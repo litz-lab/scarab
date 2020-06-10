@@ -760,11 +760,11 @@ uns get_param_file_args_and_command_line_args(char*** arg_list_ptr, int argc,
                                                 argv);
     command_line_arg_index = add_all_param_file_args_to_arg_list(
       param_file_fp, param_file_arg_count, arg_list, argc);
+    fclose(param_file_fp);
   }
   add_all_command_line_args_to_end_of_arg_list(arg_list, command_line_arg_index,
                                                argv);
 
-  fclose(param_file_fp);
   ASSERTM(0, arg_list[param_file_arg_count + argc] == 0x0,
           "2: Reading in parameters overflowed the space allocated for the "
           "args_list\n");
@@ -829,7 +829,7 @@ char** get_params(int argc, char* argv[]) {
           "RS_CONNECTIONS(%d)",
           NUM_RS, temp);
 
-  if(FRONTEND == FE_TRACE && !CBP_TRACE_R0) {
+  if((FRONTEND == FE_TRACE || FRONTEND == FE_MEMTRACE) && !CBP_TRACE_R0) {
     if(SIM_MODEL != DUMB_MODEL) {
       FATAL_ERROR(0, "Trace frontend specified, but no trace file specified "
                      "(use --cbp_trace_r0).\n");

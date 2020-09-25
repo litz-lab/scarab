@@ -24,13 +24,13 @@
 
 #undef UNUSED   // there is a name conflict between PIN and Scarab
 #undef WARNING  // there is a name conflict between PIN and Scarab
-
 #include "pin.H"
-
 #undef UNUSED   // there is a name conflict between PIN and Scarab
 #undef WARNING  // there is a name conflict between PIN and Scarab
 #include "../../ctype_pin_inst.h"
 #include "../../table_info.h"
+#include "x86_decoder.h"
+#include <ostream>
 
 void pin_decoder_init(bool translate_x87_regs, std::ostream* err_ostream);
 
@@ -40,7 +40,7 @@ ctype_pin_inst* pin_decoder_get_latest_inst();
 
 void pin_decoder_print_unknown_opcodes();
 
-uint8_t is_ifetch_barrier(const INS& ins);
+//uint8_t is_ifetch_barrier(const INS& ins);
 
 ctype_pin_inst create_sentinel();
 ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt);

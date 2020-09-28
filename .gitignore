@@ -21,6 +21,10 @@ rollups/
 *.dvi
 *.log
 
+# Some files in test directory
+test/*.out
+test/drmemtrace*
+
 # Doxygen output
 ^doc/doxygen
 

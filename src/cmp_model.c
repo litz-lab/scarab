@@ -191,6 +191,9 @@ void cmp_cores(void) {
       set_bp_recovery_info(&cmp_model.bp_recovery_info[proc_id]);
       cmp_set_all_stages(proc_id);
 
+      // verify op_count by counting number  of ops != null
+      DPRINTF("%s: sending stage with %d ops. opnum: %llx. at cycle %llx\n", icache_state_names[ic->state], ic->sd.op_count, ic->sd.ops[0] ? ic->sd.ops[0]->op_num : 0,cycle_count);
+
       update_dcache_stage(&exec->sd);
       update_exec_stage(&node->sd);
       update_node_stage(map->last_sd);

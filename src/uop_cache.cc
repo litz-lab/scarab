@@ -30,9 +30,7 @@
 /**************************************************************************************/
 /* Macros */
 
-#define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECODE_STAGE, ##args)
-#define STAGE_MAX_OP_COUNT ISSUE_WIDTH
-#define STAGE_MAX_DEPTH DECODE_CYCLES
+#define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_UOP_CACHE, ##args)
 
 
 /**************************************************************************************/
@@ -45,13 +43,13 @@ std::unordered_set<Addr> uc_set{};
 /* insert_uop_cache: */
 
 void insert_uop_cache(Addr pc) {
-  auto res = uc_set.insert(pc);
+  uc_set.insert(pc);
   // ASSERT(0, res.second);
 }
 
 /**************************************************************************************/
-/* insert_uop_cache: */
+/* get_ops_uop_cache: return 0 or 1*/
 
-Op** get_ops_uop_cache() {
-  return NULL;
+int in_uop_cache(Addr pc) {
+  return uc_set.count(pc);
 }

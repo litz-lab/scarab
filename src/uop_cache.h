@@ -2,7 +2,9 @@
  * File         : uop_cache.h
  * Author       : Peter Braun
  * Date         : 10.28.2020
- * Description  : Interface for interacting with uop cache object
+ * Description  : Interface for interacting with uop cache object.
+ *                  Currently caching individual instr. More realistically, should be
+ *                  caching full bbl keyed by first instr in bbl
  ***************************************************************************************/
 
 #ifndef __UOP_CACHE_H__
@@ -17,8 +19,8 @@ extern "C" {
 
     /* Add an instr:uop entry*/
     void insert_uop_cache(Addr pc);
-    /* Retrieve uops for given PC. Maximum length  */
-    Op** get_ops_uop_cache();
+    /* return whether the instr pc is cached */
+    int in_uop_cache(Addr pc);
 
 #ifdef __cplusplus
 }

@@ -153,7 +153,10 @@ void debug_decode_stage() {
 
 
 /**************************************************************************************/
-/* decode_cycle: */
+/* decode_cycle: Movement of cached uops to later stages assumes that with a stalled
+ *               pipeline the same (modified src_sd is passed to update_decode_stage
+ *               What if there is a branch mispred? are instr properly flushed?
+ */
 
 void update_decode_stage(Stage_Data* src_sd) {
   Flag        stall = (dec->last_sd->op_count > 0);
@@ -180,6 +183,61 @@ void update_decode_stage(Stage_Data* src_sd) {
   }
 
   /* do the first decode stage */
+  /* First, insert all cached uops into stage nearest last. 
+   * Next, place the stage data minus cached instr into last stage 
+   */
+
+  /* find first available empty pipeline stage for cached uops */
+  int empty_stage_idx = -1;
+  for(ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
+    cur = &dec->sds[ii];
+    if(!cur->op_count) {
+      empty_stage_idx = ii;
+    } else {
+      break;
+    }
+  }
+
+  /* Move cached uops to later stage in pipeline if possible */
+  // for (ii = 0; ii < src_sd->op_count; ii++) {
+  ii = 0;
+  while (ii < src_sd->op_count) {
+    Addr pc = src_sd->ops[ii]->inst_info->addr;
+
+    if (!in_uop_cache(pc)) {
+      ii++;
+      continue;
+    }
+
+    /* stage to insert op into */
+    Stage_Data* insert_stage = NULL;
+    /* the next stage after the empty stage may have a few extra slots */
+    if (empty_stage_idx + 1 < STAGE_MAX_DEPTH && dec->sds[empty_stage_idx + 1].op_count < STAGE_MAX_OP_COUNT) {
+      insert_stage = &dec->sds[empty_stage_idx + 1];
+    } else if (empty_stage_idx > 0) {
+      /* place in closest empty stage */
+      insert_stage = &dec->sds[empty_stage_idx];
+    } else {
+      /* No empty slots in later stages, Pipeline full. Done moving individual ops */
+      break;
+    }
+
+    Op* moved_op = src_sd->ops[ii];
+    insert_stage->ops[insert_stage->op_count] = src_sd->ops[ii];
+    src_sd->ops[ii] = NULL;
+    insert_stage->op_count++;
+
+    /* update src_sd->ops, op_count [need to reprocess same idx, so ii not incremented]*/
+    src_sd->ops[ii] = src_sd->ops[src_sd->op_count - 1];
+    src_sd->ops[src_sd->op_count - 1] = NULL;
+    src_sd->op_count--;
+
+    /* process op */
+    ASSERT(dec->proc_id, moved_op != NULL);
+    stage_process_op(moved_op);
+  }
+
+  /* Place any remaining ops into first stage */
   cur = &dec->sds[STAGE_MAX_DEPTH - 1];
   if(cur->op_count == 0) {
     prev           = src_sd;

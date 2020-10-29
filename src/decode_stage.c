@@ -23,7 +23,8 @@
  * File         : decode_stage.c
  * Author       : HPS Research Group
  * Date         : 2/17/1999
- * Description  :
+ * Description  : simulates the latency due to decode stage. (actual uop decoding was
+                    done in frontend)
  ***************************************************************************************/
 
 #include "debug/debug_macros.h"
@@ -44,6 +45,7 @@
 #include "general.param.h"
 #include "thread.h" /* for td */
 
+#include "uop_cache.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -57,7 +59,6 @@
 /* Global Variables */
 
 Decode_Stage* dec = NULL;
-
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -159,6 +160,11 @@ void update_decode_stage(Stage_Data* src_sd) {
   Stage_Data *cur, *prev;
   Op**        temp;
   uns         ii;
+
+  /* check if instr in uop cache */
+  if (src_sd->op_count) {
+    insert_uop_cache(src_sd->ops[0]->inst_info->addr);
+  }
 
   /* do all the intermediate stages */
   for(ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {

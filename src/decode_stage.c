@@ -164,11 +164,6 @@ void update_decode_stage(Stage_Data* src_sd) {
   Op**        temp;
   uns         ii;
 
-  /* check if instr in uop cache */
-  if (src_sd->op_count) {
-    insert_uop_cache(src_sd->ops[0]->inst_info->addr);
-  }
-
   /* do all the intermediate stages */
   for(ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
     cur = &dec->sds[ii];
@@ -182,60 +177,83 @@ void update_decode_stage(Stage_Data* src_sd) {
     prev->op_count = 0;
   }
 
+  /* Cache all uops in the last decode stage.
+   * If decode stage stalls and instr not released in next cycle is this accurate? 
+   */
+  for (ii = 0; ii < dec->last_sd->op_count; ii++) {
+    Addr pc = dec->last_sd->ops[ii]->inst_info->addr;
+
+    if (!in_uop_cache(pc)) {
+      insert_uop_cache(pc);
+    }
+  }
+
   /* do the first decode stage */
   /* First, insert all cached uops into stage nearest last. 
    * Next, place the stage data minus cached instr into last stage 
    */
 
   /* find first available empty pipeline stage for cached uops */
-  int empty_stage_idx = -1;
-  for(ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
-    cur = &dec->sds[ii];
+  int empty_stage_idx = STAGE_MAX_DEPTH;
+  for(int jj = STAGE_MAX_DEPTH - 1; jj >= 0; jj--) {
+    cur = &dec->sds[jj];
     if(!cur->op_count) {
-      empty_stage_idx = ii;
+      empty_stage_idx = jj;
     } else {
       break;
     }
   }
 
   /* Move cached uops to later stage in pipeline if possible */
-  // for (ii = 0; ii < src_sd->op_count; ii++) {
-  ii = 0;
-  while (ii < src_sd->op_count) {
+  for (int ii = 0; ii < src_sd->op_count; ii++) {
     Addr pc = src_sd->ops[ii]->inst_info->addr;
 
+    /* strict ordering within stage */
     if (!in_uop_cache(pc)) {
-      ii++;
-      continue;
+      break;
     }
 
-    /* stage to insert op into */
-    Stage_Data* insert_stage = NULL;
     /* the next stage after the empty stage may have a few extra slots */
-    if (empty_stage_idx + 1 < STAGE_MAX_DEPTH && dec->sds[empty_stage_idx + 1].op_count < STAGE_MAX_OP_COUNT) {
-      insert_stage = &dec->sds[empty_stage_idx + 1];
-    } else if (empty_stage_idx > 0) {
+    int append_to_sd = empty_stage_idx - 1 >= 0 && dec->sds[empty_stage_idx - 1].op_count < STAGE_MAX_OP_COUNT;
+    int insert_into_sd_num = -1;
+    if (append_to_sd) {
+      insert_into_sd_num = empty_stage_idx - 1;
+    } else if (empty_stage_idx < STAGE_MAX_DEPTH) {
       /* place in closest empty stage */
-      insert_stage = &dec->sds[empty_stage_idx];
+      insert_into_sd_num = empty_stage_idx;
     } else {
       /* No empty slots in later stages, Pipeline full. Done moving individual ops */
       break;
     }
+
+    /* stage to insert op into */
+    Stage_Data* insert_stage = &dec->sds[insert_into_sd_num];
 
     Op* moved_op = src_sd->ops[ii];
     insert_stage->ops[insert_stage->op_count] = src_sd->ops[ii];
     src_sd->ops[ii] = NULL;
     insert_stage->op_count++;
 
-    /* update src_sd->ops, op_count [need to reprocess same idx, so ii not incremented]*/
-    src_sd->ops[ii] = src_sd->ops[src_sd->op_count - 1];
-    src_sd->ops[src_sd->op_count - 1] = NULL;
-    src_sd->op_count--;
+    // DPRINTF("op %lld found in uop cache, moved to dec_stage_num=%lld\n", moved_op->op_num, insert_into_sd_num);
 
-    /* process op */
+    /* process op if appended to last dec stage*/
     ASSERT(dec->proc_id, moved_op != NULL);
-    stage_process_op(moved_op);
+    if (empty_stage_idx - 1 == 0 && append_to_sd) {
+      stage_process_op(moved_op);
+    }
   }
+
+  /* update src_sd->ops, op_count */
+  int ops_moved = 0;
+  for (int ii = 0; ii < src_sd->op_count; ii++) {
+    if (src_sd->ops[ii] == NULL) {
+      ops_moved++;
+    } else if (ops_moved > 0) {
+      src_sd->ops[ii - ops_moved] = src_sd->ops[ii];
+      src_sd->ops[ii] = NULL;
+    }
+  }
+  src_sd->op_count -= ops_moved;
 
   /* Place any remaining ops into first stage */
   cur = &dec->sds[STAGE_MAX_DEPTH - 1];

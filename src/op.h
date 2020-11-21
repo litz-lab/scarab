@@ -289,6 +289,10 @@ struct Op_struct {
   Addr pred_addr;
   Flag recovery_scheduled;
   // }}}
+
+  // {{{ uop cache
+  Flag fetched_from_uop_cache;
+  // }}}
 };
 // }}}
 

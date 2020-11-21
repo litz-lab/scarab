@@ -181,10 +181,11 @@ void update_decode_stage(Stage_Data* src_sd) {
    * If decode stage stalls and instr not released in next cycle is this accurate? 
    */
   for (ii = 0; ii < dec->last_sd->op_count; ii++) {
-    Addr pc = dec->last_sd->ops[ii]->inst_info->addr;
+    Op* op = dec->last_sd->ops[ii];
+    Addr pc = op->inst_info->addr;
 
-    if (!in_uop_cache(pc)) {
-      insert_uop_cache(pc);
+    if (!op->fetched_from_uop_cache) {
+      accumulate_op(op);
     }
   }
 
@@ -212,6 +213,8 @@ void update_decode_stage(Stage_Data* src_sd) {
     if (!in_uop_cache(pc)) {
       break;
     }
+
+    src_sd->ops[ii]->fetched_from_uop_cache = TRUE;
 
     /* the next stage after the empty stage may have a few extra slots */
     int append_to_sd = empty_stage_idx - 1 >= 0 && dec->sds[empty_stage_idx - 1].op_count < STAGE_MAX_OP_COUNT;

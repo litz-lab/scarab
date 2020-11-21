@@ -248,6 +248,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
 
   op->recovery_scheduled = FALSE;
   op->redirect_scheduled = FALSE;
+  op->fetched_from_uop_cache         = FALSE;
 
   for(ii = 0; ii < NUM_DEP_TYPES; ii++)
     op->wake_up_signaled[ii] = FALSE;

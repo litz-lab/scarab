@@ -290,6 +290,10 @@ struct Op_struct {
   Flag recovery_scheduled;
   Flag redirect_scheduled;
   // }}}
+
+  // {{{ uop cache
+  Flag fetched_from_uop_cache;
+  // }}}
 };
 // }}}
 

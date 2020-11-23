@@ -47,19 +47,15 @@
 /**************************************************************************************/
 /* Global Variables */
 
-// keep track of cache line of currently accumulating PW (end of CL is terminating condition)
-// dependent on icache LINE SIZE
-// cache_line = 0;  // tag+index
-
-// Cache line should be superclass of base line. incl counters of imm/disp, n_uops, etc
 Cache uop_cache;
 
-// uop trace/bbl accumulation before insertion
+// uop trace/bbl accumulation
 Op* uop_q[UOP_QUEUE_SIZE];
 int uop_q_len = 0;
 int n_imm_disp = 0;
 int n_uops = 0;
-
+// cache line of currently accumulating PW
+Addr cur_icache_line_addr = 0;
 
 
 /**************************************************************************************/
@@ -72,14 +68,20 @@ void init_uop_cache(uns8 proc_id) {
 }
 
 /**************************************************************************************/
-/* */
+/* insert_uop_cache: private method, only called by accumulate_op
+ *                   Drain buffer and insert. 
+ */
 
+void insert_uop_cache() {
+  // PW may span multiple cache entries. 1 entry per line. Additional terminating conditions per line:
+  // 1. max uops per line
+  // 2. max imm/disp per line
+  // 3. max micro-coded instr per line (not simulated)
 
-/**************************************************************************************/
-/* insert_uop_cache: private method, only called by accumulate_op */
+  // figure out how many lines we need. evict that many (up to set size!)
 
-void insert_uop_cache(Op** pw) {
-  return;
+  //insert into appropriate location, evicting entries as needed
+
 }
 
 /**************************************************************************************/
@@ -92,11 +94,25 @@ int in_uop_cache(Addr pc) {
 /**************************************************************************************/
 /* accumulate_op: accumulate into buffer. Insert into cache at end of PW. */
 void accumulate_op(Op* op) {
-  // it is possible for an instr to be partially in 2 lines. For termination purposes,
-  // it is fine to assume it is in first line.
+  // Prediction Window termination conditions:
+  // 1. end of icache line
+  // 2. branch predicted taken
+  // 3. predetermined number of branch NT (no limit in implementation)
+  // 4. uop queue full
+  // 5. too many uops to fit in entire set, even after evicting all entries
+
+  // it is possible for an instr to be partially in 2 lines. 
+  // For pw termination purposes, assume it is in first line.
   Addr icache_line_addr = ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
   
-  if (icache_line_addr) {
+  Flag end_of_icache_line = icache_line_addr != cur_icache_line_addr;
+  Flag branch_pt = op->oracle_info.pred == TAKEN;
+  Flag uop_q_full = (n_uops + 1 > UOP_QUEUE_SIZE);
 
+  if (end_of_icache_line || branch_pt || uop_q_full) {
+    insert_uop_cache();
   }
+
+  uop_q[uop_q_len] = op;
+  uop_q_len++;
 };

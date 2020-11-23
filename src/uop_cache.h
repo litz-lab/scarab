@@ -24,7 +24,7 @@ void init_uop_cache(uns8 proc_id);
 
 /* return whether the instr pc is cached (this does not consider that the whole PW 
     could already have been fetched, potentially introducing 1 incorrect cycle of latency)*/
-int in_uop_cache(Addr pc); 
+Flag in_uop_cache(Addr pc); 
 
 /* accumulate uop into buffer. If terminating condition reached, call insert_uop_cache */
 void accumulate_op(Op* op);

@@ -40,9 +40,12 @@
 #define MAX_UOPS_LINE         4
 #define MAX_IMM_DISP_LINE     4
 
-#define UOP_QUEUE_SIZE        120
+#define UOP_QUEUE_SIZE        UOP_CACHE_ASSOC * MAX_UOPS_LINE * 2
 
+/**************************************************************************************/
+/* Prototypes */
 
+inline void insert_uop_cache(void);
 
 /**************************************************************************************/
 /* Global Variables */
@@ -128,23 +131,33 @@ void insert_uop_cache() {
 }
 
 /**************************************************************************************/
-/* in_uop_cache: return 0 or 1
- *                    Iterate over all possible ops and check if contained.
+/* in_uop_cache: Iterate over all possible ops and check if contained.
  *                    Other option: use cache to simulate capacity and maintain a map 
  *                      data structure for pcs
  */
 
-  // A PW can span multiple cache entries. In this implementation, the next line used is physically
-  // next in the set (use flag to indicate entry continues) or anywhere in the set
-  // (use pointer for next entry).
-  // Flag start_of_uop_entry
-
-int in_uop_cache(Addr pc) {
-  // cache_access returns first line that matches... create own cache_access method that returns an array + array_len
+Flag in_uop_cache(Addr pc) {
+  // A PW can span multiple cache entries. The next line used is either physically 
+  // next in the set (use flag) or anywhere in the set (use pointer), depending on impl.
+  // Here, don't care about order, just search all lines for pc in question
   
-  // what if multiple lines have same tag? as they will -- need to check all for uop in question
-  // cache_access();
-  return 0;
+  // array of Op* arrays
+  Op** line_data[UOP_QUEUE_SIZE];
+  Addr line_addr;
+  int  matched_lines = 0;
+
+  matched_lines = cache_access_all(&uop_cache, pc, &line_addr, FALSE, (void**) line_data);
+
+  for (int ii = 0; ii < matched_lines; ii++) {
+    Op** line = (Op**) line_data[ii];
+    for (int jj = 0; jj < MAX_UOPS_LINE; jj++) {
+      if (line[jj]->inst_info->addr == pc) {
+        return TRUE;
+      }
+    }
+  }
+
+  return FALSE;
 }
 
 /**************************************************************************************/

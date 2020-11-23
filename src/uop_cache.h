@@ -3,10 +3,9 @@
  * Author       : Peter Braun
  * Date         : 10.28.2020
  * Description  : Interface for interacting with uop cache object.
- *                  Currently caching individual instr. More realistically, should be
- *                  caching full bbl keyed by first instr in bbl
- *                  . instr comes from icache which we speculatively execute. Theoretically
- *                  we have higher BW with uop cache
+ *                  Following Kotra et. al.'s MICRO 2020 description of uop cache baseline
+ *                  Instr comes from icache. Theoretically
+ *                  we have higher BW fetching direct with uop cache
  ***************************************************************************************/
 
 #ifndef __UOP_CACHE_H__
@@ -19,9 +18,7 @@
 // extern "C" {
 // #endif
 
-// use singleton, not OO (only one instance of uop cache)
-// Add cache struct overriding library including:
-// current_pw
+// only one instance of uop cache
 
 void init_uop_cache(uns8 proc_id);
 

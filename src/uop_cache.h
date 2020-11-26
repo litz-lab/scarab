@@ -20,7 +20,7 @@
 
 // only one instance of uop cache
 
-void init_uop_cache(uns8 proc_id);
+void init_uop_cache(void);
 
 /* return whether the instr pc is cached (this does not consider that the whole PW 
     could already have been fetched, potentially introducing 1 incorrect cycle of latency)*/

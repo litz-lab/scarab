@@ -287,6 +287,7 @@ int cache_access_all(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl,
       line_data[lines_found] = line->data;
       lines_found++;
     }
+    return lines_found;
   }
   
   if (lines_found == 0) {

@@ -54,16 +54,14 @@ static inline Flag in_uop_cache_search(Addr inst_addr);
 Cache uop_cache;
 
 // uop trace/bbl accumulation
-Op* uop_q[UOP_QUEUE_SIZE];
-int uop_q_len = 0;
-int n_imm_disp = 0;
-int n_uops = 0;
+static Op* uop_q[UOP_QUEUE_SIZE];
+static int uop_q_len = 0;
+
 // cache line of currently accumulating PW
-Addr cur_icache_line_addr = 0;
+static Addr cur_icache_line_addr = 0;
 
 // start_addr of current PW/bbl
-Addr last_successful_fetch = 0;
-
+static Addr last_successful_fetch = 0;
 
 /**************************************************************************************/
 /* init_uop_cache */
@@ -182,6 +180,7 @@ void accumulate_op(Op* op) {
 
   // it is possible for an instr to be partially in 2 lines. 
   // For pw termination purposes, assume it is in first line.
+
   Addr icache_line_addr = get_cache_line_addr(&uop_cache, op->inst_info->addr);
 
   if (!cur_icache_line_addr) {
@@ -190,7 +189,7 @@ void accumulate_op(Op* op) {
   
   Flag end_of_icache_line = icache_line_addr != cur_icache_line_addr;
   Flag branch_pt = op->oracle_info.pred == TAKEN;
-  Flag uop_q_full = (n_uops + 1 > UOP_QUEUE_SIZE);
+  Flag uop_q_full = (uop_q_len + 1 > UOP_QUEUE_SIZE);
 
   if (end_of_icache_line || branch_pt || uop_q_full) {
     insert_uop_cache();

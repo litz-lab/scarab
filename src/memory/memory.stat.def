@@ -69,6 +69,15 @@ DEF_STAT(  ICACHE_HIT_ONPATH_SAT_BY_ONPATH		   , DIST  , NO_RATIO  )
 DEF_STAT(  ICACHE_HIT_OFFPATH_SAT_BY_OFFPATH		   , DIST  , NO_RATIO  )
 DEF_STAT(  ICACHE_HIT_OFFPATH_SAT_BY_ONPATH		   , DIST  , NO_RATIO  )
 
+
+DEF_STAT(  UOP_CACHE_HIT                , DIST    , NO_RATIO)
+DEF_STAT(  UOP_CACHE_MISS               , DIST    , NO_RATIO)
+
+DEF_STAT(  ICACHE_MISS_UOP_CACHE_HIT    , COUNT   , NO_RATIO)
+/* icache is waiting for fetch to complete although uop cache already has these uops (unrealized benefit of uop cache) */
+DEF_STAT(  ICACHE_WAIT_UOP_CACHE_HIT    , COUNT   , NO_RATIO)
+
+
      /* these three are on path */
 DEF_STAT(  DCACHE_MISS		   , DIST  , NO_RATIO  )
 DEF_STAT(  DCACHE_ST_BUFFER_HIT	   , COUNT , NO_RATIO  )

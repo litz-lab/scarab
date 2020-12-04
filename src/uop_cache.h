@@ -26,6 +26,9 @@ void init_uop_cache(void);
     could already have been fetched, potentially introducing 1 incorrect cycle of latency)*/
 Flag in_uop_cache(Addr pc); 
 
+/* Same as in_uop_cache but do not log an access */
+Flag in_uop_cache_no_access(Addr pc);
+
 /* accumulate uop into buffer. If terminating condition reached, call insert_uop_cache */
 void accumulate_op(Op* op);
 

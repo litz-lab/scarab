@@ -1,9 +1,9 @@
 /***************************************************************************************
- * File         : decode_stage.c
- * Author       : HPS Research Group
- * Date         : 2/17/1999
- * Description  : simulates the latency due to decode stage. (actual uop decoding was
-                    done earlier)
+ * File         : uop_cache.h
+ * Author       : Peter Braun
+ * Date         : 10.28.2020
+ * Description  : Interface for interacting with uop cache object.
+ *                  Following Kotra et. al.'s MICRO 2020 description of uop cache baseline
  ***************************************************************************************/
 
 #include "debug/debug_macros.h"
@@ -21,26 +21,19 @@
 #include "core.param.h"
 #include "debug/debug.param.h"
 #include "general.param.h"
-#include "thread.h" /* for td */
+#include "statistics.h"
 
 #include "libs/cache_lib.h"
 #include "memory/memory.param.h"
 #include "uop_cache.h"
-// if i want to fetch an entire bbl i need to brainstorm a different technique.
 
 /**************************************************************************************/
 /* Macros */
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_UOP_CACHE, ##args)
 
-#define UOP_CACHE_SIZE        2048
-#define UOP_CACHE_ASSOC       8
 #define UOP_CACHE_LINE_SIZE   ICACHE_LINE_SIZE
-
-#define MAX_UOPS_LINE         4
-#define MAX_IMM_DISP_LINE     4
-
-#define UOP_QUEUE_SIZE        UOP_CACHE_ASSOC * MAX_UOPS_LINE * 2
+#define UOP_QUEUE_SIZE        100 // at least UOP_CACHE_ASSOC * UOP_CACHE_MAX_UOPS_LINE
 
 /**************************************************************************************/
 /* Local Prototypes */
@@ -67,7 +60,7 @@ static Addr last_successful_fetch = 0;
 /* init_uop_cache */
 
 void init_uop_cache() {
-  int data_size = sizeof(Op*) * MAX_UOPS_LINE;
+  int data_size = sizeof(Op*) * UOP_CACHE_MAX_UOPS_LINE;
   init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
              data_size, REPL_TRUE_LRU);
   
@@ -103,7 +96,7 @@ void insert_uop_cache() {
     Op* op = uop_q[ii];
     int imm_disp = (op->inst_info->lit > 0) + (op->inst_info->disp > 0);
     
-    if (cur_line_data == NULL || n_uops_line == MAX_UOPS_LINE || (n_imm_disp_line + imm_disp > MAX_IMM_DISP_LINE)) {
+    if (cur_line_data == NULL || n_uops_line == UOP_CACHE_MAX_UOPS_LINE || (n_imm_disp_line + imm_disp > UOP_CACHE_MAX_IMM_DISP_LINE)) {
       // insert a new line
       cur_line_data = (Op**) cache_insert(&uop_cache, 0, start_addr, &line_addr, &repl_line_addr);
 
@@ -135,7 +128,7 @@ static inline Flag in_uop_cache_search(Addr inst_addr) {
 
   for (int ii = 0; ii < matched_lines; ii++) {
     Op** line = (Op**) line_data[ii];
-    for (int jj = 0; jj < MAX_UOPS_LINE && line[jj]; jj++) {
+    for (int jj = 0; jj < UOP_CACHE_MAX_UOPS_LINE && line[jj]; jj++) {
       if (line[jj]->inst_info->addr == inst_addr) {
         return TRUE;
       }
@@ -155,10 +148,32 @@ Flag in_uop_cache(Addr pc) {
   // next in the set (use flag) or anywhere in the set (use pointer), depending on impl.
   // Here, don't care about order, just search all lines for pc in question
   
-  // will be either in current PW that was fetched last, or itself be the start of a new PW.
+  // Is it in current PW that was fetched last?
   if (last_successful_fetch != 0 && in_uop_cache_search(last_successful_fetch)) {
     return TRUE;
   }
+  // Is it itself start of new PW?
+  if (in_uop_cache_search(pc)) {
+    last_successful_fetch = pc;
+    STAT_EVENT(0, UOP_CACHE_HIT);
+    return TRUE;
+  }
+
+  STAT_EVENT(0, UOP_CACHE_MISS);
+  last_successful_fetch = 0;
+  return FALSE;
+}
+
+/**************************************************************************************/
+/* in_uop_cache_no_access: Same as in_uop_cache but do not log an access.
+ */
+
+Flag in_uop_cache_no_access(Addr pc) {
+  // Is it in current PW that was fetched last?
+  if (last_successful_fetch != 0 && in_uop_cache_search(last_successful_fetch)) {
+    return TRUE;
+  }
+  // Is it itself start of new PW?
   if (in_uop_cache_search(pc)) {
     last_successful_fetch = pc;
     return TRUE;

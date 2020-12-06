@@ -26,10 +26,10 @@
  * Notes        : This code has been adapted from zsim which was released under
  *                GNU General Public License as published by the Free Software
  *                Foundation, version 2.
- * Description  : Interface to simulate gziped Intel processor trace
+ * Description  : Interface to read gziped Intel processor trace
  ***************************************************************************************/
-#ifndef PT_TRACE_READER_PT_H
-#define PT_TRACE_READER_PT_H
+#ifndef __PT_TRACE_READER_PT_H__
+#define __PT_TRACE_READER_PT_H__
 #include <stdlib.h>
 #include <zlib.h>
 
@@ -161,4 +161,4 @@ public:
   }
 };
 
-#endif // PT_TRACE_READER_PT_H
+#endif // __PT_TRACE_READER_PT_H__

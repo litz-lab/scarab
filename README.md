@@ -1,3 +1,18 @@
+# Scarab Memtrace
+Install:
+1. Install exact PIN version (pinplay 3.5)
+2. Follow scarab install readme
+3. Build and compile memtrace
+4. Export the following paths
+export DRIO_ROOT=/home/hlitz/dynamorio_cur
+export LD_LIBRARY_PATH=/home/hlitz/git/pinplay-drdebug-3.5-pin-3.5-97503-gac534ca30-gcc-linux/extras/xed-intel64/lib/:$LD_LIBRARY_PATH
+export PIN_ROOT=/home/hlitz/git/pinplay-drdebug-3.5-pin-3.5-97503-gac534ca30-gcc-linux
+export LD_LIBRARY_PATH=/home/hlitz/git/pinplay-drdebug-3.5-pin-3.5-97503-gac534ca30-gcc-linux/intel64/runtime/pincrt/:$LD_LIBRARY_PATH
+5. make
+
+Run:
+src/scarab --frontend memtrace --cbp_trace_r0=<MEMTRACE_DIR> --memtrace_modules_log=<MODULES_LOG_AND_BINARIES_DIR> --fetch_off_path_ops false --inst_limit <LIMIT>
+
 # Scarab
 
 Scarab is a cycle accurate simulator for state-of-the-art, high performance,

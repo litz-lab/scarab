@@ -24,9 +24,7 @@
 
 #undef UNUSED   // there is a name conflict between PIN and Scarab
 #undef WARNING  // there is a name conflict between PIN and Scarab
-
 #include "pin.H"
-
 #undef UNUSED   // there is a name conflict between PIN and Scarab
 #undef WARNING  // there is a name conflict between PIN and Scarab
 #include <ostream>

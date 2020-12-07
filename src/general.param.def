@@ -59,6 +59,7 @@ DEF_PARAM( forward_progress_limit       , FORWARD_PROGRESS_LIMIT    , uns    , u
 DEF_PARAM( forward_progress_interval    , FORWARD_PROGRESS_INTERVAL , uns    , uns       , 10000    ,       )
 /* Fast forward in Instructions */                                                         
 DEF_PARAM( fast_forward                 , FAST_FORWARD              , uns64    , uns64   , 0        ,       )
+DEF_PARAM( fast_forward_trace_ins       , FAST_FORWARD_TRACE_INS    , uns64    , uns64   , 0        ,       )
 DEF_PARAM( fast_forward_until_addr      , FAST_FORWARD_UNTIL_ADDR   , uns      , uns     , 0        ,       )
 DEF_PARAM( warmup                       , WARMUP                    , uns64    , uns64   , 0        ,       )
 

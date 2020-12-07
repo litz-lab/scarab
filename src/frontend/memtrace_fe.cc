@@ -114,6 +114,9 @@ int ffwd(const INS& ins) {
     return 0;
   }
 #endif
+  if(ins_id == FAST_FORWARD_TRACE_INS) {
+    return 0;
+  }
   return 1;
 }
 

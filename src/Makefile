@@ -71,15 +71,39 @@ CC          = gcc
 CCC         = g++
 ARCHTYPE    = 
 CCVER       = $(shell $(CC) --version | head -n 1)
-XFLAGS	    = -D_REENTRANT
-WARN_CFLAGS = -Wall -Wunused -Wmissing-prototypes -Wmissing-declarations -Wno-long-long -Wpointer-arith -Wimplicit -Werror --param max-vartrack-size=0
+XFLAGS	    = -D_REENTRANT -DMEMTRACE -fno-omit-frame-pointer
+WARN_CFLAGS = -Wall -Wno-error=deprecated-declarations -Wunused -Wmissing-prototypes -Wmissing-declarations -Wno-long-long -Wpointer-arith -Wimplicit --param max-vartrack-size=0
 # these warning switches are conditional to stay compatible with common HPS gcc 4.1.2
 ifeq ($(CCVER), gcc (GCC) 4.7.3)
-WARN_CFLAGS += -Wno-unused-but-set-variable -Wno-maybe-uninitialized
+WARN_CFLAGS += -Wno-unused-but-set-variable -Wno-maybe-uninitialized -Wno-error=deprecated-declarations
 endif
-WARN_CCFLAGS= -Wall -Wunused -Wno-long-long -Wpointer-arith -Werror --param max-vartrack-size=0
+WARN_CCFLAGS= -Wall -Wunused -Wno-long-long -Wpointer-arith --param max-vartrack-size=0
 
 DEBUG_FLAGS = -DNO_DEBUG
+
+# Setup Dynamorio Includes
+DR_CACHESIM := $(DRIO_ROOT)/clients/drcachesim/
+DR_TRACER := $(DR_CACHESIM)/tracer/
+DR_COMMON := $(DR_CACHESIM)/common/
+DR_READER := $(DR_CACHESIM)/reader/
+DR_INC := $(DRIO_ROOT)/build/include/
+DR_EXT_INC := $(DRIO_ROOT)/build/ext/include/
+DR_CORE := $(DRIO_ROOT)/core/lib/
+DR_ALL_INC := -I$(DR_CACHESIM) -I$(DR_COMMON) -I$(DR_INC) -I$(DR_EXT_INC) -I$(DR_READER) -I$(DR_TRACER) -I$(DR_CORE)
+# Setup Dynamorio Linker
+DR_REL := $(DRIO_ROOT)/build/clients/lib64/release
+DR_BIN := $(DRIO_ROOT)/build/api/bin
+DR_EXT := $(DRIO_ROOT)/build/ext/lib64/release
+DR_REL2 := $(DRIO_ROOT)/build/lib64/release
+DR_LIB64 := $(DRIO_ROOT)/build/lib64
+DR_LINK := -L$(DR_REL) -L$(DR_BIN) -L$(DR_EXT) -L$(DR_REL2) -L$(DR_LIB64)
+DR_LIBS := -ldrmemtrace_raw2trace -ldirectory_iterator -ldrfrontendlib -ldrutil_static -ldrmgr_static -ldrmemfuncs
+DR_LIBS := $(DR_LIBS) -ldynamorio_static -ldrlibc -ldrcovlib_static -ldrx_static -ldrreg_static -ldrcontainers
+DR_LIBS := $(DR_LIBS) -ldrmemtrace_analyzer -lsnappy -ldl -lconfig++ -lz -lrt
+
+DR_ENV := -DLINUX -DX86_64
+#-DVERSION_NUMBER_INTEGER 1
+XED := -L$(PIN_ROOT)/extras/xed-intel64/lib/ -L$(PIN_ROOT)/intel64/runtime/pincrt/
 
 # Multi2sim requires pthreads. We need -static to deal with missing
 # libraries on pool machines. Combining -pthread and -static, however,
@@ -88,10 +112,10 @@ DEBUG_FLAGS = -DNO_DEBUG
 # well. Also setting -D_REENTRANT since -pthread implies it.
 # -- spruett: I removed the liberty library from below command.
 # --  used to be: LIBS	    = -lm -liberty -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -lz
-LIBS	    = -lm -lpin_fe -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -lz -lramulator
-CXXFLAGS    = -I$(GNUDIR)/$(OS)/include -I.
-OPTLDFLAGS  = -L$(GNUDIR)/$(OS)/lib -L./pin/pin_lib/obj -L./ramulator/ -rdynamic
-DBGLDFLAGS  = -L$(GNUDIR)/$(OS)/lib -L./pin/pin_lib/obj -L./ramulator/ -rdynamic
+LIBS	    = -lm -lpin_fe -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -lz -lramulator $(DR_LIBS) -lxed
+CXXFLAGS    = -I$(GNUDIR)/$(OS)/include -I. -I$(PIN_ROOT)/ $(DR_ALL_INC) $(DR_ENV)
+OPTLDFLAGS  = $(DR_LINK) $(XED) -L$(GNUDIR)/$(OS)/lib -L./pin/pin_lib/obj -L./ramulator/ -rdynamic
+DBGLDFLAGS  = $(DR_LINK) $(XED) -L$(GNUDIR)/$(OS)/lib -L./pin/pin_lib/obj -L./ramulator/ -rdynamic
 GPFLDFLAGS  = -pg -L$(GNUDIR)/$(OS)/lib -L$(BASEDIR)/lib -L./pin/pin_lib/obj -L./ramulator/ -rdynamic
 GTELDFLAGS  = -L$(GNUDIR)/$(OS)/lib -L./pin/pin_lib/obj -lgtest -L./ramulator -rdynamic
 
@@ -99,18 +123,17 @@ GTELDFLAGS  = -L$(GNUDIR)/$(OS)/lib -L./pin/pin_lib/obj -lgtest -L./ramulator -r
 # See http://valgrind.org/docs/manual/faq.html for details
 VGRLDFLAGS  = -L$(GNUDIR)/$(OS)/lib -L./pin/pin_lib/obj -L./ramulator/ -rdynamic
 
-#OPTCFLAGS  = -O3 -funroll-loops -Werror $(WARN_FLAGS) $(XFLAGS) # -DNO_ASSERT 
-OPTCFLAGS   = -std=gnu99 -O3 -g3 $(ARCHTYPE) -funroll-loops -Werror $(DEBUG_FLAGS) $(WARN_CFLAGS) $(XFLAGS) # -DNO_ASSERT 
+OPTCFLAGS   = -std=gnu99 -O3 -g3 $(ARCHTYPE) -funroll-loops $(DEBUG_FLAGS) $(WARN_CFLAGS) $(XFLAGS)
 DBGCFLAGS   = -std=gnu99 -O0 -g3 $(WARN_CFLAGS) $(XFLAGS)
 GPFCFLAGS   = -std=gnu99 $(OPTCFLAGS) -pg -g3
 VGRCFLAGS   = -std=gnu99 -O0 -g3 -funroll-loops $(XFLAGS)
-GTECFLAGS   = -std=gnu99 -O3 -g3 $(ARCHTYPE) -funroll-loops -Werror $(DEBUG_FLAGS) $(WARN_CFLAGS) $(XFLAGS) # -DNO_ASSERT 
+GTECFLAGS   = -std=gnu99 -O3 -g3 $(ARCHTYPE) -funroll-loops $(DEBUG_FLAGS) $(WARN_CFLAGS) $(XFLAGS)
 
-OPTCCFLAGS   = -std=c++14 -O3 -g3 $(ARCHTYPE) -funroll-loops -Werror $(DEBUG_FLAGS) $(WARN_CCFLAGS) $(XFLAGS) # -DNO_ASSERT 
-DBGCCFLAGS   = -std=c++14 -O0 -g3 $(WARN_CCFLAGS) $(XFLAGS)
+OPTCCFLAGS   = -std=c++14 -O3 -g3 $(ARCHTYPE) -funroll-loops -fpermissive $(DEBUG_FLAGS) $(WARN_CCFLAGS) $(XFLAGS)
+DBGCCFLAGS   = -std=c++14 -O0 -g3 -fpermissive $(WARN_CCFLAGS) $(XFLAGS)
 GPFCCFLAGS   = -std=c++14 $(OPTCCFLAGS) -pg -g3
 VGRCCFLAGS   = -std=c++14 -O0 -g3 -funroll-loops $(XFLAGS)
-GTECCFLAGS   = -std=c++14 -O3 -g3 $(ARCHTYPE) -fno-inline -funroll-loops -Werror $(DEBUG_FLAGS) $(WARN_CCFLAGS) $(XFLAGS) # -DNO_ASSERT 
+GTECCFLAGS   = -std=c++14 -O3 -g3 $(ARCHTYPE) -fno-inline -funroll-loops $(DEBUG_FLAGS) $(WARN_CCFLAGS) $(XFLAGS)
 
 
 # **************************************************************************************
@@ -162,6 +185,7 @@ GTEST_CSRC = $(filter-out main.c, $(CSRC_BASE))
 
 CCSRC    := $(wildcard *.cc) $(foreach d, $(SRC_DIRS), $(wildcard $d/*.cc))
 GTEST_CCSRC   = $(CCSRC) $(wildcard $(GTEST_DIR)/*.cc)
+
 
 SRC      := $(patsubst %.c,%,$(CSRC)) $(patsubst %.cc,%,$(CCSRC))
 GTEST_SRC:= $(patsubst %.c,%,$(GTEST_CSRC)) $(patsubst %.cc,%,$(GTEST_CCSRC))

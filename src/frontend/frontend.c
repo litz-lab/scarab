@@ -38,6 +38,7 @@
 #include "op.h"
 #include "pin_exec_driven_fe.h"
 #include "pin_trace_fe.h"
+#include "memtrace_fe.h"
 #include "sim.h"
 #include "statistics.h"
 #include "thread.h"
@@ -65,6 +66,10 @@ void frontend_init() {
       trace_init();
       break;
     }
+    case FE_MEMTRACE: {
+      memtrace_init();
+    break;
+  }
     default:
       ASSERT(0, 0);
       break;
@@ -79,6 +84,10 @@ void frontend_done(Flag* retired_exit) {
     }
     case FE_TRACE: {
       trace_done();
+      break;
+    }
+    case FE_MEMTRACE: {
+      memtrace_done();
       break;
     }
     default:

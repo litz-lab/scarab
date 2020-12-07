@@ -1258,7 +1258,6 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_SBB]     = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_SBB_LOCK] = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_SCASB]    = {OP_ICMP, 1, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_REPNE_SCASB] = {OP_ICMP, 1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_SCASD]    = {OP_ICMP, 4, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_SCASQ]    = {OP_ICMP, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_SCASW]    = {OP_ICMP, 2, 1, NONE};

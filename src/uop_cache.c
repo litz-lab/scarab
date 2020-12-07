@@ -94,7 +94,8 @@ void insert_uop_cache() {
  
   for (int ii = 0; ii < uop_q_len; ii++) {
     Op* op = uop_q[ii];
-    int imm_disp = (op->inst_info->lit > 0) + (op->inst_info->disp > 0);
+    /*int imm_disp = (op->inst_info->lit > 0) + (op->inst_info->disp > 0);*/
+    int imm_disp = 0;
     
     if (cur_line_data == NULL || n_uops_line == UOP_CACHE_MAX_UOPS_LINE || (n_imm_disp_line + imm_disp > UOP_CACHE_MAX_IMM_DISP_LINE)) {
       // insert a new line

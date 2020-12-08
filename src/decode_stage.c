@@ -182,7 +182,6 @@ void update_decode_stage(Stage_Data* src_sd) {
    */
   for (ii = 0; ii < dec->last_sd->op_count; ii++) {
     Op* op = dec->last_sd->ops[ii];
-    Addr pc = op->inst_info->addr;
 
     if (!op->fetched_from_uop_cache) {
       accumulate_op(op);

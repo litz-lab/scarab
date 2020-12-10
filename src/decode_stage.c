@@ -46,6 +46,8 @@
 #include "thread.h" /* for td */
 
 #include "uop_cache.h"
+#include "statistics.h"
+#include "memory/memory.param.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -177,17 +179,6 @@ void update_decode_stage(Stage_Data* src_sd) {
     prev->op_count = 0;
   }
 
-  /* Cache all uops in the last decode stage.
-   * If decode stage stalls and instr not released in next cycle is this accurate? 
-   */
-  for (ii = 0; ii < dec->last_sd->op_count; ii++) {
-    Op* op = dec->last_sd->ops[ii];
-
-    if (!op->fetched_from_uop_cache) {
-      accumulate_op(op);
-    }
-  }
-
   /* do the first decode stage */
   /* First, insert all cached uops into stage nearest last. 
    * Next, place the stage data minus cached instr into last stage 
@@ -205,23 +196,38 @@ void update_decode_stage(Stage_Data* src_sd) {
   }
 
   /* Move cached uops to later stage in pipeline if possible */
+  Flag prev_instr_not_in_uc = FALSE; // if true, unable to speed up dec of following instr
   for (int ii = 0; ii < src_sd->op_count; ii++) {
     Addr pc = src_sd->ops[ii]->inst_info->addr;
 
-    /* strict ordering within stage */
-    if (!in_uop_cache(pc)) {
-      break;
+    // for case where there is stall, do not want to access uop cache for uop that
+    // cannot leave icache stage (update_repl).
+    // Cannot leave icache if not in uop cache, or no space in first stage.
+    if (stall && (!in_uop_cache(pc, &src_sd->ops[ii]->op_num, FALSE) || 
+        dec->sds[STAGE_MAX_DEPTH - 1].op_count == STAGE_MAX_OP_COUNT)) {
+          break;
     }
 
+    /* strict ordering within stage */
+    if (!in_uop_cache(pc, &src_sd->ops[ii]->op_num, TRUE)) {
+      prev_instr_not_in_uc = TRUE;
+      continue;
+    } 
+    // label as fetched even if we cannot speed up decode
     src_sd->ops[ii]->fetched_from_uop_cache = TRUE;
+    if (prev_instr_not_in_uc) {
+      continue;
+    }
 
     /* the next stage after the empty stage may have a few extra slots */
-    int append_to_sd = empty_stage_idx - 1 >= 0 && dec->sds[empty_stage_idx - 1].op_count < STAGE_MAX_OP_COUNT;
+    // want to be able to append to first stage if there is a stall
+    int append_to_sd = empty_stage_idx - 1 >= 0 
+                       && dec->sds[empty_stage_idx - 1].op_count < STAGE_MAX_OP_COUNT;
     int insert_into_sd_num = -1;
     if (append_to_sd) {
       insert_into_sd_num = empty_stage_idx - 1;
-    } else if (empty_stage_idx < STAGE_MAX_DEPTH) {
-      /* place in closest empty stage */
+    } else if (empty_stage_idx < STAGE_MAX_DEPTH - 1) {
+      /* append to closest empty stage */
       insert_into_sd_num = empty_stage_idx;
     } else {
       /* No empty slots in later stages, Pipeline full. Done moving individual ops */
@@ -236,12 +242,11 @@ void update_decode_stage(Stage_Data* src_sd) {
     src_sd->ops[ii] = NULL;
     insert_stage->op_count++;
 
-    // DPRINTF("op %lld found in uop cache, moved to dec_stage_num=%lld\n", moved_op->op_num, insert_into_sd_num);
-
-    /* process op if appended to last dec stage*/
+    /* process op if appended to last dec stage. Fetched from uop cache, so do not accumulate for insert */
     ASSERT(dec->proc_id, moved_op != NULL);
     if (empty_stage_idx - 1 == 0 && append_to_sd) {
       stage_process_op(moved_op);
+      end_accumulate();
     }
   }
 
@@ -253,9 +258,13 @@ void update_decode_stage(Stage_Data* src_sd) {
     } else if (ops_moved > 0) {
       src_sd->ops[ii - ops_moved] = src_sd->ops[ii];
       src_sd->ops[ii] = NULL;
+    } else {
+      break;
     }
   }
   src_sd->op_count -= ops_moved;
+
+  INC_STAT_EVENT(dec->proc_id, N_UOPS_DEC, ops_moved);
 
   /* Place any remaining ops into first stage */
   cur = &dec->sds[STAGE_MAX_DEPTH - 1];
@@ -266,6 +275,9 @@ void update_decode_stage(Stage_Data* src_sd) {
     prev->ops      = temp;
     cur->op_count  = prev->op_count;
     prev->op_count = 0;
+    INC_STAT_EVENT(dec->proc_id, N_UOPS_DEC, cur->op_count);
+  } else {
+    ASSERT(0, stall);
   }
 
   /* if the last decode stage is stalled, don't re-process the ops  */
@@ -277,6 +289,13 @@ void update_decode_stage(Stage_Data* src_sd) {
     Op* op = dec->last_sd->ops[ii];
     ASSERT(dec->proc_id, op != NULL);
     stage_process_op(op);
+    // Cache all uops being emitted from decode stage
+    if (!op->fetched_from_uop_cache) {
+      STAT_EVENT(dec->proc_id, UOP_ACCUMULATE);
+      accumulate_op(op);
+    } else {
+      end_accumulate();
+    }
   }
 }
 

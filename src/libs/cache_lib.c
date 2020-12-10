@@ -252,7 +252,9 @@ void* cache_access(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl) {
 /**************************************************************************************/
 /* cache_access: Does a cache lookup based on the address.  Returns array of pointers
  * to the cache line data if it is found. 
- * Needed for uop cache, where a single PW entry can span multiple lines */
+ * Needed for uop cache, where a single PW entry can span multiple lines.
+ * update_repl is whether to update replacement policy --
+ */
 
 int cache_access_all(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl, void* line_data[]) {
   Addr tag;

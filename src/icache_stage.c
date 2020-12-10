@@ -360,7 +360,7 @@ void update_icache_stage() {
           STAT_EVENT(ic->proc_id, ICACHE_MISS_ONPATH + ic->off_path);
 
           // uops are in uop cache, should save cycles fetching from there instead
-          if (in_uop_cache_no_access(ic->fetch_addr)) {
+          if (in_uop_cache(ic->fetch_addr, NULL, FALSE)) {
             STAT_EVENT(ic->proc_id, ICACHE_MISS_UOP_CACHE_HIT);
           }
 

@@ -39,7 +39,7 @@
 /* Local Prototypes */
 
 static inline void insert_uop_cache(void);
-static inline Flag in_uop_cache_search(Addr inst_addr);
+static inline Flag in_uop_cache_search(Addr pw_start_addr, Addr search_addr, Flag update_repl);
 
 /**************************************************************************************/
 /* Global Variables */
@@ -56,6 +56,9 @@ static Addr cur_icache_line_addr = 0;
 // start_addr of current PW/bbl
 static Addr last_successful_fetch = 0;
 
+// uops that access uop cache
+Hash_Table uops_accessed; 
+
 /**************************************************************************************/
 /* init_uop_cache */
 
@@ -63,7 +66,7 @@ void init_uop_cache() {
   int data_size = sizeof(Op*) * UOP_CACHE_MAX_UOPS_LINE;
   init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
              data_size, REPL_TRUE_LRU);
-  
+  init_hash_table(&uops_accessed, "uops accessed table", 15000000, sizeof(int));
 }
 
 /**************************************************************************************/
@@ -120,16 +123,17 @@ void insert_uop_cache() {
   uop_q_len = 0;
 }
 
-static inline Flag in_uop_cache_search(Addr inst_addr) {
+// Access the PW, check if it has the search_addr in it.
+static inline Flag in_uop_cache_search(Addr pw_start_addr, Addr search_addr, Flag update_repl) {
   // array of Op* arrays
   Op** line_data[UOP_QUEUE_SIZE];
   Addr line_addr;
-  int matched_lines = cache_access_all(&uop_cache, inst_addr, &line_addr, FALSE, (void**) line_data);
+  int matched_lines = cache_access_all(&uop_cache, pw_start_addr, &line_addr, update_repl, (void**) line_data);
 
   for (int ii = 0; ii < matched_lines; ii++) {
     Op** line = (Op**) line_data[ii];
     for (int jj = 0; jj < UOP_CACHE_MAX_UOPS_LINE && line[jj]; jj++) {
-      if (line[jj]->inst_info->addr == inst_addr) {
+      if (line[jj]->inst_info->addr == search_addr) {
         return TRUE;
       }
     }
@@ -143,44 +147,48 @@ static inline Flag in_uop_cache_search(Addr inst_addr) {
  *                      data structure for pcs
  */
 
-Flag in_uop_cache(Addr pc) {
+Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
   // A PW can span multiple cache entries. The next line used is either physically 
   // next in the set (use flag) or anywhere in the set (use pointer), depending on impl.
   // Here, don't care about order, just search all lines for pc in question
+
+  STAT_EVENT(0, IN_UOP_CACHE_CALLED);
   
+  Flag found = FALSE;
   // Is it in current PW that was fetched last?
-  if (last_successful_fetch != 0 && in_uop_cache_search(last_successful_fetch)) {
-    return TRUE;
+  if (last_successful_fetch != 0 && in_uop_cache_search(last_successful_fetch, pc, FALSE)) {
+    found = TRUE;
   }
   // Is it itself start of new PW?
-  if (in_uop_cache_search(pc)) {
+  if (in_uop_cache_search(pc, pc, update_repl)) {
     last_successful_fetch = pc;
-    STAT_EVENT(0, UOP_CACHE_HIT);
-    return TRUE;
+    found = TRUE;
   }
 
-  STAT_EVENT(0, UOP_CACHE_MISS);
-  last_successful_fetch = 0;
-  return FALSE;
+  if (update_repl) {
+    STAT_EVENT(0, UOP_CACHE_MISS + found);
+
+    if (op_num) {
+      Flag new_entry; //verify only one access per uop
+      hash_table_access_create(&uops_accessed, *op_num, &new_entry);
+      if (!new_entry) {
+        ASSERT(0, new_entry);
+      }
+    }
+
+  }
+  if (!found) {
+    last_successful_fetch = 0;
+  }
+  
+  return found;
 }
 
-/**************************************************************************************/
-/* in_uop_cache_no_access: Same as in_uop_cache but do not log an access.
- */
-
-Flag in_uop_cache_no_access(Addr pc) {
-  // Is it in current PW that was fetched last?
-  if (last_successful_fetch != 0 && in_uop_cache_search(last_successful_fetch)) {
-    return TRUE;
+void end_accumulate(void) {
+  if (uop_q_len) {
+    insert_uop_cache();
+    cur_icache_line_addr = 0;
   }
-  // Is it itself start of new PW?
-  if (in_uop_cache_search(pc)) {
-    last_successful_fetch = pc;
-    return TRUE;
-  }
-
-  last_successful_fetch = 0;
-  return FALSE;
 }
 
 /**************************************************************************************/
@@ -207,8 +215,7 @@ void accumulate_op(Op* op) {
   Flag uop_q_full = (uop_q_len + 1 > UOP_QUEUE_SIZE);
 
   if (end_of_icache_line || branch_pt || uop_q_full) {
-    insert_uop_cache();
-    cur_icache_line_addr = 0;
+    end_accumulate();
   }
 
   uop_q[uop_q_len] = op;

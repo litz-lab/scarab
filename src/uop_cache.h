@@ -24,10 +24,9 @@ void init_uop_cache(void);
 
 /* return whether the instr pc is cached (this does not consider that the whole PW 
     could already have been fetched, potentially introducing 1 incorrect cycle of latency)*/
-Flag in_uop_cache(Addr pc); 
+Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl); 
 
-/* Same as in_uop_cache but do not log an access */
-Flag in_uop_cache_no_access(Addr pc);
+void end_accumulate(void);
 
 /* accumulate uop into buffer. If terminating condition reached, call insert_uop_cache */
 void accumulate_op(Op* op);

@@ -34,6 +34,7 @@
 #include "frontend/pin_exec_driven_fe.h"
 #include "frontend/pin_trace_fe.h"
 #include "frontend/memtrace_fe.h"
+#include "frontend/pt_fe.h"
 
 Frontend_Impl frontend_table[] = {
 #define FRONTEND_IMPL(id, name, prefix) \

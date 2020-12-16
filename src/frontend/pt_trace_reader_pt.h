@@ -42,6 +42,7 @@
 #include "frontend/memtrace_trace_reader.h"
 
 #define GZ_BUFFER_SIZE 80
+#define panic(...) printf(__VA_ARGS__)
 
 struct PTInst {
   uint64_t pc;
@@ -109,13 +110,13 @@ public:
     xed_ins = std::get<MAP_XED>(xed_tuple).get();
     _info->pc = next_line.pc;
     _info->ins = xed_ins;
-    _info->pid = 0;
-    _info->tid = 0;
+    _info->pid = 1;
+    _info->tid = 1;
     _info->target = 0; // Set when the next instruction is evaluated
     _info->taken =
         cond_branch; // Patched when the next instruction is evaluated
-    _info->mem_addr[0] = 0;
-    _info->mem_addr[1] = 0;
+    _info->mem_addr[0] = 0x4040;
+    _info->mem_addr[1] = 0x8080;
     _info->mem_used[0] = false;
     _info->mem_used[1] = false;
     _info->unknown_type = unknown_type;

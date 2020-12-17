@@ -14,10 +14,6 @@
 /**************************************************************************************/
 /* Prototypes */
 
-// #ifdef __cplusplus 
-// extern "C" {
-// #endif
-
 // only one instance of uop cache
 
 void init_uop_cache(void);
@@ -27,13 +23,8 @@ void init_uop_cache(void);
 Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl); 
 
 void end_accumulate(void);
-
 /* accumulate uop into buffer. If terminating condition reached, call insert_uop_cache */
 void accumulate_op(Op* op);
-
-// #ifdef __cplusplus
-// }
-// #endif
 
 /**************************************************************************************/
 

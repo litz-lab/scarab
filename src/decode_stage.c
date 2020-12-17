@@ -203,7 +203,8 @@ void update_decode_stage(Stage_Data* src_sd) {
     // for case where there is stall, do not want to access uop cache for uop that
     // cannot leave icache stage (update_repl).
     // Cannot leave icache if not in uop cache, or no space in first stage.
-    if (stall && (!in_uop_cache(pc, &src_sd->ops[ii]->op_num, FALSE) || 
+    // Dec stage stall doesn't stall icache if first stage is empty.
+    if ((stall && dec->sds[STAGE_MAX_DEPTH - 1].op_count) && (!in_uop_cache(pc, &src_sd->ops[ii]->op_num, FALSE) || 
         dec->sds[STAGE_MAX_DEPTH - 1].op_count == STAGE_MAX_OP_COUNT)) {
           break;
     }
@@ -231,7 +232,7 @@ void update_decode_stage(Stage_Data* src_sd) {
       insert_into_sd_num = empty_stage_idx;
     } else {
       /* No empty slots in later stages, Pipeline full. Done moving individual ops */
-      break;
+      continue;
     }
 
     /* stage to insert op into */

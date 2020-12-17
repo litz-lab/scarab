@@ -32,8 +32,9 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_UOP_CACHE, ##args)
 
-#define UOP_CACHE_LINE_SIZE   ICACHE_LINE_SIZE
-#define UOP_QUEUE_SIZE        100 // at least UOP_CACHE_ASSOC * UOP_CACHE_MAX_UOPS_LINE
+#define UOP_CACHE_LINE_SIZE       ICACHE_LINE_SIZE
+#define UOP_QUEUE_SIZE            100 // at least UOP_CACHE_ASSOC * UOP_CACHE_MAX_UOPS_LINE
+#define UOP_CACHE_LINE_DATA_SIZE  UOP_CACHE_MAX_UOPS_LINE * sizeof(Addr)
 
 /**************************************************************************************/
 /* Local Prototypes */
@@ -54,7 +55,7 @@ static int uop_q_len = 0;
 static Addr cur_icache_line_addr = 0;
 
 // start_addr of current PW/bbl
-static Addr last_successful_fetch = 0;
+static Addr cur_pw_start_addr = 0;
 
 // uops that access uop cache
 Hash_Table uops_accessed; 
@@ -63,9 +64,8 @@ Hash_Table uops_accessed;
 /* init_uop_cache */
 
 void init_uop_cache() {
-  int data_size = sizeof(Op*) * UOP_CACHE_MAX_UOPS_LINE;
   init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
-             data_size, REPL_TRUE_LRU);
+             UOP_CACHE_LINE_DATA_SIZE, REPL_TRUE_LRU);
   init_hash_table(&uops_accessed, "uops accessed table", 15000000, sizeof(int));
 }
 
@@ -89,11 +89,15 @@ void insert_uop_cache() {
   Addr start_addr = uop_q[0]->inst_info->addr;
   Addr line_addr;  
   Addr repl_line_addr;
-  Op** cur_line_data = NULL;
+  Addr* cur_line_data = NULL;
         
   int n_lines_used = 0;
   int n_uops_line = 0;
   int n_imm_disp_line = 0;
+
+  // printf("INS, %llu, idx:%i, op:%llu, %llu, len:%i\n", start_addr, 
+  //           start_addr >> uop_cache.shift_bits & uop_cache.set_mask,
+  //           uop_q[0]->op_num, sim_time, uop_q_len);
  
   for (int ii = 0; ii < uop_q_len; ii++) {
     Op* op = uop_q[ii];
@@ -101,20 +105,30 @@ void insert_uop_cache() {
     
     if (cur_line_data == NULL || n_uops_line == UOP_CACHE_MAX_UOPS_LINE || (n_imm_disp_line + imm_disp > UOP_CACHE_MAX_IMM_DISP_LINE)) {
       // insert a new line
-      cur_line_data = (Op**) cache_insert(&uop_cache, 0, start_addr, &line_addr, &repl_line_addr);
-
+      cur_line_data = (Addr*) cache_insert(&uop_cache, 0, start_addr, &line_addr, &repl_line_addr);
+      // TODO: invalidate all lines with same start_addr (not necessarily all with that line!)
+      if (repl_line_addr) {
+        // printf("INV, %llu, idx:%i, op:%llu, %llu\n", repl_line_addr, 
+        //       repl_line_addr >> uop_cache.shift_bits & uop_cache.set_mask,
+        //       op->op_num, sim_time);
+        cache_invalidate(&uop_cache, repl_line_addr, &line_addr);
+      }
       n_uops_line = 0;
       n_imm_disp_line = 0;
       n_lines_used++;
+      memset(cur_line_data, 0, UOP_CACHE_LINE_DATA_SIZE);
     }
 
     //add data to line
-    cur_line_data[n_uops_line] = op;
+    cur_line_data[n_uops_line] = op->inst_info->addr;
     n_uops_line++;
     n_imm_disp_line += imm_disp;
 
     // if we used up too many full cache lines, invalidate all of them
     if (n_lines_used >= UOP_CACHE_ASSOC) {
+      // printf("INV, %llu, idx:%i, op:%llu, %llu\n", start_addr, 
+      //     start_addr >> uop_cache.shift_bits & uop_cache.set_mask,
+      //     op->op_num, sim_time);
       cache_invalidate(&uop_cache, start_addr, &line_addr);
       break;
     }
@@ -123,17 +137,19 @@ void insert_uop_cache() {
   uop_q_len = 0;
 }
 
+
 // Access the PW, check if it has the search_addr in it.
 static inline Flag in_uop_cache_search(Addr pw_start_addr, Addr search_addr, Flag update_repl) {
-  // array of Op* arrays
-  Op** line_data[UOP_QUEUE_SIZE];
+  Addr* line_data[UOP_QUEUE_SIZE]; // way over-allocated
   Addr line_addr;
-  int matched_lines = cache_access_all(&uop_cache, pw_start_addr, &line_addr, update_repl, (void**) line_data);
+  int matched_lines = cache_access_all(&uop_cache, pw_start_addr, &line_addr, FALSE, (void*) line_data);
 
   for (int ii = 0; ii < matched_lines; ii++) {
-    Op** line = (Op**) line_data[ii];
+    Addr* line = (Addr*) line_data[ii];
     for (int jj = 0; jj < UOP_CACHE_MAX_UOPS_LINE && line[jj]; jj++) {
-      if (line[jj]->inst_info->addr == search_addr) {
+      if (line[jj] == search_addr) {
+        // actually update replacement since it is a real hit.
+        cache_access_all(&uop_cache, pw_start_addr, &line_addr, update_repl, (void*) line_data);
         return TRUE;
       }
     }
@@ -153,32 +169,39 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
   // Here, don't care about order, just search all lines for pc in question
 
   STAT_EVENT(0, IN_UOP_CACHE_CALLED);
+
+  static Counter next_op_num = 1;
   
   Flag found = FALSE;
   // Is it in current PW that was fetched last?
-  if (last_successful_fetch != 0 && in_uop_cache_search(last_successful_fetch, pc, FALSE)) {
+  if (cur_pw_start_addr != 0 && in_uop_cache_search(cur_pw_start_addr, pc, FALSE)) {
     found = TRUE;
   }
   // Is it itself start of new PW?
   if (in_uop_cache_search(pc, pc, update_repl)) {
-    last_successful_fetch = pc;
+    cur_pw_start_addr = pc;
     found = TRUE;
   }
 
   if (update_repl) {
     STAT_EVENT(0, UOP_CACHE_MISS + found);
 
+    // printf("ACC, %llu, idx:%i, op:%llu, %llu, %i\n", pc, 
+    //       pc >> uop_cache.shift_bits & uop_cache.set_mask,
+    //       *op_num, sim_time, found);
+
     if (op_num) {
+      ASSERT(0, *op_num == next_op_num);
+      next_op_num++;
+
       Flag new_entry; //verify only one access per uop
       hash_table_access_create(&uops_accessed, *op_num, &new_entry);
-      if (!new_entry) {
-        ASSERT(0, new_entry);
-      }
+      ASSERT(0, new_entry);
     }
 
   }
   if (!found) {
-    last_successful_fetch = 0;
+    cur_pw_start_addr = 0;
   }
   
   return found;
@@ -203,11 +226,16 @@ void accumulate_op(Op* op) {
 
   // it is possible for an instr to be partially in 2 lines. 
   // For pw termination purposes, assume it is in first line.
+  static Counter cons_op_num = 0;
 
   Addr icache_line_addr = get_cache_line_addr(&uop_cache, op->inst_info->addr);
 
   if (!cur_icache_line_addr) {
     cur_icache_line_addr = icache_line_addr;
+    cons_op_num = op->op_num + 1;
+  } else {
+    ASSERT(0, op->op_num == cons_op_num);
+    cons_op_num++;
   }
   
   Flag end_of_icache_line = icache_line_addr != cur_icache_line_addr;
@@ -218,6 +246,9 @@ void accumulate_op(Op* op) {
     end_accumulate();
   }
 
+  if (!uop_q_len) {
+    cur_icache_line_addr = icache_line_addr;
+  }
   uop_q[uop_q_len] = op;
   uop_q_len++;
 };

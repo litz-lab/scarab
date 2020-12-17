@@ -265,7 +265,7 @@ int cache_access_all(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl,
   for(ii = 0; ii < cache->assoc; ii++) {
     Cache_Entry* line = &cache->entries[set][ii];
 
-    if(line->valid && line->tag == tag) {
+    if(line->valid && line->tag == tag && line->pw_start_addr == addr) {
       /* update replacement state if necessary */
       ASSERT(0, line->data);
       DEBUG(0, "Found line in cache '%s' at (set %u, way %u, base 0x%s)\n",
@@ -286,7 +286,6 @@ int cache_access_all(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl,
       line_data[lines_found] = line->data;
       lines_found++;
     }
-    return lines_found;
   }
   
   if (lines_found == 0) {
@@ -356,8 +355,10 @@ void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr,
   new_line->base             = *line_addr;
   new_line->last_access_time = sim_time;  // FIXME: this fixes valgrind warnings
                                           // in update_prf_
-
+  new_line->pw_start_addr    = 0; // should set this for uop cache
   new_line->pref = isPrefetch;
+
+  new_line->pw_start_addr = addr; // only means anything for uop cache
 
   switch(insert_repl_policy) {
     case INSERT_REPL_DEFAULT:

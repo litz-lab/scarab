@@ -68,7 +68,7 @@ typedef struct Cache_Entry_struct {
   Flag    pref;             /* extra replacement info */
   Flag    dirty; /* Dirty bit should have been here, however this is used only in
                  warmup now */
-  
+  Addr pw_start_addr; /* for uop cache: start addr of prediction window */
 } Cache_Entry;
 
 // DO NOT CHANGE THIS ORDER

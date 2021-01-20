@@ -61,7 +61,7 @@
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_ICACHE_STAGE, ##args)
 
 #define STAGE_MAX_OP_COUNT ISSUE_WIDTH
-
+#define DUMMY_ADDR_UC_FETCH 0x1
 
 /**************************************************************************************/
 /* Global Variables */
@@ -77,9 +77,12 @@ extern Rob_Block_Issue_Reason rob_block_issue_reason;
 /* Local prototypes */
 
 static inline Icache_State icache_issue_ops(Break_Reason*, uns*,
-                                            Inst_Info** line);
+                                            Inst_Info** line,
+                                            Flag uop_cache_issue_ops);
+static inline Inst_Info**  lookup_cache(Flag* uop_cache_fetch);
 static Inst_Info**         ic_pref_cache_access(void);
 int32_t                    inst_lost_get_full_window_reason(void);
+static inline void         log_stats_ic_miss(void);
 
 /**************************************************************************************/
 /* set_icache_stage: */
@@ -271,6 +274,23 @@ void debug_icache_stage() {
                  ic->sd.op_count);
 }
 
+/**************************************************************************************/
+/* lookup_cache: returns instr if found in either uop cache or icache 
+ *                If icache miss but UC hit, set ic->line to non-null  
+ */
+Inst_Info** lookup_cache(Flag* uop_cache_fetch) {
+  Inst_Info** line = NULL;
+  line = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr,
+                                             &ic->line_addr, TRUE);
+  if (in_uop_cache(ic->fetch_addr, NULL, FALSE)) {
+    *uop_cache_fetch = TRUE;
+    // Should return Inst_Info, but op hasn't been fetched yet, so just give it any 
+    // value. This is not used anyway
+    if (!line) 
+      line = (Inst_Info**)DUMMY_ADDR_UC_FETCH;
+  }
+  return line;
+}
 
 /**************************************************************************************/
 /* icache_cycle: */
@@ -297,6 +317,7 @@ void update_icache_stage() {
   switch(ic->state) {
     case IC_FETCH: {
       Break_Reason break_fetch = BREAK_DONT;
+      Flag uop_cache_fetch = FALSE;
 
       ic->off_path &= !ic->back_on_path;
       ic->back_on_path = FALSE;
@@ -316,8 +337,7 @@ void update_icache_stage() {
           ASSERTM(ic->proc_id, ic->fetch_addr, "ic fetch addr: %llu\n",
                   ic->fetch_addr);
 
-        ic->line = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr,
-                                             &ic->line_addr, TRUE);
+        ic->line = lookup_cache(&uop_cache_fetch);
 
         if(PERFECT_ICACHE && !ic->line)
           ic->line = INIT_CACHE_DATA_VALUE;
@@ -331,9 +351,11 @@ void update_icache_stage() {
           ic->line = ic_pref_cache_access();
 
 
-        STAT_EVENT(ic->proc_id, POWER_ITLB_ACCESS);
-        STAT_EVENT(ic->proc_id, POWER_ICACHE_ACCESS);
-        STAT_EVENT(ic->proc_id, POWER_BTB_READ);
+        if (!uop_cache_fetch) {
+          STAT_EVENT(ic->proc_id, POWER_ITLB_ACCESS);
+          STAT_EVENT(ic->proc_id, POWER_ICACHE_ACCESS);
+          STAT_EVENT(ic->proc_id, POWER_BTB_READ);
+        }
 
         // ideal L2 Icache prefetcher
         if(IDEAL_L2_ICACHE_PREFETCHER) {
@@ -355,14 +377,7 @@ void update_icache_stage() {
           DEBUG(ic->proc_id, "Cache miss on op_num:%s @ 0x%s\n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
 
-          STAT_EVENT(ic->proc_id, ICACHE_MISS);
-          STAT_EVENT(ic->proc_id, POWER_ICACHE_MISS);
-          STAT_EVENT(ic->proc_id, ICACHE_MISS_ONPATH + ic->off_path);
-
-          // uops are in uop cache, should save cycles fetching from there instead
-          if (in_uop_cache(ic->fetch_addr, NULL, FALSE)) {
-            STAT_EVENT(ic->proc_id, ICACHE_MISS_UOP_CACHE_HIT);
-          }
+          log_stats_ic_miss();
 
           /* if the icache is available, wait for a miss */
           /* otherwise, refetch next cycle */
@@ -406,7 +421,10 @@ void update_icache_stage() {
             }
           }
           break_fetch = BREAK_ICACHE_MISS;
-        } else { /* cache hit */
+        } else if (ic->line == DUMMY_ADDR_UC_FETCH) { // icache miss, uc hit
+          log_stats_ic_miss();
+          ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
+        } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
           STAT_EVENT(ic->proc_id, ICACHE_HIT);
@@ -415,7 +433,7 @@ void update_icache_stage() {
             ASSERT(ic->proc_id, line_info);
             wp_process_icache_hit(line_info, ic->fetch_addr);
           }
-          ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line);
+          ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
         }
       }
       INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_DONT + break_fetch,
@@ -466,7 +484,8 @@ void update_icache_stage() {
    becomes true. */
 
 static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
-                                            uns* cf_num, Inst_Info** line) {
+                                            uns* cf_num, Inst_Info** line, 
+                                            Flag uop_cache_issue_ops) {
   Packet_Build_Condition packet_break = PB_BREAK_DONT;
   static uns last_icache_issue_time = 0; /* for computing fetch break latency */
   static Counter issued_real_inst   = 0;
@@ -516,12 +535,13 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       ASSERT(ic->proc_id, op->table_info->cf_type != CF_SYS);
     }
 
-    packet_break = packet_build(ic_pb_data, break_fetch, op, 0);
+    packet_break = packet_build(ic_pb_data, break_fetch, op, uop_cache_issue_ops);
     if(packet_break == PB_BREAK_BEFORE) {
       free_op(op);
       break;
     }
 
+    addr_in_dec_insert(op->inst_info->addr);
     /* add to sequential op list */
     add_to_seq_op_list(td, op);
 
@@ -655,7 +675,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         ///////////////////////////////////////
       }
 
-
+      
       /* if it's a btb miss, quit fetching and wait for redirect */
       if(op->oracle_info.btb_miss) {
         *break_fetch = BREAK_BTB_MISS;
@@ -663,7 +683,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
               cycle_count);
         return IC_WAIT_FOR_REDIRECT;
       }
-
+      
       /* if it's a taken branch, wait for timer */
       if(FETCH_BREAK_ON_TAKEN && op->oracle_info.pred &&
          *break_fetch != BREAK_BARRIER) {
@@ -954,4 +974,10 @@ int32_t inst_lost_get_full_window_reason() {
   }
 
   return 0;
+}
+
+void log_stats_ic_miss() {
+  STAT_EVENT(ic->proc_id, ICACHE_MISS);
+  STAT_EVENT(ic->proc_id, POWER_ICACHE_MISS);
+  STAT_EVENT(ic->proc_id, ICACHE_MISS_ONPATH + ic->off_path);
 }

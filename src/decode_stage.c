@@ -165,6 +165,7 @@ void update_decode_stage(Stage_Data* src_sd) {
   Stage_Data *cur, *prev;
   Op**        temp;
   uns         ii;
+  static Flag fetching_from_UC = FALSE;
 
   /* do all the intermediate stages */
   for(ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
@@ -196,28 +197,15 @@ void update_decode_stage(Stage_Data* src_sd) {
   }
 
   /* Move cached uops to later stage in pipeline if possible */
-  Flag prev_instr_not_in_uc = FALSE; // if true, unable to speed up dec of following instr
   for (int ii = 0; ii < src_sd->op_count; ii++) {
-    Addr pc = src_sd->ops[ii]->inst_info->addr;
 
-    // for case where there is stall, do not want to access uop cache for uop that
-    // cannot leave icache stage (update_repl).
     // Cannot leave icache if not in uop cache, or no space in first stage.
-    // Dec stage stall doesn't stall icache if first stage is empty.
-    if ((stall && dec->sds[STAGE_MAX_DEPTH - 1].op_count) && (!in_uop_cache(pc, &src_sd->ops[ii]->op_num, FALSE) || 
-        dec->sds[STAGE_MAX_DEPTH - 1].op_count == STAGE_MAX_OP_COUNT)) {
-          break;
+    if (!src_sd->ops[ii]->fetched_from_uop_cache) {
+      fetching_from_UC = FALSE;
+      break;
     }
-
-    /* strict ordering within stage */
-    if (!in_uop_cache(pc, &src_sd->ops[ii]->op_num, TRUE)) {
-      prev_instr_not_in_uc = TRUE;
-      continue;
-    } 
-    // label as fetched even if we cannot speed up decode
-    src_sd->ops[ii]->fetched_from_uop_cache = TRUE;
-    if (prev_instr_not_in_uc) {
-      continue;
+    if (dec->sds[STAGE_MAX_DEPTH - 1].op_count == STAGE_MAX_OP_COUNT) {
+      break;
     }
 
     /* the next stage after the empty stage may have a few extra slots */
@@ -233,6 +221,14 @@ void update_decode_stage(Stage_Data* src_sd) {
     } else {
       /* No empty slots in later stages, Pipeline full. Done moving individual ops */
       continue;
+    }
+
+    // log cycles saved only for the FIRST op that is moved in seq of fetched instr from UC
+    // if inserting into first stage when first stage is partially full still save 1 cycle
+    if (!fetching_from_UC) {
+      int cycles_saved = (STAGE_MAX_DEPTH - 1) - insert_into_sd_num;
+      INC_STAT_EVENT(dec->proc_id, UOP_CACHE_CYCLES_SAVED, cycles_saved ? cycles_saved : 1);
+      fetching_from_UC = TRUE;
     }
 
     /* stage to insert op into */
@@ -297,6 +293,8 @@ void update_decode_stage(Stage_Data* src_sd) {
     } else {
       end_accumulate();
     }
+
+    addr_in_dec_remove(op->inst_info->addr);
   }
 }
 

@@ -59,6 +59,8 @@ static Addr cur_pw_start_addr = 0;
 
 // uops that access uop cache
 Hash_Table uops_accessed; 
+// uop addr being processed in decode stage
+Hash_Table addr_in_dec;
 
 /**************************************************************************************/
 /* init_uop_cache */
@@ -67,6 +69,7 @@ void init_uop_cache() {
   init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
              UOP_CACHE_LINE_DATA_SIZE, REPL_TRUE_LRU);
   init_hash_table(&uops_accessed, "uops accessed table", 15000000, sizeof(int));
+  init_hash_table(&addr_in_dec, "uops in decode pipeline", 15000000, sizeof(int));
 }
 
 /**************************************************************************************/
@@ -138,8 +141,8 @@ void insert_uop_cache() {
   uop_q_len = 0;
 }
 
-
-// Access the PW, check if it has the search_addr in it.
+// TODO: optimize, very inefficient. Should store line data so multiple cache accesses not needed for same PW
+// Access the PW, check if it has the search_addr in it. 
 static inline Flag in_uop_cache_search(Addr pw_start_addr, Addr search_addr, Flag update_repl) {
   Addr* line_data[UOP_QUEUE_SIZE]; // way over-allocated
   Addr line_addr;
@@ -203,6 +206,16 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
   }
   if (!found) {
     cur_pw_start_addr = 0;
+
+      //How many more hits might we have if we hit pws
+      //in decode stage or accumulation buffer?
+      Addr accum_pw_start_addr = 0;
+      if (uop_q_len) {
+        accum_pw_start_addr = uop_q[0]->inst_info->addr;
+      }   
+      if (hash_table_access(&addr_in_dec, pc) || accum_pw_start_addr == pc) {
+        STAT_EVENT(0, UOP_ADDR_IN_DEC_ACCUM);
+      }
   }
   
   return found;
@@ -252,4 +265,24 @@ void accumulate_op(Op* op) {
   }
   uop_q[uop_q_len] = op;
   uop_q_len++;
+};
+
+void addr_in_dec_remove(Addr addr) {
+    int* val = (int*) hash_table_access(&addr_in_dec, addr);
+    ASSERT(0, val);
+    if (*val == 1) {
+      ASSERT(0, hash_table_access_delete(&addr_in_dec, addr));
+    } else {
+      *val -= 1;
+    }
+};
+
+void addr_in_dec_insert(Addr addr) {
+    Flag new_entry;
+    int* val = (int*) hash_table_access_create(&addr_in_dec, addr, &new_entry);
+    if (new_entry) {
+      *val = 1;
+    } else {
+      *val += 1;
+    }
 };

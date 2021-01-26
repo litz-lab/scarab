@@ -66,6 +66,9 @@ Hash_Table addr_in_dec;
 /* init_uop_cache */
 
 void init_uop_cache() {
+  if (UOP_CACHE_SIZE == 0) {
+    return;
+  }
   init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
              UOP_CACHE_LINE_DATA_SIZE, REPL_TRUE_LRU);
   init_hash_table(&uops_accessed, "uops accessed table", 15000000, sizeof(int));
@@ -173,6 +176,10 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
 
   STAT_EVENT(0, IN_UOP_CACHE_CALLED);
 
+  if (UOP_CACHE_SIZE == 0) {
+    return FALSE;
+  }
+
   static Counter next_op_num = 1;
   
   Flag found = FALSE;
@@ -221,6 +228,10 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
 }
 
 void end_accumulate(void) {
+  if (UOP_CACHE_SIZE == 0) {
+    return;
+  }
+
   if (uop_q_len) {
     insert_uop_cache();
     cur_icache_line_addr = 0;
@@ -240,6 +251,10 @@ void accumulate_op(Op* op) {
   // it is possible for an instr to be partially in 2 lines. 
   // For pw termination purposes, assume it is in first line.
   static Counter cons_op_num = 0;
+
+  if (UOP_CACHE_SIZE == 0) {
+    return;
+  }
 
   Addr icache_line_addr = get_cache_line_addr(&uop_cache, op->inst_info->addr);
 
@@ -267,21 +282,28 @@ void accumulate_op(Op* op) {
 };
 
 void addr_in_dec_remove(Addr addr) {
-    int* val = (int*) hash_table_access(&addr_in_dec, addr);
-    ASSERT(0, val);
-    if (*val == 1) {
-      ASSERT(0, hash_table_access_delete(&addr_in_dec, addr));
-    } else {
-      *val -= 1;
-    }
+  if (UOP_CACHE_SIZE == 0) {
+    return;
+  }
+  int* val = (int*) hash_table_access(&addr_in_dec, addr);
+  ASSERT(0, val);
+  if (*val == 1) {
+    ASSERT(0, hash_table_access_delete(&addr_in_dec, addr));
+  } else {
+    *val -= 1;
+  }
 };
 
 void addr_in_dec_insert(Addr addr) {
-    Flag new_entry;
-    int* val = (int*) hash_table_access_create(&addr_in_dec, addr, &new_entry);
-    if (new_entry) {
-      *val = 1;
-    } else {
-      *val += 1;
-    }
+  if (UOP_CACHE_SIZE == 0) {
+    return;
+  }
+  
+  Flag new_entry;
+  int* val = (int*) hash_table_access_create(&addr_in_dec, addr, &new_entry);
+  if (new_entry) {
+    *val = 1;
+  } else {
+    *val += 1;
+  }
 };

@@ -452,8 +452,14 @@ void update_icache_stage() {
             }
           }
           break_fetch = BREAK_ICACHE_MISS;
-        } else if (ic->line == (Inst_Info**)DUMMY_ADDR_UC_FETCH) { // icache miss, uc hit
+        } else if (ic->line == (Inst_Info**) DUMMY_ADDR_UC_FETCH) { // icache miss, uc hit
           log_stats_ic_miss();
+          // start a memreq to fill icache, but do not cause any stalls. 
+          // Use for more inclusivity between IC and UC
+          // new_mem_req(MRT_IFETCH, ic->proc_id, ic->line_addr,
+          //                  ICACHE_LINE_SIZE, 0, NULL, icache_fill_line,
+          //                  unique_count,
+          //                  0);
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",

@@ -46,6 +46,7 @@
 #include "libs/cache_lib.h"
 #include "model.h"
 #include "thread.h"
+#include "uop_cache.h"
 
 #include "bp/bp.param.h"
 #include "core.param.h"
@@ -131,8 +132,17 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op,
   if(bp_recovery_info->recovery_cycle == MAX_CTR ||
      op->op_num <= bp_recovery_info->recovery_op_num) {
     const Addr next_fetch_addr = op->oracle_info.npc;
-    const uns  latency         = late_bp_recovery ? LATE_BP_LATENCY :
-                                           1 + EXTRA_RECOVERY_CYCLES;
+
+    uns fetch_latency;
+    if (in_uop_cache(next_fetch_addr, NULL, FALSE)) {
+      fetch_latency = UOP_CACHE_LATENCY;
+      INC_STAT_EVENT(bp_recovery_info->proc_id, BP_RECOVERY_FETCH_CYCLES_UC, UOP_CACHE_LATENCY);
+    } else {
+      fetch_latency = ICACHE_LATENCY;
+      INC_STAT_EVENT(bp_recovery_info->proc_id, BP_RECOVERY_FETCH_CYCLES_IC, ICACHE_LATENCY);
+    }
+    const uns latency = late_bp_recovery ? fetch_latency + 1 + LATE_BP_LATENCY :
+                                           fetch_latency + 1;
     DEBUG(
       bp_recovery_info->proc_id,
       "Recovery signaled for op_num:%s @ 0x%s  next_fetch:0x%s offpath:%d\n",

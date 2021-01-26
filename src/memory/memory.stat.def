@@ -76,9 +76,12 @@ DEF_STAT(  UOP_CACHE_HIT                , DIST    , NO_RATIO)
 DEF_STAT(  UOP_CACHE_CYCLES_SAVED       , COUNT   , NO_RATIO) // cycles saved by 1st op in sequence of ops in deconde stage
 DEF_STAT(  UOP_ADDR_IN_DEC_ACCUM        , COUNT   , NO_RATIO) // uop's addr is being processed: in dec stage or accumulation buffer
 /* icache is waiting for fetch to complete although uop cache already has these uops (unrealized benefit of uop cache) */
-DEF_STAT(  IN_UOP_CACHE_CALLED    , COUNT   , NO_RATIO)
-DEF_STAT(  N_UOPS_DEC    , COUNT   , NO_RATIO)
-DEF_STAT(  UOP_ACCUMULATE    , COUNT   , NO_RATIO)
+DEF_STAT(  IN_UOP_CACHE_CALLED          , COUNT   , NO_RATIO)
+DEF_STAT(  N_UOPS_DEC                   , COUNT   , NO_RATIO)
+DEF_STAT(  UOP_ACCUMULATE               , COUNT   , NO_RATIO)
+
+DEF_STAT(  BP_RECOVERY_FETCH_CYCLES_UC       , DIST    , NO_RATIO)
+DEF_STAT(  BP_RECOVERY_FETCH_CYCLES_IC       , DIST    , NO_RATIO)
 
 
      /* these three are on path */

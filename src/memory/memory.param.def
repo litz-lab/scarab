@@ -105,7 +105,7 @@ DEF_PARAM(  icache_banks                   , ICACHE_BANKS                    , u
 DEF_PARAM(  icache_repl                    , ICACHE_REPL                     , uns    , uns     , 0                      ,       )
 
 /* Uop Cache */
-DEF_PARAM(  uop_cache_size                 , UOP_CACHE_SIZE                  , uns    , uns     , (2048 * 64)                   ,       )
+DEF_PARAM(  uop_cache_size                 , UOP_CACHE_SIZE                  , uns    , uns     , (2048 * 64)            ,       )
 DEF_PARAM(  uop_cache_assoc                , UOP_CACHE_ASSOC                 , uns    , uns     , 8                      ,       )
 DEF_PARAM(  uop_cache_max_uops_line        , UOP_CACHE_MAX_UOPS_LINE         , uns    , uns     , 4                      ,       )
 DEF_PARAM(  uop_cache_max_imm_disp_line    , UOP_CACHE_MAX_IMM_DISP_LINE     , uns    , uns     , 4                      ,       )

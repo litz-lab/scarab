@@ -193,7 +193,16 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op,
      op->op_num < bp_recovery_info->redirect_op_num) {
     DEBUG(bp_recovery_info->proc_id, "Redirect signaled for op_num:%s @ 0x%s\n",
           unsstr64(op->op_num), hexstr64s(op->inst_info->addr));
-    bp_recovery_info->redirect_cycle = cycle + 1 + EXTRA_REDIRECT_CYCLES +
+
+    uns fetch_latency;
+    if (in_uop_cache(op->oracle_info.npc, NULL, FALSE)) {
+      fetch_latency = UOP_CACHE_LATENCY;
+      INC_STAT_EVENT(bp_recovery_info->proc_id, BP_REDIRECT_FETCH_CYCLES_UC, UOP_CACHE_LATENCY);
+    } else {
+      fetch_latency = ICACHE_LATENCY;
+      INC_STAT_EVENT(bp_recovery_info->proc_id, BP_REDIRECT_FETCH_CYCLES_IC, ICACHE_LATENCY);
+    }
+    bp_recovery_info->redirect_cycle = cycle + 1 + EXTRA_REDIRECT_CYCLES + fetch_latency +
                                        (op->table_info->cf_type == CF_SYS ?
                                           EXTRA_CALLSYS_CYCLES :
                                           0);

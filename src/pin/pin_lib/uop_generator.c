@@ -303,7 +303,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
                                                trace_uop->npc;
   op->oracle_info.va  = trace_uop->va;
   op->oracle_info.npc = trace_uop->npc;
-  if(op->proc_id)
+  //if(op->proc_id)
     ASSERT(op->proc_id, op->oracle_info.npc);
   op->oracle_info.mem_size = trace_uop->mem_size;
   // op->table_info->mem_size = trace_uop->mem_size;  // because of repeat move

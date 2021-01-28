@@ -137,6 +137,7 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
 
   memset(pt_next_pi, 0, sizeof(ctype_pin_inst));
   fill_in_basic_info(pt_next_pi, *insi);
+  assert(pt_next_pi->instruction_next_addr && "instruction_next_addr not set");
   pt_fill_in_dynamic_info(pt_next_pi, insi);
   uint32_t max_op_width = add_dependency_info(pt_next_pi, *insi);
   fill_in_simd_info(pt_next_pi, *insi, max_op_width);

@@ -53,8 +53,11 @@ struct PTInst {
 class TraceReaderPT : public TraceReader {
 private:
   gzFile raw_file = NULL;
-  InstInfo next_instruction;
+  InstInfo inst_info_a;
+  InstInfo inst_info_b;
+  PTInst   pt_inst_a, pt_inst_b;
   bool enable_code_bloat_effect = false;
+  bool use_info_a = true; // true when filling info a, false when filling info b
   std::map<uint64_t, uint64_t> *prev_to_new_bbl_address_map = nullptr;
 
 public:
@@ -93,7 +96,7 @@ public:
     }
     return true;
   }
-  void processInst(InstInfo *_info, PTInst &next_line) {
+  void processInst(PTInst &next_line) {
     // Get the XED info from the cache, creating it if needed
     auto xed_map_iter = xed_map_.find(next_line.pc);
     if (xed_map_iter == xed_map_.end()) {
@@ -108,25 +111,30 @@ public:
     tie(mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) =
         xed_tuple;
     xed_ins = std::get<MAP_XED>(xed_tuple).get();
-    _info->pc = next_line.pc;
-    _info->ins = xed_ins;
-    _info->pid = 1;
-    _info->tid = 1;
-    _info->target = 0; // Set when the next instruction is evaluated
-    _info->taken =
+    InstInfo& _info = (use_info_a ? inst_info_a : inst_info_b);
+    InstInfo& _prior = (use_info_a ? inst_info_b : inst_info_a);
+    _info.pc = next_line.pc;
+    _info.ins = xed_ins;
+    _info.pid = 1;
+    _info.tid = 1;
+    _info.target = 0; // Set when the next instruction is evaluated
+    _prior.target = _info.pc;
+    _info.taken =
         cond_branch; // Patched when the next instruction is evaluated
-    _info->mem_addr[0] = 0x4040;
-    _info->mem_addr[1] = 0x8080;
-    _info->mem_used[0] = false;
-    _info->mem_used[1] = false;
-    _info->unknown_type = unknown_type;
-    _info->valid = true;
+    _info.mem_addr[0] = 0x4040;
+    _info.mem_addr[1] = 0x8080;
+    _info.mem_used[0] = false;
+    _info.mem_used[1] = false;
+    _info.unknown_type = unknown_type;
+    _info.valid = true;
 
     for (int i = 0; i < mem_ops_; i++) {
       if (i >= 2)
         break;
-      _info->mem_used[i] = true;
+      _info.mem_used[i] = true;
     }
+    // TODO add this?
+    // _prior.taken = _info.pc != (_prior.pc + _prior.isize);
   }
   TraceReaderPT(
       const std::string &_trace, bool _enable_code_bloat_effect = false,
@@ -138,17 +146,18 @@ public:
     prev_to_new_bbl_address_map = _prev_to_new_bbl_address_map;
   }
   const InstInfo *getNextInstruction() override {
-    PTInst next_line;
+    PTInst& next_line = (use_info_a ? pt_inst_a : pt_inst_b);
     if (read_next_line(next_line) == false)
       return &invalid_info_;
-    processInst(&next_instruction, next_line);
-    return &next_instruction;
+    processInst(next_line);
+    InstInfo& _prior = (use_info_a ? inst_info_b : inst_info_a);
+    return &_prior;
   }
   void binaryGroupPathIs(const std::string &_path) override {
     // do nothing
   }
   bool initTrace() override {
-    // do nothing
+    getNextInstruction(); // fill in info a, will lack BP information (hopefully we won't need it...)
     return true;
   }
   bool locationForVAddr(uint64_t _vaddr, uint8_t **_loc,

@@ -220,7 +220,7 @@ void recover_icache_stage() {
   }
   op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
   ic->next_fetch_addr   = bp_recovery_info->recovery_fetch_addr;
-  if(ic->proc_id)
+  //if(ic->proc_id)
     ASSERT(ic->proc_id, ic->next_fetch_addr);
 }
 

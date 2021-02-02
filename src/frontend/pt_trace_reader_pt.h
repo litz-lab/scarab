@@ -151,6 +151,11 @@ public:
       return &invalid_info_;
     processInst(next_line);
     InstInfo& _prior = (use_info_a ? inst_info_b : inst_info_a);
+    static bool should_be_valid = false;
+    if(should_be_valid)
+        assert(_prior.valid);
+    should_be_valid = true;
+    use_info_a = !use_info_a;
     return &_prior;
   }
   void binaryGroupPathIs(const std::string &_path) override {

@@ -326,16 +326,32 @@ unique_ptr<xed_decoded_inst_t> TraceReader::makeNop(uint8_t _length) {
 
 void TraceReader::init_buffer() {
     //Push one dummy entry so we can pop in nextInstruction()
-    ins_buffer.emplace_back(InstInfo());
+    if(!buf_size_)
+        ins_buffer.emplace_back(InstInfo());
 
     for (uint32_t i = 0; i < buf_size_; i++) {
-        ins_buffer.emplace_back(*getNextInstruction());
+        InstInfo* tmp = getNextInstruction();
+        assert(tmp && tmp->valid);
+        ins_buffer.emplace_back(*tmp);
     }
 }
 
 const InstInfo *TraceReader::nextInstruction() {
     ins_buffer.pop_front();
-    ins_buffer.emplace_back(*getNextInstruction());
+    for(const auto& val : ins_buffer) {
+        assert(val.valid);
+    }
+    InstInfo* tmp = getNextInstruction();
+    static bool should_be_valid = false;
+    if(should_be_valid)
+        assert(tmp && tmp->valid);
+    ins_buffer.emplace_back(*tmp);
+    if(should_be_valid) {
+        for(const auto& val : ins_buffer) {
+            assert(val.valid);
+        }
+    }
+    should_be_valid = true;
     return &ins_buffer.front();
 }
 

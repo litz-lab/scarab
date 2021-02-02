@@ -176,6 +176,12 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
 
   STAT_EVENT(0, IN_UOP_CACHE_CALLED);
 
+  if (ORACLE_PERFECT_UOP_CACHE) {
+    if (update_repl) {
+      STAT_EVENT(0, UOP_CACHE_HIT);
+    }
+    return TRUE;
+  }
   if (UOP_CACHE_SIZE == 0) {
     return FALSE;
   }
@@ -252,7 +258,7 @@ void accumulate_op(Op* op) {
   // For pw termination purposes, assume it is in first line.
   static Counter cons_op_num = 0;
 
-  if (UOP_CACHE_SIZE == 0) {
+  if (UOP_CACHE_SIZE == 0 || ORACLE_PERFECT_UOP_CACHE) {
     return;
   }
 

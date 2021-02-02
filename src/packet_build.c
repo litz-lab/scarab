@@ -251,8 +251,9 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
     }
 
     // issue width reached
+    const int issue_width = uop_cache_issue_ops ? UC_ISSUE_WIDTH : IC_ISSUE_WIDTH;
     if(pb_data->pb_ident == PB_ICACHE) {
-      if(ic->sd.op_count + 1 == ISSUE_WIDTH) {
+      if(ic->sd.op_count + 1 == issue_width) {
         *break_fetch = BREAK_ISSUE_WIDTH;
         return PB_BREAK_AFTER;
       }

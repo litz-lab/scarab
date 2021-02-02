@@ -60,7 +60,7 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_ICACHE_STAGE, ##args)
 
-#define STAGE_MAX_OP_COUNT ISSUE_WIDTH
+#define STAGE_MAX_OP_COUNT  UC_ISSUE_WIDTH
 #define DUMMY_ADDR_UC_FETCH 0x1
 
 /**************************************************************************************/
@@ -111,8 +111,8 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   ic->sd.name = (char*)strdup(name);
 
   /* initialize the ops array */
-  ic->sd.max_op_count = ISSUE_WIDTH;
-  ic->sd.ops          = (Op**)malloc(sizeof(Op*) * ISSUE_WIDTH);
+  ic->sd.max_op_count = STAGE_MAX_OP_COUNT;
+  ic->sd.ops          = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
 
   /* initialize the cache structure */
   init_cache(&ic->icache, "ICACHE", ICACHE_SIZE, ICACHE_ASSOC, ICACHE_LINE_SIZE,
@@ -161,7 +161,7 @@ void init_icache_trace() {
 
 void reset_icache_stage() {
   uns ii;
-  for(ii = 0; ii < ISSUE_WIDTH; ii++)
+  for(ii = 0; ii < STAGE_MAX_OP_COUNT; ii++)
     ic->sd.ops[ii] = NULL;
   ic->sd.op_count = 0;
 
@@ -178,7 +178,7 @@ void reset_icache_stage() {
 // CMP used for bogus run: may be combined with reset_icache_stage
 void reset_all_ops_icache_stage() {
   uns ii;
-  for(ii = 0; ii < ISSUE_WIDTH; ii++)
+  for(ii = 0; ii < STAGE_MAX_OP_COUNT; ii++)
     ic->sd.ops[ii] = NULL;
   ic->sd.op_count = 0;
 
@@ -302,7 +302,7 @@ void update_icache_stage() {
 
   STAT_EVENT(ic->proc_id, ICACHE_CYCLE);
   STAT_EVENT(ic->proc_id, ICACHE_CYCLE_ONPATH + ic->off_path);
-  INC_STAT_EVENT(ic->proc_id, INST_LOST_TOTAL, ISSUE_WIDTH);
+  INC_STAT_EVENT(ic->proc_id, INST_LOST_TOTAL, IC_ISSUE_WIDTH);
 
   ic->state = ic->next_state;
 
@@ -310,7 +310,7 @@ void update_icache_stage() {
     STAT_EVENT(ic->proc_id, FETCH_0_OPS);
     INC_STAT_EVENT(ic->proc_id,
                    INST_LOST_FULL_WINDOW + inst_lost_get_full_window_reason(),
-                   ISSUE_WIDTH);
+                   IC_ISSUE_WIDTH);
     return;
   }
 
@@ -443,31 +443,32 @@ void update_icache_stage() {
         }
       }
       INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_DONT + break_fetch,
-                     ISSUE_WIDTH - ic->sd.op_count);
+                     IC_ISSUE_WIDTH - ic->sd.op_count >= 0 ? IC_ISSUE_WIDTH - ic->sd.op_count
+                                                           : 0);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS + ic->sd.op_count);
       STAT_EVENT(ic->proc_id, ST_BREAK_DONT + break_fetch);
     } break;
 
     case IC_WAIT_FOR_MISS: {
-      INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_ICACHE_MISS, ISSUE_WIDTH);
+      INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_ICACHE_MISS, IC_ISSUE_WIDTH - 1);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
     } break;
 
     case IC_WAIT_FOR_REDIRECT: {
-      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_REDIRECT, ISSUE_WIDTH);
+      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_REDIRECT, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
     } break;
 
     case IC_WAIT_FOR_EMPTY_ROB: {
       DEBUG(ic->proc_id, "Ifetch barrier: Waiting for ROB to become empty \n");
-      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_EMPTY_ROB, ISSUE_WIDTH);
+      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_EMPTY_ROB, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
       if(td->seq_op_list.count == 0)
         ic->next_state = IC_FETCH;
     } break;
 
     case IC_WAIT_FOR_TIMER: {
-      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_TIMER, ISSUE_WIDTH);
+      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_TIMER, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
       if(cycle_count >= ic->timer_cycle)
         ic->next_state = IC_FETCH;

@@ -33,6 +33,9 @@
 #include "libs/cache_lib.h"
 #include "stage_data.h"
 
+#define IC_ISSUE_WIDTH      ISSUE_WIDTH
+#define UC_ISSUE_WIDTH      ISSUE_WIDTH + 1
+
 /**************************************************************************************/
 /* Forward Declarations */
 

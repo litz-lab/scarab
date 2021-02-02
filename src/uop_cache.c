@@ -61,6 +61,8 @@ static Addr cur_pw_start_addr = 0;
 Hash_Table uops_accessed; 
 // uop addr being processed in decode stage
 Hash_Table addr_in_dec;
+// k: instr addr
+Hash_Table inf_size_uop_cache;
 
 /**************************************************************************************/
 /* init_uop_cache */
@@ -68,6 +70,9 @@ Hash_Table addr_in_dec;
 void init_uop_cache() {
   if (UOP_CACHE_SIZE == 0) {
     return;
+  }
+  if (INF_SIZE_UOP_CACHE) {
+    init_hash_table(&inf_size_uop_cache, "infinite sized uop cache", 15000000, sizeof(int));
   }
   init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
              UOP_CACHE_LINE_DATA_SIZE, REPL_TRUE_LRU);
@@ -107,6 +112,11 @@ void insert_uop_cache() {
  
   for (int ii = 0; ii < uop_q_len; ii++) {
     Op* op = uop_q[ii];
+    if (INF_SIZE_UOP_CACHE) {
+      Flag new_entry;
+      hash_table_access_create(&inf_size_uop_cache, op->inst_info->addr, &new_entry);
+      continue;
+    }
     /*int imm_disp = (op->inst_info->lit > 0) + (op->inst_info->disp > 0);*/
     int imm_disp = 0;
     
@@ -182,6 +192,8 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
       STAT_EVENT(0, UOP_CACHE_HIT);
     }
     return TRUE;
+  } else if (INF_SIZE_UOP_CACHE) {
+    return hash_table_access(&inf_size_uop_cache, pc);
   }
   if (UOP_CACHE_SIZE == 0) {
     return FALSE;

@@ -75,6 +75,19 @@ public:
     if (parsed.size() < 3)
       panic("TraceReaderPT: GZ File line has less than 3 items");
     inst.pc = strtoul(parsed[0].c_str(), NULL, 16);
+    if(inst.pc == 0x7f9a15755ed7) {
+        parsed.resize(7);
+        parsed[1] = "5";
+        parsed[2] = "E9";
+        parsed[3] = "DF";
+        parsed[4] = "00";
+        parsed[5] = "00";
+    }
+        /* inst.size = 5; */
+        /* static char jmpBytes[] = {0xE9, 0xDF, 0x04, 0x00, 0x00}; */
+        /* for(int i = 0; i < inst.size; ++i) { */
+        /*     inst.inst_bytes[i] = jmpBytes[i]; */
+        /* } */
     inst.size = strtoul(parsed[1].c_str(), NULL, 10);
     for (uint8_t i = 0; i < inst.size; i++) {
       inst.inst_bytes[i] = strtoul(parsed[i + 2].c_str(), NULL, 16);
@@ -96,7 +109,10 @@ public:
     }
     return true;
   }
-  void processInst(PTInst &next_line) {
+
+  // ret true when insn is a syscall (and thus should be skipped)
+  bool processInst(PTInst &next_line) {
+      /* std::cout << "Processing Inst w/ PC: " << std::hex << next_line.pc << std::endl; */
     // Get the XED info from the cache, creating it if needed
     auto xed_map_iter = xed_map_.find(next_line.pc);
     if (xed_map_iter == xed_map_.end()) {
@@ -111,6 +127,8 @@ public:
     tie(mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) =
         xed_tuple;
     xed_ins = std::get<MAP_XED>(xed_tuple).get();
+    if(xed_decoded_inst_get_iclass(xed_ins) == XED_ICLASS_SYSCALL)
+        ;//return true;
     InstInfo& _info = (use_info_a ? inst_info_a : inst_info_b);
     InstInfo& _prior = (use_info_a ? inst_info_b : inst_info_a);
     _info.pc = next_line.pc;
@@ -119,6 +137,7 @@ public:
     _info.tid = 1;
     _info.target = 0; // Set when the next instruction is evaluated
     _prior.target = _info.pc;
+    /* std::cout << "PC " << std::hex << _prior.pc << " now has a target of " << std::hex << _info.pc << std::endl; */
     _info.taken =
         cond_branch; // Patched when the next instruction is evaluated
     _info.mem_addr[0] = 0x4040;
@@ -135,6 +154,7 @@ public:
     }
     // TODO add this?
     // _prior.taken = _info.pc != (_prior.pc + _prior.isize);
+    return false;
   }
   TraceReaderPT(
       const std::string &_trace, bool _enable_code_bloat_effect = false,
@@ -147,9 +167,12 @@ public:
   }
   const InstInfo *getNextInstruction() override {
     PTInst& next_line = (use_info_a ? pt_inst_a : pt_inst_b);
-    if (read_next_line(next_line) == false)
-      return &invalid_info_;
-    processInst(next_line);
+    do {
+        if (read_next_line(next_line) == false)
+          return &invalid_info_;
+    } while(processInst(next_line));
+    // todo: have process inst ret if I should use this info or not
+    // want to be able to skip syscalls for now
     InstInfo& _prior = (use_info_a ? inst_info_b : inst_info_a);
     static bool should_be_valid = false;
     if(should_be_valid)

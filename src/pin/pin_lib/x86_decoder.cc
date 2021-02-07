@@ -292,6 +292,9 @@ void fill_in_cf_info(ctype_pin_inst* info, const INS& ins) {
 
   if(INS_IsRet(ins)) {
     info->cf_type = CF_RET;
+  } else if(INS_IsSyscall(ins) || INS_IsSysret(ins) || INS_IsInterrupt(ins)) {
+      /* std::cout << "Setting info for PC " << std::hex << info->instruction_addr << std::endl; */
+    info->cf_type = CF_SYS;
   } else if(INS_IsIndirectBranchOrCall(ins)) {
     // indirect
     if(category == XED_CATEGORY_UNCOND_BR)
@@ -310,10 +313,7 @@ void fill_in_cf_info(ctype_pin_inst* info, const INS& ins) {
     else if(category == XED_CATEGORY_CALL)
       info->cf_type = CF_CALL;
     info->branch_target = INS_DirectBranchOrCallTargetAddress(ins);
-  } else if(INS_IsSyscall(ins) || INS_IsSysret(ins) || INS_IsInterrupt(ins)) {
-    info->cf_type = CF_SYS;
   }
-
   info->is_ifetch_barrier = is_ifetch_barrier(ins);
 }
 

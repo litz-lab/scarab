@@ -75,19 +75,6 @@ public:
     if (parsed.size() < 3)
       panic("TraceReaderPT: GZ File line has less than 3 items");
     inst.pc = strtoul(parsed[0].c_str(), NULL, 16);
-    if(inst.pc == 0x7f9a15755ed7) {
-        parsed.resize(7);
-        parsed[1] = "5";
-        parsed[2] = "E9";
-        parsed[3] = "DF";
-        parsed[4] = "00";
-        parsed[5] = "00";
-    }
-        /* inst.size = 5; */
-        /* static char jmpBytes[] = {0xE9, 0xDF, 0x04, 0x00, 0x00}; */
-        /* for(int i = 0; i < inst.size; ++i) { */
-        /*     inst.inst_bytes[i] = jmpBytes[i]; */
-        /* } */
     inst.size = strtoul(parsed[1].c_str(), NULL, 10);
     for (uint8_t i = 0; i < inst.size; i++) {
       inst.inst_bytes[i] = strtoul(parsed[i + 2].c_str(), NULL, 16);
@@ -108,6 +95,35 @@ public:
       inst.pc = result;
     }
     return true;
+  }
+
+  xed_decoded_inst_t* createJmp(uint64_t displacement) {
+    xed_encoder_instruction_t inst;
+    xed_state_t state;
+    state.mmode = XED_MACHINE_MODE_LONG_64;
+    xed_encoder_request_t req;
+    xed_inst1(&inst, state, XED_ICLASS_JMP, 64,  xed_relbr(displacement, 32));
+    xed_encoder_request_zero_set_mode(&req, &state);
+    if(!xed_convert_to_encoder_request(&req, &inst)) {
+        panic("Encoder conversion failed! Is the displacement too large?");
+        return nullptr;
+    }
+    xed_uint8_t encodedBytes[15];
+    unsigned int numBytesUsed = 0;
+    xed_error_enum_t error = xed_encode(&req, encodedBytes, sizeof(encodedBytes), &numBytesUsed);
+    if(error != XED_ERROR_NONE) {
+        panic("Failed to encode due to: %s\n", xed_error_enum_t2str(error));
+        return nullptr;
+    }
+    xed_decoded_inst_t* decoded_inst = new xed_decoded_inst_t;
+    xed_decoded_inst_zero(decoded_inst);
+    xed_decoded_inst_set_mode(decoded_inst, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
+    error = xed_decode(decoded_inst, encodedBytes, numBytesUsed);
+    if(error == XED_ERROR_NONE)
+        return decoded_inst;
+    delete decoded_inst;
+    panic("Could not decode due to %s\n", xed_error_enum_t2str(error));
+    return nullptr;
   }
 
   // ret true when insn is a syscall (and thus should be skipped)
@@ -131,6 +147,14 @@ public:
         ;//return true;
     InstInfo& _info = (use_info_a ? inst_info_a : inst_info_b);
     InstInfo& _prior = (use_info_a ? inst_info_b : inst_info_a);
+    if(_prior.ins && xed_decoded_inst_get_iclass(_prior.ins) == XED_ICLASS_SYSCALL
+            && next_line.pc != _prior.pc + xed_decoded_inst_get_length(_prior.ins)) {
+        std::cout << "Syscall with PC " << std::hex << _prior.pc << " will become a jump to " << std::hex << next_line.pc << std::endl;
+        xed_decoded_inst_t* new_inst = createJmp(next_line.pc - _prior.pc);
+        _prior.ins = new_inst;
+    }
+    // TODO: if prior's xed ins is a syscall, regen the xed inst via encode and decode
+    // probably just leak the xed inst object, as its supposed to be stored in the cache, but this can't be cached as it changes.
     _info.pc = next_line.pc;
     _info.ins = xed_ins;
     _info.pid = 1;

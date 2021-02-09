@@ -707,6 +707,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
     info->fake_inst        = FALSE;
     info->fake_inst_reason = WPNM_NOT_IN_WPNM;
   }
+  new_entry = 1;
   int ii;
   int num_uop = 0;
 
@@ -743,6 +744,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
           info->fake_inst_reason = WPNM_NOT_IN_WPNM;
         }
       }
+      new_entry = 1;
       ASSERT(proc_id, new_entry || pi->fake_inst);
 
       trace_uop[ii]->addr      = pi->instruction_addr;

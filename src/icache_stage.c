@@ -639,6 +639,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       const uns8 misfetch      = op->oracle_info.misfetch;
       const uns8 late_misfetch = op->oracle_info.late_misfetch;
 
+      inc_bstat_fetched(op);
+
       /* if it's a mispredict, kick the oracle off path */
       if(mispred || misfetch ||
          (USE_LATE_BP && (late_mispred || late_misfetch))) {

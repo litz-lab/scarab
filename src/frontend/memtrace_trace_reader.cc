@@ -338,20 +338,8 @@ void TraceReader::init_buffer() {
 
 const InstInfo *TraceReader::nextInstruction() {
     ins_buffer.pop_front();
-    for(const auto& val : ins_buffer) {
-        assert(val.valid);
-    }
     InstInfo* tmp = getNextInstruction();
-    static bool should_be_valid = false;
-    if(should_be_valid)
-        assert(tmp && tmp->valid);
     ins_buffer.emplace_back(*tmp);
-    if(should_be_valid) {
-        for(const auto& val : ins_buffer) {
-            assert(val.valid);
-        }
-    }
-    should_be_valid = true;
     return &ins_buffer.front();
 }
 

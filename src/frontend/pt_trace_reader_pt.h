@@ -143,13 +143,12 @@ public:
     tie(mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) =
         xed_tuple;
     xed_ins = std::get<MAP_XED>(xed_tuple).get();
-    if(xed_decoded_inst_get_iclass(xed_ins) == XED_ICLASS_SYSCALL)
-        ;//return true;
     InstInfo& _info = (use_info_a ? inst_info_a : inst_info_b);
     InstInfo& _prior = (use_info_a ? inst_info_b : inst_info_a);
-    if(_prior.ins && xed_decoded_inst_get_iclass(_prior.ins) == XED_ICLASS_SYSCALL
-            && next_line.pc != _prior.pc + xed_decoded_inst_get_length(_prior.ins)) {
-        std::cout << "Syscall with PC " << std::hex << _prior.pc << " will become a jump to " << std::hex << next_line.pc << std::endl;
+    auto& ins = _prior; // have to do this for the macros to work
+    bool changes_cf = ins.ins && INS_ChangeControlFlow(ins);
+    if(_prior.valid && (!changes_cf || INS_Category(ins) == XC(SYSCALL)) && next_line.pc != _prior.pc + xed_decoded_inst_get_length(_prior.ins)) {
+        std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a jump to " << std::hex << next_line.pc << std::endl;
         xed_decoded_inst_t* new_inst = createJmp(next_line.pc - _prior.pc);
         _prior.ins = new_inst;
     }
@@ -184,8 +183,10 @@ public:
       const std::string &_trace, bool _enable_code_bloat_effect = false,
       std::map<uint64_t, uint64_t> *_prev_to_new_bbl_address_map = nullptr) {
     raw_file = gzopen(_trace.c_str(), "rb");
-    if (!raw_file)
+    if (!raw_file) {
       panic("TraceReaderPT: Invalid GZ File");
+      throw "Could not open file";
+    }
     enable_code_bloat_effect = _enable_code_bloat_effect;
     prev_to_new_bbl_address_map = _prev_to_new_bbl_address_map;
   }

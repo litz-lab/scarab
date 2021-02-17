@@ -72,7 +72,7 @@ struct InstInfo {
 #define INS_Category(ins) xed_decoded_inst_get_category(ins.ins)
 #define INS_IsAtomicUpdate(ins) xed_decoded_inst_get_attribute(ins.ins), XED_ATTRIBUTE_LOCKED)
 //FIXME: Check if REPs are translated correctly
-#define INS_IsRep(ins) xed_decoded_inst_get_attribute(ins.ins), XED_ATTRIBUTE_REP)
+#define INS_IsRep(ins) xed_decoded_inst_get_attribute((ins.ins), XED_ATTRIBUTE_REP)
 #define INS_HasRealRep(ins) xed_operand_values_has_real_rep(xed_decoded_inst_operands((xed_decoded_inst_t *)ins.ins))
 #define INS_OperandCount(ins) xed_decoded_inst_noperands(ins.ins)
 #define INS_OperandIsImmediate(ins, op) XED_IS_IMM(ins, op)
@@ -94,7 +94,7 @@ struct InstInfo {
 #define INS_Size(ins) xed_decoded_inst_get_length(ins.ins)
 #define INS_Valid(ins) xed_decoded_inst_valid(ins.ins)
 /* Just like PIN we break BBLs on a number of additional instructions such as REP */
-#define INS_ChangeControlFlow(ins) (INS_Category(ins) == XC(COND_BR) || INS_Category(ins) == XC(UNCOND_BR) || INS_Category(ins) == XC(CALL) || INS_Category(ins) == XC(RET) || INS_Category(ins) == XC(SYSCALL) || INS_Category(ins) == XC(SYSRET) || INS_Opcode(ins) == XO(CPUID) || INS_Opcode(ins) == XO(POPF) || INS_Opcode(ins) == XO(POPFD) || INS_Opcode(ins) == XO(POPFQ) || INS_IsRep(ins)
+#define INS_ChangeControlFlow(ins) (INS_Category(ins) == XC(COND_BR) || INS_Category(ins) == XC(UNCOND_BR) || INS_Category(ins) == XC(CALL) || INS_Category(ins) == XC(RET) || INS_Category(ins) == XC(SYSCALL) || INS_Category(ins) == XC(SYSRET) || INS_Opcode(ins) == XO(CPUID) || INS_Opcode(ins) == XO(POPF) || INS_Opcode(ins) == XO(POPFD) || INS_Opcode(ins) == XO(POPFQ) || INS_IsRep(ins))
 #define REG_FullRegName(reg) xed_get_largest_enclosing_register(reg)
 
 #define UINT32 uint32_t

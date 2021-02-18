@@ -126,6 +126,26 @@ public:
     return nullptr;
   }
 
+  xed_decoded_inst_t * createNop(uint64_t length) {
+      xed_state_t state;
+      state.mmode = XED_MACHINE_MODE_LONG_64;
+      uint8_t buf[10];
+      xed_error_enum_t res = xed_encode_nop(buf, length);
+      if(res != XED_ERROR_NONE) {
+          panic("Failed to encode due to %s\n", xed_error_enum_t2str(res));
+          return nullptr;
+      }
+      xed_decoded_inst_t* decoded_inst = new xed_decoded_inst_t;
+      xed_decoded_inst_zero_set_mode(decoded_inst, &state);
+      res = xed_decode(decoded_inst, buf, sizeof(buf));
+      if(res != XED_ERROR_NONE) {
+          panic("XED NOP decode error! %s\n", xed_error_enum_t2str(res));
+          delete decoded_inst;
+          return nullptr;
+      }
+      return decoded_inst;
+  }
+
   // ret true when insn is a syscall (and thus should be skipped)
   bool processInst(PTInst &next_line) {
       /* std::cout << "Processing Inst w/ PC: " << std::hex << next_line.pc << std::endl; */
@@ -151,16 +171,18 @@ public:
         std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a jump to " << std::hex << next_line.pc << std::endl;
         xed_decoded_inst_t* new_inst = createJmp(next_line.pc - _prior.pc);
         _prior.ins = new_inst;
+    } else if (_prior.valid && xed_decoded_inst_get_attribute(ins.ins, XED_ATTRIBUTE_REP) > 0) {
+        // repz insns aren't supported, so just nop them
+        auto length = xed_decoded_inst_get_length(_prior.ins);
+        std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
+        _prior.ins = createNop(length);
     }
-    // TODO: if prior's xed ins is a syscall, regen the xed inst via encode and decode
-    // probably just leak the xed inst object, as its supposed to be stored in the cache, but this can't be cached as it changes.
     _info.pc = next_line.pc;
     _info.ins = xed_ins;
     _info.pid = 1;
     _info.tid = 1;
     _info.target = 0; // Set when the next instruction is evaluated
     _prior.target = _info.pc;
-    /* std::cout << "PC " << std::hex << _prior.pc << " now has a target of " << std::hex << _info.pc << std::endl; */
     _info.taken =
         cond_branch; // Patched when the next instruction is evaluated
     _info.mem_addr[0] = 0x4040;

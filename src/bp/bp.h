@@ -129,6 +129,13 @@ typedef struct Perceptron_struct {
   int32* weights;
 } Perceptron;
 
+typedef struct Shotgun_spatial_region_struct {
+  Addr back_targets[2*64];
+  Addr front_targets[7*64];
+} Shotgun_Region;
+
+#define NUM_SHOTGUN_REGION 4852
+
 typedef struct Bp_Data_struct {
   uns proc_id;
   /* predictor data */
@@ -146,6 +153,8 @@ typedef struct Bp_Data_struct {
   Cache ubtb;
   Cache cbtb;
   Cache rib;
+  Addr last_uaddr;
+  Shotgun_Region utoc[NUM_SHOTGUN_REGION];
   // shotgun end
 
   struct {

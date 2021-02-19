@@ -321,6 +321,15 @@ void bp_btb_shotgun_init(Bp_Data* bp_data) {
              REPL_TRUE_LRU);
   init_cache(&bp_data->rib, "RIB", 1620, BTB_ASSOC, 1, sizeof(Addr),
              REPL_TRUE_LRU);
+  bp_data->last_uaddr = 0;
+  for(uns i = 0; i< NUM_SHOTGUN_REGION; i++) {
+    for(uns j =0; j<2*64;j++) {
+      bp_data->utoc[i].back_targets[j] = 0;
+    }
+    for(uns j =0; j<7*64;j++) {
+      bp_data->utoc[i].front_targets[j] = 0;
+    }
+  }
 }
 
 
@@ -335,13 +344,46 @@ Addr* bp_btb_shotgun_pred(Bp_Data* bp_data, Op* op) {
     tmp = &bp_data->rib;
   } else {
     tmp = &bp_data->ubtb;
+    bp_data->last_uaddr = op->oracle_info.pred_addr;
+    Addr index = op->oracle_info.pred_addr % NUM_SHOTGUN_REGION;
+    for(uns j =0; j<2*64;j++) {
+      if (bp_data->utoc[index].back_targets[j] != 0) {
+        Addr btb_line_addr, repl_line_addr;
+        Addr *btb_line  = (Addr*)cache_insert(&bp_data->cbtb, bp_data->proc_id, op->oracle_info.pred_addr+j,
+                                   &btb_line_addr, &repl_line_addr);
+        *btb_line = bp_data->utoc[index].back_targets[j];
+      }
+    }
+    for(uns j =0; j<7*64;j++) {
+      if (bp_data->utoc[index].front_targets[j] != 0) {
+        Addr btb_line_addr, repl_line_addr;
+        Addr *btb_line  = (Addr*)cache_insert(&bp_data->cbtb, bp_data->proc_id, op->oracle_info.pred_addr+j,
+                                   &btb_line_addr, &repl_line_addr);
+        *btb_line = bp_data->utoc[index].front_targets[j];
+      }
+    }
   }
   Addr line_addr;
-
-  return PERFECT_BTB ?
+  Addr* result = PERFECT_BTB ?
            &op->oracle_info.target :
            (Addr*)cache_access(tmp, op->oracle_info.pred_addr,
                                &line_addr, TRUE);
+  if (result && op->table_info->cf_type == CF_CBR && bp_data->last_uaddr != 0) {
+    if (op->oracle_info.pred_addr < bp_data->last_uaddr) {
+      // may change back_targets
+      Addr distance = bp_data->last_uaddr - op->oracle_info.pred_addr;
+      if (distance < 128) {
+        bp_data->utoc[bp_data->last_uaddr % NUM_SHOTGUN_REGION].back_targets[distance] = *result;
+      }
+    } else if (op->oracle_info.pred_addr > bp_data->last_uaddr) {
+      // may change front_targets
+      Addr distance = op->oracle_info.pred_addr - bp_data->last_uaddr;
+      if (distance < 7*64) {
+        bp_data->utoc[bp_data->last_uaddr % NUM_SHOTGUN_REGION].front_targets[distance] = *result;
+      }
+    }
+  }
+  return result;
 }
 
 
@@ -368,6 +410,22 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
     btb_line  = (Addr*)cache_insert(tmp, bp_data->proc_id, fetch_addr,
                                    &btb_line_addr, &repl_line_addr);
     *btb_line = op->oracle_info.target;
+
+    if (op->table_info->cf_type == CF_CBR && bp_data->last_uaddr != 0) {
+      if (op->oracle_info.pred_addr < bp_data->last_uaddr) {
+        // may change back_targets
+        Addr distance = bp_data->last_uaddr - op->oracle_info.pred_addr;
+        if (distance < 128) {
+          bp_data->utoc[bp_data->last_uaddr % NUM_SHOTGUN_REGION].back_targets[distance] = *btb_line;
+        }
+      } else if (op->oracle_info.pred_addr > bp_data->last_uaddr) {
+        // may change front_targets
+        Addr distance = op->oracle_info.pred_addr - bp_data->last_uaddr;
+        if (distance < 7*64) {
+          bp_data->utoc[bp_data->last_uaddr % NUM_SHOTGUN_REGION].front_targets[distance] = *btb_line;
+        }
+      }
+    }
     // FIXME: the exceptions to this assert are really about x86 vs Alpha
     ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
   }

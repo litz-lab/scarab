@@ -310,6 +310,71 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
 
 /**************************************************************************************/
+/* bp_btb_shotgun_init: */
+
+void bp_btb_shotgun_init(Bp_Data* bp_data) {
+  // btb line size set to 1
+  printf("Init shotgun btb\n");
+  init_cache(&bp_data->ubtb, "U-BTB", 4852, BTB_ASSOC, 1, sizeof(Addr),
+             REPL_TRUE_LRU);
+  init_cache(&bp_data->cbtb, "C-BTB", 404, BTB_ASSOC, 1, sizeof(Addr),
+             REPL_TRUE_LRU);
+  init_cache(&bp_data->rib, "RIB", 1620, BTB_ASSOC, 1, sizeof(Addr),
+             REPL_TRUE_LRU);
+}
+
+
+/**************************************************************************************/
+/* bp_btb_shotgun_pred: */
+
+Addr* bp_btb_shotgun_pred(Bp_Data* bp_data, Op* op) {
+  Cache *tmp;
+  if (op->table_info->cf_type == CF_CBR) {
+    tmp = &bp_data->cbtb;
+  } else if (op->table_info->cf_type == CF_RET) {
+    tmp = &bp_data->rib;
+  } else {
+    tmp = &bp_data->ubtb;
+  }
+  Addr line_addr;
+
+  return PERFECT_BTB ?
+           &op->oracle_info.target :
+           (Addr*)cache_access(tmp, op->oracle_info.pred_addr,
+                               &line_addr, TRUE);
+}
+
+
+/**************************************************************************************/
+/* bp_btb_shotgun_update: */
+
+void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
+  Cache *tmp;
+  if (op->table_info->cf_type == CF_CBR) {
+    tmp = &bp_data->cbtb;
+  } else if (op->table_info->cf_type == CF_RET) {
+    tmp = &bp_data->rib;
+  } else {
+    tmp = &bp_data->ubtb;
+  }
+  Addr  fetch_addr = op->oracle_info.pred_addr;
+  Addr *btb_line, btb_line_addr, repl_line_addr;
+
+  ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
+  if(BTB_OFF_PATH_WRITES || !op->off_path) {
+    DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n",
+              hexstr64s(fetch_addr), hexstr64s(op->oracle_info.target));
+    STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
+    btb_line  = (Addr*)cache_insert(tmp, bp_data->proc_id, fetch_addr,
+                                   &btb_line_addr, &repl_line_addr);
+    *btb_line = op->oracle_info.target;
+    // FIXME: the exceptions to this assert are really about x86 vs Alpha
+    ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
+  }
+}
+
+
+/**************************************************************************************/
 /* bp_tc_tagged_init: */
 
 void bp_ibtb_tc_tagged_init(Bp_Data* bp_data) {

@@ -142,6 +142,12 @@ typedef struct Bp_Data_struct {
   uns32 global_hist;
   Cache btb;
 
+  // shotgun start
+  Cache ubtb;
+  Cache cbtb;
+  Cache rib;
+  // shotgun end
+
   struct {
     Crs_Entry* entries;
     Flag*      off_path;
@@ -182,6 +188,7 @@ typedef enum Bp_Id_enum {
 
 typedef enum Btb_Id_enum {
   GENERIC_BTB,
+  SHOTGUN_BTB,
   NUM_BTB,
 } Btb_Id;
 

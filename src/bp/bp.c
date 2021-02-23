@@ -507,7 +507,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     else
       STAT_EVENT(op->proc_id, BTB_OFF_PATH_MISS);
   }
-  // printf("BTB: %llu  %llu  %s  %llu  %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], addr, op->oracle_info.btb_miss);
+  // printf("BTB: %llu %llu %s %llu %llu %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], addr, op->oracle_info.target, op->oracle_info.btb_miss);
 
   STAT_EVENT(op->proc_id, BP_ON_PATH_CORRECT + op->oracle_info.mispred +
                             2 * op->oracle_info.misfetch + 3 * op->off_path);

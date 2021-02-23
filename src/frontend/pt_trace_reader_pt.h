@@ -176,6 +176,10 @@ public:
         auto length = xed_decoded_inst_get_length(_prior.ins);
         std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
         _prior.ins = createNop(length);
+        if(_prior.pc == next_line.pc) {
+            _info = _prior; // skip prior insn
+            return true;
+        }
     }
     _info.pc = next_line.pc;
     _info.ins = xed_ins;

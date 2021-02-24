@@ -198,6 +198,7 @@ typedef enum Bp_Id_enum {
 typedef enum Btb_Id_enum {
   GENERIC_BTB,
   SHOTGUN_BTB,
+  PGO_BTB,
   NUM_BTB,
 } Btb_Id;
 

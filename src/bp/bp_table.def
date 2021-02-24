@@ -43,6 +43,7 @@ Bp_Btb bp_btb_table [] = {
     /* ----------------------------------------------------------------------------------- */
     { GENERIC_BTB, "generic", bp_btb_gen_init, bp_btb_gen_pred, bp_btb_gen_update, NULL  },
     { SHOTGUN_BTB, "shotgun", bp_btb_shotgun_init, bp_btb_shotgun_pred, bp_btb_shotgun_update, NULL  },
+    { PGO_BTB, "pgobtb", bp_btb_pgobtb_init, bp_btb_pgobtb_pred, bp_btb_pgobtb_update, NULL  },
     { NUM_BTB,     0,         NULL,            NULL,            NULL,              NULL, }
 };
 

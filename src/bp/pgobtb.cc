@@ -45,12 +45,15 @@ extern "C" {
 }
 
 #define LBR_CAPACITY 32
+#define BTB_WARMUP 15000000
+#define FANOUT 2
 
 // My data structures
 std::unordered_map<Addr,std::set<Addr>> branch_target_sets;
 std::unordered_map<Addr,uint64_t> branch_pc_counts;
 std::deque<std::pair<Addr,Addr>> last_32_branches;
 std::unordered_map<Addr,std::unordered_map<Addr, uint64_t>> correlated_miss_counts;
+uint64_t btb_lookup_count;
 
 bool is_single_pair_btb_entry(Addr branch_pc) {
   return branch_target_sets.count(branch_pc) && branch_target_sets[branch_pc].size() == 1;
@@ -65,6 +68,7 @@ void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
   branch_pc_counts.clear();
   last_32_branches.clear();
   correlated_miss_counts.clear();
+  btb_lookup_count = 0;
 }
 
 Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
@@ -72,26 +76,51 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
   Addr branch_pc = op->oracle_info.pred_addr;
   Addr* result = (Addr*)cache_access(&bp_data->btb, branch_pc,
                                &line_addr, TRUE);
-  branch_target_sets[branch_pc].insert(op->oracle_info.target);
-  branch_pc_counts[branch_pc]++;
-  if(result == nullptr || *result != op->oracle_info.target) {
-    // btb miss
-    if(is_single_pair_btb_entry(branch_pc)) {
-      // we will only prefetch single pair btb entries
-      for(auto prev: last_32_branches) {
-        if (prev.first != branch_pc && is_single_pair_btb_entry(prev.first)) {
-          if(!correlated_miss_counts.count(prev.first)) {
-            correlated_miss_counts[prev.first]=std::unordered_map<Addr,uint64_t>();
+  
+  if (btb_lookup_count <= BTB_WARMUP) {
+    // warmup update meta data part
+    // begin
+    branch_target_sets[branch_pc].insert(op->oracle_info.target);
+    branch_pc_counts[branch_pc]++;
+    if(result == nullptr || *result != op->oracle_info.target) {
+      // btb miss
+      if(is_single_pair_btb_entry(branch_pc)) {
+        // we will only prefetch single pair btb entries
+        for(auto prev: last_32_branches) {
+          if (prev.first != branch_pc && is_single_pair_btb_entry(prev.first)) {
+            if(!correlated_miss_counts.count(prev.first)) {
+              correlated_miss_counts[prev.first]=std::unordered_map<Addr,uint64_t>();
+            }
+            correlated_miss_counts[prev.first][branch_pc]+=1;
           }
-          correlated_miss_counts[prev.first][branch_pc]+=1;
         }
       }
     }
+    if(last_32_branches.size() == LBR_CAPACITY) {
+      last_32_branches.pop_front();
+    }
+    last_32_branches.push_back(std::make_pair(branch_pc, op->oracle_info.target));
+    // end
+  } else {
+    // Prefetching part
+    // begin
+    if(is_single_pair_btb_entry(branch_pc) && correlated_miss_counts.count(branch_pc)) {
+      uint64_t branch_pc_execution_count = branch_pc_counts[branch_pc];
+      for(auto candidate: correlated_miss_counts[branch_pc]) {
+        Addr prefetched_branch_pc = candidate.first;
+        uint64_t miss_count = candidate.second;
+        if (is_single_pair_btb_entry(prefetched_branch_pc) && miss_count * FANOUT >= branch_pc_execution_count) {
+          // we should prefetch
+          Addr prefetched_target = *(branch_target_sets[prefetched_branch_pc].begin());
+          Addr btb_line_addr, repl_line_addr;
+          Addr *btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr);
+          *btb_line = prefetched_target;
+        }
+      }
+    }
+    // end
   }
-  if(last_32_branches.size() == LBR_CAPACITY) {
-    last_32_branches.pop_front();
-  }
-  last_32_branches.push_back(std::make_pair(branch_pc, op->oracle_info.target));
+  btb_lookup_count += 1;
   return PERFECT_BTB ?
            &op->oracle_info.target :
            result;

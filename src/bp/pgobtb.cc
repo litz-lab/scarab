@@ -37,6 +37,7 @@ extern "C" {
 #include "bp/bp.h"
 #include "bp/bp_targ_mech.h"
 #include "libs/cache_lib.h"
+#include "sim.h"
 
 #include "bp/bp.param.h"
 #include "core.param.h"
@@ -45,7 +46,6 @@ extern "C" {
 }
 
 #define LBR_CAPACITY 32
-#define BTB_WARMUP 1000000
 #define FANOUT 1
 
 // My data structures
@@ -55,6 +55,8 @@ std::deque<std::pair<Addr,Addr>> last_32_branches;
 std::unordered_map<Addr,std::unordered_map<Addr, uint64_t>> correlated_miss_counts;
 uint64_t btb_lookup_count;
 uint64_t btb_update_count;
+uint64_t total_prefetch_count;
+uint64_t total_predecessor_count;
 
 bool is_single_pair_btb_entry(Addr branch_pc) {
   return branch_target_sets.count(branch_pc) && branch_target_sets[branch_pc].size() == 1;
@@ -71,6 +73,8 @@ void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
   correlated_miss_counts.clear();
   btb_lookup_count = 0;
   btb_update_count = 0;
+  total_prefetch_count = 0;
+  total_predecessor_count = 0;
 }
 
 Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
@@ -98,7 +102,7 @@ void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
     ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
   }
   Addr branch_pc = fetch_addr;
-  if (btb_update_count <= BTB_WARMUP) {
+  if (operating_mode != SIMULATION_MODE) {
     // warmup update meta data part
     // begin
     branch_target_sets[branch_pc].insert(op->oracle_info.target);
@@ -122,18 +126,28 @@ void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
   } else {
     // Prefetching part
     // begin
+    uint64_t prefetched_count=0;
     if(is_single_pair_btb_entry(branch_pc) && correlated_miss_counts.count(branch_pc)) {
       uint64_t branch_pc_execution_count = branch_pc_counts[branch_pc];
       for(auto candidate: correlated_miss_counts[branch_pc]) {
         Addr prefetched_branch_pc = candidate.first;
         uint64_t miss_count = candidate.second;
-        if (is_single_pair_btb_entry(prefetched_branch_pc) && miss_count * FANOUT >= branch_pc_execution_count) {
+        Addr btb_line_addr;
+        if (is_single_pair_btb_entry(prefetched_branch_pc) && miss_count * FANOUT >= branch_pc_execution_count && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==nullptr) {
           // we should prefetch
           Addr prefetched_target = *(branch_target_sets[prefetched_branch_pc].begin());
-          Addr btb_line_addr, repl_line_addr;
-          Addr *btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr);
+          Addr repl_line_addr;
+          Addr *btb_line  = (Addr*)cache_insert_replpos(&bp_data->btb, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_LOWQTR, TRUE);
           *btb_line = prefetched_target;
+          prefetched_count+=1;
         }
+      }
+    }
+    if (prefetched_count) {
+      total_predecessor_count += 1;
+      total_prefetch_count += prefetched_count;
+      if (!(total_predecessor_count % 10000)) {
+        printf("BTB-Prefetch: %llu %llu\n",total_predecessor_count, total_prefetch_count);
       }
     }
     // end

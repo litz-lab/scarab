@@ -45,8 +45,8 @@ extern "C" {
 }
 
 #define LBR_CAPACITY 32
-#define BTB_WARMUP 15000000
-#define FANOUT 2
+#define BTB_WARMUP 1000000
+#define FANOUT 1
 
 // My data structures
 std::unordered_map<Addr,std::set<Addr>> branch_target_sets;
@@ -54,6 +54,7 @@ std::unordered_map<Addr,uint64_t> branch_pc_counts;
 std::deque<std::pair<Addr,Addr>> last_32_branches;
 std::unordered_map<Addr,std::unordered_map<Addr, uint64_t>> correlated_miss_counts;
 uint64_t btb_lookup_count;
+uint64_t btb_update_count;
 
 bool is_single_pair_btb_entry(Addr branch_pc) {
   return branch_target_sets.count(branch_pc) && branch_target_sets[branch_pc].size() == 1;
@@ -69,6 +70,7 @@ void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
   last_32_branches.clear();
   correlated_miss_counts.clear();
   btb_lookup_count = 0;
+  btb_update_count = 0;
 }
 
 Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
@@ -76,23 +78,39 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
   Addr branch_pc = op->oracle_info.pred_addr;
   Addr* result = (Addr*)cache_access(&bp_data->btb, branch_pc,
                                &line_addr, TRUE);
-  
-  if (btb_lookup_count <= BTB_WARMUP) {
+  btb_lookup_count += 1;
+  return PERFECT_BTB ?
+           &op->oracle_info.target :
+           result;
+}
+
+void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
+  Addr  fetch_addr = op->oracle_info.pred_addr;
+  Addr *btb_line, btb_line_addr, repl_line_addr;
+
+  ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
+  if(BTB_OFF_PATH_WRITES || !op->off_path) {
+    STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
+    btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, fetch_addr,
+                                   &btb_line_addr, &repl_line_addr);
+    *btb_line = op->oracle_info.target;
+    // FIXME: the exceptions to this assert are really about x86 vs Alpha
+    ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
+  }
+  Addr branch_pc = fetch_addr;
+  if (btb_update_count <= BTB_WARMUP) {
     // warmup update meta data part
     // begin
     branch_target_sets[branch_pc].insert(op->oracle_info.target);
     branch_pc_counts[branch_pc]++;
-    if(result == nullptr || *result != op->oracle_info.target) {
-      // btb miss
-      if(is_single_pair_btb_entry(branch_pc)) {
-        // we will only prefetch single pair btb entries
-        for(auto prev: last_32_branches) {
-          if (prev.first != branch_pc && is_single_pair_btb_entry(prev.first)) {
-            if(!correlated_miss_counts.count(prev.first)) {
-              correlated_miss_counts[prev.first]=std::unordered_map<Addr,uint64_t>();
-            }
-            correlated_miss_counts[prev.first][branch_pc]+=1;
+    if(is_single_pair_btb_entry(branch_pc)) {
+      // we will only prefetch single pair btb entries
+      for(auto prev: last_32_branches) {
+        if (prev.first != branch_pc && is_single_pair_btb_entry(prev.first)) {
+          if(!correlated_miss_counts.count(prev.first)) {
+            correlated_miss_counts[prev.first]=std::unordered_map<Addr,uint64_t>();
           }
+          correlated_miss_counts[prev.first][branch_pc]+=1;
         }
       }
     }
@@ -120,23 +138,5 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
     }
     // end
   }
-  btb_lookup_count += 1;
-  return PERFECT_BTB ?
-           &op->oracle_info.target :
-           result;
-}
-
-void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
-  Addr  fetch_addr = op->oracle_info.pred_addr;
-  Addr *btb_line, btb_line_addr, repl_line_addr;
-
-  ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
-  if(BTB_OFF_PATH_WRITES || !op->off_path) {
-    STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
-    btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, fetch_addr,
-                                   &btb_line_addr, &repl_line_addr);
-    *btb_line = op->oracle_info.target;
-    // FIXME: the exceptions to this assert are really about x86 vs Alpha
-    ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
-  }
+  btb_update_count += 1;
 }

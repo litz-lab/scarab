@@ -80,6 +80,13 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
   Addr* result = (Addr*)cache_access(&bp_data->btb, branch_pc,
                                &line_addr, TRUE);
   btb_lookup_count += 1;
+  int miss = 0;
+  if (!result) {
+    miss = 1;
+  } else if (*result != op->oracle_info.target) {
+    miss = 2;
+  }
+  // printf("BTB-Lookup: %llu %llu %s %llu %llu %d %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], branch_pc, op->oracle_info.target, miss, op->oracle_info.target==op->oracle_info.npc);
   return PERFECT_BTB ?
            &op->oracle_info.target :
            result;
@@ -88,6 +95,13 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
 void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
   Addr  fetch_addr = op->oracle_info.pred_addr;
   Addr *btb_line, btb_line_addr, repl_line_addr;
+  int present = 1;
+  Addr *line_if_present = (Addr *)cache_access(&bp_data->btb, fetch_addr, &btb_line_addr, FALSE);
+  if(!line_if_present) {
+    present = 0;
+  } else if (*line_if_present != op->oracle_info.target) {
+    present = 2;
+  }
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   if(BTB_OFF_PATH_WRITES || !op->off_path) {
@@ -95,6 +109,7 @@ void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
     btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, fetch_addr,
                                    &btb_line_addr, &repl_line_addr);
     *btb_line = op->oracle_info.target;
+    // printf("BTB-Update: %llu %llu %s %llu %llu %d %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], fetch_addr, op->oracle_info.target, present, op->oracle_info.target==op->oracle_info.npc);
     // FIXME: the exceptions to this assert are really about x86 vs Alpha
     ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
   }
@@ -102,26 +117,28 @@ void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
   if (operating_mode != SIMULATION_MODE) {
     // warmup update meta data part
     // begin
-    branch_target_sets[branch_pc].insert(op->oracle_info.target);
-    branch_pc_counts[branch_pc]++;
-    if(is_single_pair_btb_entry(branch_pc)) {
-      // we will only prefetch single pair btb entries
-      std::set<Addr> has_seen;
-      for(auto prev: last_32_branches) {
-        if (prev.first != branch_pc && (!has_seen.count(prev.first)) && is_single_pair_btb_entry(prev.first)) {
-          if(!correlated_miss_counts.count(prev.first)) {
-            correlated_miss_counts[prev.first]=std::unordered_map<Addr,uint64_t>();
+    if (op->table_info->cf_type == CF_CBR || op->table_info->cf_type == CF_CALL || op->table_info->cf_type == CF_BR) {
+      branch_target_sets[branch_pc].insert(op->oracle_info.target);
+      branch_pc_counts[branch_pc]++;
+      if(is_single_pair_btb_entry(branch_pc)) {
+        // we will only prefetch single pair btb entries
+        std::set<Addr> has_seen;
+        for(auto prev: last_32_branches) {
+          if (prev.first != branch_pc && (!has_seen.count(prev.first)) && is_single_pair_btb_entry(prev.first)) {
+            if(!correlated_miss_counts.count(prev.first)) {
+              correlated_miss_counts[prev.first]=std::unordered_map<Addr,uint64_t>();
+            }
+            correlated_miss_counts[prev.first][branch_pc]+=1;
+            has_seen.insert(prev.first);
           }
-          correlated_miss_counts[prev.first][branch_pc]+=1;
-          has_seen.insert(prev.first);
         }
+        has_seen.clear();
       }
-      has_seen.clear();
+      if(last_32_branches.size() == LBR_CAPACITY) {
+        last_32_branches.pop_front();
+      }
+      last_32_branches.push_back(std::make_pair(branch_pc, op->oracle_info.target));
     }
-    if(last_32_branches.size() == LBR_CAPACITY) {
-      last_32_branches.pop_front();
-    }
-    last_32_branches.push_back(std::make_pair(branch_pc, op->oracle_info.target));
     // end
   } else {
     // Prefetching part
@@ -138,7 +155,7 @@ void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
           // we should prefetch
           Addr prefetched_target = *(branch_target_sets[prefetched_branch_pc].begin());
           Addr repl_line_addr;
-          Addr *btb_line  = (Addr*)cache_insert_replpos(&bp_data->btb, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_LOWQTR, TRUE);
+          Addr *btb_line  = (Addr*)cache_insert_replpos(&bp_data->btb, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
           *btb_line = prefetched_target;
           prefetched_count+=1;
         }

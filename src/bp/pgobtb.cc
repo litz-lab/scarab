@@ -45,9 +45,6 @@ extern "C" {
 #include "statistics.h"
 }
 
-#define LBR_CAPACITY 32
-#define FANOUT 1
-
 // My data structures
 std::unordered_map<Addr,std::set<Addr>> branch_target_sets;
 std::unordered_map<Addr,uint64_t> branch_pc_counts;
@@ -64,7 +61,7 @@ bool is_single_pair_btb_entry(Addr branch_pc) {
 
 void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
   // btb line size set to 1
-  printf("Initializing pgo btb\n");
+  printf("Initializing pgo btb with fanout %u\%\n", FANOUT);
   init_cache(&bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr),
              REPL_TRUE_LRU);
   branch_target_sets.clear();
@@ -109,14 +106,17 @@ void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
     branch_pc_counts[branch_pc]++;
     if(is_single_pair_btb_entry(branch_pc)) {
       // we will only prefetch single pair btb entries
+      std::set<Addr> has_seen;
       for(auto prev: last_32_branches) {
-        if (prev.first != branch_pc && is_single_pair_btb_entry(prev.first)) {
+        if (prev.first != branch_pc && (!has_seen.count(prev.first)) && is_single_pair_btb_entry(prev.first)) {
           if(!correlated_miss_counts.count(prev.first)) {
             correlated_miss_counts[prev.first]=std::unordered_map<Addr,uint64_t>();
           }
           correlated_miss_counts[prev.first][branch_pc]+=1;
+          has_seen.insert(prev.first);
         }
       }
+      has_seen.clear();
     }
     if(last_32_branches.size() == LBR_CAPACITY) {
       last_32_branches.pop_front();
@@ -133,7 +133,8 @@ void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
         Addr prefetched_branch_pc = candidate.first;
         uint64_t miss_count = candidate.second;
         Addr btb_line_addr;
-        if (is_single_pair_btb_entry(prefetched_branch_pc) && miss_count * FANOUT >= branch_pc_execution_count && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==nullptr) {
+        uns probability = ((100.0*miss_count)/branch_pc_execution_count);
+        if (is_single_pair_btb_entry(prefetched_branch_pc) && probability >= FANOUT && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
           // we should prefetch
           Addr prefetched_target = *(branch_target_sets[prefetched_branch_pc].begin());
           Addr repl_line_addr;

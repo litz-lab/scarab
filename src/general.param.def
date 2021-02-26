@@ -61,7 +61,8 @@ DEF_PARAM( forward_progress_interval    , FORWARD_PROGRESS_INTERVAL , uns    , u
 DEF_PARAM( fast_forward                 , FAST_FORWARD              , uns64    , uns64   , 0        ,       )
 DEF_PARAM( fast_forward_until_addr      , FAST_FORWARD_UNTIL_ADDR   , uns      , uns     , 0        ,       )
 DEF_PARAM( warmup                       , WARMUP                    , uns64    , uns64   , 0        ,       )
-
+DEF_PARAM( fanout                       , FANOUT                    , uns    , uns   , 100        ,       )
+DEF_PARAM( lbr_capacity                 , LBR_CAPACITY              , uns    , uns   , 32        ,       )
 DEF_PARAM( heartbeat_interval           , HEARTBEAT_INTERVAL        , uns    , uns       , 1000000  ,       ) 
 DEF_PARAM( num_heartbeats               , NUM_HEARTBEATS            , uns    , uns       , 0        ,       ) 
  

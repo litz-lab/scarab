@@ -56,6 +56,8 @@ uint64_t total_prefetch_count;
 uint64_t total_predecessor_count;
 
 bool is_single_pair_btb_entry(Addr branch_pc) {
+  // TODO: make branch target sets branch target dictionaries and prefetch the most popular target
+  // Also, allow multiple target branches to be a good predecessor and prefetch target.
   return branch_target_sets.count(branch_pc) && branch_target_sets[branch_pc].size() == 1;
 }
 
@@ -87,6 +89,43 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
     miss = 2;
   }
   // printf("BTB-Lookup: %llu %llu %s %llu %llu %d %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], branch_pc, op->oracle_info.target, miss, op->oracle_info.target==op->oracle_info.npc);
+  if (operating_mode != SIMULATION_MODE) {
+    branch_pc_counts[branch_pc]++;
+    if(last_32_branches.size() == LBR_CAPACITY) {
+      last_32_branches.pop_front();
+    }
+    last_32_branches.push_back(std::make_pair(branch_pc, op->oracle_info.target));
+  } else {
+    // Prefetching part
+    // begin
+    uint64_t prefetched_count=0;
+    if(is_single_pair_btb_entry(branch_pc) && correlated_miss_counts.count(branch_pc)) {
+      uint64_t branch_pc_execution_count = branch_pc_counts[branch_pc];
+      for(auto candidate: correlated_miss_counts[branch_pc]) {
+        Addr prefetched_branch_pc = candidate.first;
+        uint64_t miss_count = candidate.second;
+        Addr btb_line_addr;
+        uns probability = ((100.0*miss_count)/branch_pc_execution_count);
+        if (is_single_pair_btb_entry(prefetched_branch_pc) && probability >= FANOUT && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
+          // we should prefetch
+          // printf("Tanvir: %u %u %llu %llu %s\n", miss_count, branch_pc_execution_count, prefetched_branch_pc, branch_pc, cf_type_names[op->table_info->cf_type]);
+          Addr prefetched_target = *(branch_target_sets[prefetched_branch_pc].begin());
+          Addr repl_line_addr;
+          Addr *btb_line  = (Addr*)cache_insert_replpos(&bp_data->btb, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
+          *btb_line = prefetched_target;
+          prefetched_count+=1;
+        }
+      }
+    }
+    if (prefetched_count) {
+      total_predecessor_count += 1;
+      total_prefetch_count += prefetched_count;
+      if (!(total_predecessor_count % 10000)) {
+        printf("BTB-Prefetch: %llu %llu\n",total_predecessor_count, total_prefetch_count);
+      }
+    }
+    // end
+  }
   return PERFECT_BTB ?
            &op->oracle_info.target :
            result;
@@ -119,11 +158,13 @@ void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
     // begin
     if (op->table_info->cf_type == CF_CBR || op->table_info->cf_type == CF_CALL || op->table_info->cf_type == CF_BR) {
       branch_target_sets[branch_pc].insert(op->oracle_info.target);
-      branch_pc_counts[branch_pc]++;
       if(is_single_pair_btb_entry(branch_pc)) {
         // we will only prefetch single pair btb entries
         std::set<Addr> has_seen;
+        int tmp = last_32_branches.size() / 2;
         for(auto prev: last_32_branches) {
+          if (tmp == 0)break;
+          tmp--;
           if (prev.first != branch_pc && (!has_seen.count(prev.first)) && is_single_pair_btb_entry(prev.first)) {
             if(!correlated_miss_counts.count(prev.first)) {
               correlated_miss_counts[prev.first]=std::unordered_map<Addr,uint64_t>();
@@ -133,39 +174,6 @@ void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
           }
         }
         has_seen.clear();
-      }
-      if(last_32_branches.size() == LBR_CAPACITY) {
-        last_32_branches.pop_front();
-      }
-      last_32_branches.push_back(std::make_pair(branch_pc, op->oracle_info.target));
-    }
-    // end
-  } else {
-    // Prefetching part
-    // begin
-    uint64_t prefetched_count=0;
-    if(is_single_pair_btb_entry(branch_pc) && correlated_miss_counts.count(branch_pc)) {
-      uint64_t branch_pc_execution_count = branch_pc_counts[branch_pc];
-      for(auto candidate: correlated_miss_counts[branch_pc]) {
-        Addr prefetched_branch_pc = candidate.first;
-        uint64_t miss_count = candidate.second;
-        Addr btb_line_addr;
-        uns probability = ((100.0*miss_count)/branch_pc_execution_count);
-        if (is_single_pair_btb_entry(prefetched_branch_pc) && probability >= FANOUT && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
-          // we should prefetch
-          Addr prefetched_target = *(branch_target_sets[prefetched_branch_pc].begin());
-          Addr repl_line_addr;
-          Addr *btb_line  = (Addr*)cache_insert_replpos(&bp_data->btb, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
-          *btb_line = prefetched_target;
-          prefetched_count+=1;
-        }
-      }
-    }
-    if (prefetched_count) {
-      total_predecessor_count += 1;
-      total_prefetch_count += prefetched_count;
-      if (!(total_predecessor_count % 10000)) {
-        printf("BTB-Prefetch: %llu %llu\n",total_predecessor_count, total_prefetch_count);
       }
     }
     // end

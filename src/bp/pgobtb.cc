@@ -54,6 +54,7 @@ uint64_t btb_lookup_count;
 uint64_t btb_update_count;
 uint64_t total_prefetch_count;
 uint64_t total_predecessor_count;
+Cache prefetch_buffer;
 
 bool is_single_pair_btb_entry(Addr branch_pc) {
   // TODO: make branch target sets branch target dictionaries and prefetch the most popular target
@@ -63,9 +64,10 @@ bool is_single_pair_btb_entry(Addr branch_pc) {
 
 void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
   // btb line size set to 1
-  printf("Initializing pgo btb with fanout %u\%\n", FANOUT);
+  printf("Initializing pgo btb with fanout %u\n", FANOUT);
   init_cache(&bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr),
              REPL_TRUE_LRU);
+  init_cache(&prefetch_buffer, "BTB-prefetch-buffer", 32, 32, 1, sizeof(Addr), REPL_TRUE_LRU);
   branch_target_sets.clear();
   branch_pc_counts.clear();
   last_32_branches.clear();
@@ -81,13 +83,23 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
   Addr branch_pc = op->oracle_info.pred_addr;
   Addr* result = (Addr*)cache_access(&bp_data->btb, branch_pc,
                                &line_addr, TRUE);
+  if (result == nullptr) {
+    result = (Addr*)cache_access(&prefetch_buffer, branch_pc, &line_addr, TRUE);
+    if (result!=nullptr) {
+      Addr *btb_line, btb_line_addr, repl_line_addr;
+      btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, branch_pc,
+                                   &btb_line_addr, &repl_line_addr);
+      *btb_line = *result;
+      cache_invalidate(&prefetch_buffer, branch_pc, &line_addr);
+    }
+  }
   btb_lookup_count += 1;
-  int miss = 0;
+  /*int miss = 0;
   if (!result) {
     miss = 1;
   } else if (*result != op->oracle_info.target) {
     miss = 2;
-  }
+  }*/
   // printf("BTB-Lookup: %llu %llu %s %llu %llu %d %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], branch_pc, op->oracle_info.target, miss, op->oracle_info.target==op->oracle_info.npc);
   if (operating_mode != SIMULATION_MODE) {
     branch_pc_counts[branch_pc]++;
@@ -106,12 +118,12 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
         uint64_t miss_count = candidate.second;
         Addr btb_line_addr;
         uns probability = ((100.0*miss_count)/branch_pc_execution_count);
-        if (is_single_pair_btb_entry(prefetched_branch_pc) && probability >= FANOUT && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
+        if (is_single_pair_btb_entry(prefetched_branch_pc) && probability >= FANOUT && cache_access(&prefetch_buffer, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
           // we should prefetch
           // printf("Tanvir: %u %u %llu %llu %s\n", miss_count, branch_pc_execution_count, prefetched_branch_pc, branch_pc, cf_type_names[op->table_info->cf_type]);
           Addr prefetched_target = *(branch_target_sets[prefetched_branch_pc].begin());
           Addr repl_line_addr;
-          Addr *btb_line  = (Addr*)cache_insert_replpos(&bp_data->btb, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
+          Addr *btb_line  = (Addr*)cache_insert_replpos(&prefetch_buffer, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
           *btb_line = prefetched_target;
           prefetched_count+=1;
         }
@@ -121,7 +133,7 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
       total_predecessor_count += 1;
       total_prefetch_count += prefetched_count;
       if (!(total_predecessor_count % 10000)) {
-        printf("BTB-Prefetch: %llu %llu\n",total_predecessor_count, total_prefetch_count);
+        printf("BTB-Prefetch: %lu %lu\n",total_predecessor_count, total_prefetch_count);
       }
     }
     // end
@@ -134,13 +146,13 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
 void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
   Addr  fetch_addr = op->oracle_info.pred_addr;
   Addr *btb_line, btb_line_addr, repl_line_addr;
-  int present = 1;
+  /*int present = 1;
   Addr *line_if_present = (Addr *)cache_access(&bp_data->btb, fetch_addr, &btb_line_addr, FALSE);
   if(!line_if_present) {
     present = 0;
   } else if (*line_if_present != op->oracle_info.target) {
     present = 2;
-  }
+  }*/
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   if(BTB_OFF_PATH_WRITES || !op->off_path) {

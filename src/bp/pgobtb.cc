@@ -46,7 +46,7 @@ extern "C" {
 }
 
 // My data structures
-std::unordered_map<Addr,std::set<Addr>> branch_target_sets;
+std::unordered_map<Addr,std::unordered_map<Addr,uint64_t>> branch_target_sets;
 std::unordered_map<Addr,uint64_t> branch_pc_counts;
 std::deque<std::pair<Addr,Addr>> last_32_branches;
 std::unordered_map<Addr,std::unordered_map<Addr, uint64_t>> correlated_miss_counts;
@@ -59,7 +59,25 @@ Cache prefetch_buffer;
 bool is_single_pair_btb_entry(Addr branch_pc) {
   // TODO: make branch target sets branch target dictionaries and prefetch the most popular target
   // Also, allow multiple target branches to be a good predecessor and prefetch target.
-  return branch_target_sets.count(branch_pc) && branch_target_sets[branch_pc].size() == 1;
+  return branch_target_sets.count(branch_pc);// && branch_target_sets[branch_pc].size() == 1;
+}
+
+Addr get_popular_target(Addr branch_pc) {
+  assert(is_single_pair_btb_entry(branch_pc) && branch_target_sets[branch_pc].size());
+  bool is_first = true;
+  Addr best_target;
+  uint64_t max_count;
+  for(auto kv: branch_target_sets[branch_pc]) {
+    if(is_first) {
+      best_target = kv.first;
+      max_count = kv.second;
+      is_first = false;
+    } else if (max_count < kv.second) {
+      best_target = kv.first;
+      max_count = kv.second;
+    }
+  }
+  return best_target;
 }
 
 void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
@@ -121,7 +139,7 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
         if (is_single_pair_btb_entry(prefetched_branch_pc) && probability >= FANOUT && cache_access(&prefetch_buffer, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
           // we should prefetch
           // printf("Tanvir: %u %u %llu %llu %s\n", miss_count, branch_pc_execution_count, prefetched_branch_pc, branch_pc, cf_type_names[op->table_info->cf_type]);
-          Addr prefetched_target = *(branch_target_sets[prefetched_branch_pc].begin());
+          Addr prefetched_target = get_popular_target(prefetched_branch_pc);// *(branch_target_sets[prefetched_branch_pc].begin());
           Addr repl_line_addr;
           Addr *btb_line  = (Addr*)cache_insert_replpos(&prefetch_buffer, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
           *btb_line = prefetched_target;
@@ -168,12 +186,15 @@ void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
   if (operating_mode != SIMULATION_MODE) {
     // warmup update meta data part
     // begin
-    if (op->table_info->cf_type == CF_CBR || op->table_info->cf_type == CF_CALL || op->table_info->cf_type == CF_BR) {
-      branch_target_sets[branch_pc].insert(op->oracle_info.target);
+    /*if (op->table_info->cf_type == CF_CBR || op->table_info->cf_type == CF_CALL || op->table_info->cf_type == CF_BR)*/ {
+      if (!branch_target_sets.count(branch_pc)) {
+        branch_target_sets[branch_pc]=std::unordered_map<Addr,uint64_t>();
+      }
+      branch_target_sets[branch_pc][op->oracle_info.target]+=1;
       if(is_single_pair_btb_entry(branch_pc)) {
         // we will only prefetch single pair btb entries
         std::set<Addr> has_seen;
-        int tmp = last_32_branches.size() / 2;
+        int tmp = last_32_branches.size();
         for(auto prev: last_32_branches) {
           if (tmp == 0)break;
           tmp--;

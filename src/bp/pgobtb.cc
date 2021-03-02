@@ -108,6 +108,7 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
       btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, branch_pc,
                                    &btb_line_addr, &repl_line_addr);
       *btb_line = *result;
+      result = btb_line;
       cache_invalidate(&prefetch_buffer, branch_pc, &line_addr);
     }
   }

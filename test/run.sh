@@ -10,16 +10,16 @@ for i in "${benchmarks[@]}";
 do
   mkdir $i;
   cd $i;
-  for j in `seq 1 4 100`;
+  for j in `seq 1 100`;
   do
     mkdir $j;
     cd $j;
     cp $params .;
     $sim_binary --frontend pt --cbp_trace_r0=/mnt/storage/takh/pgp/workloads/$i/trace.gz --fetch_off_path_ops=false --inst_limit 49999995 --btb_entries 8192 --btb_assoc 4 --enable_crs 1 --crs_entries 32 --crs_realistic 1 --enable_ibp 1 --use_pat_hist 1 --bp_mech tagescl --btb_mech 2 --fanout $j --warmup 49999995 &> log.txt &
     cd ..;
-    if ((j%25==0));
+    if ((j%10==0));
     then
-      sleep 1;#wait;
+      wait;
     fi
   done
   cd ..;

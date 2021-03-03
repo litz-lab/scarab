@@ -48,19 +48,20 @@ extern "C" {
 // My data structures
 std::unordered_map<Addr,std::unordered_map<Addr,uint64_t>> branch_target_sets;
 std::unordered_map<Addr,uint64_t> branch_pc_counts;
-std::deque<std::pair<Addr,Addr>> last_32_branches;
-std::unordered_map<Addr,std::unordered_map<Addr, uint64_t>> correlated_miss_counts;
+std::deque<Addr> last_32_branches;
+std::unordered_map<Addr,std::set<uint64_t>> predecessor_miss_index;
+std::unordered_map<Addr,std::set<Addr>> prefetch_list;
+std::vector<Addr> btb_miss_list;
 uint64_t btb_lookup_count;
 uint64_t btb_update_count;
 uint64_t total_prefetch_count;
 uint64_t total_predecessor_count;
 uint64_t total_prefetch_hit_count;
 Cache prefetch_buffer;
+bool has_simulation_started;
 
 bool is_single_pair_btb_entry(Addr branch_pc) {
-  // TODO: make branch target sets branch target dictionaries and prefetch the most popular target
-  // Also, allow multiple target branches to be a good predecessor and prefetch target.
-  return branch_target_sets.count(branch_pc);// && branch_target_sets[branch_pc].size() == 1;
+  return branch_target_sets.count(branch_pc);
 }
 
 Addr get_popular_target(Addr branch_pc) {
@@ -81,8 +82,60 @@ Addr get_popular_target(Addr branch_pc) {
   return best_target;
 }
 
+void find_prefetch_candidates() {
+  prefetch_list.clear();
+  std::unordered_map<uint64_t,std::set<Addr>> inverse_predecessor_miss_index;
+  std::unordered_map<Addr, std::unordered_map<Addr, uint64_t>> correlated_miss_counts;
+
+  for(const auto &kv: predecessor_miss_index) {
+    Addr predecessor = kv.first;
+    correlated_miss_counts[predecessor] = std::unordered_map<Addr, uint64_t>();
+    for(const auto &miss_index: kv.second) {
+      if(!inverse_predecessor_miss_index.count(miss_index)) {
+        inverse_predecessor_miss_index[miss_index]=std::set<Addr>();
+      }
+      inverse_predecessor_miss_index[miss_index].insert(predecessor);
+      Addr missed_branch_pc = btb_miss_list[miss_index];
+      if(!correlated_miss_counts[predecessor].count(missed_branch_pc)) {
+        correlated_miss_counts[predecessor][missed_branch_pc] = 1;
+      } else {
+        correlated_miss_counts[predecessor][missed_branch_pc] += 1;
+      }
+    }
+  }
+
+  for(const auto &kv:inverse_predecessor_miss_index) {
+    uint64_t miss_index = kv.first;
+    Addr missed_branch_pc = btb_miss_list[miss_index];
+    double best_probability = 0.0;
+    Addr best = 0;
+    for(const auto &candidate: kv.second) {
+      double current_probability = ((100.0 * correlated_miss_counts[candidate][missed_branch_pc]) / branch_pc_counts[candidate]);
+      if (current_probability > best_probability) {
+        best_probability = current_probability;
+        best = candidate;
+      }
+    }
+    if (best_probability >= FANOUT) {
+      if(!prefetch_list.count(best)) {
+        prefetch_list[best] = std::set<Addr>();
+      }
+      prefetch_list[best].insert(missed_branch_pc);
+      for(const auto &candidate: kv.second) {
+        if(candidate != best) {
+          if(correlated_miss_counts[candidate][missed_branch_pc] > 0) {
+            correlated_miss_counts[candidate][missed_branch_pc] -= 1;
+          }
+        }
+      }
+    }
+  }
+
+  correlated_miss_counts.clear();
+  inverse_predecessor_miss_index.clear();
+}
+
 void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
-  // btb line size set to 1
   printf("Initializing pgo btb with fanout %u\n", FANOUT);
   init_cache(&bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr),
              REPL_TRUE_LRU);
@@ -90,12 +143,15 @@ void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
   branch_target_sets.clear();
   branch_pc_counts.clear();
   last_32_branches.clear();
-  correlated_miss_counts.clear();
+  predecessor_miss_index.clear();
+  btb_miss_list.clear();
+  prefetch_list.clear();
   btb_lookup_count = 0;
   btb_update_count = 0;
   total_prefetch_count = 0;
   total_predecessor_count = 0;
   total_prefetch_hit_count = 0;
+  has_simulation_started = false;
 }
 
 Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
@@ -124,22 +180,25 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
   // printf("BTB-Lookup: %llu %llu %s %llu %llu %d %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], branch_pc, op->oracle_info.target, miss, op->oracle_info.target==op->oracle_info.npc);
   if (operating_mode != SIMULATION_MODE) {
     branch_pc_counts[branch_pc]++;
-    if(last_32_branches.size() == LBR_CAPACITY) {
-      last_32_branches.pop_front();
+    if (op->table_info->cf_type != CF_RET) {
+      if(last_32_branches.size() == LBR_CAPACITY) {
+        last_32_branches.pop_front();
+      }
+      last_32_branches.push_back(branch_pc);
     }
-    last_32_branches.push_back(std::make_pair(branch_pc, op->oracle_info.target));
   } else {
     // Prefetching part
     // begin
+    if (!has_simulation_started) {
+      has_simulation_started = true;
+      find_prefetch_candidates();
+    }
     uint64_t prefetched_count=0;
-    if(is_single_pair_btb_entry(branch_pc) && correlated_miss_counts.count(branch_pc)) {
-      uint64_t branch_pc_execution_count = branch_pc_counts[branch_pc];
-      for(auto candidate: correlated_miss_counts[branch_pc]) {
-        Addr prefetched_branch_pc = candidate.first;
-        uint64_t miss_count = candidate.second;
+    if(prefetch_list.count(branch_pc)) {
+      for(auto candidate: prefetch_list[branch_pc]) {
+        Addr prefetched_branch_pc = candidate;
         Addr btb_line_addr;
-        uns probability = ((100.0*miss_count)/branch_pc_execution_count);
-        if (is_single_pair_btb_entry(prefetched_branch_pc) && probability >= FANOUT && cache_access(&prefetch_buffer, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
+        if (is_single_pair_btb_entry(prefetched_branch_pc) && cache_access(&prefetch_buffer, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
           // we should prefetch
           // printf("Tanvir: %u %u %llu %llu %s\n", miss_count, branch_pc_execution_count, prefetched_branch_pc, branch_pc, cf_type_names[op->table_info->cf_type]);
           Addr prefetched_target = get_popular_target(prefetched_branch_pc);// *(branch_target_sets[prefetched_branch_pc].begin());
@@ -189,27 +248,24 @@ void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
   if (operating_mode != SIMULATION_MODE) {
     // warmup update meta data part
     // begin
-    /*if (op->table_info->cf_type == CF_CBR || op->table_info->cf_type == CF_CALL || op->table_info->cf_type == CF_BR)*/ {
+    if (op->table_info->cf_type != CF_RET) {
+      uint64_t miss_index = btb_miss_list.size();
+      btb_miss_list.push_back(branch_pc);
       if (!branch_target_sets.count(branch_pc)) {
         branch_target_sets[branch_pc]=std::unordered_map<Addr,uint64_t>();
       }
-      branch_target_sets[branch_pc][op->oracle_info.target]+=1;
-      if(is_single_pair_btb_entry(branch_pc)) {
-        // we will only prefetch single pair btb entries
-        std::set<Addr> has_seen;
-        int tmp = last_32_branches.size();
-        for(auto prev: last_32_branches) {
-          if (tmp == 0)break;
-          tmp--;
-          if (prev.first != branch_pc && (!has_seen.count(prev.first)) && is_single_pair_btb_entry(prev.first)) {
-            if(!correlated_miss_counts.count(prev.first)) {
-              correlated_miss_counts[prev.first]=std::unordered_map<Addr,uint64_t>();
-            }
-            correlated_miss_counts[prev.first][branch_pc]+=1;
-            has_seen.insert(prev.first);
+      if(!branch_target_sets[branch_pc].count(op->oracle_info.target)) {
+        branch_target_sets[branch_pc][op->oracle_info.target]=1;
+      } else {
+        branch_target_sets[branch_pc][op->oracle_info.target]+=1;
+      }
+      for(auto prev: last_32_branches) {
+        if (prev != branch_pc) {
+          if (!predecessor_miss_index.count(prev)) {
+            predecessor_miss_index[prev] = std::set<uint64_t>();
           }
+          predecessor_miss_index[prev].insert(miss_index);
         }
-        has_seen.clear();
       }
     }
     // end

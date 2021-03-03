@@ -121,18 +121,79 @@ void find_prefetch_candidates() {
         prefetch_list[best] = std::set<Addr>();
       }
       prefetch_list[best].insert(missed_branch_pc);
-      for(const auto &candidate: kv.second) {
-        if(candidate != best) {
-          if(correlated_miss_counts[candidate][missed_branch_pc] > 0) {
-            correlated_miss_counts[candidate][missed_branch_pc] -= 1;
-          }
-        }
-      }
     }
   }
 
   correlated_miss_counts.clear();
   inverse_predecessor_miss_index.clear();
+}
+
+void update_metadata(Op* op) {
+  if (operating_mode != SIMULATION_MODE) {
+    // warmup update meta data part
+    // begin
+    Addr branch_pc = op->oracle_info.pred_addr;
+    uint64_t miss_index = btb_miss_list.size();
+    btb_miss_list.push_back(branch_pc);
+    if (!branch_target_sets.count(branch_pc)) {
+      branch_target_sets[branch_pc]=std::unordered_map<Addr,uint64_t>();
+    }
+    if(!branch_target_sets[branch_pc].count(op->oracle_info.target)) {
+      branch_target_sets[branch_pc][op->oracle_info.target]=1;
+    } else {
+      branch_target_sets[branch_pc][op->oracle_info.target]+=1;
+    }
+    for(auto prev: last_32_branches) {
+      if (prev != branch_pc) {
+        if (!predecessor_miss_index.count(prev)) {
+          predecessor_miss_index[prev] = std::set<uint64_t>();
+        }
+        predecessor_miss_index[prev].insert(miss_index);
+      }
+    }
+    branch_pc_counts[branch_pc]++;
+    if(last_32_branches.size() == LBR_CAPACITY) {
+      last_32_branches.pop_front();
+    }
+    last_32_branches.push_back(branch_pc);
+    // end
+  }
+}
+
+void perform_prefetch(Bp_Data* bp_data, Op* op) {
+  if (operating_mode == SIMULATION_MODE) {
+    // Prefetching part
+    // begin
+    Addr branch_pc = op->oracle_info.pred_addr;
+    if (!has_simulation_started) {
+      has_simulation_started = true;
+      find_prefetch_candidates();
+    }
+    uint64_t prefetched_count=0;
+    if(prefetch_list.count(branch_pc)) {
+      for(auto candidate: prefetch_list[branch_pc]) {
+        Addr prefetched_branch_pc = candidate;
+        Addr btb_line_addr;
+        if (is_single_pair_btb_entry(prefetched_branch_pc) && cache_access(&prefetch_buffer, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
+          // we should prefetch
+          // printf("Tanvir: %u %u %llu %llu %s\n", miss_count, branch_pc_execution_count, prefetched_branch_pc, branch_pc, cf_type_names[op->table_info->cf_type]);
+          Addr prefetched_target = get_popular_target(prefetched_branch_pc);// *(branch_target_sets[prefetched_branch_pc].begin());
+          Addr repl_line_addr;
+          Addr *btb_line  = (Addr*)cache_insert_replpos(&prefetch_buffer, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
+          *btb_line = prefetched_target;
+          prefetched_count+=1;
+        }
+      }
+    }
+    if (prefetched_count) {
+      total_predecessor_count += 1;
+      total_prefetch_count += prefetched_count;
+      if (!(total_predecessor_count % 10000)) {
+        printf("BTB-Prefetch: %lu %lu %lu\n",total_predecessor_count, total_prefetch_count, total_prefetch_hit_count);
+      }
+    }
+    // end
+  }
 }
 
 void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
@@ -178,46 +239,9 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
     miss = 2;
   }*/
   // printf("BTB-Lookup: %llu %llu %s %llu %llu %d %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], branch_pc, op->oracle_info.target, miss, op->oracle_info.target==op->oracle_info.npc);
-  if (operating_mode != SIMULATION_MODE) {
-    branch_pc_counts[branch_pc]++;
-    if (op->table_info->cf_type != CF_RET) {
-      if(last_32_branches.size() == LBR_CAPACITY) {
-        last_32_branches.pop_front();
-      }
-      last_32_branches.push_back(branch_pc);
-    }
-  } else {
-    // Prefetching part
-    // begin
-    if (!has_simulation_started) {
-      has_simulation_started = true;
-      find_prefetch_candidates();
-    }
-    uint64_t prefetched_count=0;
-    if(prefetch_list.count(branch_pc)) {
-      for(auto candidate: prefetch_list[branch_pc]) {
-        Addr prefetched_branch_pc = candidate;
-        Addr btb_line_addr;
-        if (is_single_pair_btb_entry(prefetched_branch_pc) && cache_access(&prefetch_buffer, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
-          // we should prefetch
-          // printf("Tanvir: %u %u %llu %llu %s\n", miss_count, branch_pc_execution_count, prefetched_branch_pc, branch_pc, cf_type_names[op->table_info->cf_type]);
-          Addr prefetched_target = get_popular_target(prefetched_branch_pc);// *(branch_target_sets[prefetched_branch_pc].begin());
-          Addr repl_line_addr;
-          Addr *btb_line  = (Addr*)cache_insert_replpos(&prefetch_buffer, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
-          *btb_line = prefetched_target;
-          prefetched_count+=1;
-        }
-      }
-    }
-    if (prefetched_count) {
-      total_predecessor_count += 1;
-      total_prefetch_count += prefetched_count;
-      if (!(total_predecessor_count % 10000)) {
-        printf("BTB-Prefetch: %lu %lu %lu\n",total_predecessor_count, total_prefetch_count, total_prefetch_hit_count);
-      }
-    }
-    // end
-  }
+  update_metadata(op);
+  perform_prefetch(bp_data, op);
+  
   return PERFECT_BTB ?
            &op->oracle_info.target :
            result;
@@ -237,38 +261,15 @@ void  bp_btb_pgobtb_update(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   if(BTB_OFF_PATH_WRITES || !op->off_path) {
     STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
+    if((Addr*)cache_access(&prefetch_buffer, fetch_addr, &btb_line_addr, FALSE) != nullptr) {
+      cache_invalidate(&prefetch_buffer, fetch_addr, &btb_line_addr);
+    }
     btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, fetch_addr,
                                    &btb_line_addr, &repl_line_addr);
     *btb_line = op->oracle_info.target;
     // printf("BTB-Update: %llu %llu %s %llu %llu %d %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], fetch_addr, op->oracle_info.target, present, op->oracle_info.target==op->oracle_info.npc);
     // FIXME: the exceptions to this assert are really about x86 vs Alpha
     ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
-  }
-  Addr branch_pc = fetch_addr;
-  if (operating_mode != SIMULATION_MODE) {
-    // warmup update meta data part
-    // begin
-    if (op->table_info->cf_type != CF_RET) {
-      uint64_t miss_index = btb_miss_list.size();
-      btb_miss_list.push_back(branch_pc);
-      if (!branch_target_sets.count(branch_pc)) {
-        branch_target_sets[branch_pc]=std::unordered_map<Addr,uint64_t>();
-      }
-      if(!branch_target_sets[branch_pc].count(op->oracle_info.target)) {
-        branch_target_sets[branch_pc][op->oracle_info.target]=1;
-      } else {
-        branch_target_sets[branch_pc][op->oracle_info.target]+=1;
-      }
-      for(auto prev: last_32_branches) {
-        if (prev != branch_pc) {
-          if (!predecessor_miss_index.count(prev)) {
-            predecessor_miss_index[prev] = std::set<uint64_t>();
-          }
-          predecessor_miss_index[prev].insert(miss_index);
-        }
-      }
-    }
-    // end
   }
   btb_update_count += 1;
 }

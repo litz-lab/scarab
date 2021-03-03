@@ -10,7 +10,7 @@ for i in "${benchmarks[@]}";
 do
   mkdir $i;
   cd $i;
-  for j in `seq 1 100`;
+  for j in `seq 1 4 100`;
   do
     mkdir $j;
     cd $j;
@@ -19,7 +19,7 @@ do
     cd ..;
     if ((j%25==0));
     then
-      wait;
+      sleep 1;#wait;
     fi
   done
   cd ..;

@@ -54,6 +54,7 @@ uint64_t btb_lookup_count;
 uint64_t btb_update_count;
 uint64_t total_prefetch_count;
 uint64_t total_predecessor_count;
+uint64_t total_prefetch_hit_count;
 Cache prefetch_buffer;
 
 bool is_single_pair_btb_entry(Addr branch_pc) {
@@ -65,7 +66,7 @@ bool is_single_pair_btb_entry(Addr branch_pc) {
 Addr get_popular_target(Addr branch_pc) {
   assert(is_single_pair_btb_entry(branch_pc) && branch_target_sets[branch_pc].size());
   bool is_first = true;
-  Addr best_target;
+  Addr best_target = branch_pc;
   uint64_t max_count;
   for(auto kv: branch_target_sets[branch_pc]) {
     if(is_first) {
@@ -85,7 +86,7 @@ void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
   printf("Initializing pgo btb with fanout %u\n", FANOUT);
   init_cache(&bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr),
              REPL_TRUE_LRU);
-  init_cache(&prefetch_buffer, "BTB-prefetch-buffer", 32, 32, 1, sizeof(Addr), REPL_TRUE_LRU);
+  init_cache(&prefetch_buffer, "BTB-prefetch-buffer", BTB_PREFETCH_BUFFER_SIZE, BTB_PREFETCH_BUFFER_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
   branch_target_sets.clear();
   branch_pc_counts.clear();
   last_32_branches.clear();
@@ -94,6 +95,7 @@ void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
   btb_update_count = 0;
   total_prefetch_count = 0;
   total_predecessor_count = 0;
+  total_prefetch_hit_count = 0;
 }
 
 Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
@@ -102,13 +104,13 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
   Addr* result = (Addr*)cache_access(&bp_data->btb, branch_pc,
                                &line_addr, TRUE);
   if (result == nullptr) {
-    result = (Addr*)cache_access(&prefetch_buffer, branch_pc, &line_addr, TRUE);
+    result = (Addr*)cache_access(&prefetch_buffer, branch_pc, &line_addr, FALSE);
     if (result!=nullptr) {
       Addr *btb_line, btb_line_addr, repl_line_addr;
-      btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, branch_pc,
-                                   &btb_line_addr, &repl_line_addr);
+      btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, branch_pc,&btb_line_addr,&repl_line_addr);
       *btb_line = *result;
       result = btb_line;
+      total_prefetch_hit_count += 1;
       cache_invalidate(&prefetch_buffer, branch_pc, &line_addr);
     }
   }
@@ -137,7 +139,7 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
         uint64_t miss_count = candidate.second;
         Addr btb_line_addr;
         uns probability = ((100.0*miss_count)/branch_pc_execution_count);
-        if (is_single_pair_btb_entry(prefetched_branch_pc) && probability >= FANOUT && cache_access(&prefetch_buffer, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
+        if (is_single_pair_btb_entry(prefetched_branch_pc) && probability >= FANOUT && cache_access(&prefetch_buffer, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
           // we should prefetch
           // printf("Tanvir: %u %u %llu %llu %s\n", miss_count, branch_pc_execution_count, prefetched_branch_pc, branch_pc, cf_type_names[op->table_info->cf_type]);
           Addr prefetched_target = get_popular_target(prefetched_branch_pc);// *(branch_target_sets[prefetched_branch_pc].begin());
@@ -152,7 +154,7 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
       total_predecessor_count += 1;
       total_prefetch_count += prefetched_count;
       if (!(total_predecessor_count % 10000)) {
-        printf("BTB-Prefetch: %lu %lu\n",total_predecessor_count, total_prefetch_count);
+        printf("BTB-Prefetch: %lu %lu %lu\n",total_predecessor_count, total_prefetch_count, total_prefetch_hit_count);
       }
     }
     // end

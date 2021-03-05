@@ -111,7 +111,7 @@ void find_prefetch_candidates() {
     Addr best = 0;
     for(const auto &candidate: kv.second) {
       double current_probability = ((100.0 * correlated_miss_counts[candidate][missed_branch_pc]) / branch_pc_counts[candidate]);
-      if (current_probability > best_probability) {
+      if (current_probability > best_probability && (!prefetch_list.count(candidate) || prefetch_list[candidate].count(missed_branch_pc) || (prefetch_list[candidate].size() < MAX_BTB_PREFETCH_DEPTH))) {
         best_probability = current_probability;
         best = candidate;
       }

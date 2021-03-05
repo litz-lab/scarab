@@ -116,7 +116,7 @@ struct InstInfo {
 #define INS_IsSyscall(ins) (INS_Category(ins) == XED_CATEGORY_SYSCALL)
 #define INS_IsSysret(ins) (INS_Category(ins) == XED_CATEGORY_SYSRET)
 #define INS_IsInterrupt(ins) (INS_Category(ins) == XED_CATEGORY_INTERRUPT)
-#define INS_DirectBranchOrCallTargetAddress(ins) ins.target
+#define INS_DirectBranchOrCallTargetAddress(ins) ins.pc + INS_Size(ins) + xed_operand_values_get_branch_displacement_int32(ins.ins)
 #define INS_BranchIsTaken(ins) ins.taken
 
 #define REG_GR_BASE REG_RDI

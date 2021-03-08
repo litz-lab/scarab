@@ -313,12 +313,22 @@ void fill_in_cf_info(ctype_pin_inst* info, const INS& ins) {
     else if(category == XED_CATEGORY_CALL)
       info->cf_type = CF_CALL;
     info->branch_target = INS_DirectBranchOrCallTargetAddress(ins);
+#ifdef MEMTRACE
+    /* std::cout << " setting direct target for PC: " << std::hex << ins.pc << " to: " << info->branch_target << std::endl; */
+#endif
   }
   info->is_ifetch_barrier = is_ifetch_barrier(ins);
 }
 
 void print_err_if_invalid(ctype_pin_inst* info, const INS& ins) {
-  if(info->op_type == OP_INV) {
+    bool invalid = info->op_type == OP_INV;
+#ifdef MEMTRACE
+    bool correct = info->cf_type != NOT_CF || (info->instruction_addr + info->size + xed_operand_values_get_branch_displacement_int32(ins.ins)) == info->branch_target;
+#else
+    bool correct = true;
+#endif
+  if(invalid || !correct) {
+
     //(*glb_err_ostream)
     std::cout
       << "Unmapped instruction at "

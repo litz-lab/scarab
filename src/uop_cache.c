@@ -59,8 +59,6 @@ static Addr cur_pw_start_addr = 0;
 
 // uops that access uop cache
 Hash_Table uops_accessed; 
-// uop addr being processed in decode stage
-Hash_Table addr_in_dec;
 // k: instr addr
 Hash_Table inf_size_uop_cache;
 
@@ -77,7 +75,6 @@ void init_uop_cache() {
   init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
              UOP_CACHE_LINE_DATA_SIZE, REPL_TRUE_LRU);
   init_hash_table(&uops_accessed, "uops accessed table", 15000000, sizeof(int));
-  init_hash_table(&addr_in_dec, "uops in decode pipeline", 15000000, sizeof(int));
 }
 
 /**************************************************************************************/
@@ -126,9 +123,6 @@ void insert_uop_cache() {
       cur_line_data = (Addr*) cache_insert(&uop_cache, 0, start_addr, &line_addr, &repl_line_addr);
       // TODO: invalidate all lines with same start_addr (not necessarily all with that line!)
       if (repl_line_addr) {
-        // printf("INV, %llu, idx:%i, op:%llu, %llu\n", repl_line_addr, 
-        //       repl_line_addr >> uop_cache.shift_bits & uop_cache.set_mask,
-        //       op->op_num, sim_time);
         cache_invalidate(&uop_cache, repl_line_addr, &line_addr);
       }
       n_uops_line = 0;
@@ -216,10 +210,6 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
   if (update_repl) {
     STAT_EVENT(0, UOP_CACHE_MISS + found);
 
-    // printf("ACC, %llu, idx:%i, op:%llu, %llu, %i\n", pc, 
-    //       pc >> uop_cache.shift_bits & uop_cache.set_mask,
-    //       *op_num, sim_time, found);
-
     if (op_num) {
       ASSERT(0, *op_num == next_op_num);
       next_op_num++;
@@ -232,16 +222,6 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
   }
   if (!found) {
     cur_pw_start_addr = 0;
-
-      //How many more hits might we have if we hit pws
-      //in decode stage or accumulation buffer?
-      Addr accum_pw_start_addr = 0;
-      if (uop_q_len) {
-        accum_pw_start_addr = uop_q[0]->inst_info->addr;
-      }   
-      if (hash_table_access(&addr_in_dec, pc) || accum_pw_start_addr == pc) {
-        STAT_EVENT(0, UOP_ADDR_IN_DEC_ACCUM);
-      }
   }
   
   return found;
@@ -299,31 +279,4 @@ void accumulate_op(Op* op) {
   }
   uop_q[uop_q_len] = op;
   uop_q_len++;
-};
-
-void addr_in_dec_remove(Addr addr) {
-  if (UOP_CACHE_SIZE == 0) {
-    return;
-  }
-  int* val = (int*) hash_table_access(&addr_in_dec, addr);
-  ASSERT(0, val);
-  if (*val == 1) {
-    ASSERT(0, hash_table_access_delete(&addr_in_dec, addr));
-  } else {
-    *val -= 1;
-  }
-};
-
-void addr_in_dec_insert(Addr addr) {
-  if (UOP_CACHE_SIZE == 0) {
-    return;
-  }
-  
-  Flag new_entry;
-  int* val = (int*) hash_table_access_create(&addr_in_dec, addr, &new_entry);
-  if (new_entry) {
-    *val = 1;
-  } else {
-    *val += 1;
-  }
 };

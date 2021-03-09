@@ -548,7 +548,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       break;
     }
 
-    addr_in_dec_insert(op->inst_info->addr);
     /* add to sequential op list */
     add_to_seq_op_list(td, op);
 

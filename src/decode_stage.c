@@ -293,8 +293,6 @@ void update_decode_stage(Stage_Data* src_sd) {
     } else {
       end_accumulate();
     }
-
-    addr_in_dec_remove(op->inst_info->addr);
   }
 }
 

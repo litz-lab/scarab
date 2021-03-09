@@ -187,7 +187,7 @@ void inc_bstat_fetched(Op* op) {
   Flag new_entry;
   Per_Branch_Stat* bstat = (Per_Branch_Stat*) hash_table_access_create(&per_branch_stat, op->inst_info->addr, &new_entry);
   if (new_entry) {
-    memset(bstat, 0, sizeof(bstat));
+    memset(bstat, 0, sizeof(*bstat));
     bstat->addr = op->inst_info->addr;
     bstat->cf_type = op->table_info->cf_type;
   }

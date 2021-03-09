@@ -57,8 +57,6 @@ static Addr cur_icache_line_addr = 0;
 // start_addr of current PW/bbl
 static Addr cur_pw_start_addr = 0;
 
-// uops that access uop cache
-Hash_Table uops_accessed; 
 // k: instr addr
 Hash_Table inf_size_uop_cache;
 
@@ -74,7 +72,6 @@ void init_uop_cache() {
   }
   init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
              UOP_CACHE_LINE_DATA_SIZE, REPL_TRUE_LRU);
-  init_hash_table(&uops_accessed, "uops accessed table", 15000000, sizeof(int));
 }
 
 /**************************************************************************************/
@@ -102,10 +99,6 @@ void insert_uop_cache() {
   int n_lines_used = 0;
   int n_uops_line = 0;
   int n_imm_disp_line = 0;
-
-  // printf("INS, %llu, idx:%i, op:%llu, %llu, len:%i\n", start_addr, 
-  //           start_addr >> uop_cache.shift_bits & uop_cache.set_mask,
-  //           uop_q[0]->op_num, sim_time, uop_q_len);
  
   for (int ii = 0; ii < uop_q_len; ii++) {
     Op* op = uop_q[ii];
@@ -213,10 +206,6 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
     if (op_num) {
       ASSERT(0, *op_num == next_op_num);
       next_op_num++;
-
-      Flag new_entry; //verify only one access per uop
-      hash_table_access_create(&uops_accessed, *op_num, &new_entry);
-      ASSERT(0, new_entry);
     }
 
   }

@@ -53,6 +53,7 @@ struct InstInfo {
   uint64_t pid;                   // process ID
   uint64_t tid;                   // thread ID
   uint64_t target;                // branch target
+  uint64_t static_target;         // encoded branch target (not dynamic). Only non-zero when the information differs from what XED tells you.
   uint64_t mem_addr[2];           // memory addresses
   bool mem_used[2];               // mem address usage flags
   CustomOp custom_op;             // Special or non-x86 ISA instruction
@@ -91,6 +92,7 @@ struct InstInfo {
 #define INS_MemoryOperandIsWritten(ins, op) XED_MEM_WRITTEN(ins, op)
 #define INS_MemoryOperandCount(ins) xed_decoded_inst_number_of_memory_operands(ins.ins)
 #define INS_IsDirectBranch(ins) xed3_operand_get_brdisp_width(ins.ins)
+/* #define INS_IsDirectBranch(ins) !xed_decoded_inst_get_attribute(ins.ins, XED_ATTRIBUTE_INDIRECT_BRANCH) */
 #define INS_Size(ins) xed_decoded_inst_get_length(ins.ins)
 #define INS_Valid(ins) xed_decoded_inst_valid(ins.ins)
 /* Just like PIN we break BBLs on a number of additional instructions such as REP */

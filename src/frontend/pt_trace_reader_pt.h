@@ -98,32 +98,33 @@ public:
   }
 
   xed_decoded_inst_t* createJmp(uint64_t displacement) {
-    xed_encoder_instruction_t inst;
-    xed_state_t state;
-    state.mmode = XED_MACHINE_MODE_LONG_64;
-    xed_encoder_request_t req;
-    xed_inst1(&inst, state, XED_ICLASS_JMP, 64,  xed_relbr(displacement, 32));
-    xed_encoder_request_zero_set_mode(&req, &state);
-    if(!xed_convert_to_encoder_request(&req, &inst)) {
-        panic("Encoder conversion failed! Is the displacement too large?");
-        return nullptr;
-    }
-    xed_uint8_t encodedBytes[15];
-    unsigned int numBytesUsed = 0;
-    xed_error_enum_t error = xed_encode(&req, encodedBytes, sizeof(encodedBytes), &numBytesUsed);
-    if(error != XED_ERROR_NONE) {
-        panic("Failed to encode due to: %s\n", xed_error_enum_t2str(error));
-        return nullptr;
-    }
-    xed_decoded_inst_t* decoded_inst = new xed_decoded_inst_t;
-    xed_decoded_inst_zero(decoded_inst);
-    xed_decoded_inst_set_mode(decoded_inst, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
-    error = xed_decode(decoded_inst, encodedBytes, numBytesUsed);
-    if(error == XED_ERROR_NONE)
-        return decoded_inst;
-    delete decoded_inst;
-    panic("Could not decode due to %s\n", xed_error_enum_t2str(error));
-    return nullptr;
+      xed_encoder_instruction_t inst;
+      xed_state_t state;
+      state.mmode = XED_MACHINE_MODE_LONG_64;
+      xed_encoder_request_t req;
+      xed_inst1(&inst, state, XED_ICLASS_JMP, 64,  xed_relbr(displacement - 5, 32)); // -5 is due to this jump insn being 5 bytes large (1 op, 4 32 bit disp)
+      xed_encoder_request_zero_set_mode(&req, &state);
+      if(!xed_convert_to_encoder_request(&req, &inst)) {
+          panic("Encoder conversion failed! Is the displacement too large?");
+          return nullptr;
+      }
+      xed_uint8_t encodedBytes[15];
+      unsigned int numBytesUsed = 0;
+      xed_error_enum_t error = xed_encode(&req, encodedBytes, sizeof(encodedBytes), &numBytesUsed);
+      if(error != XED_ERROR_NONE) {
+          panic("Failed to encode due to: %s\n", xed_error_enum_t2str(error));
+          return nullptr;
+      }
+      xed_decoded_inst_t* decoded_inst = new xed_decoded_inst_t;
+      xed_decoded_inst_zero(decoded_inst);
+      xed_decoded_inst_set_mode(decoded_inst, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
+      error = xed_decode(decoded_inst, encodedBytes, numBytesUsed);
+      if(error == XED_ERROR_NONE) {
+          return decoded_inst;
+      }
+      delete decoded_inst;
+      panic("Could not decode due to %s\n", xed_error_enum_t2str(error));
+      return nullptr;
   }
 
   xed_decoded_inst_t * createNop(uint64_t length) {
@@ -149,28 +150,39 @@ public:
   // ret true when insn is a syscall (and thus should be skipped)
   bool processInst(PTInst &next_line) {
       /* std::cout << "Processing Inst w/ PC: " << std::hex << next_line.pc << std::endl; */
-    // Get the XED info from the cache, creating it if needed
-    auto xed_map_iter = xed_map_.find(next_line.pc);
-    if (xed_map_iter == xed_map_.end()) {
-      fillCache(next_line.pc, next_line.size, next_line.inst_bytes);
-      xed_map_iter = xed_map_.find(next_line.pc);
-      assert((xed_map_iter != xed_map_.end()));
+      // Get the XED info from the cache, creating it if needed
+      auto xed_map_iter = xed_map_.find(next_line.pc);
+      if (xed_map_iter == xed_map_.end()) {
+          fillCache(next_line.pc, next_line.size, next_line.inst_bytes);
+          xed_map_iter = xed_map_.find(next_line.pc);
+          assert((xed_map_iter != xed_map_.end()));
+      }
+      bool unknown_type, cond_branch;
+      int mem_ops_;
+      xed_decoded_inst_t *xed_ins;
+      auto &xed_tuple = (*xed_map_iter).second;
+      tie(mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) =
+          xed_tuple;
+      xed_ins = std::get<MAP_XED>(xed_tuple).get();
+      InstInfo& _info = (use_info_a ? inst_info_a : inst_info_b);
+      InstInfo& _prior = (use_info_a ? inst_info_b : inst_info_a);
+      auto& ins = _prior; // have to do this for the macros to work
+      bool changes_cf = ins.ins && INS_ChangeControlFlow(ins);
+      bool incorrect_branch = ins.ins && INS_IsDirectBranchOrCall(ins) && next_line.pc != INS_DirectBranchOrCallTargetAddress(ins) && next_line.pc != (ins.pc + INS_Size(ins));
+    if(incorrect_branch) {
+        std::cout << "branch " << INS_Address(ins) << " is incorrect!" << std::endl;
+        std::cout << "xed target: " << INS_DirectBranchOrCallTargetAddress(ins) << " next pc: " << next_line.pc << std::endl;
     }
-    bool unknown_type, cond_branch;
-    int mem_ops_;
-    xed_decoded_inst_t *xed_ins;
-    auto &xed_tuple = (*xed_map_iter).second;
-    tie(mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) =
-        xed_tuple;
-    xed_ins = std::get<MAP_XED>(xed_tuple).get();
-    InstInfo& _info = (use_info_a ? inst_info_a : inst_info_b);
-    InstInfo& _prior = (use_info_a ? inst_info_b : inst_info_a);
-    auto& ins = _prior; // have to do this for the macros to work
-    bool changes_cf = ins.ins && INS_ChangeControlFlow(ins);
-    if(_prior.valid && (!changes_cf || INS_Category(ins) == XC(SYSCALL)) && next_line.pc != _prior.pc + xed_decoded_inst_get_length(_prior.ins)) {
+    inst_count[0];
+    if(_prior.valid && (!changes_cf || INS_Category(ins) == XC(SYSCALL) || incorrect_branch) && next_line.pc != _prior.pc + xed_decoded_inst_get_length(_prior.ins)) {
         std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a jump to " << std::hex << next_line.pc << std::endl;
-        xed_decoded_inst_t* new_inst = createJmp(next_line.pc - _prior.pc);
+        int64_t diff = std::max(next_line.pc, _prior.pc) - std::min(next_line.pc, _prior.pc);
+        if(next_line.pc < _prior.pc)
+            diff *= -1;
+        std::cout << "Jump: " << diff << std::endl;
+        xed_decoded_inst_t* new_inst = createJmp(diff);
         _prior.ins = new_inst;
+        _prior.static_target = next_line.pc;
     } else if (_prior.valid && xed_decoded_inst_get_attribute(ins.ins, XED_ATTRIBUTE_REP) > 0) {
         // repz insns aren't supported, so just nop them
         auto length = xed_decoded_inst_get_length(_prior.ins);
@@ -186,6 +198,7 @@ public:
     _info.pid = 1;
     _info.tid = 1;
     _info.target = 0; // Set when the next instruction is evaluated
+    _info.static_target = 0; // Set when the next instruction is evaluated
     _prior.target = _info.pc;
     _info.taken =
         cond_branch; // Patched when the next instruction is evaluated
@@ -202,7 +215,8 @@ public:
       _info.mem_used[i] = true;
     }
     // TODO add this?
-    // _prior.taken = _info.pc != (_prior.pc + _prior.isize);
+    if(_prior.valid)
+        _prior.taken = _info.pc != (_prior.pc + INS_Size(ins));
     return false;
   }
   TraceReaderPT(

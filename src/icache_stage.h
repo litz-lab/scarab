@@ -132,6 +132,9 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr);
 void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
 Flag icache_off_path(void);
 
+// For branch stat collection
+Flag in_icache(Addr addr);
+
 /**************************************************************************************/
 
 #endif /* #ifndef __ICACHE_STAGE_H__ */

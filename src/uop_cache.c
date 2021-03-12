@@ -181,7 +181,7 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
     }
     return TRUE;
   } else if (INF_SIZE_UOP_CACHE || INF_SIZE_UOP_CACHE_PW_SIZE_LIM) {
-    return (Flag) hash_table_access(&inf_size_uop_cache, pc);
+    return hash_table_access(&inf_size_uop_cache, pc) != NULL;
   }
   if (UOP_CACHE_SIZE == 0) {
     return FALSE;

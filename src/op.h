@@ -98,12 +98,16 @@ typedef struct Per_Branch_Stat_struct {
   Addr target;
   int bpu_hit_uc_hit;
   int bpu_hit_uc_miss;
+  int bpu_hit_uc_ic_miss;
   int mispred_uc_hit;
   int mispred_uc_miss;
+  int mispred_uc_ic_miss;   // mispred that miss in both uc and ic
   int misfetch_uc_hit;
   int misfetch_uc_miss;
+  int misfetch_uc_ic_miss;
   int btb_miss_uc_hit;
   int btb_miss_uc_miss;
+  int btb_miss_uc_ic_miss;
   int recover_redirect_extra_fetch_latency; // extra stall cycles due to target not being in UC
 } Per_Branch_Stat;
 

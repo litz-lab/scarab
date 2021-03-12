@@ -275,6 +275,16 @@ void debug_icache_stage() {
 }
 
 /**************************************************************************************/
+/* in_icache: returns whether instr in icache 
+ *            Used for branch stat collection
+ */
+
+Flag in_icache(Addr addr) {
+  Addr line_addr;
+  return cache_access(&ic->icache, addr, &line_addr, FALSE) != NULL;
+}
+
+/**************************************************************************************/
 /* lookup_cache: returns instr if found in either uop cache or icache 
  *                If icache miss but UC hit, set ic->line to non-null  
  */

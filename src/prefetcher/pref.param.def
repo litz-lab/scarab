@@ -126,3 +126,11 @@ DEF_PARAM( pref_hfilter_use_pc             , PREF_HFILTER_USE_PC     , Flag     
 DEF_PARAM( pref_hfilter_pred_useless_thres , PREF_HFILTER_PRED_USELESS_THRES, uns8     , uns8               , 2        ,    )
 DEF_PARAM( pref_hfilter_reset_enable       , PREF_HFILTER_RESET_ENABLE, Flag           , Flag               , FALSE    ,    )
 DEF_PARAM( pref_hfilter_reset_interval     , PREF_HFILTER_RESET_INTERVAL, uns          , uns                , 100000   ,    )      
+
+/* FDIP Frontend Prefetcher */
+
+DEF_PARAM(fdip_enable, FDIP_ENABLE, uns, uns, 1, )
+DEF_PARAM(fdip_break_icache, FDIP_BREAK_ICACHE, uns, uns, 1, )
+DEF_PARAM(fdip_max_runahead, FDIP_MAX_RUNAHEAD, uns, uns, 32, )
+DEF_PARAM(fdip_pref_per_cyc, FDIP_PREF_PER_CYC, uns, uns, 1, )
+DEF_PARAM(fdip_bp_per_cyc, FDIP_BP_PER_CYC, uns, uns, 4, )

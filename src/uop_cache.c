@@ -64,11 +64,11 @@ Hash_Table inf_size_uop_cache;
 /* init_uop_cache */
 
 void init_uop_cache() {
-  if (UOP_CACHE_SIZE == 0) {
-    return;
-  }
   if (INF_SIZE_UOP_CACHE || INF_SIZE_UOP_CACHE_PW_SIZE_LIM) {
     init_hash_table(&inf_size_uop_cache, "infinite sized uop cache", 15000000, sizeof(int));
+  }
+  if (UOP_CACHE_SIZE == 0) {
+    return;
   }
   init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
              UOP_CACHE_LINE_DATA_SIZE, REPL_TRUE_LRU);

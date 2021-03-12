@@ -37,7 +37,6 @@
 
 #include "bp//bp_conf.h"
 #include "bp/bp.h"
-//#include "bp/bp_dir_mech.h"
 #include "bp/bp_targ_mech.h"
 #include "bp/cbp_to_scarab.h"
 #include "bp/gshare.h"
@@ -47,6 +46,7 @@
 #include "model.h"
 #include "thread.h"
 #include "uop_cache.h"
+#include "icache_stage.h"
 
 #include "bp/bp.param.h"
 #include "core.param.h"
@@ -205,6 +205,7 @@ void inc_bstat_fetched(Op* op) {
       bstat->bpu_hit_uc_hit += 1;
     }else {
       bstat->bpu_hit_uc_miss += 1;
+      if (!in_icache(op->inst_info->addr)) bstat->bpu_hit_uc_ic_miss += 1;
     }
   }
 
@@ -222,14 +223,23 @@ void inc_bstat_miss(Op* op, Flag uc_hit) {
   const uns8 btb_miss = op->oracle_info.btb_miss;
   ASSERT(bp_recovery_info->proc_id, mispred || misfetch || btb_miss);
 
+  const Flag in_ic = in_icache(op->inst_info->addr);
+
   if (uc_hit) {
     if (mispred)        bstat->mispred_uc_hit += 1;
     else if (misfetch)  bstat->misfetch_uc_hit += 1;
     else                bstat->btb_miss_uc_hit += 1;
   } else {
-    if (mispred)        bstat->mispred_uc_miss += 1;
-    else if (misfetch)  bstat->misfetch_uc_miss += 1;
-    else                bstat->btb_miss_uc_miss += 1;
+    if (mispred) {
+      bstat->mispred_uc_miss += 1;
+      if (!in_ic) bstat->mispred_uc_ic_miss += 1;
+    } else if (misfetch) {
+      bstat->misfetch_uc_miss += 1;
+      if (!in_ic) bstat->misfetch_uc_ic_miss += 1;
+    } else {
+      bstat->btb_miss_uc_miss += 1;
+      if (!in_ic) bstat->btb_miss_uc_ic_miss += 1;
+    }
     bstat->recover_redirect_extra_fetch_latency += ICACHE_LATENCY - UOP_CACHE_LATENCY;
   }
 }

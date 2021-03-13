@@ -90,7 +90,7 @@ void patch_oracle_info(Op *op, Op *req, Addr bp_pc) {
     Op_Info *op_info = &op->oracle_info;
     Op_Info *req_info = &req->oracle_info;
 
-    op_info->pred_addr = bp_pc;
+    op_info->pred_addr = req_info->pred_addr;
     op_info->btb_miss_resolved = req_info->btb_miss_resolved;
 
     op_info->pred_npc = req_info->pred_npc;   // predicted next pc field

@@ -66,6 +66,7 @@ DEF_PARAM( lbr_capacity                 , LBR_CAPACITY              , uns    , u
 DEF_PARAM( btb_prefetch_buffer_size     , BTB_PREFETCH_BUFFER_SIZE  , uns    , uns   , 32        ,       )
 DEF_PARAM( btb_prefetch_buffer_assoc    , BTB_PREFETCH_BUFFER_ASSOC , uns    , uns   , 32        ,       )
 DEF_PARAM( max_btb_prefetch_depth       , MAX_BTB_PREFETCH_DEPTH    , uns    , uns   ,  4        ,       )
+DEF_PARAM( footprint                   , FOOTPRINT                , char * , string    , NULL      ,       )
 DEF_PARAM( heartbeat_interval           , HEARTBEAT_INTERVAL        , uns    , uns       , 1000000  ,       ) 
 DEF_PARAM( num_heartbeats               , NUM_HEARTBEATS            , uns    , uns       , 0        ,       ) 
  

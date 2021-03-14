@@ -23,6 +23,7 @@
 
 #include <iostream>
 #include <bits/stdc++.h>
+#include <boost/algorithm/string.hpp>
 
 extern "C" {
 #include "debug/debug_macros.h"
@@ -45,12 +46,15 @@ extern "C" {
 #include "statistics.h"
 }
 
+#define panic(...) printf(__VA_ARGS__)
+
 // My data structures
 std::unordered_map<Addr,std::unordered_map<Addr,uint64_t>> branch_target_sets;
 std::unordered_map<Addr,uint64_t> branch_pc_counts;
 std::deque<Addr> last_32_branches;
 std::unordered_map<Addr,std::set<uint64_t>> predecessor_miss_index;
 std::unordered_map<Addr,std::set<Addr>> prefetch_list;
+std::unordered_map<Addr,std::unordered_map<Addr,Addr>> prefetch_footprint;
 std::vector<Addr> btb_miss_list;
 uint64_t btb_lookup_count;
 uint64_t btb_update_count;
@@ -128,8 +132,13 @@ void find_prefetch_candidates() {
   inverse_predecessor_miss_index.clear();
 }
 
+bool is_good_cf(Cf_Type type) {
+  if(type==CF_BR||type==CF_CBR||type==CF_CALL)return true;
+  return false;
+}
+
 void update_metadata(Op* op) {
-  if (operating_mode != SIMULATION_MODE) {
+  if (false && operating_mode != SIMULATION_MODE && is_good_cf(op->table_info->cf_type)) {
     // warmup update meta data part
     // begin
     Addr branch_pc = op->oracle_info.pred_addr;
@@ -161,7 +170,27 @@ void update_metadata(Op* op) {
 }
 
 void perform_prefetch(Bp_Data* bp_data, Op* op) {
-  if (operating_mode == SIMULATION_MODE) {
+  if(prefetch_footprint.count(op->oracle_info.target)) {
+    Addr btb_line_addr;
+    uint64_t prefetched_count=0;
+    for(const auto &kv: prefetch_footprint[op->oracle_info.target]) {
+      auto prefetched_branch_pc = kv.first;
+      auto prefetched_target = kv.second;
+      if(cache_access(&prefetch_buffer, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
+        Addr repl_line_addr;
+        Addr *btb_line  = (Addr*)cache_insert_replpos(&prefetch_buffer, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
+        *btb_line = prefetched_target;
+      }
+    }
+    if (prefetched_count) {
+      total_predecessor_count += 1;
+      total_prefetch_count += prefetched_count;
+      if (!(total_predecessor_count % 10000)) {
+        printf("BTB-Prefetch: %lu %lu %lu\n",total_predecessor_count, total_prefetch_count, total_prefetch_hit_count);
+      }
+    }
+  }
+  if (false && operating_mode == SIMULATION_MODE && is_good_cf(op->table_info->cf_type)) {
     // Prefetching part
     // begin
     Addr branch_pc = op->oracle_info.pred_addr;
@@ -196,6 +225,17 @@ void perform_prefetch(Bp_Data* bp_data, Op* op) {
   }
 }
 
+void read_full_file(std::string file_path, std::vector<std::string> &data_destination)
+{
+  std::ifstream infile(file_path);
+  std::string line;
+  data_destination.clear();
+  while(std::getline(infile, line)) {
+    data_destination.push_back(line);
+  }
+  infile.close();
+}
+
 void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
   printf("Initializing pgo btb with fanout %u\n", FANOUT);
   init_cache(&bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr),
@@ -213,6 +253,35 @@ void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
   total_predecessor_count = 0;
   total_prefetch_hit_count = 0;
   has_simulation_started = false;
+  if (FOOTPRINT) {
+    std::cout<<FOOTPRINT<<std::endl;
+    std::vector<std::string> all_strings;
+    read_full_file(FOOTPRINT,all_strings);
+    std::cout<<all_strings.size()<<std::endl;
+    for(uint64_t j = 1; j < all_strings.size(); j++) {
+      std::string line = all_strings[j];
+      //boost::trim_if(line, boost::is_any_of("\n"));
+      std::vector<std::string> parsed;
+      boost::split(parsed, line, boost::is_any_of(" "),boost::token_compress_on);
+      //std::cout<<parsed.size()<<' '<<j<<std::endl;
+      std::cout<<j<<' '<<line<<std::endl;
+      if(parsed.size()<3) {
+        panic("PGOBTB: boost parse error");
+        throw "Could not parse prefetch file";
+      }
+      uint64_t function_start = strtoul(parsed[0].c_str(), NULL, 10);
+      uint64_t function_end = strtoul(parsed[1].c_str(), NULL, 10);
+      uint64_t entry_count = strtoul(parsed[2].c_str(), NULL, 10);
+      prefetch_footprint[function_start] =std::unordered_map<Addr,Addr>();
+      for(int i = 0; i<entry_count; i++) {
+        uint64_t pc = strtoul(parsed[3+2*i].c_str(), NULL, 10);
+        uint64_t target = strtoul(parsed[3+1+2*i].c_str(), NULL, 10);
+        prefetch_footprint[function_start][pc]=target;
+      }
+    }
+    printf("Initializing prefetch footprint with size %u\n", prefetch_footprint.size());
+    all_strings.clear();
+  }
 }
 
 Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {

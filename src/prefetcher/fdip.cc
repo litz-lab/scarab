@@ -83,7 +83,7 @@ void patch_oracle_info(Op *op, Op *req, Addr bp_pc) {
     op->recovery_info.new_dir = op->oracle_info.dir;
     op->recovery_info.op_num = op->op_num;
     op->recovery_info.PC = op->inst_info->addr;
-    ASSERT(0, op->recovery_info.cf_type == op->table_info->cf_type);
+    //ASSERT(0, op->recovery_info.cf_type == op->table_info->cf_type);
     op->recovery_info.oracle_dir = op->oracle_info.dir;
     op->recovery_info.branchTarget = op->oracle_info.target;
 
@@ -185,7 +185,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
 	else {
 	    ASSERT(0, !op->oracle_info.mispred && !op->oracle_info.misfetch);
 	}
-	ASSERT(0,req->target);
+	//ASSERT(0,req->target);
 	if (req->prefetched) {
 	    STAT_EVENT(ic_stage->proc_id, FDIP_PREF_CORRECT_PATH);
 	    INC_STAT_EVENT(ic_stage->proc_id, FDIP_SAVED_PREF_CYC,
@@ -317,6 +317,7 @@ void fdip_update() {
     // runahead PC
     while (predicts < FDIP_BP_PER_CYC && prefetches < FDIP_PREF_PER_CYC &&
 	   runahead_pc <= fdip_break_addr_top &&
+	   ftq.size()<FDIP_MAX_RUNAHEAD &&
 	   runahead_pc >= fdip_break_addr_bottom) {
 	auto op_iter = pc_to_op.find(runahead_pc);
 	if (op_iter != pc_to_op.end()) {

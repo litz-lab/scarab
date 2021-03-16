@@ -84,6 +84,9 @@ void patch_oracle_info(Op *op, Op *req, Addr bp_pc) {
     op->recovery_info.op_num = op->op_num;
     op->recovery_info.PC = op->inst_info->addr;
     //ASSERT(0, op->recovery_info.cf_type == op->table_info->cf_type);
+    /*if(op->recovery_info.cf_type != op->table_info->cf_type) {
+      printf("TanvirAssertion1: %llu %llu %s %s\n", op->fetch_addr, op->pred_addr, cf_type_names[op->recovery_info.cf_type], cf_type_names[op->table_info->cf_type]);
+    }*/
     op->recovery_info.oracle_dir = op->oracle_info.dir;
     op->recovery_info.branchTarget = op->oracle_info.target;
 
@@ -186,6 +189,9 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
 	    ASSERT(0, !op->oracle_info.mispred && !op->oracle_info.misfetch);
 	}
 	//ASSERT(0,req->target);
+	/*if(!(req->target)) {
+	  printf("TanvirAssertion2: %llu %llu %s %s\n", req->op.fetch_addr, req->op.pred_addr, cf_type_names[req->op.recovery_info.cf_type], cf_type_names[req->op.table_info->cf_type]);// op->fetch_addr, op->pred_addr, cf_type_names[op->recovery_info.cf_type], cf_type_names[op->table_info->cf_type]);
+	}*/
 	if (req->prefetched) {
 	    STAT_EVENT(ic_stage->proc_id, FDIP_PREF_CORRECT_PATH);
 	    INC_STAT_EVENT(ic_stage->proc_id, FDIP_SAVED_PREF_CYC,

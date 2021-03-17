@@ -25,6 +25,8 @@
 #include <bits/stdc++.h>
 #include <boost/algorithm/string.hpp>
 
+using namespace std;
+
 extern "C" {
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
@@ -56,16 +58,19 @@ Cache shotgun_prefetch_buffer;
 Cache ubtb;
 Cache cbtb;
 Cache rib;
+unordered_map<Addr,vector<unordered_map<Addr,Addr>>> call_footprints;
+unordered_map<Addr,vector<unordered_map<Addr,Addr>>> return_footprints;
+bool is_return = false;
+Addr last_unconditional_branch_pc = 0;
 
 void bp_btb_shotgun_init(Bp_Data* bp_data) {
+  printf("Initializing shotgun btb with %d u-btb entries, %d c-btb entries, and %d rib entries. The shotgun prefetch buffer size is %d and associativity is %d.\n", 4852, 404, 1620, BTB_PREFETCH_BUFFER_SIZE, BTB_PREFETCH_BUFFER_ASSOC);
   // btb line size set to 1
   printf("Init shotgun btb\n");
-  init_cache(&ubtb, "U-BTB", 4852, BTB_ASSOC, 1, sizeof(Addr),
-             REPL_TRUE_LRU);
-  init_cache(&cbtb, "C-BTB", 404, BTB_ASSOC, 1, sizeof(Addr),
-             REPL_TRUE_LRU);
-  init_cache(&rib, "RIB", 1620, BTB_ASSOC, 1, sizeof(Addr),
-             REPL_TRUE_LRU);
+  init_cache(&ubtb, "U-BTB", 4852, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  init_cache(&cbtb, "C-BTB", 404, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  init_cache(&rib, "RIB", 1620, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  init_cache(&shotgun_prefetch_buffer, "Shotgun-prefetch-buffer", BTB_PREFETCH_BUFFER_SIZE, BTB_PREFETCH_BUFFER_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
 }
 
 
@@ -73,16 +78,27 @@ void bp_btb_shotgun_init(Bp_Data* bp_data) {
 /* bp_btb_shotgun_pred: */
 
 Addr* bp_btb_shotgun_pred(Bp_Data* bp_data, Op* op) {
+  Addr line_addr;
   Cache *tmp;
+  Addr branch_pc = op->oracle_info.pred_addr;
   if (op->table_info->cf_type == CF_CBR) {
     tmp = &cbtb;
+    if (cache_access(tmp, branch_pc, &line_addr, TRUE)==nullptr) {
+      Addr* pb_result = (Addr*)cache_access(&shotgun_prefetch_buffer, branch_pc, &line_addr, FALSE);
+      if (pb_result!=nullptr) {
+        Addr *btb_line, btb_line_addr, repl_line_addr;
+        btb_line  = (Addr*)cache_insert(&cbtb, bp_data->proc_id, branch_pc,&btb_line_addr,&repl_line_addr);
+        *btb_line = *pb_result;
+        cache_invalidate(&shotgun_prefetch_buffer, branch_pc, &line_addr);
+        STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_HIT);
+      }
+    }
   } else if (op->table_info->cf_type == CF_RET) {
     tmp = &rib;
   } else {
     tmp = &ubtb;
   }
-  Addr line_addr;
-  Addr* result = PERFECT_BTB ? &op->oracle_info.target : (Addr*)cache_access(tmp, op->oracle_info.pred_addr,&line_addr, TRUE);
+  Addr* result = PERFECT_BTB ? &op->oracle_info.target : (Addr*)cache_access(tmp, branch_pc,&line_addr, TRUE);
   return result;
 }
 
@@ -105,9 +121,76 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   if(BTB_OFF_PATH_WRITES || !op->off_path) {
     STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
+    if((Addr*)cache_access(&shotgun_prefetch_buffer, fetch_addr, &btb_line_addr, FALSE) != nullptr) {
+      cache_invalidate(&shotgun_prefetch_buffer, fetch_addr, &btb_line_addr);
+    }
     btb_line  = (Addr*)cache_insert(tmp, bp_data->proc_id, fetch_addr,
                                    &btb_line_addr, &repl_line_addr);
     *btb_line = op->oracle_info.target;
     ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
+  }
+
+  if ((last_unconditional_branch_pc != 0) && (op->table_info->cf_type == CF_CBR)) {
+    // continue adding to the current recording and current call/return
+    if (is_return) {
+      return_footprints[last_unconditional_branch_pc][return_footprints[last_unconditional_branch_pc].size()-1][fetch_addr]=op->oracle_info.target;
+    } else {
+      call_footprints[last_unconditional_branch_pc][call_footprints[last_unconditional_branch_pc].size()-1][fetch_addr]=op->oracle_info.target;
+    }
+  }
+  if (op->table_info->cf_type != CF_CBR) {
+    // either start a new recording or switch from call to return
+    if (op->table_info->cf_type == CF_RET) {
+      is_return = true;
+      if (!return_footprints.count(last_unconditional_branch_pc)) {
+        return_footprints[last_unconditional_branch_pc]=vector<unordered_map<Addr,Addr>>();
+      } else if (return_footprints[last_unconditional_branch_pc][return_footprints[last_unconditional_branch_pc].size()-1].size() > 0) {
+        // prefetch all previous entries that are within [-2,5] cache line distance from this branch pc's cache line
+        Addr cl = last_unconditional_branch_pc;
+        cl = cl >> 6;
+        Addr left = cl-2;
+        Addr right = cl+6;
+        for(const auto &kv: return_footprints[last_unconditional_branch_pc][return_footprints[last_unconditional_branch_pc].size()-1]) {
+          Addr p_br_pc = kv.first;
+          Addr p_br_target = kv.second;
+          Addr p_br_cl = p_br_pc >> 6;
+          if (p_br_cl>= left && p_br_cl <=right) {
+            if(cache_access(&shotgun_prefetch_buffer, p_br_pc, &btb_line_addr, FALSE)==NULL && cache_access(&cbtb, p_br_pc, &btb_line_addr, FALSE)==NULL) {
+              Addr repl_line_addr;
+              Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,p_br_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
+              *btb_line = p_br_target;
+            }
+          }
+        }
+        return_footprints[last_unconditional_branch_pc].clear();
+      }
+      return_footprints[last_unconditional_branch_pc].push_back(unordered_map<Addr,Addr>());
+    } else if ((op->table_info->cf_type == CF_CALL) || (op->table_info->cf_type == CF_BR)) {
+      is_return = false;
+      last_unconditional_branch_pc = fetch_addr;
+      if (!call_footprints.count(last_unconditional_branch_pc)) {
+        call_footprints[last_unconditional_branch_pc]=vector<unordered_map<Addr,Addr>>();
+      } else if (call_footprints[last_unconditional_branch_pc][call_footprints[last_unconditional_branch_pc].size()-1].size() > 0) {
+        // prefetch all previous entries that are within [-2,5] cache line distance from this branch target's cache line
+        Addr cl = op->oracle_info.target;
+        cl = cl >> 6;
+        Addr left = cl-2;
+        Addr right = cl+6;
+        for(const auto &kv: call_footprints[last_unconditional_branch_pc][call_footprints[last_unconditional_branch_pc].size()-1]) {
+          Addr p_br_pc = kv.first;
+          Addr p_br_target = kv.second;
+          Addr p_br_cl = p_br_pc >> 6;
+          if (p_br_cl>= left && p_br_cl <=right) {
+            if(cache_access(&shotgun_prefetch_buffer, p_br_pc, &btb_line_addr, FALSE)==NULL && cache_access(&cbtb, p_br_pc, &btb_line_addr, FALSE)==NULL) {
+              Addr repl_line_addr;
+              Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,p_br_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
+              *btb_line = p_br_target;
+            }
+          }
+        }
+        call_footprints[last_unconditional_branch_pc].clear();
+      }
+      call_footprints[last_unconditional_branch_pc].push_back(unordered_map<Addr,Addr>());
+    }
   }
 }

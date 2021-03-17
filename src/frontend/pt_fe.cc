@@ -171,6 +171,9 @@ void pt_init(void) {
   init_x87_stack_delta();
 
   pt_next_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));
+  for(int i = 0; i < MAX_NUM_PROCS; ++i) {
+      pt_trace_readers[i] = nullptr;
+  }
 
   /* temp variable needed for easy initialization syntax */
   char* tmp_trace_files[MAX_NUM_PROCS] = {
@@ -247,6 +250,9 @@ void pt_close_trace_file(uns proc_id) {
 
 void pt_done() {
   printf("Frontend simulation finished for all PTs\n");
+  for(int i = 0; i < MAX_NUM_PROCS; ++i) {
+      delete pt_trace_readers[i];
+  }
 }
 
 void pt_setup(uns proc_id) {

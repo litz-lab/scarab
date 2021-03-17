@@ -59,6 +59,8 @@ private:
   bool enable_code_bloat_effect = false;
   bool use_info_a = true; // true when filling info a, false when filling info b
   std::map<uint64_t, uint64_t> *prev_to_new_bbl_address_map = nullptr;
+  uint64_t num_nops_in_trace = 0, num_inserted_nops = 0;
+  uint64_t num_direct_brs_in_trace = 0, num_inserted_direct_brs = 0;
 
 public:
   bool read_next_line(PTInst &inst) {
@@ -167,13 +169,19 @@ public:
       InstInfo& _info = (use_info_a ? inst_info_a : inst_info_b);
       InstInfo& _prior = (use_info_a ? inst_info_b : inst_info_a);
       auto& ins = _prior; // have to do this for the macros to work
+      if(ins.ins) {
+          if(INS_Category(ins) == XED_CATEGORY_NOP) {
+                  ++num_nops_in_trace;
+          } else if (INS_IsDirectBranchOrCall(ins)) {
+              ++num_direct_brs_in_trace;
+          }
+      }
       bool changes_cf = ins.ins && INS_ChangeControlFlow(ins);
       bool incorrect_branch = ins.ins && INS_IsDirectBranchOrCall(ins) && next_line.pc != INS_DirectBranchOrCallTargetAddress(ins) && next_line.pc != (ins.pc + INS_Size(ins));
     if(incorrect_branch) {
         std::cout << "branch " << INS_Address(ins) << " is incorrect!" << std::endl;
         std::cout << "xed target: " << INS_DirectBranchOrCallTargetAddress(ins) << " next pc: " << next_line.pc << std::endl;
     }
-    inst_count[0];
     if(_prior.valid && (!changes_cf || INS_Category(ins) == XC(SYSCALL) || incorrect_branch) && next_line.pc != _prior.pc + xed_decoded_inst_get_length(_prior.ins)) {
         std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a jump to " << std::hex << next_line.pc << std::endl;
         int64_t diff = std::max(next_line.pc, _prior.pc) - std::min(next_line.pc, _prior.pc);
@@ -182,12 +190,14 @@ public:
         std::cout << "Jump: " << diff << std::endl;
         xed_decoded_inst_t* new_inst = createJmp(diff);
         _prior.ins = new_inst;
+        ++num_inserted_direct_brs;
         _prior.static_target = next_line.pc;
     } else if (_prior.valid && xed_decoded_inst_get_attribute(ins.ins, XED_ATTRIBUTE_REP) > 0) {
         // repz insns aren't supported, so just nop them
         auto length = xed_decoded_inst_get_length(_prior.ins);
         std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
         _prior.ins = createNop(length);
+        ++num_inserted_nops;
         if(_prior.pc == next_line.pc) {
             _info = _prior; // skip prior insn
             return true;
@@ -259,6 +269,8 @@ public:
     return true;
   }
   ~TraceReaderPT() {
+      std::cout << std::dec << "num trace nops: " << num_nops_in_trace << " , num added nops: " << num_inserted_nops << ", ratio: " << double(num_inserted_nops) / double(num_nops_in_trace) << std::endl;
+      std::cout << "num trace direct brs: " << num_direct_brs_in_trace << " , num added direct brs: " << num_inserted_direct_brs << ", ratio: " << double(num_inserted_direct_brs) / double(num_direct_brs_in_trace) << std::endl;
     if (raw_file != NULL)
       gzclose(raw_file);
   }

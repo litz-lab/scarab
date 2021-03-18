@@ -62,14 +62,15 @@ unordered_map<Addr,vector<unordered_map<Addr,Addr>>> call_footprints;
 unordered_map<Addr,vector<unordered_map<Addr,Addr>>> return_footprints;
 bool is_return = false;
 Addr last_unconditional_branch_pc = 0;
+stack<Addr> call_stack;
 
 void bp_btb_shotgun_init(Bp_Data* bp_data) {
   printf("Initializing shotgun btb with %d u-btb entries, %d c-btb entries, and %d rib entries. The shotgun prefetch buffer size is %d and associativity is %d.\n", 4852, 404, 1620, BTB_PREFETCH_BUFFER_SIZE, BTB_PREFETCH_BUFFER_ASSOC);
   // btb line size set to 1
   printf("Init shotgun btb\n");
-  init_cache(&ubtb, "U-BTB", 4852, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
-  init_cache(&cbtb, "C-BTB", 404, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
-  init_cache(&rib, "RIB", 1620, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  init_cache(&ubtb, "U-BTB", SHOTGUN_UBTB_SIZE, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  init_cache(&cbtb, "C-BTB", SHOTGUN_CBTB_SIZE, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  init_cache(&rib, "RIB", SHOTGUN_RIB_SIZE, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
   init_cache(&shotgun_prefetch_buffer, "Shotgun-prefetch-buffer", BTB_PREFETCH_BUFFER_SIZE, BTB_PREFETCH_BUFFER_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
 }
 
@@ -117,6 +118,11 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
   }
   Addr  fetch_addr = op->oracle_info.pred_addr;
   Addr *btb_line, btb_line_addr, repl_line_addr;
+  bool was_present = true;
+
+  if (op->table_info->cf_type == CF_CALL || op->table_info->cf_type == CF_ICALL) {
+    call_stack.push(fetch_addr);
+  }
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   if(BTB_OFF_PATH_WRITES || !op->off_path) {
@@ -124,6 +130,7 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
     if((Addr*)cache_access(&shotgun_prefetch_buffer, fetch_addr, &btb_line_addr, FALSE) != nullptr) {
       cache_invalidate(&shotgun_prefetch_buffer, fetch_addr, &btb_line_addr);
     }
+    was_present = (cache_access(tmp, fetch_addr, &btb_line_addr, FALSE) != nullptr);
     btb_line  = (Addr*)cache_insert(tmp, bp_data->proc_id, fetch_addr,
                                    &btb_line_addr, &repl_line_addr);
     *btb_line = op->oracle_info.target;
@@ -142,6 +149,11 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
     // either start a new recording or switch from call to return
     if (op->table_info->cf_type == CF_RET) {
       is_return = true;
+      if (call_stack.size()) {
+        last_unconditional_branch_pc = call_stack.top();
+        call_stack.pop();
+      }
+      was_present = (cache_access(&ubtb, last_unconditional_branch_pc, &btb_line_addr, FALSE) != nullptr);
       if (!return_footprints.count(last_unconditional_branch_pc)) {
         return_footprints[last_unconditional_branch_pc]=vector<unordered_map<Addr,Addr>>();
       } else if (return_footprints[last_unconditional_branch_pc][return_footprints[last_unconditional_branch_pc].size()-1].size() > 0) {
@@ -154,7 +166,7 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
           Addr p_br_pc = kv.first;
           Addr p_br_target = kv.second;
           Addr p_br_cl = p_br_pc >> 6;
-          if (p_br_cl>= left && p_br_cl <=right) {
+          if (p_br_cl>= left && p_br_cl <=right && was_present) {
             if(cache_access(&shotgun_prefetch_buffer, p_br_pc, &btb_line_addr, FALSE)==NULL && cache_access(&cbtb, p_br_pc, &btb_line_addr, FALSE)==NULL) {
               Addr repl_line_addr;
               Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,p_br_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
@@ -180,7 +192,7 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
           Addr p_br_pc = kv.first;
           Addr p_br_target = kv.second;
           Addr p_br_cl = p_br_pc >> 6;
-          if (p_br_cl>= left && p_br_cl <=right) {
+          if (p_br_cl>= left && p_br_cl <=right && was_present) {
             if(cache_access(&shotgun_prefetch_buffer, p_br_pc, &btb_line_addr, FALSE)==NULL && cache_access(&cbtb, p_br_pc, &btb_line_addr, FALSE)==NULL) {
               Addr repl_line_addr;
               Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,p_br_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);

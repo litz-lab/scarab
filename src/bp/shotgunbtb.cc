@@ -175,7 +175,7 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
       return_footprints[last_unconditional_branch_pc].push_back(unordered_map<Addr,Addr>());
     } else if ((op->table_info->cf_type == CF_CALL) || (op->table_info->cf_type == CF_BR)) {
       is_return = false;
-      last_unconditional_branch_pc = op->oracle_info.target;
+      last_unconditional_branch_pc = fetch_addr;
       if (!call_footprints.count(last_unconditional_branch_pc)) {
         call_footprints[last_unconditional_branch_pc]=vector<unordered_map<Addr,Addr>>();
       } else if (call_footprints[last_unconditional_branch_pc][call_footprints[last_unconditional_branch_pc].size()-1].size() > 0) {

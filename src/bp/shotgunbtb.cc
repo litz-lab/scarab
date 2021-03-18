@@ -84,7 +84,7 @@ Addr* bp_btb_shotgun_pred(Bp_Data* bp_data, Op* op) {
   Addr branch_pc = op->oracle_info.pred_addr;
   if (op->table_info->cf_type == CF_CBR) {
     tmp = &cbtb;
-    if (cache_access(tmp, branch_pc, &line_addr, TRUE)==nullptr) {
+    /*if (cache_access(tmp, branch_pc, &line_addr, TRUE)==nullptr) {
       Addr* pb_result = (Addr*)cache_access(&shotgun_prefetch_buffer, branch_pc, &line_addr, FALSE);
       if (pb_result!=nullptr) {
         Addr *btb_line, btb_line_addr, repl_line_addr;
@@ -93,7 +93,7 @@ Addr* bp_btb_shotgun_pred(Bp_Data* bp_data, Op* op) {
         cache_invalidate(&shotgun_prefetch_buffer, branch_pc, &line_addr);
         STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_HIT);
       }
-    }
+    }*/
   } else if (op->table_info->cf_type == CF_RET) {
     tmp = &rib;
   } else {
@@ -118,11 +118,11 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
   } else {
     tmp = &ubtb;
   }
-  bool was_present = true;
+  /*bool was_present = true;
 
   if (op->table_info->cf_type == CF_CALL || op->table_info->cf_type == CF_ICALL) {
     call_stack.push(fetch_addr);
-  }
+  }*/
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   if(BTB_OFF_PATH_WRITES || !op->off_path) {
@@ -130,14 +130,14 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
     if((Addr*)cache_access(&shotgun_prefetch_buffer, fetch_addr, &btb_line_addr, FALSE) != nullptr) {
       cache_invalidate(&shotgun_prefetch_buffer, fetch_addr, &btb_line_addr);
     }
-    was_present = (cache_access(tmp, fetch_addr, &btb_line_addr, FALSE) != nullptr);
+    //was_present = (cache_access(tmp, fetch_addr, &btb_line_addr, FALSE) != nullptr);
     btb_line  = (Addr*)cache_insert(tmp, bp_data->proc_id, fetch_addr,
                                    &btb_line_addr, &repl_line_addr);
     *btb_line = op->oracle_info.target;
     ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
   }
 
-  if ((last_unconditional_branch_pc != 0) && (op->table_info->cf_type == CF_CBR)) {
+  /*if ((last_unconditional_branch_pc != 0) && (op->table_info->cf_type == CF_CBR)) {
     // continue adding to the current recording and current call/return
     if (is_return) {
       return_footprints[last_unconditional_branch_pc][return_footprints[last_unconditional_branch_pc].size()-1][fetch_addr]=op->oracle_info.target;
@@ -202,5 +202,5 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
       }
       call_footprints[last_unconditional_branch_pc].push_back(unordered_map<Addr,Addr>());
     }
-  }
+  }*/
 }

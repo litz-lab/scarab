@@ -63,6 +63,8 @@ uint64_t total_predecessor_count;
 uint64_t total_prefetch_hit_count;
 Cache prefetch_buffer;
 bool has_simulation_started;
+Addr current_function_start;
+std::stack<Addr> function_call_stack;
 
 bool is_single_pair_btb_entry(Addr branch_pc) {
   return branch_target_sets.count(branch_pc);
@@ -170,24 +172,36 @@ void update_metadata(Op* op) {
 }
 
 void perform_prefetch(Bp_Data* bp_data, Op* op) {
-  if(prefetch_footprint.count(op->oracle_info.target)) {
+  Addr next_target = 0;
+  if (op->table_info->cf_type == CF_RET) {
+    if (!function_call_stack.empty()) {
+      current_function_start = function_call_stack.top();
+      function_call_stack.pop();
+      next_target = current_function_start;
+    }
+  } else {
+    next_target = op->oracle_info.target;
+  }
+  if(prefetch_footprint.count(next_target)) {
     Addr btb_line_addr;
     uint64_t prefetched_count=0;
-    for(const auto &kv: prefetch_footprint[op->oracle_info.target]) {
+    if (current_function_start != 0) {
+      function_call_stack.push(current_function_start);
+    }
+    current_function_start = next_target;
+    for(const auto &kv: prefetch_footprint[next_target]) {
       auto prefetched_branch_pc = kv.first;
       auto prefetched_target = kv.second;
       if(cache_access(&prefetch_buffer, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
         Addr repl_line_addr;
         Addr *btb_line  = (Addr*)cache_insert_replpos(&prefetch_buffer, bp_data->proc_id,prefetched_branch_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
         *btb_line = prefetched_target;
+        prefetched_count += 1;
       }
     }
     if (prefetched_count) {
-      total_predecessor_count += 1;
-      total_prefetch_count += prefetched_count;
-      if (!(total_predecessor_count % 10000)) {
-        printf("BTB-Prefetch: %lu %lu %lu\n",total_predecessor_count, total_prefetch_count, total_prefetch_hit_count);
-      }
+      INC_STAT_EVENT(op->proc_id, PGO_BTB_PREFETCH_CNT, prefetched_count);
+      STAT_EVENT(op->proc_id, PGO_BTB_CANDIDATE_CNT);
     }
   }
   if (false && operating_mode == SIMULATION_MODE && is_good_cf(op->table_info->cf_type)) {
@@ -253,6 +267,7 @@ void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
   total_predecessor_count = 0;
   total_prefetch_hit_count = 0;
   has_simulation_started = false;
+  current_function_start = 0;
   if (FOOTPRINT) {
     std::cout<<FOOTPRINT<<std::endl;
     std::vector<std::string> all_strings;
@@ -296,7 +311,7 @@ Addr* bp_btb_pgobtb_pred(Bp_Data* bp_data, Op* op) {
       btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, branch_pc,&btb_line_addr,&repl_line_addr);
       *btb_line = *result;
       result = btb_line;
-      total_prefetch_hit_count += 1;
+      STAT_EVENT(op->proc_id, PGO_BTB_PREFETCH_HIT);
       cache_invalidate(&prefetch_buffer, branch_pc, &line_addr);
     }
   }

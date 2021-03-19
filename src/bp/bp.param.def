@@ -161,3 +161,4 @@ DEF_PARAM( footprint                   , FOOTPRINT                 , char * , st
 DEF_PARAM( shotgun_ubtb_size           , SHOTGUN_UBTB_SIZE         , uns    , uns   , 4852      ,       )
 DEF_PARAM( shotgun_cbtb_size           , SHOTGUN_CBTB_SIZE         , uns    , uns   , 404       ,       )
 DEF_PARAM( shotgun_rib_size            , SHOTGUN_RIB_SIZE           , uns    , uns   , 1620     ,       )
+DEF_PARAM(shotgun_confluence_enable    , SHOTGUN_CONFLUENCE_ENABLE, Flag, Flag, FALSE, )

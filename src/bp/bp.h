@@ -278,6 +278,7 @@ void bp_sched_redirect(Bp_Recovery_Info*, Op*, Counter);
 
 void init_bp_data(uns8, Bp_Data*);
 Addr bp_predict_op(Bp_Data*, Op*, uns, Addr);
+Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction);
 void bp_target_known_op(Bp_Data*, Op*);
 void bp_resolve_op(Bp_Data*, Op*);
 void bp_retire_op(Bp_Data*, Op*);

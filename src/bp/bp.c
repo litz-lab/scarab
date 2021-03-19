@@ -52,6 +52,9 @@
 #include "frontend/pin_trace_fe.h"
 #include "statistics.h"
 
+#include "prefetcher/fdip.h"
+#include "prefetcher/pref.param.h"
+
 /******************************************************************************/
 /* include the table of possible branch predictors */
 
@@ -341,7 +344,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     pred_target               = op->oracle_info.target;
   }
   // }}}
-
   // {{{ handle predictions for individual cf types
   switch(op->table_info->cf_type) {
     case CF_BR:
@@ -475,7 +477,20 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 
   const Addr prediction = op->oracle_info.pred ? pred_target : pc_plus_offset;
   op->oracle_info.pred_npc = prediction;
-  // If the direction prediction is wrong, but next address happens to be right
+  if(USE_LATE_BP) {
+    const Addr late_prediction = op->oracle_info.late_pred ? pred_target :
+      pc_plus_offset;
+    op->oracle_info.late_pred_npc = late_prediction;
+  }
+
+  return prediction;
+}
+
+/* Separate performing branch prediction from evaluating the prediction into
+ * two functions, enabling FDIP.
+ */
+Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction) {
+// If the direction prediction is wrong, but next address happens to be right
   // anyway, do not treat this as a misprediction.
   op->oracle_info.mispred = (op->oracle_info.pred != op->oracle_info.dir) &&
                             (prediction != op->oracle_info.npc);
@@ -483,9 +498,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
                              prediction != op->oracle_info.npc;
 
   if(USE_LATE_BP) {
-    const Addr late_prediction = op->oracle_info.late_pred ? pred_target :
-                                                             pc_plus_offset;
-    op->oracle_info.late_pred_npc = late_prediction;
+    const Addr late_prediction = op->oracle_info.late_pred_npc;
     op->oracle_info.late_mispred  = (op->oracle_info.late_pred !=
                                     op->oracle_info.dir) &&
                                    (late_prediction != op->oracle_info.npc);
@@ -620,7 +633,9 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
   if(!UPDATE_BP_OFF_PATH && op->off_path) {
     return;
   }
-
+  if (FDIP_ENABLE) {
+    fdip_resolve(op);
+  }
   bp_data->bp->update_func(op);
   if(USE_LATE_BP) {
     bp_data->late_bp->update_func(op);
@@ -642,6 +657,10 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
  */
 
 void bp_retire_op(Bp_Data* bp_data, Op* op) {
+  if (FDIP_ENABLE) {
+    fdip_retire(op);
+  }
+
   bp_data->bp->retire_func(op);
   if(USE_LATE_BP) {
     bp_data->late_bp->retire_func(op);
@@ -682,4 +701,8 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
 
   if(ENABLE_BP_CONF && bp_data->br_conf->recover_func)
     bp_data->br_conf->recover_func();
+
+  if (FDIP_ENABLE) {
+    fdip_recover(info);
+  }
 }

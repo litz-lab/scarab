@@ -245,6 +245,73 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
   }
 }
 
+void update_btb_stats(Addr* btb_target_result, Bp_Data* bp_data, Op* op) {
+  uns miss_type = 0;
+  if (btb_target_result == NULL) {
+    // miss
+    miss_type = 1;
+    STAT_EVENT(op->proc_id, BTB_TOTAL_MISS);
+  } else if (*btb_target_result != op->oracle_info.target) {
+    // wrong
+    miss_type = 2;
+    STAT_EVENT(op->proc_id, BTB_TOTAL_WRNG);
+  } else {
+    // hit
+    miss_type = 0;
+    STAT_EVENT(op->proc_id, BTB_TOTAL_HIT);
+  }
+  switch (op->table_info->cf_type)
+  {
+  case NOT_CF:
+    STAT_EVENT(op->proc_id, BTB_ACCS_NON);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_NON);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_NON);
+    break;
+  case CF_BR:
+    STAT_EVENT(op->proc_id, BTB_ACCS_BR);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_BR);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_BR);
+    break;
+  case CF_CBR:
+    STAT_EVENT(op->proc_id, BTB_ACCS_CBR);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_CBR);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_CBR);
+    break;
+  case CF_CALL:
+    STAT_EVENT(op->proc_id, BTB_ACCS_CALL);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_CALL);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_CALL);
+    break;
+  case CF_IBR:
+    STAT_EVENT(op->proc_id, BTB_ACCS_IBR);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_IBR);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_IBR);
+    break;
+  case CF_ICALL:
+    STAT_EVENT(op->proc_id, BTB_ACCS_ICALL);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_ICALL);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_ICALL);
+    break;
+  case CF_ICO:
+    STAT_EVENT(op->proc_id, BTB_ACCS_ICO);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_ICO);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_ICO);
+    break;
+  case CF_RET:
+    STAT_EVENT(op->proc_id, BTB_ACCS_RET);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_RET);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_RET);
+    break;
+  case CF_SYS:
+    STAT_EVENT(op->proc_id, BTB_ACCS_SYS);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_SYS);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_SYS);
+    break;
+  
+  default:
+    break;
+  }
+}
 
 /******************************************************************************/
 /* bp_predict_op:  predicts the target of a control flow instruction */
@@ -334,6 +401,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   // btb.  btb_miss and pred_target are set appropriately.
 
   btb_target = bp_data->bp_btb->pred_func(bp_data, op);
+  update_btb_stats(btb_target, bp_data, op);
   if(btb_target) {
     // btb hit
     op->oracle_info.btb_miss  = FALSE;

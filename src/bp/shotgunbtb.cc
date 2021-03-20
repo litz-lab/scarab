@@ -66,7 +66,7 @@ Addr last_unconditional_branch_pc = 0;
 stack<Addr> call_stack;
 
 void bp_btb_shotgun_init(Bp_Data* bp_data) {
-  printf("Initializing shotgun btb with %d u-btb entries, %d c-btb entries, and %d rib entries. The shotgun prefetch buffer size is %d and associativity is %d.\n", 4852, 404, 1620, BTB_PREFETCH_BUFFER_SIZE, BTB_PREFETCH_BUFFER_ASSOC);
+  printf("Initializing shotgun btb with %d u-btb entries, %d c-btb entries, and %d rib entries. The shotgun prefetch buffer size is %d and associativity is %d.\n", SHOTGUN_UBTB_SIZE, SHOTGUN_CBTB_SIZE, SHOTGUN_RIB_SIZE, BTB_PREFETCH_BUFFER_SIZE, BTB_PREFETCH_BUFFER_ASSOC);
   // btb line size set to 1
   printf("Init shotgun btb\n");
   init_cache(&ubtb, "U-BTB", SHOTGUN_UBTB_SIZE, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);

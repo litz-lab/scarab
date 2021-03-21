@@ -167,8 +167,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
 	auto target = req->target;
 	patch_oracle_info(op, &req->op, bp_pc);
 	//Re-evaluate FDIP direction prediction based on the current oracle info
-	auto target2 = bp_predict_op_evaluate(g_bp_data, op, req->target);
-	ASSERT(0, req->target==target2);
+	bp_predict_op_evaluate(g_bp_data, op, req->target);
 	op->cf_within_fetch = cf_num++;
 	if (!on_wrong_path) {
 	    //We may have mispredicted once but the branch PCs seen by the
@@ -227,9 +226,9 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
 	     */
 	    //Copy req onto the stack, as bp_recover_op will clear the ftq 
 	    ftq_req req = ftq.front().second;
-	    ASSERT(0, !ftq.empty());
+	    //ASSERT(0, !ftq.empty());
 	    bp_recover_op(g_bp_data, req.op.table_info->cf_type, &req.op.recovery_info);
-	    bp_resolve_op(g_bp_data, &req.op);
+	    //bp_resolve_op(g_bp_data, &req.op);
 	    bp_retire_op(g_bp_data, &req.op);
 	    STAT_EVENT(ic_stage->proc_id, FDIP_SQUASH_FAKE_BRANCH);
 	}
@@ -342,11 +341,13 @@ void fdip_update() {
 		STAT_EVENT(ic_stage->proc_id, FDIP_BTB_RAS_MISS);
 		return;
 	    }
-	    if (op->oracle_info.pred == TAKEN) {
+	    if (FDIP_NLP || op->oracle_info.pred == TAKEN) {
 		bool success = fdip_prefetch(target, op);
 		prefetches += success;
 		ftq.back().second.prefetched = success;
-		runahead_pc = target;
+		if (op->oracle_info.pred == TAKEN) {
+		    runahead_pc = target;
+		}
 		if (FDIP_BREAK_ICACHE) {
 		    fdip_break_addr_top = runahead_pc | CLMASK;
 		    fdip_break_addr_bottom = runahead_pc & ~CLMASK;

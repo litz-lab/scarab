@@ -245,7 +245,7 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
   }
 }
 
-void update_btb_stats(Addr* btb_target_result, Bp_Data* bp_data, Op* op) {
+void update_btb_stats_after_lookup(Addr* btb_target_result, Bp_Data* bp_data, Op* op) {
   uns miss_type = 0;
   if (btb_target_result == NULL) {
     // miss
@@ -310,6 +310,16 @@ void update_btb_stats(Addr* btb_target_result, Bp_Data* bp_data, Op* op) {
   
   default:
     break;
+  }
+  if (LOG_BTB_LOOKUP_UPDATE) {
+    printf("BTB-Lookup: %llu %llu %s %llu %llu %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], op->oracle_info.pred_addr, op->oracle_info.target, miss_type);
+  }
+}
+
+void update_btb_stats_after_update(Bp_Data* bp_data, Op* op) {
+  if (LOG_BTB_LOOKUP_UPDATE) {
+    printf("BTB-Update: %llu %llu %s %llu %llu %u\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], op->oracle_info.pred_addr, op->oracle_info.target, op->oracle_info.btb_miss);
+    // printf("BTB-Update: %llu %llu %s %llu %llu %d %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], fetch_addr, op->oracle_info.target, present, op->oracle_info.target==op->oracle_info.npc);
   }
 }
 
@@ -401,7 +411,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   // btb.  btb_miss and pred_target are set appropriately.
 
   btb_target = bp_data->bp_btb->pred_func(bp_data, op);
-  update_btb_stats(btb_target, bp_data, op);
+  update_btb_stats_after_lookup(btb_target, bp_data, op);
   if(btb_target) {
     // btb hit
     op->oracle_info.btb_miss  = FALSE;
@@ -681,6 +691,7 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   if(op->oracle_info.btb_miss)
     bp_data->bp_btb->update_func(bp_data, op);
 
+  update_btb_stats_after_update(bp_data, op);
   // special case updates
   switch(op->table_info->cf_type) {
     case CF_ICALL:  // fall through

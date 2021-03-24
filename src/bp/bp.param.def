@@ -56,6 +56,7 @@ DEF_PARAM(  perfect_ibp               , PERFECT_IBP               , Flag    , Fl
 DEF_PARAM(  perfect_crs               , PERFECT_CRS               , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM(  perfect_cbr_btb           , PERFECT_CBR_BTB           , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM(  perfect_nt_btb            , PERFECT_NT_BTB            , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  log_btb_lookup_update     , LOG_BTB_LOOKUP_UPDATE     , Flag    , Flag       , FALSE      ,        )
 
 DEF_PARAM(  cfs_per_cycle             , CFS_PER_CYCLE             , uns     , uns        , 3          ,        )
 DEF_PARAM(  update_bp_off_path        , UPDATE_BP_OFF_PATH        , Flag    , Flag       , FALSE      ,        )

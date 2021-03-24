@@ -137,14 +137,13 @@ void champsim_fill_in_basic_info(ctype_pin_inst* pin_inst, champsim_instruction_
     /*     std::cout << "@@@insn of interest has size: " << +size << " and the next insn ip is: " << insn.next_ip << " and the difference is: " << insn.next_ip - insn.ip << std::endl; */
     /* } */
     if(size != insn.next_ip - insn.ip && !insn.is_branch) {
-        if(insn.ip == 0xffffb7bc80f4)
-            std::cout << "@@@ marking this as a jmp instead!" << std::endl;
+        /* if(insn.ip == 0xffffb7bc80f4) */
+        /*     std::cout << "@@@ marking this as a jmp instead!" << std::endl; */
         insn.is_branch = BRANCH_DIRECT_JUMP;
         insn.branch_taken = insn.actually_taken = true;
         // direct branches have no sources
         memset(insn.source_registers, 0, NUM_INSTR_SOURCES * sizeof(insn.source_registers[0]));
         memset(insn.source_memory, 0, NUM_INSTR_SOURCES * sizeof(insn.source_memory[0]));
-        std::cout << +insn.source_memory[0] << ' ' << +insn.source_registers[0] << std::endl;
         fill_in_cf_info(pin_inst, insn);
     }
     if(insn.branch_taken) {
@@ -227,7 +226,6 @@ int champsim_trace_read(int proc_id, ctype_pin_inst* champsim_next_pi) {
   /* apply_x87_bug_workaround(champsim_next_pi, *insi); */
   print_err_if_invalid(champsim_next_pi, *insi);
 
-  std::cout << "fetched IP: " << std::hex << champsim_next_pi->instruction_addr << " next ip: " << champsim_next_pi->instruction_next_addr << std::endl;
   //End of ROI
   /* if (pt_roi(*insi)) */
   /*   return 0; */

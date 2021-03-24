@@ -23,6 +23,9 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#ifdef MEMTRACE
+#include "pin/pin_lib/reg.h"
+#endif
 
 #include "pin/pin_lib/pin_scarab_common_lib.h"
 
@@ -37,6 +40,10 @@ typedef enum Reg_Id_struct {
 #undef REG
 
 #include "pin/pin_lib/x86_decoder.h"
+/* static_assert(sizeof(REG) == sizeof(uint8_t), "REG is not the right size"); */
+static_assert(REG_STACK_PTR == CHAMPSIM_REG_STACK_POINTER);
+static_assert(REG_GFLAGS == CHAMPSIM_REG_FLAGS);
+static_assert(REG_INST_PTR == CHAMPSIM_REG_INSTRUCTION_POINTER);
 
 struct iclass_to_scarab {
   int     opcode;
@@ -77,12 +84,14 @@ static Reg_Array_Info reg_array_infos[NUM_REG_ARRAYS] = {
 
 // maps for translation from pin to scarab
 uint8_t reg_compress_map[(int)REG_LAST + 1] = {0};  // Assuming REG_INV is 0
+uint8_t reg_compress_map_pin[(int)REG_LAST + 1] = {0};  // Assuming REG_INV is 0
 // Assuming OP_INV is 0
 iclass_to_scarab iclass_to_scarab_map[XED_ICLASS_LAST] = {{0}};
 
 /********************* Private Functions Prototypes ***************************/
 static void     add_reg(ctype_pin_inst* info, Reg_Array_Id id, uint8_t reg);
 static uint8_t  reg_compress(REG pin_reg, ADDRINT ip);
+static uint8_t  reg_compress(uint8_t pin_reg, ADDRINT ip); // for champsim
 
 /**************************** Public Functions ********************************/
 void fill_in_basic_info(ctype_pin_inst* info, const INS& ins) {
@@ -170,9 +179,6 @@ uint32_t add_dependency_info_memtrace(ctype_pin_inst* info, const INS& ins) {
       }
     }
   }
-    if (info->instruction_addr == 0x7fb083ade789 && INS_MemoryOperandCount(ins)>1)
-      std::cout << "mem ops " << INS_MemoryOperandCount(ins) << " lds " << info->num_ld << " st " << info->num_st << std::endl;
-
   return max_op_width;
 }
 
@@ -228,6 +234,26 @@ uint32_t add_dependency_info(ctype_pin_inst* info, const INS& ins) {
 #else //memtrace
   return add_dependency_info_memtrace(info, ins);
 #endif
+}
+void add_dependency_info(ctype_pin_inst* info, const champsim_instruction_info& insn) {
+    for(int i = 0; i < NUM_INSTR_SOURCES; ++i) {
+        if(!insn.source_registers[i])
+            break;
+        uint8_t reg = reg_compress(insn.source_registers[i], insn.ip);
+        add_reg(info, SRC_REGS, reg);
+        if(reg >= SCARAB_REG_FP0 && reg <= SCARAB_REG_FP7)
+            info->is_fp = true;
+    }
+    for(int i = 0; i < NUM_INSTR_DESTINATIONS; ++i) {
+        if(!insn.destination_registers[i])
+            break;
+        uint8_t reg = reg_compress(insn.destination_registers[i], insn.ip);
+        add_reg(info, DST_REGS, reg);
+        if(reg >= SCARAB_REG_FP0 && reg <= SCARAB_REG_FP7)
+          info->is_fp = TRUE;
+    }
+    // TODO memory dependicies
+    // TODO figure out if insn has an immediate value or not
 }
 
 
@@ -319,7 +345,6 @@ void fill_in_cf_info(ctype_pin_inst* info, const INS& ins) {
   }
   info->is_ifetch_barrier = is_ifetch_barrier(ins);
 }
-
 void print_err_if_invalid(ctype_pin_inst* info, const INS& ins) {
     bool invalid = info->op_type == OP_INV;
 #ifdef MEMTRACE
@@ -359,6 +384,43 @@ void print_err_if_invalid(ctype_pin_inst* info, const INS& ins) {
   }
 }
 
+void print_err_if_invalid(ctype_pin_inst* info, const champsim_instruction_info& ins) {
+  if(info->op_type == OP_INV) {
+    //(*glb_err_ostream)
+    std::cout
+      << "Unmapped instruction at "
+      << "EIP: " << std::hex << (uint64_t)ins.ip << std::endl;
+    return;
+      /* << ", opcode: " << INS_Mnemonic(ins) */
+/* #ifndef MEMTRACE */
+      /* << ", category: " << CATEGORY_StringShort(INS_Category(ins)) << std::dec */
+/* #else */
+      /* << ", category: " << std::string(xed_category_enum_t2str(INS_Category(ins))) << std::dec */
+/* #endif */
+      /* << ", opcode index: " << INS_Opcode(ins) */
+      /* << ", hasrealrep: " << (int)info->is_repeat */
+      /* << ", is_lock: " << (int)info->is_lock */
+      /* << ", num_ld: " << (int)info->num_ld << ", num_st: " << (int)info->num_st */
+      /* << ", num_src_regs: " << (int)info->num_src_regs */
+      /* << ", num_dst_regs: " << (int)info->num_dst_regs */
+      /* << ", num_ld1_addr_regs: " << (int)info->num_ld1_addr_regs */
+      /* << ", num_ld2_addr_regs: " << (int)info->num_ld2_addr_regs */
+      /* << ", num_st_addr_regs: " << (int)info->num_st_addr_regs */
+      /* << ", num_simd_lanes: " << (int)info->num_simd_lanes */
+      /* << ", lane_width_bytes: " << (int)info->lane_width_bytes */
+      /* << ". Look at README in pin/pin_lib on how to map new instructions" */
+      /* << std::endl; */
+    //glb_err_ostream->flush();
+    //if(Knob_debug.Value()) {
+    //  unknown_opcodes.insert(INS_Mnemonic(ins));
+    //}
+  } else if(info->cf_type == NOT_CF && info->op_type == OP_CF) {
+    std::cout << "ins at addr: " << std::hex << ins.ip << " has op of OP_CF, but CF_type is NOT_CF. ins says: " << +ins.is_branch << std::endl;
+    std::cout << ins << std::endl;
+    assert(0);
+  }
+}
+
 uint8_t is_ifetch_barrier(const INS& ins) {
   int category = INS_Category(ins);
   int opcode   = INS_Opcode(ins);
@@ -370,14 +432,30 @@ uint8_t is_ifetch_barrier(const INS& ins) {
 }
 
 static compressed_reg_t reg_compress(REG pin_reg, ADDRINT ip) {
-  compressed_reg_t result = reg_compress_map[pin_reg];
+    const auto& map = [](){
+#ifdef MEMTRACE
+        return reg_compress_map;
+#else
+        return reg_compress_map_pin;
+#endif
+    }();
+  compressed_reg_t result = map[pin_reg];
   if(result == SCARAB_REG_INV && (int)pin_reg != 0) {
     /*(*glb_err_ostream)*/ std::cerr << "Invalid register operand "
 #ifdef MEMTRACE
 		       << std::string(xed_reg_enum_t2str(pin_reg))
 #else
-      //                       << LEVEL_BASE::REG_StringShort(pin_reg)
+                             /* << "converting reg to string: " << LEVEL_BASE::REG_StringShort(pin_reg) */
 #endif
+                       << " at: " << std::hex << ip << std::endl;
+  }
+  return result;
+}
+static compressed_reg_t reg_compress(uint8_t pin_reg, ADDRINT ip) {
+  compressed_reg_t result = reg_compress_map_pin[(int)pin_reg];
+  if(result == SCARAB_REG_INV && (int)pin_reg != 0) {
+    /*(*glb_err_ostream)*/ std::cerr << "Invalid register operand "
+         << +pin_reg
                        << " at: " << std::hex << ip << std::endl;
   }
   return result;
@@ -406,320 +484,319 @@ void init_reg_compress_map(void) {
   // Makes sure src_regs is wide enough for Scarab registers.
   assert(SCARAB_NUM_REGS < (1 << (sizeof(compressed_reg_t) * 8)));
 
-#ifndef MEMTRACE
-  reg_compress_map[0]                  = 0;
-  reg_compress_map[(int)REG_GR_BASE]   = SCARAB_REG_RDI;
-  reg_compress_map[(int)REG_EDI]       = SCARAB_REG_RDI;
-  reg_compress_map[(int)REG_GDI]       = SCARAB_REG_RDI;
-  reg_compress_map[(int)REG_ESI]       = SCARAB_REG_RSI;
-  reg_compress_map[(int)REG_GSI]       = SCARAB_REG_RSI;
-  reg_compress_map[(int)REG_EBP]       = SCARAB_REG_RBP;
-  reg_compress_map[(int)REG_GBP]       = SCARAB_REG_RBP;
-  reg_compress_map[(int)REG_ESP]       = SCARAB_REG_RSP;
-  reg_compress_map[(int)REG_STACK_PTR] = SCARAB_REG_RSP;
-  reg_compress_map[(int)REG_EBX]       = SCARAB_REG_RBX;
-  reg_compress_map[(int)REG_GBX]       = SCARAB_REG_RBX;
-  reg_compress_map[(int)REG_EDX]       = SCARAB_REG_RDX;
-  reg_compress_map[(int)REG_GDX]       = SCARAB_REG_RDX;
-  reg_compress_map[(int)REG_ECX]       = SCARAB_REG_RCX;
-  reg_compress_map[(int)REG_GCX]       = SCARAB_REG_RCX;
-  reg_compress_map[(int)REG_EAX]       = SCARAB_REG_RAX;
-  reg_compress_map[(int)REG_GAX]       = SCARAB_REG_RAX;
-  reg_compress_map[(int)REG_GR_LAST]   = SCARAB_REG_RAX;
-  reg_compress_map[(int)REG_SEG_BASE]  = SCARAB_REG_CS;
-  reg_compress_map[(int)REG_SEG_CS]    = SCARAB_REG_CS;
-  reg_compress_map[(int)REG_SEG_SS]    = SCARAB_REG_SS;
-  reg_compress_map[(int)REG_SEG_DS]    = SCARAB_REG_DS;
-  reg_compress_map[(int)REG_SEG_ES]    = SCARAB_REG_ES;
-  reg_compress_map[(int)REG_SEG_FS]    = SCARAB_REG_FS;
-  reg_compress_map[(int)REG_SEG_GS]    = SCARAB_REG_GS;
-  reg_compress_map[(int)REG_SEG_LAST]  = SCARAB_REG_GS;
-  // Treating any flag dependency as ZPS because we could not
-  // get finer grain dependicies from PIN
-  reg_compress_map[(int)REG_EFLAGS]   = SCARAB_REG_ZPS;
-  reg_compress_map[(int)REG_GFLAGS]   = SCARAB_REG_ZPS;
-  reg_compress_map[(int)REG_EIP]      = SCARAB_REG_RIP;
-  reg_compress_map[(int)REG_INST_PTR] = SCARAB_REG_RIP;
-  reg_compress_map[(int)REG_AL]       = SCARAB_REG_RAX;
-  reg_compress_map[(int)REG_AH]       = SCARAB_REG_RAX;
-  reg_compress_map[(int)REG_AX]       = SCARAB_REG_RAX;
-  reg_compress_map[(int)REG_CL]       = SCARAB_REG_RCX;
-  reg_compress_map[(int)REG_CH]       = SCARAB_REG_RCX;
-  reg_compress_map[(int)REG_CX]       = SCARAB_REG_RCX;
-  reg_compress_map[(int)REG_DL]       = SCARAB_REG_RDX;
-  reg_compress_map[(int)REG_DH]       = SCARAB_REG_RDX;
-  reg_compress_map[(int)REG_DX]       = SCARAB_REG_RDX;
-  reg_compress_map[(int)REG_BL]       = SCARAB_REG_RBX;
-  reg_compress_map[(int)REG_BH]       = SCARAB_REG_RBX;
-  reg_compress_map[(int)REG_BX]       = SCARAB_REG_RBX;
-  reg_compress_map[(int)REG_BP]       = SCARAB_REG_RBX;
-  reg_compress_map[(int)REG_SI]       = SCARAB_REG_RSI;
-  reg_compress_map[(int)REG_DI]       = SCARAB_REG_RDI;
-  reg_compress_map[(int)REG_SP]       = SCARAB_REG_RSP;
-  reg_compress_map[(int)REG_FLAGS]    = SCARAB_REG_ZPS;
-  reg_compress_map[(int)REG_IP]       = SCARAB_REG_RIP;
-  reg_compress_map[(int)REG_MM_BASE]  = SCARAB_REG_ZMM0;
-  reg_compress_map[(int)REG_MM0]      = SCARAB_REG_ZMM0;
-  reg_compress_map[(int)REG_MM1]      = SCARAB_REG_ZMM1;
-  reg_compress_map[(int)REG_MM2]      = SCARAB_REG_ZMM2;
-  reg_compress_map[(int)REG_MM3]      = SCARAB_REG_ZMM3;
-  reg_compress_map[(int)REG_MM4]      = SCARAB_REG_ZMM4;
-  reg_compress_map[(int)REG_MM5]      = SCARAB_REG_ZMM5;
-  reg_compress_map[(int)REG_MM6]      = SCARAB_REG_ZMM6;
-  reg_compress_map[(int)REG_MM7]      = SCARAB_REG_ZMM7;
-  reg_compress_map[(int)REG_MM_LAST]  = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[0]                  = 0;
+  reg_compress_map_pin[(int)REG_GR_BASE]   = SCARAB_REG_RDI;
+  reg_compress_map_pin[(int)REG_EDI]       = SCARAB_REG_RDI;
+  reg_compress_map_pin[(int)REG_GDI]       = SCARAB_REG_RDI;
+  reg_compress_map_pin[(int)REG_ESI]       = SCARAB_REG_RSI;
+  reg_compress_map_pin[(int)REG_GSI]       = SCARAB_REG_RSI;
+  reg_compress_map_pin[(int)REG_EBP]       = SCARAB_REG_RBP;
+  reg_compress_map_pin[(int)REG_GBP]       = SCARAB_REG_RBP;
+  reg_compress_map_pin[(int)REG_ESP]       = SCARAB_REG_RSP;
+  reg_compress_map_pin[(int)REG_STACK_PTR] = SCARAB_REG_RSP;
+  reg_compress_map_pin[(int)REG_EBX]       = SCARAB_REG_RBX;
+  reg_compress_map_pin[(int)REG_GBX]       = SCARAB_REG_RBX;
+  reg_compress_map_pin[(int)REG_EDX]       = SCARAB_REG_RDX;
+  reg_compress_map_pin[(int)REG_GDX]       = SCARAB_REG_RDX;
+  reg_compress_map_pin[(int)REG_ECX]       = SCARAB_REG_RCX;
+  reg_compress_map_pin[(int)REG_GCX]       = SCARAB_REG_RCX;
+  reg_compress_map_pin[(int)REG_EAX]       = SCARAB_REG_RAX;
+  reg_compress_map_pin[(int)REG_GAX]       = SCARAB_REG_RAX;
+  reg_compress_map_pin[(int)REG_GR_LAST]   = SCARAB_REG_RAX;
+  reg_compress_map_pin[(int)REG_SEG_BASE]  = SCARAB_REG_CS;
+  reg_compress_map_pin[(int)REG_SEG_CS]    = SCARAB_REG_CS;
+  reg_compress_map_pin[(int)REG_SEG_SS]    = SCARAB_REG_SS;
+  reg_compress_map_pin[(int)REG_SEG_DS]    = SCARAB_REG_DS;
+  reg_compress_map_pin[(int)REG_SEG_ES]    = SCARAB_REG_ES;
+  reg_compress_map_pin[(int)REG_SEG_FS]    = SCARAB_REG_FS;
+  reg_compress_map_pin[(int)REG_SEG_GS]    = SCARAB_REG_GS;
+  reg_compress_map_pin[(int)REG_SEG_LAST]  = SCARAB_REG_GS;
+  // Treating any _pinflag dependency as ZPS because we could not
+  // get finer gra_pinin dependicies from PIN
+  reg_compress_map_pin[(int)REG_EFLAGS]   = SCARAB_REG_ZPS;
+  reg_compress_map_pin[(int)REG_GFLAGS]   = SCARAB_REG_ZPS;
+  reg_compress_map_pin[(int)REG_EIP]      = SCARAB_REG_RIP;
+  reg_compress_map_pin[(int)REG_INST_PTR] = SCARAB_REG_RIP;
+  reg_compress_map_pin[(int)REG_AL]       = SCARAB_REG_RAX;
+  reg_compress_map_pin[(int)REG_AH]       = SCARAB_REG_RAX;
+  reg_compress_map_pin[(int)REG_AX]       = SCARAB_REG_RAX;
+  reg_compress_map_pin[(int)REG_CL]       = SCARAB_REG_RCX;
+  reg_compress_map_pin[(int)REG_CH]       = SCARAB_REG_RCX;
+  reg_compress_map_pin[(int)REG_CX]       = SCARAB_REG_RCX;
+  reg_compress_map_pin[(int)REG_DL]       = SCARAB_REG_RDX;
+  reg_compress_map_pin[(int)REG_DH]       = SCARAB_REG_RDX;
+  reg_compress_map_pin[(int)REG_DX]       = SCARAB_REG_RDX;
+  reg_compress_map_pin[(int)REG_BL]       = SCARAB_REG_RBX;
+  reg_compress_map_pin[(int)REG_BH]       = SCARAB_REG_RBX;
+  reg_compress_map_pin[(int)REG_BX]       = SCARAB_REG_RBX;
+  reg_compress_map_pin[(int)REG_BP]       = SCARAB_REG_RBX;
+  reg_compress_map_pin[(int)REG_SI]       = SCARAB_REG_RSI;
+  reg_compress_map_pin[(int)REG_DI]       = SCARAB_REG_RDI;
+  reg_compress_map_pin[(int)REG_SP]       = SCARAB_REG_RSP;
+  reg_compress_map_pin[(int)REG_FLAGS]    = SCARAB_REG_ZPS;
+  reg_compress_map_pin[(int)REG_IP]       = SCARAB_REG_RIP;
+  reg_compress_map_pin[(int)REG_MM_BASE]  = SCARAB_REG_ZMM0;
+  reg_compress_map_pin[(int)REG_MM0]      = SCARAB_REG_ZMM0;
+  reg_compress_map_pin[(int)REG_MM1]      = SCARAB_REG_ZMM1;
+  reg_compress_map_pin[(int)REG_MM2]      = SCARAB_REG_ZMM2;
+  reg_compress_map_pin[(int)REG_MM3]      = SCARAB_REG_ZMM3;
+  reg_compress_map_pin[(int)REG_MM4]      = SCARAB_REG_ZMM4;
+  reg_compress_map_pin[(int)REG_MM5]      = SCARAB_REG_ZMM5;
+  reg_compress_map_pin[(int)REG_MM6]      = SCARAB_REG_ZMM6;
+  reg_compress_map_pin[(int)REG_MM7]      = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_MM_LAST]  = SCARAB_REG_ZMM7;
 
-  reg_compress_map[(int)REG_XMM_BASE]        = SCARAB_REG_ZMM0;
-  reg_compress_map[(int)REG_XMM0]            = SCARAB_REG_ZMM0;
-  reg_compress_map[(int)REG_XMM1]            = SCARAB_REG_ZMM1;
-  reg_compress_map[(int)REG_XMM2]            = SCARAB_REG_ZMM2;
-  reg_compress_map[(int)REG_XMM3]            = SCARAB_REG_ZMM3;
-  reg_compress_map[(int)REG_XMM4]            = SCARAB_REG_ZMM4;
-  reg_compress_map[(int)REG_XMM5]            = SCARAB_REG_ZMM5;
-  reg_compress_map[(int)REG_XMM6]            = SCARAB_REG_ZMM6;
-  reg_compress_map[(int)REG_XMM7]            = SCARAB_REG_ZMM7;
-  reg_compress_map[(int)REG_XMM_SSE_LAST]    = SCARAB_REG_ZMM7;
-  reg_compress_map[(int)REG_XMM_AVX_LAST]    = SCARAB_REG_ZMM7;
-  reg_compress_map[(int)REG_XMM_AVX512_LAST] = SCARAB_REG_ZMM7;
-  reg_compress_map[(int)REG_XMM_LAST]        = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_XMM_BASE]        = SCARAB_REG_ZMM0;
+  reg_compress_map_pin[(int)REG_XMM0]            = SCARAB_REG_ZMM0;
+  reg_compress_map_pin[(int)REG_XMM1]            = SCARAB_REG_ZMM1;
+  reg_compress_map_pin[(int)REG_XMM2]            = SCARAB_REG_ZMM2;
+  reg_compress_map_pin[(int)REG_XMM3]            = SCARAB_REG_ZMM3;
+  reg_compress_map_pin[(int)REG_XMM4]            = SCARAB_REG_ZMM4;
+  reg_compress_map_pin[(int)REG_XMM5]            = SCARAB_REG_ZMM5;
+  reg_compress_map_pin[(int)REG_XMM6]            = SCARAB_REG_ZMM6;
+  reg_compress_map_pin[(int)REG_XMM7]            = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_XMM_SSE_LAST]    = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_XMM_AVX_LAST]    = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_XMM_AVX512_LAST] = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_XMM_LAST]        = SCARAB_REG_ZMM7;
 
-  reg_compress_map[(int)REG_YMM_BASE]        = SCARAB_REG_ZMM0;
-  reg_compress_map[(int)REG_YMM0]            = SCARAB_REG_ZMM0;
-  reg_compress_map[(int)REG_YMM1]            = SCARAB_REG_ZMM1;
-  reg_compress_map[(int)REG_YMM2]            = SCARAB_REG_ZMM2;
-  reg_compress_map[(int)REG_YMM3]            = SCARAB_REG_ZMM3;
-  reg_compress_map[(int)REG_YMM4]            = SCARAB_REG_ZMM4;
-  reg_compress_map[(int)REG_YMM5]            = SCARAB_REG_ZMM5;
-  reg_compress_map[(int)REG_YMM6]            = SCARAB_REG_ZMM6;
-  reg_compress_map[(int)REG_YMM7]            = SCARAB_REG_ZMM7;
-  reg_compress_map[(int)REG_YMM_AVX_LAST]    = SCARAB_REG_ZMM7;
-  reg_compress_map[(int)REG_YMM_AVX512_LAST] = SCARAB_REG_ZMM7;
-  reg_compress_map[(int)REG_YMM_LAST]        = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_YMM_BASE]        = SCARAB_REG_ZMM0;
+  reg_compress_map_pin[(int)REG_YMM0]            = SCARAB_REG_ZMM0;
+  reg_compress_map_pin[(int)REG_YMM1]            = SCARAB_REG_ZMM1;
+  reg_compress_map_pin[(int)REG_YMM2]            = SCARAB_REG_ZMM2;
+  reg_compress_map_pin[(int)REG_YMM3]            = SCARAB_REG_ZMM3;
+  reg_compress_map_pin[(int)REG_YMM4]            = SCARAB_REG_ZMM4;
+  reg_compress_map_pin[(int)REG_YMM5]            = SCARAB_REG_ZMM5;
+  reg_compress_map_pin[(int)REG_YMM6]            = SCARAB_REG_ZMM6;
+  reg_compress_map_pin[(int)REG_YMM7]            = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_YMM_AVX_LAST]    = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_YMM_AVX512_LAST] = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_YMM_LAST]        = SCARAB_REG_ZMM7;
 
-  reg_compress_map[(int)REG_ZMM_BASE]              = SCARAB_REG_ZMM0;
-  reg_compress_map[(int)REG_ZMM0]                  = SCARAB_REG_ZMM0;
-  reg_compress_map[(int)REG_ZMM1]                  = SCARAB_REG_ZMM1;
-  reg_compress_map[(int)REG_ZMM2]                  = SCARAB_REG_ZMM2;
-  reg_compress_map[(int)REG_ZMM3]                  = SCARAB_REG_ZMM3;
-  reg_compress_map[(int)REG_ZMM4]                  = SCARAB_REG_ZMM4;
-  reg_compress_map[(int)REG_ZMM5]                  = SCARAB_REG_ZMM5;
-  reg_compress_map[(int)REG_ZMM6]                  = SCARAB_REG_ZMM6;
-  reg_compress_map[(int)REG_ZMM7]                  = SCARAB_REG_ZMM7;
-  reg_compress_map[(int)REG_ZMM_AVX512_SPLIT_LAST] = SCARAB_REG_ZMM7;
-  reg_compress_map[(int)REG_ZMM_AVX512_LAST]       = SCARAB_REG_ZMM7;
-  reg_compress_map[(int)REG_ZMM_LAST]              = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_ZMM_BASE]              = SCARAB_REG_ZMM0;
+  reg_compress_map_pin[(int)REG_ZMM0]                  = SCARAB_REG_ZMM0;
+  reg_compress_map_pin[(int)REG_ZMM1]                  = SCARAB_REG_ZMM1;
+  reg_compress_map_pin[(int)REG_ZMM2]                  = SCARAB_REG_ZMM2;
+  reg_compress_map_pin[(int)REG_ZMM3]                  = SCARAB_REG_ZMM3;
+  reg_compress_map_pin[(int)REG_ZMM4]                  = SCARAB_REG_ZMM4;
+  reg_compress_map_pin[(int)REG_ZMM5]                  = SCARAB_REG_ZMM5;
+  reg_compress_map_pin[(int)REG_ZMM6]                  = SCARAB_REG_ZMM6;
+  reg_compress_map_pin[(int)REG_ZMM7]                  = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_ZMM_AVX512_SPLIT_LAST] = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_ZMM_AVX512_LAST]       = SCARAB_REG_ZMM7;
+  reg_compress_map_pin[(int)REG_ZMM_LAST]              = SCARAB_REG_ZMM7;
 
-  reg_compress_map[(int)REG_K_BASE]             = SCARAB_REG_K0;
-  reg_compress_map[(int)REG_IMPLICIT_FULL_MASK] = SCARAB_REG_K0;
-  reg_compress_map[(int)REG_K0]                 = SCARAB_REG_K0;
-  reg_compress_map[(int)REG_K1]                 = SCARAB_REG_K1;
-  reg_compress_map[(int)REG_K2]                 = SCARAB_REG_K2;
-  reg_compress_map[(int)REG_K3]                 = SCARAB_REG_K3;
-  reg_compress_map[(int)REG_K4]                 = SCARAB_REG_K4;
-  reg_compress_map[(int)REG_K5]                 = SCARAB_REG_K5;
-  reg_compress_map[(int)REG_K6]                 = SCARAB_REG_K6;
-  reg_compress_map[(int)REG_K7]                 = SCARAB_REG_K7;
-  reg_compress_map[(int)REG_K_LAST]             = SCARAB_REG_K7;
+  reg_compress_map_pin[(int)REG_K_BASE]             = SCARAB_REG_K0;
+  reg_compress_map_pin[(int)REG_IMPLICIT_FULL_MASK] = SCARAB_REG_K0;
+  reg_compress_map_pin[(int)REG_K0]                 = SCARAB_REG_K0;
+  reg_compress_map_pin[(int)REG_K1]                 = SCARAB_REG_K1;
+  reg_compress_map_pin[(int)REG_K2]                 = SCARAB_REG_K2;
+  reg_compress_map_pin[(int)REG_K3]                 = SCARAB_REG_K3;
+  reg_compress_map_pin[(int)REG_K4]                 = SCARAB_REG_K4;
+  reg_compress_map_pin[(int)REG_K5]                 = SCARAB_REG_K5;
+  reg_compress_map_pin[(int)REG_K6]                 = SCARAB_REG_K6;
+  reg_compress_map_pin[(int)REG_K7]                 = SCARAB_REG_K7;
+  reg_compress_map_pin[(int)REG_K_LAST]             = SCARAB_REG_K7;
 
-  reg_compress_map[(int)REG_MXCSR]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_MXCSRMASK] = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_MXCSR]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_MXCSRMASK] = SCARAB_REG_OTHER;
 
-  reg_compress_map[(int)REG_FPST_BASE]     = SCARAB_REG_FPCW;
-  reg_compress_map[(int)REG_FPSTATUS_BASE] = SCARAB_REG_FPCW;
-  reg_compress_map[(int)REG_FPCW]          = SCARAB_REG_FPCW;
-  reg_compress_map[(int)REG_FPSW]          = SCARAB_REG_FPST;
-  reg_compress_map[(int)REG_FPTAG]         = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_FPIP_OFF]      = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_FPIP_SEL]      = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_FPOPCODE]      = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_FPDP_OFF]      = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_FPDP_SEL]      = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_FPSTATUS_LAST] = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_FPTAG_FULL]    = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_FPST_BASE]     = SCARAB_REG_FPCW;
+  reg_compress_map_pin[(int)REG_FPSTATUS_BASE] = SCARAB_REG_FPCW;
+  reg_compress_map_pin[(int)REG_FPCW]          = SCARAB_REG_FPCW;
+  reg_compress_map_pin[(int)REG_FPSW]          = SCARAB_REG_FPST;
+  reg_compress_map_pin[(int)REG_FPTAG]         = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_FPIP_OFF]      = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_FPIP_SEL]      = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_FPOPCODE]      = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_FPDP_OFF]      = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_FPDP_SEL]      = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_FPSTATUS_LAST] = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_FPTAG_FULL]    = SCARAB_REG_OTHER;
 
-  reg_compress_map[(int)REG_ST_BASE]   = SCARAB_REG_FP0;
-  reg_compress_map[(int)REG_ST0]       = SCARAB_REG_FP0;
-  reg_compress_map[(int)REG_ST1]       = SCARAB_REG_FP1;
-  reg_compress_map[(int)REG_ST2]       = SCARAB_REG_FP2;
-  reg_compress_map[(int)REG_ST3]       = SCARAB_REG_FP3;
-  reg_compress_map[(int)REG_ST4]       = SCARAB_REG_FP4;
-  reg_compress_map[(int)REG_ST5]       = SCARAB_REG_FP5;
-  reg_compress_map[(int)REG_ST6]       = SCARAB_REG_FP6;
-  reg_compress_map[(int)REG_ST7]       = SCARAB_REG_FP7;
-  reg_compress_map[(int)REG_ST_LAST]   = SCARAB_REG_FP7;
-  reg_compress_map[(int)REG_FPST_LAST] = SCARAB_REG_FP7;
+  reg_compress_map_pin[(int)REG_ST_BASE]   = SCARAB_REG_FP0;
+  reg_compress_map_pin[(int)REG_ST0]       = SCARAB_REG_FP0;
+  reg_compress_map_pin[(int)REG_ST1]       = SCARAB_REG_FP1;
+  reg_compress_map_pin[(int)REG_ST2]       = SCARAB_REG_FP2;
+  reg_compress_map_pin[(int)REG_ST3]       = SCARAB_REG_FP3;
+  reg_compress_map_pin[(int)REG_ST4]       = SCARAB_REG_FP4;
+  reg_compress_map_pin[(int)REG_ST5]       = SCARAB_REG_FP5;
+  reg_compress_map_pin[(int)REG_ST6]       = SCARAB_REG_FP6;
+  reg_compress_map_pin[(int)REG_ST7]       = SCARAB_REG_FP7;
+  reg_compress_map_pin[(int)REG_ST_LAST]   = SCARAB_REG_FP7;
+  reg_compress_map_pin[(int)REG_FPST_LAST] = SCARAB_REG_FP7;
 
-  reg_compress_map[(int)REG_DR_BASE] = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_DR0]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_DR1]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_DR2]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_DR3]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_DR4]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_DR5]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_DR6]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_DR7]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_DR_LAST] = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_DR_BASE] = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_DR0]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_DR1]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_DR2]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_DR3]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_DR4]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_DR5]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_DR6]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_DR7]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_DR_LAST] = SCARAB_REG_OTHER;
 
-  reg_compress_map[(int)REG_CR_BASE] = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_CR0]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_CR1]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_CR2]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_CR3]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_CR4]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_CR_LAST] = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_TSSR]    = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_LDTR]    = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_TR_BASE] = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_TR]      = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_TR3]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_TR4]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_TR5]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_TR6]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_TR7]     = SCARAB_REG_OTHER;
-  reg_compress_map[(int)REG_TR_LAST] = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_CR_BASE] = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_CR0]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_CR1]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_CR2]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_CR3]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_CR4]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_CR_LAST] = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_TSSR]    = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_LDTR]    = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_TR_BASE] = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_TR]      = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_TR3]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_TR4]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_TR5]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_TR6]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_TR7]     = SCARAB_REG_OTHER;
+  reg_compress_map_pin[(int)REG_TR_LAST] = SCARAB_REG_OTHER;
 
 #if defined(TARGET_IA32E)
-  reg_compress_map[(int)REG_RDI]     = SCARAB_REG_RDI;
-  reg_compress_map[(int)REG_RSI]     = SCARAB_REG_RSI;
-  reg_compress_map[(int)REG_RBP]     = SCARAB_REG_RBP;
-  reg_compress_map[(int)REG_RSP]     = SCARAB_REG_RSP;
-  reg_compress_map[(int)REG_RBX]     = SCARAB_REG_RBX;
-  reg_compress_map[(int)REG_RDX]     = SCARAB_REG_RDX;
-  reg_compress_map[(int)REG_RCX]     = SCARAB_REG_RCX;
-  reg_compress_map[(int)REG_RAX]     = SCARAB_REG_RAX;
-  reg_compress_map[(int)REG_R8]      = SCARAB_REG_R8;
-  reg_compress_map[(int)REG_R9]      = SCARAB_REG_R9;
-  reg_compress_map[(int)REG_R10]     = SCARAB_REG_R10;
-  reg_compress_map[(int)REG_R11]     = SCARAB_REG_R11;
-  reg_compress_map[(int)REG_R12]     = SCARAB_REG_R12;
-  reg_compress_map[(int)REG_R13]     = SCARAB_REG_R13;
-  reg_compress_map[(int)REG_R14]     = SCARAB_REG_R14;
-  reg_compress_map[(int)REG_R15]     = SCARAB_REG_R15;
-  reg_compress_map[(int)REG_GR_LAST] = SCARAB_REG_R15;
-  reg_compress_map[(int)REG_RFLAGS]  = SCARAB_REG_ZPS;
-  reg_compress_map[(int)REG_RIP]     = SCARAB_REG_RIP;
+  reg_compress_map_pin[(int)REG_RDI]     = SCARAB_REG_RDI;
+  reg_compress_map_pin[(int)REG_RSI]     = SCARAB_REG_RSI;
+  reg_compress_map_pin[(int)REG_RBP]     = SCARAB_REG_RBP;
+  reg_compress_map_pin[(int)REG_RSP]     = SCARAB_REG_RSP;
+  reg_compress_map_pin[(int)REG_RBX]     = SCARAB_REG_RBX;
+  reg_compress_map_pin[(int)REG_RDX]     = SCARAB_REG_RDX;
+  reg_compress_map_pin[(int)REG_RCX]     = SCARAB_REG_RCX;
+  reg_compress_map_pin[(int)REG_RAX]     = SCARAB_REG_RAX;
+  reg_compress_map_pin[(int)REG_R8]      = SCARAB_REG_R8;
+  reg_compress_map_pin[(int)REG_R9]      = SCARAB_REG_R9;
+  reg_compress_map_pin[(int)REG_R10]     = SCARAB_REG_R10;
+  reg_compress_map_pin[(int)REG_R11]     = SCARAB_REG_R11;
+  reg_compress_map_pin[(int)REG_R12]     = SCARAB_REG_R12;
+  reg_compress_map_pin[(int)REG_R13]     = SCARAB_REG_R13;
+  reg_compress_map_pin[(int)REG_R14]     = SCARAB_REG_R14;
+  reg_compress_map_pin[(int)REG_R15]     = SCARAB_REG_R15;
+  reg_compress_map_pin[(int)REG_GR_LAST] = SCARAB_REG_R15;
+  reg_compress_map_pin[(int)REG_RFLAGS]  = SCARAB_REG_ZPS;
+  reg_compress_map_pin[(int)REG_RIP]     = SCARAB_REG_RIP;
 
-  reg_compress_map[(int)REG_DIL]  = SCARAB_REG_RDI;
-  reg_compress_map[(int)REG_SIL]  = SCARAB_REG_RSI;
-  reg_compress_map[(int)REG_BPL]  = SCARAB_REG_RBP;
-  reg_compress_map[(int)REG_SPL]  = SCARAB_REG_RSP;
-  reg_compress_map[(int)REG_R8B]  = SCARAB_REG_R8;
-  reg_compress_map[(int)REG_R8W]  = SCARAB_REG_R8;
-  reg_compress_map[(int)REG_R8D]  = SCARAB_REG_R8;
-  reg_compress_map[(int)REG_R9B]  = SCARAB_REG_R9;
-  reg_compress_map[(int)REG_R9W]  = SCARAB_REG_R9;
-  reg_compress_map[(int)REG_R9D]  = SCARAB_REG_R9;
-  reg_compress_map[(int)REG_R10B] = SCARAB_REG_R10;
-  reg_compress_map[(int)REG_R10W] = SCARAB_REG_R10;
-  reg_compress_map[(int)REG_R10D] = SCARAB_REG_R10;
-  reg_compress_map[(int)REG_R11B] = SCARAB_REG_R11;
-  reg_compress_map[(int)REG_R11W] = SCARAB_REG_R11;
-  reg_compress_map[(int)REG_R11D] = SCARAB_REG_R11;
-  reg_compress_map[(int)REG_R12B] = SCARAB_REG_R12;
-  reg_compress_map[(int)REG_R12W] = SCARAB_REG_R12;
-  reg_compress_map[(int)REG_R12D] = SCARAB_REG_R12;
-  reg_compress_map[(int)REG_R13B] = SCARAB_REG_R13;
-  reg_compress_map[(int)REG_R13W] = SCARAB_REG_R13;
-  reg_compress_map[(int)REG_R13D] = SCARAB_REG_R13;
-  reg_compress_map[(int)REG_R14B] = SCARAB_REG_R14;
-  reg_compress_map[(int)REG_R14W] = SCARAB_REG_R14;
-  reg_compress_map[(int)REG_R14D] = SCARAB_REG_R14;
-  reg_compress_map[(int)REG_R15B] = SCARAB_REG_R15;
-  reg_compress_map[(int)REG_R15W] = SCARAB_REG_R15;
-  reg_compress_map[(int)REG_R15D] = SCARAB_REG_R15;
+  reg_compress_map_pin[(int)REG_DIL]  = SCARAB_REG_RDI;
+  reg_compress_map_pin[(int)REG_SIL]  = SCARAB_REG_RSI;
+  reg_compress_map_pin[(int)REG_BPL]  = SCARAB_REG_RBP;
+  reg_compress_map_pin[(int)REG_SPL]  = SCARAB_REG_RSP;
+  reg_compress_map_pin[(int)REG_R8B]  = SCARAB_REG_R8;
+  reg_compress_map_pin[(int)REG_R8W]  = SCARAB_REG_R8;
+  reg_compress_map_pin[(int)REG_R8D]  = SCARAB_REG_R8;
+  reg_compress_map_pin[(int)REG_R9B]  = SCARAB_REG_R9;
+  reg_compress_map_pin[(int)REG_R9W]  = SCARAB_REG_R9;
+  reg_compress_map_pin[(int)REG_R9D]  = SCARAB_REG_R9;
+  reg_compress_map_pin[(int)REG_R10B] = SCARAB_REG_R10;
+  reg_compress_map_pin[(int)REG_R10W] = SCARAB_REG_R10;
+  reg_compress_map_pin[(int)REG_R10D] = SCARAB_REG_R10;
+  reg_compress_map_pin[(int)REG_R11B] = SCARAB_REG_R11;
+  reg_compress_map_pin[(int)REG_R11W] = SCARAB_REG_R11;
+  reg_compress_map_pin[(int)REG_R11D] = SCARAB_REG_R11;
+  reg_compress_map_pin[(int)REG_R12B] = SCARAB_REG_R12;
+  reg_compress_map_pin[(int)REG_R12W] = SCARAB_REG_R12;
+  reg_compress_map_pin[(int)REG_R12D] = SCARAB_REG_R12;
+  reg_compress_map_pin[(int)REG_R13B] = SCARAB_REG_R13;
+  reg_compress_map_pin[(int)REG_R13W] = SCARAB_REG_R13;
+  reg_compress_map_pin[(int)REG_R13D] = SCARAB_REG_R13;
+  reg_compress_map_pin[(int)REG_R14B] = SCARAB_REG_R14;
+  reg_compress_map_pin[(int)REG_R14W] = SCARAB_REG_R14;
+  reg_compress_map_pin[(int)REG_R14D] = SCARAB_REG_R14;
+  reg_compress_map_pin[(int)REG_R15B] = SCARAB_REG_R15;
+  reg_compress_map_pin[(int)REG_R15W] = SCARAB_REG_R15;
+  reg_compress_map_pin[(int)REG_R15D] = SCARAB_REG_R15;
 
-  reg_compress_map[(int)REG_XMM8]                  = SCARAB_REG_ZMM8;
-  reg_compress_map[(int)REG_XMM9]                  = SCARAB_REG_ZMM9;
-  reg_compress_map[(int)REG_XMM10]                 = SCARAB_REG_ZMM10;
-  reg_compress_map[(int)REG_XMM11]                 = SCARAB_REG_ZMM11;
-  reg_compress_map[(int)REG_XMM12]                 = SCARAB_REG_ZMM12;
-  reg_compress_map[(int)REG_XMM13]                 = SCARAB_REG_ZMM13;
-  reg_compress_map[(int)REG_XMM14]                 = SCARAB_REG_ZMM14;
-  reg_compress_map[(int)REG_XMM15]                 = SCARAB_REG_ZMM15;
-  reg_compress_map[(int)REG_XMM_SSE_LAST]          = SCARAB_REG_ZMM15;
-  reg_compress_map[(int)REG_XMM_AVX_LAST]          = SCARAB_REG_ZMM15;
-  reg_compress_map[(int)REG_XMM16]                 = SCARAB_REG_ZMM16;
-  reg_compress_map[(int)REG_XMM_AVX512_HI16_FIRST] = SCARAB_REG_ZMM16;
-  reg_compress_map[(int)REG_XMM17]                 = SCARAB_REG_ZMM17;
-  reg_compress_map[(int)REG_XMM18]                 = SCARAB_REG_ZMM18;
-  reg_compress_map[(int)REG_XMM19]                 = SCARAB_REG_ZMM19;
-  reg_compress_map[(int)REG_XMM20]                 = SCARAB_REG_ZMM20;
-  reg_compress_map[(int)REG_XMM21]                 = SCARAB_REG_ZMM21;
-  reg_compress_map[(int)REG_XMM22]                 = SCARAB_REG_ZMM22;
-  reg_compress_map[(int)REG_XMM23]                 = SCARAB_REG_ZMM23;
-  reg_compress_map[(int)REG_XMM24]                 = SCARAB_REG_ZMM24;
-  reg_compress_map[(int)REG_XMM25]                 = SCARAB_REG_ZMM25;
-  reg_compress_map[(int)REG_XMM26]                 = SCARAB_REG_ZMM26;
-  reg_compress_map[(int)REG_XMM27]                 = SCARAB_REG_ZMM27;
-  reg_compress_map[(int)REG_XMM28]                 = SCARAB_REG_ZMM28;
-  reg_compress_map[(int)REG_XMM29]                 = SCARAB_REG_ZMM29;
-  reg_compress_map[(int)REG_XMM30]                 = SCARAB_REG_ZMM30;
-  reg_compress_map[(int)REG_XMM31]                 = SCARAB_REG_ZMM31;
-  reg_compress_map[(int)REG_XMM_AVX512_HI16_LAST]  = SCARAB_REG_ZMM31;
-  reg_compress_map[(int)REG_XMM_AVX512_LAST]       = SCARAB_REG_ZMM31;
-  reg_compress_map[(int)REG_XMM_LAST]              = SCARAB_REG_ZMM31;
+  reg_compress_map_pin[(int)REG_XMM8]                  = SCARAB_REG_ZMM8;
+  reg_compress_map_pin[(int)REG_XMM9]                  = SCARAB_REG_ZMM9;
+  reg_compress_map_pin[(int)REG_XMM10]                 = SCARAB_REG_ZMM10;
+  reg_compress_map_pin[(int)REG_XMM11]                 = SCARAB_REG_ZMM11;
+  reg_compress_map_pin[(int)REG_XMM12]                 = SCARAB_REG_ZMM12;
+  reg_compress_map_pin[(int)REG_XMM13]                 = SCARAB_REG_ZMM13;
+  reg_compress_map_pin[(int)REG_XMM14]                 = SCARAB_REG_ZMM14;
+  reg_compress_map_pin[(int)REG_XMM15]                 = SCARAB_REG_ZMM15;
+  reg_compress_map_pin[(int)REG_XMM_SSE_LAST]          = SCARAB_REG_ZMM15;
+  reg_compress_map_pin[(int)REG_XMM_AVX_LAST]          = SCARAB_REG_ZMM15;
+  reg_compress_map_pin[(int)REG_XMM16]                 = SCARAB_REG_ZMM16;
+  reg_compress_map_pin[(int)REG_XMM_AVX512_HI16_FIRST] = SCARAB_REG_ZMM16;
+  reg_compress_map_pin[(int)REG_XMM17]                 = SCARAB_REG_ZMM17;
+  reg_compress_map_pin[(int)REG_XMM18]                 = SCARAB_REG_ZMM18;
+  reg_compress_map_pin[(int)REG_XMM19]                 = SCARAB_REG_ZMM19;
+  reg_compress_map_pin[(int)REG_XMM20]                 = SCARAB_REG_ZMM20;
+  reg_compress_map_pin[(int)REG_XMM21]                 = SCARAB_REG_ZMM21;
+  reg_compress_map_pin[(int)REG_XMM22]                 = SCARAB_REG_ZMM22;
+  reg_compress_map_pin[(int)REG_XMM23]                 = SCARAB_REG_ZMM23;
+  reg_compress_map_pin[(int)REG_XMM24]                 = SCARAB_REG_ZMM24;
+  reg_compress_map_pin[(int)REG_XMM25]                 = SCARAB_REG_ZMM25;
+  reg_compress_map_pin[(int)REG_XMM26]                 = SCARAB_REG_ZMM26;
+  reg_compress_map_pin[(int)REG_XMM27]                 = SCARAB_REG_ZMM27;
+  reg_compress_map_pin[(int)REG_XMM28]                 = SCARAB_REG_ZMM28;
+  reg_compress_map_pin[(int)REG_XMM29]                 = SCARAB_REG_ZMM29;
+  reg_compress_map_pin[(int)REG_XMM30]                 = SCARAB_REG_ZMM30;
+  reg_compress_map_pin[(int)REG_XMM31]                 = SCARAB_REG_ZMM31;
+  reg_compress_map_pin[(int)REG_XMM_AVX512_HI16_LAST]  = SCARAB_REG_ZMM31;
+  reg_compress_map_pin[(int)REG_XMM_AVX512_LAST]       = SCARAB_REG_ZMM31;
+  reg_compress_map_pin[(int)REG_XMM_LAST]              = SCARAB_REG_ZMM31;
 
-  reg_compress_map[(int)REG_YMM8]                  = SCARAB_REG_ZMM8;
-  reg_compress_map[(int)REG_YMM9]                  = SCARAB_REG_ZMM9;
-  reg_compress_map[(int)REG_YMM10]                 = SCARAB_REG_ZMM10;
-  reg_compress_map[(int)REG_YMM11]                 = SCARAB_REG_ZMM11;
-  reg_compress_map[(int)REG_YMM12]                 = SCARAB_REG_ZMM12;
-  reg_compress_map[(int)REG_YMM13]                 = SCARAB_REG_ZMM13;
-  reg_compress_map[(int)REG_YMM14]                 = SCARAB_REG_ZMM14;
-  reg_compress_map[(int)REG_YMM15]                 = SCARAB_REG_ZMM15;
-  reg_compress_map[(int)REG_YMM_AVX_LAST]          = SCARAB_REG_ZMM15;
-  reg_compress_map[(int)REG_YMM16]                 = SCARAB_REG_ZMM16;
-  reg_compress_map[(int)REG_YMM_AVX512_HI16_FIRST] = SCARAB_REG_ZMM16;
-  reg_compress_map[(int)REG_YMM17]                 = SCARAB_REG_ZMM17;
-  reg_compress_map[(int)REG_YMM18]                 = SCARAB_REG_ZMM18;
-  reg_compress_map[(int)REG_YMM19]                 = SCARAB_REG_ZMM19;
-  reg_compress_map[(int)REG_YMM20]                 = SCARAB_REG_ZMM20;
-  reg_compress_map[(int)REG_YMM21]                 = SCARAB_REG_ZMM21;
-  reg_compress_map[(int)REG_YMM22]                 = SCARAB_REG_ZMM22;
-  reg_compress_map[(int)REG_YMM23]                 = SCARAB_REG_ZMM23;
-  reg_compress_map[(int)REG_YMM24]                 = SCARAB_REG_ZMM24;
-  reg_compress_map[(int)REG_YMM25]                 = SCARAB_REG_ZMM25;
-  reg_compress_map[(int)REG_YMM26]                 = SCARAB_REG_ZMM26;
-  reg_compress_map[(int)REG_YMM27]                 = SCARAB_REG_ZMM27;
-  reg_compress_map[(int)REG_YMM28]                 = SCARAB_REG_ZMM28;
-  reg_compress_map[(int)REG_YMM29]                 = SCARAB_REG_ZMM29;
-  reg_compress_map[(int)REG_YMM30]                 = SCARAB_REG_ZMM30;
-  reg_compress_map[(int)REG_YMM31]                 = SCARAB_REG_ZMM31;
-  reg_compress_map[(int)REG_YMM_AVX512_HI16_LAST]  = SCARAB_REG_ZMM31;
-  reg_compress_map[(int)REG_YMM_AVX512_LAST]       = SCARAB_REG_ZMM31;
-  reg_compress_map[(int)REG_YMM_LAST]              = SCARAB_REG_ZMM31;
+  reg_compress_map_pin[(int)REG_YMM8]                  = SCARAB_REG_ZMM8;
+  reg_compress_map_pin[(int)REG_YMM9]                  = SCARAB_REG_ZMM9;
+  reg_compress_map_pin[(int)REG_YMM10]                 = SCARAB_REG_ZMM10;
+  reg_compress_map_pin[(int)REG_YMM11]                 = SCARAB_REG_ZMM11;
+  reg_compress_map_pin[(int)REG_YMM12]                 = SCARAB_REG_ZMM12;
+  reg_compress_map_pin[(int)REG_YMM13]                 = SCARAB_REG_ZMM13;
+  reg_compress_map_pin[(int)REG_YMM14]                 = SCARAB_REG_ZMM14;
+  reg_compress_map_pin[(int)REG_YMM15]                 = SCARAB_REG_ZMM15;
+  reg_compress_map_pin[(int)REG_YMM_AVX_LAST]          = SCARAB_REG_ZMM15;
+  reg_compress_map_pin[(int)REG_YMM16]                 = SCARAB_REG_ZMM16;
+  reg_compress_map_pin[(int)REG_YMM_AVX512_HI16_FIRST] = SCARAB_REG_ZMM16;
+  reg_compress_map_pin[(int)REG_YMM17]                 = SCARAB_REG_ZMM17;
+  reg_compress_map_pin[(int)REG_YMM18]                 = SCARAB_REG_ZMM18;
+  reg_compress_map_pin[(int)REG_YMM19]                 = SCARAB_REG_ZMM19;
+  reg_compress_map_pin[(int)REG_YMM20]                 = SCARAB_REG_ZMM20;
+  reg_compress_map_pin[(int)REG_YMM21]                 = SCARAB_REG_ZMM21;
+  reg_compress_map_pin[(int)REG_YMM22]                 = SCARAB_REG_ZMM22;
+  reg_compress_map_pin[(int)REG_YMM23]                 = SCARAB_REG_ZMM23;
+  reg_compress_map_pin[(int)REG_YMM24]                 = SCARAB_REG_ZMM24;
+  reg_compress_map_pin[(int)REG_YMM25]                 = SCARAB_REG_ZMM25;
+  reg_compress_map_pin[(int)REG_YMM26]                 = SCARAB_REG_ZMM26;
+  reg_compress_map_pin[(int)REG_YMM27]                 = SCARAB_REG_ZMM27;
+  reg_compress_map_pin[(int)REG_YMM28]                 = SCARAB_REG_ZMM28;
+  reg_compress_map_pin[(int)REG_YMM29]                 = SCARAB_REG_ZMM29;
+  reg_compress_map_pin[(int)REG_YMM30]                 = SCARAB_REG_ZMM30;
+  reg_compress_map_pin[(int)REG_YMM31]                 = SCARAB_REG_ZMM31;
+  reg_compress_map_pin[(int)REG_YMM_AVX512_HI16_LAST]  = SCARAB_REG_ZMM31;
+  reg_compress_map_pin[(int)REG_YMM_AVX512_LAST]       = SCARAB_REG_ZMM31;
+  reg_compress_map_pin[(int)REG_YMM_LAST]              = SCARAB_REG_ZMM31;
 
-  reg_compress_map[(int)REG_ZMM8]                  = SCARAB_REG_ZMM8;
-  reg_compress_map[(int)REG_ZMM9]                  = SCARAB_REG_ZMM9;
-  reg_compress_map[(int)REG_ZMM10]                 = SCARAB_REG_ZMM10;
-  reg_compress_map[(int)REG_ZMM11]                 = SCARAB_REG_ZMM11;
-  reg_compress_map[(int)REG_ZMM12]                 = SCARAB_REG_ZMM12;
-  reg_compress_map[(int)REG_ZMM13]                 = SCARAB_REG_ZMM13;
-  reg_compress_map[(int)REG_ZMM14]                 = SCARAB_REG_ZMM14;
-  reg_compress_map[(int)REG_ZMM15]                 = SCARAB_REG_ZMM15;
-  reg_compress_map[(int)REG_ZMM_AVX512_SPLIT_LAST] = SCARAB_REG_ZMM15;
-  reg_compress_map[(int)REG_ZMM16]                 = SCARAB_REG_ZMM16;
-  reg_compress_map[(int)REG_ZMM_AVX512_HI16_FIRST] = SCARAB_REG_ZMM16;
-  reg_compress_map[(int)REG_ZMM17]                 = SCARAB_REG_ZMM17;
-  reg_compress_map[(int)REG_ZMM18]                 = SCARAB_REG_ZMM18;
-  reg_compress_map[(int)REG_ZMM19]                 = SCARAB_REG_ZMM19;
-  reg_compress_map[(int)REG_ZMM20]                 = SCARAB_REG_ZMM20;
-  reg_compress_map[(int)REG_ZMM21]                 = SCARAB_REG_ZMM21;
-  reg_compress_map[(int)REG_ZMM22]                 = SCARAB_REG_ZMM22;
-  reg_compress_map[(int)REG_ZMM23]                 = SCARAB_REG_ZMM23;
-  reg_compress_map[(int)REG_ZMM24]                 = SCARAB_REG_ZMM24;
-  reg_compress_map[(int)REG_ZMM25]                 = SCARAB_REG_ZMM25;
-  reg_compress_map[(int)REG_ZMM26]                 = SCARAB_REG_ZMM26;
-  reg_compress_map[(int)REG_ZMM27]                 = SCARAB_REG_ZMM27;
-  reg_compress_map[(int)REG_ZMM28]                 = SCARAB_REG_ZMM28;
-  reg_compress_map[(int)REG_ZMM29]                 = SCARAB_REG_ZMM29;
-  reg_compress_map[(int)REG_ZMM30]                 = SCARAB_REG_ZMM30;
-  reg_compress_map[(int)REG_ZMM31]                 = SCARAB_REG_ZMM31;
-  reg_compress_map[(int)REG_ZMM_AVX512_HI16_LAST]  = SCARAB_REG_ZMM31;
-  reg_compress_map[(int)REG_ZMM_AVX512_LAST]       = SCARAB_REG_ZMM31;
-  reg_compress_map[(int)REG_ZMM_LAST]              = SCARAB_REG_ZMM31;
+  reg_compress_map_pin[(int)REG_ZMM8]                  = SCARAB_REG_ZMM8;
+  reg_compress_map_pin[(int)REG_ZMM9]                  = SCARAB_REG_ZMM9;
+  reg_compress_map_pin[(int)REG_ZMM10]                 = SCARAB_REG_ZMM10;
+  reg_compress_map_pin[(int)REG_ZMM11]                 = SCARAB_REG_ZMM11;
+  reg_compress_map_pin[(int)REG_ZMM12]                 = SCARAB_REG_ZMM12;
+  reg_compress_map_pin[(int)REG_ZMM13]                 = SCARAB_REG_ZMM13;
+  reg_compress_map_pin[(int)REG_ZMM14]                 = SCARAB_REG_ZMM14;
+  reg_compress_map_pin[(int)REG_ZMM15]                 = SCARAB_REG_ZMM15;
+  reg_compress_map_pin[(int)REG_ZMM_AVX512_SPLIT_LAST] = SCARAB_REG_ZMM15;
+  reg_compress_map_pin[(int)REG_ZMM16]                 = SCARAB_REG_ZMM16;
+  reg_compress_map_pin[(int)REG_ZMM_AVX512_HI16_FIRST] = SCARAB_REG_ZMM16;
+  reg_compress_map_pin[(int)REG_ZMM17]                 = SCARAB_REG_ZMM17;
+  reg_compress_map_pin[(int)REG_ZMM18]                 = SCARAB_REG_ZMM18;
+  reg_compress_map_pin[(int)REG_ZMM19]                 = SCARAB_REG_ZMM19;
+  reg_compress_map_pin[(int)REG_ZMM20]                 = SCARAB_REG_ZMM20;
+  reg_compress_map_pin[(int)REG_ZMM21]                 = SCARAB_REG_ZMM21;
+  reg_compress_map_pin[(int)REG_ZMM22]                 = SCARAB_REG_ZMM22;
+  reg_compress_map_pin[(int)REG_ZMM23]                 = SCARAB_REG_ZMM23;
+  reg_compress_map_pin[(int)REG_ZMM24]                 = SCARAB_REG_ZMM24;
+  reg_compress_map_pin[(int)REG_ZMM25]                 = SCARAB_REG_ZMM25;
+  reg_compress_map_pin[(int)REG_ZMM26]                 = SCARAB_REG_ZMM26;
+  reg_compress_map_pin[(int)REG_ZMM27]                 = SCARAB_REG_ZMM27;
+  reg_compress_map_pin[(int)REG_ZMM28]                 = SCARAB_REG_ZMM28;
+  reg_compress_map_pin[(int)REG_ZMM29]                 = SCARAB_REG_ZMM29;
+  reg_compress_map_pin[(int)REG_ZMM30]                 = SCARAB_REG_ZMM30;
+  reg_compress_map_pin[(int)REG_ZMM31]                 = SCARAB_REG_ZMM31;
+  reg_compress_map_pin[(int)REG_ZMM_AVX512_HI16_LAST]  = SCARAB_REG_ZMM31;
+  reg_compress_map_pin[(int)REG_ZMM_AVX512_LAST]       = SCARAB_REG_ZMM31;
+  reg_compress_map_pin[(int)REG_ZMM_LAST]              = SCARAB_REG_ZMM31;
 #endif
-#else
+#ifdef MEMTRACE
   reg_compress_map[0]                      = 0;
   reg_compress_map[(int)XED_REG_RDI]       = SCARAB_REG_RDI;
   reg_compress_map[(int)XED_REG_EDI]       = SCARAB_REG_RDI;

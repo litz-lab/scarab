@@ -1,4 +1,4 @@
-/* Copyright 2020 HPS/SAFARI Research Groups
+/* Copyright 2020 University of Michigan (implemented by Nathan Brown)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,38 +20,48 @@
  */
 
 /***************************************************************************************
- * File         : frontend/frontend_intf.c
- * Author       : HPS Research Group
- * Date         :
- * Description  :
+ * File         : frontend/pt_fe.h
+ * Author       : Nathan Brown
+ * Date         : 02/24/2021
+ * Description  : Interface to simulate Champsim simulator traces
  ***************************************************************************************/
 
-#include "frontend/frontend_intf.h"
-#include "general.param.h"
-#include "globals/global_defs.h"
+#ifndef CHAMPSIM_FE_H
+#define CHAMPSIM_FE_H
 
-/* Include headers of all the implementations here */
-#include "frontend/pin_exec_driven_fe.h"
-#include "frontend/pin_trace_fe.h"
-#include "frontend/memtrace_fe.h"
-#include "frontend/pt_fe.h"
-#include "frontend/champsim_fe.h"
+#include "globals/global_types.h"
 
-Frontend_Impl frontend_table[] = {
-#define FRONTEND_IMPL(id, name, prefix) \
-  {name,                                \
-   prefix##_next_fetch_addr,            \
-   prefix##_can_fetch_op,               \
-   prefix##_fetch_op,                   \
-   prefix##_redirect,                   \
-   prefix##_recover,                    \
-   prefix##_retire},
-#include "frontend/frontend_table.def"
-#undef FRONTEND_IMPL
-};
+/**************************************************************************************/
+/* Forward Declarations */
 
-Frontend_Impl* frontend = NULL;
+struct Trace_Uop_struct;
+typedef struct Trace_Uop_struct Trace_Uop;
+struct Op_struct;
 
-void frontend_intf_init() {
-  frontend = &frontend_table[FRONTEND];
+/**************************************************************************************/
+/* Prototypes */
+
+#ifdef __cplusplus
+extern "C" {
+#endif //__cplusplus
+
+void champsim_init(void);
+
+/* Implementing the frontend interface */
+Addr champsim_next_fetch_addr(uns proc_id);
+Flag champsim_can_fetch_op(uns proc_id);
+void champsim_fetch_op(uns proc_id, Op *op);
+void champsim_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);
+void champsim_recover(uns proc_id, uns64 inst_uid);
+void champsim_retire(uns proc_id, uns64 inst_uid);
+
+/* For restarting of champsim */
+void champsim_done(void);
+void champsim_close_trace_file(uns proc_id);
+void champsim_setup(uns proc_id);
+
+#ifdef __cplusplus
 }
+#endif // __cplusplus
+
+#endif // CHAMPSIM_FE_H

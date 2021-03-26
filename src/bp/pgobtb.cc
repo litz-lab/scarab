@@ -182,14 +182,14 @@ void perform_prefetch(Bp_Data* bp_data, Op* op) {
   } else {
     next_target = op->oracle_info.target;
   }
-  if(prefetch_footprint.count(next_target)) {
+  if(prefetch_footprint.count(op->oracle_info.pred_addr)) {
     Addr btb_line_addr;
     uint64_t prefetched_count=0;
     if (current_function_start != 0) {
       function_call_stack.push(current_function_start);
     }
     current_function_start = next_target;
-    for(const auto &kv: prefetch_footprint[next_target]) {
+    for(const auto &kv: prefetch_footprint[op->oracle_info.pred_addr]) {
       auto prefetched_branch_pc = kv.first;
       auto prefetched_target = kv.second;
       if(cache_access(&prefetch_buffer, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL && cache_access(&bp_data->btb, prefetched_branch_pc, &btb_line_addr, FALSE)==NULL) {
@@ -279,18 +279,18 @@ void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
       std::vector<std::string> parsed;
       boost::split(parsed, line, boost::is_any_of(" "),boost::token_compress_on);
       //std::cout<<parsed.size()<<' '<<j<<std::endl;
-      std::cout<<j<<' '<<line<<std::endl;
+      //std::cout<<j<<' '<<line<<std::endl;
       if(parsed.size()<3) {
         panic("PGOBTB: boost parse error");
         throw "Could not parse prefetch file";
       }
       uint64_t function_start = strtoul(parsed[0].c_str(), NULL, 10);
-      uint64_t function_end = strtoul(parsed[1].c_str(), NULL, 10);
-      uint64_t entry_count = strtoul(parsed[2].c_str(), NULL, 10);
+      // uint64_t function_end = strtoul(parsed[1].c_str(), NULL, 10);
+      uint64_t entry_count = strtoul(parsed[1].c_str(), NULL, 10);
       prefetch_footprint[function_start] =std::unordered_map<Addr,Addr>();
       for(int i = 0; i<entry_count; i++) {
-        uint64_t pc = strtoul(parsed[3+2*i].c_str(), NULL, 10);
-        uint64_t target = strtoul(parsed[3+1+2*i].c_str(), NULL, 10);
+        uint64_t pc = strtoul(parsed[2+2*i].c_str(), NULL, 10);
+        uint64_t target = strtoul(parsed[2+1+2*i].c_str(), NULL, 10);
         prefetch_footprint[function_start][pc]=target;
       }
     }

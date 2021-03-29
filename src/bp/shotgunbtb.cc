@@ -65,6 +65,17 @@ bool is_return = false;
 Addr last_unconditional_branch_pc = 0;
 stack<Addr> call_stack;
 
+void read_file(std::string file_path, std::vector<std::string> &data_destination)
+{
+  std::ifstream infile(file_path);
+  std::string line;
+  data_destination.clear();
+  while(std::getline(infile, line)) {
+    data_destination.push_back(line);
+  }
+  infile.close();
+}
+
 void bp_btb_shotgun_init(Bp_Data* bp_data) {
   printf("Initializing shotgun btb with %d u-btb entries, %d c-btb entries, and %d rib entries. The shotgun prefetch buffer size is %d and associativity is %d.\n", SHOTGUN_UBTB_SIZE, SHOTGUN_CBTB_SIZE, SHOTGUN_RIB_SIZE, BTB_PREFETCH_BUFFER_SIZE, BTB_PREFETCH_BUFFER_ASSOC);
   // btb line size set to 1
@@ -73,6 +84,35 @@ void bp_btb_shotgun_init(Bp_Data* bp_data) {
   init_cache(&cbtb, "C-BTB", SHOTGUN_CBTB_SIZE, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
   init_cache(&rib, "RIB", SHOTGUN_RIB_SIZE, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
   init_cache(&shotgun_prefetch_buffer, "Shotgun-prefetch-buffer", BTB_PREFETCH_BUFFER_SIZE, BTB_PREFETCH_BUFFER_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  if (FOOTPRINT) {
+    std::cout<<FOOTPRINT<<std::endl;
+    std::vector<std::string> all_strings;
+    read_file(FOOTPRINT,all_strings);
+    std::cout<<all_strings.size()<<std::endl;
+    for(uint64_t j = 0; j < all_strings.size(); j++) {
+      std::string line = all_strings[j];
+      //boost::trim_if(line, boost::is_any_of("\n"));
+      std::vector<std::string> parsed;
+      boost::split(parsed, line, boost::is_any_of(" "),boost::token_compress_on);
+      //std::cout<<parsed.size()<<' '<<j<<std::endl;
+      //std::cout<<j<<' '<<line<<std::endl;
+      if(parsed.size()<3) {
+        panic("PGOBTB: boost parse error");
+        throw "Could not parse prefetch file";
+      }
+      uint64_t function_start = strtoul(parsed[0].c_str(), NULL, 10);
+      // uint64_t function_end = strtoul(parsed[1].c_str(), NULL, 10);
+      uint64_t entry_count = strtoul(parsed[1].c_str(), NULL, 10);
+      cl_decoded_entries[function_start] =set<pair<Addr,Addr>>();
+      for(int i = 0; i<entry_count; i++) {
+        uint64_t pc = strtoul(parsed[2+2*i].c_str(), NULL, 10);
+        uint64_t target = strtoul(parsed[2+1+2*i].c_str(), NULL, 10);
+        cl_decoded_entries[function_start].insert(make_pair(pc,target));
+      }
+    }
+    printf("Initializing prefetch footprint with size %u\n", cl_decoded_entries.size());
+    all_strings.clear();
+  }
 }
 
 void perform_prefetch_update_metadata(Bp_Data* bp_data, Op* op) {
@@ -243,11 +283,13 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
   Cache *tmp;
   if (op->table_info->cf_type == CF_CBR) {
     tmp = &cbtb;
-    uint64_t cl_address = fetch_addr >> 6;
-    if(!cl_decoded_entries.count(cl_address)) {
-      cl_decoded_entries[cl_address] = set<pair<Addr,Addr>>();
+    if (!FOOTPRINT) {
+      uint64_t cl_address = fetch_addr >> 6;
+      if(!cl_decoded_entries.count(cl_address)) {
+        cl_decoded_entries[cl_address] = set<pair<Addr,Addr>>();
+      }
+      cl_decoded_entries[cl_address].insert(make_pair(fetch_addr, op->oracle_info.target));
     }
-    cl_decoded_entries[cl_address].insert(make_pair(fetch_addr, op->oracle_info.target));
   } else if (op->table_info->cf_type == CF_RET) {
     tmp = &rib;
   } else {

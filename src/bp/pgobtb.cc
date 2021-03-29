@@ -273,7 +273,7 @@ void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
     std::vector<std::string> all_strings;
     read_full_file(FOOTPRINT,all_strings);
     std::cout<<all_strings.size()<<std::endl;
-    for(uint64_t j = 1; j < all_strings.size(); j++) {
+    for(uint64_t j = 0; j < all_strings.size(); j++) {
       std::string line = all_strings[j];
       //boost::trim_if(line, boost::is_any_of("\n"));
       std::vector<std::string> parsed;

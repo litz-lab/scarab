@@ -453,7 +453,7 @@ void update_icache_stage() {
         }
       }
       INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_DONT + break_fetch,
-                     IC_ISSUE_WIDTH - ic->sd.op_count >= 0 ? IC_ISSUE_WIDTH - ic->sd.op_count
+                     IC_ISSUE_WIDTH > ic->sd.op_count ? IC_ISSUE_WIDTH - ic->sd.op_count
                                                            : 0);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS + ic->sd.op_count);
       STAT_EVENT(ic->proc_id, ST_BREAK_DONT + break_fetch);

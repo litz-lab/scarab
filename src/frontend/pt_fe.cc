@@ -25,6 +25,7 @@
  * Date         : 12/05/2020
  * Description  : Interface to simulate Intel processor trace
  ***************************************************************************************/
+extern "C" {
 #include "debug/debug.param.h"
 #include "debug/debug_macros.h"
 #include "globals/assert.h"
@@ -32,6 +33,7 @@
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
+}
 
 #include "bp/bp.h"
 #include "statistics.h"
@@ -205,7 +207,8 @@ void pt_init(void) {
 }
 
 Addr pt_next_fetch_addr(uns proc_id) {
-  return pt_next_pi[proc_id].instruction_addr;
+    Addr next = pt_next_pi[proc_id].instruction_addr;
+  return convert_to_cmp_addr(proc_id, next);
 }
 
 Flag pt_can_fetch_op(uns proc_id) {

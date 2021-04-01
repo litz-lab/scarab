@@ -61,9 +61,143 @@ Cache rib;
 unordered_map<Addr,vector<unordered_map<Addr,Addr>>> call_footprints;
 unordered_map<Addr,vector<unordered_map<Addr,Addr>>> return_footprints;
 unordered_map<uint64_t,set<pair<Addr,Addr>>> cl_decoded_entries;
+unordered_map<Addr,uint64_t> last_prefetched_cycle;
+unordered_map<Addr,pair<uint64_t,bool>> last_evicted_cycle;
 bool is_return = false;
 Addr last_unconditional_branch_pc = 0;
 stack<Addr> call_stack;
+
+void update_evict_cycle(Addr evicted_branch_pc, bool is_cbtb = false) {
+  if (evicted_branch_pc != 0) {
+    last_evicted_cycle[evicted_branch_pc]=make_pair(cycle_count,is_cbtb);
+  }
+}
+
+void update_prefetch_cycle(Addr prefetched_branch_pc) {
+  last_prefetched_cycle[prefetched_branch_pc]=cycle_count;
+}
+
+void update_shotgun_inves_stat_after_btb_miss(Op* op) {
+  if ( op == nullptr || op->table_info->cf_type != CF_CBR)return;
+  Addr  branch_pc = op->oracle_info.pred_addr;
+  if (!last_prefetched_cycle.count(branch_pc)) {
+    STAT_EVENT(op->proc_id, SHOTGUN_CBTB_MISS_NOT_PREFETCHED);
+    return;
+  }
+  uint64_t last_prefetch_cycle = last_prefetched_cycle[branch_pc];
+  if(!last_evicted_cycle.count(branch_pc)) {
+    // only for jit
+    STAT_EVENT(op->proc_id, SHOTGUN_CBTB_MISS_JIT);
+    return;
+  }
+  uint64_t last_evict_cycle = last_evicted_cycle[branch_pc].first;
+  bool was_evicted_from_cbtb = last_evicted_cycle[branch_pc].second;
+  if (last_evict_cycle < last_prefetch_cycle) {
+    // only for jit
+    STAT_EVENT(op->proc_id, SHOTGUN_CBTB_MISS_JIT);
+    return;
+  }
+  STAT_EVENT(op->proc_id, SHOTGUN_CBTB_MISS_PREFETCHED_EVICTED);
+  if (was_evicted_from_cbtb) {
+    STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_FROM_CBTB);
+  } else {
+    STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_FROM_PREFETCH_BUFFER);
+  }
+
+  /*Update the distribution of cycle distance since last evict*/
+  if (cycle_count < last_evict_cycle) {
+    STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_INVALID);
+  } else {
+    uint64_t distance = cycle_count - last_evict_cycle;
+    /*0 1 2 3 6 12 25 100 200 400 800 1600 3200 6400 12800 25600 51200 G*/
+    if (distance == 0) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_E0);
+    } else if ( distance == 1) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R1);
+    } else if (distance == 2) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R2);
+    } else if (distance == 3) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R3);
+    } else if (distance < 7) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R6);
+    } else if (distance < 13) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R12);
+    } else if (distance < 26) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R25);
+    } else if (distance < 51) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R50);
+    } else if (distance < 101) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R100);
+    } else if (distance < 201) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R200);
+    } else if (distance < 401) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R400);
+    } else if (distance < 801) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R800);
+    } else if (distance < 1601) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R1600);
+    } else if (distance < 3201) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R3200);
+    } else if (distance < 6401) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R6400);
+    } else if (distance < 12801) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R12800);
+    } else if (distance < 25601) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R25600);
+    } else if (distance < 51201) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_R51200);
+    } else {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_SE_G);
+    }
+  }
+
+  /*Update the distribution of cycle distance between last prefetch and last evict*/
+  if (last_evict_cycle < last_prefetch_cycle) {
+    STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_INVALID);
+  } else {
+    uint64_t distance = last_evict_cycle - last_prefetch_cycle;
+    /*0 1 2 3 6 12 25 100 200 400 800 1600 3200 6400 12800 25600 51200 G*/
+    if (distance == 0) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_E0);
+    } else if ( distance == 1) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R1);
+    } else if (distance == 2) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R2);
+    } else if (distance == 3) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R3);
+    } else if (distance < 7) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R6);
+    } else if (distance < 13) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R12);
+    } else if (distance < 26) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R25);
+    } else if (distance < 51) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R50);
+    } else if (distance < 101) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R100);
+    } else if (distance < 201) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R200);
+    } else if (distance < 401) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R400);
+    } else if (distance < 801) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R800);
+    } else if (distance < 1601) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R1600);
+    } else if (distance < 3201) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R3200);
+    } else if (distance < 6401) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R6400);
+    } else if (distance < 12801) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R12800);
+    } else if (distance < 25601) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R25600);
+    } else if (distance < 51201) {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R51200);
+    } else {
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_INVALID);
+    }
+  }
+}
 
 void read_file(std::string file_path, std::vector<std::string> &data_destination)
 {
@@ -170,6 +304,8 @@ void perform_prefetch_update_metadata(Bp_Data* bp_data, Op* op) {
                 Addr repl_line_addr;
                 Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,p_br_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
                 STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
+                update_prefetch_cycle(p_br_pc);
+                update_evict_cycle(repl_line_addr);
                 *btb_line = p_br_target;
               }
             } else {
@@ -185,6 +321,8 @@ void perform_prefetch_update_metadata(Bp_Data* bp_data, Op* op) {
                   Addr repl_line_addr;
                   Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,kv.first,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
                   STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
+                  update_prefetch_cycle(kv.first);
+                  update_evict_cycle(repl_line_addr);
                   *btb_line = kv.second;
                 }
               }
@@ -217,6 +355,8 @@ void perform_prefetch_update_metadata(Bp_Data* bp_data, Op* op) {
                 Addr repl_line_addr;
                 Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,p_br_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
                 STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
+                update_prefetch_cycle(p_br_pc);
+                update_evict_cycle(repl_line_addr);
                 *btb_line = p_br_target;
               }
             } else {
@@ -232,6 +372,8 @@ void perform_prefetch_update_metadata(Bp_Data* bp_data, Op* op) {
                   Addr repl_line_addr;
                   Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,kv.first,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
                   STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
+                  update_prefetch_cycle(kv.first);
+                  update_evict_cycle(repl_line_addr);
                   *btb_line = kv.second;
                 }
               }
@@ -261,13 +403,18 @@ Addr* bp_btb_shotgun_pred(Bp_Data* bp_data, Op* op) {
   if (result==nullptr) {
     Addr* pb_result = (Addr*)cache_access(&shotgun_prefetch_buffer, branch_pc, &line_addr, FALSE);
     if (pb_result!=nullptr) {
-      Addr *btb_line, btb_line_addr, repl_line_addr;
+      Addr *btb_line, btb_line_addr;
+      Addr repl_line_addr;
       btb_line  = (Addr*)cache_insert(&cbtb, bp_data->proc_id, branch_pc,&btb_line_addr,&repl_line_addr);
       *btb_line = *pb_result;
+      update_evict_cycle(repl_line_addr,true);
       cache_invalidate(&shotgun_prefetch_buffer, branch_pc, &line_addr);
       STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_HIT);
       result=btb_line;
     }
+  }
+  if (result == nullptr) {
+    update_shotgun_inves_stat_after_btb_miss(op);
   }
   perform_prefetch_update_metadata(bp_data, op);
   return result;
@@ -279,7 +426,8 @@ Addr* bp_btb_shotgun_pred(Bp_Data* bp_data, Op* op) {
 
 void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
   Addr  fetch_addr = op->oracle_info.pred_addr;
-  Addr *btb_line, btb_line_addr, repl_line_addr;
+  Addr *btb_line, btb_line_addr;
+  Addr repl_line_addr;
   Cache *tmp;
   if (op->table_info->cf_type == CF_CBR) {
     tmp = &cbtb;
@@ -304,6 +452,9 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
     }
     btb_line  = (Addr*)cache_insert(tmp, bp_data->proc_id, fetch_addr,
                                    &btb_line_addr, &repl_line_addr);
+    if (tmp == &cbtb) {
+      update_evict_cycle(repl_line_addr, true);
+    }
     *btb_line = op->oracle_info.target;
     ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
   }

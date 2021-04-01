@@ -300,7 +300,7 @@ void perform_prefetch_update_metadata(Bp_Data* bp_data, Op* op) {
           Addr p_br_cl = p_br_pc >> 6;
           if (p_br_cl>= left && p_br_cl <=right && was_present) {
             if (SHOTGUN_CONFLUENCE_ENABLE) {  
-              if(cache_access(&shotgun_prefetch_buffer, p_br_pc, &btb_line_addr, FALSE)==NULL && cache_access(&cbtb, p_br_pc, &btb_line_addr, FALSE)==NULL) {
+              if(cache_access(&shotgun_prefetch_buffer, p_br_pc, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, p_br_pc, &btb_line_addr, TRUE)==NULL) {
                 Addr repl_line_addr;
                 Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,p_br_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
                 STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
@@ -317,7 +317,7 @@ void perform_prefetch_update_metadata(Bp_Data* bp_data, Op* op) {
           for(const auto &cl: all_cache_lines) {
             if (cl_decoded_entries.count(cl)) {
               for(const auto &kv: cl_decoded_entries[cl]) {
-                if(cache_access(&shotgun_prefetch_buffer, kv.first, &btb_line_addr, FALSE)==NULL && cache_access(&cbtb, kv.first, &btb_line_addr, FALSE)==NULL) {
+                if(cache_access(&shotgun_prefetch_buffer, kv.first, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, kv.first, &btb_line_addr, TRUE)==NULL) {
                   Addr repl_line_addr;
                   Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,kv.first,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
                   STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
@@ -351,7 +351,7 @@ void perform_prefetch_update_metadata(Bp_Data* bp_data, Op* op) {
           Addr p_br_cl = p_br_pc >> 6;
           if (p_br_cl>= left && p_br_cl <=right && was_present) {
             if (SHOTGUN_CONFLUENCE_ENABLE) {
-              if(cache_access(&shotgun_prefetch_buffer, p_br_pc, &btb_line_addr, FALSE)==NULL && cache_access(&cbtb, p_br_pc, &btb_line_addr, FALSE)==NULL) {
+              if(cache_access(&shotgun_prefetch_buffer, p_br_pc, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, p_br_pc, &btb_line_addr, TRUE)==NULL) {
                 Addr repl_line_addr;
                 Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,p_br_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
                 STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
@@ -368,7 +368,7 @@ void perform_prefetch_update_metadata(Bp_Data* bp_data, Op* op) {
           for(const auto &cl: all_cache_lines) {
             if (cl_decoded_entries.count(cl)) {
               for(const auto &kv: cl_decoded_entries[cl]) {
-                if(cache_access(&shotgun_prefetch_buffer, kv.first, &btb_line_addr, FALSE)==NULL && cache_access(&cbtb, kv.first, &btb_line_addr, FALSE)==NULL) {
+                if(cache_access(&shotgun_prefetch_buffer, kv.first, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, kv.first, &btb_line_addr, TRUE)==NULL) {
                   Addr repl_line_addr;
                   Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,kv.first,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
                   STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);

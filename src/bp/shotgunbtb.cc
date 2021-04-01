@@ -194,7 +194,7 @@ void update_shotgun_inves_stat_after_btb_miss(Op* op) {
     } else if (distance < 51201) {
       STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_R51200);
     } else {
-      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_INVALID);
+      STAT_EVENT(op->proc_id, SHOTGUN_CM_PE_DPE_G);
     }
   }
 }

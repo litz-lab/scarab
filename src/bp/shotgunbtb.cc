@@ -63,6 +63,7 @@ unordered_map<Addr,vector<unordered_map<Addr,Addr>>> return_footprints;
 unordered_map<uint64_t,set<pair<Addr,Addr>>> cl_decoded_entries;
 unordered_map<Addr,uint64_t> last_prefetched_cycle;
 unordered_map<Addr,pair<uint64_t,bool>> last_evicted_cycle;
+unordered_map<Addr,set<Addr>> unconditional_jit_checker;
 bool is_return = false;
 Addr last_unconditional_branch_pc = 0;
 stack<Addr> call_stack;
@@ -284,104 +285,112 @@ void perform_prefetch_update_metadata(Bp_Data* bp_data, Op* op) {
       is_return = true;
       last_unconditional_branch_pc = call_stack.top();
       call_stack.pop();
-      was_present = (cache_access(&ubtb, last_unconditional_branch_pc, &btb_line_addr, FALSE) != nullptr);
-      if (!return_footprints.count(last_unconditional_branch_pc)) {
-        return_footprints[last_unconditional_branch_pc]=vector<unordered_map<Addr,Addr>>();
-      } else if (return_footprints[last_unconditional_branch_pc][return_footprints[last_unconditional_branch_pc].size()-1].size() > 0) {
-        // prefetch all previous entries that are within [-2,5] cache line distance from this branch pc's cache line
-        Addr cl = last_unconditional_branch_pc;
-        cl = cl >> 6;
-        Addr left = cl-2;
-        Addr right = cl+6;
-        set<uint64_t> all_cache_lines;
-        for(const auto &kv: return_footprints[last_unconditional_branch_pc][return_footprints[last_unconditional_branch_pc].size()-1]) {
-          Addr p_br_pc = kv.first;
-          Addr p_br_target = kv.second;
-          Addr p_br_cl = p_br_pc >> 6;
-          if (p_br_cl>= left && p_br_cl <=right && was_present) {
-            if (SHOTGUN_CONFLUENCE_ENABLE) {  
-              if(cache_access(&shotgun_prefetch_buffer, p_br_pc, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, p_br_pc, &btb_line_addr, TRUE)==NULL) {
-                Addr repl_line_addr;
-                Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,p_br_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
-                STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
-                update_prefetch_cycle(p_br_pc);
-                update_evict_cycle(repl_line_addr);
-                *btb_line = p_br_target;
+      if (unconditional_jit_checker.count(last_unconditional_branch_pc) && unconditional_jit_checker[last_unconditional_branch_pc].size() > 1) {
+        // would not prefetch for jitted unconditonal branches
+      } else {
+        was_present = (cache_access(&ubtb, last_unconditional_branch_pc, &btb_line_addr, FALSE) != nullptr);
+        if (!return_footprints.count(last_unconditional_branch_pc)) {
+          return_footprints[last_unconditional_branch_pc]=vector<unordered_map<Addr,Addr>>();
+        } else if (return_footprints[last_unconditional_branch_pc][return_footprints[last_unconditional_branch_pc].size()-1].size() > 0) {
+          // prefetch all previous entries that are within [-2,5] cache line distance from this branch pc's cache line
+          Addr cl = last_unconditional_branch_pc;
+          cl = cl >> 6;
+          Addr left = cl-2;
+          Addr right = cl+6;
+          set<uint64_t> all_cache_lines;
+          for(const auto &kv: return_footprints[last_unconditional_branch_pc][return_footprints[last_unconditional_branch_pc].size()-1]) {
+            Addr p_br_pc = kv.first;
+            Addr p_br_target = kv.second;
+            Addr p_br_cl = p_br_pc >> 6;
+            if (p_br_cl>= left && p_br_cl <=right && was_present) {
+              if (SHOTGUN_CONFLUENCE_ENABLE) {  
+                if(cache_access(&shotgun_prefetch_buffer, p_br_pc, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, p_br_pc, &btb_line_addr, TRUE)==NULL) {
+                  Addr repl_line_addr;
+                  Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,p_br_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
+                  STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
+                  update_prefetch_cycle(p_br_pc);
+                  update_evict_cycle(repl_line_addr);
+                  *btb_line = p_br_target;
+                }
+              } else {
+                all_cache_lines.insert(p_br_cl);
               }
-            } else {
-              all_cache_lines.insert(p_br_cl);
             }
           }
-        }
-        if (!SHOTGUN_CONFLUENCE_ENABLE) {
-          for(const auto &cl: all_cache_lines) {
-            if (cl_decoded_entries.count(cl)) {
-              for(const auto &kv: cl_decoded_entries[cl]) {
-                if(cache_access(&shotgun_prefetch_buffer, kv.first, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, kv.first, &btb_line_addr, TRUE)==NULL) {
-                  Addr repl_line_addr;
-                  Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,kv.first,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
-                  STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
-                  update_prefetch_cycle(kv.first);
-                  update_evict_cycle(repl_line_addr);
-                  *btb_line = kv.second;
+          if (!SHOTGUN_CONFLUENCE_ENABLE) {
+            for(const auto &cl: all_cache_lines) {
+              if (cl_decoded_entries.count(cl)) {
+                for(const auto &kv: cl_decoded_entries[cl]) {
+                  if(cache_access(&shotgun_prefetch_buffer, kv.first, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, kv.first, &btb_line_addr, TRUE)==NULL) {
+                    Addr repl_line_addr;
+                    Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,kv.first,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
+                    STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
+                    update_prefetch_cycle(kv.first);
+                    update_evict_cycle(repl_line_addr);
+                    *btb_line = kv.second;
+                  }
                 }
               }
             }
+            all_cache_lines.clear();
           }
-          all_cache_lines.clear();
+          return_footprints[last_unconditional_branch_pc].clear();
         }
-        return_footprints[last_unconditional_branch_pc].clear();
       }
       return_footprints[last_unconditional_branch_pc].push_back(unordered_map<Addr,Addr>());
     } else if ((op->table_info->cf_type == CF_CALL) || (op->table_info->cf_type == CF_BR)) {
       is_return = false;
       last_unconditional_branch_pc = fetch_addr;
-      if (!call_footprints.count(last_unconditional_branch_pc)) {
-        call_footprints[last_unconditional_branch_pc]=vector<unordered_map<Addr,Addr>>();
-      } else if (call_footprints[last_unconditional_branch_pc][call_footprints[last_unconditional_branch_pc].size()-1].size() > 0) {
-        // prefetch all previous entries that are within [-2,5] cache line distance from this branch target's cache line
-        Addr cl = op->oracle_info.target;
-        cl = cl >> 6;
-        Addr left = cl-2;
-        Addr right = cl+6;
-        set<uint64_t> all_cache_lines;
-        for(const auto &kv: call_footprints[last_unconditional_branch_pc][call_footprints[last_unconditional_branch_pc].size()-1]) {
-          Addr p_br_pc = kv.first;
-          Addr p_br_target = kv.second;
-          Addr p_br_cl = p_br_pc >> 6;
-          if (p_br_cl>= left && p_br_cl <=right && was_present) {
-            if (SHOTGUN_CONFLUENCE_ENABLE) {
-              if(cache_access(&shotgun_prefetch_buffer, p_br_pc, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, p_br_pc, &btb_line_addr, TRUE)==NULL) {
-                Addr repl_line_addr;
-                Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,p_br_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
-                STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
-                update_prefetch_cycle(p_br_pc);
-                update_evict_cycle(repl_line_addr);
-                *btb_line = p_br_target;
+      if (unconditional_jit_checker.count(last_unconditional_branch_pc) && unconditional_jit_checker[last_unconditional_branch_pc].size() > 1) {
+        // would not prefetch for jitted unconditonal branches
+      } else {
+        if (!call_footprints.count(last_unconditional_branch_pc)) {
+          call_footprints[last_unconditional_branch_pc]=vector<unordered_map<Addr,Addr>>();
+        } else if (call_footprints[last_unconditional_branch_pc][call_footprints[last_unconditional_branch_pc].size()-1].size() > 0) {
+          // prefetch all previous entries that are within [-2,5] cache line distance from this branch target's cache line
+          Addr cl = op->oracle_info.target;
+          cl = cl >> 6;
+          Addr left = cl-2;
+          Addr right = cl+6;
+          set<uint64_t> all_cache_lines;
+          for(const auto &kv: call_footprints[last_unconditional_branch_pc][call_footprints[last_unconditional_branch_pc].size()-1]) {
+            Addr p_br_pc = kv.first;
+            Addr p_br_target = kv.second;
+            Addr p_br_cl = p_br_pc >> 6;
+            if (p_br_cl>= left && p_br_cl <=right && was_present) {
+              if (SHOTGUN_CONFLUENCE_ENABLE) {
+                if(cache_access(&shotgun_prefetch_buffer, p_br_pc, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, p_br_pc, &btb_line_addr, TRUE)==NULL) {
+                  Addr repl_line_addr;
+                  Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,p_br_pc,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
+                  STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
+                  update_prefetch_cycle(p_br_pc);
+                  update_evict_cycle(repl_line_addr);
+                  *btb_line = p_br_target;
+                }
+              } else {
+                all_cache_lines.insert(p_br_cl);
               }
-            } else {
-              all_cache_lines.insert(p_br_cl);
             }
           }
-        }
-        if (!SHOTGUN_CONFLUENCE_ENABLE) {
-          for(const auto &cl: all_cache_lines) {
-            if (cl_decoded_entries.count(cl)) {
-              for(const auto &kv: cl_decoded_entries[cl]) {
-                if(cache_access(&shotgun_prefetch_buffer, kv.first, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, kv.first, &btb_line_addr, TRUE)==NULL) {
-                  Addr repl_line_addr;
-                  Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,kv.first,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
-                  STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
-                  update_prefetch_cycle(kv.first);
-                  update_evict_cycle(repl_line_addr);
-                  *btb_line = kv.second;
+          if (!SHOTGUN_CONFLUENCE_ENABLE) {
+            for(const auto &cl: all_cache_lines) {
+              if (cl_decoded_entries.count(cl)) {
+                for(const auto &kv: cl_decoded_entries[cl]) {
+                  if(cache_access(&shotgun_prefetch_buffer, kv.first, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, kv.first, &btb_line_addr, TRUE)==NULL) {
+                    Addr repl_line_addr;
+                    Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,kv.first,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
+                    STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
+                    update_prefetch_cycle(kv.first);
+                    update_evict_cycle(repl_line_addr);
+                    *btb_line = kv.second;
+                  }
                 }
               }
             }
+            all_cache_lines.clear();
           }
-          all_cache_lines.clear();
+          call_footprints[last_unconditional_branch_pc].clear();
         }
-        call_footprints[last_unconditional_branch_pc].clear();
       }
       call_footprints[last_unconditional_branch_pc].push_back(unordered_map<Addr,Addr>());
     }
@@ -438,6 +447,10 @@ void bp_btb_shotgun_update(Bp_Data* bp_data, Op* op) {
       }
       cl_decoded_entries[cl_address].insert(make_pair(fetch_addr, op->oracle_info.target));
     }
+    if (!unconditional_jit_checker.count(fetch_addr)) {
+      unconditional_jit_checker[fetch_addr]=set<Addr>();
+    }
+    unconditional_jit_checker[fetch_addr].insert(op->oracle_info.target);
   } else if (op->table_info->cf_type == CF_RET) {
     tmp = &rib;
   } else {

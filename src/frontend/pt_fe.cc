@@ -25,6 +25,7 @@
  * Date         : 12/05/2020
  * Description  : Interface to simulate Intel processor trace
  ***************************************************************************************/
+extern "C" {
 #include "debug/debug.param.h"
 #include "debug/debug_macros.h"
 #include "globals/assert.h"
@@ -32,6 +33,7 @@
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
+}
 
 #include "bp/bp.h"
 #include "statistics.h"
@@ -171,6 +173,9 @@ void pt_init(void) {
   init_x87_stack_delta();
 
   pt_next_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));
+  for(int i = 0; i < MAX_NUM_PROCS; ++i) {
+      pt_trace_readers[i] = nullptr;
+  }
 
   /* temp variable needed for easy initialization syntax */
   char* tmp_trace_files[MAX_NUM_PROCS] = {
@@ -202,7 +207,8 @@ void pt_init(void) {
 }
 
 Addr pt_next_fetch_addr(uns proc_id) {
-  return pt_next_pi[proc_id].instruction_addr;
+    Addr next = pt_next_pi[proc_id].instruction_addr;
+  return convert_to_cmp_addr(proc_id, next);
 }
 
 Flag pt_can_fetch_op(uns proc_id) {
@@ -247,6 +253,9 @@ void pt_close_trace_file(uns proc_id) {
 
 void pt_done() {
   printf("Frontend simulation finished for all PTs\n");
+  for(int i = 0; i < MAX_NUM_PROCS; ++i) {
+      delete pt_trace_readers[i];
+  }
 }
 
 void pt_setup(uns proc_id) {

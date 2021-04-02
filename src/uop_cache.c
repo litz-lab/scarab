@@ -132,9 +132,6 @@ void insert_uop_cache() {
 
     // if we used up too many full cache lines, invalidate all of them
     if (n_lines_used >= UOP_CACHE_ASSOC) {
-      // printf("INV, %llu, idx:%i, op:%llu, %llu\n", start_addr, 
-      //     start_addr >> uop_cache.shift_bits & uop_cache.set_mask,
-      //     op->op_num, sim_time);
       cache_invalidate(&uop_cache, start_addr, &line_addr);
       break;
     }
@@ -218,7 +215,7 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
 }
 
 void end_accumulate(void) {
-  if (UOP_CACHE_SIZE == 0) {
+  if (UOP_CACHE_SIZE == 0 && !INF_SIZE_UOP_CACHE && !INF_SIZE_UOP_CACHE_PW_SIZE_LIM) {
     return;
   }
 
@@ -242,7 +239,8 @@ void accumulate_op(Op* op) {
   // For pw termination purposes, assume it is in first line.
   static Counter cons_op_num = 0;
 
-  if (UOP_CACHE_SIZE == 0 || ORACLE_PERFECT_UOP_CACHE) {
+  if ((UOP_CACHE_SIZE == 0 && !INF_SIZE_UOP_CACHE && !INF_SIZE_UOP_CACHE_PW_SIZE_LIM) 
+      || ORACLE_PERFECT_UOP_CACHE) {
     return;
   }
 

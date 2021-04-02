@@ -345,6 +345,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
      speculatively updates global history */
   op->recovery_info.proc_id          = op->proc_id;
   op->recovery_info.pred_global_hist = bp_data->global_hist;
+  op->recovery_info.fetch_cycle      = op->fetch_cycle;
   op->recovery_info.targ_hist        = bp_data->targ_hist;
   op->recovery_info.new_dir          = op->oracle_info.dir;
   op->recovery_info.crs_next         = bp_data->crs.next;
@@ -763,6 +764,46 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
     bp_data->global_hist = info->pred_global_hist;
   }
   bp_data->targ_hist = info->targ_hist;
+
+  if (cycle_count > info->fetch_cycle) {
+    uint64_t current_penalty = cycle_count - info->fetch_cycle;
+    INC_STAT_EVENT(bp_data->proc_id, MY_MISPREDICTION_PENALTY, current_penalty);
+  }
+  STAT_EVENT(bp_data->proc_id, MY_MISPREDICTION_COUNT);
+
+  switch (cf_type)
+  {
+  case NOT_CF:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_NON);
+    break;
+  case CF_BR:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_BR);
+    break;
+  case CF_CBR:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_CBR);
+    break;
+  case CF_CALL:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_CALL);
+    break;
+  case CF_IBR:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_IBR);
+    break;
+  case CF_ICALL:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_ICALL);
+    break;
+  case CF_ICO:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_ICO);
+    break;
+  case CF_RET:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_RET);
+    break;
+  case CF_SYS:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_SYS);
+    break;
+  
+  default:
+    break;
+  }
 
   /* this event counts updates to BP, so it's really branch resolutions */
   STAT_EVENT(bp_data->proc_id, POWER_BRANCH_MISPREDICT);

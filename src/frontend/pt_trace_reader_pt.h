@@ -176,6 +176,18 @@ public:
               ++num_direct_brs_in_trace;
           }
       }
+      bool inserted_nop = false;
+      if (_prior.valid && INS_IsRep(ins)) {
+        // repz insns aren't supported, so just nop them
+        auto length = xed_decoded_inst_get_length(_prior.ins);
+        std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
+        _prior.ins = createNop(length);
+        inserted_nop = true;
+        if(_prior.pc == next_line.pc) {
+            _info = _prior; // skip prior insn
+            return true;
+        }
+      }
       bool changes_cf = ins.ins && INS_ChangeControlFlow(ins);
       bool incorrect_branch = ins.ins && INS_IsDirectBranchOrCall(ins) && next_line.pc != INS_DirectBranchOrCallTargetAddress(ins) && next_line.pc != (ins.pc + INS_Size(ins));
     if(incorrect_branch) {
@@ -190,19 +202,12 @@ public:
         std::cout << "Jump: " << diff << std::endl;
         xed_decoded_inst_t* new_inst = createJmp(diff);
         _prior.ins = new_inst;
+        inserted_nop = false; // replaced nop with a jmp, so we really inserted a jmp instead of a nop
         ++num_inserted_direct_brs;
         _prior.static_target = next_line.pc;
-    } else if (_prior.valid && xed_decoded_inst_get_attribute(ins.ins, XED_ATTRIBUTE_REP) > 0) {
-        // repz insns aren't supported, so just nop them
-        auto length = xed_decoded_inst_get_length(_prior.ins);
-        std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
-        _prior.ins = createNop(length);
-        ++num_inserted_nops;
-        if(_prior.pc == next_line.pc) {
-            _info = _prior; // skip prior insn
-            return true;
-        }
     }
+    if(inserted_nop)
+        ++num_inserted_nops;
     _info.pc = next_line.pc;
     _info.ins = xed_ins;
     _info.pid = 1;

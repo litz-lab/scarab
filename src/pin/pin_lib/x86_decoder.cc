@@ -1183,6 +1183,7 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_DIVPS]    = {OP_FDIV, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_DIVSD]    = {OP_FDIV, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_DIVSS]    = {OP_FDIV, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_ENTER]    = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_FABS]     = {OP_LOGIC, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_FADD]     = {OP_FADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_FADDP]    = {OP_FADD, -1, 1, NONE};

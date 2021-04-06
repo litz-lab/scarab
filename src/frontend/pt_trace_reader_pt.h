@@ -189,7 +189,7 @@ public:
       if (_prior.valid && INS_IsRep(ins)) {
         // repz insns aren't supported, so just nop them
         auto length = xed_decoded_inst_get_length(_prior.ins);
-        std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
+        // std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
         _prior.ins = createNop(length);
         inserted_nop = true;
         if(_prior.pc == next_line.pc) {
@@ -200,15 +200,15 @@ public:
       bool changes_cf = ins.ins && INS_ChangeControlFlow(ins);
       bool incorrect_branch = ins.ins && INS_IsDirectBranchOrCall(ins) && next_line.pc != INS_DirectBranchOrCallTargetAddress(ins) && next_line.pc != (ins.pc + INS_Size(ins));
     if(incorrect_branch) {
-        //std::cout << "branch " << INS_Address(ins) << " is incorrect!" << std::endl;
-        //std::cout << "xed target: " << INS_DirectBranchOrCallTargetAddress(ins) << " next pc: " << next_line.pc << std::endl;
+        // std::cout << "branch " << INS_Address(ins) << " is incorrect!" << std::endl;
+        // std::cout << "xed target: " << INS_DirectBranchOrCallTargetAddress(ins) << " next pc: " << next_line.pc << std::endl;
     }
     if(_prior.valid && (!changes_cf || INS_Category(ins) == XC(SYSCALL) || incorrect_branch) && next_line.pc != _prior.pc + xed_decoded_inst_get_length(_prior.ins)) {
-        //std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a jump to " << std::hex << next_line.pc << std::endl;
+        // std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a jump to " << std::hex << next_line.pc << std::endl;
         int64_t diff = std::max(next_line.pc, _prior.pc) - std::min(next_line.pc, _prior.pc);
         if(next_line.pc < _prior.pc)
             diff *= -1;
-        //std::cout << "Jump: " << diff << std::endl;
+        // std::cout << "Jump: " << diff << std::endl;
         xed_decoded_inst_t* new_inst = createJmp(diff);
         _prior.ins = new_inst;
         inserted_nop = false; // replaced nop with a jmp, so we really inserted a jmp instead of a nop
@@ -217,7 +217,7 @@ public:
     } else if (_prior.valid && xed_decoded_inst_get_attribute(ins.ins, XED_ATTRIBUTE_REP) > 0) {
         // repz insns aren't supported, so just nop them
         auto length = xed_decoded_inst_get_length(_prior.ins);
-        //std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
+        // std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
         _prior.ins = createNop(length);
         ++num_inserted_nops;
         if(_prior.pc == next_line.pc) {

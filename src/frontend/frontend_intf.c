@@ -35,6 +35,7 @@
 #include "frontend/pin_trace_fe.h"
 #include "frontend/memtrace_fe.h"
 #include "frontend/pt_fe.h"
+#include "frontend/champsim_fe.h"
 
 Frontend_Impl frontend_table[] = {
 #define FRONTEND_IMPL(id, name, prefix) \

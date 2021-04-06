@@ -1,0 +1,29 @@
+#ifndef __FDIP_H_
+#define __FDIP_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "op.h"
+#include "bp/bp.h"
+#include "icache_stage.h"
+#include "globals/global_types.h"
+
+  /*************Interface to Scarab***************/
+  void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic);
+  Addr fdip_pred(Addr bp_pc, Op *op);
+  void fdip_retire(Op *op);
+  void fdip_resolve(Op *op);
+  void fdip_new_branch(Addr bp_pc, Op *op);
+  void fdip_recover(Recovery_Info *info);
+  void fdip_update();
+
+  /* Private*/
+  void fdip_clear_ftq(Addr recover_pc);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

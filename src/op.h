@@ -96,6 +96,7 @@ typedef struct Wake_Up_Entry_struct {
 
 typedef struct Recovery_Info_struct {  // QUESTION no proc_id?
   uns   proc_id;
+  Counter fetch_cycle;
   uns32 pred_global_hist;  // the global history used for the prediction
   uns64 conf_perceptron_global_hist;  // Only for confidnece perceptron, a copy
                                       // of the correct global history

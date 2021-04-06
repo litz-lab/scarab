@@ -75,6 +75,10 @@ void frontend_init() {
       memtrace_init();
     break;
   }
+    case FE_CHAMPSIM: {
+                          champsim_init();
+                          break;
+                      }
     default:
       ASSERT(0, 0);
       break;
@@ -99,6 +103,10 @@ void frontend_done(Flag* retired_exit) {
       memtrace_done();
       break;
     }
+    case FE_CHAMPSIM: {
+                          champsim_done();
+                          break;
+                      }
     default:
       ASSERT(0, 0);
       break;

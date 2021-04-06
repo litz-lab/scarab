@@ -148,7 +148,7 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
   pt_next_pi->actually_taken = insi->taken;
   if(insi->static_target) {
       // XED encoded target may not be right, so set it directly
-      std::cout << "setting branch target to: " << insi->static_target << " for PC: " << insi->pc << std::endl;
+      //std::cout << "setting branch target to: " << insi->static_target << " for PC: " << insi->pc << std::endl;
       pt_next_pi->branch_target = insi->static_target;
   }
   /* std::cout << "branch target for PC: " << pt_next_pi->instruction_addr << " is: " << pt_next_pi->branch_target << std::endl; */

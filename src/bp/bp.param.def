@@ -56,6 +56,7 @@ DEF_PARAM(  perfect_ibp               , PERFECT_IBP               , Flag    , Fl
 DEF_PARAM(  perfect_crs               , PERFECT_CRS               , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM(  perfect_cbr_btb           , PERFECT_CBR_BTB           , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM(  perfect_nt_btb            , PERFECT_NT_BTB            , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  log_btb_lookup_update     , LOG_BTB_LOOKUP_UPDATE     , Flag    , Flag       , FALSE      ,        )
 
 DEF_PARAM(  cfs_per_cycle             , CFS_PER_CYCLE             , uns     , uns        , 3          ,        )
 DEF_PARAM(  update_bp_off_path        , UPDATE_BP_OFF_PATH        , Flag    , Flag       , FALSE      ,        )
@@ -151,3 +152,14 @@ DEF_PARAM(  perceptron_train_misp_factor  , PERCEPTRON_TRAIN_MISP_FACTOR        
 DEF_PARAM(  perceptron_train_corr_factor  , PERCEPTRON_TRAIN_CORR_FACTOR          , uns     , uns        , 1          ,        )
 DEF_PARAM(  perceptron_conf_his_both     , PERCEPTRON_CONF_HIS_BOTH   , Flag    , Flag        , FALSE     ,           )
 DEF_PARAM(  perceptron_conf_his_both_length  , PERCEPTRON_CONF_HIS_BOTH_LENGTH   , uns    , uns        , 4     ,           )
+
+DEF_PARAM( fanout                      , FANOUT                    , uns    , uns   , 100        ,       )
+DEF_PARAM( lbr_capacity                , LBR_CAPACITY              , uns    , uns   , 32        ,       )
+DEF_PARAM( btb_prefetch_buffer_size    , BTB_PREFETCH_BUFFER_SIZE  , uns    , uns   , 32        ,       )
+DEF_PARAM( btb_prefetch_buffer_assoc   , BTB_PREFETCH_BUFFER_ASSOC , uns    , uns   , 32        ,       )
+DEF_PARAM( max_btb_prefetch_depth      , MAX_BTB_PREFETCH_DEPTH    , uns    , uns   ,  4        ,       )
+DEF_PARAM( footprint                   , FOOTPRINT                 , char * , string, NULL      ,       )
+DEF_PARAM( shotgun_ubtb_size           , SHOTGUN_UBTB_SIZE         , uns    , uns   , 5132      ,       )
+DEF_PARAM( shotgun_cbtb_size           , SHOTGUN_CBTB_SIZE         , uns    , uns   , 428       ,       )
+DEF_PARAM( shotgun_rib_size            , SHOTGUN_RIB_SIZE           , uns    , uns   , 1712     ,       )
+DEF_PARAM(shotgun_confluence_enable    , SHOTGUN_CONFLUENCE_ENABLE, Flag, Flag, FALSE, )

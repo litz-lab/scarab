@@ -222,9 +222,9 @@ void set_memory(Memory* new_mem) {
 
 static inline void init_mem_queue(Mem_Queue* queue, char* name, uns size,
                                   Mem_Queue_Type type) {
-  ASSERTM(
+  /*ASSERTM(
     0, !(queue->type & QUEUE_MEM),
-    "Ramulator does not use QUEUE_MEM. QUEUE_MEM should not be initialized!\n");
+    "Ramulator does not use QUEUE_MEM. QUEUE_MEM should not be initialized!\n");*/
 
   queue->base = (Mem_Queue_Entry*)malloc(sizeof(Mem_Queue_Entry) * (size + 1));
   queue->size = size;

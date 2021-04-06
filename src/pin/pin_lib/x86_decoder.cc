@@ -353,7 +353,14 @@ void print_err_if_invalid(ctype_pin_inst* info, const INS& ins) {
     bool correct = true;
 #endif
   if(invalid || !correct) {
-
+      if(invalid) {
+          std::cout << "Invalid inst! ";
+      }
+#ifdef MEMTRACE
+      if(!correct) {
+          std::cout << "Not correct inst: " << +info->cf_type << ", " << std::hex << info->instruction_addr << ' ' << std::dec << +info->size << ' ' << xed_operand_values_get_branch_displacement_int32(ins.ins) << ' ' << std::hex << info->branch_target << ' ';
+      }
+#endif
     //(*glb_err_ostream)
     std::cout
       << "Unmapped instruction at "
@@ -1253,6 +1260,7 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_DIVPS]    = {OP_FDIV, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_DIVSD]    = {OP_FDIV, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_DIVSS]    = {OP_FDIV, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_ENTER]    = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_FABS]     = {OP_LOGIC, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_FADD]     = {OP_FADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_FADDP]    = {OP_FADD, -1, 1, NONE};

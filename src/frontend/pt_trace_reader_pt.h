@@ -41,6 +41,8 @@
 
 #include "frontend/memtrace_trace_reader.h"
 
+#include "general.param.h"
+
 #define GZ_BUFFER_SIZE 80
 #define panic(...) printf(__VA_ARGS__)
 
@@ -64,6 +66,13 @@ private:
 
 public:
   bool read_next_line(PTInst &inst) {
+      static uns64 num_nops_at_start = 0;
+      if(num_nops_at_start <= NUM_NOPS) { // = is because the last one will be overwritten as a JMP to the real instruction stream
+          inst.pc = NOPS_BB_START + num_nops_at_start++;
+          inst.size = 1;
+          inst.inst_bytes[0] = 0x90;
+          return true;
+      }
     if (raw_file == NULL)
       return false;
     char buffer[GZ_BUFFER_SIZE];
@@ -176,6 +185,18 @@ public:
               ++num_direct_brs_in_trace;
           }
       }
+      bool inserted_nop = false;
+      if (_prior.valid && INS_IsRep(ins)) {
+        // repz insns aren't supported, so just nop them
+        auto length = xed_decoded_inst_get_length(_prior.ins);
+        std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
+        _prior.ins = createNop(length);
+        inserted_nop = true;
+        if(_prior.pc == next_line.pc) {
+            _info = _prior; // skip prior insn
+            return true;
+        }
+      }
       bool changes_cf = ins.ins && INS_ChangeControlFlow(ins);
       bool incorrect_branch = ins.ins && INS_IsDirectBranchOrCall(ins) && next_line.pc != INS_DirectBranchOrCallTargetAddress(ins) && next_line.pc != (ins.pc + INS_Size(ins));
     if(incorrect_branch) {
@@ -190,6 +211,7 @@ public:
         //std::cout << "Jump: " << diff << std::endl;
         xed_decoded_inst_t* new_inst = createJmp(diff);
         _prior.ins = new_inst;
+        inserted_nop = false; // replaced nop with a jmp, so we really inserted a jmp instead of a nop
         ++num_inserted_direct_brs;
         _prior.static_target = next_line.pc;
     } else if (_prior.valid && xed_decoded_inst_get_attribute(ins.ins, XED_ATTRIBUTE_REP) > 0) {
@@ -203,6 +225,8 @@ public:
             return true;
         }
     }
+    if(inserted_nop)
+        ++num_inserted_nops;
     _info.pc = next_line.pc;
     _info.ins = xed_ins;
     _info.pid = 1;

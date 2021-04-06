@@ -41,6 +41,8 @@
 
 #include "frontend/memtrace_trace_reader.h"
 
+#include "general.param.h"
+
 #define GZ_BUFFER_SIZE 80
 #define panic(...) printf(__VA_ARGS__)
 
@@ -64,6 +66,13 @@ private:
 
 public:
   bool read_next_line(PTInst &inst) {
+      static uns64 num_nops_at_start = 0;
+      if(num_nops_at_start <= NUM_NOPS) { // = is because the last one will be overwritten as a JMP to the real instruction stream
+          inst.pc = NOPS_BB_START + num_nops_at_start++;
+          inst.size = 1;
+          inst.inst_bytes[0] = 0x90;
+          return true;
+      }
     if (raw_file == NULL)
       return false;
     char buffer[GZ_BUFFER_SIZE];

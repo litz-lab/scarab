@@ -443,8 +443,8 @@ Addr* bp_btb_shotgun_pred(Bp_Data* bp_data, Op* op) {
   if (result == nullptr) {
     update_shotgun_inves_stat_after_btb_miss(op);
   }
-  //perform_prefetch_update_metadata(bp_data, op);
-  modified_prefetch(bp_data, op);
+  perform_prefetch_update_metadata(bp_data, op);
+  //modified_prefetch(bp_data, op);
   return result;
 }
 

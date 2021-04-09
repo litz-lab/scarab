@@ -250,6 +250,24 @@ void bp_btb_shotgun_init(Bp_Data* bp_data) {
   }
 }
 
+void modified_prefetch(Bp_Data* bp_data, Op* op) {
+  if (op->table_info->cf_type != CF_BR && op->table_info->cf_type != CF_CALL) return;
+  Addr  fetch_addr = op->oracle_info.pred_addr;
+  Addr *btb_line, btb_line_addr, repl_line_addr;
+  if (cl_decoded_entries.count(fetch_addr)) {
+    for(const auto &kv: cl_decoded_entries[fetch_addr]) {
+      if(cache_access(&shotgun_prefetch_buffer, kv.first, &btb_line_addr, TRUE)==NULL && cache_access(&cbtb, kv.first, &btb_line_addr, TRUE)==NULL) {
+        Addr repl_line_addr;
+        Addr *btb_line  = (Addr*)cache_insert_replpos(&shotgun_prefetch_buffer, bp_data->proc_id,kv.first,&btb_line_addr, &repl_line_addr, INSERT_REPL_DEFAULT, TRUE);
+        STAT_EVENT(op->proc_id, SHOTGUN_BTB_PREFETCH_CNT);
+        update_prefetch_cycle(kv.first);
+        update_evict_cycle(repl_line_addr);
+        *btb_line = kv.second;
+      }
+    }
+  }
+}
+
 void perform_prefetch_update_metadata(Bp_Data* bp_data, Op* op) {
   Addr  fetch_addr = op->oracle_info.pred_addr;
   Addr *btb_line, btb_line_addr, repl_line_addr;
@@ -425,7 +443,8 @@ Addr* bp_btb_shotgun_pred(Bp_Data* bp_data, Op* op) {
   if (result == nullptr) {
     update_shotgun_inves_stat_after_btb_miss(op);
   }
-  perform_prefetch_update_metadata(bp_data, op);
+  //perform_prefetch_update_metadata(bp_data, op);
+  modified_prefetch(bp_data, op);
   return result;
 }
 

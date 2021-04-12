@@ -356,9 +356,9 @@ void perform_prefetch_update_metadata(Bp_Data* bp_data, Op* op) {
         }
       }
       return_footprints[last_unconditional_branch_pc].push_back(unordered_map<Addr,Addr>());
-    } else if ((op->table_info->cf_type == CF_CALL) || (op->table_info->cf_type == CF_BR)) {
+    } else /*if ((op->table_info->cf_type == CF_CALL) || (op->table_info->cf_type == CF_BR))*/ {
       is_return = false;
-      last_unconditional_branch_pc = fetch_addr;
+      last_unconditional_branch_pc = fetch_addr;//op->oracle_info.target;
       if (unconditional_jit_checker.count(last_unconditional_branch_pc) && unconditional_jit_checker[last_unconditional_branch_pc].size() > 1) {
         // would not prefetch for jitted unconditonal branches
       } else {

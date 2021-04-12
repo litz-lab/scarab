@@ -153,7 +153,7 @@ DEF_PARAM(  perceptron_train_corr_factor  , PERCEPTRON_TRAIN_CORR_FACTOR        
 DEF_PARAM(  perceptron_conf_his_both     , PERCEPTRON_CONF_HIS_BOTH   , Flag    , Flag        , FALSE     ,           )
 DEF_PARAM(  perceptron_conf_his_both_length  , PERCEPTRON_CONF_HIS_BOTH_LENGTH   , uns    , uns        , 4     ,           )
 
-DEF_PARAM( fanout                      , FANOUT                    , uns    , uns   , 100        ,       )
+DEF_PARAM( fanout                      , FANOUT                    , uns    , uns   , 1        ,       )
 DEF_PARAM( lbr_capacity                , LBR_CAPACITY              , uns    , uns   , 32        ,       )
 DEF_PARAM( btb_prefetch_buffer_size    , BTB_PREFETCH_BUFFER_SIZE  , uns    , uns   , 32        ,       )
 DEF_PARAM( btb_prefetch_buffer_assoc   , BTB_PREFETCH_BUFFER_ASSOC , uns    , uns   , 32        ,       )

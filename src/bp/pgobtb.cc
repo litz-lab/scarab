@@ -289,9 +289,14 @@ void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
       uint64_t entry_count = strtoul(parsed[1].c_str(), NULL, 10);
       prefetch_footprint[function_start] =std::unordered_map<Addr,Addr>();
       for(int i = 0; i<entry_count; i++) {
-        uint64_t pc = strtoul(parsed[2+2*i].c_str(), NULL, 10);
-        uint64_t target = strtoul(parsed[2+1+2*i].c_str(), NULL, 10);
-        prefetch_footprint[function_start][pc]=target;
+        uint64_t pc = strtoul(parsed[2+4*i].c_str(), NULL, 10);
+        uint64_t target = strtoul(parsed[2+1+4*i].c_str(), NULL, 10);
+        uint64_t cover_count = strtoul(parsed[2+2+4*i].c_str(), NULL, 10);
+        uint64_t access_count = strtoul(parsed[2+3+4*i].c_str(), NULL, 10);
+        double prob = 1000.0 * cover_count / access_count;
+        if (prob >= FANOUT) {
+          prefetch_footprint[function_start][pc]=target;
+        }
       }
     }
     printf("Initializing prefetch footprint with size %u\n", prefetch_footprint.size());

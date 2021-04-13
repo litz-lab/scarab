@@ -1,0 +1,10 @@
+Application Frontend-bound
+cassandra 28.175
+drupal 38.3324
+finagle-chirper	33.169
+finagle-http 42.5744
+kafka 23.8173
+mediawiki 31.3281
+tomcat 36.9957
+verilator 77.51
+wordpress 30.4224

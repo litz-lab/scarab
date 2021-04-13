@@ -111,3 +111,14 @@ add_subplot('/mnt/storage/takh/git-repos/scarab_hlitz/test/limit-study/limit-stu
 plt.axhline(0, color='gray')
 plt.tight_layout()
 fig.savefig("limit-study.pdf", bbox_inches='tight', pad_inches=0)
+plt.close(fig)
+
+
+w, h = figaspect(0.4/0.9)
+fig, axs = plt.subplots(1, 1, figsize=(w, h))
+
+add_subplot('/mnt/storage/takh/git-repos/scarab_hlitz/test/limit-study-non-fdip/limit-study.txt', axs, "", True)
+
+plt.axhline(0, color='gray')
+plt.tight_layout()
+fig.savefig("limit-study-non-fdip.pdf", bbox_inches='tight', pad_inches=0)

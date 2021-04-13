@@ -100,7 +100,7 @@ def add_subplot(filename, ax, title, show_legend=False, logy=False):  # , loc):
 
     # ax.set_xlabel('Applications')
     ax.set_ylabel(r'Misses (\%)')
-    ax.set_ylim(ymin=-3)
+    ax.set_ylim(ymin=-3, ymax=120)
     if title != "":
         ax.set_title(title)
     if show_legend:

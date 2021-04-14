@@ -36,6 +36,7 @@
 #include "isa/isa_macros.h"
 
 #include "bp//bp_conf.h"
+#include "bp//confluencebtb.h"
 #include "bp/bp.h"
 //#include "bp/bp_dir_mech.h"
 #include "bp/bp_targ_mech.h"

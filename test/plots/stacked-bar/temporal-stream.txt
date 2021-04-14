@@ -1,0 +1,12 @@
+\% of all BTB Misses
+
+Application Non-repetitive New Recurring
+cassandra 13.8124 36.9783 49.2093
+drupal 11.8826 35.7759 52.3414
+finagle-chirper 8.53132 35.6604 55.8083
+finagle-http 9.05772 36.0634 54.8789
+kafka 12.4181 36.6343 50.9476
+mediawiki 10.0877 34.9638 54.9485
+tomcat 10.5721 36.267 53.1608
+verilator 24.1776 36.0086 39.8138
+wordpress 12.25 35.1463 52.6037

@@ -1,3 +1,5 @@
+\% of all BTB Misses
+
 Application Compulsory Capacity Conflict
 cassandra 4.540000 58.000000 37.460000
 drupal 6.590000 48.370000 45.040000

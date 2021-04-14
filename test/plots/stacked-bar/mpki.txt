@@ -1,0 +1,13 @@
+BTB Misses Per Kilo
+Instruction (MPKI)
+
+Application MPKI
+cassandra 15.6687
+drupal 23.5933
+finagle-chirper 8.2174
+finagle-http 8.53267
+kafka 19.7615
+mediawiki 30.2702
+tomcat 17.8162
+verilator 120.648
+wordpress 22.4634

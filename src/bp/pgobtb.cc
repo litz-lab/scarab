@@ -287,17 +287,42 @@ void  bp_btb_pgobtb_init(Bp_Data* bp_data) {
       uint64_t function_start = strtoul(parsed[0].c_str(), NULL, 10);
       // uint64_t function_end = strtoul(parsed[1].c_str(), NULL, 10);
       uint64_t entry_count = strtoul(parsed[1].c_str(), NULL, 10);
+      uint64_t maximum_distance = ( 1 << MAX_DISTANCE_BITS ) - 1;
       prefetch_footprint[function_start] =std::unordered_map<Addr,Addr>();
-      for(int i = 0; i<entry_count; i++) {
+      std::vector<std::tuple<uint64_t, uint64_t, uint64_t, uint64_t>> all_entries;
+      for(int i = 0; i < entry_count; i++) {
         uint64_t pc = strtoul(parsed[2+4*i].c_str(), NULL, 10);
         uint64_t target = strtoul(parsed[2+1+4*i].c_str(), NULL, 10);
         uint64_t cover_count = strtoul(parsed[2+2+4*i].c_str(), NULL, 10);
         uint64_t access_count = strtoul(parsed[2+3+4*i].c_str(), NULL, 10);
-        double prob = 1000.0 * cover_count / access_count;
-        if (prob >= FANOUT) {
-          prefetch_footprint[function_start][pc]=target;
+        all_entries.push_back(std::make_tuple(cover_count, pc, target, access_count));
+      }
+      if (ENABLE_MAX_PER_BBL) {
+        std::sort(all_entries.begin(), all_entries.end());
+        std::reverse(all_entries.begin(), all_entries.end());
+        if (entry_count > MAX_PER_BBL && MAX_PER_BBL >= 0) {
+          entry_count = MAX_PER_BBL;
         }
       }
+      for(int i = 0; i<entry_count; i++) {
+        uint64_t pc = std::get<1>(all_entries[i]);
+        uint64_t target = std::get<2>(all_entries[i]);
+        uint64_t candidate_to_pc_distance = std::max(pc, function_start) - std::min(pc, function_start);
+        uint64_t pc_to_target_distance = std::max(pc, target) - std::min(pc, target);
+        uint64_t cover_count = std::get<0>(all_entries[i]);
+        uint64_t access_count = std::get<3>(all_entries[i]);
+        double prob = 1000.0 * cover_count / access_count;
+        if (prob >= FANOUT ) {
+          if (ENABLE_CONTRIBUTION) {
+            if (candidate_to_pc_distance <= maximum_distance && pc_to_target_distance <= maximum_distance) {
+              prefetch_footprint[function_start][pc]=target;
+            }
+          } else {
+            prefetch_footprint[function_start][pc]=target;
+          }
+        }
+      }
+      all_entries.clear();
     }
     printf("Initializing prefetch footprint with size %u\n", prefetch_footprint.size());
     all_strings.clear();

@@ -1,12 +1,12 @@
 \% of all BTB misses
 
-Application Unconditional-Branch	Conditional-Branch	Call	Others
-cassandra	6.76	61.325	14.448	17.467
-drupal	55.063	25.797	7.799	11.341
-finagle-chirper	7.763	60.251	15.206	16.78
-finagle-http	10.298	59.033	15.52	15.149
-kafka	6.424	62.985	14.051	16.54
-mediawiki	59.495	24.622	5.167	10.716
-tomcat	10.482	57.604	17.802	14.112
-verilator	20.762	77.02	1.674	0.544
-wordpress	63.363	21.961	5.402	9.274
+Application Unconditional-Branch Conditional-Branch Call Others
+cassandra 6.76 61.325 14.448 17.467
+drupal 55.063 25.797 7.799 11.341
+finagle-chirper 7.763 60.251 15.206 16.78
+finagle-http 10.298 59.033 15.52 15.149
+kafka 6.424 62.985 14.051 16.54
+mediawiki 59.495 24.622 5.167 10.716
+tomcat 10.482 57.604 17.802 14.112
+verilator 20.762 77.02 1.674 0.544
+wordpress 63.363 21.961 5.402 9.274

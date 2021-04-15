@@ -1,0 +1,12 @@
+Accuracy \%
+
+Application confluence-accuracy shotgun-accuracy sys-accuracy
+cassandra 5.59754 14.686 30.1794
+drupal 1.94893 11.0947 24.9569
+finagle-chirper 4.84095 18.9509 31.5326
+finagle-http 4.91306 20.7486 29.7669
+kafka 6.76359 16.8354 29.1176
+mediawiki 2.59947 13.1192 23.1173
+tomcat 7.92052 16.3889 33.8809
+verilator 21.0717 51.8513 55.698
+wordpress 1.37775 7.65151 23.597

@@ -20,7 +20,7 @@ def is_number(s):
         return False
 
 
-def add_subplot(filename, ax, ytitle, show_legend=False, logy=False):  # , loc):
+def add_subplot(filename, ax, ytitle, show_legend=True, logy=False):  # , loc):
     data = [[], {}] # [[column names], {col_name: [data for col]}]
 
     file_ytitle = ""
@@ -76,19 +76,18 @@ def add_subplot(filename, ax, ytitle, show_legend=False, logy=False):  # , loc):
     for i in range(1, len(data[0])):
         y = data[1][data[0][i]]
         if i == 1:
-            prior = np.zeros(len(y))
-        b = ax.bar(x * len(data[0])* dimw, y, dimw,
+            prior = []
+        b = ax.bar(x + (i-1) * dimw, y, dimw,
                    label=data[0][i], zorder=3,
-                   bottom=prior,
                    fill=False,
                    hatch=hatches[index%len(hatches)],
                    edgecolor=colors[index%len(colors)])
         index += 1
         all_bars.append(b)
-        prior+=y
+        prior.extend(y)
 
     #ax.set_xticks(x + dimw / 2, data[1][data[0][0]])
-    ax.set_xticks(x*len(data[0])*dimw)
+    ax.set_xticks(x+w/2-dimw/2)
     ax.set_xticklabels(data[1][data[0][0]], rotation=xlabel_rotation)
 
     if dim == 2:
@@ -102,14 +101,15 @@ def add_subplot(filename, ax, ytitle, show_legend=False, logy=False):  # , loc):
                     va='bottom', rotation=0)  # (bar_original[i].get_height() + bar_modified[i].get_height())/2 #,fontsize=17
 
     # ax.set_xlabel('Applications')
-    ax.set_ylabel(r'\% of all BTB Misses')
-    ax.set_ylim(ymin=0, ymax=max(prior)+20)
+    if logy:
+        ax.set_yscale('symlog') # only way to get log and negative values
+    # ax.set_adjustable('datalim')
+    # ax.set_ylim(-1e1, 1e2)
     if ytitle != "":
         ax.set_ylabel(ytitle)
     if show_legend:
+        # ax.legend(ncol=4)
         ax.legend(ncol=4, columnspacing=0.5, fontsize='x-small')
-    if logy:
-        ax.set_yscale('symlog')
     #ax.legend(ncol=3, columnspacing=0.25, title=title, loc=loc)
     ax.grid(linestyle='--', zorder=0)
 
@@ -118,21 +118,12 @@ w, h = figaspect(0.4/0.9)
 fig, axs = plt.subplots(1, 1, figsize=(w, h))
 filename = 'no-prefetch'
 logy=False
-show_legend=True
 if len(sys.argv) > 1:
     filename = sys.argv[1]
-for i in range(2, len(sys.argv)):
-    if sys.argv[i] == "no-legend":
-        show_legend = False
-    elif sys.argv[i] == "logy":
-        logy=True
-    elif sys.argv[i] == "-h" or sys.argv[i] == "--help":
-        print("Usage: filename [no-legend, logy]+")
-        print("no-legend disables the legend, logy turns on symlog for the y axis")
-    else:
-        print("Ignoring unrecognized command line flag: ", sys.argv[i])
-add_subplot(filename+'.txt', axs, "", show_legend, logy)
+if len(sys.argv) > 2:
+    logy=True
+add_subplot(filename+'.txt', axs, "", logy=logy)
 
 plt.axhline(0, color='gray')
 plt.tight_layout()
-fig.savefig("stacked-"+filename+".pdf", bbox_inches='tight', pad_inches=0)
+fig.savefig(filename+".pdf", bbox_inches='tight', pad_inches=0)

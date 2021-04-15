@@ -1,0 +1,13 @@
+Unconditional working set size
+(\# branches)
+
+Application \#-of-hot-u-btb-entries
+cassandra 5895
+drupal 3734
+finagle-chirper 7485
+finagle-http 6685
+kafka 9762
+mediawiki 4594
+tomcat 6400
+verilator 5878
+wordpress 2340

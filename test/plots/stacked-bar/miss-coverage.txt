@@ -1,0 +1,12 @@
+BTB Miss coverage \%
+
+Application confluence shotgun sys
+cassandra 44.2551 42.5232 72.8668
+drupal 41.8024 -17.1533 57.187
+finagle-chirper 45.7271 7.25743 58.5327
+finagle-http 45.8601 2.30321 58.1341
+kafka 45.0522 42.0135 72.9045
+mediawiki 42.1397 -15.6963 56.2834
+tomcat 42.1595 32.3436 58.7607
+verilator 31.6548 14.3559 95.8438
+wordpress 40.5675 -35.6595 58.3972

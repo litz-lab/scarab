@@ -20,7 +20,7 @@ def is_number(s):
         return False
 
 
-def add_subplot(filename, ax, ytitle, show_legend=False, logy=False):  # , loc):
+def add_subplot(filename, ax, ytitle, show_legend=False, logy=False, hline=None):  # , loc):
     data = [[], {}] # [[column names], {col_name: [data for col]}]
 
     file_ytitle = ""
@@ -103,13 +103,19 @@ def add_subplot(filename, ax, ytitle, show_legend=False, logy=False):  # , loc):
 
     # ax.set_xlabel('Applications')
     ax.set_ylabel(r'\% of all BTB Misses')
-    ax.set_ylim(ymin=0, ymax=max(prior)+20)
+    ax.set_ylim(ymin=0, ymax=max(prior)*1.20)
     if ytitle != "":
         ax.set_ylabel(ytitle)
     if show_legend:
         ax.legend(ncol=4, columnspacing=0.5, fontsize='x-small')
     if logy:
         ax.set_yscale('symlog')
+
+    if hline != None:
+        hline_handle = ax.axhline(y=hline, color='blue')
+    if dim == 1 and hline != None:
+        # add hline to the legend
+        ax.legend([hline_handle], ['Shotgun U-BTB size'])
     #ax.legend(ncol=3, columnspacing=0.25, title=title, loc=loc)
     ax.grid(linestyle='--', zorder=0)
 
@@ -121,17 +127,21 @@ logy=False
 show_legend=True
 if len(sys.argv) > 1:
     filename = sys.argv[1]
+hline=None
 for i in range(2, len(sys.argv)):
     if sys.argv[i] == "no-legend":
         show_legend = False
     elif sys.argv[i] == "logy":
         logy=True
+    elif sys.argv[i].startswith('hline'):
+        hline=float(sys.argv[i].split('=')[1])
     elif sys.argv[i] == "-h" or sys.argv[i] == "--help":
-        print("Usage: filename [no-legend, logy]+")
+        print("Usage: filename [no-legend|logy|hline=#]+")
         print("no-legend disables the legend, logy turns on symlog for the y axis")
+        print("hline=# plots a horizontal line at y=#")
     else:
         print("Ignoring unrecognized command line flag: ", sys.argv[i])
-add_subplot(filename+'.txt', axs, "", show_legend, logy)
+add_subplot(filename+'.txt', axs, "", show_legend, logy, hline)
 
 plt.axhline(0, color='gray')
 plt.tight_layout()

@@ -154,6 +154,10 @@ DEF_PARAM(  perceptron_conf_his_both     , PERCEPTRON_CONF_HIS_BOTH   , Flag    
 DEF_PARAM(  perceptron_conf_his_both_length  , PERCEPTRON_CONF_HIS_BOTH_LENGTH   , uns    , uns        , 4     ,           )
 
 DEF_PARAM( fanout                      , FANOUT                    , uns    , uns   , 1        ,       )
+DEF_PARAM( enable_contribution         , ENABLE_CONTRIBUTION       , Flag   , Flag  , FALSE    ,       )
+DEF_PARAM( max_distance_bits           , MAX_DISTANCE_BITS         , uns    , uns   , 60       ,       )
+DEF_PARAM( enable_max_per_bbl          , ENABLE_MAX_PER_BBL        , Flag   , Flag  , FALSE    ,       )
+DEF_PARAM( max_per_bbl                 , MAX_PER_BBL               , uns    , uns   , 1        ,       )
 DEF_PARAM( lbr_capacity                , LBR_CAPACITY              , uns    , uns   , 32        ,       )
 DEF_PARAM( btb_prefetch_buffer_size    , BTB_PREFETCH_BUFFER_SIZE  , uns    , uns   , 32        ,       )
 DEF_PARAM( btb_prefetch_buffer_assoc   , BTB_PREFETCH_BUFFER_ASSOC , uns    , uns   , 32        ,       )

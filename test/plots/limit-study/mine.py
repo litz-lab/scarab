@@ -91,7 +91,7 @@ def add_subplot(filename, ax, title, show_legend=False):  # , loc):
 
     # ax.set_xlabel('Applications')
     ax.set_ylabel(r'Speedup (\%)')
-    ax.set_yscale('log')
+    ax.set_yscale('symlog')
     if title != "":
         ax.set_title(title)
     if show_legend:

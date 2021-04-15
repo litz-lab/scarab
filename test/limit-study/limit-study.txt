@@ -1,0 +1,10 @@
+Application Ideal-I-cache Ideal-BTB
+cassandra 6.34803 10.8699
+drupal 12.3203 12.7253
+finagle-chirper 9.64767 9.93588
+finagle-http 3.88038 3.66652
+kafka 12.0935 18.2788
+mediawiki 10.7858 12.7376
+tomcat 9.94492 18.2127
+verilator 142.698 180.814
+wordpress 10.5676 9.45677

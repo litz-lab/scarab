@@ -14,9 +14,11 @@ python3 multi-input.py &
 python3 size-cap-miss.py size-capacity-misses
 python3 assoc-con-miss.py assoc-conflict-misses
 
-python3 size-cap-miss.py sensitivity-capacity logy show-legend &
+python3 size-cap-miss.py sensitivity-capacity show-legend &
 python3 assoc-con-miss.py sensitivity-assoc show-legend &
 
-python3 size-cap-miss.py sensitivity-pref-buffer-size logy show-legend &
+python3 size-cap-miss.py sensitivity-pref-buffer-size show-legend &
+
+python3 fdip-runahead.py sensitivity-fdip-runahead &
 
 wait

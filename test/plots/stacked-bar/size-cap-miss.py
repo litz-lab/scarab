@@ -125,8 +125,6 @@ show_legend = False
 if len(sys.argv) > 1:
     filename = sys.argv[1]
 if len(sys.argv) > 2:
-    logy=True
-if len(sys.argv) > 3:
     show_legend = True
 add_subplot(filename+'.txt', axs, "", show_legend=show_legend, logy=logy)
 

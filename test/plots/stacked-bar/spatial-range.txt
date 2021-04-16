@@ -1,0 +1,13 @@
+\% of all conditional branches
+outside spatial region
+
+Workload  Branch\%
+cassandra 26.44428583511769
+drupal 40.280529404973585
+finagle-chirper 39.486041859816204
+finagle-http 34.852439774090186
+kafka 29.318119300462488
+mediawiki 41.845027965128295
+tomcat 40.59012548280624
+verilator 33.25509503384514
+wordpress 45.32539792747983

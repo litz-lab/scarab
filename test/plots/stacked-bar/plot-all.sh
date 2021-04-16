@@ -21,4 +21,5 @@ python3 size-cap-miss.py sensitivity-pref-buffer-size show-legend &
 
 python3 fdip-runahead.py sensitivity-fdip-runahead &
 
+python3 stacked-bar.py spatial-range no-legend
 wait

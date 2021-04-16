@@ -1,0 +1,12 @@
+Overhead as \% of instructions
+
+Application dynamic
+cassandra 2.36866
+drupal 1.03282
+finagle-chirper 0.776997
+finagle-http 0.870316
+kafka 3.09709
+mediawiki 1.36888
+tomcat 1.66281
+verilator 12.6488
+wordpress 0.770054

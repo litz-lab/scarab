@@ -9,5 +9,6 @@ python3 side-by-side-bar.py miss-coverage &
 python3 side-by-side-bar.py speedup logy &
 python3 side-by-side-bar.py shotgun-confluence-speedup logy &
 python3 side-by-side-bar.py accuracy &
+python3 multi-input.py &
 
 wait

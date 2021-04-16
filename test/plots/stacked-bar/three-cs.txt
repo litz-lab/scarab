@@ -1,12 +1,12 @@
 \% of all BTB Misses
 
 Application Compulsory Capacity Conflict
-cassandra 4.540000 58.000000 37.460000
-drupal 6.590000 48.370000 45.040000
-finagle-chirper 8.840000 31.790000 59.370000
-finagle-http 9.330000 27.590000 63.080000
-kafka 6.920000 52.820000 40.250000
-mediawiki 6.550000 61.320000 32.130000
-tomcat 2.730000 78.590000 18.680000
-verilator 0.220000 99.700000 0.080000
-wordpress 7.370000 58.080000 34.550000
+cassandra 3.95 71.89 24.16
+drupal 6.41 58.22 35.37
+finagle-chirper 8.17 49.71 42.12
+finagle-http 8.61 49.46 41.93
+kafka 5.86 73.13 21.01
+mediawiki 6.17 71.35 22.49
+tomcat 2.45 90.84 6.71
+verilator 0.38 99.61 0.01
+wordpress 7.36 66.1 26.54

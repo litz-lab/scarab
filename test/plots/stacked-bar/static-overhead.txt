@@ -1,0 +1,12 @@
+Overhead as \% of instructions
+
+Application static
+cassandra 7.935389696
+drupal 6.538227357
+finagle-chirper 5.489425387
+finagle-http 4.950448213
+kafka 7.369299628
+mediawiki 6.608167224
+tomcat 5.497909371
+verilator 7.372278373
+wordpress 6.62657126

@@ -1,0 +1,12 @@
+\% of ideal BTB performance
+
+Application software-predecoding predecode-coalescing
+cassandra 39.70979766 21.03301384
+drupal 19.48296446 1.299476532
+finagle-chirper 30.57427483 11.96161735
+finagle-http 33.95946614 15.27434504
+kafka 39.27835052 20.60642813
+mediawiki 30.16813259 6.138933767
+tomcat 29.09133599 14.82977225
+verilator 41.89349614 38.31934197
+wordpress 28.71142619 11.676397

@@ -90,7 +90,7 @@ def add_subplot(filename, ax, ytitle, show_legend=True, logy=False):  # , loc):
     ax.set_xticks(x+w/2-dimw/2)
     ax.set_xticklabels(data[1][data[0][0]], rotation=xlabel_rotation)
 
-    if dim == 2:
+    if dim == 2 and False:
         bar_modified = all_bars[0]
         bar_original = all_bars[1]
         for i in range(len(bar_modified)):
@@ -104,7 +104,7 @@ def add_subplot(filename, ax, ytitle, show_legend=True, logy=False):  # , loc):
     if logy:
         ax.set_yscale('symlog') # only way to get log and negative values
     # ax.set_adjustable('datalim')
-    # ax.set_ylim(-1e1, 1e2)
+    ax.set_ylim(ymax=max(prior)*1.2)
     if ytitle != "":
         ax.set_ylabel(ytitle)
     if show_legend:

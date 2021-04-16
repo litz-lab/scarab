@@ -116,16 +116,17 @@ def add_subplot(filename, ax, ytitle, show_legend=True, logy=False):  # , loc):
 
 w, h = figaspect(0.4/0.9)
 fig, axs = plt.subplots(1, 1, figsize=(w, h))
-fig.text(.2, .035, "cassandra")
-fig.text(.47, .035, "tomcat")
-fig.text(.715, .035,"verilator")
-filename = 'multi-input'
+fig.text(.16, .035, "finagle-chirper")
+fig.text(.475, .035, "finagle-http")
+fig.text(.76, .035,"kafka")
+filename = None
 logy=False
+show_legend=False
 if len(sys.argv) > 1:
     filename = sys.argv[1]
 if len(sys.argv) > 2:
-    logy=True
-add_subplot(filename+'.txt', axs, "", show_legend=False, logy=logy)
+    show_legend = True
+add_subplot(filename+'.txt', axs, "", show_legend=show_legend, logy=logy)
 
 plt.axhline(0, color='gray')
 plt.tight_layout()

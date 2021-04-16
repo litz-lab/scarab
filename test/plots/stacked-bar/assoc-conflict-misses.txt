@@ -1,5 +1,6 @@
 Conflict misses (\% of all misses)
 
+Associativity \%-of-misses
 4 42.12
 8 29.88
 16 20.58

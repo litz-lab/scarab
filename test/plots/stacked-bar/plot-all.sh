@@ -11,4 +11,12 @@ python3 side-by-side-bar.py shotgun-confluence-speedup logy &
 python3 side-by-side-bar.py accuracy &
 python3 multi-input.py &
 
+python3 size-cap-miss.py size-capacity-misses
+python3 assoc-con-miss.py assoc-conflict-misses
+
+python3 size-cap-miss.py sensitivity-capacity logy show-legend &
+python3 assoc-con-miss.py sensitivity-assoc show-legend &
+
+python3 size-cap-miss.py sensitivity-pref-buffer-size logy show-legend &
+
 wait

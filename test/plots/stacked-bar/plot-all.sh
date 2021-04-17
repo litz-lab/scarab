@@ -1,7 +1,7 @@
 #!/bin/bash
 python3 stacked-bar.py three-cs &
 python3 stacked-bar.py temporal-stream &
-python3 stacked-bar.py mpki no-legend logy &
+python3 mpki.py mpki &
 python3 stacked-bar.py btb-miss-br-type &
 python3 stacked-bar.py uncond-wss no-legend hline=5120 &
 python3 stacked-bar.py btb-accesses &

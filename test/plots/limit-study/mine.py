@@ -96,9 +96,13 @@ def add_subplot(filename, ax, title, show_legend=False):  # , loc):
     verilator_index = 7
     get_xpos= lambda key, workload_index:x[workload_index] + (data[0].index(key) - 1) * dimw - dimw/3
     # ax.text(x[verilator-index] + (data[0].index('Ideal-I-cache') - 1) * dimw - dimw/3, cutoff*1.25, "{0:.0f}".format(data[1]['Ideal-I-cache'][verilator-index]), rotation='vertical')
-    ax.text(get_xpos('Ideal-I-cache', verilator_index), cutoff*1.25, "{0:.0f}".format(data[1]['Ideal-I-cache'][verilator_index]), rotation='vertical')
+    datum = data[1]['Ideal-I-cache'][verilator_index]
+    if datum >= cutoff:
+        ax.text(get_xpos('Ideal-I-cache', verilator_index), cutoff*1.25, "{0:.0f}".format(datum), rotation='vertical')
     # ax.text(x[7] + (data[0].index('Ideal-BTB') - 1) * dimw - dimw/3, cutoff*1.25, "{0:.0f}".format(data[1]['Ideal-BTB'][7]), rotation='vertical')
-    ax.text(get_xpos('Ideal-BTB', verilator_index), cutoff*1.25, "{0:.0f}".format(data[1]['Ideal-BTB'][verilator_index]), rotation='vertical')
+    datum = data[1]['Ideal-BTB'][verilator_index]
+    if datum >= cutoff:
+        ax.text(get_xpos('Ideal-BTB', verilator_index), cutoff*1.25, "{0:.0f}".format(datum), rotation='vertical')
     # ax.set_yscale('symlog')
     if title != "":
         ax.set_title(title)

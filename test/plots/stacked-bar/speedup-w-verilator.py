@@ -132,7 +132,7 @@ def add_subplot(filename, ax, ytitle, show_legend=True, logy=False):  # , loc):
         ax.set_ylabel(ytitle)
     if show_legend:
         # ax.legend(ncol=4)
-        ax.legend(ncol=5, columnspacing=0.5, fontsize='x-small')
+        ax.legend(ncol=3, columnspacing=0.5, fontsize='small')
     #ax.legend(ncol=3, columnspacing=0.25, title=title, loc=loc)
     ax.grid(linestyle='--', zorder=0)
 

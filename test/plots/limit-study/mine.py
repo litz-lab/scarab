@@ -89,9 +89,17 @@ def add_subplot(filename, ax, title, show_legend=False):  # , loc):
             ax.text((bar_modified[i].get_x())+0.35, bar_modified[i].get_height()+0.0, ''+str(round(difference, 1))+'', ha='center',
                     va='bottom', rotation=0)  # (bar_original[i].get_height() + bar_modified[i].get_height())/2 #,fontsize=17
 
+    cutoff=35
     # ax.set_xlabel('Applications')
     ax.set_ylabel(r'Speedup (\%)')
-    ax.set_yscale('symlog')
+    ax.set_ylim(ymax=cutoff*1.2)
+    verilator_index = 7
+    get_xpos= lambda key, workload_index:x[workload_index] + (data[0].index(key) - 1) * dimw - dimw/3
+    # ax.text(x[verilator-index] + (data[0].index('Ideal-I-cache') - 1) * dimw - dimw/3, cutoff*1.25, "{0:.0f}".format(data[1]['Ideal-I-cache'][verilator-index]), rotation='vertical')
+    ax.text(get_xpos('Ideal-I-cache', verilator_index), cutoff*1.25, "{0:.0f}".format(data[1]['Ideal-I-cache'][verilator_index]), rotation='vertical')
+    # ax.text(x[7] + (data[0].index('Ideal-BTB') - 1) * dimw - dimw/3, cutoff*1.25, "{0:.0f}".format(data[1]['Ideal-BTB'][7]), rotation='vertical')
+    ax.text(get_xpos('Ideal-BTB', verilator_index), cutoff*1.25, "{0:.0f}".format(data[1]['Ideal-BTB'][verilator_index]), rotation='vertical')
+    # ax.set_yscale('symlog')
     if title != "":
         ax.set_title(title)
     if show_legend:

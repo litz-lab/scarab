@@ -7,7 +7,7 @@ python3 stacked-bar.py uncond-wss no-legend hline=5120 &
 python3 stacked-bar.py btb-accesses &
 python3 side-by-side-bar.py miss-coverage &
 python3 speedup-w-verilator.py speedup &
-python3 side-by-side-bar.py shotgun-confluence-speedup logy &
+python3 speedup-w-verilator.py shotgun-confluence-speedup &
 python3 side-by-side-bar.py accuracy &
 python3 multi-input.py &
 

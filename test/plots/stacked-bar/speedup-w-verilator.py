@@ -78,6 +78,8 @@ def add_subplot(filename, ax, ytitle, show_legend=True, logy=False):  # , loc):
         y = data[1][data[0][i]]
         if i == 1:
             prior = []
+        if data[0][i] == 'ideal':
+            print(x[7], ' ', (i-1), ' ', x + (i-1)*dimw)
         b = ax.bar(x + (i-1) * dimw, y, dimw,
                    label=data[0][i], zorder=3,
                    fill=False,
@@ -101,18 +103,36 @@ def add_subplot(filename, ax, ytitle, show_legend=True, logy=False):  # , loc):
             ax.text((bar_modified[i].get_x())+0.35, bar_modified[i].get_height()+0.0, ''+str(round(difference, 1))+'', ha='center',
                     va='bottom', rotation=0)  # (bar_original[i].get_height() + bar_modified[i].get_height())/2 #,fontsize=17
 
-    ax.text(6.75, 50*1.25, "{0:.0f}".format(data[1]['twig'][7]))
-    ax.text(7.5, 50*1.25, "{0:.0f}".format(data[1]['ideal'][7]))
+    cutoff = 50
+    verilator_index = 7 # 0-indexed
+    print(dim)
+    print(dimw)
+    print("data0: ", data[0])
+    num_cols_to_size={5: 'xx-small', 3: '21'}
+    if 'twig' in data[1]:
+        # twig_x = (dim+1) * dimw * verilator_index
+        # print(x[verilator_index], ' ', data[0].index('twig') - 1)
+        twig_x = x[verilator_index] + (data[0].index('twig') - 1) * dimw - (dimw/2)
+        print(twig_x)
+        error=7.15 - twig_x
+        print("Error: ", error, "; num dimw: ", error / dimw)
+        ax.text(twig_x, cutoff*1.25, "{0:.0f}".format(data[1]['twig'][7]), rotation='vertical', size=num_cols_to_size[dim])
+    # ideal_x = ((dim+1) * dimw * (verilator_index+1) + 2*dimw)
+    ideal_x = x[verilator_index] + (data[0].index('ideal') - 1) * dimw - (dimw/2)
+    error=7.5 - ideal_x
+    print(ideal_x)
+    print("Error 2: ", error, "; num dimw: ", error / dimw)
+    ax.text(ideal_x, cutoff*1.25, "{0:.0f}".format(data[1]['ideal'][7]), rotation='vertical', size=num_cols_to_size[dim])
     # ax.set_xlabel('Applications')
     if logy:
         ax.set_yscale('symlog') # only way to get log and negative values
     # ax.set_adjustable('datalim')
-    ax.set_ylim(ymax=50*1.2)
+    ax.set_ylim(ymax=cutoff*1.2)
     if ytitle != "":
         ax.set_ylabel(ytitle)
     if show_legend:
         # ax.legend(ncol=4)
-        ax.legend(ncol=4, columnspacing=0.5, fontsize='x-small')
+        ax.legend(ncol=5, columnspacing=0.5, fontsize='x-small')
     #ax.legend(ncol=3, columnspacing=0.25, title=title, loc=loc)
     ax.grid(linestyle='--', zorder=0)
 

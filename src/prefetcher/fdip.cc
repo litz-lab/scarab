@@ -334,13 +334,16 @@ void fdip_update() {
         ftq.back().second.prefetched = success;
         if (op->oracle_info.pred == TAKEN) {
           runahead_pc = target;
+        } else {
+          runahead_pc++;
         }
         if (FDIP_BREAK_ICACHE) {
           fdip_break_addr_top = runahead_pc | CLMASK;
           fdip_break_addr_bottom = runahead_pc & ~CLMASK;
         }
       }
+    } else {
+      runahead_pc++;
     }
-    runahead_pc++;
   }
 }

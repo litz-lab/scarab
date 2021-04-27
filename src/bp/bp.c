@@ -555,7 +555,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     bp_data->proc_id,
     "BTB:  op_num:%s  off_path:%d  cf_type:%s  addr:0x%s  btb_miss:%d\n",
     unsstr64(op->op_num), op->off_path, cf_type_names[op->table_info->cf_type],
-    hexstr64s(addr), op->oracle_info.btb_miss);
+    hexstr64s(op->inst_info->addr), op->oracle_info.btb_miss);
 
   DEBUG(bp_data->proc_id,
         "BP:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "

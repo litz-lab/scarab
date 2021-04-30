@@ -266,11 +266,12 @@ void fdip_recover(Recovery_Info *info) {
 
 // Returns true if prefetch was emitted
 bool fdip_prefetch(Addr target, Op *op) {
+  static Addr last_line_addr_prefetched = 0;
   Addr line_addr;
 
   auto line = (Inst_Info**)cache_access(&ic_stage->icache, target,
                               &line_addr, TRUE);
-  if (!line) {
+  if (!line && (last_line_addr_prefetched != line_addr)) {
     if(new_mem_req(MRT_IFETCH, ic_stage->proc_id, line_addr,
                   ICACHE_LINE_SIZE, 0, NULL, icache_fill_line,
                   unique_count,

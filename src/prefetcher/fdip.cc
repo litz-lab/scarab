@@ -334,7 +334,8 @@ void fdip_update() {
         return;
       }
       if (FDIP_NLP || op->oracle_info.pred == TAKEN) {
-        bool success = fdip_prefetch(target, op);
+        Addr prefetch_target = op->oracle_info.pred ? target : runahead_pc + ICACHE_LINE_SIZE;
+        bool success = fdip_prefetch(prefetch_target, op);
         prefetches += success;
         ftq.back().second.prefetched = success;
         last_cl_prefetched = get_cache_line_addr(&ic->icache, target);

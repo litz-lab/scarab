@@ -288,11 +288,9 @@ bool fdip_prefetch(Addr target, Op *op) {
 
 // Called each cycle to trigger runahead prefetches
 void fdip_update() {
-  Addr fdip_break_addr_top = ~0UL;
-  Addr fdip_break_addr_bottom = 0UL;
-  Addr CLMASK = 0x3F;
   uint32_t predicts = 0;
   uint32_t prefetches = 0;
+  static Addr last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc);
 
   if (ftq.size() > FDIP_MAX_RUNAHEAD || runahead_disable) {
     return;
@@ -300,18 +298,24 @@ void fdip_update() {
 
   // Predict branches across cache lines. In many implementations, the BTB
   // is looked up once per cycle, returning all branches in the cache line
-  if (FDIP_BREAK_ICACHE) {
-    fdip_break_addr_top = runahead_pc | CLMASK;
-    fdip_break_addr_bottom = runahead_pc & ~CLMASK;
-  }
+  const Addr orig_cl = get_cache_line_addr(&ic->icache, runahead_pc);
+  Addr cur_cl = orig_cl;
 
   // Find the next branch after the runahead PC. As the BTB/BP is addressed
   // with a PC and not cache line address we need to byte-wise increment the
   // runahead PC
   while (predicts < FDIP_BP_PER_CYC && prefetches < FDIP_PREF_PER_CYC &&
           ftq.size() <= FDIP_MAX_RUNAHEAD &&
-          runahead_pc <= fdip_break_addr_top &&
-          runahead_pc >= fdip_break_addr_bottom) {
+          !(FDIP_BREAK_ICACHE && cur_cl != orig_cl)) {
+    // last_cl needed for case where FDIP broke due to a line boundary last
+    // cycle, so this cycle we are in a new line
+    if (cur_cl != last_cl_prefetched) {
+      bool success = fdip_prefetch(runahead_pc, NULL);
+      prefetches += success;
+      last_cl_prefetched = cur_cl;
+      // May have reached maximum number of prefetches. Retry loop condition.
+      continue;
+    }
     auto op_iter = pc_to_op.find(runahead_pc);
     if (op_iter != pc_to_op.end()) {
       Op *op = &op_iter->second;
@@ -333,18 +337,13 @@ void fdip_update() {
         bool success = fdip_prefetch(target, op);
         prefetches += success;
         ftq.back().second.prefetched = success;
-        if (op->oracle_info.pred == TAKEN) {
-          runahead_pc = target;
-        } else {
-          runahead_pc++;
-        }
-        if (FDIP_BREAK_ICACHE) {
-          fdip_break_addr_top = runahead_pc | CLMASK;
-          fdip_break_addr_bottom = runahead_pc & ~CLMASK;
-        }
+        last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
       }
+      // target is next predicted instruction.
+      runahead_pc = target;
     } else {
       runahead_pc++;
     }
+    cur_cl = get_cache_line_addr(&ic->icache, runahead_pc);
   }
 }

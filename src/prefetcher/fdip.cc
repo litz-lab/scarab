@@ -328,10 +328,12 @@ void fdip_update() {
                                   )));
       predicts++;
       if (op->oracle_info.btb_miss || target == 0) {
-        //On a BTB/RAS miss we cannot continue to FDIP
-        runahead_disable = true;
+        //In an actual implemenation, FDIP cannot differentiate between a btb miss and 
+        //the op not being a branch (since the BTB is used to runahead and find the next branch)
+        //Thus FDIP would continue as if it was not branch, incrementing runahead_pc
+        // This may cause cache pollution.
         STAT_EVENT(ic_stage->proc_id, FDIP_BTB_RAS_MISS);
-        return;
+        goto NOT_BRANCH;
       }
       if (FDIP_NLP || op->oracle_info.pred == TAKEN) {
         Addr prefetch_target = op->oracle_info.pred ? target : runahead_pc + ICACHE_LINE_SIZE;
@@ -343,6 +345,7 @@ void fdip_update() {
       // target is next predicted instruction.
       runahead_pc = target;
     } else {
+      NOT_BRANCH:
       runahead_pc++;
     }
     cur_cl = get_cache_line_addr(&ic->icache, runahead_pc);

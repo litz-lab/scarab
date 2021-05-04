@@ -329,6 +329,10 @@ void fdip_update() {
         // and find the next branch). Thus FDIP would continue as if it was not
         // branch, incrementing runahead_pc. This may cause cache pollution.
         // Boomerang CAN distinguish these cases by storing the end of the bbl
+        if (FDIP_STOP_ON_BTB_MISS) {
+          runahead_disable = true;
+          break;
+        }
       } else {
         // target is set to whichever instr is predicted to follow branch
         bool continuing_to_next_cl = get_cache_line_addr(&ic->icache, target) == 

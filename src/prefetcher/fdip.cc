@@ -307,15 +307,6 @@ void fdip_update() {
   while (predicts < FDIP_BP_PER_CYC && prefetches < FDIP_PREF_PER_CYC &&
           ftq.size() <= FDIP_MAX_RUNAHEAD &&
           !(FDIP_BREAK_ICACHE && cur_cl != orig_cl)) {
-    // last_cl needed for case where FDIP broke due to a line boundary last
-    // cycle, so this cycle we are in a new line
-    if (cur_cl != last_cl_prefetched) {
-      bool success = fdip_prefetch(runahead_pc, NULL);
-      prefetches += success;
-      last_cl_prefetched = cur_cl;
-      // May have reached maximum number of prefetches. Retry loop condition.
-      continue;
-    }
     auto op_iter = pc_to_op.find(runahead_pc);
     if (op_iter != pc_to_op.end()) {
       Op *op = &op_iter->second;
@@ -335,17 +326,25 @@ void fdip_update() {
         STAT_EVENT(ic_stage->proc_id, FDIP_BTB_RAS_MISS);
         goto NOT_BRANCH;
       }
-      if (FDIP_NLP || op->oracle_info.pred == TAKEN) {
-        Addr prefetch_target = op->oracle_info.pred ? target : runahead_pc + ICACHE_LINE_SIZE;
-        bool success = fdip_prefetch(prefetch_target, op);
+      // target is set to instr predicted to follow branch, whether taken or not taken
+      bool continuing_to_next_cl = get_cache_line_addr(&ic->icache, target) == last_cl_prefetched + 1;
+      if (op->oracle_info.pred == TAKEN || continuing_to_next_cl) {
+        bool success = fdip_prefetch(target, op);
         prefetches += success;
         ftq.back().second.prefetched = success;
         last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
       }
-      // target is next predicted instruction.
       runahead_pc = target;
     } else {
       NOT_BRANCH:
+      // If continuing to next cache line (no control flow change), prefetch that line.
+      bool continuing_to_next_cl = get_cache_line_addr(&ic->icache, runahead_pc+1) == last_cl_prefetched + 1;
+      if (continuing_to_next_cl) {
+        bool success = fdip_prefetch(runahead_pc+1, NULL);
+        prefetches += success;
+        ftq.back().second.prefetched = success;
+        last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
+      }
       runahead_pc++;
     }
     cur_cl = get_cache_line_addr(&ic->icache, runahead_pc);

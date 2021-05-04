@@ -308,8 +308,10 @@ void fdip_update() {
   while (predicts < FDIP_BP_PER_CYC && prefetches < FDIP_PREF_PER_CYC &&
           ftq.size() <= FDIP_MAX_RUNAHEAD &&
           !(FDIP_BREAK_ICACHE && cur_cl != orig_cl)) {
+    bool btb_ras_miss = false;
     auto op_iter = pc_to_op.find(runahead_pc);
-    if (op_iter != pc_to_op.end()) {
+    bool is_branch = op_iter != pc_to_op.end();
+    if (is_branch) {
       Op *op = &op_iter->second;
       ASSERT(ic_stage->proc_id, op->fetch_addr == runahead_pc);
       auto target = bp_predict_op(g_bp_data, op, DUMMY_CFN, runahead_pc);
@@ -319,27 +321,28 @@ void fdip_update() {
                                   op->oracle_info.pred == TAKEN
                                   )));
       predicts++;
-      if (op->oracle_info.btb_miss || target == 0) {
+      btb_ras_miss = op->oracle_info.btb_miss || target == 0;
+      if (btb_ras_miss) {
         STAT_EVENT(ic_stage->proc_id, FDIP_BTB_RAS_MISS);
         // In an actual implemenation, FDIP cannot differentiate between a btb
         // miss and the op not being a branch (since the BTB is used to runahead
         // and find the next branch). Thus FDIP would continue as if it was not
         // branch, incrementing runahead_pc. This may cause cache pollution.
         // Boomerang CAN distinguish these cases by storing the end of the bbl
-        goto NOT_BRANCH;
+      } else {
+        // target is set to whichever instr is predicted to follow branch
+        bool continuing_to_next_cl = get_cache_line_addr(&ic->icache, target) == 
+                                                        last_cl_prefetched + 1;
+        if (op->oracle_info.pred == TAKEN || continuing_to_next_cl) {
+          bool success = fdip_prefetch(target, op);
+          prefetches += success;
+          ftq.back().second.prefetched = success;
+          last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
+        }
+        runahead_pc = target;
       }
-      // target is set to instr predicted to follow branch, whether taken or not
-      bool continuing_to_next_cl = get_cache_line_addr(&ic->icache, target) == 
-                                                       last_cl_prefetched + 1;
-      if (op->oracle_info.pred == TAKEN || continuing_to_next_cl) {
-        bool success = fdip_prefetch(target, op);
-        prefetches += success;
-        ftq.back().second.prefetched = success;
-        last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
-      }
-      runahead_pc = target;
-    } else {
-      NOT_BRANCH:
+    }
+    if (!is_branch || btb_ras_miss) { // FDIP continues as for non-branch
       // If continuing to next cache line (no control flow change), prefetch it
       bool continuing_to_next_cl = get_cache_line_addr(
                                    &ic->icache, runahead_pc+1) == 

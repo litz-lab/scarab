@@ -342,6 +342,10 @@ void fdip_update() {
           prefetches += success;
           ftq.back().second.prefetched = success;
           last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
+          if (success){
+            STAT_EVENT(ic_stage->proc_id, op->oracle_info.pred ? 
+                      FDIP_BRANCH_TAKEN_PREF : FDIP_NL_PREF);
+          }
         }
         runahead_pc = target;
       }
@@ -356,6 +360,9 @@ void fdip_update() {
         prefetches += success;
         ftq.back().second.prefetched = success;
         last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
+        if (success) {
+          STAT_EVENT(ic_stage->proc_id, FDIP_NL_PREF);
+        }
       }
       runahead_pc++;
     }

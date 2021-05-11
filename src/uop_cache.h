@@ -26,8 +26,4 @@ void end_accumulate(void);
 /* accumulate uop into buffer. If terminating condition reached, call insert_uop_cache */
 void accumulate_op(Op* op);
 
-void addr_in_dec_remove(Addr addr);
-void addr_in_dec_insert(Addr addr);
-/**************************************************************************************/
-
 #endif /* #ifndef __UOP_CACHE_H__ */

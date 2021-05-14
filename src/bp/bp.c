@@ -261,7 +261,7 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op,
       fetch_latency = ICACHE_LATENCY;
       INC_STAT_EVENT(bp_recovery_info->proc_id, BP_REDIRECT_FETCH_CYCLES_IC, ICACHE_LATENCY);
     }
-    bp_recovery_info->redirect_cycle = cycle + 1 + EXTRA_REDIRECT_CYCLES + fetch_latency +
+    bp_recovery_info->redirect_cycle = cycle + 1 + fetch_latency +
                                        (op->table_info->cf_type == CF_SYS ?
                                           EXTRA_CALLSYS_CYCLES :
                                           0);

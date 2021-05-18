@@ -12,6 +12,16 @@
 #define __UOP_CACHE_H__
 
 /**************************************************************************************/
+/* Types */
+
+// Contains the addresses of the first and last addresses in the PW
+typedef struct Uop_Cache_Data_struct {
+  Addr first;
+  Addr last;
+  Counter n_uops;
+} Uop_Cache_Data;
+
+/**************************************************************************************/
 /* Prototypes */
 
 // only one instance of uop cache

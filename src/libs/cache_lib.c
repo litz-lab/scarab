@@ -253,13 +253,12 @@ void* cache_access(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl) {
 }
 
 /**************************************************************************************/
-/* cache_access: Does a cache lookup based on the address.  Returns array of pointers
- * to the cache line data if it is found. 
+/* cache_access: Does a cache lookup based on the address in order to update repl
  * Needed for uop cache, where a single PW entry can span multiple lines.
- * update_repl is whether to update replacement policy --
+ * Touch/update update_repl for ALL lines containing this PW
  */
 
-int cache_access_all(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl, void* line_data[]) {
+int cache_access_all(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl, void** line_data) {
   Addr tag;
   uns  set = cache_index(cache, addr, &tag, line_addr);
   uns  ii;
@@ -281,12 +280,7 @@ int cache_access_all(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl,
         cache->num_demand_access++;
         update_repl_policy(cache, line, set, ii, FALSE);
       }
-
-      if(update_repl)
-        update_repl_policy(cache, line, set, ii, FALSE);
-      // why are we updating repl policy twice?? bug?
-
-      line_data[lines_found] = line->data;
+      *line_data = line->data;
       lines_found++;
     }
   }
@@ -358,7 +352,6 @@ void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr,
   new_line->base             = *line_addr;
   new_line->last_access_time = sim_time;  // FIXME: this fixes valgrind warnings
                                           // in update_prf_
-  new_line->pw_start_addr    = 0; // should set this for uop cache
   new_line->pref = isPrefetch;
 
   new_line->pw_start_addr = addr; // only means anything for uop cache

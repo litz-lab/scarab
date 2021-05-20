@@ -328,7 +328,9 @@ int fdip_dual_path_prefetch(Addr target, Op* op) {
     ftq.back().second.prefetched = success;
     success = fdip_prefetch(op->inst_info->addr + ICACHE_LINE_SIZE, op);
     pref += success;
-    STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_IC);
+    STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_IC_TRIGGERED);
+    INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_IC_EMITTED, 
+                    pref);
   }
   return pref;
 }

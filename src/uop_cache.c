@@ -124,13 +124,12 @@ Flag insert_uop_cache() {
       }
       success = TRUE;
     }
-
-    if (success) {
+  }
+  if (success) {
       STAT_EVENT(0, UOP_CACHE_PWS_INSERTED);
       INC_STAT_EVENT(0, UOP_CACHE_LINES_INSERTED, lines_needed);
-    }
-    return success;
   }
+  return success;
 }
 
 static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {

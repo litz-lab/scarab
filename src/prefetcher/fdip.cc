@@ -268,6 +268,7 @@ void fdip_recover(Recovery_Info *info) {
 bool fdip_prefetch(Addr target, Op *op) {
   static Addr last_line_addr_prefetched = 0;
   Addr line_addr;
+  bool success = false;
 
   auto line = (Inst_Info**)cache_access(&ic_stage->icache, target,
                               &line_addr, TRUE);
@@ -277,13 +278,14 @@ bool fdip_prefetch(Addr target, Op *op) {
                   unique_count,
                   0)) {
       STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
-      return true;
+      success = true;
     }
   }
   else {
     STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ICACHE_HIT);
   }
-  return false;
+  last_line_addr_prefetched = line_addr;
+  return success;
 }
 
 // Called each cycle to trigger runahead prefetches

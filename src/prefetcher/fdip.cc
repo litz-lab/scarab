@@ -317,28 +317,6 @@ void fdip_update() {
       Op *op = &op_iter->second;
       ASSERT(ic_stage->proc_id, op->fetch_addr == runahead_pc);
       auto target = bp_predict_op(g_bp_data, op, DUMMY_CFN, runahead_pc);
-      if (PERFECT_BP) {
-        std::vector<uint64_t>::iterator it;
-        it = std::find(all_pcs.begin(), all_pcs.end(), runahead_pc);
-        auto next_it = std::next(it);
-        int index = 0;
-        if (it != all_pcs.end()) {
-          index = next_it - all_pcs.begin();
-          if (target != *next_it) {
-            target = *next_it;
-          }
-        } else {
-          index = it - all_pcs.begin();
-        }
-        if (op->oracle_info.pred == TAKEN) {
-          op->oracle_info.pred = NOT_TAKEN;
-          op->oracle_info.late_pred = NOT_TAKEN;
-        } else if (op->oracle_info.pred == NOT_TAKEN) {
-          op->oracle_info.pred = TAKEN;
-          op->oracle_info.late_pred = TAKEN;
-        }
-        all_pcs.erase(all_pcs.begin(), all_pcs.begin() + index);
-      }
       ftq.push(std::pair<Addr, ftq_req>(runahead_pc, ftq_req(
                                   target, cycle_count, *op,
                                   0, /*prefetched*/

@@ -303,7 +303,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
                                                trace_uop->npc;
   op->oracle_info.va  = trace_uop->va;
   op->oracle_info.npc = trace_uop->npc;
-  if(op->proc_id)
+  //if(op->proc_id)
     ASSERT(op->proc_id, op->oracle_info.npc);
   op->oracle_info.mem_size = trace_uop->mem_size;
   // op->table_info->mem_size = trace_uop->mem_size;  // because of repeat move
@@ -707,6 +707,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
     info->fake_inst        = FALSE;
     info->fake_inst_reason = WPNM_NOT_IN_WPNM;
   }
+  new_entry = 1;
   int ii;
   int num_uop = 0;
 
@@ -743,6 +744,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
           info->fake_inst_reason = WPNM_NOT_IN_WPNM;
         }
       }
+      new_entry = 1;
       ASSERT(proc_id, new_entry || pi->fake_inst);
 
       trace_uop[ii]->addr      = pi->instruction_addr;

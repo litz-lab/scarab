@@ -214,6 +214,7 @@ void memtrace_setup(uns proc_id) {
 
   //FFWD
   const InstInfo *insi = trace_readers[proc_id]->nextInstruction();
+  ins_id++;
 
   if(FAST_FORWARD) {
     std::cout << "Enter fast forward " << ins_id << std::endl;

@@ -143,17 +143,23 @@ void cmp_reset() {
 /* cmp_cycle: */
 
 void cmp_cycle() {
+    ASSERT(0, bp_recovery_info->recovery_cycle);
   cmp_istreams();
 
+    ASSERT(0, bp_recovery_info->recovery_cycle);
   /* Frequency domain checking is inside this function, since it
      handles both shared cache and memory */
   update_memory();
 
+    ASSERT(0, bp_recovery_info->recovery_cycle);
   cmp_cores();
 
+    ASSERT(0, bp_recovery_info->recovery_cycle);
   if(DVFS_ON)
     dvfs_cycle();
+    ASSERT(0, bp_recovery_info->recovery_cycle);
   cache_part_update();
+    ASSERT(0, bp_recovery_info->recovery_cycle);
 }
 
 void cmp_istreams(void) {

@@ -39,6 +39,7 @@
 #include "pin_exec_driven_fe.h"
 #include "pin_trace_fe.h"
 #include "memtrace_fe.h"
+#include "pt_fe.h"
 #include "sim.h"
 #include "statistics.h"
 #include "thread.h"
@@ -66,10 +67,18 @@ void frontend_init() {
       trace_init();
       break;
     }
+    case FE_PT: {
+      pt_init();
+      break;
+    }
     case FE_MEMTRACE: {
       memtrace_init();
     break;
   }
+    case FE_CHAMPSIM: {
+                          champsim_init();
+                          break;
+                      }
     default:
       ASSERT(0, 0);
       break;
@@ -86,10 +95,18 @@ void frontend_done(Flag* retired_exit) {
       trace_done();
       break;
     }
+    case FE_PT: {
+      pt_done();
+      break;
+    }
     case FE_MEMTRACE: {
       memtrace_done();
       break;
     }
+    case FE_CHAMPSIM: {
+                          champsim_done();
+                          break;
+                      }
     default:
       ASSERT(0, 0);
       break;

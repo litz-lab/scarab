@@ -112,7 +112,7 @@ XED := -L$(PIN_ROOT)/extras/xed-intel64/lib/ -L$(PIN_ROOT)/intel64/runtime/pincr
 # well. Also setting -D_REENTRANT since -pthread implies it.
 # -- spruett: I removed the liberty library from below command.
 # --  used to be: LIBS	    = -lm -liberty -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -lz
-LIBS	    = -lm -lpin_fe -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -lz -lramulator $(DR_LIBS) -lxed
+LIBS	    = -lm -lpin_fe -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -lz -lramulator $(DR_LIBS) -lxed -llzma
 CXXFLAGS    = -I$(GNUDIR)/$(OS)/include -I. -I$(PIN_ROOT)/ $(DR_ALL_INC) $(DR_ENV)
 OPTLDFLAGS  = $(DR_LINK) $(XED) -L$(GNUDIR)/$(OS)/lib -L./pin/pin_lib/obj -L./ramulator/ -rdynamic
 DBGLDFLAGS  = $(DR_LINK) $(XED) -L$(GNUDIR)/$(OS)/lib -L./pin/pin_lib/obj -L./ramulator/ -rdynamic

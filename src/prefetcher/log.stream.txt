@@ -1,0 +1,2 @@
+Scarab gitrev: f546210
+param_parser.c:732: WARNING (P=0  O=0  I=0  C=0):  Parameter file 'PARAMS.in' not found --- Using hard-coded defaults and command-line arguments only.

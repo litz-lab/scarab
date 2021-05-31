@@ -42,6 +42,8 @@
 #include "bp/gshare.h"
 #include "bp/hybridgp.h"
 #include "bp/tagescl.h"
+#include "bp/pgobtb.h"
+#include "bp/shotgunbtb.h"
 #include "libs/cache_lib.h"
 #include "model.h"
 #include "thread.h"
@@ -243,6 +245,83 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
   }
 }
 
+void update_btb_stats_after_lookup(Addr* btb_target_result, Bp_Data* bp_data, Op* op) {
+  uns miss_type = 0;
+  if (btb_target_result == NULL) {
+    // miss
+    miss_type = 1;
+    STAT_EVENT(op->proc_id, BTB_TOTAL_MISS);
+  } else if (*btb_target_result != op->oracle_info.target) {
+    // wrong
+    miss_type = 2;
+    STAT_EVENT(op->proc_id, BTB_TOTAL_WRNG);
+  } else {
+    // hit
+    miss_type = 0;
+    STAT_EVENT(op->proc_id, BTB_TOTAL_HIT);
+  }
+  switch (op->table_info->cf_type)
+  {
+  case NOT_CF:
+    STAT_EVENT(op->proc_id, BTB_ACCS_NON);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_NON);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_NON);
+    break;
+  case CF_BR:
+    STAT_EVENT(op->proc_id, BTB_ACCS_BR);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_BR);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_BR);
+    break;
+  case CF_CBR:
+    STAT_EVENT(op->proc_id, BTB_ACCS_CBR);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_CBR);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_CBR);
+    break;
+  case CF_CALL:
+    STAT_EVENT(op->proc_id, BTB_ACCS_CALL);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_CALL);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_CALL);
+    break;
+  case CF_IBR:
+    STAT_EVENT(op->proc_id, BTB_ACCS_IBR);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_IBR);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_IBR);
+    break;
+  case CF_ICALL:
+    STAT_EVENT(op->proc_id, BTB_ACCS_ICALL);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_ICALL);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_ICALL);
+    break;
+  case CF_ICO:
+    STAT_EVENT(op->proc_id, BTB_ACCS_ICO);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_ICO);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_ICO);
+    break;
+  case CF_RET:
+    STAT_EVENT(op->proc_id, BTB_ACCS_RET);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_RET);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_RET);
+    break;
+  case CF_SYS:
+    STAT_EVENT(op->proc_id, BTB_ACCS_SYS);
+    if(miss_type==1)STAT_EVENT(op->proc_id, BTB_MISS_SYS);
+    if(miss_type==2)STAT_EVENT(op->proc_id, BTB_WRNG_SYS);
+    break;
+  
+  default:
+    break;
+  }
+  if (LOG_BTB_LOOKUP_UPDATE) {
+    printf("BTB-Lookup: %llu %llu %s %llu %llu %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], op->oracle_info.pred_addr, op->oracle_info.target, miss_type);
+  }
+}
+
+void update_btb_stats_after_update(Bp_Data* bp_data, Op* op) {
+  if (LOG_BTB_LOOKUP_UPDATE) {
+    printf("BTB-Update: %llu %llu %s %llu %llu %u\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], op->oracle_info.pred_addr, op->oracle_info.target, op->oracle_info.btb_miss);
+    // printf("BTB-Update: %llu %llu %s %llu %llu %d %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], fetch_addr, op->oracle_info.target, present, op->oracle_info.target==op->oracle_info.npc);
+  }
+}
 
 /******************************************************************************/
 /* bp_predict_op:  predicts the target of a control flow instruction */
@@ -266,6 +345,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
      speculatively updates global history */
   op->recovery_info.proc_id          = op->proc_id;
   op->recovery_info.pred_global_hist = bp_data->global_hist;
+  op->recovery_info.fetch_cycle      = op->fetch_cycle;
   op->recovery_info.targ_hist        = bp_data->targ_hist;
   op->recovery_info.new_dir          = op->oracle_info.dir;
   op->recovery_info.crs_next         = bp_data->crs.next;
@@ -332,6 +412,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   // btb.  btb_miss and pred_target are set appropriately.
 
   btb_target = bp_data->bp_btb->pred_func(bp_data, op);
+  update_btb_stats_after_lookup(btb_target, bp_data, op);
   if(btb_target) {
     // btb hit
     op->oracle_info.btb_miss  = FALSE;
@@ -520,6 +601,7 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction) {
     else
       STAT_EVENT(op->proc_id, BTB_OFF_PATH_MISS);
   }
+  // printf("BTB: %llu %llu %s %llu %llu %d\n", cycle_count, op->op_num, cf_type_names[op->table_info->cf_type], addr, op->oracle_info.target, op->oracle_info.btb_miss);
 
   STAT_EVENT(op->proc_id, BP_ON_PATH_CORRECT + op->oracle_info.mispred +
                             2 * op->oracle_info.misfetch + 3 * op->off_path);
@@ -610,6 +692,7 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   if(op->oracle_info.btb_miss)
     bp_data->bp_btb->update_func(bp_data, op);
 
+  update_btb_stats_after_update(bp_data, op);
   // special case updates
   switch(op->table_info->cf_type) {
     case CF_ICALL:  // fall through
@@ -681,6 +764,46 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
     bp_data->global_hist = info->pred_global_hist;
   }
   bp_data->targ_hist = info->targ_hist;
+
+  if (cycle_count > info->fetch_cycle) {
+    uint64_t current_penalty = cycle_count - info->fetch_cycle;
+    INC_STAT_EVENT(bp_data->proc_id, MY_MISPREDICTION_PENALTY, current_penalty);
+  }
+  STAT_EVENT(bp_data->proc_id, MY_MISPREDICTION_COUNT);
+
+  switch (cf_type)
+  {
+  case NOT_CF:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_NON);
+    break;
+  case CF_BR:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_BR);
+    break;
+  case CF_CBR:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_CBR);
+    break;
+  case CF_CALL:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_CALL);
+    break;
+  case CF_IBR:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_IBR);
+    break;
+  case CF_ICALL:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_ICALL);
+    break;
+  case CF_ICO:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_ICO);
+    break;
+  case CF_RET:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_RET);
+    break;
+  case CF_SYS:
+    STAT_EVENT(bp_data->proc_id, MY_MISP_COUNT_SYS);
+    break;
+  
+  default:
+    break;
+  }
 
   /* this event counts updates to BP, so it's really branch resolutions */
   STAT_EVENT(bp_data->proc_id, POWER_BRANCH_MISPREDICT);

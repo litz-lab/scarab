@@ -38,6 +38,7 @@
 #include "pin_scarab_common_lib.h"
 #include "../../ctype_pin_inst.h"
 #include "../../table_info.h"
+#include "../../frontend/champsim_inst.hpp"
 
 #include <unordered_map>
 
@@ -52,6 +53,7 @@ void     init_pin_opcode_convert();
 //static uint8_t  reg_compress(REG pin_reg, ADDRINT ip);
 
 void     fill_in_basic_info(ctype_pin_inst* info, const INS& ins);
+void add_dependency_info(ctype_pin_inst* info, const champsim_instruction_info& ins);
 uint32_t add_dependency_info(ctype_pin_inst* info, const INS& ins);
 void     fill_in_simd_info(ctype_pin_inst* info, const INS& ins,
                            uint32_t max_op_width);
@@ -60,6 +62,7 @@ void     fill_in_cf_info(ctype_pin_inst* info, const INS& ins);
 void     insert_analysis_functions(ctype_pin_inst* info, const INS& ins);
 
 void     print_err_if_invalid(ctype_pin_inst* info, const INS& ins);
+void     print_err_if_invalid(ctype_pin_inst* info, const champsim_instruction_info& ins);
 
 //void get_opcode(UINT32 opcode);
 //void get_gather_scatter_eas(PIN_MULTI_MEM_ACCESS_INFO* mem_access_info);

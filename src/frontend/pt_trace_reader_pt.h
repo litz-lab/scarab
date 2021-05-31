@@ -253,6 +253,21 @@ public:
         _prior.taken = _info.pc != (_prior.pc + INS_Size(ins));
     return false;
   }
+
+  TraceReaderPT(
+      const std::string &_trace, uint32_t _bufsize, bool _enable_code_bloat_effect = false,
+      std::map<uint64_t, uint64_t> *_prev_to_new_bbl_address_map = nullptr)
+    : TraceReader(_trace, _bufsize) {
+    raw_file = gzopen(_trace.c_str(), "rb");
+    if (!raw_file) {
+      panic("TraceReaderPT: Invalid GZ File");
+      throw "Could not open file";
+    }
+    enable_code_bloat_effect = _enable_code_bloat_effect;
+    prev_to_new_bbl_address_map = _prev_to_new_bbl_address_map;
+    init(_trace);
+  }
+
   TraceReaderPT(
       const std::string &_trace, bool _enable_code_bloat_effect = false,
       std::map<uint64_t, uint64_t> *_prev_to_new_bbl_address_map = nullptr) {
@@ -264,6 +279,11 @@ public:
     enable_code_bloat_effect = _enable_code_bloat_effect;
     prev_to_new_bbl_address_map = _prev_to_new_bbl_address_map;
   }
+
+  void init(const std::string &_trace) {
+    TraceReader::init(_trace);
+  }
+
   const InstInfo *getNextInstruction() override {
     PTInst& next_line = (use_info_a ? pt_inst_a : pt_inst_b);
     do {

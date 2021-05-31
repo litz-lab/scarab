@@ -41,6 +41,7 @@
 #include "isa/isa.h"
 #include "./pin/pin_lib/uop_generator.h"
 #include "./pin/pin_lib/x86_decoder.h"
+#include "prefetcher/pref.param.h"
 
 #define DR_DO_NOT_DEFINE_int64
 
@@ -210,7 +211,10 @@ void memtrace_setup(uns proc_id) {
   std::string trace(path);
   std::string binaries(MEMTRACE_MODULES_LOG);
 
-  trace_readers[proc_id] = new TraceReaderMemtrace(trace, binaries, 1);
+  if (FDIP_ENABLE && PERFECT_BP)
+    trace_readers[proc_id] = new TraceReaderMemtrace(trace, binaries, 640);
+  else
+    trace_readers[proc_id] = new TraceReaderMemtrace(trace, binaries, 1);
 
   //FFWD
   const InstInfo *insi = trace_readers[proc_id]->nextInstruction();

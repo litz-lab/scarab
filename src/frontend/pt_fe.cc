@@ -37,12 +37,14 @@ extern "C" {
 
 #include "bp/bp.h"
 #include "statistics.h"
+#include "sim.h"
 #include "bp/bp.param.h"
 #include "ctype_pin_inst.h"
 #include "frontend/pt_fe.h"
 #include "isa/isa.h"
 #include "./pin/pin_lib/uop_generator.h"
 #include "./pin/pin_lib/x86_decoder.h"
+#include "prefetcher/pref.param.h"
 
 #define DR_DO_NOT_DEFINE_int64
 #include "frontend/pt_trace_reader_pt.h"
@@ -62,6 +64,7 @@ ctype_pin_inst* pt_next_pi;
 uint64_t pt_ins_id = 0;
 uint64_t pt_prior_tid = 0;
 uint64_t pt_prior_pid = 0;
+extern uns operating_mode;
 
 /**************************************************************************************/
 /* Private Functions for PT */
@@ -262,7 +265,10 @@ void pt_setup(uns proc_id) {
   std::string path(pt_trace_files[proc_id]);
   std::string trace(path);
 
-  pt_trace_readers[proc_id] = new TraceReaderPT(trace);
+  if (FDIP_ENABLE && PERFECT_BP)
+    pt_trace_readers[proc_id] = new TraceReaderPT(trace, 640, false, nullptr);
+  else
+    pt_trace_readers[proc_id] = new TraceReaderPT(trace, 1, false, nullptr);
 
   //FFWD
   const InstInfo *insi = pt_trace_readers[proc_id]->nextInstruction();

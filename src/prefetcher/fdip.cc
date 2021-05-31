@@ -1,4 +1,5 @@
 #include "prefetcher/fdip.h"
+#include "frontend/memtrace_trace_reader.h"
 
 #include <unordered_map>
 #include <queue>
@@ -25,7 +26,6 @@ extern "C" {
 
 #define DUMMY_CFN ~0
 
-extern std::vector<uint64_t> all_pcs;
 
 struct ftq_req {
   Addr target;
@@ -141,6 +141,11 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
       * be a corner case e.g. directly after a recovery.
       */
     runahead_disable = false;
+    auto insi = getNextRunaheadInstInfoWrapper(ic_stage->proc_id, bp_pc);
+    if (insi) {
+        op->oracle_info.target = insi->target;
+        op->oracle_info.dir    = insi->taken;
+    }
     Addr target = bp_predict_op(g_bp_data, op, cf_num++, bp_pc);
     bp_predict_op_evaluate(g_bp_data, op, target);
     recovery_checkpoint = op;
@@ -316,6 +321,11 @@ void fdip_update() {
     if (is_branch) {
       Op *op = &op_iter->second;
       ASSERT(ic_stage->proc_id, op->fetch_addr == runahead_pc);
+      auto insi = getNextRunaheadInstInfoWrapper(ic_stage->proc_id, runahead_pc);
+      if (insi) {
+          op->oracle_info.target = insi->target;
+          op->oracle_info.dir    = insi->taken;
+      }
       auto target = bp_predict_op(g_bp_data, op, DUMMY_CFN, runahead_pc);
       ftq.push(std::pair<Addr, ftq_req>(runahead_pc, ftq_req(
                                   target, cycle_count, *op,

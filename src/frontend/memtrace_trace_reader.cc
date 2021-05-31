@@ -30,6 +30,8 @@
  ***************************************************************************************/
 
 #include "frontend/memtrace_trace_reader.h"
+#include "frontend/pt_trace_reader_pt.h"
+#include "frontend_intf.h"
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -59,11 +61,17 @@ using std::unique_ptr;
 
 static bool xedInitDone = false;
 static std::mutex initMutex;
+extern TraceReader *trace_readers[MAX_NUM_PROCS];
+extern TraceReaderPT *pt_trace_readers[MAX_NUM_PROCS];
 
 // A non-reader
 TraceReader::TraceReader()
     : trace_ready_(false), binary_ready_(false), skipped_(0) {
   init("");
+}
+
+TraceReader::TraceReader(const std::string &_trace, uint32_t _buf_size)
+  : trace_ready_(false), binary_ready_(false), skipped_(0), buf_size_(_buf_size) {
 }
 
 // Trace + single binary
@@ -331,22 +339,30 @@ void TraceReader::init_buffer() {
         ins_buffer.emplace_back(InstInfo());
 
     for (uint32_t i = 0; i < buf_size_; i++) {
-        InstInfo* tmp = getNextInstruction();
+        InstInfo* tmp = const_cast<InstInfo*>(getNextInstruction());
         assert(tmp && tmp->valid);
         ins_buffer.emplace_back(*tmp);
     }
+    runahead_inst_info_ = bufferStart();
 }
 
 const InstInfo *TraceReader::nextInstruction() {
+    auto idx = std::distance(ins_buffer.begin(), runahead_inst_info_);
     ins_buffer.pop_front();
-    InstInfo* tmp = getNextInstruction();
+    InstInfo* tmp = const_cast<InstInfo*>(getNextInstruction());
     ins_buffer.emplace_back(*tmp);
+    runahead_inst_info_ = bufferStart();
+    while (idx && --idx)
+        runahead_inst_info_++;
     return &ins_buffer.front();
 }
 
 //Find the next buffer entry, starting from ref, that matches the given PC
 const TraceReader::returnValue TraceReader::findPC(bufferEntry &ref,
                                                    uint64_t _pc) {
+    if (ref == ins_buffer.end())
+        return ENTRY_NOT_FOUND;
+
     for (; ref != ins_buffer.end(); ref++) {
         if (ref->pc == _pc) {
             return ENTRY_VALID;
@@ -388,4 +404,26 @@ const TraceReader::returnValue TraceReader::findPCInSegment(bufferEntry &ref,
 
 TraceReader::bufferEntry TraceReader::bufferStart() {
     return ins_buffer.begin();
+}
+
+InstInfo* TraceReader::getNextRunaheadInstInfo(Addr addr) {
+  auto idx = std::distance(ins_buffer.begin(), runahead_inst_info_);
+  TraceReader::returnValue valid = findPC(runahead_inst_info_, addr);
+  if (valid == ENTRY_NOT_FOUND) {
+    warn("PC not found from the lookahead buffer.\n");
+    runahead_inst_info_ = bufferStart();
+    while (idx && --idx)
+        runahead_inst_info_++;
+    return nullptr;
+  }
+  return &(*runahead_inst_info_);
+}
+
+InstInfo* getNextRunaheadInstInfoWrapper(uns8 proc_id, Addr addr) {
+  InstInfo* insi = nullptr;
+  if (FRONTEND == FE_PT)
+    insi = pt_trace_readers[proc_id]->getNextRunaheadInstInfo(addr);
+  else if (FRONTEND == FE_MEMTRACE)
+    insi = trace_readers[proc_id]->getNextRunaheadInstInfo(addr);
+  return insi;
 }

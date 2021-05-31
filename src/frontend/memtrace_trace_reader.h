@@ -76,6 +76,7 @@ class TraceReader {
 
   // The default-constructed object will not return valid instructions
   TraceReader();
+  TraceReader(const std::string &_trace, uint32_t _buf_size = 0);
   // A trace and single-binary object
   TraceReader(const std::string &_trace, const std::string &_binary,
               uint64_t _offset, uint32_t _buf_size = 0);
@@ -92,6 +93,7 @@ class TraceReader {
   const returnValue findPC(bufferEntry &ref, uint64_t _pc);
   const returnValue peekInstructionAtIndex(uint32_t idx, bufferEntry &ref);
   bufferEntry bufferStart();
+  InstInfo* getNextRunaheadInstInfo(Addr addr);
 
  private:
   virtual const InstInfo *getNextInstruction() = 0;
@@ -119,6 +121,7 @@ class TraceReader {
   uint64_t skipped_;
   uint32_t buf_size_;
   std::deque <InstInfo> ins_buffer;
+  bufferEntry runahead_inst_info_;
 
   void init(const std::string &_trace);
   bool initBinary(const std::string &_name, uint64_t _offset);
@@ -126,5 +129,7 @@ class TraceReader {
   void fillCache(uint64_t _vAddr, uint8_t _reported_size, uint8_t *inst_bytes=NULL);
   void traceFileIs(const std::string &_trace);
 };
+
+InstInfo* getNextRunaheadInstInfoWrapper(uns8 proc_id, Addr addr);
 
 #endif

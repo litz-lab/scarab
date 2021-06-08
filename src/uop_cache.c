@@ -41,6 +41,7 @@
 
 static inline Flag insert_uop_cache(void);
 static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl);
+static Flag pw_insert(Uop_Cache_Data pw);
 
 /**************************************************************************************/
 /* Global Variables */
@@ -53,6 +54,8 @@ static Op* uop_q[UOP_QUEUE_SIZE];
 
 // k: instr addr
 Hash_Table inf_size_uop_cache;
+// indexed by start addr of PW
+Hash_Table pc_to_pw;
 
 /**************************************************************************************/
 /* init_uop_cache */
@@ -64,8 +67,43 @@ void init_uop_cache() {
   if (UOP_CACHE_SIZE == 0) {
     return;
   }
+  // used for prefetching
+  init_hash_table(&pc_to_pw, "Log of all PWs decoded", 15000000, 
+                    sizeof(Uop_Cache_Data));
   init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
              UOP_CACHE_LINE_DATA_SIZE, REPL_TRUE_LRU);
+}
+
+Flag pw_insert(Uop_Cache_Data pw) {
+  Uop_Cache_Data* cur_line_data = NULL;
+  Addr line_addr;  
+  Addr repl_line_addr;
+
+  int lines_needed = pw.n_uops / UOP_CACHE_MAX_UOPS_LINE;
+  if (pw.n_uops % UOP_CACHE_MAX_UOPS_LINE) lines_needed++;
+  ASSERT(0, lines_needed > 0);
+
+  // Is the PW too big?
+  if (lines_needed > UOP_CACHE_ASSOC) {
+    cache_invalidate(&uop_cache, pw.first, &line_addr);
+    return FALSE;
+  } else {
+    // Insert it, taking appropriate number of lines
+    for (int jj = 0; jj < lines_needed; jj++) {
+      cur_line_data = (Uop_Cache_Data*) cache_insert(&uop_cache, 0,
+                      pw.first, &line_addr, &repl_line_addr);
+      // TODO: invalidate all lines with same pw start addr 
+      // (instead all with that have their PW start in this line)
+      if (repl_line_addr) {
+        cache_invalidate(&uop_cache, repl_line_addr, &line_addr);
+      }
+      memset(cur_line_data, 0, UOP_CACHE_LINE_DATA_SIZE);
+      *cur_line_data = pw;
+    }
+    STAT_EVENT(0, UOP_CACHE_PWS_INSERTED);
+    INC_STAT_EVENT(0, UOP_CACHE_LINES_INSERTED, lines_needed);
+  }
+  return TRUE;
 }
 
 /**************************************************************************************/
@@ -83,12 +121,12 @@ Flag insert_uop_cache() {
   // Invalidation: Let LRU handle it by placing PW in one line at a time.   
   
   ASSERT(0, accumulating_pw.n_uops);
-
-  Addr line_addr;  
-  Addr repl_line_addr;
-  Uop_Cache_Data* cur_line_data = NULL;
   Flag success = FALSE;
 
+  Flag new_entry;
+  Uop_Cache_Data* saved_pw = (Uop_Cache_Data*) hash_table_access_create(
+                              &pc_to_pw, accumulating_pw.first, &new_entry);
+  *saved_pw = accumulating_pw;
   int lines_needed = accumulating_pw.n_uops / UOP_CACHE_MAX_UOPS_LINE;
   if (accumulating_pw.n_uops % UOP_CACHE_MAX_UOPS_LINE) lines_needed++;
 
@@ -105,30 +143,9 @@ Flag insert_uop_cache() {
             && accumulating_pw.n_uops > INF_SIZE_UOP_CACHE_PW_SIZE_LIM) {
     success = FALSE;
   } else {
-    // Is the PW too big?
-    if (lines_needed > UOP_CACHE_ASSOC) {
-      cache_invalidate(&uop_cache, accumulating_pw.first, &line_addr);
-      success = FALSE;
-    } else {
-      // Insert it, taking appropriate number of lines
-      for (int jj = 0; jj < lines_needed; jj++) {
-        cur_line_data = (Uop_Cache_Data*) cache_insert(&uop_cache, 0, 
-                        accumulating_pw.first, &line_addr, &repl_line_addr);
-        // TODO: invalidate all lines with same pw start addr 
-        // (not all with that have their PW start in this line)
-        if (repl_line_addr) {
-          cache_invalidate(&uop_cache, repl_line_addr, &line_addr);
-        }
-        memset(cur_line_data, 0, UOP_CACHE_LINE_DATA_SIZE);
-        *cur_line_data = accumulating_pw;
-      }
-      success = TRUE;
-    }
+    success = pw_insert(accumulating_pw);
   }
-  if (success) {
-      STAT_EVENT(0, UOP_CACHE_PWS_INSERTED);
-      INC_STAT_EVENT(0, UOP_CACHE_LINES_INSERTED, lines_needed);
-  }
+
   return success;
 }
 
@@ -254,3 +271,19 @@ void accumulate_op(Op* op) {
   accumulating_pw.last = op->inst_info->addr;
   accumulating_pw.n_uops++;
 };
+
+Flag uop_cache_prefetch(Addr pw_start_addr) {
+  if (UOP_CACHE_SIZE == 0) {
+    return FALSE;
+  }
+  Uop_Cache_Data* pw = (Uop_Cache_Data*) hash_table_access(&pc_to_pw, pw_start_addr);
+  // if PW has not been decoded before, do nothing. Hopefully this is uncommon
+  if (pw == NULL) {
+    STAT_EVENT(0, UOP_CACHE_PREFETCH_FAILED_PW_NEVER_SEEN);
+    return FALSE;
+  }
+  ASSERT(0, pw->first == pw_start_addr);
+  Flag prefetched = pw_insert(*pw);
+  INC_STAT_EVENT(0, UOP_CACHE_PREFETCH, prefetched);
+  return prefetched;
+}

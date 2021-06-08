@@ -137,5 +137,6 @@ DEF_PARAM(fdip_bp_per_cyc, FDIP_BP_PER_CYC, uns, uns, 4, )
 DEF_PARAM(fdip_stop_on_btb_miss, FDIP_STOP_ON_BTB_MISS, Flag, Flag, FALSE, )
 
 DEF_PARAM(fdip_dual_path_pref_ic_enable , FDIP_DUAL_PATH_PREF_IC_ENABLE    , Flag    , Flag    , FALSE, )
+DEF_PARAM(fdip_dual_path_pref_uoc_enable , FDIP_DUAL_PATH_PREF_UOC_ENABLE  , Flag    , Flag    , FALSE, ) //uop cache
 DEF_PARAM(top_mispred_br_filepath       , TOP_MISPRED_BR_FILEPATH          , char*   , string  , "br_resteer_coverage.csv", )
 DEF_PARAM(top_mispred_br_resteer_coverage, TOP_MISPRED_BR_RESTEER_COVERAGE , float   , float   , 0, )

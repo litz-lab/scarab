@@ -21,6 +21,7 @@ extern "C" {
 #include "prefetcher/pref.param.h"
 #include "memory/memory.param.h"
 #include "memory/memory.h"
+#include "uop_cache.h"
 }
 
 #define DUMMY_CFN ~0
@@ -86,7 +87,8 @@ void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic) {
   bp_data = _bp_data;
   ic_stage = _ic;
   ASSERT(ic_stage->proc_id, ic_stage);
-  if (FDIP_DUAL_PATH_PREF_IC_ENABLE && TOP_MISPRED_BR_RESTEER_COVERAGE)
+  if ((FDIP_DUAL_PATH_PREF_IC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ENABLE)
+        && TOP_MISPRED_BR_RESTEER_COVERAGE)
     init_topk_mispred();
 }
 
@@ -317,22 +319,31 @@ bool fdip_prefetch(Addr target, Op *op) {
 }
 
 int fdip_dual_path_prefetch(Addr target, Op* op) {
-  int pref = 0;
-  ASSERT(ic->proc_id, FDIP_DUAL_PATH_PREF_IC_ENABLE);
+  int icache_pref = 0;
+  int uoc_pref = 0;
+  ASSERT(ic->proc_id, FDIP_DUAL_PATH_PREF_IC_ENABLE 
+                  || FDIP_DUAL_PATH_PREF_UOC_ENABLE);
 
   if (FDIP_DUAL_PATH_PREF_IC_ENABLE) {
     // is prefetching one CL for the alt path enough?
     // pred_target is the target stored by the BTB used if predicted taken
     bool success = fdip_prefetch(op->pred_target, op);
-    pref += success;
+    icache_pref += success;
     ftq.back().second.prefetched = success;
     success = fdip_prefetch(op->inst_info->addr + ICACHE_LINE_SIZE, op);
-    pref += success;
+    icache_pref += success;
     STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_IC_TRIGGERED);
     INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_IC_EMITTED, 
-                    pref);
+                    icache_pref);
   }
-  return pref;
+  if (FDIP_DUAL_PATH_PREF_UOC_ENABLE) {
+    uoc_pref += uop_cache_prefetch(op->pred_target);
+    uoc_pref += uop_cache_prefetch(op->pc_plus_offset);
+    STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_TRIGGERED);
+    INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_EMITTED,
+                    uoc_pref);
+  }
+  return icache_pref;
 }
 
 // Called each cycle to trigger runahead prefetches
@@ -394,8 +405,8 @@ void fdip_update() {
           // target is set to whichever instr is predicted to follow branch
           bool continuing_to_next_cl = get_cache_line_addr(&ic->icache, target) == 
             last_cl_prefetched + 1;
-          if (FDIP_DUAL_PATH_PREF_IC_ENABLE &&
-              hash_table_access(&top_mispred_br, runahead_pc)) {
+          if ((FDIP_DUAL_PATH_PREF_IC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ENABLE) 
+              && hash_table_access(&top_mispred_br, runahead_pc)) {
             fdip_dual_path_prefetch(target, op);
             last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
           } else if (op->oracle_info.pred == TAKEN || continuing_to_next_cl) {

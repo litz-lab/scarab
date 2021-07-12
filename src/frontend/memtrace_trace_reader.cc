@@ -238,7 +238,8 @@ void TraceReader::fillCache(uint64_t _vAddr, uint8_t _reported_size, uint8_t *in
     else res = xed_decode(ins, loc, size);
 
     if (res != XED_ERROR_NONE) {
-      warn("XED decode error for 0x%lx: %s %u", _vAddr, xed_error_enum_t2str(res), _reported_size);
+      // warn("XED decode error for 0x%lx: %s %u, replacing with nop\n", _vAddr, xed_error_enum_t2str(res), _reported_size);
+      *ins = *makeNop(_reported_size);
     }
     // Record if this instruction requires memory operands, since the trace
     // will deliver it in additional pieces
@@ -326,16 +327,20 @@ unique_ptr<xed_decoded_inst_t> TraceReader::makeNop(uint8_t _length) {
 
 void TraceReader::init_buffer() {
     //Push one dummy entry so we can pop in nextInstruction()
-    ins_buffer.emplace_back(InstInfo());
+    if(!buf_size_)
+        ins_buffer.emplace_back(InstInfo());
 
     for (uint32_t i = 0; i < buf_size_; i++) {
-        ins_buffer.emplace_back(*getNextInstruction());
+        InstInfo* tmp = getNextInstruction();
+        assert(tmp && tmp->valid);
+        ins_buffer.emplace_back(*tmp);
     }
 }
 
 const InstInfo *TraceReader::nextInstruction() {
     ins_buffer.pop_front();
-    ins_buffer.emplace_back(*getNextInstruction());
+    InstInfo* tmp = getNextInstruction();
+    ins_buffer.emplace_back(*tmp);
     return &ins_buffer.front();
 }
 

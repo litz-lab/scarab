@@ -1,4 +1,4 @@
-/* Copyright 2020 University of California Santa Cruz
+/* Copyright 2020 University of Michigan (implemented by Tanvir Ahmed Khan)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,11 +20,12 @@
  */
 
 /***************************************************************************************
- * File         : frontend/memtrace_fe.cc
- * Author       : Heiner Litz
- * Date         : 05/15/2020
- * Description  :
+ * File         : frontend/pt_fe.cc
+ * Author       : Tanvir Ahmed Khan
+ * Date         : 12/05/2020
+ * Description  : Interface to simulate Intel processor trace
  ***************************************************************************************/
+extern "C" {
 #include "debug/debug.param.h"
 #include "debug/debug_macros.h"
 #include "globals/assert.h"
@@ -32,19 +33,19 @@
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
+}
 
 #include "bp/bp.h"
 #include "statistics.h"
 #include "bp/bp.param.h"
 #include "ctype_pin_inst.h"
-#include "frontend/memtrace_fe.h"
+#include "frontend/pt_fe.h"
 #include "isa/isa.h"
 #include "./pin/pin_lib/uop_generator.h"
 #include "./pin/pin_lib/x86_decoder.h"
 
 #define DR_DO_NOT_DEFINE_int64
-
-#include "frontend/memtrace_trace_reader_memtrace.h"
+#include "frontend/pt_trace_reader_pt.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -53,25 +54,25 @@
 
 
 /**************************************************************************************/
-/* Global Variables */
+/* Global Variables for PT */
 
-char* trace_files[MAX_NUM_PROCS];
-TraceReader *trace_readers[MAX_NUM_PROCS];
-ctype_pin_inst* next_pi;
-uint64_t ins_id = 0;
-uint64_t prior_tid = 0;
-uint64_t prior_pid = 0;
+char* pt_trace_files[MAX_NUM_PROCS];
+TraceReaderPT *pt_trace_readers[MAX_NUM_PROCS];
+ctype_pin_inst* pt_next_pi;
+uint64_t pt_ins_id = 0;
+uint64_t pt_prior_tid = 0;
+uint64_t pt_prior_pid = 0;
 
 /**************************************************************************************/
-/* Private Functions */
+/* Private Functions for PT */
 
-void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo *insi) {
+void pt_fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo *insi) {
     uint8_t ld = 0;
     uint8_t st = 0;
 
     info->actually_taken = insi->taken;
     info->branch_target = insi->target;
-    info->inst_uid = ins_id;
+    info->inst_uid = pt_ins_id;
 
 #ifdef PRINT_INSTRUCTION_INFO
     std::cout << std::hex << info->instruction_addr << " Next " << info->instruction_next_addr
@@ -103,7 +104,7 @@ void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo *insi) {
     }
 }
 
-int ffwd(const INS& ins) {
+int pt_ffwd(const INS& ins) {
   if (!FAST_FORWARD) {
     return 0;
   }
@@ -116,7 +117,7 @@ int ffwd(const INS& ins) {
 #endif
 }
 
-int roi(const INS& ins) {
+int pt_roi(const INS& ins) {
 #ifdef MEMTRACE
   if(INS_Opcode(ins) == XED_ICLASS_XCHG && INS_OperandReg(ins, 0) == XED_REG_RCX &&
      INS_OperandReg(ins, 1) == XED_REG_RCX) {
@@ -126,37 +127,41 @@ int roi(const INS& ins) {
 #endif
 }
 
-int memtrace_trace_read(int proc_id, ctype_pin_inst* next_pi) {
+int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
   InstInfo *insi;
 
   do {
-     insi = const_cast<InstInfo *>(trace_readers[proc_id]->nextInstruction());
-     ins_id++;
+     insi = const_cast<InstInfo *>(pt_trace_readers[proc_id]->nextInstruction());
+     pt_ins_id++;
      if (!insi->valid)
        return 0; //end of trace
-  } while (insi->pid != prior_pid || insi->tid != prior_tid);
+  } while (insi->pid != pt_prior_pid || insi->tid != pt_prior_tid);
 
-  memset(next_pi, 0, sizeof(ctype_pin_inst));
-  fill_in_basic_info(next_pi, *insi);
-  fill_in_dynamic_info(next_pi, insi);
-  uint32_t max_op_width = add_dependency_info(next_pi, *insi);
-  fill_in_simd_info(next_pi, *insi, max_op_width);
-  apply_x87_bug_workaround(next_pi, *insi);
-  fill_in_cf_info(next_pi, *insi);
-  print_err_if_invalid(next_pi, *insi);
+  memset(pt_next_pi, 0, sizeof(ctype_pin_inst));
+  fill_in_basic_info(pt_next_pi, *insi);
+  assert(pt_next_pi->instruction_next_addr && "instruction_next_addr not set");
+  pt_fill_in_dynamic_info(pt_next_pi, insi);
+  uint32_t max_op_width = add_dependency_info(pt_next_pi, *insi);
+  fill_in_simd_info(pt_next_pi, *insi, max_op_width);
+  apply_x87_bug_workaround(pt_next_pi, *insi);
+  fill_in_cf_info(pt_next_pi, *insi);
+  pt_next_pi->actually_taken = insi->taken;
+  if(insi->static_target) {
+      // XED encoded target may not be right, so set it directly
+      //std::cout << "setting branch target to: " << insi->static_target << " for PC: " << insi->pc << std::endl;
+      pt_next_pi->branch_target = insi->static_target;
+  }
+  /* std::cout << "branch target for PC: " << pt_next_pi->instruction_addr << " is: " << pt_next_pi->branch_target << std::endl; */
+  print_err_if_invalid(pt_next_pi, *insi);
 
   //End of ROI
-  if (roi(*insi))
+  if (pt_roi(*insi))
     return 0;
 
   return 1;
 }
 
-
-/**************************************************************************************/
-/* trace_init() */
-
-void memtrace_init(void) {
+void pt_init(void) {
   /*ASSERTM(0, !FETCH_OFF_PATH_OPS,
           "Trace frontend does not support wrong path. Turn off "
           "FETCH_OFF_PATH_OPS\n");
@@ -167,7 +172,10 @@ void memtrace_init(void) {
   init_reg_compress_map();
   init_x87_stack_delta();
 
-  next_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));
+  pt_next_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));
+  for(int i = 0; i < MAX_NUM_PROCS; ++i) {
+      pt_trace_readers[i] = nullptr;
+  }
 
   /* temp variable needed for easy initialization syntax */
   char* tmp_trace_files[MAX_NUM_PROCS] = {
@@ -191,84 +199,32 @@ void memtrace_init(void) {
   }
 
   for(uns proc_id = 0; proc_id < MAX_NUM_PROCS; proc_id++) {
-    trace_files[proc_id] = tmp_trace_files[proc_id];
+    pt_trace_files[proc_id] = tmp_trace_files[proc_id];
   }
   for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-    memtrace_setup(proc_id);
+    pt_setup(proc_id);
   }
 }
 
-void memtrace_setup(uns proc_id) {
-  std::string path(trace_files[proc_id]);
-  std::string trace(path);
-  std::string binaries(MEMTRACE_MODULES_LOG);
-
-  trace_readers[proc_id] = new TraceReaderMemtrace(trace, binaries, 1);
-
-  //FFWD
-  const InstInfo *insi = trace_readers[proc_id]->nextInstruction();
-  ins_id++;
-
-  if(FAST_FORWARD) {
-    std::cout << "Enter fast forward " << ins_id << std::endl;
-  }
-
-  while (!insi->valid || ffwd(*insi)) {
-    insi = trace_readers[proc_id]->nextInstruction();
-    ins_id++;
-    if ((ins_id % 10000000) == 0)
-      std::cout << "Fast forwarded " << ins_id << " instructions." << std::endl;
-  }
-
-  if(FAST_FORWARD) {
-    std::cout << "Exit fast forward " << ins_id << std::endl;
-  }
-
-  prior_pid = insi->pid;
-  prior_tid = insi->tid;
-  assert(prior_tid);
-  assert(prior_pid);
-  memtrace_trace_read(proc_id, &next_pi[proc_id]);
+Addr pt_next_fetch_addr(uns proc_id) {
+    Addr next = pt_next_pi[proc_id].instruction_addr;
+  return convert_to_cmp_addr(proc_id, next);
 }
 
-/**************************************************************************************/
-/* trace_next_fetch_addr */
-
-Addr memtrace_next_fetch_addr(uns proc_id) {
-  return next_pi[proc_id].instruction_addr;
-}
-
-/**************************************************************************************/
-/* trace done */
-
-void memtrace_done() {
-  uns proc_id;
-  for(proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-    //delete trace_readers[proc_id];
-  }
-  printf("done\n");
-}
-
-void memtrace_close_trace_file(uns proc_id) {
-  //delete trace_readers[proc_id];
-  printf("close\n");
-}
-
-Flag memtrace_can_fetch_op(uns proc_id) {
+Flag pt_can_fetch_op(uns proc_id) {
   assert(proc_id == 0);
   return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
 }
 
-void memtrace_fetch_op(uns proc_id, Op* op) {
+void pt_fetch_op(uns proc_id, Op *op) {
   if(uop_generator_get_bom(proc_id)) {
-    //ASSERT(proc_id, !trace_read_done[proc_id] && !reached_exit[proc_id]);
-    uop_generator_get_uop(proc_id, op, &next_pi[proc_id]);
+    uop_generator_get_uop(proc_id, op, &pt_next_pi[proc_id]);
   } else {
     uop_generator_get_uop(proc_id, op, NULL);
   }
 
   if(uop_generator_get_eom(proc_id)) {
-    int success = memtrace_trace_read(proc_id, &next_pi[proc_id]);
+    int success = pt_trace_read(proc_id, &pt_next_pi[proc_id]);
     static int ins = 0;
     ins++;
     if(!success) {
@@ -278,19 +234,58 @@ void memtrace_fetch_op(uns proc_id, Op* op) {
   }
 }
 
-void memtrace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
+void pt_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
   assert(0);
-  //FATAL_ERROR(proc_id, "Trace frontend does not support wrong path. Turn off "
-  //                     "FETCH_OFF_PATH_OPS\n");
 }
 
-void memtrace_recover(uns proc_id, uns64 inst_uid) {
+void pt_recover(uns proc_id, uns64 inst_uid) {
   assert(0);
-  //FATAL_ERROR(proc_id, "Trace frontend does not support wrong path. Turn off "
-  //                     "FETCH_OFF_PATH_OPS\n");
 }
 
-void memtrace_retire(uns proc_id, uns64 inst_uid) {
-  // Trace frontend does not need to communicate to PIN which instruction are
-  // retired.
+void pt_retire(uns proc_id, uns64 inst_uid) {
+  // Similar to memtrace, PT frontend does not need to communicate to PIN to 
+  // determine which instruction are retired.
+}
+
+void pt_close_trace_file(uns proc_id) {
+  printf("Closing PT file for %u\n", proc_id);
+}
+
+void pt_done() {
+  printf("Frontend simulation finished for all PTs\n");
+  for(int i = 0; i < MAX_NUM_PROCS; ++i) {
+      delete pt_trace_readers[i];
+  }
+}
+
+void pt_setup(uns proc_id) {
+  std::string path(pt_trace_files[proc_id]);
+  std::string trace(path);
+
+  pt_trace_readers[proc_id] = new TraceReaderPT(trace);
+
+  //FFWD
+  const InstInfo *insi = pt_trace_readers[proc_id]->nextInstruction();
+  pt_ins_id++;
+
+  if(FAST_FORWARD) {
+    std::cout << "Enter fast forward " << pt_ins_id << std::endl;
+  }
+
+  while (!insi->valid || pt_ffwd(*insi)) {
+    insi = pt_trace_readers[proc_id]->nextInstruction();
+    pt_ins_id++;
+    if ((pt_ins_id % 10000000) == 0)
+      std::cout << "Fast forwarded " << pt_ins_id << " instructions." << std::endl;
+  }
+
+  if(FAST_FORWARD) {
+    std::cout << "Exit fast forward " << pt_ins_id << std::endl;
+  }
+
+  pt_prior_pid = insi->pid;
+  pt_prior_tid = insi->tid;
+  assert(pt_prior_tid);
+  assert(pt_prior_pid);
+  pt_trace_read(proc_id, &pt_next_pi[proc_id]);
 }

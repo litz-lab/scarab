@@ -151,8 +151,9 @@ void init_icache_stage(uns8 proc_id, const char* name) {
 /* icache_init_trace:  */
 
 void init_icache_trace() {
+  ASSERT(0, (FDIP_ENABLE && LOOKAHEAD_BUF_SIZE) || (!FDIP_ENABLE && !LOOKAHEAD_BUF_SIZE));
   if (LOOKAHEAD_BUF_SIZE) {
-    ASSERT(0, ENABLE_MEMTRACE); //Lookahead buffer only works in trace mode
+    ASSERT(0, ENABLE_PT_MEMTRACE); //Lookahead buffer only works in trace mode
     init_list(&op_buf, "op_buf", sizeof(Op*), TRUE);
     while (list_get_count(&op_buf) < LOOKAHEAD_BUF_SIZE) {
       Op* new_op = alloc_op(ic->proc_id);

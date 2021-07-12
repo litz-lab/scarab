@@ -20,13 +20,13 @@
  */
 
 /***************************************************************************************
- * File         : frontend/memtrace_trace_reader_memtrace.h
+ * File         : frontend/pt_memtrace/memtrace_trace_reader_memtrace.h
  * Author       : Heiner Litz
  * Date         : 05/15/2020
  * Description  :
  ***************************************************************************************/
 
-#include "frontend/memtrace/memtrace_trace_reader_memtrace.h"
+#include "frontend/pt_memtrace/memtrace_trace_reader_memtrace.h"
 
 #include "elf.h"
 

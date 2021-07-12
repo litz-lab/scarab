@@ -20,7 +20,7 @@
  */
 
 /***************************************************************************************
- * File         : frontend/memtrace_fe.cc
+ * File         : frontend/pt_memtrace/memtrace_fe.cc
  * Author       : Heiner Litz
  * Date         : 05/15/2020
  * Description  : Frontend to simulate traces in memtrace format
@@ -37,7 +37,7 @@
 #include "bp/bp.h"
 #include "bp/bp.param.h"
 #include "ctype_pin_inst.h"
-#include "frontend/memtrace/memtrace_fe.h"
+#include "frontend/pt_memtrace/memtrace_fe.h"
 #include "isa/isa.h"
 #include "pin/pin_lib/uop_generator.h"
 #include "pin/pin_lib/x86_decoder.h"
@@ -45,14 +45,14 @@
 
 #define DR_DO_NOT_DEFINE_int64
 
-#include "frontend/memtrace/memtrace_trace_reader_memtrace.h"
+#include "frontend/pt_memtrace/memtrace_trace_reader_memtrace.h"
 
 /**************************************************************************************/
 /* Macros */
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_TRACE_READ, ##args)
 
-//#define PRINT_INSTRUCTION_INFO
+
 /**************************************************************************************/
 /* Global Variables */
 
@@ -215,8 +215,9 @@ void memtrace_setup(uns proc_id) {
 
   trace_readers[proc_id] = new TraceReaderMemtrace(trace, binaries, 1);
 
-  // FFWD
-  const InstInfo* insi = trace_readers[proc_id]->nextInstruction();
+  //FFWD
+  const InstInfo *insi = trace_readers[proc_id]->nextInstruction();
+  ins_id++;
 
   if(FAST_FORWARD) {
     std::cout << "Enter fast forward " << ins_id << std::endl;
@@ -283,7 +284,6 @@ void memtrace_fetch_op(uns proc_id, Op* op) {
     if(!success) {
       trace_read_done[proc_id] = TRUE;
       reached_exit[proc_id]    = TRUE;
-      std::cout << "Reached end of trace" << std::endl;
     }
   }
 }

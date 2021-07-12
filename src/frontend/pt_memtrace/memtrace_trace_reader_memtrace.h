@@ -20,7 +20,7 @@
  */
 
 /***************************************************************************************
- * File         : frontend/memtrace_trace_reader_memtrace.h
+ * File         : frontend/pt_memtrace/memtrace_trace_reader_memtrace.h
  * Author       : Heiner Litz
  * Date         : 05/15/2020
  * Description  :
@@ -28,7 +28,7 @@
 #ifndef MEMTRACE_READER_MEMTRACE_H
 #define MEMTRACE_READER_MEMTRACE_H
 
-#include "frontend/memtrace/memtrace_trace_reader.h"
+#include "frontend/pt_memtrace/memtrace_trace_reader.h"
 
 //#include "instrument.h"
 #include "analyzer.h"

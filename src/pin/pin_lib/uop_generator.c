@@ -892,6 +892,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
           info->fake_inst_reason = WPNM_NOT_IN_WPNM;
         }
       }
+      need_to_gen_uops = new_entry || pi->fake_inst || pi->is_gather_scatter;
       ASSERT(proc_id, need_to_gen_uops);
 
       trace_uop[ii]->addr      = pi->instruction_addr;

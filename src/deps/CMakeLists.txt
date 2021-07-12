@@ -27,11 +27,11 @@ target_include_directories(xed INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/xed/include
 target_include_directories(xed INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/xed/obj/)
 target_link_libraries(xed INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/xed/obj/libxed.a)
 
-if(DEFINED ENV{SCARAB_ENABLE_MEMTRACE})
+if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
   add_subdirectory(dynamorio)
-  add_library(memtrace INTERFACE)
+  add_library(pt_memtrace INTERFACE)
 
-  target_include_directories(memtrace
+  target_include_directories(pt_memtrace
     INTERFACE
     ${CMAKE_BINARY_DIR}/deps/dynamorio/include/
     ${CMAKE_CURRENT_SOURCE_DIR}/dynamorio/ext/drcovlib/
@@ -44,7 +44,7 @@ if(DEFINED ENV{SCARAB_ENABLE_MEMTRACE})
     ${CMAKE_CURRENT_SOURCE_DIR}/dynamorio/clients/drcachesim/
     )
 
-  target_link_libraries(memtrace
+  target_link_libraries(pt_memtrace
     INTERFACE
     drmemtrace_raw2trace
     directory_iterator

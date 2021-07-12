@@ -146,7 +146,6 @@ bool TraceReaderMemtrace::initTrace() {
 bool TraceReaderMemtrace::getNextInstruction__(InstInfo *_info, InstInfo *_prior) {
   uint32_t prior_isize = mt_prior_isize_;
   bool complete = false;
-
   while (*mt_iter_ != *mt_end_) {
     switch (mt_state_) {
       case (MTState::INST):
@@ -208,16 +207,7 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo *_info, InstInfo *_prior
             warn("Unexpected PID/TID/PC switch following 0x%lx\n", _info->pc);
             mt_state_ = MTState::INST;
           }
-        } else if (type_is_instr(mt_ref_.instr.type)) {
-	  //REP Instructions with REP count 0
-	  warn("REP BUG: Data size does not match instruction 0x%lx - PATCHING size, success!\n",
-               _info->pc);
-
-	  mt_state_ = MTState::INST;
-	  complete = true;
-	  goto PATCH_REP;
-        }
-	else {
+        } else {
           warn("Expected data but found type '%s'\n",
                trace_type_names[mt_ref_.data.type]);
           mt_state_ = MTState::INST;
@@ -251,7 +241,6 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo *_info, InstInfo *_prior
       break;
     }
   }
- PATCH_REP:
   // Compute the branch target information for the prior instruction
   _prior->target = _info->pc;  // TODO(granta): Invalid for pid/tid switch
   if (_prior->taken) {  // currently set iif conditional branch
@@ -288,7 +277,6 @@ void TraceReaderMemtrace::processInst(InstInfo *_info) {
   bool unknown_type, cond_branch;
   xed_decoded_inst_t *xed_ins;
   auto &xed_tuple = (*xed_map_iter).second;
-
   tie(mt_mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) = xed_tuple;
   mt_prior_isize_ = mt_ref_.instr.size;
   xed_ins = std::get<MAP_XED>(xed_tuple).get();

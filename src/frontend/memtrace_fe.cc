@@ -74,10 +74,14 @@ void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo *insi) {
     info->inst_uid = ins_id;
 
 #ifdef PRINT_INSTRUCTION_INFO
-    std::cout << std::hex << info->instruction_addr << " Next " << info->instruction_next_addr
-	      << " size " << (uint32_t)info->size << " taken " << (uint32_t)info->actually_taken
-	      << " target " << info->branch_target << " asm "
-	      << std::string(xed_iclass_enum_t2str(xed_decoded_inst_get_iclass(insi->ins))) <<std::endl;
+    std::cout << std::hex << info->instruction_addr << " Next "
+              << info->instruction_next_addr << " size " << (uint32_t)info->size
+              << " taken " << (uint32_t)info->actually_taken << " target "
+              << info->branch_target << " pid " << insi->pid << " tid "
+              << insi->tid << " asm "
+              << std::string(xed_iclass_enum_t2str(
+                   xed_decoded_inst_get_iclass(insi->ins)))
+              << " uid " << std::dec << info->inst_uid << std::endl;
 #endif
 
     if (xed_decoded_inst_get_iclass(insi->ins) == XED_ICLASS_RET_FAR ||
@@ -112,8 +116,11 @@ int ffwd(const INS& ins) {
      INS_OperandReg(ins, 1) == XED_REG_RCX) {
     return 0;
   }
-  return 1;
 #endif
+  if(ins_id == FAST_FORWARD_TRACE_INS) {
+    return 0;
+  }
+  return 1;
 }
 
 int roi(const INS& ins) {
@@ -130,10 +137,13 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_pi) {
   InstInfo *insi;
 
   do {
-     insi = const_cast<InstInfo *>(trace_readers[proc_id]->nextInstruction());
-     ins_id++;
-     if (!insi->valid)
-       return 0; //end of trace
+    insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
+    ins_id++;
+    if(!insi->valid) {
+      insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
+      ins_id++;
+      return 0;  // end of trace
+    }
   } while (insi->pid != prior_pid || insi->tid != prior_tid);
 
   memset(next_pi, 0, sizeof(ctype_pin_inst));
@@ -274,6 +284,7 @@ void memtrace_fetch_op(uns proc_id, Op* op) {
     if(!success) {
       trace_read_done[proc_id] = TRUE;
       reached_exit[proc_id]    = TRUE;
+      std::cout << "Reached end of trace" << std::endl;
     }
   }
 }

@@ -25,8 +25,8 @@ WARN_CCFLAGS= -Wall -Wunused -Wno-long-long -Wpointer-arith -Werror
 NO_STAT ?=
 PIN_COMPILE ?=
 INCLUDES = -I$(SCARAB_DIR) -I$(PIN_ROOT)/
-OPTCFLAGS   = -std=gnu99 -O3 -g $(ARCHTYPE) -funroll-loops -Werror $(INCLUDES) $(DEBUG_FLAGS) $(WARN_CFLAGS) $(XFLAGS) $(NO_STAT) $(PIN_COMPILE)# -DNO_ASSERT 
-OPTCCFLAGS   = -std=c++14 -O3 -g $(ARCHTYPE) -fno-inline -funroll-loops -Werror $(INCLUDES) $(DEBUG_FLAGS) $(WARN_CCFLAGS) $(XFLAGS) $(NO_STAT) $(PIN_COMPILE)# -DNO_ASSERT 
+OPTCFLAGS   = -std=gnu99 -O3 -g $(ARCHTYPE) -funroll-loops -Werror $(INCLUDES) $(DEBUG_FLAGS) $(WARN_CFLAGS) $(XFLAGS) $(NO_STAT) $(PIN_COMPILE) 
+OPTCCFLAGS   = -std=c++14 -O3 -g $(ARCHTYPE) -fno-inline -funroll-loops -Werror $(INCLUDES) $(DEBUG_FLAGS) $(WARN_CCFLAGS) $(XFLAGS) $(NO_STAT) $(PIN_COMPILE)
 
 DEPDIR := $(OBJDIR)
 DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.d

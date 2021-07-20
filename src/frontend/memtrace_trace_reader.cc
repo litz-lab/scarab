@@ -340,6 +340,7 @@ void TraceReader::init_buffer() {
 const InstInfo *TraceReader::nextInstruction() {
     ins_buffer.pop_front();
     InstInfo* tmp = getNextInstruction();
+    // assert(tmp && tmp->valid); // fails for the first instruction
     ins_buffer.emplace_back(*tmp);
     return &ins_buffer.front();
 }

@@ -207,6 +207,14 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo *_info, InstInfo *_prior
             warn("Unexpected PID/TID/PC switch following 0x%lx\n", _info->pc);
             mt_state_ = MTState::INST;
           }
+        } else if(type_is_instr(mt_ref_.instr.type)) {
+          // REP Instructions with REP count 0
+          warn("REP BUG: Data size does not match instruction 0x%lx - PATCHING "
+               "size, success!\n",
+               _info->pc);
+          mt_state_ = MTState::INST;
+          complete  = true;
+          goto PATCH_REP;
         } else {
           warn("Expected data but found type '%s'\n",
                trace_type_names[mt_ref_.data.type]);
@@ -241,6 +249,7 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo *_info, InstInfo *_prior
       break;
     }
   }
+PATCH_REP:
   // Compute the branch target information for the prior instruction
   _prior->target = _info->pc;  // TODO(granta): Invalid for pid/tid switch
   if (_prior->taken) {  // currently set iif conditional branch

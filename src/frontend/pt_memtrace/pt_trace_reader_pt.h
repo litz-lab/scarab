@@ -108,6 +108,7 @@ public:
     return true;
   }
 
+  // TODO: Move this to memtrace_trace_reader.h
   xed_decoded_inst_t* createJmp(uint64_t displacement) {
       xed_encoder_instruction_t inst;
       xed_state_t state;

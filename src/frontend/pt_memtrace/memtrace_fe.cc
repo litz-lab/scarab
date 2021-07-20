@@ -284,6 +284,7 @@ void memtrace_fetch_op(uns proc_id, Op* op) {
     if(!success) {
       trace_read_done[proc_id] = TRUE;
       reached_exit[proc_id]    = TRUE;
+      std::cout << "Reached end of trace" << std::endl;
     }
   }
 }

@@ -84,6 +84,7 @@ void pt_fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo *insi) {
 	      << std::string(xed_iclass_enum_t2str(xed_decoded_inst_get_iclass(insi->ins))) <<std::endl;
 #endif
 
+    // TODO: Check whether we need to add this fix to memtrace fe
     if (xed_decoded_inst_get_iclass(insi->ins) == XED_ICLASS_RET_FAR ||
 	xed_decoded_inst_get_iclass(insi->ins) == XED_ICLASS_RET_NEAR)
       info->actually_taken = 1;
@@ -147,6 +148,8 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
   apply_x87_bug_workaround(pt_next_pi, insi->ins);
   fill_in_cf_info(pt_next_pi, insi->ins);
   pt_next_pi->actually_taken = insi->taken;
+  // TODO: This happens for PT for example when there is some traces missing,
+  // Check whether this can also happen for memtrace fe
   if(insi->static_target) {
       // XED encoded target may not be right, so set it directly
       //std::cout << "setting branch target to: " << insi->static_target << " for PC: " << insi->pc << std::endl;

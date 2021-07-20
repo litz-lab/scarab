@@ -175,6 +175,10 @@ uint32_t add_dependency_info_memtrace(ctype_pin_inst* info, const INS& ins) {
       }
     }
   }
+  if(info->instruction_addr == 0x7fb083ade789 &&
+     INS_MemoryOperandCount(ins) > 1)
+    std::cout << "mem ops " << INS_MemoryOperandCount(ins) << " lds "
+              << info->num_ld << " st " << info->num_st << std::endl;
   return max_op_width;
 }
 
@@ -902,6 +906,7 @@ void init_reg_compress_map(void) {
 
   //reg_compress_map[(int)XED_REG_CR_BASE] = SCARAB_REG_OTHER;
   reg_compress_map[(int)XED_REG_TSC]     = SCARAB_REG_OTHER;
+  reg_compress_map[(int)XED_REG_TSCAUX]   = SCARAB_REG_OTHER;
   reg_compress_map[(int)XED_REG_XCR0]     = SCARAB_REG_OTHER;
   reg_compress_map[(int)XED_REG_CR0]     = SCARAB_REG_OTHER;
   reg_compress_map[(int)XED_REG_CR1]     = SCARAB_REG_OTHER;
@@ -1575,6 +1580,10 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_REPNE_CMPSD] = {OP_ICMP, 4, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_REPNE_CMPSQ] = {OP_ICMP, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_REPNE_CMPSW] = {OP_ICMP, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_REPNE_SCASB] = {OP_ICMP, 1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_REPNE_SCASD] = {OP_ICMP, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_REPNE_SCASQ] = {OP_ICMP, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_REPNE_SCASW] = {OP_ICMP, 2, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_REP_MOVSB] = {OP_MOV, 1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_REP_MOVSD] = {OP_MOV, 4, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_REP_MOVSQ] = {OP_MOV, 8, 1, NONE};

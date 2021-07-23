@@ -140,7 +140,6 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
       */
     runahead_disable = false;
     Addr target = bp_predict_op(g_bp_data, op, cf_num++, bp_pc);
-    bp_predict_op_evaluate(g_bp_data, op, target);
     recovery_checkpoint = op;
     recovery_checkpoint_valid = true;
     runahead_pc = target;
@@ -157,7 +156,6 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     auto target = req->target;
     patch_oracle_info(op, &req->op, bp_pc);
     //Re-evaluate FDIP direction prediction based on the current oracle info
-    bp_predict_op_evaluate(g_bp_data, op, req->target);
     op->cf_within_fetch = cf_num++;
     if (!on_wrong_path) {
       //We may have mispredicted once but the branch PCs seen by the
@@ -221,7 +219,6 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     }
     fdip_clear_ftq(bp_pc);
     auto target =  bp_predict_op(g_bp_data, op, cf_num++, bp_pc);
-    target = bp_predict_op_evaluate(g_bp_data, op, target);
     recovery_checkpoint = op;
     recovery_checkpoint_valid = true;
     runahead_disable = false;

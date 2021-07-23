@@ -20,6 +20,8 @@ set(CMAKE_C_FLAGS_VALGRIND    "-O0 -g3 -DLINUX -DX86_64 ${flags_enable_memtrace}
 set(CMAKE_CXX_FLAGS_VALGRIND  "-O0 -g3 -DLINUX -DX86_64 ${flags_enable_memtrace}")
 set(CMAKE_C_FLAGS_GPROF       "${CMAKE_CXX_FLAGS_SCARABOPT} -pg -g3 ${flags_enable_memtrace}")
 set(CMAKE_CXX_FLAGS_GPROF     "${CMAKE_CXX_FLAGS_SCARABOPT} -pg -g3 ${flags_enable_memtrace}")
+set(CMAKE_C_FLAGS_DEBUG       "-DLINUX -DX86_64 ${flags_enable_memtrace}")
+set(CMAKE_CXX_FLAGS_DEBUG     "-DLINUX -DX86_64 ${flags_enable_memtrace}")
 
 #build dependencies with default warn flags, otherwise dynamorio will not build
 add_subdirectory(deps)

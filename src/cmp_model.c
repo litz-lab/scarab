@@ -87,7 +87,6 @@ void cmp_init(uns mode) {
     cmp_init_thread_data(proc_id);
 
     init_icache_stage(proc_id, "ICACHE");
-    init_icache_trace();
 
     init_decode_stage(proc_id, "DECODE");
 

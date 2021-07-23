@@ -52,6 +52,7 @@
 #include "prefetcher/l2l1pref.h"
 #include "prefetcher/stream_pref.h"
 #include "statistics.h"
+#include "libs/list_lib.h"
 
 #include "prefetcher/fdip.h"
 #include "prefetcher/pref.param.h"
@@ -67,6 +68,7 @@
 /* Global Variables */
 
 Icache_Stage* ic = NULL;
+List op_buf;
 
 extern Cmp_Model              cmp_model;
 extern Memory*                mem;
@@ -149,7 +151,23 @@ void init_icache_stage(uns8 proc_id, const char* name) {
 /* icache_init_trace:  */
 
 void init_icache_trace() {
-  ic->next_fetch_addr = frontend_next_fetch_addr(ic->proc_id);
+  if (LOOKAHEAD_BUF_SIZE) {
+    ASSERT(0, MEMTRACE); //Lookahead buffer only works in trace mode
+    init_list(&op_buf, "op_buf", sizeof(Op*), TRUE);
+    while (list_get_count(&op_buf) < LOOKAHEAD_BUF_SIZE) {
+      Op* new_op = alloc_op(ic->proc_id);
+      frontend_fetch_op(ic->proc_id, new_op);
+      Op** ptr = sl_list_add_tail(&op_buf);
+      *ptr = new_op;
+      op_count[ic->proc_id]++;          /* increment instruction counters */
+      unique_count_per_core[ic->proc_id]++;
+      unique_count++;
+    }
+    Op **ptr = list_get_head(&op_buf);
+    ic->next_fetch_addr = (*ptr)->inst_info->addr;
+  } else {
+    ic->next_fetch_addr = frontend_next_fetch_addr(ic->proc_id);
+  }
   ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
 }
 
@@ -224,7 +242,7 @@ void recover_icache_stage() {
       ic->next_state = IC_FETCH;
     }
   }
-  op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
+  op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1 + LOOKAHEAD_BUF_SIZE;
   ic->next_fetch_addr   = bp_recovery_info->recovery_fetch_addr;
   if(ic->proc_id)
     ASSERT(ic->proc_id, ic->next_fetch_addr);
@@ -474,12 +492,23 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
   last_icache_issue_time = cycle_count;
 
   while(1) {
-    Op*        op   = alloc_op(ic->proc_id);
+    Op*        op = NULL;
     Inst_Info* inst = 0;
     UNUSED(inst);
 
     if(frontend_can_fetch_op(ic->proc_id)) {
-      frontend_fetch_op(ic->proc_id, op);
+      if (LOOKAHEAD_BUF_SIZE) {
+        Op* new_op = alloc_op(ic->proc_id);
+        frontend_fetch_op(ic->proc_id, new_op);
+        Op** ptr = sl_list_add_tail(&op_buf);
+        *ptr = new_op;
+        ptr = sl_list_remove_head(&op_buf);
+        op = *ptr;
+      }
+      else {
+        op   = alloc_op(ic->proc_id);
+        frontend_fetch_op(ic->proc_id, op);
+      }
       ASSERTM(ic->proc_id, ic->next_fetch_addr == op->inst_info->addr,
               "Fetch address 0x%llx does not match op address 0x%llx\n",
               ic->next_fetch_addr, op->inst_info->addr);
@@ -494,7 +523,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       }
       inst = op->inst_info;
     } else {
-      free_op(op);
       *break_fetch = BREAK_BARRIER;
       return IC_FETCH;
     }

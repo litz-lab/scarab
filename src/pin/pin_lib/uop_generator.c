@@ -44,6 +44,7 @@
 #include "../../libs/hash_lib.h"
 
 #include "uop_generator.h"
+#include "math.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -122,7 +123,6 @@ static void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi,
                             Flag is_last_uop);
 
 /**************************************************************************************/
-
 void uop_generator_init(uint32_t num_cores) {
   inst_info_hash = (Hash_Table*)malloc(num_cores * sizeof(Hash_Table));
   for(uns ii = 0; ii < num_cores; ii++) {
@@ -695,7 +695,11 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi,
 void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
                              Trace_Uop** trace_uop) {
   Flag       new_entry = FALSE;
-  Addr       key_addr  = (pi->instruction_addr << 3);
+  Addr       key_addr;
+  if (LOOKAHEAD_BUF_SIZE)
+    key_addr = (pi->instruction_addr << (const uns8)ceil(log2(LOOKAHEAD_BUF_SIZE))) + (unique_count % (LOOKAHEAD_BUF_SIZE+1));
+  else
+    key_addr = (pi->instruction_addr << 3);
   Inst_Info* info;
   if(pi->fake_inst) {
     info                   = (Inst_Info*)calloc(1, sizeof(Inst_Info));

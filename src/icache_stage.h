@@ -128,6 +128,7 @@ Flag icache_fill_line(Mem_Req*);
 void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr);
 void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
 Flag icache_off_path(void);
+Op* find_op(Addr pc);
 
 /**************************************************************************************/
 

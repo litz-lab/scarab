@@ -81,7 +81,8 @@ extern void tc_do_stat(Op*, Flag);
 Bp_Recovery_Info* bp_recovery_info = NULL;
 Bp_Data*          g_bp_data        = NULL;
 Flag              USE_LATE_BP      = FALSE;
-
+extern Flag       fdip_pred_on_path;
+extern List       op_buf;
 
 /******************************************************************************/
 // Local prototypes
@@ -148,6 +149,8 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op,
     bp_recovery_info->recovery_cf_type       = op->table_info->cf_type;
     bp_recovery_info->recovery_info          = op->recovery_info;
     bp_recovery_info->recovery_info.op_num   = op->op_num;
+    if (FDIP_ENABLE)
+      bp_recovery_info->recovery_info.npc    = next_fetch_addr;
     bp_recovery_info->recovery_inst_info     = op->inst_info;
     bp_recovery_info->recovery_force_offpath = op->off_path;
     bp_recovery_info->recovery_op            = op;
@@ -356,8 +359,14 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   // {{{ handle predictions for individual cf types
   switch(op->table_info->cf_type) {
     case CF_BR:
-      op->oracle_info.pred      = TAKEN;
-      op->oracle_info.late_pred = TAKEN;
+      if(PERFECT_BP) {
+        op->oracle_info.pred      = op->oracle_info.dir;
+        op->oracle_info.late_pred = op->oracle_info.dir;
+        pred_target               = op->oracle_info.target;
+      } else {
+        op->oracle_info.pred      = TAKEN;
+        op->oracle_info.late_pred = TAKEN;
+      }
       if(!op->off_path)
         STAT_EVENT(op->proc_id, CF_BR_USED_TARGET_CORRECT +
                                   (pred_target != op->oracle_info.npc));
@@ -370,6 +379,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       if(PERFECT_BP) {
         op->oracle_info.pred      = op->oracle_info.dir;
         op->oracle_info.no_target = FALSE;
+        pred_target               = op->oracle_info.target;
       } else {
         op->oracle_info.pred = bp_data->bp->pred_func(op);
         if(USE_LATE_BP) {
@@ -404,34 +414,45 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       break;
 
     case CF_IBR:
-      op->oracle_info.pred      = TAKEN;
-      op->oracle_info.late_pred = TAKEN;
-      if(ENABLE_IBP) {
-        Addr ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op);
-        if(ibp_target) {
-          pred_target               = ibp_target;
-          op->oracle_info.no_target = FALSE;
-          op->oracle_info.ibp_miss  = FALSE;
-        } else
-          op->oracle_info.ibp_miss = TRUE;
-
-        if(!op->off_path)
-          STAT_EVENT(op->proc_id, CF_IBR_USED_TARGET_CORRECT +
-                                    (pred_target != op->oracle_info.npc));
+      if(PERFECT_BP) {
+        op->oracle_info.pred      = op->oracle_info.dir;
+        pred_target               = op->oracle_info.target;
+        op->oracle_info.no_target = FALSE;
+      } else {
+        op->oracle_info.pred      = TAKEN;
+        op->oracle_info.late_pred = TAKEN;
+        if(ENABLE_IBP) {
+          Addr ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op);
+          if(ibp_target) {
+            pred_target               = ibp_target;
+            op->oracle_info.no_target = FALSE;
+            op->oracle_info.ibp_miss  = FALSE;
+          } else
+            op->oracle_info.ibp_miss = TRUE;
+        }
       }
+      if(!op->off_path)
+        STAT_EVENT(op->proc_id, CF_IBR_USED_TARGET_CORRECT +
+            (pred_target != op->oracle_info.npc));
       break;
 
     case CF_ICALL:
-      op->oracle_info.pred      = TAKEN;
-      op->oracle_info.late_pred = TAKEN;
-      if(ENABLE_IBP) {
-        Addr ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op);
-        if(ibp_target) {
-          pred_target               = ibp_target;
-          op->oracle_info.no_target = FALSE;
-          op->oracle_info.ibp_miss  = FALSE;
-        } else
-          op->oracle_info.ibp_miss = TRUE;
+      if(PERFECT_BP) {
+        op->oracle_info.pred      = op->oracle_info.dir;
+        pred_target               = op->oracle_info.target;
+        op->oracle_info.no_target = FALSE;
+      } else {
+        op->oracle_info.pred      = TAKEN;
+        op->oracle_info.late_pred = TAKEN;
+        if(ENABLE_IBP) {
+          Addr ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op);
+          if(ibp_target) {
+            pred_target               = ibp_target;
+            op->oracle_info.no_target = FALSE;
+            op->oracle_info.ibp_miss  = FALSE;
+          } else
+            op->oracle_info.ibp_miss = TRUE;
+        }
       }
       if(ENABLE_CRS)
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) :
@@ -456,11 +477,16 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       break;
 
     case CF_RET:
-      op->oracle_info.pred      = TAKEN;
-      op->oracle_info.late_pred = TAKEN;
-      if(ENABLE_CRS)
-        pred_target = CRS_REALISTIC ? bp_crs_realistic_pop(bp_data, op) :
-                                      bp_crs_pop(bp_data, op);
+      if(PERFECT_BP) {
+        op->oracle_info.pred      = op->oracle_info.dir;
+        pred_target               = op->oracle_info.target;
+      } else {
+        op->oracle_info.pred      = TAKEN;
+        op->oracle_info.late_pred = TAKEN;
+        if(ENABLE_CRS)
+          pred_target = CRS_REALISTIC ? bp_crs_realistic_pop(bp_data, op) :
+                                        bp_crs_pop(bp_data, op);
+      }
       if(!op->off_path)
         STAT_EVENT(op->proc_id, CF_RET_USED_TARGET_CORRECT +
                                   (pred_target != op->oracle_info.npc));
@@ -489,6 +515,29 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   const Addr prediction = op->oracle_info.pred ? pred_target : pc_plus_offset;
   op->oracle_info.pred_npc = prediction;
   ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.pred_npc);
+  // If the direction prediction is wrong, but next address happens to be right
+  if(FDIP_ENABLE && LOOKAHEAD_BUF_SIZE) {
+    Op* op_lookahead;
+    Op** op_p = (Op**)list_get_current(&op_buf);
+    if (op_p) {
+      op_lookahead = *op_p;
+      if ((op->oracle_info.pred != op_lookahead->oracle_info.dir) && (prediction != op_lookahead->oracle_info.npc)) {
+        STAT_EVENT(bp_data->proc_id, FDIP_PRED_OFF_PATH);
+        fdip_pred_on_path = FALSE;
+      } else {
+        STAT_EVENT(bp_data->proc_id, FDIP_PRED_ON_PATH);
+        fdip_pred_on_path = TRUE;
+      }
+    }
+  }
+  bp_predict_op_evaluate(bp_data, op, prediction);
+  return prediction;
+}
+
+/* Separate performing branch prediction from evaluating the prediction into
+ * two functions, enabling FDIP.
+ */
+Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction) {
   // If the direction prediction is wrong, but next address happens to be right
   // anyway, do not treat this as a misprediction.
   op->oracle_info.mispred = (op->oracle_info.pred != op->oracle_info.dir) &&

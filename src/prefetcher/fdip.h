@@ -15,7 +15,6 @@ extern "C" {
   Addr fdip_pred(Addr bp_pc, Op *op);
   void fdip_retire(Op *op);
   void fdip_resolve(Op *op);
-  void fdip_new_branch(Addr bp_pc, Op *op);
   void fdip_recover(Recovery_Info *info);
   void fdip_update();
 

@@ -45,6 +45,7 @@
 #include "../../libs/hash_lib.h"
 
 #include "uop_generator.h"
+#include "math.h"
 
 /**************************************************************************************/
 /* Macros */

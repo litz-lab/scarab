@@ -74,6 +74,10 @@ extern Cmp_Model              cmp_model;
 extern Memory*                mem;
 extern Rob_Stall_Reason       rob_stall_reason;
 extern Rob_Block_Issue_Reason rob_block_issue_reason;
+extern Addr                   runahead_pc;
+extern Flag                   runahead_disable;
+extern uns64                  last_runahead_uid;
+extern uns64                  max_runahead_uid;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -160,12 +164,16 @@ void init_icache_trace() {
       frontend_fetch_op(ic->proc_id, new_op);
       Op** ptr = sl_list_add_tail(&op_buf);
       *ptr = new_op;
+      if (new_op->table_info->cf_type)
+        max_runahead_uid = new_op->inst_uid;
       op_count[ic->proc_id]++;          /* increment instruction counters */
       unique_count_per_core[ic->proc_id]++;
       unique_count++;
     }
     Op **ptr = list_get_head(&op_buf);
     ic->next_fetch_addr = (*ptr)->inst_info->addr;
+    runahead_pc = (*ptr)->inst_info->addr;
+    runahead_disable = FALSE;
   } else {
     ic->next_fetch_addr = frontend_next_fetch_addr(ic->proc_id);
   }
@@ -506,6 +514,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         frontend_fetch_op(ic->proc_id, new_op);
         Op** ptr = sl_list_add_tail(&op_buf);
         *ptr = new_op;
+        if (new_op->table_info->cf_type)
+          max_runahead_uid = new_op->inst_uid;
         ptr = sl_list_remove_head(&op_buf);
         op = *ptr;
       }
@@ -985,4 +995,44 @@ int32_t inst_lost_get_full_window_reason() {
   }
 
   return 0;
+}
+
+Op* find_op(Addr pc) {
+  Op* op;
+  Op** op_p = (Op**)list_get_current(&op_buf);
+
+  if (op_p) {
+    op = *op_p;
+    op_p = (Op**)list_next_element(&op_buf);
+    op = *op_p;
+  }
+
+  if (!op_p) {
+    op_p = (Op**)list_start_head_traversal(&op_buf);
+    op = *op_p;
+    if (last_runahead_uid && op->inst_uid < last_runahead_uid) {
+      for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
+        op = *op_p;
+        if (op->table_info->cf_type && op->inst_uid == last_runahead_uid) {
+          op_p = (Op**)list_next_element(&op_buf);
+          op = *op_p;
+          break;
+        }
+      }
+    }
+  }
+
+  for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
+    op = *op_p;
+    if (op->table_info->cf_type) { // first branch after the last predicted branch
+      if (op->fetch_addr == pc) {
+        last_runahead_uid = op->inst_uid;
+        return op;
+      } else {
+        (&op_buf)->current = NULL;
+        break;
+      }
+    }
+  }
+  return NULL;
 }

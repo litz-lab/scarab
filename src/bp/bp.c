@@ -632,6 +632,9 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction) {
                 hexstr64s(op->inst_info->addr),
                 hexstr64s(op->oracle_info.pred_global_hist));
     }
+    if (PROFILE_BRANCH) {
+      printf("CBR: PC,%s,True-Dir,%u,Pred,%u\n", hexstr64s(op->inst_info->addr), op->oracle_info.dir, op->oracle_info.pred);
+    }
   }
   // }}}
 

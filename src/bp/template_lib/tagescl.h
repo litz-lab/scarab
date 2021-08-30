@@ -23,6 +23,7 @@
 #include "tage.h"
 #include "tagescl_configs.h"
 #include "utils.h"
+#include "bp/bp.param.h"
 
 template <class CONFIG>
 struct Tage_SC_L_Prediction_Info {
@@ -122,17 +123,29 @@ template <class CONFIG>
 bool Tage_SC_L<CONFIG>::get_prediction(int64_t branch_id, uint64_t br_pc) {
   auto& prediction_info = prediction_info_buffer_[branch_id];
 
+  if (PROFILE_BRANCH) {
+    printf("TAGE: %s ",hexstr64s(br_pc));
+  }
+
   // First, use Tage to make a prediction.
   tage_.get_prediction(br_pc, &prediction_info.tage);
   prediction_info.tage_or_loop_prediction = prediction_info.tage.prediction;
+  if (PROFILE_BRANCH) {
+    printf("%u ",prediction_info.tage.prediction);
+  }
 
   if(CONFIG::USE_LOOP_PREDICTOR) {
     // Then, look up the loop predictor and override Tage's prediction if
     // the
     // loop predictor is found to be beneficial.
     loop_predictor_.get_prediction(br_pc, &prediction_info.loop);
+    bool has_changed = false;
     if(loop_predictor_beneficial_.get() >= 0 && prediction_info.loop.valid) {
       prediction_info.tage_or_loop_prediction = prediction_info.loop.prediction;
+      has_changed = true;
+    }
+    if (PROFILE_BRANCH) {
+      printf("L: %u %u ",prediction_info.loop.prediction, has_changed);
     }
   }
 
@@ -143,6 +156,9 @@ bool Tage_SC_L<CONFIG>::get_prediction(int64_t branch_id, uint64_t br_pc) {
       br_pc, prediction_info.tage, prediction_info.tage_or_loop_prediction,
       &prediction_info.sc);
     prediction_info.final_prediction = prediction_info.sc.prediction;
+    if (PROFILE_BRANCH) {
+      printf("SC: %u \n",prediction_info.sc.prediction);
+    }
   }
   return prediction_info.final_prediction;
 }

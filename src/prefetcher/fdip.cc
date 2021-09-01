@@ -71,7 +71,6 @@ void fdip_retire(Op *op) {
   if (recovery_checkpoint_valid &&
     op->recovery_info.branch_id ==
     recovery_checkpoint->recovery_info.branch_id) {
-    //recovery_checkpoint_valid = false;
     recovery_checkpoint_valid = FALSE;
   }
 }
@@ -139,7 +138,7 @@ void patch_oracle_info(Op *op, Op *req, Addr bp_pc) {
 Addr fdip_pred(Addr bp_pc, Op *op) {
   if (ftq.empty()) {
     // FTQ should never be empty if we have a perfect branch predictor and no btb miss.
-    //ASSERT(ic_stage->proc_id, !(PERFECT_BP && (PERFECT_BTB || FDIP_STOP_ON_BTB_MISS)));
+    ASSERT(ic_stage->proc_id, !(PERFECT_BP && PERFECT_BTB));
     /* If the FTQ is empty we have not been able to predict ahead. Should
       * be a corner case e.g. directly after a recovery.
       */
@@ -201,7 +200,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
       */
     INC_STAT_EVENT(ic_stage->proc_id, FDIP_PRED_WRONG_PATH, ftq.size());
     // The executed branch should always match the oldest entry in the FTQ if we have a perfect branch predictor and no btb miss.
-    //ASSERT(ic_stage->proc_id, !(PERFECT_BP && (PERFECT_BTB || FDIP_STOP_ON_BTB_MISS)));
+    ASSERT(ic_stage->proc_id, !(PERFECT_BP && !FDIP_BREAK_ICACHE && (PERFECT_BTB || FDIP_STOP_ON_BTB_MISS)));
     if (recovery_checkpoint_valid) {
       /* The frontend has fetched a branch and that branch is still
         * executing. Hence we have a valid recovery point to which we will
@@ -262,6 +261,7 @@ void fdip_recover(Recovery_Info *info) {
   (&op_buf)->current = NULL;
   last_runahead_uid = 0;
   runahead_disable = FALSE;
+  on_wrong_path = false;
   fdip_update();
 }
 
@@ -312,8 +312,10 @@ void fdip_update() {
           ftq.size() <= FDIP_MAX_RUNAHEAD &&
           !(FDIP_BREAK_ICACHE && cur_cl != orig_cl)) {
     bool btb_ras_miss = false;
-    if (PERFECT_BP && LOOKAHEAD_BUF_SIZE && (max_runahead_uid - last_runahead_uid) < LOOKAHEAD_BUF_SIZE/2 && ftq.size() > 3)
+    if (LOOKAHEAD_BUF_SIZE && (max_runahead_uid == last_runahead_uid)) {
+      runahead_disable = TRUE;
       break;
+    }
     Op* op = find_op(runahead_pc);
     bool is_branch = (op && op->table_info->cf_type)? true : false;
     Addr target;

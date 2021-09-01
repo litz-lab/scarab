@@ -173,6 +173,7 @@ void init_icache_trace() {
     ic->next_fetch_addr = (*ptr)->inst_info->addr;
     runahead_pc = (*ptr)->inst_info->addr;
     runahead_disable = FALSE;
+    fdip_update();
   } else {
     ic->next_fetch_addr = frontend_next_fetch_addr(ic->proc_id);
   }
@@ -510,6 +511,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         frontend_fetch_op(ic->proc_id, new_op);
         Op** ptr = sl_list_add_tail(&op_buf);
         *ptr = new_op;
+        if (!FDIP_STOP_ON_BTB_MISS && !PERFECT_FDIP && runahead_disable && new_op->inst_uid >= last_runahead_uid + ISSUE_WIDTH)
+          runahead_disable = FALSE;
         if (new_op->table_info->cf_type)
           max_runahead_uid = new_op->inst_uid;
         ptr = sl_list_remove_head(&op_buf);
@@ -1001,7 +1004,7 @@ Op* find_op(Addr pc) {
   if (!op_p) {
     op_p = (Op**)list_start_head_traversal(&op_buf);
     op = *op_p;
-    if (last_runahead_uid && op->inst_uid < last_runahead_uid) {
+    if (last_runahead_uid && op->inst_uid <= last_runahead_uid) {
       for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
         op = *op_p;
         if (op->table_info->cf_type && op->inst_uid == last_runahead_uid) {
@@ -1017,10 +1020,8 @@ Op* find_op(Addr pc) {
     op = *op_p;
     if (op->table_info->cf_type) { // first branch after the last predicted branch
       if (op->fetch_addr == pc) {
-      last_runahead_uid = op->inst_uid;
-      Op** op_cur_p = (Op**)list_get_current(&op_buf);
-      Op* op_cur = *op_cur_p;
-      return op;
+        last_runahead_uid = op->inst_uid;
+        return op;
       } else {
         (&op_buf)->current = NULL;
         break;

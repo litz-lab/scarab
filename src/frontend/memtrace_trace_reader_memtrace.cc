@@ -280,9 +280,23 @@ void TraceReaderMemtrace::processInst(InstInfo *_info) {
   tie(mt_mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) = xed_tuple;
   mt_prior_isize_ = mt_ref_.instr.size;
   xed_ins = std::get<MAP_XED>(xed_tuple).get();
+
+  // Replace REP instructions with NOP
+  if (xed_decoded_inst_get_attribute(xed_ins, XED_ATTRIBUTE_REP)) {
+      xed_map_iter->second = make_tuple(0, true, false, false, makeNop(mt_prior_isize_));
+
+      xed_map_iter = xed_map_.find(mt_ref_.instr.addr);
+      assert((xed_map_iter != xed_map_.end()));
+
+      auto &xed_tuple_ = (*xed_map_iter).second;
+      tie(mt_mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) = xed_tuple_;
+      xed_ins = std::get<MAP_XED>(xed_tuple_).get();
+      assert(xed_decoded_inst_get_iclass(xed_ins) == XED_ICLASS_NOP);
+  }
+
   _info->pc = mt_ref_.instr.addr;
   _info->ins = xed_ins;
-  _info->pid = mt_ref_.instr.pid;
+  _info->pid = mt_ref_.instr.pid;  
   _info->tid = mt_ref_.instr.tid;
   _info->target = 0;  // Set when the next instruction is evaluated
   _info->taken = cond_branch;  // Patched when the next instruction is evaluated
@@ -302,6 +316,7 @@ const InstInfo *TraceReaderMemtrace::getNextInstruction() {
   InstInfo &info = (mt_using_info_a_ ? mt_info_a_ : mt_info_b_);
   InstInfo &prior = (mt_using_info_a_ ? mt_info_b_ : mt_info_a_);
   mt_using_info_a_ = !mt_using_info_a_;
+
   if (getNextInstruction__(&info, &prior)) {
     return &prior;
   } else {
@@ -325,4 +340,5 @@ bool TraceReaderMemtrace::locationForVAddr(uint64_t _vaddr, uint8_t **_loc,
       return false;
     }
     return true;
-  }
+}
+

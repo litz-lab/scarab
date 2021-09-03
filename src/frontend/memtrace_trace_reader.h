@@ -102,8 +102,6 @@ class TraceReader {
   void init_buffer();
   void binaryFileIs(const std::string &_binary, uint64_t _offset);
 
-  std::unique_ptr<xed_decoded_inst_t> makeNop(uint8_t _length);
-
  protected:
   std::string trace_;
   InstInfo info_;
@@ -125,6 +123,7 @@ class TraceReader {
   void clearBinaries();
   void fillCache(uint64_t _vAddr, uint8_t _reported_size, uint8_t *inst_bytes=NULL);
   void traceFileIs(const std::string &_trace);
+  std::unique_ptr<xed_decoded_inst_t> makeNop(uint8_t _length);
 };
 
 #endif

@@ -163,6 +163,13 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
     // Next try to access a new PW starting at this addr
     if (cache_access_all(&uop_cache, search_addr, &line_addr, update_repl, 
                           (void**) &uoc_data)) {
+      if (uoc_data->prefetch && !uoc_data->used) {
+        STAT_EVENT(0, UOP_CACHE_PREFETCH_USED);
+      }
+      if (!uoc_data->used) {
+        STAT_EVENT(0, UOP_CACHE_LINES_USED);
+      }
+      uoc_data->used += 1;
       cur_pw = *uoc_data;
       found = TRUE;
     } else {
@@ -283,6 +290,7 @@ Flag uop_cache_prefetch(Addr pw_start_addr) {
     return FALSE;
   }
   ASSERT(0, pw->first == pw_start_addr);
+  pw->prefetch = TRUE;
   Flag prefetched = pw_insert(*pw);
   INC_STAT_EVENT(0, UOP_CACHE_PREFETCH, prefetched);
   return prefetched;

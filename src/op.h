@@ -90,6 +90,27 @@ typedef struct Wake_Up_Entry_struct {
 } Wake_Up_Entry;
 // }}}
 
+
+// per branch stats
+typedef struct Per_Branch_Stat_struct {
+  Addr addr;
+  Cf_Type cf_type;
+  Addr target;
+  int bpu_hit_uc_hit;
+  int bpu_hit_uc_miss;
+  int bpu_hit_uc_ic_miss;
+  int mispred_uc_hit;
+  int mispred_uc_miss;
+  int mispred_uc_ic_miss;   // mispred that miss in both uc and ic
+  int misfetch_uc_hit;
+  int misfetch_uc_miss;
+  int misfetch_uc_ic_miss;
+  int btb_miss_uc_hit;
+  int btb_miss_uc_miss;
+  int btb_miss_uc_ic_miss;
+  int recover_redirect_extra_fetch_latency; // extra stall cycles due to target not being in UC
+} Per_Branch_Stat;
+
 /*------------------------------------------------------------------------------------*/
 // {{{ Recovery_Info
 // this information is used when the op mispredicts
@@ -279,6 +300,9 @@ struct Op_struct {
   struct Mbp7gshare_Info_struct* mbp7_info;  // multiple branch predictor
                                              // information
 
+  Addr pred_target; // last predicted target for this op.
+  Addr pc_plus_offset;
+
   // {{{ temporary fields -> will be deleted later (move these)
   int  derived_from_prog_input;  // derivation level from program read()
   int  min_input_id;
@@ -288,6 +312,10 @@ struct Op_struct {
   uns  stephan_corr_index;
   Addr pred_addr;
   Flag recovery_scheduled;
+  // }}}
+
+  // {{{ uop cache
+  Flag fetched_from_uop_cache;
   // }}}
 };
 // }}}

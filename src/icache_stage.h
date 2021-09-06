@@ -33,6 +33,9 @@
 #include "libs/cache_lib.h"
 #include "stage_data.h"
 
+#define IC_ISSUE_WIDTH      ISSUE_WIDTH
+#define UC_ISSUE_WIDTH      ISSUE_WIDTH + 1
+
 /**************************************************************************************/
 /* Forward Declarations */
 
@@ -129,6 +132,9 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr);
 void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
 Flag icache_off_path(void);
 Op* find_op(Addr pc);
+
+// For branch stat collection
+Flag in_icache(Addr addr);
 
 /**************************************************************************************/
 

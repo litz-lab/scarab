@@ -50,7 +50,7 @@
 /* Macros */
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_MAP_STAGE, ##args)
-#define STAGE_MAX_OP_COUNT ISSUE_WIDTH
+#define STAGE_MAX_OP_COUNT ISSUE_WIDTH + 1
 #define STAGE_MAX_DEPTH MAP_CYCLES
 
 

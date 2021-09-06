@@ -108,6 +108,7 @@ typedef enum Break_Reason_enum {
   BREAK_TAKEN,         // break because of nonsequential control flow
   BREAK_MODEL_BEFORE,  // break because of model hook
   BREAK_MODEL_AFTER,   // break because of model hook
+  BREAK_UC_MISS,       // break because during UC fetch, a following instr was not found in UC
 } Break_Reason;
 
 
@@ -116,7 +117,7 @@ typedef enum Break_Reason_enum {
 
 void init_packet_build(Pb_Data*, Packet_Build_Identifier);
 void reset_packet_build(Pb_Data*);
-Flag packet_build(Pb_Data*, Break_Reason*, Op* const, uns const);
+Flag packet_build(Pb_Data*, Break_Reason*, Op* const, Flag uop_cache_issue_ops);
 
 
 /**************************************************************************************/

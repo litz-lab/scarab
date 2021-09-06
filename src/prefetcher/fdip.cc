@@ -21,6 +21,7 @@ extern "C" {
 #include "prefetcher/pref.param.h"
 #include "memory/memory.param.h"
 #include "memory/memory.h"
+#include "uop_cache.h"
 }
 
 #define DUMMY_CFN ~0
@@ -52,12 +53,43 @@ Flag fdip_pred_on_path = FALSE;
 uns64 last_runahead_uid = 0;
 uns64 max_runahead_uid = 0;
 extern List op_buf;
+Hash_Table top_mispred_br;
+
+/**************************************************************************************/
+/* init_topk_mispred: list of branches that provide a given coverage of resteers */
+void init_topk_mispred() {
+    init_hash_table(&top_mispred_br, "top mispredicting branches", 100000, sizeof(int));
+    FILE* fp = fopen(TOP_MISPRED_BR_FILEPATH, "r");
+    const int line_len = 256;
+    char line[line_len];
+    char* field;
+    float coverage;
+    Addr br;
+    fgets(line, line_len, fp); // skip first line
+    while (fgets(line, line_len, fp)) {
+      field = strtok(line, ",");
+      field = strtok(NULL, ",");
+      coverage = atof(field);
+      field = strtok(NULL, ",");
+      br = strtoull(field, NULL, 16);
+      // add to map
+      Flag new_entry;
+      hash_table_access_create(&top_mispred_br, br, &new_entry);
+      ASSERT(0, new_entry);
+      STAT_EVENT(0, TOP_MISPRED_BR);
+      if (coverage >= TOP_MISPRED_BR_RESTEER_COVERAGE)
+        break;
+    }
+}
 
 void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic) {
   ASSERT(ic_stage->proc_id, !(FDIP_ENABLE && USE_LATE_BP));
   bp_data = _bp_data;
   ic_stage = _ic;
   ASSERT(ic_stage->proc_id, ic_stage);
+  if ((FDIP_DUAL_PATH_PREF_IC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ENABLE)
+        && TOP_MISPRED_BR_RESTEER_COVERAGE)
+    init_topk_mispred();
 }
 
 /* Called when a branch completes in the functional unit */
@@ -289,6 +321,34 @@ bool fdip_prefetch(Addr target, Op *op) {
   return success;
 }
 
+int fdip_dual_path_prefetch(Addr target, Op* op) {
+  int icache_pref = 0;
+  int uoc_pref = 0;
+  ASSERT(ic->proc_id, FDIP_DUAL_PATH_PREF_IC_ENABLE 
+                  || FDIP_DUAL_PATH_PREF_UOC_ENABLE);
+
+  if (FDIP_DUAL_PATH_PREF_IC_ENABLE) {
+    // is prefetching one CL for the alt path enough?
+    // pred_target is the target stored by the BTB used if predicted taken
+    bool success = fdip_prefetch(op->pred_target, op);
+    icache_pref += success;
+    ftq.back().second.prefetched = success;
+    success = fdip_prefetch(op->inst_info->addr + ICACHE_LINE_SIZE, op);
+    icache_pref += success;
+    STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_IC_TRIGGERED);
+    INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_IC_EMITTED, 
+                    icache_pref);
+  }
+  if (FDIP_DUAL_PATH_PREF_UOC_ENABLE) {
+    uoc_pref += uop_cache_prefetch(op->pred_target);
+    uoc_pref += uop_cache_prefetch(op->pc_plus_offset);
+    STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_TRIGGERED);
+    INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_EMITTED,
+                    uoc_pref);
+  }
+  return icache_pref;
+}
+
 // Called each cycle to trigger runahead prefetches
 void fdip_update() {
   uint32_t predicts = 0;
@@ -348,7 +408,11 @@ void fdip_update() {
           // target is set to whichever instr is predicted to follow branch
           bool continuing_to_next_cl = get_cache_line_addr(&ic->icache, target) == 
             last_cl_prefetched + 1;
-          if (op->oracle_info.pred == TAKEN || continuing_to_next_cl) {
+          if ((FDIP_DUAL_PATH_PREF_IC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ENABLE) 
+              && hash_table_access(&top_mispred_br, runahead_pc)) {
+            fdip_dual_path_prefetch(target, op);
+            last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
+          } else if (op->oracle_info.pred == TAKEN || continuing_to_next_cl) {
             bool success = fdip_prefetch(target, op);
             prefetches += success;
             ftq.back().second.prefetched = success;

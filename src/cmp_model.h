@@ -41,6 +41,7 @@
 #include "memory/memory.h"
 #include "node_stage.h"
 #include "thread.h"
+#include "uop_cache.h"
 
 /**************************************************************************************/
 /* cmp model data  */

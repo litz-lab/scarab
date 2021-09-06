@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include "globals/global_types.h"
 
+#include "libs/hash_lib.h"
 
 /**************************************************************************************/
 
@@ -59,6 +60,8 @@ extern int   mystatus_fd;
 
 extern Flag frontend_gated;
 extern uns  num_fetched_lowconf_brs;
+
+extern Hash_Table per_branch_stat;
 
 /**************************************************************************************/
 

@@ -11,7 +11,7 @@ export LD_LIBRARY_PATH=/home/hlitz/git/pinplay-drdebug-3.5-pin-3.5-97503-gac534c
 5. make
 
 Run:
-src/scarab --frontend memtrace --cbp_trace_r0=<MEMTRACE_DIR> --memtrace_modules_log=<MODULES_LOG_AND_BINARIES_DIR> --fetch_off_path_ops false --inst_limit <LIMIT>
+src/scarab --frontend memtrace --cbp_trace_r0=<MEMTRACE_FILE> --memtrace_modules_log=<MODULES_LOG_AND_BINARIES_DIR> --fetch_off_path_ops false --inst_limit <LIMIT>
 
 # Scarab
 

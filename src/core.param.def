@@ -146,8 +146,10 @@ DEF_PARAM(fu_types, FU_TYPES, char*, string, "0, 0, 0, 0", )
 DEF_PARAM(decode_cycles, DECODE_CYCLES, uns, uns, 1, )
 DEF_PARAM(map_cycles, MAP_CYCLES, uns, uns, 1, )
 
-DEF_PARAM(extra_recovery_cycles, EXTRA_RECOVERY_CYCLES, uns, uns, 0, )
+DEF_PARAM(icache_latency, ICACHE_LATENCY, uns, uns, 3, )
+DEF_PARAM(uop_cache_latency, UOP_CACHE_LATENCY, uns, uns, 1, )
 DEF_PARAM(extra_redirect_cycles, EXTRA_REDIRECT_CYCLES, uns, uns, 0, )
+DEF_PARAM(extra_recovery_cycles, EXTRA_RECOVERY_CYCLES, uns, uns, 0, )
 DEF_PARAM(extra_callsys_cycles, EXTRA_CALLSYS_CYCLES, uns, uns, 20,
           const) /* const */
 DEF_PARAM(die_on_callsys, DIE_ON_CALLSYS, Flag, Flag, FALSE, )

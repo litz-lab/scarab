@@ -100,7 +100,6 @@ DR_LINK := -L$(DR_REL) -L$(DR_BIN) -L$(DR_EXT) -L$(DR_REL2) -L$(DR_LIB64)
 DR_LIBS := -ldrmemtrace_raw2trace -ldirectory_iterator -ldrfrontendlib -ldrutil_static -ldrmgr_static -ldrmemfuncs
 DR_LIBS := $(DR_LIBS) -ldynamorio_static -ldrlibc -ldrcovlib_static -ldrx_static -ldrreg_static -ldrcontainers
 DR_LIBS := $(DR_LIBS) -ldrmemtrace_analyzer -lsnappy -ldl -lconfig++ -lz -lrt
-
 DR_ENV := -DLINUX -DX86_64
 #-DVERSION_NUMBER_INTEGER 1
 XED := -L$(PIN_ROOT)/extras/xed-intel64/lib/ -L$(PIN_ROOT)/intel64/runtime/pincrt/

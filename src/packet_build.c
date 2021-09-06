@@ -33,6 +33,7 @@
 #include "globals/utils.h"
 
 #include "icache_stage.h"
+#include "uop_cache.h"
 #include "op.h"
 #include "packet_build.h"
 
@@ -166,7 +167,7 @@ inline void reset_packet_build(Pb_Data* pb_data) {
 */
 
 Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
-                  uns const index) {
+                  Flag uop_cache_issue_ops) {
   Break_Reason model_break_result;
 
   ASSERT(pb_data->proc_id, pb_data->proc_id == op->proc_id);
@@ -208,6 +209,19 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
       return PB_BREAK_BEFORE;
     }
 
+    // log UC access. This statement must be reached for each uop fetched.
+    // break if in uc fetch mode and cur instr is NOT from UC
+    // ideally we should break and we try same cycle to fetch from IC
+    if (!in_uop_cache(op->inst_info->addr, &op->op_num, TRUE) && uop_cache_issue_ops) {
+      *break_fetch = BREAK_UC_MISS;
+      op->fetched_from_uop_cache = FALSE;
+      // Inaccuracy: should break before op. But how does this op get refetched from frontend?
+      // by breaking after I always fetch one extra op per PW from UC
+      return PB_BREAK_AFTER;
+    } else if (uop_cache_issue_ops) {
+      op->fetched_from_uop_cache = TRUE;
+    }
+
     // hit fetch barrier
     if(IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH) {
       *break_fetch = BREAK_BARRIER;
@@ -237,8 +251,9 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
     }
 
     // issue width reached
+    const int issue_width = uop_cache_issue_ops ? UC_ISSUE_WIDTH : IC_ISSUE_WIDTH;
     if(pb_data->pb_ident == PB_ICACHE) {
-      if(ic->sd.op_count + 1 == ISSUE_WIDTH) {
+      if(ic->sd.op_count + 1 == issue_width) {
         *break_fetch = BREAK_ISSUE_WIDTH;
         return PB_BREAK_AFTER;
       }

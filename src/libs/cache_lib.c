@@ -253,6 +253,47 @@ void* cache_access(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl) {
 }
 
 /**************************************************************************************/
+/* cache_access: Does a cache lookup based on the address in order to update repl
+ * Needed for uop cache, where a single PW entry can span multiple lines.
+ * Touch/update update_repl for ALL lines containing this PW
+ */
+
+int cache_access_all(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl, void** line_data) {
+  Addr tag;
+  uns  set = cache_index(cache, addr, &tag, line_addr);
+  uns  ii;
+  int lines_found = 0;
+
+  for(ii = 0; ii < cache->assoc; ii++) {
+    Cache_Entry* line = &cache->entries[set][ii];
+
+    if(line->valid && line->tag == tag && line->pw_start_addr == addr) {
+      /* update replacement state if necessary */
+      ASSERT(0, line->data);
+      DEBUG(0, "Found line in cache '%s' at (set %u, way %u, base 0x%s)\n",
+            cache->name, set, ii, hexstr64s(line->base));
+
+      if(update_repl) {
+        if(line->pref) {
+          line->pref = FALSE;
+        }
+        cache->num_demand_access++;
+        update_repl_policy(cache, line, set, ii, FALSE);
+      }
+      *line_data = line->data;
+      lines_found++;
+    }
+  }
+  
+  if (lines_found == 0) {
+    DEBUG(0, "Didn't find line in set %u in cache '%s' base 0x%s\n", set,
+        cache->name, hexstr64s(addr));
+  }
+
+  return lines_found;
+}
+ 
+/**************************************************************************************/
 /* cache_insert: returns a pointer to the data section of the new cache line.
    Sets line_addr to the address of the first block of the new line.  Sets
    repl_line_addr to the address of the first block that was replaced
@@ -311,8 +352,9 @@ void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr,
   new_line->base             = *line_addr;
   new_line->last_access_time = sim_time;  // FIXME: this fixes valgrind warnings
                                           // in update_prf_
-
   new_line->pref = isPrefetch;
+
+  new_line->pw_start_addr = addr; // only means anything for uop cache
 
   switch(insert_repl_policy) {
     case INSERT_REPL_DEFAULT:
@@ -406,8 +448,7 @@ void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr,
 
 
 /**************************************************************************************/
-/* invalidate_line: Does a cache lookup based on the address.  Returns a pointer
-   to the cache line data if it is found.  */
+/* invalidate_line: Invalidates based on the address.  */
 
 void cache_invalidate(Cache* cache, Addr addr, Addr* line_addr) {
   Addr tag;

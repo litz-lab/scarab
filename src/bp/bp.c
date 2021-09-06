@@ -37,7 +37,6 @@
 
 #include "bp//bp_conf.h"
 #include "bp/bp.h"
-//#include "bp/bp_dir_mech.h"
 #include "bp/bp_targ_mech.h"
 #include "bp/gshare.h"
 #include "bp/hybridgp.h"
@@ -45,6 +44,8 @@
 #include "libs/cache_lib.h"
 #include "model.h"
 #include "thread.h"
+#include "uop_cache.h"
+#include "icache_stage.h"
 
 #include "bp/bp.param.h"
 #include "core.param.h"
@@ -114,6 +115,9 @@ void init_bp_recovery_info(uns8              proc_id,
   new_bp_recovery_info->redirect_cycle = MAX_CTR;
 
   bp_recovery_info = new_bp_recovery_info;
+
+  init_hash_table(&per_branch_stat, "Per Branch Hit/Miss and Recovery/Redirect Stall cycles",
+                  15000000, sizeof(Per_Branch_Stat));
 }
 
 
@@ -130,8 +134,19 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op,
   if(bp_recovery_info->recovery_cycle == MAX_CTR ||
      op->op_num <= bp_recovery_info->recovery_op_num) {
     const Addr next_fetch_addr = op->oracle_info.npc;
-    const uns  latency         = late_bp_recovery ? LATE_BP_LATENCY :
-                                           1 + EXTRA_RECOVERY_CYCLES;
+
+    uns fetch_latency;
+    Flag uc_hit = in_uop_cache(next_fetch_addr, NULL, FALSE);
+    inc_bstat_miss(op, uc_hit);
+    if (uc_hit) {
+      fetch_latency = UOP_CACHE_LATENCY;
+      INC_STAT_EVENT(bp_recovery_info->proc_id, BP_RECOVERY_FETCH_CYCLES_UC, UOP_CACHE_LATENCY);
+    } else {
+      fetch_latency = ICACHE_LATENCY;
+      INC_STAT_EVENT(bp_recovery_info->proc_id, BP_RECOVERY_FETCH_CYCLES_IC, ICACHE_LATENCY);
+    }
+    const uns latency = late_bp_recovery ? fetch_latency + 1 + LATE_BP_LATENCY :
+                                           fetch_latency + 1;
     DEBUG(
       bp_recovery_info->proc_id,
       "Recovery signaled for op_num:%s @ 0x%s  next_fetch:0x%s offpath:%d\n",
@@ -171,6 +186,62 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op,
   }
 }
 
+void inc_bstat_fetched(Op* op) {
+  Flag new_entry;
+  Per_Branch_Stat* bstat = (Per_Branch_Stat*) hash_table_access_create(&per_branch_stat, op->inst_info->addr, &new_entry);
+  if (new_entry) {
+    memset(bstat, 0, sizeof(*bstat));
+    bstat->addr = op->inst_info->addr;
+    bstat->cf_type = op->table_info->cf_type;
+  }
+
+  const uns8 mispred =  op->oracle_info.mispred;
+  const uns8 misfetch = op->oracle_info.misfetch;
+  const uns8 btb_miss = op->oracle_info.btb_miss;
+
+  if (!mispred && !misfetch && !btb_miss) {
+    if (in_uop_cache(op->oracle_info.npc, NULL, FALSE)) {
+      bstat->bpu_hit_uc_hit += 1;
+    }else {
+      bstat->bpu_hit_uc_miss += 1;
+      if (!in_icache(op->inst_info->addr)) bstat->bpu_hit_uc_ic_miss += 1;
+    }
+  }
+
+  // target if taken
+  if (op->oracle_info.pred && !op->oracle_info.mispred)
+    bstat->target = op->oracle_info.npc;
+}
+
+void inc_bstat_miss(Op* op, Flag uc_hit) {
+  Per_Branch_Stat* bstat = (Per_Branch_Stat*) hash_table_access(&per_branch_stat, op->inst_info->addr);
+  ASSERT(bp_recovery_info->proc_id, bstat);
+
+  const uns8 mispred =  op->oracle_info.mispred;
+  const uns8 misfetch = op->oracle_info.misfetch;
+  const uns8 btb_miss = op->oracle_info.btb_miss;
+  ASSERT(bp_recovery_info->proc_id, mispred || misfetch || btb_miss);
+
+  const Flag in_ic = in_icache(op->inst_info->addr);
+
+  if (uc_hit) {
+    if (mispred)        bstat->mispred_uc_hit += 1;
+    else if (misfetch)  bstat->misfetch_uc_hit += 1;
+    else                bstat->btb_miss_uc_hit += 1;
+  } else {
+    if (mispred) {
+      bstat->mispred_uc_miss += 1;
+      if (!in_ic) bstat->mispred_uc_ic_miss += 1;
+    } else if (misfetch) {
+      bstat->misfetch_uc_miss += 1;
+      if (!in_ic) bstat->misfetch_uc_ic_miss += 1;
+    } else {
+      bstat->btb_miss_uc_miss += 1;
+      if (!in_ic) bstat->btb_miss_uc_ic_miss += 1;
+    }
+    bstat->recover_redirect_extra_fetch_latency += ICACHE_LATENCY - UOP_CACHE_LATENCY;
+  }
+}
 
 /******************************************************************************/
 /* bp_sched_redirect: called on an op that caused the fetch stage to suspend
@@ -182,7 +253,18 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op,
      op->op_num < bp_recovery_info->redirect_op_num) {
     DEBUG(bp_recovery_info->proc_id, "Redirect signaled for op_num:%s @ 0x%s\n",
           unsstr64(op->op_num), hexstr64s(op->inst_info->addr));
-    bp_recovery_info->redirect_cycle = cycle + 1 + EXTRA_REDIRECT_CYCLES +
+
+    uns fetch_latency;
+    Flag uc_hit = in_uop_cache(op->oracle_info.npc, NULL, FALSE);
+    inc_bstat_miss(op, uc_hit);
+    if (uc_hit) {
+      fetch_latency = UOP_CACHE_LATENCY;
+      INC_STAT_EVENT(bp_recovery_info->proc_id, BP_REDIRECT_FETCH_CYCLES_UC, UOP_CACHE_LATENCY);
+    } else {
+      fetch_latency = ICACHE_LATENCY;
+      INC_STAT_EVENT(bp_recovery_info->proc_id, BP_REDIRECT_FETCH_CYCLES_IC, ICACHE_LATENCY);
+    }
+    bp_recovery_info->redirect_cycle = cycle + 1 + fetch_latency +
                                        (op->table_info->cf_type == CF_SYS ?
                                           EXTRA_CALLSYS_CYCLES :
                                           0);
@@ -500,6 +582,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 
   const Addr pc_plus_offset = ADDR_PLUS_OFFSET(
     op->inst_info->addr, op->inst_info->trace_info.inst_size);
+
+  op->pred_target = pred_target;
+  op->pc_plus_offset = pc_plus_offset;
 
   const Addr prediction = op->oracle_info.pred ? pred_target : pc_plus_offset;
   op->oracle_info.pred_npc = prediction;

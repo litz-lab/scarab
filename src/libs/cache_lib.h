@@ -66,8 +66,9 @@ typedef struct Cache_Entry_struct {
   Counter insertion_time;   /* for replacement policy */
   void*   data;             /* pointer to arbitrary data */
   Flag    pref;             /* extra replacement info */
-  Flag dirty; /* Dirty bit should have been here, however this is used only in
+  Flag    dirty; /* Dirty bit should have been here, however this is used only in
                  warmup now */
+  Addr pw_start_addr; /* for uop cache: start addr of prediction window */
 } Cache_Entry;
 
 // DO NOT CHANGE THIS ORDER
@@ -126,6 +127,7 @@ typedef struct Cache_struct {
 
 void  init_cache(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
 void* cache_access(Cache*, Addr, Addr*, Flag);
+int   cache_access_all(Cache*, Addr, Addr*, Flag, void**);
 void* cache_insert(Cache*, uns8, Addr, Addr*, Addr*);
 void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr,
                            Addr* line_addr, Addr* repl_line_addr,

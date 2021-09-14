@@ -136,6 +136,8 @@ DEF_PARAM(fdip_pref_per_cyc, FDIP_PREF_PER_CYC, uns, uns, 1, )
 DEF_PARAM(fdip_bp_per_cyc, FDIP_BP_PER_CYC, uns, uns, 4, )
 DEF_PARAM(fdip_stop_on_btb_miss, FDIP_STOP_ON_BTB_MISS, Flag, Flag, FALSE, )
 DEF_PARAM(perfect_fdip, PERFECT_FDIP, Flag, Flag, FALSE, )
+DEF_PARAM(fdip_pref_no_latency, FDIP_PREF_NO_LATENCY, Flag, Flag, FALSE, )
+DEF_PARAM(fdip_always_prefetch, FDIP_ALWAYS_PREFETCH, Flag, Flag, FALSE, )
 
 DEF_PARAM(fdip_dual_path_pref_ic_enable , FDIP_DUAL_PATH_PREF_IC_ENABLE    , Flag    , Flag    , FALSE, )
 DEF_PARAM(fdip_dual_path_pref_uoc_enable , FDIP_DUAL_PATH_PREF_UOC_ENABLE  , Flag    , Flag    , FALSE, ) //uop cache

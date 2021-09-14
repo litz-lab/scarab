@@ -42,6 +42,7 @@ struct ftq_req {
 
 std::queue<std::pair<Addr, ftq_req>> ftq;
 Addr runahead_pc;
+Addr last_cl_prefetched = 0;
 Icache_Stage *ic_stage;
 Bp_Data *bp_data;
 uns cf_num    = 0;
@@ -170,7 +171,7 @@ void patch_oracle_info(Op *op, Op *req, Addr bp_pc) {
 Addr fdip_pred(Addr bp_pc, Op *op) {
   if (ftq.empty()) {
     // FTQ should never be empty if we have a perfect branch predictor and no btb miss.
-    ASSERT(ic_stage->proc_id, !(PERFECT_BP && PERFECT_BTB));
+    //ASSERT(ic_stage->proc_id, !(PERFECT_BP && PERFECT_BTB));
     /* If the FTQ is empty we have not been able to predict ahead. Should
       * be a corner case e.g. directly after a recovery.
       */
@@ -179,6 +180,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     recovery_checkpoint = op;
     recovery_checkpoint_valid = TRUE;
     runahead_pc = target;
+    last_cl_prefetched = 0;
     on_wrong_path = false;
     STAT_EVENT(ic_stage->proc_id, FDIP_PRED_FTQ_EMPTY);
     return target;
@@ -261,6 +263,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     recovery_checkpoint_valid = TRUE;
     runahead_disable = FALSE;
     runahead_pc = target;
+    last_cl_prefetched = 0;
     on_wrong_path = false;
 
     return target;
@@ -271,6 +274,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
  */
 void fdip_clear_ftq(Addr recover_pc) {
   runahead_pc = recover_pc;
+  last_cl_prefetched = 0;
   while (!ftq.empty()) {
     if (ftq.front().second.prefetched) {
       STAT_EVENT(ic_stage->proc_id, FDIP_PREF_WRONG_PATH);
@@ -299,16 +303,26 @@ bool fdip_prefetch(Addr target, Op *op) {
   static Addr last_line_addr_prefetched = 0;
   Addr line_addr;
   bool success = false;
+  void* line = NULL;
 
-  auto line = (Inst_Info**)cache_access(&ic_stage->icache, target,
+  if(!FDIP_ALWAYS_PREFETCH)
+    line = (Inst_Info**)cache_access(&ic_stage->icache, target,
                               &line_addr, TRUE);
-  if (!line && (last_line_addr_prefetched != line_addr)) {
-    if(new_mem_req(MRT_IFETCH, ic_stage->proc_id, line_addr,
-                  ICACHE_LINE_SIZE, 0, NULL, icache_fill_line,
-                  unique_count,
-                  0)) {
-      STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
-      success = true;
+  if(FDIP_ALWAYS_PREFETCH || (!line && (last_line_addr_prefetched != line_addr))) {
+    if(FDIP_PREF_NO_LATENCY) {
+      Addr repl_line_addr;
+      if (cache_insert(&ic_stage->icache, ic_stage->proc_id, target, &line_addr, &repl_line_addr)) {
+        STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
+        success = true;
+      }
+    } else {
+      if(new_mem_req(MRT_IFETCH, ic_stage->proc_id, line_addr,
+            ICACHE_LINE_SIZE, 0, NULL, icache_fill_line,
+            unique_count,
+            0)) {
+        STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
+        success = true;
+      }
     }
   }
   else {
@@ -350,8 +364,6 @@ int fdip_dual_path_prefetch(Addr target, Op* op) {
 void fdip_update() {
   uint32_t predicts = 0;
   uint32_t prefetches = 0;
-  static Addr last_cl_prefetched = get_cache_line_addr(&ic->icache, 
-                                                        runahead_pc);
 
   if (ftq.size() > FDIP_MAX_RUNAHEAD || runahead_disable) {
     return;
@@ -403,8 +415,8 @@ void fdip_update() {
           break;
         } else {
           // target is set to whichever instr is predicted to follow branch
-          bool continuing_to_next_cl = get_cache_line_addr(&ic->icache, target) == 
-            last_cl_prefetched + 1;
+          bool continuing_to_next_cl = !last_cl_prefetched? TRUE : (get_cache_line_addr(&ic->icache, target) ==
+                                   last_cl_prefetched + ic->icache.offset_mask + 1)? TRUE : FALSE;
           if ((FDIP_DUAL_PATH_PREF_IC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ENABLE) 
               && hash_table_access(&top_mispred_br, runahead_pc)) {
             fdip_dual_path_prefetch(target, op);
@@ -412,7 +424,8 @@ void fdip_update() {
           } else if (op->oracle_info.pred == TAKEN || continuing_to_next_cl) {
             bool success = fdip_prefetch(target, op);
             prefetches += success;
-            ftq.back().second.prefetched = success;
+            if (ftq.size())
+              ftq.back().second.prefetched = success;
             last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
             if (success){
               STAT_EVENT(ic_stage->proc_id, op->oracle_info.pred ? 
@@ -429,13 +442,13 @@ void fdip_update() {
     }
     if (!is_branch || btb_ras_miss) { // FDIP continues as for non-branch
       // If continuing to next cache line (no control flow change), prefetch it
-      bool continuing_to_next_cl = get_cache_line_addr(
-                                   &ic->icache, runahead_pc+1) == 
-                                   last_cl_prefetched + 1;
+      bool continuing_to_next_cl = !last_cl_prefetched? TRUE : (get_cache_line_addr(&ic->icache, runahead_pc+1) ==
+                                   last_cl_prefetched + ic->icache.offset_mask + 1)? TRUE : FALSE;
       if (continuing_to_next_cl) {
         bool success = fdip_prefetch(runahead_pc+1, NULL);
         prefetches += success;
-        ftq.back().second.prefetched = success;
+        if (ftq.size())
+          ftq.back().second.prefetched = success;
         last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
         if (success) {
           STAT_EVENT(ic_stage->proc_id, FDIP_NL_PREF);

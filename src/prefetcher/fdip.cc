@@ -313,8 +313,17 @@ bool fdip_prefetch(Addr target, Op *op) {
                               &line_addr, TRUE);
   if(FDIP_ALWAYS_PREFETCH || (!line && (last_line_addr_prefetched != line_addr))) {
     if(FDIP_PREF_NO_LATENCY) {
-      Addr repl_line_addr;
-      if (cache_insert(&ic_stage->icache, ic_stage->proc_id, target, &line_addr, &repl_line_addr)) {
+      Mem_Req req;
+      req.off_path             = op ? op->off_path : FALSE;
+      req.off_path_confirmed   = FALSE;
+      req.type                 = MRT_IFETCH;
+      req.proc_id              = ic_stage->proc_id;
+      req.addr                 = line_addr;
+      req.oldest_op_unique_num = (Counter)0;
+      req.oldest_op_op_num     = (Counter)0;
+      req.oldest_op_addr       = (Addr)0;
+      req.dirty_l0             = op && op->table_info->mem_type == MEM_ST && !op->off_path;
+      if(icache_fill_line(&req)) {
         STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
         success = true;
       }

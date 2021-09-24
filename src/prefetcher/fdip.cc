@@ -305,6 +305,11 @@ bool fdip_prefetch(Addr target, Op *op) {
   bool success = false;
   void* line = NULL;
 
+  if (fdip_pred_on_path)
+    STAT_EVENT(ic_stage->proc_id, FDIP_ATTEMPTED_PREF_ON_PATH);
+  else
+    STAT_EVENT(ic_stage->proc_id, FDIP_ATTEMPTED_PREF_OFF_PATH);
+
   if(!FDIP_ALWAYS_PREFETCH)
     line = (Inst_Info**)cache_access(&ic_stage->icache, target,
                               &line_addr, TRUE);
@@ -414,7 +419,7 @@ void fdip_update() {
         // and find the next branch). Thus FDIP would continue as if it was not
         // branch, incrementing runahead_pc. This may cause cache pollution.
         // Boomerang CAN distinguish these cases by storing the end of the bbl
-        if (FDIP_STOP_ON_BTB_MISS) {
+        if (FDIP_STOP_ON_BTB_MISS || PERFECT_FDIP) {
           runahead_disable = TRUE;
           break;
         }
@@ -431,18 +436,22 @@ void fdip_update() {
             fdip_dual_path_prefetch(target, op);
             last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
           } else if (op->oracle_info.pred == TAKEN || continuing_to_next_cl) {
-            bool success = fdip_prefetch(target, op);
-            prefetches += success;
-            if (ftq.size())
-              ftq.back().second.prefetched = success;
-            last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
-            if (success){
-              STAT_EVENT(ic_stage->proc_id, op->oracle_info.pred ? 
-                  FDIP_BRANCH_TAKEN_PREF : FDIP_NL_PREF);
-              if (fdip_pred_on_path)
-                STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ON_PATH);
-              else
-                STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);
+            if (FDIP_PREF_USEFUL_LINE && !will_be_accessed(target)) {
+              last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
+            } else {
+              bool success = fdip_prefetch(target, op);
+              prefetches += success;
+              if (ftq.size())
+                ftq.back().second.prefetched = success;
+              last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
+              if (success){
+                STAT_EVENT(ic_stage->proc_id, op->oracle_info.pred ? 
+                    FDIP_BRANCH_TAKEN_PREF : FDIP_NL_PREF);
+                if (fdip_pred_on_path)
+                  STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ON_PATH);
+                else
+                  STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);
+              }
             }
           }
           runahead_pc = target;
@@ -450,20 +459,33 @@ void fdip_update() {
       }
     }
     if (!is_branch || btb_ras_miss) { // FDIP continues as for non-branch
-      // If continuing to next cache line (no control flow change), prefetch it
-      bool continuing_to_next_cl = !last_cl_prefetched? TRUE : (get_cache_line_addr(&ic->icache, runahead_pc+1) ==
-                                   last_cl_prefetched + ic->icache.offset_mask + 1)? TRUE : FALSE;
-      if (continuing_to_next_cl) {
-        bool success = fdip_prefetch(runahead_pc+1, NULL);
-        prefetches += success;
-        if (ftq.size())
-          ftq.back().second.prefetched = success;
-        last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
-        if (success) {
-          STAT_EVENT(ic_stage->proc_id, FDIP_NL_PREF);
+      if (PERFECT_FDIP && !fdip_pred_on_path) {
+        runahead_disable = TRUE;
+        break;
+      } else {
+        // If continuing to next cache line (no control flow change), prefetch it
+        bool continuing_to_next_cl = !last_cl_prefetched? TRUE : (get_cache_line_addr(&ic->icache, runahead_pc+1) ==
+            last_cl_prefetched + ic->icache.offset_mask + 1)? TRUE : FALSE;
+        if (continuing_to_next_cl) {
+          if (FDIP_PREF_USEFUL_LINE && !will_be_accessed(runahead_pc+1)) {
+            last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
+          } else {
+            bool success = fdip_prefetch(runahead_pc+1, NULL);
+            prefetches += success;
+            if (ftq.size())
+              ftq.back().second.prefetched = success;
+            last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
+            if (success) {
+              STAT_EVENT(ic_stage->proc_id, FDIP_NL_PREF);
+              if (fdip_pred_on_path)
+                STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ON_PATH);
+              else
+                STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);
+            }
+          }
         }
+        runahead_pc++;
       }
-      runahead_pc++;
     }
     cur_cl = get_cache_line_addr(&ic->icache, runahead_pc);
   }

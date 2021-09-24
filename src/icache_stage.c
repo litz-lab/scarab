@@ -832,7 +832,6 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       line_info = (Icache_Data*)cache_insert(&ic->icache_line_info, ic->proc_id,
                                              ic->fetch_addr, &dummy_addr2,
                                              &repl_line_addr2);
-
       line_info->fetched_by_offpath = USE_CONFIRMED_OFF ?
                                         req->off_path_confirmed :
                                         req->off_path;
@@ -840,7 +839,12 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       line_info->offpath_op_unique = req->oldest_op_unique_num;
       line_info->fetch_cycle       = cycle_count;
       line_info->onpath_use_cycle  = req->off_path ? 0 : cycle_count;
-      line_info->HW_prefetch       = (req->type == MRT_IPRF);
+      line_info->read_count[0]     = 0;
+      line_info->read_count[1]     = 0;
+      if (FDIP_ENABLE)
+        line_info->HW_prefetch     = (req->type == MRT_IFETCH);
+      else
+        line_info->HW_prefetch       = (req->type == MRT_IPRF);
       wp_process_icache_fill(line_info, req);
     }
 
@@ -879,7 +883,12 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       line_info->offpath_op_unique = req->oldest_op_unique_num;
       line_info->fetch_cycle       = cycle_count;
       line_info->onpath_use_cycle  = req->off_path ? 0 : cycle_count;
-      line_info->HW_prefetch       = (req->type == MRT_IPRF);
+      line_info->read_count[0]     = 0;
+      line_info->read_count[1]     = 0;
+      if (FDIP_ENABLE)
+        line_info->HW_prefetch     = (req->type == MRT_IFETCH);
+      else
+        line_info->HW_prefetch       = (req->type == MRT_IPRF);
       wp_process_icache_fill(line_info, req);
     }
 
@@ -1072,6 +1081,108 @@ Op* find_op(Addr pc) {
     }
   }
   return NULL;
+}
+
+Flag will_be_accessed(Addr pc) {
+  Op* op;
+  Op** op_p = (Op**)list_get_current(&op_buf);
+  uns64 save_inst_uid = 0;
+  Addr save_pc = 0;
+  Flag found = FALSE;
+
+  if (op_p) {
+    op = *op_p;
+    save_inst_uid = op->inst_uid;
+    save_pc = op->fetch_addr;
+    op_p = (Op**)list_next_element(&op_buf);
+    op = *op_p;
+  }
+
+  if (!op_p) {
+    op_p = (Op**)list_start_head_traversal(&op_buf);
+    op = *op_p;
+    if (last_runahead_uid && op->inst_uid <= last_runahead_uid) {
+      for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
+        op = *op_p;
+        if (op->table_info->cf_type && op->inst_uid == last_runahead_uid) {
+          op_p = (Op**)list_next_element(&op_buf);
+          op = *op_p;
+          break;
+        }
+      }
+    }
+  }
+
+  // find the instruction among all the later ops in the lookahead buffer
+  for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
+    op = *op_p;
+    if (op->fetch_addr == pc) {
+      found = TRUE;
+      break;
+    }
+  }
+
+  // recover the current pointer for the future find_op
+  if (save_inst_uid) {
+    op_p = (Op**)list_start_head_traversal(&op_buf);
+    for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
+      op = *op_p;
+      if (op->inst_uid == save_inst_uid && op->fetch_addr == save_pc)
+        break;
+    }
+  } else {
+    (&op_buf)->current = NULL;
+  }
+
+  return found;
+}
+
+Flag is_mispredicted(const Addr prediction, Op* op_pred) {
+  Op* op;
+  Op** op_p = (Op**)list_get_current(&op_buf);
+  uns64 save_inst_uid = 0;
+  Addr save_pc = 0;
+  Flag mispredicted = FALSE;
+  Flag search_from_head = FALSE;
+
+  if (op_p) {
+    op = *op_p;
+    save_inst_uid = op->inst_uid;
+    save_pc = op->fetch_addr;
+    // The current op is the one looking for in most cases (bp_predict_op called from fdip_update)
+    if (op->inst_uid == op_pred->inst_uid && op->fetch_addr == op_pred->fetch_addr) {
+      if ((op_pred->oracle_info.pred != op->oracle_info.dir) && (prediction != op->oracle_info.npc))
+        mispredicted = TRUE;
+    } else
+      search_from_head = TRUE;
+  }
+
+  if (!op_p || search_from_head) {
+    op_p = (Op**)list_start_head_traversal(&op_buf);
+    for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
+      op = *op_p;
+      if (op->inst_uid == op_pred->inst_uid && op->fetch_addr == op_pred->fetch_addr) {
+        if ((op_pred->oracle_info.pred != op->oracle_info.dir) && (prediction != op->oracle_info.npc)) {
+          mispredicted = TRUE;
+          break;
+        }
+      }
+    }
+  }
+
+  // recover the current pointer for the future find_op
+  if (save_inst_uid) {
+    op_p = (Op**)list_start_head_traversal(&op_buf);
+    for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
+      op = *op_p;
+      if (op->inst_uid == save_inst_uid && op->fetch_addr == save_pc)
+        break;
+    }
+  } else {
+    (&op_buf)->current = NULL;
+  }
+
+  return mispredicted;
 }
 
 void log_stats_ic_miss() {

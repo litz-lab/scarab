@@ -595,17 +595,12 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   }
 
   if(FDIP_ENABLE && LOOKAHEAD_BUF_SIZE) {
-    Op* op_lookahead;
-    Op** op_p = (Op**)list_get_current(&op_buf);
-    if (op_p) {
-      op_lookahead = *op_p;
-      if ((op->oracle_info.pred != op_lookahead->oracle_info.dir) && (prediction != op_lookahead->oracle_info.npc)) {
-        STAT_EVENT(bp_data->proc_id, FDIP_PRED_OFF_PATH);
-        fdip_pred_on_path = FALSE;
-      } else {
-        STAT_EVENT(bp_data->proc_id, FDIP_PRED_ON_PATH);
-        fdip_pred_on_path = TRUE;
-      }
+    if(is_mispredicted(prediction, op)) {
+      STAT_EVENT(bp_data->proc_id, FDIP_PRED_OFF_PATH);
+      fdip_pred_on_path = FALSE;
+    } else {
+      STAT_EVENT(bp_data->proc_id, FDIP_PRED_ON_PATH);
+      fdip_pred_on_path = TRUE;
     }
   }
   return prediction;

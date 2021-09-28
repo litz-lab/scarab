@@ -50,7 +50,7 @@ Flag runahead_disable = TRUE;
 Op *recovery_checkpoint;
 Flag recovery_checkpoint_valid = FALSE;
 bool on_wrong_path = false;
-Flag fdip_pred_on_path = FALSE;
+Flag fdip_pred_on_path = TRUE;
 uns64 last_runahead_uid = 0;
 uns64 max_runahead_uid = 0;
 extern List op_buf;
@@ -459,6 +459,8 @@ void fdip_update() {
       }
     }
     if (!is_branch || btb_ras_miss) { // FDIP continues as for non-branch
+      if (btb_ras_miss)
+        fdip_pred_on_path = FALSE;
       if (PERFECT_FDIP && !fdip_pred_on_path) {
         runahead_disable = TRUE;
         break;

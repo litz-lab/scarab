@@ -82,7 +82,6 @@ extern void tc_do_stat(Op*, Flag);
 Bp_Recovery_Info* bp_recovery_info = NULL;
 Bp_Data*          g_bp_data        = NULL;
 Flag              USE_LATE_BP      = FALSE;
-extern Flag       fdip_pred_on_path;
 extern List       op_buf;
 
 /******************************************************************************/
@@ -600,16 +599,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   const Addr prediction = op->oracle_info.pred ? pred_target : pc_plus_offset;
   op->oracle_info.pred_npc = prediction;
   ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.pred_npc);
-  // If the direction prediction is wrong, but next address happens to be right
-  if(FDIP_ENABLE && LOOKAHEAD_BUF_SIZE) {
-    if(is_mispredicted(prediction, op)) {
-      STAT_EVENT(bp_data->proc_id, FDIP_PRED_OFF_PATH);
-      fdip_pred_on_path = FALSE;
-    } else {
-      STAT_EVENT(bp_data->proc_id, FDIP_PRED_ON_PATH);
-      fdip_pred_on_path = TRUE;
-    }
-  }
   bp_predict_op_evaluate(bp_data, op, prediction);
   return prediction;
 }

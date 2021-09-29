@@ -81,7 +81,6 @@ extern void tc_do_stat(Op*, Flag);
 Bp_Recovery_Info* bp_recovery_info = NULL;
 Bp_Data*          g_bp_data        = NULL;
 Flag              USE_LATE_BP      = FALSE;
-extern Flag       fdip_pred_on_path;
 extern List       op_buf;
 
 /******************************************************************************/
@@ -594,15 +593,10 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     op->oracle_info.late_pred_npc = late_prediction;
   }
 
-  if(FDIP_ENABLE && LOOKAHEAD_BUF_SIZE) {
-    if(is_mispredicted(prediction, op)) {
-      STAT_EVENT(bp_data->proc_id, FDIP_PRED_OFF_PATH);
-      fdip_pred_on_path = FALSE;
-    } else {
-      STAT_EVENT(bp_data->proc_id, FDIP_PRED_ON_PATH);
-      fdip_pred_on_path = TRUE;
-    }
-  }
+  op->oracle_info.mispred = (op->oracle_info.pred != op->oracle_info.dir) &&
+                            (prediction != op->oracle_info.npc);
+  op->oracle_info.misfetch = !op->oracle_info.mispred &&
+                             prediction != op->oracle_info.npc;
   return prediction;
 }
 

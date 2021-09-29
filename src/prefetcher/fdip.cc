@@ -178,6 +178,13 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     runahead_disable = FALSE;
     Addr target = bp_predict_op(g_bp_data, op, cf_num++, bp_pc);
     bp_predict_op_evaluate(g_bp_data, op, target);
+    if (op->oracle_info.mispred || op->oracle_info.misfetch) {
+      fdip_pred_on_path = FALSE;
+      STAT_EVENT(ic_stage->proc_id, FDIP_PRED_OFF_PATH);
+    } else {
+      fdip_pred_on_path = TRUE;
+      STAT_EVENT(ic_stage->proc_id, FDIP_PRED_ON_PATH);
+    }
     recovery_checkpoint = op;
     recovery_checkpoint_valid = TRUE;
     runahead_pc = target;
@@ -196,6 +203,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     patch_oracle_info(op, &req->op, bp_pc);
     //Re-evaluate FDIP direction prediction based on the current oracle info
     bp_predict_op_evaluate(g_bp_data, op, req->target);
+    //ASSERT(ic_stage->proc_id, PERFECT_FDIP && !op->oracle_info.mispred && !op->oracle_info.misfetch);
     op->cf_within_fetch = cf_num++;
     if (!on_wrong_path) {
       //We may have mispredicted once but the branch PCs seen by the
@@ -223,6 +231,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
                   cycle_count - req->prefetch_cycle);
     }
     ftq.pop();
+    STAT_EVENT(ic_stage->proc_id, FDIP_ON_PATH_FTQ_POPS);
     return target;
   }
   else {
@@ -262,6 +271,13 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     fdip_clear_ftq(bp_pc);
     auto target =  bp_predict_op(g_bp_data, op, cf_num++, bp_pc);
     target = bp_predict_op_evaluate(g_bp_data, op, target);
+    if (op->oracle_info.mispred || op->oracle_info.misfetch) {
+      fdip_pred_on_path = FALSE;
+      STAT_EVENT(ic_stage->proc_id, FDIP_PRED_OFF_PATH);
+    } else {
+      fdip_pred_on_path = TRUE;
+      STAT_EVENT(ic_stage->proc_id, FDIP_PRED_ON_PATH);
+    }
     recovery_checkpoint = op;
     recovery_checkpoint_valid = TRUE;
     runahead_disable = FALSE;
@@ -283,6 +299,7 @@ void fdip_clear_ftq(Addr recover_pc) {
       STAT_EVENT(ic_stage->proc_id, FDIP_PREF_WRONG_PATH);
     }
     ftq.pop();
+    STAT_EVENT(ic_stage->proc_id, FDIP_OFF_PATH_FTQ_POPS);
   }
 }
 
@@ -414,6 +431,16 @@ void fdip_update() {
                                   op->oracle_info.pred == TAKEN
                                   )));
       predicts++;
+      if (PERFECT_FDIP && (op->oracle_info.mispred || op->oracle_info.misfetch)) {
+        runahead_disable = TRUE;
+        fdip_pred_on_path = FALSE;
+        STAT_EVENT(ic_stage->proc_id, FDIP_PRED_OFF_PATH);
+        break;
+      } else {
+        fdip_pred_on_path = TRUE;
+        STAT_EVENT(ic_stage->proc_id, FDIP_PRED_ON_PATH);
+      }
+      STAT_EVENT(ic_stage->proc_id, FDIP_ON_PATH_FTQ_INSERTS);
       btb_ras_miss = op->oracle_info.btb_miss || target == 0;
       if (btb_ras_miss) {
         STAT_EVENT(ic_stage->proc_id, FDIP_BTB_RAS_MISS);
@@ -427,70 +454,60 @@ void fdip_update() {
           break;
         }
       } else {
-        if (PERFECT_FDIP && !fdip_pred_on_path) {
-          runahead_disable = TRUE;
-          break;
-        } else {
-          // target is set to whichever instr is predicted to follow branch
-          bool continuing_to_next_cl = !last_cl_prefetched? TRUE : (get_cache_line_addr(&ic->icache, target) ==
-                                   last_cl_prefetched + ic->icache.offset_mask + 1)? TRUE : FALSE;
-          if ((FDIP_DUAL_PATH_PREF_IC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ENABLE) 
-              && hash_table_access(&top_mispred_br, runahead_pc)) {
-            fdip_dual_path_prefetch(target, op);
-            last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
-          } else if (op->oracle_info.pred == TAKEN || continuing_to_next_cl) {
-            if (FDIP_PREF_USEFUL_LINE && !will_be_accessed(target)) {
-              last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
-            } else {
-              bool success = fdip_prefetch(target, op);
-              prefetches += success;
-              if (ftq.size())
-                ftq.back().second.prefetched = success;
-              last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
-              if (success){
-                STAT_EVENT(ic_stage->proc_id, op->oracle_info.pred ? 
-                    FDIP_BRANCH_TAKEN_PREF : FDIP_NL_PREF);
-                if (fdip_pred_on_path)
-                  STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ON_PATH);
-                else
-                  STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);
-              }
-            }
-          }
-          runahead_pc = target;
-        }
-      }
-    }
-    if (!is_branch || btb_ras_miss) { // FDIP continues as for non-branch
-      if (btb_ras_miss)
-        fdip_pred_on_path = FALSE;
-      if (PERFECT_FDIP && !fdip_pred_on_path) {
-        runahead_disable = TRUE;
-        break;
-      } else {
-        // If continuing to next cache line (no control flow change), prefetch it
-        bool continuing_to_next_cl = !last_cl_prefetched? TRUE : (get_cache_line_addr(&ic->icache, runahead_pc+1) ==
+        // target is set to whichever instr is predicted to follow branch
+        bool continuing_to_next_cl = !last_cl_prefetched? TRUE : (get_cache_line_addr(&ic->icache, target) ==
             last_cl_prefetched + ic->icache.offset_mask + 1)? TRUE : FALSE;
-        if (continuing_to_next_cl) {
-          if (FDIP_PREF_USEFUL_LINE && !will_be_accessed(runahead_pc+1)) {
-            last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
+        if ((FDIP_DUAL_PATH_PREF_IC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ENABLE) 
+            && hash_table_access(&top_mispred_br, runahead_pc)) {
+          fdip_dual_path_prefetch(target, op);
+          last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
+        } else if (op->oracle_info.pred == TAKEN || continuing_to_next_cl) {
+          if (FDIP_PREF_USEFUL_LINE && !will_be_accessed(target)) {
+            last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
           } else {
-            bool success = fdip_prefetch(runahead_pc+1, NULL);
+            bool success = fdip_prefetch(target, op);
             prefetches += success;
             if (ftq.size())
               ftq.back().second.prefetched = success;
-            last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
-            if (success) {
-              STAT_EVENT(ic_stage->proc_id, FDIP_NL_PREF);
-              if (fdip_pred_on_path)
+            last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
+            if (success){
+              STAT_EVENT(ic_stage->proc_id, op->oracle_info.pred ? 
+                  FDIP_BRANCH_TAKEN_PREF : FDIP_NL_PREF);
+              if (fdip_pred_on_path) {
                 STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ON_PATH);
+              }
               else
                 STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);
             }
           }
         }
-        runahead_pc++;
+        runahead_pc = target;
       }
+    }
+    if (!is_branch || btb_ras_miss) { // FDIP continues as for non-branch
+      // If continuing to next cache line (no control flow change), prefetch it
+      bool continuing_to_next_cl = !last_cl_prefetched? TRUE : (get_cache_line_addr(&ic->icache, runahead_pc+1) ==
+          last_cl_prefetched + ic->icache.offset_mask + 1)? TRUE : FALSE;
+      if (continuing_to_next_cl) {
+        if (FDIP_PREF_USEFUL_LINE && !will_be_accessed(runahead_pc+1)) {
+          last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
+        } else {
+          bool success = fdip_prefetch(runahead_pc+1, NULL);
+          prefetches += success;
+          if (ftq.size())
+            ftq.back().second.prefetched = success;
+          last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
+          if (success) {
+            STAT_EVENT(ic_stage->proc_id, FDIP_NL_PREF);
+            if (fdip_pred_on_path) {
+              STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ON_PATH);
+            }
+            else
+              STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);
+          }
+        }
+      }
+      runahead_pc++;
     }
     cur_cl = get_cache_line_addr(&ic->icache, runahead_pc);
   }

@@ -556,7 +556,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         frontend_fetch_op(ic->proc_id, new_op);
         Op** ptr = sl_list_add_tail(&op_buf);
         *ptr = new_op;
-        if (!FDIP_STOP_ON_BTB_MISS && !PERFECT_FDIP && runahead_disable && new_op->inst_uid >= last_runahead_uid + ISSUE_WIDTH)
+        if (!FDIP_STOP_ON_BTB_MISS && !FDIP_STOP_ON_MISPRED && !FDIP_STOP_ON_MISFETCH && runahead_disable && new_op->inst_uid >= last_runahead_uid + ISSUE_WIDTH)
           runahead_disable = FALSE;
         if (new_op->table_info->cf_type)
           max_runahead_uid = new_op->inst_uid;

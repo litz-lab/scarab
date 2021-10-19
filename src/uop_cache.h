@@ -11,17 +11,12 @@
 #ifndef __UOP_CACHE_H__
 #define __UOP_CACHE_H__
 
+#include "op.h"
+#include "icache_stage.h" //needed for get_pw_lookahead_buffer
+
 /**************************************************************************************/
 /* Types */
 
-// Contains the addresses of the first and last addresses in the PW
-typedef struct Uop_Cache_Data_struct {
-  Addr first;
-  Addr last;
-  Counter n_uops;
-  Flag prefetch;
-  Counter used;
-} Uop_Cache_Data;
 
 /**************************************************************************************/
 /* Prototypes */
@@ -38,6 +33,6 @@ void end_accumulate(void);
 /* accumulate uop into buffer. If terminating condition reached, call insert_uop_cache */
 void accumulate_op(Op* op);
 
-Flag uop_cache_prefetch(Addr pw_start_addr);
+Flag uop_cache_prefetch(Addr pw_start_addr, Flag fdip_on_path);
 
 #endif /* #ifndef __UOP_CACHE_H__ */

@@ -134,6 +134,7 @@ Flag icache_off_path(void);
 Op* find_op(Addr pc);
 Flag will_be_accessed(Addr pc);
 Flag instr_fill_line(Mem_Req* req);
+Uop_Cache_Data get_pw_lookahead_buffer(Addr start_addr);
 
 // For branch stat collection
 Flag in_icache(Addr addr);

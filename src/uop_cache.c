@@ -78,6 +78,7 @@ Flag pw_insert(Uop_Cache_Data pw) {
   Uop_Cache_Data* cur_line_data = NULL;
   Addr line_addr;  
   Addr repl_line_addr;
+  pw.used = 0;
 
   int lines_needed = pw.n_uops / UOP_CACHE_MAX_UOPS_LINE;
   if (pw.n_uops % UOP_CACHE_MAX_UOPS_LINE) lines_needed++;
@@ -279,19 +280,34 @@ void accumulate_op(Op* op) {
   accumulating_pw.n_uops++;
 };
 
-Flag uop_cache_prefetch(Addr pw_start_addr) {
+// Need first, last (for determining if instr is within the PW range) and n_uops (# entries to occupy)
+// Using lookahead buffer, the first element should be the next on-path instr (target).
+// Then count the number of instructions until the next branch (next Taken branch?).
+// Should be able to determine if branch is Taken by checking if next op is different than cur op addr plus offset.
+
+// Will need new function, loosely following findOp called getPW(target)
+// STart out with get_current since we may be running ahead. Find op that corresponds to target (next instr) - Assert it is found.
+// Continue forward to the next branch, counting the number of ops.
+// Return Uop_Cache_Data (not pointer)
+Flag uop_cache_prefetch(Addr pw_start_addr, Flag fdip_on_path) {
+  Uop_Cache_Data pw;
   if (UOP_CACHE_SIZE == 0) {
     return FALSE;
   }
-  Uop_Cache_Data* pw = (Uop_Cache_Data*) hash_table_access(&pc_to_pw, pw_start_addr);
-  // if PW has not been decoded before, do nothing. Hopefully this is uncommon
-  if (pw == NULL) {
-    STAT_EVENT(0, UOP_CACHE_PREFETCH_FAILED_PW_NEVER_SEEN);
-    return FALSE;
+  if (fdip_on_path) {
+    pw = get_pw_lookahead_buffer(pw_start_addr);
+  } else {
+    Uop_Cache_Data* pw_p = (Uop_Cache_Data*) hash_table_access(&pc_to_pw, pw_start_addr);
+    // if PW has not been decoded before, do nothing. Hopefully this is uncommon.
+    if (pw_p == NULL) {
+      STAT_EVENT(0, UOP_CACHE_PREFETCH_FAILED_PW_NEVER_SEEN);
+      return FALSE;
+    }
+    pw = *pw_p;
   }
-  ASSERT(0, pw->first == pw_start_addr);
-  pw->prefetch = TRUE;
-  Flag prefetched = pw_insert(*pw);
+  ASSERT(0, pw.first == pw_start_addr);
+  pw.prefetch = TRUE;
+  Flag prefetched = pw_insert(pw);
   INC_STAT_EVENT(0, UOP_CACHE_PREFETCH, prefetched);
   return prefetched;
 }

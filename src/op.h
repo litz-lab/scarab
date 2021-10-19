@@ -321,6 +321,15 @@ struct Op_struct {
 };
 // }}}
 
+// Contains the first and last addresses in the prediction window
+typedef struct Uop_Cache_Data_struct {
+  Addr first;
+  Addr last;
+  Counter n_uops;
+  Flag prefetch;
+  Counter used;
+} Uop_Cache_Data;
+
 /**************************************************************************************/
 
 #endif  // #ifndef __OP_H__

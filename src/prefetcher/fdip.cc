@@ -217,6 +217,11 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
       runahead_pc = target;
     else
       runahead_pc++;
+    
+    // Also prefetch for the case where FTQ is empty.
+    if (UOC_ORACLE_PREF) {
+        uop_cache_prefetch(op->oracle_info.npc, true); // verify this section. fdip_on_path
+    }
 
     last_cl_prefetched = 0;
     outstanding_prefs = 0;
@@ -351,6 +356,9 @@ void fdip_recover(Recovery_Info *info) {
   fdip_on_path_bp = TRUE;
   fdip_on_path_pref = TRUE;
   predicts_after_recovery = 0;
+  if (UOC_ORACLE_PREF) {
+    uop_cache_prefetch(info->npc, fdip_on_path_pref);
+  }
   fdip_update();
 }
 
@@ -430,8 +438,8 @@ int fdip_dual_path_prefetch(Addr target, Op* op) {
                     icache_pref);
   }
   if (FDIP_DUAL_PATH_PREF_UOC_ENABLE) {
-    uoc_pref += uop_cache_prefetch(op->pred_target);
-    uoc_pref += uop_cache_prefetch(op->pc_plus_offset);
+    uoc_pref += uop_cache_prefetch(op->pred_target, fdip_on_path_pref);
+    uoc_pref += uop_cache_prefetch(op->pc_plus_offset, fdip_on_path_pref);
     STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_TRIGGERED);
     INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_EMITTED,
                     uoc_pref);
@@ -506,6 +514,11 @@ void fdip_update() {
                                     op->oracle_info.pred == TAKEN
                                     )));
         ftq_pushed = true;
+        // No matter how branch is predicted, prefetch the correct next PW.
+        // Only predict branches that are found when on the on-path.
+        if (UOC_ORACLE_PREF) {
+          uop_cache_prefetch(op->oracle_info.npc, true); // verify this section.
+        }
         STAT_EVENT(ic_stage->proc_id, FDIP_PRED_ON_PATH);
         Flag bf = op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE;
         btb_ras_miss = (op->oracle_info.btb_miss && op->oracle_info.pred) || (op->oracle_info.btb_miss && !op->oracle_info.pred && !bf) || target == 0;

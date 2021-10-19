@@ -1145,6 +1145,58 @@ Flag will_be_accessed(Addr pc) {
   return found;
 }
 
+// Retrieve the prediction window by looking into the lookahead buffer.
+// This should only be called when on-path because if FDIP is off-path, nothing will be found in a trace. 
+Uop_Cache_Data get_pw_lookahead_buffer(Addr start_addr) {
+  Uop_Cache_Data pw;
+  memset(&pw, 0, sizeof(pw));
+
+
+  // It is not always true that the branch for which I am prefetching target
+  // is still in lookahead buffer - see FDIP_PRED_FTQ_EMPTY
+
+  List_Entry* cur = op_buf.current;
+  Op** op_p = (Op**)list_get_current(&op_buf);
+
+  // Move the op pointer to the op just after the last runahead branch.
+  // If the branch was just-consumed this is the first element in the buffer.
+  // This is the branch's correct target.
+  if (op_p) {
+    ASSERT(ic->proc_id, (*op_p)->table_info->cf_type);
+    op_p = (Op**)list_next_element(&op_buf);
+  } else {
+    op_p = (Op**)list_start_head_traversal(&op_buf);
+    if (last_runahead_uid && (*op_p)->inst_uid <= last_runahead_uid) {
+      for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
+        if ((*op_p)->table_info->cf_type && (*op_p)->inst_uid == last_runahead_uid) {
+          op_p = (Op**)list_next_element(&op_buf);
+          break;
+        }
+      }
+    }
+  }
+
+  // ASSERT that the op identified matches the target/runahead_pc
+  ASSERT(ic->proc_id, (*op_p)->inst_info->addr == start_addr);
+  pw.first = start_addr;
+
+  // Next move down runahead buffer, incrementing n_uops until a branch is found.
+  for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
+    pw.n_uops++;
+    pw.last = (*op_p)->inst_info->addr;
+    if ((*op_p)->table_info->cf_type) { // first branch after the last predicted branch, end of pw
+      break;
+    }
+  }
+
+  // Reset current to prevent side effects
+  op_buf.current = cur;
+  ASSERT(ic->proc_id, (*op_p)->table_info->cf_type);
+  ASSERT(ic->proc_id, pw.n_uops);
+
+  return pw;
+}
+
 void log_stats_ic_miss() {
   STAT_EVENT(ic->proc_id, ICACHE_MISS);
   STAT_EVENT(ic->proc_id, POWER_ICACHE_MISS);

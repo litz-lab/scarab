@@ -255,7 +255,7 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op,
           unsstr64(op->op_num), hexstr64s(op->inst_info->addr));
 
     uns fetch_latency;
-    Flag uc_hit = in_uop_cache(op->oracle_info.npc, NULL, FALSE);
+    Flag uc_hit = in_uop_cache(op->oracle_info.npc, NULL, FALSE);  // should this be pred_npc? We may not have predicted correctly.
     inc_bstat_miss(op, uc_hit);
     if (uc_hit) {
       fetch_latency = UOP_CACHE_LATENCY;

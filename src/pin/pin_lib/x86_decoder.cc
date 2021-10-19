@@ -313,8 +313,10 @@ void fill_in_cf_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
 void print_err_if_invalid(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
   bool invalid = info->op_type == OP_INV;
   bool correct = true;
-  if (FRONTEND == FE_MEMTRACE)
+  if (FRONTEND == FE_MEMTRACE) {
     correct = info->cf_type != NOT_CF || XED_INS_DirectBranchOrCallTargetAddress(info->instruction_addr, ins) == info->branch_target;
+    if (info->is_repeat) correct = true;  // Ignore rep instr since the target is the same instr.
+  }
   if(invalid || !correct) {
     if(invalid) {
       (*dec_err_ostream)

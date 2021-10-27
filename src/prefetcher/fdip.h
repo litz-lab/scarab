@@ -16,6 +16,7 @@ extern "C" {
   void fdip_retire(Op *op);
   void fdip_resolve(Op *op);
   void fdip_recover(Recovery_Info *info);
+  void fdip_redirect(Recovery_Info *info);
   void fdip_update();
 
   /* Private*/

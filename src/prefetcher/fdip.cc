@@ -263,9 +263,10 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
       bp_retire_op(g_bp_data, &req.op);
       STAT_EVENT(ic_stage->proc_id, FDIP_SQUASH_FAKE_BRANCH);
     }
-    fdip_clear_ftq(bp_pc);
+    fdip_clear_ftq();
     auto target =  bp_predict_op(g_bp_data, op, cf_num++, bp_pc);
     target = bp_predict_op_evaluate(g_bp_data, op, target);
+    runahead_pc = bp_pc;
     runahead_disable = FALSE;
     recovery_checkpoint = op;
     recovery_checkpoint_valid = TRUE;
@@ -279,8 +280,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
 
 /* Clear the FTQ, branch predictor state needs to be recovered elsewhere
  */
-void fdip_clear_ftq(Addr recover_pc) {
-  runahead_pc = recover_pc;
+void fdip_clear_ftq() {
   last_cl_prefetched = 0;
   while (!ftq.empty()) {
     if (ftq.front().second.prefetched) {
@@ -299,9 +299,10 @@ void fdip_recover(Recovery_Info *info) {
   ASSERT(ic_stage->proc_id, off_count == recovery_count);
   recovery_checkpoint = NULL;
   recovery_checkpoint_valid = false;
-  fdip_clear_ftq(info->npc);
+  fdip_clear_ftq();
   (&op_buf)->current = NULL;
   last_runahead_uid = 0;
+  runahead_pc = info->npc;
   runahead_disable = FALSE;
   on_wrong_path = false;
   fdip_on_path = TRUE;
@@ -310,14 +311,15 @@ void fdip_recover(Recovery_Info *info) {
 
 /* When a misfetch (btb miss) is resolved, the frontend informs FDIP to clear FDIP branch predictor states including the FTQ.
  */
-void fdip_redirect(Recovery_Info *info) {
+void fdip_redirect(Addr recover_pc) {
   recovery_count++;
   ASSERT(ic_stage->proc_id, off_count == recovery_count);
   recovery_checkpoint = NULL;
   recovery_checkpoint_valid = false;
-  fdip_clear_ftq(info->npc);
+  fdip_clear_ftq();
   (&op_buf)->current = NULL;
   last_runahead_uid = 0;
+  runahead_pc = recover_pc;
   runahead_disable = FALSE;
   on_wrong_path = false;
   fdip_on_path = TRUE;

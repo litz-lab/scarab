@@ -272,8 +272,7 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op,
     bp_recovery_info->redirect_op_num                 = op->op_num;
     bp_recovery_info->redirect_op->redirect_scheduled = TRUE;
     if (FDIP_ENABLE) {
-      bp_recovery_info->recovery_info.npc = op->oracle_info.pred_npc;
-      fdip_redirect(&bp_recovery_info->recovery_info);
+      fdip_redirect(op->oracle_info.pred_npc);
     }
     ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == op->proc_id);
     ASSERT_PROC_ID_IN_ADDR(op->proc_id,

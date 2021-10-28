@@ -16,11 +16,11 @@ extern "C" {
   void fdip_retire(Op *op);
   void fdip_resolve(Op *op);
   void fdip_recover(Recovery_Info *info);
-  void fdip_redirect(Recovery_Info *info);
+  void fdip_redirect(Addr recover_pc);
   void fdip_update();
 
   /* Private*/
-  void fdip_clear_ftq(Addr recover_pc);
+  void fdip_clear_ftq();
 
 #ifdef __cplusplus
 }

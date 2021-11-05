@@ -201,7 +201,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     //Re-evaluate FDIP direction prediction based on the current oracle info
     bp_predict_op_evaluate(g_bp_data, op, req->target);
     op->cf_within_fetch = cf_num++;
-    if (fdip_on_path) {
+    if (on_wrong_path) {
       //We may have mispredicted once but the branch PCs seen by the
       //frontend and FDIP still match
       recovery_checkpoint = op;
@@ -297,8 +297,7 @@ void fdip_clear_ftq() {
 void fdip_recover(Recovery_Info *info) {
   recovery_count++;
   ASSERT(ic_stage->proc_id, off_count == recovery_count);
-  recovery_checkpoint = NULL;
-  recovery_checkpoint_valid = false;
+  ASSERT(ic_stage->proc_id, ftq.empty());
   fdip_clear_ftq();
   (&op_buf)->current = NULL;
   last_runahead_uid = 0;
@@ -314,8 +313,7 @@ void fdip_recover(Recovery_Info *info) {
 void fdip_redirect(Addr recover_pc) {
   recovery_count++;
   ASSERT(ic_stage->proc_id, off_count == recovery_count);
-  recovery_checkpoint = NULL;
-  recovery_checkpoint_valid = false;
+  ASSERT(ic_stage->proc_id, (PERFECT_NT_BTB && ftq.empty()) || (!PERFECT_NT_BTB && !ftq.empty()));
   fdip_clear_ftq();
   (&op_buf)->current = NULL;
   last_runahead_uid = 0;
@@ -323,6 +321,7 @@ void fdip_redirect(Addr recover_pc) {
   runahead_disable = FALSE;
   on_wrong_path = false;
   fdip_on_path = TRUE;
+  fdip_update();
 }
 
 // Returns true if prefetch was emitted
@@ -444,7 +443,7 @@ void fdip_update() {
       } else {
         STAT_EVENT(ic_stage->proc_id, FDIP_PRED_OFF_PATH);
       }
-      if (fdip_on_path && (op->oracle_info.mispred || op->oracle_info.misfetch)) {
+      if (fdip_on_path && (op->oracle_info.mispred || op->oracle_info.misfetch || (op->oracle_info.btb_miss && op->oracle_info.pred) )) {
         off_count++;
         fdip_on_path = FALSE;
         if ((FDIP_STOP_ON_MISPRED && op->oracle_info.mispred) || (FDIP_STOP_ON_MISFETCH && op->oracle_info.misfetch)) {

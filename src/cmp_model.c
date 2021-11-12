@@ -317,9 +317,6 @@ void cmp_recover() {
          bp_recovery_info->proc_id == map_data->proc_id);
   bp_recovery_info->recovery_cycle = MAX_CTR;
   bp_recovery_info->redirect_cycle = MAX_CTR;
-  if (FDIP_ENABLE)
-    bp_recovery_info->recovery_info.npc = bp_recovery_info->recovery_fetch_addr;
-
   bp_recover_op(g_bp_data, bp_recovery_info->recovery_cf_type,
                 &bp_recovery_info->recovery_info);
 

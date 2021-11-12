@@ -20,6 +20,7 @@ extern "C" {
   void fdip_update();
 
   /* Private*/
+  void fdip_new_branch(Addr bp_pc, Op *op);
   void fdip_clear_ftq();
 
 #ifdef __cplusplus

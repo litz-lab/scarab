@@ -30,7 +30,7 @@ extern "C" {
 * it will reach the maximum size of TAGE.
 * Since the default size of TAGE buffer is 240, the maximum number of off-path predictions should be less than that for safe
 */
-#define MAX_OFF_PATH_PREDICTS 120
+#define MAX_OUTSTANDING_PREDICTS 120
 
 struct ftq_req {
   Addr target;
@@ -56,14 +56,15 @@ uns cf_num    = 0;
 Flag runahead_disable = TRUE;
 Op *recovery_checkpoint;
 Flag recovery_checkpoint_valid = FALSE;
-Flag fdip_on_path = TRUE;
+Flag fdip_on_path_bp = TRUE;
+Flag fdip_on_path_pref = TRUE;
 uns64 last_runahead_uid = 0;
 uns64 max_runahead_uid = 0;
 extern List op_buf;
 Hash_Table top_mispred_br;
 uns64 recovery_count = 0;
 uns64 off_count = 0;
-uns64 off_path_predicts = 0;
+uns64 predicts_after_recovery = 0;
 
 /**************************************************************************************/
 /* init_topk_mispred: list of branches that provide a given coverage of resteers */
@@ -190,19 +191,24 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     Addr target = bp_predict_op(g_bp_data, op, cf_num++, bp_pc);
     bp_predict_op_evaluate(g_bp_data, op, target);
     (&op_buf)->current = NULL;
+    predicts_after_recovery++;
+    if (fdip_on_path_bp)
+      STAT_EVENT(ic_stage->proc_id, FDIP_PRED_ON_PATH);
+    else
+      STAT_EVENT(ic_stage->proc_id, FDIP_PRED_OFF_PATH);
     bool btb_ras_miss = (op->oracle_info.btb_miss && op->oracle_info.pred) || target == 0;
     if (op->oracle_info.mispred || op->oracle_info.misfetch || btb_ras_miss) {
       recovery_checkpoint = op;
       recovery_checkpoint->recovery_info.npc = op->oracle_info.npc;
       recovery_checkpoint_valid = TRUE;
       off_count++;
-      fdip_on_path = FALSE;
-      off_path_predicts = 0;
+      fdip_on_path_bp = FALSE;
+      fdip_on_path_pref = FALSE;
       if ((FDIP_STOP_ON_MISPRED && op->oracle_info.mispred) || (FDIP_STOP_ON_MISFETCH && op->oracle_info.misfetch) || (FDIP_STOP_ON_BTB_MISS && btb_ras_miss))
         runahead_disable = TRUE;
     } else {
-      fdip_on_path = TRUE;
-      off_path_predicts = 0;
+      fdip_on_path_bp = TRUE;
+      fdip_on_path_pref = TRUE;
     }
 
     if (op->oracle_info.mispred || op->oracle_info.misfetch)
@@ -225,7 +231,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     //Re-evaluate FDIP direction prediction based on the current oracle info
     bp_predict_op_evaluate(g_bp_data, op, req->target);
     op->cf_within_fetch = cf_num++;
-    if (!fdip_on_path) {
+    if (!fdip_on_path_bp) {
       //We may have mispredicted once but the branch PCs seen by the
       //frontend and FDIP still match
       recovery_checkpoint = op;
@@ -290,6 +296,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     fdip_clear_ftq();
     auto target =  bp_predict_op(g_bp_data, op, cf_num++, bp_pc);
     target = bp_predict_op_evaluate(g_bp_data, op, target);
+    predicts_after_recovery++;
     runahead_pc = bp_pc;
     runahead_disable = FALSE;
     recovery_checkpoint = op;
@@ -336,8 +343,9 @@ void fdip_recover(Recovery_Info *info) {
   last_runahead_uid = 0;
   runahead_pc = info->npc;
   runahead_disable = FALSE;
-  fdip_on_path = TRUE;
-  off_path_predicts = 0;
+  fdip_on_path_bp = TRUE;
+  fdip_on_path_pref = TRUE;
+  predicts_after_recovery = 0;
   fdip_update();
 }
 
@@ -357,7 +365,7 @@ bool fdip_prefetch(Addr target, Op *op) {
   if(!FDIP_ALWAYS_PREFETCH)
     line = (Inst_Info**)cache_access(&ic_stage->icache, target,
                               &line_addr, TRUE);
-  if (fdip_on_path) {
+  if (fdip_on_path_pref) {
     STAT_EVENT(ic_stage->proc_id, FDIP_ATTEMPTED_PREF_ON_PATH);
   } else {
     STAT_EVENT(ic_stage->proc_id, FDIP_ATTEMPTED_PREF_OFF_PATH);
@@ -444,14 +452,14 @@ void fdip_update() {
   while (predicts < FDIP_BP_PER_CYC && prefetches < FDIP_PREF_PER_CYC &&
           ftq.size() <= FDIP_MAX_RUNAHEAD &&
           !(FDIP_BREAK_ICACHE && cur_cl != orig_cl) &&
-          off_path_predicts <= MAX_OFF_PATH_PREDICTS) {
+          predicts_after_recovery <= MAX_OUTSTANDING_PREDICTS) {
     bool btb_ras_miss = false;
 
     Op* op = NULL;
     bool is_branch = false;
     Addr target = 0;
     // prediction
-    if (fdip_on_path) {
+    if (fdip_on_path_bp) {
       op = find_op(runahead_pc);
       is_branch = (op && op->table_info->cf_type)? true : false;
       if (is_branch) {
@@ -459,6 +467,7 @@ void fdip_update() {
         ASSERT(ic_stage->proc_id, op->fetch_addr == runahead_pc);
         target = bp_predict_op(g_bp_data, op, DUMMY_CFN, runahead_pc);
         predicts++;
+        predicts_after_recovery++;
         ftq.push(std::pair<Addr, ftq_req>(runahead_pc, ftq_req(
                                     target, cycle_count, *op,
                                     0, /*prefetched*/
@@ -468,8 +477,7 @@ void fdip_update() {
         btb_ras_miss = (op->oracle_info.btb_miss && op->oracle_info.pred) || target == 0;
         if (op->oracle_info.mispred || op->oracle_info.misfetch) {
           off_count++;
-          fdip_on_path = FALSE;
-          off_path_predicts = 0;
+          fdip_on_path_bp = FALSE;
           if ((FDIP_STOP_ON_MISPRED && op->oracle_info.mispred) || (FDIP_STOP_ON_MISFETCH && op->oracle_info.misfetch)) {
             runahead_disable = TRUE;
             break;
@@ -477,8 +485,7 @@ void fdip_update() {
         } else if (btb_ras_miss) {
           ASSERT(ic_stage->proc_id, !op->oracle_info.mispred && !op->oracle_info.misfetch);
           off_count++;
-          fdip_on_path = FALSE;
-          off_path_predicts = 0;
+          fdip_on_path_bp = FALSE;
           if (FDIP_STOP_ON_BTB_MISS) {
             runahead_disable = TRUE;
             break;
@@ -495,7 +502,7 @@ void fdip_update() {
         if (btb_target) {
           target = bp_predict_op(g_bp_data, op, DUMMY_CFN, runahead_pc);
           predicts++;
-          off_path_predicts++;
+          predicts_after_recovery++;
           STAT_EVENT(ic_stage->proc_id, FDIP_PRED_OFF_PATH);
         }
       }
@@ -522,8 +529,10 @@ void fdip_update() {
           if (success){
             STAT_EVENT(ic_stage->proc_id, op->oracle_info.pred ? 
                 FDIP_BRANCH_TAKEN_PREF : FDIP_NL_PREF);
-            if (fdip_on_path) {
+            if (fdip_on_path_pref) {
               STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ON_PATH);
+              if (!fdip_on_path_bp)
+                fdip_on_path_pref = FALSE;
             }
             else
               STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);
@@ -553,8 +562,10 @@ void fdip_update() {
           last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
           if (success) {
             STAT_EVENT(ic_stage->proc_id, FDIP_NL_PREF);
-            if (fdip_on_path) {
+            if (fdip_on_path_pref) {
               STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ON_PATH);
+              if (!fdip_on_path_bp)
+                fdip_on_path_pref = FALSE;
             }
             else
               STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);

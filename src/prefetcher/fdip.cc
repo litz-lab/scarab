@@ -196,7 +196,8 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
       STAT_EVENT(ic_stage->proc_id, FDIP_PRED_ON_PATH);
     else
       STAT_EVENT(ic_stage->proc_id, FDIP_PRED_OFF_PATH);
-    bool btb_ras_miss = (op->oracle_info.btb_miss && op->oracle_info.pred) || target == 0;
+    Flag bf = op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE;
+    bool btb_ras_miss = (op->oracle_info.btb_miss && op->oracle_info.pred) || (op->oracle_info.btb_miss && !op->oracle_info.pred && !bf) || target == 0;
     if (op->oracle_info.mispred || op->oracle_info.misfetch || btb_ras_miss) {
       recovery_checkpoint = op;
       recovery_checkpoint->recovery_info.npc = op->oracle_info.npc;
@@ -454,7 +455,6 @@ void fdip_update() {
           !(FDIP_BREAK_ICACHE && cur_cl != orig_cl) &&
           predicts_after_recovery <= MAX_OUTSTANDING_PREDICTS) {
     bool btb_ras_miss = false;
-
     Op* op = NULL;
     bool is_branch = false;
     Addr target = 0;
@@ -474,7 +474,8 @@ void fdip_update() {
                                     op->oracle_info.pred == TAKEN
                                     )));
         STAT_EVENT(ic_stage->proc_id, FDIP_PRED_ON_PATH);
-        btb_ras_miss = (op->oracle_info.btb_miss && op->oracle_info.pred) || target == 0;
+        Flag bf = op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE;
+        btb_ras_miss = (op->oracle_info.btb_miss && op->oracle_info.pred) || (op->oracle_info.btb_miss && !op->oracle_info.pred && !bf) || target == 0;
         if (op->oracle_info.mispred || op->oracle_info.misfetch) {
           off_count++;
           fdip_on_path_bp = FALSE;

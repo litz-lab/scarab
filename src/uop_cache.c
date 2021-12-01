@@ -32,7 +32,8 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_UOP_CACHE, ##args)
 
-#define UOP_CACHE_LINE_SIZE       ICACHE_LINE_SIZE
+// Uop cache is byte-addressable, so tag/set index are generated from full address (no offset)
+#define UOP_CACHE_LINE_SIZE       1
 #define UOP_QUEUE_SIZE            100 // at least UOP_CACHE_ASSOC * UOP_CACHE_MAX_UOPS_LINE
 #define UOP_CACHE_LINE_DATA_SIZE  sizeof(Uop_Cache_Data)
 
@@ -250,9 +251,9 @@ void accumulate_op(Op* op) {
     return;
   }
 
-  Addr cur_icache_line_addr = get_cache_line_addr(&uop_cache,
+  Addr cur_icache_line_addr = get_cache_line_addr(&ic->icache,
                                                   accumulating_pw.first);
-  Addr icache_line_addr = get_cache_line_addr(&uop_cache, op->inst_info->addr);
+  Addr icache_line_addr = get_cache_line_addr(&ic->icache, op->inst_info->addr);
 
   if (!cur_icache_line_addr) {
     accumulating_pw.first = op->inst_info->addr;

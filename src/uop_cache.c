@@ -87,7 +87,8 @@ Flag pw_insert(Uop_Cache_Data pw) {
 
   // Is the PW too big?
   if (lines_needed > UOP_CACHE_ASSOC) {
-    cache_invalidate(&uop_cache, pw.first, &line_addr);
+    return FALSE;
+  } else if (cache_access(&uop_cache, pw.first, &line_addr, FALSE)) {
     return FALSE;
   } else {
     // Insert it, taking appropriate number of lines

@@ -446,7 +446,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       if(PERFECT_BP) {
         op->oracle_info.pred      = op->oracle_info.dir;
         op->oracle_info.late_pred = op->oracle_info.dir;
-        pred_target               = op->oracle_info.target;
       } else {
         op->oracle_info.pred      = TAKEN;
         op->oracle_info.late_pred = TAKEN;
@@ -463,7 +462,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       if(PERFECT_BP) {
         op->oracle_info.pred      = op->oracle_info.dir;
         op->oracle_info.no_target = FALSE;
-        pred_target               = op->oracle_info.target;
       } else {
         op->oracle_info.pred = bp_data->bp->pred_func(op);
         if(USE_LATE_BP) {
@@ -500,43 +498,41 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     case CF_IBR:
       if(PERFECT_BP) {
         op->oracle_info.pred      = op->oracle_info.dir;
-        pred_target               = op->oracle_info.target;
-        op->oracle_info.no_target = FALSE;
+        op->oracle_info.late_pred = op->oracle_info.dir;
       } else {
         op->oracle_info.pred      = TAKEN;
         op->oracle_info.late_pred = TAKEN;
-        if(ENABLE_IBP) {
-          Addr ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op);
-          if(ibp_target) {
-            pred_target               = ibp_target;
-            op->oracle_info.no_target = FALSE;
-            op->oracle_info.ibp_miss  = FALSE;
-          } else
-            op->oracle_info.ibp_miss = TRUE;
-        }
       }
+      if(ENABLE_IBP) {
+        Addr ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op);
+        if(ibp_target) {
+          pred_target               = ibp_target;
+          op->oracle_info.no_target = FALSE;
+          op->oracle_info.ibp_miss  = FALSE;
+        } else
+          op->oracle_info.ibp_miss = TRUE;
       if(!op->off_path)
         STAT_EVENT(op->proc_id, CF_IBR_USED_TARGET_CORRECT +
             (pred_target != op->oracle_info.npc));
+      }
       break;
 
     case CF_ICALL:
       if(PERFECT_BP) {
         op->oracle_info.pred      = op->oracle_info.dir;
-        pred_target               = op->oracle_info.target;
-        op->oracle_info.no_target = FALSE;
+        op->oracle_info.late_pred = op->oracle_info.dir;
       } else {
         op->oracle_info.pred      = TAKEN;
         op->oracle_info.late_pred = TAKEN;
-        if(ENABLE_IBP) {
-          Addr ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op);
-          if(ibp_target) {
-            pred_target               = ibp_target;
-            op->oracle_info.no_target = FALSE;
-            op->oracle_info.ibp_miss  = FALSE;
-          } else
-            op->oracle_info.ibp_miss = TRUE;
-        }
+      }
+      if(ENABLE_IBP) {
+        Addr ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op);
+        if(ibp_target) {
+          pred_target               = ibp_target;
+          op->oracle_info.no_target = FALSE;
+          op->oracle_info.ibp_miss  = FALSE;
+        } else
+          op->oracle_info.ibp_miss = TRUE;
       }
       if(ENABLE_CRS)
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) :
@@ -563,14 +559,14 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     case CF_RET:
       if(PERFECT_BP) {
         op->oracle_info.pred      = op->oracle_info.dir;
-        pred_target               = op->oracle_info.target;
+        op->oracle_info.late_pred = op->oracle_info.dir;
       } else {
         op->oracle_info.pred      = TAKEN;
         op->oracle_info.late_pred = TAKEN;
-        if(ENABLE_CRS)
-          pred_target = CRS_REALISTIC ? bp_crs_realistic_pop(bp_data, op) :
-                                        bp_crs_pop(bp_data, op);
       }
+      if(ENABLE_CRS)
+        pred_target = CRS_REALISTIC ? bp_crs_realistic_pop(bp_data, op) :
+                                      bp_crs_pop(bp_data, op);
       if(!op->off_path)
         STAT_EVENT(op->proc_id, CF_RET_USED_TARGET_CORRECT +
                                   (pred_target != op->oracle_info.npc));

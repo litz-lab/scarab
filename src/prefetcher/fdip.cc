@@ -30,13 +30,12 @@ extern "C" {
 * it will reach the maximum size of TAGE.
 * Since the default size of TAGE buffer is 240, the maximum number of off-path predictions should be less than that for safe
 */
-#define MAX_OUTSTANDING_PREDICTS 120
 
 struct ftq_req {
   Addr target;
   Counter prefetch_cycle;
   Op op;
-  bool prefetched; 
+  bool prefetched;
   bool taken;
 
   ftq_req(Addr _target, Counter _prefetch_cycle, Op _op, bool _prefetched,
@@ -65,6 +64,9 @@ Hash_Table top_mispred_br;
 uns64 recovery_count = 0;
 uns64 off_count = 0;
 uns64 predicts_after_recovery = 0;
+uns64 outstanding_prefs = 0;
+Flag mem_req_failed = FALSE;
+uns64 max_outstanding_predicts = (uns64)(NODE_TABLE_SIZE * 0.4);
 
 /**************************************************************************************/
 /* init_topk_mispred: list of branches that provide a given coverage of resteers */
@@ -180,10 +182,6 @@ void patch_oracle_info(Op *op, Op *req, Addr bp_pc) {
  */ 
 Addr fdip_pred(Addr bp_pc, Op *op) {
   if (ftq.empty()) {
-    // FTQ should never be empty if we have a perfect branch predictor and no btb miss.
-    if (!FDIP_BREAK_ICACHE)
-      ASSERT(ic_stage->proc_id, false);
-
     /* If the FTQ is empty we have not been able to predict ahead. Should
       * be a corner case e.g. directly after a recovery.
       */
@@ -210,14 +208,16 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     } else {
       fdip_on_path_bp = TRUE;
       fdip_on_path_pref = TRUE;
+      fdip_new_branch(op->fetch_addr, op);
     }
 
-    if (op->oracle_info.mispred || op->oracle_info.misfetch)
+    if (op->oracle_info.mispred || op->oracle_info.misfetch || target)
       runahead_pc = target;
-    else if (btb_ras_miss)
+    else
       runahead_pc++;
 
     last_cl_prefetched = 0;
+    outstanding_prefs = 0;
     STAT_EVENT(ic_stage->proc_id, FDIP_PRED_FTQ_EMPTY);
     return target;
   }
@@ -256,6 +256,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
       STAT_EVENT(ic_stage->proc_id, FDIP_PREF_CORRECT_PATH);
       INC_STAT_EVENT(ic_stage->proc_id, FDIP_SAVED_PREF_CYC,
                   cycle_count - req->prefetch_cycle);
+      outstanding_prefs--;
     }
     ftq.pop();
     return target;
@@ -329,6 +330,7 @@ void fdip_clear_ftq() {
     }
     ftq.pop();
   }
+  outstanding_prefs = 0;
 }
 
 /* When a mispredicted branch is resolved, the frontend recovers the branch
@@ -341,7 +343,8 @@ void fdip_recover(Recovery_Info *info) {
   ASSERT(ic_stage->proc_id, !PERFECT_NT_BTB || ftq.empty());
   fdip_clear_ftq();
   (&op_buf)->current = NULL;
-  last_runahead_uid = 0;
+  if (last_runahead_uid != max_runahead_uid)
+    last_runahead_uid = 0;
   runahead_pc = info->npc;
   runahead_disable = FALSE;
   fdip_on_path_bp = TRUE;
@@ -395,6 +398,8 @@ bool fdip_prefetch(Addr target, Op *op) {
             0)) {
         STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
         success = true;
+      } else {
+        mem_req_failed = TRUE;
       }
     }
   }
@@ -437,6 +442,8 @@ int fdip_dual_path_prefetch(Addr target, Op* op) {
 void fdip_update() {
   uint32_t predicts = 0;
   uint32_t prefetches = 0;
+  uns64 orig_last_runahead_uid = last_runahead_uid;
+  uint32_t taken_branches = 0;
 
   if (ftq.size() > FDIP_MAX_RUNAHEAD || runahead_disable) {
     return;
@@ -446,15 +453,37 @@ void fdip_update() {
   // is looked up once per cycle, returning all branches in the cache line
   const Addr orig_cl = get_cache_line_addr(&ic->icache, runahead_pc);
   Addr cur_cl = orig_cl;
+  mem_req_failed = FALSE;
+
+  if (FDIP_PERFECT_RUNAHEAD)
+    ASSERT(ic_stage->proc_id, !FDIP_BREAK_ICACHE);
 
   // Find the next branch after the runahead PC. As the BTB/BP is addressed
   // with a PC and not cache line address we need to byte-wise increment the
   // runahead PC
-  while (predicts < FDIP_BP_PER_CYC && prefetches < FDIP_PREF_PER_CYC &&
-          ftq.size() <= FDIP_MAX_RUNAHEAD &&
-          !(FDIP_BREAK_ICACHE && cur_cl != orig_cl) &&
-          predicts_after_recovery <= MAX_OUTSTANDING_PREDICTS) {
+  /* (1) FDIP_PERFECT_RUNAHEAD : FDIP runs ahead enough (ISSUE_WIDTH) regardless of the number of taken branches.
+     (2) FDIP_MAX_TAKEN_BRANCHES : 2 by default
+     (3) last_runahead_uid != max_runahead_uid : necessary to prevent FDIP from trying to run ahead when there are not available decoded ops.
+                                                 max_runahead_uid is the maximum uid of a branch available in the lookahead buffer (op_buf),
+                                                 and last_runahead_uid is the uid of the branch that FDIP predicted most recently.
+     (4) outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES : outstanding_prefs is the number of outstanding prefetches not per cycle.
+                                                 It is incremented by 1 whenever FDIP emits a cache line prefetch and decremented by 1 whenever the backend consumes a branch from FTQ. It is reset by 0 whenever FTQ is cleared and the backend hits an FTQ-empty case.
+     (5) predicts_after_recovery < MAX_OUTSTANDING_PREDICTS : necessary to ensure that the TAGE buffer doesn't become full.
+     (6) !mem_req_failed : necessary for FDIP to break out from the while loop when MLC queue is full.
+                           Even with outstanding_pref = 1, the queue becomes full because the backend consumes a branch from FTQ and decreases the count (outstanding_prefs), but it is possible that the requested cache line has not yet loaded due to the latency. In this case, FDIP runs ahead again and continuously increases the number of memory requests although all the previous requests have not yet been handled.
+  */
+  while ((FDIP_PERFECT_RUNAHEAD && !mem_req_failed &&
+                ((!fdip_on_path_bp && (outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES) && predicts_after_recovery < max_outstanding_predicts) ||
+                 (fdip_on_path_bp && (last_runahead_uid < orig_last_runahead_uid + ISSUE_WIDTH) && (last_runahead_uid != max_runahead_uid)))) ||
+      ((!FDIP_PERFECT_RUNAHEAD &&
+                (taken_branches < FDIP_MAX_TAKEN_BRANCHES) &&
+                (last_runahead_uid != max_runahead_uid) &&
+                (outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES) &&
+                (predicts_after_recovery < max_outstanding_predicts) &&
+                !mem_req_failed))) {
     bool btb_ras_miss = false;
+    bool ftq_pushed = false;
+
     Op* op = NULL;
     bool is_branch = false;
     Addr target = 0;
@@ -473,9 +502,12 @@ void fdip_update() {
                                     0, /*prefetched*/
                                     op->oracle_info.pred == TAKEN
                                     )));
+        ftq_pushed = true;
         STAT_EVENT(ic_stage->proc_id, FDIP_PRED_ON_PATH);
         Flag bf = op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE;
         btb_ras_miss = (op->oracle_info.btb_miss && op->oracle_info.pred) || (op->oracle_info.btb_miss && !op->oracle_info.pred && !bf) || target == 0;
+        if (op->oracle_info.pred)
+          taken_branches++;
         if (op->oracle_info.mispred || op->oracle_info.misfetch) {
           off_count++;
           fdip_on_path_bp = FALSE;
@@ -505,6 +537,8 @@ void fdip_update() {
           predicts++;
           predicts_after_recovery++;
           STAT_EVENT(ic_stage->proc_id, FDIP_PRED_OFF_PATH);
+          if (op->oracle_info.pred)
+            taken_branches++;
         }
       }
     }
@@ -524,20 +558,20 @@ void fdip_update() {
         } else {
           bool success = fdip_prefetch(target, op);
           prefetches += success;
-          if (ftq.size())
+          if (ftq_pushed)
             ftq.back().second.prefetched = success;
           last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
           if (success){
+            outstanding_prefs++;
             STAT_EVENT(ic_stage->proc_id, op->oracle_info.pred ? 
                 FDIP_BRANCH_TAKEN_PREF : FDIP_NL_PREF);
-            if (fdip_on_path_pref) {
+            if (fdip_on_path_pref)
               STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ON_PATH);
-              if (!fdip_on_path_bp)
-                fdip_on_path_pref = FALSE;
-            }
             else
               STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);
           }
+          if (!fdip_on_path_bp && fdip_on_path_pref)
+            fdip_on_path_pref = FALSE;
         }
       }
       runahead_pc = target;
@@ -550,31 +584,42 @@ void fdip_update() {
     // Boomerang CAN distinguish these cases by storing the end of the bbl
     if (!target || btb_ras_miss) { // FDIP continues as for non-branch
       // If continuing to next cache line (no control flow change), prefetch it
-      bool continuing_to_next_cl = !last_cl_prefetched? TRUE : (get_cache_line_addr(&ic->icache, runahead_pc+1) ==
+      bool continuing_to_next_cl = !last_cl_prefetched? TRUE : (get_cache_line_addr(&ic->icache, runahead_pc) ==
           last_cl_prefetched + ic->icache.offset_mask + 1)? TRUE : FALSE;
       if (continuing_to_next_cl) {
-        if (FDIP_PREF_USEFUL_LINE && !will_be_accessed(runahead_pc+1)) {
-          last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
+        if (FDIP_PREF_USEFUL_LINE && !will_be_accessed(runahead_pc)) {
+          last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc);
         } else {
-          bool success = fdip_prefetch(runahead_pc+1, NULL);
+          bool success = fdip_prefetch(runahead_pc, NULL);
           prefetches += success;
-          if (ftq.size())
+          if (ftq_pushed)
             ftq.back().second.prefetched = success;
-          last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc+1);
+          last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc);
           if (success) {
+            outstanding_prefs++;
             STAT_EVENT(ic_stage->proc_id, FDIP_NL_PREF);
-            if (fdip_on_path_pref) {
+            if (fdip_on_path_pref)
               STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ON_PATH);
-              if (!fdip_on_path_bp)
-                fdip_on_path_pref = FALSE;
-            }
             else
               STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);
           }
+          if (!fdip_on_path_bp && fdip_on_path_pref)
+            fdip_on_path_pref = FALSE;
         }
       }
       runahead_pc++;
     }
     cur_cl = get_cache_line_addr(&ic->icache, runahead_pc);
   }
+
+  if (taken_branches >= FDIP_MAX_TAKEN_BRANCHES)
+    STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_MAX_TAKEN_BRANCHES);
+  else if (last_runahead_uid == max_runahead_uid)
+    STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_MAX_RUNAHEAD_UID);
+  else if (outstanding_prefs >= FDIP_MAX_OUTSTANDING_PREFETCHES)
+    STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_MAX_OUTSTANDING_PREFETCHES);
+  else if (predicts_after_recovery >= max_outstanding_predicts)
+    STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_TAGE_BUFFER_LIMIT);
+  else if (mem_req_failed)
+    STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_FULL_MLC_QUEUE);
 }

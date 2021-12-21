@@ -133,7 +133,6 @@ void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
 Flag icache_off_path(void);
 Op* find_op(Addr pc);
 Flag will_be_accessed(Addr pc);
-Flag is_mispredicted(const Addr prediction, Op* op_pred);
 
 // For branch stat collection
 Flag in_icache(Addr addr);

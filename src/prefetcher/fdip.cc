@@ -344,7 +344,6 @@ void fdip_recover(Recovery_Info *info) {
   ASSERT(ic_stage->proc_id, off_count == recovery_count);
   ASSERT(ic_stage->proc_id, !PERFECT_NT_BTB || ftq.empty());
   fdip_clear_ftq();
-  (&op_buf)->current = NULL;
   if (last_runahead_uid != max_runahead_uid)
     last_runahead_uid = 0;
   runahead_pc = info->npc;

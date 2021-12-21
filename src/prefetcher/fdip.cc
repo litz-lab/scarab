@@ -25,12 +25,6 @@ extern "C" {
 }
 
 #define DUMMY_CFN ~0
-/*
-* If FDIP doesn't stop running ahead and the ic stage keeps waiting for a BTB miss resolved on IC_WAIT_FOR_MISS,
-* it will reach the maximum size of TAGE.
-* Since the default size of TAGE buffer is 240, the maximum number of off-path predictions should be less than that for safe
-*/
-
 struct ftq_req {
   Addr target;
   Counter prefetch_cycle;
@@ -66,7 +60,11 @@ uns64 off_count = 0;
 uns64 predicts_after_recovery = 0;
 uns64 outstanding_prefs = 0;
 Flag mem_req_failed = FALSE;
-uns64 max_outstanding_predicts = (uns64)(NODE_TABLE_SIZE * 0.4);
+/*
+ * FDIP cannot use all TAGE entries because when the backend consumes a branch, it still takes a while until it is computed.
+ * TAGE_SIZE = FDIP_BRANCHES (max_outstanding_predicts) + BRANCHES_IN_PIPELINE
+ */
+uns64 max_outstanding_predicts = (uns64)(NODE_TABLE_SIZE * 0.5);
 
 /**************************************************************************************/
 /* init_topk_mispred: list of branches that provide a given coverage of resteers */
@@ -117,6 +115,10 @@ void fdip_retire(Op *op) {
     op->recovery_info.branch_id ==
     recovery_checkpoint->recovery_info.branch_id) {
     recovery_checkpoint_valid = FALSE;
+  }
+  // predicts_after_recovery can be already 0 because there are branches that have not been predicted by FDIP (ftq empty).
+  if (predicts_after_recovery) {
+    predicts_after_recovery--;
   }
 }
 
@@ -440,7 +442,6 @@ int fdip_dual_path_prefetch(Addr target, Op* op) {
 
 // Called each cycle to trigger runahead prefetches
 void fdip_update() {
-  uint32_t predicts = 0;
   uint32_t prefetches = 0;
   uns64 orig_last_runahead_uid = last_runahead_uid;
   uint32_t taken_branches = 0;
@@ -461,17 +462,20 @@ void fdip_update() {
   // Find the next branch after the runahead PC. As the BTB/BP is addressed
   // with a PC and not cache line address we need to byte-wise increment the
   // runahead PC
-  /* (1) FDIP_PERFECT_RUNAHEAD : FDIP runs ahead enough (ISSUE_WIDTH) regardless of the number of taken branches.
-     (2) FDIP_MAX_TAKEN_BRANCHES : 2 by default
-     (3) last_runahead_uid != max_runahead_uid : necessary to prevent FDIP from trying to run ahead when there are not available decoded ops.
-                                                 max_runahead_uid is the maximum uid of a branch available in the lookahead buffer (op_buf),
-                                                 and last_runahead_uid is the uid of the branch that FDIP predicted most recently.
-     (4) outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES : outstanding_prefs is the number of outstanding prefetches not per cycle.
-                                                 It is incremented by 1 whenever FDIP emits a cache line prefetch and decremented by 1 whenever the backend consumes a branch from FTQ. It is reset by 0 whenever FTQ is cleared and the backend hits an FTQ-empty case.
-     (5) predicts_after_recovery < MAX_OUTSTANDING_PREDICTS : necessary to ensure that the TAGE buffer doesn't become full.
-     (6) !mem_req_failed : necessary for FDIP to break out from the while loop when MLC queue is full.
-                           Even with outstanding_pref = 1, the queue becomes full because the backend consumes a branch from FTQ and decreases the count (outstanding_prefs), but it is possible that the requested cache line has not yet loaded due to the latency. In this case, FDIP runs ahead again and continuously increases the number of memory requests although all the previous requests have not yet been handled.
-  */
+  /*
+   * (1) FDIP_PERFECT_RUNAHEAD : FDIP runs ahead enough (ISSUE_WIDTH) regardless of the number of taken branches.
+   * (2) FDIP_MAX_TAKEN_BRANCHES : 2 by default
+   * (3) last_runahead_uid != max_runahead_uid : necessary to prevent FDIP from trying to run ahead when there are not available decoded ops.
+   *     max_runahead_uid is the maximum uid of a branch available in the lookahead buffer (op_buf),
+   *     and last_runahead_uid is the uid of the branch that FDIP predicted most recently.
+   * (4) outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES : outstanding_prefs is the number of outstanding prefetches not per cycle.
+   *     It is incremented by 1 whenever FDIP emits a cache line prefetch and decremented by 1 whenever the backend consumes a branch from FTQ.
+   *     It is reset by 0 whenever FTQ is cleared and the backend hits an FTQ-empty case.
+   * (5) predicts_after_recovery < MAX_OUTSTANDING_PREDICTS : necessary to ensure that the TAGE buffer doesn't become full.
+   * (6) !mem_req_failed : necessary for FDIP to break out from the while loop when MLC queue is full.
+   *     Even with outstanding_pref = 1, the queue becomes full because the backend consumes a branch from FTQ and decreases the count (outstanding_prefs), but it is possible that the requested cache line has not yet loaded due to the latency.
+   *     In this case, FDIP runs ahead again and continuously increases the number of memory requests although all the previous requests have not yet been handled.
+   */
   while ((FDIP_PERFECT_RUNAHEAD && !mem_req_failed &&
                 ((!fdip_on_path_bp && (outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES) && predicts_after_recovery < max_outstanding_predicts) ||
                  (fdip_on_path_bp && (last_runahead_uid < orig_last_runahead_uid + ISSUE_WIDTH) && (last_runahead_uid != max_runahead_uid)))) ||
@@ -481,6 +485,7 @@ void fdip_update() {
                 (outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES) &&
                 (predicts_after_recovery < max_outstanding_predicts) &&
                 !mem_req_failed))) {
+
     bool btb_ras_miss = false;
     bool ftq_pushed = false;
 
@@ -495,7 +500,6 @@ void fdip_update() {
         fdip_new_branch(runahead_pc, op);
         ASSERT(ic_stage->proc_id, op->fetch_addr == runahead_pc);
         target = bp_predict_op(g_bp_data, op, DUMMY_CFN, runahead_pc);
-        predicts++;
         predicts_after_recovery++;
         ftq.push(std::pair<Addr, ftq_req>(runahead_pc, ftq_req(
                                     target, cycle_count, *op,
@@ -534,7 +538,6 @@ void fdip_update() {
         Addr* btb_target = g_bp_data->bp_btb->pred_func(g_bp_data, op);
         if (btb_target) {
           target = bp_predict_op(g_bp_data, op, DUMMY_CFN, runahead_pc);
-          predicts++;
           predicts_after_recovery++;
           STAT_EVENT(ic_stage->proc_id, FDIP_PRED_OFF_PATH);
           if (op->oracle_info.pred)

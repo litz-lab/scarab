@@ -394,7 +394,7 @@ bool fdip_prefetch(Addr target, Op *op) {
       }
     } else {
       if(new_mem_req(MRT_IFETCH, ic_stage->proc_id, line_addr,
-            ICACHE_LINE_SIZE, 0, NULL, icache_fill_line,
+            ICACHE_LINE_SIZE, 0, NULL, instr_fill_line,
             unique_count,
             0)) {
         STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);

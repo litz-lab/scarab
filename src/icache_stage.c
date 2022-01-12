@@ -431,7 +431,7 @@ void update_icache_stage() {
 
             ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->line_addr)
             if(new_mem_req(MRT_IFETCH, ic->proc_id, ic->line_addr,
-                           ICACHE_LINE_SIZE, 0, NULL, icache_fill_line,
+                           ICACHE_LINE_SIZE, 0, NULL, instr_fill_line,
                            unique_count,
                            0)) {  // CMP maybe unique_count_per_core[proc_id]?
               ic->next_state = IC_WAIT_FOR_MISS;
@@ -469,7 +469,7 @@ void update_icache_stage() {
           // start a memreq to fill icache, but do not cause any stalls. 
           // Use for more inclusivity between IC and UC
           new_mem_req(MRT_IFETCH, ic->proc_id, ic->line_addr,
-                           ICACHE_LINE_SIZE, 0, NULL, icache_fill_line,
+                           ICACHE_LINE_SIZE, 0, NULL, instr_fill_line,
                            unique_count,
                            0);
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
@@ -1149,4 +1149,13 @@ void log_stats_ic_miss() {
   STAT_EVENT(ic->proc_id, ICACHE_MISS);
   STAT_EVENT(ic->proc_id, POWER_ICACHE_MISS);
   STAT_EVENT(ic->proc_id, ICACHE_MISS_ONPATH + ic->off_path);
+}
+// Wrapper callback for any instruction memreq.
+Flag instr_fill_line(Mem_Req* req) {
+  ASSERT(ic->proc_id, req->type == MRT_IPRF || req->type == MRT_IFETCH);
+  Flag success = FALSE;
+
+  if (mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_IFETCH))
+    success = icache_fill_line(req);
+  return success;
 }

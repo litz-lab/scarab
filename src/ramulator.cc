@@ -282,7 +282,7 @@ void to_ramulator_req(const Mem_Req* scarab_req, Request* ramulator_req) {
     ramulator_req->type = Request::Type::WRITE;
   else if(scarab_req->type == MRT_DFETCH || scarab_req->type == MRT_DSTORE ||
           scarab_req->type == MRT_IFETCH || scarab_req->type == MRT_IPRF ||
-          scarab_req->type == MRT_DPRF)
+          scarab_req->type == MRT_DPRF || scarab_req->type == MRT_UOCPRF)
     ramulator_req->type = Request::Type::READ;
   else
     ASSERTM(scarab_req->proc_id, false,

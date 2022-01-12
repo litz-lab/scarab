@@ -149,5 +149,8 @@ DEF_PARAM(fdip_dual_path_pref_ic_enable , FDIP_DUAL_PATH_PREF_IC_ENABLE    , Fla
 DEF_PARAM(fdip_dual_path_pref_uoc_enable , FDIP_DUAL_PATH_PREF_UOC_ENABLE  , Flag    , Flag    , FALSE, ) //uop cache
 DEF_PARAM(top_mispred_br_filepath       , TOP_MISPRED_BR_FILEPATH          , char*   , string  , "br_resteer_coverage.csv", )
 DEF_PARAM(top_mispred_br_resteer_coverage, TOP_MISPRED_BR_RESTEER_COVERAGE , float   , float   , 0, )
+// FDIP issues uop cache prefetch concurrently with icache prefetch
+DEF_PARAM(uoc_pref                      , UOC_PREF                         , Flag    , Flag    , FALSE, )
 // Only prefetch the correct path into the uop cache.
 DEF_PARAM(uoc_oracle_pref               , UOC_ORACLE_PREF                  , Flag    , Flag    , FALSE, )
+DEF_PARAM(uoc_zero_latency_pref         , UOC_ZERO_LATENCY_PREF            , Flag    , Flag    , FALSE, )

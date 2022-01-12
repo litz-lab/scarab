@@ -24,7 +24,9 @@
 #include "statistics.h"
 
 #include "libs/cache_lib.h"
+#include "memory/memory.h"
 #include "memory/memory.param.h"
+#include "prefetcher/pref.param.h"
 #include "uop_cache.h"
 
 /**************************************************************************************/
@@ -282,20 +284,15 @@ void accumulate_op(Op* op) {
   accumulating_pw.n_uops++;
 };
 
-// Need first, last (for determining if instr is within the PW range) and n_uops (# entries to occupy)
-// Using lookahead buffer, the first element should be the next on-path instr (target).
-// Then count the number of instructions until the next branch (next Taken branch?).
-// Should be able to determine if branch is Taken by checking if next op is different than cur op addr plus offset.
-
-// Will need new function, loosely following findOp called getPW(target)
-// STart out with get_current since we may be running ahead. Find op that corresponds to target (next instr) - Assert it is found.
-// Continue forward to the next branch, counting the number of ops.
-// Return Uop_Cache_Data (not pointer)
-Flag uop_cache_prefetch(Addr pw_start_addr, Flag fdip_on_path) {
+Flag uop_cache_fill_prefetch(Addr pw_start_addr, Flag fdip_on_path) {
   Uop_Cache_Data pw;
   if (UOP_CACHE_SIZE == 0) {
     return FALSE;
   }
+
+  // on-path / off-path is not working, even for correct-path prefetching.
+  fdip_on_path = FALSE; // just use legacy method.
+
   if (fdip_on_path) {
     pw = get_pw_lookahead_buffer(pw_start_addr);
   } else {
@@ -312,4 +309,23 @@ Flag uop_cache_prefetch(Addr pw_start_addr, Flag fdip_on_path) {
   Flag prefetched = pw_insert(pw);
   INC_STAT_EVENT(0, UOP_CACHE_PREFETCH, prefetched);
   return prefetched;
+}
+
+Flag uop_cache_issue_prefetch(Addr pw_start_addr, Flag on_path) {
+  int prefetch_success = FALSE;
+
+  if (UOC_ZERO_LATENCY_PREF) {
+    prefetch_success = uop_cache_fill_prefetch(pw_start_addr, on_path);
+  } else {
+    // If no op is provided, on_path is assumed.
+    prefetch_success = new_mem_req(MRT_UOCPRF, 0, pw_start_addr,
+              ICACHE_LINE_SIZE, DECODE_CYCLES, NULL, instr_fill_line,
+              unique_count,
+              0);
+    if(!prefetch_success) {
+      STAT_EVENT(0, UOP_CACHE_PREFETCH_FAILED_MEMREQ_FAILED);
+    }
+  }
+
+  return prefetch_success;
 }

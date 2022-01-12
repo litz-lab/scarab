@@ -1202,12 +1202,17 @@ void log_stats_ic_miss() {
   STAT_EVENT(ic->proc_id, POWER_ICACHE_MISS);
   STAT_EVENT(ic->proc_id, ICACHE_MISS_ONPATH + ic->off_path);
 }
-// Wrapper callback for any instruction memreq.
-Flag instr_fill_line(Mem_Req* req) {
-  ASSERT(ic->proc_id, req->type == MRT_IPRF || req->type == MRT_IFETCH);
-  Flag success = FALSE;
 
+// Wrapper callback for any instruction memreq.
+// This must always return TRUE so that memreq is satisfied that
+// done_func is finished and does not need to be retried.
+// (uop_cache_fill_prefetch will fail for never-seen PWs on the off-path).
+Flag instr_fill_line(Mem_Req* req) {
+  ASSERT(ic->proc_id, req->type == MRT_IPRF || req->type == MRT_UOCPRF || req->type == MRT_IFETCH);
+  
   if (mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_IFETCH))
-    success = icache_fill_line(req);
-  return success;
+    icache_fill_line(req);
+  if (mem_req_is_type(req, MRT_UOCPRF))
+    uop_cache_fill_prefetch(req->addr, !req->off_path);
+  return TRUE;
 }

@@ -101,6 +101,8 @@ void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic) {
   if ((FDIP_DUAL_PATH_PREF_IC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ENABLE)
         && TOP_MISPRED_BR_RESTEER_COVERAGE)
     init_topk_mispred();
+  // Only one of these prefetching options should be set.
+  ASSERT(ic_stage->proc_id, UOC_ORACLE_PREF + UOC_PREF + FDIP_DUAL_PATH_PREF_UOC_ENABLE <= 1);
 }
 
 /* Called when a branch completes in the functional unit */
@@ -220,7 +222,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     
     // Also prefetch for the case where FTQ is empty.
     if (UOC_ORACLE_PREF) {
-        uop_cache_prefetch(op->oracle_info.npc, true); // verify this section. fdip_on_path
+        uop_cache_issue_prefetch(op->oracle_info.npc, true);
     }
 
     last_cl_prefetched = 0;
@@ -357,7 +359,7 @@ void fdip_recover(Recovery_Info *info) {
   fdip_on_path_pref = TRUE;
   predicts_after_recovery = 0;
   if (UOC_ORACLE_PREF) {
-    uop_cache_prefetch(info->npc, fdip_on_path_pref);
+    uop_cache_issue_prefetch(info->npc, fdip_on_path_pref);
   }
   fdip_update();
 }
@@ -389,7 +391,7 @@ bool fdip_prefetch(Addr target, Op *op) {
       Mem_Req req;
       req.off_path             = op ? op->off_path : FALSE;
       req.off_path_confirmed   = FALSE;
-      req.type                 = MRT_IFETCH;
+      req.type                 = MRT_IPRF;
       req.proc_id              = ic_stage->proc_id;
       req.addr                 = line_addr;
       req.oldest_op_unique_num = (Counter)0;
@@ -401,7 +403,7 @@ bool fdip_prefetch(Addr target, Op *op) {
         success = true;
       }
     } else {
-      if(new_mem_req(MRT_IFETCH, ic_stage->proc_id, line_addr,
+      if(new_mem_req(MRT_IPRF, ic_stage->proc_id, line_addr,
             ICACHE_LINE_SIZE, 0, NULL, instr_fill_line,
             unique_count,
             0)) {
@@ -438,8 +440,8 @@ int fdip_dual_path_prefetch(Addr target, Op* op) {
                     icache_pref);
   }
   if (FDIP_DUAL_PATH_PREF_UOC_ENABLE) {
-    uoc_pref += uop_cache_prefetch(op->pred_target, fdip_on_path_pref);
-    uoc_pref += uop_cache_prefetch(op->pc_plus_offset, fdip_on_path_pref);
+    uoc_pref += uop_cache_issue_prefetch(op->pred_target, fdip_on_path_pref && op->oracle_info.pred);
+    uoc_pref += uop_cache_issue_prefetch(op->pc_plus_offset, fdip_on_path_pref && !op->oracle_info.pred);
     STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_TRIGGERED);
     INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_EMITTED,
                     uoc_pref);
@@ -459,8 +461,6 @@ void fdip_update() {
 
   // Predict branches across cache lines. In many implementations, the BTB
   // is looked up once per cycle, returning all branches in the cache line
-  const Addr orig_cl = get_cache_line_addr(&ic->icache, runahead_pc);
-  Addr cur_cl = orig_cl;
   mem_req_failed = FALSE;
 
   if (FDIP_PERFECT_RUNAHEAD)
@@ -517,7 +517,7 @@ void fdip_update() {
         // No matter how branch is predicted, prefetch the correct next PW.
         // Only predict branches that are found when on the on-path.
         if (UOC_ORACLE_PREF) {
-          uop_cache_prefetch(op->oracle_info.npc, true); // verify this section.
+          uop_cache_issue_prefetch(op->oracle_info.npc, true); // Does this hit every time after recovery? If so then the prefetch at fdip_recover is redundant
         }
         STAT_EVENT(ic_stage->proc_id, FDIP_PRED_ON_PATH);
         Flag bf = op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE;
@@ -575,6 +575,8 @@ void fdip_update() {
           prefetches += success;
           if (ftq_pushed)
             ftq.back().second.prefetched = success;
+          if (UOC_PREF)
+            uop_cache_issue_prefetch(target, fdip_on_path_pref);
           last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
           if (success){
             outstanding_prefs++;
@@ -609,6 +611,8 @@ void fdip_update() {
           prefetches += success;
           if (ftq_pushed)
             ftq.back().second.prefetched = success;
+          if (UOC_PREF)
+            uop_cache_issue_prefetch(target, fdip_on_path_pref);
           last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc);
           if (success) {
             outstanding_prefs++;
@@ -624,7 +628,6 @@ void fdip_update() {
       }
       runahead_pc++;
     }
-    cur_cl = get_cache_line_addr(&ic->icache, runahead_pc);
   }
 
   if (taken_branches >= FDIP_MAX_TAKEN_BRANCHES)
@@ -637,4 +640,8 @@ void fdip_update() {
     STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_TAGE_BUFFER_LIMIT);
   else if (mem_req_failed)
     STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_FULL_MLC_QUEUE);
+}
+
+Flag fdip_pref_off_path(void) {
+  return fdip_on_path_pref;
 }

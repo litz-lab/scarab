@@ -102,6 +102,8 @@ struct Mem_Req_struct {
                               set after the branch resolves */
   Mem_Req_State            state;    /* what state is the miss in? */
   Mem_Req_Type             type;     /* what kind of miss is it? */
+  /* Bit string recording all Mem_Req_Type(s) that were coalesced into this request. */
+  uns                      types;
   struct Mem_Queue_struct* queue;    /* Pointer to the queue this entry is in */
   Counter                  priority; /* priority of the miss */
   Addr                     addr;     /* address to fetch */
@@ -193,6 +195,10 @@ struct Mem_Req_struct {
 Flag mem_req_type_is_demand(Mem_Req_Type type);
 Flag mem_req_type_is_prefetch(Mem_Req_Type type);
 Flag mem_req_type_is_stalling(Mem_Req_Type type);
+
+/* Returns whether this type either started or was ever coalesced into this mem_req. */
+Flag mem_req_is_type(Mem_Req* req, Mem_Req_Type type);
+void mem_req_set_types(Mem_Req* req, Mem_Req_Type type);
 
 /**************************************************************************************/
 /* Externs */

@@ -2936,6 +2936,8 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
   Flag old_off_path_confirmed = req->off_path_confirmed;
   Flag old_type               = req->type;
 
+  mem_req_set_types(req, type);  // Update record of types that merged into this memreq
+
   /* Adjust op related fields in the request */
   if(op) {
     ASSERT(req->proc_id, req->proc_id == op->proc_id);
@@ -3415,6 +3417,7 @@ static void mem_init_new_req(
   new_req->off_path_confirmed = FALSE;
   new_req->state              = to_mlc ? MRS_MLC_NEW : MRS_L1_NEW;
   new_req->type               = type;
+  mem_req_set_types(new_req, type);
   new_req->queue              = to_mlc ? &mem->mlc_queue : &mem->l1_queue;
   new_req->proc_id            = proc_id;
   new_req->addr               = addr;

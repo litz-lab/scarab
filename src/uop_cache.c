@@ -89,8 +89,10 @@ Flag pw_insert(Uop_Cache_Data pw) {
 
   // Is the PW too big?
   if (lines_needed > UOP_CACHE_ASSOC) {
+    STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_TOO_LONG + pw.prefetch);
     return FALSE;
   } else if (cache_access(&uop_cache, pw.first, &line_addr, FALSE)) {
+    STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_CACHE_HIT + pw.prefetch);
     return FALSE;
   } else {
     // Insert it, taking appropriate number of lines

@@ -73,8 +73,11 @@ void init_uop_cache() {
   // used for prefetching
   init_hash_table(&pc_to_pw, "Log of all PWs decoded", 15000000, 
                     sizeof(Uop_Cache_Data));
-  init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
-             UOP_CACHE_LINE_DATA_SIZE, REPL_TRUE_LRU);
+  // The cache library computes the number of entries from line_size and cache_size,
+  // but UOP_CACHE_LINE_SIZE must be 1 to enable indexing with the full byte-granularity address.
+
+  init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE * UOP_CACHE_LINE_SIZE, UOP_CACHE_ASSOC,
+             UOP_CACHE_LINE_SIZE,UOP_CACHE_LINE_DATA_SIZE, REPL_TRUE_LRU);
 }
 
 Flag pw_insert(Uop_Cache_Data pw) {

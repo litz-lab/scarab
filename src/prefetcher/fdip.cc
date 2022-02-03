@@ -558,52 +558,14 @@ void fdip_update() {
       }
     }
 
-    // prefetch
-    if (target) {
-      // target is set to whichever instr is predicted to follow branch
-      bool continuing_to_next_cl = !last_cl_prefetched? TRUE : (get_cache_line_addr(&ic->icache, target) ==
-          last_cl_prefetched + ic->icache.offset_mask + 1)? TRUE : FALSE;
-      if ((FDIP_DUAL_PATH_PREF_IC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ENABLE) 
+    bool do_prefetch = !last_cl_prefetched || (get_cache_line_addr(&ic->icache, runahead_pc) != last_cl_prefetched)? TRUE : FALSE;
+    if (do_prefetch) {
+      if ((FDIP_DUAL_PATH_PREF_IC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ENABLE)
           && hash_table_access(&top_mispred_br, runahead_pc)) {
-        fdip_dual_path_prefetch(target, op);
-        last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
-      } else if (op->oracle_info.pred == TAKEN || continuing_to_next_cl) {
-        if (FDIP_PREF_USEFUL_LINE && !will_be_accessed(target)) {
-          last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
-        } else {
-          bool success = fdip_prefetch(target, op);
-          prefetches += success;
-          if (ftq_pushed)
-            ftq.back().second.prefetched = success;
-          if (UOC_PREF)
-            uop_cache_issue_prefetch(target, fdip_on_path_pref);
-          last_cl_prefetched = get_cache_line_addr(&ic->icache, target);
-          if (success){
-            outstanding_prefs++;
-            STAT_EVENT(ic_stage->proc_id, op->oracle_info.pred ? 
-                FDIP_BRANCH_TAKEN_PREF : FDIP_NL_PREF);
-            if (fdip_on_path_pref)
-              STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ON_PATH);
-            else
-              STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);
-          }
-          if (!fdip_on_path_bp && fdip_on_path_pref)
-            fdip_on_path_pref = FALSE;
-        }
-      }
-      runahead_pc = target;
-    }
-
-    // In an actual implemenation, FDIP cannot differentiate between a btb
-    // miss and the op not being a branch (since the BTB is used to runahead
-    // and find the next branch). Thus FDIP would continue as if it was not
-    // branch, incrementing runahead_pc. This may cause cache pollution.
-    // Boomerang CAN distinguish these cases by storing the end of the bbl
-    if (!target || btb_ras_miss) { // FDIP continues as for non-branch
-      // If continuing to next cache line (no control flow change), prefetch it
-      bool continuing_to_next_cl = !last_cl_prefetched? TRUE : (get_cache_line_addr(&ic->icache, runahead_pc) ==
-          last_cl_prefetched + ic->icache.offset_mask + 1)? TRUE : FALSE;
-      if (continuing_to_next_cl) {
+        // TODO: change dual path prefetch to prefetch current op instead of the target
+        //fdip_dual_path_prefetch(runahead_pc, op);
+        //last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc);
+      } else {
         if (FDIP_PREF_USEFUL_LINE && !will_be_accessed(runahead_pc)) {
           last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc);
         } else {
@@ -612,21 +574,35 @@ void fdip_update() {
           if (ftq_pushed)
             ftq.back().second.prefetched = success;
           if (UOC_PREF)
-            uop_cache_issue_prefetch(target, fdip_on_path_pref);
+            uop_cache_issue_prefetch(runahead_pc, fdip_on_path_pref);
           last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc);
           if (success) {
             outstanding_prefs++;
-            STAT_EVENT(ic_stage->proc_id, FDIP_NL_PREF);
+            if (target)
+              STAT_EVENT(ic_stage->proc_id, op->oracle_info.pred ? 
+                  FDIP_BRANCH_TAKEN_PREF : FDIP_NL_PREF);
             if (fdip_on_path_pref)
               STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ON_PATH);
             else
               STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);
           }
-          if (!fdip_on_path_bp && fdip_on_path_pref)
-            fdip_on_path_pref = FALSE;
         }
       }
+    }
+
+    if (!fdip_on_path_bp && fdip_on_path_pref)
+      fdip_on_path_pref = FALSE;
+
+    // In an actual implemenation, FDIP cannot differentiate between a btb
+    // miss and the op not being a branch (since the BTB is used to runahead
+    // and find the next branch). Thus FDIP would continue as if it was not
+    // branch, incrementing runahead_pc. This may cause cache pollution.
+    // Boomerang CAN distinguish these cases by storing the end of the bbl
+    if (btb_ras_miss || !target)
       runahead_pc++;
+    else {
+      ASSERT(ic_stage->proc_id, target);
+      runahead_pc = target;
     }
   }
 

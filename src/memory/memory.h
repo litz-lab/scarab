@@ -76,6 +76,13 @@ typedef struct L1_Data_struct {
 
 typedef L1_Data MLC_Data; /* Use the same data structure for simplicity */
 
+typedef enum Mem_Queue_Req_Result_enum {
+  FAILED,       // Request could not be adjusted because of a merge conflict between requests
+  SUCCESS_NEW,  // A new mem request is successfully created
+  SUCCESS_DIFF, // Requests of different types successfully adjusted
+  SUCCESS_SAME, // Requests of the same type successfully adjusted
+} Mem_Queue_Req_Result;
+
 typedef enum Mem_Queue_Type_enum {
   QUEUE_L1        = 1 << 0,
   QUEUE_BUS_OUT   = 1 << 1,

@@ -225,7 +225,6 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     }
 
     last_cl_prefetched = 0;
-    outstanding_prefs = 0;
     STAT_EVENT(ic_stage->proc_id, FDIP_PRED_FTQ_EMPTY);
     return target;
   }
@@ -263,7 +262,6 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
       STAT_EVENT(ic_stage->proc_id, FDIP_PREF_CORRECT_PATH);
       INC_STAT_EVENT(ic_stage->proc_id, FDIP_SAVED_PREF_CYC,
                   cycle_count - req->prefetch_cycle);
-      outstanding_prefs--;
     }
     ftq.pop();
     return target;
@@ -336,7 +334,6 @@ void fdip_clear_ftq() {
     }
     ftq.pop();
   }
-  outstanding_prefs = 0;
 }
 
 /* When a mispredicted branch is resolved, the frontend recovers the branch
@@ -368,10 +365,10 @@ void fdip_redirect(Addr recover_pc) {
 }
 
 // Returns true if prefetch was emitted
-bool fdip_prefetch(Addr target, Op *op) {
+Flag fdip_prefetch(Addr target, Op *op) {
   static Addr last_line_addr_prefetched = 0;
   Addr line_addr;
-  bool success = false;
+  Flag success = FAILED;
   void* line = NULL;
 
   if(!FDIP_ALWAYS_PREFETCH)
@@ -388,7 +385,7 @@ bool fdip_prefetch(Addr target, Op *op) {
       Mem_Req req;
       req.off_path             = op ? op->off_path : FALSE;
       req.off_path_confirmed   = FALSE;
-      req.type                 = MRT_IPRF;
+      req.type                 = MRT_FDIPPRF;
       req.proc_id              = ic_stage->proc_id;
       req.addr                 = line_addr;
       req.oldest_op_unique_num = (Counter)0;
@@ -397,15 +394,13 @@ bool fdip_prefetch(Addr target, Op *op) {
       req.dirty_l0             = op && op->table_info->mem_type == MEM_ST && !op->off_path;
       if(icache_fill_line(&req)) {
         STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
-        success = true;
+        success = SUCCESS_NEW;
       }
     } else {
-      if(new_mem_req(MRT_IPRF, ic_stage->proc_id, line_addr,
-            ICACHE_LINE_SIZE, 0, NULL, instr_fill_line,
-            unique_count,
-            0)) {
+      success = new_mem_req(MRT_FDIPPRF, ic_stage->proc_id, line_addr,
+                    ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
+      if(success == SUCCESS_NEW || success == SUCCESS_DIFF) {
         STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
-        success = true;
       } else {
         mem_req_failed = TRUE;
       }
@@ -427,11 +422,14 @@ int fdip_dual_path_prefetch(Addr target, Op* op) {
   if (FDIP_DUAL_PATH_PREF_IC_ENABLE) {
     // is prefetching one CL for the alt path enough?
     // pred_target is the target stored by the BTB used if predicted taken
-    bool success = fdip_prefetch(op->pred_target, op);
-    icache_pref += success;
-    ftq.back().second.prefetched = success;
+    Flag success = fdip_prefetch(op->pred_target, op);
+    if (success == SUCCESS_NEW || success == SUCCESS_DIFF) {
+      icache_pref += 1;
+      ftq.back().second.prefetched = true;
+    }
     success = fdip_prefetch(op->inst_info->addr + ICACHE_LINE_SIZE, op);
-    icache_pref += success;
+    if (success == SUCCESS_NEW || success == SUCCESS_DIFF)
+      icache_pref += 1;
     STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_IC_TRIGGERED);
     INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_IC_EMITTED, 
                     icache_pref);
@@ -566,14 +564,14 @@ void fdip_update() {
         if (FDIP_PREF_USEFUL_LINE && !will_be_accessed(runahead_pc)) {
           last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc);
         } else {
-          bool success = fdip_prefetch(runahead_pc, NULL);
-          prefetches += success;
-          if (ftq_pushed)
-            ftq.back().second.prefetched = success;
+          Flag success = fdip_prefetch(runahead_pc, NULL);
           if (UOC_PREF)
             uop_cache_issue_prefetch(runahead_pc, fdip_on_path_pref);
           last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc);
-          if (success) {
+          if (success == SUCCESS_NEW || success == SUCCESS_DIFF) {
+            prefetches++;
+            if (ftq_pushed)
+              ftq.back().second.prefetched = true;
             outstanding_prefs++;
             if (target)
               STAT_EVENT(ic_stage->proc_id, op->oracle_info.pred ? 
@@ -617,4 +615,10 @@ void fdip_update() {
 
 Flag fdip_pref_off_path(void) {
   return fdip_on_path_pref;
+}
+
+void fdip_dec_outstanding_prefs(Addr cl_addr) {
+  ASSERT(ic_stage->proc_id, outstanding_prefs);
+  outstanding_prefs--;
+  return;
 }

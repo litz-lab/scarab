@@ -19,6 +19,7 @@ extern "C" {
   void fdip_redirect(Addr recover_pc);
   void fdip_update();
   Flag fdip_pref_off_path(void);
+  void fdip_dec_outstanding_prefs(Addr cl_addr);
 
   /* Private*/
   void fdip_new_branch(Addr bp_pc, Op *op);

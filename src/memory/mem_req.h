@@ -69,6 +69,7 @@ typedef enum Mem_Req_State_enum {
     elem(DSTORE)       /* data store */              \
     elem(IPRF)         /* instruction prefetch */    \
     elem(UOCPRF)       /* only uop cache prefetch */ \
+    elem(FDIPPRF)      /* FDIP instruction prefetch */ \
     elem(DPRF)         /* data prefetch */           \
     elem(WB)           /* writeback of dirty data */ \
     elem(WB_NODIRTY)   /* writeback of clean data */ \

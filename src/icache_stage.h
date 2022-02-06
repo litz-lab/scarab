@@ -132,6 +132,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr);
 void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
 Flag icache_off_path(void);
 Op* find_op(Addr pc);
+void move_to_prev_op(void);
 Flag will_be_accessed(Addr pc);
 Flag instr_fill_line(Mem_Req* req);
 Uop_Cache_Data get_pw_lookahead_buffer(Addr start_addr);

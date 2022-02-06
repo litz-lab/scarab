@@ -338,6 +338,10 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
   }
 }
 
+Flag bp_is_predictable(Bp_Data* bp_data, Op* op) {
+  return !bp_data->bp->full_func(op);
+}
+
 
 /******************************************************************************/
 /* bp_predict_op:  predicts the target of a control flow instruction */

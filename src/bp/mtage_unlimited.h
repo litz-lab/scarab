@@ -345,6 +345,7 @@ class MTAGE {
                        bool predDir, uint64_t branchTarget);
   void TrackOtherInst(uint64_t PC, OpType opType, bool taken,
                       uint64_t branchTarget);
+  uns8 IsFull(void);
 
   void initSC();
   void HistoryUpdate(uint64_t PC, uint8_t brtype, bool taken, uint64_t target,

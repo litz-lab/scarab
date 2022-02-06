@@ -1121,6 +1121,9 @@ void MTAGE::TrackOtherInst(uint64_t PC, OpType opType, bool taken,
   HistoryUpdate(PC, 0, true, branchTarget, ptghist, chgehl_i, chrhsp_i);
 }
 
+uns8 MTAGE::IsFull(void) {
+  return 0;
+}
 
 void MTAGE::initSC() {
   NRHSP       = 80;

@@ -40,7 +40,7 @@ struct ftq_req {
 };
 
 std::unordered_map<Addr, Op> pc_to_op;
-std::queue<std::pair<Addr, ftq_req>> ftq;
+std::deque<std::pair<Addr, ftq_req>> ftq;
 Addr runahead_pc;
 Addr last_cl_prefetched = 0;
 Icache_Stage *ic_stage;
@@ -95,6 +95,10 @@ void init_topk_mispred() {
 
 void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic) {
   ASSERT(ic_stage->proc_id, !(FDIP_ENABLE && USE_LATE_BP));
+  if (!FETCH_BREAK_ON_TAKEN) { // icache_stage does not break on taken branches
+    ASSERT(ic_stage->proc_id, FDIP_MAX_TAKEN_BRANCHES >= ISSUE_WIDTH);
+    ASSERT(ic_stage->proc_id, FDIP_MAX_OUTSTANDING_PREFETCHES >= ISSUE_WIDTH);
+  }
   bp_data = _bp_data;
   ic_stage = _ic;
   ASSERT(ic_stage->proc_id, ic_stage);
@@ -118,10 +122,6 @@ void fdip_retire(Op *op) {
     recovery_checkpoint->recovery_info.branch_id) {
     recovery_checkpoint_valid = FALSE;
   }
-  // predicts_after_recovery can be already 0 because there are branches that have not been predicted by FDIP (ftq empty).
-  if (predicts_after_recovery) {
-    predicts_after_recovery--;
-  }
 }
 
 /* When the branch is initially predicted by FDIP, a placeholder op struct is
@@ -137,45 +137,6 @@ void patch_oracle_info(Op *op, Op *req, Addr bp_pc) {
   op->recovery_info.PC = op->inst_info->addr;
   op->recovery_info.oracle_dir = op->oracle_info.dir;
   op->recovery_info.branchTarget = op->oracle_info.target;
-
-  Op_Info *op_info = &op->oracle_info;
-  Op_Info *req_info = &req->oracle_info;
-
-  op_info->pred_addr = req_info->pred_addr;
-  op_info->btb_miss_resolved = req_info->btb_miss_resolved;
-  op_info->pred_npc = req_info->pred_npc;
-  op_info->pred = req_info->pred;
-  op_info->btb_miss = req_info->btb_miss;
-  op_info->no_target = req_info->no_target;
-
-// FIXME late prefetcher
-  //uns8 late_pred;  // predicted direction of branch, set by the multi-cycle
-  // branch predictor
-  //Addr late_pred_npc;  // predicted next pc field by the multi-cycle branch
-  // predictor
-  //Flag late_misfetch;  // true if target address is the ONLY thing that was
-  // wrong after the multi-cycle branch prediction kicks in
-  //Flag  late_mispred;  // true if the multi-cycle branch predictor mispredicted
-  //Flag  recovery_sch;  // true if this op_info has scheduled a recovery
-  op_info->pred_global_hist = req_info->pred_global_hist;
-
-//TODO: Verify perceptron correctness with FDIP
-  op_info->pred_perceptron_global_hist =
-    req_info->pred_perceptron_global_hist;
-  op_info->pred_conf_perceptron_global_hist =
-    req_info->pred_conf_perceptron_global_hist;
-  op_info->pred_conf_perceptron_global_misp_hist =
-    req_info->pred_conf_perceptron_global_misp_hist;
-  op_info->pred_gpht_entry = req_info->pred_gpht_entry;
-  op_info->pred_ppht_entry = req_info->pred_ppht_entry;
-  op_info->pred_spht_entry = req_info->pred_spht_entry;
-  
-  op_info->pred_local_hist = req_info->pred_local_hist;
-  op_info->pred_targ_hist = req_info->pred_targ_hist;
-  op_info->hybridgp_gpred = req_info->hybridgp_gpred;
-  op_info->hybridgp_ppred = req_info->hybridgp_ppred;
-  op_info->pred_tc_selector_entry = req_info->pred_tc_selector_entry;
-  op_info->ibp_miss = req_info->ibp_miss;
 }
 
 /* Called when the frontend consumes the next prediction. There exist three
@@ -192,7 +153,6 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     runahead_disable = FALSE;
     Addr target = bp_predict_op(g_bp_data, op, cf_num++, bp_pc);
     (&op_buf)->current = NULL;
-    predicts_after_recovery++;
     if (fdip_on_path_bp)
       STAT_EVENT(ic_stage->proc_id, FDIP_PRED_ON_PATH);
     else
@@ -263,7 +223,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
       INC_STAT_EVENT(ic_stage->proc_id, FDIP_SAVED_PREF_CYC,
                   cycle_count - req->prefetch_cycle);
     }
-    ftq.pop();
+    ftq.pop_front();
     return target;
   }
   else {
@@ -302,7 +262,6 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
     }
     fdip_clear_ftq();
     auto target =  bp_predict_op(g_bp_data, op, cf_num++, bp_pc);
-    predicts_after_recovery++;
     runahead_pc = bp_pc;
     runahead_disable = FALSE;
     recovery_checkpoint = op;
@@ -327,13 +286,8 @@ void fdip_new_branch(Addr bp_pc, Op *op) {
 /* Clear the FTQ, branch predictor state needs to be recovered elsewhere
  */
 void fdip_clear_ftq() {
+  ASSERT(ic_stage->proc_id, ftq.empty());
   last_cl_prefetched = 0;
-  while (!ftq.empty()) {
-    if (ftq.front().second.prefetched) {
-      STAT_EVENT(ic_stage->proc_id, FDIP_PREF_WRONG_PATH);
-    }
-    ftq.pop();
-  }
 }
 
 /* When a mispredicted branch is resolved, the frontend recovers the branch
@@ -351,7 +305,6 @@ void fdip_recover(Recovery_Info *info) {
   runahead_disable = FALSE;
   fdip_on_path_bp = TRUE;
   fdip_on_path_pref = TRUE;
-  predicts_after_recovery = 0;
   if (UOC_ORACLE_PREF) {
     uop_cache_issue_prefetch(info->npc, fdip_on_path_pref);
   }
@@ -401,7 +354,7 @@ Flag fdip_prefetch(Addr target, Op *op) {
                     ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
       if(success == SUCCESS_NEW || success == SUCCESS_DIFF) {
         STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
-      } else {
+      } else if (success == FAILED) {
         mem_req_failed = TRUE;
       }
     }
@@ -449,6 +402,7 @@ void fdip_update() {
   uint32_t prefetches = 0;
   uns64 orig_last_runahead_uid = last_runahead_uid;
   uint32_t taken_branches = 0;
+  Flag break_on_tage_limit = FALSE;
 
   if (ftq.size() > FDIP_MAX_RUNAHEAD || runahead_disable) {
     return;
@@ -457,9 +411,6 @@ void fdip_update() {
   // Predict branches across cache lines. In many implementations, the BTB
   // is looked up once per cycle, returning all branches in the cache line
   mem_req_failed = FALSE;
-
-  if (FDIP_PERFECT_RUNAHEAD)
-    ASSERT(ic_stage->proc_id, !FDIP_BREAK_ICACHE);
 
   // Find the next branch after the runahead PC. As the BTB/BP is addressed
   // with a PC and not cache line address we need to byte-wise increment the
@@ -473,19 +424,18 @@ void fdip_update() {
    * (4) outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES : outstanding_prefs is the number of outstanding prefetches not per cycle.
    *     It is incremented by 1 whenever FDIP emits a cache line prefetch and decremented by 1 whenever the backend consumes a branch from FTQ.
    *     It is reset by 0 whenever FTQ is cleared and the backend hits an FTQ-empty case.
-   * (5) predicts_after_recovery < MAX_OUTSTANDING_PREDICTS : necessary to ensure that the TAGE buffer doesn't become full.
+   * (5) bp_is_predictable() : necessary to ensure that the TAGE buffer doesn't become full.
    * (6) !mem_req_failed : necessary for FDIP to break out from the while loop when MLC queue is full.
    *     Even with outstanding_pref = 1, the queue becomes full because the backend consumes a branch from FTQ and decreases the count (outstanding_prefs), but it is possible that the requested cache line has not yet loaded due to the latency.
    *     In this case, FDIP runs ahead again and continuously increases the number of memory requests although all the previous requests have not yet been handled.
    */
   while ((FDIP_PERFECT_RUNAHEAD && !mem_req_failed &&
-                ((!fdip_on_path_bp && (outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES) && predicts_after_recovery < max_outstanding_predicts) ||
+                ((!fdip_on_path_bp && (outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES)) ||
                  (fdip_on_path_bp && (last_runahead_uid < orig_last_runahead_uid + ISSUE_WIDTH) && (last_runahead_uid != max_runahead_uid)))) ||
       ((!FDIP_PERFECT_RUNAHEAD &&
                 (taken_branches < FDIP_MAX_TAKEN_BRANCHES) &&
                 (last_runahead_uid != max_runahead_uid) &&
                 (outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES) &&
-                (predicts_after_recovery < max_outstanding_predicts) &&
                 !mem_req_failed))) {
 
     bool btb_ras_miss = false;
@@ -498,12 +448,16 @@ void fdip_update() {
     if (fdip_on_path_bp) {
       op = find_op(runahead_pc);
       is_branch = (op && op->table_info->cf_type)? true : false;
+      if (op && !bp_is_predictable(g_bp_data, op)) {
+        break_on_tage_limit = TRUE;
+        move_to_prev_op();
+        break;
+      }
       if (is_branch) {
         fdip_new_branch(runahead_pc, op);
         ASSERT(ic_stage->proc_id, op->fetch_addr == runahead_pc);
         target = bp_predict_op(g_bp_data, op, DUMMY_CFN, runahead_pc);
-        predicts_after_recovery++;
-        ftq.push(std::pair<Addr, ftq_req>(runahead_pc, ftq_req(
+        ftq.push_back(std::pair<Addr, ftq_req>(runahead_pc, ftq_req(
                                     target, cycle_count, *op,
                                     0, /*prefetched*/
                                     op->oracle_info.pred == TAKEN
@@ -541,11 +495,11 @@ void fdip_update() {
       is_branch = op_iter != pc_to_op.end();
       if (is_branch) {
         op = &op_iter->second;
+        if (!bp_is_predictable(g_bp_data, op)) break;
         ASSERT(ic_stage->proc_id, op->fetch_addr == runahead_pc);
         Addr* btb_target = g_bp_data->bp_btb->pred_func(g_bp_data, op);
         if (btb_target) {
           target = bp_predict_op(g_bp_data, op, DUMMY_CFN, runahead_pc);
-          predicts_after_recovery++;
           STAT_EVENT(ic_stage->proc_id, FDIP_PRED_OFF_PATH);
           if (op->oracle_info.pred)
             taken_branches++;
@@ -565,6 +519,19 @@ void fdip_update() {
           last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc);
         } else {
           Flag success = fdip_prefetch(runahead_pc, NULL);
+          if (ftq_pushed && mem_req_failed) {
+            ftq.pop_back();
+            move_to_prev_op();
+            if (target) {
+              if (op->oracle_info.pred)
+                taken_branches--;
+              if (fdip_on_path_pref && (op->oracle_info.mispred || op->oracle_info.misfetch || btb_ras_miss)) {
+                off_count--;
+                fdip_on_path_bp = TRUE;
+              }
+            }
+            break;
+          }
           if (UOC_PREF)
             uop_cache_issue_prefetch(runahead_pc, fdip_on_path_pref);
           last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc);
@@ -607,7 +574,7 @@ void fdip_update() {
     STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_MAX_RUNAHEAD_UID);
   else if (outstanding_prefs >= FDIP_MAX_OUTSTANDING_PREFETCHES)
     STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_MAX_OUTSTANDING_PREFETCHES);
-  else if (predicts_after_recovery >= max_outstanding_predicts)
+  else if (break_on_tage_limit)
     STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_TAGE_BUFFER_LIMIT);
   else if (mem_req_failed)
     STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_FULL_MLC_QUEUE);

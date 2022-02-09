@@ -1509,6 +1509,7 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_PAVGW]     = {OP_LOGIC, 2, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_PBLENDVB]  = {OP_CMOV, 1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_PBLENDW]   = {OP_CMOV, 2, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_PCLMULQDQ] = {OP_IMUL, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_PCMPEQB]   = {OP_ICMP, 1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_PCMPEQD]   = {OP_ICMP, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_PCMPEQQ]   = {OP_ICMP, 8, -1, NONE};
@@ -1636,6 +1637,7 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_RCPPS]  = {OP_FMUL, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_RDTSC]  = {OP_NOTPIPELINED_SLOW, 4, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_RDTSCP]  = {OP_NOTPIPELINED_SLOW, 8, 1, NONE}; // 4 bytes for time-stamp (somehow), 4 for processor id
+  iclass_to_scarab_map[XED_ICLASS_RDPKRU] = {OP_MOV, 1, 2, NONE};
   // INS_Opcode() never returns REPEAT variants of the iclasses
   iclass_to_scarab_map[XED_ICLASS_REPE_CMPSB] = {OP_ICMP, 1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_REPE_CMPSD] = {OP_ICMP, 4, 1, NONE};
@@ -1717,6 +1719,7 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_SUB_LOCK] = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_SYSCALL]  = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_SYSENTER] = {OP_IADD, -1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SWAPGS]  = {OP_MOV,-1,1,NONE};
   iclass_to_scarab_map[XED_ICLASS_TEST]     = {OP_LOGIC, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_TZCNT]    = {OP_NOTPIPELINED_MEDIUM, -1, 1,
                                             NONE};
@@ -2295,6 +2298,7 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_VXORPS]     = {OP_LOGIC, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VZEROALL]   = {OP_LOGIC, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VZEROUPPER] = {OP_LOGIC, 16, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_WRMSR]      = {OP_MOV, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_XADD]       = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_XADD_LOCK]  = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_XCHG]       = {OP_MOV, -1, 1, NONE};

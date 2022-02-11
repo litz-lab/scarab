@@ -109,6 +109,7 @@ typedef enum Break_Reason_enum {
   BREAK_MODEL_BEFORE,  // break because of model hook
   BREAK_MODEL_AFTER,   // break because of model hook
   BREAK_UC_MISS,       // break because during UC fetch, a following instr was not found in UC
+  BREAK_FDIP_RUNAHEAD, // break because a following instr is the last
 } Break_Reason;
 
 

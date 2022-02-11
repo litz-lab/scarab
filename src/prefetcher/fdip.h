@@ -19,6 +19,7 @@ extern "C" {
   void fdip_redirect(Addr recover_pc);
   void fdip_update();
   Flag fdip_pref_off_path(void);
+  Flag fdip_is_max_op(Op *op);
   void fdip_dec_outstanding_prefs(Addr cl_addr);
 
   /* Private*/

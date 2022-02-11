@@ -69,6 +69,7 @@
 
 Icache_Stage* ic = NULL;
 List op_buf;
+Counter                last_issued_op_num = 0;
 
 extern Cmp_Model              cmp_model;
 extern Memory*                mem;
@@ -78,6 +79,7 @@ extern Addr                   runahead_pc;
 extern Flag                   runahead_disable;
 extern uns64                  last_runahead_uid;
 extern uns64                  max_runahead_uid;
+extern Counter                max_op_num;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -416,7 +418,10 @@ void update_icache_stage() {
             STAT_EVENT(ic->proc_id, L2_IDEAL_MISS_ICACHE);
         }
 
-        if(ic->line == NULL) { /* cache miss */
+        if(FDIP_ENABLE && last_issued_op_num == max_op_num && max_runahead_uid != last_runahead_uid) {
+          ic->next_state = IC_WAIT_FOR_FDIP;
+          break_fetch = BREAK_FDIP_RUNAHEAD;
+        } else if(ic->line == NULL) { /* cache miss */
           DEBUG(ic->proc_id, "Cache miss on op_num:%s @ 0x%s\n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
 
@@ -517,6 +522,13 @@ void update_icache_stage() {
         ic->next_state = IC_FETCH;
     } break;
 
+    case IC_WAIT_FOR_FDIP: {
+      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_FDIP, IC_ISSUE_WIDTH);
+      STAT_EVENT(ic->proc_id, FETCH_0_OPS);
+      if(last_issued_op_num < max_op_num)
+        ic->next_state = IC_FETCH;
+    } break;
+
     default:
       FATAL_ERROR(ic->proc_id, "Invalid icache state.\n");
   }
@@ -564,6 +576,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
           max_runahead_uid = new_op->inst_uid;
         ptr = dl_list_remove_head(&op_buf);
         op = *ptr;
+        last_issued_op_num = op->op_num;
       }
       else {
         op   = alloc_op(ic->proc_id);
@@ -750,6 +763,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         *break_fetch = BREAK_BTB_MISS;
         DEBUG(ic->proc_id, "Changed icache to wait for redirect %llu\n",
               cycle_count);
+        if (FDIP_ENABLE)
+          runahead_disable = TRUE;
         return IC_WAIT_FOR_REDIRECT;
       }
       
@@ -1091,6 +1106,55 @@ Op* find_op(Addr pc) {
   return NULL;
 }
 
+void set_max_op_num(Flag is_branch, Addr last_cl_prefetched) {
+  Counter move_cnt = 0;
+  Op* op;
+  Op** op_p;
+  if (is_branch) {
+    op_p = (Op**)list_prev_element(&op_buf);
+    move_cnt++;
+    ASSERT(ic->proc_id, op_p);
+    op = *op_p;
+    ASSERT(ic->proc_id, op->table_info->cf_type);
+    max_op_num = op->op_num;
+  }
+  else {
+    op_p = (Op**)list_get_current(&op_buf);
+    ASSERT(ic->proc_id, op_p);
+    op = *op_p;
+    ASSERT(ic->proc_id, op->table_info->cf_type);
+    Op** op_head = (Op**)list_get_head(&op_buf);
+    if (op_head == op_p)
+      return;
+    op_p = (Op**)list_prev_element(&op_buf);
+    move_cnt++;
+    op = *op_p;
+    while (op) {
+      Addr cl_addr = get_cache_line_addr(&ic->icache, op->fetch_addr);
+      if (op->table_info->cf_type)
+        break;
+      if (cl_addr == last_cl_prefetched) {
+        max_op_num = op->op_num;
+        break;
+      }
+      if (op_head != op_p) {
+        op_p = (Op**)list_prev_element(&op_buf);
+        move_cnt++;
+        op = *op_p;
+      } else {
+        max_op_num = op->op_num;
+        break;
+      }
+    }
+  }
+
+  // restore the current pointer of the buffer
+  while (move_cnt) {
+    list_next_element(&op_buf);
+    move_cnt--;
+  }
+}
+
 void move_to_prev_op(void) {
   list_prev_element(&op_buf);
 }
@@ -1213,7 +1277,7 @@ void log_stats_ic_miss() {
 // (uop_cache_fill_prefetch will fail for never-seen PWs on the off-path).
 Flag instr_fill_line(Mem_Req* req) {
   ASSERT(ic->proc_id, req->type == MRT_IPRF || req->type == MRT_FDIPPRF || req->type == MRT_UOCPRF || req->type == MRT_IFETCH);
-  
+
   if (mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_IFETCH) || mem_req_is_type(req, MRT_FDIPPRF))
     icache_fill_line(req);
   if (mem_req_is_type(req, MRT_FDIPPRF))

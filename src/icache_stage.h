@@ -55,6 +55,7 @@ typedef enum Icache_State_enum {
   IC_WAIT_FOR_REDIRECT,
   IC_WAIT_FOR_EMPTY_ROB,
   IC_WAIT_FOR_TIMER,
+  IC_WAIT_FOR_FDIP,
 } Icache_State;
 
 typedef struct Icache_Stage_struct {
@@ -132,6 +133,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr);
 void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
 Flag icache_off_path(void);
 Op* find_op(Addr pc);
+void set_max_op_num(Flag is_branch, Addr last_cl_prefetched);
 void move_to_prev_op(void);
 Flag will_be_accessed(Addr pc);
 Flag instr_fill_line(Mem_Req* req);

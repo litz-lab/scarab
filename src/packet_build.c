@@ -38,6 +38,7 @@
 #include "packet_build.h"
 
 #include "bp/bp.param.h"
+#include "prefetcher/fdip.h"
 #include "core.param.h"
 #include "debug/debug.param.h"
 #include "memory/memory.param.h"
@@ -220,6 +221,11 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
       return PB_BREAK_AFTER;
     } else if (uop_cache_issue_ops) {
       op->fetched_from_uop_cache = TRUE;
+    }
+
+    if (fdip_is_max_op(op)) {
+      *break_fetch = BREAK_FDIP_RUNAHEAD;
+      return PB_BREAK_AFTER;
     }
 
     // hit fetch barrier

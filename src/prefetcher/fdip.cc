@@ -57,14 +57,9 @@ extern List op_buf;
 Hash_Table top_mispred_br;
 uns64 recovery_count = 0;
 uns64 off_count = 0;
-uns64 predicts_after_recovery = 0;
 uns64 outstanding_prefs = 0;
 Flag mem_req_failed = FALSE;
-/*
- * FDIP cannot use all TAGE entries because when the backend consumes a branch, it still takes a while until it is computed.
- * TAGE_SIZE = FDIP_BRANCHES (max_outstanding_predicts) + BRANCHES_IN_PIPELINE
- */
-uns64 max_outstanding_predicts = (uns64)(NODE_TABLE_SIZE * 0.5);
+Counter max_op_num = 0;
 
 /**************************************************************************************/
 /* init_topk_mispred: list of branches that provide a given coverage of resteers */
@@ -146,131 +141,44 @@ void patch_oracle_info(Op *op, Op *req, Addr bp_pc) {
  * predicted a branch that is never actually processed by the frontend
  */ 
 Addr fdip_pred(Addr bp_pc, Op *op) {
-  if (ftq.empty()) {
-    /* If the FTQ is empty we have not been able to predict ahead. Should
-      * be a corner case e.g. directly after a recovery.
-      */
-    runahead_disable = FALSE;
-    Addr target = bp_predict_op(g_bp_data, op, cf_num++, bp_pc);
-    (&op_buf)->current = NULL;
-    if (fdip_on_path_bp)
-      STAT_EVENT(ic_stage->proc_id, FDIP_PRED_ON_PATH);
-    else
-      STAT_EVENT(ic_stage->proc_id, FDIP_PRED_OFF_PATH);
-    Flag bf = op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE;
-    bool btb_ras_miss = (op->oracle_info.btb_miss && op->oracle_info.pred) || (op->oracle_info.btb_miss && !op->oracle_info.pred && !bf) || target == 0;
-    if (op->oracle_info.mispred || op->oracle_info.misfetch || btb_ras_miss) {
-      recovery_checkpoint = op;
-      recovery_checkpoint->recovery_info.npc = op->oracle_info.npc;
-      recovery_checkpoint_valid = TRUE;
-      off_count++;
-      fdip_on_path_bp = FALSE;
-      fdip_on_path_pref = FALSE;
-      if ((FDIP_STOP_ON_MISPRED && op->oracle_info.mispred) || (FDIP_STOP_ON_MISFETCH && op->oracle_info.misfetch) || (FDIP_STOP_ON_BTB_MISS && btb_ras_miss))
-        runahead_disable = TRUE;
-    } else {
-      fdip_on_path_bp = TRUE;
-      fdip_on_path_pref = TRUE;
-      fdip_new_branch(op->fetch_addr, op);
-    }
-
-    if (op->oracle_info.mispred || op->oracle_info.misfetch || target)
-      runahead_pc = target;
-    else
-      runahead_pc++;
-    
-    // Also prefetch for the case where FTQ is empty.
-    if (UOC_ORACLE_PREF) {
-        uop_cache_issue_prefetch(op->oracle_info.npc, true);
-    }
-
-    last_cl_prefetched = 0;
-    STAT_EVENT(ic_stage->proc_id, FDIP_PRED_FTQ_EMPTY);
-    return target;
+  ASSERT(ic_stage->proc_id, !ftq.empty());
+  ASSERT(ic_stage->proc_id, ftq.front().first == op->fetch_addr);
+  /* FDIP predicted a branch on the right path. Consume the target and
+   * patch the current instruction.
+   */
+  STAT_EVENT(ic_stage->proc_id, FDIP_PRED_CORRECT_PATH);
+  auto req = &ftq.front().second;
+  auto target = req->target;
+  patch_oracle_info(op, &req->op, bp_pc);
+  //Re-evaluate FDIP direction prediction based on the current oracle info
+  op->cf_within_fetch = cf_num++;
+  if (!fdip_on_path_bp) {
+    //We may have mispredicted once but the branch PCs seen by the
+    //frontend and FDIP still match
+    recovery_checkpoint = op;
+    recovery_checkpoint->recovery_info.npc = op->oracle_info.npc;
+    recovery_checkpoint_valid = TRUE;
   }
-  else if (ftq.front().first == op->fetch_addr){
-    /* FDIP predicted a branch on the right path. Consume the target and
-      * patch the current instruction.
-      */
-    STAT_EVENT(ic_stage->proc_id, FDIP_PRED_CORRECT_PATH);
-    auto req = &ftq.front().second;
-    auto target = req->target;
-    patch_oracle_info(op, &req->op, bp_pc);
-    //Re-evaluate FDIP direction prediction based on the current oracle info
-    op->cf_within_fetch = cf_num++;
-    if (!fdip_on_path_bp) {
-      //We may have mispredicted once but the branch PCs seen by the
-      //frontend and FDIP still match
-      recovery_checkpoint = op;
-      recovery_checkpoint->recovery_info.npc = op->oracle_info.npc;
-      recovery_checkpoint_valid = TRUE;
-    }
-    /* A branch processed by FDIP has been mispredicted. We do not recover
-      * at this point as we want FDIP to continue prefetching on the wrong
-      * path. Recover only if this branch is resolved by the backend.
-      */
-    ASSERT(ic_stage->proc_id, req->taken == req->op.oracle_info.pred);
-    if (op->oracle_info.mispred || op->oracle_info.misfetch) {
-      ASSERT(ic_stage->proc_id, op->oracle_info.mispred ||
-            op->oracle_info.misfetch);
-    }
-    else {
-      ASSERT(ic_stage->proc_id, !op->oracle_info.mispred &&
-            !op->oracle_info.misfetch);
-    }
-    if (req->prefetched) {
-      STAT_EVENT(ic_stage->proc_id, FDIP_PREF_CORRECT_PATH);
-      INC_STAT_EVENT(ic_stage->proc_id, FDIP_SAVED_PREF_CYC,
-                  cycle_count - req->prefetch_cycle);
-    }
-    ftq.pop_front();
-    return target;
+  /* A branch processed by FDIP has been mispredicted. We do not recover
+   * at this point as we want FDIP to continue prefetching on the wrong
+   * path. Recover only if this branch is resolved by the backend.
+   */
+  ASSERT(ic_stage->proc_id, req->taken == req->op.oracle_info.pred);
+  if (op->oracle_info.mispred || op->oracle_info.misfetch) {
+    ASSERT(ic_stage->proc_id, op->oracle_info.mispred ||
+        op->oracle_info.misfetch);
   }
   else {
-    /* If the executed branch does not match the oldest entry in the FTQ,
-      * we are on the wrong path. Recover, clear FTQ and retry branch pred.
-      * At this point we may not have realized that we are on the wrong path
-      * as the branch has not been resolved yet. This should only happen with
-      * trace frontend which do not actually see branches on the wrong path.
-      */
-    INC_STAT_EVENT(ic_stage->proc_id, FDIP_PRED_WRONG_PATH, ftq.size());
-    // The executed branch should always match the oldest entry in the FTQ if we have a perfect branch predictor and no btb miss.
-    ASSERT(ic_stage->proc_id, false);
-    if (recovery_checkpoint_valid) {
-      /* The frontend has fetched a branch and that branch is still
-        * executing. Hence we have a valid recovery point to which we will
-        * recover (squash all later branches predicted by FDIP).
-        */
-      bp_recover_op(g_bp_data, recovery_checkpoint->table_info->cf_type,
-                &recovery_checkpoint->recovery_info);
-    } else {
-      /* MAYBE A HACK: The backend currently is not executing a branch. As
-        * a result we have no valid recovery point. FDIP predicted a branch
-        * that is never actually executed.
-        * First recover it so that all later branches are squashed then
-        * retire it like a regular instruction to keep the BP state in sync
-        * The BP history now contains an executed, mispredicted, retired
-        * branch that has never actually gone through the backend, this
-        * impact TAGE's accuracy (hopefully it doesn't happen often).
-        */
-      //Copy req onto the stack, as bp_recover_op will clear the ftq 
-      ftq_req req = ftq.front().second;
-      bp_recover_op(g_bp_data, req.op.table_info->cf_type,
-                &req.op.recovery_info);
-      bp_retire_op(g_bp_data, &req.op);
-      STAT_EVENT(ic_stage->proc_id, FDIP_SQUASH_FAKE_BRANCH);
-    }
-    fdip_clear_ftq();
-    auto target =  bp_predict_op(g_bp_data, op, cf_num++, bp_pc);
-    runahead_pc = bp_pc;
-    runahead_disable = FALSE;
-    recovery_checkpoint = op;
-    recovery_checkpoint_valid = TRUE;
-    runahead_pc = target;
-    last_cl_prefetched = 0;
-
-    return target;
+    ASSERT(ic_stage->proc_id, !op->oracle_info.mispred &&
+        !op->oracle_info.misfetch);
   }
+  if (req->prefetched) {
+    STAT_EVENT(ic_stage->proc_id, FDIP_PREF_CORRECT_PATH);
+    INC_STAT_EVENT(ic_stage->proc_id, FDIP_SAVED_PREF_CYC,
+        cycle_count - req->prefetch_cycle);
+  }
+  ftq.pop_front();
+  return target;
 }
 
 /* To enable off-path runahead prefetching, maintain a data structure of all branches
@@ -552,6 +460,8 @@ void fdip_update() {
       }
     }
 
+    if (fdip_on_path_pref)
+      set_max_op_num(is_branch, last_cl_prefetched);
     if (!fdip_on_path_bp && fdip_on_path_pref)
       fdip_on_path_pref = FALSE;
 
@@ -578,10 +488,21 @@ void fdip_update() {
     STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_TAGE_BUFFER_LIMIT);
   else if (mem_req_failed)
     STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_FULL_MLC_QUEUE);
+
+  if (FDIP_PREF_NO_LATENCY)
+    outstanding_prefs = 0;
 }
 
 Flag fdip_pref_off_path(void) {
   return fdip_on_path_pref;
+}
+
+Flag fdip_is_max_op(Op* op) {
+  if (!FDIP_ENABLE)
+    return FALSE;
+  if (op->op_num == max_op_num)
+    return TRUE;
+  return FALSE;
 }
 
 void fdip_dec_outstanding_prefs(Addr cl_addr) {

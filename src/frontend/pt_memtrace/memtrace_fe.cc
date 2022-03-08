@@ -223,11 +223,15 @@ void memtrace_setup(uns proc_id) {
     std::cout << "Enter fast forward " << ins_id << std::endl;
   }
 
-  while(!insi->valid || ffwd(insi->ins)) {
+  // FFWD the first instruction and as many as later ffwding parameters specify.
+  // insi is invalid for the first instruction, and once end of trace is reached.
+  // Reaching the end of the trace breaks out of the loop and segfaults later in this function.
+  while ((!insi->valid && ins_id < 10) || ffwd(insi->ins)) {
     insi = trace_readers[proc_id]->nextInstruction();
     ins_id++;
-    if((ins_id % 10000000) == 0)
-      std::cout << "Fast forwarded " << ins_id << " instructions." << std::endl;
+    if ((ins_id % 10000000) == 0)
+      std::cout << "Fast forwarded " << ins_id << " instructions." 
+      << (insi->valid ? " Valid" : " Invalid") << " instr." << std::endl;
   }
 
   if(FAST_FORWARD) {

@@ -77,7 +77,7 @@ void init_topk_mispred() {
     float coverage;
     Addr br;
     char* val = fgets(line, line_len, fp); // skip first line
-    (void)val;
+    UNUSED(val);
     while (fgets(line, line_len, fp)) {
       field = strtok(line, ",");
       field = strtok(NULL, ",");
@@ -248,8 +248,10 @@ Flag fdip_prefetch(Addr target, Op *op) {
   if(!FDIP_ALWAYS_PREFETCH) {
     line = (Inst_Info**)cache_access(&ic_stage->icache, target,
                               &line_addr, TRUE);
-    if(WP_COLLECT_STATS)
+    if(WP_COLLECT_STATS) {
       line_info = (Icache_Data*)cache_access(&ic_stage->icache_line_info, target, &dummy_addr, TRUE);
+      UNUSED(line_info);
+    }
   }
   if (fdip_on_path_pref) {
     STAT_EVENT(ic_stage->proc_id, FDIP_ATTEMPTED_PREF_ON_PATH);
@@ -369,8 +371,10 @@ void fdip_update() {
     if (!last_cl_prefetched || (get_cache_line_addr(&ic->icache, runahead_pc) != last_cl_prefetched)) {
       line = (Inst_Info**)cache_access(&ic_stage->icache, runahead_pc, &line_addr, TRUE);
       // TODO: need to check if there is outstanding prefethces in MSHR queue for the cache line.
-      if (WP_COLLECT_STATS)
+      if (WP_COLLECT_STATS) {
         line_info = (Icache_Data*)cache_access(&ic_stage->icache_line_info, runahead_pc, &dummy_addr, TRUE);
+        UNUSED(line_info);
+      }
       // MSHR hit
       Flag l1_queue_hit = l1_queue_access(get_cache_line_addr(&ic->icache, runahead_pc));
       if (line || l1_queue_hit) { // TODO: need to add MSHR hit???
@@ -413,7 +417,7 @@ void fdip_update() {
 
     if (do_prefetch) {
       // Break on mem req buffer limit
-      if(!mem_can_allocate_req_buffer(ic_stage->proc_id, MRT_FDIPPRF)) {
+      if(!mem_can_allocate_req_buffer(ic_stage->proc_id, MRT_FDIPPRF, FALSE)) {
         break_reason = BR_MEM_REQ_BUF_LIMIT;
         mem_req_failed = TRUE;
         break;

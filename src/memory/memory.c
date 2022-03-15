@@ -95,6 +95,7 @@ static uns      mem_req_wb_entries     = 0;
 
 Memory*              mem = NULL;
 extern Icache_Stage* ic;
+extern Counter  last_recover_cycle;
 
 Counter Mem_Req_Priority[MRT_NUM_ELEMS];
 Counter Mem_Req_Priority_Offset[MRT_NUM_ELEMS];
@@ -2960,8 +2961,10 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
 
   Flag old_off_path_confirmed = req->off_path_confirmed;
   Flag old_type               = req->type;
+  Flag type_added             = FALSE;
 
   mem_req_set_types(req, type);  // Update record of types that merged into this memreq
+  type_added                  = TRUE;
 
   /* Adjust op related fields in the request */
   if(op) {
@@ -3122,6 +3125,25 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
     req->off_path_confirmed = FALSE;
   }
 
+  // If the original type has higher priority (IFETCH) and the new req has lower priority (FDIP), the new req type bit should be cleared if two requests are on the different path (one on path and one off path).
+  if(req->type == MRT_IFETCH && type == MRT_FDIPPRF) {
+    if ((!req->off_path && fdip_pref_off_path()) ||
+        (req->off_path && !fdip_pref_off_path())) {
+      mem_req_clr_types(req, MRT_FDIPPRF);
+      type_added = FALSE;
+    }
+  }
+
+  Flag off_path_changed = FALSE;
+  // If the mem requests for the same FDIP type are on the different paths, give priority to the on-path one.
+  if(req->off_path &&
+      req->type == MRT_FDIPPRF && type == MRT_FDIPPRF &&
+      !fdip_pref_off_path()) {
+    req->off_path           = FALSE;
+    req->off_path_confirmed = FALSE;
+    off_path_changed        = TRUE;
+  }
+
   update_mem_req_occupancy_counter(old_type, -1);
   update_mem_req_occupancy_counter(
     req->type, +1);  // BUG? req->type does not always match type
@@ -3147,10 +3169,22 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
   }
 
   req->req_count++;
-  if (old_type == type)
-    return SUCCESS_SAME;
-  else
-    return SUCCESS_DIFF;
+  if (old_type != type && !type_added) {
+    return SUCCESS_DIFF_TYPE;
+  }
+  else if (old_type != type && type_added) {
+    return SUCCESS_DIFF_TYPE_ADDED;
+  }
+  else if (old_type == type && !off_path_changed) {
+    return SUCCESS_SAME_TYPE;
+  }
+  else if (old_type == type && off_path_changed) {
+    if (req->emitted_cycle < last_recover_cycle)
+      return SUCCESS_SAME_TYPE_INVALID_OFF_PATH_CHANGED;
+    else
+      return SUCCESS_SAME_TYPE_VALID_OFF_PATH_CHANGED;
+  }
+  return SUCCESS;
 }
 
 /**************************************************************************************/
@@ -3446,6 +3480,7 @@ static void mem_init_new_req(
   new_req->state              = to_mlc ? MRS_MLC_NEW : MRS_L1_NEW;
   new_req->type               = type;
   new_req->types              = 0;
+  new_req->emitted_cycle      = cycle_count;
   mem_req_set_types(new_req, type);
   new_req->queue              = to_mlc ? &mem->mlc_queue : &mem->l1_queue;
   new_req->proc_id            = proc_id;
@@ -3524,7 +3559,7 @@ static void mem_init_new_req(
   if(new_req->type == MRT_IFETCH && icache_off_path())
     new_req->off_path = TRUE;
   // All oracle (correct-path) prefetches are on path.
-  if (new_req->type == MRT_UOCPRF && !UOC_ORACLE_PREF &&
+  if (((new_req->type == MRT_UOCPRF && !UOC_ORACLE_PREF) || new_req->type == MRT_FDIPPRF) &&
       fdip_pref_off_path())
     new_req->off_path = TRUE;
 
@@ -5434,4 +5469,21 @@ uns num_offchip_stall_reqs(uns proc_id) {
   // return dram->proc_infos[proc_id].orig_stall_reqs; // HACKY
   return 0;  // Ramulator_todo: replicate this in Ramulator. Currently is used
              // only to collect statistics
+}
+
+Counter count_fdip_mem_l1_reqs() {
+  Mem_Req* req = NULL;
+  int      ii;
+  int      reqbuf_id;
+  Counter  num_fdip_reqs = 0;
+
+  for(ii = 0; ii < mem->l1_queue.entry_count; ii++) {
+    reqbuf_id = mem->l1_queue.base[ii].reqbuf;
+    req       = &(mem->req_buffer[reqbuf_id]);
+
+    if(mem_req_is_type(req, MRT_FDIPPRF))
+      num_fdip_reqs++;
+  }
+
+  return num_fdip_reqs;
 }

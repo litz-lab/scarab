@@ -79,7 +79,11 @@ extern Addr                   runahead_pc;
 extern Flag                   runahead_disable;
 extern uns64                  last_runahead_uid;
 extern uns64                  max_runahead_uid;
+extern Counter                last_runahead_op;
+extern Counter                max_runahead_op;
 extern Counter                max_op_num;
+extern Flag                   mem_req_failed;
+extern Counter                last_recover_cycle;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -172,6 +176,7 @@ void init_icache_trace() {
       *ptr = new_op;
       if (new_op->table_info->cf_type)
         max_runahead_uid = new_op->inst_uid;
+      max_runahead_op = new_op->op_num;
       op_count[ic->proc_id]++;          /* increment instruction counters */
       unique_count_per_core[ic->proc_id]++;
       unique_count++;
@@ -418,7 +423,7 @@ void update_icache_stage() {
             STAT_EVENT(ic->proc_id, L2_IDEAL_MISS_ICACHE);
         }
 
-        if(FDIP_ENABLE && last_issued_op_num == max_op_num && max_runahead_uid != last_runahead_uid) {
+        if(FDIP_ENABLE && last_issued_op_num == max_op_num && last_runahead_op != max_runahead_op) {
           ic->next_state = IC_WAIT_FOR_FDIP;
           break_fetch = BREAK_FDIP_RUNAHEAD;
         } else if(ic->line == NULL) { /* cache miss */
@@ -433,7 +438,6 @@ void update_icache_stage() {
             if(ic->proc_id)
               ASSERTM(ic->proc_id, ic->line_addr, "ic fetch addr: %llu\n",
                       ic->fetch_addr);
-
             ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->line_addr)
             if(new_mem_req(MRT_IFETCH, ic->proc_id, ic->line_addr,
                            ICACHE_LINE_SIZE, 0, NULL, instr_fill_line,
@@ -527,6 +531,8 @@ void update_icache_stage() {
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
       if(last_issued_op_num < max_op_num)
         ic->next_state = IC_FETCH;
+      if(last_runahead_op == max_runahead_op)
+        ic->next_state = IC_FETCH;
     } break;
 
     default:
@@ -570,10 +576,9 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         frontend_fetch_op(ic->proc_id, new_op);
         Op** ptr = dl_list_add_tail(&op_buf);
         *ptr = new_op;
-        if (!FDIP_STOP_ON_BTB_MISS && !FDIP_STOP_ON_MISPRED && !FDIP_STOP_ON_MISFETCH && runahead_disable && new_op->inst_uid >= last_runahead_uid + ISSUE_WIDTH)
-          runahead_disable = FALSE;
         if (new_op->table_info->cf_type)
           max_runahead_uid = new_op->inst_uid;
+        max_runahead_op = new_op->op_num;
         ptr = dl_list_remove_head(&op_buf);
         op = *ptr;
         last_issued_op_num = op->op_num;
@@ -763,6 +768,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         *break_fetch = BREAK_BTB_MISS;
         DEBUG(ic->proc_id, "Changed icache to wait for redirect %llu\n",
               cycle_count);
+        // During a resteer, do not perform off-path prefetching
         if (FDIP_ENABLE)
           runahead_disable = TRUE;
         return IC_WAIT_FOR_REDIRECT;
@@ -1079,10 +1085,10 @@ Op* find_op(Addr pc) {
   if (!op_p) {
     op_p = (Op**)list_start_head_traversal(&op_buf);
     op = *op_p;
-    if (last_runahead_uid && op->inst_uid <= last_runahead_uid) {
+    if (last_runahead_op && op->op_num <= last_runahead_op) {
       for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
         op = *op_p;
-        if (op->table_info->cf_type && op->inst_uid == last_runahead_uid) {
+        if (op->op_num == last_runahead_op) {
           op_p = (Op**)list_next_element(&op_buf);
           op = *op_p;
           break;
@@ -1097,11 +1103,25 @@ Op* find_op(Addr pc) {
       if (op->fetch_addr == pc) {
         last_runahead_uid = op->inst_uid;
         op_p = (Op**)list_next_element(&op_buf);
+        last_runahead_op = op->op_num;
         return op;
       } else {
+        Op** op_p_head = (Op**)list_get_head(&op_buf);
+        if (op_p == op_p_head)
+          break;
+        op_p = (Op**)list_prev_element(&op_buf);
+        op = *op_p;
+        last_runahead_op = op->op_num;
+        op_p = (Op**)list_next_element(&op_buf);
+        op = *op_p;
         break;
       }
     }
+  }
+  if (!op_p) {
+    op_p = (Op**)list_get_tail(&op_buf);
+    op = *op_p;
+    last_runahead_op = op->op_num;
   }
   return NULL;
 }
@@ -1110,15 +1130,19 @@ void set_max_op_num(Flag is_branch, Addr last_cl_prefetched) {
   Counter move_cnt = 0;
   Op* op;
   Op** op_p;
-  if (is_branch) {
+  if (max_runahead_op == last_runahead_op) {
+    op_p = (Op**)list_get_tail(&op_buf);
+    ASSERT(ic->proc_id, op_p);
+    op = *op_p;
+    max_op_num = op->op_num;
+  } else if (is_branch) {
     op_p = (Op**)list_prev_element(&op_buf);
     move_cnt++;
     ASSERT(ic->proc_id, op_p);
     op = *op_p;
     ASSERT(ic->proc_id, op->table_info->cf_type);
     max_op_num = op->op_num;
-  }
-  else {
+  } else if (!is_branch) {
     op_p = (Op**)list_get_current(&op_buf);
     ASSERT(ic->proc_id, op_p);
     op = *op_p;
@@ -1278,10 +1302,13 @@ void log_stats_ic_miss() {
 Flag instr_fill_line(Mem_Req* req) {
   ASSERT(ic->proc_id, req->type == MRT_IPRF || req->type == MRT_FDIPPRF || req->type == MRT_UOCPRF || req->type == MRT_IFETCH);
 
-  if (mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_IFETCH) || mem_req_is_type(req, MRT_FDIPPRF))
+  if (mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_IFETCH) || mem_req_is_type(req, MRT_FDIPPRF)) {
     icache_fill_line(req);
-  if (mem_req_is_type(req, MRT_FDIPPRF))
+  }
+  if (mem_req_is_type(req, MRT_FDIPPRF)) {
+    /*fdip_dec_outstanding_prefs(req->addr, req->off_path, req->emitted_cycle);*/
     fdip_dec_outstanding_prefs(req->addr);
+  }
   if (mem_req_is_type(req, MRT_UOCPRF))
     uop_cache_fill_prefetch(req->addr, !req->off_path);
   return TRUE;

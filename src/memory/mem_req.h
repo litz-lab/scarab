@@ -106,6 +106,7 @@ struct Mem_Req_struct {
   Mem_Req_Type             type;     /* what kind of miss is it? */
   /* Bit string recording all Mem_Req_Type(s) that were coalesced into this request. */
   uns                      types;
+  Counter                  emitted_cycle; /* cycle when the request is emitted. */
   struct Mem_Queue_struct* queue;    /* Pointer to the queue this entry is in */
   Counter                  priority; /* priority of the miss */
   Addr                     addr;     /* address to fetch */
@@ -201,6 +202,7 @@ Flag mem_req_type_is_stalling(Mem_Req_Type type);
 /* Returns whether this type either started or was ever coalesced into this mem_req. */
 Flag mem_req_is_type(Mem_Req* req, Mem_Req_Type type);
 void mem_req_set_types(Mem_Req* req, Mem_Req_Type type);
+void mem_req_clr_types(Mem_Req* req, Mem_Req_Type type);
 
 /**************************************************************************************/
 /* Externs */

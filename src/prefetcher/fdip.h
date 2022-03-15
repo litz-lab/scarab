@@ -20,7 +20,9 @@ extern "C" {
   void fdip_update();
   Flag fdip_pref_off_path(void);
   Flag fdip_is_max_op(Op *op);
+  void fdip_inc_outstanding_prefs(Flag success);
   void fdip_dec_outstanding_prefs(Addr cl_addr);
+  //void fdip_dec_outstanding_prefs(Addr cl_addr, Flag off_path, Counter emitted_cycle);
 
   /* Private*/
   void fdip_new_branch(Addr bp_pc, Op *op);

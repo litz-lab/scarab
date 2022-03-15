@@ -74,3 +74,7 @@ Flag mem_req_is_type(Mem_Req* req, Mem_Req_Type type) {
 void mem_req_set_types(Mem_Req* req, Mem_Req_Type type) {
   SETBIT(req->types, type);
 }
+
+void mem_req_clr_types(Mem_Req* req, Mem_Req_Type type) {
+  CLRBIT(req->types, type);
+}

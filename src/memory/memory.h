@@ -79,8 +79,17 @@ typedef L1_Data MLC_Data; /* Use the same data structure for simplicity */
 typedef enum Mem_Queue_Req_Result_enum {
   FAILED,       // Request could not be adjusted because of a merge conflict between requests
   SUCCESS_NEW,  // A new mem request is successfully created
-  SUCCESS_DIFF, // Requests of different types successfully adjusted
-  SUCCESS_SAME, // Requests of the same type successfully adjusted
+  //SUCCESS_DIFF, // Requests of different types successfully adjusted
+  //SUCCESS_DIFF_TYPE_SAME_PATH, // Requests of different types and same path (both on or both off) successfully adjusted
+  //SUCCESS_DIFF_TYPE_DIFF_PATH, // Requests of different types and different path (one on and one off) successfully adjusted
+  SUCCESS_DIFF_TYPE,
+  SUCCESS_DIFF_TYPE_ADDED,
+  //SUCCESS_SAME, // Requests of same types successfully adjusted
+  //SUCCESS_SAME_TYPE_SAME_PATH, // Requests of the same type and same path (both on or both off) successfully adjusted
+  //SUCCESS_SAME_TYPE_DIFF_PATH, // Requests of the same type and different path (one on and one off) successfully adjusted
+  SUCCESS_SAME_TYPE,
+  SUCCESS_SAME_TYPE_INVALID_OFF_PATH_CHANGED,
+  SUCCESS_SAME_TYPE_VALID_OFF_PATH_CHANGED,
 } Mem_Queue_Req_Result;
 
 typedef enum Mem_Queue_Type_enum {
@@ -266,6 +275,8 @@ void wp_process_reqbuf_match(Mem_Req* req, Op* op);
 // batch scheduler
 uns num_chip_demands(void);
 uns num_offchip_stall_reqs(uns proc_id);
+
+Counter count_fdip_mem_l1_reqs(void);
 
 /**************************************************************************************/
 /* Externs */

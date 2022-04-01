@@ -617,9 +617,10 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         op   = alloc_op(ic->proc_id);
         frontend_fetch_op(ic->proc_id, op);
       }
-      ASSERTM(ic->proc_id, ic->next_fetch_addr == op->inst_info->addr,
-              "Fetch address 0x%llx does not match op address 0x%llx\n",
-              ic->next_fetch_addr, op->inst_info->addr);
+      // Disable this to allow system interrupts.
+      // ASSERTM(ic->proc_id, ic->next_fetch_addr == op->inst_info->addr,
+      //         "Fetch address 0x%llx does not match op address 0x%llx\n",
+      //         ic->next_fetch_addr, op->inst_info->addr);
       op->fetch_addr = ic->next_fetch_addr;
       ASSERT_PROC_ID_IN_ADDR(ic->proc_id, op->fetch_addr)
       op->off_path  = ic->off_path;

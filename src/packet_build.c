@@ -218,6 +218,13 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
       op->fetched_from_uop_cache = FALSE;
       // Inaccuracy: should break before op. But how does this op get refetched from frontend?
       // by breaking after I always fetch one extra op per PW from UC
+      Flag frontend_resteer = op->oracle_info.mispred || op->oracle_info.btb_miss || op->oracle_info.misfetch;
+      // UOC to IC switches can happen at any branch, whether or not the branch causes a frontend resteer.
+      // The reason we distinguish between correct and incorrect predictions is that FDIP should be able
+      // to prefetch correct predictions. Incorrect predictions require other techniques.
+      // FDIP cannot prefetch ahead of time on neither a misprediction nor BTB miss nor misfetch.
+      STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_BR_NOT_TAKEN_RESTEERED
+                 + 2 * op->oracle_info.dir + !frontend_resteer);
       return PB_BREAK_AFTER;
     } else if (uop_cache_issue_ops) {
       op->fetched_from_uop_cache = TRUE;

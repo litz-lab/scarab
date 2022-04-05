@@ -14,6 +14,7 @@
  */
 
 #include "mtage_unlimited.h"
+#include "bp/bp.param.h"
 
 // for my personal statistics
 int  XX, YY, ZZ, TT;
@@ -1054,6 +1055,9 @@ bool MTAGE::GetPrediction(uint64_t PC) {
 
 void MTAGE::UpdatePredictor(uint64_t PC, OpType OPTYPE, bool resolveDir,
                             bool predDir, uint64_t branchTarget) {
+  if (PERFECT_BP && !subp[0])
+    GetPrediction(PC);
+
   XX += (predtaken[0] != resolveDir);
   YY += (pred_inter != resolveDir);
   ZZ += (COPRED != resolveDir);

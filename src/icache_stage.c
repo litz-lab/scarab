@@ -570,15 +570,19 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     Inst_Info* inst = 0;
     UNUSED(inst);
 
-    if(frontend_can_fetch_op(ic->proc_id)) {
+    if(frontend_can_fetch_op(ic->proc_id) ||
+        (!frontend_can_fetch_op(ic->proc_id) && LOOKAHEAD_BUF_SIZE && list_get_count(&op_buf))) {
       if (LOOKAHEAD_BUF_SIZE) {
-        Op* new_op = alloc_op(ic->proc_id);
-        frontend_fetch_op(ic->proc_id, new_op);
-        Op** ptr = dl_list_add_tail(&op_buf);
-        *ptr = new_op;
-        if (new_op->table_info->cf_type)
-          max_runahead_uid = new_op->inst_uid;
-        max_runahead_op = new_op->op_num;
+        Op** ptr = NULL;
+        if (frontend_can_fetch_op(ic->proc_id)) {
+          Op* new_op = alloc_op(ic->proc_id);
+          frontend_fetch_op(ic->proc_id, new_op);
+          ptr = dl_list_add_tail(&op_buf);
+          *ptr = new_op;
+          if (new_op->table_info->cf_type)
+            max_runahead_uid = new_op->inst_uid;
+          max_runahead_op = new_op->op_num;
+        }
         ptr = dl_list_remove_head(&op_buf);
         op = *ptr;
         last_issued_op_num = op->op_num;
@@ -1306,8 +1310,9 @@ Flag instr_fill_line(Mem_Req* req) {
     icache_fill_line(req);
   }
   if (mem_req_is_type(req, MRT_FDIPPRF)) {
-    /*fdip_dec_outstanding_prefs(req->addr, req->off_path, req->emitted_cycle);*/
-    fdip_dec_outstanding_prefs(req->addr);
+    fdip_dec_outstanding_prefs(req->addr, req->off_path, req->emitted_cycle);
+    // TODO: comment out the line above and uncomment the line below to swith 1-outstanding prefetch counter.
+    /*fdip_dec_outstanding_prefs(req->addr);*/
   }
   if (mem_req_is_type(req, MRT_UOCPRF))
     uop_cache_fill_prefetch(req->addr, !req->off_path);

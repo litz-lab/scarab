@@ -21,6 +21,7 @@
  */
 
 #include "cbp_to_scarab.h"
+#include "bp/bp.param.h"
 
 template <typename CBP_CLASS>
 class CBP_To_Scarab_Intf {

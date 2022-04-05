@@ -2927,6 +2927,10 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
   higher_priority = current_priority < old_priority;
 
   STAT_EVENT(req->proc_id, MEM_REQ_BUFFER_HIT);
+  if (req->type == MRT_FDIPPRF && type == MRT_IFETCH) {
+    STAT_EVENT(req->proc_id, MEM_REQ_FDIP_BUFFER_HIT);
+    INC_STAT_EVENT(req->proc_id, MEM_REQ_FDIP_CYCLE_DELTA, cycle_count - req->emitted_cycle);
+  }
   wp_process_reqbuf_match(req, op);
 
   if(ALLOW_TYPE_MATCHES && demand_hit_writeback) {
@@ -3173,12 +3177,14 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
     return SUCCESS_DIFF_TYPE;
   }
   else if (old_type != type && type_added) {
+    req->emitted_cycle = cycle_count;
     return SUCCESS_DIFF_TYPE_ADDED;
   }
   else if (old_type == type && !off_path_changed) {
     return SUCCESS_SAME_TYPE;
   }
   else if (old_type == type && off_path_changed) {
+    req->emitted_cycle = cycle_count;
     if (req->emitted_cycle < last_recover_cycle)
       return SUCCESS_SAME_TYPE_INVALID_OFF_PATH_CHANGED;
     else

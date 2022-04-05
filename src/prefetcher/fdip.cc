@@ -59,10 +59,10 @@ extern List op_buf;
 Hash_Table top_mispred_br;
 uns64 recovery_count = 0;
 uns64 off_count = 0;
-uns64 outstanding_prefs = 0;
+//uns64 outstanding_prefs = 0;
 // TODO: one of 1-counter mode and 2-counter mode will be deprecated after verifying with unlimited TAGE buffer. 2-counter mode is commented out in current version.
-//uns64 outstanding_prefs_on_path = 0;
-//uns64 outstanding_prefs_off_path = 0;
+uns64 outstanding_prefs_on_path = 0;
+uns64 outstanding_prefs_off_path = 0;
 Flag mem_req_failed = FALSE;
 Counter max_op_num = 0;
 Counter last_recover_cycle = 0;
@@ -227,6 +227,9 @@ void fdip_recover(Recovery_Info *info) {
   }
   last_recover_cycle = cycle_count;
   //outstanding_prefs_off_path = 0;
+  STAT_EVENT(ic_stage->proc_id, FDIP_RECOVER);
+  INC_STAT_EVENT(ic_stage->proc_id, FDIP_ON_PATH_OUTSTANDING_PREFS_ON_RECOVER, outstanding_prefs_on_path);
+  INC_STAT_EVENT(ic_stage->proc_id, FDIP_OFF_PATH_OUTSTANDING_PREFS_ON_RECOVER, outstanding_prefs_off_path);
   fdip_update();
 }
 
@@ -349,15 +352,14 @@ void fdip_update() {
    *     In this case, FDIP runs ahead again and continuously increases the number of memory requests although all the previous requests have not yet been handled.
    */
   while ((FDIP_PERFECT_RUNAHEAD && !mem_req_failed &&
-                ((!fdip_on_path_bp && (outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES)) ||
-                //((!fdip_on_path_bp && (outstanding_prefs_on_path + outstanding_prefs_off_path < FDIP_MAX_OUTSTANDING_PREFETCHES)) ||
+                //((!fdip_on_path_bp && (outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES)) ||
+                ((!fdip_on_path_bp && (outstanding_prefs_on_path + outstanding_prefs_off_path < FDIP_MAX_OUTSTANDING_PREFETCHES)) ||
                  (fdip_on_path_bp && (last_runahead_uid < orig_last_runahead_uid + ISSUE_WIDTH) && (last_runahead_uid != max_runahead_uid)))) ||
       ((!FDIP_PERFECT_RUNAHEAD &&
                 (taken_branches < FDIP_MAX_TAKEN_BRANCHES) &&
-                //(last_runahead_uid != max_runahead_uid) &&
                 (last_runahead_op != max_runahead_op) &&
-                (outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES) &&
-                //(outstanding_prefs_on_path + outstanding_prefs_off_path < FDIP_MAX_OUTSTANDING_PREFETCHES) &&
+                //(outstanding_prefs < FDIP_MAX_OUTSTANDING_PREFETCHES) &&
+                (outstanding_prefs_on_path + outstanding_prefs_off_path < FDIP_MAX_OUTSTANDING_PREFETCHES) &&
                 //(count_fdip_mem_l1_reqs() < FDIP_MAX_OUTSTANDING_PREFETCHES) && // the actual FTQ size
                 !mem_req_failed))) {
 
@@ -382,7 +384,7 @@ void fdip_update() {
         break;
       }
       if (is_branch) {
-        if (!bp_is_predictable(g_bp_data, op)) {
+        if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, op)) {
           break_on_tage_limit = TRUE;
           move_to_prev_op();
           break;
@@ -426,7 +428,7 @@ void fdip_update() {
       is_branch = op_iter != pc_to_op.end();
       if (is_branch) {
         op = &op_iter->second;
-        if (!bp_is_predictable(g_bp_data, op)) {
+        if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, op)) {
           break_on_tage_limit = TRUE;
           break;
         }
@@ -494,8 +496,10 @@ void fdip_update() {
     if (PERFECT_FDIP && !fdip_on_path_pref) {
       runahead_disable = TRUE;
     }
-    if (runahead_disable)
+    if (runahead_disable) {
+      STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_OFF_PATH);
       break;
+    }
   }
 
   if (taken_branches >= FDIP_MAX_TAKEN_BRANCHES) {
@@ -504,8 +508,9 @@ void fdip_update() {
   else if (last_runahead_op == max_runahead_op) {
     STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_LOOKAHEAD_BUFFER);
   }
-  //else if (outstanding_prefs_on_path + outstanding_prefs_off_path >= FDIP_MAX_OUTSTANDING_PREFETCHES)
-  else if (outstanding_prefs >= FDIP_MAX_OUTSTANDING_PREFETCHES)
+  else if (outstanding_prefs_on_path + outstanding_prefs_off_path >= FDIP_MAX_OUTSTANDING_PREFETCHES)
+  // TODO: comment out the line above and uncomment the line below to use 1-outstanding prefetch counter mode
+  //else if (outstanding_prefs >= FDIP_MAX_OUTSTANDING_PREFETCHES)
   {
     STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_MAX_OUTSTANDING_PREFETCHES);
   }
@@ -518,10 +523,14 @@ void fdip_update() {
   }
 
   if (FDIP_PREF_NO_LATENCY) {
-    outstanding_prefs = 0;
-    //outstanding_prefs_on_path = 0;
-    //outstanding_prefs_off_path = 0;
+    //outstanding_prefs = 0;
+    // TODO: comment out the two following lines and uncomment the line above to use 1-outstanding prefetch counter mode
+    outstanding_prefs_on_path = 0;
+    outstanding_prefs_off_path = 0;
   }
+  STAT_EVENT(ic_stage->proc_id, FDIP_CYCLE_COUNT);
+  INC_STAT_EVENT(ic_stage->proc_id, FDIP_ON_PATH_OUTSTANDING_PREFS, outstanding_prefs_on_path);
+  INC_STAT_EVENT(ic_stage->proc_id, FDIP_OFF_PATH_OUTSTANDING_PREFS, outstanding_prefs_off_path);
 }
 
 Flag fdip_pref_off_path(void) {
@@ -536,17 +545,19 @@ Flag fdip_is_max_op(Op* op) {
   return FALSE;
 }
 
-void fdip_dec_outstanding_prefs(Addr cl_addr) {
-  ASSERT(ic_stage->proc_id, outstanding_prefs);
-  outstanding_prefs--;
-  return;
-}
+// 1-outstanding prefetch counter mode
+//void fdip_dec_outstanding_prefs(Addr cl_addr) {
+  //ASSERT(ic_stage->proc_id, outstanding_prefs);
+  //outstanding_prefs--;
+  //return;
+//}
 
-/*
+// 2-outstanding prefetch counters mode
 void fdip_dec_outstanding_prefs(Addr cl_addr, Flag off_path, Counter emitted_cycle) {
   if (off_path) {
-    if (emitted_cycle < last_recover_cycle)
-      return;
+    // TODO: the following two lines should be uncommented if outstanding_prefs_off_path is reset in fdip_recover()
+    //if (emitted_cycle < last_recover_cycle)
+      //return;
     ASSERT(ic_stage->proc_id, outstanding_prefs_off_path);
     outstanding_prefs_off_path--;
   } else {
@@ -555,15 +566,15 @@ void fdip_dec_outstanding_prefs(Addr cl_addr, Flag off_path, Counter emitted_cyc
   }
   return;
 }
-*/
 
+// 1-outstanding prefetch counter mode
+/*
 void fdip_inc_outstanding_prefs(Flag success) {
   switch(success) {
     case SUCCESS_NEW:
     case SUCCESS_DIFF_TYPE_ADDED:
       outstanding_prefs++;
       break;
-    //case SUCCESS_SAME_TYPE_PATH_CHANGED:
     case SUCCESS_SAME_TYPE_INVALID_OFF_PATH_CHANGED:
     case SUCCESS_SAME_TYPE_VALID_OFF_PATH_CHANGED:
       ASSERT(ic_stage->proc_id, fdip_on_path_pref);
@@ -574,8 +585,9 @@ void fdip_inc_outstanding_prefs(Flag success) {
       break;
   }
 }
+*/
 
-/*
+// 2-outstanding prefetch counter mode
 void fdip_inc_outstanding_prefs(Flag success) {
   switch(success) {
     case SUCCESS_NEW:
@@ -603,4 +615,3 @@ void fdip_inc_outstanding_prefs(Flag success) {
       break;
   }
 }
-*/

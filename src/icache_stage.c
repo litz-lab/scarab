@@ -336,6 +336,8 @@ Inst_Info** lookup_cache(Flag* uop_cache_fetch) {
   Inst_Info** line = NULL;
   line = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr,
                                              &ic->line_addr, TRUE);
+  if(PERFECT_ICACHE && !ic->line)
+    line = (Inst_Info**)INIT_CACHE_DATA_VALUE;
   if (in_uop_cache(ic->fetch_addr, NULL, FALSE)) {
     *uop_cache_fetch = TRUE;
     // Should return Inst_Info, but op hasn't been fetched yet, so just give it any 
@@ -395,9 +397,6 @@ void update_icache_stage() {
                   ic->fetch_addr);
 
         ic->line = lookup_cache(&uop_cache_fetch);
-
-        if(PERFECT_ICACHE && !ic->line)
-          ic->line = INIT_CACHE_DATA_VALUE;
 
         if(WP_COLLECT_STATS)  // CMP remove?
           line_info = (Icache_Data*)cache_access(

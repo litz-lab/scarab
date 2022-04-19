@@ -336,7 +336,7 @@ Inst_Info** lookup_cache(Flag* uop_cache_fetch) {
   Inst_Info** line = NULL;
   line = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr,
                                              &ic->line_addr, TRUE);
-  if(PERFECT_ICACHE && !ic->line)
+  if(PERFECT_ICACHE && !line)
     line = (Inst_Info**)INIT_CACHE_DATA_VALUE;
   if (in_uop_cache(ic->fetch_addr, NULL, FALSE)) {
     *uop_cache_fetch = TRUE;

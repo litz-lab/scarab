@@ -299,7 +299,10 @@ void debug_print_node_table() {
         print_open_op_array(GLOBAL_DEBUG_STREAM, temp, DEBUG_NODE_WIDTH,
                             DEBUG_NODE_WIDTH);
       }
-      memset(temp, 0, DEBUG_NODE_WIDTH * sizeof(Op*));
+      // For some reason this does not zero out the entire array.
+      // (Assert fails and verified in gdb).
+      // memset(temp, 0, DEBUG_NODE_WIDTH * sizeof(Op*));
+      for (int i=0; i<DEBUG_NODE_WIDTH; i++) temp[i] = 0;
       empty = TRUE;
     }
   }

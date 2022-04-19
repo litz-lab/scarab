@@ -34,7 +34,7 @@
 #include "stage_data.h"
 
 #define IC_ISSUE_WIDTH      ISSUE_WIDTH
-#define UC_ISSUE_WIDTH      ISSUE_WIDTH + 1
+#define UC_ISSUE_WIDTH      ISSUE_WIDTH + UOP_CACHE_ADDITIONAL_ISSUE_BANDWIDTH
 
 /**************************************************************************************/
 /* Forward Declarations */

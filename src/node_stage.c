@@ -61,7 +61,7 @@
 #define PRINT_RETIRED_UOP(proc_id, args...) \
   _DEBUG_LEAN(proc_id, DEBUG_RETIRED_UOPS, ##args)
 
-#define DEBUG_NODE_WIDTH ISSUE_WIDTH + 1
+#define DEBUG_NODE_WIDTH ISSUE_WIDTH + UOP_CACHE_ADDITIONAL_ISSUE_BANDWIDTH
 #define OP_IS_IN_RS(op) (op->state >= OS_IN_RS && op->state < OS_SCHEDULED)
 
 /**************************************************************************************/

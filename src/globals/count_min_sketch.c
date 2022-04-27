@@ -13,7 +13,7 @@
 #include <limits.h>
 #include <inttypes.h>       /* PRIu64 */
 #include <math.h>
-#include "count_min_sketch.h"
+#include "globals/count_min_sketch.h"
 
 #define LOG_TWO 0.6931471805599453
 
@@ -277,7 +277,7 @@ int cms_merge_into(CountMinSketch* cms, int num_sketches, ...) {
     return CMS_SUCCESS;
 }
 
-int cms_print(CountMinSketch* cms) {
+void cms_print(CountMinSketch* cms) {
   int i, j;
   for (i=0; i<cms->depth; i++) {
     for (j=0; j<cms->width; j++) {

@@ -14,6 +14,7 @@ extern "C" {
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 #include "globals/enum.h"
+#include "globals/count_min_sketch.h"
 
 #include "core.param.h"
 #include "bp/bp.param.h"

@@ -33,6 +33,7 @@
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
+#include "globals/count_min_sketch.h"
 
 #include "bp/bp.h"
 #include "icache_stage.h"
@@ -493,6 +494,7 @@ void update_icache_stage() {
             ASSERT(ic->proc_id, last_issued_op_num <= max_op_num);
             if (FDIP_CMS_ENABLE) {
               int res = cms_add(&cms_useful, hexstr64s(ic->line_addr));
+              UNUSED(res);
             }
           }
           STAT_EVENT(ic->proc_id, ICACHE_HIT);
@@ -1086,10 +1088,12 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
     if(!line->fetched_by_offpath) {
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ON_PATH_BY_FDIP);
       int res = cms_add(&cms_unuseful, hexstr64s(*repl_line_addr));
+      UNUSED(res);
     }
     else {
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_OFF_PATH_BY_FDIP);
       int res = cms_add(&cms_unuseful, hexstr64s(*repl_line_addr));
+      UNUSED(res);
     }
   }
   else if(*repl_line_addr && line->FDIP_prefetch && line->read_count[0]) {

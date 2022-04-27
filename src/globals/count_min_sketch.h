@@ -200,7 +200,7 @@ int cms_merge(CountMinSketch* cms, int num_sketches, ...);
 */
 int cms_merge_into(CountMinSketch* cms, int num_sketches, ...);
 
-int cms_print(CountMinSketch* cms);
+void cms_print(CountMinSketch* cms);
 
 
 #ifdef __cplusplus

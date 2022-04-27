@@ -349,8 +349,6 @@ Flag bp_is_predictable(Bp_Data* bp_data, Op* op) {
 /* bp_predict_op:  predicts the target of a control flow instruction */
 
 Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
-  Addr addr = fetch_addr;
-  /*Addr line_addr;*/
   Addr* btb_target;
   Addr  pred_target;
   Flag  btb_miss_nt = FALSE;

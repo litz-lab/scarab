@@ -711,6 +711,16 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       ASSERT(ic->proc_id, op->table_info->cf_type != CF_SYS);
     }
 
+    // Log uop cache access - must be called for every op
+    op->fetched_from_uop_cache = in_uop_cache(op->inst_info->addr, &op->op_num, TRUE);
+    if (uop_cache_issue_ops && !op->fetched_from_uop_cache) {
+      Flag frontend_resteer = op->oracle_info.mispred || op->oracle_info.btb_miss || op->oracle_info.misfetch;
+      // A good version of FDIP should be able to prefetch correct predictions.
+      // FDIP cannot prefetch ahead of time on neither a misprediction nor BTB miss nor misfetch
+      STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_BR_NOT_TAKEN_RESTEERED
+                  + 2 * op->oracle_info.dir + !frontend_resteer);
+    }
+
     packet_break = packet_build(ic_pb_data, break_fetch, op, uop_cache_issue_ops);
     if(packet_break == PB_BREAK_BEFORE) {
       if(LOOKAHEAD_BUF_SIZE) {
@@ -890,6 +900,17 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       // pass the global branch history to all the instructions
       op->oracle_info.pred_global_hist = g_bp_data->global_hist;
       ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
+    }
+
+    // Check whether the next op will be found in the uop cache.
+    // Break when switching from icache to uoc or vice versa.
+    Flag next_op_in_uop_cache = in_uop_cache(op->oracle_info.npc, NULL, FALSE);
+    if (op->fetched_from_uop_cache && !next_op_in_uop_cache) {
+      *break_fetch = BREAK_UC_MISS;
+      break;
+    } else if (!op->fetched_from_uop_cache && next_op_in_uop_cache) {
+      *break_fetch = BREAK_ICACHE_TO_UOP_CACHE_SWITCH;
+      break;
     }
 
     if(packet_break == PB_BREAK_AFTER)

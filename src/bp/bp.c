@@ -137,18 +137,9 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op,
      op->op_num <= bp_recovery_info->recovery_op_num) {
     const Addr next_fetch_addr = op->oracle_info.npc;
 
-    uns fetch_latency;
     Flag uc_hit = in_uop_cache(next_fetch_addr, NULL, FALSE);
     inc_bstat_miss(op, uc_hit);
-    if (uc_hit) {
-      fetch_latency = UOP_CACHE_LATENCY;
-      INC_STAT_EVENT(bp_recovery_info->proc_id, BP_RECOVERY_FETCH_CYCLES_UC, UOP_CACHE_LATENCY);
-    } else {
-      fetch_latency = ICACHE_LATENCY;
-      INC_STAT_EVENT(bp_recovery_info->proc_id, BP_RECOVERY_FETCH_CYCLES_IC, ICACHE_LATENCY);
-    }
-    const uns latency = late_bp_recovery ? fetch_latency + 1 + LATE_BP_LATENCY :
-                                           fetch_latency + 1;
+    const uns latency = late_bp_recovery ? LATE_BP_LATENCY : 1;
     DEBUG(
       bp_recovery_info->proc_id,
       "Recovery signaled for op_num:%s @ 0x%s  next_fetch:0x%s offpath:%d\n",
@@ -256,17 +247,9 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op,
     DEBUG(bp_recovery_info->proc_id, "Redirect signaled for op_num:%s @ 0x%s\n",
           unsstr64(op->op_num), hexstr64s(op->inst_info->addr));
 
-    uns fetch_latency;
-    Flag uc_hit = in_uop_cache(op->oracle_info.npc, NULL, FALSE);  // should this be pred_npc? We may not have predicted correctly.
-    inc_bstat_miss(op, uc_hit);
-    if (uc_hit) {
-      fetch_latency = UOP_CACHE_LATENCY;
-      INC_STAT_EVENT(bp_recovery_info->proc_id, BP_REDIRECT_FETCH_CYCLES_UC, UOP_CACHE_LATENCY);
-    } else {
-      fetch_latency = ICACHE_LATENCY;
-      INC_STAT_EVENT(bp_recovery_info->proc_id, BP_REDIRECT_FETCH_CYCLES_IC, ICACHE_LATENCY);
-    }
-    bp_recovery_info->redirect_cycle = cycle + 1 + fetch_latency +
+    Flag uc_hit = in_uop_cache(op->oracle_info.npc, NULL, FALSE);
+    inc_bstat_miss(op, uc_hit); // shouldn't double count if both btb miss and predictor wrong.
+    bp_recovery_info->redirect_cycle = cycle + 1 +
                                        (op->table_info->cf_type == CF_SYS ?
                                           EXTRA_CALLSYS_CYCLES :
                                           0);

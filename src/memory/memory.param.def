@@ -129,6 +129,8 @@ DEF_PARAM(  fdip_uc_size                   , FDIP_UC_SIZE                    , u
 DEF_PARAM(  fdip_uc_assoc                  , FDIP_UC_ASSOC                   , uns    , uns     , 8                      ,       )
 // The insert replacement policy should be one of INSERT_REP_(DEFAULT/LRU/LOWQTR/MID/MRU)
 DEF_PARAM(  fdip_uc_insert_replpol         , FDIP_UC_INSERT_REPLPOL          , uns    , uns     , 0                      ,       )
+// Allow the map stage to consume ops originating from either the icache or uop cache path in the same cycle.
+DEF_PARAM(  map_stage_consume_from_icache_and_uoc_same_cycle, MAP_STAGE_CONSUME_FROM_ICACHE_AND_UOC_SAME_CYCLE, Flag, Flag, TRUE,)
 
 /* L0 data */
 DEF_PARAM(dcache_size, DCACHE_SIZE, uns, uns, (64 * 1024), )

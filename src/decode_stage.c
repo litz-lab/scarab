@@ -210,7 +210,9 @@ void update_decode_stage(Stage_Data* src_sd) {
 
     /* the next stage after the empty stage may have a few extra slots */
     // want to be able to append to first stage if there is a stall
-    int append_to_sd = empty_stage_idx - 1 >= 0 
+    Flag append_to_sd = FALSE;
+    if (MAP_STAGE_CONSUME_FROM_ICACHE_AND_UOC_SAME_CYCLE)
+      append_to_sd = empty_stage_idx - 1 >= 0
                        && dec->sds[empty_stage_idx - 1].op_count < STAGE_MAX_OP_COUNT;
     int insert_into_sd_num = -1;
     if (append_to_sd) {

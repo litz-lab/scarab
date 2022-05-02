@@ -776,7 +776,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
                               2 * op->off_path);
 
     thread_map_mem_dep(op);
-    op->fetch_cycle = cycle_count;
+    uns fetch_latency = op->fetched_from_uop_cache ? UOP_CACHE_LATENCY : ICACHE_LATENCY;
+    op->fetch_cycle = cycle_count + fetch_latency - 1;
 
     ic->sd.ops[ic->sd.op_count] = op; /* put op in the exit list */
     op_count[ic->proc_id]++;          /* increment instruction counters */

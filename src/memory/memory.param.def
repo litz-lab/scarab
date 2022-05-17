@@ -121,6 +121,7 @@ DEF_PARAM(  inf_size_uop_cache_pw_size_lim , INF_SIZE_UOP_CACHE_PW_SIZE_LIM  , u
 DEF_PARAM(  uop_cache_size                 , UOP_CACHE_SIZE                  , uns    , uns     , 2048                   ,       )
 DEF_PARAM(  uop_cache_assoc                , UOP_CACHE_ASSOC                 , uns    , uns     , 8                      ,       )
 DEF_PARAM(  uop_cache_max_uops_line        , UOP_CACHE_MAX_UOPS_LINE         , uns    , uns     , 4                      ,       )
+// max uops per line should be the width of the processor
 DEF_PARAM(  uop_cache_max_imm_disp_line    , UOP_CACHE_MAX_IMM_DISP_LINE     , uns    , uns     , 4                      ,       )
 
 /* FDIP Confidence Cache */

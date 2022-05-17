@@ -293,7 +293,7 @@ void recover_icache_stage() {
     Flag uc_hit = in_uop_cache(op->oracle_info.pred_npc, NULL, FALSE);
     uns fetch_latency = uc_hit ? UOP_CACHE_LATENCY : ICACHE_LATENCY;
     if (fetch_latency > 1) {
-      ic->timer_cycle = fetch_latency - 1;
+      ic->timer_cycle = cycle_count + fetch_latency - 1;
       ic->next_state = IC_WAIT_FOR_TIMER;
     }
     INC_STAT_EVENT(bp_recovery_info->proc_id, BP_RECOVERY_FETCH_CYCLES_UC + !uc_hit, fetch_latency);
@@ -331,7 +331,7 @@ void redirect_icache_stage() {
   Flag uc_hit = in_uop_cache(op->oracle_info.pred_npc, NULL, FALSE);
   uns fetch_latency = uc_hit ? UOP_CACHE_LATENCY : ICACHE_LATENCY;  
   if (fetch_latency > 1) {
-    ic->timer_cycle = fetch_latency - 1;
+    ic->timer_cycle = cycle_count + fetch_latency - 1;
     ic->next_state = IC_WAIT_FOR_TIMER;
   }
 
@@ -925,18 +925,18 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
 
     // Check whether the next op will be found in the uop cache.
     // Break when switching from icache to uoc or vice versa.
-    // BUT do not add fetch latency when the last op caused a frontend resteer
-    // since the it has already been counted.
+    // BUT do not add fetch latency when the last op caused a frontend resteer.
+    // The latency will already have been added, and break_fetch already set.
     Flag next_op_in_uop_cache = in_uop_cache(op->oracle_info.npc, NULL, FALSE);
     if (!op->oracle_info.mispred && !op->oracle_info.misfetch && !op->oracle_info.btb_miss) {
       if (op->fetched_from_uop_cache && !next_op_in_uop_cache) {
         *break_fetch = BREAK_UC_MISS;
-        ic->timer_cycle = ICACHE_LATENCY - 1;
+        ic->timer_cycle = cycle_count + ICACHE_LATENCY - 1;
         return IC_WAIT_FOR_TIMER;
       } else if (!op->fetched_from_uop_cache && next_op_in_uop_cache) {
         *break_fetch = BREAK_ICACHE_TO_UOP_CACHE_SWITCH;
         if (UOP_CACHE_LATENCY > 1) {
-          ic->timer_cycle = UOP_CACHE_LATENCY - 1;
+          ic->timer_cycle = cycle_count + UOP_CACHE_LATENCY - 1;
           return IC_WAIT_FOR_TIMER;
         }
       }

@@ -890,6 +890,20 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         if(!op->off_path)
           td->td_info.last_bp_miss_op = op;
         ///////////////////////////////////////
+
+        // Measuring basic block lengths
+        static int bbl_len = 0;
+        static int bbl_len_dont_end_pred_nt = 0;
+        bbl_len++;
+        bbl_len_dont_end_pred_nt++;
+        if (op->table_info->cf_type) {
+          STAT_EVENT(ic->proc_id, BBL_LENGTH_1 + bbl_len-1);
+          bbl_len = 0;
+          if (op->oracle_info.pred == TAKEN) {
+            STAT_EVENT(ic->proc_id, BBL_DONT_END_PRED_NT_LENGTH_1 + bbl_len_dont_end_pred_nt-1);
+            bbl_len_dont_end_pred_nt = 0;
+          }
+        }
       }
 
       

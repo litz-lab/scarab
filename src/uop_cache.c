@@ -102,8 +102,6 @@ Flag pw_insert(Uop_Cache_Data pw) {
     for (int jj = 0; jj < lines_needed; jj++) {
       cur_line_data = (Uop_Cache_Data*) cache_insert(&uop_cache, 0,
                       pw.first, &line_addr, &repl_line_addr);
-      // TODO: invalidate all lines with same pw start addr 
-      // (instead all with that have their PW start in this line)
       if (repl_line_addr) {
         cache_invalidate(&uop_cache, repl_line_addr, &line_addr);
       }
@@ -171,8 +169,10 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
     found = TRUE;
   } else {
     // Next try to access a new PW starting at this addr
-    if (cache_access_all(&uop_cache, search_addr, &line_addr, update_repl, 
-                          (void**) &uoc_data)) {
+    found = cache_access_all(&uop_cache, search_addr, &line_addr, update_repl, 
+                          (void**) &uoc_data);
+    // Only update state if this access should change state
+    if (update_repl && found) {
       if (uoc_data->prefetch && !uoc_data->used) {
         STAT_EVENT(0, UOP_CACHE_PREFETCH_USED);
       }
@@ -181,10 +181,8 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
       }
       uoc_data->used += 1;
       cur_pw = *uoc_data;
-      found = TRUE;
-    } else {
+    } else if (update_repl) {
       memset(&cur_pw, 0, sizeof(cur_pw));
-      found = FALSE;
     }
   }
 

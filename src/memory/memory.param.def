@@ -123,6 +123,7 @@ DEF_PARAM(  uop_cache_assoc                , UOP_CACHE_ASSOC                 , u
 DEF_PARAM(  uop_cache_max_uops_line        , UOP_CACHE_MAX_UOPS_LINE         , uns    , uns     , 4                      ,       )
 // max uops per line should be the width of the processor
 DEF_PARAM(  uop_cache_max_imm_disp_line    , UOP_CACHE_MAX_IMM_DISP_LINE     , uns    , uns     , 4                      ,       )
+DEF_PARAM(  iprf_on_uop_cache_hit          , IPRF_ON_UOP_CACHE_HIT           , Flag   , Flag    , FALSE                  ,       )
 
 /* FDIP Confidence Cache */
 // The cache line size is fixed to ICACHE_LINE_SIZE (64 by default). The number of entries in a FDIP UC is FDIP_UC_SIZE / ICACHE_LINE_SIZE. To have 16K (16384) entries, FDIP_UC_SIZE should be 1048576.

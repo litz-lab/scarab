@@ -533,7 +533,8 @@ void update_icache_stage() {
           log_stats_ic_miss();
           // start a memreq to fill icache, but do not cause any stalls. 
           // Use for more inclusivity between IC and UC
-          new_mem_req(MRT_IFETCH, ic->proc_id, ic->line_addr,
+          if (IPRF_ON_UOP_CACHE_HIT)
+            new_mem_req(MRT_IPRF, ic->proc_id, ic->line_addr,
                            ICACHE_LINE_SIZE, 0, NULL, instr_fill_line,
                            unique_count,
                            0);

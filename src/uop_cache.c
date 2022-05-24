@@ -274,7 +274,7 @@ void accumulate_op(Op* op) {
   Flag branch_pt = op->oracle_info.pred == TAKEN;
   Flag uop_q_full = (accumulating_pw.n_uops + 1 > UOP_QUEUE_SIZE);
 
-  if (end_of_icache_line || branch_pt || uop_q_full) {
+  if (end_of_icache_line) {
     end_accumulate();
   }
 
@@ -285,6 +285,10 @@ void accumulate_op(Op* op) {
   uop_q[accumulating_pw.n_uops] = op;
   accumulating_pw.last = op->inst_info->addr;
   accumulating_pw.n_uops++;
+
+  if (branch_pt || uop_q_full) {
+    end_accumulate();
+  }
 };
 
 Flag uop_cache_fill_prefetch(Addr pw_start_addr, Flag fdip_on_path) {

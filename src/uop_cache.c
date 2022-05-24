@@ -272,7 +272,7 @@ void accumulate_op(Op* op) {
   }
   
   Flag end_of_icache_line = icache_line_addr != cur_icache_line_addr;
-  Flag branch_pt = op->oracle_info.pred == TAKEN;
+  Flag branch_pt = op->table_info->cf_type && op->oracle_info.pred == TAKEN;
   Flag uop_q_full = (accumulating_pw.n_uops + 1 > UOP_QUEUE_SIZE);
 
   if (end_of_icache_line) {

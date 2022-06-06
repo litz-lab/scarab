@@ -49,6 +49,7 @@
 #include "statistics.h"
 
 #include "freq.h"
+#include "uop_queue_stage.h"
 
 Flag perf_pred_started = FALSE;
 
@@ -98,6 +99,8 @@ void cmp_init(uns mode) {
     init_icache_stage(proc_id, "ICACHE");
 
     init_decode_stage(proc_id, "DECODE");
+
+    init_uop_queue_stage();
 
     init_map_stage(proc_id, "MAP");
 
@@ -209,7 +212,8 @@ void cmp_cores(void) {
       update_dcache_stage(&exec->sd);
       update_exec_stage(&node->sd);
       update_node_stage(map->last_sd);
-      update_map_stage(dec->last_sd);
+      update_map_stage(&oldest_ops);
+      update_uop_queue_stage(dec->last_sd);
       update_decode_stage(&ic->sd);
       update_icache_stage();
 

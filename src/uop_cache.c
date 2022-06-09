@@ -28,6 +28,7 @@
 #include "memory/memory.param.h"
 #include "prefetcher/pref.param.h"
 #include "uop_cache.h"
+#include "icache_stage.h" //needed for get_pw_lookahead_buffer
 
 /**************************************************************************************/
 /* Macros */

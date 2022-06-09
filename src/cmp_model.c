@@ -213,8 +213,9 @@ void cmp_cores(void) {
       update_exec_stage(&node->sd);
       update_node_stage(map->last_sd);
       update_map_stage(&oldest_ops);
-      update_uop_queue_stage(dec->last_sd);
+      update_uop_queue_stage(dec->last_sd, FALSE);
       update_decode_stage(&ic->sd);
+      update_uop_queue_stage(&ic->sd, TRUE);
       update_icache_stage();
 
       node_sched_ops();

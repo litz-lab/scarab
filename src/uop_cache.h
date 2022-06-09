@@ -12,7 +12,6 @@
 #define __UOP_CACHE_H__
 
 #include "op.h"
-#include "icache_stage.h" //needed for get_pw_lookahead_buffer
 
 /**************************************************************************************/
 /* Types */

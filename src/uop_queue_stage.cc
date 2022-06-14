@@ -47,10 +47,8 @@ void update_uop_queue_stage(Stage_Data* src_sd, Flag from_uop_cache) {
       ASSERT(0, from_uop_cache);
       return;  // The decode stage is not empty - ops in flight.
     } else if ((from_uop_cache && !op->fetched_from_uop_cache) || (!from_uop_cache && op->fetched_from_uop_cache)) {
-      for (int jj = 0; ii > 0 && ii < src_orig_op_count; ii++, jj++) {
-        src_sd->ops[jj] = src_sd->ops[ii];  // Shift ops in src_sd to front.
-        src_sd->ops[ii] = NULL;
-      }
+      // Icache and uop cache fetched instructions should not be fetched same cycle.
+      ASSERT(0, ii == 0);
       break;
     }
 

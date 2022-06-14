@@ -184,18 +184,16 @@ void update_decode_stage(Stage_Data* src_sd) {
   if(cur->op_count == 0) {
     int src_orig_op_count = src_sd->op_count;
     for (int ii = 0; ii < src_orig_op_count; ii++) {
-      if (src_sd->ops[ii]->fetched_from_uop_cache) {  // Shift ops in src_sd to front.
-        for (int jj = 0; ii > 0 && ii < src_orig_op_count; ii++, jj++) {
-          src_sd->ops[jj] = src_sd->ops[ii];
-          src_sd->ops[ii] = NULL;
-        }
+      ASSERT(dec->proc_id, !src_sd->ops[ii]->fetched_from_uop_cache || ii == 0); 
+      if (src_sd->ops[ii]->fetched_from_uop_cache) {
+        // Icache and uop cache fetched instructions should not be fetched same cycle.
+        ASSERT(dec->proc_id, ii == 0);
         break;
-      } else {
-        cur->ops[ii] = src_sd->ops[ii];
-        src_sd->ops[ii] = NULL;
-        cur->op_count++;
-        src_sd->op_count--;
       }
+      cur->ops[ii] = src_sd->ops[ii];
+      src_sd->ops[ii] = NULL;
+      cur->op_count++;
+      src_sd->op_count--;
     }
   } else {
     ASSERT(0, stall);

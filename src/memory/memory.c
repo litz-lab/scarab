@@ -3138,14 +3138,14 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
     }
   }
 
-  Flag off_path_changed = FALSE;
+  Flag off_to_on_path_changed = FALSE;
   // If the mem requests for the same FDIP type are on the different paths, give priority to the on-path one.
   if(req->off_path &&
       req->type == MRT_FDIPPRF && type == MRT_FDIPPRF &&
       !fdip_pref_off_path()) {
     req->off_path           = FALSE;
     req->off_path_confirmed = FALSE;
-    off_path_changed        = TRUE;
+    off_to_on_path_changed        = TRUE;
   }
 
   update_mem_req_occupancy_counter(old_type, -1);
@@ -3180,15 +3180,24 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
     req->emitted_cycle = cycle_count;
     return SUCCESS_DIFF_TYPE_ADDED;
   }
-  else if (old_type == type && !off_path_changed) {
+  else if (old_type == type && !off_to_on_path_changed) {
     return SUCCESS_SAME_TYPE;
   }
-  else if (old_type == type && off_path_changed) {
-    req->emitted_cycle = cycle_count;
+  else if (old_type == type && off_to_on_path_changed) {
     if (req->emitted_cycle < last_recover_cycle)
-      return SUCCESS_SAME_TYPE_INVALID_OFF_PATH_CHANGED;
+    {
+      req->emitted_cycle = cycle_count;
+      return SUCCESS_SAME_TYPE_INVALID_OFF_TO_ON_PATH_CHANGED;
+    }
     else
-      return SUCCESS_SAME_TYPE_VALID_OFF_PATH_CHANGED;
+    {
+      req->emitted_cycle = cycle_count;
+      return SUCCESS_SAME_TYPE_VALID_OFF_TO_ON_PATH_CHANGED;
+    }
+    req->emitted_cycle = cycle_count;
+    if (type == MRT_FDIPPRF)
+      STAT_EVENT(req->proc_id, PROMOTION_FROM_FDIP_OFF_TO_ON);
+    return SUCCESS_SAME_TYPE_VALID_OFF_TO_ON_PATH_CHANGED;
   }
   return SUCCESS;
 }
@@ -5477,7 +5486,7 @@ uns num_offchip_stall_reqs(uns proc_id) {
              // only to collect statistics
 }
 
-Counter count_fdip_mem_l1_reqs() {
+Counter fdip_count_mem_l1_reqs() {
   Mem_Req* req = NULL;
   int      ii;
   int      reqbuf_id;
@@ -5492,4 +5501,20 @@ Counter count_fdip_mem_l1_reqs() {
   }
 
   return num_fdip_reqs;
+}
+
+Flag l1_queue_access(Addr line_addr) {
+  Mem_Req* req = NULL;
+  int      ii;
+  int      reqbuf_id;
+
+  for(ii = 0; ii < mem->l1_queue.entry_count; ii++) {
+    reqbuf_id = mem->l1_queue.base[ii].reqbuf;
+    req       = &(mem->req_buffer[reqbuf_id]);
+
+    if (line_addr == req->addr) {
+      return TRUE;
+    }
+  }
+  return FALSE;
 }

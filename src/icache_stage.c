@@ -69,7 +69,7 @@
 
 Icache_Stage* ic = NULL;
 List op_buf;
-Counter                last_issued_op_num = 0;
+Counter                last_issued_op_num = 0; // IC stage issues ops and this refers to the last op issued from head of the lookahead buffer by IC stage (there are LOOKAHEAD_BUF_SIZE amout of ops more in the lookahead buffer
 
 extern Cmp_Model              cmp_model;
 extern Memory*                mem;
@@ -81,9 +81,11 @@ extern uns64                  last_runahead_uid;
 extern uns64                  max_runahead_uid;
 extern Counter                last_runahead_op;
 extern Counter                max_runahead_op;
-extern Counter                max_op_num;
+extern Counter                max_op_num; // the maximum op that the IC stage can process which is set by FDIP.
 extern Flag                   mem_req_failed;
 extern Counter                last_recover_cycle;
+extern CountMinSketch         cms_useful;
+extern CountMinSketch         cms_unuseful;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -136,8 +138,10 @@ void init_icache_stage(uns8 proc_id, const char* name) {
     // init_cache(&ic->icache_line_info, "IC LI", ICACHE_SIZE, ICACHE_ASSOC,
     // ICACHE_LINE_SIZE,
     //           sizeof(Icache_Data), REPL_TRUE_LRU);
+    /*init_cache(&ic->icache_line_info, "IC LI", ICACHE_SIZE, ICACHE_ASSOC,*/
+               /*ICACHE_LINE_SIZE, sizeof(Icache_Data), ICACHE_REPL);*/
     init_cache(&ic->icache_line_info, "IC LI", ICACHE_SIZE, ICACHE_ASSOC,
-               ICACHE_LINE_SIZE, sizeof(Icache_Data), ICACHE_REPL);
+               ICACHE_LINE_SIZE, sizeof(Icache_Data), REPL_TRUE_LRU);
   }
 
   // moved the init code from here to reset
@@ -375,6 +379,9 @@ void update_icache_stage() {
       if(!FETCH_OFF_PATH_OPS && ic->off_path)
         return;
 
+      if (FDIP_ENABLE)
+        fdip_update();
+
       STAT_EVENT(ic->proc_id, FETCH_ON_PATH + ic->off_path);
 
       reset_packet_build(ic_pb_data);  // reset packet build counters
@@ -395,7 +402,6 @@ void update_icache_stage() {
         if(WP_COLLECT_STATS)  // CMP remove?
           line_info = (Icache_Data*)cache_access(
             &ic->icache_line_info, ic->fetch_addr, &dummy_addr, TRUE);
-
 
         if(IC_PREF_CACHE_ENABLE && (!ic->line))
           ic->line = ic_pref_cache_access();
@@ -423,15 +429,14 @@ void update_icache_stage() {
             STAT_EVENT(ic->proc_id, L2_IDEAL_MISS_ICACHE);
         }
 
-        if(FDIP_ENABLE && last_issued_op_num == max_op_num && last_runahead_op != max_runahead_op) {
-          ic->next_state = IC_WAIT_FOR_FDIP;
-          break_fetch = BREAK_FDIP_RUNAHEAD;
-        } else if(ic->line == NULL) { /* cache miss */
+        if (ic->line == NULL) { // cache miss
           DEBUG(ic->proc_id, "Cache miss on op_num:%s @ 0x%s\n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
 
           log_stats_ic_miss();
 
+          if (last_issued_op_num == max_op_num)
+            STAT_EVENT(ic->proc_id, ICACHE_OVERTAKE_FDIP);
           /* if the icache is available, wait for a miss */
           /* otherwise, refetch next cycle */
           if(model->mem == MODEL_MEM) {
@@ -485,11 +490,22 @@ void update_icache_stage() {
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
+          if (FDIP_ENABLE) {
+            ASSERT(ic->proc_id, last_issued_op_num <= max_op_num);
+            if (FDIP_CMS_ENABLE) {
+              int res = cms_add(&cms_useful, hexstr64s(ic->line_addr));
+            }
+          }
           STAT_EVENT(ic->proc_id, ICACHE_HIT);
           STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH + ic->off_path);
           if(WP_COLLECT_STATS) {
             ASSERT(ic->proc_id, line_info);
             wp_process_icache_hit(line_info, ic->fetch_addr);
+          }
+          if (FDIP_CMS_ENABLE && last_issued_op_num == max_op_num && last_runahead_op != max_runahead_op) {
+            ic->next_state = IC_WAIT_FOR_FDIP;
+            break_fetch = BREAK_FDIP_RUNAHEAD;
+            break;
           }
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
         }
@@ -502,16 +518,22 @@ void update_icache_stage() {
     } break;
 
     case IC_WAIT_FOR_MISS: {
+      if (FDIP_ENABLE)
+        fdip_update();
       INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_ICACHE_MISS, IC_ISSUE_WIDTH - 1);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
     } break;
 
     case IC_WAIT_FOR_REDIRECT: {
+      if (FDIP_ENABLE)
+        fdip_update();
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_REDIRECT, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
     } break;
 
     case IC_WAIT_FOR_EMPTY_ROB: {
+      if (FDIP_ENABLE)
+        fdip_update();
       DEBUG(ic->proc_id, "Ifetch barrier: Waiting for ROB to become empty \n");
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_EMPTY_ROB, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
@@ -520,6 +542,8 @@ void update_icache_stage() {
     } break;
 
     case IC_WAIT_FOR_TIMER: {
+      if (FDIP_ENABLE)
+        fdip_update();
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_TIMER, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
       if(cycle_count >= ic->timer_cycle)
@@ -527,6 +551,8 @@ void update_icache_stage() {
     } break;
 
     case IC_WAIT_FOR_FDIP: {
+      if (FDIP_ENABLE)
+        fdip_update();
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_FDIP, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
       if(last_issued_op_num < max_op_num)
@@ -537,9 +563,6 @@ void update_icache_stage() {
 
     default:
       FATAL_ERROR(ic->proc_id, "Invalid icache state.\n");
-  }
-  if (FDIP_ENABLE) {
-    fdip_update();
   }
 }
 
@@ -586,6 +609,9 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         ptr = dl_list_remove_head(&op_buf);
         op = *ptr;
         last_issued_op_num = op->op_num;
+        if (FDIP_ENABLE && FDIP_CMS_ENABLE && last_issued_op_num >= max_op_num - 2*ISSUE_WIDTH) {
+          runahead_disable = FALSE;
+        }
       }
       else {
         op   = alloc_op(ic->proc_id);
@@ -868,6 +894,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       line_info = (Icache_Data*)cache_insert(&ic->icache_line_info, ic->proc_id,
                                              ic->fetch_addr, &dummy_addr2,
                                              &repl_line_addr2);
+      wp_process_icache_evicted(line_info, req, &repl_line_addr2);
       line_info->fetched_by_offpath = USE_CONFIRMED_OFF ?
                                         req->off_path_confirmed :
                                         req->off_path;
@@ -877,10 +904,8 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       line_info->onpath_use_cycle  = req->off_path ? 0 : cycle_count;
       line_info->read_count[0]     = 0;
       line_info->read_count[1]     = 0;
-      if (FDIP_ENABLE)
-        line_info->HW_prefetch     = (req->type == MRT_IFETCH);
-      else
-        line_info->HW_prefetch       = (req->type == MRT_IPRF);
+      line_info->HW_prefetch       = req->type == MRT_IPRF;
+      line_info->FDIP_prefetch     = mem_req_is_type(req, MRT_FDIPPRF);
       wp_process_icache_fill(line_info, req);
     }
 
@@ -912,6 +937,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
                                              &repl_line_addr2);
       STAT_EVENT(ic->proc_id, ICACHE_FILL);
 
+      wp_process_icache_evicted(line_info, req, &repl_line_addr2);
       line_info->fetched_by_offpath = USE_CONFIRMED_OFF ?
                                         req->off_path_confirmed :
                                         req->off_path;
@@ -921,10 +947,8 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       line_info->onpath_use_cycle  = req->off_path ? 0 : cycle_count;
       line_info->read_count[0]     = 0;
       line_info->read_count[1]     = 0;
-      if (FDIP_ENABLE)
-        line_info->HW_prefetch     = (req->type == MRT_IFETCH);
-      else
-        line_info->HW_prefetch       = (req->type == MRT_IPRF);
+      line_info->HW_prefetch       = req->type == MRT_IPRF;
+      line_info->FDIP_prefetch     = mem_req_is_type(req, MRT_FDIPPRF);
       wp_process_icache_fill(line_info, req);
     }
 
@@ -1037,8 +1061,45 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
     }
   }
 
+  if(line->FDIP_prefetch) {
+    if(!line->fetched_by_offpath) {
+      STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH_BY_FDIP);
+    }
+    else {
+      STAT_EVENT(ic->proc_id, ICACHE_HIT_OFFPATH_BY_FDIP);
+    }
+    line->read_count[0] += 1;
+  }
+
   if(icache_off_path() == FALSE)
     line->fetched_by_offpath = FALSE;
+}
+
+/**************************************************************************************/
+/* wp_process_icache_evicted: */
+
+void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_addr) {
+  if(!WP_COLLECT_STATS)
+    return;
+
+  if(*repl_line_addr && line->FDIP_prefetch && !line->read_count[0]) {
+    if(!line->fetched_by_offpath) {
+      STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ON_PATH_BY_FDIP);
+      int res = cms_add(&cms_unuseful, hexstr64s(*repl_line_addr));
+    }
+    else {
+      STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_OFF_PATH_BY_FDIP);
+      int res = cms_add(&cms_unuseful, hexstr64s(*repl_line_addr));
+    }
+  }
+  else if(*repl_line_addr && line->FDIP_prefetch && line->read_count[0]) {
+    if(!line->fetched_by_offpath) {
+      STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_ON_PATH_BY_FDIP);
+    }
+    else {
+      STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_OFF_PATH_BY_FDIP);
+    }
+  }
 }
 
 /**************************************************************************************/
@@ -1104,12 +1165,12 @@ Op* find_op(Addr pc) {
   for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
     op = *op_p;
     if (op->table_info->cf_type) { // first branch after the last predicted branch
-      if (op->fetch_addr == pc) {
+      if (op->fetch_addr == pc) { // The predicting PC is referring to the first branch found
         last_runahead_uid = op->inst_uid;
         op_p = (Op**)list_next_element(&op_buf);
         last_runahead_op = op->op_num;
         return op;
-      } else {
+      } else { // If the first found branch is not the branch looking for, this case is either 1) when FDIP is trying to keep predicting but the backend is reseering on the previous branch and the exactly next branch is following at head of the buffer or 2) FDIP is on the off-path. last_runahead_op should always be the last op predicted on path (not off path): the last non-branch op before the next branch.
         Op** op_p_head = (Op**)list_get_head(&op_buf);
         if (op_p == op_p_head)
           break;
@@ -1122,6 +1183,7 @@ Op* find_op(Addr pc) {
       }
     }
   }
+  // reached the tail
   if (!op_p) {
     op_p = (Op**)list_get_tail(&op_buf);
     op = *op_p;
@@ -1134,19 +1196,20 @@ void set_max_op_num(Flag is_branch, Addr last_cl_prefetched) {
   Counter move_cnt = 0;
   Op* op;
   Op** op_p;
+  // FDIP predicted all availble ops in the lookahead buffer. Set the max_op_num with the tail op in the buffer.
   if (max_runahead_op == last_runahead_op) {
     op_p = (Op**)list_get_tail(&op_buf);
     ASSERT(ic->proc_id, op_p);
     op = *op_p;
     max_op_num = op->op_num;
-  } else if (is_branch) {
+  } else if (is_branch) { // If the predicted op is a branch, the cur pointer is already set by the next one of the branch op, so need to set the max_op_num with the prev element of 'cur' in the lookahead buffer to set the branch op as a maximum op num where the backend can run.
     op_p = (Op**)list_prev_element(&op_buf);
     move_cnt++;
     ASSERT(ic->proc_id, op_p);
     op = *op_p;
     ASSERT(ic->proc_id, op->table_info->cf_type);
     max_op_num = op->op_num;
-  } else if (!is_branch) {
+  } else if (!is_branch) { // If the predicted op is not a branch, the cur pointer is set by either the head or the last branch op. To find the maximum op num that the backend can run, travese reversely to find the op corresponding to the last_cl_prefetched.
     op_p = (Op**)list_get_current(&op_buf);
     ASSERT(ic->proc_id, op_p);
     op = *op_p;
@@ -1158,6 +1221,9 @@ void set_max_op_num(Flag is_branch, Addr last_cl_prefetched) {
     move_cnt++;
     op = *op_p;
     while (op) {
+      // no need to update, already pointing to the max op num.
+      if (op->op_num == max_op_num)
+        break;
       Addr cl_addr = get_cache_line_addr(&ic->icache, op->fetch_addr);
       if (op->table_info->cf_type)
         break;
@@ -1305,14 +1371,8 @@ void log_stats_ic_miss() {
 // (uop_cache_fill_prefetch will fail for never-seen PWs on the off-path).
 Flag instr_fill_line(Mem_Req* req) {
   ASSERT(ic->proc_id, req->type == MRT_IPRF || req->type == MRT_FDIPPRF || req->type == MRT_UOCPRF || req->type == MRT_IFETCH);
-
-  if (mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_IFETCH) || mem_req_is_type(req, MRT_FDIPPRF)) {
+  if (mem_req_is_type(req, MRT_IFETCH) || mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_FDIPPRF)) {
     icache_fill_line(req);
-  }
-  if (mem_req_is_type(req, MRT_FDIPPRF)) {
-    fdip_dec_outstanding_prefs(req->addr, req->off_path, req->emitted_cycle);
-    // TODO: comment out the line above and uncomment the line below to swith 1-outstanding prefetch counter.
-    /*fdip_dec_outstanding_prefs(req->addr);*/
   }
   if (mem_req_is_type(req, MRT_UOCPRF))
     uop_cache_fill_prefetch(req->addr, !req->off_path);

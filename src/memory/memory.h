@@ -88,8 +88,8 @@ typedef enum Mem_Queue_Req_Result_enum {
   //SUCCESS_SAME_TYPE_SAME_PATH, // Requests of the same type and same path (both on or both off) successfully adjusted
   //SUCCESS_SAME_TYPE_DIFF_PATH, // Requests of the same type and different path (one on and one off) successfully adjusted
   SUCCESS_SAME_TYPE,
-  SUCCESS_SAME_TYPE_INVALID_OFF_PATH_CHANGED,
-  SUCCESS_SAME_TYPE_VALID_OFF_PATH_CHANGED,
+  SUCCESS_SAME_TYPE_INVALID_OFF_TO_ON_PATH_CHANGED,
+  SUCCESS_SAME_TYPE_VALID_OFF_TO_ON_PATH_CHANGED,
 } Mem_Queue_Req_Result;
 
 typedef enum Mem_Queue_Type_enum {
@@ -260,6 +260,7 @@ void mark_ops_as_l1_miss_satisfied(Mem_Req* req);
 int  mem_get_req_count(uns proc_id);
 Flag mem_can_allocate_req_buffer(uns proc_id, Mem_Req_Type type,
                                  Flag for_l1_writeback);
+Flag fdip_mem_can_allocate_req_buffer(uns proc_id, Mem_Req_Type type, Flag ftq_empty);
 
 void open_mem_stat_interval_file(void);
 void close_mem_stat_interval_file(void);
@@ -276,7 +277,11 @@ void wp_process_reqbuf_match(Mem_Req* req, Op* op);
 uns num_chip_demands(void);
 uns num_offchip_stall_reqs(uns proc_id);
 
-Counter count_fdip_mem_l1_reqs(void);
+Counter fdip_count_mem_l1_reqs(void);
+Flag l1_queue_access(Addr line_addr);
+Counter fdip_free_off_path_mem_l1_reqs(void);
+//void reset_mem_req_pref_entries(void);
+//void reset_mem_req_instr_entries(void);
 
 /**************************************************************************************/
 /* Externs */

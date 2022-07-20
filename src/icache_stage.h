@@ -96,6 +96,7 @@ typedef struct Icache_Data_struct {
        offpath_op_unique; /* unique of the off path op that fetched this line */
   uns  read_count[2];
   Flag HW_prefetch;
+  Flag FDIP_prefetch;
 
   Counter fetch_cycle;
   Counter onpath_use_cycle;
@@ -129,6 +130,7 @@ void redirect_icache_stage(void);
 void debug_icache_stage(void);
 void update_icache_stage(void);
 Flag icache_fill_line(Mem_Req*);
+void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_addr);
 void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr);
 void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
 Flag icache_off_path(void);

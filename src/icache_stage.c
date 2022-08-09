@@ -618,10 +618,9 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         op   = alloc_op(ic->proc_id);
         frontend_fetch_op(ic->proc_id, op);
       }
-      // Disable this to allow system interrupts.
-      // ASSERTM(ic->proc_id, ic->next_fetch_addr == op->inst_info->addr,
-      //         "Fetch address 0x%llx does not match op address 0x%llx\n",
-      //         ic->next_fetch_addr, op->inst_info->addr);
+      ASSERTM(ic->proc_id, ic->next_fetch_addr == op->inst_info->addr,
+               "Fetch address 0x%llx does not match op address 0x%llx\n",
+               ic->next_fetch_addr, op->inst_info->addr);
       op->fetch_addr = ic->next_fetch_addr;
       ASSERT_PROC_ID_IN_ADDR(ic->proc_id, op->fetch_addr)
       op->off_path  = ic->off_path;
@@ -712,7 +711,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         // for fetch barriers (including syscalls), we do not want to do
         // redirect/recovery, BUT we still want to update the branch predictor.
         if (FDIP_ENABLE) {
-          fdip_pred(ic->fetch_addr, op);
+          ic->next_fetch_addr = fdip_pred(ic->fetch_addr, op);
         } else {
           bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
 
@@ -721,10 +720,10 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
           op->oracle_info.misfetch  = 0;
           op->oracle_info.btb_miss  = 0;
           op->oracle_info.no_target = 0;
+          ic->next_fetch_addr       = ADDR_PLUS_OFFSET(
+            ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
+          ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
         }
-        ic->next_fetch_addr       = ADDR_PLUS_OFFSET(
-          ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
-        ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
       } else {
         if (FDIP_ENABLE) {
           ic->next_fetch_addr = fdip_pred(ic->fetch_addr, op);

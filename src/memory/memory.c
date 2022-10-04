@@ -210,6 +210,7 @@ static inline Flag queue_full(Mem_Queue* queue);
 static inline uns  queue_num_free(Mem_Queue* queue);
 
 Flag is_final_state(Mem_Req_State state);
+Flag is_inv_state(Mem_Req_State state);
 
 /**************************************************************************************/
 /* set_memory: */
@@ -698,6 +699,31 @@ static void print_mem_queue_generic(Mem_Queue* queue) {
 }
 
 /**************************************************************************************/
+/* print_req_buffer: */
+
+void print_req_buffer() {
+  Mem_Req* req = NULL;
+
+  fprintf(stdout, "REQ_BUFFER --- cycle: %s\n", unsstr64(cycle_count));
+  fprintf(stdout, "------------------------------------------------------\n");
+
+  for(int reqbuf_id = 0; reqbuf_id < MEM_REQ_BUFFER_ENTRIES; reqbuf_id++) {
+    req = &(mem->req_buffer[reqbuf_id]);
+    fprintf(stdout,
+            ": q:%s reqbuf:%d index:%d st:%s type:%s pri:%s beg:%s "
+            "rdy:%s addr:%s size:%d age:%s mbank:%d oc:%d oo:%s off:%d\n",
+            (req->queue ? req->queue->name : "ramulator"),
+            reqbuf_id, req->id,
+            mem_req_state_names[req->state], Mem_Req_Type_str(req->type),
+            unsstr64(req->priority), unsstr64(req->start_cycle),
+            unsstr64(req->rdy_cycle), hexstr64s(req->addr), req->size,
+            unsstr64(cycle_count - req->start_cycle), req->mem_flat_bank,
+            req->op_count, unsstr64(req->oldest_op_unique_num), req->off_path);
+  }
+  fprintf(stdout, "------------------------------------------------------\n");
+}
+
+/**************************************************************************************/
 /* print_mem_queue: */
 
 void print_mem_queue(Mem_Queue_Type queue_type) {
@@ -718,6 +744,9 @@ void print_mem_queue(Mem_Queue_Type queue_type) {
 
   if(queue_type & QUEUE_MLC_FILL)
     print_mem_queue_generic(&(mem->mlc_fill_queue));
+
+  if(queue_type & QUEUE_CORE_FILL)
+    print_mem_queue_generic(&(mem->core_fill_queues[0]));
 }
 
 
@@ -791,6 +820,7 @@ void debug_memory() {
 
   print_mem_queue(QUEUE_L1 | QUEUE_BUS_OUT | QUEUE_L1FILL | QUEUE_MLC |
                   QUEUE_MLC_FILL);
+  print_req_buffer();
 }
 
 /**************************************************************************************/
@@ -2897,7 +2927,6 @@ static inline Mem_Req* mem_search_reqbuf(
 
   return NULL;
 }
-
 
 /**************************************************************************************/
 /* mem_adjust_matching_request: */
@@ -5287,6 +5316,10 @@ Flag is_final_state(Mem_Req_State state) {
          (state == MRS_MEM_DONE) || (state == MRS_FILL_DONE);
 }
 
+Flag is_inv_state(Mem_Req_State state) {
+  return state == MRS_INV;
+}
+
 /**************************************************************************************/
 /* wp_process_l1_hit: */
 
@@ -5486,33 +5519,13 @@ uns num_offchip_stall_reqs(uns proc_id) {
              // only to collect statistics
 }
 
-Counter fdip_count_mem_l1_reqs() {
+Flag mem_buf_access(Addr line_addr) {
   Mem_Req* req = NULL;
-  int      ii;
-  int      reqbuf_id;
-  Counter  num_fdip_reqs = 0;
+  int reqbuf_id = 0;
+  for(reqbuf_id = 0; reqbuf_id < MEM_REQ_BUFFER_ENTRIES; reqbuf_id++) {
+    req = &mem->req_buffer[reqbuf_id];
 
-  for(ii = 0; ii < mem->l1_queue.entry_count; ii++) {
-    reqbuf_id = mem->l1_queue.base[ii].reqbuf;
-    req       = &(mem->req_buffer[reqbuf_id]);
-
-    if(mem_req_is_type(req, MRT_FDIPPRF))
-      num_fdip_reqs++;
-  }
-
-  return num_fdip_reqs;
-}
-
-Flag l1_queue_access(Addr line_addr) {
-  Mem_Req* req = NULL;
-  int      ii;
-  int      reqbuf_id;
-
-  for(ii = 0; ii < mem->l1_queue.entry_count; ii++) {
-    reqbuf_id = mem->l1_queue.base[ii].reqbuf;
-    req       = &(mem->req_buffer[reqbuf_id]);
-
-    if (line_addr == req->addr) {
+    if(line_addr == req->addr && !is_final_state(req->state) && !is_inv_state(req->state)) {
       return TRUE;
     }
   }

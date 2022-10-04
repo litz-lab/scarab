@@ -118,3 +118,5 @@ DEF_PARAM( debug_cache_part                        , DEBUG_CACHE_PART           
 
 DEF_PARAM( debug_optimizer2                        , DEBUG_OPTIMIZER2                     , Flag    , Flag      , FALSE   ,       )
 DEF_PARAM( debug_pref                              , DEBUG_PREF                          , Flag            , Flag               , FALSE     ,    )
+
+DEF_PARAM( debug_fdip                              , DEBUG_FDIP                           , Flag    , Flag      , FALSE   ,       )

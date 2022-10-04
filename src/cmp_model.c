@@ -44,6 +44,7 @@
 #include "op_pool.h"
 #include "prefetcher/pref.param.h"
 #include "prefetcher/pref_common.h"
+#include "prefetcher/fdip.h"
 #include "sim.h"
 #include "statistics.h"
 
@@ -409,6 +410,8 @@ void cmp_warmup(Op* op) {
   Addr ia      = op->inst_info->addr;
   Addr va      = op->oracle_info.va;
   Addr dummy_line_addr;
+  Addr dummy_line_addr2;
+  Icache_Data* line_info = NULL;
 
   // Warmup caches for instructions
   Icache_Stage* ic = &(cmp_model.icache_stage[proc_id]);
@@ -420,11 +423,32 @@ void cmp_warmup(Op* op) {
   Cache*      icache  = &(ic->icache);
   Inst_Info** ic_data = (Inst_Info**)cache_access(icache, ia, &dummy_line_addr,
                                                   TRUE);
-  if(!ic_data) {
+  if(WP_COLLECT_STATS && FDIP_ENABLE)
+    line_info = (Icache_Data*)cache_access(&ic->icache_line_info, ia, &dummy_line_addr2, TRUE);
+
+  if(ic_data == NULL) {
     warmup_uncore(proc_id, ia, FALSE);
     Addr repl_line_addr;
     ic_data = (Inst_Info**)cache_insert(icache, proc_id, ia, &dummy_line_addr,
                                         &repl_line_addr);
+    if(WP_COLLECT_STATS && FDIP_ENABLE) {
+      Addr repl_line_addr2;
+      line_info = (Icache_Data*)cache_insert(&ic->icache_line_info, proc_id, ia,
+                                                          &dummy_line_addr2, &repl_line_addr2);
+      if(repl_line_addr2 && !line_info->read_count[0]) {
+        fdip_remove_cl_fetch_addr(repl_line_addr2);
+        fdip_inc_cnt_unuseful(repl_line_addr2);
+      }
+      fdip_insert_cl_fetch_addr(dummy_line_addr2);
+      line_info->read_count[0] = 0;
+    }
+  } else {
+    if(WP_COLLECT_STATS && FDIP_ENABLE) {
+      ASSERT(proc_id, line_info);
+      fdip_remove_cl_fetch_addr(dummy_line_addr);
+      fdip_inc_cnt_useful(dummy_line_addr);
+      line_info->read_count[0] += 1;
+    }
   }
 
   // Warmup caches for data

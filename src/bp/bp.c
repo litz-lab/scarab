@@ -53,6 +53,7 @@
 #include "debug/debug.param.h"
 #include "frontend/pin_trace_fe.h"
 #include "statistics.h"
+#include "sim.h"
 
 #include "prefetcher/fdip.h"
 #include "prefetcher/pref.param.h"
@@ -83,6 +84,7 @@ Bp_Recovery_Info* bp_recovery_info = NULL;
 Bp_Data*          g_bp_data        = NULL;
 Flag              USE_LATE_BP      = FALSE;
 extern List       op_buf;
+extern uns        operating_mode;
 
 /******************************************************************************/
 // Local prototypes
@@ -271,7 +273,7 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op,
     bp_recovery_info->redirect_op                     = op;
     bp_recovery_info->redirect_op_num                 = op->op_num;
     bp_recovery_info->redirect_op->redirect_scheduled = TRUE;
-    if (FDIP_ENABLE && !op->oracle_info.mispred && !op->oracle_info.misfetch) {
+    if (operating_mode != WARMUP_MODE && FDIP_ENABLE && !op->oracle_info.mispred && !op->oracle_info.misfetch) {
       fdip_redirect(op->oracle_info.pred_npc);
     }
     ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == op->proc_id);
@@ -447,13 +449,8 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   // {{{ handle predictions for individual cf types
   switch(op->table_info->cf_type) {
     case CF_BR:
-      if(PERFECT_BP) {
-        op->oracle_info.pred      = op->oracle_info.dir;
-        op->oracle_info.late_pred = op->oracle_info.dir;
-      } else {
-        op->oracle_info.pred      = TAKEN;
-        op->oracle_info.late_pred = TAKEN;
-      }
+      op->oracle_info.pred      = TAKEN;
+      op->oracle_info.late_pred = TAKEN;
       if(!op->off_path)
         STAT_EVENT(op->proc_id, CF_BR_USED_TARGET_CORRECT +
                                   (pred_target != op->oracle_info.npc));
@@ -822,7 +819,7 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   if(ENABLE_BP_CONF && bp_data->br_conf->recover_func)
     bp_data->br_conf->recover_func();
 
-  if (FDIP_ENABLE) {
+  if (operating_mode != WARMUP_MODE && FDIP_ENABLE) {
     fdip_recover(info);
   }
 }

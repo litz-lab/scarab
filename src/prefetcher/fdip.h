@@ -21,6 +21,11 @@ extern "C" {
   void fdip_update();
   Flag fdip_pref_off_path(void);
   Flag fdip_is_max_op(Op *op);
+  void fdip_inc_cnt_useful(Addr line_addr);
+  void fdip_inc_cnt_unuseful(Addr line_addr);
+  void fdip_insert_cl_fetch_addr(Addr line_addr);
+  void fdip_remove_cl_fetch_addr(Addr line_addr);
+  void fdip_print_hash_tables();
 
   /* Private*/
   void fdip_new_branch(Addr bp_pc, Op *op);

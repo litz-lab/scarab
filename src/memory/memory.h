@@ -249,6 +249,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size,
                  Counter unique_num, Pref_Req_Info*);
 void mem_free_reqbuf(Mem_Req* req);
 void mem_complete_bus_in_access(Mem_Req* req, Counter priority);
+void print_req_buffer(void);
 void print_mem_queue(Mem_Queue_Type queue_type);
 Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size,
                        uns delay, Op* op, Flag done_func(Mem_Req*),
@@ -277,11 +278,7 @@ void wp_process_reqbuf_match(Mem_Req* req, Op* op);
 uns num_chip_demands(void);
 uns num_offchip_stall_reqs(uns proc_id);
 
-Counter fdip_count_mem_l1_reqs(void);
-Flag l1_queue_access(Addr line_addr);
-Counter fdip_free_off_path_mem_l1_reqs(void);
-//void reset_mem_req_pref_entries(void);
-//void reset_mem_req_instr_entries(void);
+Flag mem_buf_access(Addr line_addr);
 
 /**************************************************************************************/
 /* Externs */

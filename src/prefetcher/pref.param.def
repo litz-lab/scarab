@@ -146,8 +146,9 @@ DEF_PARAM(fdip_max_runahead_uid_count, FDIP_MAX_RUNAHEAD_UID_COUNT, uns, uns, 6,
 DEF_PARAM(fdip_max_taken_branches, FDIP_MAX_TAKEN_BRANCHES, uns, uns, 2, )
 DEF_PARAM(fdip_max_runahead_unuseful_lines, FDIP_MAX_RUNAHEAD_UNUSEFUL_LINES, uns, uns, 6, )
 DEF_PARAM(perfect_fdip, PERFECT_FDIP, Flag, Flag, FALSE, )
-DEF_PARAM(fdip_cms_enable, FDIP_CMS_ENABLE, Flag, Flag, FALSE, )
-DEF_PARAM(fdip_cms_useful_weight, FDIP_CMS_USEFUL_WEIGHT, uns, uns, 1, )
+DEF_PARAM(fdip_hash_enable, FDIP_HASH_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(fdip_hash_useful_weight, FDIP_HASH_USEFUL_WEIGHT, uns, uns, 1, )
+DEF_PARAM(fdip_hash_bias, FDIP_HASH_BIAS, uns, uns, 0, )
 
 DEF_PARAM(fdip_dual_path_pref_ic_enable , FDIP_DUAL_PATH_PREF_IC_ENABLE    , Flag    , Flag    , FALSE, )
 DEF_PARAM(fdip_dual_path_pref_uoc_enable , FDIP_DUAL_PATH_PREF_UOC_ENABLE  , Flag    , Flag    , FALSE, ) //uop cache

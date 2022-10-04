@@ -56,6 +56,7 @@
 #include "power/power_intf.h"
 #include "stat_trace.h"
 #include "trigger.h"
+#include "prefetcher/fdip.h"
 
 #include "bp/bp.param.h"
 #include "core.param.h"
@@ -758,6 +759,8 @@ void full_sim() {
       check_heartbeat(proc_id, TRUE);
     }
   }
+
+  fdip_print_hash_tables();
 
   trigger_free(sim_limit);
   trigger_free(clear_stats);

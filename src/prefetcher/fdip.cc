@@ -24,9 +24,11 @@ extern "C" {
 #include "memory/memory.param.h"
 #include "memory/memory.h"
 #include "uop_cache.h"
+#include "sim.h"
 }
 
 #define DUMMY_CFN ~0
+#define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FDIP, ##args)
 struct ftq_req {
   Addr target;
   Counter prefetch_cycle;
@@ -66,6 +68,11 @@ Counter max_op_num = 0;
 Counter last_recover_cycle = 0;
 CountMinSketch cms_useful;
 CountMinSketch cms_unuseful;
+std::unordered_map<Addr, Counter> cnt_useful;
+std::unordered_map<Addr, Counter> cnt_unuseful;
+std::vector<Addr> fetch_cl_addr;
+extern uns operating_mode;
+Flag print_warmup_hash_table = FALSE;
 
 /**************************************************************************************/
 /* init_topk_mispred: list of branches that provide a given coverage of resteers */
@@ -157,6 +164,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
    * patch the current instruction.
    */
   STAT_EVENT(ic_stage->proc_id, FDIP_PRED_CORRECT_PATH);
+  DEBUG(ic_stage->proc_id, "[%llu] [fdip_pred] right path - bp_pc: %llx, op->fetch_addr: %llx, op->op_num: %llx\n", cycle_count, bp_pc, op->fetch_addr, op->op_num);
   auto req = &ftq.front().second;
   auto target = req->target;
   patch_oracle_info(op, &req->op, bp_pc);
@@ -212,6 +220,7 @@ void fdip_clear_ftq() {
  * clear the FTQ.
  */
 void fdip_recover(Recovery_Info *info) {
+  DEBUG(ic_stage->proc_id, "[%llu] [fdip_recover] info->npc : %llx\n", cycle_count, info->npc);
   recovery_count++;
   ASSERT(ic_stage->proc_id, off_count == recovery_count);
   ASSERT(ic_stage->proc_id, !PERFECT_NT_BTB || ftq.empty());
@@ -234,6 +243,7 @@ void fdip_recover(Recovery_Info *info) {
 /* When a misfetch (btb miss) is resolved, the frontend informs FDIP to clear FDIP branch predictor states including the FTQ.
  */
 void fdip_redirect(Addr recover_pc) {
+  DEBUG(ic_stage->proc_id, "[fdip_redirect] recover_pc : %llx\n", recover_pc);
   bp_recover_op(g_bp_data, recovery_checkpoint->table_info->cf_type, &recovery_checkpoint->recovery_info);
 }
 
@@ -366,38 +376,51 @@ void fdip_update() {
     Addr dummy_addr    = 0;
     void* line        = NULL;
     void* line_info   = NULL;
+    DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, max_op_num: %llu, ftq.size(): %ld\n", runahead_pc, max_runahead_op, last_runahead_op, max_op_num, ftq.size());
+    if (operating_mode == SIMULATION_MODE && print_warmup_hash_table == FALSE) {
+      fdip_print_hash_tables();
+      print_warmup_hash_table = TRUE;
+    }
 
     // Determine to emit a new prefetch
     do_prefetch = false;
+    DEBUG(ic_stage->proc_id, "last_cl_prefetched: %llx\n", last_cl_prefetched);
     if (!last_cl_prefetched || (get_cache_line_addr(&ic->icache, runahead_pc) != last_cl_prefetched)) {
       line = (Inst_Info**)cache_access(&ic_stage->icache, runahead_pc, &line_addr, TRUE);
+      ASSERT(ic_stage->proc_id, line_addr ==  get_cache_line_addr(&ic->icache, runahead_pc));
       // TODO: need to check if there is outstanding prefethces in MSHR queue for the cache line.
       if (WP_COLLECT_STATS) {
         line_info = (Icache_Data*)cache_access(&ic_stage->icache_line_info, runahead_pc, &dummy_addr, TRUE);
         UNUSED(line_info);
       }
       // MSHR hit
-      Flag l1_queue_hit = l1_queue_access(get_cache_line_addr(&ic->icache, runahead_pc));
-      if (line || l1_queue_hit) { // TODO: need to add MSHR hit???
+      Flag mem_buf_hit = mem_buf_access(get_cache_line_addr(&ic->icache, runahead_pc));
+      if (line || mem_buf_hit) {
         STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ICACHE_HIT);
         last_cl_prefetched = line_addr;
-      }
-      if (!FDIP_CMS_ENABLE && (!last_cl_prefetched || (!line && last_cl_prefetched != line_addr))) {
-        do_prefetch = true;
-      } else if (FDIP_CMS_ENABLE) {
-        if (!last_cl_prefetched || (!line && last_cl_prefetched != line_addr && last_cl_unuseful != line_addr)) {
-          Counter res_useful = cms_check(&cms_useful, hexstr64s(line_addr));
-          Counter res_unuseful = cms_check(&cms_unuseful, hexstr64s(line_addr));
-          //cms_print(&cms_useful);
-          //cms_print(&cms_unuseful);
-          if ((res_useful == 0 && res_unuseful == 0) || ((res_useful+1)*FDIP_CMS_USEFUL_WEIGHT > res_unuseful)) {
-            do_prefetch = true;
-            if (!fdip_on_path_bp) {
+      } else {
+        if (!FDIP_HASH_ENABLE) {
+          do_prefetch = true;
+        } else {
+          if (last_cl_unuseful != line_addr) {
+            auto useful_iter = cnt_useful.find(line_addr);
+            auto unuseful_iter = cnt_unuseful.find(line_addr);
+            DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, max_op_num: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, max_op_num, ftq.size(), last_cl_prefetched);
+            if (unuseful_iter == cnt_unuseful.end() || (useful_iter != cnt_useful.end() && FDIP_HASH_USEFUL_WEIGHT*useful_iter->second >= unuseful_iter->second+FDIP_HASH_BIAS)) {
+              do_prefetch = true;
+              DEBUG(ic_stage->proc_id, "do_prefetch for cl 0x%llx", line_addr);
+              if (!fdip_on_path_bp) {
+                DEBUG(ic_stage->proc_id, " OFF path\n");
+              }
+              else {
+                DEBUG(ic_stage->proc_id, " ON path\n");
+              }
+            } else {
+              DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx\n", line_addr);
+              do_prefetch = false;
+              num_unuseful_lines++;
+              last_cl_unuseful = line_addr;
             }
-          } else {
-            do_prefetch = false;
-            num_unuseful_lines++;
-            last_cl_unuseful = line_addr;
           }
         }
       }
@@ -456,6 +479,7 @@ void fdip_update() {
 
         fdip_new_branch(runahead_pc, op);
         ASSERT(ic_stage->proc_id, op->fetch_addr == runahead_pc);
+        DEBUG(ic_stage->proc_id, "[%lld] [fdip_update] is_branch - fetch_addr: %llx, op->inst_uid: %llu, op->op_num: %llu, ftq.size(): %lu, op->table_info->cf_type: %d\n", unique_count, op->fetch_addr, op->inst_uid, op->op_num, ftq.size(), op->table_info->cf_type);
         target = bp_predict_op(g_bp_data, op, DUMMY_CFN, runahead_pc);
 
         ftq.push_back(std::pair<Addr, ftq_req>(runahead_pc, ftq_req(
@@ -477,12 +501,17 @@ void fdip_update() {
         if (op->oracle_info.mispred || op->oracle_info.misfetch) {
           off_count++;
           fdip_on_path_bp = FALSE;
+          if (op->oracle_info.mispred)
+            DEBUG(ic_stage->proc_id, "mispred\n");
+          if (op->oracle_info.misfetch)
+            DEBUG(ic_stage->proc_id, "misfetch\n");
           if ((FDIP_STOP_ON_MISPRED && op->oracle_info.mispred) || (FDIP_STOP_ON_MISFETCH && op->oracle_info.misfetch))
             runahead_disable = TRUE;
         } else if (btb_ras_miss) {
           ASSERT(ic_stage->proc_id, !op->oracle_info.mispred && !op->oracle_info.misfetch);
           off_count++;
           fdip_on_path_bp = FALSE;
+          DEBUG(ic_stage->proc_id, "btb_ras_miss, target: %llx\n", target);
           if (FDIP_STOP_ON_BTB_MISS)
             runahead_disable = TRUE;
         }
@@ -550,8 +579,13 @@ void fdip_update() {
       } else {
         success = new_mem_req(MRT_FDIPPRF, ic_stage->proc_id, line_addr,
                       ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
-        if (success)
+        if (success) {
           STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
+          if (FDIP_HASH_ENABLE && !WARMUP) {
+            if (success == SUCCESS_NEW)
+              fdip_insert_cl_fetch_addr(line_addr);
+          }
+        }
         else
           ASSERT(ic_stage->proc_id, false);
       }
@@ -595,6 +629,7 @@ void fdip_update() {
 
     if (runahead_disable) {
       STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_OFF_PATH);
+      DEBUG(ic_stage->proc_id, "break due to off path\n");
       break;
     }
   }
@@ -605,24 +640,30 @@ void fdip_update() {
       break;
     case BR_MAX_TAKEN_BRANCHES:
       STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_MAX_TAKEN_BRANCHES);
+      DEBUG(ic_stage->proc_id, "break due to taken branches\n");
       break;
     case BR_LOOKAHEAD_BUFFER_LIMIT:
       STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_LOOKAHEAD_BUFFER);
+      DEBUG(ic_stage->proc_id, "break due to max runahead op (lookahead buf)\n");
       break;
     case BR_UNUSEFUL_LIMIT:
       if (fdip_on_path_bp)
         STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_UNUSEFUL_LINES_ON_PATH);
       else
         STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_UNUSEFUL_LINES_OFF_PATH);
+      DEBUG(ic_stage->proc_id, "break due to max unuseful lines\n");
       break;
     case BR_TAGE_BUFFER_LIMIT:
       STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_TAGE_BUFFER_LIMIT);
+      DEBUG(ic_stage->proc_id, "break due to tage buffer limit\n");
       break;
     case BR_MEM_REQ_BUF_LIMIT:
       STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_FULL_MEM_REQ_BUF);
+      DEBUG(ic_stage->proc_id, "break due to l1 mem req queue\n");
       break;
     case BR_CFS_PER_CYCLE:
       STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_CFS_PER_CYCLE);
+      DEBUG(ic_stage->proc_id, "break due to cfs per cycle\n");
     default:
       break;
   }
@@ -640,4 +681,56 @@ Flag fdip_is_max_op(Op* op) {
   if (op->op_num == max_op_num)
     return TRUE;
   return FALSE;
+}
+
+void fdip_inc_cnt_useful(Addr line_addr) {
+  auto useful_iter = cnt_useful.find(line_addr);
+  if (useful_iter == cnt_useful.end())
+    cnt_useful.insert(std::pair<Addr, Counter>(line_addr, 1));
+  else
+    useful_iter->second++;
+}
+
+void fdip_inc_cnt_unuseful(Addr line_addr) {
+  auto unuseful_iter = cnt_useful.find(line_addr);
+  if (unuseful_iter == cnt_unuseful.end())
+    cnt_unuseful.insert(std::pair<Addr, Counter>(line_addr, 1));
+  else
+    unuseful_iter->second++;
+}
+
+void fdip_insert_cl_fetch_addr(Addr line_addr) {
+  auto cl_addr_iter = std::find(fetch_cl_addr.begin(), fetch_cl_addr.end(), line_addr);
+
+  if (cl_addr_iter == fetch_cl_addr.end())
+    fetch_cl_addr.push_back(line_addr);
+}
+
+void fdip_remove_cl_fetch_addr(Addr line_addr) {
+  auto cl_addr_iter = std::find(fetch_cl_addr.begin(), fetch_cl_addr.end(), line_addr);
+  if (cl_addr_iter != fetch_cl_addr.end())
+    fetch_cl_addr.erase(cl_addr_iter);
+}
+
+void fdip_print_hash_tables(void) {
+  if (!FDIP_ENABLE)
+    return;
+  DEBUG(ic_stage->proc_id, "=============cnt_useful============== size: %lu\n", cnt_useful.size());
+  for(std::unordered_map<Addr, Counter>::const_iterator it = cnt_useful.begin();
+     it != cnt_useful.end(); ++it)
+    DEBUG(ic_stage->proc_id, "0x%llx - %llu\n", it->first, it->second);
+  DEBUG(ic_stage->proc_id, "=============cnt_unuseful============== size: %lu\n", cnt_unuseful.size());
+  for(std::unordered_map<Addr, Counter>::const_iterator it = cnt_unuseful.begin();
+     it != cnt_unuseful.end(); ++it) {
+    DEBUG(ic_stage->proc_id, "0x%llx - %llu\n", it->first, it->second);
+    auto useful_iter = cnt_useful.find(it->first);
+    if (useful_iter != cnt_useful.end() && it->second >= useful_iter->second) {
+      DEBUG(ic_stage->proc_id, "useful count (%llu) is smaller\n", useful_iter->second);
+    }
+  }
+  DEBUG(ic_stage->proc_id, "=============fetch cl addresses not touched ever ===== size: %lu\n", fetch_cl_addr.size());
+  for(std::vector<Counter>::const_iterator it = fetch_cl_addr.begin();
+      it != fetch_cl_addr.end(); ++it) {
+    DEBUG(ic_stage->proc_id, "0x%llx has never touched\n", *it);
+  }
 }

@@ -108,10 +108,12 @@ typedef enum Break_Reason_enum {
   BREAK_TAKEN,         // break because of nonsequential control flow
   BREAK_MODEL_BEFORE,  // break because of model hook
   BREAK_MODEL_AFTER,   // break because of model hook
-  BREAK_UC_MISS,       // break because during UC fetch, a following instr was not found in UC
-  BREAK_ICACHE_TO_UOP_CACHE_SWITCH, // break because switched to fetching from uop cache mid cache line
+  BREAK_UC_MISS,  // break because during UC fetch, a following instr was not
+                  // found in UC
+  BREAK_ICACHE_TO_UOP_CACHE_SWITCH,  // break because switched to fetching from
+                                     // uop cache mid cache line
   // need to update INST_LOST_BREAK_DONT and others for correct stats.
-  BREAK_FDIP_RUNAHEAD, // break because a following instr is the last
+  BREAK_FDIP_RUNAHEAD,  // break because a following instr is the last
 } Break_Reason;
 
 

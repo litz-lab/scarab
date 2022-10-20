@@ -180,23 +180,15 @@ void update_decode_stage(Stage_Data* src_sd) {
 
   /* do the first decode stage */
   /* Ops from the uop cache do not go to the decode stage. */
+  Flag from_icache = src_sd->op_count && !src_sd->ops[0]->fetched_from_uop_cache;
   cur = &dec->sds[STAGE_MAX_DEPTH - 1];
-  if(cur->op_count == 0) {
-    int src_orig_op_count = src_sd->op_count;
-    for (int ii = 0; ii < src_orig_op_count; ii++) {
-      ASSERT(dec->proc_id, !src_sd->ops[ii]->fetched_from_uop_cache || ii == 0); 
-      if (src_sd->ops[ii]->fetched_from_uop_cache) {
-        // Icache and uop cache fetched instructions should not be fetched same cycle.
-        ASSERT(dec->proc_id, ii == 0);
-        break;
-      }
-      cur->ops[ii] = src_sd->ops[ii];
-      src_sd->ops[ii] = NULL;
-      cur->op_count++;
-      src_sd->op_count--;
-    }
-  } else {
-    ASSERT(0, stall);
+  if(cur->op_count == 0 && from_icache) {
+    prev           = src_sd;
+    temp           = cur->ops;
+    cur->ops       = prev->ops;
+    prev->ops      = temp;
+    cur->op_count  = prev->op_count;
+    prev->op_count = 0;
   }
 
   /* if the last decode stage is stalled, don't re-process the ops  */
@@ -207,7 +199,9 @@ void update_decode_stage(Stage_Data* src_sd) {
   for(ii = 0; ii < dec->last_sd->op_count; ii++) {
     Op* op = dec->last_sd->ops[ii];
     ASSERT(dec->proc_id, op != NULL);
+    ASSERT(dec->proc_id, !op->fetched_from_uop_cache);
     decode_stage_process_op(op);
+    accumulate_op(op);
   }
 }
 

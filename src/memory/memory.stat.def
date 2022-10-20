@@ -87,7 +87,6 @@ DEF_STAT(  UOP_CACHE_HIT                , DIST    , NO_RATIO)
 
 DEF_STAT(  UOP_CACHE_CYCLES_SAVED       , COUNT   , NO_RATIO) // cycles saved by 1st op in sequence of ops in deconde stage
 DEF_STAT(  IN_UOP_CACHE_CALLED          , COUNT   , NO_RATIO)
-DEF_STAT(  UOP_ACCUMULATE               , COUNT   , NO_RATIO)
 DEF_STAT(  UOP_CACHE_PWS_INSERTED       , COUNT   , NO_RATIO)
 DEF_STAT(  UOP_CACHE_LINES_INSERTED     , COUNT   , NO_RATIO)
 DEF_STAT(  UOP_CACHE_LINES_USED         , COUNT   , NO_RATIO)

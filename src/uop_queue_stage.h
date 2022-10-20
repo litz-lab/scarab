@@ -14,10 +14,10 @@ extern "C" {
 #include "uop_cache.h"
 
 //Ops that are at the "head", i.e. the ops that can be consumed by the next stage
-extern Stage_Data oldest_ops;
+extern Stage_Data uop_queue_oldest_ops;
 
 void init_uop_queue_stage(void);
-void update_uop_queue_stage(Stage_Data* src_sd, Flag from_uop_cache);
+void update_uop_queue_stage(Stage_Data* src_sd);
 
 #ifdef __cplusplus
 }

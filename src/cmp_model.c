@@ -218,7 +218,7 @@ void cmp_cores(void) {
       // TODO: Do not compact ops in uop queue. Use a queue of stage_objects.
       update_map_stage(dec->last_sd);
       update_decode_stage(&ic->sd);
-      update_map_stage(&uop_queue_oldest_ops);
+      update_map_stage(uop_queue_stage_get_latest_sd());
       update_uop_queue_stage(&ic->sd);
       update_icache_stage();
 

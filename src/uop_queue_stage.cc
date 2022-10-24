@@ -1,3 +1,5 @@
+// The uop queue buffers ops fetched from the uop cache.
+
 #include "uop_queue_stage.h"
 #include <queue>
 
@@ -17,41 +19,56 @@ extern "C" {
 
 // Macros
 #define STAGE_MAX_OP_COUNT ISSUE_WIDTH  // The bandwidth of the next, consuming stage (map stage)
+// TODO(peterbraun): Check if the ISSUE_WIDTH can be less than the uop cache issue bandwidth
 
-// Global Variables
-Stage_Data uop_queue_oldest_ops {};
-std::queue<Op*> queue_tail {}; // The hidden, tail end of the queue
-Counter next_op_num = 1;
+// Uop Queue Variables
+std::queue<Stage_Data*> q {};
+std::queue<Stage_Data*> free_sds {};
 
 void init_uop_queue_stage() {
-  uop_queue_oldest_ops.name = (char*)strdup("Uop Queue Stage");
-  uop_queue_oldest_ops.max_op_count = STAGE_MAX_OP_COUNT;
-  uop_queue_oldest_ops.op_count = 0;
-  uop_queue_oldest_ops.ops = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
+  for (uns ii = 0; ii < UOP_QUEUE_LENGTH; ii++) {
+    Stage_Data* sd = (Stage_Data*)malloc(sizeof(Stage_Data));
+    sd->name = (char*)strdup("Uop Queue Stage");
+    sd->max_op_count = STAGE_MAX_OP_COUNT;
+    sd->op_count = 0;
+    sd->ops = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
+    free_sds.push(sd);
+  }
 }
 
-// Get ops from the decode_stage OR directly from the icache_stage when
-// the ops are predecoded (fetched from the uop cache).
+// Get ops from the uop cache.
 void update_uop_queue_stage(Stage_Data* src_sd) {
+  // If the front of the queue was consumed, remove that stage.
+  while (q.size() && q.front()->op_count == 0) {
+    free_sds.push(q.front());
+    q.pop();
+  }
+
   // If the queue cannot accomodate more ops, stall.
-  if ((int)queue_tail.size() + uop_queue_oldest_ops.op_count + src_sd->op_count > UOP_QUEUE_LENGTH) {
+  if (q.size() >= UOP_QUEUE_LENGTH) {
+    ASSERT(0, FALSE);
     return;
   }
 
-  // Place new ops into the queue.
-  int src_orig_op_count = src_sd->op_count;
-  for (int ii = 0; ii < src_orig_op_count; ii++) {
-    Op* op = src_sd->ops[ii];
+  // Build a new sd and place new ops into the queue.
+  Stage_Data* new_sd = free_sds.front();
+  free_sds.pop();
+  ASSERT(0, src_sd->op_count <= (int)STAGE_MAX_OP_COUNT);
+  std::swap(new_sd->op_count, src_sd->op_count);
+  std::swap(new_sd->ops, src_sd->ops);
+  
+  for (int ii = 0; ii < new_sd->op_count; ii++) {
+    Op* op = new_sd->ops[ii];
     decode_stage_process_op(op);  // Op skipped decode stage.
-    queue_tail.push(op);
-    src_sd->ops[ii] = NULL;
-    src_sd->op_count--;
-    next_op_num++;
+    ASSERT(0, op->fetched_from_uop_cache);
   }
-
-  // If uop_queue_oldest_ops has space, fill from queue
-  while (uop_queue_oldest_ops.op_count < (int)STAGE_MAX_OP_COUNT && !queue_tail.empty()) {
-    uop_queue_oldest_ops.ops[uop_queue_oldest_ops.op_count++] = queue_tail.front();
-    queue_tail.pop();
-  }
+  q.push(new_sd);
 }
+
+Stage_Data* uop_queue_stage_get_latest_sd(void) {
+  if (q.size()) {
+    return q.front();
+  }
+  ASSERT(0, free_sds.size() == UOP_QUEUE_LENGTH);
+  return free_sds.front();
+};

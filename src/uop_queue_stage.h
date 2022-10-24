@@ -13,11 +13,9 @@ extern "C" {
 #include "decode_stage.h"
 #include "uop_cache.h"
 
-//Ops that are at the "head", i.e. the ops that can be consumed by the next stage
-extern Stage_Data uop_queue_oldest_ops;
-
 void init_uop_queue_stage(void);
 void update_uop_queue_stage(Stage_Data* src_sd);
+Stage_Data* uop_queue_stage_get_latest_sd(void);
 
 #ifdef __cplusplus
 }

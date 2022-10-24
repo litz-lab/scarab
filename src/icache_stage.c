@@ -780,6 +780,9 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     uns fetch_latency = op->fetched_from_uop_cache ? UOP_CACHE_LATENCY : ICACHE_LATENCY;
     op->fetch_cycle = cycle_count + fetch_latency - 1;
 
+    // Verify no mixing of ops from icache and uop cache
+    if (ic->sd.op_count)
+      ASSERT(ic->proc_id, ic->sd.ops[ic->sd.op_count-1]->fetched_from_uop_cache == op->fetched_from_uop_cache);
     ic->sd.ops[ic->sd.op_count] = op; /* put op in the exit list */
     op_count[ic->proc_id]++;          /* increment instruction counters */
     unique_count_per_core[ic->proc_id]++;
@@ -946,10 +949,14 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     if (op->eom && (!op->oracle_info.mispred && !op->oracle_info.misfetch && !op->oracle_info.btb_miss)) {
       if (op->fetched_from_uop_cache && !next_op_in_uop_cache) {
         *break_fetch = BREAK_UC_MISS;
-        ic->timer_cycle = cycle_count + ICACHE_LATENCY - 1;
-        return IC_WAIT_FOR_TIMER;
+        packet_break = PB_BREAK_AFTER;
+        if (ICACHE_LATENCY > 1) {
+          ic->timer_cycle = cycle_count + ICACHE_LATENCY - 1;
+          return IC_WAIT_FOR_TIMER;
+        }
       } else if (!op->fetched_from_uop_cache && next_op_in_uop_cache) {
         *break_fetch = BREAK_ICACHE_TO_UOP_CACHE_SWITCH;
+        packet_break = PB_BREAK_AFTER;
         if (UOP_CACHE_LATENCY > 1) {
           ic->timer_cycle = cycle_count + UOP_CACHE_LATENCY - 1;
           return IC_WAIT_FOR_TIMER;

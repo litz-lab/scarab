@@ -41,6 +41,7 @@
 #include "map_stage.h"
 #include "model.h"
 #include "thread.h"
+#include "uop_cache.h"
 
 #include "core.param.h"
 #include "debug/debug.param.h"

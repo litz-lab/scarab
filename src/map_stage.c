@@ -192,9 +192,6 @@ void update_map_stage(Stage_Data* src_sd) {
   if (src_sd->op_count) {
     Op* first_op = src_sd->ops[0];
     Flag from_decode = !first_op->fetched_from_uop_cache;
-    if (from_decode) {
-      ASSERT(map->proc_id, first_op->op_num == next_op_num);  
-    }
     consume_ops = from_decode || first_op->op_num == next_op_num;
     if (!from_decode && consume_ops) {
       // PW accumulation break condition: Switched to fetching from the uop cache.

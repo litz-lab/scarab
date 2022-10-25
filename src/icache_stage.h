@@ -34,6 +34,8 @@
 #include "stage_data.h"
 
 #define IC_ISSUE_WIDTH      ISSUE_WIDTH
+// TODO(peterbraun): Only works with UOP_CACHE_ADDITIONAL_ISSUE_BANDWIDTH=0
+// Add additional ISSUE WIDTH to later stages?
 #define UC_ISSUE_WIDTH      ISSUE_WIDTH + UOP_CACHE_ADDITIONAL_ISSUE_BANDWIDTH
 
 /**************************************************************************************/

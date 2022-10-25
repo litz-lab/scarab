@@ -112,7 +112,7 @@ DEF_PARAM(icache_banks, ICACHE_BANKS, uns, uns, 8, )
 DEF_PARAM(icache_repl, ICACHE_REPL, uns, uns, 0, )
 
 /* Uop Cache */
-DEF_PARAM(  uop_cache_additional_issue_bandwidth, UOP_CACHE_ADDITIONAL_ISSUE_BANDWIDTH, uns, uns, 1                      ,       )
+DEF_PARAM(  uop_cache_additional_issue_bandwidth, UOP_CACHE_ADDITIONAL_ISSUE_BANDWIDTH, uns, uns, 0                      ,       )
 DEF_PARAM(  oracle_perfect_uop_cache       , ORACLE_PERFECT_UOP_CACHE        , Flag   , Flag    , FALSE                  ,       )
 DEF_PARAM(  inf_size_uop_cache             , INF_SIZE_UOP_CACHE              , Flag   , Flag    , FALSE                  ,       )
 DEF_PARAM(  inf_size_uop_cache_pw_size_lim , INF_SIZE_UOP_CACHE_PW_SIZE_LIM  , uns    , uns     , 0                      ,       )

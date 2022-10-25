@@ -193,13 +193,15 @@ void update_map_stage(Stage_Data* src_sd) {
     Op* first_op = src_sd->ops[0];
     Flag from_decode = !first_op->fetched_from_uop_cache;
     if (from_decode) {
-      ASSERT(map->proc_id, first_op->op_num == next_op_num);
+      ASSERT(map->proc_id, first_op->op_num == next_op_num);  
+    }
+    consume_ops = from_decode || first_op->op_num == next_op_num;
+    if (!from_decode && consume_ops) {
       // PW accumulation break condition: Switched to fetching from the uop cache.
-      // OK to call end_accumulate after any op in the decode stage. Nothing 
+      // OK to call end_accumulate after any op from the uop cache stage. Nothing 
       // happens if there is no PW being accumulated.
       end_accumulate();
     }
-    consume_ops = from_decode || first_op->op_num == next_op_num;
   }
   cur = &map->sds[STAGE_MAX_DEPTH - 1];
   if(cur->op_count == 0 && consume_ops) {

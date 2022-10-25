@@ -214,8 +214,6 @@ void cmp_cores(void) {
       update_node_stage(map->last_sd);
       // Map stage can get ops from either the uop queue following the uop cache
       // or the decoder.
-      // TODO: Update queue to reflect that it only has one source.
-      // TODO: Do not compact ops in uop queue. Use a queue of stage_objects.
       update_map_stage(dec->last_sd);
       update_decode_stage(&ic->sd);
       update_map_stage(uop_queue_stage_get_latest_sd());

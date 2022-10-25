@@ -170,8 +170,9 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
     found = TRUE;
   } else {
     // Next try to access a new PW starting at this addr
-    found = cache_access_all(&uop_cache, search_addr, &line_addr, update_repl, 
+    int lines_found = cache_access_all(&uop_cache, search_addr, &line_addr, update_repl, 
                           (void**) &uoc_data);
+    found = lines_found > 0;
     // Only update state if this access should change state
     if (update_repl && found) {
       if (uoc_data->prefetch && !uoc_data->used) {

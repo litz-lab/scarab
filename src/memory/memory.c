@@ -1879,6 +1879,7 @@ static Flag mem_complete_mlc_access(Mem_Req*         req,
     return TRUE;
   }
   ASSERT(req->proc_id, 0);
+  return FALSE;
 }
 
 /**************************************************************************************/

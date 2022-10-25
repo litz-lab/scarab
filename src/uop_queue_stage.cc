@@ -44,9 +44,14 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
     q.pop();
   }
 
+  // Check if ops are from the uop cache.
+  Flag from_icache = src_sd->op_count && !src_sd->ops[0]->fetched_from_uop_cache;
+  if (from_icache) {
+    return;
+  }
   // If the queue cannot accomodate more ops, stall.
   if (q.size() >= UOP_QUEUE_LENGTH) {
-    ASSERT(0, FALSE);
+    // Backend stalls may force fetch to stall.
     return;
   }
 

@@ -359,7 +359,7 @@ void init_memory() {
   init_mem_queue(&mem->l1fill_queue, "L1FILL_QUEUE", mem->total_mem_req_buffers,
                  QUEUE_L1FILL);
 
-  mem->core_fill_queues = (Mem_Queue*)malloc(sizeof(Mem_Queue) * NUM_CORES);
+  mem->core_fill_queues = (Mem_Queue*)calloc(NUM_CORES, sizeof(Mem_Queue));
   core_fill_seq_num     = (Counter*)malloc(sizeof(Counter) * NUM_CORES);
   for(proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     char buf[MAX_STR_LENGTH + 1];

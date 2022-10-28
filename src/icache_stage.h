@@ -68,8 +68,6 @@ typedef struct Icache_Stage_struct {
   Icache_State
     next_state; /* state that the ICACHE is going to be in next cycle */
 
-  Counter inst_count; /* instruction counter used to number ops (global counter
-                         is for retired ops) */
   Inst_Info** line;   /* pointer to current line on a hit */
   Addr        line_addr;       /* address of the last cache line hit */
   Addr        fetch_addr;      /* address fetched */

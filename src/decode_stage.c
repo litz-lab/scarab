@@ -94,7 +94,7 @@ void init_decode_stage(uns8 proc_id, const char* name) {
     snprintf(tmp_name, MAX_STR_LENGTH, "%s %d", name, STAGE_MAX_DEPTH - ii - 1);
     cur->name         = (char*)strdup(tmp_name);
     cur->max_op_count = STAGE_MAX_OP_COUNT;
-    cur->ops          = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
+    cur->ops          = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
   }
   dec->last_sd = &dec->sds[0];
   reset_decode_stage();

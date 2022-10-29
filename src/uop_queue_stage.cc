@@ -27,11 +27,11 @@ std::queue<Stage_Data*> free_sds {};
 
 void init_uop_queue_stage() {
   for (uns ii = 0; ii < UOP_QUEUE_LENGTH; ii++) {
-    Stage_Data* sd = (Stage_Data*)malloc(sizeof(Stage_Data));
+    Stage_Data* sd = (Stage_Data*)calloc(1, sizeof(Stage_Data));
     sd->name = (char*)strdup("Uop Queue Stage");
     sd->max_op_count = STAGE_MAX_OP_COUNT;
     sd->op_count = 0;
-    sd->ops = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
+    sd->ops = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
     free_sds.push(sd);
   }
 }
@@ -45,8 +45,7 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
   }
 
   // Check if ops are from the uop cache.
-  Flag from_icache = src_sd->op_count && !src_sd->ops[0]->fetched_from_uop_cache;
-  if (from_icache) {
+  if (src_sd->op_count == 0 || !src_sd->ops[0]->fetched_from_uop_cache) {
     return;
   }
   // If the queue cannot accomodate more ops, stall.

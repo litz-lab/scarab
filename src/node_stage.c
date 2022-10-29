@@ -417,7 +417,7 @@ void node_issue(Stage_Data* src_sd) {
   // Go through all the ops in the issue buffer and stick them into the Node
   // Table.
   // We will stick them into the RS later
-  for(ii = 0; ii < src_sd->op_count; ii++) {
+  for(ii = 0; ii < src_sd->max_op_count; ii++) {
     /* if node table is full, stall */
     if(is_node_table_full()) {
       collect_node_table_full_stats(node->node_head);

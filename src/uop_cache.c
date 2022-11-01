@@ -251,8 +251,9 @@ void accumulate_op(Op* op) {
   // 4. uop queue full
   // 5. too many uops to fit in entire set, even after evicting all entries
 
-  // it is possible for an instr to be partially in 2 lines. 
-  // For pw termination purposes, assume it is in first line.
+  // It is possible for an instr to be partially in 2 lines;
+  // for pw termination purposes, assume it is in first line.
+  // cons_op_num is used to verify that all ops in a PW are consecutive
   static Counter cons_op_num = 0;
 
   if ((UOP_CACHE_SIZE == 0 && !INF_SIZE_UOP_CACHE && !INF_SIZE_UOP_CACHE_PW_SIZE_LIM) 
@@ -263,6 +264,13 @@ void accumulate_op(Op* op) {
   Addr cur_icache_line_addr = get_cache_line_addr(&ic->icache,
                                                   accumulating_pw.first);
   Addr icache_line_addr = get_cache_line_addr(&ic->icache, op->inst_info->addr);
+
+  // Non-consecutive ops means that there was a uop cache hit, so the accumulating_pw
+  // needs to be flushed. This must be done in the same place accumulation is done.
+  if (cur_icache_line_addr && op->op_num != cons_op_num) {
+    end_accumulate();
+    cur_icache_line_addr = 0;
+  }
 
   if (!cur_icache_line_addr) {
     accumulating_pw.first = op->inst_info->addr;

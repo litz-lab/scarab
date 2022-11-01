@@ -207,7 +207,7 @@ void update_decode_stage(Stage_Data* src_sd) {
 
 
 /**************************************************************************************/
-/* process_decode_op: */
+/* process_decode_op: This function may also be called by ops from the uop cache.     */
 
 void decode_stage_process_op(Op* op) {
   Cf_Type cf = op->table_info->cf_type;

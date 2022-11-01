@@ -187,21 +187,8 @@ void update_map_stage(Stage_Data* src_sd) {
   /* do the first map stage */
   // Uops can be received from either the decoder or directly from the uop cache
   // via the uop queue.
-  // 1) If from decode stage, consume ops.
-  // 2) If from uop cache, check if any preceding instructions are in-flight in
-  //    the decoder by checking the op_num. If not, consume ops.
-  Flag consume_ops = FALSE;
-  if (src_sd->op_count) {
-    Op* first_op = src_sd->ops[0];
-    Flag from_decode = !first_op->fetched_from_uop_cache;
-    consume_ops = from_decode || first_op->op_num == next_op_num;
-    if (!from_decode && consume_ops) {
-      // PW accumulation break condition: Switched to fetching from the uop cache.
-      // OK to call end_accumulate after any op from the uop cache stage. Nothing 
-      // happens if there is no PW being accumulated.
-      end_accumulate();
-    }
-  }
+  // Only consume if older ops have already been consumed by this stage.
+  Flag consume_ops = src_sd->op_count && src_sd->ops[0]->op_num == next_op_num;
   cur = &map->sds[STAGE_MAX_DEPTH - 1];
   if(cur->op_count == 0 && consume_ops) {
     /* call the fetch fill unit */

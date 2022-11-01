@@ -212,12 +212,12 @@ void cmp_cores(void) {
       update_dcache_stage(&exec->sd);
       update_exec_stage(&node->sd);
       update_node_stage(map->last_sd);
+      update_uop_queue_stage(&ic->sd);
       // Map stage can get ops from either the uop queue following the uop cache
       // or the decoder.
       update_map_stage(dec->last_sd);
       update_decode_stage(&ic->sd);
       update_map_stage(uop_queue_stage_get_latest_sd());
-      update_uop_queue_stage(&ic->sd);
       update_icache_stage();
 
       node_sched_ops();

@@ -18,6 +18,7 @@ extern "C" {
 }
 
 // Macros
+#define UOP_QUEUE_STAGE_LENGTH (UOP_QUEUE_LENGTH + 1)
 #define STAGE_MAX_OP_COUNT ISSUE_WIDTH  // The bandwidth of the next, consuming stage (map stage)
 // TODO(peterbraun): Check if the ISSUE_WIDTH can be less than the uop cache issue bandwidth
 
@@ -26,7 +27,7 @@ std::queue<Stage_Data*> q {};
 std::queue<Stage_Data*> free_sds {};
 
 void init_uop_queue_stage() {
-  for (uns ii = 0; ii < UOP_QUEUE_LENGTH; ii++) {
+  for (uns ii = 0; ii < UOP_QUEUE_STAGE_LENGTH; ii++) {
     Stage_Data* sd = (Stage_Data*)calloc(1, sizeof(Stage_Data));
     sd->name = (char*)strdup("Uop Queue Stage");
     sd->max_op_count = STAGE_MAX_OP_COUNT;
@@ -49,7 +50,7 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
     return;
   }
   // If the queue cannot accomodate more ops, stall.
-  if (q.size() >= UOP_QUEUE_LENGTH) {
+  if (q.size() >= UOP_QUEUE_STAGE_LENGTH) {
     // Backend stalls may force fetch to stall.
     return;
   }
@@ -73,6 +74,6 @@ Stage_Data* uop_queue_stage_get_latest_sd(void) {
   if (q.size()) {
     return q.front();
   }
-  ASSERT(0, free_sds.size() == UOP_QUEUE_LENGTH);
+  ASSERT(0, free_sds.size() == UOP_QUEUE_STAGE_LENGTH);
   return free_sds.front();
 };

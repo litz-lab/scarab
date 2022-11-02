@@ -266,8 +266,9 @@ void accumulate_op(Op* op) {
   Addr icache_line_addr = get_cache_line_addr(&ic->icache, op->inst_info->addr);
 
   // Non-consecutive ops means that there was a uop cache hit, so the accumulating_pw
-  // needs to be flushed. This must be done in the same place accumulation is done.
-  if (cur_icache_line_addr && op->op_num != cons_op_num) {
+  // may need to be flushed. This must be done in the same place accumulation is done.
+  if (op->op_num != cons_op_num) {
+    STAT_EVENT(0, UOP_CACHE_ICACHE_SWITCH);
     end_accumulate();
     cur_icache_line_addr = 0;
   }

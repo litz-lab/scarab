@@ -163,6 +163,10 @@ void debug_map_stage() {
 /* map_cycle: */
 
 void update_map_stage(Stage_Data* src_sd) {
+  // Last cycle that map stage consumed ops.
+  // This prevents map stage from accidentally consuming ops twice per cycle
+  // (since update_map_stage is called twice per cycle).
+  static Counter last_cycle_consumed = 0;
   Flag        stall = (map->last_sd->op_count > 0);
   Stage_Data *cur, *prev;
   Op**        temp;
@@ -190,7 +194,10 @@ void update_map_stage(Stage_Data* src_sd) {
   // Only consume if older ops have already been consumed by this stage.
   Flag consume_ops = src_sd->op_count && src_sd->ops[0]->op_num == next_op_num;
   cur = &map->sds[STAGE_MAX_DEPTH - 1];
-  if(cur->op_count == 0 && consume_ops) {
+  if (cur->op_count == 0 && src_sd->op_count == 0 && last_cycle_consumed < cycle_count) {
+    STAT_EVENT(map->proc_id, MAP_STAGE_STARVED_2X);
+  }
+  if(cur->op_count == 0 && consume_ops && last_cycle_consumed < cycle_count) {
     /* call the fetch fill unit */
     prev           = src_sd;
     temp           = cur->ops;
@@ -205,6 +212,7 @@ void update_map_stage(Stage_Data* src_sd) {
       op->map_cycle = cycle_count;
     }
     next_op_num += cur->op_count;
+    last_cycle_consumed = cycle_count;
   }
 
   /* if the last map stage is stalled, don't re-process the ops  */

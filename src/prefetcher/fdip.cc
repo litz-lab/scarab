@@ -666,7 +666,7 @@ void fdip_update() {
                 if (popped_cl.second == TRUE) {
                   if(!cnt) {
                     cache_insert_replpos(&fdip_cc, ic_stage->proc_id, uc_line_addr, &dummy_uc_line_addr,
-                                         &repl_uc_line_addr, FDIP_CC_INSERT_REPLPOL, FALSE);
+                                         &repl_uc_line_addr, (Cache_Insert_Repl)FDIP_CC_INSERT_REPLPOL, FALSE);
                     if (repl_uc_line_addr)
                       STAT_EVENT(ic_stage->proc_id, FDIP_CC_REPLACEMENT);
                   }
@@ -803,7 +803,7 @@ void fdip_update() {
                     fdip_inc_useful_hash(popped_cl.first);
                     if(!cnt) {
                       cache_insert_replpos(&fdip_cc, ic_stage->proc_id, uc_line_addr, &dummy_uc_line_addr,
-                                           &repl_uc_line_addr, FDIP_CC_INSERT_REPLPOL, FALSE);
+                                           &repl_uc_line_addr, (Cache_Insert_Repl)FDIP_CC_INSERT_REPLPOL, FALSE);
                     }
                     DEBUG(ic_stage->proc_id, " useful\n");
                   } else {

@@ -235,8 +235,13 @@ public:
     _info.target = 0; // Set when the next instruction is evaluated
     _info.static_target = 0; // Set when the next instruction is evaluated
     _prior.target = _info.pc;
-    _info.taken =
-        cond_branch; // Patched when the next instruction is evaluated
+    xed_category_enum_t category = xed_decoded_inst_get_category(xed_ins);
+    // Set as taken if it's a branch.
+    // Conditional branches are patched when the next instruction is evaluated.
+    _info.taken = category == XED_CATEGORY_UNCOND_BR ||
+                 category == XED_CATEGORY_COND_BR ||
+                 category == XED_CATEGORY_CALL ||
+                 category == XED_CATEGORY_RET;
     _info.mem_addr[0] = 0x4040;
     _info.mem_addr[1] = 0x8080;
     _info.mem_used[0] = false;

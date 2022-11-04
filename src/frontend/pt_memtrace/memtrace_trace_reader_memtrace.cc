@@ -255,7 +255,7 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
 PATCH_REP:
   // Compute the branch target information for the prior instruction
   _prior->target = _info->pc;  // TODO(granta): Invalid for pid/tid switch
-  if(_prior->taken) {          // currently set iif conditional branch
+  if(_prior->taken) {          // currently set iif branch
     bool non_seq = _info->pc != (_prior->pc + prior_isize);
     bool new_gid = (_prior->tid != _info->tid) || (_prior->pid != _info->pid);
     if(new_gid) {
@@ -295,12 +295,19 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
       std::ignore) = xed_tuple;
   mt_prior_isize_  = mt_ref_.instr.size;
   xed_ins          = std::get<MAP_XED>(xed_tuple).get();
-  _info->pc        = mt_ref_.instr.addr;
-  _info->ins       = xed_ins;
-  _info->pid       = mt_ref_.instr.pid;
-  _info->tid       = mt_ref_.instr.tid;
-  _info->target    = 0;        // Set when the next instruction is evaluated
-  _info->taken = cond_branch;  // Patched when the next instruction is evaluated
+
+  xed_category_enum_t category = xed_decoded_inst_get_category(xed_ins);
+  _info->pc = mt_ref_.instr.addr;
+  _info->ins = xed_ins;
+  _info->pid = mt_ref_.instr.pid;
+  _info->tid = mt_ref_.instr.tid;
+  _info->target = 0;  // Set when the next instruction is evaluated
+  // Set as taken if it's a branch.
+  // Conditional branches are patched when the next instruction is evaluated.
+  _info->taken = category == XED_CATEGORY_UNCOND_BR ||
+                 category == XED_CATEGORY_COND_BR ||
+                 category == XED_CATEGORY_CALL ||
+                 category == XED_CATEGORY_RET;
   _info->mem_addr[0]  = 0;
   _info->mem_addr[1]  = 0;
   _info->mem_used[0]  = false;

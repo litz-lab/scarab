@@ -353,6 +353,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   /*Addr line_addr;*/
   Addr* btb_target;
   Addr  pred_target;
+  Flag  btb_miss_nt = FALSE;
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, op->table_info->cf_type);
@@ -474,6 +475,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       bp_data->global_hist = (bp_data->global_hist >> 1) |
                              (op->oracle_info.pred << 31);
 
+      if(op->oracle_info.btb_miss && op->oracle_info.pred == NOT_TAKEN)
+        btb_miss_nt = TRUE;
+
       if(PERFECT_CBR_BTB ||
          (PERFECT_NT_BTB && op->oracle_info.pred == NOT_TAKEN)) {
         pred_target               = op->oracle_info.target;
@@ -584,6 +588,8 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   // }}}
 
   // pred_target = convert_to_cmp_addr(op->proc_id, pred_target);
+  if(op->oracle_info.btb_miss && op->oracle_info.pred == NOT_TAKEN)
+    btb_miss_nt = TRUE;
 
   bp_data->bp->spec_update_func(op);
   if(USE_LATE_BP) {
@@ -600,6 +606,17 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   op->oracle_info.pred_npc = prediction;
   ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.pred_npc);
   bp_predict_op_evaluate(bp_data, op, prediction);
+
+  // The case where BTB-miss not-taken branch pollute global hist
+  // mispred || misfetch will trigger a re-steer but no chance to fix the global hist
+  if(btb_miss_nt &&
+      (((op->oracle_info.pred != op->oracle_info.dir) && (prediction != op->oracle_info.npc)) ||
+      (!op->oracle_info.mispred && prediction != op->oracle_info.npc))) {
+    if(fdip_pred_off_path())
+      STAT_EVENT(op->proc_id, FDIP_OFF_PATH_BTB_MISS_NT_RESTEER);
+    else
+      STAT_EVENT(op->proc_id, FDIP_ON_PATH_BTB_MISS_NT_RESTEER);
+  }
   return prediction;
 }
 

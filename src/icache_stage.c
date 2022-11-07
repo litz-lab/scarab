@@ -90,6 +90,8 @@ extern Counter                last_recover_cycle;
 extern CountMinSketch         cms_useful;
 extern CountMinSketch         cms_unuseful;
 extern uns                    operating_mode;
+extern Counter                FDIP_branch_id;
+extern Counter                icache_branch_id;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -194,8 +196,6 @@ void init_icache_trace() {
     ic->next_fetch_addr = (*ptr)->inst_info->addr;
     runahead_pc = (*ptr)->inst_info->addr;
     runahead_disable = FALSE;
-    if (FDIP_ENABLE)
-      fdip_update();
   } else {
     ic->next_fetch_addr = frontend_next_fetch_addr(ic->proc_id);
   }
@@ -439,6 +439,8 @@ void update_icache_stage() {
 
           DEBUG_FDIP(ic->proc_id, "[%llu] Cache miss on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
           log_stats_ic_miss();
+          if (FDIP_ENABLE && FDIP_HASH_ENABLE && FDIP_TIMELY_FIFO_SIZE)
+            fdip_touch_cl_candidates(ic->line_addr);
 
           if (last_issued_op_num == max_op_num)
             STAT_EVENT(ic->proc_id, ICACHE_OVERTAKE_FDIP);
@@ -500,13 +502,15 @@ void update_icache_stage() {
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
-          DEBUG_FDIP(ic->proc_id, "Cache hit on op_num: %s 0x %s\n", unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
+          DEBUG_FDIP(ic->proc_id, "[%llu] Cache hit on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
           if (FDIP_ENABLE) {
             ASSERT(ic->proc_id, last_issued_op_num <= max_op_num);
-            if (FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE) {
+            if (FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE && !FDIP_TIMELY_FIFO_SIZE) {
               fdip_remove_cl_fetch_addr(ic->line_addr);
               fdip_inc_cnt_useful(ic->line_addr);
             }
+            if (FDIP_TIMELY_FIFO_SIZE)
+              fdip_touch_cl_candidates(ic->line_addr);
           }
           STAT_EVENT(ic->proc_id, ICACHE_HIT);
           STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH + ic->off_path);
@@ -623,11 +627,15 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         op = *ptr;
         DEBUG_FDIP(ic->proc_id, "[%llu] [op_buf - remove head] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
         last_issued_op_num = op->op_num;
+        if (op->table_info->cf_type)
+          icache_branch_id++;
       }
       else {
         op   = alloc_op(ic->proc_id);
         frontend_fetch_op(ic->proc_id, op);
         DEBUG_FDIP(ic->proc_id, "[%llu] [op] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
+        if (op->table_info->cf_type)
+          icache_branch_id++;
       }
       ASSERTM(ic->proc_id, ic->next_fetch_addr == op->inst_info->addr,
                "Fetch address 0x%llx does not match op address 0x%llx\n",
@@ -722,7 +730,9 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         // for fetch barriers (including syscalls), we do not want to do
         // redirect/recovery, BUT we still want to update the branch predictor.
         if (FDIP_ENABLE) {
-          ic->next_fetch_addr = fdip_pred(ic->fetch_addr, op);
+          fdip_pred(ic->fetch_addr, op);
+          ic->next_fetch_addr       = ADDR_PLUS_OFFSET(
+            ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
           ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
         } else {
           bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
@@ -1101,7 +1111,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
     else {
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_OFF_PATH_BY_FDIP);
     }
-    if(FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE) {
+    if(FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE && !FDIP_TIMELY_FIFO_SIZE) {
       fdip_remove_cl_fetch_addr(*repl_line_addr);
       fdip_inc_cnt_unuseful(*repl_line_addr);
     }

@@ -706,6 +706,8 @@ void full_sim() {
       if(!sim_done[proc_id] && (retired_exit[proc_id] || reachedInstLimit)) {
         if(model->per_core_done_func)
           model->per_core_done_func(proc_id);
+        if(proc_id == 0)
+          fdip_print_hash_tables();
         dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
         sim_done[proc_id] = TRUE;
         any_sim_done      = TRUE;

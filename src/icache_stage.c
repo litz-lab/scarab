@@ -292,10 +292,6 @@ void recover_icache_stage() {
   if (ic->next_state == IC_FETCH) {
     Flag uc_hit = in_uop_cache(op->oracle_info.pred_npc, NULL, FALSE);
     uns fetch_latency = uc_hit ? UOP_CACHE_LATENCY : ICACHE_LATENCY;
-    if (fetch_latency > 1) {
-      ic->timer_cycle = cycle_count + fetch_latency - 1;
-      ic->next_state = IC_WAIT_FOR_TIMER;
-    }
     INC_STAT_EVENT(bp_recovery_info->proc_id, BP_RECOVERY_FETCH_CYCLES_UC + !uc_hit, fetch_latency);
   }
 }
@@ -330,10 +326,6 @@ void redirect_icache_stage() {
 
   Flag uc_hit = in_uop_cache(op->oracle_info.pred_npc, NULL, FALSE);
   uns fetch_latency = uc_hit ? UOP_CACHE_LATENCY : ICACHE_LATENCY;  
-  if (fetch_latency > 1) {
-    ic->timer_cycle = cycle_count + fetch_latency - 1;
-    ic->next_state = IC_WAIT_FOR_TIMER;
-  }
 
   if (ic->back_on_path) {  // Do not double count ops that have both a BTB miss and wrong predictor.
     INC_STAT_EVENT(bp_recovery_info->proc_id, BP_REDIRECT_FETCH_CYCLES_UC + !uc_hit, fetch_latency);
@@ -777,8 +769,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
                               2 * op->off_path);
 
     thread_map_mem_dep(op);
-    uns fetch_latency = op->fetched_from_uop_cache ? UOP_CACHE_LATENCY : ICACHE_LATENCY;
-    op->fetch_cycle = cycle_count + fetch_latency - 1;
+    op->fetch_cycle = cycle_count;
 
     // Verify no mixing of ops from icache and uop cache
     if (ic->sd.op_count)
@@ -950,17 +941,9 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       if (op->fetched_from_uop_cache && !next_op_in_uop_cache) {
         *break_fetch = BREAK_UC_MISS;
         packet_break = PB_BREAK_AFTER;
-        if (ICACHE_LATENCY > 1) {
-          ic->timer_cycle = cycle_count + ICACHE_LATENCY - 1;
-          return IC_WAIT_FOR_TIMER;
-        }
       } else if (!op->fetched_from_uop_cache && next_op_in_uop_cache) {
         *break_fetch = BREAK_ICACHE_TO_UOP_CACHE_SWITCH;
         packet_break = PB_BREAK_AFTER;
-        if (UOP_CACHE_LATENCY > 1) {
-          ic->timer_cycle = cycle_count + UOP_CACHE_LATENCY - 1;
-          return IC_WAIT_FOR_TIMER;
-        }
       }
     }
 

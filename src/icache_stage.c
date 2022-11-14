@@ -937,7 +937,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     // BUT do not add fetch latency when the last op caused a frontend resteer.
     // The latency will already have been added, and break_fetch already set.
     Flag next_op_in_uop_cache = in_uop_cache(op->oracle_info.npc, NULL, FALSE);
-    if (op->eom && (!op->oracle_info.mispred && !op->oracle_info.misfetch && !op->oracle_info.btb_miss)) {
+    Flag branch_that_causes_resteer = op->table_info->cf_type && (op->oracle_info.mispred || op->oracle_info.misfetch || op->oracle_info.btb_miss);
+    if (op->eom && !branch_that_causes_resteer) {
       if (op->fetched_from_uop_cache && !next_op_in_uop_cache) {
         *break_fetch = BREAK_UC_MISS;
         packet_break = PB_BREAK_AFTER;

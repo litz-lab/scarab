@@ -530,6 +530,11 @@ void update_icache_stage() {
                            ICACHE_LINE_SIZE, 0, NULL, instr_fill_line,
                            unique_count,
                            0);
+          if (FDIP_ENABLE && last_issued_op_num == max_op_num && last_runahead_op != max_runahead_op) {
+            ic->next_state = IC_WAIT_FOR_FDIP;
+            break_fetch = BREAK_FDIP_RUNAHEAD;
+            break;
+          }
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",

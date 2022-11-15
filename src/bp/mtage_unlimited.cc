@@ -740,7 +740,7 @@ int tage::postp_index() {
     ctr[i] = (i < (int)hit.size()) ? getg(hit[i]).ctr : b[bi];
   }
   int v = 0;
-  for(int i = 2; i >= 0; i--) {
+  for(int i = 1; i >= 0; i--) {
     v = (v << ctrbits) | (ctr[i] & (((1 << ctrbits) - 1)));
   }
 

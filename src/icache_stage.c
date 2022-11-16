@@ -731,8 +731,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         // redirect/recovery, BUT we still want to update the branch predictor.
         if (FDIP_ENABLE) {
           fdip_pred(ic->fetch_addr, op);
-          ic->next_fetch_addr       = ADDR_PLUS_OFFSET(
-            ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
+          ic->next_fetch_addr       = op->oracle_info.npc;
           ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
         } else {
           bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);

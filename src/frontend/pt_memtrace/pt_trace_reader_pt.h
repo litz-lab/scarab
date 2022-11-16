@@ -35,6 +35,7 @@
 
 #include <map>
 #include <string>
+#include <sstream>
 #include <vector>
 
 #include <boost/algorithm/string.hpp>
@@ -63,7 +64,7 @@ private:
   std::map<uint64_t, uint64_t> *prev_to_new_bbl_address_map = nullptr;
   uint64_t num_nops_in_trace = 0, num_inserted_nops = 0;
   uint64_t num_direct_brs_in_trace = 0, num_inserted_direct_brs = 0;
-
+  std::vector <std::string> parsed;
 public:
   bool read_next_line(PTInst &inst) {
       static uns64 num_nops_at_start = 0;
@@ -79,17 +80,29 @@ public:
     if (gzgets(raw_file, buffer, GZ_BUFFER_SIZE) == Z_NULL)
       return false;
     std::string line = buffer;
-    boost::trim_if(line, boost::is_any_of("\n"));
-    std::vector<std::string> parsed;
-    boost::split(parsed, line, boost::is_any_of(" \n"),
-                 boost::token_compress_on);
+
+    parsed.clear();
+    std::stringstream check1(line);
+    std::string intermediate;
+    while(getline(check1, intermediate, ' '))
+    {
+        parsed.emplace_back(intermediate);
+    }
     if (parsed.size() < 3)
       panic("TraceReaderPT: GZ File line has less than 3 items");
+    assert(parsed[1].length()==0);
     inst.pc = strtoul(parsed[0].c_str(), NULL, 16);
-    inst.size = strtoul(parsed[1].c_str(), NULL, 10);
-    for (uint8_t i = 0; i < inst.size; i++) {
-      inst.inst_bytes[i] = strtoul(parsed[i + 2].c_str(), NULL, 16);
+    inst.size = strtoul(parsed[2].c_str(), NULL, 10);
+
+    int found = 0;
+    assert(inst.size);
+    for (uint8_t i = 3; found < inst.size; i++) {
+      if (parsed[i].length()==0) {
+        continue;
+      }
+      inst.inst_bytes[found++] = strtoul(parsed[i].c_str(), NULL, 16);
     }
+
     if (enable_code_bloat_effect && (prev_to_new_bbl_address_map != nullptr)) {
       uint64_t result = inst.pc;
       auto it = prev_to_new_bbl_address_map->lower_bound(inst.pc);

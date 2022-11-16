@@ -83,7 +83,7 @@ DEF_PARAM( memview                      , MEMVIEW                   , Flag   , F
 DEF_PARAM( memview_file                 , MEMVIEW_FILE              , char * , string    , "memview.out",   )
 DEF_PARAM( memview_start                , MEMVIEW_START             , char*  , string    , "never",         )
  
-DEF_PARAM( inst_hash_table_size         , INST_HASH_TABLE_SIZE      , uns    , uns       , 500021   , const )
+DEF_PARAM( inst_hash_table_size         , INST_HASH_TABLE_SIZE      , uns    , uns       , 524288   , const )
 
 DEF_PARAM( stdout                       , STDOUT_FILE               , char * , string    , NULL     ,       )
 DEF_PARAM( stderr                       , STDERR_FILE               , char * , string    , NULL     ,       )

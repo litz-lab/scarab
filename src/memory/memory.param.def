@@ -123,6 +123,12 @@ DEF_PARAM(  uop_cache_assoc                , UOP_CACHE_ASSOC                 , u
 DEF_PARAM(  uop_cache_max_uops_line        , UOP_CACHE_MAX_UOPS_LINE         , uns    , uns     , 4                      ,       )
 DEF_PARAM(  uop_cache_max_imm_disp_line    , UOP_CACHE_MAX_IMM_DISP_LINE     , uns    , uns     , 4                      ,       )
 
+/* FDIP Confidence Cache */
+// The cache line size is fixed to ICACHE_LINE_SIZE (64 by default). The number of entries in a FDIP CC is FDIP_CC_SIZE / ICACHE_LINE_SIZE. To have 16K (16384) entries, FDIP_CC_SIZE should be 1048576.
+DEF_PARAM(  fdip_cc_size                   , FDIP_CC_SIZE                    , uns    , uns     , 0                      ,       )
+DEF_PARAM(  fdip_cc_assoc                  , FDIP_CC_ASSOC                   , uns    , uns     , 8                      ,       )
+// The insert replacement policy should be one of INSERT_REP_(DEFAULT/LRU/LOWQTR/MID/MRU)
+DEF_PARAM(  fdip_cc_insert_replpol         , FDIP_CC_INSERT_REPLPOL          , uns    , uns     , 0                      ,       )
 
 /* L0 data */
 DEF_PARAM(dcache_size, DCACHE_SIZE, uns, uns, (64 * 1024), )

@@ -28,6 +28,8 @@ extern "C" {
   void fdip_remove_cl_fetch_addr(Addr line_addr);
   void fdip_print_hash_tables();
   void fdip_touch_cl_candidates(Addr line_addr);
+  void fdip_inc_useful_hash(Addr line_addr);
+  void fdip_dec_useful_hash(Addr line_addr);
 
   /* Private*/
   void fdip_new_branch(Addr bp_pc, Op *op);

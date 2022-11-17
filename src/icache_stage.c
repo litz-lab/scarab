@@ -439,7 +439,7 @@ void update_icache_stage() {
 
           DEBUG_FDIP(ic->proc_id, "[%llu] Cache miss on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
           log_stats_ic_miss();
-          if (FDIP_ENABLE && FDIP_HASH_ENABLE && FDIP_TIMELY_FIFO_SIZE)
+          if (FDIP_ENABLE && FDIP_TIMELY_FIFO_SIZE)
             fdip_touch_cl_candidates(ic->line_addr);
 
           if (last_issued_op_num == max_op_num)

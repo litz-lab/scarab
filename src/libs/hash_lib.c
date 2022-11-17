@@ -43,7 +43,8 @@
 
 #define DEBUG(args...) _DEBUG(DEBUG_HASH_LIB, ##args)
 
-int64 HASH_INDEX(Hash_Table*  table, int64 key) {
+int64 HASH_INDEX(const Hash_Table* table, int64 key);
+int64 HASH_INDEX(const Hash_Table*  table, int64 key) {
   int64_t mask = (~0UL) % table->buckets;
   int64_t hash = 0;
   int log2 = 64 - __builtin_clzl(table->buckets);

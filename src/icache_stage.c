@@ -737,8 +737,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
           op->oracle_info.misfetch  = 0;
           op->oracle_info.btb_miss  = 0;
           op->oracle_info.no_target = 0;
-          ic->next_fetch_addr       = ADDR_PLUS_OFFSET(
-            ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
+          ic->next_fetch_addr       = op->oracle_info.npc;
           ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
         }
       } else {

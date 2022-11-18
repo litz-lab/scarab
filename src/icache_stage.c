@@ -90,8 +90,7 @@ extern Counter                last_recover_cycle;
 extern CountMinSketch         cms_useful;
 extern CountMinSketch         cms_unuseful;
 extern uns                    operating_mode;
-extern Counter                FDIP_branch_id;
-extern Counter                icache_branch_id;
+extern Counter                icache_ftq_pos;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -491,6 +490,7 @@ void update_icache_stage() {
           }
           break_fetch = BREAK_ICACHE_MISS;
         } else if (ic->line == (Inst_Info**) DUMMY_ADDR_UC_FETCH) { // icache miss, uc hit
+          icache_ftq_pos++;
           log_stats_ic_miss();
           // start a memreq to fill icache, but do not cause any stalls. 
           // Use for more inclusivity between IC and UC
@@ -500,6 +500,7 @@ void update_icache_stage() {
                            0);
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
         } else { /* icache hit. Can be either UC hit or miss */
+          icache_ftq_pos++;
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
           DEBUG_FDIP(ic->proc_id, "[%llu] Cache hit on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
@@ -627,15 +628,11 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         op = *ptr;
         DEBUG_FDIP(ic->proc_id, "[%llu] [op_buf - remove head] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
         last_issued_op_num = op->op_num;
-        if (op->table_info->cf_type)
-          icache_branch_id++;
       }
       else {
         op   = alloc_op(ic->proc_id);
         frontend_fetch_op(ic->proc_id, op);
         DEBUG_FDIP(ic->proc_id, "[%llu] [op] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
-        if (op->table_info->cf_type)
-          icache_branch_id++;
       }
       ASSERTM(ic->proc_id, ic->next_fetch_addr == op->inst_info->addr,
                "Fetch address 0x%llx does not match op address 0x%llx\n",

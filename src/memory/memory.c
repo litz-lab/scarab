@@ -3952,6 +3952,8 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size,
   new_req->global_hist   = (pref_info ? pref_info->global_hist : 0);
   new_req->bw_prefetch   = (pref_info ? pref_info->bw_limited : FALSE);
   new_req->destination   = destination;
+  if (type == MRT_FDIPPRF && fdip_pred_off_path())
+    new_req->fdip_pref_off_path = TRUE;
   if(PREF_FRAMEWORK_ON) {
     new_req->bw_prefetchable = PREF_STREAM_ON &&
                                pref_stream_bw_prefetchable(proc_id, addr);

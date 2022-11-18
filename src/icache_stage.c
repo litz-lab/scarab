@@ -969,7 +969,14 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       line_info->read_count[0]     = 0;
       line_info->read_count[1]     = 0;
       line_info->HW_prefetch       = req->type == MRT_IPRF;
-      line_info->FDIP_prefetch     = mem_req_is_type(req, MRT_FDIPPRF);
+      if (req->type == MRT_FDIPPRF) {
+        if (req->fdip_pref_off_path)
+          line_info->FDIP_prefetch = 2;
+        else
+          line_info->FDIP_prefetch = 1;
+      } else {
+        line_info->FDIP_prefetch = 0;
+      }
       wp_process_icache_fill(line_info, req);
     }
 
@@ -1083,10 +1090,10 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
   }
 
   if(line->FDIP_prefetch) {
-    if(!line->fetched_by_offpath) {
+    if(line->FDIP_prefetch == 1) {
       STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH_BY_FDIP);
     }
-    else {
+    else if(line->FDIP_prefetch == 2) {
       STAT_EVENT(ic->proc_id, ICACHE_HIT_OFFPATH_BY_FDIP);
     }
     line->read_count[0] += 1;
@@ -1104,7 +1111,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
     return;
 
   if(*repl_line_addr && line->FDIP_prefetch && !line->read_count[0]) {
-    if(!line->fetched_by_offpath) {
+    if(line->FDIP_prefetch == 1) {
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ON_PATH_BY_FDIP);
     }
     else {
@@ -1116,7 +1123,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
     }
   }
   else if(*repl_line_addr && line->FDIP_prefetch && line->read_count[0]) {
-    if(!line->fetched_by_offpath) {
+    if(line->FDIP_prefetch == 1) {
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_ON_PATH_BY_FDIP);
     }
     else {

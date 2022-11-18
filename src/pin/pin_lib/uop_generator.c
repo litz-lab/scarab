@@ -44,6 +44,7 @@
 #include "../../isa/isa.h"
 #include "../../libs/hash_lib.h"
 
+#include "libs/cpp_hash_lib_wrapper.h"
 #include "uop_generator.h"
 #include "math.h"
 
@@ -110,9 +111,6 @@ Flag*        eom;
 uns*         num_sending_uop;
 uns*         num_uops;
 Addr*        last_ga_va;
-
-Hash_Table*
-  inst_info_hash; /* hash table of all static instruction information */
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -212,12 +210,6 @@ static void print_op_fields(uns proc_id, Op* op) {
 }
 
 void uop_generator_init(uint32_t num_cores) {
-  inst_info_hash = (Hash_Table*)malloc(num_cores * sizeof(Hash_Table));
-  for(uns ii = 0; ii < num_cores; ii++) {
-    init_hash_table(&inst_info_hash[ii], "instruction hash table",
-                    INST_HASH_TABLE_SIZE, sizeof(Inst_Info));
-  }
-
   trace_uop_bulk = (Trace_Uop***)malloc(num_cores * sizeof(Trace_Uop**));
   for(uns ii = 0; ii < num_cores; ii++) {
     trace_uop_bulk[ii] = (Trace_Uop**)malloc(MAX_PUP * sizeof(Trace_Uop*));
@@ -825,30 +817,26 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi,
   return idx;
 }
 
-static Addr convert_pinuop_inst_addr_to_key_addr(
-  const uint64_t instruction_addr) {
-  // allows for up to 2^5=32 uops per macro instruction
-  return (instruction_addr << 5);
-}
-
 void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
                              Trace_Uop** trace_uop) {
   Flag new_entry = FALSE;
-  Addr key_addr  = convert_pinuop_inst_addr_to_key_addr(pi->instruction_addr);
   Inst_Info* info;
+  // Due to JIT compilation, each branch must be decoded to verify which instruction the PC maps to.
+  // To decrease unnecessary malloc/free, fetch inst_info from hashmap
+  // instead of allocating. However first instruction must be decoded.
+
   if(pi->fake_inst) {
     info                   = (Inst_Info*)calloc(1, sizeof(Inst_Info));
     info->fake_inst        = TRUE;
     info->fake_inst_reason = pi->fake_inst_reason;
   } else {
-    info = (Inst_Info*)hash_table_access_create(&inst_info_hash[proc_id],
-                                                key_addr, &new_entry);
+    info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb,
+                                        pi->inst_binary_msb, 0, &new_entry);
     info->fake_inst        = FALSE;
     info->fake_inst_reason = WPNM_NOT_IN_WPNM;
   }
   int ii;
   int num_uop = 0;
-
   if(pi->is_string) {
     pi->branch_target  = pi->instruction_addr;
     pi->actually_taken = (pi->branch_target == pi->instruction_next_addr);
@@ -885,10 +873,9 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
           info->fake_inst        = TRUE;
           info->fake_inst_reason = pi->fake_inst_reason;
         } else {
-          key_addr =
-            (convert_pinuop_inst_addr_to_key_addr(pi->instruction_addr) + ii);
-          info = (Inst_Info*)hash_table_access_create(&inst_info_hash[proc_id],
-                                                      key_addr, &new_entry);
+          info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb,
+                                              pi->inst_binary_msb, ii, &new_entry);
+
           info->fake_inst        = FALSE;
           info->fake_inst_reason = WPNM_NOT_IN_WPNM;
         }
@@ -936,10 +923,8 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
 
     for(ii = 0; ii < num_uop; ii++) {
       if(ii > 0) {
-        key_addr = (convert_pinuop_inst_addr_to_key_addr(pi->instruction_addr) +
-                    ii);
-        info = (Inst_Info*)hash_table_access_create(&inst_info_hash[proc_id],
-                                                    key_addr, &new_entry);
+        info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb,
+                                        pi->inst_binary_msb, ii, &new_entry);
       }
       ASSERT(proc_id, !new_entry);
 

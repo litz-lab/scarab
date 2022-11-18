@@ -124,6 +124,13 @@ void fill_in_basic_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
   info->is_lock           = XED_INS_LockPrefix(ins);
   info->is_repeat         = XED_INS_HasRealRep(ins);
   info->is_gather_scatter = XED_INS_IsVgather(ins) || XED_INS_IsVscatter(ins);
+
+  for (int ii = 0; (ii < 8) && (ii < info->size); ii++) {
+    info->inst_binary_lsb = (info->inst_binary_lsb << 8) + XED_INS_Byte(ins, ii);
+  }
+  for (int ii = 0; (ii < 16) && (ii < info->size); ii++) {
+    info->inst_binary_msb = (info->inst_binary_msb << 8) + XED_INS_Byte(ins, ii);
+  }
 }
 
 uint32_t add_dependency_info(ctype_pin_inst*           info,

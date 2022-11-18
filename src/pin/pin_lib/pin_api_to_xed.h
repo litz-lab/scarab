@@ -58,6 +58,7 @@ struct InstInfo {
 
 #define XED_OP_NAME(ins, op) \
   xed_operand_name(xed_inst_operand(xed_decoded_inst_inst(ins), op))
+#define XED_INS_Byte(ins, idx) (xed_decoded_inst_get_byte(ins, idx))
 #define XED_INS_Nop(ins) (XED_INS_Category(ins)) == XED_CATEGORY_NOP || XED_INS_Category(ins) == XED_CATEGORY_WIDENOP)
 #define XED_INS_LEA(ins) (XED_INS_Opcode(ins)) == XO(LEA))
 #define XED_INS_Opcode(ins) xed_decoded_inst_get_iclass(ins)

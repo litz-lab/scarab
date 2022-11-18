@@ -68,6 +68,8 @@ typedef struct ctype_pin_inst_struct {
 
   uint64_t instruction_addr;  // 8 bytes
   uint8_t  size;              // 5 bits
+  uint64_t inst_binary_msb;   // x86 instr are 1-15 bytes. Store first 8B and last 8B.
+  uint64_t inst_binary_lsb;
   uint8_t  op_type;           // 6 bits
   uint8_t  cf_type;           // 4 bits
   uint8_t  is_fp;             // 1 bit

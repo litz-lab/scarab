@@ -356,7 +356,7 @@ typedef enum FDIP_Break_Reason_enum {
 
 // Called each cycle to trigger runahead prefetches
 void fdip_update() {
-  Addr CLMASK = 0x3F;
+  Addr MASK_32B = 0x3F;
   uint32_t taken_branches        = 0;
   uint32_t num_cfs               = 0;
   bool do_prefetch_2_hash        = false;
@@ -364,8 +364,8 @@ void fdip_update() {
   FDIP_Break_Reason break_reason = BR_NO_BREAK;
   Addr last_cl_unuseful = 0;
   bool cl_candidates_popped = false;
-  Addr fdip_break_addr_top = runahead_pc | CLMASK;
-  Addr fdip_break_addr_bottom = runahead_pc & ~CLMASK;
+  Addr fdip_break_addr_top = runahead_pc | MASK_32B;
+  Addr fdip_break_addr_bottom = runahead_pc & ~MASK_32B;
 
   if (runahead_disable)
     return;
@@ -992,7 +992,7 @@ void fdip_update() {
             if (FDIP_HASH_ENABLE && !WARMUP && !FDIP_TIMELY_FIFO_SIZE)
               fdip_insert_cl_fetch_addr(line_addr);
           }
-          DEBUG(ic_stage->proc_id, "new_mem_req success\n");
+          DEBUG(ic_stage->proc_id, "[%llu] new_mem_req for cl%llx success\n", cycle_count, line_addr);
         }
         else
           ASSERT(ic_stage->proc_id, false);
@@ -1030,8 +1030,8 @@ void fdip_update() {
     else {
       ASSERT(ic_stage->proc_id, target);
       runahead_pc = target;
-      fdip_break_addr_top = runahead_pc | CLMASK;
-      fdip_break_addr_bottom = runahead_pc & ~CLMASK;
+      fdip_break_addr_top = runahead_pc | MASK_32B;
+      fdip_break_addr_bottom = runahead_pc & ~MASK_32B;
     }
 
     if (PERFECT_FDIP && !fdip_on_path_pref)

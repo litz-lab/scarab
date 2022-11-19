@@ -356,7 +356,7 @@ typedef enum FDIP_Break_Reason_enum {
 
 // Called each cycle to trigger runahead prefetches
 void fdip_update() {
-  Addr MASK_32B = 0x3F;
+  Addr MASK_32B = 0x2F;
   uint32_t taken_branches        = 0;
   uint32_t num_cfs               = 0;
   bool do_prefetch_2_hash        = false;

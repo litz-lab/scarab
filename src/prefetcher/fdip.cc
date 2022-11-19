@@ -26,6 +26,7 @@ extern "C" {
 #include "memory/memory.param.h"
 #include "memory/memory.h"
 #include "uop_cache.h"
+#include "prefetcher/branch_misprediction_table.h"
 #include "sim.h"
 }
 
@@ -148,7 +149,7 @@ void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic) {
         && TOP_MISPRED_BR_RESTEER_COVERAGE)
     init_topk_mispred();
   // Only one of these prefetching options should be set.
-  ASSERT(ic_stage->proc_id, UOC_ORACLE_PREF + UOC_PREF + FDIP_DUAL_PATH_PREF_UOC_ENABLE <= 1);
+  ASSERT(ic_stage->proc_id, UOC_ORACLE_PREF + UOC_PREF + FDIP_DUAL_PATH_PREF_UOC_ENABLE + FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE<= 1);
   cms_init_optimal(&cms_useful, 0.001, 0.999);
   cms_init_optimal(&cms_unuseful, 0.001, 0.999);
   if (!FDIP_BLOOM_FILTER) {
@@ -174,6 +175,8 @@ void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic) {
     bloom4_parameters.compute_optimal_parameters();
     bloom4 = new bloom_filter(bloom4_parameters);
   }
+
+  init_branch_misprediction_table(ic->proc_id);
 }
 
 /* Called when a branch completes in the functional unit */
@@ -380,7 +383,8 @@ int fdip_dual_path_prefetch(Op* op) {
   int icache_pref = 0;
   int uoc_pref = 0;
   ASSERT(ic->proc_id, FDIP_DUAL_PATH_PREF_IC_ENABLE 
-                  || FDIP_DUAL_PATH_PREF_UOC_ENABLE);
+                  || FDIP_DUAL_PATH_PREF_UOC_ENABLE
+                  || FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE);
 
   // TODO(peterbraun): Integrate FDIP_DUAL_PATH_PREF_IC_ENABLE with FDIP
   if (FDIP_DUAL_PATH_PREF_IC_ENABLE) {
@@ -398,7 +402,7 @@ int fdip_dual_path_prefetch(Op* op) {
     INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_IC_EMITTED, 
                     icache_pref);
   }
-  if (FDIP_DUAL_PATH_PREF_UOC_ENABLE) {
+  if (FDIP_DUAL_PATH_PREF_UOC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE) {
     uoc_pref += uop_cache_issue_prefetch(op->pred_target, fdip_on_path_pref && op->oracle_info.pred);
     uoc_pref += uop_cache_issue_prefetch(op->pc_plus_offset, fdip_on_path_pref && !op->oracle_info.pred);
     STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_TRIGGERED);
@@ -1251,7 +1255,11 @@ void fdip_update() {
       }
     }
     
-    if (op && FDIP_DUAL_PATH_PREF_UOC_ENABLE && hash_table_access(&top_mispred_br, runahead_pc)) {
+    Flag prefetch_dual_path_offline = op && FDIP_DUAL_PATH_PREF_UOC_ENABLE
+                                      && hash_table_access(&top_mispred_br, runahead_pc);
+    Flag prefetch_dual_path_online = op && FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE
+                                     && (get_branch_misprediction_rate(runahead_pc) > FDIP_DUAL_PATH_PREF_UOC_ONLINE_MISPRED_THRESHOLD);
+    if (prefetch_dual_path_offline || prefetch_dual_path_online) {
       fdip_dual_path_prefetch(op);
     }
 

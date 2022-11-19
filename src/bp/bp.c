@@ -46,6 +46,7 @@
 #include "model.h"
 #include "thread.h"
 #include "uop_cache.h"
+#include "prefetcher/branch_misprediction_table.h"
 #include "icache_stage.h"
 
 #include "bp/bp.param.h"
@@ -835,4 +836,6 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   if (operating_mode != WARMUP_MODE && FDIP_ENABLE) {
     fdip_recover(info);
   }
+
+  increment_branch_mispredictions(info->PC);
 }

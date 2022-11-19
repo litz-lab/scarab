@@ -530,7 +530,7 @@ void update_icache_stage() {
                            ICACHE_LINE_SIZE, 0, NULL, instr_fill_line,
                            unique_count,
                            0);
-          if (FDIP_ENABLE && last_issued_op_num == max_op_num && last_runahead_op != max_runahead_op) {
+          if (FDIP_ENABLE && icache_ftq_pos >= fdip_ftq_pos) {
             ic->next_state = IC_WAIT_FOR_FDIP;
             break_fetch = BREAK_FDIP_RUNAHEAD;
             break;

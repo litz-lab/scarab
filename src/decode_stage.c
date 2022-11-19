@@ -46,6 +46,7 @@
 #include "thread.h" /* for td */
 
 #include "uop_cache.h"
+#include "prefetcher/branch_misprediction_table.h"
 #include "statistics.h"
 #include "memory/memory.param.h"
 
@@ -244,6 +245,8 @@ void decode_stage_process_op(Op* op) {
         STAT_EVENT(dec->proc_id, RESTEER_BTB_MISS_CF_BR + cf);
       }
     }
+
+    increment_branch_count(op->inst_info->addr);
   }
 }
 

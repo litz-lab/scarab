@@ -492,10 +492,6 @@ void update_icache_stage() {
           }
           break_fetch = BREAK_ICACHE_MISS;
         } else if (ic->line == (Inst_Info**) DUMMY_ADDR_UC_FETCH) { // icache miss, uc hit
-          if(last_hit_cl != ic->line_addr) {
-            icache_ftq_pos++;
-          }
-          last_hit_cl = ic->line_addr;
           log_stats_ic_miss();
           // start a memreq to fill icache, but do not cause any stalls. 
           // Use for more inclusivity between IC and UC
@@ -504,11 +500,14 @@ void update_icache_stage() {
                            unique_count,
                            0);
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
-        } else { /* icache hit. Can be either UC hit or miss */
           if(last_hit_cl != ic->line_addr) {
-            icache_ftq_pos++;
+            if (cf_num)
+              icache_ftq_pos++;
+            else
+              icache_ftq_pos += 2;
           }
           last_hit_cl = ic->line_addr;
+        } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
           DEBUG_FDIP(ic->proc_id, "[%llu] Cache hit on fetch_addr: %llx, line_addr: %llx, icache_ftq_pos: %llu, fdip_ftq_pos: %llu\n", cycle_count, ic->fetch_addr, ic->line_addr, icache_ftq_pos, fdip_ftq_pos);
@@ -533,6 +532,13 @@ void update_icache_stage() {
             break;
           }
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
+          if(last_hit_cl != ic->line_addr) {
+            if (cf_num)
+              icache_ftq_pos++;
+            else
+              icache_ftq_pos += 2; // increment 2 entries of FTQ becuase one entry includes 32 bytes while icache line size if 64 bytes
+          }
+          last_hit_cl = ic->line_addr;
         }
       }
       INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_DONT + break_fetch,
@@ -577,7 +583,7 @@ void update_icache_stage() {
 
     case IC_WAIT_FOR_FDIP: {
       if (fdip_ftq_pos > icache_ftq_pos)
-        icache_ftq_pos++;
+        icache_ftq_pos++; // not consuming the cache line, but one FTQ entry.
       if (FDIP_ENABLE)
         fdip_update();
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_FDIP, IC_ISSUE_WIDTH);
@@ -740,6 +746,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
           fdip_pred(ic->fetch_addr, op);
           ic->next_fetch_addr       = op->oracle_info.npc;
           ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
+          if (op->oracle_info.pred && !(*cf_num))
+            (*cf_num)++;
         } else {
           bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
 
@@ -753,6 +761,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       } else {
         if (FDIP_ENABLE) {
           ic->next_fetch_addr = fdip_pred(ic->fetch_addr, op);
+          if (op->oracle_info.pred && !(*cf_num))
+            (*cf_num)++;
         }
         else {
           ic->next_fetch_addr = bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);

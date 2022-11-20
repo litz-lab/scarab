@@ -91,6 +91,8 @@ extern CountMinSketch         cms_useful;
 extern CountMinSketch         cms_unuseful;
 extern uns                    operating_mode;
 extern Counter                icache_ftq_pos;
+extern Counter                fdip_ftq_pos;
+Addr                          last_hit_cl;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -490,7 +492,10 @@ void update_icache_stage() {
           }
           break_fetch = BREAK_ICACHE_MISS;
         } else if (ic->line == (Inst_Info**) DUMMY_ADDR_UC_FETCH) { // icache miss, uc hit
-          icache_ftq_pos++;
+          if(last_hit_cl != ic->line_addr) {
+            icache_ftq_pos++;
+          }
+          last_hit_cl = ic->line_addr;
           log_stats_ic_miss();
           // start a memreq to fill icache, but do not cause any stalls. 
           // Use for more inclusivity between IC and UC
@@ -500,10 +505,13 @@ void update_icache_stage() {
                            0);
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
         } else { /* icache hit. Can be either UC hit or miss */
-          icache_ftq_pos++;
+          if(last_hit_cl != ic->line_addr) {
+            icache_ftq_pos++;
+          }
+          last_hit_cl = ic->line_addr;
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
-          DEBUG_FDIP(ic->proc_id, "[%llu] Cache hit on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
+          DEBUG_FDIP(ic->proc_id, "[%llu] Cache hit on fetch_addr: %llx, line_addr: %llx, icache_ftq_pos: %llu, fdip_ftq_pos: %llu\n", cycle_count, ic->fetch_addr, ic->line_addr, icache_ftq_pos, fdip_ftq_pos);
           if (FDIP_ENABLE) {
             ASSERT(ic->proc_id, last_issued_op_num <= max_op_num);
             if (FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE && !FDIP_TIMELY_FIFO_SIZE) {
@@ -568,6 +576,8 @@ void update_icache_stage() {
     } break;
 
     case IC_WAIT_FOR_FDIP: {
+      if (fdip_ftq_pos > icache_ftq_pos)
+        icache_ftq_pos++;
       if (FDIP_ENABLE)
         fdip_update();
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_FDIP, IC_ISSUE_WIDTH);

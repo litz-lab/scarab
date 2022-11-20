@@ -4,6 +4,7 @@
 #include <queue>
 #include <algorithm>
 #include <iostream>
+#include "libs/bloom_filter.hpp"
 
 extern "C" {
 #include "debug/debug_macros.h"
@@ -78,6 +79,15 @@ Flag print_warmup_hash_table = FALSE;
 Counter fdip_ftq_pos = 0;
 Counter icache_ftq_pos = 0;
 Cache fdip_cc;
+bloom_filter *bloom;
+bloom_filter *bloom2;
+bloom_filter *bloom4;
+bloom_parameters bloom1_parameters;
+bloom_parameters bloom2_parameters;
+bloom_parameters bloom4_parameters;
+Addr last_prefetch_candidate;
+uint32_t last_prefetch_candidate_counter = 0;
+uint64_t bloom_inserts = 0;
 Addr last_runahead_pc = 0;
 
 /**************************************************************************************/
@@ -123,8 +133,29 @@ void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic) {
   ASSERT(ic_stage->proc_id, UOC_ORACLE_PREF + UOC_PREF + FDIP_DUAL_PATH_PREF_UOC_ENABLE <= 1);
   cms_init_optimal(&cms_useful, 0.001, 0.999);
   cms_init_optimal(&cms_unuseful, 0.001, 0.999);
-  init_cache(&fdip_cc, "FDIP_USEFULNESS_CACHE", FDIP_CC_SIZE, FDIP_CC_ASSOC, ICACHE_LINE_SIZE,
-             0, REPL_TRUE_LRU); //Data size = 2 byte
+  if (!FDIP_BLOOM_FILTER) {
+    init_cache(&fdip_cc, "FDIP_USEFULNESS_CACHE", FDIP_CC_SIZE, FDIP_CC_ASSOC, ICACHE_LINE_SIZE,
+               0, REPL_TRUE_LRU); //Data size = 2 byte
+  } else {
+    bloom1_parameters.projected_element_count = FDIP_BLOOM_ENTRIES;
+    //bloom_parameters.maximum_number_of_hashes = FDIP_BLOOM_HASHES;
+    //bloom_parameters.minimum_number_of_hashes = FDIP_BLOOM_HASHES;
+    bloom1_parameters.false_positive_probability = 0.005;
+    //bloom1_parameters.maximum_size = FDIP_BLOOM_SIZE;
+    //bloom_parameters.minimum_size = FDIP_BLOOM_SIZE;
+    bloom1_parameters.compute_optimal_parameters();
+    bloom = new bloom_filter(bloom1_parameters);
+
+    bloom2_parameters.projected_element_count = FDIP_BLOOM2_ENTRIES;
+    bloom2_parameters.false_positive_probability = 0.005;
+    bloom2_parameters.compute_optimal_parameters();
+    bloom2 = new bloom_filter(bloom2_parameters);
+
+    bloom4_parameters.projected_element_count = FDIP_BLOOM4_ENTRIES;
+    bloom4_parameters.false_positive_probability = 0.005;
+    bloom4_parameters.compute_optimal_parameters();
+    bloom4 = new bloom_filter(bloom4_parameters);
+  }
 }
 
 /* Called when a branch completes in the functional unit */
@@ -353,6 +384,115 @@ typedef enum FDIP_Break_Reason_enum {
   BR_TAGE_BUFFER_LIMIT,        /* TAGE buffer is full (!bp_is_predictable()) */
   BR_MEM_REQ_BUF_LIMIT,        /* Mem Req L1 queue is full */
 } FDIP_Break_Reason;
+
+void* bloom_lookup(Addr uc_line_addr) {
+  Addr line_addr = uc_line_addr >> 6;
+  return (void*)(bloom->contains(line_addr) || bloom2->contains(line_addr >> 1) || bloom4->contains(line_addr >> 2));
+}
+
+void insert1(Addr line_addr) {
+  STAT_EVENT(ic_stage->proc_id, FDIP_BLOOM_1INSERT);
+  if (!bloom2->contains(line_addr >> 1) && !bloom4->contains(line_addr >> 2)) {
+    bloom->insert(line_addr);
+  }
+
+}
+
+void insert2(Addr line_addr) {
+  if((line_addr & 1) == 0) { //2CL aligned
+    if (!bloom4->contains(line_addr >> 2) && !bloom2->contains(line_addr >> 1)) {
+      bloom2->insert(line_addr >> 1);
+    }
+    STAT_EVENT(ic_stage->proc_id, FDIP_BLOOM_2INSERT);
+  }
+  else {
+    insert1(line_addr);
+    insert1(line_addr + 1);
+  }
+}
+
+void insert3(Addr line_addr) {
+  if((line_addr & 1) == 0) { //2CL aligned
+    insert2(line_addr);
+    insert1(line_addr + 2);
+  }
+  else {
+    insert1(line_addr + 1);
+    insert2(line_addr);
+  }
+}
+
+void insert4(Addr line_addr) {
+  ASSERT(0, (line_addr & 3) == 0);
+  bloom4->insert(line_addr >> 2);
+  STAT_EVENT(ic_stage->proc_id, FDIP_BLOOM_4INSERT);
+}
+
+void insert_remaining(uint32_t inserted) {
+  while (inserted + 4 <= last_prefetch_candidate_counter) {
+    insert4(last_prefetch_candidate + inserted);
+    inserted += 4;
+  }
+  if (inserted + 3 == last_prefetch_candidate_counter)
+    insert3(last_prefetch_candidate + inserted);
+  if (inserted + 2 == last_prefetch_candidate_counter)
+    insert2(last_prefetch_candidate + inserted);
+  if (inserted + 1 == last_prefetch_candidate_counter)
+    insert1(last_prefetch_candidate + inserted);
+
+}
+
+void bloom_insert() {
+  uint32_t inserted = 0;
+  if (last_prefetch_candidate_counter < 4) {
+    insert_remaining(inserted);
+    return;
+  }
+  if ((last_prefetch_candidate & 3) == 0) {
+    //4cl aligned
+    insert_remaining(inserted);
+  }
+  else if ((last_prefetch_candidate & 3) == 2) {
+    //2cl algned
+    insert2(last_prefetch_candidate);
+    inserted += 2;
+    insert_remaining(inserted);
+  }
+  else if ((last_prefetch_candidate & 3) == 1) {
+    //cl aligned
+    //cl aligned
+    insert3(last_prefetch_candidate);
+    inserted += 3;
+    insert_remaining(inserted);
+  }
+  else if ((last_prefetch_candidate & 3) == 3) {
+    //cl aligned
+    insert1(last_prefetch_candidate);
+    inserted +=1;
+    insert_remaining(inserted);
+  }
+  return;
+}
+
+void detect_stream(Addr uc_line_addr) {
+  Addr line_addr = uc_line_addr >> 6;
+
+  if(last_prefetch_candidate_counter == 0) {
+    last_prefetch_candidate_counter++;
+    last_prefetch_candidate = line_addr;
+    return;
+  }
+  STAT_EVENT(ic_stage->proc_id, FDIP_BLOOM_INSERTED);
+
+  if (line_addr == last_prefetch_candidate + last_prefetch_candidate_counter) {
+    last_prefetch_candidate_counter++;
+  }
+  else {
+    bloom_insert();
+    last_prefetch_candidate_counter = 1;
+    last_prefetch_candidate = line_addr;
+  }
+}
 
 // Called each cycle to trigger runahead prefetches
 void fdip_update() {
@@ -628,7 +768,13 @@ void fdip_update() {
             DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, : %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, max_op_num, ftq.size(), last_cl_prefetched);
             Addr uc_line_addr = line_addr;
             Addr dummy_uc_line_addr = 0;
-            void* useful    = (void*)cache_access(&fdip_cc, uc_line_addr, &dummy_uc_line_addr, TRUE);
+            void* useful;
+            if (!FDIP_BLOOM_FILTER) {
+              useful = (void*)cache_access(&fdip_cc, uc_line_addr, &dummy_uc_line_addr, TRUE);
+            }
+            else {
+              useful = bloom_lookup(uc_line_addr);
+            }
             ASSERT(ic_stage->proc_id, FDIP_TIMELY_FIFO_SIZE);
 
             // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
@@ -661,11 +807,20 @@ void fdip_update() {
                 DEBUG(ic_stage->proc_id, "cl_candidate popped for cl 0x%llx", popped_cl.first);
                 Addr repl_uc_line_addr;
                 uc_line_addr = popped_cl.first;
-                void*cnt = (void*)cache_access(&fdip_cc, uc_line_addr, &dummy_uc_line_addr, TRUE);
+                void*cnt;
+                if (!FDIP_BLOOM_FILTER) {
+                  cnt = (void*)cache_access(&fdip_cc, uc_line_addr, &dummy_uc_line_addr, TRUE);
+                } else {
+                  cnt = bloom_lookup(uc_line_addr);
+                }
                 if (popped_cl.second == TRUE) {
                   if(!cnt) {
-                    cache_insert_replpos(&fdip_cc, ic_stage->proc_id, uc_line_addr, &dummy_uc_line_addr,
-                                         &repl_uc_line_addr, (Cache_Insert_Repl)FDIP_CC_INSERT_REPLPOL, FALSE);
+                    if (!FDIP_BLOOM_FILTER) {
+                      cache_insert_replpos(&fdip_cc, ic_stage->proc_id, uc_line_addr, &dummy_uc_line_addr,
+                                           &repl_uc_line_addr, (Cache_Insert_Repl)FDIP_CC_INSERT_REPLPOL, FALSE);
+                    } else {
+                      detect_stream(uc_line_addr);
+                    }
                     if (repl_uc_line_addr)
                       STAT_EVENT(ic_stage->proc_id, FDIP_CC_REPLACEMENT);
                   }
@@ -745,8 +900,13 @@ void fdip_update() {
         } else if (FDIP_HASH_ENABLE == 1 && FDIP_CC_SIZE) { // compare 1-hash vs cache
           if (last_cl_unuseful != line_addr) {
             Addr uc_line_addr = line_addr;
-            Addr dummy_uc_line_addr = 0;
-            void* useful    = (void*)cache_access(&fdip_cc, uc_line_addr, &dummy_uc_line_addr, TRUE);
+            void *useful;
+            if (!FDIP_BLOOM_FILTER) {
+              Addr dummy_uc_line_addr = 0;
+              useful    = (void*)cache_access(&fdip_cc, uc_line_addr, &dummy_uc_line_addr, TRUE);
+            } else {
+              useful = bloom_lookup(uc_line_addr);
+            }
             auto useful_cl_iter = useful_hash.find(line_addr);
             DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, : %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, max_op_num, ftq.size(), last_cl_prefetched);
             if (FDIP_TIMELY_FIFO_SIZE) {
@@ -794,13 +954,23 @@ void fdip_update() {
                   auto popped_cl = cl_candidates.front();
                   Addr repl_uc_line_addr;
                   uc_line_addr = popped_cl.first;
-                  void*cnt = (void*)cache_access(&fdip_cc, uc_line_addr, &dummy_uc_line_addr, TRUE);
+                  Addr dummy_uc_line_addr = 0;
+                  void*cnt;
+                  if(!FDIP_BLOOM_FILTER) {
+                    cnt = (void*)cache_access(&fdip_cc, uc_line_addr, &dummy_uc_line_addr, TRUE);
+                  } else {
+                    cnt = bloom_lookup(uc_line_addr);
+                  }
                   DEBUG(ic_stage->proc_id, "cl_candidate popped for cl 0x%llx", popped_cl.first);
                   if (popped_cl.second == TRUE) {
                     fdip_inc_useful_hash(popped_cl.first);
                     if(!cnt) {
-                      cache_insert_replpos(&fdip_cc, ic_stage->proc_id, uc_line_addr, &dummy_uc_line_addr,
-                                           &repl_uc_line_addr, (Cache_Insert_Repl)FDIP_CC_INSERT_REPLPOL, FALSE);
+                      if(!FDIP_BLOOM_FILTER) {
+                        cache_insert_replpos(&fdip_cc, ic_stage->proc_id, uc_line_addr, &dummy_uc_line_addr,
+                                             &repl_uc_line_addr, (Cache_Insert_Repl)FDIP_CC_INSERT_REPLPOL, FALSE);
+                      } else {
+                        detect_stream(uc_line_addr);
+                      }
                     }
                     DEBUG(ic_stage->proc_id, " useful\n");
                   } else {

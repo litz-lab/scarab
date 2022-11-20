@@ -146,6 +146,13 @@ DEF_PARAM(fdip_hash_enable, FDIP_HASH_ENABLE, uns, uns, 0, )
 DEF_PARAM(fdip_hash_useful_weight, FDIP_HASH_USEFUL_WEIGHT, uns, uns, 1, )
 DEF_PARAM(fdip_hash_bias, FDIP_HASH_BIAS, uns, uns, 0, )
 DEF_PARAM(fdip_timely_fifo_size, FDIP_TIMELY_FIFO_SIZE, uns, uns, 0, )
+DEF_PARAM(fdip_bloom_filter, FDIP_BLOOM_FILTER, Flag, Flag, FALSE, )
+DEF_PARAM(fdip_bloom_entries, FDIP_BLOOM_ENTRIES, uns, uns, 4000, )
+DEF_PARAM(fdip_bloom2_entries, FDIP_BLOOM2_ENTRIES, uns, uns, 1000, )
+DEF_PARAM(fdip_bloom4_entries, FDIP_BLOOM4_ENTRIES, uns, uns, 1000, )
+DEF_PARAM(fdip_bloom_size, FDIP_BLOOM_SIZE, uns, uns, 16384, )
+DEF_PARAM(fdip_bloom_hashes, FDIP_BLOOM_HASHES, uns, uns, 6, )
+
 
 DEF_PARAM(fdip_dual_path_pref_ic_enable , FDIP_DUAL_PATH_PREF_IC_ENABLE    , Flag    , Flag    , FALSE, )
 DEF_PARAM(fdip_dual_path_pref_uoc_enable , FDIP_DUAL_PATH_PREF_UOC_ENABLE  , Flag    , Flag    , FALSE, ) //uop cache

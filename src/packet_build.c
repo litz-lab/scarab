@@ -45,8 +45,9 @@
 #include "packet_build.param.h"
 #include "statistics.h"
 
-extern icache_ftq_pos;
-extern fdip_ftq_pos;
+extern Counter icache_ftq_pos;
+extern Counter fdip_ftq_pos;
+extern Counter fetched_bytes;
 
 
 /**************************************************************************************/

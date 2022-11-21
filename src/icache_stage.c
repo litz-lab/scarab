@@ -95,6 +95,7 @@ extern Counter                icache_ftq_pos;
 extern Counter                fdip_ftq_pos;
 Counter                       ipc_counter;
 Counter                       ipc_counter_event;
+Counter                       packet_size_bytes;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -401,7 +402,7 @@ void update_icache_stage() {
 
       reset_packet_build(ic_pb_data);  // reset packet build counters
 
-      Addr fetched_bytes = ic->next_fetch_addr;
+      packet_size_bytes = 0;
       while(!break_fetch) {
         ic->fetch_addr = ic->next_fetch_addr;
         ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr)
@@ -536,9 +537,8 @@ void update_icache_stage() {
         }
       }
       if (FDIP_ENABLE) {
-        fetched_bytes = ic->next_fetch_addr - fetched_bytes;
-        icache_ftq_pos += fetched_bytes;
-        ipc_counter += fetched_bytes;
+        icache_ftq_pos += packet_size_bytes;
+        ipc_counter += packet_size_bytes;
         ipc_counter_event++;
         ASSERT(ic->proc_id, icache_ftq_pos <= fdip_ftq_pos);
         ASSERT(ic->proc_id, icache_ftq_pos + FDIP_FTQ_DEPTH * FDIP_INSTRUCTION_BW);
@@ -563,9 +563,10 @@ void update_icache_stage() {
     case IC_WAIT_FOR_REDIRECT: {
       if (FDIP_ENABLE) {
         fdip_update();
-        icache_ftq_pos += (Counter)ceil(ipc_counter/ipc_counter_event);
+        if (icache_ftq_pos + (Counter)ceil(ipc_counter/ipc_counter_event) < fdip_ftq_pos)
+          icache_ftq_pos += (Counter)ceil(ipc_counter/ipc_counter_event);
         if (ipc_counter/ipc_counter_event <= 0.1)
-          printf("The number of bytes per cycle is too small.\n");
+          DEBUG_FDIP(ic->proc_id, "The number of bytes per cycle is too small.\n");
       }
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_REDIRECT, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
@@ -705,6 +706,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
 
     /* add to sequential op list */
     add_to_seq_op_list(td, op);
+    packet_size_bytes += op->inst_info->trace_info.inst_size;
 
     ASSERT(ic->proc_id, td->seq_op_list.count <= op_pool_active_ops);
 

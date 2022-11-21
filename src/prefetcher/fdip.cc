@@ -506,6 +506,7 @@ void fdip_update() {
   Addr fdip_break_addr_top = runahead_pc | BW_MASK;
   Addr fdip_break_addr_bottom = runahead_pc & ~BW_MASK;
   Addr start_runahead_pc = runahead_pc;
+  Counter ftq_entry_size_bytes = 0;
 
   if (runahead_disable)
     return;
@@ -1190,6 +1191,7 @@ void fdip_update() {
     if (is_branch && op->table_info->cf_type == CF_SYS)
       do_not_update_addr = TRUE;
 
+    size_t inst_size = is_branch? op->inst_info->trace_info.inst_size : 1;
     // In an actual implemenation, FDIP cannot differentiate between a btb
     // miss and the op not being a branch (since the BTB is used to runahead
     // and find the next branch). Thus FDIP would continue as if it was not
@@ -1199,11 +1201,14 @@ void fdip_update() {
     op = *op_p;
     if (!is_branch && op->op_num == last_runahead_op) // this is a corner case where FDIP reaches the end of the lookahead buffer which is not a branch. Since other ops with the same fetch address can be decoded and followed, the runahead_pc should not be incremented.
       runahead_pc = runahead_pc;
-    else if (btb_ras_miss || !target)
+    else if (btb_ras_miss || !target) {
       runahead_pc++;
+      ftq_entry_size_bytes += inst_size;
+    }
     else {
       ASSERT(ic_stage->proc_id, target);
       runahead_pc = target;
+      ftq_entry_size_bytes += inst_size;
     }
 
     if (!do_not_update_addr) {
@@ -1264,7 +1269,7 @@ void fdip_update() {
   }
 
   if (start_runahead_pc != runahead_pc)
-    fdip_ftq_pos += runahead_pc - start_runahead_pc;
+    fdip_ftq_pos += ftq_entry_size_bytes;
   STAT_EVENT(ic_stage->proc_id, FDIP_CYCLE_COUNT);
 }
 

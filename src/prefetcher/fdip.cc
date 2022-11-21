@@ -1200,8 +1200,6 @@ void fdip_update() {
     else {
       ASSERT(ic_stage->proc_id, target);
       runahead_pc = target;
-      fdip_break_addr_top = runahead_pc | MASK_32B;
-      fdip_break_addr_bottom = runahead_pc & ~MASK_32B;
     }
 
     if (PERFECT_FDIP && !fdip_on_path_pref)

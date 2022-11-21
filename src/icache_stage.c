@@ -564,6 +564,8 @@ void update_icache_stage() {
       if (FDIP_ENABLE) {
         fdip_update();
         icache_ftq_pos += (Counter)ceil(ipc_counter/ipc_counter_event);
+        if (ipc_counter/ipc_counter_event <= 0.1)
+          printf("The number of bytes per cycle is too small.\n");
       }
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_REDIRECT, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);

@@ -1186,6 +1186,10 @@ void fdip_update() {
     if (!fdip_on_path_bp && fdip_on_path_pref)
       fdip_on_path_pref = FALSE;
 
+    Flag do_not_update_addr = FALSE;
+    if (is_branch && op->table_info->cf_type == CF_SYS)
+      do_not_update_addr = TRUE;
+
     // In an actual implemenation, FDIP cannot differentiate between a btb
     // miss and the op not being a branch (since the BTB is used to runahead
     // and find the next branch). Thus FDIP would continue as if it was not
@@ -1200,6 +1204,13 @@ void fdip_update() {
     else {
       ASSERT(ic_stage->proc_id, target);
       runahead_pc = target;
+    }
+
+    if (!do_not_update_addr) {
+      // initially bp_predict_op can return a garbage, for multi core run,
+      // addr must follow cmp addr convention
+      ic->next_fetch_addr = convert_to_cmp_addr(ic->proc_id,
+                                                ic->next_fetch_addr);
     }
 
     if (PERFECT_FDIP && !fdip_on_path_pref)

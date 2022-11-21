@@ -26,6 +26,7 @@
  * Description  :
  ***************************************************************************************/
 
+#include <math.h>
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
 #include "globals/assert.h"
@@ -91,6 +92,9 @@ extern CountMinSketch         cms_useful;
 extern CountMinSketch         cms_unuseful;
 extern uns                    operating_mode;
 extern Counter                icache_ftq_pos;
+extern Counter                fdip_ftq_pos;
+Counter                       ipc_counter;
+Counter                       ipc_counter_event;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -302,6 +306,11 @@ void redirect_icache_stage() {
   ic->next_fetch_addr       = next_fetch_addr;
   ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr);
   ic->next_state = IC_FETCH;
+  if (FDIP_ENABLE && ipc_counter_event == 1000) {
+    ipc_counter = 0;
+    ipc_counter_event = 0;
+  }
+
 }
 
 
@@ -392,6 +401,7 @@ void update_icache_stage() {
 
       reset_packet_build(ic_pb_data);  // reset packet build counters
 
+      Addr fetched_bytes = ic->next_fetch_addr;
       while(!break_fetch) {
         ic->fetch_addr = ic->next_fetch_addr;
         ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr)
@@ -490,7 +500,6 @@ void update_icache_stage() {
           }
           break_fetch = BREAK_ICACHE_MISS;
         } else if (ic->line == (Inst_Info**) DUMMY_ADDR_UC_FETCH) { // icache miss, uc hit
-          icache_ftq_pos++;
           log_stats_ic_miss();
           // start a memreq to fill icache, but do not cause any stalls. 
           // Use for more inclusivity between IC and UC
@@ -500,7 +509,6 @@ void update_icache_stage() {
                            0);
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
         } else { /* icache hit. Can be either UC hit or miss */
-          icache_ftq_pos++;
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
           DEBUG_FDIP(ic->proc_id, "[%llu] Cache hit on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
@@ -527,6 +535,15 @@ void update_icache_stage() {
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
         }
       }
+      if (FDIP_ENABLE) {
+        fetched_bytes = ic->next_fetch_addr - fetched_bytes;
+        icache_ftq_pos += fetched_bytes;
+        ipc_counter += fetched_bytes;
+        ipc_counter_event++;
+        ASSERT(ic->proc_id, icache_ftq_pos <= fdip_ftq_pos);
+        ASSERT(ic->proc_id, icache_ftq_pos + FDIP_FTQ_DEPTH * FDIP_INSTRUCTION_BW);
+      }
+
       INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_DONT + break_fetch,
                      IC_ISSUE_WIDTH > ic->sd.op_count ? IC_ISSUE_WIDTH - ic->sd.op_count
                                                            : 0);
@@ -535,22 +552,28 @@ void update_icache_stage() {
     } break;
 
     case IC_WAIT_FOR_MISS: {
-      if (FDIP_ENABLE)
+      if (FDIP_ENABLE) {
         fdip_update();
+        ipc_counter_event++;
+      }
       INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_ICACHE_MISS, IC_ISSUE_WIDTH - 1);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
     } break;
 
     case IC_WAIT_FOR_REDIRECT: {
-      if (FDIP_ENABLE)
+      if (FDIP_ENABLE) {
         fdip_update();
+        icache_ftq_pos += (Counter)ceil(ipc_counter/ipc_counter_event);
+      }
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_REDIRECT, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
     } break;
 
     case IC_WAIT_FOR_EMPTY_ROB: {
-      if (FDIP_ENABLE)
+      if (FDIP_ENABLE) {
         fdip_update();
+        ipc_counter_event++;
+      }
       DEBUG(ic->proc_id, "Ifetch barrier: Waiting for ROB to become empty \n");
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_EMPTY_ROB, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
@@ -559,8 +582,10 @@ void update_icache_stage() {
     } break;
 
     case IC_WAIT_FOR_TIMER: {
-      if (FDIP_ENABLE)
+      if (FDIP_ENABLE) {
         fdip_update();
+        ipc_counter_event++;
+      }
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_TIMER, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
       if(cycle_count >= ic->timer_cycle)
@@ -568,8 +593,10 @@ void update_icache_stage() {
     } break;
 
     case IC_WAIT_FOR_FDIP: {
-      if (FDIP_ENABLE)
+      if (FDIP_ENABLE) {
         fdip_update();
+        ipc_counter_event++;
+      }
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_FDIP, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
       if(last_issued_op_num < max_op_num)

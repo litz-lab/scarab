@@ -88,7 +88,6 @@ bloom_parameters bloom4_parameters;
 Addr last_prefetch_candidate;
 uint32_t last_prefetch_candidate_counter = 0;
 uint64_t bloom_inserts = 0;
-Addr last_runahead_pc = 0;
 
 /**************************************************************************************/
 /* init_topk_mispred: list of branches that provide a given coverage of resteers */
@@ -496,7 +495,7 @@ void detect_stream(Addr uc_line_addr) {
 
 // Called each cycle to trigger runahead prefetches
 void fdip_update() {
-  Addr MASK_32B = 0x2F;
+  Addr BW_MASK = N_BIT_MASK(LOG2(FDIP_INSTRUCTION_BW));
   uint32_t taken_branches        = 0;
   uint32_t num_cfs               = 0;
   bool do_prefetch_2_hash        = false;
@@ -504,8 +503,9 @@ void fdip_update() {
   FDIP_Break_Reason break_reason = BR_NO_BREAK;
   Addr last_cl_unuseful = 0;
   bool cl_candidates_popped = false;
-  Addr fdip_break_addr_top = runahead_pc | MASK_32B;
-  Addr fdip_break_addr_bottom = runahead_pc & ~MASK_32B;
+  Addr fdip_break_addr_top = runahead_pc | BW_MASK;
+  Addr fdip_break_addr_bottom = runahead_pc & ~BW_MASK;
+  Addr start_runahead_pc = runahead_pc;
 
   if (runahead_disable)
     return;
@@ -549,7 +549,7 @@ void fdip_update() {
       break;
     }
 
-    if (FDIP_FTQ_DEPTH && fdip_ftq_pos >= icache_ftq_pos + FDIP_FTQ_DEPTH) {
+    if (FDIP_FTQ_DEPTH && fdip_ftq_pos >= icache_ftq_pos + FDIP_FTQ_DEPTH * FDIP_INSTRUCTION_BW) {
       break_reason = BR_FTQ;
       break;
     }
@@ -1263,9 +1263,8 @@ void fdip_update() {
       break;
   }
 
-  if (last_runahead_pc != runahead_pc)
-    fdip_ftq_pos++;
-  last_runahead_pc = runahead_pc;
+  if (start_runahead_pc != runahead_pc)
+    fdip_ftq_pos += runahead_pc - start_runahead_pc;
   STAT_EVENT(ic_stage->proc_id, FDIP_CYCLE_COUNT);
 }
 

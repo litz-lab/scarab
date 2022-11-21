@@ -540,7 +540,7 @@ void update_icache_stage() {
         icache_ftq_pos += packet_size_bytes;
         ipc_counter += packet_size_bytes;
         ipc_counter_event++;
-        ASSERT(ic->proc_id, icache_ftq_pos <= fdip_ftq_pos);
+        ASSERT(ic->proc_id, icache_ftq_pos <= fdip_ftq_pos +24);
         ASSERT(ic->proc_id, icache_ftq_pos + FDIP_FTQ_DEPTH * FDIP_INSTRUCTION_BW);
       }
 
@@ -874,6 +874,10 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
 
   if(*break_fetch == BREAK_BARRIER) {
     return IC_WAIT_FOR_EMPTY_ROB;
+  }
+
+  if(*break_fetch == BREAK_FDIP_RUNAHEAD) {
+    return IC_WAIT_FOR_FDIP;
   }
 
   return IC_FETCH;

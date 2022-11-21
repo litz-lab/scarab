@@ -207,11 +207,6 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
       }
     }
 
-    if(icache_ftq_pos + packet_size_bytes + op->inst_info->trace_info.inst_size >= fdip_ftq_pos) {
-      *break_fetch = BREAK_FDIP_RUNAHEAD;
-      return PB_BREAK_BEFORE;
-    }
-
     // this must be called as the last BREAK_BEFORE condition
     model_break_result = model->break_hook ? model->break_hook(op) : BREAK_DONT;
     if(model_break_result) {
@@ -237,6 +232,11 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
       return PB_BREAK_AFTER;
     } else if (uop_cache_issue_ops) {
       op->fetched_from_uop_cache = TRUE;
+    }
+
+    if(icache_ftq_pos + packet_size_bytes + op->inst_info->trace_info.inst_size >= fdip_ftq_pos) {
+      *break_fetch = BREAK_FDIP_RUNAHEAD;
+      return PB_BREAK_AFTER;
     }
 
     // hit fetch barrier

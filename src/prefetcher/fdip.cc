@@ -268,7 +268,6 @@ void fdip_recover(Recovery_Info *info) {
     last_runahead_uid = 0;
   if (last_runahead_op != max_runahead_op)
     last_runahead_op = 0;
-  last_found_op_num = 0;
   runahead_pc = info->npc;
   runahead_disable = FALSE;
   fdip_on_path_bp = TRUE;
@@ -1094,7 +1093,6 @@ void fdip_update() {
         if (op->oracle_info.mispred || op->oracle_info.misfetch) {
           off_count++;
           fdip_on_path_bp = FALSE;
-          found_op_num = 0;
           if (op->oracle_info.mispred) {
             DEBUG(ic_stage->proc_id, "mispred\n");
           }
@@ -1107,7 +1105,6 @@ void fdip_update() {
           ASSERT(ic_stage->proc_id, !op->oracle_info.mispred && !op->oracle_info.misfetch);
           off_count++;
           fdip_on_path_bp = FALSE;
-          found_op_num = 0;
           DEBUG(ic_stage->proc_id, "btb_ras_miss, target: %llx\n", target);
           if (FDIP_STOP_ON_BTB_MISS)
             runahead_disable = TRUE;
@@ -1248,7 +1245,7 @@ void fdip_update() {
       STAT_EVENT(ic_stage->proc_id, FDIP_NO_BREAK);
       break;
     case BR_CACHELINE:
-      DEBUG(ic_stage->proc_id, "break on a cache line\n");
+      printf("break on a cache line\n");
       STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_CACHELINE);
       break;
     case BR_MAX_TAKEN_BRANCHES:

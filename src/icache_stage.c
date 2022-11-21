@@ -527,7 +527,7 @@ void update_icache_stage() {
             ASSERT(ic->proc_id, line_info);
             wp_process_icache_hit(line_info, ic->fetch_addr);
           }
-          if (FDIP_ENABLE && last_issued_op_num == max_op_num && last_runahead_op != max_runahead_op) {
+          if (FDIP_ENABLE && icache_ftq_pos == fdip_ftq_pos) {
             ic->next_state = IC_WAIT_FOR_FDIP;
             break_fetch = BREAK_FDIP_RUNAHEAD;
             break;
@@ -601,9 +601,7 @@ void update_icache_stage() {
       }
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_FDIP, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
-      if(last_issued_op_num < max_op_num)
-        ic->next_state = IC_FETCH;
-      if(last_runahead_op == max_runahead_op)
+      if(icache_ftq_pos < fdip_ftq_pos)
         ic->next_state = IC_FETCH;
     } break;
 
@@ -844,9 +842,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         *break_fetch = BREAK_BTB_MISS;
         DEBUG(ic->proc_id, "Changed icache to wait for redirect %llu\n",
               cycle_count);
-        // During a resteer, do not perform off-path prefetching
-        if (FDIP_ENABLE)
-          runahead_disable = TRUE;
         return IC_WAIT_FOR_REDIRECT;
       }
       

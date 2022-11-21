@@ -89,8 +89,6 @@ Addr last_prefetch_candidate;
 uint32_t last_prefetch_candidate_counter = 0;
 uint64_t bloom_inserts = 0;
 Addr last_runahead_pc = 0;
-Counter found_op_num = 0;
-Counter last_found_op_num = 0;
 
 /**************************************************************************************/
 /* init_topk_mispred: list of branches that provide a given coverage of resteers */
@@ -385,7 +383,6 @@ typedef enum FDIP_Break_Reason_enum {
   BR_LOOKAHEAD_BUFFER_LIMIT,   /* FDIP cannot run ahead due to no more available decoded ops in the lookahead buffer (last_runahead_op == max_runahead_op) */
   BR_TAGE_BUFFER_LIMIT,        /* TAGE buffer is full (!bp_is_predictable()) */
   BR_MEM_REQ_BUF_LIMIT,        /* Mem Req L1 queue is full */
-  BR_ISSUE_WIDTH,              /* Issue width reached on cosecutive on-path prefetching */
 } FDIP_Break_Reason;
 
 void* bloom_lookup(Addr uc_line_addr) {
@@ -509,7 +506,6 @@ void fdip_update() {
   bool cl_candidates_popped = false;
   Addr fdip_break_addr_top = runahead_pc | MASK_32B;
   Addr fdip_break_addr_bottom = runahead_pc & ~MASK_32B;
-  Counter tmp_last_runahead_op = last_found_op_num;
 
   if (runahead_disable)
     return;
@@ -1020,17 +1016,8 @@ void fdip_update() {
     // on-path prediction
     if (fdip_on_path_bp) {
       // find the corresponding op of runahead_pc from the lookahead buffer
-      // If the found op is a non-branch, found_op_num is updated,
-      // If the found op is a branch, found_op_num should be 0
       op = find_op(runahead_pc);
-
       is_branch = (op && op->table_info->cf_type)? true : false;
-
-      if (!is_branch && found_op_num && found_op_num - 1 >= tmp_last_runahead_op + IC_ISSUE_WIDTH) {
-        break_reason = BR_ISSUE_WIDTH;
-        break;
-      }
-
       if (is_branch) {
         // Break on TAGE buffer limit
         if (do_prefetch && BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, op)) {
@@ -1042,13 +1029,6 @@ void fdip_update() {
         // Break on the number of predictable branches per cycle
         if (num_cfs == CFS_PER_CYCLE) {
           break_reason = BR_CFS_PER_CYCLE;
-          move_to_prev_op();
-          break;
-        }
-
-        // if there are on-path consecutive ops where the backend cannot issue in one cycle due to the issue width, FDIP also should break on it.
-        if (op && op->op_num - 1 >= tmp_last_runahead_op + IC_ISSUE_WIDTH) {
-          break_reason = BR_ISSUE_WIDTH;
           move_to_prev_op();
           break;
         }
@@ -1206,9 +1186,6 @@ void fdip_update() {
     if (!fdip_on_path_bp && fdip_on_path_pref)
       fdip_on_path_pref = FALSE;
 
-    Flag do_not_update_addr = FALSE;
-    if (is_branch && op->table_info->cf_type == CF_SYS)
-      do_not_update_addr = TRUE;
     // In an actual implemenation, FDIP cannot differentiate between a btb
     // miss and the op not being a branch (since the BTB is used to runahead
     // and find the next branch). Thus FDIP would continue as if it was not
@@ -1223,11 +1200,8 @@ void fdip_update() {
     else {
       ASSERT(ic_stage->proc_id, target);
       runahead_pc = target;
-    }
-    if (!do_not_update_addr) {
-      // initially bp_predict_op can return a garbage, for multi core run,
-      // addr must follow cmp addr convention
-      runahead_pc = convert_to_cmp_addr(ic_stage->proc_id, runahead_pc);
+      fdip_break_addr_top = runahead_pc | MASK_32B;
+      fdip_break_addr_bottom = runahead_pc & ~MASK_32B;
     }
 
     if (PERFECT_FDIP && !fdip_on_path_pref)
@@ -1245,7 +1219,7 @@ void fdip_update() {
       STAT_EVENT(ic_stage->proc_id, FDIP_NO_BREAK);
       break;
     case BR_CACHELINE:
-      printf("break on a cache line\n");
+      DEBUG(ic_stage->proc_id, "break on a cache line\n");
       STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_CACHELINE);
       break;
     case BR_MAX_TAKEN_BRANCHES:
@@ -1276,17 +1250,12 @@ void fdip_update() {
       STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_CFS_PER_CYCLE);
       DEBUG(ic_stage->proc_id, "break due to cfs per cycle\n");
       break;
-    case BR_ISSUE_WIDTH:
-      STAT_EVENT(ic_stage->proc_id, FDIP_BREAK_ON_ISSUE_WIDTH);
-      DEBUG(ic_stage->proc_id, "break due to issue width\n");
-      break;
     default:
       break;
   }
 
-  if (last_runahead_pc != runahead_pc) {
+  if (last_runahead_pc != runahead_pc)
     fdip_ftq_pos++;
-  }
   last_runahead_pc = runahead_pc;
   STAT_EVENT(ic_stage->proc_id, FDIP_CYCLE_COUNT);
 }

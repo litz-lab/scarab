@@ -92,11 +92,7 @@ extern CountMinSketch         cms_unuseful;
 extern uns                    operating_mode;
 extern Counter                icache_ftq_pos;
 extern Counter                fdip_ftq_pos;
-extern Counter                found_op_num;
-extern Counter                last_found_op_num;
 Addr                          last_hit_cl;
-Counter                       last_hit_cycle;
-Icache_Data*                  last_hit_line_info;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -504,18 +500,13 @@ void update_icache_stage() {
                            unique_count,
                            0);
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
-          if(!line_info->first_consumed) {
-            if(last_hit_cycle != cycle_count)
+          if(last_hit_cl != ic->line_addr) {
+            if (cf_num)
               icache_ftq_pos++;
-          } else {
-            if(last_hit_cl != ic->line_addr)
+            else
               icache_ftq_pos += 2;
           }
-          if (last_hit_cl != ic->line_addr && last_hit_line_info && !last_hit_line_info->first_consumed)
-            last_hit_line_info->first_consumed = TRUE;
-          last_hit_cycle = cycle_count;
           last_hit_cl = ic->line_addr;
-          last_hit_line_info = line_info;
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
@@ -541,18 +532,13 @@ void update_icache_stage() {
             break;
           }
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
-          if(!line_info->first_consumed) {
-            if(last_hit_cycle != cycle_count) // If this is the first series of access to the cache line after it is fetches, N cycles spent to prefetch this line by FDIP according to the per-cycle breaking condition. The same breaking conditions for the packet build are applied.
+          if(last_hit_cl != ic->line_addr) {
+            if (cf_num)
               icache_ftq_pos++;
-          } else {
-            if(last_hit_cl != ic->line_addr) // If this is already hit by the backend, FDIP skipped emitting prefetching this line because it is already in the icache. 2 cycles spent to skip this line. (32 bytes per-cycle breaks)
-              icache_ftq_pos += 2;
+            else
+              icache_ftq_pos += 2; // increment 2 entries of FTQ becuase one entry includes 32 bytes while icache line size if 64 bytes
           }
-          if (last_hit_cl != ic->line_addr && last_hit_line_info && !last_hit_line_info->first_consumed)
-            last_hit_line_info->first_consumed = TRUE;
-          last_hit_cycle = cycle_count;
           last_hit_cl = ic->line_addr;
-          last_hit_line_info = line_info;
         }
       }
       INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_DONT + break_fetch,
@@ -596,8 +582,8 @@ void update_icache_stage() {
     } break;
 
     case IC_WAIT_FOR_FDIP: {
-      if (fdip_ftq_pos >= icache_ftq_pos)
-        icache_ftq_pos += 3; // not consuming the cache line, but one FTQ entry.
+      if (fdip_ftq_pos > icache_ftq_pos)
+        icache_ftq_pos++; // not consuming the cache line, but one FTQ entry.
       if (FDIP_ENABLE)
         fdip_update();
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_FDIP, IC_ISSUE_WIDTH);
@@ -749,7 +735,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
 
     /* figure out next address after current instruction */
     if(op->table_info->cf_type) {
-      DEBUG_FDIP(ic->proc_id, "[%lld] [backend] fetch_addr: %llx, op->inst_uid: %llu, op->op_num: %llu, op->table_info->cf_type: %d\n", cycle_count, op->fetch_addr, op->inst_uid, op->op_num, op->table_info->cf_type);
       // For pipeline gating
       if(op->table_info->cf_type == CF_CBR)
         td->td_info.fetch_br_count++;
@@ -776,6 +761,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       } else {
         if (FDIP_ENABLE) {
           ic->next_fetch_addr = fdip_pred(ic->fetch_addr, op);
+          if (op->oracle_info.pred && !(*cf_num))
+            (*cf_num)++;
         }
         else {
           ic->next_fetch_addr = bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
@@ -956,7 +943,6 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       line_info->read_count[1]     = 0;
       line_info->HW_prefetch       = req->type == MRT_IPRF;
       line_info->FDIP_prefetch     = mem_req_is_type(req, MRT_FDIPPRF);
-      line_info->first_consumed    = 0;
       wp_process_icache_fill(line_info, req);
     }
 
@@ -1007,7 +993,6 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       } else {
         line_info->FDIP_prefetch = 0;
       }
-      line_info->first_consumed = 0;
       wp_process_icache_fill(line_info, req);
     }
 
@@ -1203,40 +1188,21 @@ int32_t inst_lost_get_full_window_reason() {
 
 Op* find_op(Addr pc) {
   Op* op;
-  Op** op_p;
+  Op** op_p = (Op**)list_get_current(&op_buf);
 
-  // For IC_ISSUE_WIDTH breaks in FDIP, non-branch op should be found and the distance between ops should be measured.
-  if (found_op_num) {
+  if (op_p)
+    op = *op_p;
+
+  if (!op_p) {
     op_p = (Op**)list_start_head_traversal(&op_buf);
     op = *op_p;
-    if (op->op_num <= found_op_num) {
+    if (last_runahead_op && op->op_num <= last_runahead_op) {
       for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
         op = *op_p;
-        if (op->op_num == found_op_num) {
+        if (op->op_num == last_runahead_op) {
           op_p = (Op**)list_next_element(&op_buf);
           op = *op_p;
           break;
-        }
-      }
-    }
-  } else {
-    op;
-    op_p = (Op**)list_get_current(&op_buf);
-
-    if (op_p)
-      op = *op_p;
-
-    if (!op_p) {
-      op_p = (Op**)list_start_head_traversal(&op_buf);
-      op = *op_p;
-      if (last_runahead_op && op->op_num <= last_runahead_op) {
-        for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
-          op = *op_p;
-          if (op->op_num == last_runahead_op) {
-            op_p = (Op**)list_next_element(&op_buf);
-            op = *op_p;
-            break;
-          }
         }
       }
     }
@@ -1244,17 +1210,11 @@ Op* find_op(Addr pc) {
 
   for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
     op = *op_p;
-    if (op->table_info->cf_type == 0 && op->fetch_addr == pc) {
-      found_op_num = op->op_num;
-      last_found_op_num = op->op_num;
-    }
     if (op->table_info->cf_type) { // first branch after the last predicted branch
       if (op->fetch_addr == pc) { // The predicting PC is referring to the first branch found
         last_runahead_uid = op->inst_uid;
         op_p = (Op**)list_next_element(&op_buf);
         last_runahead_op = op->op_num;
-        found_op_num = 0;
-        last_found_op_num = op->op_num;
         return op;
       } else { // If the first found branch is not the branch looking for, this case is either 1) when FDIP is trying to keep predicting but the backend is reseering on the previous branch and the exactly next branch is following at head of the buffer or 2) FDIP is on the off-path. last_runahead_op should always be the last op predicted on path (not off path): the last non-branch op before the next branch.
         Op** op_p_head = (Op**)list_get_head(&op_buf);

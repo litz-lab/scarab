@@ -47,7 +47,7 @@
 
 extern Counter icache_ftq_pos;
 extern Counter fdip_ftq_pos;
-extern Counter fetched_bytes;
+extern Counter packet_size_bytes;
 
 
 /**************************************************************************************/
@@ -207,7 +207,7 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
       }
     }
 
-    if(icache_ftq_pos + op->inst_info->trace_info.inst_size >= fdip_ftq_pos) {
+    if(icache_ftq_pos + packet_size_bytes + op->inst_info->trace_info.inst_size >= fdip_ftq_pos) {
       *break_fetch = BREAK_FDIP_RUNAHEAD;
       return PB_BREAK_BEFORE;
     }

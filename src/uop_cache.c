@@ -51,6 +51,7 @@ static Flag pw_insert(Uop_Cache_Data pw);
 /* Global Variables */
 
 Cache uop_cache;
+uns8 proc_id;
 
 // uop trace/bbl accumulation
 static Uop_Cache_Data accumulating_pw = {0};
@@ -64,7 +65,8 @@ Hash_Table pc_to_pw;
 /**************************************************************************************/
 /* init_uop_cache */
 
-void init_uop_cache() {
+void init_uop_cache(uns8 pid) {
+  proc_id = pid;
   if (INF_SIZE_UOP_CACHE || INF_SIZE_UOP_CACHE_PW_SIZE_LIM) {
     init_hash_table(&inf_size_uop_cache, "infinite sized uop cache", 15000000, sizeof(int));
   }
@@ -337,7 +339,8 @@ Flag uop_cache_issue_prefetch(Addr pw_start_addr, Flag on_path) {
     prefetch_success = uop_cache_fill_prefetch(pw_start_addr, on_path);
   } else {
     // If no op is provided, on_path is assumed.
-    prefetch_success = new_mem_req(MRT_UOCPRF, 0, pw_start_addr,
+    // The delay is set to the decode time to allow instr to decode into uops.
+    prefetch_success = new_mem_req(MRT_UOCPRF, proc_id, pw_start_addr,
               ICACHE_LINE_SIZE, DECODE_CYCLES, NULL, instr_fill_line,
               unique_count,
               0);

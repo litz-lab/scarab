@@ -85,7 +85,6 @@ extern uns64                  last_runahead_uid;
 extern uns64                  max_runahead_uid;
 extern Counter                last_runahead_op;
 extern Counter                max_runahead_op;
-extern Counter                max_op_num; // the maximum op that the IC stage can process which is set by FDIP.
 extern Flag                   mem_req_failed;
 extern Counter                last_recover_cycle;
 extern CountMinSketch         cms_useful;
@@ -188,7 +187,7 @@ void init_icache_trace() {
       frontend_fetch_op(ic->proc_id, new_op);
       Op** ptr = dl_list_add_tail(&op_buf);
       *ptr = new_op;
-      DEBUG_FDIP(ic->proc_id, "[op_buf] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", new_op->fetch_addr, new_op->table_info->cf_type, new_op->inst_uid, new_op->op_num);
+      DEBUG(ic->proc_id, "[op_buf] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", new_op->fetch_addr, new_op->table_info->cf_type, new_op->inst_uid, new_op->op_num);
       if (new_op->table_info->cf_type)
         max_runahead_uid = new_op->inst_uid;
       max_runahead_op = new_op->op_num;
@@ -447,13 +446,11 @@ void update_icache_stage() {
           DEBUG(ic->proc_id, "Cache miss on op_num:%s @ 0x%s\n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
 
-          DEBUG_FDIP(ic->proc_id, "[%llu] Cache miss on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
+          DEBUG(ic->proc_id, "[%llu] Cache miss on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
           log_stats_ic_miss();
           if (FDIP_ENABLE && FDIP_TIMELY_FIFO_SIZE)
             fdip_touch_cl_candidates(ic->line_addr);
 
-          if (last_issued_op_num == max_op_num)
-            STAT_EVENT(ic->proc_id, ICACHE_OVERTAKE_FDIP);
           /* if the icache is available, wait for a miss */
           /* otherwise, refetch next cycle */
           if(model->mem == MODEL_MEM) {
@@ -470,7 +467,7 @@ void update_icache_stage() {
               ic->next_state = IC_WAIT_FOR_MISS;
               if (FDIP_ENABLE && success == SUCCESS_NEW)
                 fdip_insert_cl_fetch_addr(ic->line_addr);
-              DEBUG_FDIP(ic->proc_id, "from IC_STAGE for cl 0x%llx at cycle %llu\n", ic->line_addr, cycle_count);
+              DEBUG(ic->proc_id, "from IC_STAGE for cl 0x%llx at cycle %llu\n", ic->line_addr, cycle_count);
 
               if(ONE_MORE_CACHE_LINE_ENABLE) {
                 Addr         one_more_addr;
@@ -512,9 +509,8 @@ void update_icache_stage() {
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
-          DEBUG_FDIP(ic->proc_id, "[%llu] Cache hit on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
+          DEBUG(ic->proc_id, "[%llu] Cache hit on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
           if (FDIP_ENABLE) {
-            ASSERT(ic->proc_id, last_issued_op_num <= max_op_num);
             if (FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE && !FDIP_TIMELY_FIFO_SIZE) {
               fdip_remove_cl_fetch_addr(ic->line_addr);
               fdip_inc_cnt_useful(ic->line_addr);
@@ -528,7 +524,7 @@ void update_icache_stage() {
             ASSERT(ic->proc_id, line_info);
             wp_process_icache_hit(line_info, ic->fetch_addr);
           }
-          if (FDIP_ENABLE && icache_ftq_pos == fdip_ftq_pos) {
+          if (FDIP_ENABLE && icache_ftq_pos >= fdip_ftq_pos) {
             ic->next_state = IC_WAIT_FOR_FDIP;
             break_fetch = BREAK_FDIP_RUNAHEAD;
             break;
@@ -647,20 +643,20 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
           frontend_fetch_op(ic->proc_id, new_op);
           ptr = dl_list_add_tail(&op_buf);
           *ptr = new_op;
-          DEBUG_FDIP(ic->proc_id, "new_op->fetch_addr: %llx, new_op->inst_uid: %llu, cf_type: %d, new_op->op_num: %llu, last_runahead_uid: %llu, ISSUE_WIDTH: %d\n", new_op->fetch_addr, new_op->inst_uid, new_op->table_info->cf_type, new_op->op_num, last_runahead_uid, ISSUE_WIDTH);
+          DEBUG(ic->proc_id, "new_op->fetch_addr: %llx, new_op->inst_uid: %llu, cf_type: %d, new_op->op_num: %llu, last_runahead_uid: %llu, ISSUE_WIDTH: %d\n", new_op->fetch_addr, new_op->inst_uid, new_op->table_info->cf_type, new_op->op_num, last_runahead_uid, ISSUE_WIDTH);
           if (new_op->table_info->cf_type)
             max_runahead_uid = new_op->inst_uid;
           max_runahead_op = new_op->op_num;
         }
         ptr = dl_list_remove_head(&op_buf);
         op = *ptr;
-        DEBUG_FDIP(ic->proc_id, "[%llu] [op_buf - remove head] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
+        DEBUG(ic->proc_id, "[%llu] [op_buf - remove head] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
         last_issued_op_num = op->op_num;
       }
       else {
         op   = alloc_op(ic->proc_id);
         frontend_fetch_op(ic->proc_id, op);
-        DEBUG_FDIP(ic->proc_id, "[%llu] [op] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
+        DEBUG(ic->proc_id, "[%llu] [op] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
       }
       ASSERTM(ic->proc_id, ic->next_fetch_addr == op->inst_info->addr,
                "Fetch address 0x%llx does not match op address 0x%llx\n",
@@ -844,6 +840,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         *break_fetch = BREAK_BTB_MISS;
         DEBUG(ic->proc_id, "Changed icache to wait for redirect %llu\n",
               cycle_count);
+        if (FDIP_ENABLE)
+          runahead_disable = TRUE;
         return IC_WAIT_FOR_REDIRECT;
       }
       
@@ -1196,7 +1194,7 @@ int32_t inst_lost_get_full_window_reason() {
   return 0;
 }
 
-Op* find_op(Addr pc) {
+Op* find_op(Addr pc, size_t *inst_size) {
   Op* op;
   Op** op_p = (Op**)list_get_current(&op_buf);
 
@@ -1220,89 +1218,30 @@ Op* find_op(Addr pc) {
 
   for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
     op = *op_p;
-    if (op->table_info->cf_type) { // first branch after the last predicted branch
-      if (op->fetch_addr == pc) { // The predicting PC is referring to the first branch found
-        last_runahead_uid = op->inst_uid;
-        op_p = (Op**)list_next_element(&op_buf);
-        last_runahead_op = op->op_num;
-        return op;
-      } else { // If the first found branch is not the branch looking for, this case is either 1) when FDIP is trying to keep predicting but the backend is reseering on the previous branch and the exactly next branch is following at head of the buffer or 2) FDIP is on the off-path. last_runahead_op should always be the last op predicted on path (not off path): the last non-branch op before the next branch.
-        Op** op_p_head = (Op**)list_get_head(&op_buf);
-        if (op_p == op_p_head)
-          break;
-        op_p = (Op**)list_prev_element(&op_buf);
-        op = *op_p;
-        last_runahead_op = op->op_num;
-        op_p = (Op**)list_next_element(&op_buf);
-        op = *op_p;
-        break;
+    if (op->fetch_addr == pc) { // found
+      last_runahead_uid = op->inst_uid;
+      last_runahead_op = op->op_num;
+      if(op->inst_info->trace_info.inst_size)
+        *inst_size = op->inst_info->trace_info.inst_size;
+
+      // reach to the last op in a same instruction
+      op_p = (Op**)list_next_element(&op_buf);
+
+      if(op_p) {
+        Op * next_op = *op_p;
+        while(next_op->inst_uid == last_runahead_uid) {
+          op = next_op;
+          if(op->inst_info->trace_info.inst_size)
+            *inst_size = op->inst_info->trace_info.inst_size;
+          last_runahead_op = op->op_num;
+          op_p = (Op**)list_next_element(&op_buf); // make the cur pointer point the next op
+          next_op = *op_p;
+        }
       }
+      return op;
     }
-  }
-  // reached the tail
-  if (!op_p) {
-    op_p = (Op**)list_get_tail(&op_buf);
-    op = *op_p;
-    last_runahead_op = op->op_num;
   }
   return NULL;
-}
-
-void set_max_op_num(Flag is_branch, Addr last_cl_prefetched) {
-  Counter move_cnt = 0;
-  Op* op;
-  Op** op_p;
-  // FDIP predicted all availble ops in the lookahead buffer. Set the max_op_num with the tail op in the buffer.
-  if (max_runahead_op == last_runahead_op) {
-    op_p = (Op**)list_get_tail(&op_buf);
-    ASSERT(ic->proc_id, op_p);
-    op = *op_p;
-    max_op_num = op->op_num;
-  } else if (is_branch) { // If the predicted op is a branch, the cur pointer is already set by the next one of the branch op, so need to set the max_op_num with the prev element of 'cur' in the lookahead buffer to set the branch op as a maximum op num where the backend can run.
-    op_p = (Op**)list_prev_element(&op_buf);
-    move_cnt++;
-    ASSERT(ic->proc_id, op_p);
-    op = *op_p;
-    ASSERT(ic->proc_id, op->table_info->cf_type);
-    max_op_num = op->op_num;
-  } else if (!is_branch) { // If the predicted op is not a branch, the cur pointer is set by either the head or the last branch op. To find the maximum op num that the backend can run, travese reversely to find the op corresponding to the last_cl_prefetched.
-    op_p = (Op**)list_get_current(&op_buf);
-    ASSERT(ic->proc_id, op_p);
-    op = *op_p;
-    ASSERT(ic->proc_id, op->table_info->cf_type);
-    Op** op_head = (Op**)list_get_head(&op_buf);
-    if (op_head == op_p)
-      return;
-    op_p = (Op**)list_prev_element(&op_buf);
-    move_cnt++;
-    op = *op_p;
-    while (op) {
-      // no need to update, already pointing to the max op num.
-      if (op->op_num == max_op_num)
-        break;
-      Addr cl_addr = get_cache_line_addr(&ic->icache, op->fetch_addr);
-      if (op->table_info->cf_type)
-        break;
-      if (cl_addr == last_cl_prefetched) {
-        max_op_num = op->op_num;
-        break;
-      }
-      if (op_head != op_p) {
-        op_p = (Op**)list_prev_element(&op_buf);
-        move_cnt++;
-        op = *op_p;
-      } else {
-        max_op_num = op->op_num;
-        break;
-      }
-    }
-  }
-
-  // restore the current pointer of the buffer
-  while (move_cnt) {
-    list_next_element(&op_buf);
-    move_cnt--;
-  }
 }
 
 void move_to_prev_op(void) {

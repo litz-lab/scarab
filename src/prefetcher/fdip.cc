@@ -66,7 +66,6 @@ Hash_Table top_mispred_br;
 uns64 recovery_count = 0;
 uns64 off_count = 0;
 Flag mem_req_failed = FALSE;
-Counter max_op_num = 0;
 Counter last_recover_cycle = 0;
 CountMinSketch cms_useful;
 CountMinSketch cms_unuseful;
@@ -505,8 +504,8 @@ void fdip_update() {
   bool cl_candidates_popped = false;
   Addr fdip_break_addr_top = runahead_pc | BW_MASK;
   Addr fdip_break_addr_bottom = runahead_pc & ~BW_MASK;
-  Addr start_runahead_pc = runahead_pc;
   Counter ftq_entry_size_bytes = 0;
+  size_t inst_size = 0;
 
   if (runahead_disable)
     return;
@@ -529,7 +528,7 @@ void fdip_update() {
     Addr dummy_addr    = 0;
     void* line        = NULL;
     void* line_info   = NULL;
-    DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, max_op_num : %llu, ftq.size(): %ld\n", runahead_pc, max_runahead_op, last_runahead_op, max_op_num, ftq.size());
+    DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size());
     if (operating_mode == SIMULATION_MODE && print_warmup_hash_table == FALSE) {
       fdip_print_hash_tables();
       print_warmup_hash_table = TRUE;
@@ -558,6 +557,9 @@ void fdip_update() {
     // Determine to emit a new prefetch
     do_prefetch_2_hash = false;
     do_prefetch = false;
+    if (runahead_pc == 0x7f9a15755ee8 && last_cl_prefetched == 0x7f9a15755ec0) {
+      DEBUG(ic_stage->proc_id, "break here\n");
+    }
     DEBUG(ic_stage->proc_id, "last_cl_prefetched: %llx\n", last_cl_prefetched);
     if (!last_cl_prefetched || (get_cache_line_addr(&ic->icache, runahead_pc) != last_cl_prefetched)) {
       line = (Inst_Info**)cache_access(&ic_stage->icache, runahead_pc, &line_addr, TRUE);
@@ -582,7 +584,7 @@ void fdip_update() {
             auto useful_iter = cnt_useful.find(line_addr);
             auto unuseful_iter = cnt_unuseful.find(line_addr);
             auto useful_cl_iter = useful_hash.find(line_addr);
-            DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, : %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, max_op_num, ftq.size(), last_cl_prefetched);
+            DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
             if (FDIP_TIMELY_FIFO_SIZE) {
               // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
               if (unuseful_iter != cnt_unuseful.end()) {
@@ -678,7 +680,7 @@ void fdip_update() {
           if (last_cl_unuseful != line_addr) {
             auto useful_iter = cnt_useful.find(line_addr);
             auto unuseful_iter = cnt_unuseful.find(line_addr);
-            DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, : %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, max_op_num, ftq.size(), last_cl_prefetched);
+            DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
             if (FDIP_TIMELY_FIFO_SIZE) {
               // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
               if (unuseful_iter != cnt_unuseful.end()) {
@@ -766,7 +768,7 @@ void fdip_update() {
           }
         } else if (!FDIP_HASH_ENABLE && FDIP_CC_SIZE) { // confidence cache
           if (last_cl_unuseful != line_addr) {
-            DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, : %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, max_op_num, ftq.size(), last_cl_prefetched);
+            DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
             Addr uc_line_addr = line_addr;
             Addr dummy_uc_line_addr = 0;
             void* useful;
@@ -846,7 +848,7 @@ void fdip_update() {
         } else if (FDIP_HASH_ENABLE == 1 && !FDIP_CC_SIZE) { // 1-hash confidence table
           if (last_cl_unuseful != line_addr) {
             auto useful_cl_iter = useful_hash.find(line_addr);
-            DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, : %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, max_op_num, ftq.size(), last_cl_prefetched);
+            DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
             if (FDIP_TIMELY_FIFO_SIZE) {
               // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
               if (useful_cl_iter != useful_hash.end()) {
@@ -909,7 +911,7 @@ void fdip_update() {
               useful = bloom_lookup(uc_line_addr);
             }
             auto useful_cl_iter = useful_hash.find(line_addr);
-            DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, : %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, max_op_num, ftq.size(), last_cl_prefetched);
+            DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
             if (FDIP_TIMELY_FIFO_SIZE) {
               // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
               if (useful_cl_iter != useful_hash.end()) {
@@ -1017,7 +1019,7 @@ void fdip_update() {
     // on-path prediction
     if (fdip_on_path_bp) {
       // find the corresponding op of runahead_pc from the lookahead buffer
-      op = find_op(runahead_pc);
+      op = find_op(runahead_pc, &inst_size);
       is_branch = (op && op->table_info->cf_type)? true : false;
       if (is_branch) {
         // Break on TAGE buffer limit
@@ -1182,8 +1184,6 @@ void fdip_update() {
       }
     }
 
-    if (fdip_on_path_pref)
-      set_max_op_num(is_branch, last_cl_prefetched);
     if (!fdip_on_path_bp && fdip_on_path_pref)
       fdip_on_path_pref = FALSE;
 
@@ -1191,19 +1191,19 @@ void fdip_update() {
     if (is_branch && op->table_info->cf_type == CF_SYS)
       do_not_update_addr = TRUE;
 
-    size_t inst_size = is_branch? op->inst_info->trace_info.inst_size : 1;
     // In an actual implemenation, FDIP cannot differentiate between a btb
     // miss and the op not being a branch (since the BTB is used to runahead
     // and find the next branch). Thus FDIP would continue as if it was not
     // branch, incrementing runahead_pc. This may cause cache pollution.
     // Boomerang CAN distinguish these cases by storing the end of the bbl
-    Op** op_p = (Op**)list_get_tail(&op_buf);
-    op = *op_p;
-    if (!is_branch && op->op_num == last_runahead_op) // this is a corner case where FDIP reaches the end of the lookahead buffer which is not a branch. Since other ops with the same fetch address can be decoded and followed, the runahead_pc should not be incremented.
-      runahead_pc = runahead_pc;
-    else if (btb_ras_miss || !target) {
-      runahead_pc++;
-      ftq_entry_size_bytes += inst_size;
+    if (btb_ras_miss || !target) {
+      if (inst_size) {
+        ftq_entry_size_bytes += inst_size;
+        runahead_pc += inst_size;
+      } else {
+        ftq_entry_size_bytes++;
+        runahead_pc++;
+      }
     }
     else {
       ASSERT(ic_stage->proc_id, target);
@@ -1268,8 +1268,8 @@ void fdip_update() {
       break;
   }
 
-  if (start_runahead_pc != runahead_pc)
-    fdip_ftq_pos += ftq_entry_size_bytes;
+  fdip_ftq_pos += ftq_entry_size_bytes;
+  DEBUG(ic_stage->proc_id, "icache_ftq_pos: %llu, fdip_ftq_pos: %llu, ftq_entry_size_bytes: %llu\n", icache_ftq_pos, fdip_ftq_pos, ftq_entry_size_bytes);
   STAT_EVENT(ic_stage->proc_id, FDIP_CYCLE_COUNT);
 }
 
@@ -1279,14 +1279,6 @@ Flag fdip_pred_off_path(void) {
 
 Flag fdip_pref_off_path(void) {
   return !fdip_on_path_pref;
-}
-
-Flag fdip_is_max_op(Op* op) {
-  if (!FDIP_ENABLE)
-    return FALSE;
-  if (op->op_num == max_op_num)
-    return TRUE;
-  return FALSE;
 }
 
 void fdip_inc_cnt_useful(Addr line_addr) {

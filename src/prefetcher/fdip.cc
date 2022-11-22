@@ -376,12 +376,13 @@ Flag fdip_prefetch(Addr target, Op *op) {
   return success;
 }
 
-int fdip_dual_path_prefetch(Addr target, Op* op) {
+int fdip_dual_path_prefetch(Op* op) {
   int icache_pref = 0;
   int uoc_pref = 0;
   ASSERT(ic->proc_id, FDIP_DUAL_PATH_PREF_IC_ENABLE 
                   || FDIP_DUAL_PATH_PREF_UOC_ENABLE);
 
+  // TODO(peterbraun): Integrate FDIP_DUAL_PATH_PREF_IC_ENABLE with FDIP
   if (FDIP_DUAL_PATH_PREF_IC_ENABLE) {
     // is prefetching one CL for the alt path enough?
     // pred_target is the target stored by the BTB used if predicted taken
@@ -401,7 +402,7 @@ int fdip_dual_path_prefetch(Addr target, Op* op) {
     uoc_pref += uop_cache_issue_prefetch(op->pred_target, fdip_on_path_pref && op->oracle_info.pred);
     uoc_pref += uop_cache_issue_prefetch(op->pc_plus_offset, fdip_on_path_pref && !op->oracle_info.pred);
     STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_TRIGGERED);
-    INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_EMITTED,
+    INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_EMITTED_OFF_PATH + fdip_on_path_pref,
                     uoc_pref);
   }
   return icache_pref;
@@ -1249,10 +1250,15 @@ void fdip_update() {
         }
       }
     }
+    
+    if (op && FDIP_DUAL_PATH_PREF_UOC_ENABLE && hash_table_access(&top_mispred_br, runahead_pc)) {
+      fdip_dual_path_prefetch(op);
+    }
 
     if (do_prefetch) {
-      // TODO: need to add FDIP_DUAL_PATH_PREF_IC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ENABLE prefetching
-      // change dual path prefetch to prefetch current op instead of the target
+      // TODO(peterbraun): re-integrate FDIP_DUAL_PATH_PREF_IC_ENABLE
+      // We need to prefetch the OPPOSITE of target to prefetch the not-predicted path.
+      // -> change dual path prefetch to prefetch current op instead of the target
       Flag success = FALSE;
       if (fdip_on_path_pref)
         STAT_EVENT(ic_stage->proc_id, FDIP_ATTEMPTED_PREF_ON_PATH);

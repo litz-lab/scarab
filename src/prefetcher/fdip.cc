@@ -176,7 +176,8 @@ void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic) {
     bloom4 = new bloom_filter(bloom4_parameters);
   }
 
-  init_branch_misprediction_table(ic->proc_id);
+  if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)
+    init_branch_misprediction_table(ic->proc_id);
 }
 
 /* Called when a branch completes in the functional unit */

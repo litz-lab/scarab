@@ -43,6 +43,7 @@
 #include "core.param.h"
 #include "debug/debug.param.h"
 #include "general.param.h"
+#include "prefetcher/pref.param.h"
 #include "thread.h" /* for td */
 
 #include "uop_cache.h"
@@ -246,7 +247,8 @@ void decode_stage_process_op(Op* op) {
       }
     }
 
-    increment_branch_count(op->inst_info->addr);
+    if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)
+      increment_branch_count(op->inst_info->addr);
   }
 }
 

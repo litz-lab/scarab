@@ -837,5 +837,6 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
     fdip_recover(info);
   }
 
-  increment_branch_mispredictions(info->PC);
+  if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)
+    increment_branch_mispredictions(info->PC);
 }

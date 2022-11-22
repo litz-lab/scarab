@@ -29,6 +29,7 @@ extern "C" {
   void fdip_touch_cl_candidates(Addr line_addr);
   void fdip_inc_useful_hash(Addr line_addr);
   void fdip_dec_useful_hash(Addr line_addr);
+  Flag determine_by_usefulness(Addr line_addr);
 
   /* Private*/
   void fdip_new_branch(Addr bp_pc, Op *op);

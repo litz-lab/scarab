@@ -445,8 +445,8 @@ void update_icache_stage() {
         if (ic->line == NULL) { // cache miss
           DEBUG(ic->proc_id, "Cache miss on op_num:%s @ 0x%s\n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
+          DEBUG_FDIP(ic->proc_id, "[%llu] Cache miss on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
 
-          DEBUG(ic->proc_id, "[%llu] Cache miss on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
           log_stats_ic_miss();
           if (FDIP_ENABLE && FDIP_TIMELY_FIFO_SIZE)
             fdip_touch_cl_candidates(ic->line_addr);
@@ -509,7 +509,7 @@ void update_icache_stage() {
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
-          DEBUG(ic->proc_id, "[%llu] Cache hit on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
+          DEBUG_FDIP(ic->proc_id, "[%llu] Cache hit on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
           if (FDIP_ENABLE) {
             if (FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE && !FDIP_TIMELY_FIFO_SIZE) {
               fdip_remove_cl_fetch_addr(ic->line_addr);
@@ -644,20 +644,20 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
           frontend_fetch_op(ic->proc_id, new_op);
           ptr = dl_list_add_tail(&op_buf);
           *ptr = new_op;
-          DEBUG(ic->proc_id, "new_op->fetch_addr: %llx, new_op->inst_uid: %llu, cf_type: %d, new_op->op_num: %llu, last_runahead_uid: %llu, ISSUE_WIDTH: %d\n", new_op->fetch_addr, new_op->inst_uid, new_op->table_info->cf_type, new_op->op_num, last_runahead_uid, ISSUE_WIDTH);
+          DEBUG_FDIP(ic->proc_id, "new_op->fetch_addr: %llx, new_op->inst_uid: %llu, cf_type: %d, new_op->op_num: %llu, last_runahead_uid: %llu, ISSUE_WIDTH: %d\n", new_op->fetch_addr, new_op->inst_uid, new_op->table_info->cf_type, new_op->op_num, last_runahead_uid, ISSUE_WIDTH);
           if (new_op->table_info->cf_type)
             max_runahead_uid = new_op->inst_uid;
           max_runahead_op = new_op->op_num;
         }
         ptr = dl_list_remove_head(&op_buf);
         op = *ptr;
-        DEBUG(ic->proc_id, "[%llu] [op_buf - remove head] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
+        DEBUG_FDIP(ic->proc_id, "[%llu] [op_buf - remove head] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
         last_issued_op_num = op->op_num;
       }
       else {
         op   = alloc_op(ic->proc_id);
         frontend_fetch_op(ic->proc_id, op);
-        DEBUG(ic->proc_id, "[%llu] [op] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
+        DEBUG_FDIP(ic->proc_id, "[%llu] [op] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
       }
       ASSERTM(ic->proc_id, ic->next_fetch_addr == op->inst_info->addr,
                "Fetch address 0x%llx does not match op address 0x%llx\n",

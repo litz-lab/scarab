@@ -1194,54 +1194,30 @@ int32_t inst_lost_get_full_window_reason() {
   return 0;
 }
 
-Op* find_op(Addr pc, size_t *inst_size) {
+Op* get_next_inst() {
   Op* op;
   Op** op_p = (Op**)list_get_current(&op_buf);
 
-  if (op_p)
-    op = *op_p;
-
-  if (!op_p) {
+  if (!op_p)
     op_p = (Op**)list_start_head_traversal(&op_buf);
-    op = *op_p;
-    if (last_runahead_op && op->op_num <= last_runahead_op) {
-      for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
-        op = *op_p;
-        if (op->op_num == last_runahead_op) {
-          op_p = (Op**)list_next_element(&op_buf);
-          op = *op_p;
-          break;
-        }
-      }
-    }
-  }
 
-  for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
-    op = *op_p;
-    if (op->fetch_addr == pc) { // found
-      last_runahead_uid = op->inst_uid;
+  op = *op_p;
+  last_runahead_uid = op->inst_uid;
+  last_runahead_op = op->op_num;
+
+  // iterate to the last op in a same instruction
+  op_p = (Op**)list_next_element(&op_buf);
+
+  if(op_p) {
+    Op * next_op = *op_p;
+    while(next_op->inst_uid == last_runahead_uid) {
+      op = next_op;
       last_runahead_op = op->op_num;
-      if(op->inst_info->trace_info.inst_size)
-        *inst_size = op->inst_info->trace_info.inst_size;
-
-      // reach to the last op in a same instruction
-      op_p = (Op**)list_next_element(&op_buf);
-
-      if(op_p) {
-        Op * next_op = *op_p;
-        while(next_op->inst_uid == last_runahead_uid) {
-          op = next_op;
-          if(op->inst_info->trace_info.inst_size)
-            *inst_size = op->inst_info->trace_info.inst_size;
-          last_runahead_op = op->op_num;
-          op_p = (Op**)list_next_element(&op_buf); // make the cur pointer point the next op
-          next_op = *op_p;
-        }
-      }
-      return op;
+      op_p = (Op**)list_next_element(&op_buf); // make the cur pointer point the next op
+      next_op = *op_p;
     }
   }
-  return NULL;
+  return op;
 }
 
 void move_to_prev_op(void) {

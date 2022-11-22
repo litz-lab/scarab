@@ -1019,7 +1019,7 @@ void fdip_update() {
     // on-path prediction
     if (fdip_on_path_bp) {
       // find the corresponding op of runahead_pc from the lookahead buffer
-      op = find_op(runahead_pc, &inst_size);
+      op = get_next_inst();
       is_branch = (op && op->table_info->cf_type)? true : false;
       if (is_branch) {
         // Break on TAGE buffer limit
@@ -1197,9 +1197,11 @@ void fdip_update() {
     // branch, incrementing runahead_pc. This may cause cache pollution.
     // Boomerang CAN distinguish these cases by storing the end of the bbl
     if (btb_ras_miss || !target) {
-      if (inst_size) {
-        ftq_entry_size_bytes += inst_size;
-        runahead_pc += inst_size;
+      if (op) {
+        ftq_entry_size_bytes += op->inst_info->trace_info.inst_size;
+        Op** op_p = (Op**)list_get_current(&op_buf); //cur pointer has already moved to the next instruction
+        Op* next_op = *op_p;
+        runahead_pc = next_op->fetch_addr;
       } else {
         ftq_entry_size_bytes++;
         runahead_pc++;
@@ -1207,8 +1209,9 @@ void fdip_update() {
     }
     else {
       ASSERT(ic_stage->proc_id, target);
+      ASSERT(ic_stage->proc_id, op);
       runahead_pc = target;
-      ftq_entry_size_bytes += inst_size;
+      ftq_entry_size_bytes += op->inst_info->trace_info.inst_size;
     }
 
     if (!do_not_update_addr) {

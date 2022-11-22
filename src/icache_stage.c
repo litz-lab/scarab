@@ -623,6 +623,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
   static Counter issued_real_inst   = 0;
   static Counter issued_uop         = 0;
   uns            fetch_lag;
+  uns64          last_fetch_uid     = 0;
 
   ASSERT(ic->proc_id, ic->proc_id == td->proc_id);
 
@@ -702,7 +703,10 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
 
     /* add to sequential op list */
     add_to_seq_op_list(td, op);
-    packet_size_bytes += op->inst_info->trace_info.inst_size;
+    if(!last_fetch_uid || last_fetch_uid != op->inst_uid) {
+      packet_size_bytes += op->inst_info->trace_info.inst_size;
+      last_fetch_uid = op->inst_uid;
+    }
 
     ASSERT(ic->proc_id, td->seq_op_list.count <= op_pool_active_ops);
 
@@ -874,7 +878,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     return IC_WAIT_FOR_EMPTY_ROB;
   }
 
-  if(*break_fetch == BREAK_FDIP_RUNAHEAD) {
+  if(FDIP_ENABLE && *break_fetch == BREAK_FDIP_RUNAHEAD) {
     return IC_WAIT_FOR_FDIP;
   }
 
@@ -1207,7 +1211,6 @@ Op* get_next_inst() {
 
   // iterate to the last op in a same instruction
   op_p = (Op**)list_next_element(&op_buf);
-
   if(op_p) {
     Op * next_op = *op_p;
     while(next_op->inst_uid == last_runahead_uid) {

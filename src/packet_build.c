@@ -38,6 +38,7 @@
 #include "packet_build.h"
 
 #include "bp/bp.param.h"
+#include "prefetcher/pref.param.h"
 #include "prefetcher/fdip.h"
 #include "core.param.h"
 #include "debug/debug.param.h"
@@ -234,7 +235,7 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
       op->fetched_from_uop_cache = TRUE;
     }
 
-    if(icache_ftq_pos + packet_size_bytes + op->inst_info->trace_info.inst_size >= fdip_ftq_pos) {
+    if(FDIP_ENABLE && icache_ftq_pos + packet_size_bytes + op->inst_info->trace_info.inst_size >= fdip_ftq_pos) {
       *break_fetch = BREAK_FDIP_RUNAHEAD;
       return PB_BREAK_AFTER;
     }

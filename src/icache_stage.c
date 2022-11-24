@@ -811,6 +811,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         if (FDIP_ENABLE) {
           fdip_pred(ic->fetch_addr, op);
           ic->next_fetch_addr       = op->oracle_info.npc;
+          if (!fdip_pred_off_path() && mem_req_failed && last_runahead_op < last_issued_op_num)
+            fdip_reset_on_path(ic->next_fetch_addr);
           ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
         } else {
           bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
@@ -825,6 +827,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       } else {
         if (FDIP_ENABLE) {
           ic->next_fetch_addr = fdip_pred(ic->fetch_addr, op);
+          if (!fdip_pred_off_path() && mem_req_failed && last_runahead_op < last_issued_op_num)
+            fdip_reset_on_path(ic->next_fetch_addr);
         }
         else {
           ic->next_fetch_addr = bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
@@ -930,6 +934,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       if(op->eom) {
         ic->next_fetch_addr = ADDR_PLUS_OFFSET(
           ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
+        if (FDIP_ENABLE && !fdip_pred_off_path() && mem_req_failed && last_runahead_op < last_issued_op_num)
+          fdip_reset_on_path(ic->next_fetch_addr);
         ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
       }
       // pass the global branch history to all the instructions

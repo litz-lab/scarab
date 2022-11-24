@@ -524,7 +524,7 @@ void update_icache_stage() {
             ASSERT(ic->proc_id, line_info);
             wp_process_icache_hit(line_info, ic->fetch_addr);
           }
-          if (FDIP_ENABLE && icache_ftq_pos >= fdip_ftq_pos) {
+          if (FDIP_ENABLE && icache_ftq_pos == fdip_ftq_pos) {
             ic->next_state = IC_WAIT_FOR_FDIP;
             break_fetch = BREAK_FDIP_RUNAHEAD;
             break;
@@ -536,7 +536,7 @@ void update_icache_stage() {
         icache_ftq_pos += packet_size_bytes;
         ipc_counter += packet_size_bytes;
         ipc_counter_event++;
-        ASSERT(ic->proc_id, icache_ftq_pos <= fdip_ftq_pos +24);
+        ASSERT(ic->proc_id, icache_ftq_pos <= fdip_ftq_pos);
         ASSERT(ic->proc_id, icache_ftq_pos + FDIP_FTQ_DEPTH * FDIP_INSTRUCTION_BW);
       }
 
@@ -559,8 +559,9 @@ void update_icache_stage() {
     case IC_WAIT_FOR_REDIRECT: {
       if (FDIP_ENABLE) {
         fdip_update();
-        if (icache_ftq_pos + (Counter)ceil(ipc_counter/ipc_counter_event) < fdip_ftq_pos)
-          icache_ftq_pos += (Counter)ceil(ipc_counter/ipc_counter_event);
+        Counter ic_process_bytes = (Counter)ceil(ipc_counter/ipc_counter_event);
+        if (icache_ftq_pos + ic_process_bytes < fdip_ftq_pos)
+          icache_ftq_pos += ic_process_bytes;
         if (ipc_counter/ipc_counter_event <= 0.1)
           DEBUG_FDIP(ic->proc_id, "The number of bytes per cycle is too small.\n");
       }
@@ -697,7 +698,12 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
 
     packet_break = packet_build(ic_pb_data, break_fetch, op, uop_cache_issue_ops);
     if(packet_break == PB_BREAK_BEFORE) {
-      free_op(op);
+      if(LOOKAHEAD_BUF_SIZE && FDIP_ENABLE) {
+        Op** ptr = dl_list_add_head(&op_buf);
+        *ptr = op;
+      } else {
+        free_op(op);
+      }
       break;
     }
 
@@ -758,8 +764,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         if (FDIP_ENABLE) {
           fdip_pred(ic->fetch_addr, op);
           ic->next_fetch_addr       = op->oracle_info.npc;
-          if (!fdip_pred_off_path() && mem_req_failed && last_runahead_op < last_issued_op_num)
-            fdip_reset_on_path(ic->next_fetch_addr);
           ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
         } else {
           bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
@@ -773,9 +777,10 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         }
       } else {
         if (FDIP_ENABLE) {
-          ic->next_fetch_addr = fdip_pred(ic->fetch_addr, op);
-          if (!fdip_pred_off_path() && mem_req_failed && last_runahead_op < last_issued_op_num)
-            fdip_reset_on_path(ic->next_fetch_addr);
+          if (*break_fetch == BREAK_FDIP_RUNAHEAD)
+            ic->next_fetch_addr = op->fetch_addr;
+          else
+            ic->next_fetch_addr = fdip_pred(ic->fetch_addr, op);
         }
         else {
           ic->next_fetch_addr = bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
@@ -865,11 +870,13 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       }
     } else {
       if(op->eom) {
-        ic->next_fetch_addr = ADDR_PLUS_OFFSET(
-          ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
-        if (FDIP_ENABLE && !fdip_pred_off_path() && mem_req_failed && last_runahead_op < last_issued_op_num)
-          fdip_reset_on_path(ic->next_fetch_addr);
-        ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
+        if(FDIP_ENABLE && *break_fetch == BREAK_FDIP_RUNAHEAD)
+          ic->next_fetch_addr = op->fetch_addr;
+        else {
+          ic->next_fetch_addr = ADDR_PLUS_OFFSET(
+            ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
+          ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
+        }
       }
       // pass the global branch history to all the instructions
       op->oracle_info.pred_global_hist = g_bp_data->global_hist;

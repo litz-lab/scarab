@@ -282,13 +282,6 @@ void fdip_redirect(Addr recover_pc) {
   bp_recover_op(g_bp_data, recovery_checkpoint->table_info->cf_type, &recovery_checkpoint->recovery_info);
 }
 
-void fdip_reset_on_path(Addr next_fetch_addr) {
-  DEBUG(ic_stage->proc_id, "[%llu] [fdip_reset_on_path] next_fetch_addr : %llx\n", cycle_count, next_fetch_addr);
-  runahead_pc = next_fetch_addr;
-  fdip_ftq_pos = icache_ftq_pos;
-  STAT_EVENT(ic_stage->proc_id, FDIP_RESET_ON_PATH);
-}
-
 // Returns true if prefetch was emitted
 Flag fdip_prefetch(Addr target, Op *op) {
   static Addr last_line_addr_prefetched = 0;

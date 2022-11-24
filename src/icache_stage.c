@@ -178,7 +178,7 @@ void init_icache_stage(uns8 proc_id, const char* name) {
 
 void init_icache_trace() {
   if (FDIP_ENABLE)
-    ASSERT(0, LOOKAHEAD_BUF_SIZE && PERFECT_NT_BTB);
+    ASSERT(0, LOOKAHEAD_BUF_SIZE && PERFECT_NT_BTB && LOOKAHEAD_BUF_SIZE > 1000);
   if (LOOKAHEAD_BUF_SIZE) {
     ASSERT(0, ENABLE_PT_MEMTRACE); //Lookahead buffer only works in trace mode
     init_list(&op_buf, "op_buf", sizeof(Op*), TRUE);
@@ -758,6 +758,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         if (FDIP_ENABLE) {
           fdip_pred(ic->fetch_addr, op);
           ic->next_fetch_addr       = op->oracle_info.npc;
+          if (!fdip_pred_off_path() && mem_req_failed && last_runahead_op < last_issued_op_num)
+            fdip_reset_on_path(ic->next_fetch_addr);
           ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
         } else {
           bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
@@ -772,6 +774,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       } else {
         if (FDIP_ENABLE) {
           ic->next_fetch_addr = fdip_pred(ic->fetch_addr, op);
+          if (!fdip_pred_off_path() && mem_req_failed && last_runahead_op < last_issued_op_num)
+            fdip_reset_on_path(ic->next_fetch_addr);
         }
         else {
           ic->next_fetch_addr = bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
@@ -863,6 +867,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       if(op->eom) {
         ic->next_fetch_addr = ADDR_PLUS_OFFSET(
           ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
+        if (FDIP_ENABLE && !fdip_pred_off_path() && mem_req_failed && last_runahead_op < last_issued_op_num)
+          fdip_reset_on_path(ic->next_fetch_addr);
         ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
       }
       // pass the global branch history to all the instructions
@@ -1225,60 +1231,6 @@ Op* get_next_inst() {
 
 void move_to_prev_op(void) {
   list_prev_element(&op_buf);
-}
-
-Flag will_be_accessed(Addr pc) {
-  Op* op;
-  Op** op_p = (Op**)list_get_current(&op_buf);
-  uns64 save_inst_uid = 0;
-  Addr save_pc = 0;
-  Flag found = FALSE;
-
-  if (op_p) {
-    op = *op_p;
-    save_inst_uid = op->inst_uid;
-    save_pc = op->fetch_addr;
-    op_p = (Op**)list_next_element(&op_buf);
-    op = *op_p;
-  }
-
-  if (!op_p) {
-    op_p = (Op**)list_start_head_traversal(&op_buf);
-    op = *op_p;
-    if (last_runahead_uid && op->inst_uid <= last_runahead_uid) {
-      for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
-        op = *op_p;
-        if (op->table_info->cf_type && op->inst_uid == last_runahead_uid) {
-          op_p = (Op**)list_next_element(&op_buf);
-          op = *op_p;
-          break;
-        }
-      }
-    }
-  }
-
-  // find the instruction among all the later ops in the lookahead buffer
-  for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
-    op = *op_p;
-    if (op->fetch_addr == pc) {
-      found = TRUE;
-      break;
-    }
-  }
-
-  // recover the current pointer for the future find_op
-  if (save_inst_uid) {
-    op_p = (Op**)list_start_head_traversal(&op_buf);
-    for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
-      op = *op_p;
-      if (op->inst_uid == save_inst_uid && op->fetch_addr == save_pc)
-        break;
-    }
-  } else {
-    (&op_buf)->current = NULL;
-  }
-
-  return found;
 }
 
 // Retrieve the prediction window by looking into the lookahead buffer.

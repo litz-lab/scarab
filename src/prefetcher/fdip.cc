@@ -263,10 +263,6 @@ void fdip_recover(Recovery_Info *info) {
   ASSERT(ic_stage->proc_id, off_count == recovery_count);
   ASSERT(ic_stage->proc_id, !PERFECT_NT_BTB || ftq.empty());
   fdip_clear_ftq();
-  if (last_runahead_uid != max_runahead_uid)
-    last_runahead_uid = 0;
-  if (last_runahead_op != max_runahead_op)
-    last_runahead_op = 0;
   runahead_pc = info->npc;
   runahead_disable = FALSE;
   fdip_on_path_bp = TRUE;
@@ -284,6 +280,13 @@ void fdip_recover(Recovery_Info *info) {
 void fdip_redirect(Addr recover_pc) {
   DEBUG(ic_stage->proc_id, "[fdip_redirect] recover_pc : %llx\n", recover_pc);
   bp_recover_op(g_bp_data, recovery_checkpoint->table_info->cf_type, &recovery_checkpoint->recovery_info);
+}
+
+void fdip_reset_on_path(Addr next_fetch_addr) {
+  DEBUG(ic_stage->proc_id, "[%llu] [fdip_reset_on_path] next_fetch_addr : %llx\n", cycle_count, next_fetch_addr);
+  runahead_pc = next_fetch_addr;
+  fdip_ftq_pos = icache_ftq_pos;
+  STAT_EVENT(ic_stage->proc_id, FDIP_RESET_ON_PATH);
 }
 
 // Returns true if prefetch was emitted
@@ -1198,6 +1201,7 @@ void fdip_update() {
       if (op) {
         ftq_entry_size_bytes += op->inst_info->trace_info.inst_size;
         Op** op_p = (Op**)list_get_current(&op_buf); //cur pointer has already moved to the next instruction
+        ASSERT(ic_stage->proc_id, op_p); // should not be NULL if lookahead_buf_size is big enough for FDIP_FTQ_SIZE=24
         Op* next_op = *op_p;
         runahead_pc = next_op->fetch_addr;
       } else {

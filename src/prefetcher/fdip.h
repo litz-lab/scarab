@@ -18,6 +18,7 @@ extern "C" {
   void fdip_resolve(Op *op);
   void fdip_recover(Recovery_Info *info);
   void fdip_redirect(Addr recover_pc);
+  void fdip_reset_on_path(Addr next_fetch_addr);
   void fdip_update();
   Flag fdip_pred_off_path(void);
   Flag fdip_pref_off_path(void);

@@ -95,6 +95,7 @@ extern Counter                fdip_ftq_pos;
 Counter                       ipc_counter;
 Counter                       ipc_counter_event;
 Counter                       packet_size_bytes;
+Flag                          fdip_packet_break_before;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -178,7 +179,7 @@ void init_icache_stage(uns8 proc_id, const char* name) {
 
 void init_icache_trace() {
   if (FDIP_ENABLE)
-    ASSERT(0, LOOKAHEAD_BUF_SIZE && PERFECT_NT_BTB && LOOKAHEAD_BUF_SIZE > 1000);
+    ASSERT(0, LOOKAHEAD_BUF_SIZE && PERFECT_NT_BTB && LOOKAHEAD_BUF_SIZE > 6000); // FDIP can run ahead for more than 5000 ops when there are frequent on-path branches (e.g. mediawiki includes almost 1000 on-path branches in 5000 ops).
   if (LOOKAHEAD_BUF_SIZE) {
     ASSERT(0, ENABLE_PT_MEMTRACE); //Lookahead buffer only works in trace mode
     init_list(&op_buf, "op_buf", sizeof(Op*), TRUE);
@@ -640,7 +641,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         (!frontend_can_fetch_op(ic->proc_id) && LOOKAHEAD_BUF_SIZE && list_get_count(&op_buf))) {
       if (LOOKAHEAD_BUF_SIZE) {
         Op** ptr = NULL;
-        if (frontend_can_fetch_op(ic->proc_id)) {
+        if ((!FDIP_ENABLE || !fdip_packet_break_before) && frontend_can_fetch_op(ic->proc_id)) {
           Op* new_op = alloc_op(ic->proc_id);
           frontend_fetch_op(ic->proc_id, new_op);
           ptr = dl_list_add_tail(&op_buf);
@@ -650,6 +651,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
             max_runahead_uid = new_op->inst_uid;
           max_runahead_op = new_op->op_num;
         }
+        if(FDIP_ENABLE)
+          fdip_packet_break_before = FALSE;
         ptr = dl_list_remove_head(&op_buf);
         op = *ptr;
         DEBUG_FDIP(ic->proc_id, "[%llu] [op_buf - remove head] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
@@ -698,7 +701,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
 
     packet_break = packet_build(ic_pb_data, break_fetch, op, uop_cache_issue_ops);
     if(packet_break == PB_BREAK_BEFORE) {
-      if(LOOKAHEAD_BUF_SIZE && FDIP_ENABLE) {
+      if(LOOKAHEAD_BUF_SIZE && FDIP_ENABLE && *break_fetch == BREAK_FDIP_RUNAHEAD) {
         Op** ptr = dl_list_add_head(&op_buf);
         *ptr = op;
       } else {

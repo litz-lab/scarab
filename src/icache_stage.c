@@ -96,6 +96,7 @@ Counter                       ipc_counter;
 Counter                       ipc_counter_event;
 Counter                       packet_size_bytes;
 Flag                          fdip_packet_break_before;
+uns64                         last_fetch_uid     = 0;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -179,7 +180,7 @@ void init_icache_stage(uns8 proc_id, const char* name) {
 
 void init_icache_trace() {
   if (FDIP_ENABLE)
-    ASSERT(0, LOOKAHEAD_BUF_SIZE && PERFECT_NT_BTB && LOOKAHEAD_BUF_SIZE > 6000); // FDIP can run ahead for more than 5000 ops when there are frequent on-path branches (e.g. mediawiki includes almost 1000 on-path branches in 5000 ops).
+    ASSERT(0, LOOKAHEAD_BUF_SIZE && PERFECT_NT_BTB && LOOKAHEAD_BUF_SIZE > FDIP_INSTRUCTION_BW * 3 * (FDIP_FTQ_DEPTH + 1));
   if (LOOKAHEAD_BUF_SIZE) {
     ASSERT(0, ENABLE_PT_MEMTRACE); //Lookahead buffer only works in trace mode
     init_list(&op_buf, "op_buf", sizeof(Op*), TRUE);
@@ -188,7 +189,7 @@ void init_icache_trace() {
       frontend_fetch_op(ic->proc_id, new_op);
       Op** ptr = dl_list_add_tail(&op_buf);
       *ptr = new_op;
-      DEBUG(ic->proc_id, "[op_buf] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", new_op->fetch_addr, new_op->table_info->cf_type, new_op->inst_uid, new_op->op_num);
+      DEBUG_FDIP(ic->proc_id, "[op_buf] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu, op->inst_info->trace_info.inst_size: %u\n", new_op->fetch_addr, new_op->table_info->cf_type, new_op->inst_uid, new_op->op_num, new_op->inst_info->trace_info.inst_size);
       if (new_op->table_info->cf_type)
         max_runahead_uid = new_op->inst_uid;
       max_runahead_op = new_op->op_num;
@@ -534,6 +535,7 @@ void update_icache_stage() {
         }
       }
       if (FDIP_ENABLE) {
+        DEBUG_FDIP(ic->proc_id, "icache_ftq_pos from %llu to %llu\n", icache_ftq_pos, icache_ftq_pos + packet_size_bytes);
         icache_ftq_pos += packet_size_bytes;
         ipc_counter += packet_size_bytes;
         ipc_counter_event++;
@@ -625,7 +627,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
   static Counter issued_real_inst   = 0;
   static Counter issued_uop         = 0;
   uns            fetch_lag;
-  uns64          last_fetch_uid     = 0;
 
   ASSERT(ic->proc_id, ic->proc_id == td->proc_id);
 
@@ -646,7 +647,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
           frontend_fetch_op(ic->proc_id, new_op);
           ptr = dl_list_add_tail(&op_buf);
           *ptr = new_op;
-          DEBUG_FDIP(ic->proc_id, "new_op->fetch_addr: %llx, new_op->inst_uid: %llu, cf_type: %d, new_op->op_num: %llu, last_runahead_uid: %llu, ISSUE_WIDTH: %d\n", new_op->fetch_addr, new_op->inst_uid, new_op->table_info->cf_type, new_op->op_num, last_runahead_uid, ISSUE_WIDTH);
+          DEBUG_FDIP(ic->proc_id, "new_op->fetch_addr: %llx, new_op->inst_uid: %llu, cf_type: %d, new_op->op_num: %llu, new_op->inst_info->trace_info.inst_size: %u, last_runahead_uid: %llu\n", new_op->fetch_addr, new_op->inst_uid, new_op->table_info->cf_type, new_op->op_num, new_op->inst_info->trace_info.inst_size, last_runahead_uid);
           if (new_op->table_info->cf_type)
             max_runahead_uid = new_op->inst_uid;
           max_runahead_op = new_op->op_num;
@@ -655,7 +656,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
           fdip_packet_break_before = FALSE;
         ptr = dl_list_remove_head(&op_buf);
         op = *ptr;
-        DEBUG_FDIP(ic->proc_id, "[%llu] [op_buf - remove head] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
+        DEBUG_FDIP(ic->proc_id, "[%llu] [op_buf - remove head] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu, op->inst_info->trace_info.inst_size: %u\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num, op->inst_info->trace_info.inst_size);
         last_issued_op_num = op->op_num;
       }
       else {
@@ -713,6 +714,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     /* add to sequential op list */
     add_to_seq_op_list(td, op);
     if(!last_fetch_uid || last_fetch_uid != op->inst_uid) {
+      DEBUG_FDIP(ic->proc_id, "[icache_stage] uid %llu, packet_size_bytes %llu to %llu\n", op->inst_uid, packet_size_bytes, packet_size_bytes + op->inst_info->trace_info.inst_size);
       packet_size_bytes += op->inst_info->trace_info.inst_size;
       last_fetch_uid = op->inst_uid;
     }

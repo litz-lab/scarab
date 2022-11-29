@@ -36,12 +36,13 @@ struct ftq_req {
   Op op;
   bool prefetched;
   bool taken;
+  Counter alignment_bytes;
 
   ftq_req(Addr _target, Counter _prefetch_cycle, Op _op, bool _prefetched,
-    bool _taken)
+    bool _taken, Counter _alignment_bytes)
   : target(_target),
     prefetch_cycle(_prefetch_cycle), op(_op), prefetched(_prefetched),
-    taken(_taken) {};
+    taken(_taken), alignment_bytes(_alignment_bytes) {};
 };
 
 std::deque<std::pair<Addr, Flag>> cl_candidates;
@@ -89,6 +90,7 @@ uint32_t last_prefetch_candidate_counter = 0;
 uint64_t bloom_inserts = 0;
 Addr last_cl_unuseful = 0;
 bool cl_candidates_popped = 0;
+extern Counter packet_size_bytes;
 
 
 /**************************************************************************************/
@@ -208,6 +210,8 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
   patch_oracle_info(op, &req->op, bp_pc);
   //Re-evaluate FDIP direction prediction based on the current oracle info
   op->cf_within_fetch = cf_num++;
+  if (req->taken)
+    packet_size_bytes += req->alignment_bytes;
   if (!fdip_on_path_bp) {
     //We may have mispredicted once but the branch PCs seen by the
     //frontend and FDIP still match
@@ -498,7 +502,7 @@ Flag determine_by_usefulness(Addr line_addr) {
       auto useful_iter = cnt_useful.find(line_addr);
       auto unuseful_iter = cnt_unuseful.find(line_addr);
       auto useful_cl_iter = useful_hash.find(line_addr);
-      DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
+      DEBUG(ic_stage->proc_id, "[fdip_usefulness] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
       if (FDIP_TIMELY_FIFO_SIZE) {
         // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
         if (unuseful_iter != cnt_unuseful.end()) {
@@ -594,7 +598,7 @@ Flag determine_by_usefulness(Addr line_addr) {
     if (last_cl_unuseful != line_addr) {
       auto useful_iter = cnt_useful.find(line_addr);
       auto unuseful_iter = cnt_unuseful.find(line_addr);
-      DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
+      DEBUG(ic_stage->proc_id, "[fdip_usefulness] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
       if (FDIP_TIMELY_FIFO_SIZE) {
         // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
         if (unuseful_iter != cnt_unuseful.end()) {
@@ -682,7 +686,7 @@ Flag determine_by_usefulness(Addr line_addr) {
     }
   } else if (!FDIP_HASH_ENABLE && FDIP_UC_SIZE) { // confidence cache
     if (last_cl_unuseful != line_addr) {
-      DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
+      DEBUG(ic_stage->proc_id, "[fdip_usefulness] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
       Addr uc_line_addr = line_addr;
       Addr dummy_uc_line_addr = 0;
       void* useful;
@@ -762,7 +766,7 @@ Flag determine_by_usefulness(Addr line_addr) {
   } else if (FDIP_HASH_ENABLE == 1 && !FDIP_UC_SIZE) { // 1-hash confidence table
     if (last_cl_unuseful != line_addr) {
       auto useful_cl_iter = useful_hash.find(line_addr);
-      DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
+      DEBUG(ic_stage->proc_id, "[fdip_usefulness] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
       if (FDIP_TIMELY_FIFO_SIZE) {
         // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
         if (useful_cl_iter != useful_hash.end()) {
@@ -825,7 +829,7 @@ Flag determine_by_usefulness(Addr line_addr) {
         useful = bloom_lookup(uc_line_addr);
       }
       auto useful_cl_iter = useful_hash.find(line_addr);
-      DEBUG(ic_stage->proc_id, "[fdip_update] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
+      DEBUG(ic_stage->proc_id, "[fdip_usefulness] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
       if (FDIP_TIMELY_FIFO_SIZE) {
         // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
         if (useful_cl_iter != useful_hash.end()) {
@@ -917,14 +921,12 @@ Flag determine_by_usefulness(Addr line_addr) {
 
 // Called each cycle to trigger runahead prefetches
 void fdip_update() {
-  Addr BW_MASK = N_BIT_MASK(LOG2(FDIP_INSTRUCTION_BW));
   uint32_t taken_branches        = 0;
   uint32_t num_cfs               = 0;
   bool do_prefetch               = false;
   FDIP_Break_Reason break_reason = BR_NO_BREAK;
-  Addr fdip_break_addr_top = runahead_pc | BW_MASK;
-  Addr fdip_break_addr_bottom = runahead_pc & ~BW_MASK;
   Counter ftq_entry_size_bytes = 0;
+  Addr start_runahead_pc = runahead_pc;
 
   if (runahead_disable)
     return;
@@ -958,7 +960,8 @@ void fdip_update() {
       break;
     }
 
-    if (runahead_pc > fdip_break_addr_top || runahead_pc < fdip_break_addr_bottom) {
+    // This break condition should be later than FDIP_MAX_TAKEN_BRANCHES condition so that FDIP_INSTRUCTION_BW only throttles per-cycle prediction window on the sequential path (without taken branches).
+    if (runahead_pc >= start_runahead_pc + FDIP_INSTRUCTION_BW) {
       break_reason = BR_CACHELINE;
       break;
     }
@@ -1014,6 +1017,7 @@ void fdip_update() {
     if (fdip_on_path_bp) {
       // find the corresponding op of runahead_pc from the lookahead buffer
       op = get_next_inst();
+      DEBUG(ic_stage->proc_id, "[fdip_update - op path] op->inst_uid: %llu op->op_num: %llu\n", op->inst_uid, op->op_num);
       is_branch = (op && op->table_info->cf_type)? true : false;
       if (is_branch) {
         // Break on TAGE buffer limit
@@ -1048,7 +1052,8 @@ void fdip_update() {
         ftq.push_back(std::pair<Addr, ftq_req>(runahead_pc, ftq_req(
                                     target, cycle_count, *op,
                                     0, /*prefetched*/
-                                    op->oracle_info.pred == TAKEN
+                                    op->oracle_info.pred == TAKEN,
+                                    op->oracle_info.pred == TAKEN? FDIP_INSTRUCTION_BW - ftq_entry_size_bytes - op->inst_info->trace_info.inst_size : 0
                                     )));
         ftq_pushed = true;
         // No matter how branch is predicted, prefetch the correct next PW.
@@ -1192,12 +1197,14 @@ void fdip_update() {
     // Boomerang CAN distinguish these cases by storing the end of the bbl
     if (btb_ras_miss || !target) {
       if (op) {
+        DEBUG(ic_stage->proc_id, "[fdip_update] ftq_entry_size_bytes %llu to %llu\n", ftq_entry_size_bytes, ftq_entry_size_bytes + op->inst_info->trace_info.inst_size);
         ftq_entry_size_bytes += op->inst_info->trace_info.inst_size;
         Op** op_p = (Op**)list_get_current(&op_buf); //cur pointer has already moved to the next instruction
         ASSERT(ic_stage->proc_id, op_p); // should not be NULL if lookahead_buf_size is big enough for FDIP_FTQ_SIZE=24
         Op* next_op = *op_p;
         runahead_pc = next_op->fetch_addr;
       } else {
+        DEBUG(ic_stage->proc_id, "[fdip_update] ftq_entry_size_bytes %llu to %llu\n", ftq_entry_size_bytes, ftq_entry_size_bytes + 1);
         ftq_entry_size_bytes++;
         runahead_pc++;
       }
@@ -1206,14 +1213,16 @@ void fdip_update() {
       ASSERT(ic_stage->proc_id, target);
       ASSERT(ic_stage->proc_id, op);
       runahead_pc = target;
+      DEBUG(ic_stage->proc_id, "[fdip_update] ftq_entry_size_bytes %llu to %llu\n", ftq_entry_size_bytes, op->oracle_info.pred? 32 : ftq_entry_size_bytes + op->inst_info->trace_info.inst_size);
       ftq_entry_size_bytes += op->inst_info->trace_info.inst_size;
+      if (op->oracle_info.pred == TAKEN && FDIP_MAX_TAKEN_BRANCHES == 1)
+        ftq_entry_size_bytes += FDIP_INSTRUCTION_BW - ftq_entry_size_bytes;
     }
 
     if (!do_not_update_addr) {
       // initially bp_predict_op can return a garbage, for multi core run,
       // addr must follow cmp addr convention
-      ic->next_fetch_addr = convert_to_cmp_addr(ic->proc_id,
-                                                ic->next_fetch_addr);
+      runahead_pc = convert_to_cmp_addr(ic->proc_id, runahead_pc);
     }
 
     if (PERFECT_FDIP && !fdip_on_path_pref)
@@ -1262,8 +1271,8 @@ void fdip_update() {
       break;
   }
 
+  DEBUG(ic_stage->proc_id, "icache_ftq_pos: %llu, fdip_ftq_pos: %llu to %llu, ftq_entry_size_bytes: %llu\n", icache_ftq_pos, fdip_ftq_pos, fdip_ftq_pos + ftq_entry_size_bytes, ftq_entry_size_bytes);
   fdip_ftq_pos += ftq_entry_size_bytes;
-  DEBUG(ic_stage->proc_id, "icache_ftq_pos: %llu, fdip_ftq_pos: %llu, ftq_entry_size_bytes: %llu\n", icache_ftq_pos, fdip_ftq_pos, ftq_entry_size_bytes);
   STAT_EVENT(ic_stage->proc_id, FDIP_CYCLE_COUNT);
 }
 
@@ -1380,4 +1389,18 @@ void fdip_dec_useful_hash(Addr line_addr) {
     else
       useful_hash.erase(useful_cl_iter);
   }
+}
+
+Flag can_fetch_op_from_ftq(Op* op) {
+  if (op->table_info->cf_type) {
+    ASSERT(ic_stage->proc_id, !ftq.empty());
+    ASSERT(ic_stage->proc_id, ftq.front().first == op->fetch_addr);
+    auto req = &ftq.front().second;
+    if((req->taken && icache_ftq_pos + packet_size_bytes + op->inst_info->trace_info.inst_size + req->alignment_bytes >= fdip_ftq_pos)
+        || (!req->taken && icache_ftq_pos + packet_size_bytes + op->inst_info->trace_info.inst_size >= fdip_ftq_pos)) {
+      return FALSE;
+    }
+  } else if (icache_ftq_pos + packet_size_bytes + op->inst_info->trace_info.inst_size >= fdip_ftq_pos)
+    return FALSE;
+  return TRUE;
 }

@@ -30,6 +30,7 @@ extern "C" {
   void fdip_inc_useful_hash(Addr line_addr);
   void fdip_dec_useful_hash(Addr line_addr);
   Flag determine_by_usefulness(Addr line_addr);
+  Flag can_fetch_op_from_ftq(Op* op);
 
   /* Private*/
   void fdip_new_branch(Addr bp_pc, Op *op);

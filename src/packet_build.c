@@ -210,7 +210,7 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
       }
     }
 
-    if(FDIP_ENABLE && icache_ftq_pos + packet_size_bytes + op->inst_info->trace_info.inst_size >= fdip_ftq_pos) {
+    if(FDIP_ENABLE && !can_fetch_op_from_ftq(op)) {
       *break_fetch = BREAK_FDIP_RUNAHEAD;
       fdip_packet_break_before = TRUE;
       return PB_BREAK_BEFORE;

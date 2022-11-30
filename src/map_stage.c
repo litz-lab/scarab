@@ -195,6 +195,7 @@ void update_map_stage(Stage_Data* src_sd) {
   Flag consume_ops = src_sd->op_count && src_sd->ops[0]->op_num == next_op_num;
   cur = &map->sds[STAGE_MAX_DEPTH - 1];
   if (cur->op_count == 0 && src_sd->op_count == 0 && last_cycle_consumed < cycle_count) {
+    // Inaccurate: This would trigger once per cycle even if fetching steady state from one source (the other will be empty)
     STAT_EVENT(map->proc_id, MAP_STAGE_STARVED_2X);
   }
   if(cur->op_count == 0 && consume_ops && last_cycle_consumed < cycle_count) {
@@ -213,6 +214,9 @@ void update_map_stage(Stage_Data* src_sd) {
     }
     next_op_num += cur->op_count;
     last_cycle_consumed = cycle_count;
+
+    STAT_EVENT(map->proc_id, MAP_STAGE_RECEIVED_OPS_0 + cur->op_count);
+    ASSERT(map->proc_id, cur->op_count <= 8);
   }
 
   /* if the last map stage is stalled, don't re-process the ops  */

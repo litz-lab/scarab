@@ -16,6 +16,8 @@ extern "C" {
 void init_uop_queue_stage(void);
 void update_uop_queue_stage(Stage_Data* src_sd);
 Stage_Data* uop_queue_stage_get_latest_sd(void);
+// Returns length of queue in terms of number of stages
+int get_uop_queue_stage_length(void);
 
 #ifdef __cplusplus
 }

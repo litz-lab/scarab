@@ -59,6 +59,7 @@
 
 #include "prefetcher/fdip.h"
 #include "prefetcher/pref.param.h"
+#include "uop_queue_stage.h"
 /**************************************************************************************/
 /* Macros */
 
@@ -940,6 +941,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       if (op->fetched_from_uop_cache && !next_op_in_uop_cache) {
         *break_fetch = BREAK_UC_MISS;
         packet_break = PB_BREAK_AFTER;
+        STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_LENGTH_0 + get_uop_queue_stage_length());
+        ASSERT(ic->proc_id, get_uop_queue_stage_length() <= 20);  // Stat supports up to 20.
         Flag frontend_resteer = op->oracle_info.mispred || op->oracle_info.btb_miss || op->oracle_info.misfetch;
         STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_BR_NOT_TAKEN_RESTEERED
                     + 2 * op->oracle_info.dir + !frontend_resteer);

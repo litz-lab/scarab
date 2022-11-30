@@ -77,3 +77,7 @@ Stage_Data* uop_queue_stage_get_latest_sd(void) {
   ASSERT(0, free_sds.size() == UOP_QUEUE_STAGE_LENGTH);
   return free_sds.front();
 };
+
+int get_uop_queue_stage_length(void) {
+  return q.size();
+}

@@ -122,7 +122,7 @@ typedef enum Break_Reason_enum {
 
 void init_packet_build(Pb_Data*, Packet_Build_Identifier);
 void reset_packet_build(Pb_Data*);
-Flag packet_build(Pb_Data*, Break_Reason*, Op* const, Flag uop_cache_issue_ops);
+Flag packet_build(Pb_Data*, Break_Reason*, Op* const);
 
 
 /**************************************************************************************/

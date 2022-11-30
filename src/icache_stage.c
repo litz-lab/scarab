@@ -105,9 +105,8 @@ Flag                          warmed_up = FALSE;
 /* Local prototypes */
 
 static inline Icache_State icache_issue_ops(Break_Reason*, uns*,
-                                            Inst_Info** line,
-                                            Flag uop_cache_issue_ops);
-static inline Inst_Info**  lookup_cache(Flag* uop_cache_fetch);
+                                            Inst_Info** line);
+static inline Inst_Info**  lookup_cache(void);
 static Inst_Info**         ic_pref_cache_access(void);
 int32_t                    inst_lost_get_full_window_reason(void);
 static inline void         log_stats_ic_miss(void);
@@ -364,18 +363,16 @@ Flag in_icache(Addr addr) {
 /* lookup_cache: returns instr if found in either uop cache or icache 
  *                If icache miss but UC hit, set ic->line to non-null  
  */
-Inst_Info** lookup_cache(Flag* uop_cache_fetch) {
+Inst_Info** lookup_cache() {
   Inst_Info** line = NULL;
   line = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr,
                                              &ic->line_addr, TRUE);
   if(PERFECT_ICACHE && !line)
     line = (Inst_Info**)INIT_CACHE_DATA_VALUE;
-  if (in_uop_cache(ic->fetch_addr, NULL, FALSE)) {
-    *uop_cache_fetch = TRUE;
+  if (in_uop_cache(ic->fetch_addr, NULL, FALSE) && !line) {
     // Should return Inst_Info, but op hasn't been fetched yet, so just give it any 
     // value. This is not used anyway
-    if (!line) 
-      line = (Inst_Info**)DUMMY_ADDR_UC_FETCH;
+    line = (Inst_Info**)DUMMY_ADDR_UC_FETCH;
   }
   return line;
 }
@@ -410,7 +407,6 @@ void update_icache_stage() {
   switch(ic->state) {
     case IC_FETCH: {
       Break_Reason break_fetch = BREAK_DONT;
-      Flag uop_cache_fetch = FALSE;
 
       ic->off_path &= !ic->back_on_path;
       ic->back_on_path = FALSE;
@@ -434,7 +430,7 @@ void update_icache_stage() {
           ASSERTM(ic->proc_id, ic->fetch_addr, "ic fetch addr: %llu\n",
                   ic->fetch_addr);
 
-        ic->line = lookup_cache(&uop_cache_fetch);
+        ic->line = lookup_cache();
 
         if(WP_COLLECT_STATS)  // CMP remove?
           line_info = (Icache_Data*)cache_access(
@@ -444,11 +440,9 @@ void update_icache_stage() {
           ic->line = ic_pref_cache_access();
 
 
-        if (!uop_cache_fetch) {
-          STAT_EVENT(ic->proc_id, POWER_ITLB_ACCESS);
-          STAT_EVENT(ic->proc_id, POWER_ICACHE_ACCESS);
-          STAT_EVENT(ic->proc_id, POWER_BTB_READ);
-        }
+        STAT_EVENT(ic->proc_id, POWER_ITLB_ACCESS);
+        STAT_EVENT(ic->proc_id, POWER_ICACHE_ACCESS);
+        STAT_EVENT(ic->proc_id, POWER_BTB_READ);
 
         // ideal L2 Icache prefetcher
         if(IDEAL_L2_ICACHE_PREFETCHER) {
@@ -535,7 +529,7 @@ void update_icache_stage() {
             break_fetch = BREAK_FDIP_RUNAHEAD;
             break;
           }
-          ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
+          ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line);
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
@@ -559,7 +553,7 @@ void update_icache_stage() {
             break_fetch = BREAK_FDIP_RUNAHEAD;
             break;
           }
-          ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line, uop_cache_fetch);
+          ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line);
         }
       }
       if (FDIP_ENABLE) {
@@ -649,8 +643,7 @@ void update_icache_stage() {
    becomes true. */
 
 static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
-                                            uns* cf_num, Inst_Info** line, 
-                                            Flag uop_cache_issue_ops) {
+                                            uns* cf_num, Inst_Info** line) {
   Packet_Build_Condition packet_break = PB_BREAK_DONT;
   static uns last_icache_issue_time = 0; /* for computing fetch break latency */
   static Counter issued_real_inst   = 0;
@@ -729,17 +722,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       ASSERT(ic->proc_id, op->table_info->cf_type != CF_SYS);
     }
 
-    // Log uop cache access - must be called for every op
-    op->fetched_from_uop_cache = in_uop_cache(op->inst_info->addr, &op->op_num, TRUE);
-    if (uop_cache_issue_ops && !op->fetched_from_uop_cache) {
-      Flag frontend_resteer = op->oracle_info.mispred || op->oracle_info.btb_miss || op->oracle_info.misfetch;
-      // A good version of FDIP should be able to prefetch correct predictions.
-      // FDIP cannot prefetch ahead of time on neither a misprediction nor BTB miss nor misfetch
-      STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_BR_NOT_TAKEN_RESTEERED
-                  + 2 * op->oracle_info.dir + !frontend_resteer);
-    }
-
-    packet_break = packet_build(ic_pb_data, break_fetch, op, uop_cache_issue_ops);
+    packet_break = packet_build(ic_pb_data, break_fetch, op);
     if(packet_break == PB_BREAK_BEFORE) {
       if(LOOKAHEAD_BUF_SIZE) {
         Op** ptr = dl_list_add_head(&op_buf);
@@ -759,6 +742,9 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     }
 
     ASSERT(ic->proc_id, td->seq_op_list.count <= op_pool_active_ops);
+
+    // Log uop cache access - must be called exactly once for every op
+    op->fetched_from_uop_cache = in_uop_cache(op->inst_info->addr, &op->op_num, TRUE);
 
     /* map the op based on true dependencies & set information in
      * op->oracle_info */
@@ -943,6 +929,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
     }
 
+    // TODO(peterbraun): Switch to using PB_BREAK_BEFORE
     // Check whether the next op will be found in the uop cache.
     // Break when switching from icache to uoc or vice versa.
     // BUT do not add fetch latency when the last op caused a frontend resteer.
@@ -953,6 +940,9 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       if (op->fetched_from_uop_cache && !next_op_in_uop_cache) {
         *break_fetch = BREAK_UC_MISS;
         packet_break = PB_BREAK_AFTER;
+        Flag frontend_resteer = op->oracle_info.mispred || op->oracle_info.btb_miss || op->oracle_info.misfetch;
+        STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_BR_NOT_TAKEN_RESTEERED
+                    + 2 * op->oracle_info.dir + !frontend_resteer);
       } else if (!op->fetched_from_uop_cache && next_op_in_uop_cache) {
         *break_fetch = BREAK_ICACHE_TO_UOP_CACHE_SWITCH;
         packet_break = PB_BREAK_AFTER;

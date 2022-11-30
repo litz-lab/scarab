@@ -174,8 +174,7 @@ inline void reset_packet_build(Pb_Data* pb_data) {
    return 1 if otherwise
 */
 
-Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
-                  Flag uop_cache_issue_ops) {
+Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op) {
   Break_Reason model_break_result;
 
   ASSERT(pb_data->proc_id, pb_data->proc_id == op->proc_id);
@@ -252,7 +251,9 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op,
     }
 
     // issue width reached
-    const int issue_width = uop_cache_issue_ops ? UC_ISSUE_WIDTH : IC_ISSUE_WIDTH;
+    // TODO(peterbraun): Think about whether this makes sense. Can there be mismatch between this and later where
+    // update_repl=TRUE? Doesn't matter for now since UC_ISSUE_WIDTH > IC_ISSUE_WIDTH is unsupported.
+    const int issue_width = in_uop_cache(op->inst_info->addr, NULL, FALSE) ? UC_ISSUE_WIDTH : IC_ISSUE_WIDTH;
     if(pb_data->pb_ident == PB_ICACHE) {
       if(ic->sd.op_count + 1 == issue_width) {
         *break_fetch = BREAK_ISSUE_WIDTH;

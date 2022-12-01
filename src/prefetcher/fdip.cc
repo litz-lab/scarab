@@ -91,6 +91,13 @@ uint64_t bloom_inserts = 0;
 Addr last_cl_unuseful = 0;
 bool cl_candidates_popped = 0;
 extern Counter packet_size_bytes;
+Counter fdip_cycle_count = 0;
+Counter ftq_occupancy = 0;
+Counter prefs_after_last_recover = 0;
+Counter fdip_recover_cnt = 0;
+Counter resteer_interval = 0;
+Counter ftq_entries_reset = 0;
+Counter pref_bw_resteer = 0;
 
 
 /**************************************************************************************/
@@ -274,8 +281,14 @@ void fdip_recover(Recovery_Info *info) {
   if (UOC_ORACLE_PREF) {
     uop_cache_issue_prefetch(info->npc, fdip_on_path_pref);
   }
+  resteer_interval += cycle_count - last_recover_cycle;
+  ftq_entries_reset += (int)(0.5+(fdip_ftq_pos-icache_ftq_pos)/FDIP_INSTRUCTION_BW);
+  pref_bw_resteer += prefs_after_last_recover;
+
   last_recover_cycle = cycle_count;
   fdip_ftq_pos = icache_ftq_pos;
+  prefs_after_last_recover = 0;
+  fdip_recover_cnt++;
   STAT_EVENT(ic_stage->proc_id, FDIP_RECOVER);
 }
 
@@ -337,7 +350,7 @@ Flag fdip_prefetch(Addr target, Op *op) {
     }
   }
   else {
-    STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ICACHE_HIT);
+    STAT_EVENT(ic_stage->proc_id, FDIP_PREF_PROBE_HIT);
   }
   last_line_addr_prefetched = line_addr;
   return success;
@@ -986,7 +999,11 @@ void fdip_update() {
       Flag mem_buf_hit = mem_buf_access(get_cache_line_addr(&ic->icache, runahead_pc));
       if (line || mem_buf_hit) {
         DEBUG(ic_stage->proc_id, "[fdip_update] line already exists in L1 or MSHR\n");
-        STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ICACHE_HIT);
+        if (fdip_on_path_bp)
+          STAT_EVENT(ic_stage->proc_id, FDIP_PREF_PROBE_HIT_ON_PATH);
+        else
+          STAT_EVENT(ic_stage->proc_id, FDIP_PREF_PROBE_HIT_OFF_PATH);
+        STAT_EVENT(ic_stage->proc_id, FDIP_PREF_PROBE_HIT);
         last_cl_prefetched = line_addr;
         // TODO: insert a CL candidate into the FIFO cl_candidates
       } else {
@@ -1159,6 +1176,7 @@ void fdip_update() {
                       ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
         if (success) {
           STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
+          prefs_after_last_recover++;
           if (success == SUCCESS_NEW) {
             STAT_EVENT(ic_stage->proc_id, FDIP_NEW_PREFETCHES);
             if (FDIP_HASH_ENABLE && !WARMUP && !FDIP_TIMELY_FIFO_SIZE)
@@ -1274,6 +1292,8 @@ void fdip_update() {
   DEBUG(ic_stage->proc_id, "icache_ftq_pos: %llu, fdip_ftq_pos: %llu to %llu, ftq_entry_size_bytes: %llu\n", icache_ftq_pos, fdip_ftq_pos, fdip_ftq_pos + ftq_entry_size_bytes, ftq_entry_size_bytes);
   fdip_ftq_pos += ftq_entry_size_bytes;
   STAT_EVENT(ic_stage->proc_id, FDIP_CYCLE_COUNT);
+  fdip_cycle_count++;
+  ftq_occupancy += std::floor(0.5 + (fdip_ftq_pos - icache_ftq_pos)/FDIP_INSTRUCTION_BW);
 }
 
 Flag fdip_pred_off_path(void) {
@@ -1403,4 +1423,20 @@ Flag can_fetch_op_from_ftq(Op* op) {
   } else if (icache_ftq_pos + packet_size_bytes + op->inst_info->trace_info.inst_size >= fdip_ftq_pos)
     return FALSE;
   return TRUE;
+}
+
+int get_avg_ftq_occupancy() {
+  return (int)(ftq_occupancy/fdip_cycle_count);
+}
+
+int get_avg_resteer_interval() {
+  return (int)(resteer_interval/fdip_recover_cnt);
+}
+
+int get_avg_ftq_entries_reset() {
+  return (int)(ftq_entries_reset/fdip_recover_cnt);
+}
+
+int get_avg_pref_bw_resteer() {
+  return (int)(pref_bw_resteer/fdip_recover_cnt);
 }

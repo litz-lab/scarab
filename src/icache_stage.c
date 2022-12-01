@@ -702,7 +702,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
 
     packet_break = packet_build(ic_pb_data, break_fetch, op, uop_cache_issue_ops);
     if(packet_break == PB_BREAK_BEFORE) {
-      if(LOOKAHEAD_BUF_SIZE && FDIP_ENABLE && *break_fetch == BREAK_FDIP_RUNAHEAD) {
+      if(LOOKAHEAD_BUF_SIZE) {
         Op** ptr = dl_list_add_head(&op_buf);
         *ptr = op;
       } else {
@@ -782,10 +782,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         }
       } else {
         if (FDIP_ENABLE) {
-          if (*break_fetch == BREAK_FDIP_RUNAHEAD)
-            ic->next_fetch_addr = op->fetch_addr;
-          else
-            ic->next_fetch_addr = fdip_pred(ic->fetch_addr, op);
+          ic->next_fetch_addr = fdip_pred(ic->fetch_addr, op);
         }
         else {
           ic->next_fetch_addr = bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
@@ -875,13 +872,9 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       }
     } else {
       if(op->eom) {
-        if(FDIP_ENABLE && *break_fetch == BREAK_FDIP_RUNAHEAD)
-          ic->next_fetch_addr = op->fetch_addr;
-        else {
-          ic->next_fetch_addr = ADDR_PLUS_OFFSET(
-            ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
-          ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
-        }
+        ic->next_fetch_addr = ADDR_PLUS_OFFSET(
+          ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
+        ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
       }
       // pass the global branch history to all the instructions
       op->oracle_info.pred_global_hist = g_bp_data->global_hist;

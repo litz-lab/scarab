@@ -706,8 +706,15 @@ void full_sim() {
       if(!sim_done[proc_id] && (retired_exit[proc_id] || reachedInstLimit)) {
         if(model->per_core_done_func)
           model->per_core_done_func(proc_id);
-        if(proc_id == 0)
+        if(proc_id == 0) {
           fdip_print_hash_tables();
+          if(!(PERFECT_BP && PERFECT_BTB && PERFECT_IBP && PERFECT_CRS && PERFECT_CBR_BTB)) {
+            INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY, get_avg_ftq_occupancy());
+            INC_STAT_EVENT(proc_id, FDIP_AVG_RESTEER_INTERVAL, get_avg_resteer_interval());
+            INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_ENTRIES_RESET, get_avg_ftq_entries_reset());
+            INC_STAT_EVENT(proc_id, FDIP_AVG_PREF_BW_RESTEER, get_avg_pref_bw_resteer());
+          }
+        }
         dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
         sim_done[proc_id] = TRUE;
         any_sim_done      = TRUE;

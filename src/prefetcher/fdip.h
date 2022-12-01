@@ -31,6 +31,10 @@ extern "C" {
   void fdip_dec_useful_hash(Addr line_addr);
   Flag determine_by_usefulness(Addr line_addr);
   Flag can_fetch_op_from_ftq(Op* op);
+  int get_avg_ftq_occupancy();
+  int get_avg_resteer_interval();
+  int get_avg_ftq_entries_reset();
+  int get_avg_pref_bw_resteer();
 
   /* Private*/
   void fdip_new_branch(Addr bp_pc, Op *op);

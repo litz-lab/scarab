@@ -301,9 +301,6 @@ void fdip_recover(Recovery_Info *info) {
   runahead_disable = FALSE;
   fdip_on_path_bp = TRUE;
   fdip_on_path_pref = TRUE;
-  if (UOC_ORACLE_PREF) {
-    uop_cache_issue_prefetch(info->npc, fdip_on_path_pref);
-  }
   resteer_interval += cycle_count - last_recover_cycle;
   ftq_entries_reset += (int)(0.5+(fdip_ftq_pos-icache_ftq_pos)/FDIP_INSTRUCTION_BW);
   pref_bw_resteer += prefs_after_last_recover;
@@ -1194,7 +1191,7 @@ void fdip_update() {
         // No matter how branch is predicted, prefetch the correct next PW.
         // Only predict branches that are found when on the on-path.
         if (UOC_ORACLE_PREF) {
-          uop_cache_issue_prefetch(op->oracle_info.npc, true); // Does this hit every time after recovery? If so then the prefetch at fdip_recover is redundant
+          uop_cache_issue_prefetch(op->oracle_info.npc, true);
         }
         STAT_EVENT(ic_stage->proc_id, FDIP_PRED_ON_PATH);
         Flag bf = op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE;

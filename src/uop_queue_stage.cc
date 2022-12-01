@@ -18,7 +18,7 @@ extern "C" {
 }
 
 // Macros
-#define UOP_QUEUE_STAGE_LENGTH (UOP_QUEUE_LENGTH + 1)
+#define UOP_QUEUE_STAGE_LENGTH UOP_QUEUE_LENGTH
 #define STAGE_MAX_OP_COUNT ISSUE_WIDTH  // The bandwidth of the next, consuming stage (map stage)
 // TODO(peterbraun): Check if the ISSUE_WIDTH can be less than the uop cache issue bandwidth
 

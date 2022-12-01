@@ -149,7 +149,8 @@ void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic) {
         && TOP_MISPRED_BR_RESTEER_COVERAGE)
     init_topk_mispred();
   // Only one of these prefetching options should be set.
-  ASSERT(ic_stage->proc_id, UOC_ORACLE_PREF + UOC_PREF + FDIP_DUAL_PATH_PREF_UOC_ENABLE + FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE<= 1);
+  ASSERT(ic_stage->proc_id, UOC_ORACLE_PREF + FDIP_DUAL_PATH_PREF_UOC_ENABLE + FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE <= 1);
+  ASSERT(ic_stage->proc_id, UOC_ORACLE_PREF + UOC_PREF <= 1);
   cms_init_optimal(&cms_useful, 0.001, 0.999);
   cms_init_optimal(&cms_unuseful, 0.001, 0.999);
   if (!FDIP_BLOOM_FILTER) {
@@ -1093,7 +1094,9 @@ void fdip_update() {
     // Determine to emit a new prefetch
     do_prefetch = false;
     DEBUG(ic_stage->proc_id, "last_cl_prefetched: %llx\n", last_cl_prefetched);
-    if (!last_cl_prefetched || (get_cache_line_addr(&ic->icache, runahead_pc) != last_cl_prefetched)) {
+    bool cl_not_prefetched = !last_cl_prefetched
+                             || (get_cache_line_addr(&ic->icache, runahead_pc) != last_cl_prefetched);
+    if (cl_not_prefetched) {
       line = (Inst_Info**)cache_access(&ic_stage->icache, runahead_pc, &line_addr, TRUE);
       ASSERT(ic_stage->proc_id, line_addr ==  get_cache_line_addr(&ic->icache, runahead_pc));
       // TODO: need to check if there is outstanding prefethces in MSHR queue for the cache line.
@@ -1269,6 +1272,19 @@ void fdip_update() {
                                      && (get_branch_misprediction_rate(runahead_pc) > FDIP_DUAL_PATH_PREF_UOC_ONLINE_MISPRED_THRESHOLD);
     if (prefetch_dual_path_offline || prefetch_dual_path_online) {
       fdip_dual_path_prefetch(op);
+    }
+    // Predicted-path uoc prefetch.
+    // I need to prefetch if this op is the start of a new PW. 
+    // An interim close-to-good solution is to address the most common reasons a
+    // PW ends: Predicted Taken Branch, and End of cache line.
+    if (UOC_PREF && !prefetch_dual_path_offline && !prefetch_dual_path_online) {
+      // Prefetch should be emitted if it does not currently exist in uop cache,
+      // and if it is not currently mid-prefetch.
+      // For the cases where the runahead_pc is in a new CL, OR op is predicted taken.
+      // (this second case is needed if taken target is in the same CL)
+      if (cl_not_prefetched || (op && op->oracle_info.pred)) {
+        uop_cache_issue_prefetch(runahead_pc, FALSE);
+      }
     }
 
     if (do_prefetch) {

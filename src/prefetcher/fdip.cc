@@ -151,6 +151,9 @@ void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic) {
   // Only one of these prefetching options should be set.
   ASSERT(ic_stage->proc_id, UOC_ORACLE_PREF + FDIP_DUAL_PATH_PREF_UOC_ENABLE + FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE <= 1);
   ASSERT(ic_stage->proc_id, UOC_ORACLE_PREF + UOC_PREF <= 1);
+  if (FDIP_DUAL_PATH_PREF_UOC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE) {
+    ASSERT(ic_stage->proc_id, UOC_PREF);  // Doesn't make sense to have dual path without normal predicted-path prefetching
+  }
   cms_init_optimal(&cms_useful, 0.001, 0.999);
   cms_init_optimal(&cms_unuseful, 0.001, 0.999);
   if (!FDIP_BLOOM_FILTER) {
@@ -385,9 +388,10 @@ Flag fdip_prefetch(Addr target, Op *op) {
   return success;
 }
 
+// Issue the not-predicted-path prefetch (UOC_PREF already issues predicted-path)
 int fdip_dual_path_prefetch(Op* op) {
   int icache_pref = 0;
-  int uoc_pref = 0;
+  Flag uoc_pref = FALSE;
   ASSERT(ic->proc_id, FDIP_DUAL_PATH_PREF_IC_ENABLE 
                   || FDIP_DUAL_PATH_PREF_UOC_ENABLE
                   || FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE);
@@ -409,8 +413,8 @@ int fdip_dual_path_prefetch(Op* op) {
                     icache_pref);
   }
   if (FDIP_DUAL_PATH_PREF_UOC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE) {
-    uoc_pref += uop_cache_issue_prefetch(op->pred_target, fdip_on_path_pref && op->oracle_info.pred);
-    uoc_pref += uop_cache_issue_prefetch(op->pc_plus_offset, fdip_on_path_pref && !op->oracle_info.pred);
+    Addr not_predicted_npc = op->oracle_info.pred ? op->pc_plus_offset : op->pred_target;
+    uoc_pref = uop_cache_issue_prefetch(not_predicted_npc, FALSE);
     STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_TRIGGERED);
     INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_EMITTED_OFF_PATH + fdip_on_path_pref,
                     uoc_pref);
@@ -1271,16 +1275,23 @@ void fdip_update() {
       fdip_dual_path_prefetch(op);
     }
     // Predicted-path uoc prefetch.
-    // I need to prefetch if this op is the start of a new PW. 
+    // Prefetch if this op is the start of a new PW. 
     // An interim close-to-good solution is to address the most common reasons a
     // PW ends: Predicted Taken Branch, and End of cache line.
-    if (UOC_PREF && !prefetch_dual_path_offline && !prefetch_dual_path_online) {
-      // Prefetch should be emitted if it does not currently exist in uop cache,
-      // and if it is not currently mid-prefetch.
-      // For the cases where the runahead_pc is in a new CL, OR op is predicted taken.
-      // (this second case is needed if taken target is in the same CL)
-      if (cl_not_prefetched || (op && op->oracle_info.pred)) {
-        uop_cache_issue_prefetch(runahead_pc, FALSE);
+    //
+    // Prefetch should be emitted if it does not currently exist in uop cache,
+    // and if it is not currently mid-prefetch.
+    if (UOC_PREF || prefetch_dual_path_offline || prefetch_dual_path_online) {
+      // If the instruction is a predicted-taken branch, prefetch the predicted target.
+      // Else, if the next consective op is in the next cache line, prefetch that consecutive line.
+      // (any op here is the last op of an instr; op->eom == TRUE)
+      if (op && op->table_info->cf_type && op->oracle_info.pred) {
+        uop_cache_issue_prefetch(op->pred_target, FALSE);
+      } else {
+        // On the off path we don't know instr size. In that case prefetch on last byte of line.
+        Addr pred_npc = op ? op->pc_plus_offset : runahead_pc + 1;
+        if (get_cache_line_addr(&ic->icache, runahead_pc) != get_cache_line_addr(&ic->icache, pred_npc))
+          uop_cache_issue_prefetch(pred_npc, FALSE);
       }
     }
 

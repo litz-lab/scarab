@@ -413,7 +413,8 @@ int fdip_dual_path_prefetch(Op* op) {
                     icache_pref);
   }
   if (FDIP_DUAL_PATH_PREF_UOC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE) {
-    Addr not_predicted_npc = op->oracle_info.pred ? op->pc_plus_offset : op->pred_target;
+    Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
+    Addr not_predicted_npc = op->oracle_info.pred ? pc_plus_offset : op->pred_target;
     uoc_pref = uop_cache_issue_prefetch(not_predicted_npc, FALSE);
     STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_TRIGGERED);
     INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_EMITTED_OFF_PATH + fdip_on_path_pref,
@@ -1267,6 +1268,7 @@ void fdip_update() {
       }
     }
     
+    // op will be non-null for all onpath, and offpath branches.
     Flag prefetch_dual_path_offline = op && FDIP_DUAL_PATH_PREF_UOC_ENABLE
                                       && hash_table_access(&top_mispred_br, runahead_pc);
     Flag prefetch_dual_path_online = op && FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE
@@ -1289,7 +1291,7 @@ void fdip_update() {
         uop_cache_issue_prefetch(op->pred_target, FALSE);
       } else {
         // On the off path we don't know instr size. In that case prefetch on last byte of line.
-        Addr pred_npc = op ? op->pc_plus_offset : runahead_pc + 1;
+        Addr pred_npc = op ? ADDR_PLUS_OFFSET(runahead_pc, op->inst_info->trace_info.inst_size) : runahead_pc + 1;
         if (get_cache_line_addr(&ic->icache, runahead_pc) != get_cache_line_addr(&ic->icache, pred_npc))
           uop_cache_issue_prefetch(pred_npc, FALSE);
       }

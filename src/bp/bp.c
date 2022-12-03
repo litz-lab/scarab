@@ -583,7 +583,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
   op->pred_target = pred_target;
-  op->pc_plus_offset = pc_plus_offset;
 
   const Addr prediction = op->oracle_info.pred ? pred_target : pc_plus_offset;
   op->oracle_info.pred_npc = prediction;

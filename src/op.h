@@ -301,7 +301,6 @@ struct Op_struct {
                                              // information
 
   Addr pred_target; // last predicted target for this op.
-  Addr pc_plus_offset;
 
   // {{{ temporary fields -> will be deleted later (move these)
   int  derived_from_prog_input;  // derivation level from program read()

@@ -1287,7 +1287,7 @@ void fdip_update() {
       // If the instruction is a predicted-taken branch, prefetch the predicted target.
       // Else, if the next consective op is in the next cache line, prefetch that consecutive line.
       // (any op here is the last op of an instr; op->eom == TRUE)
-      if (op && op->table_info->cf_type && op->oracle_info.pred) {
+      if (!btb_ras_miss && op && op->table_info->cf_type && op->oracle_info.pred) {
         uop_cache_issue_prefetch(op->pred_target, FALSE);
       } else {
         // On the off path we don't know instr size. In that case prefetch on last byte of line.

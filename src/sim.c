@@ -62,6 +62,7 @@
 #include "core.param.h"
 #include "debug/debug.param.h"
 #include "general.param.h"
+#include "prefetcher/pref.param.h"
 
 #include "ramulator.h"
 
@@ -708,7 +709,7 @@ void full_sim() {
           model->per_core_done_func(proc_id);
         if(proc_id == 0) {
           fdip_print_hash_tables();
-          if(!(PERFECT_BP && PERFECT_BTB && PERFECT_IBP && PERFECT_CRS && PERFECT_CBR_BTB)) {
+          if(FDIP_ENABLE && !(PERFECT_BP && PERFECT_BTB && PERFECT_IBP && PERFECT_CRS && PERFECT_CBR_BTB)) {
             INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY, get_avg_ftq_occupancy());
             INC_STAT_EVENT(proc_id, FDIP_AVG_RESTEER_INTERVAL, get_avg_resteer_interval());
             INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_ENTRIES_RESET, get_avg_ftq_entries_reset());

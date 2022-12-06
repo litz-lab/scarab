@@ -284,6 +284,7 @@ void fdip_recover(Recovery_Info *info) {
   resteer_interval += cycle_count - last_recover_cycle;
   ftq_entries_reset += (int)(0.5+(fdip_ftq_pos-icache_ftq_pos)/FDIP_INSTRUCTION_BW);
   pref_bw_resteer += prefs_after_last_recover;
+  DEBUG(ic_stage->proc_id, "resteer_interval: %llu, ftq_entries_reset: %llu, pref_bw_resteer: %llu\n", resteer_interval, ftq_entries_reset, pref_bw_resteer);
 
   last_recover_cycle = cycle_count;
   fdip_ftq_pos = icache_ftq_pos;
@@ -999,10 +1000,17 @@ void fdip_update() {
       Flag mem_buf_hit = mem_buf_access(get_cache_line_addr(&ic->icache, runahead_pc));
       if (line || mem_buf_hit) {
         DEBUG(ic_stage->proc_id, "[fdip_update] line already exists in L1 or MSHR\n");
-        if (fdip_on_path_bp)
-          STAT_EVENT(ic_stage->proc_id, FDIP_PREF_PROBE_HIT_ON_PATH);
-        else
-          STAT_EVENT(ic_stage->proc_id, FDIP_PREF_PROBE_HIT_OFF_PATH);
+        if (fdip_on_path_bp) {
+          if (line)
+            STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ON_PATH);
+          else
+            STAT_EVENT(ic_stage->proc_id, FDIP_PREF_MSHR_PROBE_HIT_ON_PATH);
+        } else {
+          if (line)
+            STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ICACHE_PROBE_HIT_OFF_PATH);
+          else
+            STAT_EVENT(ic_stage->proc_id, FDIP_PREF_MSHR_PROBE_HIT_OFF_PATH);
+        }
         STAT_EVENT(ic_stage->proc_id, FDIP_PREF_PROBE_HIT);
         last_cl_prefetched = line_addr;
         // TODO: insert a CL candidate into the FIFO cl_candidates
@@ -1214,14 +1222,11 @@ void fdip_update() {
     // branch, incrementing runahead_pc. This may cause cache pollution.
     // Boomerang CAN distinguish these cases by storing the end of the bbl
     if (btb_ras_miss || !target) {
-      if (op) {
+      if (op) { // last on-path op before going into off-path
         DEBUG(ic_stage->proc_id, "[fdip_update] ftq_entry_size_bytes %llu to %llu\n", ftq_entry_size_bytes, ftq_entry_size_bytes + op->inst_info->trace_info.inst_size);
         ftq_entry_size_bytes += op->inst_info->trace_info.inst_size;
-        Op** op_p = (Op**)list_get_current(&op_buf); //cur pointer has already moved to the next instruction
-        ASSERT(ic_stage->proc_id, op_p); // should not be NULL if lookahead_buf_size is big enough for FDIP_FTQ_SIZE=24
-        Op* next_op = *op_p;
-        runahead_pc = next_op->fetch_addr;
-      } else {
+        runahead_pc += op->inst_info->trace_info.inst_size;
+      } else { // off-path
         DEBUG(ic_stage->proc_id, "[fdip_update] ftq_entry_size_bytes %llu to %llu\n", ftq_entry_size_bytes, ftq_entry_size_bytes + 1);
         ftq_entry_size_bytes++;
         runahead_pc++;
@@ -1230,6 +1235,15 @@ void fdip_update() {
     else {
       ASSERT(ic_stage->proc_id, target);
       ASSERT(ic_stage->proc_id, op);
+      if (fdip_on_path_bp) {
+        Op** op_p = (Op**)list_get_current(&op_buf); // cur pointer has already moved to the next instruction
+        ASSERT(ic_stage->proc_id, op_p); // should not be NULL if lookahead_buf_size is big enough for FDIP_FTQ_SIZE=24
+        Op* next_op = *op_p;
+        DEBUG(ic_stage->proc_id, "next_op->fetch_addr: %llx, runahead_pc + inst_size: %llx, runahead_pc: %llx\n", next_op->fetch_addr, runahead_pc + op->inst_info->trace_info.inst_size, runahead_pc);
+        ASSERT(ic_stage->proc_id, next_op->fetch_addr == target);
+        if (!op->oracle_info.pred)
+          ASSERT(ic_stage->proc_id, next_op->fetch_addr == runahead_pc + op->inst_info->trace_info.inst_size);
+      }
       runahead_pc = target;
       DEBUG(ic_stage->proc_id, "[fdip_update] ftq_entry_size_bytes %llu to %llu\n", ftq_entry_size_bytes, op->oracle_info.pred? 32 : ftq_entry_size_bytes + op->inst_info->trace_info.inst_size);
       ftq_entry_size_bytes += op->inst_info->trace_info.inst_size;

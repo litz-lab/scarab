@@ -365,11 +365,20 @@ void update_exec_stage(Stage_Data* src_sd) {
                           /*late_bp_recovery=*/FALSE, /*force_offpath=*/FALSE);
         if(!op->off_path)
           op->recovery_scheduled = TRUE;
+
+        // stats for the reason of resteer
+        if(op->oracle_info.mispred)
+          STAT_EVENT(op->proc_id, RESTEER_MISPRED_NOT_CF + op->table_info->cf_type);
+        else
+          STAT_EVENT(op->proc_id, RESTEER_MISFETCH_NOT_CF + op->table_info->cf_type);
+
       } else if(op->table_info->cf_type >= CF_IBR &&
                 op->oracle_info.no_target) {
         ASSERT(bp_recovery_info->proc_id,
                bp_recovery_info->proc_id == op->proc_id);
         bp_sched_redirect(bp_recovery_info, op, op->exec_cycle);
+        // stats for the reason of resteer
+        STAT_EVENT(op->proc_id, RESTEER_NO_TARGET_CF_IBR + op->table_info->cf_type - CF_IBR);
       }
     }
     // }}}

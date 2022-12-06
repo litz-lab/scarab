@@ -323,12 +323,16 @@ static inline void stage_process_op(Op* op) {
         ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.pred_npc);
         // schedule a redirect using the predicted npc
         bp_sched_redirect(bp_recovery_info, op, cycle_count);
+        // stats for the reason of resteer
+        STAT_EVENT(dec->proc_id, RESTEER_BTB_MISS_CF_BR + cf);
       }
     } else {
       // the instruction is indirect, so we can only unstall the front end
       if(op->oracle_info.btb_miss && !op->oracle_info.no_target && !bf) {
         // schedule a redirect using the predicted npc
         bp_sched_redirect(bp_recovery_info, op, cycle_count);
+        // stats for the reason of resteer
+        STAT_EVENT(dec->proc_id, RESTEER_BTB_MISS_CF_BR + cf);
       }
     }
   }

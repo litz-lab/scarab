@@ -337,6 +337,8 @@ Flag uop_cache_issue_prefetch(Addr pw_start_addr, Flag on_path) {
 
   if (UOC_ZERO_LATENCY_PREF) {
     prefetch_success = uop_cache_fill_prefetch(pw_start_addr, on_path);
+  } else if (in_uop_cache(pw_start_addr, NULL, FALSE)) {
+    STAT_EVENT(ic->proc_id, UOP_CACHE_HIT_NO_PREFETCH);
   } else {
     // If no op is provided, on_path is assumed.
     // The delay is set to the decode time to allow instr to decode into uops.

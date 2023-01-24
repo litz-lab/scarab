@@ -888,7 +888,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
 
       if(ii == (num_uop - 1)) {
         /* last uop's info */
-        if(pi->is_ifetch_barrier) {
+        if(pi->is_ifetch_barrier && !IGNORE_BAR_FETCH) {
           trace_uop[num_uop - 1]->bar_type = BAR_FETCH;  // only the last
                                                          // instruction will
                                                          // have bar type

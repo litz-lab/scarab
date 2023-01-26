@@ -1287,13 +1287,16 @@ void fdip_update() {
       // If the instruction is a predicted-taken branch, prefetch the predicted target.
       // Else, if the next consective op is in the next cache line, prefetch that consecutive line.
       // (any op here is the last op of an instr; op->eom == TRUE)
+      // TEMP CHANGE: Since UOCPRF is temporarily issue in same memreq as FDIPPRF,
+      // only issue pref if cf_type and target is in the SAME cache line
       if (!btb_ras_miss && op && op->table_info->cf_type && op->oracle_info.pred) {
-        uop_cache_issue_prefetch(op->pred_target, FALSE);
+        if (get_cache_line_addr(&ic->icache, runahead_pc) == get_cache_line_addr(&ic->icache, op->pred_target))
+          uop_cache_issue_prefetch(op->pred_target, FALSE);
       } else {
         // On the off path we don't know instr size. In that case prefetch on last byte of line.
-        Addr pred_npc = op ? ADDR_PLUS_OFFSET(runahead_pc, op->inst_info->trace_info.inst_size) : runahead_pc + 1;
-        if (get_cache_line_addr(&ic->icache, runahead_pc) != get_cache_line_addr(&ic->icache, pred_npc))
-          uop_cache_issue_prefetch(pred_npc, FALSE);
+        // Addr pred_npc = op ? ADDR_PLUS_OFFSET(runahead_pc, op->inst_info->trace_info.inst_size) : runahead_pc + 1;
+        // if (get_cache_line_addr(&ic->icache, runahead_pc) != get_cache_line_addr(&ic->icache, pred_npc))
+        //   uop_cache_issue_prefetch(pred_npc, FALSE);
       }
     }
 
@@ -1326,7 +1329,8 @@ void fdip_update() {
           success = SUCCESS_NEW;
         }
       } else {
-        success = new_mem_req(MRT_FDIPPRF, ic_stage->proc_id, line_addr,
+        // TEMP CHANGE: use byte addr instead of line_addr to enable UOC pref
+        success = new_mem_req(MRT_FDIPPRF, ic_stage->proc_id, runahead_pc,
                       ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
         if (success) {
           STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);

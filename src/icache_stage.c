@@ -1417,7 +1417,14 @@ Flag instr_fill_line(Mem_Req* req) {
   if (mem_req_is_type(req, MRT_IFETCH) || mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_FDIPPRF)) {
     icache_fill_line(req);
   }
-  if (mem_req_is_type(req, MRT_UOCPRF))
-    uop_cache_fill_prefetch(req->addr, !req->off_path);
+  // TEMP CHANGE: all FDIPPRF are UOC_PREF as well, except for a corner case where branch target is same line
+  if (UOC_PREF && (mem_req_is_type(req, MRT_FDIPPRF) || mem_req_is_type(req, MRT_UOCPRF))) {
+    if (in_uop_cache(req->addr, NULL, FALSE)) {
+      STAT_EVENT(ic->proc_id, UOP_CACHE_HIT_NO_PREFETCH);
+    } else {
+      uop_cache_fill_prefetch(req->addr, !req->off_path);
+    }
+  }
+
   return TRUE;
 }

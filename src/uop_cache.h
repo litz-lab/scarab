@@ -34,5 +34,6 @@ void accumulate_op(Op* op);
 
 Flag uop_cache_fill_prefetch(Addr pw_start_addr, Flag on_path);
 Flag uop_cache_issue_prefetch(Addr pw_start_addr, Flag on_path);
+Flag pw_insert(Uop_Cache_Data pw);
 
 #endif /* #ifndef __UOP_CACHE_H__ */

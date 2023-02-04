@@ -50,6 +50,7 @@
 
 #include "freq.h"
 #include "uop_queue_stage.h"
+#include "uop_cache_prefetch_decoder.h"
 
 Flag perf_pred_started = FALSE;
 
@@ -216,6 +217,7 @@ void cmp_cores(void) {
       // Map stage can get ops from either the uop queue following the uop cache
       // or the decoder.
       update_map_stage(dec->last_sd);
+      insert_decoded_uop_cache_prefetch();
       update_decode_stage(&ic->sd);
       update_map_stage(uop_queue_stage_get_latest_sd());
       update_icache_stage();

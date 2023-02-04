@@ -29,6 +29,7 @@
 #include "prefetcher/pref.param.h"
 #include "uop_cache.h"
 #include "icache_stage.h" //needed for get_pw_lookahead_buffer
+#include "uop_cache_prefetch_decoder.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -45,7 +46,6 @@
 
 static inline Flag insert_uop_cache(void);
 static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl);
-static Flag pw_insert(Uop_Cache_Data pw);
 
 /**************************************************************************************/
 /* Global Variables */
@@ -327,9 +327,8 @@ Flag uop_cache_fill_prefetch(Addr pw_start_addr, Flag fdip_on_path) {
   }
   ASSERT(0, pw.first == pw_start_addr);
   pw.prefetch = TRUE;
-  Flag prefetched = pw_insert(pw);
-  INC_STAT_EVENT(0, UOP_CACHE_PREFETCH, prefetched);
-  return prefetched;
+  start_decoding_uop_cache_prefetch(pw);
+  return TRUE;
 }
 
 Flag uop_cache_issue_prefetch(Addr pw_start_addr, Flag on_path) {

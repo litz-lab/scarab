@@ -37,5 +37,6 @@ void insert_decoded_uop_cache_prefetch(void) {
         Flag inserted = pw_insert(oldest_entry.pw);
         INC_STAT_EVENT(0, UOP_CACHE_PREFETCH, inserted);
         INC_STAT_EVENT(0, UOP_CACHE_PREFETCH_UOP_COUNT, oldest_entry.pw.n_uops);
+        STAT_EVENT(0, UOP_CACHE_PREFETCH_PW_LENGTH_1 + oldest_entry.pw.n_uops - 1);
     }
 }

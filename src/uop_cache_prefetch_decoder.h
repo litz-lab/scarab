@@ -1,7 +1,7 @@
 // This module simulates the decoder latency for uop cache prefetches
 
-#ifndef __UOP_QUEUE_STAGE_H_
-#define __UOP_QUEUE_STAGE_H_
+#ifndef __UOP_CACHE_PREFETCH_DECODER_H_
+#define __UOP_CACHE_PREFETCH_DECODER_H_
 
 #ifdef __cplusplus
 extern "C" {

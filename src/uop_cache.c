@@ -80,7 +80,7 @@ void init_uop_cache(uns8 pid) {
   // but UOP_CACHE_LINE_SIZE must be 1 to enable indexing with the full byte-granularity address.
 
   init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE * UOP_CACHE_LINE_SIZE, UOP_CACHE_ASSOC,
-             UOP_CACHE_LINE_SIZE,UOP_CACHE_LINE_DATA_SIZE, REPL_TRUE_LRU);
+             UOP_CACHE_LINE_SIZE, UOP_CACHE_LINE_DATA_SIZE, UOP_CACHE_REPL);
 }
 
 Flag pw_insert(Uop_Cache_Data pw) {

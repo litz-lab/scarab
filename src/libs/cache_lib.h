@@ -138,8 +138,11 @@ void* cache_insert_lru(Cache*, uns8, Addr, Addr*, Addr*);
 void  cache_invalidate(Cache*, Addr, Addr*);
 void  cache_flush(Cache*);
 void* get_next_repl_line(Cache*, uns8, Addr, Addr*, Flag*);
+void* get_next_valid_repl_line(Cache* cache, uns8 proc_id, Addr addr,
+                                      Addr* repl_line_addr);
 uns   ext_cache_index(Cache*, Addr, Addr*, Addr*);
 Addr  get_cache_line_addr(Cache*, Addr);
+uns   cache_get_invalid_line_count(Cache* cache, Addr addr);
 
 void* shadow_cache_insert(Cache* cache, uns set, Addr tag, Addr base);
 void* access_shadow_lines(Cache* cache, uns set, Addr tag);

@@ -101,13 +101,23 @@ Flag pw_insert(Uop_Cache_Data pw) {
     STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_CACHE_HIT + pw.prefetch);
     return FALSE;
   } else {
-    // Insert it, taking appropriate number of lines
+    // FIRST preemptively evict the PWs to create space for the new PW. 
+    // This is so that multiple lines from the same PW
+    // inserted into the LRU position do not evict each other.
+    while (cache_get_invalid_line_count(&uop_cache, pw.first) < lines_needed) {
+      // does this update after a cache_invalidate? It should.
+      // Ah. this can also return an invalid line, and will continue to return it while it is still there.
+      // get_next_valid_repl_line? That'll be gross code duplication. I'll just only implement for REPL_TRUE_LRU
+      // get_n_next_repl_lines? Similar issue-
+      // invalidate_n_repl_lines. either way need to perform surgery on find_repl_entry
+      get_next_valid_repl_line(&uop_cache, ic->proc_id, pw.first, &repl_line_addr);
+      cache_invalidate(&uop_cache, repl_line_addr, &line_addr);
+    }
+    Cache_Insert_Repl insert_repl = INSERT_REPL_DEFAULT;
     for (int jj = 0; jj < lines_needed; jj++) {
-      cur_line_data = (Uop_Cache_Data*) cache_insert(&uop_cache, 0,
-                      pw.first, &line_addr, &repl_line_addr);
-      if (repl_line_addr) {
-        cache_invalidate(&uop_cache, repl_line_addr, &line_addr);
-      }
+      cur_line_data = (Uop_Cache_Data*) cache_insert_replpos(&uop_cache, ic->proc_id,
+                      pw.first, &line_addr, &repl_line_addr, insert_repl, pw.prefetch);
+      ASSERT(ic->proc_id, !repl_line_addr);
       memset(cur_line_data, 0, UOP_CACHE_LINE_DATA_SIZE);
       *cur_line_data = pw;
     }

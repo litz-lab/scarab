@@ -629,6 +629,45 @@ Cache_Entry* find_repl_entry(Cache* cache, uns8 proc_id, uns set, uns* way) {
 
 
 /**************************************************************************************/
+/* get_next_valid_repl_line: Returns the valid cache lib entry that will be replaced the
+   soonest. This call should not change any of the state information. */
+void* get_next_valid_repl_line(Cache* cache, uns8 proc_id, Addr addr,
+                                      Addr* repl_line_addr) {
+  int ii;
+  Addr line_tag, line_addr;
+  Cache_Entry* entry = NULL;
+  uns set = cache_index(cache, addr, &line_tag, &line_addr);
+
+  switch(cache->repl_policy) {
+    case REPL_SHADOW_IDEAL:
+    case REPL_TRUE_LRU: {
+      uns     lru_ind  = 0;
+      Counter lru_time = MAX_CTR;
+      for(ii = 0; ii < cache->assoc; ii++) {
+        Cache_Entry* entry = &cache->entries[set][ii];
+        if(!entry->valid) {
+          continue;
+        }
+        if(entry->last_access_time < lru_time) {
+          lru_ind  = ii;
+          lru_time = cache->entries[set][ii].last_access_time;
+        }
+      }
+      if (lru_ind >= 0)
+        entry = &cache->entries[set][lru_ind];
+    } break;
+    default:
+      ASSERT(proc_id, FALSE);  // not implemented
+  }
+  if (entry) {
+    *repl_line_addr = entry->base;
+    return entry->data;
+  }
+  return NULL;
+}
+
+
+/**************************************************************************************/
 /* update_repl_policy: */
 
 static inline void update_repl_policy(Cache* cache, Cache_Entry* cur_entry,
@@ -692,6 +731,25 @@ static inline void update_repl_policy(Cache* cache, Cache_Entry* cur_entry,
     default:
       ASSERT(0, FALSE);
   }
+}
+
+
+/**************************************************************************************/
+/* cache_get_invalid_line_count: Return the number of invalid lines in the set this   */
+/*                               address maps to.                                     */
+
+uns cache_get_invalid_line_count(Cache* cache, Addr addr) {
+  Addr tag;
+  Addr line_addr;
+  uns  set              = cache_index(cache, addr, &tag, &line_addr);
+  uns  invalid_entries  = 0;
+  for(int ii = 0; ii < cache->assoc; ii++) {
+    Cache_Entry* entry = &cache->entries[set][ii];
+    if(!entry->valid) {  // Check for invalid entries
+      invalid_entries++;
+    }
+  }
+  return invalid_entries;
 }
 
 

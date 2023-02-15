@@ -105,11 +105,6 @@ Flag pw_insert(Uop_Cache_Data pw) {
     // This is so that multiple lines from the same PW
     // inserted into the LRU position do not evict each other.
     while (cache_get_invalid_line_count(&uop_cache, pw.first) < lines_needed) {
-      // does this update after a cache_invalidate? It should.
-      // Ah. this can also return an invalid line, and will continue to return it while it is still there.
-      // get_next_valid_repl_line? That'll be gross code duplication. I'll just only implement for REPL_TRUE_LRU
-      // get_n_next_repl_lines? Similar issue-
-      // invalidate_n_repl_lines. either way need to perform surgery on find_repl_entry
       get_next_valid_repl_line(&uop_cache, ic->proc_id, pw.first, &repl_line_addr);
       cache_invalidate(&uop_cache, repl_line_addr, &line_addr);
     }

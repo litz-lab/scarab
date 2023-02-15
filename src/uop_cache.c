@@ -169,19 +169,16 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
   static Uop_Cache_Data cur_pw = {0};
   Addr line_addr;
   Uop_Cache_Data* uoc_data = NULL;
-  Flag found = FALSE;
 
   // First check if current pw has this search addr
   if (cur_pw.first && search_addr >= cur_pw.first
                    && search_addr <= cur_pw.last) {
-    found = TRUE;
+    uoc_data = &cur_pw;
   } else {
     // Next try to access a new PW starting at this addr
-    int lines_found = cache_access_all(&uop_cache, search_addr, &line_addr, update_repl, 
-                          (void**) &uoc_data);
-    found = lines_found > 0;
+    uoc_data = cache_access(&uop_cache, search_addr, &line_addr, update_repl);
     // Only update state if this access should change state
-    if (update_repl && found) {
+    if (update_repl && uoc_data) {
       if (uoc_data->prefetch && !uoc_data->used) {
         STAT_EVENT(0, UOP_CACHE_PREFETCH_USED);
       }
@@ -195,7 +192,7 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
     }
   }
 
-  return found;
+  return uoc_data != NULL;
 }
 
 /**************************************************************************************/

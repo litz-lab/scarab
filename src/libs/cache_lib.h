@@ -54,6 +54,7 @@ typedef enum Repl_Policy_enum {
                          isn't stored at the cache */
   REPL_MLP,           /* mlp based replacement  -- uses MLP_REPL_POLICY */
   REPL_PARTITION,     /* Based on the partition*/
+  REPL_RESTEER,       /* Prioritize the instr following a resteered branch or fetch barrier */
   NUM_REPL
 } Repl_Policy;
 
@@ -142,6 +143,7 @@ void* get_next_valid_repl_line(Cache* cache, uns8 proc_id, Addr addr,
 uns   ext_cache_index(Cache*, Addr, Addr*, Addr*);
 Addr  get_cache_line_addr(Cache*, Addr);
 uns   cache_get_invalid_line_count(Cache* cache, Addr addr);
+void  update_repl_resteer_policy(Cache*, Addr);
 
 void* shadow_cache_insert(Cache* cache, uns set, Addr tag, Addr base);
 void* access_shadow_lines(Cache* cache, uns set, Addr tag);

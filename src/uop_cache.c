@@ -62,6 +62,8 @@ Hash_Table inf_size_uop_cache;
 // indexed by start addr of PW
 Hash_Table pc_to_pw;
 
+Addr addr_following_resteer_bf = 0;  // Addr that follows a resteer or fetch barrier
+
 /**************************************************************************************/
 /* init_uop_cache */
 
@@ -101,6 +103,12 @@ Flag pw_insert(Uop_Cache_Data pw) {
     STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_CACHE_HIT + pw.prefetch);
     return FALSE;
   } else {
+    // If REPL_RESTEER and not addr_following_resteer_bf, consider NOT inserting at all.
+    // (here I insert into the LRU position) 
+    Cache_Insert_Repl insert_repl = INSERT_REPL_DEFAULT;
+    if (UOP_CACHE_REPL == REPL_RESTEER && pw.first != addr_following_resteer_bf) {
+      insert_repl = INSERT_REPL_LRU;
+    }
     // FIRST preemptively evict the PWs to create space for the new PW. 
     // This is so that multiple lines from the same PW
     // inserted into the LRU position do not evict each other.
@@ -108,7 +116,6 @@ Flag pw_insert(Uop_Cache_Data pw) {
       get_next_valid_repl_line(&uop_cache, ic->proc_id, pw.first, &repl_line_addr);
       cache_invalidate(&uop_cache, repl_line_addr, &line_addr);
     }
-    Cache_Insert_Repl insert_repl = INSERT_REPL_DEFAULT;
     for (int jj = 0; jj < lines_needed; jj++) {
       cur_line_data = (Uop_Cache_Data*) cache_insert_replpos(&uop_cache, ic->proc_id,
                       pw.first, &line_addr, &repl_line_addr, insert_repl, pw.prefetch);
@@ -353,4 +360,12 @@ Flag uop_cache_issue_prefetch(Addr pw_start_addr, Flag on_path) {
   }
 
   return prefetch_success;
+}
+
+// This is called after a resteer is resolved or fetch barrier identified.
+void set_addr_following_resteer_bf(Addr addr) {
+  addr_following_resteer_bf = addr;
+  if (uop_cache.repl_policy == REPL_RESTEER) {
+    update_repl_resteer_policy(&uop_cache, addr);
+  }
 }

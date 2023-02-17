@@ -355,6 +355,8 @@ void cmp_recover() {
   recover_exec_stage();
   recover_dcache_stage();
   recover_memory();
+
+  set_addr_following_resteer_bf(bp_recovery_info->recovery_op->oracle_info.npc);
 }
 
 /**************************************************************************************/
@@ -370,6 +372,7 @@ void cmp_redirect() {
   ASSERT_PROC_ID_IN_ADDR(bp_recovery_info->proc_id,
                          bp_recovery_info->redirect_op->oracle_info.pred_npc);
   redirect_icache_stage();
+  set_addr_following_resteer_bf(bp_recovery_info->redirect_op->oracle_info.npc);
 }
 
 /**************************************************************************************/

@@ -467,6 +467,7 @@ void* get_next_repl_line(Cache* cache, uns8 proc_id, Addr addr,
 Cache_Entry* find_repl_entry(Cache* cache, uns8 proc_id, uns set, uns* way) {
   int ii;
   switch(cache->repl_policy) {
+    case REPL_RESTEER:
     case REPL_SHADOW_IDEAL:
     case REPL_TRUE_LRU: {
       uns     lru_ind  = 0;
@@ -603,6 +604,7 @@ void* get_next_valid_repl_line(Cache* cache, uns8 proc_id, Addr addr,
   uns set = cache_index(cache, addr, &line_tag, &line_addr);
 
   switch(cache->repl_policy) {
+    case REPL_RESTEER:
     case REPL_SHADOW_IDEAL:
     case REPL_TRUE_LRU: {
       uns     lru_ind  = 0;
@@ -692,8 +694,32 @@ static inline void update_repl_policy(Cache* cache, Cache_Entry* cur_entry,
         cache->repl_ctrs[set] = lru_ind;
       }
       break;
+    case REPL_RESTEER:  // No update on access
+      break;
     default:
       ASSERT(0, FALSE);
+  }
+}
+
+
+/**************************************************************************************/
+/* update_repl_resteer_policy: Update repl policy for REPL_RESTEER.                   */
+/*                             LRU counter is updated before access, when a resteer   */
+/*                             is resolved or fetch barrier identified                */
+void update_repl_resteer_policy(Cache* cache, Addr addr) {
+  ASSERT(0, cache->repl_policy == REPL_RESTEER);
+  int     ii;
+  Addr    tag;
+  Addr    line_addr;
+  uns     set = cache_index(cache, addr, &tag, &line_addr);
+  for(ii = 0; ii < cache->assoc; ii++) {
+    Cache_Entry* line = &cache->entries[set][ii];
+    if(line->valid && line->tag == tag) {
+      ASSERT(0, line->data);
+      DEBUG(0, "updating access time REPL_RESTEER '%s' at (set %u, way %u, base 0x%s)\n",
+            cache->name, set, ii, hexstr64s(line->base));
+      line->last_access_time = sim_time;
+    }
   }
 }
 

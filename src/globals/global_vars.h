@@ -73,6 +73,8 @@ extern uns  num_fetched_lowconf_brs;
 extern Hash_Table per_branch_stat;
 extern Uop_Queue_Fill_Time uop_queue_fill_time;
 
+extern Flag roi_dump_began;
+extern Counter roi_dump_ID;
 /**************************************************************************************/
 
 #endif /* #ifndef __GLOBAL_VARS_H__ */

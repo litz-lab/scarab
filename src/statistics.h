@@ -178,6 +178,9 @@ extern Stat** global_stat_array;
 
 /**************************************************************************************/
 /* Prototypes */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 void        init_global_stats_array(void);
 void        gen_stat_output_file(char*, uns8, Stat*);
@@ -189,7 +192,9 @@ Stat_Enum   get_stat_idx(const char* name);
 const Stat* get_stat(uns8, const char*);
 Counter     get_accum_stat_event(Stat_Enum name);
 
-
+#ifdef __cplusplus
+}
+#endif
 /**************************************************************************************/
 
 #endif /* #ifndef __STATISTICS_H__ */

@@ -105,6 +105,11 @@ void gen_stat_output_file(char* buf, uns8 proc_id, Stat* stat) {
     sprintf(temp3, ".warmup");
     strncat(temp, temp3, 24);
   }
+  if (roi_dump_began) {
+    char temp3[24];
+    sprintf(temp3, ".roi.%llu", roi_dump_ID);
+    strncat(temp, temp3, MAX_STR_LENGTH);
+  }
   strncpy(buf, OUTPUT_DIR, MAX_STR_LENGTH);
   strncat(buf, "/", MAX_STR_LENGTH);
   strncat(buf, FILE_TAG, MAX_STR_LENGTH);

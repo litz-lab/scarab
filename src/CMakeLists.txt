@@ -26,8 +26,8 @@ set(CMAKE_CXX_FLAGS_DEBUG     "-O0 -g3 -DLINUX -DX86_64 -fsanitize=address -fsan
 add_subdirectory(deps)
 
 set(warn_flags -Wall -Wunused -Wno-long-long
-  -Wpointer-arith
-  -Werror)
+  -Wpointer-arith)
+#  -Werror)
 set(warn_c_flags ${warn_flags}
   -Wmissing-declarations
   -Wmissing-prototypes

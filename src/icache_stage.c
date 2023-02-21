@@ -947,10 +947,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_LENGTH_0 + uop_queue_length);
         STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_PLUS_DECODE_LENGTH_0 + uop_queue_length + decode_stages_filled);
         ASSERT(ic->proc_id, uop_queue_length + decode_stages_filled <= 20);  // Stat supports up to 20.
-        Flag frontend_resteer = op->oracle_info.mispred || op->oracle_info.btb_miss || op->oracle_info.misfetch;
-        // Note that this op may not be a br
-        STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_BR_NOT_TAKEN_RESTEERED
-                    + 2 * op->oracle_info.dir + !frontend_resteer);
       } else if (!op->fetched_from_uop_cache && next_op_in_uop_cache) {
         *break_fetch = BREAK_ICACHE_TO_UOP_CACHE_SWITCH;
         packet_break = PB_BREAK_AFTER;

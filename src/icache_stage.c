@@ -605,8 +605,10 @@ void update_icache_stage() {
       DEBUG(ic->proc_id, "Ifetch barrier: Waiting for ROB to become empty \n");
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_EMPTY_ROB, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
-      if(td->seq_op_list.count == 0)
+      if(td->seq_op_list.count == 0) {
+        update_stats_bf_retired();
         ic->next_state = IC_FETCH;
+      }
     } break;
 
     case IC_WAIT_FOR_TIMER: {
@@ -633,6 +635,22 @@ void update_icache_stage() {
 
     default:
       FATAL_ERROR(ic->proc_id, "Invalid icache state.\n");
+  }
+}
+
+
+/**************************************************************************************/
+/* update_bf_uoc_stats: */
+
+void update_stats_bf_retired(void) {
+  Flag next_op_in_uop_cache = in_uop_cache(ic->next_fetch_addr, NULL, FALSE);
+  if (!next_op_in_uop_cache) {
+    // The micro-op cache can reduce the time to refill the pipeline after a fetch barrier.
+    int uop_queue_length = get_uop_queue_stage_length();
+    int decode_stages_filled = get_decode_stages_filled();
+    ASSERT(ic->proc_id, uop_queue_length + decode_stages_filled <= 20);  // Stat supports up to 20.
+    STAT_EVENT(ic->proc_id, BF_UOP_CACHE_MISS_UOP_QUEUE_LENGTH_0 + uop_queue_length);
+    STAT_EVENT(ic->proc_id, BF_UOP_CACHE_MISS_UOP_QUEUE_PLUS_DECODE_LENGTH_0 + uop_queue_length + decode_stages_filled);
   }
 }
 

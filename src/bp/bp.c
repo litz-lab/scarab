@@ -359,7 +359,8 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   ASSERT(bp_data->proc_id, op->table_info->cf_type);
 
   /* set address used to predict branch */
-  op->oracle_info.pred_addr         = addr;
+  // op->oracle_info.pred_addr         = addr;
+  op->oracle_info.pred_addr         = op->inst_info->addr;
   op->oracle_info.btb_miss_resolved = FALSE;
   op->cf_within_fetch               = br_num;
 
@@ -747,6 +748,15 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
       STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_MISS);
     else if (PERFECT_NT_BTB && op->oracle_info.dir == TAKEN)
       STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_TAKEN);
+  } else if (op->oracle_info.ibp_miss && op->oracle_info.misfetch &&
+            (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL)) {
+    // hit for btb, miss for ibtb -> pred_target from btb
+    // always taken + misfetch -> need to update btb entry
+    Addr line_addr;
+    Addr * btb_entry = (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, TRUE);
+    ASSERT(bp_data->proc_id, btb_entry);
+    ASSERT(bp_data->proc_id, *btb_entry != op->oracle_info.target);
+    *btb_entry = op->oracle_info.target;
   }
 
   // special case updates

@@ -709,11 +709,15 @@ void full_sim() {
           model->per_core_done_func(proc_id);
         if(proc_id == 0) {
           fdip_print_hash_tables();
-          if(FDIP_ENABLE && !(PERFECT_BP && PERFECT_BTB && PERFECT_IBP && PERFECT_CRS && PERFECT_CBR_BTB)) {
+          if(FDIP_ENABLE) {
             INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY, get_avg_ftq_occupancy());
-            INC_STAT_EVENT(proc_id, FDIP_AVG_RESTEER_INTERVAL, get_avg_resteer_interval());
-            INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_ENTRIES_RESET, get_avg_ftq_entries_reset());
-            INC_STAT_EVENT(proc_id, FDIP_AVG_PREF_BW_RESTEER, get_avg_pref_bw_resteer());
+            INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY_ON_PATH, get_avg_ftq_occupancy_on_path());
+            INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY_OFF_PATH, get_avg_ftq_occupancy_off_path());
+            if(!(PERFECT_BP && PERFECT_BTB && PERFECT_IBP && PERFECT_CRS && PERFECT_CBR_BTB)) {
+              INC_STAT_EVENT(proc_id, FDIP_AVG_RESTEER_INTERVAL, get_avg_resteer_interval());
+              INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_ENTRIES_RESET, get_avg_ftq_entries_reset());
+              INC_STAT_EVENT(proc_id, FDIP_AVG_PREF_BW_RESTEER, get_avg_pref_bw_resteer());
+            }
           }
         }
         dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);

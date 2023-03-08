@@ -80,6 +80,7 @@ extern Memory*                mem;
 extern Rob_Stall_Reason       rob_stall_reason;
 extern Rob_Block_Issue_Reason rob_block_issue_reason;
 extern Addr                   runahead_pc;
+extern Addr                   last_bbl_start_addr;
 extern Flag                   runahead_disable;
 extern uns64                  last_runahead_uid;
 extern uns64                  max_runahead_uid;
@@ -97,6 +98,8 @@ Counter                       ipc_counter_event;
 Counter                       packet_size_bytes;
 Flag                          fdip_packet_break_before;
 uns64                         last_fetch_uid     = 0;
+uns                           last_icache_miss_reason = 0;
+Flag                          warmed_up = FALSE;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -108,6 +111,7 @@ static inline Inst_Info**  lookup_cache(Flag* uop_cache_fetch);
 static Inst_Info**         ic_pref_cache_access(void);
 int32_t                    inst_lost_get_full_window_reason(void);
 static inline void         log_stats_ic_miss(void);
+static inline void         log_stats_mshr_hit(Addr line_addr);
 
 /**************************************************************************************/
 /* set_icache_stage: */
@@ -200,6 +204,7 @@ void init_icache_trace() {
     Op **ptr = list_get_head(&op_buf);
     ic->next_fetch_addr = (*ptr)->inst_info->addr;
     runahead_pc = (*ptr)->inst_info->addr;
+    last_bbl_start_addr = runahead_pc;
     runahead_disable = FALSE;
   } else {
     ic->next_fetch_addr = frontend_next_fetch_addr(ic->proc_id);
@@ -385,6 +390,11 @@ void update_icache_stage() {
     return;
   }
 
+  if (FDIP_WARMUP && inst_count[ic->proc_id] > FDIP_WARMUP && !warmed_up) {
+    reset_stats(FALSE);
+    warmed_up = TRUE;
+  }
+
   switch(ic->state) {
     case IC_FETCH: {
       Break_Reason break_fetch = BREAK_DONT;
@@ -448,7 +458,7 @@ void update_icache_stage() {
           DEBUG(ic->proc_id, "Cache miss on op_num:%s @ 0x%s\n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
           DEBUG_FDIP(ic->proc_id, "[%llu] Cache miss on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
-
+          log_stats_mshr_hit(ic->line_addr);
           log_stats_ic_miss();
           if (FDIP_ENABLE && FDIP_TIMELY_FIFO_SIZE)
             fdip_touch_cl_candidates(ic->line_addr);
@@ -513,7 +523,7 @@ void update_icache_stage() {
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
           DEBUG_FDIP(ic->proc_id, "[%llu] Cache hit on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
           if (FDIP_ENABLE) {
-            if (FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE && !FDIP_TIMELY_FIFO_SIZE) {
+            if (!WARMUP && operating_mode == SIMULATION_MODE) {
               fdip_remove_cl_fetch_addr(ic->line_addr);
               fdip_inc_cnt_useful(ic->line_addr);
             }
@@ -555,8 +565,9 @@ void update_icache_stage() {
         fdip_update();
         ipc_counter_event++;
       }
-      INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_ICACHE_MISS, IC_ISSUE_WIDTH - 1);
+      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS, IC_ISSUE_WIDTH - 1);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
+      STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + last_icache_miss_reason);
     } break;
 
     case IC_WAIT_FOR_REDIRECT: {
@@ -962,10 +973,17 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       line_info->offpath_op_unique = req->oldest_op_unique_num;
       line_info->fetch_cycle       = cycle_count;
       line_info->onpath_use_cycle  = req->off_path ? 0 : cycle_count;
-      line_info->read_count[0]     = 0;
+      line_info->read_count[0]     = req->hit_by_demand_load? 1 : 0;
       line_info->read_count[1]     = 0;
       line_info->HW_prefetch       = req->type == MRT_IPRF;
-      line_info->FDIP_prefetch     = mem_req_is_type(req, MRT_FDIPPRF);
+      if (req->type == MRT_FDIPPRF) {
+        if (req->fdip_pref_off_path)
+          line_info->FDIP_prefetch = 2;
+        else
+          line_info->FDIP_prefetch = 1;
+      } else {
+        line_info->FDIP_prefetch = 0;
+      }
       wp_process_icache_fill(line_info, req);
     }
 
@@ -1128,7 +1146,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
     }
   }
 
-  if(line->FDIP_prefetch) {
+  if(line->FDIP_prefetch && !line->read_count[0]) { // only consider the first hit
     if(line->FDIP_prefetch == 1) {
       STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH_BY_FDIP);
     }
@@ -1156,7 +1174,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
     else {
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_OFF_PATH_BY_FDIP);
     }
-    if(FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE && !FDIP_TIMELY_FIFO_SIZE) {
+    if(FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE) {
       fdip_remove_cl_fetch_addr(*repl_line_addr);
       fdip_inc_cnt_unuseful(*repl_line_addr);
     }
@@ -1169,6 +1187,9 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_OFF_PATH_BY_FDIP);
     }
   }
+
+  if(FDIP_ENABLE && *repl_line_addr)
+    fdip_evict_prefetched_cls(*repl_line_addr);
 }
 
 /**************************************************************************************/
@@ -1294,6 +1315,32 @@ void log_stats_ic_miss() {
   STAT_EVENT(ic->proc_id, ICACHE_MISS);
   STAT_EVENT(ic->proc_id, POWER_ICACHE_MISS);
   STAT_EVENT(ic->proc_id, ICACHE_MISS_ONPATH + ic->off_path);
+}
+
+void log_stats_mshr_hit(Addr line_addr) {
+  Mem_Req* req = mem_buf_access_all(line_addr);
+  if (req && req->type == MRT_FDIPPRF && !req->hit_by_demand_load) {
+    STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);
+    if (req->fdip_pref_off_path)
+      STAT_EVENT(ic->proc_id, MSHR_HIT_OFFPATH_BY_FDIP);
+    else
+      STAT_EVENT(ic->proc_id, MSHR_HIT_ONPATH_BY_FDIP);
+    req->hit_by_demand_load = TRUE;
+    fdip_inc_cnt_useful(ic->line_addr);
+    last_icache_miss_reason = 3;
+  }
+  if (!req) {
+    fdip_inc_icache_miss(ic->line_addr);
+    last_icache_miss_reason = fdip_get_miss_reason(line_addr);
+    if (last_icache_miss_reason == 2)
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_FDIP_LIMIT);
+    else if (last_icache_miss_reason == 1)
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED);
+    else
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
+  }
+  if (FDIP_HASH_ENABLE && FDIP_REDUCE_STORAGE)
+    fdip_inc_useful_hash(line_addr);
 }
 
 // Wrapper callback for any instruction memreq.

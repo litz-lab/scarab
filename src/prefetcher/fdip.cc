@@ -1,6 +1,7 @@
 #include "prefetcher/fdip.h"
 
 #include <unordered_map>
+#include <map>
 #include <queue>
 #include <algorithm>
 #include <iostream>
@@ -45,7 +46,8 @@ struct ftq_req {
     taken(_taken), alignment_bytes(_alignment_bytes) {};
 };
 
-std::deque<std::pair<Addr, Flag>> cl_candidates;
+// line address, hit, on/off path (only for stat)
+std::deque<std::tuple<Addr, Flag, Flag>> cl_candidates;
 std::unordered_map<Addr, Op> pc_to_op;
 std::deque<std::pair<Addr, ftq_req>> ftq;
 Addr runahead_pc;
@@ -74,6 +76,10 @@ std::unordered_map<Addr, Counter> cnt_useful;
 std::unordered_map<Addr, Counter> cnt_unuseful;
 std::unordered_map<Addr, Counter> useful_hash;
 std::vector<Addr> fetch_cl_addr;
+std::map<Addr, Counter> icache_miss;
+std::map<Addr, Counter> prefetched_cls;
+//address, cyc_access_by_fdip, cyc_evicted_from_l1
+std::unordered_map<Addr, std::pair<Counter, Counter>> prefetched_cls_info;
 extern uns operating_mode;
 Flag print_warmup_hash_table = FALSE;
 Counter fdip_ftq_pos = 0;
@@ -93,12 +99,14 @@ bool cl_candidates_popped = 0;
 extern Counter packet_size_bytes;
 Counter fdip_cycle_count = 0;
 Counter ftq_occupancy = 0;
+Counter ftq_occupancy_on_path = 0;
+Counter ftq_occupancy_off_path = 0;
 Counter prefs_after_last_recover = 0;
 Counter fdip_recover_cnt = 0;
 Counter resteer_interval = 0;
 Counter ftq_entries_reset = 0;
 Counter pref_bw_resteer = 0;
-
+Addr last_bbl_start_addr = 0;
 
 /**************************************************************************************/
 /* init_topk_mispred: list of branches that provide a given coverage of resteers */
@@ -181,6 +189,16 @@ void fdip_retire(Op *op) {
     recovery_checkpoint->recovery_info.branch_id) {
     recovery_checkpoint_valid = FALSE;
   }
+  Addr fetch_addr = last_bbl_start_addr;
+  Addr useful_cl_addr = get_cache_line_addr(&ic->icache, fetch_addr);
+  Addr last_useful_cl_addr = 0;
+  while (fetch_addr <= op->fetch_addr) {
+    if (FDIP_HASH_ENABLE && !FDIP_REDUCE_STORAGE && useful_cl_addr != last_useful_cl_addr)
+      fdip_inc_useful_hash(useful_cl_addr);
+    last_useful_cl_addr = useful_cl_addr;
+    useful_cl_addr = get_cache_line_addr(&ic->icache, ++fetch_addr);
+  }
+  last_bbl_start_addr = op->oracle_info.npc;
 }
 
 /* When the branch is initially predicted by FDIP, a placeholder op struct is
@@ -344,6 +362,7 @@ Flag fdip_prefetch(Addr target, Op *op) {
                     ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
       if (success) {
         STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
+        fdip_inc_prefetched_cls(line_addr);
       } else {
         //mem_req_failed = TRUE;
         ASSERT(ic_stage->proc_id, false);
@@ -517,65 +536,65 @@ Flag determine_by_usefulness(Addr line_addr) {
       auto unuseful_iter = cnt_unuseful.find(line_addr);
       auto useful_cl_iter = useful_hash.find(line_addr);
       DEBUG(ic_stage->proc_id, "[fdip_usefulness] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
-      if (FDIP_TIMELY_FIFO_SIZE) {
-        // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
-        if (unuseful_iter != cnt_unuseful.end()) {
-          if (useful_iter != cnt_useful.end() && useful_iter->second >= unuseful_iter->second) {
-            STAT_EVENT(ic_stage->proc_id, FDIP_HASH_HIT);
-            do_prefetch = true;
-            DEBUG(ic_stage->proc_id, "do_prefetch for cl 0x%llx", line_addr);
-            if (!fdip_on_path_bp) {
-              DEBUG(ic_stage->proc_id, " OFF path\n");
-            }
-            else {
-              DEBUG(ic_stage->proc_id, " ON path\n");
-            }
-          } else {
-            STAT_EVENT(ic_stage->proc_id, FDIP_HASH_MISS);
-            DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx\n", line_addr);
-            do_prefetch = false;
-            last_cl_unuseful = line_addr;
-          }
-        } else {
-          if (useful_iter != cnt_useful.end()) {
-            STAT_EVENT(ic_stage->proc_id, FDIP_HASH_HIT);
-            do_prefetch = true;
-            DEBUG(ic_stage->proc_id, "do_prefetch for cl 0x%llx\n", line_addr);
-            if (!fdip_on_path_bp)
-              DEBUG(ic_stage->proc_id, " OFF path\n");
-            else
-              DEBUG(ic_stage->proc_id, " ON path\n");
-          } else {
-            STAT_EVENT(ic_stage->proc_id, FDIP_HASH_MISS);
-            DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx\n", line_addr);
-            do_prefetch = false;
-            last_cl_unuseful = line_addr;
-          }
-        }
-
-        if (useful_cl_iter != useful_hash.end()) {
+      if (unuseful_iter != cnt_unuseful.end()) {
+        if (useful_iter != cnt_useful.end() && useful_iter->second >= unuseful_iter->second) {
           STAT_EVENT(ic_stage->proc_id, FDIP_HASH_HIT);
-          do_prefetch_2_hash = true;
-          DEBUG(ic_stage->proc_id, "do_prefetch for cl0x%llx", line_addr);
+          do_prefetch = true;
+          DEBUG(ic_stage->proc_id, "do_prefetch for cl 0x%llx", line_addr);
           if (!fdip_on_path_bp) {
             DEBUG(ic_stage->proc_id, " OFF path\n");
-          } else {
+          }
+          else {
             DEBUG(ic_stage->proc_id, " ON path\n");
           }
-        } else if (useful_cl_iter == useful_hash.end()) {
+        } else {
           STAT_EVENT(ic_stage->proc_id, FDIP_HASH_MISS);
           DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx\n", line_addr);
-          do_prefetch_2_hash = false;
+          do_prefetch = false;
+          last_cl_unuseful = line_addr;
         }
-
-        if (do_prefetch != do_prefetch_2_hash) {
-          DEBUG(ic_stage->proc_id, "hash and cache returns different decisions!\n");
+      } else {
+        if (useful_iter != cnt_useful.end()) {
+          STAT_EVENT(ic_stage->proc_id, FDIP_HASH_HIT);
+          do_prefetch = true;
+          DEBUG(ic_stage->proc_id, "do_prefetch for cl 0x%llx\n", line_addr);
+          if (!fdip_on_path_bp)
+            DEBUG(ic_stage->proc_id, " OFF path\n");
+          else
+            DEBUG(ic_stage->proc_id, " ON path\n");
+        } else {
+          STAT_EVENT(ic_stage->proc_id, FDIP_HASH_MISS);
+          DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx\n", line_addr);
+          do_prefetch = false;
+          last_cl_unuseful = line_addr;
         }
+      }
 
+      if (useful_cl_iter != useful_hash.end()) {
+        STAT_EVENT(ic_stage->proc_id, FDIP_HASH_HIT);
+        do_prefetch_2_hash = true;
+        DEBUG(ic_stage->proc_id, "do_prefetch for cl0x%llx", line_addr);
+        if (!fdip_on_path_bp) {
+          DEBUG(ic_stage->proc_id, " OFF path\n");
+        } else {
+          DEBUG(ic_stage->proc_id, " ON path\n");
+        }
+      } else if (useful_cl_iter == useful_hash.end()) {
+        STAT_EVENT(ic_stage->proc_id, FDIP_HASH_MISS);
+        DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx\n", line_addr);
+        do_prefetch_2_hash = false;
+      }
+
+      if (do_prefetch != do_prefetch_2_hash) {
+        DEBUG(ic_stage->proc_id, "hash and cache returns different decisions!\n");
+      }
+
+      // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
+      if (FDIP_TIMELY_FIFO_SIZE) {
         // enqueue the cacheline into the timely fifo (cl_candidates)
         bool  cl_candidate_found = false;
         for (auto it = cl_candidates.begin(); it != cl_candidates.end(); ++it) {
-          if (it->first == line_addr) {
+          if (std::get<0>(*it) == line_addr) {
             cl_candidate_found = true;
             DEBUG(ic_stage->proc_id, "cl_candidate found for cl 0x%llx\n", line_addr);
             break;
@@ -584,21 +603,31 @@ Flag determine_by_usefulness(Addr line_addr) {
         if (!cl_candidate_found) {
           if (cl_candidates.size() == FDIP_TIMELY_FIFO_SIZE) {
             auto popped_cl = cl_candidates.front();
-            DEBUG(ic_stage->proc_id, "cl_candidate popped for cl 0x%llx", popped_cl.first);
-            if (popped_cl.second == TRUE) {
-              fdip_inc_cnt_useful(popped_cl.first);
-              fdip_inc_useful_hash(popped_cl.first);
+            Addr addr_candidate = std::get<0>(popped_cl);
+            DEBUG(ic_stage->proc_id, "cl_candidate popped for cl 0x%llx", addr_candidate);
+            Flag onpath = std::get<2>(popped_cl);
+            if (std::get<1>(popped_cl) == TRUE) {
+              fdip_inc_cnt_useful(addr_candidate);
+              fdip_inc_useful_hash(addr_candidate);
               DEBUG(ic_stage->proc_id, " useful\n");
+              if (onpath)
+                STAT_EVENT(ic->proc_id, FIFO_HIT_ONPATH);
+              else
+                STAT_EVENT(ic->proc_id, FIFO_HIT_OFFPATH);
             } else {
-              fdip_inc_cnt_unuseful(popped_cl.first);
+              fdip_inc_cnt_unuseful(addr_candidate);
               DEBUG(ic_stage->proc_id, " unuseful\n");
+              if (onpath)
+                STAT_EVENT(ic->proc_id, FIFO_MISS_ONPATH);
+              else
+                STAT_EVENT(ic->proc_id, FIFO_MISS_OFFPATH);
             }
             cl_candidates.pop_front();
             cl_candidates_popped = true;
-            cl_candidates.push_back(std::pair<Addr, Flag>(line_addr, FALSE));
+            cl_candidates.push_back(std::make_tuple<Addr, Flag, Flag>(std::move(line_addr), FALSE, std::move(fdip_on_path_bp)));
             DEBUG(ic_stage->proc_id, "cl_candidate pushed for cl 0x%llx\n", line_addr);
           } else {
-            cl_candidates.push_back(std::pair<Addr, Flag>(line_addr, FALSE));
+            cl_candidates.push_back(std::make_tuple<Addr, Flag, Flag>(std::move(line_addr), FALSE, std::move(fdip_on_path_bp)));
             DEBUG(ic_stage->proc_id, "cl_candidate pushed for cl 0x%llx\n", line_addr);
             if (cl_candidates.size() == FDIP_TIMELY_FIFO_SIZE) {
               cl_candidates_popped = true;
@@ -613,45 +642,45 @@ Flag determine_by_usefulness(Addr line_addr) {
       auto useful_iter = cnt_useful.find(line_addr);
       auto unuseful_iter = cnt_unuseful.find(line_addr);
       DEBUG(ic_stage->proc_id, "[fdip_usefulness] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
-      if (FDIP_TIMELY_FIFO_SIZE) {
-        // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
-        if (unuseful_iter != cnt_unuseful.end()) {
-          if (useful_iter != cnt_useful.end() && useful_iter->second >= unuseful_iter->second) {
-            STAT_EVENT(ic_stage->proc_id, FDIP_HASH_HIT);
-            do_prefetch = true;
-            DEBUG(ic_stage->proc_id, "do_prefetch for cl 0x%llx", line_addr);
-            if (!fdip_on_path_bp) {
-              DEBUG(ic_stage->proc_id, " OFF path\n");
-            }
-            else {
-              DEBUG(ic_stage->proc_id, " ON path\n");
-            }
-          } else {
-            STAT_EVENT(ic_stage->proc_id, FDIP_HASH_MISS);
-            DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx\n", line_addr);
-            do_prefetch = false;
-            last_cl_unuseful = line_addr;
+      if (unuseful_iter != cnt_unuseful.end()) {
+        if (useful_iter != cnt_useful.end() && useful_iter->second >= unuseful_iter->second) {
+          STAT_EVENT(ic_stage->proc_id, FDIP_HASH_HIT);
+          do_prefetch = true;
+          DEBUG(ic_stage->proc_id, "do_prefetch for cl 0x%llx", line_addr);
+          if (!fdip_on_path_bp) {
+            DEBUG(ic_stage->proc_id, " OFF path\n");
+          }
+          else {
+            DEBUG(ic_stage->proc_id, " ON path\n");
           }
         } else {
-          if (useful_iter != cnt_useful.end()) {
-            STAT_EVENT(ic_stage->proc_id, FDIP_HASH_HIT);
-            do_prefetch = true;
-            DEBUG(ic_stage->proc_id, "do_prefetch for cl 0x%llx\n", line_addr);
-            if (!fdip_on_path_bp)
-              DEBUG(ic_stage->proc_id, " OFF path\n");
-            else
-              DEBUG(ic_stage->proc_id, " ON path\n");
-          } else {
-            STAT_EVENT(ic_stage->proc_id, FDIP_HASH_MISS);
-            DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx\n", line_addr);
-            do_prefetch = false;
-            last_cl_unuseful = line_addr;
-          }
+          STAT_EVENT(ic_stage->proc_id, FDIP_HASH_MISS);
+          DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx\n", line_addr);
+          do_prefetch = false;
+          last_cl_unuseful = line_addr;
         }
+      } else {
+        if (useful_iter != cnt_useful.end()) {
+          STAT_EVENT(ic_stage->proc_id, FDIP_HASH_HIT);
+          do_prefetch = true;
+          DEBUG(ic_stage->proc_id, "do_prefetch for cl 0x%llx\n", line_addr);
+          if (!fdip_on_path_bp)
+            DEBUG(ic_stage->proc_id, " OFF path\n");
+          else
+            DEBUG(ic_stage->proc_id, " ON path\n");
+        } else {
+          STAT_EVENT(ic_stage->proc_id, FDIP_HASH_MISS);
+          DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx\n", line_addr);
+          do_prefetch = false;
+          last_cl_unuseful = line_addr;
+        }
+      }
+      if (FDIP_TIMELY_FIFO_SIZE) {
+        // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
         // enqueue the cacheline into the timely fifo (cl_candidates)
         bool  cl_candidate_found = false;
         for (auto it = cl_candidates.begin(); it != cl_candidates.end(); ++it) {
-          if (it->first == line_addr) {
+          if (std::get<0>(*it) == line_addr) {
             cl_candidate_found = true;
             DEBUG(ic_stage->proc_id, "cl_candidate found for cl 0x%llx\n", line_addr);
             break;
@@ -660,20 +689,30 @@ Flag determine_by_usefulness(Addr line_addr) {
         if (!cl_candidate_found) {
           if (cl_candidates.size() == FDIP_TIMELY_FIFO_SIZE) {
             auto popped_cl = cl_candidates.front();
-            DEBUG(ic_stage->proc_id, "cl_candidate popped for cl 0x%llx", popped_cl.first);
-            if (popped_cl.second == TRUE) {
-              fdip_inc_cnt_useful(popped_cl.first);
+            Addr addr_candidate = std::get<0>(popped_cl);
+            DEBUG(ic_stage->proc_id, "cl_candidate popped for cl 0x%llx", addr_candidate);
+            Flag onpath = std::get<2>(popped_cl);
+            if (std::get<1>(popped_cl) == TRUE) {
+              fdip_inc_cnt_useful(addr_candidate);
               DEBUG(ic_stage->proc_id, " useful\n");
+              if (onpath)
+                STAT_EVENT(ic->proc_id, FIFO_HIT_ONPATH);
+              else
+                STAT_EVENT(ic->proc_id, FIFO_HIT_OFFPATH);
             } else {
-              fdip_inc_cnt_unuseful(popped_cl.first);
+              fdip_inc_cnt_unuseful(addr_candidate);
               DEBUG(ic_stage->proc_id, " unuseful\n");
+              if (onpath)
+                STAT_EVENT(ic->proc_id, FIFO_MISS_ONPATH);
+              else
+                STAT_EVENT(ic->proc_id, FIFO_MISS_OFFPATH);
             }
             cl_candidates.pop_front();
             cl_candidates_popped = true;
-            cl_candidates.push_back(std::pair<Addr, Flag>(line_addr, FALSE));
+            cl_candidates.push_back(std::make_tuple<Addr, Flag, Flag>(std::move(line_addr), FALSE, std::move(fdip_on_path_bp)));
             DEBUG(ic_stage->proc_id, "cl_candidate pushed for cl 0x%llx\n", line_addr);
           } else {
-            cl_candidates.push_back(std::pair<Addr, Flag>(line_addr, FALSE));
+            cl_candidates.push_back(std::make_tuple<Addr, Flag, Flag>(std::move(line_addr), FALSE, std::move(fdip_on_path_bp)));
             DEBUG(ic_stage->proc_id, "cl_candidate pushed for cl 0x%llx\n", line_addr);
             if (cl_candidates.size() == FDIP_TIMELY_FIFO_SIZE) {
               cl_candidates_popped = true;
@@ -730,7 +769,7 @@ Flag determine_by_usefulness(Addr line_addr) {
       // enqueue the cacheline into the timely fifo (cl_candidates)
       bool  cl_candidate_found = false;
       for (auto it = cl_candidates.begin(); it != cl_candidates.end(); ++it) {
-        if (it->first == line_addr) {
+        if (std::get<0>(*it) == line_addr) {
           cl_candidate_found = true;
           DEBUG(ic_stage->proc_id, "cl_candidate found for cl 0x%llx\n", line_addr);
           break;
@@ -739,16 +778,17 @@ Flag determine_by_usefulness(Addr line_addr) {
       if (!cl_candidate_found) {
         if (cl_candidates.size() == FDIP_TIMELY_FIFO_SIZE) {
           auto popped_cl = cl_candidates.front();
-          DEBUG(ic_stage->proc_id, "cl_candidate popped for cl 0x%llx", popped_cl.first);
           Addr repl_uc_line_addr;
-          uc_line_addr = popped_cl.first;
+          Flag onpath = std::get<2>(popped_cl);
+          uc_line_addr = std::get<0>(popped_cl);
+          DEBUG(ic_stage->proc_id, "cl_candidate popped for cl 0x%llx", uc_line_addr);
           void*cnt;
           if (!FDIP_BLOOM_FILTER) {
             cnt = (void*)cache_access(&fdip_uc, uc_line_addr, &dummy_uc_line_addr, TRUE);
           } else {
             cnt = bloom_lookup(uc_line_addr);
           }
-          if (popped_cl.second == TRUE) {
+          if (std::get<1>(popped_cl) == TRUE) {
             if(!cnt) {
               if (!FDIP_BLOOM_FILTER) {
                 cache_insert_replpos(&fdip_uc, ic_stage->proc_id, uc_line_addr, &dummy_uc_line_addr,
@@ -760,15 +800,23 @@ Flag determine_by_usefulness(Addr line_addr) {
                 STAT_EVENT(ic_stage->proc_id, FDIP_UC_REPLACEMENT);
             }
             DEBUG(ic_stage->proc_id, " useful\n");
+            if (onpath)
+              STAT_EVENT(ic->proc_id, FIFO_HIT_ONPATH);
+            else
+              STAT_EVENT(ic->proc_id, FIFO_HIT_OFFPATH);
           } else {
             DEBUG(ic_stage->proc_id, " unuseful\n");
+            if (onpath)
+              STAT_EVENT(ic->proc_id, FIFO_MISS_ONPATH);
+            else
+              STAT_EVENT(ic->proc_id, FIFO_MISS_OFFPATH);
           }
           cl_candidates.pop_front();
           cl_candidates_popped = true;
-          cl_candidates.push_back(std::pair<Addr, Flag>(line_addr, FALSE));
+          cl_candidates.push_back(std::make_tuple<Addr, Flag, Flag>(std::move(line_addr), FALSE, std::move(fdip_on_path_bp)));
           DEBUG(ic_stage->proc_id, "cl_candidate pushed for cl 0x%llx\n", line_addr);
         } else {
-          cl_candidates.push_back(std::pair<Addr, Flag>(line_addr, FALSE));
+          cl_candidates.push_back(std::make_tuple<Addr, Flag, Flag>(std::move(line_addr), FALSE, std::move(fdip_on_path_bp)));
           DEBUG(ic_stage->proc_id, "cl_candidate pushed for cl 0x%llx\n", line_addr);
           if (cl_candidates.size() == FDIP_TIMELY_FIFO_SIZE) {
             cl_candidates_popped = true;
@@ -779,10 +827,9 @@ Flag determine_by_usefulness(Addr line_addr) {
     }
   } else if (FDIP_HASH_ENABLE == 1 && !FDIP_UC_SIZE) { // 1-hash confidence table
     if (last_cl_unuseful != line_addr) {
-      auto useful_cl_iter = useful_hash.find(line_addr);
-      DEBUG(ic_stage->proc_id, "[fdip_usefulness] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
-      if (FDIP_TIMELY_FIFO_SIZE) {
-        // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
+      if (FDIP_PREF_CONSERVATIVE) {
+        auto useful_cl_iter = useful_hash.find(line_addr);
+        DEBUG(ic_stage->proc_id, "[fdip_usefulness] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
         if (useful_cl_iter != useful_hash.end()) {
           STAT_EVENT(ic_stage->proc_id, FDIP_HASH_HIT);
           do_prefetch = true;
@@ -798,10 +845,35 @@ Flag determine_by_usefulness(Addr line_addr) {
           do_prefetch = false;
           last_cl_unuseful = line_addr;
         }
+      } else if (FDIP_PREF_OPTIMISTIC == 1) {
+        auto unuseful_cl_iter = cnt_unuseful.find(line_addr);
+        if (unuseful_cl_iter != cnt_unuseful.end()) {
+          //DEBUG(ic_stage->proc_id, "do not prefetch - unuseful runahead_pc: %llx, line_addr: %llx\n", runahead_pc, line_addr);
+          do_prefetch = false;
+          last_cl_unuseful = line_addr;
+        } else
+          do_prefetch = true;
+      } else if (FDIP_PREF_OPTIMISTIC == 2) {
+        auto unuseful_cl_iter = cnt_unuseful.find(line_addr);
+        if (unuseful_cl_iter != cnt_unuseful.end()) {
+          auto useful_cl_iter = useful_hash.find(line_addr);
+          if (useful_cl_iter != useful_hash.end() && useful_cl_iter->second > unuseful_cl_iter->second)
+            do_prefetch = true;
+          else {
+            DEBUG(ic_stage->proc_id, "opt2 : do not prefetch - unuseful runahead_pc: %llx, line_addr: %llx\n", runahead_pc, line_addr);
+            do_prefetch = false;
+            last_cl_unuseful = line_addr;
+          }
+        } else
+          do_prefetch = true;
+      }
+
+      if (FDIP_TIMELY_FIFO_SIZE) {
+        // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
         // enqueue the cacheline into the timely fifo (cl_candidates)
         bool  cl_candidate_found = false;
         for (auto it = cl_candidates.begin(); it != cl_candidates.end(); ++it) {
-          if (it->first == line_addr) {
+          if (std::get<0>(*it) == line_addr) {
             cl_candidate_found = true;
             DEBUG(ic_stage->proc_id, "cl_candidate found for cl 0x%llx\n", line_addr);
             break;
@@ -810,19 +882,29 @@ Flag determine_by_usefulness(Addr line_addr) {
         if (!cl_candidate_found) {
           if (cl_candidates.size() == FDIP_TIMELY_FIFO_SIZE) {
             auto popped_cl = cl_candidates.front();
-            DEBUG(ic_stage->proc_id, "cl_candidate popped for cl 0x%llx", popped_cl.first);
-            if (popped_cl.second == TRUE) {
-              fdip_inc_useful_hash(popped_cl.first);
+            Addr addr_candidate = std::get<0>(popped_cl);
+            DEBUG(ic_stage->proc_id, "cl_candidate popped for cl 0x%llx", addr_candidate);
+            Flag onpath = std::get<2>(popped_cl);
+            if (std::get<1>(popped_cl) == TRUE) {
+              fdip_inc_useful_hash(addr_candidate);
               DEBUG(ic_stage->proc_id, " useful\n");
+              if (onpath)
+                STAT_EVENT(ic->proc_id, FIFO_HIT_ONPATH);
+              else
+                STAT_EVENT(ic->proc_id, FIFO_HIT_OFFPATH);
             } else {
               DEBUG(ic_stage->proc_id, " unuseful\n");
+              if (onpath)
+                STAT_EVENT(ic->proc_id, FIFO_MISS_ONPATH);
+              else
+                STAT_EVENT(ic->proc_id, FIFO_MISS_OFFPATH);
             }
             cl_candidates.pop_front();
             cl_candidates_popped = true;
-            cl_candidates.push_back(std::pair<Addr, Flag>(line_addr, FALSE));
+            cl_candidates.push_back(std::make_tuple<Addr, Flag, Flag>(std::move(line_addr), FALSE, std::move(fdip_on_path_bp)));
             DEBUG(ic_stage->proc_id, "cl_candidate pushed for cl 0x%llx\n", line_addr);
           } else {
-            cl_candidates.push_back(std::pair<Addr, Flag>(line_addr, FALSE));
+            cl_candidates.push_back(std::make_tuple<Addr, Flag, Flag>(std::move(line_addr), FALSE, std::move(fdip_on_path_bp)));
             DEBUG(ic_stage->proc_id, "cl_candidate pushed for cl 0x%llx\n", line_addr);
             if (cl_candidates.size() == FDIP_TIMELY_FIFO_SIZE) {
               cl_candidates_popped = true;
@@ -844,41 +926,41 @@ Flag determine_by_usefulness(Addr line_addr) {
       }
       auto useful_cl_iter = useful_hash.find(line_addr);
       DEBUG(ic_stage->proc_id, "[fdip_usefulness] runahead_pc: %llx, max_runahead_op: %llu, last_runahead_op: %llu, ftq.size(): %ld, last_cl_prefetched: %llx\n", runahead_pc, max_runahead_op, last_runahead_op, ftq.size(), last_cl_prefetched);
+      if (useful_cl_iter != useful_hash.end()) {
+        STAT_EVENT(ic_stage->proc_id, FDIP_HASH_HIT);
+        do_prefetch = true;
+        DEBUG(ic_stage->proc_id, "do_prefetch for cl0x%llx, uc_line_addr %llx", line_addr, uc_line_addr);
+        if (!fdip_on_path_bp) {
+          DEBUG(ic_stage->proc_id, " OFF path\n");
+        } else {
+          DEBUG(ic_stage->proc_id, " ON path\n");
+        }
+      } else if (useful_cl_iter == useful_hash.end()) {
+        STAT_EVENT(ic_stage->proc_id, FDIP_HASH_MISS);
+        DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx, uc_line_addr %llx\n", line_addr, uc_line_addr);
+        do_prefetch = false;
+        last_cl_unuseful = line_addr;
+      }
+      if (useful) {
+        STAT_EVENT(ic_stage->proc_id, FDIP_UC_HIT);
+        do_prefetch_2_hash = true;
+        DEBUG(ic_stage->proc_id, "do_prefetch for cl 0x%llx, uc_line_addr %llx", line_addr, uc_line_addr);
+        if (!fdip_on_path_bp)
+          DEBUG(ic_stage->proc_id, " OFF path\n");
+        else
+          DEBUG(ic_stage->proc_id, " ON path\n");
+      } else if (!useful) {
+        STAT_EVENT(ic_stage->proc_id, FDIP_UC_MISS);
+        DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx, uc_line_addr %llx\n", line_addr, uc_line_addr);
+        do_prefetch_2_hash = false;
+      }
+
       if (FDIP_TIMELY_FIFO_SIZE) {
         // With the timeliness fifo, prefetch as pessimistic as possible. If the cacheline has not yet seen by the backend within the timely window, do not prefetch, but stil enqueue the cacheline into the fifo.
-        if (useful_cl_iter != useful_hash.end()) {
-          STAT_EVENT(ic_stage->proc_id, FDIP_HASH_HIT);
-          do_prefetch = true;
-          DEBUG(ic_stage->proc_id, "do_prefetch for cl0x%llx, uc_line_addr %llx", line_addr, uc_line_addr);
-          if (!fdip_on_path_bp) {
-            DEBUG(ic_stage->proc_id, " OFF path\n");
-          } else {
-            DEBUG(ic_stage->proc_id, " ON path\n");
-          }
-        } else if (useful_cl_iter == useful_hash.end()) {
-          STAT_EVENT(ic_stage->proc_id, FDIP_HASH_MISS);
-          DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx, uc_line_addr %llx\n", line_addr, uc_line_addr);
-          do_prefetch = false;
-          last_cl_unuseful = line_addr;
-        }
-        if (useful) {
-          STAT_EVENT(ic_stage->proc_id, FDIP_UC_HIT);
-          do_prefetch_2_hash = true;
-          DEBUG(ic_stage->proc_id, "do_prefetch for cl 0x%llx, uc_line_addr %llx", line_addr, uc_line_addr);
-          if (!fdip_on_path_bp)
-            DEBUG(ic_stage->proc_id, " OFF path\n");
-          else
-            DEBUG(ic_stage->proc_id, " ON path\n");
-        } else if (!useful) {
-          STAT_EVENT(ic_stage->proc_id, FDIP_UC_MISS);
-          DEBUG(ic_stage->proc_id, "do not prefetch for cl 0x%llx, uc_line_addr %llx\n", line_addr, uc_line_addr);
-          do_prefetch_2_hash = false;
-        }
-
         // enqueue the cacheline into the timely fifo (cl_candidates)
         bool  cl_candidate_found = false;
         for (auto it = cl_candidates.begin(); it != cl_candidates.end(); ++it) {
-          if (it->first == line_addr) {
+          if (std::get<0>(*it) == line_addr) {
             cl_candidate_found = true;
             DEBUG(ic_stage->proc_id, "cl_candidate found for cl 0x%llx\n", line_addr);
             break;
@@ -888,17 +970,18 @@ Flag determine_by_usefulness(Addr line_addr) {
           if (cl_candidates.size() == FDIP_TIMELY_FIFO_SIZE) {
             auto popped_cl = cl_candidates.front();
             Addr repl_uc_line_addr;
-            uc_line_addr = popped_cl.first;
+            uc_line_addr = std::get<0>(popped_cl);
             Addr dummy_uc_line_addr = 0;
+            Flag onpath = std::get<2>(popped_cl);
             void*cnt;
             if(!FDIP_BLOOM_FILTER) {
               cnt = (void*)cache_access(&fdip_uc, uc_line_addr, &dummy_uc_line_addr, TRUE);
             } else {
               cnt = bloom_lookup(uc_line_addr);
             }
-            DEBUG(ic_stage->proc_id, "cl_candidate popped for cl 0x%llx", popped_cl.first);
-            if (popped_cl.second == TRUE) {
-              fdip_inc_useful_hash(popped_cl.first);
+            DEBUG(ic_stage->proc_id, "cl_candidate popped for cl 0x%llx", uc_line_addr);
+            if (std::get<1>(popped_cl) == TRUE) {
+              fdip_inc_useful_hash(uc_line_addr);
               if(!cnt) {
                 if(!FDIP_BLOOM_FILTER) {
                   cache_insert_replpos(&fdip_uc, ic_stage->proc_id, uc_line_addr, &dummy_uc_line_addr,
@@ -908,15 +991,23 @@ Flag determine_by_usefulness(Addr line_addr) {
                 }
               }
               DEBUG(ic_stage->proc_id, " useful\n");
+              if (onpath)
+                STAT_EVENT(ic->proc_id, FIFO_HIT_ONPATH);
+              else
+                STAT_EVENT(ic->proc_id, FIFO_HIT_OFFPATH);
             } else {
               DEBUG(ic_stage->proc_id, " unuseful\n");
+              if (onpath)
+                STAT_EVENT(ic->proc_id, FIFO_MISS_ONPATH);
+              else
+                STAT_EVENT(ic->proc_id, FIFO_MISS_OFFPATH);
             }
             cl_candidates.pop_front();
             cl_candidates_popped = true;
-            cl_candidates.push_back(std::pair<Addr, Flag>(line_addr, FALSE));
+            cl_candidates.push_back(std::make_tuple<Addr, Flag, Flag>(std::move(line_addr), FALSE, std::move(fdip_on_path_bp)));
             DEBUG(ic_stage->proc_id, "cl_candidate pushed for cl 0x%llx\n", line_addr);
           } else {
-            cl_candidates.push_back(std::pair<Addr, Flag>(line_addr, FALSE));
+            cl_candidates.push_back(std::make_tuple<Addr, Flag, Flag>(std::move(line_addr), FALSE, std::move(fdip_on_path_bp)));
             DEBUG(ic_stage->proc_id, "cl_candidate pushed for cl 0x%llx\n", line_addr);
             if (cl_candidates.size() == FDIP_TIMELY_FIFO_SIZE) {
               cl_candidates_popped = true;
@@ -941,6 +1032,7 @@ void fdip_update() {
   FDIP_Break_Reason break_reason = BR_NO_BREAK;
   Counter ftq_entry_size_bytes = 0;
   Addr start_runahead_pc = runahead_pc;
+  Flag fdip_on_path_bp_bk = fdip_on_path_bp;
 
   if (runahead_disable)
     return;
@@ -997,8 +1089,10 @@ void fdip_update() {
         UNUSED(line_info);
       }
       // MSHR hit
-      Flag mem_buf_hit = mem_buf_access(get_cache_line_addr(&ic->icache, runahead_pc));
-      if (line || mem_buf_hit) {
+      Mem_Req* mem_req = mem_buf_access(get_cache_line_addr(&ic->icache, runahead_pc));
+      if (line || mem_req) {
+        if (line)
+          fdip_touch_prefetched_cls(get_cache_line_addr(&ic->icache, runahead_pc));
         DEBUG(ic_stage->proc_id, "[fdip_update] line already exists in L1 or MSHR\n");
         if (fdip_on_path_bp) {
           if (line)
@@ -1078,7 +1172,7 @@ void fdip_update() {
                                     target, cycle_count, *op,
                                     0, /*prefetched*/
                                     op->oracle_info.pred == TAKEN,
-                                    op->oracle_info.pred == TAKEN? FDIP_INSTRUCTION_BW - ftq_entry_size_bytes - op->inst_info->trace_info.inst_size : 0
+                                    (op->oracle_info.pred == TAKEN && (!target && (target >= start_runahead_pc + FDIP_INSTRUCTION_BW || target < start_runahead_pc)))? FDIP_INSTRUCTION_BW - ftq_entry_size_bytes - op->inst_info->trace_info.inst_size : 0
                                     )));
         ftq_pushed = true;
         // No matter how branch is predicted, prefetch the correct next PW.
@@ -1175,6 +1269,10 @@ void fdip_update() {
         req.oldest_op_op_num     = (Counter)0;
         req.oldest_op_addr       = (Addr)0;
         req.dirty_l0             = op && op->table_info->mem_type == MEM_ST && !op->off_path;
+        if(fdip_pred_off_path())
+          req.fdip_pref_off_path = TRUE;
+        else
+          req.fdip_pref_off_path = FALSE;
         if (icache_fill_line(&req)) {
           STAT_EVENT(ic_stage->proc_id, FDIP_PREFETCHES);
           success = SUCCESS_NEW;
@@ -1189,6 +1287,7 @@ void fdip_update() {
             STAT_EVENT(ic_stage->proc_id, FDIP_NEW_PREFETCHES);
             if (FDIP_HASH_ENABLE && !WARMUP && !FDIP_TIMELY_FIFO_SIZE)
               fdip_insert_cl_fetch_addr(line_addr);
+            fdip_inc_prefetched_cls(line_addr);
           }
           DEBUG(ic_stage->proc_id, "[%llu] new_mem_req for %llx success\n", cycle_count, line_addr);
         }
@@ -1208,9 +1307,6 @@ void fdip_update() {
           STAT_EVENT(ic_stage->proc_id, FDIP_PREF_OFF_PATH);
       }
     }
-
-    if (!fdip_on_path_bp && fdip_on_path_pref)
-      fdip_on_path_pref = FALSE;
 
     Flag do_not_update_addr = FALSE;
     if (is_branch && op->table_info->cf_type == CF_SYS)
@@ -1245,10 +1341,11 @@ void fdip_update() {
           ASSERT(ic_stage->proc_id, next_op->fetch_addr == runahead_pc + op->inst_info->trace_info.inst_size);
       }
       runahead_pc = target;
-      DEBUG(ic_stage->proc_id, "[fdip_update] ftq_entry_size_bytes %llu to %llu\n", ftq_entry_size_bytes, op->oracle_info.pred? 32 : ftq_entry_size_bytes + op->inst_info->trace_info.inst_size);
+      DEBUG(ic_stage->proc_id, "[fdip_update] ftq_entry_size_bytes %llu to %llu\n", ftq_entry_size_bytes, op->oracle_info.pred && (!target && (target >= start_runahead_pc + FDIP_INSTRUCTION_BW || target < start_runahead_pc))? FDIP_INSTRUCTION_BW : ftq_entry_size_bytes + op->inst_info->trace_info.inst_size);
       ftq_entry_size_bytes += op->inst_info->trace_info.inst_size;
-      if (op->oracle_info.pred == TAKEN && FDIP_MAX_TAKEN_BRANCHES == 1)
+      if (op->oracle_info.pred == TAKEN && (!target && (target >= start_runahead_pc + FDIP_INSTRUCTION_BW || target < start_runahead_pc))) {
         ftq_entry_size_bytes += FDIP_INSTRUCTION_BW - ftq_entry_size_bytes;
+      }
     }
 
     if (!do_not_update_addr) {
@@ -1256,6 +1353,9 @@ void fdip_update() {
       // addr must follow cmp addr convention
       runahead_pc = convert_to_cmp_addr(ic->proc_id, runahead_pc);
     }
+
+    if (!fdip_on_path_bp && fdip_on_path_pref)
+      fdip_on_path_pref = FALSE;
 
     if (PERFECT_FDIP && !fdip_on_path_pref)
       runahead_disable = TRUE;
@@ -1308,6 +1408,10 @@ void fdip_update() {
   STAT_EVENT(ic_stage->proc_id, FDIP_CYCLE_COUNT);
   fdip_cycle_count++;
   ftq_occupancy += std::floor(0.5 + (fdip_ftq_pos - icache_ftq_pos)/FDIP_INSTRUCTION_BW);
+  if (fdip_on_path_bp_bk)
+    ftq_occupancy_on_path += std::floor(0.5 + (fdip_ftq_pos - icache_ftq_pos)/FDIP_INSTRUCTION_BW);
+  else
+    ftq_occupancy_off_path += std::floor(0.5 + (fdip_ftq_pos - icache_ftq_pos)/FDIP_INSTRUCTION_BW);
 }
 
 Flag fdip_pred_off_path(void) {
@@ -1347,19 +1451,54 @@ void fdip_remove_cl_fetch_addr(Addr line_addr) {
     fetch_cl_addr.erase(cl_addr_iter);
 }
 
+template<typename A, typename B>
+std::pair<B,A> flip_pair(const std::pair<A,B> &p)
+{
+  return std::pair<B,A>(p.second, p.first);
+}
+
+template<typename A, typename B>
+std::multimap<B,A> flip_map(const std::map<A,B> &src)
+{
+  std::multimap<B,A> dst;
+  std::transform(src.begin(), src.end(), std::inserter(dst, dst.begin()), flip_pair<A,B>);
+  return dst;
+}
+
+
 void fdip_print_hash_tables(void) {
   if (!FDIP_ENABLE)
     return;
   DEBUG(ic_stage->proc_id, "=============cnt_useful============== size: %lu\n", cnt_useful.size());
   INC_STAT_EVENT(ic_stage->proc_id, FDIP_USEFUL_CACHELINES, cnt_useful.size());
+  DEBUG(ic_stage->proc_id, "%lu useful cache lines have not been learned\n", cnt_useful.size() - useful_hash.size());
+  DEBUG(ic_stage->proc_id, "%lu useful cache lines have not been prefetched\n", cnt_useful.size() - prefetched_cls.size());
   for(std::unordered_map<Addr, Counter>::const_iterator it = cnt_useful.begin();
-        it != cnt_useful.end(); ++it)
-    DEBUG(ic_stage->proc_id, "0x%llx - %llu\n", it->first, it->second);
+        it != cnt_useful.end(); ++it) {
+    auto useful_hash_iter = useful_hash.find(it->first);
+    if (useful_hash_iter == useful_hash.end()) {
+      DEBUG(ic_stage->proc_id, "Useful 0x%llx has not been learned in hash - hit count : %llu\n", it->first, it->second);
+    }
+    auto prefetched_cl_iter = prefetched_cls.find(it->first);
+    if (prefetched_cl_iter == prefetched_cls.end() && it->second > 1) {
+      DEBUG(ic_stage->proc_id, "Useful 0x%llx has not been prefetched - hit count is greater than 1: %llu", it->first, it->second);
+      auto icache_miss_iter = icache_miss.find(it->first);
+      if (icache_miss_iter != icache_miss.end()) {
+        DEBUG(ic_stage->proc_id, ", miss count: %llu\n", icache_miss_iter->second);
+      } else
+        DEBUG(ic_stage->proc_id, ", miss count: 0\n");
+    }
+  }
   DEBUG(ic_stage->proc_id, "=============useful hash============= size: %lu\n", useful_hash.size());
+  DEBUG(ic_stage->proc_id, "%lu useful cache lines learned by hash have not been prefetched\n", useful_hash.size() - prefetched_cls.size());
   INC_STAT_EVENT(ic_stage->proc_id, FDIP_USEFUL_CACHELINES_HASH, useful_hash.size());
   for(std::unordered_map<Addr, Counter>::const_iterator it = useful_hash.begin();
-    it != useful_hash.end(); ++it)
-  DEBUG(ic_stage->proc_id, "0x%llx - %llu\n", it->first, it->second);
+    it != useful_hash.end(); ++it) {
+    auto prefetched_cl_iter = prefetched_cls.find(it->first);
+    if (prefetched_cl_iter == prefetched_cls.end() && it->second > 1) {
+      DEBUG(ic_stage->proc_id, "Useful 0x%llx has not been prefetched ever - useful count is greater than 1: %llu\n", it->first, it->second);
+    }
+  }
   DEBUG(ic_stage->proc_id, "=============cnt_unuseful============== size: %lu\n", cnt_unuseful.size());
   INC_STAT_EVENT(ic_stage->proc_id, FDIP_UNUSEFUL_CACHELINES, cnt_unuseful.size());
   for(std::unordered_map<Addr, Counter>::const_iterator it = cnt_unuseful.begin();
@@ -1375,6 +1514,31 @@ void fdip_print_hash_tables(void) {
   for(std::vector<Counter>::const_iterator it = fetch_cl_addr.begin();
       it != fetch_cl_addr.end(); ++it) {
     DEBUG(ic_stage->proc_id, "0x%llx has never touched\n", *it);
+  }
+
+  DEBUG(ic_stage->proc_id, "=============icache miss cache lines ===== size: %lu\n", icache_miss.size());
+  INC_STAT_EVENT(ic_stage->proc_id, UNIQUE_MISSED_LINES, icache_miss.size());
+  std::multimap<Counter, Addr> icache_miss_sorted = flip_map(icache_miss);
+  for(std::multimap<Counter, Addr>::const_iterator it = icache_miss_sorted.begin();
+      it != icache_miss_sorted.end(); ++it) {
+    uns set = it->second >> ic_stage->icache.shift_bits & ic_stage->icache.set_mask;
+    DEBUG(ic_stage->proc_id, "[set %u] 0x%llx missed %llu times", set, it->second, it->first);
+    auto useful_iter = cnt_useful.find(it->second);
+    if (useful_iter != cnt_useful.end())
+      DEBUG(ic_stage->proc_id, ", hit %llu times\n", useful_iter->second);
+    else
+      DEBUG(ic_stage->proc_id, ", hit 0 times\n");
+  }
+
+  DEBUG(ic_stage->proc_id, "=============unique prefetched lines ===== size: %lu\n", prefetched_cls.size());
+  INC_STAT_EVENT(ic_stage->proc_id, UNIQUE_PREFETCHED_LINES, prefetched_cls.size());
+  std::multimap<Counter, Addr> prefetched_cls_sorted = flip_map(prefetched_cls);
+  for(std::multimap<Counter, Addr>::const_iterator it = prefetched_cls_sorted.begin();
+      it != prefetched_cls_sorted.end(); ++it) {
+    auto useful_hash_iter = useful_hash.find(it->second);
+    if (useful_hash_iter == useful_hash.end()) {
+      DEBUG(ic_stage->proc_id, "Unuseful 0x%llx prefetched %llu times\n", it->second, it->first);
+    }
   }
 }
 
@@ -1399,8 +1563,8 @@ void fdip_print_usefulness_cache(void) {
 
 void fdip_touch_cl_candidates(Addr line_addr) {
   for (auto it = cl_candidates.begin(); it != cl_candidates.end(); ++it) {
-    if (it->first == line_addr) {
-      it->second = TRUE;
+    if (std::get<0>(*it) == line_addr) {
+      std::get<1>(*it) = TRUE;
       break;
     }
   }
@@ -1425,6 +1589,13 @@ void fdip_dec_useful_hash(Addr line_addr) {
   }
 }
 
+Flag fdip_learned_by_useful_hash(Addr line_addr) {
+  auto useful_cl_iter = useful_hash.find(line_addr);
+  if (useful_cl_iter != useful_hash.end())
+    return TRUE;
+  return FALSE;
+}
+
 Flag can_fetch_op_from_ftq(Op* op) {
   if (op->table_info->cf_type) {
     ASSERT(ic_stage->proc_id, !ftq.empty());
@@ -1443,6 +1614,14 @@ int get_avg_ftq_occupancy() {
   return (int)(ftq_occupancy/fdip_cycle_count);
 }
 
+int get_avg_ftq_occupancy_on_path() {
+  return (int)(ftq_occupancy_on_path/fdip_cycle_count);
+}
+
+int get_avg_ftq_occupancy_off_path() {
+  return (int)(ftq_occupancy_off_path/fdip_cycle_count);
+}
+
 int get_avg_resteer_interval() {
   return (int)(resteer_interval/fdip_recover_cnt);
 }
@@ -1453,4 +1632,55 @@ int get_avg_ftq_entries_reset() {
 
 int get_avg_pref_bw_resteer() {
   return (int)(pref_bw_resteer/fdip_recover_cnt);
+}
+
+void fdip_inc_icache_miss(Addr line_addr) {
+  auto cl_iter = icache_miss.find(line_addr);
+  if (cl_iter == icache_miss.end())
+    icache_miss.insert(std::pair<Addr, Counter>(line_addr, 1));
+  else {
+    cl_iter->second++;
+  }
+}
+
+void fdip_inc_prefetched_cls(Addr line_addr) {
+  auto cl_iter = prefetched_cls.find(line_addr);
+  if (cl_iter == prefetched_cls.end()) {
+    prefetched_cls.insert(std::pair<Addr, Counter>(line_addr, 1));
+    prefetched_cls_info.insert(std::make_pair(std::move(line_addr), std::make_pair(std::move(cycle_count), 0)));
+  } else {
+    cl_iter->second++;
+    auto cl_info_iter = prefetched_cls_info.find(line_addr);
+    ASSERT(ic_stage->proc_id, cl_info_iter != prefetched_cls_info.end());
+    cl_info_iter->second.first = cycle_count;
+  }
+}
+
+void fdip_touch_prefetched_cls(Addr line_addr) {
+  auto cl_iter = prefetched_cls_info.find(line_addr);
+  if (cl_iter != prefetched_cls_info.end())
+    cl_iter->second.first = cycle_count;
+}
+
+void fdip_evict_prefetched_cls(Addr line_addr) {
+  auto cl_iter = prefetched_cls_info.find(line_addr);
+  if (cl_iter != prefetched_cls_info.end())
+    cl_iter->second.second = cycle_count;
+}
+
+// return 0 on missing learning (not prefetched), return 1 on prefetched too early (already evicted), return 2 on not prefetched because FDIP cannot run ahead due to any of break reason after a re-steer.
+uns fdip_get_miss_reason(Addr line_addr) {
+  auto cl_iter = prefetched_cls_info.find(line_addr);
+  if (cl_iter == prefetched_cls_info.end()) {
+    auto tmp_iter = prefetched_cls.find(line_addr);
+    DEBUG(ic_stage->proc_id, "%llx misses due to 'not prefetched'\n", line_addr);
+    ASSERT(ic_stage->proc_id, tmp_iter == prefetched_cls.end());
+    return 0;
+  }
+  if (cl_iter->second.first > last_recover_cycle && cl_iter->second.second > cl_iter->second.first) {
+    DEBUG(ic_stage->proc_id, "%llx misses due to 'prefetched too early'\n", line_addr);
+    return 1;
+  }
+  DEBUG(ic_stage->proc_id, "%llx misses due to 'FDIP limit'\n", line_addr);
+  return 2;
 }

@@ -153,6 +153,10 @@ DEF_PARAM(fdip_bloom2_entries, FDIP_BLOOM2_ENTRIES, uns, uns, 1000, )
 DEF_PARAM(fdip_bloom4_entries, FDIP_BLOOM4_ENTRIES, uns, uns, 1000, )
 DEF_PARAM(fdip_bloom_size, FDIP_BLOOM_SIZE, uns, uns, 16384, )
 DEF_PARAM(fdip_bloom_hashes, FDIP_BLOOM_HASHES, uns, uns, 6, )
+DEF_PARAM(fdip_pref_conservative, FDIP_PREF_CONSERVATIVE, Flag, Flag, TRUE, )
+DEF_PARAM(fdip_pref_optimistic, FDIP_PREF_OPTIMISTIC, uns, uns, 0, )
+DEF_PARAM(fdip_reduce_storage, FDIP_REDUCE_STORAGE, Flag, Flag, FALSE, )
+DEF_PARAM(fdip_warmup, FDIP_WARMUP, uns, uns, 0, )
 
 
 DEF_PARAM(fdip_dual_path_pref_ic_enable , FDIP_DUAL_PATH_PREF_IC_ENABLE    , Flag    , Flag    , FALSE, )

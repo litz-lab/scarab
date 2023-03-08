@@ -278,7 +278,8 @@ void wp_process_reqbuf_match(Mem_Req* req, Op* op);
 uns num_chip_demands(void);
 uns num_offchip_stall_reqs(uns proc_id);
 
-Flag mem_buf_access(Addr line_addr);
+Mem_Req* mem_buf_access(Addr line_addr);
+Mem_Req* mem_buf_access_all(Addr line_addr);
 
 /**************************************************************************************/
 /* Externs */

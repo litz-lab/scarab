@@ -29,9 +29,17 @@ extern "C" {
   void fdip_touch_cl_candidates(Addr line_addr);
   void fdip_inc_useful_hash(Addr line_addr);
   void fdip_dec_useful_hash(Addr line_addr);
+  void fdip_inc_icache_miss(Addr line_addr);
+  void fdip_inc_prefetched_cls(Addr line_addr);
+  void fdip_touch_prefetched_cls(Addr line_addr);
+  void fdip_evict_prefetched_cls(Addr line_addr);
+  uns fdip_get_miss_reason(Addr line_addr);
+  void fdip_inc_all_useful_lines(Addr line_addr);
   Flag determine_by_usefulness(Addr line_addr);
   Flag can_fetch_op_from_ftq(Op* op);
   int get_avg_ftq_occupancy();
+  int get_avg_ftq_occupancy_on_path();
+  int get_avg_ftq_occupancy_off_path();
   int get_avg_resteer_interval();
   int get_avg_ftq_entries_reset();
   int get_avg_pref_bw_resteer();

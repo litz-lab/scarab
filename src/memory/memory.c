@@ -3952,8 +3952,13 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size,
   new_req->global_hist   = (pref_info ? pref_info->global_hist : 0);
   new_req->bw_prefetch   = (pref_info ? pref_info->bw_limited : FALSE);
   new_req->destination   = destination;
-  if (type == MRT_FDIPPRF && fdip_pred_off_path())
-    new_req->fdip_pref_off_path = TRUE;
+  if (type == MRT_FDIPPRF) {
+    if (fdip_pred_off_path())
+      new_req->fdip_pref_off_path = TRUE;
+    else
+      new_req->fdip_pref_off_path = FALSE;
+  }
+  new_req->hit_by_demand_load = FALSE;
   if(PREF_FRAMEWORK_ON) {
     new_req->bw_prefetchable = PREF_STREAM_ON &&
                                pref_stream_bw_prefetchable(proc_id, addr);
@@ -5521,15 +5526,28 @@ uns num_offchip_stall_reqs(uns proc_id) {
              // only to collect statistics
 }
 
-Flag mem_buf_access(Addr line_addr) {
+Mem_Req* mem_buf_access(Addr line_addr) {
   Mem_Req* req = NULL;
   int reqbuf_id = 0;
   for(reqbuf_id = 0; reqbuf_id < MEM_REQ_BUFFER_ENTRIES; reqbuf_id++) {
     req = &mem->req_buffer[reqbuf_id];
 
     if(line_addr == req->addr && !is_final_state(req->state) && !is_inv_state(req->state)) {
-      return TRUE;
+      return req;
     }
   }
-  return FALSE;
+  return NULL;
+}
+
+Mem_Req* mem_buf_access_all(Addr line_addr) {
+  Mem_Req* req = NULL;
+  int reqbuf_id = 0;
+  for(reqbuf_id = 0; reqbuf_id < MEM_REQ_BUFFER_ENTRIES; reqbuf_id++) {
+    req = &mem->req_buffer[reqbuf_id];
+
+    if(line_addr == req->addr && !is_inv_state(req->state)) {
+      return req;
+    }
+  }
+  return NULL;
 }

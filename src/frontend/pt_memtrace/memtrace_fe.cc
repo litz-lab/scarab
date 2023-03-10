@@ -288,6 +288,10 @@ void memtrace_fetch_op(uns proc_id, Op* op) {
     if(!success) {
       trace_read_done[proc_id] = TRUE;
       reached_exit[proc_id]    = TRUE;
+      /* this flag is supposed to be set in uop_generator_get_uop() but there
+       * is a circular dependency on trace_read_done to be set. So, we set
+       * op->exit here. */
+      op->exit = TRUE;
       std::cout << "Reached end of trace" << std::endl;
     }
   }

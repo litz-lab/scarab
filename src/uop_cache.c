@@ -113,8 +113,8 @@ Flag pw_insert(Uop_Cache_Data pw) {
     // This is so that multiple lines from the same PW
     // inserted into the LRU position do not evict each other.
     while (cache_get_invalid_line_count(&uop_cache, pw.first) < lines_needed) {
-      get_next_valid_repl_line(&uop_cache, ic->proc_id, pw.first, &repl_line_addr);
-      cache_invalidate(&uop_cache, repl_line_addr, &line_addr);
+      Uop_Cache_Data evict_pw = *(Uop_Cache_Data*)get_next_valid_repl_line(&uop_cache, ic->proc_id, pw.first);
+      cache_invalidate(&uop_cache, evict_pw.first, &line_addr);
     }
     for (int jj = 0; jj < lines_needed; jj++) {
       cur_line_data = (Uop_Cache_Data*) cache_insert_replpos(&uop_cache, ic->proc_id,

@@ -72,8 +72,13 @@ char rand_repl_state[31];
 
 static inline uns cache_index(Cache* cache, Addr addr, Addr* tag,
                               Addr* line_addr) {
-  *line_addr = addr & ~cache->offset_mask;
-  *tag       = addr >> cache->shift_bits & cache->tag_mask;
+  if (cache->tag_incl_offset) {
+    *tag = addr & ~(cache->set_mask << cache->shift_bits);
+    *line_addr = addr; // When the tag incl offset, cache is BYTE-addressable
+  } else {
+    *tag = addr >> cache->shift_bits & cache->tag_mask;
+    *line_addr = addr & ~cache->offset_mask;
+  }
   return addr >> cache->shift_bits & cache->set_mask;
 }
 
@@ -596,8 +601,7 @@ Cache_Entry* find_repl_entry(Cache* cache, uns8 proc_id, uns set, uns* way) {
 /**************************************************************************************/
 /* get_next_valid_repl_line: Returns the valid cache lib entry that will be replaced the
    soonest. This call should not change any of the state information. */
-void* get_next_valid_repl_line(Cache* cache, uns8 proc_id, Addr addr,
-                                      Addr* repl_line_addr) {
+void* get_next_valid_repl_line(Cache* cache, uns8 proc_id, Addr addr) {
   int ii;
   Addr line_tag, line_addr;
   Cache_Entry* entry = NULL;
@@ -626,7 +630,6 @@ void* get_next_valid_repl_line(Cache* cache, uns8 proc_id, Addr addr,
       ASSERT(proc_id, FALSE);  // not implemented
   }
   if (entry) {
-    *repl_line_addr = entry->base;
     return entry->data;
   }
   return NULL;

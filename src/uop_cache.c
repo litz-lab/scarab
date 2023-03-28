@@ -115,12 +115,17 @@ Flag pw_insert(Uop_Cache_Data pw) {
     if (UOP_CACHE_REPL == REPL_RESTEER && pw.first != addr_following_resteer_bf) {
       insert_repl = INSERT_REPL_LRU;
     }
+    Addr tag;
+    DEBUG(ic->proc_id, "PW inserted. addr=0x%llx, set=%u, lines_needed=%i\n",
+          pw.first, ext_cache_index(&uop_cache, pw.first, &tag, &line_addr), lines_needed);
     // FIRST preemptively evict the PWs to create space for the new PW. 
     // This is so that multiple lines from the same PW
     // inserted into the LRU position do not evict each other.
     while (cache_get_invalid_line_count(&uop_cache, pw.first) < lines_needed) {
       Uop_Cache_Data evict_pw = *(Uop_Cache_Data*)get_next_valid_repl_line(&uop_cache, ic->proc_id, pw.first);
       cache_invalidate(&uop_cache, evict_pw.first, &line_addr);
+      DEBUG(ic->proc_id, "PW evicted. addr=0x%llx, set=%u\n",
+            evict_pw.first, ext_cache_index(&uop_cache, evict_pw.first, &tag, &line_addr));
     }
     for (int jj = 0; jj < lines_needed; jj++) {
       cur_line_data = (Uop_Cache_Data*) cache_insert_replpos(&uop_cache, ic->proc_id,
@@ -183,11 +188,15 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
   static Uop_Cache_Data cur_pw = {0};
   Addr line_addr;
   Uop_Cache_Data* uoc_data = NULL;
+  Addr tag;
 
   // First check if current pw has this search addr
   if (cur_pw.first && search_addr >= cur_pw.first
                    && search_addr <= cur_pw.last) {
     uoc_data = &cur_pw;
+    if (uoc_data)
+      DEBUG(ic->proc_id, "UOC hit (cur_pw). addr=0x%llx, set=%u\n",
+            search_addr, ext_cache_index(&uop_cache, search_addr, &tag, &line_addr));
   } else {
     // Next try to access a new PW starting at this addr
     uoc_data = cache_access(&uop_cache, search_addr, &line_addr, update_repl);
@@ -201,8 +210,13 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
       }
       uoc_data->used += 1;
       cur_pw = *uoc_data;
+      DEBUG(ic->proc_id, "UOC hit (new PW). addr=0x%llx, set=%u\n",
+            search_addr, ext_cache_index(&uop_cache, search_addr, &tag, &line_addr));
     } else if (update_repl) {
       memset(&cur_pw, 0, sizeof(cur_pw));
+      DEBUG(ic->proc_id, "UOC miss. addr=0x%llx, set=%u\n",  
+            search_addr, ext_cache_index(&uop_cache, search_addr, &tag, &line_addr));
+      // maybe also add uop granularity, to make sure ending conditions are OK
     }
   }
 

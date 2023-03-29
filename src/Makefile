@@ -1,9 +1,6 @@
 CMAKE = $(shell which cmake3 || which cmake)
 GITREV = $(shell git rev-parse --short HEAD)
 SRCPWD = $(shell pwd)
-ifdef SCARAB_ENABLE_PT_MEMTRACE
-CPPFLAGS=-DENABLE_PT_MEMTRACE
-endif
 
 BUILD_DIR_PREFIX = build
 
@@ -38,7 +35,6 @@ gpf: BUILD_TYPE := Gprof
 gpf: $(BUILD_DIR_PREFIX)/gpf/scarab_phony ## Build Scarab in Gprof mode
 
 pin_exec:
-	cpp $(CPPFLAGS) $(SRCPWD)/frontend/frontend_table.def.in > $(SRCPWD)/frontend/frontend_table.def
 	make SCARAB_DIR=$(SRCPWD) pin_exec --directory pin/pin_exec	 --no-print-directory
 
 clean_pin_exec:

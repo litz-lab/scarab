@@ -34,7 +34,6 @@
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
-#include "globals/count_min_sketch.h"
 
 #include "bp/bp.h"
 #include "icache_stage.h"
@@ -90,8 +89,6 @@ extern Counter                last_runahead_op;
 extern Counter                max_runahead_op;
 extern Flag                   mem_req_failed;
 extern Counter                last_recover_cycle;
-extern CountMinSketch         cms_useful;
-extern CountMinSketch         cms_unuseful;
 extern uns                    operating_mode;
 extern Counter                icache_ftq_pos;
 extern Counter                fdip_ftq_pos;

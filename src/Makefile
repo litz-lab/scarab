@@ -79,7 +79,6 @@ $(BUILD_DIR_PREFIX)/%/scarab_phony: $(BUILD_DIR_PREFIX)/%/Makefile gitrev pin_ex
 	@make -j --no-print-directory -C $(dir $@)
 	ln -sf $(dir $@)scarab scarab
 
-
 # Creates the build directory and configures the CMake project.
 # .SECONDARY tells Make to not delete the intermediate Makefile created by this rule.
 .SECONDARY: $(patsubst %, $(BUILD_DIR_PREFIX)/%/Makefile, $(TARGETS))

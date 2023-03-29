@@ -9,7 +9,6 @@ extern "C" {
 #include "bp/bp.h"
 #include "icache_stage.h"
 #include "globals/global_types.h"
-#include "globals/count_min_sketch.h"
 
   /*************Interface to Scarab***************/
   void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic);

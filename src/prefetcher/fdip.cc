@@ -16,7 +16,6 @@ extern "C" {
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 #include "globals/enum.h"
-#include "globals/count_min_sketch.h"
 
 #include "core.param.h"
 #include "bp/bp.param.h"
@@ -71,8 +70,6 @@ uns64 recovery_count = 0;
 uns64 off_count = 0;
 Flag mem_req_failed = FALSE;
 Counter last_recover_cycle = 0;
-CountMinSketch cms_useful;
-CountMinSketch cms_unuseful;
 std::unordered_map<Addr, Counter> cnt_useful;
 std::unordered_map<Addr, Counter> cnt_unuseful;
 std::unordered_map<Addr, Counter> useful_hash;
@@ -154,8 +151,6 @@ void fdip_init(Bp_Data* _bp_data,  Icache_Stage *_ic) {
   if (FDIP_DUAL_PATH_PREF_UOC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE) {
     ASSERT(ic_stage->proc_id, UOC_PREF);  // Doesn't make sense to have dual path without normal predicted-path prefetching
   }
-  cms_init_optimal(&cms_useful, 0.001, 0.999);
-  cms_init_optimal(&cms_unuseful, 0.001, 0.999);
   if (!FDIP_BLOOM_FILTER) {
     init_cache(&fdip_uc, "FDIP_USEFULNESS_CACHE", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE,
                0, REPL_TRUE_LRU); //Data size = 2 byte

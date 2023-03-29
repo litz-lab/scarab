@@ -1568,7 +1568,7 @@ void fdip_print_hash_tables(void) {
   std::multimap<Counter, Addr> icache_miss_sorted = flip_map(icache_miss);
   for(std::multimap<Counter, Addr>::const_iterator it = icache_miss_sorted.begin();
       it != icache_miss_sorted.end(); ++it) {
-    DEBUG(ic_stage->proc_id, "[set %u] 0x%llx missed %llu times", it->second >> ic_stage->icache.shift_bits & ic_stage->icache.set_mask, it->second, it->first);
+    DEBUG(ic_stage->proc_id, "[set %u] 0x%llx missed %llu times", (uns)(it->second >> ic_stage->icache.shift_bits & ic_stage->icache.set_mask), it->second, it->first);
     auto useful_iter = cnt_useful.find(it->second);
     if (useful_iter != cnt_useful.end())
       DEBUG(ic_stage->proc_id, ", hit %llu times\n", useful_iter->second);

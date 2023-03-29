@@ -829,7 +829,11 @@ char** get_params(int argc, char* argv[]) {
           "RS_CONNECTIONS(%d)",
           NUM_RS, temp);
 
-  if((FRONTEND == FE_TRACE || FRONTEND == FE_MEMTRACE) && !CBP_TRACE_R0) {
+  if((FRONTEND == FE_TRACE
+#ifdef ENABLE_PT_MEMTRACE
+        || FRONTEND == FE_MEMTRACE
+#endif
+        ) && !CBP_TRACE_R0) {
     if(SIM_MODEL != DUMB_MODEL) {
       FATAL_ERROR(0, "Trace frontend specified, but no trace file specified "
                      "(use --cbp_trace_r0).\n");

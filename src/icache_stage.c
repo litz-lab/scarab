@@ -113,6 +113,7 @@ static Inst_Info**         ic_pref_cache_access(void);
 int32_t                    inst_lost_get_full_window_reason(void);
 static inline void         log_stats_ic_miss(void);
 static inline void         log_stats_mshr_hit(Addr line_addr);
+static inline void         update_stats_bf_retired(void);
 
 /**************************************************************************************/
 /* set_icache_stage: */
@@ -187,7 +188,6 @@ void init_icache_trace() {
   if (FDIP_ENABLE)
     ASSERT(0, LOOKAHEAD_BUF_SIZE && PERFECT_NT_BTB && LOOKAHEAD_BUF_SIZE > FDIP_INSTRUCTION_BW * 3 * (FDIP_FTQ_DEPTH + 1));
   if (LOOKAHEAD_BUF_SIZE) {
-    ASSERT(0, ENABLE_PT_MEMTRACE); //Lookahead buffer only works in trace mode
     init_list(&op_buf, "op_buf", sizeof(Op*), TRUE);
     while (list_get_count(&op_buf) < LOOKAHEAD_BUF_SIZE) {
       Op* new_op = alloc_op(ic->proc_id);

@@ -3168,14 +3168,12 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
     }
   }
 
-  Flag off_to_on_path_changed = FALSE;
   // If the mem requests for the same FDIP type are on the different paths, give priority to the on-path one.
   if(req->off_path &&
       req->type == MRT_FDIPPRF && type == MRT_FDIPPRF &&
       !fdip_pref_off_path()) {
     req->off_path           = FALSE;
     req->off_path_confirmed = FALSE;
-    off_to_on_path_changed        = TRUE;
   }
 
   update_mem_req_occupancy_counter(old_type, -1);
@@ -3203,33 +3201,9 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
   }
 
   req->req_count++;
-  if (old_type != type && !type_added) {
-    return SUCCESS_DIFF_TYPE;
-  }
-  else if (old_type != type && type_added) {
-    req->emitted_cycle = cycle_count;
-    return SUCCESS_DIFF_TYPE_ADDED;
-  }
-  else if (old_type == type && !off_to_on_path_changed) {
-    return SUCCESS_SAME_TYPE;
-  }
-  else if (old_type == type && off_to_on_path_changed) {
-    if (req->emitted_cycle < last_recover_cycle)
-    {
-      req->emitted_cycle = cycle_count;
-      return SUCCESS_SAME_TYPE_INVALID_OFF_TO_ON_PATH_CHANGED;
-    }
-    else
-    {
-      req->emitted_cycle = cycle_count;
-      return SUCCESS_SAME_TYPE_VALID_OFF_TO_ON_PATH_CHANGED;
-    }
-    req->emitted_cycle = cycle_count;
-    if (type == MRT_FDIPPRF)
-      STAT_EVENT(req->proc_id, PROMOTION_FROM_FDIP_OFF_TO_ON);
-    return SUCCESS_SAME_TYPE_VALID_OFF_TO_ON_PATH_CHANGED;
-  }
-  return SUCCESS;
+  if (type == MRT_FDIPPRF)
+    STAT_EVENT(req->proc_id, PROMOTION_FROM_FDIP_OFF_TO_ON);
+  return SUCCESS_MERGED;
 }
 
 /**************************************************************************************/
@@ -5531,28 +5505,11 @@ uns num_offchip_stall_reqs(uns proc_id) {
              // only to collect statistics
 }
 
-Mem_Req* mem_buf_access(Addr line_addr) {
-  Mem_Req* req = NULL;
-  int reqbuf_id = 0;
-  for(reqbuf_id = 0; reqbuf_id < MEM_REQ_BUFFER_ENTRIES; reqbuf_id++) {
-    req = &mem->req_buffer[reqbuf_id];
-
-    if(line_addr == req->addr && !is_final_state(req->state) && !is_inv_state(req->state)) {
-      return req;
-    }
-  }
-  return NULL;
-}
-
-Mem_Req* mem_buf_access_all(Addr line_addr) {
-  Mem_Req* req = NULL;
-  int reqbuf_id = 0;
-  for(reqbuf_id = 0; reqbuf_id < MEM_REQ_BUFFER_ENTRIES; reqbuf_id++) {
-    req = &mem->req_buffer[reqbuf_id];
-
-    if(line_addr == req->addr && !is_inv_state(req->state)) {
-      return req;
-    }
-  }
-  return NULL;
+Mem_Req* mem_search_reqbuf_wrapper(
+  uns8 proc_id, Addr addr, Mem_Req_Type type, uns size,
+  Flag* demand_hit_prefetch, Flag* demand_hit_writeback, uns queues_to_search,
+  Mem_Queue_Entry** queue_entry, Flag* ramulator_match) {
+  return mem_search_reqbuf(proc_id, addr, type, size,
+                           demand_hit_prefetch, demand_hit_writeback,
+                           queues_to_search, queue_entry, ramulator_match);
 }

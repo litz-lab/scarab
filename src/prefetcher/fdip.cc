@@ -1096,17 +1096,28 @@ void fdip_update() {
     if (cl_not_prefetched) {
       line = (Inst_Info**)cache_access(&ic_stage->icache, runahead_pc, &line_addr, TRUE);
       ASSERT(ic_stage->proc_id, line_addr ==  get_cache_line_addr(&ic->icache, runahead_pc));
-      // TODO: need to check if there is outstanding prefethces in MSHR queue for the cache line.
       if (WP_COLLECT_STATS) {
         line_info = (Icache_Data*)cache_access(&ic_stage->icache_line_info, runahead_pc, &dummy_addr, TRUE);
         UNUSED(line_info);
       }
+      // TODO: this should be removed after a separated decoupled-frontend is introduced. MSHR hit should be checked to determine 'do_prefetch' before bp_predict_op() is called. If it is checked inside 'new_mem_req()' and bp_predict_op() is already called, BP cannot be rolled back.
       // MSHR hit
-      Mem_Req* mem_req = mem_buf_access(get_cache_line_addr(&ic->icache, runahead_pc));
+      Flag demand_hit_prefetch = FALSE;
+      Flag demand_hit_writeback = FALSE;
+      Mem_Queue_Entry* queue_entry = NULL;
+      Flag ramulator_match = FALSE;
+      Mem_Req* mem_req = mem_search_reqbuf_wrapper(ic_stage->proc_id, get_cache_line_addr(&ic->icache, runahead_pc),
+                                                   MRT_FDIPPRF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
+                                                   QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
+                                                   QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
+                                                   &queue_entry, &ramulator_match);
       if (line || mem_req) {
-        if (line)
+        if (line) {
           fdip_touch_prefetched_cls(get_cache_line_addr(&ic->icache, runahead_pc));
-        DEBUG(ic_stage->proc_id, "[fdip_update] line already exists in L1 or MSHR\n");
+          DEBUG(ic_stage->proc_id, "[fdip_update] line already exists in L1\n");
+        } else {
+          DEBUG(ic_stage->proc_id, "[fdip_update] line already exists in MSHR - ramulator? %u\n", ramulator_match);
+        }
         if (fdip_on_path_bp) {
           if (line)
             STAT_EVENT(ic_stage->proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ON_PATH);
@@ -1152,7 +1163,7 @@ void fdip_update() {
       DEBUG(ic_stage->proc_id, "[fdip_update - op path] op->inst_uid: %llu op->op_num: %llu\n", op->inst_uid, op->op_num);
       is_branch = (op && op->table_info->cf_type)? true : false;
       if (is_branch) {
-        // Break on TAGE buffer limit
+        // Break on TAGE buffer limit TODO: do_prefetch can be ignored when this is moved to the decoupled frontend
         if (do_prefetch && BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, op)) {
           break_reason = BR_TAGE_BUFFER_LIMIT;
           move_to_prev_op();
@@ -1230,7 +1241,7 @@ void fdip_update() {
       if (is_branch) {
         op = &op_iter->second;
 
-        // Break on TAGE buffer limit
+        // Break on TAGE buffer limit TODO: do_prefetch can be ignored when this is moved to the decoupled frontend
         if (do_prefetch && BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, op)) {
           break_reason = BR_TAGE_BUFFER_LIMIT;
           break;
@@ -1343,7 +1354,7 @@ void fdip_update() {
       }
 
       last_cl_prefetched = get_cache_line_addr(&ic->icache, runahead_pc);
-      if (success) {
+      if (success == SUCCESS_NEW) {
         if (ftq_pushed)
           ftq.back().second.prefetched = true;
         if (target)

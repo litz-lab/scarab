@@ -398,11 +398,6 @@ void update_icache_stage() {
     return;
   }
 
-  if (FDIP_WARMUP && inst_count[ic->proc_id] > FDIP_WARMUP && !warmed_up) {
-    reset_stats(FALSE);
-    warmed_up = TRUE;
-  }
-
   switch(ic->state) {
     case IC_FETCH: {
       Break_Reason break_fetch = BREAK_DONT;
@@ -1253,6 +1248,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
     if(FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE) {
       fdip_remove_cl_fetch_addr(*repl_line_addr);
       fdip_inc_cnt_unuseful(*repl_line_addr);
+      DEBUG_FDIP(ic->proc_id, "%llx is evicted\n", *repl_line_addr);
     }
   }
   else if(*repl_line_addr && line->FDIP_prefetch && line->read_count[0]) {
@@ -1394,7 +1390,15 @@ void log_stats_ic_miss() {
 }
 
 void log_stats_mshr_hit(Addr line_addr) {
-  Mem_Req* req = mem_buf_access_all(line_addr);
+  Flag demand_hit_prefetch = FALSE;
+  Flag demand_hit_writeback = FALSE;
+  Mem_Queue_Entry* queue_entry = NULL;
+  Flag ramulator_match = FALSE;
+  Mem_Req* req = mem_search_reqbuf_wrapper(ic->proc_id, line_addr,
+                                           MRT_FDIPPRF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
+                                           QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
+                                           QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
+                                           &queue_entry, &ramulator_match);
   if (req && req->type == MRT_FDIPPRF && !req->hit_by_demand_load) {
     STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);
     if (req->fdip_pref_off_path)
@@ -1427,6 +1431,7 @@ Flag instr_fill_line(Mem_Req* req) {
   ASSERT(ic->proc_id, req->type == MRT_IPRF || req->type == MRT_FDIPPRF || req->type == MRT_UOCPRF || req->type == MRT_IFETCH);
   if (mem_req_is_type(req, MRT_IFETCH) || mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_FDIPPRF)) {
     icache_fill_line(req);
+    DEBUG_FDIP(ic->proc_id, "line 0x %llx is filled into icache\n", req->addr);
   }
   // TEMP CHANGE: all FDIPPRF are UOC_PREF as well, except for a corner case where branch target is same line
   if (UOC_PREF && (mem_req_is_type(req, MRT_FDIPPRF) || mem_req_is_type(req, MRT_UOCPRF))) {

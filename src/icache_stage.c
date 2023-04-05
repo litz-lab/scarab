@@ -55,6 +55,7 @@
 #include "prefetcher/stream_pref.h"
 #include "statistics.h"
 #include "libs/list_lib.h"
+#include "decoupled_frontend.h"
 
 #include "prefetcher/fdip.h"
 #include "prefetcher/pref.param.h"
@@ -72,6 +73,11 @@
 /**************************************************************************************/
 /* Global Variables */
 
+/**************************************************************************************/
+
+Pb_Data* ic_pb_data;  // cmp cne is fine for cmp now assuming homogeneous cmp
+// But decided to use array for future use
+
 Icache_Stage* ic = NULL;
 List op_buf;
 Counter                last_issued_op_num = 0; // IC stage issues ops and this refers to the last op issued from head of the lookahead buffer by IC stage (there are LOOKAHEAD_BUF_SIZE amout of ops more in the lookahead buffer
@@ -80,25 +86,6 @@ extern Cmp_Model              cmp_model;
 extern Memory*                mem;
 extern Rob_Stall_Reason       rob_stall_reason;
 extern Rob_Block_Issue_Reason rob_block_issue_reason;
-extern Addr                   runahead_pc;
-extern Addr                   last_bbl_start_addr;
-extern Flag                   runahead_disable;
-extern uns64                  last_runahead_uid;
-extern uns64                  max_runahead_uid;
-extern Counter                last_runahead_op;
-extern Counter                max_runahead_op;
-extern Flag                   mem_req_failed;
-extern Counter                last_recover_cycle;
-extern uns                    operating_mode;
-extern Counter                icache_ftq_pos;
-extern Counter                fdip_ftq_pos;
-Counter                       ipc_counter;
-Counter                       ipc_counter_event;
-Counter                       packet_size_bytes;
-Flag                          fdip_packet_break_before;
-uns64                         last_fetch_uid     = 0;
-uns                           last_icache_miss_reason = 0;
-Flag                          warmed_up = FALSE;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -171,42 +158,13 @@ void init_icache_stage(uns8 proc_id, const char* name) {
                IC_PREF_CACHE_ASSOC, ICACHE_LINE_SIZE, 0, REPL_TRUE_LRU);
 
   memset(ic->rand_wb_state, 0, NUM_ELEMENTS(ic->rand_wb_state));
-
-  //FDIP
-  if (FDIP_ENABLE) {
-    fdip_init(g_bp_data, ic);
-  }
 }
 
 /**************************************************************************************/
 /* icache_init_trace:  */
 
 void init_icache_trace() {
-  if (FDIP_ENABLE)
-    ASSERT(0, LOOKAHEAD_BUF_SIZE && PERFECT_NT_BTB && LOOKAHEAD_BUF_SIZE > FDIP_INSTRUCTION_BW * 3 * (FDIP_FTQ_DEPTH + 1));
-  if (LOOKAHEAD_BUF_SIZE) {
-    init_list(&op_buf, "op_buf", sizeof(Op*), TRUE);
-    while (list_get_count(&op_buf) < LOOKAHEAD_BUF_SIZE) {
-      Op* new_op = alloc_op(ic->proc_id);
-      frontend_fetch_op(ic->proc_id, new_op);
-      Op** ptr = dl_list_add_tail(&op_buf);
-      *ptr = new_op;
-      DEBUG_FDIP(ic->proc_id, "[op_buf] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu, op->inst_info->trace_info.inst_size: %u\n", new_op->fetch_addr, new_op->table_info->cf_type, new_op->inst_uid, new_op->op_num, new_op->inst_info->trace_info.inst_size);
-      if (new_op->table_info->cf_type)
-        max_runahead_uid = new_op->inst_uid;
-      max_runahead_op = new_op->op_num;
-      op_count[ic->proc_id]++;          /* increment instruction counters */
-      unique_count_per_core[ic->proc_id]++;
-      unique_count++;
-    }
-    Op **ptr = list_get_head(&op_buf);
-    ic->next_fetch_addr = (*ptr)->inst_info->addr;
-    runahead_pc = (*ptr)->inst_info->addr;
-    last_bbl_start_addr = runahead_pc;
-    runahead_disable = FALSE;
-  } else {
-    ic->next_fetch_addr = frontend_next_fetch_addr(ic->proc_id);
-  }
+  ic->next_fetch_addr = decoupled_fe_next_fetch_addr(ic->proc_id);
   ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
 }
 
@@ -255,13 +213,14 @@ void recover_icache_stage() {
   DEBUG(ic->proc_id,
         "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s\n",
         hexstr64s(bp_recovery_info->recovery_fetch_addr));
-
   cur->op_count = 0;
   for(ii = 0; ii < ic->sd.max_op_count; ii++) {
     if(cur->ops[ii]) {
       if(FLUSH_OP(cur->ops[ii])) {
+        ASSERT(ic->proc_id, cur->ops[ii]->off_path);
         free_op(cur->ops[ii]);
         cur->ops[ii] = NULL;
+
       } else {
         cur->op_count++;
       }
@@ -283,7 +242,7 @@ void recover_icache_stage() {
       ic->next_state = IC_FETCH;
     }
   }
-  op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1 + LOOKAHEAD_BUF_SIZE;
+  op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
   ic->next_fetch_addr   = bp_recovery_info->recovery_fetch_addr;
   ASSERT(ic->proc_id, ic->next_fetch_addr);
 
@@ -299,35 +258,8 @@ void recover_icache_stage() {
 /* redirect_icache_stage: */
 
 void redirect_icache_stage() {
-  ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == ic->proc_id);
-  Op*  op                = bp_recovery_info->redirect_op;
-  Addr next_fetch_addr   = op->oracle_info.pred_npc;
-  op->redirect_scheduled = FALSE;
-
-  DEBUG(ic->proc_id, "Icache stage redirect signaled. next_fetch_addr: 0x%s\n",
-        hexstr64s(next_fetch_addr));
-  ASSERT(ic->proc_id, ic->state == IC_WAIT_FOR_REDIRECT);
-
-  Flag main_predictor_wrong = op->oracle_info.mispred ||
-                              op->oracle_info.misfetch;
-  Flag late_predictor_wrong = (USE_LATE_BP && (op->oracle_info.late_mispred ||
-                                               op->oracle_info.late_misfetch));
-  ic->back_on_path          = !(op->off_path || main_predictor_wrong ||
-                       late_predictor_wrong);
-  ic->next_fetch_addr       = next_fetch_addr;
-  ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr);
-  ic->next_state = IC_FETCH;
-  if (FDIP_ENABLE && ipc_counter_event == 1000) {
-    ipc_counter = 0;
-    ipc_counter_event = 0;
-  }
-
-  Flag uc_hit = in_uop_cache(op->oracle_info.pred_npc, NULL, FALSE);
-  uns fetch_latency = uc_hit ? UOP_CACHE_LATENCY : ICACHE_LATENCY;  
-
-  if (ic->back_on_path) {  // Do not double count ops that have both a BTB miss and wrong predictor.
-    INC_STAT_EVENT(bp_recovery_info->proc_id, BP_REDIRECT_FETCH_CYCLES_UC + !uc_hit, fetch_latency);
-  }
+  recover_icache_stage();
+  return;
 }
 
 
@@ -368,11 +300,11 @@ Inst_Info** lookup_cache() {
                                              &ic->line_addr, TRUE);
   if(PERFECT_ICACHE && !line)
     line = (Inst_Info**)INIT_CACHE_DATA_VALUE;
-  if (in_uop_cache(ic->fetch_addr, NULL, FALSE) && !line) {
+  /*if (in_uop_cache(ic->fetch_addr, NULL, FALSE) && !line) {
     // Should return Inst_Info, but op hasn't been fetched yet, so just give it any 
     // value. This is not used anyway
     line = (Inst_Info**)DUMMY_ADDR_UC_FETCH;
-  }
+    }*/
   return line;
 }
 
@@ -395,8 +327,11 @@ void update_icache_stage() {
     INC_STAT_EVENT(ic->proc_id,
                    INST_LOST_FULL_WINDOW + inst_lost_get_full_window_reason(),
                    IC_ISSUE_WIDTH);
+    DEBUG(ic->proc_id, "Icache stalled\n");
     return;
   }
+
+  DEBUG(ic->proc_id, "Icache state: %i\n", ic->state);
 
   switch(ic->state) {
     case IC_FETCH: {
@@ -405,18 +340,12 @@ void update_icache_stage() {
       ic->off_path &= !ic->back_on_path;
       ic->back_on_path = FALSE;
 
-      if(!FETCH_OFF_PATH_OPS && ic->off_path)
-        return;
-
-      if (FDIP_ENABLE)
-        fdip_update();
-
       STAT_EVENT(ic->proc_id, FETCH_ON_PATH + ic->off_path);
 
       reset_packet_build(ic_pb_data);  // reset packet build counters
 
-      packet_size_bytes = 0;
       while(!break_fetch) {
+
         ic->fetch_addr = ic->next_fetch_addr;
         ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr)
 
@@ -457,7 +386,6 @@ void update_icache_stage() {
         if (ic->line == NULL) { // cache miss
           DEBUG(ic->proc_id, "Cache miss on op_num:%s @ 0x%s\n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
-          DEBUG_FDIP(ic->proc_id, "[%llu] Cache miss on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
           log_stats_mshr_hit(ic->line_addr);
           log_stats_ic_miss();
           if (FDIP_ENABLE && FDIP_TIMELY_FIFO_SIZE)
@@ -518,16 +446,10 @@ void update_icache_stage() {
                            ICACHE_LINE_SIZE, 0, NULL, instr_fill_line,
                            unique_count,
                            0);
-          if (FDIP_ENABLE && icache_ftq_pos >= fdip_ftq_pos) {
-            ic->next_state = IC_WAIT_FOR_FDIP;
-            break_fetch = BREAK_FDIP_RUNAHEAD;
-            break;
-          }
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line);
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
-          DEBUG_FDIP(ic->proc_id, "[%llu] Cache hit on fetch_addr: %llx, line_addr: %llx\n", cycle_count, ic->fetch_addr, ic->line_addr);
           if (FDIP_ENABLE) {
             if (!WARMUP && operating_mode == SIMULATION_MODE) {
               fdip_remove_cl_fetch_addr(ic->line_addr);
@@ -542,23 +464,9 @@ void update_icache_stage() {
             ASSERT(ic->proc_id, line_info);
             wp_process_icache_hit(line_info, ic->fetch_addr);
           }
-          if (FDIP_ENABLE && icache_ftq_pos == fdip_ftq_pos) {
-            ic->next_state = IC_WAIT_FOR_FDIP;
-            break_fetch = BREAK_FDIP_RUNAHEAD;
-            break;
-          }
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line);
         }
       }
-      if (FDIP_ENABLE) {
-        DEBUG_FDIP(ic->proc_id, "icache_ftq_pos from %llu to %llu\n", icache_ftq_pos, icache_ftq_pos + packet_size_bytes);
-        icache_ftq_pos += packet_size_bytes;
-        ipc_counter += packet_size_bytes;
-        ipc_counter_event++;
-        ASSERT(ic->proc_id, icache_ftq_pos <= fdip_ftq_pos);
-        ASSERT(ic->proc_id, icache_ftq_pos + FDIP_FTQ_DEPTH * FDIP_INSTRUCTION_BW);
-      }
-
       INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_DONT + break_fetch,
                      IC_ISSUE_WIDTH > ic->sd.op_count ? IC_ISSUE_WIDTH - ic->sd.op_count
                                                            : 0);
@@ -567,33 +475,13 @@ void update_icache_stage() {
     } break;
 
     case IC_WAIT_FOR_MISS: {
-      if (FDIP_ENABLE) {
-        fdip_update();
-        ipc_counter_event++;
-      }
+      DEBUG(ic->proc_id, "Ifetch barrier: Waiting for miss \n");
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS, IC_ISSUE_WIDTH - 1);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
-      STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + last_icache_miss_reason);
-    } break;
-
-    case IC_WAIT_FOR_REDIRECT: {
-      if (FDIP_ENABLE) {
-        fdip_update();
-        Counter ic_process_bytes = (Counter)ceil(ipc_counter/ipc_counter_event);
-        if (icache_ftq_pos + ic_process_bytes < fdip_ftq_pos)
-          icache_ftq_pos += ic_process_bytes;
-        if (ipc_counter/ipc_counter_event <= 0.1)
-          DEBUG_FDIP(ic->proc_id, "The number of bytes per cycle is too small.\n");
-      }
-      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_REDIRECT, IC_ISSUE_WIDTH);
-      STAT_EVENT(ic->proc_id, FETCH_0_OPS);
+      //STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + last_icache_miss_reason);
     } break;
 
     case IC_WAIT_FOR_EMPTY_ROB: {
-      if (FDIP_ENABLE) {
-        fdip_update();
-        ipc_counter_event++;
-      }
       DEBUG(ic->proc_id, "Ifetch barrier: Waiting for ROB to become empty \n");
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_EMPTY_ROB, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
@@ -604,24 +492,10 @@ void update_icache_stage() {
     } break;
 
     case IC_WAIT_FOR_TIMER: {
-      if (FDIP_ENABLE) {
-        fdip_update();
-        ipc_counter_event++;
-      }
+      DEBUG(ic->proc_id, "Ifetch barrier: Waiting for timer \n");
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_TIMER, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
       if(cycle_count >= ic->timer_cycle)
-        ic->next_state = IC_FETCH;
-    } break;
-
-    case IC_WAIT_FOR_FDIP: {
-      if (FDIP_ENABLE) {
-        fdip_update();
-        ipc_counter_event++;
-      }
-      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_FDIP, IC_ISSUE_WIDTH);
-      STAT_EVENT(ic->proc_id, FETCH_0_OPS);
-      if(icache_ftq_pos < fdip_ftq_pos)
         ic->next_state = IC_FETCH;
     } break;
 
@@ -671,36 +545,14 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     Op*        op = NULL;
     Inst_Info* inst = 0;
     UNUSED(inst);
-
-    if(frontend_can_fetch_op(ic->proc_id) ||
-        (!frontend_can_fetch_op(ic->proc_id) && LOOKAHEAD_BUF_SIZE && list_get_count(&op_buf))) {
-      if (LOOKAHEAD_BUF_SIZE) {
-        Op** ptr = NULL;
-        if ((!FDIP_ENABLE || !fdip_packet_break_before) && frontend_can_fetch_op(ic->proc_id)) {
-          Op* new_op = alloc_op(ic->proc_id);
-          frontend_fetch_op(ic->proc_id, new_op);
-          ptr = dl_list_add_tail(&op_buf);
-          *ptr = new_op;
-          DEBUG_FDIP(ic->proc_id, "new_op->fetch_addr: %llx, new_op->inst_uid: %llu, cf_type: %d, new_op->op_num: %llu, new_op->inst_info->trace_info.inst_size: %u, last_runahead_uid: %llu\n", new_op->fetch_addr, new_op->inst_uid, new_op->table_info->cf_type, new_op->op_num, new_op->inst_info->trace_info.inst_size, last_runahead_uid);
-          if (new_op->table_info->cf_type)
-            max_runahead_uid = new_op->inst_uid;
-          max_runahead_op = new_op->op_num;
-        }
-        if(FDIP_ENABLE)
-          fdip_packet_break_before = FALSE;
-        ptr = dl_list_remove_head(&op_buf);
-        op = *ptr;
-        DEBUG_FDIP(ic->proc_id, "[%llu] [op_buf - remove head] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu, op->inst_info->trace_info.inst_size: %u\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num, op->inst_info->trace_info.inst_size);
-        last_issued_op_num = op->op_num;
-      }
-      else {
-        op   = alloc_op(ic->proc_id);
-        frontend_fetch_op(ic->proc_id, op);
-        DEBUG_FDIP(ic->proc_id, "[%llu] [op] pc: %llx, cf_type: %d, op->inst_uid: %llu, op->op_num: %llu\n", cycle_count, op->fetch_addr, op->table_info->cf_type, op->inst_uid, op->op_num);
-      }
+    if(decoupled_fe_can_fetch_op(ic->proc_id)) {
+      decoupled_fe_fetch_op(&op, ic->proc_id);
+      last_issued_op_num = op->op_num;
       ASSERTM(ic->proc_id, ic->next_fetch_addr == op->inst_info->addr,
                "Fetch address 0x%llx does not match op address 0x%llx\n",
                ic->next_fetch_addr, op->inst_info->addr);
+      ASSERTM(ic->proc_id, ic->off_path == op->off_path,
+              "Inconsistent off-path op PC: %llx ic:%i op:%i\n", op->inst_info->addr, ic->off_path, op->off_path);
       op->fetch_addr = ic->next_fetch_addr;
       ASSERT_PROC_ID_IN_ADDR(ic->proc_id, op->fetch_addr)
       op->off_path  = ic->off_path;
@@ -736,27 +588,17 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
 
     packet_break = packet_build(ic_pb_data, break_fetch, op);
     if(packet_break == PB_BREAK_BEFORE) {
-      if(LOOKAHEAD_BUF_SIZE) {
-        Op** ptr = dl_list_add_head(&op_buf);
-        *ptr = op;
-      } else {
-        free_op(op);
-      }
+      decoupled_fe_return_op(op);
       break;
     }
 
     /* add to sequential op list */
     add_to_seq_op_list(td, op);
-    if(!last_fetch_uid || last_fetch_uid != op->inst_uid) {
-      DEBUG_FDIP(ic->proc_id, "[icache_stage] uid %llu, packet_size_bytes %llu to %llu\n", op->inst_uid, packet_size_bytes, packet_size_bytes + op->inst_info->trace_info.inst_size);
-      packet_size_bytes += op->inst_info->trace_info.inst_size;
-      last_fetch_uid = op->inst_uid;
-    }
 
     ASSERT(ic->proc_id, td->seq_op_list.count <= op_pool_active_ops);
 
     // Log uop cache access - must be called exactly once for every op
-    op->fetched_from_uop_cache = in_uop_cache(op->inst_info->addr, &op->op_num, TRUE);
+    op->fetched_from_uop_cache = FALSE;//in_uop_cache(op->inst_info->addr, &op->op_num, TRUE);
 
     /* map the op based on true dependencies & set information in
      * op->oracle_info */
@@ -768,8 +610,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     STAT_EVENT(op->proc_id, FETCH_ALL_INST);
     STAT_EVENT(op->proc_id, ORACLE_ON_PATH_INST + op->off_path);
     STAT_EVENT(op->proc_id, ORACLE_ON_PATH_INST_MEM +
-                              (op->table_info->mem_type == NOT_MEM) +
-                              2 * op->off_path);
+               (op->table_info->mem_type == NOT_MEM) +
+               2 * op->off_path);
 
     thread_map_mem_dep(op);
     op->fetch_cycle = cycle_count;
@@ -781,7 +623,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     op_count[ic->proc_id]++;          /* increment instruction counters */
     unique_count_per_core[ic->proc_id]++;
     unique_count++;
-
     /* check trigger */
     if(op->inst_info->trigger_op_fetched_hook)
       model->op_fetched_hook(op);
@@ -803,121 +644,36 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       if(op->table_info->cf_type == CF_CBR)
         td->td_info.fetch_br_count++;
 
-      if(*break_fetch == BREAK_BARRIER) {
-        // for fetch barriers (including syscalls), we do not want to do
-        // redirect/recovery, BUT we still want to update the branch predictor.
-        if (FDIP_ENABLE) {
-          fdip_pred(ic->fetch_addr, op);
-          ic->next_fetch_addr       = op->oracle_info.npc;
-          if (!fdip_pred_off_path() && mem_req_failed && last_runahead_op < last_issued_op_num)
-            fdip_reset_on_path(ic->next_fetch_addr);
-          ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
-        } else {
-          bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
+      ic->next_fetch_addr       = op->oracle_info.pred_npc;
 
-          op->oracle_info.mispred   = 0;
-          op->oracle_info.misfetch  = 0;
-          op->oracle_info.btb_miss  = 0;
-          op->oracle_info.no_target = 0;
-          ic->next_fetch_addr       = op->oracle_info.npc;
-          ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
-        }
-      } else {
-        if (FDIP_ENABLE) {
-          ic->next_fetch_addr = fdip_pred(ic->fetch_addr, op);
-          if (!fdip_pred_off_path() && mem_req_failed && last_runahead_op < last_issued_op_num)
-            fdip_reset_on_path(ic->next_fetch_addr);
-        }
-        else {
-          ic->next_fetch_addr = bp_predict_op(g_bp_data, op, (*cf_num)++, ic->fetch_addr);
-        }
+      // initially bp_predict_op can return a garbage, for multi core run,
+      // addr must follow cmp addr convention
+      ic->next_fetch_addr = convert_to_cmp_addr(ic->proc_id,
+                                                ic->next_fetch_addr);
+      ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr);
 
-        // initially bp_predict_op can return a garbage, for multi core run,
-        // addr must follow cmp addr convention
-        ic->next_fetch_addr = convert_to_cmp_addr(ic->proc_id,
-                                                  ic->next_fetch_addr);
-        ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
-      }
       ASSERT(ic->proc_id,
              (op->oracle_info.mispred << 2 | op->oracle_info.misfetch << 1 |
               op->oracle_info.btb_miss) <= 0x7);
 
-      const uns8 mispred       = op->oracle_info.mispred;
-      const uns8 late_mispred  = op->oracle_info.late_mispred;
-      const uns8 misfetch      = op->oracle_info.misfetch;
-      const uns8 late_misfetch = op->oracle_info.late_misfetch;
-
       inc_bstat_fetched(op);
 
-      /* if it's a mispredict, kick the oracle off path */
-      if(mispred || misfetch ||
-         (USE_LATE_BP && (late_mispred || late_misfetch))) {
-        ic->off_path = TRUE;
+      ic->off_path = ic->off_path || op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec;
 
-        if(FETCH_OFF_PATH_OPS) {
-          if(mispred || misfetch) {
-            DEBUG(ic->proc_id,
-                  "Cycle %llu: redirected frontend because of the "
-                  "early branch predictor to 0x%s\n",
-                  cycle_count, hexstr64s(ic->next_fetch_addr));
-            frontend_redirect(td->proc_id, op->inst_uid, ic->next_fetch_addr);
-          }
-
-          if(USE_LATE_BP) {
-            if((mispred || misfetch) && !late_mispred && !late_misfetch) {
-              bp_sched_recovery(bp_recovery_info, op, cycle_count,
-                                /*late_bp_recovery=*/TRUE,
-                                /*force_offpath=*/FALSE);
-              DEBUG(ic->proc_id,
-                    "Scheduled a recovery to correct addr for cycle %llu\n",
-                    cycle_count + LATE_BP_LATENCY);
-            } else if((late_mispred || late_misfetch) &&
-                      op->oracle_info.pred_npc !=
-                        op->oracle_info.late_pred_npc) {
-              bp_sched_recovery(bp_recovery_info, op, cycle_count,
-                                /*late_bp_recovery=*/TRUE,
-                                /*force_offpath=*/TRUE);
-              DEBUG(ic->proc_id,
-                    "Scheduled a recovery to wrong addr for cycle %llu\n",
-                    cycle_count + LATE_BP_LATENCY);
-            }
-          }
-        } else {
-          packet_break = PB_BREAK_AFTER;
-          *break_fetch = BREAK_OFFPATH;
-        }
-
-        // pipeline gating
-        if(!op->off_path)
-          td->td_info.last_bp_miss_op = op;
-        ///////////////////////////////////////
-
-        // Measuring basic block lengths
-        static int bbl_len = 0;
-        static int bbl_len_dont_end_pred_nt = 0;
-        bbl_len++;
-        bbl_len_dont_end_pred_nt++;
-        if (op->table_info->cf_type) {
-          STAT_EVENT(ic->proc_id, BBL_LENGTH_1 + bbl_len-1);
-          bbl_len = 0;
-          if (op->oracle_info.pred == TAKEN) {
-            STAT_EVENT(ic->proc_id, BBL_DONT_END_PRED_NT_LENGTH_1 + bbl_len_dont_end_pred_nt-1);
-            bbl_len_dont_end_pred_nt = 0;
-          }
+      // Measuring basic block lengths
+      static int bbl_len = 0;
+      static int bbl_len_dont_end_pred_nt = 0;
+      bbl_len++;
+      bbl_len_dont_end_pred_nt++;
+      if (op->table_info->cf_type) {
+        STAT_EVENT(ic->proc_id, BBL_LENGTH_1 + bbl_len-1);
+        bbl_len = 0;
+        if (op->oracle_info.pred == TAKEN) {
+          STAT_EVENT(ic->proc_id, BBL_DONT_END_PRED_NT_LENGTH_1 + bbl_len_dont_end_pred_nt-1);
+          bbl_len_dont_end_pred_nt = 0;
         }
       }
 
-      
-      /* if it's a btb miss, quit fetching and wait for redirect */
-      if(op->oracle_info.btb_miss) {
-        *break_fetch = BREAK_BTB_MISS;
-        DEBUG(ic->proc_id, "Changed icache to wait for redirect %llu\n",
-              cycle_count);
-        if (FDIP_ENABLE)
-          runahead_disable = TRUE;
-        return IC_WAIT_FOR_REDIRECT;
-      }
-      
       /* if it's a taken branch, wait for timer */
       if(FETCH_BREAK_ON_TAKEN && op->oracle_info.pred &&
          *break_fetch != BREAK_BARRIER) {
@@ -931,14 +687,12 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     } else {
       if(op->eom) {
         ic->next_fetch_addr = ADDR_PLUS_OFFSET(
-          ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
-        if (FDIP_ENABLE && !fdip_pred_off_path() && mem_req_failed && last_runahead_op < last_issued_op_num)
-          fdip_reset_on_path(ic->next_fetch_addr);
-        ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
+                                               ic->next_fetch_addr, op->inst_info->trace_info.inst_size);
+        ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr);
       }
       // pass the global branch history to all the instructions
       op->oracle_info.pred_global_hist = g_bp_data->global_hist;
-      ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
+      ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr);
     }
 
     // TODO(peterbraun): Switch to using PB_BREAK_BEFORE
@@ -969,10 +723,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
 
   if(*break_fetch == BREAK_BARRIER) {
     return IC_WAIT_FOR_EMPTY_ROB;
-  }
-
-  if(FDIP_ENABLE && *break_fetch == BREAK_FDIP_RUNAHEAD) {
-    return IC_WAIT_FOR_FDIP;
   }
 
   return IC_FETCH;
@@ -1029,7 +779,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
     ic->line = (Inst_Info**)cache_insert(&ic->icache, ic->proc_id,
                                          ic->fetch_addr, &ic->line_addr,
                                          &repl_line_addr);
-
+    DEBUG(ic->proc_id, "Got line switch into ic fetch %llx\n", ic->line_addr);
     STAT_EVENT(ic->proc_id, ICACHE_FILL);
 
     if(WP_COLLECT_STATS) {  // cmp IGNORE
@@ -1302,85 +1052,8 @@ int32_t inst_lost_get_full_window_reason() {
   return 0;
 }
 
-Op* get_next_inst() {
-  Op* op;
-  Op** op_p = (Op**)list_get_current(&op_buf);
-
-  if (!op_p)
-    op_p = (Op**)list_start_head_traversal(&op_buf);
-
-  op = *op_p;
-  last_runahead_uid = op->inst_uid;
-  last_runahead_op = op->op_num;
-
-  // iterate to the last op in a same instruction
-  op_p = (Op**)list_next_element(&op_buf);
-  if(op_p) {
-    Op * next_op = *op_p;
-    while(next_op->inst_uid == last_runahead_uid) {
-      op = next_op;
-      last_runahead_op = op->op_num;
-      op_p = (Op**)list_next_element(&op_buf); // make the cur pointer point the next op
-      next_op = *op_p;
-    }
-  }
-  return op;
-}
-
 void move_to_prev_op(void) {
   list_prev_element(&op_buf);
-}
-
-// Retrieve the prediction window by looking into the lookahead buffer.
-// This should only be called when on-path because if FDIP is off-path, nothing will be found in a trace. 
-Uop_Cache_Data get_pw_lookahead_buffer(Addr start_addr) {
-  Uop_Cache_Data pw;
-  memset(&pw, 0, sizeof(pw));
-
-
-  // It is not always true that the branch for which I am prefetching target
-  // is still in lookahead buffer - see FDIP_PRED_FTQ_EMPTY
-
-  List_Entry* cur = op_buf.current;
-  Op** op_p = (Op**)list_get_current(&op_buf);
-
-  // Move the op pointer to the op just after the last runahead branch.
-  // If the branch was just-consumed this is the first element in the buffer.
-  // This is the branch's correct target.
-  if (op_p) {
-    ASSERT(ic->proc_id, (*op_p)->table_info->cf_type);
-    op_p = (Op**)list_next_element(&op_buf);
-  } else {
-    op_p = (Op**)list_start_head_traversal(&op_buf);
-    if (last_runahead_uid && (*op_p)->inst_uid <= last_runahead_uid) {
-      for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
-        if ((*op_p)->table_info->cf_type && (*op_p)->inst_uid == last_runahead_uid) {
-          op_p = (Op**)list_next_element(&op_buf);
-          break;
-        }
-      }
-    }
-  }
-
-  // ASSERT that the op identified matches the target/runahead_pc
-  ASSERT(ic->proc_id, (*op_p)->inst_info->addr == start_addr);
-  pw.first = start_addr;
-
-  // Next move down runahead buffer, incrementing n_uops until a branch is found.
-  for(; op_p; op_p = (Op**)list_next_element(&op_buf)) {
-    pw.n_uops++;
-    pw.last = (*op_p)->inst_info->addr;
-    if ((*op_p)->table_info->cf_type) { // first branch after the last predicted branch, end of pw
-      break;
-    }
-  }
-
-  // Reset current to prevent side effects
-  op_buf.current = cur;
-  ASSERT(ic->proc_id, (*op_p)->table_info->cf_type);
-  ASSERT(ic->proc_id, pw.n_uops);
-
-  return pw;
 }
 
 void log_stats_ic_miss() {
@@ -1407,17 +1080,18 @@ void log_stats_mshr_hit(Addr line_addr) {
       STAT_EVENT(ic->proc_id, MSHR_HIT_ONPATH_BY_FDIP);
     req->hit_by_demand_load = TRUE;
     fdip_inc_cnt_useful(ic->line_addr);
-    last_icache_miss_reason = 3;
+    //last_icache_miss_reason = 3;
   }
   if (!req) {
     fdip_inc_icache_miss(ic->line_addr);
-    last_icache_miss_reason = fdip_get_miss_reason(line_addr);
+    /*last_icache_miss_reason = fdip_get_miss_reason(line_addr);
     if (last_icache_miss_reason == 2)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_FDIP_LIMIT);
     else if (last_icache_miss_reason == 1)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED);
     else
       STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
+    */
   }
   if (FDIP_HASH_ENABLE && FDIP_REDUCE_STORAGE)
     fdip_inc_useful_hash(line_addr);

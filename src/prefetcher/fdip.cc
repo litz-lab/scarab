@@ -94,7 +94,7 @@ uint32_t last_prefetch_candidate_counter = 0;
 uint64_t bloom_inserts = 0;
 Addr last_cl_unuseful = 0;
 bool cl_candidates_popped = 0;
-extern Counter packet_size_bytes;
+Counter packet_size_bytes;
 Counter fdip_cycle_count = 0;
 Counter ftq_occupancy = 0;
 Counter ftq_occupancy_on_path = 0;
@@ -238,6 +238,7 @@ Addr fdip_pred(Addr bp_pc, Op *op) {
   patch_oracle_info(op, &req->op, bp_pc);
   //Re-evaluate FDIP direction prediction based on the current oracle info
   op->cf_within_fetch = cf_num++;
+  ASSERT(0,0); //reimplement without packet_size_bytes
   if (req->taken)
     packet_size_bytes += req->alignment_bytes;
   if (!fdip_on_path_bp) {
@@ -395,7 +396,7 @@ int fdip_dual_path_prefetch(Op* op) {
   if (FDIP_DUAL_PATH_PREF_IC_ENABLE) {
     // is prefetching one CL for the alt path enough?
     // pred_target is the target stored by the BTB used if predicted taken
-    Flag success = fdip_prefetch(op->pred_target, op);
+    Flag success = fdip_prefetch(op->oracle_info.pred_npc, op);
     if (success) {
       icache_pref += 1;
       ftq.back().second.prefetched = true;
@@ -409,7 +410,7 @@ int fdip_dual_path_prefetch(Op* op) {
   }
   if (FDIP_DUAL_PATH_PREF_UOC_ENABLE || FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE) {
     Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
-    Addr not_predicted_npc = op->oracle_info.pred ? pc_plus_offset : op->pred_target;
+    Addr not_predicted_npc = op->oracle_info.pred ? pc_plus_offset : op->oracle_info.pred_npc;
     uoc_pref = uop_cache_issue_prefetch(not_predicted_npc, FALSE);
     STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_TRIGGERED);
     INC_STAT_EVENT(ic_stage->proc_id, FDIP_ALT_PATH_PREFETCHES_UOC_EMITTED_OFF_PATH + fdip_on_path_pref,
@@ -1159,7 +1160,8 @@ void fdip_update() {
     // on-path prediction
     if (fdip_on_path_bp) {
       // find the corresponding op of runahead_pc from the lookahead buffer
-      op = get_next_inst();
+      // Reimplement using decoupled_fe API
+      //op = get_next_inst();
       DEBUG(ic_stage->proc_id, "[fdip_update - op path] op->inst_uid: %llu op->op_num: %llu\n", op->inst_uid, op->op_num);
       is_branch = (op && op->table_info->cf_type)? true : false;
       if (is_branch) {
@@ -1296,8 +1298,8 @@ void fdip_update() {
       // TEMP CHANGE: Since UOCPRF is temporarily issue in same memreq as FDIPPRF,
       // only issue pref if cf_type and target is in the SAME cache line
       if (!btb_ras_miss && op && op->table_info->cf_type && op->oracle_info.pred) {
-        if (get_cache_line_addr(&ic->icache, runahead_pc) == get_cache_line_addr(&ic->icache, op->pred_target))
-          uop_cache_issue_prefetch(op->pred_target, FALSE);
+        if (get_cache_line_addr(&ic->icache, runahead_pc) == get_cache_line_addr(&ic->icache, op->oracle_info.pred_npc))
+          uop_cache_issue_prefetch(op->oracle_info.pred_npc, FALSE);
       } else {
         // On the off path we don't know instr size. In that case prefetch on last byte of line.
         // Addr pred_npc = op ? ADDR_PLUS_OFFSET(runahead_pc, op->inst_info->trace_info.inst_size) : runahead_pc + 1;
@@ -1654,6 +1656,7 @@ Flag fdip_learned_by_useful_hash(Addr line_addr) {
 }
 
 Flag can_fetch_op_from_ftq(Op* op) {
+  ASSERT(0,0); //reimplement without packet_size_bytes
   if (op->table_info->cf_type) {
     ASSERT(ic_stage->proc_id, !ftq.empty());
     ASSERT(ic_stage->proc_id, ftq.front().first == op->fetch_addr);

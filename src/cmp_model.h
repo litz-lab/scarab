@@ -36,6 +36,7 @@
 #include "exec_ports.h"
 #include "exec_stage.h"
 #include "icache_stage.h"
+#include "decoupled_frontend.h"
 #include "map.h"
 #include "map_stage.h"
 #include "memory/memory.h"

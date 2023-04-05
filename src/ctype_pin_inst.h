@@ -30,6 +30,7 @@
 #define CTYPE_PIN_INST_H_SEEN
 
 #include <inttypes.h>
+#include "table_info.h"
 
 #define MAX_SRC_REGS_NUM 8
 #define MAX_DST_REGS_NUM 8
@@ -130,5 +131,45 @@ typedef struct ctype_pin_inst_struct {
 } __attribute__((packed)) ctype_pin_inst;
 
 typedef ctype_pin_inst compressed_op;
+
+inline ctype_pin_inst create_sentinel() {
+  ctype_pin_inst inst;
+  memset(&inst, 0, sizeof(inst));
+  inst.op_type     = OP_INV;
+  inst.is_sentinel = 1;
+  strcpy(inst.pin_iclass, "SENTINEL");
+  return inst;
+}
+
+inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt) {
+  ctype_pin_inst inst;
+  memset(&inst, 0, sizeof(inst));
+  inst.instruction_addr = eip;
+  inst.size             = 1;
+  inst.op_type          = OP_IADD;
+  inst.cf_type          = CF_BR;
+  inst.num_simd_lanes   = 1;
+  inst.lane_width_bytes = 1;
+  inst.branch_target    = tgt;
+  inst.actually_taken   = 1;
+  inst.fake_inst        = 1;
+  strcpy(inst.pin_iclass, "DUMMY_JMP");
+  return inst;
+}
+
+inline ctype_pin_inst create_dummy_nop(uint64_t                  eip,
+                                Wrongpath_Nop_Mode_Reason reason) {
+  ctype_pin_inst inst;
+  memset(&inst, 0, sizeof(inst));
+  inst.instruction_addr      = eip;
+  inst.instruction_next_addr = eip + 1;
+  inst.size                  = 1;
+  inst.op_type               = OP_NOP;
+  strcpy(inst.pin_iclass, "DUMMY_NOP");
+  inst.fake_inst        = 1;
+  inst.fake_inst_reason = reason;
+  return inst;
+}
+
 
 #endif

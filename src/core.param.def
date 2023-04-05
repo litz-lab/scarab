@@ -288,7 +288,12 @@ DEF_PARAM(cbp_trace_r62, CBP_TRACE_R62, char*, string, NULL, )
 DEF_PARAM(cbp_trace_r63, CBP_TRACE_R63, char*, string, NULL, )
 
 DEF_PARAM(memtrace_modules_log, MEMTRACE_MODULES_LOG, char*, string, NULL, )
-DEF_PARAM(lookahead_buf_size, LOOKAHEAD_BUF_SIZE, uns, uns, 640, )
+
+DEF_PARAM(fe_taken_cf_per_cycle, FE_TAKEN_CF_PER_CYCLE, uns, uns, 1, )
+DEF_PARAM(fe_fetched_inst_bytes_per_cycle, FE_FETCHED_INST_BYTES_PER_CYCLE, uns, uns, 32, )
+DEF_PARAM(fe_predicted_branches_per_cycle, FE_PREDICTED_BRANCHES_PER_CYCLE, uns, uns, 4, )
+DEF_PARAM(fe_ftq_size, FE_FTQ_SIZE, uns, uns, 32, )
 
 DEF_PARAM(dumb_core_on, DUMB_CORE_ON, Flag, Flag, FALSE, )
 DEF_PARAM(dumb_core, DUMB_CORE, uns, uns, 1, )
+

@@ -228,11 +228,11 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
   static Counter next_op_num = 1;
 
   Flag found = in_uop_cache_search(pc, update_repl);
-
   if (update_repl) {
     STAT_EVENT(0, UOP_CACHE_MISS + found);
     if (op_num) {
-      ASSERT(0, *op_num == next_op_num);
+      //TODO: op num gets reset at recovery and hence does not monotonically increase
+      //ASSERT(0, *op_num == next_op_num);
       next_op_num++;
     }
   }
@@ -368,4 +368,9 @@ void set_addr_following_resteer_bf(Addr addr) {
   if (uop_cache.repl_policy == REPL_RESTEER) {
     update_repl_resteer_policy(&uop_cache, addr);
   }
+}
+
+Uop_Cache_Data get_pw_lookahead_buffer(Addr addr) {
+  printf("Reimplement here using decoupled_fe API\n");
+  ASSERT(0,0);
 }

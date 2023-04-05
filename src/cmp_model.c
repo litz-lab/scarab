@@ -45,6 +45,7 @@
 #include "prefetcher/pref.param.h"
 #include "prefetcher/pref_common.h"
 #include "prefetcher/fdip.h"
+#include "prefetcher/fdip_new.h"
 #include "sim.h"
 #include "statistics.h"
 
@@ -117,6 +118,10 @@ void cmp_init(uns mode) {
     init_bp_recovery_info(proc_id, &cmp_model.bp_recovery_info[proc_id]);
     init_bp_data(proc_id, &cmp_model.bp_data[proc_id]);
     init_uop_cache(proc_id);
+
+    init_decoupled_fe(proc_id, "DCFE");
+
+    init_fdip();
   }
 
   cmp_model.window_size = NODE_TABLE_SIZE;
@@ -145,6 +150,7 @@ void cmp_reset() {
 
   for(proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     cmp_set_all_stages(proc_id);
+    reset_decoupled_fe();
     reset_icache_stage();
     reset_decode_stage();
     reset_map_stage();
@@ -181,7 +187,6 @@ void cmp_istreams(void) {
       cycle_count = freq_cycle_count(FREQ_DOMAIN_CORES[proc_id]);
 
       set_bp_recovery_info(&cmp_model.bp_recovery_info[proc_id]);
-
       if(cycle_count >= bp_recovery_info->recovery_cycle) {
         set_bp_data(&cmp_model.bp_data[proc_id]);
         cmp_set_all_stages(proc_id);
@@ -220,6 +225,9 @@ void cmp_cores(void) {
       insert_decoded_uop_cache_prefetch();
       update_decode_stage(&ic->sd);
       update_map_stage(uop_queue_stage_get_latest_sd());
+      update_decoupled_fe();
+      //rname fdip_update to update_fdip
+      update_fdip();
       update_icache_stage();
 
       node_sched_ops();
@@ -241,7 +249,7 @@ void cmp_debug() {
     // cmp FIXME print out per core information
     FPRINT_LINE(proc_id, GLOBAL_DEBUG_STREAM);
     cmp_set_all_stages(proc_id);
-
+    debug_decoupled_fe();
     debug_icache_stage();
     debug_decode_stage();
     debug_map_stage();
@@ -348,6 +356,7 @@ void cmp_recover() {
                  bp_recovery_info->recovery_inst_uid,
                  bp_recovery_info->late_bp_recovery_wrong);
 
+  recover_decoupled_fe(bp_recovery_info->proc_id);
   recover_icache_stage();
   recover_decode_stage();
   recover_map_stage();
@@ -363,6 +372,8 @@ void cmp_recover() {
 /* cmp_redirect: */
 
 void cmp_redirect() {
+  // Scarab no longer supports redirect and instead recovers on BTB misses
+  ASSERT(bp_recovery_info->proc_id, 0);
   _DEBUG(bp_recovery_info->proc_id, DEBUG_BP, "Redirect caused by op_num:%s\n",
          unsstr64(bp_recovery_info->redirect_op_num));
   ASSERT(bp_recovery_info->proc_id,
@@ -371,6 +382,7 @@ void cmp_redirect() {
   bp_recovery_info->redirect_op->oracle_info.btb_miss_resolved = TRUE;
   ASSERT_PROC_ID_IN_ADDR(bp_recovery_info->proc_id,
                          bp_recovery_info->redirect_op->oracle_info.pred_npc);
+  redirect_decoupled_fe(bp_recovery_info->proc_id);
   redirect_icache_stage();
   set_addr_following_resteer_bf(bp_recovery_info->redirect_op->oracle_info.npc);
 }

@@ -130,6 +130,7 @@ void recover_decode_stage() {
     for(jj = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
       if(cur->ops[jj]) {
         if(FLUSH_OP(cur->ops[jj])) {
+          ASSERT(cur->ops[jj]->proc_id, cur->ops[jj]->off_path);
           free_op(cur->ops[jj]);
           cur->ops[jj] = NULL;
         } else {
@@ -184,6 +185,10 @@ void update_decode_stage(Stage_Data* src_sd) {
   /* Ops from the uop cache do not go to the decode stage. */
   Flag from_icache = src_sd->op_count && !src_sd->ops[0]->fetched_from_uop_cache;
   cur = &dec->sds[STAGE_MAX_DEPTH - 1];
+
+  if(src_sd->op_count) {
+    ASSERT(0, !src_sd->ops[0]->fetched_from_uop_cache);
+  }
   if(cur->op_count == 0 && from_icache) {
     prev           = src_sd;
     temp           = cur->ops;
@@ -194,8 +199,10 @@ void update_decode_stage(Stage_Data* src_sd) {
   }
 
   /* if the last decode stage is stalled, don't re-process the ops  */
-  if(stall)
+  if(stall) {
+    DEBUG(dec->proc_id, "Decode Stage stalled\n");
     return;
+  }
 
   /* now check the ops in the last decode stage for BTB errors */
   for(ii = 0; ii < dec->last_sd->op_count; ii++) {
@@ -203,7 +210,7 @@ void update_decode_stage(Stage_Data* src_sd) {
     ASSERT(dec->proc_id, op != NULL);
     ASSERT(dec->proc_id, !op->fetched_from_uop_cache);
     decode_stage_process_op(op);
-    accumulate_op(op);
+    //accumulate_op(op);
   }
 }
 
@@ -217,34 +224,26 @@ void decode_stage_process_op(Op* op) {
   if(cf) {
     Flag bf = op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE;
 
-    if(cf <= CF_CALL) {
+    // If the CF was unconditional and direct and taken and there was a BTB miss
+    // we can schedule a redirect. If the branch was not taken we are on the on-path.
+    // If the branch is condidtional or indirect, we will schedule recovery at exec
+    if(cf == CF_CALL || cf == CF_BR) {
       // it is a direct branch, so the target is now known
       bp_target_known_op(g_bp_data, op);
+    }
+    if (op->oracle_info.recover_at_decode) {
+      ASSERT(0, !bf);
+      bp_sched_recovery(bp_recovery_info, op, cycle_count,
+                        /*late_bp_recovery=*/FALSE, /*force_offpath=*/FALSE);
 
-      // since it is not indirect, redirect the input stream if it was a btb
-      // miss
-      if(op->oracle_info.btb_miss && !bf) {
-        // since this is direct, it can no longer a misfetch
-        op->oracle_info.misfetch = FALSE;
-        op->oracle_info.pred_npc = op->oracle_info.pred ?
-                                     op->oracle_info.target :
-                                     ADDR_PLUS_OFFSET(
-                                       op->inst_info->addr,
-                                       op->inst_info->trace_info.inst_size);
-        ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.pred_npc);
-        // schedule a redirect using the predicted npc
-        bp_sched_redirect(bp_recovery_info, op, cycle_count);
-        // stats for the reason of resteer
-        STAT_EVENT(dec->proc_id, RESTEER_BTB_MISS_CF_BR + cf);
-      }
-    } else {
-      // the instruction is indirect, so we can only unstall the front end
-      if(op->oracle_info.btb_miss && !op->oracle_info.no_target && !bf) {
-        // schedule a redirect using the predicted npc
-        bp_sched_redirect(bp_recovery_info, op, cycle_count);
-        // stats for the reason of resteer
-        STAT_EVENT(dec->proc_id, RESTEER_BTB_MISS_CF_BR + cf);
-      }
+      // After recovery remove misfetch/mispred/btb_miss flags so it does not trigger flush by exec again
+      op->oracle_info.misfetch = FALSE;
+      op->oracle_info.btb_miss = FALSE;
+      op->oracle_info.pred = op->oracle_info.dir;
+      op->oracle_info.mispred = FALSE;
+
+      // stats for the reason of resteer
+      STAT_EVENT(dec->proc_id, RESTEER_BTB_MISS_CF_BR + cf);
     }
 
     if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)

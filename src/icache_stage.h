@@ -105,13 +105,6 @@ typedef struct Icache_Data_struct {
 
 
 /**************************************************************************************/
-/* Global Variables */
-
-Pb_Data* ic_pb_data;  // cmp cne is fine for cmp now assuming homogeneous cmp
-// But decided to use array for future use
-
-
-/**************************************************************************************/
 /* External Variables */
 
 extern Icache_Stage* ic;
@@ -135,10 +128,8 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
 void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr);
 void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
 Flag icache_off_path(void);
-Op* get_next_inst(void);
 void move_to_prev_op(void);
 Flag instr_fill_line(Mem_Req* req);
-Uop_Cache_Data get_pw_lookahead_buffer(Addr start_addr);
 Flag instr_fill_line(Mem_Req* req);
 
 // For branch stat collection

@@ -39,18 +39,11 @@
 
 #include "bp/bp.param.h"
 #include "prefetcher/pref.param.h"
-#include "prefetcher/fdip.h"
 #include "core.param.h"
 #include "debug/debug.param.h"
 #include "memory/memory.param.h"
 #include "packet_build.param.h"
 #include "statistics.h"
-
-extern Counter icache_ftq_pos;
-extern Counter fdip_ftq_pos;
-extern Counter packet_size_bytes;
-extern List op_buf;
-extern Flag fdip_packet_break_before;
 
 
 /**************************************************************************************/
@@ -207,12 +200,6 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op) {
           }
         }
       }
-    }
-
-    if(FDIP_ENABLE && !can_fetch_op_from_ftq(op)) {
-      *break_fetch = BREAK_FDIP_RUNAHEAD;
-      fdip_packet_break_before = TRUE;
-      return PB_BREAK_BEFORE;
     }
 
     // this must be called as the last BREAK_BEFORE condition

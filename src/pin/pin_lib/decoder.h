@@ -46,8 +46,4 @@ vector<PIN_MEM_ACCESS_INFO>
   get_gather_scatter_mem_access_infos_from_gather_scatter_info(
     const CONTEXT* ctxt, const PIN_MULTI_MEM_ACCESS_INFO* infos_from_pin);
 
-ctype_pin_inst create_sentinel();
-ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt);
-ctype_pin_inst create_dummy_nop(uint64_t eip, Wrongpath_Nop_Mode_Reason reason);
-
 #endif  // __DECODER_H__

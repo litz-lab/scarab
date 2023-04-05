@@ -26,6 +26,7 @@
  * Description  : Frontend to simulate traces in memtrace format
  ***************************************************************************************/
 
+extern "C" {
 #include "debug/debug.param.h"
 #include "debug/debug_macros.h"
 #include "globals/assert.h"
@@ -33,6 +34,7 @@
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
+}
 
 #include "bp/bp.h"
 #include "bp/bp.param.h"
@@ -59,9 +61,16 @@
 char*           trace_files[MAX_NUM_PROCS];
 TraceReader*    trace_readers[MAX_NUM_PROCS];
 ctype_pin_inst* next_pi;
+ctype_pin_inst   next_offpath_pi[MAX_NUM_PROCS];
+//TODO: Make per proc?
 uint64_t        ins_id    = 0;
 uint64_t        prior_tid = 0;
 uint64_t        prior_pid = 0;
+bool            off_path_mode[MAX_NUM_PROCS] = {false};
+uint64_t        off_path_addr[MAX_NUM_PROCS] = {0};
+
+std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
+
 
 /**************************************************************************************/
 /* Private Functions */
@@ -276,42 +285,80 @@ Flag memtrace_can_fetch_op(uns proc_id) {
 void memtrace_fetch_op(uns proc_id, Op* op) {
   if(uop_generator_get_bom(proc_id)) {
     // ASSERT(proc_id, !trace_read_done[proc_id] && !reached_exit[proc_id]);
-    uop_generator_get_uop(proc_id, op, &next_pi[proc_id]);
+    if (!off_path_mode[proc_id]) {
+      uop_generator_get_uop(proc_id, op, &next_pi[proc_id]);
+    }
+    else {
+      uop_generator_get_uop(proc_id, op, &next_offpath_pi[proc_id]);
+    }
   } else {
     uop_generator_get_uop(proc_id, op, NULL);
   }
 
   if(uop_generator_get_eom(proc_id)) {
-    int        success = memtrace_trace_read(proc_id, &next_pi[proc_id]);
-    static int ins     = 0;
-    ins++;
-    if(!success) {
-      trace_read_done[proc_id] = TRUE;
-      reached_exit[proc_id]    = TRUE;
-      /* this flag is supposed to be set in uop_generator_get_uop() but there
-       * is a circular dependency on trace_read_done to be set. So, we set
-       * op->exit here. */
-      op->exit = TRUE;
-      std::cout << "Reached end of trace" << std::endl;
+    if (!off_path_mode[proc_id]) {
+      int        success = memtrace_trace_read(proc_id, &next_pi[proc_id]);
+      if(!success) {
+        trace_read_done[proc_id] = TRUE;
+        reached_exit[proc_id]    = TRUE;
+        /* this flag is supposed to be set in uop_generator_get_uop() but there
+         * is a circular dependency on trace_read_done to be set. So, we set
+         * op->exit here. */
+        op->exit = TRUE;
+        std::cout << "Reached end of trace" << std::endl;
+      }
+      else {
+        uint64_t addr = next_pi[proc_id].instruction_addr;
+        auto find = pc_to_inst.find(addr);
+        if(find == pc_to_inst.end()) {
+          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_pi[proc_id]));
+        }
+        else {
+          // Check if the instruction of a PC has changed. If yes, sufficient to just replace it?
+          ASSERT(proc_id, next_pi[proc_id].inst_binary_lsb == find->second.inst_binary_lsb);
+          ASSERT(proc_id, next_pi[proc_id].inst_binary_msb == find->second.inst_binary_msb);
+        }
+      }
+    }
+    else {
+      off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
     }
   }
+  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
 }
 
 void memtrace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
-  assert(0);
-  // FATAL_ERROR(proc_id, "Trace frontend does not support wrong path. Turn off
-  // "
-  //                     "FETCH_OFF_PATH_OPS\n");
+  off_path_mode[proc_id] = true;
+  off_path_addr[proc_id] = fetch_addr;
+  off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
+  DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
 }
 
 void memtrace_recover(uns proc_id, uns64 inst_uid) {
-  assert(0);
-  // FATAL_ERROR(proc_id, "Trace frontend does not support wrong path. Turn off
-  // "
-  //                     "FETCH_OFF_PATH_OPS\n");
+  Op dummy_op;
+  off_path_mode[proc_id] = false;
+  // Finish decoding of the current off-path inst before switching to on-path
+  while (!uop_generator_get_eom(proc_id)) {
+    uop_generator_get_uop(proc_id, &dummy_op, &next_offpath_pi[proc_id]);
+  }
+  DEBUG(proc_id, "Recover CF:%lx ", next_pi[proc_id].instruction_addr);
 }
 
 void memtrace_retire(uns proc_id, uns64 inst_uid) {
   // Trace frontend does not need to communicate to PIN which instruction are
   // retired.
+}
+
+void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
+  auto op_iter = pc_to_inst.find(*off_path_addr);
+
+  if (op_iter != pc_to_inst.end()) {
+    *inst = op_iter->second;
+    *off_path_addr += inst->size;
+    DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ",inst->instruction_addr, inst->size);
+  }
+  else {
+    *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED);
+    (*off_path_addr)++;
+  }
 }

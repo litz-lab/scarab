@@ -300,7 +300,8 @@ struct Op_struct {
   struct Mbp7gshare_Info_struct* mbp7_info;  // multiple branch predictor
                                              // information
 
-  Addr pred_target; // last predicted target for this op.
+  // Use oracle_info.pred_npc instead
+  //Addr pred_target; // last predicted target for this op.
 
   // {{{ temporary fields -> will be deleted later (move these)
   int  derived_from_prog_input;  // derivation level from program read()

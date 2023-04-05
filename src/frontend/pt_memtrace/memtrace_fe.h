@@ -46,6 +46,7 @@ extern "C" {
 #endif
 
 void memtrace_init(void);
+void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst);
 
 /* Implementing the frontend interface */
 Addr memtrace_next_fetch_addr(uns proc_id);

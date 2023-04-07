@@ -248,7 +248,7 @@ bool decoupled_fe_can_fetch_op(int proc_id) {
   return per_core_ftq[proc_id].size() > 0;
 }
 
-uns decoupled_fe_next_fetch_addr(int proc_id) {
+uint64_t decoupled_fe_next_fetch_addr(int proc_id) {
   //ASSERT(proc_id, per_core_ftq[proc_id].size() > 0);
   if(!per_core_ftq[proc_id].size())
     return frontend_next_fetch_addr(proc_id);

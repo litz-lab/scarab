@@ -67,7 +67,7 @@ extern "C" {
   void update_decoupled_fe();
   bool decoupled_fe_fetch_op(Op** op, int proc_id);
   bool decoupled_fe_can_fetch_op(int proc_id);
-  uns decoupled_fe_next_fetch_addr(int proc_id);
+  uint64_t decoupled_fe_next_fetch_addr(int proc_id);
   void decoupled_fe_return_op(Op *op);  
   decoupled_fe_iter* decoupled_fe_new_ftq_iter();
   /* Returns the Op at current FTQ iterator position. Returns NULL if the FTQ is empty */ 

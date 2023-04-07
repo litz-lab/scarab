@@ -415,7 +415,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   // In the event of a btb miss, the branch will predicted as
   // normal, but will incur the redirect penalty for missing in the
   // btb.  btb_miss and pred_target are set appropriately.
-
+  op->oracle_info.no_target = TRUE;
   btb_target = bp_data->bp_btb->pred_func(bp_data, op);
   if(btb_target) {
     // btb hit
@@ -425,7 +425,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   } else {
     // btb miss
     op->oracle_info.btb_miss  = TRUE;
-    op->oracle_info.no_target = TRUE;
     // In case of BTB miss, execute fall-through
     pred_target = pc_plus_offset;
     op->oracle_info.pred      = NOT_TAKEN;
@@ -473,7 +472,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.no_target = FALSE;
       } else {
         ASSERT(op->proc_id, !PERFECT_NT_BTB); //currently not supported
-        // On BTB miss do not even try to predict
         op->oracle_info.pred = bp_data->bp->pred_func(op);
         if(USE_LATE_BP) {
           op->oracle_info.late_pred = bp_data->late_bp->pred_func(op);
@@ -502,19 +500,29 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = TRUE;
       }
-      // If BTB missed, frontend will assume not-taken. When the branch is discovered
-      // at decode, we can branch predict and have 2 outcomes: a) predicted taken violating
-      // assumed not-taken causing flush at decode. b) predicted not-taken confirming original
-      // assumption.
-      else if (!btb_target && op->oracle_info.pred == TAKEN) {
+      // If BTB missed, the branch will be assumed not taken at fetch. At decode we detect
+      // the branch and will predict. There are 4 outcomes:
+      // 1. Branch is predicted taken, violating not-taken assumption, causing flush at decode
+      else if (!btb_target && op->oracle_info.pred == TAKEN && op->oracle_info.dir == TAKEN) {
         op->oracle_info.recover_at_decode = TRUE;
         op->oracle_info.recover_at_exec = FALSE;
       }
-      // If BTB missed, frontend will assume not-taken. If the branch in fact is taken but
-      // we predict it as not-taken at decode, then we will only be able to recover at exec
-      else if (!btb_target && op->oracle_info.dir == TAKEN) {
+      // 2. Branch is predicted taken, violating not-taken asumption. This would flush at decode,
+      // however, the branch will flush again at exec when it is determined that the prediction was wrong
+      // Scarab does not support flushing twice per op. Flushing at exec should not introduce inaccuracy.
+      else if (!btb_target && op->oracle_info.pred == TAKEN && op->oracle_info.dir == NOT_TAKEN) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = TRUE;
+      }
+      // 3. Branch is predicted not-taken causing branch to continue to exec where the flush is triggered
+      else if (!btb_target && op->oracle_info.pred == NOT_TAKEN && op->oracle_info.dir == TAKEN) {
+        op->oracle_info.recover_at_decode = FALSE;
+        op->oracle_info.recover_at_exec = TRUE;
+      }
+      // 4. Branch is predicted not-taken which is corrct causing no flush
+      else if (!btb_target && op->oracle_info.pred == NOT_TAKEN && op->oracle_info.dir == NOT_TAKEN) {
+        op->oracle_info.recover_at_decode = FALSE;
+        op->oracle_info.recover_at_exec = FALSE;
       }
       else {
         op->oracle_info.recover_at_decode = FALSE;
@@ -555,11 +563,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred      = TAKEN;
         op->oracle_info.late_pred = TAKEN;
       }
-      if(ENABLE_IBP) {
-        if(!op->off_path)
-          STAT_EVENT(op->proc_id, CF_IBR_USED_TARGET_CORRECT +
-                     (pred_target != op->oracle_info.npc));
-      }
+      if(!op->off_path)
+        STAT_EVENT(op->proc_id, CF_IBR_USED_TARGET_CORRECT +
+                   (pred_target != op->oracle_info.npc));
       if (ENABLE_IBP && ibp_target) {
         if (op->oracle_info.target == pred_target) {
           op->oracle_info.recover_at_decode = FALSE;
@@ -580,10 +586,12 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
           op->oracle_info.recover_at_exec = TRUE;
         }
       }
-      // If BTB and iBTB miss we need to recover at decode
+      // If BTB and iBTB miss we can detect the mispredition at decode but we need to wait
+      // until exec to resolve the branch target. We would not know which target to fetch
+      // at decode so we can just recover at exec
       else {
-        op->oracle_info.recover_at_decode = TRUE;
-        op->oracle_info.recover_at_exec = FALSE;
+        op->oracle_info.recover_at_decode = FALSE;
+        op->oracle_info.recover_at_exec = TRUE;
       }
 
       break;
@@ -623,10 +631,12 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
           op->oracle_info.recover_at_exec = TRUE;
         }
       }
-      // If BTB and iBTB miss we need to recover at decode
+      // If BTB and iBTB miss we can detect the mispredition at decode but we need to wait
+      // until exec to resolve the branch target. We would not know which target to fetch
+      // at decode so we can just recover at exec
       else {
-        op->oracle_info.recover_at_decode = TRUE;
-        op->oracle_info.recover_at_exec = FALSE;
+        op->oracle_info.recover_at_decode = FALSE;
+        op->oracle_info.recover_at_exec = TRUE;
       }
 
       break;

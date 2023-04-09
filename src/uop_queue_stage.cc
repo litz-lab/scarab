@@ -1,7 +1,7 @@
 // The uop queue buffers ops fetched from the uop cache.
 
 #include "uop_queue_stage.h"
-#include <queue>
+#include <deque>
 
 extern "C" {
 #include "debug/debug_macros.h"
@@ -11,6 +11,7 @@ extern "C" {
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
+#include "bp/bp.h"
 
 #include "globals/assert.h"
 #include "statistics.h"
@@ -23,8 +24,8 @@ extern "C" {
 // TODO(peterbraun): Check if the ISSUE_WIDTH can be less than the uop cache issue bandwidth
 
 // Uop Queue Variables
-std::queue<Stage_Data*> q {};
-std::queue<Stage_Data*> free_sds {};
+std::deque<Stage_Data*> q {};
+std::deque<Stage_Data*> free_sds {};
 
 void init_uop_queue_stage() {
   for (uns ii = 0; ii < UOP_QUEUE_STAGE_LENGTH; ii++) {
@@ -33,7 +34,7 @@ void init_uop_queue_stage() {
     sd->max_op_count = STAGE_MAX_OP_COUNT;
     sd->op_count = 0;
     sd->ops = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
-    free_sds.push(sd);
+    free_sds.push_back(sd);
   }
 }
 
@@ -41,8 +42,8 @@ void init_uop_queue_stage() {
 void update_uop_queue_stage(Stage_Data* src_sd) {
   // If the front of the queue was consumed, remove that stage.
   while (q.size() && q.front()->op_count == 0) {
-    free_sds.push(q.front());
-    q.pop();
+    free_sds.push_back(q.front());
+    q.pop_front();
   }
 
   // Check if ops are from the uop cache.
@@ -57,7 +58,7 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
 
   // Build a new sd and place new ops into the queue.
   Stage_Data* new_sd = free_sds.front();
-  free_sds.pop();
+  free_sds.pop_front();
   ASSERT(0, src_sd->op_count <= (int)STAGE_MAX_OP_COUNT);
   std::swap(new_sd->op_count, src_sd->op_count);
   std::swap(new_sd->ops, src_sd->ops);
@@ -67,7 +68,31 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
     decode_stage_process_op(op);  // Op skipped decode stage.
     ASSERT(0, op->fetched_from_uop_cache);
   }
-  q.push(new_sd);
+  q.push_back(new_sd);
+}
+
+void recover_uop_queue_stage(void) {
+  for (std::deque<Stage_Data*>::iterator it = q.begin(); it != q.end();) {
+    Stage_Data* sd = *it;
+    sd->op_count = 0;
+    for (uns op_idx = 0; op_idx < STAGE_MAX_OP_COUNT; op_idx++) {
+      Op* op = sd->ops[op_idx];
+      if (FLUSH_OP(op)) {
+        ASSERT(op->proc_id, op->off_path);
+        free(op);
+        sd->ops[op_idx] = NULL;
+      } else {
+        sd->op_count++;
+      }
+    }
+
+    if (sd->op_count == 0) {  // entire stage data was off-path
+      free_sds.push_back(sd);
+      it = q.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 Stage_Data* uop_queue_stage_get_latest_sd(void) {

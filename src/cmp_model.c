@@ -358,7 +358,9 @@ void cmp_recover() {
 
   recover_decoupled_fe(bp_recovery_info->proc_id);
   recover_icache_stage();
+  recover_uop_cache();
   recover_decode_stage();
+  recover_uop_queue_stage();
   recover_map_stage();
   recover_node_stage();
   recover_exec_stage();

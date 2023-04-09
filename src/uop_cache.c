@@ -39,7 +39,7 @@
 // Uop cache is byte-addressable, so tag/set index are generated from full address (no offset)
 // Uop cache uses icache tag + icache offset as full TAG
 #define UOP_CACHE_LINE_SIZE       ICACHE_LINE_SIZE
-#define UOP_QUEUE_SIZE            100 // at least UOP_CACHE_ASSOC * UOP_CACHE_MAX_UOPS_LINE
+#define UOP_QUEUE_SIZE            1000 // at least UOP_CACHE_ASSOC * UOP_CACHE_MAX_UOPS_LINE
 #define UOP_CACHE_LINE_DATA_SIZE  sizeof(Uop_Cache_Data)
 
 /**************************************************************************************/
@@ -56,12 +56,14 @@ uns8 proc_id;
 
 // uop trace/bbl accumulation
 static Uop_Cache_Data accumulating_pw = {0};
+static Counter cons_op_num = 0;
 static Op* uop_q[UOP_QUEUE_SIZE];
 
 // k: instr addr
 Hash_Table inf_size_uop_cache;
 // indexed by start addr of PW
 Hash_Table pc_to_pw;
+Flag uoc_prefetching_enabled;
 
 Addr addr_following_resteer_bf = 0;  // Addr that follows a resteer or fetch barrier
 
@@ -70,19 +72,21 @@ Addr addr_following_resteer_bf = 0;  // Addr that follows a resteer or fetch bar
 
 void init_uop_cache(uns8 pid) {
   proc_id = pid;
+  if (!UOP_CACHE_ENABLE) {
+    return;
+  }
   if (INF_SIZE_UOP_CACHE || INF_SIZE_UOP_CACHE_PW_SIZE_LIM) {
     init_hash_table(&inf_size_uop_cache, "infinite sized uop cache", 15000000, sizeof(int));
   }
-  if (UOP_CACHE_SIZE == 0) {
-    return;
-  }
-  // used for prefetching
-  init_hash_table(&pc_to_pw, "Log of all PWs decoded", 15000000, 
-                    sizeof(Uop_Cache_Data));
-  // The cache library computes the number of entries from line_size and cache_size,
-  // but UOP_CACHE_LINE_SIZE must be 1 to enable indexing with the full byte-granularity address.
 
-  init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE * UOP_CACHE_LINE_SIZE, UOP_CACHE_ASSOC,
+  uoc_prefetching_enabled = UOC_PREF || UOC_ORACLE_PREF || UOC_ZERO_LATENCY_PREF;
+  if (uoc_prefetching_enabled) {
+    init_hash_table(&pc_to_pw, "Log of all PWs decoded", 15000000,
+                    sizeof(Uop_Cache_Data));
+  }
+  // The cache library computes the number of entries from cache_size_bytes/cache_line_size_bytes,
+  uns uop_cache_lines = UOP_CACHE_UOP_CAPACITY / UOP_CACHE_MAX_UOPS_LINE;
+  init_cache(&uop_cache, "UOP_CACHE", uop_cache_lines * UOP_CACHE_LINE_SIZE, UOP_CACHE_ASSOC,
              UOP_CACHE_LINE_SIZE, UOP_CACHE_LINE_DATA_SIZE, UOP_CACHE_REPL);
   uop_cache.tag_incl_offset = TRUE;
 }
@@ -147,11 +151,13 @@ Flag insert_uop_cache() {
   
   ASSERT(0, accumulating_pw.n_uops);
   Flag success = FALSE;
-
   Flag new_entry;
-  Uop_Cache_Data* saved_pw = (Uop_Cache_Data*) hash_table_access_create(
-                              &pc_to_pw, accumulating_pw.first, &new_entry);
-  *saved_pw = accumulating_pw;
+
+  if (uoc_prefetching_enabled) {
+    Uop_Cache_Data* saved_pw = (Uop_Cache_Data*) hash_table_access_create(
+                                &pc_to_pw, accumulating_pw.first, &new_entry);
+    *saved_pw = accumulating_pw;
+  }
   int lines_needed = accumulating_pw.n_uops / UOP_CACHE_MAX_UOPS_LINE;
   if (accumulating_pw.n_uops % UOP_CACHE_MAX_UOPS_LINE) lines_needed++;
 
@@ -159,7 +165,6 @@ Flag insert_uop_cache() {
       && accumulating_pw.n_uops <= INF_SIZE_UOP_CACHE_PW_SIZE_LIM)) {
     for (int ii = 0; ii < accumulating_pw.n_uops; ii++) {
       Op* op = uop_q[ii];
-      Flag new_entry;
       hash_table_access_create(&inf_size_uop_cache, op->inst_info->addr, 
                                 &new_entry);
     }
@@ -209,11 +214,14 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
  *                    Other option: use cache to simulate capacity and maintain a map 
  *                      data structure for pcs
  */
-Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
+Flag in_uop_cache(Addr pc, Flag update_repl) {
   // A PW can span multiple cache entries. The next line used is either physically 
   // next in the set (use flag) or anywhere in the set (use pointer), depending on impl.
   // Here, don't care about order, just search all lines for pc in question
   STAT_EVENT(0, IN_UOP_CACHE_CALLED);
+  if (!UOP_CACHE_ENABLE) {
+    return FALSE;
+  }
 
   if (ORACLE_PERFECT_UOP_CACHE) {
     if (update_repl) {
@@ -223,27 +231,17 @@ Flag in_uop_cache(Addr pc, const Counter* op_num, Flag update_repl) {
   } else if (INF_SIZE_UOP_CACHE || INF_SIZE_UOP_CACHE_PW_SIZE_LIM) {
     return hash_table_access(&inf_size_uop_cache, pc) != NULL;
   }
-  if (UOP_CACHE_SIZE == 0) {
-    return FALSE;
-  }
-
-  static Counter next_op_num = 1;
 
   Flag found = in_uop_cache_search(pc, update_repl);
   if (update_repl) {
     STAT_EVENT(0, UOP_CACHE_MISS + found);
-    if (op_num) {
-      //TODO: op num gets reset at recovery and hence does not monotonically increase
-      //ASSERT(0, *op_num == next_op_num);
-      next_op_num++;
-    }
   }
   
   return found;
 }
 
 void end_accumulate(void) {
-  if (UOP_CACHE_SIZE == 0 && !INF_SIZE_UOP_CACHE && !INF_SIZE_UOP_CACHE_PW_SIZE_LIM) {
+  if (!UOP_CACHE_ENABLE) {
     return;
   }
 
@@ -266,11 +264,7 @@ void accumulate_op(Op* op) {
 
   // It is possible for an instr to be partially in 2 lines;
   // for pw termination purposes, assume it is in first line.
-  // cons_op_num is used to verify that all ops in a PW are consecutive
-  static Counter cons_op_num = 0;
-
-  if ((UOP_CACHE_SIZE == 0 && !INF_SIZE_UOP_CACHE && !INF_SIZE_UOP_CACHE_PW_SIZE_LIM) 
-      || ORACLE_PERFECT_UOP_CACHE) {
+  if (!UOP_CACHE_ENABLE) {
     return;
   }
 
@@ -278,13 +272,14 @@ void accumulate_op(Op* op) {
                                                   accumulating_pw.first);
   Addr icache_line_addr = get_cache_line_addr(&ic->icache, op->inst_info->addr);
 
-  // Non-consecutive ops means that there was a uop cache hit, so the accumulating_pw
+  // Skipped ops means that there was a uop cache hit, so the accumulating_pw
   // may need to be flushed. This must be done in the same place accumulation is done.
-  if (op->op_num != cons_op_num) {
+  if (op->op_num > cons_op_num) {
     STAT_EVENT(0, UOP_CACHE_ICACHE_SWITCH);
     end_accumulate();
     cur_icache_line_addr = 0;
   }
+  ASSERT(proc_id, op->op_num >= cons_op_num);  // At recovery cons_op_num should be reset
 
   if (!cur_icache_line_addr) {
     accumulating_pw.first = op->inst_info->addr;
@@ -296,10 +291,8 @@ void accumulate_op(Op* op) {
   }
   
   Flag end_of_icache_line = icache_line_addr != cur_icache_line_addr;
-  Flag branch_pt = op->table_info->cf_type && op->oracle_info.pred == TAKEN;
-  Flag uop_q_full = (accumulating_pw.n_uops + 1 > UOP_QUEUE_SIZE);
-
-  if (end_of_icache_line) {
+  Flag uop_q_full = (accumulating_pw.n_uops + 1 == UOP_QUEUE_SIZE);
+  if (end_of_icache_line || uop_q_full) {
     end_accumulate();
   }
 
@@ -309,16 +302,21 @@ void accumulate_op(Op* op) {
   }
   uop_q[accumulating_pw.n_uops] = op;
   accumulating_pw.last = op->inst_info->addr;
+  accumulating_pw.last_op_num = op->op_num;
   accumulating_pw.n_uops++;
 
-  if (branch_pt || uop_q_full) {
+  Flag branch_pt = op->table_info->cf_type && op->oracle_info.pred == TAKEN;
+  if (branch_pt) {
     end_accumulate();
   }
 };
 
 Flag uop_cache_fill_prefetch(Addr pw_start_addr, Flag fdip_on_path) {
+  printf("Reimplement here using decoupled_fe API\n");
+  ASSERT(proc_id, 0);
+  ASSERT(proc_id, uoc_prefetching_enabled);
   Uop_Cache_Data pw;
-  if (UOP_CACHE_SIZE == 0) {
+  if (!UOP_CACHE_ENABLE) {
     return FALSE;
   }
 
@@ -347,7 +345,7 @@ Flag uop_cache_issue_prefetch(Addr pw_start_addr, Flag on_path) {
 
   if (UOC_ZERO_LATENCY_PREF) {
     prefetch_success = uop_cache_fill_prefetch(pw_start_addr, on_path);
-  } else if (in_uop_cache(pw_start_addr, NULL, FALSE)) {
+  } else if (in_uop_cache(pw_start_addr, FALSE)) {
     STAT_EVENT(ic->proc_id, UOP_CACHE_HIT_NO_PREFETCH);
   } else {
     // If no op is provided, on_path is assumed.
@@ -375,4 +373,13 @@ void set_addr_following_resteer_bf(Addr addr) {
 Uop_Cache_Data get_pw_lookahead_buffer(Addr addr) {
   printf("Reimplement here using decoupled_fe API\n");
   ASSERT(0,0);
+}
+
+void recover_uop_cache(void) {
+  if (accumulating_pw.last_op_num > bp_recovery_info->recovery_op_num) {
+    memset(&accumulating_pw, 0, sizeof(accumulating_pw));
+  } else {
+    end_accumulate();
+  }
+  cons_op_num = bp_recovery_info->recovery_op_num + 1;
 }

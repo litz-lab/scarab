@@ -326,6 +326,7 @@ typedef struct Uop_Cache_Data_struct {
   Addr first;
   Addr last;
   Counter n_uops;
+  Counter last_op_num;
   Flag prefetch;
   Counter used;
 } Uop_Cache_Data;

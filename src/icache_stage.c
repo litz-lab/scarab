@@ -247,7 +247,7 @@ void recover_icache_stage() {
   ASSERT(ic->proc_id, ic->next_fetch_addr);
 
   if (ic->next_state == IC_FETCH) {
-    Flag uc_hit = in_uop_cache(op->oracle_info.pred_npc, NULL, FALSE);
+    Flag uc_hit = in_uop_cache(op->oracle_info.pred_npc, FALSE);
     uns fetch_latency = uc_hit ? UOP_CACHE_LATENCY : ICACHE_LATENCY;
     INC_STAT_EVENT(bp_recovery_info->proc_id, BP_RECOVERY_FETCH_CYCLES_UC + !uc_hit, fetch_latency);
   }
@@ -300,7 +300,9 @@ Inst_Info** lookup_cache() {
                                              &ic->line_addr, TRUE);
   if(PERFECT_ICACHE && !line)
     line = (Inst_Info**)INIT_CACHE_DATA_VALUE;
-  /*if (in_uop_cache(ic->fetch_addr, NULL, FALSE) && !line) {
+
+  /* TODO(peterbraun): implement UOC prefetching with decoupled_fe
+    if (in_uop_cache(ic->fetch_addr, NULL, FALSE) && !line) {
     // Should return Inst_Info, but op hasn't been fetched yet, so just give it any 
     // value. This is not used anyway
     line = (Inst_Info**)DUMMY_ADDR_UC_FETCH;
@@ -509,7 +511,7 @@ void update_icache_stage() {
 /* update_bf_uoc_stats: */
 
 void update_stats_bf_retired(void) {
-  Flag next_op_in_uop_cache = in_uop_cache(ic->next_fetch_addr, NULL, FALSE);
+  Flag next_op_in_uop_cache = in_uop_cache(ic->next_fetch_addr, FALSE);
   if (!next_op_in_uop_cache) {
     // The micro-op cache can reduce the time to refill the pipeline after a fetch barrier.
     int uop_queue_length = get_uop_queue_stage_length();
@@ -598,7 +600,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     ASSERT(ic->proc_id, td->seq_op_list.count <= op_pool_active_ops);
 
     // Log uop cache access - must be called exactly once for every op
-    op->fetched_from_uop_cache = FALSE;//in_uop_cache(op->inst_info->addr, &op->op_num, TRUE);
+    in_uop_cache(op->inst_info->addr, TRUE);
 
     /* map the op based on true dependencies & set information in
      * op->oracle_info */
@@ -700,7 +702,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     // Break when switching from icache to uoc or vice versa.
     // BUT do not add fetch latency when the last op caused a frontend resteer.
     // The latency will already have been added, and break_fetch already set.
-    Flag next_op_in_uop_cache = in_uop_cache(op->oracle_info.npc, NULL, FALSE);
+    Flag next_op_in_uop_cache = in_uop_cache(op->oracle_info.npc, FALSE);
     Flag branch_that_causes_resteer = op->table_info->cf_type && (op->oracle_info.mispred || op->oracle_info.misfetch || op->oracle_info.btb_miss);
     if (op->eom && !branch_that_causes_resteer) {
       if (op->fetched_from_uop_cache && !next_op_in_uop_cache) {
@@ -1109,7 +1111,7 @@ Flag instr_fill_line(Mem_Req* req) {
   }
   // TEMP CHANGE: all FDIPPRF are UOC_PREF as well, except for a corner case where branch target is same line
   if (UOC_PREF && (mem_req_is_type(req, MRT_FDIPPRF) || mem_req_is_type(req, MRT_UOCPRF))) {
-    if (in_uop_cache(req->addr, NULL, FALSE)) {
+    if (in_uop_cache(req->addr, FALSE)) {
       STAT_EVENT(ic->proc_id, UOP_CACHE_HIT_NO_PREFETCH);
     } else {
       uop_cache_fill_prefetch(req->addr, !req->off_path);

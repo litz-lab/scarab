@@ -241,7 +241,7 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op) {
     // issue width reached
     // TODO(peterbraun): Think about whether this makes sense. Can there be mismatch between this and later where
     // update_repl=TRUE? Doesn't matter for now since UC_ISSUE_WIDTH > IC_ISSUE_WIDTH is unsupported.
-    const int issue_width = in_uop_cache(op->inst_info->addr, NULL, FALSE) ? UC_ISSUE_WIDTH : IC_ISSUE_WIDTH;
+    const int issue_width = in_uop_cache(op->inst_info->addr, FALSE) ? UC_ISSUE_WIDTH : IC_ISSUE_WIDTH;
     if(pb_data->pb_ident == PB_ICACHE) {
       if(ic->sd.op_count + 1 == issue_width) {
         *break_fetch = BREAK_ISSUE_WIDTH;

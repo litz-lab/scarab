@@ -210,7 +210,7 @@ void update_decode_stage(Stage_Data* src_sd) {
     ASSERT(dec->proc_id, op != NULL);
     ASSERT(dec->proc_id, !op->fetched_from_uop_cache);
     decode_stage_process_op(op);
-    //accumulate_op(op);
+    accumulate_op(op);
   }
 }
 

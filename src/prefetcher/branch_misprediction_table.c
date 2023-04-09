@@ -29,7 +29,6 @@ typedef struct Bm_Info_struct {
 /**************************************************************************************/
 /* Global Variables */
 
-Cache bm_table;
 uns8 proc_id;
 
 Hash_Table inf_size_bm_table;
@@ -43,9 +42,6 @@ void init_branch_misprediction_table(uns8 pid) {
     init_hash_table(&inf_size_bm_table, "infinite sized", 15000000, sizeof(Bm_Info));
     // cpp version is not a lib yet. only one instance.
   }
-
-//   init_cache(&bm_table, "Branch Mispredictions Table", UOP_CACHE_SIZE * UOP_CACHE_LINE_SIZE, UOP_CACHE_ASSOC,
-//              UOP_CACHE_LINE_SIZE,UOP_CACHE_LINE_DATA_SIZE, REPL_TRUE_LRU);
 }
 
 float get_branch_misprediction_rate(Addr pc) {

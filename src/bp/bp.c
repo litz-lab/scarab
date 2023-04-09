@@ -138,7 +138,7 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op,
      op->op_num <= bp_recovery_info->recovery_op_num) {
     const Addr next_fetch_addr = op->oracle_info.npc;
 
-    Flag uc_hit = in_uop_cache(next_fetch_addr, NULL, FALSE);
+    Flag uc_hit = in_uop_cache(next_fetch_addr, FALSE);
     inc_bstat_miss(op, uc_hit);
     const uns latency = late_bp_recovery ? LATE_BP_LATENCY : 1;
     DEBUG(
@@ -192,7 +192,7 @@ void inc_bstat_fetched(Op* op) {
   const uns8 btb_miss = op->oracle_info.btb_miss;
 
   if (!mispred && !misfetch && !btb_miss) {
-    if (in_uop_cache(op->oracle_info.npc, NULL, FALSE)) {
+    if (in_uop_cache(op->oracle_info.npc, FALSE)) {
       bstat->bpu_hit_uc_hit += 1;
     }else {
       bstat->bpu_hit_uc_miss += 1;
@@ -247,7 +247,7 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op,
     DEBUG(bp_recovery_info->proc_id, "Redirect signaled for op_num:%s @ 0x%s\n",
           unsstr64(op->op_num), hexstr64s(op->inst_info->addr));
 
-    Flag uc_hit = in_uop_cache(op->oracle_info.npc, NULL, FALSE);
+    Flag uc_hit = in_uop_cache(op->oracle_info.npc, FALSE);
     inc_bstat_miss(op, uc_hit); // shouldn't double count if both btb miss and predictor wrong.
     bp_recovery_info->redirect_cycle = cycle + 1 +
                                        (op->table_info->cf_type == CF_SYS ?

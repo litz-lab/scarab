@@ -37,7 +37,8 @@
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_UOP_CACHE, ##args)
 
 // Uop cache is byte-addressable, so tag/set index are generated from full address (no offset)
-#define UOP_CACHE_LINE_SIZE       1
+// Uop cache uses icache tag + icache offset as full TAG
+#define UOP_CACHE_LINE_SIZE       ICACHE_LINE_SIZE
 #define UOP_QUEUE_SIZE            100 // at least UOP_CACHE_ASSOC * UOP_CACHE_MAX_UOPS_LINE
 #define UOP_CACHE_LINE_DATA_SIZE  sizeof(Uop_Cache_Data)
 
@@ -83,6 +84,7 @@ void init_uop_cache(uns8 pid) {
 
   init_cache(&uop_cache, "UOP_CACHE", UOP_CACHE_SIZE * UOP_CACHE_LINE_SIZE, UOP_CACHE_ASSOC,
              UOP_CACHE_LINE_SIZE, UOP_CACHE_LINE_DATA_SIZE, UOP_CACHE_REPL);
+  uop_cache.tag_incl_offset = TRUE;
 }
 
 Flag pw_insert(Uop_Cache_Data pw) {
@@ -113,8 +115,8 @@ Flag pw_insert(Uop_Cache_Data pw) {
     // This is so that multiple lines from the same PW
     // inserted into the LRU position do not evict each other.
     while (cache_get_invalid_line_count(&uop_cache, pw.first) < lines_needed) {
-      get_next_valid_repl_line(&uop_cache, ic->proc_id, pw.first, &repl_line_addr);
-      cache_invalidate(&uop_cache, repl_line_addr, &line_addr);
+      Uop_Cache_Data evict_pw = *(Uop_Cache_Data*)get_next_valid_repl_line(&uop_cache, ic->proc_id, pw.first);
+      cache_invalidate(&uop_cache, evict_pw.first, &line_addr);
     }
     for (int jj = 0; jj < lines_needed; jj++) {
       cur_line_data = (Uop_Cache_Data*) cache_insert_replpos(&uop_cache, ic->proc_id,

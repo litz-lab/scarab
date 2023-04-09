@@ -121,6 +121,8 @@ typedef struct Cache_struct {
   uns*     num_ways_occupied_core; /* For cache partitioning */
   uns*     lru_index_core;         /* For cache partitioning */
   Counter* lru_time_core;          /* For cache partitioning */
+
+  Flag     tag_incl_offset;        /* The uop cache is byte-addressable, so the tag includes offset bits as well */
 } Cache;
 
 
@@ -138,8 +140,7 @@ void* cache_insert_lru(Cache*, uns8, Addr, Addr*, Addr*);
 void  cache_invalidate(Cache*, Addr, Addr*);
 void  cache_flush(Cache*);
 void* get_next_repl_line(Cache*, uns8, Addr, Addr*, Flag*);
-void* get_next_valid_repl_line(Cache* cache, uns8 proc_id, Addr addr,
-                                      Addr* repl_line_addr);
+void* get_next_valid_repl_line(Cache* cache, uns8 proc_id, Addr addr);
 uns   ext_cache_index(Cache*, Addr, Addr*, Addr*);
 Addr  get_cache_line_addr(Cache*, Addr);
 uns   cache_get_invalid_line_count(Cache* cache, Addr addr);

@@ -36,6 +36,7 @@ extern "C" {
 #include "globals/utils.h"
 }
 
+#include "frontend/pt_memtrace/trace_fe.h"
 #include "bp/bp.h"
 #include "bp/bp.param.h"
 #include "ctype_pin_inst.h"
@@ -49,27 +50,17 @@ extern "C" {
 
 #include "frontend/pt_memtrace/memtrace_trace_reader_memtrace.h"
 
-/**************************************************************************************/
-/* Macros */
-
-#define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_TRACE_READ, ##args)
-
+//extern next_
 
 /**************************************************************************************/
 /* Global Variables */
 
 char*           trace_files[MAX_NUM_PROCS];
 TraceReader*    trace_readers[MAX_NUM_PROCS];
-ctype_pin_inst* next_pi;
-ctype_pin_inst   next_offpath_pi[MAX_NUM_PROCS];
 //TODO: Make per proc?
 uint64_t        ins_id    = 0;
 uint64_t        prior_tid = 0;
 uint64_t        prior_pid = 0;
-bool            off_path_mode[MAX_NUM_PROCS] = {false};
-uint64_t        off_path_addr[MAX_NUM_PROCS] = {0};
-
-std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
 
 
 /**************************************************************************************/
@@ -143,7 +134,7 @@ int roi(const xed_decoded_inst_t* ins) {
   return 0;
 }
 
-int memtrace_trace_read(int proc_id, ctype_pin_inst* next_pi) {
+int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   InstInfo* insi;
 
   do {
@@ -156,14 +147,14 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_pi) {
     }
   } while(insi->pid != prior_pid || insi->tid != prior_tid);
 
-  memset(next_pi, 0, sizeof(ctype_pin_inst));
-  fill_in_dynamic_info(next_pi, insi);
-  fill_in_basic_info(next_pi, insi->ins);
-  uint32_t max_op_width = add_dependency_info(next_pi, insi->ins);
-  fill_in_simd_info(next_pi, insi->ins, max_op_width);
-  apply_x87_bug_workaround(next_pi, insi->ins);
-  fill_in_cf_info(next_pi, insi->ins);
-  print_err_if_invalid(next_pi, insi->ins);
+  memset(next_onpath_pi, 0, sizeof(ctype_pin_inst));
+  fill_in_dynamic_info(next_onpath_pi, insi);
+  fill_in_basic_info(next_onpath_pi, insi->ins);
+  uint32_t max_op_width = add_dependency_info(next_onpath_pi, insi->ins);
+  fill_in_simd_info(next_onpath_pi, insi->ins, max_op_width);
+  apply_x87_bug_workaround(next_onpath_pi, insi->ins);
+  fill_in_cf_info(next_onpath_pi, insi->ins);
+  print_err_if_invalid(next_onpath_pi, insi->ins);
 
   // End of ROI
   if(roi(insi->ins))
@@ -177,6 +168,7 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_pi) {
 /* trace_init() */
 
 void memtrace_init(void) {
+  ext_trace_init();
   /*ASSERTM(0, !FETCH_OFF_PATH_OPS,
           "Trace frontend does not support wrong path. Turn off "
           "FETCH_OFF_PATH_OPS\n");
@@ -186,7 +178,7 @@ void memtrace_init(void) {
   init_x86_decoder(nullptr);
   init_x87_stack_delta();
 
-  next_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));
+  //next_onpath_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));
 
   /* temp variable needed for easy initialization syntax */
   char* tmp_trace_files[MAX_NUM_PROCS] = {
@@ -251,14 +243,14 @@ void memtrace_setup(uns proc_id) {
   prior_tid = insi->tid;
   assert(prior_tid);
   assert(prior_pid);
-  memtrace_trace_read(proc_id, &next_pi[proc_id]);
+  memtrace_trace_read(proc_id, &next_onpath_pi[proc_id]);
 }
 
 /**************************************************************************************/
 /* trace_next_fetch_addr */
 
 Addr memtrace_next_fetch_addr(uns proc_id) {
-  return next_pi[proc_id].instruction_addr;
+  return next_onpath_pi[proc_id].instruction_addr;
 }
 
 /**************************************************************************************/
@@ -278,15 +270,15 @@ void memtrace_close_trace_file(uns proc_id) {
 }
 
 Flag memtrace_can_fetch_op(uns proc_id) {
-  assert(proc_id == 0);
-  return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
+  return ext_trace_can_fetch_op(proc_id);
 }
 
 void memtrace_fetch_op(uns proc_id, Op* op) {
+  //return ext_trace_fetch_op(proc_id, op);
   if(uop_generator_get_bom(proc_id)) {
     // ASSERT(proc_id, !trace_read_done[proc_id] && !reached_exit[proc_id]);
     if (!off_path_mode[proc_id]) {
-      uop_generator_get_uop(proc_id, op, &next_pi[proc_id]);
+      uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id]);
     }
     else {
       uop_generator_get_uop(proc_id, op, &next_offpath_pi[proc_id]);
@@ -297,7 +289,7 @@ void memtrace_fetch_op(uns proc_id, Op* op) {
 
   if(uop_generator_get_eom(proc_id)) {
     if (!off_path_mode[proc_id]) {
-      int        success = memtrace_trace_read(proc_id, &next_pi[proc_id]);
+      int        success = memtrace_trace_read(proc_id, &next_onpath_pi[proc_id]);
       if(!success) {
         trace_read_done[proc_id] = TRUE;
         reached_exit[proc_id]    = TRUE;
@@ -308,15 +300,15 @@ void memtrace_fetch_op(uns proc_id, Op* op) {
         std::cout << "Reached end of trace" << std::endl;
       }
       else {
-        uint64_t addr = next_pi[proc_id].instruction_addr;
+        uint64_t addr = next_onpath_pi[proc_id].instruction_addr;
         auto find = pc_to_inst.find(addr);
         if(find == pc_to_inst.end()) {
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_pi[proc_id]));
+          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         }
         else {
           // Check if the instruction of a PC has changed. If yes, sufficient to just replace it?
-          ASSERT(proc_id, next_pi[proc_id].inst_binary_lsb == find->second.inst_binary_lsb);
-          ASSERT(proc_id, next_pi[proc_id].inst_binary_msb == find->second.inst_binary_msb);
+          ASSERT(proc_id, next_onpath_pi[proc_id].inst_binary_lsb == find->second.inst_binary_lsb);
+          ASSERT(proc_id, next_onpath_pi[proc_id].inst_binary_msb == find->second.inst_binary_msb);
         }
       }
     }
@@ -324,41 +316,20 @@ void memtrace_fetch_op(uns proc_id, Op* op) {
       off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
     }
   }
-  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
+  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
 }
 
 void memtrace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
-  off_path_mode[proc_id] = true;
-  off_path_addr[proc_id] = fetch_addr;
-  off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
-  DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
+  return ext_trace_redirect(proc_id, inst_uid, fetch_addr);
 }
 
 void memtrace_recover(uns proc_id, uns64 inst_uid) {
-  Op dummy_op;
-  off_path_mode[proc_id] = false;
-  // Finish decoding of the current off-path inst before switching to on-path
-  while (!uop_generator_get_eom(proc_id)) {
-    uop_generator_get_uop(proc_id, &dummy_op, &next_offpath_pi[proc_id]);
-  }
-  DEBUG(proc_id, "Recover CF:%lx ", next_pi[proc_id].instruction_addr);
+  return ext_trace_recover(proc_id,inst_uid);
 }
 
 void memtrace_retire(uns proc_id, uns64 inst_uid) {
+  return ext_trace_retire(proc_id, inst_uid);
   // Trace frontend does not need to communicate to PIN which instruction are
   // retired.
 }
 
-void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
-  auto op_iter = pc_to_inst.find(*off_path_addr);
-
-  if (op_iter != pc_to_inst.end()) {
-    *inst = op_iter->second;
-    *off_path_addr += inst->size;
-    DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ",inst->instruction_addr, inst->size);
-  }
-  else {
-    *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED);
-    (*off_path_addr)++;
-  }
-}

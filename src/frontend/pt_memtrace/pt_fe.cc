@@ -35,6 +35,7 @@ extern "C" {
 #include "globals/utils.h"
 }
 
+#include "frontend/pt_memtrace/trace_fe.h"
 #include "bp/bp.h"
 #include "statistics.h"
 #include "bp/bp.param.h"
@@ -58,7 +59,6 @@ extern "C" {
 
 char* pt_trace_files[MAX_NUM_PROCS];
 TraceReaderPT *pt_trace_readers[MAX_NUM_PROCS];
-ctype_pin_inst* pt_next_pi;
 uint64_t pt_ins_id = 0;
 uint64_t pt_prior_tid = 0;
 uint64_t pt_prior_pid = 0;
@@ -176,7 +176,7 @@ void pt_init(void) {
   init_reg_compress_map();
   init_x87_stack_delta();
 
-  pt_next_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));
+  //pt_next_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));
   for(int i = 0; i < MAX_NUM_PROCS; ++i) {
       pt_trace_readers[i] = nullptr;
   }
@@ -211,16 +211,14 @@ void pt_init(void) {
 }
 
 Addr pt_next_fetch_addr(uns proc_id) {
-    Addr next = pt_next_pi[proc_id].instruction_addr;
-  return convert_to_cmp_addr(proc_id, next);
+  return next_onpath_pi[proc_id].instruction_addr;
 }
 
 Flag pt_can_fetch_op(uns proc_id) {
-  assert(proc_id == 0);
-  return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
+  return ext_trace_can_fetch_op(proc_id);
 }
 
-void pt_fetch_op(uns proc_id, Op *op) {
+/*void pt_fetch_op(uns proc_id, Op *op) {
   if(uop_generator_get_bom(proc_id)) {
     uop_generator_get_uop(proc_id, op, &pt_next_pi[proc_id]);
   } else {
@@ -236,19 +234,55 @@ void pt_fetch_op(uns proc_id, Op *op) {
       reached_exit[proc_id]    = TRUE;
     }
   }
-}
+  }*/
 
-void pt_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
-  assert(0);
-}
+void pt_fetch_op(uns proc_id, Op* op) {
+  //return ext_trace_fetch_op(proc_id, op);
+  std::cout << "enter fetch " << std::hex << next_onpath_pi[proc_id].instruction_addr << " ofpath " << off_path_mode[proc_id] << std::endl;
+    std::cout << "PTofmode " << off_path_mode[proc_id] << " addr " << (void*)&off_path_mode[proc_id] << std::endl;
+  if(uop_generator_get_bom(proc_id)) {
+    // ASSERT(proc_id, !trace_read_done[proc_id] && !reached_exit[proc_id]);
+    if (!off_path_mode[proc_id]) {
+      uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id]);
+    }
+    else {
+      uop_generator_get_uop(proc_id, op, &next_offpath_pi[proc_id]);
+    }
+  } else {
+    uop_generator_get_uop(proc_id, op, NULL);
+  }
 
-void pt_recover(uns proc_id, uns64 inst_uid) {
-  assert(0);
-}
-
-void pt_retire(uns proc_id, uns64 inst_uid) {
-  // Similar to memtrace, PT frontend does not need to communicate to PIN to 
-  // determine which instruction are retired.
+  if(uop_generator_get_eom(proc_id)) {
+    if (!off_path_mode[proc_id]) {
+      int success = pt_trace_read(proc_id, &next_onpath_pi[proc_id]);
+      if(!success) {
+        trace_read_done[proc_id] = TRUE;
+        reached_exit[proc_id]    = TRUE;
+        /* this flag is supposed to be set in uop_generator_get_uop() but there
+         * is a circular dependency on trace_read_done to be set. So, we set
+         * op->exit here. */
+        op->exit = TRUE;
+        std::cout << "Reached end of trace" << std::endl;
+      }
+      else {
+        uint64_t addr = next_onpath_pi[proc_id].instruction_addr;
+        std::cout << "onpaht " << addr << std::endl;
+        auto find = pc_to_inst.find(addr);
+        if(find == pc_to_inst.end()) {
+          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+        }
+        else {
+          // Check if the instruction of a PC has changed. If yes, sufficient to just replace it?
+          ASSERT(proc_id, next_onpath_pi[proc_id].inst_binary_lsb == find->second.inst_binary_lsb);
+          ASSERT(proc_id, next_onpath_pi[proc_id].inst_binary_msb == find->second.inst_binary_msb);
+        }
+      }
+    }
+    else {
+      off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
+    }
+  }
+  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
 }
 
 void pt_close_trace_file(uns proc_id) {
@@ -292,5 +326,20 @@ void pt_setup(uns proc_id) {
   pt_prior_tid = insi->tid;
   assert(pt_prior_tid);
   assert(pt_prior_pid);
-  pt_trace_read(proc_id, &pt_next_pi[proc_id]);
+  pt_trace_read(proc_id, &next_onpath_pi[proc_id]);
+}
+
+void pt_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
+  std::cout << "redirect to addr " << std::hex << fetch_addr << std::endl;
+  return ext_trace_redirect(proc_id, inst_uid, fetch_addr);
+}
+
+void pt_recover(uns proc_id, uns64 inst_uid) {
+  return ext_trace_recover(proc_id,inst_uid);
+}
+
+void pt_retire(uns proc_id, uns64 inst_uid) {
+  return ext_trace_retire(proc_id, inst_uid);
+  // Trace frontend does not need to communicate to PIN which instruction are
+  // retired.
 }

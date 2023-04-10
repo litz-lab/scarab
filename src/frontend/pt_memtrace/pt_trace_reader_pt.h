@@ -174,7 +174,7 @@ public:
 
   // ret true when insn is a syscall (and thus should be skipped)
   bool processInst(PTInst &next_line) {
-      /* std::cout << "Processing Inst w/ PC: " << std::hex << next_line.pc << std::endl; */
+    /*std::cout << "Processing Inst w/ PC: " << std::hex << next_line.pc << " byt " << *((int*)next_line.inst_bytes) << std::endl; */
       // Get the XED info from the cache, creating it if needed
       auto xed_map_iter = xed_map_.find(next_line.pc);
       if (xed_map_iter == xed_map_.end()) {
@@ -192,53 +192,55 @@ public:
       InstInfo& _info = (use_info_a ? inst_info_a : inst_info_b);
       InstInfo& _prior = (use_info_a ? inst_info_b : inst_info_a);
       auto& ins = _prior; // have to do this for the macros to work
-      if(ins.ins) {
-          if(XED_INS_Category(ins.ins) == XED_CATEGORY_NOP) {
-                  ++num_nops_in_trace;
-          } else if (XED_INS_IsDirectBranchOrCall(ins.ins)) {
-              ++num_direct_brs_in_trace;
-          }
-      }
       bool inserted_nop = false;
-      if (_prior.valid && XED_INS_IsRep(ins.ins)) {
-        // repz insns aren't supported, so just nop them
-        auto length = xed_decoded_inst_get_length(_prior.ins);
-        // std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
-        _prior.ins = createNop(length);
-        inserted_nop = true;
-        if(_prior.pc == next_line.pc) {
+      if(_prior.valid) {
+        if(ins.ins) {
+          if(XED_INS_Category(ins.ins) == XED_CATEGORY_NOP) {
+            ++num_nops_in_trace;
+          } else if (XED_INS_IsDirectBranchOrCall(ins.ins)) {
+            ++num_direct_brs_in_trace;
+          }
+        }
+        if (_prior.valid && XED_INS_IsRep(ins.ins)) {
+          // repz insns aren't supported, so just nop them
+          auto length = xed_decoded_inst_get_length(_prior.ins);
+          // std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
+          _prior.ins = createNop(length);
+          inserted_nop = true;
+          if(_prior.pc == next_line.pc) {
             _info = _prior; // skip prior insn
             return true;
+          }
+        }
+        bool changes_cf = ins.ins && XED_INS_ChangeControlFlow(ins.ins);
+        bool incorrect_branch = ins.ins && XED_INS_IsDirectBranchOrCall(ins.ins) && next_line.pc != XED_INS_DirectBranchOrCallTargetAddress(ins.pc, ins.ins) && next_line.pc != (ins.pc + XED_INS_Size(ins.ins));
+        if(incorrect_branch) {
+          // std::cout << "branch " << INS_Address(ins) << " is incorrect!" << std::endl;
+          // std::cout << "xed target: " << INS_DirectBranchOrCallTargetAddress(ins) << " next pc: " << next_line.pc << std::endl;
+        }
+        if(_prior.valid && (!changes_cf || XED_INS_Category(ins.ins) == XC(SYSCALL) || incorrect_branch) && next_line.pc != _prior.pc + XED_INS_Size(_prior.ins)) {
+          // std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a jump to " << std::hex << next_line.pc << std::endl;
+          int64_t diff = std::max(next_line.pc, _prior.pc) - std::min(next_line.pc, _prior.pc);
+          if(next_line.pc < _prior.pc)
+            diff *= -1;
+          // std::cout << "Jump: " << diff << std::endl;
+          xed_decoded_inst_t* new_inst = createJmp(diff);
+          _prior.ins = new_inst;
+          inserted_nop = false; // replaced nop with a jmp, so we really inserted a jmp instead of a nop
+          ++num_inserted_direct_brs;
+          _prior.static_target = next_line.pc;
+        } else if (_prior.valid && XED_INS_IsRep(ins.ins) > 0) {
+          // repz insns aren't supported, so just nop them
+          auto length = XED_INS_Size(_prior.ins);
+          // std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
+          _prior.ins = createNop(length);
+          ++num_inserted_nops;
+          if(_prior.pc == next_line.pc) {
+            _info = _prior; // skip prior insn
+            return true;
+          }
         }
       }
-      bool changes_cf = ins.ins && XED_INS_ChangeControlFlow(ins.ins);
-      bool incorrect_branch = ins.ins && XED_INS_IsDirectBranchOrCall(ins.ins) && next_line.pc != XED_INS_DirectBranchOrCallTargetAddress(ins.pc, ins.ins) && next_line.pc != (ins.pc + XED_INS_Size(ins.ins));
-    if(incorrect_branch) {
-        // std::cout << "branch " << INS_Address(ins) << " is incorrect!" << std::endl;
-        // std::cout << "xed target: " << INS_DirectBranchOrCallTargetAddress(ins) << " next pc: " << next_line.pc << std::endl;
-    }
-    if(_prior.valid && (!changes_cf || XED_INS_Category(ins.ins) == XC(SYSCALL) || incorrect_branch) && next_line.pc != _prior.pc + XED_INS_Size(_prior.ins)) {
-        // std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a jump to " << std::hex << next_line.pc << std::endl;
-        int64_t diff = std::max(next_line.pc, _prior.pc) - std::min(next_line.pc, _prior.pc);
-        if(next_line.pc < _prior.pc)
-            diff *= -1;
-        // std::cout << "Jump: " << diff << std::endl;
-        xed_decoded_inst_t* new_inst = createJmp(diff);
-        _prior.ins = new_inst;
-        inserted_nop = false; // replaced nop with a jmp, so we really inserted a jmp instead of a nop
-        ++num_inserted_direct_brs;
-        _prior.static_target = next_line.pc;
-    } else if (_prior.valid && XED_INS_IsRep(ins.ins) > 0) {
-        // repz insns aren't supported, so just nop them
-        auto length = XED_INS_Size(_prior.ins);
-        // std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become a nop of length " << length << std::endl;
-        _prior.ins = createNop(length);
-        ++num_inserted_nops;
-        if(_prior.pc == next_line.pc) {
-            _info = _prior; // skip prior insn
-            return true;
-        }
-    }
     if(inserted_nop)
         ++num_inserted_nops;
     _info.pc = next_line.pc;
@@ -282,7 +284,11 @@ public:
     }
     enable_code_bloat_effect = _enable_code_bloat_effect;
     prev_to_new_bbl_address_map = _prev_to_new_bbl_address_map;
+    inst_info_a.valid = false;
+    inst_info_b.valid = false;
+    init("");
   }
+  int i = 0;
   const InstInfo *getNextInstruction() override {
     PTInst& next_line = (use_info_a ? pt_inst_a : pt_inst_b);
     do {

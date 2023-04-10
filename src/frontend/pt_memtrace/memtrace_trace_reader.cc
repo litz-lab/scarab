@@ -59,8 +59,7 @@ static std::mutex initMutex;
 
 // A non-reader
 TraceReader::TraceReader() :
-    trace_ready_(false), binary_ready_(false), skipped_(0) {
-  init("");
+  trace_ready_(false), binary_ready_(false), skipped_(0), buf_size_(0) {
 }
 
 // Trace + single binary
@@ -328,9 +327,8 @@ unique_ptr<xed_decoded_inst_t> TraceReader::makeNop(uint8_t _length) {
 void TraceReader::init_buffer() {
   // Push one dummy entry so we can pop in nextInstruction()
   ins_buffer.emplace_back(InstInfo());
-
   for(uint32_t i = 0; i < buf_size_; i++) {
-    ins_buffer.emplace_back(*getNextInstruction());
+      ins_buffer.emplace_back(*getNextInstruction());
   }
 }
 

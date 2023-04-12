@@ -139,13 +139,13 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op,
     const Addr next_fetch_addr = op->oracle_info.npc;
 
     Flag uc_hit = in_uop_cache(next_fetch_addr, FALSE);
-    inc_bstat_miss(op, uc_hit);
     const uns latency = late_bp_recovery ? LATE_BP_LATENCY : 1;
     DEBUG(
       bp_recovery_info->proc_id,
       "Recovery signaled for op_num:%s @ 0x%s  next_fetch:0x%s offpath:%d\n",
       unsstr64(op->op_num), hexstr64s(op->inst_info->addr),
       hexstr64s(next_fetch_addr), op->off_path);
+    inc_bstat_miss(op, uc_hit);
     ASSERT(op->proc_id, !op->oracle_info.recovery_sch);
     op->oracle_info.recovery_sch          = TRUE;
     bp_recovery_info->recovery_cycle      = cycle + latency;
@@ -434,11 +434,21 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     op->oracle_info.no_target = FALSE;
     pred_target               = *btb_target;
   } else {
-    // btb miss
-    op->oracle_info.btb_miss  = TRUE;
     // In case of BTB miss, execute fall-through
     pred_target = pc_plus_offset;
-    op->oracle_info.pred      = NOT_TAKEN;
+
+    // In the case where fall-through == branch target, ignore BTB miss
+    if (pc_plus_offset == op->oracle_info.target) {
+      op->oracle_info.btb_miss  = FALSE;
+      op->oracle_info.no_target = FALSE;
+      op->oracle_info.pred      = TAKEN;
+      btb_target = &pred_target; //make !NULL
+    }
+    else {
+      // btb miss
+      op->oracle_info.btb_miss  = TRUE;
+      op->oracle_info.pred      = NOT_TAKEN;
+    }
   }
   // overwrite pred_target with indirect predictor
   if(ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL)) {
@@ -488,7 +498,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
           op->oracle_info.late_pred = bp_data->late_bp->pred_func(op);
         }
       }
-
       // Update history used by the rest of Scarab.
       bp_data->global_hist = (bp_data->global_hist >> 1) |
                              (op->oracle_info.pred << 31);
@@ -507,7 +516,8 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
                                   (pred_target != op->oracle_info.npc));
 
       // Regular mispredict resolved at exec
-      if (btb_target && op->oracle_info.dir != op->oracle_info.pred) {
+      // On dir misprediction, treat as correctly predicted if pred_target happens to match actual target
+      if (btb_target && op->oracle_info.dir != op->oracle_info.pred && pred_target != op->oracle_info.npc) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = TRUE;
       }

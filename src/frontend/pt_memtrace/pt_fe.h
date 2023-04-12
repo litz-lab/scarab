@@ -46,18 +46,7 @@ extern "C" {
 #endif //__cplusplus
 
 void pt_init(void);
-
-/* Implementing the frontend interface */
-Addr pt_next_fetch_addr(uns proc_id);
-Flag pt_can_fetch_op(uns proc_id);
-void pt_fetch_op(uns proc_id, Op *op);
-void pt_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);
-void pt_recover(uns proc_id, uns64 inst_uid);
-void pt_retire(uns proc_id, uns64 inst_uid);
-
-/* For restarting of pt */
-void pt_done(void);
-void pt_close_trace_file(uns proc_id);
+int  pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi);
 void pt_setup(uns proc_id);
 
 #ifdef __cplusplus

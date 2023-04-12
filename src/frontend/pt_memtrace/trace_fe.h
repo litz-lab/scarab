@@ -29,6 +29,8 @@
 #ifndef __TRACE_FE_H__
 #define __TRACE_FE_H__
 
+#include "globals/global_types.h"
+
 /**************************************************************************************/
 /* Forward Declarations */
 
@@ -39,37 +41,14 @@ struct Op_struct;
 /**************************************************************************************/
 /* Prototypes */
 
-#include <unordered_map>
 #include "ctype_pin_inst.h"
-#include "pin/pin_lib/uop_generator.h"
-#include "pin/pin_lib/x86_decoder.h"
+//#include "pin/pin_lib/uop_generator.h"
+//#include "pin/pin_lib/x86_decoder.h"
 
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-  
-#include "debug/debug.param.h"
-#include "debug/debug_macros.h"
-#include "globals/assert.h"
-#include "globals/global_defs.h"
-#include "globals/global_types.h"
-#include "globals/global_vars.h"
-#include "globals/utils.h"
-#include "globals/global_types.h"
-
-/**************************************************************************************/
-/* Macros */
-
-#define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_TRACE_READ, ##args)
-
-  /* Globals */
-static ctype_pin_inst next_onpath_pi[MAX_NUM_PROCS];
-static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS];
-static bool            off_path_mode[MAX_NUM_PROCS] = {false};
-static uint64_t        off_path_addr[MAX_NUM_PROCS] = {0};
-static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
-
 
 void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst);
 
@@ -80,7 +59,8 @@ void ext_trace_fetch_op(uns proc_id, Op* op);
 void ext_trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);
 void ext_trace_recover(uns proc_id, uns64 inst_uid);
 void ext_trace_retire(uns proc_id, uns64 inst_uid);
-  void ext_trace_init();
+void ext_trace_init();
+void ext_trace_done(void);
 
 #ifdef __cplusplus
 }

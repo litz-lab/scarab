@@ -35,7 +35,6 @@ extern "C" {
 #include "globals/utils.h"
 }
 
-#include "frontend/pt_memtrace/trace_fe.h"
 #include "bp/bp.h"
 #include "statistics.h"
 #include "bp/bp.param.h"
@@ -52,7 +51,6 @@ extern "C" {
 /* Macros */
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_TRACE_READ, ##args)
-
 
 /**************************************************************************************/
 /* Global Variables for PT */
@@ -166,11 +164,6 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
 }
 
 void pt_init(void) {
-  /*ASSERTM(0, !FETCH_OFF_PATH_OPS,
-          "Trace frontend does not support wrong path. Turn off "
-          "FETCH_OFF_PATH_OPS\n");
-  */
-
   uop_generator_init(NUM_CORES);
   init_pin_opcode_convert();
   init_reg_compress_map();
@@ -210,93 +203,6 @@ void pt_init(void) {
   }
 }
 
-Addr pt_next_fetch_addr(uns proc_id) {
-  return next_onpath_pi[proc_id].instruction_addr;
-}
-
-Flag pt_can_fetch_op(uns proc_id) {
-  return ext_trace_can_fetch_op(proc_id);
-}
-
-/*void pt_fetch_op(uns proc_id, Op *op) {
-  if(uop_generator_get_bom(proc_id)) {
-    uop_generator_get_uop(proc_id, op, &pt_next_pi[proc_id]);
-  } else {
-    uop_generator_get_uop(proc_id, op, NULL);
-  }
-
-  if(uop_generator_get_eom(proc_id)) {
-    int success = pt_trace_read(proc_id, &pt_next_pi[proc_id]);
-    static int ins = 0;
-    ins++;
-    if(!success) {
-      trace_read_done[proc_id] = TRUE;
-      reached_exit[proc_id]    = TRUE;
-    }
-  }
-  }*/
-
-void pt_fetch_op(uns proc_id, Op* op) {
-  //return ext_trace_fetch_op(proc_id, op);
-  std::cout << "enter fetch " << std::hex << next_onpath_pi[proc_id].instruction_addr << " ofpath " << off_path_mode[proc_id] << std::endl;
-    std::cout << "PTofmode " << off_path_mode[proc_id] << " addr " << (void*)&off_path_mode[proc_id] << std::endl;
-  if(uop_generator_get_bom(proc_id)) {
-    // ASSERT(proc_id, !trace_read_done[proc_id] && !reached_exit[proc_id]);
-    if (!off_path_mode[proc_id]) {
-      uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id]);
-    }
-    else {
-      uop_generator_get_uop(proc_id, op, &next_offpath_pi[proc_id]);
-    }
-  } else {
-    uop_generator_get_uop(proc_id, op, NULL);
-  }
-
-  if(uop_generator_get_eom(proc_id)) {
-    if (!off_path_mode[proc_id]) {
-      int success = pt_trace_read(proc_id, &next_onpath_pi[proc_id]);
-      if(!success) {
-        trace_read_done[proc_id] = TRUE;
-        reached_exit[proc_id]    = TRUE;
-        /* this flag is supposed to be set in uop_generator_get_uop() but there
-         * is a circular dependency on trace_read_done to be set. So, we set
-         * op->exit here. */
-        op->exit = TRUE;
-        std::cout << "Reached end of trace" << std::endl;
-      }
-      else {
-        uint64_t addr = next_onpath_pi[proc_id].instruction_addr;
-        std::cout << "onpaht " << addr << std::endl;
-        auto find = pc_to_inst.find(addr);
-        if(find == pc_to_inst.end()) {
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
-        }
-        else {
-          // Check if the instruction of a PC has changed. If yes, sufficient to just replace it?
-          ASSERT(proc_id, next_onpath_pi[proc_id].inst_binary_lsb == find->second.inst_binary_lsb);
-          ASSERT(proc_id, next_onpath_pi[proc_id].inst_binary_msb == find->second.inst_binary_msb);
-        }
-      }
-    }
-    else {
-      off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
-    }
-  }
-  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
-}
-
-void pt_close_trace_file(uns proc_id) {
-  printf("Closing PT file for %u\n", proc_id);
-}
-
-void pt_done() {
-  printf("Frontend simulation finished for all PTs\n");
-  for(int i = 0; i < MAX_NUM_PROCS; ++i) {
-      //delete pt_trace_readers[i];
-      // error: deleting object of polymorphic class type ‘TraceReaderPT’ which has non-virtual destructor might cause undefined behavior [-Werror=delete-non-virtual-dtor]
-  }
-}
-
 void pt_setup(uns proc_id) {
   std::string path(pt_trace_files[proc_id]);
   std::string trace(path);
@@ -326,20 +232,4 @@ void pt_setup(uns proc_id) {
   pt_prior_tid = insi->tid;
   assert(pt_prior_tid);
   assert(pt_prior_pid);
-  pt_trace_read(proc_id, &next_onpath_pi[proc_id]);
-}
-
-void pt_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
-  std::cout << "redirect to addr " << std::hex << fetch_addr << std::endl;
-  return ext_trace_redirect(proc_id, inst_uid, fetch_addr);
-}
-
-void pt_recover(uns proc_id, uns64 inst_uid) {
-  return ext_trace_recover(proc_id,inst_uid);
-}
-
-void pt_retire(uns proc_id, uns64 inst_uid) {
-  return ext_trace_retire(proc_id, inst_uid);
-  // Trace frontend does not need to communicate to PIN which instruction are
-  // retired.
 }

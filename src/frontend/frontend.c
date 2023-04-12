@@ -43,8 +43,7 @@
 #include "thread.h"
 
 #ifdef ENABLE_PT_MEMTRACE
-#include "frontend/pt_memtrace/memtrace_fe.h"
-#include "frontend/pt_memtrace/pt_fe.h"
+#include "frontend/pt_memtrace/trace_fe.h"
 #endif
 
 /**************************************************************************************/
@@ -71,12 +70,9 @@ void frontend_init() {
       break;
     }
 #ifdef ENABLE_PT_MEMTRACE
-    case FE_PT: {
-      pt_init();
-      break;
-    }
+    case FE_PT:
     case FE_MEMTRACE: {
-      memtrace_init();
+      ext_trace_init();
       break;
     }
 #endif
@@ -97,12 +93,9 @@ void frontend_done(Flag* retired_exit) {
       break;
     }
 #ifdef ENABLE_PT_MEMTRACE
-    case FE_PT: {
-      pt_done();
-      break;
-    }
+    case FE_PT:
     case FE_MEMTRACE: {
-      memtrace_done();
+      ext_trace_done();
       break;
     }
 #endif

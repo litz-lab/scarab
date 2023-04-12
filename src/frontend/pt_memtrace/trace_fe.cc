@@ -9,6 +9,31 @@
 #include "statistics.h"
 #include <iostream>
 
+#include "frontend/pt_memtrace/pt_fe.h"
+#include "frontend/frontend_intf.h"
+
+/**************************************************************************************/
+/* Macros */
+
+#include "debug/debug.param.h"
+#include "debug/debug_macros.h"
+#include "globals/assert.h"
+//#include "globals/global_defs.h"
+//#include "globals/global_types.h"
+//#include "globals/global_vars.h"
+//#include "globals/utils.h"
+//#include "globals/global_types.h"
+
+
+#define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_TRACE_READ, ##args)
+
+/* Globals */
+static ctype_pin_inst next_onpath_pi[MAX_NUM_PROCS];
+static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS];
+static bool            off_path_mode[MAX_NUM_PROCS] = {false};
+static uint64_t        off_path_addr[MAX_NUM_PROCS] = {0};
+static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
+
 
 void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
   auto op_iter = pc_to_inst.find(*off_path_addr);
@@ -24,14 +49,8 @@ void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst
   }
 }
 
-void ext_trace_init() {
-  memset(next_offpath_pi, 0, sizeof(next_offpath_pi));
-  memset(next_onpath_pi, 0, sizeof(next_onpath_pi));
-}
-
-/*void ext_trace_fetch_op(uns proc_id, Op* op) {
+void ext_trace_fetch_op(uns proc_id, Op* op) {
   if(uop_generator_get_bom(proc_id)) {
-    // ASSERT(proc_id, !trace_read_done[proc_id] && !reached_exit[proc_id]);
     if (!off_path_mode[proc_id]) {
       uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id]);
     }
@@ -44,12 +63,16 @@ void ext_trace_init() {
 
   if(uop_generator_get_eom(proc_id)) {
     if (!off_path_mode[proc_id]) {
-      int        success = memtrace_trace_read(proc_id, &next_onpath_pi[proc_id]);
+
+      int success = false;
+      if (FRONTEND == FE_PT)
+        success = pt_trace_read(proc_id, &next_onpath_pi[proc_id]);
+      else if (FRONTEND == FE_MEMTRACE)
+        success = memtrace_trace_read(proc_id, &next_onpath_pi[proc_id]);
       if(!success) {
         trace_read_done[proc_id] = TRUE;
         reached_exit[proc_id]    = TRUE;
         op->exit = TRUE;
-        std::cout << "Reached end of trace" << std::endl;
       }
       else {
         uint64_t addr = next_onpath_pi[proc_id].instruction_addr;
@@ -69,10 +92,9 @@ void ext_trace_init() {
     }
   }
   DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
-}*/
+}
 
 Flag ext_trace_can_fetch_op(uns proc_id) {
-  //ASSERT(0, proc_id == 0);
   return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
 }
 
@@ -81,7 +103,6 @@ void ext_trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
   off_path_addr[proc_id] = fetch_addr;
   off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
   DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
-  std::cout << "ofmode " << off_path_mode[proc_id] << " addr " << (void*)&off_path_mode[proc_id] << std::endl;
 }
 
 void ext_trace_recover(uns proc_id, uns64 inst_uid) {
@@ -99,3 +120,28 @@ void ext_trace_retire(uns proc_id, uns64 inst_uid) {
   // retired.
 }
 
+Addr ext_trace_next_fetch_addr(uns proc_id) {
+  return next_onpath_pi[proc_id].instruction_addr;
+}
+
+void ext_trace_init() {
+  memset(next_offpath_pi, 0, sizeof(next_offpath_pi));
+  memset(next_onpath_pi, 0, sizeof(next_onpath_pi));
+
+  if (FRONTEND == FE_PT) {
+    pt_init();
+    for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+      pt_trace_read(proc_id, &next_onpath_pi[proc_id]);
+    }
+  }
+  else if (FRONTEND == FE_MEMTRACE) {
+    memtrace_init();
+    for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+      memtrace_trace_read(proc_id, &next_onpath_pi[proc_id]);
+    }
+  }
+}
+
+void ext_trace_done() {
+
+}

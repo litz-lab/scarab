@@ -36,7 +36,6 @@ extern "C" {
 #include "globals/utils.h"
 }
 
-#include "frontend/pt_memtrace/trace_fe.h"
 #include "bp/bp.h"
 #include "bp/bp.param.h"
 #include "ctype_pin_inst.h"
@@ -49,8 +48,6 @@ extern "C" {
 #define DR_DO_NOT_DEFINE_int64
 
 #include "frontend/pt_memtrace/memtrace_trace_reader_memtrace.h"
-
-//extern next_
 
 /**************************************************************************************/
 /* Global Variables */
@@ -168,12 +165,6 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
 /* trace_init() */
 
 void memtrace_init(void) {
-  ext_trace_init();
-  /*ASSERTM(0, !FETCH_OFF_PATH_OPS,
-          "Trace frontend does not support wrong path. Turn off "
-          "FETCH_OFF_PATH_OPS\n");
-  */
-
   uop_generator_init(NUM_CORES);
   init_x86_decoder(nullptr);
   init_x87_stack_delta();
@@ -243,93 +234,4 @@ void memtrace_setup(uns proc_id) {
   prior_tid = insi->tid;
   assert(prior_tid);
   assert(prior_pid);
-  memtrace_trace_read(proc_id, &next_onpath_pi[proc_id]);
 }
-
-/**************************************************************************************/
-/* trace_next_fetch_addr */
-
-Addr memtrace_next_fetch_addr(uns proc_id) {
-  return next_onpath_pi[proc_id].instruction_addr;
-}
-
-/**************************************************************************************/
-/* trace done */
-
-void memtrace_done() {
-  uns proc_id;
-  for(proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-    // delete trace_readers[proc_id];
-  }
-  printf("done\n");
-}
-
-void memtrace_close_trace_file(uns proc_id) {
-  // delete trace_readers[proc_id];
-  printf("close\n");
-}
-
-Flag memtrace_can_fetch_op(uns proc_id) {
-  return ext_trace_can_fetch_op(proc_id);
-}
-
-void memtrace_fetch_op(uns proc_id, Op* op) {
-  //return ext_trace_fetch_op(proc_id, op);
-  if(uop_generator_get_bom(proc_id)) {
-    // ASSERT(proc_id, !trace_read_done[proc_id] && !reached_exit[proc_id]);
-    if (!off_path_mode[proc_id]) {
-      uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id]);
-    }
-    else {
-      uop_generator_get_uop(proc_id, op, &next_offpath_pi[proc_id]);
-    }
-  } else {
-    uop_generator_get_uop(proc_id, op, NULL);
-  }
-
-  if(uop_generator_get_eom(proc_id)) {
-    if (!off_path_mode[proc_id]) {
-      int        success = memtrace_trace_read(proc_id, &next_onpath_pi[proc_id]);
-      if(!success) {
-        trace_read_done[proc_id] = TRUE;
-        reached_exit[proc_id]    = TRUE;
-        /* this flag is supposed to be set in uop_generator_get_uop() but there
-         * is a circular dependency on trace_read_done to be set. So, we set
-         * op->exit here. */
-        op->exit = TRUE;
-        std::cout << "Reached end of trace" << std::endl;
-      }
-      else {
-        uint64_t addr = next_onpath_pi[proc_id].instruction_addr;
-        auto find = pc_to_inst.find(addr);
-        if(find == pc_to_inst.end()) {
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
-        }
-        else {
-          // Check if the instruction of a PC has changed. If yes, sufficient to just replace it?
-          ASSERT(proc_id, next_onpath_pi[proc_id].inst_binary_lsb == find->second.inst_binary_lsb);
-          ASSERT(proc_id, next_onpath_pi[proc_id].inst_binary_msb == find->second.inst_binary_msb);
-        }
-      }
-    }
-    else {
-      off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
-    }
-  }
-  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
-}
-
-void memtrace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
-  return ext_trace_redirect(proc_id, inst_uid, fetch_addr);
-}
-
-void memtrace_recover(uns proc_id, uns64 inst_uid) {
-  return ext_trace_recover(proc_id,inst_uid);
-}
-
-void memtrace_retire(uns proc_id, uns64 inst_uid) {
-  return ext_trace_retire(proc_id, inst_uid);
-  // Trace frontend does not need to communicate to PIN which instruction are
-  // retired.
-}
-

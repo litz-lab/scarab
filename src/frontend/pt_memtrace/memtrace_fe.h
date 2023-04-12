@@ -46,19 +46,7 @@ extern "C" {
 #endif
   
 void memtrace_init(void);
-void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst);
-
-/* Implementing the frontend interface */
-Addr memtrace_next_fetch_addr(uns proc_id);
-Flag memtrace_can_fetch_op(uns proc_id);
-void memtrace_fetch_op(uns proc_id, Op* op);
-void memtrace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);
-void memtrace_recover(uns proc_id, uns64 inst_uid);
-void memtrace_retire(uns proc_id, uns64 inst_uid);
-
-/* For restarting of memtraces */
-void memtrace_done(void);
-void memtrace_close_trace_file(uns proc_id);
+int  memtrace_trace_read(int proc_id, ctype_pin_inst* pt_next_pi);
 void memtrace_setup(uns proc_id);
 
 #ifdef __cplusplus

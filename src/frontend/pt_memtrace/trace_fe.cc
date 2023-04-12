@@ -80,10 +80,14 @@ void ext_trace_fetch_op(uns proc_id, Op* op) {
         if(find == pc_to_inst.end()) {
           pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         }
-        else {
-          // Check if the instruction of a PC has changed. If yes, sufficient to just replace it?
-          ASSERT(proc_id, next_onpath_pi[proc_id].inst_binary_lsb == find->second.inst_binary_lsb);
-          ASSERT(proc_id, next_onpath_pi[proc_id].inst_binary_msb == find->second.inst_binary_msb);
+        else if (next_onpath_pi[proc_id].inst_binary_lsb != find->second.inst_binary_lsb ||
+                 next_onpath_pi[proc_id].inst_binary_msb != find->second.inst_binary_msb) {
+          DEBUG(proc_id, "Previously seen PC references new instruction addr:%lx inst_size:%i lsb:%lx msb:%lx\n ",
+                addr, next_onpath_pi[proc_id].size, next_onpath_pi[proc_id].inst_binary_lsb,
+                next_onpath_pi[proc_id].inst_binary_msb);
+          // Handle jitted code
+          pc_to_inst.erase(addr);
+          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         }
       }
     }

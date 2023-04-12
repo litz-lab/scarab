@@ -100,13 +100,11 @@ void recover_decoupled_fe(int proc_id) {
   per_core_redirect_cycle[proc_id] = 0;
 
   //FIXME always fetch off path ops? should we get rid of this parameter?
-  if(FETCH_OFF_PATH_OPS) {
-    frontend_recover(proc_id, bp_recovery_info->recovery_inst_uid);
-    ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == frontend_next_fetch_addr(proc_id),
-            "Scarab's recovery addr 0x%llx does not match frontend's recovery "
-            "addr 0x%llx\n",
-            bp_recovery_info->recovery_fetch_addr, frontend_next_fetch_addr(proc_id));
-  }
+  frontend_recover(proc_id, bp_recovery_info->recovery_inst_uid);
+  ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == frontend_next_fetch_addr(proc_id),
+          "Scarab's recovery addr 0x%llx does not match frontend's recovery "
+          "addr 0x%llx\n",
+          bp_recovery_info->recovery_fetch_addr, frontend_next_fetch_addr(proc_id));
 }
 
 void debug_decoupled_fe() {

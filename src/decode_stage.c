@@ -224,7 +224,8 @@ void decode_stage_process_op(Op* op) {
   Flag bf = op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE;
 
   if(cf) {
-    DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n", bf, op->inst_info->addr, op->op_num, op->oracle_info.recover_at_decode);
+    DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",
+          bf, op->inst_info->addr, op->op_num, op->oracle_info.recover_at_decode);
     // If the CF was unconditional and direct and taken and there was a BTB miss
     // we can schedule a redirect. If the branch was not taken we are on the on-path.
     // If the branch is condidtional or indirect, we will schedule recovery at exec

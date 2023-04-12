@@ -17,6 +17,7 @@ std::vector<uint64_t> per_core_op_count;
 std::vector<std::vector<decoupled_fe_iter>> per_core_ftq_iterators;
 std::vector<uint64_t> per_core_recovery_addr;
 std::vector<uint64_t> per_core_redirect_cycle;
+std::vector<bool> per_core_stalled;
 //per_core pointers
 std::deque<Op*> *df_ftq;
 int *off_path;
@@ -35,6 +36,7 @@ void alloc_mem_decoupled_fe(uns numCores) {
   per_core_ftq_iterators.resize(numCores);
   per_core_recovery_addr.resize(numCores);
   per_core_redirect_cycle.resize(numCores);
+  per_core_stalled.resize(numCores);
 }
 
 void init_decoupled_fe(uns proc_id, const char*) {
@@ -66,7 +68,7 @@ void recover_decoupled_fe(int proc_id) {
   per_core_off_path[proc_id] = false;
   per_core_sched_off_path[proc_id] = false;
   per_core_recovery_addr[proc_id] = bp_recovery_info->recovery_fetch_addr;
-  //TODO: flush ftq and fix op_num
+
   for (auto it = per_core_ftq[proc_id].begin(); it != per_core_ftq[proc_id].end(); it++) {
     free_op(*it);
   }
@@ -80,6 +82,13 @@ void recover_decoupled_fe(int proc_id) {
   }
   
   auto op = bp_recovery_info->recovery_op;
+
+  if(per_core_stalled[set_proc_id])
+    DEBUG(set_proc_id,
+          "Decoupled fetch unstalled off-path barrier due to recovery fetch_addr0x:%llx off_path:%i op_num:%llu\n",
+          op->inst_info->addr, op->off_path, op->op_num);
+  per_core_stalled[set_proc_id] = false;
+
   if (op->oracle_info.recover_at_decode)
     STAT_EVENT(proc_id, FTQ_RECOVER_DECODE);
   else if (op->oracle_info.recover_at_exec)
@@ -89,11 +98,15 @@ void recover_decoupled_fe(int proc_id) {
   ASSERT(proc_id, cycle_count > per_core_redirect_cycle[proc_id]);
   INC_STAT_EVENT(proc_id, FTQ_OFFPATH_CYCLES, offpath_cycles);
   per_core_redirect_cycle[proc_id] = 0;
-}
 
-void redirect_decoupled_fe(int proc_id) {
-  ASSERT(0,0);
-  off_path[proc_id] = false;
+  //FIXME always fetch off path ops? should we get rid of this parameter?
+  if(FETCH_OFF_PATH_OPS) {
+    frontend_recover(proc_id, bp_recovery_info->recovery_inst_uid);
+    ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == frontend_next_fetch_addr(proc_id),
+            "Scarab's recovery addr 0x%llx does not match frontend's recovery "
+            "addr 0x%llx\n",
+            bp_recovery_info->recovery_fetch_addr, frontend_next_fetch_addr(proc_id));
+  }
 }
 
 void debug_decoupled_fe() {
@@ -150,29 +163,11 @@ void update_decoupled_fe() {
 
     if(op->table_info->cf_type) {
       ASSERT(set_proc_id, op->eom);
-      
-      if(IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH) {
-        bp_predict_op(g_bp_data, op, cf_num++, op->inst_info->addr);
-
-        op->oracle_info.mispred   = 0;
-        op->oracle_info.misfetch  = 0;
-        op->oracle_info.btb_miss  = 0;
-        op->oracle_info.no_target = 0;
-
-        DEBUG(set_proc_id,
-              "Predict Syscall/Barrier fetch_addr0x:%llx off_path:%i\n",
-              op->inst_info->addr, *off_path);
-
-      }
-      else {
-        DEBUG(set_proc_id,
-              "Predict Branch fetch_addr0x:%llx off_path:%i\n",
-              op->inst_info->addr, *off_path);
-        pred_addr = bp_predict_op(g_bp_data, op, cf_num++, op->inst_info->addr);
+      DEBUG(set_proc_id,
+            "Predict Branch fetch_addr0x:%llx off_path:%i bar_fetch:%i\n",
+            op->inst_info->addr, *off_path, op->table_info->bar_type & BAR_FETCH);
+      pred_addr = bp_predict_op(g_bp_data, op, cf_num++, op->inst_info->addr);
         
-        ASSERT(0, pred_addr == op->oracle_info.pred_npc);
-      }
-
       if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
         DEBUG(set_proc_id,
               "Mispredict CF fetch_addr:%llx true_npc:%llx pred_npc:%lx mispred:%i misfetch:%i btb miss:%i taken:%i recover_at_decode:%i recover_at_exec:%i\n",
@@ -198,6 +193,8 @@ void update_decoupled_fe() {
       }
       taken_cf = (op->oracle_info.pred == TAKEN) ? taken_cf + 1 : taken_cf;
     }
+    else
+      ASSERT(0,!(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
 
     if (op->table_info->cf_type == CF_CBR) {
       predicted_branches++;
@@ -206,6 +203,14 @@ void update_decoupled_fe() {
     df_ftq->emplace_back(op);
     
     fetched_inst_bytes += op->inst_info->trace_info.inst_size;
+
+    if (op->table_info->bar_type & BAR_FETCH && op->eom) {
+      // If this is a mispredicted CF, wait for decode to recover, decode will then stall FE
+      if (!op->oracle_info.recover_at_decode) {
+        decoupled_fe_stall(op);
+      }
+      ASSERT(set_proc_id, !op->oracle_info.recover_at_exec);
+    }
 
     if (*off_path) {
       STAT_EVENT(set_proc_id, FTQ_FETCHED_INS_OFFPATH);
@@ -300,4 +305,25 @@ bool decoupled_fe_ftq_iter_advance(decoupled_fe_iter* iter) {
    and reset by flushes */
 uint64_t decoupled_fe_ftq_iter_offset(decoupled_fe_iter* iter) {
   return iter->pos;
+}
+
+void decoupled_fe_stall(Op *op) {
+  per_core_stalled[set_proc_id] = true;
+  DEBUG(set_proc_id,
+        "Decoupled fetch stalled due to barrier fetch_addr0x:%llx off_path:%i op_num:%llu\n",
+        op->inst_info->addr, op->off_path, op->op_num);
+}
+
+void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid) {
+  if(op->table_info->bar_type & BAR_FETCH) {
+    per_core_stalled[set_proc_id] = false;
+    DEBUG(set_proc_id,
+          "Decoupled fetch unstalled due to retired barrier fetch_addr0x:%llx off_path:%i op_num:%llu\n",
+          op->inst_info->addr, op->off_path, op->op_num);
+  }
+  else {
+    ASSERT(proc_id, !IS_CALLSYS(op->table_info)); //bar fetch should be set for syscal?
+  }
+  //unblock pin exec driven, trace frontends do not need to block/unblock
+  frontend_retire(proc_id, inst_uid);
 }

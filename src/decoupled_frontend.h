@@ -57,18 +57,22 @@ extern "C" {
     uint64_t pos;
   };
 
+  // Simulator API
   void alloc_mem_decoupled_fe(uns numProcs);
   void init_decoupled_fe(uns proc_id, const char*);
   void set_decoupled_fe(int proc_id);
   void reset_decoupled_fe();
-  void recover_decoupled_fe(int proc_id);
-  void redirect_decoupled_fe(int proc_id);
   void debug_decoupled_fe();
   void update_decoupled_fe();
+  // Icache/Core API
+  void recover_decoupled_fe(int proc_id);
+  void decoupled_fe_stall(Op *op);
+  void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid);
   bool decoupled_fe_fetch_op(Op** op, int proc_id);
   bool decoupled_fe_can_fetch_op(int proc_id);
   uint64_t decoupled_fe_next_fetch_addr(int proc_id);
-  void decoupled_fe_return_op(Op *op);  
+  void decoupled_fe_return_op(Op *op);
+  // FTQ API
   decoupled_fe_iter* decoupled_fe_new_ftq_iter();
   /* Returns the Op at current FTQ iterator position. Returns NULL if the FTQ is empty */ 
   Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter);

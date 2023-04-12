@@ -54,6 +54,7 @@
 #include "statistics.h"
 
 #include "bp/tagescl.h"
+#include "decoupled_frontend.h"
 
 /* Macros */
 
@@ -790,9 +791,9 @@ void node_retire() {
 
       if(op->exit) {
         retired_exit[op->proc_id] = TRUE;
-        frontend_retire(op->proc_id, -1);
+        decoupled_fe_retire(op, op->proc_id, -1);
       } else if(retire_op) {
-        frontend_retire(op->proc_id, op->inst_uid);
+        decoupled_fe_retire(op, op->proc_id, op->inst_uid);
       }
     }
     uop_count[node->proc_id]++;

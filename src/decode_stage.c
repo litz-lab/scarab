@@ -50,6 +50,7 @@
 #include "prefetcher/branch_misprediction_table.h"
 #include "statistics.h"
 #include "memory/memory.param.h"
+#include "decoupled_frontend.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -220,10 +221,10 @@ void update_decode_stage(Stage_Data* src_sd) {
 
 void decode_stage_process_op(Op* op) {
   Cf_Type cf = op->table_info->cf_type;
+  Flag bf = op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE;
 
   if(cf) {
-    Flag bf = op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE;
-
+    DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n", bf, op->inst_info->addr, op->op_num, op->oracle_info.recover_at_decode);
     // If the CF was unconditional and direct and taken and there was a BTB miss
     // we can schedule a redirect. If the branch was not taken we are on the on-path.
     // If the branch is condidtional or indirect, we will schedule recovery at exec
@@ -232,7 +233,6 @@ void decode_stage_process_op(Op* op) {
       bp_target_known_op(g_bp_data, op);
     }
     if (op->oracle_info.recover_at_decode) {
-      ASSERT(0, !bf);
       bp_sched_recovery(bp_recovery_info, op, cycle_count,
                         /*late_bp_recovery=*/FALSE, /*force_offpath=*/FALSE);
 
@@ -245,9 +245,21 @@ void decode_stage_process_op(Op* op) {
       // stats for the reason of resteer
       STAT_EVENT(dec->proc_id, RESTEER_BTB_MISS_CF_BR + cf);
     }
+    else if (!op->off_path){
+      // If this CF is a fetch barrier it should have been mispredicted and recovered at decode
+      // If its off-path then a prior op will recover instead (see OOO recovery in decoupled_fe)
+      ASSERT(dec->proc_id, !bf);
+    }
 
     if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)
       increment_branch_count(op->inst_info->addr);
+  }
+
+  // When a fetch barrier is decoded, need to stall fetch. Unstall if a) barrier retires or b)
+  // in the case the barrier is off-path, an earlier op's recovery will unstall
+  if (bf) {
+    //In the case of a fetch barrier potentially recover the mispredicted CF, then stall FE
+    decoupled_fe_stall(op);
   }
 }
 

@@ -315,13 +315,13 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
           "read pi, addr is 0x%s next_addr: 0x%s op_type:%s num_st:%d "
           "num_ld:%d is_fp:%d cf_type:%d size:%d branch_target:%s ld_size:%d "
           "st_size:%d %s taken:%d "
-          "num_uop:%d eom:%d\n",
+          "num_uop:%d eom:%d bar:%i\n",
           hexstr64s(inst->instruction_addr),
           hexstr64s(inst->instruction_next_addr), Op_Type_str(inst->op_type),
           inst->num_st, inst->num_ld, inst->is_fp, inst->cf_type, inst->size,
           hexstr64s(inst->branch_target), inst->ld_size, inst->st_size,
           ctype_pin_inst_ld_and_st_addrs(proc_id, inst), inst->actually_taken,
-          num_uops[proc_id], eom[proc_id]);
+          num_uops[proc_id], eom[proc_id], info->table_info->bar_type);
   } else {
     trace_uop = trace_uop_array[num_sending_uop[proc_id]];
     ASSERTM(proc_id, trace_uop, "%i\n", num_sending_uop[proc_id]);

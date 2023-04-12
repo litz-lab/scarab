@@ -213,7 +213,13 @@ void inc_bstat_miss(Op* op, Flag uc_hit) {
   const uns8 misfetch = op->oracle_info.misfetch;
   const uns8 btb_miss = op->oracle_info.btb_miss;
 
-  ASSERT(bp_recovery_info->proc_id, mispred || misfetch || btb_miss);
+  ASSERT(bp_recovery_info->proc_id, op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec);
+
+  if (!(mispred | misfetch | btb_miss)) {
+    //FIXME: Add stats for recovering syscalls
+    ASSERT(bp_recovery_info->proc_id, IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH);
+    return;
+  }
 
   const Flag in_ic = in_icache(op->inst_info->addr);
 
@@ -398,6 +404,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     op->oracle_info.late_mispred  = FALSE;
     op->oracle_info.btb_miss      = FALSE;
     op->oracle_info.no_target     = FALSE;
+    // Syscalls cause flush of later ops at decode
+    op->oracle_info.recover_at_decode = TRUE;
+    op->oracle_info.recover_at_exec = FALSE;
     ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.npc);
     op->oracle_info.pred_npc      = op->oracle_info.npc;
     op->oracle_info.late_pred_npc = op->oracle_info.npc;
@@ -407,6 +416,8 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     }
     return op->oracle_info.npc;
   }
+  else
+    ASSERT(0, !(op->table_info->bar_type & BAR_FETCH));
   // }}}
 
   // {{{ access btb for branch information and target

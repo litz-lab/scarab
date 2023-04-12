@@ -231,12 +231,14 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->rs_id            = MAX_CTR;
   op->same_src_last_op = 0;
 
-  op->oracle_info.num_srcs     = 0;
-  op->oracle_info.update_fpcr  = FALSE;
-  op->oracle_info.error_event  = 0;
-  op->oracle_info.mispred      = FALSE;
-  op->oracle_info.misfetch     = FALSE;
-  op->oracle_info.recovery_sch = FALSE;
+  op->oracle_info.num_srcs          = 0;
+  op->oracle_info.update_fpcr       = FALSE;
+  op->oracle_info.error_event       = 0;
+  op->oracle_info.mispred           = FALSE;
+  op->oracle_info.misfetch          = FALSE;
+  op->oracle_info.recovery_sch      = FALSE;
+  op->oracle_info.recover_at_decode = FALSE;
+  op->oracle_info.recover_at_exec   = FALSE;
 
   op->oracle_cp_num                  = -1;
   op->engine_info.dcmiss             = FALSE;

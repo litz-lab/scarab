@@ -52,6 +52,7 @@
 #include "freq.h"
 #include "uop_queue_stage.h"
 #include "uop_cache_prefetch_decoder.h"
+#include "decoupled_frontend.h"
 
 Flag perf_pred_started = FALSE;
 
@@ -384,7 +385,6 @@ void cmp_redirect() {
   bp_recovery_info->redirect_op->oracle_info.btb_miss_resolved = TRUE;
   ASSERT_PROC_ID_IN_ADDR(bp_recovery_info->proc_id,
                          bp_recovery_info->redirect_op->oracle_info.pred_npc);
-  redirect_decoupled_fe(bp_recovery_info->proc_id);
   redirect_icache_stage();
   set_addr_following_resteer_bf(bp_recovery_info->redirect_op->oracle_info.npc);
 }

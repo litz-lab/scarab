@@ -472,11 +472,10 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       if(!op->off_path)
         STAT_EVENT(op->proc_id, CF_BR_USED_TARGET_CORRECT +
                                   (pred_target != op->oracle_info.npc));
-      if (btb_target) {
+      // On BTB hit, ensure that target is correct (no aliasing or jitted code)
+      if (btb_target && pred_target == op->oracle_info.npc) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = FALSE;
-        // This could happen due to BTB aliasing, in this case cause recovery at decode
-        ASSERT(op->proc_id, op->oracle_info.target == *btb_target);
       }
       else {
         op->oracle_info.recover_at_decode = TRUE;
@@ -521,6 +520,16 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = TRUE;
       }
+      // Although the btb hits and cbr is correctly predicted, target address may be wrong (aliasing or jitted code)
+      else if (btb_target && pred_target != op->oracle_info.npc) {
+          op->oracle_info.recover_at_decode = TRUE;
+          op->oracle_info.recover_at_exec = FALSE;
+      }
+      // Correctly predicted
+      else if (btb_target) {
+        op->oracle_info.recover_at_decode = FALSE;
+        op->oracle_info.recover_at_exec = FALSE;
+      }
       // If BTB missed, the branch will be assumed not taken at fetch. At decode we detect
       // the branch and will predict. There are 4 outcomes:
       // 1. Branch is predicted taken, violating not-taken assumption, causing flush at decode
@@ -546,13 +555,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.recover_at_exec = FALSE;
       }
       else {
-        op->oracle_info.recover_at_decode = FALSE;
-        op->oracle_info.recover_at_exec = FALSE;
-        // This could happen due to BTB aliasing, in this case cause recovery at decode
-        if (btb_target)
-          ASSERT(op->proc_id, op->oracle_info.target == *btb_target);
+        //We should have matched all cases by here
+        ASSERT(op->proc_id, 0);
       }
-
       break;
 
     case CF_CALL:
@@ -564,11 +569,10 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       if(!op->off_path)
         STAT_EVENT(op->proc_id, CF_CALL_USED_TARGET_CORRECT +
                                   (pred_target != op->oracle_info.npc));
-      if (btb_target) {
+      // On BTB hit, ensure that target is correct (no aliasing or jitted code)
+      if (btb_target && pred_target == op->oracle_info.npc) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = FALSE;
-        // This could happen due to BTB aliasing, in this case cause recovery at decode
-        ASSERT(op->proc_id, op->oracle_info.target == *btb_target);
       }
       else {
         op->oracle_info.recover_at_decode = TRUE;

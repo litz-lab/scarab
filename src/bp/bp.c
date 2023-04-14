@@ -56,7 +56,6 @@
 #include "statistics.h"
 #include "sim.h"
 
-#include "prefetcher/fdip.h"
 #include "prefetcher/pref.param.h"
 
 /******************************************************************************/
@@ -327,8 +326,8 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
   }
 }
 
-Flag bp_is_predictable(Bp_Data* bp_data, Op* op) {
-  return !bp_data->bp->full_func(op);
+Flag bp_is_predictable(Bp_Data* bp_data, uns proc_id) {
+  return !bp_data->bp->full_func(proc_id);
 }
 
 
@@ -790,12 +789,8 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   // mispred || misfetch will trigger a re-steer but no chance to fix the global hist
   if(btb_miss_nt &&
       (((op->oracle_info.pred != op->oracle_info.dir) && (prediction != op->oracle_info.npc)) ||
-      (!op->oracle_info.mispred && prediction != op->oracle_info.npc))) {
-    if(fdip_pred_off_path())
-      STAT_EVENT(op->proc_id, FDIP_OFF_PATH_BTB_MISS_NT_RESTEER);
-    else
-      STAT_EVENT(op->proc_id, FDIP_ON_PATH_BTB_MISS_NT_RESTEER);
-  }
+      (!op->oracle_info.mispred && prediction != op->oracle_info.npc)))
+    STAT_EVENT(op->proc_id, FDIP_BTB_MISS_NT_RESTEER_OFFPATH + op->off_path);
   return prediction;
 }
 

@@ -57,7 +57,8 @@
 #include "libs/list_lib.h"
 #include "decoupled_frontend.h"
 
-#include "prefetcher/fdip.h"
+/*#include "prefetcher/fdip.h"*/
+#include "prefetcher/fdip_new.h"
 #include "prefetcher/pref.param.h"
 #include "uop_queue_stage.h"
 #include "decode_stage.h"
@@ -79,8 +80,8 @@ Pb_Data* ic_pb_data;  // cmp cne is fine for cmp now assuming homogeneous cmp
 // But decided to use array for future use
 
 Icache_Stage* ic = NULL;
-List op_buf;
-Counter                last_issued_op_num = 0; // IC stage issues ops and this refers to the last op issued from head of the lookahead buffer by IC stage (there are LOOKAHEAD_BUF_SIZE amout of ops more in the lookahead buffer
+uns last_icache_miss_reason = IMISS_NOT_PREFETCHED;
+Counter last_recover_cycle = 0;
 
 extern Cmp_Model              cmp_model;
 extern Memory*                mem;
@@ -208,6 +209,7 @@ void reset_all_ops_icache_stage() {
 void recover_icache_stage() {
   Stage_Data* cur = &ic->sd;
   uns         ii;
+  last_recover_cycle = cycle_count;
 
   ASSERT(ic->proc_id, ic->proc_id == bp_recovery_info->proc_id);
   DEBUG(ic->proc_id,
@@ -390,8 +392,6 @@ void update_icache_stage() {
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
           log_stats_mshr_hit(ic->line_addr);
           log_stats_ic_miss();
-          if (FDIP_ENABLE && FDIP_TIMELY_FIFO_SIZE)
-            fdip_touch_cl_candidates(ic->line_addr);
 
           /* if the icache is available, wait for a miss */
           /* otherwise, refetch next cycle */
@@ -407,8 +407,6 @@ void update_icache_stage() {
                            0);
             if (success) {  // CMP maybe unique_count_per_core[proc_id]?
               ic->next_state = IC_WAIT_FOR_MISS;
-              if (FDIP_ENABLE && success == SUCCESS_NEW)
-                fdip_insert_cl_fetch_addr(ic->line_addr);
               DEBUG(ic->proc_id, "from IC_STAGE for cl 0x%llx at cycle %llu\n", ic->line_addr, cycle_count);
 
               if(ONE_MORE_CACHE_LINE_ENABLE) {
@@ -452,14 +450,8 @@ void update_icache_stage() {
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
-          if (FDIP_ENABLE) {
-            if (!WARMUP && operating_mode == SIMULATION_MODE) {
-              fdip_remove_cl_fetch_addr(ic->line_addr);
-              fdip_inc_cnt_useful(ic->line_addr);
-            }
-            if (FDIP_TIMELY_FIFO_SIZE)
-              fdip_touch_cl_candidates(ic->line_addr);
-          }
+          if (FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE)
+            inc_cnt_useful(ic->line_addr);
           STAT_EVENT(ic->proc_id, ICACHE_HIT);
           STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH + ic->off_path);
           if(WP_COLLECT_STATS) {
@@ -480,7 +472,7 @@ void update_icache_stage() {
       DEBUG(ic->proc_id, "Ifetch barrier: Waiting for miss \n");
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS, IC_ISSUE_WIDTH - 1);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
-      //STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + last_icache_miss_reason);
+      STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + last_icache_miss_reason);
     } break;
 
     case IC_WAIT_FOR_EMPTY_ROB: {
@@ -549,7 +541,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     UNUSED(inst);
     if(decoupled_fe_can_fetch_op(ic->proc_id)) {
       decoupled_fe_fetch_op(&op, ic->proc_id);
-      last_issued_op_num = op->op_num;
       ASSERTM(ic->proc_id, ic->next_fetch_addr == op->inst_info->addr,
                "Fetch address 0x%llx does not match op address 0x%llx\n",
                ic->next_fetch_addr, op->inst_info->addr);
@@ -802,11 +793,11 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
         line_info->HW_prefetch       = req->type == MRT_IPRF;
         if (req->type == MRT_FDIPPRF) {
           if (req->fdip_pref_off_path)
-            line_info->FDIP_prefetch = 2;
+            line_info->FDIP_prefetch = FDIP_OFFPATH;
           else
-            line_info->FDIP_prefetch = 1;
+            line_info->FDIP_prefetch = FDIP_ONPATH;
         } else {
-          line_info->FDIP_prefetch = 0;
+          line_info->FDIP_prefetch = DEMAND_LOAD;
         }
         wp_process_icache_fill(line_info, req);
       }
@@ -854,11 +845,11 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
         line_info->HW_prefetch       = req->type == MRT_IPRF;
         if (req->type == MRT_FDIPPRF) {
           if (req->fdip_pref_off_path)
-            line_info->FDIP_prefetch = 2;
+            line_info->FDIP_prefetch = FDIP_OFFPATH;
           else
-            line_info->FDIP_prefetch = 1;
+            line_info->FDIP_prefetch = FDIP_ONPATH;
         } else {
-          line_info->FDIP_prefetch = 0;
+          line_info->FDIP_prefetch = DEMAND_LOAD;
         }
         wp_process_icache_fill(line_info, req);
       }
@@ -974,12 +965,10 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
   }
 
   if(line->FDIP_prefetch && !line->read_count[0]) { // only consider the first hit
-    if(line->FDIP_prefetch == 1) {
+    if(line->FDIP_prefetch == FDIP_ONPATH)
       STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH_BY_FDIP);
-    }
-    else if(line->FDIP_prefetch == 2) {
+    else if(line->FDIP_prefetch == FDIP_OFFPATH)
       STAT_EVENT(ic->proc_id, ICACHE_HIT_OFFPATH_BY_FDIP);
-    }
     line->read_count[0] += 1;
   }
 
@@ -995,29 +984,26 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
     return;
 
   if(*repl_line_addr && line->FDIP_prefetch && !line->read_count[0]) {
-    if(line->FDIP_prefetch == 1) {
-      STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ON_PATH_BY_FDIP);
-    }
-    else {
-      STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_OFF_PATH_BY_FDIP);
-    }
+    if(line->FDIP_prefetch == FDIP_ONPATH)
+      STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ONPATH_BY_FDIP);
+    else
+      STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_OFFPATH_BY_FDIP);
     if(FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE) {
-      fdip_remove_cl_fetch_addr(*repl_line_addr);
-      fdip_inc_cnt_unuseful(*repl_line_addr);
+      inc_cnt_unuseful(*repl_line_addr);
       DEBUG_FDIP(ic->proc_id, "%llx is evicted\n", *repl_line_addr);
     }
   }
   else if(*repl_line_addr && line->FDIP_prefetch && line->read_count[0]) {
-    if(line->FDIP_prefetch == 1) {
-      STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_ON_PATH_BY_FDIP);
+    if(line->FDIP_prefetch == FDIP_ONPATH) {
+      STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_ONPATH_BY_FDIP);
     }
     else {
-      STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_OFF_PATH_BY_FDIP);
+      STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_OFFPATH_BY_FDIP);
     }
   }
 
   if(FDIP_ENABLE && *repl_line_addr)
-    fdip_evict_prefetched_cls(*repl_line_addr);
+    evict_prefetched_cls(*repl_line_addr);
 }
 
 /**************************************************************************************/
@@ -1058,10 +1044,6 @@ int32_t inst_lost_get_full_window_reason() {
   return 0;
 }
 
-void move_to_prev_op(void) {
-  list_prev_element(&op_buf);
-}
-
 void log_stats_ic_miss() {
   STAT_EVENT(ic->proc_id, ICACHE_MISS);
   STAT_EVENT(ic->proc_id, POWER_ICACHE_MISS);
@@ -1085,22 +1067,18 @@ void log_stats_mshr_hit(Addr line_addr) {
     else
       STAT_EVENT(ic->proc_id, MSHR_HIT_ONPATH_BY_FDIP);
     req->hit_by_demand_load = TRUE;
-    fdip_inc_cnt_useful(ic->line_addr);
-    //last_icache_miss_reason = 3;
+    inc_cnt_useful(ic->line_addr);
   }
   if (!req) {
-    fdip_inc_icache_miss(ic->line_addr);
-    /*last_icache_miss_reason = fdip_get_miss_reason(line_addr);
-    if (last_icache_miss_reason == 2)
-      STAT_EVENT(ic->proc_id, ICACHE_MISS_FDIP_LIMIT);
-    else if (last_icache_miss_reason == 1)
+    inc_icache_miss(ic->line_addr);
+    last_icache_miss_reason = get_miss_reason(line_addr);
+    if (last_icache_miss_reason == IMISS_MSHR_HIT)
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);
+    else if (last_icache_miss_reason == IMISS_TOO_EARLY)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED);
     else
       STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
-    */
   }
-  if (FDIP_HASH_ENABLE && FDIP_REDUCE_STORAGE)
-    fdip_inc_useful_hash(line_addr);
 }
 
 // Wrapper callback for any instruction memreq.

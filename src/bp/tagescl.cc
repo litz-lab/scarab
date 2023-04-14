@@ -128,7 +128,6 @@ void bp_tagescl_recover(Recovery_Info* recovery_info) {
     recovery_info->branchTarget);
 }
 
-uns8 bp_tagescl_full(Op* op) {
-  uns proc_id = op->proc_id;
+uns8 bp_tagescl_full(uns proc_id) {
     return tagescl_predictors.at(proc_id)->is_full();
 }

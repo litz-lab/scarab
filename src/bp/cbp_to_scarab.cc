@@ -81,8 +81,7 @@ class CBP_To_Scarab_Intf {
     /* CBP Interface does not support speculative updates */
   }
 
-  Flag full(Op* op) {
-    uns proc_id = op->proc_id;
+  Flag full(uns proc_id) {
     return cbp_predictors.at(proc_id).IsFull();
   }
 };
@@ -114,7 +113,7 @@ class CBP_To_Scarab_Intf {
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, update, , void, Op*, op)      \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, retire, , void, Op*, op)      \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, recover, , void, Recovery_Info*, info) \
-  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, full, return, Flag, Op*, op)
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, full, return, Flag, uns, proc_id)
 
 #include "cbp_table.def"
 #undef DEF_CBP

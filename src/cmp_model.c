@@ -44,7 +44,7 @@
 #include "op_pool.h"
 #include "prefetcher/pref.param.h"
 #include "prefetcher/pref_common.h"
-#include "prefetcher/fdip.h"
+/*#include "prefetcher/fdip.h"*/
 #include "prefetcher/fdip_new.h"
 #include "sim.h"
 #include "statistics.h"
@@ -461,18 +461,14 @@ void cmp_warmup(Op* op) {
       Addr repl_line_addr2;
       line_info = (Icache_Data*)cache_insert(&ic->icache_line_info, proc_id, ia,
                                                           &dummy_line_addr2, &repl_line_addr2);
-      if(repl_line_addr2 && !line_info->read_count[0]) {
-        fdip_remove_cl_fetch_addr(repl_line_addr2);
-        fdip_inc_cnt_unuseful(repl_line_addr2);
-      }
-      fdip_insert_cl_fetch_addr(dummy_line_addr2);
+      if(repl_line_addr2 && !line_info->read_count[0])
+        inc_cnt_unuseful(repl_line_addr2);
       line_info->read_count[0] = 0;
     }
   } else {
     if(WP_COLLECT_STATS && FDIP_ENABLE) {
       ASSERT(proc_id, line_info);
-      fdip_remove_cl_fetch_addr(dummy_line_addr);
-      fdip_inc_cnt_useful(dummy_line_addr);
+      inc_cnt_useful(dummy_line_addr);
       line_info->read_count[0] += 1;
     }
   }

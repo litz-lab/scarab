@@ -36,7 +36,7 @@ void bp_tagescl_spec_update(Op* op);
 void bp_tagescl_update(Op* op);
 void bp_tagescl_retire(Op* op);
 void bp_tagescl_recover(Recovery_Info*);
-uns8 bp_tagescl_full(Op* op);
+uns8 bp_tagescl_full(uns proc_id);
 
 #ifdef __cplusplus
 }

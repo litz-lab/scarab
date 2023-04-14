@@ -127,9 +127,9 @@ void update_decoupled_fe() {
     }
     if (predicted_branches == FE_PREDICTED_BRANCHES_PER_CYCLE) {
       if (*off_path)
-        STAT_EVENT(set_proc_id, FTQ_BREAK_PRED_BR_OFFPATH);
+        STAT_EVENT(set_proc_id, FTQ_BREAK_PRED_BR_CYC_OFFPATH);
       else
-        STAT_EVENT(set_proc_id, FTQ_BREAK_PRED_BR_ONPATH);
+        STAT_EVENT(set_proc_id, FTQ_BREAK_PRED_BR_CYC_ONPATH);
       break;
     }
     if (taken_cf == FE_TAKEN_CF_PER_CYCLE) {
@@ -147,6 +147,12 @@ void update_decoupled_fe() {
         STAT_EVENT(set_proc_id, FTQ_BREAK_MAX_BYTES_ONPATH);
       
       break;
+    }
+    if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, set_proc_id)) {
+      if (*off_path)
+        STAT_EVENT(set_proc_id, FTQ_BREAK_PRED_BR_OFFPATH);
+      else
+        STAT_EVENT(set_proc_id, FTQ_BREAK_PRED_BR_ONPATH);
     }
     if (!frontend_can_fetch_op(set_proc_id)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;

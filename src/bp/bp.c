@@ -618,6 +618,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         STAT_EVENT(op->proc_id, CF_IBR_USED_TARGET_CORRECT +
                    (pred_target != op->oracle_info.npc));
       if (ENABLE_IBP && ibp_target) {
+        ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
         if (op->oracle_info.target == pred_target) {
           op->oracle_info.recover_at_decode = FALSE;
           op->oracle_info.recover_at_exec = FALSE;
@@ -668,6 +669,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
                    (pred_target != op->oracle_info.npc));
 
       if (ENABLE_IBP && ibp_target) {
+        ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
         if (op->oracle_info.target == pred_target) {
           op->oracle_info.recover_at_decode = FALSE;
           op->oracle_info.recover_at_exec = FALSE;
@@ -715,7 +717,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
                                     (pred_target != op->oracle_info.npc));
       }
 
-      if (pred_target != op->oracle_info.target) {
+      if (pred_target != op->oracle_info.npc) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = TRUE;
         STAT_EVENT(op->proc_id, ICO_RECOVER + op->off_path * NUM_BR_STATS);
@@ -743,7 +745,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         STAT_EVENT(op->proc_id, CF_RET_USED_TARGET_CORRECT +
                                   (pred_target != op->oracle_info.npc));
 
-      if (pred_target != op->oracle_info.target) {
+      if (pred_target != op->oracle_info.npc) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = TRUE;
         STAT_EVENT(op->proc_id, RET_RECOVER + op->off_path * NUM_BR_STATS);

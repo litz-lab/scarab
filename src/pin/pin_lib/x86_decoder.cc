@@ -304,7 +304,6 @@ void fill_in_cf_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
       info->cf_type = CF_ICO;  // ICBR not supported by Scarab, so map it to ICO
     else if(category == XED_CATEGORY_CALL)
       info->cf_type = CF_ICALL;
-
   } else if(XED_INS_IsDirectBranchOrCall(ins)) {
     // direct
     if(category == XED_CATEGORY_UNCOND_BR)
@@ -313,6 +312,7 @@ void fill_in_cf_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
       info->cf_type = CF_CBR;
     else if(category == XED_CATEGORY_CALL)
       info->cf_type = CF_CALL;
+    info->branch_target = XED_INS_DirectBranchOrCallTargetAddress(info->instruction_addr, ins);
   }
   info->is_ifetch_barrier = is_ifetch_barrier(ins);
 }

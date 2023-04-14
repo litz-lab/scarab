@@ -319,9 +319,7 @@ void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid) {
           "Decoupled fetch unstalled due to retired barrier fetch_addr0x:%llx off_path:%i op_num:%llu\n",
           op->inst_info->addr, op->off_path, op->op_num);
   }
-  else {
-    ASSERT(proc_id, !IS_CALLSYS(op->table_info)); //bar fetch should be set for syscal?
-  }
+
   //unblock pin exec driven, trace frontends do not need to block/unblock
   frontend_retire(proc_id, inst_uid);
 }

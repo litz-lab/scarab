@@ -30,6 +30,7 @@
 #include "uop_cache.h"
 #include "icache_stage.h" //needed for get_pw_lookahead_buffer
 #include "uop_cache_prefetch_decoder.h"
+#include "libs/cpp_cache.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -41,6 +42,7 @@
 #define UOP_CACHE_LINE_SIZE       ICACHE_LINE_SIZE
 #define UOP_QUEUE_SIZE            1000 // at least UOP_CACHE_ASSOC * UOP_CACHE_MAX_UOPS_LINE
 #define UOP_CACHE_LINE_DATA_SIZE  sizeof(Uop_Cache_Data)
+#define UOP_CACHE_NAME            "UOP_CACHE"
 
 /**************************************************************************************/
 /* Local Prototypes */
@@ -51,7 +53,6 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl);
 /**************************************************************************************/
 /* Global Variables */
 
-Cache uop_cache;
 uns8 proc_id;
 
 // uop trace/bbl accumulation
@@ -86,15 +87,14 @@ void init_uop_cache(uns8 pid) {
   }
   // The cache library computes the number of entries from cache_size_bytes/cache_line_size_bytes,
   uns uop_cache_lines = UOP_CACHE_UOP_CAPACITY / UOP_CACHE_MAX_UOPS_LINE;
-  init_cache(&uop_cache, "UOP_CACHE", uop_cache_lines * UOP_CACHE_LINE_SIZE, UOP_CACHE_ASSOC,
-             UOP_CACHE_LINE_SIZE, UOP_CACHE_LINE_DATA_SIZE, UOP_CACHE_REPL);
-  uop_cache.tag_incl_offset = TRUE;
+  cpp_cache_create(UOP_CACHE_NAME, uop_cache_lines, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
+                   UOP_CACHE_REPL, /*tag_incl_offset=*/TRUE, UOP_CACHE_LINE_DATA_SIZE);
 }
 
 Flag pw_insert(Uop_Cache_Data pw) {
   Uop_Cache_Data* cur_line_data = NULL;
-  Addr line_addr;  
-  Addr repl_line_addr;
+  Addr line_addr;
+  UNUSED(line_addr);
   pw.used = 0;
 
   int lines_needed = pw.n_uops / UOP_CACHE_MAX_UOPS_LINE;
@@ -105,7 +105,7 @@ Flag pw_insert(Uop_Cache_Data pw) {
   if (lines_needed > UOP_CACHE_ASSOC) {
     STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_TOO_LONG + pw.prefetch);
     return FALSE;
-  } else if (cache_access(&uop_cache, pw.first, &line_addr, FALSE)) {
+  } else if (cpp_cache_access(UOP_CACHE_NAME, pw.first, FALSE)) {
     STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_CACHE_HIT + pw.prefetch);
     return FALSE;
   } else {
@@ -116,23 +116,10 @@ Flag pw_insert(Uop_Cache_Data pw) {
       insert_repl = INSERT_REPL_LRU;
     }
     DEBUG(ic->proc_id, "PW inserted. addr=0x%llx, set=%u, lines_needed=%i\n",
-          pw.first, ext_cache_index(&uop_cache, pw.first, &line_addr, &line_addr), lines_needed);
-    // FIRST preemptively evict the PWs to create space for the new PW. 
-    // This is so that multiple lines from the same PW
-    // inserted into the LRU position do not evict each other.
-    while (cache_get_invalid_line_count(&uop_cache, pw.first) < lines_needed) {
-      Uop_Cache_Data evict_pw = *(Uop_Cache_Data*)get_next_valid_repl_line(&uop_cache, ic->proc_id, pw.first);
-      cache_invalidate(&uop_cache, evict_pw.first, &line_addr);
-      DEBUG(ic->proc_id, "PW evicted. addr=0x%llx, set=%u\n",
-            evict_pw.first, ext_cache_index(&uop_cache, evict_pw.first, &line_addr, &line_addr));
-    }
-    for (int jj = 0; jj < lines_needed; jj++) {
-      cur_line_data = (Uop_Cache_Data*) cache_insert_replpos(&uop_cache, ic->proc_id,
-                      pw.first, &line_addr, &repl_line_addr, insert_repl, pw.prefetch);
-      ASSERT(ic->proc_id, !repl_line_addr);
-      memset(cur_line_data, 0, UOP_CACHE_LINE_DATA_SIZE);
-      *cur_line_data = pw;
-    }
+          pw.first, cpp_cache_index(UOP_CACHE_NAME, pw.first, &line_addr, &line_addr), lines_needed);
+    cur_line_data = (Uop_Cache_Data*) cpp_cache_insert(UOP_CACHE_NAME, pw.first, lines_needed,
+                                                       /*priority=*/FALSE);
+    *cur_line_data = pw;
     STAT_EVENT(0, UOP_CACHE_PWS_INSERTED);
     INC_STAT_EVENT(0, UOP_CACHE_LINES_INSERTED, lines_needed);
   }
@@ -186,6 +173,7 @@ Flag insert_uop_cache() {
 static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
   static Uop_Cache_Data cur_pw = {0};
   Addr line_addr;
+  UNUSED(line_addr);
   Uop_Cache_Data* uoc_data = NULL;
 
   // First check if current pw has this search addr
@@ -194,10 +182,10 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
     uoc_data = &cur_pw;
     if (uoc_data)
       DEBUG(ic->proc_id, "UOC hit (cur_pw). addr=0x%llx, set=%u\n",
-            search_addr, ext_cache_index(&uop_cache, search_addr, &line_addr, &line_addr));
+            search_addr, cpp_cache_index(UOP_CACHE_NAME, search_addr, &line_addr, &line_addr));
   } else {
     // Next try to access a new PW starting at this addr
-    uoc_data = cache_access(&uop_cache, search_addr, &line_addr, update_repl);
+    uoc_data = cpp_cache_access(UOP_CACHE_NAME, search_addr, update_repl);
     // Only update state if this access should change state
     if (update_repl && uoc_data) {
       if (uoc_data->prefetch && !uoc_data->used) {
@@ -209,11 +197,11 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
       uoc_data->used += 1;
       cur_pw = *uoc_data;
       DEBUG(ic->proc_id, "UOC hit (new PW). addr=0x%llx, set=%u\n",
-            search_addr, ext_cache_index(&uop_cache, search_addr, &line_addr, &line_addr));
+            search_addr, cpp_cache_index(UOP_CACHE_NAME, search_addr, &line_addr, &line_addr));
     } else if (update_repl) {
       memset(&cur_pw, 0, sizeof(cur_pw));
       DEBUG(ic->proc_id, "UOC miss. addr=0x%llx, set=%u\n",  
-            search_addr, ext_cache_index(&uop_cache, search_addr, &line_addr, &line_addr));
+            search_addr, cpp_cache_index(UOP_CACHE_NAME, search_addr, &line_addr, &line_addr));
       // maybe also add uop granularity, to make sure ending conditions are OK
     }
   }
@@ -379,9 +367,9 @@ Flag uop_cache_issue_prefetch(Addr pw_start_addr, Flag on_path) {
 // This is called after a resteer is resolved or fetch barrier identified.
 void set_addr_following_resteer_bf(Addr addr) {
   addr_following_resteer_bf = addr;
-  if (uop_cache.repl_policy == REPL_RESTEER) {
-    update_repl_resteer_policy(&uop_cache, addr);
-  }
+  // if (uop_cache.repl_policy == REPL_RESTEER) {
+  //   update_repl_resteer_policy(&uop_cache, addr);
+  // }
 }
 
 Uop_Cache_Data get_pw_lookahead_buffer(Addr addr) {

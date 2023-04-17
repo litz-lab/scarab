@@ -55,6 +55,7 @@ typedef enum Repl_Policy_enum {
   REPL_MLP,           /* mlp based replacement  -- uses MLP_REPL_POLICY */
   REPL_PARTITION,     /* Based on the partition*/
   REPL_RESTEER,       /* Prioritize the instr following a resteered branch or fetch barrier */
+  REPL_STICKY_PRIORITY_LINES, /* Prioritize lines tagged with priority bit. */
   NUM_REPL
 } Repl_Policy;
 

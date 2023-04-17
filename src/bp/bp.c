@@ -527,6 +527,11 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.btb_miss  = FALSE;
         op->oracle_info.no_target = FALSE;
       }
+      // Only CBR can be not-taken, overwrite BTB entry assignment above with fall-through in this case
+      else if (op->oracle_info.pred == NOT_TAKEN) {
+        pred_target = pc_plus_offset;
+      }
+
       if(!op->off_path && op->oracle_info.pred)
         STAT_EVENT(op->proc_id, CF_CBR_USED_TARGET_CORRECT +
                                   (pred_target != op->oracle_info.npc));

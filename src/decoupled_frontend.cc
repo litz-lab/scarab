@@ -161,18 +161,16 @@ void update_decoupled_fe() {
 
     if(op->table_info->cf_type) {
       ASSERT(set_proc_id, op->eom);
-      DEBUG(set_proc_id,
-            "Predict Branch fetch_addr0x:%llx off_path:%i bar_fetch:%i\n",
-            op->inst_info->addr, *off_path, op->table_info->bar_type & BAR_FETCH);
       pred_addr = bp_predict_op(g_bp_data, op, cf_num++, op->inst_info->addr);
+      DEBUG(set_proc_id,
+            "Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%lx mispred:%i misfetch:%i btb miss:%i taken:%i recover_at_decode:%i recover_at_exec:%i off_path:%i bar_fetch:%i\n",
+            op->inst_info->addr, op->oracle_info.npc, pred_addr,
+            op->oracle_info.mispred, op->oracle_info.misfetch,
+            op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN,
+            op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec,
+            *off_path, op->table_info->bar_type & BAR_FETCH);
         
       if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
-        DEBUG(set_proc_id,
-              "Mispredict CF fetch_addr:%llx true_npc:%llx pred_npc:%lx mispred:%i misfetch:%i btb miss:%i taken:%i recover_at_decode:%i recover_at_exec:%i\n",
-              op->inst_info->addr, op->oracle_info.npc, pred_addr,
-              op->oracle_info.mispred, op->oracle_info.misfetch,
-              op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN,
-              op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec);
         ASSERT(0, (int)op->oracle_info.recover_at_decode + (int)op->oracle_info.recover_at_exec < 2);
         /* If already on the off-path do not schedule recovery as scarab cannot recover OOO
            (An older op may recover at exec and a younger op may recover at decode)

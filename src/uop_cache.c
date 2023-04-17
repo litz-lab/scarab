@@ -258,7 +258,9 @@ void end_accumulate(void) {
   }
 
   if (accumulating_pw.n_uops > 0) {
-    STAT_EVENT(ic->proc_id, UOP_CACHE_PW_LENGTH_1 + (accumulating_pw.n_uops-1));
+    Stat_Enum stat_to_inc = UOP_CACHE_PW_LENGTH_1 + (accumulating_pw.n_uops-1);
+    if (stat_to_inc > UOP_CACHE_PW_LENGTH_MAX) stat_to_inc = UOP_CACHE_PW_LENGTH_MAX;
+    STAT_EVENT(ic->proc_id, stat_to_inc);
     insert_uop_cache();
     memset(&accumulating_pw, 0, sizeof(accumulating_pw));
   }

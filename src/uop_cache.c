@@ -49,6 +49,7 @@
 
 static inline Flag insert_uop_cache(void);
 static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl);
+static inline void init_pw_priority_list(void);
 
 /**************************************************************************************/
 /* Global Variables */
@@ -67,6 +68,7 @@ Hash_Table pc_to_pw;
 Flag uoc_prefetching_enabled;
 
 Addr addr_following_resteer_bf = 0;  // Addr that follows a resteer or fetch barrier
+Hash_Table priority_pws;
 
 /**************************************************************************************/
 /* init_uop_cache */
@@ -118,7 +120,7 @@ Flag pw_insert(Uop_Cache_Data pw) {
     DEBUG(ic->proc_id, "PW inserted. addr=0x%llx, set=%u, lines_needed=%i\n",
           pw.first, cpp_cache_index(UOP_CACHE_NAME, pw.first, &line_addr, &line_addr), lines_needed);
     cur_line_data = (Uop_Cache_Data*) cpp_cache_insert(UOP_CACHE_NAME, pw.first, lines_needed,
-                                                       /*priority=*/FALSE);
+                                                       hash_table_access(&priority_pws, pw.first) != NULL);
     *cur_line_data = pw;
     STAT_EVENT(0, UOP_CACHE_PWS_INSERTED);
     INC_STAT_EVENT(0, UOP_CACHE_LINES_INSERTED, lines_needed);
@@ -384,4 +386,26 @@ void recover_uop_cache(void) {
     end_accumulate();
   }
   cons_op_num = bp_recovery_info->recovery_op_num + 1;
+}
+
+void init_pw_priority_list(void) {
+  init_hash_table(&priority_pws, "list of priority PWs", 200, sizeof(char));
+  FILE*     fp       = fopen(PW_PRIORITY_LIST_FILEPATH, "r");
+  const int line_len = 256;
+  char      line[line_len];
+  char*     field;
+  Addr      pw_start_addr;
+  uns       num_priority_pws = 0;
+  while(fgets(line, line_len, fp)) {
+    field         = strtok(line, ",");
+    field         = strtok(NULL, ",");  // second field is PW start addr
+    pw_start_addr = strtoull(field, NULL, 16);
+    // add to map
+    Flag new_entry;
+    hash_table_access_create(&priority_pws, pw_start_addr, &new_entry);
+    ASSERT(0, new_entry);
+    num_priority_pws++;
+    if(num_priority_pws >= NUM_PRIORITY_PWS)
+      break;
+  }
 }

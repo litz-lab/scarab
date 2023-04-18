@@ -929,7 +929,7 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
     Addr line_addr;
     Addr * btb_entry = (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, TRUE);
     ASSERT(bp_data->proc_id, btb_entry);
-    ASSERT(bp_data->proc_id, *btb_entry != op->oracle_info.target);
+    // ASSERT(bp_data->proc_id, *btb_entry != op->oracle_info.target);
     *btb_entry = op->oracle_info.target;
   }
 

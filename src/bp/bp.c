@@ -920,16 +920,12 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, op->table_info->cf_type);
 
   // if it was a btb miss, it is time to write it into the btb
-  if(op->oracle_info.btb_miss || (PERFECT_NT_BTB && op->oracle_info.dir == TAKEN)) {
+  if(op->oracle_info.btb_miss && op->oracle_info.pred == TAKEN) {
     bp_data->bp_btb->update_func(bp_data, op);
-    if(op->oracle_info.btb_miss)
-      STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_MISS);
-    else if (PERFECT_NT_BTB && op->oracle_info.dir == TAKEN)
-      STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_TAKEN);
+    STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_MISS);
   } else if (op->oracle_info.ibp_miss && op->oracle_info.misfetch &&
             (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL)) {
-    // hit for btb, miss for ibtb -> pred_target from btb
-    // always taken + misfetch -> need to update btb entry
+    // For indirects we want to update the BTB if the target changes, even on btb hit
     Addr line_addr;
     Addr * btb_entry = (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, TRUE);
     ASSERT(bp_data->proc_id, btb_entry);

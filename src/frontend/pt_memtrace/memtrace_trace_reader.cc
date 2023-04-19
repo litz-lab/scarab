@@ -237,7 +237,7 @@ void TraceReader::fillCache(uint64_t _vAddr, uint8_t _reported_size,
 
     if (res != XED_ERROR_NONE) {
        warn("XED decode error for 0x%lx: %s %u, replacing with nop\n", _vAddr, xed_error_enum_t2str(res), _reported_size);
-      //*ins = *makeNop(_reported_size);
+      *ins = *makeNop(_reported_size);
     }
     // Record if this instruction requires memory operands, since the trace
     // will deliver it in additional pieces

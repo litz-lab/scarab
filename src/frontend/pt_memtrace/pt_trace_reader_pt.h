@@ -287,6 +287,7 @@ public:
     inst_info_a.valid = false;
     inst_info_b.valid = false;
     init("");
+    initTrace();
   }
   int i = 0;
   const InstInfo *getNextInstruction() override {

@@ -91,6 +91,10 @@ void init_uop_cache(uns8 pid) {
   uns uop_cache_lines = UOP_CACHE_UOP_CAPACITY / UOP_CACHE_MAX_UOPS_LINE;
   cpp_cache_create(UOP_CACHE_NAME, uop_cache_lines, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
                    UOP_CACHE_REPL, /*tag_incl_offset=*/TRUE, UOP_CACHE_LINE_DATA_SIZE);
+
+  if (UOP_CACHE_REPL == REPL_STICKY_PRIORITY_LINES) {
+    init_pw_priority_list();
+  }
 }
 
 Flag pw_insert(Uop_Cache_Data pw) {
@@ -119,8 +123,9 @@ Flag pw_insert(Uop_Cache_Data pw) {
     }
     DEBUG(ic->proc_id, "PW inserted. addr=0x%llx, set=%u, lines_needed=%i\n",
           pw.first, cpp_cache_index(UOP_CACHE_NAME, pw.first, &line_addr, &line_addr), lines_needed);
+    Flag priority = (UOP_CACHE_REPL == REPL_STICKY_PRIORITY_LINES) ? (hash_table_access(&priority_pws, pw.first) != NULL) : FALSE;
     cur_line_data = (Uop_Cache_Data*) cpp_cache_insert(UOP_CACHE_NAME, pw.first, lines_needed,
-                                                       hash_table_access(&priority_pws, pw.first) != NULL);
+                                                       priority);
     *cur_line_data = pw;
     STAT_EVENT(0, UOP_CACHE_PWS_INSERTED);
     INC_STAT_EVENT(0, UOP_CACHE_LINES_INSERTED, lines_needed);

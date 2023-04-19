@@ -328,14 +328,13 @@ void print_err_if_invalid(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
 #endif
   if(invalid || !correct) {
     if(invalid) {
-      (*dec_err_ostream)
-        << "Invalid inst! ";
+      std::cout << "Invalid inst! " << std::endl;
     }
     if(!correct) {
-      (*dec_err_ostream)
-        << "Not correct inst: " << +info->cf_type << ", " << std::hex << info->instruction_addr << ' ' << std::dec << +info->size << ' ' << xed_operand_values_get_branch_displacement_int32(ins) << ' ' << std::hex << info->branch_target << ' ';
+      std::cout
+        << "Not correct inst: " << +info->cf_type << ", " << std::hex << info->instruction_addr << ' ' << std::dec << +info->size << ' ' << xed_operand_values_get_branch_displacement_int32(ins) << ' ' << std::hex << info->branch_target << ' ' << std::endl;;
     }
-    (*dec_err_ostream)
+    std::cout
       << "Unmapped instruction at "
       << "EIP: " << std::hex << info->instruction_addr
       << ", opcode: " << XED_INS_Mnemonic(ins) << ", category: "
@@ -351,8 +350,8 @@ void print_err_if_invalid(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
       << ", num_st_addr_regs: " << (int)info->num_st_addr_regs
       << ", num_simd_lanes: " << (int)info->num_simd_lanes
       << ", lane_width_bytes: " << (int)info->lane_width_bytes
-      << ". Look at README in pin/pin_lib on how to map new instructions";
-    dec_err_ostream->flush();
+      << ". Look at README in pin/pin_lib on how to map new instructions" << std::endl;;
+    //dec_err_ostream->flush();
   }
 }
 
@@ -1337,6 +1336,7 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_SYSCALL]  = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_SYSENTER] = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_SYSRET] = {OP_IADD, -1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SYSRET64] = {OP_IADD, -1, 1, NONE};
 
   iclass_to_scarab_map[XED_ICLASS_SWAPGS]  = {OP_MOV,-1,1,NONE};
   iclass_to_scarab_map[XED_ICLASS_TEST]     = {OP_LOGIC, -1, 1, NONE};

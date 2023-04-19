@@ -133,6 +133,7 @@ typedef struct ctype_pin_inst_struct {
 typedef ctype_pin_inst compressed_op;
 
 inline ctype_pin_inst create_sentinel() {
+  printf("CREATE SENTINEL\n");
   ctype_pin_inst inst;
   memset(&inst, 0, sizeof(inst));
   inst.op_type     = OP_INV;

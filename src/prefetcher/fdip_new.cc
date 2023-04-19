@@ -119,7 +119,7 @@ void update_fdip() {
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr && ~0x3F;
     if (line_addr != last_line_addr) {
-      STAT_EVENT(ic_ref->proc_id, FDIP_ATTEMPTED_PREF_ONPATH + !op->off_path);
+      STAT_EVENT(ic_ref->proc_id, FDIP_ATTEMPTED_PREF_ONPATH + op->off_path);
       Flag demand_hit_prefetch = FALSE;
       Flag demand_hit_writeback = FALSE;
       Mem_Queue_Entry* queue_entry = NULL;

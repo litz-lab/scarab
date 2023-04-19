@@ -22,6 +22,8 @@ extern "C" {
   void evict_prefetched_cls(Addr line_addr);
   uns get_miss_reason(Addr line_addr);
   uint64_t get_fdip_ftq_occupancy(void);
+  Flag determine_usefulness(Addr line_addr);
+  void update_useful_lines(Op* op);
   
 #ifdef __cplusplus
 }

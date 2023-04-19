@@ -57,6 +57,7 @@
 #include "sim.h"
 
 #include "prefetcher/pref.param.h"
+#include "prefetcher/fdip_new.h"
 
 /******************************************************************************/
 /* include the table of possible branch predictors */
@@ -913,6 +914,9 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction) {
 void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, op->table_info->cf_type);
+
+  if(FDIP_ENABLE)
+    update_useful_lines(op);
 
   // if it was a btb miss, it is time to write it into the btb
   if(op->oracle_info.btb_miss && op->oracle_info.pred == TAKEN) {

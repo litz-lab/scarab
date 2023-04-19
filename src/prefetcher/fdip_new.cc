@@ -144,8 +144,10 @@ void update_fdip() {
           emit_new_prefetch = TRUE;
       }
 
-      if (line)
+      if (line) {
         probe_prefetched_cls(line_addr);
+        STAT_EVENT(ic_ref->proc_id, FDIP_PREF_ICACHE_PROBE_HIT_OFFPATH + op->off_path);
+      }
 
       if (emit_new_prefetch && !mem_can_allocate_req_buffer(fdip_proc_id, MRT_FDIPPRF, FALSE)) {
         break_reason = BR_FULL_MEM_REQ_BUF;
@@ -161,8 +163,6 @@ void update_fdip() {
           STAT_EVENT(ic_ref->proc_id, FDIP_NEW_PREFETCHES_OFFPATH + op->off_path);
         else if (success == Mem_Queue_Req_Result::SUCCESS_MERGED)
           STAT_EVENT(ic_ref->proc_id, FDIP_PREF_MSHR_PROBE_HIT_OFFPATH + op->off_path);
-        else
-          STAT_EVENT(ic_ref->proc_id, FDIP_PREF_ICACHE_PROBE_HIT_OFFPATH + op->off_path);
         prefetch_per_cycle++;
       }
     }

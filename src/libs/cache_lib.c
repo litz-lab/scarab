@@ -294,10 +294,10 @@ void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr,
   Cache_Entry* new_line;
 
   // Sanity check that inserted line does not exist in the cache
-  Addr dummy_line_addr;
-  if (cache_access(cache, addr, &dummy_line_addr, FALSE)) {
-    DEBUG(proc_id, "Tried to insert line %llx that already exists\n", addr);
-    return NULL;
+  Cache_Entry *read_line_addr = cache_access(cache, addr, line_addr, FALSE);
+  if (read_line_addr) {
+    cache_invalidate(cache, addr, line_addr);
+    DEBUG(proc_id, "Tried to insert line %llx that already exists %p size %i\n", addr, read_line_addr, cache->data_size);
   }
 
   if(cache->repl_policy == REPL_IDEAL) {

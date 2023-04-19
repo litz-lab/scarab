@@ -301,12 +301,11 @@ Inst_Info** lookup_cache() {
   if(PERFECT_ICACHE && !line)
     line = (Inst_Info**)INIT_CACHE_DATA_VALUE;
 
-  /* TODO(peterbraun): implement UOC prefetching with decoupled_fe
-    if (in_uop_cache(ic->fetch_addr, NULL, FALSE) && !line) {
+  if (in_uop_cache(ic->fetch_addr, FALSE) && !line) {
     // Should return Inst_Info, but op hasn't been fetched yet, so just give it any 
     // value. This is not used anyway
     line = (Inst_Info**)DUMMY_ADDR_UC_FETCH;
-    }*/
+  }
   return line;
 }
 

@@ -300,8 +300,13 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
     DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n",
               hexstr64s(fetch_addr), hexstr64s(op->oracle_info.target));
     STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
-    btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, fetch_addr,
-                                   &btb_line_addr, &repl_line_addr);
+
+    btb_line = (Addr*)cache_access(&bp_data->btb, fetch_addr, &btb_line_addr,
+                                   TRUE);
+    if (!btb_line) {
+      btb_line  = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, fetch_addr,
+                                      &btb_line_addr, &repl_line_addr);
+    }
     *btb_line = op->oracle_info.target;
     // FIXME: the exceptions to this assert are really about x86 vs Alpha
     ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);

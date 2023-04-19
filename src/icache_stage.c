@@ -298,6 +298,7 @@ Inst_Info** lookup_cache() {
   Inst_Info** line = NULL;
   line = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr,
                                              &ic->line_addr, TRUE);
+  ASSERT(0, line != (Inst_Info**)DUMMY_ADDR_UC_FETCH);
   if(PERFECT_ICACHE && !line)
     line = (Inst_Info**)INIT_CACHE_DATA_VALUE;
 
@@ -356,7 +357,7 @@ void update_icache_stage() {
 
         ic->line = lookup_cache();
 
-        if(WP_COLLECT_STATS)  // CMP remove?
+        if(WP_COLLECT_STATS && ic->line != (Inst_Info**)DUMMY_ADDR_UC_FETCH)  // CMP remove?
           line_info = (Icache_Data*)cache_access(
             &ic->icache_line_info, ic->fetch_addr, &dummy_addr, TRUE);
 
@@ -787,26 +788,28 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       line_info = (Icache_Data*)cache_insert(&ic->icache_line_info, ic->proc_id,
                                              ic->fetch_addr, &dummy_addr2,
                                              &repl_line_addr2);
-      wp_process_icache_evicted(line_info, req, &repl_line_addr2);
-      line_info->fetched_by_offpath = USE_CONFIRMED_OFF ?
-                                        req->off_path_confirmed :
-                                        req->off_path;
-      line_info->offpath_op_addr   = req->oldest_op_addr;
-      line_info->offpath_op_unique = req->oldest_op_unique_num;
-      line_info->fetch_cycle       = cycle_count;
-      line_info->onpath_use_cycle  = req->off_path ? 0 : cycle_count;
-      line_info->read_count[0]     = req->hit_by_demand_load? 1 : 0;
-      line_info->read_count[1]     = 0;
-      line_info->HW_prefetch       = req->type == MRT_IPRF;
-      if (req->type == MRT_FDIPPRF) {
-        if (req->fdip_pref_off_path)
-          line_info->FDIP_prefetch = 2;
-        else
-          line_info->FDIP_prefetch = 1;
-      } else {
-        line_info->FDIP_prefetch = 0;
+      if (line_info) {
+        wp_process_icache_evicted(line_info, req, &repl_line_addr2);
+        line_info->fetched_by_offpath = USE_CONFIRMED_OFF ?
+          req->off_path_confirmed :
+          req->off_path;
+        line_info->offpath_op_addr   = req->oldest_op_addr;
+        line_info->offpath_op_unique = req->oldest_op_unique_num;
+        line_info->fetch_cycle       = cycle_count;
+        line_info->onpath_use_cycle  = req->off_path ? 0 : cycle_count;
+        line_info->read_count[0]     = req->hit_by_demand_load? 1 : 0;
+        line_info->read_count[1]     = 0;
+        line_info->HW_prefetch       = req->type == MRT_IPRF;
+        if (req->type == MRT_FDIPPRF) {
+          if (req->fdip_pref_off_path)
+            line_info->FDIP_prefetch = 2;
+          else
+            line_info->FDIP_prefetch = 1;
+        } else {
+          line_info->FDIP_prefetch = 0;
+        }
+        wp_process_icache_fill(line_info, req);
       }
-      wp_process_icache_fill(line_info, req);
     }
 
     ic->next_state = IC_FETCH;
@@ -835,28 +838,30 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       line_info = (Icache_Data*)cache_insert(&ic->icache_line_info, ic->proc_id,
                                              req->addr, &dummy_addr2,
                                              &repl_line_addr2);
-      STAT_EVENT(ic->proc_id, ICACHE_FILL);
+      if (line_info) {
+        STAT_EVENT(ic->proc_id, ICACHE_FILL);
 
-      wp_process_icache_evicted(line_info, req, &repl_line_addr2);
-      line_info->fetched_by_offpath = USE_CONFIRMED_OFF ?
-                                        req->off_path_confirmed :
-                                        req->off_path;
-      line_info->offpath_op_addr   = req->oldest_op_addr;
-      line_info->offpath_op_unique = req->oldest_op_unique_num;
-      line_info->fetch_cycle       = cycle_count;
-      line_info->onpath_use_cycle  = req->off_path ? 0 : cycle_count;
-      line_info->read_count[0]     = 0;
-      line_info->read_count[1]     = 0;
-      line_info->HW_prefetch       = req->type == MRT_IPRF;
-      if (req->type == MRT_FDIPPRF) {
-        if (req->fdip_pref_off_path)
-          line_info->FDIP_prefetch = 2;
-        else
-          line_info->FDIP_prefetch = 1;
-      } else {
-        line_info->FDIP_prefetch = 0;
+        wp_process_icache_evicted(line_info, req, &repl_line_addr2);
+        line_info->fetched_by_offpath = USE_CONFIRMED_OFF ?
+          req->off_path_confirmed :
+          req->off_path;
+        line_info->offpath_op_addr   = req->oldest_op_addr;
+        line_info->offpath_op_unique = req->oldest_op_unique_num;
+        line_info->fetch_cycle       = cycle_count;
+        line_info->onpath_use_cycle  = req->off_path ? 0 : cycle_count;
+        line_info->read_count[0]     = 0;
+        line_info->read_count[1]     = 0;
+        line_info->HW_prefetch       = req->type == MRT_IPRF;
+        if (req->type == MRT_FDIPPRF) {
+          if (req->fdip_pref_off_path)
+            line_info->FDIP_prefetch = 2;
+          else
+            line_info->FDIP_prefetch = 1;
+        } else {
+          line_info->FDIP_prefetch = 0;
+        }
+        wp_process_icache_fill(line_info, req);
       }
-      wp_process_icache_fill(line_info, req);
     }
 
     STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ);

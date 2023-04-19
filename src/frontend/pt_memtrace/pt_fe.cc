@@ -165,8 +165,7 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
 
 void pt_init(void) {
   uop_generator_init(NUM_CORES);
-  init_pin_opcode_convert();
-  init_reg_compress_map();
+  init_x86_decoder(nullptr);
   init_x87_stack_delta();
 
   //pt_next_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));

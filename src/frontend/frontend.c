@@ -106,7 +106,7 @@ void frontend_done(Flag* retired_exit) {
 }
 
 Addr frontend_next_fetch_addr(uns proc_id) {
-  return frontend->next_fetch_addr(proc_id);
+  return convert_to_cmp_addr(proc_id, frontend->next_fetch_addr(proc_id));
 }
 
 Flag frontend_can_fetch_op(uns proc_id) {

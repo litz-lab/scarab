@@ -119,7 +119,7 @@ void update_fdip() {
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr && ~0x3F;
     if (line_addr != last_line_addr) {
-      STAT_EVENT(ic_ref->proc_id, FDIP_ATTEMPTED_PREF_OFFPATH + op->off_path);
+      STAT_EVENT(ic_ref->proc_id, FDIP_ATTEMPTED_PREF_ONPATH + op->off_path);
       Flag demand_hit_prefetch = FALSE;
       Flag demand_hit_writeback = FALSE;
       Mem_Queue_Entry* queue_entry = NULL;
@@ -146,7 +146,7 @@ void update_fdip() {
 
       if (line) {
         probe_prefetched_cls(line_addr);
-        STAT_EVENT(ic_ref->proc_id, FDIP_PREF_ICACHE_PROBE_HIT_OFFPATH + op->off_path);
+        STAT_EVENT(ic_ref->proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ONPATH + op->off_path);
       }
 
       if (emit_new_prefetch && !mem_can_allocate_req_buffer(fdip_proc_id, MRT_FDIPPRF, FALSE)) {
@@ -160,9 +160,9 @@ void update_fdip() {
         // A buffer entry should be available since it is checked by mem_can_allocate_req_buffer for a new prefetch
         ASSERT(fdip_proc_id, success);
         if (success == Mem_Queue_Req_Result::SUCCESS_NEW)
-          STAT_EVENT(ic_ref->proc_id, FDIP_NEW_PREFETCHES_OFFPATH + op->off_path);
+          STAT_EVENT(ic_ref->proc_id, FDIP_NEW_PREFETCHES_ONPATH + op->off_path);
         else if (success == Mem_Queue_Req_Result::SUCCESS_MERGED)
-          STAT_EVENT(ic_ref->proc_id, FDIP_PREF_MSHR_PROBE_HIT_OFFPATH + op->off_path);
+          STAT_EVENT(ic_ref->proc_id, FDIP_PREF_MSHR_PROBE_HIT_ONPATH + op->off_path);
         prefetch_per_cycle++;
       }
     }

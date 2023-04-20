@@ -791,7 +791,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   if(btb_miss_nt &&
       (((op->oracle_info.pred != op->oracle_info.dir) && (prediction != op->oracle_info.npc)) ||
       (!op->oracle_info.mispred && prediction != op->oracle_info.npc)))
-    STAT_EVENT(op->proc_id, FDIP_BTB_MISS_NT_RESTEER_OFFPATH + op->off_path);
+    STAT_EVENT(op->proc_id, FDIP_BTB_MISS_NT_RESTEER_ONPATH + op->off_path);
   return prediction;
 }
 

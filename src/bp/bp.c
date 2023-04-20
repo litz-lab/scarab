@@ -919,7 +919,7 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
     update_useful_lines(op);
 
   // if it was a btb miss, it is time to write it into the btb
-  if(op->oracle_info.btb_miss && op->oracle_info.pred == TAKEN) {
+  if(op->oracle_info.btb_miss && op->oracle_info.dir == TAKEN) {
     bp_data->bp_btb->update_func(bp_data, op);
     STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_MISS);
   } else if (op->oracle_info.ibp_miss && op->oracle_info.misfetch &&

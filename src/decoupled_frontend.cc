@@ -7,10 +7,11 @@
 #include <deque>
 #include <vector>
 #include <iostream>
+#include <tuple>
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
-std::vector<std::deque<Op*>> per_core_ftq;
+std::vector<std::deque<std::pair<Op*, bool>>> per_core_ftq;
 std::vector<int> per_core_off_path;
 std::vector<int> per_core_sched_off_path;
 std::vector<uint64_t> per_core_op_count;
@@ -18,8 +19,11 @@ std::vector<std::vector<decoupled_fe_iter>> per_core_ftq_iterators;
 std::vector<uint64_t> per_core_recovery_addr;
 std::vector<uint64_t> per_core_redirect_cycle;
 std::vector<bool> per_core_stalled;
+std::vector<uint64_t> per_core_last_pc;
+std::vector<uint64_t> per_core_block_count;
+
 //per_core pointers
-std::deque<Op*> *df_ftq;
+std::deque<std::pair<Op*,bool>> *df_ftq;
 int *off_path;
 int *sched_off_path;
 int set_proc_id;
@@ -37,6 +41,8 @@ void alloc_mem_decoupled_fe(uns numCores) {
   per_core_recovery_addr.resize(numCores);
   per_core_redirect_cycle.resize(numCores);
   per_core_stalled.resize(numCores);
+  per_core_last_pc.resize(numCores);
+  per_core_block_count.resize(numCores);
 }
 
 void init_decoupled_fe(uns proc_id, const char*) {
@@ -51,6 +57,9 @@ void init_decoupled_fe(uns proc_id, const char*) {
   per_core_op_count[proc_id] = 1;
   per_core_recovery_addr[proc_id] = 0;
   per_core_redirect_cycle[proc_id] = 0;
+  per_core_last_pc[proc_id] = 0;
+  per_core_block_count[proc_id] = 0;
+
 }
 
 void set_decoupled_fe(int proc_id) {
@@ -68,9 +77,11 @@ void recover_decoupled_fe(int proc_id) {
   per_core_off_path[proc_id] = false;
   per_core_sched_off_path[proc_id] = false;
   per_core_recovery_addr[proc_id] = bp_recovery_info->recovery_fetch_addr;
+  per_core_last_pc[proc_id] = 0;
+  per_core_block_count[proc_id] = 0;
 
   for (auto it = per_core_ftq[proc_id].begin(); it != per_core_ftq[proc_id].end(); it++) {
-    free_op(*it);
+    free_op(it->first);
   }
   per_core_ftq[proc_id].clear();
   per_core_op_count[proc_id] = bp_recovery_info->recovery_op_num + 1;
@@ -117,7 +128,19 @@ void update_decoupled_fe() {
   uint predicted_branches = 0;
   uns cf_num = 0;
 
+  if (*off_path)
+    STAT_EVENT(set_proc_id, FTQ_CYCLES_OFFPATH);
+  else
+    STAT_EVENT(set_proc_id, FTQ_CYCLES_ONPATH);
+
   while(1) {
+    if (per_core_block_count[set_proc_id] >= FE_FTQ_BLOCK_NUM) {
+      if (*off_path)
+        STAT_EVENT(set_proc_id, FTQ_BREAK_FULL_BLOCK_OFFPATH);
+      else
+        STAT_EVENT(set_proc_id, FTQ_BREAK_FULL_BLOCK_ONPATH);
+      break;
+    }
     if (df_ftq->size() >= FE_FTQ_SIZE) {
       if (*off_path)
         STAT_EVENT(set_proc_id, FTQ_BREAK_FULL_OFFPATH);
@@ -198,11 +221,21 @@ void update_decoupled_fe() {
     else
       ASSERT(0,!(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
 
+    // We start a new block if crossing a line or take a branch
+    bool start_new_block = false;
+    start_new_block |= ((op->inst_info->addr >> FE_FTQ_BLOCK_SIZE_LOG) != (per_core_last_pc[set_proc_id] >> FE_FTQ_BLOCK_SIZE_LOG));
+
+    per_core_last_pc[set_proc_id] = op->inst_info->addr;
+
     if (op->table_info->cf_type == CF_CBR) {
       predicted_branches++;
     }
+
+    start_new_block |= (op->table_info->cf_type && op->oracle_info.pred == TAKEN);
+    per_core_block_count[set_proc_id] += start_new_block;
+    //    std::cout <<" insert " << per_core_block_count[set_proc_id] << " start " << start_new_block << " last " <<     per_core_last_pc[set_proc_id] << " next " <<  op->inst_info->addr << std::endl;
     
-    df_ftq->emplace_back(op);
+    df_ftq->emplace_back(std::pair<Op*, bool>(op, start_new_block));
     
     fetched_inst_bytes += op->inst_info->trace_info.inst_size;
 
@@ -235,7 +268,9 @@ void update_decoupled_fe() {
 bool decoupled_fe_fetch_op(Op** op, int proc_id) {
   ASSERT(proc_id, (uns)proc_id<per_core_ftq.size());
   if (per_core_ftq[proc_id].size()) {
-    *op = per_core_ftq[proc_id].front();
+    bool start_new_block;
+    std::tie(*op, start_new_block) = per_core_ftq[proc_id].front();
+    per_core_block_count[proc_id] -= start_new_block;
     per_core_ftq[proc_id].pop_front();
     DEBUG(set_proc_id,
           "Fetch op from FTQ fetch_addr0x:%llx off_path:%i op_num:%llu\n",
@@ -260,11 +295,11 @@ uint64_t decoupled_fe_next_fetch_addr(int proc_id) {
   if(!per_core_ftq[proc_id].size())
     return frontend_next_fetch_addr(proc_id);
   
-  return per_core_ftq[proc_id].front()->inst_info->addr;
+  return per_core_ftq[proc_id].front().first->inst_info->addr;
 }
 
 void decoupled_fe_return_op(Op *op) {
-  df_ftq->emplace_front(op);
+  df_ftq->emplace_front(std::pair<Op*, bool>(op,false));
   DEBUG(set_proc_id,
         "Return fetched op backt to FTQ fetch_addr0x:%llx off_path:%i\n",
         op->inst_info->addr, *off_path);
@@ -290,7 +325,7 @@ Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter) {
   }
   ASSERT(set_proc_id, iter->pos >= 0);
   ASSERT(set_proc_id, iter->pos < df_ftq->size());
-  return df_ftq->at(iter->pos);
+  return df_ftq->at(iter->pos).first;
 }
 
 /* Returns true if advanced, false if reached end of FTQ */

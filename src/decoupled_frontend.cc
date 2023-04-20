@@ -223,7 +223,7 @@ void update_decoupled_fe() {
 
     // We start a new block if crossing a line or take a branch
     bool start_new_block = false;
-    start_new_block |= ((op->inst_info->addr >> FE_FTQ_BLOCK_SIZE_LOG) != (per_core_last_pc[set_proc_id] >> FE_FTQ_BLOCK_SIZE_LOG));
+    start_new_block |= ((op->inst_info->addr >> FE_FTQ_BLOCK_SIZE_LOG) != (op->inst_info->addr + op->inst-info->size + 1 >> FE_FTQ_BLOCK_SIZE_LOG));
 
     per_core_last_pc[set_proc_id] = op->inst_info->addr;
 

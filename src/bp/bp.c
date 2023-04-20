@@ -460,7 +460,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     else {
       // btb miss
       op->oracle_info.btb_miss  = TRUE;
-      op->oracle_info.pred      = NOT_TAKEN;
     }
   }
   // overwrite pred_target with indirect predictor
@@ -482,6 +481,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   // {{{ handle predictions for individual cf types
   switch(op->table_info->cf_type) {
     case CF_BR:
+      // BR will be predicted at decode, but fill in the info here
       op->oracle_info.pred      = TAKEN;
       op->oracle_info.late_pred = TAKEN;
       if(!op->off_path)

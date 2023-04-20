@@ -268,32 +268,7 @@ void decode_stage_process_op(Op* op) {
 static inline void update_cycles_stats(Stage_Data* src_sd, int empty_stage_idx) {
   static Op*  last_op = NULL;  // The most recent op that has entered the decode stage.
 
-  Op* next_op = NULL;
   int decode_stages_empty = STAGE_MAX_DEPTH - empty_stage_idx;
-  if (last_op && decode_stages_empty && src_sd->op_count) {
-    next_op = src_sd->ops[0];
-    int fetch_bubbles = (next_op->fetch_cycle - last_op->fetch_cycle - 1);
-    int cycles_saved_with_uoc_fetch = (ICACHE_LATENCY - UOP_CACHE_LATENCY) + (decode_stages_empty - 1);
-    Flag last_op_resteered = last_op->oracle_info.mispred || last_op->oracle_info.misfetch || last_op->oracle_info.btb_miss;
-
-    if (last_op_resteered) {
-      // UOP_CACHE_LATENCY is the minimum fetch latency after a resteer. 
-      // It is added since it cannot be improved upon with a better uop cache.
-      Counter resteer_cycles = fetch_bubbles + UOP_CACHE_LATENCY;
-      if (last_op->oracle_info.mispred) {
-        INC_STAT_EVENT(dec->proc_id, CYCLES_RESTEER_MISPRED, resteer_cycles);
-        INC_STAT_EVENT(dec->proc_id, CYCLES_RESTEER_MISPRED_SAVED_UC_FETCH + !next_op->fetched_from_uop_cache, cycles_saved_with_uoc_fetch);
-      } else if (last_op->oracle_info.misfetch) {
-        INC_STAT_EVENT(dec->proc_id, CYCLES_RESTEER_MISFETCH, resteer_cycles);
-        INC_STAT_EVENT(dec->proc_id, CYCLES_RESTEER_MISFETCH_SAVED_UC_FETCH + !next_op->fetched_from_uop_cache, cycles_saved_with_uoc_fetch);
-      } else if (last_op->oracle_info.btb_miss) {
-        INC_STAT_EVENT(dec->proc_id, CYCLES_RESTEER_BTB_MISS, resteer_cycles);
-        INC_STAT_EVENT(dec->proc_id, CYCLES_RESTEER_BTB_MISS_SAVED_UC_FETCH + !next_op->fetched_from_uop_cache, cycles_saved_with_uoc_fetch);
-      }
-    } else if (last_op->fetched_from_uop_cache && !next_op->fetched_from_uop_cache) {
-      INC_STAT_EVENT(dec->proc_id, CYCLES_UOC_IC_SWITCH, cycles_saved_with_uoc_fetch);
-    }
-  }
   // Only count stats if the icache is not stalled due to a full decode stage.
   if (decode_stages_empty && src_sd->op_count)
     last_op = src_sd->ops[src_sd->op_count - 1];

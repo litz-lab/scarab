@@ -19,7 +19,6 @@ std::vector<std::vector<decoupled_fe_iter>> per_core_ftq_iterators;
 std::vector<uint64_t> per_core_recovery_addr;
 std::vector<uint64_t> per_core_redirect_cycle;
 std::vector<bool> per_core_stalled;
-std::vector<uint64_t> per_core_last_pc;
 std::vector<uint64_t> per_core_block_count;
 
 //per_core pointers
@@ -41,7 +40,6 @@ void alloc_mem_decoupled_fe(uns numCores) {
   per_core_recovery_addr.resize(numCores);
   per_core_redirect_cycle.resize(numCores);
   per_core_stalled.resize(numCores);
-  per_core_last_pc.resize(numCores);
   per_core_block_count.resize(numCores);
 }
 
@@ -57,7 +55,6 @@ void init_decoupled_fe(uns proc_id, const char*) {
   per_core_op_count[proc_id] = 1;
   per_core_recovery_addr[proc_id] = 0;
   per_core_redirect_cycle[proc_id] = 0;
-  per_core_last_pc[proc_id] = 0;
   per_core_block_count[proc_id] = 0;
 
 }
@@ -77,7 +74,6 @@ void recover_decoupled_fe(int proc_id) {
   per_core_off_path[proc_id] = false;
   per_core_sched_off_path[proc_id] = false;
   per_core_recovery_addr[proc_id] = bp_recovery_info->recovery_fetch_addr;
-  per_core_last_pc[proc_id] = 0;
   per_core_block_count[proc_id] = 0;
 
   for (auto it = per_core_ftq[proc_id].begin(); it != per_core_ftq[proc_id].end(); it++) {
@@ -127,6 +123,7 @@ void update_decoupled_fe() {
   uint taken_cf = 0;
   uint predicted_branches = 0;
   uns cf_num = 0;
+  uint64_t current_blocks = per_core_block_count[set_proc_id];
 
   if (*off_path)
     STAT_EVENT(set_proc_id, FTQ_CYCLES_OFFPATH);
@@ -141,34 +138,11 @@ void update_decoupled_fe() {
         STAT_EVENT(set_proc_id, FTQ_BREAK_FULL_BLOCK_ONPATH);
       break;
     }
-    if (df_ftq->size() >= FE_FTQ_SIZE) {
+    if (per_core_block_count[set_proc_id] == current_blocks + FE_BLOCKS_PER_CYCLE) {
       if (*off_path)
-        STAT_EVENT(set_proc_id, FTQ_BREAK_FULL_OFFPATH);
+        STAT_EVENT(set_proc_id, FTQ_BREAK_MAX_BLOCKS_OFFPATH);
       else
-        STAT_EVENT(set_proc_id, FTQ_BREAK_FULL_ONPATH);
-      break;
-    }
-    if (predicted_branches == FE_PREDICTED_BRANCHES_PER_CYCLE) {
-      if (*off_path)
-        STAT_EVENT(set_proc_id, FTQ_BREAK_PRED_BR_CYC_OFFPATH);
-      else
-        STAT_EVENT(set_proc_id, FTQ_BREAK_PRED_BR_CYC_ONPATH);
-      break;
-    }
-    if (taken_cf == FE_TAKEN_CF_PER_CYCLE) {
-      if (*off_path)
-        STAT_EVENT(set_proc_id, FTQ_BREAK_TAKEN_CF_OFFPATH);
-      else
-        STAT_EVENT(set_proc_id, FTQ_BREAK_TAKEN_CF_ONPATH);
-
-      break;
-    }
-    if (fetched_inst_bytes >= FE_FETCHED_INST_BYTES_PER_CYCLE) {
-      if (*off_path)
-        STAT_EVENT(set_proc_id, FTQ_BREAK_MAX_BYTES_OFFPATH);
-      else
-        STAT_EVENT(set_proc_id, FTQ_BREAK_MAX_BYTES_ONPATH);
-      
+        STAT_EVENT(set_proc_id, FTQ_BREAK_MAX_BLOCKS_ONPATH);
       break;
     }
     if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, set_proc_id)) {
@@ -176,6 +150,7 @@ void update_decoupled_fe() {
         STAT_EVENT(set_proc_id, FTQ_BREAK_PRED_BR_OFFPATH);
       else
         STAT_EVENT(set_proc_id, FTQ_BREAK_PRED_BR_ONPATH);
+      break;
     }
     if (!frontend_can_fetch_op(set_proc_id)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
@@ -212,7 +187,7 @@ void update_decoupled_fe() {
         frontend_redirect(set_proc_id, op->inst_uid, pred_addr);
         per_core_redirect_cycle[set_proc_id] = cycle_count;
       }
-      // If we are already on the off-path redirec on all taken branches in TRACE-MODE
+      // If we are already on the off-path redirect on all taken branches in TRACE-MODE
       else if (trace_mode && *off_path && op->oracle_info.pred == TAKEN) {
         frontend_redirect(set_proc_id, op->inst_uid, pred_addr);
       }
@@ -223,20 +198,17 @@ void update_decoupled_fe() {
 
     // We start a new block if crossing a line or take a branch
     bool start_new_block = false;
-    start_new_block |= ((op->inst_info->addr >> FE_FTQ_BLOCK_SIZE_LOG) != (op->inst_info->addr + op->inst-info->size + 1 >> FE_FTQ_BLOCK_SIZE_LOG));
-
-    per_core_last_pc[set_proc_id] = op->inst_info->addr;
+    if (op->eom) {
+      start_new_block |= ((op->inst_info->addr >> FE_FTQ_BLOCK_SIZE_LOG) != ((op->inst_info->addr + op->inst_info->trace_info.inst_size) >> FE_FTQ_BLOCK_SIZE_LOG));
+      start_new_block |= (op->table_info->cf_type && op->oracle_info.pred == TAKEN);
+    }
 
     if (op->table_info->cf_type == CF_CBR) {
       predicted_branches++;
     }
 
-    start_new_block |= (op->table_info->cf_type && op->oracle_info.pred == TAKEN);
     per_core_block_count[set_proc_id] += start_new_block;
-    //    std::cout <<" insert " << per_core_block_count[set_proc_id] << " start " << start_new_block << " last " <<     per_core_last_pc[set_proc_id] << " next " <<  op->inst_info->addr << std::endl;
-    
     df_ftq->emplace_back(std::pair<Op*, bool>(op, start_new_block));
-    
     fetched_inst_bytes += op->inst_info->trace_info.inst_size;
 
     if (op->table_info->bar_type & BAR_FETCH && op->eom) {

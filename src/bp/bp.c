@@ -205,7 +205,7 @@ void inc_bstat_fetched(Op* op) {
     }
   }
   // target if taken
-  if (op->oracle_info.pred && !(op->oracle_info.recover_at_exec || op->oracle_info.recover_at_decode))
+  if (op->oracle_info.pred == TAKEN && !(op->oracle_info.recover_at_exec || op->oracle_info.recover_at_decode))
     bstat->target = op->oracle_info.npc;
 }
 
@@ -218,6 +218,9 @@ void inc_bstat_miss(Op* op, Flag uc_hit) {
   const uns8 btb_miss = op->oracle_info.btb_miss;
 
   ASSERT(bp_recovery_info->proc_id, op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec);
+
+  if (op->off_path)
+    return;  // TODO(peterbraun): add off-path branch stats
 
   if (!(mispred | misfetch | btb_miss)) {
     //FIXME: Add stats for recovering syscalls
@@ -236,8 +239,7 @@ void inc_bstat_miss(Op* op, Flag uc_hit) {
     if (mispred) {
       bstat->mispred_uc_miss += 1;
       if (!in_ic) bstat->mispred_uc_ic_miss += 1;
-    }
-    else if (misfetch) {
+    } else if (misfetch) {
       bstat->misfetch_uc_miss += 1;
       if (!in_ic) bstat->misfetch_uc_ic_miss += 1;
     } else if (btb_miss){

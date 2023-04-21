@@ -449,7 +449,7 @@ void cmp_warmup(Op* op) {
   Cache*      icache  = &(ic->icache);
   Inst_Info** ic_data = (Inst_Info**)cache_access(icache, ia, &dummy_line_addr,
                                                   TRUE);
-  if(WP_COLLECT_STATS && FDIP_ENABLE)
+  if(WP_COLLECT_STATS)
     line_info = (Icache_Data*)cache_access(&ic->icache_line_info, ia, &dummy_line_addr2, TRUE);
 
   if(ic_data == NULL) {
@@ -457,7 +457,7 @@ void cmp_warmup(Op* op) {
     Addr repl_line_addr;
     ic_data = (Inst_Info**)cache_insert(icache, proc_id, ia, &dummy_line_addr,
                                         &repl_line_addr);
-    if(WP_COLLECT_STATS && FDIP_ENABLE) {
+    if(WP_COLLECT_STATS) {
       Addr repl_line_addr2;
       line_info = (Icache_Data*)cache_insert(&ic->icache_line_info, proc_id, ia,
                                                           &dummy_line_addr2, &repl_line_addr2);

@@ -222,6 +222,7 @@ void print_cl_info(void) {
     if (prefetched_cl_iter == prefetched_cls.end() && it->second > 1) {
       auto icache_miss_iter = icache_miss.find(it->first);
       DEBUG(fdip_proc_id, "Useful 0x%llx has not been prefetched - hit count is greater than 1: %llu, miss count: %llu\n", it->first, it->second, (icache_miss_iter != icache_miss.end() ? icache_miss_iter->second : 0));
+      UNUSED(icache_miss_iter);
     }
   }
   DEBUG(fdip_proc_id, "============= cnt_useful_ret ============= size: %lu\n", cnt_useful_ret.size());
@@ -258,6 +259,7 @@ void print_cl_info(void) {
       it != icache_miss_sorted.end(); ++it) {
     auto useful_iter = cnt_useful.find(it->second);
     DEBUG(fdip_proc_id, "[set %u] 0x%llx missed %llu times, hit %llu times\n", (uns)(it->second >> ic_ref->icache.shift_bits & ic_ref->icache.set_mask), it->second, it->first, (useful_iter != cnt_useful.end() ? useful_iter->second : 0));
+    UNUSED(useful_iter);
   }
 
   DEBUG(fdip_proc_id, "============= unique prefetched lines ===== size: %lu\n", prefetched_cls.size());

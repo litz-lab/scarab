@@ -638,7 +638,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         td->td_info.fetch_br_count++;
 
       ic->next_fetch_addr       = op->oracle_info.pred_npc;
-
+      ASSERT(ic->proc_id, ic->next_fetch_addr);
       // initially bp_predict_op can return a garbage, for multi core run,
       // addr must follow cmp addr convention
       ic->next_fetch_addr = convert_to_cmp_addr(ic->proc_id,

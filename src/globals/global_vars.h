@@ -48,6 +48,10 @@ extern Counter* uop_count;
 extern Counter* pret_inst_count;
 extern uns      operating_mode;
 
+extern Counter* period_last_inst_count;
+extern Counter  period_last_cycle_count;
+extern Counter  period_ID;
+
 extern Flag* trace_read_done;
 extern Flag* reached_exit;
 extern Flag* retired_exit;

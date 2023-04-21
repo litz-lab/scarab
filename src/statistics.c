@@ -95,6 +95,11 @@ void gen_stat_output_file(char* buf, uns8 proc_id, Stat* stat) {
   sprintf(temp2, "%u", proc_id);
   strncat(temp, temp2, MAX_STR_LENGTH);
   strncat(temp, ".out", MAX_STR_LENGTH);
+  if (PERIODIC_DUMP) {
+    char temp3[24];
+    sprintf(temp3, ".period.%llu", period_ID);
+    strncat(temp, temp3, 24);
+  }
   strncpy(buf, OUTPUT_DIR, MAX_STR_LENGTH);
   strncat(buf, "/", MAX_STR_LENGTH);
   strncat(buf, FILE_TAG, MAX_STR_LENGTH);
@@ -184,6 +189,13 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
               "%.5f\n",
               cycle_count, inst_count[proc_id],
               (double)inst_count[proc_id] / cycle_count);
+      fprintf(file_stream, "\n");
+
+      fprintf(file_stream,
+              "Periodic:          Cycles: %-20llu  Instructions: %-20llu  IPC: "
+              "%.5f\n",
+              cycle_count - period_last_cycle_count, inst_count[proc_id] - period_last_inst_count[proc_id],
+              (double)(inst_count[proc_id] - period_last_inst_count[proc_id]) / (cycle_count - period_last_cycle_count));
       fprintf(file_stream, "\n");
     }
 

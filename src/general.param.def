@@ -64,7 +64,10 @@ DEF_PARAM( fast_forward_until_addr      , FAST_FORWARD_UNTIL_ADDR   , uns      ,
 DEF_PARAM( warmup                       , WARMUP                    , uns64    , uns64   , 0        ,       )
 DEF_PARAM( heartbeat_interval           , HEARTBEAT_INTERVAL        , uns    , uns       , 1000000  ,       ) 
 DEF_PARAM( num_heartbeats               , NUM_HEARTBEATS            , uns    , uns       , 0        ,       ) 
- 
+
+/* Periodic dump every heartbeat_interval instructions*/
+DEF_PARAM( periodic_dump                , PERIODIC_DUMP             , Flag   , Flag      , FALSE    ,       )
+
 DEF_PARAM( file_tag                     , FILE_TAG                  , char * , string    , ""       ,       )
 DEF_PARAM( output_dir                   , OUTPUT_DIR                , char * , string    , "."      ,       )
 DEF_PARAM( status_file                  , STATUS_FILE               , char * , string    , NULL     ,       )

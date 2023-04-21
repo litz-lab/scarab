@@ -99,6 +99,13 @@ Counter* sim_done_last_cycle_count;
 uns*     sim_count;
 uns      operating_mode = SIMULATION_MODE;
 
+/* the global instruction counter for periodic dump - retired per core */
+Counter* period_last_inst_count;
+/* the global cycle counter for periodic dump*/
+Counter  period_last_cycle_count = 0;
+/* the global dump counter for periodic dump*/
+Counter  period_ID = 0;
+
 Hash_Table per_branch_stat;
 
 time_t sim_start_time; /* the time that the simulator was started */
@@ -188,6 +195,13 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
 
   /* print heartbeat message if necessary */
   if((HEARTBEAT_INTERVAL && inst_diff >= rounded_interval) || final) {
+    if (PERIODIC_DUMP) {
+      dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
+      period_last_cycle_count = cycle_count;
+      period_last_inst_count[proc_id] = inst_count[proc_id];
+      period_ID ++;
+    }
+
     heartbeat_checked_inst_count = inst_count[proc_id];
     double progress_frac         = 0.0;
     if(!final) {
@@ -446,6 +460,9 @@ void init_global_counter() {
   memset(sim_done_last_cycle_count, 0, sizeof(Counter) * NUM_CORES);
   sim_count = (uns*)malloc(sizeof(uns) * NUM_CORES);
   memset(sim_count, 0, sizeof(uns) * NUM_CORES);
+
+  period_last_inst_count = (Counter*)malloc(sizeof(Counter) * NUM_CORES);
+  memset(period_last_inst_count, 0, sizeof(Counter) * NUM_CORES);
 }
 
 /**************************************************************************************/
@@ -715,7 +732,9 @@ void full_sim() {
             INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY, get_fdip_ftq_occupancy());
           }
         }
-        dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
+        if (PERIODIC_DUMP == FALSE) {
+          dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
+        }
         sim_done[proc_id] = TRUE;
         any_sim_done      = TRUE;
         check_heartbeat(proc_id, TRUE);
@@ -764,7 +783,9 @@ void full_sim() {
 
   for(proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     if(!sim_done[proc_id]) {
-      dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
+      if (PERIODIC_DUMP == FALSE) {
+        dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
+      }
       check_heartbeat(proc_id, TRUE);
     }
   }

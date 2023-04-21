@@ -81,6 +81,8 @@ extern "C" {
    and reset by flushes */
   uint64_t decoupled_fe_ftq_iter_offset(decoupled_fe_iter* iter);
   uint64_t decoupled_fe_ftq_size();
+  uint64_t decoupled_fe_ftq_num_ops();
+  uint64_t decoupled_fe_ftq_num_blocks();
 
 #ifdef __cplusplus
 }

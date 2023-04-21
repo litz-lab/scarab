@@ -311,8 +311,12 @@ uint64_t decoupled_fe_ftq_iter_offset(decoupled_fe_iter* iter) {
   return iter->pos;
 }
 
-uint64_t decoupled_fe_ftq_size() {
+uint64_t decoupled_fe_ftq_num_ops() {
   return df_ftq->size();
+}
+
+uint64_t decoupled_fe_ftq_num_blocks() {
+  return  per_core_block_count[set_proc_id];
 }
 
 void decoupled_fe_stall(Op *op) {

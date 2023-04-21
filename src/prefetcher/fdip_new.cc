@@ -180,7 +180,7 @@ void update_fdip() {
     }
   }
   STAT_EVENT(ic_ref->proc_id, FDIP_BREAK_REACH_FTQ_END + break_reason);
-  DEBUG(fdip_proc_id, "FTQ size : %lu, FDIP prefetch offset : %lu\n", decoupled_fe_ftq_size(), decoupled_fe_ftq_iter_offset(iter));
+  DEBUG(fdip_proc_id, "FTQ size : %lu, FDIP prefetch offset : %lu\n", decoupled_fe_ftq_num_ins(), decoupled_fe_ftq_iter_offset(iter));
   fdip_ftq_occupancy += decoupled_fe_ftq_iter_offset(iter);
 }
 

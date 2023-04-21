@@ -132,6 +132,7 @@ void update_decoupled_fe() {
 
   while(1) {
     if (per_core_block_count[set_proc_id] >= FE_FTQ_BLOCK_NUM) {
+      DEBUG(set_proc_id, "Break due to full FTQ\n");
       if (*off_path)
         STAT_EVENT(set_proc_id, FTQ_BREAK_FULL_BLOCK_OFFPATH);
       else
@@ -139,6 +140,7 @@ void update_decoupled_fe() {
       break;
     }
     if (per_core_block_count[set_proc_id] == current_blocks + FE_BLOCKS_PER_CYCLE) {
+      DEBUG(set_proc_id, "Break due to max blocks per cycle\n");
       if (*off_path)
         STAT_EVENT(set_proc_id, FTQ_BREAK_MAX_BLOCKS_OFFPATH);
       else
@@ -146,6 +148,7 @@ void update_decoupled_fe() {
       break;
     }
     if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, set_proc_id)) {
+      DEBUG(set_proc_id, "Break due to limited branch predictor\n");
       if (*off_path)
         STAT_EVENT(set_proc_id, FTQ_BREAK_PRED_BR_OFFPATH);
       else
@@ -291,21 +294,17 @@ decoupled_fe_iter* decoupled_fe_new_ftq_iter() {
 
 /* Returns the Op at current FTQ iterator position. Returns NULL if the FTQ is empty */ 
 Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter) {
-  if (df_ftq->size() == 0) {
-    ASSERT(set_proc_id, iter->pos == 0);
+  if (iter->pos == df_ftq->size())
     return NULL;
-  }
   ASSERT(set_proc_id, iter->pos >= 0);
   ASSERT(set_proc_id, iter->pos < df_ftq->size());
-  return df_ftq->at(iter->pos).first;
+  return df_ftq->at(iter->pos++).first;
 }
 
 /* Returns true if advanced, false if reached end of FTQ */
 bool decoupled_fe_ftq_iter_advance(decoupled_fe_iter* iter) {
-  if (iter->pos + 1 == df_ftq->size()) {
+  if (iter->pos == df_ftq->size())
     return false;
-  }
-  iter->pos++;
   return true;
 }
 
@@ -314,6 +313,10 @@ bool decoupled_fe_ftq_iter_advance(decoupled_fe_iter* iter) {
    and reset by flushes */
 uint64_t decoupled_fe_ftq_iter_offset(decoupled_fe_iter* iter) {
   return iter->pos;
+}
+
+uint64_t decoupled_fe_ftq_size() {
+  return df_ftq->size();
 }
 
 void decoupled_fe_stall(Op *op) {

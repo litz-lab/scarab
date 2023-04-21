@@ -17,7 +17,7 @@ extern "C" {
 
 decoupled_fe_iter* iter;
 const int MAX_PREF_CYC = 2;
-uint64_t last_line_addr = 0;
+Addr last_line_addr = 0;
 int fdip_proc_id;
 Icache_Stage *ic_ref;
 Op *cur_op = NULL;
@@ -105,11 +105,16 @@ void update_fdip() {
   do {
     Op *op = decoupled_fe_ftq_iter_get(iter);
     if (!op) {
-      std::cout << "FTQ Empty" << std::endl;
-      break_reason = BR_FTQ_EMPTY;
+      if (!decoupled_fe_ftq_iter_offset(iter)) {
+        DEBUG(fdip_proc_id, "Break due to FTQ Empty\n");
+        break_reason = BR_FTQ_EMPTY;
+      } else {
+        break_reason = BR_REACH_FTQ_END;
+      }
       break;
     }
     if (prefetch_per_cycle == MAX_PREF_CYC) {
+      DEBUG(fdip_proc_id, "Break due to max prefetches per cycle\n");
       break_reason = BR_MAX_PREF_CYC;
       break;
     }
@@ -117,7 +122,8 @@ void update_fdip() {
       last_bbl_start_addr = op->inst_info->addr;
 
     uint64_t pc_addr = op->inst_info->addr;
-    Addr line_addr = op->inst_info->addr && ~0x3F;
+    Addr line_addr = op->inst_info->addr & ~0x3F;
+    DEBUG(fdip_proc_id, "op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx\n", op->op_num, op->inst_info->addr, line_addr, last_line_addr);
     if (line_addr != last_line_addr) {
       STAT_EVENT(ic_ref->proc_id, FDIP_ATTEMPTED_PREF_ONPATH + op->off_path);
       Flag demand_hit_prefetch = FALSE;
@@ -150,6 +156,7 @@ void update_fdip() {
       }
 
       if (emit_new_prefetch && !mem_can_allocate_req_buffer(fdip_proc_id, MRT_FDIPPRF, FALSE)) {
+        DEBUG(fdip_proc_id, "Break due to full mem_req buf\n");
         break_reason = BR_FULL_MEM_REQ_BUF;
         break;
       }
@@ -159,17 +166,22 @@ void update_fdip() {
                                    ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count++, 0);
         // A buffer entry should be available since it is checked by mem_can_allocate_req_buffer for a new prefetch
         ASSERT(fdip_proc_id, success);
-        if (success == Mem_Queue_Req_Result::SUCCESS_NEW)
+        if (success == Mem_Queue_Req_Result::SUCCESS_NEW) {
           STAT_EVENT(ic_ref->proc_id, FDIP_NEW_PREFETCHES_ONPATH + op->off_path);
-        else if (success == Mem_Queue_Req_Result::SUCCESS_MERGED)
+          DEBUG(fdip_proc_id, "Success to emit a new prefetch for %llx, prefetch_per_cycle: %d\n", line_addr, prefetch_per_cycle + 1);
+        } else if (success == Mem_Queue_Req_Result::SUCCESS_MERGED) {
           STAT_EVENT(ic_ref->proc_id, FDIP_PREF_MSHR_PROBE_HIT_ONPATH + op->off_path);
+          DEBUG(fdip_proc_id, "Success to merge a prefetch for %llx, prefetch_per_cycle: %d\n", line_addr, prefetch_per_cycle + 1);
+        }
         prefetch_per_cycle++;
       }
+      last_line_addr = line_addr;
     }
-    last_line_addr = line_addr;
-
   } while (decoupled_fe_ftq_iter_advance(iter));
+  if (break_reason == BR_REACH_FTQ_END)
+    DEBUG(fdip_proc_id, "Break due to reaching FTQ end\n");
   STAT_EVENT(ic_ref->proc_id, FDIP_BREAK_REACH_FTQ_END + break_reason);
+  DEBUG(fdip_proc_id, "FTQ size : %lu, FDIP prefetch offset : %lu\n", decoupled_fe_ftq_size(), decoupled_fe_ftq_iter_offset(iter));
   fdip_ftq_occupancy += decoupled_fe_ftq_iter_offset(iter);
 }
 
@@ -208,12 +220,8 @@ void print_cl_info(void) {
     }
     auto prefetched_cl_iter = prefetched_cls.find(it->first);
     if (prefetched_cl_iter == prefetched_cls.end() && it->second > 1) {
-      DEBUG(fdip_proc_id, "Useful 0x%llx has not been prefetched - hit count is greater than 1: %llu", it->first, it->second);
       auto icache_miss_iter = icache_miss.find(it->first);
-      if (icache_miss_iter != icache_miss.end()) {
-        DEBUG(fdip_proc_id, ", miss count: %llu\n", icache_miss_iter->second);
-      } else
-        DEBUG(fdip_proc_id, ", miss count: 0\n");
+      DEBUG(fdip_proc_id, "Useful 0x%llx has not been prefetched - hit count is greater than 1: %llu, miss count: %llu\n", it->first, it->second, (icache_miss_iter != icache_miss.end() ? icache_miss_iter->second : 0));
     }
   }
   DEBUG(fdip_proc_id, "============= cnt_useful_ret ============= size: %lu\n", cnt_useful_ret.size());
@@ -248,12 +256,8 @@ void print_cl_info(void) {
   std::multimap<Counter, Addr> icache_miss_sorted = flip_map(icache_miss);
   for(std::multimap<Counter, Addr>::const_iterator it = icache_miss_sorted.begin();
       it != icache_miss_sorted.end(); ++it) {
-    DEBUG(fdip_proc_id, "[set %u] 0x%llx missed %llu times", (uns)(it->second >> ic_ref->icache.shift_bits & ic_ref->icache.set_mask), it->second, it->first);
     auto useful_iter = cnt_useful.find(it->second);
-    if (useful_iter != cnt_useful.end())
-      DEBUG(fdip_proc_id, ", hit %llu times\n", useful_iter->second);
-    else
-      DEBUG(fdip_proc_id, ", hit 0 times\n");
+    DEBUG(fdip_proc_id, "[set %u] 0x%llx missed %llu times, hit %llu times\n", (uns)(it->second >> ic_ref->icache.shift_bits & ic_ref->icache.set_mask), it->second, it->first, (useful_iter != cnt_useful.end() ? useful_iter->second : 0));
   }
 
   DEBUG(fdip_proc_id, "============= unique prefetched lines ===== size: %lu\n", prefetched_cls.size());

@@ -82,6 +82,7 @@ extern "C" {
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */
   uint64_t decoupled_fe_ftq_iter_offset(decoupled_fe_iter* iter);
+  uint64_t decoupled_fe_ftq_size();
 
 #ifdef __cplusplus
 }

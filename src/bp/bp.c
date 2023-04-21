@@ -188,34 +188,36 @@ void inc_bstat_fetched(Op* op) {
     bstat->cf_type = op->table_info->cf_type;
   }
 
-  const uns8 mispred =  op->oracle_info.mispred;
-  const uns8 misfetch = op->oracle_info.misfetch;
-  const uns8 btb_miss = op->oracle_info.btb_miss;
-
-  if (!mispred && !misfetch && !btb_miss) {
+  if (!op->off_path) {
     if (in_uop_cache(op->oracle_info.npc, FALSE)) {
-      bstat->bpu_hit_uc_hit += 1;
+      bstat->bpu_hit_uc_hit_on_path += 1;
     }else {
-      bstat->bpu_hit_uc_miss += 1;
-      if (!in_icache(op->inst_info->addr)) bstat->bpu_hit_uc_ic_miss += 1;
+      bstat->bpu_hit_uc_miss_on_path += 1;
+      if (!in_icache(op->oracle_info.npc)) bstat->bpu_hit_uc_ic_miss_on_path += 1;
     }
   }
-
+  else {
+    if (in_uop_cache(op->oracle_info.npc, FALSE)) {
+      bstat->bpu_hit_uc_hit_off_path += 1;
+    }else {
+      bstat->bpu_hit_uc_miss_off_path += 1;
+      if (!in_icache(op->oracle_info.npc)) bstat->bpu_hit_uc_ic_miss_off_path += 1;
+    }
+  }
   // target if taken
-  if (op->oracle_info.pred && !op->oracle_info.mispred)
+  if (op->oracle_info.pred && !(op->oracle_info.recover_at_exec || op->oracle_info.recover_at_decode))
     bstat->target = op->oracle_info.npc;
 }
 
-// TODO: Fix/remove old stats
 void inc_bstat_miss(Op* op, Flag uc_hit) {
   Per_Branch_Stat* bstat = (Per_Branch_Stat*) hash_table_access(&per_branch_stat, op->inst_info->addr);
-  //ASSERT(bp_recovery_info->proc_id, bstat);
+  ASSERT(bp_recovery_info->proc_id, bstat);
 
-  const uns8 mispred =  op->oracle_info.mispred;
+  const uns8 mispred = (op->table_info->cf_type == CF_CBR) && !op->oracle_info.btb_miss;
   const uns8 misfetch = op->oracle_info.misfetch;
   const uns8 btb_miss = op->oracle_info.btb_miss;
 
-  //ASSERT(bp_recovery_info->proc_id, op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec);
+  ASSERT(bp_recovery_info->proc_id, op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec);
 
   if (!(mispred | misfetch | btb_miss)) {
     //FIXME: Add stats for recovering syscalls
@@ -223,22 +225,28 @@ void inc_bstat_miss(Op* op, Flag uc_hit) {
     return;
   }
 
-  const Flag in_ic = in_icache(op->inst_info->addr);
+  const Flag in_ic = in_icache(op->oracle_info.npc);
 
   if (uc_hit) {
     if (mispred)        bstat->mispred_uc_hit += 1;
     else if (misfetch)  bstat->misfetch_uc_hit += 1;
-    else                bstat->btb_miss_uc_hit += 1;
+    else if (btb_miss)  bstat->btb_miss_uc_hit += 1;
+    else                bstat->other_recovery_uc_hit += 1;
   } else {
     if (mispred) {
       bstat->mispred_uc_miss += 1;
       if (!in_ic) bstat->mispred_uc_ic_miss += 1;
-    } else if (misfetch) {
+    }
+    else if (misfetch) {
       bstat->misfetch_uc_miss += 1;
       if (!in_ic) bstat->misfetch_uc_ic_miss += 1;
-    } else {
+    } else if (btb_miss){
       bstat->btb_miss_uc_miss += 1;
       if (!in_ic) bstat->btb_miss_uc_ic_miss += 1;
+    }
+    else {
+      bstat->other_recovery_uc_miss += 1;
+      if (!in_ic) bstat->other_recovery_uc_ic_miss += 1;
     }
     bstat->recover_redirect_extra_fetch_latency += ICACHE_LATENCY - UOP_CACHE_LATENCY;
   }
@@ -429,6 +437,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   // normal, but will incur the redirect penalty for missing in the
   // btb.  btb_miss and pred_target are set appropriately.
   op->oracle_info.no_target = TRUE;
+  op->oracle_info.misfetch      = FALSE;
   btb_target = bp_data->bp_btb->pred_func(bp_data, op);
   if(btb_target) {
     // btb hit
@@ -439,7 +448,8 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         !(op->table_info->bar_type & BAR_FETCH)) {
       STAT_EVENT(op->proc_id, BTB_CORRECT + op->off_path * NUM_BR_STATS);
     }
-  } else {
+  }
+  else {
     // In case of BTB miss, execute fall-through
     pred_target = pc_plus_offset;
     if (op->table_info->cf_type != CF_ICO && op->table_info->cf_type != CF_RET &&
@@ -689,6 +699,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
           op->oracle_info.recover_at_decode = FALSE;
           op->oracle_info.recover_at_exec = TRUE;
           op->oracle_info.pred_npc = pred_target;
+          op->oracle_info.misfetch      = TRUE;
           STAT_EVENT(op->proc_id, IBR_RECOVER_BTB_MISFETCH + op->off_path * NUM_BR_STATS);
         }
       }
@@ -732,6 +743,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
           op->oracle_info.recover_at_decode = FALSE;
           op->oracle_info.recover_at_exec = TRUE;
           op->oracle_info.pred_npc = pred_target;
+          op->oracle_info.misfetch      = TRUE;
           STAT_EVENT(op->proc_id, ICALL_RECOVER_IBTB_MISFETCH + op->off_path * NUM_BR_STATS);
         }
       }

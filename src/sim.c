@@ -245,7 +245,7 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
           for (int i=0; i<per_branch_stat.count; i++) {
             Per_Branch_Stat* entry = entries[i];
             fprintf(fp, "%i,%llx,%llx,%i,%i,%i,%i,%i,%i,%i,%i,%i\n", entry->cf_type, entry->addr, 
-              entry->target, entry->bpu_hit_uc_hit, entry->bpu_hit_uc_miss, entry->mispred_uc_hit, 
+              entry->target, entry->bpu_hit_uc_hit_on_path, entry->bpu_hit_uc_miss_on_path, entry->mispred_uc_hit,
               entry->mispred_uc_miss, entry->misfetch_uc_hit, entry->misfetch_uc_miss, 
               entry->btb_miss_uc_hit, entry->btb_miss_uc_miss, entry->recover_redirect_extra_fetch_latency);
           }

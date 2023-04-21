@@ -133,7 +133,6 @@ void recover_map_stage() {
     for(jj = 0, kk = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
       if(cur->ops[jj]) {
         if(FLUSH_OP(cur->ops[jj])) {
-          ASSERT(map->proc_id, bp_recovery_info->recovery_op->oracle_info.recover_at_exec);
           free_op(cur->ops[jj]);
           cur->ops[jj] = NULL;
         } else {

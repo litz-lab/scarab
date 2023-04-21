@@ -12,6 +12,7 @@ extern "C" {
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 #include "bp/bp.h"
+#include "op_pool.h"
 
 #include "globals/assert.h"
 #include "statistics.h"
@@ -79,7 +80,7 @@ void recover_uop_queue_stage(void) {
       Op* op = sd->ops[op_idx];
       if (op && FLUSH_OP(op)) {
         ASSERT(op->proc_id, op->off_path);
-        // free(op);
+        free_op(op);
         sd->ops[op_idx] = NULL;
       } else if (op) {
         sd->op_count++;

@@ -537,7 +537,12 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       if(!op->off_path && op->oracle_info.pred)
         STAT_EVENT(op->proc_id, CF_CBR_USED_TARGET_CORRECT +
                                   (pred_target != op->oracle_info.npc));
-      //printf("%p %d %d %llx %llx\n", btb_target, op->oracle_info.dir, op->oracle_info.pred, pred_target, op->oracle_info.npc);
+
+      // pred_target is set by BTB on hit. For CBR we may however, still want to execute fall-through
+      if (op->oracle_info.pred == NOT_TAKEN) {
+        pred_target = pc_plus_offset;
+      }
+
       // Regular mispredict resolved at exec
       // On dir misprediction, treat as correctly predicted if fall-through happens to match target
       if (btb_target && op->oracle_info.dir != op->oracle_info.pred && pc_plus_offset != op->oracle_info.target) {

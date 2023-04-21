@@ -187,9 +187,6 @@ void update_decode_stage(Stage_Data* src_sd) {
   Flag from_icache = src_sd->op_count && !src_sd->ops[0]->fetched_from_uop_cache;
   cur = &dec->sds[STAGE_MAX_DEPTH - 1];
 
-  if(src_sd->op_count) {
-    ASSERT(0, !src_sd->ops[0]->fetched_from_uop_cache);
-  }
   if(cur->op_count == 0 && from_icache) {
     prev           = src_sd;
     temp           = cur->ops;
@@ -210,6 +207,7 @@ void update_decode_stage(Stage_Data* src_sd) {
     Op* op = dec->last_sd->ops[ii];
     ASSERT(dec->proc_id, op != NULL);
     ASSERT(dec->proc_id, !op->fetched_from_uop_cache);
+    DEBUG(dec->proc_id, "Decoding op op_num=%llu, addr=%llx\n", op->op_num, op->inst_info->addr);
     decode_stage_process_op(op);
     accumulate_op(op);
   }

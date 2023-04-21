@@ -60,6 +60,8 @@ typedef enum Packet_Break_Condition_enum {
   NUM_NON_RB,  // number of MUST BE 2's comp ops per chkpt
   NUM_SLOW_SCHED_OPS,
   NUM_FAST_SCHED_OPS,
+  NUM_OPS,         // Total number of ops in packet
+  UOP_CACHE_FETCH, // Flag set if icache_fetch, for first op in packet only
   PB_NUM_CONDITIONS
 } Packet_Break_Condition;
 

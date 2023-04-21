@@ -44,7 +44,8 @@
 #include "memory/memory.param.h"
 #include "packet_build.param.h"
 #include "statistics.h"
-
+#include "uop_queue_stage.h"
+#include "decode_stage.h"
 
 /**************************************************************************************/
 /* Initialize the packet build structures */
@@ -173,6 +174,11 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op) {
   ASSERT(pb_data->proc_id, pb_data->proc_id == op->proc_id);
 
   if(pb_data->pb_ident == PB_ICACHE) {
+    // Set fetch source as Icache or uop cache on first op in packet
+    op->fetched_from_uop_cache = in_uop_cache(op->inst_info->addr, FALSE);
+    if (pb_data->break_conditions[NUM_OPS] == 0) {
+      pb_data->break_conditions[UOP_CACHE_FETCH] = op->fetched_from_uop_cache;
+    }
     // only have constraints on the number of loads & stores per packet
     if(NUM_LOAD_STORE_PER_PACKET) {
       pb_data->break_conditions[NUM_LOAD_STORE] += (op->table_info->mem_type !=
@@ -202,12 +208,34 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op) {
       }
     }
 
+    // Break when switching between fetch from icache and uop cache
+    // Note: this precedes break due to icache line boundary or NUM_CF
+    if (pb_data->break_conditions[NUM_OPS]) {  // Never break on first op
+      Flag prev_op_from_uop_cache = pb_data->break_conditions[UOP_CACHE_FETCH];
+      if (prev_op_from_uop_cache && !op->fetched_from_uop_cache) {
+        int uop_queue_length = get_uop_queue_stage_length();
+        int decode_stages_filled = get_decode_stages_filled();
+        // TODO(peterbraun): Only measure these stats for ON-PATH. Same thing with resteer stats
+        STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_LENGTH_0 + uop_queue_length);
+        STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_PLUS_DECODE_LENGTH_0 + uop_queue_length + decode_stages_filled);
+        ASSERT(ic->proc_id, uop_queue_length + decode_stages_filled <= 20);  // Stat supports up to 20.
+        *break_fetch = BREAK_UC_MISS;
+        return PB_BREAK_BEFORE;
+      } else if (!prev_op_from_uop_cache && op->fetched_from_uop_cache) {
+        *break_fetch = BREAK_ICACHE_TO_UOP_CACHE_SWITCH;
+        return PB_BREAK_BEFORE;
+      }
+    }
+
     // this must be called as the last BREAK_BEFORE condition
     model_break_result = model->break_hook ? model->break_hook(op) : BREAK_DONT;
     if(model_break_result) {
       *break_fetch = BREAK_MODEL_BEFORE;
       return PB_BREAK_BEFORE;
     }
+
+    // Only incremented if not PB_BREAK_BEFORE
+    pb_data->break_conditions[NUM_OPS]++;
 
     // hit fetch barrier
     if(IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH) {

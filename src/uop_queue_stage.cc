@@ -65,7 +65,7 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
   
   for (int ii = 0; ii < new_sd->op_count; ii++) {
     Op* op = new_sd->ops[ii];
-    decode_stage_process_op(op);  // Op skipped decode stage.
+    decode_stage_process_op(op);
     ASSERT(0, op->fetched_from_uop_cache);
   }
   q.push_back(new_sd);
@@ -77,11 +77,11 @@ void recover_uop_queue_stage(void) {
     sd->op_count = 0;
     for (uns op_idx = 0; op_idx < STAGE_MAX_OP_COUNT; op_idx++) {
       Op* op = sd->ops[op_idx];
-      if (FLUSH_OP(op)) {
+      if (op && FLUSH_OP(op)) {
         ASSERT(op->proc_id, op->off_path);
-        free(op);
+        // free(op);
         sd->ops[op_idx] = NULL;
-      } else {
+      } else if (op) {
         sd->op_count++;
       }
     }

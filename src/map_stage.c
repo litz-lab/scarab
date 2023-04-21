@@ -61,7 +61,9 @@
 /* Global Variables */
 
 Map_Stage* map = NULL;
-
+// The next op number is used when deciding whether to consume ops from the
+// uop cache: i.e. check if any preceding instructions are still in the decoder.
+Counter map_stage_next_op_num = 1;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -131,6 +133,7 @@ void recover_map_stage() {
     for(jj = 0, kk = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
       if(cur->ops[jj]) {
         if(FLUSH_OP(cur->ops[jj])) {
+          ASSERT(map->proc_id, bp_recovery_info->recovery_op->oracle_info.recover_at_exec);
           free_op(cur->ops[jj]);
           cur->ops[jj] = NULL;
         } else {
@@ -141,6 +144,11 @@ void recover_map_stage() {
         }
       }
     }
+  }
+
+  if (map_stage_next_op_num > bp_recovery_info->recovery_op_num) {
+    map_stage_next_op_num = bp_recovery_info->recovery_op_num + 1;
+    DEBUG(map->proc_id, "Recovering map_stage_next_op_num to %llu\n", map_stage_next_op_num);
   }
 }
 
@@ -171,9 +179,6 @@ void update_map_stage(Stage_Data* src_sd) {
   Stage_Data *cur, *prev;
   Op**        temp;
   uns         ii;
-  // The next op number is used when deciding whether to consume ops from the
-  // uop cache: i.e. check if any preceding instructions are still in the decoder.
-  static Counter next_op_num = 1;
 
   /* do all the intermediate stages */
   for(ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
@@ -192,13 +197,16 @@ void update_map_stage(Stage_Data* src_sd) {
   // Uops can be received from either the decoder or directly from the uop cache
   // via the uop queue.
   // Only consume if older ops have already been consumed by this stage.
-  //Flag consume_ops = src_sd->op_count && src_sd->ops[0]->op_num == next_op_num;
+  Flag consume_ops = src_sd->op_count && src_sd->ops[0]->op_num == map_stage_next_op_num;
   cur = &map->sds[STAGE_MAX_DEPTH - 1];
+  DEBUG(map->proc_id, "src_sd_correct=%u, expected_next_op_num=%llu, peeked_op_num=%llu\n",
+                      consume_ops, map_stage_next_op_num,
+                      src_sd->op_count ? src_sd->ops[0]->op_num : 0);
   if (cur->op_count == 0 && src_sd->op_count == 0 && last_cycle_consumed < cycle_count) {
     // Inaccurate: This would trigger once per cycle even if fetching steady state from one source (the other will be empty)
     STAT_EVENT(map->proc_id, MAP_STAGE_STARVED_2X);
   }
-  if(cur->op_count == 0){// && consume_ops && last_cycle_consumed < cycle_count) {
+  if(cur->op_count == 0 && consume_ops && last_cycle_consumed < cycle_count) {
     /* call the fetch fill unit */
     prev           = src_sd;
     temp           = cur->ops;
@@ -212,7 +220,7 @@ void update_map_stage(Stage_Data* src_sd) {
       ASSERT(map->proc_id, op != NULL);
       op->map_cycle = cycle_count;
     }
-    next_op_num += cur->op_count;
+    map_stage_next_op_num += cur->op_count;
     last_cycle_consumed = cycle_count;
 
     STAT_EVENT(map->proc_id, MAP_STAGE_RECEIVED_OPS_0 + cur->op_count);

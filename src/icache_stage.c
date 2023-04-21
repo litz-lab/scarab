@@ -247,12 +247,6 @@ void recover_icache_stage() {
   op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
   ic->next_fetch_addr   = bp_recovery_info->recovery_fetch_addr;
   ASSERT(ic->proc_id, ic->next_fetch_addr);
-
-  if (ic->next_state == IC_FETCH) {
-    Flag uc_hit = in_uop_cache(op->oracle_info.pred_npc, FALSE);
-    uns fetch_latency = uc_hit ? UOP_CACHE_LATENCY : ICACHE_LATENCY;
-    INC_STAT_EVENT(bp_recovery_info->proc_id, BP_RECOVERY_FETCH_CYCLES_UC + !uc_hit, fetch_latency);
-  }
 }
 
 
@@ -590,7 +584,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
 
     ASSERT(ic->proc_id, td->seq_op_list.count <= op_pool_active_ops);
 
-    // Log uop cache access - must be called exactly once for every op
+    // Log uop cache access - must be called exactly once for every op, so it cannot be called when PB_BREAK_BEFORE
     in_uop_cache(op->inst_info->addr, TRUE);
 
     /* map the op based on true dependencies & set information in
@@ -686,28 +680,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       // pass the global branch history to all the instructions
       op->oracle_info.pred_global_hist = g_bp_data->global_hist;
       ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr);
-    }
-
-    // TODO(peterbraun): Switch to using PB_BREAK_BEFORE
-    // Check whether the next op will be found in the uop cache.
-    // Break when switching from icache to uoc or vice versa.
-    // BUT do not add fetch latency when the last op caused a frontend resteer.
-    // The latency will already have been added, and break_fetch already set.
-    Flag next_op_in_uop_cache = in_uop_cache(op->oracle_info.npc, FALSE);
-    Flag branch_that_causes_resteer = op->table_info->cf_type && (op->oracle_info.mispred || op->oracle_info.misfetch || op->oracle_info.btb_miss);
-    if (op->eom && !branch_that_causes_resteer) {
-      if (op->fetched_from_uop_cache && !next_op_in_uop_cache) {
-        *break_fetch = BREAK_UC_MISS;
-        packet_break = PB_BREAK_AFTER;
-        int uop_queue_length = get_uop_queue_stage_length();
-        int decode_stages_filled = get_decode_stages_filled();
-        STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_LENGTH_0 + uop_queue_length);
-        STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_PLUS_DECODE_LENGTH_0 + uop_queue_length + decode_stages_filled);
-        ASSERT(ic->proc_id, uop_queue_length + decode_stages_filled <= 20);  // Stat supports up to 20.
-      } else if (!op->fetched_from_uop_cache && next_op_in_uop_cache) {
-        *break_fetch = BREAK_ICACHE_TO_UOP_CACHE_SWITCH;
-        packet_break = PB_BREAK_AFTER;
-      }
     }
 
     if(packet_break == PB_BREAK_AFTER)

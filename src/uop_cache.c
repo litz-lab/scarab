@@ -58,7 +58,7 @@ uns8 proc_id;
 
 // uop trace/bbl accumulation
 static Uop_Cache_Data accumulating_pw = {0};
-static Counter cons_op_num = 0;
+static Counter next_accum_op = 0;
 static Op* uop_q[UOP_QUEUE_SIZE];
 
 // k: instr addr
@@ -121,8 +121,8 @@ Flag pw_insert(Uop_Cache_Data pw) {
     if (UOP_CACHE_REPL == REPL_RESTEER && pw.first != addr_following_resteer_bf) {
       insert_repl = INSERT_REPL_LRU;
     }
-    DEBUG(ic->proc_id, "PW inserted. addr=0x%llx, set=%u, lines_needed=%i\n",
-          pw.first, cpp_cache_index(UOP_CACHE_NAME, pw.first, &line_addr, &line_addr), lines_needed);
+    DEBUG(ic->proc_id, "PW inserted. off_path=%u, addr=0x%llx, set=%u, lines_needed=%i\n",
+          pw.first_op_offpath, pw.first, cpp_cache_index(UOP_CACHE_NAME, pw.first, &line_addr, &line_addr), lines_needed);
     Flag priority = (UOP_CACHE_REPL == REPL_STICKY_PRIORITY_LINES) ? (hash_table_access(&priority_pws, pw.first) != NULL) : FALSE;
     cur_line_data = (Uop_Cache_Data*) cpp_cache_insert(UOP_CACHE_NAME, pw.first, lines_needed,
                                                        priority);
@@ -283,21 +283,23 @@ void accumulate_op(Op* op) {
 
   // Skipped ops means that there was a uop cache hit, so the accumulating_pw
   // may need to be flushed. This must be done in the same place accumulation is done.
-  if (op->op_num > cons_op_num) {
+  if (op->op_num > next_accum_op) {
     STAT_EVENT(0, UOP_CACHE_ICACHE_SWITCH);
     end_accumulate();
     cur_icache_line_addr = 0;
   }
-  ASSERT(proc_id, op->op_num >= cons_op_num);  // At recovery cons_op_num should be reset
-
+  if ( op->op_num < next_accum_op)
+    ASSERT(proc_id, op->op_num >= next_accum_op);
   if (!cur_icache_line_addr) {
     accumulating_pw.first = op->inst_info->addr;
+    accumulating_pw.first_op_offpath = op->off_path;
     cur_icache_line_addr = icache_line_addr;
-    cons_op_num = op->op_num + 1;
+    next_accum_op = op->op_num + 1;
   } else {
-    ASSERT(0, op->op_num == cons_op_num);
-    cons_op_num++;
+    ASSERT(0, op->op_num == next_accum_op);
+    next_accum_op++;
   }
+  DEBUG(proc_id, "next_accum_op updated to %llu\n", next_accum_op);
   
   Flag end_of_icache_line = icache_line_addr != cur_icache_line_addr;
   Flag uop_q_full = (accumulating_pw.n_uops + 1 == UOP_QUEUE_SIZE);
@@ -314,8 +316,9 @@ void accumulate_op(Op* op) {
   accumulating_pw.last_op_num = op->op_num;
   accumulating_pw.n_uops++;
 
-  Flag branch_pt = op->table_info->cf_type && op->oracle_info.pred == TAKEN;
-  if (branch_pt) {
+  // PW should be terminated at predicted-taken, but we terminate if actually-taken.
+  Flag branch_taken = op->table_info->cf_type && op->oracle_info.dir == TAKEN;
+  if (branch_taken) {
     end_accumulate();
   }
 };
@@ -390,7 +393,13 @@ void recover_uop_cache(void) {
   } else {
     end_accumulate();
   }
-  cons_op_num = bp_recovery_info->recovery_op_num + 1;
+  // Ops may be decoded out of order: e.g. when a previous op is slowly getting 
+  // decoded, and the current op is (speculatively) fetched already-decoded from the uop cache.
+  // So, ops preceding the recovering op may not have called accumulate_op yet.
+  if (next_accum_op > bp_recovery_info->recovery_op_num) {
+    next_accum_op = bp_recovery_info->recovery_op_num + 1;
+    DEBUG(proc_id, "UOC recovery. next_accum_op reset to %llu\n", next_accum_op);
+  }
 }
 
 void init_pw_priority_list(void) {

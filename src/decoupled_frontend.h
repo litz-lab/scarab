@@ -76,8 +76,6 @@ extern "C" {
   decoupled_fe_iter* decoupled_fe_new_ftq_iter();
   /* Returns the Op at current FTQ iterator position. Returns NULL if the FTQ is empty */ 
   Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter);
-  /* Returns true if advanced, false if reached end of FTQ */
-  bool decoupled_fe_ftq_iter_advance(decoupled_fe_iter* iter);
 /* Returns iter offset from the start of the FTQ, this offset gets incremented
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */

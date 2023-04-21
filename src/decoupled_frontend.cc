@@ -294,18 +294,14 @@ decoupled_fe_iter* decoupled_fe_new_ftq_iter() {
 
 /* Returns the Op at current FTQ iterator position. Returns NULL if the FTQ is empty */ 
 Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter) {
-  if (iter->pos == df_ftq->size())
+  if (iter->pos == df_ftq->size()) {
+    if (!df_ftq->size())
+      ASSERT(set_proc_id, iter->pos == 0);
     return NULL;
+  }
   ASSERT(set_proc_id, iter->pos >= 0);
   ASSERT(set_proc_id, iter->pos < df_ftq->size());
   return df_ftq->at(iter->pos++).first;
-}
-
-/* Returns true if advanced, false if reached end of FTQ */
-bool decoupled_fe_ftq_iter_advance(decoupled_fe_iter* iter) {
-  if (iter->pos == df_ftq->size())
-    return false;
-  return true;
 }
 
 /* Returns iter offset from the start of the FTQ, this offset gets incremented

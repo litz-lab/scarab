@@ -102,7 +102,7 @@ void update_fdip() {
   Flag emit_new_prefetch = FALSE;
   FDIP_Break break_reason = BR_REACH_FTQ_END;
 
-  do {
+  while(true) {
     Op *op = decoupled_fe_ftq_iter_get(iter);
     if (!op) {
       if (!decoupled_fe_ftq_iter_offset(iter)) {
@@ -110,6 +110,7 @@ void update_fdip() {
         break_reason = BR_FTQ_EMPTY;
       } else {
         break_reason = BR_REACH_FTQ_END;
+        DEBUG(fdip_proc_id, "Break due to reaching FTQ end\n");
       }
       break;
     }
@@ -177,9 +178,7 @@ void update_fdip() {
       }
       last_line_addr = line_addr;
     }
-  } while (decoupled_fe_ftq_iter_advance(iter));
-  if (break_reason == BR_REACH_FTQ_END)
-    DEBUG(fdip_proc_id, "Break due to reaching FTQ end\n");
+  }
   STAT_EVENT(ic_ref->proc_id, FDIP_BREAK_REACH_FTQ_END + break_reason);
   DEBUG(fdip_proc_id, "FTQ size : %lu, FDIP prefetch offset : %lu\n", decoupled_fe_ftq_size(), decoupled_fe_ftq_iter_offset(iter));
   fdip_ftq_occupancy += decoupled_fe_ftq_iter_offset(iter);

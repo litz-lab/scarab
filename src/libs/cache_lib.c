@@ -33,6 +33,7 @@
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
+#include "frontend/frontend_intf.h"
 
 #include "core.param.h"
 #include "debug/debug.param.h"
@@ -238,6 +239,18 @@ void* cache_access(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl) {
       line_data = line->data;
     }
   }
+
+#ifdef ENABLE_PT_MEMTRACE
+  if (FRONTEND == FE_PT) {
+    if (!strcmp(cache->name, "DCACHE") && rand() % DCACHE_MISS_RATE == 0) {
+      line_data = NULL;
+    }
+    if (!strcmp(cache->name, "L1_CACHE") && rand() % L1_MISS_RATE == 0) {
+      line_data = NULL;
+    }
+  }
+#endif
+
   if (line_data)
     return line_data;
 

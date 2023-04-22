@@ -296,3 +296,5 @@ DEF_PARAM(fe_blocks_per_cycle, FE_BLOCKS_PER_CYCLE, uns, uns, 1, )
 DEF_PARAM(dumb_core_on, DUMB_CORE_ON, Flag, Flag, FALSE, )
 DEF_PARAM(dumb_core, DUMB_CORE, uns, uns, 1, )
 
+DEF_PARAM(dcache_miss_rate, DCACHE_MISS_RATE, uns, uns, 10, )
+DEF_PARAM(l1_miss_rate, L1_MISS_RATE, uns, uns, 10, )

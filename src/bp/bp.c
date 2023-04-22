@@ -77,7 +77,7 @@ extern void tc_do_stat(Op*, Flag);
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_BP, ##args)
 #define DEBUG_BTB(proc_id, args...) _DEBUG(proc_id, DEBUG_BTB, ##args)
 /* Adapt when changing stats */
-#define NUM_BR_STATS 30
+#define NUM_BR_STATS 31
 
 /******************************************************************************/
 /* Global Variables */
@@ -819,13 +819,12 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       if(!op->off_path)
         STAT_EVENT(op->proc_id, CF_RET_USED_TARGET_CORRECT +
                                   (pred_target != op->oracle_info.npc));
-      //printf("pred tart %llx npc %llx\n", pred_target, op->oracle_info.npc);
       if (pred_target == 0) { //RAS Underflow
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = TRUE;
         op->oracle_info.pred_npc = pc_plus_offset;
         op->oracle_info.pred = NOT_TAKEN;
-        STAT_EVENT(op->proc_id, RET_RECOVER + op->off_path * NUM_BR_STATS);
+        STAT_EVENT(op->proc_id, RET_RECOVER_UFLOW + op->off_path * NUM_BR_STATS);
       }
       else if (pred_target != op->oracle_info.npc) {
         op->oracle_info.recover_at_decode = FALSE;

@@ -595,7 +595,8 @@ DEF_STAT(  ICO_CORRECT,                      DIST, NO_RATIO  )
 DEF_STAT(  ICO_RECOVER,                      DIST, NO_RATIO  )
 
 DEF_STAT(  RET_CORRECT,                      DIST, NO_RATIO  )
-DEF_STAT(  RET_RECOVER,                      DIST, NO_RATIO  )
+DEF_STAT(  RET_RECOVER,                      COUNT, NO_RATIO  )
+DEF_STAT(  RET_RECOVER_UFLOW,                DIST, NO_RATIO  )
 
 DEF_STAT(  CALL_CORRECT,                     DIST, NO_RATIO  )
 DEF_STAT(  CALL_RECOVER,                     DIST, NO_RATIO  )
@@ -634,10 +635,12 @@ DEF_STAT(  ICO_CORRECT_OFF_PATH,                      DIST, NO_RATIO  )
 DEF_STAT(  ICO_RECOVER_OFF_PATH,                      DIST, NO_RATIO  )
 
 DEF_STAT(  RET_CORRECT_OFF_PATH,                      DIST, NO_RATIO  )
-DEF_STAT(  RET_RECOVER_OFF_PATH,                      DIST, NO_RATIO  )
+DEF_STAT(  RET_RECOVER_OFF_PATH,                      COUNT, NO_RATIO  )
+DEF_STAT(  RET_RECOVER_UFLOW_OFF_PATH,                DIST, NO_RATIO  )
 
 DEF_STAT(  CALL_CORRECT_OFF_PATH,                     DIST, NO_RATIO  )
 DEF_STAT(  CALL_RECOVER_OFF_PATH,                     DIST, NO_RATIO  )
+DEF_STAT(  CALL_RECOVER_UFLOW_OFF_PATH,               DIST, NO_RATIO  )
 
 DEF_STAT(  BTB_CORRECT_OFF_PATH,                      DIST, NO_RATIO  )
 DEF_STAT(  BTB_INCORRECT_BUT_TARGET_CORRECT_OFF_PATH, COUNT, NO_RATIO  )

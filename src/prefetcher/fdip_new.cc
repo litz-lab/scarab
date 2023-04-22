@@ -103,7 +103,8 @@ void update_fdip() {
   FDIP_Break break_reason = BR_REACH_FTQ_END;
 
   while(true) {
-    Op *op = decoupled_fe_ftq_iter_get(iter);
+    bool end_of_block;
+    Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block);
     if (!op) {
       if (!decoupled_fe_ftq_iter_offset(iter)) {
         DEBUG(fdip_proc_id, "Break due to FTQ Empty\n");

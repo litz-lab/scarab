@@ -74,8 +74,9 @@ extern "C" {
   void decoupled_fe_return_op(Op *op);
   // FTQ API
   decoupled_fe_iter* decoupled_fe_new_ftq_iter();
-  /* Returns the Op at current FTQ iterator position. Returns NULL if the FTQ is empty */ 
-  Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter);
+  /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached
+     if end_of_block is true the Op is the last one in a fetch block (cache-line boundary of taken branch)*/
+  Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter, bool *end_of_block);
 /* Returns iter offset from the start of the FTQ, this offset gets incremented
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */

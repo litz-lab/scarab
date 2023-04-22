@@ -293,7 +293,7 @@ decoupled_fe_iter* decoupled_fe_new_ftq_iter() {
 }
 
 /* Returns the Op at current FTQ iterator position. Returns NULL if the FTQ is empty */ 
-Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter) {
+Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter, bool *end_of_block) {
   if (iter->pos == df_ftq->size()) {
     if (!df_ftq->size())
       ASSERT(set_proc_id, iter->pos == 0);
@@ -301,6 +301,7 @@ Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter) {
   }
   ASSERT(set_proc_id, iter->pos >= 0);
   ASSERT(set_proc_id, iter->pos < df_ftq->size());
+  *end_of_block = df_ftq->at(iter->pos).second;
   return df_ftq->at(iter->pos++).first;
 }
 

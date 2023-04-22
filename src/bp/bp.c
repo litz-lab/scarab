@@ -1022,10 +1022,10 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
             (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL)) {
     // For indirects we want to update the BTB if the target changes, even on btb hit
     Addr line_addr;
-    Addr * btb_entry = (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, TRUE);
+    Addr * btb_entry = (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, FALSE);
     ASSERT(bp_data->proc_id, btb_entry);
     // ASSERT(bp_data->proc_id, *btb_entry != op->oracle_info.target);
-    *btb_entry = op->oracle_info.target;
+    bp_data->bp_btb->update_func(bp_data, op);
   }
 
   // special case updates

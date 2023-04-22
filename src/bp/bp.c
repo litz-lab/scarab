@@ -181,7 +181,8 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op,
 
 void inc_bstat_fetched(Op* op) {
   Flag new_entry;
-  Per_Branch_Stat* bstat = (Per_Branch_Stat*) hash_table_access_create(&per_branch_stat, op->inst_info->addr, &new_entry);
+  int64 key = convert_to_cmp_addr(op->table_info->cf_type, op->inst_info->addr);
+  Per_Branch_Stat* bstat = (Per_Branch_Stat*) hash_table_access_create(&per_branch_stat, key, &new_entry);
   if (new_entry) {
     memset(bstat, 0, sizeof(*bstat));
     bstat->addr = op->inst_info->addr;
@@ -210,7 +211,8 @@ void inc_bstat_fetched(Op* op) {
 }
 
 void inc_bstat_miss(Op* op, Flag uc_hit) {
-  Per_Branch_Stat* bstat = (Per_Branch_Stat*) hash_table_access(&per_branch_stat, op->inst_info->addr);
+  int64 key = convert_to_cmp_addr(op->table_info->cf_type, op->inst_info->addr);
+  Per_Branch_Stat* bstat = (Per_Branch_Stat*) hash_table_access(&per_branch_stat, key);
   ASSERT(bp_recovery_info->proc_id, bstat);
 
   const uns8 mispred = (op->table_info->cf_type == CF_CBR) && !op->oracle_info.btb_miss;

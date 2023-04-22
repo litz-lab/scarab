@@ -90,14 +90,14 @@ std::ostream& operator<<(std::ostream& os, const std::list<Entry>& list) {
 }
 
 
-static inline Cpp_Cache get_cache(char* name) {
+static inline Cpp_Cache* get_cache(char* name) {
   std::string key = name;
-  return cache_map.at(key);
+  return &cache_map.at(key);
 }
 
 // returns the set index of the addr within this cache.
 uns cpp_cache_index(char* name, Addr addr, Addr* tag, Addr* line_addr) {
-  return get_cache(name).index(addr, tag, line_addr);
+  return get_cache(name)->index(addr, tag, line_addr);
 }
 
 void cpp_cache_create(char* name, uns num_lines, uns assoc, uns line_bytes,
@@ -111,16 +111,14 @@ void cpp_cache_create(char* name, uns num_lines, uns assoc, uns line_bytes,
 
 // Insert into cache, returning a void* for the callee to fill with data
 void* cpp_cache_insert(char* name, Addr addr, int lines_used, Flag priority) {
-  Cpp_Cache cache     = get_cache(name);
-  void*     line_data = cache.insert(addr, lines_used, priority == TRUE);
-  cache_map.at(std::string(name)) = cache;
+  Cpp_Cache* cache     = get_cache(name);
+  void*     line_data = cache->insert(addr, lines_used, priority == TRUE);
   return line_data;
 }
 
 void* cpp_cache_access(char* name, Addr addr, Flag update_repl) {
-  Cpp_Cache cache                 = get_cache(name);
-  void*     line_data             = cache.access(addr, update_repl == TRUE);
-  cache_map.at(std::string(name)) = cache;
+  Cpp_Cache *cache                 = get_cache(name);
+  void*     line_data             = cache->access(addr, update_repl == TRUE);
   return line_data;
 }
 

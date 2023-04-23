@@ -103,7 +103,7 @@ void gen_stat_output_file(char* buf, uns8 proc_id, Stat* stat) {
   strncpy(buf, OUTPUT_DIR, MAX_STR_LENGTH);
   strncat(buf, "/", MAX_STR_LENGTH);
   strncat(buf, FILE_TAG, MAX_STR_LENGTH);
-  strncat(buf, temp, MAX_STR_LENGTH);
+  strncat(buf, temp, MAX_STR_LENGTH+1);
 }
 
 

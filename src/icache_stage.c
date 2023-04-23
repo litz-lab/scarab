@@ -1033,8 +1033,8 @@ void log_stats_mshr_hit(Addr line_addr) {
                                            QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
                                            &queue_entry, &ramulator_match);
   if (req && req->type == MRT_FDIPPRF) {
-    STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_ONPATH_BY_FDIP + icache_off_path());
     if (!req->hit_by_demand_load) {
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_ONPATH_BY_FDIP + icache_off_path());
       if (req->fdip_pref_off_path)
         STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_BY_FDIP_OFFPATH);
       else

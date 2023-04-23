@@ -1011,9 +1011,6 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, op->table_info->cf_type);
 
-  if(FDIP_ENABLE)
-    update_useful_lines(bp_data->proc_id, op);
-
   // if it was a btb miss, it is time to write it into the btb
   if(op->oracle_info.btb_miss && op->oracle_info.dir == TAKEN) {
     bp_data->bp_btb->update_func(bp_data, op);
@@ -1080,6 +1077,10 @@ void bp_retire_op(Bp_Data* bp_data, Op* op) {
   if(USE_LATE_BP) {
     bp_data->late_bp->retire_func(op);
   }
+
+  // TODO : verify this
+  /*if(FDIP_ENABLE)*/
+    /*update_useful_lines(bp_data->proc_id, op);*/
 }
 
 

@@ -16,6 +16,10 @@ extern "C" {
   void print_cl_info(uns proc_id);
   void inc_cnt_useful(uns proc_id, Addr line_addr, Flag icache_off_path);
   void inc_cnt_unuseful(uns proc_id, Addr line_addr, Flag icache_off_path);
+  void inc_useful_unuseful_2bit(uns proc_id, Addr line_addr);
+  void dec_useful_unuseful_2bit(uns proc_id, Addr line_addr);
+  void inc_useful_unuseful_3bit(uns proc_id, Addr line_addr);
+  void dec_useful_unuseful_3bit(uns proc_id, Addr line_addr);
   void inc_cnt_useful_ret(uns proc_id, Addr line_addr);
   void inc_icache_miss(uns proc_id, Addr line_addr);
   void inc_prefetched_cls(Addr line_addr);

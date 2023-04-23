@@ -159,11 +159,10 @@ void update_fdip() {
       }
 
       if (emit_new_prefetch && !mem_can_allocate_req_buffer(fdip_proc_id, MRT_FDIPPRF, FALSE)) {
+        // This rarely happens if mem_req_buffer_entries and ramulator_readq_entries are big enough.
+        // e.g. If FE_FTQ_BLOCK_NUM = 302, MEM_REQ_BUFFER_ENTRIES = 1024 and RAMULATOR_READQ_ENTRIES = 512 never cause this break.
         DEBUG(fdip_proc_id, "Break due to full mem_req buf\n");
         break_reason = BR_FULL_MEM_REQ_BUF;
-        //if (WARMUP && (operating_mode == SIMULATION_MODE) && (MEM_REQ_BUFFER_ENTRIES - MEM_REQ_BUFFER_PREF_WATERMARK > FE_FTQ_BLOCK_NUM + 1000))
-        if (MEM_REQ_BUFFER_ENTRIES - MEM_REQ_BUFFER_PREF_WATERMARK > FE_FTQ_BLOCK_NUM + 1000)
-          ASSERT(fdip_proc_id, false);
         break;
       }
       if (!line) { // create a mem request only if line doesn't exist. If the corresponding mem_req exists, it will merge.

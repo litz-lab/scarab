@@ -258,54 +258,20 @@ void print_cl_info(uns proc_id) {
   std::map<Addr, Counter>* prefetched_cls = &per_core_prefetched_cls[proc_id];
   std::map<Addr, Counter>* icache_miss = &per_core_icache_miss[proc_id];
 
-  DEBUG(proc_id, "============= cnt_useful ============== size: %lu\n", cnt_useful->size());
-  INC_STAT_EVENT(proc_id, FDIP_USEFUL_CACHELINES, cnt_useful->size());
-  DEBUG(proc_id, "%lu useful cache lines have not been learned\n", cnt_useful->size() - cnt_useful_ret->size());
-  DEBUG(proc_id, "%lu useful cache lines have not been prefetched\n", cnt_useful->size() - prefetched_cls->size());
-  for(std::unordered_map<Addr, std::pair<Counter, Counter>>::const_iterator it = cnt_useful->begin();
-        it != cnt_useful->end(); ++it) {
-    auto useful_ret_iter = cnt_useful_ret->find(it->first);
-    if (useful_ret_iter == cnt_useful_ret->end()) {
-      DEBUG(proc_id, "Useful 0x%llx has not been learned in hash - hit count : %llu\n", it->first, it->second);
-    }
-    auto prefetched_cl_iter = prefetched_cls->find(it->first);
-    if (prefetched_cl_iter == prefetched_cls->end() && it->second.first > 1) {
-      auto icache_miss_iter = icache_miss->find(it->first);
-      DEBUG(proc_id, "Useful 0x%llx has not been prefetched - hit count is greater than 1: %llu, miss count: %llu\n", it->first, it->second, (icache_miss_iter != icache_miss->end() ? icache_miss_iter->second : 0));
-      UNUSED(icache_miss_iter);
-    }
-  }
-  DEBUG(proc_id, "============= cnt_useful_ret ============= size: %lu\n", cnt_useful_ret->size());
-  DEBUG(proc_id, "%lu useful (retired) cache lines have not been prefetched\n", cnt_useful_ret->size() - prefetched_cls->size());
-  INC_STAT_EVENT(proc_id, FDIP_USEFUL_CACHELINES_RETIRED, cnt_useful_ret->size());
-  for(std::unordered_map<Addr, Counter>::const_iterator it = cnt_useful_ret->begin();
-    it != cnt_useful_ret->end(); ++it) {
-    auto prefetched_cl_iter = prefetched_cls->find(it->first);
-    if (prefetched_cl_iter == prefetched_cls->end() && it->second > (long long unsigned)1) {
-      DEBUG(proc_id, "Useful 0x%llx has not been prefetched ever - useful count is greater than 1: %llu\n", it->first, it->second);
-    }
-  }
-  DEBUG(proc_id, "============= cnt_unuseful ============== size: %lu\n", cnt_unuseful->size());
-  INC_STAT_EVENT(proc_id, FDIP_UNUSEFUL_CACHELINES, cnt_unuseful->size());
-  for(std::unordered_map<Addr, std::pair<Counter, Counter>>::const_iterator it = cnt_unuseful->begin();
-     it != cnt_unuseful->end(); ++it) {
-    DEBUG(proc_id, "0x%llx - %llu\n", it->first, it->second);
-    auto useful_iter = cnt_useful->find(it->first);
-    if (useful_iter != cnt_useful->end() && it->second >= useful_iter->second) {
-      DEBUG(proc_id, "useful count (%llu) is smaller\n", useful_iter->second);
-    }
-  }
-  DEBUG(proc_id, "============= icache miss cache lines ===== size: %lu\n", icache_miss->size());
+  DEBUG(proc_id, "cnt_useful (FDIP_USEFUL_PREFETCHES) size: %lu\n", cnt_useful->size());
+  INC_STAT_EVENT(proc_id, FDIP_USEFUL_PREFETCHES, cnt_useful->size());
+  DEBUG(proc_id, "cnt_useful_ret (USEFUL_CACHELINES_RETIRED) size: %lu\n", cnt_useful_ret->size());
+  INC_STAT_EVENT(proc_id, USEFUL_CACHELINES_RETIRED, cnt_useful_ret->size());
+  DEBUG(proc_id, "cnt_unuseful (FDIP_UNUSEFUL_PREFETCHES) size: %lu\n", cnt_unuseful->size());
+  INC_STAT_EVENT(proc_id, FDIP_UNUSEFUL_PREFETCHES, cnt_unuseful->size());
+  DEBUG(proc_id, "icache miss cache lines (UNIQUE_MISSED_LINES) size: %lu\n", icache_miss->size());
   INC_STAT_EVENT(proc_id, UNIQUE_MISSED_LINES, icache_miss->size());
   std::multimap<Counter, Addr> icache_miss_sorted = flip_map(*icache_miss);
   for(std::multimap<Counter, Addr>::const_iterator it = icache_miss_sorted.begin();
       it != icache_miss_sorted.end(); ++it) {
-    auto useful_iter = cnt_useful->find(it->second);
-    DEBUG(proc_id, "[set %u] 0x%llx missed %llu times, hit %llu times\n", (uns)(it->second >> ic_ref->icache.shift_bits & ic_ref->icache.set_mask), it->second, it->first, (useful_iter != cnt_useful->end() ? useful_iter->second : 0));
-    UNUSED(useful_iter);
+    DEBUG(proc_id, "[set %u] 0x%llx missed %llu times\n", (uns)(it->second >> ic_ref->icache.shift_bits & ic_ref->icache.set_mask), it->second, it->first);
   }
-
-  DEBUG(proc_id, "============= unique prefetched lines ===== size: %lu\n", prefetched_cls->size());
+  DEBUG(proc_id, "unique prefetched lines (UNIQUE_PREFETCHED_LINES) size: %lu\n", prefetched_cls->size());
   INC_STAT_EVENT(proc_id, UNIQUE_PREFETCHED_LINES, prefetched_cls->size());
   std::multimap<Counter, Addr> prefetched_cls_sorted = flip_map(*prefetched_cls);
   for(std::multimap<Counter, Addr>::const_iterator it = prefetched_cls_sorted.begin();

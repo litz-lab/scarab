@@ -1,6 +1,7 @@
 #include "decoupled_frontend.h"
 #include "prefetcher/fdip_new.h"
 #include "libs/bloom_filter.hpp"
+#include "sim.h"
 
 extern "C" {
 #include "op.h"
@@ -16,7 +17,7 @@ extern "C" {
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FDIP, ##args)
 
 decoupled_fe_iter* iter;
-const int MAX_PREF_CYC = 2;
+const int MAX_FTQ_ENTRY_CYC = 2;
 Addr last_line_addr = 0;
 int fdip_proc_id;
 Icache_Stage *ic_ref;
@@ -25,7 +26,7 @@ Op *cur_op = NULL;
 typedef enum FDIP_BREAK_enum {
   BR_REACH_FTQ_END,
   BR_FTQ_EMPTY,
-  BR_MAX_PREF_CYC,
+  BR_MAX_FTQ_ENTRY_CYC,
   BR_FULL_MEM_REQ_BUF,
 } FDIP_Break;
 
@@ -98,7 +99,7 @@ void update_fdip() {
   if (!FDIP_ENABLE)
     return;
 
-  int prefetch_per_cycle = 0;
+  int ftq_entry_per_cycle = 0;
   Flag emit_new_prefetch = FALSE;
   FDIP_Break break_reason = BR_REACH_FTQ_END;
 
@@ -115,9 +116,9 @@ void update_fdip() {
       }
       break;
     }
-    if (prefetch_per_cycle == MAX_PREF_CYC) {
-      DEBUG(fdip_proc_id, "Break due to max prefetches per cycle\n");
-      break_reason = BR_MAX_PREF_CYC;
+    if (ftq_entry_per_cycle == MAX_FTQ_ENTRY_CYC) {
+      DEBUG(fdip_proc_id, "Break due to max FTQ entries per cycle\n");
+      break_reason = BR_MAX_FTQ_ENTRY_CYC;
       break;
     }
     if (op->op_num == 0)
@@ -160,6 +161,9 @@ void update_fdip() {
       if (emit_new_prefetch && !mem_can_allocate_req_buffer(fdip_proc_id, MRT_FDIPPRF, FALSE)) {
         DEBUG(fdip_proc_id, "Break due to full mem_req buf\n");
         break_reason = BR_FULL_MEM_REQ_BUF;
+        //if (WARMUP && (operating_mode == SIMULATION_MODE) && (MEM_REQ_BUFFER_ENTRIES - MEM_REQ_BUFFER_PREF_WATERMARK > FE_FTQ_BLOCK_NUM + 1000))
+        if (MEM_REQ_BUFFER_ENTRIES - MEM_REQ_BUFFER_PREF_WATERMARK > FE_FTQ_BLOCK_NUM + 1000)
+          ASSERT(fdip_proc_id, false);
         break;
       }
       if (!line) { // create a mem request only if line doesn't exist. If the corresponding mem_req exists, it will merge.
@@ -170,14 +174,17 @@ void update_fdip() {
         ASSERT(fdip_proc_id, success);
         if (success == Mem_Queue_Req_Result::SUCCESS_NEW) {
           STAT_EVENT(ic_ref->proc_id, FDIP_NEW_PREFETCHES_ONPATH + op->off_path);
-          DEBUG(fdip_proc_id, "Success to emit a new prefetch for %llx, prefetch_per_cycle: %d\n", line_addr, prefetch_per_cycle + 1);
+          DEBUG(fdip_proc_id, "Success to emit a new prefetch for %llx\n", line_addr);
         } else if (success == Mem_Queue_Req_Result::SUCCESS_MERGED) {
           STAT_EVENT(ic_ref->proc_id, FDIP_PREF_MSHR_PROBE_HIT_ONPATH + op->off_path);
-          DEBUG(fdip_proc_id, "Success to merge a prefetch for %llx, prefetch_per_cycle: %d\n", line_addr, prefetch_per_cycle + 1);
+          DEBUG(fdip_proc_id, "Success to merge a prefetch for %llx\n", line_addr);
         }
-        prefetch_per_cycle++;
       }
       last_line_addr = line_addr;
+    }
+    if (end_of_block) {
+      ftq_entry_per_cycle++;
+      DEBUG(fdip_proc_id, "End of block - ftq_entry_per_cycle: %d\n", ftq_entry_per_cycle);
     }
   }
   STAT_EVENT(ic_ref->proc_id, FDIP_BREAK_REACH_FTQ_END + break_reason);

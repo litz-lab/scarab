@@ -3212,8 +3212,6 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
 Flag mem_can_allocate_req_buffer(uns proc_id, Mem_Req_Type type,
                                  Flag for_l1_writeback) {
   Counter watermark = MEM_REQ_BUFFER_PREF_WATERMARK;
-  if(type == MRT_UOCPRF || type == MRT_FDIPPRF)
-    watermark += 1;
 
   if(type == MRT_IPRF || type == MRT_DPRF || type == MRT_UOCPRF || type == MRT_FDIPPRF) {
     if(PRIVATE_MSHR_ON &&

@@ -28,6 +28,12 @@ extern "C" {
 std::deque<Stage_Data*> q {};
 std::deque<Stage_Data*> free_sds {};
 
+Counter last_recovery_cycle {};
+Counter last_recovery_pw {};
+std::size_t prev_q_size {};
+
+static inline void update_uop_queue_fill_time_stat(void);
+
 void init_uop_queue_stage() {
   for (uns ii = 0; ii < UOP_QUEUE_STAGE_LENGTH; ii++) {
     Stage_Data* sd = (Stage_Data*)calloc(1, sizeof(Stage_Data));
@@ -37,15 +43,26 @@ void init_uop_queue_stage() {
     sd->ops = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
     free_sds.push_back(sd);
   }
+
+  for (int cap_measured = 0; cap_measured < UOP_QUEUE_CAPACITY_MAX_MEASURED; cap_measured++) {
+    char pw_list_label[] = "PWs to fill uop queue to size";
+    char cycle_list_label[] = "Cycles to fill uop queue to size";
+    init_list(&uop_queue_fill_time.time_for_size[cap_measured].pws, pw_list_label,
+              sizeof(Counter), FALSE);
+    init_list(&uop_queue_fill_time.time_for_size[cap_measured].cycles, cycle_list_label,
+              sizeof(Counter), FALSE);
+  }
 }
 
 // Get ops from the uop cache.
 void update_uop_queue_stage(Stage_Data* src_sd) {
   // If the front of the queue was consumed, remove that stage.
-  while (q.size() && q.front()->op_count == 0) {
+  if (q.size() && q.front()->op_count == 0) {
     free_sds.push_back(q.front());
     q.pop_front();
+    ASSERT(0, !q.size() || q.front()->op_count > 0);  // Only one stage is consumed per cycle
   }
+  update_uop_queue_fill_time_stat(); // gets updated the cycle after the size changes
 
   // Check if ops are from the uop cache.
   if (src_sd->op_count == 0 || !src_sd->ops[0]->fetched_from_uop_cache) {
@@ -94,6 +111,10 @@ void recover_uop_queue_stage(void) {
       ++it;
     }
   }
+  // TODO(peterbraun): This ignores effect of fetch barriers.
+  last_recovery_cycle = cycle_count;
+  last_recovery_pw = 0;
+  prev_q_size = 0;
 }
 
 Stage_Data* uop_queue_stage_get_latest_sd(void) {
@@ -106,4 +127,17 @@ Stage_Data* uop_queue_stage_get_latest_sd(void) {
 
 int get_uop_queue_stage_length(void) {
   return q.size();
+}
+
+// This is called each cycle. If size increased, log the time.
+void update_uop_queue_fill_time_stat() {
+  if (q.size() > prev_q_size) {
+    prev_q_size = q.size();
+    if (q.size() <= UOP_QUEUE_CAPACITY_MAX_MEASURED) {
+      Counter* new_cycle_entry = static_cast<Counter*>(sl_list_add_tail(&uop_queue_fill_time.time_for_size[q.size()-1].cycles));
+      *new_cycle_entry = cycle_count - last_recovery_cycle;
+      Counter* new_pw_entry = static_cast<Counter*>(sl_list_add_tail(&uop_queue_fill_time.time_for_size[q.size()-1].pws));
+      *new_pw_entry = pw_count - last_recovery_pw;
+    }
+  }
 }

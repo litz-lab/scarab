@@ -33,6 +33,7 @@
 
 #include <stdio.h>
 #include "globals/global_types.h"
+#include "statistics.h"
 
 #include "libs/hash_lib.h"
 
@@ -47,6 +48,7 @@ extern Counter  sim_time;
 extern Counter* uop_count;
 extern Counter* pret_inst_count;
 extern uns      operating_mode;
+extern Counter  pw_count;
 
 extern Counter* period_last_inst_count;
 extern Counter  period_last_cycle_count;
@@ -66,6 +68,7 @@ extern Flag frontend_gated;
 extern uns  num_fetched_lowconf_brs;
 
 extern Hash_Table per_branch_stat;
+extern Uop_Queue_Fill_Time uop_queue_fill_time;
 
 /**************************************************************************************/
 

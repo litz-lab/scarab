@@ -33,7 +33,7 @@
 #include "core.param.h"
 #include "general.param.h"
 #include "globals/global_defs.h"
-
+#include "libs/list_lib.h"
 
 /**************************************************************************************/
 /* Type Declarations */
@@ -89,6 +89,17 @@ typedef struct Stat_struct {
   Flag noreset;  // this stat does not get reset (name has prefix "NORESET")
 } Stat;
 
+
+#define UOP_QUEUE_CAPACITY_MAX_MEASURED 7
+typedef struct Uop_Queue_Fill_Time_For_Size_struct {
+  List pws;
+  List cycles;
+} Uop_Queue_Fill_Time_For_Size;
+
+// Index zero corresponds to filling queue to size 1
+typedef struct Uop_Queue_Fill_Time_struct {
+  Uop_Queue_Fill_Time_For_Size time_for_size[UOP_QUEUE_CAPACITY_MAX_MEASURED];
+} Uop_Queue_Fill_Time;
 
 /**************************************************************************************/
 /* Macros */

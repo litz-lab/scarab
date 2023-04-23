@@ -1018,23 +1018,17 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   if(op->oracle_info.btb_miss && op->oracle_info.dir == TAKEN) {
     bp_data->bp_btb->update_func(bp_data, op);
     STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_MISS);
-  } else if (op->oracle_info.ibp_miss && op->oracle_info.misfetch &&
-            (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL)) {
-    // For indirects we want to update the BTB if the target changes, even on btb hit
+  } else if (op->oracle_info.btb_miss == FALSE && op->oracle_info.dir == TAKEN) {
+    // For jitted CF we want to update the BTB if the target changes, even on btb hit
+    // or For indirects we want to update the BTB if the target changes, even on btb hit
+    // The detection relies on the target stored in the btb
     Addr line_addr;
     Addr * btb_entry = (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, FALSE);
-    ASSERT(bp_data->proc_id, btb_entry);
-    // ASSERT(bp_data->proc_id, *btb_entry != op->oracle_info.target);
-    bp_data->bp_btb->update_func(bp_data, op);
-  } else if (op->table_info->cf_type == CF_BR) {
-    // For jitted br we want to update the BTB if the target changes, even on btb hit
-    // the detection relies on the target stored in the btb
-    Addr line_addr;
-    Addr * btb_entry = (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, FALSE);
-    ASSERT(bp_data->proc_id, btb_entry);
-    if (*btb_entry != op->oracle_info.target) {
+    // The following assertion can fail (due to eviction?)
+    // ASSERT(bp_data->proc_id, btb_entry);
+    if (btb_entry && *btb_entry != op->oracle_info.target) {
       bp_data->bp_btb->update_func(bp_data, op);
-      STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_JITTED_BR);
+      STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_JITTED_NOT_CF + op->table_info->cf_type);
     }
   }
 

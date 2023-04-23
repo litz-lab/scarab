@@ -80,8 +80,6 @@ Pb_Data* ic_pb_data;  // cmp cne is fine for cmp now assuming homogeneous cmp
 // But decided to use array for future use
 
 Icache_Stage* ic = NULL;
-uns last_icache_miss_reason = IMISS_NOT_PREFETCHED;
-Counter last_recover_cycle = 0;
 
 extern Cmp_Model              cmp_model;
 extern Memory*                mem;
@@ -209,7 +207,6 @@ void reset_all_ops_icache_stage() {
 void recover_icache_stage() {
   Stage_Data* cur = &ic->sd;
   uns         ii;
-  last_recover_cycle = cycle_count;
 
   ASSERT(ic->proc_id, ic->proc_id == bp_recovery_info->proc_id);
   DEBUG(ic->proc_id,
@@ -444,8 +441,6 @@ void update_icache_stage() {
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
-          if (FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE)
-            inc_cnt_useful(ic->line_addr);
           STAT_EVENT(ic->proc_id, ICACHE_HIT);
           STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH + ic->off_path);
           if(WP_COLLECT_STATS) {
@@ -466,7 +461,7 @@ void update_icache_stage() {
       DEBUG(ic->proc_id, "Ifetch barrier: Waiting for miss \n");
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS, IC_ISSUE_WIDTH - 1);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
-      STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + last_icache_miss_reason);
+      STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + get_last_miss_reason(ic->proc_id));
     } break;
 
     case IC_WAIT_FOR_EMPTY_ROB: {
@@ -960,8 +955,8 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ONPATH_BY_FDIP);
     else
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_OFFPATH_BY_FDIP);
-    if(FDIP_ENABLE && !WARMUP && operating_mode == SIMULATION_MODE) {
-      inc_cnt_unuseful(*repl_line_addr);
+    if(operating_mode == SIMULATION_MODE) {
+      inc_cnt_unuseful(ic->proc_id, *repl_line_addr, icache_off_path());
       DEBUG_FDIP(ic->proc_id, "%llx is evicted\n", *repl_line_addr);
     }
   }
@@ -975,7 +970,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
   }
 
   if(FDIP_ENABLE && *repl_line_addr)
-    evict_prefetched_cls(*repl_line_addr);
+    evict_prefetched_cls(ic->proc_id, *repl_line_addr);
 }
 
 /**************************************************************************************/
@@ -1032,24 +1027,28 @@ void log_stats_mshr_hit(Addr line_addr) {
                                            QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
                                            QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
                                            &queue_entry, &ramulator_match);
-  if (req && req->type == MRT_FDIPPRF && !req->hit_by_demand_load) {
+  if (req && req->type == MRT_FDIPPRF) {
     STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);
-    if (req->fdip_pref_off_path)
-      STAT_EVENT(ic->proc_id, MSHR_HIT_OFFPATH_BY_FDIP);
-    else
-      STAT_EVENT(ic->proc_id, MSHR_HIT_ONPATH_BY_FDIP);
-    req->hit_by_demand_load = TRUE;
-    inc_cnt_useful(ic->line_addr);
+    if (!req->hit_by_demand_load) {
+      if (req->fdip_pref_off_path)
+        STAT_EVENT(ic->proc_id, MSHR_HIT_OFFPATH_BY_FDIP);
+      else
+        STAT_EVENT(ic->proc_id, MSHR_HIT_ONPATH_BY_FDIP);
+      req->hit_by_demand_load = TRUE;
+      if (operating_mode == SIMULATION_MODE)
+        inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
+    }
   }
   if (!req) {
-    inc_icache_miss(ic->line_addr);
-    last_icache_miss_reason = get_miss_reason(line_addr);
-    if (last_icache_miss_reason == IMISS_MSHR_HIT)
+    inc_icache_miss(ic->proc_id, ic->line_addr);
+    uns imiss_reason = get_miss_reason(ic->proc_id, line_addr);
+    if (imiss_reason == IMISS_MSHR_HIT)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);
-    else if (last_icache_miss_reason == IMISS_TOO_EARLY)
+    else if (imiss_reason == IMISS_TOO_EARLY)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED);
     else
       STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
+    set_last_miss_reason(ic->proc_id, imiss_reason);
   }
 }
 

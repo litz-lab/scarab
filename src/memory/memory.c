@@ -3161,8 +3161,8 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
 
   // If the original type has higher priority (IFETCH) and the new req has lower priority (FDIP), the new req type bit should be cleared if two requests are on the different path (one on path and one off path).
   if(req->type == MRT_IFETCH && type == MRT_FDIPPRF) {
-    if ((!req->off_path && fdip_off_path()) ||
-        (req->off_path && !fdip_off_path())) {
+    if ((!req->off_path && fdip_off_path(req->proc_id)) ||
+        (req->off_path && !fdip_off_path(req->proc_id))) {
       mem_req_clr_types(req, MRT_FDIPPRF);
       type_added = FALSE;
     }
@@ -3171,7 +3171,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
   // If the mem requests for the same FDIP type are on the different paths, give priority to the on-path one.
   if(req->off_path &&
       req->type == MRT_FDIPPRF && type == MRT_FDIPPRF &&
-      !fdip_off_path()) {
+      !fdip_off_path(req->proc_id)) {
     req->off_path           = FALSE;
     req->off_path_confirmed = FALSE;
   }
@@ -3581,7 +3581,7 @@ static void mem_init_new_req(
     new_req->off_path = TRUE;
   // All oracle (correct-path) prefetches are on path.
   if (((new_req->type == MRT_UOCPRF && !UOC_ORACLE_PREF) || new_req->type == MRT_FDIPPRF) &&
-      fdip_off_path())
+      fdip_off_path(proc_id))
     new_req->off_path = TRUE;
 
   STAT_EVENT(proc_id, MEM_REQ_INIT_IFETCH + type);
@@ -3930,7 +3930,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size,
   new_req->bw_prefetch   = (pref_info ? pref_info->bw_limited : FALSE);
   new_req->destination   = destination;
   if (type == MRT_FDIPPRF) {
-    if (fdip_off_path())
+    if (fdip_off_path(proc_id))
       new_req->fdip_pref_off_path = TRUE;
     else
       new_req->fdip_pref_off_path = FALSE;

@@ -20,6 +20,8 @@ std::vector<uint64_t> per_core_recovery_addr;
 std::vector<uint64_t> per_core_redirect_cycle;
 std::vector<bool> per_core_stalled;
 std::vector<uint64_t> per_core_block_count;
+std::vector<uint64_t> per_core_ftq_block_num;
+extern std::vector<Counter> per_core_last_recover_cycle;
 
 //per_core pointers
 std::deque<std::pair<Op*,bool>> *df_ftq;
@@ -41,6 +43,7 @@ void alloc_mem_decoupled_fe(uns numCores) {
   per_core_redirect_cycle.resize(numCores);
   per_core_stalled.resize(numCores);
   per_core_block_count.resize(numCores);
+  per_core_ftq_block_num.resize(numCores);
 }
 
 void init_decoupled_fe(uns proc_id, const char*) {
@@ -56,6 +59,7 @@ void init_decoupled_fe(uns proc_id, const char*) {
   per_core_recovery_addr[proc_id] = 0;
   per_core_redirect_cycle[proc_id] = 0;
   per_core_block_count[proc_id] = 0;
+  per_core_ftq_block_num[proc_id] = FE_FTQ_BLOCK_NUM;
 
 }
 
@@ -65,6 +69,7 @@ void set_decoupled_fe(int proc_id) {
   off_path = &(per_core_off_path.data()[proc_id]);
   sched_off_path = &(per_core_sched_off_path.data()[proc_id]);
   ftq_iterator = &(per_core_ftq_iterators.data()[proc_id]);
+  set_proc_id = proc_id;
 }
 
 
@@ -75,6 +80,7 @@ void recover_decoupled_fe(int proc_id) {
   per_core_sched_off_path[proc_id] = false;
   per_core_recovery_addr[proc_id] = bp_recovery_info->recovery_fetch_addr;
   per_core_block_count[proc_id] = 0;
+  per_core_last_recover_cycle[proc_id] = cycle_count;
 
   for (auto it = per_core_ftq[proc_id].begin(); it != per_core_ftq[proc_id].end(); it++) {
     free_op(it->first);
@@ -131,7 +137,7 @@ void update_decoupled_fe() {
     STAT_EVENT(set_proc_id, FTQ_CYCLES_ONPATH);
 
   while(1) {
-    if (per_core_block_count[set_proc_id] >= FE_FTQ_BLOCK_NUM) {
+    if (per_core_block_count[set_proc_id] >= per_core_ftq_block_num[set_proc_id]) {
       DEBUG(set_proc_id, "Break due to full FTQ\n");
       if (*off_path)
         STAT_EVENT(set_proc_id, FTQ_BREAK_FULL_BLOCK_OFFPATH);

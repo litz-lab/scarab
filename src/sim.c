@@ -726,11 +726,9 @@ void full_sim() {
       if(!sim_done[proc_id] && (retired_exit[proc_id] || reachedInstLimit)) {
         if(model->per_core_done_func)
           model->per_core_done_func(proc_id);
-        if(proc_id == 0) {
-          if(FDIP_ENABLE) {
-            print_cl_info();
-            INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY, get_fdip_ftq_occupancy());
-          }
+        if(FDIP_ENABLE) {
+          print_cl_info(proc_id);
+          INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY, get_fdip_ftq_occupancy(proc_id));
         }
         if (PERIODIC_DUMP == FALSE) {
           dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);

@@ -1012,7 +1012,7 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, op->table_info->cf_type);
 
   if(FDIP_ENABLE)
-    update_useful_lines(op);
+    update_useful_lines(bp_data->proc_id, op);
 
   // if it was a btb miss, it is time to write it into the btb
   if(op->oracle_info.btb_miss && op->oracle_info.dir == TAKEN) {

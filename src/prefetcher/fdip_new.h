@@ -8,22 +8,25 @@ extern "C" {
 
   #include "icache_stage.h"
 
-  void init_fdip();
+  void alloc_mem_fdip(uns numProcs);
+  void init_fdip(uns proc_id);
   void update_fdip();
   void set_fdip(int _proc_id, Icache_Stage *_ic);
-  Flag fdip_off_path(void);
-  void print_cl_info(void);
-  void inc_cnt_useful(Addr line_addr);
-  void inc_cnt_unuseful(Addr line_addr);
-  void inc_cnt_useful_ret(Addr line_addr);
-  void inc_icache_miss(Addr line_addr);
+  Flag fdip_off_path(uns proc_id);
+  void print_cl_info(uns proc_id);
+  void inc_cnt_useful(uns proc_id, Addr line_addr, Flag icache_off_path);
+  void inc_cnt_unuseful(uns proc_id, Addr line_addr, Flag icache_off_path);
+  void inc_cnt_useful_ret(uns proc_id, Addr line_addr);
+  void inc_icache_miss(uns proc_id, Addr line_addr);
   void inc_prefetched_cls(Addr line_addr);
   void probe_prefetched_cls(Addr line_addr);
-  void evict_prefetched_cls(Addr line_addr);
-  uns get_miss_reason(Addr line_addr);
-  uint64_t get_fdip_ftq_occupancy(void);
+  void evict_prefetched_cls(uns proc_id, Addr line_addr);
+  uns get_miss_reason(uns proc_id, Addr line_addr);
+  uns get_last_miss_reason(uns proc_id);
+  void set_last_miss_reason(uns proc_id, uns reason);
+  uint64_t get_fdip_ftq_occupancy(uns proc_id);
   Flag determine_usefulness(Addr line_addr);
-  void update_useful_lines(Op* op);
+  void update_useful_lines(uns proc_id, Op* op);
   
 #ifdef __cplusplus
 }

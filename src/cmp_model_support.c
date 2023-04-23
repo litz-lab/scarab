@@ -62,6 +62,7 @@ void cmp_init_cmp_model() {
   cmp_model.dcache_stage = (Dcache_Stage*)malloc(sizeof(Dcache_Stage) *
                                                  NUM_CORES);
   alloc_mem_decoupled_fe(NUM_CORES);
+  alloc_mem_fdip(NUM_CORES);
 }
 
 

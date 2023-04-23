@@ -643,7 +643,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
       ic->off_path = ic->off_path || op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec;
 
       // Measuring basic block lengths
-      static int bbl_len = 0;
+      /*static int bbl_len = 0;
       static int bbl_len_dont_end_pred_nt = 0;
       bbl_len++;
       bbl_len_dont_end_pred_nt++;
@@ -654,7 +654,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
           STAT_EVENT(ic->proc_id, BBL_DONT_END_PRED_NT_LENGTH_1 + bbl_len_dont_end_pred_nt-1);
           bbl_len_dont_end_pred_nt = 0;
         }
-      }
+      }*/
 
       /* if it's a taken branch, wait for timer */
       if(FETCH_BREAK_ON_TAKEN && op->oracle_info.pred &&

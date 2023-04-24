@@ -113,8 +113,8 @@ void recover_uop_queue_stage(void) {
   }
   // TODO(peterbraun): This ignores effect of fetch barriers.
   last_recovery_cycle = cycle_count;
-  last_recovery_pw = 0;
-  prev_q_size = 0;
+  last_recovery_pw = pw_count;
+  prev_q_size = 0;  // This triggers the stat logging if the queue is not fully flushed
 }
 
 Stage_Data* uop_queue_stage_get_latest_sd(void) {

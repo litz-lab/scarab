@@ -70,6 +70,7 @@ Flag uoc_prefetching_enabled;
 
 Addr addr_following_resteer_bf = 0;  // Addr that follows a resteer or fetch barrier
 Hash_Table priority_pws;
+Flag uop_cache_insert_enable = TRUE;
 
 /**************************************************************************************/
 /* init_uop_cache */
@@ -170,6 +171,9 @@ Flag insert_uop_cache() {
     success = TRUE;
   } else if (INF_SIZE_UOP_CACHE_PW_SIZE_LIM 
             && accumulating_pw.n_uops > INF_SIZE_UOP_CACHE_PW_SIZE_LIM) {
+    success = FALSE;
+  } else if (UOP_CACHE_INSERT_ONLY_AFTER_RESTEER_UOP_QUEUE_NOT_FULL
+             && !uop_cache_insert_enable) {
     success = FALSE;
   } else {
     success = pw_insert(accumulating_pw);
@@ -403,6 +407,9 @@ void recover_uop_cache(void) {
     next_accum_op = bp_recovery_info->recovery_op_num + 1;
     DEBUG(proc_id, "UOC recovery. next_accum_op reset to %llu\n", next_accum_op);
   }
+  if (UOP_CACHE_INSERT_ONLY_AFTER_RESTEER_UOP_QUEUE_NOT_FULL && get_uop_queue_stage_length() < UOP_QUEUE_LENGTH) {
+    set_uop_cache_insert_enable(TRUE);
+  }
 }
 
 void init_pw_priority_list(void) {
@@ -425,4 +432,8 @@ void init_pw_priority_list(void) {
     if(num_priority_pws >= NUM_PRIORITY_PWS)
       break;
   }
+}
+
+void set_uop_cache_insert_enable(Flag new_val) {
+  uop_cache_insert_enable = new_val;
 }

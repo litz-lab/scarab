@@ -204,7 +204,6 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
       uoc_data->used += 1;
       cur_pw = *uoc_data;
       pw_count++;
-      cycle_count++;
       DEBUG(ic->proc_id, "UOC hit (new PW). addr=0x%llx, set=%u\n",
             search_addr, cpp_cache_index(UOP_CACHE_NAME, search_addr, &line_addr, &line_addr));
     } else if (update_repl) {

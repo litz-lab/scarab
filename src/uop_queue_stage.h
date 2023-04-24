@@ -19,7 +19,7 @@ void recover_uop_queue_stage(void);
 Stage_Data* uop_queue_stage_get_latest_sd(void);
 // Returns length of queue in terms of number of stages
 int get_uop_queue_stage_length(void);
-void inc_unique_pws_since_recovery(Addr pw_addr);
+void stat_event_new_pw_accessed(Uop_Cache_Data* pw);
 
 #ifdef __cplusplus
 }

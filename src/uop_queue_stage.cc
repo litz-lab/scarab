@@ -153,9 +153,10 @@ void update_uop_queue_fill_time_stat() {
   }
 }
 
-void inc_unique_pws_since_recovery(Addr pw_addr) {
+void stat_event_new_pw_accessed(Uop_Cache_Data* pw) {
+  pw_count++;
   Flag new_entry;
-  hash_table_access_create(&ht_unique_pws_since_recovery, pw_addr, &new_entry);
+  hash_table_access_create(&ht_unique_pws_since_recovery, pw->first, &new_entry);
   if (new_entry) {
     unique_pws_since_recovery++;
   }

@@ -31,6 +31,7 @@
 #include "icache_stage.h" //needed for get_pw_lookahead_buffer
 #include "uop_cache_prefetch_decoder.h"
 #include "libs/cpp_cache.h"
+#include "uop_queue_stage.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -204,6 +205,7 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
       uoc_data->used += 1;
       cur_pw = *uoc_data;
       pw_count++;
+      inc_unique_pws_since_recovery(cur_pw.first);
       DEBUG(ic->proc_id, "UOC hit (new PW). addr=0x%llx, set=%u\n",
             search_addr, cpp_cache_index(UOP_CACHE_NAME, search_addr, &line_addr, &line_addr));
     } else if (update_repl) {
@@ -296,6 +298,7 @@ void accumulate_op(Op* op) {
     cur_icache_line_addr = icache_line_addr;
     next_accum_op = op->op_num + 1;
     pw_count++;
+    inc_unique_pws_since_recovery(accumulating_pw.first);
   } else {
     ASSERT(0, op->op_num == next_accum_op);
     next_accum_op++;
@@ -312,6 +315,7 @@ void accumulate_op(Op* op) {
     // occurs when THIS fxn call drains the uop queue (insertion into uop cache)
     accumulating_pw.first = op->inst_info->addr;
     pw_count++;
+    inc_unique_pws_since_recovery(accumulating_pw.first);
   }
   uop_q[accumulating_pw.n_uops] = op;
   accumulating_pw.last = op->inst_info->addr;

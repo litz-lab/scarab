@@ -92,8 +92,9 @@ typedef struct Stat_struct {
 
 #define UOP_QUEUE_CAPACITY_MAX_MEASURED 7
 typedef struct Uop_Queue_Fill_Time_For_Size_struct {
-  List pws;
   List cycles;
+  List pws;
+  List unique_pws;
 } Uop_Queue_Fill_Time_For_Size;
 
 // Index zero corresponds to filling queue to size 1

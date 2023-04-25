@@ -1037,6 +1037,7 @@ void log_stats_mshr_hit(Addr line_addr) {
   Flag demand_hit_writeback = FALSE;
   Mem_Queue_Entry* queue_entry = NULL;
   Flag ramulator_match = FALSE;
+  Imiss_Reason imiss_reason = IMISS_MSHR_HIT;
   Mem_Req* req = mem_search_reqbuf_wrapper(ic->proc_id, line_addr,
                                            MRT_FDIPPRF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
                                            QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
@@ -1060,17 +1061,17 @@ void log_stats_mshr_hit(Addr line_addr) {
     }
     req->hit_by_demand_load = TRUE;
   }
+  inc_icache_miss(ic->proc_id, ic->line_addr);
   if (!req) {
-    inc_icache_miss(ic->proc_id, ic->line_addr);
-    uns imiss_reason = get_miss_reason(ic->proc_id, line_addr);
-    if (imiss_reason == IMISS_MSHR_HIT)
-      STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);
-    else if (imiss_reason == IMISS_TOO_EARLY)
+    imiss_reason = get_miss_reason(ic->proc_id, line_addr);
+    if (imiss_reason == IMISS_TOO_EARLY)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED);
     else
       STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
-    set_last_miss_reason(ic->proc_id, imiss_reason);
+  } else {
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);
   }
+  set_last_miss_reason(ic->proc_id, imiss_reason);
 }
 
 // Wrapper callback for any instruction memreq.

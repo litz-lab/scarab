@@ -437,7 +437,7 @@ uns get_miss_reason(uns proc_id, Addr line_addr) {
     ASSERT(proc_id, tmp_iter == per_core_prefetched_cls[proc_id].end());
     return Imiss_Reason::IMISS_NOT_PREFETCHED;
   }
-  if (cl_iter->second.first > per_core_last_recover_cycle[proc_id] && cl_iter->second.second > cl_iter->second.first) {
+  if (cl_iter->second.first >= per_core_last_recover_cycle[proc_id] && cl_iter->second.second > cl_iter->second.first) {
     DEBUG(proc_id, "%llx misses due to 'prefetched too early'\n", line_addr);
     return Imiss_Reason::IMISS_TOO_EARLY;
   }

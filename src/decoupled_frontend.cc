@@ -102,7 +102,7 @@ void recover_decoupled_fe(int proc_id) {
     // When the FTQ flushes, reset all iterators
     it->pos = 0;
   }
-  if (per_core_utility_timeliness_info[proc_id].adjust) {
+  if (FDIP_ADJUSTABLE_FTQ && per_core_utility_timeliness_info[proc_id].adjust) {
     double cur_utility_ratio = per_core_utility_timeliness_info[proc_id].utility_ratio;
     double cur_timeliness_ratio = per_core_utility_timeliness_info[proc_id].timeliness_ratio;
     if (FDIP_ADJUSTABLE_FTQ == 1) { // utility-based adjustment

@@ -39,6 +39,9 @@ typedef enum UTILITY_LEARN_POLICY_enum {
   LEARN_ON_OFF_USEFUL_UNUSEFUL_3BIT,
 } Utility_Learn_Policy;
 
+/* global variables for dynamic FTQ adjustment based on utility/timeliness study */
+std::vector<Utility_Timeliness_Info> per_core_utility_timeliness_info;
+
 /* global variables for utility study and stats */
 // for icache miss stats
 std::vector<uns> per_core_last_imiss_reason;
@@ -60,7 +63,7 @@ std::vector<std::map<Addr, Counter>> per_core_prefetched_cls;
 // <CL address, cyc_access_by_fdip, cyc_evicted_from_l1> - prefetched and access time information for timeliness analysis
 std::vector<std::unordered_map<Addr, std::pair<Counter, Counter>>> per_core_prefetched_cls_info;
 // accumulated FTQ occupancy every cycle
-std::vector<uint64_t> per_core_fdip_ftq_occupancy;
+std::vector<uint64_t> per_core_fdip_ftq_occupancy_ops;
 std::vector<Addr> per_core_last_cl_unuseful;
 std::vector<Addr> per_core_last_bbl_start_addr;
 // Utility cache
@@ -79,6 +82,8 @@ void alloc_mem_fdip(uns numCores) {
   per_core_cur_op.resize(numCores);
   per_core_ftq_iter.resize(numCores);
   per_core_last_line_addr.resize(numCores);
+  if (FDIP_ADJUSTABLE_FTQ)
+    per_core_utility_timeliness_info.resize(numCores);
   per_core_last_imiss_reason.resize(numCores);
   per_core_last_recover_cycle.resize(numCores);
   per_core_cnt_useful.resize(numCores);
@@ -89,7 +94,7 @@ void alloc_mem_fdip(uns numCores) {
   per_core_icache_miss.resize(numCores);
   per_core_prefetched_cls.resize(numCores);
   per_core_prefetched_cls_info.resize(numCores);
-  per_core_fdip_ftq_occupancy.resize(numCores);
+  per_core_fdip_ftq_occupancy_ops.resize(numCores);
   if (FDIP_UTILITY_HASH_ENABLE)
     ASSERT(fdip_proc_id, FDIP_UTILITY_LEARN_POLICY >= Utility_Learn_Policy::LEARN_ONLY_ONPATH_USEFUL &&
         FDIP_UTILITY_LEARN_POLICY <= Utility_Learn_Policy::LEARN_ON_OFF_USEFUL_UNUSEFUL_3BIT);
@@ -107,9 +112,11 @@ void alloc_mem_fdip(uns numCores) {
 void init_fdip(uns proc_id) {
   per_core_ftq_iter[proc_id] = decoupled_fe_new_ftq_iter();
   per_core_last_line_addr[proc_id] = 0;
+  if (FDIP_ADJUSTABLE_FTQ)
+    per_core_utility_timeliness_info[proc_id] = {0, 0, 0.0, 0, 0, 0.0, FALSE};
   per_core_last_imiss_reason[proc_id] = Imiss_Reason::IMISS_NOT_PREFETCHED;
   per_core_last_recover_cycle[proc_id] = 0;
-  per_core_fdip_ftq_occupancy[proc_id] = 0;
+  per_core_fdip_ftq_occupancy_ops[proc_id] = 0;
   if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
     per_core_last_cl_unuseful[proc_id] = 0;
     per_core_last_bbl_start_addr[proc_id] = 0;
@@ -244,8 +251,26 @@ void update_fdip() {
   }
   STAT_EVENT(ic_ref->proc_id, FDIP_BREAK_REACH_FTQ_END + break_reason);
   DEBUG(fdip_proc_id, "FTQ size : %lu, FDIP prefetch offset : %lu\n", decoupled_fe_ftq_num_ops(), decoupled_fe_ftq_iter_offset(iter));
+  if (FDIP_ADJUSTABLE_FTQ && cycle_count % FDIP_ADJUSTABLE_FTQ_CYC == 0) {
+    if (per_core_utility_timeliness_info[ic_ref->proc_id].unuseful_prefetches) {
+      per_core_utility_timeliness_info[ic_ref->proc_id].utility_ratio = (double)per_core_utility_timeliness_info[ic_ref->proc_id].useful_prefetches/((double)per_core_utility_timeliness_info[ic_ref->proc_id].useful_prefetches+(double)per_core_utility_timeliness_info[ic_ref->proc_id].unuseful_prefetches);
+      per_core_utility_timeliness_info[ic_ref->proc_id].adjust = TRUE;
+    }
+    per_core_utility_timeliness_info[ic_ref->proc_id].useful_prefetches = 0;
+    per_core_utility_timeliness_info[ic_ref->proc_id].unuseful_prefetches = 0;
+    DEBUG(fdip_proc_id, "Update utility ratio : %lf\n", per_core_utility_timeliness_info[ic_ref->proc_id].utility_ratio);
+    DEBUG(fdip_proc_id, "mshr_prefetch_hits : %llu, icache_prefetch_hits : %llu\n", per_core_utility_timeliness_info[ic_ref->proc_id].mshr_prefetch_hits, per_core_utility_timeliness_info[ic_ref->proc_id].icache_prefetch_hits);
+    if (per_core_utility_timeliness_info[ic_ref->proc_id].icache_prefetch_hits &&
+        (per_core_utility_timeliness_info[ic_ref->proc_id].icache_prefetch_hits + per_core_utility_timeliness_info[ic_ref->proc_id].mshr_prefetch_hits > 4)) { // do not adjust if there are too few samples?
+      per_core_utility_timeliness_info[ic_ref->proc_id].timeliness_ratio = (double)per_core_utility_timeliness_info[ic_ref->proc_id].mshr_prefetch_hits/((double)per_core_utility_timeliness_info[ic_ref->proc_id].mshr_prefetch_hits+(double)per_core_utility_timeliness_info[ic_ref->proc_id].icache_prefetch_hits);
+      per_core_utility_timeliness_info[ic_ref->proc_id].adjust = TRUE;
+    }
+    per_core_utility_timeliness_info[ic_ref->proc_id].mshr_prefetch_hits = 0;
+    per_core_utility_timeliness_info[ic_ref->proc_id].icache_prefetch_hits = 0;
+    DEBUG(fdip_proc_id, "Update timeliness ratio : %lf\n", per_core_utility_timeliness_info[ic_ref->proc_id].timeliness_ratio);
+  }
 
-  per_core_fdip_ftq_occupancy[ic_ref->proc_id] += decoupled_fe_ftq_iter_offset(iter);
+  per_core_fdip_ftq_occupancy_ops[ic_ref->proc_id] += decoupled_fe_ftq_iter_offset(iter);
 }
 
 Flag fdip_off_path(uns proc_id) {
@@ -429,7 +454,7 @@ void set_last_miss_reason(uns proc_id, uns reason) {
 }
 
 uint64_t get_fdip_ftq_occupancy(uns proc_id) {
-  return (uint64_t)per_core_fdip_ftq_occupancy[proc_id]/cycle_count;
+  return (uint64_t)per_core_fdip_ftq_occupancy_ops[proc_id]/cycle_count;
 }
 
 static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefetch) {
@@ -685,4 +710,22 @@ void update_useful_lines(uns proc_id, Op* op) {
   }
   per_core_last_bbl_start_addr[proc_id] = op->oracle_info.npc;
   DEBUG(proc_id, "last_bbl_start_addr: %llx\n", per_core_last_bbl_start_addr[proc_id]);
+}
+
+void inc_utility_info(uns proc_id, Flag useful) {
+  if (FDIP_ADJUSTABLE_FTQ != 1 && FDIP_ADJUSTABLE_FTQ != 3)
+    return;
+  if (useful)
+    per_core_utility_timeliness_info[proc_id].useful_prefetches++;
+  else
+    per_core_utility_timeliness_info[proc_id].unuseful_prefetches++;
+}
+
+void inc_timeliness_info(uns proc_id, Flag mshr_hit) {
+  if (FDIP_ADJUSTABLE_FTQ != 2 && FDIP_ADJUSTABLE_FTQ != 3)
+    return;
+  if (mshr_hit)
+    per_core_utility_timeliness_info[proc_id].mshr_prefetch_hits++;
+  else
+    per_core_utility_timeliness_info[proc_id].icache_prefetch_hits++;
 }

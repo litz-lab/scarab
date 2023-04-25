@@ -938,6 +938,9 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
       inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
     }
     if(line->FDIP_prefetch) {
+      inc_utility_info(ic->proc_id, TRUE);
+      if (!icache_off_path())
+        inc_timeliness_info(ic->proc_id, FALSE);
       STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH_BY_FDIP + icache_off_path());
       if(line->FDIP_prefetch == FDIP_ONPATH)
         STAT_EVENT(ic->proc_id, ICACHE_HIT_BY_FDIP_ONPATH);
@@ -966,6 +969,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
       DEBUG_FDIP(ic->proc_id, "%llx is evicted\n", *repl_line_addr);
     }
     if(line->FDIP_prefetch) {
+      inc_utility_info(ic->proc_id, FALSE);
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ONPATH_BY_FDIP + icache_off_path());
       if(line->FDIP_prefetch == FDIP_ONPATH)
         STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_BY_FDIP_ONPATH);
@@ -1045,6 +1049,9 @@ void log_stats_mshr_hit(Addr line_addr) {
       inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
     }
     if (req->type == MRT_FDIPPRF) {
+      inc_utility_info(ic->proc_id, TRUE);
+      if (!icache_off_path())
+        inc_timeliness_info(ic->proc_id, TRUE);
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_ONPATH_BY_FDIP + icache_off_path());
       if (req->fdip_pref_off_path)
         STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_BY_FDIP_OFFPATH);

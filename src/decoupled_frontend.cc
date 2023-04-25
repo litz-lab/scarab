@@ -3,13 +3,21 @@
 #include "op.h"
 #include "op_pool.h"
 #include "isa/isa_macros.h"
+#include "prefetcher/pref.param.h"
+#include "prefetcher/fdip_new.h"
 
 #include <deque>
 #include <vector>
 #include <iostream>
 #include <tuple>
+#include <cmath>
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
+
+// a threshold of utility ratio
+#define UTILITY_RATIO_THRESHOLD 0.73
+// a threshold of timeliness ratio
+#define TIMELINESS_RATIO_THRESHOLD 0.495
 
 std::vector<std::deque<std::pair<Op*, bool>>> per_core_ftq;
 std::vector<int> per_core_off_path;
@@ -22,6 +30,7 @@ std::vector<bool> per_core_stalled;
 std::vector<uint64_t> per_core_block_count;
 std::vector<uint64_t> per_core_ftq_block_num;
 extern std::vector<Counter> per_core_last_recover_cycle;
+extern std::vector<Utility_Timeliness_Info> per_core_utility_timeliness_info;
 
 //per_core pointers
 std::deque<std::pair<Op*,bool>> *df_ftq;
@@ -93,7 +102,30 @@ void recover_decoupled_fe(int proc_id) {
     // When the FTQ flushes, reset all iterators
     it->pos = 0;
   }
-  
+  if (per_core_utility_timeliness_info[proc_id].adjust) {
+    double cur_utility_ratio = per_core_utility_timeliness_info[proc_id].utility_ratio;
+    double cur_timeliness_ratio = per_core_utility_timeliness_info[proc_id].timeliness_ratio;
+    if (FDIP_ADJUSTABLE_FTQ == 1) { // utility-based adjustment
+      DEBUG(set_proc_id, "Current utility ratio : %lf, current FTQ block num : %lu\n", cur_utility_ratio, per_core_ftq_block_num[proc_id]);
+      if (cur_utility_ratio < UTILITY_RATIO_THRESHOLD)
+        per_core_ftq_block_num[proc_id] -= std::round(per_core_ftq_block_num[proc_id] * (UTILITY_RATIO_THRESHOLD - cur_utility_ratio));
+      else if (cur_utility_ratio > UTILITY_RATIO_THRESHOLD)
+        per_core_ftq_block_num[proc_id] += std::round(per_core_ftq_block_num[proc_id] * (cur_utility_ratio - UTILITY_RATIO_THRESHOLD));
+      DEBUG(set_proc_id, "New FTQ block num : %lu\n", per_core_ftq_block_num[proc_id]);
+      per_core_utility_timeliness_info[proc_id].adjust = FALSE;
+    } else if (FDIP_ADJUSTABLE_FTQ == 2) { // timeliness-based adjustment
+      DEBUG(set_proc_id, "Current timeliness ratio : %lf, current FTQ block num : %lu\n", cur_timeliness_ratio, per_core_ftq_block_num[proc_id]);
+      if (cur_timeliness_ratio < TIMELINESS_RATIO_THRESHOLD)
+        per_core_ftq_block_num[proc_id] -= std::round(per_core_ftq_block_num[proc_id] * (TIMELINESS_RATIO_THRESHOLD - cur_timeliness_ratio));
+      else if (cur_timeliness_ratio > TIMELINESS_RATIO_THRESHOLD)
+        per_core_ftq_block_num[proc_id] += std::round(per_core_ftq_block_num[proc_id] * (cur_timeliness_ratio - TIMELINESS_RATIO_THRESHOLD));
+      DEBUG(set_proc_id, "New FTQ block num : %lu\n", per_core_ftq_block_num[proc_id]);
+      per_core_utility_timeliness_info[proc_id].adjust = FALSE;
+    } else if (FDIP_ADJUSTABLE_FTQ == 3) { // combined method
+      // TODO
+    }
+  }
+
   auto op = bp_recovery_info->recovery_op;
 
   if(per_core_stalled[set_proc_id])

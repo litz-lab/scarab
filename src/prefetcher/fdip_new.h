@@ -31,6 +31,8 @@ extern "C" {
   uint64_t get_fdip_ftq_occupancy(uns proc_id);
   Flag determine_usefulness(Addr line_addr);
   void update_useful_lines(uns proc_id, Op* op);
+  void inc_utility_info(uns proc_id, Flag useful);
+  void inc_timeliness_info(uns proc_id, Flag mshr_hit);
   
 #ifdef __cplusplus
 }
@@ -47,5 +49,19 @@ typedef enum IC_FETCH_TYPE_enum {
   FDIP_ONPATH,
   FDIP_OFFPATH,
 } IC_Fetch_Type;
+
+typedef struct Utility_Timeliness_Info_struct {
+  // useful prefetch counter per 100,000 cycles
+  Counter useful_prefetches;
+  // unuseful prefetch counter per 100,000 cycles
+  Counter unuseful_prefetches;
+  double utility_ratio;
+  // MSHR prefetch hit counter per 100,000 cycles
+  Counter mshr_prefetch_hits;
+  // Icache prefetch hit counter per 100,000 cycles
+  Counter icache_prefetch_hits;
+  double timeliness_ratio;
+  Flag adjust;
+} Utility_Timeliness_Info;
 
 #endif

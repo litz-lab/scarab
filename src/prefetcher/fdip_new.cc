@@ -659,8 +659,7 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
 }
 
 Flag determine_usefulness(Addr line_addr) {
-  if ((!WARMUP && inst_count[fdip_proc_id] < FDIP_UTILITY_MIN_LEARNING_INST) ||
-      (WARMUP && inst_count[fdip_proc_id] < WARMUP + FDIP_UTILITY_MIN_LEARNING_INST))
+  if (operating_mode == SIMULATION_MODE && inst_count[fdip_proc_id] < FDIP_UTILITY_MIN_LEARNING_INST)
     return TRUE;
 
   Flag emit_new_prefetch = FALSE;

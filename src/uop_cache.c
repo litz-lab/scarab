@@ -138,7 +138,7 @@ Flag pw_insert(Uop_Cache_Data pw) {
                                                        priority, evicted_pws);
     *cur_line_data = pw;
     for (int i = 0; i < UOP_CACHE_ASSOC && evicted_pws[i]; i++) {
-      DEBUG(ic->proc_id, "Evicted PW%i: %llx\n", evicted_pws[i]);
+      DEBUG(ic->proc_id, "Evicted PW: %llx\n", evicted_pws[i]);
     }
     DEBUG(ic->proc_id,
           "PW inserted. off_path=%u, addr=0x%llx, set=%u, lines_needed=%i, "

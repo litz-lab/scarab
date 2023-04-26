@@ -71,6 +71,7 @@ Flag uoc_prefetching_enabled;
 Addr addr_following_resteer_bf = 0;  // Addr that follows a resteer or fetch barrier
 Hash_Table priority_pws;
 Flag uop_cache_insert_enable = TRUE;
+Flag make_accesses_priority = FALSE;  // Set priority bit on all accessed PWs
 
 /**************************************************************************************/
 /* init_uop_cache */
@@ -113,7 +114,7 @@ Flag pw_insert(Uop_Cache_Data pw) {
   if (lines_needed > UOP_CACHE_ASSOC) {
     STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_TOO_LONG + pw.prefetch);
     return FALSE;
-  } else if (cpp_cache_access(UOP_CACHE_NAME, pw.first, FALSE)) {
+  } else if (cpp_cache_access(UOP_CACHE_NAME, pw.first, FALSE, FALSE)) {
     STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_CACHE_HIT + pw.prefetch);
     return FALSE;
   } else {
@@ -125,7 +126,11 @@ Flag pw_insert(Uop_Cache_Data pw) {
     }
     DEBUG(ic->proc_id, "PW inserted. off_path=%u, addr=0x%llx, set=%u, lines_needed=%i\n",
           pw.first_op_offpath, pw.first, cpp_cache_index(UOP_CACHE_NAME, pw.first, &line_addr, &line_addr), lines_needed);
-    Flag priority = (UOP_CACHE_REPL == REPL_STICKY_PRIORITY_LINES) ? (hash_table_access(&priority_pws, pw.first) != NULL) : FALSE;
+    Flag first_sticky_line = (UOP_CACHE_REPL == REPL_STICKY_PRIORITY_LINES) ? (hash_table_access(&priority_pws, pw.first) != NULL) : FALSE;
+    if (PRIORITIZE_PWS_AFTER_FIRST_STICKY_UNTIL_BACKEND_STALL && first_sticky_line) {
+      make_accesses_priority = TRUE;
+    }
+    Flag priority = first_sticky_line || make_accesses_priority;
     cur_line_data = (Uop_Cache_Data*) cpp_cache_insert(UOP_CACHE_NAME, pw.first, lines_needed,
                                                        priority);
     *cur_line_data = pw;
@@ -197,7 +202,8 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
             search_addr, cpp_cache_index(UOP_CACHE_NAME, search_addr, &line_addr, &line_addr));
   } else {
     // Next try to access a new PW starting at this addr
-    uoc_data = cpp_cache_access(UOP_CACHE_NAME, search_addr, update_repl);
+    Flag upgrade_priority = PRIORITIZE_PWS_AFTER_FIRST_STICKY_UNTIL_BACKEND_STALL && make_accesses_priority;
+    uoc_data = cpp_cache_access(UOP_CACHE_NAME, search_addr, update_repl, upgrade_priority);
     // Only update state if this access should change state
     if (update_repl && uoc_data) {
       if (uoc_data->prefetch && !uoc_data->used) {
@@ -436,4 +442,8 @@ void init_pw_priority_list(void) {
 
 void set_uop_cache_insert_enable(Flag new_val) {
   uop_cache_insert_enable = new_val;
+}
+
+void make_uop_cache_accesses_priority(Flag val) {
+  make_accesses_priority = val;
 }

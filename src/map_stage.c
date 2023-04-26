@@ -227,9 +227,10 @@ void update_map_stage(Stage_Data* src_sd) {
   }
 
   /* if the last map stage is stalled, don't re-process the ops  */
-  if(stall)
+  if(stall) {
+    make_uop_cache_accesses_priority(FALSE);  // untoggle priority uoc insert/access on a backend stall
     return;
-
+  }
   /* now map the ops in the last map stage */
   for(ii = 0; ii < map->last_sd->op_count; ii++) {
     Op* op = map->last_sd->ops[ii];

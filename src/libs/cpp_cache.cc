@@ -71,7 +71,7 @@ class Cpp_Cache {
   }
 
   uns   index(Addr addr, Addr* tag, Addr* line_addr);
-  void* access(Addr addr, bool update_repl);
+  void* access(Addr addr, bool update_repl, bool upgrade_priority);
   void* insert(Addr addr, int lines_used, bool priority);
   void  evict(Set& set);
   void  insert_entry_at_pos(Set& set, Entry entry,
@@ -116,10 +116,9 @@ void* cpp_cache_insert(char* name, Addr addr, int lines_used, Flag priority) {
   return line_data;
 }
 
-void* cpp_cache_access(char* name, Addr addr, Flag update_repl) {
-  Cpp_Cache *cache                 = get_cache(name);
-  void*     line_data             = cache->access(addr, update_repl == TRUE);
-  return line_data;
+// Access cache. Upgrade priority if upgrade_priority and update_repl.
+void* cpp_cache_access(char* name, Addr addr, Flag update_repl, Flag upgrade_priority) {
+  return get_cache(name)->access(addr, update_repl == TRUE, upgrade_priority == TRUE);;
 }
 
 /////////// Cache Member Methods ////////////
@@ -133,7 +132,7 @@ uns Cpp_Cache::index(Addr addr, Addr* tag, Addr* line_addr) {
 
 // access: Looks up the cache based on addr. Returns pointer to line data if
 // found.
-void* Cpp_Cache::access(Addr addr, bool update_repl) {
+void* Cpp_Cache::access(Addr addr, bool update_repl, bool upgrade_priority) {
   Addr  tag;
   Addr  line_addr;
   void* data    = NULL;
@@ -144,6 +143,9 @@ void* Cpp_Cache::access(Addr addr, bool update_repl) {
     if(entry.tag == tag) {  // hit
       data = entry.data;
       if(update_repl) {
+        if (upgrade_priority) {
+          entry.priority = true;
+        }
         // Move to LRU position: remove entry from list and reinsert at Head
         sets.at(set_idx).lst.erase(entry_it);
         insert_entry_at_pos(sets.at(set_idx), entry,

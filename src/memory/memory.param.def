@@ -129,6 +129,7 @@ DEF_PARAM(  uop_cache_repl                 , UOP_CACHE_REPL                  , u
 DEF_PARAM(priority_line_stickiness_percent, PRIORITY_LINE_STICKINESS_PERCENT, int, int, 50,)
 DEF_PARAM(pw_priority_list_filepath, PW_PRIORITY_LIST_FILEPATH, char*, string, "pw_priority_list.csv", )
 DEF_PARAM(num_priority_pws, NUM_PRIORITY_PWS, uns, uns, 10,)
+DEF_PARAM(prioritize_pws_after_first_sticky_until_backend_stall, PRIORITIZE_PWS_AFTER_FIRST_STICKY_UNTIL_BACKEND_STALL, Flag, Flag, FALSE,)
 // If set, PWs are only inserted after a resteer until the uop queue fills.
 // The UOC becomes a cache only for ops that follow a resteer.
 DEF_PARAM(uop_cache_insert_only_after_resteer_uop_queue_not_full, UOP_CACHE_INSERT_ONLY_AFTER_RESTEER_UOP_QUEUE_NOT_FULL, Flag, Flag, FALSE,)

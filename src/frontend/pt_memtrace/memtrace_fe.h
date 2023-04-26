@@ -30,7 +30,6 @@
 #define __MEMTRACE_FE_H__
 
 #include "globals/global_types.h"
-#include "pin/pin_lib/pin_api_to_xed.h"
 
 /**************************************************************************************/
 /* Forward Declarations */
@@ -49,7 +48,6 @@ extern "C" {
 void memtrace_init(void);
 int  memtrace_trace_read(int proc_id, ctype_pin_inst* pt_next_pi);
 void memtrace_setup(uns proc_id);
-void memtrace_fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo *insi);
 
 #ifdef __cplusplus
 }

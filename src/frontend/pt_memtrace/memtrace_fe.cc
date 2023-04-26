@@ -63,7 +63,7 @@ uint64_t        prior_pid = 0;
 /**************************************************************************************/
 /* Private Functions */
 
-void memtrace_fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
+void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
   uint8_t ld = 0;
   uint8_t st = 0;
 
@@ -145,7 +145,7 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   } while(insi->pid != prior_pid || insi->tid != prior_tid);
 
   memset(next_onpath_pi, 0, sizeof(ctype_pin_inst));
-  memtrace_fill_in_dynamic_info(next_onpath_pi, insi);
+  fill_in_dynamic_info(next_onpath_pi, insi);
   fill_in_basic_info(next_onpath_pi, insi->ins);
   uint32_t max_op_width = add_dependency_info(next_onpath_pi, insi->ins);
   fill_in_simd_info(next_onpath_pi, insi->ins, max_op_width);

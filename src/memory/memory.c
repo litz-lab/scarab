@@ -2957,6 +2957,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
   higher_priority = current_priority < old_priority;
 
   STAT_EVENT(req->proc_id, MEM_REQ_BUFFER_HIT);
+  INC_STAT_EVENT(req->proc_id, MEM_REQ_CYCLE_DELTA, cycle_count - req->emitted_cycle);
   if (req->type == MRT_FDIPPRF && type == MRT_IFETCH) {
     STAT_EVENT(req->proc_id, MEM_REQ_FDIP_BUFFER_HIT);
     INC_STAT_EVENT(req->proc_id, MEM_REQ_FDIP_CYCLE_DELTA, cycle_count - req->emitted_cycle);
@@ -3160,6 +3161,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
   }
 
   // If the original type has higher priority (IFETCH) and the new req has lower priority (FDIP), the new req type bit should be cleared if two requests are on the different path (one on path and one off path).
+  // should rarely happen only FDIP cannot run ahead due to decoupled_fe limit or mem_req buffer limit
   if(req->type == MRT_IFETCH && type == MRT_FDIPPRF) {
     if ((!req->off_path && fdip_off_path(req->proc_id)) ||
         (req->off_path && !fdip_off_path(req->proc_id))) {

@@ -772,6 +772,11 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
 
     ic->next_state = IC_FETCH;
     STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ);
+    INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA, cycle_count - req->emitted_cycle);
+    if (mem_req_is_type(req, MRT_FDIPPRF)) {
+      STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_BY_FDIP);
+      INC_STAT_EVENT(req->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA_BY_FDIP, cycle_count - req->emitted_cycle);
+    }
   } else {
     if(IC_PREF_CACHE_ENABLE &&  // cmp FIXME prefetchers
        (USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path)) {
@@ -823,6 +828,11 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
     }
 
     STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ);
+    INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_CYCLE_DELTA, cycle_count - req->emitted_cycle);
+    if (mem_req_is_type(req, MRT_FDIPPRF)) {
+      STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_BY_FDIP);
+      INC_STAT_EVENT(req->proc_id, ICACHE_FILL_INCORRECT_REQ_CYCLE_DELTA_BY_FDIP, cycle_count - req->emitted_cycle);
+    }
   }
 
   return TRUE;

@@ -103,8 +103,12 @@ void init_uop_cache(uns8 pid) {
 Flag pw_insert(Uop_Cache_Data pw) {
   Uop_Cache_Data* cur_line_data = NULL;
   Addr line_addr;
+  static Addr* evicted_pws = NULL;
   UNUSED(line_addr);
   pw.used = 0;
+
+  if (evicted_pws == NULL)
+    evicted_pws = calloc(UOP_CACHE_ASSOC, sizeof(Addr));
 
   int lines_needed = pw.n_uops / UOP_CACHE_MAX_UOPS_LINE;
   if (pw.n_uops % UOP_CACHE_MAX_UOPS_LINE) lines_needed++;
@@ -124,16 +128,24 @@ Flag pw_insert(Uop_Cache_Data pw) {
     if (UOP_CACHE_REPL == REPL_RESTEER && pw.first != addr_following_resteer_bf) {
       insert_repl = INSERT_REPL_LRU;
     }
-    DEBUG(ic->proc_id, "PW inserted. off_path=%u, addr=0x%llx, set=%u, lines_needed=%i\n",
-          pw.first_op_offpath, pw.first, cpp_cache_index(UOP_CACHE_NAME, pw.first, &line_addr, &line_addr), lines_needed);
     Flag first_sticky_line = (UOP_CACHE_REPL == REPL_STICKY_PRIORITY_LINES) ? (hash_table_access(&priority_pws, pw.first) != NULL) : FALSE;
     if (PRIORITIZE_PWS_AFTER_FIRST_STICKY_UNTIL_BACKEND_STALL && first_sticky_line) {
       make_accesses_priority = TRUE;
     }
     Flag priority = first_sticky_line || make_accesses_priority;
+    memset(evicted_pws, 0, UOP_CACHE_ASSOC*sizeof(*evicted_pws));
     cur_line_data = (Uop_Cache_Data*) cpp_cache_insert(UOP_CACHE_NAME, pw.first, lines_needed,
-                                                       priority);
+                                                       priority, evicted_pws);
     *cur_line_data = pw;
+    for (int i = 0; i < UOP_CACHE_ASSOC && evicted_pws[i]; i++) {
+      DEBUG(ic->proc_id, "Evicted PW%i: %llx\n", evicted_pws[i]);
+    }
+    DEBUG(ic->proc_id,
+          "PW inserted. off_path=%u, addr=0x%llx, set=%u, lines_needed=%i, "
+          "priority=%u, first_sticky_line=%u\n",
+          pw.first_op_offpath, pw.first,
+          cpp_cache_index(UOP_CACHE_NAME, pw.first, &line_addr, &line_addr),
+          lines_needed, priority, first_sticky_line);
     STAT_EVENT(0, UOP_CACHE_PWS_INSERTED);
     INC_STAT_EVENT(0, UOP_CACHE_LINES_INSERTED, lines_needed);
   }

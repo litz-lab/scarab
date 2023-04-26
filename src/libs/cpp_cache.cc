@@ -21,6 +21,7 @@ extern "C" {
 
 class Entry {
  public:
+  Addr    addr;
   Addr    tag;
   int     num_lines;
   bool    priority;
@@ -72,8 +73,8 @@ class Cpp_Cache {
 
   uns   index(Addr addr, Addr* tag, Addr* line_addr);
   void* access(Addr addr, bool update_repl, bool upgrade_priority);
-  void* insert(Addr addr, int lines_used, bool priority);
-  void  evict(Set& set);
+  void* insert(Addr addr, int lines_used, bool priority, Addr* evicted_entries);
+  Addr  evict(Set& set);
   void  insert_entry_at_pos(Set& set, Entry entry,
                             std::list<Entry>::iterator pos);
 };
@@ -109,11 +110,10 @@ void cpp_cache_create(char* name, uns num_lines, uns assoc, uns line_bytes,
   cache_map.insert({key, cache});
 }
 
-// Insert into cache, returning a void* for the callee to fill with data
-void* cpp_cache_insert(char* name, Addr addr, int lines_used, Flag priority) {
-  Cpp_Cache* cache     = get_cache(name);
-  void*     line_data = cache->insert(addr, lines_used, priority == TRUE);
-  return line_data;
+// Insert into cache, returning a void* for the callee to fill with data.
+// evicted_entries must have enough allocated space to capture num_addr up to the cache assoc.
+void* cpp_cache_insert(char* name, Addr addr, int lines_used, Flag priority, Addr* evicted_entries) {
+  return get_cache(name)->insert(addr, lines_used, priority == TRUE, evicted_entries); //notify which lines evicted? Could be multiple! require an array to be passed in, size of assoc.
 }
 
 // Access cache. Upgrade priority if upgrade_priority and update_repl.
@@ -157,12 +157,16 @@ void* Cpp_Cache::access(Addr addr, bool update_repl, bool upgrade_priority) {
   return data;
 }
 
-void Cpp_Cache::evict(Set& set) {
+// Returns evicted line addr
+Addr Cpp_Cache::evict(Set& set) {
+  Addr evicted_line;
   ASSERT(0, !set.lst.empty());
   auto it_evicted_entry = --set.lst.end();  // last element
   set.num_lines -= it_evicted_entry->num_lines;
+  evicted_line = it_evicted_entry->addr;
   free(it_evicted_entry->data);
   set.lst.erase(it_evicted_entry);
+  return evicted_line;
 }
 
 // there are potentially Different policies for insert and access.
@@ -200,7 +204,7 @@ void Cpp_Cache::insert_entry_at_pos(Set& set, Entry entry_to_insert,
   }
 }
 
-void* Cpp_Cache::insert(Addr addr, int lines_used, bool priority) {
+void* Cpp_Cache::insert(Addr addr, int lines_used, bool priority, Addr* evicted_entries) {
   Addr  tag;
   Addr  line_addr;
   void* data    = NULL;
@@ -212,10 +216,11 @@ void* Cpp_Cache::insert(Addr addr, int lines_used, bool priority) {
     }
   }
   data = calloc(1, data_size);
-  Entry new_entry{tag, lines_used, priority, data};
+  Entry new_entry{addr, tag, lines_used, priority, data};
   // Evict any entries required
+  int num_entries_evicted = 0;
   while(assoc < sets.at(set_idx).num_lines + new_entry.num_lines) {
-    evict(sets.at(set_idx));
+    evicted_entries[num_entries_evicted++] = evict(sets.at(set_idx));
   }
   insert_entry_at_pos(sets.at(set_idx), new_entry,
                       sets.at(set_idx).lst.begin());

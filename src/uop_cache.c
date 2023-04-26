@@ -108,7 +108,7 @@ Flag pw_insert(Uop_Cache_Data pw) {
   pw.used = 0;
 
   if (evicted_pws == NULL)
-    evicted_pws = calloc(UOP_CACHE_ASSOC, sizeof(Addr));
+    evicted_pws = (Addr*)calloc(UOP_CACHE_ASSOC, sizeof(Addr));
 
   int lines_needed = pw.n_uops / UOP_CACHE_MAX_UOPS_LINE;
   if (pw.n_uops % UOP_CACHE_MAX_UOPS_LINE) lines_needed++;

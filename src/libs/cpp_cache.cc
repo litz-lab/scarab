@@ -185,7 +185,7 @@ void Cpp_Cache::insert_entry_at_pos(Set& set, Entry entry_to_insert,
       }
       // Find insert point.
       std::list<Entry>::iterator insert_pos = pos;
-      while(!entry_to_insert.priority && insert_pos->priority) {
+      while(insert_pos != set.lst.end() && !entry_to_insert.priority && insert_pos->priority) {  //what if all are prio?  *************
         ++insert_pos;
         // now insert_pos is at the element right after the insert position
       }

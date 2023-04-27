@@ -218,10 +218,11 @@ void* Cpp_Cache::insert(Addr addr, int lines_used, bool priority, Addr* evicted_
   data = calloc(1, data_size);
   Entry new_entry{addr, tag, lines_used, priority, data};
   // Evict any entries required
-  int num_entries_evicted = 0;
+  uns num_entries_evicted = 0;
   while(assoc < sets.at(set_idx).num_lines + new_entry.num_lines) {
     evicted_entries[num_entries_evicted++] = evict(sets.at(set_idx));
   }
+  ASSERT(0, num_entries_evicted <= assoc);
   insert_entry_at_pos(sets.at(set_idx), new_entry,
                       sets.at(set_idx).lst.begin());
   sets.at(set_idx).num_lines += lines_used;

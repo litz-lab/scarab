@@ -49,6 +49,7 @@ extern Counter* uop_count;
 extern Counter* pret_inst_count;
 extern uns      operating_mode;
 extern Counter  pw_count;
+extern Counter  unique_pws_since_recovery;
 
 extern Counter* period_last_inst_count;
 extern Counter  period_last_cycle_count;

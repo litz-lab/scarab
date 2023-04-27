@@ -66,10 +66,11 @@ static Op* uop_q[UOP_QUEUE_SIZE];
 Hash_Table inf_size_uop_cache;
 // indexed by start addr of PW
 Hash_Table pc_to_pw;
+Hash_Table ht_unique_pws_since_recovery;
+Hash_Table priority_pws;
 Flag uoc_prefetching_enabled;
 
 Addr addr_following_resteer_bf = 0;  // Addr that follows a resteer or fetch barrier
-Hash_Table priority_pws;
 Flag uop_cache_insert_enable = TRUE;
 Flag make_accesses_priority = FALSE;  // Set priority bit on all accessed PWs
 
@@ -98,6 +99,7 @@ void init_uop_cache(uns8 pid) {
   if (UOP_CACHE_REPL == REPL_STICKY_PRIORITY_LINES) {
     init_pw_priority_list();
   }
+  init_hash_table(&ht_unique_pws_since_recovery, "unique pws since recovery", 100, sizeof(int));
 }
 
 Flag pw_insert(Uop_Cache_Data pw) {
@@ -128,24 +130,19 @@ Flag pw_insert(Uop_Cache_Data pw) {
     if (UOP_CACHE_REPL == REPL_RESTEER && pw.first != addr_following_resteer_bf) {
       insert_repl = INSERT_REPL_LRU;
     }
-    Flag first_sticky_line = (UOP_CACHE_REPL == REPL_STICKY_PRIORITY_LINES) ? (hash_table_access(&priority_pws, pw.first) != NULL) : FALSE;
-    if (PRIORITIZE_PWS_AFTER_FIRST_STICKY_UNTIL_BACKEND_STALL && first_sticky_line) {
-      make_accesses_priority = TRUE;
-    }
-    Flag priority = first_sticky_line || make_accesses_priority;
     memset(evicted_pws, 0, UOP_CACHE_ASSOC*sizeof(*evicted_pws));
     cur_line_data = (Uop_Cache_Data*) cpp_cache_insert(UOP_CACHE_NAME, pw.first, lines_needed,
-                                                       priority, evicted_pws);
+                                                       pw.priority, evicted_pws);
     *cur_line_data = pw;
     for (int i = 0; i < UOP_CACHE_ASSOC && evicted_pws[i]; i++) {
       DEBUG(ic->proc_id, "Evicted PW: %llx\n", evicted_pws[i]);
     }
     DEBUG(ic->proc_id,
           "PW inserted. off_path=%u, addr=0x%llx, set=%u, lines_needed=%i, "
-          "priority=%u, first_sticky_line=%u\n",
+          "priority=%u\n",
           pw.first_op_offpath, pw.first,
           cpp_cache_index(UOP_CACHE_NAME, pw.first, &line_addr, &line_addr),
-          lines_needed, priority, first_sticky_line);
+          lines_needed, pw.priority);
     STAT_EVENT(0, UOP_CACHE_PWS_INSERTED);
     INC_STAT_EVENT(0, UOP_CACHE_LINES_INSERTED, lines_needed);
   }
@@ -210,8 +207,9 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
                    && search_addr <= cur_pw.last) {
     uoc_data = &cur_pw;
     if (uoc_data)
-      DEBUG(ic->proc_id, "UOC hit (cur_pw). addr=0x%llx, set=%u\n",
-            search_addr, cpp_cache_index(UOP_CACHE_NAME, search_addr, &line_addr, &line_addr));
+      DEBUG(ic->proc_id, "UOC hit (cur_pw). addr=0x%llx, set=%u, update_repl=%u\n",
+            search_addr, cpp_cache_index(UOP_CACHE_NAME, search_addr, &line_addr, &line_addr),
+            update_repl);
   } else {
     // Next try to access a new PW starting at this addr
     Flag upgrade_priority = PRIORITIZE_PWS_AFTER_FIRST_STICKY_UNTIL_BACKEND_STALL && make_accesses_priority;
@@ -428,6 +426,8 @@ void recover_uop_cache(void) {
   if (UOP_CACHE_INSERT_ONLY_AFTER_RESTEER_UOP_QUEUE_NOT_FULL && get_uop_queue_stage_length() < UOP_QUEUE_LENGTH) {
     set_uop_cache_insert_enable(TRUE);
   }
+  unique_pws_since_recovery = 0;
+  hash_table_clear(&ht_unique_pws_since_recovery);
 }
 
 void init_pw_priority_list(void) {
@@ -458,4 +458,25 @@ void set_uop_cache_insert_enable(Flag new_val) {
 
 void make_uop_cache_accesses_priority(Flag val) {
   make_accesses_priority = val;
+  DEBUG(ic->proc_id, "Set make_accesses_priority=%u (set to 0 on backend stall, 1 on sticky line insert)\n", val);
+}
+
+void stat_event_new_pw_accessed(Uop_Cache_Data* pw) {
+  pw_count++;
+  Flag new_entry;
+  hash_table_access_create(&ht_unique_pws_since_recovery, pw->first, &new_entry);
+  if (new_entry) {
+    unique_pws_since_recovery++;
+  }
+  
+  Flag first_sticky_line = (UOP_CACHE_REPL == REPL_STICKY_PRIORITY_LINES) ? (hash_table_access(&priority_pws, pw->first) != NULL) : FALSE;
+  if (first_sticky_line) {
+    pw->priority = TRUE;
+    if (PRIORITIZE_PWS_AFTER_FIRST_STICKY_UNTIL_BACKEND_STALL) {
+      make_uop_cache_accesses_priority(TRUE);
+    }
+  }
+  if (PRIORITIZE_PWS_AFTER_FIRST_STICKY_UNTIL_BACKEND_STALL && make_accesses_priority) {
+    pw->priority = TRUE;
+  }
 }

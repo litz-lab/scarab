@@ -99,6 +99,7 @@ Counter* sim_done_last_cycle_count;
 uns*     sim_count;
 uns      operating_mode = SIMULATION_MODE;
 Counter  pw_count   = 0; /* the global PW access counter */
+Counter  unique_pws_since_recovery = 0;
 
 /* the global instruction counter for periodic dump - retired per core */
 Counter* period_last_inst_count;

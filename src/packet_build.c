@@ -219,6 +219,7 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op) {
         STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_LENGTH_0 + uop_queue_length);
         STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_PLUS_DECODE_LENGTH_0 + uop_queue_length + decode_stages_filled);
         ASSERT(ic->proc_id, uop_queue_length + decode_stages_filled <= 20);  // Stat supports up to 20.
+        _DEBUG(ic->proc_id, DEBUG_UOP_CACHE, "uoc->ic switch, uop_queue=%u\n", uop_queue_length);
         *break_fetch = BREAK_UC_MISS;
         return PB_BREAK_BEFORE;
       } else if (!prev_op_from_uop_cache && op->fetched_from_uop_cache) {

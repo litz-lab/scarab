@@ -33,8 +33,6 @@ std::deque<Stage_Data*> free_sds {};
 Counter last_recovery_cycle {};
 Counter last_recovery_pw {};
 std::size_t prev_q_size {};
-Counter unique_pws_since_recovery {};
-Hash_Table ht_unique_pws_since_recovery;
 
 static inline void update_uop_queue_fill_time_stat(void);
 
@@ -59,7 +57,6 @@ void init_uop_queue_stage() {
     init_list(&uop_queue_fill_time.time_for_size[cap_measured].unique_pws, unique_pw_list_label,
               sizeof(Counter), FALSE);
   }
-  init_hash_table(&ht_unique_pws_since_recovery, "unique pws since recovery", 100, sizeof(int));
 }
 
 // Get ops from the uop cache.
@@ -123,8 +120,6 @@ void recover_uop_queue_stage(void) {
   last_recovery_cycle = cycle_count;
   last_recovery_pw = pw_count;
   prev_q_size = 0;  // This triggers the stat logging if the queue is not fully flushed
-  unique_pws_since_recovery = 0;
-  hash_table_clear(&ht_unique_pws_since_recovery);
 }
 
 Stage_Data* uop_queue_stage_get_latest_sd(void) {
@@ -155,14 +150,5 @@ void update_uop_queue_fill_time_stat() {
   if (UOP_CACHE_INSERT_ONLY_AFTER_RESTEER_UOP_QUEUE_NOT_FULL
       && q.size() == UOP_QUEUE_LENGTH) {
     set_uop_cache_insert_enable(FALSE);
-  }
-}
-
-void stat_event_new_pw_accessed(Uop_Cache_Data* pw) {
-  pw_count++;
-  Flag new_entry;
-  hash_table_access_create(&ht_unique_pws_since_recovery, pw->first, &new_entry);
-  if (new_entry) {
-    unique_pws_since_recovery++;
   }
 }

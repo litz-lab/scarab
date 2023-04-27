@@ -336,6 +336,7 @@ typedef struct Uop_Cache_Data_struct {
   Flag prefetch;
   Counter used;
   Flag first_op_offpath;
+  Flag priority;
 } Uop_Cache_Data;
 
 /**************************************************************************************/

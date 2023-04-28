@@ -2897,6 +2897,9 @@ static inline Mem_Req* mem_search_reqbuf(
       } else if(req->type == MRT_DPRF) {
         if((type == MRT_DFETCH) || (type == MRT_DSTORE))
           *demand_hit_prefetch = TRUE;
+      } else if(req->type == MRT_FDIPPRF || req->type == MRT_UOCPRF) {
+        if(type == MRT_IFETCH)
+          *demand_hit_prefetch = TRUE;
       }
       return req;
     }
@@ -2957,11 +2960,14 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
   higher_priority = current_priority < old_priority;
 
   STAT_EVENT(req->proc_id, MEM_REQ_BUFFER_HIT);
-  INC_STAT_EVENT(req->proc_id, MEM_REQ_CYCLE_DELTA, cycle_count - req->emitted_cycle);
-  if (req->type == MRT_FDIPPRF && type == MRT_IFETCH) {
+  if (req->fdip_emitted_cycle) {
     STAT_EVENT(req->proc_id, MEM_REQ_FDIP_BUFFER_HIT);
-    INC_STAT_EVENT(req->proc_id, MEM_REQ_FDIP_CYCLE_DELTA, cycle_count - req->emitted_cycle);
+    INC_STAT_EVENT(req->proc_id, MEM_REQ_FDIP_CYCLE_DELTA, cycle_count - req->fdip_emitted_cycle);
+  } else if (req->demand_icache_emitted_cycle) {
+    STAT_EVENT(req->proc_id, MEM_REQ_DEMAND_ICACHE_BUFFER_HIT);
+    INC_STAT_EVENT(req->proc_id, MEM_REQ_DEMAND_ICACHE_CYCLE_DELTA, cycle_count - req->demand_icache_emitted_cycle);
   }
+
   wp_process_reqbuf_match(req, op);
 
   if(ALLOW_TYPE_MATCHES && demand_hit_writeback) {
@@ -3503,7 +3509,16 @@ static void mem_init_new_req(
   new_req->state              = to_mlc ? MRS_MLC_NEW : MRS_L1_NEW;
   new_req->type               = type;
   new_req->types              = 0;
-  new_req->emitted_cycle      = cycle_count;
+  if (type == MRT_IFETCH) {
+    new_req->demand_icache_emitted_cycle   = cycle_count;
+    new_req->fdip_emitted_cycle      = 0;
+  } else if (type == MRT_FDIPPRF) {
+    new_req->demand_icache_emitted_cycle   = 0;
+    new_req->fdip_emitted_cycle      = cycle_count;
+  } else {
+    new_req->demand_icache_emitted_cycle   = 0;
+    new_req->fdip_emitted_cycle      = 0;
+  }
   mem_req_set_types(new_req, type);
   new_req->queue              = to_mlc ? &mem->mlc_queue : &mem->l1_queue;
   new_req->proc_id            = proc_id;
@@ -3937,7 +3952,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size,
     else
       new_req->fdip_pref_off_path = FALSE;
   }
-  new_req->hit_by_demand_load = FALSE;
+  new_req->cyc_hit_by_demand_load = 0;
   if(PREF_FRAMEWORK_ON) {
     new_req->bw_prefetchable = PREF_STREAM_ON &&
                                pref_stream_bw_prefetchable(proc_id, addr);

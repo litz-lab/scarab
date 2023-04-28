@@ -106,7 +106,8 @@ struct Mem_Req_struct {
   Mem_Req_Type             type;     /* what kind of miss is it? */
   /* Bit string recording all Mem_Req_Type(s) that were coalesced into this request. */
   uns                      types;
-  Counter                  emitted_cycle; /* cycle when the request is emitted. */
+  Counter                  fdip_emitted_cycle; /* cycle when the request is emitted. */
+  Counter                  demand_icache_emitted_cycle; /* cycle when the request is emitted. */
   struct Mem_Queue_struct* queue;    /* Pointer to the queue this entry is in */
   Counter                  priority; /* priority of the miss */
   Addr                     addr;     /* address to fetch */
@@ -191,7 +192,7 @@ struct Mem_Req_struct {
   Counter dram_latency;      /* DRAM latency (in L1 cycles) */
   Counter dram_core_service_cycles_at_start; /* "Virtual clock" timestamp */
   Flag fdip_pref_off_path; /*set if the mem_req is requested by FDIP on the wrong path prediction*/
-  Flag hit_by_demand_load; /*set if the mem_req (requested by FDIP) is hit by a demand load*/
+  Counter cyc_hit_by_demand_load; /*set if the mem_req (requested by FDIP) is hit by a demand load*/
 };
 
 /**************************************************************************************/

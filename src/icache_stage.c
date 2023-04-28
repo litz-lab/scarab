@@ -755,7 +755,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
         line_info->offpath_op_unique = req->oldest_op_unique_num;
         line_info->fetch_cycle       = cycle_count;
         line_info->onpath_use_cycle  = req->off_path ? 0 : cycle_count;
-        line_info->read_count[0]     = req->hit_by_demand_load? 1 : 0;
+        line_info->read_count[0]     = req->cyc_hit_by_demand_load? 1 : 0;
         line_info->read_count[1]     = 0;
         line_info->HW_prefetch       = req->type == MRT_IPRF;
         if (req->type == MRT_FDIPPRF) {
@@ -770,13 +770,22 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       }
     }
 
-    ic->next_state = IC_FETCH;
     STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ);
-    INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA, cycle_count - req->emitted_cycle);
-    if (mem_req_is_type(req, MRT_FDIPPRF)) {
+    ic->next_state = IC_FETCH;
+    if (req->demand_icache_emitted_cycle) {
+      ASSERT(ic->proc_id, !req->fdip_emitted_cycle && (cycle_count - req->demand_icache_emitted_cycle > 0));
+      STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_BY_ICACHE_DEMAND);
+      INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA_BY_ICACHE_DEMAND, cycle_count - req->demand_icache_emitted_cycle);
+    } else if (req->fdip_emitted_cycle) {
+      ASSERT(ic->proc_id, !req->demand_icache_emitted_cycle);
       STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_BY_FDIP);
-      INC_STAT_EVENT(req->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA_BY_FDIP, cycle_count - req->emitted_cycle);
+      INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA_BY_FDIP, cycle_count - req->fdip_emitted_cycle);
+      if (req->cyc_hit_by_demand_load) {
+        STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_BY_FDIP_HIT_BY_DEMAND_LOAD);
+        INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA_BY_FDIP_HIT_BY_DEMAND_LOAD, cycle_count - req->cyc_hit_by_demand_load);
+      }
     }
+    INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA, cycle_count - req->demand_icache_emitted_cycle);
   } else {
     if(IC_PREF_CACHE_ENABLE &&  // cmp FIXME prefetchers
        (USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path)) {
@@ -828,11 +837,20 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
     }
 
     STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ);
-    INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_CYCLE_DELTA, cycle_count - req->emitted_cycle);
-    if (mem_req_is_type(req, MRT_FDIPPRF)) {
+    if (req->demand_icache_emitted_cycle) {
+      ASSERT(ic->proc_id, !req->fdip_emitted_cycle);
+      STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_BY_ICACHE_DEMAND);
+      INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_CYCLE_DELTA_BY_ICACHE_DEMAND, cycle_count - req->demand_icache_emitted_cycle);
+    } else if (req->fdip_emitted_cycle) {
+      ASSERT(ic->proc_id, !req->demand_icache_emitted_cycle);
       STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_BY_FDIP);
-      INC_STAT_EVENT(req->proc_id, ICACHE_FILL_INCORRECT_REQ_CYCLE_DELTA_BY_FDIP, cycle_count - req->emitted_cycle);
+      INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_CYCLE_DELTA_BY_FDIP, cycle_count - req->fdip_emitted_cycle);
+      if (req->cyc_hit_by_demand_load) {
+        STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_BY_FDIP_HIT_BY_DEMAND_LOAD);
+        INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_CYCLE_DELTA_BY_FDIP_HIT_BY_DEMAND_LOAD, cycle_count - req->cyc_hit_by_demand_load);
+      }
     }
+    INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_CYCLE_DELTA, cycle_count - req->demand_icache_emitted_cycle);
   }
 
   return TRUE;
@@ -1053,7 +1071,7 @@ void log_stats_mshr_hit(Addr line_addr) {
                                            QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
                                            QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
                                            &queue_entry, &ramulator_match);
-  if (req && !req->hit_by_demand_load) {
+  if (req && !req->cyc_hit_by_demand_load) {
     if (operating_mode == SIMULATION_MODE) {
       inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
       inc_useful_unuseful_2bit(ic->proc_id, ic->line_addr);
@@ -1069,7 +1087,7 @@ void log_stats_mshr_hit(Addr line_addr) {
       else
         STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_BY_FDIP_ONPATH);
     }
-    req->hit_by_demand_load = TRUE;
+    req->cyc_hit_by_demand_load = cycle_count;
   }
   inc_icache_miss(ic->proc_id, ic->line_addr);
   if (!req) {

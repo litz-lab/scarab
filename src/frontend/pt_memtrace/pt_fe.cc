@@ -91,10 +91,10 @@ void pt_fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo *insi) {
 	//predicated true ld/st are handled just as regular ld/st
 	if(xed_decoded_inst_mem_read(insi->ins, op) && !insi->mem_used[op]) {
 	    //Handle predicated stores specially?
-	    info->ld_vaddr[ld++] = insi->mem_addr[op];
+	    info->ld_vaddr[ld++] = 0x4040;
 	}
 	else if(xed_decoded_inst_mem_read(insi->ins, op)) {
-	    info->ld_vaddr[ld++] = insi->mem_addr[op];
+	    info->ld_vaddr[ld++] = 0x4040;
 	}
 	if(xed_decoded_inst_mem_written(insi->ins, op) && !insi->mem_used[op]) {
 	    //Handle predicated stores specially?

@@ -56,6 +56,7 @@ static inline void init_pw_priority_list(void);
 /* Global Variables */
 
 uns8 proc_id;
+static Flag UOP_CACHE_ON;
 
 // uop trace/bbl accumulation
 static Uop_Cache_Data accumulating_pw = {0};
@@ -79,7 +80,8 @@ Flag make_accesses_priority = FALSE;  // Set priority bit on all accessed PWs
 
 void init_uop_cache(uns8 pid) {
   proc_id = pid;
-  if (!UOP_CACHE_ENABLE) {
+  UOP_CACHE_ON = UOP_CACHE_ENABLE && (UOP_CACHE_UOP_CAPACITY || INF_SIZE_UOP_CACHE || ORACLE_PERFECT_UOP_CACHE);
+  if (!UOP_CACHE_ON) {
     return;
   }
   if (INF_SIZE_UOP_CACHE || INF_SIZE_UOP_CACHE_PW_SIZE_LIM) {
@@ -248,7 +250,7 @@ Flag in_uop_cache(Addr pc, Flag update_repl) {
   // next in the set (use flag) or anywhere in the set (use pointer), depending on impl.
   // Here, don't care about order, just search all lines for pc in question
   STAT_EVENT(0, IN_UOP_CACHE_CALLED);
-  if (!UOP_CACHE_ENABLE) {
+  if (!UOP_CACHE_ON) {
     return FALSE;
   }
 
@@ -270,7 +272,7 @@ Flag in_uop_cache(Addr pc, Flag update_repl) {
 }
 
 void end_accumulate(void) {
-  if (!UOP_CACHE_ENABLE) {
+  if (!UOP_CACHE_ON) {
     return;
   }
 
@@ -295,7 +297,7 @@ void accumulate_op(Op* op) {
 
   // It is possible for an instr to be partially in 2 lines;
   // for pw termination purposes, assume it is in first line.
-  if (!UOP_CACHE_ENABLE) {
+  if (!UOP_CACHE_ON) {
     return;
   }
 
@@ -351,7 +353,7 @@ Flag uop_cache_fill_prefetch(Addr pw_start_addr, Flag fdip_on_path) {
   ASSERT(proc_id, 0);
   ASSERT(proc_id, uoc_prefetching_enabled);
   Uop_Cache_Data pw;
-  if (!UOP_CACHE_ENABLE) {
+  if (!UOP_CACHE_ON) {
     return FALSE;
   }
 

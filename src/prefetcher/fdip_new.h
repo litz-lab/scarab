@@ -28,9 +28,12 @@ extern "C" {
   uns get_miss_reason(uns proc_id, Addr line_addr);
   uns get_last_miss_reason(uns proc_id);
   void set_last_miss_reason(uns proc_id, uns reason);
+  uint64_t get_fdip_ftq_occupancy_ops(uns proc_id);
   uint64_t get_fdip_ftq_occupancy(uns proc_id);
   Flag determine_usefulness(Addr line_addr);
   void update_useful_lines(uns proc_id, Op* op);
+  void update_useful_lines_uc(uns proc_id, Addr line_addr);
+  void update_useful_lines_bloom_filter(uns proc_id, Addr line_addr);
   void inc_utility_info(uns proc_id, Flag useful);
   void inc_timeliness_info(uns proc_id, Flag mshr_hit);
   

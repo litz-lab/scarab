@@ -763,6 +763,7 @@ void full_sim() {
           model->per_core_done_func(proc_id);
         if(FDIP_ENABLE) {
           print_cl_info(proc_id);
+          INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY_OPS, get_fdip_ftq_occupancy_ops(proc_id));
           INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY, get_fdip_ftq_occupancy(proc_id));
         }
         if (PERIODIC_DUMP == FALSE) {

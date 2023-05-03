@@ -964,6 +964,8 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
       inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
       inc_useful_unuseful_2bit(ic->proc_id, ic->line_addr);
       inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
+      update_useful_lines_uc(ic->proc_id, ic->line_addr);
+      update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
     }
     if(line->FDIP_prefetch) {
       inc_utility_info(ic->proc_id, TRUE);
@@ -1076,6 +1078,8 @@ void log_stats_mshr_hit(Addr line_addr) {
       inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
       inc_useful_unuseful_2bit(ic->proc_id, ic->line_addr);
       inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
+      update_useful_lines_uc(ic->proc_id, ic->line_addr);
+      update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
     }
     if (req->type == MRT_FDIPPRF) {
       inc_utility_info(ic->proc_id, TRUE);
@@ -1090,14 +1094,15 @@ void log_stats_mshr_hit(Addr line_addr) {
     req->cyc_hit_by_demand_load = cycle_count;
   }
   inc_icache_miss(ic->proc_id, ic->line_addr);
+  imiss_reason = get_miss_reason(ic->proc_id, line_addr);
   if (!req) {
-    imiss_reason = get_miss_reason(ic->proc_id, line_addr);
     if (imiss_reason == IMISS_TOO_EARLY)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED);
     else
       STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
   } else {
-      STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);
+    ASSERT(ic->proc_id, imiss_reason == IMISS_MSHR_HIT);
+    STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);
   }
   set_last_miss_reason(ic->proc_id, imiss_reason);
 }

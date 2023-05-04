@@ -598,9 +598,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     thread_map_mem_dep(op);
     op->fetch_cycle = cycle_count;
 
-    // Verify no mixing of ops from icache and uop cache
-    if (ic->sd.op_count)
-      ASSERT(ic->proc_id, ic->sd.ops[ic->sd.op_count-1]->fetched_from_uop_cache == op->fetched_from_uop_cache);
     ic->sd.ops[ic->sd.op_count] = op; /* put op in the exit list */
     op_count[ic->proc_id]++;          /* increment instruction counters */
     unique_count_per_core[ic->proc_id]++;

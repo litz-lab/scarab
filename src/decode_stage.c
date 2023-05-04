@@ -184,16 +184,17 @@ void update_decode_stage(Stage_Data* src_sd) {
 
   /* do the first decode stage */
   /* Ops from the uop cache do not go to the decode stage. */
-  Flag from_icache = src_sd->op_count && !src_sd->ops[0]->fetched_from_uop_cache;
   cur = &dec->sds[STAGE_MAX_DEPTH - 1];
-
-  if(cur->op_count == 0 && from_icache) {
-    prev           = src_sd;
-    temp           = cur->ops;
-    cur->ops       = prev->ops;
-    prev->ops      = temp;
-    cur->op_count  = prev->op_count;
-    prev->op_count = 0;
+  if (cur->op_count == 0 && src_sd->op_count) {
+    for (int i = 0; i < src_sd->max_op_count; i++) {
+      Op* src_op = src_sd->ops[i];
+      if (src_op && !src_op->fetched_from_uop_cache) {
+        cur->ops[cur->op_count] = src_op;
+        src_sd->ops[i] = NULL;
+        cur->op_count++;
+        src_sd->op_count--;
+      }
+    }
   }
 
   /* if the last decode stage is stalled, don't re-process the ops  */

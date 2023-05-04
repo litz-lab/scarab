@@ -21,6 +21,7 @@ extern "C" {
 }
 
 // Macros
+#define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_UOP_QUEUE_STAGE, ##args)
 #define UOP_QUEUE_STAGE_LENGTH UOP_QUEUE_LENGTH
 #define STAGE_MAX_OP_COUNT ISSUE_WIDTH  // The bandwidth of the next, consuming stage (map stage)
 // TODO(peterbraun): Check if the ISSUE_WIDTH can be less than the uop cache issue bandwidth
@@ -37,9 +38,11 @@ std::size_t prev_q_size {};
 static inline void update_uop_queue_fill_time_stat(void);
 
 void init_uop_queue_stage() {
+  char tmp_name[MAX_STR_LENGTH + 1];
   for (uns ii = 0; ii < UOP_QUEUE_STAGE_LENGTH; ii++) {
     Stage_Data* sd = (Stage_Data*)calloc(1, sizeof(Stage_Data));
-    sd->name = (char*)strdup("Uop Queue Stage");
+    snprintf(tmp_name, MAX_STR_LENGTH, "UOP QUEUE STAGE %d", ii);
+    sd->name = (char*)strdup(tmp_name);
     sd->max_op_count = STAGE_MAX_OP_COUNT;
     sd->op_count = 0;
     sd->ops = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
@@ -69,10 +72,6 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
   }
   update_uop_queue_fill_time_stat(); // gets updated the cycle after the size changes
 
-  // Check if ops are from the uop cache.
-  if (src_sd->op_count == 0 || !src_sd->ops[0]->fetched_from_uop_cache) {
-    return;
-  }
   // If the queue cannot accomodate more ops, stall.
   if (q.size() >= UOP_QUEUE_STAGE_LENGTH) {
     // Backend stalls may force fetch to stall.
@@ -81,17 +80,24 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
 
   // Build a new sd and place new ops into the queue.
   Stage_Data* new_sd = free_sds.front();
-  free_sds.pop_front();
   ASSERT(0, src_sd->op_count <= (int)STAGE_MAX_OP_COUNT);
-  std::swap(new_sd->op_count, src_sd->op_count);
-  std::swap(new_sd->ops, src_sd->ops);
-  
-  for (int ii = 0; ii < new_sd->op_count; ii++) {
-    Op* op = new_sd->ops[ii];
-    decode_stage_process_op(op);
-    ASSERT(0, op->fetched_from_uop_cache);
+  if (src_sd->op_count) {
+    for (int i = 0; i < src_sd->max_op_count; i++) {
+      Op* src_op = src_sd->ops[i];
+      if (src_op && src_op->fetched_from_uop_cache) {
+        new_sd->ops[new_sd->op_count] = src_op;
+        src_sd->ops[i] = NULL;
+        new_sd->op_count++;
+        src_sd->op_count--;
+        decode_stage_process_op(src_op);
+        DEBUG(0, "Fetching opnum=%llu\n", src_op->op_num);
+      }
+    }
   }
-  q.push_back(new_sd);
+  if (new_sd->op_count > 0) {
+    free_sds.pop_front();
+    q.push_back(new_sd);
+  }
 }
 
 void recover_uop_queue_stage(void) {

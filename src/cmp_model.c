@@ -222,12 +222,10 @@ void cmp_cores(void) {
       update_uop_queue_stage(&ic->sd);
       // Map stage can get ops from either the uop queue following the uop cache
       // or the decoder.
-      update_map_stage(dec->last_sd);
+      update_map_stage(dec->last_sd, uop_queue_stage_get_latest_sd());
       insert_decoded_uop_cache_prefetch();
       update_decode_stage(&ic->sd);
-      update_map_stage(uop_queue_stage_get_latest_sd());
       update_decoupled_fe();
-      //rname fdip_update to update_fdip
       update_fdip();
       update_icache_stage();
 

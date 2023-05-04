@@ -52,9 +52,7 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_MAP_STAGE, ##args)
 #define STAGE_MAX_OP_COUNT ISSUE_WIDTH + UOP_CACHE_ADDITIONAL_ISSUE_BANDWIDTH
-// Since update_map_stage is called twice per cycle, STAGE_MAX_DEPTH should be double
-// the number of cycles.
-#define STAGE_MAX_DEPTH (MAP_CYCLES * 2)
+#define STAGE_MAX_DEPTH MAP_CYCLES
 
 
 /**************************************************************************************/
@@ -69,7 +67,8 @@ Counter map_stage_next_op_num = 1;
 /* Local prototypes */
 
 static inline void stage_process_op(Op*);
-
+static inline Flag map_fetch_fill_op(Stage_Data* src_sd, int* fetch_idx);
+static inline void shift_ops_to_arr_start(Stage_Data* sd);
 
 /**************************************************************************************/
 /* set_map_stage: */
@@ -169,12 +168,12 @@ void debug_map_stage() {
 /**************************************************************************************/
 /* map_cycle: */
 
-void update_map_stage(Stage_Data* src_sd) {
-  // Last cycle that map stage consumed ops.
-  // This prevents map stage from accidentally consuming ops twice per cycle
-  // (since update_map_stage is called twice per cycle).
-  static Counter last_cycle_consumed = 0;
+// Consume just from one: Select the stage to consume from
+// Else if UOC_IC_SWITCH_FRAG_DISABLE, also consume from the second one.
+void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uopq_src_sd) {
   Flag        stall = (map->last_sd->op_count > 0);
+  Stage_Data* consume_from_sd = NULL;
+  Stage_Data* other_sd = NULL;
   Stage_Data *cur, *prev;
   Op**        temp;
   uns         ii;
@@ -196,35 +195,35 @@ void update_map_stage(Stage_Data* src_sd) {
   // Uops can be received from either the decoder or directly from the uop cache
   // via the uop queue.
   // Only consume if older ops have already been consumed by this stage.
-  Flag consume_ops = src_sd->op_count && src_sd->ops[0]->op_num == map_stage_next_op_num;
   cur = &map->sds[STAGE_MAX_DEPTH - 1];
-  DEBUG(map->proc_id, "src_sd_correct=%u, expected_next_op_num=%llu, peeked_op_num=%llu\n",
-                      consume_ops, map_stage_next_op_num,
-                      src_sd->op_count ? src_sd->ops[0]->op_num : 0);
-  if (cur->op_count == 0 && src_sd->op_count == 0 && last_cycle_consumed < cycle_count) {
-    // Inaccurate: This would trigger once per cycle even if fetching steady state from one source (the other will be empty)
-    STAT_EVENT(map->proc_id, MAP_STAGE_STARVED_2X);
+  if (dec_src_sd->op_count && dec_src_sd->ops[0]->op_num == map_stage_next_op_num) {
+    consume_from_sd = dec_src_sd;
+    other_sd = uopq_src_sd;  //can only consume ALL ops from this stage if the other sd has them ready. Otherwise only the first few
+  } else if (uopq_src_sd->op_count && uopq_src_sd->ops[0]->op_num == map_stage_next_op_num) {
+    consume_from_sd = uopq_src_sd;
+    other_sd = dec_src_sd;
   }
-  if(cur->op_count == 0 && consume_ops && last_cycle_consumed < cycle_count) {
-    /* call the fetch fill unit */
-    prev           = src_sd;
-    temp           = cur->ops;
-    cur->ops       = prev->ops;
-    prev->ops      = temp;
-    cur->op_count  = prev->op_count;
-    prev->op_count = 0;
 
-    for(ii = 0; ii < cur->op_count; ii++) {
-      Op* op = cur->ops[ii];
-      ASSERT(map->proc_id, op != NULL);
-      op->map_cycle = cycle_count;
-    }
-    map_stage_next_op_num += cur->op_count;
-    last_cycle_consumed = cycle_count;
-
+  // Consume interleaved from both srcs if UOC_IC_SWITCH_FRAG_DISABLE.
+  // Else, only consume from one src
+  if (cur->op_count == 0 && consume_from_sd) {
+    const Flag fetch_from_both_srcs = UOC_IC_SWITCH_FRAG_DISABLE && cur->max_op_count >= consume_from_sd->op_count + other_sd->op_count;
+    int cfsd_ii = 0;  // consume_from_sd idx
+    int osd_ii  = 0;  // other_sd idx
+    Flag fetched_cfsd = FALSE;
+    Flag fetched_osd = FALSE;
+    do {
+      fetched_cfsd = map_fetch_fill_op(consume_from_sd, &cfsd_ii);
+      if (fetch_from_both_srcs) {
+        fetched_osd = map_fetch_fill_op(other_sd, &osd_ii);
+      }
+    } while (fetched_cfsd || fetched_osd);
     STAT_EVENT(map->proc_id, MAP_STAGE_RECEIVED_OPS_0 + cur->op_count);
-    ASSERT(map->proc_id, cur->op_count <= 8);
+    ASSERT(map->proc_id, cur->op_count <= MAP_STAGE_RECEIVED_OPS_MAX);
   }
+  // if op array not empty, shift ops to array start
+  shift_ops_to_arr_start(consume_from_sd);
+  shift_ops_to_arr_start(other_sd);
 
   /* if the last map stage is stalled, don't re-process the ops  */
   if(stall) {
@@ -246,4 +245,46 @@ void update_map_stage(Stage_Data* src_sd) {
 static inline void stage_process_op(Op* op) {
   /* the map stage is currently responsible only for setting wake up lists */
   add_to_wake_up_lists(op, &op->oracle_info, model->wake_hook);
+}
+
+
+/**************************************************************************************/
+/* map_fetch_fill_op: Fill the map stage with op from src at fetch_idx */
+
+static inline Flag map_fetch_fill_op(Stage_Data* src_sd, int* fetch_idx) {
+  Stage_Data* dest_sd = &map->sds[STAGE_MAX_DEPTH - 1];
+  if (*fetch_idx == src_sd->max_op_count)
+    return FALSE;
+
+  Op* op = src_sd->ops[*fetch_idx];
+  if (op && op->op_num == map_stage_next_op_num) {
+    DEBUG(map->proc_id, "Fetching opnum=%llu from %s at idx=%i\n", op->op_num, src_sd->name, *fetch_idx);
+    op->map_cycle = cycle_count;
+    dest_sd->ops[dest_sd->op_count++] = op;
+    src_sd->ops[*fetch_idx] = NULL;
+    src_sd->op_count--;
+    map_stage_next_op_num++;
+    *fetch_idx = *fetch_idx + 1;
+    return TRUE;
+  }
+  return FALSE;
+}
+
+
+/**************************************************************************************/
+/* shift_ops_to_arr_start:  */
+
+static inline void shift_ops_to_arr_start(Stage_Data* sd) {
+  int insert_idx = 0;
+  if (!sd || sd->op_count == 0)
+    return;
+
+  for (int ii = 0; ii < sd->max_op_count; ii++) {
+    if (sd->ops[ii]) {
+      sd->ops[insert_idx] = sd->ops[ii];
+      if (ii != insert_idx)
+        sd->ops[ii] = NULL;
+      insert_idx++;
+    }
+  }
 }

@@ -181,8 +181,9 @@ Flag insert_uop_cache() {
       && accumulating_pw.n_uops <= INF_SIZE_UOP_CACHE_PW_SIZE_LIM)) {
     for (int ii = 0; ii < accumulating_pw.n_uops; ii++) {
       Op* op = uop_q[ii];
-      hash_table_access_create(&inf_size_uop_cache, op->inst_info->addr, 
-                                &new_entry);
+      if (!op->off_path)
+        hash_table_access_create(&inf_size_uop_cache, op->inst_info->addr, 
+                                 &new_entry);
     }
     success = TRUE;
   } else if (INF_SIZE_UOP_CACHE_PW_SIZE_LIM 

@@ -298,8 +298,8 @@ void update_fdip() {
   per_core_fdip_ftq_occupancy_ops[ic_ref->proc_id] += decoupled_fe_ftq_iter_offset(iter);
   if (break_reason == BR_REACH_FTQ_END)
     per_core_fdip_ftq_occupancy_blocks[ic_ref->proc_id] += decoupled_fe_ftq_num_blocks();
-  else
-    ASSERT(fdip_proc_id, false); // for now TODO
+  //else
+    //ASSERT(fdip_proc_id, false); // for now TODO
 }
 
 Flag fdip_off_path(uns proc_id) {

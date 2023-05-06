@@ -216,7 +216,8 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
   } else {
     // Next try to access a new PW starting at this addr
     Flag upgrade_priority = PRIORITIZE_PWS_AFTER_FIRST_STICKY_UNTIL_BACKEND_STALL && make_accesses_priority;
-    uoc_data = cpp_cache_access(UOP_CACHE_NAME, search_addr, update_repl, upgrade_priority);
+    Flag update_cache_repl = NO_REPL_AFTER_QUEUE_SIZE && get_uop_queue_stage_length() >= NO_REPL_AFTER_QUEUE_SIZE ? FALSE : update_repl;
+    uoc_data = cpp_cache_access(UOP_CACHE_NAME, search_addr, update_cache_repl, upgrade_priority);
     // Only update state if this access should change state
     if (update_repl && uoc_data) {
       if (uoc_data->prefetch && !uoc_data->used) {

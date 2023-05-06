@@ -700,6 +700,47 @@ tage::tage() {
 
 void tage::init(const char* nm, int ng, int logb, int logg, int tagb, int ctrb,
                 int ppb, int ru, int caph) {
+// NUMG = number of tagged tables
+// LOGB = log2 of the number of entries of the tagless (bimodal) table
+// LOGG = log2 of the number of entries of each tagged table
+// MAXHIST = maximum path length ("rightmost" tagged table), in branches
+// MINHIST = minimum path length ("leftmost" tagged table), in branches
+// HASHPARAM = parameter used in the hash functions (may need to be changed with
+// predictor size) RAMPUP = ramp-up period in mispredictions (should be kept
+// roughly proportional to predictor size) TAGBITS = tag width in bits CTRBITS =
+// width of the taken/not-taken counters in the tagless (bimodal) and tagged
+// tables PATHBITS = number of per-branch address bits injected in the path
+// hashing POSTPBITS = width of the taken/not-taken counters in the
+// post-predictor POSTPEXTRA = number of secondary hits feeding the
+// post-predictor ALLOCFAILMAX : used for clearing u bits (cf. ISL_TAGE, Andre
+// Seznec, MICRO 2011) MAXALLOC = maximum number of entries stolen upon a
+// misprediction (cf. ISL_TAGE) CAPHIST = path length beyond which aggressive
+// update (ramp-up) is made sligtly less aggressive
+  if (MTAGE_REALISTIC_SC_40K) {
+    MTAGE_ASSERT(!MTAGE_REALISTIC_SC_100K);
+    npred = 1;
+    P0_NUMG = 10;
+    P0_LOGB = 9;
+    P0_LOGG = 9;
+    P0_MAXHIST = 359;
+    P0_MINHIST = 4;
+    P0_HASHPARAM = 3;
+    P0_RAMPUP = 10000;
+    TAGBITS = 12;
+  }
+  if (MTAGE_REALISTIC_SC_100K) {
+    MTAGE_ASSERT(!MTAGE_REALISTIC_SC_40K);
+    npred = 1;
+    P0_NUMG = 12;
+    P0_LOGB = 10;
+    P0_LOGG = 10;
+    P0_MAXHIST = 1000;
+    P0_MINHIST = 4;
+    P0_HASHPARAM = 3;
+    P0_RAMPUP = 100000;
+    TAGBITS = 12;
+  }
+
   MTAGE_ASSERT(ng > 1);
   MTAGE_ASSERT(logb < 30);
   MTAGE_ASSERT(logg < 30);

@@ -1097,8 +1097,10 @@ void log_stats_mshr_hit(Addr line_addr) {
       STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED);
     else
       STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
-  } else
+  } else {
+    imiss_reason = IMISS_MSHR_HIT;
     STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);
+  }
   set_last_miss_reason(ic->proc_id, imiss_reason);
 }
 

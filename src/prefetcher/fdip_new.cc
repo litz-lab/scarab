@@ -170,6 +170,7 @@ void update_fdip() {
   while(true) {
     bool end_of_block;
     Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block);
+    per_core_cur_op[fdip_proc_id] = op;
     Addr last_line_addr = per_core_last_line_addr[fdip_proc_id];
     Flag emit_new_prefetch = FALSE;
     if (!op) {
@@ -232,7 +233,6 @@ void update_fdip() {
         break;
       }
       if (!line && emit_new_prefetch) { // create a mem request only if line doesn't exist. If the corresponding mem_req exists, it will merge.
-        per_core_cur_op[fdip_proc_id] = op;
         if (FDIP_PREF_NO_LATENCY) {
           Mem_Req req;
           req.off_path           = op ? op->off_path : FALSE;
@@ -464,6 +464,8 @@ uns get_miss_reason(uns proc_id, Addr line_addr) {
     auto tmp_iter = per_core_prefetched_cls[proc_id].find(line_addr);
     DEBUG(proc_id, "%llx misses due to 'not prefetched'\n", line_addr);
     ASSERT(proc_id, tmp_iter == per_core_prefetched_cls[proc_id].end());
+    return Imiss_Reason::IMISS_NOT_PREFETCHED;
+  } else if (cl_iter->second.first < per_core_last_recover_cycle[proc_id]) {
     return Imiss_Reason::IMISS_NOT_PREFETCHED;
   }
   if (cl_iter->second.first >= per_core_last_recover_cycle[proc_id] && cl_iter->second.second > cl_iter->second.first) {

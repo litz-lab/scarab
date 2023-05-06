@@ -68,13 +68,15 @@
 // update (ramp-up) is made sligtly less aggressive
 
 // parameters specific to the global tage
+/*
+Moved to mtage_unlimited.cc
 #define P0_NUMG 25
 #define P0_LOGB 21
 #define P0_LOGG 21
 #define P0_MAXHIST 5000
 #define P0_MINHIST 7
 #define P0_HASHPARAM 3
-#define P0_RAMPUP 100000
+#define P0_RAMPUP 100000 */
 
 // parameters specific to the per-address tage
 #define P1_NUMG 22
@@ -122,7 +124,7 @@
 #define P5_RAMPUP 100000
 
 // parameters common to all tages
-#define TAGBITS 15
+//#define TAGBITS 15
 #define CTRBITS 3
 #define PATHBITS 6
 #define POSTPBITS 5

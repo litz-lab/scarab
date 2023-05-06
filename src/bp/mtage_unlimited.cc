@@ -34,6 +34,18 @@ bool predSC;
 bool predfinal;
 bool pred_inter;
 
+// parameters specific to the global tage
+int npred = NPRED;
+int P0_NUMG = 25;
+int P0_LOGB = 21;
+int P0_LOGG = 21;
+int P0_MAXHIST = 5000;
+int P0_MINHIST = 7;
+int P0_HASHPARAM = 3;
+int P0_RAMPUP = 100000;
+
+//int LOGCOLT = 20;
+int TAGBITS = 15;
 
 #define IMLI  // just to be able to isolate IMLI impact: marginal on CBP5 traces
 
@@ -511,15 +523,15 @@ void compressed_history::update(path_history& ph) {
 
 
 coltentry::coltentry() {
-  for(int i = 0; i < (1 << NPRED); i++) {
-    c[i] = ((i >> (NPRED - 1)) & 1) ? 1 : -2;
+  for(int i = 0; i < (1 << npred); i++) {
+    c[i] = ((i >> (npred - 1)) & 1) ? 1 : -2;
   }
 }
 
 
 int8_t& coltentry::ctr(bool predtaken[NPRED]) {
   int v = 0;
-  for(int i = 0; i < NPRED; i++) {
+  for(int i = 0; i < npred; i++) {
     v = (v << 1) | ((predtaken[i]) ? 1 : 0);
   }
   return c[v];
@@ -949,6 +961,47 @@ void folded_history::update(uint8_t* h, int PT) {
 
 
 MTAGE::MTAGE(void) {
+  // NUMG = number of tagged tables
+  // LOGB = log2 of the number of entries of the tagless (bimodal) table
+  // LOGG = log2 of the number of entries of each tagged table
+  // MAXHIST = maximum path length ("rightmost" tagged table), in branches
+  // MINHIST = minimum path length ("leftmost" tagged table), in branches
+  // HASHPARAM = parameter used in the hash functions (may need to be changed with
+  // predictor size) RAMPUP = ramp-up period in mispredictions (should be kept
+  // roughly proportional to predictor size) TAGBITS = tag width in bits CTRBITS =
+  // width of the taken/not-taken counters in the tagless (bimodal) and tagged
+  // tables PATHBITS = number of per-branch address bits injected in the path
+  // hashing POSTPBITS = width of the taken/not-taken counters in the
+  // post-predictor POSTPEXTRA = number of secondary hits feeding the
+  // post-predictor ALLOCFAILMAX : used for clearing u bits (cf. ISL_TAGE, Andre
+  // Seznec, MICRO 2011) MAXALLOC = maximum number of entries stolen upon a
+  // misprediction (cf. ISL_TAGE) CAPHIST = path length beyond which aggressive
+  // update (ramp-up) is made sligtly less aggressive
+  if (MTAGE_REALISTIC_SC_40K) {
+    MTAGE_ASSERT(!MTAGE_REALISTIC_SC_100K);
+    npred = 1;
+    P0_NUMG = 10;
+    P0_LOGB = 9;
+    P0_LOGG = 9;
+    P0_MAXHIST = 359;
+    P0_MINHIST = 4;
+    P0_HASHPARAM = 3;
+    P0_RAMPUP = 10000;
+    TAGBITS = 12;
+  }
+  if (MTAGE_REALISTIC_SC_100K) {
+    MTAGE_ASSERT(!MTAGE_REALISTIC_SC_40K);
+    npred = 1;
+    P0_NUMG = 12;
+    P0_LOGB = 10;
+    P0_LOGG = 10;
+    P0_MAXHIST = 1000;
+    P0_MINHIST = 4;
+    P0_HASHPARAM = 3;
+    P0_RAMPUP = 100000;
+    TAGBITS = 12;
+  }
+
   sp[0].init(P0_SPSIZE, P0_NUMG, P0_MINHIST, P0_MAXHIST, P0_LOGG, TAGBITS,
              PATHBITS, P0_HASHPARAM);
   sp[1].init(P1_SPSIZE, P1_NUMG, P1_MINHIST, P1_MAXHIST, P1_LOGG, TAGBITS,
@@ -992,7 +1045,7 @@ bool MTAGE::GetPrediction(uint64_t PC) {
   subp[4] = &sp[4].p[f];  // frequency subpath
   subp[5] = &sp[5].p[0];  // global backward path
 
-  for(int i = 0; i < NPRED; i++) {
+  for(int i = 0; i < npred; i++) {
     predtaken[i] = pred[i].condbr_predict(PC, *subp[i]);
     CTR[i] = VAL;  // 7 bits of information: the two longest hitting counters +
                    // the u bit
@@ -1065,13 +1118,19 @@ void MTAGE::UpdatePredictor(uint64_t PC, OpType OPTYPE, bool resolveDir,
 
   // the TAGE stage
   uint64_t ForUpdate = (resolveDir) ? (branchTarget << 1) ^ PC : PC;
-  for(int i = 0; i < NPRED - 1; i++) {
-    pred[i].condbr_update(PC, resolveDir, *subp[i]);
-    subp[i]->update(ForUpdate, resolveDir);
+  if (npred == 1) {
+    pred[0].condbr_update(PC, resolveDir, *subp[0]);
+    subp[0]->update(ForUpdate, resolveDir);
   }
-  pred[NPRED - 1].condbr_update(PC, resolveDir, *subp[NPRED - 1]);
-  if(branchTarget < PC)
-    subp[NPRED - 1]->update(ForUpdate, ((branchTarget < PC) & resolveDir));
+  else {
+    for(int i = 0; i < NPRED - 1; i++) {
+      pred[i].condbr_update(PC, resolveDir, *subp[i]);
+      subp[i]->update(ForUpdate, resolveDir);
+    }
+    pred[NPRED - 1].condbr_update(PC, resolveDir, *subp[NPRED - 1]);
+    if(branchTarget < PC)
+      subp[NPRED - 1]->update(ForUpdate, ((branchTarget < PC) & resolveDir));
+  }
   bfreq.update(bft.getfreq(PC));
   bft.getfreq(PC)++;
 

@@ -49,7 +49,7 @@
 /* Local Prototypes */
 
 static inline Flag insert_uop_cache(void);
-static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl);
+static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl, Flag offpath);
 static inline void init_pw_priority_list(void);
 
 /**************************************************************************************/
@@ -145,8 +145,8 @@ Flag pw_insert(Uop_Cache_Data pw) {
           pw.first_op_offpath, pw.first,
           cpp_cache_index(UOP_CACHE_NAME, pw.first, &line_addr, &line_addr),
           lines_needed, pw.priority);
-    STAT_EVENT(0, UOP_CACHE_PWS_INSERTED);
-    INC_STAT_EVENT(0, UOP_CACHE_LINES_INSERTED, lines_needed);
+    STAT_EVENT(0, UOP_CACHE_PWS_INSERTED_ONPATH + pw.first_op_offpath);
+    INC_STAT_EVENT(0, UOP_CACHE_LINES_INSERTED_ONPATH + pw.first_op_offpath, lines_needed);
   }
   return TRUE;
 }
@@ -199,7 +199,7 @@ Flag insert_uop_cache() {
   return success;
 }
 
-static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
+static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl, Flag offpath) {
   static Uop_Cache_Data cur_pw = {0};
   Addr line_addr;
   UNUSED(line_addr);
@@ -223,8 +223,8 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
       if (uoc_data->prefetch && !uoc_data->used) {
         STAT_EVENT(0, UOP_CACHE_PREFETCH_USED);
       }
-      if (!uoc_data->used) {
-        STAT_EVENT(0, UOP_CACHE_LINES_USED);
+      if (!uoc_data->used && !offpath) {
+        STAT_EVENT(0, UOP_CACHE_LINES_INSERTED_ONPATH_USED_ONPATH + uoc_data->first_op_offpath);
       }
       uoc_data->used += 1;
       cur_pw = *uoc_data;
@@ -247,11 +247,10 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl) {
  *                    Other option: use cache to simulate capacity and maintain a map 
  *                      data structure for pcs
  */
-Flag in_uop_cache(Addr pc, Flag update_repl) {
+Flag in_uop_cache(Addr pc, Flag update_repl, Flag offpath) {
   // A PW can span multiple cache entries. The next line used is either physically 
   // next in the set (use flag) or anywhere in the set (use pointer), depending on impl.
   // Here, don't care about order, just search all lines for pc in question
-  STAT_EVENT(0, IN_UOP_CACHE_CALLED);
   if (!UOP_CACHE_ON) {
     return FALSE;
   }
@@ -259,15 +258,17 @@ Flag in_uop_cache(Addr pc, Flag update_repl) {
   if (ORACLE_PERFECT_UOP_CACHE) {
     if (update_repl) {
       STAT_EVENT(0, UOP_CACHE_HIT);
+      STAT_EVENT(ic->proc_id, UOP_CACHE_HIT_ONPATH + offpath);
     }
     return TRUE;
   } else if (INF_SIZE_UOP_CACHE || INF_SIZE_UOP_CACHE_PW_SIZE_LIM) {
     return hash_table_access(&inf_size_uop_cache, pc) != NULL;
   }
 
-  Flag found = in_uop_cache_search(pc, update_repl);
+  Flag found = in_uop_cache_search(pc, update_repl, offpath);
   if (update_repl) {
     STAT_EVENT(0, UOP_CACHE_MISS + found);
+    STAT_EVENT(ic->proc_id, UOP_CACHE_MISS_ONPATH + 2*found + offpath);
   }
   
   return found;
@@ -384,7 +385,7 @@ Flag uop_cache_issue_prefetch(Addr pw_start_addr, Flag on_path) {
 
   if (UOC_ZERO_LATENCY_PREF) {
     prefetch_success = uop_cache_fill_prefetch(pw_start_addr, on_path);
-  } else if (in_uop_cache(pw_start_addr, FALSE)) {
+  } else if (in_uop_cache(pw_start_addr, FALSE, !on_path)) {
     STAT_EVENT(ic->proc_id, UOP_CACHE_HIT_NO_PREFETCH);
   } else {
     // If no op is provided, on_path is assumed.

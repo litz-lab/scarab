@@ -295,7 +295,7 @@ Inst_Info** lookup_cache() {
   if(PERFECT_ICACHE && !line)
     line = (Inst_Info**)INIT_CACHE_DATA_VALUE;
 
-  if (in_uop_cache(ic->fetch_addr, FALSE) && !line) {
+  if (in_uop_cache(ic->fetch_addr, FALSE, ic->off_path) && !line) {
     // Should return Inst_Info, but op hasn't been fetched yet, so just give it any 
     // value. This is not used anyway
     line = (Inst_Info**)DUMMY_ADDR_UC_FETCH;
@@ -492,7 +492,7 @@ void update_icache_stage() {
 /* update_bf_uoc_stats: */
 
 void update_stats_bf_retired(void) {
-  Flag next_op_in_uop_cache = in_uop_cache(ic->next_fetch_addr, FALSE);
+  Flag next_op_in_uop_cache = in_uop_cache(ic->next_fetch_addr, FALSE, ic->off_path);
   if (!next_op_in_uop_cache) {
     // The micro-op cache can reduce the time to refill the pipeline after a fetch barrier.
     int uop_queue_length = get_uop_queue_stage_length();
@@ -580,7 +580,7 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     ASSERT(ic->proc_id, td->seq_op_list.count <= op_pool_active_ops);
 
     // Log uop cache access - must be called exactly once for every op, so it cannot be called when PB_BREAK_BEFORE
-    in_uop_cache(op->inst_info->addr, TRUE);
+    in_uop_cache(op->inst_info->addr, TRUE, ic->off_path);
 
     /* map the op based on true dependencies & set information in
      * op->oracle_info */
@@ -1114,7 +1114,7 @@ Flag instr_fill_line(Mem_Req* req) {
   }
   // TEMP CHANGE: all FDIPPRF are UOC_PREF as well, except for a corner case where branch target is same line
   if (UOC_PREF && (mem_req_is_type(req, MRT_FDIPPRF) || mem_req_is_type(req, MRT_UOCPRF))) {
-    if (in_uop_cache(req->addr, FALSE)) {
+    if (in_uop_cache(req->addr, FALSE, req->off_path)) {
       STAT_EVENT(ic->proc_id, UOP_CACHE_HIT_NO_PREFETCH);
     } else {
       uop_cache_fill_prefetch(req->addr, !req->off_path);

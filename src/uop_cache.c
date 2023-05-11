@@ -118,8 +118,10 @@ Flag pw_insert(Uop_Cache_Data pw) {
   if (pw.n_uops % UOP_CACHE_MAX_UOPS_LINE) lines_needed++;
   ASSERT(0, lines_needed > 0);
 
-  // Is the PW too big?
-  if (lines_needed > UOP_CACHE_ASSOC) {
+  if (UOP_CACHE_INSERT_ONLY_ONPATH && pw.first_op_offpath) {
+    STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_OFFPATH);
+    return FALSE;
+  } else if (lines_needed > UOP_CACHE_ASSOC) {  // Is the PW too big?
     STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_TOO_LONG + pw.prefetch);
     return FALSE;
   } else if (cpp_cache_access(UOP_CACHE_NAME, pw.first, FALSE, FALSE)) {

@@ -117,6 +117,7 @@ DEF_PARAM(  uop_cache_additional_issue_bandwidth, UOP_CACHE_ADDITIONAL_ISSUE_BAN
 DEF_PARAM(  oracle_perfect_uop_cache       , ORACLE_PERFECT_UOP_CACHE        , Flag   , Flag    , FALSE                  ,       )
 DEF_PARAM(  inf_size_uop_cache             , INF_SIZE_UOP_CACHE              , Flag   , Flag    , FALSE                  ,       )
 DEF_PARAM(  inf_size_uop_cache_pw_size_lim , INF_SIZE_UOP_CACHE_PW_SIZE_LIM  , uns    , uns     , 0                      ,       )
+DEF_PARAM(uop_cache_insert_only_onpath, UOP_CACHE_INSERT_ONLY_ONPATH, Flag, Flag, FALSE,)
 // Uop cache size is set by its uop capacity, NOT size in bytes
 DEF_PARAM(uop_cache_uop_capacity, UOP_CACHE_UOP_CAPACITY, uns, uns, 6 * 256,)  // 256 lines * 6 uops/line = 1.5K uops
 DEF_PARAM(  uop_cache_assoc                , UOP_CACHE_ASSOC                 , uns    , uns     , 8                      ,       )

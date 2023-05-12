@@ -313,7 +313,7 @@ void accumulate_op(Op* op) {
   // Skipped ops means that there was a uop cache hit, so the accumulating_pw
   // may need to be flushed. This must be done in the same place accumulation is done.
   if (op->op_num > next_accum_op) {
-    STAT_EVENT(0, UOP_CACHE_ICACHE_SWITCH);
+    STAT_EVENT(0, UOP_CACHE_ICACHE_SWITCH_ONPATH + op->off_path);
     end_accumulate();
     cur_icache_line_addr = 0;
   }

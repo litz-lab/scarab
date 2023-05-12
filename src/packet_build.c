@@ -216,9 +216,10 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op) {
         int uop_queue_length = get_uop_queue_stage_length();
         int decode_stages_filled = get_decode_stages_filled();
         // TODO(peterbraun): Only measure these stats for ON-PATH. Same thing with resteer stats
-        STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_LENGTH_0 + uop_queue_length);
-        STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_PLUS_DECODE_LENGTH_0 + uop_queue_length + decode_stages_filled);
-        ASSERT(ic->proc_id, uop_queue_length + decode_stages_filled <= 20);  // Stat supports up to 20.
+        const int switch_stat_max_len = 20;  // Stat supports up to 20.
+        STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_LENGTH_0 + uop_queue_length + op->off_path*switch_stat_max_len);
+        STAT_EVENT(ic->proc_id, UOP_CACHE_ICACHE_SWITCH_UOP_QUEUE_PLUS_DECODE_LENGTH_0 + uop_queue_length + decode_stages_filled + op->off_path*switch_stat_max_len);
+        ASSERT(ic->proc_id, uop_queue_length + decode_stages_filled <= switch_stat_max_len);
         _DEBUG(ic->proc_id, DEBUG_UOP_CACHE, "uoc->ic switch, uop_queue=%u\n", uop_queue_length);
         if (!UOC_IC_SWITCH_FRAG_DISABLE) {
           // If IC fetch can start same cycle as UC miss and vice versa,

@@ -232,11 +232,15 @@ void inc_bstat_miss(Op* op, Flag uc_hit) {
 
   const Flag in_ic = in_icache(op->oracle_info.npc);
 
+  if (op->fetched_from_uop_cache && op->oracle_info.recover_at_decode)
+    STAT_EVENT(bp_recovery_info->proc_id, RECOVER_AT_DECODE_BR_FROM_UOC);
+
   if (uc_hit) {
     if (mispred)        bstat->mispred_uc_hit += 1;
     else if (misfetch)  bstat->misfetch_uc_hit += 1;
     else if (btb_miss)  bstat->btb_miss_uc_hit += 1;
     else                bstat->other_recovery_uc_hit += 1;
+    STAT_EVENT(bp_recovery_info->proc_id, RECOVERED_FROM_UOC);
   } else {
     if (mispred) {
       bstat->mispred_uc_miss += 1;

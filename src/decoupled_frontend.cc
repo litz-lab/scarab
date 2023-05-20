@@ -40,6 +40,8 @@ int set_proc_id;
 std::vector<decoupled_fe_iter> *ftq_iterator;
 //need to overwrite op->op_num with decoupeld fe
 
+bool trace_mode;
+
 void alloc_mem_decoupled_fe(uns numCores) {
   per_core_ftq.resize(numCores);
   per_core_off_path.resize(numCores);
@@ -54,6 +56,12 @@ void alloc_mem_decoupled_fe(uns numCores) {
 }
 
 void init_decoupled_fe(uns proc_id, const char*) {
+  trace_mode = false;
+
+#ifdef ENABLE_PT_MEMTRACE
+  trace_mode |= (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE);
+#endif
+
   per_core_off_path[proc_id] = false;
   per_core_sched_off_path[proc_id] = false;
   per_core_op_count[proc_id] = 1;
@@ -216,14 +224,12 @@ void update_decoupled_fe() {
           op->oracle_info.recover_at_decode = FALSE;
           op->oracle_info.recover_at_exec = FALSE;
         }
-        else {
-          per_core_redirect_cycle[set_proc_id] = cycle_count;
-        }
         *off_path = true;
         frontend_redirect(set_proc_id, op->inst_uid, pred_addr);
+        per_core_redirect_cycle[set_proc_id] = cycle_count;
       }
       // If we are already on the off-path redirect on all taken branches in TRACE-MODE
-      else if (*off_path && op->oracle_info.pred == TAKEN) {
+      else if (trace_mode && *off_path && op->oracle_info.pred == TAKEN) {
         frontend_redirect(set_proc_id, op->inst_uid, pred_addr);
       }
       taken_cf = (op->oracle_info.pred == TAKEN) ? taken_cf + 1 : taken_cf;

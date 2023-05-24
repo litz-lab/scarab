@@ -755,7 +755,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
         line_info->read_count[0]     = req->cyc_hit_by_demand_load? 1 : 0;
         line_info->read_count[1]     = 0;
         line_info->HW_prefetch       = req->type == MRT_IPRF;
-        if (req->type == MRT_FDIPPRF) {
+        if (mem_req_is_type(req, MRT_FDIPPRF)) {
           if (req->fdip_pref_off_path)
             line_info->FDIP_prefetch = FDIP_OFFPATH;
           else
@@ -821,7 +821,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
         line_info->read_count[0]     = 0;
         line_info->read_count[1]     = 0;
         line_info->HW_prefetch       = req->type == MRT_IPRF;
-        if (req->type == MRT_FDIPPRF) {
+        if (mem_req_is_type(req, MRT_FDIPPRF)) {
           if (req->fdip_pref_off_path)
             line_info->FDIP_prefetch = FDIP_OFFPATH;
           else
@@ -957,15 +957,13 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
   }
 
   if(!line->read_count[0]) { // only consider the first hit
-    if (operating_mode == SIMULATION_MODE) {
-      inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
-      inc_useful_unuseful_2bit(ic->proc_id, ic->line_addr);
-      inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
-      update_useful_lines_uc(ic->proc_id, ic->line_addr);
-      update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
-    }
+    inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
+    inc_useful_unuseful_2bit(ic->proc_id, ic->line_addr);
+    inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
+    update_useful_lines_uc(ic->proc_id, ic->line_addr);
+    update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
+    inc_utility_info(ic->proc_id, TRUE);
     if(line->FDIP_prefetch) {
-      inc_utility_info(ic->proc_id, TRUE);
       if (!icache_off_path())
         inc_timeliness_info(ic->proc_id, FALSE);
       STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH_BY_FDIP + icache_off_path());
@@ -989,14 +987,12 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
     return;
 
   if(*repl_line_addr && !line->read_count[0]) {
-    if(operating_mode == SIMULATION_MODE) {
-      inc_cnt_unuseful(ic->proc_id, *repl_line_addr, icache_off_path());
-      dec_useful_unuseful_2bit(ic->proc_id, *repl_line_addr);
-      dec_useful_unuseful_3bit(ic->proc_id, *repl_line_addr);
-      DEBUG_FDIP(ic->proc_id, "%llx is evicted\n", *repl_line_addr);
-    }
+    inc_cnt_unuseful(ic->proc_id, *repl_line_addr, icache_off_path());
+    dec_useful_unuseful_2bit(ic->proc_id, *repl_line_addr);
+    dec_useful_unuseful_3bit(ic->proc_id, *repl_line_addr);
+    inc_utility_info(ic->proc_id, FALSE);
     if(line->FDIP_prefetch) {
-      inc_utility_info(ic->proc_id, FALSE);
+      DEBUG_FDIP(ic->proc_id, "%llx is evicted\n", *repl_line_addr);
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ONPATH_BY_FDIP + icache_off_path());
       if(line->FDIP_prefetch == FDIP_ONPATH)
         STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_BY_FDIP_ONPATH);
@@ -1012,7 +1008,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
   }
 
   if(FDIP_ENABLE && *repl_line_addr)
-    evict_prefetched_cls(ic->proc_id, *repl_line_addr);
+    evict_prefetched_cls(ic->proc_id, *repl_line_addr, mem_req_is_type(req, MRT_FDIPPRF)? TRUE : FALSE);
 }
 
 /**************************************************************************************/
@@ -1071,15 +1067,13 @@ void log_stats_mshr_hit(Addr line_addr) {
                                            QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
                                            &queue_entry, &ramulator_match);
   if (req && !req->cyc_hit_by_demand_load) {
-    if (operating_mode == SIMULATION_MODE) {
-      inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
-      inc_useful_unuseful_2bit(ic->proc_id, ic->line_addr);
-      inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
-      update_useful_lines_uc(ic->proc_id, ic->line_addr);
-      update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
-    }
-    if (req->type == MRT_FDIPPRF) {
-      inc_utility_info(ic->proc_id, TRUE);
+    inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
+    inc_useful_unuseful_2bit(ic->proc_id, ic->line_addr);
+    inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
+    update_useful_lines_uc(ic->proc_id, ic->line_addr);
+    update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
+    inc_utility_info(ic->proc_id, TRUE);
+    if (mem_req_is_type(req, MRT_FDIPPRF)) {
       if (!icache_off_path())
         inc_timeliness_info(ic->proc_id, TRUE);
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_ONPATH_BY_FDIP + icache_off_path());
@@ -1092,12 +1086,17 @@ void log_stats_mshr_hit(Addr line_addr) {
   }
   inc_icache_miss(ic->proc_id, ic->line_addr);
   imiss_reason = get_miss_reason(ic->proc_id, line_addr);
+  DEBUG_FDIP(ic->proc_id, "miss reason: %d, req: %d\n", miss_reason, req? 1:0);
   if (!req) {
-    if (imiss_reason == IMISS_TOO_EARLY)
-      STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED);
+    if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_IFETCH);
+    else if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP)
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_FDIP);
     else
       STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
   } else {
+    if (FDIP_ENABLE && !FDIP_UTILITY_HASH_ENABLE && !FDIP_BLOOM_FILTER && !FDIP_UC_SIZE && mem_req_is_type(req, MRT_FDIPPRF))
+      ASSERT(ic->proc_id, imiss_reason == IMISS_MSHR_HIT);
     imiss_reason = IMISS_MSHR_HIT;
     STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);
   }

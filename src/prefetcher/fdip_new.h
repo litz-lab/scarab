@@ -24,7 +24,7 @@ extern "C" {
   void inc_icache_miss(uns proc_id, Addr line_addr);
   void inc_prefetched_cls(Addr line_addr);
   void probe_prefetched_cls(Addr line_addr);
-  void evict_prefetched_cls(uns proc_id, Addr line_addr);
+  void evict_prefetched_cls(uns proc_id, Addr line_addr, Flag by_fdip);
   uns get_miss_reason(uns proc_id, Addr line_addr);
   uns get_last_miss_reason(uns proc_id);
   void set_last_miss_reason(uns proc_id, uns reason);
@@ -43,7 +43,8 @@ extern "C" {
 
 typedef enum ICACHE_MISS_REASON_enum {
   IMISS_NOT_PREFETCHED,
-  IMISS_TOO_EARLY,
+  IMISS_TOO_EARLY_EVICTED_BY_IFETCH,
+  IMISS_TOO_EARLY_EVICTED_BY_FDIP,
   IMISS_MSHR_HIT,
 } Imiss_Reason;
 

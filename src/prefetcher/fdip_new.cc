@@ -60,8 +60,8 @@ std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_useful_ret;
 std::vector<std::map<Addr, Counter>> per_core_icache_miss;
 // <CL addresses, prefetched count>
 std::vector<std::map<Addr, Counter>> per_core_prefetched_cls;
-// <CL address, cyc_access_by_fdip, cyc_evicted_from_l1> - prefetched and access time information for timeliness analysis
-std::vector<std::unordered_map<Addr, std::pair<Counter, Counter>>> per_core_prefetched_cls_info;
+// <CL address, cyc_access_by_fdip, cyc_evicted_from_l1_by_demand_load, cyc_evicted_from_l1_by_FDIP> - prefetched and access time information for timeliness analysis
+std::vector<std::unordered_map<Addr, std::pair<Counter, std::pair<Counter, Counter>>>> per_core_prefetched_cls_info;
 // accumulated FTQ occupancy every cycle
 std::vector<uint64_t> per_core_fdip_ftq_occupancy_ops;
 std::vector<uint64_t> per_core_fdip_ftq_occupancy_blocks;
@@ -437,7 +437,7 @@ void inc_prefetched_cls(Addr line_addr) {
   auto cl_iter = per_core_prefetched_cls[fdip_proc_id].find(line_addr);
   if (cl_iter == per_core_prefetched_cls[fdip_proc_id].end()) {
     per_core_prefetched_cls[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
-    per_core_prefetched_cls_info[fdip_proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(std::move(cycle_count), 0)));
+    per_core_prefetched_cls_info[fdip_proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(std::move(cycle_count), std::make_pair(0, 0))));
   } else {
     cl_iter->second++;
     auto cl_info_iter = per_core_prefetched_cls_info[fdip_proc_id].find(line_addr);
@@ -452,10 +452,17 @@ void probe_prefetched_cls(Addr line_addr) {
     cl_iter->second.first = cycle_count;
 }
 
-void evict_prefetched_cls(uns proc_id, Addr line_addr) {
+void evict_prefetched_cls(uns proc_id, Addr line_addr, Flag by_fdip) {
   auto cl_iter = per_core_prefetched_cls_info[proc_id].find(line_addr);
-  if (cl_iter != per_core_prefetched_cls_info[proc_id].end())
-    cl_iter->second.second = cycle_count;
+  if (cl_iter != per_core_prefetched_cls_info[proc_id].end()) {
+    if (by_fdip) {
+      cl_iter->second.second.first = 0;
+      cl_iter->second.second.second = cycle_count;
+    } else {
+      cl_iter->second.second.first = cycle_count;
+      cl_iter->second.second.second = 0;
+    }
+  }
 }
 
 uns get_miss_reason(uns proc_id, Addr line_addr) {
@@ -465,12 +472,19 @@ uns get_miss_reason(uns proc_id, Addr line_addr) {
     DEBUG(proc_id, "%llx misses due to 'not prefetched'\n", line_addr);
     ASSERT(proc_id, tmp_iter == per_core_prefetched_cls[proc_id].end());
     return Imiss_Reason::IMISS_NOT_PREFETCHED;
-  } else if (cl_iter->second.first < per_core_last_recover_cycle[proc_id]) {
+  }
+  if (cl_iter->second.first < per_core_last_recover_cycle[proc_id]) {
     return Imiss_Reason::IMISS_NOT_PREFETCHED;
   }
-  if (cl_iter->second.first >= per_core_last_recover_cycle[proc_id] && cl_iter->second.second > cl_iter->second.first) {
-    DEBUG(proc_id, "%llx misses due to 'prefetched too early'\n", line_addr);
-    return Imiss_Reason::IMISS_TOO_EARLY;
+
+  if (cl_iter->second.first >= per_core_last_recover_cycle[proc_id]) {
+   if (cl_iter->second.second.first > cl_iter->second.first) {
+    DEBUG(proc_id, "%llx misses due to 'prefetched but evicted by a demand load'\n", line_addr);
+    return Imiss_Reason::IMISS_TOO_EARLY_EVICTED_BY_IFETCH;
+   } else if (cl_iter->second.second.second > cl_iter->second.first) {
+    DEBUG(proc_id, "%llx misses due to 'prefetched but evicted by FDIP'\n", line_addr);
+    return Imiss_Reason::IMISS_TOO_EARLY_EVICTED_BY_FDIP;
+   }
   }
   DEBUG(proc_id, "%llx misses due to 'MSHR hit'\n", line_addr);
   return Imiss_Reason::IMISS_MSHR_HIT;

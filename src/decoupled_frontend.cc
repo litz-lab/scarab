@@ -179,7 +179,7 @@ void update_decoupled_fe() {
     STAT_EVENT(set_proc_id, FTQ_CYCLES_ONPATH);
 
   while(1) {
-    if (per_core_block_count[set_proc_id] >= per_core_ftq_block_num[set_proc_id]) {
+    if (per_core_block_count[set_proc_id] > per_core_ftq_block_num[set_proc_id]) {
       DEBUG(set_proc_id, "Break due to full FTQ\n");
       if (*off_path)
         STAT_EVENT(set_proc_id, FTQ_BREAK_FULL_BLOCK_OFFPATH);

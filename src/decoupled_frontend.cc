@@ -98,6 +98,7 @@ void recover_decoupled_fe(int proc_id) {
   per_core_op_count[proc_id] = bp_recovery_info->recovery_op_num + 1;
   DEBUG(set_proc_id,
         "Recovery signalled fetch_addr0x:%llx\n", bp_recovery_info->recovery_fetch_addr);
+
   for (auto it = per_core_ftq_iterators[proc_id].begin(); it != per_core_ftq_iterators[proc_id].end(); it++) {
     // When the FTQ flushes, reset all iterators
     it->pos = 0;
@@ -128,11 +129,12 @@ void recover_decoupled_fe(int proc_id) {
 
   auto op = bp_recovery_info->recovery_op;
 
-  if(per_core_stalled[set_proc_id])
+  if(per_core_stalled[set_proc_id]) {
     DEBUG(set_proc_id,
-          "Decoupled fetch unstalled off-path barrier due to recovery fetch_addr0x:%llx off_path:%i op_num:%llu\n",
+          "Unstalled off-path fetch barrier due to recovery fetch_addr0x:%llx off_path:%i op_num:%llu\n",
           op->inst_info->addr, op->off_path, op->op_num);
-  per_core_stalled[set_proc_id] = false;
+    per_core_stalled[set_proc_id] = false;
+  }
 
   if (op->oracle_info.recover_at_decode)
     STAT_EVENT(proc_id, FTQ_RECOVER_DECODE);
@@ -162,6 +164,12 @@ void update_decoupled_fe() {
   uint predicted_branches = 0;
   uns cf_num = 0;
   uint64_t current_blocks = per_core_block_count[set_proc_id];
+  static int fwd_progress = 0;
+  fwd_progress++;
+  if (fwd_progress >= 100000) {
+    std::cout << "No forward progress for 1000000 cycles" << std::endl;
+    ASSERT(0,0);
+  }
 
   if (*off_path)
     STAT_EVENT(set_proc_id, FTQ_CYCLES_OFFPATH);
@@ -193,11 +201,20 @@ void update_decoupled_fe() {
         STAT_EVENT(set_proc_id, FTQ_BREAK_PRED_BR_ONPATH);
       break;
     }
+    if (per_core_stalled[set_proc_id]) {
+      DEBUG(set_proc_id, "Break due to wait for fetch barrier resolved\n");
+      if (*off_path)
+        STAT_EVENT(set_proc_id, FTQ_BREAK_BAR_FETCH_OFFPATH);
+      else
+        STAT_EVENT(set_proc_id, FTQ_BREAK_BAR_FETCH_ONPATH);
+      break;
+    }
     if (!frontend_can_fetch_op(set_proc_id)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
       break;
     }
 
+    fwd_progress = 0;
     uint64_t pred_addr = 3;
     Op* op = alloc_op(set_proc_id);
     frontend_fetch_op(set_proc_id, op);
@@ -214,8 +231,17 @@ void update_decoupled_fe() {
             op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN,
             op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec,
             *off_path, op->table_info->bar_type & BAR_FETCH);
-        
-      if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
+
+      /* Execution driven mode does not support frontend_redirect after syscalls.
+         On fetch barrier stall the frontend. Ignore BTB misses here as the exec frontend cannot
+         handle recovery/execution until syscalls retire. This is ok as stalling causes the same
+         cycle penalty than recovering from BTB miss. */ 
+      if (op->table_info->bar_type & BAR_FETCH) {
+        op->oracle_info.recover_at_decode = FALSE;
+        op->oracle_info.recover_at_exec = FALSE;
+        decoupled_fe_stall(op);
+      }
+      if(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
         ASSERT(0, (int)op->oracle_info.recover_at_decode + (int)op->oracle_info.recover_at_exec < 2);
         /* If already on the off-path do not schedule recovery as scarab cannot recover OOO
            (An older op may recover at exec and a younger op may recover at decode)
@@ -251,14 +277,6 @@ void update_decoupled_fe() {
     per_core_block_count[set_proc_id] += start_new_block;
     df_ftq->emplace_back(std::pair<Op*, bool>(op, start_new_block));
     fetched_inst_bytes += op->inst_info->trace_info.inst_size;
-
-    if (op->table_info->bar_type & BAR_FETCH && op->eom) {
-      // If this is a mispredicted CF, wait for decode to recover, decode will then stall FE
-      if (!op->oracle_info.recover_at_decode) {
-        decoupled_fe_stall(op);
-      }
-      ASSERT(set_proc_id, !op->oracle_info.recover_at_exec);
-    }
 
     if (*off_path) {
       STAT_EVENT(set_proc_id, FTQ_FETCHED_INS_OFFPATH);
@@ -369,8 +387,9 @@ void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid) {
   if(op->table_info->bar_type & BAR_FETCH) {
     per_core_stalled[set_proc_id] = false;
     DEBUG(set_proc_id,
-          "Decoupled fetch unstalled due to retired barrier fetch_addr0x:%llx off_path:%i op_num:%llu\n",
-          op->inst_info->addr, op->off_path, op->op_num);
+          "Decoupled fetch unstalled due to retired barrier fetch_addr0x:%llx off_path:%i op_num:%llu list_count:%i\n",
+          op->inst_info->addr, op->off_path, op->op_num, td->seq_op_list.count);
+    ASSERT(set_proc_id, td->seq_op_list.count == 1);
   }
 
   //unblock pin exec driven, trace frontends do not need to block/unblock

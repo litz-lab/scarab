@@ -245,11 +245,6 @@ void decode_stage_process_op(Op* op) {
       // stats for the reason of resteer
       STAT_EVENT(dec->proc_id, RESTEER_BTB_MISS_CF_BR + cf);
     }
-    else if (!op->off_path){
-      // If this CF is a fetch barrier it should have been mispredicted and recovered at decode
-      // If its off-path then a prior op will recover instead (see OOO recovery in decoupled_fe)
-      ASSERT(dec->proc_id, !bf);
-    }
 
     if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)
       increment_branch_count(op->inst_info->addr);

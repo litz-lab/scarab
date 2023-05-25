@@ -172,7 +172,6 @@ void update_decoupled_fe() {
     std::cout << "No forward progress for 1000000 cycles" << std::endl;
     ASSERT(0,0);
   }
-
   if (*off_path)
     STAT_EVENT(set_proc_id, FTQ_CYCLES_OFFPATH);
   else
@@ -234,14 +233,10 @@ void update_decoupled_fe() {
             op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec,
             *off_path, op->table_info->bar_type & BAR_FETCH);
 
-      /* Execution driven mode does not support frontend_redirect after syscalls.
-         On fetch barrier stall the frontend. Ignore BTB misses here as the exec frontend cannot
-         handle recovery/execution until syscalls retire. This is ok as stalling causes the same
-         cycle penalty than recovering from BTB miss. */ 
+      /* Execution driven mode does not support frontend_redirect after syscalls.*/
       if (op->table_info->bar_type & BAR_FETCH) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = FALSE;
-        decoupled_fe_stall(op);
       }
       if(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
         ASSERT(0, (int)op->oracle_info.recover_at_decode + (int)op->oracle_info.recover_at_exec < 2);
@@ -264,6 +259,15 @@ void update_decoupled_fe() {
     }
     else
       ASSERT(0,!(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
+
+    /* On fetch barrier stall the frontend. Ignore BTB misses here as the exec frontend cannot
+       handle recovery/execution until syscalls retire. This is ok as stalling causes the same
+       cycle penalty than recovering from BTB miss. */ 
+    if (op->table_info->bar_type & BAR_FETCH) {
+      op->oracle_info.recover_at_decode = FALSE;
+      op->oracle_info.recover_at_exec = FALSE;
+      decoupled_fe_stall(op);
+    }
 
     // We start a new block if crossing a line or take a branch
     bool start_new_block = false;
@@ -288,8 +292,8 @@ void update_decoupled_fe() {
     }
       
     DEBUG(set_proc_id,
-          "Push new op to FTQ fetch_addr0x:%llx off_path:%i op_num:%llu dis:%s recovery_addr:%lx\n",
-          op->inst_info->addr, op->off_path, op->op_num, disasm_op(op, TRUE), per_core_recovery_addr[set_proc_id]);
+          "Push new op to FTQ fetch_addr0x:%llx off_path:%i op_num:%llu dis:%s recovery_addr:%lx fetch_bar:%i\n",
+          op->inst_info->addr, op->off_path, op->op_num, disasm_op(op, TRUE), per_core_recovery_addr[set_proc_id], op->table_info->bar_type & BAR_FETCH);
     // Recovery sanity check
     if (per_core_recovery_addr[set_proc_id]) {
       ASSERT(set_proc_id, per_core_recovery_addr[set_proc_id] == op->inst_info->addr);

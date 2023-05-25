@@ -1086,7 +1086,7 @@ void log_stats_mshr_hit(Addr line_addr) {
   }
   inc_icache_miss(ic->proc_id, ic->line_addr);
   imiss_reason = get_miss_reason(ic->proc_id, line_addr);
-  DEBUG_FDIP(ic->proc_id, "miss reason: %d, req: %d\n", miss_reason, req? 1:0);
+  DEBUG_FDIP(ic->proc_id, "miss reason: %d, req: %d\n", imiss_reason, req? 1:0);
   if (!req) {
     if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_IFETCH);

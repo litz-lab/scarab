@@ -165,7 +165,7 @@ void update_decoupled_fe() {
   uint taken_cf = 0;
   uint predicted_branches = 0;
   uns cf_num = 0;
-  uint64_t current_blocks = per_core_block_count[set_proc_id];
+  uint64_t block_this_cycle = 0;
   static int fwd_progress = 0;
   fwd_progress++;
   if (fwd_progress >= 100000) {
@@ -186,7 +186,7 @@ void update_decoupled_fe() {
         STAT_EVENT(set_proc_id, FTQ_BREAK_FULL_BLOCK_ONPATH);
       break;
     }
-    if (per_core_block_count[set_proc_id] == current_blocks + FE_BLOCKS_PER_CYCLE) {
+    if (block_this_cycle == FE_BLOCKS_PER_CYCLE) {
       DEBUG(set_proc_id, "Break due to max blocks per cycle\n");
       if (*off_path)
         STAT_EVENT(set_proc_id, FTQ_BREAK_MAX_BLOCKS_OFFPATH);
@@ -274,6 +274,7 @@ void update_decoupled_fe() {
     if (op->eom) {
       start_new_block |= ((op->inst_info->addr >> FE_FTQ_BLOCK_SIZE_LOG) != ((op->inst_info->addr + op->inst_info->trace_info.inst_size) >> FE_FTQ_BLOCK_SIZE_LOG));
       start_new_block |= (op->table_info->cf_type && op->oracle_info.pred == TAKEN);
+      block_this_cycle += (((op->inst_info->addr >> FE_FTQ_BLOCK_SIZE_LOG) != ((op->inst_info->addr + op->inst_info->trace_info.inst_size) >> FE_FTQ_BLOCK_SIZE_LOG)) || (FETCH_BREAK_ON_TAKEN && op->table_info->cf_type && op->oracle_info.pred == TAKEN))? 1 : 0;
     }
 
     if (op->table_info->cf_type == CF_CBR) {

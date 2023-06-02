@@ -365,7 +365,21 @@ Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter, bool *end_of_block) {
   ASSERT(set_proc_id, iter->pos >= 0);
   ASSERT(set_proc_id, iter->pos < df_ftq->size());
   *end_of_block = df_ftq->at(iter->pos).second;
-  return df_ftq->at(iter->pos++).first;
+  return df_ftq->at(iter->pos).first;
+}
+
+/* Increments the iterator and returns the Op at FTQ iterator position. Returns NULL if the FTQ is empty */
+Op* decoupled_fe_ftq_iter_get_next(decoupled_fe_iter* iter, bool *end_of_block) {
+  if (iter->pos == df_ftq->size() || iter->pos + 1 == df_ftq->size()) {
+    if (!df_ftq->size())
+      ASSERT(set_proc_id, iter->pos == 0);
+    return NULL;
+  }
+  ASSERT(set_proc_id, iter->pos + 1 >= 0);
+  ASSERT(set_proc_id, iter->pos + 1 < df_ftq->size());
+  iter->pos++;
+  *end_of_block = df_ftq->at(iter->pos).second;
+  return df_ftq->at(iter->pos).first;
 }
 
 /* Returns iter offset from the start of the FTQ, this offset gets incremented

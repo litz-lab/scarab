@@ -164,15 +164,16 @@ void update_fdip() {
   if (!FDIP_ENABLE)
     return;
 
+  uint32_t ops_per_cycle = 0;
   int ftq_entry_per_cycle = 0;
   FDIP_Break break_reason = BR_REACH_FTQ_END;
+  bool end_of_block;
 
-  while(true) {
-    bool end_of_block;
-    Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block);
+  for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
     per_core_cur_op[fdip_proc_id] = op;
     Addr last_line_addr = per_core_last_line_addr[fdip_proc_id];
     Flag emit_new_prefetch = FALSE;
+    bool block_break = FETCH_BREAK_ON_TAKEN && !FETCH_ACROSS_CACHE_LINES;
     if (!op) {
       if (!decoupled_fe_ftq_iter_offset(iter)) {
         DEBUG(fdip_proc_id, "Break due to FTQ Empty\n");
@@ -183,8 +184,13 @@ void update_fdip() {
       }
       break;
     }
-    if (ftq_entry_per_cycle == MAX_FTQ_ENTRY_CYC) {
-      DEBUG(fdip_proc_id, "Break due to max FTQ entries per cycle\n");
+    if (block_break && ftq_entry_per_cycle == MAX_FTQ_ENTRY_CYC) {
+      DEBUG(fdip_proc_id, "Break due to max FTQ entries per cycle (block break enable)\n");
+      break_reason = BR_MAX_FTQ_ENTRY_CYC;
+      break;
+    }
+    if (!block_break && ftq_entry_per_cycle >= MAX_FTQ_ENTRY_CYC && ops_per_cycle >= std::max(UC_ISSUE_WIDTH, IC_ISSUE_WIDTH)) {
+      DEBUG(fdip_proc_id, "Break due to max FTQ entries per cycle (block break disable)\n");
       break_reason = BR_MAX_FTQ_ENTRY_CYC;
       break;
     }

@@ -77,14 +77,16 @@ extern "C" {
   /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached
      if end_of_block is true the Op is the last one in a fetch block (cache-line boundary of taken branch)*/
   Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter, bool *end_of_block);
-/* Returns iter offset from the start of the FTQ, this offset gets incremented
-   by advancing the iter and decremented by the icache consuming FTQ entries,
-   and reset by flushes */
+  /* Increments iterator and returns the Op at iterator position or NULL if FTQ is empty or the end of FTQ was reached
+     if end_of_block is true the Op is the last one in a fetch block (cache-line boundary of taken branch)*/
+  Op* decoupled_fe_ftq_iter_get_next(decoupled_fe_iter* iter, bool *end_of_block);
+  /* Returns iter offset from the start of the FTQ, this offset gets incremented
+     by advancing the iter and decremented by the icache consuming FTQ entries,
+     and reset by flushes */
   uint64_t decoupled_fe_ftq_iter_offset(decoupled_fe_iter* iter);
   uint64_t decoupled_fe_ftq_size();
   uint64_t decoupled_fe_ftq_num_ops();
   uint64_t decoupled_fe_ftq_num_blocks();
-
 #ifdef __cplusplus
 }
 #endif

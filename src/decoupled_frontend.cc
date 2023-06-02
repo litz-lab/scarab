@@ -19,6 +19,8 @@
 // a threshold of timeliness ratio
 #define TIMELINESS_RATIO_THRESHOLD 0.495
 
+uint32_t FE_FTQ_BLOCK_SIZE = pow(2, FE_FTQ_BLOCK_SIZE_LOG);
+
 std::vector<std::deque<std::pair<Op*, bool>>> per_core_ftq;
 std::vector<int> per_core_off_path;
 std::vector<int> per_core_sched_off_path;
@@ -166,6 +168,7 @@ void update_decoupled_fe() {
   uint predicted_branches = 0;
   uns cf_num = 0;
   uint64_t block_this_cycle = 0;
+  uint64_t bytes_this_cycle = 0;
   static int fwd_progress = 0;
   fwd_progress++;
   if (fwd_progress >= 100000) {
@@ -269,12 +272,16 @@ void update_decoupled_fe() {
       decoupled_fe_stall(op);
     }
 
-    // We start a new block if crossing a line or take a branch
+    // We start a new block if crossing a block or take a branch depending on packet break conditions
     bool start_new_block = false;
     if (op->eom) {
-      start_new_block |= ((op->inst_info->addr >> FE_FTQ_BLOCK_SIZE_LOG) != ((op->inst_info->addr + op->inst_info->trace_info.inst_size) >> FE_FTQ_BLOCK_SIZE_LOG));
-      start_new_block |= (op->table_info->cf_type && op->oracle_info.pred == TAKEN);
-      block_this_cycle += (((op->inst_info->addr >> FE_FTQ_BLOCK_SIZE_LOG) != ((op->inst_info->addr + op->inst_info->trace_info.inst_size) >> FE_FTQ_BLOCK_SIZE_LOG)) || (FETCH_BREAK_ON_TAKEN && op->table_info->cf_type && op->oracle_info.pred == TAKEN))? 1 : 0;
+      bool cross_block = (op->inst_info->addr >> FE_FTQ_BLOCK_SIZE_LOG) != ((op->inst_info->addr + op->inst_info->trace_info.inst_size) >> FE_FTQ_BLOCK_SIZE_LOG);
+      bool max_bytes = (bytes_this_cycle + op->inst_info->trace_info.inst_size) > FE_FTQ_BLOCK_SIZE;
+
+      bytes_this_cycle += op->inst_info->trace_info.inst_size;
+      start_new_block |= cross_block || (op->table_info->cf_type && op->oracle_info.pred == TAKEN);
+      block_this_cycle += (!FETCH_ACROSS_CACHE_LINES && cross_block) || (FETCH_ACROSS_CACHE_LINES && max_bytes) ||
+        (FETCH_BREAK_ON_TAKEN && op->table_info->cf_type && op->oracle_info.pred == TAKEN);
     }
 
     if (op->table_info->cf_type == CF_CBR) {

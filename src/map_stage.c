@@ -218,12 +218,6 @@ void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uopq_src_sd) {
   else
       STAT_EVENT(map->proc_id, MAP_STAGE_OFF_PATH);
 
-  for(int ii = 0; ii < cur->op_count; ii++) {
-    Op* op = cur->ops[ii];
-    if (op && op->off_path)
-      map_off_path = 1;
-  }
-
   // Consume interleaved from both srcs if UOC_IC_SWITCH_FRAG_DISABLE.
   // Else, only consume from one src
   if (cur->op_count == 0 && consume_from_sd) {
@@ -239,6 +233,13 @@ void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uopq_src_sd) {
       }
     } while (fetched_cfsd || fetched_osd);
 
+    for(int ii = 0; ii < cur->op_count; ii++) {
+      Op* op = cur->ops[ii];
+      if (op && op->off_path)
+        map_off_path = 1;
+    }
+    // Probably should count number of on-path ops. 
+    // Any stage can receive a mix of on/off-path ops in a single cycle.
     if (!map_off_path)
       STAT_EVENT(map->proc_id, MAP_STAGE_RECEIVED_OPS_0 + cur->op_count);
     ASSERT(map->proc_id, cur->op_count <= MAP_STAGE_RECEIVED_OPS_MAX);

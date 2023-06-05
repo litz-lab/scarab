@@ -61,7 +61,7 @@
 
 Exec_Stage* exec = NULL;
 int         op_type_delays[NUM_OP_TYPES];
-
+int         exec_off_path;
 /**************************************************************************************/
 /* Prototypes */
 
@@ -136,6 +136,7 @@ void reset_exec_stage() {
 
 void recover_exec_stage() {
   uns ii;
+  exec_off_path = 0;
   for(ii = 0; ii < NUM_FUS; ii++) {
     Func_Unit* fu = &exec->fus[ii];
     Op*        op = exec->sd.ops[ii];
@@ -180,6 +181,20 @@ void update_exec_stage(Stage_Data* src_sd) {
   uns ii;
   ASSERT(exec->proc_id, exec->sd.op_count <= exec->sd.max_op_count);
   // {{{ phase 1 - success/failure of latching and wake up of dependent ops
+  if (!exec_off_path) {
+    if (exec->sd.op_count)
+      STAT_EVENT(exec->proc_id, EXEC_STAGE_STARVED);
+    else
+      STAT_EVENT(exec->proc_id, EXEC_STAGE_NOT_STARVED);
+  }
+  else
+    STAT_EVENT(exec->proc_id, EXEC_STAGE_OFF_PATH);
+
+  for(ii = 0; ii < src_sd->max_op_count; ii++) {
+    if (src_sd->ops[ii] && src_sd->ops[ii]->off_path)
+      exec_off_path = 1;
+  }
+
   for(ii = 0; ii < src_sd->max_op_count; ii++) {
     Func_Unit* fu  = &exec->fus[ii];
     Op*        op  = src_sd->ops[ii];

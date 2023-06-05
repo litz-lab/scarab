@@ -49,7 +49,6 @@
 
 /**************************************************************************************/
 /* Macros */
-
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_MAP_STAGE, ##args)
 #define STAGE_MAX_OP_COUNT ISSUE_WIDTH + UOP_CACHE_ADDITIONAL_ISSUE_BANDWIDTH
 #define STAGE_MAX_DEPTH MAP_CYCLES
@@ -62,6 +61,7 @@ Map_Stage* map = NULL;
 // The next op number is used when deciding whether to consume ops from the
 // uop cache: i.e. check if any preceding instructions are still in the decoder.
 Counter map_stage_next_op_num = 1;
+int map_off_path = 0;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -124,6 +124,7 @@ void reset_map_stage() {
 
 void recover_map_stage() {
   uns ii, jj, kk;
+  map_off_path = 0;
   ASSERT(0, map);
   for(ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &map->sds[ii];
@@ -204,6 +205,25 @@ void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uopq_src_sd) {
     other_sd = dec_src_sd;
   }
 
+  if(!map_off_path) {
+    if(stall)
+      STAT_EVENT(map->proc_id, MAP_STAGE_STALLED);
+    else
+      STAT_EVENT(map->proc_id, MAP_STAGE_NOT_STALLED);
+    if(consume_from_sd == NULL)
+      STAT_EVENT(map->proc_id, MAP_STAGE_STARVED);
+    else
+      STAT_EVENT(map->proc_id, MAP_STAGE_NOT_STARVED);
+  }
+  else
+      STAT_EVENT(map->proc_id, MAP_STAGE_OFF_PATH);
+
+  for(int ii = 0; ii < cur->op_count; ii++) {
+    Op* op = cur->ops[ii];
+    if (op && op->off_path)
+      map_off_path = 1;
+  }
+
   // Consume interleaved from both srcs if UOC_IC_SWITCH_FRAG_DISABLE.
   // Else, only consume from one src
   if (cur->op_count == 0 && consume_from_sd) {
@@ -218,7 +238,9 @@ void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uopq_src_sd) {
         fetched_osd = map_fetch_fill_op(other_sd, &osd_ii);
       }
     } while (fetched_cfsd || fetched_osd);
-    STAT_EVENT(map->proc_id, MAP_STAGE_RECEIVED_OPS_0 + cur->op_count);
+
+    if (!map_off_path)
+      STAT_EVENT(map->proc_id, MAP_STAGE_RECEIVED_OPS_0 + cur->op_count);
     ASSERT(map->proc_id, cur->op_count <= MAP_STAGE_RECEIVED_OPS_MAX);
   }
   // if op array not empty, shift ops to array start
@@ -236,6 +258,7 @@ void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uopq_src_sd) {
     ASSERT(map->proc_id, op != NULL);
     stage_process_op(op);
   }
+
 }
 
 

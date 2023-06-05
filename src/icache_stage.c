@@ -317,14 +317,25 @@ void update_icache_stage() {
 
   ic->state = ic->next_state;
 
+  if (ic->off_path)
+    STAT_EVENT(exec->proc_id, ICACHE_STAGE_OFF_PATH);
+
   if(ic->sd.op_count) {
     STAT_EVENT(ic->proc_id, FETCH_0_OPS);
     INC_STAT_EVENT(ic->proc_id,
                    INST_LOST_FULL_WINDOW + inst_lost_get_full_window_reason(),
                    IC_ISSUE_WIDTH);
     DEBUG(ic->proc_id, "Icache stalled\n");
+    if(!ic->off_path) {
+      STAT_EVENT(map->proc_id, ICACHE_STAGE_STALLED);
+    }
     return;
   }
+  else if(!ic->off_path) {
+    STAT_EVENT(map->proc_id, ICACHE_STAGE_NOT_STALLED);
+  }
+
+
 
   DEBUG(ic->proc_id, "Icache state: %i\n", ic->state);
 
@@ -455,12 +466,22 @@ void update_icache_stage() {
                                                            : 0);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS + ic->sd.op_count);
       STAT_EVENT(ic->proc_id, ST_BREAK_DONT + break_fetch);
+      if(!ic->off_path) {
+        if (!ic->sd.op_count)
+          STAT_EVENT(map->proc_id, ICACHE_STAGE_STARVED);
+        else
+          STAT_EVENT(map->proc_id, ICACHE_STAGE_NOT_STARVED);
+      }
     } break;
 
     case IC_WAIT_FOR_MISS: {
       DEBUG(ic->proc_id, "Ifetch barrier: Waiting for miss \n");
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS, IC_ISSUE_WIDTH - 1);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
+      if(!ic->off_path) {
+        STAT_EVENT(map->proc_id, ICACHE_STAGE_STARVED);
+      }
+
       STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + get_last_miss_reason(ic->proc_id));
     } break;
 
@@ -478,6 +499,9 @@ void update_icache_stage() {
       DEBUG(ic->proc_id, "Ifetch barrier: Waiting for timer \n");
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_TIMER, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
+      if(!ic->off_path) {
+        STAT_EVENT(map->proc_id, ICACHE_STAGE_STARVED);
+      }
       if(cycle_count >= ic->timer_cycle)
         ic->next_state = IC_FETCH;
     } break;

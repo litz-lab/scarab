@@ -64,6 +64,7 @@
 /* Global Variables */
 
 Decode_Stage* dec = NULL;
+bool decode_off_path;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -124,6 +125,7 @@ void reset_decode_stage() {
 
 void recover_decode_stage() {
   uns ii, jj;
+  decode_off_path = false;
   ASSERT(0, dec);
   for(ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &dec->sds[ii];
@@ -169,6 +171,20 @@ void update_decode_stage(Stage_Data* src_sd) {
   Op**        temp;
   uns         ii;
 
+  if(!decode_off_path) {
+    if(stall)
+      STAT_EVENT(dec->proc_id, DECODE_STAGE_STALLED);
+    else
+      STAT_EVENT(dec->proc_id, DECODE_STAGE_NOT_STALLED);
+    if(!src_sd->op_count)
+      STAT_EVENT(dec->proc_id, DECODE_STAGE_STARVED);
+    else
+      STAT_EVENT(dec->proc_id, DECODE_STAGE_NOT_STARVED);
+  }
+  else
+    STAT_EVENT(dec->proc_id, DECODE_STAGE_OFF_PATH);
+
+
   /* do all the intermediate stages */
   for(ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
     cur = &dec->sds[ii];
@@ -188,6 +204,8 @@ void update_decode_stage(Stage_Data* src_sd) {
   if (cur->op_count == 0 && src_sd->op_count) {
     for (int i = 0; i < src_sd->max_op_count; i++) {
       Op* src_op = src_sd->ops[i];
+      if (src_op && src_op->off_path)
+        decode_off_path = true;
       if (src_op && !src_op->fetched_from_uop_cache) {
         cur->ops[cur->op_count] = src_op;
         src_sd->ops[i] = NULL;
@@ -195,6 +213,8 @@ void update_decode_stage(Stage_Data* src_sd) {
         src_sd->op_count--;
       }
     }
+    //   if (!stall)
+    //ASSERT(0, !src_sd->op_count);
   }
 
   /* if the last decode stage is stalled, don't re-process the ops  */

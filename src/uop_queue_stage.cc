@@ -34,6 +34,7 @@ std::deque<Stage_Data*> free_sds {};
 Counter last_recovery_cycle {};
 Counter last_recovery_pw {};
 std::size_t prev_q_size {};
+bool uopq_off_path;
 
 static inline void update_uop_queue_fill_time_stat(void);
 
@@ -72,16 +73,28 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
   }
   update_uop_queue_fill_time_stat(); // gets updated the cycle after the size changes
 
+  if (uopq_off_path) {
+    STAT_EVENT(dec->proc_id, UOPQ_STAGE_OFF_PATH);
+  }
   // If the queue cannot accomodate more ops, stall.
   if (q.size() >= UOP_QUEUE_STAGE_LENGTH) {
     // Backend stalls may force fetch to stall.
+    if (!uopq_off_path) {
+      STAT_EVENT(dec->proc_id, UOPQ_STAGE_STALLED);
+    }
     return;
+  }
+  else if (!uopq_off_path) {
+    STAT_EVENT(dec->proc_id, UOPQ_STAGE_NOT_STALLED);
   }
 
   // Build a new sd and place new ops into the queue.
   Stage_Data* new_sd = free_sds.front();
   ASSERT(0, src_sd->op_count <= (int)STAGE_MAX_OP_COUNT);
   if (src_sd->op_count) {
+    if (!uopq_off_path) {
+      STAT_EVENT(dec->proc_id, UOPQ_STAGE_NOT_STARVED);
+    }
     for (int i = 0; i < src_sd->max_op_count; i++) {
       Op* src_op = src_sd->ops[i];
       if (src_op && src_op->fetched_from_uop_cache) {
@@ -91,9 +104,15 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
         src_sd->op_count--;
         decode_stage_process_op(src_op);
         DEBUG(0, "Fetching opnum=%llu\n", src_op->op_num);
+        if (src_op->off_path)
+          uopq_off_path = true;
       }
     }
   }
+  else if (!uopq_off_path) {
+    STAT_EVENT(dec->proc_id, UOPQ_STAGE_STARVED);
+  }
+
   if (new_sd->op_count > 0) {
     free_sds.pop_front();
     q.push_back(new_sd);
@@ -101,6 +120,7 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
 }
 
 void recover_uop_queue_stage(void) {
+  uopq_off_path = false;
   for (std::deque<Stage_Data*>::iterator it = q.begin(); it != q.end();) {
     Stage_Data* sd = *it;
     sd->op_count = 0;

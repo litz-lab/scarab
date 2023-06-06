@@ -216,6 +216,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->done_cycle          = MAX_CTR;
   op->retire_cycle        = MAX_CTR;
   op->replay_cycle        = MAX_CTR;
+  op->decode_cycle        = 0;
   op->replay              = FALSE;
   op->replay_count        = 0;
   op->dont_cause_replays  = FALSE;

@@ -42,6 +42,7 @@
 #include "model.h"
 #include "thread.h"
 #include "uop_cache.h"
+#include "decode_stage.h"
 
 #include "core.param.h"
 #include "debug/debug.param.h"
@@ -283,6 +284,7 @@ static inline Flag map_fetch_fill_op(Stage_Data* src_sd, int* fetch_idx) {
   Op* op = src_sd->ops[*fetch_idx];
   if (op && op->op_num == map_stage_next_op_num) {
     DEBUG(map->proc_id, "Fetching opnum=%llu from %s at idx=%i\n", op->op_num, src_sd->name, *fetch_idx);
+    if (!op->decode_cycle) decode_stage_process_op(op);
     op->map_cycle = cycle_count;
     dest_sd->ops[dest_sd->op_count++] = op;
     src_sd->ops[*fetch_idx] = NULL;

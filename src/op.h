@@ -216,6 +216,7 @@ struct Op_struct {
                          // talbes)
   Counter replay_cycle;  // cycle when the op catches a replay signal
   Counter pred_cycle;
+  Counter decode_cycle;  // cycle when decode completes
 
   // }}}
 

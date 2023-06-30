@@ -345,8 +345,9 @@ Mem_Req* ramulator_search_queue(long phys_addr, Mem_Req_Type type) {
   // Search response queue
   for(auto resp : resp_queue) {
     if(resp.first == phys_addr) {
-      if((resp.second->type == MRT_IFETCH || resp.second->type == MRT_IPRF) &&
-         (type == MRT_IFETCH || type == MRT_IPRF))
+      if((resp.second->type == MRT_IFETCH || resp.second->type == MRT_IPRF ||
+          resp.second->type == MRT_FDIPPRF || resp.second->type == MRT_UOCPRF) &&
+         (type == MRT_IFETCH || type == MRT_IPRF || type == MRT_FDIPPRF || type == MRT_UOCPRF))
         return resp.second;
       else if((resp.second->type == MRT_DFETCH ||
                resp.second->type == MRT_DPRF ||

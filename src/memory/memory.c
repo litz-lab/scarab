@@ -2747,8 +2747,8 @@ static inline Mem_Req* mem_search_queue(
     src_addr       = CACHE_SIZE_ADDR(req->size, addr);
     match          = FALSE;
 
-    if((dest_addr == src_addr) &&
-       !is_final_state(req->state)) { /* address match */
+    if((dest_addr == src_addr)/* &&
+                                 !is_final_state(req->state)*/) { /* address match */
       ASSERTM(proc_id, proc_id == get_proc_id_from_cmp_addr(addr),
               "Proc ID does not match proc ID in address!\n");
       ASSERTM(proc_id, req->proc_id == get_proc_id_from_cmp_addr(req->addr),

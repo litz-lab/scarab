@@ -1118,6 +1118,10 @@ void log_stats_mshr_hit(Addr line_addr) {
       STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_FDIP);
     else
       STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
+    if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP || imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_TOO_EARLY_ONPATH + icache_off_path());
+    else
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED + icache_off_path());
   } else {
     if (FDIP_ENABLE && !FDIP_UTILITY_HASH_ENABLE && !FDIP_BLOOM_FILTER && !FDIP_UC_SIZE && mem_req_is_type(req, MRT_FDIPPRF))
       ASSERT(ic->proc_id, imiss_reason == IMISS_MSHR_HIT);

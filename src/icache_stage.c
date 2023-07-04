@@ -981,13 +981,13 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
   }
 
   if(!line->read_count[0]) { // only consider the first hit
-    inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
-    inc_useful_unuseful_2bit(ic->proc_id, ic->line_addr);
-    inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
-    update_useful_lines_uc(ic->proc_id, ic->line_addr);
-    update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
-    inc_utility_info(ic->proc_id, TRUE);
     if(line->FDIP_prefetch) {
+      inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
+      inc_useful_unuseful_2bit(ic->proc_id, ic->line_addr);
+      inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
+      update_useful_lines_uc(ic->proc_id, ic->line_addr);
+      update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
+      inc_utility_info(ic->proc_id, TRUE);
       if (!icache_off_path())
         inc_timeliness_info(ic->proc_id, FALSE);
       STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH_BY_FDIP + icache_off_path());
@@ -1011,11 +1011,11 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
     return;
 
   if(*repl_line_addr && !line->read_count[0]) {
-    inc_cnt_unuseful(ic->proc_id, *repl_line_addr, icache_off_path());
-    dec_useful_unuseful_2bit(ic->proc_id, *repl_line_addr);
-    dec_useful_unuseful_3bit(ic->proc_id, *repl_line_addr);
-    inc_utility_info(ic->proc_id, FALSE);
     if(line->FDIP_prefetch) {
+      inc_cnt_unuseful(ic->proc_id, *repl_line_addr, icache_off_path());
+      dec_useful_unuseful_2bit(ic->proc_id, *repl_line_addr);
+      dec_useful_unuseful_3bit(ic->proc_id, *repl_line_addr);
+      inc_utility_info(ic->proc_id, FALSE);
       DEBUG_FDIP(ic->proc_id, "%llx is evicted\n", *repl_line_addr);
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ONPATH_BY_FDIP + icache_off_path());
       if(line->FDIP_prefetch == FDIP_ONPATH)
@@ -1091,13 +1091,13 @@ void log_stats_mshr_hit(Addr line_addr) {
                                            QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
                                            &queue_entry, &ramulator_match);
   if (req && !req->cyc_hit_by_demand_load) {
-    inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
-    inc_useful_unuseful_2bit(ic->proc_id, ic->line_addr);
-    inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
-    update_useful_lines_uc(ic->proc_id, ic->line_addr);
-    update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
-    inc_utility_info(ic->proc_id, TRUE);
     if (mem_req_is_type(req, MRT_FDIPPRF)) {
+      inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
+      inc_useful_unuseful_2bit(ic->proc_id, ic->line_addr);
+      inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
+      update_useful_lines_uc(ic->proc_id, ic->line_addr);
+      update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
+      inc_utility_info(ic->proc_id, TRUE);
       if (!icache_off_path())
         inc_timeliness_info(ic->proc_id, TRUE);
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_ONPATH_BY_FDIP + icache_off_path());
@@ -1112,6 +1112,12 @@ void log_stats_mshr_hit(Addr line_addr) {
   imiss_reason = get_miss_reason(ic->proc_id, line_addr);
   DEBUG_FDIP(ic->proc_id, "miss reason: %d, req: %d\n", imiss_reason, req? 1:0);
   if (!req) {
+    inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path());
+    inc_useful_unuseful_2bit(ic->proc_id, ic->line_addr);
+    inc_useful_unuseful_3bit(ic->proc_id, ic->line_addr);
+    update_useful_lines_uc(ic->proc_id, ic->line_addr);
+    update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
+    inc_utility_info(ic->proc_id, TRUE);
     if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_IFETCH);
     else if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP)

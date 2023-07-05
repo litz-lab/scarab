@@ -134,6 +134,15 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op,
                        Counter cycle, Flag late_bp_recovery,
                        Flag force_offpath) {
   ASSERT(op->proc_id, bp_recovery_info->proc_id == op->proc_id);
+  ASSERT(0, !op->off_path);
+  if (op->oracle_info.recover_at_exec) {
+    INC_STAT_EVENT(0, SCHEDULED_EXEC_LAT, cycle_count - op->recovery_info.predict_cycle);
+    STAT_EVENT(0, SCHEDULED_EXEC_RECOVERIES);
+  }
+  else if (op->oracle_info.recover_at_decode) {
+    INC_STAT_EVENT(0, SCHEDULED_DECODE_LAT, cycle_count - op->recovery_info.predict_cycle);
+    STAT_EVENT(0, SCHEDULED_DECODE_RECOVERIES);
+  }
 
   if(bp_recovery_info->recovery_cycle == MAX_CTR ||
      op->op_num <= bp_recovery_info->recovery_op_num) {
@@ -384,7 +393,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   op->recovery_info.cf_type          = op->table_info->cf_type;
   op->recovery_info.oracle_dir       = op->oracle_info.dir;
   op->recovery_info.branchTarget     = op->oracle_info.target;
-
+  op->recovery_info.predict_cycle    = cycle_count;
 
   bp_data->bp->timestamp_func(op);
   if(USE_LATE_BP) {
@@ -567,6 +576,12 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = TRUE;
         op->oracle_info.pred_npc = pred_target;
+
+        if (op->oracle_info.pred == TAKEN )
+          ASSERT(0, pred_target != pc_plus_offset);
+        if (op->oracle_info.pred == NOT_TAKEN)
+          ASSERT(0, pred_target == pc_plus_offset);
+
         STAT_EVENT(op->proc_id, CBR_RECOVER_MISPREDICT + op->off_path * NUM_BR_STATS);
       }
       // Although the btb hits and cbr is correctly predicted, target address may be wrong (aliasing or jitted code)
@@ -600,7 +615,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = TRUE;
         op->oracle_info.pred = NOT_TAKEN;
-        op->oracle_info.pred_npc = pc_plus_offset;
+        op->oracle_info.pred_npc = pred_target; //Not accurate. At fetch it would execute pc_plus_offset, at decode would resteer frontend to pred_taken
         STAT_EVENT(op->proc_id, CBR_RECOVER_BTB_MISS_T_NT + op->off_path * NUM_BR_STATS);
       }
       // 3. Branch is predicted not-taken causing branch to continue to exec where the flush is triggered
@@ -892,6 +907,13 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       (((op->oracle_info.pred != op->oracle_info.dir) && (op->oracle_info.pred_npc != op->oracle_info.npc)) ||
       (!op->oracle_info.mispred && op->oracle_info.pred_npc != op->oracle_info.npc)))
     STAT_EVENT(op->proc_id, FDIP_BTB_MISS_NT_RESTEER_ONPATH + op->off_path);
+
+  if (!op->off_path) {
+    if (op->oracle_info.recover_at_exec)
+      STAT_EVENT(0, BP_EXEC_RECOVERIES);
+    else if (op->oracle_info.recover_at_decode)
+      STAT_EVENT(0, BP_DECODE_RECOVERIES);
+  }
   return op->oracle_info.pred_npc;
 }
 
@@ -1093,6 +1115,8 @@ void bp_retire_op(Bp_Data* bp_data, Op* op) {
  */
 
 void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
+  STAT_EVENT(0, PERFORMED_EXEC_RECOVERIES);
+  INC_STAT_EVENT(0, PERFORMED_RECOVERY_LAT, cycle_count - info->predict_cycle);
   /* always recover the global history */
   if(cf_type == CF_CBR) {
     bp_data->global_hist = (info->pred_global_hist >> 1) |

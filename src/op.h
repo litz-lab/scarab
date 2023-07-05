@@ -145,6 +145,7 @@ typedef struct Recovery_Info_struct {  // QUESTION no proc_id?
   Cf_Type cf_type;
   Addr    branchTarget;
   int64   branch_id;  // set by the branch predictor timestamp_func().
+  uns64   predict_cycle;
 } Recovery_Info;
 // }}}
 

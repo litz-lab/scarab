@@ -240,12 +240,12 @@ void update_decode_stage(Stage_Data* src_sd) {
 
 void decode_stage_process_op(Op* op) {
   Cf_Type cf = op->table_info->cf_type;
-  Flag bf = op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE;
   op->decode_cycle = cycle_count;
 
   if(cf) {
     DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",
-          bf, op->inst_info->addr, op->op_num, op->oracle_info.recover_at_decode);
+          op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE, op->inst_info->addr, op->op_num,
+          op->oracle_info.recover_at_decode);
     // it is a direct branch, so the target is now known
     if (cf <= CF_CALL) {
       bp_target_known_op(g_bp_data, op);
@@ -269,13 +269,6 @@ void decode_stage_process_op(Op* op) {
 
     if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)
       increment_branch_count(op->inst_info->addr);
-  }
-
-  // When a fetch barrier is decoded, need to stall fetch. Unstall if a) barrier retires or b)
-  // in the case the barrier is off-path, an earlier op's recovery will unstall
-  if (bf) {
-    //In the case of a fetch barrier potentially recover the mispredicted CF, then stall FE
-    decoupled_fe_stall(op);
   }
 }
 

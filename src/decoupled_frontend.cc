@@ -236,11 +236,15 @@ void update_decoupled_fe() {
             op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec,
             *off_path, op->table_info->bar_type & BAR_FETCH);
 
-      /* Execution driven mode does not support frontend_redirect after syscalls.*/
+      /* On fetch barrier stall the frontend. Ignore BTB misses here as the exec frontend cannot
+         handle recovery/execution until syscalls retire. This is ok as stalling causes the same
+         cycle penalty than recovering from BTB miss. */
       if (op->table_info->bar_type & BAR_FETCH) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = FALSE;
+        decoupled_fe_stall(op);
       }
+
       if(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
         ASSERT(0, (int)op->oracle_info.recover_at_decode + (int)op->oracle_info.recover_at_exec < 2);
         /* If already on the off-path do not schedule recovery as scarab cannot recover OOO
@@ -262,15 +266,6 @@ void update_decoupled_fe() {
     }
     else
       ASSERT(0,!(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
-
-    /* On fetch barrier stall the frontend. Ignore BTB misses here as the exec frontend cannot
-       handle recovery/execution until syscalls retire. This is ok as stalling causes the same
-       cycle penalty than recovering from BTB miss. */ 
-    if (op->table_info->bar_type & BAR_FETCH) {
-      op->oracle_info.recover_at_decode = FALSE;
-      op->oracle_info.recover_at_exec = FALSE;
-      decoupled_fe_stall(op);
-    }
 
     // We start a new block if crossing a block or take a branch depending on packet break conditions
     bool start_new_block = false;
@@ -412,7 +407,7 @@ void decoupled_fe_stall(Op *op) {
 }
 
 void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid) {
-  if(op->table_info->bar_type & BAR_FETCH) {
+  if((op->table_info->bar_type & BAR_FETCH) && op->table_info->cf_type) {
     per_core_stalled[set_proc_id] = false;
     DEBUG(set_proc_id,
           "Decoupled fetch unstalled due to retired barrier fetch_addr0x:%llx off_path:%i op_num:%llu list_count:%i\n",

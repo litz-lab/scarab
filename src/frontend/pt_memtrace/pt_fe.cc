@@ -27,6 +27,7 @@
  ***************************************************************************************/
 extern "C" {
 #include "debug/debug.param.h"
+#include "memory/memory.param.h"
 #include "debug/debug_macros.h"
 #include "globals/assert.h"
 #include "globals/global_defs.h"
@@ -43,6 +44,9 @@ extern "C" {
 #include "isa/isa.h"
 #include "pin/pin_lib/uop_generator.h"
 #include "pin/pin_lib/x86_decoder.h"
+#include <cmath>
+#include <iomanip>
+#include <random>
 
 #define DR_DO_NOT_DEFINE_int64
 #include "frontend/pt_memtrace/pt_trace_reader_pt.h"
@@ -61,6 +65,14 @@ uint64_t pt_ins_id = 0;
 uint64_t pt_prior_tid = 0;
 uint64_t pt_prior_pid = 0;
 
+std::random_device rd {};
+std::mt19937 gen {rd()};
+// Generate random addresses near the mean (1GB)
+const uint64_t mean = 1000000000;
+// Generate addresses where approximately 92% hit the L1 cache for DCACHE_SIZE=48KB
+double sd = 14000;
+std::normal_distribution<> d {mean, sd}; //generates an address of 1G +/-25K with 92% proability
+const uint64_t offset = 0xFF0000; //ensure to generate no zero page address
 /**************************************************************************************/
 /* Private Functions for PT */
 
@@ -88,20 +100,20 @@ void pt_fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo *insi) {
       info->actually_taken = 1;
 
     for (uint8_t op = 0; op < xed_decoded_inst_number_of_memory_operands(insi->ins); op++) {
-	//predicated true ld/st are handled just as regular ld/st
+        //generate random address according to normal distribution as PT does not contain memory addresses
+        uint64_t fake_addr = std::round(d(gen)) + offset;
+        //predicated true ld/st are handled just as regular ld/st
 	if(xed_decoded_inst_mem_read(insi->ins, op) && !insi->mem_used[op]) {
-	    //Handle predicated stores specially?
-	    info->ld_vaddr[ld++] = 0x4040;
+          info->ld_vaddr[ld++] = fake_addr;
 	}
 	else if(xed_decoded_inst_mem_read(insi->ins, op)) {
-	    info->ld_vaddr[ld++] = 0x4040;
+          info->ld_vaddr[ld++] = fake_addr;
 	}
 	if(xed_decoded_inst_mem_written(insi->ins, op) && !insi->mem_used[op]) {
-	    //Handle predicated stores specially?
-	    info->st_vaddr[st++] = insi->mem_addr[op];
+          info->st_vaddr[st++] = fake_addr;
 	}
 	else if(xed_decoded_inst_mem_written(insi->ins, op)) {
-	    info->st_vaddr[st++] = insi->mem_addr[op];
+          info->st_vaddr[st++] = fake_addr;
 	}
     }
 }
@@ -221,6 +233,8 @@ void pt_setup(uns proc_id) {
     pt_ins_id++;
     if ((pt_ins_id % 10000000) == 0)
       std::cout << "Fast forwarded " << pt_ins_id << " instructions." << std::endl;
+    if (pt_ins_id >= FAST_FORWARD_TRACE_INS)
+      break;
   }
 
   if(FAST_FORWARD) {
@@ -232,3 +246,4 @@ void pt_setup(uns proc_id) {
   assert(pt_prior_tid);
   assert(pt_prior_pid);
 }
+

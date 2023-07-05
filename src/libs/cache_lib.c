@@ -240,17 +240,6 @@ void* cache_access(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl) {
     }
   }
 
-#ifdef ENABLE_PT_MEMTRACE
-  if (FRONTEND == FE_PT && addr == 0x4040) {
-    if (!strcmp(cache->name, "DCACHE") && rand() % DCACHE_MISS_RATE == 0) {
-      line_data = NULL;
-    }
-    if (!strcmp(cache->name, "L1_CACHE") && rand() % L1_MISS_RATE == 0) {
-      line_data = NULL;
-    }
-  }
-#endif
-
   if (line_data)
     return line_data;
 

@@ -410,6 +410,8 @@ void update_icache_stage() {
             if (success) {  // CMP maybe unique_count_per_core[proc_id]?
               ic->next_state = IC_WAIT_FOR_MISS;
               DEBUG(ic->proc_id, "from IC_STAGE for cl 0x%llx at cycle %llu\n", ic->line_addr, cycle_count);
+              STAT_EVENT(ic->proc_id, ICACHE_STAGE_MISS);
+              ic->wait_for_miss_start = cycle_count;
 
               if(ONE_MORE_CACHE_LINE_ENABLE) {
                 Addr         one_more_addr;
@@ -739,6 +741,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
   /* get new line in the cache */
   if((ic->line_addr == req->addr) && ((ic->state == IC_WAIT_FOR_MISS) ||
                                       (ic->next_state == IC_WAIT_FOR_MISS))) {
+    INC_STAT_EVENT(ic->proc_id, MISS_WAIT_TIME, cycle_count - ic->wait_for_miss_start);
     if(IC_PREF_CACHE_ENABLE &&  // cmp FIXME prefetchers
        (USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path)) {
       Addr pref_line_addr;

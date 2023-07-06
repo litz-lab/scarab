@@ -11,6 +11,7 @@
 
 /**Add CBP Header Below**/
 #include "mtage_unlimited.h"
+#include "cbp_tagescl_64k.h"
 /************************/
 
 /******DO NOT MODIFY BELOW THIS POINT*****/
@@ -116,6 +117,7 @@ class CBP_To_Scarab_Intf {
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, full, return, Flag, uns, proc_id)
 
 #include "cbp_table.def"
+
 #undef DEF_CBP
 #undef SCARAB_BP_INF_FUNC_IMPL
 #undef CBP_PREDICTOR

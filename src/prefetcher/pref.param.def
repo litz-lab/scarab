@@ -129,6 +129,9 @@ DEF_PARAM( pref_hfilter_reset_interval     , PREF_HFILTER_RESET_INTERVAL, uns   
 
 /* EIP Frontend Prefetcher */
 DEF_PARAM(eip_enable, EIP_ENABLE, uns, uns, 0, )
+DEF_PARAM(l1i_entangled_table_index_bits, L1I_ENTANGLED_TABLE_INDEX_BITS, uns, uns, 9, )
+DEF_PARAM(l1i_entangled_table_ways, L1I_ENTANGLED_TABLE_WAYS, uns, uns, 16, )
+
 
 /* FDIP Frontend Prefetcher */
 

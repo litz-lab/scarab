@@ -402,8 +402,6 @@ uint32_t l1i_find_bb_merge_hist_table(uint64_t line_addr) {
 #define L1I_TIMING_CACHE_TAG_BITS (L1I_TIMING_MSHR_TAG_BITS - L1I_SET_BITS)
 #define L1I_TIMING_CACHE_TAG_MASK (((uint64_t)1 << L1I_HIST_TAG_BITS) - 1)
 
-#define L1I_ENTANGLED_TABLE_WAYS 16
-
   // We do not have access to the MSHR, so we aproximate it using this structure
   typedef struct __l1i_timing_mshr_entry {
     bool valid; // 1 bit
@@ -612,11 +610,12 @@ uint32_t l1i_find_bb_merge_hist_table(uint64_t line_addr) {
     return entangled_addr & (((uint64_t)1 << L1I_ENTANGLED_FORMATS[format-1]) - 1);
   }
 
-#define L1I_ENTANGLED_TABLE_INDEX_BITS 9
-#define L1I_ENTANGLED_TABLE_SETS (1 << L1I_ENTANGLED_TABLE_INDEX_BITS)
 #define L1I_MAX_ENTANGLED_PER_LINE L1I_ENTANGLED_NUM_FORMATS
-#define L1I_TAG_BITS (19 - L1I_ENTANGLED_TABLE_INDEX_BITS)
-#define L1I_TAG_MASK (((uint64_t)1 << L1I_TAG_BITS) - 1)
+
+uint32_t L1I_ENTANGLED_TABLE_SETS;
+uint32_t L1I_TAG_BITS;
+uint32_t L1I_TAG_MASK;
+
 #define L1I_CONFIDENCE_COUNTER_BITS 2
 #define L1I_CONFIDENCE_COUNTER_MAX_VALUE ((1 << L1I_CONFIDENCE_COUNTER_BITS) - 1)
 #define L1I_CONFIDENCE_COUNTER_THRESHOLD 1
@@ -870,6 +869,11 @@ uint32_t l1i_find_bb_merge_hist_table(uint64_t line_addr) {
 void alloc_mem_eip(uns numCores) {
   if (!EIP_ENABLE)
     return;
+
+  L1I_ENTANGLED_TABLE_SETS = (1 << L1I_ENTANGLED_TABLE_INDEX_BITS);
+  L1I_TAG_BITS = (19 - L1I_ENTANGLED_TABLE_INDEX_BITS);
+  L1I_TAG_MASK = (((uint64_t)1 << L1I_TAG_BITS) - 1);
+
   ASSERT(eip_proc_id, MEM_REQ_BUFFER_ENTRIES > 16);
   L1I_RQ_SIZE = QUEUE_L1_SIZE == 0 ? MEM_REQ_BUFFER_ENTRIES : QUEUE_L1_SIZE;
   ASSERT(eip_proc_id, L1I_RQ_SIZE > 0);
@@ -909,6 +913,7 @@ void alloc_mem_eip(uns numCores) {
   void init_eip(uns proc_id) {
     if (!EIP_ENABLE)
       return;
+
     ASSERT(proc_id, WP_COLLECT_STATS);
 
     eip_proc_id = proc_id;

@@ -1143,7 +1143,8 @@ void log_stats_mshr_hit(Addr line_addr) {
     else
       STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED + icache_off_path());
   } else {
-    if (FDIP_ENABLE && !FDIP_UTILITY_HASH_ENABLE && !FDIP_BLOOM_FILTER && !FDIP_UC_SIZE && mem_req_is_type(req, MRT_FDIPPRF))
+    if (FDIP_ENABLE && !FDIP_UTILITY_HASH_ENABLE && !FDIP_BLOOM_FILTER && !FDIP_UC_SIZE && !EIP_ENABLE
+        && mem_req_is_type(req, MRT_FDIPPRF))
       ASSERT(ic->proc_id, imiss_reason == IMISS_MSHR_HIT);
     imiss_reason = IMISS_MSHR_HIT;
     STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);

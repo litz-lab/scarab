@@ -275,8 +275,6 @@ void update_fdip() {
             STAT_EVENT(ic_ref->proc_id, FDIP_PREF_MSHR_PROBE_HIT_ONPATH + op->off_path);
             DEBUG(fdip_proc_id, "Success to merge a prefetch for %llx\n", line_addr);
           }
-          if (EIP_ENABLE)
-            eip_prefetch(fdip_proc_id, ic->fetch_addr, 0, 1);
         }
         inc_prefetched_cls(line_addr);
       }

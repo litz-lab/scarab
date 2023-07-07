@@ -123,3 +123,4 @@ DEF_PARAM( debug_optimizer2                        , DEBUG_OPTIMIZER2           
 DEF_PARAM( debug_pref                              , DEBUG_PREF                          , Flag            , Flag               , FALSE     ,    )
 
 DEF_PARAM( debug_fdip                              , DEBUG_FDIP                           , Flag    , Flag      , FALSE   ,       )
+DEF_PARAM( debug_eip                               , DEBUG_EIP                            , Flag    , Flag      , FALSE   ,       )

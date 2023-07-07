@@ -127,6 +127,9 @@ DEF_PARAM( pref_hfilter_pred_useless_thres , PREF_HFILTER_PRED_USELESS_THRES, un
 DEF_PARAM( pref_hfilter_reset_enable       , PREF_HFILTER_RESET_ENABLE, Flag           , Flag               , FALSE    ,    )
 DEF_PARAM( pref_hfilter_reset_interval     , PREF_HFILTER_RESET_INTERVAL, uns          , uns                , 100000   ,    )      
 
+/* EIP Frontend Prefetcher */
+DEF_PARAM(eip_enable, EIP_ENABLE, uns, uns, 0, )
+
 /* FDIP Frontend Prefetcher */
 
 DEF_PARAM(fdip_enable, FDIP_ENABLE, uns, uns, 1, )

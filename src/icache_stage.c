@@ -59,6 +59,7 @@
 
 /*#include "prefetcher/fdip.h"*/
 #include "prefetcher/fdip_new.h"
+#include "prefetcher/eip.h"
 #include "prefetcher/pref.param.h"
 #include "uop_queue_stage.h"
 #include "decode_stage.h"
@@ -440,6 +441,8 @@ void update_icache_stage() {
               }
             }
           }
+          if(EIP_ENABLE)
+            eip_prefetch(ic->proc_id, ic->fetch_addr, 0, 0);
           break_fetch = BREAK_ICACHE_MISS;
         } else if (ic->line == (Inst_Info**) DUMMY_ADDR_UC_FETCH) { // icache miss, uc hit
           log_stats_ic_miss();
@@ -450,16 +453,20 @@ void update_icache_stage() {
                            ICACHE_LINE_SIZE, 0, NULL, instr_fill_line,
                            unique_count,
                            0);
+          if(EIP_ENABLE)
+            eip_prefetch(ic->proc_id, ic->fetch_addr, 0, 0);
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line);
         } else { /* icache hit. Can be either UC hit or miss */
-          DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s \n",
-                unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
+          DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s line_addr 0x%s\n",
+                unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr), hexstr64s(ic->fetch_addr & ~0x3F));
           STAT_EVENT(ic->proc_id, ICACHE_HIT);
           STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH + ic->off_path);
           if(WP_COLLECT_STATS) {
             ASSERT(ic->proc_id, line_info);
             wp_process_icache_hit(line_info, ic->fetch_addr);
           }
+          if(EIP_ENABLE)
+            eip_prefetch(ic->proc_id, ic->fetch_addr, 1, 0);
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line);
         }
       }
@@ -772,6 +779,8 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
                                              &repl_line_addr2);
       if (line_info) {
         wp_process_icache_evicted(line_info, req, &repl_line_addr2);
+        if(EIP_ENABLE)
+          eip_cache_fill(ic->proc_id, req->addr, repl_line_addr2);
         line_info->fetched_by_offpath = USE_CONFIRMED_OFF ?
           req->off_path_confirmed :
           req->off_path;
@@ -838,6 +847,8 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
         STAT_EVENT(ic->proc_id, ICACHE_FILL);
 
         wp_process_icache_evicted(line_info, req, &repl_line_addr2);
+        if(EIP_ENABLE)
+          eip_cache_fill(ic->proc_id, req->addr, repl_line_addr2);
         line_info->fetched_by_offpath = USE_CONFIRMED_OFF ?
           req->off_path_confirmed :
           req->off_path;
@@ -1019,7 +1030,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
       dec_useful_unuseful_2bit(ic->proc_id, *repl_line_addr);
       dec_useful_unuseful_3bit(ic->proc_id, *repl_line_addr);
       inc_utility_info(ic->proc_id, FALSE);
-      DEBUG_FDIP(ic->proc_id, "%llx is evicted\n", *repl_line_addr);
+      DEBUG(ic->proc_id, "%llx is evicted\n", *repl_line_addr);
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ONPATH_BY_FDIP + icache_off_path());
       if(line->FDIP_prefetch == FDIP_ONPATH)
         STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_BY_FDIP_ONPATH);
@@ -1148,7 +1159,7 @@ Flag instr_fill_line(Mem_Req* req) {
   ASSERT(ic->proc_id, req->type == MRT_IPRF || req->type == MRT_FDIPPRF || req->type == MRT_UOCPRF || req->type == MRT_IFETCH);
   if (mem_req_is_type(req, MRT_IFETCH) || mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_FDIPPRF)) {
     icache_fill_line(req);
-    DEBUG_FDIP(ic->proc_id, "line 0x %llx is filled into icache\n", req->addr);
+    DEBUG(ic->proc_id, "line 0x%llx is filled into icache\n", req->addr);
   }
   // TEMP CHANGE: all FDIPPRF are UOC_PREF as well, except for a corner case where branch target is same line
   if (UOC_PREF && (mem_req_is_type(req, MRT_FDIPPRF) || mem_req_is_type(req, MRT_UOCPRF))) {

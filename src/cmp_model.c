@@ -46,6 +46,7 @@
 #include "prefetcher/pref_common.h"
 /*#include "prefetcher/fdip.h"*/
 #include "prefetcher/fdip_new.h"
+#include "prefetcher/eip.h"
 #include "sim.h"
 #include "statistics.h"
 
@@ -123,6 +124,7 @@ void cmp_init(uns mode) {
     init_decoupled_fe(proc_id, "DCFE");
 
     init_fdip(proc_id);
+    init_eip(proc_id);
   }
 
   cmp_model.window_size = NODE_TABLE_SIZE;
@@ -230,6 +232,7 @@ void cmp_cores(void) {
       update_decode_stage(&ic->sd);
       update_decoupled_fe();
       update_fdip();
+      update_eip();
       update_icache_stage();
 
       node_sched_ops();

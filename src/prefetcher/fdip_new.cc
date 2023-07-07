@@ -6,6 +6,7 @@
 extern "C" {
 #include "op.h"
 #include "prefetcher/pref.param.h"
+#include "prefetcher/eip.h"
 #include "memory/memory.h"
 #include "memory/memory.param.h"
 }
@@ -17,12 +18,13 @@ extern "C" {
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FDIP, ##args)
 
 decoupled_fe_iter* iter;
-const int MAX_FTQ_ENTRY_CYC = 2;
+extern const int MAX_FTQ_ENTRY_CYC = 2;
 int fdip_proc_id;
 Icache_Stage *ic_ref;
 std::vector<Op*> per_core_cur_op;
 std::vector<decoupled_fe_iter*> per_core_ftq_iter;
 std::vector<Addr> per_core_last_line_addr;
+int per_cyc_ipref = 0;
 
 typedef enum FDIP_BREAK_enum {
   BR_REACH_FTQ_END,
@@ -168,6 +170,7 @@ void update_fdip() {
   int ftq_entry_per_cycle = 0;
   FDIP_Break break_reason = BR_REACH_FTQ_END;
   bool end_of_block;
+  per_cyc_ipref = 0;
 
   for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
     per_core_cur_op[fdip_proc_id] = op;
@@ -260,16 +263,20 @@ void update_fdip() {
             ASSERT(fdip_proc_id, false);
         } else {
           Flag success = new_mem_req(MRT_FDIPPRF, fdip_proc_id, line_addr,
-              ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count++, 0);
+              ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
+              //ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count++, 0); // bug?
           // A buffer entry should be available since it is checked by mem_can_allocate_req_buffer for a new prefetch
           ASSERT(fdip_proc_id, success);
           if (success == Mem_Queue_Req_Result::SUCCESS_NEW) {
             STAT_EVENT(ic_ref->proc_id, FDIP_NEW_PREFETCHES_ONPATH + op->off_path);
             DEBUG(fdip_proc_id, "Success to emit a new prefetch for %llx\n", line_addr);
+            per_cyc_ipref++;
           } else if (success == Mem_Queue_Req_Result::SUCCESS_MERGED) {
             STAT_EVENT(ic_ref->proc_id, FDIP_PREF_MSHR_PROBE_HIT_ONPATH + op->off_path);
             DEBUG(fdip_proc_id, "Success to merge a prefetch for %llx\n", line_addr);
           }
+          if (EIP_ENABLE)
+            eip_prefetch(fdip_proc_id, ic->fetch_addr, 0, 1);
         }
         inc_prefetched_cls(line_addr);
       }

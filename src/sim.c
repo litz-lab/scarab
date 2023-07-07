@@ -57,6 +57,7 @@
 #include "stat_trace.h"
 #include "trigger.h"
 #include "prefetcher/fdip_new.h"
+#include "prefetcher/eip.h"
 
 #include "bp/bp.param.h"
 #include "core.param.h"
@@ -765,6 +766,9 @@ void full_sim() {
           print_cl_info(proc_id);
           INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY_OPS, get_fdip_ftq_occupancy_ops(proc_id));
           INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY, get_fdip_ftq_occupancy(proc_id));
+        }
+        if(EIP_ENABLE) {
+          print_eip_stats(proc_id);
         }
         if (PERIODIC_DUMP == FALSE) {
           dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);

@@ -36,6 +36,7 @@
 #include "packet_build.h"
 #include "statistics.h"
 #include "prefetcher/fdip_new.h"
+#include "prefetcher/eip.h"
 
 /**************************************************************************************/
 /* cmp_init_cmp_model  */
@@ -63,6 +64,7 @@ void cmp_init_cmp_model() {
                                                  NUM_CORES);
   alloc_mem_decoupled_fe(NUM_CORES);
   alloc_mem_fdip(NUM_CORES);
+  alloc_mem_eip(NUM_CORES);
 }
 
 
@@ -82,6 +84,7 @@ void cmp_set_all_stages(uns8 proc_id) {
 
   set_pb_data(&cmp_model.pb_data[proc_id]);
 
+  set_eip(proc_id);
   set_fdip(proc_id, &cmp_model.icache_stage[proc_id]);
   set_decoupled_fe(proc_id);
   set_icache_stage(&cmp_model.icache_stage[proc_id]);

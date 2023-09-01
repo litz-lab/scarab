@@ -753,6 +753,7 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_ADDSUBPD] = {OP_FADD, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_ADDSUBPS] = {OP_FADD, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_ADD_LOCK] = {OP_IADD, -1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_ADOX_ADCX] = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_AESENC]   = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_AESENCLAST]   = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_AND]      = {OP_LOGIC, -1, 1, NONE};
@@ -1358,6 +1359,8 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_VADDSS]          = {OP_FADD, 4, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VADDSUBPD]       = {OP_FADD, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VADDSUBPS]       = {OP_FADD, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VAESENC]         = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VAESENCLAST]     = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VANDNPD]         = {OP_LOGIC, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VANDNPS]         = {OP_LOGIC, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VANDPD]          = {OP_LOGIC, 8, -1, NONE};
@@ -1659,6 +1662,7 @@ void init_pin_opcode_convert(void) {
                                                       -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPBROADCASTQ]    = {OP_MOV, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPBROADCASTW]    = {OP_MOV, 2, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPCLMULQDQ]      = {OP_IMUL, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPCMPB]          = {OP_ICMP, 1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPCMPD]          = {OP_ICMP, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPCMPEQB]        = {OP_ICMP, 1, -1, NONE};

@@ -49,6 +49,103 @@ void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst
   }
 }
 
+Flag ctype_pin_inst_same_mem_vaddr(ctype_pin_inst inst_a, ctype_pin_inst inst_b) {
+  for (uns i = 0; i < MAX_LD_NUM; i++) {
+    if (inst_a.ld_vaddr[i] != inst_b.ld_vaddr[i]) {
+      return FALSE;
+    }
+  }
+
+  for (uns i = 0; i < MAX_ST_NUM; i++) {
+    if (inst_a.st_vaddr[i] != inst_b.st_vaddr[i]) {
+      return FALSE;
+    }
+  }
+
+  return TRUE;
+}
+
+void assert_ctype_pin_inst_same(uns proc_id, ctype_pin_inst inst_a, ctype_pin_inst inst_b) {
+  // uint64_t inst_uid;  // unique ID produced by the frontend
+
+  ASSERT(proc_id, inst_a.instruction_addr == inst_b.instruction_addr);
+  ASSERT(proc_id, inst_a.size == inst_b.size);
+  ASSERT(proc_id, inst_a.inst_binary_msb == inst_b.inst_binary_msb);
+  ASSERT(proc_id, inst_a.inst_binary_lsb == inst_b.inst_binary_lsb);
+  ASSERT(proc_id, inst_a.op_type == inst_b.op_type);
+  ASSERT(proc_id, inst_a.cf_type == inst_b.cf_type);
+  ASSERT(proc_id,  inst_a.is_fp == inst_b.is_fp);
+  ASSERT(proc_id,  inst_a.true_op_type == inst_b.true_op_type);
+  ASSERT(proc_id,  inst_a.num_src_regs == inst_b.num_src_regs);
+  ASSERT(proc_id,  inst_a.num_dst_regs == inst_b.num_dst_regs);
+  ASSERT(proc_id,  inst_a.num_ld1_addr_regs == inst_b.num_ld1_addr_regs);
+  ASSERT(proc_id,  inst_a.num_ld2_addr_regs == inst_b.num_ld2_addr_regs);
+  ASSERT(proc_id,  inst_a.num_st_addr_regs == inst_b.num_st_addr_regs);
+
+  for (uns i = 0; i < MAX_SRC_REGS_NUM; i++) {
+    ASSERT(proc_id, inst_a.src_regs[i] == inst_b.src_regs[i]);
+  }
+
+  for (uns i = 0; i < MAX_DST_REGS_NUM; i++) {
+    ASSERT(proc_id, inst_a.dst_regs[i] == inst_b.dst_regs[i]);
+  }
+
+  for (uns i = 0; i < MAX_MEM_ADDR_REGS_NUM; i++) {
+    ASSERT(proc_id, inst_a.ld1_addr_regs[i] == inst_b.ld1_addr_regs[i]);
+  }
+
+  for (uns i = 0; i < MAX_MEM_ADDR_REGS_NUM; i++) {
+    ASSERT(proc_id, inst_a.ld2_addr_regs[i] == inst_b.ld2_addr_regs[i]);
+  }
+
+  for (uns i = 0; i < MAX_MEM_ADDR_REGS_NUM; i++) {
+    ASSERT(proc_id, inst_a.st_addr_regs[i] == inst_b.st_addr_regs[i]);
+  }
+
+  ASSERT(proc_id, inst_a.num_simd_lanes == inst_b.num_simd_lanes);
+  ASSERT(proc_id, inst_a.lane_width_bytes == inst_b.lane_width_bytes);
+  ASSERT(proc_id, inst_a.num_ld == inst_b.num_ld);
+  ASSERT(proc_id, inst_a.num_st == inst_b.num_st);
+  ASSERT(proc_id, inst_a.has_immediate == inst_b.has_immediate);
+
+  for (uns i = 0; i < MAX_LD_NUM; i++) {
+    ASSERT(proc_id, inst_a.ld_vaddr[i] == inst_b.ld_vaddr[i]);
+  }
+
+  for (uns i = 0; i < MAX_ST_NUM; i++) {
+    ASSERT(proc_id, inst_a.st_vaddr[i] == inst_b.st_vaddr[i]);
+  }
+
+  ASSERT(proc_id, inst_a.ld_size == inst_b.ld_size);
+  ASSERT(proc_id, inst_a.st_size == inst_b.st_size);
+  ASSERT(proc_id, inst_a.branch_target == inst_b.branch_target);
+  ASSERT(proc_id, inst_a.actually_taken == inst_b.actually_taken);
+
+  ASSERT(proc_id, inst_a.is_string == inst_b.is_string);
+  ASSERT(proc_id, inst_a.is_call == inst_b.is_call);
+  ASSERT(proc_id, inst_a.is_move == inst_b.is_move);
+  ASSERT(proc_id, inst_a.is_prefetch == inst_b.is_prefetch);
+
+  ASSERT(proc_id, inst_a.has_push == inst_b.has_push);
+  ASSERT(proc_id, inst_a.has_pop == inst_b.has_pop);
+  ASSERT(proc_id, inst_a.is_ifetch_barrier == inst_b.is_ifetch_barrier);
+  ASSERT(proc_id, inst_a.is_lock == inst_b.is_lock);
+
+  ASSERT(proc_id, inst_a.is_repeat == inst_b.is_repeat);
+  ASSERT(proc_id, inst_a.is_simd == inst_b.is_simd);
+  ASSERT(proc_id, inst_a.is_gather_scatter == inst_b.is_gather_scatter);
+  ASSERT(proc_id, inst_a.is_sentinel == inst_b.is_sentinel);
+
+  ASSERT(proc_id, inst_a.fake_inst == inst_b.fake_inst);
+  ASSERT(proc_id, inst_a.exit == inst_b.exit);
+  ASSERT(proc_id, inst_a.fake_inst_reason == inst_b.fake_inst_reason);
+  ASSERT(proc_id, inst_a.instruction_next_addr == inst_b.instruction_next_addr);
+
+  for (uns i = 0; i < 16; i++) {
+    ASSERT(proc_id, inst_a.pin_iclass[i] == inst_b.pin_iclass[i]);
+  }
+}
+
 void ext_trace_fetch_op(uns proc_id, Op* op) {
   if(uop_generator_get_bom(proc_id)) {
     if (!off_path_mode[proc_id]) {
@@ -86,8 +183,29 @@ void ext_trace_fetch_op(uns proc_id, Op* op) {
                 addr, next_onpath_pi[proc_id].size, next_onpath_pi[proc_id].inst_binary_lsb,
                 next_onpath_pi[proc_id].inst_binary_msb);
           // Handle jitted code
+          STAT_EVENT(proc_id, INST_MAP_UPDATE_JITTED);
           pc_to_inst.erase(addr);
           pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+        }
+        else if (next_onpath_pi[proc_id].instruction_next_addr != find->second.instruction_next_addr) {
+          ASSERT(proc_id, next_onpath_pi[proc_id].op_type == find->second.op_type);
+          if (next_onpath_pi[proc_id].cf_type) {
+            ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == find->second.cf_type);
+            ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == CF_CBR ||
+                            next_onpath_pi[proc_id].cf_type >= CF_IBR);
+          }
+          STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + next_onpath_pi[proc_id].op_type);
+          pc_to_inst.erase(addr);
+          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+        }
+        else if (!ctype_pin_inst_same_mem_vaddr(next_onpath_pi[proc_id], find->second)) {
+          ASSERT(proc_id, next_onpath_pi[proc_id].op_type == find->second.op_type);
+          STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + next_onpath_pi[proc_id].op_type);
+          pc_to_inst.erase(addr);
+          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+        }
+        else {
+          assert_ctype_pin_inst_same(proc_id, next_onpath_pi[proc_id], find->second);
         }
       }
     }

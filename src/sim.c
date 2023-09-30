@@ -197,6 +197,10 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
                       heartbeat_checked_inst_count;  // FIXME cmp
   Counter rounded_interval = HEARTBEAT_INTERVAL;
 
+  if (PERIODIC_DUMP) {
+    inst_diff = inst_count[proc_id] - rounded_interval * period_ID;
+  }
+
   /* print heartbeat message if necessary */
   if((HEARTBEAT_INTERVAL && inst_diff >= rounded_interval) || final) {
     if (PERIODIC_DUMP) {

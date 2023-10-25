@@ -38,7 +38,7 @@ TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace,
                                          const std::string& _binary,
                                          uint64_t _offset, uint32_t _bufsize) :
     TraceReader(_trace, _binary, _offset, _bufsize),
-    mt_iter_(nullptr), mt_end_(nullptr), mt_state_(MTState::INST),
+    mt_state_(MTState::INST),
     mt_mem_ops_(0), mt_seq_(0), mt_prior_isize_(0), mt_using_info_a_(true),
     mt_warn_target_(0) {
   init(_trace);
@@ -49,7 +49,7 @@ TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace,
                                          const std::string& _binary_group_path,
                                          uint32_t           _bufsize) :
     TraceReader(_trace, _binary_group_path, _bufsize),
-    mt_iter_(nullptr), mt_end_(nullptr), mt_state_(MTState::INST),
+    mt_state_(MTState::INST),
     mt_mem_ops_(0), mt_seq_(0), mt_prior_isize_(0), mt_using_info_a_(true),
     mt_warn_target_(0) {
   binaryGroupPathIs(_binary_group_path);
@@ -108,7 +108,7 @@ void TraceReaderMemtrace::binaryGroupPathIs(const std::string& _path) {
             error.c_str());
       return;
     }
-    module_mapper_ = module_mapper_t::create(directory_.modfile_bytes_,
+    module_mapper_ = dynamorio::drmemtrace::module_mapper_t::create(directory_.modfile_bytes_,
 #ifdef ZSIM_USE_YT
                                              parse_buildid_string,
 #else
@@ -129,13 +129,25 @@ void TraceReaderMemtrace::binaryGroupPathIs(const std::string& _path) {
 }
 
 bool TraceReaderMemtrace::initTrace() {
-  mt_reader_ = make_unique<analyzer_t>(trace_);
-  if(!(*mt_reader_)) {
-    panic("Failure starting memtrace reader");
-    return false;
+  std::vector<dynamorio::drmemtrace::scheduler_t::input_workload_t> sched_inputs;
+  // memtrace region of interest provides a view of the trace only of interest
+  // inst count satrt with 1
+  // begin 0 is invalid
+  // end is inclusive
+  // end 0 is end of trace
+  if(MEMTRACE_ROI_BEGIN) {
+    ASSERT(0, MEMTRACE_ROI_BEGIN < MEMTRACE_ROI_END || MEMTRACE_ROI_END == 0);
+    dynamorio::drmemtrace::scheduler_t::range_t roi(static_cast<uint64_t>(MEMTRACE_ROI_BEGIN), static_cast<uint64_t>(MEMTRACE_ROI_END));
+    sched_inputs.emplace_back(trace_, std::vector<dynamorio::drmemtrace::scheduler_t::range_t>{roi});
+  } else {
+    sched_inputs.emplace_back(trace_);
   }
-  mt_iter_ = &(mt_reader_->begin());
-  mt_end_  = &(mt_reader_->end());
+
+  if (scheduler.init(sched_inputs, 1, dynamorio::drmemtrace::scheduler_t::make_scheduler_serial_options()) !=
+      dynamorio::drmemtrace::scheduler_t::STATUS_SUCCESS) {
+      panic("failed to initialize scheduler: %s", scheduler.get_error_string().c_str());
+      return false;
+  }
 
   // Set info 'A' to the first complete instruction.
   // It will initially lack branch target information.
@@ -149,10 +161,19 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
   uint32_t prior_isize = mt_prior_isize_;
   bool     complete    = false;
 
-  while(*mt_iter_ != *mt_end_) {
+  auto *stream = scheduler.get_stream(0);
+
+  for(dynamorio::drmemtrace::scheduler_t::stream_status_t status = stream->next_record(mt_ref_);
+      status != dynamorio::drmemtrace::scheduler_t::STATUS_EOF; status = stream->next_record(mt_ref_)) {
+    if(status != dynamorio::drmemtrace::scheduler_t::STATUS_OK) {
+      panic("scheduler failed to advance: %d", status);
+    }
+
+    // there can be mt_ref types other than inst and mem
+    // the FSM will skip those if they appear within MTState::INST state
+
     switch(mt_state_) {
       case(MTState::INST):
-        mt_ref_ = **mt_iter_;
         if(type_is_instr(mt_ref_.instr.type)) {
           processInst(_info);
           if(mt_mem_ops_ > 0) {
@@ -192,7 +213,6 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
         }
         break;
       case(MTState::MEM1):
-        mt_ref_ = **mt_iter_;
         if(typeIsMem(mt_ref_.data.type)) {
           if(((uint32_t)_info->pid == mt_ref_.data.pid) &&
              ((uint32_t)_info->tid == mt_ref_.data.tid) &&
@@ -220,12 +240,11 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
           goto PATCH_REP;
         } else {
           warn("Expected data but found type '%s'\n",
-               trace_type_names[mt_ref_.data.type]);
+               dynamorio::drmemtrace::trace_type_names[mt_ref_.data.type]);
           mt_state_ = MTState::INST;
         }
         break;
       case(MTState::MEM2):
-        mt_ref_ = **mt_iter_;
         if(typeIsMem(mt_ref_.data.type)) {
           if(((uint32_t)_info->pid == mt_ref_.data.pid) &&
              ((uint32_t)_info->tid == mt_ref_.data.tid) &&
@@ -241,20 +260,17 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
           }
         } else {
           warn("Expected data2 but found type '%s'\n",
-               trace_type_names[mt_ref_.data.type]);
+               dynamorio::drmemtrace::trace_type_names[mt_ref_.data.type]);
           mt_state_ = MTState::INST;
         }
         break;
     }
     mt_seq_++;
-    ++(*mt_iter_);
     if(complete) {
       break;
     }
   }
 PATCH_REP:
-  // Compute the branch target information for the prior instruction
-  _prior->target = _info->pc;  // TODO(granta): Invalid for pid/tid switch
   if(_prior->taken) {          // currently set iif branch
     bool non_seq = _info->pc != (_prior->pc + prior_isize);
     bool new_gid = (_prior->tid != _info->tid) || (_prior->pid != _info->pid);
@@ -276,6 +292,14 @@ PATCH_REP:
   }
 
   _info->valid &= complete;
+  // Compute the branch target information for the prior instruction
+  if(_info->valid)
+    _prior->target = _info->pc;  // TODO(granta): Invalid for pid/tid switch
+  else {
+    // for the last instruction of the trace, the npc cannot be set by the next one
+    _prior->target = XED_INS_DirectBranchOrCallTargetAddress(_prior->pc, _prior->ins);
+  }
+
   return complete;
 }
 
@@ -315,8 +339,8 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   _info->unknown_type = unknown_type;
 }
 
-bool TraceReaderMemtrace::typeIsMem(trace_type_t _type) {
-  return ((_type == TRACE_TYPE_READ) || (_type == TRACE_TYPE_WRITE) ||
+bool TraceReaderMemtrace::typeIsMem(dynamorio::drmemtrace::trace_type_t _type) {
+  return ((_type == dynamorio::drmemtrace::TRACE_TYPE_READ) || (_type == dynamorio::drmemtrace::TRACE_TYPE_WRITE) ||
           type_is_prefetch(_type));
 }
 
@@ -325,6 +349,11 @@ const InstInfo* TraceReaderMemtrace::getNextInstruction() {
   InstInfo& prior  = (mt_using_info_a_ ? mt_info_b_ : mt_info_a_);
   mt_using_info_a_ = !mt_using_info_a_;
   if(getNextInstruction__(&info, &prior)) {
+    return &prior;
+  } else if(prior.valid) {
+    // the last instruction's npc cannot be set by the trace
+    // but it is a valid instruction
+    ASSERT(0, !info.valid);
     return &prior;
   } else {
     return &invalid_info_;

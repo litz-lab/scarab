@@ -136,6 +136,15 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
 
   do {
     insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
+
+    if(ins_id == 0) {
+      ASSERT(proc_id, insi->valid);
+      prior_pid = insi->pid;
+      prior_tid = insi->tid;
+      assert(prior_tid);
+      assert(prior_pid);
+    }
+
     ins_id++;
     if(!insi->valid) {
       insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
@@ -207,31 +216,20 @@ void memtrace_setup(uns proc_id) {
 
   trace_readers[proc_id] = new TraceReaderMemtrace(trace, binaries, 1);
 
-  //FFWD
-  const InstInfo *insi = trace_readers[proc_id]->nextInstruction();
-  ins_id++;
-
   if(FAST_FORWARD) {
+    ASSERT(proc_id, !MEMTRACE_ROI_BEGIN && !MEMTRACE_ROI_END);
     std::cout << "Enter fast forward " << ins_id << std::endl;
-  }
-
-  // FFWD the first instruction and as many as later ffwding parameters specify.
-  // insi is invalid for the first instruction, and once end of trace is reached.
-  // Reaching the end of the trace breaks out of the loop and segfaults later in this function.
-  while ((!insi->valid && ins_id < 10) || ffwd(insi->ins)) {
-    insi = trace_readers[proc_id]->nextInstruction();
-    ins_id++;
-    if ((ins_id % 10000000) == 0)
-      std::cout << "Fast forwarded " << ins_id << " instructions." 
-      << (insi->valid ? " Valid" : " Invalid") << " instr." << std::endl;
-  }
-
-  if(FAST_FORWARD) {
+    // FFWD the first instruction and as many as later ffwding parameters specify.
+    // insi is invalid once end of trace is reached.
+    // Reaching the end of the trace breaks out of the loop and segfaults later in this function.
+    const InstInfo *insi;
+    do {
+      insi = trace_readers[proc_id]->nextInstruction();
+      ins_id++;
+      if((ins_id % 10000000) == 0)
+        std::cout << "Fast forwarded " << ins_id << " instructions."
+        << (insi->valid ? " Valid" : " Invalid") << " instr." << std::endl;
+    } while(ffwd(insi->ins));
     std::cout << "Exit fast forward " << ins_id << std::endl;
   }
-
-  prior_pid = insi->pid;
-  prior_tid = insi->tid;
-  assert(prior_tid);
-  assert(prior_pid);
 }

@@ -104,3 +104,6 @@ DEF_PARAM( num_nops                     , NUM_NOPS                   , uns64  , 
 DEF_PARAM( nops_bb_start                , NOPS_BB_START              , uns64  , uns64    , 0x5000000,       )
 
 DEF_PARAM( ignore_bar_fetch             , IGNORE_BAR_FETCH           , Flag   , Flag     , FALSE    ,       ) 
+
+DEF_PARAM( trace_bbv_output             , TRACE_BBV_OUTPUT          , char*  , string    , NULL     ,       )
+DEF_PARAM( chunk_instr_count            , CHUNK_INSTR_COUNT         , uns64  , uns64     , 100000000,       )

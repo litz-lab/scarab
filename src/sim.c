@@ -840,3 +840,9 @@ void full_sim() {
 
 
 /**************************************************************************************/
+#ifdef ENABLE_PT_MEMTRACE
+/* trace_bbv: This is the main loop for extracting basic block vectors from the trace.*/
+void extract_basic_block_vectors() {
+  frontend_extract_basic_block_vectors();
+}
+#endif

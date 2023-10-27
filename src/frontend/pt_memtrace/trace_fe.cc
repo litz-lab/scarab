@@ -468,14 +468,14 @@ void ext_trace_extract_basic_block_vectors() {
       std::unordered_map<uint64_t, basic_block_info>::iterator map_lookup =
                                 bb_map.find(cur_bb.ins_list.front().instruction_addr);
 
-      std::ofstream cinstf;
-      cinstf.open("cinst.log", std::ofstream::out | std::ofstream::app);
-      for (uint i = 0; i < cur_bb.ins_list.size(); i++) {
-        cinstf << std::hex
-               << std::setfill('0') << std::setw(sizeof(void *) * 2) << cur_bb.ins_list[i].instruction_addr
-               << std::dec << std::setfill(' ') << std::endl;
-      }
-      cinstf.close();
+      // std::ofstream cinstf;
+      // cinstf.open("cinst.log", std::ofstream::out | std::ofstream::app);
+      // for (uint i = 0; i < cur_bb.ins_list.size(); i++) {
+      //   cinstf << std::hex
+      //          << std::setfill('0') << std::setw(sizeof(void *) * 2) << cur_bb.ins_list[i].instruction_addr
+      //          << std::dec << std::setfill(' ') << std::endl;
+      // }
+      // cinstf.close();
       if(map_lookup != bb_map.end()) {
         // not the first time bb
         // the bb size might be cut if at boundary

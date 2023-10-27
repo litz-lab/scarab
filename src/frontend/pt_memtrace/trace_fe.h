@@ -61,7 +61,7 @@ void ext_trace_recover(uns proc_id, uns64 inst_uid);
 void ext_trace_retire(uns proc_id, uns64 inst_uid);
 void ext_trace_init();
 void ext_trace_done(void);
-
+void ext_trace_extract_basic_block_vectors();
 #ifdef __cplusplus
 }
 #endif

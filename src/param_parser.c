@@ -78,7 +78,12 @@ the program.  This way, an exact duplicate run can be performed.
 
 const char* help_options[]    = {"-help", "-h", "--help",
                               "--h"}; /* cmd-line help options strings */
-const char* sim_mode_names[]  = {"uop", "full"};
+const char* sim_mode_names[]  = {"uop", "full"
+#ifdef ENABLE_PT_MEMTRACE
+, "trace_bbv"
+, "trace_bbv_distributed"
+#endif
+};
 const char* exit_cond_names[] = {"last_done", "first_done"};
 
 /**************************************************************************************/

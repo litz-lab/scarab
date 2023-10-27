@@ -162,4 +162,19 @@ static void collect_op_stats(Op* op) {
     STAT_EVENT(op->proc_id, ST_NOT_MEM_OFFPATH + op->table_info->mem_type);
   }
 }
+
+#ifdef ENABLE_PT_MEMTRACE
+void frontend_extract_basic_block_vectors() {
+  switch(FRONTEND) {
+    case FE_PT:
+    case FE_MEMTRACE: {
+      ext_trace_extract_basic_block_vectors();
+      break;
+    }
+    default:
+      ASSERT(0, 0);
+      break;
+  }
+}
+#endif
 /*************************************************************/

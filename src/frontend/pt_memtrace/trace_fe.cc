@@ -427,7 +427,6 @@ void ext_trace_extract_basic_block_vectors() {
   // continue till trace end
   while(success) {
     if(inst->actually_taken){
-      ASSERT(proc_id, inst->instruction_next_addr != inst->instruction_addr + inst->size);
       ASSERT(proc_id, inst->cf_type);
       op_taken_count[inst->cf_type]++;
     }

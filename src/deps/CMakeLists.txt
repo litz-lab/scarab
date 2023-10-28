@@ -41,6 +41,7 @@ if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
     ${CMAKE_CURRENT_SOURCE_DIR}/dynamorio/clients/drcachesim/reader/
     ${CMAKE_CURRENT_SOURCE_DIR}/dynamorio/clients/drcachesim/common/
     ${CMAKE_CURRENT_SOURCE_DIR}/dynamorio/clients/drcachesim/tracer/
+    ${CMAKE_CURRENT_SOURCE_DIR}/dynamorio/clients/drcachesim/scheduler/
     ${CMAKE_CURRENT_SOURCE_DIR}/dynamorio/clients/drcachesim/
     )
 
@@ -52,7 +53,7 @@ if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
     drutil_static
     drmgr_static
     drmemfuncs
-    dynamorio_static
+
     drlibc
     drcovlib_static
     drx_static

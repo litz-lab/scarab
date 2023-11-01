@@ -297,7 +297,10 @@ PATCH_REP:
     _prior->target = _info->pc;  // TODO(granta): Invalid for pid/tid switch
   else {
     // for the last instruction of the trace, the npc cannot be set by the next one
-    _prior->target = XED_INS_DirectBranchOrCallTargetAddress(_prior->pc, _prior->ins);
+    // set the npc to itself because of the frontend assertion
+    // bp_recovery_info->recovery_fetch_addr == frontend_next_fetch_addr(proc_id)
+    // at /home/mxu61_bak/scarab_hlitz/src/decoupled_frontend.cc
+    _prior->target = _prior->pc;
   }
 
   return complete;

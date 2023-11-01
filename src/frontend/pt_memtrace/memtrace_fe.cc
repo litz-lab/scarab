@@ -137,12 +137,13 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   do {
     insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
 
-    if(ins_id == 0) {
+    if(prior_pid == 0) {
+      ASSERT(proc_id, prior_tid == 0);
       ASSERT(proc_id, insi->valid);
       prior_pid = insi->pid;
       prior_tid = insi->tid;
-      assert(prior_tid);
-      assert(prior_pid);
+      ASSERT(proc_id, prior_tid);
+      ASSERT(proc_id, prior_pid);
     }
 
     ins_id++;

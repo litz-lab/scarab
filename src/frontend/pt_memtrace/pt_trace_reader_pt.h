@@ -38,8 +38,6 @@
 #include <sstream>
 #include <vector>
 
-#include <boost/algorithm/string.hpp>
-
 #include "frontend/pt_memtrace/memtrace_trace_reader.h"
 
 #include "general.param.h"

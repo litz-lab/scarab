@@ -6,7 +6,6 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <math.h>
-#include "utils.h"
 
 #include "cbp_to_scarab.h"
 //#include "bt9.h"

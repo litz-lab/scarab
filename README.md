@@ -1,17 +1,16 @@
 # Scarab Memtrace
 Install:
-1. Install exact PIN version (pinplay 3.5)
-2. Follow scarab install readme
-3. Build and compile memtrace
-4. Export the following paths
-export DRIO_ROOT=/home/hlitz/dynamorio_cur
-export LD_LIBRARY_PATH=/home/hlitz/git/pinplay-drdebug-3.5-pin-3.5-97503-gac534ca30-gcc-linux/extras/xed-intel64/lib/:$LD_LIBRARY_PATH
-export PIN_ROOT=/home/hlitz/git/pinplay-drdebug-3.5-pin-3.5-97503-gac534ca30-gcc-linux
-export LD_LIBRARY_PATH=/home/hlitz/git/pinplay-drdebug-3.5-pin-3.5-97503-gac534ca30-gcc-linux/intel64/runtime/pincrt/:$LD_LIBRARY_PATH
-5. make
+1. Install exact PIN version ([PIN 3.15](https://www.intel.com/content/www/us/en/developer/articles/tool/pin-a-binary-instrumentation-tool-downloads.html))
+2. Export the following paths
+  - `export PIN_ROOT=/path/to/pin-3.15`
+  - `export SCARAB_ENABLE_PT_MEMTRACE=1`
+3. `cd src && make`
 
 Run:
-src/scarab --frontend memtrace --cbp_trace_r0=<MEMTRACE_FILE> --memtrace_modules_log=<MODULES_LOG_AND_BINARIES_DIR> --fetch_off_path_ops false --inst_limit <LIMIT>
+
+Use `src/PARAMS.sunny_cove` as the `PARAMS.in` file template, and run:
+
+`src/scarab --frontend memtrace --cbp_trace_r0=<MEMTRACE_FILE> --memtrace_modules_log=<MODULES_LOG_AND_BINARIES_DIR>`
 
 # Scarab
 

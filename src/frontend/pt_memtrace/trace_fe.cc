@@ -307,7 +307,7 @@ void output_fingerprint(std::map<uint64_t, uint64_t> fingerprint) {
   }
 
   // ASSERT(proc_id, nonzero_count == fingerprint.size());
-  // ASSERT(proc_id, instrs_count == CHUNK_INSTR_COUNT);
+  // ASSERT(proc_id, instrs_count == SEGMENT_INSTR_COUNT);
 
   myfile << std::endl;
   myfile.close();
@@ -531,16 +531,16 @@ void ext_trace_extract_basic_block_vectors() {
       // same as dynamorio client
       uint64_t to_last_vector_count = 0;
       uint64_t to_new_vector_count = 0;
-      if(cur_counter > CHUNK_INSTR_COUNT) {
+      if(cur_counter > SEGMENT_INSTR_COUNT) {
         // if at a boundary (excluding perfect aligned boundary)
-        to_new_vector_count = cur_counter - CHUNK_INSTR_COUNT;
+        to_new_vector_count = cur_counter - SEGMENT_INSTR_COUNT;
         to_last_vector_count = cur_bb.ins_list.size() - to_new_vector_count;
       } else {
         to_last_vector_count = cur_bb.ins_list.size();
       }
 
       ASSERT(proc_id, to_last_vector_count + to_new_vector_count == cur_bb.ins_list.size());
-      ASSERT(proc_id, (cur_counter > CHUNK_INSTR_COUNT) == (to_new_vector_count > 0));
+      ASSERT(proc_id, (cur_counter > SEGMENT_INSTR_COUNT) == (to_new_vector_count > 0));
 
       if (SIM_MODE == TRACE_BBV_MODE) {
         fingerprint[cur_bb.bb_id] += to_last_vector_count;
@@ -554,7 +554,7 @@ void ext_trace_extract_basic_block_vectors() {
       // - if reach segment limit
       // - if it is the end of trace
       // if two are both satisfied, will output twice
-      if(cur_counter >= CHUNK_INSTR_COUNT) {
+      if(cur_counter >= SEGMENT_INSTR_COUNT) {
         num_of_segments++;
 
         printf("to be appened segment num %ld\n", num_of_segments);

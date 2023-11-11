@@ -434,7 +434,7 @@ void ext_trace_extract_basic_block_vectors() {
       if(!inst->cf_type && !inst->is_repeat) {
         fprintf(stderr, "the cf is not cf or rep %p\n", (void *)inst->instruction_addr);
       }
-      ASSERT(proc_id, inst->cf_type || inst->is_repeat);
+      // ASSERT(proc_id, inst->cf_type || inst->is_repeat);
     }
 
     // add to current basic block

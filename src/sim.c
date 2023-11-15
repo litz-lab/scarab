@@ -109,6 +109,9 @@ Counter  period_last_cycle_count = 0;
 /* the global dump counter for periodic dump*/
 Counter  period_ID = 0;
 
+/* the global warmup dump flags */
+Flag*    warmup_dump_done;
+
 Hash_Table per_branch_stat;
 Uop_Queue_Fill_Time uop_queue_fill_time;
 
@@ -199,6 +202,15 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
 
   if (PERIODIC_DUMP) {
     inst_diff = inst_count[proc_id] - rounded_interval * period_ID;
+  }
+
+  /* dump warmup stats */
+  if (FULL_WARMUP && !warmup_dump_done[proc_id] && inst_count[proc_id] >= FULL_WARMUP) {
+    ASSERT(proc_id, !PERIODIC_DUMP);
+    dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
+    period_last_cycle_count = cycle_count;
+    period_last_inst_count[proc_id] = inst_count[proc_id];
+    warmup_dump_done[proc_id] = TRUE;
   }
 
   /* print heartbeat message if necessary */
@@ -503,6 +515,9 @@ void init_global_counter() {
 
   period_last_inst_count = (Counter*)malloc(sizeof(Counter) * NUM_CORES);
   memset(period_last_inst_count, 0, sizeof(Counter) * NUM_CORES);
+
+  warmup_dump_done = (Flag*)malloc(sizeof(Flag) * NUM_CORES);
+  memset(warmup_dump_done, 0, sizeof(Flag) * NUM_CORES);
 }
 
 /**************************************************************************************/

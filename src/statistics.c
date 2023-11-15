@@ -100,6 +100,11 @@ void gen_stat_output_file(char* buf, uns8 proc_id, Stat* stat) {
     sprintf(temp3, ".period.%llu", period_ID);
     strncat(temp, temp3, 24);
   }
+  if (FULL_WARMUP && !warmup_dump_done[proc_id]) {
+    char temp3[24];
+    sprintf(temp3, ".warmup");
+    strncat(temp, temp3, 24);
+  }
   strncpy(buf, OUTPUT_DIR, MAX_STR_LENGTH);
   strncat(buf, "/", MAX_STR_LENGTH);
   strncat(buf, FILE_TAG, MAX_STR_LENGTH);

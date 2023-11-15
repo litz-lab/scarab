@@ -63,6 +63,7 @@ DEF_PARAM( fast_forward_trace_ins       , FAST_FORWARD_TRACE_INS    , uns64    ,
 DEF_PARAM( fast_forward_until_addr      , FAST_FORWARD_UNTIL_ADDR   , uns      , uns     , 0        ,       )
 DEF_PARAM( memtrace_roi_begin           , MEMTRACE_ROI_BEGIN        , uns64    , uns64   , 0        ,       )
 DEF_PARAM( memtrace_roi_end             , MEMTRACE_ROI_END          , uns64    , uns64   , 0        ,       )
+DEF_PARAM( full_warmup                  , FULL_WARMUP               , uns64    , uns64   , 0        ,       )
 DEF_PARAM( warmup                       , WARMUP                    , uns64    , uns64   , 0        ,       )
 DEF_PARAM( heartbeat_interval           , HEARTBEAT_INTERVAL        , uns    , uns       , 1000000  ,       ) 
 DEF_PARAM( num_heartbeats               , NUM_HEARTBEATS            , uns    , uns       , 0        ,       ) 
@@ -108,4 +109,4 @@ DEF_PARAM( nops_bb_start                , NOPS_BB_START              , uns64  , 
 DEF_PARAM( ignore_bar_fetch             , IGNORE_BAR_FETCH           , Flag   , Flag     , FALSE    ,       ) 
 
 DEF_PARAM( trace_bbv_output             , TRACE_BBV_OUTPUT          , char*  , string    , NULL     ,       )
-DEF_PARAM( segment_instr_count          , SEGMENT_INSTR_COUNT         , uns64  , uns64     , 100000000,       )
+DEF_PARAM( segment_instr_count          , SEGMENT_INSTR_COUNT       , uns64  , uns64     , 100000000,       )

@@ -55,6 +55,8 @@ extern Counter* period_last_inst_count;
 extern Counter  period_last_cycle_count;
 extern Counter  period_ID;
 
+extern Flag* warmup_dump_done;
+
 extern Flag* trace_read_done;
 extern Flag* reached_exit;
 extern Flag* retired_exit;

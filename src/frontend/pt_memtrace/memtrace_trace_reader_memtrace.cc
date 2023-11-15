@@ -171,7 +171,6 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
 
     // there can be mt_ref types other than inst and mem
     // the FSM will skip those if they appear within MTState::INST state
-
     switch(mt_state_) {
       case(MTState::INST):
         if(type_is_instr(mt_ref_.instr.type)) {
@@ -235,6 +234,7 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
                "size, success!\n",
                _info->pc);
 
+	  mt_mem_ops_ = 0;
           mt_state_ = MTState::INST;
           complete  = true;
           goto PATCH_REP;
@@ -271,8 +271,10 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
     }
   }
 PATCH_REP:
+  bool is_rep = xed_map_.find(_prior->pc) != xed_map_.end() ? std::get<MAP_REP>(xed_map_.at(_prior->pc)) : 0;
+  bool non_seq = _info->pc != (_prior->pc + prior_isize);
+
   if(_prior->taken) {          // currently set iif branch
-    bool non_seq = _info->pc != (_prior->pc + prior_isize);
     bool new_gid = (_prior->tid != _info->tid) || (_prior->pid != _info->pid);
     if(new_gid) {
       // TODO(granta): If there are enough of these, it may make sense to
@@ -289,6 +291,14 @@ PATCH_REP:
       non_seq = false;
     }
     _prior->taken = non_seq;
+  }
+  else if (_prior->pc && non_seq && (!is_rep || (_prior->pc != _info->pc && (_prior->pc + prior_isize) != _info->pc))) {
+    _prior->ins = createJmp(_info->pc - _prior->pc);
+    _prior->target = _info->pc;
+    _prior->taken = true;
+    _prior->mem_used[0] = false;
+    _prior->mem_used[1] = false;
+    warn("Patching gap in trace by injecting a Jmp, prior PC: %lx next PC: %lx\n", _prior->pc, _info->pc);
   }
 
   _info->valid &= complete;

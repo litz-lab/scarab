@@ -119,37 +119,6 @@ public:
     return true;
   }
 
-  // TODO: Move this to memtrace_trace_reader.h
-  xed_decoded_inst_t* createJmp(uint64_t displacement) {
-      xed_encoder_instruction_t inst;
-      xed_state_t state;
-      state.mmode = XED_MACHINE_MODE_LONG_64;
-      xed_encoder_request_t req;
-      xed_inst1(&inst, state, XED_ICLASS_JMP, 64,  xed_relbr(displacement - 5, 32)); // -5 is due to this jump insn being 5 bytes large (1 op, 4 32 bit disp)
-      xed_encoder_request_zero_set_mode(&req, &state);
-      if(!xed_convert_to_encoder_request(&req, &inst)) {
-          panic("Encoder conversion failed! Is the displacement too large?");
-          return nullptr;
-      }
-      xed_uint8_t encodedBytes[15];
-      unsigned int numBytesUsed = 0;
-      xed_error_enum_t error = xed_encode(&req, encodedBytes, sizeof(encodedBytes), &numBytesUsed);
-      if(error != XED_ERROR_NONE) {
-          panic("Failed to encode due to: %s\n", xed_error_enum_t2str(error));
-          return nullptr;
-      }
-      xed_decoded_inst_t* decoded_inst = new xed_decoded_inst_t;
-      xed_decoded_inst_zero(decoded_inst);
-      xed_decoded_inst_set_mode(decoded_inst, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
-      error = xed_decode(decoded_inst, encodedBytes, numBytesUsed);
-      if(error == XED_ERROR_NONE) {
-          return decoded_inst;
-      }
-      delete decoded_inst;
-      panic("Could not decode due to %s\n", xed_error_enum_t2str(error));
-      return nullptr;
-  }
-
   xed_decoded_inst_t * createNop(uint64_t length) {
       xed_state_t state;
       state.mmode = XED_MACHINE_MODE_LONG_64;

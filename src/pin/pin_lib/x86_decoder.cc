@@ -324,6 +324,16 @@ void print_err_if_invalid(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
   if (FRONTEND == FE_MEMTRACE) {
     correct = info->cf_type != NOT_CF || XED_INS_DirectBranchOrCallTargetAddress(info->instruction_addr, ins) == info->branch_target;
     if (info->is_repeat) correct = true;  // Ignore rep instr since the target is the same instr.
+    if (info->last_inst_from_trace) {
+      // if last intruction is direct, branch target is overwritten, but npc shall be itself
+      // if it is indirect or NOT_CF, branch target shall equal npc, and is itself
+      assert(info->instruction_next_addr == info->instruction_addr);
+      if (!correct) {
+        assert(info->cf_type == NOT_CF);
+        // ignore incorrect npc for the last instruction from the trace
+        correct = true;
+      }
+    }
   }
 #endif
   if(invalid || !correct) {

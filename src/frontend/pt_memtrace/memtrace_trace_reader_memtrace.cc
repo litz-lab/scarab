@@ -310,6 +310,7 @@ PATCH_REP:
     // set the npc to itself because of the frontend assertion
     // bp_recovery_info->recovery_fetch_addr == frontend_next_fetch_addr(proc_id)
     // at /home/mxu61_bak/scarab_hlitz/src/decoupled_frontend.cc
+    _prior->last_inst_from_trace = true;
     _prior->target = _prior->pc;
   }
 
@@ -350,6 +351,8 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   _info->mem_used[0]  = false;
   _info->mem_used[1]  = false;
   _info->unknown_type = unknown_type;
+  // correct this later at getNextInstruction if it is the last instruction
+  _info->last_inst_from_trace = false;
 }
 
 bool TraceReaderMemtrace::typeIsMem(dynamorio::drmemtrace::trace_type_t _type) {

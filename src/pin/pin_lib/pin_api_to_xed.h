@@ -54,6 +54,9 @@ struct InstInfo {
   bool                      taken;        // branch taken
   bool unknown_type;  // No available decode info (presents a nop)
   bool valid;         // True until the end of the sequence
+#ifdef ENABLE_PT_MEMTRACE
+  bool last_inst_from_trace;
+#endif
 };
 
 #define XED_OP_NAME(ins, op) \

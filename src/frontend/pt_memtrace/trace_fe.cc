@@ -196,7 +196,8 @@ void ext_trace_fetch_op(uns proc_id, Op* op) {
           if (next_onpath_pi[proc_id].cf_type) {
             ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == find->second.cf_type);
             ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == CF_CBR ||
-                            next_onpath_pi[proc_id].cf_type >= CF_IBR);
+                            next_onpath_pi[proc_id].cf_type >= CF_IBR ||
+                            next_onpath_pi[proc_id].last_inst_from_trace);
           }
           STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + next_onpath_pi[proc_id].op_type);
           pc_to_inst.erase(addr);
@@ -434,7 +435,7 @@ void ext_trace_extract_basic_block_vectors() {
       if(!inst->cf_type && !inst->is_repeat) {
         fprintf(stderr, "the cf is not cf or rep %p\n", (void *)inst->instruction_addr);
       }
-      // ASSERT(proc_id, inst->cf_type || inst->is_repeat);
+      ASSERT(proc_id, inst->cf_type || inst->is_repeat || inst->last_inst_from_trace);
     }
 
     // add to current basic block

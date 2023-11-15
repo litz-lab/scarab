@@ -128,6 +128,9 @@ typedef struct ctype_pin_inst_struct {
 
   char pin_iclass[16];
 
+#ifdef ENABLE_PT_MEMTRACE
+  Flag last_inst_from_trace;
+#endif
 } __attribute__((packed)) ctype_pin_inst;
 
 typedef ctype_pin_inst compressed_op;

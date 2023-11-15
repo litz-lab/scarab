@@ -43,7 +43,7 @@
 --cfs_per_cycle                 6                         # Number of branches that can be predicted in a single cycle
 --bp_update_at_retire           0                         # Update the BP at retire. If false, update at the end of exec.
 --update_bp_off_path            1                         # Allow off path ops to update branch predictor state (e.g., ops when they complete exec stage).
---bp_mech                       mtage
+--bp_mech                       tage64k
 
 
 #### BTB
@@ -64,7 +64,7 @@
 
 # Enable return stack
 --enable_crs                    1
---crs_entries                   32
+--crs_entries                   128
 --crs_realistic                 1
 
 ### iBP

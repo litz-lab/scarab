@@ -459,9 +459,13 @@ void update_icache_stage() {
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s line_addr 0x%s\n",
                 unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr), hexstr64s(ic->fetch_addr & ~0x3F));
-          STAT_EVENT(ic->proc_id, ICACHE_HIT);
-          STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH + ic->off_path);
-          if(WP_COLLECT_STATS) {
+	  static uint64_t last_line = 0;
+	  if ((ic->fetch_addr >> LOG2(ICACHE_LINE_SIZE)) != last_line) {
+	    STAT_EVENT(ic->proc_id, ICACHE_HIT);
+	    STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH + ic->off_path);
+	  }
+	  last_line = (ic->fetch_addr >> LOG2(ICACHE_LINE_SIZE));
+	  if(WP_COLLECT_STATS) {
             ASSERT(ic->proc_id, line_info);
             wp_process_icache_hit(line_info, ic->fetch_addr);
           }

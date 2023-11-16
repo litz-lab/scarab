@@ -1106,6 +1106,7 @@ void init_pin_opcode_convert(void) {
 
   iclass_to_scarab_map[XED_ICLASS_PABSB]     = {OP_LOGIC, 1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_PABSD]     = {OP_LOGIC, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_PACKSSDW]  = {OP_MOV, -1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_PACKUSWB]  = {OP_MOV, -1, -1, NONE}; // I think output lane bytes will be different than input lane bytes, but not sure.
   iclass_to_scarab_map[XED_ICLASS_PABSW]     = {OP_LOGIC, 2, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_PADDB]     = {OP_IADD, 1, -1, NONE};
@@ -1812,6 +1813,7 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_VPSHUFD]     = {OP_MOV, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPSHUFHW]    = {OP_MOV, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPSHUFLW]    = {OP_MOV, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPSIGNB]     = {OP_LOGIC, 1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPSLLD]      = {OP_SHIFT, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPSLLDQ]     = {OP_SHIFT, 16, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPSLLQ]      = {OP_SHIFT, 8, -1, NONE};

@@ -160,7 +160,7 @@ uint32_t add_dependency_info(ctype_pin_inst*           info,
           max_op_width = std::max(max_op_width, XED_INS_OperandWidth(ins, ii));
         }
         if(is_gather_or_scatter) {
-          set_gather_scatter_reg_operand_info(iaddr, xed_reg, operandRead,
+	  set_gather_scatter_reg_operand_info(iaddr, xed_reg, operandRead,
                                               operandWritten);
         }
       }
@@ -1460,6 +1460,7 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_VEXTRACTI64X4] = {OP_MOV, 32, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VEXTRACTPS]    = {OP_PIPELINED_FAST, 4, -1,
                                                  NONE};
+  iclass_to_scarab_map[XED_ICLASS_VFPCLASSPD]    = {OP_FCMP, 8, 8, NONE};
   // FMA instructions
   iclass_to_scarab_map[XED_ICLASS_VFMADD132PD]    = {OP_FMA, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VFMADD132PS]    = {OP_FMA, 4, -1, NONE};

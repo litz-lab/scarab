@@ -43,6 +43,7 @@ extern "C" {
 #include "isa/isa.h"
 #include "pin/pin_lib/uop_generator.h"
 #include "pin/pin_lib/x86_decoder.h"
+#include "pin/pin_lib/gather_scatter_addresses.h"
 #include "statistics.h"
 
 #define DR_DO_NOT_DEFINE_int64
@@ -58,7 +59,7 @@ TraceReader*    trace_readers[MAX_NUM_PROCS];
 uint64_t        ins_id    = 0;
 uint64_t        prior_tid = 0;
 uint64_t        prior_pid = 0;
-
+extern scatter_info_map                          scatter_info_storage;
 
 /**************************************************************************************/
 /* Private Functions */
@@ -158,6 +159,11 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   memset(next_onpath_pi, 0, sizeof(ctype_pin_inst));
   fill_in_dynamic_info(next_onpath_pi, insi);
   fill_in_basic_info(next_onpath_pi, insi->ins);
+  if(XED_INS_IsVgather(insi->ins) || XED_INS_IsVscatter(insi->ins)) {
+    xed_category_enum_t category           = XED_INS_Category(insi->ins);
+    scatter_info_storage[insi->pc] = add_to_gather_scatter_info_storage(
+      insi->pc, XED_INS_IsVgather(insi->ins), XED_INS_IsVscatter(insi->ins), category);
+  }
   uint32_t max_op_width = add_dependency_info(next_onpath_pi, insi->ins);
   fill_in_simd_info(next_onpath_pi, insi->ins, max_op_width);
   apply_x87_bug_workaround(next_onpath_pi, insi->ins);

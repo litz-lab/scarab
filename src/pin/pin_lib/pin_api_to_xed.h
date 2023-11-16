@@ -154,6 +154,7 @@ struct InstInfo {
 #define XED_REG_is_ymm(reg) (xed_reg_class(reg) == XED_REG_CLASS_YMM)
 // TODO: Check if mask is sufficient or if we need to check for K-mask reg
 #define XED_REG_is_k_mask(reg) (xed_reg_class(reg) == XED_REG_CLASS_MASK)
+#define XED_REG_is_gr(reg) (xed_reg_class(reg) == XED_REG_CLASS_GPR)
 #define XED_REG_is_gr32(reg) (xed_reg_class(reg) == XED_REG_CLASS_GPR32)
 #define XED_REG_is_gr64(reg) (xed_reg_class(reg) == XED_REG_CLASS_GPR64)
 // TODO: What is the difference between PINs REG_Size and REG_Width?

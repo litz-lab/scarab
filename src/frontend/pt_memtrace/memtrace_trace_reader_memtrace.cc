@@ -271,41 +271,40 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
     }
   }
 PATCH_REP:
-  bool is_rep = xed_map_.find(_prior->pc) != xed_map_.end() ? std::get<MAP_REP>(xed_map_.at(_prior->pc)) : 0;
-  bool non_seq = _info->pc != (_prior->pc + prior_isize);
-
-  if(_prior->taken) {          // currently set iif branch
-    bool new_gid = (_prior->tid != _info->tid) || (_prior->pid != _info->pid);
-    if(new_gid) {
-      // TODO(granta): If there are enough of these, it may make sense to
-      // delay conditional branch instructions until the thread resumes even
-      // though this alters the apparent order of the trace.
-      // (Seeking ahead to resolve the branch info is a non-starter.)
-      if(mt_warn_target_ == 0) {
-        warn("Detected a conditional branch preceding a pid/tid change "
-             "at seq. %lu. Assuming not-taken. Suppressing further "
-             "messages.\n",
-             mt_seq_ - 1);
-      }
-      mt_warn_target_++;
-      non_seq = false;
-    }
-    _prior->taken = non_seq;
-  }
-  else if (_prior->pc && non_seq && (!is_rep || (_prior->pc != _info->pc && (_prior->pc + prior_isize) != _info->pc))) {
-    _prior->ins = createJmp(_info->pc - _prior->pc);
-    _prior->target = _info->pc;
-    _prior->taken = true;
-    _prior->mem_used[0] = false;
-    _prior->mem_used[1] = false;
-    warn("Patching gap in trace by injecting a Jmp, prior PC: %lx next PC: %lx\n", _prior->pc, _info->pc);
-  }
-
   _info->valid &= complete;
   // Compute the branch target information for the prior instruction
-  if(_info->valid)
+  if(_info->valid) {
+    bool is_rep = xed_map_.find(_prior->pc) != xed_map_.end() ? std::get<MAP_REP>(xed_map_.at(_prior->pc)) : 0;
+    bool non_seq = _info->pc != (_prior->pc + prior_isize);
+
+    if(_prior->taken) {          // currently set iif branch
+      bool new_gid = (_prior->tid != _info->tid) || (_prior->pid != _info->pid);
+      if(new_gid) {
+        // TODO(granta): If there are enough of these, it may make sense to
+        // delay conditional branch instructions until the thread resumes even
+        // though this alters the apparent order of the trace.
+        // (Seeking ahead to resolve the branch info is a non-starter.)
+        if(mt_warn_target_ == 0) {
+          warn("Detected a conditional branch preceding a pid/tid change "
+              "at seq. %lu. Assuming not-taken. Suppressing further "
+              "messages.\n",
+              mt_seq_ - 1);
+        }
+        mt_warn_target_++;
+        non_seq = false;
+      }
+      _prior->taken = non_seq;
+    }
+    else if (_prior->pc && non_seq && (!is_rep || (_prior->pc != _info->pc && (_prior->pc + prior_isize) != _info->pc))) {
+      _prior->ins = createJmp(_info->pc - _prior->pc);
+      _prior->target = _info->pc;
+      _prior->taken = true;
+      _prior->mem_used[0] = false;
+      _prior->mem_used[1] = false;
+      warn("Patching gap in trace by injecting a Jmp, prior PC: %lx next PC: %lx\n", _prior->pc, _info->pc);
+    }
     _prior->target = _info->pc;  // TODO(granta): Invalid for pid/tid switch
-  else {
+  } else {
     // for the last instruction of the trace, the npc cannot be set by the next one
     // set the npc to itself because of the frontend assertion
     // bp_recovery_info->recovery_fetch_addr == frontend_next_fetch_addr(proc_id)

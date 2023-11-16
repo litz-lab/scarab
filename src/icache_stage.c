@@ -495,7 +495,7 @@ void update_icache_stage() {
         STAT_EVENT(map->proc_id, ICACHE_STAGE_STARVED);
       }
 
-      STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + get_last_miss_reason(ic->proc_id));
+      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + get_last_miss_reason(ic->proc_id), IC_ISSUE_WIDTH - 1);
     } break;
 
     case IC_WAIT_FOR_EMPTY_ROB: {

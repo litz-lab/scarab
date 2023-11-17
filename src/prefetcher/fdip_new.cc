@@ -307,8 +307,11 @@ void update_fdip() {
   }
 
   per_core_fdip_ftq_occupancy_ops[ic_ref->proc_id] += decoupled_fe_ftq_iter_offset(iter);
-  if (break_reason == BR_REACH_FTQ_END)
+  INC_STAT_EVENT(proc_id, FDIP_FTQ_OCCUPANCY_OPS_ACCUMULATED, decoupled_fe_ftq_iter_offset(iter));
+  if (break_reason == BR_REACH_FTQ_END) {
     per_core_fdip_ftq_occupancy_blocks[ic_ref->proc_id] += decoupled_fe_ftq_num_blocks();
+    INC_STAT_EVENT(proc_id, FDIP_FTQ_OCCUPANCY_BLOCKS_ACCUMULATED, decoupled_fe_ftq_num_blocks());
+  }
   //else
     //ASSERT(fdip_proc_id, false); // for now TODO
 }

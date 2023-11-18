@@ -1031,6 +1031,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
     return;
 
   if(*repl_line_addr && !line->read_count[0]) {
+    DEBUG(ic->proc_id, "%llx is evicted without hit, FDIP pref: %d\n", *repl_line_addr, line->FDIP_prefetch);
     if(line->FDIP_prefetch) {
       inc_cnt_unuseful(ic->proc_id, *repl_line_addr, icache_off_path());
       inc_optimistic_1bit(ic->proc_id, *repl_line_addr);
@@ -1038,19 +1039,21 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
       dec_useful_unuseful_2bit(ic->proc_id, *repl_line_addr);
       dec_useful_unuseful_3bit(ic->proc_id, *repl_line_addr);
       inc_utility_info(ic->proc_id, FALSE);
-      DEBUG(ic->proc_id, "%llx is evicted\n", *repl_line_addr);
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ONPATH_BY_FDIP + icache_off_path());
       if(line->FDIP_prefetch == FDIP_ONPATH)
         STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_BY_FDIP_ONPATH);
       else
         STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_BY_FDIP_OFFPATH);
     }
-  } else if(*repl_line_addr && line->read_count[0] && line->FDIP_prefetch) {
-    STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_ONPATH_BY_FDIP + icache_off_path());
-    if(line->FDIP_prefetch == FDIP_ONPATH)
-      STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_BY_FDIP_ONPATH);
-    else
-      STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_BY_FDIP_OFFPATH);
+  } else if(*repl_line_addr && line->read_count[0]) {
+    DEBUG(ic->proc_id, "%llx is evicted with hits, FDIP pref: %d\n", *repl_line_addr, line->FDIP_prefetch);
+    if (line->FDIP_prefetch) {
+      STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_ONPATH_BY_FDIP + icache_off_path());
+      if(line->FDIP_prefetch == FDIP_ONPATH)
+        STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_BY_FDIP_ONPATH);
+      else
+        STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_BY_FDIP_OFFPATH);
+    }
   }
 
   if(FDIP_ENABLE && *repl_line_addr)

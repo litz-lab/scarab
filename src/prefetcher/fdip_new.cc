@@ -373,7 +373,8 @@ void assert_not_trained(uns proc_id, Addr line_addr) {
   if (!FDIP_UTILITY_HASH_ENABLE || (FDIP_UTILITY_LEARN_POLICY != LEARN_ON_OFF_USEFUL) || (inst_count[proc_id] < FULL_WARMUP))
     return;
   auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
-  printf("True miss even trained %llx\n", useful_iter->first);
+  if (useful_iter != per_core_cnt_useful[proc_id].end())
+    printf("True miss even trained %llx\n", useful_iter->first);
   //ASSERT(proc_id, useful_iter == per_core_cnt_useful[proc_id].end());
 }
 

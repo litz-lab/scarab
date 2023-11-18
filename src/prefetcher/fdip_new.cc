@@ -378,18 +378,22 @@ void assert_not_trained(uns proc_id, Addr line_addr) {
 
 void inc_cnt_useful(uns proc_id, Addr line_addr, Flag icache_off_path) {
   auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
+  DEBUG(proc_id, "cnt_useful size %ld\n", per_core_cnt_useful[proc_id].size());
   if (useful_iter == per_core_cnt_useful[proc_id].end()) {
+    DEBUG(proc_id, "%llx useful line new insert, icache_off_path: %d\n", line_addr, icache_off_path);
     STAT_EVENT(proc_id, ICACHE_USEFUL_FETCHES);
     if (icache_off_path)
       per_core_cnt_useful[proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(0, 1)));
     else
       per_core_cnt_useful[proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(1, 0)));
   } else {
+    DEBUG(proc_id, "%llx useful line inc, icache_off_path: %d\n", line_addr, icache_off_path);
     if (icache_off_path)
       useful_iter->second.second++;
     else
       useful_iter->second.first++;
   }
+  DEBUG(proc_id, "cnt_useful size after inserted %ld\n", per_core_cnt_useful[proc_id].size());
 }
 
 void inc_cnt_unuseful(uns proc_id, Addr line_addr, Flag icache_off_path) {

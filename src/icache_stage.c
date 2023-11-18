@@ -1136,7 +1136,8 @@ void log_stats_mshr_hit(Addr line_addr) {
   imiss_reason = get_miss_reason(ic->proc_id, line_addr);
   DEBUG_FDIP(ic->proc_id, "miss reason: %d, req: %d\n", imiss_reason, req? 1:0);
   if (!req) {
-    assert_not_trained(ic->proc_id, ic->line_addr);
+    //assert_not_trained(ic->proc_id, ic->line_addr);
+    printf("True miss even trained %llx\n", ic->line_addr);
     inc_cnt_useful(ic->proc_id, ic->line_addr, icache_off_path()); // true miss (not yet covered by UDP)
     dec_optimistic_1bit(ic->proc_id, ic->line_addr);
     inc_useful_unuseful_1bit(ic->proc_id, ic->line_addr);

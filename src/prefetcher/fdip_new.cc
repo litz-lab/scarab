@@ -40,6 +40,7 @@ typedef enum UTILITY_LEARN_POLICY_enum {
   LEARN_ON_OFF_USEFUL_UNUSEFUL_1BIT,
   LEARN_ON_OFF_USEFUL_UNUSEFUL_2BIT,
   LEARN_ON_OFF_USEFUL_UNUSEFUL_3BIT,
+  LEARN_ON_OFF_OPTIMISTIC_1BIT,
 } Utility_Learn_Policy;
 
 /* global variables for dynamic FTQ adjustment based on utility/timeliness study */
@@ -53,6 +54,10 @@ std::vector<Counter> per_core_last_recover_cycle;
 std::vector<std::unordered_map<Addr, std::pair<Counter, Counter>>> per_core_cnt_useful;
 // <CL address, # of evictions w/o hit of cache lines> - unuseful count
 std::vector<std::unordered_map<Addr, std::pair<Counter, Counter>>> per_core_cnt_unuseful;
+// Increment if unuseful, decrement if useful
+// <CL address, 1-bit counter for on/off-path unuseful/useful> init by 0 (0), prefetch : 0 not prefetch : 1
+std::vector<std::unordered_map<Addr, Counter>> per_core_optimistic_1bit;
+// Increment if useful, decrement if unuseful
 // <CL address, 1-bit counter for on/off-path useful/unuseful> init by 1 (1), not prefetch : 0 prefetch : 1
 std::vector<std::unordered_map<Addr, Counter>> per_core_useful_unuseful_1bit;
 // <CL address, 2-bit counter for on/off-path useful/unuseful> init by 01 (1), not prefetch : 00, 01, prefetch : 10, 11
@@ -94,6 +99,7 @@ void alloc_mem_fdip(uns numCores) {
   per_core_last_recover_cycle.resize(numCores);
   per_core_cnt_useful.resize(numCores);
   per_core_cnt_unuseful.resize(numCores);
+  per_core_optimistic_1bit.resize(numCores);
   per_core_useful_unuseful_1bit.resize(numCores);
   per_core_useful_unuseful_2bit.resize(numCores);
   per_core_useful_unuseful_3bit.resize(numCores);
@@ -401,6 +407,22 @@ void inc_cnt_unuseful(uns proc_id, Addr line_addr, Flag icache_off_path) {
   }
 }
 
+void inc_optimistic_1bit(uns proc_id, Addr line_addr) {
+  auto opt_iter = per_core_optimistic_1bit[proc_id].find(line_addr);
+  if (opt_iter == per_core_optimistic_1bit[proc_id].end())
+    per_core_optimistic_1bit[proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
+  else if (opt_iter->second < 1)
+    opt_iter->second++;
+}
+
+void dec_optimistic_1bit(uns proc_id, Addr line_addr) {
+  auto opt_iter = per_core_optimistic_1bit[proc_id].find(line_addr);
+  if (opt_iter == per_core_optimistic_1bit[proc_id].end())
+    per_core_optimistic_1bit[proc_id].insert(std::pair<Addr, Counter>(line_addr, 0));
+  else if (opt_iter->second > 0)
+    opt_iter->second--;
+}
+
 void inc_useful_unuseful_1bit(uns proc_id, Addr line_addr) {
   auto useful_iter = per_core_useful_unuseful_1bit[proc_id].find(line_addr);
   if (useful_iter == per_core_useful_unuseful_1bit[proc_id].end())
@@ -596,6 +618,15 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         *emit_new_prefetch = TRUE;
       else
         *emit_new_prefetch = FALSE;
+      break;
+    }
+    case Utility_Learn_Policy::LEARN_ON_OFF_OPTIMISTIC_1BIT: {
+      std::unordered_map<Addr, Counter>* optimistic_1bit = &per_core_optimistic_1bit[fdip_proc_id];
+      auto iter = optimistic_1bit->find(line_addr);
+      if (iter != optimistic_1bit->end() && iter->second >= 1)
+        *emit_new_prefetch = FALSE;
+      else
+        *emit_new_prefetch = TRUE;
       break;
     }
   }

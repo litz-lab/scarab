@@ -17,6 +17,10 @@ extern "C" {
   void assert_not_trained(uns proc_id, Addr line_addr);
   void inc_cnt_useful(uns proc_id, Addr line_addr, Flag icache_off_path);
   void inc_cnt_unuseful(uns proc_id, Addr line_addr, Flag icache_off_path);
+  void inc_optimistic_1bit(uns proc_id, Addr line_addr);
+  void dec_optimistic_1bit(uns proc_id, Addr line_addr);
+  void inc_useful_unuseful_1bit(uns proc_id, Addr line_addr);
+  void dec_useful_unuseful_1bit(uns proc_id, Addr line_addr);
   void inc_useful_unuseful_2bit(uns proc_id, Addr line_addr);
   void dec_useful_unuseful_2bit(uns proc_id, Addr line_addr);
   void inc_useful_unuseful_3bit(uns proc_id, Addr line_addr);

@@ -338,14 +338,10 @@ std::multimap<B,A> flip_map(const std::map<A,B> &src)
 void print_cl_info(uns proc_id) {
   if (!FDIP_ENABLE)
     return;
-  std::unordered_map<Addr, std::pair<Counter, Counter>>* cnt_useful = &per_core_cnt_useful[proc_id];
-  std::unordered_map<Addr, std::pair<Counter, Counter>>* cnt_unuseful = &per_core_cnt_unuseful[proc_id];
   std::unordered_map<Addr, Counter>* cnt_useful_ret = &per_core_cnt_useful_ret[proc_id];
   std::map<Addr, Counter>* prefetched_cls = &per_core_prefetched_cls[proc_id];
   std::map<Addr, Counter>* icache_miss = &per_core_icache_miss[proc_id];
 
-  DEBUG(proc_id, "cnt_useful (ICACHE_USEFUL_FETCHES) size: %lu\n", cnt_useful->size());
-  DEBUG(proc_id, "cnt_useful_ret (USEFUL_CACHELINES_RETIRED) size: %lu\n", cnt_useful_ret->size());
   DEBUG(proc_id, "cnt_unuseful (ICACHE_UNUSEFUL_FETCHES) size: %lu\n", cnt_unuseful->size());
   DEBUG(proc_id, "icache miss cache lines (UNIQUE_MISSED_LINES) size: %lu\n", icache_miss->size());
   std::multimap<Counter, Addr> icache_miss_sorted = flip_map(*icache_miss);

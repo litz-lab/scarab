@@ -345,20 +345,15 @@ void print_cl_info(uns proc_id) {
   std::map<Addr, Counter>* icache_miss = &per_core_icache_miss[proc_id];
 
   DEBUG(proc_id, "cnt_useful (ICACHE_USEFUL_FETCHES) size: %lu\n", cnt_useful->size());
-  INC_STAT_EVENT(proc_id, ICACHE_USEFUL_FETCHES, cnt_useful->size());
   DEBUG(proc_id, "cnt_useful_ret (USEFUL_CACHELINES_RETIRED) size: %lu\n", cnt_useful_ret->size());
-  INC_STAT_EVENT(proc_id, USEFUL_CACHELINES_RETIRED, cnt_useful_ret->size());
   DEBUG(proc_id, "cnt_unuseful (ICACHE_UNUSEFUL_FETCHES) size: %lu\n", cnt_unuseful->size());
-  INC_STAT_EVENT(proc_id, ICACHE_UNUSEFUL_FETCHES, cnt_unuseful->size());
   DEBUG(proc_id, "icache miss cache lines (UNIQUE_MISSED_LINES) size: %lu\n", icache_miss->size());
-  INC_STAT_EVENT(proc_id, UNIQUE_MISSED_LINES, icache_miss->size());
   std::multimap<Counter, Addr> icache_miss_sorted = flip_map(*icache_miss);
   for(std::multimap<Counter, Addr>::const_iterator it = icache_miss_sorted.begin();
       it != icache_miss_sorted.end(); ++it) {
     DEBUG(proc_id, "[set %u] 0x%llx missed %llu times\n", (uns)(it->second >> ic_ref->icache.shift_bits & ic_ref->icache.set_mask), it->second, it->first);
   }
   DEBUG(proc_id, "unique prefetched lines (UNIQUE_PREFETCHED_LINES) size: %lu\n", prefetched_cls->size());
-  INC_STAT_EVENT(proc_id, UNIQUE_PREFETCHED_LINES, prefetched_cls->size());
   std::multimap<Counter, Addr> prefetched_cls_sorted = flip_map(*prefetched_cls);
   for(std::multimap<Counter, Addr>::const_iterator it = prefetched_cls_sorted.begin();
       it != prefetched_cls_sorted.end(); ++it) {
@@ -369,9 +364,15 @@ void print_cl_info(uns proc_id) {
   }
 }
 
+void assert_not_trained(uns proc_id, Addr line_addr) {
+  auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
+  ASSERT(proc_id, useful_iter == per_core_cnt_useful[proc_id].end());
+}
+
 void inc_cnt_useful(uns proc_id, Addr line_addr, Flag icache_off_path) {
   auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
   if (useful_iter == per_core_cnt_useful[proc_id].end()) {
+    STAT_EVENT(proc_id, ICACHE_USEFUL_FETCHES);
     if (icache_off_path)
       per_core_cnt_useful[proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(0, 1)));
     else
@@ -387,6 +388,7 @@ void inc_cnt_useful(uns proc_id, Addr line_addr, Flag icache_off_path) {
 void inc_cnt_unuseful(uns proc_id, Addr line_addr, Flag icache_off_path) {
   auto unuseful_iter = per_core_cnt_unuseful[proc_id].find(line_addr);
   if (unuseful_iter == per_core_cnt_unuseful[proc_id].end()) {
+    STAT_EVENT(proc_id, ICACHE_UNUSEFUL_FETCHES);
     if (icache_off_path)
       per_core_cnt_unuseful[proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(0, 1)));
     else
@@ -433,16 +435,20 @@ void dec_useful_unuseful_3bit(uns proc_id, Addr line_addr) {
 
 void inc_cnt_useful_ret(uns proc_id, Addr line_addr) {
   auto useful_iter = per_core_cnt_useful_ret[proc_id].find(line_addr);
-  if (useful_iter == per_core_cnt_useful_ret[proc_id].end())
+  if (useful_iter == per_core_cnt_useful_ret[proc_id].end()) {
+    STAT_EVENT(proc_id, USEFUL_CACHELINES_RETIRED);
     per_core_cnt_useful_ret[proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
+  }
   else
     useful_iter->second++;
 }
 
 void inc_icache_miss(uns proc_id, Addr line_addr) {
   auto cl_iter = per_core_icache_miss[proc_id].find(line_addr);
-  if (cl_iter == per_core_icache_miss[proc_id].end())
+  if (cl_iter == per_core_icache_miss[proc_id].end()) {
+    STAT_EVENT(proc_id, UNIQUE_MISSED_LINES);
     per_core_icache_miss[proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
+  }
   else
     cl_iter->second++;
 }

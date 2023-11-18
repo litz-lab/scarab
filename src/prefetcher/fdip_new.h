@@ -14,6 +14,7 @@ extern "C" {
   void set_fdip(int _proc_id, Icache_Stage *_ic);
   Flag fdip_off_path(uns proc_id);
   void print_cl_info(uns proc_id);
+  void assert_not_trained(uns proc_id, Addr line_addr);
   void inc_cnt_useful(uns proc_id, Addr line_addr, Flag icache_off_path);
   void inc_cnt_unuseful(uns proc_id, Addr line_addr, Flag icache_off_path);
   void inc_useful_unuseful_2bit(uns proc_id, Addr line_addr);

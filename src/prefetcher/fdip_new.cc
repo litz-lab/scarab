@@ -53,7 +53,7 @@ std::vector<Counter> per_core_last_recover_cycle;
 std::vector<std::unordered_map<Addr, std::pair<Counter, Counter>>> per_core_cnt_useful;
 // <CL address, # of evictions w/o hit of cache lines> - unuseful count
 std::vector<std::unordered_map<Addr, std::pair<Counter, Counter>>> per_core_cnt_unuseful;
-// <CL address, 2-bit counter for on/off-path useful/unuseful> init by 1 (1), not prefetch : 0 prefetch : 1
+// <CL address, 1-bit counter for on/off-path useful/unuseful> init by 1 (1), not prefetch : 0 prefetch : 1
 std::vector<std::unordered_map<Addr, Counter>> per_core_useful_unuseful_1bit;
 // <CL address, 2-bit counter for on/off-path useful/unuseful> init by 01 (1), not prefetch : 00, 01, prefetch : 10, 11
 std::vector<std::unordered_map<Addr, Counter>> per_core_useful_unuseful_2bit;

@@ -352,7 +352,6 @@ void print_cl_info(uns proc_id) {
   std::map<Addr, Counter>* prefetched_cls = &per_core_prefetched_cls[proc_id];
   std::map<Addr, Counter>* icache_miss = &per_core_icache_miss[proc_id];
 
-  DEBUG(proc_id, "cnt_unuseful (ICACHE_UNUSEFUL_FETCHES) size: %lu\n", cnt_unuseful->size());
   DEBUG(proc_id, "icache miss cache lines (UNIQUE_MISSED_LINES) size: %lu\n", icache_miss->size());
   std::multimap<Counter, Addr> icache_miss_sorted = flip_map(*icache_miss);
   for(std::multimap<Counter, Addr>::const_iterator it = icache_miss_sorted.begin();

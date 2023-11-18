@@ -111,7 +111,7 @@ void alloc_mem_fdip(uns numCores) {
   per_core_fdip_ftq_occupancy_blocks.resize(numCores);
   if (FDIP_UTILITY_HASH_ENABLE)
     ASSERT(fdip_proc_id, FDIP_UTILITY_LEARN_POLICY >= Utility_Learn_Policy::LEARN_ONLY_ONPATH_USEFUL &&
-        FDIP_UTILITY_LEARN_POLICY <= Utility_Learn_Policy::LEARN_ON_OFF_USEFUL_UNUSEFUL_3BIT);
+        FDIP_UTILITY_LEARN_POLICY <= Utility_Learn_Policy::LEARN_ON_OFF_OPTIMISTIC_1BIT);
 
   if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
     per_core_last_cl_unuseful.resize(numCores);
@@ -371,6 +371,8 @@ void print_cl_info(uns proc_id) {
 }
 
 void assert_not_trained(uns proc_id, Addr line_addr) {
+  if (inst_count[proc_id] < FULL_WARMUP)
+    return;
   auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
   ASSERT(proc_id, useful_iter == per_core_cnt_useful[proc_id].end());
 }

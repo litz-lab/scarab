@@ -171,7 +171,8 @@ void update_fdip() {
   FDIP_Break break_reason = BR_REACH_FTQ_END;
   bool end_of_block;
   per_cyc_ipref = 0;
-  per_core_last_cl_unuseful[fdip_proc_id] = 0;
+  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
+    per_core_last_cl_unuseful[fdip_proc_id] = 0;
 
   for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
     per_core_cur_op[fdip_proc_id] = op;

@@ -37,10 +37,8 @@ typedef enum UTILITY_LEARN_POLICY_enum {
   LEARN_ONLY_ONPATH_USEFUL,
   LEARN_ON_OFF_USEFUL,
   LEARN_ONLY_UNUSEFUL,
-  LEARN_ON_OFF_USEFUL_UNUSEFUL_1BIT,
-  LEARN_ON_OFF_USEFUL_UNUSEFUL_2BIT,
-  LEARN_ON_OFF_USEFUL_UNUSEFUL_3BIT,
-  LEARN_ON_OFF_OPTIMISTIC_1BIT,
+  LEARN_ON_OFF_OPTIMISTIC,
+  LEARN_ON_OFF_CONSERVATIVE,
 } Utility_Learn_Policy;
 
 /* global variables for dynamic FTQ adjustment based on utility/timeliness study */
@@ -54,16 +52,11 @@ std::vector<Counter> per_core_last_recover_cycle;
 std::vector<std::unordered_map<Addr, std::pair<Counter, Counter>>> per_core_cnt_useful;
 // <CL address, # of evictions w/o hit of cache lines> - unuseful count
 std::vector<std::unordered_map<Addr, std::pair<Counter, Counter>>> per_core_cnt_unuseful;
-// Increment if unuseful, decrement if useful
-// <CL address, 1-bit counter for on/off-path unuseful/useful> init by 0 (0), prefetch : 0 not prefetch : 1
-std::vector<std::unordered_map<Addr, Counter>> per_core_optimistic_1bit;
-// Increment if useful, decrement if unuseful
-// <CL address, 1-bit counter for on/off-path useful/unuseful> init by 1 (1), not prefetch : 0 prefetch : 1
-std::vector<std::unordered_map<Addr, Counter>> per_core_useful_unuseful_1bit;
-// <CL address, 2-bit counter for on/off-path useful/unuseful> init by 01 (1), not prefetch : 00, 01, prefetch : 10, 11
-std::vector<std::unordered_map<Addr, Counter>> per_core_useful_unuseful_2bit;
-// <CL address, 3-bit counter for on/off-path useful/unuseful> init by 011 (3) not prefetch : 000, 001, 010, 011, prefetch : 100, 101, 110, 111
-std::vector<std::unordered_map<Addr, Counter>> per_core_useful_unuseful_3bit;
+// Increment if useful by UDP_WEIGHT_USEFUL, decrement if unuseful by UDP_WEIGHT_UNUSEFUL
+// <CL address, counter for on/off-path unuseful/useful> init by UDP_USEFUL_THRESHOLD
+// OPTIMISTIC POLICY : do not prefetch if < USEFUL_THRESHOLD, otherwise, prefetch (do not prefetch only when it was unuseful at least once)
+// CONSERVATIVE POLICY : prefetch if > USEFUL_THRESHOLD, otherwise, do not prefetch (prefetch only when it was useful at least once)
+std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_onoff;
 // <CL addresses, retirement count> - on-path retired cache line count
 std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_useful_ret;
 // <CL addresses, icache miss count>
@@ -99,10 +92,7 @@ void alloc_mem_fdip(uns numCores) {
   per_core_last_recover_cycle.resize(numCores);
   per_core_cnt_useful.resize(numCores);
   per_core_cnt_unuseful.resize(numCores);
-  per_core_optimistic_1bit.resize(numCores);
-  per_core_useful_unuseful_1bit.resize(numCores);
-  per_core_useful_unuseful_2bit.resize(numCores);
-  per_core_useful_unuseful_3bit.resize(numCores);
+  per_core_cnt_onoff.resize(numCores);
   per_core_cnt_useful_ret.resize(numCores);
   per_core_icache_miss.resize(numCores);
   per_core_prefetched_cls.resize(numCores);
@@ -111,7 +101,7 @@ void alloc_mem_fdip(uns numCores) {
   per_core_fdip_ftq_occupancy_blocks.resize(numCores);
   if (FDIP_UTILITY_HASH_ENABLE)
     ASSERT(fdip_proc_id, FDIP_UTILITY_LEARN_POLICY >= Utility_Learn_Policy::LEARN_ONLY_ONPATH_USEFUL &&
-        FDIP_UTILITY_LEARN_POLICY <= Utility_Learn_Policy::LEARN_ON_OFF_OPTIMISTIC_1BIT);
+        FDIP_UTILITY_LEARN_POLICY <= Utility_Learn_Policy::LEARN_ON_OFF_CONSERVATIVE);
 
   if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
     per_core_last_cl_unuseful.resize(numCores);
@@ -181,6 +171,7 @@ void update_fdip() {
   FDIP_Break break_reason = BR_REACH_FTQ_END;
   bool end_of_block;
   per_cyc_ipref = 0;
+  per_core_last_cl_unuseful[fdip_proc_id] = 0;
 
   for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
     per_core_cur_op[fdip_proc_id] = op;
@@ -240,6 +231,7 @@ void update_fdip() {
         emit_new_prefetch = TRUE;
 
       if (line) {
+        DEBUG(fdip_proc_id, "probe hit for %llx\n", line_addr);
         probe_prefetched_cls(line_addr);
         STAT_EVENT(ic_ref->proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ONPATH + op->off_path);
       }
@@ -378,19 +370,19 @@ void assert_not_trained(uns proc_id, Addr line_addr) {
   //ASSERT(proc_id, useful_iter == per_core_cnt_useful[proc_id].end());
 }
 
-void inc_cnt_useful(uns proc_id, Addr line_addr, Flag icache_off_path) {
+void inc_cnt_useful(uns proc_id, Addr line_addr, Flag fdip_off_path) {
   auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
   DEBUG(proc_id, "cnt_useful size %ld\n", per_core_cnt_useful[proc_id].size());
   if (useful_iter == per_core_cnt_useful[proc_id].end()) {
-    DEBUG(proc_id, "%llx useful line new insert, icache_off_path: %d\n", line_addr, icache_off_path);
+    DEBUG(proc_id, "%llx useful line new insert, fdip_off_path: %d\n", line_addr, fdip_off_path);
     STAT_EVENT(proc_id, ICACHE_USEFUL_FETCHES);
-    if (icache_off_path)
+    if (fdip_off_path)
       per_core_cnt_useful[proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(0, 1)));
     else
       per_core_cnt_useful[proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(1, 0)));
   } else {
-    DEBUG(proc_id, "%llx useful line inc, icache_off_path: %d\n", line_addr, icache_off_path);
-    if (icache_off_path)
+    DEBUG(proc_id, "%llx useful line inc, fdip_off_path: %d\n", line_addr, fdip_off_path);
+    if (fdip_off_path)
       useful_iter->second.second++;
     else
       useful_iter->second.first++;
@@ -398,84 +390,36 @@ void inc_cnt_useful(uns proc_id, Addr line_addr, Flag icache_off_path) {
   DEBUG(proc_id, "cnt_useful size after inserted %ld\n", per_core_cnt_useful[proc_id].size());
 }
 
-void inc_cnt_unuseful(uns proc_id, Addr line_addr, Flag icache_off_path) {
+void inc_cnt_unuseful(uns proc_id, Addr line_addr, Flag fdip_off_path) {
   auto unuseful_iter = per_core_cnt_unuseful[proc_id].find(line_addr);
   if (unuseful_iter == per_core_cnt_unuseful[proc_id].end()) {
     STAT_EVENT(proc_id, ICACHE_UNUSEFUL_FETCHES);
-    if (icache_off_path)
+    if (fdip_off_path)
       per_core_cnt_unuseful[proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(0, 1)));
     else
       per_core_cnt_unuseful[proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(1, 0)));
   } else {
-    if (icache_off_path)
+    if (fdip_off_path)
       unuseful_iter->second.second++;
     else
       unuseful_iter->second.first++;
   }
 }
 
-void inc_optimistic_1bit(uns proc_id, Addr line_addr) {
-  auto opt_iter = per_core_optimistic_1bit[proc_id].find(line_addr);
-  if (opt_iter == per_core_optimistic_1bit[proc_id].end())
-    per_core_optimistic_1bit[proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
-  else if (opt_iter->second < 1)
-    opt_iter->second++;
+void inc_cnt_onoff(uns proc_id, Addr line_addr) {
+  auto it = per_core_cnt_onoff[proc_id].find(line_addr);
+  if (it == per_core_cnt_onoff[proc_id].end())
+    per_core_cnt_onoff[proc_id].insert(std::pair<Addr, Counter>(line_addr, UDP_USEFUL_THRESHOLD+UDP_WEIGHT_USEFUL));
+  else
+    it->second += UDP_WEIGHT_USEFUL;
 }
 
-void dec_optimistic_1bit(uns proc_id, Addr line_addr) {
-  auto opt_iter = per_core_optimistic_1bit[proc_id].find(line_addr);
-  if (opt_iter == per_core_optimistic_1bit[proc_id].end())
-    per_core_optimistic_1bit[proc_id].insert(std::pair<Addr, Counter>(line_addr, 0));
-  else if (opt_iter->second > 0)
-    opt_iter->second--;
-}
-
-void inc_useful_unuseful_1bit(uns proc_id, Addr line_addr) {
-  auto useful_iter = per_core_useful_unuseful_1bit[proc_id].find(line_addr);
-  if (useful_iter == per_core_useful_unuseful_1bit[proc_id].end())
-    per_core_useful_unuseful_1bit[proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
-  else if (useful_iter->second < 1)
-    useful_iter->second++;
-}
-
-void dec_useful_unuseful_1bit(uns proc_id, Addr line_addr) {
-  auto useful_iter = per_core_useful_unuseful_1bit[proc_id].find(line_addr);
-  if (useful_iter == per_core_useful_unuseful_1bit[proc_id].end())
-    per_core_useful_unuseful_1bit[proc_id].insert(std::pair<Addr, Counter>(line_addr, 0));
-  else if (useful_iter->second > 0)
-    useful_iter->second--;
-}
-
-void inc_useful_unuseful_2bit(uns proc_id, Addr line_addr) {
-  auto useful_iter = per_core_useful_unuseful_2bit[proc_id].find(line_addr);
-  if (useful_iter == per_core_useful_unuseful_2bit[proc_id].end())
-    per_core_useful_unuseful_2bit[proc_id].insert(std::pair<Addr, Counter>(line_addr, 2));
-  else if (useful_iter->second < 3)
-    useful_iter->second++;
-}
-
-void dec_useful_unuseful_2bit(uns proc_id, Addr line_addr) {
-  auto useful_iter = per_core_useful_unuseful_2bit[proc_id].find(line_addr);
-  if (useful_iter == per_core_useful_unuseful_2bit[proc_id].end())
-    per_core_useful_unuseful_2bit[proc_id].insert(std::pair<Addr, Counter>(line_addr, 0));
-  else if (useful_iter->second > 0)
-    useful_iter->second--;
-}
-
-void inc_useful_unuseful_3bit(uns proc_id, Addr line_addr) {
-  auto useful_iter = per_core_useful_unuseful_3bit[proc_id].find(line_addr);
-  if (useful_iter == per_core_useful_unuseful_3bit[proc_id].end())
-    per_core_useful_unuseful_3bit[proc_id].insert(std::pair<Addr, Counter>(line_addr, 4));
-  else if (useful_iter->second < 7)
-    useful_iter->second++;
-}
-
-void dec_useful_unuseful_3bit(uns proc_id, Addr line_addr) {
-  auto useful_iter = per_core_useful_unuseful_3bit[proc_id].find(line_addr);
-  if (useful_iter == per_core_useful_unuseful_3bit[proc_id].end())
-    per_core_useful_unuseful_3bit[proc_id].insert(std::pair<Addr, Counter>(line_addr, 2));
-  else if (useful_iter->second > 0)
-    useful_iter->second--;
+void dec_cnt_onoff(uns proc_id, Addr line_addr) {
+  auto it = per_core_cnt_onoff[proc_id].find(line_addr);
+  if (it == per_core_cnt_onoff[proc_id].end())
+    per_core_cnt_onoff[proc_id].insert(std::pair<Addr, Counter>(line_addr, UDP_USEFUL_THRESHOLD-UDP_WEIGHT_UNUSEFUL));
+  else
+    it->second -= UDP_WEIGHT_UNUSEFUL;
 }
 
 void inc_cnt_useful_ret(uns proc_id, Addr line_addr) {
@@ -600,40 +544,22 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         *emit_new_prefetch = FALSE;
       break;
     }
-    case Utility_Learn_Policy::LEARN_ON_OFF_USEFUL_UNUSEFUL_1BIT: {
-      std::unordered_map<Addr, Counter>* useful_unuseful_1bit = &per_core_useful_unuseful_1bit[fdip_proc_id];
-      auto iter = useful_unuseful_1bit->find(line_addr);
-      if (iter != useful_unuseful_1bit->end() && iter->second >= 1)
-        *emit_new_prefetch = TRUE;
-      else
+    case Utility_Learn_Policy::LEARN_ON_OFF_OPTIMISTIC: {
+      std::unordered_map<Addr, Counter>* cnt = &per_core_cnt_onoff[fdip_proc_id];
+      auto iter = cnt->find(line_addr);
+      if (iter != cnt->end() && iter->second < UDP_USEFUL_THRESHOLD)
         *emit_new_prefetch = FALSE;
+      else
+        *emit_new_prefetch = TRUE;
       break;
     }
-    case Utility_Learn_Policy::LEARN_ON_OFF_USEFUL_UNUSEFUL_2BIT: {
-      std::unordered_map<Addr, Counter>* useful_unuseful_2bit = &per_core_useful_unuseful_2bit[fdip_proc_id];
-      auto iter = useful_unuseful_2bit->find(line_addr);
-      if (iter != useful_unuseful_2bit->end() && iter->second >= 2)
+    case Utility_Learn_Policy::LEARN_ON_OFF_CONSERVATIVE: {
+      std::unordered_map<Addr, Counter>* cnt = &per_core_cnt_onoff[fdip_proc_id];
+      auto iter = cnt->find(line_addr);
+      if (iter != cnt->end() && iter->second > UDP_USEFUL_THRESHOLD)
         *emit_new_prefetch = TRUE;
       else
         *emit_new_prefetch = FALSE;
-      break;
-    }
-    case Utility_Learn_Policy::LEARN_ON_OFF_USEFUL_UNUSEFUL_3BIT: {
-      std::unordered_map<Addr, Counter>* useful_unuseful_3bit = &per_core_useful_unuseful_3bit[fdip_proc_id];
-      auto iter = useful_unuseful_3bit->find(line_addr);
-      if (iter != useful_unuseful_3bit->end() && iter->second >= 4)
-        *emit_new_prefetch = TRUE;
-      else
-        *emit_new_prefetch = FALSE;
-      break;
-    }
-    case Utility_Learn_Policy::LEARN_ON_OFF_OPTIMISTIC_1BIT: {
-      std::unordered_map<Addr, Counter>* optimistic_1bit = &per_core_optimistic_1bit[fdip_proc_id];
-      auto iter = optimistic_1bit->find(line_addr);
-      if (iter != optimistic_1bit->end() && iter->second >= 1)
-        *emit_new_prefetch = FALSE;
-      else
-        *emit_new_prefetch = TRUE;
       break;
     }
   }
@@ -795,7 +721,7 @@ Flag determine_usefulness(Addr line_addr) {
     return TRUE;
 
   Flag emit_new_prefetch = FALSE;
-  if (per_core_last_cl_unuseful[fdip_proc_id] != line_addr) {
+  if (!per_core_last_cl_unuseful[fdip_proc_id] && per_core_last_cl_unuseful[fdip_proc_id] != line_addr) {
     if (FDIP_UTILITY_HASH_ENABLE)
       determine_usefulness_by_inf_hash(line_addr, &emit_new_prefetch);
     else if (FDIP_UC_SIZE)

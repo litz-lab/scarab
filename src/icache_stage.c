@@ -999,14 +999,15 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
   }
 
   if(!line->read_count[0]) { // only consider the first hit
-    if(line->FDIP_prefetch && !icache_off_path()) {
-      inc_cnt_useful(ic->proc_id, ic->line_addr, (line->FDIP_prefetch == FDIP_OFFPATH)? 1:0);
-      inc_cnt_onoff(ic->proc_id, ic->line_addr);
-      update_useful_lines_uc(ic->proc_id, ic->line_addr);
-      update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
-      inc_utility_info(ic->proc_id, TRUE);
-      if (!icache_off_path())
+    if(line->FDIP_prefetch) {
+      if(!icache_off_path()) {
+        inc_cnt_useful(ic->proc_id, ic->line_addr, (line->FDIP_prefetch == FDIP_OFFPATH)? 1:0);
+        inc_cnt_onoff(ic->proc_id, ic->line_addr);
+        update_useful_lines_uc(ic->proc_id, ic->line_addr);
+        update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
+        inc_utility_info(ic->proc_id, TRUE);
         inc_timeliness_info(ic->proc_id, FALSE);
+      }
       STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH_BY_FDIP + icache_off_path());
       if(line->FDIP_prefetch == FDIP_ONPATH)
         STAT_EVENT(ic->proc_id, ICACHE_HIT_BY_FDIP_ONPATH);
@@ -1111,13 +1112,14 @@ void log_stats_mshr_hit(Addr line_addr) {
                                            &queue_entry, &ramulator_match);
   if (req && !req->cyc_hit_by_demand_load) {
     if (mem_req_is_type(req, MRT_FDIPPRF)) {
-      inc_cnt_useful(ic->proc_id, ic->line_addr, req->fdip_pref_off_path);
-      inc_cnt_onoff(ic->proc_id, ic->line_addr);
-      update_useful_lines_uc(ic->proc_id, ic->line_addr);
-      update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
-      inc_utility_info(ic->proc_id, TRUE);
-      if (!icache_off_path())
+      if (!icache_off_path()) {
+        inc_cnt_useful(ic->proc_id, ic->line_addr, req->fdip_pref_off_path);
+        inc_cnt_onoff(ic->proc_id, ic->line_addr);
+        update_useful_lines_uc(ic->proc_id, ic->line_addr);
+        update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
+        inc_utility_info(ic->proc_id, TRUE);
         inc_timeliness_info(ic->proc_id, TRUE);
+      }
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_ONPATH_BY_FDIP + icache_off_path());
       if (req->fdip_pref_off_path)
         STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_BY_FDIP_OFFPATH);

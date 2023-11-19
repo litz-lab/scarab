@@ -1075,6 +1075,7 @@ MTAGE::MTAGE(void) {
   initSC();
 }
 
+bool MTAGE::GetPrediction (UINT64 PC, int* bp_confidence) {*bp_confidence = 0; return GetPrediction(PC);};
 
 bool MTAGE::GetPrediction(uint64_t PC) {
   subp[0] = &sp[0].p[0];                             // global path

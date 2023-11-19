@@ -49,7 +49,7 @@ class CBP_To_Scarab_Intf {
     uns proc_id = op->proc_id;
     if(op->off_path)
       return op->oracle_info.dir;
-    return cbp_predictors.at(proc_id).GetPrediction(op->inst_info->addr);
+    return cbp_predictors.at(proc_id).GetPrediction(op->inst_info->addr, &op->bp_confidence);
   }
 
   void spec_update(Op* op) {

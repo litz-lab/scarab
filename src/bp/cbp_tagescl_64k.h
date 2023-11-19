@@ -454,7 +454,7 @@ public:
   void baseupdate (bool Taken);
   int MYRANDOM ();
   void Tagepred (UINT64 PC);
-  bool GetPrediction (UINT64 PC);
+  bool GetPrediction (UINT64 PC, int* bp_confidence);
   void HistoryUpdate (UINT64 PC, OpType opType, bool taken, UINT64 target, long long &X, int &Y,
                       cbp64_folded_history * H, cbp64_folded_history * G,
                       cbp64_folded_history * J);

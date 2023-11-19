@@ -343,6 +343,7 @@ class MTAGE {
  public:
   MTAGE(void);
   bool GetPrediction(uint64_t PC);
+  bool GetPrediction (UINT64 PC, int* bp_confidence);
   void UpdatePredictor(uint64_t PC, OpType OPTYPE, bool resolveDir,
                        bool predDir, uint64_t branchTarget);
   void TrackOtherInst(uint64_t PC, OpType opType, bool taken,

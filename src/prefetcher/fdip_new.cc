@@ -25,6 +25,7 @@ std::vector<Op*> per_core_cur_op;
 std::vector<decoupled_fe_iter*> per_core_ftq_iter;
 std::vector<Addr> per_core_last_line_addr;
 int per_cyc_ipref = 0;
+uns low_confidence_cnt = 0;
 
 typedef enum FDIP_BREAK_enum {
   BR_REACH_FTQ_END,
@@ -103,7 +104,7 @@ void alloc_mem_fdip(uns numCores) {
     ASSERT(fdip_proc_id, FDIP_UTILITY_LEARN_POLICY >= Utility_Learn_Policy::LEARN_ONLY_ONPATH_USEFUL &&
         FDIP_UTILITY_LEARN_POLICY <= Utility_Learn_Policy::LEARN_ON_OFF_CONSERVATIVE);
 
-  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
+  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_BP_CONFIDENCE) {
     per_core_last_cl_unuseful.resize(numCores);
     per_core_last_bbl_start_addr.resize(numCores);
   }
@@ -122,7 +123,7 @@ void init_fdip(uns proc_id) {
   per_core_last_recover_cycle[proc_id] = 0;
   per_core_fdip_ftq_occupancy_ops[proc_id] = 0;
   per_core_fdip_ftq_occupancy_blocks[proc_id] = 0;
-  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
+  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_BP_CONFIDENCE) {
     per_core_last_cl_unuseful[proc_id] = 0;
     per_core_last_bbl_start_addr[proc_id] = 0;
   }
@@ -162,6 +163,10 @@ void set_fdip(int _proc_id, Icache_Stage *_ic) {
   iter = per_core_ftq_iter[_proc_id];
 }
 
+void recover_fdip() {
+  low_confidence_cnt = 0;
+}
+
 void update_fdip() {
   if (!FDIP_ENABLE)
     return;
@@ -171,7 +176,7 @@ void update_fdip() {
   FDIP_Break break_reason = BR_REACH_FTQ_END;
   bool end_of_block;
   per_cyc_ipref = 0;
-  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
+  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_BP_CONFIDENCE)
     per_core_last_cl_unuseful[fdip_proc_id] = 0;
 
   for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
@@ -199,11 +204,13 @@ void update_fdip() {
       break_reason = BR_MAX_FTQ_ENTRY_CYC;
       break;
     }
-    if ((FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) && !per_core_last_bbl_start_addr[fdip_proc_id]) {
+    if ((FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_BP_CONFIDENCE) && !per_core_last_bbl_start_addr[fdip_proc_id]) {
       per_core_last_bbl_start_addr[fdip_proc_id] = op->inst_info->addr;
       DEBUG(fdip_proc_id, "init last_bbl_start_addr: %llx\n", per_core_last_bbl_start_addr[fdip_proc_id]);
     }
-
+    if (op->table_info->cf_type) {
+      low_confidence_cnt += 3 - op->bp_confidence; //3 is highest confidence
+    }
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;
     DEBUG(fdip_proc_id, "op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx\n", op->op_num, op->inst_info->addr, line_addr, last_line_addr);
@@ -226,7 +233,7 @@ void update_fdip() {
                                                    QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
                                                    QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
                                                    &queue_entry, &ramulator_match);
-      if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
+      if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_BP_CONFIDENCE)
         emit_new_prefetch = determine_usefulness(line_addr);
       else
         emit_new_prefetch = TRUE;
@@ -717,13 +724,31 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
   }
 }
 
+static inline void determine_usefuleness_by_bp_confidence(Addr line_addr, Flag* emit_new_prefetch) {
+  Addr dummy_line_addr;
+  if (low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD)
+    *emit_new_prefetch = TRUE;
+  else {
+    ASSERT(0, FDIP_UTILITY_ONLY_TRAIN_OFF_PATH);
+    void* useful = (void*)cache_access(&per_core_fdip_uc[fdip_proc_id], line_addr, &dummy_line_addr, TRUE);
+    if (useful) {
+      *emit_new_prefetch = TRUE;
+    }
+    else {
+      *emit_new_prefetch = FALSE;
+    }
+  }
+}
+
 Flag determine_usefulness(Addr line_addr) {
   if (operating_mode == SIMULATION_MODE && inst_count[fdip_proc_id] < FDIP_UTILITY_MIN_LEARNING_INST)
     return TRUE;
 
   Flag emit_new_prefetch = FALSE;
   if (!per_core_last_cl_unuseful[fdip_proc_id] && per_core_last_cl_unuseful[fdip_proc_id] != line_addr) {
-    if (FDIP_UTILITY_HASH_ENABLE)
+    if (FDIP_BP_CONFIDENCE)
+      determine_usefuleness_by_bp_confidence(line_addr, &emit_new_prefetch);
+    else if (FDIP_UTILITY_HASH_ENABLE)
       determine_usefulness_by_inf_hash(line_addr, &emit_new_prefetch);
     else if (FDIP_UC_SIZE)
       determine_usefulness_by_utility_cache(line_addr, &emit_new_prefetch);

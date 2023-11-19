@@ -326,6 +326,7 @@ struct Op_struct {
   // {{{ uop cache
   Flag fetched_from_uop_cache;
   // }}}
+  int bp_confidence;
 };
 // }}}
 

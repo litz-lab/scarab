@@ -495,7 +495,7 @@ void TAGE64K::Tagepred (UINT64 PC)
 
 
 //compute the prediction
-bool TAGE64K::GetPrediction (UINT64 PC)
+bool TAGE64K::GetPrediction (UINT64 PC, int* bp_confidence)
 {
   // computes the TAGE table addresses and the partial tags
 
@@ -586,7 +586,14 @@ bool TAGE64K::GetPrediction (UINT64 PC)
           }
 
     }
-
+  *bp_confidence = 0;
+  if (HighConf)
+    *bp_confidence += 3;
+  if (MedConf)
+    *bp_confidence += 2;
+  if (LowConf)
+    *bp_confidence += 1;
+  assert(*bp_confidence < 4);
   return pred_taken;
 }
 

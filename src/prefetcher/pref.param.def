@@ -157,6 +157,10 @@ DEF_PARAM(udp_weight_unuseful, UDP_WEIGHT_UNUSEFUL, uns, uns, 1, )
 DEF_PARAM(fdip_dual_path_pref_ic_enable , FDIP_DUAL_PATH_PREF_IC_ENABLE    , Flag    , Flag    , FALSE, )
 DEF_PARAM(fdip_dual_path_pref_uoc_enable , FDIP_DUAL_PATH_PREF_UOC_ENABLE  , Flag    , Flag    , FALSE, ) //uop cache
 DEF_PARAM(top_mispred_br_filepath       , TOP_MISPRED_BR_FILEPATH          , char*   , string  , "br_resteer_coverage.csv", )
+DEF_PARAM(fdip_bp_confidence, FDIP_BP_CONFIDENCE, Flag, Flag, FALSE, )
+DEF_PARAM(fdip_off_path_threshold, FDIP_OFF_PATH_THRESHOLD, uns     , uns     , 10    , )
+DEF_PARAM(fdip_utility_only_train_off_path, FDIP_UTILITY_ONLY_TRAIN_OFF_PATH, Flag, Flag, FALSE, )
+
 DEF_PARAM(top_mispred_br_resteer_coverage, TOP_MISPRED_BR_RESTEER_COVERAGE , float   , float   , 0, )
 // Identify branches in an online fashion (vs offline)
 DEF_PARAM(fdip_dual_path_pref_uoc_online_enable , FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE  , Flag, Flag, FALSE, ) //uop cache

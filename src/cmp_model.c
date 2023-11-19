@@ -362,6 +362,7 @@ void cmp_recover() {
                  bp_recovery_info->late_bp_recovery_wrong);
 
   recover_decoupled_fe(bp_recovery_info->proc_id);
+  recover_fdip();
   recover_icache_stage();
   recover_uop_cache();
   recover_decode_stage();

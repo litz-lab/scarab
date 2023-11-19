@@ -1000,7 +1000,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
 
   if(!line->read_count[0]) { // only consider the first hit
     if(line->FDIP_prefetch) {
-      if(!icache_off_path()) {
+      if(!icache_off_path() && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch == FDIP_OFFPATH : TRUE) {
         inc_cnt_useful(ic->proc_id, ic->line_addr, (line->FDIP_prefetch == FDIP_OFFPATH)? 1:0);
         inc_cnt_onoff(ic->proc_id, ic->line_addr);
         update_useful_lines_uc(ic->proc_id, ic->line_addr);
@@ -1030,7 +1030,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
 
   if(*repl_line_addr && !line->read_count[0]) {
     DEBUG(ic->proc_id, "%llx is evicted without hit, FDIP pref: %d\n", *repl_line_addr, line->FDIP_prefetch);
-    if(line->FDIP_prefetch) {
+    if(line->FDIP_prefetch && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch == FDIP_OFFPATH : TRUE) {
       inc_cnt_unuseful(ic->proc_id, *repl_line_addr, (line->FDIP_prefetch == FDIP_OFFPATH)? 1:0);
       dec_cnt_onoff(ic->proc_id, *repl_line_addr);
       inc_utility_info(ic->proc_id, FALSE);
@@ -1112,7 +1112,7 @@ void log_stats_mshr_hit(Addr line_addr) {
                                            &queue_entry, &ramulator_match);
   if (req && !req->cyc_hit_by_demand_load) {
     if (mem_req_is_type(req, MRT_FDIPPRF)) {
-      if (!icache_off_path()) {
+      if (!icache_off_path() && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? req->off_path : TRUE) {
         inc_cnt_useful(ic->proc_id, ic->line_addr, req->fdip_pref_off_path);
         inc_cnt_onoff(ic->proc_id, ic->line_addr);
         update_useful_lines_uc(ic->proc_id, ic->line_addr);
@@ -1134,22 +1134,24 @@ void log_stats_mshr_hit(Addr line_addr) {
   if (!req) {
     assert_not_trained(ic->proc_id, ic->line_addr);
     if (!icache_off_path()) {
-      inc_cnt_useful(ic->proc_id, ic->line_addr, 0); // assume prefetched on-path
-      inc_cnt_onoff(ic->proc_id, ic->line_addr);
-      update_useful_lines_uc(ic->proc_id, ic->line_addr);
-      update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
-      inc_utility_info(ic->proc_id, TRUE);
+      if (!FDIP_UTILITY_ONLY_TRAIN_OFF_PATH) {
+	inc_cnt_useful(ic->proc_id, ic->line_addr, 0); // assume prefetched on-path
+	inc_cnt_onoff(ic->proc_id, ic->line_addr);
+	update_useful_lines_uc(ic->proc_id, ic->line_addr);
+	update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
+	inc_utility_info(ic->proc_id, TRUE);
+      }
+      if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
+	STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_IFETCH);
+      else if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP)
+	STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_FDIP);
+      else
+	STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
+      if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP || imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
+	STAT_EVENT(ic->proc_id, ICACHE_MISS_TOO_EARLY_ONPATH + icache_off_path());
+      else
+	STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED + icache_off_path());
     }
-    if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
-      STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_IFETCH);
-    else if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP)
-      STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_FDIP);
-    else
-      STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
-    if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP || imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
-      STAT_EVENT(ic->proc_id, ICACHE_MISS_TOO_EARLY_ONPATH + icache_off_path());
-    else
-      STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED + icache_off_path());
   } else {
     if (FDIP_ENABLE && !FDIP_UTILITY_HASH_ENABLE && !FDIP_BLOOM_FILTER && !FDIP_UC_SIZE && !EIP_ENABLE
         && mem_req_is_type(req, MRT_FDIPPRF))

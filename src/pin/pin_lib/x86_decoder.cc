@@ -1693,6 +1693,7 @@ void init_pin_opcode_convert(void) {
                                                  NONE};
   iclass_to_scarab_map[XED_ICLASS_VPCMPISTRM] = {OP_NOTPIPELINED_SLOW, 1, -1,
                                                  NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPCMPQ]     = {OP_ICMP, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPERM2F128] = {OP_MOV, 16, 1,
                                                  NONE};  // TODO: Move or shift?
   iclass_to_scarab_map[XED_ICLASS_VPERM2I128] = {OP_MOV, 16, 1,

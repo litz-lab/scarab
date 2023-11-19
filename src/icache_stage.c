@@ -1029,7 +1029,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
 
   if(*repl_line_addr && !line->read_count[0]) {
     DEBUG(ic->proc_id, "%llx is evicted without hit, FDIP pref: %d\n", *repl_line_addr, line->FDIP_prefetch);
-    if(line->FDIP_prefetch && !icache_off_path()) {
+    if(line->FDIP_prefetch) {
       inc_cnt_unuseful(ic->proc_id, *repl_line_addr, (line->FDIP_prefetch == FDIP_OFFPATH)? 1:0);
       dec_cnt_onoff(ic->proc_id, *repl_line_addr);
       inc_utility_info(ic->proc_id, FALSE);

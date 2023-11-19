@@ -56,7 +56,7 @@ std::vector<std::unordered_map<Addr, std::pair<Counter, Counter>>> per_core_cnt_
 // <CL address, counter for on/off-path unuseful/useful> init by UDP_USEFUL_THRESHOLD
 // OPTIMISTIC POLICY : do not prefetch if < USEFUL_THRESHOLD, otherwise, prefetch (do not prefetch only when it was unuseful at least once)
 // CONSERVATIVE POLICY : prefetch if > USEFUL_THRESHOLD, otherwise, do not prefetch (prefetch only when it was useful at least once)
-std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_onoff;
+std::vector<std::unordered_map<Addr, int64_t>> per_core_cnt_onoff;
 // <CL addresses, retirement count> - on-path retired cache line count
 std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_useful_ret;
 // <CL addresses, icache miss count>
@@ -545,7 +545,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
       break;
     }
     case Utility_Learn_Policy::LEARN_ON_OFF_OPTIMISTIC: {
-      std::unordered_map<Addr, Counter>* cnt = &per_core_cnt_onoff[fdip_proc_id];
+      std::unordered_map<Addr, int64_t>* cnt = &per_core_cnt_onoff[fdip_proc_id];
       auto iter = cnt->find(line_addr);
       if (iter != cnt->end() && iter->second < UDP_USEFUL_THRESHOLD)
         *emit_new_prefetch = FALSE;
@@ -554,7 +554,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
       break;
     }
     case Utility_Learn_Policy::LEARN_ON_OFF_CONSERVATIVE: {
-      std::unordered_map<Addr, Counter>* cnt = &per_core_cnt_onoff[fdip_proc_id];
+      std::unordered_map<Addr, int64_t>* cnt = &per_core_cnt_onoff[fdip_proc_id];
       auto iter = cnt->find(line_addr);
       if (iter != cnt->end() && iter->second > UDP_USEFUL_THRESHOLD)
         *emit_new_prefetch = TRUE;

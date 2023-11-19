@@ -1112,7 +1112,7 @@ void log_stats_mshr_hit(Addr line_addr) {
                                            &queue_entry, &ramulator_match);
   if (req && !req->cyc_hit_by_demand_load) {
     if (mem_req_is_type(req, MRT_FDIPPRF)) {
-      if (!icache_off_path() && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? req->off_path : TRUE) {
+      if (!icache_off_path() && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? req->fdip_pref_off_path : TRUE) {
         inc_cnt_useful(ic->proc_id, ic->line_addr, req->fdip_pref_off_path);
         inc_cnt_onoff(ic->proc_id, ic->line_addr);
         update_useful_lines_uc(ic->proc_id, ic->line_addr);

@@ -41,6 +41,7 @@ typedef enum UTILITY_PREF_POLICY_enum {
   PREF_ON_OFF_OPTIMISTIC,
   PREF_ON_OFF_CONSERVATIVE,
   PREF_BY_BP_CONF,
+  PREF_POL_END, // add a new policy above this line
 } Utility_Pref_Policy;
 
 /* global variables for dynamic FTQ adjustment based on utility/timeliness study */
@@ -58,7 +59,7 @@ std::vector<std::unordered_map<Addr, std::pair<Counter, Counter>>> per_core_cnt_
 // <CL address, counter for on/off-path unuseful/useful> init by UDP_USEFUL_THRESHOLD
 // OPTIMISTIC POLICY : do not prefetch if < USEFUL_THRESHOLD, otherwise, prefetch (do not prefetch only when it was unuseful at least once)
 // CONSERVATIVE POLICY : prefetch if > USEFUL_THRESHOLD, otherwise, do not prefetch (prefetch only when it was useful at least once)
-std::vector<std::unordered_map<Addr, int64_t>> per_core_cnt_onoff;
+std::vector<std::unordered_map<Addr, int64_t>> per_core_cnt_useful_signed;
 // <CL addresses, retirement count> - on-path retired cache line count
 std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_useful_ret;
 // <CL addresses, icache miss count>
@@ -94,7 +95,7 @@ void alloc_mem_fdip(uns numCores) {
   per_core_last_recover_cycle.resize(numCores);
   per_core_cnt_useful.resize(numCores);
   per_core_cnt_unuseful.resize(numCores);
-  per_core_cnt_onoff.resize(numCores);
+  per_core_cnt_useful_signed.resize(numCores);
   per_core_cnt_useful_ret.resize(numCores);
   per_core_icache_miss.resize(numCores);
   per_core_prefetched_cls.resize(numCores);
@@ -103,7 +104,7 @@ void alloc_mem_fdip(uns numCores) {
   per_core_fdip_ftq_occupancy_blocks.resize(numCores);
   if (FDIP_UTILITY_HASH_ENABLE)
     ASSERT(fdip_proc_id, FDIP_UTILITY_PREF_POLICY >= Utility_Pref_Policy::PREF_ONLY_ONPATH_USEFUL &&
-        FDIP_UTILITY_PREF_POLICY <= Utility_Pref_Policy::PREF_BY_BP_CONF);
+        FDIP_UTILITY_PREF_POLICY < Utility_Pref_Policy::PREF_POL_END);
 
   if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
     per_core_last_cl_unuseful.resize(numCores);
@@ -414,18 +415,18 @@ void inc_cnt_unuseful(uns proc_id, Addr line_addr, Flag fdip_off_path) {
   }
 }
 
-void inc_cnt_onoff(uns proc_id, Addr line_addr) {
-  auto it = per_core_cnt_onoff[proc_id].find(line_addr);
-  if (it == per_core_cnt_onoff[proc_id].end())
-    per_core_cnt_onoff[proc_id].insert(std::pair<Addr, Counter>(line_addr, UDP_USEFUL_THRESHOLD+UDP_WEIGHT_USEFUL));
+void inc_cnt_useful_signed(uns proc_id, Addr line_addr) {
+  auto it = per_core_cnt_useful_signed[proc_id].find(line_addr);
+  if (it == per_core_cnt_useful_signed[proc_id].end())
+    per_core_cnt_useful_signed[proc_id].insert(std::pair<Addr, Counter>(line_addr, UDP_USEFUL_THRESHOLD+UDP_WEIGHT_USEFUL));
   else
     it->second += UDP_WEIGHT_USEFUL;
 }
 
-void dec_cnt_onoff(uns proc_id, Addr line_addr) {
-  auto it = per_core_cnt_onoff[proc_id].find(line_addr);
-  if (it == per_core_cnt_onoff[proc_id].end())
-    per_core_cnt_onoff[proc_id].insert(std::pair<Addr, Counter>(line_addr, UDP_USEFUL_THRESHOLD-UDP_WEIGHT_UNUSEFUL));
+void dec_cnt_useful_signed(uns proc_id, Addr line_addr) {
+  auto it = per_core_cnt_useful_signed[proc_id].find(line_addr);
+  if (it == per_core_cnt_useful_signed[proc_id].end())
+    per_core_cnt_useful_signed[proc_id].insert(std::pair<Addr, Counter>(line_addr, UDP_USEFUL_THRESHOLD-UDP_WEIGHT_UNUSEFUL));
   else
     it->second -= UDP_WEIGHT_UNUSEFUL;
 }
@@ -553,7 +554,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
       break;
     }
     case Utility_Pref_Policy::PREF_ON_OFF_OPTIMISTIC: {
-      std::unordered_map<Addr, int64_t>* cnt = &per_core_cnt_onoff[fdip_proc_id];
+      std::unordered_map<Addr, int64_t>* cnt = &per_core_cnt_useful_signed[fdip_proc_id];
       auto iter = cnt->find(line_addr);
       if (iter != cnt->end() && iter->second < UDP_USEFUL_THRESHOLD)
         *emit_new_prefetch = FALSE;
@@ -562,7 +563,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
       break;
     }
     case Utility_Pref_Policy::PREF_ON_OFF_CONSERVATIVE: {
-      std::unordered_map<Addr, int64_t>* cnt = &per_core_cnt_onoff[fdip_proc_id];
+      std::unordered_map<Addr, int64_t>* cnt = &per_core_cnt_useful_signed[fdip_proc_id];
       auto iter = cnt->find(line_addr);
       if (iter != cnt->end() && iter->second > UDP_USEFUL_THRESHOLD)
         *emit_new_prefetch = TRUE;
@@ -575,12 +576,13 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         *emit_new_prefetch = TRUE;
       else {
         ASSERT(0, FDIP_UTILITY_ONLY_TRAIN_OFF_PATH);
-        std::unordered_map<Addr, std::pair<Counter, Counter>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
-        auto iter = cnt_useful->find(line_addr);
-        if (iter != cnt_useful->end())
-          *emit_new_prefetch = TRUE;
-	else
+        std::unordered_map<Addr, int64_t>* cnt = &per_core_cnt_useful_signed[fdip_proc_id];
+        auto iter = cnt->find(line_addr);
+        if (iter != cnt->end() && iter->second < UDP_USEFUL_THRESHOLD)
           *emit_new_prefetch = FALSE;
+        else
+          *emit_new_prefetch = TRUE;
+        break;
       }
     }
   }

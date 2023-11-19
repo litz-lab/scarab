@@ -18,8 +18,8 @@ extern "C" {
   void assert_not_trained(uns proc_id, Addr line_addr);
   void inc_cnt_useful(uns proc_id, Addr line_addr, Flag fdip_prefetch_path);
   void inc_cnt_unuseful(uns proc_id, Addr line_addr, Flag fdip_prefetch_path);
-  void inc_cnt_onoff(uns proc_id, Addr line_addr);
-  void dec_cnt_onoff(uns proc_id, Addr line_addr);
+  void inc_cnt_useful_signed(uns proc_id, Addr line_addr);
+  void dec_cnt_useful_signed(uns proc_id, Addr line_addr);
   void inc_cnt_useful_ret(uns proc_id, Addr line_addr);
   void inc_icache_miss(uns proc_id, Addr line_addr);
   void inc_prefetched_cls(Addr line_addr);

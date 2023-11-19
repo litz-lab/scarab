@@ -34,13 +34,14 @@ typedef enum FDIP_BREAK_enum {
   BR_FULL_MEM_REQ_BUF,
 } FDIP_Break;
 
-typedef enum UTILITY_LEARN_POLICY_enum {
-  LEARN_ONLY_ONPATH_USEFUL,
-  LEARN_ON_OFF_USEFUL,
-  LEARN_ONLY_UNUSEFUL,
-  LEARN_ON_OFF_OPTIMISTIC,
-  LEARN_ON_OFF_CONSERVATIVE,
-} Utility_Learn_Policy;
+typedef enum UTILITY_PREF_POLICY_enum {
+  PREF_ONLY_ONPATH_USEFUL,
+  PREF_ON_OFF_USEFUL,
+  PREF_ONLY_UNUSEFUL,
+  PREF_ON_OFF_OPTIMISTIC,
+  PREF_ON_OFF_CONSERVATIVE,
+  PREF_BY_BP_CONF,
+} Utility_Pref_Policy;
 
 /* global variables for dynamic FTQ adjustment based on utility/timeliness study */
 std::vector<Utility_Timeliness_Info> per_core_utility_timeliness_info;
@@ -101,10 +102,10 @@ void alloc_mem_fdip(uns numCores) {
   per_core_fdip_ftq_occupancy_ops.resize(numCores);
   per_core_fdip_ftq_occupancy_blocks.resize(numCores);
   if (FDIP_UTILITY_HASH_ENABLE)
-    ASSERT(fdip_proc_id, FDIP_UTILITY_LEARN_POLICY >= Utility_Learn_Policy::LEARN_ONLY_ONPATH_USEFUL &&
-        FDIP_UTILITY_LEARN_POLICY <= Utility_Learn_Policy::LEARN_ON_OFF_CONSERVATIVE);
+    ASSERT(fdip_proc_id, FDIP_UTILITY_PREF_POLICY >= Utility_Pref_Policy::PREF_ONLY_ONPATH_USEFUL &&
+        FDIP_UTILITY_PREF_POLICY <= Utility_Pref_Policy::PREF_BY_BP_CONF);
 
-  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_BP_CONFIDENCE) {
+  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
     per_core_last_cl_unuseful.resize(numCores);
     per_core_last_bbl_start_addr.resize(numCores);
   }
@@ -123,7 +124,7 @@ void init_fdip(uns proc_id) {
   per_core_last_recover_cycle[proc_id] = 0;
   per_core_fdip_ftq_occupancy_ops[proc_id] = 0;
   per_core_fdip_ftq_occupancy_blocks[proc_id] = 0;
-  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_BP_CONFIDENCE) {
+  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
     per_core_last_cl_unuseful[proc_id] = 0;
     per_core_last_bbl_start_addr[proc_id] = 0;
   }
@@ -131,7 +132,6 @@ void init_fdip(uns proc_id) {
     ASSERT(fdip_proc_id, !FDIP_BLOOM_FILTER);
     init_cache(&per_core_fdip_uc[proc_id], "FDIP_USEFULNESS_CACHE", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE,
                0, REPL_TRUE_LRU); //Data size = 2 byte
-    per_core_fdip_uc[proc_id].tag_incl_offset = TRUE;
   }
   if (FDIP_BLOOM_FILTER) {
     ASSERT(fdip_proc_id, !FDIP_UC_SIZE && !FDIP_UTILITY_HASH_ENABLE);
@@ -176,7 +176,7 @@ void update_fdip() {
   FDIP_Break break_reason = BR_REACH_FTQ_END;
   bool end_of_block;
   per_cyc_ipref = 0;
-  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_BP_CONFIDENCE)
+  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
     per_core_last_cl_unuseful[fdip_proc_id] = 0;
 
   for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
@@ -204,7 +204,7 @@ void update_fdip() {
       break_reason = BR_MAX_FTQ_ENTRY_CYC;
       break;
     }
-    if ((FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_BP_CONFIDENCE) && !per_core_last_bbl_start_addr[fdip_proc_id]) {
+    if ((FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) && !per_core_last_bbl_start_addr[fdip_proc_id]) {
       per_core_last_bbl_start_addr[fdip_proc_id] = op->inst_info->addr;
       DEBUG(fdip_proc_id, "init last_bbl_start_addr: %llx\n", per_core_last_bbl_start_addr[fdip_proc_id]);
     }
@@ -233,7 +233,7 @@ void update_fdip() {
                                                    QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
                                                    QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
                                                    &queue_entry, &ramulator_match);
-      if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_BP_CONFIDENCE)
+      if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
         emit_new_prefetch = determine_usefulness(line_addr);
       else
         emit_new_prefetch = TRUE;
@@ -370,7 +370,7 @@ void print_cl_info(uns proc_id) {
 }
 
 void assert_not_trained(uns proc_id, Addr line_addr) {
-  if (!FDIP_UTILITY_HASH_ENABLE || (FDIP_UTILITY_LEARN_POLICY != LEARN_ON_OFF_USEFUL) || (inst_count[proc_id] < FULL_WARMUP))
+  if (!FDIP_UTILITY_HASH_ENABLE || (FDIP_UTILITY_PREF_POLICY != PREF_ON_OFF_USEFUL) || (inst_count[proc_id] < FULL_WARMUP))
     return;
   auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
   if (useful_iter != per_core_cnt_useful[proc_id].end())
@@ -524,8 +524,8 @@ uint64_t get_fdip_ftq_occupancy(uns proc_id) {
 }
 
 static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefetch) {
-  switch(FDIP_UTILITY_LEARN_POLICY) {
-    case Utility_Learn_Policy::LEARN_ONLY_ONPATH_USEFUL: {
+  switch(FDIP_UTILITY_PREF_POLICY) {
+    case Utility_Pref_Policy::PREF_ONLY_ONPATH_USEFUL: {
       std::unordered_map<Addr, std::pair<Counter, Counter>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
       auto iter = cnt_useful->find(line_addr);
       if (iter != cnt_useful->end() && iter->second.first > 0)
@@ -534,7 +534,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         *emit_new_prefetch = FALSE;
       break;
     }
-    case Utility_Learn_Policy::LEARN_ON_OFF_USEFUL: {
+    case Utility_Pref_Policy::PREF_ON_OFF_USEFUL: {
       std::unordered_map<Addr, std::pair<Counter, Counter>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
       auto iter = cnt_useful->find(line_addr);
       if (iter != cnt_useful->end())
@@ -543,7 +543,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         *emit_new_prefetch = FALSE;
       break;
     }
-    case Utility_Learn_Policy::LEARN_ONLY_UNUSEFUL: {
+    case Utility_Pref_Policy::PREF_ONLY_UNUSEFUL: {
       std::unordered_map<Addr, std::pair<Counter, Counter>>* cnt_unuseful = &per_core_cnt_unuseful[fdip_proc_id];
       auto iter = cnt_unuseful->find(line_addr);
       if (iter == cnt_unuseful->end())
@@ -552,7 +552,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         *emit_new_prefetch = FALSE;
       break;
     }
-    case Utility_Learn_Policy::LEARN_ON_OFF_OPTIMISTIC: {
+    case Utility_Pref_Policy::PREF_ON_OFF_OPTIMISTIC: {
       std::unordered_map<Addr, int64_t>* cnt = &per_core_cnt_onoff[fdip_proc_id];
       auto iter = cnt->find(line_addr);
       if (iter != cnt->end() && iter->second < UDP_USEFUL_THRESHOLD)
@@ -561,7 +561,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         *emit_new_prefetch = TRUE;
       break;
     }
-    case Utility_Learn_Policy::LEARN_ON_OFF_CONSERVATIVE: {
+    case Utility_Pref_Policy::PREF_ON_OFF_CONSERVATIVE: {
       std::unordered_map<Addr, int64_t>* cnt = &per_core_cnt_onoff[fdip_proc_id];
       auto iter = cnt->find(line_addr);
       if (iter != cnt->end() && iter->second > UDP_USEFUL_THRESHOLD)
@@ -569,6 +569,19 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
       else
         *emit_new_prefetch = FALSE;
       break;
+    }
+    case Utility_Pref_Policy::PREF_BY_BP_CONF: {
+      if (low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD)
+        *emit_new_prefetch = TRUE;
+      else {
+        ASSERT(0, FDIP_UTILITY_ONLY_TRAIN_OFF_PATH);
+        std::unordered_map<Addr, std::pair<Counter, Counter>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
+        auto iter = cnt_useful->find(line_addr);
+        if (iter != cnt_useful->end())
+          *emit_new_prefetch = TRUE;
+	else
+          *emit_new_prefetch = FALSE;
+      }
     }
   }
   if (*emit_new_prefetch) {
@@ -724,31 +737,13 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
   }
 }
 
-static inline void determine_usefuleness_by_bp_confidence(Addr line_addr, Flag* emit_new_prefetch) {
-  Addr dummy_line_addr;
-  if (low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD)
-    *emit_new_prefetch = TRUE;
-  else {
-    ASSERT(0, FDIP_UTILITY_ONLY_TRAIN_OFF_PATH);
-    void* useful = (void*)cache_access(&per_core_fdip_uc[fdip_proc_id], line_addr, &dummy_line_addr, TRUE);
-    if (useful) {
-      *emit_new_prefetch = TRUE;
-    }
-    else {
-      *emit_new_prefetch = FALSE;
-    }
-  }
-}
-
 Flag determine_usefulness(Addr line_addr) {
   if (operating_mode == SIMULATION_MODE && inst_count[fdip_proc_id] < FDIP_UTILITY_MIN_LEARNING_INST)
     return TRUE;
 
   Flag emit_new_prefetch = FALSE;
   if (!per_core_last_cl_unuseful[fdip_proc_id] && per_core_last_cl_unuseful[fdip_proc_id] != line_addr) {
-    if (FDIP_BP_CONFIDENCE)
-      determine_usefuleness_by_bp_confidence(line_addr, &emit_new_prefetch);
-    else if (FDIP_UTILITY_HASH_ENABLE)
+    if (FDIP_UTILITY_HASH_ENABLE)
       determine_usefulness_by_inf_hash(line_addr, &emit_new_prefetch);
     else if (FDIP_UC_SIZE)
       determine_usefulness_by_utility_cache(line_addr, &emit_new_prefetch);

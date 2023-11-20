@@ -209,6 +209,7 @@ void update_fdip() {
     }
     if (op->table_info->cf_type) {
       low_confidence_cnt += 3 - op->bp_confidence; //3 is highest confidence
+      DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
     }
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;
@@ -381,7 +382,7 @@ void inc_cnt_useful(uns proc_id, Addr line_addr) {
   auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
   DEBUG(proc_id, "cnt_useful size %ld\n", per_core_cnt_useful[proc_id].size());
   if (useful_iter == per_core_cnt_useful[proc_id].end()) {
-    DEBUG(proc_id, "%llx useful line new insert, fdip_off_path: %d\n", line_addr, fdip_off_path);
+    DEBUG(proc_id, "%llx useful line new insert\n", line_addr);
     STAT_EVENT(proc_id, ICACHE_USEFUL_FETCHES);
     per_core_cnt_useful[proc_id].insert(std::make_pair(std::move(line_addr), 1));
   } else {
@@ -511,6 +512,7 @@ uint64_t get_fdip_ftq_occupancy(uns proc_id) {
 
 static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefetch) {
   if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
+    DEBUG(fdip_proc_id, "emit_new_prefetch (low conf)\n");
     *emit_new_prefetch = TRUE;
   } else {
     switch(FDIP_UTILITY_PREF_POLICY) {

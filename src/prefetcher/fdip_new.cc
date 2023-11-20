@@ -209,7 +209,14 @@ void update_fdip() {
       per_core_last_bbl_start_addr[fdip_proc_id] = op->inst_info->addr;
       DEBUG(fdip_proc_id, "init last_bbl_start_addr: %llx\n", per_core_last_bbl_start_addr[fdip_proc_id]);
     }
-    if (op->table_info->cf_type) {
+    if (FDIP_BP_PERFECT_CONFIDENCE) {
+      if (fdip_off_path(fdip_proc_id))
+	low_confidence_cnt = ~0U;
+      if(low_confidence_cnt == ~0U)
+	ASSERT(0,fdip_off_path(fdip_proc_id));
+      cf_op_distance = 0;
+    }
+    else if (op->table_info->cf_type) {
       low_confidence_cnt += 3 - op->bp_confidence; //3 is highest confidence
       cf_op_distance = 0;
       DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
@@ -245,7 +252,6 @@ void update_fdip() {
         emit_new_prefetch = determine_usefulness(line_addr);
       else
         emit_new_prefetch = TRUE;
-
       if (line) {
         DEBUG(fdip_proc_id, "probe hit for %llx\n", line_addr);
         probe_prefetched_cls(line_addr);

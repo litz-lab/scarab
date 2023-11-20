@@ -153,6 +153,7 @@ DEF_PARAM(fdip_pref_no_latency, FDIP_PREF_NO_LATENCY, Flag, Flag, FALSE, )
 DEF_PARAM(udp_useful_threshold, UDP_USEFUL_THRESHOLD, int, int, 0, )
 DEF_PARAM(udp_weight_useful, UDP_WEIGHT_USEFUL, uns, uns, 2, )
 DEF_PARAM(udp_weight_unuseful, UDP_WEIGHT_UNUSEFUL, uns, uns, 1, )
+DEF_PARAM(fdip_bp_perfect_confidence, FDIP_BP_PERFECT_CONFIDENCE, Flag, Flag, FALSE, )
 
 DEF_PARAM(fdip_dual_path_pref_ic_enable , FDIP_DUAL_PATH_PREF_IC_ENABLE    , Flag    , Flag    , FALSE, )
 DEF_PARAM(fdip_dual_path_pref_uoc_enable , FDIP_DUAL_PATH_PREF_UOC_ENABLE  , Flag    , Flag    , FALSE, ) //uop cache

@@ -1000,21 +1000,23 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
 
   if(!line->read_count[0]) { // only consider the first hit
     if(line->FDIP_prefetch) {
-      if(!icache_off_path() && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch == FDIP_OFFPATH : TRUE) {
-        inc_cnt_useful(ic->proc_id, ic->line_addr, FALSE);
-        inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
-        update_useful_lines_uc(ic->proc_id, ic->line_addr);
-        update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
-        inc_utility_info(ic->proc_id, TRUE);
-        inc_timeliness_info(ic->proc_id, FALSE);
+      if(!icache_off_path()) {
+        if(FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch == FDIP_OFFPATH : TRUE) {
+          inc_cnt_useful(ic->proc_id, ic->line_addr, FALSE);
+          inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
+          update_useful_lines_uc(ic->proc_id, ic->line_addr);
+          update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
+          inc_utility_info(ic->proc_id, TRUE);
+          inc_timeliness_info(ic->proc_id, FALSE);
+	}
+        if(line->FDIP_prefetch == FDIP_ONPATH)
+          STAT_EVENT(ic->proc_id, ICACHE_HIT_BY_FDIP_ONPATH);
+        else if(line->FDIP_prefetch == FDIP_OFFPATH)
+          STAT_EVENT(ic->proc_id, ICACHE_HIT_BY_FDIP_OFFPATH);
+        line->read_count[0] += 1;
       }
       STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH_BY_FDIP + icache_off_path());
-      if(line->FDIP_prefetch == FDIP_ONPATH)
-        STAT_EVENT(ic->proc_id, ICACHE_HIT_BY_FDIP_ONPATH);
-      else if(line->FDIP_prefetch == FDIP_OFFPATH)
-        STAT_EVENT(ic->proc_id, ICACHE_HIT_BY_FDIP_OFFPATH);
     }
-    line->read_count[0] += 1;
   }
 
   if(icache_off_path() == FALSE)
@@ -1126,7 +1128,8 @@ void log_stats_mshr_hit(Addr line_addr) {
       else
         STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_BY_FDIP_ONPATH);
     }
-    req->cyc_hit_by_demand_load = cycle_count;
+    if (!icache_off_path())
+      req->cyc_hit_by_demand_load = cycle_count;
   }
   inc_icache_miss(ic->proc_id, ic->line_addr);
   imiss_reason = get_miss_reason(ic->proc_id, line_addr);

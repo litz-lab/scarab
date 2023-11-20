@@ -37,6 +37,7 @@
 #define MAX_MEM_ADDR_REGS_NUM 2
 #define MAX_LD_NUM 8
 #define MAX_ST_NUM 8
+#define DUMMY_NOP_SIZE 3
 
 typedef uint8_t compressed_reg_t;
 
@@ -166,8 +167,8 @@ inline ctype_pin_inst create_dummy_nop(uint64_t                  eip,
   ctype_pin_inst inst;
   memset(&inst, 0, sizeof(inst));
   inst.instruction_addr      = eip;
-  inst.instruction_next_addr = eip + 1;
-  inst.size                  = 1;
+  inst.instruction_next_addr = eip + DUMMY_NOP_SIZE;
+  inst.size                  = DUMMY_NOP_SIZE;
   inst.op_type               = OP_NOP;
   strcpy(inst.pin_iclass, "DUMMY_NOP");
   inst.fake_inst        = 1;

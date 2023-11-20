@@ -831,9 +831,14 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
   // Due to JIT compilation, each branch must be decoded to verify which instruction the PC maps to.
   // To decrease unnecessary malloc/free, fetch inst_info from hashmap
   // instead of allocating. However first instruction must be decoded.
-
+  static Inst_Info dummy_nop;
+  static Flag generated_dummy_nop = FALSE;
   if(pi->fake_inst) {
     info                   = (Inst_Info*)calloc(1, sizeof(Inst_Info));
+    if (generated_dummy_nop) {
+      *info = dummy_nop;
+      info->addr = pi->instruction_addr;
+    }
     info->fake_inst        = TRUE;
     info->fake_inst_reason = pi->fake_inst_reason;
   } else {
@@ -860,12 +865,15 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
     pi->st_vaddr[st] = convert_to_cmp_addr(proc_id, pi->st_vaddr[st]);
   }
 
-  Flag need_to_gen_uops = new_entry || pi->fake_inst ||
+  Flag need_to_gen_uops = new_entry || (pi->fake_inst && !generated_dummy_nop) ||
                           pi->is_gather_scatter /* always regenerate uops for
                                                    gather/scatter, because the
                                                    num of uops could be
                                                    different every time*/
     ;
+
+  if (pi->fake_inst && !generated_dummy_nop)
+    generated_dummy_nop = TRUE;
 
   if(need_to_gen_uops) {
     num_uop = generate_uops(proc_id, pi, trace_uop);
@@ -921,6 +929,11 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
       Flag is_last_uop = (ii == (num_uop - 1));
       convert_dyn_uop(proc_id, info, pi, trace_uop[ii],
                       info->table_info->mem_size, is_last_uop);
+      if  (pi->fake_inst) {
+	ASSERT(0, generated_dummy_nop);
+	dummy_nop = *info;
+	printf("asdf\n");
+      }
     }
   } else {
     // instructions is decoded before .

@@ -930,9 +930,8 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi,
       convert_dyn_uop(proc_id, info, pi, trace_uop[ii],
                       info->table_info->mem_size, is_last_uop);
       if  (pi->fake_inst) {
-	ASSERT(0, generated_dummy_nop);
-	dummy_nop = *info;
-	printf("asdf\n");
+        ASSERT(0, generated_dummy_nop);
+        dummy_nop = *info;
       }
     }
   } else {

@@ -213,6 +213,9 @@ void update_fdip() {
       low_confidence_cnt += 3 - op->bp_confidence; //3 is highest confidence
       cf_op_distance = 0;
       DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
+    } else if (cf_op_distance >= low_confidence_cnt) {
+      low_confidence_cnt += 3; //3 is highest confidence
+      cf_op_distance = 0;
     } else {
       cf_op_distance++;
     }
@@ -517,7 +520,7 @@ uint64_t get_fdip_ftq_occupancy(uns proc_id) {
 }
 
 static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefetch) {
-  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD && cf_op_distance < FDIP_OFF_PATH_THRESHOLD) {
+  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
     DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", low_confidence_cnt, fdip_off_path(fdip_proc_id));
     *emit_new_prefetch = TRUE;
     std::unordered_map<Addr, std::pair<Counter, Flag>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
@@ -530,7 +533,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         std::unordered_map<Addr, std::pair<Counter, Flag>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
         auto iter = cnt_useful->find(line_addr);
         if (iter == cnt_useful->end()) {
-          if (!fdip_off_path(fdip_proc_id) && (low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD || cf_op_distance >= FDIP_OFF_PATH_THRESHOLD))
+          if (!fdip_off_path(fdip_proc_id) && low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD)
 	      STAT_EVENT(fdip_proc_id, FDIP_ONPATH_CONF_MISS_USEFUL);
           *emit_new_prefetch = FALSE;
 	}
@@ -545,7 +548,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
           *emit_new_prefetch = TRUE;
         else {
           *emit_new_prefetch = FALSE;
-          if (!fdip_off_path(fdip_proc_id) && (low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD || cf_op_distance >= FDIP_OFF_PATH_THRESHOLD))
+          if (!fdip_off_path(fdip_proc_id) && low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD)
 	      STAT_EVENT(fdip_proc_id, FDIP_ONPATH_CONF_MISS_USEFUL);
 	}
         break;
@@ -557,7 +560,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
           *emit_new_prefetch = TRUE;
         else {
           *emit_new_prefetch = FALSE;
-          if (!fdip_off_path(fdip_proc_id) && (low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD || cf_op_distance >= FDIP_OFF_PATH_THRESHOLD))
+          if (!fdip_off_path(fdip_proc_id) && low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD)
 	      STAT_EVENT(fdip_proc_id, FDIP_ONPATH_CONF_MISS_USEFUL);
 	}
         break;
@@ -567,7 +570,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         auto iter = cnt->find(line_addr);
         if (iter != cnt->end() && iter->second < UDP_USEFUL_THRESHOLD) {
           *emit_new_prefetch = FALSE;
-          if (!fdip_off_path(fdip_proc_id) && (low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD || cf_op_distance >= FDIP_OFF_PATH_THRESHOLD))
+          if (!fdip_off_path(fdip_proc_id) && low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD)
 	      STAT_EVENT(fdip_proc_id, FDIP_ONPATH_CONF_MISS_USEFUL);
 	}
         else

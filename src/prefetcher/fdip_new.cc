@@ -388,7 +388,7 @@ void assert_not_trained(uns proc_id, Addr line_addr, uns imiss_reason) {
     return;
   auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
   if (imiss_reason == Imiss_Reason::IMISS_NOT_PREFETCHED && useful_iter != per_core_cnt_useful[proc_id].end() && !useful_iter->second.second) { // learned from a prefetch hit
-    printf("True miss even trained %llx\n", useful_iter->first);
+    DEBUG(proc_id, "True miss even trained %llx\n", useful_iter->first);
   }
 }
 
@@ -530,21 +530,32 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
     DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", low_confidence_cnt, fdip_off_path(fdip_proc_id));
     *emit_new_prefetch = TRUE;
     std::unordered_map<Addr, std::pair<Counter, Flag>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
-    auto iter = cnt_useful->find(line_addr);
-    if (fdip_off_path(fdip_proc_id) && iter == cnt_useful->end())
-      STAT_EVENT(fdip_proc_id, FDIP_OFFPATH_CONF_EMIT_UNUSEFUL);
+    if (fdip_off_path(fdip_proc_id)) {
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
+      auto iter = cnt_useful->find(line_addr);
+      if ( iter == cnt_useful->end())
+        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
+    } else
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
   } else {
+    if (FDIP_BP_CONFIDENCE) {
+      if (fdip_off_path(fdip_proc_id))
+        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
+      else
+        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
+    }
     switch(FDIP_UTILITY_PREF_POLICY) {
       case Utility_Pref_Policy::PREF_CONV_FROM_USEFUL_SET: {
         std::unordered_map<Addr, std::pair<Counter, Flag>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
         auto iter = cnt_useful->find(line_addr);
         if (iter == cnt_useful->end()) {
-          if (!fdip_off_path(fdip_proc_id) && low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD)
-	      STAT_EVENT(fdip_proc_id, FDIP_ONPATH_CONF_MISS_USEFUL);
+          if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
+	      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
           *emit_new_prefetch = FALSE;
 	}
-        else
+        else {
           *emit_new_prefetch = TRUE;
+	}
         break;
       }
       case Utility_Pref_Policy::PREF_OPT_FROM_UNUSEFUL_SET: {
@@ -554,8 +565,8 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
           *emit_new_prefetch = TRUE;
         else {
           *emit_new_prefetch = FALSE;
-          if (!fdip_off_path(fdip_proc_id) && low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD)
-	      STAT_EVENT(fdip_proc_id, FDIP_ONPATH_CONF_MISS_USEFUL);
+          if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
+	      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
 	}
         break;
       }
@@ -566,8 +577,8 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
           *emit_new_prefetch = TRUE;
         else {
           *emit_new_prefetch = FALSE;
-          if (!fdip_off_path(fdip_proc_id) && low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD)
-	      STAT_EVENT(fdip_proc_id, FDIP_ONPATH_CONF_MISS_USEFUL);
+          if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
+	      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
 	}
         break;
       }
@@ -576,8 +587,8 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         auto iter = cnt->find(line_addr);
         if (iter != cnt->end() && iter->second < UDP_USEFUL_THRESHOLD) {
           *emit_new_prefetch = FALSE;
-          if (!fdip_off_path(fdip_proc_id) && low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD)
-	      STAT_EVENT(fdip_proc_id, FDIP_ONPATH_CONF_MISS_USEFUL);
+          if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
+	      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
 	}
         else
           *emit_new_prefetch = TRUE;

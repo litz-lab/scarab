@@ -1001,7 +1001,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
   if(!line->read_count[0]) { // only consider the first hit
     if(line->FDIP_prefetch) {
       if(!icache_off_path() && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch == FDIP_OFFPATH : TRUE) {
-        inc_cnt_useful(ic->proc_id, ic->line_addr, (line->FDIP_prefetch == FDIP_OFFPATH)? 1:0);
+        inc_cnt_useful(ic->proc_id, ic->line_addr);
         inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
         update_useful_lines_uc(ic->proc_id, ic->line_addr);
         update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
@@ -1031,7 +1031,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
   if(*repl_line_addr && !line->read_count[0]) {
     DEBUG(ic->proc_id, "%llx is evicted without hit, FDIP pref: %d\n", *repl_line_addr, line->FDIP_prefetch);
     if(line->FDIP_prefetch && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch == FDIP_OFFPATH : TRUE) {
-      inc_cnt_unuseful(ic->proc_id, *repl_line_addr, (line->FDIP_prefetch == FDIP_OFFPATH)? 1:0);
+      inc_cnt_unuseful(ic->proc_id, *repl_line_addr);
       dec_cnt_useful_signed(ic->proc_id, *repl_line_addr);
       inc_utility_info(ic->proc_id, FALSE);
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ONPATH_BY_FDIP + icache_off_path());
@@ -1113,7 +1113,7 @@ void log_stats_mshr_hit(Addr line_addr) {
   if (req && !req->cyc_hit_by_demand_load) {
     if (mem_req_is_type(req, MRT_FDIPPRF)) {
       if (!icache_off_path() && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? req->fdip_pref_off_path : TRUE) {
-        inc_cnt_useful(ic->proc_id, ic->line_addr, req->fdip_pref_off_path);
+        inc_cnt_useful(ic->proc_id, ic->line_addr);
         inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
         update_useful_lines_uc(ic->proc_id, ic->line_addr);
         update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
@@ -1134,8 +1134,8 @@ void log_stats_mshr_hit(Addr line_addr) {
   if (!req) {
     assert_not_trained(ic->proc_id, ic->line_addr);
     if (!icache_off_path()) {
-      if (!FDIP_UTILITY_ONLY_TRAIN_OFF_PATH) {
-	inc_cnt_useful(ic->proc_id, ic->line_addr, 0); // assume prefetched on-path
+      if (!FDIP_BP_CONFIDENCE) {
+	inc_cnt_useful(ic->proc_id, ic->line_addr);
 	inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
 	update_useful_lines_uc(ic->proc_id, ic->line_addr);
 	update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);

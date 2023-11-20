@@ -467,13 +467,13 @@ void cmp_warmup(Op* op) {
       line_info = (Icache_Data*)cache_insert(&ic->icache_line_info, proc_id, ia,
                                                           &dummy_line_addr2, &repl_line_addr2);
       if(repl_line_addr2 && !line_info->read_count[0])
-        inc_cnt_unuseful(proc_id, repl_line_addr2, ic->off_path);
+        inc_cnt_unuseful(proc_id, repl_line_addr2);
       line_info->read_count[0] = 0;
     }
   } else {
     if(WP_COLLECT_STATS && FDIP_ENABLE) {
       ASSERT(proc_id, line_info);
-      inc_cnt_useful(proc_id, dummy_line_addr, ic->off_path);
+      inc_cnt_useful(proc_id, dummy_line_addr);
       line_info->read_count[0] += 1;
     }
   }

@@ -16,8 +16,8 @@ extern "C" {
   Flag fdip_off_path(uns proc_id);
   void print_cl_info(uns proc_id);
   void assert_not_trained(uns proc_id, Addr line_addr);
-  void inc_cnt_useful(uns proc_id, Addr line_addr, Flag fdip_prefetch_path);
-  void inc_cnt_unuseful(uns proc_id, Addr line_addr, Flag fdip_prefetch_path);
+  void inc_cnt_useful(uns proc_id, Addr line_addr);
+  void inc_cnt_unuseful(uns proc_id, Addr line_addr);
   void inc_cnt_useful_signed(uns proc_id, Addr line_addr);
   void dec_cnt_useful_signed(uns proc_id, Addr line_addr);
   void inc_cnt_useful_ret(uns proc_id, Addr line_addr);

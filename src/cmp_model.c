@@ -473,7 +473,7 @@ void cmp_warmup(Op* op) {
   } else {
     if(WP_COLLECT_STATS && FDIP_ENABLE) {
       ASSERT(proc_id, line_info);
-      inc_cnt_useful(proc_id, dummy_line_addr);
+      inc_cnt_useful(proc_id, dummy_line_addr, FALSE);
       line_info->read_count[0] += 1;
     }
   }

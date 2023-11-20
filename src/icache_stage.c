@@ -1001,7 +1001,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
   if(!line->read_count[0]) { // only consider the first hit
     if(line->FDIP_prefetch) {
       if(!icache_off_path() && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch == FDIP_OFFPATH : TRUE) {
-        inc_cnt_useful(ic->proc_id, ic->line_addr);
+        inc_cnt_useful(ic->proc_id, ic->line_addr, FALSE);
         inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
         update_useful_lines_uc(ic->proc_id, ic->line_addr);
         update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
@@ -1113,7 +1113,7 @@ void log_stats_mshr_hit(Addr line_addr) {
   if (req && !req->cyc_hit_by_demand_load) {
     if (mem_req_is_type(req, MRT_FDIPPRF)) {
       if (!icache_off_path() && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? req->fdip_pref_off_path : TRUE) {
-        inc_cnt_useful(ic->proc_id, ic->line_addr);
+        inc_cnt_useful(ic->proc_id, ic->line_addr, FALSE);
         inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
         update_useful_lines_uc(ic->proc_id, ic->line_addr);
         update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
@@ -1132,10 +1132,11 @@ void log_stats_mshr_hit(Addr line_addr) {
   imiss_reason = get_miss_reason(ic->proc_id, line_addr);
   DEBUG_FDIP(ic->proc_id, "miss reason: %d, req: %d\n", imiss_reason, req? 1:0);
   if (!req) {
-    assert_not_trained(ic->proc_id, ic->line_addr);
+    assert_not_trained(ic->proc_id, ic->line_addr, imiss_reason);
     if (!icache_off_path()) {
-      if (!FDIP_BP_CONFIDENCE) {
-	inc_cnt_useful(ic->proc_id, ic->line_addr);
+      if (!FDIP_UTILITY_ONLY_TRAIN_OFF_PATH) {
+        DEBUG_FDIP(ic->proc_id, "learn missed line %llx\n", ic->line_addr);
+	inc_cnt_useful(ic->proc_id, ic->line_addr, TRUE);
 	inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
 	update_useful_lines_uc(ic->proc_id, ic->line_addr);
 	update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);

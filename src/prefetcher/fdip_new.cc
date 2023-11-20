@@ -26,6 +26,7 @@ std::vector<decoupled_fe_iter*> per_core_ftq_iter;
 std::vector<Addr> per_core_last_line_addr;
 int per_cyc_ipref = 0;
 uns low_confidence_cnt = 0;
+uns cf_op_distance = 0;
 
 typedef enum FDIP_BREAK_enum {
   BR_REACH_FTQ_END,
@@ -49,8 +50,8 @@ std::vector<Utility_Timeliness_Info> per_core_utility_timeliness_info;
 // for icache miss stats
 std::vector<uns> per_core_last_imiss_reason;
 std::vector<Counter> per_core_last_recover_cycle;
-// <CL address, # of first demand load on-path hits of cache lines, # of first demand load off-path hits of cache lines> - useful count
-std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_useful;
+// <CL address, # of first demand load on-path hits of cache lines, flag for learning from a true miss> - useful count
+std::vector<std::unordered_map<Addr, std::pair<Counter, Flag>>> per_core_cnt_useful;
 // <CL address, # of evictions w/o hit of cache lines> - unuseful count
 std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_unuseful;
 // Increment if useful by UDP_WEIGHT_USEFUL, decrement if unuseful by UDP_WEIGHT_UNUSEFUL
@@ -164,6 +165,7 @@ void set_fdip(int _proc_id, Icache_Stage *_ic) {
 
 void recover_fdip() {
   low_confidence_cnt = 0;
+  cf_op_distance = 0;
 }
 
 void update_fdip() {
@@ -209,7 +211,10 @@ void update_fdip() {
     }
     if (op->table_info->cf_type) {
       low_confidence_cnt += 3 - op->bp_confidence; //3 is highest confidence
+      cf_op_distance = 0;
       DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
+    } else {
+      cf_op_distance++;
     }
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;
@@ -369,24 +374,24 @@ void print_cl_info(uns proc_id) {
   }
 }
 
-void assert_not_trained(uns proc_id, Addr line_addr) {
-  if (!FDIP_UTILITY_HASH_ENABLE || (FDIP_UTILITY_PREF_POLICY != PREF_CONV_FROM_USEFUL_SET) || (inst_count[proc_id] < FULL_WARMUP))
+void assert_not_trained(uns proc_id, Addr line_addr, uns imiss_reason) {
+  if (!FDIP_UTILITY_HASH_ENABLE || (FDIP_UTILITY_PREF_POLICY != PREF_CONV_FROM_USEFUL_SET) || (inst_count[proc_id] < FDIP_UTILITY_MIN_LEARNING_INST))
     return;
   auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
-  if (useful_iter != per_core_cnt_useful[proc_id].end())
+  if (imiss_reason == Imiss_Reason::IMISS_NOT_PREFETCHED && useful_iter != per_core_cnt_useful[proc_id].end() && !useful_iter->second.second) { // learned from a prefetch hit
     printf("True miss even trained %llx\n", useful_iter->first);
-  //ASSERT(proc_id, useful_iter == per_core_cnt_useful[proc_id].end());
+  }
 }
 
-void inc_cnt_useful(uns proc_id, Addr line_addr) {
+void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss) {
   auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
   DEBUG(proc_id, "cnt_useful size %ld\n", per_core_cnt_useful[proc_id].size());
   if (useful_iter == per_core_cnt_useful[proc_id].end()) {
     DEBUG(proc_id, "%llx useful line new insert\n", line_addr);
     STAT_EVENT(proc_id, ICACHE_USEFUL_FETCHES);
-    per_core_cnt_useful[proc_id].insert(std::make_pair(std::move(line_addr), 1));
+    per_core_cnt_useful[proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(1, pref_miss)));
   } else {
-    useful_iter->second++;
+    useful_iter->second.first++;
   }
   DEBUG(proc_id, "cnt_useful size after inserted %ld\n", per_core_cnt_useful[proc_id].size());
 }
@@ -473,11 +478,12 @@ uns get_miss_reason(uns proc_id, Addr line_addr) {
   auto cl_iter = per_core_prefetched_cls_info[proc_id].find(line_addr);
   if (cl_iter == per_core_prefetched_cls_info[proc_id].end()) {
     auto tmp_iter = per_core_prefetched_cls[proc_id].find(line_addr);
-    DEBUG(proc_id, "%llx misses due to 'not prefetched'\n", line_addr);
+    DEBUG(proc_id, "%llx misses due to 'not prefetched ever'\n", line_addr);
     ASSERT(proc_id, tmp_iter == per_core_prefetched_cls[proc_id].end());
     return Imiss_Reason::IMISS_NOT_PREFETCHED;
   }
   if (cl_iter->second.first < per_core_last_recover_cycle[proc_id]) {
+    DEBUG(proc_id, "%llx misses due to 'not prefetched after last recover cycle'\n", line_addr);
     return Imiss_Reason::IMISS_NOT_PREFETCHED;
   }
 
@@ -511,16 +517,23 @@ uint64_t get_fdip_ftq_occupancy(uns proc_id) {
 }
 
 static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefetch) {
-  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
-    DEBUG(fdip_proc_id, "emit_new_prefetch (low conf)\n");
+  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD && cf_op_distance < FDIP_OFF_PATH_THRESHOLD) {
+    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", low_confidence_cnt, fdip_off_path(fdip_proc_id));
     *emit_new_prefetch = TRUE;
+    std::unordered_map<Addr, std::pair<Counter, Flag>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
+    auto iter = cnt_useful->find(line_addr);
+    if (fdip_off_path(fdip_proc_id) && iter == cnt_useful->end())
+      STAT_EVENT(fdip_proc_id, FDIP_OFFPATH_CONF_EMIT_UNUSEFUL);
   } else {
     switch(FDIP_UTILITY_PREF_POLICY) {
       case Utility_Pref_Policy::PREF_CONV_FROM_USEFUL_SET: {
-        std::unordered_map<Addr, Counter>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
+        std::unordered_map<Addr, std::pair<Counter, Flag>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
         auto iter = cnt_useful->find(line_addr);
-        if (iter == cnt_useful->end())
+        if (iter == cnt_useful->end()) {
+          if (!fdip_off_path(fdip_proc_id) && (low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD || cf_op_distance >= FDIP_OFF_PATH_THRESHOLD))
+	      STAT_EVENT(fdip_proc_id, FDIP_ONPATH_CONF_MISS_USEFUL);
           *emit_new_prefetch = FALSE;
+	}
         else
           *emit_new_prefetch = TRUE;
         break;
@@ -530,8 +543,11 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         auto iter = cnt_unuseful->find(line_addr);
         if (iter == cnt_unuseful->end())
           *emit_new_prefetch = TRUE;
-        else
+        else {
           *emit_new_prefetch = FALSE;
+          if (!fdip_off_path(fdip_proc_id) && (low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD || cf_op_distance >= FDIP_OFF_PATH_THRESHOLD))
+	      STAT_EVENT(fdip_proc_id, FDIP_ONPATH_CONF_MISS_USEFUL);
+	}
         break;
       }
       case Utility_Pref_Policy::PREF_CONV_FROM_THROTTLE_CNT: {
@@ -539,15 +555,21 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         auto iter = cnt->find(line_addr);
         if (iter != cnt->end() && iter->second > UDP_USEFUL_THRESHOLD)
           *emit_new_prefetch = TRUE;
-        else
+        else {
           *emit_new_prefetch = FALSE;
+          if (!fdip_off_path(fdip_proc_id) && (low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD || cf_op_distance >= FDIP_OFF_PATH_THRESHOLD))
+	      STAT_EVENT(fdip_proc_id, FDIP_ONPATH_CONF_MISS_USEFUL);
+	}
         break;
       }
       case Utility_Pref_Policy::PREF_OPT_FROM_THROTTLE_CNT: {
         std::unordered_map<Addr, int64_t>* cnt = &per_core_cnt_useful_signed[fdip_proc_id];
         auto iter = cnt->find(line_addr);
-        if (iter != cnt->end() && iter->second < UDP_USEFUL_THRESHOLD)
+        if (iter != cnt->end() && iter->second < UDP_USEFUL_THRESHOLD) {
           *emit_new_prefetch = FALSE;
+          if (!fdip_off_path(fdip_proc_id) && (low_confidence_cnt >= FDIP_OFF_PATH_THRESHOLD || cf_op_distance >= FDIP_OFF_PATH_THRESHOLD))
+	      STAT_EVENT(fdip_proc_id, FDIP_ONPATH_CONF_MISS_USEFUL);
+	}
         else
           *emit_new_prefetch = TRUE;
         break;

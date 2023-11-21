@@ -736,16 +736,35 @@ static inline void detect_stream(uns proc_id, Addr uc_line_addr) {
 }
 
 static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* emit_new_prefetch) {
-  void* useful = bloom_lookup(fdip_proc_id, line_addr);
-  if (useful) {
-    STAT_EVENT(fdip_proc_id, FDIP_BLOOM_HIT);
+  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
+    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", low_confidence_cnt, fdip_off_path(fdip_proc_id));
     *emit_new_prefetch = TRUE;
-    DEBUG(fdip_proc_id, "bloom : emit a new prefetch for cl 0x%llx off_path: %u", line_addr, fdip_off_path(fdip_proc_id) ? 1 : 0);
+    std::unordered_map<Addr, std::pair<Counter, Flag>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
+    if (fdip_off_path(fdip_proc_id)) {
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
+      auto iter = cnt_useful->find(line_addr);
+      if ( iter == cnt_useful->end())
+        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
+    } else
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
   } else {
-    STAT_EVENT(fdip_proc_id, FDIP_BLOOM_MISS);
-    DEBUG(fdip_proc_id, "bloom : do not emit a new prefetch for cl 0x%llx", line_addr);
-    *emit_new_prefetch = FALSE;
-    per_core_last_cl_unuseful[fdip_proc_id] = line_addr;
+    if (fdip_off_path(fdip_proc_id))
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
+    else
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
+    void* useful = bloom_lookup(fdip_proc_id, line_addr);
+    if (useful) {
+      STAT_EVENT(fdip_proc_id, FDIP_BLOOM_HIT);
+      *emit_new_prefetch = TRUE;
+      DEBUG(fdip_proc_id, "bloom : emit a new prefetch for cl 0x%llx off_path: %u", line_addr, fdip_off_path(fdip_proc_id) ? 1 : 0);
+    } else {
+      STAT_EVENT(fdip_proc_id, FDIP_BLOOM_MISS);
+      DEBUG(fdip_proc_id, "bloom : do not emit a new prefetch for cl 0x%llx", line_addr);
+      *emit_new_prefetch = FALSE;
+      if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
+        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
+      per_core_last_cl_unuseful[fdip_proc_id] = line_addr;
+    }
   }
 }
 

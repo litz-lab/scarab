@@ -1036,7 +1036,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
 
   if(*repl_line_addr && !line->read_count[0]) {
     DEBUG(ic->proc_id, "%llx is evicted without hit, FDIP pref: %d\n", *repl_line_addr, line->FDIP_prefetch);
-    if(line->FDIP_prefetch && (FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch == FDIP_OFFPATH : TRUE)) {
+    if(line->FDIP_prefetch && (FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch >= FDIP_OFFPATH : TRUE)) {
       inc_cnt_unuseful(ic->proc_id, *repl_line_addr);
       dec_cnt_useful_signed(ic->proc_id, *repl_line_addr);
       inc_utility_info(ic->proc_id, FALSE);
@@ -1118,7 +1118,7 @@ void log_stats_mshr_hit(Addr line_addr) {
                                            &queue_entry, &ramulator_match);
   if (req && !req->cyc_hit_by_demand_load) {
     if (mem_req_is_type(req, MRT_FDIPPRF)) {
-      if (!icache_off_path() && (FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? req->fdip_pref_off_path : TRUE)) {
+      if (!icache_off_path() && (FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? req->fdip_pref_off_path >= FDIP_OFFPATH : TRUE)) {
         inc_cnt_useful(ic->proc_id, ic->line_addr, FALSE);
         inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
         update_useful_lines_uc(ic->proc_id, ic->line_addr);

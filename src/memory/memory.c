@@ -3184,6 +3184,9 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
     req->off_path_confirmed = FALSE;
   }
 
+  if (mem_req_is_type(req, MRT_FDIPPRF) && type == MRT_FDIPPRF && req->fdip_pref_off_path != fdip_off_path(req->proc_id))
+    req->fdip_pref_off_path = 2;
+
   update_mem_req_occupancy_counter(old_type, -1);
   update_mem_req_occupancy_counter(
     req->type, +1);  // BUG? req->type does not always match type
@@ -3948,9 +3951,9 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size,
   new_req->destination   = destination;
   if (type == MRT_FDIPPRF) {
     if (fdip_off_path(proc_id))
-      new_req->fdip_pref_off_path = TRUE;
+      new_req->fdip_pref_off_path = 1;
     else
-      new_req->fdip_pref_off_path = FALSE;
+      new_req->fdip_pref_off_path = 0;
   }
   new_req->cyc_hit_by_demand_load = 0;
   if(PREF_FRAMEWORK_ON) {

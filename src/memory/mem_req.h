@@ -191,7 +191,7 @@ struct Mem_Req_struct {
   Counter dram_access_cycle; /* cycle of DRAM access (in L1 cycles) */
   Counter dram_latency;      /* DRAM latency (in L1 cycles) */
   Counter dram_core_service_cycles_at_start; /* "Virtual clock" timestamp */
-  Flag fdip_pref_off_path; /*set if the mem_req is requested by FDIP on the wrong path prediction*/
+  uns fdip_pref_off_path; /*set if the mem_req is requested by FDIP on the wrong path prediction*/
   Counter cyc_hit_by_demand_load; /*set if the mem_req (requested by FDIP) is hit by a demand load*/
 };
 

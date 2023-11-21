@@ -52,6 +52,7 @@ typedef enum IC_FETCH_TYPE_enum {
   DEMAND_LOAD,
   FDIP_ONPATH,
   FDIP_OFFPATH,
+  FDIP_BOTHPATH,
 } IC_Fetch_Type;
 
 typedef struct Utility_Timeliness_Info_struct {

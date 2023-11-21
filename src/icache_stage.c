@@ -796,7 +796,9 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
         line_info->read_count[1]     = 0;
         line_info->HW_prefetch       = req->type == MRT_IPRF;
         if (mem_req_is_type(req, MRT_FDIPPRF)) {
-          if (req->fdip_pref_off_path)
+          if (req->fdip_pref_off_path == 2)
+            line_info->FDIP_prefetch = FDIP_BOTHPATH;
+	  else if (req->fdip_pref_off_path == 1)
             line_info->FDIP_prefetch = FDIP_OFFPATH;
           else
             line_info->FDIP_prefetch = FDIP_ONPATH;
@@ -864,7 +866,9 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
         line_info->read_count[1]     = 0;
         line_info->HW_prefetch       = req->type == MRT_IPRF;
         if (mem_req_is_type(req, MRT_FDIPPRF)) {
-          if (req->fdip_pref_off_path)
+          if (req->fdip_pref_off_path == 2)
+            line_info->FDIP_prefetch = FDIP_BOTHPATH;
+	  else if (req->fdip_pref_off_path == 1)
             line_info->FDIP_prefetch = FDIP_OFFPATH;
           else
             line_info->FDIP_prefetch = FDIP_ONPATH;
@@ -1001,7 +1005,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
   if(!line->read_count[0]) { // only consider the first hit
     if(line->FDIP_prefetch) {
       if(!icache_off_path()) {
-        if(FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch == FDIP_OFFPATH : TRUE) {
+        if(FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch >= FDIP_OFFPATH : TRUE) {
           inc_cnt_useful(ic->proc_id, ic->line_addr, FALSE);
           inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
           update_useful_lines_uc(ic->proc_id, ic->line_addr);
@@ -1009,10 +1013,14 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
           inc_utility_info(ic->proc_id, TRUE);
           inc_timeliness_info(ic->proc_id, FALSE);
 	}
-        if(line->FDIP_prefetch == FDIP_ONPATH)
+	if(line->FDIP_prefetch == FDIP_BOTHPATH) {
           STAT_EVENT(ic->proc_id, ICACHE_HIT_BY_FDIP_ONPATH);
-        else if(line->FDIP_prefetch == FDIP_OFFPATH)
           STAT_EVENT(ic->proc_id, ICACHE_HIT_BY_FDIP_OFFPATH);
+	} else if(line->FDIP_prefetch == FDIP_ONPATH) {
+          STAT_EVENT(ic->proc_id, ICACHE_HIT_BY_FDIP_ONPATH);
+	} else if(line->FDIP_prefetch == FDIP_OFFPATH) {
+          STAT_EVENT(ic->proc_id, ICACHE_HIT_BY_FDIP_OFFPATH);
+	}
         line->read_count[0] += 1;
       }
       STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH_BY_FDIP + icache_off_path());
@@ -1032,24 +1040,32 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
 
   if(*repl_line_addr && !line->read_count[0]) {
     DEBUG(ic->proc_id, "%llx is evicted without hit, FDIP pref: %d\n", *repl_line_addr, line->FDIP_prefetch);
-    if(line->FDIP_prefetch && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch == FDIP_OFFPATH : TRUE) {
+    if(line->FDIP_prefetch && FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch >= FDIP_OFFPATH : TRUE) {
       inc_cnt_unuseful(ic->proc_id, *repl_line_addr);
       dec_cnt_useful_signed(ic->proc_id, *repl_line_addr);
       inc_utility_info(ic->proc_id, FALSE);
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ONPATH_BY_FDIP + icache_off_path());
-      if(line->FDIP_prefetch == FDIP_ONPATH)
+      if(line->FDIP_prefetch == FDIP_BOTHPATH) {
         STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_BY_FDIP_ONPATH);
-      else
         STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_BY_FDIP_OFFPATH);
+      } else if(line->FDIP_prefetch == FDIP_ONPATH) {
+        STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_BY_FDIP_ONPATH);
+      } else {
+        STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_BY_FDIP_OFFPATH);
+      }
     }
   } else if(*repl_line_addr && line->read_count[0]) {
     DEBUG(ic->proc_id, "%llx is evicted with hits, FDIP pref: %d\n", *repl_line_addr, line->FDIP_prefetch);
     if (line->FDIP_prefetch) {
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_ONPATH_BY_FDIP + icache_off_path());
-      if(line->FDIP_prefetch == FDIP_ONPATH)
+      if(line->FDIP_prefetch == FDIP_BOTHPATH) {
         STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_BY_FDIP_ONPATH);
-      else
         STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_BY_FDIP_OFFPATH);
+      } else if(line->FDIP_prefetch == FDIP_ONPATH) {
+        STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_BY_FDIP_ONPATH);
+      } else {
+        STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_BY_FDIP_OFFPATH);
+      }
     }
   }
 

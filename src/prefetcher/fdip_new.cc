@@ -757,6 +757,10 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
       STAT_EVENT(fdip_proc_id, FDIP_BLOOM_HIT);
       *emit_new_prefetch = TRUE;
       DEBUG(fdip_proc_id, "bloom : emit a new prefetch for cl 0x%llx off_path: %u", line_addr, fdip_off_path(fdip_proc_id) ? 1 : 0);
+    } else if (FDIP_CONSERVATIVE_SAMPLE_RATE && (cycle_count % FDIP_CONSERVATIVE_SAMPLE_RATE) == 0) {
+      // Use sampling mechanism to sometimes emit prefetches on the off path to enable training
+      STAT_EVENT(fdip_proc_id, FDIP_BLOOM_SAMPLE);
+      *emit_new_prefetch = TRUE;
     } else {
       STAT_EVENT(fdip_proc_id, FDIP_BLOOM_MISS);
       DEBUG(fdip_proc_id, "bloom : do not emit a new prefetch for cl 0x%llx", line_addr);

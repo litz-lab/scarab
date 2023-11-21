@@ -220,8 +220,8 @@ void update_fdip() {
       low_confidence_cnt += 3 - op->bp_confidence; //3 is highest confidence
       cf_op_distance = 0;
       DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
-    } else if (cf_op_distance >= low_confidence_cnt) {
-      low_confidence_cnt += 3; //3 is highest confidence
+    } else if (cf_op_distance >= FDIP_OFF_PATH_THRESHOLD) {
+      low_confidence_cnt += FDIP_OFF_PATH_CONF_INC; //3 is highest confidence
       cf_op_distance = 0;
     } else {
       cf_op_distance++;

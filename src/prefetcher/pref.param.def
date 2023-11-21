@@ -151,7 +151,7 @@ DEF_PARAM(fdip_adjustable_ftq, FDIP_ADJUSTABLE_FTQ, uns, uns, 0, )
 DEF_PARAM(fdip_adjustable_ftq_cyc, FDIP_ADJUSTABLE_FTQ_CYC, uns, uns, 100000, )
 DEF_PARAM(fdip_pref_no_latency, FDIP_PREF_NO_LATENCY, Flag, Flag, FALSE, )
 DEF_PARAM(udp_useful_threshold, UDP_USEFUL_THRESHOLD, int, int, 0, )
-DEF_PARAM(udp_weight_useful, UDP_WEIGHT_USEFUL, uns, uns, 2, )
+DEF_PARAM(udp_weight_useful, UDP_WEIGHT_USEFUL, uns, uns, 3, )
 DEF_PARAM(udp_weight_unuseful, UDP_WEIGHT_UNUSEFUL, uns, uns, 1, )
 DEF_PARAM(fdip_bp_perfect_confidence, FDIP_BP_PERFECT_CONFIDENCE, Flag, Flag, FALSE, )
 
@@ -160,6 +160,7 @@ DEF_PARAM(fdip_dual_path_pref_uoc_enable , FDIP_DUAL_PATH_PREF_UOC_ENABLE  , Fla
 DEF_PARAM(top_mispred_br_filepath       , TOP_MISPRED_BR_FILEPATH          , char*   , string  , "br_resteer_coverage.csv", )
 DEF_PARAM(fdip_bp_confidence, FDIP_BP_CONFIDENCE, Flag, Flag, FALSE, )
 DEF_PARAM(fdip_off_path_threshold, FDIP_OFF_PATH_THRESHOLD, uns     , uns     , 11    , )
+DEF_PARAM(fdip_off_path_conf_inc, FDIP_OFF_PATH_CONF_INC, uns     , uns     , 5    , )
 DEF_PARAM(fdip_utility_only_train_off_path, FDIP_UTILITY_ONLY_TRAIN_OFF_PATH, Flag, Flag, FALSE, )
 
 DEF_PARAM(top_mispred_br_resteer_coverage, TOP_MISPRED_BR_RESTEER_COVERAGE , float   , float   , 0, )

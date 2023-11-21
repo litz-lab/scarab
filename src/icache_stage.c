@@ -1137,14 +1137,12 @@ void log_stats_mshr_hit(Addr line_addr) {
   if (!req) {
     assert_not_trained(ic->proc_id, ic->line_addr, imiss_reason);
     if (!icache_off_path()) {
-      if (!FDIP_UTILITY_ONLY_TRAIN_OFF_PATH) {
-        DEBUG_FDIP(ic->proc_id, "learn missed line %llx\n", ic->line_addr);
-	inc_cnt_useful(ic->proc_id, ic->line_addr, TRUE);
-	inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
-	update_useful_lines_uc(ic->proc_id, ic->line_addr);
-	update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
-	inc_utility_info(ic->proc_id, TRUE);
-      }
+      DEBUG_FDIP(ic->proc_id, "learn missed line %llx\n", ic->line_addr);
+      inc_cnt_useful(ic->proc_id, ic->line_addr, TRUE);
+      inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
+      update_useful_lines_uc(ic->proc_id, ic->line_addr);
+      update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
+      inc_utility_info(ic->proc_id, TRUE);
       if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
 	STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_IFETCH);
       else if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP)

@@ -107,6 +107,7 @@ struct Mem_Req_struct {
   /* Bit string recording all Mem_Req_Type(s) that were coalesced into this request. */
   uns                      types;
   Counter                  fdip_emitted_cycle; /* cycle when the request is emitted. */
+  uns64                    ghist;
   Counter                  demand_icache_emitted_cycle; /* cycle when the request is emitted. */
   struct Mem_Queue_struct* queue;    /* Pointer to the queue this entry is in */
   Counter                  priority; /* priority of the miss */

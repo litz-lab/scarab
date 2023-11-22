@@ -3954,6 +3954,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size,
       new_req->fdip_pref_off_path = 1;
     else
       new_req->fdip_pref_off_path = 0;
+    new_req->ghist = fdip_get_ghist();
   }
   new_req->cyc_hit_by_demand_load = 0;
   if(PREF_FRAMEWORK_ON) {

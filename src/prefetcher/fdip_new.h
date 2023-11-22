@@ -14,6 +14,8 @@ extern "C" {
   void recover_fdip();
   void set_fdip(int _proc_id, Icache_Stage *_ic);
   Flag fdip_off_path(uns proc_id);
+  uns64 fdip_get_ghist();
+  uns64 fdip_hash_addr_ghist(uint64_t addr, uint64_t ghist);
   void print_cl_info(uns proc_id);
   void assert_not_trained(uns proc_id, Addr line_addr, uns imiss_reason);
   void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss);

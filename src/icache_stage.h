@@ -99,6 +99,7 @@ typedef struct Icache_Data_struct {
   uns  read_count[2];
   Flag HW_prefetch;
   uns FDIP_prefetch;
+  uint64_t ghist;
 
   Counter fetch_cycle;
   Counter onpath_use_cycle;

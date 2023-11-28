@@ -551,6 +551,10 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
     } else
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
+  } else if (FDIP_TRAINING_SAMPLE_RATE && (cycle_count % FDIP_TRAINING_SAMPLE_RATE) == 0) {
+    // Use sampling mechanism to sometimes emit prefetches on the off path to enable training
+    STAT_EVENT(fdip_proc_id, FDIP_TRAINING_SAMPLE);
+    *emit_new_prefetch = TRUE;
   } else {
     if (FDIP_BP_CONFIDENCE) {
       if (fdip_off_path(fdip_proc_id))
@@ -620,16 +624,35 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
 
 static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_prefetch) {
   Addr uc_line_addr = 0;
-  void* useful = (void*)cache_access(&per_core_fdip_uc[fdip_proc_id], line_addr, &uc_line_addr, TRUE);
-  if (useful) {
+  uint64_t hashed_line_addr = line_addr;
+  if (FDIP_GHIST_HASHING)
+    hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
+
+  void* useful = (void*)cache_access(&per_core_fdip_uc[fdip_proc_id], hashed_line_addr, &uc_line_addr, TRUE);
+  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
+    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", low_confidence_cnt, fdip_off_path(fdip_proc_id));
+    *emit_new_prefetch = TRUE;
+    std::unordered_map<Addr, std::pair<Counter, Flag>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
+    if (fdip_off_path(fdip_proc_id)) {
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
+      auto iter = cnt_useful->find(hashed_line_addr);
+      if ( iter == cnt_useful->end())
+        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
+    } else
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
+  } else if (FDIP_TRAINING_SAMPLE_RATE && (cycle_count % FDIP_TRAINING_SAMPLE_RATE) == 0) {
+    // Use sampling mechanism to sometimes emit prefetches on the off path to enable training
+    STAT_EVENT(fdip_proc_id, FDIP_TRAINING_SAMPLE);
+    *emit_new_prefetch = TRUE;
+  } else if (useful) {
     STAT_EVENT(fdip_proc_id, FDIP_UC_HIT);
     *emit_new_prefetch = TRUE;
-    DEBUG(fdip_proc_id, "uc : emit a new prefetch for cl 0x%llx, uc_line_addr %llx, fdip_off_path: %d", line_addr, uc_line_addr, fdip_off_path(fdip_proc_id) ? 1 : 0);
+    DEBUG(fdip_proc_id, "uc : emit a new prefetch for cl 0x%llx, uc_line_addr %llx, fdip_off_path: %d", hashed_line_add, uc_line_addr, fdip_off_path(fdip_proc_id) ? 1 : 0);
   } else {
     STAT_EVENT(fdip_proc_id, FDIP_UC_MISS);
-    DEBUG(fdip_proc_id, "uc : do not emit a new prefetch for cl 0x%llx, uc_line_addr %llx", line_addr, uc_line_addr);
+    DEBUG(fdip_proc_id, "uc : do not emit a new prefetch for cl 0x%llx, uc_line_addr %llx", hashed_line_add, uc_line_addr);
     *emit_new_prefetch = FALSE;
-    per_core_last_cl_unuseful[fdip_proc_id] = line_addr;
+    per_core_last_cl_unuseful[fdip_proc_id] = hashed_line_addr;
   }
 }
 
@@ -771,9 +794,9 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
       STAT_EVENT(fdip_proc_id, FDIP_BLOOM_HIT);
       *emit_new_prefetch = TRUE;
       DEBUG(fdip_proc_id, "bloom : emit a new prefetch for cl 0x%llx off_path: %u", line_addr, fdip_off_path(fdip_proc_id) ? 1 : 0);
-    } else if (FDIP_CONSERVATIVE_SAMPLE_RATE && (cycle_count % FDIP_CONSERVATIVE_SAMPLE_RATE) == 0) {
+    } else if (FDIP_TRAINING_SAMPLE_RATE && (cycle_count % FDIP_TRAINING_SAMPLE_RATE) == 0) {
       // Use sampling mechanism to sometimes emit prefetches on the off path to enable training
-      STAT_EVENT(fdip_proc_id, FDIP_BLOOM_SAMPLE);
+      STAT_EVENT(fdip_proc_id, FDIP_TRAINING_SAMPLE);
       *emit_new_prefetch = TRUE;
     } else {
       STAT_EVENT(fdip_proc_id, FDIP_BLOOM_MISS);

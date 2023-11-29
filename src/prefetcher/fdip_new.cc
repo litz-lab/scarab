@@ -26,7 +26,7 @@ std::vector<decoupled_fe_iter*> per_core_ftq_iter;
 std::vector<Addr> per_core_last_line_addr;
 int per_cyc_ipref = 0;
 uns low_confidence_cnt = 0;
-uns cf_op_distance = 0;
+double cf_op_distance = 0.0;
 
 typedef enum FDIP_BREAK_enum {
   BR_REACH_FTQ_END,
@@ -45,6 +45,10 @@ typedef enum UTILITY_PREF_POLICY_enum {
 
 /* global variables for dynamic FTQ adjustment based on utility/timeliness study */
 std::vector<Utility_Timeliness_Info> per_core_utility_timeliness_info;
+
+/* global variables for BTB miss-based BP confidence */
+std::vector<Counter> per_core_cnt_btb_miss;
+std::vector<double> per_core_btb_miss_rate;
 
 /* global variables for utility study and stats */
 // for icache miss stats
@@ -90,6 +94,10 @@ void alloc_mem_fdip(uns numCores) {
   per_core_last_line_addr.resize(numCores);
   if (FDIP_ADJUSTABLE_FTQ)
     per_core_utility_timeliness_info.resize(numCores);
+  if (FDIP_BP_CONFIDENCE) {
+    per_core_cnt_btb_miss.resize(numCores);
+    per_core_btb_miss_rate.resize(numCores);
+  }
   per_core_last_imiss_reason.resize(numCores);
   per_core_last_recover_cycle.resize(numCores);
   per_core_cnt_useful.resize(numCores);
@@ -120,6 +128,10 @@ void init_fdip(uns proc_id) {
   per_core_last_line_addr[proc_id] = 0;
   if (FDIP_ADJUSTABLE_FTQ)
     per_core_utility_timeliness_info[proc_id] = {0, 0, 0.0, 0, 0, 0.0, FALSE};
+  if (FDIP_BP_CONFIDENCE) {
+    per_core_cnt_btb_miss[proc_id] = 0;
+    per_core_btb_miss_rate[proc_id] = 0.0;
+  }
   per_core_last_imiss_reason[proc_id] = Imiss_Reason::IMISS_NOT_PREFETCHED;
   per_core_last_recover_cycle[proc_id] = 0;
   per_core_fdip_ftq_occupancy_ops[proc_id] = 0;
@@ -165,7 +177,7 @@ void set_fdip(int _proc_id, Icache_Stage *_ic) {
 
 void recover_fdip() {
   low_confidence_cnt = 0;
-  cf_op_distance = 0;
+  cf_op_distance = 0.0;
 }
 
 void update_fdip() {
@@ -179,6 +191,11 @@ void update_fdip() {
   per_cyc_ipref = 0;
   if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
     per_core_last_cl_unuseful[fdip_proc_id] = 0;
+
+  if (FDIP_BP_CONFIDENCE && (cycle_count % FDIP_BTB_MISS_SAMPLE_RATE == 0)) {
+    per_core_btb_miss_rate[fdip_proc_id] = (double)per_core_cnt_btb_miss[fdip_proc_id] / (double)FDIP_BTB_MISS_SAMPLE_RATE;
+    per_core_cnt_btb_miss[fdip_proc_id] = 0;
+  }
 
   for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
     per_core_cur_op[fdip_proc_id] = op;
@@ -214,17 +231,17 @@ void update_fdip() {
 	low_confidence_cnt = ~0U;
       if(low_confidence_cnt == ~0U)
 	ASSERT(0,fdip_off_path(fdip_proc_id));
-      cf_op_distance = 0;
+      cf_op_distance = 0.0;
     }
     else if (op->table_info->cf_type) {
       low_confidence_cnt += 3 - op->bp_confidence; //3 is highest confidence
-      cf_op_distance = 0;
+      cf_op_distance = 0.0;
       DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
     } else if (cf_op_distance >= FDIP_OFF_PATH_THRESHOLD) {
-      low_confidence_cnt += FDIP_OFF_PATH_CONF_INC; //3 is highest confidence
-      cf_op_distance = 0;
+      low_confidence_cnt += FDIP_OFF_PATH_CONF_INC;
+      cf_op_distance = 0.0;
     } else {
-      cf_op_distance++;
+      cf_op_distance += (1.0+100*per_core_btb_miss_rate[fdip_proc_id]);
     }
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;
@@ -899,4 +916,8 @@ void inc_timeliness_info(uns proc_id, Flag mshr_hit) {
     per_core_utility_timeliness_info[proc_id].mshr_prefetch_hits++;
   else
     per_core_utility_timeliness_info[proc_id].icache_prefetch_hits++;
+}
+
+void fdip_inc_cnt_btb_miss(uns proc_id) {
+  per_core_cnt_btb_miss[proc_id]++;
 }

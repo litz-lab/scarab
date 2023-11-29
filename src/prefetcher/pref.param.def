@@ -165,6 +165,7 @@ DEF_PARAM(fdip_off_path_conf_inc, FDIP_OFF_PATH_CONF_INC, uns     , uns     , 5 
 DEF_PARAM(fdip_utility_only_train_off_path, FDIP_UTILITY_ONLY_TRAIN_OFF_PATH, Flag, Flag, FALSE, )
 DEF_PARAM(fdip_conservative_sample_rate, FDIP_TRAINING_SAMPLE_RATE, uns , uns     , 100    , )
 DEF_PARAM(fdip_ghist_bits, FDIP_GHIST_BITS, uns , uns     , 8    , )
+DEF_PARAM(fdip_btb_miss_sample_rate, FDIP_BTB_MISS_SAMPLE_RATE, uns, uns, 100000, )
 
 DEF_PARAM(top_mispred_br_resteer_coverage, TOP_MISPRED_BR_RESTEER_COVERAGE , float   , float   , 0, )
 // Identify branches in an online fashion (vs offline)

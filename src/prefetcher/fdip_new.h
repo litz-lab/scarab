@@ -38,6 +38,7 @@ extern "C" {
   void update_useful_lines_bloom_filter(uns proc_id, Addr line_addr);
   void inc_utility_info(uns proc_id, Flag useful);
   void inc_timeliness_info(uns proc_id, Flag mshr_hit);
+  void fdip_inc_cnt_btb_miss(uns proc_id);
   
 #ifdef __cplusplus
 }

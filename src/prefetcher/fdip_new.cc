@@ -241,7 +241,7 @@ void update_fdip() {
       low_confidence_cnt += FDIP_OFF_PATH_CONF_INC;
       cf_op_distance = 0.0;
     } else {
-      cf_op_distance += (1.0+100*per_core_btb_miss_rate[fdip_proc_id]);
+      cf_op_distance += (1.0+(double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]);
     }
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;

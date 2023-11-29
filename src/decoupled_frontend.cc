@@ -147,7 +147,7 @@ void recover_decoupled_fe(int proc_id) {
         qdatr -= std::round(per_core_ftq_block_num[proc_id] * (TIMELINESS_RATIO_THRESHOLD - cur_timeliness_ratio));
       else if (cur_timeliness_ratio > TIMELINESS_RATIO_THRESHOLD)
         qdatr += std::round(per_core_ftq_block_num[proc_id] * (cur_timeliness_ratio - TIMELINESS_RATIO_THRESHOLD));
-      per_core_ftq_block_num[proc_id] = std::round(-2.3*qdaur - 31.2*qdatr + 0.007*qdaur*adaur + 0.1*qdatr*adatr + 0.3*qdaur*qdatr);
+      per_core_ftq_block_num[proc_id] = std::round(-2.3*qdaur - 31.2*qdatr + 0.007*qdaur*qdaur + 0.1*qdatr*qdatr + 0.3*qdaur*qdatr);
       if (per_core_ftq_block_num[proc_id] < UFTQ_MIN_FTQ_BLOCK_NUM)
         per_core_ftq_block_num[proc_id] = UFTQ_MIN_FTQ_BLOCK_NUM;
       else if (per_core_ftq_block_num[proc_id] > UFTQ_MAX_FTQ_BLOCK_NUM)

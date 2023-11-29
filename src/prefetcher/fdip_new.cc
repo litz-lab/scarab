@@ -234,7 +234,7 @@ void update_fdip() {
       cf_op_distance = 0.0;
     }
     else if (op->table_info->cf_type) {
-      low_confidence_cnt += 3 - op->bp_confidence; //3 is highest confidence
+      low_confidence_cnt += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
       cf_op_distance = 0.0;
       DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
     } else if (cf_op_distance >= FDIP_OFF_PATH_THRESHOLD) {

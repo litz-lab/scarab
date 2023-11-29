@@ -669,7 +669,7 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
     STAT_EVENT(fdip_proc_id, FDIP_UC_MISS);
     DEBUG(fdip_proc_id, "uc : do not emit a new prefetch for cl 0x%llx, uc_line_addr %llx", hashed_line_add, uc_line_addr);
     *emit_new_prefetch = FALSE;
-    per_core_last_cl_unuseful[fdip_proc_id] = hashed_line_addr;
+    per_core_last_cl_unuseful[fdip_proc_id] = line_addr;
   }
 }
 
@@ -790,13 +790,17 @@ static inline void detect_stream(uns proc_id, Addr uc_line_addr) {
 }
 
 static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* emit_new_prefetch) {
+  uint64_t hashed_line_addr = line_addr;
+  if (FDIP_GHIST_HASHING)
+    hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
+
   if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
     DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", low_confidence_cnt, fdip_off_path(fdip_proc_id));
     *emit_new_prefetch = TRUE;
     std::unordered_map<Addr, std::pair<Counter, Flag>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
     if (fdip_off_path(fdip_proc_id)) {
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
-      auto iter = cnt_useful->find(line_addr);
+      auto iter = cnt_useful->find(hashed_line_addr);
       if ( iter == cnt_useful->end())
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
     } else
@@ -806,7 +810,7 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
     else
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
-    void* useful = bloom_lookup(fdip_proc_id, line_addr);
+    void* useful = bloom_lookup(fdip_proc_id, hashed_line_addr);
     if (useful) {
       STAT_EVENT(fdip_proc_id, FDIP_BLOOM_HIT);
       *emit_new_prefetch = TRUE;

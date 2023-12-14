@@ -15,6 +15,7 @@ extern "C" {
 #include <unordered_map>
 #include <map>
 #include <algorithm>
+#include <deque>
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FDIP, ##args)
 
 decoupled_fe_iter* iter;
@@ -42,6 +43,10 @@ typedef enum UTILITY_PREF_POLICY_enum {
   PREF_OPT_FROM_THROTTLE_CNT,
   PREF_POL_END, // add a new policy above this line
 } Utility_Pref_Policy;
+
+/* Seniority-FTQ */
+// <Cl address, cycle count>
+std::vector<std::deque<std::pair<uns64, Counter>>> per_core_seniority_ftq;
 
 /* global variables for dynamic FTQ adjustment based on utility/timeliness study */
 std::vector<Utility_Timeliness_Info> per_core_utility_timeliness_info;
@@ -116,6 +121,7 @@ void alloc_mem_fdip(uns numCores) {
   if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
     per_core_last_cl_unuseful.resize(numCores);
     per_core_last_bbl_start_addr.resize(numCores);
+    per_core_seniority_ftq.resize(numCores);
   }
   if (FDIP_UC_SIZE)
     per_core_fdip_uc.resize(numCores);
@@ -222,9 +228,12 @@ void update_fdip() {
       break_reason = BR_MAX_FTQ_ENTRY_CYC;
       break;
     }
-    if ((FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) && !per_core_last_bbl_start_addr[fdip_proc_id]) {
-      per_core_last_bbl_start_addr[fdip_proc_id] = op->inst_info->addr;
-      DEBUG(fdip_proc_id, "init last_bbl_start_addr: %llx\n", per_core_last_bbl_start_addr[fdip_proc_id]);
+    if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
+      clear_old_seniority_ftq();
+      if (!per_core_last_bbl_start_addr[fdip_proc_id]) {
+        per_core_last_bbl_start_addr[fdip_proc_id] = op->inst_info->addr;
+        DEBUG(fdip_proc_id, "init last_bbl_start_addr: %llx\n", per_core_last_bbl_start_addr[fdip_proc_id]);
+      }
     }
     if (FDIP_BP_PERFECT_CONFIDENCE) {
       if (fdip_off_path(fdip_proc_id))
@@ -275,6 +284,8 @@ void update_fdip() {
         STAT_EVENT(ic_ref->proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ONPATH + op->off_path);
       }
 
+      if (!emit_new_prefetch && !line && !mem_req)
+        insert_pref_candidate_to_seniority_ftq(line_addr);
       if (emit_new_prefetch && !line && !mem_req && !mem_can_allocate_req_buffer(fdip_proc_id, MRT_FDIPPRF, FALSE)) {
         // This rarely happens if mem_req_buffer_entries and ramulator_readq_entries are big enough.
         // e.g. If FE_FTQ_BLOCK_NUM = 302, MEM_REQ_BUFFER_ENTRIES = 1024 and RAMULATOR_READQ_ENTRIES = 512 never cause this break.
@@ -568,10 +579,6 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
     } else
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
-  } else if (FDIP_TRAINING_SAMPLE_RATE && (cycle_count % FDIP_TRAINING_SAMPLE_RATE) == 0) {
-    // Use sampling mechanism to sometimes emit prefetches on the off path to enable training
-    STAT_EVENT(fdip_proc_id, FDIP_TRAINING_SAMPLE);
-    *emit_new_prefetch = TRUE;
   } else {
     if (FDIP_BP_CONFIDENCE) {
       if (fdip_off_path(fdip_proc_id))
@@ -632,9 +639,9 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
     }
   }
   if (*emit_new_prefetch) {
-    DEBUG(fdip_proc_id, "emit a new prefetch for cl 0x%llx", line_addr);
+    DEBUG(fdip_proc_id, "emit a new prefetch for cl 0x%llx\n", line_addr);
   } else {
-    DEBUG(fdip_proc_id, "do not emit a new prefetch for cl 0x%llx", line_addr);
+    DEBUG(fdip_proc_id, "do not emit a new prefetch for cl 0x%llx\n", line_addr);
     per_core_last_cl_unuseful[fdip_proc_id] = line_addr;
   }
 }
@@ -657,17 +664,13 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
     } else
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
-  } else if (FDIP_TRAINING_SAMPLE_RATE && (cycle_count % FDIP_TRAINING_SAMPLE_RATE) == 0) {
-    // Use sampling mechanism to sometimes emit prefetches on the off path to enable training
-    STAT_EVENT(fdip_proc_id, FDIP_TRAINING_SAMPLE);
-    *emit_new_prefetch = TRUE;
   } else if (useful) {
     STAT_EVENT(fdip_proc_id, FDIP_UC_HIT);
     *emit_new_prefetch = TRUE;
-    DEBUG(fdip_proc_id, "uc : emit a new prefetch for cl 0x%llx, uc_line_addr %llx, fdip_off_path: %d", hashed_line_add, uc_line_addr, fdip_off_path(fdip_proc_id) ? 1 : 0);
+    DEBUG(fdip_proc_id, "uc : emit a new prefetch for cl 0x%lx, uc_line_addr %llx, fdip_off_path: %d\n", hashed_line_addr, uc_line_addr, fdip_off_path(fdip_proc_id) ? 1 : 0);
   } else {
     STAT_EVENT(fdip_proc_id, FDIP_UC_MISS);
-    DEBUG(fdip_proc_id, "uc : do not emit a new prefetch for cl 0x%llx, uc_line_addr %llx", hashed_line_add, uc_line_addr);
+    DEBUG(fdip_proc_id, "uc : do not emit a new prefetch for cl 0x%lx, uc_line_addr %llx\n", hashed_line_addr, uc_line_addr);
     *emit_new_prefetch = FALSE;
     per_core_last_cl_unuseful[fdip_proc_id] = line_addr;
   }
@@ -815,10 +818,6 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
       STAT_EVENT(fdip_proc_id, FDIP_BLOOM_HIT);
       *emit_new_prefetch = TRUE;
       DEBUG(fdip_proc_id, "bloom : emit a new prefetch for cl 0x%llx off_path: %u", line_addr, fdip_off_path(fdip_proc_id) ? 1 : 0);
-    } else if (FDIP_TRAINING_SAMPLE_RATE && (cycle_count % FDIP_TRAINING_SAMPLE_RATE) == 0) {
-      // Use sampling mechanism to sometimes emit prefetches on the off path to enable training
-      STAT_EVENT(fdip_proc_id, FDIP_TRAINING_SAMPLE);
-      *emit_new_prefetch = TRUE;
     } else {
       STAT_EVENT(fdip_proc_id, FDIP_BLOOM_MISS);
       DEBUG(fdip_proc_id, "bloom : do not emit a new prefetch for cl 0x%llx", line_addr);
@@ -924,4 +923,40 @@ void inc_timeliness_info(uns proc_id, Flag mshr_hit) {
 
 void fdip_inc_cnt_btb_miss(uns proc_id) {
   per_core_cnt_btb_miss[proc_id]++;
+}
+
+Flag fdip_search_pref_candidate(Addr addr) {
+  auto seniority_ftq = &per_core_seniority_ftq[fdip_proc_id];
+  for (auto it = seniority_ftq->begin();
+       it != seniority_ftq->end(); ++it) {
+    if (it->first == addr)
+      return TRUE;
+  }
+  return FALSE;
+}
+
+void insert_pref_candidate_to_seniority_ftq(Addr line_addr) {
+  uint64_t hashed_line_addr = line_addr;
+  if (FDIP_GHIST_HASHING)
+    hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
+  if (per_core_seniority_ftq[fdip_proc_id].size() < FDIP_SENIORITY_FTQ_NUM) {
+    per_core_seniority_ftq[fdip_proc_id].push_back(std::make_pair(hashed_line_addr, cycle_count));
+    DEBUG(fdip_proc_id, "Insert %llx (hashed %lx) to seniority FTQ at cyc %llu seniority_ftq.size() : %ld\n", line_addr, hashed_line_addr, cycle_count, per_core_seniority_ftq[fdip_proc_id].size());
+  }
+}
+
+void clear_old_seniority_ftq() {
+  auto seniority_ftq = &per_core_seniority_ftq[fdip_proc_id];
+  Counter cnt_old = 0;
+  for (auto it = seniority_ftq->begin();
+       it != seniority_ftq->end(); ++it) {
+    DEBUG(fdip_proc_id, "Seniority FTQ entry %llx, %llu, cycle_count - FDIP_SENIORITY_FTQ_HOLD_CYC: %lld\n", it->first, it->second, cycle_count - FDIP_SENIORITY_FTQ_HOLD_CYC);
+    if (cycle_count <= FDIP_SENIORITY_FTQ_HOLD_CYC)
+      break;
+    if ((cycle_count > FDIP_SENIORITY_FTQ_HOLD_CYC) && (it->second >= cycle_count - FDIP_SENIORITY_FTQ_HOLD_CYC))
+      break;
+    cnt_old++;
+  }
+  DEBUG(fdip_proc_id, "Clear %llu entries among %ld at cyc %llu\n", cnt_old, seniority_ftq->size(), cycle_count);
+  seniority_ftq->erase(seniority_ftq->begin(), seniority_ftq->begin() + cnt_old);
 }

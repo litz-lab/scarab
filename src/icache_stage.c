@@ -1007,8 +1007,9 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
   if(!line->read_count[0]) { // only consider the first hit
     if(line->FDIP_prefetch) {
       if(!icache_off_path()) {
-        if(FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch >= FDIP_OFFPATH : TRUE) {
- 	  uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, line->ghist) : ic->line_addr;
+ 	uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, line->ghist) : ic->line_addr;
+        if((FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch >= FDIP_OFFPATH : TRUE) &&
+	    (FDIP_SENIORITY_FTQ_NUM ? fdip_search_pref_candidate(hashed_addr) : TRUE)) {
 	  inc_cnt_useful(ic->proc_id, hashed_addr, FALSE);
           inc_cnt_useful_signed(ic->proc_id, hashed_addr);
           update_useful_lines_uc(ic->proc_id, hashed_addr);
@@ -1124,8 +1125,10 @@ void log_stats_mshr_hit(Addr line_addr) {
                                            &queue_entry, &ramulator_match);
   if (req && !req->cyc_hit_by_demand_load) {
     if (mem_req_is_type(req, MRT_FDIPPRF)) {
-      if (!icache_off_path() && (FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? req->fdip_pref_off_path >= FDIP_OFFPATH : TRUE)) {
-	uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, req->ghist) : ic->line_addr;
+      uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, req->ghist) : ic->line_addr;
+      if (!icache_off_path() &&
+           (FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? req->fdip_pref_off_path >= FDIP_OFFPATH : TRUE) &&
+	   (FDIP_SENIORITY_FTQ_NUM ? fdip_search_pref_candidate(hashed_addr) : TRUE)) {
 	inc_cnt_useful(ic->proc_id, hashed_addr, FALSE);
         inc_cnt_useful_signed(ic->proc_id, hashed_addr);
         update_useful_lines_uc(ic->proc_id, hashed_addr);
@@ -1146,13 +1149,14 @@ void log_stats_mshr_hit(Addr line_addr) {
   imiss_reason = get_miss_reason(ic->proc_id, line_addr);
   DEBUG_FDIP(ic->proc_id, "miss reason: %d, req: %d\n", imiss_reason, req? 1:0);
   if (!req) {
+    uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, g_bp_data->global_hist) : ic->line_addr;
     assert_not_trained(ic->proc_id, ic->line_addr, imiss_reason);
     if (!icache_off_path()) {
       DEBUG_FDIP(ic->proc_id, "learn missed line %llx\n", ic->line_addr);
-      inc_cnt_useful(ic->proc_id, ic->line_addr, TRUE);
-      inc_cnt_useful_signed(ic->proc_id, ic->line_addr);
-      update_useful_lines_uc(ic->proc_id, ic->line_addr);
-      update_useful_lines_bloom_filter(ic->proc_id, ic->line_addr);
+      inc_cnt_useful(ic->proc_id, hashed_addr, TRUE);
+      inc_cnt_useful_signed(ic->proc_id, hashed_addr);
+      update_useful_lines_uc(ic->proc_id, hashed_addr);
+      update_useful_lines_bloom_filter(ic->proc_id, hashed_addr);
       inc_utility_info(ic->proc_id, TRUE);
       if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
 	STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_IFETCH);

@@ -39,6 +39,9 @@ extern "C" {
   void inc_utility_info(uns proc_id, Flag useful);
   void inc_timeliness_info(uns proc_id, Flag mshr_hit);
   void fdip_inc_cnt_btb_miss(uns proc_id);
+  Flag fdip_search_pref_candidate(Addr addr);
+  void insert_pref_candidate_to_seniority_ftq(Addr line_addr);
+  void clear_old_seniority_ftq();
   
 #ifdef __cplusplus
 }

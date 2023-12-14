@@ -235,22 +235,24 @@ void update_fdip() {
         DEBUG(fdip_proc_id, "init last_bbl_start_addr: %llx\n", per_core_last_bbl_start_addr[fdip_proc_id]);
       }
     }
-    if (FDIP_BP_PERFECT_CONFIDENCE) {
-      if (fdip_off_path(fdip_proc_id))
-	low_confidence_cnt = ~0U;
-      if(low_confidence_cnt == ~0U)
-	ASSERT(0,fdip_off_path(fdip_proc_id));
-      cf_op_distance = 0.0;
-    }
-    else if (op->table_info->cf_type) {
-      low_confidence_cnt += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
-      cf_op_distance = 0.0;
-      DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
-    } else if (cf_op_distance >= FDIP_OFF_PATH_THRESHOLD) {
-      low_confidence_cnt += FDIP_OFF_PATH_CONF_INC + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id];
-      cf_op_distance = 0.0;
-    } else {
-      cf_op_distance += (1.0+(double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]);
+    if (FDIP_BP_CONFIDENCE) {
+      if (FDIP_BP_PERFECT_CONFIDENCE) {
+        if (fdip_off_path(fdip_proc_id))
+          low_confidence_cnt = ~0U;
+        if(low_confidence_cnt == ~0U)
+          ASSERT(0,fdip_off_path(fdip_proc_id));
+        cf_op_distance = 0.0;
+      }
+      else if (op->table_info->cf_type) {
+        low_confidence_cnt += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
+        cf_op_distance = 0.0;
+        DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
+      } else if (cf_op_distance >= FDIP_OFF_PATH_THRESHOLD) {
+        low_confidence_cnt += FDIP_OFF_PATH_CONF_INC + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id];
+        cf_op_distance = 0.0;
+      } else {
+        cf_op_distance += (1.0+(double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]);
+      }
     }
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;

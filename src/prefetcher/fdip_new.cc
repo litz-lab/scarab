@@ -123,6 +123,8 @@ void alloc_mem_fdip(uns numCores) {
     per_core_last_cl_unuseful.resize(numCores);
     per_core_last_bbl_start_addr.resize(numCores);
     per_core_seniority_ftq.resize(numCores);
+  } else {
+    ASSERT(fdip_proc_id, !FDIP_SENIORITY_FTQ_NUM);
   }
   if (FDIP_UC_SIZE) {
     ASSERT(fdip_proc_id, FDIP_UTILITY_PREF_POLICY != PREF_OPT_FROM_UNUSEFUL_SET);

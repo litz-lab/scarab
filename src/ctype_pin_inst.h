@@ -129,9 +129,8 @@ typedef struct ctype_pin_inst_struct {
 
   char pin_iclass[16];
 
-#ifdef ENABLE_PT_MEMTRACE
-  Flag last_inst_from_trace;
-#endif
+  // used by MEMTRACE frontend to flag the last inst from the trace
+  uint8_t last_inst_from_trace : 1;
 } __attribute__((packed)) ctype_pin_inst;
 
 typedef ctype_pin_inst compressed_op;

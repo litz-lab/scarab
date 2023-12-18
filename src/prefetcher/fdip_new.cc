@@ -120,6 +120,7 @@ void alloc_mem_fdip(uns numCores) {
         FDIP_UTILITY_PREF_POLICY < Utility_Pref_Policy::PREF_POL_END);
 
   if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
+    ASSERT(fdip_proc_id, FDIP_SENIORITY_FTQ_NUM);
     per_core_last_cl_unuseful.resize(numCores);
     per_core_last_bbl_start_addr.resize(numCores);
     per_core_seniority_ftq.resize(numCores);
@@ -998,6 +999,8 @@ Flag fdip_search_pref_candidate(Addr addr) {
 }
 
 void insert_pref_candidate_to_seniority_ftq(Addr line_addr) {
+  if (!FDIP_SENIORITY_FTQ_NUM)
+    return;
   uint64_t hashed_line_addr = line_addr;
   if (FDIP_GHIST_HASHING)
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
@@ -1008,6 +1011,8 @@ void insert_pref_candidate_to_seniority_ftq(Addr line_addr) {
 }
 
 void clear_old_seniority_ftq() {
+  if (!FDIP_SENIORITY_FTQ_NUM)
+    return;
   auto seniority_ftq = &per_core_seniority_ftq[fdip_proc_id];
   Counter cnt_old = 0;
   for (auto it = seniority_ftq->begin();

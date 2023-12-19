@@ -57,6 +57,8 @@ struct InstInfo {
 
   // used by MEMTRACE frontend to flag the last inst from the trace
   bool last_inst_from_trace;
+  // used by MEMTRACE frontend to distinguish fetched/non-fetched inst
+  bool fetched_instruction;
 };
 
 #define XED_OP_NAME(ins, op) \

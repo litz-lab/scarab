@@ -180,34 +180,34 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
           } else {
             complete = true;
           }
+        } else if(mt_ref_.instr.type == dynamorio::drmemtrace::TRACE_TYPE_INSTR_NO_FETCH) {
+          // a repeated rep
+          bool is_rep = std::get<MAP_REP>(xed_map_.at(_prior->pc));
+          assert(is_rep && ((uint32_t)mt_ref_.instr.pid == _prior->pid) &&
+                ((uint32_t)mt_ref_.instr.tid == _prior->tid) &&
+                (mt_ref_.instr.addr == _prior->pc));
+          // do not need to re-process
+          *_info = *_prior;
+          // flag this instruction as non-fetched
+          _info->fetched_instruction = false;
+          // mt_mem_ops_ set by the first rep occurance
+          if(mt_mem_ops_ > 0) {
+            mt_state_ = MTState::MEM1;
+          } else {
+            complete = true;
+          }
         } else if(typeIsMem(mt_ref_.data.type)) {
-          // Skip flush and thread exit types, patch rep instructions, and
+          // Skip flush and thread exit types and
           // silently ignore memory operands of unknown instructions
           if(!_prior->unknown_type) {
-            bool is_rep = std::get<MAP_REP>(xed_map_.at(_prior->pc));
-            if(is_rep && ((uint32_t)mt_ref_.data.pid == _prior->pid) &&
-               ((uint32_t)mt_ref_.data.tid == _prior->tid) &&
-               (mt_ref_.data.pc == _prior->pc)) {
-              *_info             = *_prior;
-              _info->mem_addr[0] = mt_ref_.data.addr;
-              _info->mem_used[0] = true;
-              if(mt_mem_ops_ > 1) {
-                mt_state_ = MTState::MEM2;
-              } else {
-                _info->mem_addr[1] = 0;
-                _info->mem_used[1] = false;
-                complete           = true;
-              }
-            } else {
-              if(skipped_ == 0) {
-                warn("Stray memory record detected at seq. %lu: PC: 0x%lx, "
-                     "PID: %lu, TID: %lu, Addr: 0x%lx. "
-                     "Suppressing further messages.\n",
-                     mt_seq_, mt_ref_.data.pc, mt_ref_.data.pid,
-                     mt_ref_.data.tid, mt_ref_.data.addr);
-              }
-              skipped_++;
+            if(skipped_ == 0) {
+              warn("Stray memory record detected at seq. %lu: PC: 0x%lx, "
+                    "PID: %lu, TID: %lu, Addr: 0x%lx. "
+                    "Suppressing further messages.\n",
+                    mt_seq_, mt_ref_.data.pc, mt_ref_.data.pid,
+                    mt_ref_.data.tid, mt_ref_.data.addr);
             }
+            skipped_++;
           }
         }
         break;
@@ -352,6 +352,8 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   _info->unknown_type = unknown_type;
   // correct this later at getNextInstruction if it is the last instruction
   _info->last_inst_from_trace = false;
+  // non-fetched instructions will be set within FSM
+  _info->fetched_instruction = true;
 }
 
 bool TraceReaderMemtrace::typeIsMem(dynamorio::drmemtrace::trace_type_t _type) {

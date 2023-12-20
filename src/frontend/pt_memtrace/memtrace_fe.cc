@@ -77,6 +77,7 @@ void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
   info->branch_target         = insi->target;
   info->inst_uid              = ins_id;
   info->last_inst_from_trace  = insi->last_inst_from_trace;
+  info->fetched_instruction   = insi->fetched_instruction;
 
 #ifdef PRINT_INSTRUCTION_INFO
   std::cout << std::hex << info->instruction_addr << " Next "

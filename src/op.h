@@ -178,6 +178,7 @@ struct Op_struct {
   uns     thread_id;   // id number for the thread to which this op belongs
   Flag    bom;         // begining of macro instruction when we use op as a uop
   Flag    eom;         // end of macro instruction when we use op as a uop
+  Flag    fetched_instruction;  // is this op fetched or a rep op?
   Counter op_num;      // op number
   Counter unique_num;  // unique number for each instance of an op (not reset on
                        // recovery)

@@ -84,6 +84,7 @@ Counter  unique_count;          /* the global unique op counter */
 Counter* unique_count_per_core; /* the unique op count per core */
 Counter* op_count;              /* the global op counter per core*/
 Counter* inst_count; /* the global instruction counter - retired per core */
+Counter* inst_count_fetched; /* the global FETCHED instruction counter - retired per core */
 Counter* uop_count;  /* the global uop counter - retired per core*/
 Counter  cycle_count = 0; /* the global cycle counter */
 Counter  sim_time    = 0; /* the global time counter */
@@ -487,6 +488,8 @@ void init_global_counter() {
   memset(op_count, 0, sizeof(Counter) * NUM_CORES);
   inst_count = (Counter*)malloc(sizeof(Counter) * NUM_CORES);
   memset(inst_count, 0, sizeof(Counter) * NUM_CORES);
+  inst_count_fetched = (Counter*)malloc(sizeof(Counter) * NUM_CORES);
+  memset(inst_count_fetched, 0, sizeof(Counter) * NUM_CORES);
   uop_count = (Counter*)malloc(sizeof(Counter) * NUM_CORES);
   ;
   memset(uop_count, 0, sizeof(Counter) * NUM_CORES);

@@ -131,6 +131,8 @@ typedef struct ctype_pin_inst_struct {
 
   // used by MEMTRACE frontend to flag the last inst from the trace
   uint8_t last_inst_from_trace : 1;
+  // used by MEMTRACE frontend to distinguish fetched/non-fetched inst
+  uint8_t fetched_instruction : 1;
 } __attribute__((packed)) ctype_pin_inst;
 
 typedef ctype_pin_inst compressed_op;

@@ -56,6 +56,13 @@ typedef enum Repl_Policy_enum {
   REPL_PARTITION,     /* Based on the partition*/
   REPL_RESTEER,       /* Prioritize the instr following a resteered branch or fetch barrier */
   REPL_STICKY_PRIORITY_LINES, /* Prioritize lines tagged with priority bit. */
+
+  REPL_VOID,            /* void policy for loop ending and policy seperation */
+  REPL_LRU_REF,         /* least-recently-used replacement */
+  REPL_SRRIP,           /* static re-reference interval prediction */
+  REPL_BRRIP,           /* bimodal re-reference interval prediction */
+  REPL_DRRIP,           /* dynamic re-reference interval prediction */
+
   NUM_REPL
 } Repl_Policy;
 
@@ -71,6 +78,8 @@ typedef struct Cache_Entry_struct {
   Flag    dirty; /* Dirty bit should have been here, however this is used only in
                  warmup now */
   Addr pw_start_addr; /* for uop cache: start addr of prediction window */
+
+  uns8    reference_val;    /* for re-reference replacement policy */
 } Cache_Entry;
 
 // DO NOT CHANGE THIS ORDER
@@ -126,6 +135,29 @@ typedef struct Cache_struct {
   Flag     tag_incl_offset;        /* The uop cache is byte-addressable, so the tag includes offset bits as well */
 } Cache;
 
+/**************************************************************************************/
+/* Strategy Design */
+struct repl_policy_func {
+  Repl_Policy repl_policy_type;
+
+  void (*action_init)(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
+  void (*action_repl)(Cache*, Cache_Entry*, uns8, Addr, Addr*, Addr*);
+
+  void (*update_hit)(Cache*, uns, uns);
+  void (*update_insert)(Cache*, uns8, uns, uns);
+  Cache_Entry *(*update_evict)(Cache*, uns8, uns, uns*);
+};
+
+/* Driven Table */
+extern struct repl_policy_func repl_policy_func_table[NUM_REPL];
+
+/* Strategy Function */
+void init_cache_strategy(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
+void *cache_insert_strategy(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr);
+void *cache_access_strategy(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl);
+Cache_Entry* cache_evict_strategy(Cache* cache, uns8 proc_id, uns set, uns* way);
+
+const static Flag CACHE_DEBUG_ENABLE = FALSE; // To be Changed into DEBUG_PARA
 
 /**************************************************************************************/
 /* prototypes */

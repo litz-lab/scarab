@@ -133,6 +133,11 @@ typedef struct Cache_struct {
   Counter* lru_time_core;          /* For cache partitioning */
 
   Flag     tag_incl_offset;        /* The uop cache is byte-addressable, so the tag includes offset bits as well */
+
+  // Dedicated set map
+  uns*     dedicated_policy_set;
+  Counter* miss_count;             /* For sampling */
+  Counter  bimodal_count;
 } Cache;
 
 /**************************************************************************************/

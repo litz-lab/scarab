@@ -1573,10 +1573,148 @@ Cache_Entry* srrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way)
 }
 
 /**************************************************************************************/
+/* BRRIP */
+const static uns BRRIP_BIMODAL_PARA = 32;
+const static uns BRRIP_BIMODAL_SRAND_NUM = 0;
+void brrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc,
+  uns line_size, uns data_size, Repl_Policy repl_policy);
+void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way);
+
+void brrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc,
+  uns line_size, uns data_size, Repl_Policy repl_policy)
+{
+  general_action_init(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
+
+  // Counter Impl
+  cache->bimodal_count = 0;
+
+  // Pseudo-Random Impl
+  srand(BRRIP_BIMODAL_SRAND_NUM);
+}
+
+void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
+{
+  Flag bimodal_para;
+
+  // insertion: most in distant future
+  // Counter Impl
+  /*
+  cache->bimodal_count = (cache->bimodal_count + 1) % BRRIP_BIMODAL_PARA;
+  bimodal_para = cache->bimodal_count == 0 ? TRUE : FALSE;
+  */
+
+  // Pseudo-Random Impl
+  bimodal_para = rand() % BRRIP_BIMODAL_PARA <= BRRIP_BIMODAL_PARA - 2 ? TRUE : FALSE;
+
+  if (bimodal_para) {
+    // insertion in distant future
+    cache->entries[set][way].reference_val = RRIP_DISTANT_VAL;
+    if (CACHE_DEBUG_ENABLE)
+        printf("BRRIP insert in distant: %d, %d\n", bimodal_para, cache->entries[set][way].reference_val);
+  } else {
+    // insertion in long-interval future
+    cache->entries[set][way].reference_val = RRIP_DISTANT_VAL - 1;
+    if (CACHE_DEBUG_ENABLE)
+        printf("BRRIP insert in long-interval: %d, %d\n", bimodal_para, cache->entries[set][way].reference_val);
+  }
+
+  cache_debug_print_set(cache, set, way, CACHE_EVENT_INSERT);
+}
+
+/**************************************************************************************/
+/* DRRIP */
+const static int DRRIP_DEDICATED_BIMODAL = 1;
+const static int DRRIP_DEDICATED_STATIC = 2;
+
+void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc,
+  uns line_size, uns data_size, Repl_Policy repl_policy);
+void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way);
+Cache_Entry* drrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way);
+
+void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc,
+  uns line_size, uns data_size, Repl_Policy repl_policy)
+{
+  int ii;
+  int shift_dedicated = 0;
+  uns num_sets  = cache_size / line_size / assoc;
+
+  brrip_action_init(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
+
+  // init sample
+  cache->miss_count = (Counter*)malloc(sizeof(Counter) * num_sets);
+  for (ii = 0; ii < num_sets; ii++)
+    cache->miss_count[ii] = 0;
+
+  // init dedicated
+  cache->dedicated_policy_set = (uns*)malloc(sizeof(uns) * num_sets);
+  for (ii = 0; ii < num_sets; ii++) {
+    cache->dedicated_policy_set[ii] = 0; // for dueling
+  }
+  for (ii = 0; ii + 4 <= num_sets; ii = ii + 4) {
+    cache->dedicated_policy_set[ii + shift_dedicated % 4] = DRRIP_DEDICATED_BIMODAL;
+    cache->dedicated_policy_set[ii + (shift_dedicated + 1) % 4] = DRRIP_DEDICATED_STATIC;
+    shift_dedicated = (shift_dedicated + 1) % 4;
+  }
+}
+
+void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
+{
+  int ii;
+  Counter miss_in_brrip = 0;
+  Counter miss_in_srrip = 0;
+  Flag psel;
+
+  // dedicated set
+  if (cache->dedicated_policy_set[set]) {
+    if (cache->dedicated_policy_set[set] == DRRIP_DEDICATED_BIMODAL)
+      brrip_update_insert(cache, proc_id, set, way);
+    else
+      srrip_update_insert(cache, proc_id, set, way);
+
+    if (CACHE_DEBUG_ENABLE)
+      printf("DRRIP insert dedicated: 0x%x, %d\n\n", set, cache->dedicated_policy_set[set]);
+    return;
+  }
+
+  // set dueling
+  for (ii = 0; ii < cache->num_sets; ii++) {
+    if (!cache->dedicated_policy_set[ii])
+      continue;
+    // sampling
+    if (cache->dedicated_policy_set[ii] == DRRIP_DEDICATED_BIMODAL)
+      miss_in_brrip += cache->miss_count[ii];
+    else
+      miss_in_srrip += cache->miss_count[ii];
+  }
+  psel = miss_in_brrip < miss_in_srrip ? TRUE : FALSE;
+
+  // do insertion
+  if (psel)
+    brrip_update_insert(cache, proc_id, set, way);
+  else
+    srrip_update_insert(cache, proc_id, set, way);
+
+  if (CACHE_DEBUG_ENABLE)
+    printf("DRRIP insert dueling: 0x%x, %d, 0x%llx, 0x%llx\n\n", set, psel, miss_in_brrip, miss_in_srrip);
+}
+
+Cache_Entry* drrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way)
+{
+  cache->miss_count[set]++;
+
+  if (CACHE_DEBUG_ENABLE)
+    printf("DRRIP evict count: 0x%x, 0x%llx\n", set, cache->miss_count[set]);
+
+  return srrip_update_evict(cache, proc_id, set, way);
+}
+
+/**************************************************************************************/
 /* Driven Table */
 struct repl_policy_func repl_policy_func_table[NUM_REPL] = {
   { REPL_LRU_REF, general_action_init,  general_action_repl,  lru_update_hit,    lru_update_insert,    lru_update_evict    },
   { REPL_SRRIP,   general_action_init,  general_action_repl,  srrip_update_hit,  srrip_update_insert,  srrip_update_evict  },
+  { REPL_BRRIP,   brrip_action_init,    general_action_repl,  srrip_update_hit,  brrip_update_insert,  srrip_update_evict  },
+  { REPL_DRRIP,   drrip_action_init,    general_action_repl,  srrip_update_hit,  drrip_update_insert,  drrip_update_evict  },
   { REPL_VOID,    NULL,                 NULL,                 NULL,              NULL,                 NULL                },
 };
 /**************************************************************************************/

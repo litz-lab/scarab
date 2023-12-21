@@ -197,19 +197,23 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
   last_operating_mode = operating_mode;
   /* End Bookkeeping */
 
-  Counter inst_diff = inst_count[proc_id] -
+  Counter inst_count_to_use = USE_FETCHED_COUNT ?
+                              inst_count_fetched[proc_id] : inst_count[proc_id];
+
+  Counter inst_diff = inst_count_to_use -
                       heartbeat_checked_inst_count;  // FIXME cmp
   Counter rounded_interval = HEARTBEAT_INTERVAL;
 
   if (PERIODIC_DUMP) {
-    inst_diff = inst_count[proc_id] - rounded_interval * period_ID;
+    inst_diff = inst_count_to_use - rounded_interval * period_ID;
   }
 
   /* dump warmup stats */
-  if (FULL_WARMUP && !warmup_dump_done[proc_id] && inst_count[proc_id] >= FULL_WARMUP) {
+  if (FULL_WARMUP && !warmup_dump_done[proc_id] && inst_count_to_use >= FULL_WARMUP) {
     ASSERT(proc_id, !PERIODIC_DUMP);
     dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
     period_last_cycle_count = cycle_count;
+    // this number is used to calcute IPC, so it uses inst_count always
     period_last_inst_count[proc_id] = inst_count[proc_id];
     warmup_dump_done[proc_id] = TRUE;
   }
@@ -219,11 +223,12 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
     if (PERIODIC_DUMP) {
       dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
       period_last_cycle_count = cycle_count;
+    // this number is used to calcute IPC, so it uses inst_count always
       period_last_inst_count[proc_id] = inst_count[proc_id];
       period_ID ++;
     }
 
-    heartbeat_checked_inst_count = inst_count[proc_id];
+    heartbeat_checked_inst_count = inst_count_to_use;
     double progress_frac         = 0.0;
     if(!final) {
       ASSERT(0, operating_mode == SIMULATION_MODE);
@@ -237,8 +242,10 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
     time_t  cur_time         = time(NULL);
     double  cum_ipc          = (double)inst_count[proc_id] / cycle_count;
     Counter total_inst_count = 0;
-    for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++)
-      total_inst_count += inst_count[proc_id];
+    for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+      total_inst_count += USE_FETCHED_COUNT ?
+                          inst_count_fetched[proc_id] : inst_count[proc_id];
+    }
 #if HEARTBEAT_PRINT_CPS
     double int_khz = (double)HEARTBEAT_INTERVAL /
                      (cur_time - heartbeat_last_time) / 1000;
@@ -327,8 +334,10 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
     } else if(!opt2_in_use() || opt2_is_leader()) {
       fprintf(mystdout, "** Heartbeat: %3d%% -- { ",
               (int)(progress_frac * 100.0));
-      for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++)
-        fprintf(mystdout, "%lld ", inst_count[proc_id]);
+      for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+        fprintf(mystdout, "%lld ", USE_FETCHED_COUNT ?
+                                  inst_count_fetched[proc_id] : inst_count[proc_id]);
+      }
       fprintf(mystdout, "} -- %.2f KIPS (%.2f KIPS)\n", int_khz, cum_khz);
       fflush(mystdout);
       heartbeat_last_time        = cur_time;
@@ -405,9 +414,11 @@ static inline double sim_progress(void) {
 
   double inst_limit_progress = 1.0;
   for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+    Counter inst_count_to_use = USE_FETCHED_COUNT ?
+                                inst_count_fetched[proc_id] : inst_count[proc_id];
     inst_limit_progress = MIN2(
       inst_limit_progress,
-      (double)inst_count[proc_id] / (double)inst_limit[proc_id]);
+      (double)inst_count_to_use / (double)inst_limit[proc_id]);
   }
 
   return MAX2(sim_limit_progress, inst_limit_progress);
@@ -778,7 +789,10 @@ void full_sim() {
     any_sim_done = FALSE;
     for(proc_id = 0; proc_id < NUM_CORES; proc_id++) {
       Flag reachedInstLimit = (INST_LIMIT &&
-                               inst_count[proc_id] >= inst_limit[proc_id]);
+                               (USE_FETCHED_COUNT ?
+                                inst_count_fetched[proc_id] >= inst_limit[proc_id] :
+                                inst_count[proc_id] >= inst_limit[proc_id])
+                               );
       if(SIM_MODEL != DUMB_MODEL && DUMB_CORE_ON && DUMB_CORE == proc_id)
         continue;
       if(!sim_done[proc_id] && (retired_exit[proc_id] || reachedInstLimit)) {

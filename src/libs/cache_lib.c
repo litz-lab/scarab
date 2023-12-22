@@ -242,8 +242,7 @@ void* cache_access(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl) {
         }
         cache->num_demand_access++;
         update_repl_policy(cache, line, set, ii, FALSE);
-        if (CACHE_DEBUG_ENABLE)
-          printf("(%s, %d) [0x%x, 0x%x]: in access\n\n", cache->name, cache->repl_policy, cache->num_sets, cache->assoc);
+        DEBUG(0, "(%s, %d) [0x%x, 0x%x]: in access\n\n", cache->name, cache->repl_policy, cache->num_sets, cache->assoc);
       }
 
       line_data = line->data;
@@ -348,8 +347,7 @@ void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr,
   switch(insert_repl_policy) {
     case INSERT_REPL_DEFAULT:
       update_repl_policy(cache, new_line, set, repl_index, TRUE);
-      if (CACHE_DEBUG_ENABLE)
-          printf("(%s, %d) [0x%x, 0x%x]: in insert\n\n", cache->name, cache->repl_policy, cache->num_sets, cache->assoc);
+      DEBUG(0, "(%s, %d) [0x%x, 0x%x]: in insert\n\n", cache->name, cache->repl_policy, cache->num_sets, cache->assoc);
       break;
     case INSERT_REPL_LRU:
       new_line->last_access_time = 123;  // Just choose a small number
@@ -1219,11 +1217,27 @@ uns get_partition_allocated(Cache* cache, uns8 proc_id) {
 }
 
 /***************************************************************************************
- * File         : libs/cache_lib.c (Part of Strategy Pattern Design)
- * Author       : Y. Zhao
- * Date         : 12/2023
- * Description  : Cache Replacement Policy Strategy
- ***************************************************************************************/
+ * Driven Table:
+ *  Cache Replacement Policy Strategy
+ *    Action:
+ *      Change cache line
+ *    Update:
+ *      Only update the value of reference and prediction
+ *
+ * Design:
+ * = Hit                        {-> update_hit()}
+ * ----- do aging               [reference value]
+ * ----- do promotion           [reference value]
+ * ----- do prediction revise   [prediction value]
+ * = Miss
+ * === Eviction                 {-> update_evict()}
+ * ----- do aging               [reference value]
+ * ----- do prediction revise   [prediction value]
+ * === Insertion                {-> update_insert()}
+ * ----- do aging               [reference value]
+ * ----- do promotion           [reference value]
+ * ----- do prediction revise   [prediction value]
+***************************************************************************************/
 
 /**************************************************************************************/
 /* Common Func */
@@ -1259,15 +1273,17 @@ static inline void cache_debug_print_set(Cache* cache, uns set, uns way, int eve
   if (!CACHE_DEBUG_ENABLE)
     return;
 
-  printf("Cache: (%s, %d) [0x%x, 0x%x]\n", cache->name, cache->repl_policy, cache->num_sets, cache->assoc);
+  DEBUG(0, "Cache: (%s, %d) [0x%x, 0x%x]\n", cache->name, cache->repl_policy, cache->num_sets, cache->assoc);
 
   for(ii = 0; ii < cache->assoc; ii++) {
     Cache_Entry* line = &cache->entries[set][ii];
-    printf("(%d <- 0x%x) [0x%x, 0x%x] : {0x%llx, 0x%x, 0x%llx, 0x%x}\n",
+    if (line == NULL)
+      continue;
+    DEBUG(0, "(%d <- 0x%x) [0x%x, 0x%x] : {0x%llx, 0x%x, 0x%llx, 0x%x}\n",
       event, way, set, ii, line->tag, line->valid, line->last_access_time, line->reference_val);
   }
 
-  printf("\n");
+  DEBUG(0, "\n");
 }
 
 /**************************************************************************************/
@@ -1306,8 +1322,7 @@ void *cache_insert_strategy(Cache* cache, uns8 proc_id, Addr addr, Addr* line_ad
   if (policy == -1)
     return NULL;
 
-  if (CACHE_DEBUG_ENABLE)
-    printf("%s, %d: Insert Strategy\n", cache->name, cache->repl_policy);
+  DEBUG(0, "%s, %d: Insert Strategy\n", cache->name, cache->repl_policy);
 
   // update_evict -> action_repl -> update_insert
   new_line = repl_policy_func_table[policy].update_evict(cache, proc_id, set, &repl_index); // External func also directly call it
@@ -1337,8 +1352,7 @@ void *cache_access_strategy(Cache* cache, Addr addr, Addr* line_addr, Flag updat
   if (policy == -1)
     return NULL;
 
-  if (CACHE_DEBUG_ENABLE)
-    printf("%s, %d: Access Strategy\n", cache->name, cache->repl_policy);
+  DEBUG(0, "%s, %d: Access Strategy\n", cache->name, cache->repl_policy);
 
   for(ii = 0; ii < cache->assoc; ii++) {
     Cache_Entry* line = &cache->entries[set][ii];
@@ -1367,8 +1381,7 @@ Cache_Entry* cache_evict_strategy(Cache* cache, uns8 proc_id, uns set, uns* way)
   if (policy == -1)
     return NULL;
 
-  if (CACHE_DEBUG_ENABLE)
-    printf("%s, %d: Evict Strategy\n", cache->name, cache->repl_policy);
+  DEBUG(0, "%s, %d: Evict Strategy\n", cache->name, cache->repl_policy);
 
   new_line = repl_policy_func_table[policy].update_evict(cache, proc_id, set, way);
   return new_line;
@@ -1539,7 +1552,6 @@ void srrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
 Cache_Entry* srrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way)
 {
   int ii;
-  int evict_line;
   Flag found = FALSE;
 
   while (!found) {
@@ -1547,12 +1559,12 @@ Cache_Entry* srrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way)
     for (ii = 0; ii < cache->assoc; ii++) {
       Cache_Entry* entry = &cache->entries[set][ii];
       if (!entry->valid) {
-        evict_line = ii;
+        *way = ii;
         found = TRUE;
         break;
       }
       if (entry->reference_val == RRIP_DISTANT_VAL) {
-        evict_line  = ii;
+        *way  = ii;
         found = TRUE;
         break;
       }
@@ -1565,11 +1577,8 @@ Cache_Entry* srrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way)
       cache->entries[set][ii].reference_val++;
   }
 
-  *way = evict_line;
-
   cache_debug_print_set(cache, set, *way, CACHE_EVENT_EVICT);
-
-  return &cache->entries[set][evict_line];
+  return &cache->entries[set][*way];
 }
 
 /**************************************************************************************/
@@ -1609,13 +1618,11 @@ void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
   if (bimodal_para) {
     // insertion in distant future
     cache->entries[set][way].reference_val = RRIP_DISTANT_VAL;
-    if (CACHE_DEBUG_ENABLE)
-        printf("BRRIP insert in distant: %d, %d\n", bimodal_para, cache->entries[set][way].reference_val);
+    DEBUG(0, "BRRIP insert in distant: %d, %d\n", bimodal_para, cache->entries[set][way].reference_val);
   } else {
     // insertion in long-interval future
     cache->entries[set][way].reference_val = RRIP_DISTANT_VAL - 1;
-    if (CACHE_DEBUG_ENABLE)
-        printf("BRRIP insert in long-interval: %d, %d\n", bimodal_para, cache->entries[set][way].reference_val);
+    DEBUG(0, "BRRIP insert in long-interval: %d, %d\n", bimodal_para, cache->entries[set][way].reference_val);
   }
 
   cache_debug_print_set(cache, set, way, CACHE_EVENT_INSERT);
@@ -1671,8 +1678,7 @@ void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
     else
       srrip_update_insert(cache, proc_id, set, way);
 
-    if (CACHE_DEBUG_ENABLE)
-      printf("DRRIP insert dedicated: 0x%x, %d\n\n", set, cache->dedicated_policy_set[set]);
+    DEBUG(0, "DRRIP insert dedicated: 0x%x, %d\n\n", set, cache->dedicated_policy_set[set]);
     return;
   }
 
@@ -1694,17 +1700,13 @@ void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
   else
     srrip_update_insert(cache, proc_id, set, way);
 
-  if (CACHE_DEBUG_ENABLE)
-    printf("DRRIP insert dueling: 0x%x, %d, 0x%llx, 0x%llx\n\n", set, psel, miss_in_brrip, miss_in_srrip);
+  DEBUG(0, "DRRIP insert dueling: 0x%x, %d, 0x%llx, 0x%llx\n\n", set, psel, miss_in_brrip, miss_in_srrip);
 }
 
 Cache_Entry* drrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way)
 {
   cache->miss_count[set]++;
-
-  if (CACHE_DEBUG_ENABLE)
-    printf("DRRIP evict count: 0x%x, 0x%llx\n", set, cache->miss_count[set]);
-
+  DEBUG(0, "DRRIP evict count: 0x%x, 0x%llx\n", set, cache->miss_count[set]);
   return srrip_update_evict(cache, proc_id, set, way);
 }
 

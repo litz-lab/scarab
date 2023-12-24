@@ -57,6 +57,7 @@ char*           trace_files[MAX_NUM_PROCS];
 TraceReader*    trace_readers[MAX_NUM_PROCS];
 //TODO: Make per proc?
 uint64_t        ins_id    = 0;
+uint64_t        ins_id_fetched = 0;
 uint64_t        prior_tid = 0;
 uint64_t        prior_pid = 0;
 extern scatter_info_map                          scatter_info_storage;
@@ -121,7 +122,7 @@ int ffwd(const xed_decoded_inst_t* ins) {
      XED_INS_OperandReg(ins, 1) == XED_REG_RCX) {
     return 0;
   }
-  if(ins_id == FAST_FORWARD_TRACE_INS) {
+  if((USE_FETCHED_COUNT ? ins_id_fetched : ins_id) == FAST_FORWARD_TRACE_INS) {
     return 0;
   }
   return 1;
@@ -152,9 +153,15 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
     }
 
     ins_id++;
+    if(insi->fetched_instruction) {
+      ins_id_fetched++;
+    }
     if(!insi->valid) {
       insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
       ins_id++;
+      if(insi->fetched_instruction) {
+        ins_id_fetched++;
+      }
       return 0;  // end of trace
     }
   } while(insi->pid != prior_pid || insi->tid != prior_tid);
@@ -244,7 +251,9 @@ void memtrace_setup(uns proc_id) {
 
   if(FAST_FORWARD) {
     ASSERT(proc_id, !MEMTRACE_ROI_BEGIN && !MEMTRACE_ROI_END);
-    std::cout << "Enter fast forward " << ins_id << std::endl;
+    uint64_t inst_count_to_use = USE_FETCHED_COUNT ?
+                                  ins_id_fetched : ins_id;
+    std::cout << "Enter fast forward " << inst_count_to_use << std::endl;
     // FFWD the first instruction and as many as later ffwding parameters specify.
     // insi is invalid once end of trace is reached.
     // Reaching the end of the trace breaks out of the loop and segfaults later in this function.
@@ -252,10 +261,13 @@ void memtrace_setup(uns proc_id) {
     do {
       insi = trace_readers[proc_id]->nextInstruction();
       ins_id++;
-      if((ins_id % 10000000) == 0)
-        std::cout << "Fast forwarded " << ins_id << " instructions."
+      if(insi->fetched_instruction) {
+        ins_id_fetched++;
+      }
+      if((inst_count_to_use % 10000000) == 0)
+        std::cout << "Fast forwarded " << inst_count_to_use << " instructions."
         << (insi->valid ? " Valid" : " Invalid") << " instr." << std::endl;
     } while(ffwd(insi->ins));
-    std::cout << "Exit fast forward " << ins_id << std::endl;
+    std::cout << "Exit fast forward " << inst_count_to_use << std::endl;
   }
 }

@@ -151,17 +151,12 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
       ASSERT(proc_id, prior_tid);
       ASSERT(proc_id, prior_pid);
     }
-
-    ins_id++;
-    if(insi->fetched_instruction) {
-      ins_id_fetched++;
-    }
-    if(!insi->valid) {
-      insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
+    if(insi->valid) {
       ins_id++;
       if(insi->fetched_instruction) {
         ins_id_fetched++;
       }
+    } else {
       return 0;  // end of trace
     }
   } while(insi->pid != prior_pid || insi->tid != prior_tid);

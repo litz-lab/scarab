@@ -543,6 +543,22 @@ void ext_trace_extract_basic_block_vectors() {
       cur_counter += cur_bb.ins_list.size();
       cur_counter_fetched += cur_bb.inst_count_fetched;
 
+      // if TRACE_BBV_MODE_DISTRIBUTED,
+      // the fetched counter always will not exceed SEGMENT_INSTR_COUNT,
+      // as the frontend would only be provided that many instructions
+      if(SIM_MODE == TRACE_BBV_DISTRIBUTED_MODE) {
+        ASSERT(proc_id, cur_counter_fetched <= SEGMENT_INSTR_COUNT);
+      }
+      // furthermore,
+      // if TRACE_BBV_MODE_DISTRIBUTED,
+      // (cur_counter_fetched == SEGMENT_INSTR_COUNT) <=> !success
+      // but in practice,
+      // the frontend occationally skips an instruction following a "rep bug"
+      // so (cur_counter_fetched == SEGMENT_INSTR_COUNT) -> !success
+      if(cur_counter_fetched == SEGMENT_INSTR_COUNT) {
+        ASSERT(proc_id, !success);
+      }
+
       ASSERT(proc_id, cur_counter >= cur_counter_fetched);
 
       // same as dynamorio client
@@ -560,14 +576,14 @@ void ext_trace_extract_basic_block_vectors() {
         ASSERT(proc_id, (USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) < SEGMENT_INSTR_COUNT);
         bool to_new = false;
         for(uint i = 0; i < cur_bb.ins_list.size(); i++) {
-          cur_counter++;
-          if(cur_bb.ins_list[i].fetched_instruction) {
-            cur_counter_fetched++;
-          }
           if(to_new) {
             to_new_vector_count++;
             to_new_vector_count_fetched++;
           } else {
+            cur_counter++;
+            if(cur_bb.ins_list[i].fetched_instruction) {
+              cur_counter_fetched++;
+            }
             to_last_vector_count++;
           }
           if((USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) == SEGMENT_INSTR_COUNT) {
@@ -577,6 +593,7 @@ void ext_trace_extract_basic_block_vectors() {
         ASSERT(proc_id, to_new_vector_count >= to_new_vector_count_fetched);
         ASSERT(proc_id, (USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) == SEGMENT_INSTR_COUNT);
       } else {
+        ASSERT(proc_id, (USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) <= SEGMENT_INSTR_COUNT);
         to_last_vector_count = cur_bb.ins_list.size();
       }
 
@@ -664,6 +681,8 @@ void ext_trace_extract_basic_block_vectors() {
             cur_counter = to_new_vector_count;
             cur_counter_fetched = to_new_vector_count_fetched;
         }
+      } else {
+        ASSERT(proc_id, (USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) < SEGMENT_INSTR_COUNT);
       }
 
       // clear out current bb

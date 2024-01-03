@@ -683,7 +683,7 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
     switch(FDIP_UTILITY_PREF_POLICY) {
       case Utility_Pref_Policy::PREF_CONV_FROM_USEFUL_SET: {
         void* useful = (void*)cache_access(&per_core_fdip_uc[fdip_proc_id], hashed_line_addr, &uc_line_addr, TRUE);
-        if (!useful) {
+        if (useful) {
           STAT_EVENT(fdip_proc_id, FDIP_UC_HIT);
           if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
 	          STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
@@ -697,7 +697,7 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
       }
       case Utility_Pref_Policy::PREF_CONV_FROM_THROTTLE_CNT: {
         int32_t* useful = (int32_t*)cache_access(&per_core_fdip_uc_signed[fdip_proc_id], hashed_line_addr, &uc_line_addr, TRUE);
-        if (!useful) {
+        if (useful) {
           STAT_EVENT(fdip_proc_id, FDIP_UC_HIT);
           if (*useful > UDP_USEFUL_THRESHOLD)
             *emit_new_prefetch = TRUE;
@@ -714,7 +714,7 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
       }
       case Utility_Pref_Policy::PREF_OPT_FROM_THROTTLE_CNT: {
         int32_t* useful = (int32_t*)cache_access(&per_core_fdip_uc_signed[fdip_proc_id], hashed_line_addr, &uc_line_addr, TRUE);
-        if (!useful) {
+        if (useful) {
           STAT_EVENT(fdip_proc_id, FDIP_UC_HIT);
           if (*useful < UDP_USEFUL_THRESHOLD) {
             *emit_new_prefetch = FALSE;

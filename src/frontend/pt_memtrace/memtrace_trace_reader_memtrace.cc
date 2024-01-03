@@ -51,6 +51,7 @@ TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace,
                                          uint32_t           _bufsize) :
     TraceReader(_trace, _binary_group_path, _bufsize),
     mt_state_(MTState::INST),
+    mt_use_next_ref_(true),
     mt_mem_ops_(0), mt_seq_(0), mt_prior_isize_(0), mt_using_info_a_(true),
     mt_warn_target_(0) {
   binaryGroupPathIs(_binary_group_path);

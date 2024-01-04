@@ -604,10 +604,10 @@ void ext_trace_extract_basic_block_vectors() {
       }
       // furthermore,
       // if TRACE_BBV_MODE_DISTRIBUTED,
+      // and if not the last segment,
       // (cur_counter_fetched == SEGMENT_INSTR_COUNT) <=> !success
-      // but in practice,
-      // the frontend occationally skips an instruction following a "rep bug"
-      // so (cur_counter_fetched == SEGMENT_INSTR_COUNT) -> !success
+      // since do not know if it is the last one,
+      // (cur_counter_fetched == SEGMENT_INSTR_COUNT) -> !success
       if(cur_counter_fetched == SEGMENT_INSTR_COUNT) {
         ASSERT(proc_id, !success);
       }
@@ -715,6 +715,10 @@ void ext_trace_extract_basic_block_vectors() {
         ASSERT(proc_id, counts_dynamic.fetched_size == ins_id_fetched);
 
         output_fingerprint(fingerprint);
+        if(SIM_MODE == TRACE_BBV_DISTRIBUTED_MODE) {
+          printf("The fingerprint outputting is triggered at the end of the trace."
+                  "Is this the last segment?");
+        }
       }
     }
   }

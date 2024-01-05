@@ -610,6 +610,7 @@ void ext_trace_extract_basic_block_vectors() {
       // (cur_counter_fetched == SEGMENT_INSTR_COUNT) -> !success
       if(cur_counter_fetched == SEGMENT_INSTR_COUNT) {
         ASSERT(proc_id, !success);
+        ASSERT(proc_id, USE_FETCHED_COUNT);
       }
 
       ASSERT(proc_id, cur_counter >= cur_counter_fetched);
@@ -644,6 +645,7 @@ void ext_trace_extract_basic_block_vectors() {
           }
         }
         ASSERT(proc_id, to_new_vector_count >= to_new_vector_count_fetched);
+        ASSERT(proc_id, to_new_vector_count > 0);
         ASSERT(proc_id, (USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) == SEGMENT_INSTR_COUNT);
       } else {
         ASSERT(proc_id, (USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) <= SEGMENT_INSTR_COUNT);
@@ -651,7 +653,20 @@ void ext_trace_extract_basic_block_vectors() {
       }
 
       ASSERT(proc_id, to_last_vector_count + to_new_vector_count == cur_bb.ins_list.size());
-      ASSERT(proc_id, ((USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) > SEGMENT_INSTR_COUNT) == (to_new_vector_count > 0));
+
+      // the following are not true since the counters will not exceed SEGMENT_INSTR_COUNT
+      // if(cur_counter_fetched > SEGMENT_INSTR_COUNT) {
+      //   // it must be using the fetched count
+      //   ASSERT(proc_id, USE_FETCHED_COUNT);
+      //   // the termination of the current fp must be triggered
+      //   ASSERT(proc_id, to_new_vector_count > 0);
+      //   ASSERT(proc_id, to_new_vector_count_fetched > 0);
+      // }
+      // if(!USE_FETCHED_COUNT && cur_counter > SEGMENT_INSTR_COUNT) {
+      //   // the termination of the current fp must be triggered
+      //   ASSERT(proc_id, to_new_vector_count > 0);
+      // }
+      // ASSERT(proc_id, ((USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) > SEGMENT_INSTR_COUNT) == (to_new_vector_count > 0));
 
       if (SIM_MODE == TRACE_BBV_MODE) {
         fingerprint[cur_bb.bb_id] += to_last_vector_count;
@@ -715,9 +730,9 @@ void ext_trace_extract_basic_block_vectors() {
         ASSERT(proc_id, counts_dynamic.fetched_size == ins_id_fetched);
 
         output_fingerprint(fingerprint);
-        if(SIM_MODE == TRACE_BBV_DISTRIBUTED_MODE) {
+        if(SIM_MODE == TRACE_BBV_DISTRIBUTED_MODE && USE_FETCHED_COUNT) {
           printf("The fingerprint outputting is triggered at the end of the trace."
-                  "Is this the last segment?");
+                  "Is this the last segment?\n");
         }
       }
     }

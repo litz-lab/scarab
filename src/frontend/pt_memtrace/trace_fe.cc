@@ -610,7 +610,6 @@ void ext_trace_extract_basic_block_vectors() {
       // (cur_counter_fetched == SEGMENT_INSTR_COUNT) -> !success
       if(cur_counter_fetched == SEGMENT_INSTR_COUNT) {
         ASSERT(proc_id, !success);
-        ASSERT(proc_id, USE_FETCHED_COUNT);
       }
 
       ASSERT(proc_id, cur_counter >= cur_counter_fetched);

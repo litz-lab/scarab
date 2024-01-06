@@ -548,7 +548,8 @@ void ext_trace_extract_basic_block_vectors() {
         // sanity check: are they the same?
         auto bb_key = cur_bb.ins_list.front().instruction_addr;
         bool find = false;
-        ASSERT(proc_id, bb_identity_map[bb_key].size() >= 1);
+        // bb_identity_map is cleared at segment boundary
+        // so the sieze could be zero
         for(unsigned i = 0; i < bb_identity_map[bb_key].size(); i++) {
           if(cur_bb != bb_identity_map[bb_key][i]) {
           } else {
@@ -561,10 +562,12 @@ void ext_trace_extract_basic_block_vectors() {
           cur_bb.freq++;
           bb_identity_map[bb_key].push_back(cur_bb);
 
-          for(uint i = 0; i < cur_bb.ins_list.size(); i++) {
-            fprintf(stderr, "[%lu]: ad: %p, op: %d\n", map_lookup->second.bb_id, (void *)cur_bb.ins_list[i].instruction_addr, cur_bb.ins_list[i].true_op_type);
+          if(bb_identity_map[bb_key].size() > 1) {
+            for(uint i = 0; i < cur_bb.ins_list.size(); i++) {
+              fprintf(stderr, "[%lu]: ad: %p, op: %d\n", map_lookup->second.bb_id, (void *)cur_bb.ins_list[i].instruction_addr, cur_bb.ins_list[i].true_op_type);
+            }
+            fprintf(stderr, "DUP bb detected%s\n", success? "" : " at trace end");
           }
-          fprintf(stderr, "DUP bb detected%s\n", success? "" : " at trace end");
         }
       } else {
         // a new bb, starting at 1
@@ -578,6 +581,7 @@ void ext_trace_extract_basic_block_vectors() {
         // sanity check
         cur_bb.freq++;
         bb_identity_map[cur_bb.ins_list.front().instruction_addr].push_back(cur_bb);
+        ASSERT(proc_id, bb_identity_map[cur_bb.ins_list.front().instruction_addr].size() == 1);
 
         // fprintf(stderr, "======================\n");
         static int bb_built_count = 0;

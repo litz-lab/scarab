@@ -491,8 +491,8 @@ void ext_trace_extract_basic_block_vectors() {
       op_taken_count[inst->cf_type]++;
     }
     if(inst->instruction_next_addr != inst->instruction_addr + inst->size) {
-      if(!inst->cf_type && !inst->is_repeat) {
-        fprintf(stderr, "the cf is not cf or rep %p\n", (void *)inst->instruction_addr);
+      if(!inst->cf_type && !inst->is_repeat && !inst->last_inst_from_trace) {
+        fprintf(stderr, "the cf change is not due to cf or rep or trace end at %p\n", (void *)inst->instruction_addr);
       }
       ASSERT(proc_id, inst->cf_type || inst->is_repeat || inst->last_inst_from_trace);
     }
@@ -548,6 +548,7 @@ void ext_trace_extract_basic_block_vectors() {
         // sanity check: are they the same?
         auto bb_key = cur_bb.ins_list.front().instruction_addr;
         bool find = false;
+        ASSERT(proc_id, bb_identity_map[bb_key].size() >= 1);
         for(unsigned i = 0; i < bb_identity_map[bb_key].size(); i++) {
           if(cur_bb != bb_identity_map[bb_key][i]) {
           } else {
@@ -563,7 +564,7 @@ void ext_trace_extract_basic_block_vectors() {
           for(uint i = 0; i < cur_bb.ins_list.size(); i++) {
             fprintf(stderr, "[%lu]: ad: %p, op: %d\n", map_lookup->second.bb_id, (void *)cur_bb.ins_list[i].instruction_addr, cur_bb.ins_list[i].true_op_type);
           }
-          fprintf(stderr, "DUP bb detected\n");
+          fprintf(stderr, "DUP bb detected%s\n", success? "" : " at trace end");
         }
       } else {
         // a new bb, starting at 1
@@ -681,7 +682,6 @@ void ext_trace_extract_basic_block_vectors() {
       // if two are both satisfied, will output twice
       if((USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) == SEGMENT_INSTR_COUNT) {
         num_of_segments++;
-        ASSERT(proc_id, bb_identity_map.size() == fingerprint.size());
         output_counts(num_of_segments,
                       counts_dynamic, counts_as_built,
                       op_taken_count,
@@ -718,7 +718,6 @@ void ext_trace_extract_basic_block_vectors() {
 
       if(!success && !fingerprint.empty()) {
         num_of_segments++;
-        ASSERT(proc_id, bb_identity_map.size() == fingerprint.size());
         output_counts(num_of_segments,
                       counts_dynamic, counts_as_built,
                       op_taken_count,

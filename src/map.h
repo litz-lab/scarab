@@ -44,6 +44,35 @@ typedef struct Map_Entry_struct {
                          only overwritten) */
 } Map_Entry;
 
+typedef enum Map_Consume_Reg_State_enum {
+  CONSUME_REG_STATE_VOID,
+  CONSUME_REG_STATE_NOT_CONSUMED,
+  CONSMUE_REG_STATE_CONSUMED,
+  CONSUME_REG_STATE_NUM
+} Consume_Reg_State;
+
+typedef enum Map_Consume_Reg_Signiture_enum {
+  CONSUME_REG_SIGH_PC,
+  CONSUME_REG_SIGH_NUM
+} Consume_Reg_Signiture;
+
+typedef struct Map_Consume_Reg_Entry_struct {
+  Op*                   op;
+  Counter               op_num;
+  Consume_Reg_State     if_consumed;
+} Map_Consume_Reg_Entry;
+
+typedef struct Consume_Reg_Stat_Table_struct {
+  /* Reg Consume Counter Stat*/
+  Counter reg_all;
+  Counter reg_consumed;
+  Counter reg_not_consumed;
+
+  /* Reg Dep Predictor */
+  Hash_Table            not_consumed_hash;
+  Consume_Reg_Signiture not_consumed_hash_key_tpye;
+} Consume_Reg_Stat_Table;
+
 typedef struct Map_Data_struct {
   /* store information about the last op to write each register */
   uns8      proc_id;
@@ -58,6 +87,9 @@ typedef struct Map_Data_struct {
   Wake_Up_Entry* free_list_head;
   uns            wake_up_entries;
   uns            active_wake_up_entries;
+
+  Map_Consume_Reg_Entry   consume_reg_map[NUM_REG_IDS];
+  Consume_Reg_Stat_Table  *consume_reg_stat_table;
 } Map_Data;
 
 
@@ -90,6 +122,9 @@ void delete_store_hash_entry(Op*);
 void clear_not_rdy_bit(Op*, uns);
 Flag test_not_rdy_bit(Op*, uns);
 void set_not_rdy_bit(Op*, uns);
+
+/* Deubug Func */
+void debug_print_reg_consumed_stat(void);
 
 /**************************************************************************************/
 

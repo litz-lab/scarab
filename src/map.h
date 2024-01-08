@@ -44,34 +44,38 @@ typedef struct Map_Entry_struct {
                          only overwritten) */
 } Map_Entry;
 
-typedef enum Map_Consume_Reg_State_enum {
-  CONSUME_REG_STATE_VOID,
-  CONSUME_REG_STATE_NOT_CONSUMED,
-  CONSMUE_REG_STATE_CONSUMED,
-  CONSUME_REG_STATE_NUM
-} Consume_Reg_State;
+typedef enum Map_Reg_Consume_State_enum {
+  REG_CONSUME_STATE_VOID,
+  REG_CONSUME_STATE_UNCONSUMED,
+  REG_CONSUME_STATE_CONSUMED,
+  REG_CONSUME_STATE_NUM
+} Reg_Consume_State;
 
-typedef enum Map_Consume_Reg_Signiture_enum {
-  CONSUME_REG_SIGH_PC,
-  CONSUME_REG_SIGH_NUM
-} Consume_Reg_Signiture;
+typedef enum Map_Reg_Consume_Signiture_enum {
+  REG_CONSUME_SIGH_PC,
+  REG_CONSUME_SIGH_MEM,
+  REG_CONSUME_SIGH_NUM
+} Reg_Consume_Signiture;
 
-typedef struct Map_Consume_Reg_Entry_struct {
-  Op*                   op;
-  Counter               op_num;
-  Consume_Reg_State     if_consumed;
-} Map_Consume_Reg_Entry;
+typedef struct Map_Reg_Consume_Entry_struct {
+  Op*               op;
+  Counter           op_num;
+  Reg_Consume_State if_consumed;
+} Map_Reg_Consume_Entry;
 
-typedef struct Consume_Reg_Stat_Table_struct {
-  /* Reg Consume Counter Stat*/
-  Counter reg_all;
-  Counter reg_consumed;
-  Counter reg_not_consumed;
+typedef struct Reg_Consume_Table_struct {
+  /* track if the producer is consumed */
+  Map_Reg_Consume_Entry reg_consume_map[NUM_REG_IDS];
 
-  /* Reg Dep Predictor */
-  Hash_Table            not_consumed_hash;
-  Consume_Reg_Signiture not_consumed_hash_key_tpye;
-} Consume_Reg_Stat_Table;
+  /* count the producer instructions */
+  Counter num_reg_all_producer;
+  Counter num_reg_consumed;
+  Counter num_reg_unconsumed;
+
+  /* collect the unconsumed producer instructions by signiture */
+  Hash_Table            unconsumed_hash;
+  Reg_Consume_Signiture unconsumed_hash_key_tpye;
+} Reg_Consume_Table;
 
 typedef struct Map_Data_struct {
   /* store information about the last op to write each register */
@@ -88,8 +92,8 @@ typedef struct Map_Data_struct {
   uns            wake_up_entries;
   uns            active_wake_up_entries;
 
-  Map_Consume_Reg_Entry   consume_reg_map[NUM_REG_IDS];
-  Consume_Reg_Stat_Table  *consume_reg_stat_table;
+  /* unconsumed producer insturction tracking and optimization */
+  Reg_Consume_Table *reg_consume_table;
 } Map_Data;
 
 
@@ -123,8 +127,9 @@ void clear_not_rdy_bit(Op*, uns);
 Flag test_not_rdy_bit(Op*, uns);
 void set_not_rdy_bit(Op*, uns);
 
-/* Deubug Func */
-void debug_print_reg_consumed_stat(void);
+/* external functions of the unconsumed producer table */
+Flag reg_consume_table_predict(Op*);
+void reg_consume_table_print_debug_stat(void);
 
 /**************************************************************************************/
 

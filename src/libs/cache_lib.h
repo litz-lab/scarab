@@ -59,6 +59,7 @@ typedef enum Repl_Policy_enum {
 
   REPL_VOID,            /* void policy for loop ending and policy seperation */
   REPL_LRU_REF,         /* least-recently-used replacement */
+  REPL_NRU,             /* not recently used replacement */
   REPL_SRRIP,           /* static re-reference interval prediction */
   REPL_BRRIP,           /* bimodal re-reference interval prediction */
   REPL_DRRIP,           /* dynamic re-reference interval prediction */
@@ -148,9 +149,9 @@ struct repl_policy_func {
   void (*action_init)(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
   void (*action_repl)(Cache*, Cache_Entry*, uns8, Addr, Addr*, Addr*);
 
-  void (*update_hit)(Cache*, uns, uns);
-  void (*update_insert)(Cache*, uns8, uns, uns);
-  Cache_Entry *(*update_evict)(Cache*, uns8, uns, uns*);
+  void (*update_hit)(Cache*, uns, uns, void*);
+  void (*update_insert)(Cache*, uns8, uns, uns, void*);
+  Cache_Entry *(*update_evict)(Cache*, uns8, uns, uns*, void*);
 };
 
 /* Driven Table */

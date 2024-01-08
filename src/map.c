@@ -929,7 +929,7 @@ static inline int64 reg_consume_table_signiture(Op* op, Reg_Consume_Signiture si
   case REG_CONSUME_SIGH_MEM:
     sign = op->oracle_info.va;
     break;
-  
+
   default:
     break;
   }
@@ -1012,7 +1012,7 @@ Flag reg_consume_table_predict(Op* op) {
 
   if (*unconsumed_num <= REG_CONSUME_PREDICT_THRESHOLD)
     return FALSE;
-  
+
   return TRUE;
 }
 

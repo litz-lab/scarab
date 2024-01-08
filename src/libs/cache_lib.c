@@ -1325,13 +1325,13 @@ void *cache_insert_strategy(Cache* cache, uns8 proc_id, Addr addr, Addr* line_ad
   DEBUG(0, "%s, %d: Insert Strategy\n", cache->name, cache->repl_policy);
 
   // update_evict -> action_repl -> update_insert
-  new_line = repl_policy_func_table[policy].update_evict(cache, proc_id, set, &repl_index); // External func also directly call it
+  new_line = repl_policy_func_table[policy].update_evict(cache, proc_id, set, &repl_index, NULL); // External func also directly call it
   if (new_line->valid)
     *repl_line_addr = new_line->base;
   else
     *repl_line_addr = 0;
   repl_policy_func_table[policy].action_repl(cache, new_line, proc_id, tag, line_addr, repl_line_addr);
-  repl_policy_func_table[policy].update_insert(cache, proc_id, set, repl_index);
+  repl_policy_func_table[policy].update_insert(cache, proc_id, set, repl_index, NULL);
 
   return new_line->data;
 }
@@ -1359,7 +1359,7 @@ void *cache_access_strategy(Cache* cache, Addr addr, Addr* line_addr, Flag updat
 
     if(line->valid && line->tag == tag) {
       if(update_repl)
-        repl_policy_func_table[policy].update_hit(cache, set, ii);
+        repl_policy_func_table[policy].update_hit(cache, set, ii, NULL);
 
       return line->data;
     }
@@ -1383,7 +1383,7 @@ Cache_Entry* cache_evict_strategy(Cache* cache, uns8 proc_id, uns set, uns* way)
 
   DEBUG(0, "%s, %d: Evict Strategy\n", cache->name, cache->repl_policy);
 
-  new_line = repl_policy_func_table[policy].update_evict(cache, proc_id, set, way);
+  new_line = repl_policy_func_table[policy].update_evict(cache, proc_id, set, way, NULL);
   return new_line;
 }
 
@@ -1447,11 +1447,11 @@ void general_action_repl(Cache* cache, Cache_Entry* new_line, uns8 proc_id, Addr
 
 /**************************************************************************************/
 /* LRU */
-void lru_update_hit(Cache* cache, uns set, uns way);
-void lru_update_insert(Cache* cache, uns8 proc_id, uns set, uns way);
-Cache_Entry* lru_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way);
+void lru_update_hit(Cache* cache, uns set, uns way, void* arg);
+void lru_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg);
+Cache_Entry* lru_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg);
 
-void lru_update_hit(Cache* cache, uns set, uns way)
+void lru_update_hit(Cache* cache, uns set, uns way, void* arg)
 {
   int ii;
   uns8 ref_orig = cache->entries[set][way].reference_val;
@@ -1476,7 +1476,7 @@ void lru_update_hit(Cache* cache, uns set, uns way)
   cache_debug_print_set(cache, set, way, CACHE_EVENT_HIT);
 }
 
-void lru_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
+void lru_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg)
 {
   int ii;
 
@@ -1499,7 +1499,7 @@ void lru_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
   cache_debug_print_set(cache, set, way, CACHE_EVENT_INSERT);
 }
 
-Cache_Entry* lru_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way)
+Cache_Entry* lru_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg)
 {
   int ii;
   uns8 oldest_ref = 0;
@@ -1523,25 +1523,72 @@ Cache_Entry* lru_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way)
 }
 
 /**************************************************************************************/
+/* NRU */
+void nru_update_hit(Cache* cache, uns set, uns way, void* arg);
+void nru_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg);
+Cache_Entry* nru_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg);
+
+const static uns8 NRU_DISTANT_VAL = 1;
+
+void nru_update_hit(Cache* cache, uns set, uns way, void* arg)
+{
+  // promotion: near immediate -> RRPV = 0
+  cache->entries[set][way].reference_val = 0;
+
+  cache_debug_print_set(cache, set, way, CACHE_EVENT_HIT);
+}
+
+void nru_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg)
+{
+  // insertion: near immediate -> RRPV = 0
+  cache->entries[set][way].reference_val = NRU_DISTANT_VAL;
+
+  cache_debug_print_set(cache, set, way, CACHE_EVENT_INSERT);
+}
+
+Cache_Entry* nru_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg)
+{
+  int ii;
+  Flag found = FALSE;
+
+  while (!found) {
+    // eviction: search the distant line whose RRPV == 1
+    for (ii = 0; ii < cache->assoc; ii++) {
+      Cache_Entry* entry = &cache->entries[set][ii];
+      if (!entry->valid) {
+        *way = ii;
+        found = TRUE;
+        break;
+      }
+      if (entry->reference_val == NRU_DISTANT_VAL) {
+        *way  = ii;
+        found = TRUE;
+        break;
+      }
+    }
+
+    // aging: increment until there is a RRPV == 1
+    if (found)
+      break;
+    for (ii = 0; ii < cache->assoc; ii++)
+      cache->entries[set][ii].reference_val++;
+  }
+
+  cache_debug_print_set(cache, set, *way, CACHE_EVENT_EVICT);
+  return &cache->entries[set][*way];
+}
+
+/**************************************************************************************/
 /* RRIP: SRRIP, BRRIP, DRRIP */
 const static uns8 RRIP_M = 2;
 const static uns8 RRIP_DISTANT_VAL = (1 << RRIP_M) - 1;
 
 /**************************************************************************************/
 /* SRRIP */
-void srrip_update_hit(Cache* cache, uns set, uns way);
-void srrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way);
-Cache_Entry* srrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way);
+void srrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg);
+Cache_Entry* srrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg);
 
-void srrip_update_hit(Cache* cache, uns set, uns way)
-{
-  // promotion: near future -> RRPV = 0
-  cache->entries[set][way].reference_val = 0;
-
-  cache_debug_print_set(cache, set, way, CACHE_EVENT_HIT);
-}
-
-void srrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
+void srrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg)
 {
   // insertion: long interval -> RRPV = 2^M - 2
   cache->entries[set][way].reference_val = RRIP_DISTANT_VAL - 1;
@@ -1549,7 +1596,7 @@ void srrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
   cache_debug_print_set(cache, set, way, CACHE_EVENT_INSERT);
 }
 
-Cache_Entry* srrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way)
+Cache_Entry* srrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg)
 {
   int ii;
   Flag found = FALSE;
@@ -1587,7 +1634,7 @@ const static uns BRRIP_BIMODAL_PARA = 32;
 const static uns BRRIP_BIMODAL_SRAND_NUM = 0;
 void brrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc,
   uns line_size, uns data_size, Repl_Policy repl_policy);
-void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way);
+void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg);
 
 void brrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc,
   uns line_size, uns data_size, Repl_Policy repl_policy)
@@ -1601,7 +1648,7 @@ void brrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc
   srand(BRRIP_BIMODAL_SRAND_NUM);
 }
 
-void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
+void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg)
 {
   Flag bimodal_para;
 
@@ -1635,8 +1682,8 @@ const static int DRRIP_DEDICATED_STATIC = 2;
 
 void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc,
   uns line_size, uns data_size, Repl_Policy repl_policy);
-void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way);
-Cache_Entry* drrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way);
+void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg);
+Cache_Entry* drrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg);
 
 void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc,
   uns line_size, uns data_size, Repl_Policy repl_policy)
@@ -1664,7 +1711,7 @@ void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc
   }
 }
 
-void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
+void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg)
 {
   int ii;
   Counter miss_in_brrip = 0;
@@ -1674,9 +1721,9 @@ void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
   // dedicated set
   if (cache->dedicated_policy_set[set]) {
     if (cache->dedicated_policy_set[set] == DRRIP_DEDICATED_BIMODAL)
-      brrip_update_insert(cache, proc_id, set, way);
+      brrip_update_insert(cache, proc_id, set, way, arg);
     else
-      srrip_update_insert(cache, proc_id, set, way);
+      srrip_update_insert(cache, proc_id, set, way, arg);
 
     DEBUG(0, "DRRIP insert dedicated: 0x%x, %d\n\n", set, cache->dedicated_policy_set[set]);
     return;
@@ -1696,27 +1743,28 @@ void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way)
 
   // do insertion
   if (psel)
-    brrip_update_insert(cache, proc_id, set, way);
+    brrip_update_insert(cache, proc_id, set, way, arg);
   else
-    srrip_update_insert(cache, proc_id, set, way);
+    srrip_update_insert(cache, proc_id, set, way, arg);
 
   DEBUG(0, "DRRIP insert dueling: 0x%x, %d, 0x%llx, 0x%llx\n\n", set, psel, miss_in_brrip, miss_in_srrip);
 }
 
-Cache_Entry* drrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way)
+Cache_Entry* drrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg)
 {
   cache->miss_count[set]++;
   DEBUG(0, "DRRIP evict count: 0x%x, 0x%llx\n", set, cache->miss_count[set]);
-  return srrip_update_evict(cache, proc_id, set, way);
+  return srrip_update_evict(cache, proc_id, set, way, arg);
 }
 
 /**************************************************************************************/
 /* Driven Table */
 struct repl_policy_func repl_policy_func_table[NUM_REPL] = {
-  { REPL_LRU_REF, general_action_init,  general_action_repl,  lru_update_hit,    lru_update_insert,    lru_update_evict    },
-  { REPL_SRRIP,   general_action_init,  general_action_repl,  srrip_update_hit,  srrip_update_insert,  srrip_update_evict  },
-  { REPL_BRRIP,   brrip_action_init,    general_action_repl,  srrip_update_hit,  brrip_update_insert,  srrip_update_evict  },
-  { REPL_DRRIP,   drrip_action_init,    general_action_repl,  srrip_update_hit,  drrip_update_insert,  drrip_update_evict  },
-  { REPL_VOID,    NULL,                 NULL,                 NULL,              NULL,                 NULL                },
+  { REPL_LRU_REF, general_action_init,  general_action_repl,  lru_update_hit,     lru_update_insert,    lru_update_evict    },
+  { REPL_NRU,     general_action_init,  general_action_repl,  nru_update_hit,     nru_update_insert,    nru_update_evict    },
+  { REPL_SRRIP,   general_action_init,  general_action_repl,  nru_update_hit,     srrip_update_insert,  srrip_update_evict  },
+  { REPL_BRRIP,   brrip_action_init,    general_action_repl,  nru_update_hit,     brrip_update_insert,  srrip_update_evict  },
+  { REPL_DRRIP,   drrip_action_init,    general_action_repl,  nru_update_hit,     drrip_update_insert,  drrip_update_evict  },
+  { REPL_VOID,    NULL,                 NULL,                 NULL,               NULL,                 NULL                },
 };
 /**************************************************************************************/

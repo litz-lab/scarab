@@ -63,9 +63,16 @@ typedef enum Repl_Policy_enum {
   REPL_SRRIP,           /* static re-reference interval prediction */
   REPL_BRRIP,           /* bimodal re-reference interval prediction */
   REPL_DRRIP,           /* dynamic re-reference interval prediction */
+  REPL_SHIP,            /* signature-based hit predictor */
 
   NUM_REPL
 } Repl_Policy;
+
+typedef enum Cache_Repl_Signiture_enum {
+  CACHE_REPL_SIGH_PC,
+  CACHE_REPL_SIGH_MEM,
+  CACHE_REPL_SIGH_NUM
+} Cache_Repl_Signiture;
 
 typedef struct Cache_Entry_struct {
   uns8    proc_id;
@@ -81,6 +88,7 @@ typedef struct Cache_Entry_struct {
   Addr pw_start_addr; /* for uop cache: start addr of prediction window */
 
   uns8    reference_val;    /* for re-reference replacement policy */
+  Flag    outcome;          /* for replacement policy */
 } Cache_Entry;
 
 // DO NOT CHANGE THIS ORDER
@@ -135,10 +143,13 @@ typedef struct Cache_struct {
 
   Flag     tag_incl_offset;        /* The uop cache is byte-addressable, so the tag includes offset bits as well */
 
-  // Dedicated set map
-  uns*     dedicated_policy_set;
-  Counter* miss_count;             /* For sampling */
+  /* For DRRIP repl */
+  uns*     dedicated_policy_set;    /* For dedicated set map */
+  Counter* miss_count;              /* For sampling */
   Counter  bimodal_count;
+
+  /* For repl with predictor */
+  void* predictor;
 } Cache;
 
 /**************************************************************************************/
@@ -151,7 +162,7 @@ struct repl_policy_func {
 
   void (*update_hit)(Cache*, uns, uns, void*);
   void (*update_insert)(Cache*, uns8, uns, uns, void*);
-  Cache_Entry *(*update_evict)(Cache*, uns8, uns, uns*, void*);
+  Cache_Entry *(*update_evict)(Cache*, uns8, uns, uns*, void*, Flag);
 };
 
 /* Driven Table */

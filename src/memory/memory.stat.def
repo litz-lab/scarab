@@ -1071,6 +1071,9 @@ DEF_STAT( ICACHE_WB_REQ,                              RATIO,        ICACHE_FILL)
 DEF_STAT(L1_FILL_DIRTY,                               RATIO,           L1_FILL)
 DEF_STAT(MLC_FILL_DIRTY,                              RATIO,           MLC_FILL)
 
+DEF_STAT( ICACHE_UNUSEFUL_CL_CYC,                     COUNT,           NO_RATIO)
+DEF_STAT( ICACHE_UNUSEFUL_CL,                         COUNT,           NO_RATIO)
+
 DEF_STAT( ICACHE_EVICT_MISS_ONPATH_BY_FDIP,           DIST,            NO_RATIO)
 DEF_STAT( ICACHE_EVICT_MISS_OFFPATH_BY_FDIP,          DIST,            NO_RATIO)
 

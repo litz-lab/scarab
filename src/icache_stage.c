@@ -1009,7 +1009,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
       if(!icache_off_path()) {
         uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, line->ghist) : ic->line_addr;
         if((FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch >= FDIP_OFFPATH : TRUE) &&
-            (FDIP_SENIORITY_FTQ_NUM ? fdip_search_pref_candidate(hashed_addr) : TRUE)) {
+            fdip_search_pref_candidate(hashed_addr)) {
           inc_cnt_useful(ic->proc_id, hashed_addr, FALSE);
           inc_cnt_useful_signed(ic->proc_id, hashed_addr);
           inc_useful_lines_uc(ic->proc_id, hashed_addr);
@@ -1041,6 +1041,8 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
 
   if(*repl_line_addr && !line->read_count[0]) {
     DEBUG(ic->proc_id, "%llx is evicted without hit, FDIP pref: %d\n", *repl_line_addr, line->FDIP_prefetch);
+    INC_STAT_EVENT(ic->proc_id, ICACHE_UNUSEFUL_CL_CYC, cycle_count - line->fetch_cycle);
+    STAT_EVENT(ic->proc_id, ICACHE_UNUSEFUL_CL);
     if(line->FDIP_prefetch && (FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch >= FDIP_OFFPATH : TRUE)) {
       uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(*repl_line_addr, line->ghist) : *repl_line_addr;
       inc_cnt_unuseful(ic->proc_id, hashed_addr);
@@ -1128,7 +1130,7 @@ void log_stats_mshr_hit(Addr line_addr) {
       uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, req->ghist) : ic->line_addr;
       if (!icache_off_path() &&
           (FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? req->fdip_pref_off_path >= FDIP_OFFPATH : TRUE) &&
-          (FDIP_SENIORITY_FTQ_NUM ? fdip_search_pref_candidate(hashed_addr) : TRUE)) {
+          fdip_search_pref_candidate(hashed_addr)) {
         inc_cnt_useful(ic->proc_id, hashed_addr, FALSE);
         inc_cnt_useful_signed(ic->proc_id, hashed_addr);
         inc_useful_lines_uc(ic->proc_id, hashed_addr);

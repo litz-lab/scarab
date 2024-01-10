@@ -120,12 +120,9 @@ void alloc_mem_fdip(uns numCores) {
         FDIP_UTILITY_PREF_POLICY < Utility_Pref_Policy::PREF_POL_END);
 
   if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
-    ASSERT(fdip_proc_id, FDIP_SENIORITY_FTQ_NUM);
     per_core_last_cl_unuseful.resize(numCores);
     per_core_last_bbl_start_addr.resize(numCores);
     per_core_seniority_ftq.resize(numCores);
-  } else {
-    ASSERT(fdip_proc_id, !FDIP_SENIORITY_FTQ_NUM);
   }
   if (FDIP_UC_SIZE) {
     ASSERT(fdip_proc_id, FDIP_UTILITY_PREF_POLICY != PREF_OPT_FROM_UNUSEFUL_SET);
@@ -297,6 +294,8 @@ void update_fdip() {
 
       if (!emit_new_prefetch && !line && !mem_req)
         insert_pref_candidate_to_seniority_ftq(line_addr);
+      if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
+        INC_STAT_EVENT(fdip_proc_id, FDIP_SENIORITY_FTQ_ACCUMULATED, per_core_seniority_ftq[fdip_proc_id].size());
       if (emit_new_prefetch && !line && !mem_req && !mem_can_allocate_req_buffer(fdip_proc_id, MRT_FDIPPRF, FALSE)) {
         // This rarely happens if mem_req_buffer_entries and ramulator_readq_entries are big enough.
         // e.g. If FE_FTQ_BLOCK_NUM = 302, MEM_REQ_BUFFER_ENTRIES = 1024 and RAMULATOR_READQ_ENTRIES = 512 never cause this break.
@@ -989,6 +988,8 @@ void fdip_inc_cnt_btb_miss(uns proc_id) {
 }
 
 Flag fdip_search_pref_candidate(Addr addr) {
+  if (!FDIP_UTILITY_HASH_ENABLE && !FDIP_UC_SIZE && !FDIP_BLOOM_FILTER)
+    return TRUE;
   auto seniority_ftq = &per_core_seniority_ftq[fdip_proc_id];
   for (auto it = seniority_ftq->begin();
        it != seniority_ftq->end(); ++it) {
@@ -999,19 +1000,17 @@ Flag fdip_search_pref_candidate(Addr addr) {
 }
 
 void insert_pref_candidate_to_seniority_ftq(Addr line_addr) {
-  if (!FDIP_SENIORITY_FTQ_NUM)
+  if (!FDIP_UTILITY_HASH_ENABLE && !FDIP_UC_SIZE && !FDIP_BLOOM_FILTER)
     return;
   uint64_t hashed_line_addr = line_addr;
   if (FDIP_GHIST_HASHING)
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
-  if (per_core_seniority_ftq[fdip_proc_id].size() < FDIP_SENIORITY_FTQ_NUM) {
-    per_core_seniority_ftq[fdip_proc_id].push_back(std::make_pair(hashed_line_addr, cycle_count));
-    DEBUG(fdip_proc_id, "Insert %llx (hashed %lx) to seniority FTQ at cyc %llu seniority_ftq.size() : %ld\n", line_addr, hashed_line_addr, cycle_count, per_core_seniority_ftq[fdip_proc_id].size());
-  }
+  per_core_seniority_ftq[fdip_proc_id].push_back(std::make_pair(hashed_line_addr, cycle_count));
+  DEBUG(fdip_proc_id, "Insert %llx (hashed %lx) to seniority FTQ at cyc %llu seniority_ftq.size() : %ld\n", line_addr, hashed_line_addr, cycle_count, per_core_seniority_ftq[fdip_proc_id].size());
 }
 
 void clear_old_seniority_ftq() {
-  if (!FDIP_SENIORITY_FTQ_NUM)
+  if (!FDIP_UTILITY_HASH_ENABLE && !FDIP_UC_SIZE && !FDIP_BLOOM_FILTER)
     return;
   auto seniority_ftq = &per_core_seniority_ftq[fdip_proc_id];
   Counter cnt_old = 0;

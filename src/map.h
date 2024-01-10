@@ -65,7 +65,7 @@ typedef struct Map_Reg_Consume_Entry_struct {
 
 typedef struct Reg_Consume_Table_struct {
   /* track if the producer is consumed */
-  Map_Reg_Consume_Entry reg_consume_map[NUM_REG_IDS];
+  Map_Reg_Consume_Entry reg_consume_map[NUM_REG_IDS * 2];
 
   /* count the producer instructions */
   Counter num_reg_all_producer;

@@ -282,7 +282,7 @@ static inline void read_reg_map(Op* op) {
           "Reading map  op_num:%s  off_path:%d  id:%d  flag:%d  ind:%d\n",
           unsstr64(op->op_num), op->off_path, id, map_data->map_flags[id], ind);
 
-    reg_consume_table_read_reg_map(op, id);
+    reg_consume_table_read_reg_map(op, ind);
 
     add_src_from_map_entry(op, map_entry, REG_DATA_DEP);
     /* address predictor is called if op is a load & this is first mem op reg
@@ -333,7 +333,7 @@ static inline void update_map(Op* op) {
     map_entry->unique_num   = op->unique_num;
     map_data->map_flags[id] = op->off_path;
 
-    reg_consume_table_update_map(op, id);
+    reg_consume_table_update_map(op, ind);
   }
 
   /* update the map if the op is a store */
@@ -899,7 +899,7 @@ static inline void reg_consume_table_init(void) {
   map_data->reg_consume_table = (Reg_Consume_Table *)malloc(sizeof(Reg_Consume_Table));
 
   /* init the map for tracking unconsumed producer */
-  for(ii = 0; ii < NUM_REG_IDS; ii++) {
+  for(ii = 0; ii < NUM_REG_IDS * 2; ii++) {
     map_data->reg_consume_table->reg_consume_map[ii].op          = &invalid_op;
     map_data->reg_consume_table->reg_consume_map[ii].op_num      = 0;
     map_data->reg_consume_table->reg_consume_map[ii].if_consumed = REG_CONSUME_STATE_VOID;
@@ -941,14 +941,11 @@ static inline int64 reg_consume_table_signiture(Op* op, Reg_Consume_Signiture si
   reg_consume_table_read_reg_map
   -- called by: read_reg_map
   -- procedure: 
-  ----- 1. get the entry by id
+  ----- 1. get the entry by id and off-path flag
   ----- 2. change the state to CONSUMED
 */
-static inline void reg_consume_table_read_reg_map(Op* op, uns id) {
-  if (map_data->map_flags[id])
-    return;
-
-  Map_Reg_Consume_Entry* map_entry = &map_data->reg_consume_table->reg_consume_map[id];
+static inline void reg_consume_table_read_reg_map(Op* op, uns ind) {
+  Map_Reg_Consume_Entry* map_entry = &map_data->reg_consume_table->reg_consume_map[ind];
   map_entry->if_consumed = REG_CONSUME_STATE_CONSUMED;
 }
 
@@ -956,15 +953,12 @@ static inline void reg_consume_table_read_reg_map(Op* op, uns id) {
   reg_consume_table_update_map
   -- called by: update_map
   -- procedure: 
-  ----- 1. get the entry by id
+  ----- 1. get the entry by id and off-path flag
   ----- 2. track if the entry is consumed by state
   ----- 3. change the state to UNCONSUMED
 */
-static inline void reg_consume_table_update_map(Op* op, uns id) {
-  if (op->off_path)
-    return;
-
-  Map_Reg_Consume_Entry* map_entry = &map_data->reg_consume_table->reg_consume_map[id];
+static inline void reg_consume_table_update_map(Op* op, uns ind) {
+  Map_Reg_Consume_Entry* map_entry = &map_data->reg_consume_table->reg_consume_map[ind];
   map_entry->op           = op;
   map_entry->op_num       = op->op_num;
 

@@ -259,6 +259,9 @@ void memtrace_setup(uns proc_id) {
       if(insi->fetched_instruction) {
         ins_id_fetched++;
       }
+
+      inst_count_to_use = USE_FETCHED_COUNT ? ins_id_fetched : ins_id;
+
       if((inst_count_to_use % 10000000) == 0)
         std::cout << "Fast forwarded " << inst_count_to_use << " instructions."
         << (insi->valid ? " Valid" : " Invalid") << " instr." << std::endl;

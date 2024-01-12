@@ -274,15 +274,15 @@ void ext_trace_done() {
 
 }
 
-void output_fingerprint(std::map<uint64_t, uint64_t> fingerprint) {
+// is also used to print footprint
+uint64_t output_fingerprint(std::string file_name, std::map<uint64_t, uint64_t> fingerprint) {
   // output the map for this segment
   // make it a function?
   std::ofstream myfile;
-  std::string bbv_output(TRACE_BBV_OUTPUT);
-  myfile.open(bbv_output, std::ofstream::out | std::ofstream::app);
+  myfile.open(file_name, std::ofstream::out | std::ofstream::app);
 
   if (!myfile.is_open()) {
-      printf("open file failed\n");
+    std::cout << "open file failed: " << file_name << std::endl;
   }
 
   // std::cout << num_of_segments << "th fp dimensions: " << fingerprint.size() << std::endl;
@@ -309,10 +309,11 @@ void output_fingerprint(std::map<uint64_t, uint64_t> fingerprint) {
   }
 
   // ASSERT(proc_id, nonzero_count == fingerprint.size());
-  // ASSERT(proc_id, instrs_count == SEGMENT_INSTR_COUNT);
 
   myfile << std::endl;
   myfile.close();
+
+  return instrs_count;
 }
 
 typedef struct bb_counts {
@@ -474,6 +475,9 @@ void ext_trace_extract_basic_block_vectors() {
   // mode 2: the key is the first addr of the basic block, used for trace chunks
   std::map<uint64_t, uint64_t> fingerprint;
 
+  // for instruction footprint analysis
+  std::map<uint64_t, uint64_t> footprint;
+
   // maintain the current basic block
   basic_block_info cur_bb{};
 
@@ -500,6 +504,9 @@ void ext_trace_extract_basic_block_vectors() {
     // add to current basic block
     // a sequence of rep of same pc is a bb executed multiple times
     cur_bb.ins_list.push_back(*inst);
+
+    // increment unique inst frequency
+    footprint[inst->instruction_addr]++;
 
     // increment fetched count if it is fetched
     if(inst->fetched_instruction) {
@@ -695,9 +702,16 @@ void ext_trace_extract_basic_block_vectors() {
         cur_counter = 0;
         cur_counter_fetched = 0;
 
-        output_fingerprint(fingerprint);
+        std::string bbv_output(TRACE_BBV_OUTPUT);
+        std::string footprint_output(TRACE_FOOTPRINT_OUTPUT);
+        uint64_t instrs_count_bbv = output_fingerprint(bbv_output, fingerprint);
+        uint64_t instrs_count_footprint = output_fingerprint(footprint_output, footprint);
+        ASSERT(proc_id, instrs_count_bbv == instrs_count_footprint);
+        ASSERT(proc_id, instrs_count_bbv == SEGMENT_INSTR_COUNT);
+
         // clear for the next segment
         fingerprint.clear();
+        footprint.clear();
 
         // record the residue
         // if to_new_vector_count > 0, the bb must have crossed the vector boundary
@@ -731,7 +745,12 @@ void ext_trace_extract_basic_block_vectors() {
         ASSERT(proc_id, counts_dynamic.total_size == ins_id);
         ASSERT(proc_id, counts_dynamic.fetched_size == ins_id_fetched);
 
-        output_fingerprint(fingerprint);
+        std::string bbv_output(TRACE_BBV_OUTPUT);
+        std::string footprint_output(TRACE_FOOTPRINT_OUTPUT);
+        uint64_t instrs_count_bbv = output_fingerprint(bbv_output, fingerprint);
+        uint64_t instrs_count_footprint = output_fingerprint(footprint_output, footprint);
+        ASSERT(proc_id, instrs_count_bbv == instrs_count_footprint);
+
         if(SIM_MODE == TRACE_BBV_DISTRIBUTED_MODE && USE_FETCHED_COUNT) {
           printf("The fingerprint outputting is triggered at the end of the trace."
                   "Is this the last segment?\n");

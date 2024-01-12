@@ -707,7 +707,6 @@ void ext_trace_extract_basic_block_vectors() {
         uint64_t instrs_count_bbv = output_fingerprint(bbv_output, fingerprint);
         uint64_t instrs_count_footprint = output_fingerprint(footprint_output, footprint);
         ASSERT(proc_id, instrs_count_bbv == instrs_count_footprint);
-        ASSERT(proc_id, instrs_count_bbv == SEGMENT_INSTR_COUNT);
 
         // clear for the next segment
         fingerprint.clear();

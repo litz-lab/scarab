@@ -183,7 +183,7 @@ extern "C" {
 #endif
 
 void        init_global_stats_array(void);
-void        gen_stat_output_file(char*, uns8, Stat*);
+void        gen_stat_output_file(char*, uns8, Stat*, char);
 void        init_global_stats(uns8);
 void        dump_stats(uns8, Flag, Stat[], uns);
 void        reset_stats(Flag);

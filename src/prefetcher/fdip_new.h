@@ -24,6 +24,7 @@ extern "C" {
   void dec_cnt_useful_signed(uns proc_id, Addr line_addr);
   void inc_cnt_useful_ret(uns proc_id, Addr line_addr);
   void inc_icache_miss(uns proc_id, Addr line_addr);
+  void inc_off_fetched_cls(Addr line_addr, Flag off_path);
   void inc_prefetched_cls(Addr line_addr);
   void probe_prefetched_cls(Addr line_addr);
   void evict_prefetched_cls(uns proc_id, Addr line_addr, Flag by_fdip);

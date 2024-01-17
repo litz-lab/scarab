@@ -16,6 +16,7 @@ extern "C" {
 #include <map>
 #include <algorithm>
 #include <deque>
+#include <tuple>
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FDIP, ##args)
 
 decoupled_fe_iter* iter;
@@ -45,8 +46,8 @@ typedef enum UTILITY_PREF_POLICY_enum {
 } Utility_Pref_Policy;
 
 /* Seniority-FTQ */
-// <Cl address, cycle count>
-std::vector<std::deque<std::pair<uns64, Counter>>> per_core_seniority_ftq;
+// <Cl address, cycle count, on/off-path>
+std::vector<std::deque<std::tuple<uns64, Counter, Flag>>> per_core_seniority_ftq;
 
 /* global variables for dynamic FTQ adjustment based on utility/timeliness study */
 std::vector<Utility_Timeliness_Info> per_core_utility_timeliness_info;
@@ -72,6 +73,8 @@ std::vector<std::unordered_map<Addr, int32_t>> per_core_cnt_useful_signed;
 std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_useful_ret;
 // <CL addresses, icache miss count>
 std::vector<std::map<Addr, Counter>> per_core_icache_miss;
+// <CL addresses, fetched_cycle on the off-path>
+std::vector<std::map<Addr, Counter>> per_core_off_fetched_cls;;
 // <CL addresses, prefetched count>
 std::vector<std::map<Addr, Counter>> per_core_prefetched_cls;
 // <CL address, cyc_access_by_fdip, cyc_evicted_from_l1_by_demand_load, cyc_evicted_from_l1_by_FDIP> - prefetched and access time information for timeliness analysis
@@ -111,6 +114,7 @@ void alloc_mem_fdip(uns numCores) {
   per_core_cnt_useful_signed.resize(numCores);
   per_core_cnt_useful_ret.resize(numCores);
   per_core_icache_miss.resize(numCores);
+  per_core_off_fetched_cls.resize(numCores);
   per_core_prefetched_cls.resize(numCores);
   per_core_prefetched_cls_info.resize(numCores);
   per_core_fdip_ftq_occupancy_ops.resize(numCores);
@@ -262,7 +266,7 @@ void update_fdip() {
     }
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;
-    DEBUG(fdip_proc_id, "op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx\n", op->op_num, op->inst_info->addr, line_addr, last_line_addr);
+    DEBUG(fdip_proc_id, "op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, off-path: %d\n", op->op_num, op->inst_info->addr, line_addr, last_line_addr, fdip_off_path(fdip_proc_id));
     if (line_addr != last_line_addr) {
       STAT_EVENT(ic_ref->proc_id, FDIP_ATTEMPTED_PREF_ONPATH + op->off_path);
       Flag demand_hit_prefetch = FALSE;
@@ -303,6 +307,10 @@ void update_fdip() {
         break_reason = BR_FULL_MEM_REQ_BUF;
         break;
       }
+
+      if (emit_new_prefetch)
+        STAT_EVENT(ic_ref->proc_id, FDIP_DECIDE_PREF_ONPATH + op->off_path);
+
       if (!line && emit_new_prefetch) { // create a mem request only if line doesn't exist. If the corresponding mem_req exists, it will merge.
         if (FDIP_PREF_NO_LATENCY) {
           Mem_Req req;
@@ -432,11 +440,12 @@ void print_cl_info(uns proc_id) {
 }
 
 void assert_not_trained(uns proc_id, Addr line_addr, uns imiss_reason) {
-  if (!FDIP_UTILITY_HASH_ENABLE || (FDIP_UTILITY_PREF_POLICY != PREF_CONV_FROM_USEFUL_SET) || (inst_count[proc_id] < FDIP_UTILITY_MIN_LEARNING_INST))
+  if (!FDIP_UTILITY_HASH_ENABLE || (FDIP_UTILITY_PREF_POLICY != PREF_CONV_FROM_USEFUL_SET) || (FULL_WARMUP && !warmup_dump_done[proc_id]))
     return;
   auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
-  if (imiss_reason == Imiss_Reason::IMISS_NOT_PREFETCHED && useful_iter != per_core_cnt_useful[proc_id].end() && !useful_iter->second.second) { // learned from a prefetch hit
+  if (imiss_reason == Imiss_Reason::IMISS_NOT_PREFETCHED && useful_iter != per_core_cnt_useful[proc_id].end() && !useful_iter->second.second) { // learned from a seniority-FTQ hit
     DEBUG(proc_id, "True miss even trained %llx\n", useful_iter->first);
+    ASSERT(proc_id, false);
   }
 }
 
@@ -449,6 +458,7 @@ void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss) {
     per_core_cnt_useful[proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(1, pref_miss)));
   } else {
     useful_iter->second.first++;
+    useful_iter->second.second = pref_miss;
   }
   DEBUG(proc_id, "cnt_useful size after inserted %ld\n", per_core_cnt_useful[proc_id].size());
 }
@@ -504,11 +514,25 @@ void inc_prefetched_cls(Addr line_addr) {
   if (cl_iter == per_core_prefetched_cls[fdip_proc_id].end()) {
     per_core_prefetched_cls[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
     per_core_prefetched_cls_info[fdip_proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(std::move(cycle_count), std::make_pair(0, 0))));
+    DEBUG(fdip_proc_id, "%llx inserted into prefetched_cls at %llu\n", line_addr, cycle_count);
   } else {
     cl_iter->second++;
     auto cl_info_iter = per_core_prefetched_cls_info[fdip_proc_id].find(line_addr);
     ASSERT(fdip_proc_id, cl_info_iter != per_core_prefetched_cls_info[fdip_proc_id].end());
     cl_info_iter->second.first = cycle_count;
+    DEBUG(fdip_proc_id, "%llx updated with cnt %llu in prefetched_cls at cyc %llu\n", line_addr, cl_iter->second, cycle_count);
+  }
+}
+
+void inc_off_fetched_cls(Addr line_addr, Flag off_path) {
+  ASSERT(fdip_proc_id, off_path);
+  auto cl_iter = per_core_off_fetched_cls[fdip_proc_id].find(line_addr);
+  if (cl_iter == per_core_off_fetched_cls[fdip_proc_id].end()) {
+    per_core_off_fetched_cls[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, cycle_count));
+    DEBUG(fdip_proc_id, "%llx inserted into off_fetched_cls at %llu\n", line_addr, cycle_count);
+  } else {
+    cl_iter->second = cycle_count;
+    DEBUG(fdip_proc_id, "%llx in off_fetched_cls updated at %llu\n", line_addr, cycle_count);
   }
 }
 
@@ -516,6 +540,10 @@ void probe_prefetched_cls(Addr line_addr) {
   auto cl_iter = per_core_prefetched_cls_info[fdip_proc_id].find(line_addr);
   if (cl_iter != per_core_prefetched_cls_info[fdip_proc_id].end())
     cl_iter->second.first = cycle_count;
+  else {
+    auto cl_off_iter = per_core_off_fetched_cls[fdip_proc_id].find(line_addr);
+    ASSERT(fdip_proc_id, cl_off_iter != per_core_off_fetched_cls[fdip_proc_id].end());
+  }
 }
 
 void evict_prefetched_cls(uns proc_id, Addr line_addr, Flag by_fdip) {
@@ -892,9 +920,6 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
 }
 
 Flag determine_usefulness(Addr line_addr) {
-  if (operating_mode == SIMULATION_MODE && inst_count[fdip_proc_id] < FDIP_UTILITY_MIN_LEARNING_INST)
-    return TRUE;
-
   Flag emit_new_prefetch = FALSE;
   if (!per_core_last_cl_unuseful[fdip_proc_id] && per_core_last_cl_unuseful[fdip_proc_id] != line_addr) {
     if (FDIP_UTILITY_HASH_ENABLE)
@@ -991,11 +1016,16 @@ Flag fdip_search_pref_candidate(Addr addr) {
   if (!FDIP_UTILITY_HASH_ENABLE && !FDIP_UC_SIZE && !FDIP_BLOOM_FILTER)
     return TRUE;
   auto seniority_ftq = &per_core_seniority_ftq[fdip_proc_id];
+  DEBUG(fdip_proc_id, "Search a pref candidate for %llx. seniority_ftq.size(): %ld\n", addr, seniority_ftq->size());
   for (auto it = seniority_ftq->begin();
-       it != seniority_ftq->end(); ++it) {
-    if (it->first == addr)
+      it != seniority_ftq->end(); ++it) {
+    if (std::get<0>(*it) == addr && (FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? std::get<2>(*it) == FALSE :TRUE)) {
+      DEBUG(fdip_proc_id, "Hit seniority-FTQ for addr: %llx cyc: %lld, on-path: %u\n", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it));
+      STAT_EVENT(fdip_proc_id, FDIP_SENIORITY_FTQ_HIT);
       return TRUE;
+    }
   }
+  STAT_EVENT(fdip_proc_id, FDIP_SENIORITY_FTQ_MISS);
   return FALSE;
 }
 
@@ -1005,7 +1035,8 @@ void insert_pref_candidate_to_seniority_ftq(Addr line_addr) {
   uint64_t hashed_line_addr = line_addr;
   if (FDIP_GHIST_HASHING)
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
-  per_core_seniority_ftq[fdip_proc_id].push_back(std::make_pair(hashed_line_addr, cycle_count));
+  Flag on_path = FDIP_BP_CONFIDENCE && (low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD);
+  per_core_seniority_ftq[fdip_proc_id].push_back(std::make_tuple(hashed_line_addr, cycle_count, on_path));
   DEBUG(fdip_proc_id, "Insert %llx (hashed %lx) to seniority FTQ at cyc %llu seniority_ftq.size() : %ld\n", line_addr, hashed_line_addr, cycle_count, per_core_seniority_ftq[fdip_proc_id].size());
 }
 
@@ -1016,10 +1047,9 @@ void clear_old_seniority_ftq() {
   Counter cnt_old = 0;
   for (auto it = seniority_ftq->begin();
        it != seniority_ftq->end(); ++it) {
-    DEBUG(fdip_proc_id, "Seniority FTQ entry %llx, %llu, cycle_count - FDIP_SENIORITY_FTQ_HOLD_CYC: %lld\n", it->first, it->second, cycle_count - FDIP_SENIORITY_FTQ_HOLD_CYC);
     if (cycle_count <= FDIP_SENIORITY_FTQ_HOLD_CYC)
       break;
-    if ((cycle_count > FDIP_SENIORITY_FTQ_HOLD_CYC) && (it->second >= cycle_count - FDIP_SENIORITY_FTQ_HOLD_CYC))
+    if ((cycle_count > FDIP_SENIORITY_FTQ_HOLD_CYC) && (std::get<1>(*it) >= cycle_count - FDIP_SENIORITY_FTQ_HOLD_CYC))
       break;
     cnt_old++;
   }

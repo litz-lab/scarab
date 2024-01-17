@@ -194,14 +194,14 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
       }
       last_file_name = s->file_name;
       ASSERT(0, !file_stream);
-      char buf[MAX_STR_LENGTH + 1];
+      char buf[MAX_STR_LENGTH + 2];
       gen_stat_output_file(buf, proc_id, s, 0);
       file_stream = fopen(buf, "w");
       ASSERTUM(0, file_stream, "Couldn't open statistic output file '%s'.\n",
                buf);
 
       ASSERT(0, !csv_file_stream);
-      char csv_buf[MAX_STR_LENGTH + 1];
+      char csv_buf[MAX_STR_LENGTH + 2];
       gen_stat_output_file(csv_buf, proc_id, s, 1);
       csv_file_stream = fopen(csv_buf, "w");
       ASSERTUM(0, csv_file_stream, "Couldn't open statistic output file '%s'.\n",

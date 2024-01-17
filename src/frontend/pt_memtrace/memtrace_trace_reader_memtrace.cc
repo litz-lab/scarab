@@ -39,6 +39,7 @@ TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace,
                                          uint64_t _offset, uint32_t _bufsize) :
     TraceReader(_trace, _binary, _offset, _bufsize),
     mt_state_(MTState::INST),
+    mt_use_next_ref_(true),
     mt_mem_ops_(0), mt_seq_(0), mt_prior_isize_(0), mt_using_info_a_(true),
     mt_warn_target_(0) {
   init(_trace);
@@ -50,6 +51,7 @@ TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace,
                                          uint32_t           _bufsize) :
     TraceReader(_trace, _binary_group_path, _bufsize),
     mt_state_(MTState::INST),
+    mt_use_next_ref_(true),
     mt_mem_ops_(0), mt_seq_(0), mt_prior_isize_(0), mt_using_info_a_(true),
     mt_warn_target_(0) {
   binaryGroupPathIs(_binary_group_path);
@@ -163,12 +165,23 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
 
   auto *stream = scheduler.get_stream(0);
 
-  for(dynamorio::drmemtrace::scheduler_t::stream_status_t status = stream->next_record(mt_ref_);
-      status != dynamorio::drmemtrace::scheduler_t::STATUS_EOF; status = stream->next_record(mt_ref_)) {
-    if(status != dynamorio::drmemtrace::scheduler_t::STATUS_OK) {
-      panic("scheduler failed to advance: %d", status);
+  if(mt_use_next_ref_) {
+    // start with the next entry
+    mt_status_ = stream->next_record(mt_ref_);
+  } else {
+    // mt_use_next_ref_ is false following a REP BUG
+    // start with the current entry because it needs to be processed
+    // otherwise it will be skipped
+    assert(mt_status_ != dynamorio::drmemtrace::scheduler_t::STATUS_EOF);
+    assert(mt_state_ == MTState::INST);
+    assert(type_is_instr(mt_ref_.instr.type));
+    // will use the next entry the next time if not set to false again
+    mt_use_next_ref_ = true;
+  }
+  while(mt_status_ != dynamorio::drmemtrace::scheduler_t::STATUS_EOF) {
+    if(mt_status_ != dynamorio::drmemtrace::scheduler_t::STATUS_OK) {
+      panic("scheduler failed to advance: %d", mt_status_);
     }
-
     // there can be mt_ref types other than inst and mem
     // the FSM will skip those if they appear within MTState::INST state
     switch(mt_state_) {
@@ -180,34 +193,34 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
           } else {
             complete = true;
           }
+        } else if(mt_ref_.instr.type == dynamorio::drmemtrace::TRACE_TYPE_INSTR_NO_FETCH) {
+          // a repeated rep
+          bool is_rep = std::get<MAP_REP>(xed_map_.at(_prior->pc));
+          assert(is_rep && ((uint32_t)mt_ref_.instr.pid == _prior->pid) &&
+                ((uint32_t)mt_ref_.instr.tid == _prior->tid) &&
+                (mt_ref_.instr.addr == _prior->pc));
+          // do not need to re-process
+          *_info = *_prior;
+          // flag this instruction as non-fetched
+          _info->fetched_instruction = false;
+          // mt_mem_ops_ set by the first rep occurance
+          if(mt_mem_ops_ > 0) {
+            mt_state_ = MTState::MEM1;
+          } else {
+            complete = true;
+          }
         } else if(typeIsMem(mt_ref_.data.type)) {
-          // Skip flush and thread exit types, patch rep instructions, and
+          // Skip flush and thread exit types and
           // silently ignore memory operands of unknown instructions
           if(!_prior->unknown_type) {
-            bool is_rep = std::get<MAP_REP>(xed_map_.at(_prior->pc));
-            if(is_rep && ((uint32_t)mt_ref_.data.pid == _prior->pid) &&
-               ((uint32_t)mt_ref_.data.tid == _prior->tid) &&
-               (mt_ref_.data.pc == _prior->pc)) {
-              *_info             = *_prior;
-              _info->mem_addr[0] = mt_ref_.data.addr;
-              _info->mem_used[0] = true;
-              if(mt_mem_ops_ > 1) {
-                mt_state_ = MTState::MEM2;
-              } else {
-                _info->mem_addr[1] = 0;
-                _info->mem_used[1] = false;
-                complete           = true;
-              }
-            } else {
-              if(skipped_ == 0) {
-                warn("Stray memory record detected at seq. %lu: PC: 0x%lx, "
-                     "PID: %lu, TID: %lu, Addr: 0x%lx. "
-                     "Suppressing further messages.\n",
-                     mt_seq_, mt_ref_.data.pc, mt_ref_.data.pid,
-                     mt_ref_.data.tid, mt_ref_.data.addr);
-              }
-              skipped_++;
+            if(skipped_ == 0) {
+              warn("Stray memory record detected at seq. %lu: PC: 0x%lx, "
+                    "PID: %lu, TID: %lu, Addr: 0x%lx. "
+                    "Suppressing further messages.\n",
+                    mt_seq_, mt_ref_.data.pc, mt_ref_.data.pid,
+                    mt_ref_.data.tid, mt_ref_.data.addr);
             }
+            skipped_++;
           }
         }
         break;
@@ -234,9 +247,10 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
                "size, success!\n",
                _info->pc);
 
-	  mt_mem_ops_ = 0;
+          mt_mem_ops_ = 0;
           mt_state_ = MTState::INST;
           complete  = true;
+          mt_use_next_ref_ = false;
           goto PATCH_REP;
         } else {
           warn("Expected data but found type '%s'\n",
@@ -269,6 +283,8 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
     if(complete) {
       break;
     }
+    // advance to the next entry if the instruction has not yet completed
+    mt_status_ = stream->next_record(mt_ref_);
   }
 PATCH_REP:
   _info->valid &= complete;
@@ -352,6 +368,8 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   _info->unknown_type = unknown_type;
   // correct this later at getNextInstruction if it is the last instruction
   _info->last_inst_from_trace = false;
+  // non-fetched instructions will be set within FSM
+  _info->fetched_instruction = true;
 }
 
 bool TraceReaderMemtrace::typeIsMem(dynamorio::drmemtrace::trace_type_t _type) {

@@ -785,6 +785,11 @@ void node_retire() {
       inst_count[node->proc_id]++;
       STAT_EVENT(op->proc_id, NODE_INST_COUNT);
 
+      if(op->fetched_instruction) {
+        inst_count_fetched[node->proc_id]++;
+        STAT_EVENT(op->proc_id, NODE_INST_COUNT_FETCHED);
+      }
+
       Flag retire_op = IS_CALLSYS(op->table_info) ||
                        op->table_info->bar_type & BAR_FETCH ||
                        (inst_count[node->proc_id] % NODE_RETIRE_RATE == 0);

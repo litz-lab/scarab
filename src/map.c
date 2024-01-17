@@ -127,6 +127,13 @@ static inline void mem_map_byte_traversal_init(Mem_Map_Traversal* traversal);
 static inline Flag mem_map_byte_traversal_done(Mem_Map_Traversal* traversal);
 static inline void mem_map_byte_traversal_next(Mem_Map_Traversal* traversal);
 
+/* reg consume track */
+static inline void  reg_consume_table_init(void);
+static inline int64 reg_consume_table_signiture(Op*, Reg_Consume_Signiture);
+static inline void  reg_consume_table_read_reg_map(Op*, uns);
+static inline void  reg_consume_table_update_map(Op*, uns);
+static inline void  reg_consume_table_print_hash_entry(void*, void*);
+
 /**************************************************************************************/
 /* set_map_data: */
 
@@ -172,6 +179,10 @@ void init_map(uns8 proc_id) {
      buckets to the size of instruction window. */
   init_hash_table(&map_data->oracle_mem_hash, "oracle mem dependence map",
                   NODE_TABLE_SIZE, sizeof(Mem_Map_Entry));
+
+  /* Init Consume Reg Map and Table */
+  map_data->reg_consume_table = NULL;
+  reg_consume_table_init();
 }
 
 
@@ -271,6 +282,8 @@ static inline void read_reg_map(Op* op) {
           "Reading map  op_num:%s  off_path:%d  id:%d  flag:%d  ind:%d\n",
           unsstr64(op->op_num), op->off_path, id, map_data->map_flags[id], ind);
 
+    reg_consume_table_read_reg_map(op, ind);
+
     add_src_from_map_entry(op, map_entry, REG_DATA_DEP);
     /* address predictor is called if op is a load & this is first mem op reg
      * read for this reg instance */
@@ -319,6 +332,8 @@ static inline void update_map(Op* op) {
     map_entry->op_num       = op->op_num;
     map_entry->unique_num   = op->unique_num;
     map_data->map_flags[id] = op->off_path;
+
+    reg_consume_table_update_map(op, ind);
   }
 
   /* update the map if the op is a store */
@@ -859,4 +874,155 @@ void reset_map() {
   map_data->last_store[0].op_num = 0;
   map_data->last_store[1].op     = &invalid_op;
   map_data->last_store[1].op_num = 0;
+}
+
+/**************************************************************************************
+ * Module:      Reg_Consume_Table
+ * Description: 
+ * --- 1. Track if a producer insturction is consumed
+ * --- 2. Collect the info of unconsumed producers and do optimization
+***************************************************************************************/
+
+const static Reg_Consume_Signiture REG_CONSUME_PREDICT_SIGN = REG_CONSUME_SIGH_PC; // To be changed to a configurable para
+const static Counter REG_CONSUME_PREDICT_THRESHOLD = 5; // To be changed to a configurable para
+
+/*
+  reg_consume_table_init
+  -- called by: init_map
+  -- procedure: 
+  ----- 1. init tracking map
+  ----- 2. init counter
+  ----- 3. init collecting hash
+*/
+static inline void reg_consume_table_init(void) {
+  uns ii;
+  map_data->reg_consume_table = (Reg_Consume_Table *)malloc(sizeof(Reg_Consume_Table));
+
+  /* init the map for tracking unconsumed producer */
+  for(ii = 0; ii < NUM_REG_IDS * 2; ii++) {
+    map_data->reg_consume_table->reg_consume_map[ii].op          = &invalid_op;
+    map_data->reg_consume_table->reg_consume_map[ii].op_num      = 0;
+    map_data->reg_consume_table->reg_consume_map[ii].if_consumed = REG_CONSUME_STATE_VOID;
+  }
+
+  /* counters for recording producer instructions */
+  map_data->reg_consume_table->num_reg_all_producer = 0;
+  map_data->reg_consume_table->num_reg_consumed = 0;
+  map_data->reg_consume_table->num_reg_unconsumed = 0;
+
+  /* init the hash for collecting unconsumed producers */
+  init_hash_table(&map_data->reg_consume_table->unconsumed_hash, "consum reg stat table",
+    NODE_TABLE_SIZE, sizeof(Counter));
+
+  /* signiture type for the hash */
+  map_data->reg_consume_table->unconsumed_hash_key_tpye = REG_CONSUME_PREDICT_SIGN;
+}
+
+static inline int64 reg_consume_table_signiture(Op* op, Reg_Consume_Signiture sign_type) {
+  int64 sign = 0;
+  switch (sign_type)
+  {
+  case REG_CONSUME_SIGH_PC:
+    sign = op->oracle_info.inst_info->addr;
+    break;
+
+  case REG_CONSUME_SIGH_MEM:
+    sign = op->oracle_info.va;
+    break;
+
+  default:
+    break;
+  }
+
+  return sign;
+}
+
+/*
+  reg_consume_table_read_reg_map
+  -- called by: read_reg_map
+  -- procedure: 
+  ----- 1. get the entry by id and off-path flag
+  ----- 2. change the state to CONSUMED
+*/
+static inline void reg_consume_table_read_reg_map(Op* op, uns ind) {
+  Map_Reg_Consume_Entry* map_entry = &map_data->reg_consume_table->reg_consume_map[ind];
+  map_entry->if_consumed = REG_CONSUME_STATE_CONSUMED;
+}
+
+/*
+  reg_consume_table_update_map
+  -- called by: update_map
+  -- procedure: 
+  ----- 1. get the entry by id and off-path flag
+  ----- 2. track if the entry is consumed by state
+  ----- 3. change the state to UNCONSUMED
+*/
+static inline void reg_consume_table_update_map(Op* op, uns ind) {
+  Map_Reg_Consume_Entry* map_entry = &map_data->reg_consume_table->reg_consume_map[ind];
+  map_entry->op           = op;
+  map_entry->op_num       = op->op_num;
+
+  if (map_entry->if_consumed != REG_CONSUME_STATE_VOID) {
+    map_data->reg_consume_table->num_reg_all_producer++;
+    if (map_entry->if_consumed == REG_CONSUME_STATE_CONSUMED)
+      map_data->reg_consume_table->num_reg_consumed++;
+
+    if (map_entry->if_consumed == REG_CONSUME_STATE_UNCONSUMED) {
+      map_data->reg_consume_table->num_reg_unconsumed++;
+
+      /* update unconsumed hash */
+      Flag new_entry = FALSE;
+      Counter *unconsumed_num = (Counter*)hash_table_access_create(
+        &map_data->reg_consume_table->unconsumed_hash,
+        reg_consume_table_signiture(op, map_data->reg_consume_table->unconsumed_hash_key_tpye),
+        &new_entry
+      );
+      (*unconsumed_num)++;
+    }
+  }
+
+  map_entry->if_consumed = REG_CONSUME_STATE_UNCONSUMED;
+}
+
+static inline void reg_consume_table_print_hash_entry(void* hash_entry, void* arg) {
+  Counter *unconsumed_num = (Counter*)hash_entry;
+  printf("%lld, ", *unconsumed_num);
+}
+
+/**************************************************************************************/
+/* external functions of the unconsumed producer table */
+
+Flag reg_consume_table_predict(Op* op) {
+  if (map_data->reg_consume_table == NULL)
+    return FALSE;
+
+  Counter *unconsumed_num = (Counter*)hash_table_access(
+    &map_data->reg_consume_table->unconsumed_hash,
+    reg_consume_table_signiture(op, map_data->reg_consume_table->unconsumed_hash_key_tpye)
+  );
+
+  if (!unconsumed_num)
+    return FALSE;
+
+  if (*unconsumed_num <= REG_CONSUME_PREDICT_THRESHOLD)
+    return FALSE;
+
+  return TRUE;
+}
+
+void reg_consume_table_print_debug_stat(void) {
+  if (map_data->reg_consume_table == NULL)
+    return;
+
+  printf("=======================================================================\n");
+  printf("\nREG MAP\n");
+
+  printf("UNCONSUMED: %lld, CONSUMED: %lld, ALL: %lld\n",
+    map_data->reg_consume_table->num_reg_unconsumed,
+    map_data->reg_consume_table->num_reg_consumed,
+    map_data->reg_consume_table->num_reg_all_producer);
+
+  printf("-----------------------------------------------------------------------\n");
+  hash_table_scan(&map_data->reg_consume_table->unconsumed_hash, reg_consume_table_print_hash_entry, NULL);
+  printf("\n=======================================================================\n");
 }

@@ -108,6 +108,7 @@ char dbg_print_buf[1024];
 Trace_Uop*** trace_uop_bulk;
 Flag*        bom;
 Flag*        eom;
+Flag*        fetched_instruction;
 uns*         num_sending_uop;
 uns*         num_uops;
 Addr*        last_ga_va;
@@ -222,6 +223,8 @@ void uop_generator_init(uint32_t num_cores) {
   memset(bom, 1, num_cores * sizeof(Flag));
   eom = (Flag*)malloc(num_cores * sizeof(Flag));
   memset(eom, 1, num_cores * sizeof(Flag));
+  fetched_instruction = (Flag*)malloc(num_cores * sizeof(Flag));
+  memset(fetched_instruction, 1, num_cores * sizeof(Flag));
   num_uops = (uns*)malloc(num_cores * sizeof(uns));
   memset(num_uops, 0, num_cores * sizeof(uns));
   num_sending_uop = (uns*)malloc(num_cores * sizeof(uns));
@@ -310,6 +313,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
 
     num_sending_uop[proc_id] = 1;
     eom[proc_id]             = trace_uop->eom;
+    fetched_instruction[proc_id] = inst->fetched_instruction;
 
     DEBUG(proc_id,
           "read pi, addr is 0x%s next_addr: 0x%s op_type:%s num_st:%d "
@@ -344,6 +348,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->proc_id                  = proc_id;
   op->thread_id                = 0;
   op->eom                      = trace_uop->eom;
+  op->fetched_instruction      = fetched_instruction[proc_id];
   op->inst_info                = info;
   op->table_info               = info->table_info;
   op->oracle_info.inst_info    = info;

@@ -72,6 +72,8 @@ class TraceReaderMemtrace : public TraceReader {
 
   MTState                     mt_state_;
   dynamorio::drmemtrace::memref_t                    mt_ref_;
+  dynamorio::drmemtrace::scheduler_t::stream_status_t mt_status_;
+  bool                        mt_use_next_ref_;
   int                         mt_mem_ops_;
   uint64_t                    mt_seq_;
   uint32_t                    mt_prior_isize_;

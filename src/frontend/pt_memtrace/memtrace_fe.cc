@@ -57,6 +57,7 @@ char*           trace_files[MAX_NUM_PROCS];
 TraceReader*    trace_readers[MAX_NUM_PROCS];
 //TODO: Make per proc?
 uint64_t        ins_id    = 0;
+uint64_t        ins_id_fetched = 0;
 uint64_t        prior_tid = 0;
 uint64_t        prior_pid = 0;
 extern scatter_info_map                          scatter_info_storage;
@@ -77,6 +78,7 @@ void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
   info->branch_target         = insi->target;
   info->inst_uid              = ins_id;
   info->last_inst_from_trace  = insi->last_inst_from_trace;
+  info->fetched_instruction   = insi->fetched_instruction;
 
 #ifdef PRINT_INSTRUCTION_INFO
   std::cout << std::hex << info->instruction_addr << " Next "
@@ -120,7 +122,7 @@ int ffwd(const xed_decoded_inst_t* ins) {
      XED_INS_OperandReg(ins, 1) == XED_REG_RCX) {
     return 0;
   }
-  if(ins_id == FAST_FORWARD_TRACE_INS) {
+  if((USE_FETCHED_COUNT ? ins_id_fetched : ins_id) == FAST_FORWARD_TRACE_INS) {
     return 0;
   }
   return 1;
@@ -131,21 +133,6 @@ int roi(const xed_decoded_inst_t* ins) {
      XED_INS_OperandReg(ins, 0) == XED_REG_RCX &&
      XED_INS_OperandReg(ins, 1) == XED_REG_RCX) {
     return 1;
-  }
-  return 0;
-}
-
-int dump_marker_type(const xed_decoded_inst_t* ins) {
-  // not caring about the actual start/end specified in the app
-  if(XED_INS_Opcode(ins) == XED_ICLASS_XCHG &&
-     XED_INS_OperandReg(ins, 0) == XED_REG_RBX &&
-     XED_INS_OperandReg(ins, 1) == XED_REG_RBX) {
-    return 1;
-  }
-  if(XED_INS_Opcode(ins) == XED_ICLASS_XCHG &&
-     XED_INS_OperandReg(ins, 0) == XED_REG_RDX &&
-     XED_INS_OperandReg(ins, 1) == XED_REG_RDX) {
-    return 2;
   }
   return 0;
 }
@@ -164,11 +151,12 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
       ASSERT(proc_id, prior_tid);
       ASSERT(proc_id, prior_pid);
     }
-
-    ins_id++;
-    if(!insi->valid) {
-      insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
+    if(insi->valid) {
       ins_id++;
+      if(insi->fetched_instruction) {
+        ins_id_fetched++;
+      }
+    } else {
       return 0;  // end of trace
     }
   } while(insi->pid != prior_pid || insi->tid != prior_tid);
@@ -187,13 +175,13 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   fill_in_cf_info(next_onpath_pi, insi->ins);
   print_err_if_invalid(next_onpath_pi, insi->ins);
 
-  if (dump_marker_type(insi->ins) == 1) {
+  if (next_onpath_pi->scarab_marker_roi_begin == true) {
     assert(!roi_dump_began);
     // reset stats
     std::cout << "Reached roi dump begin marker, reset stats" << std::endl;
     reset_stats(TRUE);
     roi_dump_began = TRUE;
-  } else if (dump_marker_type(insi->ins) == 2) {
+  } else if (next_onpath_pi->scarab_marker_roi_end == true) {
     assert(roi_dump_began);
     // dump stats
     std::cout << "Reached roi dump end marker, dump stats between" << std::endl;
@@ -258,7 +246,9 @@ void memtrace_setup(uns proc_id) {
 
   if(FAST_FORWARD) {
     ASSERT(proc_id, !MEMTRACE_ROI_BEGIN && !MEMTRACE_ROI_END);
-    std::cout << "Enter fast forward " << ins_id << std::endl;
+    uint64_t inst_count_to_use = USE_FETCHED_COUNT ?
+                                  ins_id_fetched : ins_id;
+    std::cout << "Enter fast forward " << inst_count_to_use << std::endl;
     // FFWD the first instruction and as many as later ffwding parameters specify.
     // insi is invalid once end of trace is reached.
     // Reaching the end of the trace breaks out of the loop and segfaults later in this function.
@@ -266,10 +256,16 @@ void memtrace_setup(uns proc_id) {
     do {
       insi = trace_readers[proc_id]->nextInstruction();
       ins_id++;
-      if((ins_id % 10000000) == 0)
-        std::cout << "Fast forwarded " << ins_id << " instructions."
+      if(insi->fetched_instruction) {
+        ins_id_fetched++;
+      }
+
+      inst_count_to_use = USE_FETCHED_COUNT ? ins_id_fetched : ins_id;
+
+      if((inst_count_to_use % 10000000) == 0)
+        std::cout << "Fast forwarded " << inst_count_to_use << " instructions."
         << (insi->valid ? " Valid" : " Invalid") << " instr." << std::endl;
     } while(ffwd(insi->ins));
-    std::cout << "Exit fast forward " << ins_id << std::endl;
+    std::cout << "Exit fast forward " << inst_count_to_use << std::endl;
   }
 }

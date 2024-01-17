@@ -43,6 +43,7 @@ extern Counter  unique_count;
 extern Counter* unique_count_per_core;
 extern Counter* op_count;
 extern Counter* inst_count;
+extern Counter* inst_count_fetched;
 extern Counter  cycle_count;
 extern Counter  sim_time;
 extern Counter* uop_count;

@@ -129,8 +129,17 @@ typedef struct ctype_pin_inst_struct {
 
   char pin_iclass[16];
 
+  // for pin executable, these are zero initialized (calloc);
+  // for MEMTRACE, the values are set by InstInfo in fill_in_dynamic_info,
+  // whose initial values are set in processInst.
   // used by MEMTRACE frontend to flag the last inst from the trace
   uint8_t last_inst_from_trace : 1;
+  // used by MEMTRACE frontend to distinguish fetched/non-fetched inst
+  uint8_t fetched_instruction : 1;
+  // used to flag scarab marker roi begin
+  uint8_t scarab_marker_roi_begin : 1;
+  // used to flag scarab marker roi begin
+  uint8_t scarab_marker_roi_end : 1;
 } __attribute__((packed)) ctype_pin_inst;
 
 typedef ctype_pin_inst compressed_op;

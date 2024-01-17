@@ -99,6 +99,21 @@ void init_x86_decoder(std::ostream* err_ostream) {
   }
 }
 
+int dump_marker_type(const xed_decoded_inst_t* ins) {
+  // not caring about the actual start/end specified in the app
+  if(XED_INS_Opcode(ins) == XED_ICLASS_XCHG &&
+     XED_INS_OperandReg(ins, 0) == XED_REG_RBX &&
+     XED_INS_OperandReg(ins, 1) == XED_REG_RBX) {
+    return 1;
+  }
+  if(XED_INS_Opcode(ins) == XED_ICLASS_XCHG &&
+     XED_INS_OperandReg(ins, 0) == XED_REG_RDX &&
+     XED_INS_OperandReg(ins, 1) == XED_REG_RDX) {
+    return 2;
+  }
+  return 0;
+}
+
 void fill_in_basic_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
   int category = XED_INS_Category(ins);
   info->size   = XED_INS_Size(ins);
@@ -130,6 +145,14 @@ void fill_in_basic_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
   }
   for (int ii = 0; (ii < 16) && (ii < info->size); ii++) {
     info->inst_binary_msb = (info->inst_binary_msb << 8) + XED_INS_Byte(ins, ii);
+  }
+
+  if (dump_marker_type(ins) == 1) {
+    info->scarab_marker_roi_begin = true;
+    info->scarab_marker_roi_end = false;
+  } else if (dump_marker_type(ins) == 2) {
+    info->scarab_marker_roi_end = true;
+    info->scarab_marker_roi_begin = false;
   }
 }
 

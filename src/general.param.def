@@ -67,6 +67,7 @@ DEF_PARAM( full_warmup                  , FULL_WARMUP               , uns64    ,
 DEF_PARAM( warmup                       , WARMUP                    , uns64    , uns64   , 0        ,       )
 DEF_PARAM( heartbeat_interval           , HEARTBEAT_INTERVAL        , uns    , uns       , 1000000  ,       ) 
 DEF_PARAM( num_heartbeats               , NUM_HEARTBEATS            , uns    , uns       , 0        ,       ) 
+DEF_PARAM( use_fetched_count            , USE_FETCHED_COUNT         , Flag   , Flag      , FALSE    ,       )
 
 /* Periodic dump every heartbeat_interval instructions*/
 DEF_PARAM( periodic_dump                , PERIODIC_DUMP             , Flag   , Flag      , FALSE    ,       )
@@ -109,4 +110,5 @@ DEF_PARAM( nops_bb_start                , NOPS_BB_START              , uns64  , 
 DEF_PARAM( ignore_bar_fetch             , IGNORE_BAR_FETCH           , Flag   , Flag     , FALSE    ,       ) 
 
 DEF_PARAM( trace_bbv_output             , TRACE_BBV_OUTPUT          , char*  , string    , NULL     ,       )
+DEF_PARAM( trace_footprint_output       , TRACE_FOOTPRINT_OUTPUT    , char*  , string    , NULL     ,       )
 DEF_PARAM( segment_instr_count          , SEGMENT_INSTR_COUNT       , uns64  , uns64     , 100000000,       )

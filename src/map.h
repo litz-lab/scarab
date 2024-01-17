@@ -44,6 +44,39 @@ typedef struct Map_Entry_struct {
                          only overwritten) */
 } Map_Entry;
 
+typedef enum Map_Reg_Consume_State_enum {
+  REG_CONSUME_STATE_VOID,
+  REG_CONSUME_STATE_UNCONSUMED,
+  REG_CONSUME_STATE_CONSUMED,
+  REG_CONSUME_STATE_NUM
+} Reg_Consume_State;
+
+typedef enum Map_Reg_Consume_Signiture_enum {
+  REG_CONSUME_SIGH_PC,
+  REG_CONSUME_SIGH_MEM,
+  REG_CONSUME_SIGH_NUM
+} Reg_Consume_Signiture;
+
+typedef struct Map_Reg_Consume_Entry_struct {
+  Op*               op;
+  Counter           op_num;
+  Reg_Consume_State if_consumed;
+} Map_Reg_Consume_Entry;
+
+typedef struct Reg_Consume_Table_struct {
+  /* track if the producer is consumed */
+  Map_Reg_Consume_Entry reg_consume_map[NUM_REG_IDS * 2];
+
+  /* count the producer instructions */
+  Counter num_reg_all_producer;
+  Counter num_reg_consumed;
+  Counter num_reg_unconsumed;
+
+  /* collect the unconsumed producer instructions by signiture */
+  Hash_Table            unconsumed_hash;
+  Reg_Consume_Signiture unconsumed_hash_key_tpye;
+} Reg_Consume_Table;
+
 typedef struct Map_Data_struct {
   /* store information about the last op to write each register */
   uns8      proc_id;
@@ -58,6 +91,9 @@ typedef struct Map_Data_struct {
   Wake_Up_Entry* free_list_head;
   uns            wake_up_entries;
   uns            active_wake_up_entries;
+
+  /* unconsumed producer insturction tracking and optimization */
+  Reg_Consume_Table *reg_consume_table;
 } Map_Data;
 
 
@@ -90,6 +126,10 @@ void delete_store_hash_entry(Op*);
 void clear_not_rdy_bit(Op*, uns);
 Flag test_not_rdy_bit(Op*, uns);
 void set_not_rdy_bit(Op*, uns);
+
+/* external functions of the unconsumed producer table */
+Flag reg_consume_table_predict(Op*);
+void reg_consume_table_print_debug_stat(void);
 
 /**************************************************************************************/
 

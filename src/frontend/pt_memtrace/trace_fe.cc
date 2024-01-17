@@ -38,6 +38,9 @@ static bool            off_path_mode[MAX_NUM_PROCS] = {false};
 static uint64_t        off_path_addr[MAX_NUM_PROCS] = {0};
 static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
 
+extern uint64_t ins_id;
+extern uint64_t ins_id_fetched;
+
 void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
   auto op_iter = pc_to_inst.find(*off_path_addr);
   if (op_iter != pc_to_inst.end()) {
@@ -271,15 +274,15 @@ void ext_trace_done() {
 
 }
 
-void output_fingerprint(std::map<uint64_t, uint64_t> fingerprint) {
+// is also used to print footprint
+uint64_t output_fingerprint(std::string file_name, std::map<uint64_t, uint64_t> fingerprint) {
   // output the map for this segment
   // make it a function?
   std::ofstream myfile;
-  std::string bbv_output(TRACE_BBV_OUTPUT);
-  myfile.open(bbv_output, std::ofstream::out | std::ofstream::app);
+  myfile.open(file_name, std::ofstream::out | std::ofstream::app);
 
   if (!myfile.is_open()) {
-      printf("open file failed\n");
+    std::cout << "open file failed: " << file_name << std::endl;
   }
 
   // std::cout << num_of_segments << "th fp dimensions: " << fingerprint.size() << std::endl;
@@ -306,16 +309,79 @@ void output_fingerprint(std::map<uint64_t, uint64_t> fingerprint) {
   }
 
   // ASSERT(proc_id, nonzero_count == fingerprint.size());
-  // ASSERT(proc_id, instrs_count == SEGMENT_INSTR_COUNT);
 
   myfile << std::endl;
   myfile.close();
+
+  return instrs_count;
 }
 
-// ATTENTION: the string instruction expansion can inflate frenquency
-// those abstract inst type..
-void ext_trace_extract_basic_block_vectors() {
-  uint64_t op_taken_count[NUM_CF_TYPES] = {0};
+typedef struct bb_counts {
+    uint64_t blocks;
+    uint64_t total_size;
+    uint64_t fetched_size;
+} bb_counts;
+
+typedef struct basic_block_info
+{
+  // instruction list contained in this basic block
+  std::vector<ctype_pin_inst> ins_list;
+  // fetched inst count in this basic block
+  uint64_t inst_count_fetched;
+  // the basic block id
+  uint64_t bb_id;
+  uint64_t freq;
+  void clear() {
+    inst_count_fetched = 0;
+    ins_list.clear();
+    bb_id = 0;
+    freq = 0;
+  }
+
+  basic_block_info() {
+    inst_count_fetched = 0;
+    bb_id = 0;
+    ins_list = std::vector<ctype_pin_inst>();
+    freq = 0;
+  }
+
+  bool operator<(const basic_block_info& rhs) const
+  {
+    std::vector<ctype_pin_inst>::size_type size = ins_list.size() < rhs.ins_list.size()?
+                                                  ins_list.size() : rhs.ins_list.size();
+    for(unsigned i = 0 ; i < size; i++) {
+      if(ins_list[i].instruction_addr < rhs.ins_list[i].instruction_addr) {
+        return true;
+      }
+    }
+
+    if(ins_list.size() < rhs.ins_list.size()) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  bool operator!=(const basic_block_info& bb) const
+  {
+    if(ins_list.size() != bb.ins_list.size()) {
+      return true;
+    }
+
+    for(unsigned i = 0 ; i < this->ins_list.size(); i++) {
+      if(this->ins_list[i].instruction_addr != bb.ins_list[i].instruction_addr) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+} basic_block_info;
+
+void output_counts(uint64_t num_of_segments,
+  bb_counts counts_dynamic, bb_counts counts_as_built,
+  uint64_t *op_taken_count,
+  std::unordered_map<uint64_t, std::vector<basic_block_info>> bb_identity_map) {
   const char *op_type_strings[] = {
     "TRACE_INST_TAKEN_NOT_CF",
     "TRACE_INST_TAKEN_CF_BR",
@@ -328,69 +394,64 @@ void ext_trace_extract_basic_block_vectors() {
     "TRACE_INST_TAKEN_CF_SYS",
   };
 
+  printf("to be appened segment num %ld\n", num_of_segments);
+  std::cout << counts_dynamic.total_size << std::endl;
+  std::cout << counts_dynamic.fetched_size << std::endl;
+
+  std::cout << "====================================\n";
+  for(uint i = 0; i < NUM_CF_TYPES; i++) {
+    std::cout << op_type_strings[i] << ":" << op_taken_count[i] << std::endl;
+  }
+
+  std::cout << "====================================\n";
+  printf("identity within this segment\n");
+  auto counter = 0;
+  for(auto i = bb_identity_map.begin(); i != bb_identity_map.end(); i++) {
+    if(i->second.size() > 1) {
+      counter++;
+      printf("%lu bbs with same first pc\n", i->second.size());
+      for(unsigned j = 0; j < i->second.size(); j++) {
+        printf("[%ld]: size %ld, freq %ld\n", i->second[j].bb_id, i->second[j].ins_list.size(), i->second[j].freq);
+        for(unsigned k = 0; k < i->second[j].ins_list.size(); k++) {
+          printf("%s: %u, %d\n",
+                  hexstr64s(i->second[j].ins_list[k].instruction_addr),
+                  i->second[j].ins_list[k].true_op_type, i->second[j].ins_list[k].last_inst_from_trace);
+        }
+      }
+    }
+  }
+
+  printf("%d / %ld\n", counter, bb_identity_map.size());
+
+  printf(
+  "========================================================\n"
+  "Number of blocks built : %ld\n"
+  "     Average size      : %5.2lf instructions\n"
+  "Number of blocks executed  : %ld\n"
+  "     Average weighted size : %5.2lf instructions\n"
+  "Number of total instructions  : %ld\n"
+  "Number of fetched instruction : %ld\n"
+  "========================================================\n"
+  ,
+  counts_as_built.blocks,
+  counts_as_built.total_size / (double)counts_as_built.blocks,
+  counts_dynamic.blocks,
+  counts_dynamic.total_size / (double)counts_dynamic.blocks,
+  counts_dynamic.total_size,
+  counts_dynamic.fetched_size
+  );
+}
+
+// ATTENTION: the string instruction expansion can inflate frenquency
+// those abstract inst type..
+void ext_trace_extract_basic_block_vectors() {
+  uint64_t op_taken_count[NUM_CF_TYPES] = {0};
+
   std::vector<std::pair<std::string, uint64_t>> npc_op_count;
 
   ASSERT(0, NUM_CORES == 1);
   uns8 proc_id = 0;
   ASSERT(proc_id, (FRONTEND == FE_PT) || (FRONTEND == FE_MEMTRACE));
-
-  typedef struct bb_counts {
-      uint64_t blocks;
-      uint64_t total_size;
-      uint64_t non_fetched;
-  } bb_counts;
-
-  typedef struct basic_block_info
-  {
-    // instruction list contained in this basic block
-    std::vector<ctype_pin_inst> ins_list;
-    // the basic block id
-    uint64_t bb_id;
-    uint64_t freq;
-    void clear() {
-      ins_list.clear();
-      bb_id = 0;
-      freq = 0;
-    }
-
-    basic_block_info() {
-      bb_id = 0;
-      ins_list = std::vector<ctype_pin_inst>();
-      freq = 0;
-    }
-
-    bool operator<(const basic_block_info& rhs) const
-    {
-      std::vector<ctype_pin_inst>::size_type size = ins_list.size() < rhs.ins_list.size()?
-                                                    ins_list.size() : rhs.ins_list.size();
-      for(unsigned i = 0 ; i < size; i++) {
-        if(ins_list[i].instruction_addr < rhs.ins_list[i].instruction_addr) {
-          return true;
-        }
-      }
-
-      if(ins_list.size() < rhs.ins_list.size()) {
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-    bool operator!=(const basic_block_info& bb) const
-    {
-      if(ins_list.size() != bb.ins_list.size()) {
-        return true;
-      }
-
-      for(unsigned i = 0 ; i < this->ins_list.size(); i++) {
-        if(this->ins_list[i].instruction_addr != bb.ins_list[i].instruction_addr) {
-          return true;
-        }
-      }
-
-      return false;
-    }
-  } basic_block_info;
 
   // global counters for the entire trace
   bb_counts counts_dynamic{}, counts_as_built{};
@@ -398,6 +459,7 @@ void ext_trace_extract_basic_block_vectors() {
 
   // segment instruction counter, reset every segment
   uint64_t cur_counter = 0;
+  uint64_t cur_counter_fetched = 0;
 
   // unordered map to hash basic block identifier to the basic block info
   // the identifier: the first pc of the basic block
@@ -412,6 +474,9 @@ void ext_trace_extract_basic_block_vectors() {
   // mode 1: the key is the basic block id, used for the whole trace
   // mode 2: the key is the first addr of the basic block, used for trace chunks
   std::map<uint64_t, uint64_t> fingerprint;
+
+  // for instruction footprint analysis
+  std::map<uint64_t, uint64_t> footprint;
 
   // maintain the current basic block
   basic_block_info cur_bb{};
@@ -430,8 +495,8 @@ void ext_trace_extract_basic_block_vectors() {
       op_taken_count[inst->cf_type]++;
     }
     if(inst->instruction_next_addr != inst->instruction_addr + inst->size) {
-      if(!inst->cf_type && !inst->is_repeat) {
-        fprintf(stderr, "the cf is not cf or rep %p\n", (void *)inst->instruction_addr);
+      if(!inst->cf_type && !inst->is_repeat && !inst->last_inst_from_trace) {
+        fprintf(stderr, "the cf change is not due to cf or rep or trace end at %p\n", (void *)inst->instruction_addr);
       }
       ASSERT(proc_id, inst->cf_type || inst->is_repeat || inst->last_inst_from_trace);
     }
@@ -439,6 +504,14 @@ void ext_trace_extract_basic_block_vectors() {
     // add to current basic block
     // a sequence of rep of same pc is a bb executed multiple times
     cur_bb.ins_list.push_back(*inst);
+
+    // increment unique inst frequency
+    footprint[inst->instruction_addr]++;
+
+    // increment fetched count if it is fetched
+    if(inst->fetched_instruction) {
+      cur_bb.inst_count_fetched++;
+    }
 
     // read the next instruction from the trace, which overwrites inst
     if(FRONTEND == FE_PT)
@@ -482,6 +555,8 @@ void ext_trace_extract_basic_block_vectors() {
         // sanity check: are they the same?
         auto bb_key = cur_bb.ins_list.front().instruction_addr;
         bool find = false;
+        // bb_identity_map is cleared at segment boundary
+        // so the sieze could be zero
         for(unsigned i = 0; i < bb_identity_map[bb_key].size(); i++) {
           if(cur_bb != bb_identity_map[bb_key][i]) {
           } else {
@@ -494,22 +569,26 @@ void ext_trace_extract_basic_block_vectors() {
           cur_bb.freq++;
           bb_identity_map[bb_key].push_back(cur_bb);
 
-          for(uint i = 0; i < cur_bb.ins_list.size(); i++) {
-            fprintf(stderr, "[%lu]: ad: %p, op: %d\n", map_lookup->second.bb_id, (void *)cur_bb.ins_list[i].instruction_addr, cur_bb.ins_list[i].true_op_type);
+          if(bb_identity_map[bb_key].size() > 1) {
+            for(uint i = 0; i < cur_bb.ins_list.size(); i++) {
+              fprintf(stderr, "[%lu]: ad: %p, op: %d\n", map_lookup->second.bb_id, (void *)cur_bb.ins_list[i].instruction_addr, cur_bb.ins_list[i].true_op_type);
+            }
+            fprintf(stderr, "DUP bb detected%s\n", success? "" : " at trace end");
           }
-          fprintf(stderr, "DUP bb detected\n");
         }
       } else {
         // a new bb, starting at 1
         counts_as_built.blocks++;
         cur_bb.bb_id = counts_as_built.blocks;
         counts_as_built.total_size += cur_bb.ins_list.size();
+        counts_as_built.fetched_size += cur_bb.inst_count_fetched;
 
         // enter bb map
         bb_map[cur_bb.ins_list.front().instruction_addr] = cur_bb;
         // sanity check
         cur_bb.freq++;
         bb_identity_map[cur_bb.ins_list.front().instruction_addr].push_back(cur_bb);
+        ASSERT(proc_id, bb_identity_map[cur_bb.ins_list.front().instruction_addr].size() == 1);
 
         // fprintf(stderr, "======================\n");
         static int bb_built_count = 0;
@@ -525,21 +604,80 @@ void ext_trace_extract_basic_block_vectors() {
 
       counts_dynamic.blocks++;
       counts_dynamic.total_size += cur_bb.ins_list.size();
+      counts_dynamic.fetched_size += cur_bb.inst_count_fetched;
       cur_counter += cur_bb.ins_list.size();
+      cur_counter_fetched += cur_bb.inst_count_fetched;
+
+      // if TRACE_BBV_MODE_DISTRIBUTED,
+      // the fetched counter always will not exceed SEGMENT_INSTR_COUNT,
+      // as the frontend would only be provided that many instructions
+      if(SIM_MODE == TRACE_BBV_DISTRIBUTED_MODE) {
+        ASSERT(proc_id, cur_counter_fetched <= SEGMENT_INSTR_COUNT);
+      }
+      // furthermore,
+      // if TRACE_BBV_MODE_DISTRIBUTED,
+      // and if not the last segment,
+      // (cur_counter_fetched == SEGMENT_INSTR_COUNT) <=> !success
+      // since do not know if it is the last one,
+      // (cur_counter_fetched == SEGMENT_INSTR_COUNT) -> !success
+      if(cur_counter_fetched == SEGMENT_INSTR_COUNT) {
+        ASSERT(proc_id, !success);
+      }
+
+      ASSERT(proc_id, cur_counter >= cur_counter_fetched);
 
       // same as dynamorio client
       uint64_t to_last_vector_count = 0;
       uint64_t to_new_vector_count = 0;
-      if(cur_counter > SEGMENT_INSTR_COUNT) {
+      uint64_t to_new_vector_count_fetched = 0;
+      if((USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) > SEGMENT_INSTR_COUNT) {
         // if at a boundary (excluding perfect aligned boundary)
-        to_new_vector_count = cur_counter - SEGMENT_INSTR_COUNT;
-        to_last_vector_count = cur_bb.ins_list.size() - to_new_vector_count;
+        // to_new_vector_count = cur_counter - SEGMENT_INSTR_COUNT;
+        // to_last_vector_count = cur_bb.ins_list.size() - to_new_vector_count;
+
+        // re-examine the counting
+        cur_counter -= cur_bb.ins_list.size();
+        cur_counter_fetched -= cur_bb.inst_count_fetched;
+        ASSERT(proc_id, (USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) < SEGMENT_INSTR_COUNT);
+        bool to_new = false;
+        for(uint i = 0; i < cur_bb.ins_list.size(); i++) {
+          if(to_new) {
+            to_new_vector_count++;
+            to_new_vector_count_fetched++;
+          } else {
+            cur_counter++;
+            if(cur_bb.ins_list[i].fetched_instruction) {
+              cur_counter_fetched++;
+            }
+            to_last_vector_count++;
+          }
+          if((USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) == SEGMENT_INSTR_COUNT) {
+            to_new = true;
+          }
+        }
+        ASSERT(proc_id, to_new_vector_count >= to_new_vector_count_fetched);
+        ASSERT(proc_id, to_new_vector_count > 0);
+        ASSERT(proc_id, (USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) == SEGMENT_INSTR_COUNT);
       } else {
+        ASSERT(proc_id, (USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) <= SEGMENT_INSTR_COUNT);
         to_last_vector_count = cur_bb.ins_list.size();
       }
 
       ASSERT(proc_id, to_last_vector_count + to_new_vector_count == cur_bb.ins_list.size());
-      ASSERT(proc_id, (cur_counter > SEGMENT_INSTR_COUNT) == (to_new_vector_count > 0));
+
+      // the following are not true since the counters will not exceed SEGMENT_INSTR_COUNT
+      // if(cur_counter_fetched > SEGMENT_INSTR_COUNT) {
+      //   // it must be using the fetched count
+      //   ASSERT(proc_id, USE_FETCHED_COUNT);
+      //   // the termination of the current fp must be triggered
+      //   ASSERT(proc_id, to_new_vector_count > 0);
+      //   ASSERT(proc_id, to_new_vector_count_fetched > 0);
+      // }
+      // if(!USE_FETCHED_COUNT && cur_counter > SEGMENT_INSTR_COUNT) {
+      //   // the termination of the current fp must be triggered
+      //   ASSERT(proc_id, to_new_vector_count > 0);
+      // }
+      // ASSERT(proc_id, ((USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) > SEGMENT_INSTR_COUNT) == (to_new_vector_count > 0));
 
       if (SIM_MODE == TRACE_BBV_MODE) {
         fingerprint[cur_bb.bb_id] += to_last_vector_count;
@@ -553,58 +691,29 @@ void ext_trace_extract_basic_block_vectors() {
       // - if reach segment limit
       // - if it is the end of trace
       // if two are both satisfied, will output twice
-      if(cur_counter >= SEGMENT_INSTR_COUNT) {
+      if((USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) == SEGMENT_INSTR_COUNT) {
         num_of_segments++;
-
-        printf("to be appened segment num %ld\n", num_of_segments);
-        std::cout << counts_dynamic.total_size << std::endl;
-        for(uint i = 0; i < NUM_CF_TYPES; i++) {
-          std::cout << op_type_strings[i] << ":" << op_taken_count[i] << std::endl;
-        }
-
-        printf("indentity within this segment\n");
-        auto counter = 0;
-        for(auto i = bb_identity_map.begin(); i != bb_identity_map.end(); i++) {
-          if(i->second.size() > 1) {
-            counter++;
-            printf("%lu bbs with same first pc\n", i->second.size());
-            for(unsigned j = 0; j < i->second.size(); j++) {
-              printf("[%ld]: size %ld, freq %ld\n", i->second[j].bb_id, i->second[j].ins_list.size(), i->second[j].freq);
-              for(unsigned k = 0; k < i->second[j].ins_list.size(); k++) {
-                printf("%s: %u\n",
-                        hexstr64s(i->second[j].ins_list[k].instruction_addr),
-                        i->second[j].ins_list[k].true_op_type);
-              }
-            }
-          }
-        }
-        printf("%d / %ld (%ld)\n", counter, bb_identity_map.size(), fingerprint.size());
+        output_counts(num_of_segments,
+                      counts_dynamic, counts_as_built,
+                      op_taken_count,
+                      bb_identity_map);
         bb_identity_map.clear();
-        std::cout << "====================================\n";
 
         cur_counter = 0;
+        cur_counter_fetched = 0;
 
-        output_fingerprint(fingerprint);
+        std::string bbv_output(TRACE_BBV_OUTPUT);
+        std::string footprint_output(TRACE_FOOTPRINT_OUTPUT);
+        uint64_t instrs_count_bbv = output_fingerprint(bbv_output, fingerprint);
+        uint64_t instrs_count_footprint = output_fingerprint(footprint_output, footprint);
+        ASSERT(proc_id, instrs_count_bbv == instrs_count_footprint);
+
         // clear for the next segment
         fingerprint.clear();
-
-        printf(
-        "========================================================\n"
-        "Number of blocks built : %ld\n"
-        "     Average size      : %5.2lf instructions\n"
-        "Number of blocks executed  : %ld\n"
-        "     Average weighted size : %5.2lf instructions\n"
-        "Number of total instructions : %ld\n"
-        "========================================================\n"
-        ,
-        counts_as_built.blocks,
-        counts_as_built.total_size / (double)counts_as_built.blocks,
-        counts_dynamic.blocks,
-        counts_dynamic.total_size / (double)counts_dynamic.blocks,
-        counts_dynamic.total_size
-        );
+        footprint.clear();
 
         // record the residue
+        // if to_new_vector_count > 0, the bb must have crossed the vector boundary
         if(to_new_vector_count > 0) {
             if (SIM_MODE == TRACE_BBV_MODE) {
               fingerprint.insert(std::make_pair(cur_bb.bb_id, to_new_vector_count));
@@ -615,40 +724,36 @@ void ext_trace_extract_basic_block_vectors() {
             }
 
             cur_counter = to_new_vector_count;
+            cur_counter_fetched = to_new_vector_count_fetched;
         }
+      } else {
+        ASSERT(proc_id, (USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) < SEGMENT_INSTR_COUNT);
       }
 
       // clear out current bb
       cur_bb.clear();
 
-      if(!success) {
+      if(!success && !fingerprint.empty()) {
         num_of_segments++;
+        output_counts(num_of_segments,
+                      counts_dynamic, counts_as_built,
+                      op_taken_count,
+                      bb_identity_map);
 
-        printf("to be appened segment num %ld\n", num_of_segments);
-        std::cout << counts_dynamic.total_size << std::endl;
-        for(uint i = 0; i < NUM_CF_TYPES; i++) {
-          std::cout << op_type_strings[i] << ":" << op_taken_count[i] << std::endl;
+        // caution that ins_id and ins_id_fetched is only for memtrace
+        ASSERT(proc_id, counts_dynamic.total_size == ins_id);
+        ASSERT(proc_id, counts_dynamic.fetched_size == ins_id_fetched);
+
+        std::string bbv_output(TRACE_BBV_OUTPUT);
+        std::string footprint_output(TRACE_FOOTPRINT_OUTPUT);
+        uint64_t instrs_count_bbv = output_fingerprint(bbv_output, fingerprint);
+        uint64_t instrs_count_footprint = output_fingerprint(footprint_output, footprint);
+        ASSERT(proc_id, instrs_count_bbv == instrs_count_footprint);
+
+        if(SIM_MODE == TRACE_BBV_DISTRIBUTED_MODE && USE_FETCHED_COUNT) {
+          printf("The fingerprint outputting is triggered at the end of the trace."
+                  "Is this the last segment?\n");
         }
-        std::cout << "====================================\n";
-
-        output_fingerprint(fingerprint);
-
-        // TODO: arrange the output for two output situations
-        printf(
-        "========================================================\n"
-        "Number of blocks built : %ld\n"
-        "     Average size      : %5.2lf instructions\n"
-        "Number of blocks executed  : %ld\n"
-        "     Average weighted size : %5.2lf instructions\n"
-        "Number of total instructions : %ld\n"
-        "========================================================\n"
-        ,
-        counts_as_built.blocks,
-        counts_as_built.total_size / (double)counts_as_built.blocks,
-        counts_dynamic.blocks,
-        counts_dynamic.total_size / (double)counts_dynamic.blocks,
-        counts_dynamic.total_size
-        );
       }
     }
   }

@@ -24,7 +24,8 @@ extern "C" {
   void dec_cnt_useful_signed(uns proc_id, Addr line_addr);
   void inc_cnt_useful_ret(uns proc_id, Addr line_addr);
   void inc_icache_miss(uns proc_id, Addr line_addr);
-  void inc_off_fetched_cls(Addr line_addr, Flag off_path);
+  void inc_icache_hit(uns proc_id, Addr line_addr);
+  void inc_off_fetched_cls(Addr line_addr);
   void inc_prefetched_cls(Addr line_addr);
   void probe_prefetched_cls(Addr line_addr);
   void evict_prefetched_cls(uns proc_id, Addr line_addr, Flag by_fdip);
@@ -45,6 +46,7 @@ extern "C" {
   Flag fdip_search_pref_candidate(Addr addr);
   void insert_pref_candidate_to_seniority_ftq(Addr line_addr);
   void clear_old_seniority_ftq();
+  void assert_fdip_break_reason(uns proc_id);
   
 #ifdef __cplusplus
 }

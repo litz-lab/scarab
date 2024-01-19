@@ -975,6 +975,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
     return;
 
   if(icache_off_path() == FALSE) {
+    inc_icache_hit(ic->proc_id, ic->line_addr);
     if(line->fetched_by_offpath) {
       STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH_SAT_BY_OFFPATH);
       STAT_EVENT(ic->proc_id, ICACHE_USE_OFFPATH);
@@ -1145,7 +1146,8 @@ void log_stats_mshr_hit(Addr line_addr) {
     if (!icache_off_path())
       req->cyc_hit_by_demand_load = cycle_count;
   }
-  inc_icache_miss(ic->proc_id, ic->line_addr);
+  if (!icache_off_path())
+    inc_icache_miss(ic->proc_id, ic->line_addr);
   imiss_reason = get_miss_reason(ic->proc_id, line_addr);
   DEBUG_FDIP(ic->proc_id, "miss reason: %d, req: %d\n", imiss_reason, req? 1:0);
   if (!req) {
@@ -1166,14 +1168,15 @@ void log_stats_mshr_hit(Addr line_addr) {
       else {
         ASSERT(ic->proc_id, imiss_reason == IMISS_NOT_PREFETCHED);
         STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
+        assert_fdip_break_reason(ic->proc_id);
       }
-      if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP || imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
-        STAT_EVENT(ic->proc_id, ICACHE_MISS_TOO_EARLY_ONPATH + icache_off_path());
-      else
-        STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED + icache_off_path());
     } else {
-      inc_off_fetched_cls(ic->line_addr, icache_off_path());
+      inc_off_fetched_cls(ic->line_addr);
     }
+    if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP || imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_TOO_EARLY_ONPATH + icache_off_path());
+    else
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED + icache_off_path());
   } else {
     if (FDIP_ENABLE && !FDIP_UTILITY_HASH_ENABLE && !FDIP_BLOOM_FILTER && !FDIP_UC_SIZE && !EIP_ENABLE
         && mem_req_is_type(req, MRT_FDIPPRF))

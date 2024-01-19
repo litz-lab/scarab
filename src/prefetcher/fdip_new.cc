@@ -74,13 +74,15 @@ std::vector<std::unordered_map<Addr, int32_t>> per_core_cnt_useful_signed;
 // <CL addresses, retirement count> - on-path retired cache line count
 std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_useful_ret;
 // <CL addresses, icache miss count>
-std::vector<std::tuple<Addr, Counter>> per_core_icache_miss;
+std::vector<std::map<Addr, Counter>> per_core_icache_miss;
 // <CL addresses, icache hit count>
 std::vector<std::map<Addr, Counter>> per_core_icache_hit;
 // <CL addresses, fetched_cycle on the off-path>
 std::vector<std::map<Addr, Counter>> per_core_off_fetched_cls;;
 // <CL addresses, prefetched count>
 std::vector<std::map<Addr, Counter>> per_core_prefetched_cls;
+// <CL addresses, new_prefetched count>
+std::vector<std::map<Addr, Counter>> per_core_new_prefetched_cls;
 // <CL address, cyc_access_by_fdip, cyc_evicted_from_l1_by_demand_load, cyc_evicted_from_l1_by_FDIP> - prefetched and access time information for timeliness analysis
 std::vector<std::unordered_map<Addr, std::pair<Counter, std::pair<Counter, Counter>>>> per_core_prefetched_cls_info;
 // accumulated FTQ occupancy every cycle
@@ -122,6 +124,7 @@ void alloc_mem_fdip(uns numCores) {
   per_core_icache_hit.resize(numCores);
   per_core_off_fetched_cls.resize(numCores);
   per_core_prefetched_cls.resize(numCores);
+  per_core_new_prefetched_cls.resize(numCores);
   per_core_prefetched_cls_info.resize(numCores);
   per_core_fdip_ftq_occupancy_ops.resize(numCores);
   per_core_fdip_ftq_occupancy_blocks.resize(numCores);
@@ -429,19 +432,16 @@ void print_cl_info(uns proc_id) {
   std::unordered_map<Addr, Counter>* cnt_useful_ret = &per_core_cnt_useful_ret[proc_id];
   std::map<Addr, Counter>* prefetched_cls = &per_core_prefetched_cls[proc_id];
   std::map<Addr, Counter>* icache_miss = &per_core_icache_miss[proc_id];
+  std::map<Addr, Counter>* icache_hit = &per_core_icache_hit[proc_id];
 
-  DEBUG(proc_id, "icache miss cache lines (UNIQUE_MISSED_LINES) size: %lu\n", icache_miss->size());
-  FILE* fp = fopen("per_line_icache_access.csv", "w");
-  fprintf(fp, "cl_addr,miss,hit\n");
+  DEBUG(proc_id, "icache miss cache lines (UNIQUE_MISSED_LINES) size: %lu, icache hit cache lines (UNIQUE_MISSED_LINES): %lu\n", icache_miss->size(), icache_hit->size());
+  INC_STAT_EVENT(proc_id, ICACHE_UNIQUE_MISSED_LINES, icache_miss->size());
+  INC_STAT_EVENT(proc_id, ICACHE_UNIQUE_HIT_LINES, icache_hit->size());
   std::multimap<Counter, Addr> icache_miss_sorted = flip_map(*icache_miss);
   for(std::multimap<Counter, Addr>::const_iterator it = icache_miss_sorted.begin();
       it != icache_miss_sorted.end(); ++it) {
     DEBUG(proc_id, "[set %u] 0x%llx missed %llu times\n", (uns)(it->second >> ic_ref->icache.shift_bits & ic_ref->icache.set_mask), it->second, it->first);
-    auto hit_iter = per_core_icache_hit[proc_id].find(it->second);
-    Counter num_hit = (hit_iter != per_core_icache_hit[proc_id].end())? hit_iter->second : 0;
-    fprintf(fp, "%llx,%llu,%llu\n", it->second, it->first, num_hit);
   }
-  fclose(fp);
   DEBUG(proc_id, "unique prefetched lines (UNIQUE_PREFETCHED_LINES) size: %lu\n", prefetched_cls->size());
   std::multimap<Counter, Addr> prefetched_cls_sorted = flip_map(*prefetched_cls);
   for(std::multimap<Counter, Addr>::const_iterator it = prefetched_cls_sorted.begin();
@@ -453,14 +453,22 @@ void print_cl_info(uns proc_id) {
   }
 
   std::unordered_map<Addr, int32_t>* cnt_learned_cl = &per_core_cnt_useful_signed[proc_id];
-  fp = fopen("per_line_stats.csv", "w");
-  fprintf(fp, "cl_addr,useful_cnt,unuseful_cnt\n");
+  FILE* fp = fopen("per_line_icache_line_info.csv", "w");
+  fprintf(fp, "cl_addr,useful_cnt,unuseful_cnt,prefetch_cnt,new_prefetch_cnt,icache_hit,icache_miss\n");
   for(auto it = cnt_learned_cl->begin(); it != cnt_learned_cl->end(); ++it) {
     auto cnt_useful_iter = per_core_cnt_useful[proc_id].find(it->first);
     auto cnt_unuseful_iter = per_core_cnt_unuseful[proc_id].find(it->first);
+    auto cnt_prefetch_iter = per_core_prefetched_cls[proc_id].find(it->first);
+    auto cnt_new_prefetch_iter = per_core_new_prefetched_cls[proc_id].find(it->first);
+    auto hit_iter = per_core_icache_hit[proc_id].find(it->first);
+    auto miss_iter = per_core_icache_miss[proc_id].find(it->first);
     Counter cnt_useful = (cnt_useful_iter != per_core_cnt_useful[proc_id].end())? cnt_useful_iter->second.first : 0;
     Counter cnt_unuseful = (cnt_unuseful_iter != per_core_cnt_unuseful[proc_id].end())? cnt_unuseful_iter->second : 0;
-    fprintf(fp, "%llx,%llu,%llu\n", it->first, cnt_useful, cnt_unuseful);
+    Counter cnt_prefetch = (cnt_prefetch_iter != per_core_prefetched_cls[proc_id].end())? cnt_prefetch_iter->second : 0;
+    Counter cnt_new_prefetch = (cnt_new_prefetch_iter != per_core_new_prefetched_cls[proc_id].end())? cnt_new_prefetch_iter->second : 0;
+    Counter num_hit = (hit_iter != per_core_icache_hit[proc_id].end())? hit_iter->second : 0;
+    Counter num_miss = (miss_iter != per_core_icache_miss[proc_id].end())? miss_iter->second : 0;
+    fprintf(fp, "%llx,%llu,%llu,%llu,%llu,%llu,%llu\n", it->first, cnt_useful, cnt_unuseful, cnt_prefetch, cnt_new_prefetch, num_hit, num_miss);
     ASSERT(proc_id, (cnt_useful_iter != per_core_cnt_useful[proc_id].end()) || (cnt_unuseful_iter != per_core_cnt_unuseful[proc_id].end()));
   }
   fclose(fp);
@@ -549,6 +557,12 @@ void inc_prefetched_cls(Addr line_addr) {
     cl_info_iter->second.first = cycle_count;
     DEBUG(fdip_proc_id, "%llx updated with cnt %llu in prefetched_cls at cyc %llu\n", line_addr, cl_iter->second, cycle_count);
   }
+
+  auto cl_new_iter = per_core_new_prefetched_cls[fdip_proc_id].find(line_addr);
+  if (cl_new_iter == per_core_new_prefetched_cls[fdip_proc_id].end())
+    per_core_new_prefetched_cls[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
+  else
+    cl_new_iter->second++;
 }
 
 void inc_off_fetched_cls(Addr line_addr) {

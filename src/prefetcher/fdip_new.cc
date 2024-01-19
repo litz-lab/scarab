@@ -59,8 +59,6 @@ std::vector<double> per_core_btb_miss_rate;
 /* global variables for utility study and stats */
 // for icache miss stats
 std::vector<uns> per_core_last_imiss_reason;
-// for assertions
-std::vector<uns> per_core_last_break_reason;
 std::vector<Counter> per_core_last_recover_cycle;
 // <CL address, # of first demand load on-path hits of cache lines, flag for learning from a true miss> - useful count
 std::vector<std::unordered_map<Addr, std::pair<Counter, Flag>>> per_core_cnt_useful;
@@ -74,9 +72,7 @@ std::vector<std::unordered_map<Addr, int32_t>> per_core_cnt_useful_signed;
 // <CL addresses, retirement count> - on-path retired cache line count
 std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_useful_ret;
 // <CL addresses, icache miss count>
-std::vector<std::tuple<Addr, Counter>> per_core_icache_miss;
-// <CL addresses, icache hit count>
-std::vector<std::map<Addr, Counter>> per_core_icache_hit;
+std::vector<std::map<Addr, Counter>> per_core_icache_miss;
 // <CL addresses, fetched_cycle on the off-path>
 std::vector<std::map<Addr, Counter>> per_core_off_fetched_cls;;
 // <CL addresses, prefetched count>
@@ -112,14 +108,12 @@ void alloc_mem_fdip(uns numCores) {
     per_core_btb_miss_rate.resize(numCores);
   }
   per_core_last_imiss_reason.resize(numCores);
-  per_core_last_break_reason.resize(numCores);
   per_core_last_recover_cycle.resize(numCores);
   per_core_cnt_useful.resize(numCores);
   per_core_cnt_unuseful.resize(numCores);
   per_core_cnt_useful_signed.resize(numCores);
   per_core_cnt_useful_ret.resize(numCores);
   per_core_icache_miss.resize(numCores);
-  per_core_icache_hit.resize(numCores);
   per_core_off_fetched_cls.resize(numCores);
   per_core_prefetched_cls.resize(numCores);
   per_core_prefetched_cls_info.resize(numCores);
@@ -153,7 +147,6 @@ void init_fdip(uns proc_id) {
     per_core_btb_miss_rate[proc_id] = 0.0;
   }
   per_core_last_imiss_reason[proc_id] = Imiss_Reason::IMISS_NOT_PREFETCHED;
-  per_core_last_break_reason[proc_id] = BR_REACH_FTQ_END;
   per_core_last_recover_cycle[proc_id] = 0;
   per_core_fdip_ftq_occupancy_ops[proc_id] = 0;
   per_core_fdip_ftq_occupancy_blocks[proc_id] = 0;
@@ -390,7 +383,6 @@ void update_fdip() {
     per_core_fdip_ftq_occupancy_blocks[ic_ref->proc_id] += decoupled_fe_ftq_num_blocks();
     INC_STAT_EVENT(fdip_proc_id, FDIP_FTQ_OCCUPANCY_BLOCKS_ACCUMULATED, decoupled_fe_ftq_num_blocks());
   }
-  per_core_last_break_reason[ic_ref->proc_id] = break_reason;
   //else
     //ASSERT(fdip_proc_id, false); // for now TODO
 }
@@ -431,17 +423,11 @@ void print_cl_info(uns proc_id) {
   std::map<Addr, Counter>* icache_miss = &per_core_icache_miss[proc_id];
 
   DEBUG(proc_id, "icache miss cache lines (UNIQUE_MISSED_LINES) size: %lu\n", icache_miss->size());
-  FILE* fp = fopen("per_line_icache_access.csv", "w");
-  fprintf(fp, "cl_addr,miss,hit\n");
   std::multimap<Counter, Addr> icache_miss_sorted = flip_map(*icache_miss);
   for(std::multimap<Counter, Addr>::const_iterator it = icache_miss_sorted.begin();
       it != icache_miss_sorted.end(); ++it) {
     DEBUG(proc_id, "[set %u] 0x%llx missed %llu times\n", (uns)(it->second >> ic_ref->icache.shift_bits & ic_ref->icache.set_mask), it->second, it->first);
-    auto hit_iter = per_core_icache_hit[proc_id].find(it->second);
-    Counter num_hit = (hit_iter != per_core_icache_hit[proc_id].end())? hit_iter->second : 0;
-    fprintf(fp, "%llx,%llu,%llu\n", it->second, it->first, num_hit);
   }
-  fclose(fp);
   DEBUG(proc_id, "unique prefetched lines (UNIQUE_PREFETCHED_LINES) size: %lu\n", prefetched_cls->size());
   std::multimap<Counter, Addr> prefetched_cls_sorted = flip_map(*prefetched_cls);
   for(std::multimap<Counter, Addr>::const_iterator it = prefetched_cls_sorted.begin();
@@ -451,19 +437,6 @@ void print_cl_info(uns proc_id) {
       DEBUG(proc_id, "Unuseful 0x%llx prefetched %llu times\n", it->second, it->first);
     }
   }
-
-  std::unordered_map<Addr, int32_t>* cnt_learned_cl = &per_core_cnt_useful_signed[proc_id];
-  fp = fopen("per_line_stats.csv", "w");
-  fprintf(fp, "cl_addr,useful_cnt,unuseful_cnt\n");
-  for(auto it = cnt_learned_cl->begin(); it != cnt_learned_cl->end(); ++it) {
-    auto cnt_useful_iter = per_core_cnt_useful[proc_id].find(it->first);
-    auto cnt_unuseful_iter = per_core_cnt_unuseful[proc_id].find(it->first);
-    Counter cnt_useful = (cnt_useful_iter != per_core_cnt_useful[proc_id].end())? cnt_useful_iter->second.first : 0;
-    Counter cnt_unuseful = (cnt_unuseful_iter != per_core_cnt_unuseful[proc_id].end())? cnt_unuseful_iter->second : 0;
-    fprintf(fp, "%llx,%llu,%llu\n", it->first, cnt_useful, cnt_unuseful);
-    ASSERT(proc_id, (cnt_useful_iter != per_core_cnt_useful[proc_id].end()) || (cnt_unuseful_iter != per_core_cnt_unuseful[proc_id].end()));
-  }
-  fclose(fp);
 }
 
 void assert_not_trained(uns proc_id, Addr line_addr, uns imiss_reason) {
@@ -551,7 +524,8 @@ void inc_prefetched_cls(Addr line_addr) {
   }
 }
 
-void inc_off_fetched_cls(Addr line_addr) {
+void inc_off_fetched_cls(Addr line_addr, Flag off_path) {
+  ASSERT(fdip_proc_id, off_path);
   auto cl_iter = per_core_off_fetched_cls[fdip_proc_id].find(line_addr);
   if (cl_iter == per_core_off_fetched_cls[fdip_proc_id].end()) {
     per_core_off_fetched_cls[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, cycle_count));
@@ -1125,18 +1099,4 @@ void dec_useful_lines_uc(uns proc_id, Addr line_addr) {
   UNUSED(uc_line_addr);
   if (repl_uc_line_addr)
     STAT_EVENT(proc_id, FDIP_UC_REPLACEMENT);
-}
-
-void assert_fdip_break_reason(uns proc_id) {
-  ASSERT(proc_id, per_core_last_break_reason[proc_id] == BR_FULL_MEM_REQ_BUF);
-}
-
-void inc_icache_hit(uns proc_id, Addr line_addr) {
-  auto cl_iter = per_core_icache_hit[proc_id].find(line_addr);
-  if (cl_iter == per_core_icache_hit[proc_id].end()) {
-    STAT_EVENT(proc_id, UNIQUE_HIT_LINES);
-    per_core_icache_hit[proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
-  }
-  else
-    cl_iter->second++;
 }

@@ -63,6 +63,52 @@ typedef struct Map_Reg_Consume_Entry_struct {
   Reg_Consume_State if_consumed;
 } Map_Reg_Consume_Entry;
 
+/**************************************************************************************/
+/* Reg File Hardware Implementation */
+
+// To be change to configurable val
+#define REG_FILE_PHY_ENABLE FALSE
+#define REG_FILE_PHY_NUM 144
+
+typedef enum Reg_File_Phy_State_enum {
+  REG_FILE_PHY_STATE_FREE,
+  REG_FILE_PHY_STATE_ALLOC,
+  REG_FILE_PHY_STATE_OVERLAP,
+  REG_FILE_PHY_STATE_COMMIT,
+  REG_FILE_PHY_STATE_NUM
+} Reg_File_Phy_State;
+
+typedef struct Reg_File_Phy_Entry_struct {
+  // op info
+  Op                  *op;
+  Counter             op_num;
+  Counter             unique_num;
+  Flag                off_path;
+  int                 reg_logical_id;
+
+  // reg info
+  int                 reg_phy_id;
+  Reg_File_Phy_State  reg_state;
+  Reg_Consume_State   if_consumed;
+
+  // alloc list info
+  struct Reg_File_Phy_Entry_struct *prev;
+  struct Reg_File_Phy_Entry_struct *next;
+} Reg_File_Phy_Entry;
+
+typedef struct Reg_File_Phy_Map_struct {
+  Reg_File_Phy_Entry reg_map_array[REG_FILE_PHY_NUM];
+  Reg_File_Phy_Entry *reg_alloc_head;
+  uns                reg_map_free_num;
+} Reg_File_Phy_Map;
+
+typedef struct Reg_File_struct {
+  Reg_File_Phy_Map *phy_map;
+  Flag reg_stall;
+} Reg_File;
+
+/**************************************************************************************/
+
 typedef struct Reg_Consume_Table_struct {
   /* track if the producer is consumed */
   Map_Reg_Consume_Entry reg_consume_map[NUM_REG_IDS * 2];
@@ -94,6 +140,9 @@ typedef struct Map_Data_struct {
 
   /* unconsumed producer insturction tracking and optimization */
   Reg_Consume_Table *reg_consume_table;
+
+  /* register file for renaming based on hardware implementation */
+  Reg_File *reg_file;
 } Map_Data;
 
 
@@ -130,6 +179,9 @@ void set_not_rdy_bit(Op*, uns);
 /* external functions of the unconsumed producer table */
 Flag reg_consume_table_predict(Op*);
 void reg_consume_table_print_debug_stat(void);
+
+/* external functions of the physical register file */
+Flag reg_file_if_stall(void);
 
 /**************************************************************************************/
 

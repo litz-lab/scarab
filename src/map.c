@@ -134,6 +134,11 @@ static inline void  reg_consume_table_read_reg_map(Op*, uns);
 static inline void  reg_consume_table_update_map(Op*, uns);
 static inline void  reg_consume_table_print_hash_entry(void*, void*);
 
+/* physical register file */
+static inline void reg_file_init(void);
+static inline void reg_file_process_renaming(Op*);
+static inline void reg_file_rebuild_map(void);
+
 /**************************************************************************************/
 /* set_map_data: */
 
@@ -183,6 +188,8 @@ void init_map(uns8 proc_id) {
   /* Init Consume Reg Map and Table */
   map_data->reg_consume_table = NULL;
   reg_consume_table_init();
+
+  reg_file_init();
 }
 
 
@@ -197,6 +204,8 @@ void recover_map() {
   map_data->last_store_flag = FALSE;
   hash_table_scan(&map_data->oracle_mem_hash, recover_mem_map_entry, NULL);
   rebuild_offpath_map();
+
+  reg_file_rebuild_map();
 }
 
 /**************************************************************************************/
@@ -263,6 +272,8 @@ void map_op(Op* op) {
   ASSERT(map_data->proc_id, op);
   ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
 
+  reg_file_process_renaming(op);
+
   read_reg_map(op);   /* set reg sources */
   read_store_map(op); /* set addr dependency on last store */
   update_map(op);     /* update reg and last store maps */
@@ -273,6 +284,10 @@ void map_op(Op* op) {
 
 static inline void read_reg_map(Op* op) {
   uns ii;
+
+  if (REG_FILE_PHY_ENABLE)
+    return;
+
   for(ii = 0; ii < op->table_info->num_src_regs; ii++) {
     uns        id        = op->inst_info->srcs[ii].id;
     uns        ind       = id << 1 | map_data->map_flags[id];
@@ -1025,4 +1040,295 @@ void reg_consume_table_print_debug_stat(void) {
   printf("-----------------------------------------------------------------------\n");
   hash_table_scan(&map_data->reg_consume_table->unconsumed_hash, reg_consume_table_print_hash_entry, NULL);
   printf("\n=======================================================================\n");
+}
+
+/**************************************************************************************
+ * Module:      Reg_File
+ * Description: Implementation of register renaming stage in hardware mechanism
+***************************************************************************************/
+// reg file procedure
+static inline void reg_file_look_up_src(Op*);
+static inline void reg_file_alloc_dest(Op*);
+
+// physical map functional methods
+static inline void reg_file_phy_map_init(void);
+static inline Flag reg_file_phy_map_remove_dead(Op*);
+static inline void reg_file_phy_map_reset(void);
+
+// physical map basic operations
+static inline void reg_file_phy_map_read_entry(Op*, Reg_File_Phy_Entry*, Dep_Type);
+static inline void reg_file_phy_map_write_entry(Op*, Reg_File_Phy_Entry*, uns);
+static inline Flag reg_file_phy_map_can_alloc(uns);
+static inline Reg_File_Phy_Entry *reg_file_phy_map_search_entry(uns16, Flag);
+static inline Reg_File_Phy_Entry *reg_file_phy_map_alloc_entry(void);
+static inline void reg_file_phy_map_free_entry(Reg_File_Phy_Entry*);
+
+const static int REG_FILE_REG_INVALID_ID = -1;
+
+void reg_file_init(void) {
+  if (!REG_FILE_PHY_ENABLE)
+    return;
+
+  map_data->reg_file = (Reg_File *)malloc(sizeof(Reg_File));
+  map_data->reg_file->reg_stall = FALSE;
+
+  map_data->reg_file->phy_map = (Reg_File_Phy_Map *)malloc(sizeof(Reg_File_Phy_Map));
+  reg_file_phy_map_init();
+}
+
+/*
+  reg_file_process_renaming
+  --- 1. look up register as src and fill the entry into src_info
+  --- 2. alloc entry and store self info into register as dest
+*/
+void reg_file_process_renaming(Op *op) {
+  if (!REG_FILE_PHY_ENABLE)
+    return;
+
+  reg_file_look_up_src(op);
+  reg_file_alloc_dest(op);
+}
+
+/*
+  reg_file_rebuild_map
+  --- 1. reset and recover data for error spec
+  --- 2. get the data from snapshot of seq list
+*/
+void reg_file_rebuild_map(void) {
+  if (!REG_FILE_PHY_ENABLE)
+    return;
+
+  Op** op_p = (Op**)list_start_head_traversal(&td->seq_op_list);
+  while (op_p && !(*op_p)->off_path) {
+    op_p = (Op**)list_next_element(&td->seq_op_list);
+  }
+
+  reg_file_phy_map_reset();
+
+  for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
+    reg_file_alloc_dest(*op_p);
+  }
+}
+
+/*
+  reg_file_look_up_src
+  --- 1. search the entry in map
+  --- 2. read info from map
+*/
+void reg_file_look_up_src(Op *op) {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+
+  for (ii = 0; ii < op->table_info->num_src_regs; ii++) {
+    uns16 id = op->inst_info->srcs[ii].id;
+    entry = reg_file_phy_map_search_entry(id, op->off_path);
+    reg_file_phy_map_read_entry(op, entry, REG_DATA_DEP);
+  }
+}
+
+/*
+  reg_file_alloc_dest
+  --- 1. remove dead register for overlapped and committed op
+  --- 2. fill the info into free entries
+*/
+void reg_file_alloc_dest(Op *op) {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+
+  // free the dead register in the map
+  reg_file_phy_map_remove_dead(op);
+
+  // check if enough reg
+  if (!reg_file_phy_map_can_alloc(op->table_info->num_dest_regs)) {
+    map_data->reg_file->reg_stall = TRUE;
+    return;
+  }
+  map_data->reg_file->reg_stall = FALSE;
+
+  // alloc reg for all dests
+  for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
+    entry = reg_file_phy_map_alloc_entry();
+    reg_file_phy_map_write_entry(op, entry, ii);
+  }
+}
+
+/**************************************************************************************/
+/* External Calling of Register File */
+
+Flag reg_file_if_stall(void) {
+  if (REG_FILE_PHY_ENABLE)
+    return FALSE;
+
+  return map_data->reg_file->reg_stall;
+}
+
+/**************************************************************************************/
+/* Operations of Physical Map in Register File */
+
+void reg_file_phy_map_init(void) {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+
+  for (ii = 0; ii < REG_FILE_PHY_NUM; ii++) {
+    entry = &map_data->reg_file->phy_map->reg_map_array[ii];
+    entry->op = &invalid_op;
+    entry->op_num = 0;
+    entry->unique_num = 0;
+    entry->off_path = FALSE;
+    entry->reg_logical_id = REG_FILE_REG_INVALID_ID;
+
+    entry->reg_phy_id = ii;
+    entry->reg_state = REG_FILE_PHY_STATE_FREE;
+    entry->if_consumed = REG_CONSUME_STATE_VOID;
+
+    entry->prev = NULL;
+    entry->next = NULL;
+  }
+
+  map_data->reg_file->phy_map->reg_alloc_head = NULL;
+  map_data->reg_file->phy_map->reg_map_free_num = REG_FILE_PHY_NUM;
+}
+
+// free dead register for overlapped and committed op
+Flag reg_file_phy_map_remove_dead(Op *op) {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+  Flag if_remove = FALSE;
+
+  for (entry = map_data->reg_file->phy_map->reg_alloc_head; entry != NULL; entry = entry->next) {
+    // check if it is committed
+    if (entry->op->op_pool_valid == FALSE) {
+      reg_file_phy_map_free_entry(entry);
+      if_remove = TRUE;
+      continue;
+    }
+
+    // check if it is overlapped
+    for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
+      if (entry->reg_logical_id == op->inst_info->dests[ii].id && entry->off_path == op->off_path) {
+        reg_file_phy_map_free_entry(entry);
+        if_remove = TRUE;
+        break;
+      }
+    }
+  }
+
+  return if_remove;
+}
+
+// remove all off path ops
+void reg_file_phy_map_reset(void) {
+  Reg_File_Phy_Entry *entry;
+
+  for (entry = map_data->reg_file->phy_map->reg_alloc_head; entry != NULL; entry = entry->next) {
+    if (!entry->off_path)
+      continue;
+
+    reg_file_phy_map_free_entry(entry);
+  }
+}
+
+void reg_file_phy_map_read_entry(Op *op, Reg_File_Phy_Entry *entry, Dep_Type type) {
+  if (entry == NULL) {
+    return;
+  }
+
+  uns       src_num = op->oracle_info.num_srcs++;
+  Src_Info* info    = &op->oracle_info.src_info[src_num];
+
+  info->type       = type;
+  info->op         = entry->op;
+  info->op_num     = entry->op_num;
+  info->unique_num = entry->unique_num;
+  entry->if_consumed = REG_CONSUME_STATE_CONSUMED;
+
+  set_not_rdy_bit(op, src_num);
+}
+
+void reg_file_phy_map_write_entry(Op* op, Reg_File_Phy_Entry *entry, uns index) {
+  if (entry == NULL)
+    return;
+
+  // fill op info
+  entry->op = op;
+  entry->op_num = op->op_num;
+  entry->unique_num = op->unique_num;
+  entry->off_path = op->off_path;
+  entry->reg_logical_id = op->inst_info->dests[index].id;
+
+  // set reg info
+  entry->reg_state = REG_FILE_PHY_STATE_ALLOC;
+  entry->if_consumed = REG_CONSUME_STATE_UNCONSUMED;
+}
+
+Flag reg_file_phy_map_can_alloc(uns num) {
+  return map_data->reg_file->phy_map->reg_map_free_num >= num;
+}
+
+Reg_File_Phy_Entry *reg_file_phy_map_search_entry(uns16 id, Flag off_path) {
+  Reg_File_Phy_Entry *entry;
+
+  for (entry = map_data->reg_file->phy_map->reg_alloc_head; entry != NULL; entry = entry->next) {
+    if (entry->reg_logical_id != id || entry->off_path != off_path)
+      continue;
+
+    return entry;
+  }
+
+  return NULL;
+}
+
+Reg_File_Phy_Entry *reg_file_phy_map_alloc_entry(void) {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+
+  for (ii = 0; ii < REG_FILE_PHY_NUM; ii++) {
+    entry = &map_data->reg_file->phy_map->reg_map_array[ii];
+    if (entry->reg_state != REG_FILE_PHY_STATE_FREE)
+      continue;
+
+    map_data->reg_file->phy_map->reg_map_free_num--;
+
+    entry->prev = NULL;
+    entry->next = map_data->reg_file->phy_map->reg_alloc_head;
+
+    if (map_data->reg_file->phy_map->reg_alloc_head == NULL) {
+      map_data->reg_file->phy_map->reg_alloc_head = entry;
+    } else {
+      map_data->reg_file->phy_map->reg_alloc_head->prev = entry;
+      map_data->reg_file->phy_map->reg_alloc_head = entry;
+    }
+
+    return entry;
+  }
+
+  return NULL;
+}
+
+void reg_file_phy_map_free_entry(Reg_File_Phy_Entry *entry) {
+  if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
+    return;
+
+  entry->op = &invalid_op;
+  entry->op_num = 0;
+  entry->unique_num = 0;
+  entry->off_path = FALSE;
+  entry->reg_logical_id = REG_FILE_REG_INVALID_ID;
+
+  entry->reg_state = REG_FILE_PHY_STATE_FREE;
+  entry->if_consumed = REG_CONSUME_STATE_VOID;
+
+  map_data->reg_file->phy_map->reg_map_free_num++;
+
+  if (entry->next) {
+    entry->next->prev = entry->prev;
+  }
+
+  if (entry->prev) {
+    entry->prev->next = entry->next;
+  } else {
+    map_data->reg_file->phy_map->reg_alloc_head = entry->next;
+  }
+
+  entry->prev = NULL;
 }

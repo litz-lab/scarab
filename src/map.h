@@ -104,7 +104,7 @@ typedef struct Reg_File_Phy_Map_struct {
 
 typedef struct Reg_File_struct {
   Reg_File_Phy_Map *phy_map;
-  Flag reg_stall;
+  Op *stall_op;
 } Reg_File;
 
 /**************************************************************************************/
@@ -181,7 +181,8 @@ Flag reg_consume_table_predict(Op*);
 void reg_consume_table_print_debug_stat(void);
 
 /* external functions of the physical register file */
-Flag reg_file_if_stall(void);
+Flag reg_file_check_stall(void);
+Flag reg_file_remove_stall(void);
 
 /**************************************************************************************/
 

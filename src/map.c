@@ -189,6 +189,8 @@ void init_map(uns8 proc_id) {
   map_data->reg_consume_table = NULL;
   reg_consume_table_init();
 
+  /* Init Physical Register File */
+  map_data->reg_file = NULL;
   reg_file_init();
 }
 
@@ -1052,7 +1054,8 @@ static inline void reg_file_alloc_dest(Op*);
 
 // physical map functional methods
 static inline void reg_file_phy_map_init(void);
-static inline Flag reg_file_phy_map_remove_dead(Op*);
+static inline Flag reg_file_phy_map_remove_dead(void);
+static inline void reg_file_phy_map_check_overlap(Op*);
 static inline void reg_file_phy_map_reset(void);
 
 // physical map basic operations
@@ -1070,7 +1073,7 @@ void reg_file_init(void) {
     return;
 
   map_data->reg_file = (Reg_File *)malloc(sizeof(Reg_File));
-  map_data->reg_file->reg_stall = FALSE;
+  map_data->reg_file->stall_op = NULL;
 
   map_data->reg_file->phy_map = (Reg_File_Phy_Map *)malloc(sizeof(Reg_File_Phy_Map));
   reg_file_phy_map_init();
@@ -1136,16 +1139,22 @@ void reg_file_alloc_dest(Op *op) {
   Reg_File_Phy_Entry *entry;
 
   // free the dead register in the map
-  reg_file_phy_map_remove_dead(op);
+  reg_file_phy_map_remove_dead();
 
   // check if enough reg
   if (!reg_file_phy_map_can_alloc(op->table_info->num_dest_regs)) {
-    map_data->reg_file->reg_stall = TRUE;
+    DEBUG(map_data->proc_id, "Map File Physical Renaming Stall: %lld\n", op->unique_num);
+    map_data->reg_file->stall_op = op;
     return;
   }
-  map_data->reg_file->reg_stall = FALSE;
+
+  if (map_data->reg_file->stall_op) {
+    DEBUG(map_data->proc_id, "Map File Physical Renaming Recover: %lld\n", op->unique_num);
+    map_data->reg_file->stall_op = NULL;
+  }
 
   // alloc reg for all dests
+  reg_file_phy_map_check_overlap(op);
   for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
     entry = reg_file_phy_map_alloc_entry();
     reg_file_phy_map_write_entry(op, entry, ii);
@@ -1155,11 +1164,30 @@ void reg_file_alloc_dest(Op *op) {
 /**************************************************************************************/
 /* External Calling of Register File */
 
-Flag reg_file_if_stall(void) {
-  if (REG_FILE_PHY_ENABLE)
+Flag reg_file_check_stall(void) {
+  if (!REG_FILE_PHY_ENABLE)
     return FALSE;
 
-  return map_data->reg_file->reg_stall;
+  if (map_data->reg_file == NULL)
+    return FALSE;
+
+  return map_data->reg_file->stall_op != NULL;
+}
+
+Flag reg_file_remove_stall(void) {
+  if (!REG_FILE_PHY_ENABLE)
+    return FALSE;
+
+  if (map_data->reg_file == NULL)
+    return FALSE;
+
+  if (map_data->reg_file->stall_op != NULL) {
+    DEBUG(map_data->proc_id, "Map File Physical Renaming Try To Remove Stall: %lld\n",
+      map_data->reg_file->stall_op->unique_num);
+    reg_file_alloc_dest(map_data->reg_file->stall_op);
+  }
+
+  return map_data->reg_file->stall_op != NULL;
 }
 
 /**************************************************************************************/
@@ -1190,8 +1218,7 @@ void reg_file_phy_map_init(void) {
 }
 
 // free dead register for overlapped and committed op
-Flag reg_file_phy_map_remove_dead(Op *op) {
-  uns ii;
+Flag reg_file_phy_map_remove_dead() {
   Reg_File_Phy_Entry *entry;
   Flag if_remove = FALSE;
 
@@ -1204,16 +1231,28 @@ Flag reg_file_phy_map_remove_dead(Op *op) {
     }
 
     // check if it is overlapped
-    for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
-      if (entry->reg_logical_id == op->inst_info->dests[ii].id && entry->off_path == op->off_path) {
-        reg_file_phy_map_free_entry(entry);
-        if_remove = TRUE;
-        break;
-      }
+    if (entry->reg_state == REG_FILE_PHY_STATE_OVERLAP) {
+      reg_file_phy_map_free_entry(entry);
+      if_remove = TRUE;
+      continue;
     }
   }
 
   return if_remove;
+}
+
+void reg_file_phy_map_check_overlap(Op *op) {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+
+  for (entry = map_data->reg_file->phy_map->reg_alloc_head; entry != NULL; entry = entry->next) {
+    for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
+      if (entry->reg_logical_id == op->inst_info->dests[ii].id && entry->off_path == op->off_path) {
+        entry->reg_state = REG_FILE_PHY_STATE_OVERLAP;
+        break;
+      }
+    }
+  }
 }
 
 // remove all off path ops

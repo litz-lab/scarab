@@ -116,6 +116,7 @@ typedef enum Break_Reason_enum {
                                      // uop cache mid cache line
   // need to update INST_LOST_BREAK_DONT and others for correct stats.
   BREAK_FDIP_RUNAHEAD,  // break because a following instr is the last
+  BREAK_RENAME,         // break because of no free renaming physical register 
 } Break_Reason;
 
 

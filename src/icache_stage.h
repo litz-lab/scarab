@@ -58,6 +58,7 @@ typedef enum Icache_State_enum {
   IC_WAIT_FOR_EMPTY_ROB,
   IC_WAIT_FOR_TIMER,
   IC_WAIT_FOR_FDIP,
+  IC_WAIT_FOR_RENAME,
 } Icache_State;
 
 typedef struct Icache_Stage_struct {

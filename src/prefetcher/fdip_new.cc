@@ -474,16 +474,6 @@ void print_cl_info(uns proc_id) {
   fclose(fp);
 }
 
-void assert_not_trained(uns proc_id, Addr line_addr, uns imiss_reason) {
-  if (!FDIP_UTILITY_HASH_ENABLE || (FDIP_UTILITY_PREF_POLICY != PREF_CONV_FROM_USEFUL_SET) || (FULL_WARMUP && !warmup_dump_done[proc_id]))
-    return;
-  auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
-  if (imiss_reason == Imiss_Reason::IMISS_NOT_PREFETCHED && useful_iter != per_core_cnt_useful[proc_id].end() && !useful_iter->second.second) { // learned from a seniority-FTQ hit
-    DEBUG(proc_id, "True miss even trained %llx\n", useful_iter->first);
-    ASSERT(proc_id, false);
-  }
-}
-
 void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss) {
   auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
   DEBUG(proc_id, "cnt_useful size %ld\n", per_core_cnt_useful[proc_id].size());
@@ -1141,8 +1131,13 @@ void dec_useful_lines_uc(uns proc_id, Addr line_addr) {
     STAT_EVENT(proc_id, FDIP_UC_REPLACEMENT);
 }
 
-void assert_fdip_break_reason(uns proc_id) {
-  ASSERT(proc_id, per_core_last_break_reason[proc_id] == BR_FULL_MEM_REQ_BUF);
+void assert_fdip_break_reason(uns proc_id, Addr line_addr) {
+  if (!FDIP_UTILITY_HASH_ENABLE || (FDIP_UTILITY_PREF_POLICY != PREF_CONV_FROM_USEFUL_SET) || (FULL_WARMUP && !warmup_dump_done[proc_id]) || !FDIP_BP_PERFECT_CONFIDENCE)
+    return;
+  auto useful_iter = per_core_cnt_useful[proc_id].find(line_addr);
+  if (useful_iter != per_core_cnt_useful[proc_id].end() && !useful_iter->second.second) { // learned from a seniority-FTQ hit
+    ASSERT(proc_id, per_core_last_break_reason[proc_id] == BR_FULL_MEM_REQ_BUF);
+  }
 }
 
 void inc_icache_hit(uns proc_id, Addr line_addr) {

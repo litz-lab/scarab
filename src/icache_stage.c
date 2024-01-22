@@ -1153,7 +1153,6 @@ void log_stats_mshr_hit(Addr line_addr) {
   if (!req) {
     if (!icache_off_path()) {
       uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, g_bp_data->global_hist) : ic->line_addr;
-      assert_not_trained(ic->proc_id, ic->line_addr, imiss_reason);
       DEBUG_FDIP(ic->proc_id, "learn missed line %llx\n", ic->line_addr);
       inc_cnt_useful(ic->proc_id, hashed_addr, TRUE);
       inc_cnt_useful_signed(ic->proc_id, hashed_addr);
@@ -1168,7 +1167,7 @@ void log_stats_mshr_hit(Addr line_addr) {
       else {
         ASSERT(ic->proc_id, imiss_reason == IMISS_NOT_PREFETCHED);
         STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
-        assert_fdip_break_reason(ic->proc_id);
+        assert_fdip_break_reason(ic->proc_id, hashed_addr);
       }
     } else {
       inc_off_fetched_cls(ic->line_addr);

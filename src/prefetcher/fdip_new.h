@@ -17,7 +17,6 @@ extern "C" {
   uns64 fdip_get_ghist();
   uns64 fdip_hash_addr_ghist(uint64_t addr, uint64_t ghist);
   void print_cl_info(uns proc_id);
-  void assert_not_trained(uns proc_id, Addr line_addr, uns imiss_reason);
   void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss);
   void inc_cnt_unuseful(uns proc_id, Addr line_addr);
   void inc_cnt_useful_signed(uns proc_id, Addr line_addr);
@@ -46,7 +45,7 @@ extern "C" {
   Flag fdip_search_pref_candidate(Addr addr);
   void insert_pref_candidate_to_seniority_ftq(Addr line_addr);
   void clear_old_seniority_ftq();
-  void assert_fdip_break_reason(uns proc_id);
+  void assert_fdip_break_reason(uns proc_id, Addr line_addr);
   
 #ifdef __cplusplus
 }

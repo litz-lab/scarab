@@ -34,15 +34,7 @@
 #include "op.h"
 
 /**************************************************************************************/
-/* Types */
-
-typedef struct Map_Entry_struct {
-  Op*     op;         /* last op to write (invalid when committed) */
-  Counter op_num;     /* op number of the last op to write (not cleared, only
-                         overwritten) */
-  Counter unique_num; /* unique number of the last op to write (not cleared,
-                         only overwritten) */
-} Map_Entry;
+/* Unconsumed Producer Tracking */
 
 typedef enum Map_Reg_Consume_State_enum {
   REG_CONSUME_STATE_VOID,
@@ -57,11 +49,20 @@ typedef enum Map_Reg_Consume_Signiture_enum {
   REG_CONSUME_SIGH_NUM
 } Reg_Consume_Signiture;
 
-typedef struct Map_Reg_Consume_Entry_struct {
-  Op*               op;
-  Counter           op_num;
-  Reg_Consume_State if_consumed;
-} Map_Reg_Consume_Entry;
+typedef struct Reg_Consume_Table_struct {
+  /* track if the producer is consumed */
+  Reg_Consume_State *tracking_array;
+  uns trakcing_array_size;
+
+  /* count the producer instructions */
+  Counter num_reg_all_producer;
+  Counter num_reg_consumed;
+  Counter num_reg_unconsumed;
+
+  /* collect the unconsumed producer instructions by signiture */
+  Hash_Table            unconsumed_hash;
+  Reg_Consume_Signiture unconsumed_hash_key_tpye;
+} Reg_Consume_Table;
 
 /**************************************************************************************/
 /* Reg File Hardware Implementation */
@@ -108,20 +109,15 @@ typedef struct Reg_File_struct {
 } Reg_File;
 
 /**************************************************************************************/
+/* Types */
 
-typedef struct Reg_Consume_Table_struct {
-  /* track if the producer is consumed */
-  Map_Reg_Consume_Entry reg_consume_map[NUM_REG_IDS * 2];
-
-  /* count the producer instructions */
-  Counter num_reg_all_producer;
-  Counter num_reg_consumed;
-  Counter num_reg_unconsumed;
-
-  /* collect the unconsumed producer instructions by signiture */
-  Hash_Table            unconsumed_hash;
-  Reg_Consume_Signiture unconsumed_hash_key_tpye;
-} Reg_Consume_Table;
+typedef struct Map_Entry_struct {
+  Op*     op;         /* last op to write (invalid when committed) */
+  Counter op_num;     /* op number of the last op to write (not cleared, only
+                         overwritten) */
+  Counter unique_num; /* unique number of the last op to write (not cleared,
+                         only overwritten) */
+} Map_Entry;
 
 typedef struct Map_Data_struct {
   /* store information about the last op to write each register */
@@ -138,7 +134,7 @@ typedef struct Map_Data_struct {
   uns            wake_up_entries;
   uns            active_wake_up_entries;
 
-  /* unconsumed producer insturction tracking and optimization */
+  /* unconsumed producer insturction tracking */
   Reg_Consume_Table *reg_consume_table;
 
   /* register file for renaming based on hardware implementation */

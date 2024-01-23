@@ -298,8 +298,20 @@ void update_fdip() {
                                                    &queue_entry, &ramulator_match);
       if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
         emit_new_prefetch = determine_usefulness(line_addr);
-      else
+      else {
         emit_new_prefetch = TRUE;
+        if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
+          if (fdip_off_path(fdip_proc_id))
+            STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
+          else
+            STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
+        } else {
+          if (fdip_off_path(fdip_proc_id))
+            STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
+          else
+            STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
+        }
+      }
       if (line) {
         DEBUG(fdip_proc_id, "probe hit for %llx\n", line_addr);
         probe_prefetched_cls(line_addr);

@@ -92,6 +92,7 @@ std::vector<Addr> per_core_last_cl_unuseful;
 std::vector<Addr> per_core_last_bbl_start_addr;
 // Utility cache
 std::vector<Cache> per_core_fdip_uc;
+std::vector<Cache> per_core_fdip_uc_unuseful;
 std::vector<Cache> per_core_fdip_uc_signed;
 // bloom filters
 typedef struct Bloom_Filter_struct {
@@ -140,6 +141,7 @@ void alloc_mem_fdip(uns numCores) {
   if (FDIP_UC_SIZE) {
     ASSERT(fdip_proc_id, FDIP_UTILITY_PREF_POLICY != PREF_OPT_FROM_UNUSEFUL_SET);
     per_core_fdip_uc.resize(numCores);
+    per_core_fdip_uc_unuseful.resize(numCores);
     per_core_fdip_uc_signed.resize(numCores);
   }
   if (FDIP_BLOOM_FILTER)
@@ -168,7 +170,9 @@ void init_fdip(uns proc_id) {
     ASSERT(fdip_proc_id, !FDIP_BLOOM_FILTER);
     init_cache(&per_core_fdip_uc[proc_id], "FDIP_USEFULNESS_CACHE", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE,
                0, REPL_TRUE_LRU); //Data size = 2 byte
-    init_cache(&per_core_fdip_uc_signed[proc_id], "FDIP_USEFULNESS_CACHE", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE,
+    init_cache(&per_core_fdip_uc_unuseful[proc_id], "FDIP_USEFULNESS_CACHE_UNUSEFUL", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE,
+               0, REPL_TRUE_LRU); //Data size = 2 byte
+    init_cache(&per_core_fdip_uc_signed[proc_id], "FDIP_USEFULNESS_CACHE_SIGNED", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE,
                sizeof(int32_t), REPL_TRUE_LRU);
   }
   if (FDIP_BLOOM_FILTER) {
@@ -514,7 +518,7 @@ void inc_cnt_useful_signed(uns proc_id, Addr line_addr) {
   auto it = per_core_cnt_useful_signed[proc_id].find(line_addr);
   if (it == per_core_cnt_useful_signed[proc_id].end())
     per_core_cnt_useful_signed[proc_id].insert(std::pair<Addr, int64_t>(line_addr, UDP_USEFUL_THRESHOLD+UDP_WEIGHT_USEFUL));
-  else
+  else if (it->second + UDP_WEIGHT_USEFUL < UDP_WEIGHT_POSITIVE_SATURATION)
     it->second += UDP_WEIGHT_USEFUL;
 }
 
@@ -753,6 +757,20 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
       case Utility_Pref_Policy::PREF_CONV_FROM_USEFUL_SET: {
         void* useful = (void*)cache_access(&per_core_fdip_uc[fdip_proc_id], hashed_line_addr, &uc_line_addr, TRUE);
         if (useful) {
+          STAT_EVENT(fdip_proc_id, FDIP_UC_HIT);
+          *emit_new_prefetch = TRUE;
+	      }
+        else {
+          STAT_EVENT(fdip_proc_id, FDIP_UC_MISS);
+          if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
+	          STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
+          *emit_new_prefetch = FALSE;
+	      }
+        break;
+      }
+      case Utility_Pref_Policy::PREF_OPT_FROM_UNUSEFUL_SET: {
+        void* unuseful = (void*)cache_access(&per_core_fdip_uc_unuseful[fdip_proc_id], hashed_line_addr, &uc_line_addr, TRUE);
+        if (unuseful) {
           STAT_EVENT(fdip_proc_id, FDIP_UC_HIT);
           if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
 	          STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
@@ -1010,6 +1028,20 @@ void update_useful_lines(uns proc_id, Op* op) {
   DEBUG(proc_id, "last_bbl_start_addr: %llx\n", per_core_last_bbl_start_addr[proc_id]);
 }
 
+void update_unuseful_lines_uc(uns proc_id, Addr line_addr) {
+  if (!FDIP_UC_SIZE)
+    return;
+  Addr uc_line_addr = 0;
+  Addr repl_uc_line_addr = 0;
+  void* cnt = (void*)cache_access(&per_core_fdip_uc_unuseful[proc_id], line_addr, &uc_line_addr, TRUE);
+  if (!cnt)
+    cache_insert_replpos(&per_core_fdip_uc_unuseful[proc_id], fdip_proc_id, line_addr, &uc_line_addr,
+        &repl_uc_line_addr, (Cache_Insert_Repl)FDIP_UC_INSERT_REPLPOL, FALSE);
+  UNUSED(uc_line_addr);
+  if (repl_uc_line_addr)
+    STAT_EVENT(proc_id, FDIP_UC_REPLACEMENT);
+}
+
 void update_useful_lines_uc(uns proc_id, Addr line_addr) {
   if (!FDIP_UC_SIZE)
     return;
@@ -1111,7 +1143,7 @@ void inc_useful_lines_uc(uns proc_id, Addr line_addr) {
     *cnt = UDP_USEFUL_THRESHOLD+UDP_WEIGHT_USEFUL;
     DEBUG(proc_id, "Insert uc cnt with value %d\n", *cnt);
   }
-  else {
+  else if (*cnt + UDP_WEIGHT_USEFUL < UDP_WEIGHT_POSITIVE_SATURATION) {
     DEBUG(proc_id, "Increment uc cnt from %d to ", *cnt);
     *cnt += UDP_WEIGHT_USEFUL;
     DEBUG(proc_id, "%d\n", *cnt);
@@ -1130,12 +1162,12 @@ void dec_useful_lines_uc(uns proc_id, Addr line_addr) {
   if (!cnt) {
     cnt = (int32_t*)cache_insert_replpos(&per_core_fdip_uc_signed[proc_id], fdip_proc_id, line_addr, &uc_line_addr,
         &repl_uc_line_addr, (Cache_Insert_Repl)FDIP_UC_INSERT_REPLPOL, FALSE);
-    *cnt = UDP_USEFUL_THRESHOLD-UDP_WEIGHT_USEFUL;
+    *cnt = UDP_USEFUL_THRESHOLD-UDP_WEIGHT_UNUSEFUL;
     DEBUG(proc_id, "Insert uc cnt with value %d\n", *cnt);
   }
   else {
     DEBUG(proc_id, "Decrement uc cnt from %d to ", *cnt);
-    *cnt -= UDP_WEIGHT_USEFUL;
+    *cnt -= UDP_WEIGHT_UNUSEFUL;
     DEBUG(proc_id, "%d\n", *cnt);
   }
   UNUSED(uc_line_addr);

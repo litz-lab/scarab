@@ -1064,6 +1064,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
       inc_cnt_unuseful(ic->proc_id, hashed_addr);
       dec_cnt_useful_signed(ic->proc_id, hashed_addr);
       dec_useful_lines_uc(ic->proc_id, hashed_addr);
+      update_unuseful_lines_uc(ic->proc_id, hashed_addr);
       inc_utility_info(ic->proc_id, FALSE);
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ONPATH_BY_FDIP + icache_off_path());
       if(line->FDIP_prefetch == FDIP_BOTHPATH || line->FDIP_prefetch == FDIP_ONPATH)

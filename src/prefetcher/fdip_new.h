@@ -36,6 +36,7 @@ extern "C" {
   Flag determine_usefulness(Addr line_addr);
   void update_useful_lines(uns proc_id, Op* op);
   void update_useful_lines_uc(uns proc_id, Addr line_addr);
+  void update_unuseful_lines_uc(uns proc_id, Addr line_addr);
   void inc_useful_lines_uc(uns proc_id, Addr line_addr);
   void dec_useful_lines_uc(uns proc_id, Addr line_addr);
   void update_useful_lines_bloom_filter(uns proc_id, Addr line_addr);

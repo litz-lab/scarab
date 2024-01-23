@@ -128,10 +128,11 @@ static inline Flag mem_map_byte_traversal_done(Mem_Map_Traversal* traversal);
 static inline void mem_map_byte_traversal_next(Mem_Map_Traversal* traversal);
 
 /* reg consume track */
-static inline void  reg_consume_table_init(uns);
+static inline void  reg_consume_table_init(Reg_Consume_Table**, uns);
 static inline int64 reg_consume_table_signiture(Op*, Reg_Consume_Signiture);
-static inline void  reg_consume_table_read_reg_map(Op*, uns);
-static inline void  reg_consume_table_update_map(Op*, uns);
+Flag reg_consume_table_predict(Reg_Consume_Table*, Op*);
+static inline void  reg_consume_table_read_reg_map(Reg_Consume_Table*, Op*, uns);
+static inline void  reg_consume_table_update_map(Reg_Consume_Table*, Op*, uns);
 static inline void  reg_consume_table_print_hash_entry(void*, void*);
 
 /* physical register file */
@@ -187,7 +188,7 @@ void init_map(uns8 proc_id) {
 
   /* Init Consume Reg Map and Table */
   map_data->reg_consume_table = NULL;
-  reg_consume_table_init(NUM_REG_IDS * 2);
+  reg_consume_table_init(&map_data->reg_consume_table, NUM_REG_IDS * 2);
 
   /* Init Physical Register File */
   map_data->reg_file = NULL;
@@ -299,7 +300,7 @@ static inline void read_reg_map(Op* op) {
           "Reading map  op_num:%s  off_path:%d  id:%d  flag:%d  ind:%d\n",
           unsstr64(op->op_num), op->off_path, id, map_data->map_flags[id], ind);
 
-    reg_consume_table_read_reg_map(op, ind);
+    reg_consume_table_read_reg_map(map_data->reg_consume_table, op, ind);
 
     add_src_from_map_entry(op, map_entry, REG_DATA_DEP);
     /* address predictor is called if op is a load & this is first mem op reg
@@ -350,7 +351,7 @@ static inline void update_map(Op* op) {
     map_entry->unique_num   = op->unique_num;
     map_data->map_flags[id] = op->off_path;
 
-    reg_consume_table_update_map(op, ind);
+    reg_consume_table_update_map(map_data->reg_consume_table, op, ind);
   }
 
   /* update the map if the op is a store */
@@ -900,9 +901,6 @@ void reset_map() {
  * --- 2. Collect the info of unconsumed producers
 ***************************************************************************************/
 
-const static Reg_Consume_Signiture REG_CONSUME_PREDICT_SIGN = REG_CONSUME_SIGH_PC; // To be changed to a configurable para
-const static Counter REG_CONSUME_PREDICT_THRESHOLD = 5; // To be changed to a configurable para
-
 /*
   reg_consume_table_init
   -- called by: init_map
@@ -911,28 +909,31 @@ const static Counter REG_CONSUME_PREDICT_THRESHOLD = 5; // To be changed to a co
   ----- 2. init counter
   ----- 3. init collecting hash
 */
-static inline void reg_consume_table_init(uns array_size) {
+static inline void reg_consume_table_init(Reg_Consume_Table **table, uns array_size) {
   uns ii;
-  map_data->reg_consume_table = (Reg_Consume_Table *)malloc(sizeof(Reg_Consume_Table));
-  map_data->reg_consume_table->trakcing_array_size = array_size;
-  map_data->reg_consume_table->tracking_array = (Reg_Consume_State *)malloc(sizeof(Reg_Consume_State) * array_size);
+
+  if (!REG_CONSUME_TRACKING_ENABLE)
+    return;
+
+  (*table) = (Reg_Consume_Table *)malloc(sizeof(Reg_Consume_Table));
+  (*table)->trakcing_array_size = array_size;
+  (*table)->tracking_array = (Reg_Consume_State *)malloc(sizeof(Reg_Consume_State) * array_size);
 
   /* init the map for tracking unconsumed producer */
   for (ii = 0; ii < array_size; ii++) {
-    map_data->reg_consume_table->tracking_array[ii] = REG_CONSUME_STATE_VOID;
+    (*table)->tracking_array[ii] = REG_CONSUME_STATE_UNCONSUMED;
   }
 
   /* counters for recording producer instructions */
-  map_data->reg_consume_table->num_reg_all_producer = 0;
-  map_data->reg_consume_table->num_reg_consumed = 0;
-  map_data->reg_consume_table->num_reg_unconsumed = 0;
+  (*table)->num_reg_all_producer = 0;
+  (*table)->num_reg_consumed = 0;
+  (*table)->num_reg_unconsumed = 0;
 
   /* init the hash for collecting unconsumed producers */
-  init_hash_table(&map_data->reg_consume_table->unconsumed_hash, "consum reg stat table",
-    NODE_TABLE_SIZE, sizeof(Counter));
+  init_hash_table(&(*table)->unconsumed_hash, "consum reg stat table", NODE_TABLE_SIZE, sizeof(Counter));
 
   /* signiture type for the hash */
-  map_data->reg_consume_table->unconsumed_hash_key_tpye = REG_CONSUME_PREDICT_SIGN;
+  (*table)->unconsumed_hash_key_tpye = REG_CONSUME_PREDICT_SIGN;
 }
 
 static inline int64 reg_consume_table_signiture(Op* op, Reg_Consume_Signiture sign_type) {
@@ -954,6 +955,27 @@ static inline int64 reg_consume_table_signiture(Op* op, Reg_Consume_Signiture si
   return sign;
 }
 
+Flag reg_consume_table_predict(Reg_Consume_Table *table, Op* op) {
+  if (!REG_CONSUME_TRACKING_ENABLE)
+    return FALSE;
+
+  if (table == NULL)
+    return FALSE;
+
+  Counter *unconsumed_num = (Counter*)hash_table_access(
+    &table->unconsumed_hash,
+    reg_consume_table_signiture(op, table->unconsumed_hash_key_tpye)
+  );
+
+  if (!unconsumed_num)
+    return FALSE;
+
+  if (*unconsumed_num <= REG_CONSUME_PREDICT_THRESHOLD)
+    return FALSE;
+
+  return TRUE;
+}
+
 /*
   reg_consume_table_read_reg_map
   -- called by: read_reg_map
@@ -961,11 +983,17 @@ static inline int64 reg_consume_table_signiture(Op* op, Reg_Consume_Signiture si
   ----- 1. get the entry by id and off-path flag
   ----- 2. change the state to CONSUMED
 */
-static inline void reg_consume_table_read_reg_map(Op* op, uns ind) {
-  if (ind >= map_data->reg_consume_table->trakcing_array_size)
+static inline void reg_consume_table_read_reg_map(Reg_Consume_Table *table, Op* op, uns ind) {
+  if (!REG_CONSUME_TRACKING_ENABLE)
     return;
 
-  map_data->reg_consume_table->tracking_array[ind] = REG_CONSUME_STATE_CONSUMED;
+  if (table == NULL)
+    return;
+
+  if (ind >= table->trakcing_array_size)
+    return;
+
+  table->tracking_array[ind] = REG_CONSUME_STATE_CONSUMED;
 }
 
 /*
@@ -976,29 +1004,33 @@ static inline void reg_consume_table_read_reg_map(Op* op, uns ind) {
   ----- 2. track if the entry is consumed by state
   ----- 3. change the state to UNCONSUMED
 */
-static inline void reg_consume_table_update_map(Op* op, uns ind) {
-  if (ind >= map_data->reg_consume_table->trakcing_array_size)
+static inline void reg_consume_table_update_map(Reg_Consume_Table *table, Op* op, uns ind) {
+  if (!REG_CONSUME_TRACKING_ENABLE)
     return;
 
-  Reg_Consume_State *map_entry_state = &map_data->reg_consume_table->tracking_array[ind];
+  if (table == NULL)
+    return;
 
-  if (*map_entry_state != REG_CONSUME_STATE_VOID) {
-    map_data->reg_consume_table->num_reg_all_producer++;
-    if (*map_entry_state == REG_CONSUME_STATE_CONSUMED)
-      map_data->reg_consume_table->num_reg_consumed++;
+  if (ind >= table->trakcing_array_size)
+    return;
 
-    if (*map_entry_state == REG_CONSUME_STATE_UNCONSUMED) {
-      map_data->reg_consume_table->num_reg_unconsumed++;
+  Reg_Consume_State *map_entry_state = &table->tracking_array[ind];
 
-      /* update unconsumed hash */
-      Flag new_entry = FALSE;
-      Counter *unconsumed_num = (Counter*)hash_table_access_create(
-        &map_data->reg_consume_table->unconsumed_hash,
-        reg_consume_table_signiture(op, map_data->reg_consume_table->unconsumed_hash_key_tpye),
-        &new_entry
-      );
-      (*unconsumed_num)++;
-    }
+  table->num_reg_all_producer++;
+  if (*map_entry_state == REG_CONSUME_STATE_CONSUMED)
+    table->num_reg_consumed++;
+
+  if (*map_entry_state == REG_CONSUME_STATE_UNCONSUMED) {
+    table->num_reg_unconsumed++;
+
+    /* update unconsumed hash */
+    Flag new_entry = FALSE;
+    Counter *unconsumed_num = (Counter*)hash_table_access_create(
+      &table->unconsumed_hash,
+      reg_consume_table_signiture(op, table->unconsumed_hash_key_tpye),
+      &new_entry
+    );
+    (*unconsumed_num)++;
   }
 
   *map_entry_state = REG_CONSUME_STATE_UNCONSUMED;
@@ -1011,39 +1043,30 @@ static inline void reg_consume_table_print_hash_entry(void* hash_entry, void* ar
 
 /**************************************************************************************/
 /* external functions of the unconsumed producer table */
-
-Flag reg_consume_table_predict(Op* op) {
-  if (map_data->reg_consume_table == NULL)
-    return FALSE;
-
-  Counter *unconsumed_num = (Counter*)hash_table_access(
-    &map_data->reg_consume_table->unconsumed_hash,
-    reg_consume_table_signiture(op, map_data->reg_consume_table->unconsumed_hash_key_tpye)
-  );
-
-  if (!unconsumed_num)
-    return FALSE;
-
-  if (*unconsumed_num <= REG_CONSUME_PREDICT_THRESHOLD)
-    return FALSE;
-
-  return TRUE;
-}
-
 void reg_consume_table_print_debug_stat(void) {
-  if (map_data->reg_consume_table == NULL)
+  if (!REG_CONSUME_TRACKING_ENABLE)
+    return;
+
+  Reg_Consume_Table *table = NULL;
+
+  if (!REG_FILE_PHY_ENABLE)
+    table = map_data->reg_consume_table;
+  else if (map_data->reg_file != NULL)
+    table = map_data->reg_file->phy_map->phy_reg_consume_table;
+
+  if (table == NULL)
     return;
 
   printf("=======================================================================\n");
   printf("\nREG MAP\n");
 
   printf("UNCONSUMED: %lld, CONSUMED: %lld, ALL: %lld\n",
-    map_data->reg_consume_table->num_reg_unconsumed,
-    map_data->reg_consume_table->num_reg_consumed,
-    map_data->reg_consume_table->num_reg_all_producer);
+    table->num_reg_unconsumed,
+    table->num_reg_consumed,
+    table->num_reg_all_producer);
 
   printf("-----------------------------------------------------------------------\n");
-  hash_table_scan(&map_data->reg_consume_table->unconsumed_hash, reg_consume_table_print_hash_entry, NULL);
+  hash_table_scan(&table->unconsumed_hash, reg_consume_table_print_hash_entry, NULL);
   printf("\n=======================================================================\n");
 }
 
@@ -1210,7 +1233,6 @@ void reg_file_phy_map_init(void) {
 
     entry->reg_phy_id = ii;
     entry->reg_state = REG_FILE_PHY_STATE_FREE;
-    entry->if_consumed = REG_CONSUME_STATE_VOID;
 
     entry->prev = NULL;
     entry->next = NULL;
@@ -1218,6 +1240,10 @@ void reg_file_phy_map_init(void) {
 
   map_data->reg_file->phy_map->reg_alloc_head = NULL;
   map_data->reg_file->phy_map->reg_map_free_num = REG_FILE_PHY_NUM;
+
+  // tracking table
+  map_data->reg_file->phy_map->phy_reg_consume_table = NULL;
+  reg_consume_table_init(&map_data->reg_file->phy_map->phy_reg_consume_table, REG_FILE_PHY_NUM);
 }
 
 // free dead register for overlapped and committed op
@@ -1282,8 +1308,11 @@ void reg_file_phy_map_read_entry(Op *op, Reg_File_Phy_Entry *entry, Dep_Type typ
   info->op         = entry->op;
   info->op_num     = entry->op_num;
   info->unique_num = entry->unique_num;
-  entry->if_consumed = REG_CONSUME_STATE_CONSUMED;
 
+  // consume tracking
+  reg_consume_table_read_reg_map(map_data->reg_file->phy_map->phy_reg_consume_table, op, entry->reg_phy_id);
+
+  // setting waking up
   set_not_rdy_bit(op, src_num);
 }
 
@@ -1291,16 +1320,12 @@ void reg_file_phy_map_write_entry(Op* op, Reg_File_Phy_Entry *entry, uns index) 
   if (entry == NULL)
     return;
 
-  // fill op info
   entry->op = op;
   entry->op_num = op->op_num;
   entry->unique_num = op->unique_num;
   entry->off_path = op->off_path;
   entry->reg_logical_id = op->inst_info->dests[index].id;
-
-  // set reg info
   entry->reg_state = REG_FILE_PHY_STATE_ALLOC;
-  entry->if_consumed = REG_CONSUME_STATE_UNCONSUMED;
 }
 
 Flag reg_file_phy_map_can_alloc(uns num) {
@@ -1351,14 +1376,15 @@ void reg_file_phy_map_free_entry(Reg_File_Phy_Entry *entry) {
   if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
     return;
 
+  // produce tracking
+  reg_consume_table_update_map(map_data->reg_file->phy_map->phy_reg_consume_table, entry->op, entry->reg_phy_id);
+
   entry->op = &invalid_op;
   entry->op_num = 0;
   entry->unique_num = 0;
   entry->off_path = FALSE;
   entry->reg_logical_id = REG_FILE_REG_INVALID_ID;
-
   entry->reg_state = REG_FILE_PHY_STATE_FREE;
-  entry->if_consumed = REG_CONSUME_STATE_VOID;
 
   map_data->reg_file->phy_map->reg_map_free_num++;
 

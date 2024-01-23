@@ -36,10 +36,15 @@
 /**************************************************************************************/
 /* Unconsumed Producer Tracking */
 
+// To be changed to a configurable para
+#define REG_CONSUME_TRACKING_ENABLE FALSE
+#define REG_CONSUME_PREDICT_SIGN REG_CONSUME_SIGH_PC
+#define REG_CONSUME_PREDICT_THRESHOLD 5
+
 typedef enum Map_Reg_Consume_State_enum {
-  REG_CONSUME_STATE_VOID,
   REG_CONSUME_STATE_UNCONSUMED,
   REG_CONSUME_STATE_CONSUMED,
+  REG_CONSUME_STATE_VOID,
   REG_CONSUME_STATE_NUM
 } Reg_Consume_State;
 
@@ -90,7 +95,6 @@ typedef struct Reg_File_Phy_Entry_struct {
   // reg info
   int                 reg_phy_id;
   Reg_File_Phy_State  reg_state;
-  Reg_Consume_State   if_consumed;
 
   // alloc list info
   struct Reg_File_Phy_Entry_struct *prev;
@@ -101,6 +105,9 @@ typedef struct Reg_File_Phy_Map_struct {
   Reg_File_Phy_Entry reg_map_array[REG_FILE_PHY_NUM];
   Reg_File_Phy_Entry *reg_alloc_head;
   uns                reg_map_free_num;
+
+  /* unconsumed producer insturction tracking */
+  Reg_Consume_Table *phy_reg_consume_table;
 } Reg_File_Phy_Map;
 
 typedef struct Reg_File_struct {
@@ -173,7 +180,6 @@ Flag test_not_rdy_bit(Op*, uns);
 void set_not_rdy_bit(Op*, uns);
 
 /* external functions of the unconsumed producer table */
-Flag reg_consume_table_predict(Op*);
 void reg_consume_table_print_debug_stat(void);
 
 /* external functions of the physical register file */

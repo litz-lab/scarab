@@ -139,7 +139,6 @@ void alloc_mem_fdip(uns numCores) {
     per_core_seniority_ftq.resize(numCores);
   }
   if (FDIP_UC_SIZE) {
-    ASSERT(fdip_proc_id, FDIP_UTILITY_PREF_POLICY != PREF_OPT_FROM_UNUSEFUL_SET);
     per_core_fdip_uc.resize(numCores);
     per_core_fdip_uc_unuseful.resize(numCores);
     per_core_fdip_uc_signed.resize(numCores);

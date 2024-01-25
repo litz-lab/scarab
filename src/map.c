@@ -130,7 +130,7 @@ static inline void mem_map_byte_traversal_next(Mem_Map_Traversal* traversal);
 /* reg consume track */
 static inline void  reg_consume_table_init(Reg_Consume_Table**, uns);
 static inline int64 reg_consume_table_signiture(Op*, Reg_Consume_Signiture);
-Flag reg_consume_table_predict(Reg_Consume_Table*, Op*);
+static inline Flag  reg_consume_table_predict(Reg_Consume_Table*, Op*);
 static inline void  reg_consume_table_read_reg_map(Reg_Consume_Table*, Op*, uns);
 static inline void  reg_consume_table_update_map(Reg_Consume_Table*, Op*, uns);
 static inline void  reg_consume_table_print_hash_entry(void*, void*);
@@ -955,7 +955,7 @@ static inline int64 reg_consume_table_signiture(Op* op, Reg_Consume_Signiture si
   return sign;
 }
 
-Flag reg_consume_table_predict(Reg_Consume_Table *table, Op* op) {
+static inline Flag reg_consume_table_predict(Reg_Consume_Table *table, Op* op) {
   if (!REG_CONSUME_TRACKING_ENABLE)
     return FALSE;
 
@@ -1079,21 +1079,24 @@ static inline void reg_file_look_up_src(Op*);
 static inline void reg_file_alloc_dest(Op*);
 
 // physical map functional methods
-static inline void reg_file_phy_map_init(void);
+static inline void reg_file_phy_map_init(uns);
 static inline Flag reg_file_phy_map_remove_dead(void);
-static inline void reg_file_phy_map_check_overlap(Op*);
 static inline void reg_file_phy_map_reset(void);
 
 // physical map basic operations
 static inline void reg_file_phy_map_read_entry(Op*, Reg_File_Phy_Entry*, Dep_Type);
 static inline void reg_file_phy_map_write_entry(Op*, Reg_File_Phy_Entry*, uns);
+static inline Reg_File_Phy_Entry *reg_file_phy_map_access_entry(uns16);
 static inline Flag reg_file_phy_map_can_alloc(uns);
-static inline Reg_File_Phy_Entry *reg_file_phy_map_search_entry(uns16, Flag);
 static inline Reg_File_Phy_Entry *reg_file_phy_map_alloc_entry(void);
 static inline void reg_file_phy_map_free_entry(Reg_File_Phy_Entry*);
+static inline void reg_file_phy_map_free_list_insert(Reg_File_Phy_Entry *entry);
+static inline Reg_File_Phy_Entry *reg_file_phy_map_free_list_delete(void);
 
-const static int REG_FILE_REG_INVALID_ID = -1;
-
+/*
+  --- 1. init op pool for stalling
+  --- 2. init physical impl of map
+*/
 void reg_file_init(void) {
   if (!REG_FILE_PHY_ENABLE)
     return;
@@ -1101,12 +1104,11 @@ void reg_file_init(void) {
   map_data->reg_file = (Reg_File *)malloc(sizeof(Reg_File));
   map_data->reg_file->stall_op = NULL;
 
-  map_data->reg_file->phy_map = (Reg_File_Phy_Map *)malloc(sizeof(Reg_File_Phy_Map));
-  reg_file_phy_map_init();
+  map_data->reg_file->phy_map = NULL;
+  reg_file_phy_map_init(REG_FILE_PHY_NUM);
 }
 
 /*
-  reg_file_process_renaming
   --- 1. look up register as src and fill the entry into src_info
   --- 2. alloc entry and store self info into register as dest
 */
@@ -1119,28 +1121,20 @@ void reg_file_process_renaming(Op *op) {
 }
 
 /*
-  reg_file_rebuild_map
-  --- 1. reset and recover data for error spec
-  --- 2. get the data from snapshot of seq list
+  --- 1. flush off-path op for error spec
+  --- 2. recover op from snapshot
 */
 void reg_file_rebuild_map(void) {
   if (!REG_FILE_PHY_ENABLE)
     return;
 
-  Op** op_p = (Op**)list_start_head_traversal(&td->seq_op_list);
-  while (op_p && !(*op_p)->off_path) {
-    op_p = (Op**)list_next_element(&td->seq_op_list);
-  }
+  if (map_data->reg_file == NULL)
+    return;
 
   reg_file_phy_map_reset();
-
-  for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
-    reg_file_alloc_dest(*op_p);
-  }
 }
 
 /*
-  reg_file_look_up_src
   --- 1. search the entry in map
   --- 2. read info from map
 */
@@ -1150,13 +1144,12 @@ void reg_file_look_up_src(Op *op) {
 
   for (ii = 0; ii < op->table_info->num_src_regs; ii++) {
     uns16 id = op->inst_info->srcs[ii].id;
-    entry = reg_file_phy_map_search_entry(id, op->off_path);
+    entry = reg_file_phy_map_access_entry(id);
     reg_file_phy_map_read_entry(op, entry, REG_DATA_DEP);
   }
 }
 
 /*
-  reg_file_alloc_dest
   --- 1. remove dead register for overlapped and committed op
   --- 2. fill the info into free entries
 */
@@ -1180,7 +1173,6 @@ void reg_file_alloc_dest(Op *op) {
   }
 
   // alloc reg for all dests
-  reg_file_phy_map_check_overlap(op);
   for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
     entry = reg_file_phy_map_alloc_entry();
     reg_file_phy_map_write_entry(op, entry, ii);
@@ -1188,8 +1180,220 @@ void reg_file_alloc_dest(Op *op) {
 }
 
 /**************************************************************************************/
+/* Operations of Physical Map in Register File */
+
+/*
+  --- 1. init isa map
+  --- 2. init physical arry and entry
+  --- 3. init tracking table
+*/
+void reg_file_phy_map_init(uns array_size) {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+
+  map_data->reg_file->phy_map = (Reg_File_Phy_Map *)malloc(sizeof(Reg_File_Phy_Map));
+
+  /* init the isa map */
+  for (ii = 0; ii < NUM_REG_IDS; ii++)
+    map_data->reg_file->phy_map->reg_isa_map[ii] = NULL;
+
+  /* init the free list */
+  map_data->reg_file->phy_map->reg_free_num = 0;
+  map_data->reg_file->phy_map->reg_free_list_head = NULL;
+
+  /* init the physical register map array */
+  map_data->reg_file->phy_map->reg_phy_size = array_size;
+  map_data->reg_file->phy_map->reg_phy_array = (Reg_File_Phy_Entry *)malloc(sizeof(Reg_File_Phy_Entry) * array_size);
+
+  /* init the physical register map entry */
+  for (ii = 0; ii < array_size; ii++) {
+    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
+
+    entry->op = &invalid_op;
+    entry->op_num = 0;
+    entry->unique_num = 0;
+    entry->off_path = FALSE;
+    entry->reg_isa_id = REG_FILE_REG_INVALID_ID;
+
+    entry->reg_phy_id = ii;
+    entry->reg_state = REG_FILE_PHY_STATE_FREE;
+
+    reg_file_phy_map_free_list_insert(entry);
+  }
+
+  /* init the table for tracking unconsumed producers */
+  map_data->reg_file->phy_map->phy_reg_consume_table = NULL;
+  reg_consume_table_init(&map_data->reg_file->phy_map->phy_reg_consume_table, array_size);
+}
+
+/*
+  --- free dead register
+*/
+Flag reg_file_phy_map_remove_dead() {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+  Flag if_remove = FALSE;
+
+  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
+    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
+    if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
+      continue;
+
+    if (entry->op->op_pool_valid == FALSE) {
+      reg_file_phy_map_free_entry(entry);
+      if_remove = TRUE;
+      continue;
+    }
+  }
+
+  return if_remove;
+}
+
+/*
+  --- remove all off path ops
+*/
+void reg_file_phy_map_reset(void) {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+
+  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
+    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
+    if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
+      continue;
+
+    if (!entry->off_path)
+      continue;
+
+    reg_file_phy_map_free_entry(entry);
+  }
+}
+
+/*
+  --- 1. fill src info of op from entry
+  --- 2. update consumer tracking info
+*/
+void reg_file_phy_map_read_entry(Op *op, Reg_File_Phy_Entry *entry, Dep_Type type) {
+  if (entry == NULL)
+    return;
+
+  // increase src num
+  uns       src_num = op->oracle_info.num_srcs++;
+  Src_Info* info    = &op->oracle_info.src_info[src_num];
+
+  // get info from entry
+  info->type       = type;
+  info->op         = entry->op;
+  info->op_num     = entry->op_num;
+  info->unique_num = entry->unique_num;
+
+  // setting waking up siganl
+  set_not_rdy_bit(op, src_num);
+
+  // consume tracking
+  reg_consume_table_read_reg_map(map_data->reg_file->phy_map->phy_reg_consume_table, op, entry->reg_phy_id);
+}
+
+/*
+  --- 1. fill src info of entry from op
+  --- 2. update isa map
+*/
+void reg_file_phy_map_write_entry(Op* op, Reg_File_Phy_Entry *entry, uns index) {
+  if (entry == NULL)
+    return;
+
+  // set info to entry
+  entry->op = op;
+  entry->op_num = op->op_num;
+  entry->unique_num = op->unique_num;
+  entry->off_path = op->off_path;
+  entry->reg_isa_id = op->inst_info->dests[index].id;
+  entry->reg_state = REG_FILE_PHY_STATE_ALLOC;
+
+  // change the pointer in isa to the latest one
+  map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] = entry;
+}
+
+/*
+  --- get latest entry from isa map
+*/
+Reg_File_Phy_Entry *reg_file_phy_map_access_entry(uns16 id) {
+  return map_data->reg_file->phy_map->reg_isa_map[id];
+}
+
+/*
+  --- check if enough free register num for allocation
+*/
+Flag reg_file_phy_map_can_alloc(uns num) {
+  return map_data->reg_file->phy_map->reg_free_num >= num;
+}
+
+/*
+  --- get the allocating entry from free list
+*/
+Reg_File_Phy_Entry *reg_file_phy_map_alloc_entry(void) {
+  return reg_file_phy_map_free_list_delete();
+}
+
+/*
+  --- free the entry and insert to free list
+*/
+void reg_file_phy_map_free_entry(Reg_File_Phy_Entry *entry) {
+  if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
+    return;
+
+  // produce tracking
+  reg_consume_table_update_map(map_data->reg_file->phy_map->phy_reg_consume_table, entry->op, entry->reg_phy_id);
+
+  // clear entry
+  entry->op = &invalid_op;
+  entry->op_num = 0;
+  entry->unique_num = 0;
+  entry->off_path = FALSE;
+  entry->reg_isa_id = REG_FILE_REG_INVALID_ID;
+  entry->reg_state = REG_FILE_PHY_STATE_FREE;
+
+  // append to free list
+  reg_file_phy_map_free_list_insert(entry);
+}
+
+/*
+  --- 1. isnert the entry to list
+  --- 2. increase the free num
+*/
+void reg_file_phy_map_free_list_insert(Reg_File_Phy_Entry *entry) {
+  entry->next_free = map_data->reg_file->phy_map->reg_free_list_head;
+  map_data->reg_file->phy_map->reg_free_list_head = entry;
+  map_data->reg_file->phy_map->reg_free_num++;
+}
+
+/*
+  --- 1. delete the entry from list
+  --- 2. decrease the free num
+*/
+Reg_File_Phy_Entry *reg_file_phy_map_free_list_delete(void) {
+  Reg_File_Phy_Entry *entry;
+
+  if (map_data->reg_file->phy_map->reg_free_list_head == NULL) {
+    entry = NULL;
+  } else {
+    entry = map_data->reg_file->phy_map->reg_free_list_head;
+    map_data->reg_file->phy_map->reg_free_list_head = entry->next_free;
+    entry->next_free = NULL;
+    map_data->reg_file->phy_map->reg_free_num--;
+  }
+
+  return entry;
+}
+
+/**************************************************************************************/
 /* External Calling of Register File */
 
+/*
+  Called by:
+  --- icache_stage.c -> icache_issue_ops
+  Procedure:
+  --- check if there is stalling op
+*/
 Flag reg_file_check_stall(void) {
   if (!REG_FILE_PHY_ENABLE)
     return FALSE;
@@ -1200,6 +1404,14 @@ Flag reg_file_check_stall(void) {
   return map_data->reg_file->stall_op != NULL;
 }
 
+/*
+  Called by:
+  --- icache_stage.c -> update_icache_stage
+  Procedure:
+  --- 1. check if there is stalling op
+  --- 2. if true, try to alloc the stalling op
+  --- 3. check if there is stalling op
+*/
 Flag reg_file_remove_stall(void) {
   if (!REG_FILE_PHY_ENABLE)
     return FALSE;
@@ -1216,187 +1428,35 @@ Flag reg_file_remove_stall(void) {
   return map_data->reg_file->stall_op != NULL;
 }
 
-/**************************************************************************************/
-/* Operations of Physical Map in Register File */
-
-void reg_file_phy_map_init(void) {
+/*
+  --- printf for debug
+*/
+void reg_file_phy_map_debug_print(void) {
   uns ii;
   Reg_File_Phy_Entry *entry;
 
-  for (ii = 0; ii < REG_FILE_PHY_NUM; ii++) {
-    entry = &map_data->reg_file->phy_map->reg_map_array[ii];
-    entry->op = &invalid_op;
-    entry->op_num = 0;
-    entry->unique_num = 0;
-    entry->off_path = FALSE;
-    entry->reg_logical_id = REG_FILE_REG_INVALID_ID;
+  printf("=========== Physical Array (proc: %d)\n", map_data->proc_id);
+  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
+    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
 
-    entry->reg_phy_id = ii;
-    entry->reg_state = REG_FILE_PHY_STATE_FREE;
-
-    entry->prev = NULL;
-    entry->next = NULL;
+    printf("P[%d], (%d, %lld, %d)\n", entry->reg_phy_id, entry->reg_isa_id, entry->unique_num, entry->reg_state);
   }
 
-  map_data->reg_file->phy_map->reg_alloc_head = NULL;
-  map_data->reg_file->phy_map->reg_map_free_num = REG_FILE_PHY_NUM;
+  printf("=========== ISA Map (proc: %d)\n", map_data->proc_id);
+  for (ii = 0; ii < NUM_REG_IDS; ii++) {
+    entry = map_data->reg_file->phy_map->reg_isa_map[ii];
 
-  // tracking table
-  map_data->reg_file->phy_map->phy_reg_consume_table = NULL;
-  reg_consume_table_init(&map_data->reg_file->phy_map->phy_reg_consume_table, REG_FILE_PHY_NUM);
-}
-
-// free dead register for overlapped and committed op
-Flag reg_file_phy_map_remove_dead() {
-  Reg_File_Phy_Entry *entry;
-  Flag if_remove = FALSE;
-
-  for (entry = map_data->reg_file->phy_map->reg_alloc_head; entry != NULL; entry = entry->next) {
-    // check if it is committed
-    if (entry->op->op_pool_valid == FALSE) {
-      reg_file_phy_map_free_entry(entry);
-      if_remove = TRUE;
-      continue;
-    }
-
-    // check if it is overlapped
-    if (entry->reg_state == REG_FILE_PHY_STATE_OVERLAP) {
-      reg_file_phy_map_free_entry(entry);
-      if_remove = TRUE;
-      continue;
-    }
-  }
-
-  return if_remove;
-}
-
-void reg_file_phy_map_check_overlap(Op *op) {
-  uns ii;
-  Reg_File_Phy_Entry *entry;
-
-  for (entry = map_data->reg_file->phy_map->reg_alloc_head; entry != NULL; entry = entry->next) {
-    for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
-      if (entry->reg_logical_id == op->inst_info->dests[ii].id && entry->off_path == op->off_path) {
-        entry->reg_state = REG_FILE_PHY_STATE_OVERLAP;
-        break;
-      }
-    }
-  }
-}
-
-// remove all off path ops
-void reg_file_phy_map_reset(void) {
-  Reg_File_Phy_Entry *entry;
-
-  for (entry = map_data->reg_file->phy_map->reg_alloc_head; entry != NULL; entry = entry->next) {
-    if (!entry->off_path)
+    if (entry == NULL)
       continue;
 
-    reg_file_phy_map_free_entry(entry);
-  }
-}
-
-void reg_file_phy_map_read_entry(Op *op, Reg_File_Phy_Entry *entry, Dep_Type type) {
-  if (entry == NULL) {
-    return;
+    printf("I[%d], (%d, %lld, %d)\n", entry->reg_isa_id, entry->reg_phy_id, entry->unique_num, entry->reg_state);
   }
 
-  uns       src_num = op->oracle_info.num_srcs++;
-  Src_Info* info    = &op->oracle_info.src_info[src_num];
-
-  info->type       = type;
-  info->op         = entry->op;
-  info->op_num     = entry->op_num;
-  info->unique_num = entry->unique_num;
-
-  // consume tracking
-  reg_consume_table_read_reg_map(map_data->reg_file->phy_map->phy_reg_consume_table, op, entry->reg_phy_id);
-
-  // setting waking up
-  set_not_rdy_bit(op, src_num);
-}
-
-void reg_file_phy_map_write_entry(Op* op, Reg_File_Phy_Entry *entry, uns index) {
-  if (entry == NULL)
-    return;
-
-  entry->op = op;
-  entry->op_num = op->op_num;
-  entry->unique_num = op->unique_num;
-  entry->off_path = op->off_path;
-  entry->reg_logical_id = op->inst_info->dests[index].id;
-  entry->reg_state = REG_FILE_PHY_STATE_ALLOC;
-}
-
-Flag reg_file_phy_map_can_alloc(uns num) {
-  return map_data->reg_file->phy_map->reg_map_free_num >= num;
-}
-
-Reg_File_Phy_Entry *reg_file_phy_map_search_entry(uns16 id, Flag off_path) {
-  Reg_File_Phy_Entry *entry;
-
-  for (entry = map_data->reg_file->phy_map->reg_alloc_head; entry != NULL; entry = entry->next) {
-    if (entry->reg_logical_id != id || entry->off_path != off_path)
-      continue;
-
-    return entry;
+  printf("=========== Free List (proc: %d)\n", map_data->proc_id);
+  for (entry = map_data->reg_file->phy_map->reg_free_list_head; entry != NULL; entry = entry->next_free) {
+    printf("Free Entry: %d\n", entry->reg_phy_id);
   }
+  printf("Free Num: %d\n", map_data->reg_file->phy_map->reg_free_num);
 
-  return NULL;
-}
-
-Reg_File_Phy_Entry *reg_file_phy_map_alloc_entry(void) {
-  uns ii;
-  Reg_File_Phy_Entry *entry;
-
-  for (ii = 0; ii < REG_FILE_PHY_NUM; ii++) {
-    entry = &map_data->reg_file->phy_map->reg_map_array[ii];
-    if (entry->reg_state != REG_FILE_PHY_STATE_FREE)
-      continue;
-
-    map_data->reg_file->phy_map->reg_map_free_num--;
-
-    entry->prev = NULL;
-    entry->next = map_data->reg_file->phy_map->reg_alloc_head;
-
-    if (map_data->reg_file->phy_map->reg_alloc_head == NULL) {
-      map_data->reg_file->phy_map->reg_alloc_head = entry;
-    } else {
-      map_data->reg_file->phy_map->reg_alloc_head->prev = entry;
-      map_data->reg_file->phy_map->reg_alloc_head = entry;
-    }
-
-    return entry;
-  }
-
-  return NULL;
-}
-
-void reg_file_phy_map_free_entry(Reg_File_Phy_Entry *entry) {
-  if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
-    return;
-
-  // produce tracking
-  reg_consume_table_update_map(map_data->reg_file->phy_map->phy_reg_consume_table, entry->op, entry->reg_phy_id);
-
-  entry->op = &invalid_op;
-  entry->op_num = 0;
-  entry->unique_num = 0;
-  entry->off_path = FALSE;
-  entry->reg_logical_id = REG_FILE_REG_INVALID_ID;
-  entry->reg_state = REG_FILE_PHY_STATE_FREE;
-
-  map_data->reg_file->phy_map->reg_map_free_num++;
-
-  if (entry->next) {
-    entry->next->prev = entry->prev;
-  }
-
-  if (entry->prev) {
-    entry->prev->next = entry->next;
-  } else {
-    map_data->reg_file->phy_map->reg_alloc_head = entry->next;
-  }
-
-  entry->prev = NULL;
+  printf("===========\n");
 }

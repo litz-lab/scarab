@@ -74,7 +74,9 @@ typedef struct Reg_Consume_Table_struct {
 
 // To be change to configurable val
 #define REG_FILE_PHY_ENABLE FALSE
-#define REG_FILE_PHY_NUM 144
+#define REG_FILE_PHY_NUM 160
+
+const static int REG_FILE_REG_INVALID_ID = -1;
 
 typedef enum Reg_File_Phy_State_enum {
   REG_FILE_PHY_STATE_FREE,
@@ -90,21 +92,27 @@ typedef struct Reg_File_Phy_Entry_struct {
   Counter             op_num;
   Counter             unique_num;
   Flag                off_path;
-  int                 reg_logical_id;
+  int                 reg_isa_id;
 
   // reg info
   int                 reg_phy_id;
   Reg_File_Phy_State  reg_state;
 
-  // alloc list info
-  struct Reg_File_Phy_Entry_struct *prev;
-  struct Reg_File_Phy_Entry_struct *next;
+  // free list info
+  struct Reg_File_Phy_Entry_struct *next_free;
 } Reg_File_Phy_Entry;
 
 typedef struct Reg_File_Phy_Map_struct {
-  Reg_File_Phy_Entry reg_map_array[REG_FILE_PHY_NUM];
-  Reg_File_Phy_Entry *reg_alloc_head;
-  uns                reg_map_free_num;
+  /* isa map */
+  Reg_File_Phy_Entry* reg_isa_map[NUM_REG_IDS];
+
+  /* physical map */
+  Reg_File_Phy_Entry *reg_phy_array;
+  uns                 reg_phy_size;
+
+  /* free list */
+  Reg_File_Phy_Entry *reg_free_list_head;
+  uns                 reg_free_num;
 
   /* unconsumed producer insturction tracking */
   Reg_Consume_Table *phy_reg_consume_table;
@@ -185,6 +193,7 @@ void reg_consume_table_print_debug_stat(void);
 /* external functions of the physical register file */
 Flag reg_file_check_stall(void);
 Flag reg_file_remove_stall(void);
+void reg_file_phy_map_debug_print(void);
 
 /**************************************************************************************/
 

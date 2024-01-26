@@ -705,8 +705,10 @@ void ext_trace_extract_basic_block_vectors() {
         std::string bbv_output(TRACE_BBV_OUTPUT);
         std::string footprint_output(TRACE_FOOTPRINT_OUTPUT);
         uint64_t instrs_count_bbv = output_fingerprint(bbv_output, fingerprint);
-        uint64_t instrs_count_footprint = output_fingerprint(footprint_output, footprint);
-        ASSERT(proc_id, instrs_count_bbv == instrs_count_footprint);
+        if (!footprint_output.empty()) {
+          uint64_t instrs_count_footprint = output_fingerprint(footprint_output, footprint);
+          ASSERT(proc_id, instrs_count_bbv == instrs_count_footprint);
+        }
 
         // clear for the next segment
         fingerprint.clear();
@@ -747,8 +749,10 @@ void ext_trace_extract_basic_block_vectors() {
         std::string bbv_output(TRACE_BBV_OUTPUT);
         std::string footprint_output(TRACE_FOOTPRINT_OUTPUT);
         uint64_t instrs_count_bbv = output_fingerprint(bbv_output, fingerprint);
-        uint64_t instrs_count_footprint = output_fingerprint(footprint_output, footprint);
-        ASSERT(proc_id, instrs_count_bbv == instrs_count_footprint);
+        if (!footprint_output.empty()) {
+          uint64_t instrs_count_footprint = output_fingerprint(footprint_output, footprint);
+          ASSERT(proc_id, instrs_count_bbv == instrs_count_footprint);
+        }
 
         if(SIM_MODE == TRACE_BBV_DISTRIBUTED_MODE && USE_FETCHED_COUNT) {
           printf("The fingerprint outputting is triggered at the end of the trace."

@@ -1078,10 +1078,12 @@ void reg_consume_table_print_debug_stat(void) {
 static inline void reg_file_look_up_src(Op*);
 static inline void reg_file_alloc_dest(Op*);
 
-// physical map functional methods
+// physical map init 
 static inline void reg_file_phy_map_init(uns);
-static inline Flag reg_file_phy_map_remove_dead(void);
-static inline void reg_file_phy_map_reset(void);
+
+// physical map rebuild procedure
+static inline void reg_file_phy_map_flush(void);
+static inline void reg_file_phy_map_remap(void);
 
 // physical map basic operations
 static inline void reg_file_phy_map_read_entry(Op*, Reg_File_Phy_Entry*, Dep_Type);
@@ -1122,7 +1124,8 @@ void reg_file_process_renaming(Op *op) {
 
 /*
   --- 1. flush off-path op for error spec
-  --- 2. recover op from snapshot
+  --- 2. remap phy to isa
+  --- 3. recover op from snapshot (TODO)
 */
 void reg_file_rebuild_map(void) {
   if (!REG_FILE_PHY_ENABLE)
@@ -1131,7 +1134,9 @@ void reg_file_rebuild_map(void) {
   if (map_data->reg_file == NULL)
     return;
 
-  reg_file_phy_map_reset();
+  DEBUG(map_data->proc_id, "*** REBUILD ***\n");
+  reg_file_phy_map_flush();
+  reg_file_phy_map_remap();
 }
 
 /*
@@ -1150,23 +1155,34 @@ void reg_file_look_up_src(Op *op) {
 }
 
 /*
-  --- 1. remove dead register for overlapped and committed op
+  --- 1. check if enough register for allocation
   --- 2. fill the info into free entries
 */
 void reg_file_alloc_dest(Op *op) {
   uns ii;
   Reg_File_Phy_Entry *entry;
 
-  // free the dead register in the map
-  reg_file_phy_map_remove_dead();
+  // TODO: change polling to callback
+  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
+    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
+    if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
+      continue;
+
+    if (entry->op->op_pool_valid)
+      continue;
+
+    reg_file_remove_dead(entry);
+  }
 
   // check if enough reg
   if (!reg_file_phy_map_can_alloc(op->table_info->num_dest_regs)) {
     DEBUG(map_data->proc_id, "Map File Physical Renaming Stall: %lld\n", op->unique_num);
-    map_data->reg_file->stall_op = op;
+    if (map_data->reg_file->stall_op == NULL)
+      map_data->reg_file->stall_op = op;
     return;
   }
 
+  // remove stall
   if (map_data->reg_file->stall_op) {
     DEBUG(map_data->proc_id, "Map File Physical Renaming Recover: %lld\n", op->unique_num);
     map_data->reg_file->stall_op = NULL;
@@ -1218,6 +1234,9 @@ void reg_file_phy_map_init(uns array_size) {
     entry->reg_phy_id = ii;
     entry->reg_state = REG_FILE_PHY_STATE_FREE;
 
+    entry->prev_same_isa = NULL;
+    entry->next_same_isa = NULL;
+
     reg_file_phy_map_free_list_insert(entry);
   }
 
@@ -1227,32 +1246,9 @@ void reg_file_phy_map_init(uns array_size) {
 }
 
 /*
-  --- free dead register
-*/
-Flag reg_file_phy_map_remove_dead() {
-  uns ii;
-  Reg_File_Phy_Entry *entry;
-  Flag if_remove = FALSE;
-
-  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
-    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
-    if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
-      continue;
-
-    if (entry->op->op_pool_valid == FALSE) {
-      reg_file_phy_map_free_entry(entry);
-      if_remove = TRUE;
-      continue;
-    }
-  }
-
-  return if_remove;
-}
-
-/*
   --- remove all off path ops
 */
-void reg_file_phy_map_reset(void) {
+void reg_file_phy_map_flush(void) {
   uns ii;
   Reg_File_Phy_Entry *entry;
 
@@ -1265,6 +1261,28 @@ void reg_file_phy_map_reset(void) {
       continue;
 
     reg_file_phy_map_free_entry(entry);
+  }
+}
+
+/*
+  --- point the current latest phy to isa
+*/
+void reg_file_phy_map_remap(void) {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+
+  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
+    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
+    if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
+      continue;
+
+    ASSERT(map_data->proc_id, !entry->off_path);
+
+    if (entry->next_same_isa != NULL) 
+      continue;
+
+    if (map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] == NULL)
+      map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] = entry;
   }
 }
 
@@ -1298,8 +1316,7 @@ void reg_file_phy_map_read_entry(Op *op, Reg_File_Phy_Entry *entry, Dep_Type typ
   --- 2. update isa map
 */
 void reg_file_phy_map_write_entry(Op* op, Reg_File_Phy_Entry *entry, uns index) {
-  if (entry == NULL)
-    return;
+  ASSERT(op->proc_id, entry != NULL && entry->next_same_isa == NULL && entry->prev_same_isa == NULL);
 
   // set info to entry
   entry->op = op;
@@ -1310,6 +1327,12 @@ void reg_file_phy_map_write_entry(Op* op, Reg_File_Phy_Entry *entry, uns index) 
   entry->reg_state = REG_FILE_PHY_STATE_ALLOC;
 
   // change the pointer in isa to the latest one
+  Reg_File_Phy_Entry *prev_entry = map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id];
+  if (prev_entry != NULL && prev_entry->reg_phy_id != entry->reg_phy_id) {
+    ASSERT(op->proc_id, prev_entry->next_same_isa == NULL);
+    entry->prev_same_isa = prev_entry;
+    prev_entry->next_same_isa = entry;
+  }
   map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] = entry;
 }
 
@@ -1338,8 +1361,12 @@ Reg_File_Phy_Entry *reg_file_phy_map_alloc_entry(void) {
   --- free the entry and insert to free list
 */
 void reg_file_phy_map_free_entry(Reg_File_Phy_Entry *entry) {
-  if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
-    return;
+  ASSERT(map->proc_id, entry->reg_state != REG_FILE_PHY_STATE_FREE);
+
+  // clear entry in isa
+  Reg_File_Phy_Entry *isa_entry = map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id];
+  if (isa_entry != NULL && isa_entry->reg_phy_id == entry->reg_phy_id)
+    map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] = NULL;
 
   // produce tracking
   reg_consume_table_update_map(map_data->reg_file->phy_map->phy_reg_consume_table, entry->op, entry->reg_phy_id);
@@ -1354,6 +1381,14 @@ void reg_file_phy_map_free_entry(Reg_File_Phy_Entry *entry) {
 
   // append to free list
   reg_file_phy_map_free_list_insert(entry);
+
+  // clear same isa pointer
+  if (entry->prev_same_isa != NULL)
+    entry->prev_same_isa->next_same_isa = NULL;
+  if (entry->next_same_isa != NULL)
+    entry->next_same_isa->prev_same_isa = NULL;
+  entry->prev_same_isa = NULL;
+  entry->next_same_isa = NULL;
 }
 
 /*
@@ -1429,34 +1464,108 @@ Flag reg_file_remove_stall(void) {
 }
 
 /*
+  Called by:
+  --- TODO: (op_pool.c -> free_op)
+  Procedure:
+  --- 1. mark dead for all prev entry before the committed one
+  --- 2. remove dead from the oldest op
+*/
+void reg_file_remove_dead(Reg_File_Phy_Entry *entry) {
+  if (!REG_FILE_PHY_ENABLE)
+    return;
+
+  if (entry->reg_state == REG_FILE_PHY_STATE_DEAD || entry->reg_state == REG_FILE_PHY_STATE_COMMIT)
+    return;
+
+  ASSERT(map_data->proc_id, entry != NULL &&
+    entry->reg_state != REG_FILE_PHY_STATE_FREE && !entry->op->op_pool_valid);
+  if (entry->next_same_isa == NULL) {
+    ASSERT(map_data->proc_id, map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] != NULL);
+    ASSERT(map_data->proc_id, map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id]->reg_phy_id == entry->reg_phy_id);
+  }
+
+  // mark current register as commit when it is free
+  entry->reg_state = REG_FILE_PHY_STATE_COMMIT;
+
+  // mark all the op before the committed op as dead
+  Reg_File_Phy_Entry *curr_entry;
+  curr_entry = entry;
+  while (curr_entry->prev_same_isa != NULL) {
+    ASSERT(map_data->proc_id, curr_entry->reg_state != REG_FILE_PHY_STATE_FREE);
+    curr_entry = curr_entry->prev_same_isa;
+    curr_entry->reg_state = REG_FILE_PHY_STATE_DEAD;
+  }
+
+  // remove dead from the oldest to the latest
+  Reg_File_Phy_Entry *next_entry;
+  while (curr_entry != NULL && curr_entry->reg_state == REG_FILE_PHY_STATE_DEAD) {
+    next_entry = curr_entry->next_same_isa;
+    reg_file_phy_map_free_entry(curr_entry);
+    curr_entry = next_entry;
+  }
+}
+
+/*
   --- printf for debug
 */
-void reg_file_phy_map_debug_print(void) {
+void reg_file_print_map(int isa_id) {
   uns ii;
   Reg_File_Phy_Entry *entry;
 
-  printf("=========== Physical Array (proc: %d)\n", map_data->proc_id);
+  printf("\n-------------------------\n");
+  printf("Physical Array (proc: %d)\n", map_data->proc_id);
   for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
     entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
 
-    printf("P[%d], (%d, %lld, %d)\n", entry->reg_phy_id, entry->reg_isa_id, entry->unique_num, entry->reg_state);
+    if (isa_id != -1 && isa_id != entry->reg_isa_id) {
+      continue;
+    }
+
+    printf("P[%d]  \t(i: %d, \ts: %d,\tn: %lld, \tu: %lld, \to: %d, \tv: %d)\n",
+      entry->reg_phy_id, entry->reg_isa_id, entry->reg_state, entry->op_num,
+      entry->unique_num, entry->off_path, entry->op->op_pool_valid);
+
+    printf("Prev: ->");
+    entry = entry->prev_same_isa;
+    while (entry != NULL) {
+      printf("%d->", entry->reg_phy_id);
+      entry = entry->prev_same_isa;
+    }
+    printf("\n");
+
+    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
+    printf("Next: ->");
+    entry = entry->next_same_isa;
+    while (entry != NULL) {
+      printf("%d->", entry->reg_phy_id);
+      entry = entry->next_same_isa;
+    }
+    printf("\n");
   }
 
-  printf("=========== ISA Map (proc: %d)\n", map_data->proc_id);
+  printf("-------------------------\n");
+  printf("ISA Map (proc: %d)\n", map_data->proc_id);
   for (ii = 0; ii < NUM_REG_IDS; ii++) {
     entry = map_data->reg_file->phy_map->reg_isa_map[ii];
+
+    if (isa_id != -1 && isa_id != ii) {
+      continue;
+    }
 
     if (entry == NULL)
       continue;
 
-    printf("I[%d], (%d, %lld, %d)\n", entry->reg_isa_id, entry->reg_phy_id, entry->unique_num, entry->reg_state);
+    printf("I[%d] \t(phy: %d, \ts: %d,\tn: %lld, \tu: %lld, \to: %d, \tv: %d)\n",
+      entry->reg_isa_id, entry->reg_phy_id, entry->reg_state, entry->op_num,
+      entry->unique_num, entry->off_path, entry->op->op_pool_valid);
   }
 
-  printf("=========== Free List (proc: %d)\n", map_data->proc_id);
+  printf("-------------------------\n");
+  printf("Free List (proc: %d)\n", map_data->proc_id);
   for (entry = map_data->reg_file->phy_map->reg_free_list_head; entry != NULL; entry = entry->next_free) {
-    printf("Free Entry: %d\n", entry->reg_phy_id);
+    printf("F[%d], ", entry->reg_phy_id);
   }
   printf("Free Num: %d\n", map_data->reg_file->phy_map->reg_free_num);
 
-  printf("===========\n");
+  printf("-------------------------\n\n");
 }

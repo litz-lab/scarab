@@ -81,8 +81,8 @@ const static int REG_FILE_REG_INVALID_ID = -1;
 typedef enum Reg_File_Phy_State_enum {
   REG_FILE_PHY_STATE_FREE,
   REG_FILE_PHY_STATE_ALLOC,
-  REG_FILE_PHY_STATE_OVERLAP,
   REG_FILE_PHY_STATE_COMMIT,
+  REG_FILE_PHY_STATE_DEAD,
   REG_FILE_PHY_STATE_NUM
 } Reg_File_Phy_State;
 
@@ -100,6 +100,10 @@ typedef struct Reg_File_Phy_Entry_struct {
 
   // free list info
   struct Reg_File_Phy_Entry_struct *next_free;
+
+  // previous physical entry of same isa registers info
+  struct Reg_File_Phy_Entry_struct *prev_same_isa;
+  struct Reg_File_Phy_Entry_struct *next_same_isa;
 } Reg_File_Phy_Entry;
 
 typedef struct Reg_File_Phy_Map_struct {
@@ -193,7 +197,8 @@ void reg_consume_table_print_debug_stat(void);
 /* external functions of the physical register file */
 Flag reg_file_check_stall(void);
 Flag reg_file_remove_stall(void);
-void reg_file_phy_map_debug_print(void);
+void reg_file_remove_dead(Reg_File_Phy_Entry *);
+void reg_file_print_map(int);
 
 /**************************************************************************************/
 

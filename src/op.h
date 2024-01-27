@@ -90,6 +90,46 @@ typedef struct Wake_Up_Entry_struct {
 } Wake_Up_Entry;
 // }}}
 
+/*------------------------------------------------------------------------------------*/
+// {{{ Physical Register Renaming
+typedef enum Reg_File_Phy_State_enum {
+  REG_FILE_PHY_STATE_FREE,
+  REG_FILE_PHY_STATE_ALLOC,
+  REG_FILE_PHY_STATE_COMMIT,
+  REG_FILE_PHY_STATE_DEAD,
+  REG_FILE_PHY_STATE_NUM
+} Reg_File_Phy_State;
+
+typedef struct Reg_Dep_Track_Node_struct {
+  uns                               out_degree;
+  uns                               in_degree;
+  struct Reg_Dep_Track_Node_struct  *src_node[MAX_SRCS];
+  struct Reg_Dep_Track_Node_struct  *next_sort;
+  struct Reg_Dep_Track_Node_struct  *next_alloc;
+} Reg_Dep_Track_Node;
+
+typedef struct Reg_File_Phy_Entry_struct {
+  // op info
+  Op                  *op;
+  Counter             op_num;
+  Counter             unique_num;
+  Flag                off_path;
+  int                 reg_isa_id;
+
+  // reg info
+  int                 reg_phy_id;
+  Reg_File_Phy_State  reg_state;
+
+  // free list info
+  struct Reg_File_Phy_Entry_struct *next_free;
+
+  // previous physical entry of same isa registers info
+  struct Reg_File_Phy_Entry_struct *prev_same_isa;
+  struct Reg_File_Phy_Entry_struct *next_same_isa;
+} Reg_File_Phy_Entry;
+// }}}
+
+/*------------------------------------------------------------------------------------*/
 
 // per branch stats
 typedef struct Per_Branch_Stat_struct {
@@ -328,6 +368,12 @@ struct Op_struct {
   Flag fetched_from_uop_cache;
   // }}}
   int bp_confidence;
+
+  // {{{ physical register renaming
+  Reg_Dep_Track_Node *reg_dep_track;              // dependency tracking info of register
+  Reg_File_Phy_Entry *reg_dest_entry[MAX_DESTS];  // pointer to the physical register
+  uns                reg_dest_num;                // number of destination entry
+  // }}}
 };
 // }}}
 

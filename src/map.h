@@ -37,70 +37,54 @@
 /* Unconsumed Producer Tracking */
 
 // To be changed to a configurable para
-#define REG_CONSUME_TRACKING_ENABLE FALSE
-#define REG_CONSUME_PREDICT_SIGN REG_CONSUME_SIGH_PC
-#define REG_CONSUME_PREDICT_THRESHOLD 5
+#define REG_DEP_TRACK_ENABLE            FALSE
+#define REG_DEP_TRACK_ANSCESTOR_ENABLE  FALSE
+#define REG_DEP_TRACK_SIGNITURE         REG_DEP_TRACK_SIGH_PC
+#define REG_DEP_TRACK_PREDICT_THRESHOLD 5
 
-typedef enum Map_Reg_Consume_State_enum {
-  REG_CONSUME_STATE_UNCONSUMED,
-  REG_CONSUME_STATE_CONSUMED,
-  REG_CONSUME_STATE_VOID,
-  REG_CONSUME_STATE_NUM
-} Reg_Consume_State;
+typedef enum Reg_Dep_Track_Signiture_enum {
+  REG_DEP_TRACK_SIGH_PC,
+  REG_DEP_TRACK_SIGH_MEM,
+  REG_DEP_TRACK_SIGH_NUM
+} Reg_Dep_Track_Signiture;
 
-typedef enum Map_Reg_Consume_Signiture_enum {
-  REG_CONSUME_SIGH_PC,
-  REG_CONSUME_SIGH_MEM,
-  REG_CONSUME_SIGH_NUM
-} Reg_Consume_Signiture;
+typedef enum Reg_Dep_Track_Tree_State_enum {
+  REG_DEP_TRACK_STATE_UNCONSUMED,
+  REG_DEP_TRACK_STATE_CONSUMED,
+  REG_DEP_TRACK_STATE_VOID,
+  REG_DEP_TRACK_STATE_NUM
+} Reg_Dep_Track_State;
 
-typedef struct Reg_Consume_Table_struct {
-  /* track if the producer is consumed */
-  Reg_Consume_State *tracking_array;
-  uns trakcing_array_size;
+typedef struct Reg_Dep_Track_Table_struct {
+  /* dep tracking info */
+  uns64               *op_sign_array;   // store op signiture for prediction
+  Reg_Dep_Track_State *state_array;     // single flag mechanism
+  Reg_Dep_Track_Node  **node_array;     // topological mechanism
+  uns                 trakcing_array_size;
 
   /* count the producer instructions */
   Counter num_reg_all_producer;
   Counter num_reg_consumed;
   Counter num_reg_unconsumed;
+  Counter num_reg_topo_unconsumed;
 
   /* collect the unconsumed producer instructions by signiture */
-  Hash_Table            unconsumed_hash;
-  Reg_Consume_Signiture unconsumed_hash_key_tpye;
-} Reg_Consume_Table;
+  Hash_Table              unconsumed_hash;
+  Reg_Dep_Track_Signiture sign_key_type;
+
+  /* queue for nodes in topolocigal sort */
+  Reg_Dep_Track_Node      *sort_list_head;
+  Reg_Dep_Track_Node      *alloc_head;
+} Reg_Dep_Track_Table;
 
 /**************************************************************************************/
 /* Reg File Hardware Implementation */
 
 // To be change to configurable val
-#define REG_FILE_PHY_ENABLE FALSE
-#define REG_FILE_PHY_NUM 160
+#define REG_FILE_PHY_ENABLE   FALSE
+#define REG_FILE_PHY_NUM      1024
 
 const static int REG_FILE_REG_INVALID_ID = -1;
-
-typedef enum Reg_File_Phy_State_enum {
-  REG_FILE_PHY_STATE_FREE,
-  REG_FILE_PHY_STATE_ALLOC,
-  REG_FILE_PHY_STATE_OVERLAP,
-  REG_FILE_PHY_STATE_COMMIT,
-  REG_FILE_PHY_STATE_NUM
-} Reg_File_Phy_State;
-
-typedef struct Reg_File_Phy_Entry_struct {
-  // op info
-  Op                  *op;
-  Counter             op_num;
-  Counter             unique_num;
-  Flag                off_path;
-  int                 reg_isa_id;
-
-  // reg info
-  int                 reg_phy_id;
-  Reg_File_Phy_State  reg_state;
-
-  // free list info
-  struct Reg_File_Phy_Entry_struct *next_free;
-} Reg_File_Phy_Entry;
 
 typedef struct Reg_File_Phy_Map_struct {
   /* isa map */
@@ -115,7 +99,10 @@ typedef struct Reg_File_Phy_Map_struct {
   uns                 reg_free_num;
 
   /* unconsumed producer insturction tracking */
-  Reg_Consume_Table *phy_reg_consume_table;
+  Reg_Dep_Track_Table *phy_track_table;
+
+  /* isa counter */
+  Counter             reg_isa_counter[NUM_REG_IDS];
 } Reg_File_Phy_Map;
 
 typedef struct Reg_File_struct {
@@ -150,7 +137,7 @@ typedef struct Map_Data_struct {
   uns            active_wake_up_entries;
 
   /* unconsumed producer insturction tracking */
-  Reg_Consume_Table *reg_consume_table;
+  Reg_Dep_Track_Table *track_table;
 
   /* register file for renaming based on hardware implementation */
   Reg_File *reg_file;
@@ -188,12 +175,13 @@ Flag test_not_rdy_bit(Op*, uns);
 void set_not_rdy_bit(Op*, uns);
 
 /* external functions of the unconsumed producer table */
-void reg_consume_table_print_debug_stat(void);
+void reg_dep_track_table_print_debug_stat(void);
 
 /* external functions of the physical register file */
 Flag reg_file_check_stall(void);
 Flag reg_file_remove_stall(void);
-void reg_file_phy_map_debug_print(void);
+void reg_file_remove_dead(Op*);
+void reg_file_print_map(int);
 
 /**************************************************************************************/
 

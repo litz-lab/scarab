@@ -457,6 +457,11 @@ void ext_trace_extract_basic_block_vectors() {
   bb_counts counts_dynamic{}, counts_as_built{};
   uint64_t num_of_segments = 0;
 
+  // if SEGMENT_INSTR_COUNT is the default value zero,
+  // output a single BBV for the entire trace
+  if(SEGMENT_INSTR_COUNT == 0) {
+    SEGMENT_INSTR_COUNT = std::numeric_limits<uns64>::max();
+  }
   // segment instruction counter, reset every segment
   uint64_t cur_counter = 0;
   uint64_t cur_counter_fetched = 0;

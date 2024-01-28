@@ -78,34 +78,6 @@ typedef struct Reg_Consume_Table_struct {
 
 const static int REG_FILE_REG_INVALID_ID = -1;
 
-typedef enum Reg_File_Phy_State_enum {
-  REG_FILE_PHY_STATE_FREE,
-  REG_FILE_PHY_STATE_ALLOC,
-  REG_FILE_PHY_STATE_COMMIT,
-  REG_FILE_PHY_STATE_DEAD,
-  REG_FILE_PHY_STATE_NUM
-} Reg_File_Phy_State;
-
-typedef struct Reg_File_Phy_Entry_struct {
-  // op info
-  Op                  *op;
-  Counter             op_num;
-  Counter             unique_num;
-  Flag                off_path;
-  int                 reg_isa_id;
-
-  // reg info
-  int                 reg_phy_id;
-  Reg_File_Phy_State  reg_state;
-
-  // free list info
-  struct Reg_File_Phy_Entry_struct *next_free;
-
-  // previous physical entry of same isa registers info
-  struct Reg_File_Phy_Entry_struct *prev_same_isa;
-  struct Reg_File_Phy_Entry_struct *next_same_isa;
-} Reg_File_Phy_Entry;
-
 typedef struct Reg_File_Phy_Map_struct {
   /* isa map */
   Reg_File_Phy_Entry* reg_isa_map[NUM_REG_IDS];

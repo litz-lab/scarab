@@ -1162,18 +1162,6 @@ void reg_file_alloc_dest(Op *op) {
   uns ii;
   Reg_File_Phy_Entry *entry;
 
-  // TODO: change polling to callback
-  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
-    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
-    if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
-      continue;
-
-    if (entry->op->op_pool_valid)
-      continue;
-
-    reg_file_remove_dead(entry);
-  }
-
   // check if enough reg
   if (!reg_file_phy_map_can_alloc(op->table_info->num_dest_regs)) {
     DEBUG(map_data->proc_id, "Map File Physical Renaming Stall: %lld\n", op->unique_num);
@@ -1334,6 +1322,10 @@ void reg_file_phy_map_write_entry(Op* op, Reg_File_Phy_Entry *entry, uns index) 
     prev_entry->next_same_isa = entry;
   }
   map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] = entry;
+
+  // insert entry info to op
+  ASSERT(op->proc_id, op->num_dest < MAX_DESTS);
+  op->dest_reg_entry[op->num_dest++] = entry;
 }
 
 /*

@@ -151,6 +151,13 @@ void free_op(Op* op) {
   DEBUG(0, "Freed op  id:%u  op_pool_active_ops: %u\n", op->op_pool_id,
         op_pool_active_ops);
 
+  // free the register entry for the op before this op
+  for (int ii = 0; ii < op->num_dest; ii++) {
+    if (op->dest_reg_entry[ii]->reg_state == REG_FILE_PHY_STATE_FREE)
+      continue;
+    reg_file_remove_dead(op->dest_reg_entry[ii]);
+  }
+
   if(op->sched_info)
     free(op->sched_info);
 
@@ -257,6 +264,10 @@ void op_pool_setup_op(uns proc_id, Op* op) {
 
   for(ii = 0; ii < NUM_DEP_TYPES; ii++)
     op->wake_up_signaled[ii] = FALSE;
+
+  op->num_dest          = 0;
+  for (ii = 0; ii < MAX_DESTS; ii++)
+    op->dest_reg_entry[ii] = NULL;
 }
 
 

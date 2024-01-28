@@ -1078,12 +1078,13 @@ void reg_consume_table_print_debug_stat(void) {
 static inline void reg_file_look_up_src(Op*);
 static inline void reg_file_alloc_dest(Op*);
 
+// reg file rebuild
+static inline void reg_file_rebuild_flush(void);
+static inline void reg_file_rebuild_remap(void);
+static inline void reg_file_rebuild_recover(void);
+
 // physical map init 
 static inline void reg_file_phy_map_init(uns);
-
-// physical map rebuild procedure
-static inline void reg_file_phy_map_flush(void);
-static inline void reg_file_phy_map_remap(void);
 
 // physical map basic operations
 static inline void reg_file_phy_map_read_entry(Op*, Reg_File_Phy_Entry*, Dep_Type);
@@ -1125,7 +1126,7 @@ void reg_file_process_renaming(Op *op) {
 /*
   --- 1. flush off-path op for error spec
   --- 2. remap phy to isa
-  --- 3. recover op from snapshot (TODO)
+  --- 3. recover op from snapshot
 */
 void reg_file_rebuild_map(void) {
   if (!REG_FILE_PHY_ENABLE)
@@ -1135,9 +1136,13 @@ void reg_file_rebuild_map(void) {
     return;
 
   DEBUG(map_data->proc_id, "*** REBUILD ***\n");
-  reg_file_phy_map_flush();
-  reg_file_phy_map_remap();
+  reg_file_rebuild_flush();
+  reg_file_rebuild_remap();
+  reg_file_rebuild_recover();
 }
+
+/**************************************************************************************/
+/* Internal Function */
 
 /*
   --- 1. search the entry in map
@@ -1180,6 +1185,69 @@ void reg_file_alloc_dest(Op *op) {
   for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
     entry = reg_file_phy_map_alloc_entry();
     reg_file_phy_map_write_entry(op, entry, ii);
+  }
+}
+
+/*
+  --- remove all off path ops
+*/
+void reg_file_rebuild_flush(void) {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+
+  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
+    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
+    if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
+      continue;
+
+    if (!entry->off_path)
+      continue;
+
+    reg_file_phy_map_free_entry(entry);
+  }
+}
+
+/*
+  --- point the current latest phy to isa
+*/
+void reg_file_rebuild_remap(void) {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+
+  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
+    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
+    if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
+      continue;
+
+    ASSERT(map_data->proc_id, !entry->off_path);
+
+    if (entry->next_same_isa != NULL) 
+      continue;
+
+    if (map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] == NULL)
+      map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] = entry;
+  }
+}
+
+/*
+  --- re alloc dest for current off-path op
+*/
+void reg_file_rebuild_recover(void) {
+  uns ii;
+  Reg_File_Phy_Entry *entry;
+
+  Op** op_p = (Op**)list_start_head_traversal(&td->seq_op_list);
+  while (op_p && !(*op_p)->off_path) {
+    op_p = (Op**)list_next_element(&td->seq_op_list);
+  }
+
+  for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
+    ASSERT(map_data->proc_id, reg_file_phy_map_can_alloc((*op_p)->table_info->num_dest_regs));
+    ASSERT(map_data->proc_id, map_data->reg_file->stall_op == NULL);
+    for (ii = 0; ii < (*op_p)->table_info->num_dest_regs; ii++) {
+      entry = reg_file_phy_map_alloc_entry();
+      reg_file_phy_map_write_entry((*op_p), entry, ii);
+    }
   }
 }
 
@@ -1231,47 +1299,6 @@ void reg_file_phy_map_init(uns array_size) {
   /* init the table for tracking unconsumed producers */
   map_data->reg_file->phy_map->phy_reg_consume_table = NULL;
   reg_consume_table_init(&map_data->reg_file->phy_map->phy_reg_consume_table, array_size);
-}
-
-/*
-  --- remove all off path ops
-*/
-void reg_file_phy_map_flush(void) {
-  uns ii;
-  Reg_File_Phy_Entry *entry;
-
-  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
-    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
-    if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
-      continue;
-
-    if (!entry->off_path)
-      continue;
-
-    reg_file_phy_map_free_entry(entry);
-  }
-}
-
-/*
-  --- point the current latest phy to isa
-*/
-void reg_file_phy_map_remap(void) {
-  uns ii;
-  Reg_File_Phy_Entry *entry;
-
-  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
-    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
-    if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
-      continue;
-
-    ASSERT(map_data->proc_id, !entry->off_path);
-
-    if (entry->next_same_isa != NULL) 
-      continue;
-
-    if (map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] == NULL)
-      map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] = entry;
-  }
 }
 
 /*
@@ -1457,7 +1484,7 @@ Flag reg_file_remove_stall(void) {
 
 /*
   Called by:
-  --- TODO: (op_pool.c -> free_op)
+  --- op_pool.c -> free_op
   Procedure:
   --- 1. mark dead for all prev entry before the committed one
   --- 2. remove dead from the oldest op

@@ -107,6 +107,7 @@ typedef struct Reg_File_Phy_Entry_struct {
   Counter             unique_num;
   Flag                off_path;
   int                 reg_isa_id;
+  uns64               sign_key;
 
   // reg info
   int                 reg_phy_id;

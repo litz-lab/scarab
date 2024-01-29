@@ -129,10 +129,10 @@ static inline void mem_map_byte_traversal_next(Mem_Map_Traversal* traversal);
 
 /* reg consume track */
 static inline void  reg_consume_table_init(Reg_Consume_Table**, uns);
-static inline int64 reg_consume_table_signiture(Op*, Reg_Consume_Signiture);
+static inline uns64 reg_consume_table_signiture(Op*, Reg_Consume_Signiture);
 static inline Flag  reg_consume_table_predict(Reg_Consume_Table*, Op*);
-static inline void  reg_consume_table_read_reg_map(Reg_Consume_Table*, Op*, uns);
-static inline void  reg_consume_table_update_map(Reg_Consume_Table*, Op*, uns);
+static inline void  reg_consume_table_read_reg_map(Reg_Consume_Table*, uns);
+static inline void  reg_consume_table_update_map(Reg_Consume_Table*, uns64, uns);
 static inline void  reg_consume_table_print_hash_entry(void*, void*);
 
 /* physical register file */
@@ -300,7 +300,7 @@ static inline void read_reg_map(Op* op) {
           "Reading map  op_num:%s  off_path:%d  id:%d  flag:%d  ind:%d\n",
           unsstr64(op->op_num), op->off_path, id, map_data->map_flags[id], ind);
 
-    reg_consume_table_read_reg_map(map_data->reg_consume_table, op, ind);
+    reg_consume_table_read_reg_map(map_data->reg_consume_table, ind);
 
     add_src_from_map_entry(op, map_entry, REG_DATA_DEP);
     /* address predictor is called if op is a load & this is first mem op reg
@@ -351,7 +351,8 @@ static inline void update_map(Op* op) {
     map_entry->unique_num   = op->unique_num;
     map_data->map_flags[id] = op->off_path;
 
-    reg_consume_table_update_map(map_data->reg_consume_table, op, ind);
+    reg_consume_table_update_map(map_data->reg_consume_table,
+      reg_consume_table_signiture(op, map_data->reg_consume_table->unconsumed_hash_key_tpye), ind);
   }
 
   /* update the map if the op is a store */
@@ -936,8 +937,8 @@ static inline void reg_consume_table_init(Reg_Consume_Table **table, uns array_s
   (*table)->unconsumed_hash_key_tpye = REG_CONSUME_PREDICT_SIGN;
 }
 
-static inline int64 reg_consume_table_signiture(Op* op, Reg_Consume_Signiture sign_type) {
-  int64 sign = 0;
+static inline uns64 reg_consume_table_signiture(Op* op, Reg_Consume_Signiture sign_type) {
+  uns64 sign = 0;
   switch (sign_type)
   {
   case REG_CONSUME_SIGH_PC:
@@ -959,8 +960,7 @@ static inline Flag reg_consume_table_predict(Reg_Consume_Table *table, Op* op) {
   if (!REG_CONSUME_TRACKING_ENABLE)
     return FALSE;
 
-  if (table == NULL)
-    return FALSE;
+  ASSERT(map_data->proc_id, table != NULL);
 
   Counter *unconsumed_num = (Counter*)hash_table_access(
     &table->unconsumed_hash,
@@ -983,15 +983,11 @@ static inline Flag reg_consume_table_predict(Reg_Consume_Table *table, Op* op) {
   ----- 1. get the entry by id and off-path flag
   ----- 2. change the state to CONSUMED
 */
-static inline void reg_consume_table_read_reg_map(Reg_Consume_Table *table, Op* op, uns ind) {
+static inline void reg_consume_table_read_reg_map(Reg_Consume_Table *table, uns ind) {
   if (!REG_CONSUME_TRACKING_ENABLE)
     return;
 
-  if (table == NULL)
-    return;
-
-  if (ind >= table->trakcing_array_size)
-    return;
+  ASSERT(map_data->proc_id, table != NULL && ind < table->trakcing_array_size);
 
   table->tracking_array[ind] = REG_CONSUME_STATE_CONSUMED;
 }
@@ -1004,15 +1000,11 @@ static inline void reg_consume_table_read_reg_map(Reg_Consume_Table *table, Op* 
   ----- 2. track if the entry is consumed by state
   ----- 3. change the state to UNCONSUMED
 */
-static inline void reg_consume_table_update_map(Reg_Consume_Table *table, Op* op, uns ind) {
+static inline void reg_consume_table_update_map(Reg_Consume_Table *table, uns64 sign_key, uns ind) {
   if (!REG_CONSUME_TRACKING_ENABLE)
     return;
 
-  if (table == NULL)
-    return;
-
-  if (ind >= table->trakcing_array_size)
-    return;
+  ASSERT(map_data->proc_id, table != NULL && ind < table->trakcing_array_size);
 
   Reg_Consume_State *map_entry_state = &table->tracking_array[ind];
 
@@ -1026,9 +1018,7 @@ static inline void reg_consume_table_update_map(Reg_Consume_Table *table, Op* op
     /* update unconsumed hash */
     Flag new_entry = FALSE;
     Counter *unconsumed_num = (Counter*)hash_table_access_create(
-      &table->unconsumed_hash,
-      reg_consume_table_signiture(op, table->unconsumed_hash_key_tpye),
-      &new_entry
+      &table->unconsumed_hash, sign_key, &new_entry
     );
     (*unconsumed_num)++;
   }
@@ -1287,6 +1277,8 @@ void reg_file_phy_map_init(uns array_size) {
     entry->off_path = FALSE;
     entry->reg_isa_id = REG_FILE_REG_INVALID_ID;
 
+    entry->sign_key = 0;
+
     entry->reg_phy_id = ii;
     entry->reg_state = REG_FILE_PHY_STATE_FREE;
 
@@ -1323,7 +1315,7 @@ void reg_file_phy_map_read_entry(Op *op, Reg_File_Phy_Entry *entry, Dep_Type typ
   set_not_rdy_bit(op, src_num);
 
   // consume tracking
-  reg_consume_table_read_reg_map(map_data->reg_file->phy_map->phy_reg_consume_table, op, entry->reg_phy_id);
+  reg_consume_table_read_reg_map(map_data->reg_file->phy_map->phy_reg_consume_table, entry->reg_phy_id);
 }
 
 /*
@@ -1340,6 +1332,13 @@ void reg_file_phy_map_write_entry(Op* op, Reg_File_Phy_Entry *entry, uns index) 
   entry->off_path = op->off_path;
   entry->reg_isa_id = op->inst_info->dests[index].id;
   entry->reg_state = REG_FILE_PHY_STATE_ALLOC;
+
+  // write the signiture for tracking
+  if (REG_CONSUME_TRACKING_ENABLE) {
+    ASSERT(map_data->proc_id, map_data->reg_file->phy_map->phy_reg_consume_table != NULL);
+    entry->sign_key = reg_consume_table_signiture(op,
+      map_data->reg_file->phy_map->phy_reg_consume_table->unconsumed_hash_key_tpye);
+  }
 
   // change the pointer in isa to the latest one
   Reg_File_Phy_Entry *prev_entry = map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id];
@@ -1388,7 +1387,7 @@ void reg_file_phy_map_free_entry(Reg_File_Phy_Entry *entry) {
     map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] = NULL;
 
   // produce tracking
-  reg_consume_table_update_map(map_data->reg_file->phy_map->phy_reg_consume_table, entry->op, entry->reg_phy_id);
+  reg_consume_table_update_map(map_data->reg_file->phy_map->phy_reg_consume_table, entry->sign_key, entry->reg_phy_id);
 
   // clear entry
   entry->op = &invalid_op;
@@ -1397,6 +1396,7 @@ void reg_file_phy_map_free_entry(Reg_File_Phy_Entry *entry) {
   entry->off_path = FALSE;
   entry->reg_isa_id = REG_FILE_REG_INVALID_ID;
   entry->reg_state = REG_FILE_PHY_STATE_FREE;
+  entry->sign_key = 0;
 
   // append to free list
   reg_file_phy_map_free_list_insert(entry);

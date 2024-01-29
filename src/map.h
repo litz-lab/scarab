@@ -37,26 +37,26 @@
 /* Unconsumed Producer Tracking */
 
 // To be changed to a configurable para
-#define REG_CONSUME_TRACKING_ENABLE FALSE
-#define REG_CONSUME_PREDICT_SIGN REG_CONSUME_SIGH_PC
-#define REG_CONSUME_PREDICT_THRESHOLD 5
+#define REG_DEP_TRACK_ENABLE            FALSE
+#define REG_DEP_TRACK_SIGNITURE         REG_DEP_TRACK_SIGH_PC
+#define REG_DEP_TRACK_PREDICT_THRESHOLD 5
 
-typedef enum Map_Reg_Consume_State_enum {
-  REG_CONSUME_STATE_UNCONSUMED,
-  REG_CONSUME_STATE_CONSUMED,
-  REG_CONSUME_STATE_VOID,
-  REG_CONSUME_STATE_NUM
-} Reg_Consume_State;
+typedef enum Reg_Dep_Track_State_enum {
+  REG_DEP_TRACK_STATE_UNCONSUMED,
+  REG_DEP_TRACK_STATE_CONSUMED,
+  REG_DEP_TRACK_STATE_VOID,
+  REG_DEP_TRACK_STATE_NUM
+} Reg_Dep_Track_State;
 
-typedef enum Map_Reg_Consume_Signiture_enum {
-  REG_CONSUME_SIGH_PC,
-  REG_CONSUME_SIGH_MEM,
-  REG_CONSUME_SIGH_NUM
-} Reg_Consume_Signiture;
+typedef enum Reg_Dep_Track_Signiture_enum {
+  REG_DEP_TRACK_SIGH_PC,
+  REG_DEP_TRACK_SIGH_MEM,
+  REG_DEP_TRACK_SIGH_NUM
+} Reg_Dep_Track_Signiture;
 
-typedef struct Reg_Consume_Table_struct {
+typedef struct Reg_Dep_Track_Table_struct {
   /* track if the producer is consumed */
-  Reg_Consume_State *tracking_array;
+  Reg_Dep_Track_State *state_array;
   uns trakcing_array_size;
 
   /* count the producer instructions */
@@ -65,16 +65,16 @@ typedef struct Reg_Consume_Table_struct {
   Counter num_reg_unconsumed;
 
   /* collect the unconsumed producer instructions by signiture */
-  Hash_Table            unconsumed_hash;
-  Reg_Consume_Signiture unconsumed_hash_key_tpye;
-} Reg_Consume_Table;
+  Hash_Table              unconsumed_hash;
+  Reg_Dep_Track_Signiture sign_key_type;
+} Reg_Dep_Track_Table;
 
 /**************************************************************************************/
 /* Reg File Hardware Implementation */
 
 // To be change to configurable val
-#define REG_FILE_PHY_ENABLE FALSE
-#define REG_FILE_PHY_NUM 160
+#define REG_FILE_PHY_ENABLE   FALSE
+#define REG_FILE_PHY_NUM      1024
 
 const static int REG_FILE_REG_INVALID_ID = -1;
 
@@ -91,7 +91,7 @@ typedef struct Reg_File_Phy_Map_struct {
   uns                 reg_free_num;
 
   /* unconsumed producer insturction tracking */
-  Reg_Consume_Table *phy_reg_consume_table;
+  Reg_Dep_Track_Table *phy_track_table;
 } Reg_File_Phy_Map;
 
 typedef struct Reg_File_struct {
@@ -126,7 +126,7 @@ typedef struct Map_Data_struct {
   uns            active_wake_up_entries;
 
   /* unconsumed producer insturction tracking */
-  Reg_Consume_Table *reg_consume_table;
+  Reg_Dep_Track_Table *track_table;
 
   /* register file for renaming based on hardware implementation */
   Reg_File *reg_file;
@@ -164,7 +164,7 @@ Flag test_not_rdy_bit(Op*, uns);
 void set_not_rdy_bit(Op*, uns);
 
 /* external functions of the unconsumed producer table */
-void reg_consume_table_print_debug_stat(void);
+void reg_dep_track_table_print_debug_stat(void);
 
 /* external functions of the physical register file */
 Flag reg_file_check_stall(void);

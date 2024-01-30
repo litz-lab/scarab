@@ -38,15 +38,9 @@
 
 // To be changed to a configurable para
 #define REG_DEP_TRACK_ENABLE            FALSE
+#define REG_DEP_TRACK_ANSCESTOR_ENABLE  FALSE
 #define REG_DEP_TRACK_SIGNITURE         REG_DEP_TRACK_SIGH_PC
 #define REG_DEP_TRACK_PREDICT_THRESHOLD 5
-
-typedef enum Reg_Dep_Track_State_enum {
-  REG_DEP_TRACK_STATE_UNCONSUMED,
-  REG_DEP_TRACK_STATE_CONSUMED,
-  REG_DEP_TRACK_STATE_VOID,
-  REG_DEP_TRACK_STATE_NUM
-} Reg_Dep_Track_State;
 
 typedef enum Reg_Dep_Track_Signiture_enum {
   REG_DEP_TRACK_SIGH_PC,
@@ -55,9 +49,13 @@ typedef enum Reg_Dep_Track_Signiture_enum {
 } Reg_Dep_Track_Signiture;
 
 typedef struct Reg_Dep_Track_Table_struct {
-  /* track if the producer is consumed */
-  Reg_Dep_Track_State *state_array;
   uns trakcing_array_size;
+
+  /* ancestor dependency topology for tracking */
+  Reg_Dep_Track_Node **node_array;
+
+  /* table flag mechanism to track if the producer is consumed */
+  Reg_Dep_Track_State *state_array;
 
   /* count the producer instructions */
   Counter num_reg_all_producer;

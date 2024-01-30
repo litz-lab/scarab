@@ -152,10 +152,10 @@ void free_op(Op* op) {
         op_pool_active_ops);
 
   // free the register entry for the op before this op
-  for (int ii = 0; ii < op->num_dest; ii++) {
-    if (op->dest_reg_entry[ii]->reg_state == REG_FILE_PHY_STATE_FREE)
+  for (int ii = 0; ii < op->reg_dest_num; ii++) {
+    if (op->reg_dest_entry[ii]->reg_state == REG_FILE_PHY_STATE_FREE)
       continue;
-    reg_file_remove_dead(op->dest_reg_entry[ii]);
+    reg_file_remove_dead(op->reg_dest_entry[ii]);
   }
 
   if(op->sched_info)
@@ -265,9 +265,10 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   for(ii = 0; ii < NUM_DEP_TYPES; ii++)
     op->wake_up_signaled[ii] = FALSE;
 
-  op->num_dest          = 0;
+  op->reg_dep_track = NULL;
+  op->reg_dest_num = 0;
   for (ii = 0; ii < MAX_DESTS; ii++)
-    op->dest_reg_entry[ii] = NULL;
+    op->reg_dest_entry[ii] = NULL;
 }
 
 

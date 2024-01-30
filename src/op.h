@@ -100,6 +100,21 @@ typedef enum Reg_File_Phy_State_enum {
   REG_FILE_PHY_STATE_NUM
 } Reg_File_Phy_State;
 
+typedef enum Reg_Dep_Track_Tree_State_enum {
+  REG_DEP_TRACK_STATE_UNCONSUMED,
+  REG_DEP_TRACK_STATE_CONSUMED,
+  REG_DEP_TRACK_STATE_VOID,
+  REG_DEP_TRACK_STATE_NUM
+} Reg_Dep_Track_State;
+
+typedef struct Reg_Dep_Track_Node_struct {
+  uns64                             op_sign;
+  Reg_Dep_Track_State               node_state;
+  uns                               out_degree;
+  uns                               in_degree;
+  struct Reg_Dep_Track_Node_struct  *src_node[MAX_SRCS];
+} Reg_Dep_Track_Node;
+
 typedef struct Reg_File_Phy_Entry_struct {
   // op info
   Op                  *op;
@@ -107,7 +122,6 @@ typedef struct Reg_File_Phy_Entry_struct {
   Counter             unique_num;
   Flag                off_path;
   int                 reg_isa_id;
-  uns64               sign_key;
 
   // reg info
   int                 reg_phy_id;
@@ -363,8 +377,9 @@ struct Op_struct {
   int bp_confidence;
 
   // {{{ physical register renaming
-  Reg_File_Phy_Entry *dest_reg_entry[MAX_DESTS];  // register entry
-  uns                num_dest;                    // number of destination entry
+  Reg_Dep_Track_Node *reg_dep_track;              // dependency tracking info of register
+  Reg_File_Phy_Entry *reg_dest_entry[MAX_DESTS];  // pointer to the physical register
+  uns                reg_dest_num;                // number of destination entry
   // }}}
 };
 // }}}

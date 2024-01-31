@@ -900,42 +900,41 @@ void reset_map() {
  * --- 1. Track if a producer insturction is consumed
  * --- 2. Collect the info of unconsumed producers
 ***************************************************************************************/
-static inline uns64 reg_dep_track_table_signiture(Reg_Dep_Track_Table*, Op*);
-static inline Reg_Dep_Track_Node *reg_dep_track_table_create_node(Reg_Dep_Track_Table*, Op*);
-static inline void  reg_dep_track_table_print_hash_entry(void*, void*);
+static inline uns64               reg_dep_track_table_signiture(Reg_Dep_Track_Table*, Op*);
+static inline Reg_Dep_Track_Node* reg_dep_track_table_create_node(Reg_Dep_Track_Table*, Op*);
+static inline void                reg_dep_track_table_print_hash_entry(void*, void*);
+static inline void                rep_dep_track_table_topo_sort(Reg_Dep_Track_Table*, Reg_Dep_Track_Node*);
 
-/*
-  --- 1. init tracking map
-  --- 2. init counter
-  --- 3. init collecting hash
-*/
 static inline void reg_dep_track_table_init(Reg_Dep_Track_Table **table, uns array_size) {
-  uns ii;
-
   if (!REG_DEP_TRACK_ENABLE)
     return;
 
   (*table) = (Reg_Dep_Track_Table *)malloc(sizeof(Reg_Dep_Track_Table));
   (*table)->trakcing_array_size = array_size;
-  (*table)->node_array = (Reg_Dep_Track_Node **)malloc(sizeof(Reg_Dep_Track_Node *) * array_size);
+  (*table)->op_sign_array = (uns64 *)malloc(sizeof(uns64) * array_size);
   (*table)->state_array = (Reg_Dep_Track_State *)malloc(sizeof(Reg_Dep_Track_State) * array_size);
+  (*table)->node_array = (Reg_Dep_Track_Node **)malloc(sizeof(Reg_Dep_Track_Node *) * array_size);
 
   /* init the map for tracking unconsumed producer */
-  for (ii = 0; ii < array_size; ii++) {
-    (*table)->node_array[ii] = NULL;
+  for (uns ii = 0; ii < array_size; ii++) {
+    (*table)->op_sign_array[ii] = 0;
     (*table)->state_array[ii] = REG_DEP_TRACK_STATE_UNCONSUMED;
+    (*table)->node_array[ii] = NULL;
   }
 
   /* counters for recording producer instructions */
   (*table)->num_reg_all_producer = 0;
   (*table)->num_reg_consumed = 0;
   (*table)->num_reg_unconsumed = 0;
+  (*table)->num_reg_topo_unconsumed = 0;
 
-  /* init the hash for collecting unconsumed producers */
+  /* init the hash for collecting unconsumed producers and its signiture type */
   init_hash_table(&(*table)->unconsumed_hash, "reg dep track table", NODE_TABLE_SIZE, sizeof(Counter));
-
-  /* signiture type for the hash */
   (*table)->sign_key_type = REG_DEP_TRACK_SIGNITURE;
+
+  /* init the queue for topological sort nodes of in_degree = 0 and the alloc list */
+  (*table)->queue_head = NULL;
+  (*table)->alloc_head = NULL;
 }
 
 /*
@@ -944,7 +943,6 @@ static inline void reg_dep_track_table_init(Reg_Dep_Track_Table **table, uns arr
 static inline Flag reg_dep_track_table_predict(Reg_Dep_Track_Table *table, Op* op) {
   if (!REG_DEP_TRACK_ENABLE)
     return FALSE;
-
   ASSERT(map_data->proc_id, table != NULL);
 
   Counter *unconsumed_num = (Counter*)hash_table_access(
@@ -962,12 +960,9 @@ static inline Flag reg_dep_track_table_predict(Reg_Dep_Track_Table *table, Op* o
 }
 
 /**************************************************************************************/
-
-/* point to the track info in register */
 static inline void reg_dep_track_table_read(Reg_Dep_Track_Table *table, Op *op, uns ind) {
   if (!REG_DEP_TRACK_ENABLE)
     return;
-
   ASSERT(map_data->proc_id, table != NULL && ind < table->trakcing_array_size);
   ASSERT(map_data->proc_id, op != NULL);
 
@@ -975,75 +970,86 @@ static inline void reg_dep_track_table_read(Reg_Dep_Track_Table *table, Op *op, 
   table->state_array[ind] = REG_DEP_TRACK_STATE_CONSUMED;
 
   /* topological mechanism */
-  if (table->node_array[ind] == NULL)
+  if (!REG_DEP_TRACK_ANSCESTOR_ENABLE)
     return;
 
+  if (table->node_array[ind] == NULL)
+    return;
   if (op->reg_dep_track == NULL)
     op->reg_dep_track = reg_dep_track_table_create_node(table, op);
 
   // point src node and increase the in degree of src node
   ASSERT(map_data->proc_id, op->reg_dep_track->out_degree < MAX_SRCS);
   table->node_array[ind]->in_degree++;
-  table->node_array[ind]->node_state = REG_DEP_TRACK_STATE_CONSUMED;
-
   op->reg_dep_track->src_node[op->reg_dep_track->out_degree++] = table->node_array[ind];
 }
 
-/* store the track info in the register */
 static inline void reg_dep_track_table_write(Reg_Dep_Track_Table *table, Op *op, uns ind) {
   if (!REG_DEP_TRACK_ENABLE)
     return;
-
   ASSERT(map_data->proc_id, table != NULL && ind < table->trakcing_array_size);
+  ASSERT(map_data->proc_id, table->node_array[ind] == NULL);
+  ASSERT(map_data->proc_id, table->op_sign_array[ind] == 0);
+
+  table->op_sign_array[ind] = reg_dep_track_table_signiture(table, op);
 
   /* single flag mechanism */
   table->state_array[ind] = REG_DEP_TRACK_STATE_UNCONSUMED;
 
   /* topological mechanism */
-  ASSERT(map_data->proc_id, table->node_array[ind] == NULL);
+  if (!REG_DEP_TRACK_ANSCESTOR_ENABLE)
+    return;
+
   if (op->reg_dep_track == NULL) 
     op->reg_dep_track = reg_dep_track_table_create_node(table, op);
-
   table->node_array[ind] = op->reg_dep_track;
 }
 
-/* topological sort */
+/* stat update */
 static inline void reg_dep_track_table_release(Reg_Dep_Track_Table *table, uns ind) {
   if (!REG_DEP_TRACK_ENABLE)
     return;
-
   ASSERT(map_data->proc_id, table != NULL && ind < table->trakcing_array_size);
 
-  Reg_Dep_Track_Node *track_node = table->node_array[ind];
-  if (track_node == NULL)
-    return;
-
-  Reg_Dep_Track_State map_entry_state;
-  if (!REG_DEP_TRACK_ANSCESTOR_ENABLE)
-    map_entry_state = table->state_array[ind]; // single flag mechanism
-  else
-    map_entry_state = track_node->node_state; // topological mechanism
-
+  /* single flag mechanism */
   table->num_reg_all_producer++;
-  if (map_entry_state == REG_DEP_TRACK_STATE_CONSUMED)
+  if (table->state_array[ind] == REG_DEP_TRACK_STATE_CONSUMED)
     table->num_reg_consumed++;
-
-  if (map_entry_state == REG_DEP_TRACK_STATE_UNCONSUMED) {
+  if (table->state_array[ind] == REG_DEP_TRACK_STATE_UNCONSUMED) {
     Flag new_entry = FALSE;
     Counter *unconsumed_num = (Counter*)hash_table_access_create(
-      &table->unconsumed_hash, table->node_array[ind]->op_sign, &new_entry
+      &table->unconsumed_hash, table->op_sign_array[ind], &new_entry
     );
     (*unconsumed_num)++;
     table->num_reg_unconsumed++;
   }
+  table->op_sign_array[ind] = 0;
 
+  /* topological mechanism */
+  if (!REG_DEP_TRACK_ANSCESTOR_ENABLE)
+    return;
+
+  Reg_Dep_Track_Node *track_node = table->node_array[ind];
+  if (track_node == NULL)
+    return;
+  if (track_node->in_degree == 0) {
+    track_node->next_in_queue = table->queue_head;
+    table->queue_head = track_node;
+  }
+
+  while (table->queue_head != NULL) {
+    track_node = table->queue_head;
+    track_node->next_in_queue = NULL;
+    table->queue_head = table->queue_head->next_in_queue;
+    rep_dep_track_table_topo_sort(table, track_node);
+  }
   table->node_array[ind] = NULL;
 }
 
 /**************************************************************************************/
 /* Internal Call */
 
-/*  return the corresponding signiture */
+/* return the corresponding signiture */
 static inline uns64 reg_dep_track_table_signiture(Reg_Dep_Track_Table *table, Op* op) {
   if (!REG_DEP_TRACK_ENABLE)
     return FALSE;
@@ -1072,14 +1078,15 @@ static inline uns64 reg_dep_track_table_signiture(Reg_Dep_Track_Table *table, Op
 static inline Reg_Dep_Track_Node *reg_dep_track_table_create_node(Reg_Dep_Track_Table *table, Op *op) {
   Reg_Dep_Track_Node *track_node = (Reg_Dep_Track_Node *)malloc(sizeof(Reg_Dep_Track_Node));
 
-  track_node->op_sign = reg_dep_track_table_signiture(table, op);
-  track_node->node_state = REG_DEP_TRACK_STATE_UNCONSUMED;
   track_node->in_degree = 0;
   track_node->out_degree = 0;
-
   for (uns ii = 0; ii < MAX_SRCS; ii++)
     track_node->src_node[ii] = NULL;
-  
+
+  track_node->next_in_queue = NULL;
+  track_node->next_alloc = table->alloc_head;
+  table->alloc_head = track_node;
+
   return track_node;
 }
 
@@ -1087,6 +1094,23 @@ static inline Reg_Dep_Track_Node *reg_dep_track_table_create_node(Reg_Dep_Track_
 static inline void reg_dep_track_table_print_hash_entry(void* hash_entry, void* arg) {
   Counter *unconsumed_num = (Counter*)hash_entry;
   printf("%lld, ", *unconsumed_num);
+}
+
+/* topological sort */
+static inline void rep_dep_track_table_topo_sort(Reg_Dep_Track_Table *table, Reg_Dep_Track_Node *track_node) {
+  ASSERT(map_data->proc_id, track_node->in_degree == 0);
+  ASSERT(map_data->proc_id, track_node->next_in_queue == NULL);
+  table->num_reg_topo_unconsumed++;
+
+  for (uns ii = 0; ii < track_node->out_degree; ii++) {
+    ASSERT(map_data->proc_id, track_node->src_node[ii] != NULL);
+
+    track_node->src_node[ii]->in_degree--;
+    if (track_node->src_node[ii]->in_degree == 0) {
+      track_node->src_node[ii]->next_in_queue = table->queue_head;
+      table->queue_head = track_node->src_node[ii];
+    }
+  }
 }
 
 /**************************************************************************************/
@@ -1108,10 +1132,12 @@ void reg_dep_track_table_print_debug_stat(void) {
   printf("=======================================================================\n");
   printf("\nREG MAP\n");
 
-  printf("UNCONSUMED: %lld, CONSUMED: %lld, ALL: %lld\n",
+  printf("UNCONSUMED: %lld, CONSUMED: %lld, ALL: %lld, TOPO_UNCONSUMED: %lld\n",
     table->num_reg_unconsumed,
     table->num_reg_consumed,
-    table->num_reg_all_producer);
+    table->num_reg_all_producer,
+    table->num_reg_topo_unconsumed
+  );
 
   printf("-----------------------------------------------------------------------\n");
   hash_table_scan(&table->unconsumed_hash, reg_dep_track_table_print_hash_entry, NULL);

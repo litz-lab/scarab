@@ -48,23 +48,33 @@ typedef enum Reg_Dep_Track_Signiture_enum {
   REG_DEP_TRACK_SIGH_NUM
 } Reg_Dep_Track_Signiture;
 
+typedef enum Reg_Dep_Track_Tree_State_enum {
+  REG_DEP_TRACK_STATE_UNCONSUMED,
+  REG_DEP_TRACK_STATE_CONSUMED,
+  REG_DEP_TRACK_STATE_VOID,
+  REG_DEP_TRACK_STATE_NUM
+} Reg_Dep_Track_State;
+
 typedef struct Reg_Dep_Track_Table_struct {
-  uns trakcing_array_size;
-
-  /* ancestor dependency topology for tracking */
-  Reg_Dep_Track_Node **node_array;
-
-  /* table flag mechanism to track if the producer is consumed */
-  Reg_Dep_Track_State *state_array;
+  /* dep tracking info */
+  uns64               *op_sign_array;   // store op signiture for prediction
+  Reg_Dep_Track_State *state_array;     // single flag mechanism
+  Reg_Dep_Track_Node  **node_array;     // topological mechanism
+  uns                 trakcing_array_size;
 
   /* count the producer instructions */
   Counter num_reg_all_producer;
   Counter num_reg_consumed;
   Counter num_reg_unconsumed;
+  Counter num_reg_topo_unconsumed;
 
   /* collect the unconsumed producer instructions by signiture */
   Hash_Table              unconsumed_hash;
   Reg_Dep_Track_Signiture sign_key_type;
+
+  /* queue for nodes in topolocigal sort */
+  Reg_Dep_Track_Node      *queue_head;
+  Reg_Dep_Track_Node      *alloc_head;
 } Reg_Dep_Track_Table;
 
 /**************************************************************************************/

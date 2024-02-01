@@ -933,7 +933,7 @@ static inline void reg_dep_track_table_init(Reg_Dep_Track_Table **table, uns arr
   (*table)->sign_key_type = REG_DEP_TRACK_SIGNITURE;
 
   /* init the queue for topological sort nodes of in_degree = 0 and the alloc list */
-  (*table)->queue_head = NULL;
+  (*table)->sort_list_head = NULL;
   (*table)->alloc_head = NULL;
 }
 
@@ -1033,14 +1033,17 @@ static inline void reg_dep_track_table_release(Reg_Dep_Track_Table *table, uns i
   if (track_node == NULL)
     return;
   if (track_node->in_degree == 0) {
-    track_node->next_in_queue = table->queue_head;
-    table->queue_head = track_node;
+    // push the node to sort list
+    track_node->next_sort = table->sort_list_head;
+    table->sort_list_head = track_node;
   }
 
-  while (table->queue_head != NULL) {
-    track_node = table->queue_head;
-    track_node->next_in_queue = NULL;
-    table->queue_head = table->queue_head->next_in_queue;
+  while (table->sort_list_head != NULL) {
+    // pop the node from sort list
+    track_node = table->sort_list_head;
+    track_node->next_sort = NULL;
+    table->sort_list_head = table->sort_list_head->next_sort;
+    // topological sort for each node in the sort list
     rep_dep_track_table_topo_sort(table, track_node);
   }
   table->node_array[ind] = NULL;
@@ -1083,7 +1086,7 @@ static inline Reg_Dep_Track_Node *reg_dep_track_table_create_node(Reg_Dep_Track_
   for (uns ii = 0; ii < MAX_SRCS; ii++)
     track_node->src_node[ii] = NULL;
 
-  track_node->next_in_queue = NULL;
+  track_node->next_sort = NULL;
   track_node->next_alloc = table->alloc_head;
   table->alloc_head = track_node;
 
@@ -1099,7 +1102,7 @@ static inline void reg_dep_track_table_print_hash_entry(void* hash_entry, void* 
 /* topological sort */
 static inline void rep_dep_track_table_topo_sort(Reg_Dep_Track_Table *table, Reg_Dep_Track_Node *track_node) {
   ASSERT(map_data->proc_id, track_node->in_degree == 0);
-  ASSERT(map_data->proc_id, track_node->next_in_queue == NULL);
+  ASSERT(map_data->proc_id, track_node->next_sort == NULL);
   table->num_reg_topo_unconsumed++;
 
   for (uns ii = 0; ii < track_node->out_degree; ii++) {
@@ -1107,8 +1110,9 @@ static inline void rep_dep_track_table_topo_sort(Reg_Dep_Track_Table *table, Reg
 
     track_node->src_node[ii]->in_degree--;
     if (track_node->src_node[ii]->in_degree == 0) {
-      track_node->src_node[ii]->next_in_queue = table->queue_head;
-      table->queue_head = track_node->src_node[ii];
+      // push the child of the node to sort list
+      track_node->src_node[ii]->next_sort = table->sort_list_head;
+      table->sort_list_head = track_node->src_node[ii];
     }
   }
 }
@@ -1161,14 +1165,15 @@ static inline void reg_file_rebuild_recover(void);
 static inline void reg_file_phy_map_init(uns);
 
 // physical map basic operations
-static inline void reg_file_phy_map_read_entry(Op*, Reg_File_Phy_Entry*, Dep_Type);
-static inline void reg_file_phy_map_write_entry(Op*, Reg_File_Phy_Entry*, uns);
-static inline Reg_File_Phy_Entry *reg_file_phy_map_access_entry(uns16);
-static inline Flag reg_file_phy_map_can_alloc(uns);
-static inline Reg_File_Phy_Entry *reg_file_phy_map_alloc_entry(void);
-static inline void reg_file_phy_map_free_entry(Reg_File_Phy_Entry*);
-static inline void reg_file_phy_map_free_list_insert(Reg_File_Phy_Entry *entry);
-static inline Reg_File_Phy_Entry *reg_file_phy_map_free_list_delete(void);
+static inline void                reg_file_phy_map_read_entry(Op*, Reg_File_Phy_Entry*, Dep_Type);
+static inline void                reg_file_phy_map_write_entry(Op*, Reg_File_Phy_Entry*, uns);
+static inline Reg_File_Phy_Entry* reg_file_phy_map_access_entry(uns16);
+static inline Flag                reg_file_phy_map_can_alloc(uns);
+static inline Reg_File_Phy_Entry* reg_file_phy_map_alloc_entry(void);
+static inline void                reg_file_phy_map_release_prev(Reg_File_Phy_Entry*);
+static inline void                reg_file_phy_map_free_entry(Reg_File_Phy_Entry*);
+static inline void                reg_file_phy_map_free_list_insert(Reg_File_Phy_Entry *entry);
+static inline Reg_File_Phy_Entry* reg_file_phy_map_free_list_delete(void);
 
 /*
   --- 1. init op pool for stalling
@@ -1340,8 +1345,10 @@ void reg_file_phy_map_init(uns array_size) {
   map_data->reg_file->phy_map = (Reg_File_Phy_Map *)malloc(sizeof(Reg_File_Phy_Map));
 
   /* init the isa map */
-  for (ii = 0; ii < NUM_REG_IDS; ii++)
+  for (ii = 0; ii < NUM_REG_IDS; ii++) {
     map_data->reg_file->phy_map->reg_isa_map[ii] = NULL;
+    map_data->reg_file->phy_map->reg_isa_counter[ii] = 0;
+  }
 
   /* init the free list */
   map_data->reg_file->phy_map->reg_free_num = 0;
@@ -1426,6 +1433,7 @@ void reg_file_phy_map_write_entry(Op* op, Reg_File_Phy_Entry *entry, uns index) 
     prev_entry->next_same_isa = entry;
   }
   map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] = entry;
+  map_data->reg_file->phy_map->reg_isa_counter[entry->reg_isa_id]++;
 
   // insert entry info to op
   ASSERT(op->proc_id, op->reg_dest_num < MAX_DESTS);
@@ -1451,6 +1459,42 @@ Flag reg_file_phy_map_can_alloc(uns num) {
 */
 Reg_File_Phy_Entry *reg_file_phy_map_alloc_entry(void) {
   return reg_file_phy_map_free_list_delete();
+}
+
+/*
+  --- 1. mark dead for all prev entry before the committed one
+  --- 2. remove dead from the oldest op
+*/
+void reg_file_phy_map_release_prev(Reg_File_Phy_Entry *entry) {
+  if (!REG_FILE_PHY_ENABLE)
+    return;
+
+  ASSERT(map_data->proc_id, entry != NULL);
+  ASSERT(map_data->proc_id, entry->op->op_pool_valid);
+  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_PHY_STATE_ALLOC);
+  ASSERT(map_data->proc_id, map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] != NULL);
+  ASSERT(map_data->proc_id, entry->next_same_isa != NULL ||
+    map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id]->reg_phy_id == entry->reg_phy_id);
+
+  // mark current register as commit when it is free
+  entry->reg_state = REG_FILE_PHY_STATE_COMMIT;
+
+  // mark all the op before the committed op as dead
+  Reg_File_Phy_Entry *curr_entry;
+  curr_entry = entry;
+  while (curr_entry->prev_same_isa != NULL) {
+    ASSERT(map_data->proc_id, curr_entry->reg_state != REG_FILE_PHY_STATE_FREE);
+    curr_entry = curr_entry->prev_same_isa;
+    curr_entry->reg_state = REG_FILE_PHY_STATE_DEAD;
+  }
+
+  // remove dead from the oldest to the latest
+  Reg_File_Phy_Entry *next_entry;
+  while (curr_entry != NULL && curr_entry->reg_state == REG_FILE_PHY_STATE_DEAD) {
+    next_entry = curr_entry->next_same_isa;
+    reg_file_phy_map_free_entry(curr_entry);
+    curr_entry = next_entry;
+  }
 }
 
 /*
@@ -1561,43 +1605,20 @@ Flag reg_file_remove_stall(void) {
 
 /*
   Called by:
-  --- op_pool.c -> free_op
+  --- node_stage.c -> node_retire
   Procedure:
-  --- 1. mark dead for all prev entry before the committed one
-  --- 2. remove dead from the oldest op
+  --- free the register entry for the op before this op
 */
-void reg_file_remove_dead(Reg_File_Phy_Entry *entry) {
+void reg_file_remove_dead(Op *op) {
   if (!REG_FILE_PHY_ENABLE)
     return;
 
-  if (entry->reg_state == REG_FILE_PHY_STATE_DEAD || entry->reg_state == REG_FILE_PHY_STATE_COMMIT)
-    return;
+  ASSERT(map_data->proc_id, op != NULL);
 
-  ASSERT(map_data->proc_id, entry != NULL &&
-    entry->reg_state != REG_FILE_PHY_STATE_FREE && !entry->op->op_pool_valid);
-  if (entry->next_same_isa == NULL) {
-    ASSERT(map_data->proc_id, map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] != NULL);
-    ASSERT(map_data->proc_id, map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id]->reg_phy_id == entry->reg_phy_id);
-  }
-
-  // mark current register as commit when it is free
-  entry->reg_state = REG_FILE_PHY_STATE_COMMIT;
-
-  // mark all the op before the committed op as dead
-  Reg_File_Phy_Entry *curr_entry;
-  curr_entry = entry;
-  while (curr_entry->prev_same_isa != NULL) {
-    ASSERT(map_data->proc_id, curr_entry->reg_state != REG_FILE_PHY_STATE_FREE);
-    curr_entry = curr_entry->prev_same_isa;
-    curr_entry->reg_state = REG_FILE_PHY_STATE_DEAD;
-  }
-
-  // remove dead from the oldest to the latest
-  Reg_File_Phy_Entry *next_entry;
-  while (curr_entry != NULL && curr_entry->reg_state == REG_FILE_PHY_STATE_DEAD) {
-    next_entry = curr_entry->next_same_isa;
-    reg_file_phy_map_free_entry(curr_entry);
-    curr_entry = next_entry;
+  for (uns ii = 0; ii < op->reg_dest_num; ii++) {
+    if (op->reg_dest_entry[ii]->reg_state == REG_FILE_PHY_STATE_FREE)
+      continue;
+    reg_file_phy_map_release_prev(op->reg_dest_entry[ii]);
   }
 }
 
@@ -1617,14 +1638,14 @@ void reg_file_print_map(int isa_id) {
       continue;
     }
 
-    printf("P[%d]  \t(i: %d, \ts: %d,\tn: %lld, \tu: %lld, \to: %d, \tv: %d)\n",
+    printf("P[%d]  \t(isa: %d, \treg_state: %d,\tnum: %lld, \tunique: %lld, \toff_path: %d, \top_state: %d)\n",
       entry->reg_phy_id, entry->reg_isa_id, entry->reg_state, entry->op_num,
-      entry->unique_num, entry->off_path, entry->op->op_pool_valid);
+      entry->unique_num, entry->off_path, entry->op->state);
 
     printf("Prev: ->");
     entry = entry->prev_same_isa;
     while (entry != NULL) {
-      printf("%d->", entry->reg_phy_id);
+      printf("(%d: %d)->", entry->reg_phy_id, entry->op->state);
       entry = entry->prev_same_isa;
     }
     printf("\n");
@@ -1633,7 +1654,7 @@ void reg_file_print_map(int isa_id) {
     printf("Next: ->");
     entry = entry->next_same_isa;
     while (entry != NULL) {
-      printf("%d->", entry->reg_phy_id);
+      printf("(%d: %d)->", entry->reg_phy_id, entry->op->state);
       entry = entry->next_same_isa;
     }
     printf("\n");
@@ -1651,9 +1672,9 @@ void reg_file_print_map(int isa_id) {
     if (entry == NULL)
       continue;
 
-    printf("I[%d] \t(phy: %d, \ts: %d,\tn: %lld, \tu: %lld, \to: %d, \tv: %d)\n",
+    printf("I[%d] \t(phy: %d, \treg_state: %d,\tnum: %lld, \tunique: %lld, \toff_path: %d, \top_state: %d)\n",
       entry->reg_isa_id, entry->reg_phy_id, entry->reg_state, entry->op_num,
-      entry->unique_num, entry->off_path, entry->op->op_pool_valid);
+      entry->unique_num, entry->off_path, entry->op->state);
   }
 
   printf("-------------------------\n");
@@ -1664,4 +1685,11 @@ void reg_file_print_map(int isa_id) {
   printf("Free Num: %d\n", map_data->reg_file->phy_map->reg_free_num);
 
   printf("-------------------------\n\n");
+
+  printf("ISA Counter (proc: %d)\n", map_data->proc_id);
+  for (ii = 0; ii < NUM_REG_IDS; ii++) {
+    printf("ISA[%d]: %lld\n", ii, map_data->reg_file->phy_map->reg_isa_counter[ii]);
+  }
+
+  printf("-------------------------\n");
 }

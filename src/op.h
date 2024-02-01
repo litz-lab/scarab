@@ -104,7 +104,7 @@ typedef struct Reg_Dep_Track_Node_struct {
   uns                               out_degree;
   uns                               in_degree;
   struct Reg_Dep_Track_Node_struct  *src_node[MAX_SRCS];
-  struct Reg_Dep_Track_Node_struct  *next_in_queue;
+  struct Reg_Dep_Track_Node_struct  *next_sort;
   struct Reg_Dep_Track_Node_struct  *next_alloc;
 } Reg_Dep_Track_Node;
 

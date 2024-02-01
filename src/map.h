@@ -73,7 +73,7 @@ typedef struct Reg_Dep_Track_Table_struct {
   Reg_Dep_Track_Signiture sign_key_type;
 
   /* queue for nodes in topolocigal sort */
-  Reg_Dep_Track_Node      *queue_head;
+  Reg_Dep_Track_Node      *sort_list_head;
   Reg_Dep_Track_Node      *alloc_head;
 } Reg_Dep_Track_Table;
 
@@ -100,6 +100,9 @@ typedef struct Reg_File_Phy_Map_struct {
 
   /* unconsumed producer insturction tracking */
   Reg_Dep_Track_Table *phy_track_table;
+
+  /* isa counter */
+  Counter             reg_isa_counter[NUM_REG_IDS];
 } Reg_File_Phy_Map;
 
 typedef struct Reg_File_struct {
@@ -177,7 +180,7 @@ void reg_dep_track_table_print_debug_stat(void);
 /* external functions of the physical register file */
 Flag reg_file_check_stall(void);
 Flag reg_file_remove_stall(void);
-void reg_file_remove_dead(Reg_File_Phy_Entry *);
+void reg_file_remove_dead(Op*);
 void reg_file_print_map(int);
 
 /**************************************************************************************/

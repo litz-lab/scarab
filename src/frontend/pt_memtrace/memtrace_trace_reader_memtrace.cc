@@ -71,6 +71,9 @@ void TraceReaderMemtrace::init(const std::string& _trace) {
   mt_info_a_.valid     = true;
   mt_info_b_.valid     = true;
   TraceReader::init(_trace);
+  auto *stream = scheduler.get_stream(0);
+  auto type = stream->get_filetype();
+  trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
 }
 
 // TODO: Detect memtrace/module.log type dynamically
@@ -336,7 +339,10 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   // Get the XED info from the cache, creating it if needed
   auto xed_map_iter = xed_map_.find(mt_ref_.instr.addr);
   if(xed_map_iter == xed_map_.end()) {
-    fillCache(mt_ref_.instr.addr, mt_ref_.instr.size);
+    if (trace_has_encodings_)
+      fillCache(mt_ref_.instr.addr, mt_ref_.instr.size, mt_ref_.instr.encoding);
+    else
+      fillCache(mt_ref_.instr.addr, mt_ref_.instr.size);
     xed_map_iter = xed_map_.find(mt_ref_.instr.addr);
     assert((xed_map_iter != xed_map_.end()));
   }

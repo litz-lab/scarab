@@ -59,6 +59,7 @@ class TraceReaderMemtrace : public TraceReader {
   dynamorio::drmemtrace::raw2trace_directory_t            directory_;
   void*                            dcontext_;
   unsigned int                     knob_verbose_;
+  bool                             trace_has_encodings_;
 
   enum class MTState {
     INST,

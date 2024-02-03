@@ -160,6 +160,7 @@ bool TraceReaderMemtrace::initTrace() {
 
 bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
                                                InstInfo* _prior) {
+  static bool first_instr = true;
   uint32_t prior_isize = mt_prior_isize_;
   bool     complete    = false;
 
@@ -187,6 +188,14 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
     switch(mt_state_) {
       case(MTState::INST):
         if(type_is_instr(mt_ref_.instr.type)) {
+          if(first_instr) {
+            // if this is the first instruction ever,
+            // the file type marker of the trace should have been processed internally by DynamoRIO.
+            // it is time to see if encodings are available.
+            auto type = stream->get_filetype();
+            trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
+            first_instr = false;
+          }
           processInst(_info);
           if(mt_mem_ops_ > 0) {
             mt_state_ = MTState::MEM1;
@@ -336,7 +345,10 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   // Get the XED info from the cache, creating it if needed
   auto xed_map_iter = xed_map_.find(mt_ref_.instr.addr);
   if(xed_map_iter == xed_map_.end()) {
-    fillCache(mt_ref_.instr.addr, mt_ref_.instr.size);
+    if (trace_has_encodings_)
+      fillCache(mt_ref_.instr.addr, mt_ref_.instr.size, mt_ref_.instr.encoding);
+    else
+      fillCache(mt_ref_.instr.addr, mt_ref_.instr.size);
     xed_map_iter = xed_map_.find(mt_ref_.instr.addr);
     assert((xed_map_iter != xed_map_.end()));
   }

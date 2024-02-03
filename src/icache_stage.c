@@ -493,9 +493,8 @@ void update_icache_stage() {
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
       if(!ic->off_path) {
         STAT_EVENT(map->proc_id, ICACHE_STAGE_STARVED);
+        INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + get_last_miss_reason(ic->proc_id), IC_ISSUE_WIDTH - 1);
       }
-
-      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + get_last_miss_reason(ic->proc_id), IC_ISSUE_WIDTH - 1);
     } break;
 
     case IC_WAIT_FOR_EMPTY_ROB: {
@@ -1025,7 +1024,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
   if(!line->read_count[0]) { // only consider the first hit
     if(!icache_off_path()) {
       uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, line->ghist) : ic->line_addr;
-      if(fdip_search_pref_candidate(hashed_addr)) {
+      if(fdip_search_pref_candidate(ic->line_addr)) {
         inc_cnt_useful(ic->proc_id, hashed_addr, FALSE);
         inc_cnt_useful_signed(ic->proc_id, hashed_addr);
         inc_useful_lines_uc(ic->proc_id, hashed_addr);
@@ -1136,7 +1135,6 @@ void log_stats_mshr_hit(Addr line_addr) {
   Flag demand_hit_writeback = FALSE;
   Mem_Queue_Entry* queue_entry = NULL;
   Flag ramulator_match = FALSE;
-  Imiss_Reason imiss_reason = IMISS_MSHR_HIT;
   Mem_Req* req = mem_search_reqbuf_wrapper(ic->proc_id, line_addr,
                                            MRT_FDIPPRF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
                                            QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
@@ -1145,7 +1143,7 @@ void log_stats_mshr_hit(Addr line_addr) {
   if (req && !req->cyc_hit_by_demand_load) {
     uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, req->ghist) : ic->line_addr;
     if (!icache_off_path() &&
-        fdip_search_pref_candidate(hashed_addr)) {
+        fdip_search_pref_candidate(ic->line_addr)) {
       inc_cnt_useful(ic->proc_id, hashed_addr, FALSE);
       inc_cnt_useful_signed(ic->proc_id, hashed_addr);
       inc_useful_lines_uc(ic->proc_id, hashed_addr);
@@ -1166,7 +1164,7 @@ void log_stats_mshr_hit(Addr line_addr) {
   }
   if (!icache_off_path())
     inc_icache_miss(ic->proc_id, ic->line_addr);
-  imiss_reason = get_miss_reason(ic->proc_id, line_addr);
+  Imiss_Reason imiss_reason = get_miss_reason(ic->proc_id, line_addr);
   DEBUG_FDIP(ic->proc_id, "miss reason: %d, req: %d\n", imiss_reason, req? 1:0);
   if (!req) {
     if (!icache_off_path()) {
@@ -1193,14 +1191,17 @@ void log_stats_mshr_hit(Addr line_addr) {
     if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP || imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_TOO_EARLY_ONPATH + icache_off_path());
     else
-      STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED + icache_off_path());
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED_ONPATH + icache_off_path());
   } else {
     if (FDIP_ENABLE && !FDIP_UTILITY_HASH_ENABLE && !FDIP_BLOOM_FILTER && !FDIP_UC_SIZE && !EIP_ENABLE
         && mem_req_is_type(req, MRT_FDIPPRF))
-      ASSERT(ic->proc_id, imiss_reason == IMISS_MSHR_HIT);
-    imiss_reason = IMISS_MSHR_HIT;
-    STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT);
+      ASSERT(ic->proc_id, imiss_reason == IMISS_MSHR_HIT_PREFETCHED_OFFPATH || imiss_reason == IMISS_MSHR_HIT_PREFETCHED_ONPATH);
+    if (imiss_reason == IMISS_MSHR_HIT_PREFETCHED_ONPATH)
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_PREFETCHED_ONPATH);
+    else
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_PREFETCHED_OFFPATH);
   }
+  DEBUG_FDIP(ic->proc_id, "set last miss reason %u for %llx\n", imiss_reason, ic->line_addr);
   set_last_miss_reason(ic->proc_id, imiss_reason);
 }
 

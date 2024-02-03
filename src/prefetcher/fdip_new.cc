@@ -26,6 +26,7 @@ Icache_Stage *ic_ref;
 std::vector<Op*> per_core_cur_op;
 std::vector<decoupled_fe_iter*> per_core_ftq_iter;
 std::vector<Addr> per_core_last_line_addr;
+std::vector<Flag> per_core_warmed_up;
 int per_cyc_ipref = 0;
 uns low_confidence_cnt = 0;
 double cf_op_distance = 0.0;
@@ -64,8 +65,12 @@ std::vector<uns> per_core_last_break_reason;
 std::vector<Counter> per_core_last_recover_cycle;
 // <CL address, # of first demand load on-path hits of cache lines, flag for learning from a true miss> - useful count
 std::vector<std::unordered_map<Addr, std::pair<Counter, Flag>>> per_core_cnt_useful;
+// <CL address, # of first demand load on-path hits of cache lines, flag for learning from a true miss> - useful count after warm-up
+std::vector<std::unordered_map<Addr, std::pair<Counter, Flag>>> per_core_cnt_useful_aw;
 // <CL address, # of evictions w/o hit of cache lines> - unuseful count
 std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_unuseful;
+// <CL address, # of evictions w/o hit of cache lines> - unuseful count after warm-up
+std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_unuseful_aw;
 // Increment if useful by UDP_WEIGHT_USEFUL, decrement if unuseful by UDP_WEIGHT_UNUSEFUL
 // <CL address, counter for on/off-path unuseful/useful> init by UDP_USEFUL_THRESHOLD
 // OPTIMISTIC POLICY : do not prefetch if < USEFUL_THRESHOLD, otherwise, prefetch (do not prefetch only when it was unuseful at least once)
@@ -75,16 +80,28 @@ std::vector<std::unordered_map<Addr, int32_t>> per_core_cnt_useful_signed;
 std::vector<std::unordered_map<Addr, Counter>> per_core_cnt_useful_ret;
 // <CL addresses, icache miss count>
 std::vector<std::map<Addr, Counter>> per_core_icache_miss;
+// <CL addresses, icache miss count> after warm-up
+std::vector<std::map<Addr, Counter>> per_core_icache_miss_aw;
 // <CL addresses, icache hit count>
 std::vector<std::map<Addr, Counter>> per_core_icache_hit;
+// <CL addresses, icache hit count> after warm-up
+std::vector<std::map<Addr, Counter>> per_core_icache_hit_aw;
 // <CL addresses, fetched_cycle on the off-path>
 std::vector<std::map<Addr, Counter>> per_core_off_fetched_cls;;
 // <CL addresses, prefetched count>
 std::vector<std::map<Addr, Counter>> per_core_prefetched_cls;
+// <CL addresses, prefetched count> after warm-up
+std::vector<std::map<Addr, Counter>> per_core_prefetched_cls_aw;
 // <CL addresses, new_prefetched count>
 std::vector<std::map<Addr, Counter>> per_core_new_prefetched_cls;
-// <CL address, cyc_access_by_fdip, cyc_evicted_from_l1_by_demand_load, cyc_evicted_from_l1_by_FDIP> - prefetched and access time information for timeliness analysis
-std::vector<std::unordered_map<Addr, std::pair<Counter, std::pair<Counter, Counter>>>> per_core_prefetched_cls_info;
+// <CL addresses, new_prefetched count> after warm-up
+std::vector<std::map<Addr, Counter>> per_core_new_prefetched_cls_aw;
+// <CL address, cyc_access_by_fdip, conf_on/off-path, cyc_evicted_from_l1_by_demand_load, cyc_evicted_from_l1_by_FDIP> - prefetched and access time information for timeliness analysis
+std::vector<std::unordered_map<Addr, std::pair<std::pair<Counter, Flag>, std::pair<Counter, Counter>>>> per_core_prefetched_cls_info;
+// <CL address, sequence of useful/unuseful>
+std::vector<std::unordered_map<Addr, std::vector<uns8>>> per_core_useful_sequence;
+// <CL address, sequence of hit/miss>
+std::vector<std::unordered_map<Addr, std::vector<uns8>>> per_core_icache_sequence;
 // accumulated FTQ occupancy every cycle
 std::vector<uint64_t> per_core_fdip_ftq_occupancy_ops;
 std::vector<uint64_t> per_core_fdip_ftq_occupancy_blocks;
@@ -108,6 +125,7 @@ void alloc_mem_fdip(uns numCores) {
   per_core_cur_op.resize(numCores);
   per_core_ftq_iter.resize(numCores);
   per_core_last_line_addr.resize(numCores);
+  per_core_warmed_up.resize(numCores);
   if (FDIP_ADJUSTABLE_FTQ)
     per_core_utility_timeliness_info.resize(numCores);
   if (FDIP_BP_CONFIDENCE) {
@@ -118,15 +136,23 @@ void alloc_mem_fdip(uns numCores) {
   per_core_last_break_reason.resize(numCores);
   per_core_last_recover_cycle.resize(numCores);
   per_core_cnt_useful.resize(numCores);
+  per_core_cnt_useful_aw.resize(numCores);
   per_core_cnt_unuseful.resize(numCores);
+  per_core_cnt_unuseful_aw.resize(numCores);
   per_core_cnt_useful_signed.resize(numCores);
   per_core_cnt_useful_ret.resize(numCores);
   per_core_icache_miss.resize(numCores);
+  per_core_icache_miss_aw.resize(numCores);
   per_core_icache_hit.resize(numCores);
+  per_core_icache_hit_aw.resize(numCores);
   per_core_off_fetched_cls.resize(numCores);
   per_core_prefetched_cls.resize(numCores);
+  per_core_prefetched_cls_aw.resize(numCores);
   per_core_new_prefetched_cls.resize(numCores);
+  per_core_new_prefetched_cls_aw.resize(numCores);
   per_core_prefetched_cls_info.resize(numCores);
+  per_core_useful_sequence.resize(numCores);
+  per_core_icache_sequence.resize(numCores);
   per_core_fdip_ftq_occupancy_ops.resize(numCores);
   per_core_fdip_ftq_occupancy_blocks.resize(numCores);
   if (FDIP_UTILITY_HASH_ENABLE)
@@ -150,6 +176,7 @@ void alloc_mem_fdip(uns numCores) {
 void init_fdip(uns proc_id) {
   per_core_ftq_iter[proc_id] = decoupled_fe_new_ftq_iter();
   per_core_last_line_addr[proc_id] = 0;
+  per_core_warmed_up[proc_id] = FALSE;
   if (FDIP_ADJUSTABLE_FTQ)
     per_core_utility_timeliness_info[proc_id] = {0, 0, 0.0, 0, 0, 0.0, FALSE};
   if (FDIP_BP_CONFIDENCE) {
@@ -212,6 +239,8 @@ void recover_fdip() {
 void update_fdip() {
   if (!FDIP_ENABLE)
     return;
+  if (FULL_WARMUP && warmup_dump_done[fdip_proc_id] && !per_core_warmed_up[fdip_proc_id])
+    per_core_warmed_up[fdip_proc_id] = TRUE;
 
   uint32_t ops_per_cycle = 0;
   int ftq_entry_per_cycle = 0;
@@ -337,6 +366,7 @@ void update_fdip() {
         STAT_EVENT(ic_ref->proc_id, FDIP_DECIDE_PREF_ONPATH + op->off_path);
 
       if (!line && emit_new_prefetch) { // create a mem request only if line doesn't exist. If the corresponding mem_req exists, it will merge.
+        uns success = Mem_Queue_Req_Result::FAILED;
         if (FDIP_PREF_NO_LATENCY) {
           Mem_Req req;
           req.off_path           = op ? op->off_path : FALSE;
@@ -357,8 +387,9 @@ void update_fdip() {
             STAT_EVENT(fdip_proc_id, FDIP_NEW_PREFETCHES_ONPATH + op->off_path);
           else
             ASSERT(fdip_proc_id, false);
+          success = Mem_Queue_Req_Result::SUCCESS_NEW;
         } else {
-          Flag success = new_mem_req(MRT_FDIPPRF, fdip_proc_id, line_addr,
+          success = new_mem_req(MRT_FDIPPRF, fdip_proc_id, line_addr,
               ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
               //ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count++, 0); // bug?
           // A buffer entry should be available since it is checked by mem_can_allocate_req_buffer for a new prefetch
@@ -372,7 +403,7 @@ void update_fdip() {
             DEBUG(fdip_proc_id, "Success to merge a prefetch for %llx\n", line_addr);
           }
         }
-        inc_prefetched_cls(line_addr);
+        inc_prefetched_cls(line_addr, success);
       }
       per_core_last_line_addr[fdip_proc_id] = line_addr;
     }
@@ -487,6 +518,51 @@ void print_cl_info(uns proc_id) {
     ASSERT(proc_id, (cnt_useful_iter != per_core_cnt_useful[proc_id].end()) || (cnt_unuseful_iter != per_core_cnt_unuseful[proc_id].end()));
   }
   fclose(fp);
+
+  cnt_learned_cl = &per_core_cnt_useful_signed[proc_id];
+  fp = fopen("per_line_icache_line_info_after_warmup.csv", "w");
+  fprintf(fp, "cl_addr,useful_cnt,unuseful_cnt,prefetch_cnt,new_prefetch_cnt,icache_hit,icache_miss\n");
+  for(auto it = cnt_learned_cl->begin(); it != cnt_learned_cl->end(); ++it) {
+    auto cnt_useful_iter = per_core_cnt_useful_aw[proc_id].find(it->first);
+    auto cnt_unuseful_iter = per_core_cnt_unuseful_aw[proc_id].find(it->first);
+    auto cnt_prefetch_iter = per_core_prefetched_cls_aw[proc_id].find(it->first);
+    auto cnt_new_prefetch_iter = per_core_new_prefetched_cls_aw[proc_id].find(it->first);
+    auto hit_iter = per_core_icache_hit_aw[proc_id].find(it->first);
+    auto miss_iter = per_core_icache_miss_aw[proc_id].find(it->first);
+    Counter cnt_useful = (cnt_useful_iter != per_core_cnt_useful_aw[proc_id].end())? cnt_useful_iter->second.first : 0;
+    Counter cnt_unuseful = (cnt_unuseful_iter != per_core_cnt_unuseful_aw[proc_id].end())? cnt_unuseful_iter->second : 0;
+    Counter cnt_prefetch = (cnt_prefetch_iter != per_core_prefetched_cls_aw[proc_id].end())? cnt_prefetch_iter->second : 0;
+    Counter cnt_new_prefetch = (cnt_new_prefetch_iter != per_core_new_prefetched_cls_aw[proc_id].end())? cnt_new_prefetch_iter->second : 0;
+    Counter num_hit = (hit_iter != per_core_icache_hit_aw[proc_id].end())? hit_iter->second : 0;
+    Counter num_miss = (miss_iter != per_core_icache_miss_aw[proc_id].end())? miss_iter->second : 0;
+    if (cnt_useful != 0 || cnt_unuseful != 0)
+      fprintf(fp, "%llx,%llu,%llu,%llu,%llu,%llu,%llu\n", it->first, cnt_useful, cnt_unuseful, cnt_prefetch, cnt_new_prefetch, num_hit, num_miss);
+  }
+  fclose(fp);
+
+  std::unordered_map<Addr, std::vector<uns8>>* useful_seq = &per_core_useful_sequence[proc_id];
+  fp = fopen("per_line_useful_seq.csv", "w");
+  fprintf(fp, "cl_addr,seq\n");
+  for(auto it = useful_seq->begin(); it != useful_seq->end(); ++it) {
+    fprintf(fp, "%llx", it->first);
+    for(auto it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
+      fprintf(fp, ",%u", *it2);
+    }
+    fprintf(fp, "\n");
+  }
+  fclose(fp);
+
+  std::unordered_map<Addr, std::vector<uns8>>* icache_seq = &per_core_icache_sequence[proc_id];
+  fp = fopen("per_line_icache_seq.csv", "w");
+  fprintf(fp, "cl_addr,seq\n");
+  for(auto it = icache_seq->begin(); it != icache_seq->end(); ++it) {
+    fprintf(fp, "%llx", it->first);
+    for(auto it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
+      fprintf(fp, ",%u", *it2);
+    }
+    fprintf(fp, "\n");
+  }
+  fclose(fp);
 }
 
 void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss) {
@@ -517,8 +593,17 @@ void inc_cnt_useful_signed(uns proc_id, Addr line_addr) {
   auto it = per_core_cnt_useful_signed[proc_id].find(line_addr);
   if (it == per_core_cnt_useful_signed[proc_id].end())
     per_core_cnt_useful_signed[proc_id].insert(std::pair<Addr, int64_t>(line_addr, UDP_USEFUL_THRESHOLD+UDP_WEIGHT_USEFUL));
-  else if (it->second + UDP_WEIGHT_USEFUL < UDP_WEIGHT_POSITIVE_SATURATION)
+  else if (it->second + UDP_WEIGHT_USEFUL <= UDP_WEIGHT_POSITIVE_SATURATION)
     it->second += UDP_WEIGHT_USEFUL;
+
+  uns8 useful_value = per_core_warmed_up[proc_id]? 3 : 1;
+  auto it2 = per_core_useful_sequence[proc_id].find(line_addr);
+  if (it2 == per_core_useful_sequence[proc_id].end()) {
+    per_core_useful_sequence[proc_id].insert(std::make_pair(line_addr, std::vector<uns8>()));
+    per_core_useful_sequence[proc_id][line_addr].push_back(useful_value);
+  } else {
+    it2->second.push_back(useful_value);
+  }
 }
 
 void dec_cnt_useful_signed(uns proc_id, Addr line_addr) {
@@ -527,6 +612,15 @@ void dec_cnt_useful_signed(uns proc_id, Addr line_addr) {
     per_core_cnt_useful_signed[proc_id].insert(std::pair<Addr, int64_t>(line_addr, UDP_USEFUL_THRESHOLD-UDP_WEIGHT_UNUSEFUL));
   else
     it->second -= UDP_WEIGHT_UNUSEFUL;
+
+  uns8 unuseful_value = per_core_warmed_up[proc_id]? 2 : 0;
+  auto it2 = per_core_useful_sequence[proc_id].find(line_addr);
+  if (it2 == per_core_useful_sequence[proc_id].end()) {
+    per_core_useful_sequence[proc_id].insert(std::make_pair(line_addr, std::vector<uns8>()));
+    per_core_useful_sequence[proc_id][line_addr].push_back(unuseful_value);
+  } else {
+    it2->second.push_back(unuseful_value);
+  }
 }
 
 void inc_cnt_useful_ret(uns proc_id, Addr line_addr) {
@@ -540,6 +634,7 @@ void inc_cnt_useful_ret(uns proc_id, Addr line_addr) {
 }
 
 void inc_icache_miss(uns proc_id, Addr line_addr) {
+
   auto cl_iter = per_core_icache_miss[proc_id].find(line_addr);
   if (cl_iter == per_core_icache_miss[proc_id].end()) {
     STAT_EVENT(proc_id, UNIQUE_MISSED_LINES);
@@ -547,27 +642,69 @@ void inc_icache_miss(uns proc_id, Addr line_addr) {
   }
   else
     cl_iter->second++;
+
+  if (per_core_warmed_up[proc_id]) {
+    auto it = per_core_icache_miss_aw[proc_id].find(line_addr);
+    if (it == per_core_icache_miss_aw[proc_id].end())
+      per_core_icache_miss_aw[proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
+    else
+      it->second++;
+  }
+
+  uns icache_val = per_core_warmed_up[proc_id]? 2 : 0;
+  auto it = per_core_icache_sequence[proc_id].find(line_addr);
+  if (it == per_core_icache_sequence[proc_id].end()) {
+    per_core_icache_sequence[proc_id].insert(std::make_pair(line_addr, std::vector<uns8>()));
+    per_core_icache_sequence[proc_id][line_addr].push_back(icache_val);
+  } else {
+    it->second.push_back(icache_val);
+  }
 }
 
-void inc_prefetched_cls(Addr line_addr) {
+void inc_prefetched_cls(Addr line_addr, uns success) {
+  Flag on_path = FALSE;
+  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD)
+    on_path = TRUE;
+  if (!FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
+    on_path = TRUE;
+
   auto cl_iter = per_core_prefetched_cls[fdip_proc_id].find(line_addr);
   if (cl_iter == per_core_prefetched_cls[fdip_proc_id].end()) {
     per_core_prefetched_cls[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
-    per_core_prefetched_cls_info[fdip_proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(std::move(cycle_count), std::make_pair(0, 0))));
+    per_core_prefetched_cls_info[fdip_proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(std::make_pair(std::move(cycle_count), on_path), std::make_pair(0, 0))));
     DEBUG(fdip_proc_id, "%llx inserted into prefetched_cls at %llu\n", line_addr, cycle_count);
   } else {
     cl_iter->second++;
     auto cl_info_iter = per_core_prefetched_cls_info[fdip_proc_id].find(line_addr);
     ASSERT(fdip_proc_id, cl_info_iter != per_core_prefetched_cls_info[fdip_proc_id].end());
-    cl_info_iter->second.first = cycle_count;
+    cl_info_iter->second.first.first = cycle_count;
+    cl_info_iter->second.first.second = on_path;
     DEBUG(fdip_proc_id, "%llx updated with cnt %llu in prefetched_cls at cyc %llu\n", line_addr, cl_iter->second, cycle_count);
   }
 
-  auto cl_new_iter = per_core_new_prefetched_cls[fdip_proc_id].find(line_addr);
-  if (cl_new_iter == per_core_new_prefetched_cls[fdip_proc_id].end())
-    per_core_new_prefetched_cls[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
-  else
-    cl_new_iter->second++;
+  if (success == Mem_Queue_Req_Result::SUCCESS_NEW) {
+    auto cl_new_iter = per_core_new_prefetched_cls[fdip_proc_id].find(line_addr);
+    if (cl_new_iter == per_core_new_prefetched_cls[fdip_proc_id].end())
+      per_core_new_prefetched_cls[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
+    else
+      cl_new_iter->second++;
+  }
+
+  if (per_core_warmed_up[fdip_proc_id]) {
+    auto it = per_core_prefetched_cls_aw[fdip_proc_id].find(line_addr);
+    if (it == per_core_prefetched_cls_aw[fdip_proc_id].end())
+      per_core_prefetched_cls_aw[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
+    else
+      it->second++;
+
+    if (success == Mem_Queue_Req_Result::SUCCESS_NEW) {
+      it = per_core_new_prefetched_cls_aw[fdip_proc_id].find(line_addr);
+      if (it == per_core_new_prefetched_cls_aw[fdip_proc_id].end())
+        per_core_new_prefetched_cls_aw[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
+      else
+        it->second++;
+    }
+  }
 }
 
 void inc_off_fetched_cls(Addr line_addr) {
@@ -584,7 +721,7 @@ void inc_off_fetched_cls(Addr line_addr) {
 void probe_prefetched_cls(Addr line_addr) {
   auto cl_iter = per_core_prefetched_cls_info[fdip_proc_id].find(line_addr);
   if (cl_iter != per_core_prefetched_cls_info[fdip_proc_id].end())
-    cl_iter->second.first = cycle_count;
+    cl_iter->second.first.first = cycle_count;
   else {
     auto cl_off_iter = per_core_off_fetched_cls[fdip_proc_id].find(line_addr);
     ASSERT(fdip_proc_id, cl_off_iter != per_core_off_fetched_cls[fdip_proc_id].end());
@@ -612,25 +749,32 @@ uns get_miss_reason(uns proc_id, Addr line_addr) {
     ASSERT(proc_id, tmp_iter == per_core_prefetched_cls[proc_id].end());
     return Imiss_Reason::IMISS_NOT_PREFETCHED;
   }
-  if (cl_iter->second.first < per_core_last_recover_cycle[proc_id]) {
+  if (cl_iter->second.first.first < per_core_last_recover_cycle[proc_id]) {
     DEBUG(proc_id, "%llx misses due to 'not prefetched after last recover cycle'\n", line_addr);
     return Imiss_Reason::IMISS_NOT_PREFETCHED;
   }
 
-  if (cl_iter->second.first >= per_core_last_recover_cycle[proc_id]) {
-   if (cl_iter->second.second.first > cl_iter->second.first) {
+  if (cl_iter->second.first.first >= per_core_last_recover_cycle[proc_id]) {
+   if (cl_iter->second.second.first > cl_iter->second.first.first) {
     DEBUG(proc_id, "%llx misses due to 'prefetched but evicted by a demand load'\n", line_addr);
     return Imiss_Reason::IMISS_TOO_EARLY_EVICTED_BY_IFETCH;
-   } else if (cl_iter->second.second.second > cl_iter->second.first) {
+   } else if (cl_iter->second.second.second > cl_iter->second.first.first) {
     DEBUG(proc_id, "%llx misses due to 'prefetched but evicted by FDIP'\n", line_addr);
     return Imiss_Reason::IMISS_TOO_EARLY_EVICTED_BY_FDIP;
    }
   }
-  DEBUG(proc_id, "%llx misses due to 'MSHR hit'\n", line_addr);
-  return Imiss_Reason::IMISS_MSHR_HIT;
+
+  if (cl_iter->second.first.second) {
+    DEBUG(proc_id, "%llx misses due to 'MSHR hit prefetched on path'\n", line_addr);
+    return Imiss_Reason::IMISS_MSHR_HIT_PREFETCHED_ONPATH;
+  }
+
+  DEBUG(proc_id, "%llx misses due to 'MSHR hit prefetched off path'\n", line_addr);
+  return Imiss_Reason::IMISS_MSHR_HIT_PREFETCHED_OFFPATH;
 }
 
 uns get_last_miss_reason(uns proc_id) {
+  DEBUG(proc_id, "get last miss reason %u\n", per_core_last_imiss_reason[proc_id]);
   return per_core_last_imiss_reason[proc_id];
 }
 
@@ -1142,7 +1286,7 @@ void inc_useful_lines_uc(uns proc_id, Addr line_addr) {
     *cnt = UDP_USEFUL_THRESHOLD+UDP_WEIGHT_USEFUL;
     DEBUG(proc_id, "Insert uc cnt with value %d\n", *cnt);
   }
-  else if (*cnt + UDP_WEIGHT_USEFUL < UDP_WEIGHT_POSITIVE_SATURATION) {
+  else if (*cnt + UDP_WEIGHT_USEFUL <= UDP_WEIGHT_POSITIVE_SATURATION) {
     DEBUG(proc_id, "Increment uc cnt from %d to ", *cnt);
     *cnt += UDP_WEIGHT_USEFUL;
     DEBUG(proc_id, "%d\n", *cnt);
@@ -1191,4 +1335,21 @@ void inc_icache_hit(uns proc_id, Addr line_addr) {
   }
   else
     cl_iter->second++;
+
+  if (per_core_warmed_up[proc_id]) {
+    auto it = per_core_icache_hit_aw[proc_id].find(line_addr);
+    if (it == per_core_icache_hit_aw[proc_id].end())
+      per_core_icache_hit_aw[proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
+    else
+      it->second++;
+  }
+
+  uns icache_val = per_core_warmed_up[proc_id]? 3 : 1;
+  auto it = per_core_icache_sequence[proc_id].find(line_addr);
+  if (it == per_core_icache_sequence[proc_id].end()) {
+    per_core_icache_sequence[proc_id].insert(std::make_pair(line_addr, std::vector<uns8>()));
+    per_core_icache_sequence[proc_id][line_addr].push_back(icache_val);
+  } else {
+    it->second.push_back(icache_val);
+  }
 }

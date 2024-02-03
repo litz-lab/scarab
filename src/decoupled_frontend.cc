@@ -288,9 +288,12 @@ void update_decoupled_fe() {
       }
       taken_cf = (op->oracle_info.pred == TAKEN) ? taken_cf + 1 : taken_cf;
     }
-    else
+    else {
       ASSERT(0,!(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
-
+      if (op->table_info->bar_type & BAR_FETCH) {
+        decoupled_fe_stall(op);
+      }
+    }
     // We start a new block if crossing a block or take a branch depending on packet break conditions
     bool start_new_block = false;
     if (op->eom) {

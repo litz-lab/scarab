@@ -227,14 +227,9 @@ void TraceReader::fillCache(uint64_t _vAddr, uint8_t _reported_size,
     xed_decoded_inst_zero_set_mode(ins, &xed_state_);
     if(inst_bytes != NULL) {
       loc  = inst_bytes;
-      size = _reported_size;
     }
     xed_error_enum_t res;
-    if(inst_bytes != NULL)
-      res = xed_decode(ins, inst_bytes, _reported_size);
-    else
-      res = xed_decode(ins, loc, size);
-
+    res = xed_decode(ins, loc, _reported_size);
     if (res != XED_ERROR_NONE) {
        warn("XED decode error for 0x%lx: %s %u, replacing with nop\n", _vAddr, xed_error_enum_t2str(res), _reported_size);
       *ins = *makeNop(_reported_size);

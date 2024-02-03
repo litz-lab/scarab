@@ -1261,10 +1261,13 @@ void reg_file_alloc_dest(Op *op) {
   }
 
   // alloc reg for all dests
+  if (op->reg_dest_num != 0)
+    return;
   for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
     entry = reg_file_phy_map_alloc_entry();
     reg_file_phy_map_write_entry(op, entry, ii);
   }
+  ASSERT(map_data->proc_id, op->reg_dest_num == op->table_info->num_dest_regs);
 }
 
 /*
@@ -1323,10 +1326,17 @@ void reg_file_rebuild_recover(void) {
   for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
     ASSERT(map_data->proc_id, reg_file_phy_map_can_alloc((*op_p)->table_info->num_dest_regs));
     ASSERT(map_data->proc_id, map_data->reg_file->stall_op == NULL);
+    ASSERT(map_data->proc_id, (*op_p)->off_path);
+
+    (*op_p)->reg_dest_num = 0;
+    for (ii = 0; ii < MAX_DESTS; ii++)
+      (*op_p)->reg_dest_entry[ii] = NULL;
+
     for (ii = 0; ii < (*op_p)->table_info->num_dest_regs; ii++) {
       entry = reg_file_phy_map_alloc_entry();
       reg_file_phy_map_write_entry((*op_p), entry, ii);
     }
+    ASSERT(map_data->proc_id, (*op_p)->reg_dest_num == (*op_p)->table_info->num_dest_regs);
   }
 }
 
@@ -1630,7 +1640,7 @@ void reg_file_print_map(int isa_id) {
   Reg_File_Phy_Entry *entry;
 
   printf("\n-------------------------\n");
-  printf("Physical Array (proc: %d)\n", map_data->proc_id);
+  printf("Physical Renaming Register (proc: %d, cycle: %lld)\n", map_data->proc_id, cycle_count);
   for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
     entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
 
@@ -1638,9 +1648,10 @@ void reg_file_print_map(int isa_id) {
       continue;
     }
 
-    printf("P[%d]  \t(isa: %d, \treg_state: %d,\tnum: %lld, \tunique: %lld, \toff_path: %d, \top_state: %d)\n",
-      entry->reg_phy_id, entry->reg_isa_id, entry->reg_state, entry->op_num,
-      entry->unique_num, entry->off_path, entry->op->state);
+    printf("P[%d]  \t(isa: %d, \treg_state: %d,\tnum: %lld, \tunique: %lld, \
+      \t off_path: %d, \top_state: %d, \top_in_rdy_list: %d, \tdone_cycle: %lld)\n",
+      entry->reg_phy_id, entry->reg_isa_id, entry->reg_state, entry->op_num, entry->unique_num,
+      entry->off_path, entry->op->state, entry->op->in_rdy_list, entry->op->done_cycle);
 
     printf("Prev: ->");
     entry = entry->prev_same_isa;
@@ -1672,9 +1683,10 @@ void reg_file_print_map(int isa_id) {
     if (entry == NULL)
       continue;
 
-    printf("I[%d] \t(phy: %d, \treg_state: %d,\tnum: %lld, \tunique: %lld, \toff_path: %d, \top_state: %d)\n",
-      entry->reg_isa_id, entry->reg_phy_id, entry->reg_state, entry->op_num,
-      entry->unique_num, entry->off_path, entry->op->state);
+    printf("I[%d] \t(phy: %d, \treg_state: %d,\tnum: %lld, \tunique: %lld, \
+      \toff_path: %d, \top_state: %d, \top_in_rdy_list: %d, \tdone_cycle: %lld)\n",
+      entry->reg_isa_id, entry->reg_phy_id, entry->reg_state, entry->op_num, entry->unique_num,
+      entry->off_path, entry->op->state, entry->op->in_rdy_list, entry->op->done_cycle);
   }
 
   printf("-------------------------\n");
@@ -1688,8 +1700,8 @@ void reg_file_print_map(int isa_id) {
 
   printf("ISA Counter (proc: %d)\n", map_data->proc_id);
   for (ii = 0; ii < NUM_REG_IDS; ii++) {
-    printf("ISA[%d]: %lld\n", ii, map_data->reg_file->phy_map->reg_isa_counter[ii]);
+    printf("[%d: %lld], ", ii, map_data->reg_file->phy_map->reg_isa_counter[ii]);
   }
 
-  printf("-------------------------\n");
+  printf("\n-------------------------\n");
 }

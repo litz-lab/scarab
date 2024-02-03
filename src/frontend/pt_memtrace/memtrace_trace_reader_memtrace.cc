@@ -71,9 +71,6 @@ void TraceReaderMemtrace::init(const std::string& _trace) {
   mt_info_a_.valid     = true;
   mt_info_b_.valid     = true;
   TraceReader::init(_trace);
-  auto *stream = scheduler.get_stream(0);
-  auto type = stream->get_filetype();
-  trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
 }
 
 // TODO: Detect memtrace/module.log type dynamically
@@ -153,6 +150,9 @@ bool TraceReaderMemtrace::initTrace() {
       panic("failed to initialize scheduler: %s", scheduler.get_error_string().c_str());
       return false;
   }
+  auto *stream = scheduler.get_stream(0);
+  auto type = stream->get_filetype();
+  trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
 
   // Set info 'A' to the first complete instruction.
   // It will initially lack branch target information.

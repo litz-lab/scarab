@@ -150,9 +150,6 @@ bool TraceReaderMemtrace::initTrace() {
       panic("failed to initialize scheduler: %s", scheduler.get_error_string().c_str());
       return false;
   }
-  auto *stream = scheduler.get_stream(0);
-  auto type = stream->get_filetype();
-  trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
 
   // Set info 'A' to the first complete instruction.
   // It will initially lack branch target information.
@@ -163,6 +160,7 @@ bool TraceReaderMemtrace::initTrace() {
 
 bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
                                                InstInfo* _prior) {
+  static bool first_instr = true;
   uint32_t prior_isize = mt_prior_isize_;
   bool     complete    = false;
 
@@ -190,6 +188,14 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info,
     switch(mt_state_) {
       case(MTState::INST):
         if(type_is_instr(mt_ref_.instr.type)) {
+          if(first_instr) {
+            // if this is the first instruction ever,
+            // the file type marker of the trace should have been processed internally by DynamoRIO.
+            // it is time to see if encodings are available.
+            auto type = stream->get_filetype();
+            trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
+            first_instr = false;
+          }
           processInst(_info);
           if(mt_mem_ops_ > 0) {
             mt_state_ = MTState::MEM1;

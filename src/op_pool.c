@@ -257,11 +257,6 @@ void op_pool_setup_op(uns proc_id, Op* op) {
 
   for(ii = 0; ii < NUM_DEP_TYPES; ii++)
     op->wake_up_signaled[ii] = FALSE;
-
-  op->reg_dep_track = NULL;
-  op->reg_dest_num = 0;
-  for (ii = 0; ii < MAX_DESTS; ii++)
-    op->reg_dest_entry[ii] = NULL;
 }
 
 

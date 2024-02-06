@@ -836,9 +836,6 @@ void node_retire() {
 
     op->retire_cycle = cycle_count;
 
-    // free the register entry of dead op
-    reg_file_remove_dead(op);
-
     if(model->op_retired_hook)
       model->op_retired_hook(op);
     else

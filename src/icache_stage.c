@@ -518,6 +518,17 @@ void update_icache_stage() {
         ic->next_state = IC_FETCH;
     } break;
 
+    case IC_WAIT_FOR_RENAME: {
+      DEBUG(ic->proc_id, "Ifetch barrier: Waiting for renaming register free \n");
+      INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_RENAME, IC_ISSUE_WIDTH);
+      STAT_EVENT(ic->proc_id, FETCH_0_OPS);
+
+      if (!reg_file_if_empty()) {
+        DEBUG(ic->proc_id, "Renaming Stall Recover\n");
+        ic->next_state = IC_FETCH;
+      }
+    } break;
+
     default:
       FATAL_ERROR(ic->proc_id, "Invalid icache state.\n");
   }
@@ -564,6 +575,12 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     Op*        op = NULL;
     Inst_Info* inst = 0;
     UNUSED(inst);
+
+    if (REG_FILE_PHY_ENABLE && reg_file_if_empty()) {
+      DEBUG(ic->proc_id, "Renaming Stall: %lld\n", op->unique_num);
+      *break_fetch = BREAK_RENAME;
+      return IC_WAIT_FOR_RENAME;
+    }
 
     if(decoupled_fe_can_fetch_op(ic->proc_id)) {
       decoupled_fe_fetch_op(&op, ic->proc_id);

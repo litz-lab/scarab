@@ -434,7 +434,7 @@ void decoupled_fe_stall(Op *op) {
 }
 
 void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid) {
-  if((op->table_info->bar_type & BAR_FETCH) && op->table_info->cf_type) {
+  if(op->table_info->bar_type & BAR_FETCH) {
     per_core_stalled[set_proc_id] = false;
     DEBUG(set_proc_id,
           "Decoupled fetch unstalled due to retired barrier fetch_addr0x:%llx off_path:%i op_num:%llu list_count:%i\n",

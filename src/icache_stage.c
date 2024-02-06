@@ -523,7 +523,7 @@ void update_icache_stage() {
       INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_RENAME, IC_ISSUE_WIDTH);
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
 
-      if (!reg_file_remove_stall()) {
+      if (!reg_file_if_empty()) {
         DEBUG(ic->proc_id, "Renaming Stall Recover\n");
         ic->next_state = IC_FETCH;
       }
@@ -575,6 +575,13 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
     Op*        op = NULL;
     Inst_Info* inst = 0;
     UNUSED(inst);
+
+    if (REG_FILE_PHY_ENABLE && reg_file_if_empty()) {
+      DEBUG(ic->proc_id, "Renaming Stall: %lld\n", op->unique_num);
+      *break_fetch = BREAK_RENAME;
+      return IC_WAIT_FOR_RENAME;
+    }
+
     if(decoupled_fe_can_fetch_op(ic->proc_id)) {
       decoupled_fe_fetch_op(&op, ic->proc_id);
       ASSERTM(ic->proc_id, ic->next_fetch_addr == op->inst_info->addr,
@@ -723,12 +730,6 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
 
     if(packet_break == PB_BREAK_AFTER)
       break;
-
-    if (REG_FILE_PHY_ENABLE && reg_file_check_stall()) {
-      DEBUG(ic->proc_id, "Renaming Stall: %lld\n", op->unique_num);
-      *break_fetch = BREAK_RENAME;
-      return IC_WAIT_FOR_RENAME;
-    }
   }
 
   if(*break_fetch == BREAK_BARRIER) {

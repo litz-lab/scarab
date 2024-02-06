@@ -107,7 +107,6 @@ typedef struct Reg_File_Phy_Map_struct {
 
 typedef struct Reg_File_struct {
   Reg_File_Phy_Map *phy_map;
-  Op *stall_op;
 } Reg_File;
 
 /**************************************************************************************/
@@ -178,8 +177,7 @@ void set_not_rdy_bit(Op*, uns);
 void reg_dep_track_table_print_debug_stat(void);
 
 /* external functions of the physical register file */
-Flag reg_file_check_stall(void);
-Flag reg_file_remove_stall(void);
+Flag reg_file_if_empty(void);
 void reg_file_remove_dead(Op*);
 void reg_file_print_map(int);
 

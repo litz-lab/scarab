@@ -1184,8 +1184,6 @@ void reg_file_init(void) {
     return;
 
   map_data->reg_file = (Reg_File *)malloc(sizeof(Reg_File));
-  map_data->reg_file->stall_op = NULL;
-
   map_data->reg_file->phy_map = NULL;
   reg_file_phy_map_init(REG_FILE_PHY_NUM);
 }
@@ -1246,23 +1244,9 @@ void reg_file_alloc_dest(Op *op) {
   uns ii;
   Reg_File_Phy_Entry *entry;
 
-  // check if enough reg
-  if (!reg_file_phy_map_can_alloc(op->table_info->num_dest_regs)) {
-    DEBUG(map_data->proc_id, "Map File Physical Renaming Stall: %lld\n", op->unique_num);
-    if (map_data->reg_file->stall_op == NULL)
-      map_data->reg_file->stall_op = op;
-    return;
-  }
+  ASSERT(map_data->proc_id, op->reg_dest_num == 0);
+  ASSERT(map_data->proc_id, reg_file_phy_map_can_alloc(op->table_info->num_dest_regs));
 
-  // remove stall
-  if (map_data->reg_file->stall_op) {
-    DEBUG(map_data->proc_id, "Map File Physical Renaming Recover: %lld\n", op->unique_num);
-    map_data->reg_file->stall_op = NULL;
-  }
-
-  // alloc reg for all dests
-  if (op->reg_dest_num != 0)
-    return;
   for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
     entry = reg_file_phy_map_alloc_entry();
     reg_file_phy_map_write_entry(op, entry, ii);
@@ -1325,7 +1309,6 @@ void reg_file_rebuild_recover(void) {
 
   for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
     ASSERT(map_data->proc_id, reg_file_phy_map_can_alloc((*op_p)->table_info->num_dest_regs));
-    ASSERT(map_data->proc_id, map_data->reg_file->stall_op == NULL);
     ASSERT(map_data->proc_id, (*op_p)->off_path);
 
     (*op_p)->reg_dest_num = 0;
@@ -1399,6 +1382,8 @@ void reg_file_phy_map_init(uns array_size) {
 void reg_file_phy_map_read_entry(Op *op, Reg_File_Phy_Entry *entry, Dep_Type type) {
   if (entry == NULL)
     return;
+
+  ASSERT(map->proc_id, op->op_num != entry->op_num);
 
   // increase src num
   uns       src_num = op->oracle_info.num_srcs++;
@@ -1577,40 +1562,16 @@ Reg_File_Phy_Entry *reg_file_phy_map_free_list_delete(void) {
   Called by:
   --- icache_stage.c -> icache_issue_ops
   Procedure:
-  --- check if there is stalling op
+  --- check if there is enough register
 */
-Flag reg_file_check_stall(void) {
+Flag reg_file_if_empty(void) {
   if (!REG_FILE_PHY_ENABLE)
     return FALSE;
 
   if (map_data->reg_file == NULL)
     return FALSE;
 
-  return map_data->reg_file->stall_op != NULL;
-}
-
-/*
-  Called by:
-  --- icache_stage.c -> update_icache_stage
-  Procedure:
-  --- 1. check if there is stalling op
-  --- 2. if true, try to alloc the stalling op
-  --- 3. check if there is stalling op
-*/
-Flag reg_file_remove_stall(void) {
-  if (!REG_FILE_PHY_ENABLE)
-    return FALSE;
-
-  if (map_data->reg_file == NULL)
-    return FALSE;
-
-  if (map_data->reg_file->stall_op != NULL) {
-    DEBUG(map_data->proc_id, "Map File Physical Renaming Try To Remove Stall: %lld\n",
-      map_data->reg_file->stall_op->unique_num);
-    reg_file_alloc_dest(map_data->reg_file->stall_op);
-  }
-
-  return map_data->reg_file->stall_op != NULL;
+  return map_data->reg_file->phy_map->reg_free_num < MAX_DESTS;
 }
 
 /*

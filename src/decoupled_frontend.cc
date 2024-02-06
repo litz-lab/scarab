@@ -263,7 +263,7 @@ void update_decoupled_fe() {
       /* On fetch barrier stall the frontend. Ignore BTB misses here as the exec frontend cannot
          handle recovery/execution until syscalls retire. This is ok as stalling causes the same
          cycle penalty than recovering from BTB miss. */
-      if (op->table_info->bar_type & BAR_FETCH) {
+      if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = FALSE;
         decoupled_fe_stall(op);
@@ -290,6 +290,7 @@ void update_decoupled_fe() {
     }
     else {
       ASSERT(0,!(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
+      /* On fetch barrier stall the frontend. */
       if (op->table_info->bar_type & BAR_FETCH) {
         decoupled_fe_stall(op);
       }
@@ -434,7 +435,7 @@ void decoupled_fe_stall(Op *op) {
 }
 
 void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid) {
-  if(op->table_info->bar_type & BAR_FETCH) {
+  if((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
     per_core_stalled[set_proc_id] = false;
     DEBUG(set_proc_id,
           "Decoupled fetch unstalled due to retired barrier fetch_addr0x:%llx off_path:%i op_num:%llu list_count:%i\n",

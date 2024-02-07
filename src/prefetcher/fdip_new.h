@@ -48,6 +48,9 @@ extern "C" {
   void clear_old_seniority_ftq();
   void assert_fdip_break_reason(uns proc_id, Addr line_addr);
   void log_fdip_off_conf_on_btb_miss_stats(Op *op);
+  //debug
+  void log_fdip_off_conf_on_other_stats(Op *op);
+  //enddebug
   void log_fdip_off_conf_on_bp_incorrect_stats(Op *op);
   void log_fdip_on_conf_off_state();
   void inc_br_conf_counters(int conf);
@@ -89,6 +92,9 @@ typedef struct Utility_Timeliness_Info_struct {
 
 //metadata for fdip confidence
 typedef struct FDIP_Confidence_Info_struct {
+  Op * prev_op;
+  Op * cur_op;
+
   Flag fdip_on_conf_off_event;
 
   Counter num_conf_0_branches;

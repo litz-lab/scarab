@@ -187,6 +187,8 @@ void init_fdip(uns proc_id) {
     per_core_cnt_btb_miss[proc_id] = 0;
     per_core_btb_miss_rate[proc_id] = 0.0;
 
+    //per_core_conf_info[proc_id].cur_op = nullptr;
+    per_core_conf_info[proc_id].prev_op = nullptr;
     per_core_conf_info[proc_id].fdip_on_conf_off_event = false;
 
     per_core_conf_info[proc_id].num_conf_0_branches = 0;
@@ -261,6 +263,9 @@ void recover_fdip() {
   cf_op_distance = 0.0;
 
   if(FDIP_BP_CONFIDENCE){
+    // set previous reset previous instruction
+    //per_core_conf_info[fdip_proc_id].cur_op = nullptr;
+    per_core_conf_info[fdip_proc_id].prev_op = nullptr;
     // reset counters and event flags
     per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event = false;
 
@@ -305,6 +310,8 @@ void update_fdip() {
   }
 
   for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
+    //set previous op
+    per_core_conf_info[fdip_proc_id].prev_op = per_core_cur_op[fdip_proc_id];
     per_core_cur_op[fdip_proc_id] = op;
     Addr last_line_addr = per_core_last_line_addr[fdip_proc_id];
     Flag emit_new_prefetch = FALSE;
@@ -393,11 +400,17 @@ void update_fdip() {
           if (fdip_off_path(fdip_proc_id)) {
             if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
               per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
-              if(op->oracle_info.btb_miss){
-                log_fdip_off_conf_on_btb_miss_stats(op);
+              STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
+              if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
+                log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
               } 
-              if(op->oracle_info.mispred){
-                log_fdip_off_conf_on_bp_incorrect_stats(op);
+              else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
+                log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
+              }
+              else{
+                //debug
+                STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER);
+                log_fdip_off_conf_on_other_stats(per_core_conf_info[fdip_proc_id].prev_op);
               }
             }
             STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
@@ -873,11 +886,17 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
       //log stats
       if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
         per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
-        if(op->oracle_info.btb_miss){
-          log_fdip_off_conf_on_btb_miss_stats(op);
+        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
+        if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
+          log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
         } 
-        if(op->oracle_info.mispred){
-          log_fdip_off_conf_on_bp_incorrect_stats(op);
+        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
+          log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
+        }
+        else{
+          //debug
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER);
+          log_fdip_off_conf_on_other_stats(per_core_conf_info[fdip_proc_id].prev_op);
         }
       }
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
@@ -970,11 +989,17 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
       //log stats
       if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
         per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
-        if(op->oracle_info.btb_miss){
-          log_fdip_off_conf_on_btb_miss_stats(op);
+        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
+        if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
+          log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
         } 
-        if(op->oracle_info.mispred){
-          log_fdip_off_conf_on_bp_incorrect_stats(op);
+        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
+          log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
+        }
+        else{
+          //debug
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER);
+          log_fdip_off_conf_on_other_stats(per_core_conf_info[fdip_proc_id].prev_op);
         }
       }
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
@@ -1195,11 +1220,17 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
     if (fdip_off_path(fdip_proc_id)) {
       if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
         per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
-        if(op->oracle_info.btb_miss){
-          log_fdip_off_conf_on_btb_miss_stats(op);
+        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
+        if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
+          log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
         } 
-        if(op->oracle_info.mispred){
-          log_fdip_off_conf_on_bp_incorrect_stats(op);
+        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
+          log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
+        }
+        else{
+          //debug
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER);
+          log_fdip_off_conf_on_other_stats(per_core_conf_info[fdip_proc_id].prev_op);
         }
       }
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
@@ -1464,6 +1495,7 @@ void inc_icache_hit(uns proc_id, Addr line_addr) {
     it->second.push_back(icache_val);
   }
 }
+
 void log_fdip_off_conf_on_btb_miss_stats(Op *op){
   STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS);
   //type of cf
@@ -1497,6 +1529,43 @@ void log_fdip_off_conf_on_btb_miss_stats(Op *op){
       break;
     default:
       DEBUG(fdip_proc_id, "fdip on conf off btb miss: instruction is not a valid cf inst.\n");
+      break;
+  } // end switch
+}
+//DEBUG
+void log_fdip_off_conf_on_other_stats(Op *op){
+  //STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS);
+  //type of cf
+  switch(op->recovery_info.cf_type){
+    case NOT_CF:
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_NOT);
+      break;
+    case CF_BR:
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_BR);
+      break;
+    case CF_CBR:
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_CBR);
+      break;
+    case CF_CALL:
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_CALL);
+      break;
+    case CF_IBR:
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_IBR);
+      break;
+    case CF_ICALL:
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_ICALL);
+      break;
+    case CF_ICO:
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_ICO);
+      break;
+    case CF_RET:
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_RET);
+      break;
+    case CF_SYS:
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_SYS);
+      break;
+    default:
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_DEF);
       break;
   } // end switch
 }

@@ -34,6 +34,32 @@
 #include "op.h"
 
 /**************************************************************************************/
+/* Merged Register File: The Hardware Implementation of Register Renaming */
+
+// To be changed to configurable val
+#define REG_RENAMING_TABLE_ENABLE           FALSE
+#define REG_RENAMING_TABLE_REG_FILE_SIZE    1024
+
+const static int REG_FILE_INVALID_REG_ID = -1;
+
+typedef struct Merged_Reg_File_struct {
+  /* map each architectural register to the latest physical register */
+  Reg_File_Entry* reg_map_table[NUM_REG_IDS];
+
+  /* physical registers for both speculative and committed op */
+  Reg_File_Entry* reg_file;
+  uns             reg_file_size;
+
+  /* track all free physical registers */
+  Reg_File_Entry* reg_free_list_head;
+  uns             reg_free_num;
+} Merged_Reg_File;
+
+typedef struct Reg_Renaming_Table_struct {
+  Merged_Reg_File *merged_rf;
+} Reg_Renaming_Table;
+
+/**************************************************************************************/
 /* Types */
 
 typedef struct Map_Entry_struct {
@@ -58,6 +84,9 @@ typedef struct Map_Data_struct {
   Wake_Up_Entry* free_list_head;
   uns            wake_up_entries;
   uns            active_wake_up_entries;
+
+  /* register renaming implementation based on the hardware scheme */
+  Reg_Renaming_Table *rename_table;
 } Map_Data;
 
 
@@ -90,6 +119,10 @@ void delete_store_hash_entry(Op*);
 void clear_not_rdy_bit(Op*, uns);
 Flag test_not_rdy_bit(Op*, uns);
 void set_not_rdy_bit(Op*, uns);
+
+/* external functions of the register renaming table */
+Flag rename_table_available(void);
+void rename_table_commit(Op*);
 
 /**************************************************************************************/
 

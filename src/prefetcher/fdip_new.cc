@@ -189,6 +189,7 @@ void init_fdip(uns proc_id) {
 
     //per_core_conf_info[proc_id].cur_op = nullptr;
     per_core_conf_info[proc_id].prev_op = nullptr;
+
     per_core_conf_info[proc_id].fdip_on_conf_off_event = false;
 
     per_core_conf_info[proc_id].num_conf_0_branches = 0;
@@ -208,6 +209,7 @@ void init_fdip(uns proc_id) {
     per_core_conf_info[proc_id].num_BTB_misses = 0;
     per_core_conf_info[proc_id].num_op_dist_incs = 0;
 
+    per_core_conf_info[proc_id].fdip_off_path_event = false;
     per_core_conf_info[proc_id].fdip_off_conf_on_event = false;
   }
   per_core_last_imiss_reason[proc_id] = Imiss_Reason::IMISS_NOT_PREFETCHED;
@@ -287,6 +289,7 @@ void recover_fdip() {
     per_core_conf_info[fdip_proc_id].num_op_dist_incs = 0;
 
     per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = false;
+    per_core_conf_info[fdip_proc_id].fdip_off_path_event = false;
   }
 }
 
@@ -310,8 +313,13 @@ void update_fdip() {
   }
 
   for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
-    //set previous op
-    per_core_conf_info[fdip_proc_id].prev_op = per_core_cur_op[fdip_proc_id];
+    //set previous op, only if on path or first off path instruction
+    if(!(op->off_path) || !(per_core_conf_info[fdip_proc_id].fdip_off_path_event)){
+      per_core_conf_info[fdip_proc_id].prev_op = per_core_cur_op[fdip_proc_id];
+      if(op->off_path){
+        per_core_conf_info[fdip_proc_id].fdip_off_path_event = true;
+      }
+    }
     per_core_cur_op[fdip_proc_id] = op;
     Addr last_line_addr = per_core_last_line_addr[fdip_proc_id];
     Flag emit_new_prefetch = FALSE;
@@ -364,7 +372,6 @@ void update_fdip() {
       } else if (cf_op_distance >= FDIP_OFF_PATH_THRESHOLD) {
         low_confidence_cnt += FDIP_OFF_PATH_CONF_INC + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id];
         cf_op_distance = 0.0;
-
         per_core_conf_info[fdip_proc_id].num_op_dist_incs += 1;
       } else {
         cf_op_distance += (1.0+(double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]);
@@ -392,6 +399,7 @@ void update_fdip() {
                                                    QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
                                                    QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
                                                    &queue_entry, &ramulator_match);
+      DEBUG(fdip_proc_id, "fdip off path: %d, conf off path: %d\n", fdip_off_path(fdip_proc_id), (low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) ? 0:1);
       if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
         emit_new_prefetch = determine_usefulness(line_addr, op);
       else {
@@ -401,16 +409,25 @@ void update_fdip() {
             if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
               per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
               STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
+              //if off path due to btb miss
               if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
                 log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
               } 
+              //if off path due to mis prediction
               else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
                 log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
               }
+              //if off path due to no target
+              else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.no_target){
+                STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
+              }
+              //if off path due to misfetch
+              else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.misfetch){
+                STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
+              }
+              //if some other reason (shouldn't happen)
               else{
-                //debug
-                STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER);
-                log_fdip_off_conf_on_other_stats(per_core_conf_info[fdip_proc_id].prev_op);
+                DEBUG(fdip_proc_id, "fdip off conf on event, unrecognized off path reason: op type: %u\n", per_core_conf_info[fdip_proc_id].prev_op->table_info->op_type);
               }
             }
             STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
@@ -887,16 +904,25 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
       if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
         per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
+        //if off path due to btb miss
         if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
           log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
         } 
+        //if off path due to misprediction
         else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
           log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
         }
+        //if off path due to no target
+        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.no_target){
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
+        }
+        //if off path due to misfetch
+        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.misfetch){
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
+        }
+        //if some other reason (shouldn't happen)
         else{
-          //debug
-          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER);
-          log_fdip_off_conf_on_other_stats(per_core_conf_info[fdip_proc_id].prev_op);
+          DEBUG(fdip_proc_id, "fdip off conf on event, unrecognized off path reason: op type: %u\n", per_core_conf_info[fdip_proc_id].prev_op->table_info->op_type);
         }
       }
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
@@ -990,16 +1016,28 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
       if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
         per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
+        if(per_core_conf_info[fdip_proc_id].prev_op->table_info->cf_type == NOT_CF) {
+          DEBUG(fdip_proc_id, "fdip on conf off, all: instruction is not a cf inst! op type: %u, op num: %llu, addr: %llu\n", op->table_info->op_type, op->op_num, op->inst_info->addr);
+        }
+        //if off path due to btb miss
         if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
           log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
         } 
+        //if off path due to misprediction
         else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
           log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
         }
+        //if off path due to no target
+        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.no_target){
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
+        }
+        //if off path due to misfetch
+        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.misfetch){
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
+        }
+        //if some other reason (shouldn't happen)
         else{
-          //debug
-          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER);
-          log_fdip_off_conf_on_other_stats(per_core_conf_info[fdip_proc_id].prev_op);
+          DEBUG(fdip_proc_id, "fdip off conf on event, unrecognized off path reason: op type: %u\n", per_core_conf_info[fdip_proc_id].prev_op->table_info->op_type);
         }
       }
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
@@ -1221,16 +1259,28 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
       if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
         per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
+        if(per_core_conf_info[fdip_proc_id].prev_op->table_info->cf_type == NOT_CF) {
+          DEBUG(fdip_proc_id, "fdip on conf off, all: instruction is not a cf inst! op type: %u, op num: %llu, addr: %llu\n", op->table_info->op_type, op->op_num, op->inst_info->addr);
+        }
+        // if off path due to btb miss
         if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
           log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
         } 
+        // if off path due to misprediction
         else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
           log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
         }
+        // if off path due to no target
+        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.no_target){
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
+        }
+        // if off path due to misfetch
+        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.misfetch){
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
+        }
+        // if some other reason (shouldn't happen)
         else{
-          //debug
-          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER);
-          log_fdip_off_conf_on_other_stats(per_core_conf_info[fdip_proc_id].prev_op);
+          DEBUG(fdip_proc_id, "fdip off conf on event, unrecognized off path reason: op type: %u\n", per_core_conf_info[fdip_proc_id].prev_op->table_info->op_type);
         }
       }
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
@@ -1499,9 +1549,9 @@ void inc_icache_hit(uns proc_id, Addr line_addr) {
 void log_fdip_off_conf_on_btb_miss_stats(Op *op){
   STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS);
   //type of cf
-  switch(op->recovery_info.cf_type){
+  switch(op->table_info->cf_type){
     case NOT_CF:
-      DEBUG(fdip_proc_id, "fdip on conf off btb miss: instruction is not a cf inst.\n");
+      DEBUG(fdip_proc_id, "fdip on conf off, btb miss: instruction is not a cf inst! op type: %u, op num: %llu, addr: %llu\n", op->table_info->op_type, op->op_num, op->inst_info->addr);
       break;
     case CF_BR:
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CF_BR);
@@ -1528,44 +1578,7 @@ void log_fdip_off_conf_on_btb_miss_stats(Op *op){
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CF_SYS);
       break;
     default:
-      DEBUG(fdip_proc_id, "fdip on conf off btb miss: instruction is not a valid cf inst.\n");
-      break;
-  } // end switch
-}
-//DEBUG
-void log_fdip_off_conf_on_other_stats(Op *op){
-  //STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS);
-  //type of cf
-  switch(op->recovery_info.cf_type){
-    case NOT_CF:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_NOT);
-      break;
-    case CF_BR:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_BR);
-      break;
-    case CF_CBR:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_CBR);
-      break;
-    case CF_CALL:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_CALL);
-      break;
-    case CF_IBR:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_IBR);
-      break;
-    case CF_ICALL:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_ICALL);
-      break;
-    case CF_ICO:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_ICO);
-      break;
-    case CF_RET:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_RET);
-      break;
-    case CF_SYS:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_SYS);
-      break;
-    default:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_OTHER_CF_DEF);
+      DEBUG(fdip_proc_id, "fdip on conf off, btb miss: instruction is not a valid cf inst.\n");
       break;
   } // end switch
 }
@@ -1586,7 +1599,7 @@ void log_fdip_off_conf_on_bp_incorrect_stats(Op *op){
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT_3_CONF);
       break;
     default:
-      DEBUG(fdip_proc_id, "fdip on conf off mispred: bp_confidence is not a valid value\n");
+      DEBUG(fdip_proc_id, "fdip off conf on mispred: bp_confidence is not a valid value\n");
       break;
   }
 }

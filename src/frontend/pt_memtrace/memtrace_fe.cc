@@ -49,7 +49,7 @@ extern "C" {
 #define DR_DO_NOT_DEFINE_int64
 
 #include "frontend/pt_memtrace/memtrace_trace_reader_memtrace.h"
-
+#include <unordered_map>
 /**************************************************************************************/
 /* Global Variables */
 
@@ -60,12 +60,23 @@ uint64_t        ins_id    = 0;
 uint64_t        ins_id_fetched = 0;
 uint64_t        prior_tid = 0;
 uint64_t        prior_pid = 0;
+uint64_t        rdptr = 0;
+uint64_t        wrptr = 0;
+
 extern scatter_info_map                          scatter_info_storage;
 
 Flag roi_dump_began = FALSE;
 Counter roi_dump_ID = 0;
+std::vector<ctype_pin_inst> circ_buf;
+std::unordered_map<uint64_t, uint64_t> buf_map;
+const int CLINE = 6;
+
 /**************************************************************************************/
 /* Private Functions */
+int memtrace_trace_read_internal(int proc_id, ctype_pin_inst* next_onpath_pi);
+bool buf_map_find(uint64_t line_addr);
+void buf_map_insert();
+void buf_map_remove();
 
 void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
   uint8_t ld = 0;
@@ -137,7 +148,50 @@ int roi(const xed_decoded_inst_t* ins) {
   return 0;
 }
 
+// inserts the inst written to write_ptr location
+void buf_map_insert() {
+  uint64_t line_addr = circ_buf[wrptr].instruction_addr >> CLINE;  
+  auto it = buf_map.find(line_addr);
+  if (it != buf_map.end()) {
+    it->second++;
+  }
+  else {
+    buf_map.insert(std::pair<uint64_t, uint64_t>(line_addr, 1));
+  }
+  wrptr = (wrptr + 1) % MEMTRACE_BUF_SIZE;
+}
+
+void buf_map_remove() {
+  uint64_t line_addr = circ_buf[rdptr].instruction_addr >> CLINE;
+  auto it = buf_map.find(line_addr);
+  assert (it != buf_map.end());
+  if (it->second > 1) {
+    it->second--;
+  }
+  else {
+    buf_map.erase(it);
+  }
+  rdptr = (rdptr + 1) % MEMTRACE_BUF_SIZE;
+}
+
+bool buf_map_find(uint64_t line_addr) {
+  return buf_map.find(line_addr) != buf_map.end();
+}
+
 int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
+  if (!MEMTRACE_BUF_SIZE) {
+    return memtrace_trace_read_internal(proc_id, next_onpath_pi);
+  }
+  else {
+    *next_onpath_pi = circ_buf[rdptr];
+    buf_map_remove();
+    int ret = memtrace_trace_read_internal(proc_id, &circ_buf[wrptr]);
+    buf_map_insert();
+    return ret;
+  }
+}
+
+int memtrace_trace_read_internal(int proc_id, ctype_pin_inst* next_onpath_pi) {
   InstInfo* insi;
 
   do {
@@ -267,5 +321,15 @@ void memtrace_setup(uns proc_id) {
         << (insi->valid ? " Valid" : " Invalid") << " instr." << std::endl;
     } while(ffwd(insi->ins));
     std::cout << "Exit fast forward " << inst_count_to_use << std::endl;
+  }
+
+  if (MEMTRACE_BUF_SIZE) {
+    circ_buf.resize(MEMTRACE_BUF_SIZE);
+    rdptr = 0;
+    wrptr = 0;
+    for (uint i = 0; i < MEMTRACE_BUF_SIZE; i++) {
+      memtrace_trace_read_internal(proc_id, &circ_buf[wrptr]);
+      buf_map_insert();
+    }
   }
 }

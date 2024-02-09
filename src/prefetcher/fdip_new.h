@@ -52,6 +52,11 @@ extern "C" {
   void log_fdip_on_conf_off_state();
   void inc_br_conf_counters(int conf);
   void inc_cf_type_counters(Cf_Type cf_type);
+  void btb_miss_bp_taken_conf_update(Op * op);
+  void default_conf_update(Op * op);
+  void num_cycles_btb_miss_rate_conf_update(Op * op);
+  void log_fdip_off_conf_on_btb_miss_cbr_conf_stats(Op *op);
+  void log_conf_on_off_path_stats_icache_miss();
 
   
 #ifdef __cplusplus

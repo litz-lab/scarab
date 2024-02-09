@@ -513,6 +513,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     case CF_BR:
       // BR will be predicted at decode, but fill in the info here
       op->oracle_info.late_pred = TAKEN;
+      op->oracle_info.pred_orig = TAKEN;
       if(!op->off_path)
         STAT_EVENT(op->proc_id, CF_BR_USED_TARGET_CORRECT +
                                   (pred_target != op->oracle_info.npc));
@@ -539,10 +540,12 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 
       if(PERFECT_BP) {
         op->oracle_info.pred      = op->oracle_info.dir;
+        op->oracle_info.pred_orig = op->oracle_info.dir;
         op->oracle_info.no_target = FALSE;
       } else {
         ASSERT(op->proc_id, !PERFECT_NT_BTB); //currently not supported
         op->oracle_info.pred = bp_data->bp->pred_func(op);
+        op->oracle_info.pred_orig = op->oracle_info.pred;
         if(USE_LATE_BP) {
           op->oracle_info.late_pred = bp_data->late_bp->pred_func(op);
         }
@@ -607,7 +610,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred = NOT_TAKEN;
         op->oracle_info.pred_npc = pc_plus_offset;
         STAT_EVENT(op->proc_id, CBR_RECOVER_BTB_MISS_T_T + op->off_path * NUM_BR_STATS);
-	if (FDIP_BP_CONFIDENCE)
+	      if (FDIP_BP_CONFIDENCE)
           fdip_inc_cnt_btb_miss(op->proc_id);
       }
       // 2. Branch is predicted taken, violating not-taken asumption. This would flush at decode,
@@ -619,7 +622,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred = NOT_TAKEN;
         op->oracle_info.pred_npc = pred_target; //Not accurate. At fetch it would execute pc_plus_offset, at decode would resteer frontend to pred_taken
         STAT_EVENT(op->proc_id, CBR_RECOVER_BTB_MISS_T_NT + op->off_path * NUM_BR_STATS);
-	if (FDIP_BP_CONFIDENCE)
+	      if (FDIP_BP_CONFIDENCE)
           fdip_inc_cnt_btb_miss(op->proc_id);
       }
       // 3. Branch is predicted not-taken causing branch to continue to exec where the flush is triggered
@@ -629,7 +632,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred = NOT_TAKEN;
         op->oracle_info.pred_npc = pc_plus_offset;
         STAT_EVENT(op->proc_id, CBR_RECOVER_BTB_MISS_NT_T + op->off_path * NUM_BR_STATS);
-	if (FDIP_BP_CONFIDENCE)
+	      if (FDIP_BP_CONFIDENCE)
           fdip_inc_cnt_btb_miss(op->proc_id);
       }
       // 4. Branch is predicted not-taken which is correct causing no flush
@@ -648,6 +651,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 
     case CF_CALL:
       op->oracle_info.pred      = TAKEN;
+      op->oracle_info.pred_orig = TAKEN;
       op->oracle_info.late_pred = TAKEN;
       if(ENABLE_CRS)
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) :
@@ -694,9 +698,11 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     case CF_IBR:
       if(PERFECT_BP) {
         op->oracle_info.pred      = op->oracle_info.dir;
+        op->oracle_info.pred_orig = op->oracle_info.dir;
         op->oracle_info.late_pred = op->oracle_info.dir;
       } else {
         op->oracle_info.pred      = TAKEN;
+        op->oracle_info.pred_orig = TAKEN;
         op->oracle_info.late_pred = TAKEN;
       }
       if(!op->off_path)
@@ -748,9 +754,11 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     case CF_ICALL:
       if(PERFECT_BP) {
         op->oracle_info.pred      = op->oracle_info.dir;
+        op->oracle_info.pred_orig = op->oracle_info.dir;
         op->oracle_info.late_pred = op->oracle_info.dir;
       } else {
         op->oracle_info.pred      = TAKEN;
+        op->oracle_info.pred_orig = TAKEN;
         op->oracle_info.late_pred = TAKEN;
       }
       if(ENABLE_CRS)
@@ -805,6 +813,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 
     case CF_ICO:
       op->oracle_info.pred      = TAKEN;
+      op->oracle_info.pred_orig = TAKEN;
       op->oracle_info.late_pred = TAKEN;
       if(ENABLE_CRS) {
         pred_target = CRS_REALISTIC ? bp_crs_realistic_pop(bp_data, op) :
@@ -835,9 +844,11 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     case CF_RET:
       if(PERFECT_BP) {
         op->oracle_info.pred      = op->oracle_info.dir;
+        op->oracle_info.pred_orig = op->oracle_info.dir;
         op->oracle_info.late_pred = op->oracle_info.dir;
       } else {
         op->oracle_info.pred      = TAKEN;
+        op->oracle_info.pred_orig = TAKEN;
         op->oracle_info.late_pred = TAKEN;
       }
       if(ENABLE_CRS)
@@ -870,6 +881,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     default:
       ASSERT(op->proc_id, 0); //should not happen
       op->oracle_info.pred      = TAKEN;
+      op->oracle_info.pred_orig = TAKEN;
       op->oracle_info.late_pred = TAKEN;
       if(!op->off_path)
         STAT_EVENT(op->proc_id, CF_DEFAULT_USED_TARGET_CORRECT +

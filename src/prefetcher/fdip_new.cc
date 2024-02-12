@@ -353,6 +353,7 @@ void update_fdip() {
         DEBUG(fdip_proc_id, "init last_bbl_start_addr: %llx\n", per_core_last_bbl_start_addr[fdip_proc_id]);
       }
     }
+    //update confidence
     if (FDIP_BP_CONFIDENCE) {
       if (FDIP_BP_PERFECT_CONFIDENCE) {
         if (fdip_off_path(fdip_proc_id))
@@ -361,10 +362,11 @@ void update_fdip() {
           ASSERT(0,fdip_off_path(fdip_proc_id));
         cf_op_distance = 0.0;
         //chance this to FDIP_BTB_MISS_BP_TAKEN_CONF
-      } else if (FDIP_BTB_MISS_BP_TAKEN_CONF)
+      } else if (FDIP_BTB_MISS_BP_TAKEN_CONF) {
         btb_miss_bp_taken_conf_update(op);
       } else {
         default_conf_update(op);
+      }
     }
       
     uint64_t pc_addr = op->inst_info->addr;
@@ -1709,6 +1711,7 @@ void inc_low_conf_ctr_(Op * op){
 //new confidence mechanisms stuff
 void default_conf_update(Op * op){
   //prevent overflow
+  DEBUG(fdip_proc_id, "default_conf_update\n");
   if(low_confidence_cnt != ~0U){
     if (op->table_info->cf_type) {
       if(FDIP_BTB_NUM_CYCLES_CONFIDENCE){

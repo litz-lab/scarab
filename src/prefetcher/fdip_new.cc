@@ -355,6 +355,9 @@ void update_fdip() {
     }
     //update confidence
     if (FDIP_BP_CONFIDENCE) {
+      if(op->table_info->cf_type && op->oracle_info.btb_miss){
+        STAT_EVENT(fdip_proc_id, FDIP_TOTAL_BTB_MISS);
+      }
       if (FDIP_BP_PERFECT_CONFIDENCE) {
         if (fdip_off_path(fdip_proc_id))
           low_confidence_cnt = ~0U;

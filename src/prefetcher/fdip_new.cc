@@ -102,6 +102,10 @@ std::vector<std::unordered_map<Addr, std::pair<std::pair<Counter, Flag>, std::pa
 std::vector<std::unordered_map<Addr, std::vector<uns8>>> per_core_useful_sequence;
 // <CL address, sequence of hit/miss>
 std::vector<std::unordered_map<Addr, std::vector<uns8>>> per_core_icache_sequence;
+// <CL address, all sequence> char - P: prefetch, p: not prefetch, m: icache miss, h: icache hit, U: useful, u: unuseful (Counter - cycle count)
+std::vector<std::unordered_map<Addr, std::vector<std::pair<char,Counter>>>> per_core_sequence_bw;
+// <CL address, all sequence> char - P: prefetch, p: not prefetch, m: icache miss, h: icache hit, U: useful, u: unuseful (Counter - cycle count)
+std::vector<std::unordered_map<Addr, std::vector<std::pair<char,Counter>>>> per_core_sequence_aw;
 // accumulated FTQ occupancy every cycle
 std::vector<uint64_t> per_core_fdip_ftq_occupancy_ops;
 std::vector<uint64_t> per_core_fdip_ftq_occupancy_blocks;
@@ -153,6 +157,8 @@ void alloc_mem_fdip(uns numCores) {
   per_core_prefetched_cls_info.resize(numCores);
   per_core_useful_sequence.resize(numCores);
   per_core_icache_sequence.resize(numCores);
+  per_core_sequence_bw.resize(numCores);
+  per_core_sequence_aw.resize(numCores);
   per_core_fdip_ftq_occupancy_ops.resize(numCores);
   per_core_fdip_ftq_occupancy_blocks.resize(numCores);
   if (FDIP_UTILITY_HASH_ENABLE)
@@ -315,14 +321,18 @@ void update_fdip() {
       Flag demand_hit_writeback = FALSE;
       Mem_Queue_Entry* queue_entry = NULL;
       Flag ramulator_match = FALSE;
+      Addr dummy_addr = 0;
       bool line = (Inst_Info**)cache_access(&ic_ref->icache, pc_addr, &line_addr, TRUE);
       // icache_line_info cache should be accessed same times with icache for a consistant line information
       if (WP_COLLECT_STATS) {
-        Addr dummy_addr = 0;
         bool line_info = (Icache_Data*)cache_access(&ic_ref->icache_line_info, pc_addr, &dummy_addr, TRUE);
-        UNUSED(dummy_addr);
         UNUSED(line_info);
       }
+      bool mlc_line = (Inst_Info**)cache_access(&mem->uncores[ic_ref->proc_id].mlc->cache, pc_addr, &dummy_addr, FALSE);
+      bool l1_line = (Inst_Info**)cache_access(&mem->uncores[ic_ref->proc_id].l1->cache, pc_addr, &dummy_addr, FALSE);
+      UNUSED(dummy_addr);
+      uns pref_from = line ? 0 : (mlc_line ? 1 : (l1_line ? 2 : 3));
+      STAT_EVENT(ic_ref->proc_id, FDIP_PREFETCH_HIT_ICACHE + pref_from);
       Mem_Req* mem_req = mem_search_reqbuf_wrapper(ic_ref->proc_id, line_addr,
                                                    MRT_FDIPPRF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
                                                    QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
@@ -404,6 +414,8 @@ void update_fdip() {
           }
         }
         inc_prefetched_cls(line_addr, success);
+      } else {
+        not_prefetch(line_addr);
       }
       per_core_last_line_addr[fdip_proc_id] = line_addr;
     }
@@ -563,6 +575,27 @@ void print_cl_info(uns proc_id) {
     fprintf(fp, "\n");
   }
   fclose(fp);
+
+  std::unordered_map<Addr, std::vector<std::pair<char,Counter>>>* seq = &per_core_sequence_aw[proc_id];
+  fp = fopen("per_line_seq_aw.csv", "w");
+  fprintf(fp, "cl_addr,seq\n");
+  for(auto it = seq->begin(); it != seq->end(); ++it) {
+    fprintf(fp, "%llx", it->first);
+    if (it->second.size() == 2) {
+      auto it2 = it->second.begin();
+      if (it2++->first == 'P' && it2->first == 'u')
+        STAT_EVENT(proc_id, FDIP_PREFETCH_EVICT_NO_HIT_ONLY_ONCE);
+    }
+    for(auto it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
+      fprintf(fp, ",%c", it2->first);
+    }
+    fprintf(fp, "\n");
+    for(auto it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
+      fprintf(fp, ",%lld", it2->second);
+    }
+    fprintf(fp, "\n");
+  }
+  fclose(fp);
 }
 
 void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss) {
@@ -577,6 +610,32 @@ void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss) {
     useful_iter->second.second = pref_miss;
   }
   DEBUG(proc_id, "cnt_useful size after inserted %ld\n", per_core_cnt_useful[proc_id].size());
+
+  if (per_core_warmed_up[proc_id]) {
+    auto it = per_core_cnt_useful_aw[proc_id].find(line_addr);
+    if (it == per_core_cnt_useful_aw[proc_id].end())
+      per_core_cnt_useful_aw[proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(1, pref_miss)));
+    else {
+      it->second.first++;
+      it->second.second = pref_miss;
+    }
+
+    auto it2 = per_core_sequence_aw[proc_id].find(line_addr);
+    if (it2 == per_core_sequence_aw[proc_id].end()) {
+      per_core_sequence_aw[proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_aw[proc_id][line_addr].push_back(std::make_pair('U',cycle_count));
+    } else {
+      it2->second.push_back(std::make_pair('U',cycle_count));
+    }
+  } else {
+    auto iter = per_core_sequence_bw[proc_id].find(line_addr);
+    if (iter == per_core_sequence_bw[proc_id].end()) {
+      per_core_sequence_bw[proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_bw[proc_id][line_addr].push_back(std::make_pair('U',cycle_count));
+    } else {
+      iter->second.push_back(std::make_pair('U',cycle_count));
+    }
+  }
 }
 
 void inc_cnt_unuseful(uns proc_id, Addr line_addr) {
@@ -586,6 +645,30 @@ void inc_cnt_unuseful(uns proc_id, Addr line_addr) {
     per_core_cnt_unuseful[proc_id].insert(std::make_pair(std::move(line_addr), 1));
   } else {
     unuseful_iter->second++;
+  }
+
+  if (per_core_warmed_up[proc_id]) {
+    auto it = per_core_cnt_unuseful_aw[proc_id].find(line_addr);
+    if (it == per_core_cnt_unuseful_aw[proc_id].end())
+      per_core_cnt_unuseful_aw[proc_id].insert(std::make_pair(std::move(line_addr), 1));
+    else
+      it->second++;
+
+    auto it2 = per_core_sequence_aw[proc_id].find(line_addr);
+    if (it2 == per_core_sequence_aw[proc_id].end()) {
+      per_core_sequence_aw[proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_aw[proc_id][line_addr].push_back(std::make_pair('u',cycle_count));
+    } else {
+      it2->second.push_back(std::make_pair('u',cycle_count));
+    }
+  } else {
+    auto it2 = per_core_sequence_bw[proc_id].find(line_addr);
+    if (it2 == per_core_sequence_bw[proc_id].end()) {
+      per_core_sequence_bw[proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_bw[proc_id][line_addr].push_back(std::make_pair('u',cycle_count));
+    } else {
+      it2->second.push_back(std::make_pair('u',cycle_count));
+    }
   }
 }
 
@@ -649,6 +732,22 @@ void inc_icache_miss(uns proc_id, Addr line_addr) {
       per_core_icache_miss_aw[proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
     else
       it->second++;
+
+    auto it2 = per_core_sequence_aw[proc_id].find(line_addr);
+    if (it2 == per_core_sequence_aw[proc_id].end()) {
+      per_core_sequence_aw[proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_aw[proc_id][line_addr].push_back(std::make_pair('m',cycle_count));
+    } else {
+      it2->second.push_back(std::make_pair('m',cycle_count));
+    }
+  } else {
+    auto it2 = per_core_sequence_bw[proc_id].find(line_addr);
+    if (it2 == per_core_sequence_bw[proc_id].end()) {
+      per_core_sequence_bw[proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_bw[proc_id][line_addr].push_back(std::make_pair('m',cycle_count));
+    } else {
+      it2->second.push_back(std::make_pair('m',cycle_count));
+    }
   }
 
   uns icache_val = per_core_warmed_up[proc_id]? 2 : 0;
@@ -656,6 +755,33 @@ void inc_icache_miss(uns proc_id, Addr line_addr) {
   if (it == per_core_icache_sequence[proc_id].end()) {
     per_core_icache_sequence[proc_id].insert(std::make_pair(line_addr, std::vector<uns8>()));
     per_core_icache_sequence[proc_id][line_addr].push_back(icache_val);
+    if (icache_val == 2) {
+      auto it2 = per_core_sequence_bw[proc_id].find(line_addr);
+      std::cout << cycle_count << std::endl;
+      if (it2 != per_core_sequence_bw[proc_id].end()) {
+        STAT_EVENT(proc_id, ICACHE_FIRST_MISS_AFTER_WARMUP_SEEN_DURING_WARMUP);
+        Counter no_pref = 0;
+        Counter unuseful = 0;
+        Counter useful = 0;
+        auto it3 = it2->second.begin();
+        while(it3 != it2->second.end()) {
+          if (it3->first == 'p')
+            no_pref++;
+          else if (it3->first == 'u')
+            useful++;
+          else if (it3->first == 'U')
+            unuseful++;
+          ++it3;
+        }
+        if (no_pref && !unuseful && !useful)
+          STAT_EVENT(proc_id, ICACHE_FIRST_MISS_AFTER_WARMUP_NO_PREF_DURING_WARMUP);
+        if (!no_pref && unuseful && !useful)
+          STAT_EVENT(proc_id, ICACHE_FIRST_MISS_AFTER_WARMUP_TRAINED_UNUSEFUL_DURING_WARMUP);
+        if (!no_pref && !unuseful && useful)
+          STAT_EVENT(proc_id, ICACHE_FIRST_MISS_AFTER_WARMUP_TRAINED_USEFUL_DURING_WARMUP);
+      } else
+        STAT_EVENT(proc_id, ICACHE_FIRST_MISS_AFTER_WARMUP_NOT_SEEN_DURING_WARMUP);
+    }
   } else {
     it->second.push_back(icache_val);
   }
@@ -703,6 +829,46 @@ void inc_prefetched_cls(Addr line_addr, uns success) {
         per_core_new_prefetched_cls_aw[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
       else
         it->second++;
+    }
+
+    auto it2 = per_core_sequence_aw[fdip_proc_id].find(line_addr);
+    Counter onoff_cycle_count = fdip_off_path(fdip_proc_id)? -cycle_count : cycle_count;
+    if (it2 == per_core_sequence_aw[fdip_proc_id].end()) {
+      per_core_sequence_aw[fdip_proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_aw[fdip_proc_id][line_addr].push_back(std::make_pair('P',onoff_cycle_count));
+    } else {
+      it2->second.push_back(std::make_pair('P',onoff_cycle_count));
+    }
+  } else {
+    auto it2 = per_core_sequence_bw[fdip_proc_id].find(line_addr);
+    Counter onoff_cycle_count = fdip_off_path(fdip_proc_id)? -cycle_count : cycle_count;
+    if (it2 == per_core_sequence_bw[fdip_proc_id].end()) {
+      per_core_sequence_bw[fdip_proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_bw[fdip_proc_id][line_addr].push_back(std::make_pair('P',onoff_cycle_count));
+    } else {
+      it2->second.push_back(std::make_pair('P',onoff_cycle_count));
+    }
+  }
+}
+
+void not_prefetch(Addr line_addr) {
+  if (per_core_warmed_up[fdip_proc_id]) {
+    auto it = per_core_sequence_aw[fdip_proc_id].find(line_addr);
+    Counter onoff_cycle_count = fdip_off_path(fdip_proc_id)? -cycle_count : cycle_count;
+    if (it == per_core_sequence_aw[fdip_proc_id].end()) {
+      per_core_sequence_aw[fdip_proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_aw[fdip_proc_id][line_addr].push_back(std::make_pair('p',onoff_cycle_count));
+    } else {
+      it->second.push_back(std::make_pair('p',onoff_cycle_count));
+    }
+  } else {
+    auto it = per_core_sequence_bw[fdip_proc_id].find(line_addr);
+    Counter onoff_cycle_count = fdip_off_path(fdip_proc_id)? -cycle_count : cycle_count;
+    if (it == per_core_sequence_bw[fdip_proc_id].end()) {
+      per_core_sequence_bw[fdip_proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_bw[fdip_proc_id][line_addr].push_back(std::make_pair('p',onoff_cycle_count));
+    } else {
+      it->second.push_back(std::make_pair('p',onoff_cycle_count));
     }
   }
 }
@@ -1342,6 +1508,22 @@ void inc_icache_hit(uns proc_id, Addr line_addr) {
       per_core_icache_hit_aw[proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
     else
       it->second++;
+
+    auto it2 = per_core_sequence_aw[proc_id].find(line_addr);
+    if (it2 == per_core_sequence_aw[proc_id].end()) {
+      per_core_sequence_aw[proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_aw[proc_id][line_addr].push_back(std::make_pair('h',cycle_count));
+    } else {
+      it2->second.push_back(std::make_pair('h',cycle_count));
+    }
+  } else {
+    auto it2 = per_core_sequence_bw[proc_id].find(line_addr);
+    if (it2 == per_core_sequence_bw[proc_id].end()) {
+      per_core_sequence_bw[proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_bw[proc_id][line_addr].push_back(std::make_pair('h',cycle_count));
+    } else {
+      it2->second.push_back(std::make_pair('h',cycle_count));
+    }
   }
 
   uns icache_val = per_core_warmed_up[proc_id]? 3 : 1;

@@ -838,8 +838,8 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_BY_FDIP);
       INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA_BY_FDIP, cycle_count - req->fdip_emitted_cycle);
       if (req->cyc_hit_by_demand_load) {
-        STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_BY_FDIP_HIT_BY_DEMAND_LOAD);
-        INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA_BY_FDIP_HIT_BY_DEMAND_LOAD, cycle_count - req->cyc_hit_by_demand_load);
+        STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_BY_ON_FDIP_HIT_BY_DEMAND_LOAD + req->fdip_pref_off_path);
+        INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA_BY_ON_FDIP_HIT_BY_DEMAND_LOAD + req->fdip_pref_off_path, cycle_count - req->cyc_hit_by_demand_load);
       }
     }
     INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA, cycle_count - req->demand_icache_emitted_cycle);
@@ -908,8 +908,8 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_BY_FDIP);
       INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_CYCLE_DELTA_BY_FDIP, cycle_count - req->fdip_emitted_cycle);
       if (req->cyc_hit_by_demand_load) {
-        STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_BY_FDIP_HIT_BY_DEMAND_LOAD);
-        INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_CYCLE_DELTA_BY_FDIP_HIT_BY_DEMAND_LOAD, cycle_count - req->cyc_hit_by_demand_load);
+        STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_BY_ON_FDIP_HIT_BY_DEMAND_LOAD + req->fdip_pref_off_path);
+        INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_CYCLE_DELTA_BY_ON_FDIP_HIT_BY_DEMAND_LOAD + req->fdip_pref_off_path, cycle_count - req->cyc_hit_by_demand_load);
       }
     }
     INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_INCORRECT_REQ_CYCLE_DELTA, cycle_count - req->demand_icache_emitted_cycle);

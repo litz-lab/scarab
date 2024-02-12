@@ -26,6 +26,7 @@ extern "C" {
   void inc_icache_hit(uns proc_id, Addr line_addr);
   void inc_off_fetched_cls(Addr line_addr);
   void inc_prefetched_cls(Addr line_addr, uns success);
+  void not_prefetch(Addr line_addr);
   void probe_prefetched_cls(Addr line_addr);
   void evict_prefetched_cls(uns proc_id, Addr line_addr, Flag by_fdip);
   uns get_miss_reason(uns proc_id, Addr line_addr);

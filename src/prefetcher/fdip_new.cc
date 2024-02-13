@@ -2,6 +2,7 @@
 #include "prefetcher/fdip_new.h"
 #include "libs/bloom_filter.hpp"
 #include "sim.h"
+#include "frontend/pt_memtrace/memtrace_fe.h"
 
 extern "C" {
 #include "op.h"
@@ -338,7 +339,7 @@ void update_fdip() {
                                                    QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
                                                    QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
                                                    &queue_entry, &ramulator_match);
-      if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
+      if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_PERFECT_PREFETCH)
         emit_new_prefetch = determine_usefulness(line_addr);
       else {
         emit_new_prefetch = TRUE;
@@ -890,7 +891,8 @@ void probe_prefetched_cls(Addr line_addr) {
     cl_iter->second.first.first = cycle_count;
   else {
     auto cl_off_iter = per_core_off_fetched_cls[fdip_proc_id].find(line_addr);
-    ASSERT(fdip_proc_id, cl_off_iter != per_core_off_fetched_cls[fdip_proc_id].end());
+    if (!FDIP_PERFECT_PREFETCH)
+      ASSERT(fdip_proc_id, cl_off_iter != per_core_off_fetched_cls[fdip_proc_id].end());
   }
 }
 
@@ -1290,7 +1292,17 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
 
 Flag determine_usefulness(Addr line_addr) {
   Flag emit_new_prefetch = FALSE;
-  if (!per_core_last_cl_unuseful[fdip_proc_id] && per_core_last_cl_unuseful[fdip_proc_id] != line_addr) {
+  if (FDIP_PERFECT_PREFETCH) {
+    if (!fdip_off_path(fdip_proc_id))
+      emit_new_prefetch = TRUE;
+    else {
+      emit_new_prefetch = buf_map_find(line_addr);
+      if (emit_new_prefetch)
+        STAT_EVENT(fdip_proc_id, FDIP_MEM_BUF_HIT);
+      else
+        STAT_EVENT(fdip_proc_id, FDIP_MEM_BUF_MISS);
+    }
+  } else if (!per_core_last_cl_unuseful[fdip_proc_id] && per_core_last_cl_unuseful[fdip_proc_id] != line_addr) {
     if (FDIP_UTILITY_HASH_ENABLE)
       determine_usefulness_by_inf_hash(line_addr, &emit_new_prefetch);
     else if (FDIP_UC_SIZE)

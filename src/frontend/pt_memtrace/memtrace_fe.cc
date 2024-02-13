@@ -68,13 +68,12 @@ extern scatter_info_map                          scatter_info_storage;
 Flag roi_dump_began = FALSE;
 Counter roi_dump_ID = 0;
 std::vector<ctype_pin_inst> circ_buf;
-std::unordered_map<uint64_t, uint64_t> buf_map;
-const int CLINE = 6;
+std::unordered_map<Addr, Counter> buf_map;
+const int CLINE = ~0x3F;
 
 /**************************************************************************************/
 /* Private Functions */
 int memtrace_trace_read_internal(int proc_id, ctype_pin_inst* next_onpath_pi);
-bool buf_map_find(uint64_t line_addr);
 void buf_map_insert();
 void buf_map_remove();
 
@@ -150,19 +149,19 @@ int roi(const xed_decoded_inst_t* ins) {
 
 // inserts the inst written to write_ptr location
 void buf_map_insert() {
-  uint64_t line_addr = circ_buf[wrptr].instruction_addr >> CLINE;  
+  Addr line_addr = circ_buf[wrptr].instruction_addr & CLINE;
   auto it = buf_map.find(line_addr);
   if (it != buf_map.end()) {
     it->second++;
   }
   else {
-    buf_map.insert(std::pair<uint64_t, uint64_t>(line_addr, 1));
+    buf_map.insert(std::pair<Addr, Counter>(line_addr, 1));
   }
   wrptr = (wrptr + 1) % MEMTRACE_BUF_SIZE;
 }
 
 void buf_map_remove() {
-  uint64_t line_addr = circ_buf[rdptr].instruction_addr >> CLINE;
+  Addr line_addr = circ_buf[rdptr].instruction_addr & CLINE;
   auto it = buf_map.find(line_addr);
   assert (it != buf_map.end());
   if (it->second > 1) {
@@ -174,7 +173,7 @@ void buf_map_remove() {
   rdptr = (rdptr + 1) % MEMTRACE_BUF_SIZE;
 }
 
-bool buf_map_find(uint64_t line_addr) {
+bool buf_map_find(Addr line_addr) {
   return buf_map.find(line_addr) != buf_map.end();
 }
 

@@ -1298,7 +1298,7 @@ Flag determine_usefulness(Addr line_addr) {
     else {
       emit_new_prefetch = buf_map_find(line_addr);
       if (emit_new_prefetch)
-        STAT_EVENT(fdip_proc_id, FDIP_MEM_BUF_HIT);
+        STAT_EVENT(fdip_proc_id, FDIP_MEM_BUF_FOUND);
       else
         STAT_EVENT(fdip_proc_id, FDIP_MEM_BUF_MISS);
     }

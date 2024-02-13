@@ -364,7 +364,6 @@ void update_fdip() {
         if(low_confidence_cnt == ~0U)
           ASSERT(0,fdip_off_path(fdip_proc_id));
         cf_op_distance = 0.0;
-        //chance this to FDIP_BTB_MISS_BP_TAKEN_CONF
       } else if (FDIP_BTB_MISS_BP_TAKEN_CONF) {
         btb_miss_bp_taken_conf_update(op);
       } else {
@@ -1763,7 +1762,7 @@ void btb_miss_bp_taken_conf_update(Op * op){
       inc_br_conf_counters(op->bp_confidence);
       inc_cf_type_counters(op->table_info->cf_type);
       DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
-    //can only happen with default btb low_conf_ctr increment mechanism
+    //default btb low_conf_ctr increment mechanism
     } else if (cf_op_distance >= FDIP_OFF_PATH_THRESHOLD && !FDIP_BTB_NUM_CYCLES_CONFIDENCE) {
       low_confidence_cnt += FDIP_OFF_PATH_CONF_INC + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id];
       cf_op_distance = 0.0;

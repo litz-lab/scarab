@@ -1743,7 +1743,7 @@ void default_conf_update(Op * op){
 void btb_miss_bp_taken_conf_update(Op * op){
   if(low_confidence_cnt != ~0U){
     if (op->table_info->cf_type) {
-      if(op->oracle_info.btb_miss && op->oracle_info.pred == TAKEN && (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)){
+      if(op->oracle_info.btb_miss && op->oracle_info.pred_orig == TAKEN && (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)){
         low_confidence_cnt = ~0U;
       } else {
         //otherwise regular increment

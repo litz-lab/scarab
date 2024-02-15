@@ -91,39 +91,6 @@ typedef struct Wake_Up_Entry_struct {
 // }}}
 
 /*------------------------------------------------------------------------------------*/
-// {{{ Register File for Register Renaming
-
-// register state for releasing
-typedef enum Reg_File_Entry_State_enum {
-  REG_FILE_ENTRY_STATE_FREE,
-  REG_FILE_ENTRY_STATE_ALLOC,
-  REG_FILE_ENTRY_STATE_COMMIT,
-  REG_FILE_ENTRY_STATE_DEAD,
-  REG_FILE_ENTRY_STATE_NUM
-} Reg_File_Entry_State;
-
-typedef struct Reg_File_Entry_struct {
-  // op info (the pointer of op + the deep copy of special val)
-  Op       *op;
-  Counter  op_num;
-  Counter  unique_num;
-  Flag     off_path;
-
-  // register info
-  int                  reg_arch_id;
-  int                  reg_phy_id;
-  Reg_File_Entry_State reg_state;
-
-  // tracking free physical register
-  struct Reg_File_Entry_struct *next_free;
-
-  // tracking the ops use the same architectural register
-  struct Reg_File_Entry_struct *prev_same_arch_id;
-  struct Reg_File_Entry_struct *next_same_arch_id;
-} Reg_File_Entry;
-// }}}
-
-/*------------------------------------------------------------------------------------*/
 
 // per branch stats
 typedef struct Per_Branch_Stat_struct {
@@ -362,11 +329,6 @@ struct Op_struct {
   Flag fetched_from_uop_cache;
   // }}}
   int bp_confidence;
-
-  // {{{ register renaming
-  Reg_File_Entry*  dst_reg_file_entry[MAX_DESTS]; // allocated entries in register file in the renaming table
-  uns              dst_reg_file_entry_num;        // the number of allocated entries
-  // }}}
 };
 // }}}
 

@@ -1710,19 +1710,14 @@ void inc_low_conf_ctr_(Op * op){
   DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
 }
 
-//new confidence mechanisms stuff
+// default conf mechanism
 void default_conf_update(Op * op){
-  //prevent overflow
   DEBUG(fdip_proc_id, "default_conf_update\n");
+  //prevent wrap around
   if(low_confidence_cnt != ~0U){
     if (op->table_info->cf_type) {
-      if(FDIP_BTB_NUM_CYCLES_CONFIDENCE){
-        //update confidence based on number of cycles elapsed and btb miss rate
-        num_cycles_btb_miss_rate_conf_update(op);
-      } else {
-        low_confidence_cnt += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
-        cf_op_distance = 0.0;
-      }
+      low_confidence_cnt += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
+      cf_op_distance = 0.0;
       //log stats
       if(op->oracle_info.btb_miss){
         per_core_conf_info[fdip_proc_id].num_BTB_misses += 1;
@@ -1730,11 +1725,12 @@ void default_conf_update(Op * op){
       inc_br_conf_counters(op->bp_confidence);
       inc_cf_type_counters(op->table_info->cf_type);
       DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
-    } else if (cf_op_distance >= FDIP_OFF_PATH_THRESHOLD && !FDIP_BTB_NUM_CYCLES_CONFIDENCE) {
+    }
+    else if (cf_op_distance >= FDIP_OFF_PATH_THRESHOLD) {
       low_confidence_cnt += FDIP_OFF_PATH_CONF_INC + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id];
       cf_op_distance = 0.0;
       per_core_conf_info[fdip_proc_id].num_op_dist_incs += 1;
-    } else if(!FDIP_BTB_NUM_CYCLES_CONFIDENCE){
+    } else{
       cf_op_distance += (1.0+(double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]);
     }
   }
@@ -1746,14 +1742,8 @@ void btb_miss_bp_taken_conf_update(Op * op){
       if(op->oracle_info.btb_miss && op->oracle_info.pred_orig == TAKEN && (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)){
         low_confidence_cnt = ~0U;
       } else {
-        //otherwise regular increment
-        if(FDIP_BTB_NUM_CYCLES_CONFIDENCE){
-          //update confidence based on number of cycles elapsed and btb miss rate
-          num_cycles_btb_miss_rate_conf_update(op);
-        } else {
-          low_confidence_cnt += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
-          cf_op_distance = 0.0;
-        }
+        //update confidence based on number of cycles elapsed and btb miss rate
+        num_cycles_btb_miss_rate_conf_update(op);
       }
       //log stats
       if(op->oracle_info.btb_miss){
@@ -1763,12 +1753,6 @@ void btb_miss_bp_taken_conf_update(Op * op){
       inc_cf_type_counters(op->table_info->cf_type);
       DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
     //default btb low_conf_ctr increment mechanism
-    } else if (cf_op_distance >= FDIP_OFF_PATH_THRESHOLD && !FDIP_BTB_NUM_CYCLES_CONFIDENCE) {
-      low_confidence_cnt += FDIP_OFF_PATH_CONF_INC + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id];
-      cf_op_distance = 0.0;
-      per_core_conf_info[fdip_proc_id].num_op_dist_incs += 1;
-    } else if(!FDIP_BTB_NUM_CYCLES_CONFIDENCE){
-      cf_op_distance += (1.0+(double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]);
     }
   }
 }

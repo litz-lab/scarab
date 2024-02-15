@@ -178,7 +178,7 @@ DEF_PARAM(fdip_dual_path_pref_uoc_online_mispred_threshold, FDIP_DUAL_PATH_PREF_
 DEF_PARAM(fdip_btb_miss_bp_taken_conf, FDIP_BTB_MISS_BP_TAKEN_CONF, Flag, Flag, FALSE, )
 DEF_PARAM(fdip_btb_miss_bp_taken_conf_threshold, FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD, int, int, 3, )
 
-DEF_PARAM(fdip_btb_num_cycles_confidence, FDIP_BTB_NUM_CYCLES_CONFIDENCE, Flag, Flag, FALSE, )
+//DEF_PARAM(fdip_btb_num_cycles_confidence, FDIP_BTB_NUM_CYCLES_CONFIDENCE, Flag, Flag, FALSE, )
 
 // For infinite size, set BRANCH_MISPREDICTION_TABLE_SIZE to 0.
 DEF_PARAM(branch_misprediction_table_size, BRANCH_MISPREDICTION_TABLE_SIZE , uns     , uns     , 0    , )

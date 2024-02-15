@@ -42,9 +42,37 @@
 
 const static int REG_FILE_INVALID_REG_ID = -1;
 
+// register state for releasing
+typedef enum Reg_File_Entry_State_enum {
+  REG_FILE_ENTRY_STATE_FREE,
+  REG_FILE_ENTRY_STATE_ALLOC,
+  REG_FILE_ENTRY_STATE_COMMIT,
+  REG_FILE_ENTRY_STATE_DEAD,
+  REG_FILE_ENTRY_STATE_NUM
+} Reg_File_Entry_State;
+
+typedef struct Reg_File_Entry_struct {
+  // op info (the pointer of op + the deep copy of special val)
+  Op       *op;
+  Counter  op_num;
+  Counter  unique_num;
+  Flag     off_path;
+
+  // register info
+  int                  reg_arch_id;
+  int                  reg_phy_id;
+  Reg_File_Entry_State reg_state;
+
+  // tracking free physical register
+  struct Reg_File_Entry_struct *next_free;
+
+  // tracking the ops use the same architectural register
+  int prev_same_arch_id;
+} Reg_File_Entry;
+
 typedef struct Merged_Reg_File_struct {
   /* map each architectural register to the latest physical register */
-  Reg_File_Entry* reg_map_table[NUM_REG_IDS];
+  int             reg_map_table[NUM_REG_IDS];
 
   /* physical registers for both speculative and committed op */
   Reg_File_Entry* reg_file;
@@ -123,6 +151,7 @@ void set_not_rdy_bit(Op*, uns);
 /* external functions of the register renaming table */
 Flag rename_table_available(void);
 void rename_table_commit(Op*);
+void rename_table_recover(Counter);
 
 /**************************************************************************************/
 

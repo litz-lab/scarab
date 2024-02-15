@@ -130,7 +130,6 @@ static inline void mem_map_byte_traversal_next(Mem_Map_Traversal* traversal);
 /* register renaming implementation */
 static inline void rename_table_init(void);
 static inline void rename_table_process(Op*);
-static inline void rename_table_recover(void);
 
 /**************************************************************************************/
 /* set_map_data: */
@@ -195,8 +194,6 @@ void recover_map() {
   map_data->last_store_flag = FALSE;
   hash_table_scan(&map_data->oracle_mem_hash, recover_mem_map_entry, NULL);
   rebuild_offpath_map();
-
-  rename_table_recover();
 }
 
 /**************************************************************************************/
@@ -883,23 +880,23 @@ void reset_map() {
  * Module:      Reg_Renaming_Table
  * Description: Register renaming implementation based on the hardware scheme
 ***************************************************************************************/
-// reg renaming procedure
-static inline void rename_table_lookup_src(Op*);
-static inline void rename_table_alloc_dst(Op*);
-
-// reg renaming rebuild
-static inline void rename_table_flush(void);
-static inline void rename_table_rebuild(void);
+// reg renaming process
+static inline void rename_table_read_src(Op*);
+static inline void rename_table_write_dst(Op*);
 
 // merged register file operations
 static inline void             merged_reg_file_init(uns);
-static inline void             merged_reg_file_read_entry(Op*, Reg_File_Entry*, Dep_Type);
-static inline void             merged_reg_file_write_entry(Op*, Reg_File_Entry*, uns);
-static inline void             merged_reg_file_remove_prev(Reg_File_Entry*);
+static inline Reg_File_Entry*  merged_reg_file_lookup_entry(uns16);
+static inline void             merged_reg_file_read_entry(Op*, Reg_File_Entry*);
+static inline void             merged_reg_file_write_entry(Op*, Reg_File_Entry*, int);
 static inline Reg_File_Entry*  merged_reg_file_alloc_entry(void);
 static inline void             merged_reg_file_release_entry(Reg_File_Entry*);
-static inline void             merged_reg_file_free_list_insert(Reg_File_Entry *entry);
+static inline void             merged_reg_file_free_list_insert(Reg_File_Entry*);
 static inline Reg_File_Entry*  merged_reg_file_free_list_delete(void);
+
+// register releasing for external call
+static inline void merged_reg_file_remove_prev(int);
+static inline void merged_reg_file_flush_mispredict(int);
 
 /**************************************************************************************/
 
@@ -914,140 +911,52 @@ void rename_table_init(void) {
 
 /*
   process:
-  --- 1. look up src register and fill the entry into src_info
-  --- 2. alloc entry and store self info into register as dst
+  --- 1. read src: look up src register and fill the entry into src_info
+  --- 2. write dst: alloc entry and store self info into register as dst
 */
 void rename_table_process(Op *op) {
   if (!REG_RENAMING_TABLE_ENABLE)
     return;
 
-  rename_table_lookup_src(op);
-  rename_table_alloc_dst(op);
-}
-
-/*
-  recover:
-  --- 1. flush all off-path op
-  --- 2. rebuild off-path op from snapshot
-*/
-void rename_table_recover(void) {
-  if (!REG_RENAMING_TABLE_ENABLE)
-    return;
-
-  if (map_data->rename_table == NULL)
-    return;
-
-  rename_table_flush();
-  rename_table_rebuild();
+  rename_table_read_src(op);
+  rename_table_write_dst(op);
 }
 
 /**************************************************************************************/
 
 /*
-  lookup src:
-    1. get the latest physical entry from the register map table
+  read src:
+    1. lookup the latest physical entry from the register map table
     2. get the src_info in from entry
 */
-void rename_table_lookup_src(Op *op) {
+void rename_table_read_src(Op *op) {
   uns ii;
   Reg_File_Entry *entry;
 
   for (ii = 0; ii < op->table_info->num_src_regs; ii++) {
-    uns16 id = op->inst_info->srcs[ii].id;
-    entry = map_data->rename_table->merged_rf->reg_map_table[id];
-    merged_reg_file_read_entry(op, entry, REG_DATA_DEP);
+    entry = merged_reg_file_lookup_entry(op->inst_info->srcs[ii].id);
+    merged_reg_file_read_entry(op, entry);
   }
 }
 
 /*
-  alloc dst:
+  write dst:
     1. allocate an physical register of register file from free list
     2. store self info into the register as destination
 */
-void rename_table_alloc_dst(Op *op) {
+void rename_table_write_dst(Op *op) {
   uns ii;
   Reg_File_Entry *entry;
 
-  ASSERT(map_data->proc_id, op->dst_reg_file_entry_num == 0);
+  ASSERT(map_data->proc_id, op->dst_reg_file_ptag_num == 0);
   ASSERT(map_data->proc_id, op->table_info->num_dest_regs <= map_data->rename_table->merged_rf->reg_free_num);
 
   for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
     entry = merged_reg_file_alloc_entry();
-    merged_reg_file_write_entry(op, entry, ii);
+    merged_reg_file_write_entry(op, entry, op->inst_info->dests[ii].id);
   }
 
-  ASSERT(map_data->proc_id, op->dst_reg_file_entry_num == op->table_info->num_dest_regs);
-}
-
-/**************************************************************************************/
-
-/*
-  flush:
-  --- 1. remove all off path ops from register file (physical registers)
-  --- 2. update the register map table
-*/
-void rename_table_flush(void) {
-  uns ii;
-  Reg_File_Entry *entry;
-
-  // remove all off path ops
-  for (ii = 0; ii < map_data->rename_table->merged_rf->reg_file_size; ii++) {
-    entry = &map_data->rename_table->merged_rf->reg_file[ii];
-    if (entry->reg_state == REG_FILE_ENTRY_STATE_FREE)
-      continue;
-
-    if (!entry->off_path)
-      continue;
-
-    merged_reg_file_release_entry(entry);
-  }
-
-  // put the current latest physical register into the register map table
-  for (ii = 0; ii < map_data->rename_table->merged_rf->reg_file_size; ii++) {
-    entry = &map_data->rename_table->merged_rf->reg_file[ii];
-    if (entry->reg_state == REG_FILE_ENTRY_STATE_FREE)
-      continue;
-
-    ASSERT(map_data->proc_id, !entry->off_path);
-
-    if (entry->next_same_arch_id != NULL) 
-      continue;
-
-    if (map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] == NULL)
-      map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] = entry;
-  }
-}
-
-/*
-  rebuild:
-  --- 1. get the current off-path op from snapshot
-  --- 2. allocate register for the current off-path op
-*/
-void rename_table_rebuild(void) {
-  uns ii;
-  Reg_File_Entry *entry;
-
-  // find the oldest off-path op
-  Op** op_p = (Op**)list_start_head_traversal(&td->seq_op_list);
-  while (op_p && !(*op_p)->off_path) {
-    op_p = (Op**)list_next_element(&td->seq_op_list);
-  }
-
-  // put the current off-path op to the register file (physical register)
-  for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
-    ASSERT(map_data->proc_id, (*op_p)->table_info->num_dest_regs <= map_data->rename_table->merged_rf->reg_free_num);
-    ASSERT(map_data->proc_id, (*op_p)->off_path);
-
-    (*op_p)->dst_reg_file_entry_num = 0;
-    for (ii = 0; ii < MAX_DESTS; ii++)
-      (*op_p)->dst_reg_file_entry[ii] = NULL;
-
-    for (ii = 0; ii < (*op_p)->table_info->num_dest_regs; ii++) {
-      entry = merged_reg_file_alloc_entry();
-      merged_reg_file_write_entry((*op_p), entry, ii);
-    }
-    ASSERT(map_data->proc_id, (*op_p)->dst_reg_file_entry_num == (*op_p)->table_info->num_dest_regs);
-  }
+  ASSERT(map_data->proc_id, op->dst_reg_file_ptag_num == op->table_info->num_dest_regs);
 }
 
 /**************************************************************************************/
@@ -1061,7 +970,7 @@ void merged_reg_file_init(uns array_size) {
 
   /* init the register map table */
   for (ii = 0; ii < NUM_REG_IDS; ii++)
-    map_data->rename_table->merged_rf->reg_map_table[ii] = NULL;
+    map_data->rename_table->merged_rf->reg_map_table[ii] = REG_FILE_INVALID_REG_ID;
 
   /* init the free list */
   map_data->rename_table->merged_rf->reg_free_num = 0;
@@ -1079,16 +988,31 @@ void merged_reg_file_init(uns array_size) {
     entry->op_num = 0;
     entry->unique_num = 0;
     entry->off_path = FALSE;
-    entry->reg_arch_id = REG_FILE_INVALID_REG_ID;
 
+    entry->reg_arch_id = REG_FILE_INVALID_REG_ID;
     entry->reg_phy_id = ii;
     entry->reg_state = REG_FILE_ENTRY_STATE_FREE;
 
-    entry->prev_same_arch_id = NULL;
-    entry->next_same_arch_id = NULL;
+    entry->prev_same_arch_id = REG_FILE_INVALID_REG_ID;
 
     merged_reg_file_free_list_insert(entry);
   }
+
+  /* init the register map table with aleast one physical register */
+  for (ii = 0; ii < NUM_REG_IDS; ii++) {
+    entry = merged_reg_file_alloc_entry();
+    merged_reg_file_write_entry(&invalid_op, entry, ii);
+    ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[ii] != REG_FILE_INVALID_REG_ID);
+  }
+}
+
+static inline Reg_File_Entry* merged_reg_file_lookup_entry(uns16 id) {
+  int ptag = map_data->rename_table->merged_rf->reg_map_table[id];
+  ASSERT(map_data->proc_id, ptag != REG_FILE_INVALID_REG_ID);
+
+  Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
+  ASSERT(map_data->proc_id, entry != NULL);
+  return entry;
 }
 
 /*
@@ -1096,10 +1020,8 @@ void merged_reg_file_init(uns array_size) {
   --- 1. fill src info from the entry
   --- 2. update not ready bit for wake up
 */
-void merged_reg_file_read_entry(Op *op, Reg_File_Entry *entry, Dep_Type type) {
-  if (entry == NULL)
-    return;
-
+void merged_reg_file_read_entry(Op *op, Reg_File_Entry *entry) {
+  ASSERT(map->proc_id, entry != NULL);
   ASSERT(map->proc_id, op->op_num != entry->op_num);
 
   // increase src num
@@ -1107,7 +1029,7 @@ void merged_reg_file_read_entry(Op *op, Reg_File_Entry *entry, Dep_Type type) {
   Src_Info* info    = &op->oracle_info.src_info[src_num];
 
   // get info from the entry
-  info->type       = type;
+  info->type       = REG_DATA_DEP;
   info->op         = entry->op;
   info->op_num     = entry->op_num;
   info->unique_num = entry->unique_num;
@@ -1122,66 +1044,29 @@ void merged_reg_file_read_entry(Op *op, Reg_File_Entry *entry, Dep_Type type) {
   --- 2. update the register map table to ensure the latest assignment
   --- 3. put the entry into op
 */
-void merged_reg_file_write_entry(Op* op, Reg_File_Entry *entry, uns index) {
-  ASSERT(op->proc_id, entry != NULL && entry->next_same_arch_id == NULL && entry->prev_same_arch_id == NULL);
+void merged_reg_file_write_entry(Op* op, Reg_File_Entry *entry, int id) {
+  ASSERT(op->proc_id, entry != NULL);
 
   // write info to entry
   entry->op = op;
   entry->op_num = op->op_num;
   entry->unique_num = op->unique_num;
   entry->off_path = op->off_path;
-  entry->reg_arch_id = op->inst_info->dests[index].id;
+  entry->reg_arch_id = id;
   entry->reg_state = REG_FILE_ENTRY_STATE_ALLOC;
 
-  // change the pointer in the register map table to the latest physical register
-  Reg_File_Entry *prev_entry = map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id];
-  if (prev_entry != NULL && prev_entry->reg_phy_id != entry->reg_phy_id) {
-    ASSERT(op->proc_id, prev_entry->next_same_arch_id == NULL);
-    entry->prev_same_arch_id = prev_entry;
-    prev_entry->next_same_arch_id = entry;
-  }
-  map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] = entry;
+  // update regiseter log with same architectural register
+  ASSERT(op->proc_id, entry->prev_same_arch_id == REG_FILE_INVALID_REG_ID);
+  entry->prev_same_arch_id = map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id];
 
-  // put the entry into op for call back
-  ASSERT(op->proc_id, op->dst_reg_file_entry_num < MAX_DESTS);
-  op->dst_reg_file_entry[op->dst_reg_file_entry_num++] = entry;
-}
+  // change the ptag in the register map table to point to the latest physical register
+  map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] = entry->reg_phy_id;
 
-/*
-  remove prev:
-  --- 1. mark dead for all prev entries with same archituctural id before the committed one
-  --- 2. remove dead entries from the oldest op
-*/
-void merged_reg_file_remove_prev(Reg_File_Entry *entry) {
-  if (!REG_RENAMING_TABLE_ENABLE)
+  // put the ptag of the entry into op for call back
+  if (op == &invalid_op)
     return;
-
-  ASSERT(map_data->proc_id, entry != NULL);
-  ASSERT(map_data->proc_id, entry->op->op_pool_valid);
-  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_ALLOC);
-  ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] != NULL);
-  ASSERT(map_data->proc_id, entry->next_same_arch_id != NULL ||
-    map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id]->reg_phy_id == entry->reg_phy_id);
-
-  // mark current register as commit when it is retire
-  entry->reg_state = REG_FILE_ENTRY_STATE_COMMIT;
-
-  // mark all the op before the committed op as dead
-  Reg_File_Entry *curr_entry;
-  curr_entry = entry;
-  while (curr_entry->prev_same_arch_id != NULL) {
-    ASSERT(map_data->proc_id, curr_entry->reg_state != REG_FILE_ENTRY_STATE_FREE);
-    curr_entry = curr_entry->prev_same_arch_id;
-    curr_entry->reg_state = REG_FILE_ENTRY_STATE_DEAD;
-  }
-
-  // remove dead from the oldest to the latest
-  Reg_File_Entry *next_entry;
-  while (curr_entry != NULL && curr_entry->reg_state == REG_FILE_ENTRY_STATE_DEAD) {
-    next_entry = curr_entry->next_same_arch_id;
-    merged_reg_file_release_entry(curr_entry);
-    curr_entry = next_entry;
-  }
+  ASSERT(op->proc_id, op->dst_reg_file_ptag_num < MAX_DESTS);
+  op->dst_reg_file_ptag[op->dst_reg_file_ptag_num++] = entry->reg_phy_id;
 }
 
 /*
@@ -1197,12 +1082,8 @@ Reg_File_Entry *merged_reg_file_alloc_entry(void) {
   --- clear all the info of the entry and insert it to the free list
 */
 void merged_reg_file_release_entry(Reg_File_Entry *entry) {
-  ASSERT(map->proc_id, entry->reg_state != REG_FILE_ENTRY_STATE_FREE);
-
-  // clear the entry in the register map table
-  Reg_File_Entry *map_table_entry = map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id];
-  if (map_table_entry != NULL && map_table_entry->reg_phy_id == entry->reg_phy_id)
-    map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] = NULL;
+  ASSERT(map->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_DEAD || entry->off_path);
+  ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] != entry->reg_phy_id);
 
   // clear the storing info of the entry
   entry->op = &invalid_op;
@@ -1213,12 +1094,7 @@ void merged_reg_file_release_entry(Reg_File_Entry *entry) {
   entry->reg_state = REG_FILE_ENTRY_STATE_FREE;
 
   // clear the tracking pointers with same architectural register id
-  if (entry->prev_same_arch_id != NULL)
-    entry->prev_same_arch_id->next_same_arch_id = NULL;
-  if (entry->next_same_arch_id != NULL)
-    entry->next_same_arch_id->prev_same_arch_id = NULL;
-  entry->prev_same_arch_id = NULL;
-  entry->next_same_arch_id = NULL;
+  entry->prev_same_arch_id = REG_FILE_INVALID_REG_ID;
 
   // append to free list
   merged_reg_file_free_list_insert(entry);
@@ -1254,6 +1130,59 @@ Reg_File_Entry *merged_reg_file_free_list_delete(void) {
 }
 
 /**************************************************************************************/
+
+/*
+  remove prev:
+  --- 1. mark dead for the prev entry with same archituctural id before the committed one
+  --- 2. remove the dead entry
+*/
+void merged_reg_file_remove_prev(int ptag) {
+  ASSERT(map_data->proc_id, REG_RENAMING_TABLE_ENABLE);
+  ASSERT(map_data->proc_id, ptag != REG_FILE_INVALID_REG_ID);
+  Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
+
+  ASSERT(map_data->proc_id, entry != NULL);
+  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_ALLOC);
+  ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] != REG_FILE_INVALID_REG_ID);
+
+  // mark current register as commit when it is retire
+  entry->reg_state = REG_FILE_ENTRY_STATE_COMMIT;
+
+  // mark the op before the committed op as dead and release it
+  int prev_ptag = entry->prev_same_arch_id;
+  ASSERT(map_data->proc_id, prev_ptag != REG_FILE_INVALID_REG_ID);
+
+  Reg_File_Entry *prev_entry = &map_data->rename_table->merged_rf->reg_file[prev_ptag];
+  ASSERT(map_data->proc_id, prev_entry->reg_state != REG_FILE_ENTRY_STATE_FREE);
+
+  prev_entry->reg_state = REG_FILE_ENTRY_STATE_DEAD;
+  merged_reg_file_release_entry(prev_entry);
+}
+
+/*
+  flush mispredict:
+  --- 1. update the register map table (SRT)
+  --- 2. remove the mispredicted entry
+*/
+void merged_reg_file_flush_mispredict(int ptag) {
+  ASSERT(map_data->proc_id, REG_RENAMING_TABLE_ENABLE);
+  ASSERT(map_data->proc_id, ptag != REG_FILE_INVALID_REG_ID);
+  Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
+
+  ASSERT(map_data->proc_id, entry != NULL);
+  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_ALLOC);
+  ASSERT(map_data->proc_id, entry->off_path);
+
+  // update register map table by prev
+  ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] == ptag);
+  map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] = entry->prev_same_arch_id;
+
+  // release register
+  entry->reg_state = REG_FILE_ENTRY_STATE_DEAD;
+  merged_reg_file_release_entry(entry);
+}
+
+/**************************************************************************************/
 /* External Calling of Register Renaming Table */
 
 /*
@@ -1266,9 +1195,7 @@ Reg_File_Entry *merged_reg_file_free_list_delete(void) {
 Flag rename_table_available(void) {
   if (!REG_RENAMING_TABLE_ENABLE)
     return TRUE;
-
-  if (map_data->rename_table == NULL)
-    return TRUE;
+  ASSERT(map_data->proc_id, map_data->rename_table != NULL);
 
   return map_data->rename_table->merged_rf->reg_free_num >= MAX_DESTS;
 }
@@ -1282,12 +1209,31 @@ Flag rename_table_available(void) {
 void rename_table_commit(Op *op) {
   if (!REG_RENAMING_TABLE_ENABLE)
     return;
-
   ASSERT(map_data->proc_id, op != NULL);
 
-  for (uns ii = 0; ii < op->dst_reg_file_entry_num; ii++) {
-    if (op->dst_reg_file_entry[ii]->reg_state == REG_FILE_ENTRY_STATE_FREE)
-      continue;
-    merged_reg_file_remove_prev(op->dst_reg_file_entry[ii]);
+  for (uns ii = 0; ii < op->dst_reg_file_ptag_num; ii++)
+    merged_reg_file_remove_prev(op->dst_reg_file_ptag[ii]);
+}
+
+/*
+  recover:
+  --- thread.c -> recover_thread
+  Procedure:
+  --- free the register entry of the ops which is mispredicted
+*/
+void rename_table_recover(Counter recovery_op_num) {
+  if (!REG_RENAMING_TABLE_ENABLE)
+    return;
+
+  // start from the youngest op
+  Op** op_p = (Op**)list_start_tail_traversal(&td->seq_op_list);
+
+  // release the register from the youngest to the oldest
+  while (op_p && (*op_p)->op_num > recovery_op_num) {
+    ASSERT(map_data->proc_id, (*op_p)->off_path);
+    for (uns ii = 0; ii < (*op_p)->dst_reg_file_ptag_num; ii++)
+      merged_reg_file_flush_mispredict((*op_p)->dst_reg_file_ptag[ii]);
+
+    op_p = (Op**)list_prev_element(&td->seq_op_list);
   }
 }

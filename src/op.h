@@ -329,6 +329,11 @@ struct Op_struct {
   Flag fetched_from_uop_cache;
   // }}}
   int bp_confidence;
+
+  // {{{ register renaming
+  int dst_reg_file_ptag[MAX_DESTS]; // allocated entry ptag in register file in the renaming table
+  uns dst_reg_file_ptag_num;        // the number of allocated entries
+  // }}}
 };
 // }}}
 

@@ -60,7 +60,7 @@ typedef struct Reg_File_Entry_struct {
 
   // register info
   int                  reg_arch_id;
-  int                  reg_phy_id;
+  int                  reg_ptag;
   Reg_File_Entry_State reg_state;
 
   // tracking free physical register
@@ -74,7 +74,7 @@ typedef struct Merged_Reg_File_struct {
   /* map each architectural register to the latest physical register */
   int             reg_map_table[NUM_REG_IDS];
 
-  /* physical registers for both speculative and committed op */
+  /* map ptags to physical registers (register entries) for both speculative and committed op */
   Reg_File_Entry* reg_file;
   uns             reg_file_size;
 

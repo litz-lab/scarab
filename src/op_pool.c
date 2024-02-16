@@ -258,7 +258,6 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   for(ii = 0; ii < NUM_DEP_TYPES; ii++)
     op->wake_up_signaled[ii] = FALSE;
 
-  op->dst_reg_file_ptag_num = 0;
   for (ii = 0; ii < MAX_DESTS; ii++)
     op->dst_reg_file_ptag[ii] = -1;
 }

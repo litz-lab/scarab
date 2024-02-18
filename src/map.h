@@ -46,6 +46,7 @@ const static int REG_FILE_INVALID_REG_ID = -1;
 typedef enum Reg_File_Entry_State_enum {
   REG_FILE_ENTRY_STATE_FREE,
   REG_FILE_ENTRY_STATE_ALLOC,
+  REG_FILE_ENTRY_STATE_PRODUCED,
   REG_FILE_ENTRY_STATE_COMMIT,
   REG_FILE_ENTRY_STATE_DEAD,
   REG_FILE_ENTRY_STATE_NUM
@@ -148,7 +149,11 @@ void clear_not_rdy_bit(Op*, uns);
 Flag test_not_rdy_bit(Op*, uns);
 void set_not_rdy_bit(Op*, uns);
 
-/* external functions of the register renaming table */
+/* register renaming table */
+void rename_table_init(void);
+void rename_table_process(Op*);
+void rename_table_produce(Op*);
+
 Flag rename_table_available(void);
 void rename_table_commit(Op*);
 void rename_table_recover(Counter);

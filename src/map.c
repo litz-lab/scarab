@@ -127,10 +127,6 @@ static inline void mem_map_byte_traversal_init(Mem_Map_Traversal* traversal);
 static inline Flag mem_map_byte_traversal_done(Mem_Map_Traversal* traversal);
 static inline void mem_map_byte_traversal_next(Mem_Map_Traversal* traversal);
 
-/* register renaming implementation */
-static inline void rename_table_init(void);
-static inline void rename_table_process(Op*);
-
 /**************************************************************************************/
 /* set_map_data: */
 
@@ -615,6 +611,9 @@ void wake_up_ops(Op* op, Dep_Type type, void (*wake_action)(Op*, Op*, uns8)) {
     }
   }
   op->wake_up_signaled[type] = TRUE;
+
+  // update entry state
+  rename_table_produce(op);
 }
 
 /**************************************************************************************/
@@ -894,9 +893,10 @@ static inline void             merged_reg_file_release_entry(Reg_File_Entry*);
 static inline void             merged_reg_file_free_list_insert(Reg_File_Entry*);
 static inline Reg_File_Entry*  merged_reg_file_free_list_delete(void);
 
-// register releasing for external call
+// register releasing/update for external call
 static inline void merged_reg_file_remove_prev(int);
 static inline void merged_reg_file_flush_mispredict(int);
+static inline void merged_reg_file_produce_result(int);
 
 /**************************************************************************************/
 
@@ -1141,7 +1141,7 @@ void merged_reg_file_remove_prev(int ptag) {
   Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
 
   ASSERT(map_data->proc_id, entry != NULL);
-  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_ALLOC);
+  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_PRODUCED);
   ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] != REG_FILE_INVALID_REG_ID);
 
   // mark current register as commit when it is retire
@@ -1152,7 +1152,7 @@ void merged_reg_file_remove_prev(int ptag) {
   ASSERT(map_data->proc_id, prev_ptag != REG_FILE_INVALID_REG_ID);
 
   Reg_File_Entry *prev_entry = &map_data->rename_table->merged_rf->reg_file[prev_ptag];
-  ASSERT(map_data->proc_id, prev_entry->reg_state != REG_FILE_ENTRY_STATE_FREE);
+  ASSERT(map_data->proc_id, prev_entry->reg_state == REG_FILE_ENTRY_STATE_COMMIT || prev_entry->op == &invalid_op);
 
   prev_entry->reg_state = REG_FILE_ENTRY_STATE_DEAD;
   merged_reg_file_release_entry(prev_entry);
@@ -1169,7 +1169,7 @@ void merged_reg_file_flush_mispredict(int ptag) {
   Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
 
   ASSERT(map_data->proc_id, entry != NULL);
-  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_ALLOC);
+  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_ALLOC || entry->reg_state == REG_FILE_ENTRY_STATE_PRODUCED);
   ASSERT(map_data->proc_id, entry->off_path);
 
   // update register map table by prev
@@ -1177,12 +1177,37 @@ void merged_reg_file_flush_mispredict(int ptag) {
   map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] = entry->prev_same_arch_id;
 
   // release register
-  entry->reg_state = REG_FILE_ENTRY_STATE_DEAD;
   merged_reg_file_release_entry(entry);
+}
+
+/*
+  produce result:
+  --- update the register state
+*/
+void merged_reg_file_produce_result(int ptag) {
+  ASSERT(map_data->proc_id, REG_RENAMING_TABLE_ENABLE);
+  ASSERT(map_data->proc_id, ptag != REG_FILE_INVALID_REG_ID);
+  Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
+
+  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_ALLOC);
+  entry->reg_state = REG_FILE_ENTRY_STATE_PRODUCED;
 }
 
 /**************************************************************************************/
 /* External Calling of Register Renaming Table */
+
+/*
+  Procedure:
+  --- update the register entry state to indicate the results in the register is produced
+*/
+void rename_table_produce(Op *op) {
+  if (!REG_RENAMING_TABLE_ENABLE)
+    return;
+  ASSERT(map_data->proc_id, op != NULL);
+
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++)
+    merged_reg_file_produce_result(op->dst_reg_file_ptag[ii]);
+}
 
 /*
   Called by:

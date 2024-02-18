@@ -370,6 +370,40 @@ void update_fdip() {
         default_conf_update(op);
       }
     }
+
+    //log conf stats
+    switch(op->bp_confidence){
+      case 0:
+        if(op->oracle_info.mispred){
+          STAT_EVENT(fdip_proc_id, BP_CONF_0_MISPRED);
+        } else {
+          STAT_EVENT(fdip_proc_id, BP_CONF_0_CORRECT);
+        }
+        break;
+      case 1:
+        if(op->oracle_info.mispred){
+          STAT_EVENT(fdip_proc_id, BP_CONF_1_MISPRED);
+        } else {
+          STAT_EVENT(fdip_proc_id, BP_CONF_1_CORRECT);
+        }
+        break;
+      case 2:
+        if(op->oracle_info.mispred){
+          STAT_EVENT(fdip_proc_id, BP_CONF_2_MISPRED);
+        } else {
+          STAT_EVENT(fdip_proc_id, BP_CONF_2_CORRECT);
+        }
+        break;
+      case 3:
+        if(op->oracle_info.mispred){
+          STAT_EVENT(fdip_proc_id, BP_CONF_3_MISPRED);
+        } else {
+          STAT_EVENT(fdip_proc_id, BP_CONF_3_CORRECT);
+        }
+        break;
+      default:
+        DEBUG(fdip_proc_id, "bp confidence invalid value\n");
+    }
       
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;

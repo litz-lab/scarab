@@ -34,6 +34,47 @@
 #include "op.h"
 
 /**************************************************************************************/
+/* Unconsumed Producer Tracking */
+
+// To be changed to a configurable para
+#define REG_CONSUME_ENABLE      FALSE
+#define REG_CONSUME_SIGNITURE   REG_CONSUME_SIGH_PC
+
+typedef enum Reg_Consume_Signiture_enum {
+  REG_CONSUME_SIGH_PC,
+  REG_CONSUME_SIGH_MEM,
+  REG_CONSUME_SIGH_NUM
+} Reg_Consume_Signiture;
+
+typedef enum Reg_Consume_Tree_State_enum {
+  REG_CONSUME_STATE_UNCONSUMED,
+  REG_CONSUME_STATE_CONSUMED,
+  REG_CONSUME_STATE_NUM
+} Reg_Consume_State;
+
+typedef struct Reg_Consume_Hash_Entry_struct {
+  Counter num_all_produced;
+  Counter num_consumed;
+  Counter num_unconsumed;
+} Reg_Consume_Hash_Entry;
+
+typedef struct Reg_Consume_Table_struct {
+  /* producer tracking info */
+  uns64             *op_sign_array;
+  Reg_Consume_State *state_array;
+  uns               array_size;
+
+  /* count the producer instructions */
+  Counter num_all_produced;
+  Counter num_consumed;
+  Counter num_unconsumed;
+
+  /* collect the unconsumed producer instructions by signiture */
+  Hash_Table            sign_hash;
+  Reg_Consume_Signiture sign_type;
+} Reg_Consume_Table;
+
+/**************************************************************************************/
 /* Merged Register File: The Hardware Implementation of Register Renaming */
 
 // To be changed to configurable val
@@ -82,6 +123,9 @@ typedef struct Merged_Reg_File_struct {
   /* track all free physical registers */
   Reg_File_Entry* reg_free_list_head;
   uns             reg_free_num;
+
+  /* unconsumed producer tracking */
+  Reg_Consume_Table *consume_table;
 } Merged_Reg_File;
 
 typedef struct Reg_Renaming_Table_struct {
@@ -116,6 +160,9 @@ typedef struct Map_Data_struct {
 
   /* register renaming implementation based on the hardware scheme */
   Reg_Renaming_Table *rename_table;
+
+  /* unconsumed producer tracking */
+  Reg_Consume_Table *consume_table;
 } Map_Data;
 
 
@@ -157,6 +204,9 @@ void rename_table_produce(Op*);
 Flag rename_table_available(void);
 void rename_table_commit(Op*);
 void rename_table_recover(Counter);
+
+/* external functions of the register consume table */
+void reg_consume_table_print_stat(void);
 
 /**************************************************************************************/
 

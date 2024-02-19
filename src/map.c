@@ -127,6 +127,12 @@ static inline void mem_map_byte_traversal_init(Mem_Map_Traversal* traversal);
 static inline Flag mem_map_byte_traversal_done(Mem_Map_Traversal* traversal);
 static inline void mem_map_byte_traversal_next(Mem_Map_Traversal* traversal);
 
+/* register consume tracking */
+static inline void reg_consume_table_init(Reg_Consume_Table**, uns);
+static inline void reg_consume_table_read(Reg_Consume_Table*, Op*, uns);
+static inline void reg_consume_table_write(Reg_Consume_Table*, Op*, uns);
+static inline void reg_consume_table_release(Reg_Consume_Table*, uns);
+
 /**************************************************************************************/
 /* set_map_data: */
 
@@ -176,6 +182,9 @@ void init_map(uns8 proc_id) {
   /* Init the register renaming table */
   map_data->rename_table = NULL;
   rename_table_init();
+
+  /* Init the consume table to track unconsumed producer */
+  reg_consume_table_init(&map_data->consume_table, NUM_REG_IDS * 2);
 }
 
 
@@ -285,6 +294,8 @@ static inline void read_reg_map(Op* op) {
     add_src_from_map_entry(op, map_entry, REG_DATA_DEP);
     /* address predictor is called if op is a load & this is first mem op reg
      * read for this reg instance */
+
+    reg_consume_table_read(map_data->consume_table, op, ind);
   }
 }
 
@@ -330,6 +341,9 @@ static inline void update_map(Op* op) {
     map_entry->op_num       = op->op_num;
     map_entry->unique_num   = op->unique_num;
     map_data->map_flags[id] = op->off_path;
+
+    reg_consume_table_release(map_data->consume_table, ind);
+    reg_consume_table_write(map_data->consume_table, op, ind);
   }
 
   /* update the map if the op is a store */
@@ -1003,6 +1017,9 @@ void merged_reg_file_init(uns array_size) {
     merged_reg_file_write_entry(&invalid_op, entry, ii, 0);
     ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[ii] != REG_FILE_INVALID_REG_ID);
   }
+
+  /* init the consume table */
+  reg_consume_table_init(&map_data->rename_table->merged_rf->consume_table, array_size);
 }
 
 static inline Reg_File_Entry* merged_reg_file_lookup_entry(uns16 id) {
@@ -1035,6 +1052,9 @@ void merged_reg_file_read_entry(Op *op, Reg_File_Entry *entry) {
 
   // setting waking up signal
   set_not_rdy_bit(op, src_num);
+
+  // track unconsumed producer
+  reg_consume_table_read(map_data->rename_table->merged_rf->consume_table, op, entry->reg_ptag);
 }
 
 /*
@@ -1066,6 +1086,9 @@ void merged_reg_file_write_entry(Op* op, Reg_File_Entry *entry, int id, uns ii) 
     return;
   ASSERT(op->proc_id, op->dst_reg_file_ptag[ii] == -1);
   op->dst_reg_file_ptag[ii] = entry->reg_ptag;
+
+  // track unconsumed producer
+  reg_consume_table_write(map_data->rename_table->merged_rf->consume_table, op, entry->reg_ptag);
 }
 
 /*
@@ -1097,6 +1120,9 @@ void merged_reg_file_release_entry(Reg_File_Entry *entry) {
 
   // append to free list
   merged_reg_file_free_list_insert(entry);
+
+  // track unconsumed producer
+  reg_consume_table_release(map_data->rename_table->merged_rf->consume_table, entry->reg_ptag);
 }
 
 /*
@@ -1260,4 +1286,149 @@ void rename_table_recover(Counter recovery_op_num) {
 
     op_p = (Op**)list_prev_element(&td->seq_op_list);
   }
+}
+
+/**************************************************************************************
+ * Module:      Reg_Consume_Table
+ * Description: 
+ * --- 1. Track if a producer insturction is consumed
+ * --- 2. Collect the info of unconsumed producers
+***************************************************************************************/
+static inline uns64 reg_consume_table_signiture(Reg_Consume_Table*, Op*);
+static inline void  reg_consume_table_print_hash(void*, void*);
+
+static inline void reg_consume_table_init(Reg_Consume_Table **table, uns array_size) {
+  if (!REG_CONSUME_ENABLE)
+    return;
+
+  (*table) = (Reg_Consume_Table *)malloc(sizeof(Reg_Consume_Table));
+  (*table)->op_sign_array = (uns64 *)malloc(sizeof(uns64) * array_size);
+  (*table)->state_array = (Reg_Consume_State *)malloc(sizeof(Reg_Consume_State) * array_size);
+  (*table)->array_size = array_size;
+
+  /* init the map for tracking unconsumed producer */
+  for (uns ii = 0; ii < array_size; ii++) {
+    (*table)->op_sign_array[ii] = 0;
+    (*table)->state_array[ii] = REG_CONSUME_STATE_UNCONSUMED;
+  }
+
+  /* counters for recording producer instructions */
+  (*table)->num_all_produced = 0;
+  (*table)->num_consumed = 0;
+  (*table)->num_unconsumed = 0;
+
+  /* init the hash for collecting unconsumed producers and its signiture type */
+  init_hash_table(&(*table)->sign_hash, "reg dep track table", NODE_TABLE_SIZE, sizeof(Reg_Consume_Hash_Entry));
+  (*table)->sign_type = REG_CONSUME_SIGNITURE;
+}
+
+static inline void reg_consume_table_read(Reg_Consume_Table *table, Op *op, uns ind) {
+  if (!REG_CONSUME_ENABLE)
+    return;
+  ASSERT(map_data->proc_id, table != NULL && ind < table->array_size);
+  ASSERT(map_data->proc_id, op != NULL);
+
+  table->state_array[ind] = REG_CONSUME_STATE_CONSUMED;
+}
+
+static inline void reg_consume_table_write(Reg_Consume_Table *table, Op *op, uns ind) {
+  if (!REG_CONSUME_ENABLE)
+    return;
+  ASSERT(map_data->proc_id, table != NULL && ind < table->array_size);
+  ASSERT(map_data->proc_id, table->op_sign_array[ind] == 0);
+
+  table->op_sign_array[ind] = reg_consume_table_signiture(table, op);
+  table->state_array[ind] = REG_CONSUME_STATE_UNCONSUMED;
+}
+
+static inline void reg_consume_table_release(Reg_Consume_Table *table, uns ind) {
+  if (!REG_CONSUME_ENABLE)
+    return;
+  ASSERT(map_data->proc_id, table != NULL && ind < table->array_size);
+
+  Flag if_new_entry = FALSE;
+  Reg_Consume_Hash_Entry *entry = (Reg_Consume_Hash_Entry *)hash_table_access_create(
+    &table->sign_hash, table->op_sign_array[ind], &if_new_entry
+  );
+  if (if_new_entry) {
+    entry->num_all_produced = 0;
+    entry->num_consumed = 0;
+    entry->num_unconsumed = 0;
+  }
+  entry->num_all_produced++;
+  table->num_all_produced++;
+
+  if (table->state_array[ind] == REG_CONSUME_STATE_CONSUMED) {
+    entry->num_consumed++;
+    table->num_consumed++;
+  } else {
+    entry->num_unconsumed++;
+    table->num_unconsumed++;
+  }
+  ASSERT(map_data->proc_id, entry->num_consumed + entry->num_unconsumed == entry->num_all_produced);
+  table->op_sign_array[ind] = 0;
+}
+
+/**************************************************************************************/
+/* Internal Call */
+
+/* return the corresponding signiture */
+static inline uns64 reg_consume_table_signiture(Reg_Consume_Table *table, Op *op) {
+  if (!REG_CONSUME_ENABLE)
+    return FALSE;
+  ASSERT(map_data->proc_id, table != NULL);
+
+  uns64 sign = 0;
+
+  switch (table->sign_type) {
+    case REG_CONSUME_SIGH_PC:
+      sign = op->oracle_info.inst_info->addr;
+      break;
+
+    case REG_CONSUME_SIGH_MEM:
+      sign = op->oracle_info.va;
+      break;
+
+    default:
+      break;
+  }
+
+  return sign;
+}
+
+/* print the debug info */
+static inline void reg_consume_table_print_hash(void* hash_entry, void* arg) {
+  Reg_Consume_Hash_Entry *entry = (Reg_Consume_Hash_Entry *)hash_entry;
+  printf("[%lld, %lld, %lld],\n", entry->num_all_produced, entry->num_unconsumed, entry->num_consumed);
+}
+
+/**************************************************************************************/
+/* external functions of the unconsumed producer table */
+
+void reg_consume_table_print_stat(void) {
+  if (!REG_CONSUME_ENABLE)
+    return;
+
+  Reg_Consume_Table *table = NULL;
+
+  if (!REG_RENAMING_TABLE_ENABLE)
+    table = map_data->consume_table;
+  else
+    table = map_data->rename_table->merged_rf->consume_table;
+
+  if (table == NULL)
+    return;
+
+  printf("=======================================================================\n");
+  printf("\nRegister Consume Table Tracking: %d\n", REG_RENAMING_TABLE_ENABLE);
+
+  printf("ALL: %lld, UNCONSUMED: %lld, CONSUMED: %lld\n",
+    table->num_all_produced,
+    table->num_unconsumed,
+    table->num_consumed
+  );
+
+  printf("-----------------------------------------------------------------------\n");
+  hash_table_scan(&table->sign_hash, reg_consume_table_print_hash, NULL);
+  printf("\n=======================================================================\n");
 }

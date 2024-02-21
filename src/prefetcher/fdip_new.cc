@@ -381,30 +381,30 @@ void update_fdip() {
         switch(op->bp_confidence){
           case 0:
             if(op->oracle_info.mispred){
-              STAT_EVENT(fdip_proc_id, BP_CONF_0_MISPRED);
+              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_0_MISPRED);
             } else {
-              STAT_EVENT(fdip_proc_id, BP_CONF_0_CORRECT);
+              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_0_CORRECT);
             }
             break;
           case 1:
             if(op->oracle_info.mispred){
-              STAT_EVENT(fdip_proc_id, BP_CONF_1_MISPRED);
+              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_1_MISPRED);
             } else {
-              STAT_EVENT(fdip_proc_id, BP_CONF_1_CORRECT);
+              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_1_CORRECT);
             }
             break;
           case 2:
             if(op->oracle_info.mispred){
-              STAT_EVENT(fdip_proc_id, BP_CONF_2_MISPRED);
+              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_2_MISPRED);
             } else {
-              STAT_EVENT(fdip_proc_id, BP_CONF_2_CORRECT);
+              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_2_CORRECT);
             }
             break;
           case 3:
             if(op->oracle_info.mispred){
-              STAT_EVENT(fdip_proc_id, BP_CONF_3_MISPRED);
+              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_3_MISPRED);
             } else {
-              STAT_EVENT(fdip_proc_id, BP_CONF_3_CORRECT);
+              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_3_CORRECT);
             }
             break;
           default:

@@ -107,6 +107,9 @@ std::vector<std::unordered_map<Addr, std::vector<uns8>>> per_core_icache_sequenc
 std::vector<std::unordered_map<Addr, std::vector<std::pair<char,Counter>>>> per_core_sequence_bw;
 // <CL address, all sequence> char - P: prefetch, p: not prefetch, m: icache miss, h: icache hit, U: useful, u: unuseful (Counter - cycle count)
 std::vector<std::unordered_map<Addr, std::vector<std::pair<char,Counter>>>> per_core_sequence_aw;
+// <CL address, total miss delay>
+std::vector<std::map<Addr, Counter>> per_core_per_line_delay_aw;
+std::vector<Counter> per_core_cur_line_delay;
 // accumulated FTQ occupancy every cycle
 std::vector<uint64_t> per_core_fdip_ftq_occupancy_ops;
 std::vector<uint64_t> per_core_fdip_ftq_occupancy_blocks;
@@ -160,6 +163,8 @@ void alloc_mem_fdip(uns numCores) {
   per_core_icache_sequence.resize(numCores);
   per_core_sequence_bw.resize(numCores);
   per_core_sequence_aw.resize(numCores);
+  per_core_per_line_delay_aw.resize(numCores);
+  per_core_cur_line_delay.resize(numCores);
   per_core_fdip_ftq_occupancy_ops.resize(numCores);
   per_core_fdip_ftq_occupancy_blocks.resize(numCores);
   if (FDIP_UTILITY_HASH_ENABLE)
@@ -195,6 +200,7 @@ void init_fdip(uns proc_id) {
   per_core_last_recover_cycle[proc_id] = 0;
   per_core_fdip_ftq_occupancy_ops[proc_id] = 0;
   per_core_fdip_ftq_occupancy_blocks[proc_id] = 0;
+  per_core_cur_line_delay[proc_id] = 0;
   if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
     per_core_last_cl_unuseful[proc_id] = 0;
     per_core_last_bbl_start_addr[proc_id] = 0;
@@ -318,27 +324,6 @@ void update_fdip() {
     DEBUG(fdip_proc_id, "op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, off-path: %d\n", op->op_num, op->inst_info->addr, line_addr, last_line_addr, fdip_off_path(fdip_proc_id));
     if (line_addr != last_line_addr) {
       STAT_EVENT(ic_ref->proc_id, FDIP_ATTEMPTED_PREF_ONPATH + op->off_path);
-      Flag demand_hit_prefetch = FALSE;
-      Flag demand_hit_writeback = FALSE;
-      Mem_Queue_Entry* queue_entry = NULL;
-      Flag ramulator_match = FALSE;
-      Addr dummy_addr = 0;
-      bool line = (Inst_Info**)cache_access(&ic_ref->icache, pc_addr, &line_addr, TRUE);
-      // icache_line_info cache should be accessed same times with icache for a consistant line information
-      if (WP_COLLECT_STATS) {
-        bool line_info = (Icache_Data*)cache_access(&ic_ref->icache_line_info, pc_addr, &dummy_addr, TRUE);
-        UNUSED(line_info);
-      }
-      bool mlc_line = (Inst_Info**)cache_access(&mem->uncores[ic_ref->proc_id].mlc->cache, pc_addr, &dummy_addr, FALSE);
-      bool l1_line = (Inst_Info**)cache_access(&mem->uncores[ic_ref->proc_id].l1->cache, pc_addr, &dummy_addr, FALSE);
-      UNUSED(dummy_addr);
-      uns pref_from = line ? 0 : (mlc_line ? 1 : (l1_line ? 2 : 3));
-      STAT_EVENT(ic_ref->proc_id, FDIP_PREFETCH_HIT_ICACHE + pref_from);
-      Mem_Req* mem_req = mem_search_reqbuf_wrapper(ic_ref->proc_id, line_addr,
-                                                   MRT_FDIPPRF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
-                                                   QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
-                                                   QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
-                                                   &queue_entry, &ramulator_match);
       if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_PERFECT_PREFETCH)
         emit_new_prefetch = determine_usefulness(line_addr);
       else {
@@ -355,13 +340,41 @@ void update_fdip() {
             STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
         }
       }
-      if (line) {
-        DEBUG(fdip_proc_id, "probe hit for %llx\n", line_addr);
-        probe_prefetched_cls(line_addr);
-        STAT_EVENT(ic_ref->proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ONPATH + op->off_path);
+
+      Flag demand_hit_prefetch = FALSE;
+      Flag demand_hit_writeback = FALSE;
+      Mem_Queue_Entry* queue_entry = NULL;
+      Flag ramulator_match = FALSE;
+      Addr dummy_addr = 0;
+      bool line = false;
+      Mem_Req* mem_req = NULL;
+      if (emit_new_prefetch) {
+        line = (Inst_Info**)cache_access(&ic_ref->icache, pc_addr, &line_addr, TRUE);
+        // icache_line_info cache should be accessed same times with icache for a consistant line information
+        if (WP_COLLECT_STATS) {
+          bool line_info = (Icache_Data*)cache_access(&ic_ref->icache_line_info, pc_addr, &dummy_addr, TRUE);
+          UNUSED(line_info);
+        }
+        bool mlc_line = (Inst_Info**)cache_access(&mem->uncores[ic_ref->proc_id].mlc->cache, pc_addr, &dummy_addr, FALSE);
+        bool l1_line = (Inst_Info**)cache_access(&mem->uncores[ic_ref->proc_id].l1->cache, pc_addr, &dummy_addr, FALSE);
+        UNUSED(dummy_addr);
+        uns pref_from = line ? 0 : (mlc_line ? 1 : (l1_line ? 2 : 3));
+        STAT_EVENT(ic_ref->proc_id, FDIP_PREFETCH_HIT_ICACHE + pref_from);
+        mem_req = mem_search_reqbuf_wrapper(ic_ref->proc_id, line_addr,
+            MRT_FDIPPRF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
+            QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
+            QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
+            &queue_entry, &ramulator_match);
+
+        if (line) {
+          DEBUG(fdip_proc_id, "probe hit for %llx\n", line_addr);
+          probe_prefetched_cls(line_addr);
+          STAT_EVENT(ic_ref->proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ONPATH + op->off_path);
+        }
       }
 
       if (!emit_new_prefetch && !line && !mem_req)
+      //if (!emit_new_prefetch)
         insert_pref_candidate_to_seniority_ftq(line_addr);
       if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
         INC_STAT_EVENT(fdip_proc_id, FDIP_SENIORITY_FTQ_ACCUMULATED, per_core_seniority_ftq[fdip_proc_id].size());
@@ -597,6 +610,16 @@ void print_cl_info(uns proc_id) {
     fprintf(fp, "\n");
   }
   fclose(fp);
+
+  std::map<Addr, Counter>* per_line_delay = &per_core_per_line_delay_aw[proc_id];
+  std::multimap<Counter, Addr> per_line_delay_sorted = flip_map(*per_line_delay);
+  fp = fopen("per_line_delay.csv", "w");
+  fprintf(fp, "cl_addr,delay\n");
+  for(std::multimap<Counter, Addr>::const_iterator it = per_line_delay_sorted.begin();
+      it != per_line_delay_sorted.end(); ++it) {
+    fprintf(fp, "%llx,%lld\n", it->second, it->first);
+  }
+  fclose(fp);
 }
 
 void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss) {
@@ -741,6 +764,8 @@ void inc_icache_miss(uns proc_id, Addr line_addr) {
     } else {
       it2->second.push_back(std::make_pair('m',cycle_count));
     }
+
+    per_core_cur_line_delay[proc_id] = cycle_count;
   } else {
     auto it2 = per_core_sequence_bw[proc_id].find(line_addr);
     if (it2 == per_core_sequence_bw[proc_id].end()) {
@@ -1302,7 +1327,8 @@ Flag determine_usefulness(Addr line_addr) {
       else
         STAT_EVENT(fdip_proc_id, FDIP_MEM_BUF_MISS);
     }
-  } else if (!per_core_last_cl_unuseful[fdip_proc_id] && per_core_last_cl_unuseful[fdip_proc_id] != line_addr) {
+  //} else if (!per_core_last_cl_unuseful[fdip_proc_id] && per_core_last_cl_unuseful[fdip_proc_id] != line_addr) {
+  } else if (per_core_last_cl_unuseful[fdip_proc_id] != line_addr) {
     if (FDIP_UTILITY_HASH_ENABLE)
       determine_usefulness_by_inf_hash(line_addr, &emit_new_prefetch);
     else if (FDIP_UC_SIZE)
@@ -1528,6 +1554,16 @@ void inc_icache_hit(uns proc_id, Addr line_addr) {
     } else {
       it2->second.push_back(std::make_pair('h',cycle_count));
     }
+
+    if (per_core_cur_line_delay[proc_id]) {
+      auto it3 = per_core_per_line_delay_aw[proc_id].find(line_addr);
+      if (it3 == per_core_per_line_delay_aw[proc_id].end()) {
+        per_core_per_line_delay_aw[proc_id].insert(std::make_pair(line_addr, cycle_count - per_core_cur_line_delay[proc_id]));
+      } else {
+        it3->second += cycle_count - per_core_cur_line_delay[proc_id];
+      }
+    }
+    per_core_cur_line_delay[proc_id] = 0;
   } else {
     auto it2 = per_core_sequence_bw[proc_id].find(line_addr);
     if (it2 == per_core_sequence_bw[proc_id].end()) {
@@ -1545,5 +1581,25 @@ void inc_icache_hit(uns proc_id, Addr line_addr) {
     per_core_icache_sequence[proc_id][line_addr].push_back(icache_val);
   } else {
     it->second.push_back(icache_val);
+  }
+}
+
+void add_evict_seq(uns proc_id, Addr line_addr) {
+  if (per_core_warmed_up[proc_id]) {
+    auto it2 = per_core_sequence_aw[proc_id].find(line_addr);
+    if (it2 == per_core_sequence_aw[proc_id].end()) {
+      per_core_sequence_aw[proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_aw[proc_id][line_addr].push_back(std::make_pair('e',cycle_count));
+    } else {
+      it2->second.push_back(std::make_pair('e',cycle_count));
+    }
+  } else {
+    auto it2 = per_core_sequence_bw[proc_id].find(line_addr);
+    if (it2 == per_core_sequence_bw[proc_id].end()) {
+      per_core_sequence_bw[proc_id].insert(std::make_pair(line_addr, std::vector<std::pair<char,Counter>>()));
+      per_core_sequence_bw[proc_id][line_addr].push_back(std::make_pair('e',cycle_count));
+    } else {
+      it2->second.push_back(std::make_pair('e',cycle_count));
+    }
   }
 }

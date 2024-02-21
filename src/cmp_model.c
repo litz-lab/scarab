@@ -47,6 +47,8 @@
 /*#include "prefetcher/fdip.h"*/
 #include "prefetcher/fdip_new.h"
 #include "prefetcher/eip.h"
+#include "prefetcher/D_JOLT.h"
+#include "prefetcher/FNL+MMA.h"
 #include "sim.h"
 #include "statistics.h"
 
@@ -125,6 +127,8 @@ void cmp_init(uns mode) {
 
     init_fdip(proc_id);
     init_eip(proc_id);
+    init_djolt(proc_id);
+    init_fnlmma(proc_id);
   }
 
   cmp_model.window_size = NODE_TABLE_SIZE;

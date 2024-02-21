@@ -60,6 +60,8 @@
 /*#include "prefetcher/fdip.h"*/
 #include "prefetcher/fdip_new.h"
 #include "prefetcher/eip.h"
+#include "prefetcher/D_JOLT.h"
+#include "prefetcher/FNL+MMA.h"
 #include "prefetcher/pref.param.h"
 #include "uop_queue_stage.h"
 #include "decode_stage.h"
@@ -443,6 +445,10 @@ void update_icache_stage() {
           }
           if(EIP_ENABLE)
             eip_prefetch(ic->proc_id, ic->fetch_addr, 0, 0);
+          if(DJOLT_ENABLE)
+            djolt_prefetch(ic->proc_id, ic->fetch_addr, 0, 0);
+          if(FNLMMA_ENABLE)
+            fnlmma_prefetch(ic->proc_id, ic->fetch_addr, 0, 0);
           break_fetch = BREAK_ICACHE_MISS;
         } else if (ic->line == (Inst_Info**) DUMMY_ADDR_UC_FETCH) { // icache miss, uc hit
           log_stats_ic_miss();
@@ -455,6 +461,10 @@ void update_icache_stage() {
                            0);
           if(EIP_ENABLE)
             eip_prefetch(ic->proc_id, ic->fetch_addr, 0, 0);
+          if(DJOLT_ENABLE)
+            djolt_prefetch(ic->proc_id, ic->fetch_addr, 0, 0);
+          if(FNLMMA_ENABLE)
+            fnlmma_prefetch(ic->proc_id, ic->fetch_addr, 0, 0);
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line);
         } else { /* icache hit. Can be either UC hit or miss */
           DEBUG(ic->proc_id, "Cache hit on op_num:%s @ 0x%s line_addr 0x%s\n",
@@ -471,6 +481,10 @@ void update_icache_stage() {
           }
           if(EIP_ENABLE)
             eip_prefetch(ic->proc_id, ic->fetch_addr, 1, 0);
+          if(DJOLT_ENABLE)
+            djolt_prefetch(ic->proc_id, ic->fetch_addr, 1, 0);
+          if(FNLMMA_ENABLE)
+            fnlmma_prefetch(ic->proc_id, ic->fetch_addr, 1, 0);
           ic->next_state = icache_issue_ops(&break_fetch, &cf_num, ic->line);
         }
       }
@@ -678,6 +692,8 @@ static inline Icache_State icache_issue_ops(Break_Reason* break_fetch,
         td->td_info.fetch_br_count++;
 
       ic->next_fetch_addr       = op->oracle_info.pred_npc;
+      if(DJOLT_ENABLE)
+        update_djolt(ic->proc_id, op->fetch_addr, op->table_info->cf_type, op->oracle_info.pred_npc);
       ASSERT(ic->proc_id, ic->next_fetch_addr);
       // initially bp_predict_op can return a garbage, for multi core run,
       // addr must follow cmp addr convention

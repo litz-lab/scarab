@@ -916,7 +916,7 @@ void probe_prefetched_cls(Addr line_addr) {
     cl_iter->second.first.first = cycle_count;
   else {
     auto cl_off_iter = per_core_off_fetched_cls[fdip_proc_id].find(line_addr);
-    if (!FDIP_PERFECT_PREFETCH)
+    if (!FDIP_PERFECT_PREFETCH && !EIP_ENABLE && !DJOLT_ENABLE && !FNLMMA_ENABLE)
       ASSERT(fdip_proc_id, cl_off_iter != per_core_off_fetched_cls[fdip_proc_id].end());
   }
 }

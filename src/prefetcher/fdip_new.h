@@ -56,6 +56,7 @@ extern "C" {
   void default_conf_update(Op * op);
   void num_cycles_btb_miss_rate_conf_update(Op * op);
   void log_fdip_off_conf_on_btb_miss_cbr_conf_stats(Op *op);
+  void log_conf_on_off_path_stats_icache_miss();
 
   
 #ifdef __cplusplus

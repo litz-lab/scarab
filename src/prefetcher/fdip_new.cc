@@ -1803,10 +1803,28 @@ void btb_miss_bp_taken_conf_update(Op * op){
 void num_cycles_btb_miss_rate_conf_update(Op * op){
   //if number of cycles times btb miss rate is greater than 1 we have probably seen a btb miss
   DEBUG(fdip_proc_id, "btb miss rate: %f, cycles since recovery: %llu", per_core_btb_miss_rate[fdip_proc_id], cycle_count - cycle_count_last_recovery);
-  if((double)((cycle_count - cycle_count_last_recovery) * per_core_btb_miss_rate[fdip_proc_id])  >= 1.0){
+  if((double)((cycle_count - cycle_count_last_recovery) * per_core_btb_miss_rate[fdip_proc_id])  >= FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD){
     low_confidence_cnt = ~0U;
     STAT_EVENT(fdip_proc_id, FDIP_BTB_NUM_CYCLES_OFF_PATH_EVENT);
   } else {
     low_confidence_cnt += 3 - op->bp_confidence;
+  }
+}
+
+void log_conf_on_off_path_stats_icache_miss() {
+  //conf on
+  if(FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD){
+    //actually off
+    if(fdip_off_path(fdip_proc_id)) {
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_ICACHE_MISS);
+    } else {
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON_ICACHE_MISS);
+    }
+  } else {
+    if(fdip_off_path(fdip_proc_id)) {
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_ICACHE_MISS);
+    } else {
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_ICACHE_MISS);
+    }
   }
 }

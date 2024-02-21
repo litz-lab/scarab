@@ -177,6 +177,8 @@ DEF_PARAM(fdip_dual_path_pref_uoc_online_mispred_threshold, FDIP_DUAL_PATH_PREF_
 
 DEF_PARAM(fdip_btb_miss_bp_taken_conf, FDIP_BTB_MISS_BP_TAKEN_CONF, Flag, Flag, FALSE, )
 DEF_PARAM(fdip_btb_miss_bp_taken_conf_threshold, FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD, int, int, 3, )
+DEF_PARAM(fdip_btb_miss_rate_cycles_threshold, FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD, float, float, 1.0, )
+
 
 //DEF_PARAM(fdip_btb_num_cycles_confidence, FDIP_BTB_NUM_CYCLES_CONFIDENCE, Flag, Flag, FALSE, )
 

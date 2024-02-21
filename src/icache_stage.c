@@ -444,7 +444,7 @@ void update_icache_stage() {
             }
           }
           if(EIP_ENABLE)
-            eip_prefetch(ic->proc_id, ic->fetch_addr, 0, 0);
+            eip_prefetch(ic->proc_id, ic->fetch_addr, 0, 0, ic->off_path);
           if(DJOLT_ENABLE)
             djolt_prefetch(ic->proc_id, ic->fetch_addr, 0, 0);
           if(FNLMMA_ENABLE)
@@ -460,7 +460,7 @@ void update_icache_stage() {
                            unique_count,
                            0);
           if(EIP_ENABLE)
-            eip_prefetch(ic->proc_id, ic->fetch_addr, 0, 0);
+            eip_prefetch(ic->proc_id, ic->fetch_addr, 0, 0, ic->off_path);
           if(DJOLT_ENABLE)
             djolt_prefetch(ic->proc_id, ic->fetch_addr, 0, 0);
           if(FNLMMA_ENABLE)
@@ -480,7 +480,7 @@ void update_icache_stage() {
             wp_process_icache_hit(line_info, ic->fetch_addr);
           }
           if(EIP_ENABLE)
-            eip_prefetch(ic->proc_id, ic->fetch_addr, 1, 0);
+            eip_prefetch(ic->proc_id, ic->fetch_addr, 1, 0, ic->off_path);
           if(DJOLT_ENABLE)
             djolt_prefetch(ic->proc_id, ic->fetch_addr, 1, 0);
           if(FNLMMA_ENABLE)

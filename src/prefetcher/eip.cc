@@ -927,7 +927,7 @@ void alloc_mem_eip(uns numCores) {
     l1i_init_entangled_table();
   }
 
-  void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefetch_hit)
+  void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefetch_hit, Flag off_path)
   {
     uint64_t line_addr = v_addr >> LOG2(ICACHE_LINE_SIZE);
     DEBUG(proc_id, "eip_prefetch 0x%lx, icache_line_addr 0x%lx line_addr 0x%lx, cache hit %d, prefetch_hit %d, l1i_find_timing_cache_entry %lu\n", v_addr, v_addr & ~0x3F, line_addr, cache_hit, prefetch_hit, l1i_find_timing_cache_entry(line_addr));
@@ -971,7 +971,8 @@ void alloc_mem_eip(uns numCores) {
         success = new_mem_req(MRT_IPRF, eip_proc_id, pf_addr, ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
         if (success) {
           DEBUG(proc_id, "new_mem_req (BB pref) for v_addr 0x%lx,line_addr 0x%lx  pf_addr 0x%lx, unique_count: %llu\n", v_addr, v_addr & ~0x3F, pf_addr, unique_count);
-          l1i_add_timing_entry(pf_addr >> LOG2(ICACHE_LINE_SIZE), 0, L1I_ENTANGLED_TABLE_WAYS);
+          if (!off_path)
+            l1i_add_timing_entry(pf_addr >> LOG2(ICACHE_LINE_SIZE), 0, L1I_ENTANGLED_TABLE_WAYS);
           //if (success == Mem_Queue_Req_Result::SUCCESS_NEW)
             //per_cyc_ipref++;
         }
@@ -997,7 +998,8 @@ void alloc_mem_eip(uns numCores) {
             success = new_mem_req(MRT_IPRF, eip_proc_id, pf_line_addr << LOG2(ICACHE_LINE_SIZE), ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
             if (success) {
               DEBUG(proc_id, "new_mem_req (Entangled pref) for 0x%lx, unique_count: %llu\n", pf_line_addr << LOG2(ICACHE_LINE_SIZE), unique_count);
-              l1i_add_timing_entry(pf_line_addr, source_set, (i == 0) ? source_way : L1I_ENTANGLED_TABLE_WAYS);
+              if (!off_path)
+                l1i_add_timing_entry(pf_line_addr, source_set, (i == 0) ? source_way : L1I_ENTANGLED_TABLE_WAYS);
               //if (success == Mem_Queue_Req_Result::SUCCESS_NEW)
                 //per_cyc_ipref++;
             }
@@ -1044,7 +1046,7 @@ void alloc_mem_eip(uns numCores) {
     }
 
     // Add miss in the latency table
-    if (!cache_hit && !l1i_ongoing_request(line_addr)) {
+    if (!cache_hit && !l1i_ongoing_request(line_addr) && !off_path) {
       l1i_add_timing_entry(line_addr, 0, L1I_ENTANGLED_TABLE_WAYS);
     }
 

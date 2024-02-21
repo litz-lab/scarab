@@ -369,46 +369,18 @@ void update_fdip() {
     }
 
     //log conf stats
-    if(op->table_info->cf_type){
-      //if it is a cf with bp conf
-      if((op)->table_info->cf_type == CF_CBR || 
-        (op)->table_info->cf_type == CF_IBR || 
-        (op)->table_info->cf_type == CF_ICALL){
-        switch(op->bp_confidence){
-          case 0:
-            if(op->oracle_info.mispred){
-              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_0_MISPRED);
-            } else {
-              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_0_CORRECT);
-            }
-            break;
-          case 1:
-            if(op->oracle_info.mispred){
-              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_1_MISPRED);
-            } else {
-              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_1_CORRECT);
-            }
-            break;
-          case 2:
-            if(op->oracle_info.mispred){
-              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_2_MISPRED);
-            } else {
-              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_2_CORRECT);
-            }
-            break;
-          case 3:
-            if(op->oracle_info.mispred){
-              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_3_MISPRED);
-            } else {
-              STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_3_CORRECT);
-            }
-            break;
-          default:
-            DEBUG(fdip_proc_id, "bp confidence invalid value\n");
-        }
+
+    //if it is a cf with bp conf
+    if((op)->table_info->cf_type == CF_CBR || 
+      (op)->table_info->cf_type == CF_IBR || 
+      (op)->table_info->cf_type == CF_ICALL){
+      if(op->oracle_info.mispred) {
+        //reorder stats
+        STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_0_MISPRED + op->bp_confidence);
+      } else {
+        STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_0_CORRECT + op->bp_confidence);
       }
     }
-
       
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;
@@ -1581,82 +1553,16 @@ void inc_icache_hit(uns proc_id, Addr line_addr) {
 
 void log_fdip_off_conf_on_btb_miss_stats(Op *op){
   STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS);
-  //type of cf
-  switch(op->table_info->cf_type){
-    case NOT_CF:
-      DEBUG(fdip_proc_id, "fdip on conf off, btb miss: instruction is not a cf inst! op type: %u, op num: %llu, addr: %llu\n", op->table_info->op_type, op->op_num, op->inst_info->addr);
-      break;
-    case CF_BR:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CF_BR);
-      break;
-    case CF_CBR:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CF_CBR);
-      log_fdip_off_conf_on_btb_miss_cbr_conf_stats(op);
-      break;
-    case CF_CALL:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CF_CALL);
-      break;
-    case CF_IBR:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CF_IBR);
-      break;
-    case CF_ICALL:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CF_ICALL);
-      break;
-    case CF_ICO:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CF_ICO);
-      break;
-    case CF_RET:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CF_RET);
-      break;
-    case CF_SYS:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CF_SYS);
-      break;
-    default:
-      DEBUG(fdip_proc_id, "fdip on conf off, btb miss: instruction is not a valid cf inst.\n");
-      break;
-  } // end switch
+  STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_NOT_CF + op->table_info->cf_type);
 }
 
 void log_fdip_off_conf_on_btb_miss_cbr_conf_stats(Op *op){
-  switch (op->bp_confidence){
-    case 0:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CBR_0_CONF);
-      break;
-    case 1:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CBR_1_CONF);
-      break;
-    case 2:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CBR_2_CONF);
-      break;
-    case 3:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CBR_3_CONF);
-      break;
-    default:
-      DEBUG(fdip_proc_id, "fdip off conf on mispred: bp_confidence is not a valid value\n");
-      break;
-  }
+  STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CBR_0_CONF + op->bp_confidence);
 }
-
 
 void log_fdip_off_conf_on_bp_incorrect_stats(Op *op){
   STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT);
-  switch (op->bp_confidence){
-    case 0:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT_0_CONF);
-      break;
-    case 1:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT_1_CONF);
-      break;
-    case 2:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT_2_CONF);
-      break;
-    case 3:
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT_3_CONF);
-      break;
-    default:
-      DEBUG(fdip_proc_id, "fdip off conf on mispred: bp_confidence is not a valid value\n");
-      break;
-  }
+  STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT_0_CONF + op->bp_confidence);
 }
 
 void log_fdip_on_conf_off_state(){

@@ -582,6 +582,10 @@ void ext_trace_extract_basic_block_vectors() {
           }
         }
       } else {
+        // the first rep string should be marked as fetched
+        // in other words, counts_as_built.total_size == counts_as_built.fetched_size
+        ASSERT(proc_id, cur_bb.ins_list.size() == cur_bb.inst_count_fetched);
+
         // a new bb, starting at 1
         counts_as_built.blocks++;
         cur_bb.bb_id = counts_as_built.blocks;
@@ -641,6 +645,8 @@ void ext_trace_extract_basic_block_vectors() {
         // to_last_vector_count = cur_bb.ins_list.size() - to_new_vector_count;
 
         // re-examine the counting
+        // doing this because not knowing which one is fetched or not
+        // but it could be easier as we only have rep string emulation?
         cur_counter -= cur_bb.ins_list.size();
         cur_counter_fetched -= cur_bb.inst_count_fetched;
         ASSERT(proc_id, (USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) < SEGMENT_INSTR_COUNT);

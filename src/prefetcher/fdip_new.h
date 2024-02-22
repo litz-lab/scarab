@@ -35,7 +35,7 @@ extern "C" {
   void set_last_miss_reason(uns proc_id, uns reason);
   uint64_t get_fdip_ftq_occupancy_ops(uns proc_id);
   uint64_t get_fdip_ftq_occupancy(uns proc_id);
-  Flag determine_usefulness(Addr line_addr);
+  Flag determine_usefulness(Addr line_addr, Op* op);
   void update_useful_lines(uns proc_id, Op* op);
   void update_useful_lines_uc(uns proc_id, Addr line_addr);
   void update_unuseful_lines_uc(uns proc_id, Addr line_addr);
@@ -49,6 +49,17 @@ extern "C" {
   void insert_pref_candidate_to_seniority_ftq(Addr line_addr);
   void clear_old_seniority_ftq();
   void assert_fdip_break_reason(uns proc_id, Addr line_addr);
+  void log_fdip_off_conf_on_btb_miss_stats(Op *op);
+  void log_fdip_off_conf_on_bp_incorrect_stats(Op *op);
+  void log_fdip_on_conf_off_state();
+  void inc_br_conf_counters(int conf);
+  void inc_cf_type_counters(Cf_Type cf_type);
+  void btb_miss_bp_taken_conf_update(Op * op);
+  void default_conf_update(Op * op);
+  void num_cycles_btb_miss_rate_conf_update(Op * op);
+  void log_fdip_off_conf_on_btb_miss_cbr_conf_stats(Op *op);
+  void log_conf_on_off_path_stats_icache_miss();
+
   
 #ifdef __cplusplus
 }
@@ -82,5 +93,34 @@ typedef struct Utility_Timeliness_Info_struct {
   double timeliness_ratio;
   Flag adjust;
 } Utility_Timeliness_Info;
+
+//metadata for fdip confidence
+typedef struct FDIP_Confidence_Info_struct {
+  Op * prev_op;
+  Op * cur_op;
+
+  //prbably only need one of these lads
+  Flag fdip_off_path_event;
+  Flag fdip_on_conf_off_event;
+
+  Counter num_conf_0_branches;
+  Counter num_conf_1_branches;
+  Counter num_conf_2_branches;
+  Counter num_conf_3_branches;
+
+  Counter num_cf_br;
+  Counter num_cf_cbr;
+  Counter num_cf_call;
+  Counter num_cf_ibr;
+  Counter num_cf_icall;
+  Counter num_cf_ico;
+  Counter num_cf_ret;
+  Counter num_cf_sys;
+
+  Counter num_BTB_misses;
+  Counter num_op_dist_incs;
+
+  Flag fdip_off_conf_on_event;
+} FDIP_Confidence_Info;
 
 #endif

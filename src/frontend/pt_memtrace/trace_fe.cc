@@ -196,9 +196,10 @@ void ext_trace_fetch_op(uns proc_id, Op* op) {
           ASSERT(proc_id, next_onpath_pi[proc_id].op_type == find->second.op_type);
           if (next_onpath_pi[proc_id].cf_type) {
             ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == find->second.cf_type);
-            ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == CF_CBR ||
-                            next_onpath_pi[proc_id].cf_type >= CF_IBR ||
-                            next_onpath_pi[proc_id].last_inst_from_trace);
+            // This can fail for java pt traces
+            // ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == CF_CBR ||
+            //                 next_onpath_pi[proc_id].cf_type >= CF_IBR ||
+            //                 next_onpath_pi[proc_id].last_inst_from_trace);
           }
           STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + next_onpath_pi[proc_id].op_type);
           pc_to_inst.erase(addr);

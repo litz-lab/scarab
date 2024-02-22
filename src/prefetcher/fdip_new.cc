@@ -394,29 +394,12 @@ void update_fdip() {
         STAT_EVENT(fdip_proc_id, FDIP_BP_CONF_0_CORRECT + op->bp_confidence);
       }
     }
-      
+
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;
     DEBUG(fdip_proc_id, "op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, off-path: %d\n", op->op_num, op->inst_info->addr, line_addr, last_line_addr, fdip_off_path(fdip_proc_id));
     if (line_addr != last_line_addr) {
       STAT_EVENT(ic_ref->proc_id, FDIP_ATTEMPTED_PREF_ONPATH + op->off_path);
-      Flag demand_hit_prefetch = FALSE;
-      Flag demand_hit_writeback = FALSE;
-      Mem_Queue_Entry* queue_entry = NULL;
-      Flag ramulator_match = FALSE;
-      bool line = (Inst_Info**)cache_access(&ic_ref->icache, pc_addr, &line_addr, TRUE);
-      // icache_line_info cache should be accessed same times with icache for a consistant line information
-      if (WP_COLLECT_STATS) {
-        Addr dummy_addr = 0;
-        bool line_info = (Icache_Data*)cache_access(&ic_ref->icache_line_info, pc_addr, &dummy_addr, TRUE);
-        UNUSED(dummy_addr);
-        UNUSED(line_info);
-      }
-      Mem_Req* mem_req = mem_search_reqbuf_wrapper(ic_ref->proc_id, line_addr,
-                                                   MRT_FDIPPRF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
-                                                   QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
-                                                   QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
-                                                   &queue_entry, &ramulator_match);
       DEBUG(fdip_proc_id, "fdip off path: %d, conf off path: %d\n", fdip_off_path(fdip_proc_id), (low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) ? 0:1);
       if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_PERFECT_PREFETCH)
         emit_new_prefetch = determine_usefulness(line_addr, op);
@@ -457,7 +440,7 @@ void update_fdip() {
           else{
             STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
             if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
-             log_fdip_on_conf_off_state();
+              log_fdip_on_conf_off_state();
             }
           }
         }

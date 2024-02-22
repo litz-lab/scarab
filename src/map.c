@@ -127,17 +127,11 @@ static inline void mem_map_byte_traversal_init(Mem_Map_Traversal* traversal);
 static inline Flag mem_map_byte_traversal_done(Mem_Map_Traversal* traversal);
 static inline void mem_map_byte_traversal_next(Mem_Map_Traversal* traversal);
 
-/* reg consume track */
-static inline void  reg_dep_track_table_init(Reg_Dep_Track_Table**, uns);
-static inline Flag  reg_dep_track_table_predict(Reg_Dep_Track_Table*, Op*);
-static inline void  reg_dep_track_table_read(Reg_Dep_Track_Table*, Op*, uns);
-static inline void  reg_dep_track_table_write(Reg_Dep_Track_Table*, Op*, uns);
-static inline void  reg_dep_track_table_release(Reg_Dep_Track_Table*, uns);
-
-/* physical register file */
-static inline void reg_file_init(void);
-static inline void reg_file_process_renaming(Op*);
-static inline void reg_file_rebuild_map(void);
+/* register consume tracking */
+static inline void reg_consume_table_init(Reg_Consume_Table**, uns);
+static inline void reg_consume_table_read(Reg_Consume_Table*, Op*, uns);
+static inline void reg_consume_table_write(Reg_Consume_Table*, Op*, uns);
+static inline void reg_consume_table_release(Reg_Consume_Table*, uns);
 
 /**************************************************************************************/
 /* set_map_data: */
@@ -185,13 +179,12 @@ void init_map(uns8 proc_id) {
   init_hash_table(&map_data->oracle_mem_hash, "oracle mem dependence map",
                   NODE_TABLE_SIZE, sizeof(Mem_Map_Entry));
 
-  /* Init Consume Reg Map and Table */
-  map_data->track_table = NULL;
-  reg_dep_track_table_init(&map_data->track_table, NUM_REG_IDS * 2);
+  /* Init the register renaming table */
+  map_data->rename_table = NULL;
+  rename_table_init();
 
-  /* Init Physical Register File */
-  map_data->reg_file = NULL;
-  reg_file_init();
+  /* Init the consume table to track unconsumed producer */
+  reg_consume_table_init(&map_data->consume_table, NUM_REG_IDS * 2);
 }
 
 
@@ -206,8 +199,6 @@ void recover_map() {
   map_data->last_store_flag = FALSE;
   hash_table_scan(&map_data->oracle_mem_hash, recover_mem_map_entry, NULL);
   rebuild_offpath_map();
-
-  reg_file_rebuild_map();
 }
 
 /**************************************************************************************/
@@ -274,7 +265,7 @@ void map_op(Op* op) {
   ASSERT(map_data->proc_id, op);
   ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
 
-  reg_file_process_renaming(op);
+  rename_table_process(op);
 
   read_reg_map(op);   /* set reg sources */
   read_store_map(op); /* set addr dependency on last store */
@@ -287,7 +278,8 @@ void map_op(Op* op) {
 static inline void read_reg_map(Op* op) {
   uns ii;
 
-  if (REG_FILE_PHY_ENABLE)
+  // When enable register renaming table feature, do not read info from current map
+  if (REG_RENAMING_TABLE_ENABLE)
     return;
 
   for(ii = 0; ii < op->table_info->num_src_regs; ii++) {
@@ -299,11 +291,11 @@ static inline void read_reg_map(Op* op) {
           "Reading map  op_num:%s  off_path:%d  id:%d  flag:%d  ind:%d\n",
           unsstr64(op->op_num), op->off_path, id, map_data->map_flags[id], ind);
 
-    reg_dep_track_table_read(map_data->track_table, op, ind);
-
     add_src_from_map_entry(op, map_entry, REG_DATA_DEP);
     /* address predictor is called if op is a load & this is first mem op reg
      * read for this reg instance */
+
+    reg_consume_table_read(map_data->consume_table, op, ind);
   }
 }
 
@@ -350,8 +342,8 @@ static inline void update_map(Op* op) {
     map_entry->unique_num   = op->unique_num;
     map_data->map_flags[id] = op->off_path;
 
-    reg_dep_track_table_release(map_data->track_table, ind);
-    reg_dep_track_table_write(map_data->track_table, op, ind);
+    reg_consume_table_release(map_data->consume_table, ind);
+    reg_consume_table_write(map_data->consume_table, op, ind);
   }
 
   /* update the map if the op is a store */
@@ -633,6 +625,9 @@ void wake_up_ops(Op* op, Dep_Type type, void (*wake_action)(Op*, Op*, uns8)) {
     }
   }
   op->wake_up_signaled[type] = TRUE;
+
+  // update entry state
+  rename_table_produce(op);
 }
 
 /**************************************************************************************/
@@ -895,178 +890,502 @@ void reset_map() {
 }
 
 /**************************************************************************************
- * Module:      Reg_Dep_Track_Table
+ * Module:      Reg_Renaming_Table
+ * Description: Register renaming implementation based on the hardware scheme
+***************************************************************************************/
+// reg renaming process
+static inline void rename_table_read_src(Op*);
+static inline void rename_table_write_dst(Op*);
+
+// merged register file operations
+static inline void             merged_reg_file_init(uns);
+static inline Reg_File_Entry*  merged_reg_file_lookup_entry(uns16);
+static inline void             merged_reg_file_read_entry(Op*, Reg_File_Entry*);
+static inline void             merged_reg_file_write_entry(Op*, Reg_File_Entry*, int, uns);
+static inline Reg_File_Entry*  merged_reg_file_alloc_entry(void);
+static inline void             merged_reg_file_release_entry(Reg_File_Entry*);
+static inline void             merged_reg_file_free_list_insert(Reg_File_Entry*);
+static inline Reg_File_Entry*  merged_reg_file_free_list_delete(void);
+
+// register releasing/update for external call
+static inline void merged_reg_file_remove_prev(int);
+static inline void merged_reg_file_flush_mispredict(int);
+static inline void merged_reg_file_produce_result(int);
+
+/**************************************************************************************/
+
+void rename_table_init(void) {
+  if (!REG_RENAMING_TABLE_ENABLE)
+    return;
+
+  map_data->rename_table = (Reg_Renaming_Table *)malloc(sizeof(Reg_Renaming_Table));
+  map_data->rename_table->merged_rf = NULL;
+  merged_reg_file_init(REG_RENAMING_TABLE_REG_FILE_SIZE);
+}
+
+/*
+  process:
+  --- 1. read src: look up src register and fill the entry into src_info
+  --- 2. write dst: alloc entry and store self info into register as dst
+*/
+void rename_table_process(Op *op) {
+  if (!REG_RENAMING_TABLE_ENABLE)
+    return;
+
+  rename_table_read_src(op);
+  rename_table_write_dst(op);
+}
+
+/**************************************************************************************/
+
+/*
+  read src:
+    1. lookup the latest physical entry from the register map table
+    2. get the src_info in from entry
+*/
+void rename_table_read_src(Op *op) {
+  uns ii;
+  Reg_File_Entry *entry;
+
+  for (ii = 0; ii < op->table_info->num_src_regs; ii++) {
+    entry = merged_reg_file_lookup_entry(op->inst_info->srcs[ii].id);
+    merged_reg_file_read_entry(op, entry);
+  }
+}
+
+/*
+  write dst:
+    1. allocate an physical register of register file from free list
+    2. store self info into the register as destination
+*/
+void rename_table_write_dst(Op *op) {
+  uns ii;
+  Reg_File_Entry *entry;
+
+  ASSERT(map_data->proc_id, op->table_info->num_dest_regs <= map_data->rename_table->merged_rf->reg_free_num);
+
+  for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
+    entry = merged_reg_file_alloc_entry();
+    merged_reg_file_write_entry(op, entry, op->inst_info->dests[ii].id, ii);
+  }
+
+  ASSERT(map_data->proc_id, op->dst_reg_file_ptag[op->table_info->num_dest_regs] == -1);
+}
+
+/**************************************************************************************/
+/* Operations of Physical Reisger Entries in Merged Register File */
+
+void merged_reg_file_init(uns array_size) {
+  uns ii;
+  Reg_File_Entry *entry;
+
+  map_data->rename_table->merged_rf = (Merged_Reg_File *)malloc(sizeof(Merged_Reg_File));
+
+  /* init the register map table */
+  for (ii = 0; ii < NUM_REG_IDS; ii++)
+    map_data->rename_table->merged_rf->reg_map_table[ii] = REG_FILE_INVALID_REG_ID;
+
+  /* init the free list */
+  map_data->rename_table->merged_rf->reg_free_num = 0;
+  map_data->rename_table->merged_rf->reg_free_list_head = NULL;
+
+  /* init the physical register */
+  map_data->rename_table->merged_rf->reg_file_size = array_size;
+  map_data->rename_table->merged_rf->reg_file = (Reg_File_Entry *)malloc(sizeof(Reg_File_Entry) * array_size);
+
+  /* init the physical register entry */
+  for (ii = 0; ii < array_size; ii++) {
+    entry = &map_data->rename_table->merged_rf->reg_file[ii];
+
+    entry->op = &invalid_op;
+    entry->op_num = 0;
+    entry->unique_num = 0;
+    entry->off_path = FALSE;
+
+    entry->reg_arch_id = REG_FILE_INVALID_REG_ID;
+    entry->reg_ptag = ii;
+    entry->reg_state = REG_FILE_ENTRY_STATE_FREE;
+
+    entry->prev_same_arch_id = REG_FILE_INVALID_REG_ID;
+
+    merged_reg_file_free_list_insert(entry);
+  }
+
+  /* init the register map table with aleast one physical register */
+  for (ii = 0; ii < NUM_REG_IDS; ii++) {
+    entry = merged_reg_file_alloc_entry();
+    merged_reg_file_write_entry(&invalid_op, entry, ii, 0);
+    ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[ii] != REG_FILE_INVALID_REG_ID);
+  }
+
+  /* init the consume table */
+  reg_consume_table_init(&map_data->rename_table->merged_rf->consume_table, array_size);
+}
+
+static inline Reg_File_Entry* merged_reg_file_lookup_entry(uns16 id) {
+  int ptag = map_data->rename_table->merged_rf->reg_map_table[id];
+  ASSERT(map_data->proc_id, ptag != REG_FILE_INVALID_REG_ID);
+
+  Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
+  ASSERT(map_data->proc_id, entry != NULL);
+  return entry;
+}
+
+/*
+  read entry:
+  --- 1. fill src info from the entry
+  --- 2. update not ready bit for wake up
+*/
+void merged_reg_file_read_entry(Op *op, Reg_File_Entry *entry) {
+  ASSERT(map->proc_id, entry != NULL);
+  ASSERT(map->proc_id, op->op_num != entry->op_num);
+
+  // increase src num
+  uns       src_num = op->oracle_info.num_srcs++;
+  Src_Info* info    = &op->oracle_info.src_info[src_num];
+
+  // get info from the entry
+  info->type       = REG_DATA_DEP;
+  info->op         = entry->op;
+  info->op_num     = entry->op_num;
+  info->unique_num = entry->unique_num;
+
+  // setting waking up signal
+  set_not_rdy_bit(op, src_num);
+
+  // track unconsumed producer
+  reg_consume_table_read(map_data->rename_table->merged_rf->consume_table, op, entry->reg_ptag);
+}
+
+/*
+  write entry:
+  --- 1. write the op into the entry
+  --- 2. update the register map table to ensure the latest assignment
+  --- 3. put the entry into op
+*/
+void merged_reg_file_write_entry(Op* op, Reg_File_Entry *entry, int id, uns ii) {
+  ASSERT(op->proc_id, entry != NULL);
+
+  // write info to entry
+  entry->op = op;
+  entry->op_num = op->op_num;
+  entry->unique_num = op->unique_num;
+  entry->off_path = op->off_path;
+  entry->reg_arch_id = id;
+  entry->reg_state = REG_FILE_ENTRY_STATE_ALLOC;
+
+  // update the ptag of the previous regiseter with the same architectural register
+  ASSERT(op->proc_id, entry->prev_same_arch_id == REG_FILE_INVALID_REG_ID);
+  entry->prev_same_arch_id = map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id];
+
+  // change the ptag in the register map table to point to the latest physical register
+  map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] = entry->reg_ptag;
+
+  // put the ptag of the entry into op for call back
+  if (op == &invalid_op)
+    return;
+  ASSERT(op->proc_id, op->dst_reg_file_ptag[ii] == -1);
+  op->dst_reg_file_ptag[ii] = entry->reg_ptag;
+
+  // track unconsumed producer
+  reg_consume_table_write(map_data->rename_table->merged_rf->consume_table, op, entry->reg_ptag);
+}
+
+/*
+  alloc entry:
+  --- get the entry from the free list
+*/
+Reg_File_Entry *merged_reg_file_alloc_entry(void) {
+  return merged_reg_file_free_list_delete();
+}
+
+/*
+  release entry:
+  --- clear all the info of the entry and insert it to the free list
+*/
+void merged_reg_file_release_entry(Reg_File_Entry *entry) {
+  ASSERT(map->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_DEAD || entry->off_path);
+  ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] != entry->reg_ptag);
+
+  // clear the storing info of the entry
+  entry->op = &invalid_op;
+  entry->op_num = 0;
+  entry->unique_num = 0;
+  entry->off_path = FALSE;
+  entry->reg_arch_id = REG_FILE_INVALID_REG_ID;
+  entry->reg_state = REG_FILE_ENTRY_STATE_FREE;
+
+  // clear the tracking pointers with same architectural register id
+  entry->prev_same_arch_id = REG_FILE_INVALID_REG_ID;
+
+  // append to free list
+  merged_reg_file_free_list_insert(entry);
+
+  // track unconsumed producer
+  reg_consume_table_release(map_data->rename_table->merged_rf->consume_table, entry->reg_ptag);
+}
+
+/*
+  free list insert:
+  --- push the entry to the free list
+*/
+void merged_reg_file_free_list_insert(Reg_File_Entry *entry) {
+  ASSERT(map->proc_id, entry->next_free == NULL);
+
+  entry->next_free = map_data->rename_table->merged_rf->reg_free_list_head;
+  map_data->rename_table->merged_rf->reg_free_list_head = entry;
+
+  map_data->rename_table->merged_rf->reg_free_num++;
+}
+
+/*
+  free list delete:
+  --- pop the entry from the free list
+*/
+Reg_File_Entry *merged_reg_file_free_list_delete(void) {
+  ASSERT(map->proc_id, map_data->rename_table->merged_rf->reg_free_list_head != NULL);
+
+  Reg_File_Entry *entry = map_data->rename_table->merged_rf->reg_free_list_head;
+  map_data->rename_table->merged_rf->reg_free_list_head = entry->next_free;
+  entry->next_free = NULL;
+
+  map_data->rename_table->merged_rf->reg_free_num--;
+
+  return entry;
+}
+
+/**************************************************************************************/
+
+/*
+  remove prev:
+  --- 1. mark dead for the prev entry with same archituctural id before the committed one
+  --- 2. remove the dead entry
+*/
+void merged_reg_file_remove_prev(int ptag) {
+  ASSERT(map_data->proc_id, REG_RENAMING_TABLE_ENABLE);
+  ASSERT(map_data->proc_id, ptag != REG_FILE_INVALID_REG_ID);
+  Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
+
+  ASSERT(map_data->proc_id, entry != NULL);
+  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_PRODUCED);
+  ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] != REG_FILE_INVALID_REG_ID);
+
+  // mark current register as commit when it is retire
+  entry->reg_state = REG_FILE_ENTRY_STATE_COMMIT;
+
+  // mark the op before the committed op as dead and release it
+  int prev_ptag = entry->prev_same_arch_id;
+  ASSERT(map_data->proc_id, prev_ptag != REG_FILE_INVALID_REG_ID);
+
+  Reg_File_Entry *prev_entry = &map_data->rename_table->merged_rf->reg_file[prev_ptag];
+  ASSERT(map_data->proc_id, prev_entry->reg_state == REG_FILE_ENTRY_STATE_COMMIT || prev_entry->op == &invalid_op);
+
+  prev_entry->reg_state = REG_FILE_ENTRY_STATE_DEAD;
+  merged_reg_file_release_entry(prev_entry);
+}
+
+/*
+  flush mispredict:
+  --- 1. update the register map table (SRT)
+  --- 2. remove the mispredicted entry
+*/
+void merged_reg_file_flush_mispredict(int ptag) {
+  ASSERT(map_data->proc_id, REG_RENAMING_TABLE_ENABLE);
+  ASSERT(map_data->proc_id, ptag != REG_FILE_INVALID_REG_ID);
+  Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
+
+  ASSERT(map_data->proc_id, entry != NULL);
+  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_ALLOC || entry->reg_state == REG_FILE_ENTRY_STATE_PRODUCED);
+  ASSERT(map_data->proc_id, entry->off_path);
+
+  // update register map table by prev
+  ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] == ptag);
+  map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] = entry->prev_same_arch_id;
+
+  // release register
+  merged_reg_file_release_entry(entry);
+}
+
+/*
+  produce result:
+  --- update the register state
+*/
+void merged_reg_file_produce_result(int ptag) {
+  ASSERT(map_data->proc_id, REG_RENAMING_TABLE_ENABLE);
+  ASSERT(map_data->proc_id, ptag != REG_FILE_INVALID_REG_ID);
+  Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
+
+  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_ALLOC);
+  entry->reg_state = REG_FILE_ENTRY_STATE_PRODUCED;
+}
+
+/**************************************************************************************/
+/* External Calling of Register Renaming Table */
+
+/*
+  Procedure:
+  --- update the register entry state to indicate the results in the register is produced
+*/
+void rename_table_produce(Op *op) {
+  if (!REG_RENAMING_TABLE_ENABLE)
+    return;
+  ASSERT(map_data->proc_id, op != NULL);
+
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++)
+    merged_reg_file_produce_result(op->dst_reg_file_ptag[ii]);
+}
+
+/*
+  Called by:
+  --- icache_stage.c -> in ic wait for renaming
+  --- icache_stage.c -> icache_issue_ops
+  Procedure:
+  --- check if there are enough registers
+*/
+Flag rename_table_available(void) {
+  if (!REG_RENAMING_TABLE_ENABLE)
+    return TRUE;
+  ASSERT(map_data->proc_id, map_data->rename_table != NULL);
+
+  return map_data->rename_table->merged_rf->reg_free_num >= MAX_DESTS;
+}
+
+/*
+  Called by:
+  --- node_stage.c -> node_retire
+  Procedure:
+  --- free the register entry of the ops which is before this op
+*/
+void rename_table_commit(Op *op) {
+  if (!REG_RENAMING_TABLE_ENABLE)
+    return;
+  ASSERT(map_data->proc_id, op != NULL);
+
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++)
+    merged_reg_file_remove_prev(op->dst_reg_file_ptag[ii]);
+}
+
+/*
+  Called by:
+  --- thread.c -> recover_thread
+  Procedure:
+  --- free the register entry of the ops which is mispredicted
+*/
+void rename_table_recover(Counter recovery_op_num) {
+  if (!REG_RENAMING_TABLE_ENABLE)
+    return;
+
+  // start from the youngest op
+  Op** op_p = (Op**)list_start_tail_traversal(&td->seq_op_list);
+
+  // release the register from the youngest to the oldest
+  while (op_p && (*op_p)->op_num > recovery_op_num) {
+    ASSERT(map_data->proc_id, (*op_p)->off_path);
+    for (uns ii = 0; ii < (*op_p)->table_info->num_dest_regs; ii++)
+      merged_reg_file_flush_mispredict((*op_p)->dst_reg_file_ptag[ii]);
+
+    op_p = (Op**)list_prev_element(&td->seq_op_list);
+  }
+}
+
+/**************************************************************************************
+ * Module:      Reg_Consume_Table
  * Description: 
  * --- 1. Track if a producer insturction is consumed
  * --- 2. Collect the info of unconsumed producers
 ***************************************************************************************/
-static inline uns64               reg_dep_track_table_signiture(Reg_Dep_Track_Table*, Op*);
-static inline Reg_Dep_Track_Node* reg_dep_track_table_create_node(Reg_Dep_Track_Table*, Op*);
-static inline void                reg_dep_track_table_print_hash_entry(void*, void*);
-static inline void                rep_dep_track_table_topo_sort(Reg_Dep_Track_Table*, Reg_Dep_Track_Node*);
+static inline uns64 reg_consume_table_signiture(Reg_Consume_Table*, Op*);
+static inline void  reg_consume_table_print_hash(void*, void*);
 
-static inline void reg_dep_track_table_init(Reg_Dep_Track_Table **table, uns array_size) {
-  if (!REG_DEP_TRACK_ENABLE)
+static inline void reg_consume_table_init(Reg_Consume_Table **table, uns array_size) {
+  if (!REG_CONSUME_ENABLE)
     return;
 
-  (*table) = (Reg_Dep_Track_Table *)malloc(sizeof(Reg_Dep_Track_Table));
-  (*table)->trakcing_array_size = array_size;
+  (*table) = (Reg_Consume_Table *)malloc(sizeof(Reg_Consume_Table));
   (*table)->op_sign_array = (uns64 *)malloc(sizeof(uns64) * array_size);
-  (*table)->state_array = (Reg_Dep_Track_State *)malloc(sizeof(Reg_Dep_Track_State) * array_size);
-  (*table)->node_array = (Reg_Dep_Track_Node **)malloc(sizeof(Reg_Dep_Track_Node *) * array_size);
+  (*table)->state_array = (Reg_Consume_State *)malloc(sizeof(Reg_Consume_State) * array_size);
+  (*table)->array_size = array_size;
 
   /* init the map for tracking unconsumed producer */
   for (uns ii = 0; ii < array_size; ii++) {
     (*table)->op_sign_array[ii] = 0;
-    (*table)->state_array[ii] = REG_DEP_TRACK_STATE_UNCONSUMED;
-    (*table)->node_array[ii] = NULL;
+    (*table)->state_array[ii] = REG_CONSUME_STATE_UNCONSUMED;
   }
 
   /* counters for recording producer instructions */
-  (*table)->num_reg_all_producer = 0;
-  (*table)->num_reg_consumed = 0;
-  (*table)->num_reg_unconsumed = 0;
-  (*table)->num_reg_topo_unconsumed = 0;
+  (*table)->num_all_produced = 0;
+  (*table)->num_consumed = 0;
+  (*table)->num_unconsumed = 0;
 
   /* init the hash for collecting unconsumed producers and its signiture type */
-  init_hash_table(&(*table)->unconsumed_hash, "reg dep track table", NODE_TABLE_SIZE, sizeof(Counter));
-  (*table)->sign_key_type = REG_DEP_TRACK_SIGNITURE;
-
-  /* init the queue for topological sort nodes of in_degree = 0 and the alloc list */
-  (*table)->sort_list_head = NULL;
-  (*table)->alloc_head = NULL;
+  init_hash_table(&(*table)->sign_hash, "reg dep track table", NODE_TABLE_SIZE, sizeof(Reg_Consume_Hash_Entry));
+  (*table)->sign_type = REG_CONSUME_SIGNITURE;
 }
 
-/*
-  --- determine if the op need to be allocated
-*/
-static inline Flag reg_dep_track_table_predict(Reg_Dep_Track_Table *table, Op* op) {
-  if (!REG_DEP_TRACK_ENABLE)
-    return FALSE;
-  ASSERT(map_data->proc_id, table != NULL);
-
-  Counter *unconsumed_num = (Counter*)hash_table_access(
-    &table->unconsumed_hash,
-    reg_dep_track_table_signiture(table, op)
-  );
-
-  if (!unconsumed_num)
-    return FALSE;
-
-  if (*unconsumed_num <= REG_DEP_TRACK_PREDICT_THRESHOLD)
-    return FALSE;
-
-  return TRUE;
-}
-
-/**************************************************************************************/
-static inline void reg_dep_track_table_read(Reg_Dep_Track_Table *table, Op *op, uns ind) {
-  if (!REG_DEP_TRACK_ENABLE)
+static inline void reg_consume_table_read(Reg_Consume_Table *table, Op *op, uns ind) {
+  if (!REG_CONSUME_ENABLE)
     return;
-  ASSERT(map_data->proc_id, table != NULL && ind < table->trakcing_array_size);
+  ASSERT(map_data->proc_id, table != NULL && ind < table->array_size);
   ASSERT(map_data->proc_id, op != NULL);
 
-  /* single flag mechanism */
-  table->state_array[ind] = REG_DEP_TRACK_STATE_CONSUMED;
-
-  /* topological mechanism */
-  if (!REG_DEP_TRACK_ANSCESTOR_ENABLE)
-    return;
-
-  if (table->node_array[ind] == NULL)
-    return;
-  if (op->reg_dep_track == NULL)
-    op->reg_dep_track = reg_dep_track_table_create_node(table, op);
-
-  // point src node and increase the in degree of src node
-  ASSERT(map_data->proc_id, op->reg_dep_track->out_degree < MAX_SRCS);
-  table->node_array[ind]->in_degree++;
-  op->reg_dep_track->src_node[op->reg_dep_track->out_degree++] = table->node_array[ind];
+  table->state_array[ind] = REG_CONSUME_STATE_CONSUMED;
 }
 
-static inline void reg_dep_track_table_write(Reg_Dep_Track_Table *table, Op *op, uns ind) {
-  if (!REG_DEP_TRACK_ENABLE)
+static inline void reg_consume_table_write(Reg_Consume_Table *table, Op *op, uns ind) {
+  if (!REG_CONSUME_ENABLE)
     return;
-  ASSERT(map_data->proc_id, table != NULL && ind < table->trakcing_array_size);
-  ASSERT(map_data->proc_id, table->node_array[ind] == NULL);
+  ASSERT(map_data->proc_id, table != NULL && ind < table->array_size);
   ASSERT(map_data->proc_id, table->op_sign_array[ind] == 0);
 
-  table->op_sign_array[ind] = reg_dep_track_table_signiture(table, op);
-
-  /* single flag mechanism */
-  table->state_array[ind] = REG_DEP_TRACK_STATE_UNCONSUMED;
-
-  /* topological mechanism */
-  if (!REG_DEP_TRACK_ANSCESTOR_ENABLE)
-    return;
-
-  if (op->reg_dep_track == NULL) 
-    op->reg_dep_track = reg_dep_track_table_create_node(table, op);
-  table->node_array[ind] = op->reg_dep_track;
+  table->op_sign_array[ind] = reg_consume_table_signiture(table, op);
+  table->state_array[ind] = REG_CONSUME_STATE_UNCONSUMED;
 }
 
-/* stat update */
-static inline void reg_dep_track_table_release(Reg_Dep_Track_Table *table, uns ind) {
-  if (!REG_DEP_TRACK_ENABLE)
+static inline void reg_consume_table_release(Reg_Consume_Table *table, uns ind) {
+  if (!REG_CONSUME_ENABLE)
     return;
-  ASSERT(map_data->proc_id, table != NULL && ind < table->trakcing_array_size);
+  ASSERT(map_data->proc_id, table != NULL && ind < table->array_size);
 
-  /* single flag mechanism */
-  table->num_reg_all_producer++;
-  if (table->state_array[ind] == REG_DEP_TRACK_STATE_CONSUMED)
-    table->num_reg_consumed++;
-  if (table->state_array[ind] == REG_DEP_TRACK_STATE_UNCONSUMED) {
-    Flag new_entry = FALSE;
-    Counter *unconsumed_num = (Counter*)hash_table_access_create(
-      &table->unconsumed_hash, table->op_sign_array[ind], &new_entry
-    );
-    (*unconsumed_num)++;
-    table->num_reg_unconsumed++;
+  Flag if_new_entry = FALSE;
+  Reg_Consume_Hash_Entry *entry = (Reg_Consume_Hash_Entry *)hash_table_access_create(
+    &table->sign_hash, table->op_sign_array[ind], &if_new_entry
+  );
+  if (if_new_entry) {
+    entry->num_all_produced = 0;
+    entry->num_consumed = 0;
+    entry->num_unconsumed = 0;
   }
+  entry->num_all_produced++;
+  table->num_all_produced++;
+
+  if (table->state_array[ind] == REG_CONSUME_STATE_CONSUMED) {
+    entry->num_consumed++;
+    table->num_consumed++;
+  } else {
+    entry->num_unconsumed++;
+    table->num_unconsumed++;
+  }
+  ASSERT(map_data->proc_id, entry->num_consumed + entry->num_unconsumed == entry->num_all_produced);
   table->op_sign_array[ind] = 0;
-
-  /* topological mechanism */
-  if (!REG_DEP_TRACK_ANSCESTOR_ENABLE)
-    return;
-
-  Reg_Dep_Track_Node *track_node = table->node_array[ind];
-  if (track_node == NULL)
-    return;
-  if (track_node->in_degree == 0) {
-    // push the node to sort list
-    track_node->next_sort = table->sort_list_head;
-    table->sort_list_head = track_node;
-  }
-
-  while (table->sort_list_head != NULL) {
-    // pop the node from sort list
-    track_node = table->sort_list_head;
-    track_node->next_sort = NULL;
-    table->sort_list_head = table->sort_list_head->next_sort;
-    // topological sort for each node in the sort list
-    rep_dep_track_table_topo_sort(table, track_node);
-  }
-  table->node_array[ind] = NULL;
 }
 
 /**************************************************************************************/
 /* Internal Call */
 
 /* return the corresponding signiture */
-static inline uns64 reg_dep_track_table_signiture(Reg_Dep_Track_Table *table, Op* op) {
-  if (!REG_DEP_TRACK_ENABLE)
+static inline uns64 reg_consume_table_signiture(Reg_Consume_Table *table, Op *op) {
+  if (!REG_CONSUME_ENABLE)
     return FALSE;
-
   ASSERT(map_data->proc_id, table != NULL);
 
   uns64 sign = 0;
 
-  switch (table->sign_key_type) {
-    case REG_DEP_TRACK_SIGH_PC:
+  switch (table->sign_type) {
+    case REG_CONSUME_SIGH_PC:
       sign = op->oracle_info.inst_info->addr;
       break;
 
-    case REG_DEP_TRACK_SIGH_MEM:
+    case REG_CONSUME_SIGH_MEM:
       sign = op->oracle_info.va;
       break;
 
@@ -1077,619 +1396,39 @@ static inline uns64 reg_dep_track_table_signiture(Reg_Dep_Track_Table *table, Op
   return sign;
 }
 
-/* create tracking node for op */
-static inline Reg_Dep_Track_Node *reg_dep_track_table_create_node(Reg_Dep_Track_Table *table, Op *op) {
-  Reg_Dep_Track_Node *track_node = (Reg_Dep_Track_Node *)malloc(sizeof(Reg_Dep_Track_Node));
-
-  track_node->in_degree = 0;
-  track_node->out_degree = 0;
-  for (uns ii = 0; ii < MAX_SRCS; ii++)
-    track_node->src_node[ii] = NULL;
-
-  track_node->next_sort = NULL;
-  track_node->next_alloc = table->alloc_head;
-  table->alloc_head = track_node;
-
-  return track_node;
-}
-
 /* print the debug info */
-static inline void reg_dep_track_table_print_hash_entry(void* hash_entry, void* arg) {
-  Counter *unconsumed_num = (Counter*)hash_entry;
-  printf("%lld, ", *unconsumed_num);
-}
-
-/* topological sort */
-static inline void rep_dep_track_table_topo_sort(Reg_Dep_Track_Table *table, Reg_Dep_Track_Node *track_node) {
-  ASSERT(map_data->proc_id, track_node->in_degree == 0);
-  ASSERT(map_data->proc_id, track_node->next_sort == NULL);
-  table->num_reg_topo_unconsumed++;
-
-  for (uns ii = 0; ii < track_node->out_degree; ii++) {
-    ASSERT(map_data->proc_id, track_node->src_node[ii] != NULL);
-
-    track_node->src_node[ii]->in_degree--;
-    if (track_node->src_node[ii]->in_degree == 0) {
-      // push the child of the node to sort list
-      track_node->src_node[ii]->next_sort = table->sort_list_head;
-      table->sort_list_head = track_node->src_node[ii];
-    }
-  }
+static inline void reg_consume_table_print_hash(void* hash_entry, void* arg) {
+  Reg_Consume_Hash_Entry *entry = (Reg_Consume_Hash_Entry *)hash_entry;
+  printf("[%lld, %lld, %lld],\n", entry->num_all_produced, entry->num_unconsumed, entry->num_consumed);
 }
 
 /**************************************************************************************/
 /* external functions of the unconsumed producer table */
-void reg_dep_track_table_print_debug_stat(void) {
-  if (!REG_DEP_TRACK_ENABLE)
+
+void reg_consume_table_print_stat(void) {
+  if (!REG_CONSUME_ENABLE)
     return;
 
-  Reg_Dep_Track_Table *table = NULL;
+  Reg_Consume_Table *table = NULL;
 
-  if (!REG_FILE_PHY_ENABLE)
-    table = map_data->track_table;
-  else if (map_data->reg_file != NULL)
-    table = map_data->reg_file->phy_map->phy_track_table;
+  if (!REG_RENAMING_TABLE_ENABLE)
+    table = map_data->consume_table;
+  else
+    table = map_data->rename_table->merged_rf->consume_table;
 
   if (table == NULL)
     return;
 
   printf("=======================================================================\n");
-  printf("\nREG MAP\n");
+  printf("\nRegister Consume Table Tracking: %d\n", REG_RENAMING_TABLE_ENABLE);
 
-  printf("UNCONSUMED: %lld, CONSUMED: %lld, ALL: %lld, TOPO_UNCONSUMED: %lld\n",
-    table->num_reg_unconsumed,
-    table->num_reg_consumed,
-    table->num_reg_all_producer,
-    table->num_reg_topo_unconsumed
+  printf("ALL: %lld, UNCONSUMED: %lld, CONSUMED: %lld\n",
+    table->num_all_produced,
+    table->num_unconsumed,
+    table->num_consumed
   );
 
   printf("-----------------------------------------------------------------------\n");
-  hash_table_scan(&table->unconsumed_hash, reg_dep_track_table_print_hash_entry, NULL);
+  hash_table_scan(&table->sign_hash, reg_consume_table_print_hash, NULL);
   printf("\n=======================================================================\n");
-}
-
-/**************************************************************************************
- * Module:      Reg_File
- * Description: Implementation of register renaming stage in hardware mechanism
-***************************************************************************************/
-// reg file procedure
-static inline void reg_file_look_up_src(Op*);
-static inline void reg_file_alloc_dest(Op*);
-
-// reg file rebuild
-static inline void reg_file_rebuild_flush(void);
-static inline void reg_file_rebuild_remap(void);
-static inline void reg_file_rebuild_recover(void);
-
-// physical map init 
-static inline void reg_file_phy_map_init(uns);
-
-// physical map basic operations
-static inline void                reg_file_phy_map_read_entry(Op*, Reg_File_Phy_Entry*, Dep_Type);
-static inline void                reg_file_phy_map_write_entry(Op*, Reg_File_Phy_Entry*, uns);
-static inline Reg_File_Phy_Entry* reg_file_phy_map_access_entry(uns16);
-static inline Flag                reg_file_phy_map_can_alloc(uns);
-static inline Reg_File_Phy_Entry* reg_file_phy_map_alloc_entry(void);
-static inline void                reg_file_phy_map_release_prev(Reg_File_Phy_Entry*);
-static inline void                reg_file_phy_map_free_entry(Reg_File_Phy_Entry*);
-static inline void                reg_file_phy_map_free_list_insert(Reg_File_Phy_Entry *entry);
-static inline Reg_File_Phy_Entry* reg_file_phy_map_free_list_delete(void);
-
-/*
-  --- 1. init op pool for stalling
-  --- 2. init physical impl of map
-*/
-void reg_file_init(void) {
-  if (!REG_FILE_PHY_ENABLE)
-    return;
-
-  map_data->reg_file = (Reg_File *)malloc(sizeof(Reg_File));
-  map_data->reg_file->stall_op = NULL;
-
-  map_data->reg_file->phy_map = NULL;
-  reg_file_phy_map_init(REG_FILE_PHY_NUM);
-}
-
-/*
-  --- 1. look up register as src and fill the entry into src_info
-  --- 2. alloc entry and store self info into register as dest
-*/
-void reg_file_process_renaming(Op *op) {
-  if (!REG_FILE_PHY_ENABLE)
-    return;
-
-  reg_file_look_up_src(op);
-  reg_file_alloc_dest(op);
-}
-
-/*
-  --- 1. flush off-path op for error spec
-  --- 2. remap phy to isa
-  --- 3. recover op from snapshot
-*/
-void reg_file_rebuild_map(void) {
-  if (!REG_FILE_PHY_ENABLE)
-    return;
-
-  if (map_data->reg_file == NULL)
-    return;
-
-  DEBUG(map_data->proc_id, "*** REBUILD ***\n");
-  reg_file_rebuild_flush();
-  reg_file_rebuild_remap();
-  reg_file_rebuild_recover();
-}
-
-/**************************************************************************************/
-/* Internal Function */
-
-/*
-  --- 1. search the entry in map
-  --- 2. read info from map
-*/
-void reg_file_look_up_src(Op *op) {
-  uns ii;
-  Reg_File_Phy_Entry *entry;
-
-  for (ii = 0; ii < op->table_info->num_src_regs; ii++) {
-    uns16 id = op->inst_info->srcs[ii].id;
-    entry = reg_file_phy_map_access_entry(id);
-    reg_file_phy_map_read_entry(op, entry, REG_DATA_DEP);
-  }
-}
-
-/*
-  --- 1. check if enough register for allocation
-  --- 2. fill the info into free entries
-*/
-void reg_file_alloc_dest(Op *op) {
-  uns ii;
-  Reg_File_Phy_Entry *entry;
-
-  // check if enough reg
-  if (!reg_file_phy_map_can_alloc(op->table_info->num_dest_regs)) {
-    DEBUG(map_data->proc_id, "Map File Physical Renaming Stall: %lld\n", op->unique_num);
-    if (map_data->reg_file->stall_op == NULL)
-      map_data->reg_file->stall_op = op;
-    return;
-  }
-
-  // remove stall
-  if (map_data->reg_file->stall_op) {
-    DEBUG(map_data->proc_id, "Map File Physical Renaming Recover: %lld\n", op->unique_num);
-    map_data->reg_file->stall_op = NULL;
-  }
-
-  // alloc reg for all dests
-  for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
-    entry = reg_file_phy_map_alloc_entry();
-    reg_file_phy_map_write_entry(op, entry, ii);
-  }
-}
-
-/*
-  --- remove all off path ops
-*/
-void reg_file_rebuild_flush(void) {
-  uns ii;
-  Reg_File_Phy_Entry *entry;
-
-  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
-    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
-    if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
-      continue;
-
-    if (!entry->off_path)
-      continue;
-
-    reg_file_phy_map_free_entry(entry);
-  }
-}
-
-/*
-  --- point the current latest phy to isa
-*/
-void reg_file_rebuild_remap(void) {
-  uns ii;
-  Reg_File_Phy_Entry *entry;
-
-  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
-    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
-    if (entry->reg_state == REG_FILE_PHY_STATE_FREE)
-      continue;
-
-    ASSERT(map_data->proc_id, !entry->off_path);
-
-    if (entry->next_same_isa != NULL) 
-      continue;
-
-    if (map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] == NULL)
-      map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] = entry;
-  }
-}
-
-/*
-  --- re alloc dest for current off-path op
-*/
-void reg_file_rebuild_recover(void) {
-  uns ii;
-  Reg_File_Phy_Entry *entry;
-
-  Op** op_p = (Op**)list_start_head_traversal(&td->seq_op_list);
-  while (op_p && !(*op_p)->off_path) {
-    op_p = (Op**)list_next_element(&td->seq_op_list);
-  }
-
-  for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
-    ASSERT(map_data->proc_id, reg_file_phy_map_can_alloc((*op_p)->table_info->num_dest_regs));
-    ASSERT(map_data->proc_id, map_data->reg_file->stall_op == NULL);
-    for (ii = 0; ii < (*op_p)->table_info->num_dest_regs; ii++) {
-      entry = reg_file_phy_map_alloc_entry();
-      reg_file_phy_map_write_entry((*op_p), entry, ii);
-    }
-  }
-}
-
-/**************************************************************************************/
-/* Operations of Physical Map in Register File */
-
-/*
-  --- 1. init isa map
-  --- 2. init physical arry and entry
-  --- 3. init tracking table
-*/
-void reg_file_phy_map_init(uns array_size) {
-  uns ii;
-  Reg_File_Phy_Entry *entry;
-
-  map_data->reg_file->phy_map = (Reg_File_Phy_Map *)malloc(sizeof(Reg_File_Phy_Map));
-
-  /* init the isa map */
-  for (ii = 0; ii < NUM_REG_IDS; ii++) {
-    map_data->reg_file->phy_map->reg_isa_map[ii] = NULL;
-    map_data->reg_file->phy_map->reg_isa_counter[ii] = 0;
-  }
-
-  /* init the free list */
-  map_data->reg_file->phy_map->reg_free_num = 0;
-  map_data->reg_file->phy_map->reg_free_list_head = NULL;
-
-  /* init the physical register map array */
-  map_data->reg_file->phy_map->reg_phy_size = array_size;
-  map_data->reg_file->phy_map->reg_phy_array = (Reg_File_Phy_Entry *)malloc(sizeof(Reg_File_Phy_Entry) * array_size);
-
-  /* init the physical register map entry */
-  for (ii = 0; ii < array_size; ii++) {
-    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
-
-    entry->op = &invalid_op;
-    entry->op_num = 0;
-    entry->unique_num = 0;
-    entry->off_path = FALSE;
-    entry->reg_isa_id = REG_FILE_REG_INVALID_ID;
-
-    entry->reg_phy_id = ii;
-    entry->reg_state = REG_FILE_PHY_STATE_FREE;
-
-    entry->prev_same_isa = NULL;
-    entry->next_same_isa = NULL;
-
-    reg_file_phy_map_free_list_insert(entry);
-  }
-
-  /* init the table for tracking unconsumed producers */
-  map_data->reg_file->phy_map->phy_track_table = NULL;
-  reg_dep_track_table_init(&map_data->reg_file->phy_map->phy_track_table, array_size);
-}
-
-/*
-  --- 1. fill src info of op from entry
-  --- 2. update consumer tracking info
-*/
-void reg_file_phy_map_read_entry(Op *op, Reg_File_Phy_Entry *entry, Dep_Type type) {
-  if (entry == NULL)
-    return;
-
-  // increase src num
-  uns       src_num = op->oracle_info.num_srcs++;
-  Src_Info* info    = &op->oracle_info.src_info[src_num];
-
-  // get info from entry
-  info->type       = type;
-  info->op         = entry->op;
-  info->op_num     = entry->op_num;
-  info->unique_num = entry->unique_num;
-
-  // setting waking up siganl
-  set_not_rdy_bit(op, src_num);
-
-  // consume the reg dep track
-  reg_dep_track_table_read(map_data->reg_file->phy_map->phy_track_table, op, entry->reg_phy_id);
-}
-
-/*
-  --- 1. fill src info of entry from op
-  --- 2. update isa map
-*/
-void reg_file_phy_map_write_entry(Op* op, Reg_File_Phy_Entry *entry, uns index) {
-  ASSERT(op->proc_id, entry != NULL && entry->next_same_isa == NULL && entry->prev_same_isa == NULL);
-
-  // set info to entry
-  entry->op = op;
-  entry->op_num = op->op_num;
-  entry->unique_num = op->unique_num;
-  entry->off_path = op->off_path;
-  entry->reg_isa_id = op->inst_info->dests[index].id;
-  entry->reg_state = REG_FILE_PHY_STATE_ALLOC;
-
-  // produce the reg dep track
-  reg_dep_track_table_write(map_data->reg_file->phy_map->phy_track_table, op, entry->reg_phy_id);
-
-  // change the pointer in isa to the latest one
-  Reg_File_Phy_Entry *prev_entry = map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id];
-  if (prev_entry != NULL && prev_entry->reg_phy_id != entry->reg_phy_id) {
-    ASSERT(op->proc_id, prev_entry->next_same_isa == NULL);
-    entry->prev_same_isa = prev_entry;
-    prev_entry->next_same_isa = entry;
-  }
-  map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] = entry;
-  map_data->reg_file->phy_map->reg_isa_counter[entry->reg_isa_id]++;
-
-  // insert entry info to op
-  ASSERT(op->proc_id, op->reg_dest_num < MAX_DESTS);
-  op->reg_dest_entry[op->reg_dest_num++] = entry;
-}
-
-/*
-  --- get latest entry from isa map
-*/
-Reg_File_Phy_Entry *reg_file_phy_map_access_entry(uns16 id) {
-  return map_data->reg_file->phy_map->reg_isa_map[id];
-}
-
-/*
-  --- check if enough free register num for allocation
-*/
-Flag reg_file_phy_map_can_alloc(uns num) {
-  return map_data->reg_file->phy_map->reg_free_num >= num;
-}
-
-/*
-  --- get the allocating entry from free list
-*/
-Reg_File_Phy_Entry *reg_file_phy_map_alloc_entry(void) {
-  return reg_file_phy_map_free_list_delete();
-}
-
-/*
-  --- 1. mark dead for all prev entry before the committed one
-  --- 2. remove dead from the oldest op
-*/
-void reg_file_phy_map_release_prev(Reg_File_Phy_Entry *entry) {
-  if (!REG_FILE_PHY_ENABLE)
-    return;
-
-  ASSERT(map_data->proc_id, entry != NULL);
-  ASSERT(map_data->proc_id, entry->op->op_pool_valid);
-  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_PHY_STATE_ALLOC);
-  ASSERT(map_data->proc_id, map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] != NULL);
-  ASSERT(map_data->proc_id, entry->next_same_isa != NULL ||
-    map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id]->reg_phy_id == entry->reg_phy_id);
-
-  // mark current register as commit when it is free
-  entry->reg_state = REG_FILE_PHY_STATE_COMMIT;
-
-  // mark all the op before the committed op as dead
-  Reg_File_Phy_Entry *curr_entry;
-  curr_entry = entry;
-  while (curr_entry->prev_same_isa != NULL) {
-    ASSERT(map_data->proc_id, curr_entry->reg_state != REG_FILE_PHY_STATE_FREE);
-    curr_entry = curr_entry->prev_same_isa;
-    curr_entry->reg_state = REG_FILE_PHY_STATE_DEAD;
-  }
-
-  // remove dead from the oldest to the latest
-  Reg_File_Phy_Entry *next_entry;
-  while (curr_entry != NULL && curr_entry->reg_state == REG_FILE_PHY_STATE_DEAD) {
-    next_entry = curr_entry->next_same_isa;
-    reg_file_phy_map_free_entry(curr_entry);
-    curr_entry = next_entry;
-  }
-}
-
-/*
-  --- free the entry and insert to free list
-*/
-void reg_file_phy_map_free_entry(Reg_File_Phy_Entry *entry) {
-  ASSERT(map->proc_id, entry->reg_state != REG_FILE_PHY_STATE_FREE);
-
-  // clear entry in isa
-  Reg_File_Phy_Entry *isa_entry = map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id];
-  if (isa_entry != NULL && isa_entry->reg_phy_id == entry->reg_phy_id)
-    map_data->reg_file->phy_map->reg_isa_map[entry->reg_isa_id] = NULL;
-
-  // release reg dep track
-  reg_dep_track_table_release(map_data->reg_file->phy_map->phy_track_table, entry->reg_phy_id);
-
-  // clear entry
-  entry->op = &invalid_op;
-  entry->op_num = 0;
-  entry->unique_num = 0;
-  entry->off_path = FALSE;
-  entry->reg_isa_id = REG_FILE_REG_INVALID_ID;
-  entry->reg_state = REG_FILE_PHY_STATE_FREE;
-
-  // append to free list
-  reg_file_phy_map_free_list_insert(entry);
-
-  // clear same isa pointer
-  if (entry->prev_same_isa != NULL)
-    entry->prev_same_isa->next_same_isa = NULL;
-  if (entry->next_same_isa != NULL)
-    entry->next_same_isa->prev_same_isa = NULL;
-  entry->prev_same_isa = NULL;
-  entry->next_same_isa = NULL;
-}
-
-/*
-  --- 1. isnert the entry to list
-  --- 2. increase the free num
-*/
-void reg_file_phy_map_free_list_insert(Reg_File_Phy_Entry *entry) {
-  entry->next_free = map_data->reg_file->phy_map->reg_free_list_head;
-  map_data->reg_file->phy_map->reg_free_list_head = entry;
-  map_data->reg_file->phy_map->reg_free_num++;
-}
-
-/*
-  --- 1. delete the entry from list
-  --- 2. decrease the free num
-*/
-Reg_File_Phy_Entry *reg_file_phy_map_free_list_delete(void) {
-  Reg_File_Phy_Entry *entry;
-
-  if (map_data->reg_file->phy_map->reg_free_list_head == NULL) {
-    entry = NULL;
-  } else {
-    entry = map_data->reg_file->phy_map->reg_free_list_head;
-    map_data->reg_file->phy_map->reg_free_list_head = entry->next_free;
-    entry->next_free = NULL;
-    map_data->reg_file->phy_map->reg_free_num--;
-  }
-
-  return entry;
-}
-
-/**************************************************************************************/
-/* External Calling of Register File */
-
-/*
-  Called by:
-  --- icache_stage.c -> icache_issue_ops
-  Procedure:
-  --- check if there is stalling op
-*/
-Flag reg_file_check_stall(void) {
-  if (!REG_FILE_PHY_ENABLE)
-    return FALSE;
-
-  if (map_data->reg_file == NULL)
-    return FALSE;
-
-  return map_data->reg_file->stall_op != NULL;
-}
-
-/*
-  Called by:
-  --- icache_stage.c -> update_icache_stage
-  Procedure:
-  --- 1. check if there is stalling op
-  --- 2. if true, try to alloc the stalling op
-  --- 3. check if there is stalling op
-*/
-Flag reg_file_remove_stall(void) {
-  if (!REG_FILE_PHY_ENABLE)
-    return FALSE;
-
-  if (map_data->reg_file == NULL)
-    return FALSE;
-
-  if (map_data->reg_file->stall_op != NULL) {
-    DEBUG(map_data->proc_id, "Map File Physical Renaming Try To Remove Stall: %lld\n",
-      map_data->reg_file->stall_op->unique_num);
-    reg_file_alloc_dest(map_data->reg_file->stall_op);
-  }
-
-  return map_data->reg_file->stall_op != NULL;
-}
-
-/*
-  Called by:
-  --- node_stage.c -> node_retire
-  Procedure:
-  --- free the register entry for the op before this op
-*/
-void reg_file_remove_dead(Op *op) {
-  if (!REG_FILE_PHY_ENABLE)
-    return;
-
-  ASSERT(map_data->proc_id, op != NULL);
-
-  for (uns ii = 0; ii < op->reg_dest_num; ii++) {
-    if (op->reg_dest_entry[ii]->reg_state == REG_FILE_PHY_STATE_FREE)
-      continue;
-    reg_file_phy_map_release_prev(op->reg_dest_entry[ii]);
-  }
-}
-
-/*
-  --- printf for debug
-*/
-void reg_file_print_map(int isa_id) {
-  uns ii;
-  Reg_File_Phy_Entry *entry;
-
-  printf("\n-------------------------\n");
-  printf("Physical Array (proc: %d)\n", map_data->proc_id);
-  for (ii = 0; ii < map_data->reg_file->phy_map->reg_phy_size; ii++) {
-    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
-
-    if (isa_id != REG_FILE_REG_INVALID_ID && isa_id != entry->reg_isa_id) {
-      continue;
-    }
-
-    printf("P[%d]  \t(isa: %d, \treg_state: %d,\tnum: %lld, \tunique: %lld, \toff_path: %d, \top_state: %d)\n",
-      entry->reg_phy_id, entry->reg_isa_id, entry->reg_state, entry->op_num,
-      entry->unique_num, entry->off_path, entry->op->state);
-
-    printf("Prev: ->");
-    entry = entry->prev_same_isa;
-    while (entry != NULL) {
-      printf("(%d: %d)->", entry->reg_phy_id, entry->op->state);
-      entry = entry->prev_same_isa;
-    }
-    printf("\n");
-
-    entry = &map_data->reg_file->phy_map->reg_phy_array[ii];
-    printf("Next: ->");
-    entry = entry->next_same_isa;
-    while (entry != NULL) {
-      printf("(%d: %d)->", entry->reg_phy_id, entry->op->state);
-      entry = entry->next_same_isa;
-    }
-    printf("\n");
-  }
-
-  printf("-------------------------\n");
-  printf("ISA Map (proc: %d)\n", map_data->proc_id);
-  for (ii = 0; ii < NUM_REG_IDS; ii++) {
-    entry = map_data->reg_file->phy_map->reg_isa_map[ii];
-
-    if (isa_id != REG_FILE_REG_INVALID_ID && isa_id != ii) {
-      continue;
-    }
-
-    if (entry == NULL)
-      continue;
-
-    printf("I[%d] \t(phy: %d, \treg_state: %d,\tnum: %lld, \tunique: %lld, \toff_path: %d, \top_state: %d)\n",
-      entry->reg_isa_id, entry->reg_phy_id, entry->reg_state, entry->op_num,
-      entry->unique_num, entry->off_path, entry->op->state);
-  }
-
-  printf("-------------------------\n");
-  printf("Free List (proc: %d)\n", map_data->proc_id);
-  for (entry = map_data->reg_file->phy_map->reg_free_list_head; entry != NULL; entry = entry->next_free) {
-    printf("F[%d], ", entry->reg_phy_id);
-  }
-  printf("Free Num: %d\n", map_data->reg_file->phy_map->reg_free_num);
-
-  printf("-------------------------\n\n");
-
-  printf("ISA Counter (proc: %d)\n", map_data->proc_id);
-  for (ii = 0; ii < NUM_REG_IDS; ii++) {
-    printf("ISA[%d]: %lld\n", ii, map_data->reg_file->phy_map->reg_isa_counter[ii]);
-  }
-
-  printf("-------------------------\n");
 }

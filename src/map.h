@@ -37,78 +37,100 @@
 /* Unconsumed Producer Tracking */
 
 // To be changed to a configurable para
-#define REG_DEP_TRACK_ENABLE            FALSE
-#define REG_DEP_TRACK_ANSCESTOR_ENABLE  FALSE
-#define REG_DEP_TRACK_SIGNITURE         REG_DEP_TRACK_SIGH_PC
-#define REG_DEP_TRACK_PREDICT_THRESHOLD 5
+#define REG_CONSUME_ENABLE      FALSE
+#define REG_CONSUME_SIGNITURE   REG_CONSUME_SIGH_PC
 
-typedef enum Reg_Dep_Track_Signiture_enum {
-  REG_DEP_TRACK_SIGH_PC,
-  REG_DEP_TRACK_SIGH_MEM,
-  REG_DEP_TRACK_SIGH_NUM
-} Reg_Dep_Track_Signiture;
+typedef enum Reg_Consume_Signiture_enum {
+  REG_CONSUME_SIGH_PC,
+  REG_CONSUME_SIGH_MEM,
+  REG_CONSUME_SIGH_NUM
+} Reg_Consume_Signiture;
 
-typedef enum Reg_Dep_Track_Tree_State_enum {
-  REG_DEP_TRACK_STATE_UNCONSUMED,
-  REG_DEP_TRACK_STATE_CONSUMED,
-  REG_DEP_TRACK_STATE_VOID,
-  REG_DEP_TRACK_STATE_NUM
-} Reg_Dep_Track_State;
+typedef enum Reg_Consume_Tree_State_enum {
+  REG_CONSUME_STATE_UNCONSUMED,
+  REG_CONSUME_STATE_CONSUMED,
+  REG_CONSUME_STATE_NUM
+} Reg_Consume_State;
 
-typedef struct Reg_Dep_Track_Table_struct {
-  /* dep tracking info */
-  uns64               *op_sign_array;   // store op signiture for prediction
-  Reg_Dep_Track_State *state_array;     // single flag mechanism
-  Reg_Dep_Track_Node  **node_array;     // topological mechanism
-  uns                 trakcing_array_size;
+typedef struct Reg_Consume_Hash_Entry_struct {
+  Counter num_all_produced;
+  Counter num_consumed;
+  Counter num_unconsumed;
+} Reg_Consume_Hash_Entry;
+
+typedef struct Reg_Consume_Table_struct {
+  /* producer tracking info */
+  uns64             *op_sign_array;
+  Reg_Consume_State *state_array;
+  uns               array_size;
 
   /* count the producer instructions */
-  Counter num_reg_all_producer;
-  Counter num_reg_consumed;
-  Counter num_reg_unconsumed;
-  Counter num_reg_topo_unconsumed;
+  Counter num_all_produced;
+  Counter num_consumed;
+  Counter num_unconsumed;
 
   /* collect the unconsumed producer instructions by signiture */
-  Hash_Table              unconsumed_hash;
-  Reg_Dep_Track_Signiture sign_key_type;
-
-  /* queue for nodes in topolocigal sort */
-  Reg_Dep_Track_Node      *sort_list_head;
-  Reg_Dep_Track_Node      *alloc_head;
-} Reg_Dep_Track_Table;
+  Hash_Table            sign_hash;
+  Reg_Consume_Signiture sign_type;
+} Reg_Consume_Table;
 
 /**************************************************************************************/
-/* Reg File Hardware Implementation */
+/* Merged Register File: The Hardware Implementation of Register Renaming */
 
-// To be change to configurable val
-#define REG_FILE_PHY_ENABLE   FALSE
-#define REG_FILE_PHY_NUM      1024
+// To be changed to configurable val
+#define REG_RENAMING_TABLE_ENABLE           FALSE
+#define REG_RENAMING_TABLE_REG_FILE_SIZE    1024
 
-const static int REG_FILE_REG_INVALID_ID = -1;
+const static int REG_FILE_INVALID_REG_ID = -1;
 
-typedef struct Reg_File_Phy_Map_struct {
-  /* isa map */
-  Reg_File_Phy_Entry* reg_isa_map[NUM_REG_IDS];
+// register state for releasing
+typedef enum Reg_File_Entry_State_enum {
+  REG_FILE_ENTRY_STATE_FREE,
+  REG_FILE_ENTRY_STATE_ALLOC,
+  REG_FILE_ENTRY_STATE_PRODUCED,
+  REG_FILE_ENTRY_STATE_COMMIT,
+  REG_FILE_ENTRY_STATE_DEAD,
+  REG_FILE_ENTRY_STATE_NUM
+} Reg_File_Entry_State;
 
-  /* physical map */
-  Reg_File_Phy_Entry *reg_phy_array;
-  uns                 reg_phy_size;
+typedef struct Reg_File_Entry_struct {
+  // op info (the pointer of op + the deep copy of special val)
+  Op       *op;
+  Counter  op_num;
+  Counter  unique_num;
+  Flag     off_path;
 
-  /* free list */
-  Reg_File_Phy_Entry *reg_free_list_head;
-  uns                 reg_free_num;
+  // register info
+  int                  reg_arch_id;
+  int                  reg_ptag;
+  Reg_File_Entry_State reg_state;
 
-  /* unconsumed producer insturction tracking */
-  Reg_Dep_Track_Table *phy_track_table;
+  // tracking free physical register
+  struct Reg_File_Entry_struct *next_free;
 
-  /* isa counter */
-  Counter             reg_isa_counter[NUM_REG_IDS];
-} Reg_File_Phy_Map;
+  // tracking the ops use the same architectural register
+  int prev_same_arch_id;
+} Reg_File_Entry;
 
-typedef struct Reg_File_struct {
-  Reg_File_Phy_Map *phy_map;
-  Op *stall_op;
-} Reg_File;
+typedef struct Merged_Reg_File_struct {
+  /* map each architectural register to the latest physical register */
+  int             reg_map_table[NUM_REG_IDS];
+
+  /* map ptags to physical registers (register entries) for both speculative and committed op */
+  Reg_File_Entry* reg_file;
+  uns             reg_file_size;
+
+  /* track all free physical registers */
+  Reg_File_Entry* reg_free_list_head;
+  uns             reg_free_num;
+
+  /* unconsumed producer tracking */
+  Reg_Consume_Table *consume_table;
+} Merged_Reg_File;
+
+typedef struct Reg_Renaming_Table_struct {
+  Merged_Reg_File *merged_rf;
+} Reg_Renaming_Table;
 
 /**************************************************************************************/
 /* Types */
@@ -136,11 +158,11 @@ typedef struct Map_Data_struct {
   uns            wake_up_entries;
   uns            active_wake_up_entries;
 
-  /* unconsumed producer insturction tracking */
-  Reg_Dep_Track_Table *track_table;
+  /* register renaming implementation based on the hardware scheme */
+  Reg_Renaming_Table *rename_table;
 
-  /* register file for renaming based on hardware implementation */
-  Reg_File *reg_file;
+  /* unconsumed producer tracking */
+  Reg_Consume_Table *consume_table;
 } Map_Data;
 
 
@@ -174,14 +196,17 @@ void clear_not_rdy_bit(Op*, uns);
 Flag test_not_rdy_bit(Op*, uns);
 void set_not_rdy_bit(Op*, uns);
 
-/* external functions of the unconsumed producer table */
-void reg_dep_track_table_print_debug_stat(void);
+/* register renaming table */
+void rename_table_init(void);
+void rename_table_process(Op*);
+void rename_table_produce(Op*);
 
-/* external functions of the physical register file */
-Flag reg_file_check_stall(void);
-Flag reg_file_remove_stall(void);
-void reg_file_remove_dead(Op*);
-void reg_file_print_map(int);
+Flag rename_table_available(void);
+void rename_table_commit(Op*);
+void rename_table_recover(Counter);
+
+/* external functions of the register consume table */
+void reg_consume_table_print_stat(void);
 
 /**************************************************************************************/
 

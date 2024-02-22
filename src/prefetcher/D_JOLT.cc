@@ -465,7 +465,7 @@ class WindowBasedStreamPrefetcher {
                 const uint64_t pf_addr = (stream.start_line_address + Distance) << LOG2(ICACHE_LINE_SIZE);
 
                 new_mem_req(MRT_IPRF, djolt_proc_id, pf_addr, ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
-
+                INC_STAT_EVENT(0, DJOLT_PREFETCH_ENTRY, 1);
                 ++stream.start_line_address;
             }
             monitoring_table.touch(i);
@@ -479,6 +479,7 @@ class WindowBasedStreamPrefetcher {
         for (size_t i = 1; i < Distance; ++i) {
             const uint64_t pf_addr = (line_address + i) << LOG2(ICACHE_LINE_SIZE);
             new_mem_req(MRT_IPRF, djolt_proc_id, pf_addr, ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
+            INC_STAT_EVENT(0, DJOLT_PREFETCH_INITIAL, 1);
         }
     }
 
@@ -559,6 +560,7 @@ void D_JOLT_PREFETCHER::prefetch_with_sig(const Table& table, uint32_t sig) {
             for (const auto& address : v.getAddresses()) {
                 const uint64_t pf_addr = upper_bit_table.decompress(address);
                 new_mem_req(MRT_IPRF, proc_id, pf_addr, ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
+                INC_STAT_EVENT(0, DJOLT_PREFETCH_SIG, 1);
             }
         }
     }

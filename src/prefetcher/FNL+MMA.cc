@@ -342,6 +342,7 @@ void fnlmma_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t pr
 		  if ((WasNotJustFnl (Block)) || (i == MAXFNL))
 		    {
 		      PrefCodeBlock (pf_Block);
+              INC_STAT_EVENT(0, FNLMMA_PREFETCH_TYPE0, 1);
 		    }
 		  if (WorthPF[(index + i) & (FNL_NBENTRIES - 1)] == 0)
 		    break;
@@ -378,6 +379,7 @@ void fnlmma_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t pr
 // avoid issing prefetch the block if the previous block was prefetched
 
 	      PrefCodeBlock (AheadPredictedBlock);
+          INC_STAT_EVENT(0, FNLMMA_PREFETCH_TYPE1, 1);
 
 	      if (WorthPF[index] > 0)
 		{
@@ -387,6 +389,7 @@ void fnlmma_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t pr
 		      if ((WasNotJustFnl (AheadPredictedBlock))
 			  || (i == MAXFNL))
 			PrefCodeBlock (pf_Block);
+            INC_STAT_EVENT(0, FNLMMA_PREFETCH_TYPE2, 1);
 		      if (WorthPF[(index + i) & (FNL_NBENTRIES - 1)] == 0)
 			break;
 		    }
@@ -425,7 +428,7 @@ void fnlmma_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t pr
 // avoid issing prefetch the block if the previous block was prefetched
 
 		  PrefCodeBlock (AheadPredictedBlock);
-
+          INC_STAT_EVENT(0, FNLMMA_PREFETCH_TYPE3, 1);
 		  if (WorthPF[index] > 0)
 		    {
 		      for (int i = 1; i <= MAXFNL; i++)
@@ -434,6 +437,7 @@ void fnlmma_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t pr
 			  if ((WasNotJustFnl (AheadPredictedBlock))
 			      || (i == MAXFNL))
 			    PrefCodeBlock (pf_Block);
+                INC_STAT_EVENT(0, FNLMMA_PREFETCH_TYPE4, 1);
 			  if (WorthPF[(index + i) & (FNL_NBENTRIES - 1)] == 0)
 			    break;
 			}

@@ -275,7 +275,6 @@ void alloc_mem_fnlmma(uns numCores) {
 }
 
 void init_fnlmma(uns proc_id) {
-  cout << "CPU " << proc_id << " L1I next line prefetcher" << endl;
   AHEAD.init (DISTAHEAD);
   AHEADphist.init (DISTAHEAD);
 }
@@ -490,5 +489,4 @@ void print_fnlmma_stats(uns proc_id) {
 	  (71 * NBWAYPRED * SIZEWAYNEXTMISS / 8) +
 	  ((SIZESHADOWICACHE * (15 + 2)) / 8) + ((FNL_NBENTRIES * 3) / 8) +
 	  ((MMA_FILT_SIZE * 58) / 8) + ((SIZEFILTERFNL * (15 + 2) / 8)));
-  cout << "CPU " << proc_id << " L1I next line prefetcher final stats" << endl;
 }

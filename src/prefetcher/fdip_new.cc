@@ -329,7 +329,7 @@ void update_fdip() {
 
   for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
     //set previous op, only if on path or first off path instruction
-    if(!(op->off_path) || !(per_core_conf_info[fdip_proc_id].fdip_off_path_event)){
+    if(FDIP_BP_CONFIDENCE && (!(op->off_path) || !(per_core_conf_info[fdip_proc_id].fdip_off_path_event))){
       per_core_conf_info[fdip_proc_id].prev_op = per_core_cur_op[fdip_proc_id];
       if(op->off_path){
         per_core_conf_info[fdip_proc_id].fdip_off_path_event = true;
@@ -439,7 +439,7 @@ void update_fdip() {
             STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
           else{
             STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
-            if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
+            if(FDIP_BP_CONFIDENCE && !per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
               log_fdip_on_conf_off_state();
             }
           }

@@ -888,7 +888,6 @@ void inc_icache_miss(uns proc_id, Addr line_addr) {
     per_core_icache_sequence[proc_id][line_addr].push_back(icache_val);
     if (icache_val == 2) {
       auto it2 = per_core_sequence_bw[proc_id].find(line_addr);
-      std::cout << cycle_count << std::endl;
       if (it2 != per_core_sequence_bw[proc_id].end()) {
         STAT_EVENT(proc_id, ICACHE_FIRST_MISS_AFTER_WARMUP_SEEN_DURING_WARMUP);
         Counter no_pref = 0;

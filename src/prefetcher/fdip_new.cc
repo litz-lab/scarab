@@ -127,6 +127,12 @@ typedef struct Bloom_Filter_struct {
   bloom_filter *bloom4;
   Addr last_prefetch_candidate;
   uint32_t last_prefetch_candidate_counter;
+  Counter last_clear_cycle_count;
+  Counter new_prefs;
+  Counter cnt_unuseful;
+  Counter cnt_insert_bloom;
+  Counter cnt_insert_bloom2;
+  Counter cnt_insert_bloom4;
 } Bloom_Filter;
 std::vector<Bloom_Filter> per_core_bloom_filter;
 //confidence stats
@@ -265,6 +271,12 @@ void init_fdip(uns proc_id) {
     per_core_bloom_filter[proc_id].bloom4 = new bloom_filter(bloom4_parameters);
 
     per_core_bloom_filter[proc_id].last_prefetch_candidate_counter = 0;
+    per_core_bloom_filter[proc_id].last_clear_cycle_count = 0;
+    per_core_bloom_filter[proc_id].new_prefs = 0;
+    per_core_bloom_filter[proc_id].cnt_unuseful = 0;
+    per_core_bloom_filter[proc_id].cnt_insert_bloom = 0;
+    per_core_bloom_filter[proc_id].cnt_insert_bloom2 = 0;
+    per_core_bloom_filter[proc_id].cnt_insert_bloom4 = 0;
   }
 }
 
@@ -308,6 +320,16 @@ void recover_fdip() {
   }
 }
 
+static inline void bloom_clear(uns proc_id) {
+  Bloom_Filter* bf = &per_core_bloom_filter[proc_id];
+  bf->bloom->clear();
+  bf->bloom2->clear();
+  bf->bloom4->clear();
+  STAT_EVENT(proc_id, FDIP_BLOOM_CLEAR1);
+  STAT_EVENT(proc_id, FDIP_BLOOM_CLEAR2);
+  STAT_EVENT(proc_id, FDIP_BLOOM_CLEAR4);
+}
+
 void update_fdip() {
   if (!FDIP_ENABLE)
     return;
@@ -319,8 +341,15 @@ void update_fdip() {
   FDIP_Break break_reason = BR_REACH_FTQ_END;
   bool end_of_block;
   per_cyc_ipref = 0;
-  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
+  if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER) {
     per_core_last_cl_unuseful[fdip_proc_id] = 0;
+    if (FDIP_BLOOM_FILTER && (cycle_count - per_core_bloom_filter[fdip_proc_id].last_clear_cycle_count > FDIP_BLOOM_CLEAR_CYC_PERIOD)) {
+      Bloom_Filter* bf = &per_core_bloom_filter[fdip_proc_id];
+      bf->last_clear_cycle_count = cycle_count;
+      bf->new_prefs = 0;
+      bf->cnt_unuseful = 0;
+    }
+  }
 
   if (FDIP_BP_CONFIDENCE && (cycle_count % FDIP_BTB_MISS_SAMPLE_RATE == 0)) {
     per_core_btb_miss_rate[fdip_proc_id] = (double)per_core_cnt_btb_miss[fdip_proc_id] / (double)FDIP_BTB_MISS_SAMPLE_RATE;
@@ -512,9 +541,11 @@ void update_fdip() {
           req.demand_icache_emitted_cycle = 0;
           req.fdip_emitted_cycle = cycle_count;
 	  req.ghist = g_bp_data->global_hist;
-          if (icache_fill_line(&req))
+          if (icache_fill_line(&req)) {
             STAT_EVENT(fdip_proc_id, FDIP_NEW_PREFETCHES_ONPATH + op->off_path);
-          else
+            if (FDIP_BLOOM_FILTER)
+              per_core_bloom_filter[fdip_proc_id].new_prefs++;
+          } else
             ASSERT(fdip_proc_id, false);
           success = Mem_Queue_Req_Result::SUCCESS_NEW;
         } else {
@@ -527,6 +558,8 @@ void update_fdip() {
             STAT_EVENT(ic_ref->proc_id, FDIP_NEW_PREFETCHES_ONPATH + op->off_path);
             DEBUG(fdip_proc_id, "Success to emit a new prefetch for %llx\n", line_addr);
             per_cyc_ipref++;
+            if (FDIP_BLOOM_FILTER)
+              per_core_bloom_filter[fdip_proc_id].new_prefs++;
           } else if (success == Mem_Queue_Req_Result::SUCCESS_MERGED) {
             STAT_EVENT(ic_ref->proc_id, FDIP_PREF_MSHR_PROBE_HIT_ONPATH + op->off_path);
             DEBUG(fdip_proc_id, "Success to merge a prefetch for %llx\n", line_addr);
@@ -768,6 +801,8 @@ void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss) {
 }
 
 void inc_cnt_unuseful(uns proc_id, Addr line_addr) {
+  if (FDIP_BLOOM_FILTER)
+    per_core_bloom_filter[proc_id].cnt_unuseful++;
   auto unuseful_iter = per_core_cnt_unuseful[proc_id].find(line_addr);
   if (unuseful_iter == per_core_cnt_unuseful[proc_id].end()) {
     STAT_EVENT(proc_id, ICACHE_UNUSEFUL_FETCHES);
@@ -1339,7 +1374,13 @@ static inline void insert1(Addr line_addr) {
   Bloom_Filter* bf = &per_core_bloom_filter[fdip_proc_id];
   STAT_EVENT(fdip_proc_id, FDIP_BLOOM_1INSERT);
   if (!bf->bloom2->contains(line_addr >> 1) && !bf->bloom4->contains(line_addr >> 2)) {
+    if (bf->cnt_insert_bloom >= FDIP_BLOOM_ENTRIES && (bf->new_prefs > FDIP_BLOOM_CLEAR_CYC_PERIOD * 0.01) && ((float)bf->cnt_unuseful/(float)bf->new_prefs > FDIP_BLOOM_CLEAR_UNUSEFUL_RATIO)) {
+      bf->bloom->clear();
+      bf->cnt_insert_bloom = 0;
+      STAT_EVENT(fdip_proc_id, FDIP_BLOOM_CLEAR1);
+    }
     bf->bloom->insert(line_addr);
+    bf->cnt_insert_bloom++;
   }
 
 }
@@ -1348,7 +1389,13 @@ static inline void insert2(Addr line_addr) {
   Bloom_Filter* bf = &per_core_bloom_filter[fdip_proc_id];
   if((line_addr & 1) == 0) { //2CL aligned
     if (!bf->bloom4->contains(line_addr >> 2) && !bf->bloom2->contains(line_addr >> 1)) {
+      if (bf->cnt_insert_bloom2 >= FDIP_BLOOM2_ENTRIES && (bf->new_prefs > FDIP_BLOOM_CLEAR_CYC_PERIOD * 0.01) && ((float)bf->cnt_unuseful/(float)bf->new_prefs > FDIP_BLOOM_CLEAR_UNUSEFUL_RATIO)) {
+        bf->bloom2->clear();
+        bf->cnt_insert_bloom2 = 0;
+        STAT_EVENT(fdip_proc_id, FDIP_BLOOM_CLEAR2);
+      }
       bf->bloom2->insert(line_addr >> 1);
+      bf->cnt_insert_bloom2++;
     }
     STAT_EVENT(fdip_proc_id, FDIP_BLOOM_2INSERT);
   }
@@ -1372,7 +1419,13 @@ static inline void insert3(Addr line_addr) {
 static inline void insert4(Addr line_addr) {
   Bloom_Filter* bf = &per_core_bloom_filter[fdip_proc_id];
   ASSERT(0, (line_addr & 3) == 0);
+  if (bf->cnt_insert_bloom4 >= FDIP_BLOOM4_ENTRIES && (bf->new_prefs > FDIP_BLOOM_CLEAR_CYC_PERIOD * 0.01) && ((float)bf->cnt_unuseful/(float)bf->new_prefs > FDIP_BLOOM_CLEAR_UNUSEFUL_RATIO)) {
+    bf->bloom4->clear();
+    bf->cnt_insert_bloom4 = 0;
+    STAT_EVENT(fdip_proc_id, FDIP_BLOOM_CLEAR4);
+  }
   bf->bloom4->insert(line_addr >> 2);
+  bf->cnt_insert_bloom4++;
   STAT_EVENT(fdip_proc_id, FDIP_BLOOM_4INSERT);
 }
 

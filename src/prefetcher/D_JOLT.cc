@@ -45,6 +45,7 @@ static constexpr size_t SignatureBits = 23; // Note: if you change this, you may
 #define LongRangePrefetcherSiggen Siggen_FifoRetCnt<7>
 static constexpr size_t LongRangePrefetcherDistance = 15;
 static constexpr size_t LongRangePrefetcher_N_Sets = 2048;
+//static constexpr size_t LongRangePrefetcher_N_Sets = 64; // For 8K budget (to compare with UDP 8K)
 static constexpr size_t LongRangePrefetcher_N_Ways = 4;
 static constexpr size_t LongRangePrefetcher_N_Vectors = 2;
 static constexpr size_t LongRangePrefetcher_VectorSize = 8;
@@ -84,6 +85,7 @@ static constexpr size_t LongRangePrefetcher_TagBits = 12;
 #define ShortRangePrefetcherSiggen Siggen_FifoRetCnt<4>
 static constexpr size_t ShortRangePrefetcherDistance = 4;
 static constexpr size_t ShortRangePrefetcher_N_Sets = 1024;
+//static constexpr size_t ShortRangePrefetcher_N_Sets = 32; // For 8K budget (to compare with UDP 8K)
 static constexpr size_t ShortRangePrefetcher_N_Ways = 4;
 static constexpr size_t ShortRangePrefetcher_N_Vectors = 2;
 static constexpr size_t ShortRangePrefetcher_VectorSize = 8;

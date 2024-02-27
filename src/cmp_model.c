@@ -234,8 +234,12 @@ void cmp_cores(void) {
       insert_decoded_uop_cache_prefetch();
       update_uop_queue_stage(&ic->sd);
       update_decode_stage(&ic->sd);
-      update_decoupled_fe();
-      update_fdip();
+      update_decoupled_fe(false);
+      if (FE_MERGE_ENABLE)
+        update_decoupled_fe(true);
+      update_fdip(FALSE);
+      if (FE_MERGE_ENABLE)
+        update_fdip(TRUE);
       update_eip();
       update_icache_stage();
 

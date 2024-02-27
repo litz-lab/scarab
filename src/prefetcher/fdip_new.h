@@ -10,7 +10,7 @@ extern "C" {
 
   void alloc_mem_fdip(uns numProcs);
   void init_fdip(uns proc_id);
-  void update_fdip();
+  void update_fdip(Flag pref_from_new);
   void recover_fdip();
   void set_fdip(int _proc_id, Icache_Stage *_ic);
   Flag fdip_off_path(uns proc_id);

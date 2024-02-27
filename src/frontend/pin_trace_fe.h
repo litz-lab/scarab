@@ -46,7 +46,7 @@ void trace_init(void);
 /* Implementing the frontend interface */
 Addr trace_next_fetch_addr(uns proc_id);
 Flag trace_can_fetch_op(uns proc_id);
-void trace_fetch_op(uns proc_id, Op* op);
+void trace_fetch_op(uns proc_id, Op* op, Flag fetch_from_old);
 void trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);
 void trace_recover(uns proc_id, uns64 inst_uid);
 void trace_retire(uns proc_id, uns64 inst_uid);

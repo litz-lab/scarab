@@ -128,7 +128,7 @@ Flag trace_can_fetch_op(uns proc_id) {
   return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
 }
 
-void trace_fetch_op(uns proc_id, Op* op) {
+void trace_fetch_op(uns proc_id, Op* op, Flag fetch_from_old) {
   if(uop_generator_get_bom(proc_id)) {
     ASSERT(proc_id, !trace_read_done[proc_id] && !reached_exit[proc_id]);
     uop_generator_get_uop(proc_id, op, &next_pi[proc_id]);

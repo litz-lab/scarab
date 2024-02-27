@@ -48,7 +48,7 @@ Addr frontend_next_fetch_addr(uns proc_id);
 Flag frontend_can_fetch_op(uns proc_id);
 
 /* Get an op from the frontend */
-void frontend_fetch_op(uns proc_id, struct Op_struct* op);
+void frontend_fetch_op(uns proc_id, struct Op_struct* op, Flag fetch_from_old);
 
 /* Redirect the front end (down the wrong path) */
 void frontend_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);

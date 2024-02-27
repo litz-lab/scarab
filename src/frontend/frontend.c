@@ -113,8 +113,8 @@ Flag frontend_can_fetch_op(uns proc_id) {
   return frontend->can_fetch_op(proc_id);
 }
 
-void frontend_fetch_op(uns proc_id, Op* op) {
-  frontend->fetch_op(proc_id, op);
+void frontend_fetch_op(uns proc_id, Op* op, Flag fetch_from_old) {
+  frontend->fetch_op(proc_id, op, fetch_from_old);
   collect_op_stats(op);
 }
 

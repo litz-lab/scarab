@@ -21,17 +21,20 @@ extern "C" {
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FDIP, ##args)
 
 decoupled_fe_iter* iter;
+decoupled_fe_iter* iter_new;
 extern const int MAX_FTQ_ENTRY_CYC = 2;
 int fdip_proc_id;
 Icache_Stage *ic_ref;
 std::vector<Op*> per_core_cur_op;
 std::vector<decoupled_fe_iter*> per_core_ftq_iter;
+std::vector<decoupled_fe_iter*> per_core_ftq_iter_new;
 std::vector<Addr> per_core_last_line_addr;
 std::vector<Flag> per_core_warmed_up;
 int per_cyc_ipref = 0;
 uns low_confidence_cnt = 0;
 double cf_op_distance = 0.0;
 Counter cycle_count_last_recovery = 0;
+extern std::vector<bool> per_core_fetch_from_ftq_new;
 
 typedef enum FDIP_BREAK_enum {
   BR_REACH_FTQ_END,
@@ -141,6 +144,7 @@ std::vector<FDIP_Confidence_Info> per_core_conf_info;
 void alloc_mem_fdip(uns numCores) {
   per_core_cur_op.resize(numCores);
   per_core_ftq_iter.resize(numCores);
+  per_core_ftq_iter_new.resize(numCores);
   per_core_last_line_addr.resize(numCores);
   per_core_warmed_up.resize(numCores);
   if (FDIP_ADJUSTABLE_FTQ)
@@ -197,7 +201,8 @@ void alloc_mem_fdip(uns numCores) {
 }
 
 void init_fdip(uns proc_id) {
-  per_core_ftq_iter[proc_id] = decoupled_fe_new_ftq_iter();
+  per_core_ftq_iter[proc_id] = decoupled_fe_new_ftq_iter(false);
+  per_core_ftq_iter_new[proc_id] = decoupled_fe_new_ftq_iter(true);
   per_core_last_line_addr[proc_id] = 0;
   per_core_warmed_up[proc_id] = FALSE;
   if (FDIP_ADJUSTABLE_FTQ)
@@ -284,6 +289,7 @@ void set_fdip(int _proc_id, Icache_Stage *_ic) {
   fdip_proc_id = _proc_id;
   ic_ref = _ic;
   iter = per_core_ftq_iter[_proc_id];
+  iter_new = per_core_ftq_iter_new[_proc_id];
 }
 
 void recover_fdip() {
@@ -330,11 +336,15 @@ static inline void bloom_clear(uns proc_id) {
   STAT_EVENT(proc_id, FDIP_BLOOM_CLEAR4);
 }
 
-void update_fdip() {
+void update_fdip(Flag pref_from_new) {
   if (!FDIP_ENABLE)
     return;
   if (FULL_WARMUP && warmup_dump_done[fdip_proc_id] && !per_core_warmed_up[fdip_proc_id])
     per_core_warmed_up[fdip_proc_id] = TRUE;
+  if (!FE_MERGE_ENABLE)
+    ASSERT(0,!pref_from_new);
+  if (pref_from_new && !per_core_fetch_from_ftq_new[fdip_proc_id])
+    return;
 
   uint32_t ops_per_cycle = 0;
   int ftq_entry_per_cycle = 0;
@@ -356,7 +366,9 @@ void update_fdip() {
     per_core_cnt_btb_miss[fdip_proc_id] = 0;
   }
 
-  for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
+  decoupled_fe_iter* iter_ = pref_from_new? iter_new:iter;
+
+  for (Op *op = decoupled_fe_ftq_iter_get(iter_, &end_of_block, pref_from_new); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter_, &end_of_block, pref_from_new), ops_per_cycle++) {
     //set previous op, only if on path or first off path instruction
     if(FDIP_BP_CONFIDENCE && (!(op->off_path) || !(per_core_conf_info[fdip_proc_id].fdip_off_path_event))){
       per_core_conf_info[fdip_proc_id].prev_op = per_core_cur_op[fdip_proc_id];
@@ -961,6 +973,7 @@ void inc_prefetched_cls(Addr line_addr, uns success) {
 
   auto cl_iter = per_core_prefetched_cls[fdip_proc_id].find(line_addr);
   if (cl_iter == per_core_prefetched_cls[fdip_proc_id].end()) {
+    STAT_EVENT(proc_id, UNIQUE_PREFETCHED_LINES);
     per_core_prefetched_cls[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
     per_core_prefetched_cls_info[fdip_proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(std::make_pair(std::move(cycle_count), on_path), std::make_pair(0, 0))));
     DEBUG(fdip_proc_id, "%llx inserted into prefetched_cls at %llu\n", line_addr, cycle_count);

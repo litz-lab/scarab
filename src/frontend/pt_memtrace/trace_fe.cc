@@ -34,8 +34,11 @@
 /* Globals */
 static ctype_pin_inst next_onpath_pi[MAX_NUM_PROCS];
 static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS];
+static ctype_pin_inst next_offpath_pi_new[MAX_NUM_PROCS];
 static bool            off_path_mode[MAX_NUM_PROCS] = {false};
+static bool            off_path_mode_old[MAX_NUM_PROCS] = {false};
 static uint64_t        off_path_addr[MAX_NUM_PROCS] = {0};
+static uint64_t        off_path_addr_new[MAX_NUM_PROCS] = {0};
 static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
 
 extern uint64_t ins_id;
@@ -151,20 +154,39 @@ void assert_ctype_pin_inst_same(uns proc_id, ctype_pin_inst inst_a, ctype_pin_in
   }
 }
 
-void ext_trace_fetch_op(uns proc_id, Op* op) {
+void ext_trace_fetch_op(uns proc_id, Op* op, Flag fetch_from_old) {
+  bool *off_path_mode_;
+  ctype_pin_inst *next_offpath_pi_;
+  uint64_t *off_path_addr_;
+  if (off_path_mode_old[proc_id]) { // after a resteer
+    if (fetch_from_old) {
+      off_path_mode_ = &off_path_mode_old[proc_id];
+      next_offpath_pi_ = &next_offpath_pi[proc_id];
+      off_path_addr_ = &off_path_addr[proc_id];
+    } else {
+      off_path_mode_ = &off_path_mode[proc_id];
+      next_offpath_pi_ = &next_offpath_pi_new[proc_id];
+      off_path_addr_ = &off_path_addr_new[proc_id];
+    }
+  } else { // before a resteer
+    ASSERT(0, !fetch_from_old);
+    off_path_mode_ = &off_path_mode[proc_id];
+    next_offpath_pi_ = &next_offpath_pi[proc_id];
+    off_path_addr_ = &off_path_addr[proc_id];
+  }
   if(uop_generator_get_bom(proc_id)) {
-    if (!off_path_mode[proc_id]) {
+    if (!(*off_path_mode_)) {
       uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id]);
     }
     else {
-      uop_generator_get_uop(proc_id, op, &next_offpath_pi[proc_id]);
+      uop_generator_get_uop(proc_id, op, next_offpath_pi_);
     }
   } else {
     uop_generator_get_uop(proc_id, op, NULL);
   }
 
   if(uop_generator_get_eom(proc_id)) {
-    if (!off_path_mode[proc_id]) {
+    if (!(*off_path_mode_)) {
 
       int success = false;
       if (FRONTEND == FE_PT)
@@ -217,10 +239,10 @@ void ext_trace_fetch_op(uns proc_id, Op* op) {
       }
     }
     else {
-      off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
+      off_path_generate_inst(proc_id, off_path_addr_, next_offpath_pi_);
     }
   }
-  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
+  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", *off_path_mode_, next_onpath_pi[proc_id].instruction_addr, next_offpath_pi_->instruction_addr);
 }
 
 Flag ext_trace_can_fetch_op(uns proc_id) {
@@ -229,13 +251,26 @@ Flag ext_trace_can_fetch_op(uns proc_id) {
 
 void ext_trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
   off_path_mode[proc_id] = true;
-  off_path_addr[proc_id] = fetch_addr;
-  off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
-  DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
+  if (off_path_mode_old[proc_id]) { // another redirect after one
+    off_path_addr_new[proc_id] = fetch_addr;
+    off_path_generate_inst(proc_id, &off_path_addr_new[proc_id], &next_offpath_pi_new[proc_id]);
+    DEBUG(proc_id, "Redirect on-path:%lx off-path new:%lx", next_onpath_pi[proc_id].instruction_addr, next_offpath_pi_new[proc_id].instruction_addr);
+  } else {
+    off_path_addr[proc_id] = fetch_addr;
+    off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
+    DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
+  }
+
 }
 
 void ext_trace_recover(uns proc_id, uns64 inst_uid) {
   Op dummy_op;
+  if (off_path_mode_old[proc_id]) { // another resteer before reaching a merge point
+    off_path_mode_old[proc_id] = false;
+  } else {
+    ASSERT(0, off_path_mode[proc_id]);
+    off_path_mode_old[proc_id] = off_path_mode[proc_id];
+  }
   off_path_mode[proc_id] = false;
   // Finish decoding of the current off-path inst before switching to on-path
   while (!uop_generator_get_eom(proc_id)) {
@@ -255,6 +290,7 @@ Addr ext_trace_next_fetch_addr(uns proc_id) {
 
 void ext_trace_init() {
   memset(next_offpath_pi, 0, sizeof(next_offpath_pi));
+  memset(next_offpath_pi_new, 0, sizeof(next_offpath_pi_new));
   memset(next_onpath_pi, 0, sizeof(next_onpath_pi));
 
   if (FRONTEND == FE_PT) {

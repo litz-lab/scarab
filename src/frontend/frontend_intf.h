@@ -54,7 +54,7 @@ typedef struct Frontend_Intf_struct {
   Flag (*can_fetch_op)(uns proc_id);
 
   /* Get an op from the frontend */
-  void (*fetch_op)(uns proc_id, struct Op_struct* op, Flag from_old);
+  void (*fetch_op)(uns proc_id, struct Op_struct* op);
 
   /* Redirect the front end (down the wrong path) */
   void (*redirect)(uns proc_id, uns64 inst_uid, Addr fetch_addr);

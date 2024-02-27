@@ -51,7 +51,7 @@ Flag pin_exec_driven_can_fetch_op(uns proc_id);
 Addr pin_exec_driven_next_fetch_addr(uns proc_id);
 
 /* Get an op from pin_exec_driven */
-void pin_exec_driven_fetch_op(uns proc_id, struct Op_struct* op, Flag fetch_from_old);
+void pin_exec_driven_fetch_op(uns proc_id, struct Op_struct* op);
 
 /* Redirect pin_exec_driven (down the wrong path) */
 void pin_exec_driven_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);

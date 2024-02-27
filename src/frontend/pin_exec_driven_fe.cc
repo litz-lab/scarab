@@ -130,7 +130,7 @@ Addr pin_exec_driven_next_fetch_addr(uns proc_id) {
   return next_fetch_addr;
 }
 
-void pin_exec_driven_fetch_op(uns proc_id, Op* op, Flag fetch_from_old) {
+void pin_exec_driven_fetch_op(uns proc_id, Op* op) {
   DEBUG(proc_id, "Fetch Op begin:\n");
   update_op_buffer_if_empty(proc_id);
 

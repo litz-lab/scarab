@@ -973,7 +973,7 @@ void inc_prefetched_cls(Addr line_addr, uns success) {
 
   auto cl_iter = per_core_prefetched_cls[fdip_proc_id].find(line_addr);
   if (cl_iter == per_core_prefetched_cls[fdip_proc_id].end()) {
-    STAT_EVENT(fdip_proc_id, UNIQUE_PREFETCHED_LINES);
+    STAT_EVENT(proc_id, UNIQUE_PREFETCHED_LINES);
     per_core_prefetched_cls[fdip_proc_id].insert(std::pair<Addr, Counter>(line_addr, 1));
     per_core_prefetched_cls_info[fdip_proc_id].insert(std::make_pair(std::move(line_addr), std::make_pair(std::make_pair(std::move(cycle_count), on_path), std::make_pair(0, 0))));
     DEBUG(fdip_proc_id, "%llx inserted into prefetched_cls at %llu\n", line_addr, cycle_count);

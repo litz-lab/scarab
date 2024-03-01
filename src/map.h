@@ -31,6 +31,7 @@
 
 #include "isa/isa_macros.h"
 #include "libs/hash_lib.h"
+#include "libs/list_lib.h"
 #include "op.h"
 
 /**************************************************************************************/
@@ -38,8 +39,13 @@
 
 // To be changed to a configurable para
 #define REG_CONSUME_ENABLE      FALSE
-#define REG_CONSUME_SIGNITURE   REG_CONSUME_SIGH_PC
-#define REG_CONSUME_TRACK_BY_OP TRUE
+#define REG_CONSUME_SIGN_TYPE   REG_CONSUME_SIGH_PC
+#define REG_CONSUME_UNIQUE_OP   TRUE
+
+#define REG_CONSUME_LIST_ENABLE         FALSE
+#define REG_CONSUME_LIST_RATIO_LOWER    90
+#define REG_CONSUME_LIST_COUNT_THRESH   16
+#define REG_CONSUME_LIST_CONTEXT_NUM    10
 
 typedef enum Reg_Consume_Signiture_enum {
   REG_CONSUME_SIGH_PC,
@@ -62,6 +68,8 @@ typedef struct Reg_Consume_Node_struct {
 
   uns       in_degree;
   uns       out_degree;
+
+  Flag      if_consumed;
 } Reg_Consume_Node;
 
 typedef struct Reg_Consume_Table_struct {
@@ -81,6 +89,9 @@ typedef struct Reg_Consume_Table_struct {
   /* collect the unconsumed producer instructions by signiture */
   Hash_Table            sign_hash;
   Reg_Consume_Signiture sign_type;
+
+  /* collect the trace info between the instructions with the same dsts */
+  List consume_node_list;
 } Reg_Consume_Table;
 
 /**************************************************************************************/

@@ -1294,9 +1294,10 @@ void rename_table_recover(Counter recovery_op_num) {
  * --- 1. Track if a producer insturction is consumed
  * --- 2. Collect the info of unconsumed producers
 ***************************************************************************************/
-static inline Reg_Consume_Node* reg_consume_table_create_node(Reg_Consume_Table*, Op*);
 static inline uns64             reg_consume_table_get_sign(Reg_Consume_Table*, Op*);
+static inline Reg_Consume_Node* reg_consume_table_create_node(Reg_Consume_Table*, Op*);
 static inline void              reg_consume_table_collect_stat(Reg_Consume_Table*, uns);
+static inline void              reg_consume_table_print_list(Reg_Consume_Table*);
 static inline void              reg_consume_table_print_hash(void*, void*);
 
 static inline void reg_consume_table_init(Reg_Consume_Table **table, uns array_size) {
@@ -1321,7 +1322,7 @@ static inline void reg_consume_table_init(Reg_Consume_Table **table, uns array_s
 
   /* init the hash for collecting unconsumed producers and its signiture type */
   init_hash_table(&(*table)->sign_hash, "reg consume hash", NODE_TABLE_SIZE, sizeof(Reg_Consume_Hash_Entry));
-  (*table)->sign_type = REG_CONSUME_SIGNITURE;
+  (*table)->sign_type = REG_CONSUME_SIGN_TYPE;
 }
 
 static inline void reg_consume_table_read(Reg_Consume_Table *table, Op *op, uns ind) {
@@ -1338,7 +1339,7 @@ static inline void reg_consume_table_write(Reg_Consume_Table *table, Op *op, uns
   if (!REG_CONSUME_ENABLE)
     return;
   ASSERT(map_data->proc_id, table != NULL && ind < table->array_size);
-  ASSERT(map_data->proc_id, REG_CONSUME_TRACK_BY_OP || table->last_write_node == NULL);
+  ASSERT(map_data->proc_id, REG_CONSUME_UNIQUE_OP || table->last_write_node == NULL);
 
   // same op share same node when track by op
   table->node_array[ind] = table->last_write_node;
@@ -1347,7 +1348,7 @@ static inline void reg_consume_table_write(Reg_Consume_Table *table, Op *op, uns
   ++table->node_array[ind]->out_degree;
 
   table->last_write_node = table->node_array[ind];
-  if (!REG_CONSUME_TRACK_BY_OP || ++table->last_write_num == op->table_info->num_dest_regs) {
+  if (!REG_CONSUME_UNIQUE_OP || ++table->last_write_num == op->table_info->num_dest_regs) {
     table->last_write_node = NULL;
     table->last_write_num = 0;
   }
@@ -1365,36 +1366,17 @@ static inline void reg_consume_table_release(Reg_Consume_Table *table, uns ind) 
   if (--table->node_array[ind]->out_degree != 0)
     return;
   reg_consume_table_collect_stat(table, ind);
-  free(table->node_array[ind]);
+  if (!REG_CONSUME_LIST_ENABLE)
+    free(table->node_array[ind]);
   table->node_array[ind] = NULL;
 }
 
 /**************************************************************************************/
 /* Internal Call */
 
-/* create infomation node for tracking consumed state */
-static inline Reg_Consume_Node* reg_consume_table_create_node(Reg_Consume_Table* table, Op* op) {
-  Reg_Consume_Node *node = (Reg_Consume_Node *)malloc(sizeof(Reg_Consume_Node));
-  node->op_num = op->op_num;
-  node->off_path = op->off_path;
-
-  // op static info
-  node->sign = reg_consume_table_get_sign(table, op);
-  node->inst_info = *op->inst_info;
-
-  // op dynamic info
-  node->in_degree = 0;
-  node->out_degree = 0;
-
-  return node;
-}
-
 /* return the corresponding signiture */
 static inline uns64 reg_consume_table_get_sign(Reg_Consume_Table *table, Op *op) {
-  if (!REG_CONSUME_ENABLE)
-    return FALSE;
-  ASSERT(map_data->proc_id, table != NULL && op != NULL);
-
+  ASSERT(map_data->proc_id, REG_CONSUME_ENABLE && table != NULL && op != NULL);
   uns64 sign = 0;
 
   switch (table->sign_type) {
@@ -1413,8 +1395,33 @@ static inline uns64 reg_consume_table_get_sign(Reg_Consume_Table *table, Op *op)
   return sign;
 }
 
+/* create infomation node for tracking consumed state */
+static inline Reg_Consume_Node* reg_consume_table_create_node(Reg_Consume_Table* table, Op* op) {
+  ASSERT(map_data->proc_id, REG_CONSUME_ENABLE && table != NULL);
+  Reg_Consume_Node *node = (Reg_Consume_Node *)malloc(sizeof(Reg_Consume_Node));
+  node->op_num = op->op_num;
+  node->off_path = op->off_path;
+
+  // op static info
+  node->sign = reg_consume_table_get_sign(table, op);
+  node->inst_info = *op->inst_info;
+
+  // op dynamic info
+  node->in_degree = 0;
+  node->out_degree = 0;
+  node->if_consumed = FALSE;
+
+  if (REG_CONSUME_LIST_ENABLE) {
+    Reg_Consume_Node **node_p = dl_list_add_tail(&table->consume_node_list);
+    *node_p = node;
+  }
+
+  return node;
+}
+
 /* collect data when all of the register of an instruction are released */
 static inline void reg_consume_table_collect_stat(Reg_Consume_Table* table, uns ind) {
+  ASSERT(map_data->proc_id, REG_CONSUME_ENABLE && table != NULL);
   Flag if_new_entry = FALSE;
   Reg_Consume_Hash_Entry *entry = (Reg_Consume_Hash_Entry *)hash_table_access_create(
     &table->sign_hash, table->node_array[ind]->sign, &if_new_entry
@@ -1430,6 +1437,7 @@ static inline void reg_consume_table_collect_stat(Reg_Consume_Table* table, uns 
   if (table->node_array[ind]->in_degree != 0) {
     entry->num_consumed++;
     table->num_consumed++;
+    table->node_array[ind]->if_consumed = TRUE;
   } else {
     entry->num_unconsumed++;
     table->num_unconsumed++;
@@ -1438,7 +1446,49 @@ static inline void reg_consume_table_collect_stat(Reg_Consume_Table* table, uns 
   ASSERT(map_data->proc_id, entry->num_consumed + entry->num_unconsumed == entry->num_all_produced);
 }
 
-/* print the debug info */
+/* print the trace info */
+static inline void reg_consume_table_print_list(Reg_Consume_Table* table) {
+  ASSERT(map_data->proc_id, REG_CONSUME_ENABLE && table != NULL);
+  if (!REG_CONSUME_LIST_ENABLE)
+    return;
+
+  Reg_Consume_Node **node_p = (Reg_Consume_Node **)list_start_head_traversal(&table->consume_node_list);
+  uns if_print = 0;
+
+  for (; node_p; node_p = (Reg_Consume_Node **)list_next_element(&table->consume_node_list)) {
+    Reg_Consume_Hash_Entry *entry = (Reg_Consume_Hash_Entry *)hash_table_access(&table->sign_hash, (*node_p)->sign);
+    uns64 ratio = entry->num_unconsumed * 100 / entry->num_all_produced;
+    Flag if_target = FALSE;
+
+    if (ratio >= REG_CONSUME_LIST_RATIO_LOWER && entry->num_unconsumed > REG_CONSUME_LIST_COUNT_THRESH)
+      if_target = TRUE;
+
+    if (if_print <= 0) {
+      if (!if_target)
+        continue;
+
+      if_print = REG_CONSUME_LIST_CONTEXT_NUM;
+    }
+
+    if (if_target)
+      printf(" * ");
+    else
+      printf(" - ");
+    if_print--;
+
+    printf("opcode: 0x%x. src#%d: ", (*node_p)->inst_info.table_info->true_op_type, (*node_p)->inst_info.table_info->num_src_regs);
+    for (int ii = 0; ii < (*node_p)->inst_info.table_info->num_src_regs; ii++)
+      printf("(%d); ", (*node_p)->inst_info.srcs[ii].id);
+    printf("dest#%d: ", (*node_p)->inst_info.table_info->num_dest_regs);
+    for (int ii = 0; ii < (*node_p)->inst_info.table_info->num_dest_regs; ii++)
+      printf("(%d); ", (*node_p)->inst_info.dests[ii].id);
+
+    printf("\n --- op_num: %lld, off_path: %d, if_consumed: %d, ", (*node_p)->op_num, (*node_p)->off_path, (*node_p)->if_consumed);
+    printf("all: %lld, unconsumed: %lld\n\n", entry->num_all_produced, entry->num_unconsumed);
+  }
+}
+
+/* print the consume info */
 static inline void reg_consume_table_print_hash(void* hash_entry, void* arg) {
   Reg_Consume_Hash_Entry *entry = (Reg_Consume_Hash_Entry *)hash_entry;
   printf("[%lld, %lld, %lld],\n", entry->num_all_produced, entry->num_unconsumed, entry->num_consumed);
@@ -1470,6 +1520,8 @@ void reg_consume_table_print_stat(void) {
     table->num_consumed
   );
 
+  printf("-----------------------------------------------------------------------\n");
+  reg_consume_table_print_list(table);
   printf("-----------------------------------------------------------------------\n");
   hash_table_scan(&table->sign_hash, reg_consume_table_print_hash, NULL);
   printf("\n=======================================================================\n");

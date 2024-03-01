@@ -439,20 +439,23 @@ void update_fdip() {
             if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
               per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
               STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
-              //if off path due to btb miss
-              if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
-                log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
-              } 
-              //if off path due to mis prediction
-              else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
+              if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
+                per_core_conf_info[fdip_proc_id].off_path_reason = REASON_MISPRED;
                 log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
               }
+              //if off path due to btb miss
+              else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
+                per_core_conf_info[fdip_proc_id].off_path_reason = REASON_BTB_MISS;
+                log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
+              } 
               //if off path due to no target
               else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.no_target){
+                per_core_conf_info[fdip_proc_id].off_path_reason = REASON_NO_TARGET;
                 STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
               }
               //if off path due to misfetch
               else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.misfetch){
+                per_core_conf_info[fdip_proc_id].off_path_reason = REASON_MISFETCH;
                 STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
               }
               //if some other reason (shouldn't happen)
@@ -461,6 +464,7 @@ void update_fdip() {
               }
             }
             STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
+            STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_PER_LINE + per_core_conf_info[fdip_proc_id].off_path_reason);
           } else
             STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
         } else {
@@ -468,6 +472,7 @@ void update_fdip() {
             STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
           else{
             STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
+            STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_PER_LINE + per_core_conf_info[fdip_proc_id].conf_off_path_reason);
             if(FDIP_BP_CONFIDENCE && !per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
               log_fdip_on_conf_off_state();
             }
@@ -504,6 +509,8 @@ void update_fdip() {
           DEBUG(fdip_proc_id, "probe hit for %llx\n", line_addr);
           probe_prefetched_cls(line_addr);
           STAT_EVENT(ic_ref->proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ONPATH + op->off_path);
+          //check w surim
+          log_conf_on_off_path_stats_icache_miss();
         }
       }
 
@@ -1139,19 +1146,24 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
         //if off path due to btb miss
-        if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
-          log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
-        } 
-        //if off path due to misprediction
-        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
+        //check w surim (order)
+        if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
+          per_core_conf_info[fdip_proc_id].off_path_reason = REASON_MISPRED;
           log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
         }
+        //if off path due to misprediction
+        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
+          per_core_conf_info[fdip_proc_id].off_path_reason = REASON_BTB_MISS;
+          log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
+        } 
         //if off path due to no target
         else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.no_target){
+          per_core_conf_info[fdip_proc_id].off_path_reason = REASON_NO_TARGET;
           STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
         }
         //if off path due to misfetch
         else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.misfetch){
+          per_core_conf_info[fdip_proc_id].off_path_reason = REASON_MISFETCH;
           STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
         }
         //if some other reason (shouldn't happen)
@@ -1160,6 +1172,7 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         }
       }
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_PER_LINE + per_core_conf_info[fdip_proc_id].off_path_reason);
       auto iter = cnt_useful->find(hashed_line_addr);
       if ( iter == cnt_useful->end())
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
@@ -1171,7 +1184,8 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
       else{
         STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
-        if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
+        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_PER_LINE + per_core_conf_info[fdip_proc_id].conf_off_path_reason);
+        if(FDIP_BP_CONFIDENCE && !per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
           log_fdip_on_conf_off_state();
         }
       }
@@ -1247,6 +1261,7 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
     *emit_new_prefetch = TRUE;
     if (fdip_off_path(fdip_proc_id)) {
       //log stats
+      //TODO move this into a function
       if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
         per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
@@ -1254,19 +1269,23 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
           DEBUG(fdip_proc_id, "fdip on conf off, all: instruction is not a cf inst! op type: %u, op num: %llu, addr: %llu\n", op->table_info->op_type, op->op_num, op->inst_info->addr);
         }
         //if off path due to btb miss
-        if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
-          log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
-        } 
-        //if off path due to misprediction
-        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
+        if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
+          per_core_conf_info[fdip_proc_id].off_path_reason = REASON_MISPRED;
           log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
         }
+        //if off path due to misprediction
+        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
+          per_core_conf_info[fdip_proc_id].off_path_reason = REASON_BTB_MISS;
+          log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
+        } 
         //if off path due to no target
         else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.no_target){
+          per_core_conf_info[fdip_proc_id].off_path_reason = REASON_NO_TARGET;
           STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
         }
         //if off path due to misfetch
         else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.misfetch){
+          per_core_conf_info[fdip_proc_id].off_path_reason = REASON_MISFETCH;
           STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
         }
         //if some other reason (shouldn't happen)
@@ -1275,6 +1294,7 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
         }
       }
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_PER_LINE + per_core_conf_info[fdip_proc_id].off_path_reason);
       void* useful = (void*)cache_access(&per_core_fdip_uc[fdip_proc_id], hashed_line_addr, &uc_line_addr, TRUE);
       if (!useful)
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
@@ -1286,6 +1306,7 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
       else{
         STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
+        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_PER_LINE + per_core_conf_info[fdip_proc_id].conf_off_path_reason);
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
           log_fdip_on_conf_off_state();
         }
@@ -1514,20 +1535,23 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
         if(per_core_conf_info[fdip_proc_id].prev_op->table_info->cf_type == NOT_CF) {
           DEBUG(fdip_proc_id, "fdip on conf off, all: instruction is not a cf inst! op type: %u, op num: %llu, addr: %llu\n", op->table_info->op_type, op->op_num, op->inst_info->addr);
         }
-        // if off path due to btb miss
-        if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
-          log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
-        } 
-        // if off path due to misprediction
-        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
+        if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
+          per_core_conf_info[fdip_proc_id].off_path_reason = REASON_MISPRED;
           log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
         }
+        // if off path due to btb miss
+        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
+          per_core_conf_info[fdip_proc_id].off_path_reason = REASON_BTB_MISS;
+          log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
+        } 
         // if off path due to no target
         else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.no_target){
+          per_core_conf_info[fdip_proc_id].off_path_reason = REASON_NO_TARGET;
           STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
         }
         // if off path due to misfetch
         else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.misfetch){
+          per_core_conf_info[fdip_proc_id].off_path_reason = REASON_MISFETCH;
           STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
         }
         // if some other reason (shouldn't happen)
@@ -1536,6 +1560,7 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
         }
       }
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_PER_LINE + per_core_conf_info[fdip_proc_id].off_path_reason);
       auto iter = cnt_useful->find(hashed_line_addr);
       if ( iter == cnt_useful->end())
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
@@ -1546,6 +1571,7 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
     else{
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_PER_LINE + per_core_conf_info[fdip_proc_id].conf_off_path_reason);
       if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
         log_fdip_on_conf_off_state();
       }
@@ -1854,6 +1880,8 @@ void log_fdip_on_conf_off_state(){
 
   STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_EVENTS);
 
+  STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0 + per_core_conf_info[fdip_proc_id].conf_off_path_reason);
+
   INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_BR, per_core_conf_info[fdip_proc_id].num_cf_br);
   INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_CBR, per_core_conf_info[fdip_proc_id].num_cf_cbr);
   INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_CALL, per_core_conf_info[fdip_proc_id].num_cf_call);
@@ -1967,9 +1995,33 @@ void default_conf_update(Op * op){
 //if btb miss and high enough bp confidence set confidence to off path
 void btb_miss_bp_taken_conf_update(Op * op){
   if(low_confidence_cnt != ~0U){
+    //sus (check w surim if I should remove the cf inst condition)
     if (op->table_info->cf_type) {
       if(op->oracle_info.btb_miss && op->oracle_info.pred_orig == TAKEN && (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)){
         low_confidence_cnt = ~0U;
+        if(FDIP_BP_CONFIDENCE && !per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
+          switch(op->bp_confidence){
+            case 0:
+              per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_0;
+              break;
+
+            case 1:
+              per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_1;
+              break;
+            case 2:
+              per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_2;
+              break;
+
+            case 3:
+              per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_3;
+              break;
+            
+            default:
+              break;
+
+          }
+          //per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_0 + (Conf_Off_Path_Reason)op->bp_confidence;
+        }
       } else {
         //update confidence based on number of cycles elapsed and btb miss rate
         num_cycles_btb_miss_rate_conf_update(op);
@@ -1992,17 +2044,25 @@ void num_cycles_btb_miss_rate_conf_update(Op * op){
   if((double)((cycle_count - cycle_count_last_recovery) * per_core_btb_miss_rate[fdip_proc_id])  >= FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD){
     low_confidence_cnt = ~0U;
     STAT_EVENT(fdip_proc_id, FDIP_BTB_NUM_CYCLES_OFF_PATH_EVENT);
+    if(FDIP_BP_CONFIDENCE && !per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
+      per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_RATE;
+    }
   } else {
     low_confidence_cnt += 3 - op->bp_confidence;
+    if(FDIP_BP_CONFIDENCE && !per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
+      per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_INV_CONF_INC;
+    }
   }
 }
 
+//TODO: make a log conf function that takes enum
 void log_conf_on_off_path_stats_icache_miss() {
   //conf on
   if(FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD){
     //actually off
     if(fdip_off_path(fdip_proc_id)) {
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_ICACHE_MISS);
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_ICACHE_MISS + per_core_conf_info[fdip_proc_id].off_path_reason);
     } else {
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON_ICACHE_MISS);
     }
@@ -2011,6 +2071,7 @@ void log_conf_on_off_path_stats_icache_miss() {
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_ICACHE_MISS);
     } else {
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_ICACHE_MISS);
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_ICACHE_MISS + per_core_conf_info[fdip_proc_id].conf_off_path_reason);
     }
   }
 }

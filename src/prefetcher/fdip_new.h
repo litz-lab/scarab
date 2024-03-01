@@ -81,6 +81,22 @@ typedef enum IC_FETCH_TYPE_enum {
   FDIP_BOTHPATH,
 } IC_Fetch_Type;
 
+typedef enum OFF_PATH_REASON_enum {
+  REASON_BTB_MISS,
+  REASON_MISPRED,
+  REASON_NO_TARGET,
+  REASON_MISFETCH,
+} Off_Path_Reason;
+
+typedef enum CONF_OFF_PATH_REASON_enum {
+  REASON_BTB_MISS_BP_TAKEN_CONF_0,
+  REASON_BTB_MISS_BP_TAKEN_CONF_1,
+  REASON_BTB_MISS_BP_TAKEN_CONF_2,
+  REASON_BTB_MISS_BP_TAKEN_CONF_3,
+  REASON_BTB_MISS_RATE,
+  REASON_INV_CONF_INC,
+} Conf_Off_Path_Reason;
+
 typedef struct Utility_Timeliness_Info_struct {
   // useful prefetch counter per 100,000 cycles
   Counter useful_prefetches;
@@ -104,6 +120,9 @@ typedef struct FDIP_Confidence_Info_struct {
   Flag fdip_off_path_event;
   Flag fdip_on_conf_off_event;
 
+  Off_Path_Reason off_path_reason;
+  Conf_Off_Path_Reason  conf_off_path_reason;
+  
   Counter num_conf_0_branches;
   Counter num_conf_1_branches;
   Counter num_conf_2_branches;

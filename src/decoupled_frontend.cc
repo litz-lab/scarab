@@ -31,8 +31,6 @@ std::vector<uint64_t> per_core_redirect_cycle;
 std::vector<bool> per_core_stalled;
 std::vector<uint64_t> per_core_block_count;
 std::vector<uint64_t> per_core_ftq_block_num;
-extern std::vector<Counter> per_core_last_line_addr;
-extern std::vector<Counter> per_core_last_recover_cycle;
 extern std::vector<Utility_Timeliness_Info> per_core_utility_timeliness_info;
 
 //per_core pointers
@@ -92,8 +90,6 @@ void recover_decoupled_fe(int proc_id) {
   per_core_sched_off_path[proc_id] = false;
   per_core_recovery_addr[proc_id] = bp_recovery_info->recovery_fetch_addr;
   per_core_block_count[proc_id] = 0;
-  per_core_last_line_addr[proc_id] = 0;
-  per_core_last_recover_cycle[proc_id] = cycle_count;
 
   for (auto it = per_core_ftq[proc_id].begin(); it != per_core_ftq[proc_id].end(); it++) {
     free_op(it->first);

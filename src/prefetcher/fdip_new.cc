@@ -134,8 +134,8 @@ typedef struct Bloom_Filter_struct {
 std::vector<Bloom_Filter> per_core_bloom_filter;
 
 //confidence counter
-uns low_confidence_cnt = 0;
-double cf_op_distance = 0.0;
+std::vector<uns> per_core_low_confidence_cnt;
+std::vector<double> per_core_cf_op_distance;
 //confidence stats
 std::vector<FDIP_Confidence_Info> per_core_conf_info;
 
@@ -149,6 +149,8 @@ void alloc_mem_fdip(uns numCores) {
   if (FDIP_BP_CONFIDENCE) {
     per_core_cnt_btb_miss.resize(numCores);
     per_core_btb_miss_rate.resize(numCores);
+    per_core_low_confidence_cnt.resize(numCores);
+    per_core_cf_op_distance.resize(numCores);
     per_core_conf_info.resize(numCores);
   }
   per_core_last_imiss_reason.resize(numCores);
@@ -292,8 +294,8 @@ void recover_fdip() {
   per_core_last_recover_cycle[fdip_proc_id] = cycle_count;
 
   if(FDIP_BP_CONFIDENCE){
-    low_confidence_cnt = 0;
-    cf_op_distance = 0.0;
+    per_core_low_confidence_cnt[fdip_proc_id] = 0;
+    per_core_cf_op_distance[fdip_proc_id] = 0.0;
     // set previous reset previous instruction
     //per_core_conf_info[fdip_proc_id].cur_op = nullptr;
     per_core_conf_info[fdip_proc_id].prev_op = nullptr;
@@ -400,10 +402,10 @@ void update_fdip() {
     if (FDIP_BP_CONFIDENCE) {
       if (FDIP_BP_PERFECT_CONFIDENCE) {
         if (fdip_off_path(fdip_proc_id))
-          low_confidence_cnt = ~0U;
-        if(low_confidence_cnt == ~0U)
+          per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
+        if(per_core_low_confidence_cnt[fdip_proc_id] == ~0U)
           ASSERT(0,fdip_off_path(fdip_proc_id));
-        cf_op_distance = 0.0;
+        per_core_cf_op_distance[fdip_proc_id] = 0.0;
       } else if (FDIP_BTB_MISS_BP_TAKEN_CONF) {
         btb_miss_bp_taken_conf_update(op);
       } else {
@@ -430,7 +432,7 @@ void update_fdip() {
     DEBUG(fdip_proc_id, "op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, off-path: %d\n", op->op_num, op->inst_info->addr, line_addr, last_line_addr, fdip_off_path(fdip_proc_id));
     if (line_addr != last_line_addr) {
       STAT_EVENT(ic_ref->proc_id, FDIP_ATTEMPTED_PREF_ONPATH + op->off_path);
-      DEBUG(fdip_proc_id, "fdip off path: %d, conf off path: %d\n", fdip_off_path(fdip_proc_id), (low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) ? 0:1);
+      DEBUG(fdip_proc_id, "fdip off path: %d, conf off path: %d\n", fdip_off_path(fdip_proc_id), (per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD) ? 0:1);
       if (FDIP_BP_CONFIDENCE)
         log_stats_bp_conf();
       if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_PERFECT_PREFETCH)
@@ -919,7 +921,7 @@ void inc_icache_miss(uns proc_id, Addr line_addr) {
 
 void inc_prefetched_cls(Addr line_addr, uns success) {
   Flag on_path = FALSE;
-  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD)
+  if (FDIP_BP_CONFIDENCE && per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD)
     on_path = TRUE;
   if (!FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
     on_path = TRUE;
@@ -1094,8 +1096,8 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
   if (FDIP_GHIST_HASHING)
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
 
-  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
-    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", low_confidence_cnt, fdip_off_path(fdip_proc_id));
+  if (FDIP_BP_CONFIDENCE && per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD) {
+    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", per_core_low_confidence_cnt[fdip_proc_id], fdip_off_path(fdip_proc_id));
     *emit_new_prefetch = TRUE;
   } else {
     switch(FDIP_UTILITY_PREF_POLICY) {
@@ -1156,8 +1158,8 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
   if (FDIP_GHIST_HASHING)
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
 
-  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
-    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", low_confidence_cnt, fdip_off_path(fdip_proc_id));
+  if (FDIP_BP_CONFIDENCE && per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD) {
+    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", per_core_low_confidence_cnt[fdip_proc_id], fdip_off_path(fdip_proc_id));
     *emit_new_prefetch = TRUE;
   } else {
     switch(FDIP_UTILITY_PREF_POLICY) {
@@ -1364,8 +1366,8 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
   if (FDIP_GHIST_HASHING)
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
 
-  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
-    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", low_confidence_cnt, fdip_off_path(fdip_proc_id));
+  if (FDIP_BP_CONFIDENCE && per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD) {
+    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", per_core_low_confidence_cnt[fdip_proc_id], fdip_off_path(fdip_proc_id));
     *emit_new_prefetch = TRUE;
   } else {
     void* useful = bloom_lookup(fdip_proc_id, hashed_line_addr);
@@ -1523,7 +1525,7 @@ void insert_pref_candidate_to_seniority_ftq(Addr line_addr) {
   uint64_t hashed_line_addr = line_addr;
   if (FDIP_GHIST_HASHING)
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
-  Flag on_path = FDIP_BP_CONFIDENCE && (low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD);
+  Flag on_path = FDIP_BP_CONFIDENCE && (per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD);
   per_core_seniority_ftq[fdip_proc_id].push_back(std::make_tuple(hashed_line_addr, cycle_count, on_path));
   DEBUG(fdip_proc_id, "Insert %llx (hashed %lx) to seniority FTQ at cyc %llu seniority_ftq.size() : %ld\n", line_addr, hashed_line_addr, cycle_count, per_core_seniority_ftq[fdip_proc_id].size());
 }
@@ -1707,15 +1709,15 @@ void inc_cf_type_counters(Cf_Type cf_type){
 }
 
 void inc_low_conf_ctr_(Op * op){
-  low_confidence_cnt += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
-  cf_op_distance = 0.0;
+  per_core_low_confidence_cnt[fdip_proc_id] += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
+  per_core_cf_op_distance[fdip_proc_id] = 0.0;
 
   if(op->oracle_info.btb_miss){
     per_core_conf_info[fdip_proc_id].num_BTB_misses += 1;
   }
   inc_br_conf_counters(op->bp_confidence);
   inc_cf_type_counters(op->table_info->cf_type);
-  DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
+  DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, per_core_low_confidence_cnt[fdip_proc_id], op->off_path? 1:0);
 }
 
 // default conf mechanism
@@ -1724,24 +1726,24 @@ void default_conf_update(Op * op){
     return;
   DEBUG(fdip_proc_id, "default_conf_update\n");
   //prevent wrap around
-  if(low_confidence_cnt != ~0U){
+  if(per_core_low_confidence_cnt[fdip_proc_id] != ~0U){
     if (op->table_info->cf_type) {
-      low_confidence_cnt += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
-      cf_op_distance = 0.0;
+      per_core_low_confidence_cnt[fdip_proc_id] += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
+      per_core_cf_op_distance[fdip_proc_id] = 0.0;
       //log stats
       if(op->oracle_info.btb_miss){
         per_core_conf_info[fdip_proc_id].num_BTB_misses += 1;
       }
       inc_br_conf_counters(op->bp_confidence);
       inc_cf_type_counters(op->table_info->cf_type);
-      DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
+      DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, per_core_low_confidence_cnt[fdip_proc_id], op->off_path? 1:0);
     }
-    else if (cf_op_distance >= FDIP_OFF_PATH_THRESHOLD) {
-      low_confidence_cnt += FDIP_OFF_PATH_CONF_INC + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id];
-      cf_op_distance = 0.0;
+    else if (per_core_cf_op_distance[fdip_proc_id] >= FDIP_OFF_PATH_THRESHOLD) {
+      per_core_low_confidence_cnt[fdip_proc_id] += FDIP_OFF_PATH_CONF_INC + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id];
+      per_core_cf_op_distance[fdip_proc_id] = 0.0;
       per_core_conf_info[fdip_proc_id].num_op_dist_incs += 1;
     } else{
-      cf_op_distance += (1.0+(double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]);
+      per_core_cf_op_distance[fdip_proc_id] += (1.0+(double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]);
     }
   }
 }
@@ -1749,10 +1751,10 @@ void default_conf_update(Op * op){
 void btb_miss_bp_taken_conf_update(Op * op){
   if (!FDIP_BP_CONFIDENCE)
     return;
-  if(low_confidence_cnt != ~0U){
+  if(per_core_low_confidence_cnt[fdip_proc_id] != ~0U){
     if (op->table_info->cf_type) {
       if(op->oracle_info.btb_miss && op->oracle_info.pred_orig == TAKEN && (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)){
-        low_confidence_cnt = ~0U;
+        per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
           switch(op->bp_confidence){
             case 0:
@@ -1774,7 +1776,7 @@ void btb_miss_bp_taken_conf_update(Op * op){
           //per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_0 + (Conf_Off_Path_Reason)op->bp_confidence;
         }
       } else { // update confidence
-        low_confidence_cnt += 3 - op->bp_confidence;
+        per_core_low_confidence_cnt[fdip_proc_id] += 3 - op->bp_confidence;
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
           per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_INV_CONF_INC;
       }
@@ -1784,12 +1786,12 @@ void btb_miss_bp_taken_conf_update(Op * op){
       }
       inc_br_conf_counters(op->bp_confidence);
       inc_cf_type_counters(op->table_info->cf_type);
-      DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
+      DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, per_core_low_confidence_cnt[fdip_proc_id], op->off_path? 1:0);
     } else { // update confidence based on number of cycles elapsed and btb miss rate
       //if number of cycles times btb miss rate is greater than 1 we have probably seen a btb miss
       DEBUG(fdip_proc_id, "btb miss rate: %f, cycles since recovery: %llu", per_core_btb_miss_rate[fdip_proc_id], cycle_count - per_core_last_recover_cycle[fdip_proc_id]);
       if((double)((cycle_count - per_core_last_recover_cycle[fdip_proc_id]) * per_core_btb_miss_rate[fdip_proc_id])  >= FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD){
-        low_confidence_cnt = ~0U;
+        per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
         STAT_EVENT(fdip_proc_id, FDIP_BTB_NUM_CYCLES_OFF_PATH_EVENT);
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
           per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_RATE;
@@ -1803,7 +1805,7 @@ void log_stats_bp_conf() {
     return;
 
   FDIP_Confidence_Info *conf_info = &(per_core_conf_info.data()[fdip_proc_id]);
-  if (low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
+  if (per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD) {
     if (fdip_off_path(fdip_proc_id)) {
       if (!conf_info->fdip_off_conf_on_event) {
         ASSERT(fdip_proc_id, conf_info->prev_op->table_info->cf_type); // must be a cf as the last on-path op
@@ -1880,7 +1882,7 @@ void log_stats_bp_conf_emitted() {
   if (!FDIP_BP_CONFIDENCE)
     return;
   //conf on
-  if(low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD){
+  if(per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD){
     //actually off
     if(fdip_off_path(fdip_proc_id)) {
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMITTED);

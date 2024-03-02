@@ -50,16 +50,12 @@ extern "C" {
   void insert_pref_candidate_to_seniority_ftq(Addr line_addr);
   void clear_old_seniority_ftq();
   void assert_fdip_break_reason(uns proc_id, Addr line_addr);
-  void log_fdip_off_conf_on_btb_miss_stats(Op *op);
-  void log_fdip_off_conf_on_bp_incorrect_stats(Op *op);
-  void log_fdip_on_conf_off_state();
   void inc_br_conf_counters(int conf);
   void inc_cf_type_counters(Cf_Type cf_type);
   void btb_miss_bp_taken_conf_update(Op * op);
   void default_conf_update(Op * op);
-  void num_cycles_btb_miss_rate_conf_update(Op * op);
-  void log_fdip_off_conf_on_btb_miss_cbr_conf_stats(Op *op);
-  void log_conf_on_off_path_stats_icache_miss();
+  void log_stats_bp_conf();
+  void log_stats_bp_conf_emitted();
 
   
 #ifdef __cplusplus

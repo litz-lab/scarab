@@ -1771,7 +1771,6 @@ void btb_miss_bp_taken_conf_update(Op * op){
               break;
             default:
               break;
-
           }
           //per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_0 + (Conf_Off_Path_Reason)op->bp_confidence;
         }
@@ -1839,7 +1838,7 @@ void log_stats_bp_conf() {
         }
       }
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_PER_LINE + conf_info->off_path_reason);
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_PREF_CANDIDATES + conf_info->off_path_reason);
     } else {
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
     }
@@ -1848,7 +1847,7 @@ void log_stats_bp_conf() {
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
     else {
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
-      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_PER_LINE + conf_info->conf_off_path_reason);
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_PREF_CANDIDATES + conf_info->conf_off_path_reason);
       if (!conf_info->fdip_on_conf_off_event) {
         conf_info->fdip_on_conf_off_event = true;
 

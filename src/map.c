@@ -1465,7 +1465,7 @@ static inline void reg_consume_table_print_list(Reg_Consume_Table* table) {
   Reg_Consume_Hash_Entry *entry;
   // Hash Table to Record the Target for Printing
   Hash_Table target_trace_hash;
-  init_hash_table(&target_trace_hash, "target trace hash", NODE_TABLE_SIZE, sizeof(Flag));
+  init_hash_table(&target_trace_hash, "target trace hash", NODE_TABLE_SIZE, sizeof(uns64));
 
   // Select the Target Trace and Add into Hash Table
   node_p = (Reg_Consume_Node **)list_start_head_traversal(&table->consume_node_list);
@@ -1476,15 +1476,15 @@ static inline void reg_consume_table_print_list(Reg_Consume_Table* table) {
       continue;
 
     Flag if_new_entry = FALSE;
-    Flag *if_target = (Flag *)hash_table_access_create(&target_trace_hash, (*node_p)->op_num, &if_new_entry);
-    *if_target = TRUE;
+    uns64 *target_sign = (uns64 *)hash_table_access_create(&target_trace_hash, (*node_p)->op_num, &if_new_entry);
+    *target_sign = (*node_p)->sign;
   }
 
   // Print the Previous N and Subsequent N Traces of the Target
   int print_counter = 0;
   node_p = (Reg_Consume_Node **)list_start_head_traversal(&table->consume_node_list);
   for (; node_p; node_p = (Reg_Consume_Node **)list_next_element(&table->consume_node_list)) {
-    Flag *if_target = (Flag *)hash_table_access(&target_trace_hash, (*node_p)->op_num);
+    uns64 *target_sign = (uns64 *)hash_table_access(&target_trace_hash, (*node_p)->op_num);
     Flag *if_print = (Flag *)hash_table_access(&target_trace_hash, (*node_p)->op_num + REG_CONSUME_LIST_CONTEXT_NUM);
 
     if (print_counter <= 0) {
@@ -1493,13 +1493,13 @@ static inline void reg_consume_table_print_list(Reg_Consume_Table* table) {
           continue;
         print_counter = REG_CONSUME_LIST_CONTEXT_NUM * 2;
       } else {
-        if (!if_target)
+        if (!target_sign)
           continue;
         print_counter = REG_CONSUME_LIST_CONTEXT_NUM;
       }
     }
 
-    if (if_target)
+    if (target_sign && *target_sign == (*node_p)->sign)
       printf(" * ");
     else
       printf(" - ");

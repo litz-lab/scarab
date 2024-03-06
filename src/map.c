@@ -1297,6 +1297,7 @@ void rename_table_recover(Counter recovery_op_num) {
  * --- 2. Collect the info of unconsumed producers
 ***************************************************************************************/
 static inline uns64             reg_consume_table_get_sign(Reg_Consume_Table*, Op*);
+static inline Flag              reg_consume_table_if_target(Reg_Consume_Table*, uns64);
 static inline Reg_Consume_Node* reg_consume_table_create_node(Reg_Consume_Table*, Op*);
 static inline void              reg_consume_table_collect_stat(Reg_Consume_Table*, uns);
 static inline void              reg_consume_table_print_list(Reg_Consume_Table*);
@@ -1404,6 +1405,19 @@ static inline uns64 reg_consume_table_get_sign(Reg_Consume_Table *table, Op *op)
   return sign;
 }
 
+/* determine if the sign is target */
+static inline Flag reg_consume_table_if_target(Reg_Consume_Table *table, uns64 sign) {
+  Reg_Consume_Hash_Entry *entry = (Reg_Consume_Hash_Entry *)hash_table_access(&table->sign_hash, sign);
+  if (!entry)
+    return FALSE;
+
+  if (entry->num_unconsumed * 100 / entry->num_all_produced < REG_CONSUME_THRESH_RATIO ||
+      entry->num_unconsumed < REG_CONSUME_THRESH_COUNT)
+    return FALSE;
+
+  return TRUE;
+}
+
 /* create infomation node for tracking consumed state */
 static inline Reg_Consume_Node* reg_consume_table_create_node(Reg_Consume_Table* table, Op* op) {
   ASSERT(map_data->proc_id, REG_CONSUME_ENABLE && table != NULL);
@@ -1470,9 +1484,7 @@ static inline void reg_consume_table_print_list(Reg_Consume_Table* table) {
   // Select the Target Trace and Add into Hash Table
   node_p = (Reg_Consume_Node **)list_start_head_traversal(&table->consume_node_list);
   for (; node_p; node_p = (Reg_Consume_Node **)list_next_element(&table->consume_node_list)) {
-    entry = (Reg_Consume_Hash_Entry *)hash_table_access(&table->sign_hash, (*node_p)->sign);
-    if (entry->num_unconsumed * 100 / entry->num_all_produced < REG_CONSUME_LIST_RATIO_THRESH ||
-        entry->num_unconsumed < REG_CONSUME_LIST_COUNT_THRESH)
+    if (!reg_consume_table_if_target(table, (*node_p)->sign))
       continue;
 
     Flag if_new_entry = FALSE;

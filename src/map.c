@@ -1297,7 +1297,7 @@ void rename_table_recover(Counter recovery_op_num) {
  * --- 2. Collect the info of unconsumed producers
 ***************************************************************************************/
 static inline uns64             reg_consume_table_get_sign(Reg_Consume_Table*, Op*);
-static inline Flag              reg_consume_table_if_target(Reg_Consume_Table*, uns64);
+static inline Reg_Consume_Conf  reg_consume_table_get_conf(Reg_Consume_Table*, uns64);
 static inline Reg_Consume_Node* reg_consume_table_create_node(Reg_Consume_Table*, Op*);
 static inline void              reg_consume_table_collect_stat(Reg_Consume_Table*, uns);
 static inline void              reg_consume_table_print_list(Reg_Consume_Table*);
@@ -1338,6 +1338,10 @@ static inline void reg_consume_table_read(Reg_Consume_Table *table, Op *op, uns 
 
   if (table->node_array[ind] == NULL)
     return;
+
+  if (!REG_CONSUME_TRACK_OFF_PATH && op->off_path)
+    return;
+
   ++table->node_array[ind]->in_degree;
 }
 
@@ -1345,7 +1349,7 @@ static inline void reg_consume_table_write(Reg_Consume_Table *table, Op *op, uns
   if (!REG_CONSUME_ENABLE)
     return;
   ASSERT(map_data->proc_id, table != NULL && ind < table->array_size);
-  ASSERT(map_data->proc_id, REG_CONSUME_UNIQUE_OP || table->last_write_node == NULL);
+  ASSERT(map_data->proc_id, REG_CONSUME_TRACK_UNIQUE_OP || table->last_write_node == NULL);
 
   // same op share same node when track by each unique op
   if (table->last_write_node == NULL)
@@ -1353,7 +1357,7 @@ static inline void reg_consume_table_write(Reg_Consume_Table *table, Op *op, uns
   else
     table->node_array[ind] = table->last_write_node;
 
-  if (!REG_CONSUME_UNIQUE_OP || ++table->last_write_num == op->table_info->num_dest_regs) {
+  if (!REG_CONSUME_TRACK_UNIQUE_OP || ++table->last_write_num == op->table_info->num_dest_regs) {
     table->last_write_node = NULL;
     table->last_write_num = 0;
   } else {
@@ -1405,17 +1409,27 @@ static inline uns64 reg_consume_table_get_sign(Reg_Consume_Table *table, Op *op)
   return sign;
 }
 
-/* determine if the sign is target */
-static inline Flag reg_consume_table_if_target(Reg_Consume_Table *table, uns64 sign) {
+/* return the confidence range of the corresponding sign */
+static inline Reg_Consume_Conf reg_consume_table_get_conf(Reg_Consume_Table *table, uns64 sign) {
   Reg_Consume_Hash_Entry *entry = (Reg_Consume_Hash_Entry *)hash_table_access(&table->sign_hash, sign);
   if (!entry)
-    return FALSE;
+    return REG_CONSUME_CONF_SKEPT;
 
-  if (entry->num_unconsumed * 100 / entry->num_all_produced < REG_CONSUME_THRESH_RATIO ||
-      entry->num_unconsumed < REG_CONSUME_THRESH_COUNT)
-    return FALSE;
+  // do not consider low-execution op
+  if (entry->num_unconsumed < REG_CONSUME_COUNT_THRESH)
+    return REG_CONSUME_CONF_SKEPT;
 
-  return TRUE;
+  uns ratio = entry->num_unconsumed * 100 / entry->num_all_produced;
+  if (ratio < REG_CONSUME_CONF_THRESH_AMBIV)
+    return REG_CONSUME_CONF_SKEPT;
+
+  if (ratio < REG_CONSUME_CONF_THRESH_LIKE)
+    return REG_CONSUME_CONF_AMBIV;
+
+  if (ratio < REG_CONSUME_CONF_THRESH_CERT)
+    return REG_CONSUME_CONF_LIKE;
+
+  return REG_CONSUME_CONF_CERT;
 }
 
 /* create infomation node for tracking consumed state */
@@ -1445,6 +1459,11 @@ static inline Reg_Consume_Node* reg_consume_table_create_node(Reg_Consume_Table*
 /* collect data when all of the register of an instruction are released */
 static inline void reg_consume_table_collect_stat(Reg_Consume_Table* table, uns ind) {
   ASSERT(map_data->proc_id, REG_CONSUME_ENABLE && table != NULL);
+
+  // do not record stat if it is off-path when TRACK_OFF_PATH is not enabled
+  if (!REG_CONSUME_TRACK_OFF_PATH && table->node_array[ind]->off_path)
+    return;
+
   Flag if_new_entry = FALSE;
   Reg_Consume_Hash_Entry *entry = (Reg_Consume_Hash_Entry *)hash_table_access_create(
     &table->sign_hash, table->node_array[ind]->sign, &if_new_entry
@@ -1484,7 +1503,7 @@ static inline void reg_consume_table_print_list(Reg_Consume_Table* table) {
   // Select the Target Trace and Add into Hash Table
   node_p = (Reg_Consume_Node **)list_start_head_traversal(&table->consume_node_list);
   for (; node_p; node_p = (Reg_Consume_Node **)list_next_element(&table->consume_node_list)) {
-    if (!reg_consume_table_if_target(table, (*node_p)->sign))
+    if (reg_consume_table_get_conf(table, (*node_p)->sign) == REG_CONSUME_CONF_SKEPT)
       continue;
 
     Flag if_new_entry = FALSE;
@@ -1496,6 +1515,9 @@ static inline void reg_consume_table_print_list(Reg_Consume_Table* table) {
   int print_counter = 0;
   node_p = (Reg_Consume_Node **)list_start_head_traversal(&table->consume_node_list);
   for (; node_p; node_p = (Reg_Consume_Node **)list_next_element(&table->consume_node_list)) {
+    if (!REG_CONSUME_TRACK_OFF_PATH && (*node_p)->off_path)
+      continue;
+
     uns64 *target_sign = (uns64 *)hash_table_access(&target_trace_hash, (*node_p)->op_num);
     Flag *if_print = (Flag *)hash_table_access(&target_trace_hash, (*node_p)->op_num + REG_CONSUME_LIST_CONTEXT_NUM);
 
@@ -1511,10 +1533,18 @@ static inline void reg_consume_table_print_list(Reg_Consume_Table* table) {
       }
     }
 
-    if (target_sign && *target_sign == (*node_p)->sign)
-      printf(" * ");
-    else
+    if (target_sign && *target_sign == (*node_p)->sign) {
+      if (reg_consume_table_get_conf(table, (*node_p)->sign) == REG_CONSUME_CONF_CERT)
+        printf(" * ");
+      else if (reg_consume_table_get_conf(table, (*node_p)->sign) == REG_CONSUME_CONF_LIKE)
+        printf(" + ");
+      else if (reg_consume_table_get_conf(table, (*node_p)->sign) == REG_CONSUME_CONF_AMBIV)
+        printf(" ? ");
+    }
+    else {
       printf(" - ");
+    }
+
     print_counter--;
 
     // Print Inst Info
@@ -1528,8 +1558,10 @@ static inline void reg_consume_table_print_list(Reg_Consume_Table* table) {
 
     // Print Consumed Info
     entry = (Reg_Consume_Hash_Entry *)hash_table_access(&table->sign_hash, (*node_p)->sign);
-    printf("\n --- op_num: %lld, off_path: %d, if_consumed: %d, ", (*node_p)->op_num, (*node_p)->off_path, (*node_p)->if_consumed);
-    printf("all: %lld, unconsumed: %lld\n\n", entry->num_all_produced, entry->num_unconsumed);
+    printf("\n --- op_num: %lld, off_path: %d, if_consumed: %d", (*node_p)->op_num, (*node_p)->off_path, (*node_p)->if_consumed);
+    if (entry)
+      printf(", all: %lld, unconsumed: %lld", entry->num_all_produced, entry->num_unconsumed);
+    printf("\n\n");
   }
 
   hash_table_clear(&target_trace_hash);

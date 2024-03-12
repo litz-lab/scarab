@@ -40,10 +40,14 @@
 // To be changed to a configurable para
 #define REG_CONSUME_ENABLE      FALSE
 #define REG_CONSUME_SIGN_TYPE   REG_CONSUME_SIGH_PC
-#define REG_CONSUME_UNIQUE_OP   TRUE
 
-#define REG_CONSUME_THRESH_RATIO        90
-#define REG_CONSUME_THRESH_COUNT        256
+#define REG_CONSUME_TRACK_UNIQUE_OP     TRUE
+#define REG_CONSUME_TRACK_OFF_PATH      FALSE
+
+#define REG_CONSUME_CONF_THRESH_AMBIV   45
+#define REG_CONSUME_CONF_THRESH_LIKE    55
+#define REG_CONSUME_CONF_THRESH_CERT    90
+#define REG_CONSUME_COUNT_THRESH        256
 
 #define REG_CONSUME_LIST_ENABLE         FALSE
 #define REG_CONSUME_LIST_CONTEXT_NUM    20
@@ -53,6 +57,13 @@ typedef enum Reg_Consume_Signiture_enum {
   REG_CONSUME_SIGH_MEM,
   REG_CONSUME_SIGH_NUM
 } Reg_Consume_Signiture;
+
+typedef enum Reg_Consume_Conf_enum {
+  REG_CONSUME_CONF_SKEPT,
+  REG_CONSUME_CONF_AMBIV,
+  REG_CONSUME_CONF_LIKE,
+  REG_CONSUME_CONF_CERT
+} Reg_Consume_Conf;
 
 typedef struct Reg_Consume_Hash_Entry_struct {
   Counter num_all_produced;

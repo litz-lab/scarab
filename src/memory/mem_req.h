@@ -69,7 +69,8 @@ typedef enum Mem_Req_State_enum {
     elem(DSTORE)       /* data store */              \
     elem(IPRF)         /* instruction prefetch */    \
     elem(UOCPRF)       /* only uop cache prefetch */ \
-    elem(FDIPPRF)      /* FDIP instruction prefetch */ \
+    elem(FDIPPRFON)    /* FDIP on-path instruction prefetch */ \
+    elem(FDIPPRFOFF)   /* FDIP off-path instruction prefetch */ \
     elem(DPRF)         /* data prefetch */           \
     elem(WB)           /* writeback of dirty data */ \
     elem(WB_NODIRTY)   /* writeback of clean data */ \
@@ -192,7 +193,7 @@ struct Mem_Req_struct {
   Counter dram_access_cycle; /* cycle of DRAM access (in L1 cycles) */
   Counter dram_latency;      /* DRAM latency (in L1 cycles) */
   Counter dram_core_service_cycles_at_start; /* "Virtual clock" timestamp */
-  uns fdip_pref_off_path; /*set if the mem_req is requested by FDIP on the wrong path prediction*/
+  uns fdip_pref_off_path; /*set if the mem_req is requested by FDIP on the actual wrong path prediction*/
   Counter cyc_hit_by_demand_load; /*set if the mem_req (requested by FDIP) is hit by a demand load*/
 };
 

@@ -56,7 +56,7 @@ Flag mem_req_type_is_demand(Mem_Req_Type type) {
 /* mem_req_type_is_prefetch */
 
 Flag mem_req_type_is_prefetch(Mem_Req_Type type) {
-  return type == MRT_IPRF || type == MRT_DPRF || type == MRT_UOCPRF || type == MRT_FDIPPRF;
+  return type == MRT_IPRF || type == MRT_DPRF || type == MRT_UOCPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF;
 }
 
 /**************************************************************************************/

@@ -1147,7 +1147,6 @@ void log_stats_ic_miss() {
   STAT_EVENT(ic->proc_id, ICACHE_MISS);
   STAT_EVENT(ic->proc_id, POWER_ICACHE_MISS);
   STAT_EVENT(ic->proc_id, ICACHE_MISS_ONPATH + ic->off_path);
-  //log_conf_on_off_path_stats_icache_miss();
 }
 
 void log_stats_mshr_hit(Addr line_addr) {

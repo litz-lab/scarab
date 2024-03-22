@@ -482,7 +482,6 @@ void update_fdip() {
 
       Mem_Req_Type mem_type = fdip_conf_off_path(ic_ref->proc_id)? MRT_FDIPPRFOFF : MRT_FDIPPRFON;
       if (!emit_new_prefetch && !line && !mem_req)
-      //if (!emit_new_prefetch)
         insert_pref_candidate_to_seniority_ftq(line_addr);
       if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
         INC_STAT_EVENT(fdip_proc_id, FDIP_SENIORITY_FTQ_ACCUMULATED, per_core_seniority_ftq[fdip_proc_id].size());
@@ -580,8 +579,6 @@ void update_fdip() {
     INC_STAT_EVENT(fdip_proc_id, FDIP_FTQ_OCCUPANCY_BLOCKS_ACCUMULATED, decoupled_fe_ftq_num_blocks());
   }
   per_core_last_break_reason[ic_ref->proc_id] = break_reason;
-  //else
-    //ASSERT(fdip_proc_id, false); // for now TODO
 }
 
 uns64 fdip_get_ghist() {
@@ -600,7 +597,7 @@ Flag fdip_off_path(uns proc_id) {
 
 Flag fdip_conf_off_path(uns proc_id) {
   if (FDIP_BP_CONFIDENCE) {
-    if (low_confidence_cnt <= FDIP_OFF_PATH_THRESHOLD)
+    if (per_core_low_confidence_cnt[proc_id] <= FDIP_OFF_PATH_THRESHOLD)
       return FALSE;
     else
       return TRUE;
@@ -1791,7 +1788,6 @@ void btb_miss_bp_taken_conf_update(Op * op){
             default:
               break;
           }
-          //per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_0 + (Conf_Off_Path_Reason)op->bp_confidence;
         }
       } else { // update confidence
         per_core_low_confidence_cnt[fdip_proc_id] += 3 - op->bp_confidence;
@@ -1895,7 +1891,6 @@ void log_stats_bp_conf() {
   }
 }
 
-//TODO: make a log conf function that takes enum
 void log_stats_bp_conf_emitted() {
   if (!FDIP_BP_CONFIDENCE)
     return;

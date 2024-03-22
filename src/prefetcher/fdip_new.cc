@@ -495,10 +495,18 @@ void update_fdip() {
         uns pref_from = line ? 0 : (mlc_line ? 1 : (l1_line ? 2 : 3));
         STAT_EVENT(ic_ref->proc_id, FDIP_PREFETCH_HIT_ICACHE + pref_from);
         mem_req = mem_search_reqbuf_wrapper(ic_ref->proc_id, line_addr,
-            MRT_FDIPPRF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
+            MRT_FDIPPRFON, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
             QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
             QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
             &queue_entry, &ramulator_match);
+
+        if (!mem_req) {
+          mem_req = mem_search_reqbuf_wrapper(ic_ref->proc_id, line_addr,
+              MRT_FDIPPRFOFF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
+              QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
+              QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
+              &queue_entry, &ramulator_match);
+        }
 
         if (line) {
           DEBUG(fdip_proc_id, "probe hit for %llx\n", line_addr);
@@ -507,12 +515,13 @@ void update_fdip() {
         }
       }
 
+      Mem_Req_Type mem_type = fdip_conf_off_path(ic_ref->proc_id)? MRT_FDIPPRFOFF : MRT_FDIPPRFON;
       if (!emit_new_prefetch && !line && !mem_req)
       //if (!emit_new_prefetch)
         insert_pref_candidate_to_seniority_ftq(line_addr);
       if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
         INC_STAT_EVENT(fdip_proc_id, FDIP_SENIORITY_FTQ_ACCUMULATED, per_core_seniority_ftq[fdip_proc_id].size());
-      if (emit_new_prefetch && !line && !mem_req && !mem_can_allocate_req_buffer(fdip_proc_id, MRT_FDIPPRF, FALSE)) {
+      if (emit_new_prefetch && !line && !mem_req && !mem_can_allocate_req_buffer(fdip_proc_id, mem_type, FALSE)) {
         // This rarely happens if mem_req_buffer_entries and ramulator_readq_entries are big enough.
         // e.g. If FE_FTQ_BLOCK_NUM = 302, MEM_REQ_BUFFER_ENTRIES = 1024 and RAMULATOR_READQ_ENTRIES = 512 never cause this break.
         DEBUG(fdip_proc_id, "Break due to full mem_req buf\n");
@@ -529,8 +538,8 @@ void update_fdip() {
           Mem_Req req;
           req.off_path           = op ? op->off_path : FALSE;
           req.off_path_confirmed = FALSE;
-          req.type               = MRT_FDIPPRF;
-          mem_req_set_types(&req, MRT_FDIPPRF);
+          req.type               = mem_type;
+          mem_req_set_types(&req, mem_type);
           req.proc_id            = fdip_proc_id;
           req.addr               = line_addr;
           req.oldest_op_unique_num = (Counter)0;
@@ -549,7 +558,7 @@ void update_fdip() {
             ASSERT(fdip_proc_id, false);
           success = Mem_Queue_Req_Result::SUCCESS_NEW;
         } else {
-          success = new_mem_req(MRT_FDIPPRF, fdip_proc_id, line_addr,
+          success = new_mem_req(mem_type, fdip_proc_id, line_addr,
               ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
               //ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count++, 0); // bug?
           // A buffer entry should be available since it is checked by mem_can_allocate_req_buffer for a new prefetch

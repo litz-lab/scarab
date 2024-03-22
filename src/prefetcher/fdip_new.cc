@@ -29,9 +29,6 @@ std::vector<decoupled_fe_iter*> per_core_ftq_iter;
 std::vector<Addr> per_core_last_line_addr;
 std::vector<Flag> per_core_warmed_up;
 int per_cyc_ipref = 0;
-uns low_confidence_cnt = 0;
-double cf_op_distance = 0.0;
-Counter cycle_count_last_recovery = 0;
 
 typedef enum FDIP_BREAK_enum {
   BR_REACH_FTQ_END,
@@ -135,6 +132,10 @@ typedef struct Bloom_Filter_struct {
   Counter cnt_insert_bloom4;
 } Bloom_Filter;
 std::vector<Bloom_Filter> per_core_bloom_filter;
+
+//confidence counter
+std::vector<uns> per_core_low_confidence_cnt;
+std::vector<double> per_core_cf_op_distance;
 //confidence stats
 std::vector<FDIP_Confidence_Info> per_core_conf_info;
 
@@ -148,6 +149,8 @@ void alloc_mem_fdip(uns numCores) {
   if (FDIP_BP_CONFIDENCE) {
     per_core_cnt_btb_miss.resize(numCores);
     per_core_btb_miss_rate.resize(numCores);
+    per_core_low_confidence_cnt.resize(numCores);
+    per_core_cf_op_distance.resize(numCores);
     per_core_conf_info.resize(numCores);
   }
   per_core_last_imiss_reason.resize(numCores);
@@ -287,11 +290,12 @@ void set_fdip(int _proc_id, Icache_Stage *_ic) {
 }
 
 void recover_fdip() {
-  low_confidence_cnt = 0;
-  cf_op_distance = 0.0;
-  cycle_count_last_recovery = cycle_count;
+  per_core_last_line_addr[fdip_proc_id] = 0;
+  per_core_last_recover_cycle[fdip_proc_id] = cycle_count;
 
   if(FDIP_BP_CONFIDENCE){
+    per_core_low_confidence_cnt[fdip_proc_id] = 0;
+    per_core_cf_op_distance[fdip_proc_id] = 0.0;
     // set previous reset previous instruction
     //per_core_conf_info[fdip_proc_id].cur_op = nullptr;
     per_core_conf_info[fdip_proc_id].prev_op = nullptr;
@@ -360,9 +364,8 @@ void update_fdip() {
     //set previous op, only if on path or first off path instruction
     if(FDIP_BP_CONFIDENCE && (!(op->off_path) || !(per_core_conf_info[fdip_proc_id].fdip_off_path_event))){
       per_core_conf_info[fdip_proc_id].prev_op = per_core_cur_op[fdip_proc_id];
-      if(op->off_path){
+      if(op->off_path)
         per_core_conf_info[fdip_proc_id].fdip_off_path_event = true;
-      }
     }
     per_core_cur_op[fdip_proc_id] = op;
     Addr last_line_addr = per_core_last_line_addr[fdip_proc_id];
@@ -399,10 +402,10 @@ void update_fdip() {
     if (FDIP_BP_CONFIDENCE) {
       if (FDIP_BP_PERFECT_CONFIDENCE) {
         if (fdip_off_path(fdip_proc_id))
-          low_confidence_cnt = ~0U;
-        if(low_confidence_cnt == ~0U)
+          per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
+        if(per_core_low_confidence_cnt[fdip_proc_id] == ~0U)
           ASSERT(0,fdip_off_path(fdip_proc_id));
-        cf_op_distance = 0.0;
+        per_core_cf_op_distance[fdip_proc_id] = 0.0;
       } else if (FDIP_BTB_MISS_BP_TAKEN_CONF) {
         btb_miss_bp_taken_conf_update(op);
       } else {
@@ -429,51 +432,13 @@ void update_fdip() {
     DEBUG(fdip_proc_id, "op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, off-path: %d\n", op->op_num, op->inst_info->addr, line_addr, last_line_addr, fdip_off_path(fdip_proc_id));
     if (line_addr != last_line_addr) {
       STAT_EVENT(ic_ref->proc_id, FDIP_ATTEMPTED_PREF_ONPATH + op->off_path);
-      DEBUG(fdip_proc_id, "fdip off path: %d, conf off path: %d\n", fdip_off_path(fdip_proc_id), (low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) ? 0:1);
+      DEBUG(fdip_proc_id, "fdip off path: %d, conf off path: %d\n", fdip_off_path(fdip_proc_id), (per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD) ? 0:1);
+      if (FDIP_BP_CONFIDENCE)
+        log_stats_bp_conf();
       if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER || FDIP_PERFECT_PREFETCH)
         emit_new_prefetch = determine_usefulness(line_addr, op);
-      else {
+      else
         emit_new_prefetch = TRUE;
-        if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
-          if (fdip_off_path(fdip_proc_id)) {
-            if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
-              per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
-              STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
-              //if off path due to btb miss
-              if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
-                log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
-              } 
-              //if off path due to mis prediction
-              else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
-                log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
-              }
-              //if off path due to no target
-              else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.no_target){
-                STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
-              }
-              //if off path due to misfetch
-              else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.misfetch){
-                STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
-              }
-              //if some other reason (shouldn't happen)
-              else{
-                DEBUG(fdip_proc_id, "fdip off conf on event, unrecognized off path reason: op type: %u\n", per_core_conf_info[fdip_proc_id].prev_op->table_info->op_type);
-              }
-            }
-            STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
-          } else
-            STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
-        } else {
-          if (fdip_off_path(fdip_proc_id))
-            STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
-          else{
-            STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
-            if(FDIP_BP_CONFIDENCE && !per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
-              log_fdip_on_conf_off_state();
-            }
-          }
-        }
-      }
 
       Flag demand_hit_prefetch = FALSE;
       Flag demand_hit_writeback = FALSE;
@@ -574,6 +539,8 @@ void update_fdip() {
             DEBUG(fdip_proc_id, "Success to merge a prefetch for %llx\n", line_addr);
           }
         }
+        if (FDIP_BP_CONFIDENCE)
+          log_stats_bp_conf_emitted();
         inc_prefetched_cls(line_addr, success);
       } else {
         not_prefetch(line_addr);
@@ -973,7 +940,7 @@ void inc_icache_miss(uns proc_id, Addr line_addr) {
 
 void inc_prefetched_cls(Addr line_addr, uns success) {
   Flag on_path = FALSE;
-  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD)
+  if (FDIP_BP_CONFIDENCE && per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD)
     on_path = TRUE;
   if (!FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
     on_path = TRUE;
@@ -1148,60 +1115,15 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
   if (FDIP_GHIST_HASHING)
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
 
-  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
-    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", low_confidence_cnt, fdip_off_path(fdip_proc_id));
+  if (FDIP_BP_CONFIDENCE && per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD) {
+    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", per_core_low_confidence_cnt[fdip_proc_id], fdip_off_path(fdip_proc_id));
     *emit_new_prefetch = TRUE;
-    std::unordered_map<Addr, std::pair<Counter, Flag>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
-    if (fdip_off_path(fdip_proc_id)) {
-      //log stats
-      if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
-        per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
-        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
-        //if off path due to btb miss
-        if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
-          log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
-        } 
-        //if off path due to misprediction
-        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
-          log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
-        }
-        //if off path due to no target
-        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.no_target){
-          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
-        }
-        //if off path due to misfetch
-        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.misfetch){
-          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
-        }
-        //if some other reason (shouldn't happen)
-        else{
-          DEBUG(fdip_proc_id, "fdip off conf on event, unrecognized off path reason: op type: %u\n", per_core_conf_info[fdip_proc_id].prev_op->table_info->op_type);
-        }
-      }
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
-      auto iter = cnt_useful->find(hashed_line_addr);
-      if ( iter == cnt_useful->end())
-        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
-    } else
-      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
   } else {
-    if (FDIP_BP_CONFIDENCE) {
-      if (fdip_off_path(fdip_proc_id))
-        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
-      else{
-        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
-        if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
-          log_fdip_on_conf_off_state();
-        }
-      }
-    }
     switch(FDIP_UTILITY_PREF_POLICY) {
       case Utility_Pref_Policy::PREF_CONV_FROM_USEFUL_SET: {
         std::unordered_map<Addr, std::pair<Counter, Flag>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
         auto iter = cnt_useful->find(hashed_line_addr);
         if (iter == cnt_useful->end()) {
-          if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
-	          STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
           *emit_new_prefetch = FALSE;
 	      }
         else {
@@ -1216,8 +1138,6 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
           *emit_new_prefetch = TRUE;
         else {
           *emit_new_prefetch = FALSE;
-          if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
-	          STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
 	      }
         break;
       }
@@ -1228,8 +1148,6 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
           *emit_new_prefetch = TRUE;
         else {
           *emit_new_prefetch = FALSE;
-          if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
-	          STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
 	      }
         break;
       }
@@ -1238,8 +1156,6 @@ static inline void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_n
         auto iter = cnt->find(hashed_line_addr);
         if (iter != cnt->end() && iter->second < UDP_USEFUL_THRESHOLD) {
           *emit_new_prefetch = FALSE;
-	        if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
-	          STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
 	      }
 	      else
           *emit_new_prefetch = TRUE;
@@ -1261,55 +1177,10 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
   if (FDIP_GHIST_HASHING)
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
 
-  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
-    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", low_confidence_cnt, fdip_off_path(fdip_proc_id));
+  if (FDIP_BP_CONFIDENCE && per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD) {
+    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", per_core_low_confidence_cnt[fdip_proc_id], fdip_off_path(fdip_proc_id));
     *emit_new_prefetch = TRUE;
-    if (fdip_off_path(fdip_proc_id)) {
-      //log stats
-      if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
-        per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
-        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
-        if(per_core_conf_info[fdip_proc_id].prev_op->table_info->cf_type == NOT_CF) {
-          DEBUG(fdip_proc_id, "fdip on conf off, all: instruction is not a cf inst! op type: %u, op num: %llu, addr: %llu\n", op->table_info->op_type, op->op_num, op->inst_info->addr);
-        }
-        //if off path due to btb miss
-        if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
-          log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
-        } 
-        //if off path due to misprediction
-        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
-          log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
-        }
-        //if off path due to no target
-        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.no_target){
-          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
-        }
-        //if off path due to misfetch
-        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.misfetch){
-          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
-        }
-        //if some other reason (shouldn't happen)
-        else{
-          DEBUG(fdip_proc_id, "fdip off conf on event, unrecognized off path reason: op type: %u\n", per_core_conf_info[fdip_proc_id].prev_op->table_info->op_type);
-        }
-      }
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
-      void* useful = (void*)cache_access(&per_core_fdip_uc[fdip_proc_id], hashed_line_addr, &uc_line_addr, TRUE);
-      if (!useful)
-        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
-    } else
-      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
   } else {
-    if (FDIP_BP_CONFIDENCE) {
-      if (fdip_off_path(fdip_proc_id))
-        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
-      else{
-        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
-        if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
-          log_fdip_on_conf_off_state();
-        }
-      }
-    }
     switch(FDIP_UTILITY_PREF_POLICY) {
       case Utility_Pref_Policy::PREF_CONV_FROM_USEFUL_SET: {
         void* useful = (void*)cache_access(&per_core_fdip_uc[fdip_proc_id], hashed_line_addr, &uc_line_addr, TRUE);
@@ -1319,8 +1190,6 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
 	      }
         else {
           STAT_EVENT(fdip_proc_id, FDIP_UC_MISS);
-          if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
-	          STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
           *emit_new_prefetch = FALSE;
 	      }
         break;
@@ -1329,8 +1198,6 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
         void* unuseful = (void*)cache_access(&per_core_fdip_uc_unuseful[fdip_proc_id], hashed_line_addr, &uc_line_addr, TRUE);
         if (unuseful) {
           STAT_EVENT(fdip_proc_id, FDIP_UC_HIT);
-          if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
-	          STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
           *emit_new_prefetch = FALSE;
 	      }
         else {
@@ -1351,8 +1218,6 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
         else {
           STAT_EVENT(fdip_proc_id, FDIP_UC_MISS);
           *emit_new_prefetch = FALSE;
-          if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
-	          STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
 	      }
         break;
       }
@@ -1362,8 +1227,6 @@ static inline void determine_usefulness_by_utility_cache(Addr line_addr, Flag* e
           STAT_EVENT(fdip_proc_id, FDIP_UC_HIT);
           if (*useful < UDP_USEFUL_THRESHOLD) {
             *emit_new_prefetch = FALSE;
-            if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
-              STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
           } else
             *emit_new_prefetch = TRUE;
 	      }
@@ -1522,53 +1385,10 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
   if (FDIP_GHIST_HASHING)
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
 
-  if (FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
-    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", low_confidence_cnt, fdip_off_path(fdip_proc_id));
+  if (FDIP_BP_CONFIDENCE && per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD) {
+    DEBUG(fdip_proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", per_core_low_confidence_cnt[fdip_proc_id], fdip_off_path(fdip_proc_id));
     *emit_new_prefetch = TRUE;
-    std::unordered_map<Addr, std::pair<Counter, Flag>>* cnt_useful = &per_core_cnt_useful[fdip_proc_id];
-    if (fdip_off_path(fdip_proc_id)) {
-      if(!per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event){
-        per_core_conf_info[fdip_proc_id].fdip_off_conf_on_event = true;
-        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
-        if(per_core_conf_info[fdip_proc_id].prev_op->table_info->cf_type == NOT_CF) {
-          DEBUG(fdip_proc_id, "fdip on conf off, all: instruction is not a cf inst! op type: %u, op num: %llu, addr: %llu\n", op->table_info->op_type, op->op_num, op->inst_info->addr);
-        }
-        // if off path due to btb miss
-        if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.btb_miss){
-          log_fdip_off_conf_on_btb_miss_stats(per_core_conf_info[fdip_proc_id].prev_op);
-        } 
-        // if off path due to misprediction
-        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.mispred){
-          log_fdip_off_conf_on_bp_incorrect_stats(per_core_conf_info[fdip_proc_id].prev_op);
-        }
-        // if off path due to no target
-        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.no_target){
-          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
-        }
-        // if off path due to misfetch
-        else if(per_core_conf_info[fdip_proc_id].prev_op->oracle_info.misfetch){
-          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
-        }
-        // if some other reason (shouldn't happen)
-        else{
-          DEBUG(fdip_proc_id, "fdip off conf on event, unrecognized off path reason: op type: %u\n", per_core_conf_info[fdip_proc_id].prev_op->table_info->op_type);
-        }
-      }
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
-      auto iter = cnt_useful->find(hashed_line_addr);
-      if ( iter == cnt_useful->end())
-        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMIT_UNUSEFUL);
-    } else
-      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
   } else {
-    if (fdip_off_path(fdip_proc_id))
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
-    else{
-      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
-      if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
-        log_fdip_on_conf_off_state();
-      }
-    }
     void* useful = bloom_lookup(fdip_proc_id, hashed_line_addr);
     if (useful) {
       STAT_EVENT(fdip_proc_id, FDIP_BLOOM_HIT);
@@ -1578,8 +1398,6 @@ static inline void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* em
       STAT_EVENT(fdip_proc_id, FDIP_BLOOM_MISS);
       DEBUG(fdip_proc_id, "bloom : do not emit a new prefetch for cl 0x%llx", line_addr);
       *emit_new_prefetch = FALSE;
-      if (FDIP_BP_CONFIDENCE && !fdip_off_path(fdip_proc_id))
-        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_MISS_USEFUL);
       per_core_last_cl_unuseful[fdip_proc_id] = line_addr;
     }
   }
@@ -1726,7 +1544,7 @@ void insert_pref_candidate_to_seniority_ftq(Addr line_addr) {
   uint64_t hashed_line_addr = line_addr;
   if (FDIP_GHIST_HASHING)
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
-  Flag on_path = FDIP_BP_CONFIDENCE && (low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD);
+  Flag on_path = FDIP_BP_CONFIDENCE && (per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD);
   per_core_seniority_ftq[fdip_proc_id].push_back(std::make_tuple(hashed_line_addr, cycle_count, on_path));
   DEBUG(fdip_proc_id, "Insert %llx (hashed %lx) to seniority FTQ at cyc %llu seniority_ftq.size() : %ld\n", line_addr, hashed_line_addr, cycle_count, per_core_seniority_ftq[fdip_proc_id].size());
 }
@@ -1854,43 +1672,6 @@ void inc_icache_hit(uns proc_id, Addr line_addr) {
   }
 }
 
-void log_fdip_off_conf_on_btb_miss_stats(Op *op){
-  STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS);
-  STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_NOT_CF + op->table_info->cf_type);
-}
-
-void log_fdip_off_conf_on_btb_miss_cbr_conf_stats(Op *op){
-  STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_CBR_0_CONF + op->bp_confidence);
-}
-
-void log_fdip_off_conf_on_bp_incorrect_stats(Op *op){
-  STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT);
-  STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT_0_CONF + op->bp_confidence);
-}
-
-void log_fdip_on_conf_off_state(){
-  per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event = true;
-
-  STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_EVENTS);
-
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_BR, per_core_conf_info[fdip_proc_id].num_cf_br);
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_CBR, per_core_conf_info[fdip_proc_id].num_cf_cbr);
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_CALL, per_core_conf_info[fdip_proc_id].num_cf_call);
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_IBR, per_core_conf_info[fdip_proc_id].num_cf_ibr);
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_ICALL, per_core_conf_info[fdip_proc_id].num_cf_icall);
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_ICO, per_core_conf_info[fdip_proc_id].num_cf_ico);
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_RET, per_core_conf_info[fdip_proc_id].num_cf_ret);
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_SYS, per_core_conf_info[fdip_proc_id].num_cf_sys);
-  
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CONF_0_BR, per_core_conf_info[fdip_proc_id].num_conf_0_branches);
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CONF_1_BR, per_core_conf_info[fdip_proc_id].num_conf_1_branches);
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CONF_2_BR, per_core_conf_info[fdip_proc_id].num_conf_2_branches);
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CONF_3_BR, per_core_conf_info[fdip_proc_id].num_conf_3_branches);
-
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_BTB_MISS, per_core_conf_info[fdip_proc_id].num_BTB_misses);
-  INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_OP_DIST_INC, per_core_conf_info[fdip_proc_id].num_op_dist_incs);
-}
-
 void inc_br_conf_counters(int conf){
   switch(conf){
     case 0:
@@ -1947,51 +1728,75 @@ void inc_cf_type_counters(Cf_Type cf_type){
 }
 
 void inc_low_conf_ctr_(Op * op){
-  low_confidence_cnt += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
-  cf_op_distance = 0.0;
+  per_core_low_confidence_cnt[fdip_proc_id] += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
+  per_core_cf_op_distance[fdip_proc_id] = 0.0;
 
   if(op->oracle_info.btb_miss){
     per_core_conf_info[fdip_proc_id].num_BTB_misses += 1;
   }
   inc_br_conf_counters(op->bp_confidence);
   inc_cf_type_counters(op->table_info->cf_type);
-  DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
+  DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, per_core_low_confidence_cnt[fdip_proc_id], op->off_path? 1:0);
 }
 
 // default conf mechanism
 void default_conf_update(Op * op){
+  if (!FDIP_BP_CONFIDENCE)
+    return;
   DEBUG(fdip_proc_id, "default_conf_update\n");
   //prevent wrap around
-  if(low_confidence_cnt != ~0U){
+  if(per_core_low_confidence_cnt[fdip_proc_id] != ~0U){
     if (op->table_info->cf_type) {
-      low_confidence_cnt += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
-      cf_op_distance = 0.0;
+      per_core_low_confidence_cnt[fdip_proc_id] += 3 - op->bp_confidence + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]; //3 is highest bp_confidence
+      per_core_cf_op_distance[fdip_proc_id] = 0.0;
       //log stats
       if(op->oracle_info.btb_miss){
         per_core_conf_info[fdip_proc_id].num_BTB_misses += 1;
       }
       inc_br_conf_counters(op->bp_confidence);
       inc_cf_type_counters(op->table_info->cf_type);
-      DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
+      DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, per_core_low_confidence_cnt[fdip_proc_id], op->off_path? 1:0);
     }
-    else if (cf_op_distance >= FDIP_OFF_PATH_THRESHOLD) {
-      low_confidence_cnt += FDIP_OFF_PATH_CONF_INC + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id];
-      cf_op_distance = 0.0;
+    else if (per_core_cf_op_distance[fdip_proc_id] >= FDIP_OFF_PATH_THRESHOLD) {
+      per_core_low_confidence_cnt[fdip_proc_id] += FDIP_OFF_PATH_CONF_INC + (double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id];
+      per_core_cf_op_distance[fdip_proc_id] = 0.0;
       per_core_conf_info[fdip_proc_id].num_op_dist_incs += 1;
     } else{
-      cf_op_distance += (1.0+(double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]);
+      per_core_cf_op_distance[fdip_proc_id] += (1.0+(double)FDIP_BTB_MISS_RATE_WEIGHT*per_core_btb_miss_rate[fdip_proc_id]);
     }
   }
 }
 //if btb miss and high enough bp confidence set confidence to off path
 void btb_miss_bp_taken_conf_update(Op * op){
-  if(low_confidence_cnt != ~0U){
+  if (!FDIP_BP_CONFIDENCE)
+    return;
+  if(per_core_low_confidence_cnt[fdip_proc_id] != ~0U){
     if (op->table_info->cf_type) {
       if(op->oracle_info.btb_miss && op->oracle_info.pred_orig == TAKEN && (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)){
-        low_confidence_cnt = ~0U;
-      } else {
-        //update confidence based on number of cycles elapsed and btb miss rate
-        num_cycles_btb_miss_rate_conf_update(op);
+        per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
+        if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
+          switch(op->bp_confidence){
+            case 0:
+              per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_0;
+              break;
+            case 1:
+              per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_1;
+              break;
+            case 2:
+              per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_2;
+              break;
+            case 3:
+              per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_3;
+              break;
+            default:
+              break;
+          }
+          //per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_BP_TAKEN_CONF_0 + (Conf_Off_Path_Reason)op->bp_confidence;
+        }
+      } else { // update confidence
+        per_core_low_confidence_cnt[fdip_proc_id] += 3 - op->bp_confidence;
+        if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
+          per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_INV_CONF_INC;
       }
       //log stats
       if(op->oracle_info.btb_miss){
@@ -1999,37 +1804,116 @@ void btb_miss_bp_taken_conf_update(Op * op){
       }
       inc_br_conf_counters(op->bp_confidence);
       inc_cf_type_counters(op->table_info->cf_type);
-      DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
-    //default btb low_conf_ctr increment mechanism
+      DEBUG(fdip_proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, per_core_low_confidence_cnt[fdip_proc_id], op->off_path? 1:0);
+    } else { // update confidence based on number of cycles elapsed and btb miss rate
+      //if number of cycles times btb miss rate is greater than 1 we have probably seen a btb miss
+      DEBUG(fdip_proc_id, "btb miss rate: %f, cycles since recovery: %llu", per_core_btb_miss_rate[fdip_proc_id], cycle_count - per_core_last_recover_cycle[fdip_proc_id]);
+      if((double)((cycle_count - per_core_last_recover_cycle[fdip_proc_id]) * per_core_btb_miss_rate[fdip_proc_id])  >= FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD){
+        per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
+        STAT_EVENT(fdip_proc_id, FDIP_BTB_NUM_CYCLES_OFF_PATH_EVENT);
+        if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
+          per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_RATE;
+      }
     }
   }
 }
 
-void num_cycles_btb_miss_rate_conf_update(Op * op){
-  //if number of cycles times btb miss rate is greater than 1 we have probably seen a btb miss
-  DEBUG(fdip_proc_id, "btb miss rate: %f, cycles since recovery: %llu", per_core_btb_miss_rate[fdip_proc_id], cycle_count - cycle_count_last_recovery);
-  if((double)((cycle_count - cycle_count_last_recovery) * per_core_btb_miss_rate[fdip_proc_id])  >= FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD){
-    low_confidence_cnt = ~0U;
-    STAT_EVENT(fdip_proc_id, FDIP_BTB_NUM_CYCLES_OFF_PATH_EVENT);
+void log_stats_bp_conf() {
+  if (!FDIP_BP_CONFIDENCE)
+    return;
+
+  FDIP_Confidence_Info *conf_info = &(per_core_conf_info.data()[fdip_proc_id]);
+  if (per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD) {
+    if (fdip_off_path(fdip_proc_id)) {
+      if (!conf_info->fdip_off_conf_on_event) {
+        ASSERT(fdip_proc_id, conf_info->prev_op->table_info->cf_type); // must be a cf as the last on-path op
+        conf_info->fdip_off_conf_on_event = true;
+        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
+        if (conf_info->prev_op->oracle_info.mispred) {
+          conf_info->off_path_reason = REASON_MISPRED;
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT);
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT_0_CONF + conf_info->prev_op->bp_confidence);
+        }
+        //if off path due to btb miss
+        else if (conf_info->prev_op->oracle_info.btb_miss) {
+          conf_info->off_path_reason = REASON_BTB_MISS;
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS);
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_NOT_CF + conf_info->prev_op->table_info->cf_type);
+        }
+        //if off path due to no target
+        else if (conf_info->prev_op->oracle_info.no_target) {
+          conf_info->off_path_reason = REASON_NO_TARGET;
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
+        }
+        //if off path due to misfetch
+        else if (conf_info->prev_op->oracle_info.misfetch) {
+          conf_info->off_path_reason = REASON_MISFETCH;
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_MISFETCH);
+        }
+        //if some other reason (shouldn't happen)
+        else{
+          DEBUG(fdip_proc_id, "fdip off conf on event, unrecognized off path reason: op type: %u\n", conf_info->prev_op->table_info->op_type);
+          ASSERT(fdip_proc_id, false);
+        }
+      }
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_PREF_CANDIDATES + conf_info->off_path_reason);
+    } else {
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
+    }
   } else {
-    low_confidence_cnt += 3 - op->bp_confidence;
+    if (fdip_off_path(fdip_proc_id))
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
+    else {
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_PREF_CANDIDATES + conf_info->conf_off_path_reason);
+      if (!conf_info->fdip_on_conf_off_event) {
+        conf_info->fdip_on_conf_off_event = true;
+
+        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_EVENTS);
+
+        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0 + conf_info->conf_off_path_reason);
+
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_BR, conf_info->num_cf_br);
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_CBR, conf_info->num_cf_cbr);
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_CALL, conf_info->num_cf_call);
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_IBR, conf_info->num_cf_ibr);
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_ICALL, conf_info->num_cf_icall);
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_ICO, conf_info->num_cf_ico);
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_RET, conf_info->num_cf_ret);
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_SYS, conf_info->num_cf_sys);
+
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CONF_0_BR, conf_info->num_conf_0_branches);
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CONF_1_BR, conf_info->num_conf_1_branches);
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CONF_2_BR, conf_info->num_conf_2_branches);
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CONF_3_BR, conf_info->num_conf_3_branches);
+
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_BTB_MISS, conf_info->num_BTB_misses);
+        INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_OP_DIST_INC, conf_info->num_op_dist_incs);
+      }
+    }
   }
 }
 
-void log_conf_on_off_path_stats_icache_miss() {
+//TODO: make a log conf function that takes enum
+void log_stats_bp_conf_emitted() {
+  if (!FDIP_BP_CONFIDENCE)
+    return;
   //conf on
-  if(FDIP_BP_CONFIDENCE && low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD){
+  if(per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD){
     //actually off
     if(fdip_off_path(fdip_proc_id)) {
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_ICACHE_MISS);
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_EMITTED);
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_EMITTED + per_core_conf_info[fdip_proc_id].off_path_reason);
     } else {
-      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON_ICACHE_MISS);
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON_EMITTED);
     }
   } else {
     if(fdip_off_path(fdip_proc_id)) {
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_ICACHE_MISS);
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_EMITTED);
     } else {
-      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_ICACHE_MISS);
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_EMITTED);
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_EMITTED + per_core_conf_info[fdip_proc_id].conf_off_path_reason);
     }
   }
 }

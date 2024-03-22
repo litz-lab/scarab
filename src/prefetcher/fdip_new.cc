@@ -631,6 +631,16 @@ Flag fdip_off_path(uns proc_id) {
   return per_core_cur_op[proc_id]->off_path;
 }
 
+Flag fdip_conf_off_path(uns proc_id) {
+  if (FDIP_BP_CONFIDENCE) {
+    if (low_confidence_cnt <= FDIP_OFF_PATH_THRESHOLD)
+      return FALSE;
+    else
+      return TRUE;
+  }
+  return fdip_off_path(proc_id);
+}
+
 template<typename A, typename B>
 std::pair<B,A> flip_pair(const std::pair<A,B> &p)
 {

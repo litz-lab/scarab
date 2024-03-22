@@ -600,7 +600,7 @@ Flag fdip_off_path(uns proc_id) {
 
 Flag fdip_conf_off_path(uns proc_id) {
   if (FDIP_BP_CONFIDENCE) {
-    if (low_confidence_cnt <= FDIP_OFF_PATH_THRESHOLD)
+    if (per_core_low_confidence_cnt[fdip_proc_id] <= FDIP_OFF_PATH_THRESHOLD)
       return FALSE;
     else
       return TRUE;

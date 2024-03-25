@@ -1861,16 +1861,16 @@ void log_stats_bp_conf() {
           ASSERT(fdip_proc_id, false);
         }
       }
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON);
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_PREF_CANDIDATES);
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_BTB_MISS_PREF_CANDIDATES + conf_info->off_path_reason);
     } else {
-      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON);
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON_PREF_CANDIDATES);
     }
   } else {
     if (fdip_off_path(fdip_proc_id))
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF);
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_PREF_CANDIDATES);
     else {
-      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF);
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_PREF_CANDIDATES);
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_PREF_CANDIDATES + conf_info->conf_off_path_reason);
       if (!conf_info->fdip_on_conf_off_event) {
         conf_info->fdip_on_conf_off_event = true;

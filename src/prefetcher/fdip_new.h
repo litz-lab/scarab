@@ -81,8 +81,8 @@ typedef enum IC_FETCH_TYPE_enum {
 typedef enum OFF_PATH_REASON_enum {
   REASON_BTB_MISS,
   REASON_MISPRED,
-  REASON_NO_TARGET,
   REASON_MISFETCH,
+  REASON_NO_TARGET,
 } Off_Path_Reason;
 
 typedef enum CONF_OFF_PATH_REASON_enum {

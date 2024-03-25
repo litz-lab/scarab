@@ -362,10 +362,14 @@ void update_fdip() {
 
   for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
     //set previous op, only if on path or first off path instruction
-    if(FDIP_BP_CONFIDENCE && (!(op->off_path) || !(per_core_conf_info[fdip_proc_id].fdip_off_path_event))){
+    if(FDIP_BP_CONFIDENCE &&
+        per_core_cur_op[fdip_proc_id] &&
+        (!(op->off_path) || !(per_core_conf_info[fdip_proc_id].fdip_off_path_event))){
       per_core_conf_info[fdip_proc_id].prev_op = per_core_cur_op[fdip_proc_id];
-      if(op->off_path)
+      DEBUG(fdip_proc_id, "Set prev_op off_path:%i, op_num:%llu, cf_type:%i\n", per_core_conf_info[fdip_proc_id].prev_op->off_path, per_core_conf_info[fdip_proc_id].prev_op->op_num, per_core_conf_info[fdip_proc_id].prev_op->table_info->cf_type);
+      if(op->off_path) {
         per_core_conf_info[fdip_proc_id].fdip_off_path_event = true;
+      }
     }
     per_core_cur_op[fdip_proc_id] = op;
     Addr last_line_addr = per_core_last_line_addr[fdip_proc_id];
@@ -1826,6 +1830,7 @@ void log_stats_bp_conf() {
   if (per_core_low_confidence_cnt[fdip_proc_id] < FDIP_OFF_PATH_THRESHOLD) {
     if (fdip_off_path(fdip_proc_id)) {
       if (!conf_info->fdip_off_conf_on_event) {
+        DEBUG(fdip_proc_id, "prev_op op_num: %llu, cf_type: %i\n", conf_info->prev_op->op_num, conf_info->prev_op->table_info->cf_type);
         ASSERT(fdip_proc_id, conf_info->prev_op->table_info->cf_type); // must be a cf as the last on-path op
         conf_info->fdip_off_conf_on_event = true;
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
@@ -1936,4 +1941,8 @@ void add_evict_seq(uns proc_id, Addr line_addr) {
       it2->second.push_back(std::make_pair('e',cycle_count));
     }
   }
+}
+
+void fdip_set_cur_op(uns proc_id, Op* op) {
+  per_core_cur_op[proc_id] = op;
 }

@@ -341,6 +341,9 @@ bool decoupled_fe_fetch_op(Op** op, int proc_id) {
           (*op)->inst_info->addr, (*op)->off_path, (*op)->op_num);
     for (auto it = per_core_ftq_iterators[proc_id].begin(); it != per_core_ftq_iterators[proc_id].end(); it++) {
       // When the icache consumes an op decrement the iter's offset so it points to the same entry as before
+      if (FDIP_BP_CONFIDENCE && it->pos == 0) {
+        fdip_set_cur_op(proc_id, *op);
+      }
       if (it->pos) {
         it->pos--;
       }

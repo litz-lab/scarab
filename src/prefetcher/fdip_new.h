@@ -56,6 +56,7 @@ extern "C" {
   void default_conf_update(Op * op);
   void log_stats_bp_conf();
   void log_stats_bp_conf_emitted();
+  void fdip_set_cur_op(uns proc_id, Op * op);
 
   
 #ifdef __cplusplus

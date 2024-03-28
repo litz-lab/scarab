@@ -33,12 +33,8 @@ void end_accumulate(void);
 /* accumulate uop into buffer. If terminating condition reached, call insert_uop_cache */
 void accumulate_op(Op* op);
 
-Flag uop_cache_fill_prefetch(Addr pw_start_addr, Flag on_path);
-Flag uop_cache_issue_prefetch(Addr pw_start_addr, Flag on_path);
 Flag pw_insert(Uop_Cache_Data pw);
-void set_addr_following_resteer_bf(Addr addr);
 void set_uop_cache_insert_enable(Flag new_val);
-void make_uop_cache_accesses_priority(Flag val);
 Uop_Cache_Data get_pw_lookahead_buffer(Addr addr);
 
 #endif /* #ifndef __UOP_CACHE_H__ */

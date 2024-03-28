@@ -251,7 +251,6 @@ void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uopq_src_sd) {
 
   /* if the last map stage is stalled, don't re-process the ops  */
   if(stall) {
-    make_uop_cache_accesses_priority(FALSE);  // untoggle priority uoc insert/access on a backend stall
     return;
   }
   /* now map the ops in the last map stage */

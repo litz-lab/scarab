@@ -247,7 +247,6 @@ Flag packet_build(Pb_Data* pb_data, Break_Reason* break_fetch, Op* const op) {
     // hit fetch barrier
     if(IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH) {
       *break_fetch = BREAK_BARRIER;
-      set_addr_following_resteer_bf(op->oracle_info.npc);
       return PB_BREAK_AFTER;
     }
 

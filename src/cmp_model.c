@@ -54,7 +54,6 @@
 
 #include "freq.h"
 #include "uop_queue_stage.h"
-#include "uop_cache_prefetch_decoder.h"
 #include "decoupled_frontend.h"
 
 Flag perf_pred_started = FALSE;
@@ -231,7 +230,6 @@ void cmp_cores(void) {
       // doesnt work: decode_stage_process_op must be called once per op. For uop cache, one cycle after fetch.
       // I can add a flag: decode_cycle (cycle decoded).
       update_map_stage(dec->last_sd, map_stage_uop_cache_src);
-      insert_decoded_uop_cache_prefetch();
       update_uop_queue_stage(&ic->sd);
       update_decode_stage(&ic->sd);
       update_decoupled_fe();
@@ -376,8 +374,6 @@ void cmp_recover() {
   recover_exec_stage();
   recover_dcache_stage();
   recover_memory();
-
-  set_addr_following_resteer_bf(bp_recovery_info->recovery_op->oracle_info.npc);
 }
 
 /**************************************************************************************/
@@ -395,7 +391,6 @@ void cmp_redirect() {
   ASSERT_PROC_ID_IN_ADDR(bp_recovery_info->proc_id,
                          bp_recovery_info->redirect_op->oracle_info.pred_npc);
   redirect_icache_stage();
-  set_addr_following_resteer_bf(bp_recovery_info->redirect_op->oracle_info.npc);
 }
 
 /**************************************************************************************/

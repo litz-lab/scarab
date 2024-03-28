@@ -26,10 +26,8 @@
 #include "libs/cache_lib.h"
 #include "memory/memory.h"
 #include "memory/memory.param.h"
-#include "prefetcher/pref.param.h"
 #include "uop_cache.h"
-#include "icache_stage.h" //needed for get_pw_lookahead_buffer
-#include "uop_cache_prefetch_decoder.h"
+#include "icache_stage.h"
 #include "libs/cpp_cache.h"
 #include "uop_queue_stage.h"
 
@@ -50,7 +48,6 @@
 
 static inline Flag insert_uop_cache(void);
 static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl, Flag offpath);
-static inline void init_pw_priority_list(void);
 
 /**************************************************************************************/
 /* Global Variables */
@@ -67,13 +64,9 @@ static Op* uop_q[UOP_QUEUE_SIZE];
 Hash_Table inf_size_uop_cache;
 // indexed by start addr of PW
 Hash_Table pc_to_pw;
-Hash_Table ht_unique_pws_since_recovery;
-Hash_Table priority_pws;
-Flag uoc_prefetching_enabled;
 
 Addr addr_following_resteer_bf = 0;  // Addr that follows a resteer or fetch barrier
 Flag uop_cache_insert_enable = TRUE;
-Flag make_accesses_priority = FALSE;  // Set priority bit on all accessed PWs
 
 /**************************************************************************************/
 /* init_uop_cache */
@@ -88,20 +81,10 @@ void init_uop_cache(uns8 pid) {
     init_hash_table(&inf_size_uop_cache, "infinite sized uop cache", 15000000, sizeof(int));
   }
 
-  uoc_prefetching_enabled = UOC_PREF || UOC_ORACLE_PREF || UOC_ZERO_LATENCY_PREF;
-  if (uoc_prefetching_enabled) {
-    init_hash_table(&pc_to_pw, "Log of all PWs decoded", 15000000,
-                    sizeof(Uop_Cache_Data));
-  }
   // The cache library computes the number of entries from cache_size_bytes/cache_line_size_bytes,
   uns uop_cache_lines = UOP_CACHE_UOP_CAPACITY / UOP_CACHE_MAX_UOPS_LINE;
   cpp_cache_create(UOP_CACHE_NAME, uop_cache_lines, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
                    UOP_CACHE_REPL, /*tag_incl_offset=*/TRUE, UOP_CACHE_LINE_DATA_SIZE);
-
-  if (UOP_CACHE_REPL == REPL_STICKY_PRIORITY_LINES) {
-    init_pw_priority_list();
-  }
-  init_hash_table(&ht_unique_pws_since_recovery, "unique pws since recovery", 100, sizeof(int));
 }
 
 Flag pw_insert(Uop_Cache_Data pw) {
@@ -122,31 +105,24 @@ Flag pw_insert(Uop_Cache_Data pw) {
     STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_OFFPATH);
     return FALSE;
   } else if (lines_needed > UOP_CACHE_ASSOC) {  // Is the PW too big?
-    STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_TOO_LONG + pw.prefetch);
+    STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_TOO_LONG);
     return FALSE;
   } else if (cpp_cache_access(UOP_CACHE_NAME, pw.first, FALSE, FALSE)) {
-    STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_CACHE_HIT + pw.prefetch);
+    STAT_EVENT(ic->proc_id, UOP_CACHE_PW_INSERT_FAILED_CACHE_HIT);
     return FALSE;
   } else {
-    // If REPL_RESTEER and not addr_following_resteer_bf, consider NOT inserting at all.
-    // (here I insert into the LRU position) 
-    Cache_Insert_Repl insert_repl = INSERT_REPL_DEFAULT;
-    if (UOP_CACHE_REPL == REPL_RESTEER && pw.first != addr_following_resteer_bf) {
-      insert_repl = INSERT_REPL_LRU;
-    }
     memset(evicted_pws, 0, UOP_CACHE_ASSOC*sizeof(*evicted_pws));
     cur_line_data = (Uop_Cache_Data*) cpp_cache_insert(UOP_CACHE_NAME, pw.first, lines_needed,
-                                                       pw.priority, evicted_pws);
+                                                       0, evicted_pws);
     *cur_line_data = pw;
     for (int i = 0; i < UOP_CACHE_ASSOC && evicted_pws[i]; i++) {
       DEBUG(ic->proc_id, "Evicted PW: %llx\n", evicted_pws[i]);
     }
     DEBUG(ic->proc_id,
-          "PW inserted. off_path=%u, addr=0x%llx, set=%u, lines_needed=%i, "
-          "priority=%u\n",
+          "PW inserted. off_path=%u, addr=0x%llx, set=%u, lines_needed=%i, ",
           pw.first_op_offpath, pw.first,
           cpp_cache_index(UOP_CACHE_NAME, pw.first, &line_addr, &line_addr),
-          lines_needed, pw.priority);
+          lines_needed);
     STAT_EVENT(0, UOP_CACHE_PWS_INSERTED_ONPATH + pw.first_op_offpath);
     INC_STAT_EVENT(0, UOP_CACHE_LINES_INSERTED_ONPATH + pw.first_op_offpath, lines_needed);
   }
@@ -171,11 +147,6 @@ Flag insert_uop_cache() {
   Flag success = FALSE;
   Flag new_entry;
 
-  if (uoc_prefetching_enabled) {
-    Uop_Cache_Data* saved_pw = (Uop_Cache_Data*) hash_table_access_create(
-                                &pc_to_pw, accumulating_pw.first, &new_entry);
-    *saved_pw = accumulating_pw;
-  }
   int lines_needed = accumulating_pw.n_uops / UOP_CACHE_MAX_UOPS_LINE;
   if (accumulating_pw.n_uops % UOP_CACHE_MAX_UOPS_LINE) lines_needed++;
 
@@ -217,20 +188,14 @@ static inline Flag in_uop_cache_search(Addr search_addr, Flag update_repl, Flag 
             update_repl);
   } else {
     // Next try to access a new PW starting at this addr
-    Flag upgrade_priority = PRIORITIZE_PWS_AFTER_FIRST_STICKY_UNTIL_BACKEND_STALL && make_accesses_priority;
-    Flag update_cache_repl = NO_REPL_AFTER_QUEUE_SIZE && get_uop_queue_stage_length() >= NO_REPL_AFTER_QUEUE_SIZE ? FALSE : update_repl;
-    uoc_data = cpp_cache_access(UOP_CACHE_NAME, search_addr, update_cache_repl, upgrade_priority);
+    uoc_data = cpp_cache_access(UOP_CACHE_NAME, search_addr, update_repl, 0);
     // Only update state if this access should change state
     if (update_repl && uoc_data) {
-      if (uoc_data->prefetch && !uoc_data->used) {
-        STAT_EVENT(0, UOP_CACHE_PREFETCH_USED);
-      }
       if (!uoc_data->used && !offpath) {
         STAT_EVENT(0, UOP_CACHE_LINES_INSERTED_ONPATH_USED_ONPATH + uoc_data->first_op_offpath);
       }
       uoc_data->used += 1;
       cur_pw = *uoc_data;
-      stat_event_new_pw_accessed(uoc_data);
       DEBUG(ic->proc_id, "UOC hit (new PW). addr=0x%llx, set=%u\n",
             search_addr, cpp_cache_index(UOP_CACHE_NAME, search_addr, &line_addr, &line_addr));
     } else if (update_repl) {
@@ -323,7 +288,6 @@ void accumulate_op(Op* op) {
     accumulating_pw.first_op_offpath = op->off_path;
     cur_icache_line_addr = icache_line_addr;
     next_accum_op = op->op_num + 1;
-    stat_event_new_pw_accessed(&accumulating_pw);
   } else {
     ASSERT(0, op->op_num == next_accum_op);
     next_accum_op++;
@@ -339,7 +303,6 @@ void accumulate_op(Op* op) {
   if (accumulating_pw.n_uops == 0) {
     // occurs when THIS fxn call drains the uop queue (insertion into uop cache)
     accumulating_pw.first = op->inst_info->addr;
-    stat_event_new_pw_accessed(&accumulating_pw);
   }
   uop_q[accumulating_pw.n_uops] = op;
   accumulating_pw.last = op->inst_info->addr;
@@ -352,70 +315,6 @@ void accumulate_op(Op* op) {
     end_accumulate();
   }
 };
-
-Flag uop_cache_fill_prefetch(Addr pw_start_addr, Flag fdip_on_path) {
-  printf("Reimplement here using decoupled_fe API\n");
-  ASSERT(proc_id, 0);
-  ASSERT(proc_id, uoc_prefetching_enabled);
-  Uop_Cache_Data pw;
-  if (!UOP_CACHE_ON) {
-    return FALSE;
-  }
-
-  // on-path / off-path is not working, even for correct-path prefetching.
-  fdip_on_path = FALSE; // just use legacy method.
-
-  if (fdip_on_path) {
-    pw = get_pw_lookahead_buffer(pw_start_addr);
-  } else {
-    Uop_Cache_Data* pw_p = (Uop_Cache_Data*) hash_table_access(&pc_to_pw, pw_start_addr);
-    // if PW has not been decoded before, do nothing. Hopefully this is uncommon.
-    if (pw_p == NULL) {
-      STAT_EVENT(0, UOP_CACHE_PREFETCH_FAILED_PW_NEVER_SEEN);
-      return FALSE;
-    }
-    pw = *pw_p;
-  }
-  ASSERT(0, pw.first == pw_start_addr);
-  pw.prefetch = TRUE;
-  start_decoding_uop_cache_prefetch(pw);
-  return TRUE;
-}
-
-Flag uop_cache_issue_prefetch(Addr pw_start_addr, Flag on_path) {
-  int prefetch_success = FALSE;
-
-  if (UOC_ZERO_LATENCY_PREF) {
-    prefetch_success = uop_cache_fill_prefetch(pw_start_addr, on_path);
-  } else if (in_uop_cache(pw_start_addr, FALSE, !on_path)) {
-    STAT_EVENT(ic->proc_id, UOP_CACHE_HIT_NO_PREFETCH);
-  } else {
-    // If no op is provided, on_path is assumed.
-    // The delay is set to the decode time to allow instr to decode into uops.
-    prefetch_success = new_mem_req(MRT_UOCPRF, proc_id, pw_start_addr,
-              ICACHE_LINE_SIZE, DECODE_CYCLES, NULL, instr_fill_line,
-              unique_count,
-              0);
-    if(!prefetch_success) {
-      STAT_EVENT(0, UOP_CACHE_PREFETCH_FAILED_MEMREQ_FAILED);
-    }
-  }
-
-  return prefetch_success;
-}
-
-// This is called after a resteer is resolved or fetch barrier identified.
-void set_addr_following_resteer_bf(Addr addr) {
-  addr_following_resteer_bf = addr;
-  // if (uop_cache.repl_policy == REPL_RESTEER) {
-  //   update_repl_resteer_policy(&uop_cache, addr);
-  // }
-}
-
-Uop_Cache_Data get_pw_lookahead_buffer(Addr addr) {
-  printf("Reimplement here using decoupled_fe API\n");
-  ASSERT(0,0);
-}
 
 void recover_uop_cache(void) {
   if (accumulating_pw.last_op_num > bp_recovery_info->recovery_op_num) {
@@ -433,57 +332,8 @@ void recover_uop_cache(void) {
   if (UOP_CACHE_INSERT_ONLY_AFTER_RESTEER_UOP_QUEUE_NOT_FULL && get_uop_queue_stage_length() < UOP_QUEUE_LENGTH) {
     set_uop_cache_insert_enable(TRUE);
   }
-  unique_pws_since_recovery = 0;
-  hash_table_clear(&ht_unique_pws_since_recovery);
-}
-
-void init_pw_priority_list(void) {
-  init_hash_table(&priority_pws, "list of priority PWs", 200, sizeof(char));
-  FILE*     fp       = fopen(PW_PRIORITY_LIST_FILEPATH, "r");
-  const int line_len = 256;
-  char      line[line_len];
-  char*     field;
-  Addr      pw_start_addr;
-  uns       num_priority_pws = 0;
-  while(fgets(line, line_len, fp)) {
-    field         = strtok(line, ",");
-    field         = strtok(NULL, ",");  // second field is PW start addr
-    pw_start_addr = strtoull(field, NULL, 16);
-    // add to map
-    Flag new_entry;
-    hash_table_access_create(&priority_pws, pw_start_addr, &new_entry);
-    ASSERT(0, new_entry);
-    num_priority_pws++;
-    if(num_priority_pws >= NUM_PRIORITY_PWS)
-      break;
-  }
 }
 
 void set_uop_cache_insert_enable(Flag new_val) {
   uop_cache_insert_enable = new_val;
-}
-
-void make_uop_cache_accesses_priority(Flag val) {
-  make_accesses_priority = val;
-  DEBUG(ic->proc_id, "Set make_accesses_priority=%u (set to 0 on backend stall, 1 on sticky line insert)\n", val);
-}
-
-void stat_event_new_pw_accessed(Uop_Cache_Data* pw) {
-  pw_count++;
-  Flag new_entry;
-  hash_table_access_create(&ht_unique_pws_since_recovery, pw->first, &new_entry);
-  if (new_entry) {
-    unique_pws_since_recovery++;
-  }
-  
-  Flag first_sticky_line = (UOP_CACHE_REPL == REPL_STICKY_PRIORITY_LINES) ? (hash_table_access(&priority_pws, pw->first) != NULL) : FALSE;
-  if (first_sticky_line) {
-    pw->priority = TRUE;
-    if (PRIORITIZE_PWS_AFTER_FIRST_STICKY_UNTIL_BACKEND_STALL) {
-      make_uop_cache_accesses_priority(TRUE);
-    }
-  }
-  if (PRIORITIZE_PWS_AFTER_FIRST_STICKY_UNTIL_BACKEND_STALL && make_accesses_priority) {
-    pw->priority = TRUE;
-  }
 }

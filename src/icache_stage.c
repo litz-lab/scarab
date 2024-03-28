@@ -1236,7 +1236,6 @@ void log_stats_mshr_hit(Addr line_addr) {
 // Wrapper callback for any instruction memreq.
 // This must always return TRUE so that memreq is satisfied that
 // done_func is finished and does not need to be retried.
-// (uop_cache_fill_prefetch will fail for never-seen PWs on the off-path).
 Flag instr_fill_line(Mem_Req* req) {
   ASSERT(ic->proc_id, req->type == MRT_IPRF || req->type == MRT_FDIPPRFON || req->type == MRT_FDIPPRFOFF || req->type == MRT_UOCPRF || req->type == MRT_IFETCH);
   if (mem_req_is_type(req, MRT_IFETCH) || mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF)) {
@@ -1247,8 +1246,6 @@ Flag instr_fill_line(Mem_Req* req) {
   if (UOC_PREF && (mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF) || mem_req_is_type(req, MRT_UOCPRF))) {
     if (in_uop_cache(req->addr, FALSE, req->off_path)) {
       STAT_EVENT(ic->proc_id, UOP_CACHE_HIT_NO_PREFETCH);
-    } else {
-      uop_cache_fill_prefetch(req->addr, !req->off_path);
     }
   }
 

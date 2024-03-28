@@ -35,78 +35,6 @@
 #include "op.h"
 
 /**************************************************************************************/
-/* Unconsumed Producer Tracking */
-
-// To be changed to a configurable para
-#define REG_CONSUME_ENABLE      FALSE
-#define REG_CONSUME_SIGN_TYPE   REG_CONSUME_SIGH_PC
-
-#define REG_CONSUME_TRACK_UNIQUE_OP     TRUE
-#define REG_CONSUME_TRACK_OFF_PATH      FALSE
-
-#define REG_CONSUME_CONF_THRESH_AMBIV   45
-#define REG_CONSUME_CONF_THRESH_LIKE    55
-#define REG_CONSUME_CONF_THRESH_CERT    90
-#define REG_CONSUME_COUNT_THRESH        256
-
-#define REG_CONSUME_LIST_ENABLE         FALSE
-#define REG_CONSUME_LIST_CONTEXT_NUM    20
-
-typedef enum Reg_Consume_Signiture_enum {
-  REG_CONSUME_SIGH_PC,
-  REG_CONSUME_SIGH_MEM,
-  REG_CONSUME_SIGH_NUM
-} Reg_Consume_Signiture;
-
-typedef enum Reg_Consume_Conf_enum {
-  REG_CONSUME_CONF_SKEPT,
-  REG_CONSUME_CONF_AMBIV,
-  REG_CONSUME_CONF_LIKE,
-  REG_CONSUME_CONF_CERT
-} Reg_Consume_Conf;
-
-typedef struct Reg_Consume_Hash_Entry_struct {
-  Counter num_all_produced;
-  Counter num_consumed;
-  Counter num_unconsumed;
-} Reg_Consume_Hash_Entry;
-
-typedef struct Reg_Consume_Node_struct {
-  Counter   op_num;
-  Flag      off_path;
-
-  uns64     sign;
-  Inst_Info inst_info;
-
-  uns       in_degree;
-  uns       out_degree;
-
-  Flag      if_consumed;
-} Reg_Consume_Node;
-
-typedef struct Reg_Consume_Table_struct {
-  /* producer tracking info */
-  Reg_Consume_Node  **node_array;
-  uns               array_size;
-
-  /* store the current node when tracking by each op */
-  Counter           last_write_num;
-  Reg_Consume_Node* last_write_node;
-
-  /* count the producer instructions */
-  Counter num_all_produced;
-  Counter num_consumed;
-  Counter num_unconsumed;
-
-  /* collect the unconsumed producer instructions by signiture */
-  Hash_Table            sign_hash;
-  Reg_Consume_Signiture sign_type;
-
-  /* collect the trace info between the instructions with the same dsts */
-  List consume_node_list;
-} Reg_Consume_Table;
-
-/**************************************************************************************/
 /* Merged Register File: The Hardware Implementation of Register Renaming */
 
 // To be changed to configurable val
@@ -155,9 +83,6 @@ typedef struct Merged_Reg_File_struct {
   /* track all free physical registers */
   Reg_File_Entry* reg_free_list_head;
   uns             reg_free_num;
-
-  /* unconsumed producer tracking */
-  Reg_Consume_Table *consume_table;
 } Merged_Reg_File;
 
 typedef struct Reg_Renaming_Table_struct {
@@ -192,9 +117,6 @@ typedef struct Map_Data_struct {
 
   /* register renaming implementation based on the hardware scheme */
   Reg_Renaming_Table *rename_table;
-
-  /* unconsumed producer tracking */
-  Reg_Consume_Table *consume_table;
 } Map_Data;
 
 
@@ -236,9 +158,6 @@ void rename_table_produce(Op*);
 Flag rename_table_available(void);
 void rename_table_commit(Op*);
 void rename_table_recover(Counter);
-
-/* external functions of the register consume table */
-void reg_consume_table_print_stat(void);
 
 /**************************************************************************************/
 

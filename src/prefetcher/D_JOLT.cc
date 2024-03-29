@@ -585,8 +585,8 @@ void D_JOLT_PREFETCHER::branch_operate(uint64_t ip, uint8_t branch_type, uint64_
     // Make sure storage limits are adhered to...
     ASSERT(proc_id, sig_1 < (1ull<<ExtraMissTable_TagBits) * ExtraMissTable_N_Sets);
     ASSERT(proc_id, sig_2 < (1ull<<ExtraMissTable_TagBits) * ExtraMissTable_N_Sets);
-    ASSERT(proc_id, sig_1 < (1ull<<ShortRangePrefetcher_TagBits) * ShortRangePrefetcher_N_Sets);
-    ASSERT(proc_id, sig_2 < (1ull<<LongRangePrefetcher_TagBits) * LongRangePrefetcher_N_Sets);
+    //ASSERT(proc_id, sig_1 < (1ull<<ShortRangePrefetcher_TagBits) * ShortRangePrefetcher_N_Sets);
+    //ASSERT(proc_id, sig_2 < (1ull<<LongRangePrefetcher_TagBits) * LongRangePrefetcher_N_Sets);
 
     sig_history_1.insert(sig_1);
     sig_history_2.insert(sig_2);

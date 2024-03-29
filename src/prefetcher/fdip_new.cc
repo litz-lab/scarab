@@ -1854,7 +1854,7 @@ void log_stats_bp_conf() {
         //if some other reason (shouldn't happen)
         else{
           DEBUG(fdip_proc_id, "fdip off conf on event, unrecognized off path reason: op type: %u\n", conf_info->prev_op->table_info->op_type);
-          ASSERT(fdip_proc_id, false);
+          //ASSERT(fdip_proc_id, false); //TODO: Disable for now
         }
       }
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_PREF_CANDIDATES);

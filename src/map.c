@@ -46,7 +46,7 @@
 #include "libs/hash_lib.h"
 #include "statistics.h"
 
-#include "xed-interface.h"
+#include "map_consume.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -920,6 +920,8 @@ void rename_table_process(Op *op) {
   if (!REG_RENAMING_TABLE_ENABLE)
     return;
 
+  consume_table_process(op);
+
   rename_table_read_src(op);
   rename_table_write_dst(op);
 }
@@ -1005,6 +1007,9 @@ void merged_reg_file_init(uns array_size) {
     merged_reg_file_write_entry(&invalid_op, entry, ii, 0);
     ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[ii] != REG_FILE_INVALID_REG_ID);
   }
+
+  /* init the consume table */
+  consume_table_init(array_size);
 }
 
 static inline Reg_File_Entry* merged_reg_file_lookup_entry(uns16 id) {
@@ -1024,6 +1029,15 @@ static inline Reg_File_Entry* merged_reg_file_lookup_entry(uns16 id) {
 void merged_reg_file_read_entry(Op *op, Reg_File_Entry *entry) {
   ASSERT(map->proc_id, entry != NULL);
   ASSERT(map->proc_id, op->op_num != entry->op_num);
+
+  // track unconsumed producer
+  consume_table_read(op, entry->reg_ptag);
+
+  // unconsume misprediction
+  if (consume_table_mispredict()) {
+    consume_table_recover();
+    return;
+  }
 
   // increase src num
   uns       src_num = op->oracle_info.num_srcs++;
@@ -1068,6 +1082,9 @@ void merged_reg_file_write_entry(Op* op, Reg_File_Entry *entry, int id, uns ii) 
     return;
   ASSERT(op->proc_id, op->dst_reg_file_ptag[ii] == -1);
   op->dst_reg_file_ptag[ii] = entry->reg_ptag;
+
+  // track unconsumed producer
+  consume_table_write(op, entry->reg_ptag);
 }
 
 /*
@@ -1099,6 +1116,9 @@ void merged_reg_file_release_entry(Reg_File_Entry *entry) {
 
   // append to free list
   merged_reg_file_free_list_insert(entry);
+
+  // track unconsumed producer
+  consume_table_release(entry->reg_ptag);
 }
 
 /*
@@ -1143,7 +1163,7 @@ void merged_reg_file_remove_prev(int ptag) {
   Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
 
   ASSERT(map_data->proc_id, entry != NULL);
-  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_PRODUCED);
+  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_PRODUCED || REG_CONSUME_TABLE_OPT_ENABLE);
   ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] != REG_FILE_INVALID_REG_ID);
 
   // mark current register as commit when it is retire

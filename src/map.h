@@ -31,7 +31,6 @@
 
 #include "isa/isa_macros.h"
 #include "libs/hash_lib.h"
-#include "libs/list_lib.h"
 #include "op.h"
 
 /**************************************************************************************/

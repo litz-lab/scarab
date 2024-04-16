@@ -260,6 +260,9 @@ void op_pool_setup_op(uns proc_id, Op* op) {
 
   for (ii = 0; ii < MAX_DESTS; ii++)
     op->dst_reg_file_ptag[ii] = -1;
+
+  op->if_precommit = FALSE;
+  op->if_eliminate = FALSE;
 }
 
 

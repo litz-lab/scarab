@@ -56,6 +56,8 @@
 #include "bp/tagescl.h"
 #include "decoupled_frontend.h"
 
+#include "map_consume.h"
+
 /* Macros */
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_NODE_STAGE, ##args)
@@ -919,6 +921,10 @@ void node_fill_rs() {
   // Scan through issued nodes in node table that have not been issued to RS
   // yet.
   for(op = node->next_op_into_rs; op; op = op->next_node) {
+    // If being predicted as elimination target, do not goto RS and FU
+    if (REG_CONSUME_ELIMINATE_ENABLE && op->if_eliminate)
+      continue;
+
     // Put your own issue functions here.
     if(FIND_EMPTIEST_RS) {
       rs_id = find_emptiest_rs(op);
@@ -1021,6 +1027,9 @@ void debug_print_retired_uop(Op* op) {
 }
 
 Flag op_not_ready_for_retire(Op* op) {
+  if (REG_CONSUME_ELIMINATE_ENABLE && op->if_eliminate)
+    return !op->if_precommit;
+
   return !(op->state == OS_DONE || OP_DONE(op)) || op->off_path ||
          op->recovery_scheduled || op->redirect_scheduled;
 }
@@ -1039,6 +1048,12 @@ Flag is_node_table_empty() {
 
 void collect_not_ready_to_retire_stats(Op* op) {
   rob_stall_reason = ROB_STALL_OTHER;
+
+  if (REG_CONSUME_ELIMINATE_ENABLE && op->if_eliminate && !op->if_precommit) {
+    /* stall due to a op is predicted as a elimination target but not yet precommit */
+    STAT_EVENT(0, REG_CONSUME_STAT_STALL);
+  }
+
   if(op->recovery_scheduled) {
     rob_stall_reason = ROB_STALL_WAIT_FOR_RECOVERY;
   } else if(op->redirect_scheduled) {

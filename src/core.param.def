@@ -117,6 +117,19 @@ DEF_PARAM(core_61_cycle_time, CORE_61_CYCLE_TIME, uns, uns, 312500, )
 DEF_PARAM(core_62_cycle_time, CORE_62_CYCLE_TIME, uns, uns, 312500, )
 DEF_PARAM(core_63_cycle_time, CORE_63_CYCLE_TIME, uns, uns, 312500, )
 
+/********MAP REGISTER FILE
+ * PARAMETERS********************************************************/
+/* Merged Register File */
+DEF_PARAM(reg_renaming_table_enable, REG_RENAMING_TABLE_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(reg_renaming_table_reg_file_size, REG_RENAMING_TABLE_REG_FILE_SIZE, uns64, uns64, 1024, )
+
+/* Register Unconsume Elimination */
+DEF_PARAM(map_consume_enable, MAP_CONSUME_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(map_consume_transitive_enable, MAP_CONSUME_TRANSITIVE_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(map_consume_eliminate_enable, MAP_CONSUME_ELIMINATE_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(map_consume_count_thresh, MAP_CONSUME_COUNT_THRESH, uns, uns, 16, )
+DEF_PARAM(map_consume_ratio_thresh, MAP_CONSUME_RATIO_THRESH, uns, uns, 90, )
+
 /********NODE TABLE
  * PARAMETERS********************************************************/
 DEF_PARAM(issue_width, ISSUE_WIDTH, uns, uns, 4, )

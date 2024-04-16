@@ -333,6 +333,11 @@ struct Op_struct {
   // {{{ register renaming
   int dst_reg_file_ptag[MAX_DESTS]; // ptag of allocated entries in register file in the renaming table
   // }}}
+
+  // {{{ register unconsume
+  Flag if_precommit;                // set true after resolving to indicate it can be retire when it is eliminated
+  Flag if_eliminate;                // do not goto RS and FU when it is predicted as elimination
+  // }}}
 };
 // }}}
 

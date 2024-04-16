@@ -59,6 +59,8 @@
 #include "prefetcher/pref.param.h"
 #include "prefetcher/fdip_new.h"
 
+#include "map_consume.h"
+
 /******************************************************************************/
 /* include the table of possible branch predictors */
 
@@ -1096,6 +1098,10 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
   if(!UPDATE_BP_OFF_PATH && op->off_path) {
     return;
   }
+
+  /* set the cycle count of the elimination op from the current br to the next br */
+  consume_table_resolve(op);
+
   bp_data->bp->update_func(op);
   if(USE_LATE_BP) {
     bp_data->late_bp->update_func(op);

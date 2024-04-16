@@ -46,7 +46,7 @@
 #include "libs/hash_lib.h"
 #include "statistics.h"
 
-#include "xed-interface.h"
+#include "map_consume.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -920,6 +920,13 @@ void rename_table_process(Op *op) {
   if (!REG_RENAMING_TABLE_ENABLE)
     return;
 
+  // collect statistics and process each op as a node to track transitivity
+  map_consume_process(op);
+
+  // do prediction to determine if it is the elimination target
+  consume_table_predict(op);
+
+  // reg dep read and update
   rename_table_read_src(op);
   rename_table_write_dst(op);
 }
@@ -939,6 +946,9 @@ void rename_table_read_src(Op *op) {
     entry = merged_reg_file_lookup_entry(op->inst_info->srcs[ii].id);
     merged_reg_file_read_entry(op, entry);
   }
+
+  // transitive graph tracking
+  consume_graph_track_reg_read(op);
 }
 
 /*
@@ -957,7 +967,11 @@ void rename_table_write_dst(Op *op) {
     merged_reg_file_write_entry(op, entry, op->inst_info->dests[ii].id, ii);
   }
 
-  ASSERT(map_data->proc_id, op->dst_reg_file_ptag[op->table_info->num_dest_regs] == -1);
+  // track that destination has been produced
+  consume_table_track_produce(op);
+
+  // transitive graph tracking
+  consume_graph_track_reg_write(op);
 }
 
 /**************************************************************************************/
@@ -1005,6 +1019,9 @@ void merged_reg_file_init(uns array_size) {
     merged_reg_file_write_entry(&invalid_op, entry, ii, 0);
     ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[ii] != REG_FILE_INVALID_REG_ID);
   }
+
+  /* init the consume table and consume graph */
+  map_consume_init(array_size);
 }
 
 static inline Reg_File_Entry* merged_reg_file_lookup_entry(uns16 id) {
@@ -1025,6 +1042,15 @@ void merged_reg_file_read_entry(Op *op, Reg_File_Entry *entry) {
   ASSERT(map->proc_id, entry != NULL);
   ASSERT(map->proc_id, op->op_num != entry->op_num);
 
+  // track that produced value has been consumed
+  consume_table_track_consume(op, entry->reg_ptag);
+
+  // unconsume misprediction
+  if (consume_table_mispredict(entry->reg_ptag)) {
+    consume_table_recover();
+    return;
+  }
+
   // increase src num
   uns       src_num = op->oracle_info.num_srcs++;
   Src_Info* info    = &op->oracle_info.src_info[src_num];
@@ -1034,6 +1060,7 @@ void merged_reg_file_read_entry(Op *op, Reg_File_Entry *entry) {
   info->op         = entry->op;
   info->op_num     = entry->op_num;
   info->unique_num = entry->unique_num;
+  info->reg_ptag   = entry->reg_ptag;
 
   // setting waking up signal
   set_not_rdy_bit(op, src_num);
@@ -1099,6 +1126,12 @@ void merged_reg_file_release_entry(Reg_File_Entry *entry) {
 
   // append to free list
   merged_reg_file_free_list_insert(entry);
+
+  // do training update when all destination registers of an op are released
+  consume_table_train(entry->reg_ptag);
+
+  // clear the register and do backtracking
+  consume_graph_track_reg_release(entry->reg_ptag);
 }
 
 /*
@@ -1143,7 +1176,7 @@ void merged_reg_file_remove_prev(int ptag) {
   Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
 
   ASSERT(map_data->proc_id, entry != NULL);
-  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_PRODUCED);
+  ASSERT(map_data->proc_id, entry->reg_state == REG_FILE_ENTRY_STATE_PRODUCED || MAP_CONSUME_ELIMINATE_ENABLE);
   ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[entry->reg_arch_id] != REG_FILE_INVALID_REG_ID);
 
   // mark current register as commit when it is retire
@@ -1209,6 +1242,9 @@ void rename_table_produce(Op *op) {
 
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++)
     merged_reg_file_produce_result(op->dst_reg_file_ptag[ii]);
+
+  // update meta entry info when the value is executed
+  consume_table_exec(op);
 }
 
 /*

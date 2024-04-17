@@ -78,3 +78,16 @@ Have code you would like to commit? [Create a pull request.](https://github.com/
 
 * Please run this command in this directory to auto-generate documentation files.
 > make -C docs
+
+## Publications
+
+```
+@inproceedings{oh2024udp,
+  author = {Oh, Surim and Xu, Mingsheng and Khan, Tanvir Ahmed and Kasikci, Baris and Litz, Heiner},
+  title = {UDP: Utility-Driven Fetch Directed Instruction Prefetching},
+  booktitle = {Proceedings of the 51st International Symposium on Computer Architecture (ISCA)},
+  series = {ISCA 2024},
+  year = {2024},
+  month = jun,
+}
+```

@@ -34,6 +34,7 @@
 
 #include "thread.h"
 #include "xed-interface.h"
+#include "node_stage.h"
 #include "map_consume.h"
 
 /**************************************************************************************/
@@ -49,6 +50,9 @@ static inline uns64 consume_table_get_signature(Op*);
 static inline Flag  consume_table_if_target(uns64);
 static inline void  consume_table_train_update(uns);
 static inline void  consume_table_release_entry(uns);
+
+// elimination
+static inline void  consume_table_resource_bypass(Op*);
 
 // print analysis info
 static inline void  consume_table_print_hash_entry(void*, void*);
@@ -133,6 +137,17 @@ static inline void consume_table_release_entry(uns ind) {
   memset(&entry->inst_info, 0, sizeof(Inst_Info));
 }
 
+/* directly update the cycle count if the op bypasses the RS and FU */
+static inline void consume_table_resource_bypass(Op *op) {
+  ASSERT(0, REG_CONSUME_ENABLE && consume_table != NULL && op != NULL);
+  ASSERT(0, op->exec_count == 0);
+  ASSERT(0, op->sched_cycle == -1 && op->exec_cycle == -1 && op->done_cycle == -1);
+  op->sched_cycle = cycle_count;
+  op->exec_cycle = cycle_count;
+  op->done_cycle = cycle_count;
+  return;
+}
+
 /**************************************************************************************/
 
 static inline void consume_table_print_hash_entry(void* hash_entry, void* arg) {
@@ -167,16 +182,13 @@ void consume_table_init(uns array_size) {
   if (!REG_CONSUME_ENABLE)
     return;
 
-  /* consume info collection for predictor */
+  /* unconsumed info collection for predictor */
   consume_table = (Reg_Consume_Table *)malloc(sizeof(Reg_Consume_Table));
   consume_table->table_map = (Reg_Consume_Map_Entry *)malloc(sizeof(Reg_Consume_Map_Entry) * array_size);
   consume_table->table_map_size = array_size;
   for (uns ii = 0; ii < array_size; ii++)
     consume_table_release_entry(ii);
   init_hash_table(&consume_table->signature_hash, "reg consume hash", NODE_TABLE_SIZE, sizeof(Reg_Consume_Hash_Entry));
-
-  /* elimination mechanism */
-  consume_table->unresolved_br_num = 0;
 }
 
 /*
@@ -246,7 +258,6 @@ void consume_table_track_produce(Op *op) {
   }
 }
 
-
 /*
   Called by:
   --- map.c --> release register
@@ -306,7 +317,7 @@ void consume_table_predict(Op* op) {
 
   STAT_EVENT(0, REG_CONSUME_STAT_TOTAL);
 
-  // if it is a control flow op, do not do prediction
+  // avoid doing elimination if it is a control flow op
   if (op->table_info->cf_type)
     return;
 
@@ -319,78 +330,55 @@ void consume_table_predict(Op* op) {
 
 /*
   Called by:
-  --- map.c --> process op
-  Procedure:
-  --- precommit op if there is not unresolved branch when fetch
-*/
-void consume_table_fetch(Op* op) {
-  if (!REG_CONSUME_ENABLE)
-    return;
-  ASSERT(0, consume_table != NULL && op != NULL);
-
-  // do not consider off-path branch
-  if (op->off_path)
-    return;
-
-  // increase the unsolved br num
-  if (op->table_info->cf_type)
-    consume_table->unresolved_br_num++;
-
-  // if there is not unresolved branch, directly precommit op
-  if (consume_table->unresolved_br_num)
-    return;
-  op->if_precommit = TRUE;
-}
-
-/*
-  Called by:
   --- bp.c --> resolve
   Procedure:
-  --- update the precommit state of the op
+  --- set the cycle count of the elimination op
 */
 void consume_table_resolve(Op* op) {
   if (!REG_CONSUME_ENABLE)
     return;
   ASSERT(0, consume_table != NULL && op != NULL);
 
-  // do not consider off-path branch
-  if (op->off_path)
-    return;
-
-  // find the oldest unresolved op
-  Op** op_p = (Op**)list_start_head_traversal(&td->seq_op_list);
-  while(op_p && (*op_p)->op_num < op->op_num) {
-    ASSERT(0, !(*op_p)->off_path);
-
-    if (!(*op_p)->if_precommit)
+  op = op->next_node;
+  while (op) {
+    // from the current resolved branch to the next branch
+    if (op->table_info->cf_type)
       break;
-    op_p = (Op**)list_next_element(&td->seq_op_list);
+
+    if (op->if_eliminate)
+      consume_table_resource_bypass(op);
+
+    op = op->next_node;
   }
+}
 
-  // precommit the current op
-  op->if_precommit = TRUE;
-
-  // check if it is out-of-order resolve
-  ASSERT(0, op->op_num >= (*op_p)->op_num);
-  if (op->op_num != (*op_p)->op_num)
+/*
+  Called by:
+  --- node_stage.c --> before op retire
+  Procedure:
+  --- mark an op as precommit when its exec cycle exceeds current cycle
+*/
+void consume_table_precommit(void) {
+  if (!REG_CONSUME_ENABLE)
     return;
+  ASSERT(0, consume_table != NULL && REG_CONSUME_ELIMINATE_ENABLE);
 
-  // do precommit from the oldest resolved op to the next unresolved op
-  while (op_p) {
-    if ((*op_p)->off_path)
-      break;
+  Op *op = node->node_head;
+  Flag have_br = FALSE;
 
-    if ((*op_p)->table_info->cf_type) {
-      if (!(*op_p)->if_precommit)
-        break;
+  for (; op != NULL; op = op->next_node) {
+    if (op->table_info->cf_type)
+      have_br = TRUE;
 
-      // decrease the unresolved branch couter
-      ASSERT(0, consume_table->unresolved_br_num > 0);
-      consume_table->unresolved_br_num--;
+    if (op->exec_cycle > cycle_count) {
+      if (have_br)
+        return;
+
+      if (op->if_eliminate)
+        consume_table_resource_bypass(op);
     }
 
-    (*op_p)->if_precommit = TRUE;
-    op_p = (Op**)list_next_element(&td->seq_op_list);
+    op->if_precommit = TRUE;
   }
 }
 

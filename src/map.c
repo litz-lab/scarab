@@ -920,8 +920,6 @@ void rename_table_process(Op *op) {
   if (!REG_RENAMING_TABLE_ENABLE)
     return;
 
-  // update the precommit of the op
-  consume_table_fetch(op);
   // do prediction to determine if it is the elimination target
   consume_table_predict(op);
 

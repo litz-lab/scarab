@@ -722,6 +722,9 @@ void node_retire() {
   uns ret_count = 0;
   Op* op        = NULL;
 
+  // update the precommit state by comparing cycle count
+  consume_table_precommit();
+
   // If node table is empty, then there is nothing to retire
   if(is_node_table_empty())
     return;

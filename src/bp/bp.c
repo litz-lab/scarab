@@ -1099,7 +1099,7 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
     return;
   }
 
-  /* set op as precommit when the branch is resolve */
+  /* set the cycle count of the elimination op from the current br to the next br */
   consume_table_resolve(op);
 
   bp_data->bp->update_func(op);

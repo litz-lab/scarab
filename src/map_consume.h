@@ -37,36 +37,36 @@
  * Registe Consume Table Functionality
  *
  * 1. Predictor
- *   1) Unconsume Collection
- *      - Collect the unconsume info by signature (PC) in register ranaming and
- *        store into a hash
+ *   1) Unconsumed Info Collection
+ *      - Gather the unconsumed info identified by the signature (PC) during the renaming
+ *        stage and store it in a hash
  *   2) Elimination Decision
- *      - Based on the unconsuming count and ratio of the signature (PC) to
- *        determine if do elimination
+ *      - Determine whether perform elimination based on the unconsumed count and ratio
+ *        of the signature (PC)
  *
  * 2. Elimination
  *   1) Resource Bypass
- *      - If an op is predicted as ELIMINATION, do not let it go to the RS and FU
- *        in node stage
+ *      - Prevent an op that is predicted for elimination from proceeding to the RS and FU
+ *        in the node stage
  *   2) Precommit Mechanism
- *      - Introduce a PRECOMMIT state to enable an op release and retire without COMMIT
- *        leveraging resolve
+ *      - Introduce a precommit state that allows an elimination op to be retired when it
+ *        is overwritten by an resolved op
  *   3) Misprediction Flushing (TODO)
- *      - Propose a new renaming misprediction and schedule a flush when a ELIMINATION
- *        regsiter is consumed
+ *      - Establish a new type of misprediction recorvery during the renaming stage that
+ *        schedules a flush when an elimination regsiter is consumed
  **************************************************************************************/
 
 /**************************************************************************************
  * Registe Consume Table Structure
  *
  * 1. Meta Table Map
- *    key: index of register file ptag
- *    val: meta info of producers
- *    len: num of physical register file entries
+ *    key: index of the ptag in the register file
+ *    val: meta info of the producer
+ *    len: num of entries in the register file 
  *
  * 2. Signature Hash Map
- *    key: signature (PC) of producer op
- *    val: counters of producer unconsuming info
+ *    key: signature (PC) of the producer op
+ *    val: counter tracking the unconsuming info of the producer
  **************************************************************************************/
 
 /**************************************************************************************/
@@ -102,13 +102,9 @@ typedef struct Reg_Consume_Map_Entry_struct {
 } Reg_Consume_Map_Entry;
 
 typedef struct Reg_Consume_Table_struct {
-  /* Predictor */
   Reg_Consume_Map_Entry* table_map;         // store meta info of producers by the index of register file ptag
   uns                    table_map_size;    // map size is equal to register file
   Hash_Table             signature_hash;    // collect counters of producer unconsuming info by signature (PC)
-
-  /* Elimination */
-  uns   unresolved_br_num;                  // determine if do precommit when fetch
 } Reg_Consume_Table;
 
 /**************************************************************************************/
@@ -123,8 +119,8 @@ void consume_table_train(uns);                  // do training update when all d
 void consume_table_predict(Op*);                // do prediction to determine if the op is the elimination target
 
 /* Elimination */
-void consume_table_fetch(Op*);                  // precommit op when fetch if there is not unresolved branch
-void consume_table_resolve(Op*);                // update the precommit state of the op
+void consume_table_resolve(Op*);                // set the cycle count of the elimination op
+void consume_table_precommit(void);             // update the precommit states for all op
 Flag consume_table_mispredict(uns);             // check if the source register of an elimination target is read
 void consume_table_recover(void);               // schedule a misprediction flush
 

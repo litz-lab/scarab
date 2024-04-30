@@ -46,13 +46,16 @@ extern "C" {
   void inc_utility_info(uns proc_id, Flag useful);
   void inc_timeliness_info(uns proc_id, Flag mshr_hit);
   void fdip_inc_cnt_btb_miss(uns proc_id);
+  void fdip_inc_cnt_ibtb_miss(uns proc_id);
+  void fdip_inc_cnt_misfetch(uns proc_id);
+  void fdip_inc_cnt_mispred(uns proc_id);
   Flag fdip_search_pref_candidate(Addr addr);
   void insert_pref_candidate_to_seniority_ftq(Addr line_addr);
   void clear_old_seniority_ftq();
   void assert_fdip_break_reason(uns proc_id, Addr line_addr);
   void inc_br_conf_counters(int conf);
   void inc_cf_type_counters(Cf_Type cf_type);
-  void btb_miss_bp_taken_conf_update(Op * op);
+  void fine_grained_conf_update(Op * op);
   void default_conf_update(Op * op);
   void log_stats_bp_conf();
   void log_stats_bp_conf_emitted();
@@ -86,11 +89,15 @@ typedef enum OFF_PATH_REASON_enum {
 } Off_Path_Reason;
 
 typedef enum CONF_OFF_PATH_REASON_enum {
+  REASON_IBTB_MISS_BP_TAKEN,
   REASON_BTB_MISS_BP_TAKEN_CONF_0,
   REASON_BTB_MISS_BP_TAKEN_CONF_1,
   REASON_BTB_MISS_BP_TAKEN_CONF_2,
   REASON_BTB_MISS_BP_TAKEN_CONF_3,
   REASON_BTB_MISS_RATE,
+  REASON_IBTB_MISS_RATE,
+  REASON_MISFETCH_RATE,
+  REASON_MISPRED_RATE,
   REASON_INV_CONF_INC,
 } Conf_Off_Path_Reason;
 

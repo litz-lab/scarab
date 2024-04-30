@@ -52,9 +52,18 @@ std::vector<std::deque<std::tuple<uns64, Counter, Flag>>> per_core_seniority_ftq
 /* global variables for dynamic FTQ adjustment based on utility/timeliness study */
 std::vector<Utility_Timeliness_Info> per_core_utility_timeliness_info;
 
-/* global variables for BTB miss-based BP confidence */
+/* global variables for BTB miss rate based BP confidence */
 std::vector<Counter> per_core_cnt_btb_miss;
 std::vector<double> per_core_btb_miss_rate;
+/* global variables for IBTB miss rate based BP confidence */
+std::vector<Counter> per_core_cnt_ibtb_miss;
+std::vector<double> per_core_ibtb_miss_rate;
+/* global variables for misfetch rate based BP confidence */
+std::vector<Counter> per_core_cnt_misfetch;
+std::vector<double> per_core_misfetch_rate;
+/* global variables for mispred rate based BP confidence */
+std::vector<Counter> per_core_cnt_mispred;
+std::vector<double> per_core_mispred_rate;
 
 /* global variables for utility study and stats */
 // for icache miss stats
@@ -149,6 +158,12 @@ void alloc_mem_fdip(uns numCores) {
   if (FDIP_BP_CONFIDENCE) {
     per_core_cnt_btb_miss.resize(numCores);
     per_core_btb_miss_rate.resize(numCores);
+    per_core_cnt_ibtb_miss.resize(numCores);
+    per_core_ibtb_miss_rate.resize(numCores);
+    per_core_cnt_misfetch.resize(numCores);
+    per_core_misfetch_rate.resize(numCores);
+    per_core_cnt_mispred.resize(numCores);
+    per_core_mispred_rate.resize(numCores);
     per_core_low_confidence_cnt.resize(numCores);
     per_core_cf_op_distance.resize(numCores);
     per_core_conf_info.resize(numCores);
@@ -208,8 +223,13 @@ void init_fdip(uns proc_id) {
   if (FDIP_BP_CONFIDENCE) {
     per_core_cnt_btb_miss[proc_id] = 0;
     per_core_btb_miss_rate[proc_id] = 0.0;
+    per_core_cnt_ibtb_miss[proc_id] = 0;
+    per_core_ibtb_miss_rate[proc_id] = 0.0;
+    per_core_cnt_misfetch[proc_id] = 0;
+    per_core_misfetch_rate[proc_id] = 0.0;
+    per_core_cnt_mispred[proc_id] = 0;
+    per_core_mispred_rate[proc_id] = 0.0;
 
-    //per_core_conf_info[proc_id].cur_op = nullptr;
     per_core_conf_info[proc_id].prev_op = nullptr;
 
     per_core_conf_info[proc_id].fdip_on_conf_off_event = false;
@@ -296,8 +316,6 @@ void recover_fdip() {
   if(FDIP_BP_CONFIDENCE){
     per_core_low_confidence_cnt[fdip_proc_id] = 0;
     per_core_cf_op_distance[fdip_proc_id] = 0.0;
-    // set previous reset previous instruction
-    //per_core_conf_info[fdip_proc_id].cur_op = nullptr;
     per_core_conf_info[fdip_proc_id].prev_op = nullptr;
     // reset counters and event flags
     per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event = false;
@@ -358,10 +376,26 @@ void update_fdip() {
     }
   }
 
-  if (FDIP_BP_CONFIDENCE && (cycle_count % FDIP_BTB_MISS_SAMPLE_RATE == 0)) {
-    per_core_btb_miss_rate[fdip_proc_id] = (double)per_core_cnt_btb_miss[fdip_proc_id] / (double)FDIP_BTB_MISS_SAMPLE_RATE;
-    per_core_cnt_btb_miss[fdip_proc_id] = 0;
+  // update miss rates and reset miss rate counters
+  if (FDIP_BP_CONFIDENCE){
+    if (cycle_count % FDIP_BTB_MISS_SAMPLE_RATE == 0) {
+      per_core_btb_miss_rate[fdip_proc_id] = (double)per_core_cnt_btb_miss[fdip_proc_id] / (double)FDIP_BTB_MISS_SAMPLE_RATE;
+      per_core_cnt_btb_miss[fdip_proc_id] = 0;
+    }
+    if (cycle_count % FDIP_IBTB_MISS_SAMPLE_RATE == 0) {
+      per_core_ibtb_miss_rate[fdip_proc_id] = (double)per_core_cnt_ibtb_miss[fdip_proc_id] / (double)FDIP_IBTB_MISS_SAMPLE_RATE;
+      per_core_cnt_ibtb_miss[fdip_proc_id] = 0;
+    }
+    if (cycle_count % FDIP_MISFETCH_SAMPLE_RATE == 0) {
+      per_core_misfetch_rate[fdip_proc_id] = (double)per_core_cnt_misfetch[fdip_proc_id] / (double)FDIP_MISFETCH_SAMPLE_RATE;
+      per_core_cnt_misfetch[fdip_proc_id] = 0;
+    }
+    if (cycle_count % FDIP_MISPRED_SAMPLE_RATE == 0) {
+      per_core_mispred_rate[fdip_proc_id] = (double)per_core_cnt_mispred[fdip_proc_id] / (double)FDIP_MISPRED_SAMPLE_RATE;
+      per_core_cnt_mispred[fdip_proc_id] = 0;
+    }
   }
+  
 
   Op *op = NULL;
   for (op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
@@ -401,8 +435,8 @@ void update_fdip() {
         if(per_core_low_confidence_cnt[fdip_proc_id] == ~0U)
           ASSERT(0,fdip_off_path(fdip_proc_id));
         per_core_cf_op_distance[fdip_proc_id] = 0.0;
-      } else if (FDIP_BTB_MISS_BP_TAKEN_CONF) {
-        btb_miss_bp_taken_conf_update(op);
+      } else if (FDIP_FINE_GRAINED_CONF) {
+        fine_grained_conf_update(op);
       } else {
         default_conf_update(op);
       }
@@ -1521,8 +1555,21 @@ void inc_timeliness_info(uns proc_id, Flag mshr_hit) {
     per_core_utility_timeliness_info[proc_id].icache_prefetch_hits++;
 }
 
+// increment miss rate counters (called in bp.c)
 void fdip_inc_cnt_btb_miss(uns proc_id) {
   per_core_cnt_btb_miss[proc_id]++;
+}
+
+void fdip_inc_cnt_ibtb_miss(uns proc_id) {
+  per_core_cnt_ibtb_miss[proc_id]++;
+}
+
+void fdip_inc_cnt_misfetch(uns proc_id) {
+  per_core_cnt_misfetch[proc_id]++;
+}
+
+void fdip_inc_cnt_mispred(uns proc_id) {
+  per_core_cnt_mispred[proc_id]++;
 }
 
 Flag fdip_search_pref_candidate(Addr addr) {
@@ -1771,12 +1818,18 @@ void default_conf_update(Op * op){
   }
 }
 //if btb miss and high enough bp confidence set confidence to off path
-void btb_miss_bp_taken_conf_update(Op * op){
+void fine_grained_conf_update(Op * op){
   if (!FDIP_BP_CONFIDENCE)
     return;
   if(per_core_low_confidence_cnt[fdip_proc_id] != ~0U){
     if (op->table_info->cf_type) {
-      if(op->oracle_info.btb_miss && op->oracle_info.pred_orig == TAKEN && (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)){
+      if(ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) && op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN){
+        per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
+        if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
+          per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_IBTB_MISS_BP_TAKEN;
+        }
+      }
+      else if(op->oracle_info.btb_miss && op->oracle_info.pred_orig == TAKEN && (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)){
         per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
           switch(op->bp_confidence){
@@ -1816,6 +1869,24 @@ void btb_miss_bp_taken_conf_update(Op * op){
         STAT_EVENT(fdip_proc_id, FDIP_BTB_NUM_CYCLES_OFF_PATH_EVENT);
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
           per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_RATE;
+      }
+      else if((double)((double)(cycle_count - per_core_last_recover_cycle[fdip_proc_id]) * per_core_ibtb_miss_rate[fdip_proc_id])  >= FDIP_IBTB_MISS_RATE_CYCLES_THRESHOLD){
+        per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
+        STAT_EVENT(fdip_proc_id, FDIP_IBTB_NUM_CYCLES_OFF_PATH_EVENT);
+        if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
+          per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_IBTB_MISS_RATE;
+      }
+      else if((double)((double)(cycle_count - per_core_last_recover_cycle[fdip_proc_id]) * per_core_misfetch_rate[fdip_proc_id])  >= FDIP_MISFETCH_RATE_CYCLES_THRESHOLD){
+        per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
+        STAT_EVENT(fdip_proc_id, FDIP_MISFETCH_NUM_CYCLES_OFF_PATH_EVENT);
+        if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
+          per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_MISFETCH_RATE;
+      } 
+      else if((double)((double)(cycle_count - per_core_last_recover_cycle[fdip_proc_id]) * per_core_mispred_rate[fdip_proc_id])  >= FDIP_MISPRED_RATE_CYCLES_THRESHOLD){
+        per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
+        STAT_EVENT(fdip_proc_id, FDIP_MISPRED_NUM_CYCLES_OFF_PATH_EVENT);
+        if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
+          per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_MISPRED_RATE;
       }
     }
   }
@@ -1870,13 +1941,13 @@ void log_stats_bp_conf() {
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_PREF_CANDIDATES);
     else {
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_PREF_CANDIDATES);
-      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_PREF_CANDIDATES + conf_info->conf_off_path_reason);
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_IBTB_MISS_BP_TAKEN_PREF_CANDIDATES + conf_info->conf_off_path_reason);
       if (!conf_info->fdip_on_conf_off_event) {
         conf_info->fdip_on_conf_off_event = true;
 
         STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_EVENTS);
 
-        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0 + conf_info->conf_off_path_reason);
+        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_IBTB_MISS_BP_TAKEN + conf_info->conf_off_path_reason);
 
         INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_BR, conf_info->num_cf_br);
         INC_STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_NUM_CF_CBR, conf_info->num_cf_cbr);
@@ -1916,7 +1987,7 @@ void log_stats_bp_conf_emitted() {
       STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_EMITTED);
     } else {
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_EMITTED);
-      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_EMITTED + per_core_conf_info[fdip_proc_id].conf_off_path_reason);
+      STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_IBTB_MISS_BP_TAKEN_EMITTED + per_core_conf_info[fdip_proc_id].conf_off_path_reason);
     }
   }
 }

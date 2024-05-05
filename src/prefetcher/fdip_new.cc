@@ -394,6 +394,8 @@ void update_fdip() {
       per_core_mispred_rate[fdip_proc_id] = (double)per_core_cnt_mispred[fdip_proc_id] / (double)FDIP_MISPRED_SAMPLE_RATE;
       per_core_cnt_mispred[fdip_proc_id] = 0;
     }
+    // log fdip on/off conf on/off per cycle
+    log_per_cycle_stats();
   }
 
   Op *op = NULL;
@@ -440,8 +442,6 @@ void update_fdip() {
         default_conf_update(op);
       }
     }
-
-    //log conf stats
 
     //if it is a cf with bp conf
     if((op)->table_info->cf_type == CF_CBR || 
@@ -656,6 +656,33 @@ Flag fdip_conf_off_path(uns proc_id) {
 Flag fdip_resteer_op(uns proc_id) {
   ASSERT(proc_id, per_core_cur_op[proc_id]);
   return (per_core_cur_op[proc_id]->oracle_info.recover_at_decode || per_core_cur_op[proc_id]->oracle_info.recover_at_exec);
+}
+
+void log_per_cycle_stats() {
+  if(per_core_cur_op[fdip_proc_id]) {
+    //actually off path
+    if(fdip_off_path(fdip_proc_id)) {
+      //confidence off path
+      if(per_core_low_confidence_cnt[fdip_proc_id] > FDIP_OFF_PATH_THRESHOLD) {
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_CYCLES);
+      }
+      //confidence on path
+      else {
+        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_CYCLES);
+      }
+    }
+    //actually on path
+    else {
+      //confidence off path
+      if(per_core_low_confidence_cnt[fdip_proc_id] > FDIP_OFF_PATH_THRESHOLD) {
+        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_CYCLES);
+      }
+      //confidence on path
+      else {
+        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON_CYCLES);
+      }
+    }
+  }
 }
 
 template<typename A, typename B>

@@ -71,7 +71,7 @@ extern "C" {
   void uftq_set_ftq_ft_num(uns proc_id);
   Off_Path_Reason eval_off_path_reason(Op * op);
   void log_per_cycle_stats();
-
+  void perfect_conf_update(Op * op);
 
 #ifdef __cplusplus
 }

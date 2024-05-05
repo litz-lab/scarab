@@ -629,7 +629,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred = NOT_TAKEN;
         op->oracle_info.pred_npc = pc_plus_offset;
         STAT_EVENT(op->proc_id, CBR_RECOVER_BTB_MISS_T_T + op->off_path * NUM_BR_STATS);
-	      if (FDIP_BP_CONFIDENCE)
+        if (FDIP_BP_CONFIDENCE)
           fdip_inc_cnt_btb_miss(op->proc_id);
       }
       // 2. Branch is predicted taken, violating not-taken asumption. This would flush at decode,
@@ -651,7 +651,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred = NOT_TAKEN;
         op->oracle_info.pred_npc = pc_plus_offset;
         STAT_EVENT(op->proc_id, CBR_RECOVER_BTB_MISS_NT_T + op->off_path * NUM_BR_STATS);
-	      if (FDIP_BP_CONFIDENCE) {
+        if (FDIP_BP_CONFIDENCE) {
           fdip_inc_cnt_btb_miss(op->proc_id);
           fdip_inc_cnt_mispred(op->proc_id);
         }
@@ -839,7 +839,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred_npc = pc_plus_offset;
         STAT_EVENT(op->proc_id, ICALL_RECOVER_XBTB_MISS + op->off_path * NUM_BR_STATS);
         if(FDIP_BP_CONFIDENCE)
-            fdip_inc_cnt_ibtb_miss(op->proc_id);
+          fdip_inc_cnt_ibtb_miss(op->proc_id);
       }
 
       break;

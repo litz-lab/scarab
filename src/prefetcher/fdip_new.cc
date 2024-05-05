@@ -391,9 +391,10 @@ void update_fdip() {
       per_core_mispred_rate[fdip_proc_id] = (double)per_core_cnt_mispred[fdip_proc_id] / (double)FDIP_MISPRED_SAMPLE_RATE;
       per_core_cnt_mispred[fdip_proc_id] = 0;
     }
+    // log fdip on/off conf on/off per cycle
+    log_per_cycle_stats();
   }
   
-
   for (Op *op = decoupled_fe_ftq_iter_get(iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(iter, &end_of_block), ops_per_cycle++) {
     //set previous op, only if on path or first off path instruction (for off path reason logging)
     if(FDIP_BP_CONFIDENCE &&
@@ -450,8 +451,6 @@ void update_fdip() {
         default_conf_update(op);
       }
     }
-
-    //log conf stats
 
     //if it is a cf with bp conf
     if((op)->table_info->cf_type == CF_CBR || 
@@ -589,6 +588,7 @@ void update_fdip() {
       DEBUG(fdip_proc_id, "End of block - ftq_entry_per_cycle: %d\n", ftq_entry_per_cycle);
     }
   }
+
   STAT_EVENT(ic_ref->proc_id, FDIP_BREAK_REACH_FTQ_END + break_reason);
   DEBUG(fdip_proc_id, "FTQ size : %lu, FDIP prefetch offset : %lu\n", decoupled_fe_ftq_num_ops(), decoupled_fe_ftq_iter_offset(iter));
   if (FDIP_ADJUSTABLE_FTQ && cycle_count % FDIP_ADJUSTABLE_FTQ_CYC == 0) {
@@ -649,6 +649,33 @@ Flag fdip_conf_off_path(uns proc_id) {
 Flag fdip_resteer_op(uns proc_id) {
   ASSERT(proc_id, per_core_cur_op[proc_id]);
   return (per_core_cur_op[proc_id]->oracle_info.recover_at_decode || per_core_cur_op[proc_id]->oracle_info.recover_at_exec);
+}
+
+void log_per_cycle_stats() {
+  if(per_core_cur_op[fdip_proc_id]) {
+    //actually off path
+    if(fdip_off_path(fdip_proc_id)) {
+      //confidence off path
+      if(per_core_low_confidence_cnt[fdip_proc_id] > FDIP_OFF_PATH_THRESHOLD) {
+          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_CYCLES);
+      } 
+      //confidence on path
+      else {
+        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_CYCLES);
+      }
+    } 
+    //actually on path
+    else {
+      //confidence off path
+      if(per_core_low_confidence_cnt[fdip_proc_id] > FDIP_OFF_PATH_THRESHOLD) {
+        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_CYCLES);
+      } 
+      //confidence on path
+      else {
+        STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_ON_CYCLES);
+      }
+    }
+  }
 }
 
 template<typename A, typename B>

@@ -23,6 +23,7 @@ extern "C" {
   void set_fdip(int _proc_id, Icache_Stage *_ic);
   Flag fdip_off_path(uns proc_id);
   Flag fdip_conf_off_path(uns proc_id);
+  Flag fdip_resteer_op(uns proc_id);
   uns64 fdip_get_ghist();
   uns64 fdip_hash_addr_ghist(uint64_t addr, uint64_t ghist);
   void print_cl_info(uns proc_id);
@@ -69,6 +70,7 @@ extern "C" {
   void log_stats_bp_conf_emitted();
   void fdip_set_cur_op(uns proc_id, Op * op);
   Off_Path_Reason eval_off_path_reason(Op * op);
+  void log_per_cycle_stats();
 
   
 #ifdef __cplusplus

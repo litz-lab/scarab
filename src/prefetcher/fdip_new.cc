@@ -147,6 +147,8 @@ std::vector<uns> per_core_low_confidence_cnt;
 std::vector<double> per_core_cf_op_distance;
 //confidence stats
 std::vector<FDIP_Confidence_Info> per_core_conf_info;
+//perfect / realistic conf flag (for logging off/off) 0 -> perfect, 1->realistic
+std::vector<bool> per_core_realistic_off_path;
 
 void alloc_mem_fdip(uns numCores) {
   per_core_cur_op.resize(numCores);
@@ -167,6 +169,7 @@ void alloc_mem_fdip(uns numCores) {
     per_core_low_confidence_cnt.resize(numCores);
     per_core_cf_op_distance.resize(numCores);
     per_core_conf_info.resize(numCores);
+    per_core_realistic_off_path.resize(numCores);
   }
   per_core_last_imiss_reason.resize(numCores);
   per_core_last_break_reason.resize(numCores);
@@ -664,10 +667,8 @@ void log_per_cycle_stats() {
     if(fdip_off_path(fdip_proc_id)) {
       //confidence off path
       if(per_core_low_confidence_cnt[fdip_proc_id] > FDIP_OFF_PATH_THRESHOLD) {
-          STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_CYCLES);
-      }
-      //confidence on path
-      else {
+        STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_PERFECT_CYCLES + per_core_realistic_off_path[fdip_proc_id]);
+      } else { //confidence on path
         STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_ON_CYCLES);
       }
     }
@@ -1863,9 +1864,11 @@ void perfect_conf_update(Op * op) {
   (FDIP_PERFECT_BTB_MISS_CONF && (off_path_reason == REASON_BTB_MISS || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
   (FDIP_PERFECT_IBTB_MISS_CONF && (off_path_reason == REASON_IBTB_MISS)) ||
   (FDIP_PERFECT_MISFETCH_CONF && (off_path_reason == REASON_MISFETCH))) {
+    per_core_realistic_off_path[fdip_proc_id] = false;
     per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
   }
 }
+
 void fine_grained_conf_update(Op * op){
   if (!FDIP_BP_CONFIDENCE)
     return;
@@ -1874,12 +1877,14 @@ void fine_grained_conf_update(Op * op){
       if(FDIP_PERFECT_BTB_MISS_CONF || FDIP_PERFECT_IBTB_MISS_CONF || FDIP_PERFECT_MISFETCH_CONF || FDIP_PERFECT_MISPRED_CONF)
         perfect_conf_update(op);
       if(!FDIP_PERFECT_IBTB_MISS_CONF && (!FDIP_PERFECT_MISPRED_CONF || (FDIP_PERFECT_MISPRED_CONF && !op->oracle_info.mispred)) && FDIP_IBTB_MISS_BP_TAKEN_CONF && ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) && op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN){
+        per_core_realistic_off_path[fdip_proc_id] = true;
         per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
           per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_IBTB_MISS_BP_TAKEN;
         }
       }
       else if(!FDIP_PERFECT_BTB_MISS_CONF && (!FDIP_PERFECT_MISPRED_CONF || (FDIP_PERFECT_MISPRED_CONF && !op->oracle_info.mispred)) && FDIP_BTB_MISS_BP_TAKEN_CONF && op->oracle_info.btb_miss && op->oracle_info.pred_orig == TAKEN && (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)){
+        per_core_realistic_off_path[fdip_proc_id] = true;
         per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event){
           switch(op->bp_confidence){
@@ -1900,7 +1905,10 @@ void fine_grained_conf_update(Op * op){
           }
         }
       } else if (!FDIP_PERFECT_MISPRED_CONF && FDIP_INV_BP_CONF_CONF) {
+        Flag already_off_path = per_core_low_confidence_cnt[fdip_proc_id] > FDIP_OFF_PATH_THRESHOLD;
         per_core_low_confidence_cnt[fdip_proc_id] += 3 - op->bp_confidence;
+        if(per_core_low_confidence_cnt[fdip_proc_id] > FDIP_OFF_PATH_THRESHOLD && !already_off_path)
+          per_core_realistic_off_path[fdip_proc_id] = true;
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
           per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_INV_CONF_INC;
       }
@@ -1915,24 +1923,28 @@ void fine_grained_conf_update(Op * op){
       // update confidence based on number of cycles elapsed and miss rate
       if(!FDIP_PERFECT_BTB_MISS_CONF && FDIP_BTB_MISS_RATE_CONF && ((double)((cycle_count - per_core_last_recover_cycle[fdip_proc_id]) * per_core_btb_miss_rate[fdip_proc_id])  >= FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD)){
         per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
+        per_core_realistic_off_path[fdip_proc_id] = true;
         STAT_EVENT(fdip_proc_id, FDIP_BTB_NUM_CYCLES_OFF_PATH_EVENT);
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
           per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_BTB_MISS_RATE;
       }
       else if(!FDIP_PERFECT_IBTB_MISS_CONF && FDIP_IBTB_MISS_RATE_CONF && ((double)((double)(cycle_count - per_core_last_recover_cycle[fdip_proc_id])) * per_core_ibtb_miss_rate[fdip_proc_id])  >= FDIP_IBTB_MISS_RATE_CYCLES_THRESHOLD){
         per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
+        per_core_realistic_off_path[fdip_proc_id] = true;
         STAT_EVENT(fdip_proc_id, FDIP_IBTB_NUM_CYCLES_OFF_PATH_EVENT);
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
           per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_IBTB_MISS_RATE;
       }
       else if(!FDIP_PERFECT_MISFETCH_CONF && FDIP_MISFETCH_RATE_CONF && ((double)((double)(cycle_count - per_core_last_recover_cycle[fdip_proc_id]) * per_core_misfetch_rate[fdip_proc_id])  >= FDIP_MISFETCH_RATE_CYCLES_THRESHOLD)){
         per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
+        per_core_realistic_off_path[fdip_proc_id] = true;
         STAT_EVENT(fdip_proc_id, FDIP_MISFETCH_NUM_CYCLES_OFF_PATH_EVENT);
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
           per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_MISFETCH_RATE;
       } 
       else if(!FDIP_PERFECT_MISPRED_CONF && FDIP_MISPRED_RATE_CONF && ((double)((double)(cycle_count - per_core_last_recover_cycle[fdip_proc_id]) * per_core_mispred_rate[fdip_proc_id])  >= FDIP_MISPRED_RATE_CYCLES_THRESHOLD)){
         per_core_low_confidence_cnt[fdip_proc_id] = ~0U;
+        per_core_realistic_off_path[fdip_proc_id] = true;
         STAT_EVENT(fdip_proc_id, FDIP_MISPRED_NUM_CYCLES_OFF_PATH_EVENT);
         if(!per_core_conf_info[fdip_proc_id].fdip_on_conf_off_event)
           per_core_conf_info[fdip_proc_id].conf_off_path_reason = REASON_MISPRED_RATE;
@@ -2001,11 +2013,8 @@ void log_stats_bp_conf() {
   }
   //conf off path
   else {
-    //actually off path
-    if (fdip_off_path(fdip_proc_id)){
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_PREF_CANDIDATES);
-    }
-    //actually on path
+    if (fdip_off_path(fdip_proc_id))
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_PERFECT_PREF_CANDIDATES + per_core_realistic_off_path[fdip_proc_id]);
     else {
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_PREF_CANDIDATES);
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_IBTB_MISS_BP_TAKEN_PREF_CANDIDATES + conf_info->conf_off_path_reason);
@@ -2057,10 +2066,8 @@ void log_stats_bp_conf_emitted() {
   else {
     //actually off path
     if(fdip_off_path(fdip_proc_id)) {
-      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_EMITTED);
-    }
-    //atually on path
-    else {
+      STAT_EVENT(fdip_proc_id, FDIP_OFF_CONF_OFF_PERFECT_EMITTED + per_core_realistic_off_path[fdip_proc_id]);
+    } else { //actually on path
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_EMITTED);
       STAT_EVENT(fdip_proc_id, FDIP_ON_CONF_OFF_IBTB_MISS_BP_TAKEN_EMITTED + per_core_conf_info[fdip_proc_id].conf_off_path_reason);
     }

@@ -490,11 +490,10 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         // increment fdip miss rate counters
         // if there was a hit in the btb this is a misfetch, otherwise it's a btb miss
         if(FDIP_BP_CONFIDENCE) {
-          if(btb_target) {
+          if(btb_target)
             fdip_inc_cnt_misfetch(op->proc_id);
-          } else {
+          else
             fdip_inc_cnt_btb_miss(op->proc_id);
-          }
         }
       }
       break;
@@ -557,7 +556,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
           if(*btb_target != op->oracle_info.target)
             fdip_inc_cnt_misfetch(op->proc_id);
           fdip_inc_cnt_mispred(op->proc_id);
-        } 
+        }
       }
       // Although the btb hits and cbr is correctly predicted, target address may be wrong (aliasing or jitted code)
       else if (btb_target && pred_target != op->oracle_info.npc) {
@@ -607,7 +606,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred = NOT_TAKEN;
         op->oracle_info.pred_npc = pc_plus_offset;
         STAT_EVENT(op->proc_id, CBR_RECOVER_BTB_MISS_NT_T + op->off_path * NUM_BR_STATS);
-	      if (FDIP_BP_CONFIDENCE) {
+        if (FDIP_BP_CONFIDENCE) {
           fdip_inc_cnt_btb_miss(op->proc_id);
           fdip_inc_cnt_mispred(op->proc_id);
         }

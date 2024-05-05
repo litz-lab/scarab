@@ -1,6 +1,14 @@
 #ifndef __FDIP_NEW_H__
 #define __FDIP_NEW_H__
 
+typedef enum OFF_PATH_REASON_enum {
+  REASON_NOT,
+  REASON_IBTB_MISS,
+  REASON_BTB_MISS,
+  REASON_BTB_MISS_MISPRED,
+  REASON_MISPRED,
+  REASON_MISFETCH,
+} Off_Path_Reason;
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,8 +68,9 @@ extern "C" {
   void log_stats_bp_conf();
   void log_stats_bp_conf_emitted();
   void uftq_set_ftq_ft_num(uns proc_id);
+  Off_Path_Reason eval_off_path_reason(Op * op);
 
-  
+
 #ifdef __cplusplus
 }
 #endif
@@ -80,13 +89,6 @@ typedef enum IC_FETCH_TYPE_enum {
   FDIP_OFFPATH,
   FDIP_BOTHPATH,
 } IC_Fetch_Type;
-
-typedef enum OFF_PATH_REASON_enum {
-  REASON_BTB_MISS,
-  REASON_MISPRED,
-  REASON_MISFETCH,
-  REASON_NO_TARGET,
-} Off_Path_Reason;
 
 typedef enum CONF_OFF_PATH_REASON_enum {
   REASON_IBTB_MISS_BP_TAKEN,

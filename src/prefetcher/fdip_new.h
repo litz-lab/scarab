@@ -33,7 +33,7 @@ extern "C" {
   void alloc_mem_fdip(uns numProcs);
   void init_fdip(uns proc_id);
   void update_fdip();
-  void recover_fdip();
+  void recover_fdip(Op * op);
   void set_fdip(int _proc_id, Icache_Stage *_ic);
   Flag fdip_off_path(uns proc_id);
   Flag fdip_conf_off_path(uns proc_id);
@@ -87,6 +87,8 @@ extern "C" {
   void log_per_cycle_stats();
   void perfect_conf_update(Op * op);
   Conf_Off_Path_Reason fdip_update_conf_resteer_rate_ctrs(Conf_Off_Path_Reason conf_op_reason);
+  void fdip_log_phase_cycles(Off_Path_Reason op_reason);
+  void fdip_print_phase_cycles(uns proc_id);
 
 #ifdef __cplusplus
 }

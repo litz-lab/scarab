@@ -82,6 +82,15 @@ std::vector<Counter> per_core_last_misfetch_recover_cycle;
 // cycle of last revocery due to mispred
 std::vector<Counter> per_core_last_mispred_recover_cycle;
 
+// cycles since resteer, cycles since last btb miss event, phase, btb miss rate
+std::vector<std::vector<std::tuple<Counter, Counter, Counter, double>>> per_core_btb_miss_event_cycles;
+// cycles since resteer, cycles since last ibtb miss event, phase, ibtb miss rate
+std::vector<std::vector<std::tuple<Counter, Counter, Counter, double>>>  per_core_ibtb_miss_event_cycles;
+// cycles since resteer, cycles since last mispred event, phase, mispred rate
+std::vector<std::vector<std::tuple<Counter, Counter, Counter, double>>>  per_core_mispred_event_cycles;
+// cycles since resteer, cycles since last misfetch event, phase, misfetch rate
+std::vector<std::vector<std::tuple<Counter, Counter, Counter, double>>>  per_core_misfetch_event_cycles;
+
 // <CL address, # of first demand load on-path hits of cache lines, flag for learning from a true miss> - useful count
 std::vector<std::unordered_map<Addr, std::pair<Counter, Flag>>> per_core_cnt_useful;
 // <CL address, # of first demand load on-path hits of cache lines, flag for learning from a true miss> - useful count after warm-up
@@ -182,11 +191,17 @@ void alloc_mem_fdip(uns numCores) {
     per_core_conf_info.resize(numCores);
     per_core_realistic_off_path.resize(numCores);
 
-    if(FDIP_PER_INDICATOR_RECOVER_CYCLE) {
+    if(FDIP_PER_INDICATOR_RECOVER_CYCLE || FDIP_LOG_PHASE_CYCLES) {
       per_core_last_ibtb_recover_cycle.resize(numCores);
       per_core_last_btb_recover_cycle.resize(numCores);
       per_core_last_misfetch_recover_cycle.resize(numCores);
       per_core_last_mispred_recover_cycle.resize(numCores);
+    }
+    if(FDIP_LOG_PHASE_CYCLES) {
+      per_core_btb_miss_event_cycles.resize(numCores);
+      per_core_ibtb_miss_event_cycles.resize(numCores);
+      per_core_mispred_event_cycles.resize(numCores);
+      per_core_misfetch_event_cycles.resize(numCores);
     }
   }
   per_core_last_imiss_reason.resize(numCores);
@@ -336,11 +351,47 @@ void set_fdip(int _proc_id, Icache_Stage *_ic) {
   iter = per_core_ftq_iter[_proc_id];
 }
 
-void recover_fdip() {
+void recover_fdip(Op * op) {
   per_core_last_line_addr[fdip_proc_id] = 0;
   per_core_last_recover_cycle[fdip_proc_id] = cycle_count;
 
   if(FDIP_BP_CONFIDENCE){
+    if(FDIP_PER_INDICATOR_RECOVER_CYCLE || FDIP_LOG_PHASE_CYCLES) {
+      Off_Path_Reason op_reason = eval_off_path_reason(op);
+      switch(op_reason) {
+        case REASON_NOT: {
+          //shouldn't happen
+          ASSERT(fdip_proc_id, 0);
+          break;
+        }
+        case REASON_IBTB_MISS: {
+          per_core_last_ibtb_recover_cycle[fdip_proc_id] = cycle_count;
+          break;
+        }
+        case REASON_BTB_MISS: {
+          per_core_last_btb_recover_cycle[fdip_proc_id] = cycle_count;
+          break;
+        }
+        case REASON_BTB_MISS_MISPRED: {
+          per_core_last_btb_recover_cycle[fdip_proc_id] = cycle_count;
+          per_core_last_mispred_recover_cycle[fdip_proc_id] = cycle_count;
+          break;
+        }
+        case REASON_MISPRED: {
+          per_core_last_mispred_recover_cycle[fdip_proc_id] = cycle_count;
+          break;
+        }
+        case REASON_MISFETCH: {
+          per_core_last_misfetch_recover_cycle[fdip_proc_id] = cycle_count;
+          break;
+        }
+        default:{
+          //shouldn't happen!
+          DEBUG(fdip_proc_id, "no off path reason match: \n");
+          ASSERT(fdip_proc_id, 0);
+        }
+      }
+    }
     per_core_low_confidence_cnt[fdip_proc_id] = 0;
     per_core_cf_op_distance[fdip_proc_id] = 0.0;
     per_core_conf_info[fdip_proc_id].prev_op = nullptr;
@@ -837,6 +888,46 @@ void print_cl_info(uns proc_id) {
   for(std::multimap<Counter, Addr>::const_iterator it = per_line_delay_sorted.begin();
       it != per_line_delay_sorted.end(); ++it) {
     fprintf(fp, "%llx,%lld\n", it->second, it->first);
+  }
+  fclose(fp);
+}
+
+void fdip_print_phase_cycles(uns proc_id) {
+  if(!FDIP_ENABLE || !FDIP_FINE_GRAINED_CONF)
+    return;
+  std::vector<std::tuple<Counter, Counter, Counter, double>> * btb_miss_phase_cycles = &per_core_btb_miss_event_cycles[proc_id];
+  FILE* fp = fopen("phase_cycles_btb_miss.csv", "w");
+  fprintf(fp, "cycles_since_rec,cycles_since_event,phase,miss_rate\n");
+  for(auto it = btb_miss_phase_cycles->begin(); it != btb_miss_phase_cycles->end(); ++it) {
+    fprintf(fp, "%llu,%llu,%llu,%f", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it), std::get<3>(*it));
+    fprintf(fp, "\n");
+  }
+  fclose(fp);
+
+  std::vector<std::tuple<Counter, Counter, Counter, double>> * ibtb_miss_phase_cycles = &per_core_ibtb_miss_event_cycles[proc_id];
+  fp = fopen("phase_cycles_ibtb_miss.csv", "w");
+  fprintf(fp, "cycles_since_rec,cycles_since_event,phase,miss_rate\n");
+  for(auto it = ibtb_miss_phase_cycles->begin(); it != ibtb_miss_phase_cycles->end(); ++it) {
+    fprintf(fp, "%llu,%llu,%llu,%f", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it), std::get<3>(*it));
+    fprintf(fp, "\n");
+  }
+  fclose(fp);
+
+  std::vector<std::tuple<Counter, Counter, Counter, double>> * mispred_phase_cycles = &per_core_mispred_event_cycles[proc_id];
+  fp = fopen("phase_cycles_mispred.csv", "w");
+  fprintf(fp, "cycles_since_rec,cycles_since_event,phase,miss_rate\n");
+  for(auto it = mispred_phase_cycles->begin(); it != mispred_phase_cycles->end(); ++it) {
+    fprintf(fp, "%llu,%llu,%llu,%f", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it), std::get<3>(*it));
+    fprintf(fp, "\n");
+  }
+  fclose(fp);
+
+  std::vector<std::tuple<Counter, Counter, Counter, double>> * misfetch_phase_cycles = &per_core_misfetch_event_cycles[proc_id];
+  fp = fopen("phase_cycles_misfetch.csv", "w");
+  fprintf(fp, "cycles_since_rec,cycles_since_event,phase,miss_rate\n");
+  for(auto it = misfetch_phase_cycles->begin(); it != misfetch_phase_cycles->end(); ++it) {
+    fprintf(fp, "%llu,%llu,%llu,%f", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it), std::get<3>(*it));
+    fprintf(fp, "\n");
   }
   fclose(fp);
 }
@@ -1894,6 +1985,8 @@ void perfect_conf_update(Op * op) {
 void fine_grained_conf_update(Op * op){
   if (!FDIP_BP_CONFIDENCE)
     return;
+  Off_Path_Reason off_path_reason = eval_off_path_reason(op);
+  fdip_log_phase_cycles(off_path_reason);
   Conf_Off_Path_Reason conf_op_reason = REASON_INVALID;
   if(per_core_low_confidence_cnt[fdip_proc_id] <= FDIP_OFF_PATH_THRESHOLD){
     if (op->table_info->cf_type) {
@@ -2110,4 +2203,39 @@ void add_evict_seq(uns proc_id, Addr line_addr) {
 
 void fdip_set_cur_op(uns proc_id, Op* op) {
   per_core_cur_op[proc_id] = op;
+}
+
+void fdip_log_phase_cycles(Off_Path_Reason op_reason) {
+  if(!FDIP_BP_CONFIDENCE || !FDIP_LOG_PHASE_CYCLES)
+    return;
+  switch(op_reason) {
+    case REASON_NOT: {
+      break;
+    }
+    case REASON_IBTB_MISS: {
+      per_core_ibtb_miss_event_cycles[fdip_proc_id].push_back(std::tuple<Counter, Counter, Counter, double>(cycle_count - per_core_last_recover_cycle[fdip_proc_id], cycle_count - per_core_last_ibtb_recover_cycle[fdip_proc_id], cycle_count - (cycle_count % FDIP_IBTB_MISS_SAMPLE_RATE), (double)per_core_ibtb_miss_rate[fdip_proc_id]));
+      break;
+    }
+    case REASON_BTB_MISS: {
+      per_core_btb_miss_event_cycles[fdip_proc_id].push_back(std::tuple<Counter, Counter, Counter, double>(cycle_count - per_core_last_recover_cycle[fdip_proc_id], cycle_count - per_core_last_btb_recover_cycle[fdip_proc_id], cycle_count - (cycle_count % FDIP_BTB_MISS_SAMPLE_RATE), (double)per_core_btb_miss_rate[fdip_proc_id]));
+      break;
+    }
+    case REASON_BTB_MISS_MISPRED: {
+      per_core_btb_miss_event_cycles[fdip_proc_id].push_back(std::tuple<Counter, Counter, Counter, double>(cycle_count - per_core_last_recover_cycle[fdip_proc_id], cycle_count - per_core_last_btb_recover_cycle[fdip_proc_id], cycle_count - (cycle_count % FDIP_BTB_MISS_SAMPLE_RATE), (double)per_core_btb_miss_rate[fdip_proc_id]));
+      per_core_mispred_event_cycles[fdip_proc_id].push_back(std::tuple<Counter, Counter, Counter, double>(cycle_count - per_core_last_recover_cycle[fdip_proc_id], cycle_count - per_core_last_mispred_recover_cycle[fdip_proc_id], cycle_count - (cycle_count % FDIP_MISPRED_SAMPLE_RATE), (double)per_core_mispred_rate[fdip_proc_id]));
+      break;
+    }
+    case REASON_MISPRED: {
+      per_core_mispred_event_cycles[fdip_proc_id].push_back(std::tuple<Counter, Counter, Counter, double>(cycle_count - per_core_last_recover_cycle[fdip_proc_id], cycle_count - per_core_last_mispred_recover_cycle[fdip_proc_id], cycle_count - (cycle_count % FDIP_MISPRED_SAMPLE_RATE), (double)per_core_mispred_rate[fdip_proc_id]));
+      break;
+    }
+    case REASON_MISFETCH: {
+      per_core_misfetch_event_cycles[fdip_proc_id].push_back(std::tuple<Counter, Counter, Counter, double>(cycle_count - per_core_last_recover_cycle[fdip_proc_id], cycle_count - per_core_last_misfetch_recover_cycle[fdip_proc_id], cycle_count - (cycle_count % FDIP_MISFETCH_SAMPLE_RATE), (double)per_core_misfetch_rate[fdip_proc_id]));
+      break;
+    }
+    default: {
+      //shouldn't happen
+      ASSERT(fdip_proc_id, 0);
+    }
+  }
 }

@@ -213,6 +213,8 @@ DEF_PARAM(fdip_mispred_rate_conf, FDIP_MISPRED_RATE_CONF, Flag, Flag, TRUE, )
 DEF_PARAM(fdip_perfect_misfetch_conf, FDIP_PERFECT_MISFETCH_CONF, Flag, Flag, FALSE, )
 DEF_PARAM(fdip_misfetch_rate_conf, FDIP_MISFETCH_RATE_CONF, Flag, Flag, TRUE, )
 
+DEF_PARAM(fdip_per_indicator_recover_cycle, FDIP_PER_INDICATOR_RECOVER_CYCLE, Flag, Flag, FALSE, )
+
 DEF_PARAM(fdip_print_cl_info, FDIP_PRINT_CL_INFO, Flag, Flag, FALSE, )
 
 // For infinite size, set BRANCH_MISPREDICTION_TABLE_SIZE to 0.

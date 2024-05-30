@@ -214,6 +214,7 @@ DEF_PARAM(fdip_perfect_misfetch_conf, FDIP_PERFECT_MISFETCH_CONF, Flag, Flag, FA
 DEF_PARAM(fdip_misfetch_rate_conf, FDIP_MISFETCH_RATE_CONF, Flag, Flag, TRUE, )
 
 DEF_PARAM(fdip_per_indicator_recover_cycle, FDIP_PER_INDICATOR_RECOVER_CYCLE, Flag, Flag, FALSE, )
+DEF_PARAM(fdip_log_phase_cycles, FDIP_LOG_PHASE_CYCLES, Flag, Flag, FALSE, )
 
 DEF_PARAM(fdip_print_cl_info, FDIP_PRINT_CL_INFO, Flag, Flag, FALSE, )
 

@@ -10,6 +10,20 @@ typedef enum OFF_PATH_REASON_enum {
   REASON_MISFETCH,
 } Off_Path_Reason;
 
+typedef enum CONF_OFF_PATH_REASON_enum {
+  REASON_INVALID,
+  REASON_IBTB_MISS_BP_TAKEN,
+  REASON_BTB_MISS_BP_TAKEN_CONF_0,
+  REASON_BTB_MISS_BP_TAKEN_CONF_1,
+  REASON_BTB_MISS_BP_TAKEN_CONF_2,
+  REASON_BTB_MISS_BP_TAKEN_CONF_3,
+  REASON_BTB_MISS_RATE,
+  REASON_IBTB_MISS_RATE,
+  REASON_MISFETCH_RATE,
+  REASON_MISPRED_RATE,
+  REASON_INV_CONF_INC,
+} Conf_Off_Path_Reason;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -72,7 +86,8 @@ extern "C" {
   Off_Path_Reason eval_off_path_reason(Op * op);
   void log_per_cycle_stats();
   void perfect_conf_update(Op * op);
-  
+  Conf_Off_Path_Reason fdip_update_conf_resteer_rate_ctrs(Conf_Off_Path_Reason conf_op_reason);
+
 #ifdef __cplusplus
 }
 #endif
@@ -91,19 +106,6 @@ typedef enum IC_FETCH_TYPE_enum {
   FDIP_OFFPATH,
   FDIP_BOTHPATH,
 } IC_Fetch_Type;
-
-typedef enum CONF_OFF_PATH_REASON_enum {
-  REASON_IBTB_MISS_BP_TAKEN,
-  REASON_BTB_MISS_BP_TAKEN_CONF_0,
-  REASON_BTB_MISS_BP_TAKEN_CONF_1,
-  REASON_BTB_MISS_BP_TAKEN_CONF_2,
-  REASON_BTB_MISS_BP_TAKEN_CONF_3,
-  REASON_BTB_MISS_RATE,
-  REASON_IBTB_MISS_RATE,
-  REASON_MISFETCH_RATE,
-  REASON_MISPRED_RATE,
-  REASON_INV_CONF_INC,
-} Conf_Off_Path_Reason;
 
 typedef struct Utility_Timeliness_Info_struct {
   // useful prefetch counter per 100,000 cycles

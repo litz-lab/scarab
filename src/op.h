@@ -208,6 +208,7 @@ struct Op_struct {
   // {{{ path and fetch info
   Flag off_path;    // is the op on the correct path of the program? - oracle
                     // information
+  uns  off_path_reason; // reason this op causes a resteer (set in fdip_new.cc)
   Flag exit;        // is this the last instruction to execute?
   Flag prog_input;  // is this op directly related to an input value of the
                     // program ?

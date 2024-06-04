@@ -356,40 +356,49 @@ void recover_fdip(Op * op) {
   per_core_last_recover_cycle[fdip_proc_id] = cycle_count;
 
   if(FDIP_BP_CONFIDENCE){
-    if(FDIP_PER_INDICATOR_RECOVER_CYCLE || FDIP_LOG_PHASE_CYCLES) {
-      Off_Path_Reason op_reason = eval_off_path_reason(op);
-      switch(op_reason) {
-        case REASON_NOT: {
-          //shouldn't happen
-          ASSERT(fdip_proc_id, 0);
-          break;
-        }
-        case REASON_IBTB_MISS: {
+    Off_Path_Reason op_reason = (Off_Path_Reason)op->off_path_reason;
+    switch(op_reason) {
+      case REASON_NOT: {
+        // if a resteer happens right after another resteer it might not be in the FTQ
+        break;
+      }
+      case REASON_IBTB_MISS: {
+        fdip_inc_cnt_ibtb_miss(fdip_proc_id);
+        if(FDIP_PER_INDICATOR_RECOVER_CYCLE || FDIP_LOG_PHASE_CYCLES)
           per_core_last_ibtb_recover_cycle[fdip_proc_id] = cycle_count;
-          break;
-        }
-        case REASON_BTB_MISS: {
+        break;
+      }
+      case REASON_BTB_MISS: {
+        fdip_inc_cnt_btb_miss(fdip_proc_id);
+        if(FDIP_PER_INDICATOR_RECOVER_CYCLE || FDIP_LOG_PHASE_CYCLES)
           per_core_last_btb_recover_cycle[fdip_proc_id] = cycle_count;
-          break;
-        }
-        case REASON_BTB_MISS_MISPRED: {
+        break;
+      }
+      case REASON_BTB_MISS_MISPRED: {
+        fdip_inc_cnt_btb_miss(fdip_proc_id);
+        fdip_inc_cnt_mispred(fdip_proc_id);
+        if(FDIP_PER_INDICATOR_RECOVER_CYCLE || FDIP_LOG_PHASE_CYCLES) {
           per_core_last_btb_recover_cycle[fdip_proc_id] = cycle_count;
           per_core_last_mispred_recover_cycle[fdip_proc_id] = cycle_count;
-          break;
         }
-        case REASON_MISPRED: {
+        break;
+      }
+      case REASON_MISPRED: {
+        fdip_inc_cnt_mispred(fdip_proc_id);
+        if(FDIP_PER_INDICATOR_RECOVER_CYCLE || FDIP_LOG_PHASE_CYCLES)
           per_core_last_mispred_recover_cycle[fdip_proc_id] = cycle_count;
-          break;
-        }
-        case REASON_MISFETCH: {
+        break;
+      }
+      case REASON_MISFETCH: {
+        fdip_inc_cnt_misfetch(fdip_proc_id);
+        if(FDIP_PER_INDICATOR_RECOVER_CYCLE || FDIP_LOG_PHASE_CYCLES)
           per_core_last_misfetch_recover_cycle[fdip_proc_id] = cycle_count;
-          break;
-        }
-        default:{
-          //shouldn't happen!
-          DEBUG(fdip_proc_id, "no off path reason match: \n");
-          ASSERT(fdip_proc_id, 0);
-        }
+        break;
+      }
+      default:{
+        //shouldn't happen!
+        DEBUG(fdip_proc_id, "no off path reason match: \n");
+        ASSERT(fdip_proc_id, 0);
       }
     }
     per_core_low_confidence_cnt[fdip_proc_id] = 0;
@@ -481,11 +490,12 @@ void update_fdip() {
     //set previous op, only if on path or first off path instruction (for off path reason logging)
     if(FDIP_BP_CONFIDENCE &&
         per_core_cur_op[fdip_proc_id] &&
-	(per_core_cur_op[fdip_proc_id]->op_num != op->op_num) &&
+        (per_core_cur_op[fdip_proc_id]->op_num != op->op_num) &&
         (!(op->off_path) || !(per_core_conf_info[fdip_proc_id].fdip_off_path_event))){
       per_core_conf_info[fdip_proc_id].prev_op = per_core_cur_op[fdip_proc_id];
       DEBUG(fdip_proc_id, "Set prev_op off_path:%i, op_num:%llu, cf_type:%i\n", per_core_conf_info[fdip_proc_id].prev_op->off_path, per_core_conf_info[fdip_proc_id].prev_op->op_num, per_core_conf_info[fdip_proc_id].prev_op->table_info->cf_type);
       per_core_conf_info[fdip_proc_id].off_path_reason = eval_off_path_reason(per_core_conf_info[fdip_proc_id].prev_op);
+      per_core_conf_info[fdip_proc_id].prev_op->off_path_reason = per_core_conf_info[fdip_proc_id].off_path_reason;
       if(op->off_path) {
         per_core_conf_info[fdip_proc_id].fdip_off_path_event = true;
         STAT_EVENT(fdip_proc_id, FDIP_OFF_PATH_REASON_NOT_EVENTS + per_core_conf_info[fdip_proc_id].off_path_reason);

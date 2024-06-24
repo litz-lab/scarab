@@ -31,15 +31,10 @@
 
 #include "isa/isa_macros.h"
 #include "libs/hash_lib.h"
-#include "libs/list_lib.h"
 #include "op.h"
 
 /**************************************************************************************/
 /* Merged Register File: The Hardware Implementation of Register Renaming */
-
-// To be changed to configurable val
-#define REG_RENAMING_TABLE_ENABLE           FALSE
-#define REG_RENAMING_TABLE_REG_FILE_SIZE    1024
 
 const static int REG_FILE_INVALID_REG_ID = -1;
 
@@ -154,6 +149,7 @@ void set_not_rdy_bit(Op*, uns);
 void rename_table_init(void);
 void rename_table_process(Op*);
 void rename_table_produce(Op*);
+void rename_table_consume(Op*);
 
 Flag rename_table_available(void);
 void rename_table_commit(Op*);

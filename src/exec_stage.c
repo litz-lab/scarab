@@ -371,6 +371,7 @@ void update_exec_stage(Stage_Data* src_sd) {
     }
     op->exec_cycle = cycle_count + MAX2(latency, -latency);
     op->exec_count++;
+    rename_table_consume(op);
 
     if(op->table_info->mem_type == NOT_MEM)
       op->done_cycle = op->exec_cycle;

@@ -65,6 +65,7 @@ typedef struct Src_Info_struct {
   Counter           op_num;
   Counter           unique_num;
   Quad              val;
+  int               reg_ptag;
 } Src_Info;
 // }}}
 

@@ -56,6 +56,8 @@
 #include "uop_queue_stage.h"
 #include "decoupled_frontend.h"
 
+#include "map_dep.h"
+
 Flag perf_pred_started = FALSE;
 
 /**************************************************************************************/
@@ -290,6 +292,8 @@ void cmp_done() {
   }
   // if(L2L1PREF_ON) l2l1_done();    // FIXME prefetchers What should I do for
   // this
+
+  map_dep_done();
 }
 
 /**************************************************************************************/

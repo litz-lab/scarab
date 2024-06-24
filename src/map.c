@@ -46,7 +46,7 @@
 #include "libs/hash_lib.h"
 #include "statistics.h"
 
-#include "xed-interface.h"
+#include "map_dep.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -920,6 +920,9 @@ void rename_table_process(Op *op) {
   if (!REG_RENAMING_TABLE_ENABLE)
     return;
 
+  // process each instruction as a graph node to track dependency
+  map_dep_process(op);
+
   rename_table_read_src(op);
   rename_table_write_dst(op);
 }
@@ -939,6 +942,9 @@ void rename_table_read_src(Op *op) {
     entry = merged_reg_file_lookup_entry(op->inst_info->srcs[ii].id);
     merged_reg_file_read_entry(op, entry);
   }
+
+  // update the dependency when a register is readed
+  map_dep_read(op);
 }
 
 /*
@@ -957,7 +963,8 @@ void rename_table_write_dst(Op *op) {
     merged_reg_file_write_entry(op, entry, op->inst_info->dests[ii].id, ii);
   }
 
-  ASSERT(map_data->proc_id, op->dst_reg_file_ptag[op->table_info->num_dest_regs] == -1);
+  // track the producer when a register is written
+  map_dep_write(op);
 }
 
 /**************************************************************************************/
@@ -1005,6 +1012,9 @@ void merged_reg_file_init(uns array_size) {
     merged_reg_file_write_entry(&invalid_op, entry, ii, 0);
     ASSERT(map_data->proc_id, map_data->rename_table->merged_rf->reg_map_table[ii] != REG_FILE_INVALID_REG_ID);
   }
+
+  /* init the dependency graph */
+  map_dep_init(array_size);
 }
 
 static inline Reg_File_Entry* merged_reg_file_lookup_entry(uns16 id) {
@@ -1034,6 +1044,7 @@ void merged_reg_file_read_entry(Op *op, Reg_File_Entry *entry) {
   info->op         = entry->op;
   info->op_num     = entry->op_num;
   info->unique_num = entry->unique_num;
+  info->reg_ptag   = entry->reg_ptag;
 
   // setting waking up signal
   set_not_rdy_bit(op, src_num);
@@ -1099,6 +1110,9 @@ void merged_reg_file_release_entry(Reg_File_Entry *entry) {
 
   // append to free list
   merged_reg_file_free_list_insert(entry);
+
+  // release the register and do info collecting when the op releases all reg
+  map_dep_release(entry->reg_ptag);
 }
 
 /*

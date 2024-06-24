@@ -57,6 +57,7 @@
 
 // clang-format off
 #include "map_rename.h"
+#include "map_dep.h"
 // clang-format on
 
 /**************************************************************************************/
@@ -148,6 +149,9 @@ void cmp_init(uns mode) {
     dvfs_init();
 
   cache_part_init();
+
+  // create the graph instance and init the register map table
+  map_dep_init();
 
   ASSERTM(0, !USE_LATE_BP || LATE_BP_LATENCY < (DECODE_CYCLES + MAP_CYCLES),
           "Late branch prediction latency should be less than the total "
@@ -295,6 +299,9 @@ void cmp_done() {
   }
   // if(L2L1PREF_ON) l2l1_done();    // FIXME prefetchers What should I do for
   // this
+
+  // write the graph for doing ananysis after building
+  map_dep_done();
 }
 
 /**************************************************************************************/

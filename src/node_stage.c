@@ -57,6 +57,8 @@
 #include "bp/tagescl.h"
 #include "decoupled_frontend.h"
 
+#include "map_dep.h"
+
 /* Macros */
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_NODE_STAGE, ##args)
@@ -839,6 +841,9 @@ void node_retire() {
 
     // free the previous register entries with same architectural destination
     reg_file_commit(op);
+
+    // process each instruction as a graph node to track dependency
+    map_dep_process(op);
 
     if(model->op_retired_hook)
       model->op_retired_hook(op);

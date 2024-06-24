@@ -141,6 +141,11 @@ DEF_PARAM(reg_table_vector_physical_size, REG_TABLE_VECTOR_PHYSICAL_SIZE, uns, u
 DEF_PARAM(reg_table_integer_virtual_size, REG_TABLE_INTEGER_VIRTUAL_SIZE, uns, uns, 256, )
 DEF_PARAM(reg_table_vector_virtual_size, REG_TABLE_VECTOR_VIRTUAL_SIZE, uns, uns, 256, )
 
+/* Dependency Graph */
+DEF_PARAM(map_dep_enable, MAP_DEP_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(map_dep_collapse_enable, MAP_DEP_COLLAPSE_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(map_dep_serialization_enable, MAP_DEP_SERIALIZATION_ENABLE, Flag, Flag, FALSE, )
+
 /********EXEC PORT
  * PARAMETERS*********************************************************/
 /*Size of each RS, length should be NUM_RS, Must be type string since it is an

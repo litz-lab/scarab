@@ -125,6 +125,12 @@ DEF_PARAM(node_table_size, NODE_TABLE_SIZE, uns, uns, 256, )
 DEF_PARAM(node_ret_width, NODE_RET_WIDTH, uns, uns, 4, )
 DEF_PARAM(node_retire_rate, NODE_RETIRE_RATE, uns, uns, 10, )
 
+/********MAP REGISTER FILE
+ * PARAMETERS********************************************************/
+/* Dependency Graph */
+DEF_PARAM(map_dep_enable, MAP_DEP_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(map_dep_serialization_enable, MAP_DEP_SERIALIZATION_ENABLE, Flag, Flag, FALSE, )
+
 /********EXEC PORT
  * PARAMETERS*********************************************************/
 /*Size of each RS, length should be NUM_RS, Must be type string since it is an

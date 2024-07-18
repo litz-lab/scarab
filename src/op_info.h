@@ -98,6 +98,7 @@ struct Op_Info_struct {
   Addr pred_npc;   // predicted next pc field
   Addr pred_addr;  // address used to predict branch (might be fetch_addr)
   uns8 pred;       // predicted direction of branch, set by the branch predictor
+  Flag hard_to_predict;
   uns8 pred_orig;  // predicted direction of branch, not overwritten on BTB miss (for fdip)
   Flag misfetch;   // true if target address is the ONLY thing that was wrong
   Flag mispred;  // true if the direction of the branch was mispredicted and the

@@ -213,6 +213,7 @@ struct Tage_Prediction_Info {
   bool high_confidence;
   bool medium_confidence;
   bool low_confidence;
+  bool hard_to_predict;
 
   // Other useful intermediate predictions.
   bool longest_match_prediction;
@@ -308,21 +309,37 @@ class Tage {
   Tage(Random_Number_Generator& random_number_gen, int max_in_flight_branches) :
       tagged_table_ptrs_(), tage_histories_(max_in_flight_branches),
       low_history_tagged_table_(), high_history_tagged_table_(),
-      alt_selector_table_(), random_number_gen_(random_number_gen) {
+      alt_selector_table_(), random_number_gen_(random_number_gen), history_index_(0){
     initialize_table_sizes();
     intialize_predictor_state();
+    std::fill_n(branch_outcome_history_, HISTORY_SIZE, false);
+    std::fill_n(branch_prediction_history_, HISTORY_SIZE, false);
   }
 
+  int get_mispredictions_in_last_hist_size_branches() const {
+    int count = 0;
+    for (int i = 0; i < HISTORY_SIZE; ++i) {
+      int index = (history_index_ - i - 1 + HISTORY_SIZE) % HISTORY_SIZE;
+      if (branch_outcome_history_[index] != branch_prediction_history_[index]) {
+        ++count;
+      }
+    }
+    return count;
+  }
+  
   void get_prediction(
     uint64_t br_pc, Tage_Prediction_Info<TAGE_CONFIG>* prediction_info) const {
     fill_table_indices_tags(br_pc, prediction_info);
     auto& indices = prediction_info->indices;
     auto& tags    = prediction_info->tags;
+    prediction_info->hard_to_predict  = false;
 
     // First use the bimodal table to make an initial prediction.
     Bimodal_Output bimodal_output    = get_bimodal_prediction_confidence(br_pc);
     prediction_info->alt_prediction  = bimodal_output.prediction;
     prediction_info->alt_confidence  = bimodal_output.confidence;
+    if(get_mispredictions_in_last_hist_size_branches())
+      prediction_info->hard_to_predict  = true;
     prediction_info->high_confidence = prediction_info->alt_confidence;
     prediction_info->medium_confidence = false;
     prediction_info->low_confidence    = !prediction_info->high_confidence;
@@ -338,6 +355,7 @@ class Tage {
     prediction_info->hit_bank         = matched_banks.hit_bank;
     prediction_info->alt_bank         = matched_banks.alt_bank;
     if(prediction_info->hit_bank != 0) {
+      prediction_info->hard_to_predict  = false;
       int8_t longest_match_counter =
         tagged_table_ptrs_[prediction_info->hit_bank]
                           [indices[prediction_info->hit_bank]]
@@ -362,8 +380,11 @@ class Tage {
       bool use_alt = alt_selector_table_[alt_selector_table_index].get() >= 0;
       if((!use_alt) || std::abs(2 * longest_match_counter + 1) > 1) {
         prediction_info->prediction = prediction_info->longest_match_prediction;
+        if(std::abs(2 * longest_match_counter + 1) < ((1 << TAGE_CONFIG::PRED_COUNTER_WIDTH) - 1))
+          prediction_info->hard_to_predict  = true;
       } else {
         prediction_info->prediction = prediction_info->alt_prediction;
+        prediction_info->hard_to_predict  = true;
       }
 
       // REVISIT: this seems buggy, only works for COUNTER_BITS = 3
@@ -394,6 +415,11 @@ class Tage {
       (prediction_info.prediction != resolve_dir) &&
       (prediction_info.hit_bank <
        Tage_Histories<TAGE_CONFIG>::twice_num_histories_);
+
+    // Update the circular buffer
+    branch_prediction_history_[history_index_] = final_prediction;
+    branch_outcome_history_[history_index_] = resolve_dir;
+    history_index_ = (history_index_ + 1) % HISTORY_SIZE;
 
     if(prediction_info.hit_bank > 0) {
       // Manage the selection between longest matching and alternate
@@ -664,6 +690,12 @@ class Tage {
   int tick_;  // for resetting the useful bits
 
   Random_Number_Generator& random_number_gen_;
+
+  static const int HISTORY_SIZE = 8;
+  bool branch_outcome_history_[HISTORY_SIZE];
+  bool branch_prediction_history_[HISTORY_SIZE];
+  int history_index_;
+
 };
 
 template <class TAGE_CONFIG>

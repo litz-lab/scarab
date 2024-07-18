@@ -23,7 +23,7 @@
 #include "tage.h"
 #include "tagescl_configs.h"
 #include "utils.h"
-
+#include "bp/bp.h"
 template <class CONFIG>
 struct Tage_SC_L_Prediction_Info {
   Tage_Prediction_Info<typename CONFIG::TAGE> tage;
@@ -31,6 +31,7 @@ struct Tage_SC_L_Prediction_Info {
   bool                                        tage_or_loop_prediction;
   SC_Prediction_Info                          sc;
   bool                                        final_prediction;
+  bool                                        hard_to_predict;
   uint64_t                                    br_pc;
 };
 
@@ -38,6 +39,8 @@ class Tage_SC_L_Base {
  public:
   virtual int64_t get_new_branch_id()                                 = 0;
   virtual bool    get_prediction(int64_t branch_id, uint64_t br_pc)   = 0;
+  virtual PredictionResult get_prediction_with_confidence(int64_t branch_id, uint64_t br_pc) = 0;
+
   virtual void    update_speculative_state(int64_t branch_id, uint64_t br_pc,
                                            Branch_Type br_type, bool branch_dir,
                                            uint64_t br_target)        = 0;
@@ -93,6 +96,8 @@ class Tage_SC_L : public Tage_SC_L_Base {
   // Should be called before update_speculative_state.
   bool get_prediction(int64_t branch_id, uint64_t br_pc) override;
 
+  PredictionResult get_prediction_with_confidence(int64_t branch_id, uint64_t br_pc) override;
+
   // It updates the speculative state (e.g. to insert history bits in Tage's
   // global history register). For conditional branches, it should be called
   // after get_prediction() in the front-end of a pipeline. For unconditional
@@ -146,10 +151,20 @@ template <class CONFIG>
 bool Tage_SC_L<CONFIG>::get_prediction(int64_t branch_id, uint64_t br_pc) {
   auto& prediction_info = prediction_info_buffer_[branch_id];
 
+  // Use prediction with confidence to reduce duplication
+  get_prediction_with_confidence(branch_id, br_pc);
+
+  return prediction_info.final_prediction;
+}
+
+template <class CONFIG>
+PredictionResult Tage_SC_L<CONFIG>::get_prediction_with_confidence(int64_t branch_id, uint64_t br_pc) {
+  auto& prediction_info = prediction_info_buffer_[branch_id];
+
   // First, use Tage to make a prediction.
   tage_.get_prediction(br_pc, &prediction_info.tage);
   prediction_info.tage_or_loop_prediction = prediction_info.tage.prediction;
-
+  prediction_info.hard_to_predict = prediction_info.tage.hard_to_predict;
   if(CONFIG::USE_LOOP_PREDICTOR) {
     // Then, look up the loop predictor and override Tage's prediction if
     // the
@@ -157,6 +172,7 @@ bool Tage_SC_L<CONFIG>::get_prediction(int64_t branch_id, uint64_t br_pc) {
     loop_predictor_.get_prediction(br_pc, &prediction_info.loop);
     if(loop_predictor_beneficial_.get() >= 0 && prediction_info.loop.valid) {
       prediction_info.tage_or_loop_prediction = prediction_info.loop.prediction;
+      prediction_info.hard_to_predict = FALSE;
     }
   }
 
@@ -167,8 +183,13 @@ bool Tage_SC_L<CONFIG>::get_prediction(int64_t branch_id, uint64_t br_pc) {
       br_pc, prediction_info.tage, prediction_info.tage_or_loop_prediction,
       &prediction_info.sc);
     prediction_info.final_prediction = prediction_info.sc.prediction;
+    if(prediction_info.sc.prediction != prediction_info.tage_or_loop_prediction)
+      prediction_info.hard_to_predict = TRUE;
   }
-  return prediction_info.final_prediction;
+  PredictionResult result;
+  result.prediction_result = prediction_info.final_prediction;
+  result.hard_to_predict = prediction_info.hard_to_predict;
+  return result;
 }
 
 template <class CONFIG>

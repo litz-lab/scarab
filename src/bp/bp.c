@@ -498,9 +498,19 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred      = op->oracle_info.dir;
         op->oracle_info.pred_orig = op->oracle_info.dir;
         op->oracle_info.no_target = FALSE;
+        op->oracle_info.hard_to_predict = FALSE;
       } else {
         ASSERT(op->proc_id, !PERFECT_NT_BTB); //currently not supported
-        op->oracle_info.pred = bp_data->bp->pred_func(op);
+        if(H2P_PRED_ON){
+          ASSERT(0, BP_MECH == TAGESCL_BP);
+          PredictionResult pred_result;
+          pred_result = bp_data->bp->pred_with_confidence_func(op);
+          op->oracle_info.pred = pred_result.prediction_result;
+          op->oracle_info.hard_to_predict = pred_result.hard_to_predict;
+        } else{
+          op->oracle_info.pred = bp_data->bp->pred_func(op);
+        }
+
         op->oracle_info.pred_orig = op->oracle_info.pred;
         if(USE_LATE_BP) {
           op->oracle_info.late_pred = bp_data->late_bp->pred_func(op);
@@ -942,6 +952,10 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction) {
   if(op->table_info->cf_type == CF_CBR) {
     STAT_EVENT(op->proc_id, CBR_ON_PATH_CORRECT + op->oracle_info.mispred +
                               2 * op->off_path);
+    if(op->oracle_info.mispred && op->oracle_info.hard_to_predict)
+      STAT_EVENT(op->proc_id, MISPRED_HARD_TO_PREDICT);
+    STAT_EVENT(op->proc_id, NOT_HARD_TO_PREDICT_ON_PATH + op->oracle_info.hard_to_predict +
+                              2 * op->off_path);
     if(!op->off_path) {
       STAT_EVENT(op->proc_id,
                  CBR_ON_PATH_CORRECT_PER1000INST + op->oracle_info.mispred);
@@ -953,6 +967,16 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction) {
         _DEBUGA(op->proc_id, 0, "ON PATH HW CORRECT  addr:0x%s  pghist:0x%s\n",
                 hexstr64s(op->inst_info->addr),
                 hexstr64s(op->oracle_info.pred_global_hist));
+    }
+  }
+
+  if (!op->off_path && op->oracle_info.hard_to_predict) {
+    if (op->oracle_info.recover_at_decode) {
+      STAT_EVENT(op->proc_id, HARD_TO_PREDICT_RECOVER_AT_DECODE_ON_PATH);
+    } else if (op->oracle_info.recover_at_exec) {
+      STAT_EVENT(op->proc_id, HARD_TO_PREDICT_RECOVER_AT_EXEC_ON_PATH);
+    } else {
+      STAT_EVENT(op->proc_id, HARD_TO_PREDICT_CORRECT_ON_PATH);
     }
   }
   // }}}

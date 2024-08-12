@@ -35,8 +35,10 @@
 /* Globals */
 static ctype_pin_inst next_onpath_pi[MAX_NUM_PROCS];
 static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS];
+static ctype_pin_inst next_alt_pi[MAX_NUM_PROCS];
 static bool            off_path_mode[MAX_NUM_PROCS] = {false};
 static uint64_t        off_path_addr[MAX_NUM_PROCS] = {0};
+static uint64_t        alt_addr[MAX_NUM_PROCS] = {0};
 static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
 
 extern uint64_t ins_id;
@@ -222,6 +224,30 @@ void ext_trace_fetch_op(uns proc_id, Op* op) {
     }
   }
   DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
+}
+
+void ext_trace_alt_fetch_op(uns proc_id, Op* op) {
+  if(uop_generator_get_bom(proc_id)) {
+    if (!off_path_mode[proc_id]) {
+      uop_generator_get_uop(proc_id, op, &next_alt_pi[proc_id]);
+    }
+    else {
+      uop_generator_get_uop(proc_id, op, &next_alt_pi[proc_id]);
+    }
+  } else {
+    uop_generator_get_uop(proc_id, op, NULL);
+  }
+
+  if(uop_generator_get_eom(proc_id)) {
+
+      off_path_generate_inst(proc_id, &alt_addr[proc_id], &next_alt_pi[proc_id]);
+  }
+  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
+}
+
+void ext_trace_alt_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
+  alt_addr[proc_id] = fetch_addr;
+  off_path_generate_inst(proc_id, &alt_addr[proc_id], &next_alt_pi[proc_id]);
 }
 
 Flag ext_trace_can_fetch_op(uns proc_id) {

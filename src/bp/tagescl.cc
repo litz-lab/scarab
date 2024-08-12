@@ -71,7 +71,7 @@ Branch_Type get_branch_type(uns proc_id, Cf_Type cf_type) {
 
 void bp_tagescl_init() {
   if(tagescl_predictors.size() == 0) {
-    tagescl_predictors.reserve(NUM_CORES);
+    tagescl_predictors.reserve(NUM_CORES * 2);
     for(uns i = 0; i < NUM_CORES; ++i) {
       if(BP_MECH == TAGESCL_BP) {
         tagescl_predictors.push_back(

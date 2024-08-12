@@ -50,6 +50,7 @@
 #include "icache_stage.h"
 
 #include "bp/bp.param.h"
+#include "bp/alt_bp.h"
 #include "core.param.h"
 #include "debug/debug.param.h"
 #include "frontend/pin_trace_fe.h"
@@ -507,9 +508,11 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
           pred_result = bp_data->bp->pred_with_confidence_func(op);
           op->oracle_info.pred = pred_result.prediction_result;
           op->oracle_info.hard_to_predict = pred_result.hard_to_predict;
-        } else{
-          op->oracle_info.pred = bp_data->bp->pred_func(op);
-        }
+          if(pred_result.hard_to_predict)
+            start_new_alternate_path(op);
+          } else{
+            op->oracle_info.pred = bp_data->bp->pred_func(op);
+          }
 
         op->oracle_info.pred_orig = op->oracle_info.pred;
         if(USE_LATE_BP) {

@@ -480,3 +480,17 @@ void recover_uop_cache(void) {
                               *current_accumulating_op_num == 0);
   }
 }
+
+void uop_cache_insert_alt(uns8 proc_id, Addr line_addr, FT_Info* ft_info, Addr offset){
+
+  Uop_Cache_Data* insert_line = new Uop_Cache_Data;
+  insert_line->line_start = ft_info->static_info.start;
+  insert_line->n_uops = ft_info->static_info.n_uops; // CHANGE to nuop in this line
+  insert_line->offset = offset;
+  insert_line->ft_info_dynamic.ended_by = ft_info->dynamic_info.ended_by;
+  insert_line->ft_info_dynamic.first_op_off_path = ft_info->dynamic_info.first_op_off_path;
+  insert_line->end_of_ft = 1;
+
+  per_core_uop_cache[proc_id]->insert({line_addr, ft_info->static_info}, *insert_line);
+  delete insert_line;
+}

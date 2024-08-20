@@ -125,18 +125,18 @@ void trace_close_trace_file(uns proc_id) {
 }
 
 Flag trace_can_fetch_op(uns proc_id) {
-  return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
+  return !(uop_generator_get_eom(proc_id,0) && trace_read_done[proc_id]);
 }
 
 void trace_fetch_op(uns proc_id, Op* op) {
-  if(uop_generator_get_bom(proc_id)) {
+  if(uop_generator_get_bom(proc_id,0)) {
     ASSERT(proc_id, !trace_read_done[proc_id] && !reached_exit[proc_id]);
-    uop_generator_get_uop(proc_id, op, &next_pi[proc_id]);
+    uop_generator_get_uop(proc_id, op, &next_pi[proc_id],0);
   } else {
-    uop_generator_get_uop(proc_id, op, NULL);
+    uop_generator_get_uop(proc_id, op, NULL,0);
   }
 
-  if(uop_generator_get_eom(proc_id)) {
+  if(uop_generator_get_eom(proc_id,0)) {
     int success = pin_trace_read(proc_id, &next_pi[proc_id]);
     if(!success) {
       trace_read_done[proc_id] = TRUE;

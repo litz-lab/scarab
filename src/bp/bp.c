@@ -35,6 +35,7 @@
 #include "globals/utils.h"
 #include "isa/isa_macros.h"
 
+#include "bp/alt_bp.h"
 #include "bp//bp_conf.h"
 #include "bp/bp.h"
 #include "bp/bp_targ_mech.h"
@@ -50,7 +51,6 @@
 #include "icache_stage.h"
 
 #include "bp/bp.param.h"
-#include "bp/alt_bp.h"
 #include "core.param.h"
 #include "debug/debug.param.h"
 #include "frontend/pin_trace_fe.h"

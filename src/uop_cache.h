@@ -50,6 +50,8 @@ void end_line_accumulate(Flag last_line_of_ft);
 /* accumulate uop into buffer. If terminating condition reached, call insert_uop_cache */
 void accumulate_op(Op* op);
 
+void uop_cache_insert_alt(uns8 proc_id, Addr line_addr, FT_Info* ft_info, Addr offset);
+
 #ifdef __cplusplus
 }
 #endif

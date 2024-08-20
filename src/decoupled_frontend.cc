@@ -6,7 +6,7 @@
 #include "isa/isa_macros.h"
 #include "prefetcher/pref.param.h"
 #include "memory/memory.param.h"
-
+#include "ft.h"
 #include <deque>
 #include <vector>
 #include <iostream>
@@ -15,20 +15,7 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
-typedef struct FT_struct {
-  std::vector<Op*> ops;
-  // indicate the next op index to read by the consumer (icache or uop)
-  uint64_t op_pos;
 
-  FT_Info ft_info;
-
-  // FT API
-  void ft_add_op(Op *op, FT_Ended_By ft_ended_by);
-  void ft_free_ops_and_clear();
-  bool ft_can_fetch_op();
-  Op* ft_fetch_op();
-  void ft_set_per_op_ft_info();
-} FT;
 
 // Per core fetch target queue:
 // Each core has a queue of FTs,
@@ -497,67 +484,4 @@ void decoupled_fe_set_ftq_num(int proc_id, uint64_t ftq_ft_num) {
 
 uint64_t decoupled_fe_get_ftq_num(int proc_id) {
   return per_core_ftq_ft_num[proc_id];
-}
-
-void FT::ft_add_op(Op *op, FT_Ended_By ft_ended_by) {
-  if (ops.empty()) {
-    ASSERT(set_proc_id, op->bom && !ft_info.static_info.start);
-    ft_info.static_info.start = op->inst_info->addr;
-    ft_info.dynamic_info.first_op_off_path = op->off_path;
-  } else {
-    if (op->bom) {
-      // assert consecutivity
-      ASSERT(set_proc_id, ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size
-                      == op->inst_info->addr);
-    } else {
-      // assert all uops of the same inst share the same addr
-      ASSERT(set_proc_id, ops.back()->inst_info->addr == op->inst_info->addr);
-    }
-  }
-  ops.emplace_back(op);
-  if (ft_ended_by != FT_NOT_ENDED) {
-    ASSERT(set_proc_id, op->eom && !ft_info.static_info.length);
-    ASSERT(set_proc_id, ft_info.static_info.start);
-    ft_info.static_info.n_uops = ops.size();
-    ft_info.static_info.length = op->inst_info->addr + op->inst_info->trace_info.inst_size - ft_info.static_info.start;
-    ASSERT(set_proc_id, ft_info.dynamic_info.ended_by == FT_NOT_ENDED);
-    ft_info.dynamic_info.ended_by = ft_ended_by;
-  }
-}
-
-void FT::ft_free_ops_and_clear() {
-  while (op_pos < ops.size()) {
-    free_op(ops[op_pos]);
-    op_pos++;
-  }
-
-  ops.clear();
-  op_pos = 0;
-  ft_info.static_info.start = 0;
-  ft_info.static_info.length = 0;
-  ft_info.static_info.n_uops = 0;
-  ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
-  ft_info.dynamic_info.first_op_off_path = FALSE;
-}
-
-bool FT::ft_can_fetch_op() {
-  return op_pos < ops.size();
-}
-
-Op* FT::ft_fetch_op() {
-  ASSERT(set_proc_id, ft_can_fetch_op());
-  Op* op = ops[op_pos];
-  op_pos++;
-
-  DEBUG(set_proc_id,
-        "Fetch op from FT fetch_addr0x:%llx off_path:%i op_num:%llu\n",
-        op->inst_info->addr, op->off_path, op->op_num);
-
-  return op;
-}
-
-void FT::ft_set_per_op_ft_info() {
-  for (auto op : ops) {
-    op->ft_info = ft_info;
-  }
 }

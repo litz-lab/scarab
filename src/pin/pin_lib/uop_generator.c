@@ -101,8 +101,6 @@ typedef struct Trace_Uop_struct Trace_Uop;
 extern int op_type_delays[NUM_OP_TYPES];
 extern uns NEW_INST_TABLE_SIZE;  // TODO: what is this?
 
-char* trace_files[MAX_NUM_PROCS];
-
 char dbg_print_buf[1024];
 
 Trace_Uop*** trace_uop_bulk;
@@ -211,39 +209,39 @@ static void print_op_fields(uns proc_id, Op* op) {
 }
 
 void uop_generator_init(uint32_t num_cores) {
-  trace_uop_bulk = (Trace_Uop***)malloc(num_cores * sizeof(Trace_Uop**));
-  for(uns ii = 0; ii < num_cores; ii++) {
+  trace_uop_bulk = (Trace_Uop***)malloc(num_cores * 2 * sizeof(Trace_Uop**));
+  for(uns ii = 0; ii < num_cores * 2; ii++) {
     trace_uop_bulk[ii] = (Trace_Uop**)malloc(MAX_PUP * sizeof(Trace_Uop*));
     for(uns jj = 0; jj < MAX_PUP; jj++) {
       trace_uop_bulk[ii][jj] = (Trace_Uop*)malloc(sizeof(Trace_Uop));
     }
   }
 
-  bom = (Flag*)malloc(num_cores * sizeof(Flag));
-  memset(bom, 1, num_cores * sizeof(Flag));
-  eom = (Flag*)malloc(num_cores * sizeof(Flag));
-  memset(eom, 1, num_cores * sizeof(Flag));
-  fetched_instruction = (Flag*)malloc(num_cores * sizeof(Flag));
-  memset(fetched_instruction, 1, num_cores * sizeof(Flag));
-  num_uops = (uns*)malloc(num_cores * sizeof(uns));
-  memset(num_uops, 0, num_cores * sizeof(uns));
-  num_sending_uop = (uns*)malloc(num_cores * sizeof(uns));
-  memset(num_sending_uop, 0, num_cores * sizeof(uns));
+  bom = (Flag*)malloc(num_cores * 2 * sizeof(Flag));
+  memset(bom, 1, num_cores  * 2 * sizeof(Flag));
+  eom = (Flag*)malloc(num_cores * 2 * sizeof(Flag));
+  memset(eom, 1, num_cores  * 2 * sizeof(Flag));
+  fetched_instruction = (Flag*)malloc(num_cores  * 2 * sizeof(Flag));
+  memset(fetched_instruction, 1, num_cores  * 2 * sizeof(Flag));
+  num_uops = (uns*)malloc(num_cores  * 2 * sizeof(uns));
+  memset(num_uops, 0, num_cores  * 2 * sizeof(uns));
+  num_sending_uop = (uns*)malloc(num_cores  * 2 * sizeof(uns));
+  memset(num_sending_uop, 0, num_cores  * 2 * sizeof(uns));
 
-  last_ga_va = (Addr*)malloc(num_cores * sizeof(Addr));
+  last_ga_va = (Addr*)malloc(num_cores  * 2 * sizeof(Addr));
 }
 
 Flag uop_generator_extract_op(uns proc_id, Op* op, compressed_op* cop) {
-  if(uop_generator_get_bom(proc_id)) {
-    uop_generator_get_uop(proc_id, op, cop);
+  if(uop_generator_get_bom(proc_id,0)) {
+    uop_generator_get_uop(proc_id, op, cop,0);
     print_inst_fields(proc_id, cop);
   } else {
-    uop_generator_get_uop(proc_id, op, NULL);
+    uop_generator_get_uop(proc_id, op, NULL,0);
   }
 
   print_op_fields(proc_id, op);
 
-  if(uop_generator_get_eom(proc_id)) {
+  if(uop_generator_get_eom(proc_id,0)) {
     return TRUE;
   }
 
@@ -293,27 +291,27 @@ static char* ctype_pin_inst_ld_and_st_addrs(uns proc_id, ctype_pin_inst* inst) {
 
 #endif
 
-void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
+void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst, int alt_on) {
   Trace_Uop*  trace_uop = NULL;
   Trace_Uop** trace_uop_array;
   uns         ii;
   Inst_Info*  info = NULL;
 
   // cmp: find the correct core
-  trace_uop_array = trace_uop_bulk[proc_id];
+  trace_uop_array = trace_uop_bulk[proc_id+1*alt_on];
 
-  if(bom[proc_id]) {
+  if(bom[proc_id+1*alt_on]) {
     ASSERT(proc_id, inst != NULL);
     convert_pinuop_to_t_uop(proc_id, inst, trace_uop_array);
 
     op->bom           = TRUE;
     trace_uop         = trace_uop_array[0];
     info              = trace_uop->info;
-    num_uops[proc_id] = info->trace_info.num_uop;
+    num_uops[proc_id+1*alt_on] = info->trace_info.num_uop;
 
-    num_sending_uop[proc_id] = 1;
-    eom[proc_id]             = trace_uop->eom;
-    fetched_instruction[proc_id] = inst->fetched_instruction;
+    num_sending_uop[proc_id+1*alt_on] = 1;
+    eom[proc_id+1*alt_on]             = trace_uop->eom;
+    fetched_instruction[proc_id+1*alt_on] = inst->fetched_instruction;
 
     DEBUG(proc_id,
           "read pi, addr is 0x%s next_addr: 0x%s op_type:%s num_st:%d "
@@ -324,22 +322,22 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
           hexstr64s(inst->instruction_next_addr), Op_Type_str(inst->op_type),
           inst->num_st, inst->num_ld, inst->is_fp, inst->cf_type, inst->size,
           hexstr64s(inst->branch_target), inst->ld_size, inst->st_size,
-          ctype_pin_inst_ld_and_st_addrs(proc_id, inst), inst->actually_taken,
-          num_uops[proc_id], eom[proc_id], info->table_info->bar_type);
+          ctype_pin_inst_ld_and_st_addrs(proc_id+1*alt_on, inst), inst->actually_taken,
+          num_uops[proc_id+1*alt_on], eom[proc_id+1*alt_on], info->table_info->bar_type);
   } else {
-    trace_uop = trace_uop_array[num_sending_uop[proc_id]];
-    ASSERTM(proc_id, trace_uop, "%i\n", num_sending_uop[proc_id]);
-    num_sending_uop[proc_id]++;
+    trace_uop = trace_uop_array[num_sending_uop[proc_id+1*alt_on]];
+    ASSERTM(proc_id, trace_uop, "%i\n", num_sending_uop[proc_id+1*alt_on]);
+    num_sending_uop[proc_id+1*alt_on]++;
 
     info = trace_uop->info;
-    ASSERTM(proc_id, info, "%i\n", num_sending_uop[proc_id]);
-    eom[proc_id] = trace_uop->eom;
+    ASSERTM(proc_id, info, "%i\n", num_sending_uop[proc_id+1*alt_on]);
+    eom[proc_id+1*alt_on] = trace_uop->eom;
   }
 
-  if(eom[proc_id]) {
-    bom[proc_id] = TRUE;
+  if(eom[proc_id+1*alt_on]) {
+    bom[proc_id+1*alt_on] = TRUE;
   } else
-    bom[proc_id] = FALSE;
+    bom[proc_id+1*alt_on] = FALSE;
 
   op->op_num                   = op_count[proc_id];
   op->inst_uid                 = trace_uop->inst_uid;
@@ -348,7 +346,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->proc_id                  = proc_id;
   op->thread_id                = 0;
   op->eom                      = trace_uop->eom;
-  op->fetched_instruction      = fetched_instruction[proc_id];
+  op->fetched_instruction      = fetched_instruction[proc_id+1*alt_on];
   op->inst_info                = info;
   op->table_info               = info->table_info;
   op->oracle_info.inst_info    = info;
@@ -356,7 +354,6 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->engine_info.inst_info    = info;
   op->engine_info.table_info   = info->table_info;
   op->off_path                 = FALSE;
-  op->fetch_addr               = op->inst_info->addr;
   op->state                    = OS_FETCHED;
   op->fu_num                   = -1;
   op->issue_cycle              = MAX_CTR;
@@ -426,11 +423,10 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
 
 
   if(op->table_info->mem_type && !(op->oracle_info.va)) {
-    op->oracle_info.va = last_ga_va[proc_id];  // QUESTION why? //TODO: Really
+    op->oracle_info.va = last_ga_va[proc_id+1*alt_on];  // QUESTION why? //TODO: Really
                                                // why?
   } else if(op->oracle_info.va)
-    last_ga_va[proc_id] = op->oracle_info.va;
-
+    last_ga_va[proc_id+1*alt_on] = op->oracle_info.va;
 
   if((op->eom && trace_read_done[proc_id]) || trace_uop->exit) {
     op->exit = TRUE;
@@ -465,12 +461,12 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   }
 }
 
-Flag uop_generator_get_bom(uns proc_id) {
-  return bom[proc_id];
+Flag uop_generator_get_bom(uns proc_id, int alt_on) {
+  return bom[proc_id+1*alt_on];
 }
 
-Flag uop_generator_get_eom(uns proc_id) {
-  return eom[proc_id];
+Flag uop_generator_get_eom(uns proc_id, int alt_on) {
+  return eom[proc_id+1*alt_on];
 }
 
 void convert_t_uop_to_info(uns8 proc_id, Trace_Uop* t_uop, Inst_Info* info) {
@@ -1007,7 +1003,7 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi,
 
   trace_uop->exit = is_last_uop ? pi->exit : 0;
 
-  trace_uop->npc = trace_uop->addr;  // CHECKME!!
+  trace_uop->npc = trace_uop->info->addr;
 }
 
 void uop_generator_recover(uns8 proc_id) {

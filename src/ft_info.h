@@ -1,4 +1,4 @@
-/* Copyright 2020 HPS/SAFARI Research Groups
+/* Copyright 2024 Litz Lab
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,27 +20,43 @@
  */
 
 /***************************************************************************************
- * File         : packet_build.param.h
- * Author       : HPS Research Group
- * Date         : 2/28/01
+ * File         : ft_info.h
+ * Author       : Mingsheng Xu <mxu61@ucsc.edu>
+ * Date         : 06/16/2024
  * Description  :
  ***************************************************************************************/
 
-#ifndef __PACKET_BUILD_PARAM_H__
-#define __PACKET_BUILD_PARAM_H__
+#ifndef __FT_INFO_H__
+#define __FT_INFO_H__
 
-#include "globals/global_types.h"
+typedef enum FT_Ended_By_enum {
+  FT_NOT_ENDED,
+  FT_ICACHE_LINE_BOUNDARY,
+  FT_TAKEN_BRANCH,
+  FT_BAR_FETCH,
+  FT_APP_EXIT
+} FT_Ended_By;
 
+typedef struct FT_Info_Static_struct {
+  // the PC of the first inst in this FT
+  Addr start;
+  // the FT size in bytes, counting from the first byte of the first inst to the last byte of the last inst
+  Addr length;
+  // the number of uops in this FT
+  int n_uops;
+} FT_Info_Static;
 
-/**************************************************************************************/
-/* extern all of the variables defined in packet_build.param.def */
+// two fts with the same static info may have different dynamic info
+typedef struct FT_Info_Dynamic_struct {
+  // the termination of the FT
+  FT_Ended_By ended_by;
+  // if the first op of this FT is off-path
+  Flag first_op_off_path;
+} FT_Info_Dynamic;
 
-#define DEF_PARAM(name, variable, type, func, def, const) \
-  extern const type variable;
-#include "packet_build.param.def"
-#undef DEF_PARAM
+struct FT_Info_struct {
+  FT_Info_Static static_info;
+  FT_Info_Dynamic dynamic_info;
+};
 
-
-/**************************************************************************************/
-
-#endif /* #ifndef __PACKET_BUILD_PARAM_H__ */
+#endif

@@ -30,6 +30,7 @@
 /* Global variables */
 #include "cmp_model.h"
 #include "bp/bp.param.h"
+#include "bp/alt_bp.h"
 #include "core.param.h"
 #include "debug/debug.param.h"
 #include "debug/debug_macros.h"
@@ -56,6 +57,10 @@
 #include "uop_queue_stage.h"
 #include "decoupled_frontend.h"
 
+/**************************************************************************************/
+/* Global vars */
+
+Cmp_Model cmp_model;
 Flag perf_pred_started = FALSE;
 
 /**************************************************************************************/
@@ -120,6 +125,7 @@ void cmp_init(uns mode) {
     /* initialize the common data structures */
     init_bp_recovery_info(proc_id, &cmp_model.bp_recovery_info[proc_id]);
     init_bp_data(proc_id, &cmp_model.bp_data[proc_id]);
+    
     init_uop_cache(proc_id);
 
     init_decoupled_fe(proc_id, "DCFE");
@@ -128,6 +134,7 @@ void cmp_init(uns mode) {
     init_eip(proc_id);
     init_djolt(proc_id);
     init_fnlmma(proc_id);
+    init_alt_bp_data(proc_id);
   }
 
   cmp_model.window_size = NODE_TABLE_SIZE;
@@ -238,6 +245,7 @@ void cmp_cores(void) {
       update_uop_queue_stage(&ic->sd);
       update_decode_stage(&ic->sd);
       update_decoupled_fe();
+      alternative_path_run();
       update_fdip();
       update_eip();
       update_icache_stage();
@@ -450,11 +458,6 @@ void cmp_warmup(Op* op) {
 
   // Warmup caches for instructions
   Icache_Stage* ic = &(cmp_model.icache_stage[proc_id]);
-  // keep next_fetch_addr current to avoid confusing simulation mode
-  if(op->eom) {
-    ic->next_fetch_addr = op->oracle_info.npc;
-    ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->next_fetch_addr)
-  }
   Cache*      icache  = &(ic->icache);
   Inst_Info** ic_data = (Inst_Info**)cache_access(icache, ia, &dummy_line_addr,
                                                   TRUE);

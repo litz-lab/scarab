@@ -223,7 +223,9 @@ typedef struct Bp_struct {
   void (*recover_func)(Recovery_Info*); /* called to recover the bp when a
                                            misprediction is realized */
   uns8 (*full_func)(uns);
+
   uns8 (*copy_to_alt_pred_func)(uns);
+
   PredictionResult (*pred_with_confidence_func)(Op*); /* called to predict a branch instruction with confidence */
 } Bp;
 
@@ -294,7 +296,7 @@ void bp_retire_op(Bp_Data*, Op*);
 void bp_recover_op(Bp_Data*, Cf_Type, Recovery_Info*);
 
 void inc_bstat_fetched(Op* op);
-void inc_bstat_miss(Op* op, Flag uc_hit);
+void inc_bstat_miss(Op* op);
 
 /**************************************************************************************/
 

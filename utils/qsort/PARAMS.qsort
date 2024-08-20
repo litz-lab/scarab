@@ -18,13 +18,7 @@
 
 ### Fetch Stage
 --fetch_off_path_ops            1
---fetch_across_cache_lines      1
 
-# Will break the packet upon a taken branch.
---fetch_break_on_taken          1
-
-# Number of bubble cycles to wait after taken branch.
---fetch_taken_bubble_cycles     0
 
 
 #### ICache
@@ -224,6 +218,7 @@
 
 --mem_ooo_stores                1
 --mem_obey_store_dep            1
+
 
 --h2p_pred_on 1
 --ucp_pred_on 1

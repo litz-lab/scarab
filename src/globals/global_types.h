@@ -41,13 +41,13 @@ typedef struct Inst_Info_struct     Inst_Info;
 typedef struct Mem_Req_struct       Mem_Req;
 typedef struct Op_Info_struct       Op_Info;
 typedef struct Op_struct            Op;
-typedef struct Pb_Data_struct       Pb_Data;
 typedef struct Ports_struct         Ports;
 typedef struct Pref_Mem_Req_struct  Pref_Mem_Req;
 typedef struct Stream_Buffer_struct Stream_Buffer;
 typedef struct Table_Info_struct    Table_Info;
 typedef struct HWP_struct           HWP;
 typedef struct HWP_Info_struct      HWP_Info;
+typedef struct FT_Info_struct       FT_Info;
 
 /* Renames -- Try to use these rather than built-in C types in order to preserve
  * portability */

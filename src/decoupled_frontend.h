@@ -51,6 +51,8 @@ extern "C" {
 #include "frontend/frontend.h"
 #include "frontend/pin_trace_fe.h"
 
+#include "stage_data.h"
+
   typedef struct decoupled_fe_iter decoupled_fe_iter;
   
   struct decoupled_fe_iter {
@@ -73,12 +75,11 @@ extern "C" {
   void recover_decoupled_fe(int proc_id);
   void decoupled_fe_stall(Op *op);
   void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid);
-  bool decoupled_fe_can_fetch_op(int proc_id);
-  bool decoupled_fe_fetch_op(Op** op, int proc_id);
-  void decoupled_fe_return_op(Op *op);
+  bool decoupled_fe_current_ft_can_fetch_op(int proc_id);
+  bool decoupled_fe_fill_icache_stage_data(int proc_id, int requested, Stage_Data *sd);
   bool decoupled_fe_can_fetch_ft(int proc_id);
-  bool decoupled_fe_fetch_ft(Addr* ft_start, Addr* ft_end, int proc_id);
-  uint64_t decoupled_fe_next_fetch_addr(int proc_id);
+  FT_Info decoupled_fe_fetch_ft(int proc_id);
+  FT_Info decoupled_fe_peek_ft(int proc_id);
   // FTQ API
   decoupled_fe_iter* decoupled_fe_new_ftq_iter();
   /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached

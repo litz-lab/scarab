@@ -44,14 +44,13 @@
 #include "thread.h"
 #include "uop_cache.h"
 
+
 /**************************************************************************************/
 /* cmp model data  */
 
 typedef struct Cmp_Model_struct {
   Thread_Data* thread_data;  // cmp: one thread for each core,
   // "single_td" in sim.c is only for single core
-
-  Pb_Data* pb_data;
 
   Map_Data*         map_data;
   Bp_Recovery_Info* bp_recovery_info;
@@ -73,7 +72,6 @@ typedef struct Cmp_Model_struct {
 /**************************************************************************************/
 /* Global vars */
 
-Cmp_Model        cmp_model;
 extern Cmp_Model cmp_model;
 
 /**************************************************************************************/

@@ -23,6 +23,7 @@
 
 #include "cbp_to_scarab.h"
 #include "bp/bp.param.h"
+#include "cbp_tagescl_64k.h"
 
 template <typename CBP_CLASS>
 class CBP_To_Scarab_Intf {
@@ -38,6 +39,17 @@ class CBP_To_Scarab_Intf {
     }
     ASSERTM(0, cbp_predictors.size() == NUM_CORES,
             "cbp_predictors not initialized correctly");
+    if(UCP_PRED_ON){
+      if(cbp_predictors.size() == NUM_CORES) {
+        cbp_predictors.reserve(NUM_CORES*2);
+        for(uns i = 0; i < NUM_CORES; ++i) {
+          cbp_predictors.emplace_back();
+        }
+      }
+      ASSERTM(0, cbp_predictors.size() == NUM_CORES*2,
+        "ucp: cbp_predictors not initialized correctly");
+    }
+
   }
 
   void timestamp(Op* op) {
@@ -74,6 +86,7 @@ class CBP_To_Scarab_Intf {
   void update(Op* op) { /* CBP Interface does not support update at exec */
   }
 
+  
   void retire(Op* op) {
     /* CBP Interface updates predictor at speculative update time */
   }
@@ -84,6 +97,19 @@ class CBP_To_Scarab_Intf {
 
   Flag full(uns proc_id) {
     return cbp_predictors.at(proc_id).IsFull();
+  }
+  PredictionResult pred_with_confidence(Op* op) {
+    uns proc_id = op->proc_id;
+    PredictionResult pred_result;
+    pred_result.prediction_result = cbp_predictors.at(proc_id).GetPrediction(op->inst_info->addr, &op->bp_confidence);
+    pred_result.hard_to_predict = cbp_predictors.at(proc_id).GetH2p(proc_id);
+    return pred_result;
+  }
+
+  Flag copy_to_alt_pred(uns8 proc_id) {
+    ASSERT(0, (BP_MECH == TAGE64K_BP));
+    
+    return cbp_predictors.at(proc_id).copyGlobalHistoryTables(static_cast<void*>(&cbp_predictors.at(proc_id + NUM_CORES)));
   }
 };
 
@@ -114,7 +140,9 @@ class CBP_To_Scarab_Intf {
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, update, , void, Op*, op)      \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, retire, , void, Op*, op)      \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, recover, , void, Recovery_Info*, info) \
-  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, full, return, Flag, uns, proc_id)
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, full, return, Flag, uns, proc_id)\
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, copy_to_alt_pred, return, Flag, uns, proc_id)\
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, pred_with_confidence, return, PredictionResult, Op*, op)
 
 #include "cbp_table.def"
 

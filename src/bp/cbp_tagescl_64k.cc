@@ -288,6 +288,7 @@ void TAGE64K::reinit ()
   GHIST = 0;
   ptghist = 0;
   phist = 0;
+  h2p = 0;
 
 }
 
@@ -402,6 +403,7 @@ void TAGE64K::Tagepred (UINT64 PC)
 {
   HitBank = 0;
   AltBank = 0;
+  h2p = 0;
   for (int i = 1; i <= NHIST; i += 2)
     {
       GI[i] = gindex (PC, i, phist, ch_i);
@@ -436,6 +438,7 @@ void TAGE64K::Tagepred (UINT64 PC)
     alttaken = getbim ();
     tage_pred = alttaken;
     LongestMatchPred = alttaken;
+    h2p = 1;
   }
 
   //Look for the bank with longest matching history
@@ -481,14 +484,18 @@ void TAGE64K::Tagepred (UINT64 PC)
       if ((!Huse_alt_on_na)
           || (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) > 1))
         tage_pred = LongestMatchPred;
-      else
+      else{
         tage_pred = alttaken;
+        h2p = 1;
+      }
 
       HighConf =
         (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) >=
          (1 << CWIDTH) - 1);
       LowConf = (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) == 1);
       MedConf = (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) == 5);
+      if(HighConf)
+        h2p = 0;
 
     }
 }
@@ -575,14 +582,17 @@ bool TAGE64K::GetPrediction (UINT64 PC, int* bp_confidence)
               pred_taken = pred_inter;
             }
 
-          else if ((abs (LSUM) < THRES / 2))
+          else if ((abs (LSUM) < THRES / 2)){
             pred_taken = (SecondH < 0) ? SCPRED : pred_inter;
+            h2p = (SecondH < 0) ? 1 : h2p;
+          }
         }
 
       if (MedConf)
         if ((abs (LSUM) < THRES / 4))
           {
             pred_taken = (FirstH < 0) ? SCPRED : pred_inter;
+            h2p = (FirstH < 0) ? 1 : h2p;
           }
 
     }
@@ -1239,6 +1249,22 @@ void TAGE64K::loopupdate (UINT64 PC, bool Taken, bool ALLOC)
           }
     }
 }
+
+bool TAGE64K::GetH2p (uns proc_id)
+{
+  return h2p;
+}
+
+// Friend function definition
+bool TAGE64K::copyGlobalHistoryTables(void* dest) {
+  // const TAGE64K* srcA = static_cast<const TAGE64K*>(src); 
+  TAGE64K* destA = static_cast<TAGE64K*>(dest); 
+  // printf("cpoied ghr \n");
+  return(
+    std::memcpy(destA->GGEHLA, this->GGEHLA, sizeof(this->GGEHLA))&&
+    std::memcpy(destA->PGEHLA, this->PGEHLA, sizeof(this->PGEHLA)));
+}
+
 #endif
 
 

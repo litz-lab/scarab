@@ -380,6 +380,8 @@ class MTAGE {
   bool getloop(uint64_t PC);
   int  lindex(uint64_t);
   void loopupdate(uint64_t, bool, bool);
+  bool GetH2p (uns proc_id);
+  bool copyGlobalHistoryTables(void* dest);
 };
 void PrintStat(double NumInst);
 

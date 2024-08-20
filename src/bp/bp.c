@@ -546,11 +546,14 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       } else {
         ASSERT(op->proc_id, !PERFECT_NT_BTB); //currently not supported
         if(H2P_PRED_ON){
-          ASSERT(0, BP_MECH == TAGESCL_BP);
+          ASSERT(0, (BP_MECH == TAGESCL_BP)|| (BP_MECH == TAGE64K_BP));
           PredictionResult pred_result;
           pred_result = bp_data->bp->pred_with_confidence_func(op);
           op->oracle_info.pred = pred_result.prediction_result;
           op->oracle_info.hard_to_predict = pred_result.hard_to_predict;
+          // copy
+          if(UCP_PRED_ON)
+            bp_data->bp->copy_to_alt_pred_func(op->proc_id);
         } else{
           op->oracle_info.pred = bp_data->bp->pred_func(op);
         }

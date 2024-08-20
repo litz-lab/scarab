@@ -223,7 +223,7 @@ typedef struct Bp_struct {
   void (*recover_func)(Recovery_Info*); /* called to recover the bp when a
                                            misprediction is realized */
   uns8 (*full_func)(uns);
-
+  uns8 (*copy_to_alt_pred_func)(uns);
   PredictionResult (*pred_with_confidence_func)(Op*); /* called to predict a branch instruction with confidence */
 } Bp;
 

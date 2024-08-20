@@ -17,6 +17,7 @@
 //To get the predictor storage budget on stderr  uncomment the next line
 #define PRINTSIZE
 #include <vector>
+#include <cstring>
 
 
 
@@ -438,6 +439,7 @@ bool AltConf;			// Confidence on the alternate prediction
 #define SIZEUSEALT  (1<<(LOGSIZEUSEALT))
 #define INDUSEALT (((((HitBank-1)/8)<<1)+AltConf) % (SIZEUSEALT-1))
 
+// Declare a friend function to access private members 
   
 public:
   int THRES;
@@ -466,6 +468,9 @@ public:
   int lindex (UINT64 PC);
   bool getloop (UINT64 PC);
   void loopupdate (UINT64 PC, bool Taken, bool ALLOC);
+  bool GetH2p (uns proc_id);
+  bool copyGlobalHistoryTables(void* dest);
+
 
   //LP START
   cbp64_lentry *ltable;			//loop predictor table
@@ -502,6 +507,7 @@ int GI[NHIST + 1];		// indexes to the different tables are computed only once
 uint GTAG[NHIST + 1];		// tags for the different tables are computed only once  
 int BI;				// index of the bimodal table
 bool pred_taken;		// prediction
+bool h2p;		// prediction
 bool alttaken;			// alternate  TAGEprediction
 bool tage_pred;			// TAGE prediction
 bool LongestMatchPred;

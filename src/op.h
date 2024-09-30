@@ -215,7 +215,7 @@ struct Op_struct {
   Recovery_Info recovery_info;    // information that will be used to recover a
                                   // mispredict by the op
   // }}}
-
+  
   // {{{ scheduler information
   uns     fu_num;   // functional unit number the op will or did execute on
   Counter node_id;  // id for position in the node table
@@ -315,6 +315,7 @@ struct Op_struct {
   // {{{ register renaming
   int dst_reg_file_ptag[MAX_DESTS]; // ptag of allocated entries in register file in the renaming table
   // }}}
+  Flag from_ucp;
 };
 // }}}
 

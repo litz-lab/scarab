@@ -1,4 +1,5 @@
 #include "cbp_tagescl_64k.h"
+#include "statistics.h"
 
 TAGE64K::TAGE64K (void)
 {
@@ -373,6 +374,12 @@ bool TAGE64K::getbim ()
 void TAGE64K::baseupdate (bool Taken)
 {
   int inter = BIM;
+  bi_mispredictionHistory <<= 1; // Shift the history left by 1 bit
+  if((btable[BI].pred > 0) != Taken){ 
+      bi_mispredictionHistory |= 1; // Set the last bit to 1 if it's a misprediction
+  }
+  bi_mispredictionHistory &= 0xFF; // Ensure the history is limited to 8 bits
+  
   if (Taken)
     {
       if (inter < 3)
@@ -402,6 +409,7 @@ void TAGE64K::Tagepred (UINT64 PC)
 {
   HitBank = 0;
   AltBank = 0;
+  tage_h2p = TG_NONE;
   for (int i = 1; i <= NHIST; i += 2)
     {
       GI[i] = gindex (PC, i, phist, ch_i);
@@ -436,6 +444,7 @@ void TAGE64K::Tagepred (UINT64 PC)
     alttaken = getbim ();
     tage_pred = alttaken;
     LongestMatchPred = alttaken;
+    tage_h2p = bi_mispredictionHistory ? BIMODAL_MIS : BIMODAL;
   }
 
   //Look for the bank with longest matching history
@@ -469,28 +478,51 @@ void TAGE64K::Tagepred (UINT64 PC)
         {
           alttaken = (gtable[AltBank][GI[AltBank]].ctr >= 0);
           AltConf = (abs (2 * gtable[AltBank][GI[AltBank]].ctr + 1) > 1);
+          tage_h2p = ALT_BANK;
 
         }
-      else
+      else{
         alttaken = getbim ();
+        tage_h2p = bi_mispredictionHistory ? BIMODAL_MIS : BIMODAL;
+      }
+        
 
       //if the entry is recognized as a newly allocated entry and 
       //USE_ALT_ON_NA is positive  use the alternate prediction
 
       bool Huse_alt_on_na = (use_alt_on_na[INDUSEALT] >= 0);
       if ((!Huse_alt_on_na)
-          || (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) > 1))
+          || (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) > 1)){
         tage_pred = LongestMatchPred;
-      else
-        tage_pred = alttaken;
+        tage_h2p = HIT_BANK;
+      }
 
+      
+      else{
+        tage_pred = alttaken;
+      }
+     
       HighConf =
         (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) >=
          (1 << CWIDTH) - 1);
       LowConf = (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) == 1);
       MedConf = (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) == 5);
+      // if((!Huse_alt_on_na)
+      if(!HighConf){
+
+          if(tage_h2p  == HIT_BANK)
+            tage_h2p = HIT_BANK_LOW;
+          if(tage_h2p  == BIMODAL)
+            tage_h2p = BIMODAL_LOW;
+         }
+      //   tage_h2p = 0;
 
     }
+    if(!HighConf){
+
+          if(tage_h2p  == BIMODAL)
+            tage_h2p = BIMODAL_LOW;
+         }
 }
 
 
@@ -498,7 +530,6 @@ void TAGE64K::Tagepred (UINT64 PC)
 bool TAGE64K::GetPrediction (UINT64 PC, int* bp_confidence)
 {
   // computes the TAGE table addresses and the partial tags
-
 
   Tagepred (PC);
   pred_taken = tage_pred;
@@ -509,6 +540,7 @@ bool TAGE64K::GetPrediction (UINT64 PC, int* bp_confidence)
 #ifdef LOOPPREDICTOR
   predloop = getloop (PC);	// loop prediction
   pred_taken = ((WITHLOOP >= 0) && (LVALID)) ? predloop : pred_taken;
+  tage_h2p = ((WITHLOOP >= 0) && (LVALID)) ? LOOP : tage_h2p;
 #endif
   pred_inter = pred_taken;
 
@@ -575,14 +607,17 @@ bool TAGE64K::GetPrediction (UINT64 PC, int* bp_confidence)
               pred_taken = pred_inter;
             }
 
-          else if ((abs (LSUM) < THRES / 2))
+          else if ((abs (LSUM) < THRES / 2)){
             pred_taken = (SecondH < 0) ? SCPRED : pred_inter;
+            tage_h2p = (SecondH < 0) ? TG_SC : tage_h2p;
+          }
         }
 
       if (MedConf)
         if ((abs (LSUM) < THRES / 4))
           {
             pred_taken = (FirstH < 0) ? SCPRED : pred_inter;
+            tage_h2p = (FirstH < 0) ? TG_SC : tage_h2p;
           }
 
     }
@@ -1239,6 +1274,54 @@ void TAGE64K::loopupdate (UINT64 PC, bool Taken, bool ALLOC)
           }
     }
 }
+
+bool TAGE64K::GetH2p (uns proc_id)
+{
+  // printf("get to call h2p \n");
+    switch (tage_h2p) {
+        case BIMODAL_LOW:
+            break;
+        case BIMODAL_MIS:
+            break;
+        case HIT_BANK_LOW:
+            break;
+        case ALT_BANK:
+            break;
+        case TG_SC:
+            break;
+        default:
+            break;
+    }
+  return (tage_h2p == BIMODAL_LOW || tage_h2p == BIMODAL_MIS || tage_h2p == HIT_BANK_LOW || tage_h2p == ALT_BANK  || tage_h2p == TG_SC) ? 1 :0 ;
+}
+
+// Friend function definition
+// copies global history and gtable to another tage
+bool TAGE64K::copyGlobalHistoryTables(void* dest) {
+  // const TAGE64K* srcA = static_cast<const TAGE64K*>(src); 
+  TAGE64K* destA = static_cast<TAGE64K*>(dest); 
+  // printf("cpoied ghr \n");
+  for (int i = 1; i <= NHIST; i++) {
+    // printf("table copied \n");
+    if (gtable[i] == gtable[1]) {
+      // If gtable[i] points to gtable[1], just copy the pointer
+      destA->gtable[i] = destA->gtable[1];
+    } else if (gtable[i] == gtable[BORN]) {
+      // If gtable[i] points to gtable[BORN], copy that pointer
+      destA->gtable[i] = destA->gtable[BORN];
+    } else {
+      // Copy the content of the gtable entry
+      destA->gtable[i] = new cbp64_gentry[NBANKLOW * (1 << LOGG)];
+      std::memcpy(destA->gtable[i], this->gtable[i], (NBANKLOW * (1 << LOGG)) * sizeof(cbp64_gentry));
+    }
+  }
+  return(
+    std::memcpy(destA->GGEHLA, this->GGEHLA, sizeof(this->GGEHLA))&&
+    std::memcpy(destA->PGEHLA, this->PGEHLA, sizeof(this->PGEHLA)));
+
+  
+}
+
 #endif
 
 

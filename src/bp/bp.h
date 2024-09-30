@@ -184,6 +184,11 @@ typedef enum Bp_Id_enum {
   NUM_BP,
 } Bp_Id;
 
+typedef struct {
+    uns8 prediction_result;
+    uns8 hard_to_predict;  // Use uns8 instead of bool for C compatibility
+} PredictionResult;
+
 typedef enum Btb_Id_enum {
   GENERIC_BTB,
   NUM_BTB,
@@ -218,6 +223,10 @@ typedef struct Bp_struct {
   void (*recover_func)(Recovery_Info*); /* called to recover the bp when a
                                            misprediction is realized */
   uns8 (*full_func)(uns);
+
+  uns8 (*copy_to_alt_pred_func)(uns);
+
+  PredictionResult (*pred_with_confidence_func)(Op*); /* called to predict a branch instruction with confidence */
 } Bp;
 
 typedef struct Bp_Btb_struct {

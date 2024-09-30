@@ -38,6 +38,7 @@
 #include "prefetcher/eip.h"
 #include "prefetcher/D_JOLT.h"
 #include "prefetcher/FNL+MMA.h"
+#include "bp/alt_bp.h"
 
 /**************************************************************************************/
 /* cmp_init_cmp_model  */
@@ -66,6 +67,7 @@ void cmp_init_cmp_model() {
   alloc_mem_djolt(NUM_CORES);
   alloc_mem_fnlmma(NUM_CORES);
   alloc_mem_uop_cache(NUM_CORES);
+  alloc_alt_bp(NUM_CORES);
 }
 
 

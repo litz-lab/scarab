@@ -35,24 +35,94 @@
 /* Globals */
 static ctype_pin_inst next_onpath_pi[MAX_NUM_PROCS];
 static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS];
+static ctype_pin_inst next_alt_pi[MAX_NUM_PROCS];
 static bool            off_path_mode[MAX_NUM_PROCS] = {false};
 static uint64_t        off_path_addr[MAX_NUM_PROCS] = {0};
+static uint64_t        alt_addr[MAX_NUM_PROCS] = {0};
 static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
 
 extern uint64_t ins_id;
 extern uint64_t ins_id_fetched;
 
-void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
+void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst, uns alt_path) {
   auto op_iter = pc_to_inst.find(*off_path_addr);
   if (op_iter != pc_to_inst.end()) {
     *inst = op_iter->second;
     *off_path_addr += inst->size;
-    DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ",inst->instruction_addr, inst->size);
+
+    // DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ",inst->instruction_addr, inst->size);
   }
   else {
     *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED);
     (*off_path_addr) += DUMMY_NOP_SIZE;
   }
+}
+
+
+/*returns true if we have seen the addr*/
+int fe_peek_addr(uns proc_id, Addr fetch_addr) {
+  auto op_iter = pc_to_inst.find(fetch_addr);
+  if (op_iter != pc_to_inst.end()) {
+    return 1;
+  }
+  else {
+    return 0;
+  }
+}
+
+int fe_peek_alt_addr(uns proc_id) {
+  if(uop_generator_get_eom(proc_id,1)){
+    auto op_iter = pc_to_inst.find(alt_addr[proc_id]);
+    if (op_iter != pc_to_inst.end()) {
+      return 1;
+    }
+    else {
+      return 0;
+    }
+
+  }
+  else
+    return 1;
+
+}
+
+int fe_peek_alt_addr_batch(uns proc_id, Addr fetch_addr) {
+    auto op_iter = pc_to_inst.find(fetch_addr);
+    Addr search_addr = fetch_addr;  // Initialize search_addr
+    ctype_pin_inst inst;  // Allocate memory for inst
+    uint8_t last_len = 0;
+    
+    int return_val = 0;
+    
+    while (1) {
+        if (op_iter != pc_to_inst.end()) {
+            search_addr += last_len;
+            // printf("before checkingfetch address is %llx \n", search_addr);
+            inst = op_iter->second;
+            last_len = inst.size;
+            op_iter = pc_to_inst.find(search_addr + last_len);
+            continue;
+        }
+        else {
+            op_iter = pc_to_inst.find(search_addr);
+
+            // Check op_iter validity before dereferencing
+          if (op_iter != pc_to_inst.end()){
+            if(!op_iter->second.cf_type) {
+                return_val = 0;
+                break;
+            } else{
+              return_val = 1;
+            }
+          }
+          if (op_iter == pc_to_inst.end()){
+            ASSERT(proc_id,0);
+          }
+          break;
+        }
+    }
+    
+    return return_val;
 }
 
 Flag ctype_pin_inst_same_mem_vaddr(ctype_pin_inst inst_a, ctype_pin_inst inst_b) {
@@ -153,18 +223,18 @@ void assert_ctype_pin_inst_same(uns proc_id, ctype_pin_inst inst_a, ctype_pin_in
 }
 
 void ext_trace_fetch_op(uns proc_id, Op* op) {
-  if(uop_generator_get_bom(proc_id)) {
+  if(uop_generator_get_bom(proc_id,0)) {
     if (!off_path_mode[proc_id]) {
-      uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id]);
+      uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id],0);
     }
     else {
-      uop_generator_get_uop(proc_id, op, &next_offpath_pi[proc_id]);
+      uop_generator_get_uop(proc_id, op, &next_offpath_pi[proc_id],0);
     }
   } else {
-    uop_generator_get_uop(proc_id, op, NULL);
+    uop_generator_get_uop(proc_id, op, NULL,0);
   }
 
-  if(uop_generator_get_eom(proc_id)) {
+  if(uop_generator_get_eom(proc_id,0)) {
     if (!off_path_mode[proc_id]) {
 
       int success = false;
@@ -218,20 +288,71 @@ void ext_trace_fetch_op(uns proc_id, Op* op) {
       }
     }
     else {
-      off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
+      // printf("off path generate MAIN %lx\n", *off_path_addr);
+      off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id],0);
     }
   }
+  op->from_ucp = 0;
   DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
 }
 
+int ext_trace_alt_fetch_op(uns proc_id, Op* op) {
+  int ret_val = 1;
+  if(uop_generator_get_bom(proc_id,1)) {
+    // if (!off_path_mode[proc_id]) {
+    //   uop_generator_get_uop(proc_id, op, &next_alt_pi[proc_id],1);
+    // }
+    // else {
+      // printf("ALT off path op %p generating MID uop %lx\n", &op->inst_info->addr, alt_addr[proc_id]);
+      uop_generator_get_uop(proc_id, op, &next_alt_pi[proc_id],1);
+        
+
+     
+      // printf("ALT off path op %p generating MID after uop %lx\n", &op->inst_info->addr, alt_addr[proc_id]);
+      
+    // }
+  } else {
+    uop_generator_get_uop(proc_id, op, NULL,1);
+  }
+
+  if(uop_generator_get_eom(proc_id,1)) {
+
+      auto op_iter = pc_to_inst.find(alt_addr[proc_id]);
+      if(!(op_iter != pc_to_inst.end())){
+        ret_val = 0;
+      }
+      if(!next_alt_pi[proc_id].cf_type){
+        
+      }
+      // printf("ALT off path generate ALT before inst %lx\n", alt_addr[proc_id]);
+      off_path_generate_inst(proc_id, &alt_addr[proc_id], &next_alt_pi[proc_id],1);
+      // printf("ALT off path generate ALT after inst %lx\n", alt_addr[proc_id]);
+  }
+  // printf("op cf type is %i \n", op->table_info->cf_type);
+  // printf("inst type is %i \n", next_alt_pi[proc_id].cf_type);
+
+  op->from_ucp=1;
+  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
+  return ret_val;
+}
+
+void ext_trace_alt_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
+  alt_addr[proc_id] = fetch_addr;
+  uop_generator_recover(proc_id ,1);
+  // uop_generator_recover(proc_id+NUM_CORES);
+  // printf("off path generate REDIRECT ALT %lx\n", alt_addr[proc_id]);
+  off_path_generate_inst(proc_id, &alt_addr[proc_id], &next_alt_pi[proc_id],1);
+  // printf("off path generate REDIRECT ALT after %lx\n", alt_addr[proc_id]);
+}
+
 Flag ext_trace_can_fetch_op(uns proc_id) {
-  return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
+  return !(uop_generator_get_eom(proc_id,0) && trace_read_done[proc_id]);
 }
 
 void ext_trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
   off_path_mode[proc_id] = true;
   off_path_addr[proc_id] = fetch_addr;
-  off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
+  off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id],0);
   DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
 }
 
@@ -239,8 +360,8 @@ void ext_trace_recover(uns proc_id, uns64 inst_uid) {
   Op dummy_op;
   off_path_mode[proc_id] = false;
   // Finish decoding of the current off-path inst before switching to on-path
-  while (!uop_generator_get_eom(proc_id)) {
-    uop_generator_get_uop(proc_id, &dummy_op, &next_offpath_pi[proc_id]);
+  while (!uop_generator_get_eom(proc_id,0)) {
+    uop_generator_get_uop(proc_id, &dummy_op, &next_offpath_pi[proc_id],0);
   }
   DEBUG(proc_id, "Recover CF:%lx ", next_onpath_pi[proc_id].instruction_addr);
 }
@@ -257,6 +378,7 @@ Addr ext_trace_next_fetch_addr(uns proc_id) {
 void ext_trace_init() {
   memset(next_offpath_pi, 0, sizeof(next_offpath_pi));
   memset(next_onpath_pi, 0, sizeof(next_onpath_pi));
+  memset(next_alt_pi, 0, sizeof(next_alt_pi));
 
   if (FRONTEND == FE_PT) {
     pt_init();

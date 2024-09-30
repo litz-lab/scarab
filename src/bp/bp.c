@@ -35,6 +35,7 @@
 #include "globals/utils.h"
 #include "isa/isa_macros.h"
 
+#include "bp/alt_bp.h"
 #include "bp//bp_conf.h"
 #include "bp/bp.h"
 #include "bp/bp_targ_mech.h"
@@ -498,9 +499,29 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred      = op->oracle_info.dir;
         op->oracle_info.pred_orig = op->oracle_info.dir;
         op->oracle_info.no_target = FALSE;
+        op->oracle_info.hard_to_predict = FALSE;
       } else {
         ASSERT(op->proc_id, !PERFECT_NT_BTB); //currently not supported
-        op->oracle_info.pred = bp_data->bp->pred_func(op);
+        if(UCP_PRED_ON){
+
+          ASSERT(0, (BP_MECH == TAGESCL_BP)|| (BP_MECH == TAGE64K_BP));
+
+          PredictionResult pred_result;
+          op->from_ucp = 0;
+          pred_result = bp_data->bp->pred_with_confidence_func(op);
+          op->oracle_info.pred = pred_result.prediction_result;
+          op->oracle_info.hard_to_predict = pred_result.hard_to_predict;
+
+          // copy gtable to alt_bp before starting a new path
+          if(pred_result.hard_to_predict){
+            bp_data->bp->copy_to_alt_pred_func(op->proc_id);
+            start_new_alternate_path(op);
+          }
+        } else{
+          op->from_ucp = 0;
+          op->oracle_info.pred = bp_data->bp->pred_func(op);
+        }
+
         op->oracle_info.pred_orig = op->oracle_info.pred;
         if(USE_LATE_BP) {
           op->oracle_info.late_pred = bp_data->late_bp->pred_func(op);

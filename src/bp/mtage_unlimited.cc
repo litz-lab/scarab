@@ -1864,3 +1864,13 @@ int MTAGE::rhspindex(uint64_t PC, int bank) {
   }
   return index & ((1 << LOGRHSP) - 1);
 }
+
+// place holder
+bool MTAGE::GetH2p (uns proc_id)
+{
+  return 0;
+}
+bool MTAGE::copyGlobalHistoryTables(void* dest) {
+
+  return 0;
+}

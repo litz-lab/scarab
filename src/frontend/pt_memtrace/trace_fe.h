@@ -50,7 +50,10 @@ struct Op_struct;
 extern "C" {
 #endif
 
-void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst);
+void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst, uns alt_path);
+int fe_peek_addr(uns proc_id, Addr fetch_addr);
+int fe_peek_alt_addr(uns proc_id);
+int fe_peek_alt_addr_batch(uns proc_id, Addr fetch_addr);
 
 /* Implementing the frontend interface */
 Addr ext_trace_next_fetch_addr(uns proc_id);
@@ -62,6 +65,9 @@ void ext_trace_retire(uns proc_id, uns64 inst_uid);
 void ext_trace_init();
 void ext_trace_done(void);
 void ext_trace_extract_basic_block_vectors();
+
+int ext_trace_alt_fetch_op(uns proc_id, Op* op);
+void ext_trace_alt_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);
 #ifdef __cplusplus
 }
 #endif

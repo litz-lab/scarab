@@ -167,7 +167,7 @@ void pin_exec_driven_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
   msg.type      = FE_REDIRECT;
   msg.inst_addr = convert_to_cmp_addr(0, fetch_addr);  // removing proc_id
   msg.inst_uid  = inst_uid;
-  uop_generator_recover(proc_id);
+  uop_generator_recover(proc_id, 0);
 
   server->send(proc_id, (Message<Scarab_To_Pin_Msg>)msg);  // blocking
   invalidate_op_buffer(proc_id);
@@ -182,7 +182,7 @@ void pin_exec_driven_recover(uns proc_id, uns64 inst_uid) {
   msg.type      = FE_RECOVER_AFTER;
   msg.inst_addr = 0;
   msg.inst_uid  = inst_uid;
-  uop_generator_recover(proc_id);
+  uop_generator_recover(proc_id, 0);
 
   server->send(proc_id, (Message<Scarab_To_Pin_Msg>)msg);  // blocking
   invalidate_op_buffer(proc_id);

@@ -12,6 +12,7 @@
 /**Add CBP Header Below**/
 #include "mtage_unlimited.h"
 #include "cbp_tagescl_64k.h"
+#include "alt_bp.h"
 /************************/
 
 /******DO NOT MODIFY BELOW THIS POINT*****/
@@ -23,6 +24,7 @@
 
 #include "cbp_to_scarab.h"
 #include "bp/bp.param.h"
+#include "cbp_tagescl_64k.h"
 
 template <typename CBP_CLASS>
 class CBP_To_Scarab_Intf {
@@ -38,6 +40,17 @@ class CBP_To_Scarab_Intf {
     }
     ASSERTM(0, cbp_predictors.size() == NUM_CORES,
             "cbp_predictors not initialized correctly");
+    if(UCP_PRED_ON){
+      if(cbp_predictors.size() == NUM_CORES) {
+        cbp_predictors.reserve(NUM_CORES*2);
+        for(uns i = 0; i < NUM_CORES; ++i) {
+          cbp_predictors.emplace_back();
+        }
+      }
+      ASSERTM(0, cbp_predictors.size() == NUM_CORES*2,
+        "ucp: cbp_predictors not initialized correctly");
+    }
+
   }
 
   void timestamp(Op* op) {
@@ -45,11 +58,14 @@ class CBP_To_Scarab_Intf {
     op->recovery_info.branch_id = 0;
   }
 
+  // calls proc+NUM_CORES as alt_bp
   uns8 pred(Op* op) {
+    // printf("pred with ucp %i + %i \n", op->proc_id, op->from_ucp);
     uns proc_id = op->proc_id;
-    if(op->off_path)
+    // printf("op addr is %llx, pointer conf is %p",op->inst_info->addr, &op->bp_confidence);
+    if(op->off_path && !op->from_ucp)
       return op->oracle_info.dir;
-    return cbp_predictors.at(proc_id).GetPrediction(op->inst_info->addr, &op->bp_confidence);
+    return cbp_predictors.at(proc_id+ op->from_ucp*NUM_CORES).GetPrediction(op->inst_info->addr, &op->bp_confidence);  
   }
 
   void spec_update(Op* op) {
@@ -57,15 +73,25 @@ class CBP_To_Scarab_Intf {
     if(op->off_path)
       return;
 
-    uns    proc_id = op->proc_id;
+    uns    proc_id = op->proc_id + op->from_ucp * NUM_CORES;
     OpType optype  = scarab_to_cbp_optype(op);
 
     if(is_conditional_branch(op)) {
       cbp_predictors.at(proc_id).UpdatePredictor(
         op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred,
         op->oracle_info.target);
+        // also updates alt_bp if alt_bp not in use
+      if(!op->from_ucp && UCP_PRED_ON && !alt_path_ongoing(proc_id))
+        cbp_predictors.at(proc_id+NUM_CORES).UpdatePredictor(
+        op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred,
+        op->oracle_info.target);
     } else {
       cbp_predictors.at(proc_id).TrackOtherInst(op->inst_info->addr, optype,
+                                                op->oracle_info.dir,
+                                                op->oracle_info.target);
+      // also updates alt_bp if alt_bp not in use
+      if(!op->from_ucp && UCP_PRED_ON && !alt_path_ongoing(proc_id))
+        cbp_predictors.at(proc_id+NUM_CORES).TrackOtherInst(op->inst_info->addr, optype,
                                                 op->oracle_info.dir,
                                                 op->oracle_info.target);
     }
@@ -74,6 +100,7 @@ class CBP_To_Scarab_Intf {
   void update(Op* op) { /* CBP Interface does not support update at exec */
   }
 
+  
   void retire(Op* op) {
     /* CBP Interface updates predictor at speculative update time */
   }
@@ -84,6 +111,25 @@ class CBP_To_Scarab_Intf {
 
   Flag full(uns proc_id) {
     return cbp_predictors.at(proc_id).IsFull();
+  }
+  PredictionResult pred_with_confidence(Op* op) {
+    uns proc_id = op->proc_id;
+    PredictionResult pred_result;
+    // printf("calling predict with confi\n");
+    pred_result.prediction_result = cbp_predictors.at(proc_id).GetPrediction(op->inst_info->addr, &op->bp_confidence);
+    pred_result.hard_to_predict = cbp_predictors.at(proc_id).GetH2p(proc_id);
+    if(UCP_PRED_ON && !alt_path_ongoing(proc_id)){
+      // printf("updating alt pred\n");
+      cbp_predictors.at(proc_id+NUM_CORES).GetPrediction(op->inst_info->addr, &op->bp_confidence);
+    }
+      
+    return pred_result;
+  }
+
+  Flag copy_to_alt_pred(uns8 proc_id) {
+    ASSERT(0, (BP_MECH == TAGE64K_BP));
+    // printf("cpoy in cbp part \n");
+    return cbp_predictors.at(proc_id).copyGlobalHistoryTables(static_cast<void*>(&cbp_predictors.at(proc_id + NUM_CORES)));
   }
 };
 
@@ -114,7 +160,9 @@ class CBP_To_Scarab_Intf {
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, update, , void, Op*, op)      \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, retire, , void, Op*, op)      \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, recover, , void, Recovery_Info*, info) \
-  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, full, return, Flag, uns, proc_id)
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, full, return, Flag, uns, proc_id)\
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, copy_to_alt_pred, return, Flag, uns, proc_id)\
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, pred_with_confidence, return, PredictionResult, Op*, op)
 
 #include "cbp_table.def"
 

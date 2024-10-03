@@ -1300,6 +1300,9 @@ bool TAGE64K::GetH2p (uns proc_id)
 bool TAGE64K::copyGlobalHistoryTables(void* dest) {
   // const TAGE64K* srcA = static_cast<const TAGE64K*>(src); 
   TAGE64K* destA = static_cast<TAGE64K*>(dest); 
+  destA->ptghist = ptghist;
+  destA->GHIST = GHIST;
+  
   // printf("cpoied ghr \n");
   for (int i = 1; i <= NHIST; i++) {
     // printf("table copied \n");
@@ -1317,7 +1320,11 @@ bool TAGE64K::copyGlobalHistoryTables(void* dest) {
   }
   return(
     std::memcpy(destA->GGEHLA, this->GGEHLA, sizeof(this->GGEHLA))&&
-    std::memcpy(destA->PGEHLA, this->PGEHLA, sizeof(this->PGEHLA)));
+    std::memcpy(destA->PGEHLA, this->PGEHLA, sizeof(this->PGEHLA))&&
+    std::memcpy(destA->ch_i, this->ch_i, sizeof(this->ch_i))&&
+    std::memcpy(destA->ch_t, this->ch_t, sizeof(this->ch_t))&&
+    std::memcpy(destA->ghist, this->ghist, sizeof(this->ghist))
+    );
 
   
 }

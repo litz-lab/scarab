@@ -205,6 +205,7 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
     DEBUG_CRS(bp_data->proc_id, "UNDERFLOW  next:%d  tos: %d  offpath:%d\n", bp_data->crs.next, bp_data->crs.tos,
               op->off_path);
     STAT_EVENT(op->proc_id, CRS_MISS_ON_PATH + PERFECT_CRS + 2 * op->off_path);
+    STAT_EVENT(op->proc_id, CRS_UNDERFLOW_ON_PATH + op->off_path); /*CHECK EXCLUSIVE UNDERFLOW*/
     return PERFECT_CRS ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
   }
 

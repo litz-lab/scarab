@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bp.param.h"
 #include "cbp_to_scarab.h"
 // #include "bt9.h"
 // #include "bt9_reader.h"
@@ -219,6 +220,8 @@ class cbp64_lentry  // loop predictor entry
   }
 };
 
+enum tage_component { TAGE_BASE, TAGE_SHORT, TAGE_LONG, TAGE_LOOP, TAGE_SC, NOT_TAGE };
+
 class TAGE64K {
  private:
   // The statistical corrector components
@@ -401,7 +404,7 @@ class TAGE64K {
   void baseupdate(bool Taken);
   int MYRANDOM();
   void Tagepred(UINT64 PC);
-  bool GetPrediction(UINT64 PC, int* bp_confidence);
+  bool GetPrediction(UINT64 PC, int* bp_confidence, Op* op);
   void HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target, long long& X, int& Y, cbp64_folded_history* H,
                      cbp64_folded_history* G, cbp64_folded_history* J);
 
@@ -456,6 +459,11 @@ class TAGE64K {
   int Seed;     // for the pseudo-random number generator
   bool pred_inter;
   long long IMLIcount;  // use to monitor the iteration number
+
+  int8_t tage_component;
+  int8_t tage_component_inter;
+  int8_t tage_component_tage;
+  int8_t tage_component_alt;
 };
 
 #endif

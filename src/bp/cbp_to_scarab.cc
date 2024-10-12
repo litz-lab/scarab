@@ -88,15 +88,94 @@ class CBP_To_Scarab_Intf {
 };
 
 // Specialization for TAGE64K
-template <>
+template<>
 uns8 CBP_To_Scarab_Intf<TAGE64K>::pred(Op* op) {
   uns proc_id = op->proc_id;
-  if (op->off_path)
-    return op->oracle_info.dir;
+  if(op->off_path) {
+    if(SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON)
+      return op->oracle_info.dir;
+  }
   uns8 pred = cbp_predictors.at(proc_id).GetPrediction(op->inst_info->addr, &op->bp_confidence, op);
 
   return pred;
 }
+
+template<>
+void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op) {
+  uns    proc_id = op->proc_id;
+  OpType optype  = scarab_to_cbp_optype(op);
+  Flag is_conditional = is_conditional_branch(op);
+
+  if(op->off_path) {
+    if(SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON)
+      return;              
+    if(is_conditional)        
+      cbp_predictors.at(proc_id).SpecUpdateAtCond(op->inst_info->addr, op->oracle_info.dir, op->oracle_info.pred);
+    cbp_predictors.at(proc_id).SpecUpdate(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred, op->oracle_info.target);
+    return;
+  }
+
+  if(SPEC_LEVEL != BP_PRED_ON){
+    cbp_predictors.at(proc_id).SavePredictorStates(op->inst_info->addr, op->recovery_info.branch_id, proc_id);    
+  }
+
+  // Real update start
+  if(is_conditional) {
+    cbp_predictors.at(proc_id).SpecUpdateAtCond(op->inst_info->addr, op->oracle_info.dir, op->oracle_info.pred);
+    cbp_predictors.at(proc_id).SpecUpdate(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred, op->oracle_info.target); 
+    cbp_predictors.at(proc_id).NonSpecUpdateAtCond(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred, op->oracle_info.target, op->recovery_info.branch_id, op->op_num);
+  } else {
+    cbp_predictors.at(proc_id).SpecUpdate(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred, op->oracle_info.target); 
+    cbp_predictors.at(proc_id).TrackOtherInst(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.target, op->recovery_info.branch_id);
+  }
+  // Real update end
+
+  if(SPEC_LEVEL > BP_PRED_ON_SPEC_UPDATE_S_ON_N_ON){ // checkpoint for Exp B, C, D
+    if(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec){
+      cbp_predictors.at(proc_id).TakeCheckpoint(op->inst_info->addr, op->recovery_info.branch_id, optype, op->table_info->cf_type);
+    }
+  }
+
+  if((SPEC_LEVEL == BP_PRED_ON_SPEC_UPDATE_S_ON_N_ON)){ // Exp A
+    if(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec){
+      cbp_predictors.at(proc_id).TakeCheckpoint(op->inst_info->addr, op->recovery_info.branch_id, optype, op->table_info->cf_type);    
+      cbp_predictors.at(proc_id).VerifyCheckpoint(op->inst_info->addr, op->recovery_info.branch_id, proc_id);
+    }
+  } 
+}
+
+template<>
+void CBP_To_Scarab_Intf<TAGE64K>::update(Op* op) { /* CBP Interface does not support update at exec */
+  if(op->off_path)
+    return;
+  if(SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON)
+    return;
+}
+
+template<>
+void CBP_To_Scarab_Intf<TAGE64K>::retire(Op* op) {
+  if(SPEC_LEVEL == BP_PRED_ON)
+    return;
+  uns    proc_id = op->proc_id;
+  cbp_predictors.at(proc_id).RetireCheckpoint(op->recovery_info.branch_id);
+}
+
+template<>
+void CBP_To_Scarab_Intf<TAGE64K>::recover(Recovery_Info* recovery_info) {
+  if(SPEC_LEVEL == BP_PRED_ON)
+    return;
+  uns proc_id = recovery_info->proc_id;
+  cbp_predictors.at(proc_id).RepairStateAndUpdate(
+                recovery_info->PC, recovery_info->new_dir,
+                recovery_info->branchTarget, recovery_info);
+}
+
+template<>
+void CBP_To_Scarab_Intf<TAGE64K>::timestamp(Op* op) {  
+  uns    proc_id = op->proc_id;
+  op->recovery_info.branch_id = cbp_predictors.at(proc_id).KeyGeneration();
+}
+
 
 /******DO NOT MODIFY BELOW THIS POINT*****/
 

@@ -35,6 +35,7 @@
 #include "globals/utils.h"
 #include "op_pool.h"
 
+#include "map_rename.h"
 #include "frontend/frontend.h"
 #include "thread.h"
 

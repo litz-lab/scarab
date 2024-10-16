@@ -38,6 +38,7 @@
 
 #include "bp/bp.h"
 #include "map.h"
+#include "map_rename.h"
 #include "map_stage.h"
 #include "model.h"
 #include "thread.h"
@@ -186,6 +187,10 @@ void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uopq_src_sd) {
   Op**        temp;
   uns         ii;
 
+  /* stall if the renaming table is full */
+  if (!rename_table_available(STAGE_MAX_OP_COUNT))
+    return;
+
   /* do all the intermediate stages */
   for(ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
     cur = &map->sds[ii];
@@ -289,7 +294,10 @@ void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uopq_src_sd) {
 /* map_process_op: */
 
 static inline void stage_process_op(Op* op) {
-  /* the map stage is currently responsible only for setting wake up lists */
+  /* register renaming read and write */
+  rename_table_process(op);
+
+  /* setting wake up lists */
   add_to_wake_up_lists(op, &op->oracle_info, model->wake_hook);
 }
 
@@ -303,19 +311,22 @@ static inline Flag map_fetch_fill_op(Stage_Data* src_sd, int* fetch_idx) {
     return FALSE;
 
   Op* op = src_sd->ops[*fetch_idx];
+  if (op == NULL || op->op_num != map_stage_next_op_num) 
+    return FALSE;
+  DEBUG(map->proc_id, "Fetching opnum=%llu from %s at idx=%i\n", op->op_num, src_sd->name, *fetch_idx);
 
-  if (op && op->op_num == map_stage_next_op_num) {
-    DEBUG(map->proc_id, "Fetching opnum=%llu from %s at idx=%i\n", op->op_num, src_sd->name, *fetch_idx);
-    if (!op->decode_cycle) decode_stage_process_op(op);
-    op->map_cycle = cycle_count;
-    dest_sd->ops[dest_sd->op_count++] = op;
-    src_sd->ops[*fetch_idx] = NULL;
-    src_sd->op_count--;
-    map_stage_next_op_num++;
-    *fetch_idx = *fetch_idx + 1;
-    return TRUE;
-  }
-  return FALSE;
+  if (!op->decode_cycle)
+    decode_stage_process_op(op);
+
+  /* data move from previous stage */
+  op->map_cycle = cycle_count;
+  dest_sd->ops[dest_sd->op_count++] = op;
+  src_sd->ops[*fetch_idx] = NULL;
+  src_sd->op_count--;
+  map_stage_next_op_num++;
+  *fetch_idx = *fetch_idx + 1;
+
+  return TRUE;
 }
 
 

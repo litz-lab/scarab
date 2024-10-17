@@ -348,15 +348,20 @@ void end_line_accumulate(Flag last_line_of_ft) {
             // the insertion above evicted a line
             // need to invalidate all lines from the same FT
             FT_Info_Static evicted_ft_info_static = evicted_entry.key.second;
-            Addr invlaidate_addr = evicted_ft_info_static.start;
+            Addr invalidate_addr = evicted_ft_info_static.start;
             Entry<Uop_Cache_Key, Uop_Cache_Data> invalidated_entry{};
             do {
-              invalidated_entry = per_core_uop_cache[uop_cache_proc_id]->invalidate({invlaidate_addr, evicted_ft_info_static});
+              invalidated_entry = per_core_uop_cache[uop_cache_proc_id]->invalidate({invalidate_addr, evicted_ft_info_static});
               // if the invalidation missed, it means that the line was the one evicted at first
               if (!invalidated_entry.valid) {
                 invalidated_entry = evicted_entry;
               }
-              invlaidate_addr += invalidated_entry.data.offset;
+              invalidate_addr += invalidated_entry.data.offset;
+              if(invalidated_entry.data.used)
+                STAT_EVENT(uop_cache_proc_id, UOP_CACHE_LINE_EVICTED_USEFUL);
+              else  
+                STAT_EVENT(uop_cache_proc_id, UOP_CACHE_LINE_EVICTED_USELESS);
+                
             } while (!invalidated_entry.data.end_of_ft);
           }
 

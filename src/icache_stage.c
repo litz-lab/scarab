@@ -595,28 +595,34 @@ void update_icache_stage() {
         ic->next_state = ICACHE_RETRY_MEM_REQ;
       }
     } else if (ic->state == UOP_CACHE_SERVING) {
-      Uop_Cache_Data* uop_cache_line = uop_cache_get_line_from_lookup_buffer();
+      uns cap = ic->uopc_sd.max_op_count - ic->uopc_sd.op_count;
+      Uop_Cache_Data uop_cache_line = uop_cache_consume_line_from_lookup_buffer(cap);
       // the line must be valid
-      ASSERT(ic->proc_id, uop_cache_line->n_uops);
+      ASSERT(ic->proc_id, uop_cache_line.n_uops);
 
       ASSERT(ic->proc_id, !ic->uopc_sd.op_count);
-      ASSERT(ic->proc_id, uop_cache_line->n_uops <= ic->uopc_sd.max_op_count);
-      Flag ft_has_ended = decoupled_fe_fill_icache_stage_data(ic->proc_id, uop_cache_line->n_uops, &ic->uopc_sd);
-      ASSERT(ic->proc_id, ic->uopc_sd.op_count && ic->uopc_sd.op_count == uop_cache_line->n_uops);
+      ASSERT(ic->proc_id, uop_cache_line.n_uops <= ic->uopc_sd.max_op_count);
+      Flag ft_has_ended = decoupled_fe_fill_icache_stage_data(ic->proc_id, uop_cache_line.n_uops, &ic->uopc_sd);
+      ASSERT(ic->proc_id, ic->uopc_sd.op_count && ic->uopc_sd.op_count == uop_cache_line.n_uops);
+
+      // xtodo: when to zero out
+      // ic->uopc_lookups_per_cycle_count++;
 
       if (ft_has_ended) {
         ASSERT(ic->proc_id, !decoupled_fe_current_ft_can_fetch_op(ic->proc_id));
         // sanity check that the uop cache is in sync
-        ASSERT(ic->proc_id, uop_cache_line->end_of_ft);
+        ASSERT(ic->proc_id, uop_cache_line.end_of_ft);
         ic->next_state = UOP_CACHE_FINISHED_FT;
         switch(ic->current_ft_info.dynamic_info.ended_by) {
           case FT_ICACHE_LINE_BOUNDARY:
           case FT_TAKEN_BRANCH:
-            if (ic->uopc_sd.op_count < ic->uopc_sd.max_op_count) {
-              break_fetch = BREAK_UOP_CACHE_READ_LIMIT;
-            } else {
-              break_fetch = BREAK_UOP_CACHE_READ_LIMIT_AND_ISSUE_WIDTH;
-            }
+            // if (ic->uopc_lookups_per_cycle_count == UOP_CACHE_LOOKUPS_PER_CYCLE) {
+              if (ic->uopc_sd.op_count < ic->uopc_sd.max_op_count) {
+                break_fetch = BREAK_UOP_CACHE_READ_LIMIT;
+              } else {
+                break_fetch = BREAK_UOP_CACHE_READ_LIMIT_AND_ISSUE_WIDTH;
+              }
+            // }
             break;
           case FT_BAR_FETCH:
             break_fetch = BREAK_BARRIER;
@@ -633,14 +639,9 @@ void update_icache_stage() {
         uop_cache_clear_lookup_buffer();
       } else {
         ASSERT(ic->proc_id, decoupled_fe_current_ft_can_fetch_op(ic->proc_id));
-        ASSERT(ic->proc_id, !uop_cache_line->end_of_ft);
+        ASSERT(ic->proc_id, !uop_cache_line.end_of_ft);
         // the current uop cache assumes that uop cache line op num equals ic->uopc_sd.max_op_count (UOPC_ISSUE_WIDTH)
         ASSERT(ic->proc_id, ic->uopc_sd.op_count == ic->uopc_sd.max_op_count);
-        // next_fetch_addr is usually updated when an FT is fetched.
-        // but for uop cache, one FT can span several lines,
-        // and uop cache needs to calculate the next line address
-        ic->fetch_addr += uop_cache_line->offset;
-        ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr);
         break_fetch = BREAK_ISSUE_WIDTH;
         ic->next_state = UOP_CACHE_SERVING;
       }

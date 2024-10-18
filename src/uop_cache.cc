@@ -206,10 +206,26 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
   return TRUE;
 }
 
-Uop_Cache_Data* uop_cache_get_line_from_lookup_buffer() {
+// fetch a line from the uopc lookup buffer
+// if the uop num of this line <= cap, it will be fully consumed and the line index is incremented
+// if the uop num of this line > cap, it will be partially consumed and the line index is unchanged
+Uop_Cache_Data uop_cache_consume_line_from_lookup_buffer(uns cap) {
   Uop_Cache_Data* uop_cache_line = &current_lookup_buffer->at(*current_num_looked_up_lines);
-  *current_num_looked_up_lines += 1;
-  return uop_cache_line;
+  Uop_Cache_Data consumed_uop_cache_line = *uop_cache_line;
+  if (uop_cache_line->n_uops > cap) {
+    // the uopc line has more uops than needed; cannot fully consume it
+    uop_cache_line->n_uops -= cap;
+    // modify the line to reflect the partial consumption
+    consumed_uop_cache_line.n_uops = cap;
+    if (consumed_uop_cache_line.end_of_ft) {
+      consumed_uop_cache_line.end_of_ft = FALSE;
+      consumed_uop_cache_line.ft_info_dynamic.ended_by = FT_NOT_ENDED;
+    }
+  } else {
+    // fully consumed; move to the next line
+    *current_num_looked_up_lines += 1;
+  }
+  return consumed_uop_cache_line;
 }
 
 void uop_cache_clear_lookup_buffer() {

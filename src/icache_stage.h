@@ -89,6 +89,7 @@ typedef struct Icache_Stage_struct {
   Stage_Data sd; /* stage interface data */
   Stage_Data uopc_sd;
 
+  uns8 uopc_lookups_per_cycle_count;
   Icache_State state; /* state that the ICACHE is in */
   Icache_State
     next_state; /* state that the ICACHE is going to be in next cycle */

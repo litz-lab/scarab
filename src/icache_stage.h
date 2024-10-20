@@ -68,8 +68,11 @@ typedef enum Break_Reason_enum {
   BREAK_RENAME,        // break because of no free renaming physical register
   BREAK_FT_UNAVAILABLE, // break because the ft queue of the decoupled front-end is empty
   BREAK_ICACHE_TO_UOP_CACHE_SWITCH,  // break because in the same cycle switched to fetching from uop cache
+  BREAK_UOP_CACHE_TO_ICACHE_SWITCH,  // break because in the same cycle switched to fetching from icache
   BREAK_ICACHE_MISS_REQ_SUCCESS,     // break because of an icache miss where the mem req succeeds
+  BREAK_UOP_CACHE_TO_ICACHE_SWITCH_AND_ICACHE_MISS_REQ_SUCCESS,
   BREAK_ICACHE_MISS_REQ_FAILURE,     // break because of an icache miss where the mem req fails
+  BREAK_UOP_CACHE_TO_ICACHE_SWITCH_AND_ICACHE_MISS_REQ_FAILURE,
   BREAK_WAIT_FOR_MISS,
   BREAK_UOP_CACHE_READ_LIMIT,        // break because the uop cache has limited read capability
   BREAK_UOP_CACHE_READ_LIMIT_AND_ISSUE_WIDTH,       // break because the uop cache has limited read capability and the issue width has been reached

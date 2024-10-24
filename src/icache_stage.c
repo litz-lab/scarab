@@ -55,8 +55,7 @@
 #include "statistics.h"
 #include "libs/list_lib.h"
 
-/*#include "prefetcher/fdip.h"*/
-#include "prefetcher/fdip_new.h"
+#include "prefetcher/fdip.h"
 #include "prefetcher/eip.h"
 #include "prefetcher/D_JOLT.h"
 #include "prefetcher/FNL+MMA.h"
@@ -479,14 +478,14 @@ void update_icache_stage() {
       } else {
         ASSERT(ic->proc_id, !ic->sd.op_count && !ic->uopc_sd.op_count);
       }
-      ASSERT(ic->proc_id, !decoupled_fe_current_ft_can_fetch_op(ic->proc_id));
-      if (!decoupled_fe_can_fetch_ft(ic->proc_id)) {
+      ASSERT(ic->proc_id, !decoupled_fe_current_ft_can_fetch_op());
+      if (!decoupled_fe_can_fetch_ft()) {
         // if this happened, the app exit should have been seen
         ASSERT(ic->proc_id, get_stat(ic->proc_id, "ST_BREAK_APP_EXIT"));
         break_fetch = BREAK_FT_UNAVAILABLE;
         ic->next_state = SERVING_INIT;
       } else {
-        ic->current_ft_info = decoupled_fe_fetch_ft(ic->proc_id);
+        ic->current_ft_info = decoupled_fe_fetch_ft();
 
         // set the current fetch address
         ic->fetch_addr = ic->current_ft_info.static_info.start;
@@ -601,11 +600,11 @@ void update_icache_stage() {
 
       ASSERT(ic->proc_id, !ic->uopc_sd.op_count);
       ASSERT(ic->proc_id, uop_cache_line->n_uops <= ic->uopc_sd.max_op_count);
-      Flag ft_has_ended = decoupled_fe_fill_icache_stage_data(ic->proc_id, uop_cache_line->n_uops, &ic->uopc_sd);
+      Flag ft_has_ended = decoupled_fe_fill_icache_stage_data(uop_cache_line->n_uops, &ic->uopc_sd);
       ASSERT(ic->proc_id, ic->uopc_sd.op_count && ic->uopc_sd.op_count == uop_cache_line->n_uops);
 
       if (ft_has_ended) {
-        ASSERT(ic->proc_id, !decoupled_fe_current_ft_can_fetch_op(ic->proc_id));
+        ASSERT(ic->proc_id, !decoupled_fe_current_ft_can_fetch_op());
         // sanity check that the uop cache is in sync
         ASSERT(ic->proc_id, uop_cache_line->end_of_ft);
         ic->next_state = UOP_CACHE_FINISHED_FT;
@@ -632,7 +631,7 @@ void update_icache_stage() {
         }
         uop_cache_clear_lookup_buffer();
       } else {
-        ASSERT(ic->proc_id, decoupled_fe_current_ft_can_fetch_op(ic->proc_id));
+        ASSERT(ic->proc_id, decoupled_fe_current_ft_can_fetch_op());
         ASSERT(ic->proc_id, !uop_cache_line->end_of_ft);
         // the current uop cache assumes that uop cache line op num equals ic->uopc_sd.max_op_count (UOPC_ISSUE_WIDTH)
         ASSERT(ic->proc_id, ic->uopc_sd.op_count == ic->uopc_sd.max_op_count);
@@ -662,11 +661,11 @@ void update_icache_stage() {
       ASSERT(ic->proc_id, ic->line_addr == dummy_line_addr);
 
       int requested = ic->sd.max_op_count - ic->sd.op_count;
-      Flag ft_has_ended = decoupled_fe_fill_icache_stage_data(ic->proc_id, requested, &ic->sd);
+      Flag ft_has_ended = decoupled_fe_fill_icache_stage_data(requested, &ic->sd);
       ASSERT(ic->proc_id, ic->sd.op_count == ic->sd.max_op_count || ft_has_ended);
 
       if (ft_has_ended) {
-        ASSERT(ic->proc_id, !decoupled_fe_current_ft_can_fetch_op(ic->proc_id));
+        ASSERT(ic->proc_id, !decoupled_fe_current_ft_can_fetch_op());
         ic->next_state = ICACHE_FINISHED_FT;
         switch(ic->current_ft_info.dynamic_info.ended_by) {
           case FT_ICACHE_LINE_BOUNDARY:
@@ -702,13 +701,13 @@ void update_icache_stage() {
             ASSERT(ic->proc_id, 0);
         }
       } else {
-        ASSERT(ic->proc_id, decoupled_fe_current_ft_can_fetch_op(ic->proc_id));
+        ASSERT(ic->proc_id, decoupled_fe_current_ft_can_fetch_op());
         ASSERT(ic->proc_id, ic->sd.op_count == ic->sd.max_op_count);
         break_fetch = BREAK_ISSUE_WIDTH;
         ic->next_state = ICACHE_NO_LOOKUP_SERVING;
       }
     } else if (ic->state == WAIT_FOR_MISS) {
-      ASSERT(ic->proc_id, decoupled_fe_current_ft_can_fetch_op(ic->proc_id));
+      ASSERT(ic->proc_id, decoupled_fe_current_ft_can_fetch_op());
       DEBUG(ic->proc_id, "Ifetch barrier: Waiting for miss \n");
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
       if(!ic->off_path) {
@@ -757,10 +756,10 @@ void update_icache_stage() {
 /* update_bf_uoc_stats: */
 
 void update_stats_bf_retired(void) {
-  ASSERT(ic->proc_id, !decoupled_fe_current_ft_can_fetch_op(ic->proc_id));
+  ASSERT(ic->proc_id, !decoupled_fe_current_ft_can_fetch_op());
   Flag next_ft_in_uop_cache = FALSE;
-  if (decoupled_fe_can_fetch_ft(ic->proc_id)) {
-    FT_Info next_ft_info = decoupled_fe_peek_ft(ic->proc_id);
+  if (decoupled_fe_can_fetch_ft()) {
+    FT_Info next_ft_info = decoupled_fe_peek_ft();
     next_ft_in_uop_cache =
       uop_cache_lookup_line(next_ft_info.static_info.start, next_ft_info, FALSE) != NULL;
   }
@@ -1138,7 +1137,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
     return;
 
   if(icache_off_path() == FALSE) {
-    inc_icache_hit(ic->proc_id, ic->line_addr);
+    inc_icache_hit(ic->line_addr);
     if(line->fetched_by_offpath) {
       STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH_SAT_BY_OFFPATH);
       STAT_EVENT(ic->proc_id, ICACHE_USE_OFFPATH);
@@ -1173,12 +1172,12 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
       uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, line->ghist) : ic->line_addr;
       if(fdip_search_pref_candidate(ic->line_addr)) {
         inc_cnt_useful(ic->proc_id, hashed_addr, FALSE);
-        inc_cnt_useful_signed(ic->proc_id, hashed_addr);
-        inc_useful_lines_uc(ic->proc_id, hashed_addr);
-        update_useful_lines_uc(ic->proc_id, hashed_addr);
-        update_useful_lines_bloom_filter(ic->proc_id, hashed_addr);
-        inc_utility_info(ic->proc_id, TRUE);
-        inc_timeliness_info(ic->proc_id, FALSE);
+        inc_cnt_useful_signed(hashed_addr);
+        inc_useful_lines_uc(hashed_addr);
+        update_useful_lines_uc(hashed_addr);
+        update_useful_lines_bloom_filter(hashed_addr);
+        inc_utility_info(TRUE);
+        inc_timeliness_info(FALSE);
       }
       if(line->FDIP_prefetch == FDIP_BOTHPATH || line->FDIP_prefetch == FDIP_ONPATH)
         STAT_EVENT(ic->proc_id, ICACHE_HIT_BY_FDIP_ONPATH);
@@ -1208,10 +1207,10 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
     if(line->FDIP_prefetch && (FDIP_UTILITY_ONLY_TRAIN_OFF_PATH ? line->FDIP_prefetch >= FDIP_OFFPATH : TRUE)) {
       uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(*repl_line_addr, line->ghist) : *repl_line_addr;
       inc_cnt_unuseful(ic->proc_id, hashed_addr);
-      dec_cnt_useful_signed(ic->proc_id, hashed_addr);
-      dec_useful_lines_uc(ic->proc_id, hashed_addr);
-      update_unuseful_lines_uc(ic->proc_id, hashed_addr);
-      inc_utility_info(ic->proc_id, FALSE);
+      dec_cnt_useful_signed(hashed_addr);
+      dec_useful_lines_uc(hashed_addr);
+      update_unuseful_lines_uc(hashed_addr);
+      inc_utility_info(FALSE);
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_ONPATH_BY_FDIP + icache_off_path());
       if(line->FDIP_prefetch == FDIP_BOTHPATH || line->FDIP_prefetch == FDIP_ONPATH)
         STAT_EVENT(ic->proc_id, ICACHE_EVICT_MISS_BY_FDIP_ONPATH);
@@ -1222,7 +1221,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
     DEBUG(ic->proc_id, "%llx is evicted with hits, FDIP pref: %d\n", *repl_line_addr, line->FDIP_prefetch);
     if (line->FDIP_prefetch) {
       uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(*repl_line_addr, line->ghist) : *repl_line_addr;
-      add_evict_seq(ic->proc_id, hashed_addr);
+      add_evict_seq(hashed_addr);
       STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_ONPATH_BY_FDIP + icache_off_path());
       if(line->FDIP_prefetch == FDIP_BOTHPATH || line->FDIP_prefetch == FDIP_ONPATH)
         STAT_EVENT(ic->proc_id, ICACHE_EVICT_HIT_BY_FDIP_ONPATH);
@@ -1232,7 +1231,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
   }
 
   if(FDIP_ENABLE && *repl_line_addr)
-    evict_prefetched_cls(ic->proc_id, *repl_line_addr, (mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF))? TRUE : FALSE);
+    evict_prefetched_cls(*repl_line_addr, (mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF))? TRUE : FALSE);
 }
 
 /**************************************************************************************/
@@ -1307,12 +1306,12 @@ void log_stats_mshr_hit(Addr line_addr) {
     if (!icache_off_path() &&
         fdip_search_pref_candidate(ic->line_addr)) {
       inc_cnt_useful(ic->proc_id, hashed_addr, FALSE);
-      inc_cnt_useful_signed(ic->proc_id, hashed_addr);
-      inc_useful_lines_uc(ic->proc_id, hashed_addr);
-      update_useful_lines_uc(ic->proc_id, hashed_addr);
-      update_useful_lines_bloom_filter(ic->proc_id, hashed_addr);
-      inc_utility_info(ic->proc_id, TRUE);
-      inc_timeliness_info(ic->proc_id, TRUE);
+      inc_cnt_useful_signed(hashed_addr);
+      inc_useful_lines_uc(hashed_addr);
+      update_useful_lines_uc(hashed_addr);
+      update_useful_lines_bloom_filter(hashed_addr);
+      inc_utility_info(TRUE);
+      inc_timeliness_info(TRUE);
     }
     if (mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF)) {
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_ONPATH_BY_FDIP + icache_off_path());
@@ -1325,19 +1324,19 @@ void log_stats_mshr_hit(Addr line_addr) {
       req->cyc_hit_by_demand_load = cycle_count;
   }
   if (!icache_off_path())
-    inc_icache_miss(ic->proc_id, ic->line_addr);
-  Imiss_Reason imiss_reason = get_miss_reason(ic->proc_id, line_addr);
+    inc_icache_miss(ic->line_addr);
+  Imiss_Reason imiss_reason = get_miss_reason(line_addr);
   DEBUG_FDIP(ic->proc_id, "miss reason: %d, req: %d\n", imiss_reason, req? 1:0);
   if (!req) {
     if (!icache_off_path()) {
       uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, g_bp_data->global_hist) : ic->line_addr;
       DEBUG_FDIP(ic->proc_id, "learn missed line %llx\n", ic->line_addr);
       inc_cnt_useful(ic->proc_id, hashed_addr, TRUE);
-      inc_cnt_useful_signed(ic->proc_id, hashed_addr);
-      inc_useful_lines_uc(ic->proc_id, hashed_addr);
-      update_useful_lines_uc(ic->proc_id, hashed_addr);
-      update_useful_lines_bloom_filter(ic->proc_id, hashed_addr);
-      inc_utility_info(ic->proc_id, TRUE);
+      inc_cnt_useful_signed(hashed_addr);
+      inc_useful_lines_uc(hashed_addr);
+      update_useful_lines_uc(hashed_addr);
+      update_useful_lines_bloom_filter(hashed_addr);
+      inc_utility_info(TRUE);
       if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
         STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_IFETCH);
       else if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP)
@@ -1345,7 +1344,7 @@ void log_stats_mshr_hit(Addr line_addr) {
       else {
         ASSERT(ic->proc_id, imiss_reason == IMISS_NOT_PREFETCHED);
         STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
-        assert_fdip_break_reason(ic->proc_id, hashed_addr);
+        assert_fdip_break_reason(hashed_addr);
       }
     } else {
       inc_off_fetched_cls(ic->line_addr);
@@ -1364,7 +1363,7 @@ void log_stats_mshr_hit(Addr line_addr) {
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_PREFETCHED_OFFPATH);
   }
   DEBUG_FDIP(ic->proc_id, "set last miss reason %u for %llx\n", imiss_reason, ic->line_addr);
-  set_last_miss_reason(ic->proc_id, imiss_reason);
+  set_last_miss_reason(imiss_reason);
 }
 
 // Wrapper callback for any instruction memreq.

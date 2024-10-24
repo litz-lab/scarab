@@ -57,7 +57,7 @@
 #include "sim.h"
 
 #include "prefetcher/pref.param.h"
-#include "prefetcher/fdip_new.h"
+#include "prefetcher/fdip.h"
 
 /******************************************************************************/
 /* include the table of possible branch predictors */
@@ -1077,10 +1077,6 @@ void bp_retire_op(Bp_Data* bp_data, Op* op) {
   if(USE_LATE_BP) {
     bp_data->late_bp->retire_func(op);
   }
-
-  // TODO : verify this
-  /*if(FDIP_ENABLE)*/
-    /*update_useful_lines(bp_data->proc_id, op);*/
 }
 
 

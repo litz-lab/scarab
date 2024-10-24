@@ -56,7 +56,7 @@
 #include "power/power_intf.h"
 #include "stat_trace.h"
 #include "trigger.h"
-#include "prefetcher/fdip_new.h"
+#include "prefetcher/fdip.h"
 #include "prefetcher/eip.h"
 
 #include "bp/bp.param.h"

@@ -42,10 +42,9 @@ extern "C" {
 #include "pin/pin_lib/message_queue_interface_lib.h"
 #include "pin/pin_lib/pin_scarab_common_lib.h"
 #include "pin/pin_lib/uop_generator.h"
+#include "decoupled_frontend.h"
 
 #include <time.h>
-
-extern int *off_path;
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_PIN_EXEC_DRIVEN, ##args)
 
@@ -137,7 +136,7 @@ void pin_exec_driven_fetch_op(uns proc_id, Op* op) {
   Flag eom = uop_generator_extract_op(proc_id, op,
                                       &cached_cop_buffers[proc_id].front());
   if(eom) {
-    if(!*off_path) {
+    if(!decoupled_fe_is_off_path()) {
       if(cached_cop_buffers[proc_id].front().scarab_marker_roi_begin == true) {
         ASSERT(proc_id, !roi_dump_began);
         // reset stats

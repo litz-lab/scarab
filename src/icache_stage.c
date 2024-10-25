@@ -470,24 +470,7 @@ void update_icache_stage() {
     if (!UOP_CACHE_ENABLE) {
       ASSERT(ic->proc_id, ic->state != UOP_CACHE_FINISHED_FT && ic->state != UOP_CACHE_SERVING);
     }
-    //TODO: renaming should stall icache via back-pressure,
-    // but it seems that icache stage is doing some map stage work.
-    // consider moving them to the map stage?
-    if (REG_RENAMING_TABLE_ENABLE
-        && !rename_table_available()
-        && ic->state != WAIT_FOR_MISS
-        && ic->state != WAIT_FOR_EMPTY_ROB
-        && ic->state != WAIT_FOR_RENAME
-        && ic->state != ICACHE_RETRY_MEM_REQ) {
-      DEBUG(ic->proc_id, "Renaming Stall\n");
-      break_fetch = BREAK_RENAME;
-      ic->next_state = WAIT_FOR_RENAME;
-      if (ic->state == ICACHE_FINISHED_FT_EXPECTING_NEXT) {
-        ic->after_waiting_state = ICACHE_FINISHED_FT;
-      } else {
-        ic->after_waiting_state = ic->state;
-      }
-    } else if (ic->state == SERVING_INIT
+    if (ic->state == SERVING_INIT
               || ic->state == ICACHE_FINISHED_FT
               || ic->state == ICACHE_FINISHED_FT_EXPECTING_NEXT
               || ic->state == UOP_CACHE_FINISHED_FT) {
@@ -741,16 +724,6 @@ void update_icache_stage() {
       break_fetch = BREAK_WAIT_FOR_EMPTY_ROB;
       if(td->seq_op_list.count == 0) {
         update_stats_bf_retired();
-        ic->next_state = ic->after_waiting_state;
-      } else {
-        ic->next_state = ic->state;
-      }
-    } else if (ic->state == WAIT_FOR_RENAME) {
-      DEBUG(ic->proc_id, "Ifetch barrier: Waiting for renaming register free \n");
-      STAT_EVENT(ic->proc_id, FETCH_0_OPS);
-      break_fetch = BREAK_RENAME;
-      if (rename_table_available()) {
-        DEBUG(ic->proc_id, "Renaming Stall Recover\n");
         ic->next_state = ic->after_waiting_state;
       } else {
         ic->next_state = ic->state;

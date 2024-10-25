@@ -186,6 +186,13 @@ void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uopq_src_sd) {
   Op**        temp;
   uns         ii;
 
+  /* stall if the renaming table is full */
+  if (!rename_table_available(STAGE_MAX_OP_COUNT)) {
+    STAT_EVENT(map->proc_id, MAP_STAGE_STALL_ITSELF);
+    return;
+  }
+  STAT_EVENT(map->proc_id, MAP_STAGE_NOT_STALL_ITSELF);
+
   /* do all the intermediate stages */
   for(ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
     cur = &map->sds[ii];
@@ -289,7 +296,10 @@ void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uopq_src_sd) {
 /* map_process_op: */
 
 static inline void stage_process_op(Op* op) {
-  /* the map stage is currently responsible only for setting wake up lists */
+  /* register renaming allocation */
+  rename_table_process(op);
+
+  /* setting wake up lists */
   add_to_wake_up_lists(op, &op->oracle_info, model->wake_hook);
 }
 

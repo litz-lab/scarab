@@ -155,7 +155,7 @@ void rename_table_init(void);
 void rename_table_process(Op*);
 void rename_table_produce(Op*);
 
-Flag rename_table_available(void);
+Flag rename_table_available(uns);
 void rename_table_commit(Op*);
 void rename_table_recover(Counter);
 

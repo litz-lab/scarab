@@ -252,13 +252,15 @@ static inline void expand_wake_up_entries() {
 /* map_op: involves two things: setting up the src array in op_info
    and updating the current map state based on the op's output values.
    note that this function does nothing for memory dependencies.  you
-   must call map_mem_dep after oracle_exec to properly handle them. */
+   must call map_mem_dep after oracle_exec to properly handle them.
+
+   map_op only reads the register dependency assuming infinite registers,
+   and the register allocation is not done here. During renaming register
+   allocation, the dependency is not read again. */
 
 void map_op(Op* op) {
   ASSERT(map_data->proc_id, op);
   ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
-
-  rename_table_process(op);
 
   read_reg_map(op);   /* set reg sources */
   read_store_map(op); /* set addr dependency on last store */
@@ -270,10 +272,6 @@ void map_op(Op* op) {
 
 static inline void read_reg_map(Op* op) {
   uns ii;
-
-  // When enable register renaming table feature, do not read info from current map
-  if (REG_RENAMING_TABLE_ENABLE)
-    return;
 
   for(ii = 0; ii < op->table_info->num_src_regs; ii++) {
     uns        id        = op->inst_info->srcs[ii].id;
@@ -935,6 +933,9 @@ void rename_table_read_src(Op *op) {
   uns ii;
   Reg_File_Entry *entry;
 
+  /* do not duplicately read operand register dependency since it is already tracked during fetching */
+  return;
+
   for (ii = 0; ii < op->table_info->num_src_regs; ii++) {
     entry = merged_reg_file_lookup_entry(op->inst_info->srcs[ii].id);
     merged_reg_file_read_entry(op, entry);
@@ -1218,12 +1219,12 @@ void rename_table_produce(Op *op) {
   Procedure:
   --- check if there are enough registers
 */
-Flag rename_table_available(void) {
+Flag rename_table_available(uns stage_max_op_count) {
   if (!REG_RENAMING_TABLE_ENABLE)
     return TRUE;
   ASSERT(map_data->proc_id, map_data->rename_table != NULL);
 
-  return map_data->rename_table->merged_rf->reg_free_num >= MAX_DESTS;
+  return map_data->rename_table->merged_rf->reg_free_num >= MAX_DESTS * stage_max_op_count;
 }
 
 /*
@@ -1251,15 +1252,17 @@ void rename_table_recover(Counter recovery_op_num) {
   if (!REG_RENAMING_TABLE_ENABLE)
     return;
 
-  // start from the youngest op
-  Op** op_p = (Op**)list_start_tail_traversal(&td->seq_op_list);
-
   // release the register from the youngest to the oldest
-  while (op_p && (*op_p)->op_num > recovery_op_num) {
+  for (Op** op_p = (Op**)list_start_tail_traversal(&td->seq_op_list);
+       op_p && (*op_p)->op_num > recovery_op_num; op_p = (Op**)list_prev_element(&td->seq_op_list)) {
     ASSERT(map_data->proc_id, (*op_p)->off_path);
+
+    // do not release the un-renamed op since dependency mapping during fetching and allocation during renaming are async
+    if ((*op_p)->dst_reg_file_ptag[0] == REG_FILE_INVALID_REG_ID)
+      continue;
+
+    // release misprediction register
     for (uns ii = 0; ii < (*op_p)->table_info->num_dest_regs; ii++)
       merged_reg_file_flush_mispredict((*op_p)->dst_reg_file_ptag[ii]);
-
-    op_p = (Op**)list_prev_element(&td->seq_op_list);
   }
 }

@@ -37,6 +37,7 @@
 
 #include "frontend/frontend.h"
 #include "thread.h"
+#include "map_rename.h"
 
 #include "core.param.h"
 #include "debug/debug.param.h"
@@ -65,6 +66,9 @@ void init_thread(Thread_Data* td, char* argv[], char* envp[]) {
   set_map_data(&td->map_data);
   init_map(0);
   init_list(&td->seq_op_list, "SEQ_OP_LIST", sizeof(Op*), TRUE);
+
+  /* init the register renaming table */
+  reg_file_init();
 }
 
 
@@ -73,7 +77,9 @@ void init_thread(Thread_Data* td, char* argv[], char* envp[]) {
 
 void recover_thread(Thread_Data* td, Addr new_pc, Counter op_num,
                     uns64 inst_uid, Flag remain_wrongpath) {
-  rename_table_recover(op_num);
+  /* flush registers of mispredicted operands before the seq_op_list flush */
+  reg_file_recover(op_num);
+
   recover_seq_op_list(td, op_num);
   recover_map();
   ASSERT(td->proc_id, !remain_wrongpath);

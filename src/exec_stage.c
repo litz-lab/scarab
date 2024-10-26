@@ -39,6 +39,7 @@
 #include "exec_ports.h"
 #include "exec_stage.h"
 #include "map.h"
+#include "map_rename.h"
 
 #include "bp/bp.param.h"
 #include "cmp_model.h"
@@ -264,6 +265,9 @@ void update_exec_stage(Stage_Data* src_sd) {
       continue;
     }
     // }}}
+
+    // write the data back to the physical register
+    reg_file_execute(op);
 
     // {{{ dependent instruction wakeup
 

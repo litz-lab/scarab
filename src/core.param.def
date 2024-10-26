@@ -133,6 +133,11 @@ DEF_PARAM(node_retire_rate, NODE_RETIRE_RATE, uns, uns, 10, )
  * while the decode path has a width of 5. In that case decode_width_narrower is set to 1.*/
 DEF_PARAM(decode_path_width_narrower, DECODE_PATH_WIDTH_NARROWER, uns, uns, 0, )
 
+/********MAP REGISTER FILE
+ * PARAMETERS********************************************************/
+DEF_PARAM(reg_file_type, REG_FILE_TYPE, uns, uns, 0, )
+DEF_PARAM(reg_map_physical_size, REG_MAP_PHYSICAL_SIZE, uns, uns, 256, )
+
 /********EXEC PORT
  * PARAMETERS*********************************************************/
 /*Size of each RS, length should be NUM_RS, Must be type string since it is an

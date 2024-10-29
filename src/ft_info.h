@@ -29,6 +29,15 @@
 #ifndef __FT_INFO_H__
 #define __FT_INFO_H__
 
+typedef enum FT_Started_By_enum {
+  FT_NOT_STARTED,
+  FT_STARTED_BY_APP,
+  FT_STARTED_BY_ICACHE_LINE_BOUNDARY,
+  FT_STARTED_BY_TAKEN_BRANCH,
+  FT_STARTED_BY_BAR_FETCH,
+  FT_STARTED_BY_RECOVERY
+} FT_Started_By;
+
 typedef enum FT_Ended_By_enum {
   FT_NOT_ENDED,
   FT_ICACHE_LINE_BOUNDARY,
@@ -48,6 +57,8 @@ typedef struct FT_Info_Static_struct {
 
 // two fts with the same static info may have different dynamic info
 typedef struct FT_Info_Dynamic_struct {
+  // the start of the FT
+  FT_Started_By started_by;
   // the termination of the FT
   FT_Ended_By ended_by;
   // if the first op of this FT is off-path

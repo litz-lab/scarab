@@ -18,6 +18,7 @@
 class FT{
 public:
   FT(uns _proc_id);
+  void set_ft_started_by(FT_Started_By ft_started_by);
   void add_op(Op *op, FT_Ended_By ft_ended_by);
   void free_ops_and_clear();
   bool can_fetch_op();
@@ -207,6 +208,7 @@ void FT::free_ops_and_clear() {
   ft_info.static_info.start = 0;
   ft_info.static_info.length = 0;
   ft_info.static_info.n_uops = 0;
+  ft_info.dynamic_info.started_by = FT_NOT_STARTED;
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   ft_info.dynamic_info.first_op_off_path = FALSE;
 }
@@ -233,6 +235,10 @@ void FT::set_per_op_ft_info() {
   }
 }
 
+void FT::set_ft_started_by(FT_Started_By ft_started_by) {
+  ft_info.dynamic_info.started_by = ft_started_by;
+}
+
 void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
   if (ops.empty()) {
     ASSERT(proc_id, op->bom && !ft_info.static_info.start);
@@ -256,6 +262,33 @@ void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
     ft_info.static_info.length = op->inst_info->addr + op->inst_info->trace_info.inst_size - ft_info.static_info.start;
     ASSERT(proc_id, ft_info.dynamic_info.ended_by == FT_NOT_ENDED);
     ft_info.dynamic_info.ended_by = ft_ended_by;
+
+    // counting extremely short FT reason
+    if (!ft_info.dynamic_info.first_op_off_path) {
+      if (ft_info.static_info.n_uops <= (int)ISSUE_WIDTH) {
+        if (ft_info.dynamic_info.started_by == FT_STARTED_BY_ICACHE_LINE_BOUNDARY) {
+          STAT_EVENT(proc_id, FT_SHORT_ICACHE_LINE_BOUNDARY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1);
+          INC_STAT_EVENT(proc_id,
+                        FT_SHORT_UOP_LOST_ICACHE_LINE_BOUNDARY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
+                        ISSUE_WIDTH - ft_info.static_info.n_uops);
+        } else if (ft_info.dynamic_info.started_by == FT_STARTED_BY_TAKEN_BRANCH) {
+          STAT_EVENT(proc_id, FT_SHORT_TAKEN_BRANCH_ICACHE_LINE_BOUNDARY + ft_ended_by - 1);
+          INC_STAT_EVENT(proc_id,
+                        FT_SHORT_UOP_LOST_TAKEN_BRANCH_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
+                        ISSUE_WIDTH - ft_info.static_info.n_uops);
+        } else if (ft_info.dynamic_info.started_by == FT_STARTED_BY_RECOVERY) {
+          STAT_EVENT(proc_id, FT_SHORT_RECOVERY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1);
+          INC_STAT_EVENT(proc_id,
+                        FT_SHORT_UOP_LOST_RECOVERY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
+                        ISSUE_WIDTH - ft_info.static_info.n_uops);
+        } else {
+          STAT_EVENT(proc_id, FT_SHORT_OTHER + ft_ended_by - 1);
+          INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_OTHER, ISSUE_WIDTH - ft_info.static_info.n_uops);
+        }
+      } else {
+        STAT_EVENT(proc_id, FT_NOT_SHORT);
+      }
+    }
   }
 }
 
@@ -279,6 +312,8 @@ void Decoupled_FE::init(uns _proc_id) {
   redirect_cycle = 0;
   stalled = false;
   ftq_ft_num = FE_FTQ_BLOCK_NUM;
+
+  current_ft_to_push.set_ft_started_by(FT_STARTED_BY_APP);
 }
 
 
@@ -293,6 +328,7 @@ void Decoupled_FE::recover() {
   ftq.clear();
 
   current_ft_to_push.free_ops_and_clear();
+  current_ft_to_push.set_ft_started_by(FT_STARTED_BY_RECOVERY);
   current_ft_in_use.free_ops_and_clear();
 
   dfe_op_count = bp_recovery_info->recovery_op_num + 1;
@@ -498,6 +534,13 @@ void Decoupled_FE::update() {
       }
       ftq.emplace_back(current_ft_to_push);
       current_ft_to_push = FT(proc_id);
+      if (ft_ended_by == FT_ICACHE_LINE_BOUNDARY) {
+        current_ft_to_push.set_ft_started_by(FT_STARTED_BY_ICACHE_LINE_BOUNDARY);
+      } else if (ft_ended_by == FT_TAKEN_BRANCH) {
+        current_ft_to_push.set_ft_started_by(FT_STARTED_BY_TAKEN_BRANCH);
+      } else if (ft_ended_by == FT_BAR_FETCH) {
+        current_ft_to_push.set_ft_started_by(FT_STARTED_BY_BAR_FETCH);
+      }
     }
 
     if (off_path) {

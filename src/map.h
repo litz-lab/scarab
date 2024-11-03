@@ -37,9 +37,11 @@
 /**************************************************************************************/
 /* Merged Register File: The Hardware Implementation of Register Renaming */
 
-// To be changed to configurable val
-#define REG_RENAMING_TABLE_ENABLE           FALSE
-#define REG_RENAMING_TABLE_REG_FILE_SIZE    1024
+typedef enum Reg_File_Type_enum {
+  REG_FILE_TYPE_INFINITE,
+  REG_FILE_TYPE_REALISTIC,
+  REG_FILE_TYPE_NUM
+} Reg_File_Type;
 
 const static int REG_FILE_INVALID_REG_ID = -1;
 

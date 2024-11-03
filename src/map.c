@@ -901,12 +901,12 @@ static inline void merged_reg_file_produce_result(int);
 /**************************************************************************************/
 
 void rename_table_init(void) {
-  if (!REG_RENAMING_TABLE_ENABLE)
+  if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
     return;
 
   map_data->rename_table = (Reg_Renaming_Table *)malloc(sizeof(Reg_Renaming_Table));
   map_data->rename_table->merged_rf = NULL;
-  merged_reg_file_init(REG_RENAMING_TABLE_REG_FILE_SIZE);
+  merged_reg_file_init(REG_MAP_PHYSICAL_SIZE);
 }
 
 /*
@@ -915,7 +915,7 @@ void rename_table_init(void) {
   --- 2. write dst: alloc entry and store self info into register as dst
 */
 void rename_table_process(Op *op) {
-  if (!REG_RENAMING_TABLE_ENABLE)
+  if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
     return;
 
   rename_table_read_src(op);
@@ -1139,7 +1139,7 @@ Reg_File_Entry *merged_reg_file_free_list_delete(void) {
   --- 2. remove the dead entry
 */
 void merged_reg_file_remove_prev(int ptag) {
-  ASSERT(map_data->proc_id, REG_RENAMING_TABLE_ENABLE);
+  ASSERT(map_data->proc_id, REG_FILE_TYPE == REG_FILE_TYPE_REALISTIC);
   ASSERT(map_data->proc_id, ptag != REG_FILE_INVALID_REG_ID);
   Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
 
@@ -1167,7 +1167,7 @@ void merged_reg_file_remove_prev(int ptag) {
   --- 2. remove the mispredicted entry
 */
 void merged_reg_file_flush_mispredict(int ptag) {
-  ASSERT(map_data->proc_id, REG_RENAMING_TABLE_ENABLE);
+  ASSERT(map_data->proc_id, REG_FILE_TYPE == REG_FILE_TYPE_REALISTIC);
   ASSERT(map_data->proc_id, ptag != REG_FILE_INVALID_REG_ID);
   Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
 
@@ -1188,7 +1188,7 @@ void merged_reg_file_flush_mispredict(int ptag) {
   --- update the register state
 */
 void merged_reg_file_produce_result(int ptag) {
-  ASSERT(map_data->proc_id, REG_RENAMING_TABLE_ENABLE);
+  ASSERT(map_data->proc_id, REG_FILE_TYPE == REG_FILE_TYPE_REALISTIC);
   ASSERT(map_data->proc_id, ptag != REG_FILE_INVALID_REG_ID);
   Reg_File_Entry *entry = &map_data->rename_table->merged_rf->reg_file[ptag];
 
@@ -1204,7 +1204,7 @@ void merged_reg_file_produce_result(int ptag) {
   --- update the register entry state to indicate the results in the register is produced
 */
 void rename_table_produce(Op *op) {
-  if (!REG_RENAMING_TABLE_ENABLE)
+  if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
     return;
   ASSERT(map_data->proc_id, op != NULL);
 
@@ -1220,7 +1220,7 @@ void rename_table_produce(Op *op) {
   --- check if there are enough registers
 */
 Flag rename_table_available(uns stage_max_op_count) {
-  if (!REG_RENAMING_TABLE_ENABLE)
+  if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
     return TRUE;
   ASSERT(map_data->proc_id, map_data->rename_table != NULL);
 
@@ -1234,7 +1234,7 @@ Flag rename_table_available(uns stage_max_op_count) {
   --- free the register entry of the ops which is before this op
 */
 void rename_table_commit(Op *op) {
-  if (!REG_RENAMING_TABLE_ENABLE)
+  if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
     return;
   ASSERT(map_data->proc_id, op != NULL);
 
@@ -1249,7 +1249,7 @@ void rename_table_commit(Op *op) {
   --- free the register entry of the ops which is mispredicted
 */
 void rename_table_recover(Counter recovery_op_num) {
-  if (!REG_RENAMING_TABLE_ENABLE)
+  if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
     return;
 
   // release the register from the youngest to the oldest

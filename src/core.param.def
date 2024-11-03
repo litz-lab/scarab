@@ -136,7 +136,7 @@ DEF_PARAM(decode_path_width_narrower, DECODE_PATH_WIDTH_NARROWER, uns, uns, 0, )
 /********MAP REGISTER FILE
  * PARAMETERS********************************************************/
 DEF_PARAM(reg_file_type, REG_FILE_TYPE, uns, uns, 0, )
-DEF_PARAM(reg_map_physical_size, REG_MAP_PHYSICAL_SIZE, uns, uns, 256, )
+DEF_PARAM(reg_table_physical_size, REG_TABLE_PHYSICAL_SIZE, uns, uns, 256, )
 
 /********EXEC PORT
  * PARAMETERS*********************************************************/

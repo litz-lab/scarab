@@ -258,7 +258,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
     op->wake_up_signaled[ii] = FALSE;
 
   for (ii = 0; ii < MAX_DESTS; ii++)
-    op->dst_reg_file_ptag[ii] = -1;
+    op->dst_reg_ptag[ii] = -1;
 }
 
 

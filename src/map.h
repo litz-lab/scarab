@@ -31,31 +31,30 @@
 
 #include "isa/isa_macros.h"
 #include "libs/hash_lib.h"
-#include "libs/list_lib.h"
 #include "op.h"
 
 /**************************************************************************************/
-/* Merged Register File: The Hardware Implementation of Register Renaming */
+/* The Hardware Implementation of Register Renaming */
 
-typedef enum Reg_File_Type_enum {
+enum reg_file_type {
   REG_FILE_TYPE_INFINITE,
   REG_FILE_TYPE_REALISTIC,
   REG_FILE_TYPE_NUM
-} Reg_File_Type;
+};
 
-const static int REG_FILE_INVALID_REG_ID = -1;
+const static int REG_TABLE_INVALID_REG_ID = -1;
 
 // register state for releasing
-typedef enum Reg_File_Entry_State_enum {
-  REG_FILE_ENTRY_STATE_FREE,
-  REG_FILE_ENTRY_STATE_ALLOC,
-  REG_FILE_ENTRY_STATE_PRODUCED,
-  REG_FILE_ENTRY_STATE_COMMIT,
-  REG_FILE_ENTRY_STATE_DEAD,
-  REG_FILE_ENTRY_STATE_NUM
-} Reg_File_Entry_State;
+enum reg_table_entry_state {
+  REG_TABLE_ENTRY_STATE_FREE,
+  REG_TABLE_ENTRY_STATE_ALLOC,
+  REG_TABLE_ENTRY_STATE_PRODUCED,
+  REG_TABLE_ENTRY_STATE_COMMIT,
+  REG_TABLE_ENTRY_STATE_DEAD,
+  REG_TABLE_ENTRY_STATE_NUM
+};
 
-typedef struct Reg_File_Entry_struct {
+struct reg_table_entry {
   // op info (the pointer of op + the deep copy of special val)
   Op       *op;
   Counter  op_num;
@@ -63,33 +62,40 @@ typedef struct Reg_File_Entry_struct {
   Flag     off_path;
 
   // register info
-  int                  reg_arch_id;
-  int                  reg_ptag;
-  Reg_File_Entry_State reg_state;
+  int reg_arch_id;
+  int reg_ptag;
+  enum reg_table_entry_state reg_state;
 
   // tracking free physical register
-  struct Reg_File_Entry_struct *next_free;
+  struct reg_table_entry *next_free;
 
   // tracking the ops use the same architectural register
   int prev_same_arch_id;
-} Reg_File_Entry;
+};
 
-typedef struct Merged_Reg_File_struct {
-  /* map each architectural register to the latest physical register */
-  int             reg_map_table[NUM_REG_IDS];
+struct reg_free_list {
+  // stack implementation for free list
+  struct reg_table_entry *reg_free_list_head;
+  uns reg_free_num;
+};
 
-  /* map ptags to physical registers (register entries) for both speculative and committed op */
-  Reg_File_Entry* reg_file;
-  uns             reg_file_size;
+struct reg_table {
+  // map tag to register entries for both speculative and committed op
+  struct reg_table_entry *entries;
+  uns size;
 
-  /* track all free physical registers */
-  Reg_File_Entry* reg_free_list_head;
-  uns             reg_free_num;
-} Merged_Reg_File;
+  // track all free registers
+  struct reg_free_list *free_list;
+};
 
-typedef struct Reg_Renaming_Table_struct {
-  Merged_Reg_File *merged_rf;
-} Reg_Renaming_Table;
+struct reg_file {
+  // map each architectural register id to the latest ptag
+  int reg_table_arch_to_ptag[NUM_REG_IDS];
+
+  // map ptags to physical register for both speculative and committed op
+  struct reg_table *reg_table_ptag_to_physical;
+};
+
 
 /**************************************************************************************/
 /* Types */
@@ -116,9 +122,6 @@ typedef struct Map_Data_struct {
   Wake_Up_Entry* free_list_head;
   uns            wake_up_entries;
   uns            active_wake_up_entries;
-
-  /* register renaming implementation based on the hardware scheme */
-  Reg_Renaming_Table *rename_table;
 } Map_Data;
 
 
@@ -153,13 +156,13 @@ Flag test_not_rdy_bit(Op*, uns);
 void set_not_rdy_bit(Op*, uns);
 
 /* register renaming table */
-void rename_table_init(void);
-void rename_table_process(Op*);
-void rename_table_produce(Op*);
+void reg_file_init(void);                 // allocate register map entries
+Flag reg_file_available(uns);             // check if enough register entries
+void reg_file_rename(Op*);                // lookup src reg and alloc dst reg
+void reg_file_execute(Op*);               // write back the register
+void reg_file_recover(Counter);           // flush reg of misprediction op
+void reg_file_commit(Op*);                // release the previous reg with same arch id
 
-Flag rename_table_available(uns);
-void rename_table_commit(Op*);
-void rename_table_recover(Counter);
 
 /**************************************************************************************/
 

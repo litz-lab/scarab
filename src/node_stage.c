@@ -837,7 +837,7 @@ void node_retire() {
     op->retire_cycle = cycle_count;
 
     // free the previous register entries with same architectural destination
-    rename_table_commit(op);
+    reg_file_commit(op);
 
     if(model->op_retired_hook)
       model->op_retired_hook(op);

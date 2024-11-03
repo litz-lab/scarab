@@ -113,7 +113,6 @@ Counter  period_ID = 0;
 /* the global warmup dump flags */
 Flag*    warmup_dump_done;
 
-Hash_Table per_branch_stat;
 Uop_Queue_Fill_Time uop_queue_fill_time;
 
 time_t sim_start_time; /* the time that the simulator was started */
@@ -279,14 +278,11 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
                   "KIPS)\n",
                   proc_id, unsstr64(inst_count[proc_id]), unsstr64(cycle_count),
                   unsstr64(sim_time), cum_ipc, cum_ipc, cum_khz);
-          FILE* fp = fopen("per_branch_stats.csv", "w");
-          Per_Branch_Stat** entries = (Per_Branch_Stat**) hash_table_flatten(&per_branch_stat, NULL);
-          fprintf(fp, "cf_type,addr,target\n");
-          for (int i=0; i<per_branch_stat.count; i++) {
-            Per_Branch_Stat* entry = entries[i];
-            fprintf(fp, "%i,%llx,%llx\n", entry->cf_type, entry->addr, entry->target);
-          }
-          free(entries);
+
+          // dump the bp stat per heartbeat
+          bp_dump_stat();
+
+          FILE* fp;
 
           // Dump uop queue fill time stats. One line for each size, how many cycles it took to reach after resteer.
           fp = fopen("uop_queue_fill_cycles.csv", "w");

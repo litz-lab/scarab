@@ -71,7 +71,6 @@ extern int   mystatus_fd;
 extern Flag frontend_gated;
 extern uns  num_fetched_lowconf_brs;
 
-extern Hash_Table per_branch_stat;
 extern Uop_Queue_Fill_Time uop_queue_fill_time;
 
 extern Flag roi_dump_began;

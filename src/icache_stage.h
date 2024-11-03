@@ -50,22 +50,17 @@ struct Mem_Req_struct;
 typedef enum Icache_State_enum {
   SERVING_INIT,
   ICACHE_FINISHED_FT,
-  ICACHE_FINISHED_FT_EXPECTING_NEXT,
   UOP_CACHE_FINISHED_FT,
-  // icache serves immediately after the lookup
-  ICACHE_LOOKUP_SERVING,
-  ICACHE_NO_LOOKUP_SERVING,
+  ICACHE_SERVING,
   ICACHE_RETRY_MEM_REQ,
   UOP_CACHE_SERVING,
   WAIT_FOR_MISS,
-  WAIT_FOR_EMPTY_ROB,
-  WAIT_FOR_RENAME
+  WAIT_FOR_EMPTY_ROB
 } Icache_State;
 
 // don't change this order without fixing stats in fetch.stat.def
 typedef enum Break_Reason_enum {
   BREAK_DONT,          // don't break fetch yet
-  BREAK_RENAME,        // break because of no free renaming physical register
   BREAK_FT_UNAVAILABLE, // break because the ft queue of the decoupled front-end is empty
   BREAK_ICACHE_TO_UOP_CACHE_SWITCH,  // break because in the same cycle switched to fetching from uop cache
   BREAK_UOP_CACHE_TO_ICACHE_SWITCH,  // break because in the same cycle switched to fetching from icache
@@ -92,6 +87,7 @@ typedef struct Icache_Stage_struct {
   Stage_Data sd; /* stage interface data */
   Stage_Data uopc_sd;
 
+  uns8 icache_lookups_per_cycle_count;
   uns8 uopc_lookups_per_cycle_count;
   Icache_State state; /* state that the ICACHE is in */
   Icache_State

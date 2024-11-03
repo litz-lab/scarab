@@ -58,6 +58,7 @@
 #include "trigger.h"
 #include "prefetcher/fdip.h"
 #include "prefetcher/eip.h"
+#include "uop_queue_stage.h"
 
 #include "bp/bp.param.h"
 #include "core.param.h"
@@ -112,8 +113,6 @@ Counter  period_ID = 0;
 
 /* the global warmup dump flags */
 Flag*    warmup_dump_done;
-
-Uop_Queue_Fill_Time uop_queue_fill_time;
 
 time_t sim_start_time; /* the time that the simulator was started */
 
@@ -282,39 +281,9 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
           // dump the bp stat per heartbeat
           bp_dump_stat();
 
-          FILE* fp;
-
           // Dump uop queue fill time stats. One line for each size, how many cycles it took to reach after resteer.
-          fp = fopen("uop_queue_fill_cycles.csv", "w");
-          for (int fill = 0; fill < UOP_QUEUE_CAPACITY_MAX_MEASURED; fill++) {
-            List* dist = &uop_queue_fill_time.time_for_size[fill].cycles;
-            Counter* node = list_start_head_traversal(dist);
-            while (node) {
-              fprintf(fp, "%llu,", *node);
-              node = list_next_element(dist);
-            }
-            fprintf(fp, "\n");
-          }
-          fp = fopen("uop_queue_fill_pws.csv", "w");
-          for (int fill = 0; fill < UOP_QUEUE_CAPACITY_MAX_MEASURED; fill++) {
-            List* dist = &uop_queue_fill_time.time_for_size[fill].pws;
-            Counter* node = list_start_head_traversal(dist);
-            while (node) {
-              fprintf(fp, "%llu,", *node);
-              node = list_next_element(dist);
-            }
-            fprintf(fp, "\n");
-          }
-          fp = fopen("uop_queue_fill_unique_pws.csv", "w");
-          for (int fill = 0; fill < UOP_QUEUE_CAPACITY_MAX_MEASURED; fill++) {
-            List* dist = &uop_queue_fill_time.time_for_size[fill].unique_pws;
-            Counter* node = list_start_head_traversal(dist);
-            while (node) {
-              fprintf(fp, "%llu,", *node);
-              node = list_next_element(dist);
-            }
-            fprintf(fp, "\n");
-          }
+          uop_queue_dump_stat();
+
           break;
 
         default:

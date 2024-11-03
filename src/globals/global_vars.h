@@ -71,8 +71,6 @@ extern int   mystatus_fd;
 extern Flag frontend_gated;
 extern uns  num_fetched_lowconf_brs;
 
-extern Uop_Queue_Fill_Time uop_queue_fill_time;
-
 extern Flag roi_dump_began;
 extern Counter roi_dump_ID;
 /**************************************************************************************/

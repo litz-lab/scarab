@@ -20,6 +20,7 @@ Stage_Data* uop_queue_stage_get_latest_sd(void);
 // Returns length of queue in terms of number of stages
 int get_uop_queue_stage_length(void);
 void stat_event_new_pw_accessed(Uop_Cache_Data* pw);
+void uop_queue_dump_stat(void);
 
 #ifdef __cplusplus
 }

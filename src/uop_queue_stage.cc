@@ -13,6 +13,7 @@ extern "C" {
 #include "globals/utils.h"
 #include "bp/bp.h"
 #include "op_pool.h"
+#include "libs/list_lib.h"
 
 #include "globals/assert.h"
 #include "statistics.h"
@@ -27,6 +28,21 @@ extern "C" {
 // TODO(peterbraun): Check if the ISSUE_WIDTH can be less than the uop cache issue bandwidth
 
 // Uop Queue Variables
+
+#define UOP_QUEUE_CAPACITY_MAX_MEASURED 7
+typedef struct Uop_Queue_Fill_Time_For_Size_struct {
+  List cycles;
+  List pws;
+  List unique_pws;
+} Uop_Queue_Fill_Time_For_Size;
+
+// Index zero corresponds to filling queue to size 1
+typedef struct Uop_Queue_Fill_Time_struct {
+  Uop_Queue_Fill_Time_For_Size time_for_size[UOP_QUEUE_CAPACITY_MAX_MEASURED];
+} Uop_Queue_Fill_Time;
+
+Uop_Queue_Fill_Time uop_queue_fill_time;
+
 std::deque<Stage_Data*> q {};
 std::deque<Stage_Data*> free_sds {};
 
@@ -173,5 +189,41 @@ void update_uop_queue_fill_time_stat() {
       Counter* new_unique_pw_entry = static_cast<Counter*>(sl_list_add_tail(&uop_queue_fill_time.time_for_size[q.size()-1].unique_pws));
       *new_unique_pw_entry = unique_pws_since_recovery;
     }
+  }
+}
+
+// Dump uop queue fill time stats. One line for each size, how many cycles it took to reach after resteer.
+void uop_queue_dump_stat() {
+  FILE* fp;
+
+  fp = fopen("uop_queue_fill_cycles.csv", "w");
+  for (int fill = 0; fill < UOP_QUEUE_CAPACITY_MAX_MEASURED; fill++) {
+    List* dist = &uop_queue_fill_time.time_for_size[fill].cycles;
+    Counter* node = (Counter*)list_start_head_traversal(dist);
+    while (node) {
+      fprintf(fp, "%llu,", *node);
+      node = (Counter*)list_next_element(dist);
+    }
+    fprintf(fp, "\n");
+  }
+  fp = fopen("uop_queue_fill_pws.csv", "w");
+  for (int fill = 0; fill < UOP_QUEUE_CAPACITY_MAX_MEASURED; fill++) {
+    List* dist = &uop_queue_fill_time.time_for_size[fill].pws;
+    Counter* node = (Counter*)list_start_head_traversal(dist);
+    while (node) {
+      fprintf(fp, "%llu,", *node);
+      node = (Counter*)list_next_element(dist);
+    }
+    fprintf(fp, "\n");
+  }
+  fp = fopen("uop_queue_fill_unique_pws.csv", "w");
+  for (int fill = 0; fill < UOP_QUEUE_CAPACITY_MAX_MEASURED; fill++) {
+    List* dist = &uop_queue_fill_time.time_for_size[fill].unique_pws;
+    Counter* node = (Counter*)list_start_head_traversal(dist);
+    while (node) {
+      fprintf(fp, "%llu,", *node);
+      node = (Counter*)list_next_element(dist);
+    }
+    fprintf(fp, "\n");
   }
 }

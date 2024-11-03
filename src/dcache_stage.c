@@ -400,29 +400,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
           }
 
           if(ONE_MORE_CACHE_LINE_ENABLE) {
-            Addr         one_more_addr;
-            Addr         extra_line_addr;
-            Dcache_Data* extra_line;
-
-            one_more_addr = ((line_addr >> LOG2(DCACHE_LINE_SIZE)) & 1) ?
-                              ((line_addr >> LOG2(DCACHE_LINE_SIZE)) - 1)
-                                << LOG2(DCACHE_LINE_SIZE) :
-                              ((line_addr >> LOG2(DCACHE_LINE_SIZE)) + 1)
-                                << LOG2(DCACHE_LINE_SIZE);
-
-            extra_line = (Dcache_Data*)cache_access(&dc->dcache, one_more_addr,
-                                                    &extra_line_addr, FALSE);
-            ASSERT(dc->proc_id, one_more_addr == extra_line_addr);
-            if(!extra_line) {
-              if(new_mem_req(
-                   MRT_DFETCH, dc->proc_id, extra_line_addr, DCACHE_LINE_SIZE,
-                   DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, NULL,
-                   NULL, op->unique_num, 0))
-                STAT_EVENT_ALL(ONE_MORE_SUCESS);
-              else
-                STAT_EVENT_ALL(ONE_MORE_DISCARDED_MEM_REQ_FULL);
-            } else
-              STAT_EVENT_ALL(ONE_MORE_DISCARDED_L0CACHE);
+            extra_cache_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
           }
 
           if(!op->off_path) {
@@ -455,29 +433,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
                         DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, op,
                         dcache_fill_line, op->unique_num, 0))) {
           if(ONE_MORE_CACHE_LINE_ENABLE) {
-            Addr         one_more_addr;
-            Addr         extra_line_addr;
-            Dcache_Data* extra_line;
-
-            one_more_addr = ((line_addr >> LOG2(DCACHE_LINE_SIZE)) & 1) ?
-                              ((line_addr >> LOG2(DCACHE_LINE_SIZE)) - 1)
-                                << LOG2(DCACHE_LINE_SIZE) :
-                              ((line_addr >> LOG2(DCACHE_LINE_SIZE)) + 1)
-                                << LOG2(DCACHE_LINE_SIZE);
-
-            extra_line = (Dcache_Data*)cache_access(&dc->dcache, one_more_addr,
-                                                    &extra_line_addr, FALSE);
-            ASSERT(dc->proc_id, one_more_addr == extra_line_addr);
-            if(!extra_line) {
-              if(new_mem_req(
-                   MRT_DPRF, dc->proc_id, extra_line_addr, DCACHE_LINE_SIZE,
-                   DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, NULL,
-                   NULL, op->unique_num, 0))
-                STAT_EVENT_ALL(ONE_MORE_SUCESS);
-              else
-                STAT_EVENT_ALL(ONE_MORE_DISCARDED_MEM_REQ_FULL);
-            } else
-              STAT_EVENT_ALL(ONE_MORE_DISCARDED_L0CACHE);
+            extra_cache_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
           }
 
           if(!op->off_path) {
@@ -513,29 +469,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
                         DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, op,
                         dcache_fill_line, op->unique_num, 0))) {
           if(ONE_MORE_CACHE_LINE_ENABLE) {
-            Addr         one_more_addr;
-            Addr         extra_line_addr;
-            Dcache_Data* extra_line;
-
-            one_more_addr = ((line_addr >> LOG2(DCACHE_LINE_SIZE)) & 1) ?
-                              ((line_addr >> LOG2(DCACHE_LINE_SIZE)) - 1)
-                                << LOG2(DCACHE_LINE_SIZE) :
-                              ((line_addr >> LOG2(DCACHE_LINE_SIZE)) + 1)
-                                << LOG2(DCACHE_LINE_SIZE);
-
-            extra_line = (Dcache_Data*)cache_access(&dc->dcache, one_more_addr,
-                                                    &extra_line_addr, FALSE);
-            ASSERT(dc->proc_id, one_more_addr == extra_line_addr);
-            if(!extra_line) {
-              if(new_mem_req(
-                   MRT_DFETCH, dc->proc_id, extra_line_addr, DCACHE_LINE_SIZE,
-                   DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, NULL,
-                   NULL, op->unique_num, 0))
-                STAT_EVENT_ALL(ONE_MORE_SUCESS);
-              else
-                STAT_EVENT_ALL(ONE_MORE_DISCARDED_MEM_REQ_FULL);
-            } else
-              STAT_EVENT_ALL(ONE_MORE_DISCARDED_L0CACHE);
+            extra_cache_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
           }
 
           if(!op->off_path) {
@@ -891,4 +825,33 @@ void wp_process_dcache_fill(Dcache_Data* line, Mem_Req* req) {
         break;
     }
   }
+}
+
+/**************************************************************************************/
+/* One More Cache Line Access */
+
+void extra_cache_access(Op *op, Cache *cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle) {
+  Addr         one_more_addr;
+  Addr         extra_line_addr;
+  Dcache_Data* extra_line;
+
+  one_more_addr = ((line_addr >> LOG2(cache->line_size)) & 1) ?
+                    ((line_addr >> LOG2(cache->line_size)) - 1)
+                      << LOG2(cache->line_size) :
+                    ((line_addr >> LOG2(cache->line_size)) + 1)
+                      << LOG2(cache->line_size);
+
+  extra_line = (Dcache_Data*)cache_access(cache, one_more_addr,
+                                          &extra_line_addr, FALSE);
+  ASSERT(proc_id, one_more_addr == extra_line_addr);
+  if(!extra_line) {
+    if(new_mem_req(
+          MRT_DFETCH, proc_id, extra_line_addr, cache->line_size,
+          cache_cycle - 1 + op->inst_info->extra_ld_latency, NULL,
+          NULL, op->unique_num, 0))
+      STAT_EVENT_ALL(ONE_MORE_SUCESS);
+    else
+      STAT_EVENT_ALL(ONE_MORE_DISCARDED_MEM_REQ_FULL);
+  } else
+    STAT_EVENT_ALL(ONE_MORE_DISCARDED_L0CACHE);
 }

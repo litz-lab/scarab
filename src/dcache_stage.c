@@ -314,189 +314,10 @@ void update_dcache_stage(Stage_Data* src_sd) {
         op->wake_cycle = op->done_cycle;
         wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
       }
-    } else if(line) {  // data cache hit
-
-      if(PREF_FRAMEWORK_ON &&  // if framework is on use new prefetcher.
-                               // otherwise old one
-         (PREF_UPDATE_ON_WRONGPATH || !op->off_path)) {
-        if(line->HW_prefetch) {
-          pref_dl0_pref_hit(line_addr, op->inst_info->addr, 0);  // CHANGEME
-          line->HW_prefetch = FALSE;
-        } else {
-          pref_dl0_hit(line_addr, op->inst_info->addr);
-        }
-      } else if((STREAM_TRAIN_ON_WRONGPATH ||
-                 !op->off_path) &&  // old prefetcher code
-                line->HW_prefetch) {
-        STAT_EVENT(op->proc_id, DCACHE_PREF_HIT);
-        STAT_EVENT(op->proc_id, STREAM_DCACHE_PREF_HIT);
-        line->HW_prefetch = FALSE;  // not anymore prefetched data
-        if(L2L1PREF_ON)
-          l2l1pref_dcache(line_addr, op);
-        if(STREAM_PREFETCH_ON && STREAM_PREF_INTO_DCACHE) {
-          stream_dl0_hit_train(line_addr);
-        }
-      }
-
-      if(L2L1PREF_ON && L2L1_DC_HIT_TRAIN) {
-        l2l1pref_dcache(line_addr, op);
-      }
-
-      wp_process_dcache_hit(line, op);
-
-      line->misc_state = (line->misc_state & 2) | op->off_path;
-      if(!op->off_path) {
-        STAT_EVENT(op->proc_id, DCACHE_HIT);
-        STAT_EVENT(op->proc_id, DCACHE_HIT_ONPATH);
-      } else
-        STAT_EVENT(op->proc_id, DCACHE_HIT_OFFPATH);
-
-      op->done_cycle = cycle_count + DCACHE_CYCLES +
-                       op->inst_info->extra_ld_latency;
-
-      if(!op->off_path) {
-        line->dirty |= op->table_info->mem_type == MEM_ST;
-      }
-      line->read_count[op->off_path] = line->read_count[op->off_path] +
-                                       (op->table_info->mem_type == MEM_LD);
-      line->write_count[op->off_path] = line->write_count[op->off_path] +
-                                        (op->table_info->mem_type == MEM_ST);
-
-      if(op->table_info->mem_type != MEM_ST) {
-        op->wake_cycle = op->done_cycle;
-        wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
-      }
+    } else if(line) {
+      dcache_hit_proc(line, op, line_addr);
     } else {  // data cache miss
-      if(op->table_info->mem_type == MEM_ST)
-        STAT_EVENT(op->proc_id, POWER_DCACHE_WRITE_MISS);
-      else
-        STAT_EVENT(op->proc_id, POWER_DCACHE_READ_MISS);
-
-      if(CACHE_STAT_ENABLE)
-        dc_miss_stat(op);
-
-      if(op->table_info->mem_type == MEM_LD) {  // load request
-        if(((model->mem == MODEL_MEM) &&
-            scan_stores(
-              op->oracle_info.va,
-              op->oracle_info.mem_size))) {  // scan the store forwarding buffer
-          if(!op->off_path) {
-            STAT_EVENT(op->proc_id, DCACHE_ST_BUFFER_HIT);
-            STAT_EVENT(op->proc_id, DCACHE_ST_BUFFER_HIT_ONPATH);
-          } else
-            STAT_EVENT(op->proc_id, DCACHE_ST_BUFFER_HIT_OFFPATH);
-          op->done_cycle = cycle_count + DCACHE_CYCLES +
-                           op->inst_info->extra_ld_latency;
-          op->wake_cycle = cycle_count + DCACHE_CYCLES +
-                           op->inst_info->extra_ld_latency;
-          wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
-        } else if(((model->mem == MODEL_MEM) &&
-                   new_mem_req(
-                     MRT_DFETCH, dc->proc_id, line_addr, DCACHE_LINE_SIZE,
-                     DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, op,
-                     dcache_fill_line, op->unique_num, 0))) {
-          if(PREF_UPDATE_ON_WRONGPATH || !op->off_path) {
-            pref_dl0_miss(line_addr, op->inst_info->addr);
-          }
-
-          if(ONE_MORE_CACHE_LINE_ENABLE) {
-            extra_cache_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
-          }
-
-          if(!op->off_path) {
-            STAT_EVENT(op->proc_id, DCACHE_MISS);
-            STAT_EVENT(op->proc_id, DCACHE_MISS_ONPATH);
-            STAT_EVENT(op->proc_id, DCACHE_MISS_LD_ONPATH);
-            op->oracle_info.dcmiss = TRUE;
-            STAT_EVENT(op->proc_id, DCACHE_MISS_LD);
-          } else {
-            wrongpath_dcmiss = TRUE;
-            STAT_EVENT(op->proc_id, DCACHE_MISS_OFFPATH);
-            STAT_EVENT(op->proc_id, DCACHE_MISS_LD_OFFPATH);
-          }
-          op->state              = OS_MISS;
-          op->engine_info.dcmiss = TRUE;
-        } else {
-          op->state = OS_WAIT_MEM;  // go into this state if no miss buffer is
-                                    // available
-          cmp_model.node_stage[dc->proc_id].mem_blocked = TRUE;
-          mem->uncores[dc->proc_id].mem_block_start     = freq_cycle_count(
-            FREQ_DOMAIN_L1);
-          STAT_EVENT(op->proc_id, DCACHE_MISS_WAITMEM);
-        }
-      } else if(op->table_info->mem_type == MEM_PF ||
-                op->table_info->mem_type == MEM_WH) {
-        // prefetches don't scan the store buffer
-
-        if(((model->mem == MODEL_MEM) &&
-            new_mem_req(MRT_DPRF, dc->proc_id, line_addr, DCACHE_LINE_SIZE,
-                        DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, op,
-                        dcache_fill_line, op->unique_num, 0))) {
-          if(ONE_MORE_CACHE_LINE_ENABLE) {
-            extra_cache_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
-          }
-
-          if(!op->off_path) {
-            STAT_EVENT(op->proc_id, DCACHE_MISS);
-            STAT_EVENT(op->proc_id, DCACHE_MISS_ONPATH);
-            STAT_EVENT(op->proc_id, DCACHE_MISS_LD_ONPATH);
-            op->oracle_info.dcmiss = TRUE;
-            STAT_EVENT(op->proc_id, DCACHE_MISS_LD);
-          } else {
-            wrongpath_dcmiss = TRUE;
-            STAT_EVENT(op->proc_id, DCACHE_MISS_OFFPATH);
-            STAT_EVENT(op->proc_id, DCACHE_MISS_LD_OFFPATH);
-          }
-          op->state = OS_MISS;
-          if(PREFS_DO_NOT_BLOCK_WINDOW || op->table_info->mem_type == MEM_PF) {
-            op->done_cycle = cycle_count + DCACHE_CYCLES +
-                             op->inst_info->extra_ld_latency;
-            op->state = OS_SCHEDULED;
-          }
-        } else {
-          op->state = OS_WAIT_MEM;  // go into this state if no miss buffer is
-                                    // available
-          cmp_model.node_stage[dc->proc_id].mem_blocked = TRUE;
-          mem->uncores[dc->proc_id].mem_block_start     = freq_cycle_count(
-            FREQ_DOMAIN_L1);
-          STAT_EVENT(op->proc_id, DCACHE_MISS_WAITMEM);
-        }
-      } else {  // store request
-        ASSERT(dc->proc_id, op->table_info->mem_type == MEM_ST);
-
-        if(((model->mem == MODEL_MEM) &&
-            new_mem_req(MRT_DSTORE, dc->proc_id, line_addr, DCACHE_LINE_SIZE,
-                        DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, op,
-                        dcache_fill_line, op->unique_num, 0))) {
-          if(ONE_MORE_CACHE_LINE_ENABLE) {
-            extra_cache_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
-          }
-
-          if(!op->off_path) {
-            STAT_EVENT(op->proc_id, DCACHE_MISS);
-            STAT_EVENT(op->proc_id, DCACHE_MISS_ONPATH);
-            STAT_EVENT(op->proc_id, DCACHE_MISS_ST_ONPATH);
-            op->oracle_info.dcmiss = TRUE;
-            STAT_EVENT(op->proc_id, DCACHE_MISS_ST);
-          } else {
-            wrongpath_dcmiss = TRUE;
-            STAT_EVENT(op->proc_id, DCACHE_MISS_OFFPATH);
-            STAT_EVENT(op->proc_id, DCACHE_MISS_ST_OFFPATH);
-          }
-          op->state = OS_MISS;
-          if(STORES_DO_NOT_BLOCK_WINDOW) {
-            op->done_cycle = cycle_count + DCACHE_CYCLES +
-                             op->inst_info->extra_ld_latency;
-            op->state = OS_SCHEDULED;
-          }
-        } else {
-          op->state                                     = OS_WAIT_MEM;
-          cmp_model.node_stage[dc->proc_id].mem_blocked = TRUE;
-          mem->uncores[dc->proc_id].mem_block_start     = freq_cycle_count(
-            FREQ_DOMAIN_L1);
-          STAT_EVENT(op->proc_id, DCACHE_MISS_WAITMEM);
-        }
-      }
+      wrongpath_dcmiss = dcache_miss_proc(line, op, line_addr);
     }
 
     if(STREAM_PREFETCH_ON &&
@@ -854,4 +675,194 @@ void extra_cache_access(Op *op, Cache *cache, Addr line_addr, uns8 proc_id, uns8
       STAT_EVENT_ALL(ONE_MORE_DISCARDED_MEM_REQ_FULL);
   } else
     STAT_EVENT_ALL(ONE_MORE_DISCARDED_L0CACHE);
+}
+
+void dcache_hit_proc(Dcache_Data* line, Op *op, Addr line_addr) {
+  if(PREF_FRAMEWORK_ON &&  // if framework is on use new prefetcher.
+                            // otherwise old one
+      (PREF_UPDATE_ON_WRONGPATH || !op->off_path)) {
+    if(line->HW_prefetch) {
+      pref_dl0_pref_hit(line_addr, op->inst_info->addr, 0);  // CHANGEME
+      line->HW_prefetch = FALSE;
+    } else {
+      pref_dl0_hit(line_addr, op->inst_info->addr);
+    }
+  } else if((STREAM_TRAIN_ON_WRONGPATH ||
+              !op->off_path) &&  // old prefetcher code
+            line->HW_prefetch) {
+    STAT_EVENT(op->proc_id, DCACHE_PREF_HIT);
+    STAT_EVENT(op->proc_id, STREAM_DCACHE_PREF_HIT);
+    line->HW_prefetch = FALSE;  // not anymore prefetched data
+    if(L2L1PREF_ON)
+      l2l1pref_dcache(line_addr, op);
+    if(STREAM_PREFETCH_ON && STREAM_PREF_INTO_DCACHE) {
+      stream_dl0_hit_train(line_addr);
+    }
+  }
+
+  if(L2L1PREF_ON && L2L1_DC_HIT_TRAIN) {
+    l2l1pref_dcache(line_addr, op);
+  }
+
+  wp_process_dcache_hit(line, op);
+
+  line->misc_state = (line->misc_state & 2) | op->off_path;
+  if(!op->off_path) {
+    STAT_EVENT(op->proc_id, DCACHE_HIT);
+    STAT_EVENT(op->proc_id, DCACHE_HIT_ONPATH);
+  } else
+    STAT_EVENT(op->proc_id, DCACHE_HIT_OFFPATH);
+
+  op->done_cycle = cycle_count + DCACHE_CYCLES +
+                    op->inst_info->extra_ld_latency;
+
+  if(!op->off_path) {
+    line->dirty |= op->table_info->mem_type == MEM_ST;
+  }
+  line->read_count[op->off_path] = line->read_count[op->off_path] +
+                                    (op->table_info->mem_type == MEM_LD);
+  line->write_count[op->off_path] = line->write_count[op->off_path] +
+                                    (op->table_info->mem_type == MEM_ST);
+
+  if(op->table_info->mem_type != MEM_ST) {
+    op->wake_cycle = op->done_cycle;
+    wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+  }
+}
+
+Flag dcache_miss_proc(Dcache_Data* line, Op *op, Addr line_addr) {
+  Flag wrongpath_dcmiss = FALSE;
+
+  if(op->table_info->mem_type == MEM_ST)
+    STAT_EVENT(op->proc_id, POWER_DCACHE_WRITE_MISS);
+  else
+    STAT_EVENT(op->proc_id, POWER_DCACHE_READ_MISS);
+
+  if(CACHE_STAT_ENABLE)
+    dc_miss_stat(op);
+
+  if(op->table_info->mem_type == MEM_LD) {  // load request
+    if(((model->mem == MODEL_MEM) &&
+        scan_stores(
+          op->oracle_info.va,
+          op->oracle_info.mem_size))) {  // scan the store forwarding buffer
+      if(!op->off_path) {
+        STAT_EVENT(op->proc_id, DCACHE_ST_BUFFER_HIT);
+        STAT_EVENT(op->proc_id, DCACHE_ST_BUFFER_HIT_ONPATH);
+      } else
+        STAT_EVENT(op->proc_id, DCACHE_ST_BUFFER_HIT_OFFPATH);
+      op->done_cycle = cycle_count + DCACHE_CYCLES +
+                      op->inst_info->extra_ld_latency;
+      op->wake_cycle = cycle_count + DCACHE_CYCLES +
+                      op->inst_info->extra_ld_latency;
+      wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+    } else if(((model->mem == MODEL_MEM) &&
+              new_mem_req(
+                MRT_DFETCH, dc->proc_id, line_addr, DCACHE_LINE_SIZE,
+                DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, op,
+                dcache_fill_line, op->unique_num, 0))) {
+      if(PREF_UPDATE_ON_WRONGPATH || !op->off_path) {
+        pref_dl0_miss(line_addr, op->inst_info->addr);
+      }
+
+      if(ONE_MORE_CACHE_LINE_ENABLE) {
+        extra_cache_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
+      }
+
+      if(!op->off_path) {
+        STAT_EVENT(op->proc_id, DCACHE_MISS);
+        STAT_EVENT(op->proc_id, DCACHE_MISS_ONPATH);
+        STAT_EVENT(op->proc_id, DCACHE_MISS_LD_ONPATH);
+        op->oracle_info.dcmiss = TRUE;
+        STAT_EVENT(op->proc_id, DCACHE_MISS_LD);
+      } else {
+        wrongpath_dcmiss = TRUE;
+        STAT_EVENT(op->proc_id, DCACHE_MISS_OFFPATH);
+        STAT_EVENT(op->proc_id, DCACHE_MISS_LD_OFFPATH);
+      }
+      op->state              = OS_MISS;
+      op->engine_info.dcmiss = TRUE;
+    } else {
+      op->state = OS_WAIT_MEM;  // go into this state if no miss buffer is
+                                // available
+      cmp_model.node_stage[dc->proc_id].mem_blocked = TRUE;
+      mem->uncores[dc->proc_id].mem_block_start     = freq_cycle_count(
+        FREQ_DOMAIN_L1);
+      STAT_EVENT(op->proc_id, DCACHE_MISS_WAITMEM);
+    }
+  } else if(op->table_info->mem_type == MEM_PF ||
+            op->table_info->mem_type == MEM_WH) {
+    // prefetches don't scan the store buffer
+
+    if(((model->mem == MODEL_MEM) &&
+        new_mem_req(MRT_DPRF, dc->proc_id, line_addr, DCACHE_LINE_SIZE,
+                    DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, op,
+                    dcache_fill_line, op->unique_num, 0))) {
+      if(ONE_MORE_CACHE_LINE_ENABLE) {
+        extra_cache_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
+      }
+
+      if(!op->off_path) {
+        STAT_EVENT(op->proc_id, DCACHE_MISS);
+        STAT_EVENT(op->proc_id, DCACHE_MISS_ONPATH);
+        STAT_EVENT(op->proc_id, DCACHE_MISS_LD_ONPATH);
+        op->oracle_info.dcmiss = TRUE;
+        STAT_EVENT(op->proc_id, DCACHE_MISS_LD);
+      } else {
+        wrongpath_dcmiss = TRUE;
+        STAT_EVENT(op->proc_id, DCACHE_MISS_OFFPATH);
+        STAT_EVENT(op->proc_id, DCACHE_MISS_LD_OFFPATH);
+      }
+      op->state = OS_MISS;
+      if(PREFS_DO_NOT_BLOCK_WINDOW || op->table_info->mem_type == MEM_PF) {
+        op->done_cycle = cycle_count + DCACHE_CYCLES +
+                        op->inst_info->extra_ld_latency;
+        op->state = OS_SCHEDULED;
+      }
+    } else {
+      op->state = OS_WAIT_MEM;  // go into this state if no miss buffer is
+                                // available
+      cmp_model.node_stage[dc->proc_id].mem_blocked = TRUE;
+      mem->uncores[dc->proc_id].mem_block_start     = freq_cycle_count(
+        FREQ_DOMAIN_L1);
+      STAT_EVENT(op->proc_id, DCACHE_MISS_WAITMEM);
+    }
+  } else {  // store request
+    ASSERT(dc->proc_id, op->table_info->mem_type == MEM_ST);
+
+    if(((model->mem == MODEL_MEM) &&
+        new_mem_req(MRT_DSTORE, dc->proc_id, line_addr, DCACHE_LINE_SIZE,
+                    DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, op,
+                    dcache_fill_line, op->unique_num, 0))) {
+      if(ONE_MORE_CACHE_LINE_ENABLE) {
+        extra_cache_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
+      }
+
+      if(!op->off_path) {
+        STAT_EVENT(op->proc_id, DCACHE_MISS);
+        STAT_EVENT(op->proc_id, DCACHE_MISS_ONPATH);
+        STAT_EVENT(op->proc_id, DCACHE_MISS_ST_ONPATH);
+        op->oracle_info.dcmiss = TRUE;
+        STAT_EVENT(op->proc_id, DCACHE_MISS_ST);
+      } else {
+        wrongpath_dcmiss = TRUE;
+        STAT_EVENT(op->proc_id, DCACHE_MISS_OFFPATH);
+        STAT_EVENT(op->proc_id, DCACHE_MISS_ST_OFFPATH);
+      }
+      op->state = OS_MISS;
+      if(STORES_DO_NOT_BLOCK_WINDOW) {
+        op->done_cycle = cycle_count + DCACHE_CYCLES +
+                        op->inst_info->extra_ld_latency;
+        op->state = OS_SCHEDULED;
+      }
+    } else {
+      op->state                                     = OS_WAIT_MEM;
+      cmp_model.node_stage[dc->proc_id].mem_blocked = TRUE;
+      mem->uncores[dc->proc_id].mem_block_start     = freq_cycle_count(
+        FREQ_DOMAIN_L1);
+      STAT_EVENT(op->proc_id, DCACHE_MISS_WAITMEM);
+    }
+  }
+
+  return wrongpath_dcmiss;
 }

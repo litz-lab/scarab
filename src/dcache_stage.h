@@ -101,6 +101,9 @@ void update_iso_miss(Op*);
 Flag do_oracle_dcache_access(Op*, Addr*);
 void extra_cache_access(Op *op, Cache *cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle);
 
+void dcache_hit_proc(Dcache_Data* line, Op *op, Addr line_addr);
+Flag dcache_miss_proc(Dcache_Data* line, Op *op, Addr line_addr);
+
 /**************************************************************************************/
 
 #endif /* #ifndef __DCACHE_STAGE_H__ */

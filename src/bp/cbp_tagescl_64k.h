@@ -250,7 +250,7 @@ typedef boost::multi_index_container<CheckpointEntry,
     CheckpointContainer;
 
 class TAGE64K {
- private:
+ protected:
   // Predictor state components
 #define PERCWIDTH 6  // Statistical corrector  counter width 5 -> 6 : 0.6 %
   // The three BIAS tables in the SC component
@@ -443,7 +443,7 @@ class TAGE64K {
   void RestorePredictorstates(Counter key, UINT64 PC);
   void RestoreCheckpoint(UINT64 PC, Counter key, uns proc_id);
   void VerifyCheckpoint(UINT64 PC, Counter key, uns proc_id);
-  void RepairStateAndUpdate(UINT64 PC, bool new_dir, UINT64 branchTarget, Recovery_Info* recovery_info);
+  virtual void RepairStateAndUpdate(UINT64 PC, bool new_dir, UINT64 branchTarget, Recovery_Info* recovery_info);
   void UpdateAddr(UINT64 PC, long long phist, cbp64_folded_history* ch_i, cbp64_folded_history* ch_t0, cbp64_folded_history* ch_t1);
   CheckpointContainer checkpoints;
   PredictorContainer  predictor_states;
@@ -452,6 +452,12 @@ class TAGE64K {
   bool                off_path;
   Counter             condpattern;  // N: condition pattern
   int8_t              noskip_index[NHIST + 1];
+};
+
+class TAGE64K2 : public TAGE64K {
+public:
+  TAGE64K2(void);
+  void RepairStateAndUpdate(UINT64 PC, bool new_dir, UINT64 branchTarget, Recovery_Info* recovery_info);
 };
 
 #endif

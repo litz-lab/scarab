@@ -51,6 +51,8 @@ void cmp_init_cmp_model() {
   cmp_model.bp_recovery_info = (Bp_Recovery_Info*)malloc(
     sizeof(Bp_Recovery_Info) * NUM_CORES);
   cmp_model.bp_data      = (Bp_Data*)malloc(sizeof(Bp_Data) * NUM_CORES);
+  if (DUAL_DFE_ENABLE)
+    cmp_model.bp_data2 = (Bp_Data*)malloc(sizeof(Bp_Data) * NUM_CORES);
   cmp_model.icache_stage = (Icache_Stage*)malloc(sizeof(Icache_Stage) *
                                                  NUM_CORES);
   cmp_model.decode_stage = (Decode_Stage*)malloc(sizeof(Decode_Stage) *

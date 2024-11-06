@@ -122,7 +122,9 @@ void cmp_init(uns mode) {
 
     /* initialize the common data structures */
     init_bp_recovery_info(proc_id, &cmp_model.bp_recovery_info[proc_id]);
-    init_bp_data(proc_id, &cmp_model.bp_data[proc_id]);
+    init_bp_data(proc_id, &cmp_model.bp_data[proc_id], FALSE);
+    if (DUAL_DFE_ENABLE)
+      init_bp_data(proc_id, &cmp_model.bp_data2[proc_id], TRUE);
     init_uop_cache(proc_id);
 
     init_decoupled_fe(proc_id, "DCFE");
@@ -197,7 +199,9 @@ void cmp_istreams(void) {
 
       set_bp_recovery_info(&cmp_model.bp_recovery_info[proc_id]);
       if(cycle_count >= bp_recovery_info->recovery_cycle) {
-        set_bp_data(&cmp_model.bp_data[proc_id]);
+        set_bp_data(&cmp_model.bp_data[proc_id], FALSE);
+        if (DUAL_DFE_ENABLE)
+          set_bp_data(&cmp_model.bp_data2[proc_id], TRUE);
         cmp_set_all_stages(proc_id);
         cmp_recover();
       }
@@ -220,7 +224,9 @@ void cmp_cores(void) {
     if(freq_is_ready(FREQ_DOMAIN_CORES[proc_id])) {
       cycle_count = freq_cycle_count(FREQ_DOMAIN_CORES[proc_id]);
 
-      set_bp_data(&cmp_model.bp_data[proc_id]);
+      set_bp_data(&cmp_model.bp_data[proc_id], FALSE);
+      if (DUAL_DFE_ENABLE)
+        set_bp_data(&cmp_model.bp_data2[proc_id], TRUE);
       set_bp_recovery_info(&cmp_model.bp_recovery_info[proc_id]);
       cmp_set_all_stages(proc_id);
 
@@ -348,6 +354,9 @@ void cmp_recover() {
          bp_recovery_info->proc_id == map_data->proc_id);
   bp_recovery_info->recovery_cycle = MAX_CTR;
   bp_recovery_info->redirect_cycle = MAX_CTR;
+  if (DUAL_DFE_ENABLE)
+    bp_recover_op_secondary(g_bp_data2, g_bp_data,
+        bp_recovery_info->recovery_cf_type, &bp_recovery_info->recovery_info);
   bp_recover_op(g_bp_data, bp_recovery_info->recovery_cf_type,
                 &bp_recovery_info->recovery_info);
 

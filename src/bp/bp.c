@@ -48,6 +48,7 @@
 #include "uop_cache.h"
 #include "prefetcher/branch_misprediction_table.h"
 #include "icache_stage.h"
+#include "decoupled_frontend.h"
 
 #include "bp/bp.param.h"
 #include "core.param.h"
@@ -84,6 +85,7 @@ extern void tc_do_stat(Op*, Flag);
 
 Bp_Recovery_Info* bp_recovery_info = NULL;
 Bp_Data*          g_bp_data        = NULL;
+Bp_Data*          g_bp_data2       = NULL;
 Flag              USE_LATE_BP      = FALSE;
 extern List       op_buf;
 extern uns        operating_mode;
@@ -96,8 +98,11 @@ Hash_Table per_branch_stat;
 /******************************************************************************/
 /* set_bp_data set the global bp_data pointer (so I don't have to pass it around
  * everywhere */
-void set_bp_data(Bp_Data* new_bp_data) {
-  g_bp_data = new_bp_data;
+void set_bp_data(Bp_Data* new_bp_data, Flag secondary) {
+  if (secondary)
+    g_bp_data2 = new_bp_data;
+  else
+    g_bp_data = new_bp_data;
 }
 
 /******************************************************************************/
@@ -260,20 +265,22 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op,
 /******************************************************************************/
 /* init_bp:  initializes all branch prediction structures */
 
-void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
+void init_bp_data(uns8 proc_id, Bp_Data* bp_data, Flag secondary) {
+  if (!DUAL_DFE_ENABLE && secondary)
+    return;
   uns ii;
   ASSERT(bp_data->proc_id, bp_data);
   memset(bp_data, 0, sizeof(Bp_Data));
 
   bp_data->proc_id = proc_id;
   /* initialize branch predictor */
-  bp_data->bp = &bp_table[BP_MECH];
+  bp_data->bp = secondary? &bp_table2[BP_MECH2] : &bp_table[BP_MECH];
   bp_data->bp->init_func();
 
   USE_LATE_BP = (LATE_BP_MECH != NUM_BP);
 
   if(USE_LATE_BP) {
-    bp_data->late_bp = &bp_table[LATE_BP_MECH];
+    bp_data->late_bp = secondary? &bp_table2[LATE_BP_MECH2] : &bp_table[LATE_BP_MECH];
     bp_data->late_bp->init_func();
   } else {
     bp_data->late_bp = NULL;
@@ -302,7 +309,10 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
             bp_data->target_bit_length * TARGETS_IN_HIST == IBTB_HIST_LENGTH,
             "IBTB_HIST_LENGTH must be a multiple of TARGETS_IN_HIST\n");
 
-  g_bp_data = bp_data;
+  if (secondary)
+    g_bp_data2 = bp_data;
+  else
+    g_bp_data = bp_data;
 
   /* confidence */
   if(ENABLE_BP_CONF) {
@@ -314,7 +324,6 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
 Flag bp_is_predictable(Bp_Data* bp_data, uns proc_id) {
   return !bp_data->bp->full_func(proc_id);
 }
-
 
 /******************************************************************************/
 /* bp_predict_op:  predicts the target of a control flow instruction */
@@ -975,7 +984,7 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction) {
         op->oracle_info.misfetch, op->oracle_info.no_target);
 
   if(ENABLE_BP_CONF && IS_CONF_CF(op)) {
-    bp_data->br_conf->pred_func(op);
+    bp_data->br_conf->pred_func(bp_data, op);
 
     if(!op->off_path) {
       if(op->oracle_info.pred_conf) {
@@ -1060,7 +1069,7 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
   }
 
   if(ENABLE_BP_CONF && IS_CONF_CF(op)) {
-    bp_data->br_conf->update_func(op);
+    bp_data->br_conf->update_func(bp_data, op);
   }
   if(op->oracle_info.misfetch || op->oracle_info.mispred) {
     INC_STAT_EVENT(op->proc_id, BP_MISP_PENALTY,
@@ -1107,21 +1116,19 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
     bp_data->bp_ibtb->recover_func(bp_data, info);
   }
   bp_data->bp->recover_func(info);
-  if(USE_LATE_BP) {
+  if(USE_LATE_BP)
     bp_data->late_bp->recover_func(info);
-  }
 
   /* always recover the call return stack */
   CRS_REALISTIC ? bp_crs_realistic_recover(bp_data, info) :
                   bp_crs_recover(bp_data);
 
   if(ENABLE_BP_CONF && bp_data->br_conf->recover_func)
-    bp_data->br_conf->recover_func();
+    bp_data->br_conf->recover_func(bp_data);
 
   if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)
     increment_branch_mispredictions(info->PC);
 }
-
 
 /******************************************************************************/
 /* bp_dump_stat: dump the stat per heartbeat */
@@ -1135,4 +1142,23 @@ void bp_dump_stat(void) {
     fprintf(fp, "%i,%llx,%llx\n", entry->cf_type, entry->addr, entry->target);
   }
   free(entries);
+}
+
+void bp_recover_op_secondary(Bp_Data* bp_data2, const Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
+  if (DUAL_DFE_POLICY == CONTINUE_ON_RECOVERY) {
+    bp_data2->global_hist = bp_data->global_hist;
+  } else if (DUAL_DFE_POLICY == CONTINUE_ON_PREDICTION) {
+    /* always recover the global history */
+    if(cf_type == CF_CBR) {
+      bp_data2->global_hist = (info->pred_global_hist >> 1) |
+        (info->new_dir << 31);
+    } else {
+      bp_data2->global_hist = info->pred_global_hist;
+    }
+    bp_data2->targ_hist = info->targ_hist;
+  }
+
+  bp_data2->bp->recover_func(info);
+  if(USE_LATE_BP)
+    bp_data2->late_bp->recover_func(info);
 }

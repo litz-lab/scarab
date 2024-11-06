@@ -19,6 +19,7 @@ extern "C" {
 #include <map>
 #include <algorithm>
 #include <tuple>
+#include <memory>
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FDIP, ##args)
 
 using namespace std;
@@ -64,6 +65,7 @@ public:
     cur_line_delay(0),
     ftq_occupancy_ops(0),
     ftq_occupancy_blocks(0) {}
+  ~FDIP_Stat() {}
   void inc_prefetched_cls(Addr line_addr, Flag on_path, uns success);
   void not_prefetch(Addr line_addr);
   void print_cl_info(Icache_Stage* ic_ref);
@@ -131,14 +133,25 @@ private:
   uint64_t ftq_occupancy_ops;
   uint64_t ftq_occupancy_blocks;
   friend class FDIP;
+  friend class FDIP2;
 };
 
 class FDIP {
 public:
+  FDIP() :
+  ic_ref(nullptr),
+  cur_op(nullptr),
+  last_line_addr(0),
+  warmed_up(FALSE),
+  udp(nullptr),
+  uftq(nullptr),
+  fdip_conf(nullptr) {}
   FDIP(uns _proc_id);
+  ~FDIP() {}
   void init(uns proc_id);
-  void recover();
-  void update();
+  virtual void recover();
+  virtual void update();
+  virtual void insert_pref_candidate_to_seniority_ftq(Addr line_addr);
   void set_ic_ref(Icache_Stage *ic) { ic_ref = ic; }
   Flag is_off_path();
   Counter get_last_recover_cycle() { return fdip_stat.last_recover_cycle; }
@@ -146,7 +159,6 @@ public:
   void update_unuseful_lines_uc(Addr line_addr);
   void update_useful_lines_uc(Addr line_addr);
   void update_useful_lines_bloom_filter(Addr line_addr);
-  void insert_pref_candidate_to_seniority_ftq(Addr line_addr);
   Flag get_warmed_up() { return warmed_up; }
   void print_cl_info() { fdip_stat.print_cl_info(ic_ref); }
   uns get_proc_id() { return proc_id; }
@@ -171,63 +183,86 @@ public:
   void inc_off_fetched_cls(Addr line_addr);
   uint64_t get_ftq_occupancy_ops();
   uint64_t get_ftq_occupancy();
-private:
-  Flag determine_usefulness(Addr line_addr, Op* op);
-  void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefetch, Op* op);
-  void determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_prefetch, Op* op);
-  void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* emit_new_prefetch, Op* op);
+  Flag determine_usefulness(Addr line_addr, Op* op, uint64_t ghist);
+  void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefetch, Op* op, uint64_t ghist);
+  void determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_prefetch, Op* op, uint64_t ghist);
+  void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* emit_new_prefetch, Op* op, uint64_t ghist);
   Flag conf_off_path();
   void inc_prefetched_cls(Addr line_addr, uns success);
+  UDP* get_udp() { return udp; }
+  UFTQ* get_uftq() { return uftq; }
+  FDIP_Conf* get_fdip_conf() { return fdip_conf; }
 
+protected:
   uns proc_id;
   Icache_Stage *ic_ref;
   Op* cur_op;
-  decoupled_fe_iter* ftq_iter;
   Addr last_line_addr;
   Flag warmed_up;
   FDIP_Stat fdip_stat;
+  uns ftq_iter;
   UDP* udp;
   UFTQ* uftq;
   FDIP_Conf* fdip_conf;
 };
 
+class FDIP2 : public FDIP {
+public:
+  FDIP2(uns _proc_id);
+  ~FDIP2() {}
+  void update();
+  void recover();
+  void insert_pref_candidate_to_seniority_ftq(Addr line_addr);
+};
+
 /* Global Variables */
 FDIP* fdip = NULL;
+FDIP* fdip2 = NULL;
 
 // Per core FDIP
-vector<FDIP> per_core_fdip;
+vector<unique_ptr<FDIP>> per_core_fdip;
+vector<unique_ptr<FDIP2>> per_core_fdip2;
 
 /* Wrapper functions */
 void alloc_mem_fdip(uns numCores) {
   for (uns i = 0; i < numCores; ++i)
-    per_core_fdip.push_back(FDIP(i));
+    per_core_fdip.push_back(std::make_unique<FDIP>(i));
   ASSERT(0, per_core_fdip.size() == numCores);
 
   if (FDIP_UTILITY_HASH_ENABLE)
     ASSERT(0, FDIP_UTILITY_PREF_POLICY >= Utility_Pref_Policy::PREF_CONV_FROM_USEFUL_SET &&
         FDIP_UTILITY_PREF_POLICY < Utility_Pref_Policy::PREF_POL_END);
+  if (DUAL_DFE_ENABLE) {
+    for (uns i = 0; i < numCores; ++i)
+      per_core_fdip2.push_back(std::make_unique<FDIP2>(i));
+    ASSERT(0, per_core_fdip2.size() == numCores);
+  }
 }
 
 void init_fdip(uns proc_id) {
 }
 
 void set_fdip(int _proc_id, Icache_Stage *_ic) {
-  fdip = &per_core_fdip[_proc_id];
+  if (DUAL_DFE_ENABLE) {
+    fdip2 = per_core_fdip2[_proc_id].get();
+    fdip2->set_ic_ref(_ic);
+  }
+  fdip = per_core_fdip[_proc_id].get();
   fdip->set_ic_ref(_ic);
 }
 
 void recover_fdip() {
+  if (DUAL_DFE_ENABLE)
+    fdip2->recover();
   fdip->recover();
 }
 
 void update_fdip() {
   if (!FDIP_ENABLE)
     return;
+  if (DUAL_DFE_ENABLE)
+    fdip2->update();
   fdip->update();
-}
-
-uns64 fdip_get_ghist() {
-  return g_bp_data->global_hist;
 }
 
 uns64 fdip_hash_addr_ghist(uint64_t addr, uint64_t ghist) {
@@ -242,15 +277,15 @@ Flag fdip_off_path() {
 void print_cl_info(uns proc_id) {
   if (!FDIP_ENABLE)
     return;
-  per_core_fdip[proc_id].print_cl_info();
+  per_core_fdip[proc_id]->print_cl_info();
 }
 
 void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss) {
-  per_core_fdip[proc_id].inc_cnt_useful(line_addr, pref_miss);
+  per_core_fdip[proc_id]->inc_cnt_useful(line_addr, pref_miss);
 }
 
 void inc_cnt_unuseful(uns proc_id, Addr line_addr) {
-  per_core_fdip[proc_id].inc_cnt_unuseful(line_addr);
+  per_core_fdip[proc_id]->inc_cnt_unuseful(line_addr);
 }
 
 void inc_cnt_useful_signed(Addr line_addr) {
@@ -286,11 +321,11 @@ void set_last_miss_reason(uns reason) {
 }
 
 uint64_t get_fdip_ftq_occupancy_ops(uns proc_id) {
-  return per_core_fdip[proc_id].get_ftq_occupancy_ops();
+  return per_core_fdip[proc_id]->get_ftq_occupancy_ops();
 }
 
 uint64_t get_fdip_ftq_occupancy(uns proc_id) {
-  return per_core_fdip[proc_id].get_ftq_occupancy();
+  return per_core_fdip[proc_id]->get_ftq_occupancy();
 }
 
 void update_unuseful_lines_uc(Addr line_addr) {
@@ -324,7 +359,7 @@ void inc_timeliness_info(Flag mshr_hit) {
 }
 
 void fdip_inc_cnt_btb_miss(uns op_proc_id) {
-  per_core_fdip[op_proc_id].inc_cnt_btb_miss();
+  per_core_fdip[op_proc_id]->inc_cnt_btb_miss();
 }
 
 Flag fdip_search_pref_candidate(Addr addr) {
@@ -807,16 +842,9 @@ void FDIP_Stat::inc_icache_hit(Addr line_addr) {
 }
 
 /* FDIP member functions */
-FDIP::FDIP(uns _proc_id) :
-  proc_id(_proc_id),
-  ic_ref(nullptr),
-  cur_op(nullptr),
-  last_line_addr(0),
-  warmed_up(FALSE),
-  udp(nullptr),
-  uftq(nullptr),
-  fdip_conf(nullptr) {
-  ftq_iter = decoupled_fe_new_ftq_iter(proc_id);
+FDIP::FDIP(uns _proc_id) : FDIP() {
+  proc_id = _proc_id;
+  ftq_iter = decoupled_fe_new_ftq_iter(proc_id, FALSE);
   if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
     udp = new UDP(_proc_id);
   if (FDIP_ADJUSTABLE_FTQ)
@@ -827,7 +855,9 @@ FDIP::FDIP(uns _proc_id) :
 
 void FDIP::recover() {
   last_line_addr = 0;
+  DEBUG(proc_id, "[FDIP1] recover cycle from %llu", fdip_stat.last_recover_cycle);
   fdip_stat.last_recover_cycle = cycle_count;
+  DEBUG(proc_id, " to %llu\n", fdip_stat.last_recover_cycle);
 
   if (FDIP_BP_CONFIDENCE) {
     fdip_conf->recover();
@@ -838,7 +868,7 @@ void FDIP::recover() {
 }
 
 void FDIP::update() {
-  if (FULL_WARMUP && warmup_dump_done[fdip->proc_id] && !warmed_up)
+  if (FULL_WARMUP && warmup_dump_done[fdip->get_proc_id()] && !warmed_up)
     warmed_up = TRUE;
 
   if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
@@ -853,7 +883,7 @@ void FDIP::update() {
   bool end_of_block;
   per_cyc_ipref = 0;
   Op *op = NULL;
-  for (op = decoupled_fe_ftq_iter_get(ftq_iter, &end_of_block); op != NULL; op = decoupled_fe_ftq_iter_get_next(ftq_iter, &end_of_block), ops_per_cycle++) {
+  for (op = decoupled_fe_ftq_iter_get(ftq_iter, &end_of_block, FALSE); op != NULL; op = decoupled_fe_ftq_iter_get_next(ftq_iter, &end_of_block, FALSE), ops_per_cycle++) {
     //set previous op, only if on path or first off path instruction
     if (FDIP_BP_CONFIDENCE &&
         cur_op && (cur_op->op_num != op->op_num) &&
@@ -861,11 +891,11 @@ void FDIP::update() {
         fdip_conf->set_prev_op(cur_op, op->off_path);
 
     cur_op = op;
-    DEBUG(proc_id, "Set cur_op off_path:%i, op_num:%llu, cf_type:%i\n", cur_op->off_path, cur_op->op_num, cur_op->table_info->cf_type);
+    DEBUG(proc_id, "[FDIP] Set cur_op off_path:%i, op_num:%llu, cf_type:%i\n", cur_op->off_path, cur_op->op_num, cur_op->table_info->cf_type);
 
     Flag emit_new_prefetch = FALSE;
     if (ftq_entry_per_cycle >= MAX_FTQ_ENTRY_CYC && ops_per_cycle >= IC_ISSUE_WIDTH) {
-      DEBUG(proc_id, "Break due to max FTQ entries per cycle\n");
+      DEBUG(proc_id, "[FDIP] Break due to max FTQ entries per cycle\n");
       break_reason = BR_MAX_FTQ_ENTRY_CYC;
       break;
     }
@@ -893,13 +923,13 @@ void FDIP::update() {
 
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;
-    DEBUG(proc_id, "op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, off-path: %d\n", op->op_num, op->inst_info->addr, line_addr, last_line_addr, fdip_off_path());
+    DEBUG(proc_id, "[FDIP] op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, off-path: %d\n", op->op_num, op->inst_info->addr, line_addr, last_line_addr, fdip_off_path());
     if (line_addr != last_line_addr) {
       STAT_EVENT(proc_id, FDIP_ATTEMPTED_PREF_ONPATH + op->off_path);
-      DEBUG(proc_id, "fdip off path: %d, conf off path: %d\n", fdip_off_path(), conf_off_path());
+      DEBUG(proc_id, "[FDIP] fdip off path: %d, conf off path: %d\n", fdip_off_path(), conf_off_path());
       if (FDIP_BP_CONFIDENCE)
         fdip_conf->log_stats_bp_conf();
-      emit_new_prefetch = determine_usefulness(line_addr, op);
+      emit_new_prefetch = determine_usefulness(line_addr, op, g_bp_data->global_hist);
 
       Flag demand_hit_prefetch = FALSE;
       Flag demand_hit_writeback = FALSE;
@@ -935,7 +965,7 @@ void FDIP::update() {
         }
 
         if (line) {
-          DEBUG(proc_id, "probe hit for %llx\n", line_addr);
+          DEBUG(proc_id, "[FDIP] probe hit for %llx\n", line_addr);
           fdip_stat.probe_prefetched_cls(line_addr);
           STAT_EVENT(proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ONPATH + op->off_path);
         }
@@ -951,8 +981,8 @@ void FDIP::update() {
         mem_req_buf_full = TRUE;
         // should keep running ahead without breaking the loop by failing to emit a prefetch when FDIP is only one FTQ entry ahead where the backend fetches the FT soon
         // freeze FDIP when mem_req buffer hits the limit. This should rarely happens if mem_req_buffer_entries and ramulator_readq_entries are big enough.
-        if (FDIP_FREEZE_AT_MEM_BUF_LIMIT && decoupled_fe_ftq_iter_ft_offset(ftq_iter) > 1) {
-          DEBUG(proc_id, "Break due to full mem_req buf\n");
+        if (FDIP_FREEZE_AT_MEM_BUF_LIMIT && decoupled_fe_ftq_iter_ft_offset(ftq_iter, FALSE) > 1) {
+          DEBUG(proc_id, "[FDIP] Break due to full mem_req buf\n");
           break_reason = BR_FULL_MEM_REQ_BUF;
           break;
         }
@@ -978,7 +1008,7 @@ void FDIP::update() {
           req.fdip_pref_off_path = op->off_path;
           req.demand_icache_emitted_cycle = 0;
           req.fdip_emitted_cycle = cycle_count;
-	  req.ghist = g_bp_data->global_hist;
+          req.ghist = g_bp_data->global_hist;
           if (icache_fill_line(&req)) {
             STAT_EVENT(proc_id, FDIP_NEW_PREFETCHES_ONPATH + op->off_path);
             if (FDIP_BLOOM_FILTER)
@@ -993,17 +1023,17 @@ void FDIP::update() {
           // A buffer entry should be available since it is checked by mem_can_allocate_req_buffer for a new prefetch
           if (success == Mem_Queue_Req_Result::SUCCESS_NEW) {
             STAT_EVENT(proc_id, FDIP_NEW_PREFETCHES_ONPATH + op->off_path);
-            DEBUG(proc_id, "Success to emit a new prefetch for %llx\n", line_addr);
+            DEBUG(proc_id, "[FDIP] Success to emit a new prefetch for %llx\n", line_addr);
             per_cyc_ipref++;
             if (FDIP_BLOOM_FILTER)
               udp->bloom_inc_new_prefs();
           } else if (success == Mem_Queue_Req_Result::SUCCESS_MERGED) {
             STAT_EVENT(proc_id, FDIP_PREF_MSHR_PROBE_HIT_ONPATH + op->off_path);
-            DEBUG(proc_id, "Success to merge a prefetch for %llx\n", line_addr);
+            DEBUG(proc_id, "[FDIP] Success to merge a prefetch for %llx\n", line_addr);
           } else if (success == Mem_Queue_Req_Result::FAILED) {
             ASSERT(proc_id, mem_req_buf_full);
             STAT_EVENT(proc_id, FDIP_PREF_FAILED_ONPATH + op->off_path);
-            DEBUG(proc_id, "Failed to emit a prefetch for %llx\n", line_addr);
+            DEBUG(proc_id, "[FDIP] Failed to emit a prefetch for %llx\n", line_addr);
           }
         }
         if (FDIP_BP_CONFIDENCE)
@@ -1016,29 +1046,29 @@ void FDIP::update() {
     }
     if (end_of_block) {
       ftq_entry_per_cycle++;
-      DEBUG(proc_id, "End of block - ftq_entry_per_cycle: %d\n", ftq_entry_per_cycle);
+      DEBUG(proc_id, "[FDIP] End of block - ftq_entry_per_cycle: %d\n", ftq_entry_per_cycle);
     }
   }
   if (!op) {
-    if (!decoupled_fe_ftq_iter_ft_offset(ftq_iter)) {
-      DEBUG(proc_id, "Break due to FTQ Empty\n");
+    if (!decoupled_fe_ftq_iter_ft_offset(ftq_iter, FALSE)) {
+      DEBUG(proc_id, "[FDIP] Break due to FTQ Empty\n");
       break_reason = BR_FTQ_EMPTY;
     } else {
       break_reason = BR_REACH_FTQ_END;
-      DEBUG(proc_id, "Break due to reaching FTQ end\n");
+      DEBUG(proc_id, "[FDIP] Break due to reaching FTQ end\n");
     }
   }
 
   STAT_EVENT(proc_id, FDIP_BREAK_REACH_FTQ_END + break_reason);
-  DEBUG(proc_id, "FTQ size : %lu, FDIP prefetch FT offset : %lu\n", decoupled_fe_ftq_num_fts(), decoupled_fe_ftq_iter_ft_offset(ftq_iter));
+  DEBUG(proc_id, "[FDIP] FTQ size : %lu, FDIP prefetch FT offset : %lu\n", decoupled_fe_ftq_num_fts(FALSE), decoupled_fe_ftq_iter_ft_offset(ftq_iter, FALSE));
   if (FDIP_ADJUSTABLE_FTQ)
     uftq->cyc_reset();
 
-  fdip_stat.ftq_occupancy_ops += decoupled_fe_ftq_iter_offset(ftq_iter);
-  INC_STAT_EVENT(proc_id, FDIP_FTQ_OCCUPANCY_OPS_ACCUMULATED, decoupled_fe_ftq_iter_offset(ftq_iter));
+  fdip_stat.ftq_occupancy_ops += decoupled_fe_ftq_iter_offset(ftq_iter, FALSE);
+  INC_STAT_EVENT(proc_id, FDIP_FTQ_OCCUPANCY_OPS_ACCUMULATED, decoupled_fe_ftq_iter_offset(ftq_iter, FALSE));
   if (break_reason == BR_REACH_FTQ_END) {
-    fdip_stat.ftq_occupancy_blocks += decoupled_fe_ftq_iter_ft_offset(ftq_iter);
-    INC_STAT_EVENT(proc_id, FDIP_FTQ_OCCUPANCY_BLOCKS_ACCUMULATED, decoupled_fe_ftq_num_fts());
+    fdip_stat.ftq_occupancy_blocks += decoupled_fe_ftq_iter_ft_offset(ftq_iter, FALSE);
+    INC_STAT_EVENT(proc_id, FDIP_FTQ_OCCUPANCY_BLOCKS_ACCUMULATED, decoupled_fe_ftq_num_fts(FALSE));
   }
   fdip_stat.last_break_reason = break_reason;
 }
@@ -1055,7 +1085,7 @@ Flag FDIP::conf_off_path() {
     else
       return TRUE;
   }
-  return fdip_off_path();
+  return is_off_path();
 }
 
 void FDIP::inc_cnt_unuseful(Addr line_addr) {
@@ -1070,7 +1100,7 @@ void FDIP::inc_prefetched_cls(Addr line_addr, uns success) {
   Flag on_path = FALSE;
   if (FDIP_BP_CONFIDENCE && fdip_conf->get_low_confidence_cnt() < FDIP_OFF_PATH_THRESHOLD)
     on_path = TRUE;
-  if (!FDIP_BP_CONFIDENCE && !fdip_off_path())
+  if (!FDIP_BP_CONFIDENCE && !cur_op->off_path)
     on_path = TRUE;
 
   fdip_stat.inc_prefetched_cls(line_addr, on_path, success);
@@ -1145,10 +1175,10 @@ uint64_t FDIP::get_ftq_occupancy() {
   return (uint64_t)(fdip_stat.ftq_occupancy_blocks)/cycle_count;
 }
 
-void FDIP::determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefetch, Op* op) {
+void FDIP::determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefetch, Op* op, uint64_t ghist) {
   uint64_t hashed_line_addr = line_addr;
   if (FDIP_GHIST_HASHING)
-    hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
+    hashed_line_addr = fdip_hash_addr_ghist(line_addr, ghist);
 
   if (FDIP_BP_CONFIDENCE && fdip_conf->get_low_confidence_cnt() < FDIP_OFF_PATH_THRESHOLD) {
     DEBUG(proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", fdip_conf->get_low_confidence_cnt(), fdip_off_path());
@@ -1206,11 +1236,11 @@ void FDIP::determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefe
   }
 }
 
-void FDIP::determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_prefetch, Op* op) {
+void FDIP::determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_prefetch, Op* op, uint64_t ghist) {
   Addr uc_line_addr = 0;
   uint64_t hashed_line_addr = line_addr;
   if (FDIP_GHIST_HASHING)
-    hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
+    hashed_line_addr = fdip_hash_addr_ghist(line_addr, ghist);
 
   if (FDIP_BP_CONFIDENCE && fdip_conf->get_low_confidence_cnt() < FDIP_OFF_PATH_THRESHOLD) {
     DEBUG(proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", fdip_conf->get_low_confidence_cnt(), fdip_off_path());
@@ -1281,10 +1311,10 @@ void FDIP::determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_
   }
 }
 
-void FDIP::determine_usefulness_by_bloom_filter(Addr line_addr, Flag* emit_new_prefetch, Op* op) {
+void FDIP::determine_usefulness_by_bloom_filter(Addr line_addr, Flag* emit_new_prefetch, Op* op, uint64_t ghist) {
   uint64_t hashed_line_addr = line_addr;
   if (FDIP_GHIST_HASHING)
-    hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
+    hashed_line_addr = fdip_hash_addr_ghist(line_addr, ghist);
 
   if (FDIP_BP_CONFIDENCE && fdip_conf->get_low_confidence_cnt() < FDIP_OFF_PATH_THRESHOLD) {
     DEBUG(proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n", fdip_conf->get_low_confidence_cnt(), fdip_off_path());
@@ -1294,7 +1324,7 @@ void FDIP::determine_usefulness_by_bloom_filter(Addr line_addr, Flag* emit_new_p
     if (useful) {
       STAT_EVENT(proc_id, FDIP_BLOOM_HIT);
       *emit_new_prefetch = TRUE;
-      DEBUG(proc_id, "bloom : emit a new prefetch for cl 0x%llx off_path: %u", line_addr, fdip_off_path() ? 1 : 0);
+      DEBUG(proc_id, "bloom : emit a new prefetch for cl 0x%llx off_path: %u", line_addr, cur_op->off_path ? 1 : 0);
     } else {
       STAT_EVENT(proc_id, FDIP_BLOOM_MISS);
       DEBUG(proc_id, "bloom : do not emit a new prefetch for cl 0x%llx", line_addr);
@@ -1304,13 +1334,13 @@ void FDIP::determine_usefulness_by_bloom_filter(Addr line_addr, Flag* emit_new_p
   }
 }
 
-Flag FDIP::determine_usefulness(Addr line_addr, Op* op) {
+Flag FDIP::determine_usefulness(Addr line_addr, Op* op, uint64_t ghist) {
   if (!FDIP_UTILITY_HASH_ENABLE && !FDIP_UC_SIZE && !FDIP_BLOOM_FILTER && !FDIP_PERFECT_PREFETCH)
     return TRUE;
 
   Flag emit_new_prefetch = FALSE;
   if (FDIP_PERFECT_PREFETCH) {
-    if (!fdip_off_path())
+    if (!cur_op->off_path)
       emit_new_prefetch = TRUE;
     else {
       emit_new_prefetch = buf_map_find(line_addr);
@@ -1321,11 +1351,11 @@ Flag FDIP::determine_usefulness(Addr line_addr, Op* op) {
     }
   } else if (udp->get_last_cl_unuseful() != line_addr) {
     if (FDIP_UTILITY_HASH_ENABLE)
-      determine_usefulness_by_inf_hash(line_addr, &emit_new_prefetch, op);
+      determine_usefulness_by_inf_hash(line_addr, &emit_new_prefetch, op, ghist);
     else if (FDIP_UC_SIZE)
-      determine_usefulness_by_utility_cache(line_addr, &emit_new_prefetch, op);
+      determine_usefulness_by_utility_cache(line_addr, &emit_new_prefetch, op, ghist);
     else if (FDIP_BLOOM_FILTER)
-      determine_usefulness_by_bloom_filter(line_addr, &emit_new_prefetch, op);
+      determine_usefulness_by_bloom_filter(line_addr, &emit_new_prefetch, op, ghist);
   }
   return emit_new_prefetch;
 }
@@ -1467,4 +1497,197 @@ void FDIP::add_evict_seq(Addr line_addr) {
       it2->second.push_back(make_pair('e',cycle_count));
     }
   }
+}
+
+/* FDIP2 member functions */
+// udp, uftq, fdip_conf of the primary FDIP are shared.
+FDIP2::FDIP2(uns _proc_id) : FDIP() {
+  proc_id = _proc_id;
+  ftq_iter = decoupled_fe_new_ftq_iter(proc_id, TRUE);
+  udp = FDIP::get_udp();
+  uftq = FDIP::get_uftq();
+  fdip_conf = FDIP::get_fdip_conf();
+}
+
+void FDIP2::update() {
+  if (FULL_WARMUP && warmup_dump_done[fdip2->get_proc_id()] && !warmed_up)
+    warmed_up = TRUE;
+
+  uint32_t ops_per_cycle = 0;
+  int ftq_entry_per_cycle = 0;
+  FDIP_Break break_reason = BR_REACH_FTQ_END;
+  bool end_of_block;
+  per_cyc_ipref = 0;
+  Op *op = NULL;
+  for (op = decoupled_fe_ftq_iter_get(ftq_iter, &end_of_block, TRUE); op != NULL; op = decoupled_fe_ftq_iter_get_next(ftq_iter, &end_of_block, TRUE), ops_per_cycle++) {
+    cur_op = op;
+    DEBUG(proc_id, "[FDIP2] Set cur_op off_path:%i, op_num:%llu, cf_type:%i\n", cur_op->off_path, cur_op->op_num, cur_op->table_info->cf_type);
+
+    Flag emit_new_prefetch = FALSE;
+    if (ftq_entry_per_cycle >= MAX_FTQ_ENTRY_CYC && ops_per_cycle >= IC_ISSUE_WIDTH) {
+      DEBUG(proc_id, "[FDIP2] Break due to max FTQ entries per cycle\n");
+      break_reason = BR_MAX_FTQ_ENTRY_CYC;
+      break;
+    }
+
+    uint64_t pc_addr = op->inst_info->addr;
+    Addr line_addr = op->inst_info->addr & ~0x3F;
+    DEBUG(proc_id, "[FDIP2] op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, off-path: %d\n", op->op_num, op->inst_info->addr, line_addr, last_line_addr, cur_op->off_path);
+    if (line_addr != last_line_addr) {
+      STAT_EVENT(proc_id, FDIP_ATTEMPTED_PREF_ONPATH2 + op->off_path);
+      DEBUG(proc_id, "[FDIP2] fdip off path: %d, conf off path: %d\n", cur_op->off_path, conf_off_path());
+      emit_new_prefetch = determine_usefulness(line_addr, op, g_bp_data2->global_hist);
+
+      Flag demand_hit_prefetch = FALSE;
+      Flag demand_hit_writeback = FALSE;
+      Mem_Queue_Entry* queue_entry = NULL;
+      Flag ramulator_match = FALSE;
+      Addr dummy_addr = 0;
+      bool line = false;
+      Mem_Req* mem_req = NULL;
+      if (emit_new_prefetch) {
+        line = (Inst_Info**)cache_access(&(ic_ref->icache), pc_addr, &line_addr, TRUE);
+        // icache_line_info cache should be accessed same times with icache for a consistant line information
+        if (WP_COLLECT_STATS) {
+          bool line_info = (Icache_Data*)cache_access(&(ic_ref->icache_line_info), pc_addr, &dummy_addr, TRUE);
+          UNUSED(line_info);
+        }
+        bool mlc_line = (Inst_Info**)cache_access(&mem->uncores[proc_id].mlc->cache, pc_addr, &dummy_addr, FALSE);
+        bool l1_line = (Inst_Info**)cache_access(&mem->uncores[proc_id].l1->cache, pc_addr, &dummy_addr, FALSE);
+        UNUSED(dummy_addr);
+        uns pref_from = line ? 0 : (mlc_line ? 1 : (l1_line ? 2 : 3));
+        STAT_EVENT(proc_id, FDIP_PREFETCH_HIT_ICACHE2 + pref_from);
+        mem_req = mem_search_reqbuf_wrapper(proc_id, line_addr,
+            MRT_FDIPPRFON, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
+            QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
+            QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
+            &queue_entry, &ramulator_match);
+
+        if (!mem_req) {
+          mem_req = mem_search_reqbuf_wrapper(proc_id, line_addr,
+              MRT_FDIPPRFOFF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
+              QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT |
+              QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
+              &queue_entry, &ramulator_match);
+        }
+
+        if (line) {
+          DEBUG(proc_id, "[FDIP2] probe hit for %llx\n", line_addr);
+          fdip_stat.probe_prefetched_cls(line_addr);
+          STAT_EVENT(proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ONPATH2 + op->off_path);
+        }
+      }
+
+      Mem_Req_Type mem_type = MRT_FDIPPRFOFF;
+      if (!emit_new_prefetch && !line && !mem_req) // TODO: whether to insert the candidate for FDIP2 or not
+        insert_pref_candidate_to_seniority_ftq(line_addr);
+      Flag mem_req_buf_full = FALSE;
+      if (emit_new_prefetch && !line && !mem_req && !mem_can_allocate_req_buffer(proc_id, mem_type, FALSE)) {
+        mem_req_buf_full = TRUE;
+        // should keep running ahead without breaking the loop by failing to emit a prefetch when FDIP is only one FTQ entry ahead where the backend fetches the FT soon
+        // freeze FDIP when mem_req buffer hits the limit. This should rarely happens if mem_req_buffer_entries and ramulator_readq_entries are big enough.
+        if (FDIP_FREEZE_AT_MEM_BUF_LIMIT && decoupled_fe_ftq_iter_ft_offset(ftq_iter, TRUE) > 1) {
+          DEBUG(proc_id, "[FDIP2] Break due to full mem_req buf\n");
+          break_reason = BR_FULL_MEM_REQ_BUF;
+          break;
+        }
+      }
+
+      if (emit_new_prefetch)
+        STAT_EVENT(proc_id, FDIP_DECIDE_PREF_ONPATH2 + op->off_path);
+
+      if (!line && emit_new_prefetch) { // create a mem request only if line doesn't exist. If the corresponding mem_req exists, it will merge.
+        uns success = Mem_Queue_Req_Result::FAILED;
+        if (FDIP_PREF_NO_LATENCY) {
+          Mem_Req req;
+          req.off_path           = op ? op->off_path : FALSE;
+          req.off_path_confirmed = FALSE;
+          req.type               = mem_type;
+          mem_req_set_types(&req, mem_type);
+          req.proc_id            = proc_id;
+          req.addr               = line_addr;
+          req.oldest_op_unique_num = (Counter)0;
+          req.oldest_op_op_num = (Counter)0;
+          req.oldest_op_addr = (Addr)0;
+          req.dirty_l0 = op && op->table_info->mem_type == MEM_ST && !op->off_path;
+          req.fdip_pref_off_path = op->off_path;
+          req.demand_icache_emitted_cycle = 0;
+          req.fdip_emitted_cycle = cycle_count;
+          req.ghist = g_bp_data2->global_hist;
+          if (icache_fill_line(&req)) {
+            STAT_EVENT(proc_id, FDIP_NEW_PREFETCHES_ONPATH2 + op->off_path);
+            if (FDIP_BLOOM_FILTER)
+              udp->bloom_inc_new_prefs(); // TODO: still update for FDIP2?
+          } else
+            ASSERT(proc_id, false);
+          success = Mem_Queue_Req_Result::SUCCESS_NEW;
+        } else {
+          success = new_mem_req(mem_type, proc_id, line_addr,
+              ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
+              //ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count++, 0); // bug?
+          // A buffer entry should be available since it is checked by mem_can_allocate_req_buffer for a new prefetch
+          if (success == Mem_Queue_Req_Result::SUCCESS_NEW) {
+            STAT_EVENT(proc_id, FDIP_NEW_PREFETCHES_ONPATH2 + op->off_path);
+            DEBUG(proc_id, "[FDIP2] Success to emit a new prefetch for %llx\n", line_addr);
+            per_cyc_ipref++;
+            if (FDIP_BLOOM_FILTER)
+              udp->bloom_inc_new_prefs(); // TODO: still update for FDIP2?
+          } else if (success == Mem_Queue_Req_Result::SUCCESS_MERGED) {
+            STAT_EVENT(proc_id, FDIP_PREF_MSHR_PROBE_HIT_ONPATH2 + op->off_path);
+            DEBUG(proc_id, "[FDIP2] Success to merge a prefetch for %llx\n", line_addr);
+          } else if (success == Mem_Queue_Req_Result::FAILED) {
+            ASSERT(proc_id, mem_req_buf_full);
+            STAT_EVENT(proc_id, FDIP_PREF_FAILED_ONPATH2 + op->off_path);
+            DEBUG(proc_id, "[FDIP2] Failed to emit a prefetch for %llx\n", line_addr);
+          }
+        }
+        inc_prefetched_cls(line_addr, success);
+      } else {
+        fdip_stat.not_prefetch(line_addr);
+      }
+      last_line_addr = line_addr;
+    }
+    if (end_of_block) {
+      ftq_entry_per_cycle++;
+      DEBUG(proc_id, "[FDIP2] End of block - ftq_entry_per_cycle: %d\n", ftq_entry_per_cycle);
+    }
+  }
+  if (!op) {
+    if (!decoupled_fe_ftq_iter_ft_offset(ftq_iter, TRUE)) {
+      DEBUG(proc_id, "[FDIP2] Break due to FTQ Empty\n");
+      break_reason = BR_FTQ_EMPTY;
+    } else {
+      break_reason = BR_REACH_FTQ_END;
+      DEBUG(proc_id, "[FDIP2] Break due to reaching FTQ end\n");
+    }
+  }
+
+  STAT_EVENT(proc_id, FDIP_BREAK_REACH_FTQ_END2 + break_reason);
+  DEBUG(proc_id, "[FDIP2] FTQ size : %lu, FDIP prefetch FT offset : %lu\n", decoupled_fe_ftq_num_fts(TRUE), decoupled_fe_ftq_iter_ft_offset(ftq_iter, TRUE));
+
+  fdip_stat.ftq_occupancy_ops += decoupled_fe_ftq_iter_offset(ftq_iter, TRUE);
+  INC_STAT_EVENT(proc_id, FDIP_FTQ_OCCUPANCY_OPS_ACCUMULATED2, decoupled_fe_ftq_iter_offset(ftq_iter, TRUE));
+  if (break_reason == BR_REACH_FTQ_END) {
+    fdip_stat.ftq_occupancy_blocks += decoupled_fe_ftq_iter_ft_offset(ftq_iter, TRUE);
+    INC_STAT_EVENT(proc_id, FDIP_FTQ_OCCUPANCY_BLOCKS_ACCUMULATED2, decoupled_fe_ftq_num_fts(TRUE));
+  }
+  fdip_stat.last_break_reason = break_reason;
+}
+
+void FDIP2::recover() {
+  last_line_addr = 0;
+  DEBUG(proc_id, "[FDIP2] recover cycle from %llu", fdip_stat.last_recover_cycle);
+  fdip_stat.last_recover_cycle = cycle_count;
+  DEBUG(proc_id, " to %llu\n", fdip_stat.last_recover_cycle);
+}
+
+void FDIP2::insert_pref_candidate_to_seniority_ftq(Addr line_addr) {
+  if (!FDIP_UTILITY_HASH_ENABLE && !FDIP_UC_SIZE && !FDIP_BLOOM_FILTER)
+    return;
+  uint64_t hashed_line_addr = line_addr;
+  if (FDIP_GHIST_HASHING)
+    hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data2->global_hist);
+  Flag on_path = FDIP_BP_CONFIDENCE && (fdip_conf->get_low_confidence_cnt() < FDIP_OFF_PATH_THRESHOLD);
+  udp->seniority_ftq.push_back(make_tuple(hashed_line_addr, cycle_count, on_path));
+  DEBUG(proc_id, "Insert %llx (hashed %lx) to seniority FTQ at cyc %llu seniority_ftq.size() : %ld\n", line_addr, hashed_line_addr, cycle_count, udp->seniority_ftq.size());
 }

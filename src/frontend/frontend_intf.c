@@ -45,6 +45,7 @@ Frontend_Impl frontend_table[] = {
    prefix##_can_fetch_op,               \
    prefix##_fetch_op,                   \
    prefix##_redirect,                   \
+   prefix##_redirect2,                  \
    prefix##_recover,                    \
    prefix##_retire},
 #include "frontend/frontend_table.def"

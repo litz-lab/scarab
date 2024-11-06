@@ -305,6 +305,7 @@ DEF_PARAM(memtrace_modules_log, MEMTRACE_MODULES_LOG, char*, string, NULL, )
 DEF_PARAM(fe_ftq_block_num, FE_FTQ_BLOCK_NUM, uns, uns, 32, )
 DEF_PARAM(fe_ftq_taken_cfs_per_cycle, FE_FTQ_TAKEN_CFS_PER_CYCLE, uns, uns, 2, )
 DEF_PARAM(fe_ftq_bytes_per_cycle, FE_FTQ_BYTES_PER_CYCLE, uns, uns, 128, )
+DEF_PARAM(fe_ftq_block_num2, FE_FTQ_BLOCK_NUM2, uns, uns, 32, )
 
 DEF_PARAM(dumb_core_on, DUMB_CORE_ON, Flag, Flag, FALSE, )
 DEF_PARAM(dumb_core, DUMB_CORE, uns, uns, 1, )
@@ -313,3 +314,6 @@ DEF_PARAM(dcache_miss_rate, DCACHE_MISS_RATE, uns, uns, 10, )
 DEF_PARAM(l1_miss_rate, L1_MISS_RATE, uns, uns, 10, )
 
 DEF_PARAM(memtrace_buf_size, MEMTRACE_BUF_SIZE, uns, uns, 0, )
+
+DEF_PARAM(dual_dfe_enable, DUAL_DFE_ENABLE, uns, uns, 0, )
+DEF_PARAM(dual_dfe_policy, DUAL_DFE_POLICY, uns, uns, 0, )

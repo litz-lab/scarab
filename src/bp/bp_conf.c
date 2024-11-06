@@ -95,7 +95,7 @@ void init_bp_conf() {
 #define COOK_ADDR_BITS(addr, shift) \
   (((uns32)(addr) >> (shift)) & (N_BIT_MASK(BPC_BITS)))
 
-void bp_conf_pred(Op* op) {
+void bp_conf_pred(Bp_Data* bp_data, Op* op) {
   uns32 index;
   uns   entry;
   Flag  pred_conf;
@@ -103,7 +103,7 @@ void bp_conf_pred(Op* op) {
 
   // only updated on conditional branches
   Addr  addr        = op->inst_info->addr;
-  uns32 hist        = g_bp_data->global_hist;
+  uns32 hist        = bp_data->global_hist;
   uns32 cooked_hist = COOK_HIST_BITS(hist, 0);
   uns32 cooked_addr = COOK_ADDR_BITS(addr, 2);
   index             = cooked_hist ^ cooked_addr;
@@ -174,7 +174,7 @@ void bp_update_conf(Op* op) {
 // 1: onpath
 // 0: offpath
 
-void pred_onpath_conf(Op* op) {
+void pred_onpath_conf(Bp_Data* bp_data, Op* op) {
   Flag       pred_onpath;
   uns        head      = bpc_data->head;
   Opc_Table* opc_table = &bpc_data->opc_table[head];
@@ -211,14 +211,14 @@ void pred_onpath_conf(Op* op) {
   STAT_EVENT(op->proc_id, PRED_ONPATH_CONF_MISPRED + 2 * !pred_onpath +
                             (pred_onpath != op->off_path));
 
-  g_bp_data->on_path_pred = pred_onpath;
+  bp_data->on_path_pred = pred_onpath;
 }
 
 
 /**************************************************************************************/
 // update_onpath_conf: called by bp_resolve_op in bp.c
 
-void update_onpath_conf(Op* op) {
+void update_onpath_conf(Bp_Data* bp_data, Op* op) {
   uns  index   = op->oracle_info.opc_index;
   Flag mispred = op->oracle_info.mispred | op->oracle_info.misfetch;
   uns  ii;
@@ -243,14 +243,14 @@ void update_onpath_conf(Op* op) {
 
   print_onpath_conf();
 
-  g_bp_data->on_path_pred = compute_onpath_conf(TRUE);
+  bp_data->on_path_pred = compute_onpath_conf(TRUE);
 }
 
 
 /**************************************************************************************/
 // recover_onpath_conf: called from bp_recover_op in bp.c
 
-void recover_onpath_conf() {
+void recover_onpath_conf(Bp_Data* bp_data) {
   uns ii;
   uns count = 0;
 
@@ -270,7 +270,7 @@ void recover_onpath_conf() {
 
   print_onpath_conf();
 
-  g_bp_data->on_path_pred = compute_onpath_conf(TRUE);
+  bp_data->on_path_pred = compute_onpath_conf(TRUE);
 }
 
 
@@ -417,7 +417,7 @@ void conf_perceptron_init(void) {
      N_BIT_MASK(PERCEPTRON_CONF_HIS_BOTH_LENGTH))              \
     << (64 - PERCEPTRON_CONF_HIS_BOTH_LENGTH)))
 
-void conf_perceptron_pred(Op* op) {
+void conf_perceptron_pred(Bp_Data* bp_data, Op* op) {
   Addr        addr      = op->inst_info->addr;
   uns64       hist      = 0;
   uns32       index     = CONF_PERCEPTRON_HASH(addr);
@@ -545,7 +545,7 @@ void conf_perceptron_pred(Op* op) {
 #define MAX_WEIGHT ((1 << (CONF_PERCEPTRON_CTR_BITS - 1)) - 1)
 #define MIN_WEIGHT (-(MAX_WEIGHT + 1))
 
-void conf_perceptron_update(Op* op) {
+void conf_perceptron_update(Bp_Data* bp_data, Op* op) {
   Addr   addr   = op->inst_info->addr;
   uns64  hist   = 0;
   uns32  index  = CONF_PERCEPTRON_HASH(addr);

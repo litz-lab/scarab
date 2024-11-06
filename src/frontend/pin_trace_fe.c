@@ -124,11 +124,11 @@ void trace_close_trace_file(uns proc_id) {
   pin_trace_close(proc_id);
 }
 
-Flag trace_can_fetch_op(uns proc_id) {
+Flag trace_can_fetch_op(uns proc_id, Flag secondary) {
   return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
 }
 
-void trace_fetch_op(uns proc_id, Op* op) {
+void trace_fetch_op(uns proc_id, Op* op, Flag secondary) {
   if(uop_generator_get_bom(proc_id)) {
     ASSERT(proc_id, !trace_read_done[proc_id] && !reached_exit[proc_id]);
     uop_generator_get_uop(proc_id, op, &next_pi[proc_id]);
@@ -150,6 +150,11 @@ void trace_fetch_op(uns proc_id, Op* op) {
 }
 
 void trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
+  FATAL_ERROR(proc_id, "Trace frontend does not support wrong path. Turn off "
+                       "FETCH_OFF_PATH_OPS\n");
+}
+
+void trace_redirect2(uns proc_id, Addr fetch_addr) {
   FATAL_ERROR(proc_id, "Trace frontend does not support wrong path. Turn off "
                        "FETCH_OFF_PATH_OPS\n");
 }

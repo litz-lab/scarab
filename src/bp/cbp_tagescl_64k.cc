@@ -1297,3 +1297,14 @@ void TAGE64K::LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, Counter op_num, int 
 }
 
 #endif
+
+TAGE64K2::TAGE64K2(void) : TAGE64K() {}
+
+// TODO: For now, do the same recovery for the secondary TAGE64K but can do customized recovery.
+void TAGE64K2::RepairStateAndUpdate(UINT64 PC, bool new_dir, UINT64 branchTarget, Recovery_Info* recovery_info) {
+  // recover bp states
+  Counter key = recovery_info->branch_id;
+  if (SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON)
+    VerifyCheckpoint(PC, key, recovery_info->proc_id);
+  RestoreCheckpoint(PC, key, recovery_info->proc_id);
+}

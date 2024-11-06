@@ -35,8 +35,11 @@
 /* Globals */
 static ctype_pin_inst next_onpath_pi[MAX_NUM_PROCS];
 static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS];
+static ctype_pin_inst next_offpath_pi2[MAX_NUM_PROCS];
 static bool            off_path_mode[MAX_NUM_PROCS] = {false};
+static bool            off_path_mode2[MAX_NUM_PROCS] = {false};
 static uint64_t        off_path_addr[MAX_NUM_PROCS] = {0};
+static uint64_t        off_path_addr2[MAX_NUM_PROCS] = {0};
 static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
 
 extern uint64_t ins_id;
@@ -46,7 +49,7 @@ void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst
   auto op_iter = pc_to_inst.find(*off_path_addr);
   if (op_iter != pc_to_inst.end()) {
     *inst = op_iter->second;
-    *off_path_addr += inst->size;
+    (*off_path_addr) += inst->size;
     DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ",inst->instruction_addr, inst->size);
   }
   else {
@@ -152,20 +155,24 @@ void assert_ctype_pin_inst_same(uns proc_id, ctype_pin_inst inst_a, ctype_pin_in
   }
 }
 
-void ext_trace_fetch_op(uns proc_id, Op* op) {
+void ext_trace_fetch_op(uns proc_id, Op* op, Flag secondary = FALSE) {
+  // ext_trace_set_addr2 should be called before fetching from the secondary fetch
+  bool off_path_mode_ = secondary? off_path_mode2[proc_id] : off_path_mode[proc_id];
+  ctype_pin_inst *next_offpath_pi_ = secondary? &next_offpath_pi2[proc_id] : &next_offpath_pi[proc_id];
+  uint64_t *off_path_addr_ = secondary? &off_path_addr2[proc_id] : &off_path_addr[proc_id];
   if(uop_generator_get_bom(proc_id)) {
-    if (!off_path_mode[proc_id]) {
+    if (!off_path_mode_) {
       uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id]);
     }
     else {
-      uop_generator_get_uop(proc_id, op, &next_offpath_pi[proc_id]);
+      uop_generator_get_uop(proc_id, op, next_offpath_pi_);
     }
   } else {
     uop_generator_get_uop(proc_id, op, NULL);
   }
 
   if(uop_generator_get_eom(proc_id)) {
-    if (!off_path_mode[proc_id]) {
+    if (!off_path_mode_) {
 
       int success = false;
       if (FRONTEND == FE_PT)
@@ -218,13 +225,15 @@ void ext_trace_fetch_op(uns proc_id, Op* op) {
       }
     }
     else {
-      off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
+      off_path_generate_inst(proc_id, off_path_addr_, next_offpath_pi_);
     }
   }
-  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id], next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
+  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode_, next_onpath_pi[proc_id].instruction_addr, next_offpath_pi_->instruction_addr);
 }
 
-Flag ext_trace_can_fetch_op(uns proc_id) {
+Flag ext_trace_can_fetch_op(uns proc_id, Flag secondary) {
+  if (DUAL_DFE_ENABLE && secondary && !off_path_mode2[proc_id])
+    return FALSE;
   return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
 }
 
@@ -235,8 +244,27 @@ void ext_trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
   DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
 }
 
+// Set the address to enable secondary fetching
+// If fetch_addr = 0, stop fetching the secondary by setting off_path_mode2 = false
+void ext_trace_redirect2(uns proc_id, Addr fetch_addr) {
+  ASSERT(proc_id, DUAL_DFE_ENABLE);
+  if (!fetch_addr)
+    off_path_mode2[proc_id] = false;
+  else
+    off_path_mode2[proc_id] = true;
+  off_path_addr2[proc_id] = fetch_addr;
+  off_path_generate_inst(proc_id, &off_path_addr2[proc_id], &next_offpath_pi2[proc_id]);
+  DEBUG(proc_id, "Set the secondary FE fetch address:%lx", next_offpath_pi2[proc_id].instruction_addr);
+}
+
 void ext_trace_recover(uns proc_id, uns64 inst_uid) {
   Op dummy_op;
+  ASSERT(proc_id, off_path_mode[proc_id]);
+  if (DUAL_DFE_ENABLE) {
+    off_path_mode2[proc_id] = false;
+    off_path_addr2[proc_id] = 0;
+    memset(next_offpath_pi2, 0, sizeof(next_offpath_pi2));
+  }
   off_path_mode[proc_id] = false;
   // Finish decoding of the current off-path inst before switching to on-path
   while (!uop_generator_get_eom(proc_id)) {
@@ -257,6 +285,8 @@ Addr ext_trace_next_fetch_addr(uns proc_id) {
 void ext_trace_init() {
   memset(next_offpath_pi, 0, sizeof(next_offpath_pi));
   memset(next_onpath_pi, 0, sizeof(next_onpath_pi));
+  if (DUAL_DFE_ENABLE)
+    memset(next_offpath_pi2, 0, sizeof(next_offpath_pi2));
 
   if (FRONTEND == FE_PT) {
     pt_init();

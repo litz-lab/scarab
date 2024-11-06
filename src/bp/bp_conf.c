@@ -95,7 +95,7 @@ void init_bp_conf() {
 #define COOK_ADDR_BITS(addr, shift) \
   (((uns32)(addr) >> (shift)) & (N_BIT_MASK(BPC_BITS)))
 
-void bp_conf_pred(Op* op) {
+void bp_conf_pred(Op* op, Flag secondary) {
   uns32 index;
   uns   entry;
   Flag  pred_conf;
@@ -103,7 +103,7 @@ void bp_conf_pred(Op* op) {
 
   // only updated on conditional branches
   Addr  addr        = op->inst_info->addr;
-  uns32 hist        = g_bp_data->global_hist;
+  uns32 hist        = secondary? g_bp_data->global_hist : g_bp_data->global_hist2;
   uns32 cooked_hist = COOK_HIST_BITS(hist, 0);
   uns32 cooked_addr = COOK_ADDR_BITS(addr, 2);
   index             = cooked_hist ^ cooked_addr;
@@ -174,7 +174,7 @@ void bp_update_conf(Op* op) {
 // 1: onpath
 // 0: offpath
 
-void pred_onpath_conf(Op* op) {
+void pred_onpath_conf(Op* op, Flag secondary) {
   Flag       pred_onpath;
   uns        head      = bpc_data->head;
   Opc_Table* opc_table = &bpc_data->opc_table[head];
@@ -417,7 +417,7 @@ void conf_perceptron_init(void) {
      N_BIT_MASK(PERCEPTRON_CONF_HIS_BOTH_LENGTH))              \
     << (64 - PERCEPTRON_CONF_HIS_BOTH_LENGTH)))
 
-void conf_perceptron_pred(Op* op) {
+void conf_perceptron_pred(Op* op, Flag secondary) {
   Addr        addr      = op->inst_info->addr;
   uns64       hist      = 0;
   uns32       index     = CONF_PERCEPTRON_HASH(addr);

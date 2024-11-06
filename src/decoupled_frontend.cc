@@ -12,12 +12,15 @@
 #include <iostream>
 #include <tuple>
 #include <cmath>
+#include <memory>
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
-class FT{
+class FT {
 public:
+  FT();
   FT(uns _proc_id);
+  ~FT() {}
   void add_op(Op *op, FT_Ended_By ft_ended_by);
   void free_ops_and_clear();
   bool can_fetch_op();
@@ -32,32 +35,36 @@ private:
   std::vector<Op*> ops;
 
   friend class Decoupled_FE;
+  friend class Decoupled_FE2;
 };
 
 class Decoupled_FE {
 public:
   Decoupled_FE(uns _proc_id);
+  ~Decoupled_FE() {}
   int is_off_path() { return off_path; }
-  void recover();
-  void update();
+  void set_off_path() { off_path = true; }
+  virtual void recover();
+  virtual void update();
   bool current_ft_can_fetch_op() { return current_ft_in_use.can_fetch_op(); }
   bool fill_icache_stage_data(int requested, Stage_Data *sd);
   bool can_fetch_ft() { return ftq.size() > 0; }
   FT_Info fetch_ft();
   FT_Info peek_ft();
-  decoupled_fe_iter* new_ftq_iter();
-  Op* ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft);
-  Op* ftq_iter_get_next(decoupled_fe_iter* iter, bool* end_of_ft);
+  uns new_ftq_iter();
+  Op* ftq_iter_get(uns iter_idx, bool* end_of_ft);
+  Op* ftq_iter_get_next(uns iter_idx, bool* end_of_ft);
+  uint64_t ftq_iter_offset(uns iter_idx);
+  uint64_t ftq_iter_ft_offset(uns iter_idx);
   uint64_t ftq_num_ops();
   uint64_t ftq_num_fts() { return ftq.size(); }
   void stall(Op* op);
   void retire(Op* op, int op_proc_id, uns64 inst_uid);
   void set_ftq_num(uint64_t set_ftq_ft_num) { ftq_ft_num = set_ftq_ft_num; }
   uint64_t get_ftq_num() { return ftq_ft_num; }
+  uns get_proc_id() { return proc_id; }
 
-private:
-  void init(uns proc_id);
-
+protected:
   uns proc_id;
 
   // Per core fetch target queue:
@@ -72,25 +79,44 @@ private:
   int off_path;
   int sched_off_path;
   uint64_t dfe_op_count;
-  std::vector<decoupled_fe_iter> ftq_iterators;
   uint64_t recovery_addr;
   uint64_t redirect_cycle;
   bool stalled;
   uint64_t ftq_ft_num;
   bool trace_mode;
+  std::vector<std::unique_ptr<decoupled_fe_iter>> ftq_iterators;
+};
+
+class Decoupled_FE2 : public Decoupled_FE {
+public:
+  Decoupled_FE2(uns _proc_id);
+  ~Decoupled_FE2() {}
+  void recover();
+  void update();
 };
 
 /* Global Variables */
 Decoupled_FE* dfe = nullptr;
+Decoupled_FE2* dfe2 = nullptr;
 
 // Per core decoupled frontend
-std::vector<Decoupled_FE> per_core_dfe;
+std::vector<std::unique_ptr<Decoupled_FE>> per_core_dfe;
+std::vector<std::unique_ptr<Decoupled_FE2>> per_core_dfe2;
 
 /* Wrapper functions */
 void alloc_mem_decoupled_fe(uns numCores) {
-  for (uns i = 0; i < numCores; ++i)
-    per_core_dfe.push_back(Decoupled_FE(i));
+  for (uns i = 0; i < numCores; ++i) {
+    per_core_dfe.push_back(std::make_unique<Decoupled_FE>(i));
+    ASSERT(0, per_core_dfe[i]->get_proc_id() == i);
+  }
   ASSERT(0, per_core_dfe.size() == numCores);
+  if (DUAL_DFE_ENABLE) {
+    for (uns i = 0; i < numCores; ++i) {
+      per_core_dfe2.push_back(std::make_unique<Decoupled_FE2>(i));
+      ASSERT(0, per_core_dfe2[i]->get_proc_id() == i);
+    }
+    ASSERT(0, per_core_dfe2.size() == numCores);
+  }
 }
 
 void init_decoupled_fe(uns proc_id, const char*) {
@@ -101,13 +127,19 @@ bool decoupled_fe_is_off_path() {
 }
 
 void set_decoupled_fe(uns proc_id) {
-  dfe = &per_core_dfe[proc_id];
+  if (DUAL_DFE_ENABLE) {
+    dfe2 = per_core_dfe2[proc_id].get();
+    ASSERT(proc_id, dfe2);
+  }
+  dfe = per_core_dfe[proc_id].get();
   ASSERT(proc_id, dfe);
 }
 
 void reset_decoupled_fe() {}
 
 void recover_decoupled_fe() {
+  if (DUAL_DFE_ENABLE)
+    dfe2->recover();
   dfe->recover();
 }
 
@@ -116,6 +148,8 @@ void debug_decoupled_fe() {
 }
 
 void update_decoupled_fe() {
+  if (DUAL_DFE_ENABLE)
+    dfe2->update();
   dfe->update();
 }
 
@@ -135,13 +169,13 @@ FT_Info decoupled_fe_peek_ft() {
   return dfe->peek_ft();
 }
 
-decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id) {
-  return per_core_dfe[proc_id].new_ftq_iter();
+uns decoupled_fe_new_ftq_iter(uns proc_id, Flag secondary = FALSE) {
+  return secondary? per_core_dfe2[proc_id]->new_ftq_iter() : per_core_dfe[proc_id]->new_ftq_iter();
 }
 
 /* Returns the Op at current FTQ iterator position. Returns NULL if the FTQ is empty */
-Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft) {
-  return dfe->ftq_iter_get(iter, end_of_ft);
+Op* decoupled_fe_ftq_iter_get(uns iter_idx, bool* end_of_ft, Flag secondary = FALSE) {
+  return secondary? dfe2->ftq_iter_get(iter_idx, end_of_ft) : dfe->ftq_iter_get(iter_idx, end_of_ft);
 }
 
 // fill in the icache stage data with current FT in use
@@ -152,30 +186,30 @@ bool decoupled_fe_fill_icache_stage_data(int requested, Stage_Data *sd) {
 }
 
 /* Increments the iterator and returns the Op at FTQ iterator position. Returns NULL if the FTQ is empty */
-Op* decoupled_fe_ftq_iter_get_next(decoupled_fe_iter* iter, bool* end_of_ft) {
-  return dfe->ftq_iter_get_next(iter, end_of_ft);
+Op* decoupled_fe_ftq_iter_get_next(uns iter_idx, bool* end_of_ft, Flag secondary = FALSE) {
+  return secondary? dfe2->ftq_iter_get_next(iter_idx, end_of_ft) : dfe->ftq_iter_get_next(iter_idx, end_of_ft);
 }
 
 /* Returns iter flattened offset from the start of the FTQ, this offset gets incremented
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */
-uint64_t decoupled_fe_ftq_iter_offset(decoupled_fe_iter* iter) {
-  return iter->flattened_op_pos;
+uint64_t decoupled_fe_ftq_iter_offset(uns iter_idx, Flag secondary = FALSE) {
+  return secondary? dfe2->ftq_iter_offset(iter_idx) : dfe->ftq_iter_offset(iter_idx);
 }
 
 /* Returns iter ft offset from the start of the FTQ, this offset gets incremented
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */
-uint64_t decoupled_fe_ftq_iter_ft_offset(decoupled_fe_iter* iter) {
-  return iter->ft_pos;
+uint64_t decoupled_fe_ftq_iter_ft_offset(uns iter_idx, Flag secondary = FALSE) {
+  return secondary? dfe2->ftq_iter_offset(iter_idx) : dfe->ftq_iter_offset(iter_idx);
 }
 
 uint64_t decoupled_fe_ftq_num_ops() {
   return dfe->ftq_num_ops();
 }
 
-uint64_t decoupled_fe_ftq_num_fts() {
-  return dfe->ftq_num_fts();
+uint64_t decoupled_fe_ftq_num_fts(Flag secondary = FALSE) {
+  return secondary? dfe2->ftq_num_fts() : dfe->ftq_num_fts();
 }
 
 void decoupled_fe_retire(Op *op, int op_proc_id, uns64 inst_uid) {
@@ -191,7 +225,12 @@ uint64_t decoupled_fe_get_ftq_num() {
 }
 
 /* FT member functions */
-FT::FT(uns _proc_id = 0) {
+FT::FT() {
+  proc_id = 0;
+  free_ops_and_clear();
+}
+
+FT::FT(uns _proc_id) {
   proc_id = _proc_id;
   free_ops_and_clear();
 }
@@ -241,6 +280,9 @@ void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
   } else {
     if (op->bom) {
       // assert consecutivity
+      DEBUG(proc_id, "back addr + size %llx fetch addr %llx\n",
+          ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size,
+          op->inst_info->addr);
       ASSERT(proc_id, ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size
                       == op->inst_info->addr);
     } else {
@@ -261,11 +303,6 @@ void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
 
 /* Decoupled_FE member functions */
 Decoupled_FE::Decoupled_FE(uns _proc_id) {
-  proc_id = _proc_id;
-  init(_proc_id);
-}
-
-void Decoupled_FE::init(uns _proc_id) {
   trace_mode = false;
 
 #ifdef ENABLE_PT_MEMTRACE
@@ -283,6 +320,15 @@ void Decoupled_FE::init(uns _proc_id) {
 
 
 void Decoupled_FE::recover() {
+  // Get the address to continue before flushing FTQ1
+  Addr addr2 = 0;
+  if (DUAL_DFE_ENABLE && DUAL_DFE_POLICY == CONTINUE_ON_RECOVERY) {
+    if (current_ft_to_push.ops.size())
+      addr2 = current_ft_to_push.ops.back()->inst_info->addr;
+    else if (!ftq.empty())
+      addr2 = ftq.back().ops.back()->inst_info->addr;
+  }
+
   off_path = false;
   sched_off_path = false;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
@@ -299,7 +345,7 @@ void Decoupled_FE::recover() {
   DEBUG(proc_id,
         "Recovery signalled fetch_addr0x:%llx\n", bp_recovery_info->recovery_fetch_addr);
 
-  for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
+  for (auto&& it : ftq_iterators) {
     // When the FTQ flushes, reset all iterators
     it->ft_pos = 0;
     it->op_pos = 0;
@@ -331,6 +377,16 @@ void Decoupled_FE::recover() {
           "Scarab's recovery addr 0x%llx does not match frontend's recovery "
           "addr 0x%llx\n",
           bp_recovery_info->recovery_fetch_addr, frontend_next_fetch_addr(proc_id));
+
+  // Redirect the secondary frontend after calling 'frontend_recover()'
+  if (DUAL_DFE_ENABLE) {
+    if (DUAL_DFE_POLICY == CONTINUE_ON_RECOVERY) {
+      frontend_redirect2(proc_id, addr2);
+      dfe2->set_off_path();
+    } else if (DUAL_DFE_POLICY == CONTINUE_ON_PREDICTION) {
+      frontend_redirect2(proc_id, 0); // Passing fetch_addr = 0 will stop fetching the secondary
+    }
+  }
 }
 
 void Decoupled_FE::update() {
@@ -377,7 +433,7 @@ void Decoupled_FE::update() {
         STAT_EVENT(proc_id, FTQ_BREAK_MAX_BYTES_ONPATH);
       break;
     }
-    if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, proc_id)) {
+    if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, proc_id, FALSE)) {
       DEBUG(proc_id, "Break due to limited branch predictor\n");
       if (off_path)
         STAT_EVENT(proc_id, FTQ_BREAK_PRED_BR_OFFPATH);
@@ -393,7 +449,7 @@ void Decoupled_FE::update() {
         STAT_EVENT(proc_id, FTQ_BREAK_BAR_FETCH_ONPATH);
       break;
     }
-    if (!frontend_can_fetch_op(proc_id)) {
+    if (!frontend_can_fetch_op(proc_id, FALSE)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
       break;
     }
@@ -401,13 +457,18 @@ void Decoupled_FE::update() {
     fwd_progress = 0;
     uint64_t pred_addr = 3;
     Op* op = alloc_op(proc_id);
-    frontend_fetch_op(proc_id, op);
+    frontend_fetch_op(proc_id, op, FALSE);
     op->op_num = dfe_op_count++;
     op->off_path = off_path;
 
     if(op->table_info->cf_type) {
       ASSERT(proc_id, op->eom);
-      pred_addr = bp_predict_op(g_bp_data, op, cf_num++, op->inst_info->addr);
+      Op alt_op;
+      if (DUAL_DFE_ENABLE &&
+          (DUAL_DFE_POLICY == CONTINUE_ON_PREDICTION) &&
+          !dfe2->is_off_path())
+        alt_op = *op;
+      pred_addr = bp_predict_op(g_bp_data, op, cf_num++, op->inst_info->addr, FALSE);
       DEBUG(proc_id,
             "Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%lx mispred:%i misfetch:%i btb miss:%i taken:%i recover_at_decode:%i recover_at_exec:%i off_path:%i bar_fetch:%i\n",
             op->inst_info->addr, op->oracle_info.npc, pred_addr,
@@ -437,6 +498,15 @@ void Decoupled_FE::update() {
         off_path = true;
         frontend_redirect(proc_id, op->inst_uid, pred_addr);
         redirect_cycle = cycle_count;
+        if (DUAL_DFE_ENABLE &&
+            (DUAL_DFE_POLICY == CONTINUE_ON_PREDICTION) &&
+            !dfe2->is_off_path()) {
+          ASSERT(proc_id, !dfe2->ftq_num_fts());
+          Addr alt_pred_addr = bp_predict_op(g_bp_data, &alt_op, 0, op->inst_info->addr, TRUE);
+          frontend_redirect2(proc_id, alt_pred_addr);
+          dfe2->set_off_path();
+          bp_sync(proc_id);
+        }
       }
       // If we are already on the off-path redirect on all taken branches in TRACE-MODE
       else if (trace_mode && off_path && op->oracle_info.pred == TAKEN) {
@@ -497,6 +567,7 @@ void Decoupled_FE::update() {
         }
       }
       ftq.emplace_back(current_ft_to_push);
+      DEBUG(proc_id, "[DFE1] FTQ size: %lu\n", ftq_num_fts());
       current_ft_to_push = FT(proc_id);
     }
 
@@ -506,7 +577,7 @@ void Decoupled_FE::update() {
     else {
       STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH);
     }
-      
+
     DEBUG(proc_id,
           "Push new op to FTQ fetch_addr0x:%llx off_path:%i op_num:%llu dis:%s recovery_addr:%lx fetch_bar:%i\n",
           op->inst_info->addr, op->off_path, op->op_num, disasm_op(op, TRUE), recovery_addr, op->table_info->bar_type & BAR_FETCH);
@@ -537,7 +608,7 @@ FT_Info Decoupled_FE::fetch_ft() {
     ftq.pop_front();
     FT* ft = &current_ft_in_use;
 
-    for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
+    for (auto&& it : ftq_iterators) {
       // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before
       if (it->ft_pos > 0) {
         ASSERT(proc_id, it->flattened_op_pos >= ft->ops.size());
@@ -563,16 +634,20 @@ FT_Info Decoupled_FE::peek_ft() {
   }
 }
 
-decoupled_fe_iter* Decoupled_FE::new_ftq_iter() {
-  ftq_iterators.push_back(decoupled_fe_iter());
-  return &(ftq_iterators.back());
+uns Decoupled_FE::new_ftq_iter() {
+  ftq_iterators.push_back(std::make_unique<decoupled_fe_iter>());
+  ftq_iterators.back().get()->ft_pos = 0;
+  ftq_iterators.back().get()->op_pos = 0;
+  ftq_iterators.back().get()->flattened_op_pos = 0;
+  return ftq_iterators.size() - 1;
 }
 
-Op* Decoupled_FE::ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft) {
+Op* Decoupled_FE::ftq_iter_get(uns iter_idx, bool* end_of_ft) {
+  decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
   // if FTQ is empty or if iter has seen all FTs
   if (ftq.empty() || iter->ft_pos == ftq.size()) {
     if (ftq.empty())
-      ASSERT(proc_id, iter->ft_pos == 0 && iter->op_pos == 0 && iter->flattened_op_pos == 0);
+      ASSERT(proc_id, iter[iter_idx].ft_pos == 0 && iter[iter_idx].op_pos == 0 && iter[iter_idx].flattened_op_pos == 0);
     return NULL;
   }
 
@@ -584,7 +659,8 @@ Op* Decoupled_FE::ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft) {
   return ftq.at(iter->ft_pos).ops[iter->op_pos];
 }
 
-Op* Decoupled_FE::ftq_iter_get_next(decoupled_fe_iter* iter, bool *end_of_ft) {
+Op* Decoupled_FE::ftq_iter_get_next(uns iter_idx, bool *end_of_ft) {
+  decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
   if (iter->ft_pos + 1 == ftq.size() && iter->op_pos + 1 == ftq.at(iter->ft_pos).ops.size()) {
     // if iter is at the last op and the last FT
     iter->ft_pos += 1;
@@ -608,7 +684,15 @@ Op* Decoupled_FE::ftq_iter_get_next(decoupled_fe_iter* iter, bool *end_of_ft) {
     iter->op_pos++;
     iter->flattened_op_pos++;
   }
-  return decoupled_fe_ftq_iter_get(iter, end_of_ft);
+  return decoupled_fe_ftq_iter_get(iter_idx, end_of_ft);
+}
+
+uint64_t Decoupled_FE::ftq_iter_offset(uns iter_idx) {
+  return ftq_iterators[iter_idx]->flattened_op_pos;
+}
+
+uint64_t Decoupled_FE::ftq_iter_ft_offset(uns iter_idx) {
+  return ftq_iterators[iter_idx]->ft_pos;
 }
 
 uint64_t Decoupled_FE::ftq_num_ops() {
@@ -637,4 +721,192 @@ void Decoupled_FE::retire(Op *op, int op_proc_id, uns64 inst_uid) {
 
   //unblock pin exec driven, trace frontends do not need to block/unblock
   frontend_retire(op_proc_id, inst_uid);
+}
+
+/* Decoupled_FE2 member functions */
+Decoupled_FE2::Decoupled_FE2(uns _proc_id) : Decoupled_FE(_proc_id) {
+}
+
+void Decoupled_FE2::recover() {
+  off_path = false;
+  sched_off_path = false;
+  recovery_addr = bp_recovery_info->recovery_fetch_addr;
+
+  for (auto it = ftq.begin(); it != ftq.end(); it++) {
+    it->free_ops_and_clear();
+  }
+  ftq.clear();
+
+  current_ft_to_push.free_ops_and_clear();
+  current_ft_in_use.free_ops_and_clear();
+
+  dfe_op_count = bp_recovery_info->recovery_op_num + 1;
+  DEBUG(proc_id,
+        "Recovery signalled fetch_addr0x:%llx\n", bp_recovery_info->recovery_fetch_addr);
+
+  for (auto&& it : ftq_iterators) {
+    // When the FTQ flushes, reset all iterators
+    it->ft_pos = 0;
+    it->op_pos = 0;
+    it->flattened_op_pos = 0;
+  }
+}
+
+void Decoupled_FE2::update() {
+  uns cf_num = 0;
+  uint64_t bytes_this_cycle = 0;
+  uint64_t cfs_taken_this_cycle = 0;
+
+  while(1) {
+    ASSERT(proc_id, ftq_num_fts() <= ftq_ft_num);
+    ASSERT(proc_id, cfs_taken_this_cycle <= FE_FTQ_TAKEN_CFS_PER_CYCLE);
+
+    if (!frontend_can_fetch_op(proc_id, TRUE)) {
+      break;
+    }
+
+    if (ftq_num_fts() == ftq_ft_num) {
+      DEBUG(proc_id, "Break due to full FTQ\n");
+      if (off_path)
+        STAT_EVENT(proc_id, FTQ_BREAK_FULL_FT_OFFPATH2);
+      else
+        STAT_EVENT(proc_id, FTQ_BREAK_FULL_FT_ONPATH2);
+      break;
+    }
+    if (cfs_taken_this_cycle == FE_FTQ_TAKEN_CFS_PER_CYCLE) {
+      DEBUG(proc_id, "Break due to max cfs taken per cycle\n");
+      if (off_path)
+        STAT_EVENT(proc_id, FTQ_BREAK_MAX_CFS_TAKEN_OFFPATH2);
+      else
+        STAT_EVENT(proc_id, FTQ_BREAK_MAX_CFS_TAKEN_ONPATH2);
+      break;
+    }
+    // use `>=` because inst size does not necessarily align with FE_FTQ_BYTES_PER_CYCLE
+    if (bytes_this_cycle >= FE_FTQ_BYTES_PER_CYCLE) {
+      DEBUG(proc_id, "Break due to max bytes per cycle\n");
+      if (off_path)
+        STAT_EVENT(proc_id, FTQ_BREAK_MAX_BYTES_OFFPATH2);
+      else
+        STAT_EVENT(proc_id, FTQ_BREAK_MAX_BYTES_ONPATH2);
+      break;
+    }
+    if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, proc_id, TRUE)) {
+      DEBUG(proc_id, "Break due to limited branch predictor\n");
+      if (off_path)
+        STAT_EVENT(proc_id, FTQ_BREAK_PRED_BR_OFFPATH2);
+      else
+        STAT_EVENT(proc_id, FTQ_BREAK_PRED_BR_ONPATH2);
+      break;
+    }
+    if (stalled) {
+      DEBUG(proc_id, "Break due to wait for fetch barrier resolved\n");
+      if (off_path)
+        STAT_EVENT(proc_id, FTQ_BREAK_BAR_FETCH_OFFPATH2);
+      else
+        STAT_EVENT(proc_id, FTQ_BREAK_BAR_FETCH_ONPATH2);
+      break;
+    }
+
+    uint64_t pred_addr = 3;
+    Op* op = alloc_op(proc_id);
+    frontend_fetch_op(proc_id, op, TRUE);
+    op->op_num = dfe_op_count++;
+    op->off_path = off_path;
+
+    if(op->table_info->cf_type) {
+      ASSERT(proc_id, op->eom);
+      pred_addr = bp_predict_op(g_bp_data, op, cf_num++, op->inst_info->addr, TRUE);
+      DEBUG(proc_id,
+            "Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%lx mispred:%i misfetch:%i btb miss:%i taken:%i recover_at_decode:%i recover_at_exec:%i off_path:%i bar_fetch:%i\n",
+            op->inst_info->addr, op->oracle_info.npc, pred_addr,
+            op->oracle_info.mispred, op->oracle_info.misfetch,
+            op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN,
+            op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec,
+            off_path, op->table_info->bar_type & BAR_FETCH);
+
+      /* On fetch barrier stall the frontend. Ignore BTB misses here as the exec frontend cannot
+         handle recovery/execution until syscalls retire. This is ok as stalling causes the same
+         cycle penalty than recovering from BTB miss. */
+      if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
+        op->oracle_info.recover_at_decode = FALSE;
+        op->oracle_info.recover_at_exec = FALSE;
+        // Ignore stalling for the secondary DFE on a fetch barrier
+      }
+
+      if(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
+        ASSERT(0, (int)op->oracle_info.recover_at_decode + (int)op->oracle_info.recover_at_exec < 2);
+        /* If already on the off-path do not schedule recovery as scarab cannot recover OOO
+           (An older op may recover at exec and a younger op may recover at decode)
+           This is not accurate but it should not affect the time spend on the off-path */
+        if (off_path) {
+          op->oracle_info.recover_at_decode = FALSE;
+          op->oracle_info.recover_at_exec = FALSE;
+        }
+        off_path = true;
+        frontend_redirect2(proc_id, pred_addr);
+        redirect_cycle = cycle_count;
+      }
+      // If we are already on the off-path redirect on all taken branches in TRACE-MODE
+      else if (trace_mode && off_path && op->oracle_info.pred == TAKEN) {
+        frontend_redirect2(proc_id, pred_addr);
+      }
+    }
+    else {
+      ASSERT(0,!(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
+    }
+    // We start a new fetch target if:
+    // 1. crossing a icache line
+    // 2. taking a control flow op
+    // 3. seeing a sysop or serializing (fence) instruction
+    // 4. reaching the application exit
+    FT_Ended_By ft_ended_by = FT_NOT_ENDED;
+    if (op->eom) {
+      uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
+                    ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
+      bool end_of_icache_line = offset >= ICACHE_LINE_SIZE;
+      bool cf_taken = op->table_info->cf_type && op->oracle_info.pred == TAKEN;
+      bool bar_fetch = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH;
+
+      if (op->exit) {
+        ft_ended_by = FT_APP_EXIT;
+      } else if (bar_fetch) {
+        ft_ended_by = FT_BAR_FETCH;
+      } else if (cf_taken) {
+        ft_ended_by = FT_TAKEN_BRANCH;
+      } else if (end_of_icache_line) {
+        ft_ended_by = FT_ICACHE_LINE_BOUNDARY;
+      }
+
+      bytes_this_cycle += op->inst_info->trace_info.inst_size;
+      cfs_taken_this_cycle += cf_taken || bar_fetch;
+    }
+
+    current_ft_to_push.add_op(op, ft_ended_by);
+    // ft_ended_by != FT_NOT_ENDED indicates the end of the current fetch target
+    // it is now ready to be pushed to the queue
+    if (ft_ended_by != FT_NOT_ENDED) {
+      ASSERT(proc_id, current_ft_to_push.ft_info.static_info.start && current_ft_to_push.ft_info.static_info.length && current_ft_to_push.ops.size());
+      ASSERT(proc_id, current_ft_to_push.ops.front()->bom && current_ft_to_push.ops.back()->eom);
+      current_ft_to_push.set_per_op_ft_info();
+      if (!ftq.empty()) {
+        // sanity check of consecutivity
+        Op* last_op = ftq.back().ops.back();
+        if (ftq.back().ft_info.dynamic_info.ended_by == FT_TAKEN_BRANCH) {
+          ASSERT(proc_id, last_op->oracle_info.pred_npc == current_ft_to_push.ft_info.static_info.start);
+        } else if (ftq.back().ft_info.dynamic_info.ended_by == FT_BAR_FETCH) {
+          ASSERT(proc_id, last_op->oracle_info.pred_npc == current_ft_to_push.ft_info.static_info.start ||
+                              last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == current_ft_to_push.ft_info.static_info.start);
+        } else {
+          ASSERT(proc_id, last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == current_ft_to_push.ft_info.static_info.start);
+        }
+      }
+      ftq.emplace_back(current_ft_to_push);
+      DEBUG(proc_id, "[DFE2] FTQ size: %lu\n", ftq_num_fts());
+      current_ft_to_push = FT(proc_id);
+    }
+
+    DEBUG(proc_id,
+          "Push new op to FTQ2 fetch_addr0x:%llx off_path:%i op_num:%llu dis:%s recovery_addr:%lx fetch_bar:%i\n",
+          op->inst_info->addr, op->off_path, op->op_num, disasm_op(op, TRUE), recovery_addr, op->table_info->bar_type & BAR_FETCH);
+  }
 }

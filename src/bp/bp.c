@@ -261,6 +261,8 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op,
 /* init_bp:  initializes all branch prediction structures */
 
 void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
+  if (DUAL_DFE_ENABLE)
+    ASSERT(proc_id, BP_MECH2 == TAGE64K2_BP); // Currently assume the secondary tage for the secondary BP
   uns ii;
   ASSERT(bp_data->proc_id, bp_data);
   memset(bp_data, 0, sizeof(Bp_Data));
@@ -269,12 +271,20 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
   /* initialize branch predictor */
   bp_data->bp = &bp_table[BP_MECH];
   bp_data->bp->init_func();
+  if (DUAL_DFE_ENABLE) {
+    bp_data->bp2 = &bp_table[BP_MECH2];
+    bp_data->bp2->init_func();
+  }
 
   USE_LATE_BP = (LATE_BP_MECH != NUM_BP);
 
   if(USE_LATE_BP) {
     bp_data->late_bp = &bp_table[LATE_BP_MECH];
     bp_data->late_bp->init_func();
+    if (DUAL_DFE_ENABLE) {
+      bp_data->late_bp2 = &bp_table[LATE_BP_MECH2];
+      bp_data->late_bp2->init_func();
+    }
   } else {
     bp_data->late_bp = NULL;
   }
@@ -311,15 +321,14 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
   }
 }
 
-Flag bp_is_predictable(Bp_Data* bp_data, uns proc_id) {
-  return !bp_data->bp->full_func(proc_id);
+Flag bp_is_predictable(Bp_Data* bp_data, uns proc_id, Flag secondary) {
+  return secondary? !bp_data->bp2->full_func(proc_id) : !bp_data->bp->full_func(proc_id);
 }
-
 
 /******************************************************************************/
 /* bp_predict_op:  predicts the target of a control flow instruction */
 
-Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
+Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr, Flag secondary) {
   Addr* btb_target;
   Addr  ibp_target;
   Addr  pred_target;
@@ -340,7 +349,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
      overwritten by a prediction function that uses and
      speculatively updates global history */
   op->recovery_info.proc_id          = op->proc_id;
-  op->recovery_info.pred_global_hist = bp_data->global_hist;
+  op->recovery_info.pred_global_hist = secondary? bp_data->global_hist2 : bp_data->global_hist;
   op->recovery_info.targ_hist        = bp_data->targ_hist;
   op->recovery_info.new_dir          = op->oracle_info.dir;
   op->recovery_info.crs_next         = bp_data->crs.next;
@@ -353,9 +362,15 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   op->recovery_info.branchTarget     = op->oracle_info.target;
   op->recovery_info.predict_cycle    = cycle_count;
 
-  bp_data->bp->timestamp_func(op);
+  if(secondary)
+    bp_data->bp2->timestamp_func(op);
+  else
+    bp_data->bp->timestamp_func(op);
   if(USE_LATE_BP) {
-    bp_data->late_bp->timestamp_func(op);
+    if(secondary)
+      bp_data->late_bp2->timestamp_func(op);
+    else
+      bp_data->late_bp->timestamp_func(op);
   }
 
   if(BP_HASH_TOS || IBTB_HASH_TOS) {
@@ -397,7 +412,10 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     op->oracle_info.late_pred_npc = op->oracle_info.npc;
     bp_data->bp->spec_update_func(op);
     if(USE_LATE_BP) {
-      bp_data->late_bp->spec_update_func(op);
+      if(secondary)
+        bp_data->late_bp2->spec_update_func(op);
+      else
+        bp_data->late_bp->spec_update_func(op);
     }
     return op->oracle_info.npc;
   }
@@ -505,7 +523,10 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred = bp_data->bp->pred_func(op);
         op->oracle_info.pred_orig = op->oracle_info.pred;
         if(USE_LATE_BP) {
-          op->oracle_info.late_pred = bp_data->late_bp->pred_func(op);
+          if(secondary)
+            op->oracle_info.late_pred = bp_data->late_bp2->pred_func(op);
+          else
+            op->oracle_info.late_pred = bp_data->late_bp->pred_func(op);
         }
       }
       // Update history used by the rest of Scarab.
@@ -852,9 +873,15 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   if(op->oracle_info.btb_miss && op->oracle_info.pred == NOT_TAKEN)
     btb_miss_nt = TRUE;
 
-  bp_data->bp->spec_update_func(op);
+  if(secondary)
+    bp_data->bp2->spec_update_func(op);
+  else
+    bp_data->bp->spec_update_func(op);
   if(USE_LATE_BP) {
-    bp_data->late_bp->spec_update_func(op);
+    if(secondary)
+      bp_data->late_bp2->spec_update_func(op);
+    else
+      bp_data->late_bp->spec_update_func(op);
   }
 
   DEBUG(bp_data->proc_id,
@@ -875,7 +902,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   }
 
   ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.pred_npc);
-  bp_predict_op_evaluate(bp_data, op, op->oracle_info.pred_npc);
+  bp_predict_op_evaluate(bp_data, op, op->oracle_info.pred_npc, secondary);
 
   // The case where BTB-miss not-taken branch pollute global hist
   // mispred || misfetch will trigger a re-steer but no chance to fix the global hist
@@ -896,7 +923,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 /* Separate performing branch prediction from evaluating the prediction into
  * two functions, enabling FDIP.
  */
-Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction) {
+Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction, Flag secondary) {
   // If the direction prediction is wrong, but next address happens to be right
   // anyway, do not treat this as a misprediction.
   op->oracle_info.mispred = (op->oracle_info.pred != op->oracle_info.dir) &&
@@ -975,7 +1002,7 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction) {
         op->oracle_info.misfetch, op->oracle_info.no_target);
 
   if(ENABLE_BP_CONF && IS_CONF_CF(op)) {
-    bp_data->br_conf->pred_func(op);
+    bp_data->br_conf->pred_func(op, secondary);
 
     if(!op->off_path) {
       if(op->oracle_info.pred_conf) {
@@ -1107,6 +1134,12 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
     bp_data->bp_ibtb->recover_func(bp_data, info);
   }
   bp_data->bp->recover_func(info);
+  if(DUAL_DFE_ENABLE) {
+    if(DUAL_DFE_POLICY == CONTINUE_ON_RECOVERY)
+      bp_sync(bp_data->proc_id);
+    else
+      bp_data->bp2->recover_func(info);
+  }
   if(USE_LATE_BP) {
     bp_data->late_bp->recover_func(info);
   }
@@ -1135,4 +1168,10 @@ void bp_dump_stat(void) {
     fprintf(fp, "%i,%llx,%llx\n", entry->cf_type, entry->addr, entry->target);
   }
   free(entries);
+}
+
+void bp_sync(uns proc_id) {
+  // TODO: decide what to share between two BPs
+  g_bp_data->global_hist2 = g_bp_data->global_hist;
+  sync_predictors(proc_id);
 }

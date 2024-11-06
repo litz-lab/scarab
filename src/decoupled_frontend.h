@@ -81,23 +81,23 @@ extern "C" {
   FT_Info decoupled_fe_fetch_ft();
   FT_Info decoupled_fe_peek_ft();
   // FTQ API
-  decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id);
+  uns decoupled_fe_new_ftq_iter(uns proc_id, Flag secondary);
   /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached
      if end_of_ft is true the Op is the last one in a fetch target (cache-line boundary of taken branch)*/
-  Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter, bool *end_of_ft);
+  Op* decoupled_fe_ftq_iter_get(uns iter_idx, bool *end_of_ft, Flag secondary);
   /* Increments iterator and returns the Op at iterator position or NULL if FTQ is empty or the end of FTQ was reached
      if end_of_ft is true the Op is the last one in a fetch target (cache-line boundary of taken branch)*/
-  Op* decoupled_fe_ftq_iter_get_next(decoupled_fe_iter* iter, bool *end_of_ft);
+  Op* decoupled_fe_ftq_iter_get_next(uns iter_idx, bool *end_of_ft, Flag secondary);
   /* Returns iter flattened offset from the start of the FTQ, this offset gets incremented
      by advancing the iter and decremented by the icache consuming FTQ entries,
      and reset by flushes */
-  uint64_t decoupled_fe_ftq_iter_offset(decoupled_fe_iter* iter);
+  uint64_t decoupled_fe_ftq_iter_offset(uns iter_idx, Flag secondary);
   /* Returns iter ft offset from the start of the FTQ, this offset gets incremented
      by advancing the iter and decremented by the icache consuming FTQ entries,
      and reset by flushes */
-  uint64_t decoupled_fe_ftq_iter_ft_offset(decoupled_fe_iter* iter);
+  uint64_t decoupled_fe_ftq_iter_ft_offset(uns iter_idx, Flag secondary);
   uint64_t decoupled_fe_ftq_num_ops();
-  uint64_t decoupled_fe_ftq_num_fts();
+  uint64_t decoupled_fe_ftq_num_fts(Flag secondary);
   void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num);
   uint64_t decoupled_fe_get_ftq_num();
 #ifdef __cplusplus

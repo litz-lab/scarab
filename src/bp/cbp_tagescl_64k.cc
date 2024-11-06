@@ -4,6 +4,136 @@ TAGE64K::TAGE64K(void) {
   reinit();
 }
 
+TAGE64K& TAGE64K::operator=(const TAGE64K& other) {
+  memcpy(Bias, other.Bias, sizeof(Bias));
+  memcpy(BiasSK, other.BiasSK, sizeof(BiasSK));
+  memcpy(BiasBank, other.BiasBank, sizeof(BiasBank));
+  memcpy(Im, other.Im, sizeof(Im));
+  memcpy(IGEHLA, other.IGEHLA, sizeof(IGEHLA));
+  memcpy(IGEHL, other.IGEHL, sizeof(IGEHL));
+  memcpy(IMm, other.IMm, sizeof(IMm));
+  memcpy(IMGEHLA, other.IMGEHLA, sizeof(IMGEHLA));
+  memcpy(IMGEHL, other.IMGEHL, sizeof(IMGEHL));
+  memcpy(IMHIST, other.IMHIST, sizeof(IMHIST));
+  memcpy(Gm, other.Gm, sizeof(Gm));
+  memcpy(GGEHLA, other.GGEHLA, sizeof(GGEHLA));
+  memcpy(GGEHL, other.GGEHL, sizeof(GGEHL));
+  memcpy(Pm, other.Pm, sizeof(Pm));
+  memcpy(PGEHLA, other.PGEHLA, sizeof(PGEHLA));
+  memcpy(PGEHL, other.PGEHL, sizeof(PGEHL));
+  memcpy(Lm, other.Lm, sizeof(Lm));
+  memcpy(LGEHLA, other.LGEHLA, sizeof(LGEHLA));
+  memcpy(LGEHL, other.LGEHL, sizeof(LGEHL));
+  memcpy(L_shist, other.L_shist, sizeof(L_shist));
+  memcpy(Sm, other.Sm, sizeof(Sm));
+  memcpy(SGEHLA, other.SGEHLA, sizeof(SGEHLA));
+  memcpy(SGEHL, other.SGEHL, sizeof(SGEHL));
+  memcpy(S_slhist, other.S_slhist, sizeof(S_slhist));
+  memcpy(Tm, other.Tm, sizeof(Tm));
+  memcpy(TGEHLA, other.TGEHLA, sizeof(TGEHLA));
+  memcpy(TGEHL, other.TGEHL, sizeof(TGEHL));
+  memcpy(T_slhist, other.T_slhist, sizeof(T_slhist));
+  updatethreshold = other.updatethreshold;
+  memcpy(Pupdatethreshold, other.Pupdatethreshold, sizeof(Pupdatethreshold));
+  memcpy(WG, other.WG, sizeof(WG));
+  memcpy(WL, other.WL, sizeof(WL));
+  memcpy(WS, other.WS, sizeof(WS));
+  memcpy(WT, other.WT, sizeof(WT));
+  memcpy(WP, other.WP, sizeof(WP));
+  memcpy(WI, other.WI, sizeof(WI));
+  memcpy(WIM, other.WIM, sizeof(WIM));
+  memcpy(WB, other.WB, sizeof(WB));
+  FirstH = other.FirstH;
+  SecondH = other.SecondH;
+  memcpy(SizeTable, other.SizeTable, sizeof(SizeTable));
+  memcpy(NOSKIP, other.NOSKIP, sizeof(NOSKIP));
+  Pstate.THRES = other.Pstate.THRES;
+  Pstate.LSUM = other.Pstate.LSUM;
+  Pstate.predloop = other.Pstate.predloop;
+  Pstate.LHIT = other.Pstate.LHIT;
+  Pstate.LVALID= other.Pstate.LVALID;
+  Pstate.pred_taken = other.Pstate.pred_taken;
+  Pstate.tage_pred = other.Pstate.tage_pred;
+  Pstate.pred_inter = other.Pstate.pred_inter;
+  Pstate.LongestMatchPred = other.Pstate.LongestMatchPred;
+  Pstate.alttaken = other.Pstate.alttaken;
+  Pstate.HighConf = other.Pstate.HighConf;
+  Pstate.MedConf = other.Pstate.MedConf;
+  Pstate.LowConf = other.Pstate.LowConf;
+  Pstate.AltConf = other.Pstate.AltConf;
+  Pstate.HitBank = other.Pstate.HitBank;
+  Pstate.AltBank = other.Pstate.AltBank;
+  memcpy(Pstate.GI.get(), other.Pstate.GI.get(), (NHIST+1)*sizeof(int));
+  memcpy(Pstate.GTAG.get(), other.Pstate.GTAG.get(), (NHIST+1)*sizeof(uint));
+  LIB = other.LIB;
+  LI = other.LI;
+  LTAG = other.LTAG;
+  WITHLOOP = other.WITHLOOP;
+  memcpy(use_alt_on_na, other.use_alt_on_na, sizeof(use_alt_on_na));
+  TICK = other.TICK;
+  for (int i = 0; i < (1<<(LOGL)); ++i) {
+    ltable[i].NbIter = other.ltable[i].NbIter;
+    ltable[i].confid = other.ltable[i].confid;
+    ltable[i].CurrentIter = other.ltable[i].CurrentIter;
+    ltable[i].TAG = other.ltable[i].TAG;
+    ltable[i].age = other.ltable[i].age;
+    ltable[i].dir = other.ltable[i].dir;
+  }
+  GHIST = other.GHIST;
+  memcpy(ghist, other.ghist, sizeof(ghist));
+  ptghist = other.ptghist;
+  phist = other.phist;
+  for (int i = 0; i < NHIST+1; ++i) {
+    ch_i[i].comp = other.ch_i[i].comp;
+    ch_i[i].CLENGTH = other.ch_i[i].CLENGTH;
+    ch_i[i].OLENGTH = other.ch_i[i].OLENGTH;
+    ch_i[i].OUTPOINT = other.ch_i[i].OUTPOINT;
+  }
+  for (int i = 0; i < 2; ++i) {
+    for (int j = 0; j < NHIST+1; ++j) {
+      ch_t[i][j].comp = other.ch_t[i][j].comp;
+      ch_t[i][j].CLENGTH = other.ch_t[i][j].CLENGTH;
+      ch_t[i][j].OLENGTH = other.ch_t[i][j].OLENGTH;
+      ch_t[i][j].OUTPOINT = other.ch_t[i][j].OUTPOINT;
+    }
+  }
+  for (int i = 0; i < (1<<(LOGB)); ++i) {
+    btable[i].hyst = other.btable[i].hyst;
+    btable[i].pred = other.btable[i].pred;
+  }
+  for (int i = 1; i < BORN; ++i) {
+    for (int j = 0; j < NBANKLOW * (1 << LOGG); ++j) {
+      gtable[i][j].ctr = other.gtable[i][j].ctr;
+      gtable[i][j].tag = other.gtable[i][j].tag;
+      gtable[i][j].u = other.gtable[i][j].u;
+    }
+  }
+  for (int i = BORN; i < NHIST+1; ++i) {
+    for (int j = 0; j < NBANKHIGH * (1 << LOGG); ++j) {
+      gtable[i][j].ctr = other.gtable[i][j].ctr;
+      gtable[i][j].tag = other.gtable[i][j].tag;
+      gtable[i][j].u = other.gtable[i][j].u;
+    }
+  }
+
+  memcpy(m, other.m, sizeof(m));
+  memcpy(TB, other.TB, sizeof(TB));
+  memcpy(logg, other.logg, sizeof(logg));
+  Seed = other.Seed;
+  IMLIcount = other.IMLIcount;
+  tage_component = other.tage_component;
+  tage_component_inter = other.tage_component_inter;
+  tage_component_tage = other.tage_component_tage;
+  tage_component_alt = other.tage_component_alt;
+  // no need to copy checkpoints and predictor_states ?
+  branch_id = other.branch_id;
+  off_path = other.off_path;
+  condpattern = other.condpattern;
+  memcpy(noskip_index, other.noskip_index, sizeof(noskip_index));
+
+  return *this;
+}
+
 uns8 TAGE64K::IsFull(void) {
   return 0;
 }
@@ -1297,3 +1427,10 @@ void TAGE64K::LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, Counter op_num, int 
 }
 
 #endif
+
+TAGE64K2::TAGE64K2(void) : TAGE64K() {}
+
+TAGE64K2& TAGE64K2::operator=(const TAGE64K& other) {
+  TAGE64K::operator=(other);
+  return *this;
+}

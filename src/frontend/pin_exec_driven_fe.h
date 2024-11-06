@@ -45,16 +45,19 @@ void pin_exec_driven_init(uns num_cores);
 void pin_exec_driven_done(Flag* retired_exit);
 
 /* Can an op be fetched for proc_id? */
-Flag pin_exec_driven_can_fetch_op(uns proc_id);
+Flag pin_exec_driven_can_fetch_op(uns proc_id, Flag secondary);
 
 /* Next instruction fetch address */
 Addr pin_exec_driven_next_fetch_addr(uns proc_id);
 
 /* Get an op from pin_exec_driven */
-void pin_exec_driven_fetch_op(uns proc_id, struct Op_struct* op);
+void pin_exec_driven_fetch_op(uns proc_id, struct Op_struct* op, Flag secondary);
 
 /* Redirect pin_exec_driven (down the wrong path) */
 void pin_exec_driven_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);
+
+/* Redirect the secondary pin_exec_driven */
+void pin_exec_driven_redirect2(uns proc_id, Addr fetch_addr);
 
 /* Recover pin_exec_driven (restart the right path) */
 void pin_exec_driven_recover(uns proc_id, uns64 inst_uid);

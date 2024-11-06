@@ -54,9 +54,10 @@ void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst
 
 /* Implementing the frontend interface */
 Addr ext_trace_next_fetch_addr(uns proc_id);
-Flag ext_trace_can_fetch_op(uns proc_id);
-void ext_trace_fetch_op(uns proc_id, Op* op);
+Flag ext_trace_can_fetch_op(uns proc_id, Flag secondary);
+void ext_trace_fetch_op(uns proc_id, Op* op, Flag secondary);
 void ext_trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);
+void ext_trace_redirect2(uns proc_id, Addr fetch_addr);
 void ext_trace_recover(uns proc_id, uns64 inst_uid);
 void ext_trace_retire(uns proc_id, uns64 inst_uid);
 void ext_trace_init();

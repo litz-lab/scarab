@@ -111,7 +111,7 @@ void pin_exec_driven_done(Flag* retired_exit) {
 }
 
 
-Flag pin_exec_driven_can_fetch_op(uns proc_id) {
+Flag pin_exec_driven_can_fetch_op(uns proc_id, Flag secondary = FALSE) {
   DEBUG(proc_id, "Can Fetch Op begin:\n");
   update_op_buffer_if_empty(proc_id);
 
@@ -129,7 +129,7 @@ Addr pin_exec_driven_next_fetch_addr(uns proc_id) {
   return next_fetch_addr;
 }
 
-void pin_exec_driven_fetch_op(uns proc_id, Op* op) {
+void pin_exec_driven_fetch_op(uns proc_id, Op* op, Flag secondary = FALSE) {
   DEBUG(proc_id, "Fetch Op begin:\n");
   update_op_buffer_if_empty(proc_id);
 
@@ -171,6 +171,10 @@ void pin_exec_driven_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
   server->send(proc_id, (Message<Scarab_To_Pin_Msg>)msg);  // blocking
   invalidate_op_buffer(proc_id);
   DEBUG(proc_id, "Fetch Redirect end: %llx\n", fetch_addr);
+}
+
+// TODO: currently only support PT/MEMTRACE
+void pin_exec_driven_redirect2(uns proc_id, Addr fetch_addr) {
 }
 
 void pin_exec_driven_recover(uns proc_id, uns64 inst_uid) {

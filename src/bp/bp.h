@@ -34,6 +34,11 @@
 #include "libs/hash_lib.h"
 #include "op.h"
 
+typedef enum Dual_Path_Policy_enum {
+  CONTINUE_ON_RECOVERY,
+  CONTINUE_ON_PREDICTION,
+} Dual_Path_Policy;
+
 /**************************************************************************************/
 // Branch prediction recovery information
 
@@ -133,13 +138,17 @@ typedef struct Bp_Data_struct {
   uns proc_id;
   /* predictor data */
   struct Bp_struct* bp;       // main branch predictor.
+  struct Bp_struct* bp2;      // secondary branch predictor.
   struct Bp_struct* late_bp;  // late multi-cycle branch predictor. (Could be
                               // null)
+  struct Bp_struct* late_bp2; // secondary late multi-cycle branch predictor.
+                              // (Could be null)
   struct Bp_Btb_struct*  bp_btb;
   struct Bp_Ibtb_struct* bp_ibtb;
   struct Br_Conf_struct* br_conf;
 
   uns32 global_hist;
+  uns32 global_hist2;
   Cache btb;
 
   struct {
@@ -249,7 +258,7 @@ typedef struct Br_Conf_struct {
   Br_Conf_Id  id;
   const char* name;
   void (*init_func)(void);  /* called to initialize the confidence estimator */
-  void (*pred_func)(Op*);   /* called to predict confidence */
+  void (*pred_func)(Op*, Flag);   /* called to predict confidence */
   void (*update_func)(Op*); /* called to update the confidence estimator when a
                                branch is resolved */
   void (*recover_func)(void); /* called to recover the confidence estimator
@@ -278,13 +287,14 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op,
 void bp_sched_redirect(Bp_Recovery_Info*, Op*, Counter);
 
 void init_bp_data(uns8, Bp_Data*);
-Flag bp_is_predictable(Bp_Data*, uns);
-Addr bp_predict_op(Bp_Data*, Op*, uns, Addr);
-Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction);
+Flag bp_is_predictable(Bp_Data*, uns, Flag);
+Addr bp_predict_op(Bp_Data*, Op*, uns, Addr, Flag);
+Addr bp_predict_op_evaluate(Bp_Data*, Op*, Addr, Flag);
 void bp_target_known_op(Bp_Data*, Op*);
 void bp_resolve_op(Bp_Data*, Op*);
 void bp_retire_op(Bp_Data*, Op*);
 void bp_recover_op(Bp_Data*, Cf_Type, Recovery_Info*);
+void bp_sync(uns);
 
 void inc_bstat_fetched(Op* op);
 void inc_bstat_miss(Op* op);

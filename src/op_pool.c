@@ -111,7 +111,7 @@ void reset_op_pool() {
 /**************************************************************************************/
 /* alloc_op:  returns a pointer to the next available op */
 
-Op* alloc_op(uns proc_id) {
+Op* alloc_op(uns proc_id, uns bp_id) {
   Op* new_op;
 
   if(op_pool_free_head == NULL) {
@@ -123,7 +123,7 @@ Op* alloc_op(uns proc_id) {
   ASSERT(0, !new_op->op_pool_valid);
   new_op->op_pool_valid = TRUE;
 
-  op_pool_setup_op(proc_id, new_op);
+  op_pool_setup_op(proc_id, bp_id, new_op);
 
   op_pool_active_ops++;
   DEBUG(0, "Allocating op  id:%u  op_pool_active_ops:%u  op_pool_entries:%d\n",
@@ -186,7 +186,7 @@ void op_pool_init_op(Op* op) {
 /* op_pool_init_op: this function is called every time an op is
    taken from the pool to be used */
 
-void op_pool_setup_op(uns proc_id, Op* op) {
+void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   uns ii;
   /* only initialize here what is independent of the engine (the
      rest should be in the fetch stage) */
@@ -203,6 +203,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->unique_num          = unique_count;
   op->unique_num_per_proc = unique_count_per_core[proc_id];
   op->proc_id             = proc_id;
+  op->bp_id               = bp_id;
   op->thread_id           = 0;
   op->off_path            = FALSE;  // FIXME: check
   op->state               = OS_FETCHED;

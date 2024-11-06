@@ -45,6 +45,7 @@ public:
     adjust(FALSE),
     qdaur(0),
     qdatr(0) {}
+  ~UFTQ() {}
   void cyc_reset();
   void inc_useful_prefetches() { useful_prefetches++; }
   void inc_unuseful_prefetches() { unuseful_prefetches++; }

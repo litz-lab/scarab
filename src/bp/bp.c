@@ -260,12 +260,17 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op,
 /******************************************************************************/
 /* init_bp:  initializes all branch prediction structures */
 
-void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
+void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data) {
   uns ii;
   ASSERT(bp_data->proc_id, bp_data);
   memset(bp_data, 0, sizeof(Bp_Data));
 
+  if (!bp_id) {
+    bp_data->btb = (Cache*)malloc(sizeof(Cache));
+    bp_data->tc_tagged = (Cache*)malloc(sizeof(Cache));
+  }
   bp_data->proc_id = proc_id;
+  bp_data->bp_id = bp_id;
   /* initialize branch predictor */
   bp_data->bp = &bp_table[BP_MECH];
   bp_data->bp->init_func();
@@ -311,10 +316,9 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
   }
 }
 
-Flag bp_is_predictable(Bp_Data* bp_data, uns proc_id) {
-  return !bp_data->bp->full_func(proc_id);
+Flag bp_is_predictable(Bp_Data* bp_data) {
+  return !bp_data->bp->full_func(bp_data);
 }
-
 
 /******************************************************************************/
 /* bp_predict_op:  predicts the target of a control flow instruction */
@@ -340,6 +344,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
      overwritten by a prediction function that uses and
      speculatively updates global history */
   op->recovery_info.proc_id          = op->proc_id;
+  op->recovery_info.bp_id            = op->bp_id;
   op->recovery_info.pred_global_hist = bp_data->global_hist;
   op->recovery_info.targ_hist        = bp_data->targ_hist;
   op->recovery_info.new_dir          = op->oracle_info.dir;
@@ -1022,7 +1027,7 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
     // or For indirects we want to update the BTB if the target changes, even on btb hit
     // The detection relies on the target stored in the btb
     Addr line_addr;
-    Addr * btb_entry = (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, FALSE);
+    Addr * btb_entry = (Addr*)cache_access(bp_data->btb, op->oracle_info.pred_addr, &line_addr, FALSE);
     // The following assertion can fail (due to eviction?)
     // ASSERT(bp_data->proc_id, btb_entry);
     if (btb_entry && *btb_entry != op->oracle_info.target) {
@@ -1135,4 +1140,14 @@ void bp_dump_stat(void) {
     fprintf(fp, "%i,%llx,%llx\n", entry->cf_type, entry->addr, entry->target);
   }
   free(entries);
+}
+
+void bp_sync(Bp_Data* bp_data_src, Bp_Data* bp_data_dst) {
+  bp_data_dst->global_hist = bp_data_src->global_hist;
+  bp_data_dst->targ_hist = bp_data_src->targ_hist;
+  bp_data_dst->targ_index = bp_data_src->targ_index;
+  bp_data_dst->target_bit_length = bp_data_src->target_bit_length;
+  bp_data_dst->on_path_pred = bp_data_src->on_path_pred;
+  bp_crs_sync(bp_data_src, bp_data_dst);
+  bp_predictors_sync(bp_data_src, bp_data_dst);
 }

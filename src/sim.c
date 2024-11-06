@@ -636,7 +636,7 @@ void uop_sim() {
         continue;
       if(!retired_exit[proc_id]) {
         do {
-          frontend_fetch_op(proc_id, &op);
+          frontend_fetch_op(proc_id, 0, &op);
 
           if(op.table_info->mem_type != NOT_MEM && op.oracle_info.va == 0) {
             FATAL_ERROR(proc_id, "Access to 0x0\n");
@@ -786,12 +786,8 @@ void full_sim() {
       if(!sim_done[proc_id] && (retired_exit[proc_id] || reachedInstLimit)) {
         if(model->per_core_done_func)
           model->per_core_done_func(proc_id);
-        if(FDIP_ENABLE) {
-          if(FDIP_PRINT_CL_INFO)
-            print_cl_info(proc_id);
-          INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY_OPS, get_fdip_ftq_occupancy_ops(proc_id));
-          INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY, get_fdip_ftq_occupancy(proc_id));
-        }
+        if(FDIP_ENABLE)
+          fdip_stats(proc_id);
         if(EIP_ENABLE) {
           print_eip_stats(proc_id);
         }

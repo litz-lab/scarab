@@ -53,6 +53,14 @@ extern "C" {
 
 #include "stage_data.h"
 
+// DFEx_RECOVERY_POLICY param
+typedef enum DFE_Recovery_Policy_enum {
+  PRIMARY_DFE,
+  CONTINUE_ON_RECOVERY,
+  CONTINUE_ON_PREDICTION,
+} DFE_Recovery_Policy;
+
+
   typedef struct decoupled_fe_iter decoupled_fe_iter;
   
   struct decoupled_fe_iter {
@@ -65,14 +73,14 @@ extern "C" {
   };
 
   // Simulator API
-  void alloc_mem_decoupled_fe(uns numProcs);
-  void init_decoupled_fe(uns proc_id, const char*);
-  void set_decoupled_fe(uns proc_id);
+  void alloc_mem_decoupled_fe(uns numProcs, uns numBPs);
+  void init_decoupled_fe(uns proc_id, uns bp_id, Bp_Data* bp_data);
+  void set_decoupled_fe(uns proc_id, uns bp_id);
   void reset_decoupled_fe();
   void debug_decoupled_fe();
-  void update_decoupled_fe();
+  void update_decoupled_fe(uns proc_id);
   // Icache/Core API
-  void recover_decoupled_fe();
+  void recover_decoupled_fe(uns proc_id, Cf_Type cf_type, Recovery_Info* info);
   bool decoupled_fe_is_off_path();
   void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid);
   bool decoupled_fe_current_ft_can_fetch_op();
@@ -80,26 +88,6 @@ extern "C" {
   bool decoupled_fe_can_fetch_ft();
   FT_Info decoupled_fe_fetch_ft();
   FT_Info decoupled_fe_peek_ft();
-  // FTQ API
-  decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id);
-  /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached
-     if end_of_ft is true the Op is the last one in a fetch target (cache-line boundary of taken branch)*/
-  Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter, bool *end_of_ft);
-  /* Increments iterator and returns the Op at iterator position or NULL if FTQ is empty or the end of FTQ was reached
-     if end_of_ft is true the Op is the last one in a fetch target (cache-line boundary of taken branch)*/
-  Op* decoupled_fe_ftq_iter_get_next(decoupled_fe_iter* iter, bool *end_of_ft);
-  /* Returns iter flattened offset from the start of the FTQ, this offset gets incremented
-     by advancing the iter and decremented by the icache consuming FTQ entries,
-     and reset by flushes */
-  uint64_t decoupled_fe_ftq_iter_offset(decoupled_fe_iter* iter);
-  /* Returns iter ft offset from the start of the FTQ, this offset gets incremented
-     by advancing the iter and decremented by the icache consuming FTQ entries,
-     and reset by flushes */
-  uint64_t decoupled_fe_ftq_iter_ft_offset(decoupled_fe_iter* iter);
-  uint64_t decoupled_fe_ftq_num_ops();
-  uint64_t decoupled_fe_ftq_num_fts();
-  void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num);
-  uint64_t decoupled_fe_get_ftq_num();
 #ifdef __cplusplus
 }
 #endif

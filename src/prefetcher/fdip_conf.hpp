@@ -70,6 +70,7 @@ public:
     num_cf_sys(0),
     num_BTB_misses(0),
     num_op_dist_incs(0) {}
+  ~FDIP_Confidence_Info() {}
   void recover();
   void log_stats_bp_conf_on();
   void log_stats_bp_conf_off();
@@ -112,6 +113,7 @@ public:
     btb_miss_rate(0.0),
     low_confidence_cnt(0),
     cf_op_distance(0.0) { conf_info = new FDIP_Confidence_Info(_proc_id); }
+  ~FDIP_Conf() {}
   uns get_low_confidence_cnt() { return low_confidence_cnt; }
   void recover();
   void cyc_reset();

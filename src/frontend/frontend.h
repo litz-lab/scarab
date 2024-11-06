@@ -45,16 +45,16 @@ void frontend_done(Flag* retired_exit);
 Addr frontend_next_fetch_addr(uns proc_id);
 
 /* Can we get an op from the frontend (is process proc_id running?) */
-Flag frontend_can_fetch_op(uns proc_id);
+Flag frontend_can_fetch_op(uns proc_id, uns bp_id);
 
 /* Get an op from the frontend */
-void frontend_fetch_op(uns proc_id, struct Op_struct* op);
+void frontend_fetch_op(uns proc_id, uns bp_id, struct Op_struct* op);
 
 /* Redirect the front end (down the wrong path) */
-void frontend_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);
+void frontend_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr);
 
 /* Recover the front end (restart the right path) */
-void frontend_recover(uns proc_id, uns64 inst_uid);
+void frontend_recover(uns proc_id, uns bp_id, uns64 inst_uid);
 
 /* Let the frontend know that this instruction is retired) */
 void frontend_retire(uns proc_id, uns64 inst_uid);

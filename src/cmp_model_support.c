@@ -50,7 +50,9 @@ void cmp_init_cmp_model() {
 
   cmp_model.bp_recovery_info = (Bp_Recovery_Info*)malloc(
     sizeof(Bp_Recovery_Info) * NUM_CORES);
-  cmp_model.bp_data      = (Bp_Data*)malloc(sizeof(Bp_Data) * NUM_CORES);
+  cmp_model.bp_data      = (Bp_Data**)malloc(sizeof(Bp_Data*) * NUM_CORES);
+  for (uns i = 0; i < NUM_CORES; i++)
+    cmp_model.bp_data[i] = (Bp_Data*)malloc(sizeof(Bp_Data) * NUM_BPS);
   cmp_model.icache_stage = (Icache_Stage*)malloc(sizeof(Icache_Stage) *
                                                  NUM_CORES);
   cmp_model.decode_stage = (Decode_Stage*)malloc(sizeof(Decode_Stage) *
@@ -60,8 +62,9 @@ void cmp_init_cmp_model() {
   cmp_model.exec_stage   = (Exec_Stage*)malloc(sizeof(Exec_Stage) * NUM_CORES);
   cmp_model.dcache_stage = (Dcache_Stage*)malloc(sizeof(Dcache_Stage) *
                                                  NUM_CORES);
-  alloc_mem_decoupled_fe(NUM_CORES);
-  alloc_mem_fdip(NUM_CORES);
+  alloc_mem_decoupled_fe(NUM_CORES, NUM_BPS);
+  alloc_mem_fdip(NUM_CORES, NUM_BPS);
+  // TODO: support NUM_BPS
   alloc_mem_eip(NUM_CORES);
   alloc_mem_djolt(NUM_CORES);
   alloc_mem_fnlmma(NUM_CORES);
@@ -85,8 +88,6 @@ void cmp_set_all_stages(uns8 proc_id) {
   set_eip(proc_id);
   set_djolt(proc_id);
   set_fnlmma(proc_id);
-  set_fdip(proc_id, &cmp_model.icache_stage[proc_id]);
-  set_decoupled_fe(proc_id);
   set_uop_cache(proc_id);
   set_icache_stage(&cmp_model.icache_stage[proc_id]);
   set_decode_stage(&cmp_model.decode_stage[proc_id]);
@@ -94,6 +95,14 @@ void cmp_set_all_stages(uns8 proc_id) {
   set_node_stage(&cmp_model.node_stage[proc_id]);
   set_exec_stage(&cmp_model.exec_stage[proc_id]);
   set_dcache_stage(&cmp_model.dcache_stage[proc_id]);
+}
+
+/**************************************************************************************/
+/* cmp_set_all_data */
+void cmp_set_all_data(uns8 proc_id, uns8 bp_id) {
+  set_bp_data(&cmp_model.bp_data[proc_id][bp_id]);
+  set_fdip(proc_id, bp_id);
+  set_decoupled_fe(proc_id, bp_id);
 }
 
 /**************************************************************************************/

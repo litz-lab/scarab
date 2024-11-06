@@ -129,8 +129,22 @@ typedef struct Perceptron_struct {
   int32* weights;
 } Perceptron;
 
+typedef struct CRS_struct {
+  Crs_Entry* entries;
+  Flag*      off_path;
+  uns        depth;
+  uns        head;
+  uns        tail;
+  uns        tail_save;
+  uns        depth_save;
+  // for realistic crs
+  uns tos;   // top of stack
+  uns next;  // next return address will be written here
+} CRS;
+
 typedef struct Bp_Data_struct {
   uns proc_id;
+  uns bp_id;
   /* predictor data */
   struct Bp_struct* bp;       // main branch predictor.
   struct Bp_struct* late_bp;  // late multi-cycle branch predictor. (Could be
@@ -140,22 +154,11 @@ typedef struct Bp_Data_struct {
   struct Br_Conf_struct* br_conf;
 
   uns32 global_hist;
-  Cache btb;
+  Cache* btb;                 // BTB is shared over all the BPs (only allocated on the primary BP)
 
-  struct {
-    Crs_Entry* entries;
-    Flag*      off_path;
-    uns        depth;
-    uns        head;
-    uns        tail;
-    uns        tail_save;
-    uns        depth_save;
-    // for realistic crs
-    uns tos;   // top of stack
-    uns next;  // next return address will be written here
-  } crs;
+  CRS crs;
 
-  Cache tc_tagged;
+  Cache* tc_tagged;           // TC is shared over all the BPs
   Addr* tc_tagless;
   uns8* tc_selector;
   uns32 targ_hist;
@@ -163,9 +166,6 @@ typedef struct Bp_Data_struct {
   uns8  target_bit_length;
 
   Flag on_path_pred;
-
-  List cbrs_in_machine;
-
 } Bp_Data;
 
 /**************************************************************************************/
@@ -217,7 +217,7 @@ typedef struct Bp_struct {
                                the bp that has to be updated after retirement*/
   void (*recover_func)(Recovery_Info*); /* called to recover the bp when a
                                            misprediction is realized */
-  uns8 (*full_func)(uns);
+  uns8 (*full_func)(Bp_Data*);
 } Bp;
 
 typedef struct Bp_Btb_struct {
@@ -277,14 +277,15 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op,
                        Flag force_offpath);
 void bp_sched_redirect(Bp_Recovery_Info*, Op*, Counter);
 
-void init_bp_data(uns8, Bp_Data*);
-Flag bp_is_predictable(Bp_Data*, uns);
+void init_bp_data(uns8, uns8, Bp_Data*);
+Flag bp_is_predictable(Bp_Data*);
 Addr bp_predict_op(Bp_Data*, Op*, uns, Addr);
-Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op *op, Addr prediction);
+Addr bp_predict_op_evaluate(Bp_Data*, Op*, Addr);
 void bp_target_known_op(Bp_Data*, Op*);
 void bp_resolve_op(Bp_Data*, Op*);
 void bp_retire_op(Bp_Data*, Op*);
 void bp_recover_op(Bp_Data*, Cf_Type, Recovery_Info*);
+void bp_sync(Bp_Data*, Bp_Data*);
 
 void inc_bstat_fetched(Op* op);
 void inc_bstat_miss(Op* op);

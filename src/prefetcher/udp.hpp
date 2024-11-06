@@ -52,6 +52,7 @@ public:
     cnt_insert_bloom(0),
     cnt_insert_bloom2(0),
     cnt_insert_bloom4(0) {}
+  ~Bloom_Filter() {}
   void* lookup(Addr line_addr);
   void detect_stream(Addr line_addr);
 private:
@@ -80,6 +81,7 @@ private:
 class UDP {
 public:
   UDP(uns _proc_id);
+  ~UDP() {}
   void cyc_reset();
   void clear_old_seniority_ftq();
   void set_last_bbl_start_addr(Addr addr);

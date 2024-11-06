@@ -1043,11 +1043,11 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
         line_info->read_count[0]     = 0;
         line_info->read_count[1]     = 0;
         line_info->HW_prefetch       = req->type == MRT_IPRF;
-	line_info->ghist             = req->ghist;
+        line_info->ghist             = req->ghist;
         if (mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF)) {
           if (req->fdip_pref_off_path == 2)
             line_info->FDIP_prefetch = FDIP_BOTHPATH;
-	  else if (req->fdip_pref_off_path == 1)
+          else if (req->fdip_pref_off_path == 1)
             line_info->FDIP_prefetch = FDIP_OFFPATH;
           else
             line_info->FDIP_prefetch = FDIP_ONPATH;
@@ -1369,13 +1369,15 @@ void log_stats_mshr_hit(Addr line_addr) {
     else
       STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED_ONPATH + icache_off_path());
   } else {
-    if (FDIP_ENABLE && !FDIP_UTILITY_HASH_ENABLE && !FDIP_BLOOM_FILTER && !FDIP_UC_SIZE && !EIP_ENABLE && !FDIP_PERFECT_PREFETCH
+    if (FDIP_ENABLE && !FDIP_UTILITY_HASH_ENABLE && !FDIP_BLOOM_FILTER && !FDIP_UC_SIZE && !EIP_ENABLE && !FDIP_PERFECT_PREFETCH && (NUM_BPS == 1)
         && (mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF)))
       ASSERT(ic->proc_id, imiss_reason == IMISS_MSHR_HIT_PREFETCHED_OFFPATH || imiss_reason == IMISS_MSHR_HIT_PREFETCHED_ONPATH);
     if (imiss_reason == IMISS_MSHR_HIT_PREFETCHED_ONPATH)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_PREFETCHED_ONPATH);
-    else
+    else if (imiss_reason == IMISS_MSHR_HIT_PREFETCHED_OFFPATH)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_PREFETCHED_OFFPATH);
+    else
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
   }
   DEBUG_FDIP(ic->proc_id, "set last miss reason %u for %llx\n", imiss_reason, ic->line_addr);
   set_last_miss_reason(imiss_reason);

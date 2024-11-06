@@ -36,15 +36,14 @@ extern "C" {
 
   #include "icache_stage.h"
 
-  void alloc_mem_fdip(uns numProcs);
-  void init_fdip(uns proc_id);
-  void update_fdip();
+  void alloc_mem_fdip(uns numProcs, uns numBPs);
+  void init_fdip(uns proc_id, uns bp_id, Icache_Stage *ic);
+  void update_fdip(uns proc_id);
   void recover_fdip();
-  void set_fdip(int _proc_id, Icache_Stage *_ic);
+  void set_fdip(uns proc_id, uns bp_id);
   Flag fdip_off_path();
-  uns64 fdip_get_ghist();
   uns64 fdip_hash_addr_ghist(uint64_t addr, uint64_t ghist);
-  void print_cl_info(uns proc_id);
+  void fdip_stats(uns proc_id);
   void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss);
   void inc_cnt_unuseful(uns proc_id, Addr line_addr);
   void inc_cnt_useful_signed(Addr line_addr);
@@ -57,8 +56,6 @@ extern "C" {
   uns get_miss_reason(Addr line_addr);
   uns get_last_miss_reason();
   void set_last_miss_reason(uns reason);
-  uint64_t get_fdip_ftq_occupancy_ops(uns proc_id);
-  uint64_t get_fdip_ftq_occupancy(uns proc_id);
   void update_useful_lines_uc(Addr line_addr);
   void update_unuseful_lines_uc(Addr line_addr);
   void inc_useful_lines_uc(Addr line_addr);

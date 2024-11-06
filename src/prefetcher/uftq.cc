@@ -1,5 +1,6 @@
 #include "prefetcher/uftq.hpp"
 #include "prefetcher/pref.param.h"
+#include "decoupled_frontend.hpp"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FDIP, ##args)
 

@@ -357,7 +357,7 @@ typedef boost::multi_index_container<CheckpointEntry,
     CheckpointContainer;
 
 class TAGE64K {
- private:
+ protected:
   // Predictor state components
 #define PERCWIDTH 6  // Statistical corrector  counter width 5 -> 6 : 0.6 %
   // The three BIAS tables in the SC component
@@ -451,6 +451,9 @@ class TAGE64K {
 
  public:
   TAGE64K(void);
+  TAGE64K& operator=(const TAGE64K& other); // Copy assignment
+  TAGE64K(TAGE64K&&) = default;
+  TAGE64K(const TAGE64K&) = default;
   uns8     IsFull(void);
   void     reinit();
   int      bindex(UINT64 PC);
@@ -545,5 +548,4 @@ class TAGE64K {
   int8_t tage_component_tage;
   int8_t tage_component_alt;
 };
-
 #endif

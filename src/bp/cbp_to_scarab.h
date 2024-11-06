@@ -69,7 +69,7 @@ extern "C" {
   void SCARAB_BP_INTF_FUNC(CBP_CLASS, update)(Op * op);         \
   void SCARAB_BP_INTF_FUNC(CBP_CLASS, retire)(Op * op);         \
   void SCARAB_BP_INTF_FUNC(CBP_CLASS, recover)(Recovery_Info*); \
-  Flag SCARAB_BP_INTF_FUNC(CBP_CLASS, full)(uns proc_id);
+  Flag SCARAB_BP_INTF_FUNC(CBP_CLASS, full)(Bp_Data*);
 #include "cbp_table.def"
 #undef DEF_CBP
 
@@ -172,4 +172,12 @@ typedef enum {
   BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON,  // + Non-speculative update at exec that after a branch is resolved
   BP_PRED_MAX                                     // + add additional feature or testing
 } BpOffPredType;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+void bp_predictors_sync(Bp_Data* src, Bp_Data* dst);
+#ifdef __cplusplus
+}
+#endif
 #endif

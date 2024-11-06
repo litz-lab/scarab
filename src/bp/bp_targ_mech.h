@@ -41,6 +41,7 @@ void bp_crs_recover(Bp_Data*);
 Addr bp_crs_realistic_pop(Bp_Data*, Op*);
 void bp_crs_realistic_push(Bp_Data*, Op*);
 void bp_crs_realistic_recover(Bp_Data*, Recovery_Info*);
+void bp_crs_sync(Bp_Data*, Bp_Data*);
 
 void  bp_btb_gen_init(Bp_Data*);
 Addr* bp_btb_gen_pred(Bp_Data*, Op*);

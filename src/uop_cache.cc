@@ -62,6 +62,7 @@ class Uop_Cache: public Cpp_Cache<Uop_Cache_Key, Uop_Cache_Data> {
     // user manipulates the line_bytes of the Cpp_Cache to change the set id hashing pattern
     offset_bits  = LOG2(line_bytes);
   }
+  ~Uop_Cache() {}
 };
 
 uns Uop_Cache::set_idx_hash(Uop_Cache_Key key) {

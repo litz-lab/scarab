@@ -2,6 +2,8 @@
 
 #include "prefetcher/pref.param.h"
 
+#include "decoupled_frontend.h"
+
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FDIP, ##args)
 
 /* UFTQ member functions */

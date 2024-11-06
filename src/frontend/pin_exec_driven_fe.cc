@@ -112,7 +112,7 @@ void pin_exec_driven_done(Flag* retired_exit) {
   delete server;
 }
 
-Flag pin_exec_driven_can_fetch_op(uns proc_id) {
+Flag pin_exec_driven_can_fetch_op(uns proc_id, uns bp_id) {
   DEBUG(proc_id, "Can Fetch Op begin:\n");
   update_op_buffer_if_empty(proc_id);
 
@@ -128,7 +128,7 @@ Addr pin_exec_driven_next_fetch_addr(uns proc_id) {
   return next_fetch_addr;
 }
 
-void pin_exec_driven_fetch_op(uns proc_id, Op* op) {
+void pin_exec_driven_fetch_op(uns proc_id, uns bp_id, Op* op) {
   DEBUG(proc_id, "Fetch Op begin:\n");
   update_op_buffer_if_empty(proc_id);
 
@@ -156,7 +156,7 @@ void pin_exec_driven_fetch_op(uns proc_id, Op* op) {
   DEBUG(proc_id, "Fetch Op end: %llx (%llu)\n", op->inst_info->addr, op->inst_uid);
 }
 
-void pin_exec_driven_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
+void pin_exec_driven_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr) {
   DEBUG(proc_id, "Fetch Redirect: %llx (%llu)\n", fetch_addr, inst_uid);
   /* PIN will asynchronously redirect, Scarab does not need to wait for PIN to
    * finish. Processes will synchronize when Scarab sends next command to PIN*/
@@ -171,7 +171,7 @@ void pin_exec_driven_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
   DEBUG(proc_id, "Fetch Redirect end: %llx\n", fetch_addr);
 }
 
-void pin_exec_driven_recover(uns proc_id, uns64 inst_uid) {
+void pin_exec_driven_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
   DEBUG(proc_id, "Fetch Recover: %llu\n", inst_uid);
   /* PIN will asynchronously recover, Scarab does not need to wait for PIN to
    * finish. Processes will synchronize when Scarab sends next command to PIN*/

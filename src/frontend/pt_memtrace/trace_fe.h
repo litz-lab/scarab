@@ -54,10 +54,10 @@ Flag buf_map_find(uns64 line_addr);
 
 /* Implementing the frontend interface */
 Addr ext_trace_next_fetch_addr(uns proc_id);
-Flag ext_trace_can_fetch_op(uns proc_id);
-void ext_trace_fetch_op(uns proc_id, Op *op);
-void ext_trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);
-void ext_trace_recover(uns proc_id, uns64 inst_uid);
+Flag ext_trace_can_fetch_op(uns proc_id, uns bp_id);
+void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op);
+void ext_trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr);
+void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid);
 void ext_trace_retire(uns proc_id, uns64 inst_uid);
 void ext_trace_init();
 void ext_trace_done(void);

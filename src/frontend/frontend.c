@@ -112,25 +112,25 @@ Addr frontend_next_fetch_addr(uns proc_id) {
   return convert_to_cmp_addr(proc_id, frontend->next_fetch_addr(proc_id));
 }
 
-Flag frontend_can_fetch_op(uns proc_id) {
-  return frontend->can_fetch_op(proc_id);
+Flag frontend_can_fetch_op(uns proc_id, uns bp_id) {
+  return frontend->can_fetch_op(proc_id, bp_id);
 }
 
-void frontend_fetch_op(uns proc_id, Op* op) {
-  frontend->fetch_op(proc_id, op);
+void frontend_fetch_op(uns proc_id, uns bp_id, Op* op) {
+  frontend->fetch_op(proc_id, bp_id, op);
   collect_op_stats(op);
 }
 
-void frontend_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
+void frontend_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr) {
   DEBUG(proc_id, "Redirect after op_num %lld to 0x%08llx\n", op_count[proc_id] - 1, fetch_addr);
-  frontend->redirect(proc_id, inst_uid, fetch_addr);
+  frontend->redirect(proc_id, bp_id, inst_uid, fetch_addr);
 }
 
-void frontend_recover(uns proc_id, uns64 inst_uid) {
+void frontend_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
   DEBUG(proc_id, "Recover after inst_uid %lld\n", inst_uid);
 
   /* Recover to correct path */
-  frontend->recover(proc_id, inst_uid);
+  frontend->recover(proc_id, bp_id, inst_uid);
 }
 
 void frontend_retire(uns proc_id, uns64 inst_uid) {

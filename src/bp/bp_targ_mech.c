@@ -250,11 +250,29 @@ void bp_crs_realistic_recover(Bp_Data* bp_data, Recovery_Info* info) {
 }
 
 /**************************************************************************************/
+/* bp_crs_sync: */
+
+void bp_crs_sync(Bp_Data* bp_data_src, Bp_Data* bp_data_dst) {
+  memcpy(bp_data_dst->crs.entries, bp_data_src->crs.entries, sizeof(Crs_Entry) * CRS_ENTRIES * 2);
+  memcpy(bp_data_dst->crs.off_path, bp_data_src->crs.off_path, sizeof(Flag) * CRS_ENTRIES);
+  bp_data_dst->crs.depth = bp_data_src->crs.depth;
+  bp_data_dst->crs.head = bp_data_src->crs.head;
+  bp_data_dst->crs.tail = bp_data_src->crs.tail;
+  bp_data_dst->crs.tail_save = bp_data_src->crs.tail_save;
+  bp_data_dst->crs.depth_save = bp_data_src->crs.depth_save;
+  bp_data_dst->crs.tos = bp_data_src->crs.tos;
+  bp_data_dst->crs.next = bp_data_src->crs.next;
+}
+
+/**************************************************************************************/
 /* bp_btb_init: */
 
-void bp_btb_gen_init(Bp_Data* bp_data) {
+void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   // btb line size set to 1
-  init_cache(&bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  if (!bp_data->bp_id)
+    init_cache(bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  else  // points to the primary BP's shared BTB
+    bp_data->btb = primary_bp->btb;
 }
 
 /**************************************************************************************/
@@ -264,7 +282,8 @@ Addr* bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Addr line_addr;
 
   return PERFECT_BTB ? &op->oracle_info.target
-                     : (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, TRUE);
+                     : (Addr*)cache_access(bp_data->btb, op->oracle_info.pred_addr, &line_addr,
+                                           bp_data->bp_id ? FALSE : TRUE);  // TODO
 }
 
 /**************************************************************************************/
@@ -275,14 +294,15 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
   Addr *btb_line, btb_line_addr, repl_line_addr;
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
+  ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
   if (BTB_OFF_PATH_WRITES || !op->off_path) {
     DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
               hexstr64s(op->oracle_info.target));
     STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
 
-    btb_line = (Addr*)cache_access(&bp_data->btb, fetch_addr, &btb_line_addr, TRUE);
+    btb_line = (Addr*)cache_access(bp_data->btb, fetch_addr, &btb_line_addr, TRUE);
     if (!btb_line) {
-      btb_line = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
+      btb_line = (Addr*)cache_insert(bp_data->btb, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
     }
     *btb_line = op->oracle_info.target;
     // FIXME: the exceptions to this assert are really about x86 vs Alpha
@@ -293,9 +313,12 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 /**************************************************************************************/
 /* bp_tc_tagged_init: */
 
-void bp_ibtb_tc_tagged_init(Bp_Data* bp_data) {
+void bp_ibtb_tc_tagged_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   // line size set to 1
-  init_cache(&bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  if (!bp_data->bp_id)
+    init_cache(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  else  // points to the primary BP's shared tc_tagged
+    bp_data->tc_tagged = primary_bp->tc_tagged;
 }
 
 /**************************************************************************************/
@@ -335,7 +358,7 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
   tc_index = hist ^ addr;
   if (IBTB_HASH_TOS)
     tc_index = tc_index ^ op->recovery_info.tos_addr;
-  tc_entry = (Addr*)cache_access(&bp_data->tc_tagged, tc_index, &line_addr, TRUE);
+  tc_entry = (Addr*)cache_access(bp_data->tc_tagged, tc_index, &line_addr, bp_data->bp_id ? FALSE : TRUE);  // TODO
 
   if (tc_entry)
     target = *tc_entry;
@@ -361,16 +384,17 @@ void bp_ibtb_tc_tagged_update(Bp_Data* bp_data, Op* op) {
   Addr tc_line_addr;
   Addr repl_line_addr;
 
+  ASSERT(bp_data->proc_id, !bp_data->bp_id);
   if (IBTB_HASH_TOS)
     tc_index = tc_index ^ op->recovery_info.tos_addr;
 
   DEBUG(bp_data->proc_id, "Writing target cache target for op_num:%s\n", unsstr64(op->op_num));
-  tc_line = (Addr*)cache_access(&bp_data->tc_tagged, tc_index, &tc_line_addr, TRUE);
+  tc_line = (Addr*)cache_access(bp_data->tc_tagged, tc_index, &tc_line_addr, bp_data->bp_id ? FALSE : TRUE);
   if (tc_line) {
     // ASSERT(bp_data->proc_id, !op->oracle_info.ibp_miss);
   } else {
     // ASSERT(bp_data->proc_id, op->oracle_info.ibp_miss);
-    tc_line = (Addr*)cache_insert(&bp_data->tc_tagged, bp_data->proc_id, tc_index, &tc_line_addr, &repl_line_addr);
+    tc_line = (Addr*)cache_insert(bp_data->tc_tagged, bp_data->proc_id, tc_index, &tc_line_addr, &repl_line_addr);
   }
   *tc_line = op->oracle_info.target;
 
@@ -388,11 +412,15 @@ void bp_ibtb_tc_tagged_recover(Bp_Data* bp_data, Recovery_Info* info) {
 /**************************************************************************************/
 /* bp_tc_tagless_init */
 
-void bp_ibtb_tc_tagless_init(Bp_Data* bp_data) {
-  uns ii;
-  bp_data->tc_tagless = (Addr*)malloc(sizeof(Addr) * (0x1 << IBTB_HIST_LENGTH));
-  for (ii = 0; ii < 0x1 << IBTB_HIST_LENGTH; ii++)
-    bp_data->tc_tagless[ii] = 0;
+void bp_ibtb_tc_tagless_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
+  if (!bp_data->bp_id) {
+    uns ii;
+    bp_data->tc_tagless = (Addr*)malloc(sizeof(Addr) * (0x1 << IBTB_HIST_LENGTH));
+    for (ii = 0; ii < 0x1 << IBTB_HIST_LENGTH; ii++)
+      bp_data->tc_tagless[ii] = 0;
+  } else {
+    bp_data->tc_tagless = primary_bp->tc_tagless;
+  }
 }
 
 /**************************************************************************************/
@@ -492,7 +520,7 @@ typedef enum {
 /**************************************************************************************/
 /* bp_tc_hybrid_init: */
 
-void bp_ibtb_tc_hybrid_init(Bp_Data* bp_data) {
+void bp_ibtb_tc_hybrid_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   uns ii;
 
   /* Init the meta-predictor */
@@ -507,7 +535,10 @@ void bp_ibtb_tc_hybrid_init(Bp_Data* bp_data) {
 
   /* Init the tagged predictor */
   // line size set to 1
-  init_cache(&bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  if (!bp_data->bp_id)
+    init_cache(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  else  // points to the primary BP's shared tc_tagged
+    bp_data->tc_tagged = primary_bp->tc_tagged;
 }
 
 /**************************************************************************************/

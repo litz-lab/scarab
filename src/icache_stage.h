@@ -36,6 +36,10 @@
 #include "decoupled_frontend.h"
 #include "stage_data.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define IC_ISSUE_WIDTH DECODE_WIDTH
 #define UOPC_ISSUE_WIDTH UOP_CACHE_WIDTH
 
@@ -153,5 +157,9 @@ Flag instr_fill_line(Mem_Req* req);
 Flag in_icache(Addr addr);  // For branch stat collection
 
 /**************************************************************************************/
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* #ifndef __ICACHE_STAGE_H__ */

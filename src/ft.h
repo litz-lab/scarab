@@ -41,6 +41,22 @@ extern "C" {
 // Forward declare FT as an opaque struct for C
 typedef struct FT FT;
 
+enum FT_Event {
+  FT_EVENT_NONE,
+  FT_EVENT_MISPREDICT,
+  FT_EVENT_OFFPATH_TAKEN_REDIRECT,
+  // ... add more as needed
+};
+
+typedef enum FT_Event FT_Event;
+
+struct FT_PredictResult {
+  uint64_t index;
+  FT_Event event;
+  Op* op;          // Optionally, if DFE needs to know which op
+  Addr pred_addr;  // Optionally, if DFE needs the predicted address
+};
+
 // C-compatible API
 bool ft_can_fetch_op(FT* ft);
 Op* ft_fetch_op(FT* ft);
@@ -60,27 +76,14 @@ void ft_free_op(Op* op);
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 
-#include "decoupled_frontend.h"
 #include "uop_cache.h"
 
+class Decoupled_FE;
+
 // C++ class definition
-enum FT_Event {
-  FT_EVENT_NONE,
-  FT_EVENT_MISPREDICT,
-  FT_EVENT_OFFPATH_TAKEN_REDIRECT,
-  // ... add more as needed
-};
-
-struct FT_PredictResult {
-  uint64_t index;
-  FT_Event event;
-  Op* op;          // Optionally, if DFE needs to know which op
-  Addr pred_addr;  // Optionally, if DFE needs the predicted address
-};
-
 class FT {
  public:
-  FT(uns _proc_id = 0);
+  FT(uns _proc_id, uns _bp_id);
   ~FT();
   void add_op(Op* op);
   bool can_fetch_op();
@@ -93,8 +96,8 @@ class FT {
   friend void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out);
 
   // Change return type to FT_BuildResult
-  Flag build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
-             std::function<uint64_t()> get_next_op_id_fn);
+  Flag build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
+             bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn);
 
   FT_PredictResult predict_ft();
   std::pair<FT*, FT*> extract_off_path_ft(uns split_index);
@@ -115,6 +118,7 @@ class FT {
 
  private:
   uns proc_id;
+  uns bp_id;
   uint64_t op_pos;
   FT_Info ft_info;
   std::vector<Op*> ops;

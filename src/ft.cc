@@ -47,7 +47,7 @@ uint64_t FT_id_counter = 0;
 
 /* FT member functions */
 FT::~FT() {
-  ASSERT(proc_id, !ops.empty());
+  ASSERT(proc_id, bp_id || !ops.empty());
   for (auto ft_op : ops) {
     if (!ft_op->parent_FT_off_path || ft_op->off_path) {
       ft_op->parent_FT = nullptr;
@@ -61,7 +61,7 @@ FT::~FT() {
   }
 }
 
-FT::FT(uns _proc_id) : proc_id(_proc_id) {
+FT::FT(uns _proc_id, uns _bp_id) : proc_id(_proc_id), bp_id(_bp_id) {
   ft_info.dynamic_info.FT_id = FT_id_counter++;
   op_pos = 0;
   ft_info.static_info.start = 0;
@@ -88,6 +88,9 @@ Op* FT::fetch_op() {
 void FT::add_op(Op* op) {
   if (!ops.empty()) {
     if (op->bom) {
+      // assert consecutivity
+      DEBUG(proc_id, "back addr + size %llx fetch addr %llx\n",
+            ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size, op->inst_info->addr);
       ASSERT(proc_id, ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size == op->inst_info->addr);
     } else {
       // assert all uops of the same inst share the same addr
@@ -99,17 +102,18 @@ void FT::add_op(Op* op) {
   ops.emplace_back(op);
 }
 
-Flag FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
-               std::function<uint64_t()> get_next_op_id_fn) {
+Flag FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
+               bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn) {
   do {
-    if (!can_fetch_op_fn(proc_id)) {
+    if (!can_fetch_op_fn(proc_id, bp_id)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
       delete this;
       return false;
     }
-    Op* op = alloc_op(proc_id);
-    fetch_op_fn(proc_id, op);
+    Op* op = alloc_op(proc_id, bp_id);
+    fetch_op_fn(proc_id, bp_id, op);
     op->off_path = off_path;
+    op->conf_off_path = conf_off_path;
     op->op_num = get_next_op_id_fn();
     op->oracle_info.pred_npc = op->oracle_info.npc;
     op->oracle_info.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
@@ -188,7 +192,7 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
     return {this, nullptr};
   }
   // Initialize off-path FT that will contain off-path ops after split position
-  FT* off_path_ft = new FT(proc_id);
+  FT* off_path_ft = new FT(proc_id, bp_id);
 
   bool has_trailing_ops = (index_uns + 1 < ops.size());
 
@@ -225,13 +229,16 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 #endif
   if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
+    Op alt_op;
+    if (!bp_id)
+      alt_op = *op;
     bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
     DEBUG(proc_id,
-          "Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
+          "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
           "recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
-          op->inst_info->addr, op->oracle_info.npc, op->oracle_info.pred_npc, op->oracle_info.mispred,
+          bp_id, op->inst_info->addr, op->oracle_info.npc, op->oracle_info.pred_npc, op->oracle_info.mispred,
           op->oracle_info.misfetch, op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN,
           op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec, op->table_info->bar_type & BAR_FETCH);
     if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {

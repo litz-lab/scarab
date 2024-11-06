@@ -11,13 +11,15 @@
 #ifndef __UOP_CACHE_H__
 #define __UOP_CACHE_H__
 
+#include "op.h"
+#include "stage_data.h"
+
+// Forward declarations to avoid circular dependencies
+typedef struct FT FT;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "decoupled_frontend.h"
-#include "op.h"
-#include "stage_data.h"
 
 // Uop Cache Data
 typedef struct Uop_Cache_Data_struct {

@@ -47,10 +47,10 @@ extern uns op_pool_active_ops;
 
 void init_op_pool(void);
 void reset_op_pool(void);
-Op* alloc_op(uns proc_id);
+Op* alloc_op(uns proc_id, uns bp_id);
 void free_op(Op*);
 void op_pool_init_op(Op*);
-void op_pool_setup_op(uns proc_id, Op* op);
+void op_pool_setup_op(uns proc_id, uns bp_id, Op* op);
 
 /**************************************************************************************/
 

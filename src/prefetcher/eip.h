@@ -1,11 +1,11 @@
 #ifndef __EIP_NEW_H__
 #define __EIP_NEW_H__
 
+#include "icache_stage.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "icache_stage.h"
 
 // Interface
 void alloc_mem_eip(uns numCores);

@@ -33,6 +33,10 @@
 
 #include "libs/list_lib.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**************************************************************************************/
 
 /* set data pointers to this initially */
@@ -198,5 +202,9 @@ void set_partition_allocate(Cache* cache, uns8 proc_id, uns num_ways);
 uns get_partition_allocated(Cache* cache, uns8 proc_id);
 
 /**************************************************************************************/
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* #ifndef __CACHE_LIB_H__ */

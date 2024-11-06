@@ -37,6 +37,7 @@
 void cmp_init_cmp_model(void);
 void cmp_init_thread_data(uns8);
 void cmp_set_all_stages(uns8);
+void cmp_set_all_data(uns8, uns8);
 void cmp_init_bogus_sim(uns8);
 
 /**************************************************************************************/

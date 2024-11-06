@@ -1,11 +1,11 @@
 #ifndef __FNLMMA_NEW_H__
 #define __FNLMMA_NEW_H__
 
+#include "icache_stage.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "icache_stage.h"
 
 // Interface
 void alloc_mem_fnlmma(uns numCores);

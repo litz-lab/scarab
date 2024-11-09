@@ -84,7 +84,7 @@ extern Rob_Block_Issue_Reason rob_block_issue_reason;
 /**************************************************************************************/
 /* Local prototypes */
 
-static inline void         icache_process_ops(Stage_Data* cur_data);
+static inline void         icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uop_cache, uns start_idx);
 static inline Inst_Info**  lookup_cache(void);
 static inline void         prefetcher_update_on_icache_access(Flag icache_hit);
 static inline void         icache_hit_events(Flag uop_cache_hit);
@@ -595,6 +595,8 @@ void update_icache_stage() {
         ic->next_state = ICACHE_RETRY_MEM_REQ;
       }
     } else if (ic->state == UOP_CACHE_SERVING) {
+      uns op_num_prev_fetch_target = ic->uopc_sd.op_count;
+
       Uop_Cache_Data* uop_cache_line = uop_cache_get_line_from_lookup_buffer();
       // the line must be valid
       ASSERT(ic->proc_id, uop_cache_line->n_uops);
@@ -645,12 +647,12 @@ void update_icache_stage() {
         ic->next_state = UOP_CACHE_SERVING;
       }
 
-      // mark all ops as fetched from the uop cache
-      for(int ii = 0; ii < ic->uopc_sd.op_count; ii++) {
-        ic->uopc_sd.ops[ii]->fetched_from_uop_cache = TRUE;
-      }
+      // process the fetched ops
+      icache_process_ops(&ic->uopc_sd, TRUE, op_num_prev_fetch_target);
     } else if (ic->state == ICACHE_LOOKUP_SERVING
             || ic->state == ICACHE_NO_LOOKUP_SERVING) {
+      uns op_num_prev_fetch_target = ic->sd.op_count;
+
       // ic->line should have already been set correctly
       ASSERT(ic->proc_id, ic->line);
       ASSERT(ic->proc_id, ic->line_addr);
@@ -707,6 +709,9 @@ void update_icache_stage() {
         break_fetch = BREAK_ISSUE_WIDTH;
         ic->next_state = ICACHE_NO_LOOKUP_SERVING;
       }
+
+      // process the fetched ops
+      icache_process_ops(&ic->sd, FALSE, op_num_prev_fetch_target);
     } else if (ic->state == WAIT_FOR_MISS) {
       ASSERT(ic->proc_id, decoupled_fe_current_ft_can_fetch_op(ic->proc_id));
       DEBUG(ic->proc_id, "Ifetch barrier: Waiting for miss \n");
@@ -733,11 +738,7 @@ void update_icache_stage() {
     }
   }
 
-  // fetches of this cycle has all been completed.
-  // start processing the ops.
   Stage_Data* cur_data = get_current_stage_data();
-  icache_process_ops(cur_data);
-
   INC_STAT_EVENT(ic->proc_id, INST_LOST_TOTAL, cur_data->max_op_count);
   INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_DONT + break_fetch,
                               cur_data->max_op_count > cur_data->op_count ?
@@ -775,9 +776,15 @@ void update_stats_bf_retired(void) {
 }
 
 /**************************************************************************************/
-/* icache_process_ops: process all ops fetched in a cycle.*/
-
-static inline void icache_process_ops(Stage_Data* cur_data) {
+/* icache_process_ops: process fetched ops.
+ * In one cycle, icache_process_ops can be executed multiple times, once per fetch target.
+ *
+ * For example, a small FT could not fill up the issue width; if there are enough icache/uopc ports,
+ * we would fetch more FTs in the same cycle, and call icache_process_ops more than once.
+ *
+ * start_idx indicates the op index the processing should start at.
+ */
+static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uop_cache, uns start_idx) {
   static uns last_icache_issue_time = 0; /* for computing fetch break latency */
   uns            fetch_lag;
 
@@ -786,8 +793,12 @@ static inline void icache_process_ops(Stage_Data* cur_data) {
   fetch_lag              = cycle_count - last_icache_issue_time;
   last_icache_issue_time = cycle_count;
 
-  for (uns ii = 0; ii < cur_data->op_count; ii++) {
+  for (uns ii = start_idx; ii < cur_data->op_count; ii++) {
     Op* op = cur_data->ops[ii];
+
+    if (fetched_from_uop_cache) {
+      ic->uopc_sd.ops[ii]->fetched_from_uop_cache = TRUE;
+    }
 
     ASSERTM(ic->proc_id, ic->off_path == op->off_path,
             "Inconsistent off-path op PC: %llx ic:%i op:%i\n", op->inst_info->addr, ic->off_path, op->off_path);

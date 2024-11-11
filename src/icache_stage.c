@@ -629,13 +629,13 @@ void update_icache_stage() {
         ic->next_state = ICACHE_RETRY_MEM_REQ;
       }
     } else if (ic->state == UOP_CACHE_SERVING) {
-      uns cap = ic->uopc_sd.max_op_count - ic->uopc_sd.op_count;
-      Uop_Cache_Data uop_cache_line = uop_cache_consume_line_from_lookup_buffer(cap);
+      uns requested = ic->uopc_sd.max_op_count - ic->uopc_sd.op_count;
+      Uop_Cache_Data uop_cache_line = uop_cache_consume_uops_from_lookup_buffer(requested);
       ic->uopc_lookups_per_cycle_count++;
       ASSERT(ic->proc_id, ic->uopc_lookups_per_cycle_count <= UOP_CACHE_LOOKUPS_PER_CYCLE);
       // the line must be valid
       ASSERT(ic->proc_id, uop_cache_line.n_uops);
-      ASSERT(ic->proc_id, uop_cache_line.n_uops <= cap);
+      ASSERT(ic->proc_id, uop_cache_line.n_uops <= requested);
 
       uns snapshot_op_num = ic->uopc_sd.op_count;
       Flag ft_has_ended = decoupled_fe_fill_icache_stage_data(ic->proc_id, uop_cache_line.n_uops, &ic->uopc_sd);

@@ -408,6 +408,11 @@ Flag mem_req_on_icache_miss() {
           STAT_EVENT_ALL(ONE_MORE_DISCARDED_L0CACHE);
       }
     }
+
+    if (!ic->off_path) {
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_MEM_REQ_FAIL_ON_PATH + success);
+    }
+
     return success;
   }
   ASSERT(ic->proc_id, 0);
@@ -452,7 +457,7 @@ void update_icache_stage() {
   STAT_EVENT(ic->proc_id, ICACHE_CYCLE_ONPATH + ic->off_path);
 
   if (ic->off_path)
-    STAT_EVENT(exec->proc_id, ICACHE_STAGE_OFF_PATH);
+    STAT_EVENT(ic->proc_id, ICACHE_STAGE_OFF_PATH);
 
   if(ic->sd.op_count || (UOP_CACHE_ENABLE && ic->uopc_sd.op_count)) {
     // if uop cache is enabled, use UOPC_ISSUE_WIDTH as the optimal width
@@ -463,12 +468,12 @@ void update_icache_stage() {
                    UOP_CACHE_ENABLE ? UOPC_ISSUE_WIDTH : IC_ISSUE_WIDTH);
     DEBUG(ic->proc_id, "Icache stalled\n");
     if(!ic->off_path) {
-      STAT_EVENT(map->proc_id, ICACHE_STAGE_STALLED);
+      STAT_EVENT(ic->proc_id, ICACHE_STAGE_STALLED);
     }
     return;
   }
   else if(!ic->off_path) {
-    STAT_EVENT(map->proc_id, ICACHE_STAGE_NOT_STALLED);
+    STAT_EVENT(ic->proc_id, ICACHE_STAGE_NOT_STALLED);
   }
 
   DEBUG(ic->proc_id, "Icache state: %i\n", ic->state);
@@ -742,7 +747,6 @@ void update_icache_stage() {
       DEBUG(ic->proc_id, "Ifetch barrier: Waiting for miss \n");
       STAT_EVENT(ic->proc_id, FETCH_0_OPS);
       if(!ic->off_path) {
-        STAT_EVENT(map->proc_id, ICACHE_STAGE_STARVED);
         INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + get_last_miss_reason(ic->proc_id), ic->sd.max_op_count);
       }
       break_fetch = BREAK_WAIT_FOR_MISS;
@@ -772,9 +776,9 @@ void update_icache_stage() {
   STAT_EVENT(ic->proc_id, ST_BREAK_DONT + break_fetch);
   if(!ic->off_path) {
     if (!cur_data->op_count)
-      STAT_EVENT(map->proc_id, ICACHE_STAGE_STARVED);
+      STAT_EVENT(ic->proc_id, ICACHE_STAGE_STARVED);
     else
-      STAT_EVENT(map->proc_id, ICACHE_STAGE_NOT_STARVED);
+      STAT_EVENT(ic->proc_id, ICACHE_STAGE_NOT_STARVED);
   }
 }
 

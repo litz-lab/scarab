@@ -29,14 +29,7 @@ extern "C" {
 // Uop Queue Variables
 std::deque<Stage_Data*> q {};
 std::deque<Stage_Data*> free_sds {};
-
-// For uop queue fill stat
-Counter last_recovery_cycle {};
-Counter last_recovery_pw {};
-std::size_t prev_q_size {};
 bool uopq_off_path;
-
-static inline void update_uop_queue_fill_time_stat(void);
 
 void init_uop_queue_stage() {
   char tmp_name[MAX_STR_LENGTH + 1];
@@ -49,18 +42,6 @@ void init_uop_queue_stage() {
     sd->ops = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
     free_sds.push_back(sd);
   }
-
-  for (int cap_measured = 0; cap_measured < UOP_QUEUE_CAPACITY_MAX_MEASURED; cap_measured++) {
-    char cycle_list_label[] = "Cycles to fill uop queue to size";
-    char pw_list_label[] = "PWs to fill uop queue to size";
-    char unique_pw_list_label[] = "Unique PWs to fill uop queue to size";
-    init_list(&uop_queue_fill_time.time_for_size[cap_measured].cycles, cycle_list_label,
-              sizeof(Counter), FALSE);
-    init_list(&uop_queue_fill_time.time_for_size[cap_measured].pws, pw_list_label,
-              sizeof(Counter), FALSE);
-    init_list(&uop_queue_fill_time.time_for_size[cap_measured].unique_pws, unique_pw_list_label,
-              sizeof(Counter), FALSE);
-  }
 }
 
 // Get ops from the uop cache.
@@ -71,7 +52,6 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
     q.pop_front();
     ASSERT(0, !q.size() || q.front()->op_count > 0);  // Only one stage is consumed per cycle
   }
-  update_uop_queue_fill_time_stat(); // gets updated the cycle after the size changes
 
   if (uopq_off_path) {
     STAT_EVENT(dec->proc_id, UOPQ_STAGE_OFF_PATH);
@@ -143,10 +123,6 @@ void recover_uop_queue_stage(void) {
       ++it;
     }
   }
-  // TODO(peterbraun): This ignores effect of fetch barriers.
-  last_recovery_cycle = cycle_count;
-  last_recovery_pw = pw_count;
-  prev_q_size = 0;  // This triggers the stat logging if the queue is not fully flushed
 }
 
 Stage_Data* uop_queue_stage_get_latest_sd(void) {
@@ -159,19 +135,4 @@ Stage_Data* uop_queue_stage_get_latest_sd(void) {
 
 int get_uop_queue_stage_length(void) {
   return q.size();
-}
-
-// This is called each cycle. If size increased, log the time.
-void update_uop_queue_fill_time_stat() {
-  if (q.size() > prev_q_size) {
-    prev_q_size = q.size();
-    if (q.size() <= UOP_QUEUE_CAPACITY_MAX_MEASURED) {
-      Counter* new_cycle_entry = static_cast<Counter*>(sl_list_add_tail(&uop_queue_fill_time.time_for_size[q.size()-1].cycles));
-      *new_cycle_entry = cycle_count - last_recovery_cycle;
-      Counter* new_pw_entry = static_cast<Counter*>(sl_list_add_tail(&uop_queue_fill_time.time_for_size[q.size()-1].pws));
-      *new_pw_entry = pw_count - last_recovery_pw;
-      Counter* new_unique_pw_entry = static_cast<Counter*>(sl_list_add_tail(&uop_queue_fill_time.time_for_size[q.size()-1].unique_pws));
-      *new_unique_pw_entry = unique_pws_since_recovery;
-    }
-  }
 }

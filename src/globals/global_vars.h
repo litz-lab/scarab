@@ -49,8 +49,6 @@ extern Counter  sim_time;
 extern Counter* uop_count;
 extern Counter* pret_inst_count;
 extern uns      operating_mode;
-extern Counter  pw_count;
-extern Counter  unique_pws_since_recovery;
 
 extern Counter* period_last_inst_count;
 extern Counter  period_last_cycle_count;
@@ -70,9 +68,6 @@ extern int   mystatus_fd;
 
 extern Flag frontend_gated;
 extern uns  num_fetched_lowconf_brs;
-
-extern Hash_Table per_branch_stat;
-extern Uop_Queue_Fill_Time uop_queue_fill_time;
 
 extern Flag roi_dump_began;
 extern Counter roi_dump_ID;

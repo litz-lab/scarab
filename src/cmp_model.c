@@ -44,8 +44,7 @@
 #include "op_pool.h"
 #include "prefetcher/pref.param.h"
 #include "prefetcher/pref_common.h"
-/*#include "prefetcher/fdip.h"*/
-#include "prefetcher/fdip_new.h"
+#include "prefetcher/fdip.h"
 #include "prefetcher/eip.h"
 #include "prefetcher/D_JOLT.h"
 #include "prefetcher/FNL+MMA.h"
@@ -370,7 +369,7 @@ void cmp_recover() {
                  bp_recovery_info->recovery_inst_uid,
                  bp_recovery_info->late_bp_recovery_wrong);
 
-  recover_decoupled_fe(bp_recovery_info->proc_id);
+  recover_decoupled_fe();
   recover_fdip();
   recover_icache_stage();
   recover_uop_cache();

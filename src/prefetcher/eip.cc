@@ -39,7 +39,7 @@
 #include "libs/hash_lib.h"
 #include "libs/list_lib.h"
 #include "prefetcher/eip.h"
-#include "prefetcher/fdip_new.h"
+#include "prefetcher/fdip.h"
 #include "prefetcher/pref_common.h"
 #include "statistics.h"
 

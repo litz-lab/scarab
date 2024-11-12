@@ -57,7 +57,7 @@
 #include "sim.h"
 
 #include "prefetcher/pref.param.h"
-#include "prefetcher/fdip_new.h"
+#include "prefetcher/fdip.h"
 
 /******************************************************************************/
 /* include the table of possible branch predictors */
@@ -87,6 +87,8 @@ Bp_Data*          g_bp_data        = NULL;
 Flag              USE_LATE_BP      = FALSE;
 extern List       op_buf;
 extern uns        operating_mode;
+
+Hash_Table per_branch_stat;
 
 /******************************************************************************/
 // Local prototypes
@@ -1077,10 +1079,6 @@ void bp_retire_op(Bp_Data* bp_data, Op* op) {
   if(USE_LATE_BP) {
     bp_data->late_bp->retire_func(op);
   }
-
-  // TODO : verify this
-  /*if(FDIP_ENABLE)*/
-    /*update_useful_lines(bp_data->proc_id, op);*/
 }
 
 
@@ -1122,4 +1120,19 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
 
   if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)
     increment_branch_mispredictions(info->PC);
+}
+
+
+/******************************************************************************/
+/* bp_dump_stat: dump the stat per heartbeat */
+
+void bp_dump_stat(void) {
+  FILE* fp = fopen("per_branch_stats.csv", "w");
+  Per_Branch_Stat** entries = (Per_Branch_Stat**) hash_table_flatten(&per_branch_stat, NULL);
+  fprintf(fp, "cf_type,addr,target\n");
+  for (int i=0; i<per_branch_stat.count; i++) {
+    Per_Branch_Stat* entry = entries[i];
+    fprintf(fp, "%i,%llx,%llx\n", entry->cf_type, entry->addr, entry->target);
+  }
+  free(entries);
 }

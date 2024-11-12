@@ -67,7 +67,6 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_ICACHE_STAGE, ##args)
 #define DEBUG_FDIP(proc_id, args...) _DEBUG(proc_id, DEBUG_FDIP, ##args)
-#define ICACHE_LOOKUPS_PER_CYCLE ICACHE_READ_PORTS
 /**************************************************************************************/
 /* Global Variables */
 
@@ -432,13 +431,13 @@ void uop_cache_to_icache_switch_stats() {
 Break_Reason uop_cache_get_break_reason() {
   if (ic->uopc_sd.op_count < ic->uopc_sd.max_op_count) {
     // break if reached uopc read limit; otherwise continue fetch for this cycle
-    if (ic->uopc_lookups_per_cycle_count == UOP_CACHE_LOOKUPS_PER_CYCLE) {
+    if (ic->uopc_lookups_per_cycle_count == UOP_CACHE_READ_PORTS) {
       return BREAK_UOP_CACHE_READ_LIMIT;
     } else {
       return BREAK_DONT;
     }
   } else {
-    if (ic->uopc_lookups_per_cycle_count == UOP_CACHE_LOOKUPS_PER_CYCLE) {
+    if (ic->uopc_lookups_per_cycle_count == UOP_CACHE_READ_PORTS) {
       return BREAK_UOP_CACHE_READ_LIMIT_AND_ISSUE_WIDTH;
     } else {
       return BREAK_ISSUE_WIDTH;
@@ -495,10 +494,10 @@ void update_icache_stage() {
               || ic->state == ICACHE_FINISHED_FT
               || ic->state == UOP_CACHE_FINISHED_FT) {
       if (ic->icache_lookups_per_cycle_count) {
-        ASSERT(ic->proc_id, ic->state == ICACHE_FINISHED_FT && ICACHE_LOOKUPS_PER_CYCLE > 1);
+        ASSERT(ic->proc_id, ic->state == ICACHE_FINISHED_FT && ICACHE_READ_PORTS > 1);
         ASSERT(ic->proc_id, ic->sd.op_count && !ic->uopc_sd.op_count);
       } else if (ic->uopc_lookups_per_cycle_count) {
-        ASSERT(ic->proc_id, ic->state == UOP_CACHE_FINISHED_FT && UOP_CACHE_LOOKUPS_PER_CYCLE > 1);
+        ASSERT(ic->proc_id, ic->state == UOP_CACHE_FINISHED_FT && UOP_CACHE_READ_PORTS > 1);
         ASSERT(ic->proc_id, !ic->sd.op_count && ic->uopc_sd.op_count);
       } else {
         ASSERT(ic->proc_id, !ic->sd.op_count && !ic->uopc_sd.op_count);
@@ -638,7 +637,7 @@ void update_icache_stage() {
       uns requested = ic->uopc_sd.max_op_count - ic->uopc_sd.op_count;
       Uop_Cache_Data uop_cache_line = uop_cache_consume_uops_from_lookup_buffer(requested);
       ic->uopc_lookups_per_cycle_count++;
-      ASSERT(ic->proc_id, ic->uopc_lookups_per_cycle_count <= UOP_CACHE_LOOKUPS_PER_CYCLE);
+      ASSERT(ic->proc_id, ic->uopc_lookups_per_cycle_count <= UOP_CACHE_READ_PORTS);
       // the line must be valid
       ASSERT(ic->proc_id, uop_cache_line.n_uops);
       ASSERT(ic->proc_id, uop_cache_line.n_uops <= requested);
@@ -697,7 +696,7 @@ void update_icache_stage() {
       ASSERT(ic->proc_id, ic->sd.op_count == ic->sd.max_op_count || ft_has_ended);
 
       ic->icache_lookups_per_cycle_count++;
-      ASSERT(ic->proc_id, ic->icache_lookups_per_cycle_count <= ICACHE_LOOKUPS_PER_CYCLE);
+      ASSERT(ic->proc_id, ic->icache_lookups_per_cycle_count <= ICACHE_READ_PORTS);
 
       if (ft_has_ended) {
         ASSERT(ic->proc_id, !decoupled_fe_current_ft_can_fetch_op());
@@ -707,13 +706,13 @@ void update_icache_stage() {
           case FT_TAKEN_BRANCH:
             // if there is more op slots
             if (ic->sd.op_count < ic->sd.max_op_count) {
-              if (ic->icache_lookups_per_cycle_count == ICACHE_LOOKUPS_PER_CYCLE) {
+              if (ic->icache_lookups_per_cycle_count == ICACHE_READ_PORTS) {
                 break_fetch = BREAK_ICACHE_READ_LIMIT;
               } else {
                 break_fetch = BREAK_DONT;
               }
             } else {
-              if (ic->icache_lookups_per_cycle_count == ICACHE_LOOKUPS_PER_CYCLE) {
+              if (ic->icache_lookups_per_cycle_count == ICACHE_READ_PORTS) {
                 break_fetch = BREAK_ICACHE_READ_LIMIT_AND_ISSUE_WIDTH;
               } else {
                 break_fetch = BREAK_ISSUE_WIDTH;

@@ -199,10 +199,27 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
   return TRUE;
 }
 
-Uop_Cache_Data* uop_cache_get_line_from_lookup_buffer() {
+/**************************************************************************************/
+/* uop_cache_consume_uops_from_lookup_buffer: consume some uops from the uopc lookup buffer
+ * if the uop num of the current line > requested, it will be partially consumed and the line index is unchanged
+ * if the uop num of the current line <= requested, it will be fully consumed and the line index is incremented
+ */
+Uop_Cache_Data uop_cache_consume_uops_from_lookup_buffer(uns requested) {
   Uop_Cache_Data* uop_cache_line = &current_lookup_buffer->at(*current_num_looked_up_lines);
-  *current_num_looked_up_lines += 1;
-  return uop_cache_line;
+  Uop_Cache_Data consumed_uop_cache_line = *uop_cache_line;
+  if (uop_cache_line->n_uops > requested) {
+    // the uopc line has more uops than requested; cannot fully consume it
+    consumed_uop_cache_line.n_uops = requested;
+    // update the remaining uops
+    uop_cache_line->n_uops -= requested;
+    if (consumed_uop_cache_line.end_of_ft) {
+      consumed_uop_cache_line.end_of_ft = FALSE;
+    }
+  } else {
+    // the current line is fully consumed; move to the next line
+    *current_num_looked_up_lines += 1;
+  }
+  return consumed_uop_cache_line;
 }
 
 void uop_cache_clear_lookup_buffer() {

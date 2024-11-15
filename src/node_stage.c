@@ -49,6 +49,7 @@
 #include "core.param.h"
 #include "debug/debug.param.h"
 #include "map.h"
+#include "map_rename.h"
 #include "memory/memory.param.h"
 #include "sim.h"
 #include "statistics.h"

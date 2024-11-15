@@ -34,70 +34,6 @@
 #include "op.h"
 
 /**************************************************************************************/
-/* The Hardware Implementation of Register Renaming */
-
-enum reg_file_type {
-  REG_FILE_TYPE_INFINITE,
-  REG_FILE_TYPE_REALISTIC,
-  REG_FILE_TYPE_NUM
-};
-
-const static int REG_TABLE_INVALID_REG_ID = -1;
-
-// register state for releasing
-enum reg_table_entry_state {
-  REG_TABLE_ENTRY_STATE_FREE,
-  REG_TABLE_ENTRY_STATE_ALLOC,
-  REG_TABLE_ENTRY_STATE_PRODUCED,
-  REG_TABLE_ENTRY_STATE_COMMIT,
-  REG_TABLE_ENTRY_STATE_DEAD,
-  REG_TABLE_ENTRY_STATE_NUM
-};
-
-struct reg_table_entry {
-  // op info (the pointer of op + the deep copy of special val)
-  Op       *op;
-  Counter  op_num;
-  Counter  unique_num;
-  Flag     off_path;
-
-  // register info
-  int reg_arch_id;
-  int reg_ptag;
-  enum reg_table_entry_state reg_state;
-
-  // tracking free physical register
-  struct reg_table_entry *next_free;
-
-  // tracking the ops use the same architectural register
-  int prev_same_arch_id;
-};
-
-struct reg_free_list {
-  // stack implementation for free list
-  struct reg_table_entry *reg_free_list_head;
-  uns reg_free_num;
-};
-
-struct reg_table {
-  // map tag to register entries for both speculative and committed op
-  struct reg_table_entry *entries;
-  uns size;
-
-  // track all free registers
-  struct reg_free_list *free_list;
-};
-
-struct reg_file {
-  // map each architectural register id to the latest ptag
-  int reg_table_arch_to_ptag[NUM_REG_IDS];
-
-  // map ptags to physical register for both speculative and committed op
-  struct reg_table *reg_table_ptag_to_physical;
-};
-
-
-/**************************************************************************************/
 /* Types */
 
 typedef struct Map_Entry_struct {
@@ -154,14 +90,6 @@ void delete_store_hash_entry(Op*);
 void clear_not_rdy_bit(Op*, uns);
 Flag test_not_rdy_bit(Op*, uns);
 void set_not_rdy_bit(Op*, uns);
-
-/* register renaming table */
-void reg_file_init(void);                 // allocate register map entries
-Flag reg_file_available(uns);             // check if enough register entries
-void reg_file_rename(Op*);                // lookup src reg and alloc dst reg
-void reg_file_execute(Op*);               // write back the register
-void reg_file_recover(Counter);           // flush reg of misprediction op
-void reg_file_commit(Op*);                // release the previous reg with same arch id
 
 
 /**************************************************************************************/

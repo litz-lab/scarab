@@ -38,6 +38,7 @@
 
 #include "bp/bp.h"
 #include "map.h"
+#include "map_rename.h"
 #include "map_stage.h"
 #include "model.h"
 #include "thread.h"

@@ -36,6 +36,7 @@
 #include "op_pool.h"
 
 #include "frontend/frontend.h"
+#include "map_rename.h"
 #include "thread.h"
 
 #include "core.param.h"

@@ -55,63 +55,87 @@ extern Op invalid_op;
 /* Prototypes */
 
 // free list operations
-static inline void free_list_insert(struct reg_table_entry*);
-static inline struct reg_table_entry *free_list_delete(void);
+void reg_free_list_init(struct reg_free_list *reg_free_list);
+void reg_free_list_free(struct reg_free_list *reg_free_list, struct reg_table_entry *entry);
+struct reg_table_entry *reg_free_list_alloc(struct reg_free_list *reg_free_list);
 
 // register entry operations
-static inline void reg_table_entry_read(Op*, struct reg_table_entry*);
-static inline void reg_table_entry_write(Op*, struct reg_table_entry*, int, uns);
+void reg_table_entry_clear(struct reg_table_entry *entry);
+void reg_table_entry_read(struct reg_table_entry *entry, Op *op);
+void reg_table_entry_write(struct reg_table_entry *entry, struct reg_table *parent_reg_table, Op *op, int parent_reg_id);
 
 // register table operations
-static inline void reg_table_init(uns);
-static inline void reg_table_read_src(Op*);
-static inline void reg_table_write_dst(Op*);
-static inline struct reg_table_entry *reg_table_lookup_entry(uns16);
-static inline struct reg_table_entry *reg_table_alloc_entry(void);
-static inline void reg_table_release_entry(struct reg_table_entry*);
-static inline void reg_table_remove_prev(int);
-static inline void reg_table_flush_mispredict(int);
-static inline void reg_table_produce_result(int);
+void reg_table_init(struct reg_table *reg_table, uns reg_table_size, struct reg_table *parent_reg_table);
+void reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id);
+int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id);
+void reg_table_free(struct reg_table *reg_table, struct reg_table_entry *entry);
+void reg_table_write_back(struct reg_table *reg_table, int self_reg_id);
+void reg_table_flush_mispredict(struct reg_table *reg_table, int self_reg_id);
+void reg_table_release_prev(struct reg_table *reg_table, int self_reg_id);
+
+// special init func for the architectural table
+void reg_table_arch_init(struct reg_table *reg_table, uns reg_table_size, struct reg_table *parent_reg_table);
 
 
 /**************************************************************************************/
 /* register free list operation */
 
+void reg_free_list_init(struct reg_free_list *reg_free_list) {
+  ASSERT(0, reg_free_list != NULL);
+
+  reg_free_list->reg_free_num = 0;
+  reg_free_list->reg_free_list_head = NULL;
+}
+
 /* push the entry to the free list */
-void free_list_insert(struct reg_table_entry *entry) {
-  ASSERT(0, entry->next_free == NULL);
+void reg_free_list_free(struct reg_free_list *reg_free_list, struct reg_table_entry *entry) {
+  ASSERT(0, reg_free_list != NULL && entry->next_free == NULL);
 
-  entry->next_free = reg_file->reg_table_ptag_to_physical->free_list->reg_free_list_head;
-  reg_file->reg_table_ptag_to_physical->free_list->reg_free_list_head = entry;
-
-  reg_file->reg_table_ptag_to_physical->free_list->reg_free_num++;
+  entry->next_free = reg_free_list->reg_free_list_head;
+  reg_free_list->reg_free_list_head = entry;
+  ++reg_free_list->reg_free_num;
 }
 
 /* pop the entry from the free list */
-struct reg_table_entry *free_list_delete(void) {
-  ASSERT(0, reg_file->reg_table_ptag_to_physical->free_list->reg_free_list_head != NULL);
+struct reg_table_entry *reg_free_list_alloc(struct reg_free_list *reg_free_list) {
+  ASSERT(0, reg_free_list != NULL && reg_free_list->reg_free_list_head != NULL);
 
-  struct reg_table_entry *entry = reg_file->reg_table_ptag_to_physical->free_list->reg_free_list_head;
-  reg_file->reg_table_ptag_to_physical->free_list->reg_free_list_head = entry->next_free;
+  struct reg_table_entry *entry = reg_free_list->reg_free_list_head;
+  reg_free_list->reg_free_list_head = entry->next_free;
   entry->next_free = NULL;
-
-  reg_file->reg_table_ptag_to_physical->free_list->reg_free_num--;
+  --reg_free_list->reg_free_num;
 
   return entry;
 }
+
+struct reg_free_list_ops reg_free_list_ops = {
+  .init = reg_free_list_init,
+  .free = reg_free_list_free,
+  .alloc = reg_free_list_alloc,
+};
 
 
 /**************************************************************************************/
 /* register entry operation */
 
-/*
-  read entry:
-  --- 1. fill src info from the entry
-  --- 2. update not ready bit for wake up
-*/
-void reg_table_entry_read(Op *op, struct reg_table_entry *entry) {
-  ASSERT(0, entry != NULL);
-  ASSERT(0, op->op_num != entry->op_num);
+/* set the invalid value into the entry */
+void reg_table_entry_clear(struct reg_table_entry *entry) {
+  ASSERT(0, entry != NULL && entry->self_reg_id != REG_TABLE_INVALID_REG_ID);
+
+  entry->op = &invalid_op;
+  entry->op_num = 0;
+  entry->unique_num = 0;
+  entry->off_path = FALSE;
+
+  entry->reg_state = REG_TABLE_ENTRY_STATE_FREE;
+  entry->parent_reg_id = REG_TABLE_INVALID_REG_ID;
+  entry->child_reg_id = REG_TABLE_INVALID_REG_ID;
+  entry->prev_tag_of_same_arch_id = REG_TABLE_INVALID_REG_ID;
+}
+
+/* fill src info from the entry and update not ready bit for wake up */
+void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
+  ASSERT(0, entry != NULL && op->op_num != entry->op_num);
 
   // increase src num
   uns       src_num = op->oracle_info.num_srcs++;
@@ -127,296 +151,281 @@ void reg_table_entry_read(Op *op, struct reg_table_entry *entry) {
   set_not_rdy_bit(op, src_num);
 }
 
-/*
-  write entry:
-  --- 1. write the op into the entry
-  --- 2. update the register map table to ensure the latest assignment
-  --- 3. put the entry into op
-*/
-void reg_table_entry_write(Op* op, struct reg_table_entry *entry, int id, uns ii) {
-  ASSERT(op->proc_id, entry != NULL);
+/* update reg_table entry by setting its key (lookup reg_id) and value (tag and op whose dest is assigned to reg_id) */
+void reg_table_entry_write(struct reg_table_entry *entry, struct reg_table *parent_reg_table, Op *op, int parent_reg_id) {
+  ASSERT(op->proc_id, entry != NULL && entry->self_reg_id != REG_TABLE_INVALID_REG_ID && entry->child_reg_id == REG_TABLE_INVALID_REG_ID);
 
-  // write info to entry
+  // write the op into the entry
   entry->op = op;
   entry->op_num = op->op_num;
   entry->unique_num = op->unique_num;
   entry->off_path = op->off_path;
-  entry->reg_arch_id = id;
+
+  // update the entry meta data
+  entry->parent_reg_id = parent_reg_id;
   entry->reg_state = REG_TABLE_ENTRY_STATE_ALLOC;
 
-  // update the ptag of the previous regiseter with the same architectural register
-  ASSERT(op->proc_id, entry->prev_same_arch_id == REG_TABLE_INVALID_REG_ID);
-  entry->prev_same_arch_id = reg_file->reg_table_arch_to_ptag[entry->reg_arch_id];
+  // track the previous register id with the same architectural register
+  ASSERT(op->proc_id, entry->prev_tag_of_same_arch_id == REG_TABLE_INVALID_REG_ID);
+  entry->prev_tag_of_same_arch_id = parent_reg_table->entries[entry->parent_reg_id].child_reg_id;
 
-  // change the ptag in the register map table to point to the latest physical register
-  reg_file->reg_table_arch_to_ptag[entry->reg_arch_id] = entry->reg_ptag;
-
-  // put the ptag of the entry into op for call back
-  if (op == &invalid_op)
-    return;
-  ASSERT(op->proc_id, op->dst_reg_ptag[ii] == -1);
-  op->dst_reg_ptag[ii] = entry->reg_ptag;
+  DEBUG(0, "(entry write)[%lld]: parent_reg_id: %d, self_reg_id: %d, child_reg_id: %d\n",
+    entry->op_num, entry->parent_reg_id, entry->self_reg_id, entry->child_reg_id);
 }
+
+struct reg_table_entry_ops reg_table_entry_ops = {
+  .clear = reg_table_entry_clear,
+  .read = reg_table_entry_read,
+  .write = reg_table_entry_write,
+};
 
 
 /**************************************************************************************/
 /* register table operation */
 
-void reg_table_init(uns reg_table_size) {
-  uns ii;
-  struct reg_table_entry *entry;
+void reg_table_init(struct reg_table *reg_table, uns reg_table_size, struct reg_table *parent_reg_table) {
+  // set the parent table pointer for tracking
+  reg_table->parent_reg_table = parent_reg_table;
 
-  reg_file = (struct reg_file *)malloc(sizeof(struct reg_file));
+  reg_table->free_list = (struct reg_free_list *)malloc(sizeof(struct reg_free_list));
+  reg_table->free_list->ops = &reg_free_list_ops;
+  reg_table->free_list->ops->init(reg_table->free_list);
 
-  /* init the register map table */
-  for (ii = 0; ii < NUM_REG_IDS; ii++)
-    reg_file->reg_table_arch_to_ptag[ii] = REG_TABLE_INVALID_REG_ID;
-  reg_file->reg_table_ptag_to_physical = (struct reg_table *)malloc(sizeof(struct reg_table));
+  reg_table->size = reg_table_size;
+  reg_table->entries = (struct reg_table_entry *)malloc(sizeof(struct reg_table_entry) * reg_table_size);
 
-  /* init the free list */
-  reg_file->reg_table_ptag_to_physical->free_list = (struct reg_free_list *)malloc(sizeof(struct reg_free_list));
-  reg_file->reg_table_ptag_to_physical->free_list->reg_free_num = 0;
-  reg_file->reg_table_ptag_to_physical->free_list->reg_free_list_head = NULL;
-
-  /* init the physical register */
-  reg_file->reg_table_ptag_to_physical->size = reg_table_size;
-  reg_file->reg_table_ptag_to_physical->entries = (struct reg_table_entry *)malloc(sizeof(struct reg_table_entry) * reg_table_size);
-
-  /* init the physical register entry */
-  for (ii = 0; ii < reg_table_size; ii++) {
-    entry = &reg_file->reg_table_ptag_to_physical->entries[ii];
-
-    entry->op = &invalid_op;
-    entry->op_num = 0;
-    entry->unique_num = 0;
-    entry->off_path = FALSE;
-
-    entry->reg_arch_id = REG_TABLE_INVALID_REG_ID;
-    entry->reg_ptag = ii;
-    entry->reg_state = REG_TABLE_ENTRY_STATE_FREE;
-
-    entry->prev_same_arch_id = REG_TABLE_INVALID_REG_ID;
-
-    free_list_insert(entry);
+  // init and insert all the empty entries into the free list
+  for (uns ii = 0; ii < reg_table_size; ii++) {
+    struct reg_table_entry *entry = &reg_table->entries[ii];
+    entry->ops = &reg_table_entry_ops;
+    entry->self_reg_id = ii;
+    entry->ops->clear(entry);
+    reg_table->free_list->ops->free(reg_table->free_list, entry);
   }
 
-  /* init the register map table with aleast one physical register */
-  for (ii = 0; ii < NUM_REG_IDS; ii++) {
-    entry = reg_table_alloc_entry();
-    reg_table_entry_write(&invalid_op, entry, ii, 0);
-    ASSERT(map_data->proc_id, reg_file->reg_table_arch_to_ptag[ii] != REG_TABLE_INVALID_REG_ID);
+  // initialize each arch_reg_id with a dummy ptag to ensure even unused arch regs always have a valid mapping
+  for (uns ii = 0; ii < reg_table->parent_reg_table->size; ii++) {
+    struct reg_table_entry *entry = reg_table->free_list->ops->alloc(reg_table->free_list);
+    entry->ops->write(entry, reg_table->parent_reg_table, &invalid_op, ii);
+    reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->self_reg_id;
   }
 }
 
-/*
-  read src:
-    1. lookup the latest physical entry from the register map table
-    2. get the src_info in from entry
-*/
-void reg_table_read_src(Op *op) {
-  uns ii;
-  struct reg_table_entry *entry;
-
-  /* do not duplicately read operand register dependency since it is already tracked during fetching */
+/* do not duplicately read operand register dependency since it is already tracked during fetching */
+void reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id) {
+  /*
+    op_info read is done in reg_map_read() in map.c during fetching
+    This module is to manage the allocation of registers in the map_stage
+  */
   return;
-
-  for (ii = 0; ii < op->table_info->num_src_regs; ii++) {
-    entry = reg_table_lookup_entry(op->inst_info->srcs[ii].id);
-    reg_table_entry_read(op, entry);
-  }
 }
 
 /*
-  write dst:
-    1. allocate an physical register of register file from free list
-    2. store self info into the register as destination
+  --- 1. allocate a current register table entry from free list
+  --- 2. store the op info into the register entry
+  --- 3. update the child_reg_id of the parent table for tracking same architectural id
 */
-void reg_table_write_dst(Op *op) {
-  uns ii;
-  struct reg_table_entry *entry;
+int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id) {
+  ASSERT(0, REG_FILE_TYPE && reg_table != NULL && op != NULL);
 
-  ASSERT(map_data->proc_id, op->table_info->num_dest_regs <= reg_file->reg_table_ptag_to_physical->free_list->reg_free_num);
+  // get the entry from the free list and write the metadata
+  struct reg_table_entry *entry = reg_table->free_list->ops->alloc(reg_table->free_list);
+  entry->ops->write(entry, reg_table->parent_reg_table, op, parent_reg_id);
 
-  for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
-    entry = reg_table_alloc_entry();
-    reg_table_entry_write(op, entry, op->inst_info->dests[ii].id, ii);
-  }
-}
+  // update the parent table to ensure the latest assignment
+  reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->self_reg_id;
 
-static inline struct reg_table_entry *reg_table_lookup_entry(uns16 id) {
-  int ptag = reg_file->reg_table_arch_to_ptag[id];
-  ASSERT(map_data->proc_id, ptag != REG_TABLE_INVALID_REG_ID);
-
-  struct reg_table_entry *entry = &reg_file->reg_table_ptag_to_physical->entries[ptag];
-  ASSERT(map_data->proc_id, entry != NULL);
-  return entry;
-}
-
-/* get the entry from the free list */
-struct reg_table_entry *reg_table_alloc_entry(void) {
-  return free_list_delete();
+  return entry->self_reg_id;
 }
 
 /* clear all the info of the entry and insert it to the free list */
-void reg_table_release_entry(struct reg_table_entry *entry) {
+void reg_table_free(struct reg_table *reg_table, struct reg_table_entry *entry) {
   ASSERT(0, entry->reg_state == REG_TABLE_ENTRY_STATE_DEAD || entry->off_path);
-  ASSERT(0, reg_file->reg_table_arch_to_ptag[entry->reg_arch_id] != entry->reg_ptag);
 
-  // clear the storing info of the entry
-  entry->op = &invalid_op;
-  entry->op_num = 0;
-  entry->unique_num = 0;
-  entry->off_path = FALSE;
-  entry->reg_arch_id = REG_TABLE_INVALID_REG_ID;
-  entry->reg_state = REG_TABLE_ENTRY_STATE_FREE;
-
-  // clear the tracking pointers with same architectural register id
-  entry->prev_same_arch_id = REG_TABLE_INVALID_REG_ID;
+  // clear the entry value
+  entry->ops->clear(entry);
 
   // append to free list
-  free_list_insert(entry);
+  reg_table->free_list->ops->free(reg_table->free_list, entry);
 }
 
-/*
-  remove prev:
-  --- 1. mark dead for the prev entry with same archituctural id before the committed one
-  --- 2. remove the dead entry
-*/
-void reg_table_remove_prev(int ptag) {
-  ASSERT(map_data->proc_id, REG_FILE_TYPE == REG_FILE_TYPE_REALISTIC);
-  ASSERT(map_data->proc_id, ptag != REG_TABLE_INVALID_REG_ID);
-  struct reg_table_entry *entry = &reg_file->reg_table_ptag_to_physical->entries[ptag];
+/* update the register state to indicate the value is produced */
+void reg_table_write_back(struct reg_table *reg_table, int self_reg_id) {
+  ASSERT(0, REG_FILE_TYPE && self_reg_id != REG_TABLE_INVALID_REG_ID);
+  struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
 
-  ASSERT(map_data->proc_id, entry != NULL);
-  ASSERT(map_data->proc_id, entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED);
-  ASSERT(map_data->proc_id, reg_file->reg_table_arch_to_ptag[entry->reg_arch_id] != REG_TABLE_INVALID_REG_ID);
+  ASSERT(0, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
+  entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
+}
+
+/* update the parent table and remove the mispredicted entry */
+void reg_table_flush_mispredict(struct reg_table *reg_table, int self_reg_id) {
+  ASSERT(0, REG_FILE_TYPE && self_reg_id != REG_TABLE_INVALID_REG_ID);
+  struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
+
+  ASSERT(0, entry != NULL && entry->off_path);
+  ASSERT(0, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC || entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED);
+
+  // clear the child_reg_id of the parent table by the previous same architectural id
+  ASSERT(map_data->proc_id, reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id == self_reg_id);
+  reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->prev_tag_of_same_arch_id;
+
+  // release the current mispredicted register
+   reg_table->ops->free(reg_table, entry);
+}
+
+/* mark the previous entry with same archituctural id before the committed one as dead and remove it */
+void reg_table_release_prev(struct reg_table *reg_table, int self_reg_id) {
+  ASSERT(0, REG_FILE_TYPE && self_reg_id != REG_TABLE_INVALID_REG_ID);
+  struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
+
+  ASSERT(0, entry != NULL && entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED);
+  ASSERT(0, reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id != REG_TABLE_INVALID_REG_ID);
 
   // mark current register as commit when it is retire
   entry->reg_state = REG_TABLE_ENTRY_STATE_COMMIT;
 
   // mark the op before the committed op as dead and release it
-  int prev_ptag = entry->prev_same_arch_id;
-  ASSERT(map_data->proc_id, prev_ptag != REG_TABLE_INVALID_REG_ID);
+  int prev_tag_of_same_arch_id = entry->prev_tag_of_same_arch_id;
+  ASSERT(map_data->proc_id, prev_tag_of_same_arch_id != REG_TABLE_INVALID_REG_ID);
 
-  struct reg_table_entry *prev_entry = &reg_file->reg_table_ptag_to_physical->entries[prev_ptag];
+  struct reg_table_entry *prev_entry = &reg_table->entries[prev_tag_of_same_arch_id];
   ASSERT(map_data->proc_id, prev_entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT || prev_entry->op == &invalid_op);
 
+  // release the previous register with the same arch id
   prev_entry->reg_state = REG_TABLE_ENTRY_STATE_DEAD;
-  reg_table_release_entry(prev_entry);
+  reg_table->ops->free(reg_table, prev_entry);
 }
 
-/*
-  flush mispredict:
-  --- 1. update the register map table (SRT)
-  --- 2. remove the mispredicted entry
-*/
-void reg_table_flush_mispredict(int ptag) {
-  ASSERT(map_data->proc_id, REG_FILE_TYPE == REG_FILE_TYPE_REALISTIC);
-  ASSERT(map_data->proc_id, ptag != REG_TABLE_INVALID_REG_ID);
-  struct reg_table_entry *entry = &reg_file->reg_table_ptag_to_physical->entries[ptag];
+struct reg_table_ops reg_table_ops = {
+  .init = reg_table_init,
+  .read = reg_table_read,
+  .alloc = reg_table_alloc,
+  .free = reg_table_free,
+  .write_back = reg_table_write_back,
+  .flush_mispredict = reg_table_flush_mispredict,
+  .release_prev = reg_table_release_prev,
+};
 
-  ASSERT(map_data->proc_id, entry != NULL);
-  ASSERT(map_data->proc_id, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC || entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED);
-  ASSERT(map_data->proc_id, entry->off_path);
 
-  // update register map table by prev
-  ASSERT(map_data->proc_id, reg_file->reg_table_arch_to_ptag[entry->reg_arch_id] == ptag);
-  reg_file->reg_table_arch_to_ptag[entry->reg_arch_id] = entry->prev_same_arch_id;
+void reg_table_arch_init(struct reg_table *reg_table, uns reg_table_size, struct reg_table *parent_reg_table) {
+  reg_table->parent_reg_table = parent_reg_table;
+  reg_table->free_list = NULL;
+  reg_table->size = reg_table_size;
+  reg_table->entries = (struct reg_table_entry *)malloc(sizeof(struct reg_table_entry) * reg_table_size);
 
-  // release register
-  reg_table_release_entry(entry);
+  // only need to assign the current register index for the children table to track
+  for (uns ii = 0; ii < reg_table->size; ii++) {
+    struct reg_table_entry *entry = &reg_table->entries[ii];
+    entry->ops = &reg_table_entry_ops;
+    entry->self_reg_id = ii;
+    entry->ops->clear(entry);
+    entry->reg_state = REG_TABLE_ENTRY_STATE_ALLOC;
+  }
 }
 
-/*
-  produce result:
-  --- update the register state
-*/
-void reg_table_produce_result(int ptag) {
-  ASSERT(map_data->proc_id, REG_FILE_TYPE == REG_FILE_TYPE_REALISTIC);
-  ASSERT(map_data->proc_id, ptag != REG_TABLE_INVALID_REG_ID);
-  struct reg_table_entry *entry = &reg_file->reg_table_ptag_to_physical->entries[ptag];
-
-  ASSERT(map_data->proc_id, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
-  entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
-}
+struct reg_table_ops reg_table_ops_arch = {
+  .init = reg_table_arch_init,
+};
 
 
 /**************************************************************************************/
-/* External Calling of Register Renaming Table */
+/* External Calling */
 
+/*
+  Called by:
+  --- map.c -> when map init
+  Procedure:
+  --- allocate the register table entries by the config size
+*/
 void reg_file_init(void) {
   if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
     return;
 
-  reg_file = NULL;
-  reg_table_init(REG_TABLE_PHYSICAL_SIZE);
+  reg_file = (struct reg_file *)malloc(sizeof(struct reg_file));
+
+  /* the physical reg map is the children table of the arch table
+     the child_reg_id of the arch table is the index of the physical reg map */
+  reg_file->reg_table_arch_to_ptag = (struct reg_table *)malloc(sizeof(struct reg_table));
+  reg_file->reg_table_arch_to_ptag->ops = &reg_table_ops_arch;
+  reg_file->reg_table_arch_to_ptag->ops->init(reg_file->reg_table_arch_to_ptag, NUM_REG_IDS, NULL);
+
+  /* the arch table is the parent table of the physical reg map
+     the parent_reg_id of the physical table is the index of the arch table */
+  reg_file->reg_table_ptag_to_physical = (struct reg_table *)malloc(sizeof(struct reg_table));
+  reg_file->reg_table_ptag_to_physical->ops = &reg_table_ops;
+  reg_file->reg_table_ptag_to_physical->ops->init(reg_file->reg_table_ptag_to_physical, REG_TABLE_PHYSICAL_SIZE, reg_file->reg_table_arch_to_ptag);
 }
 
 /*
-  process:
-  --- 1. read src: look up src register and fill the entry into src_info
-  --- 2. write dst: alloc entry and store self info into register as dst
+  Called by:
+  --- map_stage.c -> before an op is fetched from cache stage data
+  Procedure:
+  --- check if there are enough register entries
+*/
+Flag reg_file_available(uns stage_op_count) {
+  if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
+    return TRUE;
+  ASSERT(0, reg_file != NULL && reg_file->reg_table_ptag_to_physical != NULL);
+
+  return reg_file->reg_table_ptag_to_physical->free_list->reg_free_num >= MAX_DESTS * stage_op_count;
+}
+
+/*
+  Called by:
+  --- map_stage.c -> when an op is fetched from cache stage data
+  Procedure:
+  --- look up src register and fill the entry into src_info
+  --- allocate an entry and store the op info into the register entry
 */
 void reg_file_rename(Op *op) {
   if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
     return;
+  ASSERT(0, op != NULL && reg_file != NULL && reg_file->reg_table_ptag_to_physical != NULL);
 
-  reg_table_read_src(op);
-  reg_table_write_dst(op);
+  /* read register table */
+  for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
+    // the register dependency is not read since it is already tracked during fetching
+    reg_file->reg_table_ptag_to_physical->ops->read(reg_file->reg_table_ptag_to_physical, op, op->inst_info->srcs[ii].id);
+  }
+
+  /* write register table */
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
+    // allocate register and write meta info
+    ASSERT(0, op->table_info->num_dest_regs <= reg_file->reg_table_ptag_to_physical->free_list->reg_free_num);
+    int reg_ptag = reg_file->reg_table_ptag_to_physical->ops->alloc(reg_file->reg_table_ptag_to_physical, op, op->inst_info->dests[ii].id);
+
+    // update the register id in op
+    ASSERT(0, op != &invalid_op && op->dst_reg_ptag[ii] == -1);
+    op->dst_reg_ptag[ii] = reg_ptag;
+  }
 }
 
 /*
+  Called by:
+  --- map.c -> when the op is executed
   Procedure:
-  --- update the register entry state to indicate the results in the register is produced
+  --- write back when the results in the registers is produced
 */
 void reg_file_execute(Op *op) {
   if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
     return;
-  ASSERT(map_data->proc_id, op != NULL);
+  ASSERT(0, op != NULL && reg_file != NULL && reg_file->reg_table_ptag_to_physical != NULL);
 
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++)
-    reg_table_produce_result(op->dst_reg_ptag[ii]);
+    reg_file->reg_table_ptag_to_physical->ops->write_back(reg_file->reg_table_ptag_to_physical, op->dst_reg_ptag[ii]);
 }
 
 /*
   Called by:
-  --- icache_stage.c -> in ic wait for renaming
-  --- icache_stage.c -> icache_issue_ops
+  --- thread.c -> when a misprediction occurs, it should happen before the op list flush
   Procedure:
-  --- check if there are enough registers
-*/
-Flag reg_file_available(uns stage_max_op_count) {
-  if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
-    return TRUE;
-  ASSERT(map_data->proc_id, reg_file != NULL);
-
-  return reg_file->reg_table_ptag_to_physical->free_list->reg_free_num >= MAX_DESTS * stage_max_op_count;
-}
-
-/*
-  Called by:
-  --- node_stage.c -> node_retire
-  Procedure:
-  --- free the register entry of the ops which is before this op
-*/
-void reg_file_commit(Op *op) {
-  if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
-    return;
-  ASSERT(map_data->proc_id, op != NULL);
-
-  for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++)
-    reg_table_remove_prev(op->dst_reg_ptag[ii]);
-}
-
-/*
-  Called by:
-  --- thread.c -> recover_thread
-  Procedure:
-  --- free the register entry of the ops which is mispredicted
+  --- flush registers of misprediction operands
 */
 void reg_file_recover(Counter recovery_op_num) {
   if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
     return;
+  ASSERT(0, reg_file != NULL && reg_file->reg_table_ptag_to_physical != NULL);
 
   // release the register from the youngest to the oldest
   for (Op** op_p = (Op**)list_start_tail_traversal(&td->seq_op_list);
@@ -429,7 +438,22 @@ void reg_file_recover(Counter recovery_op_num) {
 
     // release misprediction register
     for (uns ii = 0; ii < (*op_p)->table_info->num_dest_regs; ii++)
-      reg_table_flush_mispredict((*op_p)->dst_reg_ptag[ii]);
+      reg_file->reg_table_ptag_to_physical->ops->flush_mispredict(reg_file->reg_table_ptag_to_physical, (*op_p)->dst_reg_ptag[ii]);
   }
+}
+
+/*
+  Called by:
+  --- node_stage.c -> when the op is retired
+  Procedure:
+  --- release the privious register with same architectural id
+*/
+void reg_file_commit(Op *op) {
+  if (REG_FILE_TYPE == REG_FILE_TYPE_INFINITE)
+    return;
+  ASSERT(0, op != NULL && reg_file != NULL && reg_file->reg_table_ptag_to_physical != NULL);
+
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++)
+    reg_file->reg_table_ptag_to_physical->ops->release_prev(reg_file->reg_table_ptag_to_physical, op->dst_reg_ptag[ii]);
 }
 

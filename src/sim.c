@@ -275,8 +275,6 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
                   proc_id, unsstr64(inst_count[proc_id]), unsstr64(cycle_count),
                   unsstr64(sim_time), cum_ipc, cum_ipc, cum_khz);
 
-          // dump the bp stat per heartbeat
-          bp_dump_stat();
           break;
 
         default:

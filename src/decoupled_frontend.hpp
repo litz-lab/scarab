@@ -72,7 +72,9 @@ public:
   void insert_mp_candidate(FT_Info* ft_info, uns64 ghist) { mp->insert_mp_candidate(ft_info, ghist); }
   void search_mp_candidate(Addr line_addr) { mp->search_mp_candidate(line_addr); }
   MP* get_mp() { return mp; }
-  Flag determine_to_prefetch_by_mp(Addr fetch_addr);
+  Flag determine_to_prefetch_by_mp(Addr fetch_addr, uint64_t ghist);
+  void set_last_cl_unuseful(Addr line_addr) { mp->set_last_cl_unuseful(line_addr); }
+  Addr get_last_cl_unuseful() { return mp->get_last_cl_unuseful(); }
 
 protected:
   void dfe_recover_op();
@@ -104,6 +106,9 @@ protected:
   MP* mp;
 };
 
+Flag decoupled_fe_determine_to_prefetch_by_mp(Addr fetch_addr, uint64_t ghist);
+void decoupled_fe_set_last_cl_unuseful(Addr line_addr);
+Addr decoupled_fe_get_last_cl_unuseful();
 // FTQ API
 Decoupled_FE* decoupled_fe_new_ftq_iter(uns proc_id, uns bp_id, uns* ftq_idx);
 /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached

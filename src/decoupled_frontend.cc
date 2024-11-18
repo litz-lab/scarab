@@ -110,6 +110,18 @@ FT_Info decoupled_fe_peek_ft() {
   return g_dfe->peek_ft();
 }
 
+Flag decoupled_fe_determine_to_prefetch_by_mp(Addr fetch_addr, uint64_t ghist) {
+  return g_dfe->determine_to_prefetch_by_mp(fetch_addr, ghist);
+}
+
+void decoupled_fe_set_last_cl_unuseful(Addr line_addr) {
+  g_dfe->set_last_cl_unuseful(line_addr);
+}
+
+Addr decoupled_fe_get_last_cl_unuseful() {
+  return g_dfe->get_last_cl_unuseful();
+}
+
 Decoupled_FE* decoupled_fe_new_ftq_iter(uns proc_id, uns bp_id, uns* ftq_idx) {
   *ftq_idx = per_core_dfe[proc_id][bp_id]->new_ftq_iter();
   return per_core_dfe[proc_id][bp_id].get();
@@ -175,7 +187,11 @@ void decoupled_fe_set_off_path(uns proc_id, uns bp_id) {
 }
 
 void decoupled_fe_search_mp_candidate(Addr line_addr) {
-  if (NUM_BPS == 1)
+  if (NUM_BPS == 1 ||
+      (DFE1_RECOVERY_POLICY != CONTINUE_ON_MP &&
+       DFE2_RECOVERY_POLICY != CONTINUE_ON_MP &&
+       DFE3_RECOVERY_POLICY != CONTINUE_ON_MP &&
+       DFE4_RECOVERY_POLICY != CONTINUE_ON_MP))
     return;
   g_dfe->search_mp_candidate(line_addr);
 }
@@ -779,15 +795,16 @@ Flag Decoupled_FE::determine_to_run_alt_by_mp(Addr fetch_addr) {
   return run_alt;
 }
 
-Flag Decoupled_FE::determine_to_prefetch_by_mp(Addr fetch_addr) {
-  ASSERT(proc_id, dfe_recovery_policy == CONTINUE_ON_MP);
+Flag Decoupled_FE::determine_to_prefetch_by_mp(Addr fetch_addr, uint64_t ghist) {
+  if (bp_id)
+    ASSERT(proc_id, dfe_recovery_policy == CONTINUE_ON_MP);
 
   Flag emit_new_prefetch = FALSE;
   Addr line_addr = fetch_addr & ~0x3F;
   if (PERFECT_MP)
     emit_new_prefetch = buf_map_find(line_addr);
   else {
-    emit_new_prefetch = mp->lookup(line_addr, bp_data->global_hist);
+    emit_new_prefetch = mp->lookup(line_addr, ghist);
   }
   return emit_new_prefetch;
 }

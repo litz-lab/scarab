@@ -25,6 +25,7 @@ MP::MP(uns _proc_id) : proc_id(_proc_id), candidate_mps() {
 
 void MP::init() {
   warmed_up = FALSE;
+  last_cl_unuseful = 0;
   mp_info = new MP_Info();
   mp_cache = (Cache*)malloc(sizeof(Cache));
   init_cache(mp_cache, "MERGE_POINT_CACHE", MP_CACHE_SIZE, MP_CACHE_ASSOC, ICACHE_LINE_SIZE,

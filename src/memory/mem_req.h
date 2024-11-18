@@ -71,6 +71,7 @@ typedef enum Mem_Req_State_enum {
     elem(UOCPRF)       /* only uop cache prefetch */ \
     elem(FDIPPRFON)    /* FDIP on-path instruction prefetch */ \
     elem(FDIPPRFOFF)   /* FDIP off-path instruction prefetch */ \
+    elem(FDIPPRFOFF_SUB)   /* FDIP off-path instruction prefetch */ \
     elem(DPRF)         /* data prefetch */           \
     elem(WB)           /* writeback of dirty data */ \
     elem(WB_NODIRTY)   /* writeback of clean data */ \

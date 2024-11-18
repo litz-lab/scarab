@@ -31,7 +31,7 @@ void FDIP_Confidence_Info::recover() {
 }
 
 void FDIP_Confidence_Info::log_stats_bp_conf_on() {
-  if (fdip_off_path()) {
+  if (fdip_off_path(proc_id, 0)) {
     if (!fdip_off_conf_on_event) {
       DEBUG(proc_id, "prev_op op_num: %llu, cf_type: %i, cur_op op_num: %llu, cf_type: %i\n", prev_op->op_num, prev_op->table_info->cf_type, fdip_get_cur_op()->op_num, fdip_get_cur_op()->table_info->cf_type);
       ASSERT(proc_id, prev_op->table_info->cf_type); // must be a cf as the last on-path op
@@ -64,7 +64,7 @@ void FDIP_Confidence_Info::log_stats_bp_conf_on() {
 }
 
 void FDIP_Confidence_Info::log_stats_bp_conf_off() {
-  if (fdip_off_path())
+  if (fdip_off_path(proc_id, 0))
     STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_PREF_CANDIDATES);
   else {
     STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_PREF_CANDIDATES);
@@ -111,10 +111,10 @@ void FDIP_Conf::set_prev_op(Op* prev_op, Flag off_path) {
 
 void FDIP_Conf::update(Op* op) {
   if (FDIP_BP_PERFECT_CONFIDENCE) {
-    if (fdip_off_path())
+    if (fdip_off_path(proc_id, 0))
       low_confidence_cnt = ~0U;
     if(low_confidence_cnt == ~0U)
-      ASSERT(proc_id, fdip_off_path());
+      ASSERT(proc_id, fdip_off_path(proc_id, 0));
     cf_op_distance = 0.0;
   } else if (FDIP_BTB_MISS_BP_TAKEN_CONF) {
     btb_miss_bp_taken_conf_update(op);
@@ -255,14 +255,14 @@ void FDIP_Conf::log_stats_bp_conf_emitted() {
   //conf on
   if(low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD){
     //actually off
-    if(fdip_off_path()) {
+    if(fdip_off_path(proc_id, 0)) {
       STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_EMITTED);
       STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_BTB_MISS_EMITTED + conf_info->off_path_reason);
     } else {
       STAT_EVENT(proc_id, FDIP_ON_CONF_ON_EMITTED);
     }
   } else {
-    if(fdip_off_path()) {
+    if(fdip_off_path(proc_id, 0)) {
       STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_EMITTED);
     } else {
       STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_EMITTED);

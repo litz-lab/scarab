@@ -64,6 +64,8 @@ public:
   void insert_mp(Addr line_addr, uns64 ghist);
   Flag lookup(Addr hashed_line_addr, uns64 ghist);
   void hit_mp_candidate(Addr line_addr, uns64 ghist);
+  void set_last_cl_unuseful(Addr line_addr) { last_cl_unuseful = line_addr; }
+  Flag get_last_cl_unuseful() { return last_cl_unuseful; }
 
 private:
   void insert_mp_to_inf_hash(Addr line_addr, uns64 ghist);
@@ -75,6 +77,7 @@ private:
   // <CL address, ghist, cycle count, demand load hit>
   deque<pair<Addr, tuple<uns64, Counter, Flag>>> candidate_mps;
   Flag warmed_up;
+  Addr last_cl_unuseful;
   MP_Info* mp_info;
 
   unordered_map<Addr, Counter> found_mps;

@@ -41,7 +41,7 @@ extern "C" {
   void update_fdip(uns proc_id);
   void recover_fdip();
   void set_fdip(uns proc_id, uns bp_id);
-  Flag fdip_off_path();
+  Flag fdip_off_path(uns proc_id, uns bp_id);
   uns64 fdip_hash_addr_ghist(uint64_t addr, uint64_t ghist);
   void fdip_stats(uns proc_id);
   void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss);
@@ -78,6 +78,7 @@ typedef enum ICACHE_MISS_REASON_enum {
   IMISS_TOO_EARLY_EVICTED_BY_IFETCH,
   IMISS_TOO_EARLY_EVICTED_BY_FDIP,
   IMISS_MSHR_HIT_PREFETCHED_OFFPATH,
+  IMISS_MSHR_HIT_PREFETCHED_OFFPATH_SUB,
   IMISS_MSHR_HIT_PREFETCHED_ONPATH,
 } Imiss_Reason;
 
@@ -85,7 +86,7 @@ typedef enum IC_FETCH_TYPE_enum {
   DEMAND_LOAD,
   FDIP_ONPATH,
   FDIP_OFFPATH,
-  FDIP_BOTHPATH,
+  FDIP_OFFPATH_SUB,
 } IC_Fetch_Type;
 
 #endif

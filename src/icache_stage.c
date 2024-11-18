@@ -1194,6 +1194,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
         inc_utility_info(TRUE);
         inc_timeliness_info(FALSE);
       }
+      decoupled_fe_search_mp_candidate(ic->line_addr);
       if(line->FDIP_prefetch == FDIP_BOTHPATH || line->FDIP_prefetch == FDIP_ONPATH)
         STAT_EVENT(ic->proc_id, ICACHE_HIT_BY_FDIP_ONPATH);
       else if(line->FDIP_prefetch == FDIP_OFFPATH)
@@ -1318,8 +1319,8 @@ void log_stats_mshr_hit(Addr line_addr) {
 
   if (req && !req->cyc_hit_by_demand_load) {
     uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, req->ghist) : ic->line_addr;
-    if (!icache_off_path() &&
-        fdip_search_pref_candidate(ic->line_addr)) {
+    if (!icache_off_path()) {
+      if (fdip_search_pref_candidate(ic->line_addr)) {
       inc_cnt_useful(ic->proc_id, hashed_addr, FALSE);
       inc_cnt_useful_signed(hashed_addr);
       inc_useful_lines_uc(hashed_addr);
@@ -1327,6 +1328,8 @@ void log_stats_mshr_hit(Addr line_addr) {
       update_useful_lines_bloom_filter(hashed_addr);
       inc_utility_info(TRUE);
       inc_timeliness_info(TRUE);
+      }
+      decoupled_fe_search_mp_candidate(ic->line_addr);
     }
     if (mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF)) {
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_ONPATH_BY_FDIP + icache_off_path());
@@ -1361,6 +1364,7 @@ void log_stats_mshr_hit(Addr line_addr) {
         STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
         assert_fdip_break_reason(hashed_addr);
       }
+      decoupled_fe_search_mp_candidate(ic->line_addr);
     } else {
       inc_off_fetched_cls(ic->line_addr);
     }

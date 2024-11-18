@@ -360,3 +360,8 @@ DEF_PARAM(dumb_model_avg_row_hits_per_core, DUMB_MODEL_AVG_ROW_HITS_PER_CORE,
 DEF_PARAM(dumb_model_mlp, DUMB_MODEL_MLP, uns, uns, 1, )
 DEF_PARAM(dumb_model_mlp_per_core, DUMB_MODEL_MLP_PER_CORE, char*, string,
           NULL, )
+
+DEF_PARAM(mp_cache_size, MP_CACHE_SIZE, uns, uns, 4096, )
+DEF_PARAM(mp_cache_assoc, MP_CACHE_ASSOC, uns, uns, 4, )
+// The insert replacement policy should be one of INSERT_REP_(DEFAULT/LRU/LOWQTR/MID/MRU)
+DEF_PARAM(  mp_cache_insert_replpol         , MP_CACHE_INSERT_REPLPOL          , uns    , uns     , 0                      ,       )

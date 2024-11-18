@@ -6,6 +6,8 @@
 #include "isa/isa_macros.h"
 #include "prefetcher/pref.param.h"
 #include "memory/memory.param.h"
+#include "frontend/pt_memtrace/memtrace_fe.h"
+#include "mp.hpp"
 
 #include <deque>
 #include <vector>
@@ -172,6 +174,12 @@ void decoupled_fe_set_off_path(uns proc_id, uns bp_id) {
   per_core_dfe[proc_id][bp_id]->set_off_path();
 }
 
+void decoupled_fe_search_mp_candidate(Addr line_addr) {
+  if (NUM_BPS == 1)
+    return;
+  g_dfe->search_mp_candidate(line_addr);
+}
+
 /* FT member functions */
 FT::FT() {
   proc_id = 0;
@@ -291,14 +299,22 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_re
   bp_data = _bp_data;
   dfe_recovery_policy = _dfe_recovery_policy;
   current_ft_to_push.set_ft_started_by(FT_STARTED_BY_APP);
+  if (bp_id)
+    mp = per_core_dfe[proc_id][0]->get_mp();
+  else if (NUM_BPS > 1 &&
+      (DFE1_RECOVERY_POLICY == CONTINUE_ON_MP ||
+        DFE2_RECOVERY_POLICY == CONTINUE_ON_MP ||
+        DFE3_RECOVERY_POLICY == CONTINUE_ON_MP ||
+        DFE4_RECOVERY_POLICY == CONTINUE_ON_MP))
+      mp = new MP(proc_id);
 }
 
-Op* Decoupled_FE::get_last_fetch_op() {
+FT* Decoupled_FE::get_last_fetch_target() {
   // Get the address to continue before flushing the primary FTQ
   if (current_ft_to_push.ops.size())
-    return current_ft_to_push.ops.back();
+    return &current_ft_to_push;
   else if (!ftq.empty())
-    return ftq.back().ops.back();
+    return &ftq.back();
   return nullptr;
 }
 
@@ -358,7 +374,8 @@ void Decoupled_FE::dfe_recover_op() {
 
 void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
   // Get the last addr from the primary FTQ
-  Op* alt_op = per_core_dfe[proc_id][0]->get_last_fetch_op();
+  FT* last_ft_primary = per_core_dfe[proc_id][0]->get_last_fetch_target();
+  Op* alt_op = last_ft_primary ? last_ft_primary->ops.back() : nullptr;
   info->bp_id = bp_id;
   switch(dfe_recovery_policy) {
     case PRIMARY_DFE:
@@ -368,6 +385,20 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
     case CONTINUE_ON_RECOVERY:
       bp_recover_op(bp_data, cf_type, info);
       dfe_recover_op();
+      if (alt_op)
+        frontend_redirect(proc_id, bp_id, alt_op->inst_uid, alt_op->inst_info->addr);
+      else // If it was stalled due to a fetch barrier, can be nullptr
+        frontend_redirect(proc_id, bp_id, 0, 0);
+      set_off_path();
+      bp_sync(per_core_dfe[proc_id][0]->get_bp_data(), per_core_dfe[proc_id][bp_id]->get_bp_data());
+      break;
+    case CONTINUE_ON_MP:
+      if (last_ft_primary)
+        insert_mp_candidate(&(last_ft_primary->ft_info), bp_data->global_hist);
+      bp_recover_op(bp_data, cf_type, info);
+      dfe_recover_op();
+      if (alt_op && !determine_to_run_alt_by_mp(alt_op->inst_info->addr))
+        alt_op = nullptr;
       if (alt_op)
         frontend_redirect(proc_id, bp_id, alt_op->inst_uid, alt_op->inst_info->addr);
       else // If it was stalled due to a fetch barrier, can be nullptr
@@ -452,6 +483,9 @@ void Decoupled_FE::update() {
 
     if (!bp_id)
       fwd_progress = 0;
+    if (!bp_id  && mp)
+      mp->clear_old_fts();
+
     uint64_t pred_addr = 3;
     Op* op = alloc_op(proc_id, bp_id);
     frontend_fetch_op(proc_id, bp_id, op);
@@ -726,4 +760,34 @@ void Decoupled_FE::retire(Op *op, int op_proc_id, uns64 inst_uid) {
 
   //unblock pin exec driven, trace frontends do not need to block/unblock
   frontend_retire(op_proc_id, inst_uid);
+}
+
+Flag Decoupled_FE::determine_to_run_alt_by_mp(Addr fetch_addr) {
+  ASSERT(proc_id, dfe_recovery_policy == CONTINUE_ON_MP);
+
+  Flag run_alt = FALSE;
+  Addr line_addr = fetch_addr & ~0x3F;
+  if (PERFECT_MP)
+    run_alt = buf_map_find(line_addr);
+  else {
+    run_alt = mp->lookup(line_addr, bp_data->global_hist);
+  }
+  if (run_alt)
+    STAT_EVENT(proc_id, MP_DECIDE_TO_RUN);
+  else
+    STAT_EVENT(proc_id, MP_DECIDE_NOT_TO_RUN);
+  return run_alt;
+}
+
+Flag Decoupled_FE::determine_to_prefetch_by_mp(Addr fetch_addr) {
+  ASSERT(proc_id, dfe_recovery_policy == CONTINUE_ON_MP);
+
+  Flag emit_new_prefetch = FALSE;
+  Addr line_addr = fetch_addr & ~0x3F;
+  if (PERFECT_MP)
+    emit_new_prefetch = buf_map_find(line_addr);
+  else {
+    emit_new_prefetch = mp->lookup(line_addr, bp_data->global_hist);
+  }
+  return emit_new_prefetch;
 }

@@ -2,6 +2,7 @@
 #define __DECOUPLED_FE_HPP_H__
 
 #include "decoupled_frontend.h"
+#include "mp.hpp"
 
 #include <vector>
 #include <deque>
@@ -39,7 +40,8 @@ public:
     redirect_cycle(0),
     stalled(false),
     ftq_ft_num(FE_FTQ_BLOCK_NUM),
-    trace_mode(false) {}
+    trace_mode(false),
+    mp(nullptr) {}
   ~Decoupled_FE() {}
   void init(uns _proc_id, uns _bp_id, Bp_Data* bp_data, uns dfe_recovery_policy);
   int is_off_path() { return off_path; }
@@ -65,11 +67,16 @@ public:
   uns get_proc_id() { return proc_id; }
   uns get_bp_id() { return bp_id; }
   Bp_Data* get_bp_data() { return bp_data; }
-  Op* get_last_fetch_op();
+  FT* get_last_fetch_target();
   uns get_dfe_recovery_policy() { return dfe_recovery_policy; }
+  void insert_mp_candidate(FT_Info* ft_info, uns64 ghist) { mp->insert_mp_candidate(ft_info, ghist); }
+  void search_mp_candidate(Addr line_addr) { mp->search_mp_candidate(line_addr); }
+  MP* get_mp() { return mp; }
+  Flag determine_to_prefetch_by_mp(Addr fetch_addr);
 
 protected:
   void dfe_recover_op();
+  Flag determine_to_run_alt_by_mp(Addr fetch_addr);
 
   uns proc_id;
   uns bp_id;
@@ -94,6 +101,7 @@ protected:
   uint64_t ftq_ft_num;
   bool trace_mode;
   std::vector<std::unique_ptr<decoupled_fe_iter>> ftq_iterators;
+  MP* mp;
 };
 
 // FTQ API

@@ -58,6 +58,7 @@ typedef enum DFE_Recovery_Policy_enum {
   PRIMARY_DFE,
   CONTINUE_ON_RECOVERY,
   CONTINUE_ON_PREDICTION,
+  CONTINUE_ON_MP,
 } DFE_Recovery_Policy;
 
 
@@ -88,6 +89,8 @@ typedef enum DFE_Recovery_Policy_enum {
   bool decoupled_fe_can_fetch_ft();
   FT_Info decoupled_fe_fetch_ft();
   FT_Info decoupled_fe_peek_ft();
+  void decoupled_fe_search_mp_candidate(Addr line_addr);
+  void decoupled_fe_insert_mp_candidate(Addr line_addr, uns64 ghist);
 #ifdef __cplusplus
 }
 #endif

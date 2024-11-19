@@ -1406,11 +1406,11 @@ void FDIP::determine_usefulness_by_mp(Addr fetch_addr, Flag* emit_new_prefetch, 
 Flag FDIP::determine_usefulness(Addr fetch_addr, Op* op, uint64_t ghist) {
   if (!FDIP_UTILITY_HASH_ENABLE && !FDIP_UC_SIZE && !FDIP_BLOOM_FILTER && !FDIP_PERFECT_PREFETCH && NUM_BPS == 1)
     return TRUE;
-  if (NUM_BPS >= 2 &&
+  if ((NUM_BPS >= 2 &&
       (DFE1_RECOVERY_POLICY != CONTINUE_ON_MP &&
        DFE2_RECOVERY_POLICY != CONTINUE_ON_MP &&
        DFE3_RECOVERY_POLICY != CONTINUE_ON_MP &&
-       DFE4_RECOVERY_POLICY != CONTINUE_ON_MP))
+       DFE4_RECOVERY_POLICY != CONTINUE_ON_MP)) && !FDIP_UTILITY_HASH_ENABLE && !FDIP_UC_SIZE && !FDIP_BLOOM_FILTER && !FDIP_PERFECT_PREFETCH)
     return TRUE;
 
   Addr line_addr = fetch_addr & ~0x3F;

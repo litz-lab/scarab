@@ -106,14 +106,6 @@ struct reg_table {
   struct reg_table_ops *ops;
 };
 
-struct reg_file {
-  // map each architectural register id to the latest ptag
-  struct reg_table *reg_table_arch_to_ptag;
-
-  // map ptags to physical register for both speculative and committed op
-  struct reg_table *reg_table_ptag_to_physical;
-};
-
 
 /**************************************************************************************/
 /* Operations */

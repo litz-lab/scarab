@@ -24,6 +24,9 @@
 #include "bp/bp.param.h"
 #include "cbp_to_scarab.h"
 
+int tage_ucp_stop_count;
+const int UCP_STOP_THRESHOLD=100;
+
 template <typename CBP_CLASS>
 class CBP_To_Scarab_Intf {
   std::vector<std::vector<CBP_CLASS>> cbp_predictors_all_cores;
@@ -31,10 +34,15 @@ class CBP_To_Scarab_Intf {
  public:
   CBP_CLASS* get_predictor(uns proc_id, uns bp_id) { return &cbp_predictors_all_cores.at(proc_id).at(bp_id); }
 
+  int get_predictor_weight(UINT64 PC, uns proc_id, uns bp_id) { return cbp_predictors_all_cores.at(proc_id).at(bp_id).GetWeight(PC); }
+
   void init() {
     if (NUM_BPS > 1)
       ASSERTM(0, !USE_PRED_STATES && SPEC_LEVEL == BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON,
           "Multiple BPs are available for SPEC_LEVEL BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON without USE_PRED_STATES");
+
+
+    tage_ucp_stop_count = 0;
 
     if (cbp_predictors_all_cores.size() == 0) {
       cbp_predictors_all_cores.reserve(NUM_CORES);
@@ -108,11 +116,14 @@ template <>
 uns8 CBP_To_Scarab_Intf<TAGE64K>::pred(Op* op) {
   uns proc_id = op->proc_id;
   uns bp_id   = op->bp_id;
+  tage_ucp_stop_count = 0;
   if (op->off_path) {
     if (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON)
       return op->oracle_info.dir;
   }
   uns8 pred = cbp_predictors_all_cores.at(proc_id).at(bp_id).GetPrediction(op->inst_info->addr, &op->bp_confidence, op);
+  if(op->bp_id)
+    tage_ucp_stop_count = get_predictor_weight(op->inst_info->addr, op->proc_id, op->bp_id);
 
   return pred;
 }
@@ -237,4 +248,16 @@ void bp_predictors_sync(Bp_Data* src, Bp_Data* dst) {
   TAGE64K* tage_src = cbp_predictor_TAGE64K.get_predictor(src->proc_id, src->bp_id);
   TAGE64K* tage_dst = cbp_predictor_TAGE64K.get_predictor(dst->proc_id, dst->bp_id);
   *tage_dst = *tage_src;
+}
+
+int tage_ucp_stop_weight_check(){
+  ASSERT(0, (BP_MECH == TAGESCL_BP)|| (BP_MECH == TAGE64K_BP));
+  // printf("weight is %i \n", tage_ucp_stop_count);
+  return tage_ucp_stop_count;
+}
+
+int tage_ucp_h2p_check(Bp_Data* bp){
+  ASSERT(0, (BP_MECH == TAGESCL_BP)|| (BP_MECH == TAGE64K_BP));
+  return cbp_predictor_TAGE64K.get_predictor(bp->proc_id, bp->bp_id)->GetH2p(); 
+  
 }

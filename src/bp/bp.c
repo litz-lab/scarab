@@ -90,6 +90,8 @@ extern uns        operating_mode;
 
 Hash_Table per_branch_stat;
 
+int tage_ucp_weight_;
+
 /******************************************************************************/
 // Local prototypes
 
@@ -121,6 +123,8 @@ void init_bp_recovery_info(uns8              proc_id,
   new_bp_recovery_info->redirect_cycle = MAX_CTR;
 
   bp_recovery_info = new_bp_recovery_info;
+
+  tage_ucp_weight_ = 0;
 
   init_hash_table(&per_branch_stat, "Per Branch Hit/Miss and Recovery/Redirect Stall cycles",
                   15000000, sizeof(Per_Branch_Stat));
@@ -320,6 +324,10 @@ Flag bp_is_predictable(Bp_Data* bp_data) {
   return !bp_data->bp->full_func(bp_data);
 }
 
+int bp_get_tage_weight(void){
+  return tage_ucp_weight_;
+}
+
 /******************************************************************************/
 /* bp_predict_op:  predicts the target of a control flow instruction */
 
@@ -328,6 +336,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   Addr  ibp_target;
   Addr  pred_target;
   Flag  btb_miss_nt = FALSE;
+  tage_ucp_weight_ = 0;
   const Addr pc_plus_offset = ADDR_PLUS_OFFSET(
     op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
@@ -509,6 +518,11 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         ASSERT(op->proc_id, !PERFECT_NT_BTB); //currently not supported
         op->oracle_info.pred = bp_data->bp->pred_func(op);
         op->oracle_info.pred_orig = op->oracle_info.pred;
+        if(bp_data->bp_id){
+          tage_ucp_weight_ = tage_ucp_stop_weight_check();
+          if(!btb_target)
+            tage_ucp_weight_ = 999;
+        }
         if(USE_LATE_BP) {
           op->oracle_info.late_pred = bp_data->late_bp->pred_func(op);
         }
@@ -1151,3 +1165,5 @@ void bp_sync(Bp_Data* bp_data_src, Bp_Data* bp_data_dst) {
   bp_crs_sync(bp_data_src, bp_data_dst);
   bp_predictors_sync(bp_data_src, bp_data_dst);
 }
+
+

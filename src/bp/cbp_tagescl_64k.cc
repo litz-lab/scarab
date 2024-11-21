@@ -424,6 +424,13 @@ void TAGE64K::baseupdate(bool Taken, UINT64 PC, cbp64_bentry* btable) {
   int8_t BIM = (btable[BI].pred << 1) + (btable[BI >> HYSTSHIFT].hyst);
 
   int inter = BIM;
+
+  bi_mispredictionHistory <<= 1; // Shift the history left by 1 bit
+  if((btable[BI].pred > 0) != Taken){ 
+      bi_mispredictionHistory |= 1; // Set the last bit to 1 if it's a misprediction
+  }
+  bi_mispredictionHistory &= 0xFF; // Ensure the history is limited to 8 bits
+
   if (Taken) {
     if (inter < 3)
       inter += 1;
@@ -623,7 +630,98 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
   }
   return Pstate.pred_taken;
 }
+int TAGE64K::GetWeight(UINT64 PC){
+  int BI = GET_BI(PC);
+    switch (tage_component) {
+        case TAGE_BASE:
+          switch (btable[BI].pred) {
+            case -2:
+            case 1:
+              if(bi_mispredictionHistory) 
+                return 2;
+              else
+                return 1;
+            case -1:
+            case 0:
+              if(bi_mispredictionHistory) 
+                return 6;
+              else
+                return 2;
+            default:
+                return -1; // Invalid output
+          }
+        case TAGE_SHORT:
+        case TAGE_LONG:
+          if(!(use_alt_on_na[INDUSEALT] >= 0) || gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr ){//HIT_bank
+              switch(Pstate.HitBank){
+                case -4:
+                case 3:
+                    return 3;
+                case -3:
+                case 2:
+                    return 4;
+                default:
+                    return -1; // Invalid output 
+              }
+            }
+          else{//alt_bank
+              switch (Pstate.AltBank) {
+                case -3:
+                case -2:
+                case -1:
+                case 0:
+                case 1:
+                case 2:
+                    return 5;
+                default:
+                    return -1; // Invalid output
+            }
 
+          }
+           
+        case TAGE_LOOP:
+            return 1;
+        case TAGE_SC:
+          if (Pstate.LSUM >= 128 && Pstate.LSUM <= 255)
+              return 3;
+          else if (Pstate.LSUM >= 64 && Pstate.LSUM <= 127)
+              return 6;
+          else if (Pstate.LSUM >= 32 && Pstate.LSUM <= 63)
+              return 8;
+          else if (Pstate.LSUM >= 0 && Pstate.LSUM <= 31)
+              return 10;
+          else 
+              return -1; // Invalid output
+            
+        case NOT_TAGE:
+          return -1;
+        default:
+          return -1;
+    }
+
+}
+
+bool TAGE64K::GetH2p(){
+  switch (tage_component) {
+        case TAGE_BASE:
+          if(bi_mispredictionHistory)
+            return true; 
+        case TAGE_SHORT:
+          return true; 
+        case TAGE_LONG:
+          return false;
+        case TAGE_LOOP:
+          return false;
+        case TAGE_SC:
+          return true; 
+        case NOT_TAGE:
+          return false;
+        default:
+          return false;
+    }
+    return false;
+
+}
 int TAGE64K::GetBrtypeFromOptype(OpType opType) {
   int brtype = 0;
   switch (opType) {

@@ -8,6 +8,7 @@
 #include "memory/memory.param.h"
 #include "frontend/pt_memtrace/memtrace_fe.h"
 #include "mp.hpp"
+#include "bp/cbp_to_scarab.h"
 
 #include <deque>
 #include <vector>
@@ -22,6 +23,8 @@
 /* Global Variables */
 Decoupled_FE* g_dfe = nullptr;
 static int fwd_progress = 0;
+int ucp_stop_weight_count;
+const int UCP_STOP_THRESHOLD = 10;
 
 // Per core decoupled frontend
 std::vector<std::vector<std::unique_ptr<Decoupled_FE>>> per_core_dfe;
@@ -432,6 +435,13 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
       dfe_recover_op();
       frontend_redirect(proc_id, bp_id, 0, 0); // Passing fetch_addr = 0 will stop fetching the secondary
       break;
+    case UCP_POLICY:
+      // resets on recovery
+      bp_recover_op(bp_data, cf_type, info);
+      dfe_recover_op();
+      frontend_redirect(proc_id, bp_id, 0, 0);
+      ucp_stop_weight_count = 0;
+      break;
   }
 }
 
@@ -519,6 +529,14 @@ void Decoupled_FE::update() {
       if (!bp_id)
         alt_op = *op;
       pred_addr = bp_predict_op(bp_data, op, cf_num++, op->inst_info->addr);
+
+      if(((BP_MECH == TAGESCL_BP)|| (BP_MECH == TAGE64K_BP)) && (per_core_dfe[proc_id][bp_id]->get_dfe_recovery_policy() == UCP_POLICY)){
+        ucp_stop_weight_count += bp_get_tage_weight();
+        // reset counter when h2p seen
+        if (tage_ucp_h2p_check(per_core_dfe[proc_id][0]->bp_data))
+          ucp_stop_weight_count = 0;
+      }
+    
       DEBUG(proc_id,
             "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%lx mispred:%i misfetch:%i btb miss:%i taken:%i recover_at_decode:%i recover_at_exec:%i off_path:%i bar_fetch:%i\n",
             bp_id, op->inst_info->addr, op->oracle_info.npc, pred_addr,
@@ -550,13 +568,27 @@ void Decoupled_FE::update() {
         redirect_cycle = cycle_count;
         if (!bp_id) {
           for (uns _bp_id = 1; _bp_id < NUM_BPS; ++_bp_id) {
-            if (per_core_dfe[proc_id][_bp_id]->get_dfe_recovery_policy() == CONTINUE_ON_PREDICTION
+            if ((per_core_dfe[proc_id][_bp_id]->get_dfe_recovery_policy() == CONTINUE_ON_PREDICTION)
                 && !per_core_dfe[proc_id][_bp_id]->is_off_path()) {
               ASSERT(proc_id, !per_core_dfe[proc_id][_bp_id]->ftq_num_fts());
               Addr alt_pred_addr = bp_predict_op(per_core_dfe[proc_id][_bp_id]->bp_data, &alt_op, 0, op->inst_info->addr);
               frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);
               per_core_dfe[proc_id][_bp_id]->set_off_path();
               bp_sync(per_core_dfe[proc_id][bp_id]->get_bp_data(), per_core_dfe[proc_id][_bp_id]->get_bp_data());
+            }
+            // ucp starts when h2p branch seen
+            if(((BP_MECH == TAGESCL_BP)|| (BP_MECH == TAGE64K_BP)) && (per_core_dfe[proc_id][_bp_id]->get_dfe_recovery_policy() == UCP_POLICY)
+              && !per_core_dfe[proc_id][_bp_id]->is_off_path()) {
+              ASSERT(proc_id, !per_core_dfe[proc_id][_bp_id]->ftq_num_fts());
+              if(tage_ucp_h2p_check(per_core_dfe[proc_id][0]->bp_data)){
+                STAT_EVENT(proc_id, H2P_SEEN_MAIN);
+                frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_op.oracle_info.pred ? 
+                  alt_op.inst_info->addr + alt_op.inst_info->trace_info.inst_size :
+                  alt_op.oracle_info.target);
+                per_core_dfe[proc_id][_bp_id]->set_off_path();
+                bp_sync(per_core_dfe[proc_id][bp_id]->get_bp_data(), per_core_dfe[proc_id][_bp_id]->get_bp_data());
+              }
+
             }
           }
         }
@@ -622,6 +654,9 @@ void Decoupled_FE::update() {
 
       if (bp_id && dfe_recovery_policy == CONTINUE_ON_MP)
         mp->update(&current_ft_to_push);
+
+      if (bp_id && dfe_recovery_policy == UCP_POLICY && ucp_stop_weight_count >= UCP_STOP_THRESHOLD)
+        current_ft_to_push.set_prefetch(FALSE);
 
       ftq.emplace_back(current_ft_to_push);
       DEBUG(proc_id, "[DFE%u] FTQ size: %lu\n", bp_id, ftq_num_fts());

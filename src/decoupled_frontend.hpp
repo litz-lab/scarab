@@ -25,6 +25,7 @@ public:
   void init(uns _proc_id, uns _bp_id, Bp_Data* bp_data, uns dfe_recovery_policy);
   int is_off_path() { return off_path; }
   void set_off_path() { off_path = true; }
+  void set_off_path_0() { off_path = false; }
   void recover(Cf_Type cf_type, Recovery_Info* info);
   void update();
   bool current_ft_can_fetch_op() { return current_ft_in_use.can_fetch_op(); }

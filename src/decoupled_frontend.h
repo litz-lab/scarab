@@ -59,6 +59,7 @@ typedef enum DFE_Recovery_Policy_enum {
   CONTINUE_ON_RECOVERY,
   CONTINUE_ON_PREDICTION,
   CONTINUE_ON_MP,
+  UCP_POLICY,
 } DFE_Recovery_Policy;
 
 

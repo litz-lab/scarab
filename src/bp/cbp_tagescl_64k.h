@@ -493,6 +493,8 @@ class TAGE64K {
   void     RepairStateAndUpdate(Counter key);
   void     UpdateAddr(UINT64 PC, long long phist, cbp64_folded_history* ch_i, cbp64_folded_history* ch_t0, cbp64_folded_history* ch_t1);
   Counter  KeyGeneration(bool offpath);
+  int GetWeight(UINT64 PC);
+  bool GetH2p();
   // P: Predictor components
   PredictorStates Pstate;
   // S: Speculative components
@@ -547,5 +549,7 @@ class TAGE64K {
   int8_t tage_component_inter;
   int8_t tage_component_tage;
   int8_t tage_component_alt;
+
+  int bi_mispredictionHistory;
 };
 #endif

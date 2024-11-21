@@ -177,6 +177,8 @@ typedef enum {
 extern "C" {
 #endif
 void bp_predictors_sync(Bp_Data* src, Bp_Data* dst);
+int tage_ucp_stop_weight_check();
+int tage_ucp_h2p_check(Bp_Data* bp);
 #ifdef __cplusplus
 }
 #endif

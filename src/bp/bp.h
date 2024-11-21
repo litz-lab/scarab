@@ -268,6 +268,7 @@ extern Br_Conf           br_conf_table[];
 
 /**************************************************************************************/
 /* Prototypes */
+int bp_get_tage_weight(void);
 void set_bp_data(Bp_Data* new_bp_data);
 void set_bp_recovery_info(Bp_Recovery_Info* new_bp_recovery_info);
 

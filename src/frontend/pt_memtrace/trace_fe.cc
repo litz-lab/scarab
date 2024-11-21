@@ -42,7 +42,7 @@ static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
 extern uint64_t ins_id;
 extern uint64_t ins_id_fetched;
 
-void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
+void off_path_generate_inst(uns proc_id, uns bp_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
   auto op_iter = pc_to_inst.find(*off_path_addr);
   if (op_iter != pc_to_inst.end()) {
     *inst = op_iter->second;
@@ -222,7 +222,7 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op* op) {
       }
     }
     else {
-      off_path_generate_inst(proc_id, off_path_addr_, next_offpath_pi_);
+      off_path_generate_inst(proc_id, bp_id, off_path_addr_, next_offpath_pi_);
     }
   }
   DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode_, next_onpath_pi[proc_id].instruction_addr, next_offpath_pi_->instruction_addr);
@@ -242,7 +242,7 @@ void ext_trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr)
   else
     off_path_mode[proc_id][bp_id] = true;
   off_path_addr[proc_id][bp_id] = fetch_addr;
-  off_path_generate_inst(proc_id, &off_path_addr[proc_id][bp_id], &next_offpath_pi[proc_id][bp_id]);
+  off_path_generate_inst(proc_id, bp_id, &off_path_addr[proc_id][bp_id], &next_offpath_pi[proc_id][bp_id]);
   DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id][bp_id].instruction_addr);
 }
 

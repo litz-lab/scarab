@@ -971,6 +971,8 @@ void FDIP::update() {
         fdip_conf->log_stats_bp_conf();
       emit_new_prefetch = determine_usefulness(op->inst_info->addr, op, op->oracle_info.pred_global_hist);
       //emit_new_prefetch = determine_usefulness(line_addr, op, g_bp_data->global_hist);
+      if (!decoupled_fe_ftq_iter_get_ft(dfe, ftq_idx)->get_prefetch())
+        emit_new_prefetch = FALSE;
 
       Flag demand_hit_prefetch = FALSE;
       Flag demand_hit_writeback = FALSE;

@@ -50,7 +50,7 @@ struct Op_struct;
 extern "C" {
 #endif
 
-void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst);
+void off_path_generate_inst(uns proc_id, uns bp_id, uint64_t *off_path_addr, ctype_pin_inst *inst);
 
 /* Implementing the frontend interface */
 Addr ext_trace_next_fetch_addr(uns proc_id);

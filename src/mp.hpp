@@ -32,6 +32,7 @@
 #include "globals/global_types.h"
 #include "decoupled_frontend.h"
 #include "ft_info.h"
+#include "ft.hpp"
 
 #include <deque>
 #include <unordered_map>
@@ -53,12 +54,27 @@ private:
   unordered_map<Addr, unordered_map<Addr, Counter>> per_br_mp; // per-branch PC merge point stats
 };
 
+class MP_Conf {
+public:
+  MP_Conf(uns _proc_id) :
+    proc_id(_proc_id) {}
+  void inc_low_conf_cnt() { low_confidence_cnt++; }
+  void dec_low_conf_cnt() { low_confidence_cnt--; }
+  Flag get_low_conf_cnt() { return low_confidence_cnt; }
+
+private:
+  uns proc_id;
+  uns low_confidence_cnt;
+};
+
 class MP {
 public:
   MP(uns proc_id);
   void init();
   void insert_mp_candidate(FT_Info* ft, uns64 ghist);
   void clear_old_fts();
+  void update(FT* ft);
+  Flag need_to_stop_prefetch();
   Addr get_hashed_line_addr(Addr line_addr, uns64 ghist);
   void search_mp_candidate(Addr line_addr);
   void insert_mp(Addr line_addr, uns64 ghist);
@@ -66,6 +82,7 @@ public:
   void hit_mp_candidate(Addr line_addr, uns64 ghist);
   void set_last_cl_unuseful(Addr line_addr) { last_cl_unuseful = line_addr; }
   Flag get_last_cl_unuseful() { return last_cl_unuseful; }
+  MP_Conf* get_mp_conf() { return mp_conf; }
 
 private:
   void insert_mp_to_inf_hash(Addr line_addr, uns64 ghist);
@@ -79,6 +96,7 @@ private:
   Flag warmed_up;
   Addr last_cl_unuseful;
   MP_Info* mp_info;
+  MP_Conf* mp_conf;
 
   unordered_map<Addr, Counter> found_mps;
   unordered_map<Addr, Counter> found_mps_aw;

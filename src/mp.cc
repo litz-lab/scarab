@@ -30,6 +30,8 @@ void MP::init() {
   mp_cache = (Cache*)malloc(sizeof(Cache));
   init_cache(mp_cache, "MERGE_POINT_CACHE", MP_CACHE_SIZE, MP_CACHE_ASSOC, ICACHE_LINE_SIZE,
              0, REPL_TRUE_LRU);
+  if (MP_CONFIDENCE)
+    mp_conf = new MP_Conf(proc_id);
 }
 
 void MP::insert_mp_candidate(FT_Info* ft_info, uns64 ghist) {
@@ -61,6 +63,26 @@ void MP::clear_old_fts() {
   }
   DEBUG(proc_id, "Clear %llu mp candidates among %ld at cycle %llu\n", cnt_old, candidate_mps.size(), cycle_count);
   ASSERT(proc_id, candidate_mps.size() >= 0);
+}
+
+void MP::update(FT* ft) {
+  Addr line_addr = ft->ft_info.static_info.start & ~0x3F;
+  Addr line_addr2 = (ft->ft_info.static_info.start + ft->ft_info.static_info.length) & ~0x3F;
+  uint64_t ghist = ft->ops.front()->oracle_info.pred_global_hist;
+  uint64_t ghist2 = ft->ops.back()->oracle_info.pred_global_hist;
+
+  if (MP_CONFIDENCE) {
+    if (!lookup(line_addr, ghist) && !lookup(line_addr2, ghist2))
+      mp_conf->inc_low_conf_cnt();
+    else
+      mp_conf->dec_low_conf_cnt();
+  }
+  if (need_to_stop_prefetch())
+    ft->set_prefetch(FALSE);
+}
+
+Flag MP::need_to_stop_prefetch() {
+  return MP_CONFIDENCE ? (mp_conf->get_low_conf_cnt() == MP_CONF_STOP_THRESHOLD ? TRUE : FALSE) : FALSE;
 }
 
 void MP::search_mp_candidate(Addr line_addr) {

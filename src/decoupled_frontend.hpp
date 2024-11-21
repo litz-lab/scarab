@@ -2,33 +2,12 @@
 #define __DECOUPLED_FE_HPP_H__
 
 #include "decoupled_frontend.h"
+#include "ft.hpp"
 #include "mp.hpp"
 
 #include <vector>
 #include <deque>
 #include <memory>
-
-class FT {
-public:
-  FT();
-  FT(uns _proc_id);
-  ~FT() {}
-  void set_ft_started_by(FT_Started_By ft_started_by);
-  void add_op(Op *op, FT_Ended_By ft_ended_by);
-  void free_ops_and_clear();
-  bool can_fetch_op();
-  Op* fetch_op();
-  void set_per_op_ft_info();
-
-private:
-  uns proc_id;
-  // indicate the next op index to read by the consumer (icache or uop)
-  uint64_t op_pos;
-  FT_Info ft_info;
-  std::vector<Op*> ops;
-
-  friend class Decoupled_FE;
-};
 
 class Decoupled_FE {
 public:
@@ -54,6 +33,7 @@ public:
   FT_Info fetch_ft();
   FT_Info peek_ft();
   uns new_ftq_iter();
+  FT* ftq_iter_get_ft(uns iter_idx);
   Op* ftq_iter_get(uns iter_idx, bool* end_of_ft);
   Op* ftq_iter_get_next(uns iter_idx, bool* end_of_ft);
   uint64_t ftq_iter_offset(uns iter_idx);
@@ -111,6 +91,7 @@ void decoupled_fe_set_last_cl_unuseful(Addr line_addr);
 Addr decoupled_fe_get_last_cl_unuseful();
 // FTQ API
 Decoupled_FE* decoupled_fe_new_ftq_iter(uns proc_id, uns bp_id, uns* ftq_idx);
+FT* decoupled_fe_ftq_iter_get_ft(Decoupled_FE* dfe, uns iter_idx);
 /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached
    if end_of_ft is true the Op is the last one in a fetch target (cache-line boundary of taken branch)*/
 Op* decoupled_fe_ftq_iter_get(Decoupled_FE* dfe, uns iter_idx, bool *end_of_ft);

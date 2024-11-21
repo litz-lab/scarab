@@ -132,6 +132,11 @@ Op* decoupled_fe_ftq_iter_get(Decoupled_FE* dfe, uns iter_idx, bool* end_of_ft) 
   return dfe->ftq_iter_get(iter_idx, end_of_ft);
 }
 
+/* Returns the FT at current FTQ iterator position. Returns NULL if the FTQ is empty */
+FT* decoupled_fe_ftq_iter_get_ft(Decoupled_FE* dfe, uns iter_idx) {
+  return dfe->ftq_iter_get_ft(iter_idx);
+}
+
 // fill in the icache stage data with current FT in use
 // return if FT has ended
 // if true, the requested number of ops might not be fulfilled
@@ -200,11 +205,13 @@ void decoupled_fe_search_mp_candidate(Addr line_addr) {
 FT::FT() {
   proc_id = 0;
   free_ops_and_clear();
+  prefetch = TRUE;
 }
 
 FT::FT(uns _proc_id) {
   proc_id = _proc_id;
   free_ops_and_clear();
+  prefetch = TRUE;
 }
 
 void FT::free_ops_and_clear() {
@@ -413,8 +420,6 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
         insert_mp_candidate(&(last_ft_primary->ft_info), bp_data->global_hist);
       bp_recover_op(bp_data, cf_type, info);
       dfe_recover_op();
-      if (alt_op && !determine_to_run_alt_by_mp(alt_op->inst_info->addr))
-        alt_op = nullptr;
       if (alt_op)
         frontend_redirect(proc_id, bp_id, alt_op->inst_uid, alt_op->inst_info->addr);
       else // If it was stalled due to a fetch barrier, can be nullptr
@@ -614,6 +619,10 @@ void Decoupled_FE::update() {
           ASSERT(proc_id, last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == current_ft_to_push.ft_info.static_info.start);
         }
       }
+
+      if (bp_id && dfe_recovery_policy == CONTINUE_ON_MP)
+        mp->update(&current_ft_to_push);
+
       ftq.emplace_back(current_ft_to_push);
       DEBUG(proc_id, "[DFE%u] FTQ size: %lu\n", bp_id, ftq_num_fts());
       current_ft_to_push = FT(proc_id);
@@ -695,6 +704,17 @@ uns Decoupled_FE::new_ftq_iter() {
   ftq_iterators.back().get()->op_pos = 0;
   ftq_iterators.back().get()->flattened_op_pos = 0;
   return ftq_iterators.size() - 1;
+}
+
+FT* Decoupled_FE::ftq_iter_get_ft(uns iter_idx) {
+  decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
+  // if FTQ is empty or if iter has seen all FTs
+  if (ftq.empty() || iter->ft_pos == ftq.size()) {
+    if (ftq.empty())
+      ASSERT(proc_id, iter[iter_idx].ft_pos == 0 && iter[iter_idx].op_pos == 0 && iter[iter_idx].flattened_op_pos == 0);
+    return NULL;
+  }
+  return &ftq.at(iter->ft_pos);
 }
 
 Op* Decoupled_FE::ftq_iter_get(uns iter_idx, bool* end_of_ft) {

@@ -321,8 +321,10 @@ DEF_PARAM(dfe2_recovery_policy, DFE2_RECOVERY_POLICY, uns, uns, 1, )
 DEF_PARAM(dfe3_recovery_policy, DFE3_RECOVERY_POLICY, uns, uns, 1, )
 DEF_PARAM(dfe4_recovery_policy, DFE4_RECOVERY_POLICY, uns, uns, 1, )
 
-DEF_PARAM(mp_candidate_hold_cyc, MP_CANDIDATE_HOLD_CYC, uns, uns, 30000, )
+DEF_PARAM(mp_candidate_hold_cyc, MP_CANDIDATE_HOLD_CYC, uns, uns, 100, )
 DEF_PARAM(mp_ghist_hashing, MP_GHIST_HASHING, Flag, Flag, FALSE, )
 DEF_PARAM(mp_ghist_bits, MP_GHIST_BITS, uns, uns, 8, )
 DEF_PARAM(perfect_mp, PERFECT_MP, uns, uns, 0, )
 DEF_PARAM(mp_data_type, MP_DATA_TYPE, uns, uns, 0, ) // 0: infinite-sized hash, 1: cache
+DEF_PARAM(mp_confidence, MP_CONFIDENCE, uns, uns, 0, )
+DEF_PARAM(mp_conf_stop_threshold, MP_CONF_STOP_THRESHOLD, uns, uns, 5, )

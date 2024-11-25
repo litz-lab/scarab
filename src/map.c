@@ -609,9 +609,6 @@ void wake_up_ops(Op* op, Dep_Type type, void (*wake_action)(Op*, Op*, uns8)) {
     }
   }
   op->wake_up_signaled[type] = TRUE;
-
-  // update entry state
-  reg_file_execute(op);
 }
 
 /**************************************************************************************/

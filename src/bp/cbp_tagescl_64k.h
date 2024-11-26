@@ -32,10 +32,10 @@
 #define HISTBUFFERLENGTH 4096  // we use a 4K entries history buffer to store the branch history (this allows us to explore using history length up to 4K)
 
 // utility class for index computation
-// this is the cyclic shift register for folding 
+// this is the cyclic shift register for folding
 // a long global history into a smaller number of bits; see P. Michaud's PPM-like predictor at CBP-1
 class cbp64_folded_history {
-public:
+ public:
   unsigned comp;
   int      CLENGTH;
   int      OLENGTH;
@@ -61,7 +61,7 @@ public:
 
 class cbp64_bentry  // TAGE bimodal table entry
 {
-public:
+ public:
   int8_t hyst;
   int8_t pred;
 
@@ -73,7 +73,7 @@ public:
 };
 class cbp64_gentry  // TAGE global table entry
 {
-public:
+ public:
   int8_t ctr;
   uint   tag;
   int8_t u;
@@ -185,9 +185,9 @@ predictorsize ()
 #endif
 #ifdef PRINTSIZE
   fprintf (stderr, " (TOTAL %d bits %d Kbits) ", STORAGESIZE,
-	   STORAGESIZE / 1024);
+     STORAGESIZE / 1024);
   fprintf (stdout, " (TOTAL %d bits %d Kbits) ", STORAGESIZE,
-	   STORAGESIZE / 1024);
+     STORAGESIZE / 1024);
 #endif
 
 
@@ -199,7 +199,7 @@ predictorsize ()
 
 class cbp64_lentry  // loop predictor entry
 {
-public:
+ public:
   uint16_t NbIter;       // 10 bits
   uint8_t  confid;       // 4bits
   uint16_t CurrentIter;  // 10 bits
@@ -220,8 +220,16 @@ public:
 };
 
 
+enum tage_component { TAGE_BASE,
+  TAGE_SHORT,
+  TAGE_LONG,
+  TAGE_LOOP,
+  TAGE_SC,
+  NOT_TAGE };
+
+
 class TAGE64K {
-private:
+ private:
   // The statistical corrector components
 
 #define PERCWIDTH 6  // Statistical corrector  counter width 5 -> 6 : 0.6 %
@@ -348,7 +356,7 @@ private:
 #define NBANKLOW 10   // number of banks in the shared bank-interleaved for the low history lengths
 #define NBANKHIGH 20  // number of banks in the shared bank-interleaved for the  history lengths
 
-int SizeTable[NHIST + 1];
+  int SizeTable[NHIST + 1];
 
 #define BORN 13  // below BORN in the table for low history lengths, >= BORN in the table for high history lengths,
 
@@ -356,7 +364,7 @@ int SizeTable[NHIST + 1];
 #define BORNINFASSOC 9  // 2 -way assoc for those banks 0.4 %
 #define BORNSUPASSOC 23
 
-/*in practice 2 bits or 3 bits par branch: around 1200 cond. branchs*/
+  /*in practice 2 bits or 3 bits par branch: around 1200 cond. branchs*/
 
 #define MINHIST 6  // not optimized so far
 #define MAXHIST 3000
@@ -365,8 +373,8 @@ int SizeTable[NHIST + 1];
 #define TBITS 8  // minimum width of the tags  (low history lengths), +4 for high history lengths
 
   bool NOSKIP[NHIST + 1];  // to manage the associativity for different history lengths
-bool LowConf;
-bool HighConf;
+  bool LowConf;
+  bool HighConf;
 
 #define NNN 1        // number of extra entries allocated on a TAGE misprediction (1+NNN)
 #define HYSTSHIFT 2  // bimodal hysteresis shared by 4 entries
@@ -382,8 +390,8 @@ bool HighConf;
 #define ALTWIDTH 5
 #define SIZEUSEALT (1 << (LOGSIZEUSEALT))
 #define INDUSEALT (((((HitBank - 1) / 8) << 1) + AltConf) % (SIZEUSEALT - 1))
-  
-public:
+
+ public:
   int THRES;
 
   TAGE64K(void);
@@ -422,10 +430,10 @@ public:
   bool   LVALID;    // validity of the loop predictor prediction
   int8_t WITHLOOP;  // counter to monitor whether or not loop prediction is beneficial
   // LP end
-  
+
   int8_t use_alt_on_na[SIZEUSEALT];
   // very marginal benefit
-long long GHIST;
+  long long GHIST;
   int8_t    BIM;
 
   int                  TICK;  // for the reset of the u counter
@@ -454,7 +462,11 @@ long long GHIST;
   int       Seed;     // for the pseudo-random number generator
   bool      pred_inter;
   long long IMLIcount;  // use to monitor the iteration number
-  
+
+  int8_t tage_component;
+  int8_t tage_component_inter;
+  int8_t tage_component_tage;
+  int8_t tage_component_alt;
 };
 
 #endif

@@ -458,6 +458,10 @@ void Decoupled_FE::update() {
       if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = FALSE;
+        if (off_path)
+          STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_OFFPATH);
+        else
+          STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_ONPATH);
         stall(op);
       }
 
@@ -483,6 +487,10 @@ void Decoupled_FE::update() {
       ASSERT(0,!(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
       /* On fetch barrier stall the frontend. */
       if (op->table_info->bar_type & BAR_FETCH) {
+        if (off_path)
+          STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_OFFPATH);
+        else
+          STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_ONPATH);
         stall(op);
       }
     }

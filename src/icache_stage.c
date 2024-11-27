@@ -95,7 +95,6 @@ int32_t                    inst_lost_get_full_window_reason(void);
 static inline void         log_stats_ic_miss(void);
 static inline void         log_stats_ic_hit(void);
 static inline void         log_stats_mshr_hit(Addr line_addr);
-static inline void         update_stats_bf_retired(void);
 
 /**************************************************************************************/
 /* set_icache_stage: */
@@ -618,17 +617,13 @@ void update_icache_stage() {
         switch(ic->current_ft_info.dynamic_info.ended_by) {
           case FT_ICACHE_LINE_BOUNDARY:
           case FT_TAKEN_BRANCH:
+          // barriers are handled by the decoupled fe; proceed as normal
+          case FT_BAR_FETCH:
             if (ic->uopc_sd.op_count < ic->uopc_sd.max_op_count) {
               break_fetch = BREAK_UOP_CACHE_READ_LIMIT;
             } else {
               break_fetch = BREAK_UOP_CACHE_READ_LIMIT_AND_ISSUE_WIDTH;
             }
-            break;
-          case FT_BAR_FETCH:
-            break_fetch = BREAK_BARRIER;
-            // overwrite the next serving state.
-            ic->next_state = WAIT_FOR_EMPTY_ROB;
-            ic->after_waiting_state = UOP_CACHE_FINISHED_FT;
             break;
           case FT_APP_EXIT:
             break_fetch = BREAK_APP_EXIT;
@@ -677,6 +672,8 @@ void update_icache_stage() {
         switch(ic->current_ft_info.dynamic_info.ended_by) {
           case FT_ICACHE_LINE_BOUNDARY:
           case FT_TAKEN_BRANCH:
+          // barriers are handled by the decoupled fe; proceed as normal
+          case FT_BAR_FETCH:
             // if there is more op slots
             if (ic->sd.op_count < ic->sd.max_op_count) {
               if (ic->state == ICACHE_NO_LOOKUP_SERVING && FETCH_ACROSS_FETCH_TARGET) {
@@ -694,12 +691,6 @@ void update_icache_stage() {
                 break_fetch = BREAK_ISSUE_WIDTH;
               }
             }
-            break;
-          case FT_BAR_FETCH:
-            break_fetch = BREAK_BARRIER;
-            // overwrite the next serving state.
-            ic->next_state = WAIT_FOR_EMPTY_ROB;
-            ic->after_waiting_state = ICACHE_FINISHED_FT;
             break;
           case FT_APP_EXIT:
             break_fetch = BREAK_APP_EXIT;
@@ -726,16 +717,6 @@ void update_icache_stage() {
       break_fetch = BREAK_WAIT_FOR_MISS;
       ic->next_state = ic->state;
       // the next state can be overwritten to ic->after_waiting_state by icache_fill_line
-    } else if (ic->state == WAIT_FOR_EMPTY_ROB) {
-      DEBUG(ic->proc_id, "Ifetch barrier: Waiting for ROB to become empty \n");
-      STAT_EVENT(ic->proc_id, FETCH_0_OPS);
-      break_fetch = BREAK_WAIT_FOR_EMPTY_ROB;
-      if(td->seq_op_list.count == 0) {
-        update_stats_bf_retired();
-        ic->next_state = ic->after_waiting_state;
-      } else {
-        ic->next_state = ic->state;
-      }
     } else {
       ASSERT(ic->proc_id, 0);
     }
@@ -753,28 +734,6 @@ void update_icache_stage() {
       STAT_EVENT(ic->proc_id, ICACHE_STAGE_STARVED);
     else
       STAT_EVENT(ic->proc_id, ICACHE_STAGE_NOT_STARVED);
-  }
-}
-
-
-/**************************************************************************************/
-/* update_bf_uoc_stats: */
-
-void update_stats_bf_retired(void) {
-  ASSERT(ic->proc_id, !decoupled_fe_current_ft_can_fetch_op());
-  Flag next_ft_in_uop_cache = FALSE;
-  if (decoupled_fe_can_fetch_ft()) {
-    FT_Info next_ft_info = decoupled_fe_peek_ft();
-    next_ft_in_uop_cache =
-      uop_cache_lookup_line(next_ft_info.static_info.start, next_ft_info, FALSE) != NULL;
-  }
-  if (!next_ft_in_uop_cache) {
-    // The micro-op cache can reduce the time to refill the pipeline after a fetch barrier.
-    int uop_queue_length = get_uop_queue_stage_length();
-    int decode_stages_filled = get_decode_stages_filled();
-    ASSERT(ic->proc_id, uop_queue_length + decode_stages_filled <= 20);  // Stat supports up to 20.
-    STAT_EVENT(ic->proc_id, BF_UOP_CACHE_MISS_UOP_QUEUE_LENGTH_0 + uop_queue_length);
-    STAT_EVENT(ic->proc_id, BF_UOP_CACHE_MISS_UOP_QUEUE_PLUS_DECODE_LENGTH_0 + uop_queue_length + decode_stages_filled);
   }
 }
 

@@ -215,6 +215,9 @@ void TAGE64K::reinit() {
   GHIST = 0;
   ptghist = 0;
   phist = 0;
+
+  tage_component = TAGE_BASE;
+  tage_component_alt = TAGE_BASE;
 }
 
 // index function for the bimodal table
@@ -325,6 +328,8 @@ void TAGE64K::Tagepred(UINT64 PC) {
     alttaken = getbim();
     tage_pred = alttaken;
     LongestMatchPred = alttaken;
+    tage_component_alt = TAGE_BASE;
+    tage_component_tage = tage_component_alt;
   }
 
   // Look for the bank with longest matching history
@@ -351,6 +356,8 @@ void TAGE64K::Tagepred(UINT64 PC) {
     if (AltBank > 0) {
       alttaken = (gtable[AltBank][GI[AltBank]].ctr >= 0);
       AltConf = (abs(2 * gtable[AltBank][GI[AltBank]].ctr + 1) > 1);
+      tage_component_alt =
+          (AltBank >= BORN) ? TAGE_LONG : TAGE_SHORT;  // tag hit at the longer history length: TAGE_LONG
     } else
       alttaken = getbim();
 
@@ -360,8 +367,10 @@ void TAGE64K::Tagepred(UINT64 PC) {
     bool Huse_alt_on_na = (use_alt_on_na[INDUSEALT] >= 0);
     if ((!Huse_alt_on_na) || (abs(2 * gtable[HitBank][GI[HitBank]].ctr + 1) > 1)) {
       tage_pred = LongestMatchPred;
+      tage_component_tage = (HitBank >= BORN) ? TAGE_LONG : TAGE_SHORT;
     } else {
       tage_pred = alttaken;
+      tage_component_tage = tage_component_alt;
     }
 
     HighConf = (abs(2 * gtable[HitBank][GI[HitBank]].ctr + 1) >= (1 << CWIDTH) - 1);
@@ -376,16 +385,23 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
 
   Tagepred(PC);
   pred_taken = tage_pred;
+  tage_component = tage_component_tage;
 
 #ifndef SC
+  if (!op->off_path)
+    STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_BASE_CORRECT + op->oracle_info.mispred + tage_component * 2);
   return (tage_pred);
 #endif
 
 #ifdef LOOPPREDICTOR
   predloop = getloop(PC);  // loop prediction
   pred_taken = ((WITHLOOP >= 0) && (LVALID)) ? predloop : pred_taken;
+  tage_component = ((WITHLOOP >= 0) && (LVALID))
+      ? TAGE_LOOP
+      : tage_component_tage;  // update STATUS to loop predictor or keep component level
 #endif
   pred_inter = pred_taken;
+  tage_component_inter = tage_component;
 
   // Compute the SC prediction
 
@@ -442,29 +458,53 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
   if (pred_inter != SCPRED) {
     // Choser uses TAGE confidence and |LSUM|
     pred_taken = SCPRED;
+    tage_component = TAGE_SC;
     if (HighConf) {
       // if |LSUM| is 'much' smaller than threshold, final prediction is pred_inter(tage or loop)
       if ((abs(LSUM) < THRES / 4)) {
         pred_taken = pred_inter;
+        tage_component = tage_component_inter;
       }
       // if |LSUM| is 'slightly' smaller than threshold(THRES / 4 <= |LSUM| < THRES / 2), select pred_inter when SecondH
       // >= 0
       else if ((abs(LSUM) < THRES / 2)) {
         pred_taken = (SecondH < 0) ? SCPRED : pred_inter;
+        tage_component = (SecondH < 0) ? TAGE_SC : tage_component_inter;
+        if (pred_taken == SCPRED && !op->off_path)
+          STAT_EVENT(op->proc_id, TAGESCL_SC_SMALLLSUM + 2);  // SC from HighConf
       }
     }
     // if |LSUM| is 'much' smaller than threshold and FirstH < 0), select pred_inter
     if (MedConf) {
       if ((abs(LSUM) < THRES / 4)) {
         pred_taken = (FirstH < 0) ? SCPRED : pred_inter;
+        tage_component = (FirstH < 0) ? TAGE_SC : tage_component_inter;
+        if (pred_taken == SCPRED && !op->off_path)
+          STAT_EVENT(op->proc_id, TAGESCL_SC_SMALLLSUM + 1);  // SC from MedConf
       }
     }
+    if (!MedConf && !HighConf && pred_taken == SCPRED && !op->off_path) {
+      STAT_EVENT(op->proc_id, TAGESCL_SC_SMALLLSUM);  // exclusive SC not MedConf or HighConf
+    }
+  } else if (pred_inter == SCPRED) {
+    if (!op->off_path) STAT_EVENT(op->proc_id, TAGESCL_SC_SMALLLSUM + 3);
   }
+  if (!op->off_path) {
+    STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_BASE_CORRECT + (pred_taken != op->oracle_info.dir) + tage_component * 2);
+    STAT_EVENT(op->proc_id,
+        TAGESCL_COMP_BTB_HIT_TAGE_BASE_CORRECT + (pred_taken != op->oracle_info.dir) + tage_component * 2 +
+            op->oracle_info.btb_miss * 12);
+  }
+
   *bp_confidence = 0;
   if (HighConf) *bp_confidence += 3;
   if (MedConf) *bp_confidence += 2;
   if (LowConf) *bp_confidence += 1;
   assert(*bp_confidence < 4);
+
+  if ((pred_taken != op->oracle_info.dir) && !op->off_path) {  // collect only for misprediction
+    STAT_EVENT(op->proc_id, TAGESCL_CONF_0_PER_BASE_MISPREDICT + *bp_confidence + tage_component * 4);
+  }
   return pred_taken;
 }
 

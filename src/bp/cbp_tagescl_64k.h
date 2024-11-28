@@ -220,6 +220,8 @@ class cbp64_lentry  // loop predictor entry
   }
 };
 
+enum tage_component { TAGE_BASE, TAGE_SHORT, TAGE_LONG, TAGE_LOOP, TAGE_SC, NOT_TAGE };
+
 class TAGE64K {
  private:
   // The statistical corrector components
@@ -457,6 +459,11 @@ class TAGE64K {
   int Seed;     // for the pseudo-random number generator
   bool pred_inter;
   long long IMLIcount;  // use to monitor the iteration number
+
+  int8_t tage_component;
+  int8_t tage_component_inter;
+  int8_t tage_component_tage;
+  int8_t tage_component_alt;
 };
 
 #endif

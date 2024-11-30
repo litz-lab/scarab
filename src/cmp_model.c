@@ -238,10 +238,10 @@ void cmp_cores(void) {
       update_map_stage(dec->last_sd, map_stage_uop_cache_src);
       update_uop_queue_stage(&ic->uopc_sd);
       update_decode_stage(&ic->sd);
+      update_icache_stage();
       update_decoupled_fe();
       update_fdip();
       update_eip();
-      update_icache_stage();
 
       node_sched_ops();
 

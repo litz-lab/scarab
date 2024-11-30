@@ -485,8 +485,6 @@ void update_icache_stage() {
       }
       ASSERT(ic->proc_id, !decoupled_fe_current_ft_can_fetch_op());
       if (!decoupled_fe_can_fetch_ft()) {
-        // if this happened, the app exit should have been seen
-        ASSERT(ic->proc_id, get_stat(ic->proc_id, "ST_BREAK_APP_EXIT"));
         break_fetch = BREAK_FT_UNAVAILABLE;
         ic->next_state = SERVING_INIT;
       } else {

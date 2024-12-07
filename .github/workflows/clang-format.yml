@@ -1,0 +1,76 @@
+name: Clang Format Check
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - pr-clang-format
+      # - "**"  # Run for all branches pushed by lab members
+  pull_request:
+    branches:
+      - pr-clang-format  # Only run for the pr-clang-format branch
+
+jobs:
+  clang-format:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install clang-format
+        run: sudo apt-get install -y clang-format
+      
+      - name: Apply formatting using src/.clang-format
+        run: |
+          # Automatically format all .cpp, .h, and .c files in src/bp
+          find src/bp -name "*.cc" -or -name "*.h" -or -name "*.c" | xargs clang-format -style=file -i
+          # # Get list of changed files in src/bp that match our patterns
+          # if [ "${{ github.event_name }}" = "pull_request" ]; then
+          #   # For pull requests, check files changed in the PR
+          #   FILES=$(git diff --name-only --diff-filter=ACMRT origin/${{ github.base_ref }} | grep -E '^src/bp/.*\.(cc|h|c)$' || true)
+          # else
+          #   # For pushes, check files in the latest commit
+          #   FILES=$(git diff --name-only --diff-filter=ACMRT HEAD^1 | grep -E '^src/bp/.*\.(cc|h|c)$' || true)
+          # fi
+          
+          # # Apply clang-format if there are matching files
+          # if [ -n "$FILES" ]; then
+          #   echo "Formatting files: $FILES"
+          #   echo "$FILES" | xargs clang-format -style=file -i
+          # else
+          #   echo "No matching files to format"
+          # fi
+      
+      - name: Show modified files
+        run: git status --short
+
+      - name: Commit and push fixes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if there are changes after formatting
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "GitHub Actions"
+            git config user.email "actions@github.com"
+            git commit -am "Apply clang-format fixes"
+            git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} HEAD:${{ github.ref_name }}
+          else
+            echo "No formatting changes to commit."
+          fi
+
+      # - name: Check formatting using src/bp/.clang-format
+      #   run: |
+      #     find src/bp -name "*.cc" -or -name "*.h" -or -name "*.c" | xargs clang-format -style=file -i
+      #     git diff --exit-code
+
+      # Uncomment the following to enable automatic fixing of formatting issues in the future
+      # - name: Fix formatting and push changes
+      #   run: |
+      #     find src/bp -name "*.cpp" -or -name "*.h" | xargs clang-format -style=file -i
+      #     git config user.name "GitHub Actions"
+      #     git config user.email "actions@github.com"
+      #     git commit -am "Apply clang-format fixes"
+      #     git push origin pr-clang-format

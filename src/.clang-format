@@ -1,0 +1,39 @@
+BasedOnStyle: Google  # Use Google's base style as a foundation for consistency.
+IndentWidth: 2  # Google requires a 2-space indentation for better readability and compactness.
+TabWidth: 2  # Ensure that tabs are equivalent to 2 spaces, aligning with the indentation width.
+UseTab: Never  # Always use spaces instead of tabs to ensure consistent formatting across different editors.
+ColumnLimit: 120  
+DerivePointerAlignment: false  # Disable auto-detection of pointer alignment, allowing explicit control over pointer style.
+PointerAlignment: Left  # Place the '*' next to the type (e.g., `int* ptr`) as per the guide's preference.
+SpaceBeforeParens: ControlStatements  # Add space before parentheses in control statements (if, for, while) for clarity.
+SpacesInParentheses: false  # Do not add spaces inside parentheses to maintain a cleaner look.
+SpaceAfterCStyleCast: true  # Add space after C-style casts for better readability (e.g., `(int) x`).
+SortIncludes: true  # Automatically sort includes to maintain proper order and consistency.
+IncludeBlocks: Regroup  # Group similar types of includes together, aiding in readability and maintenance.
+IncludeCategories:  # Define specific priorities for include categories as per the Google style guide.
+  - Regex: '^<.*\.h>'
+    Priority: 1  # C system headers (e.g., `<stdlib.h>`).
+  - Regex: '^<.*>'
+    Priority: 2  # C++ standard library headers (e.g., `<iostream>`).
+  - Regex: '^".*\.h"'
+    Priority: 3  # Project-specific headers using quotes (e.g., `"my_header.h"`).
+  - Regex: '^".*"'
+    Priority: 4  # Other project-specific headers using quotes.
+AllowShortFunctionsOnASingleLine: Empty  # Allow empty short functions to be on a single line but not those with content.
+BreakBeforeBraces: Attach  # Attach opening braces to the preceding line, consistent with Google's preferred brace style.
+BraceWrapping:  # Control the behavior of braces for better consistency with the style guide.
+  AfterClass: false  # Keep braces for classes on the same line as the class declaration.
+  AfterControlStatement: false  # Place braces for control statements on the same line as the statement.
+  AfterEnum: false  # Keep enum braces on the same line for consistency.
+  AfterFunction: false  # Keep function braces on the same line as the function definition.
+  AfterNamespace: false  # Keep braces for namespaces on the same line as the namespace keyword.
+  AfterStruct: false  # Keep braces for structs on the same line as the struct declaration.
+  SplitEmptyFunction: false  # Keep empty function braces together to avoid unnecessary line breaks.
+NamespaceIndentation: None  # Do not indent namespace contents to simplify structure.
+#AlignConsecutiveAssignments: false  
+#AlignConsecutiveDeclarations: false
+#AlignAfterOpenBracket: DontAlign  # Avoid aligning parameters after opening brackets to prevent overly complex alignment.
+#AlignOperands: false  # Avoid aligning operands to simplify expressions and improve readability.
+#AlignTrailingComments: true  # Align trailing comments to keep them consistent, making code easier to read.
+#AllowAllParametersOfDeclarationOnNextLine: false  # Keep function parameter declarations compact to fit within line limits.
+#CompactNamespaces: false  # Do not compact namespaces, preferring explicit `namespace {}` structure for readability.

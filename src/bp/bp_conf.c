@@ -41,7 +41,7 @@
 #include "bp/bp.param.h"
 #include "debug/debug.param.h"
 #include "statistics.h"
-
+#include "decoupled_frontend.h"
 
 /***************************************************************************************/
 /* Defines */
@@ -296,7 +296,7 @@ static Flag compute_onpath_conf(Flag include_last) {
       else
         pred_onpath = FALSE;
       STAT_EVENT(bpc_data->proc_id,
-                 FIRST_ONE_MIS + (pred_onpath != ic->off_path));
+                 FIRST_ONE_MIS + (pred_onpath != decoupled_fe_is_off_path()));
       break;
     }
     ii = CIRC_INC(ii, OPC_SIZE);
@@ -304,7 +304,7 @@ static Flag compute_onpath_conf(Flag include_last) {
   // if we get here, we think we are on-path
   if(!set) {
     pred_onpath = TRUE;
-    STAT_EVENT(bpc_data->proc_id, ALL_ONES_MIS + (pred_onpath != ic->off_path));
+    STAT_EVENT(bpc_data->proc_id, ALL_ONES_MIS + (pred_onpath != decoupled_fe_is_off_path()));
   }
 
   count = count_zeros(bpc_data->tail, bpc_data->head);
@@ -312,14 +312,14 @@ static Flag compute_onpath_conf(Flag include_last) {
   // {{{ stats
   STAT_EVENT(bpc_data->proc_id, OPC_LENGTH_0_7_MIS +
                                   2 * MIN2(bpc_data->count >> 3, 10) +
-                                  (pred_onpath != ic->off_path));
+                                  (pred_onpath != decoupled_fe_is_off_path()));
 
   STAT_EVENT(bpc_data->proc_id, ZEROS_0_1_MIS + 2 * MIN2(count >> 1, 8) +
-                                  (pred_onpath != ic->off_path));
+                                  (pred_onpath != decoupled_fe_is_off_path()));
   // }}}
 
   if(bpc_data->count > 128) {
-    if(ic->off_path)
+    if(decoupled_fe_is_off_path())
       STAT_EVENT(bpc_data->proc_id, LONG_OVWT_MIS);
     else
       STAT_EVENT(bpc_data->proc_id, LONG_OVWT_COR);

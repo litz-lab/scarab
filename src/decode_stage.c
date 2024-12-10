@@ -281,14 +281,3 @@ static inline void update_cycles_stats(Stage_Data* src_sd, int empty_stage_idx) 
   if (decode_stages_empty && src_sd->op_count)
     last_op = src_sd->ops[src_sd->op_count - 1];
 }
-
-int get_decode_stages_filled(void) {
-  int full_stages = 0;
-  for(int ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
-    Stage_Data* cur = &dec->sds[ii];
-    if (cur->op_count) {
-      full_stages++;
-    }
-  }
-  return full_stages;
-}

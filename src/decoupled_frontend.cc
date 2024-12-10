@@ -41,10 +41,10 @@ public:
   int is_off_path() { return off_path; }
   void recover();
   void update();
-  bool current_ft_can_fetch_op() { return current_ft_in_use.can_fetch_op(); }
-  bool fill_icache_stage_data(int requested, Stage_Data *sd);
+  bool current_ft_can_fetch_op(bool is_uop_cache) { return is_uop_cache ? current_ft_used_by_uop_cache.can_fetch_op() : current_ft_used_by_icache.can_fetch_op(); }
+  bool fill_icache_stage_data(int requested, Stage_Data *sd, bool is_uop_cache);
   bool can_fetch_ft() { return ftq.size() > 0; }
-  FT_Info fetch_ft();
+  FT_Info fetch_ft(bool is_uop_cache);
   FT_Info peek_ft();
   decoupled_fe_iter* new_ftq_iter();
   Op* ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft);
@@ -68,7 +68,8 @@ private:
   // keep track of the current FT to be pushed next
   FT current_ft_to_push;
   // keep track of the current FT being used by the icache / uop cache
-  FT current_ft_in_use;
+  FT current_ft_used_by_uop_cache;
+  FT current_ft_used_by_icache;
 
   int off_path;
   int sched_off_path;
@@ -120,16 +121,16 @@ void update_decoupled_fe() {
   dfe->update();
 }
 
-bool decoupled_fe_current_ft_can_fetch_op() {
-  return dfe->current_ft_can_fetch_op();
+bool decoupled_fe_current_ft_can_fetch_op(bool is_uop_cache) {
+  return dfe->current_ft_can_fetch_op(is_uop_cache);
 }
 
 bool decoupled_fe_can_fetch_ft() {
   return dfe->can_fetch_ft();
 }
 
-FT_Info decoupled_fe_fetch_ft() {
-  return dfe->fetch_ft();
+FT_Info decoupled_fe_fetch_ft(bool is_uop_cache) {
+  return dfe->fetch_ft(is_uop_cache);
 }
 
 FT_Info decoupled_fe_peek_ft() {
@@ -148,8 +149,8 @@ Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft) {
 // fill in the icache stage data with current FT in use
 // return if FT has ended
 // if true, the requested number of ops might not be fulfilled
-bool decoupled_fe_fill_icache_stage_data(int requested, Stage_Data *sd) {
-  return dfe->fill_icache_stage_data(requested, sd);
+bool decoupled_fe_fill_icache_stage_data(int requested, Stage_Data *sd, bool is_uop_cache) {
+  return dfe->fill_icache_stage_data(requested, sd, is_uop_cache);
 }
 
 /* Increments the iterator and returns the Op at FTQ iterator position. Returns NULL if the FTQ is empty */
@@ -329,7 +330,8 @@ void Decoupled_FE::recover() {
 
   current_ft_to_push.free_ops_and_clear();
   current_ft_to_push.set_ft_started_by(FT_STARTED_BY_RECOVERY);
-  current_ft_in_use.free_ops_and_clear();
+  current_ft_used_by_uop_cache.free_ops_and_clear();
+  current_ft_used_by_icache.free_ops_and_clear();
 
   dfe_op_count = bp_recovery_info->recovery_op_num + 1;
   DEBUG(proc_id,
@@ -549,6 +551,7 @@ void Decoupled_FE::update() {
       } else if (ft_ended_by == FT_BAR_FETCH) {
         current_ft_to_push.set_ft_started_by(FT_STARTED_BY_BAR_FETCH);
       }
+      STAT_EVENT(proc_id, POWER_BTB_READ);
     }
 
     if (off_path) {
@@ -569,24 +572,31 @@ void Decoupled_FE::update() {
   }
 }
 
-bool Decoupled_FE::fill_icache_stage_data(int requested, Stage_Data *sd) {
+bool Decoupled_FE::fill_icache_stage_data(int requested, Stage_Data *sd, bool is_uop_cache) {
   ASSERT(proc_id, requested && requested <= sd->max_op_count - sd->op_count);
-  ASSERT(proc_id, current_ft_in_use.can_fetch_op());
+  FT* current_ft_in_use = is_uop_cache ? &current_ft_used_by_uop_cache : &current_ft_used_by_icache;
+  ASSERT(proc_id, current_ft_in_use->can_fetch_op());
 
-  while (requested && current_ft_in_use.can_fetch_op()) {
-    sd->ops[sd->op_count] = current_ft_in_use.fetch_op();
+  while (requested && current_ft_in_use->can_fetch_op()) {
+    sd->ops[sd->op_count] = current_ft_in_use->fetch_op();
     sd->op_count++;
     requested--;
   }
 
-  return !current_ft_in_use.can_fetch_op();
+  return !current_ft_in_use->can_fetch_op();
 }
 
-FT_Info Decoupled_FE::fetch_ft() {
+FT_Info Decoupled_FE::fetch_ft(bool is_uop_cache) {
   if (ftq.size()) {
-    current_ft_in_use = ftq.front();
+    FT* ft;
+    if (is_uop_cache) {
+      current_ft_used_by_uop_cache = ftq.front();
+      ft = &current_ft_used_by_uop_cache;
+    } else {
+      current_ft_used_by_icache = ftq.front();
+      ft = &current_ft_used_by_icache;
+    }
     ftq.pop_front();
-    FT* ft = &current_ft_in_use;
 
     for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
       // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before

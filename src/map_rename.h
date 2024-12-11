@@ -30,7 +30,6 @@
 #ifndef __MAP_RENAME_H__
 #define __MAP_RENAME_H__
 
-#include "isa/isa_macros.h"
 #include "op.h"
 
 /**************************************************************************************/
@@ -49,6 +48,13 @@ enum reg_table_entry_state {
   REG_TABLE_ENTRY_STATE_COMMIT,
   REG_TABLE_ENTRY_STATE_DEAD,
   REG_TABLE_ENTRY_STATE_NUM
+};
+
+enum reg_table_reg_type {
+  REG_TABLE_REG_TYPE_GENERAL_PURPOSE,
+  REG_TABLE_REG_TYPE_VECTOR,
+  REG_TABLE_REG_TYPE_OTHER,
+  REG_TABLE_REG_TYPE_NUM
 };
 
 const static int REG_TABLE_INVALID_REG_ID = -1;

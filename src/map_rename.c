@@ -33,6 +33,8 @@
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 #include "debug/debug.param.h"
+#include "isa/isa.h"
+#include "isa/isa_macros.h"
 #include "xed-interface.h"
 
 #include "op.h"
@@ -73,6 +75,46 @@ void reg_table_release_prev(struct reg_table *reg_table, int self_reg_id);
 
 // special init func for the architectural table
 void reg_table_arch_init(struct reg_table *reg_table, uns reg_table_size, struct reg_table *parent_reg_table);
+
+
+/**************************************************************************************/
+/* Inline Methods */
+
+static inline enum reg_table_reg_type reg_file_get_reg_type(int reg_id) {
+  if (reg_id >= REG_RAX && reg_id < REG_CS)
+    return REG_TABLE_REG_TYPE_GENERAL_PURPOSE;
+
+  if (reg_id >= REG_ZMM0 && reg_id < REG_K0)
+    return REG_TABLE_REG_TYPE_VECTOR;
+
+  return REG_TABLE_REG_TYPE_OTHER;
+}
+
+static inline void reg_file_debug_print_op(Op* op, int state) {
+  ASSERT(0, op != NULL);
+  if (op->table_info->num_dest_regs == 0)
+    return;
+
+  Inst_Info *inst_info = op->inst_info;
+  uns16 op_code = inst_info->table_info->true_op_type;
+
+  printf("[%d]\n", state);
+  printf("op_num: %lld, off_path: %d, ", op->op_num, op->off_path);
+  printf("pc: %lld, opcode: 0x%x(%s), cf: %d, mem: %d\n", inst_info->addr, op_code, xed_iclass_enum_t2str(op_code), inst_info->table_info->cf_type, inst_info->table_info->mem_type);
+
+  printf("src#%d: <", inst_info->table_info->num_src_regs);
+  for (int ii = 0; ii < inst_info->table_info->num_src_regs; ii++)
+    printf("%d, ", inst_info->srcs[ii].id);
+  printf(">, dest#%d: <", inst_info->table_info->num_dest_regs);
+  for (int ii = 0; ii < inst_info->table_info->num_dest_regs; ii++)
+    printf("%d, ", inst_info->dests[ii].id);
+  printf(">\n");
+
+  printf("ptag#%d: <", inst_info->table_info->num_dest_regs);
+  for (int ii = 0; ii < inst_info->table_info->num_dest_regs; ii++)
+    printf("%d, ", op->dst_reg_ptag[ii]);
+  printf(">\n");
+}
 
 
 /**************************************************************************************/
@@ -201,8 +243,16 @@ void reg_table_init(struct reg_table *reg_table, uns reg_table_size, struct reg_
     reg_table->free_list->ops->free(reg_table->free_list, entry);
   }
 
-  // initialize each arch_reg_id with a dummy ptag to ensure even unused arch regs always have a valid mapping
+  /*
+    initialize each general purpose and vector arch_reg_id with a dummy ptag to
+    ensure even unused arch regs always have a valid mapping
+  */
   for (uns ii = 0; ii < reg_table->parent_reg_table->size; ii++) {
+    // do not map the unallocated parent table entry
+    if (reg_table->parent_reg_table->entries[ii].reg_state == REG_TABLE_ENTRY_STATE_FREE) {
+      continue;
+    }
+
     struct reg_table_entry *entry = reg_table->free_list->ops->alloc(reg_table->free_list);
     entry->ops->write(entry, reg_table->parent_reg_table, &invalid_op, ii);
     reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->self_reg_id;
@@ -269,7 +319,7 @@ void reg_table_flush_mispredict(struct reg_table *reg_table, int self_reg_id) {
   reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->prev_tag_of_same_arch_id;
 
   // release the current mispredicted register
-   reg_table->ops->free(reg_table, entry);
+  reg_table->ops->free(reg_table, entry);
 }
 
 /* mark the previous entry with same archituctural id before the committed one as dead and remove it */
@@ -318,7 +368,10 @@ void reg_table_arch_init(struct reg_table *reg_table, uns reg_table_size, struct
     entry->ops = &reg_table_entry_ops;
     entry->self_reg_id = ii;
     entry->ops->clear(entry);
-    entry->reg_state = REG_TABLE_ENTRY_STATE_ALLOC;
+
+    // only allocate general purpose and vector registers
+    if (reg_file_get_reg_type(ii) != REG_TABLE_REG_TYPE_OTHER)
+      entry->reg_state = REG_TABLE_ENTRY_STATE_ALLOC;
   }
 }
 
@@ -406,21 +459,26 @@ Flag reg_file_realistic_available(uns stage_op_count) {
 // allocate physical registers of the op and write the ptag info into the op
 void reg_file_realistic_rename(Op *op) {
   ASSERT(0, op != NULL && reg_table_ptag_to_physical != NULL);
+  ASSERT(0, op->table_info->num_dest_regs <= reg_table_ptag_to_physical->free_list->reg_free_num);
 
   /* read register table */
   for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
     // the register dependency is not read since it is already tracked during fetching
-    reg_table_ptag_to_physical->ops->read(reg_table_ptag_to_physical, op, op->inst_info->srcs[ii].id);
+    if (reg_file_get_reg_type(op->inst_info->srcs[ii].id) != REG_TABLE_REG_TYPE_OTHER)
+      reg_table_ptag_to_physical->ops->read(reg_table_ptag_to_physical, op, op->inst_info->srcs[ii].id);
   }
 
   /* write register table */
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
+    // only allocate general purpose and vector registers
+    if (reg_file_get_reg_type(op->inst_info->dests[ii].id) == REG_TABLE_REG_TYPE_OTHER)
+      continue;
+
     // allocate register and write meta info
-    ASSERT(0, op->table_info->num_dest_regs <= reg_table_ptag_to_physical->free_list->reg_free_num);
     int reg_ptag = reg_table_ptag_to_physical->ops->alloc(reg_table_ptag_to_physical, op, op->inst_info->dests[ii].id);
 
     // update the register id in op
-    ASSERT(0, op != &invalid_op && op->dst_reg_ptag[ii] == -1);
+    ASSERT(0, op != &invalid_op && op->dst_reg_ptag[ii] == REG_TABLE_INVALID_REG_ID);
     op->dst_reg_ptag[ii] = reg_ptag;
   }
 }
@@ -429,8 +487,10 @@ void reg_file_realistic_rename(Op *op) {
 void reg_file_realistic_execute(Op *op) {
   ASSERT(0, op != NULL && reg_table_ptag_to_physical != NULL);
 
-  for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++)
-    reg_table_ptag_to_physical->ops->write_back(reg_table_ptag_to_physical, op->dst_reg_ptag[ii]);
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++) {
+    if (op->dst_reg_ptag[ii] != REG_TABLE_INVALID_REG_ID)
+      reg_table_ptag_to_physical->ops->write_back(reg_table_ptag_to_physical, op->dst_reg_ptag[ii]);
+  }
 }
 
 // flush registers of misprediction operands using the ptag info
@@ -442,13 +502,11 @@ void reg_file_realistic_recover(Counter recovery_op_num) {
        op_p && (*op_p)->op_num > recovery_op_num; op_p = (Op**)list_prev_element(&td->seq_op_list)) {
     ASSERT(map_data->proc_id, (*op_p)->off_path);
 
-    // only release ptags for already renamed ops since the list contains all fetched instructions.
-    if ((*op_p)->dst_reg_ptag[0] == REG_TABLE_INVALID_REG_ID)
-      continue;
-
     // release misprediction register
-    for (uns ii = 0; ii < (*op_p)->table_info->num_dest_regs; ii++)
-      reg_table_ptag_to_physical->ops->flush_mispredict(reg_table_ptag_to_physical, (*op_p)->dst_reg_ptag[ii]);
+    for (uns ii = 0; ii < (*op_p)->table_info->num_dest_regs; ii++) {
+      if ((*op_p)->dst_reg_ptag[ii] != REG_TABLE_INVALID_REG_ID)
+        reg_table_ptag_to_physical->ops->flush_mispredict(reg_table_ptag_to_physical, (*op_p)->dst_reg_ptag[ii]);
+    }
   }
 }
 
@@ -456,8 +514,10 @@ void reg_file_realistic_recover(Counter recovery_op_num) {
 void reg_file_realistic_commit(Op *op) {
   ASSERT(0, op != NULL && reg_table_ptag_to_physical != NULL);
 
-  for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++)
-    reg_table_ptag_to_physical->ops->release_prev(reg_table_ptag_to_physical, op->dst_reg_ptag[ii]);
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++) {
+    if (op->dst_reg_ptag[ii] != REG_TABLE_INVALID_REG_ID)
+      reg_table_ptag_to_physical->ops->release_prev(reg_table_ptag_to_physical, op->dst_reg_ptag[ii]);
+  }
 }
 
 

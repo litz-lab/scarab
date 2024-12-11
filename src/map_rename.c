@@ -76,6 +76,80 @@ void reg_table_arch_init(struct reg_table *reg_table, uns reg_table_size, struct
 
 
 /**************************************************************************************/
+/* register id define */
+
+enum reg_id_type {
+  REG_ID_TYPE_INVALID,
+  REG_ID_TYPE_GENERAL_PURPOSE,
+  REG_ID_TYPE_SEGMENT,
+  REG_ID_TYPE_INST_POINTER,
+  REG_ID_TYPE_FLAG,
+  REG_ID_TYPE_VECTOR,
+  REG_ID_TYPE_MASK,
+  REG_ID_TYPE_FLOAT_POINT,
+  REG_ID_TYPE_FLOAT_POINT_CTRL,
+  REG_ID_TYPE_TEMPORARY,
+  REG_ID_TYPE_OTHER,
+};
+
+enum reg_id_index {
+  // Invalid
+  REG_ID_INDEX_INVALID = 0,
+
+  // General Purpose
+  REG_ID_INDEX_RAX = 1,
+
+  // Segment
+  REG_ID_INDEX_CS = 17,
+
+  // Instruction Pointer
+  REG_ID_INDEX_RIP = 23,
+
+  // Flag
+  REG_ID_INDEX_ZPS = 24,
+
+  // Vector
+  REG_ID_INDEX_ZMM0 = 28,
+  REG_ID_INDEX_ZMM16 = 44,
+
+  // Mask
+  REG_ID_INDEX_K0 = 60,
+
+  // Floating Point
+  REG_ID_INDEX_FP0 = 68,
+
+  // Floating Control
+  REG_ID_INDEX_FPST = 76,
+
+  // Temporary
+  REG_ID_INDEX_TMP0 = 78,
+  REG_ID_INDEX_TMP4 = 82,
+
+  // Other
+  REG_ID_INDEX_OTHER = 94,
+};
+
+static inline enum reg_id_type reg_file_get_reg_type(uns reg_id) {
+  if (reg_id >= REG_ID_INDEX_RAX && reg_id < REG_ID_INDEX_CS)
+    return REG_ID_TYPE_GENERAL_PURPOSE;
+
+  if (reg_id == REG_ID_INDEX_ZPS)
+    return REG_ID_TYPE_FLAG;
+
+  if (reg_id >= REG_ID_INDEX_ZMM0 && reg_id < REG_ID_INDEX_ZMM16)
+    return REG_ID_TYPE_VECTOR;
+
+  if (reg_id >= REG_ID_INDEX_TMP0 && reg_id < REG_ID_INDEX_TMP4)
+    return REG_ID_TYPE_TEMPORARY;
+
+  if (reg_id == REG_ID_INDEX_OTHER)
+    return REG_ID_TYPE_OTHER;
+
+  return REG_ID_TYPE_INVALID;
+}
+
+
+/**************************************************************************************/
 /* register free list operation */
 
 void reg_free_list_init(struct reg_free_list *reg_free_list) {
@@ -203,6 +277,11 @@ void reg_table_init(struct reg_table *reg_table, uns reg_table_size, struct reg_
 
   // initialize each arch_reg_id with a dummy ptag to ensure even unused arch regs always have a valid mapping
   for (uns ii = 0; ii < reg_table->parent_reg_table->size; ii++) {
+    // do not map the unallocated parent table entry
+    if (reg_table->parent_reg_table->entries[ii].reg_state == REG_TABLE_ENTRY_STATE_FREE) {
+      continue;
+    }
+
     struct reg_table_entry *entry = reg_table->free_list->ops->alloc(reg_table->free_list);
     entry->ops->write(entry, reg_table->parent_reg_table, &invalid_op, ii);
     reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->self_reg_id;
@@ -269,7 +348,7 @@ void reg_table_flush_mispredict(struct reg_table *reg_table, int self_reg_id) {
   reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->prev_tag_of_same_arch_id;
 
   // release the current mispredicted register
-   reg_table->ops->free(reg_table, entry);
+  reg_table->ops->free(reg_table, entry);
 }
 
 /* mark the previous entry with same archituctural id before the committed one as dead and remove it */
@@ -318,7 +397,10 @@ void reg_table_arch_init(struct reg_table *reg_table, uns reg_table_size, struct
     entry->ops = &reg_table_entry_ops;
     entry->self_reg_id = ii;
     entry->ops->clear(entry);
-    entry->reg_state = REG_TABLE_ENTRY_STATE_ALLOC;
+
+    // do not allocate redundant registers
+    if (reg_file_get_reg_type(ii) != REG_ID_TYPE_INVALID)
+      entry->reg_state = REG_TABLE_ENTRY_STATE_ALLOC;
   }
 }
 
@@ -406,6 +488,7 @@ Flag reg_file_realistic_available(uns stage_op_count) {
 // allocate physical registers of the op and write the ptag info into the op
 void reg_file_realistic_rename(Op *op) {
   ASSERT(0, op != NULL && reg_table_ptag_to_physical != NULL);
+  ASSERT(0, op->table_info->num_dest_regs <= reg_table_ptag_to_physical->free_list->reg_free_num);
 
   /* read register table */
   for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
@@ -416,7 +499,7 @@ void reg_file_realistic_rename(Op *op) {
   /* write register table */
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
     // allocate register and write meta info
-    ASSERT(0, op->table_info->num_dest_regs <= reg_table_ptag_to_physical->free_list->reg_free_num);
+    ASSERT(0, reg_file_get_reg_type(op->inst_info->dests[ii].id) != REG_ID_TYPE_INVALID);
     int reg_ptag = reg_table_ptag_to_physical->ops->alloc(reg_table_ptag_to_physical, op, op->inst_info->dests[ii].id);
 
     // update the register id in op

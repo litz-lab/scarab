@@ -42,5 +42,4 @@ uns8 bp_gshare_full(uns);
 }
 #endif
 
-
 #endif  // __GSHARE_H__

@@ -66,7 +66,8 @@ class CBP_To_Scarab_Intf {
     }
   }
 
-  void update(Op* op) { /* CBP Interface does not support update at exec */ }
+  void update(Op* op) { /* CBP Interface does not support update at exec */
+  }
 
   void retire(Op* op) {
     /* CBP Interface updates predictor at speculative update time */

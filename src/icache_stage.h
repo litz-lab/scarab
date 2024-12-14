@@ -48,7 +48,7 @@ struct Mem_Req_struct;
 
 /* name strings are in debug/debug_print.c */
 typedef enum Icache_State_enum {
-  SERVING_INIT,
+  ICACHE_STAGE_RESTEER,
   ICACHE_MEM_REQ,
   ICACHE_WAIT_FOR_MISS,
   ICACHE_SERVING,

@@ -103,8 +103,8 @@ const char* const bar_type_names[] = {"NOT_BAR"};
 DEFINE_ENUM(Op_State, OP_STATE_LIST);
 
 const char* const icache_state_names[] = {
-  "SERVING_INIT",   "ICACHE_MEM_REQ",    "ICACHE_WAIT_FOR_MISS",
-  "ICACHE_SERVING", "UOP_CACHE_SERVING"};
+  "ICACHE_STAGE_RESTEER",    "ICACHE_MEM_REQ",    "ICACHE_WAIT_FOR_MISS",
+  "ICACHE_SERVING",          "UOP_CACHE_SERVING"};
 
 const char* const tcache_state_names[] = {"TC_FETCH",
                                           "TC_WAIT_FOR_MISS",

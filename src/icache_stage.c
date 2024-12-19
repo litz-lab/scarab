@@ -410,11 +410,10 @@ Flag mem_req_on_icache_miss() {
 }
 
 FT_Arbitration_Result ft_arbitration() {
-  if (!decoupled_fe_can_fetch_ft()) {
+  FT_Info ft_info;
+  if (!decoupled_fe_peek_ft(&ft_info)) {
     return FT_UNAVAILABLE;
   } else {
-    FT_Info ft_info = decoupled_fe_peek_ft();
-
     // set the current fetch address
     ic->fetch_addr = ft_info.static_info.start;
     ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr);

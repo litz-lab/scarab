@@ -77,9 +77,8 @@ extern "C" {
   void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid);
   bool decoupled_fe_current_ft_can_fetch_op(bool is_uop_cache);
   bool decoupled_fe_fill_icache_stage_data(int requested, Stage_Data *sd, bool is_uop_cache);
-  bool decoupled_fe_can_fetch_ft();
-  FT_Info decoupled_fe_fetch_ft(bool is_uop_cache);
-  FT_Info decoupled_fe_peek_ft();
+  void decoupled_fe_fetch_ft(bool is_uop_cache);
+  Flag decoupled_fe_peek_ft(FT_Info* ft_info);
   // FTQ API
   decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id);
   /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached

@@ -43,9 +43,8 @@ public:
   void update();
   bool current_ft_can_fetch_op(bool is_uop_cache) { return is_uop_cache ? current_ft_used_by_uop_cache.can_fetch_op() : current_ft_used_by_icache.can_fetch_op(); }
   bool fill_icache_stage_data(int requested, Stage_Data *sd, bool is_uop_cache);
-  bool can_fetch_ft() { return ftq.size() > 0; }
-  FT_Info fetch_ft(bool is_uop_cache);
-  FT_Info peek_ft();
+  void fetch_ft(bool is_uop_cache);
+  Flag peek_ft(FT_Info* ft_info);
   decoupled_fe_iter* new_ftq_iter();
   Op* ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft);
   Op* ftq_iter_get_next(decoupled_fe_iter* iter, bool* end_of_ft);
@@ -125,16 +124,12 @@ bool decoupled_fe_current_ft_can_fetch_op(bool is_uop_cache) {
   return dfe->current_ft_can_fetch_op(is_uop_cache);
 }
 
-bool decoupled_fe_can_fetch_ft() {
-  return dfe->can_fetch_ft();
+void decoupled_fe_fetch_ft(bool is_uop_cache) {
+  dfe->fetch_ft(is_uop_cache);
 }
 
-FT_Info decoupled_fe_fetch_ft(bool is_uop_cache) {
-  return dfe->fetch_ft(is_uop_cache);
-}
-
-FT_Info decoupled_fe_peek_ft() {
-  return dfe->peek_ft();
+Flag decoupled_fe_peek_ft(FT_Info* ft_info) {
+  return dfe->peek_ft(ft_info);
 }
 
 decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id) {
@@ -586,41 +581,36 @@ bool Decoupled_FE::fill_icache_stage_data(int requested, Stage_Data *sd, bool is
   return !current_ft_in_use->can_fetch_op();
 }
 
-FT_Info Decoupled_FE::fetch_ft(bool is_uop_cache) {
-  if (ftq.size()) {
-    FT* ft;
-    if (is_uop_cache) {
-      current_ft_used_by_uop_cache = ftq.front();
-      ft = &current_ft_used_by_uop_cache;
-    } else {
-      current_ft_used_by_icache = ftq.front();
-      ft = &current_ft_used_by_icache;
-    }
-    ftq.pop_front();
-
-    for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
-      // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before
-      if (it->ft_pos > 0) {
-        ASSERT(proc_id, it->flattened_op_pos >= ft->ops.size());
-        it->flattened_op_pos -= ft->ops.size();
-        it->ft_pos--;
-      } else {
-        ASSERT(proc_id, it->flattened_op_pos < ft->ops.size());
-        it->flattened_op_pos = 0;
-        it->op_pos = 0;
-      }
-    }
-
-    return ft->ft_info;
+void Decoupled_FE::fetch_ft(bool is_uop_cache) {
+  ASSERT(proc_id, !ftq.empty());
+  uint64_t ft_num_ops = ftq.front().ops.size();
+  if (is_uop_cache) {
+    current_ft_used_by_uop_cache = ftq.front();
+  } else {
+    current_ft_used_by_icache = ftq.front();
   }
-  return FT_Info();
+  ftq.pop_front();
+
+  for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
+    // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before
+    if (it->ft_pos > 0) {
+      ASSERT(proc_id, it->flattened_op_pos >= ft_num_ops);
+      it->flattened_op_pos -= ft_num_ops;
+      it->ft_pos--;
+    } else {
+      ASSERT(proc_id, it->flattened_op_pos < ft_num_ops);
+      it->flattened_op_pos = 0;
+      it->op_pos = 0;
+    }
+  }
 }
 
-FT_Info Decoupled_FE::peek_ft() {
+Flag Decoupled_FE::peek_ft(FT_Info* ft_info) {
   if (ftq.size()) {
-    return ftq.front().ft_info;
+    *ft_info = ftq.front().ft_info;
+    return TRUE;
   } else {
-    return FT_Info();
+    return FALSE;
   }
 }
 

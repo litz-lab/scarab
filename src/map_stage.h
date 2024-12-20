@@ -36,11 +36,13 @@
 /* Types */
 
 typedef struct Map_Stage_struct {
-  uns         proc_id;
-  Stage_Data* sds;     /* stage interface data (dynamically
-                        * allocated number of pipe stages) */
-  Stage_Data* last_sd; /* pointer to last decode pipeline stage
-                        * (for passing ops to map) */
+  uns proc_id;
+
+  // stage interface data (dynamically allocated number of pipe stages)
+  Stage_Data* sds;
+
+  Stage_Data* last_sd;      // for passing ops to map
+  Stage_Data* first_sd;     // for receiving ops from either the decoder or the uop queue
 } Map_Stage;
 
 
@@ -51,9 +53,8 @@ extern Map_Stage* map;
 
 
 /**************************************************************************************/
-/* prototypes */
+/* External Prototypes (vanilla hps model) */
 
-/* vanilla hps model */
 void set_map_stage(Map_Stage*);
 void init_map_stage(uns8, const char*);
 void reset_map_stage(void);

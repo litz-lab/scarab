@@ -272,7 +272,9 @@ static inline void read_reg_map(Op* op) {
   uns ii;
 
   for(ii = 0; ii < op->table_info->num_src_regs; ii++) {
-    uns        id        = op->inst_info->srcs[ii].id;
+    uns id = op->inst_info->srcs[ii].id;
+    ASSERT(map_data->proc_id, id < NUM_REG_IDS);
+
     uns        ind       = id << 1 | map_data->map_flags[id];
     Map_Entry* map_entry = &map_data->reg_map[ind];
 
@@ -316,7 +318,9 @@ static inline void update_map(Op* op) {
   ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
   /* update the register map if the op produces a value */
   for(ii = 0; ii < op->table_info->num_dest_regs; ii++) {
-    uns        id        = op->inst_info->dests[ii].id;
+    uns id = op->inst_info->dests[ii].id;
+    ASSERT(map_data->proc_id, id < NUM_REG_IDS);
+
     uns        ind       = id << 1 | op->off_path;
     Map_Entry* map_entry = &map_data->reg_map[ind];
 

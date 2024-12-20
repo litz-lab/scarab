@@ -32,28 +32,29 @@
 /**************************************************************************************/
 /* ISA definition macros */
 
-#define NUM_INT_REGS 32 /* default 32 */ /* number of integer registers */
-#define NUM_FP_REGS 32 /* default 32 */  /* number of float registers */
-#define NUM_SPEC_REGS 8                  /* guess, may be unnecessary */
-#define NUM_SPARE_REGS 8
-#define NUM_EXTRA_REGS          \
-  (NUM_INT_REGS + NUM_FP_REGS + \
-   NUM_SPARE_REGS) /* number of extra (fake) registers */
-#define NUM_REG_IDS \
-  (NUM_INT_REGS + NUM_FP_REGS + NUM_SPEC_REGS + NUM_EXTRA_REGS)
+#define NUM_INVALID_REGS          1
+#define NUM_GENERAL_PURPOSE_REGS  16
+#define NUM_SEGMENT_REGS          6
+#define NUM_INST_PTR_REGS         1
+#define NUM_FLAG_REGS             4
+#define NUM_VECTOR_REGS           32
+#define NUM_MASK_REGS             8
+#define NUM_FP_REGS               8
+#define NUM_FP_CTRL_REGS          2
+#define NUM_TEMP_REGS             16
+#define NUM_OTHER_REGS            1
 
-
-#define SRC_REG_ID(src)                    \
-  (((src).type > INT_REG) * NUM_INT_REGS + \
-   ((src).type > FP_REG) * NUM_FP_REGS +   \
-   ((src).type > SPEC_REG) * NUM_SPEC_REGS + ((src).reg))
-#define INT_REG_ID(reg) (reg)
-#define FP_REG_ID(reg) (reg + NUM_INT_REGS)
-#define SPEC_REG_ID(reg) (reg + NUM_INT_REGS + NUM_FP_REGS)
-#define EXTRA_REG_ID(reg) (reg + NUM_INT_REGS + NUM_FP_REGS + NUM_SPEC_REGS)
+#define NUM_REG_IDS               ( \
+  NUM_INVALID_REGS + NUM_GENERAL_PURPOSE_REGS + \
+  NUM_SEGMENT_REGS + NUM_INST_PTR_REGS + \
+  NUM_FLAG_REGS    + NUM_VECTOR_REGS + \
+  NUM_MASK_REGS    + NUM_FP_REGS + NUM_FP_CTRL_REGS + \
+  NUM_TEMP_REGS    + NUM_OTHER_REGS \
+  )
 
 #define IS_CALLSYS(tab) ((tab)->cf_type == CF_SYS)
 #define IS_NOP(tab) ((tab)->op_type == OP_NOP)
+
 
 /**************************************************************************************/
 

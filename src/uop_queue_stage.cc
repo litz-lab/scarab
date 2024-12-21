@@ -14,22 +14,34 @@ extern "C" {
 #include "bp/bp.h"
 #include "op_pool.h"
 
-#include "globals/assert.h"
 #include "statistics.h"
 #include "memory/memory.param.h"
 #include "uop_cache.h"
+#include "decode_stage.h"
 }
 
-// Macros
+/**************************************************************************************/
+/* Macros */
+
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_UOP_QUEUE_STAGE, ##args)
 #define UOP_QUEUE_STAGE_LENGTH UOP_QUEUE_LENGTH
 #define STAGE_MAX_OP_COUNT ISSUE_WIDTH  // The bandwidth of the next, consuming stage (map stage)
 // TODO(peterbraun): Check if the ISSUE_WIDTH can be less than the uop cache issue bandwidth
 
+
+/**************************************************************************************/
+/* Global Variables */
+
+UOp_Queue_Stage *uop_queue = NULL;
+
 // Uop Queue Variables
 std::deque<Stage_Data*> q {};
 std::deque<Stage_Data*> free_sds {};
 bool uopq_off_path;
+
+
+/**************************************************************************************/
+/* External Methods */
 
 void init_uop_queue_stage() {
   char tmp_name[MAX_STR_LENGTH + 1];
@@ -42,6 +54,10 @@ void init_uop_queue_stage() {
     sd->ops = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
     free_sds.push_back(sd);
   }
+
+  uop_queue = (UOp_Queue_Stage *)malloc(sizeof(UOp_Queue_Stage));
+  uop_queue->proc_id = 0;
+  uop_queue->last_sd = NULL;
 }
 
 // Get ops from the uop cache.
@@ -54,18 +70,18 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
   }
 
   if (uopq_off_path) {
-    STAT_EVENT(dec->proc_id, UOPQ_STAGE_OFF_PATH);
+    STAT_EVENT(uop_queue->proc_id, UOPQ_STAGE_OFF_PATH);
   }
   // If the queue cannot accomodate more ops, stall.
   if (q.size() >= UOP_QUEUE_STAGE_LENGTH) {
     // Backend stalls may force fetch to stall.
     if (!uopq_off_path) {
-      STAT_EVENT(dec->proc_id, UOPQ_STAGE_STALLED);
+      STAT_EVENT(uop_queue->proc_id, UOPQ_STAGE_STALLED);
     }
     return;
   }
   else if (!uopq_off_path) {
-    STAT_EVENT(dec->proc_id, UOPQ_STAGE_NOT_STALLED);
+    STAT_EVENT(uop_queue->proc_id, UOPQ_STAGE_NOT_STALLED);
   }
 
   // Build a new sd and place new ops into the queue.
@@ -73,7 +89,7 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
   ASSERT(0, src_sd->op_count <= (int)STAGE_MAX_OP_COUNT);
   if (src_sd->op_count) {
     if (!uopq_off_path) {
-      STAT_EVENT(dec->proc_id, UOPQ_STAGE_NOT_STARVED);
+      STAT_EVENT(uop_queue->proc_id, UOPQ_STAGE_NOT_STARVED);
     }
     for (int i = 0; i < src_sd->max_op_count; i++) {
       Op* src_op = src_sd->ops[i];
@@ -91,7 +107,7 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
     }
   }
   else if (!uopq_off_path) {
-    STAT_EVENT(dec->proc_id, UOPQ_STAGE_STARVED);
+    STAT_EVENT(uop_queue->proc_id, UOPQ_STAGE_STARVED);
   }
 
   if (new_sd->op_count > 0) {

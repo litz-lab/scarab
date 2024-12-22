@@ -102,7 +102,7 @@ static inline void icache_serve_ops(void);
 static inline Icache_State icache_serving_actions(Break_Reason*);
 static inline void uop_cache_serve_ops(void);
 static inline Icache_State uop_cache_serving_actions(Break_Reason*);
-static inline void ft_service_orchestration(void);
+static inline void execute_coupled_FSM(void);
 /**************************************************************************************/
 /* set_icache_stage: */
 
@@ -686,7 +686,7 @@ Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
   }
 }
 
-void ft_service_orchestration() {
+void execute_coupled_FSM() {
   STAT_EVENT(ic->proc_id, ICACHE_CYCLE);
   STAT_EVENT(ic->proc_id, ICACHE_CYCLE_ONPATH + ic->off_path);
   if (ic->off_path)
@@ -769,7 +769,7 @@ void update_icache_stage() {
   ic->icache_lookups_per_cycle_count = 0;
   ic->uop_cache_lookups_per_cycle_count = 0;
 
-  ft_service_orchestration();
+  execute_coupled_FSM();
 }
 
 /**************************************************************************************/

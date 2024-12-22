@@ -123,8 +123,7 @@ int   mystatus_fd = 0; /* file descriptor pointing to the mystatus file */
 Model* model; /* pointer to the simulator model being used
        (points to an entry in the model_table array) */
 
-Thread_Data
-             single_td; /* cmp Only For single processor: backward compatibility issue*/
+Thread_Data   single_td; /* cmp Only For single processor: backward compatibility issue*/
 Thread_Data* td = &single_td; /* array of tds for muti-core, all state
                                  associated with the simulated thread */
 

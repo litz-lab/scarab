@@ -192,13 +192,6 @@ void reset_icache_stage() {
   ic->back_on_path                   = FALSE;
   op_count[ic->proc_id]              = 1;
   unique_count_per_core[ic->proc_id] = 1;
-
-  if (ic->current_ft_used_by_uop_cache) {
-    ft_delete(ic->current_ft_used_by_uop_cache);
-  }
-  if (ic->current_ft_used_by_icache) {
-    ft_delete(ic->current_ft_used_by_icache);
-  }
 }
 
 /**************************************************************************************/
@@ -213,13 +206,6 @@ void reset_all_ops_icache_stage() {
 
   ic->off_path     = FALSE;
   ic->back_on_path = FALSE;
-
-  if (ic->current_ft_used_by_uop_cache) {
-    ft_delete(ic->current_ft_used_by_uop_cache);
-  }
-  if (ic->current_ft_used_by_icache) {
-    ft_delete(ic->current_ft_used_by_icache);
-  }
 }
 
 /**************************************************************************************/
@@ -261,7 +247,6 @@ void recover_icache_stage() {
     ft_delete(ic->current_ft_used_by_uop_cache);
     ic->current_ft_used_by_uop_cache = NULL;
   }
-
   if (ic->current_ft_used_by_icache) {
     ft_delete(ic->current_ft_used_by_icache);
     ic->current_ft_used_by_icache = NULL;

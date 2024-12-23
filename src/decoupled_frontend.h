@@ -52,6 +52,7 @@ extern "C" {
 #include "frontend/pin_trace_fe.h"
 
 #include "stage_data.h"
+  typedef struct FT FT;
 
   typedef struct decoupled_fe_iter decoupled_fe_iter;
   
@@ -75,9 +76,10 @@ extern "C" {
   void recover_decoupled_fe();
   bool decoupled_fe_is_off_path();
   void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid);
-  bool decoupled_fe_current_ft_can_fetch_op(bool is_uop_cache);
-  bool decoupled_fe_fill_icache_stage_data(int requested, Stage_Data *sd, bool is_uop_cache);
-  void decoupled_fe_fetch_ft(bool is_uop_cache);
+  bool ft_can_fetch_op(FT* ft);
+  bool ft_fill_icache_stage_data(FT* ft, int requested, Stage_Data *sd);
+  void ft_delete(FT* ft);
+  FT*  decoupled_fe_fetch_ft();
   Flag decoupled_fe_peek_ft(FT_Info* ft_info);
   // FTQ API
   decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id);

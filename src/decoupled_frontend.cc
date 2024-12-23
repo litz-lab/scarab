@@ -23,6 +23,7 @@ public:
   void free_ops_and_clear();
   bool can_fetch_op();
   Op* fetch_op();
+  bool fill_icache_stage_data(int requested, Stage_Data *sd);
   void set_per_op_ft_info();
 
 private:
@@ -41,9 +42,7 @@ public:
   int is_off_path() { return off_path; }
   void recover();
   void update();
-  bool current_ft_can_fetch_op(bool is_uop_cache) { return is_uop_cache ? current_ft_used_by_uop_cache.can_fetch_op() : current_ft_used_by_icache.can_fetch_op(); }
-  bool fill_icache_stage_data(int requested, Stage_Data *sd, bool is_uop_cache);
-  void fetch_ft(bool is_uop_cache);
+  FT* fetch_ft();
   Flag peek_ft(FT_Info* ft_info);
   decoupled_fe_iter* new_ftq_iter();
   Op* ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft);
@@ -63,12 +62,9 @@ private:
   // Per core fetch target queue:
   // Each core has a queue of FTs,
   // where each FT contains a queue of micro instructions.
-  std::deque<FT> ftq;
+  std::deque<FT*> ftq;
   // keep track of the current FT to be pushed next
-  FT current_ft_to_push;
-  // keep track of the current FT being used by the icache / uop cache
-  FT current_ft_used_by_uop_cache;
-  FT current_ft_used_by_icache;
+  FT* current_ft_to_push;
 
   int off_path;
   int sched_off_path;
@@ -120,12 +116,8 @@ void update_decoupled_fe() {
   dfe->update();
 }
 
-bool decoupled_fe_current_ft_can_fetch_op(bool is_uop_cache) {
-  return dfe->current_ft_can_fetch_op(is_uop_cache);
-}
-
-void decoupled_fe_fetch_ft(bool is_uop_cache) {
-  dfe->fetch_ft(is_uop_cache);
+FT* decoupled_fe_fetch_ft() {
+  return dfe->fetch_ft();
 }
 
 Flag decoupled_fe_peek_ft(FT_Info* ft_info) {
@@ -139,13 +131,6 @@ decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id) {
 /* Returns the Op at current FTQ iterator position. Returns NULL if the FTQ is empty */
 Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft) {
   return dfe->ftq_iter_get(iter, end_of_ft);
-}
-
-// fill in the icache stage data with current FT in use
-// return if FT has ended
-// if true, the requested number of ops might not be fulfilled
-bool decoupled_fe_fill_icache_stage_data(int requested, Stage_Data *sd, bool is_uop_cache) {
-  return dfe->fill_icache_stage_data(requested, sd, is_uop_cache);
 }
 
 /* Increments the iterator and returns the Op at FTQ iterator position. Returns NULL if the FTQ is empty */
@@ -225,6 +210,19 @@ Op* FT::fetch_op() {
   return op;
 }
 
+bool FT::fill_icache_stage_data(int requested, Stage_Data *sd) {
+  ASSERT(proc_id, requested && requested <= sd->max_op_count - sd->op_count);
+  ASSERT(proc_id, can_fetch_op());
+
+  while (requested && can_fetch_op()) {
+    sd->ops[sd->op_count] = fetch_op();
+    sd->op_count++;
+    requested--;
+  }
+
+  return !can_fetch_op();
+}
+
 void FT::set_per_op_ft_info() {
   for (auto op : ops) {
     op->ft_info = ft_info;
@@ -288,6 +286,23 @@ void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
   }
 }
 
+/* FT wrappers */
+bool ft_can_fetch_op(FT* ft) {
+  return ft->can_fetch_op();
+}
+
+// fill in the icache stage data with current FT in use
+// return if FT has ended
+// if true, the requested number of ops might not be fulfilled
+bool ft_fill_icache_stage_data(FT* ft, int requested, Stage_Data *sd) {
+  return ft->fill_icache_stage_data(requested, sd);
+}
+
+void ft_delete(FT* ft) {
+  ft->free_ops_and_clear();
+  delete ft;
+}
+
 /* Decoupled_FE member functions */
 Decoupled_FE::Decoupled_FE(uns _proc_id) {
   proc_id = _proc_id;
@@ -309,7 +324,8 @@ void Decoupled_FE::init(uns _proc_id) {
   stalled = false;
   ftq_ft_num = FE_FTQ_BLOCK_NUM;
 
-  current_ft_to_push.set_ft_started_by(FT_STARTED_BY_APP);
+  current_ft_to_push = new FT(proc_id);
+  current_ft_to_push->set_ft_started_by(FT_STARTED_BY_APP);
 }
 
 
@@ -319,14 +335,13 @@ void Decoupled_FE::recover() {
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
 
   for (auto it = ftq.begin(); it != ftq.end(); it++) {
-    it->free_ops_and_clear();
+    (*it)->free_ops_and_clear();
+    delete *it;
   }
   ftq.clear();
 
-  current_ft_to_push.free_ops_and_clear();
-  current_ft_to_push.set_ft_started_by(FT_STARTED_BY_RECOVERY);
-  current_ft_used_by_uop_cache.free_ops_and_clear();
-  current_ft_used_by_icache.free_ops_and_clear();
+  current_ft_to_push->free_ops_and_clear();
+  current_ft_to_push->set_ft_started_by(FT_STARTED_BY_RECOVERY);
 
   dfe_op_count = bp_recovery_info->recovery_op_num + 1;
   DEBUG(proc_id,
@@ -518,33 +533,33 @@ void Decoupled_FE::update() {
       cfs_taken_this_cycle += cf_taken || bar_fetch;
     }
 
-    current_ft_to_push.add_op(op, ft_ended_by);
+    current_ft_to_push->add_op(op, ft_ended_by);
     // ft_ended_by != FT_NOT_ENDED indicates the end of the current fetch target
     // it is now ready to be pushed to the queue
     if (ft_ended_by != FT_NOT_ENDED) {
-      ASSERT(proc_id, current_ft_to_push.ft_info.static_info.start && current_ft_to_push.ft_info.static_info.length && current_ft_to_push.ops.size());
-      ASSERT(proc_id, current_ft_to_push.ops.front()->bom && current_ft_to_push.ops.back()->eom);
-      current_ft_to_push.set_per_op_ft_info();
+      ASSERT(proc_id, current_ft_to_push->ft_info.static_info.start && current_ft_to_push->ft_info.static_info.length && current_ft_to_push->ops.size());
+      ASSERT(proc_id, current_ft_to_push->ops.front()->bom && current_ft_to_push->ops.back()->eom);
+      current_ft_to_push->set_per_op_ft_info();
       if (!ftq.empty()) {
         // sanity check of consecutivity
-        Op* last_op = ftq.back().ops.back();
-        if (ftq.back().ft_info.dynamic_info.ended_by == FT_TAKEN_BRANCH) {
-          ASSERT(proc_id, last_op->oracle_info.pred_npc == current_ft_to_push.ft_info.static_info.start);
-        } else if (ftq.back().ft_info.dynamic_info.ended_by == FT_BAR_FETCH) {
-          ASSERT(proc_id, last_op->oracle_info.pred_npc == current_ft_to_push.ft_info.static_info.start ||
-                              last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == current_ft_to_push.ft_info.static_info.start);
+        Op* last_op = ftq.back()->ops.back();
+        if (ftq.back()->ft_info.dynamic_info.ended_by == FT_TAKEN_BRANCH) {
+          ASSERT(proc_id, last_op->oracle_info.pred_npc == current_ft_to_push->ft_info.static_info.start);
+        } else if (ftq.back()->ft_info.dynamic_info.ended_by == FT_BAR_FETCH) {
+          ASSERT(proc_id, last_op->oracle_info.pred_npc == current_ft_to_push->ft_info.static_info.start ||
+                              last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == current_ft_to_push->ft_info.static_info.start);
         } else {
-          ASSERT(proc_id, last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == current_ft_to_push.ft_info.static_info.start);
+          ASSERT(proc_id, last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == current_ft_to_push->ft_info.static_info.start);
         }
       }
       ftq.emplace_back(current_ft_to_push);
-      current_ft_to_push = FT(proc_id);
+      current_ft_to_push = new FT(proc_id);
       if (ft_ended_by == FT_ICACHE_LINE_BOUNDARY) {
-        current_ft_to_push.set_ft_started_by(FT_STARTED_BY_ICACHE_LINE_BOUNDARY);
+        current_ft_to_push->set_ft_started_by(FT_STARTED_BY_ICACHE_LINE_BOUNDARY);
       } else if (ft_ended_by == FT_TAKEN_BRANCH) {
-        current_ft_to_push.set_ft_started_by(FT_STARTED_BY_TAKEN_BRANCH);
+        current_ft_to_push->set_ft_started_by(FT_STARTED_BY_TAKEN_BRANCH);
       } else if (ft_ended_by == FT_BAR_FETCH) {
-        current_ft_to_push.set_ft_started_by(FT_STARTED_BY_BAR_FETCH);
+        current_ft_to_push->set_ft_started_by(FT_STARTED_BY_BAR_FETCH);
       }
       STAT_EVENT(proc_id, POWER_BTB_READ);
     }
@@ -567,29 +582,11 @@ void Decoupled_FE::update() {
   }
 }
 
-bool Decoupled_FE::fill_icache_stage_data(int requested, Stage_Data *sd, bool is_uop_cache) {
-  ASSERT(proc_id, requested && requested <= sd->max_op_count - sd->op_count);
-  FT* current_ft_in_use = is_uop_cache ? &current_ft_used_by_uop_cache : &current_ft_used_by_icache;
-  ASSERT(proc_id, current_ft_in_use->can_fetch_op());
-
-  while (requested && current_ft_in_use->can_fetch_op()) {
-    sd->ops[sd->op_count] = current_ft_in_use->fetch_op();
-    sd->op_count++;
-    requested--;
-  }
-
-  return !current_ft_in_use->can_fetch_op();
-}
-
-void Decoupled_FE::fetch_ft(bool is_uop_cache) {
+FT* Decoupled_FE::fetch_ft() {
   ASSERT(proc_id, !ftq.empty());
-  uint64_t ft_num_ops = ftq.front().ops.size();
-  if (is_uop_cache) {
-    current_ft_used_by_uop_cache = ftq.front();
-  } else {
-    current_ft_used_by_icache = ftq.front();
-  }
+  FT* fetched_ft = ftq.front();
   ftq.pop_front();
+  uint64_t ft_num_ops = fetched_ft->ops.size();
 
   for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
     // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before
@@ -603,11 +600,13 @@ void Decoupled_FE::fetch_ft(bool is_uop_cache) {
       it->op_pos = 0;
     }
   }
+
+  return fetched_ft;
 }
 
 Flag Decoupled_FE::peek_ft(FT_Info* ft_info) {
   if (ftq.size()) {
-    *ft_info = ftq.front().ft_info;
+    *ft_info = ftq.front()->ft_info;
     return TRUE;
   } else {
     return FALSE;
@@ -630,13 +629,13 @@ Op* Decoupled_FE::ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft) {
   ASSERT(proc_id, iter->ft_pos >= 0);
   ASSERT(proc_id, iter->ft_pos < ftq.size());
   ASSERT(proc_id, iter->op_pos >= 0);
-  ASSERT(proc_id, iter->op_pos < ftq.at(iter->ft_pos).ops.size());
-  *end_of_ft = iter->op_pos == ftq.at(iter->ft_pos).ops.size() - 1;
-  return ftq.at(iter->ft_pos).ops[iter->op_pos];
+  ASSERT(proc_id, iter->op_pos < ftq.at(iter->ft_pos)->ops.size());
+  *end_of_ft = iter->op_pos == ftq.at(iter->ft_pos)->ops.size() - 1;
+  return ftq.at(iter->ft_pos)->ops[iter->op_pos];
 }
 
 Op* Decoupled_FE::ftq_iter_get_next(decoupled_fe_iter* iter, bool *end_of_ft) {
-  if (iter->ft_pos + 1 == ftq.size() && iter->op_pos + 1 == ftq.at(iter->ft_pos).ops.size()) {
+  if (iter->ft_pos + 1 == ftq.size() && iter->op_pos + 1 == ftq.at(iter->ft_pos)->ops.size()) {
     // if iter is at the last op and the last FT
     iter->ft_pos += 1;
     // at this moment iter is at the last FT
@@ -649,7 +648,7 @@ Op* Decoupled_FE::ftq_iter_get_next(decoupled_fe_iter* iter, bool *end_of_ft) {
     // if iter has seen all FTs
     ASSERT(proc_id, iter->op_pos == 0);
     return NULL;
-  } else if (iter->op_pos + 1 == ftq.at(iter->ft_pos).ops.size()) {
+  } else if (iter->op_pos + 1 == ftq.at(iter->ft_pos)->ops.size()) {
     // if iter is at the last op, but not the last FT
     iter->ft_pos += 1;
     iter->op_pos = 0;
@@ -664,8 +663,8 @@ Op* Decoupled_FE::ftq_iter_get_next(decoupled_fe_iter* iter, bool *end_of_ft) {
 
 uint64_t Decoupled_FE::ftq_num_ops() {
   uint64_t num_ops = 0;
-  for (auto ft = ftq.begin(); ft != ftq.end(); ft++) {
-    num_ops += ft->ops.size();
+  for (auto it = ftq.begin(); it != ftq.end(); it++) {
+    num_ops += (*it)->ops.size();
   }
   return num_ops;
 }

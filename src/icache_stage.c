@@ -511,6 +511,7 @@ Icache_State icache_mem_req_actions(Break_Reason* break_fetch) {
         unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
   Flag success = mem_req_on_icache_miss();
   if (success) {
+    ic->icache_miss_fulfilled = FALSE;
     *break_fetch = BREAK_ICACHE_MISS_REQ_SUCCESS;
     return ICACHE_WAIT_FOR_MISS;
   } else {
@@ -525,9 +526,12 @@ Icache_State icache_wait_for_miss_actions(Break_Reason* break_fetch) {
   if (!ic->off_path) {
     INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + get_last_miss_reason(ic->proc_id), ic->sd.max_op_count);
   }
-  // the next state can be changed to ICACHE_SERVING by icache_fill_line
   *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
-  return ICACHE_WAIT_FOR_MISS;
+  if (ic->icache_miss_fulfilled) {
+    return ICACHE_SERVING;
+  } else {
+    return ICACHE_WAIT_FOR_MISS;
+  }
 }
 
 void icache_serve_ops() {
@@ -954,7 +958,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
         hexstr64(ic->fetch_addr), hexstr64(pref_line_addr),
         (long int)(req - mem->req_buffer), hexstr64s(req->addr));
       STAT_EVENT(ic->proc_id, IC_PREF_CACHE_FILL);
-      ic->next_state = ICACHE_SERVING;
+      ic->icache_miss_fulfilled = TRUE;
       return TRUE;
     }
 
@@ -998,7 +1002,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
     }
 
     STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ);
-    ic->next_state = ICACHE_SERVING;
+    ic->icache_miss_fulfilled = TRUE;
 
     if (req->demand_icache_emitted_cycle) {
       ASSERT(ic->proc_id, !req->fdip_emitted_cycle && (cycle_count - req->demand_icache_emitted_cycle > 0));

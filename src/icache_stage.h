@@ -93,6 +93,7 @@ typedef struct Icache_Stage_struct {
   Icache_State
     next_state; /* state that the ICACHE is going to be in next cycle */
   uint64_t wait_for_miss_start; /* time when cache miss was observed */
+  Flag icache_miss_fulfilled;
 
   Inst_Info** line;   /* pointer to current line on a hit */
   Addr        line_addr;       /* address of the last cache line hit */

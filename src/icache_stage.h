@@ -58,6 +58,7 @@ typedef enum Icache_State_enum {
 // don't change this order without fixing stats in fetch.stat.def
 typedef enum Break_Reason_enum {
   BREAK_DONT,          // don't break fetch yet
+  BREAK_ICACHE_STAGE_RESTEER,
   BREAK_FT_UNAVAILABLE, // break because the ft queue of the decoupled front-end is empty
   BREAK_ICACHE_MISS_REQ_SUCCESS,     // break because of an icache miss where the mem req succeeds
   BREAK_ICACHE_MISS_REQ_FAILURE,     // break because of an icache miss where the mem req fails
@@ -94,6 +95,7 @@ typedef struct Icache_Stage_struct {
     next_state; /* state that the ICACHE is going to be in next cycle */
   uint64_t wait_for_miss_start; /* time when cache miss was observed */
   Flag icache_miss_fulfilled;
+  Flag icache_stage_resteer_signaled;
 
   Inst_Info** line;   /* pointer to current line on a hit */
   Addr        line_addr;       /* address of the last cache line hit */

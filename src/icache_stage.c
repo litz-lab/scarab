@@ -251,6 +251,8 @@ void recover_icache_stage() {
     ft_delete(ic->current_ft_used_by_icache);
     ic->current_ft_used_by_icache = NULL;
   }
+
+  ic->icache_stage_resteer_signaled = TRUE;
 }
 
 
@@ -724,7 +726,11 @@ void execute_coupled_FSM() {
   Break_Reason break_fetch = BREAK_DONT;
   ic->state = ic->next_state;
   DEBUG(ic->proc_id, "Icache state: %i\n", ic->state);
-  if (ic->state == ICACHE_STAGE_RESTEER) {
+  if (ic->icache_stage_resteer_signaled) {
+    ic->icache_stage_resteer_signaled = FALSE;
+    ic->next_state = ICACHE_STAGE_RESTEER;
+    break_fetch = BREAK_ICACHE_STAGE_RESTEER;
+  } else if (ic->state == ICACHE_STAGE_RESTEER) {
     ASSERT(ic->proc_id, !ic->current_ft_used_by_uop_cache || !ft_can_fetch_op(ic->current_ft_used_by_uop_cache));
     ASSERT(ic->proc_id, !ic->current_ft_used_by_icache || !ft_can_fetch_op(ic->current_ft_used_by_icache));
 

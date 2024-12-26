@@ -98,6 +98,7 @@ static inline void         log_stats_mshr_hit(Addr line_addr);
 static inline FT_Arbitration_Result ft_arbitration(void);
 static inline Icache_State icache_mem_req_actions(Break_Reason*);
 static inline Icache_State icache_wait_for_miss_actions(Break_Reason*);
+static inline Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data *sd);
 static inline void icache_serve_ops(void);
 static inline Icache_State icache_serving_actions(Break_Reason*);
 static inline void uop_cache_serve_ops(void);
@@ -536,6 +537,22 @@ Icache_State icache_wait_for_miss_actions(Break_Reason* break_fetch) {
   }
 }
 
+// fill in the icache stage data with current FT in use
+// return if FT has ended
+// if true, the requested number of ops might not be fulfilled
+Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data *sd) {
+  ASSERT(ic->proc_id, requested && requested <= sd->max_op_count - sd->op_count);
+  ASSERT(ic->proc_id, ft_can_fetch_op(ft));
+
+  while (requested && ft_can_fetch_op(ft)) {
+    sd->ops[sd->op_count] = ft_fetch_op(ft);
+    sd->op_count++;
+    requested--;
+  }
+
+  return !ft_can_fetch_op(ft);
+}
+
 void icache_serve_ops() {
   uns op_num_prev_fetch_target = ic->sd.op_count;
 
@@ -550,7 +567,7 @@ void icache_serve_ops() {
   ASSERT(ic->proc_id, ic->line_addr == dummy_line_addr);
 
   int requested = ic->sd.max_op_count - ic->sd.op_count;
-  Flag ft_has_ended = ft_fill_icache_stage_data(ic->current_ft_used_by_icache, requested, &ic->sd);
+  Flag ft_has_ended = fill_icache_stage_data(ic->current_ft_used_by_icache, requested, &ic->sd);
   ASSERT(ic->proc_id, ic->sd.op_count == ic->sd.max_op_count || ft_has_ended);
 
   if (ft_has_ended) {
@@ -633,7 +650,7 @@ void uop_cache_serve_ops() {
   ASSERT(ic->proc_id, uop_cache_line.n_uops);
   ASSERT(ic->proc_id, uop_cache_line.n_uops <= requested);
 
-  Flag ft_has_ended = ft_fill_icache_stage_data(ic->current_ft_used_by_uop_cache, uop_cache_line.n_uops, &ic->uopc_sd);
+  Flag ft_has_ended = fill_icache_stage_data(ic->current_ft_used_by_uop_cache, uop_cache_line.n_uops, &ic->uopc_sd);
   // the ft should provide exactly the same amount of uops as in the uop cache line
   ASSERT(ic->proc_id, uop_cache_line.n_uops == ic->uopc_sd.op_count - op_num_prev_fetch_target);
 

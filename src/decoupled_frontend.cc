@@ -23,7 +23,6 @@ public:
   void free_ops_and_clear();
   bool can_fetch_op();
   Op* fetch_op();
-  bool fill_icache_stage_data(int requested, Stage_Data *sd);
   void set_per_op_ft_info();
 
 private:
@@ -210,19 +209,6 @@ Op* FT::fetch_op() {
   return op;
 }
 
-bool FT::fill_icache_stage_data(int requested, Stage_Data *sd) {
-  ASSERT(proc_id, requested && requested <= sd->max_op_count - sd->op_count);
-  ASSERT(proc_id, can_fetch_op());
-
-  while (requested && can_fetch_op()) {
-    sd->ops[sd->op_count] = fetch_op();
-    sd->op_count++;
-    requested--;
-  }
-
-  return !can_fetch_op();
-}
-
 void FT::set_per_op_ft_info() {
   for (auto op : ops) {
     op->ft_info = ft_info;
@@ -291,11 +277,8 @@ bool ft_can_fetch_op(FT* ft) {
   return ft->can_fetch_op();
 }
 
-// fill in the icache stage data with current FT in use
-// return if FT has ended
-// if true, the requested number of ops might not be fulfilled
-bool ft_fill_icache_stage_data(FT* ft, int requested, Stage_Data *sd) {
-  return ft->fill_icache_stage_data(requested, sd);
+Op* ft_fetch_op(FT* ft) {
+  return ft->fetch_op();
 }
 
 void ft_delete(FT* ft) {

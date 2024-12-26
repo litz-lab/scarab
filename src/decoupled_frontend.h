@@ -77,7 +77,7 @@ extern "C" {
   bool decoupled_fe_is_off_path();
   void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid);
   bool ft_can_fetch_op(FT* ft);
-  bool ft_fill_icache_stage_data(FT* ft, int requested, Stage_Data *sd);
+  Op*  ft_fetch_op(FT* ft);
   void ft_delete(FT* ft);
   FT*  decoupled_fe_fetch_ft();
   Flag decoupled_fe_peek_ft(FT_Info* ft_info);

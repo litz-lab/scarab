@@ -238,7 +238,7 @@ void recover_icache_stage() {
     // Late branch predictor recovered before btb miss is resolved (i.e., icache
     // stage should still wait for redirect)
   } else {
-    ic->next_state = ICACHE_STAGE_RESTEER;
+    ic->icache_stage_resteer_signaled = TRUE;
   }
   op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
 
@@ -252,8 +252,6 @@ void recover_icache_stage() {
     ft_delete(ic->current_ft_used_by_icache);
     ic->current_ft_used_by_icache = NULL;
   }
-
-  ic->icache_stage_resteer_signaled = TRUE;
 }
 
 

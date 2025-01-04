@@ -748,8 +748,6 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
   static uns last_icache_issue_time = 0; /* for computing fetch break latency */
   uns            fetch_lag;
 
-  ASSERT(ic->proc_id, ic->proc_id == td->proc_id);
-
   fetch_lag              = cycle_count - last_icache_issue_time;
   last_icache_issue_time = cycle_count;
 
@@ -786,17 +784,8 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       ASSERT(ic->proc_id, op->table_info->cf_type != CF_SYS);
     }
 
-    /* add to sequential op list */
-    add_to_seq_op_list(td, op);
-
-    ASSERT(ic->proc_id, td->seq_op_list.count <= op_pool_active_ops);
-
-    /* map the op based on true dependencies & set information in
-     * op->oracle_info */
     /* num cycles since last group issued */
     op->fetch_lag = fetch_lag;
-
-    thread_map_op(op);
 
     STAT_EVENT(op->proc_id, FETCH_ALL_INST);
     STAT_EVENT(op->proc_id, ORACLE_ON_PATH_INST + op->off_path);
@@ -804,7 +793,6 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
                (op->table_info->mem_type == NOT_MEM) +
                2 * op->off_path);
 
-    thread_map_mem_dep(op);
     op->fetch_cycle = cycle_count;
 
     op_count[ic->proc_id]++;          /* increment instruction counters */

@@ -1,0 +1,105 @@
+name: Clang Format Check
+
+permissions:
+  contents: write  # Required for pushing fixes to the PR branch
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  clang-format:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          # Fetch all commit history so 'git diff origin/main...HEAD' has a valid merge base
+          fetch-depth: 0
+
+      - name: Install clang-format and clang-format-diff
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Get changed files
+        id: changed-files
+        run: |
+          set -x  # Enable debug mode to print each command
+          git remote -v  # Verify the remote URL
+
+          if [ "$GITHUB_ACTIONS" != "true" ]; then
+            #if the flow is tested locally with act ensure to have a valid GITHUB_TOKEN in .secrets
+            git remote set-url origin https://${{ secrets.GITHUB_TOKEN }}@github.com/Litz-Lab/scarab_ll.git
+          else
+            git remote set-url origin https://github.com/Litz-Lab/scarab_ll.git
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+          else
+            BASE_REF="main"
+          fi
+          git fetch origin "$BASE_REF"
+          CHANGED_FILES=$(git diff --name-only "origin/${BASE_REF}...HEAD" | grep -E '\.(cc|c|h|cpp)$' || true)
+          echo "Changed files: $CHANGED_FILES"
+          echo "files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+
+      - name: Check clang-format on changed portions
+        if: steps.changed-files.outputs.files != ''
+        run: |
+          EXIT_CODE=0
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE_SHA="origin/main"
+            HEAD_SHA="HEAD"
+          fi
+
+          while IFS= read -r file; do
+            if [ -n "$file" ]; then
+              echo "Checking formatting for changed portions in: $file"
+              
+              # Create a temporary file for the diff
+              DIFF_FILE=$(mktemp)
+              
+              # Get the diff and check formatting
+              if ! git diff -U0 "${BASE_SHA}" "${HEAD_SHA}" -- "$file" | \
+                   clang-format-diff -p1 -style=file > "${DIFF_FILE}"; then
+                echo "::error::Error running clang-format-diff on $file"
+                EXIT_CODE=1
+              fi
+              
+              # Check if there are any formatting differences
+              if [ -s "${DIFF_FILE}" ]; then
+                echo "::error::Formatting issues found in $file:"
+                cat "${DIFF_FILE}"
+                EXIT_CODE=1
+              fi
+              
+              # Clean up temporary file
+              rm "${DIFF_FILE}"
+            fi
+          done <<< "${{ steps.changed-files.outputs.files }}"
+          exit $EXIT_CODE
+
+      - name: Post a comment on the PR
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { github, context } = require('@actions/github');
+            github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.payload.pull_request.number,
+              body: "⚠️ clang-format check failed. Please format your code using clang-format before pushing. The workflow output shows the specific formatting issues in the changed portions of the code."
+            });

@@ -3,6 +3,7 @@ IndentWidth: 2  # Google requires a 2-space indentation for better readability a
 TabWidth: 2  # Ensure that tabs are equivalent to 2 spaces, aligning with the indentation width.
 UseTab: Never  # Always use spaces instead of tabs to ensure consistent formatting across different editors.
 ColumnLimit: 120  
+ReflowComments: true
 DerivePointerAlignment: false  # Disable auto-detection of pointer alignment, allowing explicit control over pointer style.
 PointerAlignment: Left  # Place the '*' next to the type (e.g., `int* ptr`) as per the guide's preference.
 SpaceBeforeParens: ControlStatements  # Add space before parentheses in control statements (if, for, while) for clarity.

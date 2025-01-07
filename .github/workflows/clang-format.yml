@@ -1,19 +1,16 @@
 name: Clang Format Check
 
 permissions:
-  contents: write
+  contents: write  # Required for pushing fixes to the PR branch
 
 on:
   push:
     branches:
-      - pr-clang-format
-      # - "**"  # Run for all branches pushed by lab members
+      - '**'
   pull_request:
     branches:
-      - "**"  # Run for all branches pushed by lab members
-      #- pr-clang-format  # Only run for the pr-clang-format branch
-
-  workflow_dispatch: # Allows manual trigger
+      - '**'
+  workflow_dispatch:
 
 jobs:
   clang-format:
@@ -22,6 +19,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          # Fetch all commit history so 'git diff origin/main...HEAD' has a valid merge base
+          fetch-depth: 0
 
       - name: Install clang-format
         run: |
@@ -43,9 +43,13 @@ jobs:
           else
             git remote set-url origin https://github.com/Litz-Lab/scarab_ll.git
           fi
-          git fetch origin main  # Fetch the main branch
-          CHANGED_FILES=$(git diff --name-only origin/main...HEAD | grep -E '\.(cc|h|c)$')
-          #CHANGED_FILES=$(timeout 30s git diff --name-only origin/main...HEAD | grep -E '\.(cpp|h|c)$')
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+          else
+            BASE_REF="main"
+          fi
+          git fetch origin "$BASE_REF"
+          CHANGED_FILES=$(git diff --name-only "origin/${BASE_REF}...HEAD" | grep -E '\.(cc|c|h|cpp)$' || true)
           echo "Changed files: $CHANGED_FILES"
           echo "::set-output name=files::$CHANGED_FILES"
 

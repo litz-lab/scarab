@@ -245,11 +245,9 @@ void recover_icache_stage() {
   uop_cache_clear_lookup_buffer();
 
   if (ic->current_ft_used_by_uop_cache) {
-    ft_delete(ic->current_ft_used_by_uop_cache);
     ic->current_ft_used_by_uop_cache = NULL;
   }
   if (ic->current_ft_used_by_icache) {
-    ft_delete(ic->current_ft_used_by_icache);
     ic->current_ft_used_by_icache = NULL;
   }
 }
@@ -423,10 +421,20 @@ Flag mem_req_on_icache_miss() {
 }
 
 FT_Arbitration_Result ft_arbitration() {
-  FT_Info ft_info;
-  if (!decoupled_fe_peek_ft(&ft_info)) {
+  if (ic->current_ft_used_by_uop_cache) {
+    ft_invalidate(ic->current_ft_used_by_uop_cache);
+    ic->current_ft_used_by_uop_cache = NULL;
+  }
+  if (ic->current_ft_used_by_icache) {
+    ft_invalidate(ic->current_ft_used_by_icache);
+    ic->current_ft_used_by_icache = NULL;
+  }
+
+  FT* ft = decoupled_fe_get_ft();
+  if (!ft) {
     return FT_UNAVAILABLE;
   } else {
+    FT_Info ft_info = ft_get_ft_info(ft);
     // set the current fetch address
     ic->fetch_addr = ft_info.static_info.start;
     ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr);
@@ -467,10 +475,8 @@ FT_Arbitration_Result ft_arbitration() {
         }
       }
 
-      if (ic->current_ft_used_by_uop_cache) {
-        ft_delete(ic->current_ft_used_by_uop_cache);
-      }
-      ic->current_ft_used_by_uop_cache = decoupled_fe_fetch_ft();
+      ASSERT(ic->proc_id, !ic->current_ft_used_by_uop_cache);
+      ic->current_ft_used_by_uop_cache = ft;
 
       return FT_HIT_UOP_CACHE;
     } else if (ic->line) {
@@ -482,10 +488,8 @@ FT_Arbitration_Result ft_arbitration() {
       }
       icache_hit_events();
 
-      if (ic->current_ft_used_by_icache) {
-        ft_delete(ic->current_ft_used_by_icache);
-      }
-      ic->current_ft_used_by_icache = decoupled_fe_fetch_ft();
+      ASSERT(ic->proc_id, !ic->current_ft_used_by_icache);
+      ic->current_ft_used_by_icache = ft;
 
       return FT_HIT_ICACHE;
     } else {
@@ -497,10 +501,8 @@ FT_Arbitration_Result ft_arbitration() {
       }
       icache_miss_events();
 
-      if (ic->current_ft_used_by_icache) {
-        ft_delete(ic->current_ft_used_by_icache);
-      }
-      ic->current_ft_used_by_icache = decoupled_fe_fetch_ft();
+      ASSERT(ic->proc_id, !ic->current_ft_used_by_icache);
+      ic->current_ft_used_by_icache = ft;
 
       return FT_MISS_BOTH;
     }

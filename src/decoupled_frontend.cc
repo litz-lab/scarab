@@ -24,6 +24,8 @@ public:
   bool can_fetch_op();
   Op* fetch_op();
   void set_per_op_ft_info();
+  FT_Info get_ft_info();
+  void invalidate();
 
 private:
   uns proc_id;
@@ -31,6 +33,7 @@ private:
   uint64_t op_pos;
   FT_Info ft_info;
   std::vector<Op*> ops;
+  bool valid;
 
   friend class Decoupled_FE;
 };
@@ -41,8 +44,8 @@ public:
   int is_off_path() { return off_path; }
   void recover();
   void update();
-  FT fetch_ft();
-  Flag peek_ft(FT_Info* ft_info);
+  FT* get_ft();
+  void pop_fts();
   decoupled_fe_iter* new_ftq_iter();
   Op* ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft);
   Op* ftq_iter_get_next(decoupled_fe_iter* iter, bool* end_of_ft);
@@ -115,12 +118,8 @@ void update_decoupled_fe() {
   dfe->update();
 }
 
-FT* decoupled_fe_fetch_ft() {
-  return new FT(dfe->fetch_ft());
-}
-
-Flag decoupled_fe_peek_ft(FT_Info* ft_info) {
-  return dfe->peek_ft(ft_info);
+FT* decoupled_fe_get_ft() {
+  return dfe->get_ft();
 }
 
 decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id) {
@@ -174,6 +173,7 @@ uint64_t decoupled_fe_get_ftq_num() {
 /* FT member functions */
 FT::FT(uns _proc_id = 0) {
   proc_id = _proc_id;
+  valid = true;
   free_ops_and_clear();
 }
 
@@ -272,6 +272,14 @@ void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
   }
 }
 
+FT_Info FT::get_ft_info() {
+  return ft_info;
+}
+
+void FT::invalidate() {
+  valid = false;
+}
+
 /* FT wrappers */
 bool ft_can_fetch_op(FT* ft) {
   return ft->can_fetch_op();
@@ -281,9 +289,13 @@ Op* ft_fetch_op(FT* ft) {
   return ft->fetch_op();
 }
 
-void ft_delete(FT* ft) {
-  ft->free_ops_and_clear();
-  delete ft;
+void ft_invalidate(FT* ft) {
+  ft->invalidate();
+  dfe->pop_fts();
+}
+
+FT_Info ft_get_ft_info(FT* ft) {
+  return ft->get_ft_info();
 }
 
 /* Decoupled_FE member functions */
@@ -564,34 +576,34 @@ void Decoupled_FE::update() {
   }
 }
 
-FT Decoupled_FE::fetch_ft() {
-  ASSERT(proc_id, !ftq.empty());
-  FT fetched_ft = ftq.front();
-  ftq.pop_front();
-  uint64_t ft_num_ops = fetched_ft.ops.size();
-
-  for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
-    // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before
-    if (it->ft_pos > 0) {
-      ASSERT(proc_id, it->flattened_op_pos >= ft_num_ops);
-      it->flattened_op_pos -= ft_num_ops;
-      it->ft_pos--;
-    } else {
-      ASSERT(proc_id, it->flattened_op_pos < ft_num_ops);
-      it->flattened_op_pos = 0;
-      it->op_pos = 0;
-    }
+FT* Decoupled_FE::get_ft() {
+  if (ftq.empty()) {
+    return NULL;
+  } else {
+    ASSERT(proc_id, ftq.front().valid);
+    return &ftq.front();
   }
-
-  return fetched_ft;
 }
 
-Flag Decoupled_FE::peek_ft(FT_Info* ft_info) {
-  if (ftq.size()) {
-    *ft_info = ftq.front().ft_info;
-    return TRUE;
-  } else {
-    return FALSE;
+void Decoupled_FE::pop_fts() {
+  ASSERT(proc_id, !ftq.empty());
+
+  while (!ftq.empty() && !ftq.front().valid) {
+    uint64_t ft_num_ops = ftq.front().ops.size();
+    ftq.front().free_ops_and_clear();
+    ftq.pop_front();
+    for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
+      // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before
+      if (it->ft_pos > 0) {
+        ASSERT(proc_id, it->flattened_op_pos >= ft_num_ops);
+        it->flattened_op_pos -= ft_num_ops;
+        it->ft_pos--;
+      } else {
+        ASSERT(proc_id, it->flattened_op_pos < ft_num_ops);
+        it->flattened_op_pos = 0;
+        it->op_pos = 0;
+      }
+    }
   }
 }
 

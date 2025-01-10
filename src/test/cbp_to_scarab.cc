@@ -68,17 +68,11 @@ class CBP_To_Scarab_Intf {
 
   void update(Op* op) { /* CBP Interface does not support update at exec */ }
 
-  void retire(Op* op) {
-    /* CBP Interface updates predictor at speculative update time */
-  }
+  void retire(Op* op) { /* CBP Interface updates predictor at speculative update time */ }
 
-  void recover(Recovery_Info*) {
-    /* CBP Interface does not support speculative updates */
-  }
+  void recover(Recovery_Info*) { /* CBP Interface does not support speculative updates */ }
 
-  Flag full(uns proc_id) {
-    return cbp_predictors.at(proc_id).IsFull();
-  }
+  Flag full(uns proc_id) { return cbp_predictors.at(proc_id).IsFull(); }
 };
 
 /******DO NOT MODIFY BELOW THIS POINT*****/
@@ -95,9 +89,7 @@ class CBP_To_Scarab_Intf {
 #undef DEF_CBP
 
 #define SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, FCN_NAME, Ret, RetType, Type, Arg) \
-  RetType SCARAB_BP_INTF_FUNC(CBP_CLASS, FCN_NAME)(Type Arg) {                 \
-    Ret CBP_PREDICTOR(CBP_CLASS).FCN_NAME(Arg);                                \
-  }
+  RetType SCARAB_BP_INTF_FUNC(CBP_CLASS, FCN_NAME)(Type Arg) { Ret CBP_PREDICTOR(CBP_CLASS).FCN_NAME(Arg); }
 
 #define DEF_CBP(CBP_NAME, CBP_CLASS)                                         \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, init, , void, , )                      \

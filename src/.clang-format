@@ -3,12 +3,11 @@ IndentWidth: 2  # Google requires a 2-space indentation for better readability a
 TabWidth: 2  # Ensure that tabs are equivalent to 2 spaces, aligning with the indentation width.
 UseTab: Never  # Always use spaces instead of tabs to ensure consistent formatting across different editors.
 ColumnLimit: 120  
-ReflowComments: true
 DerivePointerAlignment: false  # Disable auto-detection of pointer alignment, allowing explicit control over pointer style.
-PointerAlignment: Right  # Place the '*' next to the type (e.g., `int* ptr`) as per the guide's preference.
+PointerAlignment: Left  # Place the '*' next to the type (e.g., `int* ptr`) as per the guide's preference.
 SpaceBeforeParens: ControlStatements  # Add space before parentheses in control statements (if, for, while) for clarity.
 SpacesInParentheses: false  # Do not add spaces inside parentheses to maintain a cleaner look.
-SpaceAfterCStyleCast: false  # Do not add space after C-style casts(e.g., `(int)x`).
+SpaceAfterCStyleCast: true  # Add space after C-style casts for better readability (e.g., `(int) x`).
 SortIncludes: true  # Automatically sort includes to maintain proper order and consistency.
 IncludeBlocks: Regroup  # Group similar types of includes together, aiding in readability and maintenance.
 IncludeCategories:  # Define specific priorities for include categories as per the Google style guide.
@@ -20,7 +19,7 @@ IncludeCategories:  # Define specific priorities for include categories as per t
     Priority: 3  # Project-specific headers using quotes (e.g., `"my_header.h"`).
   - Regex: '^".*"'
     Priority: 4  # Other project-specific headers using quotes.
-AllowShortFunctionsOnASingleLine: Inline  # Allow empty functions or short functions in classes to be on a single line.
+AllowShortFunctionsOnASingleLine: Empty  # Allow empty short functions to be on a single line but not those with content.
 BreakBeforeBraces: Attach  # Attach opening braces to the preceding line, consistent with Google's preferred brace style.
 BraceWrapping:  # Control the behavior of braces for better consistency with the style guide.
   AfterClass: false  # Keep braces for classes on the same line as the class declaration.

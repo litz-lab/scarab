@@ -59,6 +59,7 @@ jobs:
 
       - name: Check clang-format on changed portions
         if: steps.changed-files.outputs.files != ''
+        working-directory: src
         run: |
           EXIT_CODE=0
           if [ "${{ github.event_name }}" = "pull_request" ]; then

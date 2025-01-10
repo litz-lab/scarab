@@ -49,9 +49,13 @@ jobs:
             BASE_REF="main"
           fi
           git fetch origin "$BASE_REF"
-          CHANGED_FILES=$(git diff --name-only "origin/${BASE_REF}...HEAD" | grep -E '\.(cc|c|h|cpp)$' || true)
-          echo "Changed files: $CHANGED_FILES"
-          echo "files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+          # Store files in a temporary file to avoid issues with newlines
+          TEMP_FILE=$(mktemp)
+          git diff --name-only "origin/${BASE_REF}...HEAD" | grep -E '\.(cc|c|h|cpp)$' > "$TEMP_FILE" || true
+          echo "files=$(cat $TEMP_FILE | tr '\n' ' ')" >> $GITHUB_OUTPUT
+          echo "Changed files:"
+          cat "$TEMP_FILE"
+          rm "$TEMP_FILE"
 
       - name: Check clang-format on changed portions
         if: steps.changed-files.outputs.files != ''
@@ -65,7 +69,7 @@ jobs:
             HEAD_SHA="HEAD"
           fi
 
-          while IFS= read -r file; do
+          for file in ${{ steps.changed-files.outputs.files }}; do
             if [ -n "$file" ]; then
               echo "Checking formatting for changed portions in: $file"
               
@@ -89,7 +93,7 @@ jobs:
               # Clean up temporary file
               rm "${DIFF_FILE}"
             fi
-          done <<< "${{ steps.changed-files.outputs.files }}"
+          done
           exit $EXIT_CODE
 
       - name: Post a comment on the PR
@@ -97,9 +101,9 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const { github, context } = require('@actions/github');
-            github.rest.issues.createComment({
-              ...context.repo,
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
               body: "⚠️ clang-format check failed. Please format your code using clang-format before pushing. The workflow output shows the specific formatting issues in the changed portions of the code."
             });

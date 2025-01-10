@@ -2,6 +2,7 @@ name: Clang Format Check
 
 permissions:
   contents: write  # Required for pushing fixes to the PR branch
+  pull-requests: write
 
 on:
   pull_request:

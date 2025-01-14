@@ -85,7 +85,8 @@ class CBP_To_Scarab_Intf {
 template <>
 uns8 CBP_To_Scarab_Intf<TAGE64K>::pred(Op* op) {
   uns proc_id = op->proc_id;
-  if (op->off_path) return op->oracle_info.dir;
+  if (op->off_path)
+    return op->oracle_info.dir;
   uns8 pred = cbp_predictors.at(proc_id).GetPrediction(op->inst_info->addr, &op->bp_confidence, op);
 
   return pred;

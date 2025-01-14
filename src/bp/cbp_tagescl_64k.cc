@@ -486,7 +486,8 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
       STAT_EVENT(op->proc_id, TAGESCL_SC_SMALLLSUM);  // exclusive SC not MedConf or HighConf
     }
   } else if (pred_inter == SCPRED) {
-    if (!op->off_path) STAT_EVENT(op->proc_id, TAGESCL_SC_SMALLLSUM + 3);
+    if (!op->off_path)
+      STAT_EVENT(op->proc_id, TAGESCL_SC_SMALLLSUM + 3);
   }
   if (!op->off_path) {
     STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_BASE_CORRECT + (pred_taken != op->oracle_info.dir) + tage_component * 2);

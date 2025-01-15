@@ -131,9 +131,10 @@ struct reg_free_list_ops {
 
 struct reg_table_ops {
   void (*init)(struct reg_table *reg_table, uns reg_table_size, struct reg_table *parent_reg_table);
-  void (*read)(struct reg_table *reg_table, Op *op, int parent_reg_id);
+  int (*lookup)(struct reg_table *reg_table, Op *op, int parent_reg_id);
   int (*alloc)(struct reg_table *reg_table, Op *op, int parent_reg_id);
   void (*free)(struct reg_table *reg_table, struct reg_table_entry *entry);
+  void (*read_back)(struct reg_table *reg_table, int reg_id, Op *op);
   void (*write_back)(struct reg_table *reg_table, int reg_id);
   void (*flush_mispredict)(struct reg_table *reg_table, int reg_id);
   void (*release_prev)(struct reg_table *reg_table, int reg_id);
@@ -147,7 +148,7 @@ void reg_file_init(void);                           // init the register file an
 Flag reg_file_available(uns stage_op_count);        // check if there are enough register entries
 void reg_file_rename(Op *op);                       // alloc destination registers for the operand
 Flag reg_file_issue(Op *op);                        // check the op before being issued into the FU
-void reg_file_execute(Op *op);                      // write back into the register
+void reg_file_execute(Op *op);                      // read the src registers and write back the dst registers
 void reg_file_recover(Counter recovery_op_num);     // flush registers of misprediction operands
 void reg_file_commit(Op *op);                       // release the previous register with same architectural register id
 

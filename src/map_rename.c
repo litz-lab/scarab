@@ -63,13 +63,15 @@ struct reg_table_entry *reg_free_list_alloc(struct reg_free_list *reg_free_list)
 void reg_table_entry_clear(struct reg_table_entry *entry);
 void reg_table_entry_read(struct reg_table_entry *entry, Op *op);
 void reg_table_entry_write(struct reg_table_entry *entry, struct reg_table *parent_reg_table, Op *op, int parent_reg_id);
+void reg_table_entry_consume(struct reg_table_entry *entry, Op *op);
+void reg_table_entry_produce(struct reg_table_entry *entry);
 
 // register table operations
 void reg_table_init(struct reg_table *reg_table, uns reg_table_size, struct reg_table *parent_reg_table);
-int reg_table_lookup(struct reg_table *reg_table, Op *op, int parent_reg_id);
+int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id);
 int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id);
 void reg_table_free(struct reg_table *reg_table, struct reg_table_entry *entry);
-void reg_table_read_back(struct reg_table *reg_table, int reg_id, Op *op);
+void reg_table_wake_up(struct reg_table *reg_table, int reg_id, Op *op);
 void reg_table_write_back(struct reg_table *reg_table, int self_reg_id);
 void reg_table_flush_mispredict(struct reg_table *reg_table, int self_reg_id);
 void reg_table_release_prev(struct reg_table *reg_table, int self_reg_id);
@@ -174,8 +176,13 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->prev_tag_of_same_arch_id = REG_TABLE_INVALID_REG_ID;
 }
 
-/* update the metadata when it is consumed during execution */
+/* update the metadata when it is read during renaming */
 void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
+  /*
+    traditionally, fill src info from the entry and update not ready bit for wake up
+    since the dependency is tracked in the map module
+    only update the metadata here
+  */
   return;
 }
 
@@ -201,10 +208,24 @@ void reg_table_entry_write(struct reg_table_entry *entry, struct reg_table *pare
     entry->op_num, entry->parent_reg_id, entry->self_reg_id, entry->child_reg_id);
 }
 
+/* update the metadata when it is consumed during execution */
+void reg_table_entry_consume(struct reg_table_entry *entry, Op *op) {
+  return;
+}
+
+/* update the register state to indicate the value is produced during execution*/
+void reg_table_entry_produce(struct reg_table_entry *entry) {
+  ASSERT(0, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
+  entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
+}
+
+
 struct reg_table_entry_ops reg_table_entry_ops = {
   .clear = reg_table_entry_clear,
   .read = reg_table_entry_read,
   .write = reg_table_entry_write,
+  .consume = reg_table_entry_consume,
+  .produce = reg_table_entry_produce,
 };
 
 
@@ -247,16 +268,20 @@ void reg_table_init(struct reg_table *reg_table, uns reg_table_size, struct reg_
   }
 }
 
-/* lookup the parent table to get the latest self reg id */
-int reg_table_lookup(struct reg_table *reg_table, Op *op, int parent_reg_id) {
+/* do not duplicately read operand register dependency since it is already tracked */
+int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id) {
   /*
     sine op_info read is done in reg_map_read() in map.c
     do not duplicately read register dependency during renaming
     this module is to manage the allocation of registers in the map_stage
   */
 
+  // lookup the parent table to get the latest self reg id
   int self_reg_id = reg_table->parent_reg_table->entries[parent_reg_id].child_reg_id;
   ASSERT(0, self_reg_id != REG_TABLE_INVALID_REG_ID);
+
+  struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
+  entry->ops->read(entry, op);
   return self_reg_id;
 }
 
@@ -289,15 +314,15 @@ void reg_table_free(struct reg_table *reg_table, struct reg_table_entry *entry) 
   reg_table->free_list->ops->free(reg_table->free_list, entry);
 }
 
-/* read back the src reg when the dep op is executed */
-void reg_table_read_back(struct reg_table *reg_table, int reg_id, Op *op) {
+/* read the src reg when the dep op is executed */
+void reg_table_wake_up(struct reg_table *reg_table, int reg_id, Op *op) {
   /*
     the dependency wake up will be done in the map module
     only update the metadata of the source entry
   */
 
   struct reg_table_entry *entry = &reg_table->entries[reg_id];
-  entry->ops->read(entry, op);
+  entry->ops->consume(entry, op);
 }
 
 /* update the register state to indicate the value is produced */
@@ -305,8 +330,7 @@ void reg_table_write_back(struct reg_table *reg_table, int self_reg_id) {
   ASSERT(0, REG_FILE_TYPE && self_reg_id != REG_TABLE_INVALID_REG_ID);
   struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
 
-  ASSERT(0, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
-  entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
+  entry->ops->produce(entry);
 }
 
 /* update the parent table and remove the mispredicted entry */
@@ -350,10 +374,10 @@ void reg_table_release_prev(struct reg_table *reg_table, int self_reg_id) {
 
 struct reg_table_ops reg_table_ops = {
   .init = reg_table_init,
-  .lookup = reg_table_lookup,
+  .read = reg_table_read,
   .alloc = reg_table_alloc,
   .free = reg_table_free,
-  .read_back = reg_table_read_back,
+  .wake_up = reg_table_wake_up,
   .write_back = reg_table_write_back,
   .flush_mispredict = reg_table_flush_mispredict,
   .release_prev = reg_table_release_prev,
@@ -486,7 +510,7 @@ void reg_file_realistic_rename(Op *op) {
       continue;
 
     // lookup the architectural table to get the latest ptag
-    int reg_ptag = reg_table_ptag_to_physical->ops->lookup(reg_table_ptag_to_physical, op, op->inst_info->srcs[ii].id);
+    int reg_ptag = reg_table_ptag_to_physical->ops->read(reg_table_ptag_to_physical, op, op->inst_info->srcs[ii].id);
 
     // update the register id in op
     ASSERT(0, op->src_reg_ptag[ii] == REG_TABLE_INVALID_REG_ID);
@@ -517,11 +541,12 @@ Flag reg_file_realistic_issue(Op *op) {
 void reg_file_realistic_execute(Op *op) {
   ASSERT(0, op != NULL && reg_table_ptag_to_physical != NULL);
 
-  // read the src register
+  // wake up the src register
   for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
+    // only update metadata since the register dependency wake up will be done in the map module
     if (op->src_reg_ptag[ii] == REG_TABLE_INVALID_REG_ID)
       continue;
-    reg_table_ptag_to_physical->ops->read_back(reg_table_ptag_to_physical, op->src_reg_ptag[ii], op);
+    reg_table_ptag_to_physical->ops->wake_up(reg_table_ptag_to_physical, op->src_reg_ptag[ii], op);
   }
 
   // write back the physical register using the ptag info of the op
@@ -814,7 +839,7 @@ Flag reg_file_issue(Op *op) {
   Called by:
   --- map.c -> when the op is executed
   Procedure:
-  --- read the src registers and write back the dst registers
+  --- wake up the src registers and write back the dst registers
 */
 void reg_file_execute(Op *op) {
   ASSERT(0, REG_FILE_TYPE >= REG_FILE_TYPE_INFINITE && REG_FILE_TYPE < REG_FILE_TYPE_NUM);

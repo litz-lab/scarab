@@ -919,18 +919,19 @@ bool TAGE64K::getloop(UINT64 PC) {
 }
 
 void TAGE64K::SpecLoopUpdate(UINT64 PC, bool Taken) {
-  if (LHIT < 0) return;
+  if (LHIT < 0)
+    return;
   // Calculate index into loop predictor table
-  int   index = (LI ^ ((LIB >> LHIT) << 2)) + LHIT;
+  int index = (LI ^ ((LIB >> LHIT) << 2)) + LHIT;
   auto& entry = ltable[index];
 
   // Handle valid loop prediction
   if (LVALID) {
     if (Taken != predloop) {
       // Free the entry on misprediction
-      entry.NbIter      = 0;
-      entry.age         = 0;
-      entry.confid      = 0;
+      entry.NbIter = 0;
+      entry.age = 0;
+      entry.confid = 0;
       entry.CurrentIter = 0;
       return;
     }
@@ -958,9 +959,9 @@ void TAGE64K::SpecLoopUpdate(UINT64 PC, bool Taken) {
         entry.confid++;
       // Free entry for small loops (1-2 iterations)
       if (entry.NbIter < 3) {
-        entry.dir    = Taken;
+        entry.dir = Taken;
         entry.NbIter = 0;
-        entry.age    = 0;
+        entry.age = 0;
         entry.confid = 0;
       }
     } else {
@@ -988,17 +989,18 @@ void TAGE64K::LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, int lhit) {
 
   UINT64 X = MYRANDOM() & 3;
   // 25% chance to attempt allocation
-  if ((MYRANDOM() & 3) != 0) return;
+  if ((MYRANDOM() & 3) != 0)
+    return;
   for (int i = 0; i < 4; i++) {
-    int LHIT  = (X + i) & 3;
+    int LHIT = (X + i) & 3;
     int index = (LI ^ ((LIB >> LHIT) << 2)) + LHIT;
     if (ltable[index].age == 0) {
       ltable[index].dir = !Taken;
       // most of mispredictions are on last iterations
-      ltable[index].TAG         = LTAG;
-      ltable[index].NbIter      = 0;
-      ltable[index].age         = 7;
-      ltable[index].confid      = 0;
+      ltable[index].TAG = LTAG;
+      ltable[index].NbIter = 0;
+      ltable[index].age = 7;
+      ltable[index].confid = 0;
       ltable[index].CurrentIter = 0;
       break;
     } else

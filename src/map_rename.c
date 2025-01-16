@@ -180,8 +180,7 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
 void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
   /*
     traditionally, fill src info from the entry and update not ready bit for wake up
-    since the dependency is tracked in the map module
-    only update the metadata here
+    since the dependency is tracked in the map module, only update the metadata for the research reg file schemes
   */
   return;
 }
@@ -271,7 +270,7 @@ void reg_table_init(struct reg_table *reg_table, uns reg_table_size, struct reg_
 /* do not duplicately read operand register dependency since it is already tracked */
 int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id) {
   /*
-    sine op_info read is done in reg_map_read() in map.c
+    since op_info read is done in reg_map_read() in map.c
     do not duplicately read register dependency during renaming
     this module is to manage the allocation of registers in the map_stage
   */

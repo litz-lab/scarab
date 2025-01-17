@@ -1,0 +1,55 @@
+name: Clang Format Check
+
+permissions:
+  contents: write  # Required for pushing fixes to the PR branch
+  pull-requests: write
+
+on:
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  clang-format:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          # Fetch all commit history so 'git diff origin/main...HEAD' has a valid merge base
+          fetch-depth: 0
+
+      - name: Install clang-format and clang-format-diff
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Check clang-format on changed portions
+        working-directory: src
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          DIFF_OUTPUT=$(git diff -U0 --relative=src origin/${{ github.base_ref }}..HEAD | clang-format-diff -p1)
+
+          if [ -n "$DIFF_OUTPUT" ]; then
+            echo "::error::Formatting issues found:"
+            echo "$DIFF_OUTPUT"
+            exit 1
+          fi
+
+      - name: Post a comment on the PR
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: "⚠️ clang-format check failed. Please format your code using clang-format before pushing."
+            });

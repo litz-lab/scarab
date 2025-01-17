@@ -1,0 +1,5 @@
+BasedOnStyle: Google  # Use Google's base style as a foundation for consistency.
+ColumnLimit: 120
+AllowShortLoopsOnASingleLine: false           # Never collapse loops
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: false

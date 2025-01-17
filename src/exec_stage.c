@@ -39,6 +39,7 @@
 #include "exec_ports.h"
 #include "exec_stage.h"
 #include "map.h"
+#include "map_rename.h"
 
 #include "bp/bp.param.h"
 #include "cmp_model.h"
@@ -215,7 +216,7 @@ void update_exec_stage(Stage_Data* src_sd) {
     }
 
     // {{{ rejection/failure to latch cases
-    if(cycle_count < fu->avail_cycle) {
+    if(cycle_count < fu->avail_cycle || !reg_file_issue(op)) {
       // fu not available, so nullify node stage entry to make
       //   instruction get scheduled again
       if(op != NULL) {
@@ -264,6 +265,9 @@ void update_exec_stage(Stage_Data* src_sd) {
       continue;
     }
     // }}}
+
+    // data can be written back
+    reg_file_execute(op);
 
     // {{{ dependent instruction wakeup
 

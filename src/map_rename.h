@@ -30,7 +30,6 @@
 #ifndef __MAP_RENAME_H__
 #define __MAP_RENAME_H__
 
-#include "isa/isa_macros.h"
 #include "op.h"
 
 /**************************************************************************************/
@@ -39,6 +38,7 @@
 enum reg_file_type {
   REG_FILE_TYPE_INFINITE,
   REG_FILE_TYPE_REALISTIC,
+  REG_FILE_TYPE_LATE_ALLOCATION,
   REG_FILE_TYPE_NUM
 };
 
@@ -49,6 +49,13 @@ enum reg_table_entry_state {
   REG_TABLE_ENTRY_STATE_COMMIT,
   REG_TABLE_ENTRY_STATE_DEAD,
   REG_TABLE_ENTRY_STATE_NUM
+};
+
+enum reg_table_reg_type {
+  REG_TABLE_REG_TYPE_GENERAL_PURPOSE,
+  REG_TABLE_REG_TYPE_VECTOR,
+  REG_TABLE_REG_TYPE_OTHER,
+  REG_TABLE_REG_TYPE_NUM
 };
 
 const static int REG_TABLE_INVALID_REG_ID = -1;
@@ -139,6 +146,7 @@ struct reg_table_ops {
 void reg_file_init(void);                           // init the register file and its register map tables
 Flag reg_file_available(uns stage_op_count);        // check if there are enough register entries
 void reg_file_rename(Op *op);                       // alloc destination registers for the operand
+Flag reg_file_issue(Op *op);                        // check the op before being issued into the FU
 void reg_file_execute(Op *op);                      // write back into the register
 void reg_file_recover(Counter recovery_op_num);     // flush registers of misprediction operands
 void reg_file_commit(Op *op);                       // release the previous register with same architectural register id

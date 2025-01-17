@@ -297,6 +297,17 @@ void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uopq_src_sd) {
 /* map_process_op: */
 
 static inline void stage_process_op(Op* op) {
+  ASSERT(map->proc_id, map->proc_id == td->proc_id);
+
+  /* add to sequential op list */
+  add_to_seq_op_list(td, op);
+  ASSERT(map->proc_id, td->seq_op_list.count <= op_pool_active_ops);
+
+  /* map the op based on true dependencies & set information in
+   * op->oracle_info */
+  thread_map_op(op);
+  thread_map_mem_dep(op);
+
   /* register renaming allocation */
   reg_file_rename(op);
 

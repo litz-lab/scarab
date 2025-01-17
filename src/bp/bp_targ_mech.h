@@ -31,7 +31,6 @@
 #include "bp/bp.h"
 #include "op.h"
 
-
 /**************************************************************************************/
 /* Local prototypes */
 
@@ -42,9 +41,9 @@ Addr bp_crs_realistic_pop(Bp_Data*, Op*);
 void bp_crs_realistic_push(Bp_Data*, Op*);
 void bp_crs_realistic_recover(Bp_Data*, Recovery_Info*);
 
-void  bp_btb_gen_init(Bp_Data*);
+void bp_btb_gen_init(Bp_Data*);
 Addr* bp_btb_gen_pred(Bp_Data*, Op*);
-void  bp_btb_gen_update(Bp_Data*, Op*);
+void bp_btb_gen_update(Bp_Data*, Op*);
 
 void bp_ibtb_tc_tagged_init(Bp_Data*);
 Addr bp_ibtb_tc_tagged_pred(Bp_Data*, Op*);
@@ -60,7 +59,6 @@ void bp_ibtb_tc_hybrid_init(Bp_Data*);
 Addr bp_ibtb_tc_hybrid_pred(Bp_Data*, Op*);
 void bp_ibtb_tc_hybrid_update(Bp_Data*, Op*);
 void bp_ibtb_tc_hybrid_recover(Bp_Data*, Recovery_Info*);
-
 
 /**************************************************************************************/
 

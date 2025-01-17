@@ -313,7 +313,8 @@ struct Op_struct {
   int bp_confidence;
 
   // {{{ register renaming
-  int dst_reg_ptag[MAX_DESTS]; // ptag of allocated entries in register file in the renaming table
+  int dst_reg_ptag[MAX_DESTS]; // the ptag of allocated entries in the renaming table
+  int dst_reg_vtag[MAX_DESTS]; // the vtag of allocated entries in the renaming table
   // }}}
 };
 // }}}

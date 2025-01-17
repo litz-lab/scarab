@@ -27,8 +27,8 @@
 inline int get_min_num_bits_to_represent(int x) {
   assert(x > 0);
   int num_bits = 1;
-  while(true) {
-    if(1 << num_bits >= x) {
+  while (true) {
+    if (1 << num_bits >= x) {
       return num_bits;
     }
 
@@ -58,11 +58,9 @@ struct Smallest_Int_Type {
   // else if (width < 32) using type = int32_t;
   // else using type = int64_t;
   using type = typename conditional_type<
-    (width < 8), int8_t,
-    typename conditional_type<
-      (width < 16), int16_t,
-      typename conditional_type<(width < 32), int32_t, int64_t>::type>::type>::
-    type;
+      (width < 8), int8_t,
+      typename conditional_type<(width < 16), int16_t,
+                                typename conditional_type<(width < 32), int32_t, int64_t>::type>::type>::type;
 };
 
 /* Saturating counters: Could be signed or unsigned. Can be
@@ -73,16 +71,22 @@ class Saturating_Counter {
  public:
   using Int_Type = typename Smallest_Int_Type<width>::type;
 
-  Saturating_Counter() { set(0); }
-  Saturating_Counter(Int_Type init_value) { set(init_value); }
+  Saturating_Counter() {
+    set(0);
+  }
+  Saturating_Counter(Int_Type init_value) {
+    set(init_value);
+  }
 
   // Returns the current value of the counter.
-  Int_Type get() const { return counter_; }
+  Int_Type get() const {
+    return counter_;
+  }
 
   // If condition is true, increments the counter, otherwise, decrements the
   // counter.
   void update(bool condition) {
-    if(condition) {
+    if (condition) {
       increment();
     } else {
       decrement();
@@ -91,14 +95,14 @@ class Saturating_Counter {
 
   // Increments the counter (saturating).
   void increment(void) {
-    if(counter_ < counter_max_) {
+    if (counter_ < counter_max_) {
       counter_ += 1;
     }
   }
 
   // Decrements the counter (saturating).
   void decrement(void) {
-    if(counter_ > counter_min_) {
+    if (counter_ > counter_min_) {
       counter_ -= 1;
     }
   }
@@ -111,11 +115,8 @@ class Saturating_Counter {
   }
 
  private:
-  static constexpr Int_Type counter_max_ = (is_signed ?
-                                              ((1 << (width - 1)) - 1) :
-                                              ((1 << width) - 1));
-  static constexpr Int_Type counter_min_ = (is_signed ? -(1 << (width - 1)) :
-                                                        0);
+  static constexpr Int_Type counter_max_ = (is_signed ? ((1 << (width - 1)) - 1) : ((1 << width) - 1));
+  static constexpr Int_Type counter_min_ = (is_signed ? -(1 << (width - 1)) : 0);
 
   Int_Type counter_;
 };
@@ -130,12 +131,12 @@ class Random_Number_Generator {
     seed_++;
     seed_ ^= (*phist_ptr_);
     seed_ = (seed_ >> 21) + (seed_ << 11);
-    seed_ ^= (int)(*ptghist_ptr_);
+    seed_ ^= (int) (*ptghist_ptr_);
     seed_ = (seed_ >> 10) + (seed_ << 22);
     return (seed_);
   }
 
-  int      seed_ = 0;
+  int seed_ = 0;
   int64_t* phist_ptr_;
   int64_t* ptghist_ptr_;
 };
@@ -151,8 +152,8 @@ class Circular_Buffer {
   Circular_Buffer(unsigned max_size) {
     assert(max_size > 0);
     int min_num_address_bits = get_min_num_bits_to_represent(max_size);
-    buffer_size_             = 1 << min_num_address_bits;
-    buffer_access_mask_      = (1 << min_num_address_bits) - 1;
+    buffer_size_ = 1 << min_num_address_bits;
+    buffer_access_mask_ = (1 << min_num_address_bits) - 1;
     buffer_.resize(buffer_size_);
   }
 
@@ -162,7 +163,9 @@ class Circular_Buffer {
     return buffer_[id & buffer_access_mask_];
   }
 
-  int64_t back_id() const { return back_; }
+  int64_t back_id() const {
+    return back_;
+  }
 
   void deallocate_after(int64_t dealloc_id) {
     assert(dealloc_id >= front_);
@@ -186,19 +189,18 @@ class Circular_Buffer {
   }
 
   bool is_full() {
-    if (size_ == buffer_size_)
-      return true;
+    if (size_ == buffer_size_) return true;
     return false;
   }
 
  private:
   std::vector<T> buffer_;
-  int64_t        buffer_size_;
-  int64_t        buffer_access_mask_;
+  int64_t buffer_size_;
+  int64_t buffer_access_mask_;
 
-  int64_t back_  = -1;
+  int64_t back_ = -1;
   int64_t front_ = 0;
-  int64_t size_  = 0;
+  int64_t size_ = 0;
 };
 
 #endif  // __TAGE_SC_L_LIB_H_

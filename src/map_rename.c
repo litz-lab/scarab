@@ -71,7 +71,7 @@ void reg_table_init(struct reg_table *reg_table, uns reg_table_size, struct reg_
 int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id);
 int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id);
 void reg_table_free(struct reg_table *reg_table, struct reg_table_entry *entry);
-void reg_table_wake_up(struct reg_table *reg_table, int reg_id, Op *op);
+void reg_table_consume(struct reg_table *reg_table, int reg_id, Op *op);
 void reg_table_write_back(struct reg_table *reg_table, int self_reg_id);
 void reg_table_flush_mispredict(struct reg_table *reg_table, int self_reg_id);
 void reg_table_release_prev(struct reg_table *reg_table, int self_reg_id);
@@ -314,7 +314,7 @@ void reg_table_free(struct reg_table *reg_table, struct reg_table_entry *entry) 
 }
 
 /* read the src reg when the dep op is executed */
-void reg_table_wake_up(struct reg_table *reg_table, int reg_id, Op *op) {
+void reg_table_consume(struct reg_table *reg_table, int reg_id, Op *op) {
   /*
     the dependency wake up will be done in the map module
     only update the metadata of the source entry
@@ -376,7 +376,7 @@ struct reg_table_ops reg_table_ops = {
   .read = reg_table_read,
   .alloc = reg_table_alloc,
   .free = reg_table_free,
-  .wake_up = reg_table_wake_up,
+  .consume = reg_table_consume,
   .write_back = reg_table_write_back,
   .flush_mispredict = reg_table_flush_mispredict,
   .release_prev = reg_table_release_prev,
@@ -540,12 +540,12 @@ Flag reg_file_realistic_issue(Op *op) {
 void reg_file_realistic_execute(Op *op) {
   ASSERT(0, op != NULL && reg_table_ptag_to_physical != NULL);
 
-  // wake up the src register
+  // consume the src register
   for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
     // only update metadata since the register dependency wake up will be done in the map module
     if (op->src_reg_ptag[ii] == REG_TABLE_INVALID_REG_ID)
       continue;
-    reg_table_ptag_to_physical->ops->wake_up(reg_table_ptag_to_physical, op->src_reg_ptag[ii], op);
+    reg_table_ptag_to_physical->ops->consume(reg_table_ptag_to_physical, op->src_reg_ptag[ii], op);
   }
 
   // write back the physical register using the ptag info of the op
@@ -838,7 +838,7 @@ Flag reg_file_issue(Op *op) {
   Called by:
   --- map.c -> when the op is executed
   Procedure:
-  --- wake up the src registers and write back the dst registers
+  --- consume the src registers and write back the dst registers
 */
 void reg_file_execute(Op *op) {
   ASSERT(0, REG_FILE_TYPE >= REG_FILE_TYPE_INFINITE && REG_FILE_TYPE < REG_FILE_TYPE_NUM);

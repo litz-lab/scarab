@@ -83,22 +83,22 @@ extern Rob_Block_Issue_Reason rob_block_issue_reason;
 /**************************************************************************************/
 /* Local prototypes */
 
-static inline void         icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uop_cache, uns start_idx);
-static inline Inst_Info**  lookup_icache(void);
-static inline void         prefetcher_update_on_icache_access(Flag icache_hit);
-static inline void         icache_hit_events(void);
-static inline void         icache_miss_events(void);
-static inline Flag         mem_req_on_icache_miss(void);
-static Inst_Info**         ic_pref_cache_access(void);
-int32_t                    inst_lost_get_full_window_reason(void);
-static inline void         log_stats_ic_miss(void);
-static inline void         log_stats_ic_hit(void);
-static inline void         log_stats_mshr_hit(Addr line_addr);
+static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uop_cache, uns start_idx);
+static inline Inst_Info** lookup_icache(void);
+static inline void prefetcher_update_on_icache_access(Flag icache_hit);
+static inline void icache_hit_events(void);
+static inline void icache_miss_events(void);
+static inline Flag mem_req_on_icache_miss(void);
+static Inst_Info** ic_pref_cache_access(void);
+int32_t inst_lost_get_full_window_reason(void);
+static inline void log_stats_ic_miss(void);
+static inline void log_stats_ic_hit(void);
+static inline void log_stats_mshr_hit(Addr line_addr);
 
 static inline FT_Arbitration_Result ft_arbitration(void);
 static inline Icache_State icache_mem_req_actions(Break_Reason*);
 static inline Icache_State icache_wait_for_miss_actions(Break_Reason*);
-static inline Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data *sd);
+static inline Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data* sd);
 static inline void icache_serve_ops(void);
 static inline Icache_State icache_serving_actions(Break_Reason*);
 static inline void uop_cache_serve_ops(void);
@@ -328,7 +328,7 @@ Inst_Info** lookup_icache() {
     line = ic_pref_cache_access();
   }
 
-  if (WP_COLLECT_STATS) { // CMP remove?
+  if (WP_COLLECT_STATS) {  // CMP remove?
     Addr dummy_addr;
     Icache_Data* line_info = (Icache_Data*)cache_access(&ic->icache_line_info, ic->fetch_addr, &dummy_addr, TRUE);
     if (line) {
@@ -358,8 +358,7 @@ void icache_hit_events() {
 }
 
 void icache_miss_events() {
-  DEBUG(ic->proc_id, "Cache miss on op_num:%s @ 0x%s\n",
-        unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
+  DEBUG(ic->proc_id, "Cache miss on op_num:%s @ 0x%s\n", unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
 
   prefetcher_update_on_icache_access(/*icache_hit*/ FALSE);
   log_stats_ic_miss();
@@ -467,9 +466,7 @@ FT_Arbitration_Result ft_arbitration() {
           if (IPRF_ON_UOP_CACHE_HIT) {
             // start a memreq to fill icache, but do not cause any stalls.
             // Use for more inclusivity between IC and UC
-            new_mem_req(MRT_IPRF, ic->proc_id, ic->line_addr,
-                        ICACHE_LINE_SIZE, 0, NULL, instr_fill_line,
-                        unique_count,
+            new_mem_req(MRT_IPRF, ic->proc_id, ic->line_addr, ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count,
                         0);
           }
         }
@@ -510,8 +507,8 @@ FT_Arbitration_Result ft_arbitration() {
 }
 
 Icache_State icache_mem_req_actions(Break_Reason* break_fetch) {
-  DEBUG(ic->proc_id, "Icache mem req on op_num:%s @ 0x%s\n",
-        unsstr64(op_count[ic->proc_id]), hexstr64s(ic->fetch_addr));
+  DEBUG(ic->proc_id, "Icache mem req on op_num:%s @ 0x%s\n", unsstr64(op_count[ic->proc_id]),
+        hexstr64s(ic->fetch_addr));
   Flag success = mem_req_on_icache_miss();
   if (success) {
     ic->icache_miss_fulfilled = FALSE;
@@ -527,7 +524,8 @@ Icache_State icache_wait_for_miss_actions(Break_Reason* break_fetch) {
   ASSERT(ic->proc_id, ft_can_fetch_op(ic->current_ft_used_by_icache));
   DEBUG(ic->proc_id, "Ifetch barrier: Waiting for miss \n");
   if (!ic->off_path) {
-    INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + get_last_miss_reason(ic->proc_id), ic->sd.max_op_count);
+    INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + get_last_miss_reason(ic->proc_id),
+                   ic->sd.max_op_count);
   }
   *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
   if (ic->icache_miss_fulfilled) {
@@ -540,7 +538,7 @@ Icache_State icache_wait_for_miss_actions(Break_Reason* break_fetch) {
 // fill in the icache stage data with current FT in use
 // return if FT has ended
 // if true, the requested number of ops might not be fulfilled
-Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data *sd) {
+Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data* sd) {
   ASSERT(ic->proc_id, requested && requested <= sd->max_op_count - sd->op_count);
   ASSERT(ic->proc_id, ft_can_fetch_op(ft));
 
@@ -601,8 +599,7 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
   // we need to consider if the buffer is occupied by an ft from a previous cycle;
   // it is true if there is no lookup in the current cycle but the buffer is occupied.
   int occupied_lookup_buffer = 0;
-  if (!ICACHE_FETCH_ACROSS_FETCH_TARGET &&
-      ic->icache_lookups_per_cycle_count == 0 &&
+  if (!ICACHE_FETCH_ACROSS_FETCH_TARGET && ic->icache_lookups_per_cycle_count == 0 &&
       ft_can_fetch_op(ic->current_ft_used_by_icache)) {
     occupied_lookup_buffer = 1;
   }
@@ -611,7 +608,7 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
       icache_serve_ops();
     } else if (ic->icache_lookups_per_cycle_count + occupied_lookup_buffer < ICACHE_READ_PORTS) {
       FT_Arbitration_Result result = ft_arbitration();
-      switch(result) {
+      switch (result) {
         case FT_UNAVAILABLE:
           *break_fetch = BREAK_FT_UNAVAILABLE;
           return ICACHE_STAGE_RESTEER;
@@ -690,8 +687,7 @@ Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
   // we need to consider if the buffer is occupied by an ft from a previous cycle;
   // it is true if there is no lookup in the current cycle but the buffer is occupied.
   int occupied_lookup_buffer = 0;
-  if (!UOP_CACHE_FETCH_ACROSS_FETCH_TARGET &&
-      ic->uop_cache_lookups_per_cycle_count == 0 &&
+  if (!UOP_CACHE_FETCH_ACROSS_FETCH_TARGET && ic->uop_cache_lookups_per_cycle_count == 0 &&
       ft_can_fetch_op(ic->current_ft_used_by_uop_cache)) {
     occupied_lookup_buffer = 1;
   }
@@ -700,7 +696,7 @@ Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
       uop_cache_serve_ops();
     } else if (ic->uop_cache_lookups_per_cycle_count + occupied_lookup_buffer < UOP_CACHE_READ_PORTS) {
       FT_Arbitration_Result result = ft_arbitration();
-      switch(result) {
+      switch (result) {
         case FT_UNAVAILABLE:
           *break_fetch = BREAK_FT_UNAVAILABLE;
           return ICACHE_STAGE_RESTEER;
@@ -752,7 +748,7 @@ void execute_coupled_FSM() {
     ASSERT(ic->proc_id, !ic->current_ft_used_by_icache || !ft_can_fetch_op(ic->current_ft_used_by_icache));
 
     FT_Arbitration_Result result = ft_arbitration();
-    switch(result) {
+    switch (result) {
       case FT_UNAVAILABLE:
         ic->next_state = ICACHE_STAGE_RESTEER;
         break_fetch = BREAK_FT_UNAVAILABLE;
@@ -786,15 +782,12 @@ void execute_coupled_FSM() {
   Stage_Data* cur_data = get_current_stage_data();
   INC_STAT_EVENT(ic->proc_id, INST_LOST_TOTAL, cur_data->max_op_count);
   INC_STAT_EVENT(ic->proc_id, INST_LOST_BREAK_DONT + break_fetch,
-                              cur_data->max_op_count > cur_data->op_count ?
-                              cur_data->max_op_count - cur_data->op_count : 0);
+                 cur_data->max_op_count > cur_data->op_count ? cur_data->max_op_count - cur_data->op_count : 0);
   STAT_EVENT(ic->proc_id, FETCH_0_OPS + cur_data->op_count);
   STAT_EVENT(ic->proc_id, ST_BREAK_DONT + break_fetch);
   if (!ic->off_path) {
     if (break_fetch == BREAK_UOP_CACHE_STALLED || break_fetch == BREAK_ICACHE_STALLED) {
-      INC_STAT_EVENT(ic->proc_id,
-                    INST_LOST_FULL_WINDOW + inst_lost_get_full_window_reason(),
-                    cur_data->max_op_count);
+      INC_STAT_EVENT(ic->proc_id, INST_LOST_FULL_WINDOW + inst_lost_get_full_window_reason(), cur_data->max_op_count);
       STAT_EVENT(ic->proc_id, ICACHE_STAGE_STALLED);
     } else {
       STAT_EVENT(ic->proc_id, ICACHE_STAGE_NOT_STALLED);
@@ -954,32 +947,26 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
   }
 
   /* get new line in the cache */
-  if((ic->line_addr == req->addr) && ic->next_state == ICACHE_WAIT_FOR_MISS) {
+  if ((ic->line_addr == req->addr) && ic->next_state == ICACHE_WAIT_FOR_MISS) {
     INC_STAT_EVENT(ic->proc_id, MISS_WAIT_TIME, cycle_count - ic->wait_for_miss_start);
-    if(IC_PREF_CACHE_ENABLE &&  // cmp FIXME prefetchers
-       (USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path)) {
+    if (IC_PREF_CACHE_ENABLE &&  // cmp FIXME prefetchers
+        (USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path)) {
       Addr pref_line_addr;
 
-      line = (Inst_Info**)cache_insert(&ic->pref_icache, ic->proc_id,
-                                       ic->fetch_addr, &pref_line_addr,
-                                       &repl_line_addr);
-      DEBUG(
-        ic->proc_id,
-        "Insert PREF_ICACHE fetch_addr0x:%s line_addr:%s index:%ld addr:0x%s\n",
-        hexstr64(ic->fetch_addr), hexstr64(pref_line_addr),
-        (long int)(req - mem->req_buffer), hexstr64s(req->addr));
+      line = (Inst_Info**)cache_insert(&ic->pref_icache, ic->proc_id, ic->fetch_addr, &pref_line_addr, &repl_line_addr);
+      DEBUG(ic->proc_id, "Insert PREF_ICACHE fetch_addr0x:%s line_addr:%s index:%ld addr:0x%s\n",
+            hexstr64(ic->fetch_addr), hexstr64(pref_line_addr), (long int)(req - mem->req_buffer),
+            hexstr64s(req->addr));
       STAT_EVENT(ic->proc_id, IC_PREF_CACHE_FILL);
       ic->icache_miss_fulfilled = TRUE;
       return TRUE;
     }
 
-    ic->line = (Inst_Info**)cache_insert(&ic->icache, ic->proc_id,
-                                         ic->fetch_addr, &ic->line_addr,
-                                         &repl_line_addr);
+    ic->line = (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, ic->fetch_addr, &ic->line_addr, &repl_line_addr);
     DEBUG(ic->proc_id, "Got line switch into ic fetch %llx\n", ic->line_addr);
     STAT_EVENT(ic->proc_id, ICACHE_FILL);
 
-    if(WP_COLLECT_STATS) {  // cmp IGNORE
+    if (WP_COLLECT_STATS) {  // cmp IGNORE
       line_info = (Icache_Data*)cache_insert(&ic->icache_line_info, ic->proc_id,
                                              ic->fetch_addr, &dummy_addr2,
                                              &repl_line_addr2);
@@ -1018,7 +1005,8 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
     if (req->demand_icache_emitted_cycle) {
       ASSERT(ic->proc_id, !req->fdip_emitted_cycle && (cycle_count - req->demand_icache_emitted_cycle > 0));
       STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_BY_ICACHE_DEMAND);
-      INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA_BY_ICACHE_DEMAND, cycle_count - req->demand_icache_emitted_cycle);
+      INC_STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_CYCLE_DELTA_BY_ICACHE_DEMAND,
+                     cycle_count - req->demand_icache_emitted_cycle);
     } else if (req->fdip_emitted_cycle) {
       ASSERT(ic->proc_id, !req->demand_icache_emitted_cycle);
       STAT_EVENT(ic->proc_id, ICACHE_FILL_CORRECT_REQ_BY_FDIP);

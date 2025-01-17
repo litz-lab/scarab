@@ -16,7 +16,7 @@
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
 class FT{
-public:
+ public:
   FT(uns _proc_id);
   void set_ft_started_by(FT_Started_By ft_started_by);
   void add_op(Op *op, FT_Ended_By ft_ended_by);
@@ -27,7 +27,7 @@ public:
   FT_Info get_ft_info();
   void invalidate();
 
-private:
+ private:
   uns proc_id;
   // indicate the next op index to read by the consumer (icache or uop)
   uint64_t op_pos;

@@ -52,18 +52,18 @@ extern "C" {
 #include "frontend/pin_trace_fe.h"
 
 #include "stage_data.h"
-  typedef struct FT FT;
+typedef struct FT FT;
 
-  typedef struct decoupled_fe_iter decoupled_fe_iter;
-  
-  struct decoupled_fe_iter {
-    // the ft index
-    uint64_t ft_pos;
-    // the op index
-    uint64_t op_pos;
-    // the flattened op index, as if the ftq is an 1-d array
-    uint64_t flattened_op_pos;
-  };
+typedef struct decoupled_fe_iter decoupled_fe_iter;
+
+struct decoupled_fe_iter {
+  // the ft index
+  uint64_t ft_pos;
+  // the op index
+  uint64_t op_pos;
+  // the flattened op index, as if the ftq is an 1-d array
+  uint64_t flattened_op_pos;
+};
 
   // Simulator API
   void alloc_mem_decoupled_fe(uns numProcs);
@@ -77,10 +77,10 @@ extern "C" {
   bool decoupled_fe_is_off_path();
   void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid);
   bool ft_can_fetch_op(FT* ft);
-  Op*  ft_fetch_op(FT* ft);
+  Op* ft_fetch_op(FT* ft);
   void ft_invalidate(FT* ft);
   FT_Info ft_get_ft_info(FT* ft);
-  FT*  decoupled_fe_get_ft();
+  FT* decoupled_fe_get_ft();
   // FTQ API
   decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id);
   /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached

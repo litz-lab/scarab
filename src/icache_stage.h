@@ -57,11 +57,11 @@ typedef enum Icache_State_enum {
 
 // don't change this order without fixing stats in fetch.stat.def
 typedef enum Break_Reason_enum {
-  BREAK_DONT,          // don't break fetch yet
+  BREAK_DONT,  // don't break fetch yet
   BREAK_ICACHE_STAGE_RESTEER,
-  BREAK_FT_UNAVAILABLE, // break because the ft queue of the decoupled front-end is empty
-  BREAK_ICACHE_MISS_REQ_SUCCESS,     // break because of an icache miss where the mem req succeeds
-  BREAK_ICACHE_MISS_REQ_FAILURE,     // break because of an icache miss where the mem req fails
+  BREAK_FT_UNAVAILABLE,           // break because the ft queue of the decoupled front-end is empty
+  BREAK_ICACHE_MISS_REQ_SUCCESS,  // break because of an icache miss where the mem req succeeds
+  BREAK_ICACHE_MISS_REQ_FAILURE,  // break because of an icache miss where the mem req fails
   BREAK_ICACHE_WAIT_FOR_MISS,
   BREAK_ICACHE_STALLED,
   BREAK_ICACHE_TO_UOP_CACHE_SWITCH,  // break because in the same cycle switched to fetching from uop cache

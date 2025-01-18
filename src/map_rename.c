@@ -83,14 +83,14 @@ void reg_table_arch_init(struct reg_table *reg_table, uns reg_table_size, struct
 /**************************************************************************************/
 /* Inline Methods */
 
-static inline enum reg_table_reg_type reg_file_get_reg_type(int reg_id) {
+static inline int reg_file_get_reg_type(int reg_id) {
   if (reg_id >= REG_RAX && reg_id < REG_CS)
-    return REG_TABLE_REG_TYPE_GENERAL_PURPOSE;
+    return REG_FILE_REG_TYPE_GENERAL_PURPOSE;
 
   if (reg_id >= REG_ZMM0 && reg_id < REG_K0)
-    return REG_TABLE_REG_TYPE_VECTOR;
+    return REG_FILE_REG_TYPE_VECTOR;
 
-  return REG_TABLE_REG_TYPE_OTHER;
+  return REG_FILE_REG_TYPE_OTHER;
 }
 
 static inline void reg_file_debug_print_op(Op* op, int state) {
@@ -163,7 +163,7 @@ struct reg_free_list_ops reg_free_list_ops = {
 
 /* set the invalid value into the entry */
 void reg_table_entry_clear(struct reg_table_entry *entry) {
-  ASSERT(0, entry != NULL && entry->self_reg_id != REG_TABLE_INVALID_REG_ID);
+  ASSERT(0, entry != NULL && entry->self_reg_id != REG_TABLE_REG_ID_INVALID);
 
   entry->op = &invalid_op;
   entry->op_num = 0;
@@ -171,9 +171,9 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->off_path = FALSE;
 
   entry->reg_state = REG_TABLE_ENTRY_STATE_FREE;
-  entry->parent_reg_id = REG_TABLE_INVALID_REG_ID;
-  entry->child_reg_id = REG_TABLE_INVALID_REG_ID;
-  entry->prev_tag_of_same_arch_id = REG_TABLE_INVALID_REG_ID;
+  entry->parent_reg_id = REG_TABLE_REG_ID_INVALID;
+  entry->child_reg_id = REG_TABLE_REG_ID_INVALID;
+  entry->prev_tag_of_same_arch_id = REG_TABLE_REG_ID_INVALID;
 }
 
 /* update the metadata when it is read during renaming */
@@ -187,7 +187,8 @@ void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
 
 /* update reg_table entry by setting its key (lookup reg_id) and value (tag and op whose dest is assigned to reg_id) */
 void reg_table_entry_write(struct reg_table_entry *entry, struct reg_table *parent_reg_table, Op *op, int parent_reg_id) {
-  ASSERT(op->proc_id, entry != NULL && entry->self_reg_id != REG_TABLE_INVALID_REG_ID && entry->child_reg_id == REG_TABLE_INVALID_REG_ID);
+  ASSERT(op->proc_id, entry != NULL && entry->self_reg_id != REG_TABLE_REG_ID_INVALID);
+  ASSERT(op->proc_id, entry->child_reg_id == REG_TABLE_REG_ID_INVALID);
 
   // write the op into the entry
   entry->op = op;
@@ -200,7 +201,7 @@ void reg_table_entry_write(struct reg_table_entry *entry, struct reg_table *pare
   entry->reg_state = REG_TABLE_ENTRY_STATE_ALLOC;
 
   // track the previous register id with the same architectural register
-  ASSERT(op->proc_id, entry->prev_tag_of_same_arch_id == REG_TABLE_INVALID_REG_ID);
+  ASSERT(op->proc_id, entry->prev_tag_of_same_arch_id == REG_TABLE_REG_ID_INVALID);
   entry->prev_tag_of_same_arch_id = parent_reg_table->entries[entry->parent_reg_id].child_reg_id;
 
   DEBUG(0, "(entry write)[%lld]: parent_reg_id: %d, self_reg_id: %d, child_reg_id: %d\n",
@@ -277,7 +278,7 @@ int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id) {
 
   // lookup the parent table to get the latest self reg id
   int self_reg_id = reg_table->parent_reg_table->entries[parent_reg_id].child_reg_id;
-  ASSERT(0, self_reg_id != REG_TABLE_INVALID_REG_ID);
+  ASSERT(0, self_reg_id != REG_TABLE_REG_ID_INVALID);
 
   struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
   entry->ops->read(entry, op);
@@ -290,7 +291,7 @@ int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id) {
   --- 3. update the child_reg_id of the parent table for tracking same architectural id
 */
 int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id) {
-  ASSERT(0, REG_FILE_TYPE && reg_table != NULL && op != NULL);
+  ASSERT(0, REG_RENAMING_SCHEME && reg_table != NULL && op != NULL);
 
   // get the entry from the free list and write the metadata
   struct reg_table_entry *entry = reg_table->free_list->ops->alloc(reg_table->free_list);
@@ -326,7 +327,7 @@ void reg_table_consume(struct reg_table *reg_table, int reg_id, Op *op) {
 
 /* update the register state to indicate the value is produced */
 void reg_table_write_back(struct reg_table *reg_table, int self_reg_id) {
-  ASSERT(0, REG_FILE_TYPE && self_reg_id != REG_TABLE_INVALID_REG_ID);
+  ASSERT(0, REG_RENAMING_SCHEME && self_reg_id != REG_TABLE_REG_ID_INVALID);
   struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
 
   entry->ops->produce(entry);
@@ -334,7 +335,7 @@ void reg_table_write_back(struct reg_table *reg_table, int self_reg_id) {
 
 /* update the parent table and remove the mispredicted entry */
 void reg_table_flush_mispredict(struct reg_table *reg_table, int self_reg_id) {
-  ASSERT(0, REG_FILE_TYPE && self_reg_id != REG_TABLE_INVALID_REG_ID);
+  ASSERT(0, REG_RENAMING_SCHEME && self_reg_id != REG_TABLE_REG_ID_INVALID);
   struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
 
   ASSERT(0, entry != NULL && entry->off_path);
@@ -350,18 +351,18 @@ void reg_table_flush_mispredict(struct reg_table *reg_table, int self_reg_id) {
 
 /* mark the previous entry with same archituctural id before the committed one as dead and remove it */
 void reg_table_release_prev(struct reg_table *reg_table, int self_reg_id) {
-  ASSERT(0, REG_FILE_TYPE && self_reg_id != REG_TABLE_INVALID_REG_ID);
+  ASSERT(0, REG_RENAMING_SCHEME && self_reg_id != REG_TABLE_REG_ID_INVALID);
   struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
 
   ASSERT(0, entry != NULL && entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED);
-  ASSERT(0, reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id != REG_TABLE_INVALID_REG_ID);
+  ASSERT(0, reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id != REG_TABLE_REG_ID_INVALID);
 
   // mark current register as commit when it is retire
   entry->reg_state = REG_TABLE_ENTRY_STATE_COMMIT;
 
   // mark the op before the committed op as dead and release it
   int prev_tag_of_same_arch_id = entry->prev_tag_of_same_arch_id;
-  ASSERT(map_data->proc_id, prev_tag_of_same_arch_id != REG_TABLE_INVALID_REG_ID);
+  ASSERT(map_data->proc_id, prev_tag_of_same_arch_id != REG_TABLE_REG_ID_INVALID);
 
   struct reg_table_entry *prev_entry = &reg_table->entries[prev_tag_of_same_arch_id];
   ASSERT(map_data->proc_id, prev_entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT || prev_entry->op == &invalid_op);
@@ -397,7 +398,7 @@ void reg_table_arch_init(struct reg_table *reg_table, uns reg_table_size, struct
     entry->ops->clear(entry);
 
     // only allocate general purpose and vector registers
-    if (reg_file_get_reg_type(ii) != REG_TABLE_REG_TYPE_OTHER)
+    if (reg_file_get_reg_type(ii) != REG_FILE_REG_TYPE_OTHER)
       entry->reg_state = REG_TABLE_ENTRY_STATE_ALLOC;
   }
 }
@@ -426,58 +427,58 @@ struct reg_table *reg_table_vtag_to_ptag;
 
 
 /**************************************************************************************/
-/* Infinite Register File Scheme */
+/* Infinite Register Scheme */
 
-void reg_file_infinite_init(void);
-Flag reg_file_infinite_available(uns stage_op_count);
-void reg_file_infinite_rename(Op *op);
-Flag reg_file_infinite_issue(Op *op);
-void reg_file_infinite_execute(Op *op);
-void reg_file_infinite_recover(Counter recovery_op_num);
-void reg_file_infinite_commit(Op *op);
+void reg_renaming_scheme_infinite_init(void);
+Flag reg_renaming_scheme_infinite_available(uns stage_op_count);
+void reg_renaming_scheme_infinite_rename(Op *op);
+Flag reg_renaming_scheme_infinite_issue(Op *op);
+void reg_renaming_scheme_infinite_execute(Op *op);
+void reg_renaming_scheme_infinite_recover(Counter recovery_op_num);
+void reg_renaming_scheme_infinite_commit(Op *op);
 
-void reg_file_infinite_init(void) {
+void reg_renaming_scheme_infinite_init(void) {
   return;
 }
 
-Flag reg_file_infinite_available(uns stage_op_count) {
+Flag reg_renaming_scheme_infinite_available(uns stage_op_count) {
   return TRUE;
 }
 
-void reg_file_infinite_rename(Op *op) {
+void reg_renaming_scheme_infinite_rename(Op *op) {
   return;
 }
 
-Flag reg_file_infinite_issue(Op *op) {
+Flag reg_renaming_scheme_infinite_issue(Op *op) {
   return TRUE;
 }
 
-void reg_file_infinite_execute(Op *op) {
+void reg_renaming_scheme_infinite_execute(Op *op) {
   return;
 }
 
-void reg_file_infinite_recover(Counter recovery_op_num) {
+void reg_renaming_scheme_infinite_recover(Counter recovery_op_num) {
   return;
 }
 
-void reg_file_infinite_commit(Op *op) {
+void reg_renaming_scheme_infinite_commit(Op *op) {
   return;
 }
 
 
 /**************************************************************************************/
-/* Realistic Register File Scheme */
+/* Realistic Register Scheme */
 
-void reg_file_realistic_init(void);
-Flag reg_file_realistic_available(uns stage_op_count);
-void reg_file_realistic_rename(Op *op);
-Flag reg_file_realistic_issue(Op *op);
-void reg_file_realistic_execute(Op *op);
-void reg_file_realistic_recover(Counter recovery_op_num);
-void reg_file_realistic_commit(Op *op);
+void reg_renaming_scheme_realistic_init(void);
+Flag reg_renaming_scheme_realistic_available(uns stage_op_count);
+void reg_renaming_scheme_realistic_rename(Op *op);
+Flag reg_renaming_scheme_realistic_issue(Op *op);
+void reg_renaming_scheme_realistic_execute(Op *op);
+void reg_renaming_scheme_realistic_recover(Counter recovery_op_num);
+void reg_renaming_scheme_realistic_commit(Op *op);
 
 // allocate entries and assign the parent-child relationship of the arch table and the physical table
-void reg_file_realistic_init(void) {
+void reg_renaming_scheme_realistic_init(void) {
   /* the physical reg map is the children table of the arch table
      the child_reg_id of the arch table is the index of the physical reg map */
   reg_table_arch_to_ptag = (struct reg_table *)malloc(sizeof(struct reg_table));
@@ -492,71 +493,71 @@ void reg_file_realistic_init(void) {
 }
 
 // check if there are enough register entries
-Flag reg_file_realistic_available(uns stage_op_count) {
+Flag reg_renaming_scheme_realistic_available(uns stage_op_count) {
   ASSERT(0, reg_table_ptag_to_physical != NULL);
   return reg_table_ptag_to_physical->free_list->reg_free_num >= MAX_DESTS * stage_op_count;
 }
 
 // allocate physical registers of the op and write the ptag info into the op
-void reg_file_realistic_rename(Op *op) {
+void reg_renaming_scheme_realistic_rename(Op *op) {
   ASSERT(0, op != NULL && reg_table_ptag_to_physical != NULL);
   ASSERT(0, op->table_info->num_dest_regs <= reg_table_ptag_to_physical->free_list->reg_free_num);
 
   /* read register table */
   for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
     // the register dependency is not read since it is already tracked in the map module
-    if (reg_file_get_reg_type(op->inst_info->srcs[ii].id) == REG_TABLE_REG_TYPE_OTHER)
+    if (reg_file_get_reg_type(op->inst_info->srcs[ii].id) == REG_FILE_REG_TYPE_OTHER)
       continue;
 
     // lookup the architectural table to get the latest ptag
     int reg_ptag = reg_table_ptag_to_physical->ops->read(reg_table_ptag_to_physical, op, op->inst_info->srcs[ii].id);
 
     // update the register id in op
-    ASSERT(0, op->src_reg_ptag[ii] == REG_TABLE_INVALID_REG_ID);
+    ASSERT(0, op->src_reg_ptag[ii] == REG_TABLE_REG_ID_INVALID);
     op->src_reg_ptag[ii] = reg_ptag;
   }
 
   /* write register table */
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
     // only allocate general purpose and vector registers
-    if (reg_file_get_reg_type(op->inst_info->dests[ii].id) == REG_TABLE_REG_TYPE_OTHER)
+    if (reg_file_get_reg_type(op->inst_info->dests[ii].id) == REG_FILE_REG_TYPE_OTHER)
       continue;
 
     // allocate register and write meta info
     int reg_ptag = reg_table_ptag_to_physical->ops->alloc(reg_table_ptag_to_physical, op, op->inst_info->dests[ii].id);
 
     // update the register id in op
-    ASSERT(0, op != &invalid_op && op->dst_reg_ptag[ii] == REG_TABLE_INVALID_REG_ID);
+    ASSERT(0, op != &invalid_op && op->dst_reg_ptag[ii] == REG_TABLE_REG_ID_INVALID);
     op->dst_reg_ptag[ii] = reg_ptag;
   }
 }
 
 // do not check the reg file when issuing
-Flag reg_file_realistic_issue(Op *op) {
+Flag reg_renaming_scheme_realistic_issue(Op *op) {
   return TRUE;
 }
 
 // consume the src registers and produce the dst registers
-void reg_file_realistic_execute(Op *op) {
+void reg_renaming_scheme_realistic_execute(Op *op) {
   ASSERT(0, op != NULL && reg_table_ptag_to_physical != NULL);
 
   // consume the src register
   for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
     // only update metadata since the register dependency wake up will be done in the map module
-    if (op->src_reg_ptag[ii] == REG_TABLE_INVALID_REG_ID)
+    if (op->src_reg_ptag[ii] == REG_TABLE_REG_ID_INVALID)
       continue;
     reg_table_ptag_to_physical->ops->consume(reg_table_ptag_to_physical, op->src_reg_ptag[ii], op);
   }
 
   // write back the physical register using the ptag info of the op
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++) {
-    if (op->dst_reg_ptag[ii] != REG_TABLE_INVALID_REG_ID)
+    if (op->dst_reg_ptag[ii] != REG_TABLE_REG_ID_INVALID)
       reg_table_ptag_to_physical->ops->write_back(reg_table_ptag_to_physical, op->dst_reg_ptag[ii]);
   }
 }
 
 // flush registers of misprediction operands using the ptag info
-void reg_file_realistic_recover(Counter recovery_op_num) {
+void reg_renaming_scheme_realistic_recover(Counter recovery_op_num) {
   ASSERT(0, reg_table_ptag_to_physical != NULL);
 
   // release the register from the youngest to the flush point
@@ -566,36 +567,36 @@ void reg_file_realistic_recover(Counter recovery_op_num) {
 
     // release misprediction register
     for (uns ii = 0; ii < (*op_p)->table_info->num_dest_regs; ii++) {
-      if ((*op_p)->dst_reg_ptag[ii] != REG_TABLE_INVALID_REG_ID)
+      if ((*op_p)->dst_reg_ptag[ii] != REG_TABLE_REG_ID_INVALID)
         reg_table_ptag_to_physical->ops->flush_mispredict(reg_table_ptag_to_physical, (*op_p)->dst_reg_ptag[ii]);
     }
   }
 }
 
 // release the previous register with same architectural id
-void reg_file_realistic_commit(Op *op) {
+void reg_renaming_scheme_realistic_commit(Op *op) {
   ASSERT(0, op != NULL && reg_table_ptag_to_physical != NULL);
 
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++) {
-    if (op->dst_reg_ptag[ii] != REG_TABLE_INVALID_REG_ID)
+    if (op->dst_reg_ptag[ii] != REG_TABLE_REG_ID_INVALID)
       reg_table_ptag_to_physical->ops->release_prev(reg_table_ptag_to_physical, op->dst_reg_ptag[ii]);
   }
 }
 
 
 /**************************************************************************************/
-/* Virtual Physical Register File Scheme */
+/* Virtual Physical Register Scheme */
 
-void reg_file_late_allocation_init(void);
-Flag reg_file_late_allocation_available(uns stage_op_count);
-void reg_file_late_allocation_rename(Op *op);
-Flag reg_file_late_allocation_issue(Op *op);
-void reg_file_late_allocation_execute(Op *op);
-void reg_file_late_allocation_recover(Counter recovery_op_num);
-void reg_file_late_allocation_commit(Op *op);
+void reg_renaming_scheme_late_allocation_init(void);
+Flag reg_renaming_scheme_late_allocation_available(uns stage_op_count);
+void reg_renaming_scheme_late_allocation_rename(Op *op);
+Flag reg_renaming_scheme_late_allocation_issue(Op *op);
+void reg_renaming_scheme_late_allocation_execute(Op *op);
+void reg_renaming_scheme_late_allocation_recover(Counter recovery_op_num);
+void reg_renaming_scheme_late_allocation_commit(Op *op);
 
 // allocate entries and assign the parent-child relationship for arch, vtag, and ptag tables
-void reg_file_late_allocation_init(void) {
+void reg_renaming_scheme_late_allocation_init(void) {
   ASSERT(0, REG_TABLE_VIRTUAL_SIZE >= REG_TABLE_PHYSICAL_SIZE);
 
   /* the arch reg table is the parent table of the vtag table
@@ -618,27 +619,28 @@ void reg_file_late_allocation_init(void) {
 }
 
 // check if there are enough registers in the virtual table instead of the physical registers
-Flag reg_file_late_allocation_available(uns stage_op_count) {
+Flag reg_renaming_scheme_late_allocation_available(uns stage_op_count) {
   ASSERT(0, reg_table_vtag_to_ptag != NULL);
   return reg_table_vtag_to_ptag->free_list->reg_free_num >= MAX_DESTS * stage_op_count;
 }
 
 // allocate only virtual registers and write the vtag info into the op
-void reg_file_late_allocation_rename(Op *op) {
+void reg_renaming_scheme_late_allocation_rename(Op *op) {
   ASSERT(0, op != NULL && reg_table_vtag_to_ptag != NULL);
   ASSERT(0, op->table_info->num_dest_regs <= reg_table_vtag_to_ptag->free_list->reg_free_num);
 
   /* write register table */
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
     // only allocate general purpose and vector registers
-    if (reg_file_get_reg_type(op->inst_info->dests[ii].id) == REG_TABLE_REG_TYPE_OTHER)
+    if (reg_file_get_reg_type(op->inst_info->dests[ii].id) == REG_FILE_REG_TYPE_OTHER)
       continue;
 
     // allocate virtual registers and write meta info
     int reg_vtag = reg_table_vtag_to_ptag->ops->alloc(reg_table_vtag_to_ptag, op, op->inst_info->dests[ii].id);
 
     // write the register vtag into the op
-    ASSERT(0, op != &invalid_op && op->dst_reg_vtag[ii] == REG_TABLE_INVALID_REG_ID && reg_vtag != REG_TABLE_INVALID_REG_ID);
+    ASSERT(0, op != &invalid_op && op->dst_reg_vtag[ii] == REG_TABLE_REG_ID_INVALID);
+    ASSERT(0, reg_vtag != REG_TABLE_REG_ID_INVALID);
     op->dst_reg_vtag[ii] = reg_vtag;
   }
 }
@@ -647,7 +649,7 @@ void reg_file_late_allocation_rename(Op *op) {
   To avoid deadlock, only allocate physical registers
   if sufficient additional registers exist to serve the oldest op in the ROB
 */
-Flag reg_file_late_allocation_issue(Op *op) {
+Flag reg_renaming_scheme_late_allocation_issue(Op *op) {
   ASSERT(0, reg_table_vtag_to_ptag != NULL && reg_table_ptag_to_physical != NULL);
 
   // if the op does not have destination registers, it will no result in deadlock
@@ -665,7 +667,7 @@ Flag reg_file_late_allocation_issue(Op *op) {
   ASSERT(0, reserve_op != NULL);
 
   // do not need to reserve if the reserving head has allocated physical register
-  if (reserve_op->dst_reg_ptag[0] != REG_TABLE_INVALID_REG_ID) {
+  if (reserve_op->dst_reg_ptag[0] != REG_TABLE_REG_ID_INVALID) {
     ASSERT(0, reserve_op->op_num <= op->op_num);
     return reg_table_ptag_to_physical->free_list->reg_free_num >= MAX_DESTS;
   }
@@ -683,27 +685,28 @@ Flag reg_file_late_allocation_issue(Op *op) {
   return if_available;
 }
 
-// allocate the physical registers during execution using the vtag info of the op and write back the virtual and physical registers
-void reg_file_late_allocation_execute(Op *op) {
+// allocate the physical reg during execution using the vtag info of the op and write back the virtual and physical reg
+void reg_renaming_scheme_late_allocation_execute(Op *op) {
   ASSERT(0, op != NULL && reg_table_vtag_to_ptag != NULL && reg_table_ptag_to_physical != NULL);
   ASSERT(0, op->table_info->num_dest_regs <= reg_table_ptag_to_physical->free_list->reg_free_num);
 
   // late allocation for physical register entries
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
-    if (op->dst_reg_vtag[ii] == REG_TABLE_INVALID_REG_ID)
+    if (op->dst_reg_vtag[ii] == REG_TABLE_REG_ID_INVALID)
       continue;
 
     // allocate physical register and write info
     int reg_ptag = reg_table_ptag_to_physical->ops->alloc(reg_table_ptag_to_physical, op, op->dst_reg_vtag[ii]);
 
     // write the register ptag in the op
-    ASSERT(0, op != &invalid_op && op->dst_reg_ptag[ii] == REG_TABLE_INVALID_REG_ID && reg_ptag != REG_TABLE_INVALID_REG_ID);
+    ASSERT(0, op != &invalid_op && op->dst_reg_ptag[ii] == REG_TABLE_REG_ID_INVALID);
+    ASSERT(0, reg_ptag != REG_TABLE_REG_ID_INVALID);
     op->dst_reg_ptag[ii] = reg_ptag;
   }
 
   // write back to update the register state
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
-    if (op->dst_reg_vtag[ii] == REG_TABLE_INVALID_REG_ID)
+    if (op->dst_reg_vtag[ii] == REG_TABLE_REG_ID_INVALID)
       continue;
 
     reg_table_vtag_to_ptag->ops->write_back(reg_table_vtag_to_ptag, op->dst_reg_vtag[ii]);
@@ -711,7 +714,7 @@ void reg_file_late_allocation_execute(Op *op) {
   }
 }
 
-void reg_file_late_allocation_recover(Counter recovery_op_num) {
+void reg_renaming_scheme_late_allocation_recover(Counter recovery_op_num) {
   ASSERT(0, reg_table_vtag_to_ptag != NULL && reg_table_ptag_to_physical != NULL);
 
   // release the register from the youngest to the flush point
@@ -720,22 +723,22 @@ void reg_file_late_allocation_recover(Counter recovery_op_num) {
     ASSERT((*op_p)->proc_id, (*op_p)->off_path);
 
     for (uns ii = 0; ii < (*op_p)->table_info->num_dest_regs; ++ii) {
-      if ((*op_p)->dst_reg_ptag[ii] != REG_TABLE_INVALID_REG_ID)
+      if ((*op_p)->dst_reg_ptag[ii] != REG_TABLE_REG_ID_INVALID)
         reg_table_ptag_to_physical->ops->flush_mispredict(reg_table_ptag_to_physical, (*op_p)->dst_reg_ptag[ii]);
     }
 
     for (uns ii = 0; ii < (*op_p)->table_info->num_dest_regs; ++ii) {
-      if ((*op_p)->dst_reg_vtag[ii] != REG_TABLE_INVALID_REG_ID)
+      if ((*op_p)->dst_reg_vtag[ii] != REG_TABLE_REG_ID_INVALID)
         reg_table_vtag_to_ptag->ops->flush_mispredict(reg_table_vtag_to_ptag, (*op_p)->dst_reg_vtag[ii]);
     }
   }
 }
 
-void reg_file_late_allocation_commit(Op *op) {
+void reg_renaming_scheme_late_allocation_commit(Op *op) {
   ASSERT(0, op != NULL && reg_table_vtag_to_ptag != NULL && reg_table_ptag_to_physical != NULL);
 
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
-    if (op->dst_reg_vtag[ii] == REG_TABLE_INVALID_REG_ID)
+    if (op->dst_reg_vtag[ii] == REG_TABLE_REG_ID_INVALID)
       continue;
 
     /*
@@ -756,8 +759,7 @@ void reg_file_late_allocation_commit(Op *op) {
 /**************************************************************************************/
 /* Register File Function Driven Table */
 
-struct reg_file_func {
-  enum reg_file_type reg_file_type;
+struct reg_renaming_scheme_func {
   void (*init)(void);
   Flag (*available)(uns stage_op_count);
   void (*rename)(Op *op);
@@ -767,21 +769,24 @@ struct reg_file_func {
   void (*commit)(Op *op);
 };
 
-struct reg_file_func reg_file_func_table[REG_FILE_TYPE_NUM] = {
+struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHEME_NUM] = {
   {
-    REG_FILE_TYPE_INFINITE,
-    reg_file_infinite_init, reg_file_infinite_available, reg_file_infinite_rename, reg_file_infinite_issue,
-    reg_file_infinite_execute, reg_file_infinite_recover, reg_file_infinite_commit
+    reg_renaming_scheme_infinite_init, reg_renaming_scheme_infinite_available,
+    reg_renaming_scheme_infinite_rename, reg_renaming_scheme_infinite_issue,
+    reg_renaming_scheme_infinite_execute, reg_renaming_scheme_infinite_recover,
+    reg_renaming_scheme_infinite_commit
   },
   {
-    REG_FILE_TYPE_REALISTIC,
-    reg_file_realistic_init, reg_file_realistic_available, reg_file_realistic_rename, reg_file_realistic_issue,
-    reg_file_realistic_execute, reg_file_realistic_recover, reg_file_realistic_commit
+    reg_renaming_scheme_realistic_init, reg_renaming_scheme_realistic_available,
+    reg_renaming_scheme_realistic_rename, reg_renaming_scheme_realistic_issue,
+    reg_renaming_scheme_realistic_execute, reg_renaming_scheme_realistic_recover,
+    reg_renaming_scheme_realistic_commit
   },
   {
-    REG_FILE_TYPE_LATE_ALLOCATION,
-    reg_file_late_allocation_init, reg_file_late_allocation_available, reg_file_late_allocation_rename, reg_file_late_allocation_issue,
-    reg_file_late_allocation_execute, reg_file_late_allocation_recover, reg_file_late_allocation_commit
+    reg_renaming_scheme_late_allocation_init, reg_renaming_scheme_late_allocation_available,
+    reg_renaming_scheme_late_allocation_rename, reg_renaming_scheme_late_allocation_issue,
+    reg_renaming_scheme_late_allocation_execute, reg_renaming_scheme_late_allocation_recover,
+    reg_renaming_scheme_late_allocation_commit
   }
 };
 
@@ -796,8 +801,8 @@ struct reg_file_func reg_file_func_table[REG_FILE_TYPE_NUM] = {
   --- allocate the register table entries by the config size
 */
 void reg_file_init(void) {
-  ASSERT(0, REG_FILE_TYPE >= REG_FILE_TYPE_INFINITE && REG_FILE_TYPE < REG_FILE_TYPE_NUM);
-  reg_file_func_table[REG_FILE_TYPE].init();
+  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].init();
 }
 
 /*
@@ -807,8 +812,8 @@ void reg_file_init(void) {
   --- check if there are enough register entries
 */
 Flag reg_file_available(uns stage_op_count) {
-  ASSERT(0, REG_FILE_TYPE >= REG_FILE_TYPE_INFINITE && REG_FILE_TYPE < REG_FILE_TYPE_NUM);
-  return reg_file_func_table[REG_FILE_TYPE].available(stage_op_count);
+  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  return reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].available(stage_op_count);
 }
 
 /*
@@ -819,8 +824,8 @@ Flag reg_file_available(uns stage_op_count) {
   --- allocate an entry and store the op info into the register entry
 */
 void reg_file_rename(Op *op) {
-  ASSERT(0, REG_FILE_TYPE >= REG_FILE_TYPE_INFINITE && REG_FILE_TYPE < REG_FILE_TYPE_NUM);
-  reg_file_func_table[REG_FILE_TYPE].rename(op);
+  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].rename(op);
 }
 
 /*
@@ -830,8 +835,8 @@ void reg_file_rename(Op *op) {
   --- do additional checking before execution
 */
 Flag reg_file_issue(Op *op) {
-  ASSERT(0, REG_FILE_TYPE >= REG_FILE_TYPE_INFINITE && REG_FILE_TYPE < REG_FILE_TYPE_NUM);
-  return reg_file_func_table[REG_FILE_TYPE].issue(op);
+  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  return reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].issue(op);
 }
 
 /*
@@ -841,8 +846,8 @@ Flag reg_file_issue(Op *op) {
   --- consume the src registers and write back the dst registers
 */
 void reg_file_execute(Op *op) {
-  ASSERT(0, REG_FILE_TYPE >= REG_FILE_TYPE_INFINITE && REG_FILE_TYPE < REG_FILE_TYPE_NUM);
-  reg_file_func_table[REG_FILE_TYPE].execute(op);
+  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].execute(op);
 }
 
 /*
@@ -852,8 +857,8 @@ void reg_file_execute(Op *op) {
   --- flush registers of misprediction operands
 */
 void reg_file_recover(Counter recovery_op_num) {
-  ASSERT(0, REG_FILE_TYPE >= REG_FILE_TYPE_INFINITE && REG_FILE_TYPE < REG_FILE_TYPE_NUM);
-  reg_file_func_table[REG_FILE_TYPE].recover(recovery_op_num);
+  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].recover(recovery_op_num);
 }
 
 /*
@@ -863,7 +868,7 @@ void reg_file_recover(Counter recovery_op_num) {
   --- release the previous register with same architectural id
 */
 void reg_file_commit(Op *op) {
-  ASSERT(0, REG_FILE_TYPE >= REG_FILE_TYPE_INFINITE && REG_FILE_TYPE < REG_FILE_TYPE_NUM);
-  reg_file_func_table[REG_FILE_TYPE].commit(op);
+  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].commit(op);
 }
 

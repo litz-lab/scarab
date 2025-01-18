@@ -35,11 +35,11 @@
 /**************************************************************************************/
 /* Constexpr */
 
-enum reg_file_type {
-  REG_FILE_TYPE_INFINITE,
-  REG_FILE_TYPE_REALISTIC,
-  REG_FILE_TYPE_LATE_ALLOCATION,
-  REG_FILE_TYPE_NUM
+enum reg_renaming_scheme {
+  REG_RENAMING_SCHEME_INFINITE,
+  REG_RENAMING_SCHEME_REALISTIC,
+  REG_RENAMING_SCHEME_LATE_ALLOCATION,
+  REG_RENAMING_SCHEME_NUM
 };
 
 enum reg_table_entry_state {
@@ -51,14 +51,14 @@ enum reg_table_entry_state {
   REG_TABLE_ENTRY_STATE_NUM
 };
 
-enum reg_table_reg_type {
-  REG_TABLE_REG_TYPE_GENERAL_PURPOSE,
-  REG_TABLE_REG_TYPE_VECTOR,
-  REG_TABLE_REG_TYPE_OTHER,
-  REG_TABLE_REG_TYPE_NUM
+enum reg_file_reg_type {
+  REG_FILE_REG_TYPE_GENERAL_PURPOSE,
+  REG_FILE_REG_TYPE_VECTOR,
+  REG_FILE_REG_TYPE_NUM
 };
 
-const static int REG_TABLE_INVALID_REG_ID = -1;
+const static int REG_TABLE_REG_ID_INVALID = -1;
+const static int REG_FILE_REG_TYPE_OTHER = -1;
 
 
 /**************************************************************************************/

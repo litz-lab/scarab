@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2024 University of California, Santa Cruz
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -54,22 +54,21 @@ enum reg_table_entry_state {
 enum reg_file_reg_type {
   REG_FILE_REG_TYPE_GENERAL_PURPOSE,
   REG_FILE_REG_TYPE_VECTOR,
-  REG_FILE_REG_TYPE_NUM
+  REG_FILE_REG_TYPE_NUM,
 };
 
 const static int REG_TABLE_REG_ID_INVALID = -1;
 const static int REG_FILE_REG_TYPE_OTHER = -1;
-
 
 /**************************************************************************************/
 /* Types */
 
 struct reg_table_entry {
   // op info (the pointer of op + the deep copy of special val)
-  Op       *op;
-  Counter  op_num;
-  Counter  unique_num;
-  Flag     off_path;
+  Op *op;
+  Counter op_num;
+  Counter unique_num;
+  Flag off_path;
 
   // reg id info
   int parent_reg_id;
@@ -113,7 +112,6 @@ struct reg_table {
   struct reg_table_ops *ops;
 };
 
-
 /**************************************************************************************/
 /* Operations */
 
@@ -142,17 +140,15 @@ struct reg_table_ops {
   void (*release_prev)(struct reg_table *reg_table, int reg_id);
 };
 
-
 /**************************************************************************************/
 /* External Methods */
 
-void reg_file_init(void);                           // init the register file and its register map tables
-Flag reg_file_available(uns stage_op_count);        // check if there are enough register entries
-void reg_file_rename(Op *op);                       // alloc destination registers for the operand
-Flag reg_file_issue(Op *op);                        // check the op before being issued into the FU
-void reg_file_execute(Op *op);                      // consume the src registers and write back the dst registers
-void reg_file_recover(Counter recovery_op_num);     // flush registers of misprediction operands
-void reg_file_commit(Op *op);                       // release the previous register with same architectural register id
-
+void reg_file_init(void);                        // init the register file and its register map tables
+Flag reg_file_available(uns stage_op_count);     // check if there are enough register entries
+void reg_file_rename(Op *op);                    // alloc destination registers for the operand
+Flag reg_file_issue(Op *op);                     // check the op before being issued into the FU
+void reg_file_execute(Op *op);                   // consume the src registers and write back the dst registers
+void reg_file_recover(Counter recovery_op_num);  // flush registers of misprediction operands
+void reg_file_commit(Op *op);                    // release the previous register with same architectural register id
 
 #endif /* #ifndef __MAP_RENAME_H__ */

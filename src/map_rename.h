@@ -59,6 +59,7 @@ enum reg_file_reg_type {
 
 const static int REG_TABLE_REG_ID_INVALID = -1;
 const static int REG_FILE_REG_TYPE_OTHER = -1;
+const static uns REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM = 1;
 
 /**************************************************************************************/
 /* Types */
@@ -98,6 +99,9 @@ struct reg_free_list {
 };
 
 struct reg_table {
+  // the reg type of the corresponding reg file
+  int reg_type;
+
   // map reg id to register entries for both speculative and committed op
   struct reg_table_entry *entries;
   uns size;
@@ -110,6 +114,20 @@ struct reg_table {
 
   // register table operation
   struct reg_table_ops *ops;
+};
+
+struct reg_file {
+  /* properties */
+  int reg_type;
+
+  /* register table instances */
+  // for realistic renaming
+  struct reg_table *reg_table_arch_to_ptag;
+  struct reg_table *reg_table_ptag_to_physical;
+
+  // for late allocation
+  struct reg_table *reg_table_arch_to_vtag;
+  struct reg_table *reg_table_vtag_to_ptag;
 };
 
 /**************************************************************************************/
@@ -130,7 +148,7 @@ struct reg_free_list_ops {
 };
 
 struct reg_table_ops {
-  void (*init)(struct reg_table *reg_table, uns reg_table_size, struct reg_table *parent_reg_table);
+  void (*init)(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size, int reg_type);
   int (*read)(struct reg_table *reg_table, Op *op, int parent_reg_id);
   int (*alloc)(struct reg_table *reg_table, Op *op, int parent_reg_id);
   void (*free)(struct reg_table *reg_table, struct reg_table_entry *entry);

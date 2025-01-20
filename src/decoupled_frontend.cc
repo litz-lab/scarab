@@ -9,6 +9,7 @@
 
 #include <deque>
 #include <vector>
+#include <list>
 #include <iostream>
 #include <tuple>
 #include <cmath>
@@ -27,6 +28,8 @@ class FT{
   FT_Info get_ft_info();
   bool is_consumed();
   void set_consumed();
+  Predecoding_Marker get_predecoding_marker();
+  void set_predecoding_marker(Predecoding_Marker marker);
 
  private:
   uns proc_id;
@@ -35,6 +38,8 @@ class FT{
   FT_Info ft_info;
   std::vector<Op*> ops;
   bool consumed;
+  // for predecoding
+  Predecoding_Marker predecoding_marker;
 
   friend class Decoupled_FE;
 };
@@ -72,7 +77,12 @@ private:
   int off_path;
   int sched_off_path;
   uint64_t dfe_op_count;
-  std::vector<decoupled_fe_iter> ftq_iterators;
+  // details:
+  // iterators cannot use std::<vector>.
+  // a vector uses consecutive memory;
+  // when a new element is inserted, the vector may be reallocated,
+  // rendering previous pointers to elements invalid.
+  std::list<decoupled_fe_iter> ftq_iterators;
   uint64_t recovery_addr;
   uint64_t redirect_cycle;
   bool stalled;
@@ -192,6 +202,9 @@ void FT::free_ops_and_clear() {
   ft_info.dynamic_info.started_by = FT_NOT_STARTED;
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   ft_info.dynamic_info.first_op_off_path = FALSE;
+  ft_info.dynamic_info.first_op_num = 0;
+  ft_info.dynamic_info.last_op_num = 0;
+  predecoding_marker = FT_NOT_LOOKED_UP;
 }
 
 bool FT::can_fetch_op() {
@@ -225,6 +238,7 @@ void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
     ASSERT(proc_id, op->bom && !ft_info.static_info.start);
     ft_info.static_info.start = op->inst_info->addr;
     ft_info.dynamic_info.first_op_off_path = op->off_path;
+    ft_info.dynamic_info.first_op_num = op->op_num;
   } else {
     if (op->bom) {
       // assert consecutivity
@@ -243,6 +257,7 @@ void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
     ft_info.static_info.length = op->inst_info->addr + op->inst_info->trace_info.inst_size - ft_info.static_info.start;
     ASSERT(proc_id, ft_info.dynamic_info.ended_by == FT_NOT_ENDED);
     ft_info.dynamic_info.ended_by = ft_ended_by;
+    ft_info.dynamic_info.last_op_num = op->op_num;
 
     // counting extremely short FT reason
     if (!ft_info.dynamic_info.first_op_off_path) {
@@ -285,6 +300,15 @@ void FT::set_consumed() {
   consumed = true;
 }
 
+Predecoding_Marker FT::get_predecoding_marker() {
+  return predecoding_marker;
+}
+
+void FT::set_predecoding_marker(Predecoding_Marker marker) {
+  ASSERT(proc_id, predecoding_marker == FT_NOT_LOOKED_UP);
+  predecoding_marker = marker;
+}
+
 /* FT wrappers */
 bool ft_can_fetch_op(FT* ft) {
   return ft->can_fetch_op();
@@ -304,6 +328,14 @@ void ft_set_consumed(FT* ft) {
 
 FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
+}
+
+Predecoding_Marker ft_get_predecoding_marker(FT* ft) {
+  return ft->get_predecoding_marker();
+}
+
+void ft_set_predecoding_marker(FT* ft, Predecoding_Marker marker) {
+  ft->set_predecoding_marker(marker);
 }
 
 /* Decoupled_FE member functions */
@@ -337,10 +369,40 @@ void Decoupled_FE::recover() {
   sched_off_path = false;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
 
-  for (auto it = ftq.begin(); it != ftq.end(); it++) {
-    it->free_ops_and_clear();
+  if (DECOUPLED_ICACHE_STAGE) {
+    // details:
+    // the icache stage might seize pointers to on-path fts that do not need to be flushed;
+    // for ftq which uses std::<deque>, the flush has to start at the end of the ftq.
+    // Otherwise, if the flush starts at the front and any ft is removed from the middle of the ftq,
+    // those pointers will no longer be valid
+    for (int i = ftq.size() - 1; i >= 0; i--) {
+      if (ftq[i].ft_info.dynamic_info.last_op_num > bp_recovery_info->recovery_op_num) {
+        // if ever to flush an FT, it has to be at the end
+        ASSERT(proc_id, (uint64_t)i == ftq.size() - 1);
+        ftq[i].free_ops_and_clear();
+        ftq.erase(ftq.begin() + i);
+      }
+    }
+
+    for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
+      if (it->ft_pos >= ftq.size()) {
+        it->ft_pos = ftq.size();
+        it->op_pos = 0;
+        it->flattened_op_pos = ftq_num_ops();
+      }
+    }
+  } else {
+    for (auto it = ftq.begin(); it != ftq.end(); it++) {
+      it->free_ops_and_clear();
+    }
+    ftq.clear();
+    for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
+      // When the FTQ flushes, reset all iterators
+      it->ft_pos = 0;
+      it->op_pos = 0;
+      it->flattened_op_pos = 0;
+    }
   }
-  ftq.clear();
 
   current_ft_to_push.free_ops_and_clear();
   current_ft_to_push.set_ft_started_by(FT_STARTED_BY_RECOVERY);
@@ -348,13 +410,6 @@ void Decoupled_FE::recover() {
   dfe_op_count = bp_recovery_info->recovery_op_num + 1;
   DEBUG(proc_id,
         "Recovery signalled fetch_addr0x:%llx\n", bp_recovery_info->recovery_fetch_addr);
-
-  for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
-    // When the FTQ flushes, reset all iterators
-    it->ft_pos = 0;
-    it->op_pos = 0;
-    it->flattened_op_pos = 0;
-  }
 
   auto op = bp_recovery_info->recovery_op;
 
@@ -545,7 +600,7 @@ void Decoupled_FE::update() {
       ASSERT(proc_id, current_ft_to_push.ft_info.static_info.start && current_ft_to_push.ft_info.static_info.length && current_ft_to_push.ops.size());
       ASSERT(proc_id, current_ft_to_push.ops.front()->bom && current_ft_to_push.ops.back()->eom);
       current_ft_to_push.set_per_op_ft_info();
-      if (!ftq.empty()) {
+      if (!ftq.empty() && !DECOUPLED_ICACHE_STAGE) {
         // sanity check of consecutivity
         Op* last_op = ftq.back().ops.back();
         if (ftq.back().ft_info.dynamic_info.ended_by == FT_TAKEN_BRANCH) {

@@ -52,6 +52,8 @@ extern "C" {
 #include "frontend/pin_trace_fe.h"
 
 #include "stage_data.h"
+#include "predecoding.h"
+
 typedef struct FT FT;
 
 typedef struct decoupled_fe_iter decoupled_fe_iter;
@@ -81,8 +83,10 @@ struct decoupled_fe_iter {
   bool ft_is_consumed(FT* ft);
   void ft_set_consumed(FT* ft);
   FT_Info ft_get_ft_info(FT* ft);
-  FT* decoupled_fe_get_ft(uint64_t ft_pos);
+  Predecoding_Marker ft_get_predecoding_marker(FT* ft);
+  void ft_set_predecoding_marker(FT* ft, Predecoding_Marker marker);
   // FTQ API
+  FT* decoupled_fe_get_ft(uint64_t ft_pos);
   decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id);
   /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached
      if end_of_ft is true the Op is the last one in a fetch target (cache-line boundary of taken branch)*/

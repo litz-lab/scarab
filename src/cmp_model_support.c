@@ -66,6 +66,7 @@ void cmp_init_cmp_model() {
   alloc_mem_djolt(NUM_CORES);
   alloc_mem_fnlmma(NUM_CORES);
   alloc_mem_uop_cache(NUM_CORES);
+  alloc_mem_predecoding(NUM_CORES);
 }
 
 
@@ -88,6 +89,7 @@ void cmp_set_all_stages(uns8 proc_id) {
   set_fdip(proc_id, &cmp_model.icache_stage[proc_id]);
   set_decoupled_fe(proc_id);
   set_uop_cache(proc_id);
+  set_predecoding(proc_id);
   set_icache_stage(&cmp_model.icache_stage[proc_id]);
   set_decode_stage(&cmp_model.decode_stage[proc_id]);
   set_map_stage(&cmp_model.map_stage[proc_id]);

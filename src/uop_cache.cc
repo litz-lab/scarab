@@ -32,6 +32,8 @@
 #include "uop_queue_stage.h"
 
 #include <vector>
+#include <deque>
+#include <algorithm>
 /**************************************************************************************/
 /* Macros */
 
@@ -109,10 +111,10 @@ static Counter* current_accumulating_op_num = NULL;
 // the lookup buffer stores the uop cache lines of an FT
 // to be consumed by the icache stage.
 // all lines are cleared when the entire FT has been consumed by the icache stage
-static std::vector<std::vector<Uop_Cache_Data>> per_core_lookup_buffer;
+static std::vector<std::deque<std::pair<FT_Info, std::vector<Uop_Cache_Data>>>> per_core_lookup_buffer_queue;
 static std::vector<uns> per_core_num_looked_up_lines;
 // pointers to the structures of the current core in use
-static std::vector<Uop_Cache_Data>* current_lookup_buffer = NULL;
+static std::deque<std::pair<FT_Info, std::vector<Uop_Cache_Data>>>* current_lookup_buffer_queue = NULL;
 static uns* current_num_looked_up_lines = NULL;
 
 void alloc_mem_uop_cache(uns num_cores) {
@@ -124,7 +126,7 @@ void alloc_mem_uop_cache(uns num_cores) {
   per_core_accumulating_ft.resize(num_cores);
   per_core_accumulating_op_num.resize(num_cores);
 
-  per_core_lookup_buffer.resize(num_cores);
+  per_core_lookup_buffer_queue.resize(num_cores);
   per_core_num_looked_up_lines.resize(num_cores);
 
   per_core_uop_cache.resize(num_cores);
@@ -154,7 +156,7 @@ void set_uop_cache(uns8 proc_id) {
   current_accumulating_ft = &per_core_accumulating_ft[proc_id];
   current_accumulating_op_num = &per_core_accumulating_op_num[proc_id];
 
-  current_lookup_buffer = &per_core_lookup_buffer[proc_id];
+  current_lookup_buffer_queue = &per_core_lookup_buffer_queue[proc_id];
   current_num_looked_up_lines = &per_core_num_looked_up_lines[proc_id];
 }
 
@@ -163,13 +165,16 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
     return FALSE;
   }
 
-  ASSERT(uop_cache_proc_id, current_lookup_buffer->empty());
-  ASSERT(uop_cache_proc_id, *current_num_looked_up_lines == 0);
+  std::vector<Uop_Cache_Data> current_lookup_buffer = {};
+  ASSERT(uop_cache_proc_id, current_lookup_buffer.empty());
+  if (!DECOUPLED_ICACHE_STAGE) {
+    ASSERT(uop_cache_proc_id, *current_num_looked_up_lines == 0);
+  }
   Uop_Cache_Data* uoc_data = NULL;
   Addr lookup_addr = ft_info.static_info.start;
   do {
     uoc_data = uop_cache_lookup_line(lookup_addr, ft_info, TRUE);
-    if (current_lookup_buffer->empty()) {
+    if (current_lookup_buffer.empty()) {
       DEBUG(uop_cache_proc_id, "UOC %s. ft_start=0x%llx, ft_length=%lld\n",
             uoc_data ? "hit" : "miss", ft_info.static_info.start, ft_info.static_info.length);
       if (!uoc_data) {
@@ -188,12 +193,18 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
       uoc_data->used += 1;
     }
 
-    current_lookup_buffer->emplace_back(*uoc_data);
+    current_lookup_buffer.emplace_back(*uoc_data);
     ASSERT(uop_cache_proc_id, (uoc_data->offset == 0) == uoc_data->end_of_ft);
     lookup_addr += uoc_data->offset;
   } while (!uoc_data->end_of_ft);
 
+  current_lookup_buffer_queue->emplace_back(ft_info, current_lookup_buffer);
   return TRUE;
+}
+
+FT_Info uop_cache_get_lookup_buffer_ft_info() {
+  ASSERT(uop_cache_proc_id, !current_lookup_buffer_queue->empty());
+  return current_lookup_buffer_queue->front().first;
 }
 
 /**************************************************************************************/
@@ -202,6 +213,7 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
  * if the uop num of the current line <= requested, it will be fully consumed and the line index is incremented
  */
 Uop_Cache_Data uop_cache_consume_uops_from_lookup_buffer(uns requested) {
+  std::vector<Uop_Cache_Data>* current_lookup_buffer = &current_lookup_buffer_queue->front().second;
   Uop_Cache_Data* uop_cache_line = &current_lookup_buffer->at(*current_num_looked_up_lines);
   Uop_Cache_Data consumed_uop_cache_line = *uop_cache_line;
   if (uop_cache_line->n_uops > requested) {
@@ -224,8 +236,16 @@ void uop_cache_clear_lookup_buffer() {
     return;
   }
 
-  current_lookup_buffer->clear();
-  *current_num_looked_up_lines = 0;
+  if (!DECOUPLED_ICACHE_STAGE) {
+    ASSERT(uop_cache_proc_id, current_lookup_buffer_queue->size() <= 1);
+  }
+
+  if (!current_lookup_buffer_queue->empty()) {
+    current_lookup_buffer_queue->pop_front();
+    *current_num_looked_up_lines = 0;
+  } else {
+    ASSERT(uop_cache_proc_id, *current_num_looked_up_lines == 0);
+  }
 }
 
 Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag update_repl) {
@@ -498,5 +518,17 @@ void recover_uop_cache(void) {
     // no accumulation on-going
     ASSERT(uop_cache_proc_id, current_accumulating_ft->static_info == FT_Info_Static{} &&
                               *current_accumulating_op_num == 0);
+  }
+
+  if (DECOUPLED_ICACHE_STAGE) {
+    // recover uop cache lookup buffer queue
+    auto it = std::find_if(current_lookup_buffer_queue->begin(), current_lookup_buffer_queue->end(),
+                            [&](const auto& ele){ return ele.first.dynamic_info.last_op_num > bp_recovery_info->recovery_op_num; });
+    if (it != current_lookup_buffer_queue->end()) {
+      current_lookup_buffer_queue->erase(it, current_lookup_buffer_queue->end());
+    }
+  } else {
+    // for the legacy design (coupled icache stage), there is nothing more to do
+    ASSERT(uop_cache_proc_id, current_lookup_buffer_queue->size() == 0);
   }
 }

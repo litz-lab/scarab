@@ -128,6 +128,7 @@ void cmp_init(uns mode) {
     init_bp_recovery_info(proc_id, &cmp_model.bp_recovery_info[proc_id]);
     init_bp_data(proc_id, &cmp_model.bp_data[proc_id]);
     init_uop_cache(proc_id);
+    init_predecoding(proc_id);
 
     init_decoupled_fe(proc_id, "DCFE");
 
@@ -376,7 +377,11 @@ void cmp_recover() {
 
   recover_decoupled_fe();
   recover_fdip();
-  recover_icache_stage();
+  if (DECOUPLED_ICACHE_STAGE) {
+    recover_decoupled_icache_stage();
+  } else {
+    recover_icache_stage();
+  }
   recover_uop_cache();
   recover_decode_stage();
   recover_uop_queue_stage();

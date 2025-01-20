@@ -20,57 +20,35 @@
  */
 
 /***************************************************************************************
- * File         : ft_info.h
+ * File         : predecoding.h
  * Author       : Mingsheng Xu <mxu61@ucsc.edu>
- * Date         : 06/16/2024
+ * Date         : 01/04/2025
  * Description  :
  ***************************************************************************************/
 
-#ifndef __FT_INFO_H__
-#define __FT_INFO_H__
+#ifndef __PREDECODING_H__
+#define __PREDECODING_H__
 
-typedef enum FT_Started_By_enum {
-  FT_NOT_STARTED,
-  FT_STARTED_BY_APP,
-  FT_STARTED_BY_ICACHE_LINE_BOUNDARY,
-  FT_STARTED_BY_TAKEN_BRANCH,
-  FT_STARTED_BY_BAR_FETCH,
-  FT_STARTED_BY_RECOVERY
-} FT_Started_By;
 
-typedef enum FT_Ended_By_enum {
-  FT_NOT_ENDED,
-  FT_ICACHE_LINE_BOUNDARY,
-  FT_TAKEN_BRANCH,
-  FT_BAR_FETCH,
-  FT_APP_EXIT
-} FT_Ended_By;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-typedef struct FT_Info_Static_struct {
-  // the PC of the first inst in this FT
-  Addr start;
-  // the FT size in bytes, counting from the first byte of the first inst to the last byte of the last inst
-  Addr length;
-  // the number of uops in this FT
-  int n_uops;
-} FT_Info_Static;
+#include "uop_cache.h"
 
-// two fts with the same static info may have different dynamic info
-typedef struct FT_Info_Dynamic_struct {
-  // the start of the FT
-  FT_Started_By started_by;
-  // the termination of the FT
-  FT_Ended_By ended_by;
-  // if the first op of this FT is off-path
-  Flag first_op_off_path;
-  // inclusive range of op_num insiede the ft
-  Counter first_op_num;
-  Counter last_op_num;
-} FT_Info_Dynamic;
+typedef enum Predecoding_Marker_enum {
+FT_NOT_LOOKED_UP,
+FT_IN_UOP_CACHE,
+FT_NOT_IN_UOP_CACHE
+} Predecoding_Marker;
 
-struct FT_Info_struct {
-  FT_Info_Static static_info;
-  FT_Info_Dynamic dynamic_info;
-};
+void alloc_mem_predecoding(uns numProcs);
+void init_predecoding(uns proc_id);
+void set_predecoding(int proc_id);
+void predecoding_probe_ftq();
+uint64_t predecoding_get_next_ft_pos(Predecoding_Marker marker);
+#ifdef __cplusplus
+}
+#endif
 
 #endif

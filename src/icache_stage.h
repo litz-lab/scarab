@@ -77,7 +77,8 @@ typedef enum FT_Arbitration_Result_enum {
   FT_UNAVAILABLE,
   FT_MISS_BOTH,
   FT_HIT_ICACHE,
-  FT_HIT_UOP_CACHE
+  FT_HIT_UOP_CACHE,
+  FT_INCONSECUTIVE
 } FT_Arbitration_Result;
 
 typedef struct Icache_Stage_struct {
@@ -103,6 +104,9 @@ typedef struct Icache_Stage_struct {
   // keep track of the current FT being used by the icache / uop cache
   FT* current_ft_used_by_uop_cache;
   FT* current_ft_used_by_icache;
+  // for decoupled icache stage recovery
+  Counter last_op_num_of_last_uop_cache_ft;
+  Counter last_op_num_of_last_icache_ft;
   Flag        off_path;        /* is the icache fetching on the correct path? */
   Flag back_on_path; /* did a recovery happen to put the machine back on path?
                       */
@@ -148,6 +152,7 @@ Stage_Data* get_current_stage_data(void);
 void reset_icache_stage(void);
 void reset_all_ops_icache_stage(void);
 void recover_icache_stage(void);
+void recover_decoupled_icache_stage(void);
 void redirect_icache_stage(void);
 void debug_icache_stage(void);
 void update_icache_stage(void);

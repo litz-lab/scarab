@@ -40,6 +40,8 @@ struct Op_struct;
 
 /**************************************************************************************/
 /* Prototypes */
+#include <vector>
+Addr buf_map_find_replace(const std::vector<Addr>& line_addrs, Flag bypass, uns num_ft);
 
 #ifdef __cplusplus
 extern "C" {

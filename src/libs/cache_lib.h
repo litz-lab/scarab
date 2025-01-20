@@ -42,29 +42,30 @@
 /**************************************************************************************/
 
 typedef enum Repl_Policy_enum {
-  REPL_TRUE_LRU,    /* actual least-recently-used replacement */
-  REPL_RANDOM,      /* random replacement */
-  REPL_NOT_MRU,     /* not-most-recently-used replacement */
-  REPL_ROUND_ROBIN, /* round-robin replacement */
-  REPL_IDEAL,       /* ideal replacement */
-  REPL_ISO_PREF, /* lru with some entries (isolated misses) higher priority */
-  REPL_LOW_PREF, /* prefetched data have lower priority */
-  REPL_SHADOW_IDEAL,  /* ideal replacement with shadow cache */
-  REPL_IDEAL_STORAGE, /* if the data doesn't have a temporal locality then it
-                         isn't stored at the cache */
-  REPL_MLP,           /* mlp based replacement  -- uses MLP_REPL_POLICY */
-  REPL_PARTITION,     /* Based on the partition*/
-  REPL_RESTEER,       /* Prioritize the instr following a resteered branch or fetch barrier */
+  REPL_TRUE_LRU,              /* actual least-recently-used replacement */
+  REPL_RANDOM,                /* random replacement */
+  REPL_NOT_MRU,               /* not-most-recently-used replacement */
+  REPL_ROUND_ROBIN,           /* round-robin replacement */
+  REPL_IDEAL,                 /* ideal replacement */
+  REPL_ISO_PREF,              /* lru with some entries (isolated misses) higher priority */
+  REPL_LOW_PREF,              /* prefetched data have lower priority */
+  REPL_SHADOW_IDEAL,          /* ideal replacement with shadow cache */
+  REPL_IDEAL_STORAGE,         /* if the data doesn't have a temporal locality then it
+                                 isn't stored at the cache */
+  REPL_MLP,                   /* mlp based replacement  -- uses MLP_REPL_POLICY */
+  REPL_PARTITION,             /* Based on the partition*/
+  REPL_RESTEER,               /* Prioritize the instr following a resteered branch or fetch barrier */
   REPL_STICKY_PRIORITY_LINES, /* Prioritize lines tagged with priority bit. */
 
-  REPL_VOID,            /* void policy for loop ending and policy seperation */
-  REPL_LRU_REF,         /* least-recently-used replacement */
-  REPL_NRU,             /* not recently used replacement */
-  REPL_SRRIP,           /* static re-reference interval prediction */
-  REPL_BRRIP,           /* bimodal re-reference interval prediction */
-  REPL_DRRIP,           /* dynamic re-reference interval prediction */
-  REPL_SHIP,            /* signature-based hit predictor */
+  REPL_VOID,    /* void policy for loop ending and policy seperation */
+  REPL_LRU_REF, /* least-recently-used replacement */
+  REPL_NRU,     /* not recently used replacement */
+  REPL_SRRIP,   /* static re-reference interval prediction */
+  REPL_BRRIP,   /* bimodal re-reference interval prediction */
+  REPL_DRRIP,   /* dynamic re-reference interval prediction */
+  REPL_SHIP,    /* signature-based hit predictor */
 
+  BELADY_UOP,
   NUM_REPL
 } Repl_Policy;
 

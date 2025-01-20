@@ -8,6 +8,7 @@
 #include <limits>
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
+#include "frontend/pt_memtrace/memtrace_fe.h"
 
 extern "C" {
 #include "globals/assert.h"
@@ -18,6 +19,9 @@ extern "C" {
 
 #define CPPC_DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CPP_CACHE, ##args)
 
+Addr bypass_repl_addr = 0;
+uns bypass_repl_idx = 0;
+bool bypass_repl_idx_valid = 0;
 template <typename User_Key_Type, typename User_Data_Type>
 struct Entry {
   Flag valid;
@@ -68,6 +72,7 @@ class Cpp_Cache {
   User_Data_Type* access(User_Key_Type key, bool update_repl);
   Entry<User_Key_Type, User_Data_Type> insert(User_Key_Type key, User_Data_Type data);
   Entry<User_Key_Type, User_Data_Type> invalidate(User_Key_Type key);
+  bool check_bypass(User_Key_Type key);
 };
 
 template <typename User_Key_Type, typename User_Data_Type>
@@ -79,6 +84,9 @@ void Cpp_Cache<User_Key_Type, User_Data_Type>::update_repl_states(Set<User_Key_T
     case REPL_RANDOM: {
     } break;
     case REPL_ROUND_ROBIN: {
+    } break;
+    case BELADY_UOP: {
+      set.entries[hit_idx].accessed_cycle = cycle_count;
     } break;
     default:
       ASSERT(0, FALSE);  // unsupported
@@ -116,10 +124,107 @@ uns Cpp_Cache<User_Key_Type, User_Data_Type>::get_repl_idx(Set<User_Key_Type, Us
       repl_idx = (set.next_evict + 1) % assoc;
       set.next_evict = repl_idx;
     } break;
+    case BELADY_UOP: {
+      // record the most recent used and not evict it
+      uns num_ft = 0;
+      Counter mru_cycle = std::numeric_limits<Counter>::min();
+      for (uns i = 0; i < assoc; i++) {
+        Entry<User_Key_Type, User_Data_Type> entry = set.entries[i];
+        // find biggest access cycle
+        if (entry.accessed_cycle > mru_cycle) {
+          mru_cycle = entry.accessed_cycle;
+        }
+        if (entry.key.first == bypass_repl_addr)
+          bypass_repl_idx= i;
+        if(set.entries[i].data.end_of_ft)
+          num_ft++;
+      }
+      if(bypass_repl_idx_valid && mru_cycle != set.entries[bypass_repl_idx].accessed_cycle){
+        bypass_repl_idx_valid = 0;
+        return bypass_repl_idx;
+      }
+      
+      std::vector<Addr> addresses;
+      for (uns i = 0; i < assoc; i++) {
+        if(mru_cycle != set.entries[i].accessed_cycle && set.entries[i].data.end_of_ft)
+          addresses.push_back(set.entries[i].key.first);
+      }
+
+      Addr replace_addr = buf_map_find_replace(addresses, 0, num_ft);
+      if(!replace_addr){
+        for (uns i = 0; i < assoc; i++) {
+          Entry<User_Key_Type, User_Data_Type> entry = set.entries[i];
+          if (mru_cycle != entry.accessed_cycle){
+            repl_idx= i;
+            break;
+          } 
+        }
+      }else{
+        for (uns i = 0; i < assoc; i++) {
+          Entry<User_Key_Type, User_Data_Type> entry = set.entries[i];
+          if (entry.key.first == replace_addr && mru_cycle != entry.accessed_cycle){
+            repl_idx= i;
+            break;
+          }
+            
+        }
+        for (uns i = 0; i < assoc; i++) {
+          Entry<User_Key_Type, User_Data_Type> entry = set.entries[i];
+          if (mru_cycle != entry.accessed_cycle){
+            repl_idx= i;
+            break;
+          }
+            
+        }
+      }
+
+      break;
+    }
     default:
       ASSERT(0, FALSE);  // unsupported
   }
   return repl_idx;
+}
+
+template <typename User_Key_Type, typename User_Data_Type>
+bool Cpp_Cache<User_Key_Type, User_Data_Type>::check_bypass(User_Key_Type key){
+  uns set_idx = set_idx_hash(key);
+  uns num_ft = 0;
+  auto set = sets[set_idx];
+  std::vector<Addr> addresses;
+  addresses.push_back(key.first);
+  uns valid_cnt = 0;
+  for (uns i = 0; i < assoc; i++) {
+    // if have empty entry don't bypass
+      
+    if(set.entries[i].valid){
+      num_ft++;
+      valid_cnt++;
+      // printf("inserting addr %llx \n", set.entries[i].key.first);
+      addresses.push_back(set.entries[i].key.first);
+    }
+      
+  }
+  if(addresses.size()<2)
+    return 0;
+  // printf("set has valid line %i ft %i :\n", valid_cnt, num_ft);
+  Addr replace_addr = buf_map_find_replace(addresses, 1, num_ft);
+  if(!replace_addr){
+    // bypass if 0 return
+    return 1;
+  }else{
+      if(replace_addr == key.first)
+        return 1;
+      else{
+        bypass_repl_addr = replace_addr;
+        bypass_repl_idx_valid = 1;
+        return 0;
+      }
+  }
+
+
+    
+  
 }
 
 // access: Looks up the cache based on key. Returns pointer to line data if found

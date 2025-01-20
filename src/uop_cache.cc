@@ -283,6 +283,16 @@ bool insert_buffer_into_uopc(FT_Info* buffer_ft_info, std::vector<Uop_Cache_Data
       Uop_Cache_Data* insert_line = &accumulation_buffer->at(i);
       Uop_Cache_Data* uop_cache_line = uop_cache_lookup_line(insert_line->line_start, *buffer_ft_info, TRUE);
 
+      if (UOP_CACHE_BYPASS) {
+        if (i == 0)
+          STAT_EVENT(uop_cache_proc_id, UOP_INSERTION_BYPASSED_CHECKED);
+        if (i == 0 && per_core_uop_cache[uop_cache_proc_id]->check_bypass(
+                          {insert_line->line_start, buffer_ft_info->static_info})) {
+          STAT_EVENT(uop_cache_proc_id, UOP_INSERTION_BYPASSED_ONPATH + buffer_ft_info->dynamic_info.first_op_off_path);
+          return true;
+        }
+      }
+
       if (i == 0 && uop_cache_line) {
         // when i == 0, we are looking up the first line from the FT;
         // if this is already in the uop cache, all lines of the FT should be in the uop cache;

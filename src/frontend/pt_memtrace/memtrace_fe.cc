@@ -41,15 +41,20 @@ extern "C" {
 #include "ctype_pin_inst.h"
 #include "frontend/pt_memtrace/memtrace_fe.h"
 #include "isa/isa.h"
+#include "memory/memory.param.h"
+#include "pin/pin_lib/gather_scatter_addresses.h"
 #include "pin/pin_lib/uop_generator.h"
 #include "pin/pin_lib/x86_decoder.h"
-#include "pin/pin_lib/gather_scatter_addresses.h"
 #include "statistics.h"
 
 #define DR_DO_NOT_DEFINE_int64
 
-#include "frontend/pt_memtrace/memtrace_trace_reader_memtrace.h"
+#define UOP_CACHE_LINE_SIZE ICACHE_LINE_SIZE
+
+#include <map>
 #include <unordered_map>
+
+#include "frontend/pt_memtrace/memtrace_trace_reader_memtrace.h"
 /**************************************************************************************/
 /* Global Variables */
 
@@ -69,8 +74,13 @@ Flag roi_dump_began = FALSE;
 Counter roi_dump_ID = 0;
 std::vector<ctype_pin_inst> circ_buf;
 std::unordered_map<Addr, Counter> buf_map;
-const int CLINE = ~0x3F;
+// key is timestamp, value is addr
+std::map<unsigned long long, Addr> order_to_addr;
+std::unordered_map<Addr, std::vector<unsigned long long>> addr_to_orders;
 
+const int CLINE = ~0x3F;
+unsigned long long insert_order = 0;
+unsigned long long remove_order = 0;
 /**************************************************************************************/
 /* Private Functions */
 int memtrace_trace_read_internal(int proc_id, ctype_pin_inst* next_onpath_pi);
@@ -147,28 +157,55 @@ int roi(const xed_decoded_inst_t* ins) {
   return 0;
 }
 
-// inserts the inst written to write_ptr location
 void buf_map_insert() {
-  Addr line_addr = circ_buf[wrptr].instruction_addr & CLINE;
-  auto it = buf_map.find(line_addr);
-  if (it != buf_map.end()) {
-    it->second++;
+  // Addr line_addr = circ_buf[wrptr].instruction_addr & CLINE;
+  Addr inst_addr = circ_buf[wrptr].instruction_addr;
+  auto it = addr_to_orders.find(inst_addr);
+  if (it != addr_to_orders.end()) {
+    // Address exists, add new order to its vector
+    it->second.push_back(insert_order);
+  } else {
+    // New address, create vector with first order
+    std::vector<unsigned long long> orders;
+    orders.push_back(insert_order);
+    addr_to_orders[inst_addr] = orders;
   }
-  else {
+  order_to_addr[insert_order] = inst_addr;
+  insert_order++;
+
+  Addr line_addr = circ_buf[wrptr].instruction_addr & CLINE;
+  auto it_ = buf_map.find(line_addr);
+  if (it_ != buf_map.end()) {
+    it_->second++;
+  } else {
     buf_map.insert(std::pair<Addr, Counter>(line_addr, 1));
   }
+
   wrptr = (wrptr + 1) % MEMTRACE_BUF_SIZE;
 }
 
 void buf_map_remove() {
-  Addr line_addr = circ_buf[rdptr].instruction_addr & CLINE;
-  auto it = buf_map.find(line_addr);
-  assert (it != buf_map.end());
-  if (it->second > 1) {
-    it->second--;
+  // Addr line_addr = circ_buf[rdptr].instruction_addr & CLINE;
+  Addr inst_addr = circ_buf[rdptr].instruction_addr;
+  auto it = addr_to_orders.find(inst_addr);
+  if (it != addr_to_orders.end() && !it->second.empty()) {
+    // Remove oldest order (first in vector) for this address
+    unsigned long long oldest_order = it->second[0];
+    order_to_addr.erase(oldest_order);
+    it->second.erase(it->second.begin());
+
+    // Only erase address if no more orders left
+    if (it->second.empty()) {
+      addr_to_orders.erase(it);
+    }
   }
-  else {
-    buf_map.erase(it);
+  Addr line_addr = circ_buf[rdptr].instruction_addr & CLINE;
+  auto it_ = buf_map.find(line_addr);
+  assert(it_ != buf_map.end());
+  if (it_->second > 1) {
+    it_->second--;
+  } else {
+    buf_map.erase(it_);
   }
   rdptr = (rdptr + 1) % MEMTRACE_BUF_SIZE;
 }
@@ -289,6 +326,175 @@ void memtrace_init(void) {
     memtrace_setup(proc_id);
   }
 }
+
+Addr buf_map_find_replace(const std::vector<Addr>& line_addrs, Flag bypass, uns num_ft) {
+  ASSERT(0, line_addrs.size() == bypass + num_ft);
+  if (line_addrs.empty() || num_ft == 0) {
+    return 0;
+  }
+
+  uns offset_bits = LOG2(UOP_CACHE_LINE_SIZE);
+  uns num_sets = UOP_CACHE_LINES / UOP_CACHE_ASSOC;
+  uns target_set = (line_addrs[0] >> offset_bits) % num_sets;
+
+  Addr return_addr = line_addrs[0];
+  unsigned long long latest_next_use = 0;  // Track the furthest next use
+
+  if (bypass) {
+    // First address is the new one to insert
+    // Addr new_addr = line_addrs[0] & ~0x3f;
+    Addr new_addr = line_addrs[0];
+    auto new_addr_orders = addr_to_orders.find(new_addr);
+    // printf("checking bypassing:\n");
+
+    uns not_found_cnt = 0;
+    if (new_addr_orders != addr_to_orders.end() && !new_addr_orders->second.empty()) {
+      STAT_EVENT(0, BELADY_BYPASS_FOUND);
+      unsigned long long new_next_use = new_addr_orders->second[0];  // When will inserting be used
+      // printf("inserting %llx ts %llx \n", line_addrs[0], new_addr_orders->second[0]);
+      // Check all existing addresses in cache
+      bool should_insert = true;
+      Addr replace_addr = 0;
+      unsigned long long replace_order = 0;
+
+      for (size_t i = 1; i < line_addrs.size(); i++) {
+        // Addr existing_addr = line_addrs[i] & ~0x3f;
+        Addr existing_addr = line_addrs[i];
+        auto existing_orders = addr_to_orders.find(existing_addr);
+
+        if (existing_orders != addr_to_orders.end() && !existing_orders->second.empty()) {
+          STAT_EVENT(0, BELADY_BYPASS_FOUND);
+          // printf("checking %llx ts %llx \n", line_addrs[i], existing_orders->second[0]);
+          if (replace_order < existing_orders->second[0]) {
+            replace_addr = line_addrs[i];
+            replace_order = existing_orders->second[0];
+          }
+        } else {
+          // printf("checking not found\n");
+          STAT_EVENT(0, BELADY_BYPASS_NOT_FOUND);
+          replace_addr = line_addrs[i];
+          replace_order = std::numeric_limits<unsigned long long>::max();
+          not_found_cnt++;
+          // return line_addrs[i];
+        }
+      }
+
+      // Check if any address appears twice before this address's next use
+      // if(found_cnt < num_ft + bypass){
+      //   for (const auto& entry : order_to_addr) {
+      //     if (entry.first > new_next_use) break;  // We've gone too far
+
+      //     Addr curr_addr = entry.second;
+      //     uns curr_set = (curr_addr >> offset_bits) % num_sets;
+
+      //     // Only check addresses in the same set
+      //     if (curr_set == target_set) {
+      //         auto addr_orders = addr_to_orders.find(entry.second);
+      //         if (addr_orders != addr_to_orders.end() && addr_orders->second.size() > 1) {
+      //             should_insert = false;
+      //             break;
+      //         }
+      //     }
+      //   }
+      // }
+      // if not found >1 need to find a double
+
+      should_insert = (new_next_use < replace_order);
+
+      if (not_found_cnt > 1) {
+        for (const auto& entry : order_to_addr) {
+          if (entry.first > new_next_use) {
+            should_insert = 1;
+            break;  // We've gone too far, if no value found before inserting addr is accessed again, just insert
+          }
+
+          Addr curr_addr = entry.second;
+          uns curr_set = (curr_addr >> offset_bits) % num_sets;
+          // count addrs not in the set
+          bool found = false;
+          for (const auto& addr : line_addrs) {
+            if ((addr & ~0x3f) == (curr_addr & ~0x3f)) {
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            // curr_addr is not in line_addrs
+
+            // Only check addresses in the same set
+            if (curr_set == target_set) {
+              auto addr_orders = addr_to_orders.find(entry.second);
+              // if we find a value to be accessed twice, it should be inserted later, can
+              if (addr_orders != addr_to_orders.end() && addr_orders->second.size() > 1) {
+                should_insert = 1;
+              }
+            }
+          }
+        }
+      }
+      if (should_insert) {
+        // printf("should insert %i, replacing %llx \n\n", should_insert, replace_addr);
+        return replace_addr;
+      }
+
+      else {
+        // printf("should insert %i, bypassing \n\n", should_insert);
+        return line_addrs[0];
+      }
+
+    } else {
+      // printf("inserting value not found, bypassing \n\n");
+      STAT_EVENT(0, BELADY_BYPASS_NOT_FOUND);
+      return line_addrs[0];
+    }
+
+  } else {
+    // Simple Belady's - just find the address that will be used furthest in the future
+    for (size_t i = 0; i < line_addrs.size(); i++) {
+      Addr curr_addr = line_addrs[i];
+      auto curr_orders = addr_to_orders.find(curr_addr);
+
+      if (curr_orders != addr_to_orders.end() && !curr_orders->second.empty()) {
+        if (curr_orders->second[0] > latest_next_use) {
+          latest_next_use = curr_orders->second[0];
+          return_addr = line_addrs[i];
+        }
+      } else {
+        // If address not found in future accesses, it's the best candidate for replacement
+        return line_addrs[i];
+      }
+    }
+  }
+
+  return return_addr;
+}
+
+// Flag buf_map_find_set_assoc(Addr line_addr) {
+//   uns offset_bits = LOG2(UOP_CACHE_LINE_SIZE);
+//   uns num_sets = UOP_CACHE_LINES / UOP_CACHE_ASSOC;
+//   uns target_set = (line_addr >> offset_bits) % num_sets;
+
+//   // Will store the last matching entry's timestamp
+
+//   uns found_count = 0;
+
+//   // Iterate through all entries to find matches
+//   for (const auto& entry : buf_map) {
+//     uns entry_set = (entry.first >> offset_bits) % num_sets;
+//     if (entry_set == target_set) {
+//       found_count++;
+//       if(entry.first == line_addr & ~0x3f)
+//         return true;
+//     }
+//     // If we've found all entries in the set, we can stop
+//     if (found_count == UOP_CACHE_ASSOC) {
+//         break;
+//     }
+//   }
+
+//   return false;
+
+// }
 
 void memtrace_setup(uns proc_id) {
   std::string path(trace_files[proc_id]);

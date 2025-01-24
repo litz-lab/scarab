@@ -94,6 +94,14 @@ static inline int reg_file_get_reg_type(int reg_id) {
   return REG_FILE_REG_TYPE_OTHER;
 }
 
+static inline Flag reg_file_check_physical_reg_num(uns op_count) {
+  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+    if (reg_file[ii]->reg_table_ptag_to_physical->free_list->reg_free_num < MAX_DESTS * op_count)
+      return FALSE;
+  }
+  return TRUE;
+}
+
 static inline void reg_file_debug_print_op(Op *op, int state) {
   ASSERT(0, op != NULL);
   if (op->table_info->num_dest_regs == 0)
@@ -488,12 +496,7 @@ void reg_renaming_scheme_realistic_init(void) {
 
 // check if there are enough register entries
 Flag reg_renaming_scheme_realistic_available(uns stage_op_count) {
-  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-    ASSERT(0, reg_file[ii] != NULL && reg_file[ii]->reg_table_ptag_to_physical != NULL);
-    if (reg_file[ii]->reg_table_ptag_to_physical->free_list->reg_free_num < MAX_DESTS * stage_op_count)
-      return FALSE;
-  }
-  return TRUE;
+  return reg_file_check_physical_reg_num(stage_op_count);
 }
 
 // allocate physical registers of the op and write the ptag info into the op
@@ -693,7 +696,7 @@ Flag reg_renaming_scheme_late_allocation_issue(Op *op) {
   // do not need to reserve if the reserving head has allocated physical register
   if (reserve_op->dst_reg_ptag[0] != REG_TABLE_REG_ID_INVALID) {
     ASSERT(0, reserve_op->op_num <= op->op_num);
-    return reg_renaming_scheme_realistic_available(1);
+    return reg_file_check_physical_reg_num(1);
   }
 
   // if the reserving head has not allocated but the current op is in the head, allow the head to allocate
@@ -702,7 +705,7 @@ Flag reg_renaming_scheme_late_allocation_issue(Op *op) {
   }
 
   // reserve registers for the head
-  Flag if_available = reg_renaming_scheme_realistic_available(REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM + 1);
+  Flag if_available = reg_file_check_physical_reg_num(REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM + 1);
   if (!if_available)
     STAT_EVENT(0, MAP_STAGE_LATE_ALLOCATE_SEND_BACK);
   return if_available;

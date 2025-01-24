@@ -398,7 +398,8 @@ void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_r
     entry->self_reg_id = ii;
     entry->ops->clear(entry);
 
-    // only allocate the self register type (int/vector)
+    /* only allocate an architectural register for supported register types (int/vector)
+     * and only if the current reg table matches */
     if (reg_file_get_reg_type(ii) == reg_table->reg_type)
       entry->reg_state = REG_TABLE_ENTRY_STATE_ALLOC;
   }

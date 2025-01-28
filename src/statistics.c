@@ -224,8 +224,8 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
       //.csv file
       fprintf(csv_file_stream, "Core, %d, %u\n", STATISTICS_CSV_NO_GROUP, proc_id);
 
-      fprintf(csv_file_stream, "Cumulative_Cycles, %d, %-20llu\nCumulative_Instructions, %d, %-20llu\n", STATISTICS_CSV_NO_GROUP, 
-              cycle_count, STATISTICS_CSV_NO_GROUP, inst_count[proc_id]);
+      fprintf(csv_file_stream, "Cumulative_Cycles, %d, %-20llu\nCumulative_Instructions, %d, %-20llu\n",
+              STATISTICS_CSV_NO_GROUP, cycle_count, STATISTICS_CSV_NO_GROUP, inst_count[proc_id]);
 
       fprintf(csv_file_stream, "Periodic_Cycles, %d, %-20llu\nPeriodic_Instructions, %d, %-20llu\n",
               STATISTICS_CSV_NO_GROUP, cycle_count - period_last_cycle_count, STATISTICS_CSV_NO_GROUP,
@@ -245,7 +245,8 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
           fprintf(file_stream, "%13s %13s    %13s %13s\n", unsstr64(s->count), "", unsstr64(s->total_count), "");
 
           fprintf(csv_file_stream, "%s_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->count));
-          fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->total_count));
+          fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP,
+                  unsstr64(s->total_count));
         } else {
           fprintf(file_stream, "%13s %12.3f%%    %13s %12.3f%%", unsstr64(s->count), (double)s->count / dist_sum * 100,
                   unsstr64(s->total_count), (double)s->total_count / total_dist_sum * 100);
@@ -334,8 +335,10 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
                 (double)s->total_count / (double)inst_count[proc_id]);
 
         fprintf(csv_file_stream, "%s_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->count));
-        fprintf(csv_file_stream, "%s_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP, (double)s->count / (double)inst_count[proc_id]);
-        fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->total_count));
+        fprintf(csv_file_stream, "%s_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP,
+                (double)s->count / (double)inst_count[proc_id]);
+        fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP,
+                unsstr64(s->total_count));
         fprintf(csv_file_stream, "%s_total_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP,
                 (double)s->total_count / (double)inst_count[proc_id]);
         break;
@@ -348,7 +351,8 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
         fprintf(csv_file_stream, "%s_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->count));
         fprintf(csv_file_stream, "%s_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP,
                 (double)1000.0 * (double)s->count / (double)inst_count[proc_id]);
-        fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->total_count));
+        fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP,
+                unsstr64(s->total_count));
         fprintf(csv_file_stream, "%s_total_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP,
                 (double)1000.0 * (double)s->total_count / (double)inst_count[proc_id]);
         break;
@@ -361,7 +365,8 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
         fprintf(csv_file_stream, "%s_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->count));
         fprintf(csv_file_stream, "%s_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP,
                 (double)1000.0 * (double)s->count / (double)pret_inst_count[proc_id]);
-        fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->total_count));
+        fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP,
+                unsstr64(s->total_count));
         fprintf(csv_file_stream, "%s_total_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP,
                 (double)1000.0 * (double)s->total_count / (double)pret_inst_count[0]);
         break;
@@ -371,9 +376,12 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
                 unsstr64(s->total_count), (double)s->total_count / (double)cycle_count);
 
         fprintf(csv_file_stream, "%s_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->count));
-        fprintf(csv_file_stream, "%s_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP, (double)s->count / (double)cycle_count);
-        fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->total_count));
-        fprintf(csv_file_stream, "%s_total_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP, (double)s->total_count / (double)cycle_count);
+        fprintf(csv_file_stream, "%s_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP,
+                (double)s->count / (double)cycle_count);
+        fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP,
+                unsstr64(s->total_count));
+        fprintf(csv_file_stream, "%s_total_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP,
+                (double)s->total_count / (double)cycle_count);
         break;
 
       case RATIO_TYPE_STAT:
@@ -384,7 +392,8 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
         fprintf(csv_file_stream, "%s_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->count));
         fprintf(csv_file_stream, "%s_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP,
                 (double)s->count / (double)(stat_array[s->ratio_stat].count));
-        fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->total_count));
+        fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP,
+                unsstr64(s->total_count));
         fprintf(csv_file_stream, "%s_total_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP,
                 (double)s->total_count / (double)stat_array[s->ratio_stat].total_count);
         break;
@@ -397,7 +406,8 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
         fprintf(csv_file_stream, "%s_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->count));
         fprintf(csv_file_stream, "%s_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP,
                 (double)s->count * 100 / (double)(stat_array[s->ratio_stat].count));
-        fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP, unsstr64(s->total_count));
+        fprintf(csv_file_stream, "%s_total_count, %d, %13s\n", s->name, STATISTICS_CSV_NO_GROUP,
+                unsstr64(s->total_count));
         fprintf(csv_file_stream, "%s_total_pct, %d, %12.3f\n", s->name, STATISTICS_CSV_NO_GROUP,
                 (double)s->total_count * 100 / (double)stat_array[s->ratio_stat].total_count);
         break;

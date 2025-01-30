@@ -354,9 +354,10 @@ static inline Counter check_forward_progress(uns8 proc_id) {
        (Counter)FORWARD_PROGRESS_LIMIT)) {
     uns8 proc_id2;
     for(proc_id2 = 0; proc_id2 < NUM_CORES; proc_id2++) {
-      if(!sim_done[proc_id2])
+      if(!sim_done[proc_id2]){
         dump_stats(proc_id2, TRUE, global_stat_array[proc_id2],
                    NUM_GLOBAL_STATS);
+        }
     }
 
     if(cmp_model.node_stage[proc_id].node_head) {

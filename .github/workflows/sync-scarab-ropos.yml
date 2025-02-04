@@ -27,6 +27,10 @@ jobs:
         run: |
           git rebase public/main  # Rebase with the main branch of the public repo
 
+      - name: Remove Sync Workflow for Public Repo
+        run: |
+          rm -f .github/workflows/sync-scarabs_workflow.yml
+
       - name: Push Updates to Public Repository
         env:
           DATE: ${{ github.event.head_commit.timestamp }}

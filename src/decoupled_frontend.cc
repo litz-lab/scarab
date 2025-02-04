@@ -25,6 +25,7 @@ class FT{
   Op* fetch_op();
   void set_per_op_ft_info();
   FT_Info get_ft_info();
+  bool is_valid();
   void invalidate();
 
  private:
@@ -44,7 +45,7 @@ public:
   int is_off_path() { return off_path; }
   void recover();
   void update();
-  FT* get_ft();
+  FT* get_ft(uint64_t ft_pos);
   void pop_fts();
   decoupled_fe_iter* new_ftq_iter();
   Op* ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft);
@@ -118,8 +119,8 @@ void update_decoupled_fe() {
   dfe->update();
 }
 
-FT* decoupled_fe_get_ft() {
-  return dfe->get_ft();
+FT* decoupled_fe_get_ft(uint64_t ft_pos) {
+  return dfe->get_ft(ft_pos);
 }
 
 decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id) {
@@ -276,6 +277,10 @@ FT_Info FT::get_ft_info() {
   return ft_info;
 }
 
+bool FT::is_valid() {
+  return valid;
+}
+
 void FT::invalidate() {
   valid = false;
 }
@@ -289,9 +294,12 @@ Op* ft_fetch_op(FT* ft) {
   return ft->fetch_op();
 }
 
+bool ft_is_valid(FT* ft) {
+  return ft->is_valid();
+}
+
 void ft_invalidate(FT* ft) {
   ft->invalidate();
-  dfe->pop_fts();
 }
 
 FT_Info ft_get_ft_info(FT* ft) {
@@ -389,6 +397,9 @@ void Decoupled_FE::update() {
     STAT_EVENT(proc_id, FTQ_CYCLES_OFFPATH);
   else
     STAT_EVENT(proc_id, FTQ_CYCLES_ONPATH);
+
+  // pop used fts in the front of the ftq
+  pop_fts();
 
   while(1) {
     ASSERT(proc_id, ftq_num_fts() <= ftq_ft_num);
@@ -576,18 +587,15 @@ void Decoupled_FE::update() {
   }
 }
 
-FT* Decoupled_FE::get_ft() {
-  if (ftq.empty()) {
-    return NULL;
+FT* Decoupled_FE::get_ft(uint64_t ft_pos) {
+  if (ft_pos < ftq.size()) {
+    return &ftq[ft_pos];
   } else {
-    ASSERT(proc_id, ftq.front().valid);
-    return &ftq.front();
+    return NULL;
   }
 }
 
 void Decoupled_FE::pop_fts() {
-  ASSERT(proc_id, !ftq.empty());
-
   while (!ftq.empty() && !ftq.front().valid) {
     uint64_t ft_num_ops = ftq.front().ops.size();
     ftq.front().free_ops_and_clear();

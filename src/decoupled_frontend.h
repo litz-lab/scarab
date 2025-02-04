@@ -78,9 +78,10 @@ struct decoupled_fe_iter {
   void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid);
   bool ft_can_fetch_op(FT* ft);
   Op* ft_fetch_op(FT* ft);
+  bool ft_is_valid(FT* ft);
   void ft_invalidate(FT* ft);
   FT_Info ft_get_ft_info(FT* ft);
-  FT* decoupled_fe_get_ft();
+  FT* decoupled_fe_get_ft(uint64_t ft_pos);
   // FTQ API
   decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id);
   /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached

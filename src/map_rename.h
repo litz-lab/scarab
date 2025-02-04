@@ -51,6 +51,13 @@ enum reg_table_entry_state {
   REG_TABLE_ENTRY_STATE_NUM
 };
 
+enum reg_table_type {
+  REG_TABLE_TYPE_ARCHITECTURAL,
+  REG_TABLE_TYPE_PHYSICAL,
+  REG_TABLE_TYPE_VIRTUAL,
+  REG_TABLE_TYPE_NUM,
+};
+
 enum reg_file_reg_type {
   REG_FILE_REG_TYPE_GENERAL_PURPOSE,
   REG_FILE_REG_TYPE_VECTOR,
@@ -121,13 +128,7 @@ struct reg_file {
   int reg_type;
 
   /* register table instances */
-  // for realistic renaming
-  struct reg_table *reg_table_arch_to_ptag;
-  struct reg_table *reg_table_ptag_to_physical;
-
-  // for late allocation
-  struct reg_table *reg_table_arch_to_vtag;
-  struct reg_table *reg_table_vtag_to_ptag;
+  struct reg_table *reg_table[REG_TABLE_TYPE_NUM];
 };
 
 /**************************************************************************************/

@@ -94,9 +94,9 @@ static inline int reg_file_get_reg_type(int reg_id) {
   return REG_FILE_REG_TYPE_OTHER;
 }
 
-static inline Flag reg_file_check_physical_reg_num(uns op_count) {
+static inline Flag reg_file_check_reg_num(uns reg_table_type, uns op_count) {
   for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-    if (reg_file[ii]->reg_table_ptag_to_physical->free_list->reg_free_num < MAX_DESTS * op_count)
+    if (reg_file[ii]->reg_table[reg_table_type]->free_list->reg_free_num < MAX_DESTS * op_count)
       return FALSE;
   }
   return TRUE;
@@ -479,24 +479,26 @@ void reg_renaming_scheme_realistic_init(void) {
      * the physical reg map is the children table of the arch table
      * the child_reg_id of the arch table is the index of the physical reg map
      */
-    reg_file[ii]->reg_table_arch_to_ptag = (struct reg_table *)malloc(sizeof(struct reg_table));
-    reg_file[ii]->reg_table_arch_to_ptag->ops = &reg_table_ops_arch;
-    reg_file[ii]->reg_table_arch_to_ptag->ops->init(reg_file[ii]->reg_table_arch_to_ptag, NULL, NUM_REG_IDS, ii);
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL] = (struct reg_table *)malloc(sizeof(struct reg_table));
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops = &reg_table_ops_arch;
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->init(
+        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL], NULL, NUM_REG_IDS, ii);
 
     /*
      * the arch table is the parent table of the physical reg map
      * the parent_reg_id of the physical table is the index of the arch table
      */
-    reg_file[ii]->reg_table_ptag_to_physical = (struct reg_table *)malloc(sizeof(struct reg_table));
-    reg_file[ii]->reg_table_ptag_to_physical->ops = &reg_table_ops;
-    reg_file[ii]->reg_table_ptag_to_physical->ops->init(reg_file[ii]->reg_table_ptag_to_physical,
-                                                        reg_file[ii]->reg_table_arch_to_ptag, reg_file_size[ii], ii);
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_PHYSICAL] = (struct reg_table *)malloc(sizeof(struct reg_table));
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops = &reg_table_ops;
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops->init(reg_file[ii]->reg_table[REG_TABLE_TYPE_PHYSICAL],
+                                                                reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL],
+                                                                reg_file_size[ii], ii);
   }
 }
 
 // check if there are enough register entries
 Flag reg_renaming_scheme_realistic_available(uns stage_op_count) {
-  return reg_file_check_physical_reg_num(stage_op_count);
+  return reg_file_check_reg_num(REG_TABLE_TYPE_PHYSICAL, stage_op_count);
 }
 
 // allocate physical registers of the op and write the ptag info into the op
@@ -509,8 +511,8 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
       continue;
 
     // lookup the architectural table to get the latest ptag
-    int reg_ptag = reg_file[reg_type]->reg_table_ptag_to_physical->ops->read(
-        reg_file[reg_type]->reg_table_ptag_to_physical, op, op->inst_info->srcs[ii].id);
+    int reg_ptag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops->read(
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL], op, op->inst_info->srcs[ii].id);
 
     // update the register id in op
     ASSERT(0, op->src_reg_ptag[ii] == REG_TABLE_REG_ID_INVALID);
@@ -525,8 +527,8 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
       continue;
 
     // allocate register and write meta info
-    int reg_ptag = reg_file[reg_type]->reg_table_ptag_to_physical->ops->alloc(
-        reg_file[reg_type]->reg_table_ptag_to_physical, op, op->inst_info->dests[ii].id);
+    int reg_ptag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops->alloc(
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL], op, op->inst_info->dests[ii].id);
 
     // update the register id in op
     ASSERT(0, op != &invalid_op && op->dst_reg_ptag[ii] == REG_TABLE_REG_ID_INVALID);
@@ -548,8 +550,8 @@ void reg_renaming_scheme_realistic_execute(Op *op) {
       continue;
     int reg_type = reg_file_get_reg_type(op->inst_info->srcs[ii].id);
     ASSERT(op->proc_id, reg_type >= 0 && reg_type < REG_FILE_REG_TYPE_NUM);
-    reg_file[reg_type]->reg_table_ptag_to_physical->ops->consume(reg_file[reg_type]->reg_table_ptag_to_physical,
-                                                                 op->src_reg_ptag[ii], op);
+    reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops->consume(
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL], op->src_reg_ptag[ii], op);
   }
 
   // write back the physical register using the ptag info of the op
@@ -558,8 +560,8 @@ void reg_renaming_scheme_realistic_execute(Op *op) {
       continue;
     int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
     ASSERT(op->proc_id, reg_type >= 0 && reg_type < REG_FILE_REG_TYPE_NUM);
-    reg_file[reg_type]->reg_table_ptag_to_physical->ops->write_back(reg_file[reg_type]->reg_table_ptag_to_physical,
-                                                                    op->dst_reg_ptag[ii]);
+    reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops->write_back(
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL], op->dst_reg_ptag[ii]);
   }
 }
 
@@ -576,8 +578,8 @@ void reg_renaming_scheme_realistic_recover(Counter recovery_op_num) {
         continue;
       int reg_type = reg_file_get_reg_type((*op_p)->inst_info->dests[ii].id);
       ASSERT((*op_p)->proc_id, reg_type >= 0 && reg_type < REG_FILE_REG_TYPE_NUM);
-      reg_file[reg_type]->reg_table_ptag_to_physical->ops->flush_mispredict(
-          reg_file[reg_type]->reg_table_ptag_to_physical, (*op_p)->dst_reg_ptag[ii]);
+      reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops->flush_mispredict(
+          reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL], (*op_p)->dst_reg_ptag[ii]);
     }
   }
 }
@@ -589,8 +591,8 @@ void reg_renaming_scheme_realistic_commit(Op *op) {
       continue;
     int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
     ASSERT(0, reg_type >= 0 && reg_type < REG_FILE_REG_TYPE_NUM);
-    reg_file[reg_type]->reg_table_ptag_to_physical->ops->release_prev(reg_file[reg_type]->reg_table_ptag_to_physical,
-                                                                      op->dst_reg_ptag[ii]);
+    reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops->release_prev(
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL], op->dst_reg_ptag[ii]);
   }
 }
 
@@ -620,38 +622,36 @@ void reg_renaming_scheme_late_allocation_init(void) {
      * the arch reg table is the parent table of the vtag table
      * the child_reg_id of the arch table is the index of the vtag reg map table
      */
-    reg_file[ii]->reg_table_arch_to_vtag = (struct reg_table *)malloc(sizeof(struct reg_table));
-    reg_file[ii]->reg_table_arch_to_vtag->ops = &reg_table_ops_arch;
-    reg_file[ii]->reg_table_arch_to_vtag->ops->init(reg_file[ii]->reg_table_arch_to_vtag, NULL, NUM_REG_IDS, ii);
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL] = (struct reg_table *)malloc(sizeof(struct reg_table));
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops = &reg_table_ops_arch;
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->init(
+        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL], NULL, NUM_REG_IDS, ii);
 
     /*
      * the vtag reg table is the parent table of the ptag table
      * the child_reg_id of the vtag table is the index of the ptag reg map table
      */
-    reg_file[ii]->reg_table_vtag_to_ptag = (struct reg_table *)malloc(sizeof(struct reg_table));
-    reg_file[ii]->reg_table_vtag_to_ptag->ops = &reg_table_ops;
-    reg_file[ii]->reg_table_vtag_to_ptag->ops->init(
-        reg_file[ii]->reg_table_vtag_to_ptag, reg_file[ii]->reg_table_arch_to_vtag, reg_file_virtual_size[ii], ii);
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_VIRTUAL] = (struct reg_table *)malloc(sizeof(struct reg_table));
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_VIRTUAL]->ops = &reg_table_ops;
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_VIRTUAL]->ops->init(reg_file[ii]->reg_table[REG_TABLE_TYPE_VIRTUAL],
+                                                               reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL],
+                                                               reg_file_virtual_size[ii], ii);
 
     /*
      * the ptag reg table is the child table of the vtag table
      * the parent_reg_id of the ptag table is the index of the vtag reg map table
      */
-    reg_file[ii]->reg_table_ptag_to_physical = (struct reg_table *)malloc(sizeof(struct reg_table));
-    reg_file[ii]->reg_table_ptag_to_physical->ops = &reg_table_ops;
-    reg_file[ii]->reg_table_ptag_to_physical->ops->init(
-        reg_file[ii]->reg_table_ptag_to_physical, reg_file[ii]->reg_table_vtag_to_ptag, reg_file_physical_size[ii], ii);
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_PHYSICAL] = (struct reg_table *)malloc(sizeof(struct reg_table));
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops = &reg_table_ops;
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops->init(reg_file[ii]->reg_table[REG_TABLE_TYPE_PHYSICAL],
+                                                                reg_file[ii]->reg_table[REG_TABLE_TYPE_VIRTUAL],
+                                                                reg_file_physical_size[ii], ii);
   }
 }
 
 // check if there are enough registers in the virtual table instead of the physical registers
 Flag reg_renaming_scheme_late_allocation_available(uns stage_op_count) {
-  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-    ASSERT(0, reg_file[ii] != NULL && reg_file[ii]->reg_table_vtag_to_ptag != NULL);
-    if (reg_file[ii]->reg_table_vtag_to_ptag->free_list->reg_free_num < MAX_DESTS * stage_op_count)
-      return FALSE;
-  }
-  return TRUE;
+  return reg_file_check_reg_num(REG_TABLE_TYPE_VIRTUAL, stage_op_count);
 }
 
 // allocate only virtual registers and write the vtag info into the op
@@ -664,8 +664,8 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
       continue;
 
     // allocate virtual registers and write meta info
-    int reg_vtag = reg_file[reg_type]->reg_table_vtag_to_ptag->ops->alloc(reg_file[reg_type]->reg_table_vtag_to_ptag,
-                                                                          op, op->inst_info->dests[ii].id);
+    int reg_vtag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL]->ops->alloc(
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL], op, op->inst_info->dests[ii].id);
 
     // write the register vtag into the op
     ASSERT(0, op != &invalid_op && op->dst_reg_vtag[ii] == REG_TABLE_REG_ID_INVALID);
@@ -696,7 +696,7 @@ Flag reg_renaming_scheme_late_allocation_issue(Op *op) {
   // do not need to reserve if the reserving head has allocated physical register
   if (reserve_op->dst_reg_ptag[0] != REG_TABLE_REG_ID_INVALID) {
     ASSERT(0, reserve_op->op_num <= op->op_num);
-    return reg_file_check_physical_reg_num(1);
+    return reg_file_check_reg_num(REG_TABLE_TYPE_PHYSICAL, 1);
   }
 
   // if the reserving head has not allocated but the current op is in the head, allow the head to allocate
@@ -705,7 +705,8 @@ Flag reg_renaming_scheme_late_allocation_issue(Op *op) {
   }
 
   // reserve registers for the head
-  Flag if_available = reg_file_check_physical_reg_num(REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM + 1);
+  Flag if_available =
+      reg_file_check_reg_num(REG_TABLE_TYPE_PHYSICAL, REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM + 1);
   if (!if_available)
     STAT_EVENT(0, MAP_STAGE_LATE_ALLOCATE_SEND_BACK);
   return if_available;
@@ -722,8 +723,8 @@ void reg_renaming_scheme_late_allocation_execute(Op *op) {
     ASSERT(op->proc_id, reg_type >= 0 && reg_type < REG_FILE_REG_TYPE_NUM);
 
     // allocate physical register and write info
-    int reg_ptag = reg_file[reg_type]->reg_table_ptag_to_physical->ops->alloc(
-        reg_file[reg_type]->reg_table_ptag_to_physical, op, op->dst_reg_vtag[ii]);
+    int reg_ptag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops->alloc(
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL], op, op->dst_reg_vtag[ii]);
 
     // write the register ptag in the op
     ASSERT(op->proc_id, op != &invalid_op && op->dst_reg_ptag[ii] == REG_TABLE_REG_ID_INVALID);
@@ -739,10 +740,10 @@ void reg_renaming_scheme_late_allocation_execute(Op *op) {
     int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
     ASSERT(op->proc_id, reg_type >= 0 && reg_type < REG_FILE_REG_TYPE_NUM);
 
-    reg_file[reg_type]->reg_table_vtag_to_ptag->ops->write_back(reg_file[reg_type]->reg_table_vtag_to_ptag,
-                                                                op->dst_reg_vtag[ii]);
-    reg_file[reg_type]->reg_table_ptag_to_physical->ops->write_back(reg_file[reg_type]->reg_table_ptag_to_physical,
-                                                                    op->dst_reg_ptag[ii]);
+    reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL]->ops->write_back(
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL], op->dst_reg_vtag[ii]);
+    reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops->write_back(
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL], op->dst_reg_ptag[ii]);
   }
 }
 
@@ -758,12 +759,12 @@ void reg_renaming_scheme_late_allocation_recover(Counter recovery_op_num) {
         continue;
 
       if ((*op_p)->dst_reg_ptag[ii] != REG_TABLE_REG_ID_INVALID)
-        reg_file[reg_type]->reg_table_ptag_to_physical->ops->flush_mispredict(
-            reg_file[reg_type]->reg_table_ptag_to_physical, (*op_p)->dst_reg_ptag[ii]);
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops->flush_mispredict(
+            reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL], (*op_p)->dst_reg_ptag[ii]);
 
       if ((*op_p)->dst_reg_vtag[ii] != REG_TABLE_REG_ID_INVALID)
-        reg_file[reg_type]->reg_table_vtag_to_ptag->ops->flush_mispredict(reg_file[reg_type]->reg_table_vtag_to_ptag,
-                                                                          (*op_p)->dst_reg_vtag[ii]);
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL]->ops->flush_mispredict(
+            reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL], (*op_p)->dst_reg_vtag[ii]);
     }
   }
 }
@@ -781,15 +782,17 @@ void reg_renaming_scheme_late_allocation_commit(Op *op) {
       therefore, a lazy assignment is done here, e.g., tracking the prev_ptag when the op is committed and the prev_ptag
       is to be released
     */
-    struct reg_table_entry *entry = &reg_file[reg_type]->reg_table_ptag_to_physical->entries[op->dst_reg_ptag[ii]];
+    struct reg_table_entry *entry =
+        &reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL]->entries[op->dst_reg_ptag[ii]];
     int vtag = entry->parent_reg_id;
-    int prev_vtag = reg_file[reg_type]->reg_table_vtag_to_ptag->entries[vtag].prev_tag_of_same_arch_id;
-    entry->prev_tag_of_same_arch_id = reg_file[reg_type]->reg_table_vtag_to_ptag->entries[prev_vtag].child_reg_id;
+    int prev_vtag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL]->entries[vtag].prev_tag_of_same_arch_id;
+    entry->prev_tag_of_same_arch_id =
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL]->entries[prev_vtag].child_reg_id;
 
-    reg_file[reg_type]->reg_table_ptag_to_physical->ops->release_prev(reg_file[reg_type]->reg_table_ptag_to_physical,
-                                                                      op->dst_reg_ptag[ii]);
-    reg_file[reg_type]->reg_table_vtag_to_ptag->ops->release_prev(reg_file[reg_type]->reg_table_vtag_to_ptag,
-                                                                  op->dst_reg_vtag[ii]);
+    reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL]->ops->release_prev(
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL], op->dst_reg_ptag[ii]);
+    reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL]->ops->release_prev(
+        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL], op->dst_reg_vtag[ii]);
   }
 }
 

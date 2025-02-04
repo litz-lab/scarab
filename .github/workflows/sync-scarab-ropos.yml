@@ -1,0 +1,35 @@
+name: Sync Private Repo to Public
+
+on:
+  push:
+    branches:
+      - main            # Trigger when PR is merged into main
+    workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Private Repository
+        uses: actions/checkout@v4
+        with:
+          repository: https://github.com/litz-lab/scarab_ll.git
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          fetch-depth: 0  # Full history for proper sync
+
+      - name: Add Public Repository Remote
+        run: |
+          git remote add public https://github.com/litz-lab/scarab.git
+          git fetch public
+
+      - name: Rebase Private Repo with Public Repo
+        run: |
+          git rebase public/main  # Rebase with the main branch of the public repo
+
+      - name: Push Updates to Public Repository
+        env:
+          DATE: ${{ github.event.head_commit.timestamp }}
+        run: |
+          DATE=$(date +%Y-%m-%d)  # Format date as YYYY-MM-DD
+          git push public main:release_${DATE}  # Push to release_<date> branch

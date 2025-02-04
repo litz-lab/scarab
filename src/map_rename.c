@@ -77,9 +77,11 @@ void reg_table_write_back(struct reg_table *reg_table, int self_reg_id);
 void reg_table_flush_mispredict(struct reg_table *reg_table, int self_reg_id);
 void reg_table_release_prev(struct reg_table *reg_table, int self_reg_id);
 
-// special init func for the architectural table
+// special init/checkpoint func for the architectural table
 void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size,
                          int reg_type);
+void reg_table_arch_snapshot(struct reg_table *reg_table);
+void reg_table_arch_rollback(struct reg_table *reg_table);
 
 /**************************************************************************************/
 /* Inline Methods */
@@ -349,10 +351,6 @@ void reg_table_flush_mispredict(struct reg_table *reg_table, int self_reg_id) {
   ASSERT(0, entry != NULL && entry->off_path);
   ASSERT(0, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC || entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED);
 
-  // clear the child_reg_id of the parent table by the previous same architectural id
-  ASSERT(map_data->proc_id, reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id == self_reg_id);
-  reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->prev_tag_of_same_arch_id;
-
   // release the current mispredicted register
   reg_table->ops->free(reg_table, entry);
 }
@@ -398,6 +396,7 @@ void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_r
   reg_table->reg_type = reg_type;
   reg_table->size = reg_table_size;
   reg_table->entries = (struct reg_table_entry *)malloc(sizeof(struct reg_table_entry) * reg_table_size);
+  reg_table->entries_checkpoint = (struct reg_table_entry *)malloc(sizeof(struct reg_table_entry) * reg_table_size);
 
   // only need to assign the current register index for the children table to track
   for (uns ii = 0; ii < reg_table->size; ii++) {
@@ -413,8 +412,18 @@ void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_r
   }
 }
 
+void reg_table_arch_snapshot(struct reg_table *reg_table) {
+  memcpy(reg_table->entries_checkpoint, reg_table->entries, sizeof(struct reg_table_entry) * reg_table->size);
+}
+
+void reg_table_arch_rollback(struct reg_table *reg_table) {
+  memcpy(reg_table->entries, reg_table->entries_checkpoint, sizeof(struct reg_table_entry) * reg_table->size);
+}
+
 struct reg_table_ops reg_table_ops_arch = {
     .init = reg_table_arch_init,
+    .snapshot = reg_table_arch_snapshot,
+    .rollback = reg_table_arch_rollback,
 };
 
 /**************************************************************************************/
@@ -494,6 +503,12 @@ void reg_renaming_scheme_realistic_init(void) {
                                                                 reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL],
                                                                 reg_file_size[ii], ii);
   }
+
+  // snapshot the SRT after init all the register tables
+  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->snapshot(
+        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
+  }
 }
 
 // check if there are enough register entries
@@ -534,6 +549,17 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
     ASSERT(0, op != &invalid_op && op->dst_reg_ptag[ii] == REG_TABLE_REG_ID_INVALID);
     op->dst_reg_ptag[ii] = reg_ptag;
   }
+
+  /*
+    since Scarab has the knowledges of the off_path information
+    only maintain one checkpoint of that mispredicted branch for recovering SRT
+  */
+  if (!op->off_path) {
+    for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+      reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->snapshot(
+          reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
+    }
+  }
 }
 
 // do not check the reg file when issuing
@@ -567,6 +593,15 @@ void reg_renaming_scheme_realistic_execute(Op *op) {
 
 // flush registers of misprediction operands using the ptag info
 void reg_renaming_scheme_realistic_recover(Counter recovery_op_num) {
+  /*
+    since Scarab only flushes all off_path operands
+    only need to recover the SRT to the checkpoint without off_path operands before the mispred branch
+  */
+  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->rollback(
+        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
+  }
+
   // release the register from the youngest to the flush point
   for (Op **op_p = (Op **)list_start_tail_traversal(&td->seq_op_list); op_p && (*op_p)->op_num > recovery_op_num;
        op_p = (Op **)list_prev_element(&td->seq_op_list)) {
@@ -647,6 +682,12 @@ void reg_renaming_scheme_late_allocation_init(void) {
                                                                 reg_file[ii]->reg_table[REG_TABLE_TYPE_VIRTUAL],
                                                                 reg_file_physical_size[ii], ii);
   }
+
+  // snapshot the SRT after init all the register tables
+  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->snapshot(
+        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
+  }
 }
 
 // check if there are enough registers in the virtual table instead of the physical registers
@@ -671,6 +712,14 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
     ASSERT(0, op != &invalid_op && op->dst_reg_vtag[ii] == REG_TABLE_REG_ID_INVALID);
     ASSERT(0, reg_vtag != REG_TABLE_REG_ID_INVALID);
     op->dst_reg_vtag[ii] = reg_vtag;
+  }
+
+  /* checkpoint the speculative register table for recovering */
+  if (!op->off_path) {
+    for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+      reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->snapshot(
+          reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
+    }
   }
 }
 
@@ -748,6 +797,12 @@ void reg_renaming_scheme_late_allocation_execute(Op *op) {
 }
 
 void reg_renaming_scheme_late_allocation_recover(Counter recovery_op_num) {
+  // rollback to the status that does not contain any off_path entries
+  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->rollback(
+        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
+  }
+
   // release the register from the youngest to the flush point
   for (Op **op_p = (Op **)list_start_tail_traversal(&td->seq_op_list); op_p && (*op_p)->op_num > recovery_op_num;
        op_p = (Op **)list_prev_element(&td->seq_op_list)) {

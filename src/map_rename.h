@@ -111,6 +111,7 @@ struct reg_table {
 
   // map reg id to register entries for both speculative and committed op
   struct reg_table_entry *entries;
+  struct reg_table_entry *entries_checkpoint;
   uns size;
 
   // track all free registers
@@ -157,6 +158,8 @@ struct reg_table_ops {
   void (*write_back)(struct reg_table *reg_table, int reg_id);
   void (*flush_mispredict)(struct reg_table *reg_table, int reg_id);
   void (*release_prev)(struct reg_table *reg_table, int reg_id);
+  void (*snapshot)(struct reg_table *reg_table);
+  void (*rollback)(struct reg_table *reg_table);
 };
 
 /**************************************************************************************/

@@ -14,13 +14,17 @@ jobs:
       - name: Checkout Private Repository
         uses: actions/checkout@v4
         with:
-          repository: https://github.com/litz-lab/scarab_ll.git
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          repository: litz-lab/scarab_ll
           fetch-depth: 0  # Full history for proper sync
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Add Public Repository Remote
         run: |
-          git remote add public https://github.com/litz-lab/scarab.git
+          git remote add public git@github.com:litz-lab/scarab.git
           git fetch public
 
       - name: Rebase Private Repo with Public Repo

@@ -1,30 +1,29 @@
-name: Sync Private Repo to Public
+name: Sync to Public Repo with Original Authors
 
 on:
-  push:
-    branches:
-      - main            # Trigger when PR is merged into main
-    workflow_dispatch:  # Allows manual triggering
+  pull_request:
+    types:
+      - closed
 
 jobs:
   sync:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Private Repository
         uses: actions/checkout@v4
         with:
-          repository: litz-lab/scarab_ll
           fetch-depth: 0  # Full history for proper sync
 
-      - name: Configure Git
+      - name: Configure Git (Keep Original Authors)
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.email "$(git log -1 --pretty=format:'%ae')"
+          git config --global user.name "$(git log -1 --pretty=format:'%an')"
 
       - name: Add Public Repository Remote
         run: |
-          git remote add public git@github.com:litz-lab/scarab.git
+          git remote add public https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab.git
           git fetch public
 
       - name: Rebase Private Repo with Public Repo
@@ -40,4 +39,4 @@ jobs:
           DATE: ${{ github.event.head_commit.timestamp }}
         run: |
           DATE=$(date +%Y-%m-%d)  # Format date as YYYY-MM-DD
-          git push public main:release_${DATE}  # Push to release_<date> branch
+          git push --force-with-lease public main:release_${DATE}  # Push to release_<date> branch

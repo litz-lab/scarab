@@ -2,8 +2,7 @@ name: Sync to Public Repo with Original Authors
 
 on:
   pull_request:
-    types:
-      branches:
+    branches:
       - main
 
 jobs:

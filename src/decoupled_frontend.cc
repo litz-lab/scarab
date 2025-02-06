@@ -25,8 +25,8 @@ class FT{
   Op* fetch_op();
   void set_per_op_ft_info();
   FT_Info get_ft_info();
-  bool is_valid();
-  void invalidate();
+  bool is_consumed();
+  void set_consumed();
 
  private:
   uns proc_id;
@@ -34,7 +34,7 @@ class FT{
   uint64_t op_pos;
   FT_Info ft_info;
   std::vector<Op*> ops;
-  bool valid;
+  bool consumed;
 
   friend class Decoupled_FE;
 };
@@ -174,7 +174,7 @@ uint64_t decoupled_fe_get_ftq_num() {
 /* FT member functions */
 FT::FT(uns _proc_id = 0) {
   proc_id = _proc_id;
-  valid = true;
+  consumed = false;
   free_ops_and_clear();
 }
 
@@ -277,12 +277,12 @@ FT_Info FT::get_ft_info() {
   return ft_info;
 }
 
-bool FT::is_valid() {
-  return valid;
+bool FT::is_consumed() {
+  return consumed;
 }
 
-void FT::invalidate() {
-  valid = false;
+void FT::set_consumed() {
+  consumed = true;
 }
 
 /* FT wrappers */
@@ -294,12 +294,12 @@ Op* ft_fetch_op(FT* ft) {
   return ft->fetch_op();
 }
 
-bool ft_is_valid(FT* ft) {
-  return ft->is_valid();
+bool ft_is_consumed(FT* ft) {
+  return ft->is_consumed();
 }
 
-void ft_invalidate(FT* ft) {
-  ft->invalidate();
+void ft_set_consumed(FT* ft) {
+  ft->set_consumed();
 }
 
 FT_Info ft_get_ft_info(FT* ft) {
@@ -596,7 +596,7 @@ FT* Decoupled_FE::get_ft(uint64_t ft_pos) {
 }
 
 void Decoupled_FE::pop_fts() {
-  while (!ftq.empty() && !ftq.front().valid) {
+  while (!ftq.empty() && ftq.front().consumed) {
     uint64_t ft_num_ops = ftq.front().ops.size();
     ftq.front().free_ops_and_clear();
     ftq.pop_front();

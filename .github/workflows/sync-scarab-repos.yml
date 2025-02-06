@@ -27,12 +27,12 @@ jobs:
 
       - name: Add Public Repository Remote
         run: |
-          git remote add public https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab.git
+          git remote add public https://github.com/litz-lab/scarab.git
           git fetch public
 
       - name: Rebase Private Repo with Public Repo
         run: |
-          git rebase public/main  # Rebase with the main branch of the public repo
+          git rebase --rebase public main || git rebase --abort # Rebase with the main branch of the public repo
 
       - name: Remove Sync Workflow for Public Repo
         run: |
@@ -43,4 +43,4 @@ jobs:
           DATE: ${{ github.event.head_commit.timestamp }}
         run: |
           DATE=$(date +%Y-%m-%d)  # Format date as YYYY-MM-DD
-          git push --force-with-lease public main:release_${DATE}  # Push to release_<date> branch
+          git push --force-with-lease https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab.git main:release_${DATE} # Push to release_<date> branch

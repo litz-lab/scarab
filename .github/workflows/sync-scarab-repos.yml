@@ -1,13 +1,14 @@
 name: Sync to Public Repo with Original Authors
 
 on:
-  push:
+  pull_request:
     branches:
       - main
   workflow_dispatch:
 
 jobs:
   sync:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:

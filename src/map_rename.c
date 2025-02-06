@@ -104,6 +104,31 @@ static inline Flag reg_file_check_reg_num(uns reg_table_type, uns op_count) {
   return TRUE;
 }
 
+/*
+  Scarab currently does not support early flushes and will only trigger a flush if the
+  oldest mispredicted branch is resolved
+  Therefore, only maintain one checkpoint of that mispredicted branch for recovering SRT
+*/
+static inline void reg_file_snapshot_srt() {
+  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->snapshot(
+        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
+  }
+}
+
+/*
+  Scarab currently does not support early flushes and will only trigger a flush if the oldest
+  mispredicted branch is resolved
+  Therefore, only need to recover the SRT to the checkpoint without off_path operands before
+  the mispredicted branch
+*/
+static inline void reg_file_rollback_srt() {
+  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->rollback(
+        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
+  }
+}
+
 static inline void reg_file_debug_print_op(Op *op, int state) {
   ASSERT(0, op != NULL);
   if (op->table_info->num_dest_regs == 0)
@@ -505,10 +530,7 @@ void reg_renaming_scheme_realistic_init(void) {
   }
 
   // snapshot the SRT after init all the register tables
-  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->snapshot(
-        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
-  }
+  reg_file_snapshot_srt();
 }
 
 // check if there are enough register entries
@@ -550,16 +572,9 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
     op->dst_reg_ptag[ii] = reg_ptag;
   }
 
-  /*
-    since Scarab has the knowledges of the off_path information
-    only maintain one checkpoint of that mispredicted branch for recovering SRT
-  */
-  if (!op->off_path) {
-    for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-      reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->snapshot(
-          reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
-    }
-  }
+  /* checkpoint the speculative register table for recovering */
+  if (!op->off_path)
+    reg_file_snapshot_srt();
 }
 
 // do not check the reg file when issuing
@@ -593,14 +608,8 @@ void reg_renaming_scheme_realistic_execute(Op *op) {
 
 // flush registers of misprediction operands using the ptag info
 void reg_renaming_scheme_realistic_recover(Counter recovery_op_num) {
-  /*
-    since Scarab only flushes all off_path operands
-    only need to recover the SRT to the checkpoint without off_path operands before the mispred branch
-  */
-  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->rollback(
-        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
-  }
+  // rollback to the status that does not contain any off_path entries
+  reg_file_rollback_srt();
 
   // release the register from the youngest to the flush point
   for (Op **op_p = (Op **)list_start_tail_traversal(&td->seq_op_list); op_p && (*op_p)->op_num > recovery_op_num;
@@ -684,10 +693,7 @@ void reg_renaming_scheme_late_allocation_init(void) {
   }
 
   // snapshot the SRT after init all the register tables
-  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->snapshot(
-        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
-  }
+  reg_file_snapshot_srt();
 }
 
 // check if there are enough registers in the virtual table instead of the physical registers
@@ -715,12 +721,8 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
   }
 
   /* checkpoint the speculative register table for recovering */
-  if (!op->off_path) {
-    for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-      reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->snapshot(
-          reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
-    }
-  }
+  if (!op->off_path)
+    reg_file_snapshot_srt();
 }
 
 /*
@@ -798,10 +800,7 @@ void reg_renaming_scheme_late_allocation_execute(Op *op) {
 
 void reg_renaming_scheme_late_allocation_recover(Counter recovery_op_num) {
   // rollback to the status that does not contain any off_path entries
-  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->rollback(
-        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
-  }
+  reg_file_rollback_srt();
 
   // release the register from the youngest to the flush point
   for (Op **op_p = (Op **)list_start_tail_traversal(&td->seq_op_list); op_p && (*op_p)->op_num > recovery_op_num;

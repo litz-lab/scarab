@@ -34,7 +34,7 @@ jobs:
 
       - name: Rebase Private Repo with Public Repo
         run: |
-          git rebase --rebase public main || git rebase --abort # Rebase with the main branch of the public repo
+          git pull --rebase public main || git rebase --abort # Rebase with the main branch of the public repo
 
       - name: Remove Sync Workflow for Public Repo
         run: |

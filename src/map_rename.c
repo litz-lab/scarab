@@ -462,7 +462,6 @@ struct reg_table_ops reg_table_ops_arch = {
 /* Infinite Register Scheme */
 
 void reg_renaming_scheme_infinite_init(void);
-void reg_renaming_scheme_infinite_decode(Op *op);
 Flag reg_renaming_scheme_infinite_available(uns stage_op_count);
 void reg_renaming_scheme_infinite_rename(Op *op);
 Flag reg_renaming_scheme_infinite_issue(Op *op);
@@ -471,10 +470,6 @@ void reg_renaming_scheme_infinite_recover(Op *op);
 void reg_renaming_scheme_infinite_commit(Op *op);
 
 void reg_renaming_scheme_infinite_init(void) {
-  return;
-}
-
-void reg_renaming_scheme_infinite_decode(Op *op) {
   return;
 }
 
@@ -506,7 +501,6 @@ void reg_renaming_scheme_infinite_commit(Op *op) {
 /* Realistic Register Scheme */
 
 void reg_renaming_scheme_realistic_init(void);
-void reg_renaming_scheme_realistic_decode(Op *op);
 Flag reg_renaming_scheme_realistic_available(uns stage_op_count);
 void reg_renaming_scheme_realistic_rename(Op *op);
 Flag reg_renaming_scheme_realistic_issue(Op *op);
@@ -544,12 +538,6 @@ void reg_renaming_scheme_realistic_init(void) {
 
   // snapshot the SRT after init all the register tables
   reg_file_snapshot_srt();
-}
-
-// snapshot the SRT for BTB recovery
-void reg_renaming_scheme_realistic_decode(Op *op) {
-  if (!op->off_path && op->table_info->cf_type && op->oracle_info.recover_at_decode)
-    reg_file_snapshot_srt();
 }
 
 // check if there are enough register entries
@@ -668,7 +656,6 @@ void reg_renaming_scheme_realistic_commit(Op *op) {
 /* Virtual Physical Register Scheme */
 
 void reg_renaming_scheme_late_allocation_init(void);
-void reg_renaming_scheme_late_allocation_decode(Op *op);
 Flag reg_renaming_scheme_late_allocation_available(uns stage_op_count);
 void reg_renaming_scheme_late_allocation_rename(Op *op);
 Flag reg_renaming_scheme_late_allocation_issue(Op *op);
@@ -719,12 +706,6 @@ void reg_renaming_scheme_late_allocation_init(void) {
 
   // snapshot the SRT after init all the register tables
   reg_file_snapshot_srt();
-}
-
-// snapshot the SRT for BTB recovery
-void reg_renaming_scheme_late_allocation_decode(Op *op) {
-  if (!op->off_path && op->table_info->cf_type && op->oracle_info.recover_at_decode)
-    reg_file_snapshot_srt();
 }
 
 // check if there are enough registers in the virtual table instead of the physical registers
@@ -891,7 +872,6 @@ void reg_renaming_scheme_late_allocation_commit(Op *op) {
 
 struct reg_renaming_scheme_func {
   void (*init)(void);
-  void (*decode)(Op *op);
   Flag (*available)(uns stage_op_count);
   void (*rename)(Op *op);
   Flag (*issue)(Op *op);
@@ -905,7 +885,6 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
   // REG_RENAMING_SCHEME_INFINITE
   {
     .init = reg_renaming_scheme_infinite_init,
-    .decode = reg_renaming_scheme_infinite_decode,
     .available = reg_renaming_scheme_infinite_available,
     .rename = reg_renaming_scheme_infinite_rename,
     .issue = reg_renaming_scheme_infinite_issue,
@@ -916,7 +895,6 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
   // REG_RENAMING_SCHEME_REALISTIC
   {
     .init = reg_renaming_scheme_realistic_init,
-    .decode = reg_renaming_scheme_realistic_decode,
     .available = reg_renaming_scheme_realistic_available,
     .rename = reg_renaming_scheme_realistic_rename,
     .issue = reg_renaming_scheme_realistic_issue,
@@ -927,7 +905,6 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
   // REG_RENAMING_SCHEME_LATE_ALLOCATION
   {
     .init = reg_renaming_scheme_late_allocation_init,
-    .decode = reg_renaming_scheme_late_allocation_decode,
     .available = reg_renaming_scheme_late_allocation_available,
     .rename = reg_renaming_scheme_late_allocation_rename,
     .issue = reg_renaming_scheme_late_allocation_issue,
@@ -950,17 +927,6 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
 void reg_file_init(void) {
   ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].init();
-}
-
-/*
-  Called by:
-  --- decode_stage.c -> when an op is checked for BTB error during decoding proc
-  Procedure:
-  --- snapshot the speculative register table for recovery
-*/
-void reg_file_decode(Op *op) {
-  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
-  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].decode(op);
 }
 
 /*

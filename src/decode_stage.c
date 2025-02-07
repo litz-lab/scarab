@@ -40,10 +40,6 @@
 #include "decode_stage.h"
 #include "op_pool.h"
 
-// clang-format off
-#include "map_rename.h"
-// clang-format on
-
 #include "core.param.h"
 #include "debug/debug.param.h"
 #include "general.param.h"
@@ -245,8 +241,6 @@ void update_decode_stage(Stage_Data* src_sd) {
 void decode_stage_process_op(Op* op) {
   Cf_Type cf = op->table_info->cf_type;
   op->decode_cycle = cycle_count;
-
-  reg_file_decode(op);
 
   if(cf) {
     DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",

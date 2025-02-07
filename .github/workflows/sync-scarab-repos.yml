@@ -36,9 +36,9 @@ jobs:
         run: |
           git pull --rebase public main || git rebase --abort # Rebase with the main branch of the public repo
 
-      - name: Remove Sync Workflow for Public Repo
+      - name: Remove Sync Workflow # Each sync workflow of two repositories should differ
         run: |
-          rm -f .github/workflows/sync-scarabs_workflow.yml
+          rm -f .github/workflows/sync-scarabs-repos.yml
 
       - name: Push Updates to Public Repository
         if: github.event_name == 'push' # Only push on merge to main

@@ -146,7 +146,7 @@ static inline void reg_file_init_checkpoint() {
     reg_file[ii]->reg_checkpoint = (struct reg_checkpoint *)malloc(sizeof(struct reg_checkpoint));
     reg_file[ii]->reg_checkpoint->entries = (struct reg_table_entry *)malloc(
         sizeof(struct reg_table_entry) * reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->size);
-    reg_file[ii]->reg_checkpoint->if_valid = FALSE;
+    reg_file[ii]->reg_checkpoint->is_valid = FALSE;
   }
 }
 
@@ -161,8 +161,8 @@ static inline void reg_file_snapshot_srt() {
     struct reg_checkpoint *checkpoint = reg_file[ii]->reg_checkpoint;
     memcpy(checkpoint->entries, srt->entries, sizeof(struct reg_table_entry) * srt->size);
 
-    ASSERT(map_data->proc_id, !checkpoint->if_valid);
-    checkpoint->if_valid = TRUE;
+    ASSERT(map_data->proc_id, !checkpoint->is_valid);
+    checkpoint->is_valid = TRUE;
   }
 }
 
@@ -178,8 +178,8 @@ static inline void reg_file_rollback_srt() {
     struct reg_checkpoint *checkpoint = reg_file[ii]->reg_checkpoint;
     memcpy(srt->entries, checkpoint->entries, sizeof(struct reg_table_entry) * srt->size);
 
-    ASSERT(map_data->proc_id, checkpoint->if_valid);
-    checkpoint->if_valid = FALSE;
+    ASSERT(map_data->proc_id, checkpoint->is_valid);
+    checkpoint->is_valid = FALSE;
   }
 }
 

@@ -125,7 +125,7 @@ struct reg_table {
 
 struct reg_checkpoint {
   // metadata for validation of the special checkpoint mechanism in Scarab
-  Flag if_valid;
+  Flag is_valid;
 
   // only map on-path op for recovery
   struct reg_table_entry *entries;

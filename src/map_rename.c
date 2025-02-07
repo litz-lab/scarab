@@ -467,7 +467,7 @@ Flag reg_renaming_scheme_infinite_available(uns stage_op_count);
 void reg_renaming_scheme_infinite_rename(Op *op);
 Flag reg_renaming_scheme_infinite_issue(Op *op);
 void reg_renaming_scheme_infinite_execute(Op *op);
-void reg_renaming_scheme_infinite_recover(Counter recovery_op_num);
+void reg_renaming_scheme_infinite_recover(Op *op);
 void reg_renaming_scheme_infinite_commit(Op *op);
 
 void reg_renaming_scheme_infinite_init(void) {
@@ -494,7 +494,7 @@ void reg_renaming_scheme_infinite_execute(Op *op) {
   return;
 }
 
-void reg_renaming_scheme_infinite_recover(Counter recovery_op_num) {
+void reg_renaming_scheme_infinite_recover(Op *op) {
   return;
 }
 
@@ -511,7 +511,7 @@ Flag reg_renaming_scheme_realistic_available(uns stage_op_count);
 void reg_renaming_scheme_realistic_rename(Op *op);
 Flag reg_renaming_scheme_realistic_issue(Op *op);
 void reg_renaming_scheme_realistic_execute(Op *op);
-void reg_renaming_scheme_realistic_recover(Counter recovery_op_num);
+void reg_renaming_scheme_realistic_recover(Op *op);
 void reg_renaming_scheme_realistic_commit(Op *op);
 
 // allocate entries and assign the parent-child relationship of the arch table and the physical table
@@ -626,12 +626,17 @@ void reg_renaming_scheme_realistic_execute(Op *op) {
 }
 
 // flush registers of misprediction operands using the ptag info
-void reg_renaming_scheme_realistic_recover(Counter recovery_op_num) {
+void reg_renaming_scheme_realistic_recover(Op *op) {
+  // do not need to do flushing if it is a decoding flush
+  ASSERT(op->proc_id, op->table_info->cf_type);
+  if (op->oracle_info.recover_at_decode)
+    return;
+
   // rollback to the status that does not contain any off_path entries
   reg_file_rollback_srt();
 
   // release the register from the youngest to the flush point
-  for (Op **op_p = (Op **)list_start_tail_traversal(&td->seq_op_list); op_p && (*op_p)->op_num > recovery_op_num;
+  for (Op **op_p = (Op **)list_start_tail_traversal(&td->seq_op_list); op_p && (*op_p)->op_num > op->op_num;
        op_p = (Op **)list_prev_element(&td->seq_op_list)) {
     ASSERT((*op_p)->proc_id, (*op_p)->off_path);
 
@@ -668,7 +673,7 @@ Flag reg_renaming_scheme_late_allocation_available(uns stage_op_count);
 void reg_renaming_scheme_late_allocation_rename(Op *op);
 Flag reg_renaming_scheme_late_allocation_issue(Op *op);
 void reg_renaming_scheme_late_allocation_execute(Op *op);
-void reg_renaming_scheme_late_allocation_recover(Counter recovery_op_num);
+void reg_renaming_scheme_late_allocation_recover(Op *op);
 void reg_renaming_scheme_late_allocation_commit(Op *op);
 
 // allocate entries and assign the parent-child relationship for arch, vtag, and ptag tables
@@ -824,12 +829,17 @@ void reg_renaming_scheme_late_allocation_execute(Op *op) {
   }
 }
 
-void reg_renaming_scheme_late_allocation_recover(Counter recovery_op_num) {
+void reg_renaming_scheme_late_allocation_recover(Op *op) {
+  // do not need to do flushing if it is a decoding flush
+  ASSERT(op->proc_id, op->table_info->cf_type);
+  if (op->oracle_info.recover_at_decode)
+    return;
+
   // rollback to the status that does not contain any off_path entries
   reg_file_rollback_srt();
 
   // release the register from the youngest to the flush point
-  for (Op **op_p = (Op **)list_start_tail_traversal(&td->seq_op_list); op_p && (*op_p)->op_num > recovery_op_num;
+  for (Op **op_p = (Op **)list_start_tail_traversal(&td->seq_op_list); op_p && (*op_p)->op_num > op->op_num;
        op_p = (Op **)list_prev_element(&td->seq_op_list)) {
     ASSERT((*op_p)->proc_id, (*op_p)->off_path);
 
@@ -886,7 +896,7 @@ struct reg_renaming_scheme_func {
   void (*rename)(Op *op);
   Flag (*issue)(Op *op);
   void (*execute)(Op *op);
-  void (*recover)(Counter recovery_op_num);
+  void (*recover)(Op *op);
   void (*commit)(Op *op);
 };
 
@@ -1000,13 +1010,13 @@ void reg_file_execute(Op *op) {
 
 /*
   Called by:
-  --- thread.c -> when a misprediction occurs, it should happen before the op list flush
+  --- cmp.c -> when a misprediction occurs, it should happen before the op list flush
   Procedure:
   --- flush registers of misprediction operands
 */
-void reg_file_recover(Counter recovery_op_num) {
+void reg_file_recover(Op *op) {
   ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
-  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].recover(recovery_op_num);
+  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].recover(op);
 }
 
 /*

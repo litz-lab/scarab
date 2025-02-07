@@ -93,6 +93,33 @@ static inline void reg_file_debug_print_entry(struct reg_table_entry *entry) {
          entry->prev_tag_of_same_arch_id);
 }
 
+static inline void reg_file_debug_print_op(Op *op, int state) {
+  ASSERT(0, op != NULL);
+  if (op->table_info->num_dest_regs == 0)
+    return;
+
+  Inst_Info *inst_info = op->inst_info;
+  uns16 op_code = inst_info->table_info->true_op_type;
+
+  printf("[OP: %d]\n", state);
+  printf("op_num: %lld, off_path: %d, ", op->op_num, op->off_path);
+  printf("pc: %lld, opcode: 0x%x(%s), cf: %d, mem: %d\n", inst_info->addr, op_code, xed_iclass_enum_t2str(op_code),
+         inst_info->table_info->cf_type, inst_info->table_info->mem_type);
+
+  printf("src#%d: <", inst_info->table_info->num_src_regs);
+  for (int ii = 0; ii < inst_info->table_info->num_src_regs; ii++)
+    printf("%d, ", inst_info->srcs[ii].id);
+  printf(">, dest#%d: <", inst_info->table_info->num_dest_regs);
+  for (int ii = 0; ii < inst_info->table_info->num_dest_regs; ii++)
+    printf("%d, ", inst_info->dests[ii].id);
+  printf(">\n");
+
+  printf("ptag#%d: <", inst_info->table_info->num_dest_regs);
+  for (int ii = 0; ii < inst_info->table_info->num_dest_regs; ii++)
+    printf("%d, ", op->dst_reg_ptag[ii]);
+  printf(">\n");
+}
+
 static inline int reg_file_get_reg_type(int reg_id) {
   if (reg_id >= REG_RAX && reg_id < REG_CS)
     return REG_FILE_REG_TYPE_GENERAL_PURPOSE;
@@ -111,6 +138,18 @@ static inline Flag reg_file_check_reg_num(uns reg_table_type, uns op_count) {
   return TRUE;
 }
 
+/**************************************************************************************/
+/* checkpoint management */
+
+static inline void reg_file_init_checkpoint() {
+  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+    reg_file[ii]->reg_checkpoint = (struct reg_checkpoint *)malloc(sizeof(struct reg_checkpoint));
+    reg_file[ii]->reg_checkpoint->entries = (struct reg_table_entry *)malloc(
+        sizeof(struct reg_table_entry) * reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->size);
+    reg_file[ii]->reg_checkpoint->if_valid = FALSE;
+  }
+}
+
 /*
   Scarab currently does not support early flushes and will only trigger a flush if the
   oldest mispredicted branch is resolved
@@ -118,8 +157,12 @@ static inline Flag reg_file_check_reg_num(uns reg_table_type, uns op_count) {
 */
 static inline void reg_file_snapshot_srt() {
   for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->snapshot(
-        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
+    struct reg_table *srt = reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL];
+    struct reg_checkpoint *checkpoint = reg_file[ii]->reg_checkpoint;
+    memcpy(checkpoint->entries, srt->entries, sizeof(struct reg_table_entry) * srt->size);
+
+    ASSERT(map_data->proc_id, !checkpoint->if_valid);
+    checkpoint->if_valid = TRUE;
   }
 }
 
@@ -131,36 +174,13 @@ static inline void reg_file_snapshot_srt() {
 */
 static inline void reg_file_rollback_srt() {
   for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-    reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->ops->rollback(
-        reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]);
+    struct reg_table *srt = reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL];
+    struct reg_checkpoint *checkpoint = reg_file[ii]->reg_checkpoint;
+    memcpy(srt->entries, checkpoint->entries, sizeof(struct reg_table_entry) * srt->size);
+
+    ASSERT(map_data->proc_id, checkpoint->if_valid);
+    checkpoint->if_valid = FALSE;
   }
-}
-
-static inline void reg_file_debug_print_op(Op *op, int state) {
-  ASSERT(0, op != NULL);
-  if (op->table_info->num_dest_regs == 0)
-    return;
-
-  Inst_Info *inst_info = op->inst_info;
-  uns16 op_code = inst_info->table_info->true_op_type;
-
-  printf("[%d]\n", state);
-  printf("op_num: %lld, off_path: %d, ", op->op_num, op->off_path);
-  printf("pc: %lld, opcode: 0x%x(%s), cf: %d, mem: %d\n", inst_info->addr, op_code, xed_iclass_enum_t2str(op_code),
-         inst_info->table_info->cf_type, inst_info->table_info->mem_type);
-
-  printf("src#%d: <", inst_info->table_info->num_src_regs);
-  for (int ii = 0; ii < inst_info->table_info->num_src_regs; ii++)
-    printf("%d, ", inst_info->srcs[ii].id);
-  printf(">, dest#%d: <", inst_info->table_info->num_dest_regs);
-  for (int ii = 0; ii < inst_info->table_info->num_dest_regs; ii++)
-    printf("%d, ", inst_info->dests[ii].id);
-  printf(">\n");
-
-  printf("ptag#%d: <", inst_info->table_info->num_dest_regs);
-  for (int ii = 0; ii < inst_info->table_info->num_dest_regs; ii++)
-    printf("%d, ", op->dst_reg_ptag[ii]);
-  printf(">\n");
 }
 
 /**************************************************************************************/
@@ -428,7 +448,6 @@ void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_r
   reg_table->reg_type = reg_type;
   reg_table->size = reg_table_size;
   reg_table->entries = (struct reg_table_entry *)malloc(sizeof(struct reg_table_entry) * reg_table_size);
-  reg_table->entries_checkpoint = (struct reg_table_entry *)malloc(sizeof(struct reg_table_entry) * reg_table_size);
 
   // only need to assign the current register index for the children table to track
   for (uns ii = 0; ii < reg_table->size; ii++) {
@@ -444,18 +463,8 @@ void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_r
   }
 }
 
-void reg_table_arch_snapshot(struct reg_table *reg_table) {
-  memcpy(reg_table->entries_checkpoint, reg_table->entries, sizeof(struct reg_table_entry) * reg_table->size);
-}
-
-void reg_table_arch_rollback(struct reg_table *reg_table) {
-  memcpy(reg_table->entries, reg_table->entries_checkpoint, sizeof(struct reg_table_entry) * reg_table->size);
-}
-
 struct reg_table_ops reg_table_ops_arch = {
     .init = reg_table_arch_init,
-    .snapshot = reg_table_arch_snapshot,
-    .rollback = reg_table_arch_rollback,
 };
 
 /**************************************************************************************/
@@ -536,8 +545,7 @@ void reg_renaming_scheme_realistic_init(void) {
                                                                 reg_file_size[ii], ii);
   }
 
-  // snapshot the SRT after init all the register tables
-  reg_file_snapshot_srt();
+  reg_file_init_checkpoint();
 }
 
 // check if there are enough register entries
@@ -704,8 +712,7 @@ void reg_renaming_scheme_late_allocation_init(void) {
                                                                 reg_file_physical_size[ii], ii);
   }
 
-  // snapshot the SRT after init all the register tables
-  reg_file_snapshot_srt();
+  reg_file_init_checkpoint();
 }
 
 // check if there are enough registers in the virtual table instead of the physical registers

@@ -29,7 +29,7 @@ jobs:
 
       - name: Add Private Repository Remote
         run: |
-          git remote add private https://github.com/litz-lab/scarab_ll.git
+          git remote add private https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab_ll.git
           git fetch private
 
       - name: Rebase Public Repo with Private Repo

@@ -38,7 +38,7 @@ jobs:
 
       - name: Remove Sync Workflow  # Each sync workflow of two repositories should differ
         run: |
-          rm -f .github/workflows/sync-scarabs-repos.yml
+          rm -f .github/workflows/sync-scarab-repos.yml
 
       - name: Push Updates to Private Repository
         if: github.event_name == 'push' # Only push on merge to main

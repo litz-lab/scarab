@@ -51,13 +51,6 @@ enum reg_table_entry_state {
   REG_TABLE_ENTRY_STATE_NUM
 };
 
-enum reg_table_type {
-  REG_TABLE_TYPE_ARCHITECTURAL,
-  REG_TABLE_TYPE_PHYSICAL,
-  REG_TABLE_TYPE_VIRTUAL,
-  REG_TABLE_TYPE_NUM,
-};
-
 enum reg_file_reg_type {
   REG_FILE_REG_TYPE_GENERAL_PURPOSE,
   REG_FILE_REG_TYPE_VECTOR,

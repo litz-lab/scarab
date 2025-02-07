@@ -7,6 +7,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -38,6 +41,7 @@ jobs:
           rm -f .github/workflows/sync-scarabs_workflow.yml
 
       - name: Push Updates to Public Repository
+        if: github.event_name == 'push' # Only push on merge to main
         env:
           DATE: ${{ github.event.head_commit.timestamp }}
         run: |

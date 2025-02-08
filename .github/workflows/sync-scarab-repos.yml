@@ -13,7 +13,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  sync:
+  sync_on_pull_request:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
@@ -23,29 +24,29 @@ jobs:
           fetch-depth: 0  # Full history for proper sync
 
       - name: Configure Git (Keep Original Authors)
-        if: github.event_name == 'pull_request'
         run: |
           git config --global user.email "$(git log -1 --pretty=format:'%ae')"
           git config --global user.name "$(git log -1 --pretty=format:'%an')"
 
       - name: Add Public Repository Remote
-        if: github.event_name == 'pull_request'
         run: |
           git remote add public https://github.com/litz-lab/scarab.git
           git fetch public
 
       - name: Rebase Private Repo with Public Repo
-        if: github.event_name == 'pull_request'
         run: |
           git pull --rebase public main || git rebase --abort # Rebase with the main branch of the public repo
 
       - name: Remove Sync Workflow # Each sync workflow of two repositories should differ
-        if: github.event_name == 'pull_request'
         run: |
           rm -f .github/workflows/sync-scarab-repos.yml
 
+  sync_on_push:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
       - name: Push Updates to Public Repository
-        if: github.event_name == 'push' # Only push on merge to main
         env:
           DATE: ${{ github.event.head_commit.timestamp }}
         run: |

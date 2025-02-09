@@ -35,7 +35,7 @@ jobs:
 
       - name: Attempt a test merge
         run: |
-          git merge --no_commit --no-ff public/main || {
+          git merge --no-commit --no-ff public/main || {
             echo "Merge Conflict detected! Aborting merge."
             exit 1
           }
@@ -64,7 +64,7 @@ jobs:
 
       - name: Attempt a test merge
         run: |
-          git merge --no_commit --no-ff public/main || {
+          git merge --no-commit --no-ff public/main || {
             echo "Merge Conflict detected! Aborting merge."
             exit 1
           }

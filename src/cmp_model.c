@@ -55,6 +55,10 @@
 #include "uop_queue_stage.h"
 #include "decoupled_frontend.h"
 
+// clang-format off
+#include "map_rename.h"
+// clang-format on
+
 /**************************************************************************************/
 /* Global vars */
 
@@ -364,6 +368,7 @@ void cmp_recover() {
     op->oracle_info.recovery_sch = FALSE;
   }
 
+  reg_file_recover(bp_recovery_info->recovery_op);
   recover_thread(td, bp_recovery_info->recovery_fetch_addr,
                  bp_recovery_info->recovery_op_num,
                  bp_recovery_info->recovery_inst_uid,

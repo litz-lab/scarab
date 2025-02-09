@@ -1,0 +1,82 @@
+name: Sync to Private Repo with Original Authors
+
+permissions:
+  contents: write
+
+on:
+  merge_group: # Runs just before a merge is attempted
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  sync_on_pull_request:
+    if: github.repository == 'litz-lab/scarab' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Public Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper sync
+
+      - name: Configure Git (Keep Original Authors)
+        run: |
+          git config --global user.email "$(git log -1 --pretty=format:'%ae')"
+          git config --global user.name "$(git log -1 --pretty=format:'%an')"
+
+      - name: Debug Repository Access
+        run: |
+          curl -u "x-access-token:${{ secrets.SCARAB_SYNC_PAT }}" -s -o /dev/null -w "%{http_code}" https://github.com/litz-lab/scarab_ll.git
+
+      - name: Add Private Repository Remote
+        run: |
+          git remote add private https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab_ll.git
+          git fetch private
+
+      - name: Attempt a test merge
+        run: |
+          git merge --no-commit --no-ff public/main || {
+            echo "Merge Conflict detected! Aborting merge."
+            exit 1
+          }
+          echo "No conflicts detected. Ready to merge."
+
+  check-merge:
+    if: github.repository == 'litz-lab/scarab' && github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Public Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper sync
+
+      - name: Configure Git (Keep Original Authors)
+        run: |
+          git config --global user.email "$(git log -1 --pretty=format:'%ae')"
+          git config --global user.name "$(git log -1 --pretty=format:'%an')"
+
+      - name: Add Private Repository Remote
+        run: |
+          git remote add private https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab_ll.git
+          git fetch private
+
+      - name: Attempt a test merge
+        run: |
+          git merge --no-commit --no-ff public/main || {
+            echo "Merge Conflict detected! Aborting merge."
+            exit 1
+          }
+          echo "No conflicts detected. Ready to merge."
+
+      - name: Push Updates to Private Repository
+        if: github.event_name == 'push' # Only push on merge to main
+        env:
+          DATE: ${{ github.event.head_commit.timestamp }}
+        run: |
+          DATE=$(date +%Y-%m-%d)  # Format date as YYYY-MM-DD
+          git push --force-with-lease https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab_ll.git main:pull_${DATE} # Push to pull_<date> branch

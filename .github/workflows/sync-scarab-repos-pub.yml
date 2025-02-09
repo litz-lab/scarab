@@ -28,10 +28,6 @@ jobs:
           git config --global user.email "$(git log -1 --pretty=format:'%ae')"
           git config --global user.name "$(git log -1 --pretty=format:'%an')"
 
-      - name: Debug Repository Access
-        run: |
-          curl -u "x-access-token:${{ secrets.SCARAB_SYNC_PAT }}" -s -o /dev/null -w "%{http_code}" https://github.com/litz-lab/scarab_ll.git
-
       - name: Add Private Repository Remote
         run: |
           git remote add private https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab_ll.git

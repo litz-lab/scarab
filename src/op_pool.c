@@ -257,11 +257,14 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   for(ii = 0; ii < NUM_DEP_TYPES; ii++)
     op->wake_up_signaled[ii] = FALSE;
 
-  for (ii = 0; ii < REG_TABLE_TYPE_NUM; ++ii) {
-    for (jj = 0; jj < MAX_SRCS; ++jj) {
+  for (ii = 0; ii < MAX_SRCS; ++ii) {
+    for (jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
       op->src_reg_id[ii][jj] = -1;
     }
-    for (jj = 0; jj < MAX_DESTS; ++jj) {
+  }
+
+  for (ii = 0; ii < MAX_DESTS; ++ii) {
+    for (jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
       op->dst_reg_id[ii][jj] = -1;
     }
   }

@@ -220,15 +220,18 @@ static inline void reg_file_write_dst(Op *op, int self_reg_table_type, int paren
 }
 
 // only update metadata since the register dependency wake up will be done in the map module
-static inline void reg_file_consume_src(Op *op, int *reg_table_types, int reg_table_num) {
+static inline void reg_file_consume_src(Op *op, int *reg_table_types) {
   for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->inst_info->srcs[ii].id);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
-    for (uns jj = 0; jj < reg_table_num; ++jj) {
+    for (uns jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
       int table_type = reg_table_types[jj];
-      ASSERT(op->proc_id, table_type > 0 && table_type < REG_TABLE_TYPE_NUM);
+      if (table_type == REG_TABLE_TYPE_INVALID)
+        break;
+
+      ASSERT(op->proc_id, table_type > REG_TABLE_TYPE_ARCHITECTURAL && table_type < REG_TABLE_TYPE_NUM);
       int reg_id = op->src_reg_id[table_type][ii];
       ASSERT(op->proc_id, reg_id != REG_TABLE_REG_ID_INVALID);
 
@@ -238,15 +241,18 @@ static inline void reg_file_consume_src(Op *op, int *reg_table_types, int reg_ta
   }
 }
 
-static inline void reg_file_produce_dst(Op *op, int *reg_table_types, int reg_table_num) {
+static inline void reg_file_produce_dst(Op *op, int *reg_table_types) {
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
-    for (uns jj = 0; jj < reg_table_num; ++jj) {
+    for (uns jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
       int table_type = reg_table_types[jj];
-      ASSERT(op->proc_id, table_type > 0 && table_type < REG_TABLE_TYPE_NUM);
+      if (table_type == REG_TABLE_TYPE_INVALID)
+        break;
+
+      ASSERT(op->proc_id, table_type > REG_TABLE_TYPE_ARCHITECTURAL && table_type < REG_TABLE_TYPE_NUM);
       int reg_id = op->dst_reg_id[table_type][ii];
       ASSERT(op->proc_id, reg_id != REG_TABLE_REG_ID_INVALID);
 
@@ -256,17 +262,19 @@ static inline void reg_file_produce_dst(Op *op, int *reg_table_types, int reg_ta
   }
 }
 
-static inline void reg_file_flush_mispredict(Op *op, int *reg_table_types, int reg_table_num) {
+static inline void reg_file_flush_mispredict(Op *op, int *reg_table_types) {
   ASSERT(op->proc_id, op->off_path);
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++) {
     int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
-    for (uns jj = 0; jj < reg_table_num; ++jj) {
+    for (uns jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
       int table_type = reg_table_types[jj];
-      ASSERT(op->proc_id, table_type > 0 && table_type < REG_TABLE_TYPE_NUM);
+      if (table_type == REG_TABLE_TYPE_INVALID)
+        break;
 
+      ASSERT(op->proc_id, table_type > REG_TABLE_TYPE_ARCHITECTURAL && table_type < REG_TABLE_TYPE_NUM);
       int reg_id = op->dst_reg_id[table_type][ii];
       if (reg_id == REG_TABLE_REG_ID_INVALID)
         continue;
@@ -284,15 +292,18 @@ static inline void reg_file_flush_mispredict(Op *op, int *reg_table_types, int r
 }
 
 // mark the previous entry with same archituctural id before the committed one as dead and remove it
-static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_table_num) {
+static inline void reg_file_release_prev(Op *op, int *reg_table_types) {
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
-    for (uns jj = 0; jj < reg_table_num; ++jj) {
+    for (uns jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
       int table_type = reg_table_types[jj];
-      ASSERT(op->proc_id, table_type > 0 && table_type < REG_TABLE_TYPE_NUM);
+      if (table_type == REG_TABLE_TYPE_INVALID)
+        break;
+
+      ASSERT(op->proc_id, table_type > REG_TABLE_TYPE_ARCHITECTURAL && table_type < REG_TABLE_TYPE_NUM);
       int reg_id = op->dst_reg_id[table_type][ii];
       ASSERT(op->proc_id, reg_id != REG_TABLE_REG_ID_INVALID);
 
@@ -712,13 +723,13 @@ Flag reg_renaming_scheme_realistic_issue(Op *op) {
 
 // consume the src registers and produce the dst registers
 void reg_renaming_scheme_realistic_execute(Op *op) {
-  int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
+  int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_INVALID};
 
   // consume the src register in the physical reg table
-  reg_file_consume_src(op, reg_table_types, 1);
+  reg_file_consume_src(op, reg_table_types);
 
   // write back the physical register table
-  reg_file_produce_dst(op, reg_table_types, 1);
+  reg_file_produce_dst(op, reg_table_types);
 }
 
 // flush registers of misprediction operands using the ptag info
@@ -732,17 +743,17 @@ void reg_renaming_scheme_realistic_recover(Op *op) {
   reg_file_rollback_srt();
 
   // release the registers from the youngest to the flush point
-  int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
+  int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_INVALID};
   for (Op **op_p = (Op **)list_start_tail_traversal(&td->seq_op_list); op_p && (*op_p)->op_num > op->op_num;
        op_p = (Op **)list_prev_element(&td->seq_op_list)) {
-    reg_file_flush_mispredict(*op_p, reg_table_types, 1);
+    reg_file_flush_mispredict(*op_p, reg_table_types);
   }
 }
 
 // release the previous register with same architectural id
 void reg_renaming_scheme_realistic_commit(Op *op) {
-  int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
-  reg_file_release_prev(op, reg_table_types, 1);
+  int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_INVALID};
+  reg_file_release_prev(op, reg_table_types);
 }
 
 /**************************************************************************************/
@@ -857,9 +868,9 @@ void reg_renaming_scheme_late_allocation_execute(Op *op) {
   reg_file_read_src(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_VIRTUAL);
 
   // consume/produce for both register tables
-  int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
-  reg_file_consume_src(op, reg_table_types, 2);
-  reg_file_produce_dst(op, reg_table_types, 2);
+  int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_INVALID};
+  reg_file_consume_src(op, reg_table_types);
+  reg_file_produce_dst(op, reg_table_types);
 }
 
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
@@ -871,11 +882,11 @@ void reg_renaming_scheme_late_allocation_recover(Op *op) {
   // rollback to the status that does not contain any off_path entries
   reg_file_rollback_srt();
 
-  // release the registers from the youngest to the flush point
-  int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
+  // release the registers from the youngest to the flush point for both register tables
+  int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_INVALID};
   for (Op **op_p = (Op **)list_start_tail_traversal(&td->seq_op_list); op_p && (*op_p)->op_num > op->op_num;
        op_p = (Op **)list_prev_element(&td->seq_op_list)) {
-    reg_file_flush_mispredict(*op_p, reg_table_types, 2);
+    reg_file_flush_mispredict(*op_p, reg_table_types);
   }
 }
 
@@ -901,8 +912,8 @@ void reg_renaming_scheme_late_allocation_commit(Op *op) {
         reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL]->entries[prev_vtag].child_reg_id;
   }
 
-  int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
-  reg_file_release_prev(op, reg_table_types, 2);
+  int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_INVALID};
+  reg_file_release_prev(op, reg_table_types);
 }
 
 /**************************************************************************************/

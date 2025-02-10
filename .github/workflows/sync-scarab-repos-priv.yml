@@ -10,7 +10,6 @@ on:
   pull_request:
     branches:
       - main
-  workflow_dispatch:
 
 jobs:
   sync_on_pull_request:
@@ -60,7 +59,9 @@ jobs:
         run: |
           git remote add public https://github.com/litz-lab/scarab.git
           git fetch public
-          git checkout ${{ github.head_ref }} # Checkout the PR branch
+
+      - name: Checkout Merge Group Commit
+        run: git checkout ${{ github.sha }}
 
       - name: Attempt a test merge
         run: |

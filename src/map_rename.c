@@ -162,17 +162,13 @@ static inline void reg_file_extract_arch_reg_id(Op *op) {
 /**************************************************************************************/
 /* reg file operation functions for all register schemes */
 
-static inline void reg_file_init_reg_table(int self_reg_table_type, int parent_reg_table_type, int reg_table_size,
-                                           int reg_type, struct reg_table_ops *reg_table_ops) {
+static inline void reg_file_init_reg_table(int self_reg_table_type, struct reg_table *parent_reg_table,
+                                           int reg_table_size, int reg_type, struct reg_table_ops *reg_table_ops) {
   ASSERT(map_data->proc_id, reg_file[reg_type] && reg_table_ops && reg_table_ops->init);
   reg_file[reg_type]->reg_table[self_reg_table_type] = (struct reg_table *)malloc(sizeof(struct reg_table));
   ASSERT(map_data->proc_id, reg_file[reg_type]->reg_table[self_reg_table_type]);
 
   struct reg_table *self_reg_table = reg_file[reg_type]->reg_table[self_reg_table_type];
-  struct reg_table *parent_reg_table = NULL;
-  if (parent_reg_table_type != REG_TABLE_TYPE_INVALID)
-    parent_reg_table = reg_file[reg_type]->reg_table[parent_reg_table_type];
-
   self_reg_table->ops = reg_table_ops;
   self_reg_table->ops->init(self_reg_table, parent_reg_table, reg_table_size, reg_type);
 }
@@ -667,14 +663,14 @@ void reg_renaming_scheme_realistic_init(void) {
      * the physical reg map is the children table of the arch table
      * the child_reg_id of the arch table is the index of the physical reg map
      */
-    reg_file_init_reg_table(REG_TABLE_TYPE_ARCHITECTURAL, REG_TABLE_TYPE_INVALID, NUM_REG_IDS, ii, &reg_table_ops_arch);
+    reg_file_init_reg_table(REG_TABLE_TYPE_ARCHITECTURAL, NULL, NUM_REG_IDS, ii, &reg_table_ops_arch);
 
     /*
      * the arch table is the parent table of the physical reg map
      * the parent_reg_id of the physical table is the index of the arch table
      */
-    reg_file_init_reg_table(REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL, reg_file_physical_size[ii], ii,
-                            &reg_table_ops);
+    reg_file_init_reg_table(REG_TABLE_TYPE_PHYSICAL, reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL],
+                            reg_file_physical_size[ii], ii, &reg_table_ops);
   }
 
   reg_file_init_checkpoint();
@@ -711,10 +707,10 @@ void reg_renaming_scheme_realistic_execute(Op *op) {
   int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
 
   // consume the src register in the physical reg table
-  reg_file_consume_src(op, reg_table_types, 1);
+  reg_file_consume_src(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
 
   // write back the physical register table
-  reg_file_produce_dst(op, reg_table_types, 1);
+  reg_file_produce_dst(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
 }
 
 // flush registers of misprediction operands using the ptag info
@@ -731,14 +727,14 @@ void reg_renaming_scheme_realistic_recover(Op *op) {
   int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
   for (Op **op_p = (Op **)list_start_tail_traversal(&td->seq_op_list); op_p && (*op_p)->op_num > op->op_num;
        op_p = (Op **)list_prev_element(&td->seq_op_list)) {
-    reg_file_flush_mispredict(*op_p, reg_table_types, 1);
+    reg_file_flush_mispredict(*op_p, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
   }
 }
 
 // release the previous register with same architectural id
 void reg_renaming_scheme_realistic_commit(Op *op) {
   int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
-  reg_file_release_prev(op, reg_table_types, 1);
+  reg_file_release_prev(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
 }
 
 /**************************************************************************************/
@@ -767,21 +763,21 @@ void reg_renaming_scheme_late_allocation_init(void) {
      * the arch reg table is the parent table of the vtag table
      * the child_reg_id of the arch table is the index of the vtag reg map table
      */
-    reg_file_init_reg_table(REG_TABLE_TYPE_ARCHITECTURAL, REG_TABLE_TYPE_INVALID, NUM_REG_IDS, ii, &reg_table_ops_arch);
+    reg_file_init_reg_table(REG_TABLE_TYPE_ARCHITECTURAL, NULL, NUM_REG_IDS, ii, &reg_table_ops_arch);
 
     /*
      * the vtag reg table is the parent table of the ptag table
      * the child_reg_id of the vtag table is the index of the ptag reg map table
      */
-    reg_file_init_reg_table(REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL, reg_file_virtual_size[ii], ii,
-                            &reg_table_ops);
+    reg_file_init_reg_table(REG_TABLE_TYPE_VIRTUAL, reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL],
+                            reg_file_virtual_size[ii], ii, &reg_table_ops);
 
     /*
      * the ptag reg table is the child table of the vtag table
      * the parent_reg_id of the ptag table is the index of the vtag reg map table
      */
-    reg_file_init_reg_table(REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_VIRTUAL, reg_file_physical_size[ii], ii,
-                            &reg_table_ops);
+    reg_file_init_reg_table(REG_TABLE_TYPE_PHYSICAL, reg_file[ii]->reg_table[REG_TABLE_TYPE_VIRTUAL],
+                            reg_file_physical_size[ii], ii, &reg_table_ops);
   }
 
   reg_file_init_checkpoint();
@@ -854,8 +850,8 @@ void reg_renaming_scheme_late_allocation_execute(Op *op) {
 
   // consume/produce for both register tables
   int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
-  reg_file_consume_src(op, reg_table_types, 2);
-  reg_file_produce_dst(op, reg_table_types, 2);
+  reg_file_consume_src(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
+  reg_file_produce_dst(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
 }
 
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
@@ -871,7 +867,7 @@ void reg_renaming_scheme_late_allocation_recover(Op *op) {
   int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
   for (Op **op_p = (Op **)list_start_tail_traversal(&td->seq_op_list); op_p && (*op_p)->op_num > op->op_num;
        op_p = (Op **)list_prev_element(&td->seq_op_list)) {
-    reg_file_flush_mispredict(*op_p, reg_table_types, 2);
+    reg_file_flush_mispredict(*op_p, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
   }
 }
 
@@ -898,7 +894,7 @@ void reg_renaming_scheme_late_allocation_commit(Op *op) {
   }
 
   int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
-  reg_file_release_prev(op, reg_table_types, 2);
+  reg_file_release_prev(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
 }
 
 /**************************************************************************************/

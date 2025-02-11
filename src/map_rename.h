@@ -47,7 +47,6 @@ enum reg_table_entry_state {
   REG_TABLE_ENTRY_STATE_ALLOC,
   REG_TABLE_ENTRY_STATE_PRODUCED,
   REG_TABLE_ENTRY_STATE_COMMIT,
-  REG_TABLE_ENTRY_STATE_DEAD,
   REG_TABLE_ENTRY_STATE_NUM
 };
 
@@ -58,6 +57,7 @@ enum reg_file_reg_type {
 };
 
 const static int REG_TABLE_REG_ID_INVALID = -1;
+const static int REG_TABLE_TYPE_INVALID = -1;
 const static int REG_FILE_REG_TYPE_OTHER = -1;
 const static uns REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM = 1;
 
@@ -139,7 +139,7 @@ struct reg_file {
 struct reg_table_entry_ops {
   void (*clear)(struct reg_table_entry *entry);
   void (*read)(struct reg_table_entry *entry, Op *op);
-  void (*write)(struct reg_table_entry *entry, struct reg_table *parent_reg_table, Op *op, int parent_reg_id);
+  void (*write)(struct reg_table_entry *entry, Op *op, int parent_reg_id);
   void (*consume)(struct reg_table_entry *entry, Op *op);
   void (*produce)(struct reg_table_entry *entry);
 };
@@ -156,9 +156,7 @@ struct reg_table_ops {
   int (*alloc)(struct reg_table *reg_table, Op *op, int parent_reg_id);
   void (*free)(struct reg_table *reg_table, struct reg_table_entry *entry);
   void (*consume)(struct reg_table *reg_table, int reg_id, Op *op);
-  void (*write_back)(struct reg_table *reg_table, int reg_id);
-  void (*flush_mispredict)(struct reg_table *reg_table, int reg_id);
-  void (*release_prev)(struct reg_table *reg_table, int reg_id);
+  void (*produce)(struct reg_table *reg_table, int reg_id);
 };
 
 /**************************************************************************************/

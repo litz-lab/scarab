@@ -320,7 +320,7 @@ static inline void reg_file_release_prev(Op *op, int *reg_table_types) {
       int prev_tag_of_same_arch_id = entry->prev_tag_of_same_arch_id;
       ASSERT(op->proc_id, prev_tag_of_same_arch_id != REG_TABLE_REG_ID_INVALID);
 
-      // mark the op before the committed op as dead and release it
+      // release the previous op before the current committed op
       struct reg_table_entry *prev_entry = &reg_table->entries[prev_tag_of_same_arch_id];
       ASSERT(op->proc_id, prev_entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT || prev_entry->op == &invalid_op);
       reg_table->ops->free(reg_table, prev_entry);

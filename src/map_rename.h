@@ -79,9 +79,6 @@ struct reg_table_entry {
   // register state info
   enum reg_table_entry_state reg_state;
 
-  // tracking the previous register use the same architectural register id
-  int prev_tag_of_same_arch_id;
-
   // tracking free register entries
   struct reg_table_entry *next_free;
 

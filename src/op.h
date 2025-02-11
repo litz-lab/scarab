@@ -313,8 +313,9 @@ struct Op_struct {
   int bp_confidence;
 
   // {{{ register renaming
-  int src_reg_id[MAX_SRCS][REG_TABLE_TYPE_NUM];   // the reg id of the source reg file entries
-  int dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];  // the reg id of allocated reg file entries
+  int src_reg_id[MAX_SRCS][REG_TABLE_TYPE_NUM];        // the reg id of the source reg file entries
+  int dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];       // the reg id of allocated reg file entries
+  int prev_dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];  // the previous dst reg id with the same parent register id
   // }}}
 };
 // }}}

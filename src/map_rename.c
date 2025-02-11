@@ -84,8 +84,7 @@ void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_r
 static inline void reg_file_debug_print_entry(struct reg_table_entry *entry) {
   printf("[ENTRY]\n");
   printf("op_num: %lld, off_path: %d, state: %d,\n", entry->op_num, entry->off_path, entry->reg_state);
-  printf("parent: %d, self: %d, child: %d, prev: %d\n", entry->parent_reg_id, entry->self_reg_id, entry->child_reg_id,
-         entry->prev_tag_of_same_arch_id);
+  printf("parent: %d, self: %d, child: %d\n", entry->parent_reg_id, entry->self_reg_id, entry->child_reg_id);
 }
 
 static inline void reg_file_debug_print_op(Op *op, int state) {
@@ -203,10 +202,15 @@ static inline void reg_file_write_dst(Op *op, int self_reg_table_type, int paren
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
-    // allocate the dst register and write meta info
     int parent_reg_id = op->dst_reg_id[ii][parent_reg_table_type];
     ASSERT(op->proc_id, parent_reg_id != REG_TABLE_REG_ID_INVALID);
     struct reg_table *reg_table = reg_file[reg_type]->reg_table[self_reg_table_type];
+
+    // track the previous register id with the same parent table register before allocation
+    ASSERT(op->proc_id, op->prev_dst_reg_id[ii][self_reg_table_type] == REG_TABLE_REG_ID_INVALID);
+    op->prev_dst_reg_id[ii][self_reg_table_type] = reg_table->parent_reg_table->entries[parent_reg_id].child_reg_id;
+
+    // allocate the dst register and write meta info
     int self_reg_id = reg_table->ops->alloc(reg_table, op, parent_reg_id);
 
     // update the dst register id into the op
@@ -300,12 +304,11 @@ static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_t
              reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id != REG_TABLE_REG_ID_INVALID);
       entry->reg_state = REG_TABLE_ENTRY_STATE_COMMIT;
 
-      // TODO: store the reg id into op
-      int prev_tag_of_same_arch_id = entry->prev_tag_of_same_arch_id;
-      ASSERT(op->proc_id, prev_tag_of_same_arch_id != REG_TABLE_REG_ID_INVALID);
+      int prev_reg_id = op->prev_dst_reg_id[ii][table_type];
+      ASSERT(op->proc_id, prev_reg_id != REG_TABLE_REG_ID_INVALID);
 
       // release the previous op before the current committed op
-      struct reg_table_entry *prev_entry = &reg_table->entries[prev_tag_of_same_arch_id];
+      struct reg_table_entry *prev_entry = &reg_table->entries[prev_reg_id];
       ASSERT(op->proc_id, prev_entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT || prev_entry->op == &invalid_op);
       reg_table->ops->free(reg_table, prev_entry);
     }
@@ -409,7 +412,6 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->reg_state = REG_TABLE_ENTRY_STATE_FREE;
   entry->parent_reg_id = REG_TABLE_REG_ID_INVALID;
   entry->child_reg_id = REG_TABLE_REG_ID_INVALID;
-  entry->prev_tag_of_same_arch_id = REG_TABLE_REG_ID_INVALID;
 }
 
 /* update the metadata when it is read during renaming */
@@ -519,7 +521,6 @@ int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id) {
 /*
   --- 1. allocate a current register table entry from free list
   --- 2. store the op info into the register entry
-  --- 3. update the child_reg_id of the parent table for tracking same architectural id
 */
 int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id) {
   ASSERT(0, REG_RENAMING_SCHEME && reg_table != NULL && op != NULL);
@@ -527,10 +528,6 @@ int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id) {
   // get the entry from the free list and write the metadata
   struct reg_table_entry *entry = reg_table->free_list->ops->alloc(reg_table->free_list);
   entry->ops->write(entry, op, parent_reg_id);
-
-  // track the previous register id with the same architectural register
-  ASSERT(op->proc_id, entry->prev_tag_of_same_arch_id == REG_TABLE_REG_ID_INVALID);
-  entry->prev_tag_of_same_arch_id = reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id;
 
   // update the parent table to ensure the latest assignment
   reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->self_reg_id;
@@ -872,25 +869,21 @@ void reg_renaming_scheme_late_allocation_recover(Op *op) {
 }
 
 void reg_renaming_scheme_late_allocation_commit(Op *op) {
-  // TODO: store the reg id into op
+  /*
+    the previous same architectural id of ptag may be invalid due to the out-of-order allocation
+    therefore, a lazy assignment is done here, e.g., tracking the prev_ptag when the op is committed and the prev_ptag
+    is to be released
+  */
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
-    if (op->dst_reg_id[ii][REG_TABLE_TYPE_VIRTUAL] == REG_TABLE_REG_ID_INVALID)
+    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
-    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
-    ASSERT(op->proc_id, reg_type >= 0 && reg_type < REG_FILE_REG_TYPE_NUM);
-
-    /*
-      the previous same architectural id of ptag may be invalid due to the out-of-order allocation
-      therefore, a lazy assignment is done here, e.g., tracking the prev_ptag when the op is committed and the prev_ptag
-      is to be released
-    */
-    struct reg_table_entry *entry =
-        &reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL]->entries[op->dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL]];
-    int vtag = entry->parent_reg_id;
-    int prev_vtag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL]->entries[vtag].prev_tag_of_same_arch_id;
-    entry->prev_tag_of_same_arch_id =
-        reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL]->entries[prev_vtag].child_reg_id;
+    int prev_vtag = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_VIRTUAL];
+    ASSERT(op->proc_id, prev_vtag != REG_TABLE_REG_ID_INVALID);
+    int prev_ptag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_VIRTUAL]->entries[prev_vtag].child_reg_id;
+    ASSERT(op->proc_id, prev_ptag != REG_TABLE_REG_ID_INVALID);
+    op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL] = prev_ptag;
   }
 
   int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};

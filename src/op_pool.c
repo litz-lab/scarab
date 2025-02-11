@@ -266,6 +266,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   for (ii = 0; ii < MAX_DESTS; ++ii) {
     for (jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
       op->dst_reg_id[ii][jj] = -1;
+      op->prev_dst_reg_id[ii][jj] = -1;
     }
   }
 }

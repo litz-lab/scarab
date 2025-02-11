@@ -1,0 +1,80 @@
+name: Sync to Public Repo with Original Authors
+
+permissions:
+  contents: write
+
+on:
+  merge_group: # Runs just before a merge is attempted
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  sync_on_pull_request:
+    if: github.repository == 'litz-lab/scarab_ll' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Private Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper sync
+
+      - name: Configure Git (Keep Original Authors)
+        run: |
+          git config --global user.email "$(git log -1 --pretty=format:'%ae')"
+          git config --global user.name "$(git log -1 --pretty=format:'%an')"
+
+      - name: Add Public Repository Remote
+        run: |
+          git remote add public https://github.com/litz-lab/scarab.git
+          git fetch public
+
+      - name: Attempt a test merge
+        run: |
+          git merge --no-commit --no-ff public/main || {
+            echo "Merge Conflict detected! Aborting merge."
+            exit 1
+          }
+          echo "No conflicts detected. Ready to merge."
+
+  check-merge:
+    if: github.repository == 'litz-lab/scarab_ll' && github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Private Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Ensure we have the full commit history
+
+      - name: Configure Git (Keep Original Authors)
+        run: |
+          git config --global user.email "$(git log -1 --pretty=format:'%ae')"
+          git config --global user.name "$(git log -1 --pretty=format:'%an')"
+
+      - name: Add Public Repository Remote
+        run: |
+          git remote add public https://github.com/litz-lab/scarab.git
+          git fetch public
+
+      - name: Checkout Merge Group Commit
+        run: git checkout ${{ github.sha }}
+
+      - name: Attempt a test merge
+        run: |
+          git merge --no-commit --no-ff public/main || {
+            echo "Merge Conflict detected! Aborting merge."
+            exit 1
+          }
+          echo "No conflicts detected. Ready to merge."
+          git commit
+
+      - name: Push Updates to Public Repository
+        env:
+          DATE: ${{ github.event.head_commit.timestamp }}
+        run: |
+          DATE=$(date +%Y-%m-%d)  # Format date as YYYY-MM-DD
+          git push --force-with-lease https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab.git main:release_${DATE} # Push to release_<date> branch

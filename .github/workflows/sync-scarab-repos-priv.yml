@@ -70,6 +70,7 @@ jobs:
             exit 1
           }
           echo "No conflicts detected. Ready to merge."
+          git commit
 
       - name: Push Updates to Public Repository
         env:

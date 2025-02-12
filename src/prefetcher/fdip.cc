@@ -161,7 +161,6 @@ public:
   void set_last_miss_reason(uns reason) { fdip_stat.last_imiss_reason = reason; }
   void inc_utility_info(Flag useful);
   void inc_timeliness_info(Flag mshr_hit);
-  void inc_cnt_btb_miss() { fdip_conf->inc_cnt_btb_miss(); }
   Flag search_pref_candidate(Addr addr);
   void dec_useful_lines_uc(Addr line_addr);
   void inc_useful_lines_uc(Addr line_addr);
@@ -321,10 +320,6 @@ void inc_timeliness_info(Flag mshr_hit) {
   if (FDIP_ADJUSTABLE_FTQ != 2 && FDIP_ADJUSTABLE_FTQ != 3)
     return;
   fdip->inc_timeliness_info(mshr_hit);
-}
-
-void fdip_inc_cnt_btb_miss(uns op_proc_id) {
-  per_core_fdip[op_proc_id].inc_cnt_btb_miss();
 }
 
 Flag fdip_search_pref_candidate(Addr addr) {

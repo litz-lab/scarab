@@ -31,19 +31,29 @@
 
 #include "prefetcher/fdip.h"
 
+// reasons an op can trigger a recovery
 typedef enum OFF_PATH_REASON_enum {
+  REASON_NOT,
+  REASON_IBTB_MISS,
   REASON_BTB_MISS,
+  // op that misses in the BTB and the BP incorrectly predicts not taken
+  REASON_BTB_MISS_MISPRED,
   REASON_MISPRED,
   REASON_MISFETCH,
-  REASON_NO_TARGET,
 } Off_Path_Reason;
 
+// reasons the confidence mechanism can predict off-path
 typedef enum CONF_OFF_PATH_REASON_enum {
+  REASON_INVALID,
+  REASON_IBTB_MISS_BP_TAKEN,
   REASON_BTB_MISS_BP_TAKEN_CONF_0,
   REASON_BTB_MISS_BP_TAKEN_CONF_1,
   REASON_BTB_MISS_BP_TAKEN_CONF_2,
   REASON_BTB_MISS_BP_TAKEN_CONF_3,
   REASON_BTB_MISS_RATE,
+  REASON_IBTB_MISS_RATE,
+  REASON_MISFETCH_RATE,
+  REASON_MISPRED_RATE,
   REASON_INV_CONF_INC,
 } Conf_Off_Path_Reason;
 
@@ -106,12 +116,24 @@ private:
 
 class FDIP_Conf {
 public:
-  FDIP_Conf(uns _proc_id) :
-    proc_id(_proc_id),
-    cnt_btb_miss(0),
-    btb_miss_rate(0.0),
-    low_confidence_cnt(0),
-    cf_op_distance(0.0) { conf_info = new FDIP_Confidence_Info(_proc_id); }
+ FDIP_Conf(uns _proc_id)
+     : proc_id(_proc_id),
+       cnt_btb_miss(0),
+       btb_miss_rate(0.0),
+       last_btb_recover_cycle(0),
+       cnt_ibtb_miss(0),
+       ibtb_miss_rate(0.0),
+       last_ibtb_recover_cycle(0),
+       cnt_misfetch(0),
+       misfetch_rate(0.0),
+       last_misfetch_recover_cycle(0),
+       cnt_mispred(0),
+       mispred_rate(0.0),
+       last_mispred_recover_cycle(0),
+       low_confidence_cnt(0),
+       cf_op_distance(0.0) {
+   conf_info = new FDIP_Confidence_Info(_proc_id);
+ }
   uns get_low_confidence_cnt() { return low_confidence_cnt; }
   void recover();
   void cyc_reset();
@@ -120,17 +142,36 @@ public:
   void update(Op* op);
   void log_stats_bp_conf();
   void log_stats_bp_conf_emitted();
-  void inc_cnt_btb_miss() { cnt_btb_miss++; }
-private:
+  void inc_cnt_btb_miss() { cnt_btb_miss++; };
+  void inc_cnt_ibtb_miss() { cnt_ibtb_miss++; };
+  void inc_cnt_misfetch() { cnt_misfetch++; };
+  void inc_cnt_mispred() { cnt_mispred++; };
+
+ private:
   void default_conf_update(Op* op);
-  void btb_miss_bp_taken_conf_update(Op* op);
+  void fine_grained_conf_update(Op* op);
   void inc_br_conf_counters(int conf);
   void inc_cf_type_counters(Cf_Type cf_type);
+  Conf_Off_Path_Reason update_resteer_rate_ctrs(Conf_Off_Path_Reason conf_op_reason);
+  Off_Path_Reason eval_off_path_reason(Op* op);
 
   uns proc_id;
-  /* global variables for BTB miss-based BP confidence */
+  /* variables for BTB miss-based BP confidence */
   Counter cnt_btb_miss;
   double btb_miss_rate;
+  Counter last_btb_recover_cycle;
+  /* variables for IBTB miss-based BP confidence */
+  Counter cnt_ibtb_miss;
+  double ibtb_miss_rate;
+  Counter last_ibtb_recover_cycle;
+  /* variables for MISFETCH miss-based BP confidence */
+  Counter cnt_misfetch;
+  double misfetch_rate;
+  Counter last_misfetch_recover_cycle;
+  /* variables for MISPRED miss-based BP confidence */
+  Counter cnt_mispred;
+  double mispred_rate;
+  Counter last_mispred_recover_cycle;
 
   //confidence counter
   uns low_confidence_cnt;

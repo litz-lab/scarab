@@ -7,7 +7,7 @@
 void FDIP_Confidence_Info::recover() {
   // set previous reset previous instruction
   prev_op = nullptr;
-  // reset counters and event flags
+  // reset counters and event flags (for logging)
   fdip_off_path_event = false;
   fdip_on_conf_off_event = false;
   fdip_off_conf_on_event = false;
@@ -37,44 +37,28 @@ void FDIP_Confidence_Info::log_stats_bp_conf_on() {
       ASSERT(proc_id, prev_op->table_info->cf_type); // must be a cf as the last on-path op
       fdip_off_conf_on_event = true;
       STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NUM_EVENTS);
-      if (prev_op->oracle_info.mispred) {
-        off_path_reason = REASON_MISPRED;
-        STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT);
-        STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_BP_INCORRECT_0_CONF + prev_op->bp_confidence);
-      } else if (prev_op->oracle_info.btb_miss) { // if off path due to btb miss
-        off_path_reason = REASON_BTB_MISS;
-        STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_BTB_MISS);
-        STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_BTB_MISS_NOT_CF + prev_op->table_info->cf_type);
-      } else if (prev_op->oracle_info.no_target) { // if off path due to no target
-        off_path_reason = REASON_NO_TARGET;
-        STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NO_TARGET);
-      } else if (prev_op->oracle_info.misfetch) { // if off path due to misfetch
-        off_path_reason = REASON_MISFETCH;
-        STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_MISFETCH);
-      } else { // if some other reason (shouldn't happen)
-        DEBUG(proc_id, "fdip off conf on event, unrecognized off path reason: op type: %u\n", prev_op->table_info->op_type);
-        //ASSERT(proc_id, false); //Disable for now
-      }
+      STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NOT + off_path_reason);
     }
     STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_PREF_CANDIDATES);
-    STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_BTB_MISS_PREF_CANDIDATES + off_path_reason);
+    // FIXME
+    STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NOT_PREF_CANDIDATES + off_path_reason);
   } else {
     STAT_EVENT(proc_id, FDIP_ON_CONF_ON_PREF_CANDIDATES);
   }
 }
 
+// FIXME: we never use these, get rid of them?
 void FDIP_Confidence_Info::log_stats_bp_conf_off() {
   if (fdip_off_path())
     STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_PREF_CANDIDATES);
   else {
     STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_PREF_CANDIDATES);
-    STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_PREF_CANDIDATES + conf_off_path_reason);
+    STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_INVALID_PREF_CANDIDATES + conf_off_path_reason);
     if (!fdip_on_conf_off_event) {
       fdip_on_conf_off_event = true;
 
       STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_NUM_EVENTS);
-
-      STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0 + conf_off_path_reason);
+      STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_INVALID + conf_off_path_reason);
 
       INC_STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_NUM_CF_BR, num_cf_br);
       INC_STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_NUM_CF_CBR, num_cf_cbr);
@@ -98,6 +82,46 @@ void FDIP_Confidence_Info::log_stats_bp_conf_off() {
 
 /* FDIP_Conf member functions */
 void FDIP_Conf::recover() {
+  Off_Path_Reason op_reason = conf_info->off_path_reason;
+  switch (op_reason) {
+    case REASON_NOT: {
+      // if a resteer happens right after another resteer it might not be in the FTQ
+      // TODO: this should NOT happen if using eval(op) ?
+      break;
+    }
+    case REASON_IBTB_MISS: {
+      inc_cnt_ibtb_miss();
+      last_ibtb_recover_cycle = cycle_count;
+      break;
+    }
+    case REASON_BTB_MISS: {
+      inc_cnt_btb_miss();
+      last_btb_recover_cycle = cycle_count;
+      break;
+    }
+    case REASON_BTB_MISS_MISPRED: {
+      inc_cnt_btb_miss();
+      inc_cnt_mispred();
+      last_btb_recover_cycle = cycle_count;
+      last_mispred_recover_cycle = cycle_count;
+      break;
+    }
+    case REASON_MISPRED: {
+      inc_cnt_mispred();
+      last_mispred_recover_cycle = cycle_count;
+      break;
+    }
+    case REASON_MISFETCH: {
+      inc_cnt_misfetch();
+      last_misfetch_recover_cycle = cycle_count;
+      break;
+    }
+    default: {
+      // shouldn't happen!
+      DEBUG(proc_id, "no off path reason match: \n");
+      ASSERT(proc_id, 0);
+    }
+  }
   low_confidence_cnt = 0;
   cf_op_distance = 0.0;
   conf_info->recover();
@@ -107,6 +131,7 @@ void FDIP_Conf::set_prev_op(Op* prev_op, Flag off_path) {
   conf_info->prev_op = prev_op;
   DEBUG(proc_id, "Set prev_op off_path:%i, op_num:%llu, cf_type:%i\n", conf_info->prev_op->off_path, conf_info->prev_op->op_num, conf_info->prev_op->table_info->cf_type);
   conf_info->fdip_off_path_event = off_path;
+  conf_info->off_path_reason = eval_off_path_reason(prev_op);
 }
 
 void FDIP_Conf::update(Op* op) {
@@ -116,8 +141,8 @@ void FDIP_Conf::update(Op* op) {
     if(low_confidence_cnt == ~0U)
       ASSERT(proc_id, fdip_off_path());
     cf_op_distance = 0.0;
-  } else if (FDIP_BTB_MISS_BP_TAKEN_CONF) {
-    btb_miss_bp_taken_conf_update(op);
+  } else if (FDIP_FINE_GRAINED_CONF) {
+    fine_grained_conf_update(op);
   } else {
     default_conf_update(op);
   }
@@ -127,6 +152,18 @@ void FDIP_Conf::cyc_reset() {
   if (cycle_count % FDIP_BTB_MISS_SAMPLE_RATE == 0) {
     btb_miss_rate = (double)cnt_btb_miss / (double)FDIP_BTB_MISS_SAMPLE_RATE;
     cnt_btb_miss = 0;
+  }
+  if (cycle_count % FDIP_IBTB_MISS_SAMPLE_RATE == 0) {
+    ibtb_miss_rate = (double)cnt_ibtb_miss / (double)FDIP_IBTB_MISS_SAMPLE_RATE;
+    cnt_ibtb_miss = 0;
+  }
+  if (cycle_count % FDIP_MISFETCH_SAMPLE_RATE == 0) {
+    misfetch_rate = (double)cnt_misfetch / (double)FDIP_MISFETCH_SAMPLE_RATE;
+    cnt_misfetch = 0;
+  }
+  if (cycle_count % FDIP_MISPRED_SAMPLE_RATE == 0) {
+    mispred_rate = (double)cnt_mispred / (double)FDIP_MISPRED_SAMPLE_RATE;
+    cnt_mispred = 0;
   }
 }
 
@@ -208,39 +245,95 @@ void FDIP_Conf::default_conf_update(Op* op) {
     }
   }
 }
-//if btb miss and high enough bp confidence set confidence to off path
-void FDIP_Conf::btb_miss_bp_taken_conf_update(Op* op) {
+
+void FDIP_Conf::fine_grained_conf_update(Op* op) {
   if (!FDIP_BP_CONFIDENCE)
     return;
   if (low_confidence_cnt == ~0U)
     return;
+  Conf_Off_Path_Reason conf_op_reason = REASON_INVALID;
   if (op->table_info->cf_type) {
-    if (op->oracle_info.btb_miss &&
-        (op->oracle_info.pred_orig == TAKEN) &&
-        (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)) {
-      low_confidence_cnt = ~0U;
-      if (!conf_info->fdip_on_conf_off_event && op->bp_confidence >= 0 && op->bp_confidence <= 3)
-        conf_info->conf_off_path_reason = static_cast<Conf_Off_Path_Reason>(REASON_BTB_MISS_BP_TAKEN_CONF_0 + op->bp_confidence);
-    } else { // update confidence
+    // IBTB miss and BP Predicts taken
+    if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) &&
+        op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN) {
+      conf_op_reason = REASON_IBTB_MISS_BP_TAKEN;
+    }
+    // BTB miss and BP Predicts taken
+    else if (op->oracle_info.btb_miss && (op->oracle_info.pred_orig == TAKEN) &&
+             (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)) {
+      conf_op_reason = (Conf_Off_Path_Reason)(REASON_BTB_MISS_BP_TAKEN_CONF_0 + op->bp_confidence);
+    } else {  // update low bp confidence counter
       low_confidence_cnt += 3 - op->bp_confidence;
-      if (!conf_info->fdip_on_conf_off_event)
-        conf_info->conf_off_path_reason = REASON_INV_CONF_INC;
+      if (low_confidence_cnt > FDIP_OFF_PATH_THRESHOLD) {
+        conf_op_reason = REASON_INV_CONF_INC;
+      }
     }
     //log stats
-    if (op->oracle_info.btb_miss)
+    if (op->oracle_info.btb_miss) {
       conf_info->num_BTB_misses += 1;
+    }
     inc_br_conf_counters(op->bp_confidence);
     inc_cf_type_counters(op->table_info->cf_type);
     DEBUG(proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence, low_confidence_cnt, op->off_path? 1:0);
-  } else { // update confidence based on number of cycles elapsed and btb miss rate
-           //if number of cycles times btb miss rate is greater than 1 we have probably seen a btb miss
-    DEBUG(proc_id, "btb miss rate: %f, cycles since recovery: %llu", btb_miss_rate, cycle_count - fdip_get_last_recover_cycle());
-    if ((double)((cycle_count - fdip_get_last_recover_cycle()) * btb_miss_rate)  >= FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD) {
-      low_confidence_cnt = ~0U;
-      STAT_EVENT(proc_id, FDIP_BTB_NUM_CYCLES_OFF_PATH_EVENT);
-      if (!conf_info->fdip_on_conf_off_event)
-        conf_info->conf_off_path_reason = REASON_BTB_MISS_RATE;
-    }
+  } else {
+    conf_op_reason = update_resteer_rate_ctrs(conf_op_reason);
+  }
+  if (conf_op_reason != REASON_INVALID) {
+    low_confidence_cnt = ~0U;
+    STAT_EVENT(proc_id, FDIP_CONF_OP_REASON_INVALID + conf_op_reason);
+    // set conf off-path event flag (used for logging)
+    if (!conf_info->fdip_on_conf_off_event)
+      conf_info->conf_off_path_reason = conf_op_reason;
+  }
+}
+
+// update based on cycles since resteer of type X * rate of X
+Conf_Off_Path_Reason FDIP_Conf::update_resteer_rate_ctrs(Conf_Off_Path_Reason conf_op_reason) {
+  Conf_Off_Path_Reason ctrs_op_reason = conf_op_reason;
+  if (((double)(cycle_count - last_btb_recover_cycle) * btb_miss_rate) >= FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD) {
+    ctrs_op_reason = REASON_BTB_MISS_RATE;
+  } else if (((double)(cycle_count - last_ibtb_recover_cycle) * ibtb_miss_rate) >=
+             FDIP_IBTB_MISS_RATE_CYCLES_THRESHOLD) {
+    ctrs_op_reason = REASON_IBTB_MISS_RATE;
+  } else if (((double)(cycle_count - last_misfetch_recover_cycle) * misfetch_rate) >=
+             FDIP_MISFETCH_RATE_CYCLES_THRESHOLD) {
+    ctrs_op_reason = REASON_MISFETCH_RATE;
+  } else if (((double)(cycle_count - last_mispred_recover_cycle) * mispred_rate) >=
+             FDIP_MISPRED_RATE_CYCLES_THRESHOLD) {
+    ctrs_op_reason = REASON_MISPRED_RATE;
+  }
+  return ctrs_op_reason;
+}
+
+Off_Path_Reason FDIP_Conf::eval_off_path_reason(Op* op) {
+  // if the instruction is not a resteer op no reason to log
+  if (!(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec)) {
+    return REASON_NOT;
+  }
+  // mispred
+  if (op->oracle_info.pred_orig != op->oracle_info.dir && !op->oracle_info.btb_miss) {
+    return REASON_MISPRED;
+  }
+  // misfetch
+  else if (!op->oracle_info.btb_miss && op->oracle_info.pred_orig == op->oracle_info.dir &&
+           op->oracle_info.pred_npc != op->oracle_info.npc) {
+    return REASON_MISFETCH;
+  }
+  // ibtb miss
+  else if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) &&
+           op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN) {
+    return REASON_IBTB_MISS;
+  }
+  // btb miss and mispred (would have been incorrect with or without btb miss)
+  else if (op->oracle_info.pred_orig != op->oracle_info.dir && op->oracle_info.btb_miss) {
+    return REASON_BTB_MISS_MISPRED;
+  }
+  // true btb miss
+  else if (op->oracle_info.btb_miss) {
+    return REASON_BTB_MISS;
+  } else {
+    // shouldn't happen
+    ASSERT(proc_id, FALSE);
   }
 }
 
@@ -257,7 +350,7 @@ void FDIP_Conf::log_stats_bp_conf_emitted() {
     //actually off
     if(fdip_off_path()) {
       STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_EMITTED);
-      STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_BTB_MISS_EMITTED + conf_info->off_path_reason);
+      STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NOT_EMITTED + conf_info->off_path_reason);
     } else {
       STAT_EVENT(proc_id, FDIP_ON_CONF_ON_EMITTED);
     }
@@ -266,7 +359,7 @@ void FDIP_Conf::log_stats_bp_conf_emitted() {
       STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_EMITTED);
     } else {
       STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_EMITTED);
-      STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_EMITTED + conf_info->conf_off_path_reason);
+      STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_INVALID_EMITTED + conf_info->conf_off_path_reason);
     }
   }
 }

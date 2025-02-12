@@ -66,7 +66,6 @@ extern "C" {
   void update_useful_lines_bloom_filter(Addr line_addr);
   void inc_utility_info(Flag useful);
   void inc_timeliness_info(Flag mshr_hit);
-  void fdip_inc_cnt_btb_miss(uns proc_id);
   Flag fdip_search_pref_candidate(Addr addr);
   void assert_fdip_break_reason(Addr line_addr);
   Op* fdip_get_cur_op();

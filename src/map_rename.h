@@ -76,6 +76,10 @@ struct reg_table_entry {
   int self_reg_id;
   int child_reg_id;
 
+  // type info
+  int reg_type;        // INT or FP
+  int reg_table_type;  // arch, physical, or virtual
+
   // register state info
   enum reg_table_entry_state reg_state;
 
@@ -84,6 +88,15 @@ struct reg_table_entry {
 
   // register entry operation
   struct reg_table_entry_ops *ops;
+
+  // lifecycle counter
+  Counter alloc_cycle;
+  Counter produce_cycle;
+  Counter last_consume_cycle;
+
+  // read/consume counter
+  int read_count;     // the count of being read during renaming
+  int consume_count;  // the count of being consumed during execution
 };
 
 struct reg_free_list {
@@ -96,8 +109,9 @@ struct reg_free_list {
 };
 
 struct reg_table {
-  // the reg type of the corresponding reg file
-  int reg_type;
+  // the type of the corresponding reg file and reg table
+  int reg_type;        // INT or FP
+  int reg_table_type;  // arch, physical, or virtual
 
   // map reg id to register entries for both speculative and committed op
   struct reg_table_entry *entries;
@@ -148,7 +162,8 @@ struct reg_free_list_ops {
 };
 
 struct reg_table_ops {
-  void (*init)(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size, int reg_type);
+  void (*init)(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size, int reg_type,
+               int reg_table_type);
   int (*read)(struct reg_table *reg_table, Op *op, int parent_reg_id);
   int (*alloc)(struct reg_table *reg_table, Op *op, int parent_reg_id);
   void (*free)(struct reg_table *reg_table, struct reg_table_entry *entry);

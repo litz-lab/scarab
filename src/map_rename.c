@@ -67,7 +67,8 @@ void reg_table_entry_consume(struct reg_table_entry *entry, Op *op);
 void reg_table_entry_produce(struct reg_table_entry *entry);
 
 // register table operations
-void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size, int reg_type);
+void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size, int reg_type,
+                    int reg_table_type);
 int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id);
 int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id);
 void reg_table_free(struct reg_table *reg_table, struct reg_table_entry *entry);
@@ -76,7 +77,7 @@ void reg_table_produce(struct reg_table *reg_table, int self_reg_id);
 
 // special init func for the architectural table
 void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size,
-                         int reg_type);
+                         int reg_type, int reg_table_type);
 
 /**************************************************************************************/
 /* Inline Methods */
@@ -158,6 +159,61 @@ static inline void reg_file_extract_arch_reg_id(Op *op) {
   }
 }
 
+static inline void reg_file_collect_entry_stat(struct reg_table_entry *entry) {
+  if (entry->op_num == 0)
+    return;
+
+  if (entry->reg_table_type != REG_TABLE_TYPE_PHYSICAL)
+    return;
+
+  if (entry->off_path)
+    return;
+
+  Counter last_consume_cycle = entry->last_consume_cycle == MAX_CTR ? cycle_count : entry->last_consume_cycle;
+  ASSERT(map_data->proc_id, entry->produce_cycle >= entry->alloc_cycle);
+  ASSERT(map_data->proc_id, last_consume_cycle > entry->produce_cycle);
+  ASSERT(map_data->proc_id, cycle_count >= last_consume_cycle);
+
+  switch (entry->reg_type) {
+    case REG_FILE_REG_TYPE_GENERAL_PURPOSE:
+      STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ALLOC);
+      if (entry->read_count == 0)
+        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_UNCONSUME);
+      if (entry->read_count == 1)
+        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ONEUSE);
+      if (entry->read_count != 0 && last_consume_cycle - entry->produce_cycle == 1)
+        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_SHORTLIVE);
+
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_EMPTY,
+                     entry->produce_cycle - entry->alloc_cycle);
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_READY,
+                     last_consume_cycle - entry->produce_cycle);
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_IDEL, cycle_count - last_consume_cycle);
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_TOTAL, cycle_count - entry->alloc_cycle);
+      break;
+
+    case REG_FILE_REG_TYPE_VECTOR:
+      STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_NUM_ALLOC);
+      if (entry->read_count == 0)
+        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_NUM_UNCONSUME);
+      if (entry->read_count == 1)
+        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_NUM_ONEUSE);
+      if (entry->read_count != 0 && last_consume_cycle - entry->produce_cycle == 1)
+        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_NUM_SHORTLIVE);
+
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_LIFECYCLE_EMPTY,
+                     entry->produce_cycle - entry->alloc_cycle);
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_LIFECYCLE_READY,
+                     last_consume_cycle - entry->produce_cycle);
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_LIFECYCLE_IDEL, cycle_count - last_consume_cycle);
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_LIFECYCLE_TOTAL, cycle_count - entry->alloc_cycle);
+      break;
+
+    default:
+      break;
+  }
+}
+
 /**************************************************************************************/
 /* reg file operation functions for all register schemes */
 
@@ -169,7 +225,7 @@ static inline void reg_file_init_reg_table(int self_reg_table_type, struct reg_t
 
   struct reg_table *self_reg_table = reg_file[reg_type]->reg_table[self_reg_table_type];
   self_reg_table->ops = reg_table_ops;
-  self_reg_table->ops->init(self_reg_table, parent_reg_table, reg_table_size, reg_type);
+  self_reg_table->ops->init(self_reg_table, parent_reg_table, reg_table_size, reg_type, self_reg_table_type);
 }
 
 // read the src by looking up the parent table, and record the reg id into the op
@@ -178,7 +234,7 @@ static inline void reg_file_read_src(Op *op, int self_reg_table_type, int parent
   ASSERT(op->proc_id, op != &invalid_op);
 
   for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
-    int reg_type = reg_file_get_reg_type(op->inst_info->srcs[ii].id);
+    int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
@@ -198,7 +254,7 @@ static inline void reg_file_read_src(Op *op, int self_reg_table_type, int parent
 static inline void reg_file_write_dst(Op *op, int self_reg_table_type, int parent_reg_table_type) {
   ASSERT(op->proc_id, op != &invalid_op);
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
-    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+    int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
@@ -222,7 +278,7 @@ static inline void reg_file_write_dst(Op *op, int self_reg_table_type, int paren
 // only update metadata since the register dependency wake up will be done in the map module
 static inline void reg_file_consume_src(Op *op, int *reg_table_types, int reg_table_num) {
   for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
-    int reg_type = reg_file_get_reg_type(op->inst_info->srcs[ii].id);
+    int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
@@ -240,7 +296,7 @@ static inline void reg_file_consume_src(Op *op, int *reg_table_types, int reg_ta
 
 static inline void reg_file_produce_dst(Op *op, int *reg_table_types, int reg_table_num) {
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
-    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+    int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
@@ -258,8 +314,30 @@ static inline void reg_file_produce_dst(Op *op, int *reg_table_types, int reg_ta
 
 static inline void reg_file_flush_mispredict(Op *op, int *reg_table_types, int reg_table_num) {
   ASSERT(op->proc_id, op->off_path);
+  for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    for (uns jj = 0; jj < reg_table_num; ++jj) {
+      int table_type = reg_table_types[jj];
+      ASSERT(op->proc_id, table_type > REG_TABLE_TYPE_ARCHITECTURAL && table_type < REG_TABLE_TYPE_NUM);
+      int reg_id = op->src_reg_id[ii][table_type];
+      if (reg_id == REG_TABLE_REG_ID_INVALID)
+        continue;
+
+      struct reg_table *reg_table = reg_file[reg_type]->reg_table[table_type];
+      struct reg_table_entry *entry = &reg_table->entries[reg_id];
+
+      ASSERT(op->proc_id, entry != NULL);
+      --entry->read_count;
+      if (op->exec_count)
+        --entry->consume_count;
+    }
+  }
+
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++) {
-    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+    int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
@@ -285,7 +363,7 @@ static inline void reg_file_flush_mispredict(Op *op, int *reg_table_types, int r
 // mark the previous entry with same archituctural id before the committed one as dead and remove it
 static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_table_num) {
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
-    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+    int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
@@ -310,6 +388,7 @@ static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_t
       // release the previous op before the current committed op
       struct reg_table_entry *prev_entry = &reg_table->entries[prev_reg_id];
       ASSERT(op->proc_id, prev_entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT || prev_entry->op == &invalid_op);
+      ASSERT(op->proc_id, prev_entry->consume_count == prev_entry->read_count);
       reg_table->ops->free(reg_table, prev_entry);
     }
   }
@@ -412,6 +491,13 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->reg_state = REG_TABLE_ENTRY_STATE_FREE;
   entry->parent_reg_id = REG_TABLE_REG_ID_INVALID;
   entry->child_reg_id = REG_TABLE_REG_ID_INVALID;
+
+  entry->alloc_cycle = MAX_CTR;
+  entry->produce_cycle = MAX_CTR;
+  entry->last_consume_cycle = MAX_CTR;
+
+  entry->read_count = 0;
+  entry->consume_count = 0;
 }
 
 /* update the metadata when it is read during renaming */
@@ -420,6 +506,7 @@ void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
     traditionally, fill src info from the entry and update not ready bit for wake up
     since the dependency is tracked in the map module, only update the metadata for the research reg file schemes
   */
+  ++entry->read_count;
   return;
 }
 
@@ -437,6 +524,7 @@ void reg_table_entry_write(struct reg_table_entry *entry, Op *op, int parent_reg
   // update the entry meta data
   entry->parent_reg_id = parent_reg_id;
   entry->reg_state = REG_TABLE_ENTRY_STATE_ALLOC;
+  entry->alloc_cycle = cycle_count;
 
   DEBUG(0, "(entry write)[%lld]: parent_reg_id: %d, self_reg_id: %d, child_reg_id: %d\n", entry->op_num,
         entry->parent_reg_id, entry->self_reg_id, entry->child_reg_id);
@@ -444,13 +532,15 @@ void reg_table_entry_write(struct reg_table_entry *entry, Op *op, int parent_reg
 
 /* update the metadata when it is consumed during execution */
 void reg_table_entry_consume(struct reg_table_entry *entry, Op *op) {
-  return;
+  ++entry->consume_count;
+  entry->last_consume_cycle = cycle_count;
 }
 
 /* update the register state to indicate the value is produced during execution*/
 void reg_table_entry_produce(struct reg_table_entry *entry) {
   ASSERT(0, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
   entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
+  entry->produce_cycle = cycle_count;
 }
 
 struct reg_table_entry_ops reg_table_entry_ops = {
@@ -464,7 +554,8 @@ struct reg_table_entry_ops reg_table_entry_ops = {
 /**************************************************************************************/
 /* register table operation */
 
-void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size, int reg_type) {
+void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size, int reg_type,
+                    int reg_table_type) {
   // set the parent table pointer for tracking
   reg_table->parent_reg_table = parent_reg_table;
 
@@ -473,6 +564,8 @@ void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_ta
   reg_table->free_list->ops->init(reg_table->free_list);
 
   reg_table->reg_type = reg_type;
+  reg_table->reg_table_type = reg_table_type;
+
   reg_table->size = reg_table_size;
   reg_table->entries = (struct reg_table_entry *)malloc(sizeof(struct reg_table_entry) * reg_table_size);
 
@@ -481,6 +574,8 @@ void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_ta
     struct reg_table_entry *entry = &reg_table->entries[ii];
     entry->ops = &reg_table_entry_ops;
     entry->self_reg_id = ii;
+    entry->reg_type = reg_type;
+    entry->reg_table_type = reg_table_type;
     entry->ops->clear(entry);
     reg_table->free_list->ops->free(reg_table->free_list, entry);
   }
@@ -537,6 +632,9 @@ int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id) {
 
 /* clear all the info of the entry and insert it to the free list */
 void reg_table_free(struct reg_table *reg_table, struct reg_table_entry *entry) {
+  // collect the counter stat before clearing
+  reg_file_collect_entry_stat(entry);
+
   // clear the entry value
   entry->ops->clear(entry);
 
@@ -573,10 +671,11 @@ struct reg_table_ops reg_table_ops = {
 };
 
 void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size,
-                         int reg_type) {
+                         int reg_type, int reg_table_type) {
   reg_table->parent_reg_table = parent_reg_table;
   reg_table->free_list = NULL;
   reg_table->reg_type = reg_type;
+  reg_table->reg_table_type = reg_table_type;
   reg_table->size = reg_table_size;
   reg_table->entries = (struct reg_table_entry *)malloc(sizeof(struct reg_table_entry) * reg_table_size);
 
@@ -585,6 +684,8 @@ void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_r
     struct reg_table_entry *entry = &reg_table->entries[ii];
     entry->ops = &reg_table_entry_ops;
     entry->self_reg_id = ii;
+    entry->reg_type = reg_type;
+    entry->reg_table_type = reg_table_type;
     entry->ops->clear(entry);
 
     /* only allocate an architectural register for supported register types (int/vector)
@@ -842,8 +943,8 @@ Flag reg_renaming_scheme_late_allocation_issue(Op *op) {
 // allocate the physical reg during execution using the vtag info of the op and write back the virtual and physical reg
 void reg_renaming_scheme_late_allocation_execute(Op *op) {
   // late allocation for physical register entries
-  reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_VIRTUAL);
   reg_file_read_src(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_VIRTUAL);
+  reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_VIRTUAL);
 
   // consume/produce for both register tables
   int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
@@ -875,7 +976,7 @@ void reg_renaming_scheme_late_allocation_commit(Op *op) {
     is to be released
   */
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
-    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+    int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 

@@ -55,6 +55,7 @@ typedef enum CONF_OFF_PATH_REASON_enum {
   REASON_MISFETCH_RATE,
   REASON_MISPRED_RATE,
   REASON_INV_CONF_INC,
+  REASON_PERFECT_CONF,
 } Conf_Off_Path_Reason;
 
 //metadata for fdip confidence
@@ -153,6 +154,7 @@ public:
   void fine_grained_conf_update(Op* op);
   void inc_br_conf_counters(int conf);
   void inc_cf_type_counters(Cf_Type cf_type);
+  Conf_Off_Path_Reason perfect_conf_update(Op* op);
   Conf_Off_Path_Reason update_resteer_rate_ctrs(Conf_Off_Path_Reason conf_op_reason);
   Off_Path_Reason eval_off_path_reason(Op* op);
 

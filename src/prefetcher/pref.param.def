@@ -202,6 +202,13 @@ DEF_PARAM(fdip_ibtb_miss_rate_cycles_threshold, FDIP_IBTB_MISS_RATE_CYCLES_THRES
 DEF_PARAM(fdip_misfetch_rate_cycles_threshold, FDIP_MISFETCH_RATE_CYCLES_THRESHOLD, float, float, 1.0, )
 DEF_PARAM(fdip_mispred_rate_cycles_threshold, FDIP_MISPRED_RATE_CYCLES_THRESHOLD, float, float, 1.0, )
 
+// for perfect fine grained conf mechanisms
+DEF_PARAM(fdip_perfect_btb_miss_conf, FDIP_PERFECT_BTB_MISS_CONF, Flag, Flag, FALSE, )
+DEF_PARAM(fdip_perfect_ibtb_miss_conf, FDIP_PERFECT_IBTB_MISS_CONF, Flag, Flag, FALSE, )
+DEF_PARAM(fdip_perfect_misfetch_conf, FDIP_PERFECT_MISFETCH_CONF, Flag, Flag, FALSE, )
+DEF_PARAM(fdip_perfect_mispred_conf, FDIP_PERFECT_MISPRED_CONF, Flag, Flag, FALSE, )
+
+
 DEF_PARAM(fdip_btb_miss_rate_weight, FDIP_BTB_MISS_RATE_WEIGHT, uns, uns, 200, )
 
 DEF_PARAM(fdip_off_path_threshold, FDIP_OFF_PATH_THRESHOLD, uns     , uns     , 15    , )

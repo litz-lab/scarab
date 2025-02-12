@@ -70,7 +70,7 @@ jobs:
             exit 1
           }
           echo "No conflicts detected. Ready to merge."
-          git commit -m "Syncing private repo changes"
+          git commit --no-edit
 
       - name: Push Updates to Public Repository
         run: git push --force-with-lease https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab.git main:main

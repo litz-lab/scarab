@@ -4,7 +4,7 @@ permissions:
   contents: write
 
 on:
-  merge_group: # Runs just before a merge is attempted
+  push:
     branches:
       - main
   pull_request:
@@ -13,7 +13,7 @@ on:
 
 jobs:
   sync_on_pull_request:
-    if: github.repository == 'litz-lab/scarab_ll' && github.event_name == 'pull_request'
+    if: ${{ github.repository == 'litz-lab/scarab_ll' && github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -41,7 +41,7 @@ jobs:
           echo "No conflicts detected. Ready to merge."
 
   check-merge:
-    if: github.repository == 'litz-lab/scarab_ll' && github.event_name == 'merge_group'
+    if: ${{ github.repository == 'litz-lab/scarab_ll' && github.event_name == 'push' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -70,11 +70,7 @@ jobs:
             exit 1
           }
           echo "No conflicts detected. Ready to merge."
-          git commit
+          git commit -m "Syncing private repo changes"
 
       - name: Push Updates to Public Repository
-        env:
-          DATE: ${{ github.event.head_commit.timestamp }}
-        run: |
-          DATE=$(date +%Y-%m-%d)  # Format date as YYYY-MM-DD
-          git push --force-with-lease https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab.git main:release_${DATE} # Push to release_<date> branch
+        run: git push --force-with-lease https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab.git main:main

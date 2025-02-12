@@ -12,6 +12,8 @@ void FDIP_Confidence_Info::recover() {
   fdip_on_conf_off_event = false;
   fdip_off_conf_on_event = false;
 
+  perfect_off_path = false;
+
   num_conf_0_branches = 0;
   num_conf_1_branches = 0;
   num_conf_2_branches = 0;
@@ -50,7 +52,7 @@ void FDIP_Confidence_Info::log_stats_bp_conf_on() {
 // FIXME: we never use these, get rid of them?
 void FDIP_Confidence_Info::log_stats_bp_conf_off() {
   if (fdip_off_path())
-    STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_PREF_CANDIDATES);
+    STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_REALISTIC_PREF_CANDIDATES + perfect_off_path);
   else {
     STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_PREF_CANDIDATES);
     STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_INVALID_PREF_CANDIDATES + conf_off_path_reason);
@@ -330,6 +332,7 @@ Conf_Off_Path_Reason FDIP_Conf::perfect_conf_update(Op* op) {
       (FDIP_PERFECT_IBTB_MISS_CONF && (off_path_reason == REASON_IBTB_MISS)) ||
       (FDIP_PERFECT_MISFETCH_CONF && (off_path_reason == REASON_MISFETCH))) {
     low_confidence_cnt = ~0U;
+    conf_info->perfect_off_path = true;
     return REASON_PERFECT_CONF;
   }
   return REASON_INVALID;
@@ -386,7 +389,7 @@ void FDIP_Conf::log_stats_bp_conf_emitted() {
     }
   } else {
     if(fdip_off_path()) {
-      STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_EMITTED);
+      STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_REALISTIC_EMITTED + conf_info->perfect_off_path);
     } else {
       STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_EMITTED);
       STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_INVALID_EMITTED + conf_info->conf_off_path_reason);
@@ -398,7 +401,7 @@ void FDIP_Conf::log_stats_bp_conf_per_cycle(Op* cur_op) {
   if (cur_op) {
     if (cur_op->off_path) {
       if (low_confidence_cnt > FDIP_OFF_PATH_THRESHOLD) {
-        STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_CYCLES);
+        STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_REALISTIC_CYCLES + conf_info->perfect_off_path);
       } else {
         STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_CYCLES);
       }

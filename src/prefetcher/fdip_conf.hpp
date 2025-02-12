@@ -58,32 +58,35 @@ typedef enum CONF_OFF_PATH_REASON_enum {
   REASON_PERFECT_CONF,
 } Conf_Off_Path_Reason;
 
-//metadata for fdip confidence
+// metadata for fdip confidence
+// NOTE: Does it make sense to have this?
 class FDIP_Confidence_Info {
 public:
-  FDIP_Confidence_Info(uns _proc_id) :
-    proc_id(_proc_id),
-    prev_op(nullptr),
-    fdip_off_path_event(FALSE),
-    fdip_on_conf_off_event(FALSE),
-    fdip_off_conf_on_event(FALSE),
-    num_conf_0_branches(0),
-    num_conf_1_branches(0),
-    num_conf_2_branches(0),
-    num_conf_3_branches(0),
-    num_cf_br(0),
-    num_cf_cbr(0),
-    num_cf_call(0),
-    num_cf_ibr(0),
-    num_cf_icall(0),
-    num_cf_ico(0),
-    num_cf_ret(0),
-    num_cf_sys(0),
-    num_BTB_misses(0),
-    num_op_dist_incs(0) {}
-  void recover();
-  void log_stats_bp_conf_on();
-  void log_stats_bp_conf_off();
+ FDIP_Confidence_Info(uns _proc_id)
+     : proc_id(_proc_id),
+       prev_op(nullptr),
+       fdip_off_path_event(FALSE),
+       fdip_on_conf_off_event(FALSE),
+       fdip_off_conf_on_event(FALSE),
+       perfect_off_path(FALSE),
+       num_conf_0_branches(0),
+       num_conf_1_branches(0),
+       num_conf_2_branches(0),
+       num_conf_3_branches(0),
+       num_cf_br(0),
+       num_cf_cbr(0),
+       num_cf_call(0),
+       num_cf_ibr(0),
+       num_cf_icall(0),
+       num_cf_ico(0),
+       num_cf_ret(0),
+       num_cf_sys(0),
+       num_BTB_misses(0),
+       num_op_dist_incs(0) {}
+ void recover();
+ void log_stats_bp_conf_on();
+ void log_stats_bp_conf_off();
+
 private:
   uns proc_id;
   Op * prev_op;
@@ -92,6 +95,7 @@ private:
   Flag fdip_off_path_event;
   Flag fdip_on_conf_off_event;
   Flag fdip_off_conf_on_event;
+  Flag perfect_off_path;
 
   Off_Path_Reason off_path_reason;
   Conf_Off_Path_Reason  conf_off_path_reason;

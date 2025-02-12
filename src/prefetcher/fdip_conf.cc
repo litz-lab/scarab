@@ -363,3 +363,21 @@ void FDIP_Conf::log_stats_bp_conf_emitted() {
     }
   }
 }
+
+void FDIP_Conf::log_stats_bp_conf_per_cycle(Op* cur_op) {
+  if (cur_op) {
+    if (cur_op->off_path) {
+      if (low_confidence_cnt > FDIP_OFF_PATH_THRESHOLD) {
+        STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_CYCLES);
+      } else {
+        STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_CYCLES);
+      }
+    } else {
+      if (low_confidence_cnt > FDIP_OFF_PATH_THRESHOLD) {
+        STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_CYCLES);
+      } else {
+        STAT_EVENT(proc_id, FDIP_ON_CONF_ON_CYCLES);
+      }
+    }
+  }
+}

@@ -142,6 +142,7 @@ public:
   void update(Op* op);
   void log_stats_bp_conf();
   void log_stats_bp_conf_emitted();
+  void log_stats_bp_conf_per_cycle(Op* cur_op);
   void inc_cnt_btb_miss() { cnt_btb_miss++; };
   void inc_cnt_ibtb_miss() { cnt_ibtb_miss++; };
   void inc_cnt_misfetch() { cnt_misfetch++; };

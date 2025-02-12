@@ -839,8 +839,10 @@ void FDIP::update() {
   if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
     udp->cyc_reset();
 
-  if (FDIP_BP_CONFIDENCE)
+  if (FDIP_BP_CONFIDENCE) {
     fdip_conf->cyc_reset();
+    fdip_conf->log_stats_bp_conf_per_cycle(cur_op);
+  }
 
   uint32_t ops_per_cycle = 0;
   int ftq_entry_per_cycle = 0;

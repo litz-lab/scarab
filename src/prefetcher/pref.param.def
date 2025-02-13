@@ -208,6 +208,16 @@ DEF_PARAM(fdip_perfect_ibtb_miss_conf, FDIP_PERFECT_IBTB_MISS_CONF, Flag, Flag, 
 DEF_PARAM(fdip_perfect_misfetch_conf, FDIP_PERFECT_MISFETCH_CONF, Flag, Flag, FALSE, )
 DEF_PARAM(fdip_perfect_mispred_conf, FDIP_PERFECT_MISPRED_CONF, Flag, Flag, FALSE, )
 
+// enable flags for each component of the conf mechanism
+DEF_PARAM(fdip_btb_miss_bp_taken_conf, FDIP_BTB_MISS_BP_TAKEN_CONF, Flag, Flag, TRUE, )
+DEF_PARAM(fdip_ibtb_miss_bp_taken_conf, FDIP_IBTB_MISS_BP_TAKEN_CONF, Flag, Flag, TRUE, )
+DEF_PARAM(fdip_btb_miss_rate_conf, FDIP_BTB_MISS_RATE_CONF, Flag, Flag, TRUE, )
+DEF_PARAM(fdip_ibtb_miss_rate_conf, FDIP_IBTB_MISS_RATE_CONF, Flag, Flag, TRUE, )
+DEF_PARAM(fdip_misfetch_rate_conf, FDIP_MISFETCH_RATE_CONF, Flag, Flag, TRUE, )
+DEF_PARAM(fdip_mispred_rate_conf, FDIP_MISPRED_RATE_CONF, Flag, Flag, TRUE, )
+DEF_PARAM(fdip_inv_bp_conf_conf, FDIP_INV_BP_CONF_CONF, Flag, Flag, TRUE, )
+
+
 
 DEF_PARAM(fdip_btb_miss_rate_weight, FDIP_BTB_MISS_RATE_WEIGHT, uns, uns, 200, )
 

@@ -260,19 +260,19 @@ void FDIP_Conf::fine_grained_conf_update(Op* op) {
   if (low_confidence_cnt < FDIP_OFF_PATH_THRESHOLD) {
     if (op->table_info->cf_type) {
       // IBTB miss and BP Predicts taken
-      if (!FDIP_PERFECT_IBTB_MISS_CONF &&
+      if (FDIP_IBTB_MISS_BP_TAKEN_CONF && !FDIP_PERFECT_IBTB_MISS_CONF &&
           (!FDIP_PERFECT_MISPRED_CONF || (FDIP_PERFECT_MISPRED_CONF && !op->oracle_info.mispred)) && ENABLE_IBP &&
           (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) && op->oracle_info.btb_miss &&
           op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN) {
         conf_op_reason = REASON_IBTB_MISS_BP_TAKEN;
       }
       // BTB miss and BP Predicts taken
-      else if (!FDIP_PERFECT_BTB_MISS_CONF &&
+      else if (FDIP_BTB_MISS_BP_TAKEN_CONF && !FDIP_PERFECT_BTB_MISS_CONF &&
                (!FDIP_PERFECT_MISPRED_CONF || (FDIP_PERFECT_MISPRED_CONF && !op->oracle_info.mispred)) &&
                op->oracle_info.btb_miss && (op->oracle_info.pred_orig == TAKEN) &&
                (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)) {
         conf_op_reason = (Conf_Off_Path_Reason)(REASON_BTB_MISS_BP_TAKEN_CONF_0 + op->bp_confidence);
-      } else if (!FDIP_PERFECT_MISPRED_CONF) {  // update low bp confidence counter
+      } else if (FDIP_INV_BP_CONF_CONF && !FDIP_PERFECT_MISPRED_CONF) {  // update low bp confidence counter
         low_confidence_cnt += 3 - op->bp_confidence;
         if (low_confidence_cnt > FDIP_OFF_PATH_THRESHOLD) {
           conf_op_reason = REASON_INV_CONF_INC;
@@ -303,17 +303,20 @@ void FDIP_Conf::fine_grained_conf_update(Op* op) {
 // update based on cycles since resteer of type X * rate of X
 Conf_Off_Path_Reason FDIP_Conf::update_resteer_rate_ctrs(Conf_Off_Path_Reason conf_op_reason) {
   Conf_Off_Path_Reason ctrs_op_reason = conf_op_reason;
-  if (!FDIP_PERFECT_BTB_MISS_CONF &&
+  if (FDIP_BTB_MISS_RATE_CONF && !FDIP_PERFECT_BTB_MISS_CONF &&
       ((double)(cycle_count - last_btb_recover_cycle) * btb_miss_rate) >= FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_BTB_MISS_RATE;
-  } else if (!FDIP_PERFECT_IBTB_MISS_CONF && ((double)(cycle_count - last_ibtb_recover_cycle) * ibtb_miss_rate) >=
-                                                 FDIP_IBTB_MISS_RATE_CYCLES_THRESHOLD) {
+  } else if (FDIP_IBTB_MISS_RATE_CONF && !FDIP_PERFECT_IBTB_MISS_CONF &&
+             ((double)(cycle_count - last_ibtb_recover_cycle) * ibtb_miss_rate) >=
+                 FDIP_IBTB_MISS_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_IBTB_MISS_RATE;
-  } else if (!FDIP_PERFECT_MISFETCH_CONF && ((double)(cycle_count - last_misfetch_recover_cycle) * misfetch_rate) >=
-                                                FDIP_MISFETCH_RATE_CYCLES_THRESHOLD) {
+  } else if (FDIP_MISFETCH_RATE_CONF && !FDIP_PERFECT_MISFETCH_CONF &&
+             ((double)(cycle_count - last_misfetch_recover_cycle) * misfetch_rate) >=
+                 FDIP_MISFETCH_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_MISFETCH_RATE;
-  } else if (!FDIP_PERFECT_MISPRED_CONF && ((double)(cycle_count - last_mispred_recover_cycle) * mispred_rate) >=
-                                               FDIP_MISPRED_RATE_CYCLES_THRESHOLD) {
+  } else if (FDIP_MISPRED_RATE_CONF && !FDIP_PERFECT_MISPRED_CONF &&
+             ((double)(cycle_count - last_mispred_recover_cycle) * mispred_rate) >=
+                 FDIP_MISPRED_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_MISPRED_RATE;
   }
   return ctrs_op_reason;

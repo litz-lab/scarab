@@ -44,6 +44,7 @@ void FDIP_Confidence_Info::log_stats_bp_conf_on() {
     STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_PREF_CANDIDATES);
     // FIXME
     STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NOT_PREF_CANDIDATES + off_path_reason);
+    STAT_EVENT(proc_id, FDIP_OFF_PATH_REASON_NOT_PREF_CANDIDATES + off_path_reason);
   } else {
     STAT_EVENT(proc_id, FDIP_ON_CONF_ON_PREF_CANDIDATES);
   }
@@ -51,9 +52,10 @@ void FDIP_Confidence_Info::log_stats_bp_conf_on() {
 
 // FIXME: we never use these, get rid of them?
 void FDIP_Confidence_Info::log_stats_bp_conf_off() {
-  if (fdip_off_path())
+  if (fdip_off_path()) {
     STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_REALISTIC_PREF_CANDIDATES + perfect_off_path);
-  else {
+    STAT_EVENT(proc_id, FDIP_OFF_PATH_REASON_NOT_PREF_CANDIDATES + off_path_reason);
+  } else {
     STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_PREF_CANDIDATES);
     STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_INVALID_PREF_CANDIDATES + conf_off_path_reason);
     if (!fdip_on_conf_off_event) {
@@ -61,6 +63,7 @@ void FDIP_Confidence_Info::log_stats_bp_conf_off() {
 
       STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_NUM_EVENTS);
       STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_INVALID + conf_off_path_reason);
+      STAT_EVENT(proc_id, FDIP_OFF_PATH_REASON_NOT_EVENTS + off_path_reason);
 
       INC_STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_NUM_CF_BR, num_cf_br);
       INC_STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_NUM_CF_CBR, num_cf_cbr);

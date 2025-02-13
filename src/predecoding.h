@@ -29,18 +29,13 @@
 #ifndef __PREDECODING_H__
 #define __PREDECODING_H__
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include "uop_cache.h"
 
-typedef enum Predecoding_Marker_enum {
-FT_NOT_LOOKED_UP,
-FT_IN_UOP_CACHE,
-FT_NOT_IN_UOP_CACHE
-} Predecoding_Marker;
+typedef enum Predecoding_Marker_enum { FT_NOT_LOOKED_UP, FT_IN_UOP_CACHE, FT_NOT_IN_UOP_CACHE } Predecoding_Marker;
 
 void alloc_mem_predecoding(uns numProcs);
 void init_predecoding(uns proc_id);

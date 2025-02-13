@@ -26,43 +26,42 @@
  * Description  :
  ***************************************************************************************/
 
+#include "icache_stage.h"
+
 #include <math.h>
+
+#include "bp/bp.h"
+#include "bp/bp.param.h"
+#include "cmp_model.h"
+#include "core.param.h"
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
+#include "debug/debug.param.h"
+#include "decode_stage.h"
+#include "frontend/frontend.h"
+#include "frontend/pin_trace_fe.h"
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
-
-#include "bp/bp.h"
-#include "icache_stage.h"
+#include "libs/list_lib.h"
 #include "map.h"
-#include "op_pool.h"
-#include "thread.h"
-#include "sim.h"
-
-#include "bp/bp.param.h"
-#include "cmp_model.h"
-#include "core.param.h"
-#include "debug/debug.param.h"
-#include "frontend/frontend.h"
-#include "frontend/pin_trace_fe.h"
 #include "memory/memory.h"
 #include "memory/memory.param.h"
-#include "prefetcher/l2l1pref.h"
-#include "prefetcher/stream_pref.h"
-#include "statistics.h"
-#include "libs/list_lib.h"
-
-#include "prefetcher/fdip.h"
-#include "prefetcher/eip.h"
+#include "op_pool.h"
+#include "predecoding.h"
 #include "prefetcher/D_JOLT.h"
 #include "prefetcher/FNL+MMA.h"
+#include "prefetcher/eip.h"
+#include "prefetcher/fdip.h"
+#include "prefetcher/l2l1pref.h"
 #include "prefetcher/pref.param.h"
+#include "prefetcher/stream_pref.h"
+#include "sim.h"
+#include "statistics.h"
+#include "thread.h"
 #include "uop_queue_stage.h"
-#include "decode_stage.h"
-#include "predecoding.h"
 /**************************************************************************************/
 /* Macros */
 
@@ -245,8 +244,7 @@ void flush_stage_data(Stage_Data* cur_data) {
 
 void recover_decoupled_icache_stage() {
   ASSERT(ic->proc_id, ic->proc_id == bp_recovery_info->proc_id);
-  DEBUG(ic->proc_id,
-        "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s\n",
+  DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s\n",
         hexstr64s(bp_recovery_info->recovery_fetch_addr));
 
   Counter recovery_op_num = bp_recovery_info->recovery_op_num;
@@ -663,8 +661,8 @@ FT_Arbitration_Result uop_cache_decoupled_ft_arbitration(Flag occupied_lookup_bu
     // sanity check uop cache hit
     FT_Info buffer_ft_info = uop_cache_get_lookup_buffer_ft_info();
     Flag ft_in_uop_cache = buffer_ft_info.static_info.start == ft_info.static_info.start &&
-                            buffer_ft_info.static_info.length == ft_info.static_info.length &&
-                            buffer_ft_info.static_info.n_uops == ft_info.static_info.n_uops;
+                           buffer_ft_info.static_info.length == ft_info.static_info.length &&
+                           buffer_ft_info.static_info.n_uops == ft_info.static_info.n_uops;
     ASSERT(ic->proc_id, ft_in_uop_cache);
     ic->uop_cache_lookups_per_cycle_count++;
     ASSERT(ic->proc_id, ic->uop_cache_lookups_per_cycle_count <= UOP_CACHE_READ_PORTS);
@@ -785,8 +783,7 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
   // to determine the availability of read ports,
   // we need to consider if the buffer is occupied by an ft from a previous cycle;
   // it is true if there is no lookup in the current cycle but the buffer is occupied.
-  Flag occupied_lookup_buffer = ic->icache_lookups_per_cycle_count == 0 &&
-                                ic->current_ft_used_by_icache &&
+  Flag occupied_lookup_buffer = ic->icache_lookups_per_cycle_count == 0 && ic->current_ft_used_by_icache &&
                                 ft_can_fetch_op(ic->current_ft_used_by_icache);
   // if ICACHE_FETCH_ACROSS_FETCH_TARGET is turned on,
   // ignore that the buffer is occupied
@@ -906,8 +903,7 @@ Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
   // to determine the availability of read ports,
   // we need to consider if the buffer is occupied by an ft from a previous cycle;
   // it is true if there is no lookup in the current cycle but the buffer is occupied.
-  Flag occupied_lookup_buffer = ic->uop_cache_lookups_per_cycle_count == 0 &&
-                                ic->current_ft_used_by_uop_cache &&
+  Flag occupied_lookup_buffer = ic->uop_cache_lookups_per_cycle_count == 0 && ic->current_ft_used_by_uop_cache &&
                                 ft_can_fetch_op(ic->current_ft_used_by_uop_cache);
   // if UOP_CACHE_FETCH_ACROSS_FETCH_TARGET is turned on,
   // ignore that the buffer is occupied
@@ -1125,10 +1121,9 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     }
 
     if (!(DECOUPLED_ICACHE_STAGE && fetched_from_uop_cache)) {
-      ASSERTM(ic->proc_id, ic->off_path == op->off_path,
-              "Inconsistent off-path op PC: %llx ic:%i op:%i\n", op->inst_info->addr, ic->off_path, op->off_path);
+      ASSERTM(ic->proc_id, ic->off_path == op->off_path, "Inconsistent off-path op PC: %llx ic:%i op:%i\n",
+                           op->inst_info->addr, ic->off_path, op->off_path);
     }
-
 
     if (!op->off_path) {
       STAT_EVENT(ic->proc_id, UOPS_SERVED_BY_ICACHE_ON_PATH + op->fetched_from_uop_cache);
@@ -1677,7 +1672,8 @@ void log_stats_mshr_hit(Addr line_addr) {
   } else {
     if (FDIP_ENABLE && !FDIP_UTILITY_HASH_ENABLE && !FDIP_BLOOM_FILTER && !FDIP_UC_SIZE && !EIP_ENABLE && !FDIP_PERFECT_PREFETCH
         && (mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF)) && !DECOUPLED_ICACHE_STAGE)
-      ASSERT(ic->proc_id, imiss_reason == IMISS_MSHR_HIT_PREFETCHED_OFFPATH || imiss_reason == IMISS_MSHR_HIT_PREFETCHED_ONPATH);
+      ASSERT(ic->proc_id,
+             imiss_reason == IMISS_MSHR_HIT_PREFETCHED_OFFPATH || imiss_reason == IMISS_MSHR_HIT_PREFETCHED_ONPATH);
     if (imiss_reason == IMISS_MSHR_HIT_PREFETCHED_ONPATH)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_PREFETCHED_ONPATH);
     else

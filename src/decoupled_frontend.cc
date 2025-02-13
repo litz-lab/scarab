@@ -1,18 +1,19 @@
 #include "decoupled_frontend.h"
+
+#include <cmath>
+#include <deque>
+#include <iostream>
+#include <list>
+#include <tuple>
+#include <vector>
+
 #include "frontend/frontend_intf.h"
+#include "isa/isa_macros.h"
+#include "memory/memory.param.h"
 #include "op.h"
 #include "op_pool.h"
-#include "thread.h"
-#include "isa/isa_macros.h"
 #include "prefetcher/pref.param.h"
-#include "memory/memory.param.h"
-
-#include <deque>
-#include <vector>
-#include <list>
-#include <iostream>
-#include <tuple>
-#include <cmath>
+#include "thread.h"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 

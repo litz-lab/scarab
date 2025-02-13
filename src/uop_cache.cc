@@ -6,34 +6,32 @@
  *                  Following Kotra et. al.'s MICRO 2020 description of uop cache baseline
  ***************************************************************************************/
 
+#include "uop_cache.h"
+
+#include <vector>
+#include <deque>
+#include <algorithm>
+
+#include "bp/bp.h"
+#include "core.param.h"
+#include "debug/debug.param.h"
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
+#include "general.param.h"
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
+#include "icache_stage.h"
 #include "isa/isa_macros.h"
-
-#include "bp/bp.h"
-#include "op_pool.h"
-
-#include "core.param.h"
-#include "debug/debug.param.h"
-#include "general.param.h"
-#include "statistics.h"
-
 #include "libs/cache_lib.h"
+#include "libs/cpp_cache.h"
 #include "memory/memory.h"
 #include "memory/memory.param.h"
-#include "libs/cpp_cache.h"
-#include "uop_cache.h"
-#include "icache_stage.h"
+#include "op_pool.h"
+#include "statistics.h"
 #include "uop_queue_stage.h"
-
-#include <vector>
-#include <deque>
-#include <algorithm>
 /**************************************************************************************/
 /* Macros */
 
@@ -175,8 +173,8 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
   do {
     uoc_data = uop_cache_lookup_line(lookup_addr, ft_info, TRUE);
     if (current_lookup_buffer.empty()) {
-      DEBUG(uop_cache_proc_id, "UOC %s. ft_start=0x%llx, ft_length=%lld\n",
-            uoc_data ? "hit" : "miss", ft_info.static_info.start, ft_info.static_info.length);
+      DEBUG(uop_cache_proc_id, "UOC %s. ft_start=0x%llx, ft_length=%lld\n", uoc_data ? "hit" : "miss",
+            ft_info.static_info.start, ft_info.static_info.length);
       if (!uoc_data) {
         return FALSE;
       } else {
@@ -522,8 +520,9 @@ void recover_uop_cache(void) {
 
   if (DECOUPLED_ICACHE_STAGE) {
     // recover uop cache lookup buffer queue
-    auto it = std::find_if(current_lookup_buffer_queue->begin(), current_lookup_buffer_queue->end(),
-                            [&](const auto& ele){ return ele.first.dynamic_info.last_op_num > bp_recovery_info->recovery_op_num; });
+    auto it = std::find_if(
+        current_lookup_buffer_queue->begin(), current_lookup_buffer_queue->end(),
+        [&](const auto& ele) { return ele.first.dynamic_info.last_op_num > bp_recovery_info->recovery_op_num; });
     if (it != current_lookup_buffer_queue->end()) {
       current_lookup_buffer_queue->erase(it, current_lookup_buffer_queue->end());
     }

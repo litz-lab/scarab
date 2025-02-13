@@ -37,22 +37,19 @@ extern "C" {
 #include <math.h>
 #include <stdbool.h>
 
+#include "bp/bp.h"
+#include "bp/bp.param.h"
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
+#include "frontend/frontend.h"
+#include "frontend/pin_trace_fe.h"
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
-
-#include "bp/bp.h"
-#include "bp/bp.param.h"
-
-#include "frontend/frontend.h"
-#include "frontend/pin_trace_fe.h"
-
-#include "stage_data.h"
 #include "predecoding.h"
+#include "stage_data.h"
 
 typedef struct FT FT;
 

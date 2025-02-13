@@ -27,23 +27,25 @@
  ***************************************************************************************/
 
 #include "predecoding.h"
-#include "globals/enum.h"
+
+#include <vector>
+
+#include "decoupled_frontend.h"
 #include "globals/assert.h"
+#include "globals/enum.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 #include "memory/memory.param.h"
-#include "decoupled_frontend.h"
-
-#include <vector>
 
 class PREDECODING {
-public:
+ public:
   void init(uns _proc_id);
   void probe_ftq();
   uint64_t get_next_ft_pos(Predecoding_Marker marker);
-private:
+
+ private:
   uns proc_id;
   decoupled_fe_iter* ftq_iter;
 };
@@ -62,7 +64,8 @@ void PREDECODING::init(uns _proc_id) {
 void PREDECODING::probe_ftq() {
   // predecoding sets the markers
   int probe_per_cycle = 0;
-  while (ftq_iter->ft_pos < decoupled_fe_ftq_num_fts() && probe_per_cycle < (int)UOP_CACHE_READ_PORTS + (int)UOP_CACHE_FTQ_ADDITIONAL_PROBE) {
+  while (ftq_iter->ft_pos < decoupled_fe_ftq_num_fts() &&
+         probe_per_cycle < (int)UOP_CACHE_READ_PORTS + (int)UOP_CACHE_FTQ_ADDITIONAL_PROBE) {
     FT* next_probe_ft = decoupled_fe_get_ft(ftq_iter->ft_pos);
     ASSERT(proc_id, next_probe_ft);
     ASSERT(proc_id, ft_get_predecoding_marker(next_probe_ft) == FT_NOT_LOOKED_UP);

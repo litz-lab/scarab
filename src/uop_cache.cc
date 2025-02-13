@@ -8,9 +8,9 @@
 
 #include "uop_cache.h"
 
-#include <vector>
-#include <deque>
 #include <algorithm>
+#include <deque>
+#include <vector>
 
 #include "bp/bp.h"
 #include "core.param.h"

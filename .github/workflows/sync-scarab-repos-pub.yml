@@ -1,0 +1,52 @@
+name: Sync to Private Repo with Original Authors
+
+permissions:
+  contents: write
+
+on:
+  merge_group: # Runs just before a merge is attempted
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  sync_on_pull_request:
+    if: ${{ github.repository == 'litz-lab/scarab' && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Public Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper sync
+
+      - name: Configure Git (Keep Original Authors)
+        run: |
+          git config --global user.email "$(git log -1 --pretty=format:'%ae')"
+          git config --global user.name "$(git log -1 --pretty=format:'%an')"
+
+      - name: Add Private Repository Remote
+        run: git remote add private https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab_ll.git
+
+  sync-repos:
+    if: ${{ github.repository == 'litz-lab/scarab' && github.event_name == 'merge_group' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Public Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper sync
+
+      - name: Configure Git (Keep Original Authors)
+        run: |
+          git config --global user.email "$(git log -1 --pretty=format:'%ae')"
+          git config --global user.name "$(git log -1 --pretty=format:'%an')"
+
+      - name: Add Private Repository Remote
+        run: git remote add private https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab_ll.git
+
+      - name: Push Updates to Private Repository
+        run: git push private HEAD:main

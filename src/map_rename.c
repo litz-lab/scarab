@@ -177,11 +177,11 @@ static inline void reg_file_collect_entry_stat(struct reg_table_entry *entry) {
   switch (entry->reg_type) {
     case REG_FILE_REG_TYPE_GENERAL_PURPOSE:
       STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ALLOC);
-      if (entry->read_count == 0)
+      if (entry->num_consumers == 0)
         STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_UNCONSUME);
-      if (entry->read_count == 1)
+      if (entry->num_consumers == 1)
         STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ONEUSE);
-      if (entry->read_count != 0 && last_consume_cycle - entry->produce_cycle == 1)
+      if (entry->num_consumers != 0 && last_consume_cycle - entry->produce_cycle == 1)
         STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_SHORTLIVE);
 
       INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_EMPTY,
@@ -193,20 +193,20 @@ static inline void reg_file_collect_entry_stat(struct reg_table_entry *entry) {
       break;
 
     case REG_FILE_REG_TYPE_VECTOR:
-      STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_NUM_ALLOC);
-      if (entry->read_count == 0)
-        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_NUM_UNCONSUME);
-      if (entry->read_count == 1)
-        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_NUM_ONEUSE);
-      if (entry->read_count != 0 && last_consume_cycle - entry->produce_cycle == 1)
-        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_NUM_SHORTLIVE);
+      STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_NUM_ALLOC);
+      if (entry->num_consumers == 0)
+        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_NUM_UNCONSUME);
+      if (entry->num_consumers == 1)
+        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_NUM_ONEUSE);
+      if (entry->num_consumers != 0 && last_consume_cycle - entry->produce_cycle == 1)
+        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_NUM_SHORTLIVE);
 
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_LIFECYCLE_EMPTY,
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_EMPTY,
                      entry->produce_cycle - entry->alloc_cycle);
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_LIFECYCLE_READY,
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_READY,
                      last_consume_cycle - entry->produce_cycle);
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_LIFECYCLE_IDEL, cycle_count - last_consume_cycle);
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_FP_REG_LIFECYCLE_TOTAL, cycle_count - entry->alloc_cycle);
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_IDEL, cycle_count - last_consume_cycle);
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_TOTAL, cycle_count - entry->alloc_cycle);
       break;
 
     default:
@@ -323,6 +323,8 @@ static inline void reg_file_flush_mispredict(Op *op, int *reg_table_types, int r
       int table_type = reg_table_types[jj];
       ASSERT(op->proc_id, table_type > REG_TABLE_TYPE_ARCHITECTURAL && table_type < REG_TABLE_TYPE_NUM);
       int reg_id = op->src_reg_id[ii][table_type];
+
+      // mapping may be async in the scheme of multiple register tables, e.g. no vtag to ptag mapping
       if (reg_id == REG_TABLE_REG_ID_INVALID)
         continue;
 
@@ -330,9 +332,12 @@ static inline void reg_file_flush_mispredict(Op *op, int *reg_table_types, int r
       struct reg_table_entry *entry = &reg_table->entries[reg_id];
 
       ASSERT(op->proc_id, entry != NULL);
-      --entry->read_count;
-      if (op->exec_count)
-        --entry->consume_count;
+      ASSERT(op->proc_id, entry->num_consumers > 0);
+      entry->num_consumers--;
+      if (op->exec_count) {
+        ASSERT(op->proc_id, entry->consumed_count > 0);
+        entry->consumed_count--;
+      }
     }
   }
 
@@ -388,7 +393,7 @@ static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_t
       // release the previous op before the current committed op
       struct reg_table_entry *prev_entry = &reg_table->entries[prev_reg_id];
       ASSERT(op->proc_id, prev_entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT || prev_entry->op == &invalid_op);
-      ASSERT(op->proc_id, prev_entry->consume_count == prev_entry->read_count);
+      ASSERT(op->proc_id, prev_entry->consumed_count == prev_entry->num_consumers);
       reg_table->ops->free(reg_table, prev_entry);
     }
   }
@@ -496,8 +501,8 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->produce_cycle = MAX_CTR;
   entry->last_consume_cycle = MAX_CTR;
 
-  entry->read_count = 0;
-  entry->consume_count = 0;
+  entry->num_consumers = 0;
+  entry->consumed_count = 0;
 }
 
 /* update the metadata when it is read during renaming */
@@ -506,7 +511,7 @@ void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
     traditionally, fill src info from the entry and update not ready bit for wake up
     since the dependency is tracked in the map module, only update the metadata for the research reg file schemes
   */
-  ++entry->read_count;
+  entry->num_consumers++;
   return;
 }
 
@@ -532,7 +537,7 @@ void reg_table_entry_write(struct reg_table_entry *entry, Op *op, int parent_reg
 
 /* update the metadata when it is consumed during execution */
 void reg_table_entry_consume(struct reg_table_entry *entry, Op *op) {
-  ++entry->consume_count;
+  entry->consumed_count++;
   entry->last_consume_cycle = cycle_count;
 }
 

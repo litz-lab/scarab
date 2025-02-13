@@ -77,7 +77,7 @@ struct reg_table_entry {
   int child_reg_id;
 
   // type info
-  int reg_type;        // INT or FP
+  int reg_type;        // INT or VEC
   int reg_table_type;  // arch, physical, or virtual
 
   // register state info
@@ -94,9 +94,9 @@ struct reg_table_entry {
   Counter produce_cycle;
   Counter last_consume_cycle;
 
-  // read/consume counter
-  int read_count;     // the count of being read during renaming
-  int consume_count;  // the count of being consumed during execution
+  // consumer counter
+  int num_consumers;   // the number of registered (at rename) consumers of a registers
+  int consumed_count;  // the number of issued (at execute) consumers of a register
 };
 
 struct reg_free_list {

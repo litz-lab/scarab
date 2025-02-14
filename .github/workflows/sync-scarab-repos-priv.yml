@@ -42,8 +42,10 @@ jobs:
           echo "Testing authentication..."
           curl -H "Authorization: Bearer $PAT" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/litz-lab/scarab
 
-      - name: Push Updates to Public Repository
+      - name: Push Updates to Public Repository (Keeping Original Author, Setting Committer)
         env:
           PAT: ${{ secrets.SCARAB_SYNC_PAT }}
+          BOT_USER: "hlitz"  # Replace with service account GitHub username
+          BOT_EMAIL: "hlitz@ucsc.edu"  # Replace with service account email
         run: |
-          git push https://${PAT}@github.com/litz-lab/scarab.git HEAD:main
+          GIT_COMMITTER_NAME="$BOT_USER" GIT_COMMITTER_EMAIL="$BOT_EMAIL" git push https://${PAT}@github.com/litz-lab/scarab.git HEAD:main

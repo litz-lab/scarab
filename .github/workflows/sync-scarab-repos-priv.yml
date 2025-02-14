@@ -34,13 +34,13 @@ jobs:
 
       - name: Debug PAT Authentication
         env:
-	  PAT: ${{ secrets.SCARAB_SYNC_PAT }}
-	run: |
-	  echo "Testing authentication..."
-	  curl -H "Authorization: Bearer $PAT" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/litz-lab/scarab
+          PAT: ${{ secrets.SCARAB_SYNC_PAT }}
+        run: |
+          echo "Testing authentication..."
+          curl -H "Authorization: Bearer $PAT" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/litz-lab/scarab
 
       - name: Push Updates to Public Repository
         env:
           PAT: ${{ secrets.SCARAB_SYNC_PAT }}
         run: |
-	  git push https://${PAT}@github.com/litz-lab/scarab.git HEAD:main
+          git push https://${PAT}@github.com/litz-lab/scarab.git HEAD:main

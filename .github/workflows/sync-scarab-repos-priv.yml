@@ -25,7 +25,7 @@ jobs:
           git config --global user.name "$(git log -1 --pretty=format:'%an')"
 
       - name: Add Public Repository Remote
-        run: git remote add public https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab.git
+        run: git remote add public https://github.com/litz-lab/scarab.git
 
       - name: Push Updates to Public Repository
-        run: git push public HEAD:main
+        run: git push https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab.git HEAD:main

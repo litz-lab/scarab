@@ -28,9 +28,12 @@ jobs:
         env:
           PAT: ${{ secrets.SCARAB_SYNC_PAT }}
         run: |
-          git remote remove public || true
-          git remote add public https://${PAT}@github.com/litz-lab/scarab.git
-          git credential reject https://github.com/  # Ensure old credentials are cleared
+          if git remote get-url public > /dev/null 2>&1; then
+            git remote set-url public https://${PAT}@github.com/litz-lab/scarab.git
+          else
+            git remote add public https://${PAT}@github.com/litz-lab/scarab.git
+          fi
+          git credential reject https://github.com/ || true  # Ensure old credentials are cleared
 
       - name: Debug PAT Authentication
         env:

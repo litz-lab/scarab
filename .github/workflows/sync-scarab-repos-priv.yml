@@ -15,11 +15,9 @@ jobs:
 
     steps:
       - name: Checkout Private Repository
-        env:
-          PAT: ${{ secrets.SCARAB_SYNC_PAT }}
         uses: actions/checkout@v4
         with:
-          token: ${PAT}
+          token: ${{ secrets.SCARAB_SYNC_PAT }}
           fetch-depth: 0  # Ensure we have the full commit history
 
       - name: Configure Git (Keep Original Authors)

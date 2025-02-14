@@ -751,6 +751,8 @@ void full_sim() {
             print_cl_info(proc_id);
           if (FDIP_LOG_PHASE_CYCLES || FDIP_LOG_FDIP_TO_REC)
             print_recovery_cycles(proc_id);
+          if (FDIP_COLLECT_ML_DATA)
+            decoupled_fe_print_ml_data(proc_id);
           INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY_OPS, get_fdip_ftq_occupancy_ops(proc_id));
           INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY, get_fdip_ftq_occupancy(proc_id));
         }

@@ -71,6 +71,14 @@ extern "C" {
   void assert_fdip_break_reason(Addr line_addr);
   Op* fdip_get_cur_op();
   Counter fdip_get_last_recover_cycle();
+  Counter fdip_get_last_btb_recover_cycle();
+  Counter fdip_get_last_ibtb_recover_cycle();
+  Counter fdip_get_last_misfetch_recover_cycle();
+  Counter fdip_get_last_mispred_recover_cycle();
+  double fdip_get_btb_miss_rate();
+  double fdip_get_ibtb_miss_rate();
+  double fdip_get_misfetch_rate();
+  double fdip_get_mispred_rate();
 
 #ifdef __cplusplus
 }

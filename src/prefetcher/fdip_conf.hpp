@@ -35,17 +35,6 @@
 
 #include "prefetcher/fdip.h"
 
-// reasons an op can trigger a recovery
-typedef enum OFF_PATH_REASON_enum {
-  REASON_NOT,
-  REASON_IBTB_MISS,
-  REASON_BTB_MISS,
-  // op that misses in the BTB and the BP incorrectly predicts not taken
-  REASON_BTB_MISS_MISPRED,
-  REASON_MISPRED,
-  REASON_MISFETCH,
-} Off_Path_Reason;
-
 // reasons the confidence mechanism can predict off-path
 typedef enum CONF_OFF_PATH_REASON_enum {
   REASON_INVALID,
@@ -165,6 +154,15 @@ public:
   void inc_cnt_misfetch() { cnt_misfetch++; };
   void inc_cnt_mispred() { cnt_mispred++; };
   void inc_cnt_on_path_insts() { cnt_on_path_instructions++; };
+  Counter get_last_btb_recover_cycle() { return last_btb_recover_cycle; };
+  Counter get_last_ibtb_recover_cycle() { return last_ibtb_recover_cycle; };
+  Counter get_last_misfetch_recover_cycle() { return last_misfetch_recover_cycle; };
+  Counter get_last_mispred_recover_cycle() { return last_mispred_recover_cycle; };
+  double get_btb_miss_rate() { return btb_miss_rate; };
+  double get_ibtb_miss_rate() { return ibtb_miss_rate; };
+  double get_misfetch_rate() { return misfetch_rate; };
+  double get_mispred_rate() { return mispred_rate; };
+
   void inc_cnt_total_ops() { cnt_total_ops++; };
   void print_recovery_cycles();
   void log_off_path_event(Op* op);

@@ -205,9 +205,11 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->proc_id             = proc_id;
   op->thread_id           = 0;
   op->off_path            = FALSE;  // FIXME: check
+  op->off_path_reason = 0;          // Not off-path
   op->state               = OS_FETCHED;
   op->fu_num              = -1;
   op->issue_cycle         = MAX_CTR;
+  op->fdip_cycle = MAX_CTR;
   op->map_cycle           = MAX_CTR;
   op->rdy_cycle           = 1;
   op->sched_cycle         = MAX_CTR;
@@ -223,6 +225,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->exec_count          = 0;
   op->in_rdy_list         = FALSE;
   op->in_node_list        = FALSE;
+  op->tage_comp = 5;  // NOT_TAGE
 
   op->req = NULL;
 

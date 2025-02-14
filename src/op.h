@@ -185,6 +185,7 @@ struct Op_struct {
   Op_State state;        // the state of the op in the datapath
   Counter  fetch_cycle;  // cycle an individual instruction is fetched
   Counter  bp_cycle;     // cycle a CF instruction accesses the branch predictor
+  Counter fdip_cycle;    // cycle an instruction is processed by FDIP
   Counter  map_cycle;    // cycle an individual instruction enters the map stage
   Counter  issue_cycle;  // cycle an individual instruction is issued -- same as
                          // chkpt
@@ -310,7 +311,12 @@ struct Op_struct {
   // {{{ uop cache
   Flag fetched_from_uop_cache;
   // }}}
+
+  // {{{ BP
   int bp_confidence;
+  int8_t tage_comp;
+  int off_path_reason;
+  // }}}
 
   // {{{ register renaming
   int src_reg_id[MAX_SRCS][REG_TABLE_TYPE_NUM];        // the reg id of the source reg file entries

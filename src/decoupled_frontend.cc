@@ -1,11 +1,12 @@
 #include "decoupled_frontend.h"
 #include "frontend/frontend_intf.h"
+#include "isa/isa_macros.h"
+#include "memory/memory.param.h"
 #include "op.h"
 #include "op_pool.h"
-#include "thread.h"
-#include "isa/isa_macros.h"
+#include "prefetcher/fdip.h"
 #include "prefetcher/pref.param.h"
-#include "memory/memory.param.h"
+#include "thread.h"
 
 #include <deque>
 #include <vector>
@@ -27,6 +28,7 @@ class FT{
   FT_Info get_ft_info();
   bool is_consumed();
   void set_consumed();
+  std::vector<Op*> get_ops() { return ops; };
 
  private:
   uns proc_id;
@@ -38,6 +40,29 @@ class FT{
 
   friend class Decoupled_FE;
 };
+
+typedef std::tuple<Addr,         // ft address
+                   Addr,         // ft length (bytes)
+                   FT_Ended_By,  // ft ended by
+                   Counter,      // cycle seen by fdip
+                   Counter,      // cycle seen by icache stage (popped from ftq)
+                   Counter,      // cycles since last btb miss
+                   Counter,      // cycles since last ibtb miss
+                   Counter,      // cycles since last mispred
+                   Counter,      // cycles since last misfetch
+                   double,       // btb miss rate
+                   double,       // ibtb miss rate
+                   double,       // mispred rate
+                   double,       // misfetch rate
+                   int,          // cf_mask (mask of cf ops detected by BTB)
+                   bool,         // tage_comp_base
+                   bool,         // tage_comp_short
+                   bool,         // tage_comp_long
+                   bool,         // tage_comp_loop
+                   bool,         // tage_comp_sc
+                   int,          // off_path_reason (for recovery ops)
+                   int>          // off_path
+    ml_data_entry;
 
 class Decoupled_FE {
 public:
@@ -56,8 +81,12 @@ public:
   void retire(Op* op, int op_proc_id, uns64 inst_uid);
   void set_ftq_num(uint64_t set_ftq_ft_num) { ftq_ft_num = set_ftq_ft_num; }
   uint64_t get_ftq_num() { return ftq_ft_num; }
+  std::vector<ml_data_entry>* get_ml_fts() { return &ml_fts; };
+  void log_ft_data(FT* cur_ft, uns proc_id);
+  void print_ml_data();
+  Off_Path_Reason eval_off_path_reason(Op* op);
 
-private:
+ private:
   void init(uns proc_id);
 
   uns proc_id;
@@ -78,6 +107,8 @@ private:
   bool stalled;
   uint64_t ftq_ft_num;
   bool trace_mode;
+
+  std::vector<ml_data_entry> ml_fts;
 };
 
 /* Global Variables */
@@ -169,6 +200,15 @@ void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num) {
 
 uint64_t decoupled_fe_get_ftq_num() {
   return dfe->get_ftq_num();
+}
+
+void decoupled_fe_log_ft_data(FT* cur_ft, uns proc_id) {
+  DEBUG(proc_id, "Logging FT data\n");
+  per_core_dfe[proc_id].log_ft_data(cur_ft, proc_id);
+}
+
+void decoupled_fe_print_ml_data(uns proc_id) {
+  per_core_dfe[proc_id].print_ml_data();
 }
 
 /* FT member functions */
@@ -492,6 +532,7 @@ void Decoupled_FE::update() {
           op->oracle_info.recover_at_exec = FALSE;
         }
         off_path = true;
+        op->off_path_reason = eval_off_path_reason(op);
         frontend_redirect(proc_id, op->inst_uid, pred_addr);
         redirect_cycle = cycle_count;
       }
@@ -689,4 +730,150 @@ void Decoupled_FE::retire(Op *op, int op_proc_id, uns64 inst_uid) {
 
   //unblock pin exec driven, trace frontends do not need to block/unblock
   frontend_retire(op_proc_id, inst_uid);
+}
+
+void Decoupled_FE::log_ft_data(FT* cur_ft, uns proc_id) {
+  if (!FDIP_COLLECT_ML_DATA)
+    return;
+
+  DEBUG(proc_id, "Log FT data\n");
+
+  // Counter recover_cycle = 0;
+  int op_num = 0;
+  int cf_mask = 0;
+  // enum tage_component {TAGE_BASE, TAGE_SHORT, TAGE_LONG, TAGE_LOOP, TAGE_SC, NOT_TAGE};
+  bool tage_base = false;
+  bool tage_short = false;
+  bool tage_long = false;
+  bool tage_loop = false;
+  bool tage_sc = false;
+
+  int off_path_reason = 0;
+
+  for (auto op : cur_ft->get_ops()) {
+    // should only be non-zero for one op in the FT if any
+    off_path_reason += (int)op->off_path_reason;
+    // get the mask of ops that can be identified as CF
+    cf_mask |= ((1 & (op->table_info->cf_type && !op->oracle_info.btb_miss)) << op_num);
+    switch (op->tage_comp) {
+      case 0:
+        tage_base = true;
+        break;
+      case 1:
+        tage_short = true;
+        break;
+      case 2:
+        tage_long = true;
+        break;
+      case 3:
+        tage_loop = true;
+        break;
+      case 4:
+        tage_sc = true;
+        break;
+    }
+  }
+
+  // add entry to vector of data
+  ml_fts.emplace_back(ml_data_entry(cur_ft->get_ft_info().static_info.start,               // ft_start
+                                    cur_ft->get_ft_info().static_info.length,              // ft_length
+                                    cur_ft->get_ft_info().dynamic_info.ended_by,           // ft_ended_by
+                                    cur_ft->get_ops()[0]->fdip_cycle,                      // fdip_cycle
+                                    cycle_count,                                           // icache_cycle
+                                    cycle_count - fdip_get_last_btb_recover_cycle(),       // cycles since btb rec
+                                    cycle_count - fdip_get_last_ibtb_recover_cycle(),      // cycles since ibtb rec
+                                    cycle_count - fdip_get_last_misfetch_recover_cycle(),  // cycles since misfetch rec
+                                    cycle_count - fdip_get_last_mispred_recover_cycle(),   // cycles since mispred rec
+                                    fdip_get_btb_miss_rate(),                              // btb miss rate
+                                    fdip_get_ibtb_miss_rate(),                             // ibtb miss rate
+                                    fdip_get_misfetch_rate(),                              // misfetch rate
+                                    fdip_get_mispred_rate(),                               // mispred rate
+                                    cf_mask, tage_base, tage_short, tage_long, tage_loop, tage_sc, off_path_reason,
+                                    cur_ft->get_ft_info().dynamic_info.first_op_off_path));  // off-path
+}
+
+void Decoupled_FE::print_ml_data() {
+  if (!FDIP_ENABLE || !FDIP_FINE_GRAINED_CONF || !FDIP_COLLECT_ML_DATA)
+    return;
+  DEBUG(proc_id, "Print ML data\n");
+  FILE* fp = fopen("fdip_training_data.csv", "w");
+  fprintf(fp,
+          "ft_start_addr,\
+ft_length,\
+ft_ended_by,\
+fdip_cycle,\
+icache_cycle,\
+cycles_since_btb_rec,\
+cycles_since_ibtb_rec,\
+cycles_since_misfetch_rec,\
+cycles_since_mispred_rec,\
+btb_miss_rate,\
+ibtb_miss_rate,\
+misfetch_rate,\
+mispred_rate,\
+cf_mask,\
+tage_comp_base,\
+tage_comp_short,\
+tage_comp_long,\
+tage_comp_loop,\
+tage_comp_sc,\
+off_path_reason,\
+off_path\n");
+  for (const ml_data_entry& line : ml_fts) {
+    fprintf(fp, "%llu,%llu,%d,%llu,%llu,%llu,%llu,%llu,%llu,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d\n",
+            std::get<0>(line),    // ft_addr
+            std::get<1>(line),    // ft_length
+            std::get<2>(line),    // ended_by
+            std::get<3>(line),    // fdip_cycle
+            std::get<4>(line),    // icache_cycle
+            std::get<5>(line),    // cycles_since_btb_rec
+            std::get<6>(line),    // cycles_since_ibtb_rec
+            std::get<7>(line),    // cycles_since_misfetch_rec
+            std::get<8>(line),    // cycles_since_mispred_rec
+            std::get<9>(line),    // btb_miss_rate
+            std::get<10>(line),   // ibtb_miss_rate
+            std::get<11>(line),   // misfetch_rate
+            std::get<12>(line),   // mispred_rate
+            std::get<13>(line),   // cf_mask
+            std::get<14>(line),   // tage_comp_base
+            std::get<15>(line),   // tage_comp_short
+            std::get<16>(line),   // tage_comp_long
+            std::get<17>(line),   // tage_comp_loop
+            std::get<18>(line),   // tage_comp_sc
+            std::get<19>(line),   // off_path_reason
+            std::get<20>(line));  // off_path
+  }
+  fclose(fp);
+}
+
+Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
+  // if the instruction is not a resteer op no reason to log
+  if (!(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec)) {
+    return REASON_NOT;
+  }
+  // mispred
+  if (op->oracle_info.pred_orig != op->oracle_info.dir && !op->oracle_info.btb_miss) {
+    return REASON_MISPRED;
+  }
+  // misfetch
+  else if (!op->oracle_info.btb_miss && op->oracle_info.pred_orig == op->oracle_info.dir &&
+           op->oracle_info.pred_npc != op->oracle_info.npc) {
+    return REASON_MISFETCH;
+  }
+  // ibtb miss
+  else if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) &&
+           op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN) {
+    return REASON_IBTB_MISS;
+  }
+  // btb miss and mispred (would have been incorrect with or without btb miss)
+  else if (op->oracle_info.pred_orig != op->oracle_info.dir && op->oracle_info.btb_miss) {
+    return REASON_BTB_MISS_MISPRED;
+  }
+  // true btb miss
+  else if (op->oracle_info.btb_miss) {
+    return REASON_BTB_MISS;
+  } else {
+    // all cases should be covered
+    ASSERT(proc_id, FALSE);
+  }
 }

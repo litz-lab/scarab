@@ -228,6 +228,7 @@ DEF_PARAM(fdip_off_path_conf_inc, FDIP_OFF_PATH_CONF_INC, uns     , uns     , 5 
 DEF_PARAM(fdip_print_cl_info, FDIP_PRINT_CL_INFO, Flag, Flag, FALSE, )
 DEF_PARAM(fdip_log_phase_cycles, FDIP_LOG_PHASE_CYCLES, Flag, Flag, FALSE, )
 DEF_PARAM(fdip_log_fdip_to_rec, FDIP_LOG_FDIP_TO_REC, Flag, Flag, FALSE, )
+DEF_PARAM(fdip_collect_ml_data, FDIP_COLLECT_ML_DATA, Flag, Flag, FALSE, )
 
 // For infinite size, set BRANCH_MISPREDICTION_TABLE_SIZE to 0.
 DEF_PARAM(branch_misprediction_table_size, BRANCH_MISPREDICTION_TABLE_SIZE , uns     , uns     , 0    , )

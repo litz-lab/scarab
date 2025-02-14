@@ -171,7 +171,16 @@ public:
   void inc_off_fetched_cls(Addr line_addr);
   uint64_t get_ftq_occupancy_ops();
   uint64_t get_ftq_occupancy();
-private:
+  Counter get_last_btb_recover_cycle() { return fdip_conf->get_last_btb_recover_cycle(); };
+  Counter get_last_ibtb_recover_cycle() { return fdip_conf->get_last_ibtb_recover_cycle(); };
+  Counter get_last_misfetch_recover_cycle() { return fdip_conf->get_last_misfetch_recover_cycle(); };
+  Counter get_last_mispred_recover_cycle() { return fdip_conf->get_last_mispred_recover_cycle(); };
+  double get_btb_miss_rate() { return fdip_conf->get_btb_miss_rate(); };
+  double get_ibtb_miss_rate() { return fdip_conf->get_ibtb_miss_rate(); };
+  double get_misfetch_rate() { return fdip_conf->get_misfetch_rate(); };
+  double get_mispred_rate() { return fdip_conf->get_mispred_rate(); };
+
+ private:
   Flag determine_usefulness(Addr line_addr, Op* op);
   void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefetch, Op* op);
   void determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_prefetch, Op* op);
@@ -370,6 +379,38 @@ Op* fdip_get_cur_op() {
 
 Counter fdip_get_last_recover_cycle() {
   return fdip->get_last_recover_cycle();
+}
+
+Counter fdip_get_last_btb_recover_cycle() {
+  return fdip->get_last_btb_recover_cycle();
+}
+
+Counter fdip_get_last_ibtb_recover_cycle() {
+  return fdip->get_last_ibtb_recover_cycle();
+}
+
+Counter fdip_get_last_misfetch_recover_cycle() {
+  return fdip->get_last_misfetch_recover_cycle();
+}
+
+Counter fdip_get_last_mispred_recover_cycle() {
+  return fdip->get_last_mispred_recover_cycle();
+}
+
+double fdip_get_btb_miss_rate() {
+  return fdip->get_btb_miss_rate();
+}
+
+double fdip_get_ibtb_miss_rate() {
+  return fdip->get_ibtb_miss_rate();
+}
+
+double fdip_get_mispred_rate() {
+  return fdip->get_mispred_rate();
+}
+
+double fdip_get_misfetch_rate() {
+  return fdip->get_misfetch_rate();
 }
 
 /* FDIP_Stat member functions */
@@ -865,6 +906,7 @@ void FDIP::update() {
         fdip_conf->set_prev_op(cur_op, op->off_path);
 
     cur_op = op;
+    op->fdip_cycle = cycle_count;
     DEBUG(proc_id, "Set cur_op off_path:%i, op_num:%llu, cf_type:%i\n", cur_op->off_path, cur_op->op_num, cur_op->table_info->cf_type);
 
     Flag emit_new_prefetch = FALSE;

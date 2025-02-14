@@ -447,6 +447,8 @@ FT_Arbitration_Result ft_arbitration() {
   } else {
     ASSERT(ic->proc_id, !ft_is_consumed(ft));
     FT_Info ft_info = ft_get_ft_info(ft);
+    STAT_EVENT(ic->proc_id, FT_POPPED_ON_PATH + ft_info.dynamic_info.first_op_off_path);
+    decoupled_fe_log_ft_data(ft, ic->proc_id);
     // set the current fetch address
     ic->fetch_addr = ft_info.static_info.start;
     ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr);

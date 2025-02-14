@@ -56,6 +56,17 @@ typedef struct FT FT;
 
 typedef struct decoupled_fe_iter decoupled_fe_iter;
 
+// reasons an op can trigger a recovery
+typedef enum OFF_PATH_REASON_enum {
+  REASON_NOT,
+  REASON_IBTB_MISS,
+  REASON_BTB_MISS,
+  // op that misses in the BTB and the BP incorrectly predicts not taken
+  REASON_BTB_MISS_MISPRED,
+  REASON_MISPRED,
+  REASON_MISFETCH,
+} Off_Path_Reason;
+
 struct decoupled_fe_iter {
   // the ft index
   uint64_t ft_pos;
@@ -102,6 +113,9 @@ struct decoupled_fe_iter {
   uint64_t decoupled_fe_ftq_num_fts();
   void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num);
   uint64_t decoupled_fe_get_ftq_num();
+  // for ML data collection
+  void decoupled_fe_log_ft_data(FT* cur_ft, uns proc_id);
+  void decoupled_fe_print_ml_data(uns proc_id);
 #ifdef __cplusplus
 }
 #endif

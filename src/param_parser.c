@@ -473,18 +473,38 @@ void get_uns64_param(const char* name, uns64* variable) {
 void dump_params(char** arg_list, Param_Record used_params[], Flag exe_found) {
   int   ii;
   FILE* arg_stream_out = file_tag_fopen(NULL, ARG_FILE_OUT, "w");
+  FILE* arg_stream_csv = file_tag_csv_fopen(NULL, ARG_FILE_OUT, "w");
+
   if(!arg_stream_out) {
     WARNINGU(
       0, "Couldn't open parameter output file %s.out --- Dumping to stderr.\n",
       ARG_FILE_OUT);
     arg_stream_out = stderr;
   }
+
+  if(!arg_stream_csv) {
+    WARNINGU(
+      0, "Couldn't open parameter output file %s.csv --- Dumping to stderr.\n",
+      ARG_FILE_OUT);
+    arg_stream_out = stderr;
+  }
+
   for(ii = 0; ii < NUM_PARAMS; ii++)
     if(used_params[ii].used)
       fprintf(arg_stream_out, "--%s %s\n", long_options[ii].name,
               used_params[ii].optarg);
-  if(exe_found)
+
+  fprintf(arg_stream_csv, "Metric, Value\n");
+  for(ii = 0; ii < NUM_PARAMS; ii++)
+    if(used_params[ii].used)
+      fprintf(arg_stream_csv, "--%s, %s\n", long_options[ii].name,
+              used_params[ii].optarg);
+
+  if(exe_found) {
     fprintf(arg_stream_out, "--exe ");
+    fprintf(arg_stream_csv, "--exe, 1");
+  } else fprintf(arg_stream_csv, "--exe, 0");
+
   for(ii = optind; arg_list[ii]; ii++)
     fprintf(arg_stream_out, "%s ", arg_list[ii]);
 

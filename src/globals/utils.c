@@ -655,6 +655,32 @@ FILE* file_tag_fopen(char const* const dir, char const* const name,
   return fopen(file_name, mode);
 }
 
+
+/**************************************************************************************/
+// file_tag_csv_fopen:
+
+FILE* file_tag_csv_fopen(char const* const dir, char const* const name,
+  char const* const mode) {
+  char file_name[MAX_STR_LENGTH + 1];
+  uns  len = strlen(FILE_TAG) + strlen(name) + strlen(".csv") + 1;
+  if(dir)
+    len += strlen(dir) + 1;
+  ASSERTM(0, len <= MAX_STR_LENGTH,
+  "File name longer than MAX_STR_LENGTH (%d > %d)\n", len,
+  MAX_STR_LENGTH);
+
+  strncpy(file_name, "", MAX_STR_LENGTH);
+  if(dir) {
+    strncat(file_name, dir, MAX_STR_LENGTH);
+    strncat(file_name, "/", MAX_STR_LENGTH);
+  }
+  strncat(file_name, FILE_TAG, MAX_STR_LENGTH);
+  strncat(file_name, name, MAX_STR_LENGTH);
+  strncat(file_name, ".csv", MAX_STR_LENGTH);
+
+  return fopen(file_name, mode);
+}
+
 /**************************************************************************************/
 // factorial:
 

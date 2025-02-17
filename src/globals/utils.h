@@ -363,6 +363,7 @@ int   strin(const char*, const char* const[], const uns);
 uns   log2_ctr(Counter);
 void  cfprintf(FILE*, const char*, ...);
 FILE* file_tag_fopen(char const* const, char const* const, char const* const);
+FILE* file_tag_csv_fopen(char const* const, char const* const, char const* const);
 uns   factorial(uns);
 Flag  similar(float, float, float);
 Flag  is_power_of_2(uns64);

@@ -1,0 +1,52 @@
+name: Sync to Public Repo with Original Authors
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync-repos:
+    if: ${{ github.repository == 'litz-lab/scarab_ll' && github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Private Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SCARAB_SYNC_PAT }}
+          fetch-depth: 0  # Ensure we have the full commit history
+
+      - name: Configure Git (Keep Original Authors)
+        run: |
+          git config --global user.email "$(git log -1 --pretty=format:'%ae')"
+          git config --global user.name "$(git log -1 --pretty=format:'%an')"
+
+      - name: Force Authentication with Fine-Grained PAT
+        env:
+          PAT: ${{ secrets.SCARAB_SYNC_PAT }}
+        run: |
+          if git remote get-url public > /dev/null 2>&1; then
+            git remote set-url public https://${PAT}@github.com/litz-lab/scarab.git
+          else
+            git remote add public https://${PAT}@github.com/litz-lab/scarab.git
+          fi
+          git credential reject https://github.com/ || true  # Ensure old credentials are cleared
+
+      - name: Debug PAT Authentication
+        env:
+          PAT: ${{ secrets.SCARAB_SYNC_PAT }}
+        run: |
+          echo "Testing authentication..."
+          curl -H "Authorization: Bearer $PAT" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/litz-lab/scarab
+
+      - name: Push Updates to Public Repository (Keeping Original Author, Setting Committer)
+        env:
+          PAT: ${{ secrets.SCARAB_SYNC_PAT }}
+          BOT_USER: "hlitz"  # Replace with service account GitHub username
+          BOT_EMAIL: "hlitz@ucsc.edu"  # Replace with service account email
+        run: |
+          GIT_COMMITTER_NAME="$BOT_USER" GIT_COMMITTER_EMAIL="$BOT_EMAIL" git push https://${PAT}@github.com/litz-lab/scarab.git HEAD:main

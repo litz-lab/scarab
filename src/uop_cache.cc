@@ -125,9 +125,6 @@ void alloc_mem_uop_cache(uns num_cores) {
   per_core_accumulating_op_num.resize(num_cores);
 
   per_core_lookup_buffer.resize(num_cores);
-  for (uns i = 0; i < num_cores; i++) {
-    per_core_lookup_buffer[i].resize(UOP_CACHE_ASSOC);
-  }
   per_core_num_looked_up_lines.resize(num_cores);
 
   per_core_uop_cache.resize(num_cores);
@@ -166,12 +163,13 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
     return FALSE;
   }
 
+  ASSERT(uop_cache_proc_id, current_lookup_buffer->empty());
+  ASSERT(uop_cache_proc_id, *current_num_looked_up_lines == 0);
   Uop_Cache_Data* uoc_data = NULL;
   Addr lookup_addr = ft_info.static_info.start;
-  int buffer_index = 0;
   do {
     uoc_data = uop_cache_lookup_line(lookup_addr, ft_info, TRUE);
-    if (buffer_index == 0) {
+    if (current_lookup_buffer->empty()) {
       DEBUG(uop_cache_proc_id, "UOC %s. ft_start=0x%llx, ft_length=%lld\n",
             uoc_data ? "hit" : "miss", ft_info.static_info.start, ft_info.static_info.length);
       if (!uoc_data) {
@@ -190,8 +188,7 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
       uoc_data->used += 1;
     }
 
-    current_lookup_buffer->at(buffer_index) = *uoc_data;
-    buffer_index++;
+    current_lookup_buffer->emplace_back(*uoc_data);
     ASSERT(uop_cache_proc_id, (uoc_data->offset == 0) == uoc_data->end_of_ft);
     lookup_addr += uoc_data->offset;
   } while (!uoc_data->end_of_ft);
@@ -199,10 +196,27 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
   return TRUE;
 }
 
-Uop_Cache_Data* uop_cache_get_line_from_lookup_buffer() {
+/**************************************************************************************/
+/* uop_cache_consume_uops_from_lookup_buffer: consume some uops from the uopc lookup buffer
+ * if the uop num of the current line > requested, it will be partially consumed and the line index is unchanged
+ * if the uop num of the current line <= requested, it will be fully consumed and the line index is incremented
+ */
+Uop_Cache_Data uop_cache_consume_uops_from_lookup_buffer(uns requested) {
   Uop_Cache_Data* uop_cache_line = &current_lookup_buffer->at(*current_num_looked_up_lines);
-  *current_num_looked_up_lines += 1;
-  return uop_cache_line;
+  Uop_Cache_Data consumed_uop_cache_line = *uop_cache_line;
+  if (uop_cache_line->n_uops > requested) {
+    // the uopc line has more uops than requested; cannot fully consume it
+    consumed_uop_cache_line.n_uops = requested;
+    // update the remaining uops
+    uop_cache_line->n_uops -= requested;
+    if (consumed_uop_cache_line.end_of_ft) {
+      consumed_uop_cache_line.end_of_ft = FALSE;
+    }
+  } else {
+    // the current line is fully consumed; move to the next line
+    *current_num_looked_up_lines += 1;
+  }
+  return consumed_uop_cache_line;
 }
 
 void uop_cache_clear_lookup_buffer() {
@@ -210,7 +224,7 @@ void uop_cache_clear_lookup_buffer() {
     return;
   }
 
-  std::fill(current_lookup_buffer->begin(), current_lookup_buffer->end(), Uop_Cache_Data{});
+  current_lookup_buffer->clear();
   *current_num_looked_up_lines = 0;
 }
 

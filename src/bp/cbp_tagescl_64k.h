@@ -437,7 +437,9 @@ class TAGE64K {
   int TICK;  // for the reset of the u counter
   uint8_t ghist[HISTBUFFERLENGTH];
   int ptghist;
+  int on_ptghist;
   long long phist;                          // path history
+  long long on_phist;                          // path history
   cbp64_folded_history ch_i[NHIST + 1];     // utility for computing TAGE indices
   cbp64_folded_history ch_t[2][NHIST + 1];  // utility for computing TAGE tags
 

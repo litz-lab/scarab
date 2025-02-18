@@ -214,7 +214,9 @@ void TAGE64K::reinit() {
   }
   GHIST = 0;
   ptghist = 0;
+  on_ptghist = 0;
   phist = 0;
+  on_phist = 0;
 
   tage_component = TAGE_BASE;
   tage_component_alt = TAGE_BASE;
@@ -286,11 +288,12 @@ void TAGE64K::baseupdate(bool Taken) {
 
 // just a simple pseudo random number generator: use available information
 //  to allocate entries  in the loop predictor
+// MYRANDOM must be called by on-path instructions
 int TAGE64K::MYRANDOM() {
   Seed++;
-  Seed ^= phist;
+  Seed ^= on_phist;
   Seed = (Seed >> 21) + (Seed << 11);
-  Seed ^= ptghist;
+  Seed ^= on_ptghist;
   Seed = (Seed >> 10) + (Seed << 22);
   return (Seed);
 };
@@ -604,6 +607,10 @@ void TAGE64K::HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target,
   X = (X & ((1 << PHISTWIDTH) - 1));
 
   // END UPDATE  HISTORIES
+
+  // on_phist and on_ptghist are updated when op is on-path
+  on_phist = X;
+  on_ptghist = Y;
 }
 
 // PREDICTOR UPDATE

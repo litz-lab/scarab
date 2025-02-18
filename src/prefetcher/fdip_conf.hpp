@@ -142,6 +142,8 @@ public:
        cnt_mispred(0),
        mispred_rate(0.0),
        last_mispred_recover_cycle(0),
+       cnt_on_path_instructions(0),
+       effective_ipc(0.0),
        low_confidence_cnt(0),
        cf_op_distance(0.0) {
    conf_info = new FDIP_Confidence_Info(_proc_id);
@@ -159,6 +161,7 @@ public:
   void inc_cnt_ibtb_miss() { cnt_ibtb_miss++; };
   void inc_cnt_misfetch() { cnt_misfetch++; };
   void inc_cnt_mispred() { cnt_mispred++; };
+  void inc_cnt_on_path_insts() { cnt_on_path_instructions++; };
   void print_recovery_cycles();
 
  private:
@@ -188,6 +191,9 @@ public:
   Counter cnt_mispred;
   double mispred_rate;
   Counter last_mispred_recover_cycle;
+
+  Counter cnt_on_path_instructions;
+  double effective_ipc;
 
   //confidence counter
   uns low_confidence_cnt;

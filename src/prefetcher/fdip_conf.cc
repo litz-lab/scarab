@@ -136,6 +136,8 @@ void FDIP_Conf::set_prev_op(Op* prev_op, Flag off_path) {
   DEBUG(proc_id, "Set prev_op off_path:%i, op_num:%llu, cf_type:%i\n", conf_info->prev_op->off_path, conf_info->prev_op->op_num, conf_info->prev_op->table_info->cf_type);
   // never used?
   conf_info->fdip_off_path_event = off_path;
+  if (!fdip_off_path())
+    inc_cnt_on_path_insts();
 }
 
 void FDIP_Conf::update(Op* op) {
@@ -169,6 +171,10 @@ void FDIP_Conf::cyc_reset() {
   if (cycle_count % FDIP_MISPRED_SAMPLE_RATE == 0) {
     mispred_rate = (double)cnt_mispred / (double)FDIP_MISPRED_SAMPLE_RATE;
     cnt_mispred = 0;
+  }
+  if (cycle_count % FDIP_IPC_SAMPLE_RATE == 0) {
+    effective_ipc = (double)cnt_on_path_instructions / (double)FDIP_IPC_SAMPLE_RATE;
+    cnt_on_path_instructions = 0;
   }
 }
 
@@ -308,21 +314,25 @@ void FDIP_Conf::fine_grained_conf_update(Op* op) {
 
 // update based on cycles since resteer of type X * rate of X
 Conf_Off_Path_Reason FDIP_Conf::update_resteer_rate_ctrs(Conf_Off_Path_Reason conf_op_reason) {
+  int multiplier = 1;
+  if (FDIP_IPC_RATE_CONF) {
+    multiplier = effective_ipc;
+  }
   Conf_Off_Path_Reason ctrs_op_reason = conf_op_reason;
   if (FDIP_BTB_MISS_RATE_CONF && !FDIP_PERFECT_BTB_MISS_CONF &&
-      ((double)(cycle_count - last_btb_recover_cycle) * btb_miss_rate) >=
+      ((double)(cycle_count - last_btb_recover_cycle) * btb_miss_rate * multiplier) >=
           FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_BTB_MISS_RATE;
   } else if (FDIP_IBTB_MISS_RATE_CONF && !FDIP_PERFECT_IBTB_MISS_CONF &&
-             ((double)(cycle_count - last_ibtb_recover_cycle) * ibtb_miss_rate) >=
+             ((double)(cycle_count - last_ibtb_recover_cycle) * ibtb_miss_rate * multiplier) >=
                  FDIP_IBTB_MISS_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_IBTB_MISS_RATE;
   } else if (FDIP_MISFETCH_RATE_CONF && !FDIP_PERFECT_MISFETCH_CONF &&
-             ((double)(cycle_count - last_misfetch_recover_cycle) * misfetch_rate) >=
+             ((double)(cycle_count - last_misfetch_recover_cycle) * misfetch_rate * multiplier) >=
                  FDIP_MISFETCH_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_MISFETCH_RATE;
   } else if (FDIP_MISPRED_RATE_CONF && !FDIP_PERFECT_MISPRED_CONF &&
-             ((double)(cycle_count - last_mispred_recover_cycle) * mispred_rate) >=
+             ((double)(cycle_count - last_mispred_recover_cycle) * mispred_rate * multiplier) >=
                  FDIP_MISPRED_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_MISPRED_RATE;
   }
@@ -507,4 +517,3 @@ void FDIP_Conf::log_phase_cycles(Op* op) {
     }
   }
 }
-

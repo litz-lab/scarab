@@ -197,6 +197,7 @@ DEF_PARAM(fdip_btb_miss_sample_rate, FDIP_BTB_MISS_SAMPLE_RATE, uns, uns, 100000
 DEF_PARAM(fdip_ibtb_miss_sample_rate, FDIP_IBTB_MISS_SAMPLE_RATE, uns, uns, 100000, )
 DEF_PARAM(fdip_misfetch_sample_rate, FDIP_MISFETCH_SAMPLE_RATE, uns, uns, 100000, )
 DEF_PARAM(fdip_mispred_sample_rate, FDIP_MISPRED_SAMPLE_RATE, uns, uns, 100000, )
+DEF_PARAM(fdip_ipc_sample_rate, FDIP_IPC_SAMPLE_RATE, uns, uns, 100000, )
 
 DEF_PARAM(fdip_btb_miss_rate_cycles_threshold, FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD, float, float, 1.0, )
 DEF_PARAM(fdip_ibtb_miss_rate_cycles_threshold, FDIP_IBTB_MISS_RATE_CYCLES_THRESHOLD, float, float, 1.0, )
@@ -217,6 +218,7 @@ DEF_PARAM(fdip_ibtb_miss_rate_conf, FDIP_IBTB_MISS_RATE_CONF, Flag, Flag, TRUE, 
 DEF_PARAM(fdip_misfetch_rate_conf, FDIP_MISFETCH_RATE_CONF, Flag, Flag, TRUE, )
 DEF_PARAM(fdip_mispred_rate_conf, FDIP_MISPRED_RATE_CONF, Flag, Flag, TRUE, )
 DEF_PARAM(fdip_inv_bp_conf_conf, FDIP_INV_BP_CONF_CONF, Flag, Flag, TRUE, )
+DEF_PARAM(fdip_ipc_rate_conf, FDIP_IPC_RATE_CONF, Flag, Flag, FALSE, )
 
 DEF_PARAM(fdip_btb_miss_rate_weight, FDIP_BTB_MISS_RATE_WEIGHT, uns, uns, 200, )
 

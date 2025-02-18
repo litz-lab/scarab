@@ -39,12 +39,13 @@ extern "C" {
   void alloc_mem_fdip(uns numProcs);
   void init_fdip(uns proc_id);
   void update_fdip();
-  void recover_fdip();
+  void recover_fdip(Op* Op);
   void set_fdip(int _proc_id, Icache_Stage *_ic);
   Flag fdip_off_path();
   uns64 fdip_get_ghist();
   uns64 fdip_hash_addr_ghist(uint64_t addr, uint64_t ghist);
   void print_cl_info(uns proc_id);
+  void print_recovery_cycles(uns proc_id);
   void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss);
   void inc_cnt_unuseful(uns proc_id, Addr line_addr);
   void inc_cnt_useful_signed(Addr line_addr);

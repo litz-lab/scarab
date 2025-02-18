@@ -29,6 +29,9 @@
 #ifndef __FDIP_CONF_H__
 #define __FDIP_CONF_H__
 
+#include <tuple>
+#include <vector>
+
 #include "prefetcher/fdip.h"
 
 // reasons an op can trigger a recovery
@@ -57,6 +60,9 @@ typedef enum CONF_OFF_PATH_REASON_enum {
   REASON_INV_CONF_INC,
   REASON_PERFECT_CONF,
 } Conf_Off_Path_Reason;
+
+// typedefs for phase cycles csvs
+typedef std::tuple<Counter, Counter, Counter, double> phase_cycles_line;
 
 // metadata for fdip confidence
 // NOTE: Does it make sense to have this?
@@ -123,6 +129,7 @@ class FDIP_Conf {
 public:
  FDIP_Conf(uns _proc_id)
      : proc_id(_proc_id),
+       last_recover_cycle(0),
        cnt_btb_miss(0),
        btb_miss_rate(0.0),
        last_btb_recover_cycle(0),
@@ -140,7 +147,7 @@ public:
    conf_info = new FDIP_Confidence_Info(_proc_id);
  }
   uns get_low_confidence_cnt() { return low_confidence_cnt; }
-  void recover();
+  void recover(Op* op);
   void cyc_reset();
   void set_prev_op(Op* op, Flag off_path);
   Flag get_off_path_event() { return conf_info->fdip_off_path_event; }
@@ -152,6 +159,7 @@ public:
   void inc_cnt_ibtb_miss() { cnt_ibtb_miss++; };
   void inc_cnt_misfetch() { cnt_misfetch++; };
   void inc_cnt_mispred() { cnt_mispred++; };
+  void print_recovery_cycles();
 
  private:
   void default_conf_update(Op* op);
@@ -161,8 +169,9 @@ public:
   Conf_Off_Path_Reason perfect_conf_update(Op* op);
   Conf_Off_Path_Reason update_resteer_rate_ctrs(Conf_Off_Path_Reason conf_op_reason);
   Off_Path_Reason eval_off_path_reason(Op* op);
-
+  void log_phase_cycles(Op* op);
   uns proc_id;
+  Counter last_recover_cycle;
   /* variables for BTB miss-based BP confidence */
   Counter cnt_btb_miss;
   double btb_miss_rate;
@@ -185,6 +194,17 @@ public:
   double cf_op_distance;
 
   FDIP_Confidence_Info* conf_info;
+
+  // vectors for phase cycles
+  // TODO: Make these into one CSV with resteer type as a column
+  // cycles since resteer, cycles since last btb miss event, phase, btb miss rate
+  std::vector<phase_cycles_line> btb_miss_event_cycles;
+  // cycles since resteer, cycles since last ibtb miss event, phase, ibtb miss rate
+  std::vector<phase_cycles_line> ibtb_miss_event_cycles;
+  // cycles since resteer, cycles since last mispred event, phase, mispred rate
+  std::vector<phase_cycles_line> mispred_event_cycles;
+  // cycles since resteer, cycles since last misfetch event, phase, misfetch rate
+  std::vector<phase_cycles_line> misfetch_event_cycles;
 };
 
 #endif

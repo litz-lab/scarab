@@ -86,13 +86,11 @@ void FDIP_Confidence_Info::log_stats_bp_conf_off() {
 }
 
 /* FDIP_Conf member functions */
-void FDIP_Conf::recover() {
-  Off_Path_Reason op_reason = conf_info->off_path_reason;
+void FDIP_Conf::recover(Op* op) {
+  Off_Path_Reason op_reason = eval_off_path_reason(op);
   switch (op_reason) {
     case REASON_NOT: {
-      // if a resteer happens right after another resteer it might not be in the FTQ
-      // TODO: this should NOT happen if using eval(op) ?
-      break;
+      ASSERT(proc_id, 0);
     }
     case REASON_IBTB_MISS: {
       inc_cnt_ibtb_miss();
@@ -127,6 +125,7 @@ void FDIP_Conf::recover() {
       ASSERT(proc_id, 0);
     }
   }
+  last_recover_cycle = cycle_count;
   low_confidence_cnt = 0;
   cf_op_distance = 0.0;
   conf_info->recover();
@@ -135,8 +134,8 @@ void FDIP_Conf::recover() {
 void FDIP_Conf::set_prev_op(Op* prev_op, Flag off_path) {
   conf_info->prev_op = prev_op;
   DEBUG(proc_id, "Set prev_op off_path:%i, op_num:%llu, cf_type:%i\n", conf_info->prev_op->off_path, conf_info->prev_op->op_num, conf_info->prev_op->table_info->cf_type);
+  // never used?
   conf_info->fdip_off_path_event = off_path;
-  conf_info->off_path_reason = eval_off_path_reason(prev_op);
 }
 
 void FDIP_Conf::update(Op* op) {
@@ -151,6 +150,7 @@ void FDIP_Conf::update(Op* op) {
   } else {
     default_conf_update(op);
   }
+  conf_info->off_path_reason = eval_off_path_reason(op);
 }
 
 void FDIP_Conf::cyc_reset() {
@@ -256,6 +256,7 @@ void FDIP_Conf::fine_grained_conf_update(Op* op) {
     return;
   if (low_confidence_cnt == ~0U)
     return;
+  log_phase_cycles(op);
   Conf_Off_Path_Reason conf_op_reason = REASON_INVALID;
   if (FDIP_PERFECT_BTB_MISS_CONF || FDIP_PERFECT_IBTB_MISS_CONF || FDIP_PERFECT_MISFETCH_CONF ||
       FDIP_PERFECT_MISPRED_CONF)
@@ -275,7 +276,9 @@ void FDIP_Conf::fine_grained_conf_update(Op* op) {
                op->oracle_info.btb_miss && (op->oracle_info.pred_orig == TAKEN) &&
                (op->bp_confidence >= FDIP_BTB_MISS_BP_TAKEN_CONF_THRESHOLD)) {
         conf_op_reason = (Conf_Off_Path_Reason)(REASON_BTB_MISS_BP_TAKEN_CONF_0 + op->bp_confidence);
-      } else if (FDIP_INV_BP_CONF_CONF && !FDIP_PERFECT_MISPRED_CONF) {  // update low bp confidence counter
+      }
+      // update low bp confidence counter
+      else if (FDIP_INV_BP_CONF_CONF && !FDIP_PERFECT_MISPRED_CONF) {
         low_confidence_cnt += 3 - op->bp_confidence;
         if (low_confidence_cnt > FDIP_OFF_PATH_THRESHOLD) {
           conf_op_reason = REASON_INV_CONF_INC;
@@ -307,7 +310,8 @@ void FDIP_Conf::fine_grained_conf_update(Op* op) {
 Conf_Off_Path_Reason FDIP_Conf::update_resteer_rate_ctrs(Conf_Off_Path_Reason conf_op_reason) {
   Conf_Off_Path_Reason ctrs_op_reason = conf_op_reason;
   if (FDIP_BTB_MISS_RATE_CONF && !FDIP_PERFECT_BTB_MISS_CONF &&
-      ((double)(cycle_count - last_btb_recover_cycle) * btb_miss_rate) >= FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD) {
+      ((double)(cycle_count - last_btb_recover_cycle) * btb_miss_rate) >=
+          FDIP_BTB_MISS_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_BTB_MISS_RATE;
   } else if (FDIP_IBTB_MISS_RATE_CONF && !FDIP_PERFECT_IBTB_MISS_CONF &&
              ((double)(cycle_count - last_ibtb_recover_cycle) * ibtb_miss_rate) >=
@@ -350,7 +354,7 @@ Off_Path_Reason FDIP_Conf::eval_off_path_reason(Op* op) {
     return REASON_NOT;
   }
   // mispred
-  if (op->oracle_info.pred_orig != op->oracle_info.dir && !op->oracle_info.btb_miss) {
+  else if (op->oracle_info.pred_orig != op->oracle_info.dir && !op->oracle_info.btb_miss) {
     return REASON_MISPRED;
   }
   // misfetch
@@ -371,7 +375,7 @@ Off_Path_Reason FDIP_Conf::eval_off_path_reason(Op* op) {
   else if (op->oracle_info.btb_miss) {
     return REASON_BTB_MISS;
   } else {
-    // shouldn't happen
+    // all cases should be covered
     ASSERT(proc_id, FALSE);
   }
 }
@@ -420,3 +424,87 @@ void FDIP_Conf::log_stats_bp_conf_per_cycle(Op* cur_op) {
     }
   }
 }
+
+void FDIP_Conf::print_recovery_cycles() {
+  if (!FDIP_ENABLE || !FDIP_FINE_GRAINED_CONF)
+    return;
+  FILE* fp;
+  if (FDIP_LOG_PHASE_CYCLES) {
+    fp = fopen("phase_cycles_btb_miss.csv", "w");
+    fprintf(fp, "cycles_since_rec,cycles_since_event,phase,miss_rate\n");
+    for (auto it = btb_miss_event_cycles.begin(); it != btb_miss_event_cycles.end(); ++it) {
+      fprintf(fp, "%llu,%llu,%llu,%f", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it), std::get<3>(*it));
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
+    fp = fopen("phase_cycles_ibtb_miss.csv", "w");
+    fprintf(fp, "cycles_since_rec,cycles_since_event,phase,miss_rate\n");
+    for (auto it = ibtb_miss_event_cycles.begin(); it != ibtb_miss_event_cycles.end(); ++it) {
+      fprintf(fp, "%llu,%llu,%llu,%f", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it), std::get<3>(*it));
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
+    fp = fopen("phase_cycles_mispred.csv", "w");
+    fprintf(fp, "cycles_since_rec,cycles_since_event,phase,miss_rate\n");
+    for (auto it = mispred_event_cycles.begin(); it != mispred_event_cycles.end(); ++it) {
+      fprintf(fp, "%llu,%llu,%llu,%f", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it), std::get<3>(*it));
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
+    fp = fopen("phase_cycles_misfetch.csv", "w");
+    fprintf(fp, "cycles_since_rec,cycles_since_event,phase,miss_rate\n");
+    for (auto it = misfetch_event_cycles.begin(); it != misfetch_event_cycles.end(); ++it) {
+      fprintf(fp, "%llu,%llu,%llu,%f", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it), std::get<3>(*it));
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
+  }
+}
+
+void FDIP_Conf::log_phase_cycles(Op* op) {
+  if (!FDIP_BP_CONFIDENCE || !FDIP_LOG_PHASE_CYCLES)
+    return;
+  Off_Path_Reason op_reason = eval_off_path_reason(op);
+  switch (op_reason) {
+    case REASON_NOT: {
+      break;
+    }
+    case REASON_IBTB_MISS: {
+      ibtb_miss_event_cycles.push_back(
+          phase_cycles_line(cycle_count - last_recover_cycle, cycle_count - last_ibtb_recover_cycle,
+                            cycle_count - (cycle_count % FDIP_IBTB_MISS_SAMPLE_RATE), (double)ibtb_miss_rate));
+      break;
+    }
+    case REASON_BTB_MISS: {
+      btb_miss_event_cycles.push_back(
+          phase_cycles_line(cycle_count - last_recover_cycle, cycle_count - last_btb_recover_cycle,
+                            cycle_count - (cycle_count % FDIP_BTB_MISS_SAMPLE_RATE), (double)btb_miss_rate));
+      break;
+    }
+    case REASON_BTB_MISS_MISPRED: {
+      btb_miss_event_cycles.push_back(
+          phase_cycles_line(cycle_count - last_recover_cycle, cycle_count - last_btb_recover_cycle,
+                            cycle_count - (cycle_count % FDIP_BTB_MISS_SAMPLE_RATE), (double)btb_miss_rate));
+      mispred_event_cycles.push_back(
+          phase_cycles_line(cycle_count - last_recover_cycle, cycle_count - last_mispred_recover_cycle,
+                            cycle_count - (cycle_count % FDIP_MISPRED_SAMPLE_RATE), (double)mispred_rate));
+      break;
+    }
+    case REASON_MISPRED: {
+      mispred_event_cycles.push_back(
+          phase_cycles_line(cycle_count - last_recover_cycle, cycle_count - last_mispred_recover_cycle,
+                            cycle_count - (cycle_count % FDIP_MISPRED_SAMPLE_RATE), (double)mispred_rate));
+      break;
+    }
+    case REASON_MISFETCH: {
+      misfetch_event_cycles.push_back(
+          phase_cycles_line(cycle_count - last_recover_cycle, cycle_count - last_misfetch_recover_cycle,
+                            cycle_count - (cycle_count % FDIP_MISFETCH_SAMPLE_RATE), (double)misfetch_rate));
+      break;
+    }
+    default: {
+      ASSERT(proc_id, 0);
+    }
+  }
+}
+

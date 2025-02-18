@@ -137,7 +137,7 @@ class FDIP {
 public:
   FDIP(uns _proc_id);
   void init(uns proc_id);
-  void recover();
+  void recover(Op* op);
   void update();
   void set_ic_ref(Icache_Stage *ic) { ic_ref = ic; }
   Flag is_off_path();
@@ -149,6 +149,7 @@ public:
   void insert_pref_candidate_to_seniority_ftq(Addr line_addr);
   Flag get_warmed_up() { return warmed_up; }
   void print_cl_info() { fdip_stat.print_cl_info(ic_ref); }
+  void print_recovery_cycles() { fdip_conf->print_recovery_cycles(); }
   uns get_proc_id() { return proc_id; }
   void inc_cnt_useful(Addr line_addr, Flag pref_miss) { fdip_stat.inc_cnt_useful(line_addr, pref_miss); }
   void inc_cnt_unuseful(Addr line_addr);
@@ -215,8 +216,8 @@ void set_fdip(int _proc_id, Icache_Stage *_ic) {
   fdip->set_ic_ref(_ic);
 }
 
-void recover_fdip() {
-  fdip->recover();
+void recover_fdip(Op* op) {
+  fdip->recover(op);
 }
 
 void update_fdip() {
@@ -242,6 +243,12 @@ void print_cl_info(uns proc_id) {
   if (!FDIP_ENABLE)
     return;
   per_core_fdip[proc_id].print_cl_info();
+}
+
+void print_recovery_cycles(uns proc_id) {
+  if (!FDIP_ENABLE || !FDIP_LOG_PHASE_CYCLES)
+    return;
+  per_core_fdip[proc_id].print_recovery_cycles();
 }
 
 void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss) {
@@ -820,12 +827,12 @@ FDIP::FDIP(uns _proc_id) :
     fdip_conf = new FDIP_Conf(_proc_id);
 }
 
-void FDIP::recover() {
+void FDIP::recover(Op* op) {
   last_line_addr = 0;
   fdip_stat.last_recover_cycle = cycle_count;
 
   if (FDIP_BP_CONFIDENCE) {
-    fdip_conf->recover();
+    fdip_conf->recover(op);
   }
 
   if (FDIP_ADJUSTABLE_FTQ)

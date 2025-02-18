@@ -27,30 +27,32 @@
                     done in frontend)
  ***************************************************************************************/
 
-#include "debug/debug_macros.h"
-#include "debug/debug_print.h"
+#include "decode_stage.h"
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
-#include "isa/isa_macros.h"
 
-#include "bp/bp.h"
-#include "decode_stage.h"
-#include "op_pool.h"
+#include "debug/debug.param.h"
+#include "debug/debug_macros.h"
+#include "debug/debug_print.h"
 
 #include "core.param.h"
-#include "debug/debug.param.h"
 #include "general.param.h"
-#include "prefetcher/pref.param.h"
-#include "thread.h" /* for td */
-
-#include "uop_cache.h"
-#include "prefetcher/branch_misprediction_table.h"
-#include "statistics.h"
 #include "memory/memory.param.h"
+#include "prefetcher/pref.param.h"
+
+#include "bp/bp.h"
+#include "isa/isa_macros.h"
+#include "prefetcher/branch_misprediction_table.h"
+
 #include "decoupled_frontend.h"
+#include "op_pool.h"
+#include "statistics.h"
+#include "thread.h" /* for td */
+#include "uop_cache.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -58,7 +60,6 @@
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECODE_STAGE, ##args)
 #define STAGE_MAX_OP_COUNT ISSUE_WIDTH - DECODE_PATH_WIDTH_NARROWER
 #define STAGE_MAX_DEPTH (DECODE_CYCLES + ICACHE_LATENCY - 1)
-
 
 /**************************************************************************************/
 /* Global Variables */
@@ -78,13 +79,12 @@ void set_decode_stage(Decode_Stage* new_dec) {
   dec = new_dec;
 }
 
-
 /**************************************************************************************/
 /* init_decode_stage: */
 
 void init_decode_stage(uns8 proc_id, const char* name) {
   char tmp_name[MAX_STR_LENGTH + 1];
-  uns  ii;
+  uns ii;
   ASSERT(0, dec);
   ASSERT(0, STAGE_MAX_DEPTH > 0);
   DEBUG(proc_id, "Initializing %s stage\n", name);
@@ -93,17 +93,16 @@ void init_decode_stage(uns8 proc_id, const char* name) {
   dec->proc_id = proc_id;
 
   dec->sds = (Stage_Data*)malloc(sizeof(Stage_Data) * STAGE_MAX_DEPTH);
-  for(ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
+  for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &dec->sds[ii];
     snprintf(tmp_name, MAX_STR_LENGTH, "%s %d", name, STAGE_MAX_DEPTH - ii - 1);
-    cur->name         = (char*)strdup(tmp_name);
+    cur->name = (char*)strdup(tmp_name);
     cur->max_op_count = STAGE_MAX_OP_COUNT;
-    cur->ops          = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
+    cur->ops = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
   }
   dec->last_sd = &dec->sds[0];
   reset_decode_stage();
 }
-
 
 /**************************************************************************************/
 /* reset_decode_stage: */
@@ -111,14 +110,13 @@ void init_decode_stage(uns8 proc_id, const char* name) {
 void reset_decode_stage() {
   uns ii, jj;
   ASSERT(0, dec);
-  for(ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
+  for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &dec->sds[ii];
-    cur->op_count   = 0;
-    for(jj = 0; jj < STAGE_MAX_OP_COUNT; jj++)
+    cur->op_count = 0;
+    for (jj = 0; jj < STAGE_MAX_OP_COUNT; jj++)
       cur->ops[jj] = NULL;
   }
 }
-
 
 /**************************************************************************************/
 /* recover_decode_stage: */
@@ -127,12 +125,12 @@ void recover_decode_stage() {
   uns ii, jj;
   decode_off_path = false;
   ASSERT(0, dec);
-  for(ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
+  for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &dec->sds[ii];
-    cur->op_count   = 0;
-    for(jj = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
-      if(cur->ops[jj]) {
-        if(FLUSH_OP(cur->ops[jj])) {
+    cur->op_count = 0;
+    for (jj = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
+      if (cur->ops[jj]) {
+        if (FLUSH_OP(cur->ops[jj])) {
           ASSERT(cur->ops[jj]->proc_id, cur->ops[jj]->off_path);
           free_op(cur->ops[jj]);
           cur->ops[jj] = NULL;
@@ -144,20 +142,17 @@ void recover_decode_stage() {
   }
 }
 
-
 /**************************************************************************************/
 /* debug_decode_stage: */
 
 void debug_decode_stage() {
   uns ii;
-  for(ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
+  for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &dec->sds[STAGE_MAX_DEPTH - ii - 1];
     DPRINTF("# %-10s  op_count:%d\n", cur->name, cur->op_count);
-    print_op_array(GLOBAL_DEBUG_STREAM, cur->ops, STAGE_MAX_OP_COUNT,
-                   cur->op_count);
+    print_op_array(GLOBAL_DEBUG_STREAM, cur->ops, STAGE_MAX_OP_COUNT, cur->op_count);
   }
 }
-
 
 /**************************************************************************************/
 /* decode_cycle: Movement of cached uops to later stages assumes that with a stalled
@@ -166,35 +161,33 @@ void debug_decode_stage() {
  */
 
 void update_decode_stage(Stage_Data* src_sd) {
-  Flag        stall = (dec->last_sd->op_count > 0);
+  Flag stall = (dec->last_sd->op_count > 0);
   Stage_Data *cur, *prev;
-  Op**        temp;
-  uns         ii;
+  Op** temp;
+  uns ii;
 
-  if(!decode_off_path) {
-    if(stall)
+  if (!decode_off_path) {
+    if (stall)
       STAT_EVENT(dec->proc_id, DECODE_STAGE_STALLED);
     else
       STAT_EVENT(dec->proc_id, DECODE_STAGE_NOT_STALLED);
-    if(!src_sd->op_count)
+    if (!src_sd->op_count)
       STAT_EVENT(dec->proc_id, DECODE_STAGE_STARVED);
     else
       STAT_EVENT(dec->proc_id, DECODE_STAGE_NOT_STARVED);
-  }
-  else
+  } else
     STAT_EVENT(dec->proc_id, DECODE_STAGE_OFF_PATH);
 
-
   /* do all the intermediate stages */
-  for(ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
+  for (ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
     cur = &dec->sds[ii];
-    if(cur->op_count)
+    if (cur->op_count)
       continue;
-    prev           = &dec->sds[ii + 1];
-    temp           = cur->ops;
-    cur->ops       = prev->ops;
-    prev->ops      = temp;
-    cur->op_count  = prev->op_count;
+    prev = &dec->sds[ii + 1];
+    temp = cur->ops;
+    cur->ops = prev->ops;
+    prev->ops = temp;
+    cur->op_count = prev->op_count;
     prev->op_count = 0;
   }
 
@@ -214,17 +207,17 @@ void update_decode_stage(Stage_Data* src_sd) {
       }
     }
     //   if (!stall)
-    //ASSERT(0, !src_sd->op_count);
+    // ASSERT(0, !src_sd->op_count);
   }
 
   /* if the last decode stage is stalled, don't re-process the ops  */
-  if(stall) {
+  if (stall) {
     DEBUG(dec->proc_id, "Decode Stage stalled\n");
     return;
   }
 
   /* now check the ops in the last decode stage for BTB errors */
-  for(ii = 0; ii < dec->last_sd->op_count; ii++) {
+  for (ii = 0; ii < dec->last_sd->op_count; ii++) {
     Op* op = dec->last_sd->ops[ii];
     ASSERT(dec->proc_id, op != NULL);
     ASSERT(dec->proc_id, !op->fetched_from_uop_cache);
@@ -234,7 +227,6 @@ void update_decode_stage(Stage_Data* src_sd) {
   }
 }
 
-
 /**************************************************************************************/
 /* process_decode_op: This function may also be called by ops from the uop cache.     */
 
@@ -242,7 +234,7 @@ void decode_stage_process_op(Op* op) {
   Cf_Type cf = op->table_info->cf_type;
   op->decode_cycle = cycle_count;
 
-  if(cf) {
+  if (cf) {
     DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",
           op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE, op->inst_info->addr, op->op_num,
           op->oracle_info.recover_at_decode);
@@ -274,7 +266,7 @@ void decode_stage_process_op(Op* op) {
 
 // UNUSED, and not kept up to date with uop cache changes.
 static inline void update_cycles_stats(Stage_Data* src_sd, int empty_stage_idx) {
-  static Op*  last_op = NULL;  // The most recent op that has entered the decode stage.
+  static Op* last_op = NULL;  // The most recent op that has entered the decode stage.
 
   int decode_stages_empty = STAGE_MAX_DEPTH - empty_stage_idx;
   // Only count stats if the icache is not stalled due to a full decode stage.

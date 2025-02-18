@@ -26,60 +26,54 @@
  * Description  :
  ***************************************************************************************/
 
-#include "debug/debug_macros.h"
+#include "libs/port_lib.h"
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 
-#include "libs/port_lib.h"
-
 #include "debug/debug.param.h"
-
+#include "debug/debug_macros.h"
 
 /**************************************************************************************/
 /* Macros */
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_PORT_LIB, ##args)
 
-
 /**************************************************************************************/
 /* init_ports: */
 
-void init_ports(Ports* ports, char name[], uns read, uns write,
-                Flag writes_prevent_reads) {
+void init_ports(Ports* ports, char name[], uns read, uns write, Flag writes_prevent_reads) {
   DEBUG(0, "Initializing ports called '%s'.\n", name);
   strncpy(ports->name, name, MAX_STR_LENGTH);
-  ports->read_last_cycle      = 0;
-  ports->write_last_cycle     = 0;
-  ports->num_read_ports       = read;
-  ports->read_ports_in_use    = 0;
-  ports->num_write_ports      = write;
-  ports->write_ports_in_use   = 0;
+  ports->read_last_cycle = 0;
+  ports->write_last_cycle = 0;
+  ports->num_read_ports = read;
+  ports->read_ports_in_use = 0;
+  ports->num_write_ports = write;
+  ports->write_ports_in_use = 0;
   ports->writes_prevent_reads = writes_prevent_reads;
 }
-
 
 /**************************************************************************************/
 /* get_read_port: */
 
 Flag get_read_port(Ports* ports) {
-  if(ports->read_last_cycle != cycle_count) {
+  if (ports->read_last_cycle != cycle_count) {
     ASSERT(0, ports->num_read_ports > 0);
-    ports->read_last_cycle   = cycle_count;
+    ports->read_last_cycle = cycle_count;
     ports->read_ports_in_use = 1;
     DEBUG(0, "get_read_port successful\n");
     return SUCCESS;
   }
 
-  if(ports->read_ports_in_use == ports->num_read_ports) {
-    DEBUG(0, "get_read_port failed (%d ports in use)\n",
-          ports->read_ports_in_use);
+  if (ports->read_ports_in_use == ports->num_read_ports) {
+    DEBUG(0, "get_read_port failed (%d ports in use)\n", ports->read_ports_in_use);
     return FAILURE;
   }
-  if(ports->write_ports_in_use && ports->writes_prevent_reads) {
-    DEBUG(0, "get_read_port failed (%d writes preventing reads)\n",
-          ports->write_ports_in_use);
+  if (ports->write_ports_in_use && ports->writes_prevent_reads) {
+    DEBUG(0, "get_read_port failed (%d writes preventing reads)\n", ports->write_ports_in_use);
     return FAILURE;
   }
 
@@ -88,27 +82,24 @@ Flag get_read_port(Ports* ports) {
   return SUCCESS;
 }
 
-
 /**************************************************************************************/
 /* get_write_port: */
 
 Flag get_write_port(Ports* ports) {
-  if(ports->write_last_cycle != cycle_count) {
+  if (ports->write_last_cycle != cycle_count) {
     ASSERT(0, ports->num_write_ports > 0);
-    ports->write_last_cycle   = cycle_count;
+    ports->write_last_cycle = cycle_count;
     ports->write_ports_in_use = 1;
     DEBUG(0, "get_write_port successful\n");
     return SUCCESS;
   }
 
-  if(ports->write_ports_in_use == ports->num_write_ports) {
-    DEBUG(0, "get_write_port failed (%d ports in use)\n",
-          ports->write_ports_in_use);
+  if (ports->write_ports_in_use == ports->num_write_ports) {
+    DEBUG(0, "get_write_port failed (%d ports in use)\n", ports->write_ports_in_use);
     return FAILURE;
   }
-  if(ports->writes_prevent_reads)
-    ASSERTM(0, ports->read_ports_in_use == 0,
-            "Must request write ports before reads.\n");
+  if (ports->writes_prevent_reads)
+    ASSERTM(0, ports->read_ports_in_use == 0, "Must request write ports before reads.\n");
 
   DEBUG(0, "get_write_port successful\n");
   ports->write_ports_in_use++;

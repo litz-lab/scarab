@@ -30,6 +30,7 @@
 #define __DCACHE_STAGE_H__
 
 #include "libs/cache_lib.h"
+
 #include "stage_data.h"
 
 /**************************************************************************************/
@@ -42,42 +43,39 @@ struct Ports_struct;
 /* Types */
 
 typedef struct Dcache_Stage_struct {
-  uns8       proc_id;
+  uns8 proc_id;
   Stage_Data sd; /* stage interface data */
 
-  Cache  dcache;      /* the data cache */
-  Ports* ports;       /* read and write ports to the data cache (per bank) */
-  Cache  pref_dcache; /* prefetcher cache for data cache */
+  Cache dcache;      /* the data cache */
+  Ports* ports;      /* read and write ports to the data cache (per bank) */
+  Cache pref_dcache; /* prefetcher cache for data cache */
 
-  Counter idle_cycle;  /* Cycle the cache will be idle */
-  Flag    mem_blocked; /* Are memory request buffers (aka MSHRs) full? */
+  Counter idle_cycle; /* Cycle the cache will be idle */
+  Flag mem_blocked;   /* Are memory request buffers (aka MSHRs) full? */
 
-  char rand_wb_state[31]; /* state of random number generator for random
-                             writebacks */
+  char rand_wb_state[31]; /* state of random number generator for random writebacks */
 } Dcache_Stage;
 
-
 typedef struct Dcache_Data_struct {
-  Flag dirty;       /* is the line dirty? */
-  Flag prefetch;    /* was the line prefetched? */
-  Flag HW_prefetch; /* was the hardware prefetcher - Be careful with this when
-                       using multiple prefetchers */
-  Flag
-      HW_prefetched; /* stick HW_prefetch - always set even if the data is used */
+  Flag dirty;         /* is the line dirty? */
+  Flag prefetch;      /* was the line prefetched? */
+  Flag HW_prefetch;   /* was the hardware prefetcher - Be careful with this when using multiple prefetchers */
+  Flag HW_prefetched; /* stick HW_prefetch - always set even if the data is used */
+
   uns read_count[2];  /* number of reads, including the first */
   uns write_count[2]; /* number of writes, including the first */
-  uns misc_state;     /* bit 0: was line most recently accessed by off-path op?
-                       * bit 1: was line brought into cache by off-path op? */
+
+  /* bit 0: was line most recently accessed by off-path op?
+   * bit 1: was line brought into cache by off-path op? */
+  uns misc_state;
   Counter rdy_cycle;
-  Flag    fetched_by_offpath; /* fetched by an off_path op? */
-  Addr    offpath_op_addr;    /* PC of the off path op that fetched this line */
-  Counter
-    offpath_op_unique; /* unique of the off path op that fetched this line */
+  Flag fetched_by_offpath;   /* fetched by an off_path op? */
+  Addr offpath_op_addr;      /* PC of the off path op that fetched this line */
+  Counter offpath_op_unique; /* unique of the off path op that fetched this line */
 
   Counter fetch_cycle;      /* when was this data fetched into the cache? */
   Counter onpath_use_cycle; /* when was this data last used by correct path? */
 } Dcache_Data;
-
 
 /**************************************************************************************/
 /* External variables */
@@ -99,7 +97,7 @@ void wp_process_dcache_fill(Dcache_Data* line, Mem_Req* req);
 Flag dcache_fill_line(Mem_Req*);
 void update_iso_miss(Op*);
 Flag do_oracle_dcache_access(Op*, Addr*);
-void extra_cache_access(Op *op, Cache *cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle);
+void extra_cache_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle);
 
 /**************************************************************************************/
 

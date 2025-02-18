@@ -1,18 +1,21 @@
 // CPP implementation of a cache.
 
-#include "libs/cpp_cache.h"
 #include <iostream>
+#include <limits>
 #include <list>
 #include <unordered_map>
 #include <vector>
-#include <limits>
+
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
 
+#include "libs/cpp_cache.h"
+
 extern "C" {
 #include "globals/assert.h"
-#include "globals/utils.h"
 #include "globals/global_vars.h"
+#include "globals/utils.h"
+
 #include "memory/memory.param.h"
 }
 
@@ -39,10 +42,10 @@ template <typename User_Key_Type, typename User_Data_Type>
 class Cpp_Cache {
  protected:
   std::vector<Set<User_Key_Type, User_Data_Type>> sets;
-  Repl_Policy      repl_policy;
-  uns              assoc;
-  uns              num_sets;
-  uns              line_bytes;
+  Repl_Policy repl_policy;
+  uns assoc;
+  uns num_sets;
+  uns line_bytes;
 
   // defines how to hash the key to the set index, need to be implemented by the user
   virtual uns set_idx_hash(User_Key_Type key) = 0;
@@ -54,12 +57,12 @@ class Cpp_Cache {
  public:
   Cpp_Cache() = default;
   Cpp_Cache(uns nl, uns asc, uns lb, Repl_Policy rp) {
-    assoc           = asc;
-    num_sets        = nl / assoc;
-    line_bytes      = lb;
-    repl_policy     = rp;
+    assoc = asc;
+    num_sets = nl / assoc;
+    line_bytes = lb;
+    repl_policy = rp;
 
-    sets            = std::vector<Set<User_Key_Type, User_Data_Type>>(num_sets);
+    sets = std::vector<Set<User_Key_Type, User_Data_Type>>(num_sets);
     for (uns i = 0; i < num_sets; i++) {
       sets[i].entries.resize(assoc);
     }
@@ -71,8 +74,9 @@ class Cpp_Cache {
 };
 
 template <typename User_Key_Type, typename User_Data_Type>
-void Cpp_Cache<User_Key_Type, User_Data_Type>::update_repl_states(Set<User_Key_Type, User_Data_Type>& set, uns hit_idx) {
-  switch(repl_policy) {
+void Cpp_Cache<User_Key_Type, User_Data_Type>::update_repl_states(Set<User_Key_Type, User_Data_Type>& set,
+                                                                  uns hit_idx) {
+  switch (repl_policy) {
     case REPL_TRUE_LRU: {
       set.entries[hit_idx].accessed_cycle = cycle_count;
     } break;
@@ -97,7 +101,7 @@ uns Cpp_Cache<User_Key_Type, User_Data_Type>::get_repl_idx(Set<User_Key_Type, Us
 
   // otherwise, replace according to the policy
   uns repl_idx = 0;
-  switch(repl_policy) {
+  switch (repl_policy) {
     case REPL_TRUE_LRU: {
       Counter lru_cycle = std::numeric_limits<Counter>::max();
       for (uns i = 0; i < assoc; i++) {
@@ -141,7 +145,8 @@ User_Data_Type* Cpp_Cache<User_Key_Type, User_Data_Type>::access(User_Key_Type k
 }
 
 template <typename User_Key_Type, typename User_Data_Type>
-Entry<User_Key_Type, User_Data_Type> Cpp_Cache<User_Key_Type, User_Data_Type>::insert(User_Key_Type key, User_Data_Type data) {
+Entry<User_Key_Type, User_Data_Type> Cpp_Cache<User_Key_Type, User_Data_Type>::insert(User_Key_Type key,
+                                                                                      User_Data_Type data) {
   // first check if line exists
   ASSERT(0, access(key, FALSE) == NULL);
 

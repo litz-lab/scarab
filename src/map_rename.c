@@ -29,14 +29,17 @@
 
 #include "map_rename.h"
 
-#include "debug/debug.param.h"
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
+
+#include "debug/debug.param.h"
+
 #include "isa/isa.h"
 #include "isa/isa_macros.h"
+
 #include "node_stage.h"
 #include "op.h"
 #include "thread.h"

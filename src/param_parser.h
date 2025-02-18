@@ -29,25 +29,25 @@
 #ifndef __PARAM_PARSER_H__
 #define __PARAM_PARSER_H__
 
+#include "globals/global_types.h"
 
 /**************************************************************************************/
 /* Global Variables */
 
 extern const char* sim_mode_names[];
 
-
 /**************************************************************************************/
 /* Prototypes */
 
-char** get_params(int, char* []);
-void   get_bp_mech_param(const char*, uns*);
-void   get_btb_mech_param(const char*, uns*);
-void   get_ibtb_mech_param(const char*, uns*);
-void   get_conf_mech_param(const char*, uns*);
-void   get_sim_mode_param(const char*, Generic_Enum*);
-void   get_exit_cond_param(const char*, Generic_Enum*);
-void   get_sim_model_param(const char*, uns*);
-void   get_frontend_param(const char*, uns*);
+char** get_params(int, char*[]);
+void get_bp_mech_param(const char*, uns*);
+void get_btb_mech_param(const char*, uns*);
+void get_ibtb_mech_param(const char*, uns*);
+void get_conf_mech_param(const char*, uns*);
+void get_sim_mode_param(const char*, Generic_Enum*);
+void get_exit_cond_param(const char*, Generic_Enum*);
+void get_sim_model_param(const char*, uns*);
+void get_frontend_param(const char*, uns*);
 // void get_dram_sched_param(const char *, uns *); // Ramulator_remove
 void get_float_param(const char*, float*);
 void get_int_param(const char*, int*);
@@ -57,7 +57,6 @@ void get_Flag_param(const char*, uns8*);
 void get_string_param(const char*, char**);
 void get_strlist_param(const char*, char***);
 void get_uns64_param(const char*, uns64*);
-
 
 /**************************************************************************************/
 

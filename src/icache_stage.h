@@ -30,12 +30,14 @@
 #define __ICACHE_STAGE_H__
 
 #include "globals/global_types.h"
-#include "libs/cache_lib.h"
-#include "stage_data.h"
-#include "decoupled_frontend.h"
 
-#define IC_ISSUE_WIDTH  ISSUE_WIDTH - DECODE_PATH_WIDTH_NARROWER
-#define UOPC_ISSUE_WIDTH  ISSUE_WIDTH
+#include "libs/cache_lib.h"
+
+#include "decoupled_frontend.h"
+#include "stage_data.h"
+
+#define IC_ISSUE_WIDTH ISSUE_WIDTH - DECODE_PATH_WIDTH_NARROWER
+#define UOPC_ISSUE_WIDTH ISSUE_WIDTH
 
 /**************************************************************************************/
 /* Forward Declarations */
@@ -81,7 +83,7 @@ typedef enum FT_Arbitration_Result_enum {
 } FT_Arbitration_Result;
 
 typedef struct Icache_Stage_struct {
-  uns8       proc_id;
+  uns8 proc_id;
   /* two data paths: */
   /* uops fetched from uop cache go to uopc_sd, otherwise sd */
   Stage_Data sd; /* stage interface data */
@@ -90,40 +92,34 @@ typedef struct Icache_Stage_struct {
   uns8 icache_lookups_per_cycle_count;
   uns8 uop_cache_lookups_per_cycle_count;
 
-  Icache_State state; /* state that the ICACHE is in */
-  Icache_State
-    next_state; /* state that the ICACHE is going to be in next cycle */
+  Icache_State state;           /* state that the ICACHE is in */
+  Icache_State next_state;      /* state that the ICACHE is going to be in next cycle */
   uint64_t wait_for_miss_start; /* time when cache miss was observed */
   Flag icache_miss_fulfilled;
   Flag icache_stage_resteer_signaled;
 
-  Inst_Info** line;   /* pointer to current line on a hit */
-  Addr        line_addr;       /* address of the last cache line hit */
-  Addr        fetch_addr;      /* address to fetch or fetching */
+  Inst_Info** line; /* pointer to current line on a hit */
+  Addr line_addr;   /* address of the last cache line hit */
+  Addr fetch_addr;  /* address to fetch or fetching */
   // keep track of the current FT being used by the icache / uop cache
   FT* current_ft_used_by_uop_cache;
   FT* current_ft_used_by_icache;
-  Flag        off_path;        /* is the icache fetching on the correct path? */
-  Flag back_on_path; /* did a recovery happen to put the machine back on path?
-                      */
+  Flag off_path;     /* is the icache fetching on the correct path? */
+  Flag back_on_path; /* did a recovery happen to put the machine back on path? */
 
-  Counter rdy_cycle; /* cycle that the henry icache will return data (only used
-                        in henry model) */
+  Counter rdy_cycle; /* cycle that the henry icache will return data (only used in henry model) */
 
   Cache icache;           /* the cache storage structure (caches Inst_Info *) */
   Cache icache_line_info; /* contains info about the icache lines */
-  Cache
-       pref_icache; /* Prefetcher cache storage structure (caches Inst_Info *) */
-  char rand_wb_state[31]; /* State of random number generator for random
-                             writeback */
+  Cache pref_icache;      /* Prefetcher cache storage structure (caches Inst_Info *) */
+  char rand_wb_state[31]; /* State of random number generator for random writeback */
 } Icache_Stage;
 
 typedef struct Icache_Data_struct {
-  Flag fetched_by_offpath; /* fetched by an off_path op? */
-  Addr offpath_op_addr;    /* PC of the off path op that fetched this line */
-  Counter
-       offpath_op_unique; /* unique of the off path op that fetched this line */
-  uns  read_count[2];
+  Flag fetched_by_offpath;   /* fetched by an off_path op? */
+  Addr offpath_op_addr;      /* PC of the off path op that fetched this line */
+  Counter offpath_op_unique; /* unique of the off path op that fetched this line */
+  uns read_count[2];
   Flag HW_prefetch;
   uns FDIP_prefetch;
   uint64_t ghist;
@@ -131,7 +127,6 @@ typedef struct Icache_Data_struct {
   Counter fetch_cycle;
   Counter onpath_use_cycle;
 } Icache_Data;
-
 
 /**************************************************************************************/
 /* External Variables */

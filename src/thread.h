@@ -30,9 +30,10 @@
 #define __THREAD_H__
 
 #include "globals/global_types.h"
-#include "libs/list_lib.h"
-#include "map.h"
 
+#include "libs/list_lib.h"
+
+#include "map.h"
 
 /**************************************************************************************/
 /* Types */
@@ -45,7 +46,7 @@ typedef struct Thread_Info_struct {
   int low_conf_count;
   int fetch_throttle_adjust;
   // int fetch_throttle_br_th_adjust;
-  Op*     last_bp_miss_op;
+  Op* last_bp_miss_op;
   Counter corrpred_counter;
   Counter mispred_counter;
   Counter last_l1_miss_time;
@@ -53,17 +54,15 @@ typedef struct Thread_Info_struct {
 
 ////////////////////////////////////////////////////////////////////////////////////////
 
-
 typedef struct Thread_struct {
-  uns8     proc_id;
+  uns8 proc_id;
   Map_Data map_data;
-  List     seq_op_list;
+  List seq_op_list;
   ///////////////////////////////////////////////////
   // Pipeline Gating
   Thread_Info td_info;
   ///////////////////////////////////////////////////
 } Thread_Data;
-
 
 /**************************************************************************************/
 /* External variables */
@@ -71,19 +70,18 @@ typedef struct Thread_struct {
 extern Thread_Data* td; /* here for now, variable declared in sim.c */
 /* if we ever go MT, this will turn into an array */
 
-
 /**************************************************************************************/
 /* Prototypes */
 
 void set_thread_data(Thread_Data*);
-void init_thread(Thread_Data*, char* [], char* []);
+void init_thread(Thread_Data*, char*[], char*[]);
 void recover_thread(Thread_Data*, Addr, Counter, uns64, Flag);
 void add_to_seq_op_list(Thread_Data*, Op*);
 void remove_from_seq_op_list(Thread_Data*, Op*);
 void thread_map_op(Op*);
 void thread_map_mem_dep(Op*);
 void recover_seq_op_list(Thread_Data*, Counter);
-Op*  remove_next_from_seq_op_list(Thread_Data*);
+Op* remove_next_from_seq_op_list(Thread_Data*);
 void reset_seq_op_list(Thread_Data*);
 
 /**************************************************************************************/

@@ -1,25 +1,28 @@
 #include "decoupled_frontend.h"
+
+#include <cmath>
+#include <deque>
+#include <iostream>
+#include <tuple>
+#include <vector>
+
+#include "memory/memory.param.h"
+#include "prefetcher/pref.param.h"
+
 #include "frontend/frontend_intf.h"
+#include "isa/isa_macros.h"
+
 #include "op.h"
 #include "op_pool.h"
 #include "thread.h"
-#include "isa/isa_macros.h"
-#include "prefetcher/pref.param.h"
-#include "memory/memory.param.h"
-
-#include <deque>
-#include <vector>
-#include <iostream>
-#include <tuple>
-#include <cmath>
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
-class FT{
+class FT {
  public:
   FT(uns _proc_id);
   void set_ft_started_by(FT_Started_By ft_started_by);
-  void add_op(Op *op, FT_Ended_By ft_ended_by);
+  void add_op(Op* op, FT_Ended_By ft_ended_by);
   void free_ops_and_clear();
   bool can_fetch_op();
   Op* fetch_op();
@@ -40,7 +43,7 @@ class FT{
 };
 
 class Decoupled_FE {
-public:
+ public:
   Decoupled_FE(uns _proc_id);
   int is_off_path() { return off_path; }
   void recover();
@@ -57,7 +60,7 @@ public:
   void set_ftq_num(uint64_t set_ftq_ft_num) { ftq_ft_num = set_ftq_ft_num; }
   uint64_t get_ftq_num() { return ftq_ft_num; }
 
-private:
+ private:
   void init(uns proc_id);
 
   uns proc_id;
@@ -105,14 +108,14 @@ void set_decoupled_fe(uns proc_id) {
   ASSERT(proc_id, dfe);
 }
 
-void reset_decoupled_fe() {}
+void reset_decoupled_fe() {
+}
 
 void recover_decoupled_fe() {
   dfe->recover();
 }
 
 void debug_decoupled_fe() {
-
 }
 
 void update_decoupled_fe() {
@@ -159,7 +162,7 @@ uint64_t decoupled_fe_ftq_num_fts() {
   return dfe->ftq_num_fts();
 }
 
-void decoupled_fe_retire(Op *op, int op_proc_id, uns64 inst_uid) {
+void decoupled_fe_retire(Op* op, int op_proc_id, uns64 inst_uid) {
   dfe->retire(op, op_proc_id, inst_uid);
 }
 
@@ -203,9 +206,8 @@ Op* FT::fetch_op() {
   Op* op = ops[op_pos];
   op_pos++;
 
-  DEBUG(proc_id,
-        "Fetch op from FT fetch_addr0x:%llx off_path:%i op_num:%llu\n",
-        op->inst_info->addr, op->off_path, op->op_num);
+  DEBUG(proc_id, "Fetch op from FT fetch_addr0x:%llx off_path:%i op_num:%llu\n", op->inst_info->addr, op->off_path,
+        op->op_num);
 
   return op;
 }
@@ -220,7 +222,7 @@ void FT::set_ft_started_by(FT_Started_By ft_started_by) {
   ft_info.dynamic_info.started_by = ft_started_by;
 }
 
-void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
+void FT::add_op(Op* op, FT_Ended_By ft_ended_by) {
   if (ops.empty()) {
     ASSERT(proc_id, op->bom && !ft_info.static_info.start);
     ft_info.static_info.start = op->inst_info->addr;
@@ -228,8 +230,7 @@ void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
   } else {
     if (op->bom) {
       // assert consecutivity
-      ASSERT(proc_id, ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size
-                      == op->inst_info->addr);
+      ASSERT(proc_id, ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size == op->inst_info->addr);
     } else {
       // assert all uops of the same inst share the same addr
       ASSERT(proc_id, ops.back()->inst_info->addr == op->inst_info->addr);
@@ -249,19 +250,16 @@ void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
       if (ft_info.static_info.n_uops <= (int)ISSUE_WIDTH) {
         if (ft_info.dynamic_info.started_by == FT_STARTED_BY_ICACHE_LINE_BOUNDARY) {
           STAT_EVENT(proc_id, FT_SHORT_ICACHE_LINE_BOUNDARY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1);
-          INC_STAT_EVENT(proc_id,
-                        FT_SHORT_UOP_LOST_ICACHE_LINE_BOUNDARY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
-                        ISSUE_WIDTH - ft_info.static_info.n_uops);
+          INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_ICACHE_LINE_BOUNDARY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
+                         ISSUE_WIDTH - ft_info.static_info.n_uops);
         } else if (ft_info.dynamic_info.started_by == FT_STARTED_BY_TAKEN_BRANCH) {
           STAT_EVENT(proc_id, FT_SHORT_TAKEN_BRANCH_ICACHE_LINE_BOUNDARY + ft_ended_by - 1);
-          INC_STAT_EVENT(proc_id,
-                        FT_SHORT_UOP_LOST_TAKEN_BRANCH_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
-                        ISSUE_WIDTH - ft_info.static_info.n_uops);
+          INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_TAKEN_BRANCH_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
+                         ISSUE_WIDTH - ft_info.static_info.n_uops);
         } else if (ft_info.dynamic_info.started_by == FT_STARTED_BY_RECOVERY) {
           STAT_EVENT(proc_id, FT_SHORT_RECOVERY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1);
-          INC_STAT_EVENT(proc_id,
-                        FT_SHORT_UOP_LOST_RECOVERY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
-                        ISSUE_WIDTH - ft_info.static_info.n_uops);
+          INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_RECOVERY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
+                         ISSUE_WIDTH - ft_info.static_info.n_uops);
         } else {
           STAT_EVENT(proc_id, FT_SHORT_OTHER + ft_ended_by - 1);
           INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_OTHER, ISSUE_WIDTH - ft_info.static_info.n_uops);
@@ -331,7 +329,6 @@ void Decoupled_FE::init(uns _proc_id) {
   current_ft_to_push.set_ft_started_by(FT_STARTED_BY_APP);
 }
 
-
 void Decoupled_FE::recover() {
   off_path = false;
   sched_off_path = false;
@@ -346,8 +343,7 @@ void Decoupled_FE::recover() {
   current_ft_to_push.set_ft_started_by(FT_STARTED_BY_RECOVERY);
 
   dfe_op_count = bp_recovery_info->recovery_op_num + 1;
-  DEBUG(proc_id,
-        "Recovery signalled fetch_addr0x:%llx\n", bp_recovery_info->recovery_fetch_addr);
+  DEBUG(proc_id, "Recovery signalled fetch_addr0x:%llx\n", bp_recovery_info->recovery_fetch_addr);
 
   for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
     // When the FTQ flushes, reset all iterators
@@ -358,9 +354,8 @@ void Decoupled_FE::recover() {
 
   auto op = bp_recovery_info->recovery_op;
 
-  if(stalled) {
-    DEBUG(proc_id,
-          "Unstalled off-path fetch barrier due to recovery fetch_addr0x:%llx off_path:%i op_num:%llu\n",
+  if (stalled) {
+    DEBUG(proc_id, "Unstalled off-path fetch barrier due to recovery fetch_addr0x:%llx off_path:%i op_num:%llu\n",
           op->inst_info->addr, op->off_path, op->op_num);
     stalled = false;
   }
@@ -375,7 +370,7 @@ void Decoupled_FE::recover() {
   INC_STAT_EVENT(proc_id, FTQ_OFFPATH_CYCLES, offpath_cycles);
   redirect_cycle = 0;
 
-  //FIXME always fetch off path ops? should we get rid of this parameter?
+  // FIXME always fetch off path ops? should we get rid of this parameter?
   frontend_recover(proc_id, bp_recovery_info->recovery_inst_uid);
   ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == frontend_next_fetch_addr(proc_id),
           "Scarab's recovery addr 0x%llx does not match frontend's recovery "
@@ -391,7 +386,7 @@ void Decoupled_FE::update() {
   fwd_progress++;
   if (fwd_progress >= 100000) {
     std::cout << "No forward progress for 1000000 cycles" << std::endl;
-    ASSERT(0,0);
+    ASSERT(0, 0);
   }
   if (off_path)
     STAT_EVENT(proc_id, FTQ_CYCLES_OFFPATH);
@@ -401,7 +396,7 @@ void Decoupled_FE::update() {
   // pop used fts in the front of the ftq
   pop_fts();
 
-  while(1) {
+  while (1) {
     ASSERT(proc_id, ftq_num_fts() <= ftq_ft_num);
     ASSERT(proc_id, cfs_taken_this_cycle <= FE_FTQ_TAKEN_CFS_PER_CYCLE);
 
@@ -458,16 +453,15 @@ void Decoupled_FE::update() {
     op->op_num = dfe_op_count++;
     op->off_path = off_path;
 
-    if(op->table_info->cf_type) {
+    if (op->table_info->cf_type) {
       ASSERT(proc_id, op->eom);
       pred_addr = bp_predict_op(g_bp_data, op, cf_num++, op->inst_info->addr);
       DEBUG(proc_id,
-            "Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%lx mispred:%i misfetch:%i btb miss:%i taken:%i recover_at_decode:%i recover_at_exec:%i off_path:%i bar_fetch:%i\n",
-            op->inst_info->addr, op->oracle_info.npc, pred_addr,
-            op->oracle_info.mispred, op->oracle_info.misfetch,
-            op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN,
-            op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec,
-            off_path, op->table_info->bar_type & BAR_FETCH);
+            "Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%lx mispred:%i misfetch:%i btb miss:%i taken:%i "
+            "recover_at_decode:%i recover_at_exec:%i off_path:%i bar_fetch:%i\n",
+            op->inst_info->addr, op->oracle_info.npc, pred_addr, op->oracle_info.mispred, op->oracle_info.misfetch,
+            op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN, op->oracle_info.recover_at_decode,
+            op->oracle_info.recover_at_exec, off_path, op->table_info->bar_type & BAR_FETCH);
 
       /* On fetch barrier stall the frontend. Ignore BTB misses here as the exec frontend cannot
          handle recovery/execution until syscalls retire. This is ok as stalling causes the same
@@ -482,7 +476,7 @@ void Decoupled_FE::update() {
         stall(op);
       }
 
-      if(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
+      if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
         ASSERT(0, (int)op->oracle_info.recover_at_decode + (int)op->oracle_info.recover_at_exec < 2);
         /* If already on the off-path do not schedule recovery as scarab cannot recover OOO
            (An older op may recover at exec and a younger op may recover at decode)
@@ -499,9 +493,8 @@ void Decoupled_FE::update() {
       else if (trace_mode && off_path && op->oracle_info.pred == TAKEN) {
         frontend_redirect(proc_id, op->inst_uid, pred_addr);
       }
-    }
-    else {
-      ASSERT(0,!(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
+    } else {
+      ASSERT(0, !(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
       /* On fetch barrier stall the frontend. */
       if (op->table_info->bar_type & BAR_FETCH) {
         if (off_path)
@@ -519,7 +512,7 @@ void Decoupled_FE::update() {
     FT_Ended_By ft_ended_by = FT_NOT_ENDED;
     if (op->eom) {
       uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
-                    ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
+                   ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
       bool end_of_icache_line = offset >= ICACHE_LINE_SIZE;
       bool cf_taken = op->table_info->cf_type && op->oracle_info.pred == TAKEN;
       bool bar_fetch = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH;
@@ -542,7 +535,8 @@ void Decoupled_FE::update() {
     // ft_ended_by != FT_NOT_ENDED indicates the end of the current fetch target
     // it is now ready to be pushed to the queue
     if (ft_ended_by != FT_NOT_ENDED) {
-      ASSERT(proc_id, current_ft_to_push.ft_info.static_info.start && current_ft_to_push.ft_info.static_info.length && current_ft_to_push.ops.size());
+      ASSERT(proc_id, current_ft_to_push.ft_info.static_info.start && current_ft_to_push.ft_info.static_info.length &&
+                          current_ft_to_push.ops.size());
       ASSERT(proc_id, current_ft_to_push.ops.front()->bom && current_ft_to_push.ops.back()->eom);
       current_ft_to_push.set_per_op_ft_info();
       if (!ftq.empty()) {
@@ -552,9 +546,11 @@ void Decoupled_FE::update() {
           ASSERT(proc_id, last_op->oracle_info.pred_npc == current_ft_to_push.ft_info.static_info.start);
         } else if (ftq.back().ft_info.dynamic_info.ended_by == FT_BAR_FETCH) {
           ASSERT(proc_id, last_op->oracle_info.pred_npc == current_ft_to_push.ft_info.static_info.start ||
-                              last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == current_ft_to_push.ft_info.static_info.start);
+                              last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size ==
+                                  current_ft_to_push.ft_info.static_info.start);
         } else {
-          ASSERT(proc_id, last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == current_ft_to_push.ft_info.static_info.start);
+          ASSERT(proc_id, last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size ==
+                              current_ft_to_push.ft_info.static_info.start);
         }
       }
       ftq.emplace_back(current_ft_to_push);
@@ -571,14 +567,14 @@ void Decoupled_FE::update() {
 
     if (off_path) {
       STAT_EVENT(proc_id, FTQ_FETCHED_INS_OFFPATH);
-    }
-    else {
+    } else {
       STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH);
     }
-      
+
     DEBUG(proc_id,
           "Push new op to FTQ fetch_addr0x:%llx off_path:%i op_num:%llu dis:%s recovery_addr:%lx fetch_bar:%i\n",
-          op->inst_info->addr, op->off_path, op->op_num, disasm_op(op, TRUE), recovery_addr, op->table_info->bar_type & BAR_FETCH);
+          op->inst_info->addr, op->off_path, op->op_num, disasm_op(op, TRUE), recovery_addr,
+          op->table_info->bar_type & BAR_FETCH);
     // Recovery sanity check
     if (recovery_addr) {
       ASSERT(proc_id, recovery_addr == op->inst_info->addr);
@@ -636,7 +632,7 @@ Op* Decoupled_FE::ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft) {
   return ftq.at(iter->ft_pos).ops[iter->op_pos];
 }
 
-Op* Decoupled_FE::ftq_iter_get_next(decoupled_fe_iter* iter, bool *end_of_ft) {
+Op* Decoupled_FE::ftq_iter_get_next(decoupled_fe_iter* iter, bool* end_of_ft) {
   if (iter->ft_pos + 1 == ftq.size() && iter->op_pos + 1 == ftq.at(iter->ft_pos).ops.size()) {
     // if iter is at the last op and the last FT
     iter->ft_pos += 1;
@@ -671,15 +667,14 @@ uint64_t Decoupled_FE::ftq_num_ops() {
   return num_ops;
 }
 
-void Decoupled_FE::stall(Op *op) {
+void Decoupled_FE::stall(Op* op) {
   stalled = true;
-  DEBUG(proc_id,
-        "Decoupled fetch stalled due to barrier fetch_addr0x:%llx off_path:%i op_num:%llu\n",
+  DEBUG(proc_id, "Decoupled fetch stalled due to barrier fetch_addr0x:%llx off_path:%i op_num:%llu\n",
         op->inst_info->addr, op->off_path, op->op_num);
 }
 
-void Decoupled_FE::retire(Op *op, int op_proc_id, uns64 inst_uid) {
-  if((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
+void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
+  if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
     stalled = false;
     DEBUG(proc_id,
           "Decoupled fetch unstalled due to retired barrier fetch_addr0x:%llx off_path:%i op_num:%llu list_count:%i\n",
@@ -687,6 +682,6 @@ void Decoupled_FE::retire(Op *op, int op_proc_id, uns64 inst_uid) {
     ASSERT(proc_id, td->seq_op_list.count == 1);
   }
 
-  //unblock pin exec driven, trace frontends do not need to block/unblock
+  // unblock pin exec driven, trace frontends do not need to block/unblock
   frontend_retire(op_proc_id, inst_uid);
 }

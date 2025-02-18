@@ -140,7 +140,7 @@ void frontend_retire(uns proc_id, uns64 inst_uid) {
 }
 
 static void collect_op_stats(Op* op) {
-  if(!ic || !ic->off_path) {
+  if (!op->off_path) {
     STAT_EVENT(op->proc_id, ST_OP_ONPATH);
     if(op->eom)
       STAT_EVENT(op->proc_id, ST_INST_ONPATH);

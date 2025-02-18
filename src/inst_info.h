@@ -41,6 +41,13 @@
 
 
 /**************************************************************************************/
+enum reg_table_type {
+  REG_TABLE_TYPE_ARCHITECTURAL,
+  REG_TABLE_TYPE_PHYSICAL,
+  REG_TABLE_TYPE_VIRTUAL,
+  REG_TABLE_TYPE_NUM,
+};
+
 // {{{ Reg_Type
 typedef enum Reg_Type_enum {
   INT_REG,

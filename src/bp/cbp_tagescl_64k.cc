@@ -614,7 +614,8 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
   if (LVALID) {
     if (pred_taken != predloop) ctrupdate(WITHLOOP, (predloop == resolveDir), 7);
   }
-  loopupdate(PC, resolveDir, (pred_taken != resolveDir));
+  SpecLoopUpdate(PC, resolveDir);
+  LoopUpdate(PC, resolveDir, (pred_taken != resolveDir), LHIT);
 #endif
 
   bool SCPRED = (LSUM >= 0);
@@ -917,80 +918,94 @@ bool TAGE64K::getloop(UINT64 PC) {
   return (false);
 }
 
-void TAGE64K::loopupdate(UINT64 PC, bool Taken, bool ALLOC) {
-  if (LHIT >= 0) {
-    int index = (LI ^ ((LIB >> LHIT) << 2)) + LHIT;
-    // already a hit
-    if (LVALID) {
-      if (Taken != predloop) {
-        // free the entry
-        ltable[index].NbIter = 0;
-        ltable[index].age = 0;
-        ltable[index].confid = 0;
-        ltable[index].CurrentIter = 0;
-        return;
+void TAGE64K::SpecLoopUpdate(UINT64 PC, bool Taken) {
+  if (LHIT < 0)
+    return;
+  // Calculate index into loop predictor table
+  int index = (LI ^ ((LIB >> LHIT) << 2)) + LHIT;
+  auto& entry = ltable[index];
 
-      } else if ((predloop != tage_pred) || ((MYRANDOM() & 7) == 0))
-        if (ltable[index].age < CONFLOOP) ltable[index].age++;
+  // Handle valid loop prediction
+  if (LVALID) {
+    if (Taken != predloop) {
+      // Free the entry on misprediction
+      entry.NbIter = 0;
+      entry.age = 0;
+      entry.confid = 0;
+      entry.CurrentIter = 0;
+      return;
     }
+    // Increment age when prediction differs from TAGE or randomly
+    if ((predloop != tage_pred) || ((MYRANDOM() & 7) == 0))
+      if (entry.age < CONFLOOP)
+        entry.age++;
+  }
 
-    ltable[index].CurrentIter++;
-    ltable[index].CurrentIter &= ((1 << WIDTHNBITERLOOP) - 1);
-    // loop with more than 2** WIDTHNBITERLOOP iterations are not treated correctly; but who cares :-)
-    if (ltable[index].CurrentIter > ltable[index].NbIter) {
-      ltable[index].confid = 0;
-      ltable[index].NbIter = 0;
-      // treat like the 1st encounter of the loop
-    }
-    if (Taken != ltable[index].dir) {
-      if (ltable[index].CurrentIter == ltable[index].NbIter) {
-        if (ltable[index].confid < CONFLOOP) ltable[index].confid++;
-        if (ltable[index].NbIter < 3)
-        // just do not predict when the loop count is 1 or 2
-        {
-          // free the entry
-          ltable[index].dir = Taken;
-          ltable[index].NbIter = 0;
-          ltable[index].age = 0;
-          ltable[index].confid = 0;
-        }
+  // Update iteration counter
+  entry.CurrentIter++;
+  entry.CurrentIter &= ((1 << WIDTHNBITERLOOP) - 1);
+
+  // Reset on overflow
+  if (entry.CurrentIter > entry.NbIter) {
+    entry.confid = 0;
+    entry.NbIter = 0;
+  }
+
+  // Handle direction change
+  if (Taken != entry.dir) {
+    if (entry.CurrentIter == entry.NbIter) {
+      // Increment confidence if not saturated
+      if (entry.confid < CONFLOOP)
+        entry.confid++;
+      // Free entry for small loops (1-2 iterations)
+      if (entry.NbIter < 3) {
+        entry.dir = Taken;
+        entry.NbIter = 0;
+        entry.age = 0;
+        entry.confid = 0;
+      }
+    } else {
+      // Handle first complete iteration or mismatch
+      if (entry.NbIter == 0) {
+        entry.confid = 0;
+        entry.NbIter = entry.CurrentIter;
       } else {
-        if (ltable[index].NbIter == 0) {
-          // first complete nest;
-          ltable[index].confid = 0;
-          ltable[index].NbIter = ltable[index].CurrentIter;
-        } else {
-          // not the same number of iterations as last time: free the entry
-          ltable[index].NbIter = 0;
-          ltable[index].confid = 0;
-        }
+        // Free entry on iteration count mismatch
+        entry.NbIter = 0;
+        entry.confid = 0;
       }
-      ltable[index].CurrentIter = 0;
     }
+    entry.CurrentIter = 0;
+  }
+}
 
-  } else if (ALLOC)
+void TAGE64K::LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, int lhit) {
+  if (lhit >= 0) {
+    return;
+  }
 
-  {
-    UINT64 X = MYRANDOM() & 3;
+  if (!ALLOC)
+    return;
 
-    if ((MYRANDOM() & 3) == 0)
-      for (int i = 0; i < 4; i++) {
-        int LHIT = (X + i) & 3;
-        int index = (LI ^ ((LIB >> LHIT) << 2)) + LHIT;
-        if (ltable[index].age == 0) {
-          ltable[index].dir = !Taken;
-          // most of mispredictions are on last iterations
-          ltable[index].TAG = LTAG;
-          ltable[index].NbIter = 0;
-          ltable[index].age = 7;
-          ltable[index].confid = 0;
-          ltable[index].CurrentIter = 0;
-          break;
-
-        } else
-          ltable[index].age--;
-        break;
-      }
+  UINT64 X = MYRANDOM() & 3;
+  // 25% chance to attempt allocation
+  if ((MYRANDOM() & 3) != 0)
+    return;
+  for (int i = 0; i < 4; i++) {
+    int LHIT = (X + i) & 3;
+    int index = (LI ^ ((LIB >> LHIT) << 2)) + LHIT;
+    if (ltable[index].age == 0) {
+      ltable[index].dir = !Taken;
+      // most of mispredictions are on last iterations
+      ltable[index].TAG = LTAG;
+      ltable[index].NbIter = 0;
+      ltable[index].age = 7;
+      ltable[index].confid = 0;
+      ltable[index].CurrentIter = 0;
+      break;
+    } else
+      ltable[index].age--;
+    break;
   }
 }
 #endif

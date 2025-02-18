@@ -414,7 +414,8 @@ class TAGE64K {
   void TrackOtherInst(UINT64 PC, OpType opType, bool taken, UINT64 branchTarget);
   int lindex(UINT64 PC);
   bool getloop(UINT64 PC);
-  void loopupdate(UINT64 PC, bool Taken, bool ALLOC);
+  void SpecLoopUpdate(UINT64 PC, bool Taken);
+  void LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, int lhit);
 
   // LP START
   cbp64_lentry* ltable;  // loop predictor table

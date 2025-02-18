@@ -30,6 +30,7 @@
 #define __FDIP_CONF_H__
 
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 #include "prefetcher/fdip.h"
@@ -63,6 +64,7 @@ typedef enum CONF_OFF_PATH_REASON_enum {
 
 // typedefs for phase cycles csvs
 typedef std::tuple<Counter, Counter, Counter, double> phase_cycles_line;
+typedef std::tuple<Counter, Counter, Off_Path_Reason> fdip_to_resolution_line;
 
 // metadata for fdip confidence
 // NOTE: Does it make sense to have this?
@@ -144,6 +146,7 @@ public:
        last_mispred_recover_cycle(0),
        cnt_on_path_instructions(0),
        effective_ipc(0.0),
+       cnt_total_ops(0),
        low_confidence_cnt(0),
        cf_op_distance(0.0) {
    conf_info = new FDIP_Confidence_Info(_proc_id);
@@ -162,7 +165,10 @@ public:
   void inc_cnt_misfetch() { cnt_misfetch++; };
   void inc_cnt_mispred() { cnt_mispred++; };
   void inc_cnt_on_path_insts() { cnt_on_path_instructions++; };
+  void inc_cnt_total_ops() { cnt_total_ops++; };
   void print_recovery_cycles();
+  void log_off_path_event(Op* op);
+  void log_resolution(Op* op);
 
  private:
   void default_conf_update(Op* op);
@@ -194,6 +200,7 @@ public:
 
   Counter cnt_on_path_instructions;
   double effective_ipc;
+  Counter cnt_total_ops;
 
   //confidence counter
   uns low_confidence_cnt;
@@ -211,6 +218,9 @@ public:
   std::vector<phase_cycles_line> mispred_event_cycles;
   // cycles since resteer, cycles since last misfetch event, phase, misfetch rate
   std::vector<phase_cycles_line> misfetch_event_cycles;
+  // for analyzing cycles between a resteer op reaching FDIP and triggering the recovery
+  std::unordered_map<Counter, fdip_to_resolution_line> resteer_ops_cycles;
+  std::unordered_map<Counter, fdip_to_resolution_line> resteer_ops_ops;
 };
 
 #endif

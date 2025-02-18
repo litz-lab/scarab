@@ -129,6 +129,7 @@ void FDIP_Conf::recover(Op* op) {
   low_confidence_cnt = 0;
   cf_op_distance = 0.0;
   conf_info->recover();
+  log_resolution(op);
 }
 
 void FDIP_Conf::set_prev_op(Op* prev_op, Flag off_path) {
@@ -138,6 +139,7 @@ void FDIP_Conf::set_prev_op(Op* prev_op, Flag off_path) {
   conf_info->fdip_off_path_event = off_path;
   if (!fdip_off_path())
     inc_cnt_on_path_insts();
+  inc_cnt_total_ops();
 }
 
 void FDIP_Conf::update(Op* op) {
@@ -263,6 +265,7 @@ void FDIP_Conf::fine_grained_conf_update(Op* op) {
   if (low_confidence_cnt == ~0U)
     return;
   log_phase_cycles(op);
+  log_off_path_event(op);
   Conf_Off_Path_Reason conf_op_reason = REASON_INVALID;
   if (FDIP_PERFECT_BTB_MISS_CONF || FDIP_PERFECT_IBTB_MISS_CONF || FDIP_PERFECT_MISFETCH_CONF ||
       FDIP_PERFECT_MISPRED_CONF)
@@ -469,6 +472,24 @@ void FDIP_Conf::print_recovery_cycles() {
     }
     fclose(fp);
   }
+  if (FDIP_LOG_FDIP_TO_REC) {
+    fp = fopen("off_path_events_cycles.csv", "w");
+    fprintf(fp, "op_num,fdip_cycle,resolved_cycle,off_path_reason\n");
+    for (const std::pair<const Counter, std::tuple<Counter, Counter, Off_Path_Reason>>& line : resteer_ops_cycles) {
+      fprintf(fp, "%llu,%llu,%llu,%d", line.first, std::get<0>(line.second), std::get<1>(line.second),
+              std::get<2>(line.second));
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
+    fp = fopen("off_path_events_ops.csv", "w");
+    fprintf(fp, "op_num,fdip_num_ops,resolved_num_ops,off_path_reason\n");
+    for (const std::pair<const Counter, std::tuple<Counter, Counter, Off_Path_Reason>>& line : resteer_ops_ops) {
+      fprintf(fp, "%llu,%llu,%llu,%d", line.first, std::get<0>(line.second), std::get<1>(line.second),
+              std::get<2>(line.second));
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
+  }
 }
 
 void FDIP_Conf::log_phase_cycles(Op* op) {
@@ -516,4 +537,32 @@ void FDIP_Conf::log_phase_cycles(Op* op) {
       ASSERT(proc_id, 0);
     }
   }
+}
+
+// first seen by FDIP
+void FDIP_Conf::log_off_path_event(Op* op) {
+  if (!FDIP_BP_CONFIDENCE || !FDIP_LOG_FDIP_TO_REC)
+    return;
+  Off_Path_Reason off_path_reason = eval_off_path_reason(op);
+  if (!off_path_reason)
+    return;
+  std::get<0>(resteer_ops_cycles[op->op_num]) = cycle_count;
+  std::get<1>(resteer_ops_cycles[op->op_num]) = 0;
+  std::get<2>(resteer_ops_cycles[op->op_num]) = off_path_reason;
+
+  std::get<0>(resteer_ops_ops[op->op_num]) = cnt_total_ops;
+  std::get<1>(resteer_ops_ops[op->op_num]) = 0;
+  std::get<2>(resteer_ops_ops[op->op_num]) = off_path_reason;
+}
+
+// resolved
+void FDIP_Conf::log_resolution(Op* op) {
+  if (!FDIP_BP_CONFIDENCE || !FDIP_LOG_FDIP_TO_REC)
+    return;
+  std::get<1>(resteer_ops_cycles[op->op_num]) = cycle_count;
+  std::get<2>(resteer_ops_cycles[op->op_num]) = eval_off_path_reason(op);
+
+  std::get<1>(resteer_ops_cycles[op->op_num]) = cnt_total_ops;
+  std::get<2>(resteer_ops_cycles[op->op_num]) = eval_off_path_reason(op);
+  DEBUG(proc_id, "Op off-path reason");
 }

@@ -246,7 +246,7 @@ void print_cl_info(uns proc_id) {
 }
 
 void print_recovery_cycles(uns proc_id) {
-  if (!FDIP_ENABLE || !FDIP_LOG_PHASE_CYCLES)
+  if (!FDIP_ENABLE)
     return;
   per_core_fdip[proc_id].print_recovery_cycles();
 }

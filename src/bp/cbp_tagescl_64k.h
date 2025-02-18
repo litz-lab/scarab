@@ -16,12 +16,12 @@
 // To get the predictor storage budget on stderr  uncomment the next line
 #define PRINTSIZE
 #include <algorithm>
-#include <sstream>
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/sequenced_index.hpp>
 #include <boost/multi_index_container.hpp>
 #include <memory>
+#include <sstream>
 #include <vector>
 
 #define SC    // 8.2 % if TAGE alone
@@ -67,10 +67,8 @@ class cbp64_folded_history {
   }
 
   bool operator==(const cbp64_folded_history& other) const {
-    return (comp == other.comp) &&
-        (CLENGTH == other.CLENGTH) &&
-        (OLENGTH == other.OLENGTH) &&
-        (OUTPOINT == other.OUTPOINT);
+    return (comp == other.comp) && (CLENGTH == other.CLENGTH) && (OLENGTH == other.OLENGTH) &&
+           (OUTPOINT == other.OUTPOINT);
   }
 };
 
@@ -86,9 +84,7 @@ class cbp64_bentry  // TAGE bimodal table entry
     hyst = 1;
   }
 
-  bool operator==(const cbp64_bentry& other) const {
-    return (pred == other.pred) && (hyst == other.hyst);
-  }
+  bool operator==(const cbp64_bentry& other) const { return (pred == other.pred) && (hyst == other.hyst); }
 };
 class cbp64_gentry  // TAGE global table entry
 {
@@ -135,22 +131,20 @@ class cbp64_lentry  // loop predictor entry
   }
 
   bool operator==(const cbp64_lentry& other) const {
-    return (NbIter == other.NbIter) &&
-        (confid == other.confid) &&
-        (CurrentIter == other.CurrentIter) &&
-        (TAG == other.TAG) &&
-        (age == other.age) &&
-        (dir == other.dir);
+    return (NbIter == other.NbIter) && (confid == other.confid) && (CurrentIter == other.CurrentIter) &&
+           (TAG == other.TAG) && (age == other.age) && (dir == other.dir);
   }
 };
 
 enum tage_component {
   TAGE_BASE,   // final prediction by GetPrediction() is bimodal table
-  TAGE_SHORT,  // final prediction by GetPrediction() is TAGE component which are accessed by shorter history lengths(MINHIST:6 ~ 37)
-  TAGE_LONG,   // final prediction by GetPrediction() is TAGE component which are accessed by longer history lengths(54 ~ MAXHIST:3000)
-  TAGE_LOOP,   // final prediction by GetPrediction() is LOOP predictor
-  TAGE_SC,     // final prediction by GetPrediction() is statistical corrector(SC)
-  NOT_TAGE     // redundancy
+  TAGE_SHORT,  // final prediction by GetPrediction() is TAGE component which are accessed by shorter history
+               // lengths(MINHIST:6 ~ 37)
+  TAGE_LONG,  // final prediction by GetPrediction() is TAGE component which are accessed by longer history lengths(54 ~
+              // MAXHIST:3000)
+  TAGE_LOOP,  // final prediction by GetPrediction() is LOOP predictor
+  TAGE_SC,    // final prediction by GetPrediction() is statistical corrector(SC)
+  NOT_TAGE    // redundancy
 };
 
 // due to partial associativity, twice the number of different histories (18 different histories)
@@ -162,7 +156,9 @@ enum tage_component {
 #define BORNINFASSOC (4 * ASSOC + 1)   // disable associativity for 1st 4 history lengths
 #define BORNSUPASSOC (11 * ASSOC + 1)  // enable associativity for upto 11th history lengths
 // the actual number of history lengths which are used in CBP64K
-#define NOSKIPCNT (NHIST - ((BORNINFASSOC - 1) * (ASSOC - 1) / ASSOC) - ((NHIST - BORNSUPASSOC + 1) * (ASSOC - 1) / ASSOC) - MANUAL_OMIT)
+#define NOSKIPCNT                                                                                            \
+  (NHIST - ((BORNINFASSOC - 1) * (ASSOC - 1) / ASSOC) - ((NHIST - BORNSUPASSOC + 1) * (ASSOC - 1) / ASSOC) - \
+   MANUAL_OMIT)
 
 #define LOGGNB 10  // 1 1K + 2 * 512-entry tables
 #define GNB 3
@@ -183,7 +179,7 @@ struct PredictorStates {
   int LSUM;   // SC predict using LSUM
 #ifdef LOOPPREDICTOR
   bool predloop;  // prediction of LOOP predictor
-  int  LHIT;      // hitting way in LOOP predictor
+  int LHIT;       // hitting way in LOOP predictor
   bool LVALID;    // validity of LOOP predictor prediction
 #endif
   bool pred_taken;        // final prediction
@@ -195,56 +191,47 @@ struct PredictorStates {
   bool MedConf;           // Set med confidence when 2*|ctr + 1| == 5
   bool LowConf;           // Set low confidence when 2*|ctr + 1| == 1
   bool AltConf;           // Set med confidence when 2*|ctr + 1| > 1
-  int  HitBank;           // index of the bank with the longest history among matching tags in TAGE table
-  int  AltBank;           // index of the bank with 2nd longest history among matching tags in TAGE table
+  int HitBank;            // index of the bank with the longest history among matching tags in TAGE table
+  int AltBank;            // index of the bank with 2nd longest history among matching tags in TAGE table
 
   // regular pointer incurs Segmentation fault + automatic memory management
-  std::unique_ptr<int[]>  GI;    // hashed index set for gtable
+  std::unique_ptr<int[]> GI;     // hashed index set for gtable
   std::unique_ptr<uint[]> GTAG;  // hashed tag set for gtable
 
   // Constructor
   PredictorStates(bool snapshot = false) {
     int size = snapshot ? NOSKIPCNT : (NHIST + 1);
-    GI       = std::make_unique<int[]>(size);
-    GTAG     = std::make_unique<uint[]>(size);
+    GI = std::make_unique<int[]>(size);
+    GTAG = std::make_unique<uint[]>(size);
   }
 
   // Move constructor & assignment
-  PredictorStates(PredictorStates&& other) noexcept            = default;
+  PredictorStates(PredictorStates&& other) noexcept = default;
   PredictorStates& operator=(PredictorStates&& other) noexcept = default;
 
   // Delete copy constructor and assignment
-  PredictorStates(const PredictorStates&)            = delete;
+  PredictorStates(const PredictorStates&) = delete;
   PredictorStates& operator=(const PredictorStates&) = delete;
 
   std::string to_string() const {
     std::stringstream ss;
-    ss << "PState{"
-       << "THRES=" << THRES
-       << " LSUM=" << LSUM
-       << " pred_taken=" << pred_taken
-       << " tage_pred=" << tage_pred
-       << " pred_inter=" << pred_inter
-       << " LongestMatchPred=" << LongestMatchPred
-       << " alttaken=" << alttaken
-       << " HighConf=" << HighConf
-       << " MedConf=" << MedConf
-       << " LowConf=" << LowConf
-       << " AltConf=" << AltConf
-       << " HitBank=" << HitBank
-       << " AltBank=" << AltBank
-       << "}";
+    ss << "PState{" << "THRES=" << THRES << " LSUM=" << LSUM << " pred_taken=" << pred_taken
+       << " tage_pred=" << tage_pred << " pred_inter=" << pred_inter << " LongestMatchPred=" << LongestMatchPred
+       << " alttaken=" << alttaken << " HighConf=" << HighConf << " MedConf=" << MedConf << " LowConf=" << LowConf
+       << " AltConf=" << AltConf << " HitBank=" << HitBank << " AltBank=" << AltBank << "}";
     // Print GI
     ss << " GI=[";
     for (int i = 1; i <= NHIST; i++) {
-      if (i > 0) ss << ",";
+      if (i > 0)
+        ss << ",";
       ss << GI[i];
     }
     ss << "]";
     // Print GTAG
     ss << " GTAG=[";
     for (int i = 1; i <= NHIST; i++) {
-      if (i > 0) ss << ",";
+      if (i > 0)
+        ss << ",";
       ss << GTAG[i];
     }
     ss << "]";
@@ -256,11 +243,13 @@ struct PredictorStates {
 struct SpeculativeStatesBase {
   // checkpoint doesn't need to snapshot ghist because ptghist overwrite off-path updates
   //  and ghist's length(3000-bit, around 1200 branches) is long enough to avoid overlapping of correct histories
-  int                  ptghist;             // pointer of ghist(global history)
-  long long            GHIST;               // global history which is specialized to conditional branch
-  long long            phist;               // path history
-  cbp64_folded_history ch_i[NHIST + 1];     // folded global history using cyclic shift register to generate i'th TAGE index
-  cbp64_folded_history ch_t[2][NHIST + 1];  // folded global history using cyclic shift register to generate i'th TAGE tag
+  int ptghist;      // pointer of ghist(global history)
+  long long GHIST;  // global history which is specialized to conditional branch
+  long long phist;  // path history
+  cbp64_folded_history
+      ch_i[NHIST + 1];  // folded global history using cyclic shift register to generate i'th TAGE index
+  cbp64_folded_history ch_t[2]
+                           [NHIST + 1];  // folded global history using cyclic shift register to generate i'th TAGE tag
   // To reduce below tables, tracking off-path is required
   int8_t WG[1 << LOGSIZEUPS];  // GGEHL's weight table
   int8_t WP[1 << LOGSIZEUPS];  // PGEHL's weight table
@@ -269,22 +258,21 @@ struct SpeculativeStatesBase {
 #endif
   std::string to_string() const {
     std::stringstream ss;
-    ss << "SpecBase{"
-       << "ptghist=" << ptghist
-       << " GHIST=" << GHIST
-       << " phist=" << phist;
+    ss << "SpecBase{" << "ptghist=" << ptghist << " GHIST=" << GHIST << " phist=" << phist;
 
     // Print folded histories
     ss << " ch_i=[";
     for (int i = 0; i <= NHIST; i++) {
-      if (i > 0) ss << ",";
+      if (i > 0)
+        ss << ",";
       ss << ch_i[i].comp;
     }
     ss << "]";
 
     ss << " ch_t=[";
     for (int i = 0; i <= NHIST; i++) {
-      if (i > 0) ss << ",";
+      if (i > 0)
+        ss << ",";
       ss << "[" << ch_t[0][i].comp << "," << ch_t[1][i].comp << "]";
     }
     ss << "]";
@@ -292,15 +280,17 @@ struct SpeculativeStatesBase {
     // Print weight tables
     ss << " WG=[";
     for (int i = 0; i < (1 << LOGSIZEUPS); i++) {
-      if (i > 0) ss << ",";
-      ss << (int) WG[i];
+      if (i > 0)
+        ss << ",";
+      ss << (int)WG[i];
     }
     ss << "]";
 
     ss << " WP=[";
     for (int i = 0; i < (1 << LOGSIZEUPS); i++) {
-      if (i > 0) ss << ",";
-      ss << (int) WP[i];
+      if (i > 0)
+        ss << ",";
+      ss << (int)WP[i];
     }
     ss << "]";
 
@@ -328,9 +318,16 @@ class TAGE64K {
   // The three BIAS tables in the SC component
   // We play with the TAGE  confidence here, with the number of the hitting bank
 #define LOGBIAS 8
-#define INDBIAS (((((PC ^ (PC >> 2)) << 1) ^ (Pstate.LowConf & (Pstate.LongestMatchPred != Pstate.alttaken))) << 1) + Pstate.pred_inter) & ((1 << LOGBIAS) - 1)
-#define INDBIASSK (((((PC ^ (PC >> (LOGBIAS - 2))) << 1) ^ (Pstate.HighConf)) << 1) + Pstate.pred_inter) & ((1 << LOGBIAS) - 1)
-#define INDBIASBANK (Pstate.pred_inter + (((Pstate.HitBank + 1) / 4) << 4) + (Pstate.HighConf << 1) + (Pstate.LowConf << 2) + ((Pstate.AltBank != 0) << 3) + ((PC ^ (PC >> 2)) << 7)) & ((1 << LOGBIAS) - 1)
+#define INDBIAS                                                                                         \
+  (((((PC ^ (PC >> 2)) << 1) ^ (Pstate.LowConf & (Pstate.LongestMatchPred != Pstate.alttaken))) << 1) + \
+   Pstate.pred_inter) &                                                                                 \
+      ((1 << LOGBIAS) - 1)
+#define INDBIASSK \
+  (((((PC ^ (PC >> (LOGBIAS - 2))) << 1) ^ (Pstate.HighConf)) << 1) + Pstate.pred_inter) & ((1 << LOGBIAS) - 1)
+#define INDBIASBANK                                                                                         \
+  (Pstate.pred_inter + (((Pstate.HitBank + 1) / 4) << 4) + (Pstate.HighConf << 1) + (Pstate.LowConf << 2) + \
+   ((Pstate.AltBank != 0) << 3) + ((PC ^ (PC >> 2)) << 7)) &                                                \
+      ((1 << LOGBIAS) - 1)
 
   // IMLI-SIC -> Micro 2015  paper: a big disappointment on  CBP2016 traces
 #ifdef IMLI
@@ -432,9 +429,9 @@ class TAGE64K {
 #define SIZEUSEALT (1 << (LOGSIZEUSEALT))
 #define INDUSEALT (((((Pstate.HitBank - 1) / 8) << 1) + Pstate.AltConf) % (SIZEUSEALT - 1))
 
-  int    m[NHIST + 1];
-  int    TB[NHIST + 1];
-  int    logg[NHIST + 1];
+  int m[NHIST + 1];
+  int TB[NHIST + 1];
+  int logg[NHIST + 1];
   int8_t noskip_index[NHIST + 1];
 
  public:
@@ -450,14 +447,16 @@ class TAGE64K {
   void baseupdate(bool Taken, UINT64 PC);
   int MYRANDOM();
   void Tagepred(UINT64 PC);
-  void UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history* index, cbp64_folded_history* tag0, cbp64_folded_history* tag1);
+  void UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history* index, cbp64_folded_history* tag0,
+                  cbp64_folded_history* tag1);
   bool GetPrediction(UINT64 PC, int* bp_confidence, Op* op);
   void HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target, long long& X, int& Y, cbp64_folded_history* H,
                      cbp64_folded_history* G, cbp64_folded_history* J);
   int GetBrtypeFromOptype(OpType opType);
   void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget);
   int Gpredict(UINT64 PC, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W);
-  void Gupdate(UINT64 PC, bool taken, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W, int LSUM);
+  void Gupdate(UINT64 PC, bool taken, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W,
+               int LSUM);
   void TrackOtherInst(UINT64 PC, OpType opType, bool taken, UINT64 branchTarget);
   int lindex(UINT64 PC);
   bool getloop(UINT64 PC);
@@ -469,47 +468,45 @@ class TAGE64K {
   // S: Speculative components
   SpeculativeStates Sstate;
   // N: Non-speculative components
-  int8_t  Bias[(1 << LOGBIAS)];      // N: BIAS table for SC
-  int8_t  BiasSK[(1 << LOGBIAS)];    // N: BIAS table for SKIP
-  int8_t  BiasBank[(1 << LOGBIAS)];  // N: BIAS table for BANK
-  int8_t* LGEHL[LNB];                // N: GEHL for first local history
-  int8_t* SGEHL[SNB];                // N: GEHL for second local history
-  int8_t* TGEHL[TNB];                // N: GEHL for third local history
+  int8_t Bias[(1 << LOGBIAS)];      // N: BIAS table for SC
+  int8_t BiasSK[(1 << LOGBIAS)];    // N: BIAS table for SKIP
+  int8_t BiasBank[(1 << LOGBIAS)];  // N: BIAS table for BANK
+  int8_t* LGEHL[LNB];               // N: GEHL for first local history
+  int8_t* SGEHL[SNB];               // N: GEHL for second local history
+  int8_t* TGEHL[TNB];               // N: GEHL for third local history
 #ifdef IMLI
-  int8_t*   IMGEHL[IMNB];  // N: GEHL for IMLI
-  int8_t*   IGEHL[INB];    // N: GEHL for IMLI
-  long long IMHIST[256];   // N: IMHIST
-  long long IMLIcount;     // N: use to monitor the iteration number
+  int8_t* IMGEHL[IMNB];   // N: GEHL for IMLI
+  int8_t* IGEHL[INB];     // N: GEHL for IMLI
+  long long IMHIST[256];  // N: IMHIST
+  long long IMLIcount;    // N: use to monitor the iteration number
 #endif
   long long L_shist[NLOCAL];      // N: local histories
   long long S_slhist[NSECLOCAL];  // N: second local history
   long long T_slhist[NTLOCAL];    // N: third local history
   // playing with putting more weights (x2)  on some of the SC components
-  int    updatethreshold;                     // N: update threshold for the statistical corrector
-  int    Pupdatethreshold[(1 << LOGSIZEUP)];  // N: size is fixed by LOGSIZEUP
-  int8_t WL[(1 << LOGSIZEUPS)];               // N: GEHL weights for local history
-  int8_t WS[(1 << LOGSIZEUPS)];               // N: GEHL weights for second local history
-  int8_t WT[(1 << LOGSIZEUPS)];               // N: GEHL weights for third local history
-  int8_t WI[(1 << LOGSIZEUPS)];               // N: GEHL weights for IMLI
-  int8_t WIM[(1 << LOGSIZEUPS)];              // N: GEHL weights for IMHIST
-  int8_t WB[(1 << LOGSIZEUPS)];               // N: GEHL weights for Bias
-  int8_t FirstH, SecondH;                     // N: counters to choose between TAGE and SC on Low Conf SC
+  int updatethreshold;                     // N: update threshold for the statistical corrector
+  int Pupdatethreshold[(1 << LOGSIZEUP)];  // N: size is fixed by LOGSIZEUP
+  int8_t WL[(1 << LOGSIZEUPS)];            // N: GEHL weights for local history
+  int8_t WS[(1 << LOGSIZEUPS)];            // N: GEHL weights for second local history
+  int8_t WT[(1 << LOGSIZEUPS)];            // N: GEHL weights for third local history
+  int8_t WI[(1 << LOGSIZEUPS)];            // N: GEHL weights for IMLI
+  int8_t WIM[(1 << LOGSIZEUPS)];           // N: GEHL weights for IMHIST
+  int8_t WB[(1 << LOGSIZEUPS)];            // N: GEHL weights for Bias
+  int8_t FirstH, SecondH;                  // N: counters to choose between TAGE and SC on Low Conf SC
 #ifdef LOOPPREDICTOR
   int8_t WITHLOOP;  // N: counter to monitor whether or not loop prediction is beneficial
-  int    LIB;
-  int    LI;
-  int    LTAG;  // tag on the loop predictor
+  int LIB;
+  int LI;
+  int LTAG;  // tag on the loop predictor
 #endif
-  int8_t        use_alt_on_na[SIZEUSEALT];  // N: alternate prediction on non-taken branches
-  cbp64_bentry* btable;                     // N: bimodal TAGE table
-  cbp64_gentry* gtable[NHIST + 1];          // N: tagged TAGE tables
-  long long     on_phist;                   // N: condition pattern
-  int           on_ptghist;                 // N: condition pattern
-  int           TICK;                       // N: for the reset of the u counter
+  int8_t use_alt_on_na[SIZEUSEALT];  // N: alternate prediction on non-taken branches
+  cbp64_bentry* btable;              // N: bimodal TAGE table
+  cbp64_gentry* gtable[NHIST + 1];   // N: tagged TAGE tables
+  int TICK;                          // N: for the reset of the u counter
   // utility variables
   Counter branch_id;
-  int     Seed;  // for the pseudo-random number generator
-  bool    off_path; // global indicator of op
+  int Seed;       // for the pseudo-random number generator
+  bool off_path;  // global indicator of op
 
   int8_t tage_component;
   int8_t tage_component_inter;

@@ -31,7 +31,7 @@ void TAGE64K::reinit() {
   NOSKIP[NHIST - 6] = 0;
   // just eliminate some extra tables (very very marginal)
 
-  int idx_n         = 0;
+  int idx_n = 0;
   for (int i = 0; i <= NHIST; i++) {
     if (NOSKIP[i])
       noskip_index[i] = idx_n++;
@@ -78,7 +78,8 @@ void TAGE64K::reinit() {
   updatethreshold = 35 << 3;
 
   for (int i = 0; i < (1 << LOGSIZEUP); i++) Pupdatethreshold[i] = 0;
-  for (int i = 0; i < GNB; i++) Sstate.GGEHL[i] = &GGEHLA[i][0];
+  for (int i = 0; i < GNB; i++)
+    Sstate.GGEHL[i] = &GGEHLA[i][0];
   for (int i = 0; i < LNB; i++) LGEHL[i] = &LGEHLA[i][0];
 
   for (int i = 0; i < GNB; i++)
@@ -96,7 +97,8 @@ void TAGE64K::reinit() {
 
   for (int i = 0; i < SNB; i++) SGEHL[i] = &SGEHLA[i][0];
   for (int i = 0; i < TNB; i++) TGEHL[i] = &TGEHLA[i][0];
-  for (int i = 0; i < PNB; i++) Sstate.PGEHL[i] = &PGEHLA[i][0];
+  for (int i = 0; i < PNB; i++)
+    Sstate.PGEHL[i] = &PGEHLA[i][0];
 #ifdef IMLI
 #ifdef IMLIOH
   for (int i = 0; i < FNB; i++) FGEHL[i] = &FGEHLA[i][0];
@@ -219,8 +221,6 @@ void TAGE64K::reinit() {
   }
   TICK = 0;
   Sstate.GHIST = 0;
-  on_ptghist = 0;
-  on_phist = 0;
 
   tage_component = TAGE_BASE;
   tage_component_alt = TAGE_BASE;
@@ -273,18 +273,18 @@ void TAGE64K::ctrupdate(int8_t& ctr, bool taken, int nbits) {
 
 #define GET_BI(PC) ((PC ^ (PC >> 2)) & ((1 << LOGB) - 1))
 bool TAGE64K::getbim(UINT64 PC) {
-  int    BI  = GET_BI(PC);
+  int BI = GET_BI(PC);
   int8_t BIM = (btable[BI].pred << 1) + (btable[BI >> HYSTSHIFT].hyst);
 
   Pstate.HighConf = (BIM == 0) || (BIM == 3);
-  Pstate.LowConf  = !Pstate.HighConf;
-  Pstate.AltConf  = Pstate.HighConf;
-  Pstate.MedConf  = false;
+  Pstate.LowConf = !Pstate.HighConf;
+  Pstate.AltConf = Pstate.HighConf;
+  Pstate.MedConf = false;
   return (btable[BI].pred > 0);
 }
 
 void TAGE64K::baseupdate(bool Taken, UINT64 PC) {
-  int    BI  = GET_BI(PC);
+  int BI = GET_BI(PC);
   int8_t BIM = (btable[BI].pred << 1) + (btable[BI >> HYSTSHIFT].hyst);
   int inter = BIM;
   if (Taken) {
@@ -306,12 +306,13 @@ int TAGE64K::MYRANDOM() {
   return (Seed);
 };
 
-void TAGE64K::UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history* index, cbp64_folded_history* tag0, cbp64_folded_history* tag1) {
+void TAGE64K::UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history* index, cbp64_folded_history* tag0,
+                         cbp64_folded_history* tag1) {
   for (int i = 1; i <= NHIST; i += 2) {
-    Pstate.GI[i]       = gindex(PC, i, path_history, index);
-    Pstate.GTAG[i]     = gtag(PC, i, tag0, tag1);
+    Pstate.GI[i] = gindex(PC, i, path_history, index);
+    Pstate.GTAG[i] = gtag(PC, i, tag0, tag1);
     Pstate.GTAG[i + 1] = Pstate.GTAG[i];
-    Pstate.GI[i + 1]   = Pstate.GI[i] ^ (Pstate.GTAG[i] & ((1 << LOGG) - 1));
+    Pstate.GI[i + 1] = Pstate.GI[i] ^ (Pstate.GTAG[i] & ((1 << LOGG) - 1));
   }
   int T = (PC ^ (path_history & ((1 << m[BORN]) - 1))) % NBANKHIGH;
   for (int i = BORN; i <= NHIST; i++)
@@ -336,7 +337,7 @@ void TAGE64K::Tagepred(UINT64 PC) {
   UpdateAddr(PC, Sstate.phist, Sstate.ch_i, Sstate.ch_t[0], Sstate.ch_t[1]);
   // just do not forget most address are aligned on 4 bytes
   Pstate.alttaken = getbim(PC);
-  Pstate.tage_pred        = Pstate.alttaken;
+  Pstate.tage_pred = Pstate.alttaken;
   Pstate.LongestMatchPred = Pstate.alttaken;
   tage_component_alt = TAGE_BASE;
   tage_component_tage = tage_component_alt;
@@ -448,15 +449,15 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
   // just  an heuristic if the respective contribution of component groups can be multiplied by 2 or not
   Pstate.THRES = (updatethreshold >> 3) + Pupdatethreshold[INDUPD]
 #ifdef VARTHRES
-          + 12 * ((WB[INDUPDS] >= 0) + (Sstate.WP[INDUPDS] >= 0)
+                 + 12 * ((WB[INDUPDS] >= 0) + (Sstate.WP[INDUPDS] >= 0)
 #ifdef LOCALH
-                  + (WS[INDUPDS] >= 0) + (WT[INDUPDS] >= 0) + (WL[INDUPDS] >= 0)
+                         + (WS[INDUPDS] >= 0) + (WT[INDUPDS] >= 0) + (WL[INDUPDS] >= 0)
 #endif
-                  + (Sstate.WG[INDUPDS] >= 0)
+                         + (Sstate.WG[INDUPDS] >= 0)
 #ifdef IMLI
-                  + (WI[INDUPDS] >= 0)
+                         + (WI[INDUPDS] >= 0)
 #endif
-                 )
+                        )
 #endif
       ;
 
@@ -464,7 +465,6 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
   // TAGE
   //  but just uses 2 counters 0.3 % MPKI reduction
   if (Pstate.pred_inter != SCPRED) {
-
     // Choser uses TAGE confidence and |LSUM|
     Pstate.pred_taken = SCPRED;
     tage_component = TAGE_SC;
@@ -500,16 +500,20 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
       STAT_EVENT(op->proc_id, TAGESCL_SC_SMALLLSUM + 3);
   }
   if (!op->off_path) {
-    STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) + tage_component * 2);
+    STAT_EVENT(op->proc_id,
+               TAGESCL_COMP_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) + tage_component * 2);
     if (op->oracle_info.btb_miss)
-      STAT_EVENT(op->proc_id,
-                 TAGESCL_COMP_BTB_MISS_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) + tage_component * 2);
+      STAT_EVENT(op->proc_id, TAGESCL_COMP_BTB_MISS_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) +
+                                  tage_component * 2);
   }
 
   *bp_confidence = 0;
-  if (Pstate.HighConf) *bp_confidence += 3;
-  if (Pstate.MedConf) *bp_confidence += 2;
-  if (Pstate.LowConf) *bp_confidence += 1;
+  if (Pstate.HighConf)
+    *bp_confidence += 3;
+  if (Pstate.MedConf)
+    *bp_confidence += 2;
+  if (Pstate.LowConf)
+    *bp_confidence += 1;
   assert(*bp_confidence < 4);
 
   if ((Pstate.pred_taken != op->oracle_info.dir) && !op->off_path) {  // collect only for misprediction
@@ -626,7 +630,8 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
 #ifdef SC
 #ifdef LOOPPREDICTOR
   if (Pstate.LVALID) {
-    if (Pstate.pred_taken != Pstate.predloop) ctrupdate(WITHLOOP, (Pstate.predloop == resolveDir), 7);
+    if (Pstate.pred_taken != Pstate.predloop)
+      ctrupdate(WITHLOOP, (Pstate.predloop == resolveDir), 7);
   }
   SpecLoopUpdate(PC, resolveDir);
   LoopUpdate(PC, resolveDir, (Pstate.pred_taken != resolveDir), Pstate.LHIT);
@@ -637,7 +642,8 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
     if ((abs(Pstate.LSUM) < Pstate.THRES))
       if ((Pstate.HighConf)) {
         if ((abs(Pstate.LSUM) < Pstate.THRES / 2))
-          if ((abs(Pstate.LSUM) >= Pstate.THRES / 4)) ctrupdate(SecondH, (Pstate.pred_inter == resolveDir), CONFWIDTH);
+          if ((abs(Pstate.LSUM) >= Pstate.THRES / 4))
+            ctrupdate(SecondH, (Pstate.pred_inter == resolveDir), CONFWIDTH);
       }
     if ((Pstate.MedConf))
       if ((abs(Pstate.LSUM) < Pstate.THRES / 4)) {
@@ -666,8 +672,8 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
     }
 #ifdef VARTHRES
     {
-      int XSUM = Pstate.LSUM - ((WB[INDUPDS] >= 0) *
-                         ((2 * Bias[INDBIAS] + 1) + (2 * BiasSK[INDBIASSK] + 1) + (2 * BiasBank[INDBIASBANK] + 1)));
+      int XSUM = Pstate.LSUM - ((WB[INDUPDS] >= 0) * ((2 * Bias[INDBIAS] + 1) + (2 * BiasSK[INDBIASSK] + 1) +
+                                                      (2 * BiasBank[INDBIASBANK] + 1)));
       if ((XSUM + ((2 * Bias[INDBIAS] + 1) + (2 * BiasSK[INDBIASSK] + 1) + (2 * BiasBank[INDBIASBANK] + 1)) >= 0) !=
           (XSUM >= 0))
         ctrupdate(WB[INDUPDS],
@@ -679,7 +685,8 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
     ctrupdate(Bias[INDBIAS], resolveDir, PERCWIDTH);
     ctrupdate(BiasSK[INDBIASSK], resolveDir, PERCWIDTH);
     ctrupdate(BiasBank[INDBIASBANK], resolveDir, PERCWIDTH);
-    Gupdate((PC << 1) + Pstate.pred_inter, resolveDir, Sstate.GHIST, Gm, Sstate.GGEHL, GNB, LOGGNB, Sstate.WG, Pstate.LSUM);
+    Gupdate((PC << 1) + Pstate.pred_inter, resolveDir, Sstate.GHIST, Gm, Sstate.GGEHL, GNB, LOGGNB, Sstate.WG,
+            Pstate.LSUM);
     Gupdate(PC, resolveDir, Sstate.phist, Pm, Sstate.PGEHL, PNB, LOGPNB, Sstate.WP, Pstate.LSUM);
 #ifdef LOCALH
     Gupdate(PC, resolveDir, L_shist[INDLOCAL], Lm, LGEHL, LNB, LOGLNB, WL, Pstate.LSUM);
@@ -710,7 +717,8 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
     bool PseudoNewAlloc = (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) <= 1);
     // an entry is considered as newly allocated if its prediction counter is weak
     if (PseudoNewAlloc) {
-      if (Pstate.LongestMatchPred == resolveDir) ALLOC = false;
+      if (Pstate.LongestMatchPred == resolveDir)
+        ALLOC = false;
       // if it was delivering the correct prediction, no need to allocate a new entry
       // even if the overall prediction was false
 
@@ -828,11 +836,13 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
         if (Pstate.AltBank > 0) {
           ctrupdate(gtable[Pstate.AltBank][Pstate.GI[Pstate.AltBank]].ctr, resolveDir, CWIDTH);
         }
-        if (Pstate.AltBank == 0) baseupdate(resolveDir, PC);
+        if (Pstate.AltBank == 0)
+          baseupdate(resolveDir, PC);
       }
     ctrupdate(gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr, resolveDir, CWIDTH);
     // sign changes: no way it can have been useful
-    if (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) == 1) gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].u = 0;
+    if (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) == 1)
+      gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].u = 0;
     if (Pstate.alttaken == resolveDir)
       if (Pstate.AltBank > 0)
         if (abs(2 * gtable[Pstate.AltBank][Pstate.GI[Pstate.AltBank]].ctr + 1) == 7)
@@ -848,11 +858,13 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
 
   if (Pstate.LongestMatchPred != Pstate.alttaken)
     if (Pstate.LongestMatchPred == resolveDir) {
-      if (gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].u < (1 << UWIDTH) - 1) gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].u++;
+      if (gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].u < (1 << UWIDTH) - 1)
+        gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].u++;
     }
   // END TAGE UPDATE
 
-  HistoryUpdate(PC, opType, resolveDir, branchTarget, Sstate.phist, Sstate.ptghist, Sstate.ch_i, Sstate.ch_t[0], Sstate.ch_t[1]);
+  HistoryUpdate(PC, opType, resolveDir, branchTarget, Sstate.phist, Sstate.ptghist, Sstate.ch_i, Sstate.ch_t[0],
+                Sstate.ch_t[1]);
 
   // END PREDICTOR UPDATE
 }
@@ -875,7 +887,8 @@ int TAGE64K::Gpredict(UINT64 PC, long long BHIST, int* length, int8_t** tab, int
 #endif
   return ((PERCSUM));
 }
-void TAGE64K::Gupdate(UINT64 PC, bool taken, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W, int LSUM) {
+void TAGE64K::Gupdate(UINT64 PC, bool taken, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W,
+                      int LSUM) {
   int PERCSUM = 0;
 
   for (int i = 0; i < NBR; i++) {
@@ -894,7 +907,8 @@ void TAGE64K::Gupdate(UINT64 PC, bool taken, long long BHIST, int* length, int8_
 }
 
 void TAGE64K::TrackOtherInst(UINT64 PC, OpType opType, bool taken, UINT64 branchTarget) {
-  HistoryUpdate(PC, opType, taken, branchTarget, Sstate.phist, Sstate.ptghist, Sstate.ch_i, Sstate.ch_t[0], Sstate.ch_t[1]);
+  HistoryUpdate(PC, opType, taken, branchTarget, Sstate.phist, Sstate.ptghist, Sstate.ch_i, Sstate.ch_t[0],
+                Sstate.ch_t[1]);
 }
 
 #ifdef LOOPPREDICTOR
@@ -920,9 +934,11 @@ bool TAGE64K::getloop(UINT64 PC) {
 
     if (Sstate.ltable[index].TAG == LTAG) {
       Pstate.LHIT = i;
-      Pstate.LVALID = ((Sstate.ltable[index].confid == CONFLOOP) || (Sstate.ltable[index].confid * Sstate.ltable[index].NbIter > 128));
+      Pstate.LVALID = ((Sstate.ltable[index].confid == CONFLOOP) ||
+                       (Sstate.ltable[index].confid * Sstate.ltable[index].NbIter > 128));
 
-      if (Sstate.ltable[index].CurrentIter + 1 == Sstate.ltable[index].NbIter) return (!(Sstate.ltable[index].dir));
+      if (Sstate.ltable[index].CurrentIter + 1 == Sstate.ltable[index].NbIter)
+        return (!(Sstate.ltable[index].dir));
       return ((Sstate.ltable[index].dir));
     }
   }

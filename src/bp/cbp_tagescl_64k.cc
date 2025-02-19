@@ -308,14 +308,207 @@ int TAGE64K::MYRANDOM() {
   return (Seed);
 };
 
-void TAGE64K::SavePredictorStates() {
+void TAGE64K::SavePredictorStates(Counter key) {
   Pstate.on_path_phist = Sstate.phist;
   Pstate.on_path_ptghist = Sstate.ptghist;
+  if (SPEC_LEVEL == BP_PRED_ON)
+    return;
+
+  auto& key_index = predictor_states.get<0>();  // Get the key index
+  auto it = key_index.find(key);
+  assert(it == key_index.end());
+
+  PredictorStates state(true);
+// loop
+#ifdef LOOPPREDICTOR
+  state.LHIT = Pstate.LHIT;
+  state.LVALID = Pstate.LVALID;
+  state.predloop = Pstate.predloop;
+#endif
+  // SC + TAGE
+  state.tage_pred = Pstate.tage_pred;
+  state.pred_inter = Pstate.pred_inter;
+  state.pred_taken = Pstate.pred_taken;
+  state.LongestMatchPred = Pstate.LongestMatchPred;
+  state.alttaken = Pstate.alttaken;
+  state.HighConf = Pstate.HighConf;
+  state.MedConf = Pstate.MedConf;
+  state.LowConf = Pstate.LowConf;
+  state.AltConf = Pstate.AltConf;
+  state.THRES = Pstate.THRES;
+  state.LSUM = Pstate.LSUM;
+  state.HitBank = Pstate.HitBank;
+  state.AltBank = Pstate.AltBank;
+  state.on_path_phist = Pstate.on_path_phist;
+  state.on_path_ptghist = Pstate.on_path_ptghist;
+  assert(NOSKIP[state.HitBank] || state.HitBank == 0);  // HitBank should be valid or 0
+  assert(NOSKIP[state.AltBank] || state.AltBank == 0);
+  int8_t j = 0;
+  for (int i = 0; i <= NHIST; i++) {
+    if (NOSKIP[i]) {
+      state.GI[j] = Pstate.GI[i];
+      state.GTAG[j] = Pstate.GTAG[i];
+      assert(state.GI[j] != -1);
+      assert(noskip_index[i] != -1);
+      j++;
+    }
+  }
+  predictor_states.insert(PredictorEntry(key, std::move(state)));
+  it = key_index.find(key);
+  ASSERTM(0, it != key_index.end(), "it != key_index.end()");
 }
 
 Counter TAGE64K::KeyGeneration(bool offpath) {
   off_path = offpath;
   return ++branch_id;
+}
+
+void TAGE64K::RestorePredictorstates(Counter key) {
+  auto& key_pindex = predictor_states.get<0>();
+  auto pit = key_pindex.find(key);
+  assert(pit != key_pindex.end());
+
+// loop
+#ifdef LOOPPREDICTOR
+  Pstate.LHIT = pit->state.LHIT;
+  Pstate.LVALID = pit->state.LVALID;
+  Pstate.predloop = pit->state.predloop;
+#endif
+  // // SC + TAGE
+  Pstate.tage_pred = pit->state.tage_pred;
+  Pstate.pred_inter = pit->state.pred_inter;
+  Pstate.pred_taken = pit->state.pred_taken;
+  Pstate.LongestMatchPred = pit->state.LongestMatchPred;
+  Pstate.alttaken = pit->state.alttaken;
+  Pstate.HighConf = pit->state.HighConf;
+  Pstate.MedConf = pit->state.MedConf;
+  Pstate.LowConf = pit->state.LowConf;
+  Pstate.AltConf = pit->state.AltConf;
+  Pstate.THRES = pit->state.THRES;
+  Pstate.LSUM = pit->state.LSUM;
+  Pstate.HitBank = pit->state.HitBank;
+  Pstate.AltBank = pit->state.AltBank;
+  // store only elements with NOSKIP
+  int j = 0;
+  for (int i = 0; i <= NHIST; i++) {
+    if (NOSKIP[i]) {
+      assert(noskip_index[i] >= 0);
+      Pstate.GI[i] = pit->state.GI[j];
+      Pstate.GTAG[i] = pit->state.GTAG[j];
+      j++;
+    }
+  }
+  off_path = false;
+}
+
+void TAGE64K::TakeCheckpoint(Counter key) {
+  auto& key_index = checkpoints.get<0>();  // Get the key index
+  auto it = key_index.find(key);
+  assert(it == key_index.end());
+  long unsigned int org_size = checkpoints.size();
+  Checkpoint state;
+  // Copy scalar values
+  state.ptghist = Sstate.ptghist;
+  state.GHIST = Sstate.GHIST;
+  state.phist = Sstate.phist;
+  // Copy folded histories - use memcpy for better performance
+  std::copy(std::begin(Sstate.ch_i), std::end(Sstate.ch_i), std::begin(state.ch_i));
+  std::copy(std::begin(Sstate.ch_t[0]), std::end(Sstate.ch_t[0]), std::begin(state.ch_t[0]));
+  std::copy(std::begin(Sstate.ch_t[1]), std::end(Sstate.ch_t[1]), std::begin(state.ch_t[1]));
+  // Copy GEHL arrays
+  for (int i = 0; i < GNB; ++i) {
+    std::copy(Sstate.GGEHL[i], Sstate.GGEHL[i] + (1 << LOGGNB), state.GGEHL[i]);
+  }
+  for (int i = 0; i < PNB; ++i) {
+    std::copy(Sstate.PGEHL[i], Sstate.PGEHL[i] + (1 << LOGPNB), state.PGEHL[i]);
+  }
+  // Copy weight tables
+  std::copy(Sstate.WG, Sstate.WG + (1 << LOGSIZEUPS), state.WG);
+  std::copy(Sstate.WP, Sstate.WP + (1 << LOGSIZEUPS), state.WP);
+#ifdef LOOPPREDICTOR
+  std::copy(Sstate.ltable, Sstate.ltable + (1 << LOGL), state.ltable);
+#endif
+  checkpoints.insert(CheckpointEntry(key, state));
+  assert(checkpoints.size() == (org_size + 1));
+}
+
+void TAGE64K::VerifyCheckpoint(Counter key) {
+  auto& key_index = checkpoints.get<0>();  // Get the key index
+  auto it = key_index.find(key);
+  assert(it != key_index.end());
+  // checkpoint states
+  CompareCheckpoint(it->state);
+  it = key_index.upper_bound(key);
+  if (it != key_index.end())
+    key_index.erase(it, key_index.end());
+}
+
+void TAGE64K::VerifyPredictorStates(Counter key) {
+  auto& key_pindex = predictor_states.get<0>();
+  auto pit = key_pindex.find(key);
+  assert(pit != key_pindex.end());
+  auto& mutable_state = const_cast<PredictorStates&>(pit->state);
+  // predictor states
+  ComparePredictor(mutable_state);
+  pit = key_pindex.upper_bound(key);
+  if (pit != key_pindex.end())
+    key_pindex.erase(pit, key_pindex.end());
+}
+
+void TAGE64K::RestoreStates(Counter key) {
+  // recover bp states
+  if (SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON)
+    VerifyCheckpoint(key);
+  else
+    RestoreCheckpoint(key);
+}
+
+void TAGE64K::RestoreCheckpoint(Counter key) {
+  auto& key_index = checkpoints.get<0>();
+  auto it = key_index.find(key);
+  assert(it != key_index.end());  // Ensure the checkpoint exists
+  // Restore global history
+  Sstate.GHIST = it->state.GHIST;
+  Sstate.phist = it->state.phist;
+  Sstate.ptghist = it->state.ptghist;
+  // Restore folded histories
+  std::copy(std::begin(it->state.ch_i), std::end(it->state.ch_i), std::begin(Sstate.ch_i));
+  std::copy(std::begin(it->state.ch_t[0]), std::end(it->state.ch_t[0]), std::begin(Sstate.ch_t[0]));
+  std::copy(std::begin(it->state.ch_t[1]), std::end(it->state.ch_t[1]), std::begin(Sstate.ch_t[1]));
+  // Restore GEHL arrays
+  for (int i = 0; i < GNB; ++i) {
+    std::copy(it->state.GGEHL[i], it->state.GGEHL[i] + (1 << LOGGNB), Sstate.GGEHL[i]);
+  }
+  for (int i = 0; i < PNB; ++i) {
+    std::copy(it->state.PGEHL[i], it->state.PGEHL[i] + (1 << LOGPNB), Sstate.PGEHL[i]);
+  }
+  std::copy(it->state.WG, it->state.WG + (1 << LOGSIZEUPS), Sstate.WG);
+  std::copy(it->state.WP, it->state.WP + (1 << LOGSIZEUPS), Sstate.WP);
+#ifdef LOOPPREDICTOR
+  std::copy(it->state.ltable, it->state.ltable + (1 << LOGL), Sstate.ltable);
+#endif
+  // Restore predictor states
+  RestorePredictorstates(key);
+  auto& key_pindex = predictor_states.get<0>();
+  auto pit = key_pindex.upper_bound(key);
+  it = key_index.upper_bound(key);
+  if (pit != key_pindex.end())
+    key_pindex.erase(pit, key_pindex.end());
+  if (it != key_index.end())
+    key_index.erase(it, key_index.end());
+}
+
+void TAGE64K::RetireCheckpoint(Counter key) {
+  auto& key_index = checkpoints.get<0>();
+  auto& key_pindex = predictor_states.get<0>();
+  auto it = key_index.find(key);
+  auto pit = key_pindex.find(key);
+  // assert(it != key_index.end()); // key can be not exist
+  assert(pit != key_pindex.end());  // Ensure the checkpoint exists
+  if (it != key_index.end())
+    key_index.erase(it);
+  if (pit != key_pindex.end())
+    key_pindex.erase(pit);
 }
 
 void TAGE64K::UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history* index, cbp64_folded_history* tag0,
@@ -1068,3 +1261,96 @@ void TAGE64K::LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, int lhit) {
   }
 }
 #endif
+
+void TAGE64K::ComparePredictor(const PredictorStates& state) {
+  ASSERTM(0, Pstate.LSUM == state.LSUM, "id: %llu LSUM mismatch: %d vs %d", branch_id, Pstate.LSUM, state.LSUM);
+  ASSERTM(0, Pstate.THRES == state.THRES, "id: %llu THRES mismatch: %d vs %d", branch_id, Pstate.THRES, state.THRES);
+#ifdef LOOPPREDICTOR
+  ASSERTM(0, Pstate.predloop == state.predloop, "id: %llu predloop mismatch", branch_id);
+  ASSERTM(0, Pstate.LHIT == state.LHIT, "id: %llu LHIT mismatch: %d vs %d", branch_id, Pstate.LHIT, state.LHIT);
+  ASSERTM(0, Pstate.LVALID == state.LVALID, "id: %llu LVALID mismatch", branch_id);
+#endif
+  ASSERTM(0, Pstate.pred_taken == state.pred_taken, "id: %llu pred_taken mismatch", branch_id);
+  ASSERTM(0, Pstate.tage_pred == state.tage_pred, "tage_pred mismatch");
+  ASSERTM(0, Pstate.pred_inter == state.pred_inter, "pred_inter mismatch");
+  ASSERTM(0, Pstate.LongestMatchPred == state.LongestMatchPred, "LongestMatchPred mismatch");
+  ASSERTM(0, Pstate.alttaken == state.alttaken, "alttaken mismatch");
+  ASSERTM(0, Pstate.HighConf == state.HighConf, "HighConf mismatch");
+  ASSERTM(0, Pstate.MedConf == state.MedConf, "MedConf mismatch");
+  ASSERTM(0, Pstate.LowConf == state.LowConf, "LowConf mismatch");
+  ASSERTM(0, Pstate.AltConf == state.AltConf, "AltConf mismatch");
+  ASSERTM(0, Pstate.HitBank == state.HitBank, "id: %llu HitBank mismatch: %d vs %d", branch_id, Pstate.HitBank,
+          state.HitBank);
+  ASSERTM(0, Pstate.AltBank == state.AltBank, "id: %llu AltBank mismatch: %d vs %d", branch_id, Pstate.AltBank,
+          state.AltBank);
+  // Example how to print all states
+  // ASSERTM(0, Pstate.HitBank == state.HitBank,
+  //         "id: %llu HitBank mismatch: %d vs %d\n"
+  //         "Pstate: %s\n"
+  //         "_Pstate: %s\n"
+  //         "Sstate: %s\n"
+  //         "_Sstate: %s",
+  //         branch_id, Pstate.HitBank, state.HitBank,
+  //         Pstate.to_string().c_str(),
+  //         state.to_string().c_str(),
+  //         Sstate.to_string().c_str(),
+  //         state.to_string().c_str());
+
+  // Compare GI and GTAG arrays
+  int j = 0;
+  for (int i = 0; i <= NHIST; i++) {
+    if (NOSKIP[i]) {
+      ASSERTM(0, Pstate.GI[i] == state.GI[j], "GI[%d] mismatch: %d vs %d", i, Pstate.GI[i], state.GI[j]);
+      ASSERTM(0, Pstate.GTAG[i] == state.GTAG[j], "GTAG[%d] mismatch: %u vs %u", i, Pstate.GTAG[i], state.GTAG[j]);
+      j++;
+    }
+  }
+}
+
+void TAGE64K::CompareCheckpoint(const Checkpoint& state) {
+  ASSERTM(0, Sstate.ptghist == state.ptghist, "ptghist mismatch: %d vs %d", Sstate.ptghist, state.ptghist);
+  ASSERTM(0, Sstate.GHIST == state.GHIST, "GHIST mismatch: %lld vs %lld", Sstate.GHIST, state.GHIST);
+  ASSERTM(0, Sstate.phist == state.phist, "phist mismatch: %lld vs %lld", Sstate.phist, state.phist);
+
+  // Compare folded histories
+  for (int i = 0; i <= NHIST; i++) {
+    ASSERTM(0, Sstate.ch_i[i].comp == state.ch_i[i].comp, "ch_i[%d].comp mismatch: %u vs %u", i, Sstate.ch_i[i].comp,
+            state.ch_i[i].comp);
+    ASSERTM(0, Sstate.ch_i[i].CLENGTH == state.ch_i[i].CLENGTH, "ch_i[%d].CLENGTH mismatch: %d vs %d", i,
+            Sstate.ch_i[i].CLENGTH, state.ch_i[i].CLENGTH);
+    ASSERTM(0, Sstate.ch_i[i].OLENGTH == state.ch_i[i].OLENGTH, "ch_i[%d].OLENGTH mismatch: %d vs %d", i,
+            Sstate.ch_i[i].OLENGTH, state.ch_i[i].OLENGTH);
+    ASSERTM(0, Sstate.ch_i[i].OUTPOINT == state.ch_i[i].OUTPOINT, "ch_i[%d].OUTPOINT mismatch: %d vs %d", i,
+            Sstate.ch_i[i].OUTPOINT, state.ch_i[i].OUTPOINT);
+
+    for (int j = 0; j < 2; j++) {
+      ASSERTM(0, Sstate.ch_t[j][i].comp == state.ch_t[j][i].comp, "ch_t[%d][%d].comp mismatch: %u vs %u", j, i,
+              Sstate.ch_t[j][i].comp, state.ch_t[j][i].comp);
+      ASSERTM(0, Sstate.ch_t[j][i].CLENGTH == state.ch_t[j][i].CLENGTH, "ch_t[%d][%d].CLENGTH mismatch: %d vs %d", j, i,
+              Sstate.ch_t[j][i].CLENGTH, state.ch_t[j][i].CLENGTH);
+      ASSERTM(0, Sstate.ch_t[j][i].OLENGTH == state.ch_t[j][i].OLENGTH, "ch_t[%d][%d].OLENGTH mismatch: %d vs %d", j, i,
+              Sstate.ch_t[j][i].OLENGTH, state.ch_t[j][i].OLENGTH);
+      ASSERTM(0, Sstate.ch_t[j][i].OUTPOINT == state.ch_t[j][i].OUTPOINT, "ch_t[%d][%d].OUTPOINT mismatch: %d vs %d", j,
+              i, Sstate.ch_t[j][i].OUTPOINT, state.ch_t[j][i].OUTPOINT);
+    }
+  }
+  for (int i = 0; i < GNB; i++) {
+    for (int j = 0; j < (1 << LOGGNB); j++) {
+      ASSERTM(0, Sstate.GGEHL[i][j] == state.GGEHL[i][j], "GGEHL[%d][%d] mismatch: %d vs %d", i, j, Sstate.GGEHL[i][j],
+              state.GGEHL[i][j]);
+    }
+  }
+
+  for (int i = 0; i < PNB; i++) {
+    for (int j = 0; j < (1 << LOGPNB); j++) {
+      ASSERTM(0, Sstate.PGEHL[i][j] == state.PGEHL[i][j], "PGEHL[%d][%d] mismatch: %d vs %d", i, j, Sstate.PGEHL[i][j],
+              state.PGEHL[i][j]);
+    }
+  }
+
+  // Compare weight tables
+  for (int i = 0; i < (1 << LOGSIZEUPS); i++) {
+    ASSERTM(0, Sstate.WG[i] == state.WG[i], "WG[%d] mismatch: %d vs %d", i, Sstate.WG[i], state.WG[i]);
+    ASSERTM(0, Sstate.WP[i] == state.WP[i], "WP[%d] mismatch: %d vs %d", i, Sstate.WP[i], state.WP[i]);
+  }
+}

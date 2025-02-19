@@ -135,7 +135,6 @@ DEF_PARAM( br_mispred_file            , BR_MISPRED_FILE            , char *  , s
 
 // 0: baseline 1: take checkpoint, 2: off-path spec_update 3: off-path prediction 4: update N at exec stage
 DEF_PARAM(  spec_level                , SPEC_LEVEL                   , uns   , uns      , 0     ,    )
-DEF_PARAM(  use_pred_states           , USE_PRED_STATES              , uns   , uns      , 0     ,    )
 
 ///////////////////////////////////////////////////////////////////////////
 // confidence estimator based on perceptron

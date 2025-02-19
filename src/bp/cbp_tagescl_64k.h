@@ -320,6 +320,44 @@ struct SpeculativeStates : public SpeculativeStatesBase {
   uint8_t ghist[HISTBUFFERLENGTH];  // S: 3000-bit global history buffer (circular buffer)
 };
 
+struct Checkpoint : public SpeculativeStatesBase {
+  int8_t GGEHL[GNB][1 << LOGGNB];  // GEHL component which exploits 'GHIST'
+  int8_t PGEHL[PNB][1 << LOGPNB];  // GEHL component which exploits 'phist'
+};
+
+struct PredictorEntry {
+  Counter counter;
+  PredictorStates state;
+
+  // Constructor that takes ownership of state
+  PredictorEntry(const Counter& c, PredictorStates&& s) : counter(c), state(std::move(s)) {}
+};
+
+struct CheckpointEntry {
+  Counter counter;
+  Checkpoint state;
+
+  CheckpointEntry(const Counter& c, const Checkpoint& cp) : counter(c), state(cp) {}
+};
+
+typedef boost::multi_index_container<
+    PredictorEntry,
+    // Ordered by Counter as the key (unique index)
+    boost::multi_index::indexed_by<boost::multi_index::ordered_unique<
+                                       boost::multi_index::member<PredictorEntry, Counter, &PredictorEntry::counter>>,
+                                   // Sequence to maintain insertion order
+                                   boost::multi_index::sequenced<>>>
+    PredictorContainer;
+
+typedef boost::multi_index_container<
+    CheckpointEntry,
+    // Ordered by Counter as the key (unique index)
+    boost::multi_index::indexed_by<boost::multi_index::ordered_unique<
+                                       boost::multi_index::member<CheckpointEntry, Counter, &CheckpointEntry::counter>>,
+                                   // Sequence to maintain insertion order
+                                   boost::multi_index::sequenced<>>>
+    CheckpointContainer;
+
 class TAGE64K {
  private:
   // The statistical corrector components
@@ -460,7 +498,16 @@ class TAGE64K {
                   cbp64_folded_history* tag1);
   bool GetPrediction(UINT64 PC, int* bp_confidence, Op* op);
   void HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target);
-  void SavePredictorStates();
+  void SavePredictorStates(Counter key);
+  void TakeCheckpoint(Counter key);
+  void RetireCheckpoint(Counter key);
+  void VerifyCheckpoint(Counter key);
+  void VerifyPredictorStates(Counter key);
+  void RestoreStates(Counter key);
+  void RestoreCheckpoint(Counter key);
+  void RestorePredictorstates(Counter key);
+  void ComparePredictor(const PredictorStates& Pstate);
+  void CompareCheckpoint(const Checkpoint& cp);
   Counter KeyGeneration(bool offpath);
   int GetBrtypeFromOptype(OpType opType);
   void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget,
@@ -523,6 +570,9 @@ class TAGE64K {
   Counter branch_id;
   int Seed;       // for the pseudo-random number generator
   bool off_path;  // global indicator of op
+  // snapshot containers
+  CheckpointContainer checkpoints;
+  PredictorContainer predictor_states;
 
   int8_t tage_component;
   int8_t tage_component_inter;

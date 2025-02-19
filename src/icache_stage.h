@@ -48,39 +48,37 @@ struct Mem_Req_struct;
 
 /* name strings are in debug/debug_print.c */
 typedef enum Icache_State_enum {
-  SERVING_INIT,
-  ICACHE_FINISHED_FT,
-  ICACHE_FINISHED_FT_EXPECTING_NEXT,
-  UOP_CACHE_FINISHED_FT,
-  // icache serves immediately after the lookup
-  ICACHE_LOOKUP_SERVING,
-  ICACHE_NO_LOOKUP_SERVING,
-  ICACHE_RETRY_MEM_REQ,
-  UOP_CACHE_SERVING,
-  WAIT_FOR_MISS,
-  WAIT_FOR_EMPTY_ROB,
-  WAIT_FOR_RENAME
+  ICACHE_STAGE_RESTEER,
+  ICACHE_MEM_REQ,
+  ICACHE_WAIT_FOR_MISS,
+  ICACHE_SERVING,
+  UOP_CACHE_SERVING
 } Icache_State;
 
 // don't change this order without fixing stats in fetch.stat.def
 typedef enum Break_Reason_enum {
-  BREAK_DONT,          // don't break fetch yet
-  BREAK_RENAME,        // break because of no free renaming physical register
-  BREAK_FT_UNAVAILABLE, // break because the ft queue of the decoupled front-end is empty
+  BREAK_DONT,  // don't break fetch yet
+  BREAK_ICACHE_STAGE_RESTEER,
+  BREAK_FT_UNAVAILABLE,           // break because the ft queue of the decoupled front-end is empty
+  BREAK_ICACHE_MISS_REQ_SUCCESS,  // break because of an icache miss where the mem req succeeds
+  BREAK_ICACHE_MISS_REQ_FAILURE,  // break because of an icache miss where the mem req fails
+  BREAK_ICACHE_WAIT_FOR_MISS,
+  BREAK_ICACHE_STALLED,
   BREAK_ICACHE_TO_UOP_CACHE_SWITCH,  // break because in the same cycle switched to fetching from uop cache
-  BREAK_ICACHE_MISS_REQ_SUCCESS,     // break because of an icache miss where the mem req succeeds
-  BREAK_ICACHE_MISS_REQ_FAILURE,     // break because of an icache miss where the mem req fails
-  BREAK_WAIT_FOR_MISS,
-  BREAK_UOP_CACHE_READ_LIMIT,        // break because the uop cache has limited read capability
-  BREAK_UOP_CACHE_READ_LIMIT_AND_ISSUE_WIDTH,       // break because the uop cache has limited read capability and the issue width has been reached
   BREAK_ICACHE_READ_LIMIT,           // break because the uop cache has limited read capability
-  BREAK_ICACHE_READ_LIMIT_AND_ISSUE_WIDTH,          // break because the icache has limited read capability and the issue width has been reached
-  BREAK_ISSUE_WIDTH,   // break because it's reached maximum issue width
-  BREAK_BARRIER,       // break because of a system call or a fetch barrier instruction
-  BREAK_WAIT_FOR_EMPTY_ROB,
-  BREAK_APP_EXIT,      // break because the app exit has been reached
-  BREAK_STALL          // break because the pipeline is stalled
+  BREAK_ICACHE_ISSUE_WIDTH,
+  BREAK_UOP_CACHE_STALLED,
+  BREAK_UOP_CACHE_TO_ICACHE_SWITCH,
+  BREAK_UOP_CACHE_READ_LIMIT,
+  BREAK_UOP_CACHE_ISSUE_WIDTH
 } Break_Reason;
+
+typedef enum FT_Arbitration_Result_enum {
+  FT_UNAVAILABLE,
+  FT_MISS_BOTH,
+  FT_HIT_ICACHE,
+  FT_HIT_UOP_CACHE
+} FT_Arbitration_Result;
 
 typedef struct Icache_Stage_struct {
   uns8       proc_id;
@@ -89,16 +87,22 @@ typedef struct Icache_Stage_struct {
   Stage_Data sd; /* stage interface data */
   Stage_Data uopc_sd;
 
+  uns8 icache_lookups_per_cycle_count;
+  uns8 uop_cache_lookups_per_cycle_count;
+
   Icache_State state; /* state that the ICACHE is in */
   Icache_State
     next_state; /* state that the ICACHE is going to be in next cycle */
-  Icache_State after_waiting_state; /* state to transit to after waiting */
   uint64_t wait_for_miss_start; /* time when cache miss was observed */
+  Flag icache_miss_fulfilled;
+  Flag icache_stage_resteer_signaled;
 
   Inst_Info** line;   /* pointer to current line on a hit */
   Addr        line_addr;       /* address of the last cache line hit */
   Addr        fetch_addr;      /* address to fetch or fetching */
-  FT_Info     current_ft_info; /* containing start, length, and termination reason of the current ft */
+  // keep track of the current FT being used by the icache / uop cache
+  FT* current_ft_used_by_uop_cache;
+  FT* current_ft_used_by_icache;
   Flag        off_path;        /* is the icache fetching on the correct path? */
   Flag back_on_path; /* did a recovery happen to put the machine back on path?
                       */

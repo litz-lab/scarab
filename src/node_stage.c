@@ -49,6 +49,7 @@
 #include "core.param.h"
 #include "debug/debug.param.h"
 #include "map.h"
+#include "map_rename.h"
 #include "memory/memory.param.h"
 #include "sim.h"
 #include "statistics.h"
@@ -837,7 +838,7 @@ void node_retire() {
     op->retire_cycle = cycle_count;
 
     // free the previous register entries with same architectural destination
-    rename_table_commit(op);
+    reg_file_commit(op);
 
     if(model->op_retired_hook)
       model->op_retired_hook(op);

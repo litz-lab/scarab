@@ -56,7 +56,7 @@
 #include "prefetcher/pref.param.h"
 #include "prefetcher/pref_common.h"
 #include "prefetcher/stream_pref.h"
-#include "prefetcher/fdip_new.h"
+#include "prefetcher/fdip.h"
 #include "statistics.h"
 //#include "dram.h"
 //#include "dram.param.h"
@@ -3195,7 +3195,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr,
   // MRT_FDIPPRFON/OFF is based on fdip confidence not the correct on/off-path
   if ((mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF))
      && (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF)
-     && req->fdip_pref_off_path != fdip_off_path(req->proc_id))
+     && req->fdip_pref_off_path != fdip_off_path())
     req->fdip_pref_off_path = 2;
 
   update_mem_req_occupancy_counter(old_type, -1);
@@ -3613,7 +3613,7 @@ static void mem_init_new_req(
     new_req->off_path = TRUE;
   // All oracle (correct-path) prefetches are on path.
   if (((new_req->type == MRT_UOCPRF && !UOC_ORACLE_PREF) || new_req->type == MRT_FDIPPRFON || new_req->type == MRT_FDIPPRFOFF) &&
-      fdip_off_path(proc_id))
+      fdip_off_path())
     new_req->off_path = TRUE;
 
   STAT_EVENT(proc_id, MEM_REQ_INIT_IFETCH + type);
@@ -3962,7 +3962,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size,
   new_req->bw_prefetch   = (pref_info ? pref_info->bw_limited : FALSE);
   new_req->destination   = destination;
   if (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF) {
-    if (fdip_off_path(proc_id))
+    if (fdip_off_path())
       new_req->fdip_pref_off_path = 1;
     else
       new_req->fdip_pref_off_path = 0;

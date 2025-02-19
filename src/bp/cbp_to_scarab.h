@@ -28,6 +28,7 @@
 #include <inttypes.h>
 #include <math.h>
 #include <stdlib.h>
+
 #include "stdint.h"
 #include "stdio.h"
 
@@ -60,13 +61,13 @@ extern "C" {
 #define SCARAB_BP_INTF_FUNC(CBP_CLASS, FCN_NAME) bp_##CBP_CLASS##_##FCN_NAME
 
 /*************Interface to Scarab***************/
-#define DEF_CBP(CBP_NAME, CBP_CLASS)                         \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, init)();               \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, timestamp)(Op * op);   \
-  uns8 SCARAB_BP_INTF_FUNC(CBP_CLASS, pred)(Op*);            \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, spec_update)(Op * op); \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, update)(Op * op);      \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, retire)(Op * op);      \
+#define DEF_CBP(CBP_NAME, CBP_CLASS)                            \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, init)();                  \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, timestamp)(Op * op);      \
+  uns8 SCARAB_BP_INTF_FUNC(CBP_CLASS, pred)(Op*);               \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, spec_update)(Op * op);    \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, update)(Op * op);         \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, retire)(Op * op);         \
   void SCARAB_BP_INTF_FUNC(CBP_CLASS, recover)(Recovery_Info*); \
   Flag SCARAB_BP_INTF_FUNC(CBP_CLASS, full)(uns proc_id);
 #include "cbp_table.def"
@@ -110,14 +111,12 @@ typedef enum {
 } OpType;
 
 static inline UINT32 SatIncrement(UINT32 x, UINT32 max) {
-  if(x < max)
-    return x + 1;
+  if (x < max) return x + 1;
   return x;
 }
 
 static inline UINT32 SatDecrement(UINT32 x) {
-  if(x > 0)
-    return x - 1;
+  if (x > 0) return x - 1;
   return x;
 }
 
@@ -127,9 +126,9 @@ static inline Flag is_conditional_branch(Op* op) {
 
 static inline OpType scarab_to_cbp_optype(Op* op) {
   Cf_Type cf_type = op->table_info->cf_type;
-  OpType  optype  = OPTYPE_OP;
+  OpType optype = OPTYPE_OP;
 
-  switch(cf_type) {
+  switch (cf_type) {
     case CF_BR:
       optype = OPTYPE_JMP_DIRECT_UNCOND;
       break;

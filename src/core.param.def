@@ -133,6 +133,14 @@ DEF_PARAM(node_retire_rate, NODE_RETIRE_RATE, uns, uns, 10, )
  * while the decode path has a width of 5. In that case decode_width_narrower is set to 1.*/
 DEF_PARAM(decode_path_width_narrower, DECODE_PATH_WIDTH_NARROWER, uns, uns, 0, )
 
+/********MAP REGISTER FILE
+ * PARAMETERS********************************************************/
+DEF_PARAM(reg_renaming_scheme, REG_RENAMING_SCHEME, uns, uns, 0, )
+DEF_PARAM(reg_table_integer_physical_size, REG_TABLE_INTEGER_PHYSICAL_SIZE, uns, uns, 256, )
+DEF_PARAM(reg_table_vector_physical_size, REG_TABLE_VECTOR_PHYSICAL_SIZE, uns, uns, 256, )
+DEF_PARAM(reg_table_integer_virtual_size, REG_TABLE_INTEGER_VIRTUAL_SIZE, uns, uns, 256, )
+DEF_PARAM(reg_table_vector_virtual_size, REG_TABLE_VECTOR_VIRTUAL_SIZE, uns, uns, 256, )
+
 /********EXEC PORT
  * PARAMETERS*********************************************************/
 /*Size of each RS, length should be NUM_RS, Must be type string since it is an
@@ -165,12 +173,10 @@ DEF_PARAM(die_on_ret_stall_core, DIE_ON_RET_STALL_CORE, uns, uns, 0, )
 DEF_PARAM(die_on_mem_block_thresh, DIE_ON_MEM_BLOCK_THRESH, uns, uns, 0, )
 DEF_PARAM(die_on_mem_block_core, DIE_ON_MEM_BLOCK_CORE, uns, uns, 0, )
 
-DEF_PARAM(fetch_across_fetch_target, FETCH_ACROSS_FETCH_TARGET, Flag, Flag,
-          TRUE, )
+DEF_PARAM(icache_fetch_across_fetch_target, ICACHE_FETCH_ACROSS_FETCH_TARGET, Flag, Flag, TRUE, )
+DEF_PARAM(uop_cache_fetch_across_fetch_target, UOP_CACHE_FETCH_ACROSS_FETCH_TARGET, Flag, Flag, TRUE, )
 DEF_PARAM(fetch_off_path_ops, FETCH_OFF_PATH_OPS, Flag, Flag, TRUE, )
 DEF_PARAM(wp_collect_stats, WP_COLLECT_STATS, Flag, Flag, FALSE, )
-DEF_PARAM(switch_ic_fetch_on_recovery, SWITCH_IC_FETCH_ON_RECOVERY, Flag, Flag,
-          TRUE, )
 
 /* functional unit delays by op_type */
 /* note: memory delays correspond to address computation time.  This

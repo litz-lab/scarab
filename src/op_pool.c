@@ -187,7 +187,7 @@ void op_pool_init_op(Op* op) {
    taken from the pool to be used */
 
 void op_pool_setup_op(uns proc_id, Op* op) {
-  uns ii;
+  uns ii, jj;
   /* only initialize here what is independent of the engine (the
      rest should be in the fetch stage) */
   op->bom                     = FALSE;
@@ -257,8 +257,18 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   for(ii = 0; ii < NUM_DEP_TYPES; ii++)
     op->wake_up_signaled[ii] = FALSE;
 
-  for (ii = 0; ii < MAX_DESTS; ii++)
-    op->dst_reg_file_ptag[ii] = -1;
+  for (ii = 0; ii < MAX_SRCS; ++ii) {
+    for (jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
+      op->src_reg_id[ii][jj] = -1;
+    }
+  }
+
+  for (ii = 0; ii < MAX_DESTS; ++ii) {
+    for (jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
+      op->dst_reg_id[ii][jj] = -1;
+      op->prev_dst_reg_id[ii][jj] = -1;
+    }
+  }
 }
 
 

@@ -73,7 +73,6 @@ void init_thread(Thread_Data* td, char* argv[], char* envp[]) {
 
 void recover_thread(Thread_Data* td, Addr new_pc, Counter op_num,
                     uns64 inst_uid, Flag remain_wrongpath) {
-  rename_table_recover(op_num);
   recover_seq_op_list(td, op_num);
   recover_map();
   ASSERT(td->proc_id, !remain_wrongpath);

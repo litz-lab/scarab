@@ -5,6 +5,7 @@
 #include <list>
 #include <unordered_map>
 #include <vector>
+#include <limits>
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
 

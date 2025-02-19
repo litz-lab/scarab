@@ -35,20 +35,17 @@
 /**************************************************************************************/
 // Macros
 
-#define IS_CONF_CF(op)                    \
-  ((op)->table_info->cf_type == CF_CBR || \
-   (op)->table_info->cf_type == CF_IBR || \
-   (op)->table_info->cf_type == CF_ICALL)
-
+#define IS_CONF_CF(op) \
+  ((op)->table_info->cf_type == CF_CBR || (op)->table_info->cf_type == CF_IBR || (op)->table_info->cf_type == CF_ICALL)
 
 /**************************************************************************************/
 /* Types */
 
 typedef struct Opc_Table_struct {
-  Flag    off_path;
-  Flag    mispred;
-  Flag    pred_conf;
-  Flag    verified;
+  Flag off_path;
+  Flag mispred;
+  Flag pred_conf;
+  Flag verified;
   Counter op_num;  // here for debugging only
 } Opc_Table;
 
@@ -61,7 +58,6 @@ typedef struct Bpc_Data_struct {
   uns head;              // head index in opc_table
   uns tail;              // tail index in opc_table
 } Bpc_Data;
-
 
 typedef struct PERCEP_Bpc_Data_struct {
   Perceptron* conf_pt;
@@ -81,16 +77,14 @@ void bp_update_conf(Op*);
 void pred_onpath_conf(Op*);
 void update_onpath_conf(Op*);
 void recover_onpath_conf(void);
-uns  read_conf_head(void);
+uns read_conf_head(void);
 uns8 compute_spawn_path_conf(uns);
-
 
 /**************************************************************************************/
 /* perceptron based confidece estimator */
 void conf_perceptron_init(void);
 void conf_perceptron_pred(Op*);
 void conf_perceptron_update(Op*);
-
 
 /**************************************************************************************/
 

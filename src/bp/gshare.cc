@@ -54,56 +54,56 @@ void bp_gshare_timestamp(Op* op) {}
 void bp_gshare_recover(Recovery_Info* info) {}
 void bp_gshare_spec_update(Op* op) {}
 void bp_gshare_retire(Op* op) {}
-uns8 bp_gshare_full(uns proc_id) { return 0; }
-
+uns8 bp_gshare_full(uns proc_id) {
+  return 0;
+}
 
 void bp_gshare_init() {
   gshare_state_all_cores.resize(NUM_CORES);
-  for(auto& gshare_state : gshare_state_all_cores) {
+  for (auto& gshare_state : gshare_state_all_cores) {
     gshare_state.pht.resize(1 << HIST_LENGTH, PHT_INIT_VALUE);
   }
 }
 
 uns8 bp_gshare_pred(Op* op) {
-  const uns   proc_id      = op->proc_id;
+  const uns proc_id = op->proc_id;
   const auto& gshare_state = gshare_state_all_cores.at(proc_id);
 
-  const Addr  addr      = op->oracle_info.pred_addr;
-  const uns32 hist      = op->oracle_info.pred_global_hist;
+  const Addr addr = op->oracle_info.pred_addr;
+  const uns32 hist = op->oracle_info.pred_global_hist;
   const uns32 pht_index = get_pht_index(addr, hist);
-  const uns8  pht_entry = gshare_state.pht[pht_index];
-  const uns8  pred      = pht_entry >> (PHT_CTR_BITS - 1) & 0x1;
+  const uns8 pht_entry = gshare_state.pht[pht_index];
+  const uns8 pred = pht_entry >> (PHT_CTR_BITS - 1) & 0x1;
 
-  DEBUG(proc_id, "Predicting with gshare for  op_num:%s  index:%d\n",
-        unsstr64(op->op_num), pht_index);
-  DEBUG(proc_id, "Predicting  addr:%s  pht:%u  pred:%d  dir:%d\n",
-        hexstr64s(addr), pht_index, pred, op->oracle_info.dir);
+  DEBUG(proc_id, "Predicting with gshare for  op_num:%s  index:%d\n", unsstr64(op->op_num), pht_index);
+  DEBUG(proc_id, "Predicting  addr:%s  pht:%u  pred:%d  dir:%d\n", hexstr64s(addr), pht_index, pred,
+        op->oracle_info.dir);
 
   return pred;
 }
 
 void bp_gshare_update(Op* op) {
-  if(op->table_info->cf_type != CF_CBR) {
+  if (op->table_info->cf_type != CF_CBR) {
     // If op is not a conditional branch, we do not interact with gshare.
     return;
   }
 
-  const uns   proc_id      = op->proc_id;
-  auto&       gshare_state = gshare_state_all_cores.at(proc_id);
-  const Addr  addr         = op->oracle_info.pred_addr;
-  const uns32 hist         = op->oracle_info.pred_global_hist;
-  const uns32 pht_index    = get_pht_index(addr, hist);
-  const uns8  pht_entry    = gshare_state.pht[pht_index];
+  const uns proc_id = op->proc_id;
+  auto& gshare_state = gshare_state_all_cores.at(proc_id);
+  const Addr addr = op->oracle_info.pred_addr;
+  const uns32 hist = op->oracle_info.pred_global_hist;
+  const uns32 pht_index = get_pht_index(addr, hist);
+  const uns8 pht_entry = gshare_state.pht[pht_index];
 
-  DEBUG(proc_id, "Writing gshare PHT for  op_num:%s  index:%d  dir:%d\n",
-        unsstr64(op->op_num), pht_index, op->oracle_info.dir);
+  DEBUG(proc_id, "Writing gshare PHT for  op_num:%s  index:%d  dir:%d\n", unsstr64(op->op_num), pht_index,
+        op->oracle_info.dir);
 
-  if(op->oracle_info.dir) {
+  if (op->oracle_info.dir) {
     gshare_state.pht[pht_index] = SAT_INC(pht_entry, N_BIT_MASK(PHT_CTR_BITS));
   } else {
     gshare_state.pht[pht_index] = SAT_DEC(pht_entry, 0);
   }
 
-  DEBUG(proc_id, "Updating addr:%s  pht:%u  ent:%u  dir:%d\n", hexstr64s(addr),
-        pht_index, gshare_state.pht[pht_index], op->oracle_info.dir);
+  DEBUG(proc_id, "Updating addr:%s  pht:%u  ent:%u  dir:%d\n", hexstr64s(addr), pht_index, gshare_state.pht[pht_index],
+        op->oracle_info.dir);
 }

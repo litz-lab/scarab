@@ -41,7 +41,7 @@ void set_uop_cache(uns8 proc_id);
 void recover_uop_cache(void);
 
 Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath);
-Uop_Cache_Data* uop_cache_get_line_from_lookup_buffer(void);
+Uop_Cache_Data uop_cache_consume_uops_from_lookup_buffer(uns requested);
 void uop_cache_clear_lookup_buffer(void);
 Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag update_repl);
 

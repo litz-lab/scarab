@@ -34,7 +34,7 @@
 #include "globals/assert.h"
 #include "globals/utils.h"
 #include "statistics.h"
-#include "prefetcher/fdip_new.h"
+#include "prefetcher/fdip.h"
 #include "prefetcher/eip.h"
 #include "prefetcher/D_JOLT.h"
 #include "prefetcher/FNL+MMA.h"

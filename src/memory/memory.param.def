@@ -106,7 +106,7 @@ DEF_PARAM(icache_line_size, ICACHE_LINE_SIZE, uns, uns,
           64, ) /* line size in bytes */
 DEF_PARAM(perfect_icache, PERFECT_ICACHE, Flag, Flag,
           FALSE, ) /* it always hits? */
-DEF_PARAM(icache_read_ports, ICACHE_READ_PORTS, uns, uns, 2, )
+DEF_PARAM(icache_read_ports, ICACHE_READ_PORTS, uns, uns, 1, )
 DEF_PARAM(icache_write_ports, ICACHE_WRITE_PORTS, uns, uns, 1, )
 DEF_PARAM(icache_banks, ICACHE_BANKS, uns, uns, 8, )
 DEF_PARAM(icache_repl, ICACHE_REPL, uns, uns, 0, )
@@ -115,6 +115,7 @@ DEF_PARAM(icache_repl, ICACHE_REPL, uns, uns, 0, )
 DEF_PARAM(uop_cache_enable, UOP_CACHE_ENABLE, uns, uns, 1,)
 DEF_PARAM(always_lookup_icache, ALWAYS_LOOKUP_ICACHE, uns, uns, 0,)
 DEF_PARAM(uop_cache_insert_only_onpath, UOP_CACHE_INSERT_ONLY_ONPATH, Flag, Flag, FALSE,)
+DEF_PARAM(uop_cache_read_ports, UOP_CACHE_READ_PORTS, uns, uns, 1,)
 // Uop cache size in its uop capacity = ISSUE_WIDTH * UOP_CACHE_LINES = 6 * 384 = 2304 uops
 DEF_PARAM(  uop_cache_lines                , UOP_CACHE_LINES                 , uns    , uns     , 384                    ,       )
 DEF_PARAM(  uop_cache_assoc                , UOP_CACHE_ASSOC                 , uns    , uns     , 8                      ,       )

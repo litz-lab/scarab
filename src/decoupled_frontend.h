@@ -52,36 +52,38 @@ extern "C" {
 #include "frontend/pin_trace_fe.h"
 
 #include "stage_data.h"
+typedef struct FT FT;
 
-  typedef struct decoupled_fe_iter decoupled_fe_iter;
-  
-  struct decoupled_fe_iter {
-    // the ft index
-    uint64_t ft_pos;
-    // the op index
-    uint64_t op_pos;
-    // the flattened op index, as if the ftq is an 1-d array
-    uint64_t flattened_op_pos;
-  };
+typedef struct decoupled_fe_iter decoupled_fe_iter;
+
+struct decoupled_fe_iter {
+  // the ft index
+  uint64_t ft_pos;
+  // the op index
+  uint64_t op_pos;
+  // the flattened op index, as if the ftq is an 1-d array
+  uint64_t flattened_op_pos;
+};
 
   // Simulator API
   void alloc_mem_decoupled_fe(uns numProcs);
   void init_decoupled_fe(uns proc_id, const char*);
-  void set_decoupled_fe(int proc_id);
+  void set_decoupled_fe(uns proc_id);
   void reset_decoupled_fe();
   void debug_decoupled_fe();
   void update_decoupled_fe();
   // Icache/Core API
-  void recover_decoupled_fe(int proc_id);
-  void decoupled_fe_stall(Op *op);
+  void recover_decoupled_fe();
+  bool decoupled_fe_is_off_path();
   void decoupled_fe_retire(Op *op, int proc_id, uns64 inst_uid);
-  bool decoupled_fe_current_ft_can_fetch_op(int proc_id);
-  bool decoupled_fe_fill_icache_stage_data(int proc_id, int requested, Stage_Data *sd);
-  bool decoupled_fe_can_fetch_ft(int proc_id);
-  FT_Info decoupled_fe_fetch_ft(int proc_id);
-  FT_Info decoupled_fe_peek_ft(int proc_id);
+  bool ft_can_fetch_op(FT* ft);
+  Op* ft_fetch_op(FT* ft);
+  bool ft_is_consumed(FT* ft);
+  void ft_set_consumed(FT* ft);
+  FT_Info ft_get_ft_info(FT* ft);
+  FT* decoupled_fe_get_ft(uint64_t ft_pos);
   // FTQ API
-  decoupled_fe_iter* decoupled_fe_new_ftq_iter();
+  decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id);
   /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached
      if end_of_ft is true the Op is the last one in a fetch target (cache-line boundary of taken branch)*/
   Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter, bool *end_of_ft);
@@ -98,8 +100,8 @@ extern "C" {
   uint64_t decoupled_fe_ftq_iter_ft_offset(decoupled_fe_iter* iter);
   uint64_t decoupled_fe_ftq_num_ops();
   uint64_t decoupled_fe_ftq_num_fts();
-  void decoupled_fe_set_ftq_num(int proc_id, uint64_t ftq_ft_num);
-  uint64_t decoupled_fe_get_ftq_num(int proc_id);
+  void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num);
+  uint64_t decoupled_fe_get_ftq_num();
 #ifdef __cplusplus
 }
 #endif

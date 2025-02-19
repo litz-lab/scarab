@@ -56,7 +56,7 @@
 #include "power/power_intf.h"
 #include "stat_trace.h"
 #include "trigger.h"
-#include "prefetcher/fdip_new.h"
+#include "prefetcher/fdip.h"
 #include "prefetcher/eip.h"
 
 #include "bp/bp.param.h"
@@ -100,8 +100,6 @@ Counter* sim_done_last_uop_count;
 Counter* sim_done_last_cycle_count;
 uns*     sim_count;
 uns      operating_mode = SIMULATION_MODE;
-Counter  pw_count   = 0; /* the global PW access counter */
-Counter  unique_pws_since_recovery = 0;
 
 /* the global instruction counter for periodic dump - retired per core */
 Counter* period_last_inst_count;
@@ -112,9 +110,6 @@ Counter  period_ID = 0;
 
 /* the global warmup dump flags */
 Flag*    warmup_dump_done;
-
-Hash_Table per_branch_stat;
-Uop_Queue_Fill_Time uop_queue_fill_time;
 
 time_t sim_start_time; /* the time that the simulator was started */
 
@@ -279,46 +274,7 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
                   "KIPS)\n",
                   proc_id, unsstr64(inst_count[proc_id]), unsstr64(cycle_count),
                   unsstr64(sim_time), cum_ipc, cum_ipc, cum_khz);
-          FILE* fp = fopen("per_branch_stats.csv", "w");
-          Per_Branch_Stat** entries = (Per_Branch_Stat**) hash_table_flatten(&per_branch_stat, NULL);
-          fprintf(fp, "cf_type,addr,target\n");
-          for (int i=0; i<per_branch_stat.count; i++) {
-            Per_Branch_Stat* entry = entries[i];
-            fprintf(fp, "%i,%llx,%llx\n", entry->cf_type, entry->addr, entry->target);
-          }
-          free(entries);
 
-          // Dump uop queue fill time stats. One line for each size, how many cycles it took to reach after resteer.
-          fp = fopen("uop_queue_fill_cycles.csv", "w");
-          for (int fill = 0; fill < UOP_QUEUE_CAPACITY_MAX_MEASURED; fill++) {
-            List* dist = &uop_queue_fill_time.time_for_size[fill].cycles;
-            Counter* node = list_start_head_traversal(dist);
-            while (node) {
-              fprintf(fp, "%llu,", *node);
-              node = list_next_element(dist);
-            }
-            fprintf(fp, "\n");
-          }
-          fp = fopen("uop_queue_fill_pws.csv", "w");
-          for (int fill = 0; fill < UOP_QUEUE_CAPACITY_MAX_MEASURED; fill++) {
-            List* dist = &uop_queue_fill_time.time_for_size[fill].pws;
-            Counter* node = list_start_head_traversal(dist);
-            while (node) {
-              fprintf(fp, "%llu,", *node);
-              node = list_next_element(dist);
-            }
-            fprintf(fp, "\n");
-          }
-          fp = fopen("uop_queue_fill_unique_pws.csv", "w");
-          for (int fill = 0; fill < UOP_QUEUE_CAPACITY_MAX_MEASURED; fill++) {
-            List* dist = &uop_queue_fill_time.time_for_size[fill].unique_pws;
-            Counter* node = list_start_head_traversal(dist);
-            while (node) {
-              fprintf(fp, "%llu,", *node);
-              node = list_next_element(dist);
-            }
-            fprintf(fp, "\n");
-          }
           break;
 
         default:

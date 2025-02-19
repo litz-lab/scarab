@@ -17,16 +17,17 @@
 #define _MTAGE_H_
 
 #include <assert.h>
-#include <cmath>
 #include <inttypes.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <cmath>
 #include <vector>
-#include "stdint.h"
-#include "stdio.h"
 
 #include "cbp_to_scarab.h"
+#include "stdint.h"
+#include "stdio.h"
 
 /*************Code From CBP 2016***************/
 
@@ -34,7 +35,6 @@
 
 // NPRED : number of tage predictors
 #define NPRED 6
-
 
 // SPSIZE : spectrum size (number of subpaths) for each tage
 // P0 = global, P1 = per-address, P2 = per-set, P3 = per-set, P4 = frequency
@@ -145,31 +145,28 @@ Moved to mtage_unlimited.cc
 #define LOGCOLT 20
 #define COLTBITS 5
 
-
 using namespace std;
-
 
 class path_history {
   // path history register
  public:
-  int       ptr;
-  int       hlength;
+  int ptr;
+  int hlength;
   unsigned* h;
 
-  void      init(int hlen);
-  void      insert(unsigned val);
+  void init(int hlen);
+  void insert(unsigned val);
   unsigned& operator[](int n);
 };
-
 
 class compressed_history {
   // used in the hash functions
  public:
   unsigned comp;
-  int      clength;
-  int      olength;
-  int      nbits;
-  int      outpoint;
+  int clength;
+  int olength;
+  int nbits;
+  int outpoint;
   unsigned mask1;
   unsigned mask2;
 
@@ -180,7 +177,6 @@ class compressed_history {
   void update(path_history& ph);
 };
 
-
 class coltentry {
   // COLT entry (holds 2^NPRED counters)
  public:
@@ -189,17 +185,15 @@ class coltentry {
   int8_t& ctr(bool predtaken[NPRED]);
 };
 
-
 class colt {
   // This is COLT, a method invented by Gabriel Loh and Dana Henry
   // for combining several different predictors (see PACT 2002)
  public:
   coltentry c[1 << LOGCOLT];
-  int8_t&   ctr(uint64_t pc, bool predtaken[NPRED]);
-  bool      predict(uint64_t pc, bool predtaken[NPRED]);
-  void      update(uint64_t pc, bool predtaken[NPRED], bool taken);
+  int8_t& ctr(uint64_t pc, bool predtaken[NPRED]);
+  bool predict(uint64_t pc, bool predtaken[NPRED]);
+  void update(uint64_t pc, bool predtaken[NPRED], bool taken);
 };
-
 
 class bftable {
   // branch frequency table (BFT)
@@ -209,20 +203,18 @@ class bftable {
   int& getfreq(uint64_t pc);
 };
 
-
 class subpath {
   // path history register and hashing
  public:
-  path_history        ph;
-  int                 numg;
+  path_history ph;
+  int numg;
   compressed_history* chg;
   compressed_history* chgg;
   compressed_history* cht;
   compressed_history* chtt;
 
   void init(int ng, int hist[], int logg, int tagbits, int pathbits, int hp);
-  void init(int ng, int minhist, int maxhist, int logg, int tagbits,
-            int pathbits, int hp);
+  void init(int ng, int minhist, int maxhist, int logg, int tagbits, int pathbits, int hp);
   void update(uint64_t targetpc, bool taken);
   unsigned cg(int bank);
   unsigned cgg(int bank);
@@ -230,18 +222,15 @@ class subpath {
   unsigned ctt(int bank);
 };
 
-
 class spectrum {
   // path spectrum (= set of subpaths, aka first-level history)
  public:
-  int      size;
+  int size;
   subpath* p;
 
   spectrum();
-  void init(int sz, int ng, int minhist, int maxhist, int logg, int tagbits,
-            int pathbits, int hp);
+  void init(int sz, int ng, int minhist, int maxhist, int logg, int tagbits, int pathbits, int hp);
 };
-
 
 class freqbins {
   // frequency bins for predictor P3
@@ -250,39 +239,37 @@ class freqbins {
   int maxfreq;
 
   void init(int nb);
-  int  find(int bfreq);
+  int find(int bfreq);
   void update(int bfreq);
 };
-
 
 class gentry {
   // tage tagged tables entry
  public:
   int16_t tag;
-  int8_t  ctr;
-  int8_t  u;
+  int8_t ctr;
+  int8_t u;
   gentry();
 };
-
 
 class tage {
   // cf. TAGE (Seznec & Michaud JILP 2006, Seznec MICRO 2011)
  public:
   string name;
 
-  int8_t*     b;  // tagless (bimodal) table
-  gentry**    g;  // tagged tables
-  int         bi;
-  int*        gi;
+  int8_t* b;   // tagless (bimodal) table
+  gentry** g;  // tagged tables
+  int bi;
+  int* gi;
   vector<int> hit;
-  bool        predtaken;
-  bool        altpredtaken;
-  int         ppi;
-  int8_t*     postp;  // post-predictor
-  bool        postpredtaken;
-  bool        mispred;
-  int         allocfail;
-  int         nmisp;
+  bool predtaken;
+  bool altpredtaken;
+  int ppi;
+  int8_t* postp;  // post-predictor
+  bool postpredtaken;
+  bool mispred;
+  int allocfail;
+  int nmisp;
 
   int numg;
   int bsize;
@@ -296,22 +283,20 @@ class tage {
   int caphist;
 
   tage();
-  void    init(const char* nm, int ng, int logb, int logg, int tagb, int ctrb,
-               int ppb, int ru, int caph);
-  int     bindex(uint64_t pc);
-  int     gindex(uint64_t pc, subpath& p, int bank);
-  int     gtag(uint64_t pc, subpath& p, int bank);
-  int     postp_index();
+  void init(const char* nm, int ng, int logb, int logg, int tagb, int ctrb, int ppb, int ru, int caph);
+  int bindex(uint64_t pc);
+  int gindex(uint64_t pc, subpath& p, int bank);
+  int gtag(uint64_t pc, subpath& p, int bank);
+  int postp_index();
   gentry& getg(int i);
-  bool    condbr_predict(uint64_t pc, subpath& p);
-  void    uclear();
-  void    galloc(int i, uint64_t pc, bool taken, subpath& p);
-  void    aggressive_update(uint64_t pc, bool taken, subpath& p);
-  void    careful_update(uint64_t pc, bool taken, subpath& p);
-  bool    condbr_update(uint64_t pc, bool taken, subpath& p);
-  void    printconfig(subpath& p);
+  bool condbr_predict(uint64_t pc, subpath& p);
+  void uclear();
+  void galloc(int i, uint64_t pc, bool taken, subpath& p);
+  void aggressive_update(uint64_t pc, bool taken, subpath& p);
+  void careful_update(uint64_t pc, bool taken, subpath& p);
+  bool condbr_update(uint64_t pc, bool taken, subpath& p);
+  void printconfig(subpath& p);
 };
-
 
 /////////////////////////////////////////////////////////////
 
@@ -322,67 +307,59 @@ class folded_history {
   // PPM-like predictor at CBP-1
  public:
   unsigned comp;
-  int      CLENGTH;
-  int      OLENGTH;
-  int      OUTPOINT;
-  void     init(int original_length, int compressed_length, int N);
-  void     update(uint8_t* h, int PT);
+  int CLENGTH;
+  int OLENGTH;
+  int OUTPOINT;
+  void init(int original_length, int compressed_length, int N);
+  void update(uint8_t* h, int PT);
 };
-
 
 class MTAGE {
  private:
-  bftable  bft;
+  bftable bft;
   freqbins bfreq;
   spectrum sp[NPRED];
-  tage     pred[NPRED];
+  tage pred[NPRED];
   subpath* subp[NPRED];
-  bool     predtaken[NPRED];
-  colt     co;
+  bool predtaken[NPRED];
+  colt co;
 
  public:
   MTAGE(void);
   bool GetPrediction(uint64_t PC);
-  bool GetPrediction (UINT64 PC, int* bp_confidence);
-  void UpdatePredictor(uint64_t PC, OpType OPTYPE, bool resolveDir,
-                       bool predDir, uint64_t branchTarget);
-  void TrackOtherInst(uint64_t PC, OpType opType, bool taken,
-                      uint64_t branchTarget);
+  bool GetPrediction(UINT64 PC, int* bp_confidence);
+  void UpdatePredictor(uint64_t PC, OpType OPTYPE, bool resolveDir, bool predDir, uint64_t branchTarget);
+  void TrackOtherInst(uint64_t PC, OpType opType, bool taken, uint64_t branchTarget);
   uns8 IsFull(void);
 
   void initSC();
-  void HistoryUpdate(uint64_t PC, uint8_t brtype, bool taken, uint64_t target,
-                     int& Y, folded_history* K, folded_history* L);
-
+  void HistoryUpdate(uint64_t PC, uint8_t brtype, bool taken, uint64_t target, int& Y, folded_history* K,
+                     folded_history* L);
 
   void UpdateFinalSC(uint64_t PC, bool taken);
   void UpdateSC(uint64_t PC, bool taken, bool PRED);
   bool FinalSCpredict(uint64_t PC, bool Tpred);
   bool SCpredict(uint64_t PC, bool Tpred);
-  int  percpredict(int PC, long long BHIST, int8_t* line, int PSTEP, int WIDTH);
-  void updateperc(bool taken, int8_t* line, long long BHIST, int PSTEP,
-                  int WIDTH);
-  int  Gpredict(uint64_t PC, long long BHIST, int* length, int8_t** tab,
-                int NBR);
-  void Gupdate(uint64_t PC, bool taken, long long BHIST, int* length,
-               int8_t** tab, int NBR, int WIDTH);
+  int percpredict(int PC, long long BHIST, int8_t* line, int PSTEP, int WIDTH);
+  void updateperc(bool taken, int8_t* line, long long BHIST, int PSTEP, int WIDTH);
+  int Gpredict(uint64_t PC, long long BHIST, int* length, int8_t** tab, int NBR);
+  void Gupdate(uint64_t PC, bool taken, long long BHIST, int* length, int8_t** tab, int NBR, int WIDTH);
 
   // index function for the GEHL and MAC-RHSP tables
   // FGEHL serves to mix path history
 
   int gehlindex(uint64_t PC, int bank);
 
-  int  rhspindex(uint64_t PC, int bank);
+  int rhspindex(uint64_t PC, int bank);
   void predict_gehl(uint64_t PC);
   void gehlupdate(uint64_t PC, bool taken);
   void predict_rhsp(uint64_t PC);
   void rhspupdate(uint64_t PC, bool taken);
   bool getloop(uint64_t PC);
-  int  lindex(uint64_t);
+  int lindex(uint64_t);
   void loopupdate(uint64_t, bool, bool);
 };
 void PrintStat(double NumInst);
-
 
 /***********************************************************/
 #endif

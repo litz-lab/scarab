@@ -44,8 +44,7 @@
 #include "op_pool.h"
 #include "prefetcher/pref.param.h"
 #include "prefetcher/pref_common.h"
-/*#include "prefetcher/fdip.h"*/
-#include "prefetcher/fdip_new.h"
+#include "prefetcher/fdip.h"
 #include "prefetcher/eip.h"
 #include "prefetcher/D_JOLT.h"
 #include "prefetcher/FNL+MMA.h"
@@ -55,6 +54,10 @@
 #include "freq.h"
 #include "uop_queue_stage.h"
 #include "decoupled_frontend.h"
+
+// clang-format off
+#include "map_rename.h"
+// clang-format on
 
 /**************************************************************************************/
 /* Global vars */
@@ -239,10 +242,10 @@ void cmp_cores(void) {
       update_map_stage(dec->last_sd, map_stage_uop_cache_src);
       update_uop_queue_stage(&ic->uopc_sd);
       update_decode_stage(&ic->sd);
+      update_icache_stage();
       update_decoupled_fe();
       update_fdip();
       update_eip();
-      update_icache_stage();
 
       node_sched_ops();
 
@@ -365,12 +368,13 @@ void cmp_recover() {
     op->oracle_info.recovery_sch = FALSE;
   }
 
+  reg_file_recover(bp_recovery_info->recovery_op);
   recover_thread(td, bp_recovery_info->recovery_fetch_addr,
                  bp_recovery_info->recovery_op_num,
                  bp_recovery_info->recovery_inst_uid,
                  bp_recovery_info->late_bp_recovery_wrong);
 
-  recover_decoupled_fe(bp_recovery_info->proc_id);
+  recover_decoupled_fe();
   recover_fdip();
   recover_icache_stage();
   recover_uop_cache();

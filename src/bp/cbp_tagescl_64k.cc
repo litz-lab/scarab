@@ -223,6 +223,10 @@ void TAGE64K::reinit() {
   }
   TICK = 0;
   Sstate.GHIST = 0;
+  Pstate.on_phist = 0;
+  Pstate.on_ptghist = 0;
+  off_path = false;
+  branch_id = 0;
 
   tage_component = TAGE_BASE;
   tage_component_alt = TAGE_BASE;
@@ -297,12 +301,22 @@ void TAGE64K::baseupdate(bool Taken, UINT64 PC) {
 //  to allocate entries  in the loop predictor
 int TAGE64K::MYRANDOM() {
   Seed++;
-  Seed ^= Sstate.phist;
+  Seed ^= Pstate.on_phist;
   Seed = (Seed >> 21) + (Seed << 11);
-  Seed ^= Sstate.ptghist;
+  Seed ^= Pstate.on_ptghist;
   Seed = (Seed >> 10) + (Seed << 22);
   return (Seed);
 };
+
+void TAGE64K::SavePredictorStates() {
+  Pstate.on_phist = Sstate.phist;
+  Pstate.on_ptghist = Sstate.ptghist;
+}
+
+Counter TAGE64K::KeyGeneration(bool offpath) {
+  off_path = offpath;
+  return ++branch_id;
+}
 
 void TAGE64K::UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history* index, cbp64_folded_history* tag0,
                          cbp64_folded_history* tag1) {
@@ -962,7 +976,7 @@ void TAGE64K::SpecLoopUpdate(UINT64 PC, bool Taken) {
       return;
     }
     // Increment age when prediction differs from TAGE or randomly
-    if ((Pstate.predloop != Pstate.tage_pred) || ((MYRANDOM() & 7) == 0))
+    if ((Pstate.predloop != Pstate.tage_pred) || (((off_path ? Seed: MYRANDOM()) & 7) == 0))
       if (entry.age < CONFLOOP)
         entry.age++;
   }

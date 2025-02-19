@@ -101,7 +101,10 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op) {
   if (op->off_path) {
     if (SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON)
       return;
-
+    if (is_conditional)
+      cbp_predictors.at(proc_id).SpecUpdateAtCond(op->inst_info->addr, op->oracle_info.dir, op->oracle_info.pred);
+    cbp_predictors.at(proc_id).SpecUpdate(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred,
+                                          op->oracle_info.target);
     return;
   }
 

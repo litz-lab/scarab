@@ -20,6 +20,7 @@ jobs:
       - name: Checkout Public Repository
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.SCARAB_SYNC_PATH }}
           fetch-depth: 0  # Full history for proper sync
 
       - name: Configure Git (Keep Original Authors)
@@ -27,8 +28,23 @@ jobs:
           git config --global user.email "$(git log -1 --pretty=format:'%ae')"
           git config --global user.name "$(git log -1 --pretty=format:'%an')"
 
-      - name: Add Private Repository Remote
-        run: git remote add private https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab_ll.git
+      - name: Force Authentication with Fine-Grained PAT
+        env:
+          PAT: ${{ secrets.SCARAB_SYNC_PAT }}
+        run: |
+          if git remote get-url private > /dev/null 2>&1; then
+            git remote set-url private https://${PAT}@github.com/litz-lab/scarab_ll.git
+          else
+            git remote add public https://${PAT}@github.com/litz-lab/scarab_ll.git
+          fi
+        git credential reject https://github.com/ || true  # Ensure old credentials are cleared
+
+      - name: Debug PAT Authentication
+        env:
+          PAT: ${{ secrets.SCARAB_SYNC_PAT }}
+        run: |
+          echo "Testing authentication..."
+          curl -H "Authorization: Bearer $PAT" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/litz-lab/scarab_ll
 
   sync-repos:
     if: ${{ github.repository == 'litz-lab/scarab' && github.event_name == 'merge_group' }}
@@ -38,6 +54,7 @@ jobs:
       - name: Checkout Public Repository
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.SCARAB_SYNC_PATH }}
           fetch-depth: 0  # Full history for proper sync
 
       - name: Configure Git (Keep Original Authors)
@@ -45,8 +62,28 @@ jobs:
           git config --global user.email "$(git log -1 --pretty=format:'%ae')"
           git config --global user.name "$(git log -1 --pretty=format:'%an')"
 
-      - name: Add Private Repository Remote
-        run: git remote add private https://x-access-token:${{ secrets.SCARAB_SYNC_PAT }}@github.com/litz-lab/scarab_ll.git
+      - name: Force Authentication with Fine-Grained PAT
+        env:
+          PAT: ${{ secrets.SCARAB_SYNC_PAT }}
+        run: |
+          if git remote get-url private > /dev/null 2>&1; then
+            git remote set-url private https://${PAT}@github.com/litz-lab/scarab_ll.git
+          else
+            git remote add public https://${PAT}@github.com/litz-lab/scarab_ll.git
+          fi
+        git credential reject https://github.com/ || true  # Ensure old credentials are cleared
 
-      - name: Push Updates to Private Repository
-        run: git push private HEAD:main
+      - name: Debug PAT Authentication
+        env:
+          PAT: ${{ secrets.SCARAB_SYNC_PAT }}
+        run: |
+          echo "Testing authentication..."
+          curl -H "Authorization: Bearer $PAT" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/litz-lab/scarab_ll
+
+      - name: Push Updates to Private Repository (Keeping Original Author, Setting Committer)
+        env:
+          PAT: ${{ secrets.SCARAB_SYNC_PAT }}
+          BOT_USER: "hlitz"  # Replace with service account GitHub username
+          BOT_EMAIL: "hlitz@ucsc.edu"  # Replace with service account email
+        run: |
+          GIT_COMMITTER_NAME="$BOT_USER" GIT_COMMITTER_EMAIL="$BOT_EMAIL" git push https://${PAT}@github.com/litz-lab/scarab_ll.git HEAD:main

@@ -459,12 +459,15 @@ class TAGE64K {
   void UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history* index, cbp64_folded_history* tag0,
                   cbp64_folded_history* tag1);
   bool GetPrediction(UINT64 PC, int* bp_confidence, Op* op);
-  void HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target, long long& X, int& Y, cbp64_folded_history* H,
-                     cbp64_folded_history* G, cbp64_folded_history* J);
+  void HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target);
   void SavePredictorStates();
   Counter KeyGeneration(bool offpath);
   int GetBrtypeFromOptype(OpType opType);
-  void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget);
+  void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget, const PredictorStates& Pstate);
+  void SpecUpdate(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget);
+  void GlobalStateUpdate(UINT64 PC, UINT64 branchTarget, int brtype, bool predDir);
+  void SpecUpdateAtCond(UINT64 PC, bool resolveDir, bool predDir);
+  void NonSpecUpdateAtCond(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget);
   int Gpredict(UINT64 PC, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W);
   void Gupdate(UINT64 PC, bool taken, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W,
                int LSUM);

@@ -120,12 +120,11 @@ static inline UINT32 SatDecrement(UINT32 x) {
   return x;
 }
 
-static inline Flag is_conditional_branch(Op* op) {
-  return op->table_info->cf_type == CF_CBR;
+static inline Flag is_conditional_branch(Cf_Type cf_type) {
+  return cf_type == CF_CBR;
 }
 
-static inline OpType scarab_to_cbp_optype(Op* op) {
-  Cf_Type cf_type = op->table_info->cf_type;
+static inline OpType scarab_to_cbp_optype(Cf_Type cf_type) {
   OpType optype = OPTYPE_OP;
 
   switch (cf_type) {
@@ -156,7 +155,7 @@ static inline OpType scarab_to_cbp_optype(Op* op) {
     default:
       // Should never see non-control flow instructions or invalid CF
       // types in the branch predictor.
-      ASSERT(op->proc_id, 0);
+      ASSERT(0, 0);
       break;
   }
   return optype;

@@ -137,6 +137,11 @@ DEF_PARAM( br_mispred_file            , BR_MISPRED_FILE            , char *  , s
 DEF_PARAM(  spec_level                , SPEC_LEVEL                   , uns   , uns      , 0     ,    )
 DEF_PARAM(  random_deterministic      , RANDOM_DETERMINISTIC         , Flag  , Flag     , TRUE  ,    )
 
+// toggle tage-sc-l 64kb components
+DEF_PARAM( tagescl64kb_sc                 , TAGESCL64KB_SC                 , Flag    , Flag       , TRUE       ,        )
+DEF_PARAM( tagescl64kb_loop               , TAGESCL64KB_LOOP               , Flag    , Flag       , TRUE       ,        )
+DEF_PARAM( tagescl64kb_alt                , TAGESCL64KB_ALT           , Flag    , Flag       , TRUE       ,        )
+
 ///////////////////////////////////////////////////////////////////////////
 // confidence estimator based on perceptron
 

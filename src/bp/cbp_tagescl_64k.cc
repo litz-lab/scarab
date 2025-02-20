@@ -24,13 +24,15 @@ void TAGE64K::reinit() {
     NOSKIP[i] = ((i - 1) & 1) || ((i >= BORNINFASSOC) & (i < BORNSUPASSOC));
   }
 
-  // MANUAL_OMIT is 4 so remove 4 entries
+  // just eliminate some extra tables (very very marginal)
+  // Author removed4 entries manually, set MANUAL_OMIT 4 to specify the entries to be omitted
   NOSKIP[4] = 0;
   NOSKIP[NHIST - 2] = 0;
   NOSKIP[8] = 0;
   NOSKIP[NHIST - 6] = 0;
-  // just eliminate some extra tables (very very marginal)
 
+  // Since the entry of global Pstate and the entry of checkpoint have different size,
+  // we need to map the index of NOSKIP to the index of Pstate and checkpoint
   int idx_n = 0;
   for (int i = 0; i <= NHIST; i++) {
     if (NOSKIP[i])
@@ -335,7 +337,6 @@ void TAGE64K::Tagepred(UINT64 PC) {
   Pstate.HitBank = 0;
   Pstate.AltBank = 0;
   UpdateAddr(PC, Sstate.phist, Sstate.ch_i, Sstate.ch_t[0], Sstate.ch_t[1]);
-  // just do not forget most address are aligned on 4 bytes
   Pstate.alttaken = getbim(PC);
   Pstate.tage_pred = Pstate.alttaken;
   Pstate.LongestMatchPred = Pstate.alttaken;

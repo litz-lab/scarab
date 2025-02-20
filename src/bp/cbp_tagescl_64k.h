@@ -173,6 +173,7 @@ enum tage_component {
 #endif
 #define LOGSIZEUPS (LOGSIZEUP / 2)
 
+// P components: Predictor (P) components are updated at prediction and used for updating N components.
 struct PredictorStates {
   // Predictor status
   int THRES;  // used for comparing SC and intermediate result(one of TAGE or LOOP) to determine final prediction
@@ -239,7 +240,8 @@ struct PredictorStates {
   }
 };
 
-// S components: snapshot is taken for on-path branch which is scheduled to be restoered.
+// S components: Speculative (S) components are checkpointed and speculatively updated on each branch prediction.
+// Whenever a mispredicted branch is resolved, the S state is recovered from the checkpoint
 struct SpeculativeStatesBase {
   // checkpoint doesn't need to snapshot ghist because ptghist overwrite off-path updates
   //  and ghist's length(3000-bit, around 1200 branches) is long enough to avoid overlapping of correct histories

@@ -178,6 +178,7 @@ private:
   void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* emit_new_prefetch, Op* op);
   Flag conf_off_path();
   void inc_prefetched_cls(Addr line_addr, uns success);
+  Mem_Req_Type determine_req_type();
 
   uns proc_id;
   Icache_Stage *ic_ref;
@@ -941,7 +942,7 @@ void FDIP::update() {
         }
       }
 
-      Mem_Req_Type mem_type = conf_off_path()? MRT_FDIPPRFOFF : MRT_FDIPPRFON;
+      Mem_Req_Type mem_type = determine_req_type();
       if (!emit_new_prefetch && !line && !mem_req)
         insert_pref_candidate_to_seniority_ftq(line_addr);
       if (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)
@@ -1467,4 +1468,11 @@ void FDIP::add_evict_seq(Addr line_addr) {
       it2->second.push_back(make_pair('e',cycle_count));
     }
   }
+}
+
+Mem_Req_Type FDIP::determine_req_type() {
+  if(FDIP_BP_CONFIDENCE && (FDIP_UTILITY_HASH_ENABLE || FDIP_BLOOM_FILTER || FDIP_UC_SIZE))
+    return conf_off_path() ? MRT_FDIPPRFOFF : MRT_FDIPPRFON;
+  // if BP conf isn't in use assume everything is on-path
+  return MRT_FDIPPRFON;
 }

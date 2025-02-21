@@ -200,7 +200,6 @@ struct PredictorStates {
   int on_ptghist;         // used for MYRANDOM()
   long long on_phist;     // used for MYRANDOM()
 
-
   // regular pointer incurs Segmentation fault + automatic memory management
   std::unique_ptr<int[]> GI;     // hashed index set for gtable
   std::unique_ptr<uint[]> GTAG;  // hashed tag set for gtable
@@ -459,6 +458,7 @@ class TAGE64K {
                   cbp64_folded_history* tag1);
   bool GetPrediction(UINT64 PC, int* bp_confidence, Op* op);
   void HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target, long long& X, int& Y, cbp64_folded_history* H,
+                     cbp64_folded_history* G, cbp64_folded_history* J);
   void SavePredictorStates();
   Counter KeyGeneration(bool offpath);
   int GetBrtypeFromOptype(OpType opType);

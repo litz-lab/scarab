@@ -94,29 +94,27 @@ uns8 CBP_To_Scarab_Intf<TAGE64K>::pred(Op* op) {
 
 template <>
 void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op) {
-  uns    proc_id        = op->proc_id;
-  OpType optype         = scarab_to_cbp_optype(op);
-  Flag   is_conditional = is_conditional_branch(op);
+  uns proc_id = op->proc_id;
+  OpType optype = scarab_to_cbp_optype(op);
+  Flag is_conditional = is_conditional_branch(op);
 
   if (op->off_path) {
-      return;
+    return;
   }
 
   cbp_predictors.at(proc_id).SavePredictorStates();
 
   if (is_conditional) {
     cbp_predictors.at(proc_id).UpdatePredictor(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred,
-                                                op->oracle_info.target);
+                                               op->oracle_info.target);
   } else {
-    cbp_predictors.at(proc_id).TrackOtherInst(op->inst_info->addr, optype, op->oracle_info.dir,
-                                              op->oracle_info.target);
+    cbp_predictors.at(proc_id).TrackOtherInst(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.target);
   }
-
 }
 
 template <>
 void CBP_To_Scarab_Intf<TAGE64K>::timestamp(Op* op) {
-  uns proc_id                 = op->proc_id;
+  uns proc_id = op->proc_id;
   op->recovery_info.branch_id = cbp_predictors.at(proc_id).KeyGeneration(op->off_path);
 }
 

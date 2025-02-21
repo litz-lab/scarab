@@ -976,7 +976,7 @@ void TAGE64K::SpecLoopUpdate(UINT64 PC, bool Taken) {
       return;
     }
     // Increment age when prediction differs from TAGE or randomly
-    if ((Pstate.predloop != Pstate.tage_pred) || (((off_path ? Seed: MYRANDOM()) & 7) == 0))
+    if ((Pstate.predloop != Pstate.tage_pred) || (((off_path ? Seed : MYRANDOM()) & 7) == 0))
       if (entry.age < CONFLOOP)
         entry.age++;
   }

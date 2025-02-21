@@ -228,11 +228,7 @@ void TAGE64K::reinit() {
   tage_component_alt = TAGE_BASE;
 }
 
-// index function for the bimodal table
 
-int TAGE64K::bindex(UINT64 PC) {
-  return ((PC ^ (PC >> LOGB)) & ((1 << (LOGB)) - 1));
-}
 
 // the index functions for the tagged tables uses path history as in the OGEHL predictor
 // F serves to mix path history: not very important impact

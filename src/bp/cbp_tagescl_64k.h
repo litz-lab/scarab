@@ -197,8 +197,10 @@ struct PredictorStates {
   bool AltConf;           // Set med confidence when 2*|ctr + 1| > 1
   int HitBank;            // index of the bank with the longest history among matching tags in TAGE table
   int AltBank;            // index of the bank with 2nd longest history among matching tags in TAGE table
-  int on_ptghist;         // used for MYRANDOM()
-  long long on_phist;     // used for MYRANDOM()
+  // We are using on-path history as a seed for MYRANDOM() to ensure deterministic behavior.
+  // Using both on/off-path history info should not change entropy of MYRANDOM() substantially
+  int on_path_ptghist;
+  long long on_path_phist;
 
   // regular pointer incurs Segmentation fault + automatic memory management
   std::unique_ptr<int[]> GI;     // hashed index set for gtable

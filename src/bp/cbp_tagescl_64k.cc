@@ -223,8 +223,8 @@ void TAGE64K::reinit() {
   }
   TICK = 0;
   Sstate.GHIST = 0;
-  Pstate.on_phist = 0;
-  Pstate.on_ptghist = 0;
+  Pstate.on_path_phist = 0;
+  Pstate.on_path_ptghist = 0;
   off_path = false;
   branch_id = 0;
 
@@ -301,16 +301,16 @@ void TAGE64K::baseupdate(bool Taken, UINT64 PC) {
 //  to allocate entries  in the loop predictor
 int TAGE64K::MYRANDOM() {
   Seed++;
-  Seed ^= Pstate.on_phist;
+  Seed ^= Pstate.on_path_phist;
   Seed = (Seed >> 21) + (Seed << 11);
-  Seed ^= Pstate.on_ptghist;
+  Seed ^= Pstate.on_path_ptghist;
   Seed = (Seed >> 10) + (Seed << 22);
   return (Seed);
 };
 
 void TAGE64K::SavePredictorStates() {
-  Pstate.on_phist = Sstate.phist;
-  Pstate.on_ptghist = Sstate.ptghist;
+  Pstate.on_path_phist = Sstate.phist;
+  Pstate.on_path_ptghist = Sstate.ptghist;
 }
 
 Counter TAGE64K::KeyGeneration(bool offpath) {

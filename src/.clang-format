@@ -1,5 +1,25 @@
-BasedOnStyle: Google  # Use Google's base style as a foundation for consistency.
+BasedOnStyle: Google
+
 ColumnLimit: 120
-AllowShortLoopsOnASingleLine: false           # Never collapse loops
-AllowShortFunctionsOnASingleLine: InlineOnly
+
+# do not adapt compact style for conditions, loops, structs, and functions
 AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: InlineOnly
+
+# Include ordering: 
+### self, system, globals ("globals/*"), debug ("debug/*"), parameter ("*.param.*"), subdirectory ("dir/*"), local ("*.h")
+IncludeCategories:
+  - Regex: '^<.*>$'
+    Priority: 1
+  - Regex: '^"globals/.*\.h"$'
+    Priority: 2
+  - Regex: '^"debug/.*\.h"$'
+    Priority: 3
+  - Regex: '^".*\.param\..*"$'
+    Priority: 4
+  - Regex: '^".*/.*\.h"$'
+    Priority: 5
+  - Regex: '^"[^/]+\.h"$'
+    Priority: 6

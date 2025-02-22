@@ -25,29 +25,31 @@
  * Date         : 10/28/2006
  * Description  :
  ***************************************************************************************/
-#include "debug/debug.param.h"
-#include "debug/debug_macros.h"
+#include "frontend/pin_trace_fe.h"
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 
-#include "bp/bp.h"
-#include "statistics.h"
+#include "debug/debug.param.h"
+#include "debug/debug_macros.h"
+
+#include "bp/bp.param.h"
 
 #include "./pin/pin_lib/uop_generator.h"
-#include "bp/bp.param.h"
-#include "ctype_pin_inst.h"
-#include "frontend/pin_trace_fe.h"
+#include "bp/bp.h"
 #include "frontend/pin_trace_read.h"
 #include "isa/isa.h"
+
+#include "ctype_pin_inst.h"
+#include "statistics.h"
 
 /**************************************************************************************/
 /* Macros */
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_TRACE_READ, ##args)
-
 
 /**************************************************************************************/
 /* Global Variables */
@@ -72,28 +74,25 @@ void trace_init() {
 
   /* temp variable needed for easy initialization syntax */
   char* tmp_trace_files[MAX_NUM_PROCS] = {
-    CBP_TRACE_R0,  CBP_TRACE_R1,  CBP_TRACE_R2,  CBP_TRACE_R3,  CBP_TRACE_R4,
-    CBP_TRACE_R5,  CBP_TRACE_R6,  CBP_TRACE_R7,  CBP_TRACE_R8,  CBP_TRACE_R9,
-    CBP_TRACE_R10, CBP_TRACE_R11, CBP_TRACE_R12, CBP_TRACE_R13, CBP_TRACE_R14,
-    CBP_TRACE_R15, CBP_TRACE_R16, CBP_TRACE_R17, CBP_TRACE_R18, CBP_TRACE_R19,
-    CBP_TRACE_R20, CBP_TRACE_R21, CBP_TRACE_R22, CBP_TRACE_R23, CBP_TRACE_R24,
-    CBP_TRACE_R25, CBP_TRACE_R26, CBP_TRACE_R27, CBP_TRACE_R28, CBP_TRACE_R29,
-    CBP_TRACE_R30, CBP_TRACE_R31, CBP_TRACE_R32, CBP_TRACE_R33, CBP_TRACE_R34,
-    CBP_TRACE_R35, CBP_TRACE_R36, CBP_TRACE_R37, CBP_TRACE_R38, CBP_TRACE_R39,
-    CBP_TRACE_R40, CBP_TRACE_R41, CBP_TRACE_R42, CBP_TRACE_R43, CBP_TRACE_R44,
-    CBP_TRACE_R45, CBP_TRACE_R46, CBP_TRACE_R47, CBP_TRACE_R48, CBP_TRACE_R49,
-    CBP_TRACE_R50, CBP_TRACE_R51, CBP_TRACE_R52, CBP_TRACE_R53, CBP_TRACE_R54,
-    CBP_TRACE_R55, CBP_TRACE_R56, CBP_TRACE_R57, CBP_TRACE_R58, CBP_TRACE_R59,
-    CBP_TRACE_R60, CBP_TRACE_R61, CBP_TRACE_R62, CBP_TRACE_R63,
+      CBP_TRACE_R0,  CBP_TRACE_R1,  CBP_TRACE_R2,  CBP_TRACE_R3,  CBP_TRACE_R4,  CBP_TRACE_R5,  CBP_TRACE_R6,
+      CBP_TRACE_R7,  CBP_TRACE_R8,  CBP_TRACE_R9,  CBP_TRACE_R10, CBP_TRACE_R11, CBP_TRACE_R12, CBP_TRACE_R13,
+      CBP_TRACE_R14, CBP_TRACE_R15, CBP_TRACE_R16, CBP_TRACE_R17, CBP_TRACE_R18, CBP_TRACE_R19, CBP_TRACE_R20,
+      CBP_TRACE_R21, CBP_TRACE_R22, CBP_TRACE_R23, CBP_TRACE_R24, CBP_TRACE_R25, CBP_TRACE_R26, CBP_TRACE_R27,
+      CBP_TRACE_R28, CBP_TRACE_R29, CBP_TRACE_R30, CBP_TRACE_R31, CBP_TRACE_R32, CBP_TRACE_R33, CBP_TRACE_R34,
+      CBP_TRACE_R35, CBP_TRACE_R36, CBP_TRACE_R37, CBP_TRACE_R38, CBP_TRACE_R39, CBP_TRACE_R40, CBP_TRACE_R41,
+      CBP_TRACE_R42, CBP_TRACE_R43, CBP_TRACE_R44, CBP_TRACE_R45, CBP_TRACE_R46, CBP_TRACE_R47, CBP_TRACE_R48,
+      CBP_TRACE_R49, CBP_TRACE_R50, CBP_TRACE_R51, CBP_TRACE_R52, CBP_TRACE_R53, CBP_TRACE_R54, CBP_TRACE_R55,
+      CBP_TRACE_R56, CBP_TRACE_R57, CBP_TRACE_R58, CBP_TRACE_R59, CBP_TRACE_R60, CBP_TRACE_R61, CBP_TRACE_R62,
+      CBP_TRACE_R63,
   };
-  if(DUMB_CORE_ON) {
+  if (DUMB_CORE_ON) {
     // avoid errors by specifying a trace known to be good
     tmp_trace_files[DUMB_CORE] = tmp_trace_files[0];
   }
-  for(uns proc_id = 0; proc_id < MAX_NUM_PROCS; proc_id++) {
+  for (uns proc_id = 0; proc_id < MAX_NUM_PROCS; proc_id++) {
     trace_files[proc_id] = tmp_trace_files[proc_id];
   }
-  for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+  for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     trace_setup(proc_id);
   }
 }
@@ -115,7 +114,7 @@ Addr trace_next_fetch_addr(uns proc_id) {
 
 void trace_done() {
   uns proc_id;
-  for(proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+  for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     pin_trace_close(proc_id);
   }
 }
@@ -129,18 +128,18 @@ Flag trace_can_fetch_op(uns proc_id) {
 }
 
 void trace_fetch_op(uns proc_id, Op* op) {
-  if(uop_generator_get_bom(proc_id)) {
+  if (uop_generator_get_bom(proc_id)) {
     ASSERT(proc_id, !trace_read_done[proc_id] && !reached_exit[proc_id]);
     uop_generator_get_uop(proc_id, op, &next_pi[proc_id]);
   } else {
     uop_generator_get_uop(proc_id, op, NULL);
   }
 
-  if(uop_generator_get_eom(proc_id)) {
+  if (uop_generator_get_eom(proc_id)) {
     int success = pin_trace_read(proc_id, &next_pi[proc_id]);
-    if(!success) {
+    if (!success) {
       trace_read_done[proc_id] = TRUE;
-      reached_exit[proc_id]    = TRUE;
+      reached_exit[proc_id] = TRUE;
       /* this flag is supposed to be set in uop_generator_get_uop() but there
        * is a circular dependency on trace_read_done to be set. So, we set
        * op->exit here. */
@@ -150,13 +149,15 @@ void trace_fetch_op(uns proc_id, Op* op) {
 }
 
 void trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
-  FATAL_ERROR(proc_id, "Trace frontend does not support wrong path. Turn off "
-                       "FETCH_OFF_PATH_OPS\n");
+  FATAL_ERROR(proc_id,
+              "Trace frontend does not support wrong path. Turn off "
+              "FETCH_OFF_PATH_OPS\n");
 }
 
 void trace_recover(uns proc_id, uns64 inst_uid) {
-  FATAL_ERROR(proc_id, "Trace frontend does not support wrong path. Turn off "
-                       "FETCH_OFF_PATH_OPS\n");
+  FATAL_ERROR(proc_id,
+              "Trace frontend does not support wrong path. Turn off "
+              "FETCH_OFF_PATH_OPS\n");
 }
 
 void trace_retire(uns proc_id, uns64 inst_uid) {

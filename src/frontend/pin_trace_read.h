@@ -36,7 +36,7 @@ extern "C" {
 #endif
 
 void pin_trace_file_pointer_init(unsigned char);
-int  pin_trace_read(unsigned char, ctype_pin_inst*);
+int pin_trace_read(unsigned char, ctype_pin_inst*);
 void pin_trace_open(unsigned char, const char*);
 void pin_trace_close(unsigned char);
 

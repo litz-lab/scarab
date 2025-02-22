@@ -26,8 +26,9 @@
  * Description  : ISA definitions (currently just registers)
  ***************************************************************************************/
 
-//#include "globals/assert.h"
+// #include "globals/assert.h"
 #include "isa/isa.h"
+
 #include <assert.h>
 
 #define REG(x) #x,

@@ -107,10 +107,13 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op) {
   // Real update start
   if (is_conditional) {
     cbp_predictors.at(proc_id).SpecUpdateAtCond(op->inst_info->addr, op->oracle_info.dir, op->oracle_info.pred);
-    cbp_predictors.at(proc_id).SpecUpdate(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred, op->oracle_info.target);
-    cbp_predictors.at(proc_id).NonSpecUpdateAtCond(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred, op->oracle_info.target);
+    cbp_predictors.at(proc_id).SpecUpdate(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred,
+                                          op->oracle_info.target);
+    cbp_predictors.at(proc_id).NonSpecUpdateAtCond(op->inst_info->addr, optype, op->oracle_info.dir,
+                                                   op->oracle_info.pred, op->oracle_info.target);
   } else {
-    cbp_predictors.at(proc_id).SpecUpdate(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred, op->oracle_info.target);
+    cbp_predictors.at(proc_id).SpecUpdate(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred,
+                                          op->oracle_info.target);
     cbp_predictors.at(proc_id).TrackOtherInst(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.target);
   }
   // Real update end

@@ -618,7 +618,7 @@ void TAGE64K::GlobalStateUpdate(UINT64 PC, UINT64 br_target, int brtype, bool pr
   if (brtype & 1)
     Sstate.GHIST = (Sstate.GHIST << 1) + (pred_dir & (br_target < PC));
 
-  int T    = ((PC ^ (PC >> 2))) ^ pred_dir;
+  int T = ((PC ^ (PC >> 2))) ^ pred_dir;
   int PATH = PC ^ (PC >> 2) ^ (PC >> 4);
   // if branch is indirect, encode global history with 3 bits. Otherwise, 2 bits
   // int maxt = ((brtype & 2) != 0) ? 3 : 2;
@@ -653,12 +653,12 @@ void TAGE64K::GlobalStateUpdate(UINT64 PC, UINT64 br_target, int brtype, bool pr
 }
 
 // PREDICTOR UPDATE
-void TAGE64K::NonSpecUpdateAtCond(UINT64 PC, OpType opType, bool resolveDir,
-    bool predDir, UINT64 branchTarget) {
+void TAGE64K::NonSpecUpdateAtCond(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget) {
   UpdatePredictor(PC, opType, resolveDir, predDir, branchTarget, Pstate);
 }
 
-void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget, const PredictorStates& state) {
+void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget,
+                              const PredictorStates& state) {
 #ifdef SC
 #ifdef LOOPPREDICTOR
   if (state.LVALID) {
@@ -704,7 +704,7 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
 #ifdef VARTHRES
     {
       int XSUM = state.LSUM - ((WB[INDUPDS] >= 0) * ((2 * Bias[INDBIAS] + 1) + (2 * BiasSK[INDBIASSK] + 1) +
-                                                      (2 * BiasBank[INDBIASBANK] + 1)));
+                                                     (2 * BiasBank[INDBIASBANK] + 1)));
       if ((XSUM + ((2 * Bias[INDBIAS] + 1) + (2 * BiasSK[INDBIASSK] + 1) + (2 * BiasBank[INDBIASBANK] + 1)) >= 0) !=
           (XSUM >= 0))
         ctrupdate(WB[INDUPDS],

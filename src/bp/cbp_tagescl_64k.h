@@ -463,7 +463,8 @@ class TAGE64K {
   void SavePredictorStates();
   Counter KeyGeneration(bool offpath);
   int GetBrtypeFromOptype(OpType opType);
-  void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget, const PredictorStates& Pstate);
+  void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget,
+                       const PredictorStates& Pstate);
   void SpecUpdate(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget);
   void GlobalStateUpdate(UINT64 PC, UINT64 branchTarget, int brtype, bool predDir);
   void SpecUpdateAtCond(UINT64 PC, bool resolveDir, bool predDir);

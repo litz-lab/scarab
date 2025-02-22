@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "bp.param.h"
+
 #include "cbp_to_scarab.h"
 // #include "bt9.h"
 // #include "bt9_reader.h"
@@ -107,7 +108,6 @@ class cbp64_gentry  // TAGE global table entry
 #define LOGL 5
 #define WIDTHNBITERLOOP 10  // we predict only loops with less than 1K iterations
 #define LOOPTAG 10          // tag width in the loop predictor
-
 
 class cbp64_lentry  // loop predictor entry
 {
@@ -458,8 +458,8 @@ class TAGE64K {
 #define MINHIST 6  // not optimized so far
 #define MAXHIST 3000
 
-#define LOGG 10  /* logsize of the  banks in the  tagged TAGE tables */
-#define TBITS 8  // minimum width of the tags  (low history lengths), +4 for high history lengths
+#define LOGG 10            /* logsize of the  banks in the  tagged TAGE tables */
+#define TBITS 8            // minimum width of the tags  (low history lengths), +4 for high history lengths
   bool NOSKIP[NHIST + 1];  // to manage the associativity for different history lengths
 
 #define NNN 1        // number of extra entries allocated on a TAGE misprediction (1+NNN)

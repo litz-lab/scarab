@@ -30,8 +30,10 @@
 #define __BP_H__
 
 #include "globals/global_types.h"
+
 #include "libs/cache_lib.h"
 #include "libs/hash_lib.h"
+
 #include "op.h"
 
 /**************************************************************************************/
@@ -52,18 +54,15 @@ typedef struct Bp_Recovery_Info_struct {
   Op* redirect_op;         /* pointer to op that caused redirect */
 
   Op* recovery_op;             /* pointer to op that caused recovery */
-  int oracle_cp_num;           /* checkpoint num that we need to return to - if using
-                                  oracle checkpointing */
+  int oracle_cp_num;           /* checkpoint num that we need to return to - if using oracle checkpointing */
   Counter recovery_unique_num; /* unique_num of op that caused recovery */
   uns64 recovery_inst_uid;     /* unique id of the instruction that caused  */
 
   Flag wpe_flag;     /* This CFI has a WPE associated with it */
   Counter wpe_cycle; /* The cycle in which the WPE occurred */
 
-  Flag late_bp_recovery;        // TRUE if recovery is due to a late branch
-                                // prediction.
-  Flag late_bp_recovery_wrong;  // TRUE if recovery is due to a late branch
-                                // prediction that is wrong.
+  Flag late_bp_recovery;        // TRUE if recovery is due to a late branch prediction.
+  Flag late_bp_recovery_wrong;  // TRUE if recovery is due to a late branch prediction that is wrong.
 
 } Bp_Recovery_Info;
 
@@ -132,8 +131,7 @@ typedef struct Bp_Data_struct {
   uns proc_id;
   /* predictor data */
   struct Bp_struct* bp;       // main branch predictor.
-  struct Bp_struct* late_bp;  // late multi-cycle branch predictor. (Could be
-                              // null)
+  struct Bp_struct* late_bp;  // late multi-cycle branch predictor. (Could be null)
   struct Bp_Btb_struct* bp_btb;
   struct Bp_Ibtb_struct* bp_ibtb;
   struct Br_Conf_struct* br_conf;
@@ -205,17 +203,14 @@ typedef struct Bp_struct {
   Bp_Id id;
   const char* name;
   void (*init_func)(void);              /* called to initialize the predictor */
-  void (*timestamp_func)(Op*);          /* called to timestamp a branch for prediction,
-                                           update, and recovery */
+  void (*timestamp_func)(Op*);          /* called to timestamp a branch for prediction, update, and recovery */
   uns8 (*pred_func)(Op*);               /* called to predict a branch instruction */
-  void (*spec_update_func)(Op*);        /* called to update the speculative state of
-                                           the predictor in the front-end */
+  void (*spec_update_func)(Op*);        /* called to update the speculative state of the predictor in the front-end */
   void (*update_func)(Op*);             /* called to update the bp when a branch is resolved
-                                           (at the end of execute or retire) */
-  void (*retire_func)(Op*);             /* called to retire a branch and update the state of
-                                           the bp that has to be updated after retirement*/
-  void (*recover_func)(Recovery_Info*); /* called to recover the bp when a
-                                           misprediction is realized */
+                                         * (at the end of execute or retire) */
+  void (*retire_func)(Op*);             /* called to retire a branch and update the state of the bp that has to be
+                                         * updated after retirement*/
+  void (*recover_func)(Recovery_Info*); /* called to recover the bp when a misprediction is realized */
   uns8 (*full_func)(uns);
 } Bp;
 
@@ -231,15 +226,11 @@ typedef struct Bp_Btb_struct {
 typedef struct Bp_Ibtb_struct {
   Ibtb_Id id;
   const char* name;
-  void (*init_func)(Bp_Data*);                    /* called to initialize the indirect target
-                                                     predictor */
-  Addr (*pred_func)(Bp_Data*, Op*);               /* called to predict an indirect branch target */
-  void (*update_func)(Bp_Data*, Op*);             /* called to update the indirect branch
-                                                     target when a branch is resolved */
-  void (*recover_func)(Bp_Data*, Recovery_Info*); /* called to recover the
-                                                     indirect branch target when
-                                                     a misprediction is realized
-                                                   */
+  void (*init_func)(Bp_Data*);        /* called to initialize the indirect target predictor */
+  Addr (*pred_func)(Bp_Data*, Op*);   /* called to predict an indirect branch target */
+  void (*update_func)(Bp_Data*, Op*); /* called to update the indirect branch target when a branch is resolved */
+  void (*recover_func)(Bp_Data*, Recovery_Info*); /* called to recover the indirect branch target when
+                                                   * a misprediction is realized */
 } Bp_Ibtb;
 
 typedef struct Br_Conf_struct {

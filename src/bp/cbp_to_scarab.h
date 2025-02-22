@@ -36,9 +36,11 @@
 extern "C" {
 #endif
 
-#include "core.param.h"
 #include "globals/assert.h"
 #include "globals/utils.h"
+
+#include "core.param.h"
+
 #include "table_info.h"
 
 #ifdef __cplusplus
@@ -111,12 +113,14 @@ typedef enum {
 } OpType;
 
 static inline UINT32 SatIncrement(UINT32 x, UINT32 max) {
-  if (x < max) return x + 1;
+  if (x < max)
+    return x + 1;
   return x;
 }
 
 static inline UINT32 SatDecrement(UINT32 x) {
-  if (x > 0) return x - 1;
+  if (x > 0)
+    return x - 1;
   return x;
 }
 

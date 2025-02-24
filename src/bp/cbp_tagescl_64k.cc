@@ -658,31 +658,31 @@ void TAGE64K::NonSpecUpdateAtCond(UINT64 PC, OpType opType, bool resolveDir, boo
 }
 
 void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget,
-                              const PredictorStates& state) {
+                              const PredictorStates& pstate) {
 #ifdef SC
 #ifdef LOOPPREDICTOR
-  if (state.LVALID) {
-    if (state.pred_taken != state.predloop)
-      ctrupdate(WITHLOOP, (state.predloop == resolveDir), 7);
+  if (pstate.LVALID) {
+    if (pstate.pred_taken != pstate.predloop)
+      ctrupdate(WITHLOOP, (pstate.predloop == resolveDir), 7);
   }
-  LoopUpdate(PC, resolveDir, (state.pred_taken != resolveDir), state.LHIT);
+  LoopUpdate(PC, resolveDir, (pstate.pred_taken != resolveDir), pstate.LHIT);
 #endif
 
-  bool SCPRED = (state.LSUM >= 0);
-  if (state.pred_inter != SCPRED) {
-    if ((abs(state.LSUM) < state.THRES))
-      if ((state.HighConf)) {
-        if ((abs(state.LSUM) < state.THRES / 2))
-          if ((abs(state.LSUM) >= state.THRES / 4))
-            ctrupdate(SecondH, (state.pred_inter == resolveDir), CONFWIDTH);
+  bool SCPRED = (pstate.LSUM >= 0);
+  if (pstate.pred_inter != SCPRED) {
+    if ((abs(pstate.LSUM) < pstate.THRES))
+      if ((pstate.HighConf)) {
+        if ((abs(pstate.LSUM) < pstate.THRES / 2))
+          if ((abs(pstate.LSUM) >= pstate.THRES / 4))
+            ctrupdate(SecondH, (pstate.pred_inter == resolveDir), CONFWIDTH);
       }
-    if ((state.MedConf))
-      if ((abs(state.LSUM) < state.THRES / 4)) {
-        ctrupdate(FirstH, (state.pred_inter == resolveDir), CONFWIDTH);
+    if ((pstate.MedConf))
+      if ((abs(pstate.LSUM) < pstate.THRES / 4)) {
+        ctrupdate(FirstH, (pstate.pred_inter == resolveDir), CONFWIDTH);
       }
   }
 
-  if ((SCPRED != resolveDir) || ((abs(state.LSUM) < state.THRES))) {
+  if ((SCPRED != resolveDir) || ((abs(pstate.LSUM) < pstate.THRES))) {
     {
       if (SCPRED != resolveDir) {
         Pupdatethreshold[INDUPD] += 1;
@@ -703,8 +703,8 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
     }
 #ifdef VARTHRES
     {
-      int XSUM = state.LSUM - ((WB[INDUPDS] >= 0) * ((2 * Bias[INDBIAS] + 1) + (2 * BiasSK[INDBIASSK] + 1) +
-                                                     (2 * BiasBank[INDBIASBANK] + 1)));
+      int XSUM = pstate.LSUM - ((WB[INDUPDS] >= 0) * ((2 * Bias[INDBIAS] + 1) + (2 * BiasSK[INDBIASSK] + 1) +
+                                                      (2 * BiasBank[INDBIASBANK] + 1)));
       if ((XSUM + ((2 * Bias[INDBIAS] + 1) + (2 * BiasSK[INDBIASSK] + 1) + (2 * BiasBank[INDBIASBANK] + 1)) >= 0) !=
           (XSUM >= 0))
         ctrupdate(WB[INDUPDS],
@@ -716,50 +716,50 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
     ctrupdate(Bias[INDBIAS], resolveDir, PERCWIDTH);
     ctrupdate(BiasSK[INDBIASSK], resolveDir, PERCWIDTH);
     ctrupdate(BiasBank[INDBIASBANK], resolveDir, PERCWIDTH);
-    // Gupdate((PC << 1) + state.pred_inter, resolveDir, Sstate.GHIST, Gm, Sstate.GGEHL, GNB, LOGGNB, Sstate.WG,
-    //         state.LSUM);
-    // Gupdate(PC, resolveDir, Sstate.phist, Pm, Sstate.PGEHL, PNB, LOGPNB, Sstate.WP, state.LSUM);
+    // Gupdate((PC << 1) + pstate.pred_inter, resolveDir, Sstate.GHIST, Gm, Sstate.GGEHL, GNB, LOGGNB, Sstate.WG,
+    //         pstate.LSUM);
+    // Gupdate(PC, resolveDir, Sstate.phist, Pm, Sstate.PGEHL, PNB, LOGPNB, Sstate.WP, pstate.LSUM);
 #ifdef LOCALH
-    Gupdate(PC, resolveDir, L_shist[INDLOCAL], Lm, LGEHL, LNB, LOGLNB, WL, state.LSUM);
+    Gupdate(PC, resolveDir, L_shist[INDLOCAL], Lm, LGEHL, LNB, LOGLNB, WL, pstate.LSUM);
 #ifdef LOCALS
-    Gupdate(PC, resolveDir, S_slhist[INDSLOCAL], Sm, SGEHL, SNB, LOGSNB, WS, state.LSUM);
+    Gupdate(PC, resolveDir, S_slhist[INDSLOCAL], Sm, SGEHL, SNB, LOGSNB, WS, pstate.LSUM);
 #endif
 #ifdef LOCALT
-    Gupdate(PC, resolveDir, T_slhist[INDTLOCAL], Tm, TGEHL, TNB, LOGTNB, WT, state.LSUM);
+    Gupdate(PC, resolveDir, T_slhist[INDTLOCAL], Tm, TGEHL, TNB, LOGTNB, WT, pstate.LSUM);
 #endif
 #endif
 
 #ifdef IMLI
-    Gupdate(PC, resolveDir, IMHIST[(IMLIcount)], IMm, IMGEHL, IMNB, LOGIMNB, WIM, state.LSUM);
-    Gupdate(PC, resolveDir, IMLIcount, Im, IGEHL, INB, LOGINB, WI, state.LSUM);
+    Gupdate(PC, resolveDir, IMHIST[(IMLIcount)], IMm, IMGEHL, IMNB, LOGIMNB, WIM, pstate.LSUM);
+    Gupdate(PC, resolveDir, IMLIcount, Im, IGEHL, INB, LOGINB, WI, pstate.LSUM);
 #endif
   }
 #endif
 
   // TAGE UPDATE
-  bool ALLOC = ((state.tage_pred != resolveDir) & (state.HitBank < NHIST));
+  bool ALLOC = ((pstate.tage_pred != resolveDir) & (pstate.HitBank < NHIST));
 
   // do not allocate too often if the overall prediction is correct
 
-  if (state.HitBank > 0) {
+  if (pstate.HitBank > 0) {
     // Manage the selection between longest matching and alternate matching
     // for "pseudo"-newly allocated longest matching entry
     // this is extremely important for TAGE only, not that important when the overall predictor is implemented
-    bool PseudoNewAlloc = (abs(2 * gtable[state.HitBank][state.GI[state.HitBank]].ctr + 1) <= 1);
+    bool PseudoNewAlloc = (abs(2 * gtable[pstate.HitBank][pstate.GI[pstate.HitBank]].ctr + 1) <= 1);
     // an entry is considered as newly allocated if its prediction counter is weak
     if (PseudoNewAlloc) {
-      if (state.LongestMatchPred == resolveDir)
+      if (pstate.LongestMatchPred == resolveDir)
         ALLOC = false;
       // if it was delivering the correct prediction, no need to allocate a new entry
       // even if the overall prediction was false
 
-      if (state.LongestMatchPred != state.alttaken) {
-        ctrupdate(use_alt_on_na[INDUSEALT], (state.alttaken == resolveDir), ALTWIDTH);
+      if (pstate.LongestMatchPred != pstate.alttaken) {
+        ctrupdate(use_alt_on_na[INDUSEALT], (pstate.alttaken == resolveDir), ALTWIDTH);
       }
     }
   }
 
-  if (state.pred_taken == resolveDir)
+  if (pstate.pred_taken == resolveDir)
     if ((MYRANDOM() & 31) != 0) ALLOC = false;
 
   if (ALLOC) {
@@ -769,24 +769,24 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
     if ((MYRANDOM() & 127) < 32) A = 2;
     int Penalty = 0;
     int NA = 0;
-    int DEP = ((((state.HitBank - 1 + 2 * A) & 0xffe)) ^ (MYRANDOM() & 1));
+    int DEP = ((((pstate.HitBank - 1 + 2 * A) & 0xffe)) ^ (MYRANDOM() & 1));
     // just a complex formula to chose between X and X+1, when X is odd: sorry
 
     for (int I = DEP; I < NHIST; I += 2) {
       int i = I + 1;
       bool Done = false;
       if (NOSKIP[i]) {
-        if (gtable[i][state.GI[i]].u == 0)
+        if (gtable[i][pstate.GI[i]].u == 0)
 
         {
 #define OPTREMP
           // the replacement is optimized with a single u bit: 0.2 %
 #ifdef OPTREMP
-          if (abs(2 * gtable[i][state.GI[i]].ctr + 1) <= 3)
+          if (abs(2 * gtable[i][pstate.GI[i]].ctr + 1) <= 3)
 #endif
           {
-            gtable[i][state.GI[i]].tag = state.GTAG[i];
-            gtable[i][state.GI[i]].ctr = (resolveDir) ? 0 : -1;
+            gtable[i][pstate.GI[i]].tag = pstate.GTAG[i];
+            gtable[i][pstate.GI[i]].ctr = (resolveDir) ? 0 : -1;
             NA++;
             if (T <= 0) {
               break;
@@ -797,10 +797,10 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
           }
 #ifdef OPTREMP
           else {
-            if (gtable[i][state.GI[i]].ctr > 0)
-              gtable[i][state.GI[i]].ctr--;
+            if (gtable[i][pstate.GI[i]].ctr > 0)
+              gtable[i][pstate.GI[i]].ctr--;
             else
-              gtable[i][state.GI[i]].ctr++;
+              gtable[i][pstate.GI[i]].ctr++;
           }
 
 #endif
@@ -815,14 +815,14 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
       if (!Done) {
         i = (I ^ 1) + 1;
         if (NOSKIP[i]) {
-          if (gtable[i][state.GI[i]].u == 0) {
+          if (gtable[i][pstate.GI[i]].u == 0) {
 #ifdef OPTREMP
-            if (abs(2 * gtable[i][state.GI[i]].ctr + 1) <= 3)
+            if (abs(2 * gtable[i][pstate.GI[i]].ctr + 1) <= 3)
 #endif
 
             {
-              gtable[i][state.GI[i]].tag = state.GTAG[i];
-              gtable[i][state.GI[i]].ctr = (resolveDir) ? 0 : -1;
+              gtable[i][pstate.GI[i]].tag = pstate.GTAG[i];
+              gtable[i][pstate.GI[i]].ctr = (resolveDir) ? 0 : -1;
               NA++;
               if (T <= 0) {
                 break;
@@ -832,10 +832,10 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
             }
 #ifdef OPTREMP
             else {
-              if (gtable[i][state.GI[i]].ctr > 0)
-                gtable[i][state.GI[i]].ctr--;
+              if (gtable[i][pstate.GI[i]].ctr > 0)
+                gtable[i][pstate.GI[i]].ctr--;
               else
-                gtable[i][state.GI[i]].ctr++;
+                gtable[i][pstate.GI[i]].ctr++;
             }
 
 #endif
@@ -859,27 +859,27 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
   }
 
   // update predictions
-  if (state.HitBank > 0) {
-    if (abs(2 * gtable[state.HitBank][state.GI[state.HitBank]].ctr + 1) == 1)
-      if (state.LongestMatchPred != resolveDir)
+  if (pstate.HitBank > 0) {
+    if (abs(2 * gtable[pstate.HitBank][pstate.GI[pstate.HitBank]].ctr + 1) == 1)
+      if (pstate.LongestMatchPred != resolveDir)
 
       {  // acts as a protection
-        if (state.AltBank > 0) {
-          ctrupdate(gtable[state.AltBank][state.GI[state.AltBank]].ctr, resolveDir, CWIDTH);
+        if (pstate.AltBank > 0) {
+          ctrupdate(gtable[pstate.AltBank][pstate.GI[pstate.AltBank]].ctr, resolveDir, CWIDTH);
         }
-        if (state.AltBank == 0)
+        if (pstate.AltBank == 0)
           baseupdate(resolveDir, PC);
       }
-    ctrupdate(gtable[state.HitBank][state.GI[state.HitBank]].ctr, resolveDir, CWIDTH);
+    ctrupdate(gtable[pstate.HitBank][pstate.GI[pstate.HitBank]].ctr, resolveDir, CWIDTH);
     // sign changes: no way it can have been useful
-    if (abs(2 * gtable[state.HitBank][state.GI[state.HitBank]].ctr + 1) == 1)
-      gtable[state.HitBank][state.GI[state.HitBank]].u = 0;
-    if (state.alttaken == resolveDir)
-      if (state.AltBank > 0)
-        if (abs(2 * gtable[state.AltBank][state.GI[state.AltBank]].ctr + 1) == 7)
-          if (gtable[state.HitBank][state.GI[state.HitBank]].u == 1) {
-            if (state.LongestMatchPred == resolveDir) {
-              gtable[state.HitBank][state.GI[state.HitBank]].u = 0;
+    if (abs(2 * gtable[pstate.HitBank][pstate.GI[pstate.HitBank]].ctr + 1) == 1)
+      gtable[pstate.HitBank][pstate.GI[pstate.HitBank]].u = 0;
+    if (pstate.alttaken == resolveDir)
+      if (pstate.AltBank > 0)
+        if (abs(2 * gtable[pstate.AltBank][pstate.GI[pstate.AltBank]].ctr + 1) == 7)
+          if (gtable[pstate.HitBank][pstate.GI[pstate.HitBank]].u == 1) {
+            if (pstate.LongestMatchPred == resolveDir) {
+              gtable[pstate.HitBank][pstate.GI[pstate.HitBank]].u = 0;
             }
           }
   }
@@ -887,10 +887,10 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
   else
     baseupdate(resolveDir, PC);
 
-  if (state.LongestMatchPred != state.alttaken)
-    if (state.LongestMatchPred == resolveDir) {
-      if (gtable[state.HitBank][state.GI[state.HitBank]].u < (1 << UWIDTH) - 1)
-        gtable[state.HitBank][state.GI[state.HitBank]].u++;
+  if (pstate.LongestMatchPred != pstate.alttaken)
+    if (pstate.LongestMatchPred == resolveDir) {
+      if (gtable[pstate.HitBank][pstate.GI[pstate.HitBank]].u < (1 << UWIDTH) - 1)
+        gtable[pstate.HitBank][pstate.GI[pstate.HitBank]].u++;
     }
   // END TAGE UPDATE
   HistoryUpdate(PC, opType, resolveDir, branchTarget);

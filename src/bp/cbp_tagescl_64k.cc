@@ -716,9 +716,6 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
     ctrupdate(Bias[INDBIAS], resolveDir, PERCWIDTH);
     ctrupdate(BiasSK[INDBIASSK], resolveDir, PERCWIDTH);
     ctrupdate(BiasBank[INDBIASBANK], resolveDir, PERCWIDTH);
-    // Gupdate((PC << 1) + pstate.pred_inter, resolveDir, Sstate.GHIST, Gm, Sstate.GGEHL, GNB, LOGGNB, Sstate.WG,
-    //         pstate.LSUM);
-    // Gupdate(PC, resolveDir, Sstate.phist, Pm, Sstate.PGEHL, PNB, LOGPNB, Sstate.WP, pstate.LSUM);
 #ifdef LOCALH
     Gupdate(PC, resolveDir, L_shist[INDLOCAL], Lm, LGEHL, LNB, LOGLNB, WL, pstate.LSUM);
 #ifdef LOCALS

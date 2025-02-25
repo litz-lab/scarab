@@ -657,6 +657,12 @@ void TAGE64K::NonSpecUpdateAtCond(UINT64 PC, OpType opType, bool resolveDir, boo
   UpdatePredictor(PC, opType, resolveDir, predDir, branchTarget, Pstate);
 }
 
+// UpdatePredictor uses predictor state (pstate) from one of two sources:
+// 1. For spec_level 0-3: Uses the global Pstate variable directly
+// 2. For spec_level 4: Uses a snapshot from the predictor_states container
+//    where each entry maintains a separate copy of predictor states
+// This allows handling both on/off-path speculation while
+// maintaining correct predictor state for each path.
 void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget,
                               const PredictorStates& pstate) {
 #ifdef SC

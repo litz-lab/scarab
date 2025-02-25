@@ -70,6 +70,11 @@ void PREDECODING::probe_ftq() {
     ASSERT(proc_id, next_probe_ft);
     ASSERT(proc_id, ft_get_predecoding_marker(next_probe_ft) == FT_NOT_LOOKED_UP);
     FT_Info next_probe_info = ft_get_ft_info(next_probe_ft);
+
+    if (ON_PATH_DECOUPLED_ICACHE_STAGE && next_probe_info.dynamic_info.first_op_off_path) {
+      break;
+    }
+
     if (uop_cache_lookup_ft_and_fill_lookup_buffer(next_probe_info, next_probe_info.dynamic_info.first_op_off_path)) {
       ft_set_predecoding_marker(next_probe_ft, FT_IN_UOP_CACHE);
     } else {
@@ -93,11 +98,6 @@ uint64_t PREDECODING::get_next_ft_pos(Predecoding_Marker marker) {
     Predecoding_Marker marker_at_i = ft_get_predecoding_marker(ft);
     ASSERT(proc_id, marker_at_i != FT_NOT_LOOKED_UP);
     if (!ft_is_consumed(ft) && marker_at_i == marker) {
-      if (ON_PATH_DECOUPLED_ICACHE_STAGE && ft_get_ft_info(ft).dynamic_info.first_op_off_path && i != 0) {
-        // when ON_PATH_DECOUPLED_ICACHE_STAGE is on, stop the runahead if the ft is off-path;
-        // i.e., only fetch at the ftq top
-        return decoupled_fe_ftq_num_fts();
-      }
       return i;
     }
   }

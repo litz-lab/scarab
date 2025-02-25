@@ -508,6 +508,10 @@ FT_Arbitration_Result ft_arbitration() {
     ic->fetch_addr = ft_info.static_info.start;
     ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr);
 
+    if (ON_PATH_DECOUPLED_ICACHE_STAGE && ft_info.dynamic_info.first_op_off_path) {
+      return FT_UNAVAILABLE;
+    }
+
     // look up uop cache
     Flag ft_in_uop_cache = uop_cache_lookup_ft_and_fill_lookup_buffer(ft_info, ic->off_path);
     ic->uop_cache_lookups_per_cycle_count++;

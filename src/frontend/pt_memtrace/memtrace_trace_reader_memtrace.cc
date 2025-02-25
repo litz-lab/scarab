@@ -102,15 +102,8 @@ void TraceReaderMemtrace::binaryGroupPathIs(const std::string& _path) {
       panic("Module file path is missing");
       return;
     }
-    dcontext_ = dr_standalone_init();
-    std::string error = directory_.initialize_module_file(_path + "/modules.log");
-    if (!error.empty()) {
-      panic(
-          "Failed to initialize directory: %s Cannot find a file named "
-          "modules.log",
-          error.c_str());
-      return;
-    }
+    dcontext_         = dr_standalone_init();
+    std::string error;
     module_mapper_ = dynamorio::drmemtrace::module_mapper_t::create(directory_.modfile_bytes_,
 #ifdef ZSIM_USE_YT
                                                                     parse_buildid_string,

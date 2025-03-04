@@ -440,6 +440,12 @@ void accumulate_op(Op* op) {
     return;
   }
 
+  // need a state?
+  // if ever a FT failed (not short reuse), do not insert anymore
+  if (UOP_CACHE_ONLY_IMMEDIATE_RESTEER_UOPS && op->ft_info.dynamic_info.num_preceding_uops >= UOP_CACHE_ONLY_IMMEDIATE_RESTEER_UOPS) {
+    return;
+  }
+
   // uop cache line begin detection
   // these two conditions should be identical
   ASSERT(uop_cache_proc_id, (current_accumulation_buffer->size() == 0 && current_accumulating_line->n_uops == 0) ==

@@ -21,7 +21,7 @@ class FT{
  public:
   FT(uns _proc_id);
   void set_ft_started_by(FT_Started_By ft_started_by);
-  void add_op(Op *op, FT_Ended_By ft_ended_by);
+  void add_op(Op *op, FT_Ended_By ft_ended_by, Counter num_preceding_uops);
   void free_ops_and_clear();
   bool can_fetch_op();
   Op* fetch_op();
@@ -74,6 +74,8 @@ private:
   std::deque<FT> ftq;
   // keep track of the current FT to be pushed next
   FT current_ft_to_push;
+  // counting the number of uops after a resteer
+  Counter num_uops_after_resteer;
 
   int off_path;
   int sched_off_path;
@@ -234,7 +236,7 @@ void FT::set_ft_started_by(FT_Started_By ft_started_by) {
   ft_info.dynamic_info.started_by = ft_started_by;
 }
 
-void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
+void FT::add_op(Op *op, FT_Ended_By ft_ended_by, Counter num_preceding_uops) {
   if (ops.empty()) {
     ASSERT(proc_id, op->bom && !ft_info.static_info.start);
     ft_info.static_info.start = op->inst_info->addr;
@@ -259,6 +261,7 @@ void FT::add_op(Op *op, FT_Ended_By ft_ended_by) {
     ASSERT(proc_id, ft_info.dynamic_info.ended_by == FT_NOT_ENDED);
     ft_info.dynamic_info.ended_by = ft_ended_by;
     ft_info.dynamic_info.last_op_num = op->op_num;
+    ft_info.dynamic_info.num_preceding_uops = num_preceding_uops;
 
     // counting extremely short FT reason
     if (!ft_info.dynamic_info.first_op_off_path) {
@@ -362,6 +365,7 @@ void Decoupled_FE::init(uns _proc_id) {
 
   current_ft_to_push = FT(proc_id);
   current_ft_to_push.set_ft_started_by(FT_STARTED_BY_APP);
+  num_uops_after_resteer = 0;
 }
 
 
@@ -407,6 +411,7 @@ void Decoupled_FE::recover() {
 
   current_ft_to_push.free_ops_and_clear();
   current_ft_to_push.set_ft_started_by(FT_STARTED_BY_RECOVERY);
+  num_uops_after_resteer = 0;
 
   dfe_op_count = bp_recovery_info->recovery_op_num + 1;
   DEBUG(proc_id,
@@ -594,7 +599,7 @@ void Decoupled_FE::update() {
       cfs_taken_this_cycle += cf_taken || bar_fetch;
     }
 
-    current_ft_to_push.add_op(op, ft_ended_by);
+    current_ft_to_push.add_op(op, ft_ended_by, num_uops_after_resteer);
     // ft_ended_by != FT_NOT_ENDED indicates the end of the current fetch target
     // it is now ready to be pushed to the queue
     if (ft_ended_by != FT_NOT_ENDED) {
@@ -614,6 +619,7 @@ void Decoupled_FE::update() {
         }
       }
       ftq.emplace_back(current_ft_to_push);
+      num_uops_after_resteer += current_ft_to_push.get_ft_info().static_info.n_uops;
       current_ft_to_push = FT(proc_id);
       if (ft_ended_by == FT_ICACHE_LINE_BOUNDARY) {
         current_ft_to_push.set_ft_started_by(FT_STARTED_BY_ICACHE_LINE_BOUNDARY);

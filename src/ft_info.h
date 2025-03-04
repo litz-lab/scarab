@@ -66,6 +66,9 @@ typedef struct FT_Info_Dynamic_struct {
   // inclusive range of op_num insiede the ft
   Counter first_op_num;
   Counter last_op_num;
+  // num of preceding uops after a resteer
+  // this is oracle; for implementation, can use known num of uops
+  Counter num_preceding_uops;
 } FT_Info_Dynamic;
 
 struct FT_Info_struct {

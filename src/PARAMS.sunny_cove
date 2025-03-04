@@ -4,6 +4,7 @@
 # 
 # Based on documentation found here:
 # https://en.wikichip.org/wiki/intel/microarchitectures/sunny_cove
+# https://en.wikichip.org/wiki/intel/microarchitectures/sunny_cove
 
 ## Simulation Parameters
 --mode                          full
@@ -106,6 +107,9 @@
 # Max number of instructions to be retired per cycle.
 --node_ret_width                6
 --node_table_size               352
+
+--load_queue_entries            128
+--store_queue_entries           72
 
 # Do not keep stores in RSVs on cache misses; TODO: confirm what this knob does
 --stores_do_not_block_window    1

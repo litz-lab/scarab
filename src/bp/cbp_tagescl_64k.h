@@ -21,6 +21,7 @@
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/sequenced_index.hpp>
 #include <boost/multi_index_container.hpp>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <vector>
@@ -93,11 +94,13 @@ class cbp64_gentry  // TAGE global table entry
   int8_t ctr;
   uint tag;
   int8_t u;
+  uint perfect_tag;
 
   cbp64_gentry() {
     ctr = 0;
     u = 0;
     tag = 0;
+    perfect_tag = 0;
   }
 
   bool operator==(const cbp64_gentry& other) const {
@@ -138,14 +141,18 @@ class cbp64_lentry  // loop predictor entry
 
 enum tage_component {
   TAGE_BASE,   // final prediction by GetPrediction() is bimodal table
-  TAGE_SHORT,  // final prediction by GetPrediction() is TAGE component which are accessed by shorter history
-               // lengths(MINHIST:6 ~ 37)
-  TAGE_LONG,  // final prediction by GetPrediction() is TAGE component which are accessed by longer history lengths(54 ~
-              // MAXHIST:3000)
+  // final prediction by GetPrediction() is TAGE component which are accessed by shorter history lengths(MINHIST:6 ~ 37)
+  TAGE_SHORT,
+  TAGE_SHORT_ALT,
+  // final prediction by GetPrediction() is TAGE component which are accessed by longer history lengths(54 ~
+  // MAXHIST:3000)
+  TAGE_LONG,
+  TAGE_LONG_ALT,
   TAGE_LOOP,  // final prediction by GetPrediction() is LOOP predictor
   TAGE_SC,    // final prediction by GetPrediction() is statistical corrector(SC)
   NOT_TAGE    // redundancy
 };
+
 
 // due to partial associativity, twice the number of different histories (18 different histories)
 #define HIST 18            // 18 different history lengths
@@ -532,11 +539,12 @@ class TAGE64K {
   int F(long long A, int size, int bank);
   int gindex(unsigned int PC, int bank, long long hist, cbp64_folded_history* ch_i);
   uint16_t gtag(unsigned int PC, int bank, cbp64_folded_history* ch0, cbp64_folded_history* ch1);
+  uint16_t raw_gtag(unsigned int PC, int bank, cbp64_folded_history* ch0, cbp64_folded_history* ch1);
   void ctrupdate(int8_t& ctr, bool taken, int nbits);
   bool getbim(UINT64 PC);
   void baseupdate(bool Taken, UINT64 PC);
   int MYRANDOM(long long on_path_phist, int on_path_ptghist, bool off_path);
-  void Tagepred(UINT64 PC);
+  void Tagepred(UINT64 PC, uns8 oracle_dir, bool off_path);
   void UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history* index, cbp64_folded_history* tag0,
                   cbp64_folded_history* tag1);
   bool GetPrediction(UINT64 PC, int* bp_confidence, Op* op);
@@ -623,6 +631,35 @@ class TAGE64K {
   int8_t tage_component_inter;
   int8_t tage_component_tage;
   int8_t tage_component_alt;
+  bool perfect_tag_mismatch[NHIST + 1];
+  int selected_bank;
+  bool has_valid_entry;
+  bool has_valid_entry_alt;
+  int perfect_tag_bank;
+  int perfect_tag_bank_alt;
+  std::map<UINT64 /*PC*/, bool /*flag*/> seen_branches;
+  // In the class definition
+  std::map<uint /*perfect_tag*/, std::map<int /*index*/, int8_t /*counter*/>> live_perfect_tag_map;
+  // Update and erase function
+  void update_and_erase_perfect_tag_map(int index, uint new_tag, int8_t ctr, uint erase_tag) {
+    // Update - add new entry
+    live_perfect_tag_map[new_tag][index] = ctr;
+    // Erase - remove entry with matching index
+    auto it = live_perfect_tag_map.find(erase_tag);
+    if (it != live_perfect_tag_map.end()) {
+      it->second.erase(index);
+      if (it->second.empty()) {
+        live_perfect_tag_map.erase(it);
+      }
+    }
+  }
+  void update_perfect_tag_map(uint tag, bool dir) {
+    auto it = live_perfect_tag_map.find(tag);
+    if (it != live_perfect_tag_map.end()) {
+      for (auto& [index, ctr] : it->second) {
+        ctrupdate(ctr, dir, CWIDTH);
+      }
+    }
+  }
 };
-
 #endif

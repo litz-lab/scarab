@@ -317,6 +317,11 @@ uint16_t TAGE64K::gtag(unsigned int PC, int bank, cbp64_folded_history* ch0, cbp
   return (tag & ((1 << (TB[bank])) - 1));
 }
 
+uint16_t TAGE64K::raw_gtag(unsigned int PC, int bank, cbp64_folded_history* ch0, cbp64_folded_history* ch1) {
+  int tag = (PC) ^ ch0[bank].comp ^ (ch1[bank].comp << 1);
+  return tag;
+}
+
 // up-down saturating counter
 void TAGE64K::ctrupdate(int8_t& ctr, bool taken, int nbits) {
   if (taken) {
@@ -596,9 +601,13 @@ void TAGE64K::UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history
                          cbp64_folded_history* tag1) {
   for (int i = 1; i <= NHIST; i += 2) {
     Pstate.GI[i] = gindex(PC, i, path_history, index);
-    Pstate.GTAG[i] = gtag(PC, i, tag0, tag1);
+    uint16_t raw_tag = raw_gtag(PC, i, tag0, tag1);
+    uint16_t masked_tag = gtag(PC, i, tag0, tag1);
+    if (USE_PERFECT_TAG)
+      masked_tag = raw_tag;
+    Pstate.GTAG[i] = raw_tag;
     Pstate.GTAG[i + 1] = Pstate.GTAG[i];
-    Pstate.GI[i + 1] = Pstate.GI[i] ^ (Pstate.GTAG[i] & ((1 << LOGG) - 1));
+    Pstate.GI[i + 1] = Pstate.GI[i] ^ (masked_tag & ((1 << LOGG) - 1));
   }
   int T = (PC ^ (path_history & ((1 << m[BORN]) - 1))) % NBANKHIGH;
   for (int i = BORN; i <= NHIST; i++)
@@ -617,51 +626,84 @@ void TAGE64K::UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history
 }
 
 //  TAGE PREDICTION: same code at fetch or retire time but the index and tags must recomputed
-void TAGE64K::Tagepred(UINT64 PC) {
+void TAGE64K::Tagepred(UINT64 PC, uns8 oracle_dir, bool off_path) {
   Pstate.HitBank = 0;
   Pstate.AltBank = 0;
   UpdateAddr(PC, Sstate.phist, Sstate.ch_i, Sstate.ch_t[0], Sstate.ch_t[1]);
-  Pstate.alttaken = getbim(PC);
-  Pstate.tage_pred = Pstate.alttaken;
-  Pstate.LongestMatchPred = Pstate.alttaken;
+  Pstate.tage_pred = getbim(PC);
+  Pstate.LongestMatchPred = Pstate.tage_pred;
   tage_component_tage = TAGE_BASE;
+  bool is_cold = seen_branches.find(PC) == seen_branches.end();
+  selected_bank = 0;
+  has_valid_entry = false;
+  perfect_tag_bank = 0;
   if (TAGESCL64KB_ALT) {
     tage_component_alt = TAGE_BASE;
+    Pstate.alttaken = Pstate.tage_pred;
+    has_valid_entry_alt = false;
+    perfect_tag_bank_alt = 0;
   }
 
   // Look for the bank with longest matching history
   for (int i = NHIST; i > 0; i--) {
-    if (NOSKIP[i])
-      if (gtable[i][Pstate.GI[i]].tag == Pstate.GTAG[i]) {
+    if (NOSKIP[i]) {
+      uint current_tag = (USE_PERFECT_TAG) ? Pstate.GTAG[i] : (Pstate.GTAG[i] & ((1 << (TB[i])) - 1));
+      if (gtable[i][Pstate.GI[i]].tag == current_tag && Pstate.HitBank == 0) {
         Pstate.HitBank = i;
         Pstate.LongestMatchPred = (gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr >= 0);
-        break;
+        selected_bank = i;
+        if (!off_path) {
+          perfect_tag_bank = i;
+          if (gtable[i][Pstate.GI[i]].perfect_tag != Pstate.GTAG[i])
+            perfect_tag_mismatch[i] = true;
+          else
+            perfect_tag_mismatch[i] = false;
+        }
+      } else if (!has_valid_entry) {
+        has_valid_entry = live_perfect_tag_map.find(Pstate.GTAG[i]) != live_perfect_tag_map.end();
+        if (has_valid_entry)
+          perfect_tag_bank = i;
       }
+    }
   }
 
   // Look for the alternate bank
   if (TAGESCL64KB_ALT) {
     for (int i = Pstate.HitBank - 1; i > 0; i--) {
-      if (NOSKIP[i])
-        if (gtable[i][Pstate.GI[i]].tag == Pstate.GTAG[i]) {
+      if (NOSKIP[i]) {
+        uint current_tag = (USE_PERFECT_TAG) ? Pstate.GTAG[i] : (Pstate.GTAG[i] & ((1 << (TB[i])) - 1));
+        if (gtable[i][Pstate.GI[i]].tag == current_tag && Pstate.AltBank == 0) {
           Pstate.AltBank = i;
-          break;
+          if (!off_path) {
+            perfect_tag_bank_alt = i;
+            if (gtable[i][Pstate.GI[i]].perfect_tag != Pstate.GTAG[i])
+              perfect_tag_mismatch[i] = true;
+            else
+              perfect_tag_mismatch[i] = false;
+          }
+        } else if (!has_valid_entry_alt) {
+          has_valid_entry_alt = live_perfect_tag_map.find(Pstate.GTAG[i]) != live_perfect_tag_map.end();
+          if (has_valid_entry_alt)
+            perfect_tag_bank_alt = i;
         }
+      }
     }
   }
-  // computes the prediction and the alternate prediction
 
+  // computes the prediction and the alternate prediction
   if (Pstate.HitBank > 0) {
     if (TAGESCL64KB_ALT) {
       if (Pstate.AltBank > 0) {
         Pstate.alttaken = (gtable[Pstate.AltBank][Pstate.GI[Pstate.AltBank]].ctr >= 0);
         Pstate.AltConf = (abs(2 * gtable[Pstate.AltBank][Pstate.GI[Pstate.AltBank]].ctr + 1) > 1);
-        tage_component_alt =
-            (Pstate.AltBank >= BORN) ? TAGE_LONG : TAGE_SHORT;  // tag hit at the longer history length: TAGE_LONG
+        tage_component_alt = (Pstate.AltBank >= BORN)
+                                 ? TAGE_LONG_ALT
+                                 : TAGE_SHORT_ALT;  // tag hit at the longer history length: TAGE_LONG
       } else
         Pstate.alttaken = getbim(PC);
       // if the entry is recognized as a newly allocated entry and
       // USE_ALT_ON_NA is positive  use the alternate prediction
+
       bool Huse_alt_on_na = (use_alt_on_na[INDUSEALT(Pstate)] >= 0);
       if (!Huse_alt_on_na || (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) > 1)) {
         Pstate.tage_pred = Pstate.LongestMatchPred;
@@ -669,15 +711,62 @@ void TAGE64K::Tagepred(UINT64 PC) {
       } else {
         Pstate.tage_pred = Pstate.alttaken;
         tage_component_tage = tage_component_alt;
+        selected_bank = Pstate.AltBank;
+        perfect_tag_bank = perfect_tag_bank_alt;
+        has_valid_entry = has_valid_entry_alt;
       }
     } else if (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) > 1) {
       Pstate.tage_pred = Pstate.LongestMatchPred;
       tage_component_tage = (Pstate.HitBank >= BORN) ? TAGE_LONG : TAGE_SHORT;
     }
-
+    // Even if we use the alternate prediction, compute the confidence of the prediction
     Pstate.HighConf = (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) >= (1 << CWIDTH) - 1);
     Pstate.LowConf = (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) == 1);
     Pstate.MedConf = (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) == 5);
+
+    if (off_path)
+      return;
+
+    if (Pstate.tage_pred != oracle_dir) {
+      if (perfect_tag_mismatch[selected_bank]) {
+        auto it = live_perfect_tag_map.find(Pstate.GTAG[perfect_tag_bank]);
+        if (it != live_perfect_tag_map.end()) {
+          auto it2 = it->second.rbegin();
+          bool is_correct = (it2->second >= 0) == oracle_dir;
+          int offset = (((it2->first >= (NBANKLOW * (1 << LOGG))) ? 1 : 0) << 1) + !is_correct;
+          STAT_EVENT(0, PERFECT_TAG_TAGALIAS_SHORT_EXIST_CORRECT + offset);
+        }
+      }
+
+      if (is_cold) {
+        STAT_EVENT(0, TAGESCL_MISPR_COLD_TAG_ALIAS);
+      } else {
+        if (perfect_tag_mismatch[selected_bank])
+          STAT_EVENT(0, TAGESCL_MISPR_TAGALIAS);
+        else
+          STAT_EVENT(0, TAGESCL_MISPR_MISPRED);
+      }
+    } else if (perfect_tag_mismatch[selected_bank])
+      STAT_EVENT(0, TAGESCL_CORRECT_TAGALIAS);
+    else
+      STAT_EVENT(0, TAGESCL_CORRECT);
+  } else {
+    if (off_path)
+      return;
+
+    if (has_valid_entry) {
+      auto it = live_perfect_tag_map.find(Pstate.GTAG[perfect_tag_bank]);
+      assert(it != live_perfect_tag_map.end());
+      auto it2 = it->second.rbegin();
+      bool is_correct = (it2->second >= 0) == oracle_dir;
+      int offset = (((it2->first >= (NBANKLOW * (1 << LOGG))) ? 1 : 0) << 1) + !is_correct;
+      STAT_EVENT(0, PERFECT_TAG_TAGEMISS_SHORT_EXIST_CORRECT + offset);
+    }
+    if (is_cold)
+      STAT_EVENT(0, TAGESCL_MISS_COLD);
+    else {
+      STAT_EVENT(0, TAGESCL_MISS_CONFLICT);
+    }
   }
 }
 
@@ -685,7 +774,7 @@ void TAGE64K::Tagepred(UINT64 PC) {
 bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
   // computes the TAGE table addresses and the partial tags
 
-  Tagepred(PC);
+  Tagepred(PC, op->oracle_info.dir, op->off_path);
   Pstate.pred_taken = Pstate.tage_pred;
   tage_component = tage_component_tage;
 
@@ -796,7 +885,7 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
 
   if (!op->off_path) {
     STAT_EVENT(op->proc_id,
-               TAGESCL_COMP_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) + tage_component * 2);
+               TAGESCL_COMP_TAGE_BASE_CORRECT + tage_component * 2 + (Pstate.pred_taken != op->oracle_info.dir));
     if (op->oracle_info.btb_miss)
       STAT_EVENT(op->proc_id, TAGESCL_COMP_BTB_MISS_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) +
                                   tage_component * 2);
@@ -963,6 +1052,8 @@ void TAGE64K::NonSpecUpdateAtCond(UINT64 PC, OpType opType, bool resolveDir, boo
 // maintaining correct predictor state for each path.
 void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget,
                               const PredictorStates& pstate) {
+  seen_branches[PC] = true;
+
   if (TAGESCL64KB_LOOP) {
     if (pstate.LVALID) {
       if (pstate.pred_taken != pstate.predloop)
@@ -1082,6 +1173,7 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
 
   if (ALLOC) {
     int T = NNN;
+    bool allocation_succeeded = false;
 
     int A = 1;
     if ((MYRANDOM(pstate.on_path_phist, pstate.on_path_ptghist, false) & 127) < 32)
@@ -1106,9 +1198,15 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
           if (abs(2 * gtable[i][pstate.GI[idx]].ctr + 1) <= 3)
 #endif
           {
-            gtable[i][pstate.GI[idx]].tag = pstate.GTAG[idx];
+            int8_t new_ctr = (resolveDir) ? 0 : -1;
+            update_and_erase_perfect_tag_map(pstate.GI[idx], pstate.GTAG[idx], new_ctr,
+                                             gtable[i][pstate.GI[idx]].perfect_tag);
+            uint16_t tag_to_store = (USE_PERFECT_TAG) ? pstate.GTAG[idx] : (pstate.GTAG[idx] & ((1 << TB[i]) - 1));
+            gtable[i][pstate.GI[idx]].tag = tag_to_store;
             gtable[i][pstate.GI[idx]].ctr = (resolveDir) ? 0 : -1;
+            gtable[i][pstate.GI[idx]].perfect_tag = pstate.GTAG[idx];
             NA++;
+            allocation_succeeded = true;
             if (T <= 0) {
               break;
             }
@@ -1118,10 +1216,12 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
           }
 #ifdef OPTREMP
           else {
-            if (gtable[i][pstate.GI[idx]].ctr > 0)
+            if (gtable[i][pstate.GI[idx]].ctr > 0) {
               gtable[i][pstate.GI[idx]].ctr--;
-            else
+            } else {
               gtable[i][pstate.GI[idx]].ctr++;
+            }
+            update_perfect_tag_map(pstate.GTAG[idx], resolveDir);
           }
 
 #endif
@@ -1144,11 +1244,16 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
 #ifdef OPTREMP
             if (abs(2 * gtable[i][pstate.GI[idx]].ctr + 1) <= 3)
 #endif
-
             {
-              gtable[i][pstate.GI[idx]].tag = pstate.GTAG[idx];
+              int8_t new_ctr = (resolveDir) ? 0 : -1;
+              update_and_erase_perfect_tag_map(pstate.GI[idx], pstate.GTAG[idx], new_ctr,
+                                               gtable[i][pstate.GI[idx]].perfect_tag);
+              uint16_t tag_to_store = (USE_PERFECT_TAG) ? pstate.GTAG[idx] : (pstate.GTAG[idx] & ((1 << TB[i]) - 1));
+              gtable[i][pstate.GI[idx]].tag = tag_to_store;
               gtable[i][pstate.GI[idx]].ctr = (resolveDir) ? 0 : -1;
+              gtable[i][pstate.GI[idx]].perfect_tag = pstate.GTAG[idx];
               NA++;
+              allocation_succeeded = true;
               if (T <= 0) {
                 break;
               }
@@ -1157,10 +1262,12 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
             }
 #ifdef OPTREMP
             else {
-              if (gtable[i][pstate.GI[idx]].ctr > 0)
+              if (gtable[i][pstate.GI[idx]].ctr > 0) {
                 gtable[i][pstate.GI[idx]].ctr--;
-              else
+              } else {
                 gtable[i][pstate.GI[idx]].ctr++;
+              }
+              update_perfect_tag_map(gtable[i][pstate.GI[idx]].perfect_tag, resolveDir);
             }
 
 #endif
@@ -1170,6 +1277,9 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
           }
         }
       }
+    }
+    if (!allocation_succeeded) {
+      STAT_EVENT(0, TAGESCL_ALLOC_FAILED);
     }
     TICK += (Penalty - 2 * NA);
 
@@ -1192,6 +1302,7 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
         if (TAGESCL64KB_ALT) {
           if (alt_idx > 0) {
             ctrupdate(gtable[pstate.AltBank][pstate.GI[alt_idx]].ctr, resolveDir, CWIDTH);
+            update_perfect_tag_map(pstate.GTAG[alt_idx], resolveDir);
           }
           if (alt_idx == 0)
             baseupdate(resolveDir, PC);
@@ -1199,6 +1310,7 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
           baseupdate(resolveDir, PC);
       }
     ctrupdate(gtable[pstate.HitBank][pstate.GI[hit_idx]].ctr, resolveDir, CWIDTH);
+    update_perfect_tag_map(pstate.GTAG[hit_idx], resolveDir);
     // sign changes: no way it can have been useful
     if (abs(2 * gtable[pstate.HitBank][pstate.GI[hit_idx]].ctr + 1) == 1)
       gtable[pstate.HitBank][pstate.GI[hit_idx]].u = 0;

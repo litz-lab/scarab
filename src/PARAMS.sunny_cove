@@ -70,6 +70,8 @@
 --decode_path_width_narrower    1
 --decode_cycles                 5
 
+### Instruction Decode Queue
+--idq_size                      140
 
 ### Map Stage
 --map_cycles                    5

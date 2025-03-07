@@ -29,35 +29,37 @@
 /**************************************************************************************/
 /* Global variables */
 #include "cmp_model.h"
-#include "bp/bp.param.h"
-#include "core.param.h"
+
+#include "globals/assert.h"
+
 #include "debug/debug.param.h"
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
-#include "dvfs/dvfs.h"
+
+#include "bp/bp.param.h"
+#include "core.param.h"
 #include "dvfs/dvfs.param.h"
-#include "dvfs/perf_pred.h"
 #include "general.param.h"
-#include "globals/assert.h"
-#include "memory/cache_part.h"
 #include "memory/memory.param.h"
-#include "op_pool.h"
 #include "prefetcher/pref.param.h"
-#include "prefetcher/pref_common.h"
-#include "prefetcher/fdip.h"
-#include "prefetcher/eip.h"
+
+#include "dvfs/dvfs.h"
+#include "dvfs/perf_pred.h"
+#include "memory/cache_part.h"
 #include "prefetcher/D_JOLT.h"
 #include "prefetcher/FNL+MMA.h"
+#include "prefetcher/eip.h"
+#include "prefetcher/fdip.h"
+#include "prefetcher/pref_common.h"
+
+#include "decoupled_frontend.h"
+#include "freq.h"
+#include "idq.h"
+#include "map_rename.h"
+#include "op_pool.h"
 #include "sim.h"
 #include "statistics.h"
-
-#include "freq.h"
 #include "uop_queue_stage.h"
-#include "decoupled_frontend.h"
-
-// clang-format off
-#include "map_rename.h"
-// clang-format on
 
 /**************************************************************************************/
 /* Global vars */
@@ -114,6 +116,8 @@ void cmp_init(uns mode) {
 
     init_uop_queue_stage();
 
+    init_idq(proc_id);
+
     init_map_stage(proc_id, "MAP");
 
     init_node_stage(proc_id, "NODE");
@@ -166,6 +170,7 @@ void cmp_reset() {
     reset_decoupled_fe();
     reset_icache_stage();
     reset_decode_stage();
+    reset_idq();
     reset_map_stage();
     reset_node_stage();
     reset_exec_stage();
@@ -231,18 +236,19 @@ void cmp_cores(void) {
       update_dcache_stage(&exec->sd);
       update_exec_stage(&node->sd);
       update_node_stage(map->last_sd);
-      // Map stage can get ops from either the uop queue following the uop cache
-      // or the decoder.
-      Stage_Data* map_stage_uop_cache_src = NULL;
-      if (UOP_CACHE_ENABLE) {
-        map_stage_uop_cache_src = get_uop_queue_stage_length() > 0 ? uop_queue_stage_get_latest_sd() : &ic->uopc_sd;
-      }
-      // doesnt work: decode_stage_process_op must be called once per op. For uop cache, one cycle after fetch.
-      // I can add a flag: decode_cycle (cycle decoded).
-      update_map_stage(dec->last_sd, map_stage_uop_cache_src);
+      update_map_stage();
       update_uop_queue_stage(&ic->uopc_sd);
       update_decode_stage(&ic->sd);
       update_icache_stage();
+      // idq can get ops from the uop cache, uop cache queue, or the decoder.
+      // idq is combinational; it adds no extra latency on top of the uop cache latency / decoding latency;
+      // in other words, its latency is subsumed by the uop cache latency / decoding latency;
+      // that is why it is not updated in reverse order.
+      Stage_Data* idq_uop_cache_src = NULL;
+      if (UOP_CACHE_ENABLE) {
+        idq_uop_cache_src = get_uop_queue_stage_length() > 0 ? uop_queue_stage_get_latest_sd() : &ic->uopc_sd;
+      }
+      update_idq(dec->last_sd, idq_uop_cache_src);
       update_decoupled_fe();
       update_fdip();
       update_eip();
@@ -269,6 +275,7 @@ void cmp_debug() {
     debug_decoupled_fe();
     debug_icache_stage();
     debug_decode_stage();
+    debug_idq();
     debug_map_stage();
     debug_node_stage();
     debug_exec_stage();
@@ -380,6 +387,7 @@ void cmp_recover() {
   recover_uop_cache();
   recover_decode_stage();
   recover_uop_queue_stage();
+  recover_idq();
   recover_map_stage();
   recover_node_stage();
   recover_exec_stage();

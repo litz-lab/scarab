@@ -1,4 +1,4 @@
-/* Copyright 2020 HPS/SAFARI Research Groups
+/* Copyright 2024 Litz Lab
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,48 +20,46 @@
  */
 
 /***************************************************************************************
- * File         : map_stage.h
- * Author       : HPS Research Group
- * Date         : 2/4/1999
- * Description  :
+ * File         : idq.h
+ * Author       : Mingsheng Xu <mxu61@ucsc.edu>
+ * Date         : 03/05/2025
+ * Description  : Instruction Decode Queue (IDQ) bridges the front-end and the back-end.
  ***************************************************************************************/
 
-#ifndef __MAP_STAGE_H__
-#define __MAP_STAGE_H__
+#ifndef __IDQ_H__
+#define __IDQ_H__
 
-#include "idq.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "stage_data.h"
-
 
 /**************************************************************************************/
 /* Types */
 
-typedef struct Map_Stage_struct {
-  uns         proc_id;
-  Stage_Data* sds;     /* stage interface data (dynamically
-                        * allocated number of pipe stages) */
-  Stage_Data* last_sd; /* pointer to last decode pipeline stage
-                        * (for passing ops to map) */
-} Map_Stage;
-
+typedef struct IDQ IDQ;
 
 /**************************************************************************************/
 /* External Variables */
 
-extern Map_Stage* map;
-
-
-/**************************************************************************************/
-/* prototypes */
-
-/* vanilla hps model */
-void set_map_stage(Map_Stage*);
-void init_map_stage(uns8, const char*);
-void reset_map_stage(void);
-void recover_map_stage(void);
-void debug_map_stage(void);
-void update_map_stage(void);
+extern IDQ* idq;
 
 /**************************************************************************************/
+/* Prototypes */
 
-#endif /* #ifndef __MAP_STAGE_H__ */
+void alloc_mem_idq(uns8);
+void set_idq(uns8);
+void init_idq(uns8);
+void reset_idq(void);
+void recover_idq(void);
+void debug_idq(void);
+void update_idq(Stage_Data*, Stage_Data*);
+Op* dequeue_op_from_idq(void);
+Op* peek_op_from_idq(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

@@ -123,7 +123,6 @@ DEF_PARAM(  uop_cache_assoc                , UOP_CACHE_ASSOC                 , u
 DEF_PARAM(  uop_cache_max_imm_disp_line    , UOP_CACHE_MAX_IMM_DISP_LINE     , uns    , uns     , 4                      ,       )
 DEF_PARAM(  iprf_on_uop_cache_hit          , IPRF_ON_UOP_CACHE_HIT           , Flag   , Flag    , FALSE                  ,       )
 DEF_PARAM(  uop_cache_repl                 , UOP_CACHE_REPL                  , uns    , uns     , 0                      ,       )
-DEF_PARAM(  map_consume_from_both_srcs     , MAP_CONSUME_FROM_BOTH_SRCS      , Flag   , Flag    , FALSE                  ,       )
 // For REPL_STICKY_PRIORITY_LINES; Likelihood of lines to be sticky when updating repl as a percent (0-100). If not sticky, default to LRU.
 DEF_PARAM(priority_line_stickiness_percent, PRIORITY_LINE_STICKINESS_PERCENT, int, int, 50,)
 DEF_PARAM(pw_priority_list_filepath, PW_PRIORITY_LIST_FILEPATH, char*, string, "pw_priority_list.csv", )

@@ -1379,15 +1379,10 @@ void log_stats_mshr_hit(Addr line_addr) {
       update_useful_lines_uc(hashed_addr);
       update_useful_lines_bloom_filter(hashed_addr);
       inc_utility_info(TRUE);
-      if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_IFETCH)
-        STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_IFETCH);
-      else if (imiss_reason == IMISS_TOO_EARLY_EVICTED_BY_FDIP)
-        STAT_EVENT(ic->proc_id, ICACHE_MISS_PREFETCHED_AND_EVICTED_BY_FDIP);
-      else {
-        ASSERT(ic->proc_id, imiss_reason == IMISS_NOT_PREFETCHED);
-        STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED);
+      ASSERT(ic->proc_id, imiss_reason <= IMISS_TOO_EARLY_EVICTED_BY_FDIP);
+      STAT_EVENT(ic->proc_id, ICACHE_MISS_NOT_PREFETCHED + imiss_reason);
+      if (imiss_reason == IMISS_NOT_PREFETCHED)
         assert_fdip_break_reason(hashed_addr);
-      }
     } else {
       inc_off_fetched_cls(ic->line_addr);
     }

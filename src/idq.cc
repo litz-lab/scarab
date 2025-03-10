@@ -52,11 +52,9 @@ class IDQ {
   void reset();
   void recover();
   void debug();
-  void update(Stage_Data* dec_src_sd, Stage_Data* uopc_src_sd);
-  bool enqueue(Op* op);
+  void update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd);
   Op* dequeue();
   Op* peek();
-  inline int wrap_around(int);
 
  private:
   uns8 proc_id;
@@ -66,6 +64,9 @@ class IDQ {
   int head;
   int tail;
   Counter next_op_num;
+
+  bool enqueue(Op* op);
+  inline int wrap_around(int);
 };
 
 /* Global Variables */
@@ -116,16 +117,24 @@ void IDQ::recover() {
 void IDQ::debug() {
 }
 
-void IDQ::update(Stage_Data* dec_src_sd, Stage_Data* uopc_src_sd) {
-  // When the uop cache is enabled, the next op to enqueue the idq is from either:
-  // 1. the decode stage
-  // 2. the uop cache source
-  // Furthermore, the uop cache source is either:
-  // 1. the uop queue
-  // 2. the icache stage uopc stage data bypassing the uop queue
+void IDQ::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
+  /* When the uop cache is enabled, the next op to enqueue the idq is from either:
+   * 1. the decode stage
+   * 2. the uop cache source
+   * Furthermore, the uop cache source is either:
+   * 1. the uop queue
+   * 2. the icache stage uopc stage data bypassing the uop queue */
+  Stage_Data* uopc_src_sd = NULL;
+  if (UOP_CACHE_ENABLE) {
+    uopc_src_sd = uop_queue_sd->op_count ? uop_queue_sd : ic_uopc_sd;
+    if (uop_queue_sd->op_count && ic_uopc_sd->op_count) {
+      /* the stage data from the uop queue should be older */
+      ASSERT(proc_id, uop_queue_sd->ops[uop_queue_sd->op_count - 1]->op_num < ic_uopc_sd->ops[0]->op_num);
+    }
+  }
 
-  // The ops are enqueued in order, i.e.,
-  // only consume if older ops have already been consumed by this stage.
+  /* The ops are enqueued in order, i.e.,
+   * only consume if older ops have already been consumed by this stage. */
   Stage_Data* consume_from_sd = NULL;
   if (UOP_CACHE_ENABLE) {
     ASSERT(proc_id, uopc_src_sd != NULL);
@@ -203,8 +212,8 @@ int IDQ::wrap_around(int index) {
 }
 
 /* Wrapper functions */
-void alloc_mem_idq(uns8 numCores) {
-  per_core_idq.resize(numCores);
+void alloc_mem_idq(uns8 num_cores) {
+  per_core_idq.resize(num_cores);
 }
 
 void set_idq(uns8 proc_id) {
@@ -227,8 +236,8 @@ void debug_idq(void) {
   idq->debug();
 }
 
-void update_idq(Stage_Data* dec_src_sd, Stage_Data* uopc_src_sd) {
-  idq->update(dec_src_sd, uopc_src_sd);
+void update_idq(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
+  idq->update(dec_src_sd, ic_uopc_sd, uop_queue_sd);
 }
 
 Op* dequeue_op_from_idq(void) {

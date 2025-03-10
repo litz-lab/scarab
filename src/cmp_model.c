@@ -233,22 +233,23 @@ void cmp_cores(void) {
       set_bp_recovery_info(&cmp_model.bp_recovery_info[proc_id]);
       cmp_set_all_stages(proc_id);
 
+      /* back-end pipeline */
       update_dcache_stage(&exec->sd);
       update_exec_stage(&node->sd);
       update_node_stage(map->last_sd);
       update_map_stage();
+
+      /* front-end pipiline */
       update_uop_queue_stage(&ic->uopc_sd);
       update_decode_stage(&ic->sd);
       update_icache_stage();
       // idq can get ops from the uop cache, uop cache queue, or the decoder.
-      // idq is combinational; it adds no extra latency on top of the uop cache latency / decoding latency;
+      // enqueuing idq is combinational; it adds no extra latency on top of the uop cache latency / decoding latency;
       // in other words, its latency is subsumed by the uop cache latency / decoding latency;
       // that is why it is not updated in reverse order.
-      Stage_Data* idq_uop_cache_src = NULL;
-      if (UOP_CACHE_ENABLE) {
-        idq_uop_cache_src = get_uop_queue_stage_length() > 0 ? uop_queue_stage_get_latest_sd() : &ic->uopc_sd;
-      }
-      update_idq(dec->last_sd, idq_uop_cache_src);
+      update_idq(dec->last_sd, &ic->uopc_sd, uop_queue_stage_get_latest_sd());
+
+      /* decoupled branch prediction */
       update_decoupled_fe();
       update_fdip();
       update_eip();

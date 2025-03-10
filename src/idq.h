@@ -54,7 +54,7 @@ void init_idq(uns8);
 void reset_idq(void);
 void recover_idq(void);
 void debug_idq(void);
-void update_idq(Stage_Data*, Stage_Data*);
+void update_idq(Stage_Data*, Stage_Data*, Stage_Data*);
 Op* dequeue_op_from_idq(void);
 Op* peek_op_from_idq(void);
 

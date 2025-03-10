@@ -314,3 +314,4 @@ DEF_PARAM(dcache_miss_rate, DCACHE_MISS_RATE, uns, uns, 10, )
 DEF_PARAM(l1_miss_rate, L1_MISS_RATE, uns, uns, 10, )
 
 DEF_PARAM(memtrace_buf_size, MEMTRACE_BUF_SIZE, uns, uns, 0, )
+DEF_PARAM(use_scan_buf_ft, USE_SCAN_BUF_FT, uns, uns, 0, )

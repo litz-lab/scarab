@@ -12,6 +12,7 @@
 #include <iostream>
 #include <tuple>
 #include <cmath>
+#include <uop_cache.h>
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
@@ -110,6 +111,7 @@ void reset_decoupled_fe() {}
 
 void recover_decoupled_fe() {
   dfe->recover();
+  ghrp_recoverPathHistory();
 }
 
 void debug_decoupled_fe() {
@@ -180,6 +182,7 @@ uint64_t decoupled_fe_ftq_num_fts() {
 }
 
 void decoupled_fe_retire(Op *op, int op_proc_id, uns64 inst_uid) {
+  ghrp_commitPathHistory(op->inst_info->addr);
   dfe->retire(op, op_proc_id, inst_uid);
 }
 

@@ -358,6 +358,7 @@ class MTAGE {
   bool getloop(uint64_t PC);
   int lindex(uint64_t);
   void loopupdate(uint64_t, bool, bool);
+  uns8 GetTageComp();
 };
 void PrintStat(double NumInst);
 

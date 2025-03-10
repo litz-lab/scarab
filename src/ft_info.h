@@ -53,6 +53,10 @@ typedef struct FT_Info_Static_struct {
   Addr length;
   // the number of uops in this FT
   int n_uops;
+  uns tage_comp;
+  Addr start_branch_addr;
+  uns bp_confi;
+  uns bp_dir;
 } FT_Info_Static;
 
 // two fts with the same static info may have different dynamic info

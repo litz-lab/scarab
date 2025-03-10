@@ -79,6 +79,7 @@ DEF_PARAM( bindir                       , BINDIR                    , char * , s
 
 DEF_PARAM( dump_params                  , DUMP_PARAMS               , Flag   , Flag      , TRUE     ,       )
 DEF_PARAM( dump_stats                   , DUMP_STATS                , Flag   , Flag      , TRUE     ,       )
+DEF_PARAM( dump_ft_info                   , DUMP_FT_INFO                , Flag   , Flag      , FALSE     ,       )
 DEF_PARAM( dump_trace                   , DUMP_TRACE                , Flag   , Flag      , FALSE    ,       )
 DEF_PARAM( clear_stats                  , CLEAR_STATS               , char * , string    , "never"  ,       )
 DEF_PARAM( stats_to_trace               , STATS_TO_TRACE            , char * , string    , NULL     ,       )

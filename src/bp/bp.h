@@ -217,6 +217,7 @@ typedef struct Bp_struct {
   void (*recover_func)(Recovery_Info*); /* called to recover the bp when a
                                            misprediction is realized */
   uns8 (*full_func)(uns);
+  uns8 (*tage_source_func)(uns);
 } Bp;
 
 typedef struct Bp_Btb_struct {

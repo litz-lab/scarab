@@ -468,6 +468,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       } else {
         ASSERT(op->proc_id, !PERFECT_NT_BTB);  // currently not supported
         op->oracle_info.pred = bp_data->bp->pred_func(op);
+        op->oracle_info.tage_source = bp_data->bp->tage_source_func(op->proc_id);
         op->oracle_info.pred_orig = op->oracle_info.pred;
         if (USE_LATE_BP) {
           op->oracle_info.late_pred = bp_data->late_bp->pred_func(op);

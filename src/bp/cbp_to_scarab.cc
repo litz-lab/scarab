@@ -79,6 +79,9 @@ class CBP_To_Scarab_Intf {
   Flag full(uns proc_id) {
     return cbp_predictors.at(proc_id).IsFull();
   }
+  uns8 tage_source(uns proc_id) {
+    return cbp_predictors.at(proc_id).GetTageComp();
+  }
 };
 
 // Specialization for TAGE64K
@@ -118,7 +121,8 @@ uns8 CBP_To_Scarab_Intf<TAGE64K>::pred(Op* op) {
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, update, , void, Op*, op)               \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, retire, , void, Op*, op)               \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, recover, , void, Recovery_Info*, info) \
-  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, full, return, Flag, uns, proc_id)
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, full, return, Flag, uns, proc_id)\
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, tage_source, return, uns8, uns, proc_id)
 
 #include "cbp_table.def"
 

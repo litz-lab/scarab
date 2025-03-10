@@ -415,6 +415,7 @@ class TAGE64K {
   int lindex(UINT64 PC);
   bool getloop(UINT64 PC);
   void loopupdate(UINT64 PC, bool Taken, bool ALLOC);
+  uns8     GetTageComp();
 
   // LP START
   cbp64_lentry* ltable;  // loop predictor table

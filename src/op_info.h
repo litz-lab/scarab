@@ -100,6 +100,7 @@ struct Op_Info_struct {
   uns8 pred;       // predicted direction of branch, set by the branch predictor
   uns8 pred_orig;  // predicted direction of branch, not overwritten on BTB miss (for fdip)
   Flag misfetch;   // true if target address is the ONLY thing that was wrong
+  uns8 tage_source;
   Flag mispred;  // true if the direction of the branch was mispredicted and the
                  // branch should cause a recovery, set by the branch predictor
   Flag btb_miss;           // true if the target is not known at prediction time

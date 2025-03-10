@@ -993,4 +993,9 @@ void TAGE64K::loopupdate(UINT64 PC, bool Taken, bool ALLOC) {
       }
   }
 }
+
+uns8 TAGE64K::GetTageComp(){
+  return tage_component;
+}
+
 #endif

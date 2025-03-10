@@ -1683,3 +1683,6 @@ int MTAGE::rhspindex(uint64_t PC, int bank) {
   }
   return index & ((1 << LOGRHSP) - 1);
 }
+uns8 MTAGE::GetTageComp(){
+  return 0;
+}

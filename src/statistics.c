@@ -41,7 +41,7 @@ working on this (ob).
 
 #include "core.param.h"
 #include "general.param.h"
-
+#include "uop_cache.h"
 /**************************************************************************************/
 /* Global Variables */
 
@@ -162,6 +162,11 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
 
   if(!DUMP_STATS)
     return;
+
+  // if(DUMP_FT_INFO)
+  //   dump_uop_reuse(proc_id);
+    // if(DUMP_IN_UOP_INFO)
+      stat_ucache_inside(proc_id);
 
   for(ii = 0; ii < num_stats; ii++) {
     Stat* s = &stat_array[ii];

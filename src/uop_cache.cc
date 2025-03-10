@@ -32,6 +32,13 @@
 #include "uop_queue_stage.h"
 
 #include <vector>
+
+#include <unordered_map>
+#include <fstream>
+#include <cmath>
+#include <memory>
+#include <string>
+#include <stdexcept>
 /**************************************************************************************/
 /* Macros */
 
@@ -42,6 +49,10 @@
 #define UOP_CACHE_LINE_SIZE       ICACHE_LINE_SIZE
 
 typedef std::pair<Addr, FT_Info_Static> Uop_Cache_Key;
+uns tage_source = 0;
+uns bp_confi = 0;
+int branch_blk_dir = 0;
+Addr start_branch_addr = 0;
 /**************************************************************************************/
 /* Local Prototypes */
 
@@ -84,12 +95,227 @@ bool operator==(const Uop_Cache_Key& lhs, const Uop_Cache_Key& rhs) {
   return pc_match && l_info == r_info;
 }
 
+// Forward declaration
+class UOPCacheTracker;
+
+// Custom deleter as a standalone class
+class UOPTrackerDeleter {
+public:
+    void operator()(UOPCacheTracker* p);
+};
+
+class UOPCacheTracker {
+    friend class UOPTrackerDeleter;
+private:
+    struct AccessInfo {
+        unsigned long long timestamp;
+        unsigned long long address;
+        unsigned length;  // Added length field
+    };
+
+    // Define a custom key structure for the map
+    struct AccessKey {
+        unsigned long long address;
+        unsigned length;
+
+        // Define equality operator for the key
+        bool operator==(const AccessKey& other) const {
+            return address == other.address && length == other.length;
+        }
+    };
+
+    // Custom hash function for AccessKey
+    struct AccessKeyHash {
+        std::size_t operator()(const AccessKey& k) const {
+            return std::hash<unsigned long long>()(k.address) ^ 
+                   (std::hash<unsigned>()(k.length) << 1);
+        }
+    };
+
+    struct SetInfo {
+        unsigned long long current_timestamp;
+        std::unordered_map<AccessKey, AccessInfo, AccessKeyHash> address_history;
+    };
+
+    static std::unique_ptr<UOPCacheTracker, UOPTrackerDeleter> instance;
+    
+    const unsigned UOP_CACHE_LINE_SIZE;
+    const unsigned UOP_CACHE_LINES;
+    const unsigned UOP_CACHE_ASSOC;
+    const unsigned offset_bits;
+    const unsigned num_sets;
+    std::vector<SetInfo> sets;
+    std::ofstream output_file;
+
+protected:
+    ~UOPCacheTracker() {
+        if (output_file.is_open()) {
+            dumpStatistics();
+            output_file.close();
+        }
+    }
+
+private:
+    UOPCacheTracker(unsigned line_size, unsigned lines, unsigned assoc, const std::string& output_filename) 
+        : UOP_CACHE_LINE_SIZE(line_size),
+          UOP_CACHE_LINES(lines),
+          UOP_CACHE_ASSOC(assoc),
+          offset_bits(log2(line_size)),
+          num_sets(lines / assoc),
+          sets(lines / assoc) {
+        
+        output_file.open(output_filename);
+        if (!output_file.is_open()) {
+            throw std::runtime_error("Failed to open output file");
+        }
+        
+        for (auto& set : sets) {
+            set.current_timestamp = 0;
+        }
+        output_file << "FT_Start,FT_Length,NumUops,TAGEComp,start_branch_addr,bp_confi,bp_dir,"
+                << "StartedBy,EndedBy,FirstOpOffPath,bypass_decision\n";
+    }
+
+public:
+    static void initialize(unsigned line_size, unsigned lines, unsigned assoc, const std::string& output_filename) {
+        if (!instance) {
+            instance.reset(new UOPCacheTracker(line_size, lines, assoc, output_filename));
+        }
+    }
+
+    static UOPCacheTracker& getInstance() {
+        if (!instance) {
+            throw std::runtime_error("UOPCacheTracker not initialized");
+        }
+        return *instance;
+    }
+
+    static void cleanup() {
+        instance.reset();
+    }
+
+    void recordAccess(unsigned long long address, unsigned length) {
+        unsigned target_set = (address >> offset_bits) % num_sets;
+        SetInfo& set = sets[target_set];
+        set.current_timestamp++;
+
+        AccessKey key{address, length};
+        unsigned long long reuse_distance = 0;
+        auto it = set.address_history.find(key);
+        
+        if (it != set.address_history.end()) {
+            reuse_distance = set.current_timestamp - it->second.timestamp;
+        }
+
+        if(DUMP_FT_INFO) {
+            output_file << target_set << ","
+                       << std::hex << address << std::dec << ","
+                       << length << ","
+                       << set.current_timestamp << ","
+                       << reuse_distance << "\n";
+        }
+
+        set.address_history[key] = {
+            set.current_timestamp,
+            address,
+            length
+        };
+    }
+
+    void logFTInfo( const FT_Info_struct& ft_info, uns bypass) {
+      output_file 
+      << ft_info.static_info.start << ","
+      << ft_info.static_info.length << ","
+      << ft_info.static_info.n_uops << ","
+      << ft_info.static_info.tage_comp << ","
+      << ft_info.static_info.start_branch_addr << ","
+      << ft_info.static_info.bp_confi << ","
+      << ft_info.static_info.bp_dir << ","
+      << static_cast<int>(ft_info.dynamic_info.started_by) << ","
+      << static_cast<int>(ft_info.dynamic_info.ended_by) << ","
+      << static_cast<int>(ft_info.dynamic_info.first_op_off_path) << ","
+      << bypass << "\n";
+    }
+
+
+    void dumpStatistics() {
+        // Statistics dumping remains the same
+    }
+
+    unsigned lookupLength(unsigned long long address) {
+        unsigned target_set = (address >> offset_bits) % num_sets;
+        SetInfo& set = sets[target_set];
+        
+        unsigned longest_length = 0;
+        bool found = false;
+        
+        // Find the longest length for this address
+        for (const auto& entry : set.address_history) {
+            if (entry.first.address == address) {
+                found = true;
+                longest_length = std::max(longest_length, entry.first.length);
+            }
+        }
+        STAT_EVENT(0, FT_LENGTH_NOT_FOUND+found);
+        
+        // if (found && DUMP_FT_INFO) {
+        //     std::cerr << "Found length " << longest_length 
+        //              << " for address 0x" << std::hex << address << std::dec << "\n";
+        // }
+        
+        return longest_length;  // Returns 0 if address not found
+    }
+
+};
+
+// Implement deleter
+void UOPTrackerDeleter::operator()(UOPCacheTracker* p) { 
+    delete p; 
+}
+
+// Define static member
+std::unique_ptr<UOPCacheTracker, UOPTrackerDeleter> UOPCacheTracker::instance = nullptr;
+
+// API namespace
+namespace uop_cache_tracker {
+    void init(unsigned line_size, unsigned lines, unsigned assoc, const std::string& filename) {
+        UOPCacheTracker::initialize(line_size, lines, assoc, filename);
+    }
+
+    void record_access(unsigned long long address, unsigned length) {
+        UOPCacheTracker::getInstance().recordAccess(address, length);
+    }
+
+    void dump_stats() {
+        UOPCacheTracker::getInstance().dumpStatistics();
+    }
+
+    void cleanup() {
+        UOPCacheTracker::cleanup();
+    }
+
+    unsigned lookup_length(unsigned long long address) {
+      return UOPCacheTracker::getInstance().lookupLength(address);
+    }
+    
+
+    void record_FT(const FT_Info_struct& ft_info, uns bypass) {
+     UOPCacheTracker::getInstance().logFTInfo(ft_info, bypass);
+    }
+
+}
+
+
+
+  
 /**************************************************************************************/
 /* Global Variables */
 
 uns8 uop_cache_proc_id;
 // per core caches
 std::vector<Uop_Cache*> per_core_uop_cache;
+
+// std::vector<std::pair{n_uop, end_addr}> ft_len_info;
 
 // uop cache per core accumulation structures
 // the accumulation buffer stores the uop cache lines of an FT
@@ -143,7 +369,12 @@ void init_uop_cache(uns8 proc_id) {
   // The cache library computes the number of entries from cache_size_bytes/cache_line_size_bytes,
   per_core_uop_cache[proc_id] = new Uop_Cache(UOP_CACHE_LINES, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
                                               (Repl_Policy)UOP_CACHE_REPL);
+
+  uop_cache_tracker::init(UOP_CACHE_LINE_SIZE, UOP_CACHE_LINES, UOP_CACHE_ASSOC, "uop_cache_access_pattern.csv");
+
 }
+
+
 
 void set_uop_cache(uns8 proc_id) {
   if (!UOP_CACHE_ENABLE) {
@@ -165,6 +396,8 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
   if (!UOP_CACHE_ENABLE) {
     return FALSE;
   }
+  // std::cout << "looking for uop cache:: Addr 0x" << std::hex<<ft_info.static_info.start
+  //           << ", length: "<< ft_info.static_info.n_uops <<std::endl;
 
   Uop_Cache_Data* uoc_data = NULL;
   Addr lookup_addr = ft_info.static_info.start;
@@ -177,7 +410,15 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
       if (!uoc_data) {
         return FALSE;
       } else {
-        if (!uoc_data->used && !offpath) {
+        // if (!uoc_data->used && !offpath) {
+        //   uoc_data->used += 1;
+        //   STAT_EVENT(uop_cache_proc_id, UOP_CACHE_FT_INSERTED_ONPATH_USED_ONPATH + uoc_data->ft_info_dynamic.first_op_off_path);
+        // }
+        if (!uoc_data->used ) {
+          // std::cout << "Used uop cache:: Addr 0x" << std::hex<<uoc_data->line_start
+          //   << ", length: "<< uoc_data->n_uops <<std::endl;
+          uoc_data->used += 1;
+          
           STAT_EVENT(uop_cache_proc_id, UOP_CACHE_FT_INSERTED_ONPATH_USED_ONPATH + uoc_data->ft_info_dynamic.first_op_off_path);
         }
       }
@@ -185,7 +426,11 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
 
     ASSERT(uop_cache_proc_id, uoc_data);
 
-    if (!uoc_data->used && !offpath) {
+    // if (!uoc_data->used && !offpath) {
+    //   STAT_EVENT(uop_cache_proc_id, UOP_CACHE_LINE_INSERTED_ONPATH_USED_ONPATH + uoc_data->ft_info_dynamic.first_op_off_path);
+    //   uoc_data->used += 1;
+    // }
+    if (!uoc_data->used) {
       STAT_EVENT(uop_cache_proc_id, UOP_CACHE_LINE_INSERTED_ONPATH_USED_ONPATH + uoc_data->ft_info_dynamic.first_op_off_path);
       uoc_data->used += 1;
     }
@@ -218,7 +463,7 @@ Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag upd
   if (!UOP_CACHE_ENABLE) {
     return NULL;
   }
-
+  uop_cache_tracker::record_access(line_start, ft_info.static_info.n_uops);
   Uop_Cache_Data* uoc_data = per_core_uop_cache[uop_cache_proc_id]->access({line_start, ft_info.static_info}, update_repl == TRUE);
   return uoc_data;
 }
@@ -283,15 +528,10 @@ bool insert_buffer_into_uopc(FT_Info* buffer_ft_info, std::vector<Uop_Cache_Data
       Uop_Cache_Data* insert_line = &accumulation_buffer->at(i);
       Uop_Cache_Data* uop_cache_line = uop_cache_lookup_line(insert_line->line_start, *buffer_ft_info, TRUE);
 
-      if (UOP_CACHE_BYPASS) {
-        if (i == 0)
-          STAT_EVENT(uop_cache_proc_id, UOP_INSERTION_BYPASSED_CHECKED);
-        if (i == 0 && per_core_uop_cache[uop_cache_proc_id]->check_bypass(
-                          {insert_line->line_start, buffer_ft_info->static_info})) {
-          STAT_EVENT(uop_cache_proc_id, UOP_INSERTION_BYPASSED_ONPATH + buffer_ft_info->dynamic_info.first_op_off_path);
-          return true;
-        }
-      }
+      if (i == 0)
+        insert_line->begin_of_ft = 1;
+      else
+        insert_line->begin_of_ft = 0;
 
       if (i == 0 && uop_cache_line) {
         // when i == 0, we are looking up the first line from the FT;
@@ -327,9 +567,54 @@ bool insert_buffer_into_uopc(FT_Info* buffer_ft_info, std::vector<Uop_Cache_Data
         }
       } else {
         ASSERT(uop_cache_proc_id, !uop_cache_line);
+        // if(i==0){
+        //             std::cout << "trying to Inserting uop cache head:: Addr 0x" << std::hex<<insert_line->line_start << " off path: " << std::boolalpha<< buffer_ft_info->dynamic_info.first_op_off_path 
+        //     << "length: "<< insert_line->n_uops <<std::endl;
+        // }
+        auto end_address = &accumulation_buffer->back().line_start;
 
+        
+
+
+        if (UOP_CACHE_BYPASS) {
+          
+          if (i == 0)
+            STAT_EVENT(uop_cache_proc_id, UOP_INSERTION_BYPASS_CHECK);
+          if(UOP_BYPASS_ALL_OFFPATH){
+            if(i == 0 && buffer_ft_info->dynamic_info.first_op_off_path){
+              STAT_EVENT(uop_cache_proc_id, UOP_INSERTION_BYPASSED_OFFPATH);
+              return true;
+            }
+          }
+         
+          
+            // if(*end_address == insert_line->line_start)
+            // STAT_EVENT(uop_cache_proc_id, UOP_INSERTION_BYPASSED_OFFPATH);
+          if (i == 0 ) {
+            auto should_bypass = per_core_uop_cache[uop_cache_proc_id]->check_bypass(
+              {insert_line->line_start, buffer_ft_info->static_info}, *end_address);
+            if(should_bypass)
+            {
+                STAT_EVENT(uop_cache_proc_id, UOP_INSERTION_CHECKED_BYPASSING);
+                if(buffer_ft_info->static_info.start)
+                  uop_cache_tracker::record_FT(*buffer_ft_info, 1);
+                return true;
+            }else
+            {
+              if(buffer_ft_info->static_info.start)
+                uop_cache_tracker::record_FT(*buffer_ft_info, 0);
+            }
+            
+          }
+        }
+        
+        // if(i!=0){
+        //             std::cout << "trying to Inserting uop cache not head:: Addr 0x" << std::hex<<insert_line->line_start << " off path: " << std::hex<< buffer_ft_info->dynamic_info.first_op_off_path 
+        //     << "length: "<< insert_line->n_uops <<std::endl;
+        // }
         Entry<Uop_Cache_Key, Uop_Cache_Data> evicted_entry = per_core_uop_cache[uop_cache_proc_id]->insert({insert_line->line_start, buffer_ft_info->static_info}, *insert_line);
-
+        // std::cout << "Inserted uop cache:: Addr 0x" << std::hex<<insert_line->line_start << std::endl;
+        // std::cout << "Evicted uop cache:: Addr 0x" << std::hex << evicted_entry.key.first << std::endl;
         DEBUG(uop_cache_proc_id,
               "uop cache line inserted. off_path=%u, addr=0x%llx\n",
               buffer_ft_info->dynamic_info.first_op_off_path, insert_line->line_start);
@@ -340,6 +625,17 @@ bool insert_buffer_into_uopc(FT_Info* buffer_ft_info, std::vector<Uop_Cache_Data
           FT_Info_Static evicted_ft_info_static = evicted_entry.key.second;
           Addr invalidate_addr = evicted_ft_info_static.start;
           Entry<Uop_Cache_Key, Uop_Cache_Data> invalidated_entry{};
+          STAT_EVENT(uop_cache_proc_id, UOP_CACHE_FT_EVICTED_LENGTH_1 + (evicted_ft_info_static.n_uops / ISSUE_WIDTH));
+
+
+          if(evicted_entry.data.used)
+              STAT_EVENT(uop_cache_proc_id, UOP_CACHE_FT_EVICTED_USEFUL);
+            else{
+              // std::cout << "USELESS:: Addr 0x" << std::hex<<invalidate_addr << " eviceted unused" << std::endl;
+              STAT_EVENT(uop_cache_proc_id, UOP_CACHE_FT_EVICTED_USELESS);
+            }
+              
+          
           do {
             invalidated_entry = per_core_uop_cache[uop_cache_proc_id]->invalidate({invalidate_addr, evicted_ft_info_static});
             if (invalidate_addr == evicted_entry.key.first) {
@@ -387,6 +683,7 @@ bool insert_buffer_into_uopc(FT_Info* buffer_ft_info, std::vector<Uop_Cache_Data
   return success;
 }
 
+
 /**************************************************************************************/
 /* end_line_accumulate: called when a uop cache line is built. */
 /* the line is added to the buffer, and when the FT has ended, */
@@ -417,6 +714,27 @@ void accumulate_op(Op* op) {
   if (!UOP_CACHE_ENABLE) {
     return;
   }
+  if (op->table_info->cf_type){
+    if ((op->table_info->cf_type != CF_CBR) || (op->table_info->cf_type == CF_CBR && op->oracle_info.pred)){
+      start_branch_addr = op->inst_info->addr;
+      if (op->oracle_info.target <= op->inst_info->addr)
+        branch_blk_dir = 1;
+      else if(op->oracle_info.target > op->inst_info->addr)
+        branch_blk_dir = 2;
+    }
+      else
+        branch_blk_dir = 0;
+    
+
+  }
+  if (op->table_info->cf_type == CF_CBR){
+    tage_source = op->oracle_info.tage_source +1;
+    bp_confi = op->bp_confidence+1;
+  } else if (op->table_info->cf_type){
+    tage_source = 0;
+    bp_confi = 0;
+  }
+    
 
   // uop cache line begin detection
   // these two conditions should be identical
@@ -426,6 +744,11 @@ void accumulate_op(Op* op) {
     if (current_accumulation_buffer->size() == 0) {
       // set current FT info
       *current_accumulating_ft = op->ft_info;
+      current_accumulating_ft->static_info.tage_comp = tage_source;
+      current_accumulating_ft->static_info.start_branch_addr = start_branch_addr;
+      current_accumulating_ft->static_info.bp_confi = bp_confi;
+      current_accumulating_ft->static_info.bp_dir = branch_blk_dir;
+      
       ASSERT(uop_cache_proc_id, current_accumulating_ft->dynamic_info.first_op_off_path == op->off_path);
     }
     // set per line meta info
@@ -496,3 +819,32 @@ void recover_uop_cache(void) {
                               *current_accumulating_op_num == 0);
   }
 }
+
+void dump_uop_reuse(uns prod_id){
+  uop_cache_tracker::dump_stats();
+  // uop_cache_tracker::cleanup();
+}
+
+
+void ghrp_commitPathHistory(Addr addr){
+  if(GHRP_ENABLE)
+    per_core_uop_cache[0]->commitPathHistory(addr);
+}
+
+void ghrp_recoverPathHistory(){
+  if(GHRP_ENABLE)
+    per_core_uop_cache[0]->recoverPathHistory();
+}
+
+// Add this function to your code:
+unsigned get_uop_length(Addr line_start) {
+    if (!UOP_CACHE_ENABLE) {
+        return 0;
+    }
+    return uop_cache_tracker::lookup_length(line_start);
+}
+
+void stat_ucache_inside(uns proc_id) {
+  per_core_uop_cache[proc_id]-> check_used_counters();
+}
+

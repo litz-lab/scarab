@@ -66,6 +66,7 @@ typedef enum Repl_Policy_enum {
   REPL_SHIP,    /* signature-based hit predictor */
 
   BELADY_UOP,
+  GHRP_UOP,
   NUM_REPL
 } Repl_Policy;
 

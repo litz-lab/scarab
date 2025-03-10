@@ -41,7 +41,11 @@ struct Op_struct;
 /**************************************************************************************/
 /* Prototypes */
 #include <vector>
-Addr buf_map_find_replace(const std::vector<Addr>& line_addrs, Flag bypass, uns num_ft);
+uns buffer_find_replace(const std::vector<Addr>& line_addrs, const std::vector<Addr>& end_line_addrs, const std::vector<uns>& lengths,  const std::vector<Addr>& byte_length, const std::vector<uns>& n_uop, uns num_ft);
+uns buffer_find_replace_start(const std::vector<Addr>& line_addrs, const std::vector<Addr>& end_line_addrs, const std::vector<uns>& lengths,  const std::vector<Addr>& byte_length, const std::vector<uns>& n_uop, uns num_ft);
+Addr buffer_find_timestamp(Addr lookup_addr);
+Addr find_valid_ft_timestamp(Addr addr, Addr end_addr, uns length, uns n_uop);
+std::vector<unsigned long long> get_timestamps_for_cache_line(Addr addr);
 
 #ifdef __cplusplus
 extern "C" {

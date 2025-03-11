@@ -105,7 +105,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op) {
     if (SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON)
       return;
     if (is_conditional)
-      cbp_predictors.at(proc_id).SpecUpdateAtCond(op->inst_info->addr, pred_dir);
+      cbp_predictors.at(proc_id).SpecUpdateAtCond(op->inst_info->addr, pred_dir, true);
     cbp_predictors.at(proc_id).SpecUpdate(op->inst_info->addr, optype, pred_dir, op->oracle_info.target);
     return;
   }
@@ -118,7 +118,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op) {
 
   // Real update start
   if (is_conditional) {
-    cbp_predictors.at(proc_id).SpecUpdateAtCond(op->inst_info->addr, pred_dir);
+    cbp_predictors.at(proc_id).SpecUpdateAtCond(op->inst_info->addr, pred_dir, false);
     cbp_predictors.at(proc_id).SpecUpdate(op->inst_info->addr, optype, pred_dir, op->oracle_info.target);
     if (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON)
       cbp_predictors.at(proc_id).NonSpecUpdateAtCond(op->inst_info->addr, optype, op->oracle_info.dir,

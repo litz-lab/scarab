@@ -225,7 +225,6 @@ void TAGE64K::reinit() {
   Sstate.GHIST = 0;
   Pstate.on_path_phist = 0;
   Pstate.on_path_ptghist = 0;
-  off_path = false;
   branch_id = 0;
 
   tage_component = TAGE_BASE;
@@ -299,18 +298,26 @@ void TAGE64K::baseupdate(bool Taken, UINT64 PC) {
 
 // just a simple pseudo random number generator: use available information
 //  to allocate entries  in the loop predictor
-int TAGE64K::MYRANDOM(long long on_path_phist, int on_path_ptghist) {
+int TAGE64K::MYRANDOM(long long on_path_phist, int on_path_ptghist, bool off_path) {
+  if (RANDOM_DETERMINISTIC && off_path)
+    return Seed;
+
+  long long phist = (RANDOM_DETERMINISTIC) ? on_path_phist : Sstate.phist;
+  int ptghist = (RANDOM_DETERMINISTIC) ? on_path_ptghist : Sstate.ptghist;
+
   Seed++;
-  Seed ^= on_path_phist;
+  Seed ^= phist;
   Seed = (Seed >> 21) + (Seed << 11);
-  Seed ^= on_path_ptghist;
+  Seed ^= ptghist;
   Seed = (Seed >> 10) + (Seed << 22);
   return (Seed);
 };
 
 void TAGE64K::SavePredictorStates(Counter key) {
-  Pstate.on_path_phist = Sstate.phist;
-  Pstate.on_path_ptghist = Sstate.ptghist;
+  if (RANDOM_DETERMINISTIC) {
+    Pstate.on_path_phist = Sstate.phist;
+    Pstate.on_path_ptghist = Sstate.ptghist;
+  }
   if (SPEC_LEVEL == BP_PRED_ON)
     return;
 
@@ -339,8 +346,10 @@ void TAGE64K::SavePredictorStates(Counter key) {
   state.LSUM = Pstate.LSUM;
   state.HitBank = Pstate.HitBank;
   state.AltBank = Pstate.AltBank;
-  state.on_path_phist = Pstate.on_path_phist;
-  state.on_path_ptghist = Pstate.on_path_ptghist;
+  if (RANDOM_DETERMINISTIC) {
+    state.on_path_phist = Pstate.on_path_phist;
+    state.on_path_ptghist = Pstate.on_path_ptghist;
+  }
   assert(NOSKIP[state.HitBank] || state.HitBank == 0);  // HitBank should be valid or 0
   assert(NOSKIP[state.AltBank] || state.AltBank == 0);
   int8_t j = 0;
@@ -358,8 +367,7 @@ void TAGE64K::SavePredictorStates(Counter key) {
   ASSERTM(0, it != key_index.end(), "it != key_index.end()");
 }
 
-Counter TAGE64K::KeyGeneration(bool offpath) {
-  off_path = offpath;
+Counter TAGE64K::KeyGeneration() {
   return ++branch_id;
 }
 
@@ -398,7 +406,6 @@ void TAGE64K::RestorePredictorstates(Counter key) {
       j++;
     }
   }
-  off_path = false;
 }
 
 void TAGE64K::TakeCheckpoint(Counter key) {
@@ -464,7 +471,7 @@ void TAGE64K::RestoreStates(Counter key, UINT64 PC, OpType optype, Flag is_condi
     if (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON)
       return;
     if (is_conditional)
-      SpecUpdateAtCond(PC, dir);
+      SpecUpdateAtCond(PC, dir, false);
     SpecUpdate(PC, optype, dir, target);
   }
 }
@@ -797,9 +804,9 @@ void TAGE64K::HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target)
   // END UPDATE  HISTORIES
 }
 
-void TAGE64K::SpecUpdateAtCond(UINT64 PC, bool dir) {
+void TAGE64K::SpecUpdateAtCond(UINT64 PC, bool dir, bool off_path) {
 #ifdef LOOPPREDICTOR
-  SpecLoopUpdate(PC, dir, Pstate.on_path_phist, Pstate.on_path_ptghist);
+  SpecLoopUpdate(PC, dir, Pstate.on_path_phist, Pstate.on_path_ptghist, off_path);
 #endif
   bool SCPRED = (Pstate.LSUM >= 0);
   if ((SCPRED != dir) || ((abs(Pstate.LSUM) < Pstate.THRES))) {
@@ -981,18 +988,18 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
   }
 
   if (pstate.pred_taken == resolveDir)
-    if ((MYRANDOM(pstate.on_path_phist, pstate.on_path_ptghist) & 31) != 0)
+    if ((MYRANDOM(pstate.on_path_phist, pstate.on_path_ptghist, false) & 31) != 0)
       ALLOC = false;
 
   if (ALLOC) {
     int T = NNN;
 
     int A = 1;
-    if ((MYRANDOM(pstate.on_path_phist, pstate.on_path_ptghist) & 127) < 32)
+    if ((MYRANDOM(pstate.on_path_phist, pstate.on_path_ptghist, false) & 127) < 32)
       A = 2;
     int Penalty = 0;
     int NA = 0;
-    int DEP = ((((pstate.HitBank - 1 + 2 * A) & 0xffe)) ^ (MYRANDOM(pstate.on_path_phist, pstate.on_path_ptghist) & 1));
+    int DEP = ((((pstate.HitBank - 1 + 2 * A) & 0xffe)) ^ (MYRANDOM(pstate.on_path_phist, pstate.on_path_ptghist, false) & 1));
     // just a complex formula to chose between X and X+1, when X is odd: sorry
 
     for (int I = DEP; I < NHIST; I += 2) {
@@ -1202,7 +1209,7 @@ bool TAGE64K::getloop(UINT64 PC) {
   return (false);
 }
 
-void TAGE64K::SpecLoopUpdate(UINT64 PC, bool Taken, long long on_path_phist, int on_path_ptghist) {
+void TAGE64K::SpecLoopUpdate(UINT64 PC, bool Taken, long long on_path_phist, int on_path_ptghist, bool off_path) {
   if (Pstate.LHIT < 0)
     return;
   // Calculate index into loop predictor table
@@ -1221,7 +1228,7 @@ void TAGE64K::SpecLoopUpdate(UINT64 PC, bool Taken, long long on_path_phist, int
     }
     // Increment age when prediction differs from TAGE or randomly
     if ((Pstate.predloop != Pstate.tage_pred) ||
-        (((off_path ? Seed : MYRANDOM(on_path_phist, on_path_ptghist)) & 7) == 0))
+        ((MYRANDOM(on_path_phist, on_path_ptghist, off_path) & 7) == 0))
       if (entry.age < CONFLOOP)
         entry.age++;
   }
@@ -1272,9 +1279,9 @@ void TAGE64K::LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, int lhit, long long 
   if (!ALLOC)
     return;
 
-  UINT64 X = MYRANDOM(on_path_phist, on_path_ptghist) & 3;
+  UINT64 X = MYRANDOM(on_path_phist, on_path_ptghist, false) & 3;
   // 25% chance to attempt allocation
-  if ((MYRANDOM(on_path_phist, on_path_ptghist) & 3) != 0)
+  if ((MYRANDOM(on_path_phist, on_path_ptghist, false) & 3) != 0)
     return;
   for (int i = 0; i < 4; i++) {
     int LHIT = (X + i) & 3;

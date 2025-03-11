@@ -492,7 +492,7 @@ class TAGE64K {
   void ctrupdate(int8_t& ctr, bool taken, int nbits);
   bool getbim(UINT64 PC);
   void baseupdate(bool Taken, UINT64 PC);
-  int MYRANDOM(long long on_path_phist, int on_path_ptghist);
+  int MYRANDOM(long long on_path_phist, int on_path_ptghist, bool off_path);
   void Tagepred(UINT64 PC);
   void UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history* index, cbp64_folded_history* tag0,
                   cbp64_folded_history* tag1);
@@ -514,7 +514,7 @@ class TAGE64K {
                        const PredictorStates& Pstate);
   void SpecUpdate(UINT64 PC, OpType opType, bool predDir, UINT64 branchTarget);
   void GlobalStateUpdate(UINT64 PC, UINT64 branchTarget, int brtype, bool predDir);
-  void SpecUpdateAtCond(UINT64 PC, bool predDir);
+  void SpecUpdateAtCond(UINT64 PC, bool predDir, bool off_path);
   void NonSpecUpdateAtCond(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget,
                            Counter branch_id);
   int Gpredict(UINT64 PC, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W);
@@ -570,7 +570,6 @@ class TAGE64K {
   // utility variables
   Counter branch_id;
   int Seed;       // for the pseudo-random number generator
-  bool off_path;  // global indicator of op
   // snapshot containers
   CheckpointContainer checkpoints;
   PredictorContainer predictor_states;

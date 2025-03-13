@@ -209,6 +209,7 @@ void alloc_mem_fdip(uns numCores) {
 }
 
 void init_fdip(uns proc_id) {
+  ASSERT(proc_id, WP_COLLECT_STATS);
 }
 
 void set_fdip(int _proc_id, Icache_Stage *_ic) {
@@ -1088,6 +1089,7 @@ void FDIP::inc_off_fetched_cls(Addr line_addr) {
 }
 
 void FDIP::evict_prefetched_cls(Addr line_addr, Flag by_fdip) {
+  DEBUG(proc_id, "%llx evicted by %s\n", line_addr, by_fdip ? "FDIP" : "IFETCH");
   auto cl_iter = fdip_stat.prefetched_cls_info.find(line_addr);
   if (cl_iter != fdip_stat.prefetched_cls_info.end()) {
     if (by_fdip) {

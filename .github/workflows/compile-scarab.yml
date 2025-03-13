@@ -29,5 +29,5 @@ jobs:
 
       - name: Build Scarab
         run: |
-          cd scarab/src
+          cd scarab_ll/src
           make -j

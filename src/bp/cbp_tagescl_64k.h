@@ -366,15 +366,15 @@ class TAGE64K {
   // The three BIAS tables in the SC component
   // We play with the TAGE  confidence here, with the number of the hitting bank
 #define LOGBIAS 8
-#define INDBIAS                                                                                         \
-  (((((PC ^ (PC >> 2)) << 1) ^ (Pstate.LowConf & (Pstate.LongestMatchPred != Pstate.alttaken))) << 1) + \
-   Pstate.pred_inter) &                                                                                 \
+#define INDBIAS(state)                                                                               \
+  (((((PC ^ (PC >> 2)) << 1) ^ (state.LowConf & (state.LongestMatchPred != state.alttaken))) << 1) + \
+   state.pred_inter) &                                                                               \
       ((1 << LOGBIAS) - 1)
-#define INDBIASSK \
-  (((((PC ^ (PC >> (LOGBIAS - 2))) << 1) ^ (Pstate.HighConf)) << 1) + Pstate.pred_inter) & ((1 << LOGBIAS) - 1)
-#define INDBIASBANK                                                                                         \
-  (Pstate.pred_inter + (((Pstate.HitBank + 1) / 4) << 4) + (Pstate.HighConf << 1) + (Pstate.LowConf << 2) + \
-   ((Pstate.AltBank != 0) << 3) + ((PC ^ (PC >> 2)) << 7)) &                                                \
+#define INDBIASSK(state) \
+  (((((PC ^ (PC >> (LOGBIAS - 2))) << 1) ^ (state.HighConf)) << 1) + state.pred_inter) & ((1 << LOGBIAS) - 1)
+#define INDBIASBANK(state)                                                                              \
+  (state.pred_inter + (((state.HitBank + 1) / 4) << 4) + (state.HighConf << 1) + (state.LowConf << 2) + \
+   ((state.AltBank != 0) << 3) + ((PC ^ (PC >> 2)) << 7)) &                                             \
       ((1 << LOGBIAS) - 1)
 
   // IMLI-SIC -> Micro 2015  paper: a big disappointment on  CBP2016 traces
@@ -475,7 +475,7 @@ class TAGE64K {
   bool AltConf;  // Confidence on the alternate prediction
 #define ALTWIDTH 5
 #define SIZEUSEALT (1 << (LOGSIZEUSEALT))
-#define INDUSEALT (((((Pstate.HitBank - 1) / 8) << 1) + Pstate.AltConf) % (SIZEUSEALT - 1))
+#define INDUSEALT(state) (((((state.HitBank - 1) / 8) << 1) + state.AltConf) % (SIZEUSEALT - 1))
 
   int m[NHIST + 1];
   int TB[NHIST + 1];
@@ -492,7 +492,7 @@ class TAGE64K {
   void ctrupdate(int8_t& ctr, bool taken, int nbits);
   bool getbim(UINT64 PC);
   void baseupdate(bool Taken, UINT64 PC);
-  int MYRANDOM();
+  int MYRANDOM(long long on_path_phist, int on_path_ptghist, bool off_path);
   void Tagepred(UINT64 PC);
   void UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history* index, cbp64_folded_history* tag0,
                   cbp64_folded_history* tag1);
@@ -503,7 +503,7 @@ class TAGE64K {
   void RetireCheckpoint(Counter key);
   void VerifyCheckpoint(Counter key);
   void VerifyPredictorStates(Counter key);
-  void RestoreStates(Counter key);
+  void RestoreStates(Counter key, UINT64 PC, OpType optype, Flag is_conditional, Flag dir, UINT64 target);
   void RestoreCheckpoint(Counter key);
   void RestorePredictorstates(Counter key);
   void ComparePredictor(const PredictorStates& Pstate);
@@ -512,18 +512,19 @@ class TAGE64K {
   int GetBrtypeFromOptype(OpType opType);
   void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget,
                        const PredictorStates& Pstate);
-  void SpecUpdate(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget);
+  void SpecUpdate(UINT64 PC, OpType opType, bool predDir, UINT64 branchTarget);
   void GlobalStateUpdate(UINT64 PC, UINT64 branchTarget, int brtype, bool predDir);
-  void SpecUpdateAtCond(UINT64 PC, bool resolveDir, bool predDir);
-  void NonSpecUpdateAtCond(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget);
+  void SpecUpdateAtCond(UINT64 PC, bool predDir, bool off_path);
+  void NonSpecUpdateAtCond(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget,
+                           Counter branch_id);
   int Gpredict(UINT64 PC, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W);
   void Gupdate(UINT64 PC, bool taken, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W,
                int LSUM);
   void TrackOtherInst(UINT64 PC, OpType opType, bool taken, UINT64 branchTarget);
   int lindex(UINT64 PC);
   bool getloop(UINT64 PC);
-  void SpecLoopUpdate(UINT64 PC, bool Taken);
-  void LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, int lhit);
+  void SpecLoopUpdate(UINT64 PC, bool Taken, long long on_path_phist, int on_path_ptghist);
+  void LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, int lhit, long long on_path_phist, int on_path_ptghist);
 
   // P: Predictor components
   PredictorStates Pstate;
@@ -569,7 +570,6 @@ class TAGE64K {
   // utility variables
   Counter branch_id;
   int Seed;       // for the pseudo-random number generator
-  bool off_path;  // global indicator of op
   // snapshot containers
   CheckpointContainer checkpoints;
   PredictorContainer predictor_states;

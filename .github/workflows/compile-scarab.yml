@@ -27,7 +27,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Mark Git repo as safe
+        run: git config --global --add safe.directory "${{ github.workspace }}"
+
       - name: Build Scarab
-        run: |
-          cd src
-          make -j
+        working-directory: src
+        run: make -j

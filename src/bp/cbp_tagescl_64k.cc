@@ -999,7 +999,8 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
       A = 2;
     int Penalty = 0;
     int NA = 0;
-    int DEP = ((((pstate.HitBank - 1 + 2 * A) & 0xffe)) ^ (MYRANDOM(pstate.on_path_phist, pstate.on_path_ptghist, false) & 1));
+    int DEP = ((((pstate.HitBank - 1 + 2 * A) & 0xffe)) ^
+               (MYRANDOM(pstate.on_path_phist, pstate.on_path_ptghist, false) & 1));
     // just a complex formula to chose between X and X+1, when X is odd: sorry
 
     for (int I = DEP; I < NHIST; I += 2) {
@@ -1227,8 +1228,7 @@ void TAGE64K::SpecLoopUpdate(UINT64 PC, bool Taken, long long on_path_phist, int
       return;
     }
     // Increment age when prediction differs from TAGE or randomly
-    if ((Pstate.predloop != Pstate.tage_pred) ||
-        ((MYRANDOM(on_path_phist, on_path_ptghist, off_path) & 7) == 0))
+    if ((Pstate.predloop != Pstate.tage_pred) || ((MYRANDOM(on_path_phist, on_path_ptghist, off_path) & 7) == 0))
       if (entry.age < CONFLOOP)
         entry.age++;
   }

@@ -179,7 +179,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::recover(Recovery_Info* recovery_info) {
 template <>
 void CBP_To_Scarab_Intf<TAGE64K>::timestamp(Op* op) {
   uns proc_id = op->proc_id;
-  op->recovery_info.branch_id = cbp_predictors.at(proc_id).KeyGeneration(op->off_path);
+  op->recovery_info.branch_id = cbp_predictors.at(proc_id).KeyGeneration();
 }
 
 /******DO NOT MODIFY BELOW THIS POINT*****/

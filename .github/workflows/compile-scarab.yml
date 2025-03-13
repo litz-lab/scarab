@@ -29,7 +29,5 @@ jobs:
 
       - name: Build Scarab
         run: |
-          pwd
-          ls
-          cd scarab_ll/src
+          cd src
           make -j

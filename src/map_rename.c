@@ -172,10 +172,13 @@ static inline void reg_file_collect_entry_stat(struct reg_table_entry *entry) {
   if (entry->off_path)
     return;
 
-  Counter last_consume_cycle = entry->last_consume_cycle == MAX_CTR ? cycle_count : entry->last_consume_cycle;
+  // regard the commit cycle as the last consume cycle for unconsumed ops
+  entry->last_consume_cycle = entry->last_consume_cycle == MAX_CTR ? cycle_count : entry->last_consume_cycle;
+  entry->produce_cycle = entry->produce_cycle == MAX_CTR ? cycle_count : entry->produce_cycle;
+
   ASSERT(map_data->proc_id, entry->produce_cycle >= entry->alloc_cycle);
-  ASSERT(map_data->proc_id, last_consume_cycle > entry->produce_cycle);
-  ASSERT(map_data->proc_id, cycle_count >= last_consume_cycle);
+  ASSERT(map_data->proc_id, entry->last_consume_cycle >= entry->produce_cycle);
+  ASSERT(map_data->proc_id, cycle_count >= entry->last_consume_cycle);
 
   switch (entry->reg_type) {
     case REG_FILE_REG_TYPE_GENERAL_PURPOSE:
@@ -184,14 +187,15 @@ static inline void reg_file_collect_entry_stat(struct reg_table_entry *entry) {
         STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_UNCONSUME);
       if (entry->num_consumers == 1)
         STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ONEUSE);
-      if (entry->num_consumers != 0 && last_consume_cycle - entry->produce_cycle == 1)
+      if (entry->num_consumers != 0 && entry->last_consume_cycle - entry->produce_cycle == 1)
         STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_SHORTLIVE);
 
       INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_EMPTY,
                      entry->produce_cycle - entry->alloc_cycle);
       INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_READY,
-                     last_consume_cycle - entry->produce_cycle);
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_IDEL, cycle_count - last_consume_cycle);
+                     entry->last_consume_cycle - entry->produce_cycle);
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_IDEL,
+                     cycle_count - entry->last_consume_cycle);
       INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_TOTAL, cycle_count - entry->alloc_cycle);
       break;
 
@@ -201,14 +205,15 @@ static inline void reg_file_collect_entry_stat(struct reg_table_entry *entry) {
         STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_NUM_UNCONSUME);
       if (entry->num_consumers == 1)
         STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_NUM_ONEUSE);
-      if (entry->num_consumers != 0 && last_consume_cycle - entry->produce_cycle == 1)
+      if (entry->num_consumers != 0 && entry->last_consume_cycle - entry->produce_cycle == 1)
         STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_NUM_SHORTLIVE);
 
       INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_EMPTY,
                      entry->produce_cycle - entry->alloc_cycle);
       INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_READY,
-                     last_consume_cycle - entry->produce_cycle);
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_IDEL, cycle_count - last_consume_cycle);
+                     entry->last_consume_cycle - entry->produce_cycle);
+      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_IDEL,
+                     cycle_count - entry->last_consume_cycle);
       INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_TOTAL, cycle_count - entry->alloc_cycle);
       break;
 

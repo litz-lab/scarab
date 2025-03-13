@@ -1,0 +1,23 @@
+# .github/workflows/compile-pr.yml
+name: Compile PR in Container
+
+on:
+  pull_request:
+    branches: [main]  # Or your target branch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/litz-lab/scarab-infra/allbench_traces:latest
+      #options: --user root  # Optional if you need root inside container
+
+    steps:
+    - name: Checkout PR code
+      uses: actions/checkout@v3
+
+    - name: Run build inside container
+      run: |
+        cd scarab/src
+        make -j
+

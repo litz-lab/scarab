@@ -34,8 +34,7 @@
 /**************************************************************************************/
 /* extern all of the variables defined in core.param.def */
 
-#define DEF_PARAM(name, variable, type, func, def, const) \
-  extern const type variable;
+#define DEF_PARAM(name, variable, type, func, def, const) extern const type variable;
 #include "pref_markov.param.def"
 #undef DEF_PARAM
 

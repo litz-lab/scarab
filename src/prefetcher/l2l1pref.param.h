@@ -31,15 +31,12 @@
 
 #include "globals/global_types.h"
 
-
 /**************************************************************************************/
 /* extern all of the variables defined in l2l1pref.param.def */
 
-#define DEF_PARAM(name, variable, type, func, def, const) \
-  extern const type variable;
+#define DEF_PARAM(name, variable, type, func, def, const) extern const type variable;
 #include "l2l1pref.param.def"
 #undef DEF_PARAM
-
 
 /**************************************************************************************/
 

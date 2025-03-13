@@ -6,32 +6,35 @@
  *                  Following Kotra et. al.'s MICRO 2020 description of uop cache baseline
  ***************************************************************************************/
 
-#include "debug/debug_macros.h"
-#include "debug/debug_print.h"
+#include "uop_cache.h"
+
+#include <vector>
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
-#include "isa/isa_macros.h"
 
-#include "bp/bp.h"
-#include "op_pool.h"
+#include "debug/debug.param.h"
+#include "debug/debug_macros.h"
+#include "debug/debug_print.h"
 
 #include "core.param.h"
-#include "debug/debug.param.h"
 #include "general.param.h"
-#include "statistics.h"
-
-#include "libs/cache_lib.h"
-#include "memory/memory.h"
 #include "memory/memory.param.h"
+
+#include "bp/bp.h"
+#include "isa/isa_macros.h"
+#include "libs/cache_lib.h"
 #include "libs/cpp_cache.h"
-#include "uop_cache.h"
+#include "memory/memory.h"
+
 #include "icache_stage.h"
+#include "op_pool.h"
+#include "statistics.h"
 #include "uop_queue_stage.h"
 
-#include <vector>
 /**************************************************************************************/
 /* Macros */
 
@@ -39,28 +42,30 @@
 
 // Uop cache is byte-addressable, so tag/set index are generated from full address (no offset)
 // Uop cache uses icache tag + icache offset as full TAG
-#define UOP_CACHE_LINE_SIZE       ICACHE_LINE_SIZE
+#define UOP_CACHE_LINE_SIZE ICACHE_LINE_SIZE
 
 typedef std::pair<Addr, FT_Info_Static> Uop_Cache_Key;
+
 /**************************************************************************************/
 /* Local Prototypes */
 
 // uop cache derived class
-class Uop_Cache: public Cpp_Cache<Uop_Cache_Key, Uop_Cache_Data> {
+class Uop_Cache : public Cpp_Cache<Uop_Cache_Key, Uop_Cache_Data> {
  protected:
-  uns   offset_bits;
+  uns offset_bits;
 
   // implementing the virtual hash function
   uns set_idx_hash(Uop_Cache_Key key);
 
  public:
   // constructor
-  Uop_Cache(uns nl, uns asc, uns lb, Repl_Policy rp) : Cpp_Cache<Uop_Cache_Key, Uop_Cache_Data>::Cpp_Cache(nl, asc, lb, rp) {
+  Uop_Cache(uns nl, uns asc, uns lb, Repl_Policy rp)
+      : Cpp_Cache<Uop_Cache_Key, Uop_Cache_Data>::Cpp_Cache(nl, asc, lb, rp) {
     // offset_bits is only used to denote the start of the set bits
     // the set bits follow the offset_bits on the significant side
     // in other words,
     // user manipulates the line_bytes of the Cpp_Cache to change the set id hashing pattern
-    offset_bits  = LOG2(line_bytes);
+    offset_bits = LOG2(line_bytes);
   }
 };
 
@@ -138,8 +143,8 @@ void init_uop_cache(uns8 proc_id) {
   }
 
   // The cache library computes the number of entries from cache_size_bytes/cache_line_size_bytes,
-  per_core_uop_cache[proc_id] = new Uop_Cache(UOP_CACHE_LINES, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
-                                              (Repl_Policy)UOP_CACHE_REPL);
+  per_core_uop_cache[proc_id] =
+      new Uop_Cache(UOP_CACHE_LINES, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE, (Repl_Policy)UOP_CACHE_REPL);
 }
 
 void set_uop_cache(uns8 proc_id) {
@@ -170,13 +175,14 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
   do {
     uoc_data = uop_cache_lookup_line(lookup_addr, ft_info, TRUE);
     if (current_lookup_buffer->empty()) {
-      DEBUG(uop_cache_proc_id, "UOC %s. ft_start=0x%llx, ft_length=%lld\n",
-            uoc_data ? "hit" : "miss", ft_info.static_info.start, ft_info.static_info.length);
+      DEBUG(uop_cache_proc_id, "UOC %s. ft_start=0x%llx, ft_length=%lld\n", uoc_data ? "hit" : "miss",
+            ft_info.static_info.start, ft_info.static_info.length);
       if (!uoc_data) {
         return FALSE;
       } else {
         if (!uoc_data->used && !offpath) {
-          STAT_EVENT(uop_cache_proc_id, UOP_CACHE_FT_INSERTED_ONPATH_USED_ONPATH + uoc_data->ft_info_dynamic.first_op_off_path);
+          STAT_EVENT(uop_cache_proc_id,
+                     UOP_CACHE_FT_INSERTED_ONPATH_USED_ONPATH + uoc_data->ft_info_dynamic.first_op_off_path);
         }
       }
     }
@@ -184,7 +190,8 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
     ASSERT(uop_cache_proc_id, uoc_data);
 
     if (!uoc_data->used && !offpath) {
-      STAT_EVENT(uop_cache_proc_id, UOP_CACHE_LINE_INSERTED_ONPATH_USED_ONPATH + uoc_data->ft_info_dynamic.first_op_off_path);
+      STAT_EVENT(uop_cache_proc_id,
+                 UOP_CACHE_LINE_INSERTED_ONPATH_USED_ONPATH + uoc_data->ft_info_dynamic.first_op_off_path);
       uoc_data->used += 1;
     }
 
@@ -233,7 +240,8 @@ Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag upd
     return NULL;
   }
 
-  Uop_Cache_Data* uoc_data = per_core_uop_cache[uop_cache_proc_id]->access({line_start, ft_info.static_info}, update_repl == TRUE);
+  Uop_Cache_Data* uoc_data =
+      per_core_uop_cache[uop_cache_proc_id]->access({line_start, ft_info.static_info}, update_repl == TRUE);
   return uoc_data;
 }
 
@@ -274,7 +282,8 @@ bool insert_buffer_into_uopc(FT_Info* buffer_ft_info, std::vector<Uop_Cache_Data
     ASSERT(uop_cache_proc_id, !uop_cache_line);
     if (buffer_ft_info->dynamic_info.first_op_off_path) {
       STAT_EVENT(uop_cache_proc_id, UOP_CACHE_FT_INSERT_FAILED_INST_TOO_BIG_OFF_PATH);
-      INC_STAT_EVENT(uop_cache_proc_id, UOP_CACHE_LINE_INSERT_FAILED_INST_TOO_BIG_OFF_PATH, accumulation_buffer->size());
+      INC_STAT_EVENT(uop_cache_proc_id, UOP_CACHE_LINE_INSERT_FAILED_INST_TOO_BIG_OFF_PATH,
+                     accumulation_buffer->size());
     } else {
       STAT_EVENT(uop_cache_proc_id, UOP_CACHE_FT_INSERT_FAILED_INST_TOO_BIG_ON_PATH);
       INC_STAT_EVENT(uop_cache_proc_id, UOP_CACHE_LINE_INSERT_FAILED_INST_TOO_BIG_ON_PATH, accumulation_buffer->size());
@@ -315,8 +324,8 @@ bool insert_buffer_into_uopc(FT_Info* buffer_ft_info, std::vector<Uop_Cache_Data
 
         // the line should be identical
         ASSERT(uop_cache_proc_id, uop_cache_line->n_uops == insert_line->n_uops &&
-                                  uop_cache_line->offset == insert_line->offset &&
-                                  uop_cache_line->end_of_ft == insert_line->end_of_ft);
+                                      uop_cache_line->offset == insert_line->offset &&
+                                      uop_cache_line->end_of_ft == insert_line->end_of_ft);
 
         if (buffer_ft_info->dynamic_info.first_op_off_path) {
           if (i == 0) {
@@ -332,10 +341,10 @@ bool insert_buffer_into_uopc(FT_Info* buffer_ft_info, std::vector<Uop_Cache_Data
       } else {
         ASSERT(uop_cache_proc_id, !uop_cache_line);
 
-        Entry<Uop_Cache_Key, Uop_Cache_Data> evicted_entry = per_core_uop_cache[uop_cache_proc_id]->insert({insert_line->line_start, buffer_ft_info->static_info}, *insert_line);
+        Entry<Uop_Cache_Key, Uop_Cache_Data> evicted_entry = per_core_uop_cache[uop_cache_proc_id]->insert(
+            {insert_line->line_start, buffer_ft_info->static_info}, *insert_line);
 
-        DEBUG(uop_cache_proc_id,
-              "uop cache line inserted. off_path=%u, addr=0x%llx\n",
+        DEBUG(uop_cache_proc_id, "uop cache line inserted. off_path=%u, addr=0x%llx\n",
               buffer_ft_info->dynamic_info.first_op_off_path, insert_line->line_start);
 
         if (evicted_entry.valid) {
@@ -345,14 +354,15 @@ bool insert_buffer_into_uopc(FT_Info* buffer_ft_info, std::vector<Uop_Cache_Data
           Addr invalidate_addr = evicted_ft_info_static.start;
           Entry<Uop_Cache_Key, Uop_Cache_Data> invalidated_entry{};
           do {
-            invalidated_entry = per_core_uop_cache[uop_cache_proc_id]->invalidate({invalidate_addr, evicted_ft_info_static});
+            invalidated_entry =
+                per_core_uop_cache[uop_cache_proc_id]->invalidate({invalidate_addr, evicted_ft_info_static});
             if (invalidate_addr == evicted_entry.key.first) {
               // this was the one evicted at first
               ASSERT(uop_cache_proc_id, !invalidated_entry.valid);
               invalidated_entry = evicted_entry;
             }
             invalidate_addr += invalidated_entry.data.offset;
-            if(invalidated_entry.data.used)
+            if (invalidated_entry.data.used)
               STAT_EVENT(uop_cache_proc_id, UOP_CACHE_LINE_EVICTED_USEFUL);
             else
               STAT_EVENT(uop_cache_proc_id, UOP_CACHE_LINE_EVICTED_USELESS);
@@ -425,7 +435,7 @@ void accumulate_op(Op* op) {
   // uop cache line begin detection
   // these two conditions should be identical
   ASSERT(uop_cache_proc_id, (current_accumulation_buffer->size() == 0 && current_accumulating_line->n_uops == 0) ==
-                            (op->bom && op->inst_info->addr == op->ft_info.static_info.start));
+                                (op->bom && op->inst_info->addr == op->ft_info.static_info.start));
   if (current_accumulating_line->n_uops == 0) {
     if (current_accumulation_buffer->size() == 0) {
       // set current FT info
@@ -439,7 +449,7 @@ void accumulate_op(Op* op) {
 
   // once current FT is set, they should be identical within the FT
   ASSERT(uop_cache_proc_id, current_accumulating_ft->static_info.start == op->ft_info.static_info.start &&
-                            current_accumulating_ft->static_info.length == op->ft_info.static_info.length);
+                                current_accumulating_ft->static_info.length == op->ft_info.static_info.length);
 
   current_accumulating_line->n_uops++;
   *current_accumulating_op_num = op->op_num;
@@ -464,8 +474,10 @@ void accumulate_op(Op* op) {
         next_line_start = op->inst_info->addr;
       }
 
-      // if next_line_start != npc, the decoupled fe did not end the FT correctly (mispredict or btb miss), or op is off-path
-      ASSERT(uop_cache_proc_id, next_line_start == op->oracle_info.npc || op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec || op->off_path);
+      // if next_line_start != npc, the decoupled fe did not end the FT correctly (mispredict or btb miss), or op is
+      // off-path
+      ASSERT(uop_cache_proc_id, next_line_start == op->oracle_info.npc || op->oracle_info.recover_at_decode ||
+                                    op->oracle_info.recover_at_exec || op->off_path);
       current_accumulating_line->offset = next_line_start - current_accumulating_line->line_start;
     }
 
@@ -489,14 +501,15 @@ void recover_uop_cache(void) {
 
       if (bp_recovery_info->recovery_op->ft_info.static_info == current_accumulating_ft->static_info) {
         // a FT currently accumulating is caught up in a recovery... how come?
-        // recall the corner case where the accumulated FT is already in the uop cache because the reuse distance is small.
-        // that should be the case here.
-        ASSERT(uop_cache_proc_id, uop_cache_lookup_line(current_accumulating_ft->static_info.start, *current_accumulating_ft, FALSE) != NULL);
+        // recall the corner case where the accumulated FT is already in the uop cache because the reuse distance is
+        // small. that should be the case here.
+        ASSERT(uop_cache_proc_id, uop_cache_lookup_line(current_accumulating_ft->static_info.start,
+                                                        *current_accumulating_ft, FALSE) != NULL);
       }
     }
   } else {
     // no accumulation on-going
-    ASSERT(uop_cache_proc_id, current_accumulating_ft->static_info == FT_Info_Static{} &&
-                              *current_accumulating_op_num == 0);
+    ASSERT(uop_cache_proc_id,
+           current_accumulating_ft->static_info == FT_Info_Static{} && *current_accumulating_op_num == 0);
   }
 }

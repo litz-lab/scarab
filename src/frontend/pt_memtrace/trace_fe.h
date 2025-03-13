@@ -42,9 +42,8 @@ struct Op_struct;
 /* Prototypes */
 
 #include "ctype_pin_inst.h"
-//#include "pin/pin_lib/uop_generator.h"
-//#include "pin/pin_lib/x86_decoder.h"
-
+// #include "pin/pin_lib/uop_generator.h"
+// #include "pin/pin_lib/x86_decoder.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,7 +54,7 @@ void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst
 /* Implementing the frontend interface */
 Addr ext_trace_next_fetch_addr(uns proc_id);
 Flag ext_trace_can_fetch_op(uns proc_id);
-void ext_trace_fetch_op(uns proc_id, Op* op);
+void ext_trace_fetch_op(uns proc_id, Op *op);
 void ext_trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr);
 void ext_trace_recover(uns proc_id, uns64 inst_uid);
 void ext_trace_retire(uns proc_id, uns64 inst_uid);

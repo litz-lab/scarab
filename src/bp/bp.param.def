@@ -25,7 +25,7 @@
    simulator.  NOTE: Don't screw around with the order of these macro fields without
    fixing the etags regexps.
 
-   DEF_PARAM(  Option, Variable Name, Type, Function, Default Value, Const) 
+   DEF_PARAM(  Option, Variable Name, Type, Function, Default Value, Const)
 
    Option -- The name of the parameter when given on the command line (eg. "--param_0").
 	   All parameters take an argument.  Thus, "--param_0=3" would be a valid
@@ -79,13 +79,13 @@ DEF_PARAM(  bp_hash_tos               , BP_HASH_TOS               , Flag    , Fl
 DEF_PARAM(  ibtb_hash_tos             , IBTB_HASH_TOS             , Flag    , Flag       , FALSE      ,        )
 
 DEF_PARAM(  btb_mech                  , BTB_MECH                  , uns     , uns        , 0          ,        )
-DEF_PARAM(  btb_entries               , BTB_ENTRIES               , uns     , uns        , (4 * 1024) ,        ) 
+DEF_PARAM(  btb_entries               , BTB_ENTRIES               , uns     , uns        , (4 * 1024) ,        )
 DEF_PARAM(  btb_assoc                 , BTB_ASSOC                 , uns     , uns        , 4          ,        )
 DEF_PARAM(  btb_off_path_writes       , BTB_OFF_PATH_WRITES       , Flag    , Flag       , TRUE       ,        ) /* const */
 
 DEF_PARAM(  enable_crs                , ENABLE_CRS                , Flag    , Flag       , TRUE       ,        )
-DEF_PARAM(  crs_entries               , CRS_ENTRIES               , uns     , uns        , 32         ,        )     
-     // CRS_REALISTIC --- 0:off_path does not disturb on_path 1: next & tos scheme (use this if you want a realistic CRS) 
+DEF_PARAM(  crs_entries               , CRS_ENTRIES               , uns     , uns        , 32         ,        )
+     // CRS_REALISTIC --- 0:off_path does not disturb on_path 1: next & tos scheme (use this if you want a realistic CRS)
      //                                                       2: pure stack scheme (doesn't work well, b/c of wrong path effects)
 DEF_PARAM(  crs_realistic             , CRS_REALISTIC             , uns     , uns        , 0          ,        )
      // Confidence Mechanism
@@ -108,7 +108,7 @@ DEF_PARAM(  sel_hist_mispred_th       , SEL_HIST_MISPRED_TH       , uns     , un
 
 // branch confidence
 DEF_PARAM(  enable_bp_conf            , ENABLE_BP_CONF            , Flag    , Flag       , FALSE      ,        )
-DEF_PARAM(  conf_mech                 , CONF_MECH                 , uns     , conf_mech   , 0         ,        )     
+DEF_PARAM(  conf_mech                 , CONF_MECH                 , uns     , conf_mech   , 0         ,        )
 DEF_PARAM(  perf_bp_conf_pred         , PERF_BP_CONF_PRED         , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM(  bpc_bits                  , BPC_BITS                  , uns     , uns        , 16         ,        )
 DEF_PARAM(  bpc_mech                  , BPC_MECH                  , uns     , uns        , 1          ,        )
@@ -122,9 +122,9 @@ DEF_PARAM(  opc_count_zeros           , OPC_COUNT_ZEROS           , Flag    , Fl
 DEF_PARAM(  opc_count_thresh          , OPC_COUNT_THRESH          , uns     , uns        , 10         ,        )
 
 // loop predictor parameters
-DEF_PARAM(  inf_loop                  , INF_LOOP                   , Flag    , Flag       , FALSE      ,        ) 
-DEF_PARAM(  inf_loop_buckets          , INF_LOOP_BUCKETS           , uns     , uns        , 811        ,        ) 
-DEF_PARAM(  loop_entries              , LOOP_ENTRIES               , uns     , uns        , (4 * 1024) ,        ) 
+DEF_PARAM(  inf_loop                  , INF_LOOP                   , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  inf_loop_buckets          , INF_LOOP_BUCKETS           , uns     , uns        , 811        ,        )
+DEF_PARAM(  loop_entries              , LOOP_ENTRIES               , uns     , uns        , (4 * 1024) ,        )
 DEF_PARAM(  loop_assoc                , LOOP_ASSOC                 , uns     , uns        , 4          ,        )
 DEF_PARAM(  loop_count_max            , LOOP_COUNT_MAX             , uns     , uns        , 127        ,        )
 DEF_PARAM(  loop_repeat_max           , LOOP_REPEAT_MAX            , uns     , uns        , 15         ,        )
@@ -133,10 +133,14 @@ DEF_PARAM(  loop_repeat_max           , LOOP_REPEAT_MAX            , uns     , u
 DEF_PARAM( knob_print_brinfo          , KNOB_PRINT_BRINFO          , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM( br_mispred_file            , BR_MISPRED_FILE            , char *  , string     , NULL       ,	)
 
-///////////////////////////////////////////////////////////////////////////
-// confidence estimator based on perceptron 
+// 0: baseline 1: take checkpoint, 2: off-path spec_update 3: off-path prediction 4: update N at exec stage
+DEF_PARAM(  spec_level                , SPEC_LEVEL                   , uns   , uns      , 0     ,    )
+DEF_PARAM(  random_deterministic      , RANDOM_DETERMINISTIC         , Flag  , Flag     , TRUE  ,    )
 
-DEF_PARAM(  conf_perceptron_th        , CONF_PERCEPTRON_TH                , int     , int         , 0         ,         ) /* threshold to distinguish high confidence and low confidence */ 
+///////////////////////////////////////////////////////////////////////////
+// confidence estimator based on perceptron
+
+DEF_PARAM(  conf_perceptron_th        , CONF_PERCEPTRON_TH                , int     , int         , 0         ,         ) /* threshold to distinguish high confidence and low confidence */
 DEF_PARAM(  conf_perceptron_ctr_bits  , CONF_PERCEPTRON_CTR_BITS          , uns     , uns        , 8          ,        )
 DEF_PARAM(  conf_perceptron_rows           ,  CONF_PERCEPTRON_ENTRIES     , uns     , uns        , 127       ,        )
 DEF_PARAM(  conf_perceptron_thresh_ovrd    , CONF_PERCEPTRON_THRESH_OVRD  , uns     , uns        , 0          ,        )

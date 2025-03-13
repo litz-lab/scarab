@@ -74,7 +74,7 @@ typedef enum Frontend_Id_enum {
 } Frontend_Id;
 
 extern Frontend_Impl* frontend;
-extern Frontend_Impl  frontend_table[];
+extern Frontend_Impl frontend_table[];
 
 /* Initialize the above frontend pointer */
 void frontend_intf_init(void);

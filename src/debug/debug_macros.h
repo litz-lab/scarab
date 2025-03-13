@@ -44,24 +44,24 @@ output when
 #define __DEBUG_MACROS_H__
 
 #include <stdio.h>
-#include "debug/debug.param.h"
-#include "freq.h"
+
 #include "globals/global_defs.h"
 #include "globals/utils.h"
 
+#include "debug/debug.param.h"
+
+#include "freq.h"
 
 /**************************************************************************************/
 /* Returns whether simulation progress is within the debugging range */
-#define DEBUG_RANGE_COND(proc_id)                                    \
-  (((DEBUG_INST_START && inst_count[proc_id] >= DEBUG_INST_START) && \
-    (!DEBUG_INST_STOP || inst_count[proc_id] <= DEBUG_INST_STOP)) || \
-   ((DEBUG_CYCLE_START && cycle_count >= DEBUG_CYCLE_START) &&       \
-    (!DEBUG_CYCLE_STOP || cycle_count <= DEBUG_CYCLE_STOP)) ||       \
-   ((DEBUG_TIME_START && freq_time() >= DEBUG_TIME_START) &&         \
-    (!DEBUG_TIME_STOP || freq_time() <= DEBUG_TIME_STOP)) ||         \
-   ((DEBUG_OP_START && op_count[proc_id] >= DEBUG_OP_START) &&       \
+#define DEBUG_RANGE_COND(proc_id)                                                                                     \
+  (((DEBUG_INST_START && inst_count[proc_id] >= DEBUG_INST_START) &&                                                  \
+    (!DEBUG_INST_STOP || inst_count[proc_id] <= DEBUG_INST_STOP)) ||                                                  \
+   ((DEBUG_CYCLE_START && cycle_count >= DEBUG_CYCLE_START) &&                                                        \
+    (!DEBUG_CYCLE_STOP || cycle_count <= DEBUG_CYCLE_STOP)) ||                                                        \
+   ((DEBUG_TIME_START && freq_time() >= DEBUG_TIME_START) && (!DEBUG_TIME_STOP || freq_time() <= DEBUG_TIME_STOP)) || \
+   ((DEBUG_OP_START && op_count[proc_id] >= DEBUG_OP_START) &&                                                        \
     (!DEBUG_OP_STOP || op_count[proc_id] <= DEBUG_OP_STOP)))
-
 
 #ifdef NO_DEBUG
 #define ENABLE_GLOBAL_DEBUG_PRINT FALSE /* default FALSE */
@@ -71,21 +71,20 @@ output when
 
 #define GLOBAL_DEBUG_STREAM mystdout /* default mystdout */
 
-
 /**************************************************************************************/
 /* Unconditional debug printf that cannot be turned off. */
 #define DPRINTF(args...) fprintf(GLOBAL_DEBUG_STREAM, ##args);
 
-
 /**************************************************************************************/
 /* Prints a horizontal line to debug output. */
 #if ENABLE_GLOBAL_DEBUG_PRINT
-#define FPRINT_LINE(proc_id, stream)                                           \
-  {                                                                            \
-    if(DEBUG_RANGE_COND(proc_id)) {                                            \
-      fprintf(stream, "#*****************************************************" \
-                      "**************************\n");                         \
-    }                                                                          \
+#define FPRINT_LINE(proc_id, stream)                                   \
+  {                                                                    \
+    if (DEBUG_RANGE_COND(proc_id)) {                                   \
+      fprintf(stream,                                                  \
+              "#*****************************************************" \
+              "**************************\n");                         \
+    }                                                                  \
   }
 #else
 #define FPRINT_LINE(proc_id, stream) \
@@ -97,150 +96,134 @@ output when
 #if ENABLE_GLOBAL_DEBUG_PRINT
 /* Prints args printf-style if debug_flag is on and simulation is in
    the debugging range. */
-#define _DEBUG(proc_id, debug_flag, args...)                             \
-  do {                                                                   \
-    if(debug_flag && DEBUG_RANGE_COND(proc_id)) {                        \
-      fprintf(GLOBAL_DEBUG_STREAM,                                       \
-              "%s:%u: " #debug_flag " (P=%u O=%llu  I=%llu  C=%llu):  ", \
-              __FILE__, __LINE__, proc_id, op_count[proc_id],            \
-              inst_count[proc_id], cycle_count);                         \
-      fprintf(GLOBAL_DEBUG_STREAM, ##args);                              \
-      fflush(GLOBAL_DEBUG_STREAM);                                       \
-    }                                                                    \
-  } while(0)
+#define _DEBUG(proc_id, debug_flag, args...)                                                                      \
+  do {                                                                                                            \
+    if (debug_flag && DEBUG_RANGE_COND(proc_id)) {                                                                \
+      fprintf(GLOBAL_DEBUG_STREAM, "%s:%u: " #debug_flag " (P=%u O=%llu  I=%llu  C=%llu):  ", __FILE__, __LINE__, \
+              proc_id, op_count[proc_id], inst_count[proc_id], cycle_count);                                      \
+      fprintf(GLOBAL_DEBUG_STREAM, ##args);                                                                       \
+      fflush(GLOBAL_DEBUG_STREAM);                                                                                \
+    }                                                                                                             \
+  } while (0)
 
 /* Prints args printf-style if debug_flag is on and simulation is in
    the debugging range. Does not print proc_id, op_count, inst_count, cycle
    count. i.e., it only prints the given statement.*/
-#define _DEBUG_LEAN(proc_id, debug_flag, args...) \
-  do {                                            \
-    if(debug_flag && DEBUG_RANGE_COND(proc_id)) { \
-      fprintf(GLOBAL_DEBUG_STREAM, ##args);       \
-      fflush(GLOBAL_DEBUG_STREAM);                \
-    }                                             \
-  } while(0)
+#define _DEBUG_LEAN(proc_id, debug_flag, args...)  \
+  do {                                             \
+    if (debug_flag && DEBUG_RANGE_COND(proc_id)) { \
+      fprintf(GLOBAL_DEBUG_STREAM, ##args);        \
+      fflush(GLOBAL_DEBUG_STREAM);                 \
+    }                                              \
+  } while (0)
 
 /* Macro for tracing args to a file stream. */
-#define _TRACE(debug_flag, stream, args...) \
-  do {                                      \
-    if(debug_flag && DEBUG_RANGE_COND(0)) { \
-      fprintf(stream, ##args);              \
-    }                                       \
-  } while(0)
+#define _TRACE(debug_flag, stream, args...)  \
+  do {                                       \
+    if (debug_flag && DEBUG_RANGE_COND(0)) { \
+      fprintf(stream, ##args);               \
+    }                                        \
+  } while (0)
 
 /* Prints args printf-style if debug_flag is on, regardless of whether
    simulation is in the debugging range. */
-#define _DEBUGU(proc_id, debug_flag, args...)                            \
-  do {                                                                   \
-    if(debug_flag) {                                                     \
-      fprintf(GLOBAL_DEBUG_STREAM,                                       \
-              "%s:%u: " #debug_flag " (P=%u O=%llu  I=%llu  C=%llu):  ", \
-              __FILE__, __LINE__, proc_id, op_count[proc_id],            \
-              inst_count[proc_id], cycle_count);                         \
-      fprintf(GLOBAL_DEBUG_STREAM, ##args);                              \
-      fflush(GLOBAL_DEBUG_STREAM);                                       \
-    }                                                                    \
-  } while(0)
+#define _DEBUGU(proc_id, debug_flag, args...)                                                                     \
+  do {                                                                                                            \
+    if (debug_flag) {                                                                                             \
+      fprintf(GLOBAL_DEBUG_STREAM, "%s:%u: " #debug_flag " (P=%u O=%llu  I=%llu  C=%llu):  ", __FILE__, __LINE__, \
+              proc_id, op_count[proc_id], inst_count[proc_id], cycle_count);                                      \
+      fprintf(GLOBAL_DEBUG_STREAM, ##args);                                                                       \
+      fflush(GLOBAL_DEBUG_STREAM);                                                                                \
+    }                                                                                                             \
+  } while (0)
 
 /* Prints args printf-style if debug_flag is on, cond is true, and
    simulation is in the debugging range. */
-#define _DEBUGC(proc_id, debug_flag, cond, args...)                      \
-  do {                                                                   \
-    if((cond) && debug_flag && DEBUG_RANGE_COND(proc_id)) {              \
-      fprintf(GLOBAL_DEBUG_STREAM,                                       \
-              "%s:%u: " #debug_flag " (P=%u O=%llu  I=%llu  C=%llu):  ", \
-              __FILE__, __LINE__, proc_id, op_count[proc_id],            \
-              inst_count[proc_id], cycle_count);                         \
-      fprintf(GLOBAL_DEBUG_STREAM, ##args);                              \
-      fflush(GLOBAL_DEBUG_STREAM);                                       \
-    }                                                                    \
-  } while(0)
+#define _DEBUGC(proc_id, debug_flag, cond, args...)                                                               \
+  do {                                                                                                            \
+    if ((cond) && debug_flag && DEBUG_RANGE_COND(proc_id)) {                                                      \
+      fprintf(GLOBAL_DEBUG_STREAM, "%s:%u: " #debug_flag " (P=%u O=%llu  I=%llu  C=%llu):  ", __FILE__, __LINE__, \
+              proc_id, op_count[proc_id], inst_count[proc_id], cycle_count);                                      \
+      fprintf(GLOBAL_DEBUG_STREAM, ##args);                                                                       \
+      fflush(GLOBAL_DEBUG_STREAM);                                                                                \
+    }                                                                                                             \
+  } while (0)
 
 /* Unused */
-#define _DEBUGL(proc_id, debug_lvl, which_lvl, args...)                       \
-  do {                                                                        \
-    if(which_lvl >= debug_lvl && DEBUG_RANGE_COND(proc_id)) {                 \
-      char str0[MAX_STR_LENGTH + 1], str1[MAX_STR_LENGTH + 1],                \
-        str2[MAX_STR_LENGTH + 1];                                             \
-      snprintf(str0, MAX_STR_LENGTH, "%s:%u:", __FILE__, __LINE__);           \
-      snprintf(str1, MAX_STR_LENGTH, " " #which_lvl ":" #debug_lvl);          \
-      snprintf(str2, MAX_STR_LENGTH,                                          \
-               " (P=%u O=%llu  I=%llu  C=%llu):", proc_id, op_count[proc_id], \
-               inst_count[proc_id], cycle_count);                             \
-      fprintf(GLOBAL_DEBUG_STREAM, "%-22s%-18s%-30s  ", str0, str1, str2);    \
-      fprintf(GLOBAL_DEBUG_STREAM, ##args);                                   \
-      fflush(GLOBAL_DEBUG_STREAM);                                            \
-    }                                                                         \
-  } while(0)
+#define _DEBUGL(proc_id, debug_lvl, which_lvl, args...)                                             \
+  do {                                                                                              \
+    if (which_lvl >= debug_lvl && DEBUG_RANGE_COND(proc_id)) {                                      \
+      char str0[MAX_STR_LENGTH + 1], str1[MAX_STR_LENGTH + 1], str2[MAX_STR_LENGTH + 1];            \
+      snprintf(str0, MAX_STR_LENGTH, "%s:%u:", __FILE__, __LINE__);                                 \
+      snprintf(str1, MAX_STR_LENGTH, " " #which_lvl ":" #debug_lvl);                                \
+      snprintf(str2, MAX_STR_LENGTH, " (P=%u O=%llu  I=%llu  C=%llu):", proc_id, op_count[proc_id], \
+               inst_count[proc_id], cycle_count);                                                   \
+      fprintf(GLOBAL_DEBUG_STREAM, "%-22s%-18s%-30s  ", str0, str1, str2);                          \
+      fprintf(GLOBAL_DEBUG_STREAM, ##args);                                                         \
+      fflush(GLOBAL_DEBUG_STREAM);                                                                  \
+    }                                                                                               \
+  } while (0)
 
 /* Unused */
-#define _DEBUGLU(proc_id, debug_lvl, which_lvl, args...)      \
-  do {                                                        \
-    if(which_lvl >= debug_lvl) {                              \
-      fprintf(GLOBAL_DEBUG_STREAM,                            \
-              "%s:%u: " #which_lvl ":" #debug_lvl             \
-              " (P=%u O=%llu  I=%llu  C=%llu):  ",            \
-              __FILE__, __LINE__, proc_id, op_count[proc_id], \
-              inst_count[proc_id], cycle_count);              \
-      fprintf(GLOBAL_DEBUG_STREAM, ##args);                   \
-      fflush(GLOBAL_DEBUG_STREAM);                            \
-    }                                                         \
-  } while(0)
+#define _DEBUGLU(proc_id, debug_lvl, which_lvl, args...)                                                              \
+  do {                                                                                                                \
+    if (which_lvl >= debug_lvl) {                                                                                     \
+      fprintf(GLOBAL_DEBUG_STREAM, "%s:%u: " #which_lvl ":" #debug_lvl " (P=%u O=%llu  I=%llu  C=%llu):  ", __FILE__, \
+              __LINE__, proc_id, op_count[proc_id], inst_count[proc_id], cycle_count);                                \
+      fprintf(GLOBAL_DEBUG_STREAM, ##args);                                                                           \
+      fflush(GLOBAL_DEBUG_STREAM);                                                                                    \
+    }                                                                                                                 \
+  } while (0)
 
 #else
 #define _DEBUG(proc_id, debug_flag, args...) \
   do {                                       \
-  } while(0)
+  } while (0)
 #define _DEBUG_LEAN(proc_id, debug_flag, args...) \
   do {                                            \
-  } while(0)
+  } while (0)
 #define _TRACE(debug_flag, stream, args...) \
   do {                                      \
-  } while(0)
+  } while (0)
 #define _DEBUGU(proc_id, debug_flag, args...) \
   do {                                        \
-  } while(0)
+  } while (0)
 #define _DEBUGC(proc_id, debug_flag, cond, args...) \
   do {                                              \
-  } while(0)
+  } while (0)
 #define _DEBUGL(proc_id, debug_lvl, which_lvl, args...) \
   do {                                                  \
-  } while(0)
+  } while (0)
 #define _DEBUGLU(proc_id, debug_lvl, which_lvl, cond, args...) \
   do {                                                         \
-  } while(0)
+  } while (0)
 #endif
 
 /* Almost unused */
-#define _DEBUGA(proc_id, debug_flag, args...)                            \
-  do {                                                                   \
-    if(debug_flag && DEBUG_RANGE_COND(proc_id)) {                        \
-      fprintf(GLOBAL_DEBUG_STREAM,                                       \
-              "%s:%u: " #debug_flag " (P=%u O=%llu  I=%llu  C=%llu):  ", \
-              __FILE__, __LINE__, proc_id, op_count[proc_id],            \
-              inst_count[proc_id], cycle_count);                         \
-      fprintf(GLOBAL_DEBUG_STREAM, ##args);                              \
-      fflush(GLOBAL_DEBUG_STREAM);                                       \
-    }                                                                    \
-  } while(0)
+#define _DEBUGA(proc_id, debug_flag, args...)                                                                     \
+  do {                                                                                                            \
+    if (debug_flag && DEBUG_RANGE_COND(proc_id)) {                                                                \
+      fprintf(GLOBAL_DEBUG_STREAM, "%s:%u: " #debug_flag " (P=%u O=%llu  I=%llu  C=%llu):  ", __FILE__, __LINE__, \
+              proc_id, op_count[proc_id], inst_count[proc_id], cycle_count);                                      \
+      fprintf(GLOBAL_DEBUG_STREAM, ##args);                                                                       \
+      fflush(GLOBAL_DEBUG_STREAM);                                                                                \
+    }                                                                                                             \
+  } while (0)
 
 /* Unused */
-#define _DEBUGLA(proc_id, debug_lvl, which_lvl, args...)                      \
-  do {                                                                        \
-    if(which_lvl >= debug_lvl && DEBUG_RANGE_COND(proc_id)) {                 \
-      char str0[MAX_STR_LENGTH + 1], str1[MAX_STR_LENGTH + 1],                \
-        str2[MAX_STR_LENGTH + 1];                                             \
-      snprintf(str0, MAX_STR_LENGTH, "%s:%u:", __FILE__, __LINE__);           \
-      snprintf(str1, MAX_STR_LENGTH, " " #which_lvl ":" #debug_lvl);          \
-      snprintf(str2, MAX_STR_LENGTH,                                          \
-               " (P=%u O=%llu  I=%llu  C=%llu):", proc_id, op_count[proc_id], \
-               inst_count[proc_id], cycle_count);                             \
-      fprintf(GLOBAL_DEBUG_STREAM, "%-22s%-18s%-30s  ", str0, str1, str2);    \
-      fprintf(GLOBAL_DEBUG_STREAM, ##args);                                   \
-      fflush(GLOBAL_DEBUG_STREAM);                                            \
-    }                                                                         \
-  } while(0)
-
+#define _DEBUGLA(proc_id, debug_lvl, which_lvl, args...)                                            \
+  do {                                                                                              \
+    if (which_lvl >= debug_lvl && DEBUG_RANGE_COND(proc_id)) {                                      \
+      char str0[MAX_STR_LENGTH + 1], str1[MAX_STR_LENGTH + 1], str2[MAX_STR_LENGTH + 1];            \
+      snprintf(str0, MAX_STR_LENGTH, "%s:%u:", __FILE__, __LINE__);                                 \
+      snprintf(str1, MAX_STR_LENGTH, " " #which_lvl ":" #debug_lvl);                                \
+      snprintf(str2, MAX_STR_LENGTH, " (P=%u O=%llu  I=%llu  C=%llu):", proc_id, op_count[proc_id], \
+               inst_count[proc_id], cycle_count);                                                   \
+      fprintf(GLOBAL_DEBUG_STREAM, "%-22s%-18s%-30s  ", str0, str1, str2);                          \
+      fprintf(GLOBAL_DEBUG_STREAM, ##args);                                                         \
+      fflush(GLOBAL_DEBUG_STREAM);                                                                  \
+    }                                                                                               \
+  } while (0)
 
 /**************************************************************************************/
 

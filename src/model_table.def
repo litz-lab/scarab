@@ -49,6 +49,5 @@ Model model_table [] = {
                          , NULL              , NULL              , NULL                  , NULL, } ,
 };
 
-// note: the model's mem field is for easy distinction of which memory
-// model is used.  You can't switch back and forth just by changing it
-// here.
+/* note: the model's mem field is for easy distinction of which memory model is used.
+ * You can't switch back and forth just by changing it here. */

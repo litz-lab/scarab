@@ -32,12 +32,11 @@
 #include "memory/mem_req.h"
 
 typedef struct Mem_Req_Info_Struct {
-  uns8         proc_id;
-  Addr         addr;
+  uns8 proc_id;
+  Addr addr;
   Mem_Req_Type type;
-  Counter      oldest_op_unique_num;
-  Addr         oldest_op_inst_addr;
+  Counter oldest_op_unique_num;
+  Addr oldest_op_inst_addr;
 } Mem_Req_Info;
-
 
 #endif  // #ifndef __PREF_TYPE_H__

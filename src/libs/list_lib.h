@@ -32,41 +32,35 @@
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 
-
 /**************************************************************************************/
 /* Types */
 
 typedef struct List_Entry_struct {
   struct List_Entry_struct *next, *prev;
-  char                      data; /* placeholder, don't put any
-       fields after this or you
-       will be screwed */
+  char data;  // placeholder, don't put any fields after this or you will be screwed
 } List_Entry;
 
-
 typedef struct List_struct {
-  char* name;      /* name of the linked list */
-  uns   data_size; /* size of the data elements in the list */
+  char* name;    /* name of the linked list */
+  uns data_size; /* size of the data elements in the list */
 
   List_Entry *head, *tail; /* pointers to the head and tail of the list */
   List_Entry* current;     /* pointer to the current element (for traversals) */
   List_Entry* free;        /* pointer to the free entry pool for the list */
-  int         count;       /* count of elements in the list */
-  int         place;       /* place of 'current' in the list (starts at 0) */
-  Flag use_free_list;      /* whether or not to use free list or free memory on
-                              removal */
+  int count;               /* count of elements in the list */
+  int place;               /* place of 'current' in the list (starts at 0) */
+  Flag use_free_list;      /* whether or not to use free list or free memory on removal */
 
   int free_count;
   int total_count;
 } List;
 
-
 /**************************************************************************************/
 /* Prototypes */
 
-void  init_list(List*, char[], uns, Flag);
-void  clear_list(List*);
-void  clip_list_at_current(List*);
+void init_list(List*, char[], uns, Flag);
+void clear_list(List*);
+void clip_list_at_current(List*);
 void* sl_list_add_tail(List*);
 void* dl_list_add_tail(List*);
 void* sl_list_add_head(List*);
@@ -90,8 +84,7 @@ Flag list_at_head(List*);
 Flag list_at_tail(List*);
 
 void** list_flatten(List*);
-int    list_get_count(List*);
-
+int list_get_count(List*);
 
 /**************************************************************************************/
 

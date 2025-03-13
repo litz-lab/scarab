@@ -27,11 +27,15 @@
  ***************************************************************************************/
 
 #include "debug/pipeview.h"
-#include "core.param.h"
-#include "debug/debug_print.h"
-#include "general.param.h"
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
+
+#include "debug/debug_print.h"
+
+#include "core.param.h"
+#include "general.param.h"
+
 #include "op.h"
 
 /**************************************************************************************
@@ -65,8 +69,8 @@ void print_event(FILE*, Op*, const char*, Counter);
 
 void pipeview_init(void) {
   files = malloc(sizeof(FILE*) * NUM_CORES);
-  if(PIPEVIEW) {
-    for(uns proc_id = 0; proc_id < NUM_CORES; ++proc_id) {
+  if (PIPEVIEW) {
+    for (uns proc_id = 0; proc_id < NUM_CORES; ++proc_id) {
       char filename[MAX_STR_LENGTH + 1];
       sprintf(filename, "%s.%d.trace", PIPEVIEW_FILE, proc_id);
       files[proc_id] = fopen(filename, "w");
@@ -79,12 +83,12 @@ void pipeview_init(void) {
 /* pipeview_print_op: */
 
 void pipeview_print_op(struct Op_struct* op) {
-  if(!DEBUG_RANGE_COND(op->proc_id))
+  if (!DEBUG_RANGE_COND(op->proc_id))
     return;
 
   FILE* file = files[op->proc_id];
   print_header(file, op);
-  if(op->off_path) {
+  if (op->off_path) {
     print_event(file, op, "fetch_offpath", op->fetch_cycle);
   } else {
     print_event(file, op, "fetch", op->fetch_cycle);
@@ -95,7 +99,7 @@ void pipeview_print_op(struct Op_struct* op) {
   print_event(file, op, "map_done", op->map_cycle + MAP_CYCLES);
   print_event(file, op, "issue", op->issue_cycle);
   print_event(file, op, "issue_done", op->issue_cycle + 1);
-  if(op->srcs_not_rdy_vector == 0) {
+  if (op->srcs_not_rdy_vector == 0) {
     // op was ready at rdy_cycle only if all sources are ready
     print_event(file, op, "ready", MAX2(op->rdy_cycle, op->issue_cycle + 1));
   } else {
@@ -105,7 +109,7 @@ void pipeview_print_op(struct Op_struct* op) {
   print_event(file, op, "exec", op->exec_cycle);
   print_event(file, op, "dcache", op->dcache_cycle);
   print_event(file, op, "done", op->done_cycle);
-  if(op->off_path) {
+  if (op->off_path) {
     print_event(file, op, "flush", cycle_count);
     print_event(file, op, "end", cycle_count);
   } else {
@@ -119,8 +123,8 @@ void pipeview_print_op(struct Op_struct* op) {
 /* pipeview_done: */
 
 void pipeview_done(void) {
-  if(PIPEVIEW) {
-    for(uns proc_id = 0; proc_id < NUM_CORES; ++proc_id) {
+  if (PIPEVIEW) {
+    for (uns proc_id = 0; proc_id < NUM_CORES; ++proc_id) {
       fclose(files[proc_id]);
     }
   }
@@ -133,7 +137,7 @@ void print_event(FILE* file, Op* op, const char* name, Counter cycle) {
   /* print only events that make sense because flushed ops may not
      have all *_cycle fields set and non mem ops will not have
      dcache_cycle set  */
-  if(cycle >= op->fetch_cycle && cycle <= cycle_count) {
+  if (cycle >= op->fetch_cycle && cycle <= cycle_count) {
     fprintf(file, "%s:%s:%lld\n", PREFIX, name, cycle);
   }
 }
@@ -142,6 +146,6 @@ void print_event(FILE* file, Op* op, const char* name, Counter cycle) {
 /* print_header: */
 
 void print_header(FILE* file, Op* op) {
-  fprintf(file, "%s:new:%lld:%llx:%d:%lld:%s\n", PREFIX, op->fetch_cycle,
-          op->inst_info->addr, 0, op->unique_num_per_proc, disasm_op(op, TRUE));
+  fprintf(file, "%s:new:%lld:%llx:%d:%lld:%s\n", PREFIX, op->fetch_cycle, op->inst_info->addr, 0,
+          op->unique_num_per_proc, disasm_op(op, TRUE));
 }

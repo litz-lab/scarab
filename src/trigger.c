@@ -29,21 +29,25 @@
  ***************************************************************************************/
 
 #include "trigger.h"
+
 #include <stdio.h>
-#include "core.param.h"
+
 #include "globals/assert.h"
+
+#include "core.param.h"
+
 #include "statistics.h"
 
 /**************************************************************************************/
 /* Types */
 
 struct Trigger_struct {
-  Flag         armed;
-  const Stat*  stat;
-  char*        name;
+  Flag armed;
+  const Stat* stat;
+  char* name;
   Trigger_Type type;
-  Counter      period;
-  Counter      next_threshold;
+  Counter period;
+  Counter next_threshold;
 };
 
 /**************************************************************************************/
@@ -53,12 +57,12 @@ Trigger* trigger_create(const char* name, const char* spec, Trigger_Type type) {
   ASSERT(0, name);
   ASSERT(0, spec);
   Trigger* trigger = malloc(sizeof(Trigger));
-  trigger->name    = strdup(name);
+  trigger->name = strdup(name);
   ASSERT(0, type < TRIGGER_NUM_ELEMS);
   trigger->type = type;
 
-  if(!strcmp(spec, "none") || !strcmp(spec, "never")) {
-    trigger->stat  = NULL;
+  if (!strcmp(spec, "none") || !strcmp(spec, "never")) {
+    trigger->stat = NULL;
     trigger->armed = FALSE;  // will never trigger
     return trigger;
   }
@@ -69,26 +73,26 @@ Trigger* trigger_create(const char* name, const char* spec, Trigger_Type type) {
           "Spec '%s' for trigger '%s' does not fit required format, e.g. "
           "'inst[0]:1000'\n",
           spec, name);
-  *colon           = 0;
-  char* stat_str   = buf;
+  *colon = 0;
+  char* stat_str = buf;
   char* number_str = colon + 1;
 
-  uns   proc_id      = 0;
+  uns proc_id = 0;
   char* open_bracket = strchr(stat_str, '[');
-  if(open_bracket) {
+  if (open_bracket) {
     char* close_bracket = strchr(stat_str, ']');
     ASSERTM(0, close_bracket,
             "Spec '%s' for trigger '%s' does not fit required format, e.g. "
             "'inst[0]:1000'\n",
             spec, name);
-    *close_bracket    = 0;
+    *close_bracket = 0;
     char* proc_id_str = open_bracket + 1;
-    proc_id           = atoi(proc_id_str);
+    proc_id = atoi(proc_id_str);
     ASSERT(0, proc_id < NUM_CORES);
     *open_bracket = 0;
   }
 
-  switch(*stat_str) {
+  switch (*stat_str) {
     case 'i':
       trigger->stat = &global_stat_array[proc_id][NODE_INST_COUNT];
       break;
@@ -100,8 +104,7 @@ Trigger* trigger_create(const char* name, const char* spec, Trigger_Type type) {
       break;
     default:
       trigger->stat = get_stat(proc_id, stat_str);
-      ASSERTM(0, trigger->stat, "Stat '%s' for trigger '%s' not found\n",
-              stat_str, name);
+      ASSERTM(0, trigger->stat, "Stat '%s' for trigger '%s' not found\n", stat_str, name);
       ASSERTM(0, trigger->stat->type != FLOAT_TYPE_STAT,
               "Stat '%s' for trigger '%s' is a float (triggers support counter "
               "stats only)\n",
@@ -109,34 +112,32 @@ Trigger* trigger_create(const char* name, const char* spec, Trigger_Type type) {
   }
 
   trigger->period = atoll(number_str);
-  if(trigger->period == 0 && trigger->type == TRIGGER_REPEAT) {
+  if (trigger->period == 0 && trigger->type == TRIGGER_REPEAT) {
     FATAL_ERROR(0, "Repeat trigger '%s' has a zero period\n", name);
   }
   trigger->next_threshold = trigger->period;
-  trigger->armed          = TRUE;
+  trigger->armed = TRUE;
 
   return trigger;
 }
 
 Flag trigger_fired(Trigger* trigger) {
   // common (false) case first
-  if(!trigger->armed || (trigger->stat->count + trigger->stat->total_count) <
-                          trigger->next_threshold) {
+  if (!trigger->armed || (trigger->stat->count + trigger->stat->total_count) < trigger->next_threshold) {
     return FALSE;
   }
 
   // trigger fired
-  if(trigger->type == TRIGGER_ONCE) {
+  if (trigger->type == TRIGGER_ONCE) {
     trigger->armed = FALSE;
   } else {
     trigger->next_threshold += trigger->period;
     uns skipped = 0;
-    while(trigger->stat->count + trigger->stat->total_count >=
-          trigger->next_threshold) {
+    while (trigger->stat->count + trigger->stat->total_count >= trigger->next_threshold) {
       trigger->next_threshold += trigger->period;
       skipped++;
     }
-    if(skipped > 0) {
+    if (skipped > 0) {
       ERROR(0, "Trigger '%s' skipped %d firings\n", trigger->name, skipped);
     }
   }
@@ -149,19 +150,18 @@ Flag trigger_on(Trigger* trigger) {
 }
 
 double trigger_progress(Trigger* trigger) {
-  if(!trigger->stat)
+  if (!trigger->stat)
     return 0.0;  // trigger set to "never"
-  if(!trigger->armed)
+  if (!trigger->armed)
     return 1.0;
 
   ASSERT(0, trigger->next_threshold >= trigger->period);
   Counter stat_count = trigger->stat->count + trigger->stat->total_count;
   ASSERT(0, stat_count >= trigger->next_threshold - trigger->period);
-  if(stat_count >= trigger->next_threshold)
+  if (stat_count >= trigger->next_threshold)
     return 1.0;
 
-  return (double)(stat_count - (trigger->next_threshold - trigger->period)) /
-         (double)trigger->period;
+  return (double)(stat_count - (trigger->next_threshold - trigger->period)) / (double)trigger->period;
 }
 
 void trigger_free(Trigger* trigger) {

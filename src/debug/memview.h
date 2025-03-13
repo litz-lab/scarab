@@ -40,19 +40,16 @@ struct Mem_Req_struct;
 /**************************************************************************************/
 /* Types */
 
-#define MEMVIEW_DRAM_EVENT_LIST(elem)                               \
-  elem(IDLE) elem(PRECHARGE) elem(ACTIVATE) elem(COLUMN) elem(READ) \
-    elem(WRITE) elem(BUS) elem(REFRESH)
+#define MEMVIEW_DRAM_EVENT_LIST(elem) \
+  elem(IDLE) elem(PRECHARGE) elem(ACTIVATE) elem(COLUMN) elem(READ) elem(WRITE) elem(BUS) elem(REFRESH)
 
 DECLARE_ENUM(Memview_Dram_Event, MEMVIEW_DRAM_EVENT_LIST, MEMVIEW_DRAM_);
 
 #define MEMVIEW_MEMQUEUE_EVENT_LIST(elem) elem(ARRIVE) elem(DEPART)
 
-DECLARE_ENUM(Memview_Memqueue_Event, MEMVIEW_MEMQUEUE_EVENT_LIST,
-             MEMVIEW_MEMQUEUE_);
+DECLARE_ENUM(Memview_Memqueue_Event, MEMVIEW_MEMQUEUE_EVENT_LIST, MEMVIEW_MEMQUEUE_);
 
-#define MEMVIEW_NOTE_TYPE_LIST(elem) \
-  elem(GENERAL) elem(DRAM_MODE) elem(DRAM_BATCH) elem(DRAM_UNBLOCK)
+#define MEMVIEW_NOTE_TYPE_LIST(elem) elem(GENERAL) elem(DRAM_MODE) elem(DRAM_BATCH) elem(DRAM_UNBLOCK)
 
 DECLARE_ENUM(Memview_Note_Type, MEMVIEW_NOTE_TYPE_LIST, MEMVIEW_NOTE_);
 
@@ -63,12 +60,10 @@ DECLARE_ENUM(Memview_Note_Type, MEMVIEW_NOTE_TYPE_LIST, MEMVIEW_NOTE_);
 void memview_init(void);
 
 /* Record DRAM event */
-void memview_dram(Memview_Dram_Event event, struct Mem_Req_struct* req,
-                  uns flat_bank_id, Counter start, Counter end);
+void memview_dram(Memview_Dram_Event event, struct Mem_Req_struct* req, uns flat_bank_id, Counter start, Counter end);
 
 /* Record a potential segment of the critical path through DRAM reqs */
-void memview_dram_crit_path(const char* from_type_str, uns from_index,
-                            const char* to_type_str, uns to_index,
+void memview_dram_crit_path(const char* from_type_str, uns from_index, const char* to_type_str, uns to_index,
                             Counter start, Counter end);
 
 /* Record mem queue departure */

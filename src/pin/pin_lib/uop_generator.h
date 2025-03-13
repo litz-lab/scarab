@@ -31,6 +31,8 @@
 
 #include "../../globals/global_types.h"
 
+#include "ctype_pin_inst.h"
+
 /**************************************************************************************/
 /* Prototypes */
 
@@ -42,8 +44,7 @@ void uop_generator_init(uint32_t num_cores);
 Flag uop_generator_extract_op(uns proc_id, Op* op, compressed_op* cop);
 
 void uop_generator_get_uop(uns proc_id, Op* op, compressed_op* inst);
-Flag uop_generator_get_bom(uns proc_id);  // Called before
-                                          // uop_generator_get_uop.
+Flag uop_generator_get_bom(uns proc_id);  // Called before uop_generator_get_uop.
 Flag uop_generator_get_eom(uns proc_id);  // Called after uop_generator_get_uop.
 void uop_generator_recover(uns8 proc_id);
 

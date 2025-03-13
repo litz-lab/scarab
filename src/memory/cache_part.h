@@ -36,8 +36,7 @@ struct Mem_Req_struct;
 /**************************************************************************************/
 /* Enums */
 
-#define CACHE_PART_METRIC_LIST(elem) \
-  elem(GLOBAL_MISS_RATE) elem(MISS_RATE_SUM) elem(GMEAN_PERF)
+#define CACHE_PART_METRIC_LIST(elem) elem(GLOBAL_MISS_RATE) elem(MISS_RATE_SUM) elem(GMEAN_PERF)
 
 DECLARE_ENUM(Cache_Part_Metric, CACHE_PART_METRIC_LIST, CACHE_PART_METRIC_);
 

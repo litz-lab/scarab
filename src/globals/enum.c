@@ -28,31 +28,27 @@
  ***************************************************************************************/
 
 #include "globals/enum.h"
+
 #include <strings.h> /* for strcasecmp */
 #include <unistd.h>  /* for optarg */
 
-const char* enum_str(const char* enum_strs[], size_t value, size_t num,
-                     const char* enum_type_name) {
-  if(value >= num)
-    FATAL_ERROR(0, "Unknown %s enum value %ld\n", enum_type_name,
-                (long int)value);
+const char* enum_str(const char* enum_strs[], size_t value, size_t num, const char* enum_type_name) {
+  if (value >= num)
+    FATAL_ERROR(0, "Unknown %s enum value %ld\n", enum_type_name, (long int)value);
   return enum_strs[value];
 }
 
-size_t enum_parse(const char* enum_strs[], const char* str, size_t num,
-                  const char* enum_type_name) {
+size_t enum_parse(const char* enum_strs[], const char* str, size_t num, const char* enum_type_name) {
   size_t i;
-  for(i = 0; i < num; ++i) {
-    if(strcasecmp(enum_strs[i], str) == 0)
+  for (i = 0; i < num; ++i) {
+    if (strcasecmp(enum_strs[i], str) == 0)
       return i;
   }
-  FATAL_ERROR(0, "Could not match \"%s\" to an element of %s enum\n", str,
-              enum_type_name);
+  FATAL_ERROR(0, "Could not match \"%s\" to an element of %s enum\n", str, enum_type_name);
 }
 
-void get_enum_param(const char* param_name, const char* enum_strs[], uns* var,
-                    size_t num, const char* enum_type_name) {
-  if(optarg)
+void get_enum_param(const char* param_name, const char* enum_strs[], uns* var, size_t num, const char* enum_type_name) {
+  if (optarg)
     *var = enum_parse(enum_strs, optarg, num, enum_type_name);
   else
     WARNINGU(0, "Parameter '%s' missing value --- Ignored.\n", param_name);

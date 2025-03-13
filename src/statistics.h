@@ -30,9 +30,12 @@
 #define __STATISTICS_H__
 
 #include <stdio.h>
+
+#include "globals/global_defs.h"
+
 #include "core.param.h"
 #include "general.param.h"
-#include "globals/global_defs.h"
+
 #include "libs/list_lib.h"
 
 /**************************************************************************************/
@@ -47,7 +50,6 @@ typedef enum Stat_Enum_enum {
 
 #undef DEF_STAT
 
-
 typedef enum Stat_Type_enum {
   COUNT_TYPE_STAT,  // stat is a simple counter
   //   output is a number
@@ -59,8 +61,7 @@ typedef enum Stat_Type_enum {
   //   output is a ratio of count/inst_count
   PER_1000_INST_TYPE_STAT,  // stat is measured per 1000 instructions
   //   output is a ratio of 1000*count/inst_count
-  PER_1000_PRET_INST_TYPE_STAT,  // stat is measured per 1000 pseudo-retired
-                                 // instructions
+  PER_1000_PRET_INST_TYPE_STAT,  // stat is measured per 1000 pseudo-retired instructions
   //   output is a ratio of 1000*count/pret_inst_count
   PER_CYCLE_TYPE_STAT,  // stat is measured per cycle
   //   output is a ratio of count/cycle_count
@@ -72,23 +73,21 @@ typedef enum Stat_Type_enum {
   NUM_STAT_TYPES,
 } Stat_Type;
 
-
 typedef struct Stat_struct {
-  Stat_Type   type;  // see types above
+  Stat_Type type;    // see types above
   const char* name;  // name of stat
   union {
     Counter count;  // count during the current stat interval
-    double  value;  // value during the current stat interval
+    double value;   // value during the current stat interval
   };
   union {
     Counter total_count;  // total count from beginning of run
-    double  total_value;  // total value from beginning of run
+    double total_value;   // total value from beginning of run
   };
-  Stat_Enum   ratio_stat;  // stat that to use in the ratio
-  const char* file_name;   // name of file to print stats
-  Flag noreset;  // this stat does not get reset (name has prefix "NORESET")
+  Stat_Enum ratio_stat;   // stat that to use in the ratio
+  const char* file_name;  // name of file to print stats
+  Flag noreset;           // this stat does not get reset (name has prefix "NORESET")
 } Stat;
-
 
 /**************************************************************************************/
 /* Macros */
@@ -97,43 +96,41 @@ typedef struct Stat_struct {
 #define STAT_EVENT(proc_id, stat)             \
   do {                                        \
     global_stat_array[proc_id][stat].count++; \
-  } while(0)
+  } while (0)
 
-#define STAT_EVENT_ALL(stat)                             \
-  do {                                                   \
-    for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++) \
-      global_stat_array[proc_id][stat].count++;          \
-  } while(0)
+#define STAT_EVENT_ALL(stat)                              \
+  do {                                                    \
+    for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) \
+      global_stat_array[proc_id][stat].count++;           \
+  } while (0)
 
 #define INC_STAT_EVENT(proc_id, stat, inc)           \
   do {                                               \
     global_stat_array[proc_id][stat].count += (inc); \
-  } while(0)
+  } while (0)
 
-#define INC_STAT_EVENT_ALL(stat, inc)                    \
-  do {                                                   \
-    for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++) \
-      global_stat_array[proc_id][stat].count += (inc);   \
-  } while(0)
+#define INC_STAT_EVENT_ALL(stat, inc)                     \
+  do {                                                    \
+    for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) \
+      global_stat_array[proc_id][stat].count += (inc);    \
+  } while (0)
 
 #define INC_STAT_VALUE(proc_id, stat, inc)           \
   do {                                               \
     global_stat_array[proc_id][stat].value += (inc); \
-  } while(0)
+  } while (0)
 
-#define INC_STAT_VALUE_ALL(stat, inc)                    \
-  do {                                                   \
-    for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++) \
-      global_stat_array[proc_id][stat].value += (inc);   \
-  } while(0)
+#define INC_STAT_VALUE_ALL(stat, inc)                     \
+  do {                                                    \
+    for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) \
+      global_stat_array[proc_id][stat].value += (inc);    \
+  } while (0)
 
 #define GET_STAT_EVENT(proc_id, stat) (global_stat_array[proc_id][stat].count)
 #define GET_TOTAL_STAT_EVENT(proc_id, stat) \
-  (global_stat_array[proc_id][stat].count + \
-   global_stat_array[proc_id][stat].total_count)
+  (global_stat_array[proc_id][stat].count + global_stat_array[proc_id][stat].total_count)
 #define GET_TOTAL_STAT_VALUE(proc_id, stat) \
-  (global_stat_array[proc_id][stat].value + \
-   global_stat_array[proc_id][stat].total_value)
+  (global_stat_array[proc_id][stat].value + global_stat_array[proc_id][stat].total_value)
 #define GET_ACCUM_STAT_EVENT(stat) get_accum_stat_event(stat)
 #define RESET_STAT(proc_id, stat) (global_stat_array[proc_id][stat].count = 0)
 
@@ -163,22 +160,21 @@ typedef struct Stat_struct {
 extern Stat** global_stat_array;
 #endif
 
-
 /**************************************************************************************/
 /* Prototypes */
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void        init_global_stats_array(void);
-void        gen_stat_output_file(char*, uns8, Stat*, char);
-void        init_global_stats(uns8);
-void        dump_stats(uns8, Flag, Stat[], uns);
-void        reset_stats(Flag);
-void        fprint_line(FILE*);
-Stat_Enum   get_stat_idx(const char* name);
+void init_global_stats_array(void);
+void gen_stat_output_file(char*, uns8, Stat*, char);
+void init_global_stats(uns8);
+void dump_stats(uns8, Flag, Stat[], uns);
+void reset_stats(Flag);
+void fprint_line(FILE*);
+Stat_Enum get_stat_idx(const char* name);
 const Stat* get_stat(uns8, const char*);
-Counter     get_accum_stat_event(Stat_Enum name);
+Counter get_accum_stat_event(Stat_Enum name);
 
 #ifdef __cplusplus
 }

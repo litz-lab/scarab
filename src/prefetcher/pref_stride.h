@@ -35,7 +35,7 @@
 typedef struct Stride_Region_Table_Entry_Struct {
   Addr tag;
   Flag valid;
-  uns  last_access;  // for lru
+  uns last_access;  // for lru
 } Stride_Region_Table_Entry;
 
 typedef struct Stride_Index_Table_Entry_Struct {
@@ -45,8 +45,8 @@ typedef struct Stride_Index_Table_Entry_Struct {
   // verified
   Flag train_count_mode;
 
-  uns  num_states;
-  uns  curr_state;
+  uns num_states;
+  uns curr_state;
   Addr last_index;
 
   int stride[2];
@@ -56,8 +56,8 @@ typedef struct Stride_Index_Table_Entry_Struct {
   int recnt;
   int count;
 
-  int  pref_count;
-  uns  pref_curr_state;
+  int pref_count;
+  uns pref_curr_state;
   Addr pref_last_index;
 
   Counter pref_sent;
@@ -69,10 +69,10 @@ typedef struct Pref_Stride_Struct {
   Stride_Region_Table_Entry* region_table;
   // Index table
   Stride_Index_Table_Entry* index_table;
-  CacheLevel        type;
+  CacheLevel type;
 } Pref_Stride;
 
-typedef struct{
+typedef struct {
   Pref_Stride* stride_hwp_ul1;
   Pref_Stride* stride_hwp_umlc;
 } stride_prefetchers;
@@ -80,14 +80,10 @@ typedef struct{
 /* HWP Interface */
 void pref_stride_init(HWP* hwp);
 
-void pref_stride_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                          uns32 global_hist);
-void pref_stride_ul1_hit(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                         uns32 global_hist);
-void pref_stride_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                          uns32 global_hist);
-void pref_stride_umlc_hit(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                         uns32 global_hist);
+void pref_stride_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_stride_ul1_hit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_stride_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_stride_umlc_hit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 /*************************************************************/
 /* Internal Function */
 void init_stride(HWP* hwp, Pref_Stride* stride_hwp);

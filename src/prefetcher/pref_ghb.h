@@ -35,15 +35,15 @@
 typedef struct GHB_Index_Table_Entry_Struct {
   Addr czone_tag;
   Flag valid;
-  uns  ghb_ptr;      // ptr to last entry in ghb with same czone
-  uns  last_access;  // for lru
+  uns ghb_ptr;      // ptr to last entry in ghb with same czone
+  uns last_access;  // for lru
 } GHB_Index_Table_Entry;
 
 typedef struct GHB_Entry_Struct {
   Addr miss_index;
-  int  ghb_ptr;          // -1 == invalid
-  int  ghb_reverse_ptr;  // -1 == invalid
-  int  idx_reverse_ptr;
+  int ghb_ptr;          // -1 == invalid
+  int ghb_reverse_ptr;  // -1 == invalid
+  int idx_reverse_ptr;
 } GHB_Entry;
 
 typedef struct Pref_GHB_Struct {
@@ -57,16 +57,16 @@ typedef struct Pref_GHB_Struct {
   int ghb_tail;
   int ghb_head;
 
-  int  deltab_size;
+  int deltab_size;
   int* delta_buffer;
 
   uns pref_degree;
 
   uns pref_degree_vals[5];
-  CacheLevel        type;
+  CacheLevel type;
 } Pref_GHB;
 
-typedef struct{
+typedef struct {
   Pref_GHB* ghb_hwp_core_ul1;
   Pref_GHB* ghb_hwp_core_umlc;
 } ghb_prefetchers;
@@ -75,14 +75,10 @@ typedef struct{
 /* HWP Interface */
 void pref_ghb_init(HWP* hwp);
 
-void pref_ghb_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                       uns32 global_hist);
-void pref_ghb_ul1_prefhit(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                          uns32 global_hist);
-void pref_ghb_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                       uns32 global_hist);
-void pref_ghb_umlc_prefhit(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                          uns32 global_hist);
+void pref_ghb_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_ghb_ul1_prefhit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_ghb_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_ghb_umlc_prefhit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 
 /*************************************************************/
 /* Internal function */
@@ -90,8 +86,7 @@ void init_ghb_core(HWP* hwp, Pref_GHB* ghb_hwp_core);
 void pref_ghb_train(Pref_GHB* ghb_hwp, uns8 proc_id, Addr lineAddr, Addr loadPC, Flag is_hit);
 /*************************************************************/
 /* Misc functions */
-void pref_ghb_create_newentry(Pref_GHB* ghb_hwp, int idx, Addr line_addr, Addr czone_tag,
-                              int old_ptr);
+void pref_ghb_create_newentry(Pref_GHB* ghb_hwp, int idx, Addr line_addr, Addr czone_tag, int old_ptr);
 
 void pref_ghb_throttle(Pref_GHB* ghb_hwp);
 void pref_ghb_throttle_fb(Pref_GHB* ghb_hwp);

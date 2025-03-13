@@ -42,8 +42,10 @@ whenever any assert fails.
 #include <execinfo.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "debug/debug_macros.h"
+
 #include "globals/global_vars.h"
+
+#include "debug/debug_macros.h"
 
 #ifdef NO_ASSERT
 #define ENABLE_ASSERTIONS FALSE /* default FALSE */
@@ -55,13 +57,13 @@ whenever any assert fails.
 /* Prints the current call stack of Scarab. For the function names to be
  * printed, Scarab should be linked with -rdynamic flag. */
 inline void print_backtrace(void) {
-  void*  array[30];
+  void* array[30];
   char** strings;
   size_t size = backtrace(array, 30);
-  strings     = backtrace_symbols(array, size);
+  strings = backtrace_symbols(array, size);
 
   fprintf(mystderr, "Obtained %zd stack frames.\n", size);
-  for(size_t i = 0; i < size; i++)
+  for (size_t i = 0; i < size; i++)
     fprintf(mystderr, "%s\n", strings[i]);
 
   free(strings);
@@ -72,99 +74,84 @@ inline void print_backtrace(void) {
  * information and stops the simulation. May be disabled by defining
  * NO_ASSERT. */
 #undef ASSERT
-#define ASSERT(proc_id, cond)                                           \
-  do {                                                                  \
-    if(ENABLE_ASSERTIONS && !(cond)) {                                  \
-      fflush(mystdout);                                                 \
-      fprintf(mystderr, "\n");                                          \
-      fprintf(mystderr,                                                 \
-              "%s:%d: ASSERT FAILED (P=%u  O=%llu  I=%llu  C=%llu):  ", \
-              __FILE__, __LINE__, proc_id, op_count[proc_id],           \
-              inst_count[proc_id], cycle_count);                        \
-      fprintf(mystderr, "%s\n", #cond);                                 \
-      breakpoint(__FILE__, __LINE__);                                   \
-      WRITE_STATUS("ASSERT");                                           \
-      print_backtrace();                                                \
-      exit(15);                                                         \
-    }                                                                   \
-  } while(0)
+#define ASSERT(proc_id, cond)                                                                                  \
+  do {                                                                                                         \
+    if (ENABLE_ASSERTIONS && !(cond)) {                                                                        \
+      fflush(mystdout);                                                                                        \
+      fprintf(mystderr, "\n");                                                                                 \
+      fprintf(mystderr, "%s:%d: ASSERT FAILED (P=%u  O=%llu  I=%llu  C=%llu):  ", __FILE__, __LINE__, proc_id, \
+              op_count[proc_id], inst_count[proc_id], cycle_count);                                            \
+      fprintf(mystderr, "%s\n", #cond);                                                                        \
+      breakpoint(__FILE__, __LINE__);                                                                          \
+      WRITE_STATUS("ASSERT");                                                                                  \
+      print_backtrace();                                                                                       \
+      exit(15);                                                                                                \
+    }                                                                                                          \
+  } while (0)
 
 /**************************************************************************************/
 /* Asserts that cond is true. If cond is false, prints simulation
  * information, prints the printf-style message specified by args, and
  * stops the simulation. May be disabled by defining NO_ASSERT. */
-#define ASSERTM(proc_id, cond, args...)                                 \
-  do {                                                                  \
-    if(ENABLE_ASSERTIONS && !(cond)) {                                  \
-      fflush(mystdout);                                                 \
-      fprintf(mystderr, "\n");                                          \
-      fprintf(mystderr,                                                 \
-              "%s:%d: ASSERT FAILED (P=%u  O=%llu  I=%llu  C=%llu):  ", \
-              __FILE__, __LINE__, proc_id, op_count[proc_id],           \
-              inst_count[proc_id], cycle_count);                        \
-      fprintf(mystderr, "%s\n", #cond);                                 \
-      fprintf(mystderr,                                                 \
-              "%s:%d: ASSERT FAILED (P=%u  O=%llu  I=%llu  C=%llu):  ", \
-              __FILE__, __LINE__, proc_id, op_count[proc_id],           \
-              inst_count[proc_id], cycle_count);                        \
-      fprintf(mystderr, ##args);                                        \
-      breakpoint(__FILE__, __LINE__);                                   \
-      WRITE_STATUS("ASSERT");                                           \
-      print_backtrace();                                                \
-      exit(15);                                                         \
-    }                                                                   \
-  } while(0)
-
+#define ASSERTM(proc_id, cond, args...)                                                                        \
+  do {                                                                                                         \
+    if (ENABLE_ASSERTIONS && !(cond)) {                                                                        \
+      fflush(mystdout);                                                                                        \
+      fprintf(mystderr, "\n");                                                                                 \
+      fprintf(mystderr, "%s:%d: ASSERT FAILED (P=%u  O=%llu  I=%llu  C=%llu):  ", __FILE__, __LINE__, proc_id, \
+              op_count[proc_id], inst_count[proc_id], cycle_count);                                            \
+      fprintf(mystderr, "%s\n", #cond);                                                                        \
+      fprintf(mystderr, "%s:%d: ASSERT FAILED (P=%u  O=%llu  I=%llu  C=%llu):  ", __FILE__, __LINE__, proc_id, \
+              op_count[proc_id], inst_count[proc_id], cycle_count);                                            \
+      fprintf(mystderr, ##args);                                                                               \
+      breakpoint(__FILE__, __LINE__);                                                                          \
+      WRITE_STATUS("ASSERT");                                                                                  \
+      print_backtrace();                                                                                       \
+      exit(15);                                                                                                \
+    }                                                                                                          \
+  } while (0)
 
 /**************************************************************************************/
 /* Asserts that cond is true. If cond is false, prints simulation
  * information and stops the simulation. Always enabled (NO_ASSERT has
  * no effect). */
-#define ASSERTU(proc_id, cond)                                          \
-  do {                                                                  \
-    if(!(cond)) {                                                       \
-      fflush(mystdout);                                                 \
-      fprintf(mystderr, "\n");                                          \
-      fprintf(mystderr,                                                 \
-              "%s:%d: ASSERT FAILED (P=%u  O=%llu  I=%llu  C=%llu):  ", \
-              __FILE__, __LINE__, proc_id, op_count[proc_id],           \
-              inst_count[proc_id], cycle_count);                        \
-      fprintf(mystderr, "%s\n", #cond);                                 \
-      breakpoint(__FILE__, __LINE__);                                   \
-      WRITE_STATUS("ASSERT");                                           \
-      print_backtrace();                                                \
-      exit(15);                                                         \
-    }                                                                   \
-  } while(0)
-
+#define ASSERTU(proc_id, cond)                                                                                 \
+  do {                                                                                                         \
+    if (!(cond)) {                                                                                             \
+      fflush(mystdout);                                                                                        \
+      fprintf(mystderr, "\n");                                                                                 \
+      fprintf(mystderr, "%s:%d: ASSERT FAILED (P=%u  O=%llu  I=%llu  C=%llu):  ", __FILE__, __LINE__, proc_id, \
+              op_count[proc_id], inst_count[proc_id], cycle_count);                                            \
+      fprintf(mystderr, "%s\n", #cond);                                                                        \
+      breakpoint(__FILE__, __LINE__);                                                                          \
+      WRITE_STATUS("ASSERT");                                                                                  \
+      print_backtrace();                                                                                       \
+      exit(15);                                                                                                \
+    }                                                                                                          \
+  } while (0)
 
 /**************************************************************************************/
 /* Asserts that cond is true. If cond is false, prints simulation
  * information, prints the printf-style message specified by args, and
  * stops the simulation. Always enabled (NO_ASSERT has no effect). */
-#define ASSERTUM(proc_id, cond, args...)                                \
-  do {                                                                  \
-    if(!(cond)) {                                                       \
-      fflush(mystdout);                                                 \
-      fprintf(mystderr, "\n");                                          \
-      fprintf(mystderr,                                                 \
-              "%s:%d: ASSERT FAILED (P=%u  O=%llu  I=%llu  C=%llu):  ", \
-              __FILE__, __LINE__, proc_id, op_count[proc_id],           \
-              inst_count[proc_id], cycle_count);                        \
-      fprintf(mystderr, "%s\n", #cond);                                 \
-      fprintf(mystderr,                                                 \
-              "%s:%d: ASSERT FAILED (P=%u  O=%llu  I=%llu  C=%llu):  ", \
-              __FILE__, __LINE__, proc_id, op_count[proc_id],           \
-              inst_count[proc_id], cycle_count);                        \
-      fprintf(mystderr, ##args);                                        \
-      breakpoint(__FILE__, __LINE__);                                   \
-      WRITE_STATUS("ASSERT");                                           \
-      print_backtrace();                                                \
-      exit(15);                                                         \
-    }                                                                   \
-  } while(0)
+#define ASSERTUM(proc_id, cond, args...)                                                                       \
+  do {                                                                                                         \
+    if (!(cond)) {                                                                                             \
+      fflush(mystdout);                                                                                        \
+      fprintf(mystderr, "\n");                                                                                 \
+      fprintf(mystderr, "%s:%d: ASSERT FAILED (P=%u  O=%llu  I=%llu  C=%llu):  ", __FILE__, __LINE__, proc_id, \
+              op_count[proc_id], inst_count[proc_id], cycle_count);                                            \
+      fprintf(mystderr, "%s\n", #cond);                                                                        \
+      fprintf(mystderr, "%s:%d: ASSERT FAILED (P=%u  O=%llu  I=%llu  C=%llu):  ", __FILE__, __LINE__, proc_id, \
+              op_count[proc_id], inst_count[proc_id], cycle_count);                                            \
+      fprintf(mystderr, ##args);                                                                               \
+      breakpoint(__FILE__, __LINE__);                                                                          \
+      WRITE_STATUS("ASSERT");                                                                                  \
+      print_backtrace();                                                                                       \
+      exit(15);                                                                                                \
+    }                                                                                                          \
+  } while (0)
 
-
-  /**************************************************************************************/
+/**************************************************************************************/
 
 #endif /* #ifndef __ASSERT_H__ */

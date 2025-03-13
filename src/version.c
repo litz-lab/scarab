@@ -33,5 +33,5 @@
 const char* version(void) {
   return
 #include "gitrev"
-    ;
+      ;
 }

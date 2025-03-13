@@ -43,14 +43,14 @@ struct Op_struct;
 
 #ifdef __cplusplus
 extern "C" {
-#endif //__cplusplus
+#endif  //__cplusplus
 
 void pt_init(void);
-int  pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi);
+int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi);
 void pt_setup(uns proc_id);
 
 #ifdef __cplusplus
 }
-#endif // __cplusplus
+#endif  // __cplusplus
 
-#endif //__PT_FE_H__
+#endif  //__PT_FE_H__

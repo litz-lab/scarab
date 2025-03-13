@@ -37,51 +37,48 @@ source file. Be really careful about putting stuff in here.  You don't want to
 /* Forward declarations of typedefs. They are in this file to avoid
    typedef re-definition. Typedef re-definition is actually OK in gcc 4.4+,
    but since the base HPS gcc is only 4.1.2, we are using this solution. */
-typedef struct Inst_Info_struct     Inst_Info;
-typedef struct Mem_Req_struct       Mem_Req;
-typedef struct Op_Info_struct       Op_Info;
-typedef struct Op_struct            Op;
-typedef struct Ports_struct         Ports;
-typedef struct Pref_Mem_Req_struct  Pref_Mem_Req;
+typedef struct Inst_Info_struct Inst_Info;
+typedef struct Mem_Req_struct Mem_Req;
+typedef struct Op_Info_struct Op_Info;
+typedef struct Op_struct Op;
+typedef struct Ports_struct Ports;
+typedef struct Pref_Mem_Req_struct Pref_Mem_Req;
 typedef struct Stream_Buffer_struct Stream_Buffer;
-typedef struct Table_Info_struct    Table_Info;
-typedef struct HWP_struct           HWP;
-typedef struct HWP_Info_struct      HWP_Info;
-typedef struct FT_Info_struct       FT_Info;
+typedef struct Table_Info_struct Table_Info;
+typedef struct HWP_struct HWP;
+typedef struct HWP_Info_struct HWP_Info;
+typedef struct FT_Info_struct FT_Info;
 
 /* Renames -- Try to use these rather than built-in C types in order to preserve
  * portability */
-typedef unsigned           uns;
-typedef unsigned char      uns8;
-typedef unsigned short     uns16;
-typedef unsigned           uns32;
+typedef unsigned uns;
+typedef unsigned char uns8;
+typedef unsigned short uns16;
+typedef unsigned uns32;
 typedef unsigned long long uns64;
-typedef char               int8;
-typedef short              int16;
-typedef int                int32;
-typedef int long long      int64;
-typedef int                Generic_Enum;
-
+typedef char int8;
+typedef short int16;
+typedef int int32;
+typedef int long long int64;
+typedef int Generic_Enum;
 
 /* Conventions */
 typedef uns64 Addr;
 typedef uns32 Binary;
-typedef uns8  Flag;
+typedef uns8 Flag;
 
 typedef uns64 Counter;
 typedef int64 SCounter;
-
 
 /* Alpha types */
 typedef int64 Quad;
 typedef int32 Long;
 typedef int16 Word;
-//typedef int8  Byte;
+// typedef int8  Byte;
 typedef uns64 UQuad;
 typedef uns32 ULong;
 typedef uns16 UWord;
-typedef uns8  UByte;
-
+typedef uns8 UByte;
 
 /**************************************************************************************/
 

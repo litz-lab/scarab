@@ -32,22 +32,20 @@
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 
-
 /**************************************************************************************/
 /* Types */
 
 // typedef in globals/global_types.h
 struct Ports_struct {
-  char    name[MAX_STR_LENGTH + 1];
+  char name[MAX_STR_LENGTH + 1];
   Counter read_last_cycle;
   Counter write_last_cycle;
-  uns     num_read_ports;
-  uns     read_ports_in_use;
-  uns     num_write_ports;
-  uns     write_ports_in_use;
-  Flag    writes_prevent_reads;
+  uns num_read_ports;
+  uns read_ports_in_use;
+  uns num_write_ports;
+  uns write_ports_in_use;
+  Flag writes_prevent_reads;
 };
-
 
 /**************************************************************************************/
 /* Prototypes */
@@ -56,8 +54,6 @@ void init_ports(Ports* ports, char[], uns, uns, Flag);
 Flag get_read_port(Ports* ports);
 Flag get_write_port(Ports* ports);
 
-
 /**************************************************************************************/
-
 
 #endif /* #ifndef __PORT_LIB_H__ */

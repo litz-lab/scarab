@@ -28,9 +28,11 @@
 #ifndef __L2L1PREF_H__
 #define __L2L1PREF_H__
 
-#include "dcache_stage.h"
 #include "globals/global_types.h"
+
 #include "l2l1pref.param.h"
+
+#include "dcache_stage.h"
 #include "l2markv_pref.h"
 #include "l2way_pref.h"
 #include "pref_type.h"
@@ -43,25 +45,23 @@
 /**************************************************************************************/
 /* Prototypes */
 
-
 typedef struct L2_hit_ip_stat_Struct {
   Counter hit_count;
   Counter last_cycle;
-  int     delta[9];
+  int delta[9];
 } L2_hit_ip_stat_entry;
-
 
 void init_prefetch(void); /* need to move somewhere for generatic prefetcher
                              file */
-void         l2l1_init(void);
-void         l2l1pref_mem(Mem_Req* req);
-void         l2l1pref_mem_process(Mem_Req_Info* req);
-void         l2l1pref_dcache(Addr line_addr, Op* op);
+void l2l1_init(void);
+void l2l1pref_mem(Mem_Req* req);
+void l2l1pref_mem_process(Mem_Req_Info* req);
+void l2l1pref_dcache(Addr line_addr, Op* op);
 Dcache_Data* dc_pref_cache_access(Op* op);
-void         dc_pref_cache_insert(Addr addr);
-Flag         dc_pref_cache_fill_line(Mem_Req*);
-void         ideal_l2l1_prefetcher(Op* op);
-void         l2l1_done(void);
+void dc_pref_cache_insert(Addr addr);
+Flag dc_pref_cache_fill_line(Mem_Req*);
+void ideal_l2l1_prefetcher(Op* op);
+void l2l1_done(void);
 
 /*stat */
 void hps_hit_stat(Mem_Req* req);

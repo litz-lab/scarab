@@ -27,6 +27,7 @@
  ***************************************************************************************/
 
 #include "frontend/pt_memtrace/memtrace_trace_reader.h"
+
 #include <algorithm>
 #include <cstring>
 #include <fcntl.h>
@@ -40,11 +41,10 @@
 
 #include "assert.h"
 #include "elf.h"
-//#include "log.h"
+// #include "log.h"
 
 #define warn(...) printf(__VA_ARGS__)
 #define panic(...) printf(__VA_ARGS__)
-
 
 using std::endl;
 using std::get;
@@ -54,33 +54,27 @@ using std::make_pair;
 using std::tie;
 using std::unique_ptr;
 
-static bool       xedInitDone = false;
+static bool xedInitDone = false;
 static std::mutex initMutex;
 
 // A non-reader
-TraceReader::TraceReader() :
-  trace_ready_(false), binary_ready_(false), skipped_(0), buf_size_(0) {
+TraceReader::TraceReader() : trace_ready_(false), binary_ready_(false), skipped_(0), buf_size_(0) {
 }
 
 // Trace + single binary
-TraceReader::TraceReader(const std::string& _trace, const std::string& _binary,
-                         uint64_t _offset, uint32_t _buf_size) :
-    trace_ready_(false),
-    binary_ready_(true), warn_not_found_(1), skipped_(0), buf_size_(_buf_size) {
+TraceReader::TraceReader(const std::string& _trace, const std::string& _binary, uint64_t _offset, uint32_t _buf_size)
+    : trace_ready_(false), binary_ready_(true), warn_not_found_(1), skipped_(0), buf_size_(_buf_size) {
   binaryFileIs(_binary, _offset);
 }
 
 // Trace + multiple binaries
-TraceReader::TraceReader(const std::string& _trace,
-                         const std::string& _binary_group_path,
-                         uint32_t           _buf_size) :
-    trace_ready_(false),
-    binary_ready_(true), warn_not_found_(1), skipped_(0), buf_size_(_buf_size) {
+TraceReader::TraceReader(const std::string& _trace, const std::string& _binary_group_path, uint32_t _buf_size)
+    : trace_ready_(false), binary_ready_(true), warn_not_found_(1), skipped_(0), buf_size_(_buf_size) {
 }
 
 TraceReader::~TraceReader() {
   clearBinaries();
-  if(skipped_ > 0) {
+  if (skipped_ > 0) {
     warn("Skipped %lu stray memory references\n", skipped_);
   }
 }
@@ -93,7 +87,7 @@ bool TraceReader::operator!() {
 void TraceReader::init(const std::string& _trace) {
   // Initialize XED only once
   initMutex.lock();
-  if(!xedInitDone) {
+  if (!xedInitDone) {
     xed_tables_init();
     xedInitDone = true;
   }
@@ -103,33 +97,33 @@ void TraceReader::init(const std::string& _trace) {
   xed_state_init2(&xed_state_, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
 
   // Clear the 'invalid' record (memset() would do too)
-  invalid_info_.pc           = 0;
-  invalid_info_.ins          = nullptr;
-  invalid_info_.pid          = 0;
-  invalid_info_.tid          = 0;
-  invalid_info_.target       = 0;
-  invalid_info_.mem_addr[0]  = 0;
-  invalid_info_.mem_addr[1]  = 0;
-  invalid_info_.mem_used[0]  = false;
-  invalid_info_.mem_used[1]  = false;
-  invalid_info_.custom_op    = CustomOp::NONE;
-  invalid_info_.taken        = false;
+  invalid_info_.pc = 0;
+  invalid_info_.ins = nullptr;
+  invalid_info_.pid = 0;
+  invalid_info_.tid = 0;
+  invalid_info_.target = 0;
+  invalid_info_.mem_addr[0] = 0;
+  invalid_info_.mem_addr[1] = 0;
+  invalid_info_.mem_used[0] = false;
+  invalid_info_.mem_used[1] = false;
+  invalid_info_.custom_op = CustomOp::NONE;
+  invalid_info_.taken = false;
   invalid_info_.unknown_type = false;
-  invalid_info_.valid        = false;
+  invalid_info_.valid = false;
 
-  if(_trace.size())
+  if (_trace.size())
     traceFileIs(_trace);
   init_buffer();
 }
 
 void TraceReader::traceFileIs(const std::string& _trace) {
-  trace_       = _trace;
+  trace_ = _trace;
   trace_ready_ = initTrace();
 }
 
 void TraceReader::binaryFileIs(const std::string& _binary, uint64_t _offset) {
   clearBinaries();
-  if(_binary.empty()) {
+  if (_binary.empty()) {
     // An absent binary is allowed
     binary_ready_ = true;
   } else {
@@ -139,9 +133,9 @@ void TraceReader::binaryFileIs(const std::string& _binary, uint64_t _offset) {
 
 void TraceReader::clearBinaries() {
   // Unmap all existing files
-  for(auto& binary : binaries_) {
+  for (auto& binary : binaries_) {
     auto& map_info = binary.second;
-    if(munmap(map_info.first, map_info.second) == -1) {
+    if (munmap(map_info.first, map_info.second) == -1) {
       panic("munmap: %s", strerror(errno));
     }
   }
@@ -152,59 +146,57 @@ void TraceReader::clearBinaries() {
 bool TraceReader::initBinary(const std::string& _name, uint64_t _offset) {
   // Load the input file to memory
   int fd = open(_name.c_str(), O_RDONLY);
-  if(fd == -1) {
+  if (fd == -1) {
     panic("Could not open '%s': %s", _name.c_str(), strerror(errno));
     return false;
   }
   struct stat sb;
-  if(fstat(fd, &sb) == -1) {
+  if (fstat(fd, &sb) == -1) {
     panic("fstat: %s", strerror(errno));
     return false;
   }
   uint64_t size = static_cast<uint64_t>(sb.st_size);
-  if(size == 0) {
+  if (size == 0) {
     warn("Input file '%s' is empty", _name.c_str());
-    if(close(fd) == -1) {
+    if (close(fd) == -1) {
       panic("close: %s", strerror(errno));
     }
     return false;
   }
-  uint8_t* data = static_cast<uint8_t*>(
-    mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0));
-  if(data == MAP_FAILED) {
+  uint8_t* data = static_cast<uint8_t*>(mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0));
+  if (data == MAP_FAILED) {
     panic("mmap: %s", strerror(errno));
     return false;
   }
-  if(close(fd) == -1) {
+  if (close(fd) == -1) {
     panic("close: %s", strerror(errno));
     return false;
   }
   binaries_.emplace(_name, make_pair(data, size));
 
   // Parse the ELF structures in the file
-  if(size < sizeof(Elf64_Ehdr)) {
+  if (size < sizeof(Elf64_Ehdr)) {
     panic("File is too small to hold an ELF header");
     return false;
   }
   Elf64_Ehdr* hdr = reinterpret_cast<Elf64_Ehdr*>(data);
-  if(hdr->e_machine != EM_X86_64) {
+  if (hdr->e_machine != EM_X86_64) {
     panic("Expected ELF binary type 'EM_X86_64'");
     return false;
   }
   Elf64_Off shoff = hdr->e_shoff;  // section header table offset
-  if(size < shoff + (hdr->e_shnum * sizeof(Elf64_Shdr))) {
+  if (size < shoff + (hdr->e_shnum * sizeof(Elf64_Shdr))) {
     panic("ELF file is too small for section headers");
     return false;
   }
 
   Elf64_Shdr* shdr = reinterpret_cast<Elf64_Shdr*>(data + shoff);
-  for(Elf64_Half i = 0; i < hdr->e_shnum; i++) {
-    if((shdr[i].sh_type == SHT_PROGBITS) &&
-       (shdr[i].sh_flags & SHF_EXECINSTR)) {
+  for (Elf64_Half i = 0; i < hdr->e_shnum; i++) {
+    if ((shdr[i].sh_type == SHT_PROGBITS) && (shdr[i].sh_flags & SHF_EXECINSTR)) {
       // An executable ("text") section
-      Elf64_Off   sec_offset = shdr[i].sh_offset;
-      Elf64_Xword sec_size   = shdr[i].sh_size;
-      if(size < sec_offset + sec_size) {
+      Elf64_Off sec_offset = shdr[i].sh_offset;
+      Elf64_Xword sec_size = shdr[i].sh_size;
+      if (size < sec_offset + sec_size) {
         panic("ELF file is too small for section %u", i);
         return false;
       }
@@ -216,44 +208,42 @@ bool TraceReader::initBinary(const std::string& _name, uint64_t _offset) {
   return true;
 }
 
-void TraceReader::fillCache(uint64_t _vAddr, uint8_t _reported_size,
-                            uint8_t* inst_bytes) {
+void TraceReader::fillCache(uint64_t _vAddr, uint8_t _reported_size, uint8_t* inst_bytes) {
   uint64_t size;
   uint8_t* loc;
-  if(inst_bytes != NULL || locationForVAddr(_vAddr, &loc, &size)) {
-    xed_map_.emplace(_vAddr, make_tuple(0, false, false, false,
-                                        make_unique<xed_decoded_inst_t>()));
+  if (inst_bytes != NULL || locationForVAddr(_vAddr, &loc, &size)) {
+    xed_map_.emplace(_vAddr, make_tuple(0, false, false, false, make_unique<xed_decoded_inst_t>()));
     xed_decoded_inst_t* ins = get<MAP_XED>(xed_map_.at(_vAddr)).get();
     xed_decoded_inst_zero_set_mode(ins, &xed_state_);
-    if(inst_bytes != NULL) {
-      loc  = inst_bytes;
+    if (inst_bytes != NULL) {
+      loc = inst_bytes;
     }
     xed_error_enum_t res;
     res = xed_decode(ins, loc, _reported_size);
     if (res != XED_ERROR_NONE) {
-       warn("XED decode error for 0x%lx: %s %u, replacing with nop\n", _vAddr, xed_error_enum_t2str(res), _reported_size);
+      warn("XED decode error for 0x%lx: %s %u, replacing with nop\n", _vAddr, xed_error_enum_t2str(res),
+           _reported_size);
       *ins = *makeNop(_reported_size);
     }
     // Record if this instruction requires memory operands, since the trace
     // will deliver it in additional pieces
     uint32_t n_mem_ops = xed_decoded_inst_number_of_memory_operands(ins);
-    if(n_mem_ops > 0) {
+    if (n_mem_ops > 0) {
       // NOPs are special and don't actually cause memory accesses
       xed_category_enum_t category = xed_decoded_inst_get_category(ins);
-      if(category != XED_CATEGORY_NOP && category != XED_CATEGORY_WIDENOP) {
+      if (category != XED_CATEGORY_NOP && category != XED_CATEGORY_WIDENOP) {
         uint32_t n_used_mem_ops = 0;  // 'lea' doesn't actually touch memory
-        for(uint32_t i = 0; i < n_mem_ops; i++) {
-          if(xed_decoded_inst_mem_read(ins, i)) {
+        for (uint32_t i = 0; i < n_mem_ops; i++) {
+          if (xed_decoded_inst_mem_read(ins, i)) {
             n_used_mem_ops++;
           }
-          if(xed_decoded_inst_mem_written(ins, i)) {
+          if (xed_decoded_inst_mem_written(ins, i)) {
             n_used_mem_ops++;
           }
         }
-        if(n_used_mem_ops > 0) {
-          if(n_used_mem_ops > 2) {
-            warn("Unexpected %u memory operands for 0x%lx\n", n_used_mem_ops,
-                 _vAddr);
+        if (n_used_mem_ops > 0) {
+          if (n_used_mem_ops > 2) {
+            warn("Unexpected %u memory operands for 0x%lx\n", n_used_mem_ops, _vAddr);
           }
           get<MAP_MEMOPS>(xed_map_.at(_vAddr)) = n_used_mem_ops;
         }
@@ -261,8 +251,7 @@ void TraceReader::fillCache(uint64_t _vAddr, uint8_t _reported_size,
     }
     auto& xed_tuple = xed_map_[_vAddr];
     // Record if this instruction is a conditional branch
-    bool is_cond_br          = (xed_decoded_inst_get_category(ins) ==
-                       XED_CATEGORY_COND_BR);
+    bool is_cond_br = (xed_decoded_inst_get_category(ins) == XED_CATEGORY_COND_BR);
     get<MAP_COND>(xed_tuple) = is_cond_br;
 
     // Record if this instruction is a 'rep' type, which may indicate a
@@ -270,30 +259,29 @@ void TraceReader::fillCache(uint64_t _vAddr, uint8_t _reported_size,
     bool is_rep = xed_decoded_inst_get_attribute(ins, XED_ATTRIBUTE_REP) > 0;
     get<MAP_REP>(xed_tuple) = is_rep;
   } else {
-    if(warn_not_found_ > 0) {
+    if (warn_not_found_ > 0) {
       warn_not_found_ -= 1;
-      if(warn_not_found_ > 0) {
+      if (warn_not_found_ > 0) {
         warn("No information for instruction at address 0x%lx", _vAddr);
       } else {
-        warn("No information for instruction at address 0x%lx. "
-             "Suppressing further messages",
-             _vAddr);
+        warn(
+            "No information for instruction at address 0x%lx. "
+            "Suppressing further messages",
+            _vAddr);
       }
     }
     // Replace the unknown instruction with a NOP
     // NOTE: Unknown memory records are skipped, so 'rep' needs no special
     // handling here
-    xed_map_.emplace(
-      _vAddr, make_tuple(0, true, false, false, makeNop(_reported_size)));
+    xed_map_.emplace(_vAddr, make_tuple(0, true, false, false, makeNop(_reported_size)));
   }
 }
 
 unique_ptr<xed_decoded_inst_t> TraceReader::makeNop(uint8_t _length) {
   // A 10-to-15-byte NOP instruction (direct XED support is only up to 9)
-  static const char* nop15 =
-    "\x66\x66\x66\x66\x66\x66\x2e\x0f\x1f\x84\x00\x00\x00\x00\x00";
+  static const char* nop15 = "\x66\x66\x66\x66\x66\x66\x2e\x0f\x1f\x84\x00\x00\x00\x00\x00";
 
-  auto                ptr = make_unique<xed_decoded_inst_t>();
+  auto ptr = make_unique<xed_decoded_inst_t>();
   xed_decoded_inst_t* ins = ptr.get();
   xed_decoded_inst_zero_set_mode(ins, &xed_state_);
   xed_error_enum_t res;
@@ -301,19 +289,19 @@ unique_ptr<xed_decoded_inst_t> TraceReader::makeNop(uint8_t _length) {
   // The reported instruction length must be 1-15 bytes
   _length &= 0xf;
   assert(_length > 0);
-  if(_length > 9) {
-    int            offset = 15 - _length;
-    const uint8_t* pos    = reinterpret_cast<const uint8_t*>(nop15 + offset);
-    res                   = xed_decode(ins, pos, 15 - offset);
+  if (_length > 9) {
+    int offset = 15 - _length;
+    const uint8_t* pos = reinterpret_cast<const uint8_t*>(nop15 + offset);
+    res = xed_decode(ins, pos, 15 - offset);
   } else {
     uint8_t buf[10];
     res = xed_encode_nop(&buf[0], _length);
-    if(res != XED_ERROR_NONE) {
+    if (res != XED_ERROR_NONE) {
       warn("XED NOP encode error: %s", xed_error_enum_t2str(res));
     }
     res = xed_decode(ins, buf, sizeof(buf));
   }
-  if(res != XED_ERROR_NONE) {
+  if (res != XED_ERROR_NONE) {
     warn("XED NOP decode error: %s", xed_error_enum_t2str(res));
   }
   return ptr;
@@ -326,16 +314,17 @@ xed_decoded_inst_t* TraceReader::createJmp(uint64_t displacement) {
   xed_state_t state;
   state.mmode = XED_MACHINE_MODE_LONG_64;
   xed_encoder_request_t req;
-  xed_inst1(&inst, state, XED_ICLASS_JMP, 64,  xed_relbr(displacement - 5, 32)); // -5 is due to this jump insn being 5 bytes large (1 op, 4 32 bit disp)
+  xed_inst1(&inst, state, XED_ICLASS_JMP, 64,
+            xed_relbr(displacement - 5, 32));  // -5 is due to this jump insn being 5 bytes large (1 op, 4 32 bit disp)
   xed_encoder_request_zero_set_mode(&req, &state);
-  if(!xed_convert_to_encoder_request(&req, &inst)) {
+  if (!xed_convert_to_encoder_request(&req, &inst)) {
     panic("Encoder conversion failed! Is the displacement too large?");
     return nullptr;
   }
   xed_uint8_t encodedBytes[15];
   unsigned int numBytesUsed = 0;
   xed_error_enum_t error = xed_encode(&req, encodedBytes, sizeof(encodedBytes), &numBytesUsed);
-  if(error != XED_ERROR_NONE) {
+  if (error != XED_ERROR_NONE) {
     panic("Failed to encode due to: %s\n", xed_error_enum_t2str(error));
     return nullptr;
   }
@@ -346,7 +335,7 @@ xed_decoded_inst_t* TraceReader::createJmp(uint64_t displacement) {
   xed_decoded_inst_zero(decoded_inst);
   xed_decoded_inst_set_mode(decoded_inst, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
   error = xed_decode(decoded_inst, encodedBytes, numBytesUsed);
-  if(error == XED_ERROR_NONE) {
+  if (error == XED_ERROR_NONE) {
     return decoded_inst;
   }
   delete decoded_inst;
@@ -354,12 +343,11 @@ xed_decoded_inst_t* TraceReader::createJmp(uint64_t displacement) {
   return nullptr;
 }
 
-
 void TraceReader::init_buffer() {
   // Push one dummy entry so we can pop in nextInstruction()
   ins_buffer.emplace_back(InstInfo());
-  for(uint32_t i = 0; i < buf_size_; i++) {
-      ins_buffer.emplace_back(*getNextInstruction());
+  for (uint32_t i = 0; i < buf_size_; i++) {
+    ins_buffer.emplace_back(*getNextInstruction());
   }
 }
 
@@ -370,39 +358,36 @@ const InstInfo* TraceReader::nextInstruction() {
 }
 
 // Find the next buffer entry, starting from ref, that matches the given PC
-const TraceReader::returnValue TraceReader::findPC(bufferEntry& ref,
-                                                   uint64_t     _pc) {
-  for(; ref != ins_buffer.end(); ref++) {
-    if(ref->pc == _pc) {
+const TraceReader::returnValue TraceReader::findPC(bufferEntry& ref, uint64_t _pc) {
+  for (; ref != ins_buffer.end(); ref++) {
+    if (ref->pc == _pc) {
       return ENTRY_VALID;
     }
   }
   return ENTRY_NOT_FOUND;
 }
 
-const TraceReader::returnValue TraceReader::peekInstructionAtIndex(
-  uint32_t idx, bufferEntry& ref) {
-  if(idx >= ins_buffer.size())
+const TraceReader::returnValue TraceReader::peekInstructionAtIndex(uint32_t idx, bufferEntry& ref) {
+  if (idx >= ins_buffer.size())
     return ENTRY_NOT_FOUND;
 
   ref = ins_buffer.begin();
-  for(; ref != ins_buffer.end(); ref++) {
-    if(idx == 0)
+  for (; ref != ins_buffer.end(); ref++) {
+    if (idx == 0)
       break;
     idx--;
   }
   return ENTRY_VALID;
 }
 
-const TraceReader::returnValue TraceReader::findPCInSegment(
-  bufferEntry& ref, uint64_t _pc, uint64_t _termination_pc) {
-  if(ref == ins_buffer.end())
+const TraceReader::returnValue TraceReader::findPCInSegment(bufferEntry& ref, uint64_t _pc, uint64_t _termination_pc) {
+  if (ref == ins_buffer.end())
     return ENTRY_NOT_FOUND;
 
-  for(ref++; ref != ins_buffer.end(); ref++) {
-    if(ref->pc == _pc) {
+  for (ref++; ref != ins_buffer.end(); ref++) {
+    if (ref->pc == _pc) {
       return ENTRY_VALID;
-    } else if(ref->pc == _termination_pc) {
+    } else if (ref->pc == _termination_pc) {
       return ENTRY_OUT_OF_SEGMENT;
     }
   }

@@ -1,6 +1,7 @@
 #include "prefetcher/udp.hpp"
-#include "prefetcher/pref.param.h"
+
 #include "memory/memory.param.h"
+#include "prefetcher/pref.param.h"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FDIP, ##args)
 
@@ -12,7 +13,8 @@ void* Bloom_Filter::lookup(Addr line_addr) {
 void Bloom_Filter::insert1(Addr line_addr) {
   STAT_EVENT(proc_id, FDIP_BLOOM_1INSERT);
   if (!bloom2->contains(line_addr >> 1) && !bloom4->contains(line_addr >> 2)) {
-    if (cnt_insert_bloom >= FDIP_BLOOM_ENTRIES && (new_prefs > FDIP_BLOOM_CLEAR_CYC_PERIOD * 0.01) && ((float)cnt_unuseful/(float)new_prefs > FDIP_BLOOM_CLEAR_UNUSEFUL_RATIO)) {
+    if (cnt_insert_bloom >= FDIP_BLOOM_ENTRIES && (new_prefs > FDIP_BLOOM_CLEAR_CYC_PERIOD * 0.01) &&
+        ((float)cnt_unuseful / (float)new_prefs > FDIP_BLOOM_CLEAR_UNUSEFUL_RATIO)) {
       bloom->clear();
       cnt_insert_bloom = 0;
       STAT_EVENT(proc_id, FDIP_BLOOM_CLEAR1);
@@ -23,9 +25,10 @@ void Bloom_Filter::insert1(Addr line_addr) {
 }
 
 void Bloom_Filter::insert2(Addr line_addr) {
-  if((line_addr & 1) == 0) { //2CL aligned
+  if ((line_addr & 1) == 0) {  // 2CL aligned
     if (!bloom4->contains(line_addr >> 2) && !bloom2->contains(line_addr >> 1)) {
-      if (cnt_insert_bloom2 >= FDIP_BLOOM2_ENTRIES && (new_prefs > FDIP_BLOOM_CLEAR_CYC_PERIOD * 0.01) && ((float)cnt_unuseful/(float)new_prefs > FDIP_BLOOM_CLEAR_UNUSEFUL_RATIO)) {
+      if (cnt_insert_bloom2 >= FDIP_BLOOM2_ENTRIES && (new_prefs > FDIP_BLOOM_CLEAR_CYC_PERIOD * 0.01) &&
+          ((float)cnt_unuseful / (float)new_prefs > FDIP_BLOOM_CLEAR_UNUSEFUL_RATIO)) {
         bloom2->clear();
         cnt_insert_bloom2 = 0;
         STAT_EVENT(proc_id, FDIP_BLOOM_CLEAR2);
@@ -34,19 +37,17 @@ void Bloom_Filter::insert2(Addr line_addr) {
       cnt_insert_bloom2++;
     }
     STAT_EVENT(proc_id, FDIP_BLOOM_2INSERT);
-  }
-  else {
+  } else {
     insert1(line_addr);
     insert1(line_addr + 1);
   }
 }
 
 void Bloom_Filter::insert3(Addr line_addr) {
-  if((line_addr & 1) == 0) { //2CL aligned
+  if ((line_addr & 1) == 0) {  // 2CL aligned
     insert2(line_addr);
     insert1(line_addr + 2);
-  }
-  else {
+  } else {
     insert1(line_addr + 1);
     insert2(line_addr);
   }
@@ -54,7 +55,8 @@ void Bloom_Filter::insert3(Addr line_addr) {
 
 void Bloom_Filter::insert4(Addr line_addr) {
   ASSERT(0, (line_addr & 3) == 0);
-  if (cnt_insert_bloom4 >= FDIP_BLOOM4_ENTRIES && (new_prefs > FDIP_BLOOM_CLEAR_CYC_PERIOD * 0.01) && ((float)cnt_unuseful/(float)new_prefs > FDIP_BLOOM_CLEAR_UNUSEFUL_RATIO)) {
+  if (cnt_insert_bloom4 >= FDIP_BLOOM4_ENTRIES && (new_prefs > FDIP_BLOOM_CLEAR_CYC_PERIOD * 0.01) &&
+      ((float)cnt_unuseful / (float)new_prefs > FDIP_BLOOM_CLEAR_UNUSEFUL_RATIO)) {
     bloom4->clear();
     cnt_insert_bloom4 = 0;
     STAT_EVENT(proc_id, FDIP_BLOOM_CLEAR4);
@@ -84,33 +86,30 @@ void Bloom_Filter::bloom_insert() {
     return;
   }
   if ((last_prefetch_candidate & 3) == 0) {
-    //4cl aligned
+    // 4cl aligned
     insert_remaining(inserted);
-  }
-  else if ((last_prefetch_candidate & 3) == 2) {
-    //2cl algned
+  } else if ((last_prefetch_candidate & 3) == 2) {
+    // 2cl algned
     insert2(last_prefetch_candidate);
     inserted += 2;
     insert_remaining(inserted);
-  }
-  else if ((last_prefetch_candidate & 3) == 1) {
-    //cl aligned
-    //cl aligned
+  } else if ((last_prefetch_candidate & 3) == 1) {
+    // cl aligned
+    // cl aligned
     insert3(last_prefetch_candidate);
     inserted += 3;
     insert_remaining(inserted);
-  }
-  else if ((last_prefetch_candidate & 3) == 3) {
-    //cl aligned
+  } else if ((last_prefetch_candidate & 3) == 3) {
+    // cl aligned
     insert1(last_prefetch_candidate);
-    inserted +=1;
+    inserted += 1;
     insert_remaining(inserted);
   }
   return;
 }
 
 void Bloom_Filter::detect_stream(Addr line_addr) {
-  if(last_prefetch_candidate_counter == 0) {
+  if (last_prefetch_candidate_counter == 0) {
     last_prefetch_candidate_counter++;
     last_prefetch_candidate = line_addr;
     return;
@@ -119,8 +118,7 @@ void Bloom_Filter::detect_stream(Addr line_addr) {
 
   if (line_addr == last_prefetch_candidate + last_prefetch_candidate_counter) {
     last_prefetch_candidate_counter++;
-  }
-  else {
+  } else {
     bloom_insert();
     last_prefetch_candidate_counter = 1;
     last_prefetch_candidate = line_addr;
@@ -128,22 +126,22 @@ void Bloom_Filter::detect_stream(Addr line_addr) {
 }
 
 /* UDP member functions */
-UDP::UDP(uns _proc_id) :
-  proc_id(_proc_id),
-  last_cl_unuseful(0),
-  last_bbl_start_addr(0),
-  fdip_uc(nullptr),
-  fdip_uc_unuseful(nullptr),
-  fdip_uc_signed(nullptr) {
+UDP::UDP(uns _proc_id)
+    : proc_id(_proc_id),
+      last_cl_unuseful(0),
+      last_bbl_start_addr(0),
+      fdip_uc(nullptr),
+      fdip_uc_unuseful(nullptr),
+      fdip_uc_signed(nullptr) {
   if (FDIP_UC_SIZE) {
     fdip_uc = (Cache*)malloc(sizeof(Cache));
     fdip_uc_unuseful = (Cache*)malloc(sizeof(Cache));
     fdip_uc_signed = (Cache*)malloc(sizeof(Cache));
     ASSERT(proc_id, !FDIP_BLOOM_FILTER);
-    init_cache(fdip_uc, "FDIP_USEFULNESS_CACHE", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE,
-               0, REPL_TRUE_LRU); //Data size = 2 byte
-    init_cache(fdip_uc_unuseful, "FDIP_USEFULNESS_CACHE_UNUSEFUL", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE,
-               0, REPL_TRUE_LRU); //Data size = 2 byte
+    init_cache(fdip_uc, "FDIP_USEFULNESS_CACHE", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE, 0,
+               REPL_TRUE_LRU);  // Data size = 2 byte
+    init_cache(fdip_uc_unuseful, "FDIP_USEFULNESS_CACHE_UNUSEFUL", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE, 0,
+               REPL_TRUE_LRU);  // Data size = 2 byte
     init_cache(fdip_uc_signed, "FDIP_USEFULNESS_CACHE_SIGNED", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE,
                sizeof(int32_t), REPL_TRUE_LRU);
   }
@@ -191,8 +189,7 @@ void UDP::clear_old_seniority_ftq() {
   if (!FDIP_UTILITY_HASH_ENABLE && !FDIP_UC_SIZE && !FDIP_BLOOM_FILTER)
     return;
   Counter cnt_old = 0;
-  for (auto it = seniority_ftq.begin();
-       it != seniority_ftq.end(); ++it) {
+  for (auto it = seniority_ftq.begin(); it != seniority_ftq.end(); ++it) {
     if (cycle_count <= FDIP_SENIORITY_FTQ_HOLD_CYC)
       break;
     if ((cycle_count > FDIP_SENIORITY_FTQ_HOLD_CYC) && (get<1>(*it) >= cycle_count - FDIP_SENIORITY_FTQ_HOLD_CYC))

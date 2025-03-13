@@ -29,32 +29,35 @@
 #ifndef __UDP_H__
 #define __UDP_H__
 
-#include "libs/bloom_filter.hpp"
-#include "prefetcher/fdip.h"
 #include <deque>
 #include <tuple>
+
+#include "prefetcher/fdip.h"
+
+#include "libs/bloom_filter.hpp"
 
 using namespace std;
 
 // bloom filters
 class Bloom_Filter {
-public:
-  Bloom_Filter(uns _proc_id) :
-    proc_id(_proc_id),
-    bloom(nullptr),
-    bloom2(nullptr),
-    bloom4(nullptr),
-    last_prefetch_candidate(0),
-    last_prefetch_candidate_counter(0),
-    last_clear_cycle_count(0),
-    new_prefs(0),
-    cnt_unuseful(0),
-    cnt_insert_bloom(0),
-    cnt_insert_bloom2(0),
-    cnt_insert_bloom4(0) {}
+ public:
+  Bloom_Filter(uns _proc_id)
+      : proc_id(_proc_id),
+        bloom(nullptr),
+        bloom2(nullptr),
+        bloom4(nullptr),
+        last_prefetch_candidate(0),
+        last_prefetch_candidate_counter(0),
+        last_clear_cycle_count(0),
+        new_prefs(0),
+        cnt_unuseful(0),
+        cnt_insert_bloom(0),
+        cnt_insert_bloom2(0),
+        cnt_insert_bloom4(0) {}
   void* lookup(Addr line_addr);
   void detect_stream(Addr line_addr);
-private:
+
+ private:
   void bloom_insert();
   void insert1(Addr line_addr);
   void insert2(Addr line_addr);
@@ -63,9 +66,9 @@ private:
   void insert_remaining(uint32_t inserted);
 
   uns proc_id;
-  bloom_filter *bloom;
-  bloom_filter *bloom2;
-  bloom_filter *bloom4;
+  bloom_filter* bloom;
+  bloom_filter* bloom2;
+  bloom_filter* bloom4;
   Addr last_prefetch_candidate;
   uint32_t last_prefetch_candidate_counter;
   Counter last_clear_cycle_count;
@@ -78,7 +81,7 @@ private:
 };
 
 class UDP {
-public:
+ public:
   UDP(uns _proc_id);
   void cyc_reset();
   void clear_old_seniority_ftq();
@@ -96,7 +99,8 @@ public:
   /* Seniority-FTQ */
   // <Cl address, cycle count, on/off-path>
   deque<tuple<uns64, Counter, Flag>> seniority_ftq;
-private:
+
+ private:
   uns proc_id;
 
   Addr last_cl_unuseful;

@@ -27,9 +27,13 @@
  ***************************************************************************************/
 
 #include "stat_trace.h"
+
 #include <stdio.h>
-#include "core.param.h"
+
 #include "globals/assert.h"
+
+#include "core.param.h"
+
 #include "stat_mon.h"
 #include "statistics.h"
 #include "trigger.h"
@@ -42,19 +46,19 @@ typedef struct Stat_Info_struct {
   /* value of the stat after the last interval */
   union {
     Counter last_count;
-    double  last_value;
+    double last_value;
   };
 } Stat_Info;
 
 /**************************************************************************************/
 /* Global Variables */
 
-static Stat_Mon*  stat_mon;
+static Stat_Mon* stat_mon;
 static Stat_Enum* stat_indices;
-static uns        num_stats;
-static Trigger*   interval_trigger = NULL;
-static FILE*      file;
-const char*       DELIMITERS = " ,";
+static uns num_stats;
+static Trigger* interval_trigger = NULL;
+static FILE* file;
+const char* DELIMITERS = " ,";
 
 /**************************************************************************************/
 /* Local Prototypes */
@@ -65,7 +69,7 @@ static void trace_stats(void);
 /* stat_trace_init: */
 
 void stat_trace_init(void) {
-  if(!STATS_TO_TRACE)
+  if (!STATS_TO_TRACE)
     return;
 
   /* open the trace file */
@@ -75,18 +79,18 @@ void stat_trace_init(void) {
   ASSERTM(0, file, "Could not open %s", STAT_TRACE_FILE);
 
   /* parse the stats to trace */
-  num_stats       = num_tokens(STATS_TO_TRACE, DELIMITERS);
-  stat_indices    = malloc(num_stats * sizeof(Stat_Enum));
+  num_stats = num_tokens(STATS_TO_TRACE, DELIMITERS);
+  stat_indices = malloc(num_stats * sizeof(Stat_Enum));
   char* stats_str = strdup(STATS_TO_TRACE);
   char* stat_name = strtok(stats_str, DELIMITERS);
-  uns   ii        = 0;
+  uns ii = 0;
   fprintf(file, "Instructions");
-  while(stat_name) {
+  while (stat_name) {
     Stat_Enum stat_idx = get_stat_idx(stat_name);
     ASSERTM(0, stat_idx < NUM_GLOBAL_STATS, "Stat %s not found\n", stat_name);
     stat_indices[ii] = stat_idx;
     ii++;
-    for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+    for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
       fprintf(file, "\t%s[%d]", stat_name, proc_id);
     }
     stat_name = strtok(NULL, DELIMITERS);
@@ -100,18 +104,17 @@ void stat_trace_init(void) {
   /* do an initial trace print (all zeros) */
   trace_stats();
 
-  interval_trigger = trigger_create("STAT_TRACE_INTERVAL", STAT_TRACE_INTERVAL,
-                                    TRIGGER_REPEAT);
+  interval_trigger = trigger_create("STAT_TRACE_INTERVAL", STAT_TRACE_INTERVAL, TRIGGER_REPEAT);
 }
 
 /**************************************************************************************/
 /* stat_trace_cycle: */
 
 void stat_trace_cycle(void) {
-  if(!STATS_TO_TRACE)
+  if (!STATS_TO_TRACE)
     return;
 
-  if(trigger_fired(interval_trigger)) {
+  if (trigger_fired(interval_trigger)) {
     trace_stats();
   }
 }
@@ -120,7 +123,7 @@ void stat_trace_cycle(void) {
 /* stat_trace_done: */
 
 void stat_trace_done(void) {
-  if(!STATS_TO_TRACE)
+  if (!STATS_TO_TRACE)
     return;
 
   /* trace the final stat values */
@@ -137,10 +140,10 @@ void stat_trace_done(void) {
 /* num_tokens: */
 
 uns num_tokens(const char* str, const char* delim) {
-  uns   n     = 0;
-  char* buf   = strdup(str);
+  uns n = 0;
+  char* buf = strdup(str);
   char* token = strtok(buf, delim);
-  while(token) {
+  while (token) {
     n += 1;
     token = strtok(NULL, delim);
   }
@@ -153,15 +156,14 @@ uns num_tokens(const char* str, const char* delim) {
 
 static void trace_stats(void) {
   fprintf(file, "%lld", inst_count[0]);
-  for(uns ii = 0; ii < num_stats; ++ii) {
-    for(uns proc_id = 0; proc_id < NUM_CORES; ++proc_id) {
+  for (uns ii = 0; ii < num_stats; ++ii) {
+    for (uns proc_id = 0; proc_id < NUM_CORES; ++proc_id) {
       Stat_Enum stat_idx = stat_indices[ii];
-      Stat*     stat     = &global_stat_array[proc_id][stat_idx];
-      if(stat->type == FLOAT_TYPE_STAT) {
+      Stat* stat = &global_stat_array[proc_id][stat_idx];
+      if (stat->type == FLOAT_TYPE_STAT) {
         fprintf(file, "\t%le", stat_mon_get_value(stat_mon, proc_id, stat_idx));
       } else {
-        fprintf(file, "\t%lld",
-                stat_mon_get_count(stat_mon, proc_id, stat_idx));
+        fprintf(file, "\t%lld", stat_mon_get_count(stat_mon, proc_id, stat_idx));
       }
     }
   }

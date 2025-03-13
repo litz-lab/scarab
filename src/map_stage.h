@@ -31,24 +31,19 @@
 
 #include "stage_data.h"
 
-
 /**************************************************************************************/
 /* Types */
 
 typedef struct Map_Stage_struct {
-  uns         proc_id;
-  Stage_Data* sds;     /* stage interface data (dynamically
-                        * allocated number of pipe stages) */
-  Stage_Data* last_sd; /* pointer to last decode pipeline stage
-                        * (for passing ops to map) */
+  uns proc_id;
+  Stage_Data* sds;     /* stage interface data (dynamically allocated number of pipe stages) */
+  Stage_Data* last_sd; /* pointer to last decode pipeline stage (for passing ops to map) */
 } Map_Stage;
-
 
 /**************************************************************************************/
 /* External Variables */
 
 extern Map_Stage* map;
-
 
 /**************************************************************************************/
 /* prototypes */
@@ -60,7 +55,6 @@ void reset_map_stage(void);
 void recover_map_stage(void);
 void debug_map_stage(void);
 void update_map_stage(Stage_Data* dec_src_sd, Stage_Data* uop_queue_src_sd);
-
 
 /**************************************************************************************/
 

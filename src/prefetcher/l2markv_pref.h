@@ -31,19 +31,18 @@
 #include "pref_type.h"
 
 typedef struct L2markv_Rec_Struct {
-  Addr    last_addr;
-  Addr    next_addr;
+  Addr last_addr;
+  Addr next_addr;
   Counter time_diff;
-  int     next_addr_counter;
-  int     last_addr_counter;
+  int next_addr_counter;
+  int last_addr_counter;
   Counter last_access_time;
 } L2markv_Rec;
 
 void l2markv_init(void);
-void l2markv_pref(Mem_Req_Info* req, int* train_hit, int* pref_req,
-                  Addr* req_addr);
-int  l2markv_pref_train(Mem_Req_Info* req);
-int  l2markv_pref_pred(Mem_Req_Info* req, Addr* req_addr);
+void l2markv_pref(Mem_Req_Info* req, int* train_hit, int* pref_req, Addr* req_addr);
+int l2markv_pref_train(Mem_Req_Info* req);
+int l2markv_pref_pred(Mem_Req_Info* req, Addr* req_addr);
 void insert_l2markv_pref_req(Addr va, Counter time);
 void update_l2markv_pref_req_queue(void);
 

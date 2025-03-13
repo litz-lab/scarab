@@ -24,10 +24,13 @@
 #include <vector>
 
 extern "C" {
-#include "bp/bp.param.h"
 #include "globals/assert.h"
+
+#include "bp/bp.param.h"
+
 #include "libs/cache_lib.h"
 #include "libs/hash_lib.h"
+
 #include "statistics.h"
 }
 
@@ -67,15 +70,16 @@ uns32* get_local_history_entry(Hybridgp_State& hybridgp_state, const Addr addr) 
     Flag new_entry = 0;
     const int64 key = addr;
 
-    uns32* local_hist_entry = (uns32*) hash_table_access_create(&hybridgp_state.bht_hash, key, &new_entry);
+    uns32* local_hist_entry = (uns32*)hash_table_access_create(&hybridgp_state.bht_hash, key, &new_entry);
 
-    if (new_entry) *local_hist_entry = 0;
+    if (new_entry)
+      *local_hist_entry = 0;
 
     return local_hist_entry;
 
   } else {
     Addr bht_line_addr;
-    return (uns32*) cache_access(&hybridgp_state.bht, addr, &bht_line_addr, TRUE);
+    return (uns32*)cache_access(&hybridgp_state.bht, addr, &bht_line_addr, TRUE);
   }
 }
 
@@ -96,7 +100,7 @@ void update_local_history(Hybridgp_State& hybridgp_state, const uns proc_id, con
   } else {
     ASSERT(proc_id, INF_HYBRIDGP == FALSE);
     Addr bht_line_addr, repl_line_addr;
-    uns32* bht_line = (uns32*) cache_insert(&hybridgp_state.bht, proc_id, addr, &bht_line_addr, &repl_line_addr);
+    uns32* bht_line = (uns32*)cache_insert(&hybridgp_state.bht, proc_id, addr, &bht_line_addr, &repl_line_addr);
     *bht_line = new_dir << 31;
   }
 }
@@ -208,8 +212,8 @@ bool get_gpred(Op* op, Hybridgp_State& hybridgp_state, const Addr addr, const un
   uns8 gpht_entry;
   if (INF_HYBRIDGP) {
     Flag new_entry;
-    const int64 key = addr << 32 | (Addr) op->oracle_info.pred_global_hist;
-    uns8* entry = (uns8*) hash_table_access_create(&hybridgp_state.hybgpht_hash, key, &new_entry);
+    const int64 key = addr << 32 | (Addr)op->oracle_info.pred_global_hist;
+    uns8* entry = (uns8*)hash_table_access_create(&hybridgp_state.hybgpht_hash, key, &new_entry);
     if (new_entry) {
       *entry = PHT_INIT_VALUE;
     }
@@ -321,7 +325,8 @@ uns8 bp_hybridgp_pred(Op* op) {
   return pred;
 }
 
-void bp_hybridgp_spec_update(Op* op) {}
+void bp_hybridgp_spec_update(Op* op) {
+}
 
 void bp_hybridgp_update(Op* op) {
   if (op->table_info->cf_type != CF_CBR) {
@@ -390,7 +395,7 @@ void bp_hybridgp_recover(Recovery_Info* recovery_info) {
   if (!local_history_entry) {
     ASSERT(proc_id, INF_HYBRIDGP == FALSE);
     Addr bht_line_addr, repl_line_addr;
-    local_history_entry = (uns32*) cache_insert(&hybridgp_state.bht, proc_id, addr, &bht_line_addr, &repl_line_addr);
+    local_history_entry = (uns32*)cache_insert(&hybridgp_state.bht, proc_id, addr, &bht_line_addr, &repl_line_addr);
   }
   *local_history_entry = (hybridgp_state.in_flight[branch_id].pred_phist >> 1) | (recovery_info->new_dir << 31);
 }

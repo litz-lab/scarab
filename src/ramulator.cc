@@ -31,18 +31,20 @@
 #include <map>
 #include <utility>
 
-
 #include "ramulator/Config.h"
 #include "ramulator/Request.h"
 #include "ramulator/ScarabWrapper.h"
 
 extern "C" {
-#include "general.param.h"
 #include "globals/assert.h"
-#include "memory/memory.h"
+
+#include "general.param.h"
 #include "memory/memory.param.h"
-#include "ramulator.h"
 #include "ramulator.param.h"
+
+#include "memory/memory.h"
+
+#include "ramulator.h"
 #include "statistics.h"
 }
 
@@ -53,11 +55,10 @@ extern "C" {
 
 /**************************************************************************************/
 
-
 using namespace ramulator;
 
 ScarabWrapper* wrapper = NULL;
-Config*        configs = NULL;
+Config* configs = NULL;
 
 void to_ramulator_req(const Mem_Req* scarab_req, Request* ramulator_req);
 void init_configs();
@@ -96,7 +97,7 @@ void ramulator_finish() {
 }
 
 void stats_callback(int coreid, int type) {
-  switch(type) {
+  switch (type) {
     case int(StatCallbackType::DRAM_ACT):
       STAT_EVENT(coreid, POWER_DRAM_ACTIVATE);
       break;
@@ -137,8 +138,7 @@ void init_configs() {
 
   configs->add("record_cmd_trace", RAMULATOR_REC_CMD_TRACE);
   configs->add("print_cmd_trace", RAMULATOR_PRINT_CMD_TRACE);
-  configs->add("use_rest_of_addr_as_row_addr",
-               RAMULATOR_USE_REST_OF_ADDR_AS_ROW_ADDR);
+  configs->add("use_rest_of_addr_as_row_addr", RAMULATOR_USE_REST_OF_ADDR_AS_ROW_ADDR);
 
   configs->add("scheduling_policy", RAMULATOR_SCHEDULING_POLICY);
   configs->add("readq_entries", to_string(RAMULATOR_READQ_ENTRIES));
@@ -167,7 +167,6 @@ void init_configs() {
   configs->add("tRAS", to_string(RAMULATOR_TRAS));
 }
 
-
 int ramulator_send(Mem_Req* scarab_req) {
   Request req;
 
@@ -178,47 +177,44 @@ int ramulator_send(Mem_Req* scarab_req) {
 
   // does inflight_read_reqs have the proc_id in the req?
   auto it_scarab_req = inflight_read_reqs.find(req.addr);
-  if(it_scarab_req != inflight_read_reqs.end() &&
-     req.type == Request::Type::READ) {
-    DEBUG(scarab_req->proc_id,
-          "Ramulator: Duplicate (%s) request to address %llx\n",
+  if (it_scarab_req != inflight_read_reqs.end() && req.type == Request::Type::READ) {
+    DEBUG(scarab_req->proc_id, "Ramulator: Duplicate (%s) request to address %llx\n",
           Mem_Req_Type_str(scarab_req->type), scarab_req->addr);
     // Can have duplicate Ifetch and Dfetch requests, but only one of each
     ASSERT(0, it_scarab_req->second.size() <= 1);
 
-    if(req.type == Request::Type::READ)
-      inflight_read_reqs[req.addr].push_back(
-        scarab_req);  // save it as an inflight request so later it will be
-                      // moved to the resp_queue at the same time with the older
-                      // request
+    /* save it as an inflight request so later it will be moved to the resp_queue
+     * at the same time with the older request */
+    if (req.type == Request::Type::READ)
+      inflight_read_reqs[req.addr].push_back(scarab_req);
+
     scarab_req->mem_queue_cycle = cycle_count;
     return true;  // a request to the same address is already issued
   }
 
   bool is_sent = wrapper->send(req);
 
-  if(is_sent) {
+  if (is_sent) {
     STAT_EVENT(scarab_req->proc_id, POWER_MEMORY_CTRL_ACCESS);
 
-    if(req.type == Request::Type::READ) {
+    if (req.type == Request::Type::READ) {
       ASSERTM(0, inflight_read_reqs.find(req.addr) == inflight_read_reqs.end(),
               "ERROR: A read request to the same address shouldn't be sent "
               "multiple times to Ramulator\n");
       // inflight_read_reqs[req.addr] = scarab_req;
       inflight_read_reqs[req.addr].push_back(scarab_req);
       STAT_EVENT(scarab_req->proc_id, POWER_MEMORY_CTRL_READ);
-    } else if(req.type == Request::Type::WRITE) {
+    } else if (req.type == Request::Type::WRITE) {
       STAT_EVENT(scarab_req->proc_id, POWER_MEMORY_CTRL_WRITE);
     }
 
     scarab_req->mem_queue_cycle = cycle_count;
   }
 
-  if(is_sent) {
+  if (is_sent) {
     DEBUG(scarab_req->proc_id, "Ramulator: The request has been enqueued.\n");
   } else {
-    DEBUG(scarab_req->proc_id,
-          "Ramulator: The request has been rejected. Queue full?\n");
+    DEBUG(scarab_req->proc_id, "Ramulator: The request has been rejected. Queue full?\n");
   }
 
   return (int)is_sent;
@@ -226,31 +222,26 @@ int ramulator_send(Mem_Req* scarab_req) {
 
 void enqueue_response(Request& req) {
   // This should only be called by READ requests
-  ASSERTM(0, req.type == Request::Type::READ,
-          "ERROR: Responses should be sent only for read requests! \n");
+  ASSERTM(0, req.type == Request::Type::READ, "ERROR: Responses should be sent only for read requests! \n");
   ASSERTM(0, inflight_read_reqs.find(req.addr) != inflight_read_reqs.end(),
           "ERROR: A corresponding Scarab request was not found for the "
           "Ramulator request that read address: %lu\n",
           req.addr);
 
   auto it_scarab_req = inflight_read_reqs.find(req.addr);
-  for(auto req : it_scarab_req->second)
+  for (auto req : it_scarab_req->second)
     resp_queue.push_back(make_pair(it_scarab_req->first, req));
-  // resp_queue.push_back(make_pair(it_scarab_req->first,
-  // it_scarab_req->second));
+  // resp_queue.push_back(make_pair(it_scarab_req->first, it_scarab_req->second));
   inflight_read_reqs.erase(it_scarab_req);
 }
 
 bool try_completing_request(Mem_Req* req) {
-  if((unsigned int)mem->l1fill_queue.entry_count < MEM_L1_FILL_QUEUE_ENTRIES) {
-    DEBUG(req->proc_id,
-          "Ramulator: Completing a (%s) request to address %llx\n",
-          Mem_Req_Type_str(req->type), req->addr);
+  if ((unsigned int)mem->l1fill_queue.entry_count < MEM_L1_FILL_QUEUE_ENTRIES) {
+    DEBUG(req->proc_id, "Ramulator: Completing a (%s) request to address %llx\n", Mem_Req_Type_str(req->type),
+          req->addr);
 
-    mem_complete_bus_in_access(
-      req, 0 /*mem->mem_queue.base[ii].priority*/);  // TODO_hasan: how do we
-                                                     // need to set the
-                                                     // priority?
+    // TODO_hasan: how do we need to set the priority?
+    mem_complete_bus_in_access(req, 0 /*mem->mem_queue.base[ii].priority*/);
 
     // remove from mem queue - how do we handle this now?
     // mem_queue_removal_count++;
@@ -278,18 +269,16 @@ void to_ramulator_req(const Mem_Req* scarab_req, Request* ramulator_req) {
 
   // only MRT_WB should result in a DRAM write. A plain store miss should still
   // result in a DRAM read
-  if(scarab_req->type == MRT_WB)
+  if (scarab_req->type == MRT_WB)
     ramulator_req->type = Request::Type::WRITE;
-  else if(scarab_req->type == MRT_DFETCH || scarab_req->type == MRT_DSTORE ||
-          scarab_req->type == MRT_IFETCH || scarab_req->type == MRT_IPRF ||
-          scarab_req->type == MRT_DPRF || scarab_req->type == MRT_UOCPRF || scarab_req->type == MRT_FDIPPRFON || scarab_req->type == MRT_FDIPPRFOFF)
+  else if (scarab_req->type == MRT_DFETCH || scarab_req->type == MRT_DSTORE || scarab_req->type == MRT_IFETCH ||
+           scarab_req->type == MRT_IPRF || scarab_req->type == MRT_DPRF || scarab_req->type == MRT_UOCPRF ||
+           scarab_req->type == MRT_FDIPPRFON || scarab_req->type == MRT_FDIPPRFOFF)
     ramulator_req->type = Request::Type::READ;
   else
-    ASSERTM(scarab_req->proc_id, false,
-            "Ramulator: Currently unsupported Scarab request type: %d\n",
-            scarab_req->type);
+    ASSERTM(scarab_req->proc_id, false, "Ramulator: Currently unsupported Scarab request type: %d\n", scarab_req->type);
 
-  ramulator_req->addr   = scarab_req->phys_addr;
+  ramulator_req->addr = scarab_req->phys_addr;
   ramulator_req->coreid = scarab_req->proc_id;
 
   ramulator_req->callback = enqueue_response;
@@ -298,8 +287,8 @@ void to_ramulator_req(const Mem_Req* scarab_req, Request* ramulator_req) {
 void ramulator_tick() {
   wrapper->tick();
 
-  if(resp_queue.size() > 0) {
-    if(try_completing_request(resp_queue.front().second))
+  if (resp_queue.size() > 0) {
+    if (try_completing_request(resp_queue.front().second))
       resp_queue.pop_front();
   }
 }
@@ -321,38 +310,37 @@ int ramulator_get_chip_row_buffer_size() {
 }
 
 Mem_Req* ramulator_search_queue(long phys_addr, Mem_Req_Type type) {
-  ASSERTM(
-    0,
-    (type == MRT_IFETCH) || (type == MRT_DFETCH) || (type == MRT_IPRF) ||
-      (type == MRT_DPRF) || (type == MRT_DSTORE) || (type == MRT_MIN_PRIORITY) ||
-      (type == MRT_FDIPPRFON) || (type == MRT_FDIPPRFOFF) || (type == MRT_UOCPRF),
-    "Ramulator: Cannot search write requests in Ramulator request queue\n");
+  ASSERTM(0,
+          (type == MRT_IFETCH) || (type == MRT_DFETCH) || (type == MRT_IPRF) || (type == MRT_DPRF) ||
+              (type == MRT_DSTORE) || (type == MRT_MIN_PRIORITY) || (type == MRT_FDIPPRFON) ||
+              (type == MRT_FDIPPRFOFF) || (type == MRT_UOCPRF),
+          "Ramulator: Cannot search write requests in Ramulator request queue\n");
   auto it_req = inflight_read_reqs.find(phys_addr);
 
   // Search request queue
-  if(it_req != inflight_read_reqs.end()) {
-    for(auto req : it_req->second) {
-      if((req->type == MRT_IFETCH || req->type == MRT_IPRF || req->type == MRT_FDIPPRFON || req->type == MRT_FDIPPRFOFF || req->type == MRT_UOCPRF) &&
-         (type == MRT_IFETCH || type == MRT_IPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF || type == MRT_UOCPRF))
+  if (it_req != inflight_read_reqs.end()) {
+    for (auto req : it_req->second) {
+      if ((req->type == MRT_IFETCH || req->type == MRT_IPRF || req->type == MRT_FDIPPRFON ||
+           req->type == MRT_FDIPPRFOFF || req->type == MRT_UOCPRF) &&
+          (type == MRT_IFETCH || type == MRT_IPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF ||
+           type == MRT_UOCPRF))
         return req;
-      else if((req->type == MRT_DFETCH || req->type == MRT_DPRF ||
-               req->type == MRT_DSTORE) &&
-              (type == MRT_DFETCH || type == MRT_DPRF || type == MRT_DSTORE))
+      else if ((req->type == MRT_DFETCH || req->type == MRT_DPRF || req->type == MRT_DSTORE) &&
+               (type == MRT_DFETCH || type == MRT_DPRF || type == MRT_DSTORE))
         return req;
     }
   }
 
   // Search response queue
-  for(auto resp : resp_queue) {
-    if(resp.first == phys_addr) {
-      if((resp.second->type == MRT_IFETCH || resp.second->type == MRT_IPRF ||
-          resp.second->type == MRT_FDIPPRFON || resp.second->type == MRT_FDIPPRFOFF || resp.second->type == MRT_UOCPRF) &&
-         (type == MRT_IFETCH || type == MRT_IPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF || type == MRT_UOCPRF))
+  for (auto resp : resp_queue) {
+    if (resp.first == phys_addr) {
+      if ((resp.second->type == MRT_IFETCH || resp.second->type == MRT_IPRF || resp.second->type == MRT_FDIPPRFON ||
+           resp.second->type == MRT_FDIPPRFOFF || resp.second->type == MRT_UOCPRF) &&
+          (type == MRT_IFETCH || type == MRT_IPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF ||
+           type == MRT_UOCPRF))
         return resp.second;
-      else if((resp.second->type == MRT_DFETCH ||
-               resp.second->type == MRT_DPRF ||
-               resp.second->type == MRT_DSTORE) &&
-              (type == MRT_DFETCH || type == MRT_DPRF || type == MRT_DSTORE))
+      else if ((resp.second->type == MRT_DFETCH || resp.second->type == MRT_DPRF || resp.second->type == MRT_DSTORE) &&
+               (type == MRT_DFETCH || type == MRT_DPRF || type == MRT_DSTORE))
         return resp.second;
     }
   }

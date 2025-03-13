@@ -26,29 +26,28 @@
  * Description  :
  ***************************************************************************************/
 
-#include "thread.h"
-
+#include "debug/debug_macros.h"
+#include "debug/debug_print.h"
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
-
-#include "debug/debug.param.h"
-#include "debug/debug_macros.h"
-#include "debug/debug_print.h"
-
-#include "core.param.h"
-#include "general.param.h"
+#include "op_pool.h"
 
 #include "frontend/frontend.h"
+#include "thread.h"
 
-#include "op_pool.h"
+#include "core.param.h"
+#include "debug/debug.param.h"
+#include "general.param.h"
+
 
 /**************************************************************************************/
 /* Macros */
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_THREAD, ##args)
+
 
 /**************************************************************************************/
 /* Prototypes */
@@ -68,14 +67,17 @@ void init_thread(Thread_Data* td, char* argv[], char* envp[]) {
   init_list(&td->seq_op_list, "SEQ_OP_LIST", sizeof(Op*), TRUE);
 }
 
+
 /**************************************************************************************/
 /* recover_thread: */
 
-void recover_thread(Thread_Data* td, Addr new_pc, Counter op_num, uns64 inst_uid, Flag remain_wrongpath) {
+void recover_thread(Thread_Data* td, Addr new_pc, Counter op_num,
+                    uns64 inst_uid, Flag remain_wrongpath) {
   recover_seq_op_list(td, op_num);
   recover_map();
   ASSERT(td->proc_id, !remain_wrongpath);
 }
+
 
 /**************************************************************************************/
 /* add_to_seq_op_list: */
@@ -85,11 +87,13 @@ void add_to_seq_op_list(Thread_Data* td, Op* op) {
   ASSERT(td->proc_id, op);
   ASSERT(td->proc_id, td->proc_id == op->proc_id);
   ASSERT(td->proc_id, op->op_pool_valid);
-  op_p = dl_list_add_tail(&td->seq_op_list);
+  op_p  = dl_list_add_tail(&td->seq_op_list);
   *op_p = op;
-  DEBUG(td->proc_id, "Adding to seq op list  op:%s  count:%d\n", unsstr64(op->op_num), td->seq_op_list.count);
+  DEBUG(td->proc_id, "Adding to seq op list  op:%s  count:%d\n",
+        unsstr64(op->op_num), td->seq_op_list.count);
   ASSERT(td->proc_id, (td->seq_op_list.count < 8193));
 }
+
 
 /**************************************************************************************/
 /* remove_from_seq_op_list: */
@@ -100,11 +104,15 @@ void remove_from_seq_op_list(Thread_Data* td, Op* op) {
   ASSERT(td->proc_id, td->proc_id == (*op_p)->proc_id);
   ASSERT(td->proc_id, *op_p);
   ASSERT(td->proc_id, (*op_p)->op_pool_valid);
-  ASSERTM(td->proc_id, *op_p == op, "op_p_num: %s op_num: %s dis_op_p: %s dis_op: %s\n", unsstr64((*op_p)->op_num),
-          unsstr64(op->op_num), disasm_op((*op_p), TRUE), disasm_op(op, TRUE));
+  ASSERTM(td->proc_id, *op_p == op,
+          "op_p_num: %s op_num: %s dis_op_p: %s dis_op: %s\n",
+          unsstr64((*op_p)->op_num), unsstr64(op->op_num),
+          disasm_op((*op_p), TRUE), disasm_op(op, TRUE));
   ASSERT(td->proc_id, (*op_p)->unique_num == op->unique_num);
-  DEBUG(td->proc_id, "Removing op from seq op list  op:%s  count:%d\n", unsstr64(op->op_num), td->seq_op_list.count);
+  DEBUG(td->proc_id, "Removing op from seq op list  op:%s  count:%d\n",
+        unsstr64(op->op_num), td->seq_op_list.count);
 }
+
 
 /**************************************************************************************/
 /* recover_seq_op_list: */
@@ -113,17 +121,18 @@ void recover_seq_op_list(Thread_Data* td, Counter op_num) {
   // Traverse the sequential op list and remove everything younger than the
   // recovering op
   Op** op_p = (Op**)list_start_head_traversal(&td->seq_op_list);
-  if (op_p) {
+  if(op_p) {
     ASSERT(td->proc_id, *op_p);
     ASSERT(td->proc_id, td->proc_id == (*op_p)->proc_id);
-    if ((*op_p)->op_num > op_num) {
-      ASSERTM(td->proc_id, (*op_p)->op_num == op_num + 1, "Oldest in-flight op_num:%lld, recovery op_num:%lld\n",
+    if((*op_p)->op_num > op_num) {
+      ASSERTM(td->proc_id, (*op_p)->op_num == op_num + 1,
+              "Oldest in-flight op_num:%lld, recovery op_num:%lld\n",
               (*op_p)->op_num, op_num + 1);
       clear_list(&td->seq_op_list);
     } else {
-      for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
+      for(; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
         ASSERT(td->proc_id, (*op_p)->op_num <= op_num);
-        if ((*op_p)->op_num == op_num) {
+        if((*op_p)->op_num == op_num) {
           clip_list_at_current(&td->seq_op_list);
           break;
         }
@@ -131,8 +140,10 @@ void recover_seq_op_list(Thread_Data* td, Counter op_num) {
     }
   }
 
-  DEBUG(td->proc_id, "Recovering seq op list  op:%s  count:%d\n", unsstr64(op_num), td->seq_op_list.count);
+  DEBUG(td->proc_id, "Recovering seq op list  op:%s  count:%d\n",
+        unsstr64(op_num), td->seq_op_list.count);
 }
+
 
 /**************************************************************************************/
 /* thread_map: sets the dependencies in the thread Op_Info struct */
@@ -163,8 +174,8 @@ void thread_map_mem_dep(Op* op) {
 
 Op* remove_next_from_seq_op_list(Thread_Data* td) {
   Op** op_p = dl_list_remove_head(&td->seq_op_list);
-  DEBUG(td->proc_id, "Removing op from seq op list  op:%s  count:%d\n", unsstr64((*op_p)->op_num),
-        td->seq_op_list.count);
+  DEBUG(td->proc_id, "Removing op from seq op list  op:%s  count:%d\n",
+        unsstr64((*op_p)->op_num), td->seq_op_list.count);
   return *op_p;
 }
 
@@ -174,11 +185,13 @@ Op* remove_next_from_seq_op_list(Thread_Data* td) {
 void reset_seq_op_list(Thread_Data* td) {
   // Traverse the sequential op list and remove and free every op
   Op** op_p = (Op**)list_start_head_traversal(&td->seq_op_list);
-  for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
+  for(; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
     ASSERT(td->proc_id, td->proc_id == (*op_p)->proc_id);
     free_op(*op_p);
   }
   clear_list(&td->seq_op_list);
 
-  DEBUG(td->proc_id, "Reseting seq op list   count:%d\n", td->seq_op_list.count);
+
+  DEBUG(td->proc_id, "Reseting seq op list   count:%d\n",
+        td->seq_op_list.count);
 }

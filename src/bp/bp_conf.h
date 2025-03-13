@@ -29,9 +29,8 @@
 #ifndef __BP_CONF_H__
 #define __BP_CONF_H__
 
-#include "globals/global_types.h"
-
 #include "bp/bp.h"
+#include "globals/global_types.h"
 
 /**************************************************************************************/
 // Macros
@@ -53,7 +52,8 @@ typedef struct Opc_Table_struct {
 typedef struct Bpc_Data_struct {
   uns8 proc_id;
   uns* bpc_ctr_table;    // used to predict confidence for a particular branch
-  Opc_Table* opc_table;  // used to calculate the on_path conf, stores confidence of in-flight branches
+  Opc_Table* opc_table;  // used to calculate the on_path conf, stores
+                         // confidence of in-flight branches
   uns count;             // size of opc_table
   uns head;              // head index in opc_table
   uns tail;              // tail index in opc_table
@@ -61,8 +61,10 @@ typedef struct Bpc_Data_struct {
 
 typedef struct PERCEP_Bpc_Data_struct {
   Perceptron* conf_pt;
-  uns64 conf_perceptron_global_hist;       // global history only for confidence perceptron to support long history
-  uns64 conf_perceptron_global_misp_hist;  // global history only for confidence perceptron to support long history
+  uns64 conf_perceptron_global_hist;       // global history only for confidence
+                                           // perceptron to support long history
+  uns64 conf_perceptron_global_misp_hist;  // global history only for confidence
+                                           // perceptron to support long history
 } PERCEP_Bpc_Data;
 
 /**************************************************************************************/

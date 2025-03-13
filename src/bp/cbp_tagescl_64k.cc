@@ -15,9 +15,9 @@ void TAGE64K::reinit() {
   m[1] = MINHIST;
   m[NHIST / 2] = MAXHIST;
   for (int i = 2; i <= NHIST / 2; i++) {
-    m[i] = (int)(((double)MINHIST *
-                  pow((double)(MAXHIST) / (double)MINHIST, (double)(i - 1) / (double)(((NHIST / 2) - 1)))) +
-                 0.5);
+    m[i] = (int) (((double) MINHIST *
+                   pow((double) (MAXHIST) / (double) MINHIST, (double) (i - 1) / (double) (((NHIST / 2) - 1)))) +
+                  0.5);
     //      fprintf(stderr, "(%d %d)", m[i],i);
   }
   for (int i = 1; i <= NHIST; i++) {
@@ -56,10 +56,8 @@ void TAGE64K::reinit() {
   gtable[BORN] = new cbp64_gentry[NBANKHIGH * (1 << LOGG)];
   SizeTable[BORN] = NBANKHIGH * (1 << LOGG);
 
-  for (int i = BORN + 1; i <= NHIST; i++)
-    gtable[i] = gtable[BORN];
-  for (int i = 2; i <= BORN - 1; i++)
-    gtable[i] = gtable[1];
+  for (int i = BORN + 1; i <= NHIST; i++) gtable[i] = gtable[BORN];
+  for (int i = 2; i <= BORN - 1; i++) gtable[i] = gtable[1];
   btable = new cbp64_bentry[1 << LOGB];
 
   for (int i = 1; i <= NHIST; i++) {
@@ -81,12 +79,10 @@ void TAGE64K::reinit() {
   Sstate.ptghist = 0;
   updatethreshold = 35 << 3;
 
-  for (int i = 0; i < (1 << LOGSIZEUP); i++)
-    Pupdatethreshold[i] = 0;
+  for (int i = 0; i < (1 << LOGSIZEUP); i++) Pupdatethreshold[i] = 0;
   for (int i = 0; i < GNB; i++)
     Sstate.GGEHL[i] = &GGEHLA[i][0];
-  for (int i = 0; i < LNB; i++)
-    LGEHL[i] = &LGEHLA[i][0];
+  for (int i = 0; i < LNB; i++) LGEHL[i] = &LGEHLA[i][0];
 
   for (int i = 0; i < GNB; i++)
     for (int j = 0; j < ((1 << LOGGNB) - 1); j++) {
@@ -101,16 +97,13 @@ void TAGE64K::reinit() {
       }
     }
 
-  for (int i = 0; i < SNB; i++)
-    SGEHL[i] = &SGEHLA[i][0];
-  for (int i = 0; i < TNB; i++)
-    TGEHL[i] = &TGEHLA[i][0];
+  for (int i = 0; i < SNB; i++) SGEHL[i] = &SGEHLA[i][0];
+  for (int i = 0; i < TNB; i++) TGEHL[i] = &TGEHLA[i][0];
   for (int i = 0; i < PNB; i++)
     Sstate.PGEHL[i] = &PGEHLA[i][0];
 #ifdef IMLI
 #ifdef IMLIOH
-  for (int i = 0; i < FNB; i++)
-    FGEHL[i] = &FGEHLA[i][0];
+  for (int i = 0; i < FNB; i++) FGEHL[i] = &FGEHLA[i][0];
 
   for (int i = 0; i < FNB; i++)
     for (int j = 0; j < ((1 << LOGFNB) - 1); j++) {
@@ -119,16 +112,14 @@ void TAGE64K::reinit() {
       }
     }
 #endif
-  for (int i = 0; i < INB; i++)
-    IGEHL[i] = &IGEHLA[i][0];
+  for (int i = 0; i < INB; i++) IGEHL[i] = &IGEHLA[i][0];
   for (int i = 0; i < INB; i++)
     for (int j = 0; j < ((1 << LOGINB) - 1); j++) {
       if (!(j & 1)) {
         IGEHL[i][j] = -1;
       }
     }
-  for (int i = 0; i < IMNB; i++)
-    IMGEHL[i] = &IMGEHLA[i][0];
+  for (int i = 0; i < IMNB; i++) IMGEHL[i] = &IMGEHLA[i][0];
   for (int i = 0; i < IMNB; i++)
     for (int j = 0; j < ((1 << LOGIMNB) - 1); j++) {
       if (!(j & 1)) {
@@ -240,6 +231,8 @@ void TAGE64K::reinit() {
   tage_component_alt = TAGE_BASE;
 }
 
+
+
 // the index functions for the tagged tables uses path history as in the OGEHL predictor
 // F serves to mix path history: not very important impact
 
@@ -249,11 +242,9 @@ int TAGE64K::F(long long A, int size, int bank) {
   A1 = (A & ((1 << logg[bank]) - 1));
   A2 = (A >> logg[bank]);
 
-  if (bank < logg[bank])
-    A2 = ((A2 << bank) & ((1 << logg[bank]) - 1)) + (A2 >> (logg[bank] - bank));
+  if (bank < logg[bank]) A2 = ((A2 << bank) & ((1 << logg[bank]) - 1)) + (A2 >> (logg[bank] - bank));
   A = A1 ^ A2;
-  if (bank < logg[bank])
-    A = ((A << bank) & ((1 << logg[bank]) - 1)) + (A >> (logg[bank] - bank));
+  if (bank < logg[bank]) A = ((A << bank) & ((1 << logg[bank]) - 1)) + (A >> (logg[bank] - bank));
   return (A);
 }
 
@@ -275,11 +266,9 @@ uint16_t TAGE64K::gtag(unsigned int PC, int bank, cbp64_folded_history* ch0, cbp
 // up-down saturating counter
 void TAGE64K::ctrupdate(int8_t& ctr, bool taken, int nbits) {
   if (taken) {
-    if (ctr < ((1 << (nbits - 1)) - 1))
-      ctr++;
+    if (ctr < ((1 << (nbits - 1)) - 1)) ctr++;
   } else {
-    if (ctr > -(1 << (nbits - 1)))
-      ctr--;
+    if (ctr > -(1 << (nbits - 1))) ctr--;
   }
 }
 
@@ -300,8 +289,7 @@ void TAGE64K::baseupdate(bool Taken, UINT64 PC) {
   int8_t BIM = (btable[BI].pred << 1) + (btable[BI >> HYSTSHIFT].hyst);
   int inter = BIM;
   if (Taken) {
-    if (inter < 3)
-      inter += 1;
+    if (inter < 3) inter += 1;
   } else if (inter > 0)
     inter--;
   btable[BI].pred = inter >> 1;
@@ -801,8 +789,7 @@ void TAGE64K::HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target)
         IMLIcount = 0;
       }
       if (taken) {
-        if (IMLIcount < ((1 << Im[0]) - 1))
-          IMLIcount++;
+        if (IMLIcount < ((1 << Im[0]) - 1)) IMLIcount++;
       }
     }
   }
@@ -929,16 +916,12 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
         updatethreshold -= 1;
       }
 
-      if (Pupdatethreshold[INDUPD] >= (1 << (WIDTHRESP - 1)))
-        Pupdatethreshold[INDUPD] = (1 << (WIDTHRESP - 1)) - 1;
+      if (Pupdatethreshold[INDUPD] >= (1 << (WIDTHRESP - 1))) Pupdatethreshold[INDUPD] = (1 << (WIDTHRESP - 1)) - 1;
       // Pupdatethreshold[INDUPD] could be negative
-      if (Pupdatethreshold[INDUPD] < -(1 << (WIDTHRESP - 1)))
-        Pupdatethreshold[INDUPD] = -(1 << (WIDTHRESP - 1));
-      if (updatethreshold >= (1 << (WIDTHRES - 1)))
-        updatethreshold = (1 << (WIDTHRES - 1)) - 1;
+      if (Pupdatethreshold[INDUPD] < -(1 << (WIDTHRESP - 1))) Pupdatethreshold[INDUPD] = -(1 << (WIDTHRESP - 1));
+      if (updatethreshold >= (1 << (WIDTHRES - 1))) updatethreshold = (1 << (WIDTHRES - 1)) - 1;
       // updatethreshold could be negative
-      if (updatethreshold < -(1 << (WIDTHRES - 1)))
-        updatethreshold = -(1 << (WIDTHRES - 1));
+      if (updatethreshold < -(1 << (WIDTHRES - 1))) updatethreshold = -(1 << (WIDTHRES - 1));
     }
 #ifdef VARTHRES
     {
@@ -1103,12 +1086,10 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
 
     // just the best formula for the Championship:
     // In practice when one out of two entries are useful
-    if (TICK < 0)
-      TICK = 0;
+    if (TICK < 0) TICK = 0;
     if (TICK >= BORNTICK) {
       for (int i = 1; i <= BORN; i += BORN - 1)
-        for (int j = 0; j < SizeTable[i]; j++)
-          gtable[i][j].u >>= 1;
+        for (int j = 0; j < SizeTable[i]; j++) gtable[i][j].u >>= 1;
       TICK = 0;
     }
   }
@@ -1151,14 +1132,14 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
   HistoryUpdate(PC, opType, resolveDir, branchTarget);
 }
 
-#define GINDEX                                                                                        \
-  (((long long)PC) ^ bhist ^ (bhist >> (8 - i)) ^ (bhist >> (16 - 2 * i)) ^ (bhist >> (24 - 3 * i)) ^ \
-   (bhist >> (32 - 3 * i)) ^ (bhist >> (40 - 4 * i))) &                                               \
+#define GINDEX                                                                                         \
+  (((long long) PC) ^ bhist ^ (bhist >> (8 - i)) ^ (bhist >> (16 - 2 * i)) ^ (bhist >> (24 - 3 * i)) ^ \
+   (bhist >> (32 - 3 * i)) ^ (bhist >> (40 - 4 * i))) &                                                \
       ((1 << (logs - (i >= (NBR - 2)))) - 1)
 int TAGE64K::Gpredict(UINT64 PC, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W) {
   int PERCSUM = 0;
   for (int i = 0; i < NBR; i++) {
-    long long bhist = BHIST & ((long long)((1 << length[i]) - 1));
+    long long bhist = BHIST & ((long long) ((1 << length[i]) - 1));
     long long index = GINDEX;
 
     int8_t ctr = tab[i][index];
@@ -1175,7 +1156,7 @@ void TAGE64K::Gupdate(UINT64 PC, bool taken, long long BHIST, int* length, int8_
   int PERCSUM = 0;
 
   for (int i = 0; i < NBR; i++) {
-    long long bhist = BHIST & ((long long)((1 << length[i]) - 1));
+    long long bhist = BHIST & ((long long) ((1 << length[i]) - 1));
     long long index = GINDEX;
 
     PERCSUM += (2 * tab[i][index] + 1);
@@ -1184,8 +1165,7 @@ void TAGE64K::Gupdate(UINT64 PC, bool taken, long long BHIST, int* length, int8_
 #ifdef VARTHRES
   {
     int XSUM = LSUM - ((W[INDUPDS] >= 0)) * PERCSUM;
-    if ((XSUM + PERCSUM >= 0) != (XSUM >= 0))
-      ctrupdate(W[INDUPDS], ((PERCSUM >= 0) == taken), EWIDTH);
+    if ((XSUM + PERCSUM >= 0) != (XSUM >= 0)) ctrupdate(W[INDUPDS], ((PERCSUM >= 0) == taken), EWIDTH);
   }
 #endif
 }

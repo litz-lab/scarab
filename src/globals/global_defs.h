@@ -30,9 +30,11 @@
 #ifndef __GLOBAL_DEFS_H__
 #define __GLOBAL_DEFS_H__
 
+
 #include <malloc.h>
 #include <string.h>
 #include <time.h>
+
 
 /**************************************************************************************/
 /* Constants */
@@ -68,6 +70,7 @@
 #ifndef NULL
 #define NULL ((void*)0x0)
 #endif
+
 
 /**************************************************************************************/
 

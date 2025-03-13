@@ -22,7 +22,6 @@
  */
 
 #include "bp/bp.param.h"
-
 #include "cbp_to_scarab.h"
 
 template <typename CBP_CLASS>
@@ -47,15 +46,13 @@ class CBP_To_Scarab_Intf {
 
   uns8 pred(Op* op) {
     uns proc_id = op->proc_id;
-    if (op->off_path)
-      return op->oracle_info.dir;
+    if (op->off_path) return op->oracle_info.dir;
     return cbp_predictors.at(proc_id).GetPrediction(op->inst_info->addr, &op->bp_confidence);
   }
 
   void spec_update(Op* op) {
     /* CBP Interface does not support speculative updates */
-    if (op->off_path)
-      return;
+    if (op->off_path) return;
 
     uns proc_id = op->proc_id;
     OpType optype = scarab_to_cbp_optype(op->table_info->cf_type);
@@ -71,11 +68,17 @@ class CBP_To_Scarab_Intf {
 
   void update(Op* op) { /* CBP Interface does not support update at exec */ }
 
-  void retire(Op* op) { /* CBP Interface updates predictor at speculative update time */ }
+  void retire(Op* op) {
+    /* CBP Interface updates predictor at speculative update time */
+  }
 
-  void recover(Recovery_Info*) { /* CBP Interface does not support speculative updates */ }
+  void recover(Recovery_Info*) {
+    /* CBP Interface does not support speculative updates */
+  }
 
-  Flag full(uns proc_id) { return cbp_predictors.at(proc_id).IsFull(); }
+  Flag full(uns proc_id) {
+    return cbp_predictors.at(proc_id).IsFull();
+  }
 };
 
 // Specialization for TAGE64K

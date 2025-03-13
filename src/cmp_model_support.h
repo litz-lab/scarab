@@ -26,6 +26,7 @@
  * Description  : CMP with runahead
  ***************************************************************************************/
 
+
 #ifndef __CMP_MODEL_SUPPORT_H__
 #define __CMP_MODEL_SUPPORT_H__
 
@@ -38,7 +39,6 @@ void cmp_init_cmp_model(void);
 void cmp_init_thread_data(uns8);
 void cmp_set_all_stages(uns8);
 void cmp_init_bogus_sim(uns8);
-
 /**************************************************************************************/
 /* External variables */
 

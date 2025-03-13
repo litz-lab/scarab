@@ -27,10 +27,8 @@
  ***************************************************************************************/
 
 #include "frontend/frontend_intf.h"
-
-#include "globals/global_defs.h"
-
 #include "general.param.h"
+#include "globals/global_defs.h"
 
 /* Include headers of all the implementations here */
 #include "frontend/pin_exec_driven_fe.h"

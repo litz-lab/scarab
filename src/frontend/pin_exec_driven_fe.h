@@ -26,7 +26,6 @@
  * Description  :
  ***************************************************************************************/
 #include "globals/global_types.h"
-
 #include "op_info.h"
 #include "stdint.h"
 

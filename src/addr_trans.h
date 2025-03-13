@@ -37,7 +37,8 @@
 /**************************************************************************************/
 /* Types */
 
-#define ADDR_TRANSLATION_LIST(elem) elem(NONE) elem(FLIP) elem(RANDOM) elem(PRESERVE_BLP) elem(PRESERVE_STREAM)
+#define ADDR_TRANSLATION_LIST(elem) \
+  elem(NONE) elem(FLIP) elem(RANDOM) elem(PRESERVE_BLP) elem(PRESERVE_STREAM)
 
 DECLARE_ENUM(Addr_Translation, ADDR_TRANSLATION_LIST, ADDR_TRANS_);
 

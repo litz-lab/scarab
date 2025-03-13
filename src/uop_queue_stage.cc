@@ -1,25 +1,22 @@
 // The uop queue buffers ops fetched from the uop cache.
 
 #include "uop_queue_stage.h"
-
 #include <deque>
 
 extern "C" {
+#include "debug/debug_macros.h"
+#include "debug/debug_print.h"
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
-
-#include "debug/debug_macros.h"
-#include "debug/debug_print.h"
-
-#include "memory/memory.param.h"
-
 #include "bp/bp.h"
-
 #include "op_pool.h"
+
+#include "globals/assert.h"
 #include "statistics.h"
+#include "memory/memory.param.h"
 #include "uop_cache.h"
 }
 
@@ -30,8 +27,8 @@ extern "C" {
 // TODO(peterbraun): Check if the ISSUE_WIDTH can be less than the uop cache issue bandwidth
 
 // Uop Queue Variables
-std::deque<Stage_Data*> q{};
-std::deque<Stage_Data*> free_sds{};
+std::deque<Stage_Data*> q {};
+std::deque<Stage_Data*> free_sds {};
 bool uopq_off_path;
 
 void init_uop_queue_stage() {
@@ -66,7 +63,8 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
       STAT_EVENT(dec->proc_id, UOPQ_STAGE_STALLED);
     }
     return;
-  } else if (!uopq_off_path) {
+  }
+  else if (!uopq_off_path) {
     STAT_EVENT(dec->proc_id, UOPQ_STAGE_NOT_STALLED);
   }
 
@@ -91,7 +89,8 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
           uopq_off_path = true;
       }
     }
-  } else if (!uopq_off_path) {
+  }
+  else if (!uopq_off_path) {
     STAT_EVENT(dec->proc_id, UOPQ_STAGE_STARVED);
   }
 

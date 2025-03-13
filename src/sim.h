@@ -29,8 +29,6 @@
 #ifndef __SIM_H__
 #define __SIM_H__
 
-#include "globals/global_types.h"
-
 /**************************************************************************************/
 /* Types */
 
@@ -49,22 +47,19 @@ enum operating_mode_enum {
   WARMUP_MODE /* not implemented yet */
 };
 
-enum exit_cond_enum {
-  LAST_DONE,
-  FIRST_DONE,
-  NUM_EXIT_CONDS
-};
+enum exit_cond_enum { LAST_DONE, FIRST_DONE, NUM_EXIT_CONDS };
 
 /**************************************************************************************/
 /* External Variables */
 
 extern const char* sim_mode_names[];
-extern Counter* inst_limit;
+extern Counter*    inst_limit;
+
 
 /**************************************************************************************/
 /* Prototypes */
 
-void init_global(char*[], char*[]);
+void init_global(char* [], char* []);
 void uop_sim(void);
 void monitor_sim(void);
 void sampling_sim(void);

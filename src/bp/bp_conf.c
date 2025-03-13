@@ -28,19 +28,15 @@
 
 #include "bp/bp_conf.h"
 
+#include "bp/bp.h"
+#include "bp/bp.param.h"
+#include "debug/debug.param.h"
+#include "debug/debug_macros.h"
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
-
-#include "debug/debug.param.h"
-#include "debug/debug_macros.h"
-
-#include "bp/bp.param.h"
-
-#include "bp/bp.h"
-
 #include "icache_stage.h"
 #include "op.h"
 #include "statistics.h"
@@ -69,8 +65,8 @@ static uns count_zeros(uns, uns);
 void init_bp_conf() {
   uns ii;
 
-  bpc_data = (Bpc_Data*)malloc(sizeof(Bpc_Data));
-  bpc_data->bpc_ctr_table = (uns*)malloc(sizeof(uns) * (1 << BPC_BITS));
+  bpc_data = (Bpc_Data*) malloc(sizeof(Bpc_Data));
+  bpc_data->bpc_ctr_table = (uns*) malloc(sizeof(uns) * (1 << BPC_BITS));
   ASSERT(0, bpc_data->bpc_ctr_table);
   for (ii = 0; ii < (1 << BPC_BITS); ii++) {
     if (BPC_MECH)  // counter
@@ -79,7 +75,7 @@ void init_bp_conf() {
       bpc_data->bpc_ctr_table[ii] = N_BIT_MASK(BPC_CIT_BITS);
   }
 
-  bpc_data->opc_table = (Opc_Table*)malloc(sizeof(Opc_Table) * OPC_SIZE);
+  bpc_data->opc_table = (Opc_Table*) malloc(sizeof(Opc_Table) * OPC_SIZE);
   bpc_data->count = 0;
   bpc_data->head = 0;
   bpc_data->tail = 0;
@@ -90,8 +86,8 @@ void init_bp_conf() {
 // 0: think branch will mispredict
 // 1: confident branch will go the right direction
 
-#define COOK_HIST_BITS(hist, untouched) ((uns32)(hist) >> (32 - BPC_BITS + (untouched)) << (untouched))
-#define COOK_ADDR_BITS(addr, shift) (((uns32)(addr) >> (shift)) & (N_BIT_MASK(BPC_BITS)))
+#define COOK_HIST_BITS(hist, untouched) ((uns32) (hist) >> (32 - BPC_BITS + (untouched)) << (untouched))
+#define COOK_ADDR_BITS(addr, shift) (((uns32) (addr) >> (shift)) & (N_BIT_MASK(BPC_BITS)))
 
 void bp_conf_pred(Op* op) {
   uns32 index;
@@ -116,13 +112,11 @@ void bp_conf_pred(Op* op) {
 
     // count ones
     for (ii = 0; ii < BPC_CIT_BITS; ii++, mask <<= 1)
-      if (entry & mask)
-        count++;
+      if (entry & mask) count++;
     pred_conf = count > (BPC_CIT_BITS * BPC_CIT_TH) / 100 ? TRUE : FALSE;
   }
 
-  if (PERF_BP_CONF_PRED)
-    pred_conf = !(op->oracle_info.mispred || op->oracle_info.misfetch);
+  if (PERF_BP_CONF_PRED) pred_conf = !(op->oracle_info.mispred || op->oracle_info.misfetch);
 
   _DEBUG(0, DEBUG_BP_CONF, "bp_conf_pred: op:%s mispred:%d, pred:%d,%d\n", unsstr64(op->op_num), mispred, pred_conf,
          pred_conf != mispred);
@@ -221,8 +215,7 @@ void update_onpath_conf(Op* op) {
   ii = bpc_data->tail;
   while (ii != bpc_data->head) {
     Opc_Table* opc_table = &bpc_data->opc_table[ii];
-    if (!opc_table->verified || opc_table->off_path || opc_table->mispred)
-      break;
+    if (!opc_table->verified || opc_table->off_path || opc_table->mispred) break;
     bpc_data->count--;
     ii = CIRC_INC(ii, OPC_SIZE);
   }
@@ -245,8 +238,7 @@ void recover_onpath_conf() {
   // reposition the head index, and recompute count
   ii = bpc_data->tail;
   while (ii != bpc_data->head) {
-    if (bpc_data->opc_table[ii].mispred || bpc_data->opc_table[ii].off_path)
-      break;
+    if (bpc_data->opc_table[ii].mispred || bpc_data->opc_table[ii].off_path) break;
     count++;
     ii = CIRC_INC(ii, OPC_SIZE);
   }
@@ -318,8 +310,7 @@ static uns count_zeros(uns tail, uns head) {
   uns count = 0;
 
   for (ii = tail; ii != head; ii = CIRC_INC(ii, OPC_SIZE))
-    if (!bpc_data->opc_table[ii].pred_conf)
-      count++;
+    if (!bpc_data->opc_table[ii].pred_conf) count++;
   return count;
 }
 
@@ -363,11 +354,11 @@ uns read_conf_head() {
 
 void conf_perceptron_init(void) {
   uns ii;
-  percep_bpc_data = (PERCEP_Bpc_Data*)malloc(sizeof(PERCEP_Bpc_Data));
-  percep_bpc_data->conf_pt = (Perceptron*)malloc(sizeof(Perceptron) * (CONF_PERCEPTRON_ENTRIES));
+  percep_bpc_data = (PERCEP_Bpc_Data*) malloc(sizeof(PERCEP_Bpc_Data));
+  percep_bpc_data->conf_pt = (Perceptron*) malloc(sizeof(Perceptron) * (CONF_PERCEPTRON_ENTRIES));
   for (ii = 0; ii < CONF_PERCEPTRON_ENTRIES; ii++) {
     uns jj;
-    percep_bpc_data->conf_pt[ii].weights = (int32*)malloc(sizeof(int32) * (CONF_HIST_LENGTH + 1));
+    percep_bpc_data->conf_pt[ii].weights = (int32*) malloc(sizeof(int32) * (CONF_HIST_LENGTH + 1));
     for (jj = 0; jj < (CONF_HIST_LENGTH + 1); jj++) {
       percep_bpc_data->conf_pt[ii].weights[jj] = CONF_PERCEPTRON_INIT_VALUE;
     }
@@ -425,7 +416,7 @@ void conf_perceptron_pred(Op* op) {
    * us use binary instead of bipolar logic to represent the history
    * register
    */
-  for (mask = ((uns64)1) << 63, ii = 0; ii < CONF_HIST_LENGTH; ii++, mask >>= 1, w++) {
+  for (mask = ((uns64) 1) << 63, ii = 0; ii < CONF_HIST_LENGTH; ii++, mask >>= 1, w++) {
     if (!!(hist & mask))
       output += *w;
     else
@@ -471,18 +462,18 @@ void conf_perceptron_pred(Op* op) {
       x_i = 1;
 
     op->recovery_info.conf_perceptron_global_hist =
-        (percep_bpc_data->conf_perceptron_global_hist) | (((uns64)x_i) << 63);
-    percep_bpc_data->conf_perceptron_global_hist |= (((uns64)x_i) << 63);
+        (percep_bpc_data->conf_perceptron_global_hist) | (((uns64) x_i) << 63);
+    percep_bpc_data->conf_perceptron_global_hist |= (((uns64) x_i) << 63);
   } else {
     op->recovery_info.conf_perceptron_global_hist =
-        (percep_bpc_data->conf_perceptron_global_hist) | (((uns64)op->oracle_info.dir) << 63);
+        (percep_bpc_data->conf_perceptron_global_hist) | (((uns64) op->oracle_info.dir) << 63);
 
-    percep_bpc_data->conf_perceptron_global_hist |= (((uns64)(op->oracle_info.dir)) << 63);
+    percep_bpc_data->conf_perceptron_global_hist |= (((uns64) (op->oracle_info.dir)) << 63);
 
     op->recovery_info.conf_perceptron_global_misp_hist =
-        (percep_bpc_data->conf_perceptron_global_misp_hist) | ((uns64)(op->oracle_info.mispred) << 63);
+        (percep_bpc_data->conf_perceptron_global_misp_hist) | ((uns64) (op->oracle_info.mispred) << 63);
 
-    percep_bpc_data->conf_perceptron_global_misp_hist |= (((uns64)(op->oracle_info.mispred)) << 63);
+    percep_bpc_data->conf_perceptron_global_misp_hist |= (((uns64) (op->oracle_info.mispred)) << 63);
   }
 
   op->conf_perceptron_output = output;
@@ -554,17 +545,15 @@ void conf_perceptron_update(Op* op) {
       (*w)++;
     else
       (*w)--;
-    if (*w > MAX_WEIGHT)
-      *w = MAX_WEIGHT;
-    if (*w < MIN_WEIGHT)
-      *w = MIN_WEIGHT;
+    if (*w > MAX_WEIGHT) *w = MAX_WEIGHT;
+    if (*w < MIN_WEIGHT) *w = MIN_WEIGHT;
 
     _DEBUG(0, DEBUG_BP_CONF, "index:%d *w[%d] :%d->%d  p:%d c:%d bp_mis_pred:%d conf:%d y:%d \n", index, ii, old_w, *w,
            p, c, op->oracle_info.mispred, op->oracle_info.pred_conf, y);
 
     w++;
 
-    for (mask = ((uns64)1) << 63, ii = 0; ii < CONF_HIST_LENGTH; ii++, mask >>= 1, w++) {
+    for (mask = ((uns64) 1) << 63, ii = 0; ii < CONF_HIST_LENGTH; ii++, mask >>= 1, w++) {
       /* if the i'th bit in the history positively correlates
        * with this branch outcome, increment the corresponding
        * weight, else decrement it, with saturating arithmetic
@@ -574,12 +563,10 @@ void conf_perceptron_update(Op* op) {
       UNUSED(old_w);
       if (!!(hist & mask) == op->oracle_info.dir) {
         (*w)++;
-        if (*w > MAX_WEIGHT)
-          *w = MAX_WEIGHT;
+        if (*w > MAX_WEIGHT) *w = MAX_WEIGHT;
       } else {
         (*w)--;
-        if (*w < MIN_WEIGHT)
-          *w = MIN_WEIGHT;
+        if (*w < MIN_WEIGHT) *w = MIN_WEIGHT;
       }
       _DEBUG(0, DEBUG_BP_CONF, "index:%d *w[%d] :%d->%d  p:%d c:%d  bp_mis_pred:%d conf:%d y:%d \n", index, ii, old_w,
              *w, p, c, op->oracle_info.mispred, op->oracle_info.pred_conf, y);
@@ -604,17 +591,15 @@ void conf_perceptron_update(Op* op) {
         (*w)--;
     }
 
-    if (*w > MAX_WEIGHT)
-      *w = MAX_WEIGHT;
-    if (*w < MIN_WEIGHT)
-      *w = MIN_WEIGHT;
+    if (*w > MAX_WEIGHT) *w = MAX_WEIGHT;
+    if (*w < MIN_WEIGHT) *w = MIN_WEIGHT;
 
     _DEBUG(0, DEBUG_BP_CONF, "index:%d *w[%d] :%d->%d  p:%d c:%d bp_mis_pred:%d conf:%d y:%d \n", index, ii, old_w, *w,
            p, c, op->oracle_info.mispred, op->oracle_info.pred_conf, y);
 
     w++;
     if ((y == 2) || (c != p)) {
-      for (mask = ((uns64)1) << 63, ii = 0; ii < CONF_HIST_LENGTH; ii++, mask >>= 1, w++) {
+      for (mask = ((uns64) 1) << 63, ii = 0; ii < CONF_HIST_LENGTH; ii++, mask >>= 1, w++) {
         /* if the i'th bit in the history positively correlates
          * with this branch outcome, increment the corresponding
          * weight, else decrement it, with saturating arithmetic
@@ -627,24 +612,20 @@ void conf_perceptron_update(Op* op) {
           // mispredicted so increase the weight vector values
           if (!!(hist & mask)) {
             (*w) = (*w) + PERCEPTRON_TRAIN_MISP_FACTOR;
-            if (*w > MAX_WEIGHT)
-              *w = MAX_WEIGHT;
+            if (*w > MAX_WEIGHT) *w = MAX_WEIGHT;
           } else {
             (*w) = (*w) - PERCEPTRON_TRAIN_MISP_FACTOR;
-            if (*w < MIN_WEIGHT)
-              *w = MIN_WEIGHT;
+            if (*w < MIN_WEIGHT) *w = MIN_WEIGHT;
           }
         } else {
           // no mispredicted so decrease the weight vector values
           if (!!(hist & mask)) {
             (*w) = (*w) - PERCEPTRON_TRAIN_CORR_FACTOR;
 
-            if (*w < MAX_WEIGHT)
-              *w = MAX_WEIGHT;
+            if (*w < MAX_WEIGHT) *w = MAX_WEIGHT;
           } else {
             (*w) = (*w) + PERCEPTRON_TRAIN_CORR_FACTOR;
-            if (*w > MIN_WEIGHT)
-              *w = MIN_WEIGHT;
+            if (*w > MIN_WEIGHT) *w = MIN_WEIGHT;
           }
         }
         _DEBUG(0, DEBUG_BP_CONF, "index:%d *w[%d] :%d->%d  p:%d c:%d  bp_mis_pred:%d conf:%d y:%d \n", index, ii, old_w,
@@ -657,30 +638,26 @@ void conf_perceptron_update(Op* op) {
   // akary's paper original paper
   if ((y == 2) || (c != p)) {
     // change the counter value
-    for (mask = ((uns64)1) << 63, ii = 0; ii < CONF_HIST_LENGTH; ii++, mask >>= 1, w++) {
+    for (mask = ((uns64) 1) << 63, ii = 0; ii < CONF_HIST_LENGTH; ii++, mask >>= 1, w++) {
       int x_i = !!(hist & mask);
       int old_w;
       old_w = *w;
       UNUSED(old_w);
       if (PERCEPTRON_CONF_USE_CONF) {
         // mispred x_i = 1, correct pred: 0
-        if (x_i == 0)
-          x_i = -1;
+        if (x_i == 0) x_i = -1;
         // fix thise x_i mispredicted and c!=p then increament the counter
         if (x_i == p)
           (*w)++;
         else
           (*w)--;
       } else {
-        if (x_i == 0)
-          x_i = -1;  // not taken is -1 in the paper
+        if (x_i == 0) x_i = -1;  // not taken is -1 in the paper
         (*w) = (*w) + p * x_i;
       }
 
-      if (*w > MAX_WEIGHT)
-        *w = MAX_WEIGHT;
-      if (*w < MIN_WEIGHT)
-        *w = MIN_WEIGHT;
+      if (*w > MAX_WEIGHT) *w = MAX_WEIGHT;
+      if (*w < MIN_WEIGHT) *w = MIN_WEIGHT;
 
       _DEBUG(0, DEBUG_BP_CONF,
              "index:%d *w[%d] :%d->%d  p:%d c:%d x_i:%d bp_mis_pred:%d conf:%d "

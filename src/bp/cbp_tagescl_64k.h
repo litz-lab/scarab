@@ -179,14 +179,14 @@ enum tage_component {
 // P state is used to update the N components.
 struct PredictorStates {
   // Predictor status
-  //SC
+  // SC
   int THRES;  // used for comparing SC and intermediate result(one of TAGE or LOOP) to determine final prediction
   int LSUM;   // SC predict using LSUM
-  //LOOP
+  // LOOP
   bool predloop;  // prediction of LOOP predictor
   int LHIT;       // hitting way in LOOP predictor
   bool LVALID;    // validity of LOOP predictor prediction
-  //TAGE
+  // TAGE
   bool pred_taken;        // final prediction
   bool tage_pred;         // prediction of TAGE: one of LongestMatchPred or alttaken
   bool pred_inter;        // intermediate result: one of TAGE or LOOP
@@ -263,10 +263,10 @@ struct SpeculativeStatesBase {
   // folded global history using cyclic shift register to generate i'th TAGE tag
   cbp64_folded_history ch_t[2][NHIST + 1];
   // SC
-  long long GHIST;  // global history which is specialized to conditional branch
+  long long GHIST;             // global history which is specialized to conditional branch
   int8_t WG[1 << LOGSIZEUPS];  // GGEHL's weight table
   int8_t WP[1 << LOGSIZEUPS];  // PGEHL's weight table
-  //LOOP
+  // LOOP
   cbp64_lentry ltable[1 << LOGL];  // entire loop table.
 
   std::string to_string() const {
@@ -307,7 +307,7 @@ struct SpeculativeStatesBase {
     }
     ss << "]";
     if (TAGESCL64KB_LOOP) {
-    ss << " ltable=[...omitted...]";  // Can expand if needed
+      ss << " ltable=[...omitted...]";  // Can expand if needed
     }
 
     ss << "}";
@@ -370,13 +370,17 @@ class TAGE64K {
   // We play with the TAGE  confidence here, with the number of the hitting bank
 #define LOGBIAS 8
 #define INDBIAS(state)                                                                                         \
-  (((((PC ^ (PC >> 2)) << 1) ^ (state.LowConf & (TAGESCL64KB_ALT ? (state.LongestMatchPred != state.alttaken) : (state.LongestMatchPred > state.HitBank)))) << 1) + \
-   state.pred_inter) & ((1 << LOGBIAS) - 1)
+  (((((PC ^ (PC >> 2)) << 1) ^ (state.LowConf & (TAGESCL64KB_ALT ? (state.LongestMatchPred != state.alttaken)  \
+                                                                 : (state.LongestMatchPred > state.HitBank)))) \
+    << 1) +                                                                                                    \
+   state.pred_inter) &                                                                                         \
+      ((1 << LOGBIAS) - 1)
 #define INDBIASSK(state) \
   (((((PC ^ (PC >> (LOGBIAS - 2))) << 1) ^ (state.HighConf)) << 1) + state.pred_inter) & ((1 << LOGBIAS) - 1)
 #define INDBIASBANK(state)                                                                              \
   (state.pred_inter + (((state.HitBank + 1) / 4) << 4) + (state.HighConf << 1) + (state.LowConf << 2) + \
-  ((TAGESCL64KB_ALT ? (state.AltBank != 0) : 0) << 3) + ((PC ^ (PC >> 2)) << 7)) & ((1 << LOGBIAS) - 1)
+   ((TAGESCL64KB_ALT ? (state.AltBank != 0) : 0) << 3) + ((PC ^ (PC >> 2)) << 7)) &                     \
+      ((1 << LOGBIAS) - 1)
 
   // IMLI-SIC -> Micro 2015  paper: a big disappointment on  CBP2016 traces
 #ifdef IMLI
@@ -569,7 +573,7 @@ class TAGE64K {
   cbp64_gentry* gtable[NHIST + 1];   // N: tagged TAGE tables
 
   // utility variables
-  int TICK;                          // N: for the reset of the u counter
+  int TICK;  // N: for the reset of the u counter
   Counter branch_id;
   int Seed;       // for the pseudo-random number generator
   // snapshot containers

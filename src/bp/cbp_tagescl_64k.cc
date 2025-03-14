@@ -67,7 +67,7 @@ void TAGE64K::reinit() {
     Sstate.ch_t[0][i].init(Sstate.ch_i[i].OLENGTH, TB[i]);
     Sstate.ch_t[1][i].init(Sstate.ch_i[i].OLENGTH, TB[i] - 1);
   }
-  if(TAGESCL64KB_LOOP){
+  if (TAGESCL64KB_LOOP) {
     Pstate.LVALID = false;
     WITHLOOP = -1;
   }
@@ -339,18 +339,18 @@ void TAGE64K::SavePredictorStates(Counter key) {
 
   PredictorStates state(true);
   // LOOP
-  if(TAGESCL64KB_LOOP){
+  if (TAGESCL64KB_LOOP) {
     state.LHIT = Pstate.LHIT;
     state.LVALID = Pstate.LVALID;
     state.predloop = Pstate.predloop;
   }
   // SC
-  if(TAGESCL64KB_SC){
+  if (TAGESCL64KB_SC) {
     state.THRES = Pstate.THRES;
     state.LSUM = Pstate.LSUM;
   }
   // TAGE
-  if(TAGESCL64KB_ALT){
+  if (TAGESCL64KB_ALT) {
     state.alttaken = Pstate.alttaken;
     state.AltConf = Pstate.AltConf;
     state.AltBank = Pstate.AltBank;
@@ -393,13 +393,13 @@ void TAGE64K::RestorePredictorstates(Counter key) {
   auto pit = key_pindex.find(key);
   assert(pit != key_pindex.end());
   // LOOP
-  if(TAGESCL64KB_LOOP) {
+  if (TAGESCL64KB_LOOP) {
     Pstate.LHIT = pit->state.LHIT;
     Pstate.LVALID = pit->state.LVALID;
     Pstate.predloop = pit->state.predloop;
   }
   // SC
-  if(TAGESCL64KB_SC){
+  if (TAGESCL64KB_SC) {
     Pstate.THRES = pit->state.THRES;
     Pstate.LSUM = pit->state.LSUM;
   }
@@ -408,7 +408,7 @@ void TAGE64K::RestorePredictorstates(Counter key) {
   Pstate.pred_inter = pit->state.pred_inter;
   Pstate.pred_taken = pit->state.pred_taken;
   Pstate.LongestMatchPred = pit->state.LongestMatchPred;
-  if(TAGESCL64KB_ALT){
+  if (TAGESCL64KB_ALT) {
     Pstate.alttaken = pit->state.alttaken;
     Pstate.AltConf = pit->state.AltConf;
     Pstate.AltBank = pit->state.AltBank;
@@ -521,7 +521,7 @@ void TAGE64K::RestoreCheckpoint(Counter key) {
     std::copy(it->state.WG, it->state.WG + (1 << LOGSIZEUPS), Sstate.WG);
     std::copy(it->state.WP, it->state.WP + (1 << LOGSIZEUPS), Sstate.WP);
   }
-  if(TAGESCL64KB_LOOP)
+  if (TAGESCL64KB_LOOP)
     std::copy(it->state.ltable, it->state.ltable + (1 << LOGL), Sstate.ltable);
   // Restore predictor states
   RestorePredictorstates(key);
@@ -580,7 +580,7 @@ void TAGE64K::Tagepred(UINT64 PC) {
   Pstate.tage_pred = Pstate.alttaken;
   Pstate.LongestMatchPred = Pstate.alttaken;
   tage_component_tage = TAGE_BASE;
-  if(TAGESCL64KB_ALT) {
+  if (TAGESCL64KB_ALT) {
     tage_component_alt = TAGE_BASE;
   }
 
@@ -615,18 +615,17 @@ void TAGE64K::Tagepred(UINT64 PC) {
             (Pstate.AltBank >= BORN) ? TAGE_LONG : TAGE_SHORT;  // tag hit at the longer history length: TAGE_LONG
       } else
         Pstate.alttaken = getbim(PC);
-    // if the entry is recognized as a newly allocated entry and
-    // USE_ALT_ON_NA is positive  use the alternate prediction
-    bool Huse_alt_on_na = (use_alt_on_na[INDUSEALT(Pstate)] >= 0);
-    if (!Huse_alt_on_na || (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) > 1)) {
+      // if the entry is recognized as a newly allocated entry and
+      // USE_ALT_ON_NA is positive  use the alternate prediction
+      bool Huse_alt_on_na = (use_alt_on_na[INDUSEALT(Pstate)] >= 0);
+      if (!Huse_alt_on_na || (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) > 1)) {
         Pstate.tage_pred = Pstate.LongestMatchPred;
         tage_component_tage = (Pstate.HitBank >= BORN) ? TAGE_LONG : TAGE_SHORT;
       } else {
         Pstate.tage_pred = Pstate.alttaken;
         tage_component_tage = tage_component_alt;
       }
-    }
-    else if (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) > 1) {
+    } else if (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) > 1) {
       Pstate.tage_pred = Pstate.LongestMatchPred;
       tage_component_tage = (Pstate.HitBank >= BORN) ? TAGE_LONG : TAGE_SHORT;
     }
@@ -654,8 +653,8 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
     Pstate.predloop = getloop(PC);  // loop prediction
     Pstate.pred_taken = ((WITHLOOP >= 0) && (Pstate.LVALID)) ? Pstate.predloop : Pstate.pred_taken;
     tage_component = ((WITHLOOP >= 0) && (Pstate.LVALID))
-                       ? TAGE_LOOP
-                       : tage_component_tage;  // update STATUS to loop predictor or keep component level
+                         ? TAGE_LOOP
+                         : tage_component_tage;  // update STATUS to loop predictor or keep component level
   }
 
   Pstate.pred_inter = Pstate.pred_taken;
@@ -680,7 +679,7 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
     Pstate.LSUM += Gpredict((PC << 1) + Pstate.pred_inter, Sstate.GHIST, Gm, Sstate.GGEHL, GNB, LOGGNB, Sstate.WG);
     Pstate.LSUM += Gpredict(PC, Sstate.phist, Pm, Sstate.PGEHL, PNB, LOGPNB, Sstate.WP);
 #ifdef LOCALH
-     Pstate.LSUM += Gpredict(PC, L_shist[INDLOCAL], Lm, LGEHL, LNB, LOGLNB, WL);
+    Pstate.LSUM += Gpredict(PC, L_shist[INDLOCAL], Lm, LGEHL, LNB, LOGLNB, WL);
 #ifdef LOCALS
     Pstate.LSUM += Gpredict(PC, S_slhist[INDSLOCAL], Sm, SGEHL, SNB, LOGSNB, WS);
 #endif
@@ -697,17 +696,17 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
     // just  an heuristic if the respective contribution of component groups can be multiplied by 2 or not
     Pstate.THRES = (updatethreshold >> 3) + Pupdatethreshold[INDUPD]
 #ifdef VARTHRES
-                 + 12 * ((WB[INDUPDS] >= 0) + (Sstate.WP[INDUPDS] >= 0)
+                   + 12 * ((WB[INDUPDS] >= 0) + (Sstate.WP[INDUPDS] >= 0)
 #ifdef LOCALH
-                         + (WS[INDUPDS] >= 0) + (WT[INDUPDS] >= 0) + (WL[INDUPDS] >= 0)
+                           + (WS[INDUPDS] >= 0) + (WT[INDUPDS] >= 0) + (WL[INDUPDS] >= 0)
 #endif
-                         + (Sstate.WG[INDUPDS] >= 0)
+                           + (Sstate.WG[INDUPDS] >= 0)
 #ifdef IMLI
-                         + (WI[INDUPDS] >= 0)
+                           + (WI[INDUPDS] >= 0)
 #endif
-                        )
+                          )
 #endif
-      ;
+        ;
 
     // Minimal benefit in trying to avoid accuracy loss on low confidence SC prediction and  high/medium confidence on
     // TAGE
@@ -722,7 +721,8 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
           Pstate.pred_taken = Pstate.pred_inter;
           tage_component = tage_component_inter;
         }
-        // if |LSUM| is 'slightly' smaller than threshold(THRES / 4 <= |LSUM| < THRES / 2), select pred_inter when SecondH
+        // if |LSUM| is 'slightly' smaller than threshold(THRES / 4 <= |LSUM| < THRES / 2), select pred_inter when
+        // SecondH
         // >= 0
         else if ((abs(Pstate.LSUM) < Pstate.THRES / 2)) {
           Pstate.pred_taken = (SecondH < 0) ? SCPRED : Pstate.pred_inter;
@@ -823,7 +823,8 @@ void TAGE64K::HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target)
           IMLIcount = 0;
         }
         if (taken) {
-          if (IMLIcount < ((1 << Im[0]) - 1)) IMLIcount++;
+          if (IMLIcount < ((1 << Im[0]) - 1))
+            IMLIcount++;
         }
       }
     }
@@ -923,7 +924,7 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
         ctrupdate(WITHLOOP, (pstate.predloop == resolveDir), 7);
     }
     LoopUpdate(PC, resolveDir, (pstate.pred_taken != resolveDir), pstate.LHIT, pstate.on_path_phist,
-             pstate.on_path_ptghist);
+               pstate.on_path_ptghist);
   }
 
   if (TAGESCL64KB_SC) {
@@ -953,40 +954,48 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
           updatethreshold -= 1;
         }
 
-        if (Pupdatethreshold[INDUPD] >= (1 << (WIDTHRESP - 1))) Pupdatethreshold[INDUPD] = (1 << (WIDTHRESP - 1)) - 1;
+        if (Pupdatethreshold[INDUPD] >= (1 << (WIDTHRESP - 1)))
+          Pupdatethreshold[INDUPD] = (1 << (WIDTHRESP - 1)) - 1;
         // Pupdatethreshold[INDUPD] could be negative
-        if (Pupdatethreshold[INDUPD] < -(1 << (WIDTHRESP - 1))) Pupdatethreshold[INDUPD] = -(1 << (WIDTHRESP - 1));
-        if (updatethreshold >= (1 << (WIDTHRES - 1))) updatethreshold = (1 << (WIDTHRES - 1)) - 1;
+        if (Pupdatethreshold[INDUPD] < -(1 << (WIDTHRESP - 1)))
+          Pupdatethreshold[INDUPD] = -(1 << (WIDTHRESP - 1));
+        if (updatethreshold >= (1 << (WIDTHRES - 1)))
+          updatethreshold = (1 << (WIDTHRES - 1)) - 1;
         // updatethreshold could be negative
-        if (updatethreshold < -(1 << (WIDTHRES - 1))) updatethreshold = -(1 << (WIDTHRES - 1));
+        if (updatethreshold < -(1 << (WIDTHRES - 1)))
+          updatethreshold = -(1 << (WIDTHRES - 1));
       }
 #ifdef VARTHRES
       {
-        int XSUM = pstate.LSUM - ((WB[INDUPDS] >= 0) * ((2 * Bias[INDBIAS(pstate)] + 1) + (2 * BiasSK[INDBIASSK(pstate)] + 1) +
-                                                       (2 * BiasBank[INDBIASBANK(pstate)] + 1)));
-        if ((XSUM + ((2 * Bias[INDBIAS(pstate)] + 1) + (2 * BiasSK[INDBIASSK(pstate)] + 1) + (2 * BiasBank[INDBIASBANK(pstate)] + 1)) >= 0) !=
-            (XSUM >= 0))
+        int XSUM =
+            pstate.LSUM - ((WB[INDUPDS] >= 0) * ((2 * Bias[INDBIAS(pstate)] + 1) + (2 * BiasSK[INDBIASSK(pstate)] + 1) +
+                                                 (2 * BiasBank[INDBIASBANK(pstate)] + 1)));
+        if ((XSUM + ((2 * Bias[INDBIAS(pstate)] + 1) + (2 * BiasSK[INDBIASSK(pstate)] + 1) +
+                     (2 * BiasBank[INDBIASBANK(pstate)] + 1)) >=
+             0) != (XSUM >= 0))
           ctrupdate(WB[INDUPDS],
-                    (((2 * Bias[INDBIAS(pstate)] + 1) + (2 * BiasSK[INDBIASSK(pstate)] + 1) + (2 * BiasBank[INDBIASBANK(pstate)] + 1) >= 0) ==
-                    resolveDir), EWIDTH);
+                    (((2 * Bias[INDBIAS(pstate)] + 1) + (2 * BiasSK[INDBIASSK(pstate)] + 1) +
+                          (2 * BiasBank[INDBIASBANK(pstate)] + 1) >=
+                      0) == resolveDir),
+                    EWIDTH);
       }
 #endif
     ctrupdate(Bias[INDBIAS(pstate)], resolveDir, PERCWIDTH);
     ctrupdate(BiasSK[INDBIASSK(pstate)], resolveDir, PERCWIDTH);
     ctrupdate(BiasBank[INDBIASBANK(pstate)], resolveDir, PERCWIDTH);
 #ifdef LOCALH
-      Gupdate(PC, resolveDir, L_shist[INDLOCAL], Lm, LGEHL, LNB, LOGLNB, WL, pstate.LSUM);
+    Gupdate(PC, resolveDir, L_shist[INDLOCAL], Lm, LGEHL, LNB, LOGLNB, WL, pstate.LSUM);
 #ifdef LOCALS
-      Gupdate(PC, resolveDir, S_slhist[INDSLOCAL], Sm, SGEHL, SNB, LOGSNB, WS, pstate.LSUM);
+    Gupdate(PC, resolveDir, S_slhist[INDSLOCAL], Sm, SGEHL, SNB, LOGSNB, WS, pstate.LSUM);
 #endif
 #ifdef LOCALT
-      Gupdate(PC, resolveDir, T_slhist[INDTLOCAL], Tm, TGEHL, TNB, LOGTNB, WT, pstate.LSUM);
+    Gupdate(PC, resolveDir, T_slhist[INDTLOCAL], Tm, TGEHL, TNB, LOGTNB, WT, pstate.LSUM);
 #endif
 #endif
 
 #ifdef IMLI
-      Gupdate(PC, resolveDir, IMHIST[(IMLIcount)], IMm, IMGEHL, IMNB, LOGIMNB, WIM, pstate.LSUM);
-      Gupdate(PC, resolveDir, IMLIcount, Im, IGEHL, INB, LOGINB, WI, pstate.LSUM);
+    Gupdate(PC, resolveDir, IMHIST[(IMLIcount)], IMm, IMGEHL, IMNB, LOGIMNB, WIM, pstate.LSUM);
+    Gupdate(PC, resolveDir, IMLIcount, Im, IGEHL, INB, LOGINB, WI, pstate.LSUM);
 #endif
     }
   }
@@ -1016,7 +1025,7 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
       // even if the overall prediction was false
       if (TAGESCL64KB_ALT) {
         if (pstate.LongestMatchPred != pstate.alttaken) {
-        ctrupdate(use_alt_on_na[INDUSEALT(pstate)], (pstate.alttaken == resolveDir), ALTWIDTH);
+          ctrupdate(use_alt_on_na[INDUSEALT(pstate)], (pstate.alttaken == resolveDir), ALTWIDTH);
         }
       }
     }
@@ -1141,8 +1150,7 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
           }
           if (alt_idx == 0)
             baseupdate(resolveDir, PC);
-        }
-        else
+        } else
           baseupdate(resolveDir, PC);
       }
     ctrupdate(gtable[pstate.HitBank][pstate.GI[hit_idx]].ctr, resolveDir, CWIDTH);
@@ -1170,10 +1178,9 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
           if (gtable[pstate.HitBank][pstate.GI[hit_idx]].u < (1 << UWIDTH) - 1)
             gtable[pstate.HitBank][pstate.GI[hit_idx]].u++;
         }
-    }
-    else if (pstate.LongestMatchPred == resolveDir) {
+    } else if (pstate.LongestMatchPred == resolveDir) {
       if (gtable[pstate.HitBank][pstate.GI[hit_idx]].u < (1 << UWIDTH) - 1)
-          gtable[pstate.HitBank][pstate.GI[hit_idx]].u++;
+        gtable[pstate.HitBank][pstate.GI[hit_idx]].u++;
     }
   }
 
@@ -1373,7 +1380,7 @@ void TAGE64K::ComparePredictor(const PredictorStates& state) {
     ASSERTM(0, Pstate.alttaken == state.alttaken, "alttaken mismatch");
     ASSERTM(0, Pstate.AltConf == state.AltConf, "AltConf mismatch");
     ASSERTM(0, Pstate.AltBank == state.AltBank, "id: %llu AltBank mismatch: %d vs %d", branch_id, Pstate.AltBank,
-          state.AltBank);
+            state.AltBank);
   }
   // Example how to print all states
   // ASSERTM(0, Pstate.HitBank == state.HitBank,
@@ -1430,15 +1437,15 @@ void TAGE64K::CompareCheckpoint(const Checkpoint& state) {
     ASSERTM(0, Sstate.GHIST == state.GHIST, "GHIST mismatch: %lld vs %lld", Sstate.GHIST, state.GHIST);
     for (int i = 0; i < GNB; i++) {
       for (int j = 0; j < (1 << LOGGNB); j++) {
-        ASSERTM(0, Sstate.GGEHL[i][j] == state.GGEHL[i][j], "GGEHL[%d][%d] mismatch: %d vs %d", i, j, Sstate.GGEHL[i][j],
-                state.GGEHL[i][j]);
+        ASSERTM(0, Sstate.GGEHL[i][j] == state.GGEHL[i][j], "GGEHL[%d][%d] mismatch: %d vs %d", i, j,
+                Sstate.GGEHL[i][j], state.GGEHL[i][j]);
       }
     }
 
     for (int i = 0; i < PNB; i++) {
       for (int j = 0; j < (1 << LOGPNB); j++) {
-        ASSERTM(0, Sstate.PGEHL[i][j] == state.PGEHL[i][j], "PGEHL[%d][%d] mismatch: %d vs %d", i, j, Sstate.PGEHL[i][j],
-                state.PGEHL[i][j]);
+        ASSERTM(0, Sstate.PGEHL[i][j] == state.PGEHL[i][j], "PGEHL[%d][%d] mismatch: %d vs %d", i, j,
+                Sstate.PGEHL[i][j], state.PGEHL[i][j]);
       }
     }
 

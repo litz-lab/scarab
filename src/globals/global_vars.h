@@ -32,27 +32,29 @@
 /**************************************************************************************/
 
 #include <stdio.h>
+
 #include "globals/global_types.h"
-#include "statistics.h"
 
 #include "libs/hash_lib.h"
 
+#include "statistics.h"
+
 /**************************************************************************************/
 
-extern Counter  unique_count;
+extern Counter unique_count;
 extern Counter* unique_count_per_core;
 extern Counter* op_count;
 extern Counter* inst_count;
 extern Counter* inst_count_fetched;
-extern Counter  cycle_count;
-extern Counter  sim_time;
+extern Counter cycle_count;
+extern Counter sim_time;
 extern Counter* uop_count;
 extern Counter* pret_inst_count;
-extern uns      operating_mode;
+extern uns operating_mode;
 
 extern Counter* period_last_inst_count;
-extern Counter  period_last_cycle_count;
-extern Counter  period_ID;
+extern Counter period_last_cycle_count;
+extern Counter period_ID;
 
 extern Flag* warmup_dump_done;
 
@@ -64,10 +66,10 @@ extern Flag* sim_done;
 extern FILE* mystderr;
 extern FILE* mystdout;
 extern FILE* mystatus;
-extern int   mystatus_fd;
+extern int mystatus_fd;
 
 extern Flag frontend_gated;
-extern uns  num_fetched_lowconf_brs;
+extern uns num_fetched_lowconf_brs;
 
 extern Flag roi_dump_began;
 extern Counter roi_dump_ID;

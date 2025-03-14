@@ -17,12 +17,11 @@
 #define _MTAGE_H_
 
 #include <assert.h>
+#include <cmath>
 #include <inttypes.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <cmath>
 #include <vector>
 
 #include "cbp_to_scarab.h"
@@ -124,11 +123,11 @@ Moved to mtage_unlimited.cc
 #define P5_RAMPUP 100000
 
 // parameters common to all tages
-//#define TAGBITS 15
+// #define TAGBITS 15
 #define CTRBITS 3
 #define PATHBITS 6
 #define POSTPBITS 5
-//#define POSTPEXTRA 1
+// #define POSTPEXTRA 1
 #define ALLOCFAILMAX 511
 #define MAXALLOC 3
 #define CAPHIST 200

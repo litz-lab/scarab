@@ -29,6 +29,8 @@
 #ifndef __OP_POOL_H__
 #define __OP_POOL_H__
 
+#include "globals/global_types.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -36,17 +38,16 @@ extern "C" {
 /**************************************************************************************/
 /* Global Variables */
 
-extern Op  invalid_op;
+extern Op invalid_op;
 extern uns op_pool_entries;
 extern uns op_pool_active_ops;
-
 
 /**************************************************************************************/
 /* Prototypes */
 
 void init_op_pool(void);
 void reset_op_pool(void);
-Op*  alloc_op(uns proc_id);
+Op* alloc_op(uns proc_id);
 void free_op(Op*);
 void op_pool_init_op(Op*);
 void op_pool_setup_op(uns proc_id, Op* op);

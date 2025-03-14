@@ -31,55 +31,52 @@
 
 #include "isa/isa_macros.h"
 #include "libs/hash_lib.h"
+
 #include "op.h"
 
 /**************************************************************************************/
 /* Types */
 
 typedef struct Map_Entry_struct {
-  Op*     op;         /* last op to write (invalid when committed) */
-  Counter op_num;     /* op number of the last op to write (not cleared, only
-                         overwritten) */
-  Counter unique_num; /* unique number of the last op to write (not cleared,
-                         only overwritten) */
+  Op* op;             /* last op to write (invalid when committed) */
+  Counter op_num;     /* op number of the last op to write (not cleared, only overwritten) */
+  Counter unique_num; /* unique number of the last op to write (not cleared, only overwritten) */
 } Map_Entry;
 
 typedef struct Map_Data_struct {
   /* store information about the last op to write each register */
-  uns8      proc_id;
+  uns8 proc_id;
   Map_Entry reg_map[NUM_REG_IDS * 2];
-  Flag      map_flags[NUM_REG_IDS];
+  Flag map_flags[NUM_REG_IDS];
 
   Map_Entry last_store[2];
-  Flag      last_store_flag;
+  Flag last_store_flag;
 
   Hash_Table oracle_mem_hash;
 
   Wake_Up_Entry* free_list_head;
-  uns            wake_up_entries;
-  uns            active_wake_up_entries;
+  uns wake_up_entries;
+  uns active_wake_up_entries;
 } Map_Data;
-
 
 /**************************************************************************************/
 /* External Variables */
 
 extern Map_Data* map_data;
 
-
 /**************************************************************************************/
 /* Prototypes */
 
 Map_Data* set_map_data(Map_Data*);
-void      init_map(uns8);
-void      recover_map(void);
-void      rebuild_offpath_map(void);
-void      reset_map(void);
-void      map_op(Op*);
-void      map_mem_dep(Op*);
-void      wake_up_ops(Op*, Dep_Type, void (*)(Op*, Op*, uns8));
-void      free_wake_up_list(Op*);
-void      add_to_wake_up_lists(Op*, Op_Info*, void (*)(Op*, Op*, uns8));
+void init_map(uns8);
+void recover_map(void);
+void rebuild_offpath_map(void);
+void reset_map(void);
+void map_op(Op*);
+void map_mem_dep(Op*);
+void wake_up_ops(Op*, Dep_Type, void (*)(Op*, Op*, uns8));
+void free_wake_up_list(Op*);
+void add_to_wake_up_lists(Op*, Op_Info*, void (*)(Op*, Op*, uns8));
 
 void add_src_from_op(Op*, Op*, Dep_Type);
 void add_src_from_map_entry(Op*, Map_Entry*, Dep_Type);
@@ -90,7 +87,6 @@ void delete_store_hash_entry(Op*);
 void clear_not_rdy_bit(Op*, uns);
 Flag test_not_rdy_bit(Op*, uns);
 void set_not_rdy_bit(Op*, uns);
-
 
 /**************************************************************************************/
 

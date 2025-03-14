@@ -26,36 +26,38 @@
  * Description  :
  ***************************************************************************************/
 
-#include "debug/debug_macros.h"
-#include "debug/debug_print.h"
+#include "map_stage.h"
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
-#include "memory/memory.param.h"
-#include "op_pool.h"
 
-#include "bp/bp.h"
-#include "map.h"
-#include "map_rename.h"
-#include "map_stage.h"
-#include "model.h"
-#include "thread.h"
-#include "uop_cache.h"
-#include "decode_stage.h"
-#include "icache_stage.h"
+#include "debug/debug.param.h"
+#include "debug/debug_macros.h"
+#include "debug/debug_print.h"
 
 #include "core.param.h"
-#include "debug/debug.param.h"
+#include "memory/memory.param.h"
+
+#include "bp/bp.h"
+
+#include "decode_stage.h"
+#include "icache_stage.h"
+#include "map.h"
+#include "map_rename.h"
+#include "model.h"
+#include "op_pool.h"
 #include "statistics.h"
+#include "thread.h"
+#include "uop_cache.h"
 
 /**************************************************************************************/
 /* Macros */
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_MAP_STAGE, ##args)
 #define STAGE_MAX_OP_COUNT ISSUE_WIDTH
 #define STAGE_MAX_DEPTH MAP_CYCLES
-
 
 /**************************************************************************************/
 /* Global Variables */
@@ -78,13 +80,12 @@ void set_map_stage(Map_Stage* new_map) {
   map = new_map;
 }
 
-
 /**************************************************************************************/
 /* init_map_stage: */
 
 void init_map_stage(uns8 proc_id, const char* name) {
   char tmp_name[MAX_STR_LENGTH + 1];
-  uns  ii;
+  uns ii;
   ASSERT(proc_id, map);
   ASSERT(proc_id, STAGE_MAX_DEPTH > 0);
   DEBUG(proc_id, "Initializing %s stage\n", name);
@@ -93,21 +94,20 @@ void init_map_stage(uns8 proc_id, const char* name) {
   map->proc_id = proc_id;
 
   map->sds = (Stage_Data*)malloc(sizeof(Stage_Data) * STAGE_MAX_DEPTH);
-  for(ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
+  for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &map->sds[ii];
     snprintf(tmp_name, MAX_STR_LENGTH, "%s %d", name, STAGE_MAX_DEPTH - ii - 1);
-    cur->name         = (char*)strdup(tmp_name);
+    cur->name = (char*)strdup(tmp_name);
     ASSERT(proc_id, STAGE_MAX_OP_COUNT >= IC_ISSUE_WIDTH);
     if (UOP_CACHE_ENABLE) {
       ASSERT(proc_id, STAGE_MAX_OP_COUNT >= UOPC_ISSUE_WIDTH);
     }
     cur->max_op_count = STAGE_MAX_OP_COUNT;
-    cur->ops          = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
+    cur->ops = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
   }
   map->last_sd = &map->sds[0];
   reset_map_stage();
 }
-
 
 /**************************************************************************************/
 /* reset_map_stage: */
@@ -115,14 +115,13 @@ void init_map_stage(uns8 proc_id, const char* name) {
 void reset_map_stage() {
   uns ii, jj;
   ASSERT(0, map);
-  for(ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
+  for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &map->sds[ii];
-    cur->op_count   = 0;
-    for(jj = 0; jj < STAGE_MAX_OP_COUNT; jj++)
+    cur->op_count = 0;
+    for (jj = 0; jj < STAGE_MAX_OP_COUNT; jj++)
       cur->ops[jj] = NULL;
   }
 }
-
 
 /**************************************************************************************/
 /* recover_map_stage: */
@@ -131,19 +130,19 @@ void recover_map_stage() {
   uns ii, jj, kk;
   map_off_path = 0;
   ASSERT(0, map);
-  for(ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
+  for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &map->sds[ii];
-    cur->op_count   = 0;
+    cur->op_count = 0;
 
-    for(jj = 0, kk = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
-      if(cur->ops[jj]) {
-        if(FLUSH_OP(cur->ops[jj])) {
+    for (jj = 0, kk = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
+      if (cur->ops[jj]) {
+        if (FLUSH_OP(cur->ops[jj])) {
           free_op(cur->ops[jj]);
           cur->ops[jj] = NULL;
         } else {
           Op* op = cur->ops[jj];
           cur->op_count++;
-          cur->ops[jj]   = NULL;  // collapse the ops
+          cur->ops[jj] = NULL;  // collapse the ops
           cur->ops[kk++] = op;
         }
       }
@@ -156,29 +155,26 @@ void recover_map_stage() {
   }
 }
 
-
 /**************************************************************************************/
 /* debug_map_stage: */
 
 void debug_map_stage() {
   uns ii;
-  for(ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
+  for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &map->sds[STAGE_MAX_DEPTH - ii - 1];
     DPRINTF("# %-10s  op_count:%d\n", cur->name, cur->op_count);
-    print_op_array(GLOBAL_DEBUG_STREAM, cur->ops, STAGE_MAX_OP_COUNT,
-                   STAGE_MAX_OP_COUNT);
+    print_op_array(GLOBAL_DEBUG_STREAM, cur->ops, STAGE_MAX_OP_COUNT, STAGE_MAX_OP_COUNT);
   }
 }
-
 
 /**************************************************************************************/
 /* map_cycle: */
 
 void update_map_stage(Stage_Data* idq_sd) {
-  Flag        stall = (map->last_sd->op_count > 0);
+  Flag stall = (map->last_sd->op_count > 0);
   Stage_Data *cur, *prev;
-  Op**        temp;
-  uns         ii;
+  Op** temp;
+  uns ii;
 
   /* stall if the renaming table is full */
   if (!reg_file_available(STAGE_MAX_OP_COUNT)) {
@@ -188,15 +184,15 @@ void update_map_stage(Stage_Data* idq_sd) {
   STAT_EVENT(map->proc_id, MAP_STAGE_NOT_STALL_ITSELF);
 
   /* do all the intermediate stages */
-  for(ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
+  for (ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
     cur = &map->sds[ii];
-    if(cur->op_count)
+    if (cur->op_count)
       continue;
-    prev           = &map->sds[ii + 1];
-    temp           = cur->ops;
-    cur->ops       = prev->ops;
-    prev->ops      = temp;
-    cur->op_count  = prev->op_count;
+    prev = &map->sds[ii + 1];
+    temp = cur->ops;
+    cur->ops = prev->ops;
+    prev->ops = temp;
+    cur->op_count = prev->op_count;
     prev->op_count = 0;
   }
 
@@ -205,8 +201,8 @@ void update_map_stage(Stage_Data* idq_sd) {
 
   Flag starved = idq_sd->op_count == 0;
 
-  if(!map_off_path) {
-    if(stall)
+  if (!map_off_path) {
+    if (stall)
       STAT_EVENT(map->proc_id, MAP_STAGE_STALLED);
     else
       STAT_EVENT(map->proc_id, MAP_STAGE_NOT_STALLED);
@@ -214,9 +210,8 @@ void update_map_stage(Stage_Data* idq_sd) {
       STAT_EVENT(map->proc_id, MAP_STAGE_STARVED);
     else
       STAT_EVENT(map->proc_id, MAP_STAGE_NOT_STARVED);
-  }
-  else
-      STAT_EVENT(map->proc_id, MAP_STAGE_OFF_PATH);
+  } else
+    STAT_EVENT(map->proc_id, MAP_STAGE_OFF_PATH);
 
   if (cur->op_count == 0 && !starved) {
     int op_count_before_consuming = idq_sd->op_count;
@@ -234,7 +229,7 @@ void update_map_stage(Stage_Data* idq_sd) {
         map_off_path = 1;
       }
     }
-    // Probably should count number of on-path ops. 
+    // Probably should count number of on-path ops.
     // Any stage can receive a mix of on/off-path ops in a single cycle.
     if (!map_off_path)
       STAT_EVENT(map->proc_id, MAP_STAGE_RECEIVED_OPS_0 + cur->op_count);
@@ -242,11 +237,11 @@ void update_map_stage(Stage_Data* idq_sd) {
   }
 
   /* if the last map stage is stalled, don't re-process the ops  */
-  if(stall) {
+  if (stall) {
     return;
   }
   /* now map the ops in the last map stage */
-  for(ii = 0; ii < map->last_sd->op_count; ii++) {
+  for (ii = 0; ii < map->last_sd->op_count; ii++) {
     Op* op = map->last_sd->ops[ii];
     ASSERT(map->proc_id, op != NULL);
     stage_process_op(op);

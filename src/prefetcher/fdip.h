@@ -29,48 +29,47 @@
 #ifndef __FDIP_H__
 #define __FDIP_H__
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-  #include "icache_stage.h"
+#include "icache_stage.h"
 
-  void alloc_mem_fdip(uns numProcs);
-  void init_fdip(uns proc_id);
-  void update_fdip();
-  void recover_fdip();
-  void set_fdip(int _proc_id, Icache_Stage *_ic);
-  Flag fdip_off_path();
-  uns64 fdip_get_ghist();
-  uns64 fdip_hash_addr_ghist(uint64_t addr, uint64_t ghist);
-  void print_cl_info(uns proc_id);
-  void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss);
-  void inc_cnt_unuseful(uns proc_id, Addr line_addr);
-  void inc_cnt_useful_signed(Addr line_addr);
-  void dec_cnt_useful_signed(Addr line_addr);
-  void inc_icache_miss(Addr line_addr);
-  void inc_icache_hit(Addr line_addr);
-  void inc_off_fetched_cls(Addr line_addr);
-  void add_evict_seq(Addr line_addr);
-  void evict_prefetched_cls(Addr line_addr, Flag by_fdip);
-  uns get_miss_reason(Addr line_addr);
-  uns get_last_miss_reason();
-  void set_last_miss_reason(uns reason);
-  uint64_t get_fdip_ftq_occupancy_ops(uns proc_id);
-  uint64_t get_fdip_ftq_occupancy(uns proc_id);
-  void update_useful_lines_uc(Addr line_addr);
-  void update_unuseful_lines_uc(Addr line_addr);
-  void inc_useful_lines_uc(Addr line_addr);
-  void dec_useful_lines_uc(Addr line_addr);
-  void update_useful_lines_bloom_filter(Addr line_addr);
-  void inc_utility_info(Flag useful);
-  void inc_timeliness_info(Flag mshr_hit);
-  void fdip_inc_cnt_btb_miss(uns proc_id);
-  Flag fdip_search_pref_candidate(Addr addr);
-  void assert_fdip_break_reason(Addr line_addr);
-  Op* fdip_get_cur_op();
-  Counter fdip_get_last_recover_cycle();
+void alloc_mem_fdip(uns numProcs);
+void init_fdip(uns proc_id);
+void update_fdip();
+void recover_fdip();
+void set_fdip(int _proc_id, Icache_Stage* _ic);
+Flag fdip_off_path();
+uns64 fdip_get_ghist();
+uns64 fdip_hash_addr_ghist(uint64_t addr, uint64_t ghist);
+void print_cl_info(uns proc_id);
+void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss);
+void inc_cnt_unuseful(uns proc_id, Addr line_addr);
+void inc_cnt_useful_signed(Addr line_addr);
+void dec_cnt_useful_signed(Addr line_addr);
+void inc_icache_miss(Addr line_addr);
+void inc_icache_hit(Addr line_addr);
+void inc_off_fetched_cls(Addr line_addr);
+void add_evict_seq(Addr line_addr);
+void evict_prefetched_cls(Addr line_addr, Flag by_fdip);
+uns get_miss_reason(Addr line_addr);
+uns get_last_miss_reason();
+void set_last_miss_reason(uns reason);
+uint64_t get_fdip_ftq_occupancy_ops(uns proc_id);
+uint64_t get_fdip_ftq_occupancy(uns proc_id);
+void update_useful_lines_uc(Addr line_addr);
+void update_unuseful_lines_uc(Addr line_addr);
+void inc_useful_lines_uc(Addr line_addr);
+void dec_useful_lines_uc(Addr line_addr);
+void update_useful_lines_bloom_filter(Addr line_addr);
+void inc_utility_info(Flag useful);
+void inc_timeliness_info(Flag mshr_hit);
+void fdip_inc_cnt_btb_miss(uns proc_id);
+Flag fdip_search_pref_candidate(Addr addr);
+void assert_fdip_break_reason(Addr line_addr);
+Op* fdip_get_cur_op();
+Counter fdip_get_last_recover_cycle();
 
 #ifdef __cplusplus
 }

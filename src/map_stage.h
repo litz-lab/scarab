@@ -32,24 +32,19 @@
 #include "idq_stage.h"
 #include "stage_data.h"
 
-
 /**************************************************************************************/
 /* Types */
 
 typedef struct Map_Stage_struct {
-  uns         proc_id;
-  Stage_Data* sds;     /* stage interface data (dynamically
-                        * allocated number of pipe stages) */
-  Stage_Data* last_sd; /* pointer to last decode pipeline stage
-                        * (for passing ops to map) */
+  uns proc_id;
+  Stage_Data* sds;     /* stage interface data (dynamically allocated number of pipe stages) */
+  Stage_Data* last_sd; /* pointer to last decode pipeline stage (for passing ops to map) */
 } Map_Stage;
-
 
 /**************************************************************************************/
 /* External Variables */
 
 extern Map_Stage* map;
-
 
 /**************************************************************************************/
 /* prototypes */

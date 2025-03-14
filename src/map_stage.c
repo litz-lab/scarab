@@ -43,15 +43,12 @@
 
 #include "bp/bp.h"
 
-#include "decode_stage.h"
-#include "icache_stage.h"
 #include "map.h"
 #include "map_rename.h"
 #include "model.h"
 #include "op_pool.h"
 #include "statistics.h"
 #include "thread.h"
-#include "uop_cache.h"
 
 /**************************************************************************************/
 /* Macros */

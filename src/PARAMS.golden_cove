@@ -29,7 +29,9 @@
 
 ### Uop Cache
 # inclusive w/ L1i
---uop_cache_max_uops_line       680      # 6 x 680 = 4080 uops in total (~4K)
+--uop_cache_enable              1
+--uop_cache_width               8
+--uop_cache_lines               512      # 8 x 512 = 4096 uops in total (~4K)
 --uop_cache_assoc               8
 --iprf_on_uop_cache_hit         1
 
@@ -77,9 +79,11 @@
 --tc_assoc                      4
 
 ### Decode Stage
---decode_path_width_narrower    0
+--decode_width                  6
 --decode_cycles                 5
 
+### Instruction Decode Queue
+--idq_size                      144
 
 ### Map Stage
 --map_cycles                    5
@@ -87,7 +91,7 @@
 
 ### Issue Stage
 
-# Max number of instructions to be fetched, decoded, renamed, and issued per cycle.
+# Max number of instructions to be renamed, and issued per cycle.
 --issue_width                   6
 
 --rs_fill_width                 0

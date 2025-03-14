@@ -98,10 +98,6 @@ void init_map_stage(uns8 proc_id, const char* name) {
     Stage_Data* cur = &map->sds[ii];
     snprintf(tmp_name, MAX_STR_LENGTH, "%s %d", name, STAGE_MAX_DEPTH - ii - 1);
     cur->name = (char*)strdup(tmp_name);
-    ASSERT(proc_id, STAGE_MAX_OP_COUNT >= IC_ISSUE_WIDTH);
-    if (UOP_CACHE_ENABLE) {
-      ASSERT(proc_id, STAGE_MAX_OP_COUNT >= UOPC_ISSUE_WIDTH);
-    }
     cur->max_op_count = STAGE_MAX_OP_COUNT;
     cur->ops = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
   }

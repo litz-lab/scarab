@@ -219,13 +219,13 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
   /* BTB ports always equals to fetch ports since branch information in
    * consective branch instructions in the same fetch group can be read out from
    * BTB once.*/
-  ADD_XML_PARAM(out, header, "fetch_width", ISSUE_WIDTH,
+  ADD_XML_PARAM(out, header, "fetch_width", DECODE_WIDTH,
                 "fetch_width determins the size of cachelines of L1 cache block");
   ADD_XML_PARAM(out, header, "number_instruction_fetch_ports", 1,
                 "number_instruction_fetch_ports(icache ports) is always 1 in "
                 "single-thread processor, it only may be more than one in SMT "
                 "processors.");
-  ADD_XML_PARAM(out, header, "decode_width", ISSUE_WIDTH,
+  ADD_XML_PARAM(out, header, "decode_width", DECODE_WIDTH,
                 "decode_width determins the number of ports of the renaming "
                 "table (both RAM and CAM) scheme");
 

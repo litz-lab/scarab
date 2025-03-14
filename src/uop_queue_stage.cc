@@ -26,8 +26,7 @@ extern "C" {
 // Macros
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_UOP_QUEUE_STAGE, ##args)
 #define UOP_QUEUE_STAGE_LENGTH UOP_QUEUE_LENGTH
-#define STAGE_MAX_OP_COUNT ISSUE_WIDTH  // The bandwidth of the next, consuming stage (map stage)
-// TODO(peterbraun): Check if the ISSUE_WIDTH can be less than the uop cache issue bandwidth
+#define STAGE_MAX_OP_COUNT UOP_CACHE_WIDTH
 
 // Uop Queue Variables
 std::deque<Stage_Data*> q{};

@@ -20,14 +20,14 @@
  */
 
 /***************************************************************************************
- * File         : idq.h
+ * File         : idq_stage.h
  * Author       : Mingsheng Xu <mxu61@ucsc.edu>
  * Date         : 03/05/2025
  * Description  : Instruction Decode Queue (IDQ) bridges the front-end and the back-end.
  ***************************************************************************************/
 
-#ifndef __IDQ_H__
-#define __IDQ_H__
+#ifndef __IDQ_SATGE_H__
+#define __IDQ_SATGE_H__
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,25 +38,24 @@ extern "C" {
 /**************************************************************************************/
 /* Types */
 
-typedef struct IDQ IDQ;
+typedef struct IDQ_Stage IDQ_Stage;
 
 /**************************************************************************************/
 /* External Variables */
 
-extern IDQ* idq;
+extern IDQ_Stage* idq_stage;
 
 /**************************************************************************************/
 /* Prototypes */
 
-void alloc_mem_idq(uns8);
-void set_idq(uns8);
-void init_idq(uns8);
-void reset_idq(void);
-void recover_idq(void);
-void debug_idq(void);
-void update_idq(Stage_Data*, Stage_Data*, Stage_Data*);
-Op* dequeue_op_from_idq(void);
-Op* peek_op_from_idq(void);
+void alloc_mem_idq_stage(uns8);
+void set_idq_stage(uns8);
+void init_idq_stage(uns8, const char*);
+void reset_idq_stage(void);
+void recover_idq_stage(void);
+void debug_idq_stage(void);
+void update_idq_stage(Stage_Data*, Stage_Data*, Stage_Data*);
+Stage_Data* idq_stage_get_stage_data(void);
 
 #ifdef __cplusplus
 }

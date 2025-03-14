@@ -174,7 +174,7 @@ void debug_map_stage() {
 /**************************************************************************************/
 /* map_cycle: */
 
-void update_map_stage() {
+void update_map_stage(Stage_Data* idq_sd) {
   Flag        stall = (map->last_sd->op_count > 0);
   Stage_Data *cur, *prev;
   Op**        temp;
@@ -203,12 +203,7 @@ void update_map_stage() {
   /* do the first map stage */
   cur = &map->sds[STAGE_MAX_DEPTH - 1];
 
-  Op* idq_head_op = peek_op_from_idq();
-  Flag starved = TRUE;
-  if (idq_head_op) {
-    ASSERT(map->proc_id, idq_head_op->op_num == map_stage_next_op_num);
-    starved = FALSE;
-  }
+  Flag starved = idq_sd->op_count == 0;
 
   if(!map_off_path) {
     if(stall)
@@ -224,20 +219,19 @@ void update_map_stage() {
       STAT_EVENT(map->proc_id, MAP_STAGE_OFF_PATH);
 
   if (cur->op_count == 0 && !starved) {
-    for (int ii = 0; ii < cur->max_op_count; ii++) {
-      Op* op = dequeue_op_from_idq();
-      if (op) {
-        ASSERT(map->proc_id, op->op_num == map_stage_next_op_num);
-        DEBUG(map->proc_id, "Fetching opnum=%llu at idx=%i\n", op->op_num, ii);
-        op->map_cycle = cycle_count;
-        cur->ops[cur->op_count++] = op;
-        map_stage_next_op_num++;
-        if (op->off_path) {
-          map_off_path = 1;
-        }
-      } else {
-        ASSERT(map->proc_id, ii > 0);
-        break;
+    int op_count_before_consuming = idq_sd->op_count;
+    for (int ii = 0; ii < op_count_before_consuming; ii++) {
+      Op* op = idq_sd->ops[ii];
+      ASSERT(map->proc_id, op->op_num == map_stage_next_op_num);
+      DEBUG(map->proc_id, "Fetching opnum=%llu at idx=%i\n", op->op_num, ii);
+      op->map_cycle = cycle_count;
+      cur->ops[ii] = op;
+      cur->op_count++;
+      map_stage_next_op_num++;
+      idq_sd->ops[ii] = NULL;
+      idq_sd->op_count--;
+      if (op->off_path) {
+        map_off_path = 1;
       }
     }
     // Probably should count number of on-path ops. 

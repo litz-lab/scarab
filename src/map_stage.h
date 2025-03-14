@@ -29,7 +29,7 @@
 #ifndef __MAP_STAGE_H__
 #define __MAP_STAGE_H__
 
-#include "idq.h"
+#include "idq_stage.h"
 #include "stage_data.h"
 
 
@@ -60,7 +60,7 @@ void init_map_stage(uns8, const char*);
 void reset_map_stage(void);
 void recover_map_stage(void);
 void debug_map_stage(void);
-void update_map_stage(void);
+void update_map_stage(Stage_Data*);
 
 /**************************************************************************************/
 

@@ -54,7 +54,7 @@
 
 #include "decoupled_frontend.h"
 #include "freq.h"
-#include "idq.h"
+#include "idq_stage.h"
 #include "map_rename.h"
 #include "op_pool.h"
 #include "sim.h"
@@ -116,7 +116,7 @@ void cmp_init(uns mode) {
 
     init_uop_queue_stage();
 
-    init_idq(proc_id);
+    init_idq_stage(proc_id, "IDQ");
 
     init_map_stage(proc_id, "MAP");
 
@@ -170,7 +170,7 @@ void cmp_reset() {
     reset_decoupled_fe();
     reset_icache_stage();
     reset_decode_stage();
-    reset_idq();
+    reset_idq_stage();
     reset_map_stage();
     reset_node_stage();
     reset_exec_stage();
@@ -233,23 +233,22 @@ void cmp_cores(void) {
       set_bp_recovery_info(&cmp_model.bp_recovery_info[proc_id]);
       cmp_set_all_stages(proc_id);
 
-      /* back-end pipeline */
+      /* Back-end pipeline */
       update_dcache_stage(&exec->sd);
       update_exec_stage(&node->sd);
       update_node_stage(map->last_sd);
-      update_map_stage();
+      update_map_stage(idq_stage_get_stage_data());
 
-      /* front-end pipiline */
+      /* IDQ stage that bridges the front-end and back-end */
+      /* This stage can get uops from the ic->uopc_sd, cache queue, or decoder. */
+      update_idq_stage(dec->last_sd, &ic->uopc_sd, uop_queue_stage_get_latest_sd());
+
+      /* Front-end pipiline */
       update_uop_queue_stage(&ic->uopc_sd);
       update_decode_stage(&ic->sd);
       update_icache_stage();
-      // idq can get ops from the uop cache, uop cache queue, or the decoder.
-      // enqueuing idq is combinational; it adds no extra latency on top of the uop cache latency / decoding latency;
-      // in other words, its latency is subsumed by the uop cache latency / decoding latency;
-      // that is why it is not updated in reverse order.
-      update_idq(dec->last_sd, &ic->uopc_sd, uop_queue_stage_get_latest_sd());
 
-      /* decoupled branch prediction */
+      /* Decoupled branch prediction and prefetching */
       update_decoupled_fe();
       update_fdip();
       update_eip();
@@ -276,7 +275,7 @@ void cmp_debug() {
     debug_decoupled_fe();
     debug_icache_stage();
     debug_decode_stage();
-    debug_idq();
+    debug_idq_stage();
     debug_map_stage();
     debug_node_stage();
     debug_exec_stage();
@@ -388,7 +387,7 @@ void cmp_recover() {
   recover_uop_cache();
   recover_decode_stage();
   recover_uop_queue_stage();
-  recover_idq();
+  recover_idq_stage();
   recover_map_stage();
   recover_node_stage();
   recover_exec_stage();

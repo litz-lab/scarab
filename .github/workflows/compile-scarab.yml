@@ -30,6 +30,10 @@ jobs:
       - name: Mark Git repo as safe
         run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
 
-      - name: Build Scarab
+      - name: Build Scarab Opt
         working-directory: src
-        run: make -j
+        run: make opt -j
+
+      - name: Build Scarab Dbg
+        working-directory: src
+        run: make dbg -j

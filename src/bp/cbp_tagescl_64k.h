@@ -508,7 +508,7 @@ class TAGE64K {
   void RestorePredictorstates(Counter key);
   void ComparePredictor(const PredictorStates& Pstate);
   void CompareCheckpoint(const Checkpoint& cp);
-  Counter KeyGeneration(bool offpath);
+  Counter KeyGeneration();
   int GetBrtypeFromOptype(OpType opType);
   void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget,
                        const PredictorStates& Pstate);
@@ -523,7 +523,7 @@ class TAGE64K {
   void TrackOtherInst(UINT64 PC, OpType opType, bool taken, UINT64 branchTarget);
   int lindex(UINT64 PC);
   bool getloop(UINT64 PC);
-  void SpecLoopUpdate(UINT64 PC, bool Taken, long long on_path_phist, int on_path_ptghist);
+  void SpecLoopUpdate(UINT64 PC, bool Taken, long long on_path_phist, int on_path_ptghist, bool off_path);
   void LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, int lhit, long long on_path_phist, int on_path_ptghist);
 
   // P: Predictor components

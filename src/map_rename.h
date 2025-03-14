@@ -92,7 +92,8 @@ struct reg_table_entry {
   // lifecycle counter
   Counter alloc_cycle;
   Counter produce_cycle;
-  Counter last_consume_cycle;
+  Counter last_consume_execute_cycle;
+  Counter last_consume_commit_cycle;
 
   // consumer counter
   int num_consumers;   // the number of registered (at rename) consumers of a registers

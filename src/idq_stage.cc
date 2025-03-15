@@ -145,7 +145,8 @@ void IDQ_Stage::recover() {
 void IDQ_Stage::debug() {
 }
 
-Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
+Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd,
+                                               Stage_Data* uop_queue_sd) {
   /* When the uop cache is enabled, the next uop to enqueue the idq is from either:
    * 1. the decode stage
    * 2. the uop cache source

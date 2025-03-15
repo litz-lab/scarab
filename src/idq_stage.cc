@@ -53,7 +53,7 @@ class IDQ_Stage {
   void recover();
   void debug();
   void update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd);
-  Stage_Data* get_stage_data();
+  Stage_Data* get_output_stage_data();
 
  private:
   uns8 proc_id;
@@ -64,8 +64,10 @@ class IDQ_Stage {
   int tail;
   Counter next_op_num;
 
+  /* the IDQ outpur stage data */
   Stage_Data idq_sd;
 
+  Stage_Data* select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd);
   bool enqueue(Op* op);
   Op* dequeue();
   inline int wrap_around(int);
@@ -143,7 +145,7 @@ void IDQ_Stage::recover() {
 void IDQ_Stage::debug() {
 }
 
-void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
+Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
   /* When the uop cache is enabled, the next uop to enqueue the idq is from either:
    * 1. the decode stage
    * 2. the uop cache source
@@ -166,34 +168,38 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
     } else if (uopc_src_sd->op_count && uopc_src_sd->ops[0]->op_num == next_op_num) {
       consume_from_sd = uopc_src_sd;
     }
-  } else {
-    if (dec_src_sd->op_count) {
-      ASSERT(proc_id, dec_src_sd->ops[0]->op_num == next_op_num);
-      consume_from_sd = dec_src_sd;
-    }
+  } else if (dec_src_sd->op_count) {
+    ASSERT(proc_id, dec_src_sd->ops[0]->op_num == next_op_num);
+    consume_from_sd = dec_src_sd;
   }
+  return consume_from_sd;
+}
 
+void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
   /* Fill the IDQ output stage data with uops from IDQ. */
   for (int i = idq_sd.op_count; i < idq_sd.max_op_count; i++) {
     Op* op = dequeue();
-    if (op) {
-      idq_sd.ops[i] = op;
-      idq_sd.op_count++;
-    } else {
+    if (!op) {
       ASSERT(proc_id, !occupied_count);
       break;
     }
+    idq_sd.ops[i] = op;
+    idq_sd.op_count++;
   }
 
-  /* Return if the next expected uop has not yet arrived or there is no enough space. */
+  /* Select the input stage data. */
+  Stage_Data* consume_from_sd = select_input_stage_data(dec_src_sd, ic_uopc_sd, uop_queue_sd);
+  /* Return if the next expected uop has not yet arrived. */
   if (!consume_from_sd) {
     return;
-  } else if (capacity - occupied_count < consume_from_sd->op_count) {
+  }
+  /* Return if there is no enough space. */
+  if (capacity - occupied_count < consume_from_sd->op_count) {
     ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count);
     return;
   }
 
-  /* Fill the IDQ with uops in the input stage data. */
+  /* Process the input stage data. */
   int op_count_before_consuming = consume_from_sd->op_count;
   for (int i = 0; i < op_count_before_consuming; i++) {
     Op* op = consume_from_sd->ops[i];
@@ -224,34 +230,35 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
 }
 
 bool IDQ_Stage::enqueue(Op* op) {
-  if (occupied_count < capacity) {
-    ops[tail] = op;
-    occupied_count++;
-    tail = wrap_around(tail + 1);
-    return true;
-  } else {
+  if (occupied_count == capacity) {
     return false;
   }
+  ASSERT(proc_id, op);
+  ops[tail] = op;
+  occupied_count++;
+  ASSERT(proc_id, occupied_count <= capacity);
+  tail = wrap_around(tail + 1);
+  return true;
 }
 
 Op* IDQ_Stage::dequeue() {
-  if (occupied_count > 0) {
-    Op* op = ops[head];
-    ASSERT(proc_id, op);
-    ops[head] = NULL;
-    occupied_count--;
-    head = wrap_around(head + 1);
-    return op;
-  } else {
+  if (occupied_count == 0) {
     return NULL;
   }
+  Op* op = ops[head];
+  ASSERT(proc_id, op);
+  ops[head] = NULL;
+  occupied_count--;
+  ASSERT(proc_id, occupied_count >= 0);
+  head = wrap_around(head + 1);
+  return op;
 }
 
 int IDQ_Stage::wrap_around(int index) {
   return (index + capacity) % capacity;
 }
 
-Stage_Data* IDQ_Stage::get_stage_data() {
+Stage_Data* IDQ_Stage::get_output_stage_data() {
   return &idq_sd;
 }
 
@@ -285,5 +292,5 @@ void update_idq_stage(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data
 }
 
 Stage_Data* idq_stage_get_stage_data() {
-  return idq_stage->get_stage_data();
+  return idq_stage->get_output_stage_data();
 }

@@ -147,31 +147,36 @@ void IDQ_Stage::debug() {
 
 Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd,
                                                Stage_Data* uop_queue_sd) {
+  /* The uops are enqueued in order, i.e.,
+   * only consume if older uops have already been consumed by this stage.
+   * This is enforced by the `next_op_num` counter of IDQ stage. */
+
+  /* When the uop cache is disabled, the next uop to enqueue the idq is from the decode stage. */
+  if (!UOP_CACHE_ENABLE) {
+    Stage_Data* consume_from_sd = NULL;
+    if (dec_src_sd->op_count) {
+      ASSERT(proc_id, dec_src_sd->ops[0]->op_num == next_op_num);
+      consume_from_sd = dec_src_sd;
+    }
+    return consume_from_sd;
+  }
+
   /* When the uop cache is enabled, the next uop to enqueue the idq is from either:
    * 1. the decode stage
    * 2. the uop cache source
    * Furthermore, the uop cache source is either:
    * 2.1. the uop queue
    * 2.2. the icache stage uopc stage data bypassing the uop queue */
-
-  /* The uops are enqueued in order, i.e.,
-   * only consume if older uops have already been consumed by this stage.
-   * This is enforced by the `next_op_num` counter of IDQ stage. */
   Stage_Data* consume_from_sd = NULL;
-  if (UOP_CACHE_ENABLE) {
-    Stage_Data* uopc_src_sd = uop_queue_sd->op_count ? uop_queue_sd : ic_uopc_sd;
-    if (uop_queue_sd->op_count && ic_uopc_sd->op_count) {
-      /* The stage data from the uop queue should be older. */
-      ASSERT(proc_id, uop_queue_sd->ops[uop_queue_sd->op_count - 1]->op_num < ic_uopc_sd->ops[0]->op_num);
-    }
-    if (dec_src_sd->op_count && dec_src_sd->ops[0]->op_num == next_op_num) {
-      consume_from_sd = dec_src_sd;
-    } else if (uopc_src_sd->op_count && uopc_src_sd->ops[0]->op_num == next_op_num) {
-      consume_from_sd = uopc_src_sd;
-    }
-  } else if (dec_src_sd->op_count) {
-    ASSERT(proc_id, dec_src_sd->ops[0]->op_num == next_op_num);
+  Stage_Data* uopc_src_sd = uop_queue_sd->op_count ? uop_queue_sd : ic_uopc_sd;
+  if (uop_queue_sd->op_count && ic_uopc_sd->op_count) {
+    /* The stage data from the uop queue should be older. */
+    ASSERT(proc_id, uop_queue_sd->ops[uop_queue_sd->op_count - 1]->op_num < ic_uopc_sd->ops[0]->op_num);
+  }
+  if (dec_src_sd->op_count && dec_src_sd->ops[0]->op_num == next_op_num) {
     consume_from_sd = dec_src_sd;
+  } else if (uopc_src_sd->op_count && uopc_src_sd->ops[0]->op_num == next_op_num) {
+    consume_from_sd = uopc_src_sd;
   }
   return consume_from_sd;
 }

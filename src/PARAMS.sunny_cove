@@ -72,10 +72,16 @@
 --decode_width                  5
 --decode_cycles                 5
 
+### Instruction Decode Queue
+--idq_size                      140
 
 ### Map Stage
 --map_cycles                    5
 
+# register renaming table
+--reg_renaming_scheme               1
+--reg_table_integer_physical_size   280
+--reg_table_vector_physical_size    224
 
 ### Issue Stage
 

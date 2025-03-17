@@ -54,6 +54,7 @@
 
 #include "decoupled_frontend.h"
 #include "freq.h"
+#include "idq_stage.h"
 #include "map_rename.h"
 #include "op_pool.h"
 #include "sim.h"
@@ -109,6 +110,7 @@ void cmp_init(uns mode) {
     init_icache_stage(proc_id, "ICACHE");
     init_decode_stage(proc_id, "DECODE");
     init_uop_queue_stage();
+    init_idq_stage(proc_id, "IDQ");
     init_map_stage(proc_id, "MAP");
     init_node_stage(proc_id, "NODE");
     init_exec_stage(proc_id, "EXEC");
@@ -156,6 +158,7 @@ void cmp_reset() {
     reset_decoupled_fe();
     reset_icache_stage();
     reset_decode_stage();
+    reset_idq_stage();
     reset_map_stage();
     reset_node_stage();
     reset_exec_stage();
@@ -217,21 +220,22 @@ void cmp_cores(void) {
       set_bp_recovery_info(&cmp_model.bp_recovery_info[proc_id]);
       cmp_set_all_stages(proc_id);
 
+      /* Back-end pipeline */
       update_dcache_stage(&exec->sd);
       update_exec_stage(&node->sd);
       update_node_stage(map->last_sd);
-      // Map stage can get ops from either the uop queue following the uop cache or the decoder.
+      update_map_stage(idq_stage_get_stage_data());
 
-      Stage_Data* map_stage_uop_cache_src = NULL;
-      if (UOP_CACHE_ENABLE) {
-        map_stage_uop_cache_src = get_uop_queue_stage_length() > 0 ? uop_queue_stage_get_latest_sd() : &ic->uopc_sd;
-      }
-      /* doesnt work: decode_stage_process_op must be called once per op. For uop cache, one cycle after fetch.
-       * I can add a flag: decode_cycle (cycle decoded). */
-      update_map_stage(dec->last_sd, map_stage_uop_cache_src);
+      /* IDQ stage that bridges the front-end and back-end */
+      /* This stage can get uops from the ic->uopc_sd, cache queue, or decoder. */
+      update_idq_stage(dec->last_sd, &ic->uopc_sd, uop_queue_stage_get_latest_sd());
+
+      /* Front-end pipiline */
       update_uop_queue_stage(&ic->uopc_sd);
       update_decode_stage(&ic->sd);
       update_icache_stage();
+
+      /* Decoupled branch prediction and prefetching */
       update_decoupled_fe();
       update_fdip();
       update_eip();
@@ -258,6 +262,7 @@ void cmp_debug() {
     debug_decoupled_fe();
     debug_icache_stage();
     debug_decode_stage();
+    debug_idq_stage();
     debug_map_stage();
     debug_node_stage();
     debug_exec_stage();
@@ -366,6 +371,7 @@ void cmp_recover() {
   recover_uop_cache();
   recover_decode_stage();
   recover_uop_queue_stage();
+  recover_idq_stage();
   recover_map_stage();
   recover_node_stage();
   recover_exec_stage();

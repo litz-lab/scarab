@@ -1,4 +1,4 @@
-/* Copyright 2020 HPS/SAFARI Research Groups
+/* Copyright 2024 Litz Lab
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,24 +20,45 @@
  */
 
 /***************************************************************************************
- * File         : memory/memory.param.h
- * Author       : HPS Research Group
- * Date         : 9/18/1998
- * Description  :
+ * File         : idq_stage.h
+ * Author       : Mingsheng Xu <mxu61@ucsc.edu>
+ * Date         : 03/05/2025
+ * Description  : Instruction Decode Queue (IDQ) bridges the front-end and the back-end.
  ***************************************************************************************/
 
-#ifndef __MEMORY_PARAM_H__
-#define __MEMORY_PARAM_H__
+#ifndef __IDQ_SATGE_H__
+#define __IDQ_SATGE_H__
 
-#include "globals/global_types.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-/**************************************************************************************/
-/* extern all of the variables defined in memory.param.def */
-
-#define DEF_PARAM(name, variable, type, func, def, const) extern const type variable;
-#include "memory.param.def"
-#undef DEF_PARAM
+#include "stage_data.h"
 
 /**************************************************************************************/
+/* Types */
 
-#endif /* #ifndef __MEMORY_PARAM_H__ */
+typedef struct IDQ_Stage IDQ_Stage;
+
+/**************************************************************************************/
+/* External Variables */
+
+extern IDQ_Stage* idq_stage;
+
+/**************************************************************************************/
+/* Prototypes */
+
+void alloc_mem_idq_stage(uns8);
+void set_idq_stage(uns8);
+void init_idq_stage(uns8, const char*);
+void reset_idq_stage(void);
+void recover_idq_stage(void);
+void debug_idq_stage(void);
+void update_idq_stage(Stage_Data*, Stage_Data*, Stage_Data*);
+Stage_Data* idq_stage_get_stage_data(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

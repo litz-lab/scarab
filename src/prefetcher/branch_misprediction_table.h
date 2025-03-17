@@ -22,5 +22,4 @@ float get_branch_misprediction_rate(Addr pc);
 void increment_branch_count(Addr pc);
 void increment_branch_mispredictions(Addr pc);
 
-
 #endif /* #ifndef __BRANCH_MISPREDICTION_TABLE_H__ */

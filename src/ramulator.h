@@ -30,6 +30,7 @@
 #define __RAMULATOR_H__
 
 #include "globals/global_types.h"
+
 #include "memory/memory.h"
 
 #ifdef __cplusplus
@@ -41,7 +42,7 @@
 EXTERNC void ramulator_init();
 EXTERNC void ramulator_finish();
 
-EXTERNC int  ramulator_send(Mem_Req* scarab_req);
+EXTERNC int ramulator_send(Mem_Req* scarab_req);
 EXTERNC void ramulator_tick();
 
 EXTERNC int ramulator_get_chip_width();

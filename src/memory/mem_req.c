@@ -27,8 +27,10 @@
  ***************************************************************************************/
 
 #include "memory/mem_req.h"
-#include "core.param.h"
+
 #include "globals/enum.h"
+
+#include "core.param.h"
 
 /**************************************************************************************/
 /* Enums */
@@ -39,11 +41,14 @@ DEFINE_ENUM(Dram_Req_Status, DRAM_REQ_STATUS_LIST);
 /**************************************************************************************/
 /* Global Variables */
 
+// clang-format off
 const char* const mem_req_state_names[] = {
   "INV",      "MLC_NEW",     "MLC_WAIT", "MLC_HIT_DONE", "L1_NEW",
   "L1_WAIT",  "L1_HIT_DONE", "BUS_NEW",  "MEM_NEW",      "MEM_SCHEDULED",
   "MEM_WAIT", "BUS_BUSY",    "BUS_WAIT", "MEM_DONE",     "BUS_IN_DONE",
-  "FILL_L1",  "FILL_MLC",    "FILL_DONE"};
+  "FILL_L1",  "FILL_MLC",    "FILL_DONE"
+};
+// clang-format on
 
 /**************************************************************************************/
 /* mem_req_type_is_demand */
@@ -63,8 +68,7 @@ Flag mem_req_type_is_prefetch(Mem_Req_Type type) {
 /* mem_req_type_is_stalling */
 
 Flag mem_req_type_is_stalling(Mem_Req_Type type) {
-  return type == MRT_IFETCH || type == MRT_DFETCH ||
-         (!STORES_DO_NOT_BLOCK_WINDOW && type == MRT_DSTORE);
+  return type == MRT_IFETCH || type == MRT_DFETCH || (!STORES_DO_NOT_BLOCK_WINDOW && type == MRT_DSTORE);
 }
 
 Flag mem_req_is_type(Mem_Req* req, Mem_Req_Type type) {

@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "bp.param.h"
+
 #include "cbp_to_scarab.h"
 // #include "bt9.h"
 // #include "bt9_reader.h"
@@ -107,7 +108,6 @@ class cbp64_gentry  // TAGE global table entry
 #define LOGL 5
 #define WIDTHNBITERLOOP 10  // we predict only loops with less than 1K iterations
 #define LOOPTAG 10          // tag width in the loop predictor
-
 
 class cbp64_lentry  // loop predictor entry
 {
@@ -320,6 +320,44 @@ struct SpeculativeStates : public SpeculativeStatesBase {
   uint8_t ghist[HISTBUFFERLENGTH];  // S: 3000-bit global history buffer (circular buffer)
 };
 
+struct Checkpoint : public SpeculativeStatesBase {
+  int8_t GGEHL[GNB][1 << LOGGNB];  // GEHL component which exploits 'GHIST'
+  int8_t PGEHL[PNB][1 << LOGPNB];  // GEHL component which exploits 'phist'
+};
+
+struct PredictorEntry {
+  Counter counter;
+  PredictorStates state;
+
+  // Constructor that takes ownership of state
+  PredictorEntry(const Counter& c, PredictorStates&& s) : counter(c), state(std::move(s)) {}
+};
+
+struct CheckpointEntry {
+  Counter counter;
+  Checkpoint state;
+
+  CheckpointEntry(const Counter& c, const Checkpoint& cp) : counter(c), state(cp) {}
+};
+
+typedef boost::multi_index_container<
+    PredictorEntry,
+    // Ordered by Counter as the key (unique index)
+    boost::multi_index::indexed_by<boost::multi_index::ordered_unique<
+                                       boost::multi_index::member<PredictorEntry, Counter, &PredictorEntry::counter>>,
+                                   // Sequence to maintain insertion order
+                                   boost::multi_index::sequenced<>>>
+    PredictorContainer;
+
+typedef boost::multi_index_container<
+    CheckpointEntry,
+    // Ordered by Counter as the key (unique index)
+    boost::multi_index::indexed_by<boost::multi_index::ordered_unique<
+                                       boost::multi_index::member<CheckpointEntry, Counter, &CheckpointEntry::counter>>,
+                                   // Sequence to maintain insertion order
+                                   boost::multi_index::sequenced<>>>
+    CheckpointContainer;
+
 class TAGE64K {
  private:
   // The statistical corrector components
@@ -328,15 +366,15 @@ class TAGE64K {
   // The three BIAS tables in the SC component
   // We play with the TAGE  confidence here, with the number of the hitting bank
 #define LOGBIAS 8
-#define INDBIAS                                                                                         \
-  (((((PC ^ (PC >> 2)) << 1) ^ (Pstate.LowConf & (Pstate.LongestMatchPred != Pstate.alttaken))) << 1) + \
-   Pstate.pred_inter) &                                                                                 \
+#define INDBIAS(state)                                                                               \
+  (((((PC ^ (PC >> 2)) << 1) ^ (state.LowConf & (state.LongestMatchPred != state.alttaken))) << 1) + \
+   state.pred_inter) &                                                                               \
       ((1 << LOGBIAS) - 1)
-#define INDBIASSK \
-  (((((PC ^ (PC >> (LOGBIAS - 2))) << 1) ^ (Pstate.HighConf)) << 1) + Pstate.pred_inter) & ((1 << LOGBIAS) - 1)
-#define INDBIASBANK                                                                                         \
-  (Pstate.pred_inter + (((Pstate.HitBank + 1) / 4) << 4) + (Pstate.HighConf << 1) + (Pstate.LowConf << 2) + \
-   ((Pstate.AltBank != 0) << 3) + ((PC ^ (PC >> 2)) << 7)) &                                                \
+#define INDBIASSK(state) \
+  (((((PC ^ (PC >> (LOGBIAS - 2))) << 1) ^ (state.HighConf)) << 1) + state.pred_inter) & ((1 << LOGBIAS) - 1)
+#define INDBIASBANK(state)                                                                              \
+  (state.pred_inter + (((state.HitBank + 1) / 4) << 4) + (state.HighConf << 1) + (state.LowConf << 2) + \
+   ((state.AltBank != 0) << 3) + ((PC ^ (PC >> 2)) << 7)) &                                             \
       ((1 << LOGBIAS) - 1)
 
   // IMLI-SIC -> Micro 2015  paper: a big disappointment on  CBP2016 traces
@@ -420,8 +458,8 @@ class TAGE64K {
 #define MINHIST 6  // not optimized so far
 #define MAXHIST 3000
 
-#define LOGG 10  /* logsize of the  banks in the  tagged TAGE tables */
-#define TBITS 8  // minimum width of the tags  (low history lengths), +4 for high history lengths
+#define LOGG 10            /* logsize of the  banks in the  tagged TAGE tables */
+#define TBITS 8            // minimum width of the tags  (low history lengths), +4 for high history lengths
   bool NOSKIP[NHIST + 1];  // to manage the associativity for different history lengths
 
 #define NNN 1        // number of extra entries allocated on a TAGE misprediction (1+NNN)
@@ -437,7 +475,7 @@ class TAGE64K {
   bool AltConf;  // Confidence on the alternate prediction
 #define ALTWIDTH 5
 #define SIZEUSEALT (1 << (LOGSIZEUSEALT))
-#define INDUSEALT (((((Pstate.HitBank - 1) / 8) << 1) + Pstate.AltConf) % (SIZEUSEALT - 1))
+#define INDUSEALT(state) (((((state.HitBank - 1) / 8) << 1) + state.AltConf) % (SIZEUSEALT - 1))
 
   int m[NHIST + 1];
   int TB[NHIST + 1];
@@ -454,25 +492,39 @@ class TAGE64K {
   void ctrupdate(int8_t& ctr, bool taken, int nbits);
   bool getbim(UINT64 PC);
   void baseupdate(bool Taken, UINT64 PC);
-  int MYRANDOM();
+  int MYRANDOM(long long on_path_phist, int on_path_ptghist, bool off_path);
   void Tagepred(UINT64 PC);
   void UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history* index, cbp64_folded_history* tag0,
                   cbp64_folded_history* tag1);
   bool GetPrediction(UINT64 PC, int* bp_confidence, Op* op);
-  void HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target, long long& X, int& Y, cbp64_folded_history* H,
-                     cbp64_folded_history* G, cbp64_folded_history* J);
-  void SavePredictorStates();
-  Counter KeyGeneration(bool offpath);
+  void HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target);
+  void SavePredictorStates(Counter key);
+  void TakeCheckpoint(Counter key);
+  void RetireCheckpoint(Counter key);
+  void VerifyCheckpoint(Counter key);
+  void VerifyPredictorStates(Counter key);
+  void RestoreStates(Counter key, UINT64 PC, OpType optype, Flag is_conditional, Flag dir, UINT64 target);
+  void RestoreCheckpoint(Counter key);
+  void RestorePredictorstates(Counter key);
+  void ComparePredictor(const PredictorStates& Pstate);
+  void CompareCheckpoint(const Checkpoint& cp);
+  Counter KeyGeneration();
   int GetBrtypeFromOptype(OpType opType);
-  void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget);
+  void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget,
+                       const PredictorStates& Pstate);
+  void SpecUpdate(UINT64 PC, OpType opType, bool predDir, UINT64 branchTarget);
+  void GlobalStateUpdate(UINT64 PC, UINT64 branchTarget, int brtype, bool predDir);
+  void SpecUpdateAtCond(UINT64 PC, bool predDir, bool off_path);
+  void NonSpecUpdateAtCond(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget,
+                           Counter branch_id);
   int Gpredict(UINT64 PC, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W);
   void Gupdate(UINT64 PC, bool taken, long long BHIST, int* length, int8_t** tab, int NBR, int logs, int8_t* W,
                int LSUM);
   void TrackOtherInst(UINT64 PC, OpType opType, bool taken, UINT64 branchTarget);
   int lindex(UINT64 PC);
   bool getloop(UINT64 PC);
-  void SpecLoopUpdate(UINT64 PC, bool Taken);
-  void LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, int lhit);
+  void SpecLoopUpdate(UINT64 PC, bool Taken, long long on_path_phist, int on_path_ptghist, bool off_path);
+  void LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, int lhit, long long on_path_phist, int on_path_ptghist);
 
   // P: Predictor components
   PredictorStates Pstate;
@@ -518,7 +570,9 @@ class TAGE64K {
   // utility variables
   Counter branch_id;
   int Seed;       // for the pseudo-random number generator
-  bool off_path;  // global indicator of op
+  // snapshot containers
+  CheckpointContainer checkpoints;
+  PredictorContainer predictor_states;
 
   int8_t tage_component;
   int8_t tage_component_inter;

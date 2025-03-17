@@ -1,0 +1,39 @@
+# .github/workflows/compile-pr.yml
+name: Compile PR in Container
+
+on:
+  pull_request:
+    branches: [main]  # Or your target branch
+
+jobs:
+  get_tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.get_sha.outputs.tag }}
+    steps:
+      - name: Get latest SHA from scarab-infra
+        id: get_sha
+        run: |
+          LATEST_SHA=$(curl -s https://api.github.com/repos/litz-lab/scarab-infra/commits/main | jq -r '.sha')
+          SHORT_SHA=$(echo "$LATEST_SHA" | cut -c1-7)
+          echo "tag=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+  build:
+    runs-on: ubuntu-latest
+    needs: get_tag
+    container:
+      image: ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Mark Git repo as safe
+        run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
+
+      - name: Build Scarab Opt
+        working-directory: src
+        run: make opt -j
+
+      - name: Build Scarab Dbg
+        working-directory: src
+        run: make dbg -j

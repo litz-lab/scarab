@@ -38,7 +38,7 @@
 /* Return predicted normalized power for the provided core and memory
    cycle times, memory access fractions, and the predicted slowdown of each core
  */
-double power_pred_norm_power(uns* core_cycle_times, uns memory_cycle_time,
-                             double* memory_access_fracs, double* slowdowns);
+double power_pred_norm_power(uns* core_cycle_times, uns memory_cycle_time, double* memory_access_fracs,
+                             double* slowdowns);
 
 #endif  // __POWER_PRED_H__

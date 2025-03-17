@@ -32,26 +32,27 @@
 #include "prefetcher/fdip.h"
 
 /* dynamic FTQ adjustment based on utility/timeliness study */
-class UFTQ{
-public:
-  UFTQ(uns _proc_id) :
-    proc_id(_proc_id),
-    useful_prefetches(0),
-    unuseful_prefetches(0),
-    utility_ratio(0.0),
-    mshr_prefetch_hits(0),
-    icache_prefetch_hits(0.0),
-    timeliness_ratio(0.0),
-    adjust(FALSE),
-    qdaur(0),
-    qdatr(0) {}
+class UFTQ {
+ public:
+  UFTQ(uns _proc_id)
+      : proc_id(_proc_id),
+        useful_prefetches(0),
+        unuseful_prefetches(0),
+        utility_ratio(0.0),
+        mshr_prefetch_hits(0),
+        icache_prefetch_hits(0.0),
+        timeliness_ratio(0.0),
+        adjust(FALSE),
+        qdaur(0),
+        qdatr(0) {}
   void cyc_reset();
   void inc_useful_prefetches() { useful_prefetches++; }
   void inc_unuseful_prefetches() { unuseful_prefetches++; }
   void inc_mshr_prefetch_hits() { mshr_prefetch_hits++; }
   void inc_icache_prefetch_hits() { icache_prefetch_hits++; }
   void set_ftq_ft_num();
-private:
+
+ private:
   uns proc_id;
   // useful prefetch counter per 100,000 cycles
   Counter useful_prefetches;

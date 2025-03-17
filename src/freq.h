@@ -85,13 +85,11 @@ uns freq_get_cycle_time(Freq_Domain_Id id);
 /* Convert the cycle count of one domain to the other. If DVFS is
    enabled, this only works if the frequency domains did not change
    frequency during the cycles counted */
-Counter freq_convert(Freq_Domain_Id src, Counter src_cycle_count,
-                     Freq_Domain_Id dst);
+Counter freq_convert(Freq_Domain_Id src, Counter src_cycle_count, Freq_Domain_Id dst);
 
 /* Returns the earliest cycle in dst domain that is at or after the
    time specified by the src_cycle_count in src domain */
-Counter freq_convert_future_cycle(Freq_Domain_Id src, Counter src_cycle_count,
-                                  Freq_Domain_Id dst);
+Counter freq_convert_future_cycle(Freq_Domain_Id src, Counter src_cycle_count, Freq_Domain_Id dst);
 
 /* Clean up at the end */
 void freq_done(void);

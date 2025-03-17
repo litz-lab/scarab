@@ -30,6 +30,7 @@
 #define __MODEL_H__
 
 #include "globals/global_types.h"
+
 #include "thread.h"
 
 /**************************************************************************************/
@@ -41,49 +42,40 @@ typedef enum Model_Id_enum {
   NUM_MODELS,
 } Model_Id;
 
-
 typedef enum Model_Mem_enum {
   MODEL_MEM,
   NUM_MODEL_MEMS,
 } Model_Mem;
 
-
 typedef struct Model_struct {
-  Model_Id    id;
-  Model_Mem   mem;
+  Model_Id id;
+  Model_Mem mem;
   const char* name;
 
   /* these functions are called by the mode functions in sim.c */
-  void (*init_func)(uns mode); /* called to initialize data structures before
-                                  warmup and main simulation loop */
-  void (*reset_func)(void);    /* called at the end of a sample to clear model
-                                  state */
-  void (*cycle_func)(void);    /* called once each cycle */
-  void (*debug_func)(void);    /* called after the cycle_func when debugging
-                                  conditions are true */
-  void (*per_core_done_func)(
-    uns8); /* called simulation before stats are dumped (may be NULL) */
-  void (*done_func)(void); /* called after the main loop terminates (may be
-                              NULL) */
+  void (*init_func)(uns mode);      /* called to initialize data structures before warmup and main simulation loop */
+  void (*reset_func)(void);         /* called at the end of a sample to clear model state */
+  void (*cycle_func)(void);         /* called once each cycle */
+  void (*debug_func)(void);         /* called after the cycle_func when debugging conditions are true */
+  void (*per_core_done_func)(uns8); /* called simulation before stats are dumped (may be NULL) */
+  void (*done_func)(void);          /* called after the main loop terminates (may be NULL) */
 
   /* these are general hook functions for various processor events
      that can be handled differently by different models */
   void (*wake_hook)(Op*, Op*, uns8);
   void (*op_fetched_hook)(Op*);
   void (*op_retired_hook)(Op*);  // called just before the op is freed
-  void (*warmup_func)(Op* op);   /* called for warmup(may be NULL) */
+  void (*warmup_func)(Op* op);   // called for warmup(may be NULL)
 
   /*      void (*l0_cache_miss_hook)      (Op *); */
   /*      void (*resolve_mispredict_hook) (Op *); */
 } Model;
 
-
 /**************************************************************************************/
 /* Global Variables */
 
 extern struct Model_struct model_table[];
-extern Model*              model;
-
+extern Model* model;
 
 /**************************************************************************************/
 

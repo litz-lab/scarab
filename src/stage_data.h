@@ -30,6 +30,7 @@
 #define __STAGE_H__
 
 #include "globals/global_types.h"
+
 #include "model.h"
 
 /**************************************************************************************/
@@ -40,29 +41,28 @@
 /* Types */
 
 typedef enum Rob_Block_Issue_Reason_enum {
-  ROB_BLOCK_ISSUE_NONE          = 0,
-  ROB_BLOCK_ISSUE_FULL          = 7,
+  ROB_BLOCK_ISSUE_NONE = 0,
+  ROB_BLOCK_ISSUE_FULL = 7,
   ROB_BLOCK_ISSUE_GAP_TOO_LARGE = 8,
 } Rob_Block_Issue_Reason;
 
 typedef enum Rob_Stall_Reason_enum {
-  ROB_STALL_NONE              = 0,
-  ROB_STALL_OTHER             = 1,
+  ROB_STALL_NONE = 0,
+  ROB_STALL_OTHER = 1,
   ROB_STALL_WAIT_FOR_RECOVERY = 2,
   ROB_STALL_WAIT_FOR_REDIRECT = 3,
   ROB_STALL_WAIT_FOR_GAP_FILL = 4,
-  ROB_STALL_WAIT_FOR_L1_MISS  = 5,
-  ROB_STALL_WAIT_FOR_MEMORY   = 6,
-  ROB_STALL_WAIT_FOR_DC_MISS  = 7,
+  ROB_STALL_WAIT_FOR_L1_MISS = 5,
+  ROB_STALL_WAIT_FOR_MEMORY = 6,
+  ROB_STALL_WAIT_FOR_DC_MISS = 7,
 } Rob_Stall_Reason;
 
 typedef struct Stage_Data_struct {
-  char* name;         /* name of the stage */
-  int   op_count;     /* number of ops in the stage */
-  int   max_op_count; /* max value of op_count */
-  Op**  ops;          /* array of ops in the stage */
+  char* name;       /* name of the stage */
+  int op_count;     /* number of ops in the stage */
+  int max_op_count; /* max value of op_count */
+  Op** ops;         /* array of ops in the stage */
 } Stage_Data;
-
 
 /**************************************************************************************/
 

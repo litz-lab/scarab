@@ -47,43 +47,44 @@ typedef enum CONF_OFF_PATH_REASON_enum {
   REASON_INV_CONF_INC,
 } Conf_Off_Path_Reason;
 
-//metadata for fdip confidence
+// metadata for fdip confidence
 class FDIP_Confidence_Info {
-public:
-  FDIP_Confidence_Info(uns _proc_id) :
-    proc_id(_proc_id),
-    prev_op(nullptr),
-    fdip_off_path_event(FALSE),
-    fdip_on_conf_off_event(FALSE),
-    fdip_off_conf_on_event(FALSE),
-    num_conf_0_branches(0),
-    num_conf_1_branches(0),
-    num_conf_2_branches(0),
-    num_conf_3_branches(0),
-    num_cf_br(0),
-    num_cf_cbr(0),
-    num_cf_call(0),
-    num_cf_ibr(0),
-    num_cf_icall(0),
-    num_cf_ico(0),
-    num_cf_ret(0),
-    num_cf_sys(0),
-    num_BTB_misses(0),
-    num_op_dist_incs(0) {}
+ public:
+  FDIP_Confidence_Info(uns _proc_id)
+      : proc_id(_proc_id),
+        prev_op(nullptr),
+        fdip_off_path_event(FALSE),
+        fdip_on_conf_off_event(FALSE),
+        fdip_off_conf_on_event(FALSE),
+        num_conf_0_branches(0),
+        num_conf_1_branches(0),
+        num_conf_2_branches(0),
+        num_conf_3_branches(0),
+        num_cf_br(0),
+        num_cf_cbr(0),
+        num_cf_call(0),
+        num_cf_ibr(0),
+        num_cf_icall(0),
+        num_cf_ico(0),
+        num_cf_ret(0),
+        num_cf_sys(0),
+        num_BTB_misses(0),
+        num_op_dist_incs(0) {}
   void recover();
   void log_stats_bp_conf_on();
   void log_stats_bp_conf_off();
-private:
-  uns proc_id;
-  Op * prev_op;
 
-  //probably only need one of these lads
+ private:
+  uns proc_id;
+  Op* prev_op;
+
+  // probably only need one of these lads
   Flag fdip_off_path_event;
   Flag fdip_on_conf_off_event;
   Flag fdip_off_conf_on_event;
 
   Off_Path_Reason off_path_reason;
-  Conf_Off_Path_Reason  conf_off_path_reason;
+  Conf_Off_Path_Reason conf_off_path_reason;
 
   Counter num_conf_0_branches;
   Counter num_conf_1_branches;
@@ -105,13 +106,11 @@ private:
 };
 
 class FDIP_Conf {
-public:
-  FDIP_Conf(uns _proc_id) :
-    proc_id(_proc_id),
-    cnt_btb_miss(0),
-    btb_miss_rate(0.0),
-    low_confidence_cnt(0),
-    cf_op_distance(0.0) { conf_info = new FDIP_Confidence_Info(_proc_id); }
+ public:
+  FDIP_Conf(uns _proc_id)
+      : proc_id(_proc_id), cnt_btb_miss(0), btb_miss_rate(0.0), low_confidence_cnt(0), cf_op_distance(0.0) {
+    conf_info = new FDIP_Confidence_Info(_proc_id);
+  }
   uns get_low_confidence_cnt() { return low_confidence_cnt; }
   void recover();
   void cyc_reset();
@@ -121,7 +120,8 @@ public:
   void log_stats_bp_conf();
   void log_stats_bp_conf_emitted();
   void inc_cnt_btb_miss() { cnt_btb_miss++; }
-private:
+
+ private:
   void default_conf_update(Op* op);
   void btb_miss_bp_taken_conf_update(Op* op);
   void inc_br_conf_counters(int conf);
@@ -132,7 +132,7 @@ private:
   Counter cnt_btb_miss;
   double btb_miss_rate;
 
-  //confidence counter
+  // confidence counter
   uns low_confidence_cnt;
   double cf_op_distance;
 

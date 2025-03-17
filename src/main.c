@@ -203,19 +203,20 @@ Scarab's source code is organized as follows:
 
 #include <signal.h>
 #include <unistd.h>
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 
+#include "general.param.h"
+
 #include "optimizer2.h"
 #include "param_parser.h"
 #include "sim.h"
 #include "statistics.h"
 #include "version.h"
-
-#include "general.param.h"
 
 /**************************************************************************************/
 
@@ -248,7 +249,7 @@ int main(int argc, char* argv[], char* envp[]) {
   init_global(simulated_argv, envp);
 
   /* print PID (sometimes useful for debugging) */
-  if(PRINT_PID) {
+  if (PRINT_PID) {
     fprintf(stderr, "PID: %d\n", getpid());
     sleep(10);
   }
@@ -263,7 +264,7 @@ int main(int argc, char* argv[], char* envp[]) {
   WRITE_STATUS("STARTED");
 
   /* call the function for the type of simulation  */
-  switch(SIM_MODE) {
+  switch (SIM_MODE) {
     case UOP_SIM_MODE:
       uop_sim();
       break;
@@ -288,7 +289,7 @@ int main(int argc, char* argv[], char* envp[]) {
 
   close_output_streams();
 
-  if(opt2_in_use())
+  if (opt2_in_use())
     opt2_sim_complete();
 
   return 0;

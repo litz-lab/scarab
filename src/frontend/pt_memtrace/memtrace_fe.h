@@ -44,9 +44,9 @@ struct Op_struct;
 #ifdef __cplusplus
 extern "C" {
 #endif
-  
+
 void memtrace_init(void);
-int  memtrace_trace_read(int proc_id, ctype_pin_inst* pt_next_pi);
+int memtrace_trace_read(int proc_id, ctype_pin_inst* pt_next_pi);
 void memtrace_setup(uns proc_id);
 bool buf_map_find(uns64 line_addr);
 

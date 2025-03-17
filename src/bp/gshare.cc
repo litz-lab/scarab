@@ -24,9 +24,11 @@
 #include <vector>
 
 extern "C" {
+#include "globals/assert.h"
+
 #include "bp/bp.param.h"
 #include "core.param.h"
-#include "globals/assert.h"
+
 #include "statistics.h"
 }
 
@@ -50,10 +52,18 @@ uns32 get_pht_index(const Addr addr, const uns32 hist) {
 
 // The only speculative state of gshare is the global history which is managed
 // by bp.c. Thus, no internal timestamping and recovery mechanism is needed.
-void bp_gshare_timestamp(Op* op) {}
-void bp_gshare_recover(Recovery_Info* info) {}
-void bp_gshare_spec_update(Op* op) {}
-void bp_gshare_retire(Op* op) {}
+void bp_gshare_timestamp(Op* op) {
+}
+
+void bp_gshare_recover(Recovery_Info* info) {
+}
+
+void bp_gshare_spec_update(Op* op) {
+}
+
+void bp_gshare_retire(Op* op) {
+}
+
 uns8 bp_gshare_full(uns proc_id) {
   return 0;
 }

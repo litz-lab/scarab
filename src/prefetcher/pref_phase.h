@@ -53,7 +53,7 @@ typedef struct Phase_Region_Struct {
                                                        // for this region
 
   Counter last_access;
-  Flag    valid;
+  Flag valid;
 } Phase_Region;
 
 typedef struct PhaseInfoEntry_Struct {
@@ -64,7 +64,7 @@ typedef struct PhaseInfoEntry_Struct {
                                  // access pattern
 
   Counter last_access;  // used for lru
-  Flag    valid;
+  Flag valid;
 } PhaseInfoEntry;
 
 typedef struct Pref_PHASE_Struct {
@@ -76,11 +76,11 @@ typedef struct Pref_PHASE_Struct {
 
   uns curr_phaseid;  // Current phase entry we are prefetching for
 
-  Flag* MemAccess;  // Current miss pattern - used to find the next phase
+  Flag* MemAccess;               // Current miss pattern - used to find the next phase
   Phase_Region* mapped_regions;  // Used to update the phase table
 
-  uns     currsent_regid;
-  uns     currsent_regid_offset;
+  uns currsent_regid;
+  uns currsent_regid_offset;
   Counter num_misses;
 } Pref_PHASE;
 
@@ -88,13 +88,10 @@ typedef struct Pref_PHASE_Struct {
 /* HWP Interface */
 void pref_phase_init(HWP* hwp);
 void pref_phase_ul1_train(Addr lineAddr, Addr loadPC, Flag pref_hit);
-void pref_phase_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                         uns32 global_hist);
-void pref_phase_ul1_hit(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                        uns32 global_hist);
+void pref_phase_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_phase_ul1_hit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 
-void pref_phase_ul1_prefhit(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                            uns32 global_hist);
+void pref_phase_ul1_prefhit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 
 /*************************************************************/
 /* Misc functions */

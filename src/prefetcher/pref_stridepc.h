@@ -38,7 +38,7 @@ typedef struct StridePC_Table_Entry_Struct {
   Addr load_addr;
   Addr start_index;
   Addr pref_last_index;
-  int  stride;
+  int stride;
 
   Counter train_num;
   Counter pref_sent;
@@ -46,12 +46,12 @@ typedef struct StridePC_Table_Entry_Struct {
 } StridePC_Table_Entry;
 
 typedef struct Pref_StridePC_Struct {
-  HWP_Info*             hwp_info;
+  HWP_Info* hwp_info;
   StridePC_Table_Entry* stride_table;
-  CacheLevel        type;
+  CacheLevel type;
 } Pref_StridePC;
 
-typedef struct{
+typedef struct {
   Pref_StridePC* stridepc_hwp_core_ul1;
   Pref_StridePC* stridepc_hwp_core_umlc;
 } stridepc_prefetchers;
@@ -60,21 +60,15 @@ typedef struct{
 /* HWP Interface */
 void pref_stridepc_init(HWP* hwp);
 
-void pref_stridepc_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                            uns32 global_hist);
-void pref_stridepc_ul1_hit(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                           uns32 global_hist);
-void pref_stridepc_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                            uns32 global_hist);
-void pref_stridepc_umlc_hit(uns8 proc_id, Addr lineAddr, Addr loadPC,
-                           uns32 global_hist);
-
+void pref_stridepc_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_stridepc_ul1_hit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_stridepc_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_stridepc_umlc_hit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 
 /*************************************************************/
 /* Internal Function */
 void init_stridepc(HWP* hwp, Pref_StridePC* stridepc_hwp_core);
-void pref_stridepc_train(Pref_StridePC* stridepc_hwp, uns8 proc_id, Addr lineAddr, Addr loadPC,
-                             Flag is_hit);
+void pref_stridepc_train(Pref_StridePC* stridepc_hwp, uns8 proc_id, Addr lineAddr, Addr loadPC, Flag is_hit);
 /*************************************************************/
 /* Misc functions */
 

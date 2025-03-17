@@ -34,17 +34,15 @@
 /**************************************************************************************/
 /* Types */
 
-#define POWER_DOMAIN_LIST(elem)                                      \
-  elem(CORE_0) elem(CORE_1) elem(CORE_2) elem(CORE_3) elem(CORE_4)   \
-    elem(CORE_5) elem(CORE_6) elem(CORE_7) elem(UNCORE) elem(MEMORY) \
-      elem(OTHER)
+#define POWER_DOMAIN_LIST(elem)                                                                                        \
+  elem(CORE_0) elem(CORE_1) elem(CORE_2) elem(CORE_3) elem(CORE_4) elem(CORE_5) elem(CORE_6) elem(CORE_7) elem(UNCORE) \
+      elem(MEMORY) elem(OTHER)
 
 DECLARE_ENUM(Power_Domain, POWER_DOMAIN_LIST, POWER_DOMAIN_);
 
-#define POWER_RESULT_LIST(elem)                                             \
-  elem(TOTAL) elem(DYNAMIC) elem(PEAK_DYNAMIC) elem(STATIC)                 \
-    elem(SUBTHR_LEAKAGE) elem(GATE_LEAKAGE) elem(VOLTAGE) elem(MIN_VOLTAGE) \
-      elem(FREQUENCY)
+#define POWER_RESULT_LIST(elem)                                                                                   \
+  elem(TOTAL) elem(DYNAMIC) elem(PEAK_DYNAMIC) elem(STATIC) elem(SUBTHR_LEAKAGE) elem(GATE_LEAKAGE) elem(VOLTAGE) \
+      elem(MIN_VOLTAGE) elem(FREQUENCY)
 
 DECLARE_ENUM(Power_Result, POWER_RESULT_LIST, POWER_RESULT_);
 

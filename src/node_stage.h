@@ -32,52 +32,45 @@
 #include "exec_stage.h"
 #include "stage_data.h"
 
-
 /**************************************************************************************/
 // Types
 
 typedef struct Reservation_Station_struct {
-  uns  proc_id;
-  char name[EXEC_PORTS_MAX_NAME_LEN];  // unique name of the RS, from
-                                       // exec_ports.def
-  uns32       size;                    // 0 is infinite
-  Func_Unit** connected_fus;  // FUs that this reservation station is connected
-                              // to.
-  uns32 num_fus;              // number of fus that this rs is connected to.
-  uns32 rs_op_count;          // number of ops in this reservation station
+  uns proc_id;
+  char name[EXEC_PORTS_MAX_NAME_LEN];  // unique name of the RS, from exec_ports.def
+  uns32 size;                          // 0 is infinite
+  Func_Unit** connected_fus;           // FUs that this reservation station is connected to.
+  uns32 num_fus;                       // number of fus that this rs is connected to.
+  uns32 rs_op_count;                   // number of ops in this reservation station
 } Reservation_Station;
 
 typedef struct Node_Stage_struct {
-  uns        proc_id;
+  uns proc_id;
   Stage_Data sd;  // stage interface data
 
-  Op*   node_head;   // linked-list of ops in the node stage
-  Op*   node_tail;   // linked-list of ops in the node stage
+  Op* node_head;     // linked-list of ops in the node stage
+  Op* node_tail;     // linked-list of ops in the node stage
   int32 node_count;  // number of ops in the node table
 
-  Op* rdy_head;  // linked-list of ops that are ready to schedule. Ops
-                 // are put in here when they are issued, or after they
-                 // are issued and another op wakes them up.
+  /* linked-list of ops that are ready to schedule. Ops are put in here when they are issued,
+   * or after they are issued and another op wakes them up. */
+  Op* rdy_head;
 
-  Counter ret_op;  // next op number to retire
+  Counter ret_op;                // next op number to retire
+  Counter last_scheduled_opnum;  // op num of the last scheduled op
 
-  Counter last_scheduled_opnum;  // opnum of the last scheduled op
-
-  Op* next_op_into_rs;      // oldest issued op not yet in the scheduling window
-                            // (RS)
+  Op* next_op_into_rs;      // oldest issued op not yet in the scheduling window (RS)
   Reservation_Station* rs;  // information about all of the reservation stations
 
-  Flag mem_blocked;       // are we out of mem req buffers for this core
-  uns  mem_block_length;  // length of the current memory block
-  uns  ret_stall_length;  // length of the current retirement stall
+  Flag mem_blocked;      // are we out of mem req buffers for this core
+  uns mem_block_length;  // length of the current memory block
+  uns ret_stall_length;  // length of the current retirement stall
 } Node_Stage;
-
 
 /**************************************************************************************/
 // External Variables
 
 extern Node_Stage* node;
-
 
 /**************************************************************************************/
 // Prototypes
@@ -91,13 +84,13 @@ void debug_node_stage(void);
 void update_node_stage(Stage_Data*);
 Flag is_node_stage_stalled(void);
 
-void  node_sched_ops(void);
-void  node_handle_scheduled_ops(void);
-void  node_issue(Stage_Data*);
-void  node_fill_rs(void);
-void  node_retire(void);
-void  check_if_mem_blocked(void);
-void  oldest_first_sched(Op*);
+void node_sched_ops(void);
+void node_handle_scheduled_ops(void);
+void node_issue(Stage_Data*);
+void node_fill_rs(void);
+void node_retire(void);
+void check_if_mem_blocked(void);
+void oldest_first_sched(Op*);
 int64 find_emptiest_rs(Op*);
 
 /**************************************************************************************/

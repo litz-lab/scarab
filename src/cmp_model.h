@@ -30,16 +30,17 @@
 #define __CMP_MODEL_H__
 
 #include "bp/bp.h"
+#include "memory/memory.h"
+
 #include "cmp_model_support.h"
 #include "dcache_stage.h"
 #include "decode_stage.h"
+#include "decoupled_frontend.h"
 #include "exec_ports.h"
 #include "exec_stage.h"
 #include "icache_stage.h"
-#include "decoupled_frontend.h"
 #include "map.h"
 #include "map_stage.h"
-#include "memory/memory.h"
 #include "node_stage.h"
 #include "thread.h"
 #include "uop_cache.h"
@@ -48,20 +49,21 @@
 /* cmp model data  */
 
 typedef struct Cmp_Model_struct {
-  Thread_Data* thread_data;  // cmp: one thread for each core,
-  // "single_td" in sim.c is only for single core
+  /* cmp: one thread for each core,
+   * "single_td" in sim.c is only for single core */
+  Thread_Data* thread_data;
 
-  Map_Data*         map_data;
+  Map_Data* map_data;
   Bp_Recovery_Info* bp_recovery_info;
-  Bp_Data*          bp_data;
+  Bp_Data* bp_data;
 
   Memory memory;
 
   Icache_Stage* icache_stage;
   Decode_Stage* decode_stage;
-  Map_Stage*    map_stage;
-  Node_Stage*   node_stage;
-  Exec_Stage*   exec_stage;
+  Map_Stage* map_stage;
+  Node_Stage* node_stage;
+  Exec_Stage* exec_stage;
   Dcache_Stage* dcache_stage;
 
   uns window_size;

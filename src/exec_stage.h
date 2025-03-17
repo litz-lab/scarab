@@ -35,36 +35,30 @@
 /* Types */
 
 typedef struct Func_Unit_struct {
-  uns  proc_id;
-  char name[EXEC_PORTS_MAX_NAME_LEN]; /* unique name of the FU, from
-                                         exec_ports.def */
-  uns32   fu_id; /* id of the FU, corresponds to it's slot number*/
-  uns64   type;  /* bitwise-OR of all OP_<type>_BITs that the fu can execute */
+  uns proc_id;
+  char name[EXEC_PORTS_MAX_NAME_LEN]; /* unique name of the FU, from exec_ports.def */
+
+  uns32 fu_id;         /* id of the FU, corresponds to it's slot number*/
+  uns64 type;          /* bitwise-OR of all OP_<type>_BITs that the fu can execute */
   Counter avail_cycle; /* cycle when the functional unit becomes available */
-  Counter
-       idle_cycle;  /* cycle when the FU becomes idle (no op in its pipeline) */
-  Flag held_by_mem; /* when true, the memory system has determined a stall for
-                       the func unit */
+  Counter idle_cycle;  /* cycle when the FU becomes idle (no op in its pipeline) */
+  Flag held_by_mem;    /* when true, the memory system has determined a stall for  the func unit */
 } Func_Unit;
 
-
 typedef struct Exec_Stage_struct {
-  uns8       proc_id;
+  uns8 proc_id;
   Stage_Data sd; /* stage interface data */
 
   Func_Unit* fus; /* functional units (dynamically allocated) */
 
   FILE* fu_util_plot_file;
-  uns8  fus_busy; /* for FU util plot and performance prediction, does not
-                     include mem stalls */
+  uns8 fus_busy; /* for FU util plot and performance prediction, does not include mem stalls */
 } Exec_Stage;
-
 
 /**************************************************************************************/
 /* External Variables */
 
 extern Exec_Stage* exec;
-
 
 /**************************************************************************************/
 /* Prototypes */
@@ -79,6 +73,5 @@ void update_exec_stage(Stage_Data*);
 void finalize_exec_stage(void);
 
 /**************************************************************************************/
-
 
 #endif /* #ifndef __EXEC_STAGE_H__ */

@@ -25,13 +25,14 @@
  * Date         :
  * Description  :
  ****************************************************************************************/
+#include "frontend/pin_trace_read.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <inttypes.h>
 #include <iostream>
 #include <string>
 
-#include "frontend/pin_trace_read.h"
 #include "isa/isa.h"
 
 extern "C" {
@@ -39,7 +40,7 @@ extern "C" {
 #include "globals/utils.h"
 }
 
-#define CMP_ADDR_MASK (((uint64_t)-1) << 58)
+#define CMP_ADDR_MASK (((uint64_t) - 1) << 58)
 
 FILE** pin_file;
 
@@ -53,7 +54,7 @@ void pin_trace_open(unsigned char proc_id, const char* name) {
   sprintf(cmdline, "bzip2 -dc %s", name);
   pin_file[proc_id] = popen(cmdline, "r");
   printf("pin trace should be opened now for core %u: %s \n", proc_id, name);
-  if(!pin_file[proc_id]) {
+  if (!pin_file[proc_id]) {
     printf("Cannot open trace file: %s\n", name);
     exit(1);
   }
@@ -67,7 +68,7 @@ int pin_trace_read(unsigned char proc_id, ctype_pin_inst* pi) {
   int read_size;
 
   read_size = fread(pi, sizeof(ctype_pin_inst), 1, pin_file[proc_id]);
-  if(read_size != 1) {
+  if (read_size != 1) {
     return 0;
   }
   return 1;

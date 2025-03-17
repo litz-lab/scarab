@@ -20,10 +20,10 @@
 // for my personal statistics
 int XX, YY, ZZ, TT;
 void PrintStat(double NUMINST) {
-  printf("  \nTAGE_MPKI   \t : %10.4f", 1000.0 * (double) (XX) / NUMINST);
-  printf("  \nCOLT_MPKI    \t : %10.4f", 1000.0 * (double) (ZZ) / NUMINST);
-  printf("  \nNEURAL_MPKI    \t : %10.4f", 1000.0 * (double) (YY) / NUMINST);
-  printf("  \nSC_MPKI    \t : %10.4f", 1000.0 * (double) (TT) / NUMINST);
+  printf("  \nTAGE_MPKI   \t : %10.4f", 1000.0 * (double)(XX) / NUMINST);
+  printf("  \nCOLT_MPKI    \t : %10.4f", 1000.0 * (double)(ZZ) / NUMINST);
+  printf("  \nNEURAL_MPKI    \t : %10.4f", 1000.0 * (double)(YY) / NUMINST);
+  printf("  \nSC_MPKI    \t : %10.4f", 1000.0 * (double)(TT) / NUMINST);
 
   //    printf("  XX %d YY %d ZZ %d TT %d",XX,YY,ZZ,TT);
 }
@@ -288,9 +288,9 @@ int VAL;
 int indexfinal;
 int LFINAL;
 int Cupdatethreshold;
-//#define LOGSIZEFINAL LOGTAB
-//#define MAXSIZEFINAL  TABSIZE
-//#define SIZEFINAL  (1<<(LOGSIZEFINAL))
+// #define LOGSIZEFINAL LOGTAB
+// #define MAXSIZEFINAL  TABSIZE
+// #define SIZEFINAL  (1<<(LOGSIZEFINAL))
 int8_t GFINAL[TABSIZE] = {0};
 int8_t GFINALCOLT[TABSIZE] = {0};
 
@@ -406,14 +406,16 @@ int MAXHISTGEHL;
     }                     \
   }
 
-#define INCSAT(ctr, max)    \
-  {                         \
-    if (ctr < (max)) ctr++; \
+#define INCSAT(ctr, max) \
+  {                      \
+    if (ctr < (max))     \
+      ctr++;             \
   }
 
-#define DECSAT(ctr, min)    \
-  {                         \
-    if (ctr > (min)) ctr--; \
+#define DECSAT(ctr, min) \
+  {                      \
+    if (ctr > (min))     \
+      ctr--;             \
   }
 
 // for updating up-down saturating counters
@@ -550,7 +552,7 @@ void subpath::init(int ng, int hist[], int logg, int tagbits, int pathbits, int 
 void subpath::init(int ng, int minhist, int maxhist, int logg, int tagbits, int pathbits, int hp) {
   int* h = new int[ng];
   for (int i = 0; i < ng; i++) {
-    h[i] = minhist * pow((double) maxhist / minhist, (double) i / (ng - 1));
+    h[i] = minhist * pow((double)maxhist / minhist, (double)i / (ng - 1));
   }
   init(ng, h, logg, tagbits, pathbits, hp);
 }
@@ -729,7 +731,7 @@ int tage::postp_index() {
   // post predictor index function
   int ctr[2];
   for (int i = 0; i < 2; i++) {
-    ctr[i] = (i < (int) hit.size()) ? getg(hit[i]).ctr : b[bi];
+    ctr[i] = (i < (int)hit.size()) ? getg(hit[i]).ctr : b[bi];
   }
   int v = 0;
   for (int i = 1; i >= 0; i--) {
@@ -770,7 +772,8 @@ bool tage::condbr_predict(uint64_t pc, subpath& p) {
 void tage::uclear() {
   for (int i = 0; i < numg; i++) {
     for (int j = 0; j < gsize; j++) {
-      if (g[i][j].u) g[i][j].u--;
+      if (g[i][j].u)
+        g[i][j].u--;
     }
   }
 }
@@ -795,7 +798,8 @@ void tage::aggressive_update(uint64_t pc, bool taken, subpath& p) {
 
     if (getg(hit[0]).u == 0) {
       if (hit.size() > 1) {
-        if ((getg(hit[1]).ctr >= 0) != inter) STOP = true;
+        if ((getg(hit[1]).ctr >= 0) != inter)
+          STOP = true;
 
         start = 2;
         allsat &= ctrupdate(getg(hit[1]).ctr, taken, ctrbits);
@@ -806,7 +810,7 @@ void tage::aggressive_update(uint64_t pc, bool taken, subpath& p) {
     }
 
     if (!STOP)
-      for (int i = start; i < (int) hit.size(); i++) {
+      for (int i = start; i < (int)hit.size(); i++) {
         if ((getg(hit[i]).ctr >= 0) == inter)
           allsat &= ctrupdate(getg(hit[i]).ctr, taken, ctrbits);
         else {
@@ -815,14 +819,16 @@ void tage::aggressive_update(uint64_t pc, bool taken, subpath& p) {
         }
       }
     if (!Done)
-      if ((b[bi] >= 0) == inter) allsat &= ctrupdate(b[bi], taken, ctrbits);
+      if ((b[bi] >= 0) == inter)
+        allsat &= ctrupdate(b[bi], taken, ctrbits);
   } else {
     ctrupdate(b[bi], taken, ctrbits);
   }
 
   int i = (hit.size() > 0) ? hit[0] : numg;
   while (--i >= 0) {
-    if (getg(i).u != 0) continue;
+    if (getg(i).u != 0)
+      continue;
     if (!allsat || (p.chg[i].olength <= caphist)) {
       galloc(i, pc, taken, p);
     }
@@ -856,7 +862,8 @@ void tage::careful_update(uint64_t pc, bool taken, subpath& p) {
         DECSAT(allocfail, 0);
         i--;
         nalloc++;
-        if (nalloc == MAXALLOC) break;
+        if (nalloc == MAXALLOC)
+          break;
       } else {
         INCSAT(allocfail, ALLOCFAILMAX);
         if (allocfail == ALLOCFAILMAX) {
@@ -883,7 +890,8 @@ bool tage::condbr_update(uint64_t pc, bool taken, subpath& p) {
   // update u bit (see TAGE, JILP 2006)
   if (predtaken != altpredtaken) {
     if (altpredtaken != predtaken)
-      if (predtaken == taken) ctrupdate(getg(hit[0]).u, true, 3);
+      if (predtaken == taken)
+        ctrupdate(getg(hit[0]).u, true, 3);
   }
 
   // update post pred
@@ -1057,7 +1065,8 @@ bool MTAGE::GetPrediction(uint64_t PC) {
 /////////////////////////////////////////////////////////////
 
 void MTAGE::UpdatePredictor(uint64_t PC, OpType OPTYPE, bool resolveDir, bool predDir, uint64_t branchTarget) {
-  if (PERFECT_BP && !subp[0]) GetPrediction(PC);
+  if (PERFECT_BP && !subp[0])
+    GetPrediction(PC);
 
   XX += (predtaken[0] != resolveDir);
   YY += (pred_inter != resolveDir);
@@ -1075,7 +1084,8 @@ void MTAGE::UpdatePredictor(uint64_t PC, OpType OPTYPE, bool resolveDir, bool pr
       subp[i]->update(ForUpdate, resolveDir);
     }
     pred[NPRED - 1].condbr_update(PC, resolveDir, *subp[NPRED - 1]);
-    if (branchTarget < PC) subp[NPRED - 1]->update(ForUpdate, ((branchTarget < PC) & resolveDir));
+    if (branchTarget < PC)
+      subp[NPRED - 1]->update(ForUpdate, ((branchTarget < PC) & resolveDir));
   }
   bfreq.update(bft.getfreq(PC));
   bft.getfreq(PC)++;
@@ -1136,7 +1146,8 @@ void MTAGE::initSC() {
   NGEHL = 209;
   MAXHISTGEHL = 1393;
 
-  for (int i = 0; i < HISTBUFFERLENGTH; i++) ghist[0] = 0;
+  for (int i = 0; i < HISTBUFFERLENGTH; i++)
+    ghist[0] = 0;
 
   ptghist = 0;
 
@@ -1146,53 +1157,70 @@ void MTAGE::initSC() {
   mgehl[NGEHL] = MAXHISTGEHL;
 
   for (int i = 2; i <= NGEHL; i++)
-    mgehl[i] = (int) (((double) MINHISTGEHL *
-                       pow((double) MAXHISTGEHL / (double) MINHISTGEHL, (double) (i - 1) / (double) (NGEHL - 1))) +
-                      0.5);
+    mgehl[i] = (int)(((double)MINHISTGEHL *
+                      pow((double)MAXHISTGEHL / (double)MINHISTGEHL, (double)(i - 1) / (double)(NGEHL - 1))) +
+                     0.5);
 
   // just guarantee that all history lengths are distinct
 
   for (int i = 1; i <= NGEHL; i++)
-    if (mgehl[i] <= mgehl[i - 1] + MINSTEP) mgehl[i] = mgehl[i - 1] + MINSTEP;
+    if (mgehl[i] <= mgehl[i - 1] + MINSTEP)
+      mgehl[i] = mgehl[i - 1] + MINSTEP;
 
-  for (int i = 1; i <= NGEHL; i++) chgehl_i[i].init(mgehl[i], LOGGEHL, ((i & 1)) ? i : 1);
+  for (int i = 1; i <= NGEHL; i++)
+    chgehl_i[i].init(mgehl[i], LOGGEHL, ((i & 1)) ? i : 1);
 
   // initialization of GEHL tables
 
   for (int j = 0; j < (1 << LOGGEHL); j++)
-    for (int i = 0; i <= NGEHL; i++) GEHL[j][i] = (i & 1) ? -4 : 3;
+    for (int i = 0; i <= NGEHL; i++)
+      GEHL[j][i] = (i & 1) ? -4 : 3;
 
   // RHSP initialization
 
-  for (int i = 1; i <= NRHSP; i++) mrhsp[i] = 6 * i;
+  for (int i = 1; i <= NRHSP; i++)
+    mrhsp[i] = 6 * i;
 
-  for (int i = 1; i <= NRHSP; i++) chrhsp_i[i].init(mrhsp[i], LOGRHSP, ((i & 1)) ? i : 1);
+  for (int i = 1; i <= NRHSP; i++)
+    chrhsp_i[i].init(mrhsp[i], LOGRHSP, ((i & 1)) ? i : 1);
 
   // initialization of RHSP tables
 
   for (int j = 0; j < (1 << LOGRHSP); j++)
-    for (int i = 0; i <= NRHSP; i++) RHSP[j][i] = (i & 1) ? -4 : 3;
+    for (int i = 0; i <= NRHSP; i++)
+      RHSP[j][i] = (i & 1) ? -4 : 3;
 
   updatethreshold = 100;
   Cupdatethreshold = 11;
 
-  for (int i = 0; i < (1 << LOGSIZE); i++) Pupdatethreshold[i] = 0;
+  for (int i = 0; i < (1 << LOGSIZE); i++)
+    Pupdatethreshold[i] = 0;
 
-  for (int i = 0; i < LNB; i++) LGEHL[i] = &LGEHLA[i][0];
-  for (int i = 0; i < LINB; i++) LIGEHL[i] = &LIGEHLA[i][0];
-  for (int i = 0; i < SNB; i++) SGEHL[i] = &SGEHLA[i][0];
+  for (int i = 0; i < LNB; i++)
+    LGEHL[i] = &LGEHLA[i][0];
+  for (int i = 0; i < LINB; i++)
+    LIGEHL[i] = &LIGEHLA[i][0];
+  for (int i = 0; i < SNB; i++)
+    SGEHL[i] = &SGEHLA[i][0];
 
-  for (int i = 0; i < QNB; i++) QGEHL[i] = &QGEHLA[i][0];
+  for (int i = 0; i < QNB; i++)
+    QGEHL[i] = &QGEHLA[i][0];
 
-  for (int i = 0; i < TNB; i++) TGEHL[i] = &TGEHLA[i][0];
-  for (int i = 0; i < IMLINB; i++) IMLIGEHL[i] = &IMLIGEHLA[i][0];
+  for (int i = 0; i < TNB; i++)
+    TGEHL[i] = &TGEHLA[i][0];
+  for (int i = 0; i < IMLINB; i++)
+    IMLIGEHL[i] = &IMLIGEHLA[i][0];
 
-  for (int i = 0; i < BNB; i++) BGEHL[i] = &BGEHLA[i][0];
+  for (int i = 0; i < BNB; i++)
+    BGEHL[i] = &BGEHLA[i][0];
 
-  for (int i = 0; i < YNB; i++) YGEHL[i] = &YGEHLA[i][0];
-  for (int i = 0; i < INB; i++) IGEHL[i] = &IGEHLA[i][0];
+  for (int i = 0; i < YNB; i++)
+    YGEHL[i] = &YGEHLA[i][0];
+  for (int i = 0; i < INB; i++)
+    IGEHL[i] = &IGEHLA[i][0];
 
-  for (int i = 0; i < FNB; i++) fGEHL[i] = &fGEHLA[i][0];
+  for (int i = 0; i < FNB; i++)
+    fGEHL[i] = &fGEHLA[i][0];
 
 #ifdef LOOPMTAGE
   ltable = new lentry[1 << (LOGL)];
@@ -1266,14 +1294,16 @@ void MTAGE::initSC() {
         fGEHL[i][j] = -1;
       }
     }
-  for (int i = 0; i < CNB; i++) CGEHL[i] = &CGEHLA[i][0];
+  for (int i = 0; i < CNB; i++)
+    CGEHL[i] = &CGEHLA[i][0];
   for (int i = 0; i < CNB; i++)
     for (int j = 0; j < TABSIZE; j++) {
       if (j & 1) {
         CGEHL[i][j] = -1;
       }
     }
-  for (int i = 0; i < RNB; i++) RGEHL[i] = &RGEHLA[i][0];
+  for (int i = 0; i < RNB; i++)
+    RGEHL[i] = &RGEHLA[i][0];
   for (int i = 0; i < RNB; i++)
     for (int j = 0; j < TABSIZE; j++) {
       if (j & 1) {
@@ -1281,7 +1311,8 @@ void MTAGE::initSC() {
       }
     }
 
-  for (int i = 0; i < QQNB; i++) QQGEHL[i] = &QQGEHLA[i][0];
+  for (int i = 0; i < QQNB; i++)
+    QQGEHL[i] = &QQGEHLA[i][0];
   for (int i = 0; i < QQNB; i++)
     for (int j = 0; j < TABSIZE; j++) {
       if (j & 1) {
@@ -1289,9 +1320,11 @@ void MTAGE::initSC() {
       }
     }
 
-  for (int j = 0; j < (1 << LOGBIAS); j++) Bias[j] = (j & 1) ? 15 : -16;
+  for (int j = 0; j < (1 << LOGBIAS); j++)
+    Bias[j] = (j & 1) ? 15 : -16;
 
-  for (int j = 0; j < (1 << LOGBIASCOLT); j++) BiasColt[j] = (j & 1) ? 0 : -1;
+  for (int j = 0; j < (1 << LOGBIASCOLT); j++)
+    BiasColt[j] = (j & 1) ? 0 : -1;
 
   for (int i = 0; i < (1 << LOGSIZES); i++)
     for (int j = 0; j < (SWIDTH / SPSTEP) * (1 << SPSTEP); j++) {
@@ -1351,13 +1384,16 @@ void MTAGE::HistoryUpdate(uint64_t PC, uint8_t brtype, bool taken, uint64_t targ
   bool V = false;
 
   for (int i = 0; i <= 7; i++)
-    if (LastBR[i] == (int) PC) V = true;
+    if (LastBR[i] == (int)PC)
+      V = true;
 
-  for (int i = 7; i >= 1; i--) LastBR[i] = LastBR[i - 1];
+  for (int i = 7; i >= 1; i--)
+    LastBR[i] = LastBR[i - 1];
 
   LastBR[0] = PC;
 
-  if (!V) YHA = (YHA << 1) ^ (taken ^ ((PC >> 5) & 1));
+  if (!V)
+    YHA = (YHA << 1) ^ (taken ^ ((PC >> 5) & 1));
 
   // Path history
   P_phist = (P_phist << 1) ^ (taken ^ ((PC >> 5) & 1));
@@ -1374,9 +1410,11 @@ void MTAGE::HistoryUpdate(uint64_t PC, uint8_t brtype, bool taken, uint64_t targ
     // global branch history
     GHIST = (GHIST << 1) + taken;
 
-    if ((target > PC + 64) || (target < PC - 64)) RHIST = (RHIST << 1) + taken;
+    if ((target > PC + 64) || (target < PC - 64))
+      RHIST = (RHIST << 1) + taken;
     if (taken)
-      if ((target > PC + 64) || (target < PC + 64)) CHIST = (CHIST << 1) ^ (PC & 63);
+      if ((target > PC + 64) || (target < PC + 64))
+        CHIST = (CHIST << 1) ^ (PC & 63);
   }
 
   // is it really useful ?
@@ -1393,7 +1431,8 @@ void MTAGE::HistoryUpdate(uint64_t PC, uint8_t brtype, bool taken, uint64_t targ
         IMLIcount = 0;
       }
       if (taken) {
-        if (IMLIcount < ((1 << Im[0]) - 1)) IMLIcount++;
+        if (IMLIcount < ((1 << Im[0]) - 1))
+          IMLIcount++;
       }
     }
 
@@ -1455,7 +1494,8 @@ bool MTAGE::FinalSCpredict(uint64_t PC, bool Tpred) {
   indexfinal = CLASS;
   indexfinalcolt = ((PC << 7) + CLASS) & (TABSIZE - 1);
   LFINAL = 2 * GFINAL[indexfinal] + 1;
-  if (abs(2 * GFINALCOLT[indexfinalcolt] + 1) > 15) LFINAL = 2 * GFINALCOLT[indexfinalcolt] + 1;
+  if (abs(2 * GFINALCOLT[indexfinalcolt] + 1) > 15)
+    LFINAL = 2 * GFINALCOLT[indexfinalcolt] + 1;
 
   return (LFINAL >= 0);
 }
@@ -1591,7 +1631,8 @@ void MTAGE::predict_gehl(uint64_t PC) {
 
 void MTAGE::gehlupdate(uint64_t PC, bool taken) {
   // update the GEHL  predictor tables
-  for (int i = NGEHL; i >= 0; i--) ctrupdate(GEHL[GEHLINDEX[i]][i], taken, PERCWIDTH);
+  for (int i = NGEHL; i >= 0; i--)
+    ctrupdate(GEHL[GEHLINDEX[i]][i], taken, PERCWIDTH);
 }
 
 void MTAGE::predict_rhsp(uint64_t PC) {
@@ -1603,11 +1644,13 @@ void MTAGE::predict_rhsp(uint64_t PC) {
 
   // SUMRHSP is centered
   SUMRHSP = 0;
-  for (int i = 1; i <= NRHSP; i++) SUMRHSP += 2 * RHSP[RHSPINDEX[i]][i] + 1;
+  for (int i = 1; i <= NRHSP; i++)
+    SUMRHSP += 2 * RHSP[RHSPINDEX[i]][i] + 1;
 }
 
 void MTAGE::rhspupdate(uint64_t PC, bool taken) {
-  for (int i = NRHSP; i >= 1; i--) ctrupdate(RHSP[RHSPINDEX[i]][i], taken, PERCWIDTH);
+  for (int i = NRHSP; i >= 1; i--)
+    ctrupdate(RHSP[RHSPINDEX[i]][i], taken, PERCWIDTH);
 }
 
 int MTAGE::percpredict(int PC, long long BHIST, int8_t* line, int PSTEP, int WIDTH) {
@@ -1644,10 +1687,10 @@ int MTAGE::Gpredict(uint64_t PC, long long BHIST, int* length, int8_t** tab, int
   PERCSUM = 0;
 
   for (int i = 0; i < NBR; i++) {
-    long long bhist = BHIST & ((long long) ((1 << length[i]) - 1));
+    long long bhist = BHIST & ((long long)((1 << length[i]) - 1));
 
     int index =
-        (((long long) PC) ^ bhist ^ (bhist >> (LOGTAB - i)) ^ (bhist >> (40 - 2 * i)) ^ (bhist >> (60 - 3 * i))) &
+        (((long long)PC) ^ bhist ^ (bhist >> (LOGTAB - i)) ^ (bhist >> (40 - 2 * i)) ^ (bhist >> (60 - 3 * i))) &
         (TABSIZE - 1);
 
     int8_t ctr = tab[i][index];
@@ -1658,10 +1701,10 @@ int MTAGE::Gpredict(uint64_t PC, long long BHIST, int* length, int8_t** tab, int
 
 void MTAGE::Gupdate(uint64_t PC, bool taken, long long BHIST, int* length, int8_t** tab, int NBR, int WIDTH) {
   for (int i = 0; i < NBR; i++) {
-    long long bhist = BHIST & ((long long) ((1 << length[i]) - 1));
+    long long bhist = BHIST & ((long long)((1 << length[i]) - 1));
 
     int index =
-        (((long long) PC) ^ bhist ^ (bhist >> (LOGTAB - i)) ^ (bhist >> (40 - 2 * i)) ^ (bhist >> (60 - 3 * i))) &
+        (((long long)PC) ^ bhist ^ (bhist >> (LOGTAB - i)) ^ (bhist >> (40 - 2 * i)) ^ (bhist >> (60 - 3 * i))) &
         (TABSIZE - 1);
 
     ctrupdate(tab[i][index], taken, WIDTH);

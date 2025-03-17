@@ -32,13 +32,15 @@ working on this (ob).
 
 #include <math.h>
 
-#include "core.param.h"
-#include "general.param.h"
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
+
+#include "core.param.h"
+#include "general.param.h"
+
 #include "optimizer2.h"
 
 /**************************************************************************************/

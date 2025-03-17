@@ -28,9 +28,11 @@
  ***************************************************************************************/
 
 #include "stat_mon.h"
+
 #include "globals/assert.h"
 #include "globals/global_types.h"
 #include "globals/utils.h"
+
 #include "statistics.h"
 
 /**************************************************************************************/
@@ -39,7 +41,7 @@
 typedef struct Stat_Datum_struct {
   union {
     Counter count;
-    double  value;
+    double value;
   };
 } Stat_Datum;
 
@@ -51,23 +53,23 @@ typedef struct Stat_Info_struct {
 
 struct Stat_Mon_struct {
   Stat_Info* stat_infos;
-  uns        num_stats;
+  uns num_stats;
 };
 
 /**************************************************************************************/
 /* Local Prototypes */
 
 static Stat_Info* find_stat_info(Stat_Mon* mon, uns stat_idx);
-static void       init_stat_info(Stat_Info* info, uns stat_idx);
+static void init_stat_info(Stat_Info* info, uns stat_idx);
 
 /**************************************************************************************/
 /* stat_mon_create_from_array: */
 
 Stat_Mon* stat_mon_create_from_array(uns* stat_idx_array, uns num) {
-  Stat_Mon* mon   = malloc(sizeof(Stat_Mon));
-  mon->num_stats  = num;
+  Stat_Mon* mon = malloc(sizeof(Stat_Mon));
+  mon->num_stats = num;
   mon->stat_infos = malloc(num * sizeof(Stat_Info));
-  for(uns i = 0; i < num; i++) {
+  for (uns i = 0; i < num; i++) {
     init_stat_info(&mon->stat_infos[i], stat_idx_array[i]);
   }
   stat_mon_reset(mon);
@@ -80,10 +82,10 @@ Stat_Mon* stat_mon_create_from_array(uns* stat_idx_array, uns num) {
 Stat_Mon* stat_mon_create_from_range(uns first_stat_idx, uns last_stat_idx) {
   ASSERT(0, last_stat_idx >= first_stat_idx);
   ASSERT(0, last_stat_idx < NUM_GLOBAL_STATS);
-  Stat_Mon* mon   = malloc(sizeof(Stat_Mon));
-  mon->num_stats  = last_stat_idx - first_stat_idx + 1;
+  Stat_Mon* mon = malloc(sizeof(Stat_Mon));
+  mon->num_stats = last_stat_idx - first_stat_idx + 1;
   mon->stat_infos = malloc(mon->num_stats * sizeof(Stat_Info));
-  for(uns i = 0; i < mon->num_stats; i++) {
+  for (uns i = 0; i < mon->num_stats; i++) {
     init_stat_info(&mon->stat_infos[i], first_stat_idx + i);
   }
   stat_mon_reset(mon);
@@ -123,11 +125,11 @@ double stat_mon_get_value(Stat_Mon* mon, uns proc_id, uns stat_idx) {
  * @param mon
  */
 void stat_mon_reset(Stat_Mon* mon) {
-  for(uns i = 0; i < mon->num_stats; i++) {
+  for (uns i = 0; i < mon->num_stats; i++) {
     Stat_Info* info = &mon->stat_infos[i];
-    for(uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+    for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
       Stat* stat = &global_stat_array[proc_id][info->stat_idx];
-      if(stat->type == FLOAT_TYPE_STAT) {
+      if (stat->type == FLOAT_TYPE_STAT) {
         info->last_data[proc_id].value = stat->value + stat->total_value;
       } else {
         info->last_data[proc_id].count = stat->count + stat->total_count;
@@ -140,7 +142,7 @@ void stat_mon_reset(Stat_Mon* mon) {
 /* stat_mon_free: */
 
 void stat_mon_free(Stat_Mon* mon) {
-  for(uns i = 0; i < mon->num_stats; i++) {
+  for (uns i = 0; i < mon->num_stats; i++) {
     free(mon->stat_infos[i].last_data);
   }
   free(mon->stat_infos);
@@ -153,13 +155,12 @@ void stat_mon_free(Stat_Mon* mon) {
 static Stat_Info* find_stat_info(Stat_Mon* mon, uns stat_idx) {
   /* linear search is a little slow, but stat monitors are not
      supposed to be used often, so it should be a minor perf hit */
-  for(uns i = 0; i < mon->num_stats; i++) {
-    if(mon->stat_infos[i].stat_idx == stat_idx) {
+  for (uns i = 0; i < mon->num_stats; i++) {
+    if (mon->stat_infos[i].stat_idx == stat_idx) {
       return &mon->stat_infos[i];
     }
   }
-  FATAL_ERROR(0, "Stat %s not in stat monitor\n",
-              global_stat_array[0][stat_idx].name);
+  FATAL_ERROR(0, "Stat %s not in stat monitor\n", global_stat_array[0][stat_idx].name);
 }
 
 /**************************************************************************************/
@@ -168,8 +169,8 @@ static Stat_Info* find_stat_info(Stat_Mon* mon, uns stat_idx) {
 static void init_stat_info(Stat_Info* info, uns stat_idx) {
   ASSERT(0, stat_idx < NUM_GLOBAL_STATS);
   Stat* stat = &global_stat_array[0][stat_idx];
-  if(stat->noreset)
+  if (stat->noreset)
     WARNINGU_ONCE(0, "NORESET stats are treated as resettable by stat_mon\n");
-  info->stat_idx  = stat_idx;
+  info->stat_idx = stat_idx;
   info->last_data = malloc(NUM_CORES * sizeof(Stat_Datum));
 }

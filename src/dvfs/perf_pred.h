@@ -31,6 +31,7 @@
 #define __PERF_PRED_H__
 
 #include "globals/enum.h"
+
 #include "memory/mem_req.h"
 
 #define PERF_PRED_MECH_LIST(ELEM) \
@@ -46,8 +47,7 @@ DECLARE_ENUM(Perf_Pred_Mech, PERF_PRED_MECH_LIST, PERF_PRED_);
   ELEM(DRAM_LATENCY)                          \
   ELEM(VIRTUAL_CLOCK)
 
-DECLARE_ENUM(Perf_Pred_Req_Latency_Mech, PERF_PRED_REQ_LATENCY_MECH_LIST,
-             PERF_PRED_REQ_LATENCY_MECH_);
+DECLARE_ENUM(Perf_Pred_Req_Latency_Mech, PERF_PRED_REQ_LATENCY_MECH_LIST, PERF_PRED_REQ_LATENCY_MECH_);
 
 /* Initialize before using other functions */
 void init_perf_pred(void);
@@ -71,8 +71,7 @@ void perf_pred_dram_latency_end(struct Mem_Req_struct*);
 void perf_pred_mem_req_done(struct Mem_Req_struct*);
 
 /* Report that an outstanding memory request changed type */
-void perf_pred_update_mem_req_type(struct Mem_Req_struct*,
-                                   Mem_Req_Type old_type, Flag old_offpath);
+void perf_pred_update_mem_req_type(struct Mem_Req_struct*, Mem_Req_Type old_type, Flag old_offpath);
 
 /* The functions above must be called in temporal order */
 
@@ -83,8 +82,7 @@ void perf_pred_cycle(void);
 void perf_pred_core_busy(uns proc_id, uns num_fus_busy);
 
 /* Report slack encountered by a request in a DRAM bank */
-void perf_pred_slack(Mem_Req* req, Counter constraint, Counter latency,
-                     Flag final);
+void perf_pred_slack(Mem_Req* req, Counter constraint, Counter latency, Flag final);
 
 /* Report that a request started that, from this cycle, is affected by
    the off-chip latency */
@@ -104,8 +102,7 @@ void perf_pred_interval_done(void);
 
 /* Return predicted slowdown for the provided chip and memory cycle
    times */
-double perf_pred_slowdown(uns proc_id, Perf_Pred_Mech mech, uns chip_cycle_time,
-                          uns memory_cycle_time);
+double perf_pred_slowdown(uns proc_id, Perf_Pred_Mech mech, uns chip_cycle_time, uns memory_cycle_time);
 
 /* LLC Level Parallelism calculation */
 

@@ -29,13 +29,14 @@
 #define __L2WAY_PREF_H__
 
 #include "globals/global_types.h"
+
 #include "pref_type.h"
 
 // way predictor training structure
 typedef struct L2way_Rec_Struct {
-  uns     last_way;
-  uns     pred_way;
-  uns     counter;
+  uns last_way;
+  uns pred_way;
+  uns counter;
   Counter last_access_time;
 } L2way_Rec;
 
@@ -45,12 +46,11 @@ typedef struct L2set_Rec_Struct {
 } L2set_Rec;
 
 typedef struct L1pref_Req_Struct {
-  Flag    valid;
-  Addr    va;
+  Flag valid;
+  Addr va;
   Counter time;
   Counter rdy_cycle;
 } L1pref_Req;
-
 
 void l2way_init(void);
 void l2way_pref(Mem_Req_Info* req);

@@ -30,8 +30,8 @@
 #define __DEBUG_PRINT_H__
 
 #include <stdio.h>
-#include "globals/global_types.h"
 
+#include "globals/global_types.h"
 
 /**************************************************************************************/
 /* External Variables */
@@ -41,22 +41,20 @@ extern const char* const tcache_state_names[];
 extern const char* const cf_type_names[];
 extern const char* const sm_state_names[];
 
-
 /**************************************************************************************/
 /* Prototypes */
 
-void  print_op(Op*);
-void  print_func_op(Op*);
-void  print_short_op_array(FILE*, Op* [], uns);
-void  print_op_array(FILE*, Op* [], uns, uns);
-void  print_open_op_array(FILE*, Op* [], uns, uns);
-void  print_open_op_array_end(FILE*, uns);
-void  print_op_field(FILE*, Op*, uns);
-void  print_field_tail(FILE*, uns);
-void  print_field_head(FILE*, uns);
+void print_op(Op*);
+void print_func_op(Op*);
+void print_short_op_array(FILE*, Op*[], uns);
+void print_op_array(FILE*, Op*[], uns, uns);
+void print_open_op_array(FILE*, Op*[], uns, uns);
+void print_open_op_array_end(FILE*, uns);
+void print_op_field(FILE*, Op*, uns);
+void print_field_tail(FILE*, uns);
+void print_field_head(FILE*, uns);
 char* disasm_op(Op*, Flag wide);
 char* disasm_reg(uns);
-
 
 /**************************************************************************************/
 

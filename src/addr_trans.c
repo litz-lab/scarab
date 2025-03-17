@@ -29,9 +29,12 @@
  ***************************************************************************************/
 
 #include "addr_trans.h"
-#include "debug/debug_macros.h"
+
 #include "globals/assert.h"
 #include "globals/utils.h"
+
+#include "debug/debug_macros.h"
+
 #include "memory/memory.param.h"
 #include "ramulator.param.h"
 
@@ -45,7 +48,7 @@ static uns32 hsieh_hash(const char* data, int len);
 /* addr_translate: translate virtual address to physical address */
 
 Addr addr_translate(Addr virt_addr) {
-  if(ADDR_TRANSLATION == ADDR_TRANS_NONE)
+  if (ADDR_TRANSLATION == ADDR_TRANS_NONE)
     return virt_addr;
 
   /* We fake the virtual->physical address translation by scrambling the addr
@@ -55,39 +58,36 @@ Addr addr_translate(Addr virt_addr) {
    * original bits and shift them into the high redundant address bits. The high
    * address bits are redundant because they are the output of sign extension
    * (i.e., all 0s or all 1s). */
-  uns  num_page_offset_bits = LOG2(VA_PAGE_SIZE_BYTES);
-  Addr page_index           = virt_addr >> num_page_offset_bits;
+  uns num_page_offset_bits = LOG2(VA_PAGE_SIZE_BYTES);
+  Addr page_index = virt_addr >> num_page_offset_bits;
   // we already use the 6 highest bits to store the proc_id.
   // NUM_ADDR_NON_SIGN_EXTEND_BITS tells us how many bits we actually need to
   // keep, and the bits that are left are used to store the original bits after
   // scrambling
-  uns   num_bits_to_scramble = 58 - NUM_ADDR_NON_SIGN_EXTEND_BITS;
-  uns32 orig_bits            = page_index & N_BIT_MASK(num_bits_to_scramble);
-  Addr  hash_source;
+  uns num_bits_to_scramble = 58 - NUM_ADDR_NON_SIGN_EXTEND_BITS;
+  uns32 orig_bits = page_index & N_BIT_MASK(num_bits_to_scramble);
+  Addr hash_source;
 
-  if(ADDR_TRANSLATION == ADDR_TRANS_RANDOM ||
-     ADDR_TRANSLATION == ADDR_TRANS_FLIP) {
+  if (ADDR_TRANSLATION == ADDR_TRANS_RANDOM || ADDR_TRANSLATION == ADDR_TRANS_FLIP) {
     hash_source = page_index;
-  } else if(ADDR_TRANSLATION == ADDR_TRANS_PRESERVE_BLP ||
-            ADDR_TRANSLATION == ADDR_TRANS_PRESERVE_STREAM) {
+  } else if (ADDR_TRANSLATION == ADDR_TRANS_PRESERVE_BLP || ADDR_TRANSLATION == ADDR_TRANS_PRESERVE_STREAM) {
     /* excluding original_bits from hash source will preserve
        bank-level parallelism among requests with the same upper
        bits */
     hash_source = page_index >> num_bits_to_scramble;
   } else {
-    FATAL_ERROR(0, "Unknown ADDR_TRANSLATION: %s\n",
-                Addr_Translation_str(ADDR_TRANSLATION));
+    FATAL_ERROR(0, "Unknown ADDR_TRANSLATION: %s\n", Addr_Translation_str(ADDR_TRANSLATION));
   }
   uns32 hash;
-  if(ADDR_TRANSLATION == ADDR_TRANS_FLIP) {
+  if (ADDR_TRANSLATION == ADDR_TRANS_FLIP) {
     hash = hash_source ^ N_BIT_MASK(num_bits_to_scramble);
   } else {
     hash = hsieh_hash((char*)&hash_source, sizeof(Addr));
   }
   uns32 scrambled_bits = (hash & N_BIT_MASK(num_bits_to_scramble));
-  if(ADDR_TRANSLATION == ADDR_TRANS_PRESERVE_BLP) {
+  if (ADDR_TRANSLATION == ADDR_TRANS_PRESERVE_BLP) {
     scrambled_bits ^= orig_bits;
-  } else if(ADDR_TRANSLATION == ADDR_TRANS_PRESERVE_STREAM) {
+  } else if (ADDR_TRANSLATION == ADDR_TRANS_PRESERVE_STREAM) {
     scrambled_bits ^= orig_bits;
     Addr top_orig_bit = (page_index >> (num_bits_to_scramble - 1)) & 1;
     CLRBIT(scrambled_bits, num_bits_to_scramble - 1);
@@ -98,58 +98,52 @@ Addr addr_translate(Addr virt_addr) {
      1. the address should retain proc_id in the upper bits
      2. no two page indices should map to the same frame number (otherwise such
         collisions artifically reduce the application's working set) */
-  uns  proc_id          = get_proc_id_from_cmp_addr(virt_addr);
-  Addr page_offset      = virt_addr & N_BIT_MASK(num_page_offset_bits);
-  Addr masked_virt_addr = check_and_remove_addr_sign_extended_bits(
-    virt_addr, NUM_ADDR_NON_SIGN_EXTEND_BITS, FALSE);
-  Addr orig_masked_virt_addr  = convert_to_cmp_addr(0, masked_virt_addr);
+  uns proc_id = get_proc_id_from_cmp_addr(virt_addr);
+  Addr page_offset = virt_addr & N_BIT_MASK(num_page_offset_bits);
+  Addr masked_virt_addr = check_and_remove_addr_sign_extended_bits(virt_addr, NUM_ADDR_NON_SIGN_EXTEND_BITS, FALSE);
+  Addr orig_masked_virt_addr = convert_to_cmp_addr(0, masked_virt_addr);
   Addr orig_masked_page_index = orig_masked_virt_addr >> num_page_offset_bits;
   Addr masked_page_index_with_scrambled_bits =
-    (orig_masked_page_index & (~N_BIT_MASK(num_bits_to_scramble))) |
-    scrambled_bits;
-  ASSERT(proc_id, 0 == (masked_page_index_with_scrambled_bits &
-                        ~N_BIT_MASK(NUM_ADDR_NON_SIGN_EXTEND_BITS)));
+      (orig_masked_page_index & (~N_BIT_MASK(num_bits_to_scramble))) | scrambled_bits;
+  ASSERT(proc_id, 0 == (masked_page_index_with_scrambled_bits & ~N_BIT_MASK(NUM_ADDR_NON_SIGN_EXTEND_BITS)));
   Addr new_phys_addr = ((Addr)orig_bits << NUM_ADDR_NON_SIGN_EXTEND_BITS) |
-                       (masked_page_index_with_scrambled_bits
-                        << num_page_offset_bits) |
-                       page_offset;
+                       (masked_page_index_with_scrambled_bits << num_page_offset_bits) | page_offset;
 
   Addr cmp_addr = convert_to_cmp_addr(proc_id, new_phys_addr);
   DEBUG(proc_id, "%llx => %llx\n", virt_addr, cmp_addr);
   return cmp_addr;
 }
 
-  /**************************************************************************************
-   * The code below was adapted from
-   *http://www.azillionmonkeys.com/qed/hash.html
-   **************************************************************************************/
+/**************************************************************************************
+ * The code below was adapted from
+ *http://www.azillionmonkeys.com/qed/hash.html
+ **************************************************************************************/
 
 #if !defined(get16bits)
-#define get16bits(d) \
-  ((((uns32)(((const uns8*)(d))[1])) << 8) + (uns32)(((const uns8*)(d))[0]))
+#define get16bits(d) ((((uns32)(((const uns8*)(d))[1])) << 8) + (uns32)(((const uns8*)(d))[0]))
 #endif
 
 uns32 hsieh_hash(const char* data, int len) {
   uns32 hash = len, tmp;
-  int   rem;
+  int rem;
 
-  if(len <= 0 || data == NULL)
+  if (len <= 0 || data == NULL)
     return 0;
 
   rem = len & 3;
   len >>= 2;
 
   /* Main loop */
-  for(; len > 0; len--) {
+  for (; len > 0; len--) {
     hash += get16bits(data);
-    tmp  = (get16bits(data + 2) << 11) ^ hash;
+    tmp = (get16bits(data + 2) << 11) ^ hash;
     hash = (hash << 16) ^ tmp;
     data += 2 * sizeof(uns16);
     hash += hash >> 11;
   }
 
   /* Handle end cases */
-  switch(rem) {
+  switch (rem) {
     case 3:
       hash += get16bits(data);
       hash ^= hash << 16;

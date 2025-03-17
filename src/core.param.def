@@ -178,7 +178,7 @@ DEF_PARAM(on_path_decoupled_icache_stage, ON_PATH_DECOUPLED_ICACHE_STAGE, Flag, 
 DEF_PARAM(icache_fetch_across_fetch_target, ICACHE_FETCH_ACROSS_FETCH_TARGET, Flag, Flag, TRUE, )
 DEF_PARAM(uop_cache_fetch_across_fetch_target, UOP_CACHE_FETCH_ACROSS_FETCH_TARGET, Flag, Flag, TRUE, )
 DEF_PARAM(fetch_off_path_ops, FETCH_OFF_PATH_OPS, Flag, Flag, TRUE, )
-DEF_PARAM(wp_collect_stats, WP_COLLECT_STATS, Flag, Flag, FALSE, )
+DEF_PARAM(wp_collect_stats, WP_COLLECT_STATS, Flag, Flag, TRUE, )
 
 /* functional unit delays by op_type */
 /* note: memory delays correspond to address computation time.  This

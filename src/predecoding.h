@@ -35,7 +35,11 @@ extern "C" {
 
 #include "uop_cache.h"
 
-typedef enum Predecoding_Marker_enum { FT_NOT_LOOKED_UP, FT_IN_UOP_CACHE, FT_NOT_IN_UOP_CACHE } Predecoding_Marker;
+typedef enum Predecoding_Marker_enum {
+  FT_NOT_LOOKED_UP,
+  FT_IN_UOP_CACHE,
+  FT_NOT_IN_UOP_CACHE
+} Predecoding_Marker;
 
 void alloc_mem_predecoding(uns numProcs);
 void init_predecoding(uns proc_id);

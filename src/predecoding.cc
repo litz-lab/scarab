@@ -30,14 +30,16 @@
 
 #include <vector>
 
-#include "decoupled_frontend.h"
 #include "globals/assert.h"
 #include "globals/enum.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
+
 #include "memory/memory.param.h"
+
+#include "decoupled_frontend.h"
 
 class PREDECODING {
  public:

@@ -50,6 +50,7 @@ extern "C" {
 #include "bp/bp.h"
 #include "frontend/frontend.h"
 #include "frontend/pin_trace_fe.h"
+
 #include "predecoding.h"
 #include "stage_data.h"
 

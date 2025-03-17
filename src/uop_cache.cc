@@ -454,7 +454,8 @@ void accumulate_op(Op* op) {
 
   // need a state?
   // if ever a FT failed (not short reuse), do not insert anymore
-  if (UOP_CACHE_ONLY_IMMEDIATE_RESTEER_UOPS && op->ft_info.dynamic_info.num_preceding_uops >= UOP_CACHE_ONLY_IMMEDIATE_RESTEER_UOPS) {
+  if (UOP_CACHE_ONLY_IMMEDIATE_RESTEER_UOPS &&
+      op->ft_info.dynamic_info.num_preceding_uops >= UOP_CACHE_ONLY_IMMEDIATE_RESTEER_UOPS) {
     return;
   }
 

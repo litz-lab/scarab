@@ -153,7 +153,6 @@ enum tage_component {
   NOT_TAGE    // redundancy
 };
 
-
 // due to partial associativity, twice the number of different histories (18 different histories)
 #define HIST 18            // 18 different history lengths
 #define ASSOC 2            // 2-way associativity

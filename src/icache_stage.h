@@ -36,8 +36,8 @@
 #include "decoupled_frontend.h"
 #include "stage_data.h"
 
-#define IC_ISSUE_WIDTH ISSUE_WIDTH - DECODE_PATH_WIDTH_NARROWER
-#define UOPC_ISSUE_WIDTH ISSUE_WIDTH
+#define IC_ISSUE_WIDTH DECODE_WIDTH
+#define UOPC_ISSUE_WIDTH UOP_CACHE_WIDTH
 
 /**************************************************************************************/
 /* Forward Declarations */

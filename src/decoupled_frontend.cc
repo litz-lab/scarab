@@ -247,22 +247,22 @@ void FT::add_op(Op* op, FT_Ended_By ft_ended_by) {
 
     // counting extremely short FT reason
     if (!ft_info.dynamic_info.first_op_off_path) {
-      if (ft_info.static_info.n_uops <= (int)ISSUE_WIDTH) {
+      if (ft_info.static_info.n_uops <= (int)UOP_CACHE_WIDTH) {
         if (ft_info.dynamic_info.started_by == FT_STARTED_BY_ICACHE_LINE_BOUNDARY) {
           STAT_EVENT(proc_id, FT_SHORT_ICACHE_LINE_BOUNDARY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1);
           INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_ICACHE_LINE_BOUNDARY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
-                         ISSUE_WIDTH - ft_info.static_info.n_uops);
+                         UOP_CACHE_WIDTH - ft_info.static_info.n_uops);
         } else if (ft_info.dynamic_info.started_by == FT_STARTED_BY_TAKEN_BRANCH) {
           STAT_EVENT(proc_id, FT_SHORT_TAKEN_BRANCH_ICACHE_LINE_BOUNDARY + ft_ended_by - 1);
           INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_TAKEN_BRANCH_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
-                         ISSUE_WIDTH - ft_info.static_info.n_uops);
+                         UOP_CACHE_WIDTH - ft_info.static_info.n_uops);
         } else if (ft_info.dynamic_info.started_by == FT_STARTED_BY_RECOVERY) {
           STAT_EVENT(proc_id, FT_SHORT_RECOVERY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1);
           INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_RECOVERY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
-                         ISSUE_WIDTH - ft_info.static_info.n_uops);
+                         UOP_CACHE_WIDTH - ft_info.static_info.n_uops);
         } else {
           STAT_EVENT(proc_id, FT_SHORT_OTHER + ft_ended_by - 1);
-          INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_OTHER, ISSUE_WIDTH - ft_info.static_info.n_uops);
+          INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_OTHER, UOP_CACHE_WIDTH - ft_info.static_info.n_uops);
         }
       } else {
         STAT_EVENT(proc_id, FT_NOT_SHORT);

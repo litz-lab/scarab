@@ -460,7 +460,7 @@ void accumulate_op(Op* op) {
   // condition 1: if the FT ends
   bool end_condition_1 = op->eom && addr_following_inst == addr_following_ft;
   // condition 2: if the uop cache line reaches the uop num limit
-  bool end_condition_2 = current_accumulating_line->n_uops == ISSUE_WIDTH;
+  bool end_condition_2 = current_accumulating_line->n_uops == UOP_CACHE_WIDTH;
   if (end_condition_1 || end_condition_2) {
     if (end_condition_1) {
       current_accumulating_line->end_of_ft = TRUE;

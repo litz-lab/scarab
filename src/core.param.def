@@ -127,11 +127,15 @@ DEF_PARAM(node_retire_rate, NODE_RETIRE_RATE, uns, uns, 10, )
 
 /********DECODE WIDTH
  * PARAMETERS*********************************************************/
-/*How narrower is decode stage than issue width, Must be smaller than the issue_width,
- * will be used in icache_stage.c and decode_stage.c.*/
+/*The maximum number of uops that can be produced by the decoders per cycle,
+ * which will be used in icache_stage.c and decode_stage.c.*/
 /*E.g., in sunny cove, the issue width is 6, same as the uop cache issue width,
- * while the decode path has a width of 5. In that case decode_width_narrower is set to 1.*/
-DEF_PARAM(decode_path_width_narrower, DECODE_PATH_WIDTH_NARROWER, uns, uns, 0, )
+ * while the decode path has a width of 5.*/
+DEF_PARAM(decode_width, DECODE_WIDTH, uns, uns, 4, )
+
+/********INSTRUCTION DECODE QUEUE
+ * PARAMETERS********************************************************/
+DEF_PARAM(idq_size, IDQ_SIZE, uns, uns, 140, )
 
 /********MAP REGISTER FILE
  * PARAMETERS********************************************************/

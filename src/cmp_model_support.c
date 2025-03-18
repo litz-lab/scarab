@@ -66,6 +66,7 @@ void cmp_init_cmp_model() {
   alloc_mem_djolt(NUM_CORES);
   alloc_mem_fnlmma(NUM_CORES);
   alloc_mem_uop_cache(NUM_CORES);
+  alloc_mem_idq_stage(NUM_CORES);
 }
 
 void cmp_init_thread_data(uns8 proc_id) {
@@ -88,6 +89,7 @@ void cmp_set_all_stages(uns8 proc_id) {
   set_uop_cache(proc_id);
   set_icache_stage(&cmp_model.icache_stage[proc_id]);
   set_decode_stage(&cmp_model.decode_stage[proc_id]);
+  set_idq_stage(proc_id);
   set_map_stage(&cmp_model.map_stage[proc_id]);
   set_node_stage(&cmp_model.node_stage[proc_id]);
   set_exec_stage(&cmp_model.exec_stage[proc_id]);
@@ -121,6 +123,7 @@ void cmp_init_bogus_sim(uns8 proc_id) {
 
   reset_all_ops_icache_stage();
   reset_decode_stage();
+  reset_idq_stage();
   reset_map_stage();
   reset_all_ops_node_stage();
   reset_exec_stage();

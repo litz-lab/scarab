@@ -92,6 +92,7 @@ Flag is_node_table_full(void);
 void collect_node_table_full_stats(Op* op);
 
 void node_precommit_dispatch(Op* op);
+void node_precommit_update(void);
 void node_precommit_retire(Op* op);
 
 /**************************************************************************************/
@@ -377,6 +378,8 @@ void update_node_stage(Stage_Data* src_sd) {
 
   /* insert ops coming from the previous stage*/
   node_issue(src_sd);
+
+  node_precommit_update();
 
   /* remove scheduled ops from RS and ready list */
   node_handle_scheduled_ops();
@@ -1053,7 +1056,9 @@ void node_precommit_dispatch(Op* op) {
     return;
   }
   ASSERT(node->proc_id, node->precommit_op->op_num < op->op_num);
+}
 
+void node_precommit_update(void) {
   for (Op* iter = node->precommit_op; iter != NULL; iter = iter->next_node) {
     if (iter->table_info->cf_type && iter->oracle_info.recover_at_exec && iter->exec_count == 0)
       return;

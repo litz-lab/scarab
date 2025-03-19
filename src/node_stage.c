@@ -91,6 +91,9 @@ void collect_not_ready_to_retire_stats(Op* op);
 Flag is_node_table_full(void);
 void collect_node_table_full_stats(Op* op);
 
+void node_precommit_dispatch(Op* op);
+void node_precommit_retire(Op* op);
+
 /**************************************************************************************/
 /* set_node_stage:*/
 
@@ -135,6 +138,8 @@ void reset_node_stage() {
   node->mem_blocked = FALSE;
   node->mem_block_length = 0;
   node->ret_stall_length = 0;
+
+  node->precommit_op = NULL;
 }
 
 /**************************************************************************************/
@@ -456,6 +461,8 @@ void node_issue(Stage_Data* src_sd) {
     DEBUG(node->proc_id, "Issuing the op op_num:%s off_path:%d\n", unsstr64(op->op_num), op->off_path);
 
     op->state = OS_ISSUED;
+
+    node_precommit_dispatch(op);
 
     /* always stop issuing after a synchronizing op */
     if (op->table_info->bar_type & BAR_ISSUE)
@@ -792,6 +799,8 @@ void node_retire() {
     // free the previous register entries with same architectural destination
     reg_file_commit(op);
 
+    node_precommit_retire(op);
+
     if (model->op_retired_hook)
       model->op_retired_hook(op);
     else
@@ -1030,4 +1039,40 @@ void collect_node_table_full_stats(Op* op) {
   }
 
   STAT_EVENT(node->proc_id, FULL_WINDOW_STALL);
+}
+
+void node_precommit_dispatch(Op* op) {
+  if (op->off_path)
+    return;
+
+  if (op->table_info->cf_type && op->oracle_info.recover_at_exec)
+    return;
+
+  if (!node->precommit_op) {
+    node->precommit_op = op;
+    return;
+  }
+  ASSERT(node->proc_id, node->precommit_op->op_num < op->op_num);
+
+  for (Op* iter = node->precommit_op; iter != NULL; iter = iter->next_node) {
+    if (iter->table_info->cf_type && iter->oracle_info.recover_at_exec && iter->exec_count == 0)
+      return;
+
+    if (iter->off_path)
+      return;
+
+    node->precommit_op = iter;
+  }
+}
+
+void node_precommit_retire(Op* op) {
+  if (!node->precommit_op)
+    return;
+  ASSERT(node->proc_id, node->precommit_op->op_num >= op->op_num);
+
+  /* clear the precommit pointer when it commits, which indicates that
+   * the ROB is empty or all in-flight ops are off-path */
+  if (node->precommit_op->op_num != op->op_num)
+    return;
+  node->precommit_op = NULL;
 }

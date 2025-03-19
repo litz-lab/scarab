@@ -39,6 +39,7 @@ enum reg_renaming_scheme {
   REG_RENAMING_SCHEME_INFINITE,
   REG_RENAMING_SCHEME_REALISTIC,
   REG_RENAMING_SCHEME_LATE_ALLOCATION,
+  REG_RENAMING_SCHEME_EARLY_RELEASE_SPEC,
   REG_RENAMING_SCHEME_NUM
 };
 
@@ -98,6 +99,9 @@ struct reg_table_entry {
   // consumer counter
   int num_consumers;   // the number of registered (at rename) consumers of a registers
   int consumed_count;  // the number of issued (at execute) consumers of a register
+
+  // metadata for early release
+  Flag if_redefined;  // indicate if this entry is overwritten by another instruction with the same arch reg id
 };
 
 struct reg_free_list {

@@ -25,7 +25,7 @@ jobs:
       image: ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Mark Git repo as safe
         run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
@@ -39,7 +39,7 @@ jobs:
         run: make dbg -j
 
       - name: Upload Scarab binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: scarab-binary
           path: src/scarab

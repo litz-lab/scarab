@@ -1025,15 +1025,17 @@ void reg_renaming_scheme_late_allocation_commit(Op *op) {
 }
 
 /**************************************************************************************/
-/* Spec Early Release Register Scheme */
+/* Early Release Common Func */
 
 static void reg_early_release_clear(struct reg_table_entry *entry) {
   if (entry->op_num == 0)
     return;
 
+  // if the producer op of the entry is not yet committed, the op in the entry is still valid
   Op *op = entry->op;
   ASSERT(op->proc_id, op->op_num == entry->op_num && op->unique_num == entry->unique_num);
 
+  // find and clear the corresponding register information inside the operands
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
     if (entry->parent_reg_id != op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL])
       continue;
@@ -1045,13 +1047,20 @@ static void reg_early_release_clear(struct reg_table_entry *entry) {
 }
 
 static void reg_early_release_free(struct reg_table *reg_table, struct reg_table_entry *entry) {
-  // only clear the op that still in the ROB
+  /*
+   * if the producer op is still in the ROB, the corresponding register entry info
+   * inside that op should be cleared to prevent invalid access;
+   * if the producer op has committed, do not clear the information inside that op.
+   */
   if (entry->reg_state != REG_TABLE_ENTRY_STATE_COMMIT) {
     reg_early_release_clear(entry);
   }
 
   reg_table->ops->free(reg_table, entry);
 }
+
+/**************************************************************************************/
+/* Spec Early Release Register Scheme */
 
 void reg_renaming_scheme_early_release_spec_rename(Op *op);
 void reg_renaming_scheme_early_release_spec_execute(Op *op);
@@ -1107,6 +1116,7 @@ void reg_renaming_scheme_early_release_spec_commit(Op *op) {
   /* the physical register is already released during renaming or execution */
 
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
+    // if the corresponding entry is early released, the reg info of this op is cleared
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -1118,7 +1128,7 @@ void reg_renaming_scheme_early_release_spec_commit(Op *op) {
     struct reg_table_entry *entry = &reg_table->entries[reg_id];
     ASSERT(op->proc_id, entry != NULL && entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED);
 
-    // mark register as committed at retirement
+    // mark register as committed at retirement to avoid accessing the op object of this entry
     ASSERT(op->proc_id,
            reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id != REG_TABLE_REG_ID_INVALID);
     entry->reg_state = REG_TABLE_ENTRY_STATE_COMMIT;

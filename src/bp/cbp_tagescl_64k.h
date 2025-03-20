@@ -25,12 +25,12 @@
 #include <sstream>
 #include <vector>
 
-#define SC    // 8.2 % if TAGE alone
+// #define SC    // 8.2 % if TAGE alone
 #define IMLI  // 0.2 %
 #define LOCALH
 
 #ifdef LOCALH          // 2.7 %
-#define LOOPPREDICTOR  // loop predictor enable
+// #define LOOPPREDICTOR  // loop predictor enable
 #define LOCALS         // enable the 2nd local history
 #define LOCALT         // enables the 3rd local history
 
@@ -179,23 +179,25 @@ enum tage_component {
 // P state is used to update the N components.
 struct PredictorStates {
   // Predictor status
+  // SC
   int THRES;  // used for comparing SC and intermediate result(one of TAGE or LOOP) to determine final prediction
   int LSUM;   // SC predict using LSUM
-#ifdef LOOPPREDICTOR
+  // LOOP
   bool predloop;  // prediction of LOOP predictor
   int LHIT;       // hitting way in LOOP predictor
   bool LVALID;    // validity of LOOP predictor prediction
-#endif
+  // TAGE
   bool pred_taken;        // final prediction
   bool tage_pred;         // prediction of TAGE: one of LongestMatchPred or alttaken
   bool pred_inter;        // intermediate result: one of TAGE or LOOP
   bool LongestMatchPred;  // prediction of selected bank which has the longest history length among hit banks in TAGE
-  bool alttaken;          // prediction of alternative predictor
   bool HighConf;          // Set high confidence when 2*|ctr + 1| >= 7
   bool MedConf;           // Set med confidence when 2*|ctr + 1| == 5
   bool LowConf;           // Set low confidence when 2*|ctr + 1| == 1
-  bool AltConf;           // Set med confidence when 2*|ctr + 1| > 1
   int HitBank;            // index of the bank with the longest history among matching tags in TAGE table
+  // ALT
+  bool alttaken;          // prediction of alternative predictor
+  bool AltConf;           // Set med confidence when 2*|ctr + 1| > 1
   int AltBank;            // index of the bank with 2nd longest history among matching tags in TAGE table
   // We are using on-path history as a seed for MYRANDOM() to ensure deterministic behavior.
   // Using both on/off-path history info should not change entropy of MYRANDOM() substantially
@@ -253,19 +255,20 @@ struct PredictorStates {
 struct SpeculativeStatesBase {
   // checkpoint doesn't need to snapshot ghist because ptghist overwrite off-path updates
   //  and ghist's length(3000-bit, around 1200 branches) is long enough to avoid overlapping of correct histories
+  // TAGE
   int ptghist;      // pointer of ghist(global history)
-  long long GHIST;  // global history which is specialized to conditional branch
   long long phist;  // path history
-  cbp64_folded_history
-      ch_i[NHIST + 1];  // folded global history using cyclic shift register to generate i'th TAGE index
-  cbp64_folded_history ch_t[2]
-                           [NHIST + 1];  // folded global history using cyclic shift register to generate i'th TAGE tag
-  // To reduce below tables, tracking off-path is required
+  // folded global history using cyclic shift register to generate i'th TAGE index
+  cbp64_folded_history ch_i[NHIST + 1];
+  // folded global history using cyclic shift register to generate i'th TAGE tag
+  cbp64_folded_history ch_t[2][NHIST + 1];
+  // SC
+  long long GHIST;             // global history which is specialized to conditional branch
   int8_t WG[1 << LOGSIZEUPS];  // GGEHL's weight table
   int8_t WP[1 << LOGSIZEUPS];  // PGEHL's weight table
-#ifdef LOOPPREDICTOR
+  // LOOP
   cbp64_lentry ltable[1 << LOGL];  // entire loop table.
-#endif
+
   std::string to_string() const {
     std::stringstream ss;
     ss << "SpecBase{" << "ptghist=" << ptghist << " GHIST=" << GHIST << " phist=" << phist;
@@ -303,10 +306,10 @@ struct SpeculativeStatesBase {
       ss << (int)WP[i];
     }
     ss << "]";
+    if (TAGESCL64KB_LOOP) {
+      ss << " ltable=[...omitted...]";  // Can expand if needed
+    }
 
-#ifdef LOOPPREDICTOR
-    ss << " ltable=[...omitted...]";  // Can expand if needed
-#endif
     ss << "}";
     return ss.str();
   }
@@ -366,15 +369,17 @@ class TAGE64K {
   // The three BIAS tables in the SC component
   // We play with the TAGE  confidence here, with the number of the hitting bank
 #define LOGBIAS 8
-#define INDBIAS(state)                                                                               \
-  (((((PC ^ (PC >> 2)) << 1) ^ (state.LowConf & (state.LongestMatchPred != state.alttaken))) << 1) + \
-   state.pred_inter) &                                                                               \
+#define INDBIAS(state)                                                                                         \
+  (((((PC ^ (PC >> 2)) << 1) ^ (state.LowConf & (TAGESCL64KB_ALT ? (state.LongestMatchPred != state.alttaken)  \
+                                                                 : (state.LongestMatchPred > state.HitBank)))) \
+    << 1) +                                                                                                    \
+   state.pred_inter) &                                                                                         \
       ((1 << LOGBIAS) - 1)
 #define INDBIASSK(state) \
   (((((PC ^ (PC >> (LOGBIAS - 2))) << 1) ^ (state.HighConf)) << 1) + state.pred_inter) & ((1 << LOGBIAS) - 1)
 #define INDBIASBANK(state)                                                                              \
   (state.pred_inter + (((state.HitBank + 1) / 4) << 4) + (state.HighConf << 1) + (state.LowConf << 2) + \
-   ((state.AltBank != 0) << 3) + ((PC ^ (PC >> 2)) << 7)) &                                             \
+   ((TAGESCL64KB_ALT ? (state.AltBank != 0) : 0) << 3) + ((PC ^ (PC >> 2)) << 7)) &                     \
       ((1 << LOGBIAS) - 1)
 
   // IMLI-SIC -> Micro 2015  paper: a big disappointment on  CBP2016 traces
@@ -472,7 +477,6 @@ class TAGE64K {
 
 // the counter(s) to chose between longest match and alternate prediction on TAGE when weak counters
 #define LOGSIZEUSEALT 4
-  bool AltConf;  // Confidence on the alternate prediction
 #define ALTWIDTH 5
 #define SIZEUSEALT (1 << (LOGSIZEUSEALT))
 #define INDUSEALT(state) (((((state.HitBank - 1) / 8) << 1) + state.AltConf) % (SIZEUSEALT - 1))
@@ -557,17 +561,19 @@ class TAGE64K {
   int8_t WIM[(1 << LOGSIZEUPS)];           // N: GEHL weights for IMHIST
   int8_t WB[(1 << LOGSIZEUPS)];            // N: GEHL weights for Bias
   int8_t FirstH, SecondH;                  // N: counters to choose between TAGE and SC on Low Conf SC
-#ifdef LOOPPREDICTOR
+  // LOOP
   int8_t WITHLOOP;  // N: counter to monitor whether or not loop prediction is beneficial
   int LIB;
   int LI;
   int LTAG;  // tag on the loop predictor
-#endif
-  int8_t use_alt_on_na[SIZEUSEALT];  // N: alternate prediction on non-taken branches
+  // ALT
+  int8_t use_alt_on_na[SIZEUSEALT];  // N: counters to choose between longest match and second longest match on TAGE
+  // TAGE
   cbp64_bentry* btable;              // N: bimodal TAGE table
   cbp64_gentry* gtable[NHIST + 1];   // N: tagged TAGE tables
-  int TICK;                          // N: for the reset of the u counter
+
   // utility variables
+  int TICK;  // N: for the reset of the u counter
   Counter branch_id;
   int Seed;       // for the pseudo-random number generator
   // snapshot containers

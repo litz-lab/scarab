@@ -1064,16 +1064,16 @@ void node_precommit_update(void) {
       return;
 
     // avoid multiple precommit for the precommit head
-    if (op->if_precommit)
+    if (op->precommitted)
       continue;
     node->node_precommit = op;
-    op->if_precommit = TRUE;
+    op->precommitted = TRUE;
     op->precommit_cycle = cycle_count;
   }
 }
 
 void node_precommit_retire(Op* op) {
-  ASSERT(node->proc_id, op->if_precommit);
+  ASSERT(node->proc_id, op->precommitted);
   ASSERT(node->proc_id, op->precommit_cycle <= op->retire_cycle);
 
   if (!node->node_precommit)

@@ -1060,6 +1060,9 @@ void reg_renaming_scheme_early_release_spec_commit(Op *op);
 void reg_renaming_scheme_early_release_spec_rename(Op *op) {
   reg_renaming_scheme_realistic_rename(op);
 
+  if (op->off_path)
+    return;
+
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
@@ -1071,8 +1074,6 @@ void reg_renaming_scheme_early_release_spec_rename(Op *op) {
     struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
 
     // speculative early release mechanisms provide backup storage for recovering, which allows aggressively redefining
-    if (op->off_path)
-      continue;
     prev_entry->if_redefined = TRUE;
 
     // do register early release

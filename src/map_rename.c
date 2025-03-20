@@ -741,6 +741,7 @@ void reg_renaming_scheme_infinite_rename(Op *op);
 Flag reg_renaming_scheme_infinite_issue(Op *op);
 void reg_renaming_scheme_infinite_execute(Op *op);
 void reg_renaming_scheme_infinite_recover(Op *op);
+void reg_renaming_scheme_infinite_precommit(Op *op);
 void reg_renaming_scheme_infinite_commit(Op *op);
 
 void reg_renaming_scheme_infinite_init(void) {
@@ -767,6 +768,10 @@ void reg_renaming_scheme_infinite_recover(Op *op) {
   return;
 }
 
+void reg_renaming_scheme_infinite_precommit(Op *op) {
+  return;
+}
+
 void reg_renaming_scheme_infinite_commit(Op *op) {
   return;
 }
@@ -780,6 +785,7 @@ void reg_renaming_scheme_realistic_rename(Op *op);
 Flag reg_renaming_scheme_realistic_issue(Op *op);
 void reg_renaming_scheme_realistic_execute(Op *op);
 void reg_renaming_scheme_realistic_recover(Op *op);
+void reg_renaming_scheme_realistic_precommit(Op *op);
 void reg_renaming_scheme_realistic_commit(Op *op);
 
 // allocate entries and assign the parent-child relationship of the arch table and the physical table
@@ -862,6 +868,10 @@ void reg_renaming_scheme_realistic_recover(Op *op) {
   }
 }
 
+void reg_renaming_scheme_realistic_precommit(Op *op) {
+  return;
+}
+
 // release the previous register with same architectural id
 void reg_renaming_scheme_realistic_commit(Op *op) {
   int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
@@ -877,6 +887,7 @@ void reg_renaming_scheme_late_allocation_rename(Op *op);
 Flag reg_renaming_scheme_late_allocation_issue(Op *op);
 void reg_renaming_scheme_late_allocation_execute(Op *op);
 void reg_renaming_scheme_late_allocation_recover(Op *op);
+void reg_renaming_scheme_late_allocation_precommit(Op *op);
 void reg_renaming_scheme_late_allocation_commit(Op *op);
 
 // allocate entries and assign the parent-child relationship for arch, vtag, and ptag tables
@@ -1000,6 +1011,10 @@ void reg_renaming_scheme_late_allocation_recover(Op *op) {
        op_p = (Op **)list_prev_element(&td->seq_op_list)) {
     reg_file_flush_mispredict(*op_p, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
   }
+}
+
+void reg_renaming_scheme_late_allocation_precommit(Op *op) {
+  return;
 }
 
 void reg_renaming_scheme_late_allocation_commit(Op *op) {
@@ -1145,6 +1160,7 @@ struct reg_renaming_scheme_func {
   Flag (*issue)(Op *op);
   void (*execute)(Op *op);
   void (*recover)(Op *op);
+  void (*precommit)(Op *op);
   void (*commit)(Op *op);
 };
 
@@ -1158,6 +1174,7 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .issue = reg_renaming_scheme_infinite_issue,
     .execute = reg_renaming_scheme_infinite_execute,
     .recover = reg_renaming_scheme_infinite_recover,
+    .precommit = reg_renaming_scheme_infinite_precommit,
     .commit = reg_renaming_scheme_infinite_commit
   },
   // REG_RENAMING_SCHEME_REALISTIC
@@ -1168,6 +1185,7 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .issue = reg_renaming_scheme_realistic_issue,
     .execute = reg_renaming_scheme_realistic_execute,
     .recover = reg_renaming_scheme_realistic_recover,
+    .precommit = reg_renaming_scheme_realistic_precommit,
     .commit = reg_renaming_scheme_realistic_commit
   },
   // REG_RENAMING_SCHEME_LATE_ALLOCATION
@@ -1178,6 +1196,7 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .issue = reg_renaming_scheme_late_allocation_issue,
     .execute = reg_renaming_scheme_late_allocation_execute,
     .recover = reg_renaming_scheme_late_allocation_recover,
+    .precommit = reg_renaming_scheme_late_allocation_precommit,
     .commit = reg_renaming_scheme_late_allocation_commit
   },
   // REG_RENAMING_SCHEME_EARLY_RELEASE_SPEC
@@ -1188,6 +1207,7 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .issue = reg_renaming_scheme_realistic_issue,
     .execute = reg_renaming_scheme_early_release_spec_execute,
     .recover = reg_renaming_scheme_realistic_recover,
+    .precommit = reg_renaming_scheme_realistic_precommit,
     .commit = reg_renaming_scheme_early_release_spec_commit
   },
 };
@@ -1261,6 +1281,17 @@ void reg_file_execute(Op *op) {
 void reg_file_recover(Op *op) {
   ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].recover(op);
+}
+
+/*
+  Called by:
+  --- node_stage.c -> when the op is precommitted
+  Procedure:
+  --- update the register metadata when an op is non-spec
+*/
+void reg_file_precommit(Op *op) {
+  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].precommit(op);
 }
 
 /*

@@ -1066,9 +1066,12 @@ void node_precommit_update(void) {
     // avoid multiple precommit for the precommit head
     if (op->precommitted)
       continue;
+
     node->node_precommit = op;
     op->precommitted = TRUE;
     op->precommit_cycle = cycle_count;
+
+    reg_file_precommit(op);
   }
 }
 

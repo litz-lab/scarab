@@ -1063,6 +1063,9 @@ void node_precommit_update(void) {
     if (op->off_path)
       return;
 
+    // avoid multiple precommit for the precommit head
+    if (op->if_precommit)
+      continue;
     node->node_precommit = op;
     op->if_precommit = TRUE;
     op->precommit_cycle = cycle_count;

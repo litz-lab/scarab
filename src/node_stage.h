@@ -48,9 +48,10 @@ typedef struct Node_Stage_struct {
   uns proc_id;
   Stage_Data sd;  // stage interface data
 
-  Op* node_head;     // linked-list of ops in the node stage
-  Op* node_tail;     // linked-list of ops in the node stage
-  int32 node_count;  // number of ops in the node table
+  Op* node_head;       // linked-list of ops in the node stage
+  Op* node_tail;       // linked-list of ops in the node stage
+  Op* node_precommit;  // the pre-commit pointer in the ROB
+  int32 node_count;    // number of ops in the node table
 
   /* linked-list of ops that are ready to schedule. Ops are put in here when they are issued,
    * or after they are issued and another op wakes them up. */
@@ -65,8 +66,6 @@ typedef struct Node_Stage_struct {
   Flag mem_blocked;      // are we out of mem req buffers for this core
   uns mem_block_length;  // length of the current memory block
   uns ret_stall_length;  // length of the current retirement stall
-
-  Op* precommit_op;
 } Node_Stage;
 
 /**************************************************************************************/

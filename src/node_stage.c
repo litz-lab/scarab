@@ -91,7 +91,6 @@ void collect_not_ready_to_retire_stats(Op* op);
 Flag is_node_table_full(void);
 void collect_node_table_full_stats(Op* op);
 
-void node_precommit_dispatch(Op* op);
 void node_precommit_update(void);
 void node_precommit_retire(Op* op);
 
@@ -140,7 +139,7 @@ void reset_node_stage() {
   node->mem_block_length = 0;
   node->ret_stall_length = 0;
 
-  node->precommit_op = NULL;
+  node->node_precommit = NULL;
 }
 
 /**************************************************************************************/
@@ -379,6 +378,7 @@ void update_node_stage(Stage_Data* src_sd) {
   /* insert ops coming from the previous stage*/
   node_issue(src_sd);
 
+  /* update the precommit pointer in the ROB */
   node_precommit_update();
 
   /* remove scheduled ops from RS and ready list */
@@ -464,8 +464,6 @@ void node_issue(Stage_Data* src_sd) {
     DEBUG(node->proc_id, "Issuing the op op_num:%s off_path:%d\n", unsstr64(op->op_num), op->off_path);
 
     op->state = OS_ISSUED;
-
-    node_precommit_dispatch(op);
 
     /* always stop issuing after a synchronizing op */
     if (op->table_info->bar_type & BAR_ISSUE)
@@ -1044,40 +1042,44 @@ void collect_node_table_full_stats(Op* op) {
   STAT_EVENT(node->proc_id, FULL_WINDOW_STALL);
 }
 
-void node_precommit_dispatch(Op* op) {
-  if (op->off_path)
-    return;
-
-  if (op->table_info->cf_type && op->oracle_info.recover_at_exec)
-    return;
-
-  if (!node->precommit_op) {
-    node->precommit_op = op;
-    return;
-  }
-  ASSERT(node->proc_id, node->precommit_op->op_num < op->op_num);
-}
+/**************************************************************************************/
+/* node precommit mechanism */
 
 void node_precommit_update(void) {
-  for (Op* iter = node->precommit_op; iter != NULL; iter = iter->next_node) {
-    if (iter->table_info->cf_type && iter->oracle_info.recover_at_exec && iter->exec_count == 0)
+  Op *op = node->node_head;
+  if (node->node_precommit)
+    op = node->node_precommit;
+
+  // scan the node table to update the precommit pointer
+  for (; op != NULL; op = op->next_node) {
+    // wait until the results usable for branches
+    if (op->table_info->cf_type && op->exec_cycle > cycle_count)
       return;
 
-    if (iter->off_path)
+    // wait until looking up the d-cache for memory operands
+    if (op->table_info->mem_type && op->dcache_cycle > cycle_count)
       return;
 
-    node->precommit_op = iter;
+    if (op->off_path)
+      return;
+
+    node->node_precommit = op;
+    op->if_precommit = TRUE;
+    op->precommit_cycle = cycle_count;
   }
 }
 
 void node_precommit_retire(Op* op) {
-  if (!node->precommit_op)
+  ASSERT(node->proc_id, op->if_precommit);
+  ASSERT(node->proc_id, op->precommit_cycle <= op->retire_cycle);
+
+  if (!node->node_precommit)
     return;
-  ASSERT(node->proc_id, node->precommit_op->op_num >= op->op_num);
+  ASSERT(node->proc_id, node->node_precommit->op_num >= op->op_num);
 
   /* clear the precommit pointer when it commits, which indicates that
    * the ROB is empty or all in-flight ops are off-path */
-  if (node->precommit_op->op_num != op->op_num)
+  if (node->node_precommit->op_num != op->op_num)
     return;
-  node->precommit_op = NULL;
+  node->node_precommit = NULL;
 }

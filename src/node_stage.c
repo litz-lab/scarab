@@ -91,6 +91,9 @@ void collect_not_ready_to_retire_stats(Op* op);
 Flag is_node_table_full(void);
 void collect_node_table_full_stats(Op* op);
 
+void node_precommit_update(void);
+void node_precommit_retire(Op* op);
+
 /**************************************************************************************/
 /* set_node_stage:*/
 
@@ -135,6 +138,8 @@ void reset_node_stage() {
   node->mem_blocked = FALSE;
   node->mem_block_length = 0;
   node->ret_stall_length = 0;
+
+  node->node_precommit = NULL;
 }
 
 /**************************************************************************************/
@@ -372,6 +377,9 @@ void update_node_stage(Stage_Data* src_sd) {
 
   /* insert ops coming from the previous stage*/
   node_issue(src_sd);
+
+  /* update the precommit pointer in the ROB */
+  node_precommit_update();
 
   /* remove scheduled ops from RS and ready list */
   node_handle_scheduled_ops();
@@ -792,6 +800,8 @@ void node_retire() {
     // free the previous register entries with same architectural destination
     reg_file_commit(op);
 
+    node_precommit_retire(op);
+
     if (model->op_retired_hook)
       model->op_retired_hook(op);
     else
@@ -1030,4 +1040,49 @@ void collect_node_table_full_stats(Op* op) {
   }
 
   STAT_EVENT(node->proc_id, FULL_WINDOW_STALL);
+}
+
+/**************************************************************************************/
+/* node precommit mechanism */
+
+void node_precommit_update(void) {
+  Op* op = node->node_head;
+  if (node->node_precommit)
+    op = node->node_precommit;
+
+  // scan the node table to update the precommit pointer
+  for (; op != NULL; op = op->next_node) {
+    // wait until the results usable for branches
+    if (op->table_info->cf_type && op->exec_cycle > cycle_count)
+      return;
+
+    // wait until looking up the d-cache for memory operands
+    if (op->table_info->mem_type && op->dcache_cycle > cycle_count)
+      return;
+
+    if (op->off_path)
+      return;
+
+    // avoid multiple precommit for the precommit head
+    if (op->precommitted)
+      continue;
+    node->node_precommit = op;
+    op->precommitted = TRUE;
+    op->precommit_cycle = cycle_count;
+  }
+}
+
+void node_precommit_retire(Op* op) {
+  ASSERT(node->proc_id, op->precommitted);
+  ASSERT(node->proc_id, op->precommit_cycle <= op->retire_cycle);
+
+  if (!node->node_precommit)
+    return;
+  ASSERT(node->proc_id, node->node_precommit->op_num >= op->op_num);
+
+  /* clear the precommit pointer when it commits, which indicates that
+   * the ROB is empty or all in-flight ops are off-path */
+  if (node->node_precommit->op_num != op->op_num)
+    return;
+  node->node_precommit = NULL;
 }

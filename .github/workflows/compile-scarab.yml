@@ -46,7 +46,7 @@ jobs:
 
   run-scarab:
     runs-on: ubuntu-latest
-    needs: get_tag  # can also depend on build if needed
+    needs: build  # can also depend on build if needed
     steps:
       #- name: Set up SSH for private repo access
       #  run: |
@@ -56,7 +56,8 @@ jobs:
       #    ssh-keyscan github.com >> ~/.ssh/known_hosts
 
       - name: Clone scarab-infra repo via SSH
-        run: git clone git@github.com:litz-lab/scarab-infra.git
+        run: git clone https://github.com/litz-lab/scarab-infra.git
+        #git clone git@github.com:litz-lab/scarab-infra.git
 
       #- name: Docker login to GHCR
       #  run: |

@@ -68,7 +68,7 @@ jobs:
       - name: Run Scarab simulation
         working-directory: scarab-infra
         run: |
-	  curl -L -o traces_top_simpoint.tar.gz https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz
-	  tar -xzf traces_top_simpoint.tar.gz
+          curl -L -o traces_top_simpoint.tar.gz https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz
+          tar -xzf traces_top_simpoint.tar.gz
           chmod +x run.sh
           ./run.sh --simulation ./top_simpoint.json

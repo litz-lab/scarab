@@ -37,3 +37,38 @@ jobs:
       - name: Build Scarab Dbg
         working-directory: src
         run: make dbg -j
+
+      - name: Upload Scarab binary
+        uses: actions/upload-artifact@v3
+        with:
+          name: scarab-binary
+          path: src/scarab
+
+  run-scarab:
+    runs-on: ubuntu-latest
+    needs: get_tag  # can also depend on build if needed
+    steps:
+      #- name: Set up SSH for private repo access
+      #  run: |
+      #    mkdir -p ~/.ssh
+      #    echo "${{ secrets.SCARAB_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+      #    chmod 600 ~/.ssh/id_rsa
+      #    ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Clone scarab-infra repo via SSH
+        run: git clone git@github.com:litz-lab/scarab-infra.git
+
+      #- name: Docker login to GHCR
+      #  run: |
+      #    echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password-stdin
+
+      - name: Pull Scarab Docker image
+        run: docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
+
+      - name: Run Scarab simulation
+        working-directory: scarab-infra
+        run: |
+	  curl -L -o traces_top_simpoint.tar.gz https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz
+	  tar -xzf traces_top_simpoint.tar.gz
+          chmod +x run.sh
+          ./run.sh --simulation ./top_simpoint.json

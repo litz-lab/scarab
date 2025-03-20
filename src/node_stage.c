@@ -1046,7 +1046,7 @@ void collect_node_table_full_stats(Op* op) {
 /* node precommit mechanism */
 
 void node_precommit_update(void) {
-  Op *op = node->node_head;
+  Op* op = node->node_head;
   if (node->node_precommit)
     op = node->node_precommit;
 

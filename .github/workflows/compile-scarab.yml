@@ -70,7 +70,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: scarab-binary
-          path: ./scarab_ll/src/scarab
+          path: ./scarab_ll/src/build/opt/scarab
 
       - name: Run Scarab simulation
         working-directory: scarab-infra

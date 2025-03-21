@@ -111,7 +111,7 @@ jobs:
 
   upload-perf-data:
     runs-on: ubuntu-latest
-    needs: [get_tag, build-opt, run-scarab]
+    needs: [get_tag, build-opt]
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4

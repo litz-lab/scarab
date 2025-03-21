@@ -86,7 +86,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: last-perf-data
-          path: ./tmp.csv
+          path: .//simulations/exp6/baseline/mongodb/4118
 
 
 
@@ -140,12 +140,5 @@ jobs:
 
       - name: Upload updated CSV
         run: gh release upload perf-data performance_log.csv --clobber
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-steps:
-      - name: Download existing performance log
-        run: |
-          gh release download perf-data --pattern "performance_log.csv" --dir .
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

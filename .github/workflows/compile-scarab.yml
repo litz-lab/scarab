@@ -59,8 +59,11 @@ jobs:
       - name: Clone scarab-infra repo via SSH
         run: git clone https://github.com/litz-lab/scarab-infra.git
 
-      #- name: Pull Scarab Docker image
-      #  run: docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
+      - name: Pull Scarab Docker image
+        working-directory: scarab-infra
+        run: |
+          docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
+          docker tag ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }} allbench_traces:${{ needs.get_tag.outputs.tag }}
 
       #- name: Download Scarab dir
       #  uses: actions/download-artifact@v4

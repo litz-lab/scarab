@@ -66,10 +66,17 @@ jobs:
       - name: Pull Scarab Docker image
         run: docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
 
+      - name: Download Scarab binary
+        uses: actions/download-artifact@v4
+        with:
+          name: scarab-binary
+          path: ./scarab_ll/src/scarab
+
       - name: Run Scarab simulation
         working-directory: scarab-infra
         run: |
           curl -L -o traces_top_simpoint.tar.gz https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz
           tar -xzf traces_top_simpoint.tar.gz
           chmod +x run.sh
+          pip install docker
           ./run.sh --simulation ./top_simpoint.json

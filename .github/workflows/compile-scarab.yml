@@ -77,7 +77,8 @@ jobs:
         run: |
           curl -L -o traces_top_simpoint.tar.gz https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz
           tar -xzf traces_top_simpoint.tar.gz
+          mv top_simpoint.json ./json/top_simpoint.json
           chmod +x run.sh
           pip install docker
           pip install psutil
-          ./run.sh --simulation ./top_simpoint.json
+          ./run.sh --simulation top_simpoint

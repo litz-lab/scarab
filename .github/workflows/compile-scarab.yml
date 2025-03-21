@@ -42,26 +42,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: scarab-binary
-          path: src/scarab
+          path: src/build/opt/scarab
 
   run-scarab:
     runs-on: ubuntu-latest
     needs: [get_tag, build]
     steps:
-      #- name: Set up SSH for private repo access
-      #  run: |
-      #    mkdir -p ~/.ssh
-      #    echo "${{ secrets.SCARAB_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-      #    chmod 600 ~/.ssh/id_rsa
-      #    ssh-keyscan github.com >> ~/.ssh/known_hosts
 
       - name: Clone scarab-infra repo via SSH
         run: git clone https://github.com/litz-lab/scarab-infra.git
-        #git clone git@github.com:litz-lab/scarab-infra.git
-
-      #- name: Docker login to GHCR
-      #  run: |
-      #    echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password-stdin
 
       - name: Pull Scarab Docker image
         run: docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}

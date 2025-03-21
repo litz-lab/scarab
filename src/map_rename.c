@@ -85,10 +85,12 @@ void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_r
 /**************************************************************************************/
 /* Inline Methods */
 
-static inline void reg_file_debug_print_entry(struct reg_table_entry *entry) {
-  printf("[ENTRY]\n");
+static inline void reg_file_debug_print_entry(struct reg_table_entry *entry, int state) {
+  printf("[ENTRY: %d]\n", state);
   printf("op_num: %lld, off_path: %d, state: %d,\n", entry->op_num, entry->off_path, entry->reg_state);
   printf("parent: %d, self: %d, child: %d\n", entry->parent_reg_id, entry->self_reg_id, entry->child_reg_id);
+  printf("table type: %d, reg type: %d\n", entry->reg_table_type, entry->reg_type);
+  printf("read: %d, consume: %d\n", entry->num_consumers, entry->consumed_count);
 }
 
 static inline void reg_file_debug_print_op(Op *op, int state) {
@@ -112,9 +114,19 @@ static inline void reg_file_debug_print_op(Op *op, int state) {
     printf("%d, ", inst_info->dests[ii].id);
   printf(">\n");
 
-  printf("ptag#%d: <", inst_info->table_info->num_dest_regs);
+  printf("src_ptag#%d: <", inst_info->table_info->num_src_regs);
+  for (int ii = 0; ii < inst_info->table_info->num_src_regs; ii++)
+    printf("%d, ", op->src_reg_id[ii][REG_TABLE_TYPE_PHYSICAL]);
+  printf(">\n");
+
+  printf("dst_ptag#%d: <", inst_info->table_info->num_dest_regs);
   for (int ii = 0; ii < inst_info->table_info->num_dest_regs; ii++)
     printf("%d, ", op->dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL]);
+  printf(">\n");
+
+  printf("prev_ptag#%d: <", inst_info->table_info->num_dest_regs);
+  for (int ii = 0; ii < inst_info->table_info->num_dest_regs; ii++)
+    printf("%d, ", op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL]);
   printf(">\n");
 }
 
@@ -329,32 +341,6 @@ static inline void reg_file_produce_dst(Op *op, int *reg_table_types, int reg_ta
 
 static inline void reg_file_flush_mispredict(Op *op, int *reg_table_types, int reg_table_num) {
   ASSERT(op->proc_id, op->off_path);
-  for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
-    int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
-    if (reg_type == REG_FILE_REG_TYPE_OTHER)
-      continue;
-
-    for (uns jj = 0; jj < reg_table_num; ++jj) {
-      int table_type = reg_table_types[jj];
-      ASSERT(op->proc_id, table_type > REG_TABLE_TYPE_ARCHITECTURAL && table_type < REG_TABLE_TYPE_NUM);
-      int reg_id = op->src_reg_id[ii][table_type];
-
-      // mapping may be async in the scheme of multiple register tables, e.g. no vtag to ptag mapping
-      if (reg_id == REG_TABLE_REG_ID_INVALID)
-        continue;
-
-      struct reg_table *reg_table = reg_file[reg_type]->reg_table[table_type];
-      struct reg_table_entry *entry = &reg_table->entries[reg_id];
-
-      ASSERT(op->proc_id, entry != NULL);
-      ASSERT(op->proc_id, entry->num_consumers > 0);
-      entry->num_consumers--;
-      if (op->exec_count) {
-        ASSERT(op->proc_id, entry->consumed_count > 0);
-        entry->consumed_count--;
-      }
-    }
-  }
 
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ii++) {
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
@@ -538,6 +524,8 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
 
   entry->num_consumers = 0;
   entry->consumed_count = 0;
+
+  entry->if_redefined = FALSE;
 }
 
 /* update the metadata when it is read during renaming */
@@ -546,6 +534,9 @@ void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
     traditionally, fill src info from the entry and update not ready bit for wake up
     since the dependency is tracked in the map module, only update the metadata for the research reg file schemes
   */
+  if (op->off_path)
+    return;
+
   entry->num_consumers++;
 }
 
@@ -571,6 +562,9 @@ void reg_table_entry_write(struct reg_table_entry *entry, Op *op, int parent_reg
 
 /* update the metadata when it is consumed during execution */
 void reg_table_entry_consume(struct reg_table_entry *entry, Op *op) {
+  if (op->off_path)
+    return;
+
   entry->consumed_count++;
   entry->last_consume_execute_cycle = cycle_count;
 }
@@ -747,6 +741,7 @@ void reg_renaming_scheme_infinite_rename(Op *op);
 Flag reg_renaming_scheme_infinite_issue(Op *op);
 void reg_renaming_scheme_infinite_execute(Op *op);
 void reg_renaming_scheme_infinite_recover(Op *op);
+void reg_renaming_scheme_infinite_precommit(Op *op);
 void reg_renaming_scheme_infinite_commit(Op *op);
 
 void reg_renaming_scheme_infinite_init(void) {
@@ -773,6 +768,10 @@ void reg_renaming_scheme_infinite_recover(Op *op) {
   return;
 }
 
+void reg_renaming_scheme_infinite_precommit(Op *op) {
+  return;
+}
+
 void reg_renaming_scheme_infinite_commit(Op *op) {
   return;
 }
@@ -786,6 +785,7 @@ void reg_renaming_scheme_realistic_rename(Op *op);
 Flag reg_renaming_scheme_realistic_issue(Op *op);
 void reg_renaming_scheme_realistic_execute(Op *op);
 void reg_renaming_scheme_realistic_recover(Op *op);
+void reg_renaming_scheme_realistic_precommit(Op *op);
 void reg_renaming_scheme_realistic_commit(Op *op);
 
 // allocate entries and assign the parent-child relationship of the arch table and the physical table
@@ -868,6 +868,10 @@ void reg_renaming_scheme_realistic_recover(Op *op) {
   }
 }
 
+void reg_renaming_scheme_realistic_precommit(Op *op) {
+  return;
+}
+
 // release the previous register with same architectural id
 void reg_renaming_scheme_realistic_commit(Op *op) {
   int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
@@ -883,6 +887,7 @@ void reg_renaming_scheme_late_allocation_rename(Op *op);
 Flag reg_renaming_scheme_late_allocation_issue(Op *op);
 void reg_renaming_scheme_late_allocation_execute(Op *op);
 void reg_renaming_scheme_late_allocation_recover(Op *op);
+void reg_renaming_scheme_late_allocation_precommit(Op *op);
 void reg_renaming_scheme_late_allocation_commit(Op *op);
 
 // allocate entries and assign the parent-child relationship for arch, vtag, and ptag tables
@@ -1008,6 +1013,10 @@ void reg_renaming_scheme_late_allocation_recover(Op *op) {
   }
 }
 
+void reg_renaming_scheme_late_allocation_precommit(Op *op) {
+  return;
+}
+
 void reg_renaming_scheme_late_allocation_commit(Op *op) {
   /*
     the previous same architectural id of ptag may be invalid due to the out-of-order allocation
@@ -1031,6 +1040,117 @@ void reg_renaming_scheme_late_allocation_commit(Op *op) {
 }
 
 /**************************************************************************************/
+/* Early Release Common Func */
+
+static void reg_early_release_clear(struct reg_table_entry *entry) {
+  if (entry->op_num == 0)
+    return;
+
+  // if the producer op of the entry is not yet committed, the op in the entry is still valid
+  Op *op = entry->op;
+  ASSERT(op->proc_id, op->op_num == entry->op_num && op->unique_num == entry->unique_num);
+
+  // find and clear the corresponding register information inside the operands
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
+    if (entry->parent_reg_id != op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL])
+      continue;
+
+    op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] = REG_TABLE_REG_ID_INVALID;
+    op->dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL] = REG_TABLE_REG_ID_INVALID;
+    return;
+  }
+}
+
+static void reg_early_release_free(struct reg_table *reg_table, struct reg_table_entry *entry) {
+  /*
+   * if the producer op is still in the ROB, the corresponding register entry info
+   * inside that op should be cleared to prevent invalid access;
+   * if the producer op has committed, do not clear the information inside that op.
+   */
+  if (entry->reg_state != REG_TABLE_ENTRY_STATE_COMMIT) {
+    reg_early_release_clear(entry);
+  }
+
+  reg_table->ops->free(reg_table, entry);
+}
+
+/**************************************************************************************/
+/* Spec Early Release Register Scheme */
+
+void reg_renaming_scheme_early_release_spec_rename(Op *op);
+void reg_renaming_scheme_early_release_spec_execute(Op *op);
+void reg_renaming_scheme_early_release_spec_commit(Op *op);
+
+void reg_renaming_scheme_early_release_spec_rename(Op *op) {
+  reg_renaming_scheme_realistic_rename(op);
+
+  if (op->off_path)
+    return;
+
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    int prev_ptag = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, prev_ptag != REG_TABLE_REG_ID_INVALID);
+    struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
+
+    // speculative early release mechanisms provide backup storage for recovering, which allows aggressively redefining
+    prev_entry->if_redefined = TRUE;
+
+    // do register early release
+    if (prev_entry->num_consumers == prev_entry->consumed_count && prev_entry->if_redefined) {
+      reg_early_release_free(reg_table, prev_entry);
+    }
+  }
+}
+
+void reg_renaming_scheme_early_release_spec_execute(Op *op) {
+  reg_renaming_scheme_realistic_execute(op);
+
+  for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    int src_reg_id = op->src_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, src_reg_id != REG_TABLE_REG_ID_INVALID);
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    struct reg_table_entry *src_entry = &reg_table->entries[src_reg_id];
+
+    // do register early release
+    if (src_entry->num_consumers == src_entry->consumed_count && src_entry->if_redefined) {
+      reg_early_release_free(reg_table, src_entry);
+    }
+  }
+}
+
+void reg_renaming_scheme_early_release_spec_commit(Op *op) {
+  /* the physical register is already released during renaming or execution */
+
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
+    // if the corresponding entry is early released, the reg info of this op is cleared
+    int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    int reg_id = op->dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, reg_id != REG_TABLE_REG_ID_INVALID);
+
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    struct reg_table_entry *entry = &reg_table->entries[reg_id];
+    ASSERT(op->proc_id, entry != NULL && entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED);
+
+    // mark register as committed at retirement to avoid accessing the op object of this entry
+    ASSERT(op->proc_id,
+           reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id != REG_TABLE_REG_ID_INVALID);
+    entry->reg_state = REG_TABLE_ENTRY_STATE_COMMIT;
+  }
+}
+
+/**************************************************************************************/
 /* Register File Function Driven Table */
 
 struct reg_renaming_scheme_func {
@@ -1040,6 +1160,7 @@ struct reg_renaming_scheme_func {
   Flag (*issue)(Op *op);
   void (*execute)(Op *op);
   void (*recover)(Op *op);
+  void (*precommit)(Op *op);
   void (*commit)(Op *op);
 };
 
@@ -1053,6 +1174,7 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .issue = reg_renaming_scheme_infinite_issue,
     .execute = reg_renaming_scheme_infinite_execute,
     .recover = reg_renaming_scheme_infinite_recover,
+    .precommit = reg_renaming_scheme_infinite_precommit,
     .commit = reg_renaming_scheme_infinite_commit
   },
   // REG_RENAMING_SCHEME_REALISTIC
@@ -1063,6 +1185,7 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .issue = reg_renaming_scheme_realistic_issue,
     .execute = reg_renaming_scheme_realistic_execute,
     .recover = reg_renaming_scheme_realistic_recover,
+    .precommit = reg_renaming_scheme_realistic_precommit,
     .commit = reg_renaming_scheme_realistic_commit
   },
   // REG_RENAMING_SCHEME_LATE_ALLOCATION
@@ -1073,7 +1196,19 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .issue = reg_renaming_scheme_late_allocation_issue,
     .execute = reg_renaming_scheme_late_allocation_execute,
     .recover = reg_renaming_scheme_late_allocation_recover,
+    .precommit = reg_renaming_scheme_late_allocation_precommit,
     .commit = reg_renaming_scheme_late_allocation_commit
+  },
+  // REG_RENAMING_SCHEME_EARLY_RELEASE_SPEC
+  {
+    .init = reg_renaming_scheme_realistic_init,
+    .available = reg_renaming_scheme_realistic_available,
+    .rename = reg_renaming_scheme_early_release_spec_rename,
+    .issue = reg_renaming_scheme_realistic_issue,
+    .execute = reg_renaming_scheme_early_release_spec_execute,
+    .recover = reg_renaming_scheme_realistic_recover,
+    .precommit = reg_renaming_scheme_realistic_precommit,
+    .commit = reg_renaming_scheme_early_release_spec_commit
   },
 };
 // clang-format on
@@ -1146,6 +1281,17 @@ void reg_file_execute(Op *op) {
 void reg_file_recover(Op *op) {
   ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].recover(op);
+}
+
+/*
+  Called by:
+  --- node_stage.c -> when the op is precommitted
+  Procedure:
+  --- update the register metadata when an op is non-spec
+*/
+void reg_file_precommit(Op *op) {
+  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].precommit(op);
 }
 
 /*

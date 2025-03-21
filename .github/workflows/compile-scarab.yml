@@ -61,7 +61,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: scarab-dir
-          path: ./
+          path: ./scarab_ll/
 
       #- name: Download PARAMS.file
       #  uses: actions/download-artifact@v4

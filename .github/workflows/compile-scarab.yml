@@ -34,11 +34,11 @@ jobs:
         working-directory: src
         run: make opt -j
 
-      #- name: Upload Scarab dir
-      #  uses: actions/upload-artifact@v4
-      #  with:
-      #    name: scarab-dir
-      #    path: ./
+      - name: Upload Scarab dir
+        uses: actions/upload-artifact@v4
+        with:
+          name: scarab-dir
+          path: ./
 
       #- name: Upload PARAMS.file
       #  uses: actions/upload-artifact@v4
@@ -46,10 +46,10 @@ jobs:
       #    name: params-file
       #    path: src/PARAMS.sunny_cove
 
-#  run-scarab:
-#    runs-on: ubuntu-latest
-#    needs: [get_tag, build-opt]
-#    steps:
+  run-scarab:
+    runs-on: ubuntu-latest
+    needs: [get_tag, build-opt]
+    steps:
 
       - name: Clone scarab-infra repo via SSH
         run: git clone https://github.com/litz-lab/scarab-infra.git
@@ -57,11 +57,11 @@ jobs:
       - name: Pull Scarab Docker image
         run: docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
 
-      #- name: Download Scarab dir
-      #  uses: actions/download-artifact@v4
-      #  with:
-      #    name: scarab-dir
-      #    path: ./scarab_ll/
+      - name: Download Scarab dir
+        uses: actions/download-artifact@v4
+        with:
+          name: scarab-dir
+          path: ./scarab_ll/
 
       #- name: Download PARAMS.file
       #  uses: actions/download-artifact@v4
@@ -77,8 +77,6 @@ jobs:
           tar -xzf traces_top_simpoint.tar.gz
           mv ./traces_top_simpoint/top_simpoint.json ./json/top_simpoint.json
           chmod +x run.sh
-          ls -alt /home/runner/work/scarab_ll/scarab_ll/scarab_ll/
-          ls -alt ../scarab_ll/
           #ln -s ../scarab_ll/src/build/opt/scarab ../scarab_ll/src/scarab
           pip install docker
           pip install psutil
@@ -111,7 +109,7 @@ jobs:
 
   upload-perf-data:
     runs-on: ubuntu-latest
-    needs: [get_tag, build-opt]
+    needs: [get_tag, build-opt, run-scarab]
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4

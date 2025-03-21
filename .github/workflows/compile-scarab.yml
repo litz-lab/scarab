@@ -18,22 +18,6 @@ jobs:
           SHORT_SHA=$(echo "$LATEST_SHA" | cut -c1-7)
           echo "tag=$SHORT_SHA" >> $GITHUB_OUTPUT
 
-  build-dbg:
-    runs-on: ubuntu-latest
-    needs: get_tag
-    container:
-      image: ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Mark Git repo as safe
-        run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
-
-      - name: Build Scarab Dbg
-        working-directory: src
-        run: make dbg -j
-
   build-opt:
     runs-on: ubuntu-latest
     needs: get_tag
@@ -56,6 +40,12 @@ jobs:
           name: scarab-binary
           path: src/build/opt/scarab
 
+      - name: Upload PARAMS.file
+        uses: actions/upload-artifact@v4
+        with:
+          name: params-file
+          path: src/PARAMS.sunny_cove
+
   run-scarab:
     runs-on: ubuntu-latest
     needs: [get_tag, build-opt]
@@ -73,9 +63,16 @@ jobs:
           name: scarab-binary
           path: ./scarab_ll/src/build/opt
 
+      - name: Download PARAMS.file
+        uses: actions/upload-artifact@v4
+        with:
+          name: params-file
+          path: ./scarab_ll/src
+
       - name: Run Scarab simulation
         working-directory: scarab-infra
         run: |
+          set -e #force workflow to fail on script error
           curl -L -o traces_top_simpoint.tar.gz https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz
           tar -xzf traces_top_simpoint.tar.gz
           mv ./traces_top_simpoint/top_simpoint.json ./json/top_simpoint.json
@@ -84,3 +81,20 @@ jobs:
           pip install docker
           pip install psutil
           ./run.sh --simulation top_simpoint
+
+  build-dbg:
+    runs-on: ubuntu-latest
+    needs: get_tag
+    container:
+      image: ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Mark Git repo as safe
+        run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
+
+      - name: Build Scarab Dbg
+        working-directory: src
+        run: make dbg -j
+

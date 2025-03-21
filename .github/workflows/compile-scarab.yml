@@ -79,5 +79,5 @@ jobs:
           tar -xzf traces_top_simpoint.tar.gz
           chmod +x run.sh
           pip install docker
-	  pip install psutil
+          pip install psutil
           ./run.sh --simulation ./top_simpoint.json

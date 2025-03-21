@@ -77,7 +77,7 @@ jobs:
           tar -xzf traces_top_simpoint.tar.gz
           mv ./traces_top_simpoint/top_simpoint.json ./json/top_simpoint.json
           chmod +x run.sh
-          ln -s ../scarab_ll/src/build/opt/scarab ../scarab_ll/src/scarab
+          #ln -s ../scarab_ll/src/build/opt/scarab ../scarab_ll/src/scarab
           pip install docker
           pip install psutil
           ./run.sh --simulation top_simpoint

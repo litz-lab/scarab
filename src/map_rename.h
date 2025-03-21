@@ -40,6 +40,7 @@ enum reg_renaming_scheme {
   REG_RENAMING_SCHEME_REALISTIC,
   REG_RENAMING_SCHEME_LATE_ALLOCATION,
   REG_RENAMING_SCHEME_EARLY_RELEASE_SPEC,
+  REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC,
   REG_RENAMING_SCHEME_NUM
 };
 
@@ -102,6 +103,8 @@ struct reg_table_entry {
 
   // metadata for early release
   Flag if_redefined;  // indicate if this entry is overwritten by another instruction with the same arch reg id
+  Counter last_used_op_num;
+  Flag last_used_committed;
 };
 
 struct reg_free_list {

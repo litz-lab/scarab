@@ -34,11 +34,11 @@ jobs:
         working-directory: src
         run: make opt -j
 
-      - name: Upload Scarab dir
-        uses: actions/upload-artifact@v4
-        with:
-          name: scarab-dir
-          path: ./
+      #- name: Upload Scarab dir
+      #  uses: actions/upload-artifact@v4
+      #  with:
+      #    name: scarab-dir
+      #    path: ./
 
       #- name: Upload PARAMS.file
       #  uses: actions/upload-artifact@v4
@@ -48,8 +48,13 @@ jobs:
 
   run-scarab:
     runs-on: ubuntu-latest
-    needs: [get_tag, build-opt]
+    needs: [get_tag]
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Mark Git repo as safe
+        run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
 
       - name: Clone scarab-infra repo via SSH
         run: git clone https://github.com/litz-lab/scarab-infra.git
@@ -57,11 +62,11 @@ jobs:
       - name: Pull Scarab Docker image
         run: docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
 
-      - name: Download Scarab dir
-        uses: actions/download-artifact@v4
-        with:
-          name: scarab-dir
-          path: ./scarab_ll/
+      #- name: Download Scarab dir
+      #  uses: actions/download-artifact@v4
+      #  with:
+      #    name: scarab-dir
+      #    path: ./scarab_ll/
 
       #- name: Download PARAMS.file
       #  uses: actions/download-artifact@v4
@@ -80,7 +85,7 @@ jobs:
           #ln -s ../scarab_ll/src/build/opt/scarab ../scarab_ll/src/scarab
           pip install docker
           pip install psutil
-          ls -alt /home/runner/work/scarab_ll/scarab_ll/scarab_ll/
+          ls -alt /home/runner/work/scarab_ll/scarab_ll/
           ls -alt ../scarab_ll/
           ./run.sh --simulation top_simpoint
 

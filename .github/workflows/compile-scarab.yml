@@ -80,6 +80,8 @@ jobs:
           #ln -s ../scarab_ll/src/build/opt/scarab ../scarab_ll/src/scarab
           pip install docker
           pip install psutil
+          ls -alt /home/runner/work/scarab_ll/scarab_ll/scarab_ll/
+          ls -alt ../scarab_ll/
           ./run.sh --simulation top_simpoint
 
       - name: Upload perf data

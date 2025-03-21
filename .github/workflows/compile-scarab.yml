@@ -34,17 +34,17 @@ jobs:
         working-directory: src
         run: make opt -j
 
-      - name: Upload Scarab binary
+      - name: Upload Scarab dir
         uses: actions/upload-artifact@v4
         with:
-          name: scarab-binary
-          path: src/build/opt/scarab
+          name: scarab-dur
+          path: ./
 
-      - name: Upload PARAMS.file
-        uses: actions/upload-artifact@v4
-        with:
-          name: params-file
-          path: src/PARAMS.sunny_cove
+      #- name: Upload PARAMS.file
+      #  uses: actions/upload-artifact@v4
+      #  with:
+      #    name: params-file
+      #    path: src/PARAMS.sunny_cove
 
   run-scarab:
     runs-on: ubuntu-latest
@@ -57,17 +57,17 @@ jobs:
       - name: Pull Scarab Docker image
         run: docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
 
-      - name: Download Scarab binary
+      - name: Download Scarab dir
         uses: actions/download-artifact@v4
         with:
-          name: scarab-binary
-          path: ./scarab_ll/src/build/opt
+          name: scarab-dir
+          path: ./
 
-      - name: Download PARAMS.file
-        uses: actions/download-artifact@v4
-        with:
-          name: params-file
-          path: ./scarab_ll/src
+      #- name: Download PARAMS.file
+      #  uses: actions/download-artifact@v4
+      #  with:
+      #    name: params-file
+      #    path: ./scarab_ll/src
 
       - name: Run Scarab simulation
         working-directory: scarab-infra

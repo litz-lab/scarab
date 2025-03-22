@@ -207,6 +207,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->done_cycle = MAX_CTR;
   op->retire_cycle = MAX_CTR;
   op->replay_cycle = MAX_CTR;
+  op->precommit_cycle = MAX_CTR;
   op->decode_cycle = 0;
   op->replay = FALSE;
   op->replay_count = 0;
@@ -214,6 +215,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->exec_count = 0;
   op->in_rdy_list = FALSE;
   op->in_node_list = FALSE;
+  op->precommitted = FALSE;
 
   op->req = NULL;
 

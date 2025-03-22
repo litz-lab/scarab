@@ -39,6 +39,7 @@ enum reg_renaming_scheme {
   REG_RENAMING_SCHEME_INFINITE,
   REG_RENAMING_SCHEME_REALISTIC,
   REG_RENAMING_SCHEME_LATE_ALLOCATION,
+  REG_RENAMING_SCHEME_EARLY_RELEASE_SPEC,
   REG_RENAMING_SCHEME_NUM
 };
 
@@ -98,6 +99,9 @@ struct reg_table_entry {
   // consumer counter
   int num_consumers;   // the number of registered (at rename) consumers of a registers
   int consumed_count;  // the number of issued (at execute) consumers of a register
+
+  // metadata for early release
+  Flag if_redefined;  // indicate if this entry is overwritten by another instruction with the same arch reg id
 };
 
 struct reg_free_list {
@@ -181,6 +185,7 @@ void reg_file_rename(Op *op);                 // alloc destination registers for
 Flag reg_file_issue(Op *op);                  // check the op before being issued into the FU
 void reg_file_execute(Op *op);                // consume the src registers and write back the dst registers
 void reg_file_recover(Op *op);                // flush registers of misprediction operands
+void reg_file_precommit(Op *op);              // update the register metadata when an op is non-spec
 void reg_file_commit(Op *op);                 // release the previous register with same architectural register id
 
 #endif /* #ifndef __MAP_RENAME_H__ */

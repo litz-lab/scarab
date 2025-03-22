@@ -16,6 +16,8 @@
 #include "op_pool.h"
 #include "thread.h"
 
+#include "conf.hpp"
+
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
 class FT {
@@ -46,6 +48,7 @@ class Decoupled_FE {
  public:
   Decoupled_FE(uns _proc_id);
   int is_off_path() { return off_path; }
+  int is_conf_off_path() { return conf_off_path; }
   void recover();
   void update();
   FT* get_ft(uint64_t ft_pos);
@@ -59,9 +62,14 @@ class Decoupled_FE {
   void retire(Op* op, int op_proc_id, uns64 inst_uid);
   void set_ftq_num(uint64_t set_ftq_ft_num) { ftq_ft_num = set_ftq_ft_num; }
   uint64_t get_ftq_num() { return ftq_ft_num; }
+  Op* get_cur_op() { return cur_op; }
+  uns get_low_confidence_cnt() { return conf->get_low_confidence_cnt(); }
+  Off_Path_Reason get_off_path_reason() { return conf->get_off_path_reason(); }
+  Conf_Off_Path_Reason get_conf_off_path_reason() { return conf->get_conf_off_path_reason(); }
 
  private:
   void init(uns proc_id);
+  void set_conf_off_path() { conf_off_path = true; }
 
   uns proc_id;
 
@@ -73,6 +81,7 @@ class Decoupled_FE {
   FT current_ft_to_push;
 
   int off_path;
+  int conf_off_path;
   int sched_off_path;
   uint64_t dfe_op_count;
   std::vector<decoupled_fe_iter> ftq_iterators;
@@ -81,6 +90,8 @@ class Decoupled_FE {
   bool stalled;
   uint64_t ftq_ft_num;
   bool trace_mode;
+  Op* cur_op;
+  Conf* conf;
 };
 
 /* Global Variables */
@@ -101,6 +112,10 @@ void init_decoupled_fe(uns proc_id, const char*) {
 
 bool decoupled_fe_is_off_path() {
   return dfe->is_off_path();
+}
+
+bool decoupled_fe_is_conf_off_path() {
+  return dfe->is_conf_off_path();
 }
 
 void set_decoupled_fe(uns proc_id) {
@@ -172,6 +187,22 @@ void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num) {
 
 uint64_t decoupled_fe_get_ftq_num() {
   return dfe->get_ftq_num();
+}
+
+Op* decoupled_fe_get_cur_op() {
+  return dfe->get_cur_op();
+}
+
+uns decoupled_fe_get_low_confidence_cnt() {
+  return dfe->get_low_confidence_cnt();
+}
+
+Off_Path_Reason decoupled_fe_get_off_path_reason() {
+  return dfe->get_off_path_reason();
+}
+
+Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason() {
+  return dfe->get_conf_off_path_reason();
 }
 
 /* FT member functions */
@@ -318,20 +349,27 @@ void Decoupled_FE::init(uns _proc_id) {
 #endif
   proc_id = _proc_id;
   off_path = false;
+  conf_off_path = false;
   sched_off_path = false;
   dfe_op_count = 1;
   recovery_addr = 0;
   redirect_cycle = 0;
   stalled = false;
   ftq_ft_num = FE_FTQ_BLOCK_NUM;
+  cur_op = nullptr;
 
   current_ft_to_push = FT(proc_id);
   current_ft_to_push.set_ft_started_by(FT_STARTED_BY_APP);
+
+  if (CONFIDENCE_ENABLE)
+    conf = new Conf(_proc_id);
 }
 
 void Decoupled_FE::recover() {
   off_path = false;
+  conf_off_path = false;
   sched_off_path = false;
+  cur_op = nullptr;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
 
   for (auto it = ftq.begin(); it != ftq.end(); it++) {
@@ -376,6 +414,9 @@ void Decoupled_FE::recover() {
           "Scarab's recovery addr 0x%llx does not match frontend's recovery "
           "addr 0x%llx\n",
           bp_recovery_info->recovery_fetch_addr, frontend_next_fetch_addr(proc_id));
+
+  if (CONFIDENCE_ENABLE && cur_op && !cur_op->exit)
+    conf->recover();
 }
 
 void Decoupled_FE::update() {
@@ -452,6 +493,23 @@ void Decoupled_FE::update() {
     frontend_fetch_op(proc_id, op);
     op->op_num = dfe_op_count++;
     op->off_path = off_path;
+    op->conf_off_path = conf_off_path;
+
+    if (CONFIDENCE_ENABLE) {
+      // set previous op, only if on path or first off path instruction
+      if (cur_op && (cur_op->op_num != op->op_num) &&
+          (!(op->off_path) || (conf->get_off_path_reason() == REASON_NOT_IDENTIFIED)))
+        conf->set_prev_op(cur_op);
+
+      // update confidence
+      conf->update(op);
+      if (!is_conf_off_path() && conf->is_conf_off_path())
+        set_conf_off_path();
+    }
+
+    cur_op = op;
+    DEBUG(proc_id, "Set cur_op off_path:%i, op_num:%llu, cf_type:%i\n", cur_op->off_path, cur_op->op_num,
+          cur_op->table_info->cf_type);
 
     if (op->table_info->cf_type) {
       ASSERT(proc_id, op->eom);
@@ -581,6 +639,9 @@ void Decoupled_FE::update() {
       recovery_addr = 0;
     }
   }
+
+  if (CONFIDENCE_ENABLE)
+    conf->cyc_reset();
 }
 
 FT* Decoupled_FE::get_ft(uint64_t ft_pos) {

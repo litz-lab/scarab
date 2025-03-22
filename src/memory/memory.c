@@ -2744,6 +2744,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
 
     req->off_path &= op->off_path;
     req->off_path_confirmed = FALSE;  // processor thinks op is on path; otherwise it would have flushed it
+    req->conf_off_path &= op->conf_off_path;
     op->req = req;
 
     if (!req->done_func)
@@ -3154,6 +3155,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
 
   new_req->off_path = op ? op->off_path : FALSE;
   new_req->off_path_confirmed = FALSE;
+  new_req->conf_off_path = op ? op->conf_off_path : FALSE;
   new_req->state = to_mlc ? MRS_MLC_NEW : MRS_L1_NEW;
   new_req->type = type;
   new_req->types = 0;

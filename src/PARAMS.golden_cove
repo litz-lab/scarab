@@ -91,7 +91,7 @@
 # register renaming table
 --reg_renaming_scheme               1
 --reg_table_integer_physical_size   280
---reg_table_vector_physical_size    242
+--reg_table_vector_physical_size    332
 
 ### Issue Stage
 

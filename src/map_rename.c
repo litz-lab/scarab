@@ -526,6 +526,8 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->consumed_count = 0;
 
   entry->if_redefined = FALSE;
+  entry->last_used_op_num = 0;
+  entry->last_used_committed = FALSE;
 }
 
 /* update the metadata when it is read during renaming */
@@ -538,6 +540,8 @@ void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
     return;
 
   entry->num_consumers++;
+  entry->last_used_op_num = op->op_num;
+  entry->last_used_committed = FALSE;
 }
 
 /* update reg_table entry by setting its key (lookup reg_id) and value (tag and op whose dest is assigned to reg_id) */
@@ -1152,6 +1156,62 @@ void reg_renaming_scheme_early_release_spec_commit(Op *op) {
 }
 
 /**************************************************************************************/
+/* Non-Spec Early Release Register Scheme */
+
+void reg_renaming_scheme_early_release_nonspec_precommit(Op *op);
+void reg_renaming_scheme_early_release_nonspec_commit(Op *op);
+
+void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
+  ASSERT(op->proc_id, !op->off_path);
+  if (REG_RENAMING_SCHEME != REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC)
+    return;
+
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    int prev_ptag = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, prev_ptag != REG_TABLE_REG_ID_INVALID);
+    struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
+
+    prev_entry->if_redefined = TRUE;
+    if (prev_entry->num_consumers == 0) {
+      prev_entry->last_used_committed = TRUE;
+    }
+
+    if (prev_entry->last_used_committed && prev_entry->if_redefined) {
+      reg_early_release_free(reg_table, prev_entry);
+    }
+  }
+}
+
+void reg_renaming_scheme_early_release_nonspec_commit(Op *op) {
+  for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    int reg_id = op->src_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, reg_id != REG_TABLE_REG_ID_INVALID);
+
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    struct reg_table_entry *entry = &reg_table->entries[reg_id];
+
+    if (entry->last_used_op_num == op->op_num) {
+      entry->last_used_committed = TRUE;
+    }
+
+    if (entry->last_used_committed && entry->if_redefined) {
+      reg_early_release_free(reg_table, entry);
+    }
+  }
+
+  reg_renaming_scheme_early_release_spec_commit(op);
+}
+
+/**************************************************************************************/
 /* Register File Function Driven Table */
 
 struct reg_renaming_scheme_func {
@@ -1210,6 +1270,17 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .recover = reg_renaming_scheme_realistic_recover,
     .precommit = reg_renaming_scheme_realistic_precommit,
     .commit = reg_renaming_scheme_early_release_spec_commit
+  },
+  // REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC
+  {
+    .init = reg_renaming_scheme_realistic_init,
+    .available = reg_renaming_scheme_realistic_available,
+    .rename = reg_renaming_scheme_realistic_rename,
+    .issue = reg_renaming_scheme_realistic_issue,
+    .execute = reg_renaming_scheme_realistic_execute,
+    .recover = reg_renaming_scheme_realistic_recover,
+    .precommit = reg_renaming_scheme_early_release_nonspec_precommit,
+    .commit = reg_renaming_scheme_early_release_nonspec_commit
   },
 };
 // clang-format on

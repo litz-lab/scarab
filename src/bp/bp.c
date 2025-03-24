@@ -537,8 +537,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred = NOT_TAKEN;
         op->oracle_info.pred_npc = pc_plus_offset;
         STAT_EVENT(op->proc_id, CBR_RECOVER_BTB_MISS_T_T + op->off_path * NUM_BR_STATS);
-        if (FDIP_BP_CONFIDENCE)
-          fdip_inc_cnt_btb_miss(op->proc_id);
       }
       // 2. Branch is predicted taken, violating not-taken asumption. This would flush at decode,
       // however, the branch will flush again at exec when it is determined that the prediction was wrong
@@ -550,8 +548,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred_npc = pred_target;  // Not accurate. At fetch it would execute pc_plus_offset, at decode
                                                  // would resteer frontend to pred_taken
         STAT_EVENT(op->proc_id, CBR_RECOVER_BTB_MISS_T_NT + op->off_path * NUM_BR_STATS);
-        if (FDIP_BP_CONFIDENCE)
-          fdip_inc_cnt_btb_miss(op->proc_id);
       }
       // 3. Branch is predicted not-taken causing branch to continue to exec where the flush is triggered
       else if (!btb_target && op->oracle_info.pred == NOT_TAKEN && op->oracle_info.dir == TAKEN) {
@@ -560,8 +556,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->oracle_info.pred = NOT_TAKEN;
         op->oracle_info.pred_npc = pc_plus_offset;
         STAT_EVENT(op->proc_id, CBR_RECOVER_BTB_MISS_NT_T + op->off_path * NUM_BR_STATS);
-        if (FDIP_BP_CONFIDENCE)
-          fdip_inc_cnt_btb_miss(op->proc_id);
       }
       // 4. Branch is predicted not-taken which is correct causing no flush
       else if (!btb_target && op->oracle_info.pred == NOT_TAKEN && op->oracle_info.dir == NOT_TAKEN) {

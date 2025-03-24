@@ -170,6 +170,7 @@ struct Op_struct {
 
   // {{{ path and fetch info
   Flag off_path;                // is the op on the correct path of the program? - oracle information
+  Flag conf_off_path;           // is the op on the correct path of the program? - confidence information
   Flag exit;                    // is this the last instruction to execute?
   Flag prog_input;              // is this op directly related to an input value of the program ?
   uns cf_within_fetch;          // branch number within a fetch cycle

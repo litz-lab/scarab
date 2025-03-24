@@ -102,7 +102,7 @@ struct reg_table_entry {
   int consumed_count;  // the number of issued (at execute) consumers of a register
 
   // metadata for early release
-  Flag if_redefined;  // indicate if this entry is overwritten by another instruction with the same arch reg id
+  Flag redefined;  // indicate if this entry is overwritten by another instruction with the same arch reg id
   Counter last_used_op_num;
   Flag last_used_committed;
 };

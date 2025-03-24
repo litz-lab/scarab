@@ -525,7 +525,7 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->num_consumers = 0;
   entry->consumed_count = 0;
 
-  entry->if_redefined = FALSE;
+  entry->redefined = FALSE;
   entry->last_used_op_num = 0;
   entry->last_used_committed = FALSE;
 }
@@ -1103,10 +1103,10 @@ void reg_renaming_scheme_early_release_spec_rename(Op *op) {
     struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
 
     // speculative early release mechanisms provide backup storage for recovering, which allows aggressively redefining
-    prev_entry->if_redefined = TRUE;
+    prev_entry->redefined = TRUE;
 
     // do register early release
-    if (prev_entry->num_consumers == prev_entry->consumed_count && prev_entry->if_redefined) {
+    if (prev_entry->num_consumers == prev_entry->consumed_count && prev_entry->redefined) {
       reg_early_release_free(reg_table, prev_entry);
     }
   }
@@ -1126,7 +1126,7 @@ void reg_renaming_scheme_early_release_spec_execute(Op *op) {
     struct reg_table_entry *src_entry = &reg_table->entries[src_reg_id];
 
     // do register early release
-    if (src_entry->num_consumers == src_entry->consumed_count && src_entry->if_redefined) {
+    if (src_entry->num_consumers == src_entry->consumed_count && src_entry->redefined) {
       reg_early_release_free(reg_table, src_entry);
     }
   }
@@ -1163,8 +1163,6 @@ void reg_renaming_scheme_early_release_nonspec_commit(Op *op);
 
 void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
   ASSERT(op->proc_id, !op->off_path);
-  if (REG_RENAMING_SCHEME != REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC)
-    return;
 
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
@@ -1176,12 +1174,12 @@ void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
     ASSERT(op->proc_id, prev_ptag != REG_TABLE_REG_ID_INVALID);
     struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
 
-    prev_entry->if_redefined = TRUE;
+    prev_entry->redefined = TRUE;
     if (prev_entry->num_consumers == 0) {
       prev_entry->last_used_committed = TRUE;
     }
 
-    if (prev_entry->last_used_committed && prev_entry->if_redefined) {
+    if (prev_entry->last_used_committed && prev_entry->redefined) {
       reg_early_release_free(reg_table, prev_entry);
     }
   }
@@ -1203,7 +1201,7 @@ void reg_renaming_scheme_early_release_nonspec_commit(Op *op) {
       entry->last_used_committed = TRUE;
     }
 
-    if (entry->last_used_committed && entry->if_redefined) {
+    if (entry->last_used_committed && entry->redefined) {
       reg_early_release_free(reg_table, entry);
     }
   }

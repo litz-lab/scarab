@@ -46,6 +46,7 @@ extern "C" {
 
 #include "bp/bp.h"
 #include "frontend/pt_memtrace/pt_fe.h"
+#include "frontend/pt_memtrace/trace_fe.h"
 #include "isa/isa.h"
 #include "pin/pin_lib/uop_generator.h"
 #include "pin/pin_lib/x86_decoder.h"
@@ -77,8 +78,12 @@ const uint64_t mean = 1000000000;
 double sd = 14000;
 std::normal_distribution<> d{mean, sd};  // generates an address of 1G +/-25K with 92% proability
 const uint64_t offset = 0xFF0000;        // ensure to generate no zero page address
+extern uint64_t rdptr;
+extern uint64_t wrptr;
+extern std::vector<ctype_pin_inst> circ_buf;
 /**************************************************************************************/
 /* Private Functions for PT */
+int pt_trace_read_internal(int proc_id, ctype_pin_inst* next_onpath_pi);
 
 void pt_fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
   uint8_t ld = 0;
@@ -138,7 +143,19 @@ int pt_roi(const xed_decoded_inst_t* ins) {
   return 0;
 }
 
-int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
+int pt_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
+  if (!TRACE_BUF_SIZE) {
+    return pt_trace_read_internal(proc_id, next_onpath_pi);
+  } else {
+    *next_onpath_pi = circ_buf[rdptr];
+    buf_map_remove();
+    int ret = pt_trace_read_internal(proc_id, &circ_buf[wrptr]);
+    buf_map_insert();
+    return ret;
+  }
+}
+
+int pt_trace_read_internal(int proc_id, ctype_pin_inst* pt_next_pi) {
   InstInfo* insi;
 
   do {
@@ -223,18 +240,16 @@ void pt_setup(uns proc_id) {
 
   if (FAST_FORWARD) {
     std::cout << "Enter fast forward " << pt_ins_id << std::endl;
-  }
 
-  while (!insi->valid || pt_ffwd(insi->ins)) {
-    insi = pt_trace_readers[proc_id]->nextInstruction();
-    pt_ins_id++;
-    if ((pt_ins_id % 10000000) == 0)
-      std::cout << "Fast forwarded " << pt_ins_id << " instructions." << std::endl;
-    if (pt_ins_id >= FAST_FORWARD_TRACE_INS)
-      break;
-  }
+    while (!insi->valid || pt_ffwd(insi->ins)) {
+      insi = pt_trace_readers[proc_id]->nextInstruction();
+      pt_ins_id++;
+      if ((pt_ins_id % 10000000) == 0)
+        std::cout << "Fast forwarded " << pt_ins_id << " instructions." << std::endl;
+      if (pt_ins_id >= FAST_FORWARD_TRACE_INS)
+        break;
+    }
 
-  if (FAST_FORWARD) {
     std::cout << "Exit fast forward " << pt_ins_id << std::endl;
   }
 
@@ -242,4 +257,14 @@ void pt_setup(uns proc_id) {
   pt_prior_tid = insi->tid;
   assert(pt_prior_tid);
   assert(pt_prior_pid);
+
+  if (TRACE_BUF_SIZE) {
+    circ_buf.resize(TRACE_BUF_SIZE);
+    rdptr = 0;
+    wrptr = 0;
+    for (uint i = 0; i < TRACE_BUF_SIZE; i++) {
+      pt_trace_read_internal(proc_id, &circ_buf[wrptr]);
+      buf_map_insert();
+    }
+  }
 }

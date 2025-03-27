@@ -1,6 +1,6 @@
 #include "prefetcher/fdip.h"
 
-#include "frontend/pt_memtrace/memtrace_fe.h"
+#include "frontend/pt_memtrace/trace_fe.h"
 
 #include "decoupled_frontend.h"
 #include "sim.h"

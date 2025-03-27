@@ -42,8 +42,42 @@ static bool off_path_mode[MAX_NUM_PROCS] = {false};
 static uint64_t off_path_addr[MAX_NUM_PROCS] = {0};
 static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
 
+uint64_t rdptr = 0;
+uint64_t wrptr = 0;
+std::vector<ctype_pin_inst> circ_buf;
+std::unordered_map<Addr, Counter> buf_map;
+const int CLINE = ~0x3F;
+
 extern uint64_t ins_id;
 extern uint64_t ins_id_fetched;
+
+Flag buf_map_find(Addr line_addr) {
+  return buf_map.find(line_addr) != buf_map.end();
+}
+
+// inserts the inst written to write_ptr location
+void buf_map_insert() {
+  Addr line_addr = circ_buf[wrptr].instruction_addr & CLINE;
+  auto it = buf_map.find(line_addr);
+  if (it != buf_map.end()) {
+    it->second++;
+  } else {
+    buf_map.insert(std::pair<Addr, Counter>(line_addr, 1));
+  }
+  wrptr = (wrptr + 1) % TRACE_BUF_SIZE;
+}
+
+void buf_map_remove() {
+  Addr line_addr = circ_buf[rdptr].instruction_addr & CLINE;
+  auto it = buf_map.find(line_addr);
+  assert(it != buf_map.end());
+  if (it->second > 1) {
+    it->second--;
+  } else {
+    buf_map.erase(it);
+  }
+  rdptr = (rdptr + 1) % TRACE_BUF_SIZE;
+}
 
 void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
   auto op_iter = pc_to_inst.find(*off_path_addr);

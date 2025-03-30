@@ -1,4 +1,6 @@
-/* Copyright 2020 HPS/SAFARI Research Groups
+/*
+ * Copyright 2020 HPS/SAFARI Research Groups
+ * Copyright 2025 Litz Lab
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,8 +23,8 @@
 
 /***************************************************************************************
  * File         : map_stage.c
- * Author       : HPS Research Group
- * Date         : 2/4/1999
+ * Author       : HPS Research Group, Litz Lab
+ * Date         : 2/4/1999, 3/2025
  * Description  :
  ***************************************************************************************/
 
@@ -60,15 +62,18 @@
 /* Global Variables */
 
 Map_Stage* map = NULL;
-// The next op number is used when deciding whether to consume ops from the
-// uop cache: i.e. check if any preceding instructions are still in the decoder.
-Counter map_stage_next_op_num = 1;
+
 int map_off_path = 0;
+Counter map_stage_next_op_num = 1;
+/* The next op number is used when deciding whether to consume ops from the uop
+ * cache: i.e. check if any preceding instructions are still in the decoder. */
 
 /**************************************************************************************/
 /* Local prototypes */
 
 static inline void stage_process_op(Op*);
+static inline void map_stage_collect_stat(Flag, Flag);
+static inline void map_stage_fetch_op(Stage_Data*);
 
 /**************************************************************************************/
 /* set_map_stage: */
@@ -163,12 +168,7 @@ void debug_map_stage() {
 /**************************************************************************************/
 /* map_cycle: */
 
-void update_map_stage(Stage_Data* idq_sd) {
-  Flag stall = (map->last_sd->op_count > 0);
-  Stage_Data *cur, *prev;
-  Op** temp;
-  uns ii;
-
+void update_map_stage(Stage_Data* src_sd) {
   /* stall if the renaming table is full */
   if (!reg_file_available(STAGE_MAX_OP_COUNT)) {
     STAT_EVENT(map->proc_id, MAP_STAGE_STALL_ITSELF);
@@ -176,13 +176,19 @@ void update_map_stage(Stage_Data* idq_sd) {
   }
   STAT_EVENT(map->proc_id, MAP_STAGE_NOT_STALL_ITSELF);
 
+  Flag stall = (map->last_sd->op_count > 0);
+  Flag starved = (src_sd->op_count == 0);
+  map_stage_collect_stat(stall, starved);
+
   /* do all the intermediate stages */
-  for (ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
-    cur = &map->sds[ii];
+  for (int ii = 0; ii < STAGE_MAX_DEPTH - 1; ii++) {
+    Stage_Data* cur = &map->sds[ii];
+    Stage_Data* prev = &map->sds[ii + 1];
+
     if (cur->op_count)
       continue;
-    prev = &map->sds[ii + 1];
-    temp = cur->ops;
+
+    Op** temp = cur->ops;
     cur->ops = prev->ops;
     prev->ops = temp;
     cur->op_count = prev->op_count;
@@ -190,51 +196,17 @@ void update_map_stage(Stage_Data* idq_sd) {
   }
 
   /* do the first map stage */
-  cur = &map->sds[STAGE_MAX_DEPTH - 1];
-
-  Flag starved = idq_sd->op_count == 0;
-
-  if (!map_off_path) {
-    if (stall)
-      STAT_EVENT(map->proc_id, MAP_STAGE_STALLED);
-    else
-      STAT_EVENT(map->proc_id, MAP_STAGE_NOT_STALLED);
-    if (starved)
-      STAT_EVENT(map->proc_id, MAP_STAGE_STARVED);
-    else
-      STAT_EVENT(map->proc_id, MAP_STAGE_NOT_STARVED);
-  } else
-    STAT_EVENT(map->proc_id, MAP_STAGE_OFF_PATH);
-
-  if (cur->op_count == 0 && !starved) {
-    int op_count_before_consuming = idq_sd->op_count;
-    for (int ii = 0; ii < op_count_before_consuming; ii++) {
-      Op* op = idq_sd->ops[ii];
-      ASSERT(map->proc_id, op->op_num == map_stage_next_op_num);
-      DEBUG(map->proc_id, "Fetching opnum=%llu at idx=%i\n", op->op_num, ii);
-      op->map_cycle = cycle_count;
-      cur->ops[ii] = op;
-      cur->op_count++;
-      map_stage_next_op_num++;
-      idq_sd->ops[ii] = NULL;
-      idq_sd->op_count--;
-      if (op->off_path) {
-        map_off_path = 1;
-      }
-    }
-    // Probably should count number of on-path ops.
-    // Any stage can receive a mix of on/off-path ops in a single cycle.
-    if (!map_off_path)
-      STAT_EVENT(map->proc_id, MAP_STAGE_RECEIVED_OPS_0 + cur->op_count);
-    ASSERT(map->proc_id, cur->op_count <= MAP_STAGE_RECEIVED_OPS_MAX);
+  if (map->sds[STAGE_MAX_DEPTH - 1].op_count == 0 && !starved) {
+    map_stage_fetch_op(src_sd);
   }
 
   /* if the last map stage is stalled, don't re-process the ops  */
   if (stall) {
     return;
   }
+
   /* now map the ops in the last map stage */
-  for (ii = 0; ii < map->last_sd->op_count; ii++) {
+  for (int ii = 0; ii < map->last_sd->op_count; ii++) {
     Op* op = map->last_sd->ops[ii];
     ASSERT(map->proc_id, op != NULL);
     stage_process_op(op);
@@ -242,7 +214,7 @@ void update_map_stage(Stage_Data* idq_sd) {
 }
 
 /**************************************************************************************/
-/* map_process_op: */
+/* Local methods */
 
 static inline void stage_process_op(Op* op) {
   ASSERT(map->proc_id, map->proc_id == td->proc_id);
@@ -251,8 +223,7 @@ static inline void stage_process_op(Op* op) {
   add_to_seq_op_list(td, op);
   ASSERT(map->proc_id, td->seq_op_list.count <= op_pool_active_ops);
 
-  /* map the op based on true dependencies & set information in
-   * op->oracle_info */
+  /* map the op based on true dependencies & set information in op->oracle_info */
   thread_map_op(op);
   thread_map_mem_dep(op);
 
@@ -261,4 +232,51 @@ static inline void stage_process_op(Op* op) {
 
   /* setting wake up lists */
   add_to_wake_up_lists(op, &op->oracle_info, model->wake_hook);
+}
+
+static inline void map_stage_collect_stat(Flag stall, Flag starved) {
+  if (map_off_path) {
+    STAT_EVENT(map->proc_id, MAP_STAGE_OFF_PATH);
+    return;
+  }
+
+  if (stall)
+    STAT_EVENT(map->proc_id, MAP_STAGE_STALLED);
+  else
+    STAT_EVENT(map->proc_id, MAP_STAGE_NOT_STALLED);
+
+  if (starved)
+    STAT_EVENT(map->proc_id, MAP_STAGE_STARVED);
+  else
+    STAT_EVENT(map->proc_id, MAP_STAGE_NOT_STARVED);
+}
+
+static inline void map_stage_fetch_op(Stage_Data* src_sd) {
+  Stage_Data* first_sd = &map->sds[STAGE_MAX_DEPTH - 1];
+  int op_count_before_fetch = src_sd->op_count;
+
+  for (int ii = 0; ii < op_count_before_fetch; ii++) {
+    Op* op = src_sd->ops[ii];
+    ASSERT(map->proc_id, op->op_num == map_stage_next_op_num);
+    DEBUG(map->proc_id, "Fetching opnum=%llu at idx=%i\n", op->op_num, ii);
+
+    op->map_cycle = cycle_count;
+    first_sd->ops[ii] = op;
+    first_sd->op_count++;
+
+    src_sd->ops[ii] = NULL;
+    src_sd->op_count--;
+
+    map_stage_next_op_num++;
+    if (op->off_path) {
+      map_off_path = 1;
+    }
+  }
+
+  // TODO: probably should count number of on-path ops.
+  if (!map_off_path)
+    STAT_EVENT(map->proc_id, MAP_STAGE_RECEIVED_OPS_0 + first_sd->op_count);
+
+  // Any stage can receive a mix of on/off-path ops in a single cycle.
+  ASSERT(map->proc_id, first_sd->op_count <= MAP_STAGE_RECEIVED_OPS_MAX);
 }

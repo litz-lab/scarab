@@ -40,7 +40,7 @@ enum reg_renaming_scheme {
   REG_RENAMING_SCHEME_REALISTIC,
   REG_RENAMING_SCHEME_LATE_ALLOCATION,
   REG_RENAMING_SCHEME_EARLY_RELEASE_SPEC,
-  REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC,
+  REG_RENAMING_SCHEME_EARLY_RELEASE_LASTUSE,
   REG_RENAMING_SCHEME_NUM
 };
 
@@ -102,7 +102,9 @@ struct reg_table_entry {
   int consumed_count;  // the number of issued (at execute) consumers of a register
 
   // metadata for early release
-  Flag redefined;  // indicate if this entry is overwritten by another instruction with the same arch reg id
+  Flag redefined_rename;     // indicate if it is overwritten by an instruction with the same arch id during renaming
+  Flag redefined_precommit;  // indicate if the redefine-instruction is precommitted
+
   Counter last_used_op_num;
   Flag last_used_committed;
 };

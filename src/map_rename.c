@@ -525,7 +525,9 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->num_consumers = 0;
   entry->consumed_count = 0;
 
-  entry->redefined = FALSE;
+  entry->redefined_rename = FALSE;
+  entry->redefined_precommit = FALSE;
+
   entry->last_used_op_num = 0;
   entry->last_used_committed = FALSE;
 }
@@ -1103,10 +1105,10 @@ void reg_renaming_scheme_early_release_spec_rename(Op *op) {
     struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
 
     // speculative early release mechanisms provide backup storage for recovering, which allows aggressively redefining
-    prev_entry->redefined = TRUE;
+    prev_entry->redefined_rename = TRUE;
 
     // do register early release
-    if (prev_entry->num_consumers == prev_entry->consumed_count && prev_entry->redefined) {
+    if (prev_entry->num_consumers == prev_entry->consumed_count && prev_entry->redefined_rename) {
       reg_early_release_free(reg_table, prev_entry);
     }
   }
@@ -1126,7 +1128,7 @@ void reg_renaming_scheme_early_release_spec_execute(Op *op) {
     struct reg_table_entry *src_entry = &reg_table->entries[src_reg_id];
 
     // do register early release
-    if (src_entry->num_consumers == src_entry->consumed_count && src_entry->redefined) {
+    if (src_entry->num_consumers == src_entry->consumed_count && src_entry->redefined_rename) {
       reg_early_release_free(reg_table, src_entry);
     }
   }
@@ -1156,12 +1158,25 @@ void reg_renaming_scheme_early_release_spec_commit(Op *op) {
 }
 
 /**************************************************************************************/
-/* Non-Spec Early Release Register Scheme */
+/* Last-Use Early Release Register Scheme */
 
-void reg_renaming_scheme_early_release_nonspec_precommit(Op *op);
-void reg_renaming_scheme_early_release_nonspec_commit(Op *op);
+/*
+ * In this mechanism, physical registers are freed once the last instruction reading the register
+ * has committed if the redefining instruction becomes non-speculative. A last-use table is employed
+ * to track the last consumer.
+ *
+ * This technique was first introduced in:
+ *    "Hardware schemes for early register release," in ICPP, IEEE, 2002.
+ *
+ * This ALGO will do the register early release if the following holds:
+ *    (1) the redefine-instruction of the producer needs to be precommitted
+ *    (2) the last-use instruction of the producer needs to be committed
+ */
 
-void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
+void reg_renaming_scheme_early_release_lastuse_precommit(Op *op);
+void reg_renaming_scheme_early_release_lastuse_commit(Op *op);
+
+void reg_renaming_scheme_early_release_lastuse_precommit(Op *op) {
   ASSERT(op->proc_id, !op->off_path);
 
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
@@ -1172,20 +1187,25 @@ void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
     struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
     int prev_ptag = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
     ASSERT(op->proc_id, prev_ptag != REG_TABLE_REG_ID_INVALID);
-    struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
 
-    prev_entry->redefined = TRUE;
+    struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
+    prev_entry->redefined_precommit = TRUE;
+
+    // directly early release for unconsumed producers
     if (prev_entry->num_consumers == 0) {
       prev_entry->last_used_committed = TRUE;
     }
 
-    if (prev_entry->last_used_committed && prev_entry->redefined) {
+    // do register early release
+    if (prev_entry->last_used_committed && prev_entry->redefined_precommit) {
       reg_early_release_free(reg_table, prev_entry);
     }
   }
 }
 
-void reg_renaming_scheme_early_release_nonspec_commit(Op *op) {
+void reg_renaming_scheme_early_release_lastuse_commit(Op *op) {
+  /* when the last-use consumer is committed, early release the producer instruction
+   * if the redefine-instruction of the producer is precommitted */
   for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
@@ -1197,11 +1217,13 @@ void reg_renaming_scheme_early_release_nonspec_commit(Op *op) {
     struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
     struct reg_table_entry *entry = &reg_table->entries[reg_id];
 
+    // the last-use metadata is overwritten for every on-path read of the producer during renaming
     if (entry->last_used_op_num == op->op_num) {
       entry->last_used_committed = TRUE;
     }
 
-    if (entry->last_used_committed && entry->redefined) {
+    // do register early release
+    if (entry->last_used_committed && entry->redefined_precommit) {
       reg_early_release_free(reg_table, entry);
     }
   }
@@ -1269,7 +1291,7 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .precommit = reg_renaming_scheme_realistic_precommit,
     .commit = reg_renaming_scheme_early_release_spec_commit
   },
-  // REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC
+  // REG_RENAMING_SCHEME_EARLY_RELEASE_LASTUSE
   {
     .init = reg_renaming_scheme_realistic_init,
     .available = reg_renaming_scheme_realistic_available,
@@ -1277,8 +1299,8 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .issue = reg_renaming_scheme_realistic_issue,
     .execute = reg_renaming_scheme_realistic_execute,
     .recover = reg_renaming_scheme_realistic_recover,
-    .precommit = reg_renaming_scheme_early_release_nonspec_precommit,
-    .commit = reg_renaming_scheme_early_release_nonspec_commit
+    .precommit = reg_renaming_scheme_early_release_lastuse_precommit,
+    .commit = reg_renaming_scheme_early_release_lastuse_commit
   },
 };
 // clang-format on

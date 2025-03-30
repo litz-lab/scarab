@@ -104,6 +104,7 @@ struct Mem_Req_struct {
   Flag off_path;           /* is the mem_req entirely off path? */
   Flag off_path_confirmed; /* does the processor know that this is off-path -
                               set after the branch resolves */
+  Flag conf_off_path;      /* is the mem_req off path by path confidence? */
   Mem_Req_State state;     /* what state is the miss in? */
   Mem_Req_Type type;       /* what kind of miss is it? */
   /* Bit string recording all Mem_Req_Type(s) that were coalesced into this request. */

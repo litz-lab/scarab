@@ -52,6 +52,25 @@ extern "C" {
 #include "frontend/pin_trace_fe.h"
 
 #include "stage_data.h"
+
+typedef enum OFF_PATH_REASON_enum {
+  REASON_BTB_MISS,
+  REASON_MISPRED,
+  REASON_MISFETCH,
+  REASON_NO_TARGET,
+  REASON_NOT_IDENTIFIED,
+} Off_Path_Reason;
+
+typedef enum CONF_OFF_PATH_REASON_enum {
+  REASON_BTB_MISS_BP_TAKEN_CONF_0,
+  REASON_BTB_MISS_BP_TAKEN_CONF_1,
+  REASON_BTB_MISS_BP_TAKEN_CONF_2,
+  REASON_BTB_MISS_BP_TAKEN_CONF_3,
+  REASON_BTB_MISS_RATE,
+  REASON_CONF_THRESHOLD,
+  REASON_CONF_NOT_IDENTIFIED,
+} Conf_Off_Path_Reason;
+
 typedef struct FT FT;
 
 typedef struct decoupled_fe_iter decoupled_fe_iter;
@@ -102,6 +121,10 @@ uint64_t decoupled_fe_ftq_num_ops();
 uint64_t decoupled_fe_ftq_num_fts();
 void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num);
 uint64_t decoupled_fe_get_ftq_num();
+Op* decoupled_fe_get_cur_op();
+uns decoupled_fe_get_low_confidence_cnt();
+Off_Path_Reason decoupled_fe_get_off_path_reason();
+Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason();
 #ifdef __cplusplus
 }
 #endif

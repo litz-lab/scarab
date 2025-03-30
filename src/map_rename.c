@@ -610,6 +610,7 @@ void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_ta
     entry->reg_type = reg_type;
     entry->reg_table_type = reg_table_type;
     entry->ops->clear(entry);
+    entry->next_free = NULL;
     reg_table->free_list->ops->free(reg_table->free_list, entry);
   }
 

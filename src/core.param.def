@@ -318,3 +318,15 @@ DEF_PARAM(dcache_miss_rate, DCACHE_MISS_RATE, uns, uns, 10, )
 DEF_PARAM(l1_miss_rate, L1_MISS_RATE, uns, uns, 10, )
 
 DEF_PARAM(memtrace_buf_size, MEMTRACE_BUF_SIZE, uns, uns, 0, )
+
+DEF_PARAM(perfect_confidence, PERFECT_CONFIDENCE, Flag, Flag, FALSE, )
+DEF_PARAM(confidence_enable, CONFIDENCE_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(conf_off_path_threshold, CONF_OFF_PATH_THRESHOLD, uns, uns, 15, )
+DEF_PARAM(conf_off_path_inc, CONF_OFF_PATH_INC, uns, uns, 5, )
+
+DEF_PARAM(conf_btb_miss_bp_taken, CONF_BTB_MISS_BP_TAKEN, Flag, Flag, TRUE, )
+DEF_PARAM(conf_btb_miss_bp_taken_threshold, CONF_BTB_MISS_BP_TAKEN_THRESHOLD, int, int, 0, )
+DEF_PARAM(conf_btb_miss_rate_cycles_threshold, CONF_BTB_MISS_RATE_CYCLES_THRESHOLD, float, float, 1.0, )
+
+DEF_PARAM(conf_btb_miss_sample_rate, CONF_BTB_MISS_SAMPLE_RATE, uns, uns, 100000, )
+DEF_PARAM(conf_btb_miss_rate_weight, CONF_BTB_MISS_RATE_WEIGHT, uns, uns, 200, )

@@ -20,42 +20,25 @@
  */
 
 /***************************************************************************************
- * File         : fdip_conf.hpp
+ * File         : conf.hpp
  * Author       : Surim Oh <soh31@ucsc.edu> and Naomi Rehman <narehman@ucsc.edu>
  * Date         : 10/31/2024
  * Description  :
  ***************************************************************************************/
 
-#ifndef __FDIP_CONF_H__
-#define __FDIP_CONF_H__
+#ifndef __CONF_H__
+#define __CONF_H__
 
-#include "prefetcher/fdip.h"
+#include "decoupled_frontend.h"
 
-typedef enum OFF_PATH_REASON_enum {
-  REASON_BTB_MISS,
-  REASON_MISPRED,
-  REASON_MISFETCH,
-  REASON_NO_TARGET,
-} Off_Path_Reason;
-
-typedef enum CONF_OFF_PATH_REASON_enum {
-  REASON_BTB_MISS_BP_TAKEN_CONF_0,
-  REASON_BTB_MISS_BP_TAKEN_CONF_1,
-  REASON_BTB_MISS_BP_TAKEN_CONF_2,
-  REASON_BTB_MISS_BP_TAKEN_CONF_3,
-  REASON_BTB_MISS_RATE,
-  REASON_INV_CONF_INC,
-} Conf_Off_Path_Reason;
-
-// metadata for fdip confidence
-class FDIP_Confidence_Info {
+// metadata for confidence
+class Confidence_Info {
  public:
-  FDIP_Confidence_Info(uns _proc_id)
+  Confidence_Info(uns _proc_id)
       : proc_id(_proc_id),
         prev_op(nullptr),
-        fdip_off_path_event(FALSE),
-        fdip_on_conf_off_event(FALSE),
-        fdip_off_conf_on_event(FALSE),
+        off_path_reason(REASON_NOT_IDENTIFIED),
+        conf_off_path_reason(REASON_CONF_NOT_IDENTIFIED),
         num_conf_0_branches(0),
         num_conf_1_branches(0),
         num_conf_2_branches(0),
@@ -70,18 +53,14 @@ class FDIP_Confidence_Info {
         num_cf_sys(0),
         num_BTB_misses(0),
         num_op_dist_incs(0) {}
+  void update(Op* op, Flag conf_off_path, Conf_Off_Path_Reason new_reson);
   void recover();
-  void log_stats_bp_conf_on();
-  void log_stats_bp_conf_off();
 
  private:
+  void inc_br_conf_counters(int conf);
+  void inc_cf_type_counters(Cf_Type cf_type);
   uns proc_id;
   Op* prev_op;
-
-  // probably only need one of these lads
-  Flag fdip_off_path_event;
-  Flag fdip_on_conf_off_event;
-  Flag fdip_off_conf_on_event;
 
   Off_Path_Reason off_path_reason;
   Conf_Off_Path_Reason conf_off_path_reason;
@@ -102,32 +81,37 @@ class FDIP_Confidence_Info {
 
   Counter num_BTB_misses;
   Counter num_op_dist_incs;
-  friend class FDIP_Conf;
+  friend class Conf;
 };
 
-class FDIP_Conf {
+class Conf {
  public:
-  FDIP_Conf(uns _proc_id)
-      : proc_id(_proc_id), cnt_btb_miss(0), btb_miss_rate(0.0), low_confidence_cnt(0), cf_op_distance(0.0) {
-    conf_info = new FDIP_Confidence_Info(_proc_id);
+  Conf(uns _proc_id)
+      : proc_id(_proc_id),
+        last_recover_cycle(0),
+        cnt_btb_miss(0),
+        btb_miss_rate(0.0),
+        low_confidence_cnt(0),
+        cf_op_distance(0.0) {
+    conf_info = new Confidence_Info(_proc_id);
   }
   uns get_low_confidence_cnt() { return low_confidence_cnt; }
   void recover();
   void cyc_reset();
-  void set_prev_op(Op* op, Flag off_path);
-  Flag get_off_path_event() { return conf_info->fdip_off_path_event; }
+  void set_prev_op(Op* op);
   void update(Op* op);
-  void log_stats_bp_conf();
-  void log_stats_bp_conf_emitted();
   void inc_cnt_btb_miss() { cnt_btb_miss++; }
+  Flag is_conf_off_path() { return low_confidence_cnt < CONF_OFF_PATH_THRESHOLD ? FALSE : TRUE; }
+  Off_Path_Reason get_off_path_reason() { return conf_info->off_path_reason; }
+  Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_info->conf_off_path_reason; }
 
  private:
   void default_conf_update(Op* op);
-  void btb_miss_bp_taken_conf_update(Op* op);
-  void inc_br_conf_counters(int conf);
-  void inc_cf_type_counters(Cf_Type cf_type);
+  void weight_update(Op* op, Conf_Off_Path_Reason& new_reason);
+  void btb_miss_bp_taken_update(Op* op, Conf_Off_Path_Reason& new_reason);
 
   uns proc_id;
+  Counter last_recover_cycle;
   /* global variables for BTB miss-based BP confidence */
   Counter cnt_btb_miss;
   double btb_miss_rate;
@@ -136,7 +120,7 @@ class FDIP_Conf {
   uns low_confidence_cnt;
   double cf_op_distance;
 
-  FDIP_Confidence_Info* conf_info;
+  Confidence_Info* conf_info;
 };
 
 #endif

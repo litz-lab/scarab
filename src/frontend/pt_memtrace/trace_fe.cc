@@ -181,6 +181,10 @@ void ext_trace_fetch_op(uns proc_id, Op *op) {
         auto find = pc_to_inst.find(addr);
         if (find == pc_to_inst.end()) {
           pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+        } else if (next_onpath_pi[proc_id].encoding_is_new) {
+          STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
+          pc_to_inst.erase(addr);
+          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         } else if (next_onpath_pi[proc_id].inst_binary_lsb != find->second.inst_binary_lsb ||
                    next_onpath_pi[proc_id].inst_binary_msb != find->second.inst_binary_msb) {
           DEBUG(proc_id, "Previously seen PC references new instruction addr:%lx inst_size:%i lsb:%lx msb:%lx\n ", addr,

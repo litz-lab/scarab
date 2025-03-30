@@ -55,4 +55,23 @@ void print_err_if_invalid(ctype_pin_inst* info, const xed_decoded_inst_t* ins);
 
 uint8_t is_ifetch_barrier(const xed_decoded_inst_t* ins);
 
+enum Reg_Array_Id {
+  SRC_REGS,
+  DST_REGS,
+  LD1_ADDR_REGS,
+  LD2_ADDR_REGS,
+  ST_ADDR_REGS,
+  NUM_REG_ARRAYS
+};
+void add_reg(ctype_pin_inst* info, Reg_Array_Id id, uint8_t reg);
+
+struct iclass_to_scarab {
+  int opcode;
+  int lane_width_bytes;
+  int num_simd_lanes;
+  MemHint mem_hint;
+};
+
+iclass_to_scarab iclass_to_scarab(xed_iclass_enum_t iclass);
+
 #endif  //__X86_DECODER_H__

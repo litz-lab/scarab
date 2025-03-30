@@ -40,22 +40,6 @@ typedef enum Reg_Id_struct {
 #include "gather_scatter_addresses.h"
 #include "pin/pin_lib/x86_decoder.h"
 
-struct iclass_to_scarab {
-  int     opcode;
-  int     lane_width_bytes;
-  int     num_simd_lanes;
-  MemHint mem_hint;
-};
-
-enum Reg_Array_Id {
-  SRC_REGS,
-  DST_REGS,
-  LD1_ADDR_REGS,
-  LD2_ADDR_REGS,
-  ST_ADDR_REGS,
-  NUM_REG_ARRAYS
-};
-
 struct Reg_Array_Info {
   size_t  array_offset;
   uint8_t ctype_pin_inst::*num;
@@ -80,12 +64,15 @@ static Reg_Array_Info reg_array_infos[NUM_REG_ARRAYS] = {
 // maps for translation from pin to scarab
 uint8_t reg_compress_map[(int)XED_REG_LAST + 1] = {0};  // Assuming REG_INV is 0
 // Assuming OP_INV is 0
-iclass_to_scarab iclass_to_scarab_map[XED_ICLASS_LAST] = {{0}};
+struct iclass_to_scarab iclass_to_scarab_map[XED_ICLASS_LAST] = {{0}};
 
+struct iclass_to_scarab iclass_to_scarab(xed_iclass_enum_t iclass) {
+  return iclass_to_scarab_map[iclass];
+}
 std::ostream* dec_err_ostream;
 
 /********************* Private Functions Prototypes ***************************/
-static void    add_reg(ctype_pin_inst* info, Reg_Array_Id id, uint8_t reg);
+
 static uint8_t reg_compress(xed_reg_enum_t pin_reg, ADDRINT ip);
 
 /**************************** Public Functions ********************************/
@@ -255,7 +242,7 @@ uint32_t add_dependency_info(ctype_pin_inst*           info,
 
 void fill_in_simd_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins,
                        uint32_t max_op_width) {
-  iclass_to_scarab iclass_info = iclass_to_scarab_map[XED_INS_Opcode(ins)];
+  struct iclass_to_scarab iclass_info = iclass_to_scarab_map[XED_INS_Opcode(ins)];
   if(info->op_type != OP_INV) {
     assert(max_op_width % 8 == 0);
     int lane_width_bytes = iclass_info.lane_width_bytes;
@@ -409,7 +396,7 @@ static compressed_reg_t reg_compress(xed_reg_enum_t pin_reg, ADDRINT ip) {
 }
 
 /*************************** Private Functions  *******************************/
-static void add_reg(ctype_pin_inst* info, Reg_Array_Id id, uint8_t reg) {
+void add_reg(ctype_pin_inst* info, Reg_Array_Id id, uint8_t reg) {
   if(reg == SCARAB_REG_INV)
     return;
   if(reg >= SCARAB_REG_CS && reg <= SCARAB_REG_RIP)

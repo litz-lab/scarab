@@ -32,7 +32,6 @@
 
 #undef ASSERT
 #undef UNUSED
-#include "globals/assert.h"
 
 #include "analyzer.h"
 #include "raw2trace.h"

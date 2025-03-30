@@ -32,11 +32,11 @@
 
 #undef ASSERT
 #undef UNUSED
+#include "globals/assert.h"
+
 #include "analyzer.h"
 #include "raw2trace.h"
 #include "raw2trace_directory.h"
-#include "globals/assert.h"
-
 
 class TraceReaderMemtrace : public TraceReader {
  public:

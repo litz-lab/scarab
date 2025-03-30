@@ -51,6 +51,7 @@ extern "C" {
 
 #define DR_DO_NOT_DEFINE_int64
 
+#include <iostream>
 #include <unordered_map>
 
 #include "frontend/pt_memtrace/memtrace_trace_reader_memtrace.h"
@@ -96,30 +97,54 @@ void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
   info->fetched_instruction = insi->fetched_instruction;
 
 #ifdef PRINT_INSTRUCTION_INFO
+
   std::cout << std::hex << info->instruction_addr << " Next " << info->instruction_next_addr << " size "
             << (uint32_t)info->size << " taken " << (uint32_t)info->actually_taken << " target " << info->branch_target
-            << " pid " << insi->pid << " tid " << insi->tid << " asm "
-            << std::string(xed_iclass_enum_t2str(xed_decoded_inst_get_iclass(insi->ins))) << " uid " << std::dec
-            << info->inst_uid << std::endl;
+            << " pid " << insi->pid << " tid " << insi->tid;
+  if (!insi->is_dr_ins) {
+    std::cout << " asm " << std::string(xed_iclass_enum_t2str(xed_decoded_inst_get_iclass(insi->ins)));
+  }
+  std::cout << " uid " << std::dec << info->inst_uid << std::endl;
 #endif
 
-  if (xed_decoded_inst_get_iclass(insi->ins) == XED_ICLASS_RET_FAR ||
-      xed_decoded_inst_get_iclass(insi->ins) == XED_ICLASS_RET_NEAR)
-    info->actually_taken = 1;
+  if (insi->is_dr_ins) {
+    assert(info->size);
+    // only one load/store
+    assert(!(insi->mem_is_rd[0] && insi->mem_is_rd[1]));
+    assert(!(insi->mem_is_wr[0] && insi->mem_is_wr[1]));
+    if (insi->mem_is_rd[0] || insi->mem_is_rd[1])
+      assert(info->num_ld);
+    if (insi->mem_is_wr[0] || insi->mem_is_wr[1])
+      assert(info->num_st);
 
-  for (uint8_t op = 0; op < xed_decoded_inst_number_of_memory_operands(insi->ins); op++) {
-    // predicated true ld/st are handled just as regular ld/st
-    if (xed_decoded_inst_mem_read(insi->ins, op) && !insi->mem_used[op]) {
-      // Handle predicated stores specially?
-      info->ld_vaddr[ld++] = insi->mem_addr[op];
-    } else if (xed_decoded_inst_mem_read(insi->ins, op)) {
-      info->ld_vaddr[ld++] = insi->mem_addr[op];
+    for (uint8_t op = 0; op < 2; op++) {
+      if (!insi->mem_used[op])
+        continue;
+      if (insi->mem_is_rd[op]) {
+        info->ld_vaddr[ld++] = insi->mem_addr[op];
+      } else if (insi->mem_is_wr[op]) {
+        info->st_vaddr[st++] = insi->mem_addr[op];
+      }
     }
-    if (xed_decoded_inst_mem_written(insi->ins, op) && !insi->mem_used[op]) {
-      // Handle predicated stores specially?
-      info->st_vaddr[st++] = insi->mem_addr[op];
-    } else if (xed_decoded_inst_mem_written(insi->ins, op)) {
-      info->st_vaddr[st++] = insi->mem_addr[op];
+  } else {
+    if (xed_decoded_inst_get_iclass(insi->ins) == XED_ICLASS_RET_FAR ||
+        xed_decoded_inst_get_iclass(insi->ins) == XED_ICLASS_RET_NEAR) {
+      info->actually_taken = 1;
+    }
+    for (uint8_t op = 0; op < xed_decoded_inst_number_of_memory_operands(insi->ins); op++) {
+      // predicated true ld/st are handled just as regular ld/st
+      if (xed_decoded_inst_mem_read(insi->ins, op) && !insi->mem_used[op]) {
+        // Handle predicated stores specially?
+        info->ld_vaddr[ld++] = insi->mem_addr[op];
+      } else if (xed_decoded_inst_mem_read(insi->ins, op)) {
+        info->ld_vaddr[ld++] = insi->mem_addr[op];
+      }
+      if (xed_decoded_inst_mem_written(insi->ins, op) && !insi->mem_used[op]) {
+        // Handle predicated stores specially?
+        info->st_vaddr[st++] = insi->mem_addr[op];
+      } else if (xed_decoded_inst_mem_written(insi->ins, op)) {
+        info->st_vaddr[st++] = insi->mem_addr[op];
+      }
     }
   }
 }
@@ -206,23 +231,30 @@ int memtrace_trace_read_internal(int proc_id, ctype_pin_inst* next_onpath_pi) {
         ins_id_fetched++;
       }
     } else {
+      std::cout << "Reached end of trace" << std::endl;
       return 0;  // end of trace
     }
   } while (insi->pid != prior_pid || insi->tid != prior_tid);
 
-  memset(next_onpath_pi, 0, sizeof(ctype_pin_inst));
-  fill_in_dynamic_info(next_onpath_pi, insi);
-  fill_in_basic_info(next_onpath_pi, insi->ins);
-  if (XED_INS_IsVgather(insi->ins) || XED_INS_IsVscatter(insi->ins)) {
-    xed_category_enum_t category = XED_INS_Category(insi->ins);
-    scatter_info_storage[insi->pc] = add_to_gather_scatter_info_storage(insi->pc, XED_INS_IsVgather(insi->ins),
-                                                                        XED_INS_IsVscatter(insi->ins), category);
+  if (insi->is_dr_ins) {
+    memcpy(next_onpath_pi, insi->info, sizeof(ctype_pin_inst));
+    // dr_ins ctype_pin_inst are already populated in memtrace_reader_memtrace
+    fill_in_dynamic_info(next_onpath_pi, insi);
+  } else {
+    memset(next_onpath_pi, 0, sizeof(ctype_pin_inst));
+    fill_in_dynamic_info(next_onpath_pi, insi);
+    fill_in_basic_info(next_onpath_pi, insi->ins);
+    if (XED_INS_IsVgather(insi->ins) || XED_INS_IsVscatter(insi->ins)) {
+      xed_category_enum_t category = XED_INS_Category(insi->ins);
+      scatter_info_storage[insi->pc] = add_to_gather_scatter_info_storage(insi->pc, XED_INS_IsVgather(insi->ins),
+                                                                          XED_INS_IsVscatter(insi->ins), category);
+    }
+    uint32_t max_op_width = add_dependency_info(next_onpath_pi, insi->ins);
+    fill_in_simd_info(next_onpath_pi, insi->ins, max_op_width);
+    apply_x87_bug_workaround(next_onpath_pi, insi->ins);
+    fill_in_cf_info(next_onpath_pi, insi->ins);
+    print_err_if_invalid(next_onpath_pi, insi->ins);
   }
-  uint32_t max_op_width = add_dependency_info(next_onpath_pi, insi->ins);
-  fill_in_simd_info(next_onpath_pi, insi->ins, max_op_width);
-  apply_x87_bug_workaround(next_onpath_pi, insi->ins);
-  fill_in_cf_info(next_onpath_pi, insi->ins);
-  print_err_if_invalid(next_onpath_pi, insi->ins);
 
   if (next_onpath_pi->scarab_marker_roi_begin == true) {
     assert(!roi_dump_began);
@@ -240,7 +272,7 @@ int memtrace_trace_read_internal(int proc_id, ctype_pin_inst* next_onpath_pi) {
   }
 
   // End of ROI
-  if (roi(insi->ins))
+  if (!insi->is_dr_ins && roi(insi->ins))
     return 0;
 
   return 1;

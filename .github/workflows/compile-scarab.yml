@@ -72,8 +72,9 @@ jobs:
           ./run.sh --simulation top_simpoint
 
       - name: Extract cumulative IPC and post to summary
+        working-directory: simulations
         run: |
-          ipc=$(grep "Cumulative:" results.txt | sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
+          ipc=$(grep "Cumulative:" ./github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/core.stat.0.out | sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
           echo "### Cumulative IPC Result" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Cumulative IPC: ${ipc:-ERROR}" >> $GITHUB_STEP_SUMMARY

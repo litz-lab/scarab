@@ -1165,6 +1165,13 @@ void reg_renaming_scheme_early_release_spec_commit(Op *op) {
     ASSERT(op->proc_id,
            reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id != REG_TABLE_REG_ID_INVALID);
     entry->reg_state = REG_TABLE_ENTRY_STATE_COMMIT;
+
+    // make sure the redefined one is early freed
+    int prev_reg_id = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, prev_reg_id != REG_TABLE_REG_ID_INVALID);
+
+    struct reg_table_entry *prev_entry = &reg_table->entries[prev_reg_id];
+    ASSERT(op->proc_id, prev_entry->op_num == 0 || prev_entry->op_num > op->op_num);
   }
 }
 

@@ -899,6 +899,7 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   xed_ins = std::get<MAP_XED>(xed_tuple).get();
 
   xed_category_enum_t category = xed_decoded_inst_get_category(xed_ins);
+  _info->is_dr_ins = false;
   _info->pc = mt_ref_.instr.addr;
   _info->ins = xed_ins;
   _info->pid = mt_ref_.instr.pid;

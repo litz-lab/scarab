@@ -48,8 +48,9 @@ jobs:
         run: git clone https://github.com/litz-lab/scarab-infra.git
 
       - name: Checkout scarab PR code
-        working-directory: scarab_ll
         uses: actions/checkout@v4
+        with:
+          path: scarab_ll
 
       #- name: Mark Git repo as safe
       #  working-directory: scarab_ll

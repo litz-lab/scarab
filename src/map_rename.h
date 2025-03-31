@@ -31,6 +31,7 @@
 #define __MAP_RENAME_H__
 
 #include "op.h"
+#include "stage_data.h"
 
 /**************************************************************************************/
 /* Constexpr */
@@ -186,7 +187,7 @@ struct reg_table_ops {
 /* External Methods */
 
 void reg_file_init(void);                     // init the register file and its register map tables
-Flag reg_file_available(uns stage_op_count);  // check if there are enough register entries
+Flag reg_file_available(Stage_Data *sd);      // check if there are enough register entries
 void reg_file_rename(Op *op);                 // alloc destination registers for the operand
 Flag reg_file_issue(Op *op);                  // check the op before being issued into the FU
 void reg_file_execute(Op *op);                // consume the src registers and write back the dst registers

@@ -152,7 +152,8 @@ static inline int reg_file_get_reg_type(int reg_id) {
   return REG_FILE_REG_TYPE_OTHER;
 }
 
-static inline Flag reg_file_check_reg_num(uns reg_table_type, uns op_count) {
+// reserve the max number for each op
+static inline Flag reg_file_reserve_reg(uns reg_table_type, uns op_count) {
   for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
     if (reg_file[ii]->reg_table[reg_table_type]->free_list->reg_free_num < MAX_DESTS * op_count)
       return FALSE;
@@ -264,6 +265,31 @@ static inline void reg_file_init_reg_table(int self_reg_table_type, struct reg_t
   struct reg_table *self_reg_table = reg_file[reg_type]->reg_table[self_reg_table_type];
   self_reg_table->ops = reg_table_ops;
   self_reg_table->ops->init(self_reg_table, parent_reg_table, reg_table_size, reg_type, self_reg_table_type);
+}
+
+// scan the stage data and calculate the total required register number
+static inline Flag reg_file_check_reg_num(uns reg_table_type, Stage_Data *sd) {
+  ASSERT(map_data->proc_id, sd != NULL);
+  int reg_num[REG_FILE_REG_TYPE_NUM] = {0, 0};
+
+  for (uns ii = 0; ii < sd->op_count; ii++) {
+    Op *op = sd->ops[ii];
+    ASSERT(map_data->proc_id, op != NULL);
+
+    for (uns jj = 0; jj < op->table_info->num_dest_regs; jj++) {
+      int reg_type = reg_file_get_reg_type(op->inst_info->dests[jj].id);
+      if (reg_type == REG_FILE_REG_TYPE_OTHER)
+        continue;
+
+      ASSERT(op->proc_id, reg_type >= 0 && reg_type < REG_FILE_REG_TYPE_NUM);
+      reg_num[reg_type]++;
+
+      if (reg_num[reg_type] > reg_file[reg_type]->reg_table[reg_table_type]->free_list->reg_free_num)
+        return FALSE;
+    }
+  }
+
+  return TRUE;
 }
 
 // read the src by looking up the parent table, and record the reg id into the op
@@ -754,7 +780,7 @@ struct reg_table_ops reg_table_ops_arch = {
 /* Infinite Register Scheme */
 
 void reg_renaming_scheme_infinite_init(void);
-Flag reg_renaming_scheme_infinite_available(uns stage_op_count);
+Flag reg_renaming_scheme_infinite_available(Stage_Data *sd);
 void reg_renaming_scheme_infinite_rename(Op *op);
 Flag reg_renaming_scheme_infinite_issue(Op *op);
 void reg_renaming_scheme_infinite_execute(Op *op);
@@ -766,7 +792,7 @@ void reg_renaming_scheme_infinite_init(void) {
   return;
 }
 
-Flag reg_renaming_scheme_infinite_available(uns stage_op_count) {
+Flag reg_renaming_scheme_infinite_available(Stage_Data *sd) {
   return TRUE;
 }
 
@@ -798,7 +824,7 @@ void reg_renaming_scheme_infinite_commit(Op *op) {
 /* Realistic Register Scheme */
 
 void reg_renaming_scheme_realistic_init(void);
-Flag reg_renaming_scheme_realistic_available(uns stage_op_count);
+Flag reg_renaming_scheme_realistic_available(Stage_Data *sd);
 void reg_renaming_scheme_realistic_rename(Op *op);
 Flag reg_renaming_scheme_realistic_issue(Op *op);
 void reg_renaming_scheme_realistic_execute(Op *op);
@@ -832,8 +858,8 @@ void reg_renaming_scheme_realistic_init(void) {
 }
 
 // check if there are enough register entries
-Flag reg_renaming_scheme_realistic_available(uns stage_op_count) {
-  return reg_file_check_reg_num(REG_TABLE_TYPE_PHYSICAL, stage_op_count);
+Flag reg_renaming_scheme_realistic_available(Stage_Data *sd) {
+  return reg_file_check_reg_num(REG_TABLE_TYPE_PHYSICAL, sd);
 }
 
 // allocate physical registers of the op and write the ptag info into the op
@@ -900,7 +926,7 @@ void reg_renaming_scheme_realistic_commit(Op *op) {
 /* Virtual Physical Register Scheme */
 
 void reg_renaming_scheme_late_allocation_init(void);
-Flag reg_renaming_scheme_late_allocation_available(uns stage_op_count);
+Flag reg_renaming_scheme_late_allocation_available(Stage_Data *sd);
 void reg_renaming_scheme_late_allocation_rename(Op *op);
 Flag reg_renaming_scheme_late_allocation_issue(Op *op);
 void reg_renaming_scheme_late_allocation_execute(Op *op);
@@ -944,8 +970,8 @@ void reg_renaming_scheme_late_allocation_init(void) {
 }
 
 // check if there are enough registers in the virtual table instead of the physical registers
-Flag reg_renaming_scheme_late_allocation_available(uns stage_op_count) {
-  return reg_file_check_reg_num(REG_TABLE_TYPE_VIRTUAL, stage_op_count);
+Flag reg_renaming_scheme_late_allocation_available(Stage_Data *sd) {
+  return reg_file_check_reg_num(REG_TABLE_TYPE_VIRTUAL, sd);
 }
 
 // allocate only virtual registers and write the vtag info into the op
@@ -986,7 +1012,7 @@ Flag reg_renaming_scheme_late_allocation_issue(Op *op) {
   // do not need to reserve if the reserving head has allocated physical register
   if (reserve_op->dst_reg_id[0][REG_TABLE_TYPE_PHYSICAL] != REG_TABLE_REG_ID_INVALID) {
     ASSERT(0, reserve_op->op_num <= op->op_num);
-    return reg_file_check_reg_num(REG_TABLE_TYPE_PHYSICAL, 1);
+    return reg_file_reserve_reg(REG_TABLE_TYPE_PHYSICAL, 1);
   }
 
   // if the reserving head has not allocated but the current op is in the head, allow the head to allocate
@@ -996,7 +1022,7 @@ Flag reg_renaming_scheme_late_allocation_issue(Op *op) {
 
   // reserve registers for the head
   Flag if_available =
-      reg_file_check_reg_num(REG_TABLE_TYPE_PHYSICAL, REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM + 1);
+      reg_file_reserve_reg(REG_TABLE_TYPE_PHYSICAL, REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM + 1);
   if (!if_available)
     STAT_EVENT(0, MAP_STAGE_LATE_ALLOCATE_SEND_BACK);
   return if_available;
@@ -1311,7 +1337,7 @@ void reg_renaming_scheme_early_release_lastuse_commit(Op *op) {
 
 struct reg_renaming_scheme_func {
   void (*init)(void);
-  Flag (*available)(uns stage_op_count);
+  Flag (*available)(Stage_Data *sd);
   void (*rename)(Op *op);
   Flag (*issue)(Op *op);
   void (*execute)(Op *op);
@@ -1411,9 +1437,9 @@ void reg_file_init(void) {
   Procedure:
   --- check if there are enough register entries
 */
-Flag reg_file_available(uns stage_op_count) {
+Flag reg_file_available(Stage_Data *sd) {
   ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
-  return reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].available(stage_op_count);
+  return reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].available(sd);
 }
 
 /*

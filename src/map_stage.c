@@ -170,7 +170,7 @@ void debug_map_stage() {
 
 void update_map_stage(Stage_Data* src_sd) {
   /* stall if the renaming table is full */
-  if (!reg_file_available(STAGE_MAX_OP_COUNT)) {
+  if (!reg_file_available(src_sd)) {
     STAT_EVENT(map->proc_id, MAP_STAGE_STALL_ITSELF);
     return;
   }
@@ -219,16 +219,9 @@ void update_map_stage(Stage_Data* src_sd) {
 static inline void stage_process_op(Op* op) {
   ASSERT(map->proc_id, map->proc_id == td->proc_id);
 
-  /* add to sequential op list */
-  add_to_seq_op_list(td, op);
-  ASSERT(map->proc_id, td->seq_op_list.count <= op_pool_active_ops);
-
   /* map the op based on true dependencies & set information in op->oracle_info */
   thread_map_op(op);
   thread_map_mem_dep(op);
-
-  /* register renaming allocation */
-  reg_file_rename(op);
 
   /* setting wake up lists */
   add_to_wake_up_lists(op, &op->oracle_info, model->wake_hook);
@@ -271,6 +264,15 @@ static inline void map_stage_fetch_op(Stage_Data* src_sd) {
     if (op->off_path) {
       map_off_path = 1;
     }
+
+    /* add to sequential op list */
+    add_to_seq_op_list(td, op);
+    ASSERT(map->proc_id, td->seq_op_list.count <= op_pool_active_ops);
+
+    /* 1. register renaming allocation should be sycn with the register table availability checking
+     * 2. register renaming allocation should be after the journal as flushing misprediction register
+     *    is based on the sequential op list */
+    reg_file_rename(op);
   }
 
   // TODO: probably should count number of on-path ops.

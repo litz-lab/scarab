@@ -51,5 +51,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
-              body: "⚠️ clang-format check failed. Please format your code using clang-format before pushing."
+              body: "⚠️ clang-format check FAILED. Please fix by running 'git diff -U0  --relative HEAD^ | clang-format-diff -p1 -i'."
             });

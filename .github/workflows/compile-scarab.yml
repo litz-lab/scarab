@@ -38,12 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [get_tag]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Mark Git repo as safe
-        run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
-
       - name: Copy simpoint traces
         run: |
           curl -L -o traces_top_simpoint.tar.gz https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz
@@ -52,6 +46,14 @@ jobs:
 
       - name: Clone scarab-infra repo via SSH
         run: git clone https://github.com/litz-lab/scarab-infra.git
+
+      - name: Checkout scarab PR code
+        working-directory: scarab_ll
+        uses: actions/checkout@v4
+
+      #- name: Mark Git repo as safe
+      #  working-directory: scarab_ll
+      #  run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
 
       - name: Pull Scarab Docker image
         working-directory: scarab-infra

@@ -201,9 +201,8 @@ void trace_buf_init() {
         pt_trace_read(proc_id, &circ_buf[wrptr]);
         buf_map_insert();
       }
-    }
-    else if (FRONTEND == FE_MEMTRACE) {
-      for (uint i = 0; i <TRACE_BUF_SIZE; i++) {
+    } else if (FRONTEND == FE_MEMTRACE) {
+      for (uint i = 0; i < TRACE_BUF_SIZE; i++) {
         memtrace_trace_read(proc_id, &circ_buf[wrptr]);
         buf_map_insert();
       }
@@ -211,7 +210,7 @@ void trace_buf_init() {
   }
 }
 
-int trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
+int trace_read(int proc_id, ctype_pin_inst *next_onpath_pi) {
   if (!TRACE_BUF_SIZE) {
     if (FRONTEND == FE_PT)
       return pt_trace_read(proc_id, next_onpath_pi);

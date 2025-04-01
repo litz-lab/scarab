@@ -71,13 +71,9 @@ extern scatter_info_map scatter_info_storage;
 
 Flag roi_dump_began = FALSE;
 Counter roi_dump_ID = 0;
-extern uint64_t rdptr;
-extern uint64_t wrptr;
-extern std::vector<ctype_pin_inst> circ_buf;
 
 /**************************************************************************************/
 /* Private Functions */
-int memtrace_trace_read_internal(int proc_id, ctype_pin_inst* next_onpath_pi);
 
 void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
   uint8_t ld = 0;
@@ -144,18 +140,6 @@ int roi(const xed_decoded_inst_t* ins) {
 }
 
 int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
-  if (!TRACE_BUF_SIZE) {
-    return memtrace_trace_read_internal(proc_id, next_onpath_pi);
-  } else {
-    *next_onpath_pi = circ_buf[rdptr];
-    buf_map_remove();
-    int ret = memtrace_trace_read_internal(proc_id, &circ_buf[wrptr]);
-    buf_map_insert();
-    return ret;
-  }
-}
-
-int memtrace_trace_read_internal(int proc_id, ctype_pin_inst* next_onpath_pi) {
   InstInfo* insi;
 
   do {
@@ -280,15 +264,5 @@ void memtrace_setup(uns proc_id) {
                   << " instr." << std::endl;
     } while (ffwd(insi->ins));
     std::cout << "Exit fast forward " << inst_count_to_use << std::endl;
-  }
-
-  if (TRACE_BUF_SIZE) {
-    circ_buf.resize(TRACE_BUF_SIZE);
-    rdptr = 0;
-    wrptr = 0;
-    for (uint i = 0; i < TRACE_BUF_SIZE; i++) {
-      memtrace_trace_read_internal(proc_id, &circ_buf[wrptr]);
-      buf_map_insert();
-    }
   }
 }

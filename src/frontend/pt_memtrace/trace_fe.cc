@@ -188,6 +188,49 @@ void assert_ctype_pin_inst_same(uns proc_id, ctype_pin_inst inst_a, ctype_pin_in
   }
 }
 
+void trace_buf_init() {
+  if (!TRACE_BUF_SIZE)
+    return;
+
+  for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+    circ_buf.resize(TRACE_BUF_SIZE);
+    rdptr = 0;
+    wrptr = 0;
+    if (FRONTEND == FE_PT) {
+      for (uint i = 0; i < TRACE_BUF_SIZE; i++) {
+        pt_trace_read(proc_id, &circ_buf[wrptr]);
+        buf_map_insert();
+      }
+    }
+    else if (FRONTEND == FE_MEMTRACE) {
+      for (uint i = 0; i <TRACE_BUF_SIZE; i++) {
+        memtrace_trace_read(proc_id, &circ_buf[wrptr]);
+        buf_map_insert();
+      }
+    }
+  }
+}
+
+int trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
+  if (!TRACE_BUF_SIZE) {
+    if (FRONTEND == FE_PT)
+      return pt_trace_read(proc_id, next_onpath_pi);
+    else if (FRONTEND == FE_MEMTRACE)
+      return memtrace_trace_read(proc_id, next_onpath_pi);
+  }
+
+  ASSERT(0, TRACE_BUF_SIZE);
+  *next_onpath_pi = circ_buf[rdptr];
+  buf_map_remove();
+  int ret = 0;
+  if (FRONTEND == FE_PT)
+    ret = pt_trace_read(proc_id, &circ_buf[wrptr]);
+  else if (FRONTEND == FE_MEMTRACE)
+    ret = memtrace_trace_read(proc_id, &circ_buf[wrptr]);
+  buf_map_insert();
+  return ret;
+}
+
 void ext_trace_fetch_op(uns proc_id, Op *op) {
   if (uop_generator_get_bom(proc_id)) {
     if (!off_path_mode[proc_id]) {
@@ -202,10 +245,7 @@ void ext_trace_fetch_op(uns proc_id, Op *op) {
   if (uop_generator_get_eom(proc_id)) {
     if (!off_path_mode[proc_id]) {
       int success = false;
-      if (FRONTEND == FE_PT)
-        success = pt_trace_read(proc_id, &next_onpath_pi[proc_id]);
-      else if (FRONTEND == FE_MEMTRACE)
-        success = memtrace_trace_read(proc_id, &next_onpath_pi[proc_id]);
+      success = trace_read(proc_id, &next_onpath_pi[proc_id]);
       if (!success) {
         trace_read_done[proc_id] = TRUE;
         reached_exit[proc_id] = TRUE;
@@ -288,17 +328,14 @@ void ext_trace_init() {
   memset(next_offpath_pi, 0, sizeof(next_offpath_pi));
   memset(next_onpath_pi, 0, sizeof(next_onpath_pi));
 
-  if (FRONTEND == FE_PT) {
+  if (FRONTEND == FE_PT)
     pt_init();
-    for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-      pt_trace_read(proc_id, &next_onpath_pi[proc_id]);
-    }
-  } else if (FRONTEND == FE_MEMTRACE) {
+  else if (FRONTEND == FE_MEMTRACE)
     memtrace_init();
-    for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-      memtrace_trace_read(proc_id, &next_onpath_pi[proc_id]);
-    }
-  }
+
+  trace_buf_init();
+  for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++)
+    trace_read(proc_id, &next_onpath_pi[proc_id]);
 }
 
 void ext_trace_done() {
@@ -533,10 +570,7 @@ void ext_trace_extract_basic_block_vectors() {
     }
 
     // read the next instruction from the trace, which overwrites inst
-    if (FRONTEND == FE_PT)
-      success = pt_trace_read(proc_id, inst);
-    else if (FRONTEND == FE_MEMTRACE)
-      success = memtrace_trace_read(proc_id, inst);
+    success = trace_read(proc_id, inst);
 
     if (cur_bb.ins_list.back().is_repeat && !inst->is_repeat) {
       ASSERT(proc_id, cur_bb.ins_list.back().instruction_addr != inst->instruction_addr);

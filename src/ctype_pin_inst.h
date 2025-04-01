@@ -123,6 +123,7 @@ typedef struct ctype_pin_inst_struct {
   uint8_t is_sentinel : 1;
   uint8_t fake_inst : 1;
   uint8_t exit : 1;
+  uint8_t encoding_is_new : 1;
 
   Wrongpath_Nop_Mode_Reason fake_inst_reason;
   uint64_t instruction_next_addr;  // the original trace does not have this information

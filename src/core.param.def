@@ -317,7 +317,7 @@ DEF_PARAM(dumb_core, DUMB_CORE, uns, uns, 1, )
 DEF_PARAM(dcache_miss_rate, DCACHE_MISS_RATE, uns, uns, 10, )
 DEF_PARAM(l1_miss_rate, L1_MISS_RATE, uns, uns, 10, )
 
-DEF_PARAM(memtrace_buf_size, MEMTRACE_BUF_SIZE, uns, uns, 0, )
+DEF_PARAM(trace_buf_size, TRACE_BUF_SIZE, uns, uns, 0, )
 
 DEF_PARAM(perfect_confidence, PERFECT_CONFIDENCE, Flag, Flag, FALSE, )
 DEF_PARAM(confidence_enable, CONFIDENCE_ENABLE, Flag, Flag, FALSE, )

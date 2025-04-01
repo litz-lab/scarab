@@ -28,14 +28,23 @@
 #ifndef MEMTRACE_READER_MEMTRACE_H
 #define MEMTRACE_READER_MEMTRACE_H
 
+#include "globals/assert.h"
+
 #include "frontend/pt_memtrace/memtrace_trace_reader.h"
 
 #undef ASSERT
 #undef UNUSED
-
 #include "analyzer.h"
 #include "raw2trace.h"
 #include "raw2trace_directory.h"
+
+#define MAX_DRIO_OPNDS 4
+typedef struct drinst_opnd {
+  int num_srcs;
+  int num_dests;
+  opnd_t srcs[MAX_DRIO_OPNDS];
+  opnd_t dests[MAX_DRIO_OPNDS];
+} drinst_opnd;
 
 class TraceReaderMemtrace : public TraceReader {
  public:
@@ -52,6 +61,9 @@ class TraceReaderMemtrace : public TraceReader {
   static const char* parse_buildid_string(const char* src, OUT void** data);
   bool getNextInstruction__(InstInfo* _info, InstInfo* _prior);
   void processInst(InstInfo* _info);
+  void processDrIsaInst(InstInfo* _info, bool has_another_mem);
+  uint32_t add_dependency_info(ctype_pin_inst* info);
+  void fill_in_basic_info(ctype_pin_inst* info, instr_t* drinst, size_t size, dynamorio::drmemtrace::trace_type_t type);
   bool typeIsMem(dynamorio::drmemtrace::trace_type_t _type);
 
   std::unique_ptr<dynamorio::drmemtrace::module_mapper_t> module_mapper_;
@@ -59,6 +71,7 @@ class TraceReaderMemtrace : public TraceReader {
   void* dcontext_;
   unsigned int knob_verbose_;
   bool trace_has_encodings_;
+  bool is_dr_isa;
 
   enum class MTState {
     INST,
@@ -81,6 +94,7 @@ class TraceReaderMemtrace : public TraceReader {
   InstInfo mt_info_b_;
   bool mt_using_info_a_;
   uint64_t mt_warn_target_;
+  drinst_opnd drinst_opnd_;
 };
 
 #endif

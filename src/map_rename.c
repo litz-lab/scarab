@@ -130,6 +130,17 @@ static inline void reg_file_debug_print_op(Op *op, int state) {
   printf(">\n");
 }
 
+static inline void reg_file_debug_print_table(uns reg_table_type) {
+  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ii++) {
+    printf("\n");
+    printf("Table Type: %d; Reg Type: %d\n", reg_table_type, ii);
+    for (uns jj = 0; jj < reg_file[ii]->reg_table[reg_table_type]->size; jj++) {
+      struct reg_table_entry *entry = &reg_file[ii]->reg_table[reg_table_type]->entries[jj];
+      reg_file_debug_print_entry(entry, 0);
+    }
+  }
+}
+
 // only process general purpose and vector registers for the renaming allocation
 static inline int reg_file_get_reg_type(int reg_id) {
   if (reg_id >= REG_RAX && reg_id < REG_CS)
@@ -1154,6 +1165,70 @@ void reg_renaming_scheme_early_release_spec_commit(Op *op) {
     ASSERT(op->proc_id,
            reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id != REG_TABLE_REG_ID_INVALID);
     entry->reg_state = REG_TABLE_ENTRY_STATE_COMMIT;
+
+    // make sure the redefined one is early freed
+    int prev_reg_id = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, prev_reg_id != REG_TABLE_REG_ID_INVALID);
+
+    struct reg_table_entry *prev_entry = &reg_table->entries[prev_reg_id];
+    ASSERT(op->proc_id, prev_entry->op_num == 0 || prev_entry->op_num > op->op_num);
+  }
+}
+
+/**************************************************************************************/
+/* Non-Spec Early Release Register Scheme */
+
+/*
+ * In this mechanism, physical registers are freed once all the consumers execute if the redefining
+ * instruction becomes non-speculative. A counter is used to track the pending consumed.
+ *
+ * This ALGO will do the register early release if the following holds:
+ *    (1) the redefine-instruction of the producer needs to be precommitted
+ *    (2) the pending consumed count needs to be zero
+ */
+
+void reg_renaming_scheme_early_release_nonspec_precommit(Op *op);
+void reg_renaming_scheme_early_release_nonspec_execute(Op *op);
+
+void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
+  ASSERT(op->proc_id, !op->off_path);
+
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    int prev_ptag = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, prev_ptag != REG_TABLE_REG_ID_INVALID);
+
+    struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
+    prev_entry->redefined_precommit = TRUE;
+
+    // do register early release
+    if (prev_entry->num_consumers == prev_entry->consumed_count && prev_entry->redefined_precommit) {
+      reg_early_release_free(reg_table, prev_entry);
+    }
+  }
+}
+
+void reg_renaming_scheme_early_release_nonspec_execute(Op *op) {
+  reg_renaming_scheme_realistic_execute(op);
+
+  for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    int src_reg_id = op->src_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, src_reg_id != REG_TABLE_REG_ID_INVALID);
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    struct reg_table_entry *src_entry = &reg_table->entries[src_reg_id];
+
+    // do register early release
+    if (src_entry->num_consumers == src_entry->consumed_count && src_entry->redefined_precommit) {
+      reg_early_release_free(reg_table, src_entry);
+    }
   }
 }
 
@@ -1289,6 +1364,17 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .execute = reg_renaming_scheme_early_release_spec_execute,
     .recover = reg_renaming_scheme_realistic_recover,
     .precommit = reg_renaming_scheme_realistic_precommit,
+    .commit = reg_renaming_scheme_early_release_spec_commit
+  },
+  // REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC
+  {
+    .init = reg_renaming_scheme_realistic_init,
+    .available = reg_renaming_scheme_realistic_available,
+    .rename = reg_renaming_scheme_realistic_rename,
+    .issue = reg_renaming_scheme_realistic_issue,
+    .execute = reg_renaming_scheme_early_release_nonspec_execute,
+    .recover = reg_renaming_scheme_realistic_recover,
+    .precommit = reg_renaming_scheme_early_release_nonspec_precommit,
     .commit = reg_renaming_scheme_early_release_spec_commit
   },
   // REG_RENAMING_SCHEME_EARLY_RELEASE_LASTUSE

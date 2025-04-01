@@ -223,18 +223,16 @@ void pt_setup(uns proc_id) {
 
   if (FAST_FORWARD) {
     std::cout << "Enter fast forward " << pt_ins_id << std::endl;
-  }
 
-  while (!insi->valid || pt_ffwd(insi->ins)) {
-    insi = pt_trace_readers[proc_id]->nextInstruction();
-    pt_ins_id++;
-    if ((pt_ins_id % 10000000) == 0)
-      std::cout << "Fast forwarded " << pt_ins_id << " instructions." << std::endl;
-    if (pt_ins_id >= FAST_FORWARD_TRACE_INS)
-      break;
-  }
+    while (!insi->valid || pt_ffwd(insi->ins)) {
+      insi = pt_trace_readers[proc_id]->nextInstruction();
+      pt_ins_id++;
+      if ((pt_ins_id % 10000000) == 0)
+        std::cout << "Fast forwarded " << pt_ins_id << " instructions." << std::endl;
+      if (pt_ins_id >= FAST_FORWARD_TRACE_INS)
+        break;
+    }
 
-  if (FAST_FORWARD) {
     std::cout << "Exit fast forward " << pt_ins_id << std::endl;
   }
 

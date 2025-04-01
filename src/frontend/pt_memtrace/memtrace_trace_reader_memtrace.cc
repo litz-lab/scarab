@@ -366,9 +366,11 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
           }
         } else if (mt_ref_.instr.type == dynamorio::drmemtrace::TRACE_TYPE_INSTR_NO_FETCH) {
           // a repeated rep
-          bool is_rep = std::get<MAP_REP>(xed_map_.at(_prior->pc));
-          assert(is_rep && ((uint32_t)mt_ref_.instr.pid == _prior->pid) &&
-                 ((uint32_t)mt_ref_.instr.tid == _prior->tid) && (mt_ref_.instr.addr == _prior->pc));
+          if (!is_dr_isa) {  // impossible to check DR_ISA_REGDEPS for REP
+            bool is_rep = std::get<MAP_REP>(xed_map_.at(_prior->pc));
+            assert(is_rep && ((uint32_t)mt_ref_.instr.pid == _prior->pid) &&
+                   ((uint32_t)mt_ref_.instr.tid == _prior->tid) && (mt_ref_.instr.addr == _prior->pc));
+          }
           // do not need to re-process
           *_info = *_prior;
           // flag this instruction as non-fetched

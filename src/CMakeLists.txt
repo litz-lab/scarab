@@ -22,6 +22,8 @@ set(CMAKE_CXX_FLAGS_GPROF     "${CMAKE_CXX_FLAGS_SCARABOPT} -pg -g3 ${flags_enab
 set(CMAKE_C_FLAGS_DEBUG       "-O0 -g3 -DLINUX -DX86_64 -fsanitize=address -fsanitize-address-use-after-scope ${flags_enable_pt_memtrace}")
 set(CMAKE_CXX_FLAGS_DEBUG     "-O0 -g3 -DLINUX -DX86_64 -fsanitize=address -fsanitize-address-use-after-scope ${flags_enable_pt_memtrace}")
 
+# Turn off doc generation before adding the subdirectory
+set(BUILD_DOCS OFF CACHE BOOL "Disable DynamoRIO doc generation" FORCE)
 #build dependencies with default warn flags, otherwise dynamorio will not build
 add_subdirectory(deps)
 

@@ -6,5 +6,4 @@
 	url = https://github.com/intelxed/xed.git
 [submodule "src/deps/dynamorio"]
 	path = src/deps/dynamorio
-	url = https://github.com/kofyou/dynamorio.git
-	branch = scarab_dep
+	url = https://github.com/DynamoRIO/dynamorio.git

@@ -43,17 +43,23 @@ enum class CustomOp : uint8_t { NONE, PREFETCH_CODE };
 
 struct InstInfo {
   uint64_t                  pc;           // instruction address
-  const xed_decoded_inst_t* ins;          // XED info
+  union {
+    const xed_decoded_inst_t* ins;  // XED info
+    const ctype_pin_inst* info;
+  };
   uint64_t                  pid;          // process ID
   uint64_t                  tid;          // thread ID
   uint64_t                  target;       // branch target
   uint64_t                  static_target;// encoded branch target (not dynamic). Only non-zero when the information differs from what XED tells you.
   uint64_t                  mem_addr[2];  // memory addresses
   bool                      mem_used[2];  // mem address usage flags
+  bool mem_is_rd[2];                      // mem is load
+  bool mem_is_wr[2];                      // mem is store
   CustomOp                  custom_op;    // Special or non-x86 ISA instruction
   bool                      taken;        // branch taken
   bool unknown_type;  // No available decode info (presents a nop)
   bool valid;         // True until the end of the sequence
+  bool is_dr_ins;     // True if the ins is of type DR_ISA_REGDEPS
 
   // used by MEMTRACE frontend to flag the last inst from the trace
   bool last_inst_from_trace;

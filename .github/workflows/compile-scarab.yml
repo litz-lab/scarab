@@ -18,14 +18,14 @@ jobs:
           SHORT_SHA=$(echo "$LATEST_SHA" | cut -c1-7)
           echo "tag=$SHORT_SHA" >> $GITHUB_OUTPUT
 
-  build:
+  build-opt:
     runs-on: ubuntu-latest
     needs: get_tag
     container:
       image: ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Mark Git repo as safe
         run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
@@ -33,6 +33,72 @@ jobs:
       - name: Build Scarab Opt
         working-directory: src
         run: make opt -j
+
+  run-scarab:
+    runs-on: ubuntu-latest
+    needs: [get_tag]
+    steps:
+      - name: Copy simpoint traces
+        run: |
+          curl -L -o traces_top_simpoint.tar.gz https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz
+          tar -xzf traces_top_simpoint.tar.gz
+          pwd
+
+      - name: Clone scarab-infra repo via SSH
+        run: git clone https://github.com/litz-lab/scarab-infra.git
+
+      - name: Checkout scarab PR code
+        uses: actions/checkout@v4
+        with:
+          path: scarab_ll
+
+      - name: Pull Scarab Docker image
+        working-directory: scarab-infra
+        run: |
+          docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
+          docker tag ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }} allbench_traces:${{ needs.get_tag.outputs.tag }}
+
+      - name: Run Scarab simulation
+        working-directory: scarab-infra
+        run: |
+          set -e #force workflow to fail on script error
+          chmod +x run.sh
+          pip install -r requirements.txt
+          ls -alt /home/runner/work/scarab_ll/scarab_ll/
+          ./run.sh --simulation top_simpoint
+
+      - name: Extract cumulative IPC and post to summary
+        id: extract-ipc
+        working-directory: simulations
+        run: |
+          ipc=$(grep "Cumulative:" ./github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/core.stat.0.out | sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
+          echo "ipc=${ipc:-ERROR}" >> $GITHUB_OUTPUT
+
+      - name: Post IPC result to PR
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const ipc = "${{ steps.extract-ipc.outputs.ipc }}";
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: `📊 **Scarab Simulation Result**\n\nCumulative IPC: \`${ipc}\``
+            });
+
+  build-dbg:
+    runs-on: ubuntu-latest
+    needs: get_tag
+    if: github.event_name == 'pull_request'
+    container:
+      image: ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Mark Git repo as safe
+        run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
 
       - name: Build Scarab Dbg
         working-directory: src

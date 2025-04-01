@@ -572,11 +572,6 @@ uint32_t TraceReaderMemtrace::add_dependency_info(ctype_pin_inst* info, instr_t*
   assert(!info->num_ld2_addr_regs);
   assert(!info->num_st_addr_regs);
 
-
-
-
-
-
   /* Handle register sources. The Google traces do not contain info about
      whether operands are memory operands or regular register ops. We do some
      guessing, ie. assign one source register to each memory operand. It should not matter

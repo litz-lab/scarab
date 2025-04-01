@@ -51,8 +51,6 @@ extern "C" {
 
 void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst);
 Flag buf_map_find(uns64 line_addr);
-void buf_map_insert();
-void buf_map_remove();
 
 /* Implementing the frontend interface */
 Addr ext_trace_next_fetch_addr(uns proc_id);

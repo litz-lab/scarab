@@ -154,7 +154,7 @@ static inline int reg_file_get_reg_type(int reg_id) {
 
 static inline Flag reg_file_check_reg_num(uns reg_table_type, uns op_count) {
   for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-    if (reg_file[ii]->reg_table[reg_table_type]->free_list->reg_free_num < REG_FILE_MAX_DESTS * op_count)
+    if (reg_file[ii]->reg_table[reg_table_type]->free_list->reg_free_num < REG_FILE_MAX_DESTS[ii] * op_count)
       return FALSE;
   }
   return TRUE;

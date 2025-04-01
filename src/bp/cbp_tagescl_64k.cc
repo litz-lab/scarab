@@ -1,6 +1,49 @@
 #include "cbp_tagescl_64k.h"
 
 TAGE64K::TAGE64K(void) {
+  memset(SizeTable, 0, sizeof(SizeTable));
+  memset(NOSKIP, 0, sizeof(NOSKIP));
+  memset(m, 0, sizeof(m));
+  memset(TB, 0, sizeof(TB));
+  memset(logg, 0, sizeof(logg));
+  memset(noskip_index, 0, sizeof(noskip_index));
+  memset(Bias, 0, sizeof(Bias));
+  memset(BiasSK, 0, sizeof(BiasSK));
+  memset(BiasBank, 0, sizeof(BiasBank));
+  memset(LGEHL, 0, sizeof(LGEHL));
+  memset(SGEHL, 0, sizeof(SGEHL));
+  memset(TGEHL, 0, sizeof(TGEHL));
+#ifdef IMLI
+  memset(IMGEHL, 0, sizeof(IMGEHL));
+  memset(IGEHL, 0, sizeof(IGEHL));
+  memset(IMHIST, 0, sizeof(IMHIST));
+  IMLIcount = 0;
+#endif
+  memset(L_shist, 0, sizeof(L_shist));
+  memset(S_slhist, 0, sizeof(S_slhist));
+  memset(T_slhist, 0, sizeof(T_slhist));
+  updatethreshold = 0;
+  memset(Pupdatethreshold, 0, sizeof(Pupdatethreshold));
+  memset(WL, 0, sizeof(WL));
+  memset(WS, 0, sizeof(WS));
+  memset(WT, 0, sizeof(WT));
+  memset(WI, 0, sizeof(WI));
+  memset(WIM, 0, sizeof(WIM));
+  memset(WB, 0, sizeof(WB));
+  FirstH = 0;
+  SecondH = 0;
+  WITHLOOP = 0;
+  LIB = 0;
+  LI = 0;
+  LTAG = 0;
+  memset(use_alt_on_na, 0, sizeof(use_alt_on_na));
+  TICK = 0;
+  branch_id = 0;
+  Seed = 0;
+  tage_component = 0;
+  tage_component_inter = 0;
+  tage_component_tage = 0;
+  tage_component_alt = 0;
   reinit();
   // #ifdef PRINTSIZE
   // predictorsize ();

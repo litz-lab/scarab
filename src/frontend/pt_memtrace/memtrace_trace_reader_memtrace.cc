@@ -46,6 +46,61 @@ typedef enum Reg_Id_struct {
 
 using namespace dynamorio::drmemtrace;
 
+const char* trace_type_to_string(dynamorio::drmemtrace::trace_type_t type) {
+  switch (type) {
+    case TRACE_TYPE_INSTR:
+      return "TRACE_TYPE_INSTR";
+    case TRACE_TYPE_INSTR_NO_FETCH:
+      return "TRACE_TYPE_INSTR_NO_FETCH";
+    case TRACE_TYPE_INSTR_INDIRECT_CALL:
+      return "TRACE_TYPE_INSTR_INDIRECT_CALL";
+    case TRACE_TYPE_INSTR_DIRECT_CALL:
+      return "TRACE_TYPE_INSTR_DIRECT_CALL";
+    case TRACE_TYPE_INSTR_RETURN:
+      return "TRACE_TYPE_INSTR_RETURN";
+    case TRACE_TYPE_INSTR_CONDITIONAL_JUMP:
+      return "TRACE_TYPE_INSTR_CONDITIONAL_JUMP";
+    case TRACE_TYPE_INSTR_DIRECT_JUMP:
+      return "TRACE_TYPE_INSTR_DIRECT_JUMP";
+    case TRACE_TYPE_INSTR_INDIRECT_JUMP:
+      return "TRACE_TYPE_INSTR_INDIRECT_JUMP";
+    case TRACE_TYPE_INSTR_SYSENTER:
+      return "TRACE_TYPE_INSTR_SYSENTER";
+    case TRACE_TYPE_INSTR_FLUSH:
+      return "TRACE_TYPE_INSTR_FLUSH";
+    case TRACE_TYPE_READ:
+      return "TRACE_TYPE_READ";
+    case TRACE_TYPE_WRITE:
+      return "TRACE_TYPE_WRITE";
+    case TRACE_TYPE_DATA_FLUSH:
+      return "TRACE_TYPE_DATA_FLUSH";
+    case TRACE_TYPE_PREFETCH:
+      return "TRACE_TYPE_PREFETCH";
+    case TRACE_TYPE_PREFETCHT0:
+      return "TRACE_TYPE_PREFETCHT0";
+    case TRACE_TYPE_PREFETCHT1:
+      return "TRACE_TYPE_PREFETCHT1";
+    case TRACE_TYPE_PREFETCHT2:
+      return "TRACE_TYPE_PREFETCHT2";
+    case TRACE_TYPE_PREFETCHNTA:
+      return "TRACE_TYPE_PREFETCHNTA";
+    case TRACE_TYPE_PREFETCH_READ:
+      return "TRACE_TYPE_PREFETCH_READ";
+    case TRACE_TYPE_PREFETCH_WRITE:
+      return "TRACE_TYPE_PREFETCH_WRITE";
+    case TRACE_TYPE_PREFETCH_INSTR:
+      return "TRACE_TYPE_PREFETCH_INSTR";
+    case TRACE_TYPE_HARDWARE_PREFETCH:
+      return "TRACE_TYPE_HARDWARE_PREFETCH";
+    case TRACE_TYPE_MARKER:
+      return "TRACE_TYPE_MARKER";
+    case TRACE_TYPE_THREAD_EXIT:
+      return "TRACE_TYPE_THREAD_EXIT";
+    default:
+      return "TRACE_TYPE_UNKNOWN";
+  }
+}
+
 typedef enum {
   DR_ISA_REGDEPS_0,
   DR_ISA_REGDEPS_1,
@@ -503,7 +558,7 @@ PATCH_REP:
   return complete;
 }
 
-uint32_t TraceReaderMemtrace::add_dependency_info(ctype_pin_inst* info) {
+uint32_t TraceReaderMemtrace::add_dependency_info(ctype_pin_inst* info, instr_t* drinst) {
   uint32_t max_op_width = 1;
   info->ld_size = 8;
   info->st_size = 8;
@@ -516,17 +571,15 @@ uint32_t TraceReaderMemtrace::add_dependency_info(ctype_pin_inst* info) {
   assert(!info->num_ld1_addr_regs);
   assert(!info->num_ld2_addr_regs);
   assert(!info->num_st_addr_regs);
-  static std::set<uint64_t> rega;
 
   /* Handle register sources. The Google traces do not contain info about
      whether operands are memory operands or regular register ops. We do some
      guessing, ie. assign one source register to each memory operand. It should not matter
      much as all source dependencis should be considered (regular and mem regs) */
-  for (int i = 0; i < drinst_opnd_.num_srcs; ++i) {
-    opnd_t src = drinst_opnd_.srcs[i];
+  for (int i = 0; i < instr_num_srcs(drinst); ++i) {
+    opnd_t src = instr_get_src(drinst, i);
     if (opnd_is_reg(src)) {
       reg_id_t dr_reg = opnd_get_reg(src);
-      rega.insert(dr_reg);
       uint8_t scarab_reg = dr_isa_to_scarab_reg(dr_reg);
 
       if (mem_regs == 0) {
@@ -551,15 +604,15 @@ uint32_t TraceReaderMemtrace::add_dependency_info(ctype_pin_inst* info) {
   }
 
   // Handle register destinations
-  for (int i = 0; i < drinst_opnd_.num_dests; ++i) {
-    opnd_t dst = drinst_opnd_.srcs[i];
+  for (int i = 0; i < instr_num_dsts(drinst); ++i) {
+    opnd_t dst = instr_get_dst(drinst, i);
     if (opnd_is_reg(dst)) {
       reg_id_t dr_reg = opnd_get_reg(dst);
-      rega.insert(dr_reg);
       uint8_t scarab_reg = dr_isa_to_scarab_reg(dr_reg);
       add_reg(info, DST_REGS, scarab_reg);
     }
   }
+
   return max_op_width;
 }
 
@@ -767,60 +820,6 @@ void TraceReaderMemtrace::fill_in_basic_info(ctype_pin_inst* info, instr_t* drin
 
 std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, ctype_pin_inst>> ctype_inst_map;
 
-const char* trace_type_to_string(dynamorio::drmemtrace::trace_type_t type) {
-  switch (type) {
-    case TRACE_TYPE_INSTR:
-      return "TRACE_TYPE_INSTR";
-    case TRACE_TYPE_INSTR_NO_FETCH:
-      return "TRACE_TYPE_INSTR_NO_FETCH";
-    case TRACE_TYPE_INSTR_INDIRECT_CALL:
-      return "TRACE_TYPE_INSTR_INDIRECT_CALL";
-    case TRACE_TYPE_INSTR_DIRECT_CALL:
-      return "TRACE_TYPE_INSTR_DIRECT_CALL";
-    case TRACE_TYPE_INSTR_RETURN:
-      return "TRACE_TYPE_INSTR_RETURN";
-    case TRACE_TYPE_INSTR_CONDITIONAL_JUMP:
-      return "TRACE_TYPE_INSTR_CONDITIONAL_JUMP";
-    case TRACE_TYPE_INSTR_DIRECT_JUMP:
-      return "TRACE_TYPE_INSTR_DIRECT_JUMP";
-    case TRACE_TYPE_INSTR_INDIRECT_JUMP:
-      return "TRACE_TYPE_INSTR_INDIRECT_JUMP";
-    case TRACE_TYPE_INSTR_SYSENTER:
-      return "TRACE_TYPE_INSTR_SYSENTER";
-    case TRACE_TYPE_INSTR_FLUSH:
-      return "TRACE_TYPE_INSTR_FLUSH";
-    case TRACE_TYPE_READ:
-      return "TRACE_TYPE_READ";
-    case TRACE_TYPE_WRITE:
-      return "TRACE_TYPE_WRITE";
-    case TRACE_TYPE_DATA_FLUSH:
-      return "TRACE_TYPE_DATA_FLUSH";
-    case TRACE_TYPE_PREFETCH:
-      return "TRACE_TYPE_PREFETCH";
-    case TRACE_TYPE_PREFETCHT0:
-      return "TRACE_TYPE_PREFETCHT0";
-    case TRACE_TYPE_PREFETCHT1:
-      return "TRACE_TYPE_PREFETCHT1";
-    case TRACE_TYPE_PREFETCHT2:
-      return "TRACE_TYPE_PREFETCHT2";
-    case TRACE_TYPE_PREFETCHNTA:
-      return "TRACE_TYPE_PREFETCHNTA";
-    case TRACE_TYPE_PREFETCH_READ:
-      return "TRACE_TYPE_PREFETCH_READ";
-    case TRACE_TYPE_PREFETCH_WRITE:
-      return "TRACE_TYPE_PREFETCH_WRITE";
-    case TRACE_TYPE_PREFETCH_INSTR:
-      return "TRACE_TYPE_PREFETCH_INSTR";
-    case TRACE_TYPE_HARDWARE_PREFETCH:
-      return "TRACE_TYPE_HARDWARE_PREFETCH";
-    case TRACE_TYPE_MARKER:
-      return "TRACE_TYPE_MARKER";
-    case TRACE_TYPE_THREAD_EXIT:
-      return "TRACE_TYPE_THREAD_EXIT";
-    default:
-      return "TRACE_TYPE_UNKNOWN";
-  }
-}
 
 void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem) {
   assert(mt_ref_.instr.size);
@@ -834,16 +833,8 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
     memset(&cinst, 0, sizeof(cinst));
     decode(dcontext_, mt_ref_.instr.encoding, &drinst);
 
-    drinst_opnd_.num_srcs = instr_num_srcs(&drinst);
-    drinst_opnd_.num_dests = instr_num_dsts(&drinst);
-    for (int i = 0; i < drinst_opnd_.num_srcs; i++) {
-      drinst_opnd_.srcs[i] = instr_get_src(&drinst, i);
-    }
-    for (int i = 0; i < drinst_opnd_.num_dests; i++) {
-      drinst_opnd_.dests[i] = instr_get_dst(&drinst, i);
-    }
     fill_in_basic_info(&cinst, &drinst, mt_ref_.instr.size, mt_ref_.instr.type);
-    add_dependency_info(&cinst);
+    add_dependency_info(&cinst, &drinst);
     ctype_inst_map.erase(mt_ref_.instr.addr);
     ctype_inst_map.emplace(mt_ref_.instr.addr,
                            std::make_tuple(cinst.num_ld + cinst.num_st, false, cinst.cf_type, false, cinst));

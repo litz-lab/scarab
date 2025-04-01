@@ -109,6 +109,14 @@ void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
     if (insi->mem_is_wr[0] || insi->mem_is_wr[1])
       assert(info->num_st);
 
+    // For REP instructions with count 0, need to reset num-ld/st, can only modify copy of info need to
+    if (!insi->mem_is_rd[0] && !insi->mem_is_rd[1]) {
+      info->num_ld = 0;
+    }
+    if (!insi->mem_is_wr[0] && !insi->mem_is_wr[1]) {
+      info->num_st = 0;
+    }
+
     for (uint8_t op = 0; op < 2; op++) {
       if (!insi->mem_used[op])
         continue;

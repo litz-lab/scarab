@@ -46,7 +46,6 @@ extern "C" {
 
 #include "bp/bp.h"
 #include "frontend/pt_memtrace/pt_fe.h"
-#include "frontend/pt_memtrace/trace_fe.h"
 #include "isa/isa.h"
 #include "pin/pin_lib/uop_generator.h"
 #include "pin/pin_lib/x86_decoder.h"

@@ -7,6 +7,8 @@ TAGE64K::TAGE64K(void) {
   memset(TB, 0, sizeof(TB));
   memset(logg, 0, sizeof(logg));
   memset(noskip_index, 0, sizeof(noskip_index));
+  Pstate.init();
+  Sstate.init();
   memset(Bias, 0, sizeof(Bias));
   memset(BiasSK, 0, sizeof(BiasSK));
   memset(BiasBank, 0, sizeof(BiasBank));

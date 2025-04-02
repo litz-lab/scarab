@@ -62,7 +62,7 @@ DEF_PARAM(  update_bp_off_path        , UPDATE_BP_OFF_PATH        , Flag    , Fl
 DEF_PARAM(  bp_update_at_retire       , BP_UPDATE_AT_RETIRE       , Flag    , Flag       , FALSE      ,        )
 
 // conditional branch predictor
-DEF_PARAM(  bp_mech                   , BP_MECH                   , uns     , bp_mech    , 0          ,        )
+DEF_PARAM(  bp_mech                   , BP_MECH                   , uns     , bp_mech    , TAGE64K_BP ,        )
 DEF_PARAM(  late_bp_mech              , LATE_BP_MECH              , uns     , bp_mech    , NUM_BP     ,        )
 DEF_PARAM(  late_bp_latency           , LATE_BP_LATENCY           , uns     , uns        , 5          ,        )
 DEF_PARAM(  hist_length               , HIST_LENGTH               , uns     , uns        , 16         ,        )
@@ -134,7 +134,7 @@ DEF_PARAM( knob_print_brinfo          , KNOB_PRINT_BRINFO          , Flag    , F
 DEF_PARAM( br_mispred_file            , BR_MISPRED_FILE            , char *  , string     , NULL       ,	)
 
 // 0: baseline 1: take checkpoint, 2: off-path spec_update 3: off-path prediction 4: update N at exec stage
-DEF_PARAM(  spec_level                , SPEC_LEVEL                   , uns   , uns      , 0     ,    )
+DEF_PARAM(  spec_level                , SPEC_LEVEL                   , uns   , uns      , 3     ,    )
 DEF_PARAM(  random_deterministic      , RANDOM_DETERMINISTIC         , Flag  , Flag     , TRUE  ,    )
 
 // toggle tage-sc-l 64kb components

@@ -245,6 +245,8 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
 
 void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
   uns ii;
+  if (SPEC_LEVEL)
+    ASSERT(proc_id, BP_MECH == TAGE64K_BP);
   ASSERT(bp_data->proc_id, bp_data);
   memset(bp_data, 0, sizeof(Bp_Data));
 

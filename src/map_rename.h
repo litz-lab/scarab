@@ -64,6 +64,9 @@ const static int REG_TABLE_TYPE_INVALID = -1;
 const static int REG_FILE_REG_TYPE_OTHER = -1;
 const static uns REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM = 1;
 
+// CPUID instruction will need 4 int register destination
+const static uns REG_FILE_MAX_DESTS[] = {4, 2};
+
 /**************************************************************************************/
 /* Types */
 

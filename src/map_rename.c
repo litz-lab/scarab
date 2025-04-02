@@ -154,7 +154,7 @@ static inline int reg_file_get_reg_type(int reg_id) {
 
 static inline Flag reg_file_check_reg_num(uns reg_table_type, uns op_count) {
   for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-    if (reg_file[ii]->reg_table[reg_table_type]->free_list->reg_free_num < MAX_DESTS * op_count)
+    if (reg_file[ii]->reg_table[reg_table_type]->free_list->reg_free_num < REG_FILE_MAX_DESTS[ii] * op_count)
       return FALSE;
   }
   return TRUE;
@@ -175,6 +175,7 @@ static inline void reg_file_extract_arch_reg_id(Op *op) {
   }
 
   // fill the destination register id
+  uns reg_dest_num[REG_FILE_REG_TYPE_NUM] = {0};
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
     ASSERT(op->proc_id, op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] == REG_TABLE_REG_ID_INVALID);
     int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
@@ -182,6 +183,11 @@ static inline void reg_file_extract_arch_reg_id(Op *op) {
       continue;
 
     op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] = op->inst_info->dests[ii].id;
+    reg_dest_num[reg_type]++;
+  }
+
+  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+    ASSERT(op->proc_id, reg_dest_num[ii] <= REG_FILE_MAX_DESTS[ii]);
   }
 }
 

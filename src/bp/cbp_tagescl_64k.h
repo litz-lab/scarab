@@ -223,6 +223,27 @@ struct PredictorStates {
   PredictorStates(const PredictorStates&) = delete;
   PredictorStates& operator=(const PredictorStates&) = delete;
 
+  void init() {
+    THRES = 0;
+    LSUM = 0;
+    predloop = false;
+    LHIT = 0;
+    LVALID = 0;
+    pred_taken = false;
+    tage_pred = false;
+    pred_inter = false;
+    LongestMatchPred = false;
+    HighConf = false;
+    MedConf = false;
+    LowConf = false;
+    HitBank = 0;
+    alttaken = false;
+    AltConf = false;
+    AltBank = 0;
+    on_path_ptghist = 0;
+    on_path_phist = 0;
+  }
+
   std::string to_string() const {
     std::stringstream ss;
     ss << "PState{" << "THRES=" << THRES << " LSUM=" << LSUM << " pred_taken=" << pred_taken
@@ -268,6 +289,17 @@ struct SpeculativeStatesBase {
   int8_t WP[1 << LOGSIZEUPS];  // PGEHL's weight table
   // LOOP
   cbp64_lentry ltable[1 << LOGL];  // entire loop table.
+
+  void init() {
+    ptghist = 0;
+    phist = 0;
+    memset(ch_i, 0, sizeof(ch_i));
+    memset(ch_t, 0, sizeof(ch_t));
+    GHIST = 0;
+    memset(WG, 0, sizeof(WG));
+    memset(WP, 0, sizeof(WP));
+    memset(ltable, 0, sizeof(ltable));
+  }
 
   std::string to_string() const {
     std::stringstream ss;
@@ -321,6 +353,13 @@ struct SpeculativeStates : public SpeculativeStatesBase {
   int8_t* PGEHL[PNB];  // GEHL component which exploits 'phist'
   // This is restored by ptghist so you don't need to snapshot it
   uint8_t ghist[HISTBUFFERLENGTH];  // S: 3000-bit global history buffer (circular buffer)
+
+  void init() {
+    SpeculativeStatesBase::init();
+    memset(GGEHL, 0, sizeof(GGEHL));
+    memset(PGEHL, 0, sizeof(PGEHL));
+    memset(ghist, 0, sizeof(ghist));
+  }
 };
 
 struct Checkpoint : public SpeculativeStatesBase {

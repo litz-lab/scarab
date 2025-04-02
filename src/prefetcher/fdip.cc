@@ -219,6 +219,8 @@ void alloc_mem_fdip(uns numCores) {
 }
 
 void init_fdip(uns proc_id) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(proc_id, WP_COLLECT_STATS);
 }
 

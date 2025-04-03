@@ -1978,10 +1978,10 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_KORD] = {OP_LOGIC, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPSIGNW] = {OP_CMOV, 2, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPHADDD] = {OP_IADD, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPDPBUSDS] = {OP_PIPELINED_MEDIUM, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPDPBUSDS] = {OP_PIPELINED_SLOW, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VHADDPS] = {OP_FADD, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VLDDQU] = {OP_MOV, -1, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPHMINPOSUW] = {OP_PIPELINED_MEDIUM, 2, 8, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPHMINPOSUW] = {OP_PIPELINED_SLOW, 2, 8, NONE};
   iclass_to_scarab_map[XED_ICLASS_PDEP] = {OP_NOTPIPELINED_SLOW, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VHADDPD] = {OP_FADD, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_PEXT] = {OP_NOTPIPELINED_SLOW, -1, 1, NONE};

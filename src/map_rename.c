@@ -194,6 +194,8 @@ static inline void reg_file_extract_arch_reg_id(Op *op) {
 static inline void reg_file_collect_rename_stat(Op *op) {
   ASSERT(op->proc_id, op != &invalid_op);
 
+  STAT_EVENT(map_data->proc_id, MAP_STAGE_RENAME_OP_ONPATH + op->off_path);
+
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
@@ -201,17 +203,11 @@ static inline void reg_file_collect_rename_stat(Op *op) {
 
     switch (reg_type) {
       case REG_FILE_REG_TYPE_GENERAL_PURPOSE:
-        if (op->off_path)
-          STAT_EVENT(map_data->proc_id, MAP_STAGE_INT_RENAME_OFFPATH);
-        else
-          STAT_EVENT(map_data->proc_id, MAP_STAGE_INT_RENAME_ONPATH);
+        STAT_EVENT(map_data->proc_id, MAP_STAGE_RENAME_INT_REG_ONPATH + op->off_path);
         break;
 
       case REG_FILE_REG_TYPE_VECTOR:
-        if (op->off_path)
-          STAT_EVENT(map_data->proc_id, MAP_STAGE_VEC_RENAME_OFFPATH);
-        else
-          STAT_EVENT(map_data->proc_id, MAP_STAGE_VEC_RENAME_ONPATH);
+        STAT_EVENT(map_data->proc_id, MAP_STAGE_RENAME_VEC_REG_ONPATH + op->off_path);
         break;
 
       default:

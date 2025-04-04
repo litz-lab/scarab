@@ -157,6 +157,7 @@ void bp_crs_realistic_push(Bp_Data* bp_data, Op* op) {
   ent->nos = bp_data->crs.tos;
   bp_data->crs.off_path[bp_data->crs.next] = op->off_path;
   bp_data->crs.tos = bp_data->crs.next;
+  ASSERT(bp_data->proc_id, bp_data->crs.tos < CRS_ENTRIES * 2);
   bp_data->crs.next = CIRC_INC2(bp_data->crs.next, CRS_ENTRIES);
 
   if (bp_data->crs.depth == CRS_ENTRIES) {

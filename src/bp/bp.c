@@ -271,8 +271,12 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
   /* init call-return stack */
   bp_data->crs.entries = (Crs_Entry*)malloc(sizeof(Crs_Entry) * CRS_ENTRIES * 2);
   bp_data->crs.off_path = (Flag*)malloc(sizeof(Flag) * CRS_ENTRIES);
-  for (ii = 0; ii < CRS_ENTRIES; ii++) {
+  for (ii = 0; ii < CRS_ENTRIES * 2; ii++) {
     bp_data->crs.entries[ii].addr = 0;
+    bp_data->crs.entries[ii].op_num = 0;
+    bp_data->crs.entries[ii].nos = 0;
+  }
+  for (ii = 0; ii < CRS_ENTRIES; ii++) {
     bp_data->crs.off_path[ii] = FALSE;
   }
 

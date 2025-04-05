@@ -1973,7 +1973,7 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_BZHI] = {OP_LOGIC, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPCMPUB] = {OP_LOGIC, 1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPTESTMB] = {OP_LOGIC, 1, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_RDSEED] = {OP_NOTPIPELINED_SLOW, -1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_RDSEED] = {OP_NOTPIPELINED_VERY_SLOW, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KORTESTD] = {OP_LOGIC, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KORD] = {OP_LOGIC, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPSIGNW] = {OP_CMOV, 2, -1, NONE};

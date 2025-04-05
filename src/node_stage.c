@@ -58,6 +58,7 @@
 #include "sim.h"
 #include "statistics.h"
 #include "thread.h"
+#include "xed-iclass-enum.h"
 
 /* Macros */
 
@@ -93,6 +94,8 @@ void collect_node_table_full_stats(Op* op);
 
 void node_precommit_update(void);
 void node_precommit_retire(Op* op);
+
+void node_fuse_op(Op* op);
 
 /**************************************************************************************/
 /* set_node_stage:*/
@@ -140,6 +143,7 @@ void reset_node_stage() {
   node->ret_stall_length = 0;
 
   node->node_precommit = NULL;
+  node->node_fusable = FALSE;
 }
 
 /**************************************************************************************/
@@ -236,7 +240,8 @@ void flush_window() {
 
     if (FLUSH_OP(op)) {
       DEBUG(node->proc_id, "Node flushing  op:%s\n", unsstr64(op->op_num));
-      flush_ops++;
+      if (!op->macro_fused)
+        flush_ops++;
       ASSERT(node->proc_id, op->op_num > bp_recovery_info->recovery_op_num);
       op->in_node_list = FALSE;
       *last = op->next_node;
@@ -253,7 +258,8 @@ void flush_window() {
         op->recovery_scheduled = FALSE;
       }
       DEBUG(node->proc_id, "Node keeping  op:%s node_id:%llu\n", unsstr64(op->op_num), op->node_id);
-      keep_ops++;
+      if (!op->macro_fused)
+        keep_ops++;
       last = &op->next_node;
       node->node_tail = op;
     }
@@ -454,7 +460,11 @@ void node_issue(Stage_Data* src_sd) {
     if (!node->next_op_into_rs)   /* if there are no ops waiting to enter RS */
       node->next_op_into_rs = op; /* this will be the first one */
 
-    node->node_count++;
+    // Jump uop after CMP or TEST will be fused into one uop
+    node_fuse_op(op);
+    if (!op->macro_fused)
+      node->node_count++;
+
     ASSERTM(node->proc_id, node->node_count <= NODE_TABLE_SIZE,
             "node_count: %d src_max_op_count: %d src_op_count: %d\n", node->node_count, src_sd->max_op_count,
             src_sd->op_count);
@@ -807,7 +817,10 @@ void node_retire() {
     else
       free_op(op);
 
-    node->node_count--;
+    // the fused op does not occupy the ROB entry
+    if (!op->macro_fused)
+      node->node_count--;
+
     ASSERT(node->proc_id, node->node_count >= 0);
   }
 
@@ -975,6 +988,11 @@ Flag op_not_ready_for_retire(Op* op) {
 
 Flag is_node_table_empty() {
   if (node->node_count == 0) {
+    if (node->node_head != NULL) {
+      ASSERT(node->proc_id, node->node_head->macro_fused);
+      return FALSE;
+    }
+
     ASSERT(node->proc_id, node->node_head == NULL);
     ASSERT(node->proc_id, node->node_tail == NULL);
     return TRUE;
@@ -1088,4 +1106,23 @@ void node_precommit_retire(Op* op) {
   if (node->node_precommit->op_num != op->op_num)
     return;
   node->node_precommit = NULL;
+}
+
+/* Marcro-Fusion op */
+void node_fuse_op(Op* op) {
+  uns16 op_code = op->inst_info->table_info->true_op_type;
+
+  if (op_code == XED_ICLASS_CMP || op_code == XED_ICLASS_TEST) {
+    node->node_fusable = TRUE;
+    return;
+  }
+
+  if (op_code >= XED_ICLASS_JB && op_code <= XED_ICLASS_JZ) {
+    if (node->node_fusable) {
+      op->macro_fused = TRUE;
+      STAT_EVENT(op->proc_id, OP_MACRO_FUSION_ONPATH + op->off_path);
+    }
+  }
+
+  node->node_fusable = FALSE;
 }

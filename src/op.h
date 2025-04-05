@@ -188,6 +188,7 @@ struct Op_struct {
   struct Op_struct* next_node;  // pointer to the next op in the node table
   Flag in_node_list;            // is the op in the node list?
   Flag precommitted;            // if the op is pre-commit in the ROB
+  Flag macro_fused;             // if the op should be fused with the previous op (CMP/TEST)
   Flag replay;                  // is the op waiting to replay?
   uns replay_count;             // number of times the op has replayed
   Flag dont_cause_replays;      // true if the op should not cause other ops to replay (like a correct value prediction)

@@ -143,7 +143,7 @@ void reset_node_stage() {
   node->ret_stall_length = 0;
 
   node->node_precommit = NULL;
-  node->node_fusable = FALSE;
+  node->prev_op_fusable = FALSE;
 }
 
 /**************************************************************************************/
@@ -1113,16 +1113,16 @@ void node_fuse_op(Op* op) {
   uns16 op_code = op->inst_info->table_info->true_op_type;
 
   if (op_code == XED_ICLASS_CMP || op_code == XED_ICLASS_TEST) {
-    node->node_fusable = TRUE;
+    node->prev_op_fusable = TRUE;
     return;
   }
 
   if (op_code >= XED_ICLASS_JB && op_code <= XED_ICLASS_JZ) {
-    if (node->node_fusable) {
+    if (node->prev_op_fusable) {
       op->macro_fused = TRUE;
       STAT_EVENT(op->proc_id, OP_MACRO_FUSION_ONPATH + op->off_path);
     }
   }
 
-  node->node_fusable = FALSE;
+  node->prev_op_fusable = FALSE;
 }

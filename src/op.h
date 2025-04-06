@@ -155,6 +155,7 @@ struct Op_struct {
   Counter fetch_cycle;   // cycle an individual instruction is fetched
   Counter bp_cycle;      // cycle a CF instruction accesses the branch predictor
   Counter map_cycle;     // cycle an individual instruction enters the map stage
+  Counter rename_cycle;  // cycle an individual instruction is renamed
   Counter issue_cycle;   // cycle an individual instruction is issued -- same as chkpt
   Counter rdy_cycle;     // cycle when the final source value is available to the op (only useful when vector is clear)
   Counter sched_cycle;   // cycle when the op is scheduled (arrives at the functional unit)

@@ -217,6 +217,14 @@ static inline void reg_file_collect_rename_stat(Op *op) {
   }
 }
 
+static inline void reg_file_collect_commit_stat(Op *op) {
+  ASSERT(op->proc_id, op != &invalid_op && !op->off_path);
+  ASSERT(op->proc_id, op->rename_cycle != MAX_CTR && op->precommit_cycle != MAX_CTR);
+
+  INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_OP_RENAME_TO_COMMIT, op->retire_cycle - op->rename_cycle);
+  INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_OP_PRECOMMIT_TO_COMMIT, op->retire_cycle - op->precommit_cycle);
+}
+
 static inline void reg_file_collect_entry_stat(struct reg_table_entry *entry) {
   if (entry->op_num == 0)
     return;
@@ -1458,6 +1466,8 @@ Flag reg_file_available(uns stage_op_count) {
 void reg_file_rename(Op *op) {
   ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].rename(op);
+
+  op->rename_cycle = cycle_count;
   reg_file_collect_rename_stat(op);
 }
 
@@ -1514,4 +1524,6 @@ void reg_file_precommit(Op *op) {
 void reg_file_commit(Op *op) {
   ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].commit(op);
+
+  reg_file_collect_commit_stat(op);
 }

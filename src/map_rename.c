@@ -143,7 +143,7 @@ static inline void reg_file_debug_print_table(uns reg_table_type) {
 
 // only process general purpose and vector registers for the renaming allocation
 static inline int reg_file_get_reg_type(int reg_id) {
-  if ((reg_id >= REG_RAX && reg_id < REG_CS) || (reg_id >= REG_TMP0 && reg_id < REG_TMP4) ||
+  if ((reg_id >= REG_RAX && reg_id < REG_CS) || (reg_id >= REG_TMP0 && reg_id <= REG_TMP4) ||
       (reg_id >= REG_ZPS && reg_id < REG_ZMM0))
     return REG_FILE_REG_TYPE_GENERAL_PURPOSE;
 

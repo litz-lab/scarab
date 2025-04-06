@@ -96,10 +96,10 @@ struct reg_table_entry {
   struct reg_table_entry_ops *ops;
 
   // lifecycle counter
-  Counter alloc_cycle;
-  Counter produce_cycle;
-  Counter last_consume_execute_cycle;
-  Counter last_consume_commit_cycle;
+  Counter allocated_cycle;
+  Counter produced_cycle;
+  Counter consumed_cycle;
+  Counter lastuse_committed_cycle;
 
   // consumer counter
   int num_consumers;   // the number of registered (at rename) consumers of a registers
@@ -109,8 +109,8 @@ struct reg_table_entry {
   Flag redefined_rename;     // indicate if it is overwritten by an instruction with the same arch id during renaming
   Flag redefined_precommit;  // indicate if the redefine-instruction is precommitted
 
-  Counter last_used_op_num;
-  Flag last_used_committed;
+  Counter lastuse_op_num;
+  Flag lastuse_committed;
 };
 
 struct reg_free_list {

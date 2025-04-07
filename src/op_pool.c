@@ -200,7 +200,6 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->fu_num = -1;
   op->issue_cycle = MAX_CTR;
   op->map_cycle = MAX_CTR;
-  op->rename_cycle = MAX_CTR;
   op->rdy_cycle = 1;
   op->sched_cycle = MAX_CTR;
   op->exec_cycle = MAX_CTR;

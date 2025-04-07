@@ -1069,7 +1069,8 @@ void node_precommit_update(void) {
     op = node->node_precommit;
 
   // scan the node table to update the precommit pointer
-  for (; op != NULL; op = op->next_node) {
+  uns precommit_count = 0;
+  for (; op != NULL && precommit_count < NODE_RET_WIDTH; op = op->next_node) {
     // wait until the results usable for branches
     if (op->table_info->cf_type && op->exec_cycle > cycle_count)
       return;
@@ -1085,6 +1086,7 @@ void node_precommit_update(void) {
     if (op->precommitted)
       continue;
 
+    precommit_count++;
     node->node_precommit = op;
     op->precommitted = TRUE;
     op->precommit_cycle = cycle_count;

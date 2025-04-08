@@ -1,11 +1,11 @@
-#include "default_conf.hpp"
+#include "weight_conf.hpp"
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
 void WeightConf::per_op_update(Op * op, Conf_Off_Path_Reason& new_reason) {
  if (cf_op_distance >= CONF_OFF_PATH_THRESHOLD) {
     low_confidence_cnt += CONF_OFF_PATH_INC + (double)CONF_BTB_MISS_RATE_WEIGHT * btb_miss_rate;
     cf_op_distance = 0.0;
-  } else {
+  } else if (!(op->table_info->cf_type)) {
     cf_op_distance += (1.0 + (double)CONF_BTB_MISS_RATE_WEIGHT * btb_miss_rate);
   }
 

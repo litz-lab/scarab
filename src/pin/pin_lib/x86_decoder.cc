@@ -1985,4 +1985,5 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_PDEP] = {OP_NOTPIPELINED_SLOW, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VHADDPD] = {OP_FADD, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_PEXT] = {OP_NOTPIPELINED_SLOW, -1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_PACKSSWB] = {OP_MOV, 1, -1, NONE};
 }

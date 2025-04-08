@@ -54,13 +54,13 @@
 #include "prefetcher/branch_misprediction_table.h"
 #include "prefetcher/fdip.h"
 
+#include "decoupled_frontend.h"
 #include "icache_stage.h"
 #include "model.h"
 #include "sim.h"
 #include "statistics.h"
 #include "thread.h"
 #include "uop_cache.h"
-#include "decoupled_frontend.h"
 
 /******************************************************************************/
 /* include the table of possible branch predictors */

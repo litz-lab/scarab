@@ -70,8 +70,8 @@ void Confidence_Info::update(Op* op, Flag conf_off_path, Conf_Off_Path_Reason ne
       num_BTB_misses += 1;
     inc_br_conf_counters(op->bp_confidence);
     inc_cf_type_counters(op->table_info->cf_type);
-    DEBUG(proc_id, "op->bp_confidence: %d, conf: %d, off_path: %d\n", op->bp_confidence,
-          decoupled_fe_get_conf(), op->off_path ? 1 : 0);
+    DEBUG(proc_id, "op->bp_confidence: %d, conf: %d, off_path: %d\n", op->bp_confidence, decoupled_fe_get_conf(),
+          op->off_path ? 1 : 0);
   }
 
   Flag dfe_off_path = op->off_path;
@@ -185,8 +185,7 @@ void Conf::update(Op* op, Flag last_in_ft) {
     if (conf_off_path)
       ASSERT(proc_id, decoupled_fe_is_off_path());
     update_state_perfect_conf(op);
-  }
-  else if (conf_info->off_path_reason == REASON_NOT_IDENTIFIED ||
+  } else if (conf_info->off_path_reason == REASON_NOT_IDENTIFIED ||
              conf_info->conf_off_path_reason ==
                  REASON_CONF_NOT_IDENTIFIED) {  // update until both real/confidence path go off
     per_op_update(op, new_reason);
@@ -202,8 +201,8 @@ void Conf::update(Op* op, Flag last_in_ft) {
   }
   op->conf_off_path = conf_off_path;
   if (conf_info->off_path_reason == REASON_NOT_IDENTIFIED ||
-    conf_info->conf_off_path_reason == REASON_CONF_NOT_IDENTIFIED)
-  conf_info->update(op, conf_off_path, new_reason);
+      conf_info->conf_off_path_reason == REASON_CONF_NOT_IDENTIFIED)
+    conf_info->update(op, conf_off_path, new_reason);
   set_prev_op(op);
 }
 

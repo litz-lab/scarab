@@ -63,7 +63,7 @@ class Decoupled_FE {
   void set_ftq_num(uint64_t set_ftq_ft_num) { ftq_ft_num = set_ftq_ft_num; }
   uint64_t get_ftq_num() { return ftq_ft_num; }
   Op* get_cur_op() { return cur_op; }
-  uns get_low_confidence_cnt() { return conf->get_low_confidence_cnt(); }
+  uns get_conf() { return conf->get_conf(); }
   Off_Path_Reason get_off_path_reason() { return conf->get_off_path_reason(); }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf->get_conf_off_path_reason(); }
 
@@ -193,8 +193,8 @@ Op* decoupled_fe_get_cur_op() {
   return dfe->get_cur_op();
 }
 
-uns decoupled_fe_get_low_confidence_cnt() {
-  return dfe->get_low_confidence_cnt();
+uns decoupled_fe_get_conf() {
+  return dfe->get_conf();
 }
 
 Off_Path_Reason decoupled_fe_get_off_path_reason() {
@@ -502,9 +502,13 @@ void Decoupled_FE::update() {
         conf->set_prev_op(cur_op);
 
       // update confidence
-      conf->update(op);
+      // FIXME
+      conf->update(op, false);
+      /*
       if (!is_conf_off_path() && conf->is_conf_off_path())
         set_conf_off_path();
+      */
+     conf_off_path = conf->is_conf_off_path();
     }
 
     cur_op = op;
@@ -639,9 +643,6 @@ void Decoupled_FE::update() {
       recovery_addr = 0;
     }
   }
-
-  if (CONFIDENCE_ENABLE)
-    conf->cyc_reset();
 }
 
 FT* Decoupled_FE::get_ft(uint64_t ft_pos) {

@@ -10,8 +10,7 @@ public:
         cnt_btb_miss(0),
         btb_miss_rate(0.0),
         low_confidence_cnt(0),
-        last_recover_cycle(0) {
-    }
+        last_recover_cycle(0) {}
     // update functions
     void per_op_update(Op * op, Conf_Off_Path_Reason& new_reason) override;
     void per_cf_op_update(Op * op, Conf_Off_Path_Reason& new_reason) override;

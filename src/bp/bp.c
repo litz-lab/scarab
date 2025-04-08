@@ -60,6 +60,7 @@
 #include "statistics.h"
 #include "thread.h"
 #include "uop_cache.h"
+#include "decoupled_frontend.h"
 
 /******************************************************************************/
 /* include the table of possible branch predictors */
@@ -993,6 +994,8 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
   if (op->oracle_info.misfetch || op->oracle_info.mispred) {
     INC_STAT_EVENT(op->proc_id, BP_MISP_PENALTY, op->exec_cycle - op->issue_cycle);
   }
+  if (CONFIDENCE_ENABLE)
+    decoupled_fe_conf_resovle_cf(op);
 }
 
 /******************************************************************************/

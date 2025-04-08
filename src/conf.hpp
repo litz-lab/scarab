@@ -33,7 +33,7 @@
 // Confidence mech API
 #include "conf_mech.hpp"
 // Implementations of the API
-#include "default_conf.hpp"
+#include "weight_conf.hpp"
 #include "btb_miss_bp_taken_conf.hpp"
 
 // metadata for confidence
@@ -99,7 +99,7 @@ class Conf {
     if (CONF_BTB_MISS_BP_TAKEN)
       conf_mech = new BTBMissBPTakenConf(_proc_id);
     else
-      conf_mech = new DefaultConf(_proc_id);
+      conf_mech = new WeightConf(_proc_id);
   }
   uns get_conf() { return conf_off_path; }
   void recover();

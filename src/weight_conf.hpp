@@ -3,16 +3,14 @@
 #include "decoupled_frontend.h"
 #include "conf_mech.hpp"
 
-class DefaultConf : public ConfMech {
+class WeightConf : public ConfMech {
 public:
-    DefaultConf(uns _proc_id) 
+    WeightConf(uns _proc_id) 
         : ConfMech(_proc_id),
         cnt_btb_miss(0),
         btb_miss_rate(0.0),
         low_confidence_cnt(0),
-        cf_op_distance(0.0) {
-        proc_id = _proc_id;
-    }
+        cf_op_distance(0.0) {}
     // update functions
     void per_op_update(Op * op, Conf_Off_Path_Reason& new_reason) override;
     void per_cf_op_update(Op * op, Conf_Off_Path_Reason& new_reason) override;
@@ -28,7 +26,6 @@ public:
     void resolve_cf(Op * op) override;
     
 private:
-    uns proc_id;
     /* global variables for BTB miss-based BP confidence */
     Counter cnt_btb_miss;
     double btb_miss_rate;

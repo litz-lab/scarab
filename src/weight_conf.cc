@@ -1,10 +1,7 @@
 #include "default_conf.hpp"
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
-void DefaultConf::per_op_update(Op * op, Conf_Off_Path_Reason& new_reason) {
-  if (!CONFIDENCE_ENABLE)
-    return;
-
+void WeightConf::per_op_update(Op * op, Conf_Off_Path_Reason& new_reason) {
  if (cf_op_distance >= CONF_OFF_PATH_THRESHOLD) {
     low_confidence_cnt += CONF_OFF_PATH_INC + (double)CONF_BTB_MISS_RATE_WEIGHT * btb_miss_rate;
     cf_op_distance = 0.0;
@@ -19,7 +16,7 @@ void DefaultConf::per_op_update(Op * op, Conf_Off_Path_Reason& new_reason) {
     cnt_btb_miss++;
 }
 
-void DefaultConf::per_cf_op_update(Op * op, Conf_Off_Path_Reason& new_reason) {
+void WeightConf::per_cf_op_update(Op * op, Conf_Off_Path_Reason& new_reason) {
     low_confidence_cnt +=
         3 - op->bp_confidence + (double)CONF_BTB_MISS_RATE_WEIGHT * btb_miss_rate;  // 3 is highest bp_confidence
     cf_op_distance = 0.0;
@@ -28,26 +25,26 @@ void DefaultConf::per_cf_op_update(Op * op, Conf_Off_Path_Reason& new_reason) {
         new_reason = REASON_CONF_THRESHOLD;
 }
 
-void DefaultConf::per_ft_update(Op * op, Conf_Off_Path_Reason& new_reason) {
+void WeightConf::per_ft_update(Op * op, Conf_Off_Path_Reason& new_reason) {
     return;
 }
 
-void DefaultConf::per_cycle_update(Op * op, Conf_Off_Path_Reason& new_reason) {
+void WeightConf::per_cycle_update(Op * op, Conf_Off_Path_Reason& new_reason) {
     if (cycle_count % CONF_BTB_MISS_SAMPLE_RATE == 0) {
         btb_miss_rate = (double)cnt_btb_miss / (double)CONF_BTB_MISS_SAMPLE_RATE;
         cnt_btb_miss = 0;
     }
 }
 
-void DefaultConf::update_state_perfect_conf(Op * op) {
+void WeightConf::update_state_perfect_conf(Op * op) {
     cf_op_distance = 0.0;
 }
 
-void DefaultConf::recover() {
+void WeightConf::recover() {
     low_confidence_cnt = 0;
     cf_op_distance = 0.0;
 }
 
-void DefaultConf::resolve_cf(Op * op) {
+void WeightConf::resolve_cf(Op * op) {
     return;
 }

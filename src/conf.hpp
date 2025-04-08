@@ -30,7 +30,9 @@
 #define __CONF_H__
 
 #include "decoupled_frontend.h"
+// Confidence mech API
 #include "conf_mech.hpp"
+// Implementations of the API
 #include "default_conf.hpp"
 #include "btb_miss_bp_taken_conf.hpp"
 
@@ -101,11 +103,9 @@ class Conf {
   }
   uns get_conf() { return conf_off_path; }
   void recover();
-  void cyc_reset();
   void set_prev_op(Op* op);
   void update(Op* op, Flag last_in_ft);
   void resolve_cf(Op* op) { conf_mech->resolve_cf(op); }
-  Flag is_conf_off_path() { return conf_off_path; }
   Off_Path_Reason get_off_path_reason() { return conf_info->off_path_reason; }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_info->conf_off_path_reason; }
 

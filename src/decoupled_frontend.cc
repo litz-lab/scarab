@@ -48,7 +48,6 @@ class Decoupled_FE {
  public:
   Decoupled_FE(uns _proc_id);
   int is_off_path() { return off_path; }
-  int is_conf_off_path() { return conf_off_path; }
   void recover();
   void update();
   FT* get_ft(uint64_t ft_pos);
@@ -66,6 +65,7 @@ class Decoupled_FE {
   uns get_conf() { return conf->get_conf(); }
   Off_Path_Reason get_off_path_reason() { return conf->get_off_path_reason(); }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf->get_conf_off_path_reason(); }
+  void conf_resolve_cf(Op * op) { conf->resolve_cf(op); }
 
  private:
   void init(uns proc_id);
@@ -112,10 +112,6 @@ void init_decoupled_fe(uns proc_id, const char*) {
 
 bool decoupled_fe_is_off_path() {
   return dfe->is_off_path();
-}
-
-bool decoupled_fe_is_conf_off_path() {
-  return dfe->is_conf_off_path();
 }
 
 void set_decoupled_fe(uns proc_id) {
@@ -203,6 +199,10 @@ Off_Path_Reason decoupled_fe_get_off_path_reason() {
 
 Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason() {
   return dfe->get_conf_off_path_reason();
+}
+
+void decoupled_fe_conf_resovle_cf(Op * op) {
+  dfe->conf_resolve_cf(op);
 }
 
 /* FT member functions */
@@ -496,11 +496,6 @@ void Decoupled_FE::update() {
     op->conf_off_path = conf_off_path;
 
     if (CONFIDENCE_ENABLE) {
-      // set previous op, only if on path or first off path instruction
-      if (cur_op && (cur_op->op_num != op->op_num) &&
-          (!(op->off_path) || (conf->get_off_path_reason() == REASON_NOT_IDENTIFIED)))
-        conf->set_prev_op(cur_op);
-
       // update confidence
       // FIXME
       conf->update(op, false);
@@ -508,7 +503,7 @@ void Decoupled_FE::update() {
       if (!is_conf_off_path() && conf->is_conf_off_path())
         set_conf_off_path();
       */
-     conf_off_path = conf->is_conf_off_path();
+     conf_off_path = conf->get_conf();
     }
 
     cur_op = op;

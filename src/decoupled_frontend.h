@@ -125,6 +125,7 @@ Op* decoupled_fe_get_cur_op();
 uns decoupled_fe_get_conf();
 Off_Path_Reason decoupled_fe_get_off_path_reason();
 Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason();
+void decoupled_fe_conf_resovle_cf(Op * op);
 #ifdef __cplusplus
 }
 #endif

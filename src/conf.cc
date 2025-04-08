@@ -4,16 +4,6 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
-// CONF API
-// UPDATE
-  // per op update
-  // per cf op update
-  // per ft update
-  // per cycle update
-// RECOVER
-// resolve cf op
-// signal back on-path
-
 /* Confidence_Info member functions */
 void Confidence_Info::inc_br_conf_counters(int conf) {
   switch (conf) {
@@ -179,13 +169,15 @@ void Conf::recover() {
   conf_info->recover();
 }
 
-void Conf::set_prev_op(Op* prev_op) {
-  conf_info->prev_op = prev_op;
+void Conf::set_prev_op(Op* op) {
+  conf_info->prev_op = op;
   DEBUG(proc_id, "Set prev_op off_path:%i, op_num:%llu, cf_type:%i\n", conf_info->prev_op->off_path,
         conf_info->prev_op->op_num, conf_info->prev_op->table_info->cf_type);
 }
 
 void Conf::update(Op* op, Flag last_in_ft) {
+  if (!CONFIDENCE_ENABLE)
+    return;
   Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
   if (PERFECT_CONFIDENCE) {
     if (decoupled_fe_is_off_path())
@@ -212,23 +204,14 @@ void Conf::update(Op* op, Flag last_in_ft) {
   if (conf_info->off_path_reason == REASON_NOT_IDENTIFIED ||
     conf_info->conf_off_path_reason == REASON_CONF_NOT_IDENTIFIED)
   conf_info->update(op, conf_off_path, new_reason);
+  set_prev_op(op);
 }
 
 void Conf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
-  if (!CONFIDENCE_ENABLE)
-    return;
-  if (conf_off_path)
-    return;
-
   conf_mech->per_op_update(op, new_reason);
 }
 
 void Conf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
-  if (!CONFIDENCE_ENABLE)
-    return;
-  if (conf_off_path)
-    return;
-  
   conf_mech->per_cf_op_update(op, new_reason);
 
   // log conf stats
@@ -245,18 +228,9 @@ void Conf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
 }
 
 void Conf::per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) {
-  if (!CONFIDENCE_ENABLE)
-    return;
-  if (conf_off_path)
-    return;
   conf_mech->per_ft_update(op, new_reason);
 }
 
 void Conf::per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason) {
-  if (!CONFIDENCE_ENABLE)
-    return;
-  if (conf_off_path)
-    return;
-
   conf_mech->per_cycle_update(op, new_reason);
 }

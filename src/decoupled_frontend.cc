@@ -495,17 +495,6 @@ void Decoupled_FE::update() {
     op->off_path = off_path;
     op->conf_off_path = conf_off_path;
 
-    if (CONFIDENCE_ENABLE) {
-      // update confidence
-      // FIXME
-      conf->update(op, false);
-      /*
-      if (!is_conf_off_path() && conf->is_conf_off_path())
-        set_conf_off_path();
-      */
-     conf_off_path = conf->get_conf();
-    }
-
     cur_op = op;
     DEBUG(proc_id, "Set cur_op off_path:%i, op_num:%llu, cf_type:%i\n", cur_op->off_path, cur_op->op_num,
           cur_op->table_info->cf_type);
@@ -586,6 +575,12 @@ void Decoupled_FE::update() {
 
       bytes_this_cycle += op->inst_info->trace_info.inst_size;
       cfs_taken_this_cycle += cf_taken || bar_fetch;
+    }
+
+    if (CONFIDENCE_ENABLE) {
+      // update confidence
+      conf->update(op, ft_ended_by != FT_NOT_ENDED);
+      conf_off_path = conf->get_conf();
     }
 
     current_ft_to_push.add_op(op, ft_ended_by);

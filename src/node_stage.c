@@ -382,7 +382,7 @@ void update_node_stage(Stage_Data* src_sd) {
   STAT_EVENT(node->proc_id, POWER_CYCLE);
 
   /* insert ops coming from the previous stage*/
-  node_issue(src_sd);
+  node_fill_rob(src_sd);
 
   /* update the precommit pointer in the ROB */
   node_precommit_update();
@@ -403,11 +403,10 @@ void update_node_stage(Stage_Data* src_sd) {
 }
 
 /**************************************************************************************/
-/* node_issue:This function takes ops from the map stage and allocates them into
- *    the node table. Note, this function does not place the Op in the RS, that
- * is done later.*/
+/* node_fill_rob: This function takes ops from the map stage and allocates them into the node table.
+ *    Note, this function does not place the Op in the RS, that is done later.*/
 
-void node_issue(Stage_Data* src_sd) {
+void node_fill_rob(Stage_Data* src_sd) {
   Flag on_path = FALSE;
   uns ii;
 
@@ -455,8 +454,6 @@ void node_issue(Stage_Data* src_sd) {
     op->in_node_list = TRUE;
     node->node_tail = op;
 
-    STAT_EVENT(node->proc_id, OP_ISSUED);
-
     if (!node->next_op_into_rs)   /* if there are no ops waiting to enter RS */
       node->next_op_into_rs = op; /* this will be the first one */
 
@@ -473,7 +470,7 @@ void node_issue(Stage_Data* src_sd) {
 
     DEBUG(node->proc_id, "Issuing the op op_num:%s off_path:%d\n", unsstr64(op->op_num), op->off_path);
 
-    op->state = OS_ISSUED;
+    op->state = OS_IN_ROB;
 
     /* always stop issuing after a synchronizing op */
     if (op->table_info->bar_type & BAR_ISSUE)
@@ -904,7 +901,7 @@ void node_fill_rs() {
     ASSERTM(node->proc_id, !rs->size || rs->rs_op_count < rs->size,
             "There must be at least one free space in selected RS!\n");
 
-    ASSERT(node->proc_id, op->state == OS_ISSUED);
+    ASSERT(node->proc_id, op->state == OS_IN_ROB);
     op->state = OS_IN_RS;
     op->rs_id = (Counter)rs_id;
     rs->rs_op_count++;
@@ -946,6 +943,7 @@ void node_handle_scheduled_ops() {
       op->in_rdy_list = FALSE;
       ASSERT(node->proc_id, node->rs[op->rs_id].rs_op_count > 0);
       node->rs[op->rs_id].rs_op_count--;
+      STAT_EVENT(node->proc_id, OP_ISSUED);
     } else {
       last = &op->next_rdy;
     }

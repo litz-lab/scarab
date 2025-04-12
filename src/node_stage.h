@@ -89,7 +89,7 @@ Flag is_node_stage_stalled(void);
 
 void node_sched_ops(void);
 void node_handle_scheduled_ops(void);
-void node_issue(Stage_Data*);
+void node_fill_rob(Stage_Data*);
 void node_fill_rs(void);
 void node_retire(void);
 void check_if_mem_blocked(void);

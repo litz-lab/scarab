@@ -53,7 +53,7 @@
 // clang-format off
 #define OP_STATE_LIST(elem)                                                                 \
     elem(FETCHED)      /* op has been fetched, awaiting issue */                            \
-    elem(ISSUED)       /* op has been issued into the node table (reorder buffer) */        \
+    elem(IN_ROB)       /* op is in the node table (reorder buffer) */                       \
     elem(IN_RS)        /* op is in the scheduling window (RS), waiting for its sources */   \
     elem(SLEEP)        /* for pipelined schedule: wake up NEXT cycle */                     \
     elem(WAIT_FWD)     /* op is waiting for forwarding to happen */                         \

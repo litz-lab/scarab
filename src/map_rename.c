@@ -67,7 +67,7 @@ void reg_table_entry_clear(struct reg_table_entry *entry);
 void reg_table_entry_read(struct reg_table_entry *entry, Op *op);
 void reg_table_entry_write(struct reg_table_entry *entry, Op *op, int parent_reg_id);
 void reg_table_entry_consume(struct reg_table_entry *entry, Op *op);
-void reg_table_entry_produce(struct reg_table_entry *entry);
+void reg_table_entry_produce(struct reg_table_entry *entry, Op *op);
 
 // register table operations
 void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size, int reg_type,
@@ -76,7 +76,7 @@ int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id);
 int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id);
 void reg_table_free(struct reg_table *reg_table, struct reg_table_entry *entry);
 void reg_table_consume(struct reg_table *reg_table, int reg_id, Op *op);
-void reg_table_produce(struct reg_table *reg_table, int self_reg_id);
+void reg_table_produce(struct reg_table *reg_table, int self_reg_id, Op *op);
 
 // special init func for the architectural table
 void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size,
@@ -372,7 +372,7 @@ static inline void reg_file_produce_dst(Op *op, int *reg_table_types, int reg_ta
       ASSERT(op->proc_id, reg_id != REG_TABLE_REG_ID_INVALID);
 
       struct reg_table *reg_table = reg_file[reg_type]->reg_table[table_type];
-      reg_table->ops->produce(reg_table, reg_id);
+      reg_table->ops->produce(reg_table, reg_id, op);
     }
   }
 }
@@ -614,8 +614,11 @@ void reg_table_entry_consume(struct reg_table_entry *entry, Op *op) {
 }
 
 /* update the register state to indicate the value is produced during execution*/
-void reg_table_entry_produce(struct reg_table_entry *entry) {
+void reg_table_entry_produce(struct reg_table_entry *entry, Op *op) {
   ASSERT(0, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
+  if (op->exec_count != 0)
+    return;
+
   entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
   entry->produced_cycle = cycle_count;
 }
@@ -732,11 +735,11 @@ void reg_table_consume(struct reg_table *reg_table, int reg_id, Op *op) {
 }
 
 /* update the register state to indicate the value is produced */
-void reg_table_produce(struct reg_table *reg_table, int self_reg_id) {
+void reg_table_produce(struct reg_table *reg_table, int self_reg_id, Op *op) {
   ASSERT(0, REG_RENAMING_SCHEME && self_reg_id != REG_TABLE_REG_ID_INVALID);
   struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
 
-  entry->ops->produce(entry);
+  entry->ops->produce(entry, op);
 }
 
 struct reg_table_ops reg_table_ops = {

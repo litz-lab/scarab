@@ -1,6 +1,7 @@
 #ifndef __BTB_MISS_BP_TAKEN_H__
 #define __BTB_MISS_BP_TAKEN_H__
 #include "decoupled_frontend.h"
+
 #include "confidence/conf.hpp"
 
 class BTBMissBPTakenConf : public ConfMech {

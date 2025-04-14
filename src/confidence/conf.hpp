@@ -50,7 +50,6 @@ class ConfMech {
   virtual void resolve_cf(Op* op) = 0;
 
   uns proc_id;
-
 };
 
 // metadata for confidence

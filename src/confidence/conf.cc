@@ -2,9 +2,8 @@
 
 // Implementations of the API
 #include "confidence/btb_miss_bp_taken_conf.hpp"
-#include "confidence/weight_conf.hpp"
-
 #include "confidence/conf.hpp"
+#include "confidence/weight_conf.hpp"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 

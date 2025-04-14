@@ -1,4 +1,5 @@
-#include "btb_miss_bp_taken_conf.hpp"
+#include "confidence/btb_miss_bp_taken_conf.hpp"
+
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
 void BTBMissBPTakenConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {

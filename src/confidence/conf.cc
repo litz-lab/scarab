@@ -1,8 +1,20 @@
-#include "conf.hpp"
-
 #include "prefetcher/pref.param.h"
 
+// Implementations of the API
+#include "confidence/btb_miss_bp_taken_conf.hpp"
+#include "confidence/weight_conf.hpp"
+
+#include "confidence/conf.hpp"
+
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
+
+Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false), last_cycle_count(0) {
+  conf_info = new Confidence_Info(_proc_id);
+  if (CONF_BTB_MISS_BP_TAKEN)
+    conf_mech = new BTBMissBPTakenConf(_proc_id);
+  else
+    conf_mech = new WeightConf(_proc_id);
+}
 
 /* Confidence_Info member functions */
 void Confidence_Info::inc_br_conf_counters(int conf) {

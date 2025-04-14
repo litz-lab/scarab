@@ -1,4 +1,5 @@
-#include "weight_conf.hpp"
+#include "confidence/weight_conf.hpp"
+
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
 void WeightConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {

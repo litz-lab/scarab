@@ -16,7 +16,7 @@
 #include "op_pool.h"
 #include "thread.h"
 
-#include "conf.hpp"
+#include "confidence/conf.hpp"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 

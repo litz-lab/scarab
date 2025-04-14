@@ -1,13 +1,12 @@
-#ifndef __DEFAULT_CONF_H__
-#define __DEFAULT_CONF_H__
+#ifndef __BTB_MISS_BP_TAKEN_H__
+#define __BTB_MISS_BP_TAKEN_H__
 #include "decoupled_frontend.h"
+#include "confidence/conf.hpp"
 
-#include "conf_mech.hpp"
-
-class WeightConf : public ConfMech {
+class BTBMissBPTakenConf : public ConfMech {
  public:
-  WeightConf(uns _proc_id)
-      : ConfMech(_proc_id), cnt_btb_miss(0), btb_miss_rate(0.0), low_confidence_cnt(0), cf_op_distance(0.0) {}
+  BTBMissBPTakenConf(uns _proc_id)
+      : ConfMech(_proc_id), cnt_btb_miss(0), btb_miss_rate(0.0), low_confidence_cnt(0), last_recover_cycle(0) {}
   // update functions
   void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
   void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
@@ -29,7 +28,7 @@ class WeightConf : public ConfMech {
 
   // confidence counter
   uns low_confidence_cnt;
-  double cf_op_distance;
+  Counter last_recover_cycle;
 };
 
-#endif  // __CONF_MECH_H__
+#endif  // __BTB_MISS_BP_TAKEN_H__

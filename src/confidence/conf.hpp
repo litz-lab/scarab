@@ -30,11 +30,28 @@
 #define __CONF_H__
 
 #include "decoupled_frontend.h"
-// Confidence mech API
-#include "conf_mech.hpp"
-// Implementations of the API
-#include "btb_miss_bp_taken_conf.hpp"
-#include "weight_conf.hpp"
+
+// Confidence Mechanism interface
+class ConfMech {
+ public:
+  ConfMech(uns _proc_id) : proc_id(_proc_id) {}
+  // update functions
+  virtual void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
+  virtual void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
+  virtual void per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
+  virtual void per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
+
+  virtual void update_state_perfect_conf(Op* op) = 0;
+
+  // recovery functions
+  virtual void recover() = 0;
+
+  // resolve cf
+  virtual void resolve_cf(Op* op) = 0;
+
+  uns proc_id;
+
+};
 
 // metadata for confidence
 class Confidence_Info {
@@ -91,13 +108,7 @@ class Confidence_Info {
 
 class Conf {
  public:
-  Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false), last_cycle_count(0) {
-    conf_info = new Confidence_Info(_proc_id);
-    if (CONF_BTB_MISS_BP_TAKEN)
-      conf_mech = new BTBMissBPTakenConf(_proc_id);
-    else
-      conf_mech = new WeightConf(_proc_id);
-  }
+  Conf(uns _proc_id);
   uns get_conf() { return conf_off_path; }
   void recover();
   void set_prev_op(Op* op);

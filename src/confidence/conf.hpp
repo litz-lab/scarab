@@ -32,9 +32,9 @@
 #include "decoupled_frontend.h"
 
 // Confidence Mechanism interface
-class ConfMech {
+class ConfMechBase {
  public:
-  ConfMech(uns _proc_id) : proc_id(_proc_id) {}
+  ConfMechBase(uns _proc_id) : proc_id(_proc_id) {}
   // update functions
   virtual void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
   virtual void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
@@ -123,7 +123,7 @@ class Conf {
   void per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason);
   void update_state_perfect_conf(Op* op) { conf_mech->update_state_perfect_conf(op); }
   // confidence mech object
-  ConfMech* conf_mech;
+  ConfMechBase* conf_mech;
 
   uns proc_id;
 

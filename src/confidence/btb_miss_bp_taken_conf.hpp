@@ -4,10 +4,10 @@
 
 #include "confidence/conf.hpp"
 
-class BTBMissBPTakenConf : public ConfMech {
+class BTBMissBPTakenConf : public ConfMechBase {
  public:
   BTBMissBPTakenConf(uns _proc_id)
-      : ConfMech(_proc_id), cnt_btb_miss(0), btb_miss_rate(0.0), low_confidence_cnt(0), last_recover_cycle(0) {}
+      : ConfMechBase(_proc_id), cnt_btb_miss(0), btb_miss_rate(0.0), low_confidence_cnt(0), last_recover_cycle(0) {}
   // update functions
   void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
   void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;

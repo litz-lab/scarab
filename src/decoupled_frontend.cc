@@ -489,7 +489,10 @@ void Decoupled_FE::update() {
     frontend_fetch_op(proc_id, op);
     op->op_num = dfe_op_count++;
     op->off_path = off_path;
-    op->conf_off_path = conf->get_conf();
+    if (CONFIDENCE_ENABLE)
+      op->conf_off_path = conf->get_conf();
+    else
+      op->conf_off_path = FALSE;
 
     cur_op = op;
     DEBUG(proc_id, "Set cur_op off_path:%i, op_num:%llu, cf_type:%i\n", cur_op->off_path, cur_op->op_num,

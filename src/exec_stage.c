@@ -70,10 +70,12 @@ int exec_off_path;
 /**************************************************************************************/
 /* Prototypes */
 
-static void init_op_type_delays();
-static void exec_stage_inc_power_stats(Op* op);
-static void exec_stage_dep_wakeup(Op* op);
-static void exec_stage_bp_resolve(Op* op);
+static inline void init_op_type_delays();
+static inline void exec_stage_inc_power_stats(Op* op);
+static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event);
+static inline Flag exec_stage_issue_available(Stage_Data* src_sd, int ii);
+static inline void exec_stage_dep_wakeup(Op* op);
+static inline void exec_stage_bp_resolve(Op* op);
 
 /**************************************************************************************/
 /* set_exec_stage: */
@@ -85,7 +87,7 @@ void set_exec_stage(Exec_Stage* new_exec) {
 /**************************************************************************************/
 // init_op_type_delays
 
-static void init_op_type_delays() {
+static inline void init_op_type_delays() {
   uns ii;
 
   if (UNIFORM_OP_DELAY) {
@@ -180,17 +182,9 @@ void debug_exec_stage() {
 /* exec_cycle: */
 
 void update_exec_stage(Stage_Data* src_sd) {
-  // An array corresponds to src_sd->ops.
-  // For each op, if its target FU is busy, one of the following must happen:
-  // 1. The op is NULL. No op scheduled for this FU.
-  // 2. The op is removed becase the FU is not yet ready.
-  // 3. The op is removed becase of a memory stall.
-  Flag src_op_assrtions[src_sd->max_op_count];
-  memset(src_op_assrtions, FALSE, src_sd->max_op_count);
-
   uns ii;
   ASSERT(exec->proc_id, exec->sd.op_count <= exec->sd.max_op_count);
-  // {{{ phase 1 - success/failure of latching and wake up of dependent ops
+
   if (!exec_off_path) {
     if (!exec->sd.op_count)
       STAT_EVENT(exec->proc_id, EXEC_STAGE_STARVED);
@@ -204,76 +198,27 @@ void update_exec_stage(Stage_Data* src_sd) {
       exec_off_path = 1;
   }
 
+  // {{{ phase 1 - success/failure of latching and wake up of dependent ops
   for (ii = 0; ii < src_sd->max_op_count; ii++) {
-    Func_Unit* fu = &exec->fus[ii];
+    // store the pointer as it may be cleared during fu checking
     Op* op = src_sd->ops[ii];
-    Op* fop = exec->sd.ops[ii];
 
-    if (!op) {
-      src_op_assrtions[ii] = TRUE;
-    }
-
-    // {{{ rejection/failure to latch cases
-    if (cycle_count < fu->avail_cycle || !reg_file_issue(op)) {
-      // fu not available, so nullify node stage entry to make instruction get scheduled again
-      if (op != NULL) {
-        op->delay_bit = 1;
-        src_sd->ops[ii] = NULL;
-        src_sd->op_count--;
-        STAT_EVENT(exec->proc_id, FU_UNAVAILABLE);
-        if (op->table_info->is_simd)
-          STAT_EVENT(exec->proc_id, FU_REJECTED_OP_INV_SIMD + op->table_info->op_type);
-        else
-          STAT_EVENT(exec->proc_id, FU_REJECTED_OP_INV_NOT_SIMD + op->table_info->op_type);
-        src_op_assrtions[ii] = TRUE;
-      }
+    if (!exec_stage_issue_available(src_sd, ii)) {
+      // the op will be removed from sd if the its issuing is not available
+      ASSERT(exec->proc_id, !src_sd->ops[ii]);
       continue;
     }
-    if (fop && fop->table_info->mem_type) {
-      if (fop->replay && fop->replay_cycle == cycle_count) {
-        // it's a simultaneous replay...need to kill it
-        exec->sd.ops[ii] = NULL;
-        exec->sd.op_count--;
-        ASSERT(exec->proc_id, exec->sd.op_count >= 0);
-        STAT_EVENT(exec->proc_id, FU_REPLAY);
-      } else {
-        // memory stall
-        if (op != NULL) {
-          op->delay_bit = 1;
-          src_sd->ops[ii] = NULL;
-          src_sd->op_count--;
-          STAT_EVENT(exec->proc_id, FU_MEM_UNAVAILABLE);
-          if (op->table_info->is_simd)
-            STAT_EVENT(exec->proc_id, FU_REJECTED_OP_INV_SIMD + op->table_info->op_type);
-          else
-            STAT_EVENT(exec->proc_id, FU_REJECTED_OP_INV_NOT_SIMD + op->table_info->op_type);
-          src_op_assrtions[ii] = TRUE;
-        }
-        continue;
-      }
-    } else {
-      // remove op currently in the fu
-      exec->sd.op_count -= exec->sd.ops[ii] != NULL;
-      ASSERT(exec->proc_id, exec->sd.op_count >= 0);
-      exec->sd.ops[ii] = NULL;
-    }
+
+    // increase the starved counters after fu checking
     if (!op) {
       STAT_EVENT(exec->proc_id, FU_STARVED);
       continue;
     }
-    // }}}
-
-    // if we get to here, then it means the op is going into the
-    // functional unit.  We need to perform wake-ups of all the
-    // dependent ops.  This is done before the actual latching of
-    // the ops into the execute stage in order to make sure ops
-    // flushed or replayed during the current cycle do not sneak
-    // into the execute stage because they happened to be
-    // processed before the op causing the recovery or replay.
 
     ASSERTM(exec->proc_id, OP_SRCS_RDY(op), "op_num:%s\n", unsstr64(op->op_num));
-    ASSERT(exec->proc_id, get_fu_type(op->table_info->op_type, op->table_info->is_simd) & fu->type);
+    ASSERT(exec->proc_id, get_fu_type(op->table_info->op_type, op->table_info->is_simd) & exec->fus[ii].type);
 
+    /* if we get to here, then it means the op is going into the functional unit. */
     op->sched_cycle = cycle_count;
     DEBUG(exec->proc_id, "op_num:%s fu_num:%d sched_cycle:%s off_path:%d\n", unsstr64(op->op_num), op->fu_num,
           unsstr64(op->sched_cycle), op->off_path);
@@ -281,7 +226,12 @@ void update_exec_stage(Stage_Data* src_sd) {
     // register value can be written back
     reg_file_execute(op);
 
-    // dependent instruction wakeup before the actual latching
+    /*
+     * We need to perform wake-ups of all the dependent ops.
+     * This is done before the actual latching of the ops into the execute stage,
+     * in order to make sure ops flushed or replayed during the current cycle do not sneak into the execute stage
+     * because they happened to be processed before the op causing the recovery or replay.
+     */
     exec_stage_dep_wakeup(op);
 
     // PMU stat counters update
@@ -300,11 +250,16 @@ void update_exec_stage(Stage_Data* src_sd) {
 
     UNUSED(exec_cycle);
 
+    // if there is still an op in the fu, the fu is still busy and there is nothing to latch
     if (fop) {
-      // For explanations, see top of the function
-      ASSERT(exec->proc_id, src_op_assrtions[ii]);
-      // if there is still an op in the fu, the fu is still busy and there is nothing to latch
+      /*
+       * For each op, if its target FU is busy, one of the following must happen:
+       * 1. The op is NULL. No op scheduled for this FU.
+       * 2. The op is removed becase the FU is not yet ready.
+       * 3. The op is removed becase of a memory stall.
+       */
       ASSERT(exec->proc_id, !op);
+
       STAT_EVENT(exec->proc_id, FU_BUSY_0 + ii);
       STAT_EVENT(exec->proc_id, FUS_BUSY_ON_PATH + fop->off_path);
       if (fop->table_info->mem_type) {
@@ -390,7 +345,7 @@ void update_exec_stage(Stage_Data* src_sd) {
 /**************************************************************************************/
 /* Inline Methods */
 
-static void exec_stage_inc_power_stats(Op* op) {
+static inline void exec_stage_inc_power_stats(Op* op) {
   STAT_EVENT(op->proc_id, POWER_ROB_READ);
   STAT_EVENT(op->proc_id, POWER_ROB_WRITE);
 
@@ -466,7 +421,7 @@ static void exec_stage_inc_power_stats(Op* op) {
   }
 }
 
-static void exec_stage_dep_wakeup(Op* op) {
+static inline void exec_stage_dep_wakeup(Op* op) {
   int latency = op->inst_info->latency;
   Counter exec_cycle = cycle_count + MAX2(latency, -latency);
 
@@ -491,7 +446,62 @@ static void exec_stage_dep_wakeup(Op* op) {
   // all other ops (loads) will be handled by the memory system
 }
 
-static void exec_stage_bp_resolve(Op* op) {
+static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event) {
+  Op* op = src_sd->ops[ii];
+
+  op->delay_bit = 1;
+  src_sd->ops[ii] = NULL;
+  src_sd->op_count--;
+
+  ASSERT(exec->proc_id, event == FU_UNAVAILABLE || FU_MEM_UNAVAILABLE);
+  STAT_EVENT(exec->proc_id, event);
+
+  int simd_stat_base = op->table_info->is_simd ? FU_REJECTED_OP_INV_SIMD : FU_REJECTED_OP_INV_NOT_SIMD;
+  STAT_EVENT(exec->proc_id, simd_stat_base + op->table_info->op_type);
+}
+
+static inline Flag exec_stage_issue_available(Stage_Data* src_sd, int ii) {
+  Func_Unit* fu = &exec->fus[ii];
+  Op* op = src_sd->ops[ii];
+
+  // if fu is not available, then nullify node stage entry to make instruction get scheduled again
+  if (cycle_count < fu->avail_cycle || !reg_file_issue(op)) { /* TODO: update event for reg_file_issue */
+    if (op != NULL) {
+      exec_stage_reject_op(src_sd, ii, FU_UNAVAILABLE);
+    }
+    return FALSE;
+  }
+
+  Op* fop = exec->sd.ops[ii];
+  if (!fop) {
+    return TRUE;
+  }
+
+  // remove non-mem op currently in the fu
+  if (!fop->table_info->mem_type) {
+    exec->sd.ops[ii] = NULL;
+    exec->sd.op_count--;
+    ASSERT(exec->proc_id, exec->sd.op_count >= 0);
+    return TRUE;
+  }
+
+  // need to kill it if it is a simultaneous replay
+  if (fop->replay && fop->replay_cycle == cycle_count) {
+    exec->sd.ops[ii] = NULL;
+    exec->sd.op_count--;
+    ASSERT(exec->proc_id, exec->sd.op_count >= 0);
+    STAT_EVENT(exec->proc_id, FU_REPLAY);
+    return TRUE;
+  }
+
+  // memory stall
+  if (op != NULL) {
+    exec_stage_reject_op(src_sd, ii, FU_MEM_UNAVAILABLE);
+  }
+  return FALSE;
+}
+
+static inline void exec_stage_bp_resolve(Op* op) {
   if (!BP_UPDATE_AT_RETIRE) {
     // this code updates the branch prediction structures
     if (op->table_info->cf_type >= CF_IBR)

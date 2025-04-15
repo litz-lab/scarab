@@ -1,4 +1,6 @@
-/* Copyright 2020 HPS/SAFARI Research Groups
+/*
+ * Copyright 2020 HPS/SAFARI Research Groups
+ * Copyright 2025 Litz Lab
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,9 +23,9 @@
 
 /***************************************************************************************
  * File         : exec_stage.c
- * Author       : HPS Research Group
- * Date         : 1/27/1999
- * Description  : CMP support
+ * Author       : HPS Research Group, Litz Lab
+ * Date         : 1/27/1999, 4/12/2025
+ * Description  :
  ***************************************************************************************/
 
 #include "exec_stage.h"
@@ -69,7 +71,9 @@ int exec_off_path;
 /* Prototypes */
 
 static void init_op_type_delays();
-void exec_stage_inc_power_stats(Op* op);
+static void exec_stage_inc_power_stats(Op* op);
+static void exec_stage_dep_wakeup(Op* op);
+static void exec_stage_bp_resolve(Op* op);
 
 /**************************************************************************************/
 /* set_exec_stage: */
@@ -204,8 +208,6 @@ void update_exec_stage(Stage_Data* src_sd) {
     Func_Unit* fu = &exec->fus[ii];
     Op* op = src_sd->ops[ii];
     Op* fop = exec->sd.ops[ii];
-    int latency;
-    Counter exec_cycle;
 
     if (!op) {
       src_op_assrtions[ii] = TRUE;
@@ -261,11 +263,6 @@ void update_exec_stage(Stage_Data* src_sd) {
     }
     // }}}
 
-    // data can be written back
-    reg_file_execute(op);
-
-    // {{{ dependent instruction wakeup
-
     // if we get to here, then it means the op is going into the
     // functional unit.  We need to perform wake-ups of all the
     // dependent ops.  This is done before the actual latching of
@@ -274,34 +271,21 @@ void update_exec_stage(Stage_Data* src_sd) {
     // into the execute stage because they happened to be
     // processed before the op causing the recovery or replay.
 
-    latency = op->inst_info->latency;
     ASSERTM(exec->proc_id, OP_SRCS_RDY(op), "op_num:%s\n", unsstr64(op->op_num));
     ASSERT(exec->proc_id, get_fu_type(op->table_info->op_type, op->table_info->is_simd) & fu->type);
-    exec_cycle = cycle_count + MAX2(latency, -latency);
-    op->sched_cycle = cycle_count;
 
+    op->sched_cycle = cycle_count;
     DEBUG(exec->proc_id, "op_num:%s fu_num:%d sched_cycle:%s off_path:%d\n", unsstr64(op->op_num), op->fu_num,
           unsstr64(op->sched_cycle), op->off_path);
-    if (op->table_info->mem_type == NOT_MEM) {
-      // non-memory ops will always distribute their results
-      // after the op's latency
-      op->wake_cycle = exec_cycle;
-      wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
-    } else if (op->table_info->mem_type == MEM_ST) {
-      // stores have their addresses computed in this cycle and
-      // also write their data into the store buffer
-      if (op->exec_count == 0) {
-        // only wake up if this is the first time this op executes
-        op->wake_cycle = exec_cycle;
-        wake_up_ops(op, MEM_ADDR_DEP, model->wake_hook);
-        wake_up_ops(op, MEM_DATA_DEP, model->wake_hook);
-      }
-    }
 
+    // register value can be written back
+    reg_file_execute(op);
+
+    // dependent instruction wakeup before the actual latching
+    exec_stage_dep_wakeup(op);
+
+    // PMU stat counters update
     exec_stage_inc_power_stats(op);
-
-    // all other ops (loads) will be handled by the memory system
-    // }}}
   }
   // }}}
 
@@ -377,43 +361,13 @@ void update_exec_stage(Stage_Data* src_sd) {
     DEBUG(exec->proc_id, "op_num:%s fu_num:%d exec_cycle:%s done_cycle:%s off_path:%d\n", unsstr64(op->op_num),
           op->fu_num, unsstr64(op->exec_cycle), unsstr64(op->done_cycle), op->off_path);
 
-    // {{{ branch recovery/resolution code
+    // branch recovery/resolution
     if (op->table_info->cf_type && !is_replay) {
       /* branch recovery currently does not like to be done more than 1 time.
        * since we don't have any way to know if an op is going to be replayed,
        * we have to go with the first recovery (even though it is improper) for the time being */
-
-      if (!BP_UPDATE_AT_RETIRE) {
-        // this code updates the branch prediction structures
-        if (op->table_info->cf_type >= CF_IBR)
-          bp_target_known_op(g_bp_data, op);
-
-        bp_resolve_op(g_bp_data, op);
-      }
-
-      if (op->oracle_info.recover_at_exec) {
-        bp_sched_recovery(bp_recovery_info, op, op->exec_cycle,
-                          /*late_bp_recovery=*/FALSE, /*force_offpath=*/FALSE);
-        if (!op->off_path)
-          op->recovery_scheduled = TRUE;
-
-        // stats for the reason of resteer
-        if (op->oracle_info.mispred)
-          STAT_EVENT(op->proc_id, RESTEER_MISPRED_NOT_CF + op->table_info->cf_type);
-        else
-          STAT_EVENT(op->proc_id, RESTEER_MISFETCH_NOT_CF + op->table_info->cf_type);
-      }
-      /*      else if(op->table_info->cf_type >= CF_IBR &&
-                op->oracle_info.no_target) {
-        ASSERT(bp_recovery_info->proc_id,
-               bp_recovery_info->proc_id == op->proc_id);
-        bp_sched_redirect(bp_recovery_info, op, op->exec_cycle);
-        // stats for the reason of resteer
-        STAT_EVENT(op->proc_id, RESTEER_NO_TARGET_CF_IBR + op->table_info->cf_type - CF_IBR);
-        ASSERT(0,0);
-        }*/
+      exec_stage_bp_resolve(op);
     }
-    // }}}
 
     /* value prediction recovery/resolution code  */
     // if we know the value at this point if not ? then we need to wait.
@@ -433,7 +387,10 @@ void update_exec_stage(Stage_Data* src_sd) {
   memview_fus_busy(exec->proc_id, exec->fus_busy);
 }
 
-void exec_stage_inc_power_stats(Op* op) {
+/**************************************************************************************/
+/* Inline Methods */
+
+static void exec_stage_inc_power_stats(Op* op) {
   STAT_EVENT(op->proc_id, POWER_ROB_READ);
   STAT_EVENT(op->proc_id, POWER_ROB_WRITE);
 
@@ -507,4 +464,61 @@ void exec_stage_inc_power_stats(Op* op) {
   if (op->table_info->mem_type == MEM_ST) {
     STAT_EVENT(op->proc_id, POWER_DTLB_ACCESS);
   }
+}
+
+static void exec_stage_dep_wakeup(Op* op) {
+  int latency = op->inst_info->latency;
+  Counter exec_cycle = cycle_count + MAX2(latency, -latency);
+
+  // non-memory ops will always distribute their results after the op's latency
+  if (op->table_info->mem_type == NOT_MEM) {
+    op->wake_cycle = exec_cycle;
+    wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+    return;
+  }
+
+  // stores have their addresses computed in this cycle and also write their data into the store buffer
+  if (op->table_info->mem_type == MEM_ST) {
+    // only wake up if this is the first time this op executes
+    if (op->exec_count == 0) {
+      op->wake_cycle = exec_cycle;
+      wake_up_ops(op, MEM_ADDR_DEP, model->wake_hook);
+      wake_up_ops(op, MEM_DATA_DEP, model->wake_hook);
+    }
+    return;
+  }
+
+  // all other ops (loads) will be handled by the memory system
+}
+
+static void exec_stage_bp_resolve(Op* op) {
+  if (!BP_UPDATE_AT_RETIRE) {
+    // this code updates the branch prediction structures
+    if (op->table_info->cf_type >= CF_IBR)
+      bp_target_known_op(g_bp_data, op);
+
+    bp_resolve_op(g_bp_data, op);
+  }
+
+  if (op->oracle_info.recover_at_exec) {
+    bp_sched_recovery(bp_recovery_info, op, op->exec_cycle, FALSE, FALSE);
+    if (!op->off_path)
+      op->recovery_scheduled = TRUE;
+
+    // stats for the reason of resteer
+    if (op->oracle_info.mispred)
+      STAT_EVENT(op->proc_id, RESTEER_MISPRED_NOT_CF + op->table_info->cf_type);
+    else
+      STAT_EVENT(op->proc_id, RESTEER_MISFETCH_NOT_CF + op->table_info->cf_type);
+  }
+
+#if 0
+  if (op->table_info->cf_type >= CF_IBR && op->oracle_info.no_target) {
+    ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == op->proc_id);
+    bp_sched_redirect(bp_recovery_info, op, op->exec_cycle);
+    // stats for the reason of resteer
+    STAT_EVENT(op->proc_id, RESTEER_NO_TARGET_CF_IBR + op->table_info->cf_type - CF_IBR);
+    ASSERT(0, 0);
+  }
+#endif
 }

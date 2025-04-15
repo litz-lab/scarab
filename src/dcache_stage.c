@@ -65,6 +65,13 @@
 Dcache_Stage* dc = NULL;
 
 /**************************************************************************************/
+/* Inline Methods */
+
+static void wp_process_dcache_hit(Dcache_Data* line, Op* op);
+static void wp_process_dcache_fill(Dcache_Data* line, Mem_Req* req);
+static void extra_cache_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle);
+
+/**************************************************************************************/
 /* set_dcache_stage: */
 
 void set_dcache_stage(Dcache_Stage* new_dc) {
@@ -666,9 +673,9 @@ Flag do_oracle_dcache_access(Op* op, Addr* line_addr) {
 }
 
 /**************************************************************************************/
-/* wp_process_dcache_hit: */
+/* Inline Methods */
 
-void wp_process_dcache_hit(Dcache_Data* line, Op* op) {
+static void wp_process_dcache_hit(Dcache_Data* line, Op* op) {
   L1_Data* l1_line;
 
   if (!line) {
@@ -722,10 +729,7 @@ void wp_process_dcache_hit(Dcache_Data* line, Op* op) {
     line->fetched_by_offpath = FALSE;
 }
 
-/**************************************************************************************/
-/* wp_process_dcache_fill: */
-
-void wp_process_dcache_fill(Dcache_Data* line, Mem_Req* req) {
+static void wp_process_dcache_fill(Dcache_Data* line, Mem_Req* req) {
   if (!WP_COLLECT_STATS)
     return;
 
@@ -760,10 +764,7 @@ void wp_process_dcache_fill(Dcache_Data* line, Mem_Req* req) {
   }
 }
 
-/**************************************************************************************/
-/* One More Cache Line Access */
-
-void extra_cache_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle) {
+static void extra_cache_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle) {
   Addr one_more_addr;
   Addr extra_line_addr;
   Dcache_Data* extra_line;

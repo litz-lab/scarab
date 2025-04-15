@@ -91,13 +91,9 @@ void reset_dcache_stage(void);
 void recover_dcache_stage(void);
 void debug_dcache_stage(void);
 void update_dcache_stage(Stage_Data*);
-void cmp_update_dcache_stage(Stage_Data*, uns);
-void wp_process_dcache_hit(Dcache_Data* line, Op* op);
-void wp_process_dcache_fill(Dcache_Data* line, Mem_Req* req);
+
 Flag dcache_fill_line(Mem_Req*);
-void update_iso_miss(Op*);
 Flag do_oracle_dcache_access(Op*, Addr*);
-void extra_cache_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle);
 
 /**************************************************************************************/
 

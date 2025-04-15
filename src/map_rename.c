@@ -615,7 +615,7 @@ void reg_table_entry_consume(struct reg_table_entry *entry, Op *op) {
 
 /* update the register state to indicate the value is produced during execution*/
 void reg_table_entry_produce(struct reg_table_entry *entry, Op *op) {
-  ASSERT(map_data->proc_id, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC && op->exec_count == 0);
+  ASSERT(map_data->proc_id, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
 
   entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
   entry->produced_cycle = cycle_count;

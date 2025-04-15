@@ -69,7 +69,6 @@ class Decoupled_FE {
 
  private:
   void init(uns proc_id);
-  void set_conf_off_path() { conf_off_path = true; }
 
   uns proc_id;
 
@@ -81,7 +80,6 @@ class Decoupled_FE {
   FT current_ft_to_push;
 
   int off_path;
-  int conf_off_path;
   int sched_off_path;
   uint64_t dfe_op_count;
   std::vector<decoupled_fe_iter> ftq_iterators;
@@ -349,7 +347,6 @@ void Decoupled_FE::init(uns _proc_id) {
 #endif
   proc_id = _proc_id;
   off_path = false;
-  conf_off_path = false;
   sched_off_path = false;
   dfe_op_count = 1;
   recovery_addr = 0;
@@ -367,7 +364,6 @@ void Decoupled_FE::init(uns _proc_id) {
 
 void Decoupled_FE::recover() {
   off_path = false;
-  conf_off_path = false;
   sched_off_path = false;
   cur_op = nullptr;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
@@ -493,7 +489,7 @@ void Decoupled_FE::update() {
     frontend_fetch_op(proc_id, op);
     op->op_num = dfe_op_count++;
     op->off_path = off_path;
-    op->conf_off_path = conf_off_path;
+    op->conf_off_path = conf->get_conf();
 
     cur_op = op;
     DEBUG(proc_id, "Set cur_op off_path:%i, op_num:%llu, cf_type:%i\n", cur_op->off_path, cur_op->op_num,
@@ -580,7 +576,6 @@ void Decoupled_FE::update() {
     if (CONFIDENCE_ENABLE) {
       // update confidence
       conf->update(op, ft_ended_by != FT_NOT_ENDED);
-      conf_off_path = conf->get_conf();
     }
 
     current_ft_to_push.add_op(op, ft_ended_by);

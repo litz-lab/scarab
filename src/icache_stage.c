@@ -93,8 +93,8 @@ static inline void prefetcher_update_on_icache_access(Flag icache_hit);
 static inline void icache_hit_events(void);
 static inline void icache_miss_events(void);
 static inline Flag mem_req_on_icache_miss(void);
-static Inst_Info** ic_pref_cache_access(void);
-int32_t inst_lost_get_full_window_reason(void);
+static inline Inst_Info** ic_pref_cache_access(void);
+static inline int32_t inst_lost_get_full_window_reason(void);
 static inline void log_stats_ic_miss(void);
 static inline void log_stats_ic_hit(void);
 static inline void log_stats_mshr_hit(Addr line_addr);
@@ -109,6 +109,10 @@ static inline Icache_State icache_serving_actions(Break_Reason*);
 static inline void uop_cache_serve_ops(void);
 static inline Icache_State uop_cache_serving_actions(Break_Reason*);
 static inline void execute_coupled_FSM(void);
+
+static inline void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_addr);
+static inline void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr);
+static inline void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
 
 /**************************************************************************************/
 /* set_icache_stage: */
@@ -1135,9 +1139,9 @@ Inst_Info** ic_pref_cache_access(void) {
 }
 
 /**************************************************************************************/
-/* wp_process_icache_hit: */
+/* Stat Inline Functions */
 
-void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
+static inline void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
   L1_Data* l1_line;
 
   if (!WP_COLLECT_STATS)
@@ -1200,10 +1204,7 @@ void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr) {
     line->fetched_by_offpath = FALSE;
 }
 
-/**************************************************************************************/
-/* wp_process_icache_evicted: */
-
-void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_addr) {
+static inline void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_addr) {
   if (!WP_COLLECT_STATS)
     return;
 
@@ -1242,10 +1243,7 @@ void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_
                          (mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF)) ? TRUE : FALSE);
 }
 
-/**************************************************************************************/
-/* wp_process_icache_fill: */
-
-void wp_process_icache_fill(Icache_Data* line, Mem_Req* req) {
+static inline void wp_process_icache_fill(Icache_Data* line, Mem_Req* req) {
   if (!WP_COLLECT_STATS)
     return;
 
@@ -1265,10 +1263,7 @@ void wp_process_icache_fill(Icache_Data* line, Mem_Req* req) {
   STAT_EVENT(ic->proc_id, DIST_ICACHE_FILL);
 }
 
-/**************************************************************************************/
-/* inst_lost_get_full_window_reason(): */
-
-int32_t inst_lost_get_full_window_reason() {
+static inline int32_t inst_lost_get_full_window_reason() {
   if (rob_stall_reason != ROB_STALL_NONE) {
     return rob_stall_reason;
   }
@@ -1280,13 +1275,13 @@ int32_t inst_lost_get_full_window_reason() {
   return 0;
 }
 
-void log_stats_ic_miss() {
+static inline void log_stats_ic_miss() {
   STAT_EVENT(ic->proc_id, ICACHE_MISS);
   STAT_EVENT(ic->proc_id, POWER_ICACHE_MISS);
   STAT_EVENT(ic->proc_id, ICACHE_MISS_ONPATH + ic->off_path);
 }
 
-void log_stats_ic_hit() {
+static inline void log_stats_ic_hit() {
   STAT_EVENT(ic->proc_id, ICACHE_HIT);
   STAT_EVENT(ic->proc_id, ICACHE_HIT_ONPATH + ic->off_path);
 }

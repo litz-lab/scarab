@@ -146,17 +146,11 @@ void recover_icache_stage(void);
 void redirect_icache_stage(void);
 void debug_icache_stage(void);
 void update_icache_stage(void);
-Flag icache_fill_line(Mem_Req*);
-void wp_process_icache_evicted(Icache_Data* line, Mem_Req* req, Addr* repl_line_addr);
-void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr);
-void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
-Flag icache_off_path(void);
-void move_to_prev_op(void);
-Flag instr_fill_line(Mem_Req* req);
-Flag instr_fill_line(Mem_Req* req);
 
-// For branch stat collection
-Flag in_icache(Addr addr);
+Flag icache_fill_line(Mem_Req*);
+Flag icache_off_path(void);
+Flag instr_fill_line(Mem_Req* req);
+Flag in_icache(Addr addr);  // For branch stat collection
 
 /**************************************************************************************/
 

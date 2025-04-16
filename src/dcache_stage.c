@@ -59,10 +59,6 @@
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DCACHE_STAGE, ##args)
 #define STAGE_MAX_OP_COUNT NUM_FUS
 
-#define DCACHE_NEW_MEM_REQ(mem_req_type)                                \
-  new_mem_req((mem_req_type), dc->proc_id, line_addr, DCACHE_LINE_SIZE, \
-              DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, op, dcache_fill_line, op->unique_num, 0)
-
 /**************************************************************************************/
 /* Global Variables */
 
@@ -73,8 +69,9 @@ Dcache_Stage* dc = NULL;
 
 static void wp_process_dcache_hit(Dcache_Data* line, Op* op);
 static void wp_process_dcache_fill(Dcache_Data* line, Mem_Req* req);
-static void dcache_stage_cacheline_extra_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle);
-static void dcache_stage_cacheline_miss(Op* op, Addr line_addr);
+static inline Flag dcache_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type);
+static inline void dcache_cacheline_miss(Op* op, Addr line_addr);
+static inline void dcache_cacheline_extra_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle);
 
 /**************************************************************************************/
 /* set_dcache_stage: */
@@ -355,7 +352,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
         wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
       }
     } else {
-      dcache_stage_cacheline_miss(op, line_addr);
+      dcache_cacheline_miss(op, line_addr);
       if (op->off_path)
         wrongpath_dcmiss = TRUE;
     }
@@ -656,7 +653,7 @@ static void wp_process_dcache_fill(Dcache_Data* line, Mem_Req* req) {
   }
 }
 
-static void dcache_stage_cacheline_extra_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle) {
+static inline void dcache_cacheline_extra_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle) {
   Addr one_more_addr;
   Addr extra_line_addr;
   Dcache_Data* extra_line;
@@ -677,7 +674,12 @@ static void dcache_stage_cacheline_extra_access(Op* op, Cache* cache, Addr line_
     STAT_EVENT_ALL(ONE_MORE_DISCARDED_L0CACHE);
 }
 
-static void dcache_stage_cacheline_miss(Op* op, Addr line_addr) {
+static inline Flag dcache_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type) {
+  return new_mem_req((mem_req_type), dc->proc_id, line_addr, DCACHE_LINE_SIZE,
+                     DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, op, dcache_fill_line, op->unique_num, 0);
+}
+
+static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
   if (op->table_info->mem_type == MEM_ST)
     STAT_EVENT(op->proc_id, POWER_DCACHE_WRITE_MISS);
   else
@@ -703,7 +705,7 @@ static void dcache_stage_cacheline_miss(Op* op, Addr line_addr) {
         break;
       }
 
-      if (!(model->mem == MODEL_MEM) || !DCACHE_NEW_MEM_REQ(MRT_DFETCH)) {
+      if (!(model->mem == MODEL_MEM) || !dcache_new_mem_req(op, line_addr, MRT_DFETCH)) {
         op->state = OS_WAIT_MEM;  // go into this state if no miss buffer is available
         cmp_model.node_stage[dc->proc_id].mem_blocked = TRUE;
         mem->uncores[dc->proc_id].mem_block_start = freq_cycle_count(FREQ_DOMAIN_L1);
@@ -716,7 +718,7 @@ static void dcache_stage_cacheline_miss(Op* op, Addr line_addr) {
       }
 
       if (ONE_MORE_CACHE_LINE_ENABLE) {
-        dcache_stage_cacheline_extra_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
+        dcache_cacheline_extra_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
       }
 
       if (!op->off_path) {
@@ -735,7 +737,7 @@ static void dcache_stage_cacheline_miss(Op* op, Addr line_addr) {
 
     case MEM_PF:
     case MEM_WH:
-      if (!(model->mem == MODEL_MEM) || !DCACHE_NEW_MEM_REQ(MRT_DPRF)) {
+      if (!(model->mem == MODEL_MEM) || !dcache_new_mem_req(op, line_addr, MRT_DPRF)) {
         op->state = OS_WAIT_MEM;  // go into this state if no miss buffer is available
         cmp_model.node_stage[dc->proc_id].mem_blocked = TRUE;
         mem->uncores[dc->proc_id].mem_block_start = freq_cycle_count(FREQ_DOMAIN_L1);
@@ -744,7 +746,7 @@ static void dcache_stage_cacheline_miss(Op* op, Addr line_addr) {
       }
 
       if (ONE_MORE_CACHE_LINE_ENABLE) {
-        dcache_stage_cacheline_extra_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
+        dcache_cacheline_extra_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
       }
 
       if (!op->off_path) {
@@ -765,7 +767,7 @@ static void dcache_stage_cacheline_miss(Op* op, Addr line_addr) {
       break;
 
     case MEM_ST:
-      if (!(model->mem == MODEL_MEM) || !DCACHE_NEW_MEM_REQ(MRT_DSTORE)) {
+      if (!(model->mem == MODEL_MEM) || !dcache_new_mem_req(op, line_addr, MRT_DSTORE)) {
         op->state = OS_WAIT_MEM;
         cmp_model.node_stage[dc->proc_id].mem_blocked = TRUE;
         mem->uncores[dc->proc_id].mem_block_start = freq_cycle_count(FREQ_DOMAIN_L1);
@@ -774,7 +776,7 @@ static void dcache_stage_cacheline_miss(Op* op, Addr line_addr) {
       }
 
       if (ONE_MORE_CACHE_LINE_ENABLE) {
-        dcache_stage_cacheline_extra_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
+        dcache_cacheline_extra_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
       }
 
       if (!op->off_path) {

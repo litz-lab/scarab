@@ -1131,8 +1131,8 @@ void FDIP::determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefe
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
 
   if (CONFIDENCE_ENABLE && !op->conf_off_path) {
-    DEBUG(proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n",
-          decoupled_fe_get_low_confidence_cnt(), fdip_off_path());
+    DEBUG(proc_id, "emit_new_prefetch conf_off_path: %d, fdip_off_path: %d\n", decoupled_fe_get_conf(),
+          fdip_off_path());
     *emit_new_prefetch = TRUE;
   } else {
     switch (FDIP_UTILITY_PREF_POLICY) {
@@ -1192,8 +1192,8 @@ void FDIP::determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
 
   if (CONFIDENCE_ENABLE && !op->conf_off_path) {
-    DEBUG(proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n",
-          decoupled_fe_get_low_confidence_cnt(), fdip_off_path());
+    DEBUG(proc_id, "emit_new_prefetch conf_off_path: %d, fdip_off_path: %d\n", decoupled_fe_get_conf(),
+          fdip_off_path());
     *emit_new_prefetch = TRUE;
   } else {
     switch (FDIP_UTILITY_PREF_POLICY) {
@@ -1263,8 +1263,8 @@ void FDIP::determine_usefulness_by_bloom_filter(Addr line_addr, Flag* emit_new_p
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, g_bp_data->global_hist);
 
   if (CONFIDENCE_ENABLE && !op->conf_off_path) {
-    DEBUG(proc_id, "emit_new_prefetch low_confidence_cnt: %d, fdip_off_path: %d\n",
-          decoupled_fe_get_low_confidence_cnt(), fdip_off_path());
+    DEBUG(proc_id, "emit_new_prefetch conf_off_path: %d, fdip_off_path: %d\n", decoupled_fe_get_conf(),
+          fdip_off_path());
     *emit_new_prefetch = TRUE;
   } else {
     void* useful = udp->bloom_lookup(hashed_line_addr);

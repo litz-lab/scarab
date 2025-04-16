@@ -1,8 +1,19 @@
-#include "conf.hpp"
-
 #include "prefetcher/pref.param.h"
 
+// Implementations of the API
+#include "confidence/btb_miss_bp_taken_conf.hpp"
+#include "confidence/conf.hpp"
+#include "confidence/weight_conf.hpp"
+
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
+
+Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false), last_cycle_count(0) {
+  conf_info = new Confidence_Info(_proc_id);
+  if (CONF_BTB_MISS_BP_TAKEN)
+    conf_mech = new BTBMissBPTakenConf(_proc_id);
+  else
+    conf_mech = new WeightConf(_proc_id);
+}
 
 /* Confidence_Info member functions */
 void Confidence_Info::inc_br_conf_counters(int conf) {
@@ -70,8 +81,8 @@ void Confidence_Info::update(Op* op, Flag conf_off_path, Conf_Off_Path_Reason ne
       num_BTB_misses += 1;
     inc_br_conf_counters(op->bp_confidence);
     inc_cf_type_counters(op->table_info->cf_type);
-    DEBUG(proc_id, "op->bp_confidence: %d, low_confidence_cnt: %d, off_path: %d\n", op->bp_confidence,
-          decoupled_fe_get_low_confidence_cnt(), op->off_path ? 1 : 0);
+    DEBUG(proc_id, "op->bp_confidence: %d, conf: %d, off_path: %d\n", op->bp_confidence, decoupled_fe_get_conf(),
+          op->off_path ? 1 : 0);
   }
 
   Flag dfe_off_path = op->off_path;
@@ -164,37 +175,54 @@ void Confidence_Info::recover() {
 /* Conf member functions */
 void Conf::recover() {
   ASSERT(proc_id, conf_info->off_path_reason != REASON_NOT_IDENTIFIED);
-  low_confidence_cnt = 0;
-  cf_op_distance = 0.0;
-  last_recover_cycle = cycle_count;
+  conf_off_path = false;
+  conf_mech->recover();
   conf_info->recover();
 }
 
-void Conf::set_prev_op(Op* prev_op) {
-  conf_info->prev_op = prev_op;
+void Conf::set_prev_op(Op* op) {
+  conf_info->prev_op = op;
   DEBUG(proc_id, "Set prev_op off_path:%i, op_num:%llu, cf_type:%i\n", conf_info->prev_op->off_path,
         conf_info->prev_op->op_num, conf_info->prev_op->table_info->cf_type);
 }
 
-void Conf::update(Op* op) {
+void Conf::update(Op* op, Flag last_in_ft) {
+  if (!CONFIDENCE_ENABLE)
+    return;
   Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
   if (PERFECT_CONFIDENCE) {
     if (decoupled_fe_is_off_path())
-      low_confidence_cnt = ~0U;
-    if (low_confidence_cnt == ~0U)
+      conf_off_path = true;
+    if (conf_off_path)
       ASSERT(proc_id, decoupled_fe_is_off_path());
-    cf_op_distance = 0.0;
+    update_state_perfect_conf(op);
   } else if (conf_info->off_path_reason == REASON_NOT_IDENTIFIED ||
              conf_info->conf_off_path_reason ==
                  REASON_CONF_NOT_IDENTIFIED) {  // update until both real/confidence path go off
-    if (CONF_BTB_MISS_BP_TAKEN)
-      btb_miss_bp_taken_update(op, new_reason);
-    else
-      weight_update(op, new_reason);
+    per_op_update(op, new_reason);
+    if (op->table_info->cf_type)
+      per_cf_op_update(op, new_reason);
+    if (last_in_ft)
+      per_ft_update(op, new_reason);
+    if (cycle_count > last_cycle_count) {
+      last_cycle_count = cycle_count;
+      per_cycle_update(op, new_reason);
+    }
+    conf_off_path = new_reason != REASON_CONF_NOT_IDENTIFIED;
   }
+  op->conf_off_path = conf_off_path;
+  if (conf_info->off_path_reason == REASON_NOT_IDENTIFIED ||
+      conf_info->conf_off_path_reason == REASON_CONF_NOT_IDENTIFIED)
+    conf_info->update(op, conf_off_path, new_reason);
+  set_prev_op(op);
+}
 
-  if (op->oracle_info.btb_miss)
-    cnt_btb_miss++;
+void Conf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
+  conf_mech->per_op_update(op, new_reason);
+}
+
+void Conf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
+  conf_mech->per_cf_op_update(op, new_reason);
 
   // log conf stats
   // if it is a cf with bp conf
@@ -207,66 +235,12 @@ void Conf::update(Op* op) {
       STAT_EVENT(proc_id, DFE_CONF_0_CORRECT + op->bp_confidence);
     }
   }
-
-  if (conf_info->off_path_reason == REASON_NOT_IDENTIFIED ||
-      conf_info->conf_off_path_reason == REASON_CONF_NOT_IDENTIFIED)
-    conf_info->update(op, low_confidence_cnt >= CONF_OFF_PATH_THRESHOLD, new_reason);
 }
 
-void Conf::cyc_reset() {
-  if (cycle_count % CONF_BTB_MISS_SAMPLE_RATE == 0) {
-    btb_miss_rate = (double)cnt_btb_miss / (double)CONF_BTB_MISS_SAMPLE_RATE;
-    cnt_btb_miss = 0;
-  }
+void Conf::per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) {
+  conf_mech->per_ft_update(op, new_reason);
 }
 
-// weight-based conf mechanism
-void Conf::weight_update(Op* op, Conf_Off_Path_Reason& new_reason) {
-  if (!CONFIDENCE_ENABLE)
-    return;
-  if (low_confidence_cnt == ~0U)
-    return;
-
-  if (op->table_info->cf_type) {
-    low_confidence_cnt +=
-        3 - op->bp_confidence + (double)CONF_BTB_MISS_RATE_WEIGHT * btb_miss_rate;  // 3 is highest bp_confidence
-    cf_op_distance = 0.0;
-  } else if (cf_op_distance >= CONF_OFF_PATH_THRESHOLD) {
-    low_confidence_cnt += CONF_OFF_PATH_INC + (double)CONF_BTB_MISS_RATE_WEIGHT * btb_miss_rate;
-    cf_op_distance = 0.0;
-    conf_info->num_op_dist_incs += 1;
-  } else {
-    cf_op_distance += (1.0 + (double)CONF_BTB_MISS_RATE_WEIGHT * btb_miss_rate);
-  }
-  if (low_confidence_cnt >= CONF_OFF_PATH_THRESHOLD)
-    new_reason = REASON_CONF_THRESHOLD;
-}
-
-// if btb miss and high enough bp confidence set confidence to off path
-void Conf::btb_miss_bp_taken_update(Op* op, Conf_Off_Path_Reason& new_reason) {
-  if (!CONFIDENCE_ENABLE)
-    return;
-  if (low_confidence_cnt == ~0U)
-    return;
-
-  if (op->table_info->cf_type) {
-    if (op->oracle_info.btb_miss && (op->oracle_info.pred_orig == TAKEN) &&
-        (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
-      low_confidence_cnt = ~0U;
-      ASSERT(proc_id, op->bp_confidence >= 0 && op->bp_confidence <= 3);
-      new_reason = static_cast<Conf_Off_Path_Reason>(REASON_BTB_MISS_BP_TAKEN_CONF_0 + op->bp_confidence);
-    } else {  // update confidence
-      low_confidence_cnt += 3 - op->bp_confidence;
-      if (low_confidence_cnt >= CONF_OFF_PATH_THRESHOLD)
-        new_reason = REASON_CONF_THRESHOLD;
-    }
-  } else {  // update confidence based on number of cycles elapsed and btb miss rate
-            // if number of cycles times btb miss rate is greater than 1 we have probably seen a btb miss
-    DEBUG(proc_id, "btb miss rate: %f, cycles since recovery: %llu\n", btb_miss_rate, cycle_count - last_recover_cycle);
-    if ((double)((cycle_count - last_recover_cycle) * btb_miss_rate) >= CONF_BTB_MISS_RATE_CYCLES_THRESHOLD) {
-      low_confidence_cnt = ~0U;
-      STAT_EVENT(proc_id, CONF_BTB_NUM_CYCLES_OFF_PATH_EVENT);
-      new_reason = REASON_BTB_MISS_RATE;
-    }
-  }
+void Conf::per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason) {
+  conf_mech->per_cycle_update(op, new_reason);
 }

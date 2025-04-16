@@ -72,7 +72,6 @@ int exec_off_path;
 
 static inline void init_op_type_delays();
 static inline void exec_stage_inc_power_stats(Op* op);
-static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event);
 static inline Flag exec_stage_issue_available(Stage_Data* src_sd, int ii);
 static inline void exec_stage_dep_wakeup(Op* op);
 static inline void exec_stage_bp_resolve(Op* op);
@@ -200,11 +199,11 @@ void update_exec_stage(Stage_Data* src_sd) {
 
   // {{{ phase 1 - success/failure of latching and wake up of dependent ops
   for (ii = 0; ii < src_sd->max_op_count; ii++) {
-    // store the pointer as it may be cleared during fu checking
+    // preserve the pointer prior to issue availability check, as the function may clear src_sd->op[ii] upon rejection
     Op* op = src_sd->ops[ii];
 
+    // remove the op from stage_data if it cannot be issued
     if (!exec_stage_issue_available(src_sd, ii)) {
-      // the op will be removed from sd if the its issuing is not available
       ASSERT(exec->proc_id, !src_sd->ops[ii]);
       continue;
     }
@@ -223,6 +222,7 @@ void update_exec_stage(Stage_Data* src_sd) {
     DEBUG(exec->proc_id, "op_num:%s fu_num:%d sched_cycle:%s off_path:%d\n", unsstr64(op->op_num), op->fu_num,
           unsstr64(op->sched_cycle), op->off_path);
 
+    /* TODO: separate the callback into two phases */
     // register value can be written back
     reg_file_execute(op);
 
@@ -460,11 +460,18 @@ static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event) {
   STAT_EVENT(exec->proc_id, simd_stat_base + op->table_info->op_type);
 }
 
+static inline void exec_stage_clear_fu(int ii) {
+  exec->sd.ops[ii] = NULL;
+  exec->sd.op_count--;
+  ASSERT(exec->proc_id, exec->sd.op_count >= 0);
+}
+
 static inline Flag exec_stage_issue_available(Stage_Data* src_sd, int ii) {
-  Func_Unit* fu = &exec->fus[ii];
   Op* op = src_sd->ops[ii];
 
+  /* check whether the functional unit is busy first */
   // if fu is not available, then nullify node stage entry to make instruction get scheduled again
+  Func_Unit* fu = &exec->fus[ii];
   if (cycle_count < fu->avail_cycle || !reg_file_issue(op)) { /* TODO: update event for reg_file_issue */
     if (op != NULL) {
       exec_stage_reject_op(src_sd, ii, FU_UNAVAILABLE);
@@ -472,24 +479,22 @@ static inline Flag exec_stage_issue_available(Stage_Data* src_sd, int ii) {
     return FALSE;
   }
 
+  /* if the functional unit is not busy, check the op assigned to it */
+  // if no operation is occupying the FU, return that the FU is available
   Op* fop = exec->sd.ops[ii];
   if (!fop) {
     return TRUE;
   }
 
-  // remove non-mem op currently in the fu
+  // remove non-mem op currently in the FU
   if (!fop->table_info->mem_type) {
-    exec->sd.ops[ii] = NULL;
-    exec->sd.op_count--;
-    ASSERT(exec->proc_id, exec->sd.op_count >= 0);
+    exec_stage_clear_fu(ii);
     return TRUE;
   }
 
   // need to kill it if it is a simultaneous replay
   if (fop->replay && fop->replay_cycle == cycle_count) {
-    exec->sd.ops[ii] = NULL;
-    exec->sd.op_count--;
-    ASSERT(exec->proc_id, exec->sd.op_count >= 0);
+    exec_stage_clear_fu(ii);
     STAT_EVENT(exec->proc_id, FU_REPLAY);
     return TRUE;
   }

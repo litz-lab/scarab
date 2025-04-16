@@ -122,9 +122,10 @@ uint64_t decoupled_fe_ftq_num_fts();
 void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num);
 uint64_t decoupled_fe_get_ftq_num();
 Op* decoupled_fe_get_cur_op();
-uns decoupled_fe_get_low_confidence_cnt();
+uns decoupled_fe_get_conf();
 Off_Path_Reason decoupled_fe_get_off_path_reason();
 Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason();
+void decoupled_fe_conf_resovle_cf(Op* op);
 #ifdef __cplusplus
 }
 #endif

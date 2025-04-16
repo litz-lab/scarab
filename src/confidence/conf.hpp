@@ -31,6 +31,27 @@
 
 #include "decoupled_frontend.h"
 
+// Confidence Mechanism interface
+class ConfMechBase {
+ public:
+  ConfMechBase(uns _proc_id) : proc_id(_proc_id) {}
+  // update functions
+  virtual void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
+  virtual void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
+  virtual void per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
+  virtual void per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
+
+  virtual void update_state_perfect_conf(Op* op) = 0;
+
+  // recovery functions
+  virtual void recover() = 0;
+
+  // resolve cf
+  virtual void resolve_cf(Op* op) = 0;
+
+  uns proc_id;
+};
+
 // metadata for confidence
 class Confidence_Info {
  public:
@@ -86,40 +107,29 @@ class Confidence_Info {
 
 class Conf {
  public:
-  Conf(uns _proc_id)
-      : proc_id(_proc_id),
-        last_recover_cycle(0),
-        cnt_btb_miss(0),
-        btb_miss_rate(0.0),
-        low_confidence_cnt(0),
-        cf_op_distance(0.0) {
-    conf_info = new Confidence_Info(_proc_id);
-  }
-  uns get_low_confidence_cnt() { return low_confidence_cnt; }
+  Conf(uns _proc_id);
+  uns get_conf() { return conf_off_path; }
   void recover();
-  void cyc_reset();
   void set_prev_op(Op* op);
-  void update(Op* op);
-  void inc_cnt_btb_miss() { cnt_btb_miss++; }
-  Flag is_conf_off_path() { return low_confidence_cnt < CONF_OFF_PATH_THRESHOLD ? FALSE : TRUE; }
+  void update(Op* op, Flag last_in_ft);
+  void resolve_cf(Op* op) { conf_mech->resolve_cf(op); }
   Off_Path_Reason get_off_path_reason() { return conf_info->off_path_reason; }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_info->conf_off_path_reason; }
 
  private:
-  void default_conf_update(Op* op);
-  void weight_update(Op* op, Conf_Off_Path_Reason& new_reason);
-  void btb_miss_bp_taken_update(Op* op, Conf_Off_Path_Reason& new_reason);
+  void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason);
+  void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason);
+  void per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason);
+  void per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason);
+  void update_state_perfect_conf(Op* op) { conf_mech->update_state_perfect_conf(op); }
+  // confidence mech object
+  ConfMechBase* conf_mech;
 
   uns proc_id;
-  Counter last_recover_cycle;
-  /* global variables for BTB miss-based BP confidence */
-  Counter cnt_btb_miss;
-  double btb_miss_rate;
 
   // confidence counter
-  uns low_confidence_cnt;
-  double cf_op_distance;
-
+  bool conf_off_path;
+  Counter last_cycle_count;
   Confidence_Info* conf_info;
 };
 

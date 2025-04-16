@@ -93,8 +93,6 @@ void node_fill_rob(Stage_Data*);
 void node_fill_rs(void);
 void node_retire(void);
 void check_if_mem_blocked(void);
-void oldest_first_sched(Op*);
-int64 find_emptiest_rs(Op*);
 
 /**************************************************************************************/
 

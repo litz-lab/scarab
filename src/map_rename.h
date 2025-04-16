@@ -96,10 +96,10 @@ struct reg_table_entry {
   struct reg_table_entry_ops *ops;
 
   // lifecycle counter
-  Counter alloc_cycle;
-  Counter produce_cycle;
-  Counter last_consume_execute_cycle;
-  Counter last_consume_commit_cycle;
+  Counter allocated_cycle;
+  Counter produced_cycle;
+  Counter consumed_cycle;
+  Counter lastuse_committed_cycle;
 
   // consumer counter
   int num_consumers;   // the number of registered (at rename) consumers of a registers
@@ -109,8 +109,8 @@ struct reg_table_entry {
   Flag redefined_rename;     // indicate if it is overwritten by an instruction with the same arch id during renaming
   Flag redefined_precommit;  // indicate if the redefine-instruction is precommitted
 
-  Counter last_used_op_num;
-  Flag last_used_committed;
+  Counter lastuse_op_num;
+  Flag lastuse_committed;
 };
 
 struct reg_free_list {
@@ -166,7 +166,7 @@ struct reg_table_entry_ops {
   void (*read)(struct reg_table_entry *entry, Op *op);
   void (*write)(struct reg_table_entry *entry, Op *op, int parent_reg_id);
   void (*consume)(struct reg_table_entry *entry, Op *op);
-  void (*produce)(struct reg_table_entry *entry);
+  void (*produce)(struct reg_table_entry *entry, Op *op);
 };
 
 struct reg_free_list_ops {
@@ -182,7 +182,7 @@ struct reg_table_ops {
   int (*alloc)(struct reg_table *reg_table, Op *op, int parent_reg_id);
   void (*free)(struct reg_table *reg_table, struct reg_table_entry *entry);
   void (*consume)(struct reg_table *reg_table, int reg_id, Op *op);
-  void (*produce)(struct reg_table *reg_table, int reg_id);
+  void (*produce)(struct reg_table *reg_table, int reg_id, Op *op);
 };
 
 /**************************************************************************************/

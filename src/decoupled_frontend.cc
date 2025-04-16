@@ -16,7 +16,7 @@
 #include "op_pool.h"
 #include "thread.h"
 
-#include "conf.hpp"
+#include "confidence/conf.hpp"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
@@ -48,7 +48,6 @@ class Decoupled_FE {
  public:
   Decoupled_FE(uns _proc_id);
   int is_off_path() { return off_path; }
-  int is_conf_off_path() { return conf_off_path; }
   void recover();
   void update();
   FT* get_ft(uint64_t ft_pos);
@@ -63,13 +62,13 @@ class Decoupled_FE {
   void set_ftq_num(uint64_t set_ftq_ft_num) { ftq_ft_num = set_ftq_ft_num; }
   uint64_t get_ftq_num() { return ftq_ft_num; }
   Op* get_cur_op() { return cur_op; }
-  uns get_low_confidence_cnt() { return conf->get_low_confidence_cnt(); }
+  uns get_conf() { return conf->get_conf(); }
   Off_Path_Reason get_off_path_reason() { return conf->get_off_path_reason(); }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf->get_conf_off_path_reason(); }
+  void conf_resolve_cf(Op* op) { conf->resolve_cf(op); }
 
  private:
   void init(uns proc_id);
-  void set_conf_off_path() { conf_off_path = true; }
 
   uns proc_id;
 
@@ -81,7 +80,6 @@ class Decoupled_FE {
   FT current_ft_to_push;
 
   int off_path;
-  int conf_off_path;
   int sched_off_path;
   uint64_t dfe_op_count;
   std::vector<decoupled_fe_iter> ftq_iterators;
@@ -112,10 +110,6 @@ void init_decoupled_fe(uns proc_id, const char*) {
 
 bool decoupled_fe_is_off_path() {
   return dfe->is_off_path();
-}
-
-bool decoupled_fe_is_conf_off_path() {
-  return dfe->is_conf_off_path();
 }
 
 void set_decoupled_fe(uns proc_id) {
@@ -193,8 +187,8 @@ Op* decoupled_fe_get_cur_op() {
   return dfe->get_cur_op();
 }
 
-uns decoupled_fe_get_low_confidence_cnt() {
-  return dfe->get_low_confidence_cnt();
+uns decoupled_fe_get_conf() {
+  return dfe->get_conf();
 }
 
 Off_Path_Reason decoupled_fe_get_off_path_reason() {
@@ -203,6 +197,10 @@ Off_Path_Reason decoupled_fe_get_off_path_reason() {
 
 Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason() {
   return dfe->get_conf_off_path_reason();
+}
+
+void decoupled_fe_conf_resovle_cf(Op* op) {
+  dfe->conf_resolve_cf(op);
 }
 
 /* FT member functions */
@@ -349,7 +347,6 @@ void Decoupled_FE::init(uns _proc_id) {
 #endif
   proc_id = _proc_id;
   off_path = false;
-  conf_off_path = false;
   sched_off_path = false;
   dfe_op_count = 1;
   recovery_addr = 0;
@@ -367,7 +364,6 @@ void Decoupled_FE::init(uns _proc_id) {
 
 void Decoupled_FE::recover() {
   off_path = false;
-  conf_off_path = false;
   sched_off_path = false;
   cur_op = nullptr;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
@@ -493,19 +489,10 @@ void Decoupled_FE::update() {
     frontend_fetch_op(proc_id, op);
     op->op_num = dfe_op_count++;
     op->off_path = off_path;
-    op->conf_off_path = conf_off_path;
-
-    if (CONFIDENCE_ENABLE) {
-      // set previous op, only if on path or first off path instruction
-      if (cur_op && (cur_op->op_num != op->op_num) &&
-          (!(op->off_path) || (conf->get_off_path_reason() == REASON_NOT_IDENTIFIED)))
-        conf->set_prev_op(cur_op);
-
-      // update confidence
-      conf->update(op);
-      if (!is_conf_off_path() && conf->is_conf_off_path())
-        set_conf_off_path();
-    }
+    if (CONFIDENCE_ENABLE)
+      op->conf_off_path = conf->get_conf();
+    else
+      op->conf_off_path = FALSE;
 
     cur_op = op;
     DEBUG(proc_id, "Set cur_op off_path:%i, op_num:%llu, cf_type:%i\n", cur_op->off_path, cur_op->op_num,
@@ -589,6 +576,11 @@ void Decoupled_FE::update() {
       cfs_taken_this_cycle += cf_taken || bar_fetch;
     }
 
+    if (CONFIDENCE_ENABLE) {
+      // update confidence
+      conf->update(op, ft_ended_by != FT_NOT_ENDED);
+    }
+
     current_ft_to_push.add_op(op, ft_ended_by);
     // ft_ended_by != FT_NOT_ENDED indicates the end of the current fetch target
     // it is now ready to be pushed to the queue
@@ -639,9 +631,6 @@ void Decoupled_FE::update() {
       recovery_addr = 0;
     }
   }
-
-  if (CONFIDENCE_ENABLE)
-    conf->cyc_reset();
 }
 
 FT* Decoupled_FE::get_ft(uint64_t ft_pos) {

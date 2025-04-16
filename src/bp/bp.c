@@ -54,6 +54,7 @@
 #include "prefetcher/branch_misprediction_table.h"
 #include "prefetcher/fdip.h"
 
+#include "decoupled_frontend.h"
 #include "icache_stage.h"
 #include "model.h"
 #include "sim.h"
@@ -993,6 +994,8 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
   if (op->oracle_info.misfetch || op->oracle_info.mispred) {
     INC_STAT_EVENT(op->proc_id, BP_MISP_PENALTY, op->exec_cycle - op->issue_cycle);
   }
+  if (CONFIDENCE_ENABLE)
+    decoupled_fe_conf_resovle_cf(op);
 }
 
 /******************************************************************************/

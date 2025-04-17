@@ -1,4 +1,6 @@
-/* Copyright 2020 HPS/SAFARI Research Groups
+/*
+ * Copyright 2020 HPS/SAFARI Research Groups
+ * Copyright 2025 Litz Lab
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,8 +23,8 @@
 
 /***************************************************************************************
  * File         : dcache_stage.c
- * Author       : HPS Research Group
- * Date         : 3/8/1999
+ * Author       : HPS Research Group, Litz Lab
+ * Date         : 3/8/1999, 4/15/2025
  * Description  :
  ***************************************************************************************/
 
@@ -67,11 +69,13 @@ Dcache_Stage* dc = NULL;
 /**************************************************************************************/
 /* Inline Methods */
 
-static void wp_process_dcache_hit(Dcache_Data* line, Op* op);
-static void wp_process_dcache_fill(Dcache_Data* line, Mem_Req* req);
-static inline Flag dcache_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type);
+static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* line);
 static inline void dcache_cacheline_miss(Op* op, Addr line_addr);
-static inline void dcache_cacheline_extra_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle);
+
+static inline void dcache_fill_wp_collect_stats(Dcache_Data* line, Mem_Req* req);
+static inline void dcache_hit_wp_collect_stats(Dcache_Data* line, Op* op);
+static inline Flag dcache_miss_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type);
+static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle);
 
 /**************************************************************************************/
 /* set_dcache_stage: */
@@ -303,58 +307,15 @@ void update_dcache_stage(Stage_Data* src_sd) {
         op->wake_cycle = op->done_cycle;
         wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
       }
-    } else if (line) {  // data cache hit
-
-      if (PREF_FRAMEWORK_ON &&  // if framework is on use new prefetcher.
-                                // otherwise old one
-          (PREF_UPDATE_ON_WRONGPATH || !op->off_path)) {
-        if (line->HW_prefetch) {
-          pref_dl0_pref_hit(line_addr, op->inst_info->addr, 0);  // CHANGEME
-          line->HW_prefetch = FALSE;
-        } else {
-          pref_dl0_hit(line_addr, op->inst_info->addr);
-        }
-      } else if ((STREAM_TRAIN_ON_WRONGPATH || !op->off_path) &&  // old prefetcher code
-                 line->HW_prefetch) {
-        STAT_EVENT(op->proc_id, DCACHE_PREF_HIT);
-        STAT_EVENT(op->proc_id, STREAM_DCACHE_PREF_HIT);
-        line->HW_prefetch = FALSE;  // not anymore prefetched data
-        if (L2L1PREF_ON)
-          l2l1pref_dcache(line_addr, op);
-        if (STREAM_PREFETCH_ON && STREAM_PREF_INTO_DCACHE) {
-          stream_dl0_hit_train(line_addr);
-        }
-      }
-
-      if (L2L1PREF_ON && L2L1_DC_HIT_TRAIN) {
-        l2l1pref_dcache(line_addr, op);
-      }
-
-      wp_process_dcache_hit(line, op);
-
-      line->misc_state = (line->misc_state & 2) | op->off_path;
-      if (!op->off_path) {
-        STAT_EVENT(op->proc_id, DCACHE_HIT);
-        STAT_EVENT(op->proc_id, DCACHE_HIT_ONPATH);
-      } else
-        STAT_EVENT(op->proc_id, DCACHE_HIT_OFFPATH);
-
-      op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
-
-      if (!op->off_path) {
-        line->dirty |= op->table_info->mem_type == MEM_ST;
-      }
-      line->read_count[op->off_path] = line->read_count[op->off_path] + (op->table_info->mem_type == MEM_LD);
-      line->write_count[op->off_path] = line->write_count[op->off_path] + (op->table_info->mem_type == MEM_ST);
-
-      if (op->table_info->mem_type != MEM_ST) {
-        op->wake_cycle = op->done_cycle;
-        wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
-      }
     } else {
-      dcache_cacheline_miss(op, line_addr);
-      if (op->off_path)
-        wrongpath_dcmiss = TRUE;
+      if (line) {
+        dcache_cacheline_hit(op, line_addr, line);
+      } else {
+        dcache_cacheline_miss(op, line_addr);
+        if (op->off_path) {
+          wrongpath_dcmiss = TRUE;
+        }
+      }
     }
 
     if (STREAM_PREFETCH_ON &&
@@ -491,7 +452,7 @@ Flag dcache_fill_line(Mem_Req* req) {
   data->fetch_cycle = cycle_count;
   data->onpath_use_cycle = (req->type == MRT_DPRF || req->off_path) ? 0 : cycle_count;
 
-  wp_process_dcache_fill(data, req);
+  dcache_fill_wp_collect_stats(data, req);
 
   if (req->type == MRT_DPRF) {  // cmp FIXME
     data->HW_prefetch = TRUE;
@@ -564,7 +525,7 @@ Flag do_oracle_dcache_access(Op* op, Addr* line_addr) {
 /**************************************************************************************/
 /* Inline Methods */
 
-static void wp_process_dcache_hit(Dcache_Data* line, Op* op) {
+static inline void dcache_hit_wp_collect_stats(Dcache_Data* line, Op* op) {
   L1_Data* l1_line;
 
   if (!line) {
@@ -618,7 +579,7 @@ static void wp_process_dcache_hit(Dcache_Data* line, Op* op) {
     line->fetched_by_offpath = FALSE;
 }
 
-static void wp_process_dcache_fill(Dcache_Data* line, Mem_Req* req) {
+static inline void dcache_fill_wp_collect_stats(Dcache_Data* line, Mem_Req* req) {
   if (!WP_COLLECT_STATS)
     return;
 
@@ -653,7 +614,7 @@ static void wp_process_dcache_fill(Dcache_Data* line, Mem_Req* req) {
   }
 }
 
-static inline void dcache_cacheline_extra_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle) {
+static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle) {
   Addr one_more_addr;
   Addr extra_line_addr;
   Dcache_Data* extra_line;
@@ -674,9 +635,59 @@ static inline void dcache_cacheline_extra_access(Op* op, Cache* cache, Addr line
     STAT_EVENT_ALL(ONE_MORE_DISCARDED_L0CACHE);
 }
 
-static inline Flag dcache_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type) {
+static inline Flag dcache_miss_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type) {
   return new_mem_req((mem_req_type), dc->proc_id, line_addr, DCACHE_LINE_SIZE,
                      DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, op, dcache_fill_line, op->unique_num, 0);
+}
+
+static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* line) {
+  /* prefetching handle */
+  if (PREF_FRAMEWORK_ON && (PREF_UPDATE_ON_WRONGPATH || !op->off_path)) {
+    // if framework is on use new prefetcher. otherwise old one
+    if (line->HW_prefetch) {
+      pref_dl0_pref_hit(line_addr, op->inst_info->addr, 0);  // CHANGEME
+      line->HW_prefetch = FALSE;
+    } else {
+      pref_dl0_hit(line_addr, op->inst_info->addr);
+    }
+  } else if ((STREAM_TRAIN_ON_WRONGPATH || !op->off_path) && line->HW_prefetch) {
+    // old prefetcher code
+    STAT_EVENT(op->proc_id, DCACHE_PREF_HIT);
+    STAT_EVENT(op->proc_id, STREAM_DCACHE_PREF_HIT);
+    line->HW_prefetch = FALSE;  // not anymore prefetched data
+    if (L2L1PREF_ON)
+      l2l1pref_dcache(line_addr, op);
+    if (STREAM_PREFETCH_ON && STREAM_PREF_INTO_DCACHE) {
+      stream_dl0_hit_train(line_addr);
+    }
+  }
+  if (L2L1PREF_ON && L2L1_DC_HIT_TRAIN) {
+    l2l1pref_dcache(line_addr, op);
+  }
+
+  /* update stats */
+  dcache_hit_wp_collect_stats(line, op);
+  if (!op->off_path) {
+    STAT_EVENT(op->proc_id, DCACHE_HIT);
+    STAT_EVENT(op->proc_id, DCACHE_HIT_ONPATH);
+  } else {
+    STAT_EVENT(op->proc_id, DCACHE_HIT_OFFPATH);
+  }
+
+  /* update cacheline state */
+  op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
+  line->read_count[op->off_path] = line->read_count[op->off_path] + (op->table_info->mem_type == MEM_LD);
+  line->write_count[op->off_path] = line->write_count[op->off_path] + (op->table_info->mem_type == MEM_ST);
+  line->misc_state = (line->misc_state & 2) | op->off_path;
+  if (!op->off_path) {
+    line->dirty |= op->table_info->mem_type == MEM_ST;
+  }
+
+  /* wake up source inst if the op is completed */
+  if (op->table_info->mem_type != MEM_ST) {
+    op->wake_cycle = op->done_cycle;
+    wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+  }
 }
 
 static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
@@ -705,7 +716,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
         break;
       }
 
-      if (!(model->mem == MODEL_MEM) || !dcache_new_mem_req(op, line_addr, MRT_DFETCH)) {
+      if (!(model->mem == MODEL_MEM) || !dcache_miss_new_mem_req(op, line_addr, MRT_DFETCH)) {
         op->state = OS_WAIT_MEM;  // go into this state if no miss buffer is available
         cmp_model.node_stage[dc->proc_id].mem_blocked = TRUE;
         mem->uncores[dc->proc_id].mem_block_start = freq_cycle_count(FREQ_DOMAIN_L1);
@@ -718,7 +729,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
       }
 
       if (ONE_MORE_CACHE_LINE_ENABLE) {
-        dcache_cacheline_extra_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
+        dcache_miss_extra_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
       }
 
       if (!op->off_path) {
@@ -737,7 +748,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
 
     case MEM_PF:
     case MEM_WH:
-      if (!(model->mem == MODEL_MEM) || !dcache_new_mem_req(op, line_addr, MRT_DPRF)) {
+      if (!(model->mem == MODEL_MEM) || !dcache_miss_new_mem_req(op, line_addr, MRT_DPRF)) {
         op->state = OS_WAIT_MEM;  // go into this state if no miss buffer is available
         cmp_model.node_stage[dc->proc_id].mem_blocked = TRUE;
         mem->uncores[dc->proc_id].mem_block_start = freq_cycle_count(FREQ_DOMAIN_L1);
@@ -746,7 +757,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
       }
 
       if (ONE_MORE_CACHE_LINE_ENABLE) {
-        dcache_cacheline_extra_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
+        dcache_miss_extra_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
       }
 
       if (!op->off_path) {
@@ -767,7 +778,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
       break;
 
     case MEM_ST:
-      if (!(model->mem == MODEL_MEM) || !dcache_new_mem_req(op, line_addr, MRT_DSTORE)) {
+      if (!(model->mem == MODEL_MEM) || !dcache_miss_new_mem_req(op, line_addr, MRT_DSTORE)) {
         op->state = OS_WAIT_MEM;
         cmp_model.node_stage[dc->proc_id].mem_blocked = TRUE;
         mem->uncores[dc->proc_id].mem_block_start = freq_cycle_count(FREQ_DOMAIN_L1);
@@ -776,7 +787,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
       }
 
       if (ONE_MORE_CACHE_LINE_ENABLE) {
-        dcache_cacheline_extra_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
+        dcache_miss_extra_access(op, &dc->dcache, line_addr, dc->proc_id, DCACHE_CYCLES);
       }
 
       if (!op->off_path) {

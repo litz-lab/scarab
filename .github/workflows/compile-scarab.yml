@@ -67,25 +67,90 @@ jobs:
           ls -alt /home/runner/work/scarab_ll/scarab_ll/
           ./run.sh --simulation top_simpoint
 
-      - name: Extract cumulative IPC and post to summary
+#      - name: Post IPC result to PR
+#        uses: actions/github-script@v6
+#        with:
+#          github-token: ${{ secrets.GITHUB_TOKEN }}
+#          script: |
+#            const ipc = "${{ steps.extract-ipc.outputs.ipc }}";
+#            await github.rest.issues.createComment({
+#              owner: context.repo.owner,
+#              repo: context.repo.repo,
+#              issue_number: context.payload.pull_request.number,
+#              body: `📊 **Scarab Simulation Result**\n\nCumulative IPC: \`${ipc}\``
+#            });
+
+      # ── Extract metrics from sim.log ────────────────────────
+      - name: Extract PR KIPS
+        id: extract-sim
+        run: |
+          SIM_KIPS=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' sim.log | head -n1)
+          SIM_IPC=$(grep -oP '--\s+\K[0-9.]+(?=\s+IPC)'          sim.log | head -n1)
+          echo "kips=$SIM_KIPS" >> "$GITHUB_OUTPUT"
+#          echo "ipc=$SIM_IPC"   >> "$GITHUB_OUTPUT"
+
+      - name: Extract PR cumulative IPC
         id: extract-ipc
         working-directory: simulations
         run: |
           ipc=$(grep "Cumulative:" ./github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/core.stat.0.out | sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
           echo "ipc=${ipc:-ERROR}" >> $GITHUB_OUTPUT
 
-      - name: Post IPC result to PR
-        uses: actions/github-script@v6
+      # ── Check out baseline repo with reference results ──────
+      - name: Checkout baseline performance repo
+        uses: actions/checkout@v4
+        with:
+          repository: litz-lab/scarab_perf
+          path: baseline
+          # If the repo is private, add:
+          # ssh-key: ${{ secrets.SCARAB_PERF_SSH_KEY }}
+
+      # ── Extract baseline metrics ────────────────────────────
+      - name: Extract baseline KIPS & IPC
+        id: extract-base
+        run: |
+          line=$(cat baseline/scarab_perf.log)        # githash,ipc,KIPS
+          BASE_IPC=$(echo "$line" | cut -d',' -f2)
+          BASE_KIPS=$(echo "$line" | cut -d',' -f3)
+          echo "kips=$BASE_KIPS" >> "$GITHUB_OUTPUT"
+          echo "ipc=$BASE_IPC"   >> "$GITHUB_OUTPUT"
+
+      # ── Compute speed‑ups and post PR comment ───────────────
+      - name: Comment on PR
+        uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const ipc = "${{ steps.extract-ipc.outputs.ipc }}";
+            // ── pull numbers from previous steps ──
+            const simKips  = parseFloat("${{ steps.extract-sim.outputs.kips }}");
+            const simIpc   = parseFloat("${{ steps.extract-ipc.outputs.ipc }}");
+            const baseKips = parseFloat("${{ steps.extract-base.outputs.kips }}");
+            const baseIpc  = parseFloat("${{ steps.extract-base.outputs.ipc }}");
+
+            // ── helper to colour numbers ─────────────────────
+            function coloured(value, fasterIsBetter = true) {
+              const better = fasterIsBetter ? value >= 1 : value <= 1;
+              const colour = better ? 'green' : 'red';
+              const txt    = value.toFixed(2) + '×';
+              return `<span style="color:${colour}; font-weight:bold">${txt}</span>`;
+            }
+
+            const body = `
+  📊 **Scarab Simulation Result**
+
+  | Metric | PR run | Baseline | Δ |
+  | ------ | -----: | -------: | :-- |
+  | **KIPS** | \`${simKips}\` | \`${baseKips}\` | ${coloured(simKips / baseKips)} |
+  | **IPC**  | \`${simIpc}\`  | \`${baseIpc}\`  | ${coloured(simIpc  / baseIpc )} |
+  `;
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
-              repo: context.repo.repo,
+              repo:  context.repo.repo,
               issue_number: context.payload.pull_request.number,
-              body: `📊 **Scarab Simulation Result**\n\nCumulative IPC: \`${ipc}\``
+              body
             });
+
 
   build-dbg:
     runs-on: ubuntu-latest

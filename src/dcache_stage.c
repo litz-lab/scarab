@@ -69,6 +69,10 @@ Dcache_Stage* dc = NULL;
 /**************************************************************************************/
 /* Inline Methods */
 
+static inline Flag dcache_stage_addr_unready(Op* op);
+static inline Flag dcache_stage_check_mem_type(Op* op);
+static inline void dcache_stage_remove_op(Stage_Data* src_sd, int ii);
+
 static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* line);
 static inline void dcache_cacheline_miss(Op* op, Addr line_addr);
 
@@ -184,47 +188,32 @@ void update_dcache_stage(Stage_Data* src_sd) {
     if (op && cycle_count < op->rdy_cycle) {
       ASSERTM(dc->proc_id, op->replay, "o:%s  rdy:%s", unsstr64(op->op_num), unsstr64(op->rdy_cycle));
       // op just got told to replay this cycle (clobber it)
-      src_sd->ops[ii] = NULL;
-      src_sd->op_count--;
-      ASSERT(dc->proc_id, src_sd->op_count >= 0);
+      dcache_stage_remove_op(src_sd, ii);
       op = NULL;
     }
 
-    if (dc->sd.ops[ii])
+    if (dc->sd.ops[ii]) {
       op = dc->sd.ops[ii];
-    else if (!op)
-      continue;
-    else if (cycle_count < op->exec_cycle && !(DCACHE_CYCLES == 0 && cycle_count + 1 == op->exec_cycle))
-      /* this is a little screwy --- if the addr gen time is
-             more than one cycle, then the op won't get cleared out
-             of the exec stage, thus making it block the functional
-             unit (not for the henry mem system, which handles agen
-             itself) */
-      /* the DCACHE_CYCLES == 0 check is to make a address + 0
-         cycle cache.  This stage will grab the op out of exec a
-         cycle before normal, so the wake up happens in the same
-         cycle as execute */
-      continue;
-    else if (op->table_info->mem_type == NOT_MEM) {
-      /* just squish non-memory ops */
-      src_sd->ops[ii] = NULL;
-      src_sd->op_count--;
-      ASSERT(dc->proc_id, src_sd->op_count >= 0);
-      continue;
-    } else if (op->table_info->mem_type == MEM_PF && !ENABLE_SWPRF) {
-      op->done_cycle = cycle_count + DCACHE_CYCLES;
-      op->state = OS_SCHEDULED;
-      src_sd->ops[ii] = NULL;
-      src_sd->op_count--;
-      continue;
     } else {
+      if (!op)
+        continue;
+
+      // not ready due to address generation latency
+      if (dcache_stage_addr_unready(op)) {
+        continue;
+      }
+
+      // squash non-memory and prefetch (when software prefetching is not enabled) ops
+      if (!dcache_stage_check_mem_type(op)) {
+        dcache_stage_remove_op(src_sd, ii);
+        continue;
+      }
+
       /* if the op is valid, move it into the dcache stage */
       dc->sd.ops[ii] = op;
       dc->sd.op_count++;
       ASSERT(dc->proc_id, dc->sd.op_count <= dc->sd.max_op_count);
-      src_sd->ops[ii] = NULL;
-      src_sd->op_count--;
-      ASSERT(dc->proc_id, src_sd->op_count >= 0);
+      dcache_stage_remove_op(src_sd, ii);
     }
     ASSERTM(dc->proc_id, cycle_count >= op->exec_cycle, "o:%s  %s\n", unsstr64(op->op_num), Op_State_str(op->state));
   }
@@ -524,6 +513,48 @@ Flag do_oracle_dcache_access(Op* op, Addr* line_addr) {
 
 /**************************************************************************************/
 /* Inline Methods */
+
+static inline void dcache_stage_remove_op(Stage_Data* src_sd, int ii) {
+  src_sd->ops[ii] = NULL;
+  src_sd->op_count--;
+  ASSERT(dc->proc_id, src_sd->op_count >= 0);
+}
+
+static inline Flag dcache_stage_addr_unready(Op* op) {
+  /*
+   * this is a little screwy. if the addr gen time is more than one cycle, then the op
+   * won't get cleared out of the exec stage, thus making it block the functional unit
+   * (not for the henry mem system, which handles agen itself)
+   */
+  if (cycle_count >= op->exec_cycle)
+    return FALSE;
+
+  /*
+   * the DCACHE_CYCLES == 0 check is to make a address + 0 cycle cache.
+   * This stage will grab the op out of exec a cycle before normal,
+   * so the wake up happens in the same cycle as execute
+   */
+  if (DCACHE_CYCLES == 0 && cycle_count + 1 == op->exec_cycle)
+    return FALSE;
+
+  return TRUE;
+}
+
+static inline Flag dcache_stage_check_mem_type(Op* op) {
+  /* just squish non-memory ops */
+  if (op->table_info->mem_type == NOT_MEM) {
+    return FALSE;
+  }
+
+  /* skip prefetch ops if software prefetching is disabled */
+  if (op->table_info->mem_type == MEM_PF && !ENABLE_SWPRF) {
+    op->done_cycle = cycle_count + DCACHE_CYCLES;
+    op->state = OS_SCHEDULED;
+    return FALSE;
+  }
+
+  return TRUE;
+}
 
 static inline void dcache_hit_wp_collect_stats(Dcache_Data* line, Op* op) {
   L1_Data* l1_line;

@@ -36,6 +36,22 @@ extern "C" {
 
 #include "op.h"
 
+/**************************************************************************************/
+/* Constexpr */
+
+typedef enum NODE_ISSUE_QUEUE_DISPATCH_SCHEME_enum {
+  NODE_ISSUE_QUEUE_DISPATCH_SCHEME_FIND_EMPTIEST_RS,
+  NODE_ISSUE_QUEUE_DISPATCH_SCHEME_NUM
+} Node_Issue_Queue_Dispatch_Scheme;
+
+typedef enum NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_enum {
+  NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_OLDEST_FIRST,
+  NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_NUM
+} Node_Issue_Queue_Schedule_Scheme;
+
+/**************************************************************************************/
+/* External Methods */
+
 int64 node_issue_queue_dispatch(Op* op);
 void node_issue_queue_schedule(Op* op);
 

@@ -145,6 +145,18 @@ DEF_PARAM(reg_table_vector_physical_size, REG_TABLE_VECTOR_PHYSICAL_SIZE, uns, u
 DEF_PARAM(reg_table_integer_virtual_size, REG_TABLE_INTEGER_VIRTUAL_SIZE, uns, uns, 256, )
 DEF_PARAM(reg_table_vector_virtual_size, REG_TABLE_VECTOR_VIRTUAL_SIZE, uns, uns, 256, )
 
+/********ISSUE QUEUE
+ * PARAMETERS********************************************************/
+/*
+ * FIND_EMPTIEST_RS : 0 (default)
+ */
+DEF_PARAM(node_issue_queue_dispatch_scheme, NODE_ISSUE_QUEUE_DISPATCH_SCHEME, uns, uns, 0, )
+
+/*
+ * OLDEST_FIRST : 0 (default)
+ */
+DEF_PARAM(node_issue_queue_schedule_scheme, NODE_ISSUE_QUEUE_SCHEDULE_SCHEME, uns, uns, 0, )
+
 /********EXEC PORT
  * PARAMETERS*********************************************************/
 /*Size of each RS, length should be NUM_RS, Must be type string since it is an
@@ -236,8 +248,6 @@ DEF_PARAM(prefs_do_not_block_window, PREFS_DO_NOT_BLOCK_WINDOW, Flag, Flag,
    the source op information as if the source op had already retired */
 DEF_PARAM(obey_reg_dep, OBEY_REG_DEP, Flag, Flag, TRUE, )
 
-DEF_PARAM(oldest_first_sched, OLDEST_FIRST_SCHED, Flag, Flag, FALSE, )
-DEF_PARAM(find_emptiest_rs, FIND_EMPTIEST_RS, Flag, Flag, FALSE, )
 DEF_PARAM(track_l1_miss_deps, TRACK_L1_MISS_DEPS, Flag, Flag, FALSE, )
 
 DEF_PARAM(cbp_trace_r0, CBP_TRACE_R0, char*, string, NULL, )

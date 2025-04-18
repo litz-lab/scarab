@@ -52,8 +52,8 @@ extern "C" {
 /**************************************************************************************/
 /* Prototypes */
 
-int64 find_emptiest_rs(Op*);
-void oldest_first_sched(Op*);
+int64 node_dispatch_find_emptiest_rs(Op*);
+void node_schedule_oldest_first_sched(Op*);
 
 /**************************************************************************************/
 /* Issuers:
@@ -64,7 +64,7 @@ void oldest_first_sched(Op*);
  *
  *      +FIND_EMPTIEST_RS: will always select the RS with the most empty slots
  */
-int64 find_emptiest_rs(Op* op) {
+int64 node_dispatch_find_emptiest_rs(Op* op) {
   int64 emptiest_rs_id = -1;
   int64 emptiest_rs_slots = -1;
 
@@ -73,7 +73,7 @@ int64 find_emptiest_rs(Op* op) {
   for (int64 rs_id = 0; rs_id < NUM_RS; ++rs_id) {
     Reservation_Station* rs = &node->rs[rs_id];
     ASSERT(node->proc_id, !rs->size || rs->rs_op_count <= rs->size);
-    ASSERTM(node->proc_id, rs->size, "Infinite RS not suppoted by find_emptiest_rs issuer.");
+    ASSERTM(node->proc_id, rs->size, "Infinite RS not suppoted by node_dispatch_find_emptiest_rs issuer.");
     for (uns32 i = 0; i < rs->num_fus; ++i) {
       Func_Unit* fu = rs->connected_fus[i];
 
@@ -107,7 +107,7 @@ int64 find_emptiest_rs(Op* op) {
  *      +OLDEST_FIRST_SCHED: will always select the oldest ready ops to schedule
  */
 
-void oldest_first_sched(Op* op) {
+void node_schedule_oldest_first_sched(Op* op) {
   int32 youngest_slot_op_id = -1;  // -1 means not found
 
   // Iterate through the FUs that this RS is connected to.
@@ -163,24 +163,29 @@ void oldest_first_sched(Op* op) {
 }
 
 /**************************************************************************************/
+/* Driven Table */
+
+using Dispatch_Func = int64 (*)(Op*);
+Dispatch_Func dispatch_func_table[NODE_ISSUE_QUEUE_DISPATCH_SCHEME_NUM] = {
+    [NODE_ISSUE_QUEUE_DISPATCH_SCHEME_FIND_EMPTIEST_RS] = {node_dispatch_find_emptiest_rs},
+};
+
+using Schedule_Func = void (*)(Op*);
+Schedule_Func schedule_func_table[NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_NUM] = {
+    [NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_OLDEST_FIRST] = {node_schedule_oldest_first_sched},
+};
+
+/**************************************************************************************/
 /* External Function */
 
 int64 node_issue_queue_dispatch(Op* op) {
-  // Put your own issue functions here.
-  if (FIND_EMPTIEST_RS) {
-    return find_emptiest_rs(op);
-  } else {
-    // FIND_EMPTIEST_RS is currently the only issuer.
-    return find_emptiest_rs(op);
-  }
+  ASSERT(node->proc_id, NODE_ISSUE_QUEUE_DISPATCH_SCHEME >= 0 &&
+                            NODE_ISSUE_QUEUE_DISPATCH_SCHEME < NODE_ISSUE_QUEUE_DISPATCH_SCHEME_NUM);
+  return dispatch_func_table[NODE_ISSUE_QUEUE_DISPATCH_SCHEME](op);
 }
 
 void node_issue_queue_schedule(Op* op) {
-  // Put your own scheduling algorithm here
-  if (OLDEST_FIRST_SCHED) {
-    oldest_first_sched(op);
-  } else {
-    // oldest first is currently the only scheduling algorithm
-    oldest_first_sched(op);
-  }
+  ASSERT(node->proc_id, NODE_ISSUE_QUEUE_SCHEDULE_SCHEME >= 0 &&
+                            NODE_ISSUE_QUEUE_SCHEDULE_SCHEME < NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_NUM);
+  schedule_func_table[NODE_ISSUE_QUEUE_SCHEDULE_SCHEME](op);
 }

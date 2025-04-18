@@ -646,7 +646,7 @@ void TAGE64K::Tagepred(UINT64 PC, uns8 oracle_dir, bool off_path) {
     if (NOSKIP[i]) {
       GTAG_t current_tag;
       GTAG_t table_tag;
-      if(USE_PERFECT_TAG) {
+      if (USE_PERFECT_TAG) {
         current_tag = Pstate.GTAG[i];
         table_tag = gtable[i][Pstate.GI[i]].ptag;
       } else {
@@ -675,7 +675,7 @@ void TAGE64K::Tagepred(UINT64 PC, uns8 oracle_dir, bool off_path) {
       if (NOSKIP[i]) {
         GTAG_t current_tag;
         GTAG_t table_tag;
-        if(USE_PERFECT_TAG) {
+        if (USE_PERFECT_TAG) {
           current_tag = Pstate.GTAG[i];
           table_tag = gtable[i][Pstate.GI[i]].ptag;
         } else {

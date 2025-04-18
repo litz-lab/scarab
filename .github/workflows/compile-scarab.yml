@@ -150,7 +150,19 @@ jobs:
               issue_number: context.payload.pull_request.number,
               body
             });
+            
+      - name: Write metrics line
+        run: |
+          echo "${{ github.event.pull_request.head.sha }},\
+          ${{ steps.metrics.outputs.ipc }},\
+          ${{ steps.metrics.outputs.kips }}" > metrics_line.txt
 
+      - name: Upload metrics artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-line-${{ github.event.pull_request.head.sha }}
+          path: metrics_line.txt
+          if-no-files-found: error
 
   build-dbg:
     runs-on: ubuntu-latest
@@ -168,3 +180,4 @@ jobs:
       - name: Build Scarab Dbg
         working-directory: src
         run: make dbg -j
+

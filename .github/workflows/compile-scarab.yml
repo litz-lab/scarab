@@ -136,13 +136,13 @@ jobs:
             }
 
             const body = `
-  📊 **Scarab Simulation Result**
+              📊 **Scarab Simulation Result**
 
-  | Metric | PR run | Baseline | Δ |
-  | ------ | -----: | -------: | :-- |
-  | **KIPS** | \`${simKips}\` | \`${baseKips}\` | ${coloured(simKips / baseKips)} |
-  | **IPC**  | \`${simIpc}\`  | \`${baseIpc}\`  | ${coloured(simIpc  / baseIpc )} |
-  `;
+              | Metric | PR run | Baseline | Δ |
+              | ------ | -----: | -------: | :-- |
+              | **KIPS** | \`${simKips}\` | \`${baseKips}\` | ${coloured(simKips / baseKips)} |
+              | **IPC**  | \`${simIpc}\`  | \`${baseIpc}\`  | ${coloured(simIpc  / baseIpc )} |
+            `;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,

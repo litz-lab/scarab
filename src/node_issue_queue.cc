@@ -172,7 +172,7 @@ Dispatch_Func dispatch_func_table[NODE_ISSUE_QUEUE_DISPATCH_SCHEME_NUM] = {
 
 using Schedule_Func = void (*)(Op*);
 Schedule_Func schedule_func_table[NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_NUM] = {
-    [NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_OLDEST_FIRST_SCHED] = {node_schedule_oldest_first_sched},
+    [NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_OLDEST_FIRST] = {node_schedule_oldest_first_sched},
 };
 
 /**************************************************************************************/

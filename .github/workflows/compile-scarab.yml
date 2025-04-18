@@ -83,9 +83,10 @@ jobs:
       # ── Extract metrics from sim.log ────────────────────────
       - name: Extract PR KIPS
         id: extract-sim
+        working-directory: simulations
         run: |
-          SIM_KIPS=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' sim.log | head -n1)
-          SIM_IPC=$(grep -oP '--\s+\K[0-9.]+(?=\s+IPC)'          sim.log | head -n1)
+          SIM_KIPS=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' ./github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/sim.log | head -n1)
+          SIM_IPC=$(grep -oP '--\s+\K[0-9.]+(?=\s+IPC)'          ./github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/sim.log | head -n1)
           echo "kips=$SIM_KIPS" >> "$GITHUB_OUTPUT"
 #          echo "ipc=$SIM_IPC"   >> "$GITHUB_OUTPUT"
 
@@ -109,9 +110,8 @@ jobs:
       - name: Extract baseline KIPS & IPC
         id: extract-base
         run: |
-          line=$(cat baseline/scarab_perf.log)        # githash,ipc,KIPS
-          BASE_IPC=$(echo "$line" | cut -d',' -f2)
-          BASE_KIPS=$(echo "$line" | cut -d',' -f3)
+          last=$(tail -n1 baseline/scarab_perf.log | tr -d '\r')   # githash,ipc,KIPS
+          IFS=',' read -r _ BASE_IPC BASE_KIPS <<< "$last"
           echo "kips=$BASE_KIPS" >> "$GITHUB_OUTPUT"
           echo "ipc=$BASE_IPC"   >> "$GITHUB_OUTPUT"
 

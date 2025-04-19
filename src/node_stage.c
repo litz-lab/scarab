@@ -151,6 +151,7 @@ void reset_node_stage() {
 /* reset_node_stage:*/
 // CMP used for bogus run: may be combined with reset_node_stage
 void reset_all_ops_node_stage() {
+  /* TODO: re-consider for multi-core mode */
   reset_node_stage();
 }
 

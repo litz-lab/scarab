@@ -131,7 +131,6 @@ jobs:
           echo "ipc=$IPC"   >>"$GITHUB_OUTPUT"
           echo "kips=$KIPS" >>"$GITHUB_OUTPUT"
 
-      # Comment ---------------------------------------------
       - name: Post PR comment
         uses: actions/github-script@v7
         with:
@@ -142,10 +141,13 @@ jobs:
             const baseKips = parseFloat("${{ steps.base.outputs.kips      }}");
             const baseIpc  = parseFloat("${{ steps.base.outputs.ipc       }}");
 
-            function colour(v, highGood=true){
-              const ok = highGood ? v>=1 : v<=1;
-              const c  = ok ? 'green' : 'red';
-              return `<span style="color:${c};font-weight:bold">${v.toFixed(2)}×</span>`;
+            // 1× → green, <1× → red, >1× → blue
+            function coloured(v) {
+              const EPS = 1e-3;          // tolerance for “equal”
+              let colour = 'green';
+              if (v > 1 + EPS) colour = 'blue';
+              else if (v < 1 - EPS) colour = 'red';
+              return `<span style="color:${colour};font-weight:bold">${v.toFixed(2)}×</span>`;
             }
 
             const body = `
@@ -153,8 +155,8 @@ jobs:
 
               | Metric | PR | Baseline | Δ |
               | ------ | --:| -------: | :- |
-              | **KIPS** | \`${simKips}\` | \`${baseKips}\` | ${colour(simKips/baseKips)} |
-              | **IPC**  | \`${simIpc}\`  | \`${baseIpc}\`  | ${colour(simIpc/baseIpc)} |
+              | **KIPS** | \`${simKips}\` | \`${baseKips}\` | ${coloured(simKips / baseKips)} |
+              | **IPC**  | \`${simIpc}\`  | \`${baseIpc}\`  | ${coloured(simIpc  / baseIpc )} |
             `;
 
             await github.rest.issues.createComment({

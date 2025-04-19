@@ -67,19 +67,6 @@ jobs:
           ls -alt /home/runner/work/scarab_ll/scarab_ll/
           ./run.sh --simulation top_simpoint
 
-#      - name: Post IPC result to PR
-#        uses: actions/github-script@v6
-#        with:
-#          github-token: ${{ secrets.GITHUB_TOKEN }}
-#          script: |
-#            const ipc = "${{ steps.extract-ipc.outputs.ipc }}";
-#            await github.rest.issues.createComment({
-#              owner: context.repo.owner,
-#              repo: context.repo.repo,
-#              issue_number: context.payload.pull_request.number,
-#              body: `📊 **Scarab Simulation Result**\n\nCumulative IPC: \`${ipc}\``
-#            });
-
       # ── Extract metrics from sim.log ────────────────────────
       - name: Extract PR KIPS
         id: extract-sim
@@ -88,7 +75,6 @@ jobs:
           SIM_KIPS=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' ./github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/sim.log | head -n1)
           SIM_IPC=$(grep -oP '--\s+\K[0-9.]+(?=\s+IPC)'          ./github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/sim.log | head -n1)
           echo "kips=$SIM_KIPS" >> "$GITHUB_OUTPUT"
-#          echo "ipc=$SIM_IPC"   >> "$GITHUB_OUTPUT"
 
       - name: Extract PR cumulative IPC
         id: extract-ipc

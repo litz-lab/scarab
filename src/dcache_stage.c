@@ -71,7 +71,7 @@ Dcache_Stage* dc = NULL;
 
 static inline Flag dcache_stage_addr_unready(Op* op);
 static inline Flag dcache_stage_check_mem_type(Op* op);
-static inline void dcache_stage_remove_op(Stage_Data* src_sd, int ii);
+static inline void dcache_stage_remove_src_op(Stage_Data* src_sd, int ii);
 
 static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* line);
 static inline void dcache_cacheline_miss(Op* op, Addr line_addr);
@@ -177,44 +177,46 @@ void update_dcache_stage(Stage_Data* src_sd) {
     Op* op = src_sd->ops[ii];
     Op* dc_op = dc->sd.ops[ii];
 
-    Flag stall_dc_op = dc_op && (dc_op->state == OS_WAIT_DCACHE || (STALL_ON_WAIT_MEM && dc_op->state == OS_WAIT_MEM));
-    if (dc_op && !stall_dc_op) {
+    // op just got told to replay this cycle (clobber it)
+    if (op && cycle_count < op->rdy_cycle) {
+      ASSERTM(dc->proc_id, op->replay, "o:%s  rdy:%s", unsstr64(op->op_num), unsstr64(op->rdy_cycle));
+      dcache_stage_remove_src_op(src_sd, ii);
+      op = NULL;
+    }
+
+    /* check if the op in the dcache_stage is stall */
+    if (dc_op) {
+      if (dc_op->state == OS_WAIT_DCACHE || (STALL_ON_WAIT_MEM && dc_op->state == OS_WAIT_MEM)) {
+        ASSERT(dc->proc_id, cycle_count >= dc->sd.ops[ii]->exec_cycle);
+        continue;
+      }
+
       // unless the op stalled getting a dcache port, it's gone
       dc->sd.ops[ii] = NULL;
       dc->sd.op_count--;
       ASSERT(dc->proc_id, dc->sd.op_count >= 0);
     }
 
-    if (op && cycle_count < op->rdy_cycle) {
-      ASSERTM(dc->proc_id, op->replay, "o:%s  rdy:%s", unsstr64(op->op_num), unsstr64(op->rdy_cycle));
-      // op just got told to replay this cycle (clobber it)
-      dcache_stage_remove_op(src_sd, ii);
-      op = NULL;
+    /* check if the op from the src_stage is ready */
+    if (!op)
+      continue;
+
+    // not ready due to address generation latency
+    if (dcache_stage_addr_unready(op)) {
+      continue;
     }
 
-    if (dc->sd.ops[ii]) {
-      op = dc->sd.ops[ii];
-    } else {
-      if (!op)
-        continue;
-
-      // not ready due to address generation latency
-      if (dcache_stage_addr_unready(op)) {
-        continue;
-      }
-
-      // squash non-memory and prefetch (when software prefetching is not enabled) ops
-      if (!dcache_stage_check_mem_type(op)) {
-        dcache_stage_remove_op(src_sd, ii);
-        continue;
-      }
-
-      /* if the op is valid, move it into the dcache stage */
-      dc->sd.ops[ii] = op;
-      dc->sd.op_count++;
-      ASSERT(dc->proc_id, dc->sd.op_count <= dc->sd.max_op_count);
-      dcache_stage_remove_op(src_sd, ii);
+    // squash non-memory and prefetch (when software prefetching is not enabled) ops
+    if (!dcache_stage_check_mem_type(op)) {
+      dcache_stage_remove_src_op(src_sd, ii);
+      continue;
     }
+
+    /* if the op is valid, move it into the dcache stage */
+    dc->sd.ops[ii] = op;
+    dc->sd.op_count++;
+    ASSERT(dc->proc_id, dc->sd.op_count <= dc->sd.max_op_count);
+    dcache_stage_remove_src_op(src_sd, ii);
     ASSERTM(dc->proc_id, cycle_count >= op->exec_cycle, "o:%s  %s\n", unsstr64(op->op_num), Op_State_str(op->state));
   }
   // }}}
@@ -514,7 +516,7 @@ Flag do_oracle_dcache_access(Op* op, Addr* line_addr) {
 /**************************************************************************************/
 /* Inline Methods */
 
-static inline void dcache_stage_remove_op(Stage_Data* src_sd, int ii) {
+static inline void dcache_stage_remove_src_op(Stage_Data* src_sd, int ii) {
   src_sd->ops[ii] = NULL;
   src_sd->op_count--;
   ASSERT(dc->proc_id, src_sd->op_count >= 0);

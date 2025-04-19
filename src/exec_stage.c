@@ -299,7 +299,10 @@ void update_exec_stage(Stage_Data* src_sd) {
     exec->sd.ops[ii] = op;
     exec->sd.op_count++;
     ASSERT(exec->proc_id, exec->sd.op_count <= exec->sd.max_op_count);
-    // if the op is not pipelined, then busy up the functional unit
+    /*
+     * The op's latency is assigned a negative value if it is not pipelined.
+     * If the op is not pipelined, keep the functional unit busy for the full duration.
+     */
     int latency = op->inst_info->latency;
     fu->avail_cycle = cycle_count + (latency < 0 ? -latency : 1);
     fu->idle_cycle = cycle_count + (latency < 0 ? -latency : latency);

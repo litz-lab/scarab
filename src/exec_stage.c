@@ -204,7 +204,7 @@ void update_exec_stage(Stage_Data* src_sd) {
 
   /* phase 1 - success/failure of latching and wake up of dependent ops */
   for (uns ii = 0; ii < src_sd->max_op_count; ii++) {
-    /* do failure checking before latching */
+    /* do issue availability checking before latching */
     // preserve the pointer prior to issue availability check, as the rejection function will clear src_sd->ops[ii]
     Op* op = src_sd->ops[ii];
 

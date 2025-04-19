@@ -301,7 +301,6 @@ void update_exec_stage(Stage_Data* src_sd) {
     ASSERT(exec->proc_id, exec->sd.op_count <= exec->sd.max_op_count);
     // if the op is not pipelined, then busy up the functional unit
     int latency = op->inst_info->latency;
-    ASSERT(0, latency);  // otherwise ready list management breaks
     fu->avail_cycle = cycle_count + (latency < 0 ? -latency : 1);
     fu->idle_cycle = cycle_count + (latency < 0 ? -latency : latency);
 
@@ -418,8 +417,7 @@ static inline void exec_stage_inc_power_stats(Op* op) {
 }
 
 static inline void exec_stage_dep_wakeup(Op* op) {
-  int latency = op->inst_info->latency;
-  Counter exec_cycle = cycle_count + MAX2(latency, -latency);
+  Counter exec_cycle = cycle_count + abs(op->inst_info->latency);
 
   // non-memory ops will always distribute their results after the op's latency
   if (op->table_info->mem_type == NOT_MEM) {
@@ -495,8 +493,6 @@ static inline int exec_stage_issue_available(Stage_Data* src_sd, int ii) {
 }
 
 static inline void exec_stage_process_op(Op* op) {
-  int latency = op->inst_info->latency;
-
   // set the op's state to reflect it's execution
   if (op->table_info->mem_type == NOT_MEM || STALL_ON_WAIT_MEM) {
     op->state = OS_SCHEDULED;
@@ -505,7 +501,7 @@ static inline void exec_stage_process_op(Op* op) {
     op->state = OS_TENTATIVE;
   }
 
-  op->exec_cycle = cycle_count + MAX2(latency, -latency);
+  op->exec_cycle = cycle_count + abs(op->inst_info->latency);
   op->exec_count++;
   if (op->table_info->mem_type == NOT_MEM)
     op->done_cycle = op->exec_cycle;

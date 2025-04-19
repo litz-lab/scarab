@@ -73,11 +73,8 @@ class TraceReader {
 
   // The default-constructed object will not return valid instructions
   TraceReader();
-  // A trace and single-binary object
-  TraceReader(const std::string& _trace, const std::string& _binary, uint64_t _offset, uint32_t _buf_size = 0);
-  // A trace and multi-binary object which reads 'binary-info.txt' from the
-  // input path. This file contains one '<binary> <offset>' pair per line.
-  TraceReader(const std::string& _trace, const std::string& _binary_group_path, uint32_t _buf_size = 0);
+  // Trace reader
+  TraceReader(const std::string& _trace, uint32_t _buf_size = 0);
   ~TraceReader();
   // A constructor that fails will cause operator! to return true
   bool operator!();
@@ -89,12 +86,10 @@ class TraceReader {
 
  private:
   virtual const InstInfo* getNextInstruction() = 0;
-  virtual void binaryGroupPathIs(const std::string& _path) = 0;
   virtual bool initTrace() = 0;
   virtual bool locationForVAddr(uint64_t _vaddr, uint8_t** _loc, uint64_t* _size) = 0;
 
   void init_buffer();
-  void binaryFileIs(const std::string& _binary, uint64_t _offset);
 
   std::unique_ptr<xed_decoded_inst_t> makeNop(uint8_t _length);
 
@@ -103,9 +98,7 @@ class TraceReader {
   InstInfo info_;
   InstInfo invalid_info_;
   bool trace_ready_;
-  bool binary_ready_;
   xed_state_t xed_state_;
-  std::unordered_map<std::string, std::pair<uint8_t*, uint64_t>> binaries_;
   std::vector<std::tuple<uint64_t, uint64_t, uint8_t*>> sections_;
   std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, std::unique_ptr<xed_decoded_inst_t>>> xed_map_;
   int warn_not_found_;
@@ -114,8 +107,6 @@ class TraceReader {
   std::deque<InstInfo> ins_buffer;
 
   void init(const std::string& _trace);
-  bool initBinary(const std::string& _name, uint64_t _offset);
-  void clearBinaries();
   void fillCache(uint64_t _vAddr, uint8_t _reported_size, uint8_t* inst_bytes = NULL);
   void traceFileIs(const std::string& _trace);
   xed_decoded_inst_t* createJmp(uint64_t displacement);

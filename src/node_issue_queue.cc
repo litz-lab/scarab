@@ -60,34 +60,44 @@ void node_schedule_oldest_first_sched(Op*);
  *      The interface to the issue functions is that Scarab will pass the
  * function the op to be issued, and the issuer will return the RS id that the
  * op should be issued to, or -1 meaning that there is no RS for the op to
- * be issued to. See FIND_EMPTIEST_RS for an example.
- *
- *      +FIND_EMPTIEST_RS: will always select the RS with the most empty slots
+ * be issued to.
+ */
+
+/*
+ * FIND_EMPTIEST_RS: will always select the RS with the most empty slots
  */
 int64 node_dispatch_find_emptiest_rs(Op* op) {
-  int64 emptiest_rs_id = -1;
-  int64 emptiest_rs_slots = -1;
+  int64 emptiest_rs_id = NODE_ISSUE_QUEUE_RS_SLOT_INVALIDE;
+  uns emptiest_rs_slots = 0;
 
-  /*Iterate through RSs looking for an available RS that is connected
-    to an FU that can execute the OP.*/
+  /*
+   * Iterate through RSs looking for an available RS that is connected to
+   * an FU that can execute the OP.
+   */
   for (int64 rs_id = 0; rs_id < NUM_RS; ++rs_id) {
     Reservation_Station* rs = &node->rs[rs_id];
     ASSERT(node->proc_id, !rs->size || rs->rs_op_count <= rs->size);
-    ASSERTM(node->proc_id, rs->size, "Infinite RS not suppoted by node_dispatch_find_emptiest_rs issuer.");
-    for (uns32 i = 0; i < rs->num_fus; ++i) {
-      Func_Unit* fu = rs->connected_fus[i];
 
-      // This FU can execute this op
-      if (get_fu_type(op->table_info->op_type, op->table_info->is_simd) & fu->type) {
-        // Find the emptiest RS
-        int32 num_empty_slots = rs->size - rs->rs_op_count;
-        if (num_empty_slots != 0) {
-          if (emptiest_rs_slots < num_empty_slots) {
-            // Found a new emptiest rs
-            emptiest_rs_id = rs_id;
-            emptiest_rs_slots = num_empty_slots;
-          }
-        }
+    /* TODO: support infinite RS for upper-bound expr */
+    ASSERTM(node->proc_id, rs->size, "Infinite RS not suppoted by node_dispatch_find_emptiest_rs issuer.");
+
+    for (uns32 i = 0; i < rs->num_fus; ++i) {
+      // find the FU that can execute this op
+      Func_Unit* fu = rs->connected_fus[i];
+      if (!(get_fu_type(op->table_info->op_type, op->table_info->is_simd) & fu->type)) {
+        continue;
+      }
+
+      ASSERT(node->proc_id, rs->size >= rs->rs_op_count);
+      uns num_empty_slots = rs->size - rs->rs_op_count;
+      if (num_empty_slots == 0) {
+        continue;
+      }
+
+      // find the emptiest RS
+      if (emptiest_rs_slots < num_empty_slots) {
+        emptiest_rs_id = rs_id;
+        emptiest_rs_slots = num_empty_slots;
       }
     }
   }
@@ -99,14 +109,14 @@ int64 node_dispatch_find_emptiest_rs(Op* op) {
 /* Schedulers:
  *      The interface to the schedule functions is that Scarab will pass the
  * function the ready op, and the scheduler will return the selected ops in
- * node->sd. See OLDEST_FIRST_SCHED for an example. Note, it is not
- * necessary to look at FU availability in this stage, if the FU is busy,
- * then the op will be ignored and available to schedule again in the next
- * stage.
- *
- *      +OLDEST_FIRST_SCHED: will always select the oldest ready ops to schedule
+ * node->sd. See OLDEST_FIRST_SCHED for an example. Note, it is not necessary
+ * to look at FU availability in this stage, if the FU is busy, then the op
+ * will be ignored and available to schedule again in the next stage.
  */
 
+/*
+ * OLDEST_FIRST_SCHED: will always select the oldest ready ops to schedule
+ */
 void node_schedule_oldest_first_sched(Op* op) {
   int32 youngest_slot_op_id = -1;  // -1 means not found
 

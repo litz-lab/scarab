@@ -277,9 +277,8 @@ void memtrace_init(void) {
 void memtrace_setup(uns proc_id) {
   std::string path(trace_files[proc_id]);
   std::string trace(path);
-  std::string binaries(MEMTRACE_MODULES_LOG);
 
-  trace_readers[proc_id] = new TraceReaderMemtrace(trace, binaries, 1);
+  trace_readers[proc_id] = new TraceReaderMemtrace(trace, 1);
 
   if (FAST_FORWARD) {
     ASSERT(proc_id, !MEMTRACE_ROI_BEGIN && !MEMTRACE_ROI_END);

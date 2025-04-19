@@ -58,22 +58,15 @@ static bool xedInitDone = false;
 static std::mutex initMutex;
 
 // A non-reader
-TraceReader::TraceReader() : trace_ready_(false), binary_ready_(false), skipped_(0), buf_size_(0) {
+TraceReader::TraceReader() : trace_ready_(false), skipped_(0), buf_size_(0) {
 }
 
-// Trace + single binary
-TraceReader::TraceReader(const std::string& _trace, const std::string& _binary, uint64_t _offset, uint32_t _buf_size)
-    : trace_ready_(false), binary_ready_(true), warn_not_found_(1), skipped_(0), buf_size_(_buf_size) {
-  binaryFileIs(_binary, _offset);
-}
-
-// Trace + multiple binaries
-TraceReader::TraceReader(const std::string& _trace, const std::string& _binary_group_path, uint32_t _buf_size)
-    : trace_ready_(false), binary_ready_(true), warn_not_found_(1), skipped_(0), buf_size_(_buf_size) {
+// Trace Reader
+TraceReader::TraceReader(const std::string& _trace, uint32_t _buf_size)
+    : trace_ready_(false), warn_not_found_(1), skipped_(0), buf_size_(_buf_size) {
 }
 
 TraceReader::~TraceReader() {
-  clearBinaries();
   if (skipped_ > 0) {
     warn("Skipped %lu stray memory references\n", skipped_);
   }
@@ -81,7 +74,7 @@ TraceReader::~TraceReader() {
 
 bool TraceReader::operator!() {
   // Return true if there was an initialization error
-  return !(trace_ready_ && binary_ready_);
+  return !(trace_ready_);
 }
 
 void TraceReader::init(const std::string& _trace) {
@@ -119,93 +112,6 @@ void TraceReader::init(const std::string& _trace) {
 void TraceReader::traceFileIs(const std::string& _trace) {
   trace_ = _trace;
   trace_ready_ = initTrace();
-}
-
-void TraceReader::binaryFileIs(const std::string& _binary, uint64_t _offset) {
-  clearBinaries();
-  if (_binary.empty()) {
-    // An absent binary is allowed
-    binary_ready_ = true;
-  } else {
-    binary_ready_ = initBinary(_binary, _offset);
-  }
-}
-
-void TraceReader::clearBinaries() {
-  // Unmap all existing files
-  for (auto& binary : binaries_) {
-    auto& map_info = binary.second;
-    if (munmap(map_info.first, map_info.second) == -1) {
-      panic("munmap: %s", strerror(errno));
-    }
-  }
-  binaries_.clear();
-  sections_.clear();
-}
-
-bool TraceReader::initBinary(const std::string& _name, uint64_t _offset) {
-  // Load the input file to memory
-  int fd = open(_name.c_str(), O_RDONLY);
-  if (fd == -1) {
-    panic("Could not open '%s': %s", _name.c_str(), strerror(errno));
-    return false;
-  }
-  struct stat sb;
-  if (fstat(fd, &sb) == -1) {
-    panic("fstat: %s", strerror(errno));
-    return false;
-  }
-  uint64_t size = static_cast<uint64_t>(sb.st_size);
-  if (size == 0) {
-    warn("Input file '%s' is empty", _name.c_str());
-    if (close(fd) == -1) {
-      panic("close: %s", strerror(errno));
-    }
-    return false;
-  }
-  uint8_t* data = static_cast<uint8_t*>(mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0));
-  if (data == MAP_FAILED) {
-    panic("mmap: %s", strerror(errno));
-    return false;
-  }
-  if (close(fd) == -1) {
-    panic("close: %s", strerror(errno));
-    return false;
-  }
-  binaries_.emplace(_name, make_pair(data, size));
-
-  // Parse the ELF structures in the file
-  if (size < sizeof(Elf64_Ehdr)) {
-    panic("File is too small to hold an ELF header");
-    return false;
-  }
-  Elf64_Ehdr* hdr = reinterpret_cast<Elf64_Ehdr*>(data);
-  if (hdr->e_machine != EM_X86_64) {
-    panic("Expected ELF binary type 'EM_X86_64'");
-    return false;
-  }
-  Elf64_Off shoff = hdr->e_shoff;  // section header table offset
-  if (size < shoff + (hdr->e_shnum * sizeof(Elf64_Shdr))) {
-    panic("ELF file is too small for section headers");
-    return false;
-  }
-
-  Elf64_Shdr* shdr = reinterpret_cast<Elf64_Shdr*>(data + shoff);
-  for (Elf64_Half i = 0; i < hdr->e_shnum; i++) {
-    if ((shdr[i].sh_type == SHT_PROGBITS) && (shdr[i].sh_flags & SHF_EXECINSTR)) {
-      // An executable ("text") section
-      Elf64_Off sec_offset = shdr[i].sh_offset;
-      Elf64_Xword sec_size = shdr[i].sh_size;
-      if (size < sec_offset + sec_size) {
-        panic("ELF file is too small for section %u", i);
-        return false;
-      }
-      // Save the starting virtual address, size, and location in memory
-      uint64_t base_addr = shdr[i].sh_addr + _offset;
-      sections_.emplace_back(base_addr, sec_size, data + sec_offset);
-    }
-  }
-  return true;
 }
 
 void TraceReader::fillCache(uint64_t _vAddr, uint8_t _reported_size, uint8_t* inst_bytes) {

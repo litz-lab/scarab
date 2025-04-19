@@ -42,12 +42,10 @@
 class TraceReaderMemtrace : public TraceReader {
  public:
   const InstInfo* getNextInstruction() override;
-  TraceReaderMemtrace(const std::string& _trace, const std::string& _binary, uint64_t _offset, uint32_t _bufsize);
-  TraceReaderMemtrace(const std::string& _trace, const std::string& _binary_group_path, uint32_t _bufsize);
+  TraceReaderMemtrace(const std::string& _trace, uint32_t _bufsize);
   ~TraceReaderMemtrace();
 
  private:
-  void binaryGroupPathIs(const std::string& _path) override;
   bool initTrace() override;
   bool locationForVAddr(uint64_t _vaddr, uint8_t** _loc, uint64_t* _size) override;
   void init(const std::string& _trace);

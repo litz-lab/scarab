@@ -247,10 +247,9 @@ uint8_t dr_isa_to_scarab_reg(reg_id_t reg) {
   return SCARAB_REG_INV;  // Invalid or out-of-bounds
 }
 
-// Trace + single binary
-TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace, const std::string& _binary, uint64_t _offset,
-                                         uint32_t _bufsize)
-    : TraceReader(_trace, _binary, _offset, _bufsize),
+// Trace Reader
+TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace, uint32_t _bufsize)
+    : TraceReader(_trace, _bufsize),
       mt_state_(MTState::INST),
       mt_use_next_ref_(true),
       mt_mem_ops_(0),
@@ -258,21 +257,6 @@ TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace, const std::s
       mt_prior_isize_(0),
       mt_using_info_a_(true),
       mt_warn_target_(0) {
-  init(_trace);
-}
-
-// Trace + multiple binaries
-TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace, const std::string& _binary_group_path,
-                                         uint32_t _bufsize)
-    : TraceReader(_trace, _binary_group_path, _bufsize),
-      mt_state_(MTState::INST),
-      mt_use_next_ref_(true),
-      mt_mem_ops_(0),
-      mt_seq_(0),
-      mt_prior_isize_(0),
-      mt_using_info_a_(true),
-      mt_warn_target_(0) {
-  binaryGroupPathIs(_binary_group_path);
   init(_trace);
 }
 
@@ -301,31 +285,6 @@ const char* TraceReaderMemtrace::parse_buildid_string(const char* src, OUT void*
   return comma + 1;
 }
 #endif
-
-void TraceReaderMemtrace::binaryGroupPathIs(const std::string& _path) {
-  clearBinaries();
-  binary_ready_ = true;  // An absent binary is allowed
-  if (!_path.empty()) {
-    std::string error;
-    module_mapper_ = dynamorio::drmemtrace::module_mapper_t::create(directory_.modfile_bytes_,
-#ifdef ZSIM_USE_YT
-                                                                    parse_buildid_string,
-#else
-                                                                    nullptr,
-#endif
-                                                                    nullptr, nullptr, nullptr, knob_verbose_);
-    module_mapper_->get_loaded_modules();
-    error = module_mapper_->get_last_error();
-    if (!error.empty()) {
-      panic(
-          "Failed to load binaries: %s Check that module.log references the "
-          "correct binary paths.",
-          error.c_str());
-      return;
-    }
-    binary_ready_ = true;
-  }
-}
 
 bool TraceReaderMemtrace::initTrace() {
   std::vector<dynamorio::drmemtrace::scheduler_t::input_workload_t> sched_inputs;

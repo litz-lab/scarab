@@ -277,9 +277,6 @@ class TraceReaderPT : public TraceReader {
     use_info_a = !use_info_a;
     return &_prior;
   }
-  void binaryGroupPathIs(const std::string &_path) override {
-    // do nothing
-  }
   bool initTrace() override {
     getNextInstruction();  // fill in info a, will lack BP information (hopefully we won't need it...)
     return true;

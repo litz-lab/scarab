@@ -1,133 +1,160 @@
-# .github/workflows/compile-pr.yml
+# .github/workflows/compile-scarab.yml
 name: Compile PR in Container
 
+############################################################
+# 1 ─── Triggers ────────────────────────────────────────────
+############################################################
 on:
   pull_request:
-    branches: [main]  # Or your target branch
+    branches: [main]
+  push:
+    branches: [main]
 
+############################################################
+# 2 ─── Shared variables ───────────────────────────────────
+############################################################
+env:
+  # SHA of the code being tested (PR head or merge commit)
+  COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+############################################################
+# 3 ─── Job 0: look up infra‑container tag ─────────────────
+############################################################
 jobs:
+
   get_tag:
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.get_sha.outputs.tag }}
+      tag: ${{ steps.tag.outputs.short }}
     steps:
-      - name: Get latest SHA from scarab-infra
-        id: get_sha
+      - id: tag
+        name: Latest scarab‑infra SHA
         run: |
-          LATEST_SHA=$(curl -s https://api.github.com/repos/litz-lab/scarab-infra/commits/main | jq -r '.sha')
-          SHORT_SHA=$(echo "$LATEST_SHA" | cut -c1-7)
-          echo "tag=$SHORT_SHA" >> $GITHUB_OUTPUT
+          LATEST=$(curl -s https://api.github.com/repos/litz-lab/scarab-infra/commits/main | jq -r '.sha')
+          echo "short=${LATEST:0:7}" >>"$GITHUB_OUTPUT"
 
+############################################################
+# 4 ─── Job 1: build (opt) ─────────────────────────────────
+############################################################
   build-opt:
     runs-on: ubuntu-latest
     needs: get_tag
     container:
       image: ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Mark Git repo as safe
-        run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
-
+      - uses: actions/checkout@v4
+      - run: git config --global --add safe.directory "${{ github.workspace }}"
       - name: Build Scarab Opt
         working-directory: src
         run: make opt -j
 
+############################################################
+# 5 ─── Job 2: run simulation & extract metrics ────────────
+############################################################
   run-scarab:
-    runs-on: ubuntu-latest
     needs: [get_tag]
+    runs-on: ubuntu-latest
+    outputs:
+      ipc:  ${{ steps.ipc.outputs.value }}
+      kips: ${{ steps.kips.outputs.value }}
+    env:
+      TAG: ${{ needs.get_tag.outputs.tag }}
     steps:
-      - name: Copy simpoint traces
+      # Traces ------------------------------------------------
+      - name: Fetch traces
         run: |
-          curl -L -o traces_top_simpoint.tar.gz https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz
-          tar -xzf traces_top_simpoint.tar.gz
-          pwd
+          curl -L -o traces.tar.gz \
+            https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz
+          tar -xzf traces.tar.gz
 
-      - name: Clone scarab-infra repo via SSH
-        run: git clone https://github.com/litz-lab/scarab-infra.git
-
-      - name: Checkout scarab PR code
-        uses: actions/checkout@v4
+      # Code --------------------------------------------------
+      - uses: actions/checkout@v4            # PR or main code
         with:
           path: scarab_ll
+      - name: Clone scarab‑infra
+        run: git clone https://github.com/litz-lab/scarab-infra.git
 
-      - name: Pull Scarab Docker image
+      # Docker image -----------------------------------------
+      - name: Pull sim container
         working-directory: scarab-infra
         run: |
-          docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
-          docker tag ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }} allbench_traces:${{ needs.get_tag.outputs.tag }}
+          docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG}
+          docker tag  ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG} allbench_traces:${TAG}
 
-      - name: Run Scarab simulation
+      # Simulation -------------------------------------------
+      - name: Run simulation
         working-directory: scarab-infra
         run: |
-          set -e #force workflow to fail on script error
+          set -e
           chmod +x run.sh
           pip install -r requirements.txt
-          ls -alt /home/runner/work/scarab_ll/scarab_ll/
           ./run.sh --simulation top_simpoint
 
-      # ── Extract metrics from sim.log ────────────────────────
-      - name: Extract PR KIPS
-        id: extract-sim
+      # Extract KIPS -----------------------------------------
+      - id: kips
+        name: Grab KIPS
         working-directory: simulations
         run: |
-          SIM_KIPS=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' ./github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/sim.log | head -n1)
-          SIM_IPC=$(grep -oP '--\s+\K[0-9.]+(?=\s+IPC)'          ./github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/sim.log | head -n1)
-          echo "kips=$SIM_KIPS" >> "$GITHUB_OUTPUT"
+          v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' \
+              github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/sim.log | head -n1)
+          echo "value=$v" >>"$GITHUB_OUTPUT"
 
-      - name: Extract PR cumulative IPC
-        id: extract-ipc
+      # Extract IPC ------------------------------------------
+      - id: ipc
+        name: Grab IPC
         working-directory: simulations
         run: |
-          ipc=$(grep "Cumulative:" ./github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/core.stat.0.out | sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
-          echo "ipc=${ipc:-ERROR}" >> $GITHUB_OUTPUT
+          v=$(grep "Cumulative:" \
+               github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/core.stat.0.out | \
+               sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
+          echo "value=${v:-ERROR}" >>"$GITHUB_OUTPUT"
 
-      # ── Check out baseline repo with reference results ──────
-      - name: Checkout baseline performance repo
-        uses: actions/checkout@v4
+############################################################
+# 6 ─── Job 3A: compare & comment (PRs only) ───────────────
+############################################################
+  comment-pr:
+    if: github.event_name == 'pull_request'
+    needs: [run-scarab]
+    runs-on: ubuntu-latest
+    steps:
+      # Baseline file ---------------------------------------
+      - uses: actions/checkout@v4
         with:
           repository: litz-lab/scarab_perf
           path: baseline
-          # If the repo is private, add:
-          # ssh-key: ${{ secrets.SCARAB_PERF_SSH_KEY }}
 
-      # ── Extract baseline metrics ────────────────────────────
-      - name: Extract baseline KIPS & IPC
-        id: extract-base
+      - id: base
+        name: Read last baseline line
         run: |
-          last=$(tail -n1 baseline/scarab_perf.log | tr -d '\r')   # githash,ipc,KIPS
-          IFS=',' read -r _ BASE_IPC BASE_KIPS <<< "$last"
-          echo "kips=$BASE_KIPS" >> "$GITHUB_OUTPUT"
-          echo "ipc=$BASE_IPC"   >> "$GITHUB_OUTPUT"
+          last=$(tail -n1 baseline/scarab_perf.log | tr -d '\r')
+          IFS=',' read -r _ IPC KIPS <<<"$last"
+          echo "ipc=$IPC"   >>"$GITHUB_OUTPUT"
+          echo "kips=$KIPS" >>"$GITHUB_OUTPUT"
 
-      # ── Compute speed‑ups and post PR comment ───────────────
-      - name: Comment on PR
+      # Comment ---------------------------------------------
+      - name: Post PR comment
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // ── pull numbers from previous steps ──
-            const simKips  = parseFloat("${{ steps.extract-sim.outputs.kips }}");
-            const simIpc   = parseFloat("${{ steps.extract-ipc.outputs.ipc }}");
-            const baseKips = parseFloat("${{ steps.extract-base.outputs.kips }}");
-            const baseIpc  = parseFloat("${{ steps.extract-base.outputs.ipc }}");
+            const simKips  = parseFloat("${{ needs.run-scarab.outputs.kips }}");
+            const simIpc   = parseFloat("${{ needs.run-scarab.outputs.ipc  }}");
+            const baseKips = parseFloat("${{ steps.base.outputs.kips      }}");
+            const baseIpc  = parseFloat("${{ steps.base.outputs.ipc       }}");
 
-            // ── helper to colour numbers ─────────────────────
-            function coloured(value, fasterIsBetter = true) {
-              const better = fasterIsBetter ? value >= 1 : value <= 1;
-              const colour = better ? 'green' : 'red';
-              const txt    = value.toFixed(2) + '×';
-              return `<span style="color:${colour}; font-weight:bold">${txt}</span>`;
+            function colour(v, highGood=true){
+              const ok = highGood ? v>=1 : v<=1;
+              const c  = ok ? 'green' : 'red';
+              return `<span style="color:${c};font-weight:bold">${v.toFixed(2)}×</span>`;
             }
 
             const body = `
-              📊 **Scarab Simulation Result**
+              📊 **Scarab simulation**
 
-              | Metric | PR run | Baseline | Δ |
-              | ------ | -----: | -------: | :-- |
-              | **KIPS** | \`${simKips}\` | \`${baseKips}\` | ${coloured(simKips / baseKips)} |
-              | **IPC**  | \`${simIpc}\`  | \`${baseIpc}\`  | ${coloured(simIpc  / baseIpc )} |
+              | Metric | PR | Baseline | Δ |
+              | ------ | --:| -------: | :- |
+              | **KIPS** | \`${simKips}\` | \`${baseKips}\` | ${colour(simKips/baseKips)} |
+              | **IPC**  | \`${simIpc}\`  | \`${baseIpc}\`  | ${colour(simIpc/baseIpc)} |
             `;
 
             await github.rest.issues.createComment({
@@ -136,19 +163,37 @@ jobs:
               issue_number: context.payload.pull_request.number,
               body
             });
-            
-      - name: Write metrics line
-        run: |
-          echo "${{ github.event.pull_request.head.sha }},\
-          ${{ steps.metrics.outputs.ipc }},\
-          ${{ steps.metrics.outputs.kips }}" > metrics_line.txt
 
-      - name: Upload metrics artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: perf-line-${{ github.event.pull_request.head.sha }}
-          path: metrics_line.txt
-          if-no-files-found: error
+############################################################
+# 6 ─── Job 3B: append to scarab_perf (push only) ──────────
+############################################################
+  update-baseline:
+    if: github.event_name == 'push'
+    needs: [run-scarab]
+    runs-on: ubuntu-latest
+    env:
+      PERF_KEY: ${{ secrets.SCARAB_PERF_SSH_KEY }}
+    steps:
+      - name: Configure git‑ssh
+        run: |
+          mkdir -p ~/.ssh
+          echo "$PERF_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Clone baseline repo (write)
+        run: git clone git@github.com:litz-lab/scarab_perf.git perf
+
+      - name: Append new metrics line
+        run: |
+          echo "${{ env.COMMIT_SHA }},${{ needs.run-scarab.outputs.ipc }},${{ needs.run-scarab.outputs.kips }}" \
+            >> perf/scarab_perf.log
+          cd perf
+          git add scarab_perf.log
+          git commit -m "Add perf result for ${{ env.COMMIT_SHA::7 }}"
+          git push
 
   build-dbg:
     runs-on: ubuntu-latest

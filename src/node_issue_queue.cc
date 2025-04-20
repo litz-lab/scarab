@@ -67,7 +67,7 @@ void node_schedule_oldest_first_sched(Op*);
  * FIND_EMPTIEST_RS: will always select the RS with the most empty slots
  */
 int64 node_dispatch_find_emptiest_rs(Op* op) {
-  int64 emptiest_rs_id = NODE_ISSUE_QUEUE_RS_SLOT_INVALIDE;
+  int64 emptiest_rs_id = NODE_ISSUE_QUEUE_RS_SLOT_INVALID;
   uns emptiest_rs_slots = 0;
 
   /*

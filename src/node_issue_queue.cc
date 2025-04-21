@@ -118,58 +118,65 @@ int64 node_dispatch_find_emptiest_rs(Op* op) {
  * OLDEST_FIRST_SCHED: will always select the oldest ready ops to schedule
  */
 void node_schedule_oldest_first_sched(Op* op) {
-  int32 youngest_slot_op_id = -1;  // -1 means not found
+  int32 youngest_slot_op_id = NODE_ISSUE_QUEUE_FU_SLOT_INVALID;
 
   // Iterate through the FUs that this RS is connected to.
   Reservation_Station* rs = &node->rs[op->rs_id];
   for (uns32 i = 0; i < rs->num_fus; ++i) {
-    Func_Unit* fu = rs->connected_fus[i];
-    uns32 fu_id = fu->fu_id;
-
     // check if this op can be executed by this FU
-    if (get_fu_type(op->table_info->op_type, op->table_info->is_simd) & fu->type) {
-      Op* s_op = node->sd.ops[fu_id];
-      if (!s_op) {  // nobody has been scheduled to this FU yet
-        DEBUG(node->proc_id, "Scheduler selecting    op_num:%s  fu_id:%d op:%s l1:%d\n", unsstr64(op->op_num), fu_id,
-              disasm_op(op, TRUE), op->engine_info.l1_miss);
-        ASSERT(node->proc_id, fu_id < (uns32)node->sd.max_op_count);
-        op->fu_num = fu_id;
-        node->sd.ops[op->fu_num] = op;
-        node->last_scheduled_opnum = op->op_num;
-        node->sd.op_count += !s_op;
-        ASSERT(node->proc_id, node->sd.op_count <= node->sd.max_op_count);
-        youngest_slot_op_id = -1;
-        break;
-      } else if (op->op_num < s_op->op_num) {
-        // The slot is not empty, but we are older than the op that is in the
-        // slot
-        if (youngest_slot_op_id == -1) {
-          youngest_slot_op_id = fu_id;
-        } else {
-          Op* youngest_op = node->sd.ops[youngest_slot_op_id];
-          if (s_op->op_num > youngest_op->op_num) {
-            // this slot is younger than the youngest known op
-            youngest_slot_op_id = fu_id;
-          }
-        }
-      }
+    Func_Unit* fu = rs->connected_fus[i];
+    if (!(get_fu_type(op->table_info->op_type, op->table_info->is_simd) & fu->type)) {
+      continue;
+    }
+
+    uns32 fu_id = fu->fu_id;
+    Op* s_op = node->sd.ops[fu_id];
+
+    // nobody has been scheduled to this FU yet
+    if (!s_op) {
+      DEBUG(node->proc_id, "Scheduler selecting    op_num:%s  fu_id:%d op:%s l1:%d\n", unsstr64(op->op_num), fu_id,
+            disasm_op(op, TRUE), op->engine_info.l1_miss);
+      ASSERT(node->proc_id, fu_id < (uns32)node->sd.max_op_count);
+      op->fu_num = fu_id;
+      node->sd.ops[op->fu_num] = op;
+      node->last_scheduled_opnum = op->op_num;
+      node->sd.op_count += !s_op;
+      ASSERT(node->proc_id, node->sd.op_count <= node->sd.max_op_count);
+      return;
+    }
+
+    if (op->op_num >= s_op->op_num) {
+      continue;
+    }
+
+    // The slot is not empty, but we are older than the op that is in the slot
+    if (youngest_slot_op_id == NODE_ISSUE_QUEUE_FU_SLOT_INVALID) {
+      youngest_slot_op_id = fu_id;
+      continue;
+    }
+
+    // check if this slot is younger than the youngest known op
+    Op* youngest_op = node->sd.ops[youngest_slot_op_id];
+    if (s_op->op_num > youngest_op->op_num) {
+      youngest_slot_op_id = fu_id;
     }
   }
 
-  if (youngest_slot_op_id != -1) {
-    /* Did not find an empty slot, but we did find a slot that is younger that us */
-    uns32 fu_id = youngest_slot_op_id;
-    DEBUG(node->proc_id, "Scheduler selecting    op_num:%s  fu_id:%d op:%s l1:%d\n", unsstr64(op->op_num), fu_id,
-          disasm_op(op, TRUE), op->engine_info.l1_miss);
-    ASSERT(node->proc_id, fu_id < (uns32)node->sd.max_op_count);
-    op->fu_num = fu_id;
-    node->sd.ops[op->fu_num] = op;
-    node->last_scheduled_opnum = op->op_num;
-    node->sd.op_count += 0;  // replacing an op, not adding a new one.
-    ASSERT(node->proc_id, node->sd.op_count <= node->sd.max_op_count);
-  } else {
-    /*Did not find an empty slot or a slot that is younger than me, do nothing*/
+  /* Did not find an empty slot or a slot that is younger than me, do nothing */
+  if (youngest_slot_op_id == NODE_ISSUE_QUEUE_FU_SLOT_INVALID) {
+    return;
   }
+
+  /* Did not find an empty slot, but we did find a slot that is younger that us */
+  uns32 fu_id = youngest_slot_op_id;
+  DEBUG(node->proc_id, "Scheduler selecting    op_num:%s  fu_id:%d op:%s l1:%d\n", unsstr64(op->op_num), fu_id,
+        disasm_op(op, TRUE), op->engine_info.l1_miss);
+  ASSERT(node->proc_id, fu_id < (uns32)node->sd.max_op_count);
+  op->fu_num = fu_id;
+  node->sd.ops[op->fu_num] = op;
+  node->last_scheduled_opnum = op->op_num;
+  node->sd.op_count += 0;  // replacing an op, not adding a new one.
+  ASSERT(node->proc_id, node->sd.op_count <= node->sd.max_op_count);
 }
 
 /**************************************************************************************/

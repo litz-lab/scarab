@@ -203,17 +203,19 @@ jobs:
     env:
       PERF_KEY: ${{ secrets.SCARAB_PERF_SSH_KEY }}
     steps:
-      - name: Configure git‑ssh
+      - name: Configure SSH for GitHub
         run: |
           mkdir -p ~/.ssh
-          echo "$PERF_KEY" > ~/.ssh/id_rsa
+          echo "${PERF_KEY}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan github.com >> ~/.ssh/known_hosts
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_rsa
           git config --global user.name  "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Clone baseline repo (write)
-        run: git clone https://github.com/litz-lab/scarab_perf.git
+        run: git clone git@github.com:litz-lab/scarab_perf.git scarab_perf
 
       - name: Append new metrics line
         run: |
@@ -222,4 +224,4 @@ jobs:
           cd scarab_perf
           git add scarab_perf.log
           git commit -m "Add perf result for ${COMMIT_SHA}"
-          git push
+          git push origin main

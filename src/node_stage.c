@@ -151,20 +151,8 @@ void reset_node_stage() {
 /* reset_node_stage:*/
 // CMP used for bogus run: may be combined with reset_node_stage
 void reset_all_ops_node_stage() {
-  uns ii;
-  for (ii = 0; ii < NUM_FUS; ii++)
-    node->sd.ops[ii] = NULL;
-  node->sd.op_count = 0;
-
-  node->node_head = NULL;
-  node->node_tail = NULL;
-  node->rdy_head = NULL;
-  node->next_op_into_rs = NULL;
-
-  node->node_count = 0;
-  node->node_count = 0;
-  node->mem_blocked = FALSE;
-  node->ret_stall_length = 0;
+  /* TODO: re-consider for multi-core mode */
+  reset_node_stage();
 }
 
 /**************************************************************************************/

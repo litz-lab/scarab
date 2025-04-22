@@ -78,6 +78,7 @@ static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event);
 static inline void exec_stage_clear_fu(int ii);
 
 static inline void exec_stage_dep_wakeup(Op* op);
+static inline void exec_stage_process_op(Op* op);
 static inline void exec_stage_bp_resolve(Op* op);
 
 /**************************************************************************************/
@@ -185,7 +186,6 @@ void debug_exec_stage() {
 /* exec_cycle: */
 
 void update_exec_stage(Stage_Data* src_sd) {
-  uns ii;
   ASSERT(exec->proc_id, exec->sd.op_count <= exec->sd.max_op_count);
 
   if (!exec_off_path) {
@@ -193,17 +193,19 @@ void update_exec_stage(Stage_Data* src_sd) {
       STAT_EVENT(exec->proc_id, EXEC_STAGE_STARVED);
     else
       STAT_EVENT(exec->proc_id, EXEC_STAGE_NOT_STARVED);
-  } else
+  } else {
     STAT_EVENT(exec->proc_id, EXEC_STAGE_OFF_PATH);
+  }
 
-  for (ii = 0; ii < src_sd->max_op_count; ii++) {
+  for (uns ii = 0; ii < src_sd->max_op_count; ii++) {
     if (src_sd->ops[ii] && src_sd->ops[ii]->off_path)
       exec_off_path = 1;
   }
 
-  // {{{ phase 1 - success/failure of latching and wake up of dependent ops
-  for (ii = 0; ii < src_sd->max_op_count; ii++) {
-    // preserve the pointer prior to issue availability check, as the rejection function will clear src_sd->op[ii]
+  /* phase 1 - success/failure of latching and wake up of dependent ops */
+  for (uns ii = 0; ii < src_sd->max_op_count; ii++) {
+    /* do issue availability checking before latching */
+    // preserve the pointer prior to issue availability check, as the rejection function will clear src_sd->ops[ii]
     Op* op = src_sd->ops[ii];
 
     // remove the op from the stage_data if it cannot be issued to make it get scheduled again
@@ -222,7 +224,7 @@ void update_exec_stage(Stage_Data* src_sd) {
       exec_stage_clear_fu(ii);
     }
 
-    // increase the starved counters after fu checking
+    // increase the starved counters after the FU checking
     if (!op) {
       STAT_EVENT(exec->proc_id, FU_STARVED);
       continue;
@@ -251,20 +253,14 @@ void update_exec_stage(Stage_Data* src_sd) {
     // PMU stat counters update
     exec_stage_inc_power_stats(op);
   }
-  // }}}
 
-  // {{{ phase 2 - actual latching of instructions and setting of state
-  for (ii = 0; ii < src_sd->max_op_count; ii++) {
+  /* phase 2 - actual latching of instructions and setting of state */
+  for (uns ii = 0; ii < src_sd->max_op_count; ii++) {
     Func_Unit* fu = &exec->fus[ii];
     Op* op = src_sd->ops[ii];
-    Op* fop = exec->sd.ops[ii];
-    int latency;
-    Counter exec_cycle;
-    Flag is_replay = FALSE;
-
-    UNUSED(exec_cycle);
 
     // if there is still an op in the fu, the fu is still busy and there is nothing to latch
+    Op* fop = exec->sd.ops[ii];
     if (fop) {
       /*
        * For each op, if its target FU is busy, one of the following must happen:
@@ -293,61 +289,49 @@ void update_exec_stage(Stage_Data* src_sd) {
     STAT_EVENT(exec->proc_id, FU_BUSY_0 + ii);
     STAT_EVENT(exec->proc_id, FUS_BUSY_ON_PATH + op->off_path);
 
-    // remove the op from the "schedule" list
+    /* remove the op from the "schedule" list */
     src_sd->ops[ii] = NULL;
     src_sd->op_count--;
     ASSERT(exec->proc_id, src_sd->op_count >= 0);
 
-    // busy the functional unit
-    latency = op->inst_info->latency;
-    ASSERT(0, latency);  // otherwise ready list management breaks
-    exec_cycle = cycle_count + MAX2(latency, -latency);
+    /* busy the functional unit */
+    exec->fus_busy++;
     exec->sd.ops[ii] = op;
     exec->sd.op_count++;
     ASSERT(exec->proc_id, exec->sd.op_count <= exec->sd.max_op_count);
-    // if the op is not pipelined, then busy up the functional unit
+    /*
+     * The op's latency is assigned a negative value if it is not pipelined.
+     * If the op is not pipelined, keep the functional unit busy for the full duration.
+     */
+    int latency = op->inst_info->latency;
     fu->avail_cycle = cycle_count + (latency < 0 ? -latency : 1);
     fu->idle_cycle = cycle_count + (latency < 0 ? -latency : latency);
 
-    // set the op's state to reflect it's execution
-    if (op->table_info->mem_type == NOT_MEM || STALL_ON_WAIT_MEM) {
-      op->state = OS_SCHEDULED;
-    } else {
-      // mem op may fail if it misses and can't get a mem req buffer
-      op->state = OS_TENTATIVE;
-    }
-    op->exec_cycle = cycle_count + MAX2(latency, -latency);
-    op->exec_count++;
+    /* update op status and execution metadata; increment PMU counters */
+    exec_stage_process_op(op);
 
-    if (op->table_info->mem_type == NOT_MEM)
-      op->done_cycle = op->exec_cycle;
-
-    STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST + op->off_path);
-    STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST_MEM + (op->table_info->mem_type == NOT_MEM) + 2 * op->off_path);
-    STAT_EVENT(op->proc_id, EXEC_ALL_INST);
-    exec->fus_busy++;
-
-    DEBUG(exec->proc_id, "op_num:%s fu_num:%d exec_cycle:%s done_cycle:%s off_path:%d\n", unsstr64(op->op_num),
-          op->fu_num, unsstr64(op->exec_cycle), unsstr64(op->done_cycle), op->off_path);
-
-    // branch recovery/resolution
+    /* branch recovery/resolution */
+    Flag is_replay = FALSE;  // TODO: check if this val is needed
     if (op->table_info->cf_type && !is_replay) {
-      /* branch recovery currently does not like to be done more than 1 time.
+      /*
+       * branch recovery currently does not like to be done more than 1 time.
        * since we don't have any way to know if an op is going to be replayed,
-       * we have to go with the first recovery (even though it is improper) for the time being */
+       * we have to go with the first recovery (even though it is improper) for the time being
+       */
       exec_stage_bp_resolve(op);
     }
 
     /* value prediction recovery/resolution code  */
     // if we know the value at this point if not ? then we need to wait.
   }
-  // }}}
 
   exec->fus_busy = 0;
-  for (ii = 0; ii < src_sd->max_op_count; ii++) {
+  for (uns ii = 0; ii < src_sd->max_op_count; ii++) {
     Func_Unit* fu = &exec->fus[ii];
-    // a functional unit is busy if there's an op in any stage
-    // of its pipeline unless it's stalled by memory
+    /*
+     * a functional unit is busy if there's an op in any stage
+     * of its pipeline unless it's stalled by memory
+     */
     if (fu->idle_cycle > cycle_count && !fu->held_by_mem) {
       exec->fus_busy++;
     }
@@ -436,8 +420,7 @@ static inline void exec_stage_inc_power_stats(Op* op) {
 }
 
 static inline void exec_stage_dep_wakeup(Op* op) {
-  int latency = op->inst_info->latency;
-  Counter exec_cycle = cycle_count + MAX2(latency, -latency);
+  Counter exec_cycle = cycle_count + abs(op->inst_info->latency);
 
   // non-memory ops will always distribute their results after the op's latency
   if (op->table_info->mem_type == NOT_MEM) {
@@ -510,6 +493,28 @@ static inline int exec_stage_issue_available(Stage_Data* src_sd, int ii) {
 
   // memory stall
   return FU_MEM_UNAVAILABLE;
+}
+
+static inline void exec_stage_process_op(Op* op) {
+  // set the op's state to reflect it's execution
+  if (op->table_info->mem_type == NOT_MEM || STALL_ON_WAIT_MEM) {
+    op->state = OS_SCHEDULED;
+  } else {
+    // mem op may fail if it misses and can't get a mem req buffer
+    op->state = OS_TENTATIVE;
+  }
+
+  op->exec_cycle = cycle_count + abs(op->inst_info->latency);
+  op->exec_count++;
+  if (op->table_info->mem_type == NOT_MEM)
+    op->done_cycle = op->exec_cycle;
+
+  STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST + op->off_path);
+  STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST_MEM + (op->table_info->mem_type == NOT_MEM) + 2 * op->off_path);
+  STAT_EVENT(op->proc_id, EXEC_ALL_INST);
+
+  DEBUG(exec->proc_id, "op_num:%s fu_num:%d exec_cycle:%s done_cycle:%s off_path:%d\n", unsstr64(op->op_num),
+        op->fu_num, unsstr64(op->exec_cycle), unsstr64(op->done_cycle), op->off_path);
 }
 
 static inline void exec_stage_bp_resolve(Op* op) {

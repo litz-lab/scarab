@@ -68,7 +68,6 @@ using std::hex;
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_EIP, ##args)
 
 extern int per_cyc_ipref;
-extern const int MAX_FTQ_ENTRY_CYC;
 
 // To access cpu in my functions
 uint32_t eip_proc_id;
@@ -1035,7 +1034,7 @@ void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefe
     if (!l1i_ongoing_request(pf_addr >> LOG2(ICACHE_LINE_SIZE))) {
       Flag success = FALSE;
       // TODO : limit per-cycle prefetches
-      // if (per_cyc_ipref < MAX_FTQ_ENTRY_CYC)
+      // if (per_cyc_ipref < IPRF_MAX_FTQ_ENTRY_CYC)
       success =
           new_mem_req(MRT_IPRF, eip_proc_id, pf_addr, ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
       if (success) {
@@ -1065,7 +1064,7 @@ void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefe
         if (!l1i_ongoing_request(pf_line_addr)) {
           Flag success = FALSE;
           // TODO : limit per-cycle prefetches
-          // if (per_cyc_ipref < MAX_FTQ_ENTRY_CYC)
+          // if (per_cyc_ipref < IPRF_MAX_FTQ_ENTRY_CYC)
           success = new_mem_req(MRT_IPRF, eip_proc_id, pf_line_addr << LOG2(ICACHE_LINE_SIZE), ICACHE_LINE_SIZE, 0,
                                 NULL, instr_fill_line, unique_count, 0);
           if (success) {

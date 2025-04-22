@@ -27,7 +27,6 @@ extern "C" {
 
 using namespace std;
 
-extern const int MAX_FTQ_ENTRY_CYC = 2;
 int per_cyc_ipref = 0;
 
 template <typename A, typename B>
@@ -863,7 +862,7 @@ void FDIP::update() {
        op = decoupled_fe_ftq_iter_get_next(ftq_iter, &end_of_block), ops_per_cycle++) {
     cur_op = op;
     Flag emit_new_prefetch = FALSE;
-    if (ftq_entry_per_cycle >= MAX_FTQ_ENTRY_CYC && ops_per_cycle >= IC_ISSUE_WIDTH) {
+    if (ftq_entry_per_cycle >= IPRF_MAX_FTQ_ENTRY_CYC && ops_per_cycle >= IC_ISSUE_WIDTH) {
       DEBUG(proc_id, "Break due to max FTQ entries per cycle\n");
       break_reason = BR_MAX_FTQ_ENTRY_CYC;
       break;

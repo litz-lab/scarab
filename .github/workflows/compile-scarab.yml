@@ -213,7 +213,7 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Clone baseline repo (write)
-        run: git clone git@github.com:litz-lab/scarab_perf.git perf
+        run: git clone https://github.com/litz-lab/scarab_perf.git
 
       - name: Append new metrics line
         run: |

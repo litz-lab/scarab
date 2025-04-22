@@ -218,8 +218,8 @@ jobs:
       - name: Append new metrics line
         run: |
           echo "${COMMIT_SHA},${{ needs.run-scarab.outputs.ipc }},${{ needs.run-scarab.outputs.kips }}" \
-            >> perf/scarab_perf.log
-          cd perf
+            >> scarab_perf/scarab_perf.log
+          cd scarab_perf
           git add scarab_perf.log
           git commit -m "Add perf result for ${COMMIT_SHA}"
           git push

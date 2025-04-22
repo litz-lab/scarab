@@ -49,6 +49,9 @@ typedef enum NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_enum {
   NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_NUM
 } Node_Issue_Queue_Schedule_Scheme;
 
+const static int64 NODE_ISSUE_QUEUE_RS_SLOT_INVALID = -1;
+const static int32 NODE_ISSUE_QUEUE_FU_SLOT_INVALID = -1;
+
 /**************************************************************************************/
 /* External Methods */
 

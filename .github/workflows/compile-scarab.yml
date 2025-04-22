@@ -197,11 +197,11 @@ jobs:
 # 8 ─── Job 3B: append to scarab_perf (push only) ──────────
 ############################################################
 update-baseline:
-    if: github.event_name == 'push'
+    if: github.event_name == 'pull-request'
     needs: [run-scarab]
     runs-on: ubuntu-latest
     env:
-      PAT: ${{ secrets.SCARAB_SYNC_PAT }}
+      PAT: ${{ secrets.SCARAB_PERF_PAT }}
 
     steps:
       # 1) Clone the perf repo (via HTTPS + PAT)
@@ -209,7 +209,7 @@ update-baseline:
         uses: actions/checkout@v4
         with:
           repository: litz-lab/scarab_perf
-          token: ${{ secrets.SCARAB_SYNC_PAT }}
+          token: ${{ secrets.SCARAB_PERF_PAT }}
           path: perf
 
       # 2) Ensure commits come from the GH‑actions bot

@@ -853,7 +853,7 @@ void FDIP::update() {
     udp->cyc_reset();
 
   uint32_t ops_per_cycle = 0;
-  int ftq_entry_per_cycle = 0;
+  uint32_t ftq_entry_per_cycle = 0;
   FDIP_Break break_reason = BR_REACH_FTQ_END;
   bool end_of_block;
   per_cyc_ipref = 0;

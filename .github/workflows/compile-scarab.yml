@@ -140,7 +140,7 @@ jobs:
 # 7 ─── Job 3A: compare & comment (PRs only) ───────────────
 ############################################################
   comment-pr:
-    if: github.event_name == 'pull-request'
+    if: github.event_name == 'pull_request'
     needs: [run-scarab]
     runs-on: ubuntu-latest
     steps:
@@ -197,7 +197,7 @@ jobs:
 # 8 ─── Job 3B: append to scarab_perf (push only) ──────────
 ############################################################
   update-baseline:
-    if: github.event_name == 'pull-request'
+    if: github.event_name == 'pull_request'
     needs: [run-scarab]
     runs-on: ubuntu-latest
     env:

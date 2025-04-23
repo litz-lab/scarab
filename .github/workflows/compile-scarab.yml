@@ -197,7 +197,7 @@ jobs:
 # 8 ─── Job 3B: append to scarab_perf (push only) ──────────
 ############################################################
   update-baseline:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'push'
     needs: [run-scarab]
     runs-on: ubuntu-latest
     env:

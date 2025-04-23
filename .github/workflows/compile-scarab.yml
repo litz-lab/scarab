@@ -201,25 +201,45 @@ jobs:
     needs: [run-scarab]
     runs-on: ubuntu-latest
     env:
-      PERF_KEY: ${{ secrets.SCARAB_PERF_SSH_KEY }}
+      PAT: ${{ secrets.SCARAB_PERF_PAT }}
+
     steps:
-      - name: Configure git‑ssh
+      # 1) Clone the perf repo (via HTTPS + PAT)
+      - name: Checkout perf baseline
+        uses: actions/checkout@v4
+        with:
+          repository: litz-lab/scarab_perf
+          token: ${{ secrets.SCARAB_PERF_PAT }}
+          path: perf
+
+      # 2) Ensure commits come from the GH‑actions bot
+      - name: Configure Git user
         run: |
-          mkdir -p ~/.ssh
-          echo "$PERF_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
-          git config --global user.name  "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          cd perf
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Clone baseline repo (write)
-        run: git clone https://github.com/litz-lab/scarab_perf.git
+      # 3) “Force Authentication” remote add/set‑url exactly like your sync job
+      - name: Force Authentication with Fine‑Grained PAT
+        run: |
+          cd perf
+          if git remote get-url public > /dev/null 2>&1; then
+            git remote set-url public https://${PAT}@github.com/litz-lab/scarab_perf.git
+          else
+            git remote add public https://${PAT}@github.com/litz-lab/scarab_perf.git
+          fi
+          git credential reject https://github.com/ || true
 
+      # 4) Append the new line
       - name: Append new metrics line
         run: |
           echo "${COMMIT_SHA},${{ needs.run-scarab.outputs.ipc }},${{ needs.run-scarab.outputs.kips }}" \
-            >> scarab_perf/scarab_perf.log
-          cd scarab_perf
+            >> perf/scarab_perf.log
+
+      # 5) Commit & push back to the perf repo using the “public” remote
+      - name: Commit & Push perf update
+        run: |
+          cd perf
           git add scarab_perf.log
           git commit -m "Add perf result for ${COMMIT_SHA}"
-          git push
+          git push public main

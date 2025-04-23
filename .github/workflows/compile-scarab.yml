@@ -140,7 +140,7 @@ jobs:
 # 7 ─── Job 3A: compare & comment (PRs only) ───────────────
 ############################################################
   comment-pr:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull-request'
     needs: [run-scarab]
     runs-on: ubuntu-latest
     steps:

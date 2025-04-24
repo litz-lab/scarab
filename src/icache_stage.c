@@ -580,6 +580,7 @@ void icache_serve_ops() {
 }
 
 Icache_State icache_serving_actions(Break_Reason* break_fetch) {
+  STAT_EVENT(ic->proc_id, ICACHE_SERVING_CYCLE_ON_PATH + ic->off_path);
   if (ic->sd.op_count) {
     *break_fetch = BREAK_ICACHE_STALLED;
     return ICACHE_SERVING;
@@ -667,6 +668,7 @@ void uop_cache_serve_ops() {
 
 Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
   ASSERT(ic->proc_id, UOP_CACHE_ENABLE);
+  STAT_EVENT(ic->proc_id, UCACHE_SERVING_CYCLE_ON_PATH + ic->off_path);
 
   if (ic->sd.op_count) {
     *break_fetch = BREAK_ICACHE_STALLED;

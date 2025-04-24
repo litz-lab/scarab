@@ -73,7 +73,7 @@ int exec_off_path;
 static inline void init_op_type_delays();
 static inline void exec_stage_inc_power_stats(Op* op);
 
-static inline int exec_stage_issue_available(Stage_Data* src_sd, int ii);
+static inline int exec_stage_check_fu_available(int ii);
 static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event);
 static inline void exec_stage_clear_fu(int ii);
 
@@ -205,12 +205,10 @@ void update_exec_stage(Stage_Data* src_sd) {
   /* phase 1 - success/failure of latching and wake up of dependent ops */
   for (uns ii = 0; ii < src_sd->max_op_count; ii++) {
     /* do issue availability checking before latching */
-    // preserve the pointer prior to issue availability check, as the rejection function will clear src_sd->ops[ii]
     Op* op = src_sd->ops[ii];
-
-    // remove the op from the stage_data if it cannot be issued to make it get scheduled again
-    int ret = exec_stage_issue_available(src_sd, ii);
+    int ret = exec_stage_check_fu_available(ii);
     if (ret != 0) {
+      // remove the op from the stage_data if it cannot be issued to make it get scheduled again
       if (op != NULL) {
         exec_stage_reject_op(src_sd, ii, ret);
       }
@@ -222,6 +220,13 @@ void update_exec_stage(Stage_Data* src_sd) {
     Op* fop = exec->sd.ops[ii];
     if (fop) {
       exec_stage_clear_fu(ii);
+    }
+
+    // check register file (late allocation) if op can issue
+    if (!reg_file_issue(op)) {
+      exec_stage_reject_op(src_sd, ii, FU_OTHER_UNAVAILABLE);
+      STAT_EVENT(exec->proc_id, FU_STARVED);
+      continue;
     }
 
     // increase the starved counters after the FU checking
@@ -450,8 +455,11 @@ static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event) {
   src_sd->ops[ii] = NULL;
   src_sd->op_count--;
 
-  ASSERT(exec->proc_id, event == FU_UNAVAILABLE || FU_MEM_UNAVAILABLE);
+  ASSERT(exec->proc_id, event == FU_UNAVAILABLE || event == FU_MEM_UNAVAILABLE || event == FU_OTHER_UNAVAILABLE);
   STAT_EVENT(exec->proc_id, event);
+
+  if (event == FU_OTHER_UNAVAILABLE)
+    return;
 
   int simd_stat_base = op->table_info->is_simd ? FU_REJECTED_OP_INV_SIMD : FU_REJECTED_OP_INV_NOT_SIMD;
   STAT_EVENT(exec->proc_id, simd_stat_base + op->table_info->op_type);
@@ -463,13 +471,11 @@ static inline void exec_stage_clear_fu(int ii) {
   ASSERT(exec->proc_id, exec->sd.op_count >= 0);
 }
 
-static inline int exec_stage_issue_available(Stage_Data* src_sd, int ii) {
-  Op* op = src_sd->ops[ii];
-
+static inline int exec_stage_check_fu_available(int ii) {
   /* check whether the functional unit is busy first */
   // if the FU is not available, then nullify node stage entry to make instruction get scheduled again
   Func_Unit* fu = &exec->fus[ii];
-  if (cycle_count < fu->avail_cycle || !reg_file_issue(op)) { /* TODO: update event for reg_file_issue */
+  if (cycle_count < fu->avail_cycle) {
     return FU_UNAVAILABLE;
   }
 

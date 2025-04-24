@@ -164,16 +164,9 @@ void debug_dcache_stage() {
 /**************************************************************************************/
 /* update_dcache_stage: */
 void update_dcache_stage(Stage_Data* src_sd) {
-  Dcache_Data* line;
-  Counter oldest_op_num, last_oldest_op_num;
-  uns oldest_index;
-  int start_op_count;
-  Addr line_addr;
-  uns ii, jj;
-
-  // {{{ phase 1 - move ops into the dcache stage
+  /* phase 1 - move ops into the dcache stage */
   ASSERT(dc->proc_id, src_sd->max_op_count == dc->sd.max_op_count);
-  for (ii = 0; ii < src_sd->max_op_count; ii++) {
+  for (uns ii = 0; ii < src_sd->max_op_count; ii++) {
     Op* op = src_sd->ops[ii];
     Op* dc_op = dc->sd.ops[ii];
 
@@ -219,58 +212,55 @@ void update_dcache_stage(Stage_Data* src_sd) {
     dcache_stage_remove_src_op(src_sd, ii);
     ASSERTM(dc->proc_id, cycle_count >= op->exec_cycle, "o:%s  %s\n", unsstr64(op->op_num), Op_State_str(op->state));
   }
-  // }}}
 
-  // {{{ phase 2 - update in program order (make things easier)
-  start_op_count = dc->sd.op_count;
-  last_oldest_op_num = 0;
-  for (ii = 0; ii < start_op_count; ii++) {
-    Op* op;
-    uns bank;
-    Flag wrongpath_dcmiss = FALSE;
-
-    oldest_index = 0;
-    oldest_op_num = MAX_CTR;
-    for (jj = 0; jj < dc->sd.max_op_count; jj++)
+  /* phase 2 - check the dcache port availability and do dcache access */
+  int start_op_count = dc->sd.op_count;
+  Counter last_oldest_op_num = 0;
+  for (uns ii = 0; ii < start_op_count; ii++) {
+    /* update in program order (make things easier) */
+    uns oldest_index = 0;
+    Counter oldest_op_num = MAX_CTR;
+    // TODO: adjust this O(n2) algorithm by getting the program order outside first
+    for (uns jj = 0; jj < dc->sd.max_op_count; jj++) {
       if (dc->sd.ops[jj] && dc->sd.ops[jj]->op_num > last_oldest_op_num && dc->sd.ops[jj]->op_num < oldest_op_num) {
         oldest_op_num = dc->sd.ops[jj]->op_num;
         oldest_index = jj;
       }
+    }
     last_oldest_op_num = oldest_op_num;
 
     ASSERT(dc->proc_id, oldest_op_num < MAX_CTR);
+    Op* op = dc->sd.ops[oldest_index];
 
-    op = dc->sd.ops[oldest_index];
-
+    // if the op is replaying, squish it
     if (op->replay && op->exec_cycle == MAX_CTR) {
-      // the op is replaying, squish it
       dc->sd.ops[oldest_index] = NULL;
       dc->sd.op_count--;
       ASSERT(dc->proc_id, dc->sd.op_count >= 0);
       continue;
     }
 
-    /* compute the bank---the bank bits are the lowest order cache index bits */
-    bank = op->oracle_info.va >> dc->dcache.shift_bits & N_BIT_MASK(LOG2(DCACHE_BANKS));
     /* check on the availability of a read port for the given bank */
+    // the bank bits are the lowest order cache index bits
+    uns bank = op->oracle_info.va >> dc->dcache.shift_bits & N_BIT_MASK(LOG2(DCACHE_BANKS));
     DEBUG(dc->proc_id, "check_read and write port availiabilty mem_type:%s bank:%d \n",
           (op->table_info->mem_type == MEM_ST) ? "ST" : "LD", bank);
     if (!PERFECT_DCACHE && ((op->table_info->mem_type == MEM_ST && !get_write_port(&dc->ports[bank])) ||
                             (op->table_info->mem_type != MEM_ST && !get_read_port(&dc->ports[bank])))) {
       op->state = OS_WAIT_DCACHE;
       continue;
-    } else {
-      op->state = OS_SCHEDULED;  // memory ops are marked as scheduled so that
-                                 // they can be removed from the node->rdy_list
     }
+
+    // memory ops are marked as scheduled so that they can be removed from the node->rdy_list
+    op->state = OS_SCHEDULED;
 
     // ideal l2 l1 prefetcher bring l1 data immediately
     if (IDEAL_L2_L1_PREFETCHER)
       ideal_l2l1_prefetcher(op);
 
     /* now access the dcache with it */
-
-    line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, TRUE);
+    Addr line_addr;
+    Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, TRUE);
     op->dcache_cycle = cycle_count;
     dc->idle_cycle = MAX2(dc->idle_cycle, cycle_count + DCACHE_CYCLES);
 
@@ -279,44 +269,35 @@ void update_dcache_stage(Stage_Data* src_sd) {
     else
       STAT_EVENT(op->proc_id, POWER_DCACHE_READ_ACCESS);
 
+    // if the data hits dc_pref_cache then insert to the dcache immediately
     if (DC_PREF_CACHE_ENABLE && !line) {
-      line = dc_pref_cache_access(op);  // if the data hits dc_pref_cache then
-                                        // insert to the dcache immediately
+      line = dc_pref_cache_access(op);
     }
 
     op->oracle_info.dcmiss = FALSE;
-    wrongpath_dcmiss = FALSE;
     if (PERFECT_DCACHE) {
       if (!op->off_path) {
         STAT_EVENT(op->proc_id, DCACHE_HIT);
         STAT_EVENT(op->proc_id, DCACHE_HIT_ONPATH);
-      } else
+      } else {
         STAT_EVENT(op->proc_id, DCACHE_HIT_OFFPATH);
+      }
 
       op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
       if (op->table_info->mem_type != MEM_ST) {
         op->wake_cycle = op->done_cycle;
         wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
       }
-    } else {
-      if (line) {
-        dcache_cacheline_hit(op, line_addr, line);
-      } else {
-        dcache_cacheline_miss(op, line_addr);
-        if (op->off_path) {
-          wrongpath_dcmiss = TRUE;
-        }
-      }
+      continue;
     }
 
-    if (STREAM_PREFETCH_ON &&
-        ((op->oracle_info.dcmiss == TRUE) || (STREAM_TRAIN_ON_WRONGPATH && (wrongpath_dcmiss == TRUE)))) {
-      _DEBUG(dc->proc_id, DEBUG_STREAM_MEM, "dl0 miss : line_addr :%d op_count %lld  type :%d\n", (int)line_addr,
-             op->op_num, (int)op->table_info->mem_type);
-      stream_dl0_miss(line_addr);
+    if (line) {
+      dcache_cacheline_hit(op, line_addr, line);
+      continue;
     }
+    dcache_cacheline_miss(op, line_addr);
   }
-  // }}}
+
   /* prefetcher update */
   if (STREAM_PREFETCH_ON)
     update_pref_queue();
@@ -732,6 +713,8 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
   if (CACHE_STAT_ENABLE)
     dc_miss_stat(op);
 
+  Flag wrongpath_dcmiss = FALSE;
+
   switch (op->table_info->mem_type) {
     case MEM_LD:
       // scan the store forwarding buffer
@@ -774,6 +757,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
       } else {
         STAT_EVENT(op->proc_id, DCACHE_MISS_OFFPATH);
         STAT_EVENT(op->proc_id, DCACHE_MISS_LD_OFFPATH);
+        wrongpath_dcmiss = FALSE;
       }
       op->state = OS_MISS;
       op->engine_info.dcmiss = TRUE;
@@ -802,6 +786,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
       } else {
         STAT_EVENT(op->proc_id, DCACHE_MISS_OFFPATH);
         STAT_EVENT(op->proc_id, DCACHE_MISS_LD_OFFPATH);
+        wrongpath_dcmiss = FALSE;
       }
       op->state = OS_MISS;
       if (PREFS_DO_NOT_BLOCK_WINDOW || op->table_info->mem_type == MEM_PF) {
@@ -832,6 +817,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
       } else {
         STAT_EVENT(op->proc_id, DCACHE_MISS_OFFPATH);
         STAT_EVENT(op->proc_id, DCACHE_MISS_ST_OFFPATH);
+        wrongpath_dcmiss = FALSE;
       }
       op->state = OS_MISS;
       if (STORES_DO_NOT_BLOCK_WINDOW) {
@@ -843,5 +829,11 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
     default:
       ASSERT(dc->proc_id, FALSE);
       break;
+  }
+
+  if (STREAM_PREFETCH_ON && (op->oracle_info.dcmiss || (STREAM_TRAIN_ON_WRONGPATH && wrongpath_dcmiss))) {
+    _DEBUG(dc->proc_id, DEBUG_STREAM_MEM, "dl0 miss : line_addr :%d op_count %lld  type :%d\n", (int)line_addr,
+           op->op_num, (int)op->table_info->mem_type);
+    stream_dl0_miss(line_addr);
   }
 }

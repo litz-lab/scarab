@@ -222,7 +222,7 @@ void update_exec_stage(Stage_Data* src_sd) {
       exec_stage_clear_fu(ii);
     }
 
-    // check if the register table is ready for writing back
+    // check register file (late allocation) if op can issue
     if (!reg_file_issue(op)) {
       exec_stage_reject_op(src_sd, ii, FU_OTHER_UNAVAILABLE);
       STAT_EVENT(exec->proc_id, FU_STARVED);

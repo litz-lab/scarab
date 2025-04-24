@@ -710,6 +710,10 @@ void full_sim() {
         if (EIP_ENABLE) {
           print_eip_stats(proc_id);
         }
+        if (CONFIDENCE_ENABLE) {
+          // proc_id?
+          decoupled_fe_conf_print_data();
+        }
         if (PERIODIC_DUMP == FALSE) {
           dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
         }

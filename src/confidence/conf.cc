@@ -7,13 +7,37 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
-Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false), last_cycle_count(0) {
-  conf_info = new Confidence_Info(_proc_id);
-  if (CONF_BTB_MISS_BP_TAKEN)
-    conf_mech = new BTBMissBPTakenConf(_proc_id);
-  else
-    conf_mech = new WeightConf(_proc_id);
-}
+Off_Path_Reason ConfMechBase::eval_off_path_reason(Op* op) {
+  // if the instruction is not a resteer op no reason to log
+  if (!(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec)) {
+    return REASON_NOT_IDENTIFIED;
+  }
+  // mispred
+  if (op->oracle_info.pred_orig != op->oracle_info.dir && !op->oracle_info.btb_miss) {
+    return REASON_MISPRED;
+  }
+  // misfetch
+  else if (!op->oracle_info.btb_miss && op->oracle_info.pred_orig == op->oracle_info.dir &&
+          op->oracle_info.pred_npc != op->oracle_info.npc) {
+    return REASON_MISFETCH;
+  }
+  // ibtb miss
+  else if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) &&
+          op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN) {
+    return REASON_IBTB_MISS;
+  }
+  // btb miss and mispred (would have been incorrect with or without btb miss)
+  else if (op->oracle_info.pred_orig != op->oracle_info.dir && op->oracle_info.btb_miss) {
+    return REASON_BTB_MISS_MISPRED;
+  }
+  // true btb miss
+  else if (op->oracle_info.btb_miss) {
+    return REASON_BTB_MISS;
+  } else {
+    // all cases should be covered
+    ASSERT(proc_id, FALSE);
+  }
+} 
 
 /* Confidence_Info member functions */
 void Confidence_Info::inc_br_conf_counters(int conf) {
@@ -71,8 +95,41 @@ void Confidence_Info::inc_cf_type_counters(Cf_Type cf_type) {
   }
 }
 
+Off_Path_Reason Confidence_Info::eval_off_path_reason(Op* op) {
+    // if the instruction is not a resteer op no reason to log
+  if (!(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec)) {
+    return REASON_NOT_IDENTIFIED;
+  }
+  // mispred
+  if (op->oracle_info.pred_orig != op->oracle_info.dir && !op->oracle_info.btb_miss) {
+    return REASON_MISPRED;
+  }
+  // misfetch
+  else if (!op->oracle_info.btb_miss && op->oracle_info.pred_orig == op->oracle_info.dir &&
+          op->oracle_info.pred_npc != op->oracle_info.npc) {
+    return REASON_MISFETCH;
+  }
+  // ibtb miss
+  else if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) &&
+          op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN) {
+    return REASON_IBTB_MISS;
+  }
+  // btb miss and mispred (would have been incorrect with or without btb miss)
+  else if (op->oracle_info.pred_orig != op->oracle_info.dir && op->oracle_info.btb_miss) {
+    return REASON_BTB_MISS_MISPRED;
+  }
+  // true btb miss
+  else if (op->oracle_info.btb_miss) {
+    return REASON_BTB_MISS;
+  } else {
+    // all cases should be covered
+    ASSERT(proc_id, FALSE);
+  }
+}
+
 void Confidence_Info::update(Op* op, Flag conf_off_path, Conf_Off_Path_Reason new_reason) {
   DEBUG(proc_id, "off_path_reason: %d, conf_off_path_reason: %d\n", off_path_reason, conf_off_path_reason);
+
   if (!prev_op || (conf_off_path_reason != REASON_CONF_NOT_IDENTIFIED && off_path_reason != REASON_NOT_IDENTIFIED))
     return;
 
@@ -84,39 +141,18 @@ void Confidence_Info::update(Op* op, Flag conf_off_path, Conf_Off_Path_Reason ne
     DEBUG(proc_id, "op->bp_confidence: %d, conf: %d, off_path: %d\n", op->bp_confidence, decoupled_fe_get_conf(),
           op->off_path ? 1 : 0);
   }
-
   Flag dfe_off_path = op->off_path;
+  // change off_path_reason check to an assertion
   if (dfe_off_path && !prev_op->off_path && off_path_reason == REASON_NOT_IDENTIFIED) {  // the actual path goes off
     DEBUG(proc_id, "prev_op op_num: %llu, cf_type: %i, cur_op op_num: %llu, cf_type: %i\n", prev_op->op_num,
           prev_op->table_info->cf_type, decoupled_fe_get_cur_op()->op_num,
           decoupled_fe_get_cur_op()->table_info->cf_type);
     ASSERT(proc_id, prev_op->table_info->cf_type);  // must be a cf as the last on-path op
-    if (prev_op->oracle_info.mispred)               // check misprediction first
-      off_path_reason = REASON_MISPRED;
-    else if (prev_op->oracle_info.btb_miss)  // off path due to a btb miss
-      off_path_reason = REASON_BTB_MISS;
-    else if (prev_op->oracle_info.no_target)  // off path due to no target
-      off_path_reason = REASON_NO_TARGET;
-    else if (prev_op->oracle_info.misfetch)  // off path due to misfetch
-      off_path_reason = REASON_MISFETCH;
-    else {  // if some other reason (shouldn't happen)
-      DEBUG(proc_id, "dfe off conf on event, unrecognized off path reason: op type: %u\n",
-            prev_op->table_info->op_type);
-      // ASSERT(proc_id, false); // Disable for now
-    }
+    off_path_reason = eval_off_path_reason(op);
 
     if (!conf_off_path) {
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NUM_EVENTS);
-      if (off_path_reason == REASON_MISPRED) {
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_BP_INCORRECT);
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_BP_INCORRECT_0_CONF + prev_op->bp_confidence);
-      } else if (off_path_reason == REASON_BTB_MISS) {
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_BTB_MISS);
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_BTB_MISS_NOT_CF + prev_op->table_info->cf_type);
-      } else if (off_path_reason == REASON_NO_TARGET)
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NO_TARGET);
-      else if (off_path_reason == REASON_MISFETCH)
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_MISFETCH);
+      STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED + off_path_reason);
     }
   } else if (!dfe_off_path && prev_op->off_path) {  // the actual path is on, but conf off path
     STAT_EVENT(proc_id, DFE_ON_CONF_OFF_NUM_EVENTS);
@@ -173,10 +209,18 @@ void Confidence_Info::recover() {
 }
 
 /* Conf member functions */
-void Conf::recover() {
+Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false), last_cycle_count(0) {
+  conf_info = new Confidence_Info(_proc_id);
+  if (CONF_BTB_MISS_BP_TAKEN)
+    conf_mech = new BTBMissBPTakenConf(_proc_id);
+  else
+    conf_mech = new WeightConf(_proc_id);
+}
+
+void Conf::recover(Op* op) {
   ASSERT(proc_id, conf_info->off_path_reason != REASON_NOT_IDENTIFIED);
-  conf_off_path = false;
-  conf_mech->recover();
+  conf_off_path = false;  
+  conf_mech->recover(op);
   conf_info->recover();
 }
 
@@ -190,13 +234,8 @@ void Conf::update(Op* op, Flag last_in_ft) {
   if (!CONFIDENCE_ENABLE)
     return;
   Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
-  if (PERFECT_CONFIDENCE) {
-    if (decoupled_fe_is_off_path())
-      conf_off_path = true;
-    if (conf_off_path)
-      ASSERT(proc_id, decoupled_fe_is_off_path());
-    update_state_perfect_conf(op);
-  } else if (conf_info->off_path_reason == REASON_NOT_IDENTIFIED ||
+  perfect_conf_update(op, new_reason);
+  if (!new_reason || conf_info->off_path_reason == REASON_NOT_IDENTIFIED ||
              conf_info->conf_off_path_reason ==
                  REASON_CONF_NOT_IDENTIFIED) {  // update until both real/confidence path go off
     per_op_update(op, new_reason);
@@ -211,10 +250,38 @@ void Conf::update(Op* op, Flag last_in_ft) {
     conf_off_path = new_reason != REASON_CONF_NOT_IDENTIFIED;
   }
   op->conf_off_path = conf_off_path;
+  STAT_EVENT(proc_id, REASON_CONF_NOT_IDENTIFIED + new_reason);
   if (conf_info->off_path_reason == REASON_NOT_IDENTIFIED ||
       conf_info->conf_off_path_reason == REASON_CONF_NOT_IDENTIFIED)
     conf_info->update(op, conf_off_path, new_reason);
   set_prev_op(op);
+}
+
+void Conf::perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason) {
+  if (!PERFECT_CONFIDENCE && !CONF_PERFECT_BTB_MISS_CONF && !CONF_PERFECT_IBTB_MISS_CONF &&
+      !CONF_PERFECT_MISFETCH_CONF && !CONF_PERFECT_MISPRED_CONF)
+    return;
+  if (PERFECT_CONFIDENCE) {
+    if (decoupled_fe_is_off_path())
+      conf_off_path = true;
+    if (conf_off_path)
+      ASSERT(proc_id, decoupled_fe_is_off_path());
+    update_state_perfect_conf(op);
+    conf_info->perfect_off_path = true;
+    new_reason = REASON_PERFECT_CONF;
+  } else {
+    Off_Path_Reason off_path_reason = conf_mech->eval_off_path_reason(op);
+    // add perfect to conf_op_reason
+    if ((CONF_PERFECT_MISPRED_CONF &&
+        (off_path_reason == REASON_MISPRED || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
+        (CONF_PERFECT_BTB_MISS_CONF &&
+        (off_path_reason == REASON_BTB_MISS || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
+        (CONF_PERFECT_IBTB_MISS_CONF && (off_path_reason == REASON_IBTB_MISS)) || 
+        (CONF_PERFECT_MISFETCH_CONF && (off_path_reason == REASON_MISFETCH))) {
+      conf_info->perfect_off_path = true;
+      new_reason = REASON_PERFECT_CONF;
+    }
+  }
 }
 
 void Conf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
@@ -244,3 +311,4 @@ void Conf::per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) {
 void Conf::per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason) {
   conf_mech->per_cycle_update(op, new_reason);
 }
+

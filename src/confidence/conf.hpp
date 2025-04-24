@@ -44,10 +44,16 @@ class ConfMechBase {
   virtual void update_state_perfect_conf(Op* op) = 0;
 
   // recovery functions
-  virtual void recover() = 0;
+  virtual void recover(Op* op) = 0;
 
   // resolve cf
   virtual void resolve_cf(Op* op) = 0;
+
+  // called at the end of simulation for printing csvs
+  virtual void print_data() = 0;
+
+  // utility functions
+  Off_Path_Reason eval_off_path_reason(Op* op);
 
   uns proc_id;
 };
@@ -60,6 +66,7 @@ class Confidence_Info {
         prev_op(nullptr),
         off_path_reason(REASON_NOT_IDENTIFIED),
         conf_off_path_reason(REASON_CONF_NOT_IDENTIFIED),
+        perfect_off_path(false),
         num_conf_0_branches(0),
         num_conf_1_branches(0),
         num_conf_2_branches(0),
@@ -80,11 +87,14 @@ class Confidence_Info {
  private:
   void inc_br_conf_counters(int conf);
   void inc_cf_type_counters(Cf_Type cf_type);
+  Off_Path_Reason eval_off_path_reason(Op* op);
   uns proc_id;
   Op* prev_op;
 
   Off_Path_Reason off_path_reason;
   Conf_Off_Path_Reason conf_off_path_reason;
+
+  bool perfect_off_path;
 
   Counter num_conf_0_branches;
   Counter num_conf_1_branches;
@@ -103,18 +113,21 @@ class Confidence_Info {
   Counter num_BTB_misses;
   Counter num_op_dist_incs;
   friend class Conf;
+  friend class ConfMechBase;
 };
 
 class Conf {
  public:
   Conf(uns _proc_id);
   uns get_conf() { return conf_off_path; }
-  void recover();
+  void recover(Op* op);
   void set_prev_op(Op* op);
   void update(Op* op, Flag last_in_ft);
   void resolve_cf(Op* op) { conf_mech->resolve_cf(op); }
   Off_Path_Reason get_off_path_reason() { return conf_info->off_path_reason; }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_info->conf_off_path_reason; }
+  void perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason);
+  void print_data() { conf_mech->print_data(); }
 
  private:
   void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason);
@@ -131,6 +144,9 @@ class Conf {
   bool conf_off_path;
   Counter last_cycle_count;
   Confidence_Info* conf_info;
+
+  
+
 };
 
 #endif

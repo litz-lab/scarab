@@ -14,9 +14,6 @@ void WeightConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
 
   if (low_confidence_cnt >= CONF_OFF_PATH_THRESHOLD)
     new_reason = REASON_CONF_THRESHOLD;
-
-  if (op->oracle_info.btb_miss)
-    cnt_btb_miss++;
 }
 
 void WeightConf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
@@ -43,11 +40,20 @@ void WeightConf::update_state_perfect_conf(Op* op) {
   cf_op_distance = 0.0;
 }
 
-void WeightConf::recover() {
+void WeightConf::recover(Op* op) {
   low_confidence_cnt = 0;
   cf_op_distance = 0.0;
+
+  // rate updates
+  if (op->oracle_info.btb_miss)
+    cnt_btb_miss++;
+  
 }
 
 void WeightConf::resolve_cf(Op* op) {
+  return;
+}
+
+void WeightConf::print_data() {
   return;
 }

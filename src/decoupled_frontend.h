@@ -53,22 +53,34 @@ extern "C" {
 
 #include "stage_data.h"
 
+// reasons an op can trigger a recovery
 typedef enum OFF_PATH_REASON_enum {
+  REASON_NOT_IDENTIFIED,
+  REASON_IBTB_MISS,
   REASON_BTB_MISS,
+  // op that misses in the BTB and the BP incorrectly predicts not taken
+  REASON_BTB_MISS_MISPRED,
   REASON_MISPRED,
   REASON_MISFETCH,
-  REASON_NO_TARGET,
-  REASON_NOT_IDENTIFIED,
 } Off_Path_Reason;
 
+// reasons the confidence mechanism can predict off-path
 typedef enum CONF_OFF_PATH_REASON_enum {
+  REASON_CONF_NOT_IDENTIFIED,
+  // Weight based confidence
+  REASON_CONF_THRESHOLD,
+  // BTB miss based confidence
+  REASON_IBTB_MISS_BP_TAKEN,
   REASON_BTB_MISS_BP_TAKEN_CONF_0,
   REASON_BTB_MISS_BP_TAKEN_CONF_1,
   REASON_BTB_MISS_BP_TAKEN_CONF_2,
   REASON_BTB_MISS_BP_TAKEN_CONF_3,
   REASON_BTB_MISS_RATE,
-  REASON_CONF_THRESHOLD,
-  REASON_CONF_NOT_IDENTIFIED,
+  REASON_IBTB_MISS_RATE,
+  REASON_MISFETCH_RATE,
+  REASON_MISPRED_RATE,
+  REASON_INV_CONF_INC,
+  REASON_PERFECT_CONF,
 } Conf_Off_Path_Reason;
 
 typedef struct FT FT;
@@ -126,6 +138,7 @@ uns decoupled_fe_get_conf();
 Off_Path_Reason decoupled_fe_get_off_path_reason();
 Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason();
 void decoupled_fe_conf_resovle_cf(Op* op);
+void decoupled_fe_conf_print_data();
 #ifdef __cplusplus
 }
 #endif

@@ -66,6 +66,7 @@ class Decoupled_FE {
   Off_Path_Reason get_off_path_reason() { return conf->get_off_path_reason(); }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf->get_conf_off_path_reason(); }
   void conf_resolve_cf(Op* op) { conf->resolve_cf(op); }
+  void conf_print_data() { conf->print_data(); }
 
  private:
   void init(uns proc_id);
@@ -201,6 +202,10 @@ Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason() {
 
 void decoupled_fe_conf_resovle_cf(Op* op) {
   dfe->conf_resolve_cf(op);
+}
+
+void decoupled_fe_conf_print_data() {
+  dfe->conf_print_data();
 }
 
 /* FT member functions */
@@ -410,9 +415,9 @@ void Decoupled_FE::recover() {
           "Scarab's recovery addr 0x%llx does not match frontend's recovery "
           "addr 0x%llx\n",
           bp_recovery_info->recovery_fetch_addr, frontend_next_fetch_addr(proc_id));
-
+  // sus?
   if (CONFIDENCE_ENABLE && cur_op && !cur_op->exit)
-    conf->recover();
+    conf->recover(op);
 }
 
 void Decoupled_FE::update() {

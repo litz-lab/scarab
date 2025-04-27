@@ -1,0 +1,523 @@
+Core, 0
+Cumulative Cycles, 32107906            
+Cumulative Instructions, 100000000           
+Cumulative IPC, 3.11450
+Periodic Cycles, 32107906            
+Periodic Instructions, 100000000           
+Periodic IPC, 3.11450
+
+L2WAY_FILL_L1_count,             0
+L2WAY_FILL_L1_total_count,             0
+
+L2WAY_WAY_HIT_count,             0
+L2WAY_WAY_HIT_pct,         -nan
+L2WAY_WAY_HIT_total_count,             0
+L2WAY_WAY_HIT_total_pct,         -nan
+
+L2WAY_WAY_MISS_count,             0
+L2WAY_WAY_MISS_pct,         -nan
+L2WAY_WAY_MISS_total_count,             0
+L2WAY_WAY_MISS_total_pct,         -nan
+L2WAY_WAY_MISS_sum_count,             0
+L2WAY_WAY_MISS_sum_pct,         -nan
+L2WAY_WAY_MISS_sum_total_count,             0
+L2WAY_WAY_MISS_sum_total_pct,         -nan
+L2WAY_WAY_MISS_mean,         -nan
+L2WAY_WAY_MISS_stddev,         -nan
+L2WAY_WAY_MISS_total_mean,         -nan
+L2WAY_WAY_MISS_total_stddev,         -nan
+
+L2WAY_PREF_REQ_count,             0
+L2WAY_PREF_REQ_total_count,             0
+
+L2WAY_PREF_HIT_DATA_IN_CACHE_count,             0
+L2WAY_PREF_HIT_DATA_IN_CACHE_pct,         -nan
+L2WAY_PREF_HIT_DATA_IN_CACHE_total_count,             0
+L2WAY_PREF_HIT_DATA_IN_CACHE_total_pct,         -nan
+
+L2WAY_PREF_HIT_DATA_REQ_count,             0
+L2WAY_PREF_HIT_DATA_REQ_pct,         -nan
+L2WAY_PREF_HIT_DATA_REQ_total_count,             0
+L2WAY_PREF_HIT_DATA_REQ_total_pct,         -nan
+L2WAY_PREF_HIT_DATA_REQ_sum_count,             0
+L2WAY_PREF_HIT_DATA_REQ_sum_pct,         -nan
+L2WAY_PREF_HIT_DATA_REQ_sum_total_count,             0
+L2WAY_PREF_HIT_DATA_REQ_sum_total_pct,         -nan
+L2WAY_PREF_HIT_DATA_REQ_mean,         -nan
+L2WAY_PREF_HIT_DATA_REQ_stddev,         -nan
+L2WAY_PREF_HIT_DATA_REQ_total_mean,         -nan
+L2WAY_PREF_HIT_DATA_REQ_total_stddev,         -nan
+
+L2WAY_TRAIN_HIT_count,             0
+L2WAY_TRAIN_HIT_pct,         -nan
+L2WAY_TRAIN_HIT_total_count,             0
+L2WAY_TRAIN_HIT_total_pct,         -nan
+
+L2WAY_TRAIN_MISS_count,             0
+L2WAY_TRAIN_MISS_pct,         -nan
+L2WAY_TRAIN_MISS_total_count,             0
+L2WAY_TRAIN_MISS_total_pct,         -nan
+L2WAY_TRAIN_MISS_sum_count,             0
+L2WAY_TRAIN_MISS_sum_pct,         -nan
+L2WAY_TRAIN_MISS_sum_total_count,             0
+L2WAY_TRAIN_MISS_sum_total_pct,         -nan
+L2WAY_TRAIN_MISS_mean,         -nan
+L2WAY_TRAIN_MISS_stddev,         -nan
+L2WAY_TRAIN_MISS_total_mean,         -nan
+L2WAY_TRAIN_MISS_total_stddev,         -nan
+
+L1_HIT_REQ_TYPE_IFETCH_count,             0
+L1_HIT_REQ_TYPE_IFETCH_pct,         -nan
+L1_HIT_REQ_TYPE_IFETCH_total_count,             0
+L1_HIT_REQ_TYPE_IFETCH_total_pct,         -nan
+
+L1_HIT_REQ_TYPE_DFETCH_count,             0
+L1_HIT_REQ_TYPE_DFETCH_pct,         -nan
+L1_HIT_REQ_TYPE_DFETCH_total_count,             0
+L1_HIT_REQ_TYPE_DFETCH_total_pct,         -nan
+
+L1_HIT_REQ_TYPE_DSTORE_count,             0
+L1_HIT_REQ_TYPE_DSTORE_pct,         -nan
+L1_HIT_REQ_TYPE_DSTORE_total_count,             0
+L1_HIT_REQ_TYPE_DSTORE_total_pct,         -nan
+
+L1_HIT_REQ_TYPE_IPRF_count,             0
+L1_HIT_REQ_TYPE_IPRF_pct,         -nan
+L1_HIT_REQ_TYPE_IPRF_total_count,             0
+L1_HIT_REQ_TYPE_IPRF_total_pct,         -nan
+
+L1_HIT_REQ_TYPE_DPRF_count,             0
+L1_HIT_REQ_TYPE_DPRF_pct,         -nan
+L1_HIT_REQ_TYPE_DPRF_total_count,             0
+L1_HIT_REQ_TYPE_DPRF_total_pct,         -nan
+
+L1_HIT_REQ_TYPE_WB_count,             0
+L1_HIT_REQ_TYPE_WB_pct,         -nan
+L1_HIT_REQ_TYPE_WB_total_count,             0
+L1_HIT_REQ_TYPE_WB_total_pct,         -nan
+L1_HIT_REQ_TYPE_WB_sum_count,             0
+L1_HIT_REQ_TYPE_WB_sum_pct,         -nan
+L1_HIT_REQ_TYPE_WB_sum_total_count,             0
+L1_HIT_REQ_TYPE_WB_sum_total_pct,         -nan
+L1_HIT_REQ_TYPE_WB_mean,         -nan
+L1_HIT_REQ_TYPE_WB_stddev,         -nan
+L1_HIT_REQ_TYPE_WB_total_mean,         -nan
+L1_HIT_REQ_TYPE_WB_total_stddev,         -nan
+
+L2_ACCESS_INTERVAL__0_count,             0
+L2_ACCESS_INTERVAL__0_pct,         -nan
+L2_ACCESS_INTERVAL__0_total_count,             0
+L2_ACCESS_INTERVAL__0_total_pct,         -nan
+
+L2_ACCESS_INTERVAL__1_count,             0
+L2_ACCESS_INTERVAL__1_pct,         -nan
+L2_ACCESS_INTERVAL__1_total_count,             0
+L2_ACCESS_INTERVAL__1_total_pct,         -nan
+
+L2_ACCESS_INTERVAL__2_count,             0
+L2_ACCESS_INTERVAL__2_pct,         -nan
+L2_ACCESS_INTERVAL__2_total_count,             0
+L2_ACCESS_INTERVAL__2_total_pct,         -nan
+
+L2_ACCESS_INTERVAL__3_count,             0
+L2_ACCESS_INTERVAL__3_pct,         -nan
+L2_ACCESS_INTERVAL__3_total_count,             0
+L2_ACCESS_INTERVAL__3_total_pct,         -nan
+
+L2_ACCESS_INTERVAL__4_count,             0
+L2_ACCESS_INTERVAL__4_pct,         -nan
+L2_ACCESS_INTERVAL__4_total_count,             0
+L2_ACCESS_INTERVAL__4_total_pct,         -nan
+
+L2_ACCESS_INTERVAL__5_count,             0
+L2_ACCESS_INTERVAL__5_pct,         -nan
+L2_ACCESS_INTERVAL__5_total_count,             0
+L2_ACCESS_INTERVAL__5_total_pct,         -nan
+
+L2_ACCESS_INTERVAL__6_count,             0
+L2_ACCESS_INTERVAL__6_pct,         -nan
+L2_ACCESS_INTERVAL__6_total_count,             0
+L2_ACCESS_INTERVAL__6_total_pct,         -nan
+
+L2_ACCESS_INTERVAL__7_count,             0
+L2_ACCESS_INTERVAL__7_pct,         -nan
+L2_ACCESS_INTERVAL__7_total_count,             0
+L2_ACCESS_INTERVAL__7_total_pct,         -nan
+
+L2_ACCESS_INTERVAL__8_count,             0
+L2_ACCESS_INTERVAL__8_pct,         -nan
+L2_ACCESS_INTERVAL__8_total_count,             0
+L2_ACCESS_INTERVAL__8_total_pct,         -nan
+L2_ACCESS_INTERVAL__8_sum_count,             0
+L2_ACCESS_INTERVAL__8_sum_pct,         -nan
+L2_ACCESS_INTERVAL__8_sum_total_count,             0
+L2_ACCESS_INTERVAL__8_sum_total_pct,         -nan
+L2_ACCESS_INTERVAL__8_mean,         -nan
+L2_ACCESS_INTERVAL__8_stddev,         -nan
+L2_ACCESS_INTERVAL__8_total_mean,         -nan
+L2_ACCESS_INTERVAL__8_total_stddev,         -nan
+
+L2WAY_L1INSERT_PORT_FULL_count,             0
+L2WAY_L1INSERT_PORT_FULL_pct,         -nan
+L2WAY_L1INSERT_PORT_FULL_total_count,             0
+L2WAY_L1INSERT_PORT_FULL_total_pct,         -nan
+
+L2WAY_L1INSERT_PORT_READY_count,             0
+L2WAY_L1INSERT_PORT_READY_pct,         -nan
+L2WAY_L1INSERT_PORT_READY_total_count,             0
+L2WAY_L1INSERT_PORT_READY_total_pct,         -nan
+L2WAY_L1INSERT_PORT_READY_sum_count,             0
+L2WAY_L1INSERT_PORT_READY_sum_pct,         -nan
+L2WAY_L1INSERT_PORT_READY_sum_total_count,             0
+L2WAY_L1INSERT_PORT_READY_sum_total_pct,         -nan
+L2WAY_L1INSERT_PORT_READY_mean,         -nan
+L2WAY_L1INSERT_PORT_READY_stddev,         -nan
+L2WAY_L1INSERT_PORT_READY_total_mean,         -nan
+L2WAY_L1INSERT_PORT_READY_total_stddev,         -nan
+
+L2MARKV_NEXT_ADDR_HIT_count,             0
+L2MARKV_NEXT_ADDR_HIT_pct,         -nan
+L2MARKV_NEXT_ADDR_HIT_total_count,             0
+L2MARKV_NEXT_ADDR_HIT_total_pct,         -nan
+
+L2MARKV_NEXT_ADDR_MISS_count,             0
+L2MARKV_NEXT_ADDR_MISS_pct,         -nan
+L2MARKV_NEXT_ADDR_MISS_total_count,             0
+L2MARKV_NEXT_ADDR_MISS_total_pct,         -nan
+L2MARKV_NEXT_ADDR_MISS_sum_count,             0
+L2MARKV_NEXT_ADDR_MISS_sum_pct,         -nan
+L2MARKV_NEXT_ADDR_MISS_sum_total_count,             0
+L2MARKV_NEXT_ADDR_MISS_sum_total_pct,         -nan
+L2MARKV_NEXT_ADDR_MISS_mean,         -nan
+L2MARKV_NEXT_ADDR_MISS_stddev,         -nan
+L2MARKV_NEXT_ADDR_MISS_total_mean,         -nan
+L2MARKV_NEXT_ADDR_MISS_total_stddev,         -nan
+
+L2MARKV_LAST_ADDR_HIT_count,             0
+L2MARKV_LAST_ADDR_HIT_pct,         -nan
+L2MARKV_LAST_ADDR_HIT_total_count,             0
+L2MARKV_LAST_ADDR_HIT_total_pct,         -nan
+
+L2MARKV_LAST_ADDR_MISS_count,             0
+L2MARKV_LAST_ADDR_MISS_pct,         -nan
+L2MARKV_LAST_ADDR_MISS_total_count,             0
+L2MARKV_LAST_ADDR_MISS_total_pct,         -nan
+L2MARKV_LAST_ADDR_MISS_sum_count,             0
+L2MARKV_LAST_ADDR_MISS_sum_pct,         -nan
+L2MARKV_LAST_ADDR_MISS_sum_total_count,             0
+L2MARKV_LAST_ADDR_MISS_sum_total_pct,         -nan
+L2MARKV_LAST_ADDR_MISS_mean,         -nan
+L2MARKV_LAST_ADDR_MISS_stddev,         -nan
+L2MARKV_LAST_ADDR_MISS_total_mean,         -nan
+L2MARKV_LAST_ADDR_MISS_total_stddev,         -nan
+
+MARKV_L2_TIME_DIFF__0_count,             0
+MARKV_L2_TIME_DIFF__0_pct,         -nan
+MARKV_L2_TIME_DIFF__0_total_count,             0
+MARKV_L2_TIME_DIFF__0_total_pct,         -nan
+
+MARKV_L2_TIME_DIFF__1_count,             0
+MARKV_L2_TIME_DIFF__1_pct,         -nan
+MARKV_L2_TIME_DIFF__1_total_count,             0
+MARKV_L2_TIME_DIFF__1_total_pct,         -nan
+
+MARKV_L2_TIME_DIFF__2_count,             0
+MARKV_L2_TIME_DIFF__2_pct,         -nan
+MARKV_L2_TIME_DIFF__2_total_count,             0
+MARKV_L2_TIME_DIFF__2_total_pct,         -nan
+
+MARKV_L2_TIME_DIFF__3_count,             0
+MARKV_L2_TIME_DIFF__3_pct,         -nan
+MARKV_L2_TIME_DIFF__3_total_count,             0
+MARKV_L2_TIME_DIFF__3_total_pct,         -nan
+
+MARKV_L2_TIME_DIFF__4_count,             0
+MARKV_L2_TIME_DIFF__4_pct,         -nan
+MARKV_L2_TIME_DIFF__4_total_count,             0
+MARKV_L2_TIME_DIFF__4_total_pct,         -nan
+
+MARKV_L2_TIME_DIFF__5_count,             0
+MARKV_L2_TIME_DIFF__5_pct,         -nan
+MARKV_L2_TIME_DIFF__5_total_count,             0
+MARKV_L2_TIME_DIFF__5_total_pct,         -nan
+
+MARKV_L2_TIME_DIFF__6_count,             0
+MARKV_L2_TIME_DIFF__6_pct,         -nan
+MARKV_L2_TIME_DIFF__6_total_count,             0
+MARKV_L2_TIME_DIFF__6_total_pct,         -nan
+
+MARKV_L2_TIME_DIFF__7_count,             0
+MARKV_L2_TIME_DIFF__7_pct,         -nan
+MARKV_L2_TIME_DIFF__7_total_count,             0
+MARKV_L2_TIME_DIFF__7_total_pct,         -nan
+
+MARKV_L2_TIME_DIFF__8_count,             0
+MARKV_L2_TIME_DIFF__8_pct,         -nan
+MARKV_L2_TIME_DIFF__8_total_count,             0
+MARKV_L2_TIME_DIFF__8_total_pct,         -nan
+MARKV_L2_TIME_DIFF__8_sum_count,             0
+MARKV_L2_TIME_DIFF__8_sum_pct,         -nan
+MARKV_L2_TIME_DIFF__8_sum_total_count,             0
+MARKV_L2_TIME_DIFF__8_sum_total_pct,         -nan
+MARKV_L2_TIME_DIFF__8_mean,         -nan
+MARKV_L2_TIME_DIFF__8_stddev,         -nan
+MARKV_L2_TIME_DIFF__8_total_mean,         -nan
+MARKV_L2_TIME_DIFF__8_total_stddev,         -nan
+
+L2MARKV_PREF_REQ_count,             0
+L2MARKV_PREF_REQ_total_count,             0
+
+L2MARKV_PREF_TRAIN_count,             0
+L2MARKV_PREF_TRAIN_total_count,             0
+
+L2MARKV_PREF_HIT_DATA_REQ_count,             0
+L2MARKV_PREF_HIT_DATA_REQ_pct,         -nan
+L2MARKV_PREF_HIT_DATA_REQ_total_count,             0
+L2MARKV_PREF_HIT_DATA_REQ_total_pct,         -nan
+
+L2MARKV_PREF_HIT_DATA_IN_CACHE_count,             0
+L2MARKV_PREF_HIT_DATA_IN_CACHE_pct,         -nan
+L2MARKV_PREF_HIT_DATA_IN_CACHE_total_count,             0
+L2MARKV_PREF_HIT_DATA_IN_CACHE_total_pct,         -nan
+
+L2MARKV_PREF_MISS_count,             0
+L2MARKV_PREF_MISS_pct,         -nan
+L2MARKV_PREF_MISS_total_count,             0
+L2MARKV_PREF_MISS_total_pct,         -nan
+L2MARKV_PREF_MISS_sum_count,             0
+L2MARKV_PREF_MISS_sum_pct,         -nan
+L2MARKV_PREF_MISS_sum_total_count,             0
+L2MARKV_PREF_MISS_sum_total_pct,         -nan
+L2MARKV_PREF_MISS_mean,         -nan
+L2MARKV_PREF_MISS_stddev,         -nan
+L2MARKV_PREF_MISS_total_mean,         -nan
+L2MARKV_PREF_MISS_total_stddev,         -nan
+
+L2MARKV_L1INSERT_PORT_READY_count,             0
+L2MARKV_L1INSERT_PORT_READY_pct,         -nan
+L2MARKV_L1INSERT_PORT_READY_total_count,             0
+L2MARKV_L1INSERT_PORT_READY_total_pct,         -nan
+
+L2MARKV_L1INSERT_PORT_FULL_count,             0
+L2MARKV_L1INSERT_PORT_FULL_pct,         -nan
+L2MARKV_L1INSERT_PORT_FULL_total_count,             0
+L2MARKV_L1INSERT_PORT_FULL_total_pct,         -nan
+L2MARKV_L1INSERT_PORT_FULL_sum_count,             0
+L2MARKV_L1INSERT_PORT_FULL_sum_pct,         -nan
+L2MARKV_L1INSERT_PORT_FULL_sum_total_count,             0
+L2MARKV_L1INSERT_PORT_FULL_sum_total_pct,         -nan
+L2MARKV_L1INSERT_PORT_FULL_mean,         -nan
+L2MARKV_L1INSERT_PORT_FULL_stddev,         -nan
+L2MARKV_L1INSERT_PORT_FULL_total_mean,         -nan
+L2MARKV_L1INSERT_PORT_FULL_total_stddev,         -nan
+
+L2NEXT_PREF_REQ_count,             0
+L2NEXT_PREF_REQ_total_count,             0
+
+L2NEXT_PREF_HIT_DATA_REQ_count,             0
+L2NEXT_PREF_HIT_DATA_REQ_pct,         -nan
+L2NEXT_PREF_HIT_DATA_REQ_total_count,             0
+L2NEXT_PREF_HIT_DATA_REQ_total_pct,         -nan
+
+L2NEXT_PREF_HIT_DATA_IN_CACHE_count,             0
+L2NEXT_PREF_HIT_DATA_IN_CACHE_pct,         -nan
+L2NEXT_PREF_HIT_DATA_IN_CACHE_total_count,             0
+L2NEXT_PREF_HIT_DATA_IN_CACHE_total_pct,         -nan
+
+L2NEXT_PREF_MISS_count,             0
+L2NEXT_PREF_MISS_pct,         -nan
+L2NEXT_PREF_MISS_total_count,             0
+L2NEXT_PREF_MISS_total_pct,         -nan
+L2NEXT_PREF_MISS_sum_count,             0
+L2NEXT_PREF_MISS_sum_pct,         -nan
+L2NEXT_PREF_MISS_sum_total_count,             0
+L2NEXT_PREF_MISS_sum_total_pct,         -nan
+L2NEXT_PREF_MISS_mean,         -nan
+L2NEXT_PREF_MISS_stddev,         -nan
+L2NEXT_PREF_MISS_total_mean,         -nan
+L2NEXT_PREF_MISS_total_stddev,         -nan
+
+L2NEXT_L1INSERT_PORT_READY_count,             0
+L2NEXT_L1INSERT_PORT_READY_pct,         -nan
+L2NEXT_L1INSERT_PORT_READY_total_count,             0
+L2NEXT_L1INSERT_PORT_READY_total_pct,         -nan
+
+L2NEXT_L1INSERT_PORT_FULL_count,             0
+L2NEXT_L1INSERT_PORT_FULL_pct,         -nan
+L2NEXT_L1INSERT_PORT_FULL_total_count,             0
+L2NEXT_L1INSERT_PORT_FULL_total_pct,         -nan
+L2NEXT_L1INSERT_PORT_FULL_sum_count,             0
+L2NEXT_L1INSERT_PORT_FULL_sum_pct,         -nan
+L2NEXT_L1INSERT_PORT_FULL_sum_total_count,             0
+L2NEXT_L1INSERT_PORT_FULL_sum_total_pct,         -nan
+L2NEXT_L1INSERT_PORT_FULL_mean,         -nan
+L2NEXT_L1INSERT_PORT_FULL_stddev,         -nan
+L2NEXT_L1INSERT_PORT_FULL_total_mean,         -nan
+L2NEXT_L1INSERT_PORT_FULL_total_stddev,         -nan
+
+DCACHE_PREF_NOT_RDY_count,             0
+DCACHE_PREF_NOT_RDY_pct,         -nan
+DCACHE_PREF_NOT_RDY_total_count,             0
+DCACHE_PREF_NOT_RDY_total_pct,         -nan
+
+DCACHE_PREF_FETCH_10_count,             0
+DCACHE_PREF_FETCH_10_pct,         -nan
+DCACHE_PREF_FETCH_10_total_count,             0
+DCACHE_PREF_FETCH_10_total_pct,         -nan
+
+DCACHE_PREF_FETCH_100_count,             0
+DCACHE_PREF_FETCH_100_pct,         -nan
+DCACHE_PREF_FETCH_100_total_count,             0
+DCACHE_PREF_FETCH_100_total_pct,         -nan
+
+DCACHE_PREF_FETCH_1000_count,             0
+DCACHE_PREF_FETCH_1000_pct,         -nan
+DCACHE_PREF_FETCH_1000_total_count,             0
+DCACHE_PREF_FETCH_1000_total_pct,         -nan
+
+DCACHE_PREF_FETCH_10000_count,             0
+DCACHE_PREF_FETCH_10000_pct,         -nan
+DCACHE_PREF_FETCH_10000_total_count,             0
+DCACHE_PREF_FETCH_10000_total_pct,         -nan
+
+DCACHE_PREF_FETCH_100000_count,             0
+DCACHE_PREF_FETCH_100000_pct,         -nan
+DCACHE_PREF_FETCH_100000_total_count,             0
+DCACHE_PREF_FETCH_100000_total_pct,         -nan
+
+DCACHE_PREF_FETCH_1000000_count,             0
+DCACHE_PREF_FETCH_1000000_pct,         -nan
+DCACHE_PREF_FETCH_1000000_total_count,             0
+DCACHE_PREF_FETCH_1000000_total_pct,         -nan
+
+DCACHE_PREF_FETCH_10000000_count,             0
+DCACHE_PREF_FETCH_10000000_pct,         -nan
+DCACHE_PREF_FETCH_10000000_total_count,             0
+DCACHE_PREF_FETCH_10000000_total_pct,         -nan
+
+DCACHE_PREF_FETCH_100000000_count,             0
+DCACHE_PREF_FETCH_100000000_pct,         -nan
+DCACHE_PREF_FETCH_100000000_total_count,             0
+DCACHE_PREF_FETCH_100000000_total_pct,         -nan
+
+DCACHE_PREF_FETCH_MORE_count,             0
+DCACHE_PREF_FETCH_MORE_pct,         -nan
+DCACHE_PREF_FETCH_MORE_total_count,             0
+DCACHE_PREF_FETCH_MORE_total_pct,         -nan
+DCACHE_PREF_FETCH_MORE_sum_count,             0
+DCACHE_PREF_FETCH_MORE_sum_pct,         -nan
+DCACHE_PREF_FETCH_MORE_sum_total_count,             0
+DCACHE_PREF_FETCH_MORE_sum_total_pct,         -nan
+DCACHE_PREF_FETCH_MORE_mean,         -nan
+DCACHE_PREF_FETCH_MORE_stddev,         -nan
+DCACHE_PREF_FETCH_MORE_total_mean,         -nan
+DCACHE_PREF_FETCH_MORE_total_stddev,         -nan
+
+L2HIT_SAME_IP_DELTA__0_count,             0
+L2HIT_SAME_IP_DELTA__0_pct,         -nan
+L2HIT_SAME_IP_DELTA__0_total_count,             0
+L2HIT_SAME_IP_DELTA__0_total_pct,         -nan
+
+L2HIT_SAME_IP_DELTA__1_count,             0
+L2HIT_SAME_IP_DELTA__1_pct,         -nan
+L2HIT_SAME_IP_DELTA__1_total_count,             0
+L2HIT_SAME_IP_DELTA__1_total_pct,         -nan
+
+L2HIT_SAME_IP_DELTA__2_count,             0
+L2HIT_SAME_IP_DELTA__2_pct,         -nan
+L2HIT_SAME_IP_DELTA__2_total_count,             0
+L2HIT_SAME_IP_DELTA__2_total_pct,         -nan
+
+L2HIT_SAME_IP_DELTA__3_count,             0
+L2HIT_SAME_IP_DELTA__3_pct,         -nan
+L2HIT_SAME_IP_DELTA__3_total_count,             0
+L2HIT_SAME_IP_DELTA__3_total_pct,         -nan
+
+L2HIT_SAME_IP_DELTA__4_count,             0
+L2HIT_SAME_IP_DELTA__4_pct,         -nan
+L2HIT_SAME_IP_DELTA__4_total_count,             0
+L2HIT_SAME_IP_DELTA__4_total_pct,         -nan
+
+L2HIT_SAME_IP_DELTA__5_count,             0
+L2HIT_SAME_IP_DELTA__5_pct,         -nan
+L2HIT_SAME_IP_DELTA__5_total_count,             0
+L2HIT_SAME_IP_DELTA__5_total_pct,         -nan
+
+L2HIT_SAME_IP_DELTA__6_count,             0
+L2HIT_SAME_IP_DELTA__6_pct,         -nan
+L2HIT_SAME_IP_DELTA__6_total_count,             0
+L2HIT_SAME_IP_DELTA__6_total_pct,         -nan
+
+L2HIT_SAME_IP_DELTA__7_count,             0
+L2HIT_SAME_IP_DELTA__7_pct,         -nan
+L2HIT_SAME_IP_DELTA__7_total_count,             0
+L2HIT_SAME_IP_DELTA__7_total_pct,         -nan
+
+L2HIT_SAME_IP_DELTA__8_count,             0
+L2HIT_SAME_IP_DELTA__8_pct,         -nan
+L2HIT_SAME_IP_DELTA__8_total_count,             0
+L2HIT_SAME_IP_DELTA__8_total_pct,         -nan
+L2HIT_SAME_IP_DELTA__8_sum_count,             0
+L2HIT_SAME_IP_DELTA__8_sum_pct,         -nan
+L2HIT_SAME_IP_DELTA__8_sum_total_count,             0
+L2HIT_SAME_IP_DELTA__8_sum_total_pct,         -nan
+L2HIT_SAME_IP_DELTA__8_mean,         -nan
+L2HIT_SAME_IP_DELTA__8_stddev,         -nan
+L2HIT_SAME_IP_DELTA__8_total_mean,         -nan
+L2HIT_SAME_IP_DELTA__8_total_stddev,         -nan
+
+L2HIT_IP_HIT_COUNT__1_count,             0
+L2HIT_IP_HIT_COUNT__1_pct,         -nan
+L2HIT_IP_HIT_COUNT__1_total_count,             0
+L2HIT_IP_HIT_COUNT__1_total_pct,         -nan
+
+L2HIT_IP_HIT_COUNT__2_count,             0
+L2HIT_IP_HIT_COUNT__2_pct,         -nan
+L2HIT_IP_HIT_COUNT__2_total_count,             0
+L2HIT_IP_HIT_COUNT__2_total_pct,         -nan
+
+L2HIT_IP_HIT_COUNT__3_count,             0
+L2HIT_IP_HIT_COUNT__3_pct,         -nan
+L2HIT_IP_HIT_COUNT__3_total_count,             0
+L2HIT_IP_HIT_COUNT__3_total_pct,         -nan
+
+L2HIT_IP_HIT_COUNT__4_count,             0
+L2HIT_IP_HIT_COUNT__4_pct,         -nan
+L2HIT_IP_HIT_COUNT__4_total_count,             0
+L2HIT_IP_HIT_COUNT__4_total_pct,         -nan
+
+L2HIT_IP_HIT_COUNT__5_count,             0
+L2HIT_IP_HIT_COUNT__5_pct,         -nan
+L2HIT_IP_HIT_COUNT__5_total_count,             0
+L2HIT_IP_HIT_COUNT__5_total_pct,         -nan
+
+L2HIT_IP_HIT_COUNT__6_count,             0
+L2HIT_IP_HIT_COUNT__6_pct,         -nan
+L2HIT_IP_HIT_COUNT__6_total_count,             0
+L2HIT_IP_HIT_COUNT__6_total_pct,         -nan
+
+L2HIT_IP_HIT_COUNT__7_count,             0
+L2HIT_IP_HIT_COUNT__7_pct,         -nan
+L2HIT_IP_HIT_COUNT__7_total_count,             0
+L2HIT_IP_HIT_COUNT__7_total_pct,         -nan
+
+L2HIT_IP_HIT_COUNT__8_count,             0
+L2HIT_IP_HIT_COUNT__8_pct,         -nan
+L2HIT_IP_HIT_COUNT__8_total_count,             0
+L2HIT_IP_HIT_COUNT__8_total_pct,         -nan
+
+L2HIT_IP_HIT_COUNT__9_count,             0
+L2HIT_IP_HIT_COUNT__9_pct,         -nan
+L2HIT_IP_HIT_COUNT__9_total_count,             0
+L2HIT_IP_HIT_COUNT__9_total_pct,         -nan
+L2HIT_IP_HIT_COUNT__9_sum_count,             0
+L2HIT_IP_HIT_COUNT__9_sum_pct,         -nan
+L2HIT_IP_HIT_COUNT__9_sum_total_count,             0
+L2HIT_IP_HIT_COUNT__9_sum_total_pct,         -nan
+L2HIT_IP_HIT_COUNT__9_mean,         -nan
+L2HIT_IP_HIT_COUNT__9_stddev,         -nan
+L2HIT_IP_HIT_COUNT__9_total_mean,         -nan
+L2HIT_IP_HIT_COUNT__9_total_stddev,         -nan
+
+
+

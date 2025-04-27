@@ -1,0 +1,186 @@
+/* -*- Mode: c -*- */
+####################################################################################################
+Core 0
+####################################################################################################
+Cumulative:        Cycles: 308335300             Instructions: 100000003             IPC: 0.32432
+
+Periodic:          Cycles: 308335300             Instructions: 100000003             IPC: 0.32432
+
+POWER_STATS_BEGIN                                    0                              0              
+
+POWER_TIME                               96354781250000                  96354781250000              
+
+POWER_CYCLE                                  308335300                      308335300              
+
+POWER_ITLB_ACCESS                              1788682                        1788682              
+
+POWER_DTLB_ACCESS                              9045320                        9045320              
+
+POWER_ICACHE_ACCESS                            1788682                        1788682              
+
+POWER_ICACHE_MISS                                   57                             57              
+
+POWER_BTB_READ                                       0                              0              
+
+POWER_BTB_WRITE                                 445059                         445059              
+
+POWER_ROB_READ                               208878143                      208878143              
+
+POWER_ROB_WRITE                              208878143                      208878143              
+
+POWER_RENAME_READ                            417756286                      417756286              
+
+POWER_RENAME_WRITE                           208878143                      208878143              
+
+POWER_FP_RENAME_READ                                 0                              0              
+
+POWER_FP_RENAME_WRITE                                0                              0              
+
+POWER_FUNCTION_CALL                             775086                         775086              
+
+POWER_INST_WINDOW_READ                       208878143                      208878143              
+
+POWER_INST_WINDOW_WRITE                      208878143                      208878143              
+
+POWER_INT_REGFILE_READ                       271871855                      271871855              
+
+POWER_INT_REGFILE_WRITE                      197430461                      197430461              
+
+POWER_IALU_ACCESS                            204788730                      204788730              
+
+POWER_CDB_IALU_ACCESS                        204788730                      204788730              
+
+POWER_MUL_ACCESS                               4089413                        4089413              
+
+POWER_CDB_MUL_ACCESS                           4089413                        4089413              
+
+POWER_FP_INST_WINDOW_WRITE                           0                              0              
+
+POWER_FP_INST_WINDOW_READ                            0                              0              
+
+POWER_FP_REGFILE_READ                                0                              0              
+
+POWER_FP_REGFILE_WRITE                               0                              0              
+
+POWER_FPU_ACCESS                                     0                              0              
+
+POWER_CDB_FPU_ACCESS                                 0                              0              
+
+POWER_DCACHE_READ_ACCESS                      52340738                       52340738              
+
+POWER_DCACHE_WRITE_ACCESS                      9044249                        9044249              
+
+POWER_DCACHE_READ_MISS                        25028029                       25028029              
+
+POWER_DCACHE_WRITE_MISS                        1433255                        1433255              
+
+POWER_MLC_READ_ACCESS                                0                              0              
+
+POWER_MLC_WRITE_ACCESS                               0                              0              
+
+POWER_MLC_READ_MISS                                  0                              0              
+
+POWER_MLC_WRITE_MISS                                 0                              0              
+
+POWER_LLC_READ_ACCESS                          5559835                        5559835              
+
+POWER_LLC_WRITE_ACCESS                          628696                         628696              
+
+POWER_LLC_READ_MISS                            5322922                        5322922              
+
+POWER_LLC_WRITE_MISS                                 0                              0              
+
+POWER_MEMORY_ACCESS                                  0                              0              
+
+POWER_MEMORY_READ_ACCESS                             0                              0              
+
+POWER_MEMORY_WRITE_ACCESS                            0                              0              
+
+POWER_INST_WINDOW_WAKEUP_ACCESS              208878143                      208878143              
+
+POWER_FP_INST_WINDOW_WAKEUP_ACCESS                   0                              0              
+
+POWER_L1DIREC_READ_ACCESS                            0                              0              
+
+POWER_L1DIREC_WRITE_ACCESS                           0                              0              
+
+POWER_L1DIREC_READ_MISS                              0                              0              
+
+POWER_L1DIREC_WRITE_MISS                             0                              0              
+
+POWER_L2DIREC_READ_ACCESS                            0                              0              
+
+POWER_L2DIREC_WRITE_ACCESS                           0                              0              
+
+POWER_L2DIREC_READ_MISS                              0                              0              
+
+POWER_L2DIREC_WRITE_MISS                             0                              0              
+
+POWER_MEMORY_CTRL_ACCESS                       5946297                        5946297              
+
+POWER_MEMORY_CTRL_READ                         5322922                        5322922              
+
+POWER_MEMORY_CTRL_WRITE                         623375                         623375              
+
+POWER_OP                                     208878143                      208878143              
+
+POWER_INT_OP                                 205898635                      205898635              
+
+POWER_FP_OP                                          0                              0              
+
+POWER_LD_OP                                   52341974                       52341974              
+
+POWER_ST_OP                                    9045320                        9045320              
+
+POWER_BRANCH_MISPREDICT                         445059                         445059              
+
+POWER_COMMITTED_OP                           105266743                      105266743              
+
+POWER_COMMITTED_INT_OP                       102926031                      102926031              
+
+POWER_COMMITTED_FP_OP                          2340712                        2340712              
+
+POWER_BRANCH_OP                               34833028                       34833028              
+
+POWER_DRAM_PRECHARGE                           5674098                        5674098              
+
+POWER_DRAM_ACTIVATE                            5842155                        5842155              
+
+POWER_DRAM_READ                                5322830                        5322830              
+
+POWER_DRAM_WRITE                                623351                         623351              
+
+POWER_STATS_END                                      0                              0              
+
+ENERGY                                        0.000000                       0.000000              
+
+ENERGY_CORE                                   0.000000                       0.000000              
+
+ENERGY_UNCORE                                 0.000000                       0.000000              
+
+ENERGY_MEMORY                                 0.000000                       0.000000              
+
+ENERGY_OTHER                                  0.000000                       0.000000              
+
+ENERGY_CORE_STATIC                            0.000000                       0.000000              
+
+ENERGY_CORE_DYNAMIC                           0.000000                       0.000000              
+
+ENERGY_UNCORE_STATIC                          0.000000                       0.000000              
+
+ENERGY_UNCORE_DYNAMIC                         0.000000                       0.000000              
+
+ENERGY_MEMORY_STATIC                          0.000000                       0.000000              
+
+ENERGY_MEMORY_DYNAMIC                         0.000000                       0.000000              
+
+ENERGY_OTHER_STATIC                           0.000000                       0.000000              
+
+ENERGY_OTHER_DYNAMIC                          0.000000                       0.000000              
+
+TIME                                          0.000000                       0.000000              
+
+ENERGY_STATS_END                                     0                              0              
+
+
+

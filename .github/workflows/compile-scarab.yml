@@ -123,7 +123,7 @@ jobs:
         working-directory: simulations
         run: |
           v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' \
-              github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/sim.log | head -n1)
+              github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/sim.log | head -n1)
           echo "value=$v" >>"$GITHUB_OUTPUT"
 
       # Extract IPC ------------------------------------------
@@ -132,7 +132,7 @@ jobs:
         working-directory: simulations
         run: |
           v=$(grep "Cumulative:" \
-               github_top_simpoint_workflow/this_pr/500.perlbench_r/29229/core.stat.0.out | \
+               github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out | \
                sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
           echo "value=${v:-ERROR}" >>"$GITHUB_OUTPUT"
 

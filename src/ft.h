@@ -18,60 +18,52 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
 /***************************************************************************************
- * File         : ft_info.h
- * Author       : Mingsheng Xu <mxu61@ucsc.edu>
- * Date         : 06/16/2024
- * Description  :
+ * File         : ft.h
+ * Author       :
+ * Date         :
+ * Description  : Fetch Target (FT) class header
  ***************************************************************************************/
 
-#ifndef __FT_INFO_H__
-#define __FT_INFO_H__
-#include <stdint.h>
+#ifndef __FT_H__
+#define __FT_H__
 
+#include <vector>
+
+#include "globals/global_defs.h"
 #include "globals/global_types.h"
 
-typedef enum FT_Started_By_enum {
-  FT_NOT_STARTED,
-  FT_STARTED_BY_APP,
-  FT_STARTED_BY_ICACHE_LINE_BOUNDARY,
-  FT_STARTED_BY_TAKEN_BRANCH,
-  FT_STARTED_BY_BAR_FETCH,
-  FT_STARTED_BY_RECOVERY
-} FT_Started_By;
+#include "decoupled_frontend.h"
+#include "ft_info.h"
+#include "op.h"
 
-typedef enum FT_Ended_By_enum {
-  FT_NOT_ENDED,
-  FT_ICACHE_LINE_BOUNDARY,
-  FT_TAKEN_BRANCH,
-  FT_BAR_FETCH,
-  FT_APP_EXIT
-} FT_Ended_By;
+class FT {
+ public:
+  FT(uns _proc_id = 0);
+  void set_ft_started_by(FT_Started_By ft_started_by);
+  void add_op(Op* op, FT_Ended_By ft_ended_by);
+  void free_ops_and_clear();
+  bool can_fetch_op();
+  Op* fetch_op();
+  void set_per_op_ft_info();
+  FT_Info get_ft_info();
+  bool is_consumed();
+  void set_consumed();
+  Op* peek_next_op();
+  Op* peek_last_op();
+  Op* peek_first_op();
+  std::vector<Addr> get_all_pc();
+  void write_FT_id(uint64_t id_write);
+  uint64_t get_FT_id();
 
-typedef struct FT_Info_Static_struct {
-  // the PC of the first inst in this FT
-  Addr start;
-  // the FT size in bytes, counting from the first byte of the first inst to the last byte of the last inst
-  Addr length;
-  // the number of uops in this FT
-  int n_uops;
-} FT_Info_Static;
+ private:
+  uns proc_id;
+  uint64_t op_pos;
+  FT_Info ft_info;
+  std::vector<Op*> ops;
+  bool consumed;
 
-// two fts with the same static info may have different dynamic info
-typedef struct FT_Info_Dynamic_struct {
-  // the start of the FT
-  FT_Started_By started_by;
-  // the termination of the FT
-  FT_Ended_By ended_by;
-  // if the first op of this FT is off-path
-  Flag first_op_off_path;
-  uint64_t FT_id;
-} FT_Info_Dynamic;
-
-struct FT_Info_struct {
-  FT_Info_Static static_info;
-  FT_Info_Dynamic dynamic_info;
+  friend class Decoupled_FE;
 };
 
-#endif
+#endif  // __FT_H__

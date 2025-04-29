@@ -660,10 +660,16 @@ void full_sim() {
     memview_init();
 
   init_op_pool();
+
   unique_count = 1;
 
   sim_limit = trigger_create("SIM_LIMIT", SIM_LIMIT, TRIGGER_ONCE);
   clear_stats = trigger_create("CLEAR_STATS", CLEAR_STATS, TRIGGER_ONCE);
+
+  if (LOOKAHEAD_BUF_SIZE) {
+    // need to init after op pool bacause need op alloc to fill up
+    init_lookahead_buffer_wrap();
+  }
 
   /* main loop */
   while (!trigger_fired(sim_limit)) {

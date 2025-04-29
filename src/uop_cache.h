@@ -27,6 +27,7 @@ typedef struct Uop_Cache_Data_struct {
   FT_Info_Dynamic ft_info_dynamic;
   // is this line the end of the FT?
   Flag end_of_ft;
+  Flag begin_of_ft;
 
   Counter used;
   Flag priority;

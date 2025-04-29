@@ -100,6 +100,7 @@ Op* ft_fetch_op(FT* ft);
 bool ft_is_consumed(FT* ft);
 void ft_set_consumed(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
+void init_lookahead_buffer_wrap();
 FT* decoupled_fe_get_ft(uint64_t ft_pos);
 // FTQ API
 decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id);

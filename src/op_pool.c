@@ -79,7 +79,6 @@ static inline void expand_op_pool(void);
 /* init_op_pool: */
 
 void init_op_pool() {
-  DEBUGU(0, "Initializing op pool...\n");
 
   /* set up invalid op (for use as default value various places) */
   op_pool_init_op(&invalid_op);
@@ -98,7 +97,6 @@ void init_op_pool() {
 /* reset_op_pool:  */
 
 void reset_op_pool() {
-  DEBUGU(0, "Resetting op pool...\n");
   op_pool_entries = 0;
   op_pool_active_ops = 0;
 }
@@ -121,8 +119,6 @@ Op* alloc_op(uns proc_id) {
   op_pool_setup_op(proc_id, new_op);
 
   op_pool_active_ops++;
-  DEBUG(0, "Allocating op  id:%u  op_pool_active_ops:%u  op_pool_entries:%d\n", new_op->op_pool_id, op_pool_active_ops,
-        op_pool_entries);
   op_pool_free_head = new_op->op_pool_next;
 
   return new_op;
@@ -142,7 +138,7 @@ void free_op(Op* op) {
   op->op_pool_valid = FALSE;
   op_pool_active_ops--;
   ASSERTM(0, op_pool_active_ops >= 0, "op_pool_active_ops:%u\n", op_pool_active_ops);
-  DEBUG(0, "Freed op  id:%u  op_pool_active_ops: %u\n", op->op_pool_id, op_pool_active_ops);
+  DEBUG(0, "Freed op id:%u op_pool_active_ops: %u\n", op->op_pool_id, op_pool_active_ops);
 
   if (op->sched_info)
     free(op->sched_info);
@@ -285,5 +281,6 @@ static inline void expand_op_pool() {
   op_pool_init_op(&new_pool[ii]);
 
   op_pool_free_head = &new_pool[0];
-  ASSERT(0, op_pool_entries <= OP_POOL_ENTRIES_INC * 128);
+  // need to check this, 128 is not enought becaue of the lookahead
+  ASSERT(0, op_pool_entries <= OP_POOL_ENTRIES_INC * 12800);
 }

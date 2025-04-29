@@ -84,8 +84,10 @@ void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst
   if (op_iter != pc_to_inst.end()) {
     *inst = op_iter->second;
     *off_path_addr += inst->size;
+    STAT_EVENT(proc_id, TRACE_FE_OFF_PATH_INS_FOUND);
     DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->instruction_addr, inst->size);
   } else {
+    STAT_EVENT(proc_id, TRACE_FE_OFF_PATH_INS_NOT_FOUND);
     *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED);
     (*off_path_addr) += DUMMY_NOP_SIZE;
   }

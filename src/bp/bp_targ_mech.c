@@ -282,6 +282,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
     btb_line = (Addr*)cache_access(&bp_data->btb, fetch_addr, &btb_line_addr, TRUE);
     if (!btb_line) {
+      STAT_EVENT(op->proc_id, BTB_ON_PATH_INSERTION + op->off_path);
       btb_line = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
     }
     *btb_line = op->oracle_info.target;

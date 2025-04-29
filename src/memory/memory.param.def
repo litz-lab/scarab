@@ -361,3 +361,4 @@ DEF_PARAM(dumb_model_avg_row_hits_per_core, DUMB_MODEL_AVG_ROW_HITS_PER_CORE,
 DEF_PARAM(dumb_model_mlp, DUMB_MODEL_MLP, uns, uns, 1, )
 DEF_PARAM(dumb_model_mlp_per_core, DUMB_MODEL_MLP_PER_CORE, char*, string,
           NULL, )
+DEF_PARAM( uop_cache_bypass , UOP_CACHE_BYPASS , Flag , Flag , 0 , )

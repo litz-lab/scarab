@@ -33,6 +33,23 @@
 #include "stage_data.h"
 
 /**************************************************************************************/
+// Macro
+
+typedef enum NODE_STALL_BACKEND_enum {
+  NODE_STALL_BACKEND_NONE,
+  NODE_STALL_BACKEND_WAIT_RECOVERY,
+  NODE_STALL_BACKEND_WAIT_DEP_WAKEUP,
+  NODE_STALL_BACKEND_NONMEM_WAIT_FU_AVAILABLE,
+  NODE_STALL_BACKEND_NONMEM_WAIT_COMPLETE,
+  NODE_STALL_BACKEND_MEM_WAIT_FU_AVAILABLE,
+  NODE_STALL_BACKEND_MEM_WAIT_ADDR_GENERATE,
+  NODE_STALL_BACKEND_MEM_WAIT_DCACHE_PORT,
+  NODE_STALL_BACKEND_MEM_WAIT_DCACHE_ACCESS,
+  NODE_STALL_BACKEND_MEM_WAIT_DCACHE_MISS,
+  NODE_STALL_BACKEND_COUNT
+} Node_Stall;
+
+/**************************************************************************************/
 // Types
 
 typedef struct Reservation_Station_struct {
@@ -68,6 +85,8 @@ typedef struct Node_Stage_struct {
   Flag mem_blocked;      // are we out of mem req buffers for this core
   uns mem_block_length;  // length of the current memory block
   uns ret_stall_length;  // length of the current retirement stall
+
+  Node_Stall node_stall;
 } Node_Stage;
 
 /**************************************************************************************/

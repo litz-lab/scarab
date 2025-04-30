@@ -54,6 +54,7 @@
 #include "exec_ports.h"
 #include "map.h"
 #include "map_rename.h"
+#include "map_stage.h"
 #include "node_issue_queue.h"
 #include "op_pool.h"
 #include "sim.h"
@@ -97,6 +98,9 @@ void node_precommit_update(void);
 void node_precommit_retire(Op* op);
 
 void node_fuse_op(Op* op);
+
+void node_stall_frontend_update(uns alloc_count);
+void node_stall_backend_update(Op* op, uns ret_count);
 
 /**************************************************************************************/
 /* set_node_stage:*/
@@ -145,6 +149,8 @@ void reset_node_stage() {
 
   node->node_precommit = NULL;
   node->prev_op_fusable = FALSE;
+
+  node->node_stall = NODE_STALL_BACKEND_NONE;
 }
 
 /**************************************************************************************/
@@ -405,12 +411,13 @@ void node_fill_rob(Stage_Data* src_sd) {
 
   // Go through all the ops in the issue buffer and stick them into the Node Table.
   // We will stick them into the RS later
+  uns fill_count = 0;
   for (ii = 0; ii < src_sd->max_op_count; ii++) {
     /* if node table is full, stall */
     if (is_node_table_full()) {
       collect_node_table_full_stats(node->node_head);
       rob_block_issue_reason = ROB_BLOCK_ISSUE_FULL;
-      return;
+      break;
     }
     rob_block_issue_reason = ROB_BLOCK_ISSUE_NONE;
 
@@ -460,11 +467,14 @@ void node_fill_rob(Stage_Data* src_sd) {
     DEBUG(node->proc_id, "Issuing the op op_num:%s off_path:%d\n", unsstr64(op->op_num), op->off_path);
 
     op->state = OS_IN_ROB;
+    fill_count++;
 
     /* always stop issuing after a synchronizing op */
     if (op->table_info->bar_type & BAR_ISSUE)
       break;
   }
+
+  node_stall_frontend_update(fill_count);
 }
 
 /**************************************************************************************/
@@ -667,6 +677,8 @@ void node_retire() {
   }
 
   STAT_EVENT(node->proc_id, ROW_SIZE_0 + ret_count);
+
+  node_stall_backend_update(op, ret_count);
 
   // op should be pointing to first op that was not retired because of the above for-loop
   node->node_head = op;
@@ -925,4 +937,100 @@ void node_fuse_op(Op* op) {
   }
 
   node->prev_op_fusable = FALSE;
+}
+
+/**************************************************************************************/
+/* stall reason update for top-down analysis */
+
+void node_stall_frontend_update(uns alloc_count) {
+  if (node->node_stall != NODE_STALL_BACKEND_NONE) {
+    return;
+  }
+
+  ASSERT(node->proc_id, alloc_count <= ISSUE_WIDTH);
+  if (alloc_count == ISSUE_WIDTH) {
+    return;
+  }
+
+  INC_STAT_EVENT(node->proc_id, STALL_FRONTEND, ISSUE_WIDTH - alloc_count);
+}
+
+void node_stall_backend_update(Op* op, uns ret_count) {
+  if (!op)
+    return;
+
+#if 0
+  /* get the next-cycle allocate number */
+  int rob_allocate_num;
+  if (map->last_sd->op_count != 0) {
+    rob_allocate_num = map->last_sd->op_count;
+  } else {
+    if (MAP_CYCLES > 1) {
+      rob_allocate_num = map->sds[1].op_count;
+    } else {
+      rob_allocate_num = ISSUE_WIDTH;
+    }
+  }
+
+  /* only collect the stat when there is a ROB stall in the next cycle */
+  node->node_stall = NODE_STALL_BACKEND_NONE;
+  ASSERT(node->proc_id, node->node_count <= NODE_TABLE_SIZE);
+  if (node->node_count - ret_count + rob_allocate_num <= NODE_TABLE_SIZE) {
+    return;
+  }
+#else
+  node->node_stall = NODE_STALL_BACKEND_NONE;
+  ASSERT(op->proc_id, ret_count <= NODE_RET_WIDTH);
+  if (ret_count == NODE_RET_WIDTH || node->node_count < NODE_RET_WIDTH) {
+    return;
+  }
+#endif
+
+  if (OP_DONE(op)) {
+    node->node_stall = NODE_STALL_BACKEND_WAIT_RECOVERY;
+    goto STAT;
+  }
+
+  /* non-mem stall */
+  if (op->table_info->mem_type != MEM_ST && op->table_info->mem_type != MEM_LD) {
+    if (op->state == OS_IN_ROB) {
+      node->node_stall = NODE_STALL_BACKEND_WAIT_DEP_WAKEUP;
+    } else if (op->state > OS_IN_ROB && op->state < OS_SCHEDULED) {
+      node->node_stall = NODE_STALL_BACKEND_NONMEM_WAIT_FU_AVAILABLE;
+    } else {
+      ASSERT(op->proc_id, op->state == OS_SCHEDULED);
+      ASSERT(op->proc_id, op->wake_cycle == op->done_cycle);
+      node->node_stall = NODE_STALL_BACKEND_NONMEM_WAIT_COMPLETE;
+    }
+    goto STAT;
+  }
+
+  /* mem stall */
+  if (op->state == OS_IN_ROB) {
+    node->node_stall = NODE_STALL_BACKEND_WAIT_DEP_WAKEUP;
+  } else if (op->state > OS_IN_ROB && op->state < OS_SCHEDULED) {
+    node->node_stall = NODE_STALL_BACKEND_MEM_WAIT_FU_AVAILABLE;
+  } else {
+    if (cycle_count < op->exec_cycle) {
+      // still in the FU
+      node->node_stall = NODE_STALL_BACKEND_MEM_WAIT_ADDR_GENERATE;
+    } else if (op->state == OS_WAIT_DCACHE) {
+      // leave FU but wait for dcache port
+      node->node_stall = NODE_STALL_BACKEND_MEM_WAIT_DCACHE_PORT;
+    } else if (op->done_cycle != MAX_CTR) {
+      // d-cache hit
+      node->node_stall = NODE_STALL_BACKEND_MEM_WAIT_DCACHE_ACCESS;
+    } else {
+      // d-cache miss
+      node->node_stall = NODE_STALL_BACKEND_MEM_WAIT_DCACHE_MISS;
+    }
+  }
+
+STAT:
+  if (node->node_stall != NODE_STALL_BACKEND_NONE) {
+    ASSERT(node->proc_id, node->node_stall < NODE_STALL_BACKEND_COUNT);
+    ASSERT(node->proc_id, NODE_RET_WIDTH - ret_count > 0);
+    INC_STAT_EVENT(node->proc_id, STALL_BACKEND, NODE_RET_WIDTH - ret_count);
+    INC_STAT_EVENT(node->proc_id, STALL_BACKEND + node->node_stall, NODE_RET_WIDTH - ret_count);
+  }
 }

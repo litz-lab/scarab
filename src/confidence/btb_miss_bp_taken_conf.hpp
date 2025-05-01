@@ -8,10 +8,50 @@
 
 #include "confidence/conf.hpp"
 
+class BTBMissBPTakenConf;
+
+class BTBMissBPTakenConfStat: public ConfMechStatBase {
+ public:
+  BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech);
+  void ext_update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle) override;
+  void ext_recover(Op* op) override {}
+  void ext_print_data() override;
+
+  // for csvs
+  void log_phase_cycles(Op* op);
+
+  BTBMissBPTakenConf* conf_mech;
+
+  typedef std::tuple<Counter, Counter, Counter, double> phase_cycles_line;
+  std::vector<phase_cycles_line> btb_miss_event_cycles;
+  std::vector<phase_cycles_line> ibtb_miss_event_cycles;
+  std::vector<phase_cycles_line> mispred_event_cycles;
+  std::vector<phase_cycles_line> misfetch_event_cycles;
+};
+
 class BTBMissBPTakenConf : public ConfMechBase {
  public:
   BTBMissBPTakenConf(uns _proc_id)
-      : ConfMechBase(_proc_id), cnt_btb_miss(0), btb_miss_rate(0.0), last_recover_cycle(0), low_confidence_cnt(0) {}
+      : ConfMechBase(_proc_id), 
+       cnt_btb_miss(0),
+       btb_miss_rate(0.0), 
+       last_btb_recover_cycle(0),
+       cnt_ibtb_miss(0),
+        ibtb_miss_rate(0.0),
+        last_ibtb_recover_cycle(0),
+        cnt_misfetch(0),
+        misfetch_rate(0.0),
+        last_misfetch_recover_cycle(0),
+        cnt_mispred(0),
+        mispred_rate(0.0),
+        last_mispred_recover_cycle(0),
+        cnt_on_path_instructions(0),
+        effective_ipc(0.0),
+        cnt_total_ops(0),
+        last_recover_cycle(0), 
+       low_confidence_cnt(0) {
+        conf_mech_stat = new BTBMissBPTakenConfStat(_proc_id, this);
+      }
   // update functions
   void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
   void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
@@ -26,17 +66,10 @@ class BTBMissBPTakenConf : public ConfMechBase {
   // resolve cf
   void resolve_cf(Op* op) override;
 
-  void print_data() override;
-
  private:
   void reset_counters();
 
   Conf_Off_Path_Reason update_resteer_rate_ctrs(Conf_Off_Path_Reason conf_op_reason);
-
-
-  void log_phase_cycles(Op* op);
-  void log_off_path_event(Op* op);
-  void log_resolution(Op* op);
 
   /* miss-rate based confidence */
   Counter cnt_btb_miss;
@@ -74,6 +107,7 @@ class BTBMissBPTakenConf : public ConfMechBase {
   std::map<Counter, std::tuple<Counter, Counter, Off_Path_Reason>> resteer_ops_cycles;
   std::map<Counter, std::tuple<Counter, Counter, Off_Path_Reason>> resteer_ops_ops;
 
+  friend BTBMissBPTakenConfStat;
 };
 
 #endif  // __BTB_MISS_BP_TAKEN_H__

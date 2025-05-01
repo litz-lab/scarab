@@ -68,6 +68,7 @@ DEF_PARAM(  debug_bus_lib,         DEBUG_BUS_LIB,         Flag,  Flag,  FALSE,  
 DEF_PARAM(  debug_op_pool,         DEBUG_OP_POOL,         Flag,  Flag,  FALSE,  )
 DEF_PARAM(  debug_oracle,          DEBUG_ORACLE,          Flag,  Flag,  FALSE,  )
 DEF_PARAM(  debug_frontend,        DEBUG_FRONTEND,        Flag,  Flag,  FALSE,  )
+DEF_PARAM(  debug_conf,            DEBUG_CONF,            Flag,  Flag,  FALSE,  )   
 DEF_PARAM(  debug_addr_trans,      DEBUG_ADDR_TRANS,      Flag,  Flag,  FALSE,  )
 DEF_PARAM(  debug_bp,              DEBUG_BP,              Flag,  Flag,  FALSE,  )
 DEF_PARAM(  debug_bp_dir,          DEBUG_BP_DIR,          Flag,  Flag,  FALSE,  )

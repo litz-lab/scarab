@@ -64,6 +64,7 @@ class Decoupled_FE {
   Op* get_cur_op() { return cur_op; }
   uns get_conf() { return conf->get_conf(); }
   Off_Path_Reason get_off_path_reason() { return conf->get_off_path_reason(); }
+  Off_Path_Reason eval_off_path_reason(Op* op);
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf->get_conf_off_path_reason(); }
   void conf_resolve_cf(Op* op) { conf->resolve_cf(op); }
   void conf_print_data() { conf->print_data(); }
@@ -416,8 +417,10 @@ void Decoupled_FE::recover() {
           "addr 0x%llx\n",
           bp_recovery_info->recovery_fetch_addr, frontend_next_fetch_addr(proc_id));
   // sus?
-  if (CONFIDENCE_ENABLE && cur_op && !cur_op->exit)
+  if (CONFIDENCE_ENABLE && op) {
+    _DEBUG(proc_id, DEBUG_CONF, "Recovering confidence mech stat base for op %llu\n", op->op_num);
     conf->recover(op);
+  }
 }
 
 void Decoupled_FE::update() {
@@ -580,7 +583,8 @@ void Decoupled_FE::update() {
       bytes_this_cycle += op->inst_info->trace_info.inst_size;
       cfs_taken_this_cycle += cf_taken || bar_fetch;
     }
-
+    
+    op->off_path_reason = eval_off_path_reason(op);
     if (CONFIDENCE_ENABLE) {
       // update confidence
       conf->update(op, ft_ended_by != FT_NOT_ENDED);
@@ -739,4 +743,35 @@ void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
 
   // unblock pin exec driven, trace frontends do not need to block/unblock
   frontend_retire(op_proc_id, inst_uid);
+}
+
+Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
+  if (!(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec)) {
+    return REASON_NOT_IDENTIFIED;
+  }
+  // mispred
+  if (op->oracle_info.pred_orig != op->oracle_info.dir && !op->oracle_info.btb_miss) {
+    return REASON_MISPRED;
+  }
+  // misfetch
+  else if (!op->oracle_info.btb_miss && op->oracle_info.pred_orig == op->oracle_info.dir &&
+          op->oracle_info.pred_npc != op->oracle_info.npc) {
+    return REASON_MISFETCH;
+  }
+  // ibtb miss
+  else if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) &&
+          op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN) {
+    return REASON_IBTB_MISS;
+  }
+  // btb miss and mispred (would have been incorrect with or without btb miss)
+  else if (op->oracle_info.pred_orig != op->oracle_info.dir && op->oracle_info.btb_miss) {
+    return REASON_BTB_MISS_MISPRED;
+  }
+  // true btb miss
+  else if (op->oracle_info.btb_miss) {
+    return REASON_BTB_MISS;
+  } else {
+    // all cases should be covered
+    ASSERT(proc_id, FALSE);
+  }
 }

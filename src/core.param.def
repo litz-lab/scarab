@@ -345,7 +345,7 @@ DEF_PARAM(conf_btb_miss_rate_conf, CONF_BTB_MISS_RATE_CONF, Flag, Flag, TRUE, )
 DEF_PARAM(conf_ibtb_miss_rate_conf, CONF_IBTB_MISS_RATE_CONF, Flag, Flag, TRUE, )
 DEF_PARAM(conf_misfetch_rate_conf, CONF_MISFETCH_RATE_CONF, Flag, Flag, TRUE, )
 DEF_PARAM(conf_mispred_rate_conf, CONF_MISPRED_RATE_CONF, Flag, Flag, TRUE, )
-DEF_PARAM(conf_ipc_rate_conf, CONF_IPC_RATE_CONF, Flag, Flag, TRUE, )
+DEF_PARAM(conf_ipc_rate_conf, CONF_IPC_RATE_CONF, Flag, Flag, FALSE, )
 
 DEF_PARAM(conf_perfect_btb_miss_conf, CONF_PERFECT_BTB_MISS_CONF, Flag, Flag, FALSE, )
 DEF_PARAM(conf_perfect_ibtb_miss_conf, CONF_PERFECT_IBTB_MISS_CONF, Flag, Flag, FALSE, )

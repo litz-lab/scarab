@@ -1,6 +1,9 @@
 #include "confidence/weight_conf.hpp"
 
-#define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
+#define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CONF, ##args)
+WeightConfStat::WeightConfStat(uns _proc_id, WeightConf* _conf_mech) : ConfMechStatBase(_proc_id) {
+    conf_mech = _conf_mech;
+}
 
 void WeightConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
   if (!(op->table_info->cf_type)) {
@@ -51,9 +54,5 @@ void WeightConf::recover(Op* op) {
 }
 
 void WeightConf::resolve_cf(Op* op) {
-  return;
-}
-
-void WeightConf::print_data() {
   return;
 }

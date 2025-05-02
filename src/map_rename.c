@@ -785,7 +785,8 @@ void reg_renaming_scheme_infinite_init(void);
 Flag reg_renaming_scheme_infinite_available(uns stage_op_count);
 void reg_renaming_scheme_infinite_rename(Op *op);
 Flag reg_renaming_scheme_infinite_issue(Op *op);
-void reg_renaming_scheme_infinite_execute(Op *op);
+void reg_renaming_scheme_infinite_consume(Op *op);
+void reg_renaming_scheme_infinite_produce(Op *op);
 void reg_renaming_scheme_infinite_recover(Op *op);
 void reg_renaming_scheme_infinite_precommit(Op *op);
 void reg_renaming_scheme_infinite_commit(Op *op);
@@ -806,7 +807,11 @@ Flag reg_renaming_scheme_infinite_issue(Op *op) {
   return TRUE;
 }
 
-void reg_renaming_scheme_infinite_execute(Op *op) {
+void reg_renaming_scheme_infinite_consume(Op *op) {
+  return;
+}
+
+void reg_renaming_scheme_infinite_produce(Op *op) {
   return;
 }
 
@@ -829,7 +834,8 @@ void reg_renaming_scheme_realistic_init(void);
 Flag reg_renaming_scheme_realistic_available(uns stage_op_count);
 void reg_renaming_scheme_realistic_rename(Op *op);
 Flag reg_renaming_scheme_realistic_issue(Op *op);
-void reg_renaming_scheme_realistic_execute(Op *op);
+void reg_renaming_scheme_realistic_consume(Op *op);
+void reg_renaming_scheme_realistic_produce(Op *op);
 void reg_renaming_scheme_realistic_recover(Op *op);
 void reg_renaming_scheme_realistic_precommit(Op *op);
 void reg_renaming_scheme_realistic_commit(Op *op);
@@ -885,12 +891,17 @@ Flag reg_renaming_scheme_realistic_issue(Op *op) {
   return TRUE;
 }
 
-// consume the src registers and produce the dst registers
-void reg_renaming_scheme_realistic_execute(Op *op) {
+// consume the src registers
+void reg_renaming_scheme_realistic_consume(Op *op) {
   int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
 
   // consume the src register in the physical reg table
   reg_file_consume_src(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
+}
+
+// produce the dst registers
+void reg_renaming_scheme_realistic_produce(Op *op) {
+  int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
 
   // write back the physical register table
   reg_file_produce_dst(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
@@ -931,7 +942,8 @@ void reg_renaming_scheme_late_allocation_init(void);
 Flag reg_renaming_scheme_late_allocation_available(uns stage_op_count);
 void reg_renaming_scheme_late_allocation_rename(Op *op);
 Flag reg_renaming_scheme_late_allocation_issue(Op *op);
-void reg_renaming_scheme_late_allocation_execute(Op *op);
+void reg_renaming_scheme_late_allocation_consume(Op *op);
+void reg_renaming_scheme_late_allocation_produce(Op *op);
 void reg_renaming_scheme_late_allocation_recover(Op *op);
 void reg_renaming_scheme_late_allocation_precommit(Op *op);
 void reg_renaming_scheme_late_allocation_commit(Op *op);
@@ -1031,14 +1043,19 @@ Flag reg_renaming_scheme_late_allocation_issue(Op *op) {
 }
 
 // allocate the physical reg during execution using the vtag info of the op and write back the virtual and physical reg
-void reg_renaming_scheme_late_allocation_execute(Op *op) {
+void reg_renaming_scheme_late_allocation_consume(Op *op) {
   // late allocation for physical register entries
   reg_file_read_src(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_VIRTUAL);
   reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_VIRTUAL);
 
-  // consume/produce for both register tables
+  // consume for both register tables
   int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
   reg_file_consume_src(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
+}
+
+void reg_renaming_scheme_late_allocation_produce(Op *op) {
+  // produce for both register tables
+  int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
   reg_file_produce_dst(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
 }
 
@@ -1124,7 +1141,7 @@ static void reg_early_release_free(struct reg_table *reg_table, struct reg_table
 /* Spec Early Release Register Scheme */
 
 void reg_renaming_scheme_early_release_spec_rename(Op *op);
-void reg_renaming_scheme_early_release_spec_execute(Op *op);
+void reg_renaming_scheme_early_release_spec_consume(Op *op);
 void reg_renaming_scheme_early_release_spec_commit(Op *op);
 
 void reg_renaming_scheme_early_release_spec_rename(Op *op) {
@@ -1153,8 +1170,8 @@ void reg_renaming_scheme_early_release_spec_rename(Op *op) {
   }
 }
 
-void reg_renaming_scheme_early_release_spec_execute(Op *op) {
-  reg_renaming_scheme_realistic_execute(op);
+void reg_renaming_scheme_early_release_spec_consume(Op *op) {
+  reg_renaming_scheme_realistic_consume(op);
 
   for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
@@ -1216,7 +1233,7 @@ void reg_renaming_scheme_early_release_spec_commit(Op *op) {
  */
 
 void reg_renaming_scheme_early_release_nonspec_precommit(Op *op);
-void reg_renaming_scheme_early_release_nonspec_execute(Op *op);
+void reg_renaming_scheme_early_release_nonspec_consume(Op *op);
 
 void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
   ASSERT(op->proc_id, !op->off_path);
@@ -1240,8 +1257,8 @@ void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
   }
 }
 
-void reg_renaming_scheme_early_release_nonspec_execute(Op *op) {
-  reg_renaming_scheme_realistic_execute(op);
+void reg_renaming_scheme_early_release_nonspec_consume(Op *op) {
+  reg_renaming_scheme_realistic_consume(op);
 
   for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
@@ -1342,7 +1359,8 @@ struct reg_renaming_scheme_func {
   Flag (*available)(uns stage_op_count);
   void (*rename)(Op *op);
   Flag (*issue)(Op *op);
-  void (*execute)(Op *op);
+  void (*consume)(Op *op);
+  void (*produce)(Op *op);
   void (*recover)(Op *op);
   void (*precommit)(Op *op);
   void (*commit)(Op *op);
@@ -1356,7 +1374,8 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .available = reg_renaming_scheme_infinite_available,
     .rename = reg_renaming_scheme_infinite_rename,
     .issue = reg_renaming_scheme_infinite_issue,
-    .execute = reg_renaming_scheme_infinite_execute,
+    .consume = reg_renaming_scheme_infinite_consume,
+    .produce = reg_renaming_scheme_infinite_produce,
     .recover = reg_renaming_scheme_infinite_recover,
     .precommit = reg_renaming_scheme_infinite_precommit,
     .commit = reg_renaming_scheme_infinite_commit
@@ -1367,7 +1386,8 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .available = reg_renaming_scheme_realistic_available,
     .rename = reg_renaming_scheme_realistic_rename,
     .issue = reg_renaming_scheme_realistic_issue,
-    .execute = reg_renaming_scheme_realistic_execute,
+    .consume = reg_renaming_scheme_realistic_consume,
+    .produce = reg_renaming_scheme_realistic_produce,
     .recover = reg_renaming_scheme_realistic_recover,
     .precommit = reg_renaming_scheme_realistic_precommit,
     .commit = reg_renaming_scheme_realistic_commit
@@ -1378,7 +1398,8 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .available = reg_renaming_scheme_late_allocation_available,
     .rename = reg_renaming_scheme_late_allocation_rename,
     .issue = reg_renaming_scheme_late_allocation_issue,
-    .execute = reg_renaming_scheme_late_allocation_execute,
+    .consume = reg_renaming_scheme_late_allocation_consume,
+    .produce = reg_renaming_scheme_late_allocation_produce,
     .recover = reg_renaming_scheme_late_allocation_recover,
     .precommit = reg_renaming_scheme_late_allocation_precommit,
     .commit = reg_renaming_scheme_late_allocation_commit
@@ -1389,7 +1410,8 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .available = reg_renaming_scheme_realistic_available,
     .rename = reg_renaming_scheme_early_release_spec_rename,
     .issue = reg_renaming_scheme_realistic_issue,
-    .execute = reg_renaming_scheme_early_release_spec_execute,
+    .consume = reg_renaming_scheme_early_release_spec_consume,
+    .produce = reg_renaming_scheme_realistic_produce,
     .recover = reg_renaming_scheme_realistic_recover,
     .precommit = reg_renaming_scheme_realistic_precommit,
     .commit = reg_renaming_scheme_early_release_spec_commit
@@ -1400,7 +1422,8 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .available = reg_renaming_scheme_realistic_available,
     .rename = reg_renaming_scheme_realistic_rename,
     .issue = reg_renaming_scheme_realistic_issue,
-    .execute = reg_renaming_scheme_early_release_nonspec_execute,
+    .consume = reg_renaming_scheme_early_release_nonspec_consume,
+    .produce = reg_renaming_scheme_realistic_produce,
     .recover = reg_renaming_scheme_realistic_recover,
     .precommit = reg_renaming_scheme_early_release_nonspec_precommit,
     .commit = reg_renaming_scheme_early_release_spec_commit
@@ -1411,7 +1434,8 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .available = reg_renaming_scheme_realistic_available,
     .rename = reg_renaming_scheme_realistic_rename,
     .issue = reg_renaming_scheme_realistic_issue,
-    .execute = reg_renaming_scheme_realistic_execute,
+    .consume = reg_renaming_scheme_realistic_consume,
+    .produce = reg_renaming_scheme_realistic_produce,
     .recover = reg_renaming_scheme_realistic_recover,
     .precommit = reg_renaming_scheme_early_release_lastuse_precommit,
     .commit = reg_renaming_scheme_early_release_lastuse_commit
@@ -1471,13 +1495,24 @@ Flag reg_file_issue(Op *op) {
 
 /*
   Called by:
-  --- map.c -> when the op is executed
+  --- exec.c -> when the op is going to be executed
   Procedure:
-  --- consume the src registers and write back the dst registers
+  --- consume the src registers
 */
-void reg_file_execute(Op *op) {
+void reg_file_consume(Op *op) {
   ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
-  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].execute(op);
+  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].consume(op);
+}
+
+/*
+  Called by:
+  --- map.c -> when the op is waking up the dependent ops
+  Procedure:
+  --- write back the dst registers
+*/
+void reg_file_produce(Op *op) {
+  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].produce(op);
 }
 
 /*

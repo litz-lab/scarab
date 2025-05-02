@@ -124,6 +124,12 @@ jobs:
         run: |
           v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' \
               github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/sim.log | head -n1)
+          if ! [[ "$v" =~ ^[0-9]+$ ]]; then
+            echo "KIPS value is not a valid integer: '$v' Run failed!"
+            echo "Contents of sim.log for debugging:"
+            cat github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/sim.log
+            exit 1
+          fi
           echo "value=$v" >>"$GITHUB_OUTPUT"
 
       # Extract IPC ------------------------------------------
@@ -134,7 +140,13 @@ jobs:
           v=$(grep "Cumulative:" \
                github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out | \
                sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
-          echo "value=${v:-ERROR}" >>"$GITHUB_OUTPUT"
+          if ! [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+            echo "IPC value is not a valid floating point number: '$v' Run failed!"
+            echo "Contents of core.stat.0.out for debugging:"
+            cat github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out
+            exit 1
+          fi
+          echo "value=$v" >>"$GITHUB_OUTPUT"
 
 ############################################################
 # 7 ─── Job 3A: compare & comment (PRs only) ───────────────

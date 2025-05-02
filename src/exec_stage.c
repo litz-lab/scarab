@@ -243,9 +243,8 @@ void update_exec_stage(Stage_Data* src_sd) {
     DEBUG(exec->proc_id, "op_num:%s fu_num:%d sched_cycle:%s off_path:%d\n", unsstr64(op->op_num), op->fu_num,
           unsstr64(op->sched_cycle), op->off_path);
 
-    /* TODO: separate the callback into two phases */
-    // register value can be written back
-    reg_file_execute(op);
+    // consume the src register values
+    reg_file_consume(op);
 
     /*
      * We need to perform wake-ups of all the dependent ops.

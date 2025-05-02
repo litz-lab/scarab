@@ -538,6 +538,9 @@ void wake_up_ops(Op* op, Dep_Type type, void (*wake_action)(Op*, Op*, uns8)) {
   ASSERTM(op->proc_id, !op->wake_up_signaled[type] || op->replay, "op_num:%s op:%s off:%d\n", unsstr64(op->op_num),
           disasm_op(op, TRUE), op->off_path);
 
+  // write back the register value for the dependent ops
+  reg_file_produce(op);
+
   ASSERT(op->proc_id, wake_action);
   for (temp = op->wake_up_head; temp; temp = temp->next) {
     Op* dep_op = temp->op;

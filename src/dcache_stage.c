@@ -81,6 +81,8 @@ static inline void dcache_hit_wp_collect_stats(Dcache_Data* line, Op* op);
 static inline Flag dcache_miss_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type);
 static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle);
 
+static inline void dcache_fill_process_req_op(Mem_Req* req, Dcache_Data* data);
+
 /**************************************************************************************/
 /* set_dcache_stage: */
 
@@ -311,13 +313,6 @@ void update_dcache_stage(Stage_Data* src_sd) {
 /* dcache_fill_line: */
 
 Flag dcache_fill_line(Mem_Req* req) {
-  uns bank = req->addr >> dc->dcache.shift_bits & N_BIT_MASK(LOG2(DCACHE_BANKS));
-  Dcache_Data* data;
-  Addr line_addr, repl_line_addr;
-  Op* op;
-  Op** op_p = (Op**)list_start_head_traversal(&req->op_ptrs);
-  Counter* op_unique = (Counter*)list_start_head_traversal(&req->op_uniques);
-
   set_dcache_stage(&cmp_model.dcache_stage[req->proc_id]);
   Counter old_cycle_count = cycle_count;  // FIXME HACK!
   cycle_count = freq_cycle_count(FREQ_DOMAIN_CORES[req->proc_id]);
@@ -327,6 +322,7 @@ Flag dcache_fill_line(Mem_Req* req) {
   ASSERT(dc->proc_id, req->op_count == req->op_uniques.count);
 
   /* if it can't get a write port, fail */
+  uns bank = req->addr >> dc->dcache.shift_bits & N_BIT_MASK(LOG2(DCACHE_BANKS));
   if (!get_write_port(&dc->ports[bank])) {
     cycle_count = old_cycle_count;
     STAT_EVENT(dc->proc_id, DCACHE_FILL_PORT_UNAVAILABLE_ONPATH + req->off_path);
@@ -334,6 +330,9 @@ Flag dcache_fill_line(Mem_Req* req) {
   }
 
   /* get new line in the cache */
+  Dcache_Data* data;
+  Addr line_addr, repl_line_addr;
+
   if (DC_PREF_CACHE_ENABLE && ((USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path) ||
                                (req->type == MRT_DPRF))) {  // Add prefetches here
     DEBUG(dc->proc_id,
@@ -434,39 +433,7 @@ Flag dcache_fill_line(Mem_Req* req) {
     data->HW_prefetched = FALSE;
   }
 
-  for (; op_p; op_p = (Op**)list_next_element(&req->op_ptrs)) {
-    ASSERT(dc->proc_id, op_unique);
-    op = *op_p;
-    ASSERT(dc->proc_id, op);
-
-    if (op->unique_num == *op_unique && op->op_pool_valid) {
-      ASSERT(dc->proc_id, dc->proc_id == op->proc_id);
-      ASSERT(dc->proc_id, op->proc_id == req->proc_id);
-      if (!op->off_path && op->table_info->mem_type == MEM_ST)
-        ASSERT(dc->proc_id, data->dirty);
-      data->prefetch &= op->table_info->mem_type == MEM_PF || op->table_info->mem_type == MEM_WH;
-      data->read_count[op->off_path] = data->read_count[op->off_path] + (op->table_info->mem_type == MEM_LD);
-      data->write_count[op->off_path] = data->write_count[op->off_path] + (op->table_info->mem_type == MEM_ST);
-      DEBUG(dc->proc_id, "%s: %s line addr:0x%s: %7d\n", unsstr64(op->op_num), disasm_op(op, FALSE),
-            hexstr64s(req->addr), (int)(req->addr >> LOG2(DCACHE_LINE_SIZE)));
-    }
-
-    if (op->unique_num == *op_unique && op->op_pool_valid) {
-      DEBUG(dc->proc_id, "Awakening op_num:%lld %d %d\n", op->op_num, op->engine_info.l1_miss_satisfied,
-            op->in_rdy_list);
-      ASSERT(dc->proc_id, !op->in_rdy_list);
-
-      op->done_cycle = cycle_count + 1;
-      op->state = OS_SCHEDULED;
-
-      if (op->table_info->mem_type != MEM_ST) {
-        op->wake_cycle = op->done_cycle;
-        wake_up_ops(op, REG_DATA_DEP, model->wake_hook); /* wake up dependent ops */
-      }
-    }
-
-    op_unique = (Counter*)list_next_element(&req->op_uniques);
-  }
+  dcache_fill_process_req_op(req, data);
 
   /* This write_count is missing all the stores that retired before
      this fill happened. Still, we know at least one on-path write
@@ -835,5 +802,45 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
     _DEBUG(dc->proc_id, DEBUG_STREAM_MEM, "dl0 miss : line_addr :%d op_count %lld  type :%d\n", (int)line_addr,
            op->op_num, (int)op->table_info->mem_type);
     stream_dl0_miss(line_addr);
+  }
+}
+
+static inline void dcache_fill_process_req_op(Mem_Req* req, Dcache_Data* data) {
+  Op** op_p = (Op**)list_start_head_traversal(&req->op_ptrs);
+  Counter* op_unique = (Counter*)list_start_head_traversal(&req->op_uniques);
+  for (; op_p;
+       op_p = (Op**)list_next_element(&req->op_ptrs), op_unique = (Counter*)list_next_element(&req->op_uniques)) {
+    Op* op = *op_p;
+    ASSERT(dc->proc_id, op);
+    ASSERT(dc->proc_id, op_unique);
+    ASSERT(dc->proc_id, dc->proc_id == op->proc_id);
+    ASSERT(dc->proc_id, op->proc_id == req->proc_id);
+
+    if (op->unique_num != *op_unique || !op->op_pool_valid) {
+      continue;
+    }
+
+    /* update cacheline metadata */
+    if (!op->off_path && op->table_info->mem_type == MEM_ST)
+      ASSERT(dc->proc_id, data->dirty);
+
+    data->prefetch &= op->table_info->mem_type == MEM_PF || op->table_info->mem_type == MEM_WH;
+    data->read_count[op->off_path] += (op->table_info->mem_type == MEM_LD);
+    data->write_count[op->off_path] += (op->table_info->mem_type == MEM_ST);
+
+    DEBUG(dc->proc_id, "%s: %s line addr:0x%s: %7d\n", unsstr64(op->op_num), disasm_op(op, FALSE), hexstr64s(req->addr),
+          (int)(req->addr >> LOG2(DCACHE_LINE_SIZE)));
+
+    /* wake up dependent ops */
+    DEBUG(dc->proc_id, "Awakening op_num:%lld %d %d\n", op->op_num, op->engine_info.l1_miss_satisfied, op->in_rdy_list);
+    ASSERT(dc->proc_id, !op->in_rdy_list);
+
+    op->done_cycle = cycle_count + 1;
+    op->state = OS_SCHEDULED;
+
+    if (op->table_info->mem_type != MEM_ST) {
+      op->wake_cycle = op->done_cycle;
+      wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+    }
   }
 }

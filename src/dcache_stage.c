@@ -81,7 +81,8 @@ static inline void dcache_hit_wp_collect_stats(Dcache_Data* line, Op* op);
 static inline Flag dcache_miss_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type);
 static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle);
 
-static inline void dcache_fill_process_req_op(Mem_Req* req, Dcache_Data* data);
+static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req);
+static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data);
 
 /**************************************************************************************/
 /* set_dcache_stage: */
@@ -330,119 +331,40 @@ Flag dcache_fill_line(Mem_Req* req) {
   }
 
   /* get new line in the cache */
-  Dcache_Data* data;
-  Addr line_addr, repl_line_addr;
+  Dcache_Data* data = dcache_fill_get_cacheline(req);
+  if (data == NULL) {  // if the line we need to replace is dirty
+    /*
+     * This is a hack to get around a deadlock issue.
+     * It doesn't completely eliminate the deadlock, but makes it less likely...
+     *
+     * The deadlock occurs when all the mem_req buffers are used,
+     * and all pending mem_reqs need to fill the dcache,
+     * but the highest priority dcache fill ends up evicting a dirty line from the dcache,
+     * which then needs to be written back to L1/MLC.
+     *
+     * This dcache fill will aquire a write port via get_write_port(), but then fail here,
+     * because there are no more mem_req buffers available for dc wb req,
+     * and new_mem_dc_wb_req() will return FALSE.
+     *
+     * If we don't release the write port, then all other mem_reqs,
+     * which still need to fill the dcache, will fail, and we end up in a deadlock.
+     * So instead, we release the write port below.
+     *
+     * HOWEVER, a deadlock is still possible if all pending mem_reqs fill the dcache
+     * and all end up evicting a dirty line
+     */
 
-  if (DC_PREF_CACHE_ENABLE && ((USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path) ||
-                               (req->type == MRT_DPRF))) {  // Add prefetches here
-    DEBUG(dc->proc_id,
-          "Filling pref_dcache off_path:%d addr:0x%s  :%7d index:%7d "
-          "op_count:%d oldest:%lld\n",
-          req->off_path, hexstr64s(req->addr), (int)req->addr, (int)(req->addr >> LOG2(DCACHE_LINE_SIZE)),
-          req->op_count, (req->op_count ? req->oldest_op_unique_num : -1));
+    ASSERT(dc->proc_id, 0 < dc->ports[bank].write_ports_in_use);
+    dc->ports[bank].write_ports_in_use--;
+    ASSERT(dc->proc_id, dc->ports[bank].write_ports_in_use < dc->ports->num_write_ports);
 
-    data = (Dcache_Data*)cache_insert(&dc->pref_dcache, dc->proc_id, req->addr, &line_addr, &repl_line_addr);
-    ASSERT(dc->proc_id, req->emitted_cycle);
-    ASSERT(dc->proc_id, cycle_count >= req->emitted_cycle);
-    // mark the data as HW_prefetch if prefetch mark it as
-    // fetched_by_offpath if off_path this is done downstairs
-  } else {
-    /* Do not insert the line yet, just check which line we
-       need to replace. If that line is dirty, it's possible
-       that we won't be able to insert the writeback into the
-       memory system. */
-    Flag repl_line_valid;
-    data = (Dcache_Data*)get_next_repl_line(&dc->dcache, dc->proc_id, req->addr, &repl_line_addr, &repl_line_valid);
-    if (repl_line_valid && data->dirty) {
-      /* need to do a write-back */
-      uns repl_proc_id = get_proc_id_from_cmp_addr(repl_line_addr);
-      DEBUG(dc->proc_id, "Scheduling writeback of addr:0x%s\n", hexstr64s(repl_line_addr));
-      ASSERT(dc->proc_id, data->read_count[0] || data->read_count[1] || data->write_count[0] || data->write_count[1]);
-
-      ASSERT(dc->proc_id, repl_line_addr || data->fetched_by_offpath || data->HW_prefetched);
-      if (!new_mem_dc_wb_req(MRT_WB, repl_proc_id, repl_line_addr, DCACHE_LINE_SIZE, 1, NULL, NULL, unique_count,
-                             TRUE)) {
-        // This is a hack to get around a deadlock issue. It doesn't completely
-        // eliminate the deadlock, but makes it less likely...The deadlock
-        // occurs when all the mem_req buffers are used, and all pending
-        // mem_reqs need to fill the dcache, but the highest priority dcache
-        // fill ends up evicting a dirty line from the dcache, which then needs
-        // to be written back to L1/MLC. This dcache fill will aquire a write
-        // port via get_write_port(), but then fail here, because there are no
-        // more mem_req buffers available for dc wb req, and new_mem_dc_wb_req()
-        // will return FALSE. If we don't release the write port, then all other
-        // mem_reqs, which still need to fill the dcache, will fail, and we end
-        // up in a deadlock. So instead, we release the write port below.
-        // HOWEVER, a deadlock is still possible if all pending mem_reqs fill
-        // the dcache and all end up evicting a dirty line
-        ASSERT(dc->proc_id, 0 < dc->ports[bank].write_ports_in_use);
-        dc->ports[bank].write_ports_in_use--;
-        ASSERT(dc->proc_id, dc->ports[bank].write_ports_in_use < dc->ports->num_write_ports);
-
-        cycle_count = old_cycle_count;
-        return FAILURE;
-      }
-      STAT_EVENT(dc->proc_id, DCACHE_WB_REQ_DIRTY);
-      STAT_EVENT(dc->proc_id, DCACHE_WB_REQ);
-    }
-
-    data = (Dcache_Data*)cache_insert(&dc->dcache, dc->proc_id, req->addr, &line_addr, &repl_line_addr);
-    DEBUG(dc->proc_id,
-          "Filling dcache  off_path:%d addr:0x%s  :%7d index:%7d op_count:%d "
-          "oldest:%lld\n",
-          req->off_path, hexstr64s(req->addr), (int)req->addr, (int)(req->addr >> LOG2(DCACHE_LINE_SIZE)),
-          req->op_count, (req->op_count ? req->oldest_op_unique_num : -1));
-    STAT_EVENT(dc->proc_id, DCACHE_FILL);
-    ASSERT(dc->proc_id, req->emitted_cycle);
-    ASSERT(dc->proc_id, cycle_count >= req->emitted_cycle);
-    ASSERT(dc->proc_id, ((int)req->mlc_hit + (int)req->l1_hit) < 2);
-    INC_STAT_EVENT(dc->proc_id, DATA_LD_CYCLES_ONPATH + req->off_path, cycle_count - req->emitted_cycle);
-    if (req->mlc_hit) {
-      STAT_EVENT(dc->proc_id, DATA_LD_MLC_ACCESSES_ONPATH + req->off_path);
-      INC_STAT_EVENT(dc->proc_id, DATA_LD_MLC_CYCLES_ONPATH + req->off_path, cycle_count - req->emitted_cycle);
-    } else if (req->l1_hit) {
-      STAT_EVENT(dc->proc_id, DATA_LD_L1_ACCESSES_ONPATH + req->off_path);
-      INC_STAT_EVENT(dc->proc_id, DATA_LD_L1_CYCLES_ONPATH + req->off_path, cycle_count - req->emitted_cycle);
-    } else {
-      STAT_EVENT(dc->proc_id, DATA_LD_MEM_ACCESSES_ONPATH + req->off_path);
-      INC_STAT_EVENT(dc->proc_id, DATA_LD_MEM_CYCLES_ONPATH + req->off_path, cycle_count - req->emitted_cycle);
-    }
+    /* TODO: fix this by using a new_cycle_count to avoid replacing cycle_count */
+    cycle_count = old_cycle_count;
+    return FAILURE;
   }
 
-  /* set up dcache line fields */
-  data->dirty = req->dirty_l0 ? TRUE : FALSE;
-  data->prefetch = TRUE;
-  data->read_count[0] = 0;
-  data->read_count[1] = 0;
-  data->write_count[0] = 0;
-  data->write_count[1] = 0;
-  data->misc_state = req->off_path | req->off_path << 1;
-  data->fetched_by_offpath = USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path;
-  data->offpath_op_addr = req->oldest_op_addr;
-  data->offpath_op_unique = req->oldest_op_unique_num;
-  data->fetch_cycle = cycle_count;
-  data->onpath_use_cycle = (req->type == MRT_DPRF || req->off_path) ? 0 : cycle_count;
-
-  dcache_fill_wp_collect_stats(data, req);
-
-  if (req->type == MRT_DPRF) {  // cmp FIXME
-    data->HW_prefetch = TRUE;
-    data->HW_prefetched = TRUE;
-  } else {
-    data->HW_prefetch = FALSE;
-    data->HW_prefetched = FALSE;
-  }
-
-  dcache_fill_process_req_op(req, data);
-
-  /* This write_count is missing all the stores that retired before
-     this fill happened. Still, we know at least one on-path write
-     must have occurred if the line is dirty. */
-  if (data->dirty && data->write_count[0] == 0)
-    data->write_count[0] = 1;
-
-  ASSERT(dc->proc_id, data->read_count[0] || data->read_count[1] || data->write_count[0] || data->write_count[1] ||
-                          req->off_path || data->prefetch || data->HW_prefetch);
+  /* update cacheline fields and wake up dependent ops */
+  dcache_fill_process_cacheline(req, data);
 
   cycle_count = old_cycle_count;
   return SUCCESS;
@@ -805,7 +727,105 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
   }
 }
 
-static inline void dcache_fill_process_req_op(Mem_Req* req, Dcache_Data* data) {
+static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
+  Dcache_Data* data;
+  Addr line_addr, repl_line_addr;
+
+  /* Prefetch */
+  bool is_off_path = USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path;
+  bool is_prefetch = (req->type == MRT_DPRF);
+  if (DC_PREF_CACHE_ENABLE && (is_off_path || is_prefetch)) {
+    DEBUG(dc->proc_id,
+          "Filling pref_dcache off_path:%d addr:0x%s  :%7d index:%7d "
+          "op_count:%d oldest:%lld\n",
+          req->off_path, hexstr64s(req->addr), (int)req->addr, (int)(req->addr >> LOG2(DCACHE_LINE_SIZE)),
+          req->op_count, (req->op_count ? req->oldest_op_unique_num : -1));
+
+    data = (Dcache_Data*)cache_insert(&dc->pref_dcache, dc->proc_id, req->addr, &line_addr, &repl_line_addr);
+    ASSERT(dc->proc_id, req->emitted_cycle);
+    ASSERT(dc->proc_id, cycle_count >= req->emitted_cycle);
+    /*
+     * mark the data as HW_prefetch if prefetch mark it as fetched_by_offpath if off_path
+     * this is done downstairs
+     */
+    ASSERT(dc->proc_id, data != NULL);
+    return data;
+  }
+
+  /*
+   * Do not insert the line yet, just check which line we need to replace.
+   * If that line is dirty, it's possible that we won't be able to insert the writeback into the memory system.
+   */
+  Flag repl_line_valid;
+  data = (Dcache_Data*)get_next_repl_line(&dc->dcache, dc->proc_id, req->addr, &repl_line_addr, &repl_line_valid);
+  if (repl_line_valid && data->dirty) {
+    /* need to do a write-back */
+    uns repl_proc_id = get_proc_id_from_cmp_addr(repl_line_addr);
+    DEBUG(dc->proc_id, "Scheduling writeback of addr:0x%s\n", hexstr64s(repl_line_addr));
+    ASSERT(dc->proc_id, data->read_count[0] || data->read_count[1] || data->write_count[0] || data->write_count[1]);
+    ASSERT(dc->proc_id, repl_line_addr || data->fetched_by_offpath || data->HW_prefetched);
+
+    if (!new_mem_dc_wb_req(MRT_WB, repl_proc_id, repl_line_addr, DCACHE_LINE_SIZE, 1, NULL, NULL, unique_count, TRUE)) {
+      return NULL;
+    }
+    STAT_EVENT(dc->proc_id, DCACHE_WB_REQ_DIRTY);
+    STAT_EVENT(dc->proc_id, DCACHE_WB_REQ);
+  }
+
+  DEBUG(dc->proc_id,
+        "Filling dcache  off_path:%d addr:0x%s  :%7d index:%7d op_count:%d "
+        "oldest:%lld\n",
+        req->off_path, hexstr64s(req->addr), (int)req->addr, (int)(req->addr >> LOG2(DCACHE_LINE_SIZE)), req->op_count,
+        (req->op_count ? req->oldest_op_unique_num : -1));
+
+  data = (Dcache_Data*)cache_insert(&dc->dcache, dc->proc_id, req->addr, &line_addr, &repl_line_addr);
+  ASSERT(dc->proc_id, req->emitted_cycle);
+  ASSERT(dc->proc_id, cycle_count >= req->emitted_cycle);
+  ASSERT(dc->proc_id, ((int)req->mlc_hit + (int)req->l1_hit) < 2);
+
+  STAT_EVENT(dc->proc_id, DCACHE_FILL);
+  INC_STAT_EVENT(dc->proc_id, DATA_LD_CYCLES_ONPATH + req->off_path, cycle_count - req->emitted_cycle);
+  if (req->mlc_hit) {
+    STAT_EVENT(dc->proc_id, DATA_LD_MLC_ACCESSES_ONPATH + req->off_path);
+    INC_STAT_EVENT(dc->proc_id, DATA_LD_MLC_CYCLES_ONPATH + req->off_path, cycle_count - req->emitted_cycle);
+  } else if (req->l1_hit) {
+    STAT_EVENT(dc->proc_id, DATA_LD_L1_ACCESSES_ONPATH + req->off_path);
+    INC_STAT_EVENT(dc->proc_id, DATA_LD_L1_CYCLES_ONPATH + req->off_path, cycle_count - req->emitted_cycle);
+  } else {
+    STAT_EVENT(dc->proc_id, DATA_LD_MEM_ACCESSES_ONPATH + req->off_path);
+    INC_STAT_EVENT(dc->proc_id, DATA_LD_MEM_CYCLES_ONPATH + req->off_path, cycle_count - req->emitted_cycle);
+  }
+
+  return data;
+}
+
+static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data) {
+  /* collect wp stat */
+  dcache_fill_wp_collect_stats(data, req);
+
+  /* set up dcache line fields */
+  data->dirty = req->dirty_l0 ? TRUE : FALSE;
+  data->prefetch = TRUE;
+  data->read_count[0] = 0;
+  data->read_count[1] = 0;
+  data->write_count[0] = 0;
+  data->write_count[1] = 0;
+  data->misc_state = req->off_path | req->off_path << 1;
+  data->fetched_by_offpath = USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path;
+  data->offpath_op_addr = req->oldest_op_addr;
+  data->offpath_op_unique = req->oldest_op_unique_num;
+  data->fetch_cycle = cycle_count;
+  data->onpath_use_cycle = (req->type == MRT_DPRF || req->off_path) ? 0 : cycle_count;
+
+  if (req->type == MRT_DPRF) {  // cmp FIXME
+    data->HW_prefetch = TRUE;
+    data->HW_prefetched = TRUE;
+  } else {
+    data->HW_prefetch = FALSE;
+    data->HW_prefetched = FALSE;
+  }
+
+  /* process req op */
   Op** op_p = (Op**)list_start_head_traversal(&req->op_ptrs);
   Counter* op_unique = (Counter*)list_start_head_traversal(&req->op_uniques);
   for (; op_p;
@@ -843,4 +863,14 @@ static inline void dcache_fill_process_req_op(Mem_Req* req, Dcache_Data* data) {
       wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
     }
   }
+
+  /*
+   * This write_count is missing all the stores that retired before this fill happened.
+   * Still, we know at least one on-path write must have occurred if the line is dirty.
+   */
+  if (data->dirty && data->write_count[0] == 0)
+    data->write_count[0] = 1;
+
+  ASSERT(dc->proc_id, data->read_count[0] || data->read_count[1] || data->write_count[0] || data->write_count[1] ||
+                          req->off_path || data->prefetch || data->HW_prefetch);
 }

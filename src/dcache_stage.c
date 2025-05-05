@@ -67,7 +67,7 @@
 Dcache_Stage* dc = NULL;
 
 /**************************************************************************************/
-/* Inline Methods */
+/* Prototypes for Inline Methods */
 
 static inline Flag dcache_stage_addr_unready(Op* op);
 static inline Flag dcache_stage_check_mem_type(Op* op);
@@ -85,37 +85,29 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req);
 static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data);
 
 /**************************************************************************************/
-/* set_dcache_stage: */
+/* External Interfaces for CMP Model */
 
 void set_dcache_stage(Dcache_Stage* new_dc) {
   dc = new_dc;
 }
 
-/**************************************************************************************/
-/* init_dcache_stage: */
-
 void init_dcache_stage(uns8 proc_id, const char* name) {
-  uns ii;
-
-  ASSERT(0, dc);
   DEBUG(proc_id, "Initializing %s stage\n", name);
 
+  ASSERT(0, dc);
   memset(dc, 0, sizeof(Dcache_Stage));
 
   dc->proc_id = proc_id;
-
   dc->sd.name = (char*)strdup(name);
-
   dc->sd.max_op_count = STAGE_MAX_OP_COUNT;
   dc->sd.ops = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
 
   /* initialize the cache structure */
   init_cache(&dc->dcache, "DCACHE", DCACHE_SIZE, DCACHE_ASSOC, DCACHE_LINE_SIZE, sizeof(Dcache_Data), DCACHE_REPL);
-
   reset_dcache_stage();
 
   dc->ports = (Ports*)malloc(sizeof(Ports) * DCACHE_BANKS);
-  for (ii = 0; ii < DCACHE_BANKS; ii++) {
+  for (uns ii = 0; ii < DCACHE_BANKS; ii++) {
     char name[MAX_STR_LENGTH + 1];
     snprintf(name, MAX_STR_LENGTH, "DCACHE BANK %d PORTS", ii);
     init_ports(&dc->ports[ii], name, DCACHE_READ_PORTS, DCACHE_WRITE_PORTS, FALSE);
@@ -130,9 +122,6 @@ void init_dcache_stage(uns8 proc_id, const char* name) {
   memset(dc->rand_wb_state, 0, NUM_ELEMENTS(dc->rand_wb_state));
 }
 
-/**************************************************************************************/
-/* reset_dcache_stage: */
-
 void reset_dcache_stage(void) {
   uns ii;
   for (ii = 0; ii < STAGE_MAX_OP_COUNT; ii++)
@@ -140,9 +129,6 @@ void reset_dcache_stage(void) {
   dc->sd.op_count = 0;
   dc->idle_cycle = 0;
 }
-
-/**************************************************************************************/
-/* recover_dcache_stage: */
 
 void recover_dcache_stage() {
   uns ii;
@@ -156,16 +142,11 @@ void recover_dcache_stage() {
   dc->idle_cycle = cycle_count + 1;
 }
 
-/**************************************************************************************/
-/* debug_dcache_stage: */
-
 void debug_dcache_stage() {
   DPRINTF("# %-10s  op_count:%d  busy: %d\n", dc->sd.name, dc->sd.op_count, dc->idle_cycle > cycle_count);
   print_op_array(GLOBAL_DEBUG_STREAM, dc->sd.ops, STAGE_MAX_OP_COUNT, STAGE_MAX_OP_COUNT);
 }
 
-/**************************************************************************************/
-/* update_dcache_stage: */
 void update_dcache_stage(Stage_Data* src_sd) {
   /* phase 1 - move ops into the dcache stage */
   ASSERT(dc->proc_id, src_sd->max_op_count == dc->sd.max_op_count);
@@ -311,7 +292,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
 }
 
 /**************************************************************************************/
-/* dcache_fill_line: */
+/* External API for architectural cache */
 
 Flag dcache_fill_line(Mem_Req* req) {
   set_dcache_stage(&cmp_model.dcache_stage[req->proc_id]);
@@ -370,9 +351,6 @@ Flag dcache_fill_line(Mem_Req* req) {
   return SUCCESS;
 }
 
-/**************************************************************************************/
-/* do_oracle_dcache_access: */
-
 Flag do_oracle_dcache_access(Op* op, Addr* line_addr) {
   Dcache_Data* hit;
   hit = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, line_addr, FALSE);
@@ -429,57 +407,53 @@ static inline Flag dcache_stage_check_mem_type(Op* op) {
 }
 
 static inline void dcache_hit_wp_collect_stats(Dcache_Data* line, Op* op) {
-  L1_Data* l1_line;
+  if (!WP_COLLECT_STATS)
+    return;
 
   if (!line) {
     ASSERT(dc->proc_id, PERFECT_DCACHE);
     return;
   }
 
-  if (!WP_COLLECT_STATS)
-    return;
-
-  if (!op->off_path) {
-    if (line->fetched_by_offpath) {
-      STAT_EVENT(dc->proc_id, DCACHE_HIT_ONPATH_SAT_BY_OFFPATH);
-      STAT_EVENT(dc->proc_id, DCACHE_USE_OFFPATH);
-      STAT_EVENT(dc->proc_id, DIST_DCACHE_FILL_OFFPATH_USED);
-      STAT_EVENT(dc->proc_id, DIST_REQBUF_OFFPATH_USED);
-      STAT_EVENT(dc->proc_id, DIST2_REQBUF_OFFPATH_USED_FULL);
-
-      l1_line = do_l1_access(op);
-      if (l1_line) {
-        if (l1_line->fetched_by_offpath) {
-          STAT_EVENT(dc->proc_id, L1_USE_OFFPATH);
-          STAT_EVENT(dc->proc_id, DIST_L1_FILL_OFFPATH_USED);
-          STAT_EVENT(dc->proc_id, L1_USE_OFFPATH_DATA);
-          l1_line->fetched_by_offpath = FALSE;
-          l1_line->l0_modified_fetched_by_offpath = TRUE;
-        }
-      }
-
-      DEBUG(0,
-            "Dcache hit: On path hits off path. va:%s op:%s op:0x%s wp_op:0x%s "
-            "opu:%s wpu:%s dist:%s%s\n",
-            hexstr64s(op->oracle_info.va), disasm_op(op, TRUE), hexstr64s(op->inst_info->addr),
-            hexstr64s(line->offpath_op_addr), unsstr64(op->unique_num), unsstr64(line->offpath_op_unique),
-            op->unique_num > line->offpath_op_unique ? " " : "-",
-            op->unique_num > line->offpath_op_unique ? unsstr64(op->unique_num - line->offpath_op_unique)
-                                                     : unsstr64(line->offpath_op_unique - op->unique_num));
-    } else {
-      STAT_EVENT(dc->proc_id, DCACHE_HIT_ONPATH_SAT_BY_ONPATH);
-      STAT_EVENT(dc->proc_id, DCACHE_USE_ONPATH);
-    }
-  } else {
+  if (op->off_path) {
     if (line->fetched_by_offpath) {
       STAT_EVENT(dc->proc_id, DCACHE_HIT_OFFPATH_SAT_BY_OFFPATH);
     } else {
       STAT_EVENT(dc->proc_id, DCACHE_HIT_OFFPATH_SAT_BY_ONPATH);
     }
+    return;
   }
 
-  if (!op->off_path)
-    line->fetched_by_offpath = FALSE;
+  if (!line->fetched_by_offpath) {
+    STAT_EVENT(dc->proc_id, DCACHE_HIT_ONPATH_SAT_BY_ONPATH);
+    STAT_EVENT(dc->proc_id, DCACHE_USE_ONPATH);
+    return;
+  }
+  line->fetched_by_offpath = FALSE;
+
+  STAT_EVENT(dc->proc_id, DCACHE_HIT_ONPATH_SAT_BY_OFFPATH);
+  STAT_EVENT(dc->proc_id, DCACHE_USE_OFFPATH);
+  STAT_EVENT(dc->proc_id, DIST_DCACHE_FILL_OFFPATH_USED);
+  STAT_EVENT(dc->proc_id, DIST_REQBUF_OFFPATH_USED);
+  STAT_EVENT(dc->proc_id, DIST2_REQBUF_OFFPATH_USED_FULL);
+
+  L1_Data* l1_line = do_l1_access(op);
+  if (l1_line) {
+    if (l1_line->fetched_by_offpath) {
+      STAT_EVENT(dc->proc_id, L1_USE_OFFPATH);
+      STAT_EVENT(dc->proc_id, DIST_L1_FILL_OFFPATH_USED);
+      STAT_EVENT(dc->proc_id, L1_USE_OFFPATH_DATA);
+      l1_line->fetched_by_offpath = FALSE;
+      l1_line->l0_modified_fetched_by_offpath = TRUE;
+    }
+  }
+
+  DEBUG(0, "Dcache hit: On path hits off path. va:%s op:%s op:0x%s wp_op:0x%s opu:%s wpu:%s dist:%s%s\n",
+        hexstr64s(op->oracle_info.va), disasm_op(op, TRUE), hexstr64s(op->inst_info->addr),
+        hexstr64s(line->offpath_op_addr), unsstr64(op->unique_num), unsstr64(line->offpath_op_unique),
+        op->unique_num > line->offpath_op_unique ? " " : "-",
+        op->unique_num > line->offpath_op_unique ? unsstr64(op->unique_num - line->offpath_op_unique)
+                                                 : unsstr64(line->offpath_op_unique - op->unique_num));
 }
 
 static inline void dcache_fill_wp_collect_stats(Dcache_Data* line, Mem_Req* req) {
@@ -528,14 +502,18 @@ static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr
 
   extra_line = (Dcache_Data*)cache_access(cache, one_more_addr, &extra_line_addr, FALSE);
   ASSERT(proc_id, one_more_addr == extra_line_addr);
-  if (!extra_line) {
-    if (new_mem_req(MRT_DFETCH, proc_id, extra_line_addr, cache->line_size,
-                    cache_cycle - 1 + op->inst_info->extra_ld_latency, NULL, NULL, op->unique_num, 0))
-      STAT_EVENT_ALL(ONE_MORE_SUCESS);
-    else
-      STAT_EVENT_ALL(ONE_MORE_DISCARDED_MEM_REQ_FULL);
-  } else
+
+  if (extra_line) {
     STAT_EVENT_ALL(ONE_MORE_DISCARDED_L0CACHE);
+    return;
+  }
+
+  Flag ret = new_mem_req(MRT_DFETCH, proc_id, extra_line_addr, cache->line_size,
+                         cache_cycle - 1 + op->inst_info->extra_ld_latency, NULL, NULL, op->unique_num, 0);
+  if (ret)
+    STAT_EVENT_ALL(ONE_MORE_SUCESS);
+  else
+    STAT_EVENT_ALL(ONE_MORE_DISCARDED_MEM_REQ_FULL);
 }
 
 static inline Flag dcache_miss_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type) {

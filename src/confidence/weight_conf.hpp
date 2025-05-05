@@ -2,6 +2,7 @@
 #define __DEFAULT_CONF_H__
 
 #include "decoupled_frontend.h"
+
 #include "confidence/conf.hpp"
 
 class WeightConf;

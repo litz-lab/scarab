@@ -28,8 +28,8 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
 
   // check for on/off events
   if (dfe_off_path && !prev_op->off_path) {  // the actual path goes off
-    DEBUG(proc_id, "off-path event: prev_op op_num: %llu, cf_type: %i, cur_op op_num: %llu, cf_type: %i\n", prev_op->op_num,
-          prev_op->table_info->cf_type, decoupled_fe_get_cur_op()->op_num,
+    DEBUG(proc_id, "off-path event: prev_op op_num: %llu, cf_type: %i, cur_op op_num: %llu, cf_type: %i\n",
+          prev_op->op_num, prev_op->table_info->cf_type, decoupled_fe_get_cur_op()->op_num,
           decoupled_fe_get_cur_op()->table_info->cf_type);
     ASSERT(proc_id, off_path_reason == REASON_NOT_IDENTIFIED);
     ASSERT(proc_id, prev_op->table_info->cf_type);  // must be a cf as the last on-path op
@@ -40,7 +40,8 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NUM_EVENTS);
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_EVENTS + off_path_reason);
     }
-  } else if (!dfe_off_path && !prev_op->conf_off_path && op->conf_off_path) {  // the actual path is on, but conf off path
+  } else if (!dfe_off_path && !prev_op->conf_off_path &&
+             op->conf_off_path) {  // the actual path is on, but conf off path
     STAT_EVENT(proc_id, DFE_ON_CONF_OFF_NUM_EVENTS);
     STAT_EVENT(proc_id, DFE_ON_CONF_OFF_NOT_IDENTIFIED + conf_off_path_reason);
   }
@@ -48,29 +49,29 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
   // log on/off stats
   if (dfe_off_path) {
     // dfe off conf off
-      if(op->conf_off_path) {
-        STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_REALISTIC_OPS + perfect_off_path);
-        if (last_in_ft) {
-          STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_REALISTIC_FETCH_TARGETS + perfect_off_path);
-        }
-        if (new_cycle) {
-          STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_REALISTIC_CYCLES + perfect_off_path);
-        }
-    // dfe off conf on
+    if (op->conf_off_path) {
+      STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_REALISTIC_OPS + perfect_off_path);
+      if (last_in_ft) {
+        STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_REALISTIC_FETCH_TARGETS + perfect_off_path);
+      }
+      if (new_cycle) {
+        STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_REALISTIC_CYCLES + perfect_off_path);
+      }
+      // dfe off conf on
     } else {
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_OPS);
-        if (last_in_ft) {
-          STAT_EVENT(proc_id, DFE_OFF_CONF_ON_FETCH_TARGETS);
-          STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_FETCH_TARGETS + off_path_reason);
-        }
-        if (new_cycle) {
-          STAT_EVENT(proc_id, DFE_OFF_CONF_ON_CYCLES);
-          STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_CYCLES + off_path_reason);
-        }
+      STAT_EVENT(proc_id, DFE_OFF_CONF_ON_OPS);
+      if (last_in_ft) {
+        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_FETCH_TARGETS);
+        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_FETCH_TARGETS + off_path_reason);
+      }
+      if (new_cycle) {
+        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_CYCLES);
+        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_CYCLES + off_path_reason);
+      }
     }
   } else {
     // dfe on conf off
-    if(op->conf_off_path) {
+    if (op->conf_off_path) {
       STAT_EVENT(proc_id, DFE_ON_CONF_OFF_OPS);
       if (last_in_ft) {
         STAT_EVENT(proc_id, DFE_ON_CONF_OFF_FETCH_TARGETS);
@@ -80,7 +81,7 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
         STAT_EVENT(proc_id, DFE_ON_CONF_OFF_CYCLES);
         STAT_EVENT(proc_id, DFE_ON_CONF_OFF_NOT_IDENTIFIED_CYCLES + conf_off_path_reason);
       }
-    // dfe on conf on
+      // dfe on conf on
     } else {
       STAT_EVENT(proc_id, DFE_ON_CONF_ON_OPS);
       if (last_in_ft)
@@ -154,8 +155,8 @@ void ConfMechStatBase::print_data() {
 
 void ConfMechStatBase::set_prev_op(Op* op) {
   prev_op = op;
-  DEBUG(proc_id, "Set prev_op off_path:%i, op_num:%llu, cf_type:%i\n", prev_op->off_path,
-        prev_op->op_num, prev_op->table_info->cf_type);
+  DEBUG(proc_id, "Set prev_op off_path:%i, op_num:%llu, cf_type:%i\n", prev_op->off_path, prev_op->op_num,
+        prev_op->table_info->cf_type);
 }
 
 /* Conf member functions */
@@ -184,8 +185,7 @@ void Conf::update(Op* op, Flag last_in_ft) {
   perfect_conf_update(op, new_reason);
   bool new_cycle = cycle_count > last_cycle_count;
   if (!new_reason || get_off_path_reason() == REASON_NOT_IDENTIFIED ||
-             get_conf_off_path_reason() ==
-                 REASON_CONF_NOT_IDENTIFIED) {  // update until both real/confidence path go off
+      get_conf_off_path_reason() == REASON_CONF_NOT_IDENTIFIED) {  // update until both real/confidence path go off
     per_op_update(op, new_reason);
     if (op->table_info->cf_type)
       per_cf_op_update(op, new_reason);
@@ -220,10 +220,10 @@ void Conf::perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason) {
     Off_Path_Reason off_path_reason = (Off_Path_Reason)op->off_path_reason;
     // add perfect to conf_op_reason
     if ((CONF_PERFECT_MISPRED_CONF &&
-        (off_path_reason == REASON_MISPRED || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
+         (off_path_reason == REASON_MISPRED || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
         (CONF_PERFECT_BTB_MISS_CONF &&
-        (off_path_reason == REASON_BTB_MISS || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
-        (CONF_PERFECT_IBTB_MISS_CONF && (off_path_reason == REASON_IBTB_MISS)) || 
+         (off_path_reason == REASON_BTB_MISS || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
+        (CONF_PERFECT_IBTB_MISS_CONF && (off_path_reason == REASON_IBTB_MISS)) ||
         (CONF_PERFECT_MISFETCH_CONF && (off_path_reason == REASON_MISFETCH))) {
       conf_mech->conf_mech_stat->set_perfect_off_path();
       new_reason = REASON_PERFECT_CONF;

@@ -29,56 +29,56 @@
 #ifndef __CONF_H__
 #define __CONF_H__
 
-#include "decoupled_frontend.h"
-
 #include <map>
 #include <vector>
+
+#include "decoupled_frontend.h"
 
 class ConfMechBase;  // forward declaration
 
 class ConfMechStatBase {
-  public:
-    ConfMechStatBase(uns _proc_id) : proc_id(_proc_id), 
-        prev_op(nullptr), 
-        off_path_reason(REASON_NOT_IDENTIFIED), 
+ public:
+  ConfMechStatBase(uns _proc_id)
+      : proc_id(_proc_id),
+        prev_op(nullptr),
+        off_path_reason(REASON_NOT_IDENTIFIED),
         conf_off_path_reason(REASON_CONF_NOT_IDENTIFIED),
         perfect_off_path(false),
         cnt_total_ops(0) {}
-    void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle);
-    void recover(Op* op);
-    void print_data();
-    void set_prev_op(Op* op);
+  void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle);
+  void recover(Op* op);
+  void print_data();
+  void set_prev_op(Op* op);
 
-    Off_Path_Reason get_off_path_reason() { return off_path_reason; }
-    Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_off_path_reason; }
+  Off_Path_Reason get_off_path_reason() { return off_path_reason; }
+  Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_off_path_reason; }
 
-    void set_perfect_off_path() { perfect_off_path = true; }
+  void set_perfect_off_path() { perfect_off_path = true; }
 
-    void log_off_path_event(Op* op);
-    void log_resolution(Op* op);
+  void log_off_path_event(Op* op);
+  void log_resolution(Op* op);
 
-    virtual void ext_update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle) { return; }
-    virtual void ext_recover(Op* op) { return; }
-    virtual void ext_print_data() { return; }
+  virtual void ext_update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle) { return; }
+  virtual void ext_recover(Op* op) { return; }
+  virtual void ext_print_data() { return; }
 
-    // pointer to outer class, use this to access mech-specific data
-    ConfMechBase* conf_mech;
+  // pointer to outer class, use this to access mech-specific data
+  ConfMechBase* conf_mech;
 
-    uns proc_id;
-    Op* prev_op;
+  uns proc_id;
+  Op* prev_op;
 
-    Off_Path_Reason off_path_reason;
-    Conf_Off_Path_Reason conf_off_path_reason;
+  Off_Path_Reason off_path_reason;
+  Conf_Off_Path_Reason conf_off_path_reason;
 
-    bool perfect_off_path;
+  bool perfect_off_path;
 
-    // for csv logging
-    Counter cnt_total_ops;
+  // for csv logging
+  Counter cnt_total_ops;
 
-    std::map<Counter, std::tuple<Counter, Counter, Off_Path_Reason>> resteer_ops_cycles;
-    std::map<Counter, std::tuple<Counter, Counter, Off_Path_Reason>> resteer_ops_ops;
+  std::map<Counter, std::tuple<Counter, Counter, Off_Path_Reason>> resteer_ops_cycles;
+  std::map<Counter, std::tuple<Counter, Counter, Off_Path_Reason>> resteer_ops_ops;
 };
-
 
 // Confidence Mechanism interface
 class ConfMechBase {
@@ -135,7 +135,6 @@ class Conf {
   // confidence counter
   bool conf_off_path;
   Counter last_cycle_count;
-
 };
 
 #endif

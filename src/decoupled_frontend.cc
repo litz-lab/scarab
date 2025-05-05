@@ -583,7 +583,7 @@ void Decoupled_FE::update() {
       bytes_this_cycle += op->inst_info->trace_info.inst_size;
       cfs_taken_this_cycle += cf_taken || bar_fetch;
     }
-    
+
     op->off_path_reason = eval_off_path_reason(op);
     if (CONFIDENCE_ENABLE) {
       // update confidence
@@ -755,12 +755,12 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
   }
   // misfetch
   else if (!op->oracle_info.btb_miss && op->oracle_info.pred_orig == op->oracle_info.dir &&
-          op->oracle_info.pred_npc != op->oracle_info.npc) {
+           op->oracle_info.pred_npc != op->oracle_info.npc) {
     return REASON_MISFETCH;
   }
   // ibtb miss
   else if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) &&
-          op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN) {
+           op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN) {
     return REASON_IBTB_MISS;
   }
   // btb miss and mispred (would have been incorrect with or without btb miss)

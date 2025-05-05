@@ -10,7 +10,7 @@
 
 class BTBMissBPTakenConf;
 
-class BTBMissBPTakenConfStat: public ConfMechStatBase {
+class BTBMissBPTakenConfStat : public ConfMechStatBase {
  public:
   BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech);
   void ext_update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle) override;
@@ -32,11 +32,11 @@ class BTBMissBPTakenConfStat: public ConfMechStatBase {
 class BTBMissBPTakenConf : public ConfMechBase {
  public:
   BTBMissBPTakenConf(uns _proc_id)
-      : ConfMechBase(_proc_id), 
-       cnt_btb_miss(0),
-       btb_miss_rate(0.0), 
-       last_btb_recover_cycle(0),
-       cnt_ibtb_miss(0),
+      : ConfMechBase(_proc_id),
+        cnt_btb_miss(0),
+        btb_miss_rate(0.0),
+        last_btb_recover_cycle(0),
+        cnt_ibtb_miss(0),
         ibtb_miss_rate(0.0),
         last_ibtb_recover_cycle(0),
         cnt_misfetch(0),
@@ -48,10 +48,10 @@ class BTBMissBPTakenConf : public ConfMechBase {
         cnt_on_path_instructions(0),
         effective_ipc(0.0),
         cnt_total_ops(0),
-        last_recover_cycle(0), 
-       low_confidence_cnt(0) {
-        conf_mech_stat = new BTBMissBPTakenConfStat(_proc_id, this);
-      }
+        last_recover_cycle(0),
+        low_confidence_cnt(0) {
+    conf_mech_stat = new BTBMissBPTakenConfStat(_proc_id, this);
+  }
   // update functions
   void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
   void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
@@ -61,7 +61,7 @@ class BTBMissBPTakenConf : public ConfMechBase {
   void update_state_perfect_conf(Op* op) override;
 
   // recovery functions
-  void recover(Op*op) override;
+  void recover(Op* op) override;
 
   // resolve cf
   void resolve_cf(Op* op) override;

@@ -2,8 +2,9 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CONF, ##args)
 
-BTBMissBPTakenConfStat::BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech) : ConfMechStatBase(_proc_id) {
-    conf_mech = _conf_mech;
+BTBMissBPTakenConfStat::BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech)
+    : ConfMechStatBase(_proc_id) {
+  conf_mech = _conf_mech;
 }
 
 void BTBMissBPTakenConfStat::ext_update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle) {
@@ -57,36 +58,36 @@ void BTBMissBPTakenConfStat::log_phase_cycles(Op* op) {
       break;
     }
     case REASON_IBTB_MISS: {
-      ibtb_miss_event_cycles.push_back(
-          phase_cycles_line(cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_ibtb_recover_cycle,
-                            cycle_count - (cycle_count % CONF_IBTB_MISS_SAMPLE_RATE), (double)conf_mech->ibtb_miss_rate));
+      ibtb_miss_event_cycles.push_back(phase_cycles_line(
+          cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_ibtb_recover_cycle,
+          cycle_count - (cycle_count % CONF_IBTB_MISS_SAMPLE_RATE), (double)conf_mech->ibtb_miss_rate));
       break;
     }
     case REASON_BTB_MISS: {
-      btb_miss_event_cycles.push_back(
-          phase_cycles_line(cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_btb_recover_cycle,
-                            cycle_count - (cycle_count % CONF_BTB_MISS_SAMPLE_RATE), (double)conf_mech->btb_miss_rate));
+      btb_miss_event_cycles.push_back(phase_cycles_line(
+          cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_btb_recover_cycle,
+          cycle_count - (cycle_count % CONF_BTB_MISS_SAMPLE_RATE), (double)conf_mech->btb_miss_rate));
       break;
     }
     case REASON_BTB_MISS_MISPRED: {
-      btb_miss_event_cycles.push_back(
-          phase_cycles_line(cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_btb_recover_cycle,
-                            cycle_count - (cycle_count % CONF_BTB_MISS_SAMPLE_RATE), (double)conf_mech->btb_miss_rate));
-      mispred_event_cycles.push_back(
-          phase_cycles_line(cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_mispred_recover_cycle,
-                            cycle_count - (cycle_count % CONF_MISPRED_SAMPLE_RATE), (double)conf_mech->mispred_rate));
+      btb_miss_event_cycles.push_back(phase_cycles_line(
+          cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_btb_recover_cycle,
+          cycle_count - (cycle_count % CONF_BTB_MISS_SAMPLE_RATE), (double)conf_mech->btb_miss_rate));
+      mispred_event_cycles.push_back(phase_cycles_line(
+          cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_mispred_recover_cycle,
+          cycle_count - (cycle_count % CONF_MISPRED_SAMPLE_RATE), (double)conf_mech->mispred_rate));
       break;
     }
     case REASON_MISPRED: {
-      mispred_event_cycles.push_back(
-          phase_cycles_line(cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_mispred_recover_cycle,
-                            cycle_count - (cycle_count % CONF_MISPRED_SAMPLE_RATE), (double)conf_mech->mispred_rate));
+      mispred_event_cycles.push_back(phase_cycles_line(
+          cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_mispred_recover_cycle,
+          cycle_count - (cycle_count % CONF_MISPRED_SAMPLE_RATE), (double)conf_mech->mispred_rate));
       break;
     }
     case REASON_MISFETCH: {
-      misfetch_event_cycles.push_back(
-          phase_cycles_line(cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_misfetch_recover_cycle,
-                            cycle_count - (cycle_count % CONF_MISFETCH_SAMPLE_RATE), (double)conf_mech->misfetch_rate));
+      misfetch_event_cycles.push_back(phase_cycles_line(
+          cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_misfetch_recover_cycle,
+          cycle_count - (cycle_count % CONF_MISFETCH_SAMPLE_RATE), (double)conf_mech->misfetch_rate));
       break;
     }
     default: {
@@ -98,7 +99,8 @@ void BTBMissBPTakenConfStat::log_phase_cycles(Op* op) {
 void BTBMissBPTakenConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
   if (!CONFIDENCE_ENABLE)
     return;
-  DEBUG(proc_id, "cnt btb miss: %lld, btb miss rate: %f, cycles since last btb recovery: %llu\n", cnt_btb_miss, btb_miss_rate, cycle_count - last_btb_recover_cycle);
+  DEBUG(proc_id, "cnt btb miss: %lld, btb miss rate: %f, cycles since last btb recovery: %llu\n", cnt_btb_miss,
+        btb_miss_rate, cycle_count - last_btb_recover_cycle);
   new_reason = update_resteer_rate_ctrs(new_reason);
 
   // csv logging
@@ -138,11 +140,11 @@ void BTBMissBPTakenConf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reas
     ASSERT(proc_id, op->bp_confidence >= 0 && op->bp_confidence <= 3);
     new_reason = static_cast<Conf_Off_Path_Reason>(REASON_BTB_MISS_BP_TAKEN_CONF_0 + op->bp_confidence);
   } else if (CONF_BTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_BTB_MISS_CONF &&
-               (!CONF_PERFECT_MISPRED_CONF || (CONF_PERFECT_MISPRED_CONF && !op->oracle_info.mispred)) &&
-               op->oracle_info.btb_miss && (op->oracle_info.pred_orig == TAKEN) &&
-               (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
-        // sus?
-        new_reason = (Conf_Off_Path_Reason)(REASON_IBTB_MISS_BP_TAKEN);
+             (!CONF_PERFECT_MISPRED_CONF || (CONF_PERFECT_MISPRED_CONF && !op->oracle_info.mispred)) &&
+             op->oracle_info.btb_miss && (op->oracle_info.pred_orig == TAKEN) &&
+             (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
+    // sus?
+    new_reason = (Conf_Off_Path_Reason)(REASON_IBTB_MISS_BP_TAKEN);
   } else {  // update confidence
     low_confidence_cnt += 3 - op->bp_confidence;
     if (low_confidence_cnt >= CONF_OFF_PATH_THRESHOLD)
@@ -227,7 +229,6 @@ void BTBMissBPTakenConf::recover(Op* op) {
   }
   low_confidence_cnt = 0;
   last_recover_cycle = cycle_count;
-
 }
 
 void BTBMissBPTakenConf::resolve_cf(Op* op) {

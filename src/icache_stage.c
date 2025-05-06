@@ -138,7 +138,7 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   ic->sd.max_op_count = IC_ISSUE_WIDTH;
   ic->sd.ops = (Op**)malloc(sizeof(Op*) * IC_ISSUE_WIDTH);
 
-  ic->current_ft_used_by_icache = NULL;
+  ic->current_ft = NULL;
 
   /* initialize the cache structure */
   init_cache(&ic->icache, "ICACHE", ICACHE_SIZE, ICACHE_ASSOC, ICACHE_LINE_SIZE, 0, REPL_TRUE_LRU);
@@ -241,12 +241,8 @@ void recover_icache_stage() {
 
   uop_cache_clear_lookup_buffer();
 
-  if (uc->current_ft) {
-    uc->current_ft = NULL;
-  }
-  if (ic->current_ft_used_by_icache) {
-    ic->current_ft_used_by_icache = NULL;
-  }
+  uc->current_ft = NULL;
+  ic->current_ft = NULL;
 }
 
 /**************************************************************************************/
@@ -410,9 +406,9 @@ FT_Arbitration_Result ft_arbitration() {
     ft_set_consumed(uc->current_ft);
     uc->current_ft = NULL;
   }
-  if (ic->current_ft_used_by_icache) {
-    ft_set_consumed(ic->current_ft_used_by_icache);
-    ic->current_ft_used_by_icache = NULL;
+  if (ic->current_ft) {
+    ft_set_consumed(ic->current_ft);
+    ic->current_ft = NULL;
   }
 
   uint64_t ft_pos = get_next_unconsumed_ft_pos();
@@ -434,8 +430,8 @@ FT_Arbitration_Result ft_arbitration() {
     // look up icache if uop miss (inlcuding when uop cache disabled) or if requested
     if (!ft_in_uop_cache || ALWAYS_LOOKUP_ICACHE) {
       ic->line = lookup_icache();
-      ic->icache_lookups_per_cycle_count++;
-      ASSERT(ic->proc_id, ic->icache_lookups_per_cycle_count <= ICACHE_READ_PORTS);
+      ic->lookups_per_cycle_count++;
+      ASSERT(ic->proc_id, ic->lookups_per_cycle_count <= ICACHE_READ_PORTS);
     }
 
     if (ft_in_uop_cache) {
@@ -473,8 +469,8 @@ FT_Arbitration_Result ft_arbitration() {
       }
       icache_hit_events();
 
-      ASSERT(ic->proc_id, !ic->current_ft_used_by_icache);
-      ic->current_ft_used_by_icache = ft;
+      ASSERT(ic->proc_id, !ic->current_ft);
+      ic->current_ft = ft;
 
       return FT_HIT_ICACHE;
     } else {
@@ -486,8 +482,8 @@ FT_Arbitration_Result ft_arbitration() {
       }
       icache_miss_events();
 
-      ASSERT(ic->proc_id, !ic->current_ft_used_by_icache);
-      ic->current_ft_used_by_icache = ft;
+      ASSERT(ic->proc_id, !ic->current_ft);
+      ic->current_ft = ft;
 
       return FT_MISS_BOTH;
     }
@@ -509,7 +505,7 @@ Icache_State icache_mem_req_actions(Break_Reason* break_fetch) {
 }
 
 Icache_State icache_wait_for_miss_actions(Break_Reason* break_fetch) {
-  ASSERT(ic->proc_id, ft_can_fetch_op(ic->current_ft_used_by_icache));
+  ASSERT(ic->proc_id, ft_can_fetch_op(ic->current_ft));
   DEBUG(ic->proc_id, "Ifetch barrier: Waiting for miss \n");
   if (!ic->off_path) {
     INC_STAT_EVENT(ic->proc_id, INST_LOST_WAIT_FOR_ICACHE_MISS_NOT_PREFETCHED + get_last_miss_reason(ic->proc_id),
@@ -555,13 +551,13 @@ void icache_serve_ops() {
   }
 
   int requested = ic->sd.max_op_count - ic->sd.op_count;
-  Flag ft_has_ended = fill_icache_stage_data(ic->current_ft_used_by_icache, requested, &ic->sd);
+  Flag ft_has_ended = fill_icache_stage_data(ic->current_ft, requested, &ic->sd);
   ASSERT(ic->proc_id, ic->sd.op_count == ic->sd.max_op_count || ft_has_ended);
 
   if (ft_has_ended) {
-    ASSERT(ic->proc_id, !ft_can_fetch_op(ic->current_ft_used_by_icache));
+    ASSERT(ic->proc_id, !ft_can_fetch_op(ic->current_ft));
   } else {
-    ASSERT(ic->proc_id, ft_can_fetch_op(ic->current_ft_used_by_icache));
+    ASSERT(ic->proc_id, ft_can_fetch_op(ic->current_ft));
     ASSERT(ic->proc_id, ic->sd.op_count == ic->sd.max_op_count);
   }
 
@@ -584,20 +580,19 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
   // for the legacy design, the buffer should be occupied,
   // either by an ft from a previous cycle or this cycle,
   // otherwise icache_serving_actions should not be called.
-  ASSERT(ic->proc_id, ft_can_fetch_op(ic->current_ft_used_by_icache));
+  ASSERT(ic->proc_id, ft_can_fetch_op(ic->current_ft));
   // unless ICACHE_FETCH_ACROSS_FETCH_TARGET is turned on,
   // to determine the availability of read ports,
   // we need to consider if the buffer is occupied by an ft from a previous cycle;
   // it is true if there is no lookup in the current cycle but the buffer is occupied.
   int occupied_lookup_buffer = 0;
-  if (!ICACHE_FETCH_ACROSS_FETCH_TARGET && ic->icache_lookups_per_cycle_count == 0 &&
-      ft_can_fetch_op(ic->current_ft_used_by_icache)) {
+  if (!ICACHE_FETCH_ACROSS_FETCH_TARGET && ic->lookups_per_cycle_count == 0 && ft_can_fetch_op(ic->current_ft)) {
     occupied_lookup_buffer = 1;
   }
   while (ic->sd.op_count < ic->sd.max_op_count) {
-    if (ft_can_fetch_op(ic->current_ft_used_by_icache)) {
+    if (ft_can_fetch_op(ic->current_ft)) {
       icache_serve_ops();
-    } else if (ic->icache_lookups_per_cycle_count + occupied_lookup_buffer < ICACHE_READ_PORTS) {
+    } else if (ic->lookups_per_cycle_count + occupied_lookup_buffer < ICACHE_READ_PORTS) {
       FT_Arbitration_Result result = ft_arbitration();
       switch (result) {
         case FT_UNAVAILABLE:
@@ -622,7 +617,7 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
 
   ASSERT(ic->proc_id, ic->sd.op_count == ic->sd.max_op_count);
   *break_fetch = BREAK_ICACHE_ISSUE_WIDTH;
-  if (ft_can_fetch_op(ic->current_ft_used_by_icache)) {
+  if (ft_can_fetch_op(ic->current_ft)) {
     return ICACHE_SERVING;
   } else {
     return ICACHE_STAGE_RESTEER;
@@ -736,7 +731,7 @@ void execute_coupled_FSM() {
     break_fetch = BREAK_ICACHE_STAGE_RESTEER;
   } else if (ic->state == ICACHE_STAGE_RESTEER) {
     ASSERT(ic->proc_id, !uc->current_ft || !ft_can_fetch_op(uc->current_ft));
-    ASSERT(ic->proc_id, !ic->current_ft_used_by_icache || !ft_can_fetch_op(ic->current_ft_used_by_icache));
+    ASSERT(ic->proc_id, !ic->current_ft || !ft_can_fetch_op(ic->current_ft));
 
     FT_Arbitration_Result result = ft_arbitration();
     switch (result) {
@@ -795,7 +790,7 @@ void execute_coupled_FSM() {
 /* icache_cycle: */
 
 void update_icache_stage() {
-  ic->icache_lookups_per_cycle_count = 0;
+  ic->lookups_per_cycle_count = 0;
   uc->lookups_per_cycle_count = 0;
 
   execute_coupled_FSM();

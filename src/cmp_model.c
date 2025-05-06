@@ -107,9 +107,9 @@ void cmp_init(uns mode) {
     cmp_set_all_stages(proc_id);
     cmp_init_thread_data(proc_id);
 
+    init_uop_cache_stage(proc_id, "UOP_CACHE");
     init_icache_stage(proc_id, "ICACHE");
     init_decode_stage(proc_id, "DECODE");
-    init_uop_cache_stage(proc_id, "UOP_CACHE");
     init_uop_queue_stage();
     init_idq_stage(proc_id, "IDQ");
     init_map_stage(proc_id, "MAP");

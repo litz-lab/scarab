@@ -56,6 +56,7 @@ void cmp_init_cmp_model() {
   cmp_model.bp_data = (Bp_Data*)malloc(sizeof(Bp_Data) * NUM_CORES);
   cmp_model.icache_stage = (Icache_Stage*)malloc(sizeof(Icache_Stage) * NUM_CORES);
   cmp_model.decode_stage = (Decode_Stage*)malloc(sizeof(Decode_Stage) * NUM_CORES);
+  cmp_model.uop_cache_stage = (Uop_Cache_Stage*)malloc(sizeof(Uop_Cache_Stage) * NUM_CORES);
   cmp_model.map_stage = (Map_Stage*)malloc(sizeof(Map_Stage) * NUM_CORES);
   cmp_model.node_stage = (Node_Stage*)malloc(sizeof(Node_Stage) * NUM_CORES);
   cmp_model.exec_stage = (Exec_Stage*)malloc(sizeof(Exec_Stage) * NUM_CORES);
@@ -86,9 +87,9 @@ void cmp_set_all_stages(uns8 proc_id) {
   set_fnlmma(proc_id);
   set_fdip(proc_id, &cmp_model.icache_stage[proc_id]);
   set_decoupled_fe(proc_id);
-  set_uop_cache(proc_id);
   set_icache_stage(&cmp_model.icache_stage[proc_id]);
   set_decode_stage(&cmp_model.decode_stage[proc_id]);
+  set_uop_cache_stage(&cmp_model.uop_cache_stage[proc_id]);
   set_idq_stage(proc_id);
   set_map_stage(&cmp_model.map_stage[proc_id]);
   set_node_stage(&cmp_model.node_stage[proc_id]);

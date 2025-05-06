@@ -92,6 +92,8 @@ bool operator==(const Uop_Cache_Key& lhs, const Uop_Cache_Key& rhs) {
 /**************************************************************************************/
 /* Global Variables */
 
+Uop_Cache_Stage* uc = NULL;
+
 uns8 uop_cache_proc_id;
 // per core caches
 std::vector<Uop_Cache*> per_core_uop_cache;
@@ -135,32 +137,43 @@ void alloc_mem_uop_cache(uns num_cores) {
   per_core_uop_cache.resize(num_cores);
 }
 /**************************************************************************************/
-/* init_uop_cache */
 
-void init_uop_cache(uns8 proc_id) {
+void set_uop_cache_stage(Uop_Cache_Stage* new_uc) {
   if (!UOP_CACHE_ENABLE) {
     return;
   }
+
+  uc = new_uc;
+
+  uop_cache_proc_id = uc->proc_id;
+  current_accumulation_buffer = &per_core_accumulation_buffer[uop_cache_proc_id];
+  current_accumulating_line = &per_core_accumulating_line[uop_cache_proc_id];
+  current_accumulating_ft = &per_core_accumulating_ft[uop_cache_proc_id];
+  current_accumulating_op_num = &per_core_accumulating_op_num[uop_cache_proc_id];
+  current_lookup_buffer = &per_core_lookup_buffer[uop_cache_proc_id];
+  current_num_looked_up_lines = &per_core_num_looked_up_lines[uop_cache_proc_id];
+}
+
+void init_uop_cache_stage(uns8 proc_id, const char* name) {
+  uc->current_ft = NULL;
+
+  if (!UOP_CACHE_ENABLE) {
+    return;
+  }
+
+  DEBUG(proc_id, "Initializing %s stage\n", name);
+
+  ASSERT(0, uc);
+  memset(uc, 0, sizeof(Uop_Cache_Stage));
+
+  uc->sd.name = (char*)strdup(name);
+  uc->sd.max_op_count = UOPC_ISSUE_WIDTH;
+  uc->sd.op_count = 0;
+  uc->sd.ops = (Op**)calloc(UOPC_ISSUE_WIDTH, sizeof(Op*));
 
   // The cache library computes the number of entries from cache_size_bytes/cache_line_size_bytes,
   per_core_uop_cache[proc_id] =
       new Uop_Cache(UOP_CACHE_LINES, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE, (Repl_Policy)UOP_CACHE_REPL);
-}
-
-void set_uop_cache(uns8 proc_id) {
-  if (!UOP_CACHE_ENABLE) {
-    return;
-  }
-
-  uop_cache_proc_id = proc_id;
-
-  current_accumulation_buffer = &per_core_accumulation_buffer[proc_id];
-  current_accumulating_line = &per_core_accumulating_line[proc_id];
-  current_accumulating_ft = &per_core_accumulating_ft[proc_id];
-  current_accumulating_op_num = &per_core_accumulating_op_num[proc_id];
-
-  current_lookup_buffer = &per_core_lookup_buffer[proc_id];
-  current_num_looked_up_lines = &per_core_num_looked_up_lines[proc_id];
 }
 
 Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {

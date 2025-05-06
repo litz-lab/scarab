@@ -61,6 +61,7 @@ typedef struct Cmp_Model_struct {
 
   Icache_Stage* icache_stage;
   Decode_Stage* decode_stage;
+  Uop_Cache_Stage* uop_cache_stage;
   Map_Stage* map_stage;
   Node_Stage* node_stage;
   Exec_Stage* exec_stage;

@@ -114,7 +114,8 @@ jobs:
         run: |
           set -e
           chmod +x run.sh
-          pip install -r requirements.txt
+          conda env create --file quickstart_env.yaml
+          conda activate scarabinfra
           ./run.sh --simulation top_simpoint
 
       # Extract KIPS -----------------------------------------

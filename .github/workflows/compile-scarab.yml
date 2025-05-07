@@ -115,6 +115,7 @@ jobs:
           set -e
           chmod +x run.sh
           conda env create --file quickstart_env.yaml
+          conda init
           conda activate scarabinfra
           ./run.sh --simulation top_simpoint
 

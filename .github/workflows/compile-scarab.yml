@@ -120,6 +120,7 @@ jobs:
       # Simulation -------------------------------------------
       - name: Run simulation
         working-directory: scarab-infra
+        shell: bash -l {0}
         run: |
           set -e
           chmod +x run.sh

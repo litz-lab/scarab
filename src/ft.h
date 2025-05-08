@@ -39,7 +39,7 @@
 
 class FT {
  public:
-  FT(uns _proc_id);
+  FT(uns _proc_id = 0);
   void set_ft_started_by(FT_Started_By ft_started_by);
   void add_op(Op* op, FT_Ended_By ft_ended_by);
   void free_ops_and_clear();
@@ -49,6 +49,9 @@ class FT {
   FT_Info get_ft_info();
   bool is_consumed();
   void set_consumed();
+  Op* peek_next_op();
+  Op* peek_last_op();
+  Op* peek_first_op();
 
  private:
   uns proc_id;

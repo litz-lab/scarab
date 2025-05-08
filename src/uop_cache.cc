@@ -305,7 +305,10 @@ bool insert_buffer_into_uopc(FT_Info* buffer_ft_info, std::vector<Uop_Cache_Data
     for (uns i = 0; i < accumulation_buffer->size(); i++) {
       Uop_Cache_Data* insert_line = &accumulation_buffer->at(i);
       Uop_Cache_Data* uop_cache_line = uop_cache_lookup_line(insert_line->line_start, *buffer_ft_info, TRUE);
-
+      if (i == 0)
+        insert_line->begin_of_ft = 1;
+      else
+        insert_line->begin_of_ft = 0;
       if (i == 0 && uop_cache_line) {
         // when i == 0, we are looking up the first line from the FT;
         // if this is already in the uop cache, all lines of the FT should be in the uop cache;
@@ -340,9 +343,20 @@ bool insert_buffer_into_uopc(FT_Info* buffer_ft_info, std::vector<Uop_Cache_Data
         }
       } else {
         ASSERT(uop_cache_proc_id, !uop_cache_line);
+        if (UOP_CACHE_BYPASS) {
+          if (i == 0) {
+            auto should_bypass = per_core_uop_cache[uop_cache_proc_id]->check_bypass(
+                {insert_line->line_start, buffer_ft_info->static_info});
+            if (should_bypass) {
+              STAT_EVENT(uop_cache_proc_id, FT_INSERTION_BYPASS);
+              return true;
+            } else
+              STAT_EVENT(uop_cache_proc_id, FT_INSERTION_NOT_BYPASS);
+          }
+        }
 
         Entry<Uop_Cache_Key, Uop_Cache_Data> evicted_entry = per_core_uop_cache[uop_cache_proc_id]->insert(
-            {insert_line->line_start, buffer_ft_info->static_info}, *insert_line);
+            {insert_line->line_start, buffer_ft_info->static_info}, *insert_line, i==0);
 
         DEBUG(uop_cache_proc_id, "uop cache line inserted. off_path=%u, addr=0x%llx\n",
               buffer_ft_info->dynamic_info.first_op_off_path, insert_line->line_start);

@@ -28,6 +28,7 @@
 
 #ifndef __FT_INFO_H__
 #define __FT_INFO_H__
+#include "globals/global_types.h"
 
 typedef enum FT_Started_By_enum {
   FT_NOT_STARTED,

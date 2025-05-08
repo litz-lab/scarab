@@ -18,7 +18,9 @@
 #include "thread.h"
 
 #include "confidence/conf.hpp"
+#include "lookahead_buffer.h"
 
+uns have_seen_exit = 0;
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 class Decoupled_FE {
  public:
@@ -199,6 +201,11 @@ FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
 
+void init_lookahead_buffer_wrap() {
+  if (LOOKAHEAD_BUF_SIZE)
+    init_lookahead_buffer();
+}
+
 /* Decoupled_FE member functions */
 Decoupled_FE::Decoupled_FE(uns _proc_id) : current_ft_to_push(_proc_id) {
   proc_id = _proc_id;
@@ -272,11 +279,21 @@ void Decoupled_FE::recover() {
 
   // FIXME always fetch off path ops? should we get rid of this parameter?
   frontend_recover(proc_id, bp_recovery_info->recovery_inst_uid);
-  ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == frontend_next_fetch_addr(proc_id),
+
+  if(LOOKAHEAD_BUF_SIZE && !have_seen_exit){
+    lookahead_buffer_recover();
+    ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == lookahead_buffer_next_addr(),
+          "Scarab's recovery addr 0x%llx does not match lookahead_buffer's recovery "
+          "addr 0x%llx\n",
+          bp_recovery_info->recovery_fetch_addr, lookahead_buffer_next_addr());
+  } else{
+    ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == frontend_next_fetch_addr(proc_id),
           "Scarab's recovery addr 0x%llx does not match frontend's recovery "
           "addr 0x%llx\n",
           bp_recovery_info->recovery_fetch_addr, frontend_next_fetch_addr(proc_id));
 
+  }
+  
   if (CONFIDENCE_ENABLE && cur_op && !cur_op->exit)
     conf->recover();
 }
@@ -344,15 +361,29 @@ void Decoupled_FE::update() {
         STAT_EVENT(proc_id, FTQ_BREAK_BAR_FETCH_ONPATH);
       break;
     }
-    if (!frontend_can_fetch_op(proc_id)) {
+    if (!frontend_can_fetch_op(proc_id) && !LOOKAHEAD_BUF_SIZE) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
+      break;
+    }
+    if(LOOKAHEAD_BUF_SIZE && !lookahead_buffer_can_fetch_op(proc_id)){
+      std::cout << "Warning could not fetch inst from lookahead buffer" << std::endl;
       break;
     }
 
     fwd_progress = 0;
     uint64_t pred_addr = 3;
-    Op* op = alloc_op(proc_id);
-    frontend_fetch_op(proc_id, op);
+    Op* op= nullptr;
+    if(LOOKAHEAD_BUF_SIZE && !have_seen_exit)
+      op = lookahead_buffer_fetch_op(proc_id, op);
+    else{
+      op = alloc_op(proc_id);
+      frontend_fetch_op(proc_id, op);
+    }
+    if(op->exit){
+      have_seen_exit =1;
+      printf("DFE fetch op %llx, cf_type is %i, bar_type is %i , op exit is %i\n", op->inst_info->addr, op->table_info->cf_type, op->table_info->bar_type, op->exit);
+    }
+      
     op->op_num = dfe_op_count++;
     op->off_path = off_path;
     if (CONFIDENCE_ENABLE)
@@ -398,11 +429,15 @@ void Decoupled_FE::update() {
         }
         off_path = true;
         frontend_redirect(proc_id, op->inst_uid, pred_addr);
+        if(LOOKAHEAD_BUF_SIZE)
+          lookahead_buffer_redirect();
         redirect_cycle = cycle_count;
       }
       // If we are already on the off-path redirect on all taken branches in TRACE-MODE
       else if (trace_mode && off_path && op->oracle_info.pred == TAKEN) {
         frontend_redirect(proc_id, op->inst_uid, pred_addr);
+        if(LOOKAHEAD_BUF_SIZE)
+          lookahead_buffer_redirect();
       }
     } else {
       ASSERT(0, !(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
@@ -510,6 +545,8 @@ FT* Decoupled_FE::get_ft(uint64_t ft_pos) {
 void Decoupled_FE::pop_fts() {
   while (!ftq.empty() && ftq.front().consumed) {
     uint64_t ft_num_ops = ftq.front().ops.size();
+    if(!ftq.front().ft_info.dynamic_info.first_op_off_path)
+      lookahead_buffer_ft_removed_from_ftq(proc_id, ftq.front().ft_info.static_info.start);
     ftq.front().free_ops_and_clear();
     ftq.pop_front();
     for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
@@ -525,6 +562,7 @@ void Decoupled_FE::pop_fts() {
       }
     }
   }
+  
 }
 
 decoupled_fe_iter* Decoupled_FE::new_ftq_iter() {

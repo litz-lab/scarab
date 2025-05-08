@@ -63,6 +63,7 @@ typedef enum Repl_Policy_enum {
   REPL_BRRIP,   /* bimodal re-reference interval prediction */
   REPL_DRRIP,   /* dynamic re-reference interval prediction */
   REPL_SHIP,    /* signature-based hit predictor */
+  BELADY_UOP,  /* Belady style replacement policy for uop cache */
 
   NUM_REPL
 } Repl_Policy;

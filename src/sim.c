@@ -660,6 +660,11 @@ void full_sim() {
     memview_init();
 
   init_op_pool();
+  // for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+  //   init_decoupled_fe(proc_id, "DCFE");
+  // }
+  init_lookahead_buffer_wrap();
+  
   unique_count = 1;
 
   sim_limit = trigger_create("SIM_LIMIT", SIM_LIMIT, TRIGGER_ONCE);

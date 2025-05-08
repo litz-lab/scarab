@@ -38,7 +38,7 @@
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
 /* FT member functions */
-FT::FT(uns _proc_id = 0) {
+FT::FT(uns _proc_id) {
   proc_id = _proc_id;
   consumed = false;
   free_ops_and_clear();
@@ -81,6 +81,17 @@ void FT::set_per_op_ft_info() {
   }
 }
 
+Op* FT::peek_next_op() {
+  return ops[op_pos];
+}
+
+Op* FT::peek_last_op(){
+  return ops.back();
+}
+
+Op* FT::peek_first_op(){
+  return ops.front();
+}
 void FT::set_ft_started_by(FT_Started_By ft_started_by) {
   ft_info.dynamic_info.started_by = ft_started_by;
 }

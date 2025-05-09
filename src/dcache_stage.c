@@ -296,8 +296,6 @@ void update_dcache_stage(Stage_Data* src_sd) {
 
 Flag dcache_fill_line(Mem_Req* req) {
   set_dcache_stage(&cmp_model.dcache_stage[req->proc_id]);
-  Counter old_cycle_count = cycle_count;  // FIXME HACK!
-  cycle_count = freq_cycle_count(FREQ_DOMAIN_CORES[req->proc_id]);
 
   ASSERT(dc->proc_id, dc->proc_id == req->proc_id);
   ASSERT(dc->proc_id, req->op_count == req->op_ptrs.count);
@@ -306,7 +304,6 @@ Flag dcache_fill_line(Mem_Req* req) {
   /* if it can't get a write port, fail */
   uns bank = req->addr >> dc->dcache.shift_bits & N_BIT_MASK(LOG2(DCACHE_BANKS));
   if (!get_write_port(&dc->ports[bank])) {
-    cycle_count = old_cycle_count;
     STAT_EVENT(dc->proc_id, DCACHE_FILL_PORT_UNAVAILABLE_ONPATH + req->off_path);
     return FAILURE;
   }
@@ -338,16 +335,11 @@ Flag dcache_fill_line(Mem_Req* req) {
     ASSERT(dc->proc_id, 0 < dc->ports[bank].write_ports_in_use);
     dc->ports[bank].write_ports_in_use--;
     ASSERT(dc->proc_id, dc->ports[bank].write_ports_in_use < dc->ports->num_write_ports);
-
-    /* TODO: fix this by using a new_cycle_count to avoid replacing cycle_count */
-    cycle_count = old_cycle_count;
     return FAILURE;
   }
 
   /* update cacheline fields and wake up dependent ops */
   dcache_fill_process_cacheline(req, data);
-
-  cycle_count = old_cycle_count;
   return SUCCESS;
 }
 
@@ -708,6 +700,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
 static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
   Dcache_Data* data;
   Addr line_addr, repl_line_addr;
+  Counter req_cycle_count = freq_cycle_count(FREQ_DOMAIN_CORES[req->proc_id]);
 
   /* Prefetch */
   bool is_off_path = USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path;
@@ -721,7 +714,7 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
 
     data = (Dcache_Data*)cache_insert(&dc->pref_dcache, dc->proc_id, req->addr, &line_addr, &repl_line_addr);
     ASSERT(dc->proc_id, req->emitted_cycle);
-    ASSERT(dc->proc_id, cycle_count >= req->emitted_cycle);
+    ASSERT(dc->proc_id, req_cycle_count >= req->emitted_cycle);
     /*
      * mark the data as HW_prefetch if prefetch mark it as fetched_by_offpath if off_path
      * this is done downstairs
@@ -758,26 +751,28 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
 
   data = (Dcache_Data*)cache_insert(&dc->dcache, dc->proc_id, req->addr, &line_addr, &repl_line_addr);
   ASSERT(dc->proc_id, req->emitted_cycle);
-  ASSERT(dc->proc_id, cycle_count >= req->emitted_cycle);
+  ASSERT(dc->proc_id, req_cycle_count >= req->emitted_cycle);
   ASSERT(dc->proc_id, ((int)req->mlc_hit + (int)req->l1_hit) < 2);
 
   STAT_EVENT(dc->proc_id, DCACHE_FILL);
-  INC_STAT_EVENT(dc->proc_id, DATA_LD_CYCLES_ONPATH + req->off_path, cycle_count - req->emitted_cycle);
+  INC_STAT_EVENT(dc->proc_id, DATA_LD_CYCLES_ONPATH + req->off_path, req_cycle_count - req->emitted_cycle);
   if (req->mlc_hit) {
     STAT_EVENT(dc->proc_id, DATA_LD_MLC_ACCESSES_ONPATH + req->off_path);
-    INC_STAT_EVENT(dc->proc_id, DATA_LD_MLC_CYCLES_ONPATH + req->off_path, cycle_count - req->emitted_cycle);
+    INC_STAT_EVENT(dc->proc_id, DATA_LD_MLC_CYCLES_ONPATH + req->off_path, req_cycle_count - req->emitted_cycle);
   } else if (req->l1_hit) {
     STAT_EVENT(dc->proc_id, DATA_LD_L1_ACCESSES_ONPATH + req->off_path);
-    INC_STAT_EVENT(dc->proc_id, DATA_LD_L1_CYCLES_ONPATH + req->off_path, cycle_count - req->emitted_cycle);
+    INC_STAT_EVENT(dc->proc_id, DATA_LD_L1_CYCLES_ONPATH + req->off_path, req_cycle_count - req->emitted_cycle);
   } else {
     STAT_EVENT(dc->proc_id, DATA_LD_MEM_ACCESSES_ONPATH + req->off_path);
-    INC_STAT_EVENT(dc->proc_id, DATA_LD_MEM_CYCLES_ONPATH + req->off_path, cycle_count - req->emitted_cycle);
+    INC_STAT_EVENT(dc->proc_id, DATA_LD_MEM_CYCLES_ONPATH + req->off_path, req_cycle_count - req->emitted_cycle);
   }
 
   return data;
 }
 
 static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data) {
+  Counter req_cycle_count = freq_cycle_count(FREQ_DOMAIN_CORES[req->proc_id]);
+
   /* collect wp stat */
   dcache_fill_wp_collect_stats(data, req);
 
@@ -792,8 +787,8 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
   data->fetched_by_offpath = USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path;
   data->offpath_op_addr = req->oldest_op_addr;
   data->offpath_op_unique = req->oldest_op_unique_num;
-  data->fetch_cycle = cycle_count;
-  data->onpath_use_cycle = (req->type == MRT_DPRF || req->off_path) ? 0 : cycle_count;
+  data->fetch_cycle = req_cycle_count;
+  data->onpath_use_cycle = (req->type == MRT_DPRF || req->off_path) ? 0 : req_cycle_count;
 
   if (req->type == MRT_DPRF) {  // cmp FIXME
     data->HW_prefetch = TRUE;
@@ -833,7 +828,7 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     DEBUG(dc->proc_id, "Awakening op_num:%lld %d %d\n", op->op_num, op->engine_info.l1_miss_satisfied, op->in_rdy_list);
     ASSERT(dc->proc_id, !op->in_rdy_list);
 
-    op->done_cycle = cycle_count + 1;
+    op->done_cycle = req_cycle_count + 1;
     op->state = OS_SCHEDULED;
 
     if (op->table_info->mem_type != MEM_ST) {

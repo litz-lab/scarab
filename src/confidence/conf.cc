@@ -3,6 +3,7 @@
 // Implementations of the API
 #include "confidence/btb_miss_bp_taken_conf.hpp"
 #include "confidence/conf.hpp"
+#include "confidence/perceptron_conf.hpp"
 #include "confidence/weight_conf.hpp"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CONF, ##args)
@@ -123,6 +124,8 @@ void ConfMechStatBase::set_prev_op(Op* op) {
 Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false), last_cycle_count(0) {
   if (CONF_BTB_MISS_BP_TAKEN)
     conf_mech = new BTBMissBPTakenConf(_proc_id);
+  else if (CONF_PERCEPTRON_CONF)
+    conf_mech = new PerceptronConf(_proc_id);
   else
     conf_mech = new WeightConf(_proc_id);
 }

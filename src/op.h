@@ -171,6 +171,8 @@ struct Op_struct {
   // {{{ path and fetch info
   Flag off_path;                // is the op on the correct path of the program? - oracle information
   Flag conf_off_path;           // is the op on the correct path of the program? - confidence information
+  int32 perceptron_conf_prediction;  // confidence perceptron prediciton
+  double conf_features[22];          // confidence features
   Flag exit;                    // is this the last instruction to execute?
   Flag prog_input;              // is this op directly related to an input value of the program ?
   uns cf_within_fetch;          // branch number within a fetch cycle
@@ -261,6 +263,7 @@ struct Op_struct {
   Flag fetched_from_uop_cache;
   // }}}
   int bp_confidence;
+  int tage_comp; // Component of tage that provided the prediction (see tage_component enum in cbp_tagescl_64k.h)
 
   // {{{ register renaming
   int src_reg_id[MAX_SRCS][REG_TABLE_TYPE_NUM];        // the reg id of the source reg file entries

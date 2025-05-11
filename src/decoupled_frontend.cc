@@ -220,6 +220,16 @@ void Decoupled_FE::recover() {
   cur_op = nullptr;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
 
+  if (CONFIDENCE_ENABLE && CONFIDENCE_MECH == CONF_MECH_PERCEPTRON) {
+    for (auto it = ftq.begin(); it != ftq.end(); it++) {
+      for (auto op : it->ops) {
+        if (op->table_info->cf_type) {
+          conf->resolve_cf(op);
+        }
+      }
+    }
+  }
+
   for (auto it = ftq.begin(); it != ftq.end(); it++) {
     it->free_ops_and_clear();
   }

@@ -330,9 +330,9 @@ DEF_PARAM(trace_buf_size, TRACE_BUF_SIZE, uns, uns, 0, )
 DEF_PARAM(perfect_confidence, PERFECT_CONFIDENCE, Flag, Flag, FALSE, )
 DEF_PARAM(confidence_enable, CONFIDENCE_ENABLE, Flag, Flag, FALSE, )
 DEF_PARAM(confidence_mech, CONFIDENCE_MECH, uns, uns, 0, ) // 0 = weight, 1 = perceptron, 2 = btb_miss_bp_taken
+
 DEF_PARAM(conf_off_path_threshold, CONF_OFF_PATH_THRESHOLD, uns, uns, 15, )
 DEF_PARAM(conf_off_path_inc, CONF_OFF_PATH_INC, uns, uns, 5, )
-
 DEF_PARAM(conf_btb_miss_bp_taken, CONF_BTB_MISS_BP_TAKEN, Flag, Flag, FALSE, )
 DEF_PARAM(conf_ipc_rate_conf, CONF_IPC_RATE_CONF, Flag, Flag, FALSE, )
 DEF_PARAM(conf_btb_miss_bp_taken_threshold, CONF_BTB_MISS_BP_TAKEN_THRESHOLD, int, int, 0, )
@@ -364,3 +364,37 @@ DEF_PARAM(conf_perfect_mispred_conf, CONF_PERFECT_MISPRED_CONF, Flag, Flag, FALS
 
 DEF_PARAM(conf_log_dfe_to_rec, CONF_LOG_DFE_TO_REC, Flag, Flag, FALSE, )
 DEF_PARAM(conf_log_phase_cycles, CONF_LOG_PHASE_CYCLES, Flag, Flag, FALSE, )
+
+// Perceptron Conf Parameters
+DEF_PARAM(conf_perceptron_threshold, CONF_PERCEPTRON_THRESHOLD, float, float, 0.0, )
+DEF_PARAM(conf_perceptron_lr, PATH_CONF_PERCEPTRON_LR, float, float, 0.5, )
+DEF_PARAM(conf_n_perceptrons, PATH_CONF_N_PERCEPTRONS, uns, uns, 32, )
+DEF_PARAM(conf_perceptron_theta, CONF_PERCEPTRON_THETA, int, int, 7, )
+DEF_PARAM(conf_weight_width, CONF_PERCEPTRON_WEIGHT_WIDTH, int, int, 8, )
+
+// Enable / disable specific features
+DEF_PARAM(conf_perceptron_start, CONF_PERCEPTRON_START, Flag, Flag, TRUE, )
+DEF_PARAM(conf_perceptron_length, CONF_PERCEPTRON_LENGTH, Flag, Flag, TRUE, )
+DEF_PARAM(conf_perceptron_fteb_not, CONF_PERCEPTRON_FTEB_NOT, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_fteb_ic, CONF_PERCEPTRON_FTEB_IC, Flag, Flag, TRUE, )
+DEF_PARAM(conf_perceptron_fteb_tb, CONF_PERCEPTRON_FTEB_TB, Flag, Flag, TRUE, )
+DEF_PARAM(conf_perceptron_fteb_bf, CONF_PERCEPTRON_FTEB_BF, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_fteb_ae, CONF_PERCEPTRON_FTEB_AE, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_cycle,CONF_PERCEPTRON_CYCLE, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_btb_rec_cycles,CONF_PERCEPTRON_BTB_REC_CYCLES, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_ibtb_rec_cycles,CONF_PERCEPTRON_IBTB_REC_CYCLES, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_misfetch_rec_cycles,CONF_PERCEPTRON_MISFETCH_REC_CYCLES, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_mispred_rec_cycles,CONF_PERCEPTRON_MISPRED_REC_CYCLES, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_btb_rate,CONF_PERCEPTRON_BTB_RATE, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_ibtb_rate,CONF_PERCEPTRON_IBTB_RATE, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_misfetch_rate, CONF_PERCEPTRON_MISFETCH_RATE, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_mispred_rate, CONF_PERCEPTRON_MISPRED_RATE, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_tage_base, CONF_PERCEPTRON_TAGE_BASE, Flag, Flag, TRUE, )
+DEF_PARAM(conf_perceptron_tage_short, CONF_PERCEPTRON_TAGE_SHORT, Flag, Flag, TRUE, )
+DEF_PARAM(conf_perceptron_tage_long, CONF_PERCEPTRON_TAGE_LONG, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_tage_loop, CONF_PERCEPTRON_TAGE_LOOP, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_tage_sc, CONF_PERCEPTRON_TAGE_SC, Flag, Flag, TRUE, )
+DEF_PARAM(conf_perceptron_bp_conf, CONF_PERCEPTRON_BP_CONF, Flag, Flag, TRUE, )
+
+DEF_PARAM(conf_print_perceptron_weights, CONF_PRINT_PERCEPTRON_WEIGHTS, Flag, Flag, FALSE, )
+DEF_PARAM(conf_perceptron_max_cfs, CONF_PERCEPTRON_MAX_CFS, uns, uns, 128, )

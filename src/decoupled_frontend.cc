@@ -411,7 +411,7 @@ void Decoupled_FE::recover() {
           "addr 0x%llx\n",
           bp_recovery_info->recovery_fetch_addr, frontend_next_fetch_addr(proc_id));
 
-  if (CONFIDENCE_ENABLE && cur_op && !cur_op->exit)
+  if (CONFIDENCE_ENABLE)
     conf->recover();
 }
 

@@ -210,7 +210,6 @@ void Conf::update(Op* op, Flag last_in_ft) {
     }
     conf_off_path = new_reason != REASON_CONF_NOT_IDENTIFIED;
   }
-  op->conf_off_path = conf_off_path;
   if (conf_info->off_path_reason == REASON_NOT_IDENTIFIED ||
       conf_info->conf_off_path_reason == REASON_CONF_NOT_IDENTIFIED)
     conf_info->update(op, conf_off_path, new_reason);

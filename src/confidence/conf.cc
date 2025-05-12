@@ -91,32 +91,11 @@ void Confidence_Info::update(Op* op, Flag conf_off_path, Conf_Off_Path_Reason ne
           prev_op->table_info->cf_type, decoupled_fe_get_cur_op()->op_num,
           decoupled_fe_get_cur_op()->table_info->cf_type);
     ASSERT(proc_id, prev_op->table_info->cf_type);  // must be a cf as the last on-path op
-    if (prev_op->oracle_info.mispred)               // check misprediction first
-      off_path_reason = REASON_MISPRED;
-    else if (prev_op->oracle_info.btb_miss)  // off path due to a btb miss
-      off_path_reason = REASON_BTB_MISS;
-    else if (prev_op->oracle_info.no_target)  // off path due to no target
-      off_path_reason = REASON_NO_TARGET;
-    else if (prev_op->oracle_info.misfetch)  // off path due to misfetch
-      off_path_reason = REASON_MISFETCH;
-    else {  // if some other reason (shouldn't happen)
-      DEBUG(proc_id, "dfe off conf on event, unrecognized off path reason: op type: %u\n",
-            prev_op->table_info->op_type);
-      // ASSERT(proc_id, false); // Disable for now
-    }
+    off_path_reason = (Off_Path_Reason)prev_op->oracle_info.off_path_reason;
 
     if (!conf_off_path) {
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NUM_EVENTS);
-      if (off_path_reason == REASON_MISPRED) {
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_BP_INCORRECT);
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_BP_INCORRECT_0_CONF + prev_op->bp_confidence);
-      } else if (off_path_reason == REASON_BTB_MISS) {
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_BTB_MISS);
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_BTB_MISS_NOT_CF + prev_op->table_info->cf_type);
-      } else if (off_path_reason == REASON_NO_TARGET)
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NO_TARGET);
-      else if (off_path_reason == REASON_MISFETCH)
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_MISFETCH);
+      STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED + off_path_reason);
     }
   } else if (!dfe_off_path && prev_op->off_path) {  // the actual path is on, but conf off path
     STAT_EVENT(proc_id, DFE_ON_CONF_OFF_NUM_EVENTS);

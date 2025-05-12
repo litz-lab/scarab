@@ -54,11 +54,13 @@ extern "C" {
 #include "stage_data.h"
 
 typedef enum OFF_PATH_REASON_enum {
+  REASON_NOT_IDENTIFIED,
+  REASON_IBTB_MISS,
   REASON_BTB_MISS,
+  // op that misses in the BTB and the BP incorrectly predicts not taken
+  REASON_BTB_MISS_MISPRED,
   REASON_MISPRED,
   REASON_MISFETCH,
-  REASON_NO_TARGET,
-  REASON_NOT_IDENTIFIED,
 } Off_Path_Reason;
 
 typedef enum CONF_OFF_PATH_REASON_enum {

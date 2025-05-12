@@ -104,6 +104,7 @@ struct Op_Info_struct {
   Flag recovery_sch;       // true if this op has scheduled a recovery
   Flag recover_at_decode;  // op will schedule recovery at decode
   Flag recover_at_exec;    // op will schedule recovery at exec
+  int8 off_path_reason;    // reason this of will cause a recovery (Off_Path_Reason enum)
 
   // Only for perceptron
   uns64 pred_perceptron_global_hist;            // global history used to predict the branch

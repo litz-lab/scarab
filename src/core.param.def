@@ -332,7 +332,7 @@ DEF_PARAM(confidence_enable, CONFIDENCE_ENABLE, Flag, Flag, FALSE, )
 DEF_PARAM(conf_off_path_threshold, CONF_OFF_PATH_THRESHOLD, uns, uns, 15, )
 DEF_PARAM(conf_off_path_inc, CONF_OFF_PATH_INC, uns, uns, 5, )
 
-DEF_PARAM(conf_btb_miss_bp_taken, CONF_BTB_MISS_BP_TAKEN, Flag, Flag, TRUE, )
+DEF_PARAM(conf_btb_miss_bp_taken, CONF_BTB_MISS_BP_TAKEN, Flag, Flag, FALSE, )
 DEF_PARAM(conf_btb_miss_bp_taken_threshold, CONF_BTB_MISS_BP_TAKEN_THRESHOLD, int, int, 0, )
 DEF_PARAM(conf_btb_miss_rate_cycles_threshold, CONF_BTB_MISS_RATE_CYCLES_THRESHOLD, float, float, 1.0, )
 

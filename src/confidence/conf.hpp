@@ -44,7 +44,7 @@ class ConfMechBase {
   virtual void update_state_perfect_conf(Op* op) = 0;
 
   // recovery functions
-  virtual void recover() = 0;
+  virtual void recover(Op* op) = 0;
 
   // resolve cf
   virtual void resolve_cf(Op* op) = 0;
@@ -109,7 +109,7 @@ class Conf {
  public:
   Conf(uns _proc_id);
   uns get_conf() { return conf_off_path; }
-  void recover();
+  void recover(Op* op);
   void set_prev_op(Op* op);
   void update(Op* op, Flag last_in_ft);
   void resolve_cf(Op* op) { conf_mech->resolve_cf(op); }

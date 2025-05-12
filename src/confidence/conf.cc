@@ -152,10 +152,10 @@ void Confidence_Info::recover() {
 }
 
 /* Conf member functions */
-void Conf::recover() {
+void Conf::recover(Op* op) {
   ASSERT(proc_id, conf_info->off_path_reason != REASON_NOT_IDENTIFIED);
   conf_off_path = false;
-  conf_mech->recover();
+  conf_mech->recover(op);
   conf_info->recover();
 }
 

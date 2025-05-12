@@ -42,7 +42,9 @@ void BTBMissBPTakenConf::update_state_perfect_conf(Op* op) {
   return;
 }
 
-void BTBMissBPTakenConf::recover() {
+void BTBMissBPTakenConf::recover(Op* op) {
+  if (op->oracle_info.off_path_reason == REASON_BTB_MISS)
+    cnt_btb_miss++;
   low_confidence_cnt = 0;
   last_recover_cycle = cycle_count;
 }

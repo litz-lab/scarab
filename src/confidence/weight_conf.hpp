@@ -17,7 +17,7 @@ class WeightConf : public ConfMechBase {
   void update_state_perfect_conf(Op* op) override;
 
   // recovery functions
-  void recover() override;
+  void recover(Op* op) override;
 
   // resolve cf
   void resolve_cf(Op* op) override;

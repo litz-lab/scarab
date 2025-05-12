@@ -66,6 +66,7 @@ class Decoupled_FE {
   Off_Path_Reason get_off_path_reason() { return conf->get_off_path_reason(); }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf->get_conf_off_path_reason(); }
   void conf_resolve_cf(Op* op) { conf->resolve_cf(op); }
+  Off_Path_Reason eval_off_path_reason(Op* op);
 
  private:
   void init(uns proc_id);
@@ -549,6 +550,7 @@ void Decoupled_FE::update() {
         stall(op);
       }
     }
+    op->oracle_info.off_path_reason = eval_off_path_reason(op);
     // We start a new fetch target if:
     // 1. crossing a icache line
     // 2. taking a control flow op
@@ -734,4 +736,36 @@ void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
 
   // unblock pin exec driven, trace frontends do not need to block/unblock
   frontend_retire(op_proc_id, inst_uid);
+}
+
+
+Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
+  if (!(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec)) {
+    return REASON_NOT_IDENTIFIED;
+  }
+  // mispred
+  if (op->oracle_info.pred_orig != op->oracle_info.dir && !op->oracle_info.btb_miss) {
+    return REASON_MISPRED;
+  }
+  // misfetch
+  else if (!op->oracle_info.btb_miss && op->oracle_info.pred_orig == op->oracle_info.dir &&
+           op->oracle_info.pred_npc != op->oracle_info.npc) {
+    return REASON_MISFETCH;
+  }
+  // ibtb miss
+  else if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) &&
+           op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN) {
+    return REASON_IBTB_MISS;
+  }
+  // btb miss and mispred (would have been incorrect with or without btb miss)
+  else if (op->oracle_info.pred_orig != op->oracle_info.dir && op->oracle_info.btb_miss) {
+    return REASON_BTB_MISS_MISPRED;
+  }
+  // true btb miss
+  else if (op->oracle_info.btb_miss) {
+    return REASON_BTB_MISS;
+  } else {
+    // all cases should be covered
+    ASSERT(proc_id, FALSE);
+  }
 }

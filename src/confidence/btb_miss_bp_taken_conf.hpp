@@ -32,7 +32,9 @@ class BTBMissBPTakenConf : public ConfMechBase {
                                 mispred_rate(0.0),
                                 last_mispred_recover_cycle(0),
                                 low_confidence_cnt(0),
-                                last_recover_cycle(0) {
+                                last_recover_cycle(0),
+                                cnt_on_path_instructions(0),
+                                effective_ipc(0.0) {
     conf_mech_stat = new BTBMissBPTakenConfStat(_proc_id, this);
   }
   // update functions
@@ -72,6 +74,9 @@ class BTBMissBPTakenConf : public ConfMechBase {
   // confidence counter
   uns low_confidence_cnt;
   Counter last_recover_cycle;
+
+  Counter cnt_on_path_instructions;
+  double effective_ipc;
 
   friend BTBMissBPTakenConfStat;
 };

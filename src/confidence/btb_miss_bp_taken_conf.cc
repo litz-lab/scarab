@@ -2,6 +2,11 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CONF, ##args)
 
+BTBMissBPTakenConfStat::BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech)
+    : ConfMechStatBase(_proc_id) {
+  conf_mech = _conf_mech;
+}
+
 void BTBMissBPTakenConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
   if (!CONFIDENCE_ENABLE)
     return;

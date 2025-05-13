@@ -44,6 +44,7 @@ class Decoupled_FE {
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf->get_conf_off_path_reason(); }
   void conf_resolve_cf(Op* op) { conf->resolve_cf(op); }
   Off_Path_Reason eval_off_path_reason(Op* op);
+  void print_conf_data() { conf->print_data(); }
 
  private:
   void init(uns proc_id);
@@ -179,6 +180,10 @@ Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason() {
 
 void decoupled_fe_conf_resovle_cf(Op* op) {
   dfe->conf_resolve_cf(op);
+}
+
+void decoupled_fe_print_conf_data() {
+  dfe->print_conf_data();
 }
 
 /* Decoupled_FE member functions */

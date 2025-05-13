@@ -11,12 +11,8 @@ void BTBMissBPTakenConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason)
   if (!CONFIDENCE_ENABLE)
     return;
 
-  DEBUG(proc_id, "btb miss rate: %f, cycles since recovery: %llu\n", btb_miss_rate, cycle_count - last_recover_cycle);
-  if ((double)((cycle_count - last_recover_cycle) * btb_miss_rate) >= CONF_BTB_MISS_RATE_CYCLES_THRESHOLD) {
-    low_confidence_cnt = ~0U;
-    STAT_EVENT(proc_id, CONF_BTB_NUM_CYCLES_OFF_PATH_EVENT);
-    new_reason = REASON_BTB_MISS_RATE;
-  }
+  DEBUG(proc_id, "btb miss rate: %f, cycles since recovery: %llu\n", btb_miss_rate, cycle_count - last_btb_recover_cycle);
+  new_reason = update_resteer_rate_ctrs(new_reason);
 }
 
 void BTBMissBPTakenConf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
@@ -40,14 +36,45 @@ void BTBMissBPTakenConf::per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason)
 }
 
 void BTBMissBPTakenConf::per_cycle_update(Conf_Off_Path_Reason& new_reason) {
+  reset_counters();
+  new_reason = update_resteer_rate_ctrs(new_reason);
+}
+
+
+Conf_Off_Path_Reason BTBMissBPTakenConf::update_resteer_rate_ctrs(Conf_Off_Path_Reason conf_op_reason) {
+  Conf_Off_Path_Reason ctrs_op_reason = conf_op_reason;
+  if (((double)(cycle_count - last_btb_recover_cycle) * btb_miss_rate) >=
+          CONF_BTB_MISS_RATE_CYCLES_THRESHOLD) {
+    ctrs_op_reason = REASON_BTB_MISS_RATE;
+  } else if (((double)(cycle_count - last_ibtb_recover_cycle) * ibtb_miss_rate) >=
+                 CONF_IBTB_MISS_RATE_CYCLES_THRESHOLD) {
+    ctrs_op_reason = REASON_IBTB_MISS_RATE;
+  } else if (((double)(cycle_count - last_misfetch_recover_cycle) * misfetch_rate) >=
+                 CONF_MISFETCH_RATE_CYCLES_THRESHOLD) {
+    ctrs_op_reason = REASON_MISFETCH_RATE;
+  } else if (((double)(cycle_count - last_mispred_recover_cycle) * mispred_rate) >=
+                 CONF_MISPRED_RATE_CYCLES_THRESHOLD) {
+    ctrs_op_reason = REASON_MISPRED_RATE;
+  }
+  return ctrs_op_reason;
+}
+
+void BTBMissBPTakenConf::reset_counters() {
   if (cycle_count % CONF_BTB_MISS_SAMPLE_RATE == 0) {
     btb_miss_rate = (double)cnt_btb_miss / (double)CONF_BTB_MISS_SAMPLE_RATE;
     cnt_btb_miss = 0;
   }
-  if ((double)((cycle_count - last_recover_cycle) * btb_miss_rate) >= CONF_BTB_MISS_RATE_CYCLES_THRESHOLD) {
-    low_confidence_cnt = ~0U;
-    STAT_EVENT(proc_id, CONF_BTB_NUM_CYCLES_OFF_PATH_EVENT);
-    new_reason = REASON_BTB_MISS_RATE;
+  if (cycle_count % CONF_IBTB_MISS_SAMPLE_RATE == 0) {
+    ibtb_miss_rate = (double)cnt_ibtb_miss / (double)CONF_IBTB_MISS_SAMPLE_RATE;
+    cnt_ibtb_miss = 0;
+  }
+  if (cycle_count % CONF_MISFETCH_SAMPLE_RATE == 0) {
+    misfetch_rate = (double)cnt_misfetch / (double)CONF_MISFETCH_SAMPLE_RATE;
+    cnt_misfetch = 0;
+  }
+  if (cycle_count % CONF_MISPRED_SAMPLE_RATE == 0) {
+    mispred_rate = (double)cnt_mispred / (double)CONF_MISPRED_SAMPLE_RATE;
+    cnt_mispred = 0;
   }
 }
 
@@ -56,8 +83,44 @@ void BTBMissBPTakenConf::update_state_perfect_conf(Op* op) {
 }
 
 void BTBMissBPTakenConf::recover(Op* op) {
-  if (op->oracle_info.off_path_reason == REASON_BTB_MISS)
-    cnt_btb_miss++;
+Off_Path_Reason op_reason = (Off_Path_Reason)op->oracle_info.off_path_reason;
+  switch (op_reason) {
+    case REASON_NOT_IDENTIFIED: {
+      ASSERT(proc_id, 0);
+    }
+    case REASON_IBTB_MISS: {
+      cnt_ibtb_miss++;
+      last_ibtb_recover_cycle = cycle_count;
+      break;
+    }
+    case REASON_BTB_MISS: {
+      cnt_btb_miss++;
+      last_btb_recover_cycle = cycle_count;
+      break;
+    }
+    case REASON_BTB_MISS_MISPRED: {
+      cnt_btb_miss++;
+      cnt_mispred++;
+      last_btb_recover_cycle = cycle_count;
+      last_mispred_recover_cycle = cycle_count;
+      break;
+    }
+    case REASON_MISPRED: {
+      cnt_mispred++;
+      last_mispred_recover_cycle = cycle_count;
+      break;
+    }
+    case REASON_MISFETCH: {
+      cnt_misfetch++;
+      last_misfetch_recover_cycle = cycle_count;
+      break;
+    }
+    default: {
+      // shouldn't happen!
+      DEBUG(proc_id, "no off path reason match: \n");
+      ASSERT(proc_id, 0);
+    }
+  }
   low_confidence_cnt = 0;
   last_recover_cycle = cycle_count;
 }

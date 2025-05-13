@@ -16,7 +16,20 @@ class BTBMissBPTakenConfStat : public ConfMechStatBase {
 class BTBMissBPTakenConf : public ConfMechBase {
  public:
   BTBMissBPTakenConf(uns _proc_id)
-      : ConfMechBase(_proc_id), cnt_btb_miss(0), btb_miss_rate(0.0), low_confidence_cnt(0), last_recover_cycle(0) {
+      : ConfMechBase(_proc_id), cnt_btb_miss(0), 
+                                btb_miss_rate(0.0), 
+                                last_btb_recover_cycle(0), 
+                                cnt_ibtb_miss(0),
+                                ibtb_miss_rate(0.0),
+                                last_ibtb_recover_cycle(0),
+                                cnt_misfetch(0),
+                                misfetch_rate(0.0),
+                                last_misfetch_recover_cycle(0),
+                                cnt_mispred(0),
+                                mispred_rate(0.0),
+                                last_mispred_recover_cycle(0),
+                                low_confidence_cnt(0),
+                                last_recover_cycle(0) {
     conf_mech_stat = new BTBMissBPTakenConfStat(_proc_id, this);
   }
   // update functions
@@ -34,9 +47,24 @@ class BTBMissBPTakenConf : public ConfMechBase {
   void resolve_cf(Op* op) override;
 
  private:
-  /* global variables for BTB miss-based BP confidence */
+  void reset_counters();
+  Conf_Off_Path_Reason update_resteer_rate_ctrs(Conf_Off_Path_Reason conf_op_reason);
+
   Counter cnt_btb_miss;
   double btb_miss_rate;
+  Counter last_btb_recover_cycle;
+
+  Counter cnt_ibtb_miss;
+  double ibtb_miss_rate;
+  Counter last_ibtb_recover_cycle;
+
+  Counter cnt_misfetch;
+  double misfetch_rate;
+  Counter last_misfetch_recover_cycle;
+
+  Counter cnt_mispred;
+  double mispred_rate;
+  Counter last_mispred_recover_cycle;
 
   // confidence counter
   uns low_confidence_cnt;

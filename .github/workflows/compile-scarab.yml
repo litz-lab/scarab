@@ -108,13 +108,22 @@ jobs:
           docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG}
           docker tag  ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG} allbench_traces:${TAG}
 
+      # Conda Environment
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-activate-base: false
+          activate-environment: scarabinfra
+          environment-file: scarab-infra/quickstart_env.yaml
+          python-version: 3.12
+
       # Simulation -------------------------------------------
       - name: Run simulation
         working-directory: scarab-infra
+        shell: bash -l {0}
         run: |
           set -e
           chmod +x run.sh
-          pip install -r requirements.txt
           ./run.sh --simulation top_simpoint
 
       # Extract KIPS -----------------------------------------

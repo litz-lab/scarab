@@ -1033,4 +1033,5 @@ STAT:
     INC_STAT_EVENT(node->proc_id, STALL_BACKEND, NODE_RET_WIDTH - ret_count);
     INC_STAT_EVENT(node->proc_id, STALL_BACKEND + node->node_stall, NODE_RET_WIDTH - ret_count);
   }
+  INC_STAT_EVENT(node->proc_id, TOTAL_SLOTS, NODE_RET_WIDTH);
 }

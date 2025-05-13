@@ -1459,7 +1459,7 @@ void FDIP::log_stats_path_conf_per_pref_candidate() {
     else {
       STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_PREF_CANDIDATES);
       STAT_EVENT(proc_id,
-                 FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_PREF_CANDIDATES + decoupled_fe_get_conf_off_path_reason());
+                 FDIP_ON_CONF_OFF_IBTB_MISS_BP_TAKEN_PREF_CANDIDATES + decoupled_fe_get_conf_off_path_reason());
     }
   }
 }
@@ -1482,7 +1482,7 @@ void FDIP::log_stats_path_conf_emitted() {
       STAT_EVENT(proc_id, FDIP_OFF_CONF_OFF_EMITTED);
     } else {
       STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_EMITTED);
-      STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_EMITTED + decoupled_fe_get_conf_off_path_reason());
+      STAT_EVENT(proc_id, FDIP_ON_CONF_OFF_IBTB_MISS_BP_TAKEN_EMITTED + decoupled_fe_get_conf_off_path_reason());
     }
   }
 }

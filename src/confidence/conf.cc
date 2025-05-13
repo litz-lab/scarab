@@ -18,7 +18,7 @@ void ConfMechStatBase::per_cycle_update() {
   } else {
     if (conf_off_path_reason) {
       STAT_EVENT(proc_id, DFE_ON_CONF_OFF_CYCLES);
-      STAT_EVENT(proc_id, DFE_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_CYCLES + conf_off_path_reason);
+      STAT_EVENT(proc_id, DFE_ON_CONF_OFF_IBTB_MISS_BP_TAKEN_CYCLES + conf_off_path_reason);
     } else {
       STAT_EVENT(proc_id, DFE_ON_CONF_ON_CYCLES);
     }
@@ -59,7 +59,7 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
       STAT_EVENT(proc_id, DFE_ON_CONF_OFF_OPS);
       if (last_in_ft) {
         STAT_EVENT(proc_id, DFE_ON_CONF_OFF_FETCH_TARGETS);
-        STAT_EVENT(proc_id, DFE_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_FETCH_TARGETS + conf_off_path_reason);
+        STAT_EVENT(proc_id, DFE_ON_CONF_OFF_IBTB_MISS_BP_TAKEN_FETCH_TARGETS + conf_off_path_reason);
       }
       // dfe on conf on
     } else {
@@ -95,7 +95,7 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
              op->conf_off_path) {  // the actual path is on, but conf off path
     ASSERT(proc_id, conf_off_path_reason != REASON_CONF_NOT_IDENTIFIED);
     STAT_EVENT(proc_id, DFE_ON_CONF_OFF_NUM_EVENTS);
-    STAT_EVENT(proc_id, DFE_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0 + conf_off_path_reason);
+    STAT_EVENT(proc_id, DFE_ON_CONF_OFF_IBTB_MISS_BP_TAKEN + conf_off_path_reason);
   }
 }
 
@@ -158,7 +158,7 @@ void Conf::update(Op* op, Flag last_in_ft) {
     conf_off_path = new_reason != REASON_CONF_NOT_IDENTIFIED;
   }
   conf_mech->conf_mech_stat->update(op, new_reason, last_in_ft);
-  STAT_EVENT(proc_id, CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0 + new_reason);
+  STAT_EVENT(proc_id, CONF_OFF_IBTB_MISS_BP_TAKEN + new_reason);
   set_prev_op(op);
 }
 
@@ -194,5 +194,5 @@ void Conf::per_cycle_update() {
   conf_mech->per_cycle_update(new_reason);
   conf_off_path = new_reason != REASON_CONF_NOT_IDENTIFIED;
   conf_mech->conf_mech_stat->per_cycle_update();
-  STAT_EVENT(proc_id, CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0 + new_reason);
+  STAT_EVENT(proc_id, CONF_OFF_IBTB_MISS_BP_TAKEN + new_reason);
 }

@@ -31,6 +31,9 @@ void BTBMissBPTakenConf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reas
     low_confidence_cnt = ~0U;
     ASSERT(proc_id, op->bp_confidence >= 0 && op->bp_confidence <= 3);
     new_reason = static_cast<Conf_Off_Path_Reason>(REASON_BTB_MISS_BP_TAKEN_CONF_0 + op->bp_confidence);
+  } else if (op->oracle_info.btb_miss && (op->oracle_info.pred_orig == TAKEN) &&
+               (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
+        new_reason = (Conf_Off_Path_Reason)(REASON_IBTB_MISS_BP_TAKEN);
   } else {  // update confidence
     low_confidence_cnt += 3 - op->bp_confidence;
     if (low_confidence_cnt >= CONF_OFF_PATH_THRESHOLD)

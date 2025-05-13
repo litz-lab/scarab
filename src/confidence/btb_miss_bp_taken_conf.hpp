@@ -6,7 +6,7 @@
 
 class BTBMissBPTakenConf;
 
-class BTBMissBPTakenConfStat: public ConfMechStatBase {
+class BTBMissBPTakenConfStat : public ConfMechStatBase {
  public:
   BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech);
   void ext_update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle) override;
@@ -20,8 +20,8 @@ class BTBMissBPTakenConf : public ConfMechBase {
  public:
   BTBMissBPTakenConf(uns _proc_id)
       : ConfMechBase(_proc_id), cnt_btb_miss(0), btb_miss_rate(0.0), low_confidence_cnt(0), last_recover_cycle(0) {
-        conf_mech_stat = new BTBMissBPTakenConfStat(_proc_id, this);
-      }
+    conf_mech_stat = new BTBMissBPTakenConfStat(_proc_id, this);
+  }
   // update functions
   void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
   void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;

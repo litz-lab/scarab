@@ -2,8 +2,9 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CONF, ##args)
 
-BTBMissBPTakenConfStat::BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech) : ConfMechStatBase(_proc_id) {
-    conf_mech = _conf_mech;
+BTBMissBPTakenConfStat::BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech)
+    : ConfMechStatBase(_proc_id) {
+  conf_mech = _conf_mech;
 }
 
 void BTBMissBPTakenConfStat::ext_update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle) {

@@ -21,29 +21,29 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
   // log on/off stats for ops, fetch targets, and cycles
   if (dfe_off_path) {
     // dfe off conf off
-      if(op->conf_off_path) {
-        STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_OPS);
-        if (last_in_ft) {
-          STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_FETCH_TARGETS);
-        }
-        if (new_cycle) {
-          STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_CYCLES);
-        }
-    // dfe off conf on
+    if (op->conf_off_path) {
+      STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_OPS);
+      if (last_in_ft) {
+        STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_FETCH_TARGETS);
+      }
+      if (new_cycle) {
+        STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_CYCLES);
+      }
+      // dfe off conf on
     } else {
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_OPS);
-        if (last_in_ft) {
-          STAT_EVENT(proc_id, DFE_OFF_CONF_ON_FETCH_TARGETS);
-          STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_FETCH_TARGETS + off_path_reason);
-        }
-        if (new_cycle) {
-          STAT_EVENT(proc_id, DFE_OFF_CONF_ON_CYCLES);
-          STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_CYCLES + off_path_reason);
-        }
+      STAT_EVENT(proc_id, DFE_OFF_CONF_ON_OPS);
+      if (last_in_ft) {
+        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_FETCH_TARGETS);
+        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_FETCH_TARGETS + off_path_reason);
+      }
+      if (new_cycle) {
+        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_CYCLES);
+        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_CYCLES + off_path_reason);
+      }
     }
   } else {
     // dfe on conf off
-    if(op->conf_off_path) {
+    if (op->conf_off_path) {
       STAT_EVENT(proc_id, DFE_ON_CONF_OFF_OPS);
       if (last_in_ft) {
         STAT_EVENT(proc_id, DFE_ON_CONF_OFF_FETCH_TARGETS);
@@ -53,7 +53,7 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
         STAT_EVENT(proc_id, DFE_ON_CONF_OFF_CYCLES);
         STAT_EVENT(proc_id, DFE_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_CYCLES + conf_off_path_reason);
       }
-    // dfe on conf on
+      // dfe on conf on
     } else {
       STAT_EVENT(proc_id, DFE_ON_CONF_ON_OPS);
       if (last_in_ft)
@@ -73,8 +73,8 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
 
   // log stats for on/off events
   if (dfe_off_path && !prev_op->off_path) {  // the actual path goes off
-    DEBUG(proc_id, "off-path event: prev_op op_num: %llu, cf_type: %i, cur_op op_num: %llu, cf_type: %i\n", prev_op->op_num,
-          prev_op->table_info->cf_type, decoupled_fe_get_cur_op()->op_num,
+    DEBUG(proc_id, "off-path event: prev_op op_num: %llu, cf_type: %i, cur_op op_num: %llu, cf_type: %i\n",
+          prev_op->op_num, prev_op->table_info->cf_type, decoupled_fe_get_cur_op()->op_num,
           decoupled_fe_get_cur_op()->table_info->cf_type);
     ASSERT(proc_id, off_path_reason == REASON_NOT_IDENTIFIED);
     ASSERT(proc_id, prev_op->table_info->cf_type);  // must be a cf as the last on-path op
@@ -85,13 +85,14 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NUM_EVENTS);
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_EVENTS + off_path_reason);
     }
-  } else if (!dfe_off_path && !prev_op->conf_off_path && op->conf_off_path) {  // the actual path is on, but conf off path
+  } else if (!dfe_off_path && !prev_op->conf_off_path &&
+             op->conf_off_path) {  // the actual path is on, but conf off path
     ASSERT(proc_id, conf_off_path_reason != REASON_CONF_NOT_IDENTIFIED);
     STAT_EVENT(proc_id, DFE_ON_CONF_OFF_NUM_EVENTS);
     STAT_EVENT(proc_id, DFE_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0 + conf_off_path_reason);
   }
 
-  if(new_cycle)
+  if (new_cycle)
     DEBUG(proc_id, "stat cycle count: %llu\n", cycle_count);
   ext_update(op, reason, last_in_ft, new_cycle);
 }
@@ -111,8 +112,8 @@ void ConfMechStatBase::print_data() {
 
 void ConfMechStatBase::set_prev_op(Op* op) {
   prev_op = op;
-  DEBUG(proc_id, "Set prev_op off_path:%i, op_num:%llu, cf_type:%i\n", prev_op->off_path,
-        prev_op->op_num, prev_op->table_info->cf_type);
+  DEBUG(proc_id, "Set prev_op off_path:%i, op_num:%llu, cf_type:%i\n", prev_op->off_path, prev_op->op_num,
+        prev_op->table_info->cf_type);
 }
 
 /* Conf member functions */

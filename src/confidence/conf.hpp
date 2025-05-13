@@ -34,32 +34,33 @@
 class ConfMechBase;  // forward declaration
 
 class ConfMechStatBase {
-  public:
-    ConfMechStatBase(uns _proc_id) : proc_id(_proc_id), 
-        prev_op(nullptr), 
-        off_path_reason(REASON_NOT_IDENTIFIED), 
+ public:
+  ConfMechStatBase(uns _proc_id)
+      : proc_id(_proc_id),
+        prev_op(nullptr),
+        off_path_reason(REASON_NOT_IDENTIFIED),
         conf_off_path_reason(REASON_CONF_NOT_IDENTIFIED) {}
-    void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle);
-    void recover(Op* op);
-    void print_data();
-    void set_prev_op(Op* op);
+  void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle);
+  void recover(Op* op);
+  void print_data();
+  void set_prev_op(Op* op);
 
-    Off_Path_Reason get_off_path_reason() { return off_path_reason; }
-    Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_off_path_reason; }
+  Off_Path_Reason get_off_path_reason() { return off_path_reason; }
+  Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_off_path_reason; }
 
-    // override these for mech-specific stats stuff
-    virtual void ext_update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle) { return; }
-    virtual void ext_recover(Op* op) { return; }
-    virtual void ext_print_data() { return; }
+  // override these for mech-specific stats stuff
+  virtual void ext_update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle) { return; }
+  virtual void ext_recover(Op* op) { return; }
+  virtual void ext_print_data() { return; }
 
-    // pointer to outer class, use this to access mech-specific data
-    ConfMechBase* conf_mech;
+  // pointer to outer class, use this to access mech-specific data
+  ConfMechBase* conf_mech;
 
-    uns proc_id;
-    Op* prev_op;
+  uns proc_id;
+  Op* prev_op;
 
-    Off_Path_Reason off_path_reason;
-    Conf_Off_Path_Reason conf_off_path_reason;
+  Off_Path_Reason off_path_reason;
+  Conf_Off_Path_Reason conf_off_path_reason;
 };
 
 // Confidence Mechanism interface

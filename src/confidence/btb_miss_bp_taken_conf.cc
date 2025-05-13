@@ -22,15 +22,15 @@ void BTBMissBPTakenConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason)
 }
 
 void BTBMissBPTakenConf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
-  if (op->oracle_info.btb_miss && (op->oracle_info.pred_orig == TAKEN) &&
+  if (CONF_BTB_MISS_BP_TAKEN_CONF && op->oracle_info.btb_miss && (op->oracle_info.pred_orig == TAKEN) &&
       (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
     low_confidence_cnt = ~0U;
     ASSERT(proc_id, op->bp_confidence >= 0 && op->bp_confidence <= 3);
     new_reason = static_cast<Conf_Off_Path_Reason>(REASON_BTB_MISS_BP_TAKEN_CONF_0 + op->bp_confidence);
-  } else if (op->oracle_info.btb_miss && (op->oracle_info.pred_orig == TAKEN) &&
+  } else if (CONF_IBTB_MISS_BP_TAKEN_CONF && op->oracle_info.btb_miss && (op->oracle_info.pred_orig == TAKEN) &&
                (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
         new_reason = (Conf_Off_Path_Reason)(REASON_IBTB_MISS_BP_TAKEN);
-  } else {  // update confidence
+  } else if (CONF_INV_BP_CONF) {  // update confidence
     low_confidence_cnt += 3 - op->bp_confidence;
     if (low_confidence_cnt >= CONF_OFF_PATH_THRESHOLD)
       new_reason = REASON_CONF_THRESHOLD;
@@ -52,16 +52,16 @@ Conf_Off_Path_Reason BTBMissBPTakenConf::update_resteer_rate_ctrs(Conf_Off_Path_
     multiplier = effective_ipc;
   }
   Conf_Off_Path_Reason ctrs_op_reason = conf_op_reason;
-  if (((double)(cycle_count - last_btb_recover_cycle) * btb_miss_rate * multiplier) >=
+  if (CONF_BTB_MISS_RATE_CONF && ((double)(cycle_count - last_btb_recover_cycle) * btb_miss_rate * multiplier) >=
           CONF_BTB_MISS_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_BTB_MISS_RATE;
-  } else if (((double)(cycle_count - last_ibtb_recover_cycle) * ibtb_miss_rate * multiplier) >=
+  } else if (CONF_IBTB_MISS_RATE_CONF &&((double)(cycle_count - last_ibtb_recover_cycle) * ibtb_miss_rate * multiplier) >=
                  CONF_IBTB_MISS_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_IBTB_MISS_RATE;
-  } else if (((double)(cycle_count - last_misfetch_recover_cycle) * misfetch_rate * multiplier) >=
+  } else if (CONF_MISFETCH_RATE_CONF && ((double)(cycle_count - last_misfetch_recover_cycle) * misfetch_rate * multiplier) >=
                  CONF_MISFETCH_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_MISFETCH_RATE;
-  } else if (((double)(cycle_count - last_mispred_recover_cycle) * mispred_rate * multiplier) >=
+  } else if (CONF_MISPRED_RATE_CONF && ((double)(cycle_count - last_mispred_recover_cycle) * mispred_rate * multiplier) >=
                  CONF_MISPRED_RATE_CYCLES_THRESHOLD) {
     ctrs_op_reason = REASON_MISPRED_RATE;
   }

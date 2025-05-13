@@ -257,7 +257,15 @@ jobs:
           echo "${COMMIT_SHA},${{ needs.run-scarab.outputs.ipc }},${{ needs.run-scarab.outputs.kips }}" \
             >> perf/scarab_perf.log
 
-      # 5) Commit & push back to the perf repo using the “public” remote
+      # 5) Replace previous PMU counters with the latest simulation outputs
+      - name: Copy PMU files
+        run: |
+          rm -rf perf/pmu
+          mkdir perf/pmu
+          cp simulations/github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/* perf/pmu/
+          rm perf/pmu/sim.log
+
+      # 6) Commit & push back to the perf repo using the “public” remote
       - name: Commit & Push perf update
         run: |
           cd perf

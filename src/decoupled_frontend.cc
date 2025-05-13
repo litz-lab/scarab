@@ -738,7 +738,6 @@ void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
   frontend_retire(op_proc_id, inst_uid);
 }
 
-
 Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
   if (!(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec)) {
     return REASON_NOT_IDENTIFIED;

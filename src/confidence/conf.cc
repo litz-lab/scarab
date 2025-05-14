@@ -10,7 +10,7 @@
 void ConfMechStatBase::per_cycle_update() {
   if (off_path_reason) {
     if (conf_off_path_reason) {
-      STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_CYCLES);
+      STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_REALISTIC_CYCLES + perfect_off_path);
     } else {
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_CYCLES);
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_CYCLES + off_path_reason);
@@ -41,9 +41,9 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
   if (dfe_off_path) {
     // dfe off conf off
     if (op->conf_off_path) {
-      STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_OPS);
+      STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_REALISTIC_OPS + perfect_off_path);
       if (last_in_ft) {
-        STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_FETCH_TARGETS);
+        STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_REALISTIC_FETCH_TARGETS + perfect_off_path);
       }
       // dfe off conf on
     } else {
@@ -105,6 +105,7 @@ void ConfMechStatBase::recover(Op* op) {
   prev_op = nullptr;
   off_path_reason = REASON_NOT_IDENTIFIED;
   conf_off_path_reason = REASON_CONF_NOT_IDENTIFIED;
+  perfect_off_path = false;
 }
 
 void ConfMechStatBase::print_data() {
@@ -140,26 +141,49 @@ void Conf::set_prev_op(Op* op) {
 void Conf::update(Op* op, Flag last_in_ft) {
   ASSERT(proc_id, CONFIDENCE_ENABLE);
   Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
-  if (PERFECT_CONFIDENCE) {
-    if (decoupled_fe_is_off_path())
-      conf_off_path = true;
-    if (conf_off_path)
-      ASSERT(proc_id, decoupled_fe_is_off_path());
-    update_state_perfect_conf(op);
-    // SUS?? using stat data for mech logic??
-  } else if (get_off_path_reason() == REASON_NOT_IDENTIFIED ||
-             get_conf_off_path_reason() ==
-                 REASON_CONF_NOT_IDENTIFIED) {  // update until both real/confidence path go off
+  perfect_conf_update(op, new_reason);
+  if (!PERFECT_CONFIDENCE && new_reason == REASON_CONF_NOT_IDENTIFIED &&
+      (get_off_path_reason() == REASON_NOT_IDENTIFIED ||
+       get_conf_off_path_reason() == REASON_CONF_NOT_IDENTIFIED)) {  // update until both real/confidence path go off
     per_op_update(op, new_reason);
     if (op->table_info->cf_type)
       per_cf_op_update(op, new_reason);
     if (last_in_ft)
       per_ft_update(op, new_reason);
-    conf_off_path = new_reason != REASON_CONF_NOT_IDENTIFIED;
   }
+  conf_off_path = (conf_off_path || (new_reason != REASON_CONF_NOT_IDENTIFIED));
   conf_mech->conf_mech_stat->update(op, new_reason, last_in_ft);
   STAT_EVENT(proc_id, CONF_OFF_IBTB_MISS_BP_TAKEN + new_reason);
   set_prev_op(op);
+}
+
+void Conf::perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason) {
+  if (!PERFECT_CONFIDENCE && !CONF_PERFECT_BTB_MISS_CONF && !CONF_PERFECT_IBTB_MISS_CONF &&
+      !CONF_PERFECT_MISFETCH_CONF && !CONF_PERFECT_MISPRED_CONF)
+    return;
+  if (PERFECT_CONFIDENCE) {
+    if (op->oracle_info.off_path_reason) {
+      DEBUG(proc_id, "Perfect conf update for op %llu, off_path_reason: %d, off_path %d\n", op->op_num,
+            op->oracle_info.off_path_reason, op->off_path);
+      new_reason = REASON_PERFECT_CONF;
+      conf_mech->conf_mech_stat->perfect_off_path = true;
+    }
+    if (conf_off_path)
+      ASSERT(proc_id, decoupled_fe_is_off_path());
+    update_state_perfect_conf(op);
+  } else {
+    Off_Path_Reason off_path_reason = (Off_Path_Reason)op->oracle_info.off_path_reason;
+    // add perfect to conf_op_reason
+    if ((CONF_PERFECT_MISPRED_CONF &&
+        (off_path_reason == REASON_MISPRED || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
+        (CONF_PERFECT_BTB_MISS_CONF &&
+        (off_path_reason == REASON_BTB_MISS || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
+        (CONF_PERFECT_IBTB_MISS_CONF && (off_path_reason == REASON_IBTB_MISS)) || 
+        (CONF_PERFECT_MISFETCH_CONF && (off_path_reason == REASON_MISFETCH))) {
+      conf_mech->conf_mech_stat->perfect_off_path = true;
+      new_reason = REASON_PERFECT_CONF;
+    }
+  }
 }
 
 void Conf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
@@ -188,6 +212,8 @@ void Conf::per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) {
 
 void Conf::per_cycle_update() {
   ASSERT(proc_id, PERFECT_CONFIDENCE ? conf_off_path == decoupled_fe_is_off_path() : true);
+  if (PERFECT_CONFIDENCE)
+    return;
   if (get_off_path_reason() != REASON_NOT_IDENTIFIED && get_conf_off_path_reason() != REASON_CONF_NOT_IDENTIFIED)
     return;
   Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;

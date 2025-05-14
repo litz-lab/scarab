@@ -360,3 +360,5 @@ DEF_PARAM(conf_perfect_btb_miss_conf, CONF_PERFECT_BTB_MISS_CONF, Flag, Flag, FA
 DEF_PARAM(conf_perfect_ibtb_miss_conf, CONF_PERFECT_IBTB_MISS_CONF, Flag, Flag, FALSE, )
 DEF_PARAM(conf_perfect_misfetch_conf, CONF_PERFECT_MISFETCH_CONF, Flag, Flag, FALSE, )
 DEF_PARAM(conf_perfect_mispred_conf, CONF_PERFECT_MISPRED_CONF, Flag, Flag, FALSE, )
+
+DEF_PARAM(conf_log_dfe_to_rec, CONF_LOG_DFE_TO_REC, Flag, Flag, FALSE, )

@@ -39,7 +39,8 @@ class ConfMechStatBase {
       : proc_id(_proc_id),
         prev_op(nullptr),
         off_path_reason(REASON_NOT_IDENTIFIED),
-        conf_off_path_reason(REASON_CONF_NOT_IDENTIFIED) {}
+        conf_off_path_reason(REASON_CONF_NOT_IDENTIFIED),
+        perfect_off_path(false) {}
   void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle);
   void recover(Op* op);
   void print_data();
@@ -61,6 +62,8 @@ class ConfMechStatBase {
 
   Off_Path_Reason off_path_reason;
   Conf_Off_Path_Reason conf_off_path_reason;
+
+  bool perfect_off_path;
 };
 
 // Confidence Mechanism interface
@@ -106,6 +109,8 @@ class Conf {
   void per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason);
   void per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason);
   void update_state_perfect_conf(Op* op) { conf_mech->update_state_perfect_conf(op); }
+  void perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason);
+
   // confidence mech object
   ConfMechBase* conf_mech;
 

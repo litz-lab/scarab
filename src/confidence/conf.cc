@@ -175,10 +175,10 @@ void Conf::perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason) {
     Off_Path_Reason off_path_reason = (Off_Path_Reason)op->oracle_info.off_path_reason;
     // add perfect to conf_op_reason
     if ((CONF_PERFECT_MISPRED_CONF &&
-        (off_path_reason == REASON_MISPRED || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
+         (off_path_reason == REASON_MISPRED || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
         (CONF_PERFECT_BTB_MISS_CONF &&
-        (off_path_reason == REASON_BTB_MISS || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
-        (CONF_PERFECT_IBTB_MISS_CONF && (off_path_reason == REASON_IBTB_MISS)) || 
+         (off_path_reason == REASON_BTB_MISS || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
+        (CONF_PERFECT_IBTB_MISS_CONF && (off_path_reason == REASON_IBTB_MISS)) ||
         (CONF_PERFECT_MISFETCH_CONF && (off_path_reason == REASON_MISFETCH))) {
       conf_mech->conf_mech_stat->perfect_off_path = true;
       new_reason = REASON_PERFECT_CONF;

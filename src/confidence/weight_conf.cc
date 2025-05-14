@@ -22,7 +22,7 @@ void WeightConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
 void WeightConf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
   if (!CONF_PERFECT_BTB_MISS_CONF && !CONF_PERFECT_MISPRED_CONF) {
     low_confidence_cnt +=
-      3 - op->bp_confidence + (double)CONF_BTB_MISS_RATE_WEIGHT * btb_miss_rate;  // 3 is highest bp_confidence
+        3 - op->bp_confidence + (double)CONF_BTB_MISS_RATE_WEIGHT * btb_miss_rate;  // 3 is highest bp_confidence
     cf_op_distance = 0.0;
   }
 

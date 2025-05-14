@@ -40,22 +40,23 @@ class BTBMissBPTakenConfStat : public ConfMechStatBase {
 class BTBMissBPTakenConf : public ConfMechBase {
  public:
   BTBMissBPTakenConf(uns _proc_id)
-      : ConfMechBase(_proc_id), cnt_btb_miss(0), 
-                                btb_miss_rate(0.0), 
-                                last_btb_recover_cycle(0), 
-                                cnt_ibtb_miss(0),
-                                ibtb_miss_rate(0.0),
-                                last_ibtb_recover_cycle(0),
-                                cnt_misfetch(0),
-                                misfetch_rate(0.0),
-                                last_misfetch_recover_cycle(0),
-                                cnt_mispred(0),
-                                mispred_rate(0.0),
-                                last_mispred_recover_cycle(0),
-                                low_confidence_cnt(0),
-                                last_recover_cycle(0),
-                                cnt_on_path_instructions(0),
-                                effective_ipc(0.0) {
+      : ConfMechBase(_proc_id),
+        cnt_btb_miss(0),
+        btb_miss_rate(0.0),
+        last_btb_recover_cycle(0),
+        cnt_ibtb_miss(0),
+        ibtb_miss_rate(0.0),
+        last_ibtb_recover_cycle(0),
+        cnt_misfetch(0),
+        misfetch_rate(0.0),
+        last_misfetch_recover_cycle(0),
+        cnt_mispred(0),
+        mispred_rate(0.0),
+        last_mispred_recover_cycle(0),
+        low_confidence_cnt(0),
+        last_recover_cycle(0),
+        cnt_on_path_instructions(0),
+        effective_ipc(0.0) {
     conf_mech_stat = new BTBMissBPTakenConfStat(_proc_id, this);
   }
   // update functions

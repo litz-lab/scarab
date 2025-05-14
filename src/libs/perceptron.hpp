@@ -26,12 +26,12 @@
  * Description  :
  ***************************************************************************************/
 
-#include <vector>
-#include <string>
 #include <numeric>
+#include <string>
+#include <vector>
 
-#include "globals/global_types.h"
 #include "globals/assert.h"
+#include "globals/global_types.h"
 
 /*
  * Perceptron-based predictor implementation.
@@ -93,7 +93,8 @@ struct SingleIncrement {
 template <typename IndexFunction = PCBasedIndex, typename WeightUpdate = SaturatingCounterUpdate>
 class PerceptronTable {
  public:
-  PerceptronTable(int _num_features, int _num_entries, double _learning_rate, double _theta, int weight_width, double _threshold)
+  PerceptronTable(int _num_features, int _num_entries, double _learning_rate, double _theta, int weight_width,
+                  double _threshold)
       : num_features(_num_features),
         num_entries(_num_entries),
         learning_rate(_learning_rate),
@@ -112,7 +113,7 @@ class PerceptronTable {
     int index = IndexFunction::get_index(pc, num_entries, history);
     // Using 0 as threshold here is intended. Using threshold in both train and test doesn't move the decision boundary.
     double error = (prediction_val >= 0.0) == correct_prediction ? 0.0 : (correct_prediction ? 1.0 : -1.0);
-    if (error == 0.0 && !( prediction_val < theta && prediction > -theta)) {
+    if (error == 0.0 && !(prediction_val < theta && prediction > -theta)) {
       return;
     }
     for (u_int i = 0; i < num_features; ++i) {
@@ -125,7 +126,7 @@ class PerceptronTable {
     ASSERT(0, features.size() == num_features);
     int index = IndexFunction::get_index(pc, num_entries, history);
     double sum = std::inner_product(weights[index].begin(), weights[index].end() - 1, features.begin(),
-                                     weights[index][num_features]);
+                                    weights[index][num_features]);
     sum_out = sum;
     prediction = sum >= threshold;
     return prediction;
@@ -162,5 +163,5 @@ class PerceptronTable {
   double learning_rate;
   double theta;
   double saturation_value;
-  double threshold; // moves decision boundary for inference
+  double threshold;  // moves decision boundary for inference
 };

@@ -1,5 +1,10 @@
 #ifndef __BTB_MISS_BP_TAKEN_H__
 #define __BTB_MISS_BP_TAKEN_H__
+
+#include <map>
+#include <tuple>
+#include <vector>
+
 #include "decoupled_frontend.h"
 
 #include "confidence/conf.hpp"
@@ -10,10 +15,18 @@ class BTBMissBPTakenConfStat : public ConfMechStatBase {
  public:
   BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech);
   void ext_update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle) override;
-  void ext_recover(Op* op) override {}
+  void ext_recover(Op* op) override;
   void ext_print_data() override;
 
+  void log_off_path_event(Op* op);
+  void log_resolution(Op* op);
+
   BTBMissBPTakenConf* conf_mech;
+
+  Counter cnt_total_ops;
+
+  std::map<Counter, std::tuple<Counter, Counter, Off_Path_Reason>> resteer_ops_cycles;
+  std::map<Counter, std::tuple<Counter, Counter, Off_Path_Reason>> resteer_ops_ops;
 };
 
 class BTBMissBPTakenConf : public ConfMechBase {

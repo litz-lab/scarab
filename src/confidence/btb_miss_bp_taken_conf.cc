@@ -3,14 +3,67 @@
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CONF, ##args)
 
 BTBMissBPTakenConfStat::BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech)
-    : ConfMechStatBase(_proc_id) {
+    : ConfMechStatBase(_proc_id),
+      cnt_total_ops(0) {
   conf_mech = _conf_mech;
 }
 
 void BTBMissBPTakenConfStat::ext_update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle) {
+  log_off_path_event(op);
+  cnt_total_ops++;
+}
+
+void BTBMissBPTakenConfStat::ext_recover(Op* op) {
+  log_resolution(op);
 }
 
 void BTBMissBPTakenConfStat::ext_print_data() {
+  FILE* fp;
+  if (CONF_LOG_DFE_TO_REC) {
+    fp = fopen("off_path_events_cycles.csv", "w");
+    fprintf(fp, "op_num,dfe_cycle,resolved_cycle,off_path_reason\n");
+    for (const std::pair<const Counter, std::tuple<Counter, Counter, Off_Path_Reason>>& line : resteer_ops_cycles) {
+      fprintf(fp, "%llu,%llu,%llu,%d", line.first, std::get<0>(line.second), std::get<1>(line.second),
+              std::get<2>(line.second));
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
+    fp = fopen("off_path_events_ops.csv", "w");
+    fprintf(fp, "op_num,dfe_num_ops,resolved_num_ops,off_path_reason\n");
+    for (const std::pair<const Counter, std::tuple<Counter, Counter, Off_Path_Reason>>& line : resteer_ops_ops) {
+      fprintf(fp, "%llu,%llu,%llu,%d", line.first, std::get<0>(line.second), std::get<1>(line.second),
+              std::get<2>(line.second));
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
+  }
+}
+
+void BTBMissBPTakenConfStat::log_off_path_event(Op* op) {
+  if (!CONFIDENCE_ENABLE || !CONF_LOG_DFE_TO_REC)
+    return;
+  Off_Path_Reason op_reason = (Off_Path_Reason)op->oracle_info.off_path_reason;
+  if (!op_reason)
+    return;
+  std::get<0>(resteer_ops_cycles[op->op_num]) = cycle_count;
+  std::get<1>(resteer_ops_cycles[op->op_num]) = 0;
+  std::get<2>(resteer_ops_cycles[op->op_num]) = op_reason;
+
+  std::get<0>(resteer_ops_ops[op->op_num]) = cnt_total_ops;
+  std::get<1>(resteer_ops_ops[op->op_num]) = 0;
+  std::get<2>(resteer_ops_ops[op->op_num]) = op_reason;
+}
+
+void BTBMissBPTakenConfStat::log_resolution(Op* op) {
+  if (!CONFIDENCE_ENABLE || !CONF_LOG_DFE_TO_REC)
+    return;
+  Off_Path_Reason op_reason = (Off_Path_Reason)op->oracle_info.off_path_reason;
+  std::get<1>(resteer_ops_cycles[op->op_num]) = cycle_count;
+  std::get<2>(resteer_ops_cycles[op->op_num]) = op_reason;
+
+  std::get<1>(resteer_ops_cycles[op->op_num]) = cnt_total_ops;
+  std::get<2>(resteer_ops_cycles[op->op_num]) = op_reason;
+  DEBUG(proc_id, "Op off-path reason");
 }
 
 void BTBMissBPTakenConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {

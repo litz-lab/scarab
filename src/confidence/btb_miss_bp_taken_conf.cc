@@ -10,6 +10,7 @@ BTBMissBPTakenConfStat::BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf*
 void BTBMissBPTakenConfStat::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft) {
   ConfMechStatBase::update(op, reason, last_in_ft);
   log_off_path_event(op);
+  log_phase_cycles(op);
 }
 
 void BTBMissBPTakenConfStat::recover(Op* op) {
@@ -20,6 +21,36 @@ void BTBMissBPTakenConfStat::recover(Op* op) {
 void BTBMissBPTakenConfStat::print_data() {
   ConfMechStatBase::print_data();
   FILE* fp;
+  if (CONF_LOG_PHASE_CYCLES) {
+    fp = fopen("phase_cycles_btb_miss.csv", "w");
+    fprintf(fp, "cycles_since_rec,cycles_since_event,phase,miss_rate\n");
+    for (auto it = btb_miss_event_cycles.begin(); it != btb_miss_event_cycles.end(); ++it) {
+      fprintf(fp, "%llu,%llu,%llu,%f", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it), std::get<3>(*it));
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
+    fp = fopen("phase_cycles_ibtb_miss.csv", "w");
+    fprintf(fp, "cycles_since_rec,cycles_since_event,phase,miss_rate\n");
+    for (auto it = ibtb_miss_event_cycles.begin(); it != ibtb_miss_event_cycles.end(); ++it) {
+      fprintf(fp, "%llu,%llu,%llu,%f", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it), std::get<3>(*it));
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
+    fp = fopen("phase_cycles_mispred.csv", "w");
+    fprintf(fp, "cycles_since_rec,cycles_since_event,phase,miss_rate\n");
+    for (auto it = mispred_event_cycles.begin(); it != mispred_event_cycles.end(); ++it) {
+      fprintf(fp, "%llu,%llu,%llu,%f", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it), std::get<3>(*it));
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
+    fp = fopen("phase_cycles_misfetch.csv", "w");
+    fprintf(fp, "cycles_since_rec,cycles_since_event,phase,miss_rate\n");
+    for (auto it = misfetch_event_cycles.begin(); it != misfetch_event_cycles.end(); ++it) {
+      fprintf(fp, "%llu,%llu,%llu,%f", std::get<0>(*it), std::get<1>(*it), std::get<2>(*it), std::get<3>(*it));
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
+  }
   if (CONF_LOG_DFE_TO_REC) {
     fp = fopen("off_path_events_cycles.csv", "w");
     fprintf(fp, "op_num,dfe_cycle,resolved_cycle,off_path_reason\n");
@@ -37,6 +68,53 @@ void BTBMissBPTakenConfStat::print_data() {
       fprintf(fp, "\n");
     }
     fclose(fp);
+  }
+}
+
+void BTBMissBPTakenConfStat::log_phase_cycles(Op* op) {
+  if (!CONFIDENCE_ENABLE || !CONF_LOG_PHASE_CYCLES)
+    return;
+  Off_Path_Reason op_reason = (Off_Path_Reason)op->oracle_info.off_path_reason;
+  switch (op_reason) {
+    case REASON_NOT_IDENTIFIED: {
+      break;
+    }
+    case REASON_IBTB_MISS: {
+      ibtb_miss_event_cycles.push_back(
+          phase_cycles_line(cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_ibtb_recover_cycle,
+                            cycle_count - (cycle_count % CONF_IBTB_MISS_SAMPLE_RATE), (double)conf_mech->ibtb_miss_rate));
+      break;
+    }
+    case REASON_BTB_MISS: {
+      btb_miss_event_cycles.push_back(
+          phase_cycles_line(cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_btb_recover_cycle,
+                            cycle_count - (cycle_count % CONF_BTB_MISS_SAMPLE_RATE), (double)conf_mech->btb_miss_rate));
+      break;
+    }
+    case REASON_BTB_MISS_MISPRED: {
+      btb_miss_event_cycles.push_back(
+          phase_cycles_line(cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_btb_recover_cycle,
+                            cycle_count - (cycle_count % CONF_BTB_MISS_SAMPLE_RATE), (double)conf_mech->btb_miss_rate));
+      mispred_event_cycles.push_back(
+          phase_cycles_line(cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_mispred_recover_cycle,
+                            cycle_count - (cycle_count % CONF_MISPRED_SAMPLE_RATE), (double)conf_mech->mispred_rate));
+      break;
+    }
+    case REASON_MISPRED: {
+      mispred_event_cycles.push_back(
+          phase_cycles_line(cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_mispred_recover_cycle,
+                            cycle_count - (cycle_count % CONF_MISPRED_SAMPLE_RATE), (double)conf_mech->mispred_rate));
+      break;
+    }
+    case REASON_MISFETCH: {
+      misfetch_event_cycles.push_back(
+          phase_cycles_line(cycle_count - conf_mech->last_recover_cycle, cycle_count - conf_mech->last_misfetch_recover_cycle,
+                            cycle_count - (cycle_count % CONF_MISFETCH_SAMPLE_RATE), (double)conf_mech->misfetch_rate));
+      break;
+    }
+    default: {
+      ASSERT(proc_id, 0);
+    }
   }
 }
 

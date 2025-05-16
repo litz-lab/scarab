@@ -144,6 +144,32 @@ void FT::set_consumed() {
   consumed = true;
 }
 
+Op* FT::peek_next_op() {
+  return ops[op_pos];
+}
+
+Op* FT::peek_last_op() {
+  return ops.back();
+}
+
+std::vector<Addr> FT::get_all_pc() {
+  std::vector<Addr> pc_list;
+  for (auto op : ops) {
+    if (op && op->inst_info) {
+      pc_list.push_back(op->inst_info->addr);
+    }
+  }
+  return pc_list;
+}
+
+void FT::write_FT_id(uint64_t id_write) {
+  ft_info.dynamic_info.FT_id = id_write;
+}
+
+uint64_t FT::get_FT_id() {
+  return ft_info.dynamic_info.FT_id;
+}
+
 /* FT wrappers */
 bool ft_can_fetch_op(FT* ft) {
   return ft->can_fetch_op();

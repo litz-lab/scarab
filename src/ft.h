@@ -75,6 +75,11 @@ class FT {
   FT_Info get_ft_info();
   bool is_consumed();
   void set_consumed();
+  Op* peek_next_op();
+  Op* peek_last_op();
+  std::vector<Addr> get_all_pc();
+  void write_FT_id(uint64_t id_write);
+  uint64_t get_FT_id();
 
  private:
   uns proc_id;

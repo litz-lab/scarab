@@ -29,6 +29,8 @@
 #ifndef __FT_INFO_H__
 #define __FT_INFO_H__
 
+#include <stdint.h>
+
 #include "globals/global_types.h"
 
 typedef enum FT_Started_By_enum {
@@ -65,6 +67,8 @@ typedef struct FT_Info_Dynamic_struct {
   FT_Ended_By ended_by;
   // if the first op of this FT is off-path
   Flag first_op_off_path;
+  // the FT id monotonically increases
+  uint64_t FT_id;
 } FT_Info_Dynamic;
 
 struct FT_Info_struct {

@@ -59,6 +59,7 @@
 
 #include "cmp_model.h"
 #include "decode_stage.h"
+#include "ft.h"
 #include "map.h"
 #include "op_pool.h"
 #include "sim.h"

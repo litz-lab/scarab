@@ -87,10 +87,7 @@ typedef struct Icache_Stage_struct {
   /* two data paths: */
   /* uops fetched from uop cache go to uopc_sd, otherwise sd */
   Stage_Data sd; /* stage interface data */
-  Stage_Data uopc_sd;
-
-  uns8 icache_lookups_per_cycle_count;
-  uns8 uop_cache_lookups_per_cycle_count;
+  uns8 lookups_per_cycle_count;
 
   Icache_State state;           /* state that the ICACHE is in */
   Icache_State next_state;      /* state that the ICACHE is going to be in next cycle */
@@ -102,8 +99,7 @@ typedef struct Icache_Stage_struct {
   Addr line_addr;   /* address of the last cache line hit */
   Addr fetch_addr;  /* address to fetch or fetching */
   // keep track of the current FT being used by the icache / uop cache
-  FT* current_ft_used_by_uop_cache;
-  FT* current_ft_used_by_icache;
+  FT* current_ft;
   Flag off_path;     /* is the icache fetching on the correct path? */
   Flag back_on_path; /* did a recovery happen to put the machine back on path? */
 

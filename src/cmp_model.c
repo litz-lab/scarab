@@ -107,6 +107,7 @@ void cmp_init(uns mode) {
     cmp_set_all_stages(proc_id);
     cmp_init_thread_data(proc_id);
 
+    init_uop_cache_stage(proc_id, "UOP_CACHE");
     init_icache_stage(proc_id, "ICACHE");
     init_decode_stage(proc_id, "DECODE");
     init_uop_queue_stage();
@@ -120,7 +121,6 @@ void cmp_init(uns mode) {
     /* initialize the common data structures */
     init_bp_recovery_info(proc_id, &cmp_model.bp_recovery_info[proc_id]);
     init_bp_data(proc_id, &cmp_model.bp_data[proc_id]);
-    init_uop_cache(proc_id);
 
     init_decoupled_fe(proc_id, "DCFE");
 
@@ -227,11 +227,11 @@ void cmp_cores(void) {
       update_map_stage(idq_stage_get_stage_data());
 
       /* IDQ stage that bridges the front-end and back-end */
-      /* This stage can get uops from the ic->uopc_sd, cache queue, or decoder. */
-      update_idq_stage(dec->last_sd, &ic->uopc_sd, uop_queue_stage_get_latest_sd());
+      /* This stage can get uops from the uc->sd, cache queue, or decoder. */
+      update_idq_stage(dec->last_sd, &uc->sd, uop_queue_stage_get_latest_sd());
 
       /* Front-end pipiline */
-      update_uop_queue_stage(&ic->uopc_sd);
+      update_uop_queue_stage(&uc->sd);
       update_decode_stage(&ic->sd);
       update_icache_stage();
 

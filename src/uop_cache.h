@@ -15,7 +15,9 @@
 extern "C" {
 #endif
 
+#include "decoupled_frontend.h"
 #include "op.h"
+#include "stage_data.h"
 
 // Uop Cache Data
 typedef struct Uop_Cache_Data_struct {
@@ -32,12 +34,25 @@ typedef struct Uop_Cache_Data_struct {
   Flag priority;
 } Uop_Cache_Data;
 
+typedef struct Uop_Cache_Stage_struct {
+  uns8 proc_id;
+  Stage_Data sd;
+  uns8 lookups_per_cycle_count;
+  FT* current_ft;
+} Uop_Cache_Stage;
+
+/**************************************************************************************/
+/* External Variables */
+
+extern Uop_Cache_Stage* uc;
+
 /**************************************************************************************/
 /* Prototypes */
 
+void set_uop_cache_stage(Uop_Cache_Stage* new_uc);
+void init_uop_cache_stage(uns8 proc_id, const char* name);
+
 void alloc_mem_uop_cache(uns num_cores);
-void init_uop_cache(uns8 proc_id);
-void set_uop_cache(uns8 proc_id);
 void recover_uop_cache(void);
 
 Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath);

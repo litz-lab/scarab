@@ -181,8 +181,7 @@ void decoupled_fe_conf_resovle_cf(Op* op) {
 }
 
 /* Decoupled_FE member functions */
-Decoupled_FE::Decoupled_FE(uns _proc_id)
-    : proc_id(_proc_id), current_ft_to_push(_proc_id) {
+Decoupled_FE::Decoupled_FE(uns _proc_id) : proc_id(_proc_id), current_ft_to_push(_proc_id) {
   init(_proc_id);
 }
 

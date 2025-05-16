@@ -38,8 +38,7 @@
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
 /* FT member functions */
-FT::FT(uns _proc_id)
-    : proc_id(_proc_id), consumed(false) {
+FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
   free_ops_and_clear();
 }
 

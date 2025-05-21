@@ -147,6 +147,7 @@ class LSQ_Unit {
 
  public:
   LSQ_Unit(uns8 proc_id);
+  const LSQ* get_queue(Mem_Type mem_type) const;
 
   void init(uns8 proc_id);
   Flag available(Op* mem_op);
@@ -157,6 +158,22 @@ class LSQ_Unit {
 
 LSQ_Unit::LSQ_Unit(uns8 proc_id) {
   this->init(proc_id);
+}
+
+const LSQ* LSQ_Unit::get_queue(Mem_Type mem_type) const {
+  switch (mem_type) {
+    case MEM_LD:
+      return &load_queue;
+
+    case MEM_ST:
+      return &store_queue;
+
+    default:
+      ASSERT(this->proc_id, FALSE);
+      break;
+  }
+
+  return nullptr;
 }
 
 void LSQ_Unit::init(uns8 proc_id) {
@@ -298,4 +315,27 @@ void lsq_commit(Op* mem_op) {
 
   ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
   lsq_unit->commit(mem_op);
+}
+
+/**************************************************************************************/
+
+int lsq_get_load_num() {
+  if (!LSQ_ENABLE)
+    return 0;
+
+  return lsq_unit->get_queue(MEM_LD)->get_entries().size();
+}
+
+int lsq_get_unready_store_num() {
+  if (!LSQ_ENABLE)
+    return 0;
+
+  int unready_num = 0;
+  const auto& store_entries = lsq_unit->get_queue(MEM_ST)->get_entries();
+  for (const auto& entry : store_entries) {
+    if (entry.op->state < OS_READY && entry.op->state > OS_IN_RS)
+      unready_num++;
+  }
+
+  return unready_num;
 }

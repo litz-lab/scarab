@@ -60,6 +60,7 @@
 #include "sim.h"
 #include "statistics.h"
 #include "thread.h"
+#include "topdown.h"
 #include "uop_cache.h"
 
 /******************************************************************************/
@@ -139,6 +140,8 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
     INC_STAT_EVENT(0, SCHEDULED_DECODE_LAT, cycle_count - op->recovery_info.predict_cycle);
     STAT_EVENT(0, SCHEDULED_DECODE_RECOVERIES);
   }
+
+  topdown_bp_recovery(op->proc_id, op);
 
   if (bp_recovery_info->recovery_cycle == MAX_CTR || op->op_num <= bp_recovery_info->recovery_op_num) {
     const Addr next_fetch_addr = op->oracle_info.npc;

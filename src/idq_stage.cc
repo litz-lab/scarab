@@ -44,6 +44,7 @@ extern "C" {
 
 #include "decode_stage.h"
 #include "op_pool.h"
+#include "topdown.h"
 }
 
 class IDQ_Stage {
@@ -183,6 +184,8 @@ Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Dat
 
 void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
   /* Fill the IDQ output stage data with uops from IDQ. */
+  int count_total = 0;
+  int count_on_path = 0;
   for (int i = idq_sd.op_count; i < idq_sd.max_op_count; i++) {
     Op* op = dequeue();
     if (!op) {
@@ -191,14 +194,23 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
     }
     idq_sd.ops[i] = op;
     idq_sd.op_count++;
+
+    if (!op->off_path) {
+      count_on_path++;
+    }
+    count_total++;
   }
 
   /* Select the input stage data. */
   Stage_Data* consume_from_sd = select_input_stage_data(dec_src_sd, ic_uopc_sd, uop_queue_sd);
+
+  topdown_idq_update(proc_id, count_total, count_on_path, consume_from_sd);
+
   /* Return if the next expected uop has not yet arrived. */
   if (!consume_from_sd) {
     return;
   }
+
   /* Return if there is no enough space. */
   if (capacity - occupied_count < consume_from_sd->op_count) {
     ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count);

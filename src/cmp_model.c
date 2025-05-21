@@ -60,6 +60,7 @@
 #include "op_pool.h"
 #include "sim.h"
 #include "statistics.h"
+#include "topdown.h"
 #include "uop_queue_stage.h"
 
 /**************************************************************************************/
@@ -304,6 +305,7 @@ void cmp_done() {
 /* cmp_done: */
 
 void cmp_per_core_done(uns8 proc_id) {
+  topdown_done(proc_id);
   stats_per_core_collect(proc_id);
   if (PREF_FRAMEWORK_ON)
     pref_per_core_done(proc_id);

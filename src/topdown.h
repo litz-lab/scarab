@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 University of California Santa Cruz
+ * Copyright (c) 2025 University of California, Santa Cruz
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,38 +21,26 @@
  */
 
 /***************************************************************************************
- * File         : lsq.h
- * Author       : Litz Lab
- * Date         : 7/2025
+ * File         : topdown.h
+ * Author       : Yinyuan Zhao, Litz Lab
+ * Date         : 05/2025
  * Description  :
+ *    Implements the Top-Down performance analysis methodology based on:
+ *      Yasin, A. "A Top-Down Method for Performance Analysis and Counters Architecture,"
+ *      2014 IEEE International Symposium on Performance Analysis of Systems and Software.
  ***************************************************************************************/
 
-#ifndef __LSQ_H__
-#define __LSQ_H__
+#ifndef __TOPDOWN_H__
+#define __TOPDOWN_H__
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "globals/global_types.h"
 
 #include "op.h"
+#include "stage_data.h"
 
-/**************************************************************************************/
-/* External Methods */
+void topdown_bp_recovery(uns proc_id, Op* op);
+void topdown_idq_update(uns proc_id, int count_total, int count_on_path, Stage_Data* consume_from_sd);
+void topdown_exec_update(uns proc_id, uns8 fus_busy);
+void topdown_done(uns proc_id);
 
-void alloc_mem_lsq(uns num_cores);
-void set_lsq(uns8 proc_id);
-void init_lsq(uns8 proc_id, const char* name);
-void recover_lsq();
-
-Flag lsq_available(Op* mem_op);  // check if there is an available LSQ entry
-void lsq_dispatch(Op* mem_op);   // insert mem op into LSQ when mem op is inserted into ROB
-void lsq_commit(Op* mem_op);     // free the entry when the mem op is retired
-
-int lsq_get_load_num();
-int lsq_get_unready_store_num();
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* #ifndef __LSQ_H__ */
+#endif /* #ifndef __TOPDOWN_H__ */

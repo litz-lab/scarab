@@ -117,6 +117,10 @@ DEF_PARAM(core_61_cycle_time, CORE_61_CYCLE_TIME, uns, uns, 312500, )
 DEF_PARAM(core_62_cycle_time, CORE_62_CYCLE_TIME, uns, uns, 312500, )
 DEF_PARAM(core_63_cycle_time, CORE_63_CYCLE_TIME, uns, uns, 312500, )
 
+/********TOP-DOWN
+ * PARAMETERS********************************************************/
+DEF_PARAM(topdown_fu_exec_few, TOPDOWN_FU_EXEC_FEW, uns, uns, 0, )
+
 /********NODE TABLE
  * PARAMETERS********************************************************/
 DEF_PARAM(issue_width, ISSUE_WIDTH, uns, uns, 4, )

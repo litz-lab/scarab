@@ -9,6 +9,7 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch: # Allows manual triggering of the workflow to test before merging
 
 ############################################################
 # 2 ─── Shared variables ───────────────────────────────────
@@ -30,8 +31,8 @@ jobs:
       - id: tag
         name: Latest scarab‑infra SHA
         run: |
-          LATEST=$(curl -s https://api.github.com/repos/litz-lab/scarab-infra/commits/main | jq -r '.sha')
-          echo "short=${LATEST:0:7}" >>"$GITHUB_OUTPUT"
+          LATEST=$(curl -s https://raw.githubusercontent.com/litz-lab/scarab-infra/main/last_built_tag.txt)
+          echo "short=${LATEST}" >>"$GITHUB_OUTPUT"
 
 ############################################################
 # 4 ─── Job 1: build (opt) ─────────────────────────────────
@@ -105,8 +106,9 @@ jobs:
       - name: Pull sim container
         working-directory: scarab-infra
         run: |
+          LATEST=$(curl -s https://api.github.com/repos/litz-lab/scarab-infra/commits/main | jq -r '.sha')
           docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG}
-          docker tag  ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG} allbench_traces:${TAG}
+          docker tag  ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG} allbench_traces:${LATEST}
 
       # Conda Environment
       - name: Set up Miniconda

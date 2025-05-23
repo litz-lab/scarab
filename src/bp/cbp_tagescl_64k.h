@@ -294,10 +294,10 @@ struct SpeculativeStatesBase {
     ptghist = 0;
     phist = 0;
     memset((void *)ch_i, 0, sizeof(ch_i));
-    memset((void *)ch_t, 0, sizeof(ch_t));
+    memset(ch_t, 0, sizeof(ch_t));
     GHIST = 0;
-    memset((void *)WG, 0, sizeof(WG));
-    memset((void *)WP, 0, sizeof(WP));
+    memset(WG, 0, sizeof(WG));
+    memset(WP, 0, sizeof(WP));
     memset((void *)ltable, 0, sizeof(ltable));
   }
 

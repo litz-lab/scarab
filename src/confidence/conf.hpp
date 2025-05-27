@@ -40,9 +40,10 @@ class ConfMechStatBase {
         prev_op(nullptr),
         off_path_reason(REASON_NOT_IDENTIFIED),
         conf_off_path_reason(REASON_CONF_NOT_IDENTIFIED) {}
-  void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle);
-  void recover(Op* op);
-  void print_data();
+  virtual void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft);
+  virtual void per_cycle_update();
+  virtual void recover(Op* op);
+  virtual void print_data();
   void set_prev_op(Op* op);
 
   Off_Path_Reason get_off_path_reason() { return off_path_reason; }
@@ -66,7 +67,7 @@ class ConfMechBase {
   virtual void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
   virtual void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
   virtual void per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
-  virtual void per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
+  virtual void per_cycle_update(Conf_Off_Path_Reason& new_reason) = 0;
 
   virtual void update_state_perfect_conf(Op* op) = 0;
 
@@ -94,12 +95,13 @@ class Conf {
   Off_Path_Reason get_off_path_reason() { return conf_mech->conf_mech_stat->get_off_path_reason(); }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_mech->conf_mech_stat->get_conf_off_path_reason(); }
   void print_data() { conf_mech->conf_mech_stat->print_data(); }
+  // called every cycle, even if DFE is stalled
+  void per_cycle_update();
 
  private:
   void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason);
   void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason);
   void per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason);
-  void per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason);
   void update_state_perfect_conf(Op* op) { conf_mech->update_state_perfect_conf(op); }
   // confidence mech object
   ConfMechBase* conf_mech;

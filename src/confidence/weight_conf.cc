@@ -32,7 +32,7 @@ void WeightConf::per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) {
   return;
 }
 
-void WeightConf::per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason) {
+void WeightConf::per_cycle_update(Conf_Off_Path_Reason& new_reason) {
   if (cycle_count % CONF_BTB_MISS_SAMPLE_RATE == 0) {
     btb_miss_rate = (double)cnt_btb_miss / (double)CONF_BTB_MISS_SAMPLE_RATE;
     cnt_btb_miss = 0;

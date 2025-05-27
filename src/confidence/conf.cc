@@ -7,7 +7,26 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CONF, ##args)
 
-void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, bool new_cycle) {
+void ConfMechStatBase::per_cycle_update() {
+  if (off_path_reason) {
+    if (conf_off_path_reason) {
+      STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_CYCLES);
+    } else {
+      STAT_EVENT(proc_id, DFE_OFF_CONF_ON_CYCLES);
+      STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_CYCLES + off_path_reason);
+    }
+  } else {
+    if (conf_off_path_reason) {
+      STAT_EVENT(proc_id, DFE_ON_CONF_OFF_CYCLES);
+      STAT_EVENT(proc_id, DFE_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_CYCLES + conf_off_path_reason);
+    } else {
+      STAT_EVENT(proc_id, DFE_ON_CONF_ON_CYCLES);
+    }
+  }
+  DEBUG(proc_id, "stat cycle count: %llu\n", cycle_count);
+}
+
+void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft) {
   // this function should be called at the BEGINNING of derived class's update function
   ASSERT(proc_id, CONFIDENCE_ENABLE);
   // set conf_off_path_reason
@@ -26,19 +45,12 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
       if (last_in_ft) {
         STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_FETCH_TARGETS);
       }
-      if (new_cycle) {
-        STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_CYCLES);
-      }
       // dfe off conf on
     } else {
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_OPS);
       if (last_in_ft) {
         STAT_EVENT(proc_id, DFE_OFF_CONF_ON_FETCH_TARGETS);
         STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_FETCH_TARGETS + off_path_reason);
-      }
-      if (new_cycle) {
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_CYCLES);
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_CYCLES + off_path_reason);
       }
     }
   } else {
@@ -49,17 +61,11 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
         STAT_EVENT(proc_id, DFE_ON_CONF_OFF_FETCH_TARGETS);
         STAT_EVENT(proc_id, DFE_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_FETCH_TARGETS + conf_off_path_reason);
       }
-      if (new_cycle) {
-        STAT_EVENT(proc_id, DFE_ON_CONF_OFF_CYCLES);
-        STAT_EVENT(proc_id, DFE_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0_CYCLES + conf_off_path_reason);
-      }
       // dfe on conf on
     } else {
       STAT_EVENT(proc_id, DFE_ON_CONF_ON_OPS);
       if (last_in_ft)
         STAT_EVENT(proc_id, DFE_ON_CONF_ON_FETCH_TARGETS);
-      if (new_cycle)
-        STAT_EVENT(proc_id, DFE_ON_CONF_ON_CYCLES);
     }
   }
 
@@ -91,9 +97,6 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
     STAT_EVENT(proc_id, DFE_ON_CONF_OFF_NUM_EVENTS);
     STAT_EVENT(proc_id, DFE_ON_CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0 + conf_off_path_reason);
   }
-
-  if (new_cycle)
-    DEBUG(proc_id, "stat cycle count: %llu\n", cycle_count);
 }
 
 void ConfMechStatBase::recover(Op* op) {
@@ -137,7 +140,6 @@ void Conf::set_prev_op(Op* op) {
 void Conf::update(Op* op, Flag last_in_ft) {
   ASSERT(proc_id, CONFIDENCE_ENABLE);
   Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
-  bool new_cycle = cycle_count > last_cycle_count;
   if (PERFECT_CONFIDENCE) {
     if (decoupled_fe_is_off_path())
       conf_off_path = true;
@@ -153,13 +155,9 @@ void Conf::update(Op* op, Flag last_in_ft) {
       per_cf_op_update(op, new_reason);
     if (last_in_ft)
       per_ft_update(op, new_reason);
-    if (new_cycle) {
-      last_cycle_count = cycle_count;
-      per_cycle_update(op, new_reason);
-    }
     conf_off_path = new_reason != REASON_CONF_NOT_IDENTIFIED;
   }
-  conf_mech->conf_mech_stat->update(op, new_reason, last_in_ft, new_cycle);
+  conf_mech->conf_mech_stat->update(op, new_reason, last_in_ft);
   STAT_EVENT(proc_id, CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0 + new_reason);
   set_prev_op(op);
 }
@@ -188,6 +186,13 @@ void Conf::per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) {
   conf_mech->per_ft_update(op, new_reason);
 }
 
-void Conf::per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason) {
-  conf_mech->per_cycle_update(op, new_reason);
+void Conf::per_cycle_update() {
+  ASSERT(proc_id, PERFECT_CONFIDENCE ? conf_off_path == decoupled_fe_is_off_path() : true);
+  if (get_off_path_reason() != REASON_NOT_IDENTIFIED && get_conf_off_path_reason() != REASON_CONF_NOT_IDENTIFIED)
+    return;
+  Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
+  conf_mech->per_cycle_update(new_reason);
+  conf_off_path = new_reason != REASON_CONF_NOT_IDENTIFIED;
+  conf_mech->conf_mech_stat->per_cycle_update();
+  STAT_EVENT(proc_id, CONF_OFF_BTB_MISS_BP_TAKEN_CONF_0 + new_reason);
 }

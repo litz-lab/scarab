@@ -284,6 +284,9 @@ void Decoupled_FE::update() {
 
   // pop used fts in the front of the ftq
   pop_fts();
+  // update per-cycle confidence mechanism state
+  if (CONFIDENCE_ENABLE)
+    conf->per_cycle_update();
 
   while (1) {
     ASSERT(proc_id, ftq_num_fts() <= ftq_ft_num);

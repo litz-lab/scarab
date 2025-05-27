@@ -23,7 +23,7 @@ class BTBMissBPTakenConf : public ConfMechBase {
   void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
   void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
   void per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
-  void per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
+  void per_cycle_update(Conf_Off_Path_Reason& new_reason) override;
 
   void update_state_perfect_conf(Op* op) override;
 

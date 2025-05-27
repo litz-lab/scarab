@@ -80,7 +80,7 @@ jobs:
 # 6 ─── Job 3: run simulation & extract metrics ────────────
 ############################################################
   run-scarab:
-    needs: [get_tag, build-opt]
+    needs: get_tag
     runs-on: ubuntu-latest
     outputs:
       ipc:  ${{ steps.ipc.outputs.value }}
@@ -109,8 +109,8 @@ jobs:
           LATEST=$(curl -s https://api.github.com/repos/litz-lab/scarab-infra/commits/main | jq -r '.sha')
           echo "Pulling image with tag $TAG"
           docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG}
-          echo "Tagging it as $LATEST"
-          docker tag  ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG} allbench_traces:${LATEST}
+          echo "Tagging it as ${LATEST:0:7}"
+          docker tag  ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG} allbench_traces:${LATEST:0:7}
           echo "Local images:"
           docker images | grep allbench_traces
 

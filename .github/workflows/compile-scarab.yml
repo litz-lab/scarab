@@ -51,7 +51,7 @@ jobs:
       - name: Mark Git repo as safe
         run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
 
-      - name: Build Scarab Dbg
+      - name: Build Scarab Opt
         working-directory: src
         run: make opt -j
 
@@ -80,7 +80,7 @@ jobs:
 # 6 ─── Job 3: run simulation & extract metrics ────────────
 ############################################################
   run-scarab:
-    needs: [get_tag]
+    needs: [get_tag, build-opt]
     runs-on: ubuntu-latest
     outputs:
       ipc:  ${{ steps.ipc.outputs.value }}
@@ -107,8 +107,12 @@ jobs:
         working-directory: scarab-infra
         run: |
           LATEST=$(curl -s https://api.github.com/repos/litz-lab/scarab-infra/commits/main | jq -r '.sha')
+          echo "Pulling image with tag $TAG"
           docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG}
+          echo "Tagging it as $LATEST"
           docker tag  ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG} allbench_traces:${LATEST}
+          echo "Local images:"
+          docker images | grep allbench_traces
 
       # Conda Environment
       - name: Set up Miniconda

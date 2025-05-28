@@ -344,9 +344,7 @@ void Decoupled_FE::update() {
     frontend_fetch_op(proc_id, op);
     op->op_num = dfe_op_count++;
     op->off_path = off_path;
-    if (CONFIDENCE_ENABLE)
-      op->conf_off_path = conf->get_conf();
-    else
+    if (!CONFIDENCE_ENABLE)
       op->conf_off_path = FALSE;
 
     cur_op = op;
@@ -432,11 +430,6 @@ void Decoupled_FE::update() {
       cfs_taken_this_cycle += cf_taken || bar_fetch;
     }
 
-    if (CONFIDENCE_ENABLE) {
-      // update confidence
-      conf->update(op, ft_ended_by != FT_NOT_ENDED);
-    }
-
     current_ft_to_push.add_op(op, ft_ended_by);
     // ft_ended_by != FT_NOT_ENDED indicates the end of the current fetch target
     // it is now ready to be pushed to the queue
@@ -460,6 +453,9 @@ void Decoupled_FE::update() {
         }
       }
       ftq.emplace_back(current_ft_to_push);
+      if (CONFIDENCE_ENABLE) {
+        conf->update(current_ft_to_push);
+      }
       current_ft_to_push = FT(proc_id);
       if (ft_ended_by == FT_ICACHE_LINE_BOUNDARY) {
         current_ft_to_push.set_ft_started_by(FT_STARTED_BY_ICACHE_LINE_BOUNDARY);

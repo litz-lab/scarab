@@ -141,24 +141,38 @@ void Conf::set_prev_op(Op* op) {
   conf_mech->conf_mech_stat->set_prev_op(op);
 }
 
-void Conf::update(Op* op, Flag last_in_ft) {
-  ASSERT(proc_id, CONFIDENCE_ENABLE);
-  Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
-  if (!conf_off_path)
+void Conf::process_op(Op* op, Conf_Off_Path_Reason& new_reason, bool last_in_ft) {
+  op->conf_off_path = conf_off_path;
+  if (!conf_off_path) {
     perfect_conf_update(op, new_reason);
-  if (!PERFECT_CONFIDENCE && new_reason == REASON_CONF_NOT_IDENTIFIED &&
-      (get_off_path_reason() == REASON_NOT_IDENTIFIED ||
-       get_conf_off_path_reason() == REASON_CONF_NOT_IDENTIFIED)) {  // update until both real/confidence path go off
-    per_op_update(op, new_reason);
-    if (op->table_info->cf_type)
-      per_cf_op_update(op, new_reason);
-    if (last_in_ft)
-      per_ft_update(op, new_reason);
+    if (!PERFECT_CONFIDENCE && new_reason == REASON_CONF_NOT_IDENTIFIED) {
+      per_op_update(op, new_reason);
+      if (op->table_info->cf_type)
+        per_cf_op_update(op, new_reason);
+    }
   }
-  conf_off_path = (conf_off_path || (new_reason != REASON_CONF_NOT_IDENTIFIED));
+
+  conf_off_path |= (new_reason != REASON_CONF_NOT_IDENTIFIED);
   conf_mech->conf_mech_stat->update(op, new_reason, last_in_ft);
   STAT_EVENT(proc_id, CONF_OFF_IBTB_MISS_BP_TAKEN + new_reason);
   set_prev_op(op);
+}
+
+void Conf::update(FT pushed_ft) {
+  ASSERT(proc_id, CONFIDENCE_ENABLE);
+
+  std::vector<Op*> ops = pushed_ft.get_ops();
+  if (ops.empty())
+    return;
+
+  Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
+
+  for (auto op = ops.begin(); op != ops.end() - 1; ++op) {
+    process_op(*op, new_reason, false);
+  }
+
+  process_op(ops.back(), new_reason, true);
+  per_ft_update(ops.back(), new_reason);
 }
 
 void Conf::perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason) {
@@ -217,7 +231,6 @@ void Conf::per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) {
 }
 
 void Conf::per_cycle_update() {
-  ASSERT(proc_id, PERFECT_CONFIDENCE ? conf_off_path == decoupled_fe_is_off_path() : true);
   if (PERFECT_CONFIDENCE)
     return;
   if (get_off_path_reason() != REASON_NOT_IDENTIFIED && get_conf_off_path_reason() != REASON_CONF_NOT_IDENTIFIED)

@@ -144,6 +144,10 @@ void FT::set_consumed() {
   consumed = true;
 }
 
+std::vector<Op*>& FT::get_ops() {
+  return ops;
+}
+
 /* FT wrappers */
 bool ft_can_fetch_op(FT* ft) {
   return ft->can_fetch_op();

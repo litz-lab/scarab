@@ -30,6 +30,7 @@
 #define __CONF_H__
 
 #include "decoupled_frontend.h"
+#include "ft.h"
 
 typedef enum Confidence_Mechanism_enum {
   CONF_MECH_WEIGHT,
@@ -98,7 +99,7 @@ class Conf {
   uns get_conf() { return conf_off_path; }
   void recover(Op* op);
   void set_prev_op(Op* op);
-  void update(Op* op, Flag last_in_ft);
+  void update(FT ft_pushed);
   void resolve_cf(Op* op) { conf_mech->resolve_cf(op); }
   Off_Path_Reason get_off_path_reason() { return conf_mech->conf_mech_stat->get_off_path_reason(); }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_mech->conf_mech_stat->get_conf_off_path_reason(); }
@@ -112,6 +113,7 @@ class Conf {
   void per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason);
   void update_state_perfect_conf(Op* op) { conf_mech->update_state_perfect_conf(op); }
   void perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason);
+  void process_op(Op* op, Conf_Off_Path_Reason& new_reason, bool last_in_ft);
 
   // confidence mech object
   ConfMechBase* conf_mech;

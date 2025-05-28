@@ -75,6 +75,7 @@ class FT {
   FT_Info get_ft_info();
   bool is_consumed();
   void set_consumed();
+  std::vector<Op*>& get_ops();
 
  private:
   uns proc_id;

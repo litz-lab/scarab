@@ -172,7 +172,7 @@ struct Op_struct {
   Flag off_path;                // is the op on the correct path of the program? - oracle information
   Flag conf_off_path;           // is the op on the correct path of the program? - confidence information
   int32 perceptron_conf_prediction;  // confidence perceptron prediciton
-  double conf_features[22];          // confidence features
+  double* conf_features;             // confidence features
   Flag exit;                    // is this the last instruction to execute?
   Flag prog_input;              // is this op directly related to an input value of the program ?
   uns cf_within_fetch;          // branch number within a fetch cycle

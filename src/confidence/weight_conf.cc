@@ -45,7 +45,7 @@ void WeightConf::update_state_perfect_conf(Op* op) {
   cf_op_distance = 0.0;
 }
 
-void WeightConf::recover(Op* op) {
+void WeightConf::recover(Op* op, std::deque<FT>& ftq) {
   if (op->oracle_info.off_path_reason == REASON_BTB_MISS)
     cnt_btb_miss++;
   low_confidence_cnt = 0;

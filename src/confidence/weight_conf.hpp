@@ -28,7 +28,7 @@ class WeightConf : public ConfMechBase {
   void update_state_perfect_conf(Op* op) override;
 
   // recovery functions
-  void recover(Op* op) override;
+  void recover(Op* op, std::deque<FT>& ftq) override;
 
   // resolve cf
   void resolve_cf(Op* op) override;

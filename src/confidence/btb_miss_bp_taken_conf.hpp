@@ -15,7 +15,7 @@ class BTBMissBPTakenConfStat : public ConfMechStatBase {
  public:
   BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech);
   void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft) override;
-  void recover(Op* op) override;
+  void recover(Op* op, std::deque<FT>& ftq) override;
   void print_data() override;
 
   void log_off_path_event(Op* op);
@@ -68,7 +68,7 @@ class BTBMissBPTakenConf : public ConfMechBase {
   void update_state_perfect_conf(Op* op) override;
 
   // recovery functions
-  void recover(Op* op) override;
+  void recover(Op* op, std::deque<FT>& ftq) override;
 
   // resolve cf
   void resolve_cf(Op* op) override;

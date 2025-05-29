@@ -13,9 +13,9 @@ void BTBMissBPTakenConfStat::update(Op* op, Conf_Off_Path_Reason reason, bool la
   log_phase_cycles(op);
 }
 
-void BTBMissBPTakenConfStat::recover(Op* op) {
+void BTBMissBPTakenConfStat::recover(Op* op, std::deque<FT>& ftq) {
   log_resolution(op);
-  ConfMechStatBase::recover(op);
+  ConfMechStatBase::recover(op, ftq);
 }
 
 void BTBMissBPTakenConfStat::print_data() {
@@ -233,7 +233,7 @@ void BTBMissBPTakenConf::update_state_perfect_conf(Op* op) {
   return;
 }
 
-void BTBMissBPTakenConf::recover(Op* op) {
+void BTBMissBPTakenConf::recover(Op* op, std::deque<FT>& ftq) {
   Off_Path_Reason op_reason = (Off_Path_Reason)op->oracle_info.off_path_reason;
   switch (op_reason) {
     case REASON_NOT_IDENTIFIED: {

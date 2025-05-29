@@ -108,7 +108,16 @@ void PerceptronConf::update_features(Op* op) {
   }
 }
 
-void PerceptronConf::recover(Op* op) {
+void PerceptronConf::recover(Op* op, std::deque<FT>& ftq) {
+  // walk ftq to train on off-path ops
+  for (auto it = ftq.begin(); it != ftq.end(); it++) {
+    for (auto _op : it->get_ops()) {
+      if (_op->table_info->cf_type) {
+        resolve_cf(_op);
+      }
+    }
+  }
+
   switch (op->oracle_info.off_path_reason) {
     case REASON_BTB_MISS:
       cnt_btb_miss++;

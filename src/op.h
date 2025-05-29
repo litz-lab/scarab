@@ -263,7 +263,7 @@ struct Op_struct {
   Flag fetched_from_uop_cache;
   // }}}
   int bp_confidence;
-  int tage_comp; // Component of tage that provided the prediction (see tage_component enum in cbp_tagescl_64k.h)
+  int tage_comp;  // Component of tage that provided the prediction (see tage_component enum in cbp_tagescl_64k.h)
 
   // {{{ register renaming
   int src_reg_id[MAX_SRCS][REG_TABLE_TYPE_NUM];        // the reg id of the source reg file entries

@@ -100,7 +100,7 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
   }
 }
 
-void ConfMechStatBase::recover(Op* op) {
+void ConfMechStatBase::recover(Op* op, std::deque<FT>& ftq) {
   DEBUG(proc_id, "Recovering confidence mech stat base for op %llu\n", op->op_num);
   // this function should be called at the END of derived class's recover function
   prev_op = nullptr;
@@ -130,11 +130,11 @@ Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false), last_cycle_c
     conf_mech = new WeightConf(_proc_id);
 }
 
-void Conf::recover(Op* op) {
+void Conf::recover(Op* op, std::deque<FT>& ftq) {
   DEBUG(proc_id, "Recovering confidence mech stat base for op %llu\n", op->op_num);
   conf_off_path = false;
-  conf_mech->conf_mech_stat->recover(op);
-  conf_mech->recover(op);
+  conf_mech->conf_mech_stat->recover(op, ftq);
+  conf_mech->recover(op, ftq);
 }
 
 void Conf::set_prev_op(Op* op) {

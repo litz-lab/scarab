@@ -29,7 +29,10 @@
 #ifndef __CONF_H__
 #define __CONF_H__
 
+#include <deque>
+
 #include "decoupled_frontend.h"
+#include "ft.h"
 
 class ConfMechBase;  // forward declaration
 
@@ -43,7 +46,7 @@ class ConfMechStatBase {
         perfect_off_path(false) {}
   virtual void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft);
   virtual void per_cycle_update();
-  virtual void recover(Op* op);
+  virtual void recover(Op* op, std::deque<FT>& ftq);
   virtual void print_data();
   void set_prev_op(Op* op);
 
@@ -75,7 +78,7 @@ class ConfMechBase {
   virtual void update_state_perfect_conf(Op* op) = 0;
 
   // recovery functions
-  virtual void recover(Op* op) = 0;
+  virtual void recover(Op* op, std::deque<FT>& ftq) = 0;
 
   // resolve cf
   virtual void resolve_cf(Op* op) = 0;
@@ -91,7 +94,7 @@ class Conf {
  public:
   Conf(uns _proc_id);
   uns get_conf() { return conf_off_path; }
-  void recover(Op* op);
+  void recover(Op* op, std::deque<FT>& ftq);
   void set_prev_op(Op* op);
   void update(Op* op, Flag last_in_ft);
   void resolve_cf(Op* op) { conf_mech->resolve_cf(op); }

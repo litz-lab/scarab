@@ -220,15 +220,10 @@ void Decoupled_FE::recover() {
   cur_op = nullptr;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
 
-  if (CONFIDENCE_ENABLE && CONF_PERCEPTRON_CONF) {
-    for (auto it = ftq.begin(); it != ftq.end(); it++) {
-      for (auto op : it->ops) {
-        if (op->table_info->cf_type) {
-          conf->resolve_cf(op);
-        }
-      }
-    }
-  }
+  auto op = bp_recovery_info->recovery_op;
+
+  if (CONFIDENCE_ENABLE)
+    conf->recover(op, ftq);
 
   for (auto it = ftq.begin(); it != ftq.end(); it++) {
     it->free_ops_and_clear();
@@ -247,8 +242,6 @@ void Decoupled_FE::recover() {
     it->op_pos = 0;
     it->flattened_op_pos = 0;
   }
-
-  auto op = bp_recovery_info->recovery_op;
 
   if (stalled) {
     DEBUG(proc_id, "Unstalled off-path fetch barrier due to recovery fetch_addr0x:%llx off_path:%i op_num:%llu\n",
@@ -272,9 +265,6 @@ void Decoupled_FE::recover() {
           "Scarab's recovery addr 0x%llx does not match frontend's recovery "
           "addr 0x%llx\n",
           bp_recovery_info->recovery_fetch_addr, frontend_next_fetch_addr(proc_id));
-
-  if (CONFIDENCE_ENABLE)
-    conf->recover(op);
 }
 
 void Decoupled_FE::update() {

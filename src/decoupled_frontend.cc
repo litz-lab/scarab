@@ -44,6 +44,7 @@ class Decoupled_FE {
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf->get_conf_off_path_reason(); }
   void conf_resolve_cf(Op* op) { conf->resolve_cf(op); }
   Off_Path_Reason eval_off_path_reason(Op* op);
+  void print_conf_data() { conf->print_data(); }
 
  private:
   void init(uns proc_id);
@@ -181,6 +182,10 @@ void decoupled_fe_conf_resovle_cf(Op* op) {
   dfe->conf_resolve_cf(op);
 }
 
+void decoupled_fe_print_conf_data() {
+  dfe->print_conf_data();
+}
+
 /* Decoupled_FE member functions */
 Decoupled_FE::Decoupled_FE(uns _proc_id) : proc_id(_proc_id), current_ft_to_push(_proc_id) {
   init(_proc_id);
@@ -279,6 +284,9 @@ void Decoupled_FE::update() {
 
   // pop used fts in the front of the ftq
   pop_fts();
+  // update per-cycle confidence mechanism state
+  if (CONFIDENCE_ENABLE)
+    conf->per_cycle_update();
 
   while (1) {
     ASSERT(proc_id, ftq_num_fts() <= ftq_ft_num);

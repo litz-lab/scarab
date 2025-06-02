@@ -4,15 +4,26 @@
 
 #include "confidence/conf.hpp"
 
+class WeightConf;
+
+class WeightConfStat : public ConfMechStatBase {
+ public:
+  WeightConfStat(uns _proc_id, WeightConf* _conf_mech);
+
+  WeightConf* conf_mech;
+};
+
 class WeightConf : public ConfMechBase {
  public:
   WeightConf(uns _proc_id)
-      : ConfMechBase(_proc_id), cnt_btb_miss(0), btb_miss_rate(0.0), low_confidence_cnt(0), cf_op_distance(0.0) {}
+      : ConfMechBase(_proc_id), cnt_btb_miss(0), btb_miss_rate(0.0), low_confidence_cnt(0), cf_op_distance(0.0) {
+    conf_mech_stat = new WeightConfStat(_proc_id, this);
+  }
   // update functions
   void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
   void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
   void per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
-  void per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason) override;
+  void per_cycle_update(Conf_Off_Path_Reason& new_reason) override;
 
   void update_state_perfect_conf(Op* op) override;
 

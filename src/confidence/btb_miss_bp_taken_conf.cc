@@ -2,6 +2,11 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CONF, ##args)
 
+BTBMissBPTakenConfStat::BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech)
+    : ConfMechStatBase(_proc_id) {
+  conf_mech = _conf_mech;
+}
+
 void BTBMissBPTakenConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
   if (!CONFIDENCE_ENABLE)
     return;
@@ -31,10 +36,15 @@ void BTBMissBPTakenConf::per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason)
   return;
 }
 
-void BTBMissBPTakenConf::per_cycle_update(Op* op, Conf_Off_Path_Reason& new_reason) {
+void BTBMissBPTakenConf::per_cycle_update(Conf_Off_Path_Reason& new_reason) {
   if (cycle_count % CONF_BTB_MISS_SAMPLE_RATE == 0) {
     btb_miss_rate = (double)cnt_btb_miss / (double)CONF_BTB_MISS_SAMPLE_RATE;
     cnt_btb_miss = 0;
+  }
+  if ((double)((cycle_count - last_recover_cycle) * btb_miss_rate) >= CONF_BTB_MISS_RATE_CYCLES_THRESHOLD) {
+    low_confidence_cnt = ~0U;
+    STAT_EVENT(proc_id, CONF_BTB_NUM_CYCLES_OFF_PATH_EVENT);
+    new_reason = REASON_BTB_MISS_RATE;
   }
 }
 

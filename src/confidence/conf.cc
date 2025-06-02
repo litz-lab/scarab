@@ -124,11 +124,11 @@ void ConfMechStatBase::set_prev_op(Op* op) {
 
 /* Conf member functions */
 Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false), last_cycle_count(0) {
-  if (CONF_BTB_MISS_BP_TAKEN)
+  if (CONFIDENCE_MECH == CONF_MECH_BTB_MISS_BP_TAKEN)
     conf_mech = new BTBMissBPTakenConf(_proc_id);
-  else if (CONF_PERCEPTRON_CONF)
+  else if (CONFIDENCE_MECH == CONF_MECH_PERCEPTRON)
     conf_mech = new PerceptronConf(_proc_id);
-  else
+  else if (CONFIDENCE_MECH == CONF_MECH_WEIGHT)
     conf_mech = new WeightConf(_proc_id);
 }
 

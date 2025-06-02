@@ -329,11 +329,11 @@ DEF_PARAM(trace_buf_size, TRACE_BUF_SIZE, uns, uns, 0, )
 
 DEF_PARAM(perfect_confidence, PERFECT_CONFIDENCE, Flag, Flag, FALSE, )
 DEF_PARAM(confidence_enable, CONFIDENCE_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(confidence_mech, CONFIDENCE_MECH, uns, uns, 0, ) // 0 = weight, 1 = perceptron, 2 = btb_miss_bp_taken
 // Flag for this for perf reasons
 DEF_PARAM(conf_walk_ftq_on_flush, CONF_WALK_FTQ_ON_FLUSH, Flag, Flag, FALSE, )
 DEF_PARAM(conf_off_path_threshold, CONF_OFF_PATH_THRESHOLD, uns, uns, 15, )
 DEF_PARAM(conf_off_path_inc, CONF_OFF_PATH_INC, uns, uns, 5, )
-DEF_PARAM(conf_btb_miss_bp_taken, CONF_BTB_MISS_BP_TAKEN, Flag, Flag, FALSE, )
 DEF_PARAM(conf_ipc_rate_conf, CONF_IPC_RATE_CONF, Flag, Flag, FALSE, )
 DEF_PARAM(conf_btb_miss_bp_taken_threshold, CONF_BTB_MISS_BP_TAKEN_THRESHOLD, int, int, 0, )
 DEF_PARAM(conf_btb_miss_rate_cycles_threshold, CONF_BTB_MISS_RATE_CYCLES_THRESHOLD, float, float, 1.0, )
@@ -366,7 +366,6 @@ DEF_PARAM(conf_log_dfe_to_rec, CONF_LOG_DFE_TO_REC, Flag, Flag, FALSE, )
 DEF_PARAM(conf_log_phase_cycles, CONF_LOG_PHASE_CYCLES, Flag, Flag, FALSE, )
 
 // Perceptron Conf Parameters
-DEF_PARAM(conf_perceptron_conf, CONF_PERCEPTRON_CONF, Flag, Flag, FALSE, )
 DEF_PARAM(conf_perceptron_threshold, CONF_PERCEPTRON_THRESHOLD, float, float, 0.0, )
 DEF_PARAM(conf_perceptron_lr, PATH_CONF_PERCEPTRON_LR, float, float, 0.5, )
 DEF_PARAM(conf_n_perceptrons, PATH_CONF_N_PERCEPTRONS, uns, uns, 32, )

@@ -7,8 +7,8 @@ BTBMissBPTakenConfStat::BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf*
   conf_mech = _conf_mech;
 }
 
-void BTBMissBPTakenConfStat::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft) {
-  ConfMechStatBase::update(op, reason, last_in_ft);
+void BTBMissBPTakenConfStat::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, FT& pushed_ft) {
+  ConfMechStatBase::update(op, reason, last_in_ft, pushed_ft);
   log_off_path_event(op);
   log_phase_cycles(op);
 }

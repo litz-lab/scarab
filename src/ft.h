@@ -72,7 +72,7 @@ class FT {
   bool can_fetch_op();
   Op* fetch_op();
   void set_per_op_ft_info();
-  FT_Info get_ft_info();
+  FT_Info& get_ft_info();
   bool is_consumed();
   void set_consumed();
   std::vector<Op*>& get_ops();

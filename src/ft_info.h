@@ -31,6 +31,18 @@
 
 #include "globals/global_types.h"
 
+typedef struct FT_Info_ML_Data_struct {
+  Counter dfe_cycle;
+  Counter cycles_since_btb_rec;
+  Counter cycles_since_ibtb_rec;
+  Counter cycles_since_misfetch_rec;
+  Counter cycles_since_mispred_rec;
+  double btb_miss_rate;
+  double ibtb_miss_rate;
+  double misfetch_rate;
+  double mispred_rate;
+} FT_Info_ML_Data;
+
 typedef enum FT_Started_By_enum {
   FT_NOT_STARTED,
   FT_STARTED_BY_APP,
@@ -65,6 +77,8 @@ typedef struct FT_Info_Dynamic_struct {
   FT_Ended_By ended_by;
   // if the first op of this FT is off-path
   Flag first_op_off_path;
+  // ML data collection info (only used if CONF_ML_DATA_COLLECTION is enabled)
+  FT_Info_ML_Data* ml_data_info;
 } FT_Info_Dynamic;
 
 struct FT_Info_struct {

@@ -30,6 +30,7 @@
 #define __CONF_H__
 
 #include <deque>
+#include <vector>
 
 #include "decoupled_frontend.h"
 #include "ft.h"
@@ -38,6 +39,7 @@ typedef enum Confidence_Mechanism_enum {
   CONF_MECH_WEIGHT,
   CONF_MECH_BTB_MISS_BP_TAKEN,
   CONF_MECH_PERCEPTRON,
+  CONF_MECH_ML_DATA_COLLECTION,
 } Confidence_Mechanism;
 
 class ConfMechBase;  // forward declaration
@@ -50,11 +52,12 @@ class ConfMechStatBase {
         off_path_reason(REASON_NOT_IDENTIFIED),
         conf_off_path_reason(REASON_CONF_NOT_IDENTIFIED),
         perfect_off_path(false) {}
-  virtual void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft);
+  virtual void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, FT& pushed_ft);
   virtual void per_cycle_update(Conf_Off_Path_Reason reason);
   virtual void recover(Op* op, std::deque<FT>& ftq);
   virtual void print_data();
   void set_prev_op(Op* op);
+  virtual void ft_consumed_update(FT_Info& ft_info, std::vector<Op*>& ops) {}
 
   Off_Path_Reason get_off_path_reason() { return off_path_reason; }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_off_path_reason; }
@@ -80,6 +83,7 @@ class ConfMechBase {
   virtual void per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
   virtual void per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
   virtual void per_cycle_update(Conf_Off_Path_Reason& new_reason) = 0;
+  virtual void ft_consumed_update(FT_Info& ft_info, std::vector<Op*>& ops) {}
 
   virtual void update_state_perfect_conf(Op* op) = 0;
 
@@ -102,13 +106,17 @@ class Conf {
   uns get_conf() { return conf_off_path; }
   void recover(Op* op, std::deque<FT>& ftq);
   void set_prev_op(Op* op);
-  void update(FT ft_pushed);
+  void update(FT& ft_pushed);
   void resolve_cf(Op* op) { conf_mech->resolve_cf(op); }
   Off_Path_Reason get_off_path_reason() { return conf_mech->conf_mech_stat->get_off_path_reason(); }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_mech->conf_mech_stat->get_conf_off_path_reason(); }
   void print_data() { conf_mech->conf_mech_stat->print_data(); }
   // called every cycle, even if DFE is stalled
   void per_cycle_update();
+  void ft_consumed_update(FT_Info& ft_info, std::vector<Op*>& ops) {
+    conf_mech->ft_consumed_update(ft_info, ops);
+    conf_mech->conf_mech_stat->ft_consumed_update(ft_info, ops);
+  }
 
  private:
   void per_op_update(Op* op, Conf_Off_Path_Reason& new_reason);
@@ -116,7 +124,7 @@ class Conf {
   void per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason);
   void update_state_perfect_conf(Op* op) { conf_mech->update_state_perfect_conf(op); }
   void perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason);
-  void process_op(Op* op, Conf_Off_Path_Reason& new_reason, bool last_in_ft);
+  void process_op(Op* op, Conf_Off_Path_Reason& new_reason, bool last_in_ft, FT& pushed_ft);
 
   // confidence mech object
   ConfMechBase* conf_mech;

@@ -14,7 +14,7 @@ class BTBMissBPTakenConf;
 class BTBMissBPTakenConfStat : public ConfMechStatBase {
  public:
   BTBMissBPTakenConfStat(uns _proc_id, BTBMissBPTakenConf* _conf_mech);
-  void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft) override;
+  void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, FT& pushed_ft) override;
   void recover(Op* op, std::deque<FT>& ftq) override;
   void print_data() override;
 

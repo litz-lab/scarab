@@ -45,6 +45,7 @@ class Decoupled_FE {
   void conf_resolve_cf(Op* op) { conf->resolve_cf(op); }
   Off_Path_Reason eval_off_path_reason(Op* op);
   void print_conf_data() { conf->print_data(); }
+  void ft_consumed_update(FT_Info ft_info, std::vector<Op*>& ops) { conf->ft_consumed_update(ft_info, ops); }
 
  private:
   void init(uns proc_id);
@@ -429,7 +430,6 @@ void Decoupled_FE::update() {
       bytes_this_cycle += op->inst_info->trace_info.inst_size;
       cfs_taken_this_cycle += cf_taken || bar_fetch;
     }
-
     current_ft_to_push.add_op(op, ft_ended_by);
     // ft_ended_by != FT_NOT_ENDED indicates the end of the current fetch target
     // it is now ready to be pushed to the queue
@@ -452,10 +452,10 @@ void Decoupled_FE::update() {
                               current_ft_to_push.ft_info.static_info.start);
         }
       }
-      ftq.emplace_back(current_ft_to_push);
       if (CONFIDENCE_ENABLE) {
         conf->update(current_ft_to_push);
       }
+      ftq.emplace_back(current_ft_to_push);
       current_ft_to_push = FT(proc_id);
       if (ft_ended_by == FT_ICACHE_LINE_BOUNDARY) {
         current_ft_to_push.set_ft_started_by(FT_STARTED_BY_ICACHE_LINE_BOUNDARY);
@@ -495,6 +495,8 @@ FT* Decoupled_FE::get_ft(uint64_t ft_pos) {
 
 void Decoupled_FE::pop_fts() {
   while (!ftq.empty() && ftq.front().consumed) {
+    if (CONFIDENCE_ENABLE && CONFIDENCE_MECH == CONF_MECH_ML_DATA_COLLECTION)
+      ft_consumed_update(ftq.front().get_ft_info(), ftq.front().get_ops());
     uint64_t ft_num_ops = ftq.front().ops.size();
     ftq.front().free_ops_and_clear();
     ftq.pop_front();

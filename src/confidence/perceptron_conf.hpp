@@ -5,7 +5,7 @@
 #include "confidence/conf.hpp"
 #include "libs/perceptron.hpp"
 
-const unsigned int N_FEATURES = 22;
+const unsigned int PERCEPTRON_N_FEATURES = 22;
 
 class PerceptronConf;
 
@@ -20,9 +20,9 @@ class PerceptronConfStat : public ConfMechStatBase {
 class PerceptronConf : public ConfMechBase {
  public:
   PerceptronConf(uns _proc_id) : ConfMechBase(_proc_id) {
-    conf_features.resize(N_FEATURES);
+    conf_features.resize(PERCEPTRON_N_FEATURES);
     conf_mech_stat = new PerceptronConfStat(_proc_id, this);
-    perceptron = new PerceptronTable(N_FEATURES, PATH_CONF_N_PERCEPTRONS, PATH_CONF_PERCEPTRON_LR,
+    perceptron = new PerceptronTable(PERCEPTRON_N_FEATURES, PATH_CONF_N_PERCEPTRONS, PATH_CONF_PERCEPTRON_LR,
                                      CONF_PERCEPTRON_THETA, CONF_PERCEPTRON_WEIGHT_WIDTH, CONF_PERCEPTRON_THRESHOLD);
   }
   // update functions

@@ -53,7 +53,7 @@ void PerceptronConf::per_cycle_update(Conf_Off_Path_Reason& new_reason) {
 
 void PerceptronConf::update_features(Op* op) {
   // change CONF to OP_CONF
-  op->conf_features = new double[N_FEATURES];
+  op->conf_features = new double[PERCEPTRON_N_FEATURES];
   if (CONF_PERCEPTRON_START)
     conf_features[0] = (double)op->ft_info.static_info.start;
   if (CONF_PERCEPTRON_LENGTH)

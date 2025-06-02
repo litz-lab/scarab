@@ -40,6 +40,8 @@
 /* FT member functions */
 FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
   free_ops_and_clear();
+  if (CONFIDENCE_ENABLE && CONFIDENCE_MECH == 3 /*CONF_MECH_ML_DATA_COLLECTION*/)
+    this->ft_info.dynamic_info.ml_data_info = new FT_Info_ML_Data();
 }
 
 void FT::free_ops_and_clear() {
@@ -132,7 +134,7 @@ void FT::add_op(Op* op, FT_Ended_By ft_ended_by) {
   }
 }
 
-FT_Info FT::get_ft_info() {
+FT_Info& FT::get_ft_info() {
   return ft_info;
 }
 

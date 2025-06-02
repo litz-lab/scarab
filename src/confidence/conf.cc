@@ -3,10 +3,13 @@
 // Implementations of the API
 #include "confidence/btb_miss_bp_taken_conf.hpp"
 #include "confidence/conf.hpp"
+#include "confidence/ml_data_collection.hpp"
 #include "confidence/perceptron_conf.hpp"
 #include "confidence/weight_conf.hpp"
 
+#ifndef DEBUG
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CONF, ##args)
+#endif
 
 void ConfMechStatBase::per_cycle_update(Conf_Off_Path_Reason reason) {
   if (conf_off_path_reason == REASON_CONF_NOT_IDENTIFIED && reason != REASON_CONF_NOT_IDENTIFIED)
@@ -29,7 +32,7 @@ void ConfMechStatBase::per_cycle_update(Conf_Off_Path_Reason reason) {
   DEBUG(proc_id, "stat cycle count: %llu\n", cycle_count);
 }
 
-void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft) {
+void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft, FT& pushed_ft) {
   // this function should be called at the BEGINNING of derived class's update function
   ASSERT(proc_id, CONFIDENCE_ENABLE);
   // set conf_off_path_reason
@@ -130,12 +133,14 @@ Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false), last_cycle_c
     conf_mech = new PerceptronConf(_proc_id);
   else if (CONFIDENCE_MECH == CONF_MECH_WEIGHT)
     conf_mech = new WeightConf(_proc_id);
+  else if (CONFIDENCE_MECH == CONF_MECH_ML_DATA_COLLECTION)
+    conf_mech = new MLDataCollection(_proc_id);
   else
     ASSERT(proc_id, FALSE);
 }
 
 void Conf::recover(Op* op, std::deque<FT>& ftq) {
-  DEBUG(proc_id, "Recovering confidence mech stat base for op %llu\n", op->op_num);
+  DEBUG(proc_id, "Recovering confidence mech stat base, reason %d\n", op->oracle_info.off_path_reason);
   conf_off_path = false;
   conf_mech->conf_mech_stat->recover(op, ftq);
   conf_mech->recover(op, ftq);
@@ -145,7 +150,7 @@ void Conf::set_prev_op(Op* op) {
   conf_mech->conf_mech_stat->set_prev_op(op);
 }
 
-void Conf::process_op(Op* op, Conf_Off_Path_Reason& new_reason, bool last_in_ft) {
+void Conf::process_op(Op* op, Conf_Off_Path_Reason& new_reason, bool last_in_ft, FT& pushed_ft) {
   op->conf_off_path = conf_off_path;
   if (!conf_off_path) {
     perfect_conf_update(op, new_reason);
@@ -157,12 +162,12 @@ void Conf::process_op(Op* op, Conf_Off_Path_Reason& new_reason, bool last_in_ft)
   }
 
   conf_off_path |= (new_reason != REASON_CONF_NOT_IDENTIFIED);
-  conf_mech->conf_mech_stat->update(op, new_reason, last_in_ft);
+  conf_mech->conf_mech_stat->update(op, new_reason, last_in_ft, pushed_ft);
   STAT_EVENT(proc_id, CONF_OFF_IBTB_MISS_BP_TAKEN + new_reason);
   set_prev_op(op);
 }
 
-void Conf::update(FT pushed_ft) {
+void Conf::update(FT& pushed_ft) {
   ASSERT(proc_id, CONFIDENCE_ENABLE);
 
   std::vector<Op*> ops = pushed_ft.get_ops();
@@ -172,10 +177,10 @@ void Conf::update(FT pushed_ft) {
   Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
 
   for (auto op = ops.begin(); op != ops.end() - 1; ++op) {
-    process_op(*op, new_reason, false);
+    process_op(*op, new_reason, false, pushed_ft);
   }
   per_ft_update(ops.back(), new_reason);
-  process_op(ops.back(), new_reason, true);
+  process_op(ops.back(), new_reason, true, pushed_ft);
 }
 
 void Conf::perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason) {

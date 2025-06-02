@@ -701,7 +701,7 @@ void full_sim() {
       if (!sim_done[proc_id] && (retired_exit[proc_id] || reachedInstLimit)) {
         if (model->per_core_done_func)
           model->per_core_done_func(proc_id);
-        if (CONFIDENCE_ENABLE && (CONF_LOG_DFE_TO_REC || CONF_LOG_PHASE_CYCLES)) {
+        if (CONFIDENCE_ENABLE) {
           decoupled_fe_print_conf_data();
         }
         if (FDIP_ENABLE) {

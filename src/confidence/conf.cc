@@ -141,7 +141,8 @@ void Conf::set_prev_op(Op* op) {
 void Conf::update(Op* op, Flag last_in_ft) {
   ASSERT(proc_id, CONFIDENCE_ENABLE);
   Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
-  perfect_conf_update(op, new_reason);
+  if (!conf_off_path)
+    perfect_conf_update(op, new_reason);
   if (!PERFECT_CONFIDENCE && new_reason == REASON_CONF_NOT_IDENTIFIED &&
       (get_off_path_reason() == REASON_NOT_IDENTIFIED ||
        get_conf_off_path_reason() == REASON_CONF_NOT_IDENTIFIED)) {  // update until both real/confidence path go off
@@ -163,6 +164,7 @@ void Conf::perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason) {
     return;
   if (PERFECT_CONFIDENCE) {
     if (op->oracle_info.off_path_reason) {
+      ASSERT(proc_id, conf_mech->conf_mech_stat->perfect_off_path == false);
       DEBUG(proc_id, "Perfect conf update for op %llu, off_path_reason: %d, off_path %d\n", op->op_num,
             op->oracle_info.off_path_reason, op->off_path);
       new_reason = REASON_PERFECT_CONF;
@@ -180,6 +182,7 @@ void Conf::perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason) {
          (off_path_reason == REASON_BTB_MISS || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
         (CONF_PERFECT_IBTB_MISS_CONF && (off_path_reason == REASON_IBTB_MISS)) ||
         (CONF_PERFECT_MISFETCH_CONF && (off_path_reason == REASON_MISFETCH))) {
+      ASSERT(proc_id, conf_mech->conf_mech_stat->perfect_off_path == false);
       conf_mech->conf_mech_stat->perfect_off_path = true;
       new_reason = REASON_PERFECT_CONF;
     }

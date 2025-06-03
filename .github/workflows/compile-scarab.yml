@@ -9,6 +9,7 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch: # Allows manual triggering of the workflow to test before merging
 
 ############################################################
 # 2 ─── Shared variables ───────────────────────────────────
@@ -30,8 +31,8 @@ jobs:
       - id: tag
         name: Latest scarab‑infra SHA
         run: |
-          LATEST=$(curl -s https://api.github.com/repos/litz-lab/scarab-infra/commits/main | jq -r '.sha')
-          echo "short=${LATEST:0:7}" >>"$GITHUB_OUTPUT"
+          LATEST=$(curl -s https://raw.githubusercontent.com/litz-lab/scarab-infra/main/last_built_tag.txt)
+          echo "short=${LATEST}" >>"$GITHUB_OUTPUT"
 
 ############################################################
 # 4 ─── Job 1: build (opt) ─────────────────────────────────
@@ -50,7 +51,7 @@ jobs:
       - name: Mark Git repo as safe
         run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
 
-      - name: Build Scarab Dbg
+      - name: Build Scarab Opt
         working-directory: src
         run: make opt -j
 
@@ -79,7 +80,7 @@ jobs:
 # 6 ─── Job 3: run simulation & extract metrics ────────────
 ############################################################
   run-scarab:
-    needs: [get_tag]
+    needs: get_tag
     runs-on: ubuntu-latest
     outputs:
       ipc:  ${{ steps.ipc.outputs.value }}
@@ -105,8 +106,13 @@ jobs:
       - name: Pull sim container
         working-directory: scarab-infra
         run: |
+          LATEST=$(curl -s https://api.github.com/repos/litz-lab/scarab-infra/commits/main | jq -r '.sha')
+          echo "Pulling image with tag $TAG"
           docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG}
-          docker tag  ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG} allbench_traces:${TAG}
+          echo "Tagging it as ${LATEST:0:7}"
+          docker tag  ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG} allbench_traces:${LATEST:0:7}
+          echo "Local images:"
+          docker images | grep allbench_traces
 
       # Conda Environment
       - name: Set up Miniconda

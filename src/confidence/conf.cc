@@ -7,7 +7,9 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CONF, ##args)
 
-void ConfMechStatBase::per_cycle_update() {
+void ConfMechStatBase::per_cycle_update(Conf_Off_Path_Reason reason) {
+  if (conf_off_path_reason == REASON_CONF_NOT_IDENTIFIED && reason != REASON_CONF_NOT_IDENTIFIED)
+    conf_off_path_reason = reason;
   if (off_path_reason) {
     if (conf_off_path_reason) {
       STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_REALISTIC_CYCLES + perfect_off_path);
@@ -216,14 +218,11 @@ void Conf::per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) {
 }
 
 void Conf::per_cycle_update() {
-  ASSERT(proc_id, PERFECT_CONFIDENCE ? conf_off_path == decoupled_fe_is_off_path() : true);
-  if (PERFECT_CONFIDENCE)
-    return;
-  if (get_off_path_reason() != REASON_NOT_IDENTIFIED && get_conf_off_path_reason() != REASON_CONF_NOT_IDENTIFIED)
-    return;
   Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
-  conf_mech->per_cycle_update(new_reason);
-  conf_off_path = new_reason != REASON_CONF_NOT_IDENTIFIED;
-  conf_mech->conf_mech_stat->per_cycle_update();
+  if (!PERFECT_CONFIDENCE) {
+    conf_mech->per_cycle_update(new_reason);
+    conf_off_path |= new_reason != REASON_CONF_NOT_IDENTIFIED;
+  }
+  conf_mech->conf_mech_stat->per_cycle_update(new_reason);
   STAT_EVENT(proc_id, CONF_OFF_IBTB_MISS_BP_TAKEN + new_reason);
 }

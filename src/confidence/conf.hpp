@@ -47,7 +47,7 @@ class ConfMechStatBase {
         conf_off_path_reason(REASON_CONF_NOT_IDENTIFIED),
         perfect_off_path(false) {}
   virtual void update(Op* op, Conf_Off_Path_Reason reason, bool last_in_ft);
-  virtual void per_cycle_update();
+  virtual void per_cycle_update(Conf_Off_Path_Reason reason);
   virtual void recover(Op* op);
   virtual void print_data();
   void set_prev_op(Op* op);

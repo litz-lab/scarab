@@ -234,11 +234,10 @@ void Conf::per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) {
 void Conf::per_cycle_update() {
   if (PERFECT_CONFIDENCE)
     return;
-  if (get_off_path_reason() != REASON_NOT_IDENTIFIED && get_conf_off_path_reason() != REASON_CONF_NOT_IDENTIFIED)
-    return;
   Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
-  conf_mech->per_cycle_update(new_reason);
-  conf_off_path = new_reason != REASON_CONF_NOT_IDENTIFIED;
+  if (!conf_off_path)
+    conf_mech->per_cycle_update(new_reason);
+  conf_off_path |= new_reason != REASON_CONF_NOT_IDENTIFIED;
   conf_mech->conf_mech_stat->per_cycle_update(new_reason);
   STAT_EVENT(proc_id, CONF_OFF_IBTB_MISS_BP_TAKEN + new_reason);
 }

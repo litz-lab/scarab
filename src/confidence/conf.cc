@@ -164,7 +164,7 @@ void Conf::update(FT pushed_ft) {
 
   std::vector<Op*> ops = pushed_ft.get_ops();
   ASSERT(proc_id, !ops.empty());
-  
+
   Conf_Off_Path_Reason new_reason = REASON_CONF_NOT_IDENTIFIED;
 
   for (auto op = ops.begin(); op != ops.end() - 1; ++op) {

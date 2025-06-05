@@ -329,7 +329,7 @@ DEF_PARAM(trace_buf_size, TRACE_BUF_SIZE, uns, uns, 0, )
 
 DEF_PARAM(perfect_confidence, PERFECT_CONFIDENCE, Flag, Flag, FALSE, )
 DEF_PARAM(confidence_enable, CONFIDENCE_ENABLE, Flag, Flag, FALSE, )
-DEF_PARAM(confidence_mech, CONFIDENCE_MECH, uns, uns, 0, ) // 0 = weight, 1 = perceptron, 2 = btb_miss_bp_taken
+DEF_PARAM(confidence_mech, CONFIDENCE_MECH, uns, uns, 0, ) // 0 = weight, 1 = btb_miss_bp_taken
 DEF_PARAM(conf_off_path_threshold, CONF_OFF_PATH_THRESHOLD, uns, uns, 15, )
 DEF_PARAM(conf_off_path_inc, CONF_OFF_PATH_INC, uns, uns, 5, )
 

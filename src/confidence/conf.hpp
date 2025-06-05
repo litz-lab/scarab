@@ -37,6 +37,11 @@ typedef enum Confidence_Mechanism_enum {
   CONF_MECH_BTB_MISS_BP_TAKEN,
 } Confidence_Mechanism;
 
+typedef enum Confidence_Mechanism_enum {
+  CONF_MECH_WEIGHT,
+  CONF_MECH_BTB_MISS_BP_TAKEN,
+} Confidence_Mechanism;
+
 class ConfMechBase;  // forward declaration
 
 class ConfMechStatBase {

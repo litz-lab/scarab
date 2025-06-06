@@ -398,3 +398,5 @@ DEF_PARAM(conf_perceptron_bp_conf, CONF_PERCEPTRON_BP_CONF, Flag, Flag, TRUE, )
 
 DEF_PARAM(conf_print_perceptron_weights, CONF_PRINT_PERCEPTRON_WEIGHTS, Flag, Flag, FALSE, )
 DEF_PARAM(conf_perceptron_max_cfs, CONF_PERCEPTRON_MAX_CFS, uns, uns, 128, )
+
+DEF_PARAM(conf_pipeline_gating_threshold, CONF_PIPELINE_GATING_THRESHOLD, uns, uns, 3, )

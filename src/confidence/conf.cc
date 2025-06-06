@@ -5,11 +5,16 @@
 #include "confidence/conf.hpp"
 #include "confidence/ml_data_collection.hpp"
 #include "confidence/perceptron_conf.hpp"
+#include "confidence/pipeline_gating.hpp"
 #include "confidence/weight_conf.hpp"
 
 #ifndef DEBUG
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CONF, ##args)
 #endif
+
+void ConfMechStatBase::early_conf_recover() {
+  conf_off_path_reason = REASON_CONF_NOT_IDENTIFIED;
+}
 
 void ConfMechStatBase::per_cycle_update(Conf_Off_Path_Reason reason) {
   if (conf_off_path_reason == REASON_CONF_NOT_IDENTIFIED && reason != REASON_CONF_NOT_IDENTIFIED)
@@ -99,6 +104,7 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
     }
   } else if (!dfe_off_path && !prev_op->conf_off_path &&
              op->conf_off_path) {  // the actual path is on, but conf off path
+    DEBUG(proc_id, "Event op_num: %llu, prev_op op_num: %llu\n", op->op_num, prev_op->op_num);
     ASSERT(proc_id, conf_off_path_reason != REASON_CONF_NOT_IDENTIFIED);
     STAT_EVENT(proc_id, DFE_ON_CONF_OFF_NUM_EVENTS);
     STAT_EVENT(proc_id, DFE_ON_CONF_OFF_IBTB_MISS_BP_TAKEN + conf_off_path_reason);
@@ -135,6 +141,8 @@ Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false), last_cycle_c
     conf_mech = new WeightConf(_proc_id);
   else if (CONFIDENCE_MECH == CONF_MECH_ML_DATA_COLLECTION)
     conf_mech = new MLDataCollection(_proc_id);
+  else if (CONFIDENCE_MECH == CONF_MECH_PIPELINE_GATING)
+    conf_mech = new PipelineGatingConf(_proc_id);
   else
     ASSERT(proc_id, FALSE);
 }
@@ -160,9 +168,21 @@ void Conf::process_op(Op* op, Conf_Off_Path_Reason& new_reason, bool last_in_ft,
         per_cf_op_update(op, new_reason);
     }
   }
-
-  conf_off_path |= (new_reason != REASON_CONF_NOT_IDENTIFIED);
-  conf_mech->conf_mech_stat->update(op, new_reason, last_in_ft, pushed_ft);
+  bool go_back_on_path = false;
+  if (conf_off_path)
+    go_back_on_path = conf_mech->go_back_on_path(op);
+  if (go_back_on_path) {
+    conf_off_path = false;
+    conf_mech->early_conf_recover();
+    conf_mech->conf_mech_stat->update(op, new_reason, last_in_ft, pushed_ft);
+    conf_mech->conf_mech_stat->early_conf_recover();
+    DEBUG(proc_id, "Going back on path for op %llu, conf_off_path_reason: %d\n", op->op_num,
+          conf_mech->conf_mech_stat->conf_off_path_reason);
+  } else {
+    conf_off_path |= (new_reason != REASON_CONF_NOT_IDENTIFIED);
+    DEBUG(proc_id, "updating conf_off_path for op %llu, conf_off_path_reason: %d\n", op->op_num, new_reason);
+    conf_mech->conf_mech_stat->update(op, new_reason, last_in_ft, pushed_ft);
+  }
   STAT_EVENT(proc_id, CONF_OFF_IBTB_MISS_BP_TAKEN + new_reason);
   set_prev_op(op);
 }

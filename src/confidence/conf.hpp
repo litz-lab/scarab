@@ -40,6 +40,7 @@ typedef enum Confidence_Mechanism_enum {
   CONF_MECH_BTB_MISS_BP_TAKEN,
   CONF_MECH_PERCEPTRON,
   CONF_MECH_ML_DATA_COLLECTION,
+  CONF_MECH_PIPELINE_GATING,  // new confidence mechanism for pipeline gating
 } Confidence_Mechanism;
 
 class ConfMechBase;  // forward declaration
@@ -58,6 +59,7 @@ class ConfMechStatBase {
   virtual void print_data();
   void set_prev_op(Op* op);
   virtual void ft_consumed_update(FT_Info& ft_info, std::vector<Op*>& ops) {}
+  virtual void early_conf_recover();
 
   Off_Path_Reason get_off_path_reason() { return off_path_reason; }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_off_path_reason; }
@@ -84,6 +86,8 @@ class ConfMechBase {
   virtual void per_ft_update(Op* op, Conf_Off_Path_Reason& new_reason) = 0;
   virtual void per_cycle_update(Conf_Off_Path_Reason& new_reason) = 0;
   virtual void ft_consumed_update(FT_Info& ft_info, std::vector<Op*>& ops) {}
+  virtual void early_conf_recover() {}
+  virtual bool go_back_on_path(Op* op) { return false; }
 
   virtual void update_state_perfect_conf(Op* op) = 0;
 
@@ -125,6 +129,7 @@ class Conf {
   void update_state_perfect_conf(Op* op) { conf_mech->update_state_perfect_conf(op); }
   void perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason);
   void process_op(Op* op, Conf_Off_Path_Reason& new_reason, bool last_in_ft, FT& pushed_ft);
+  // void early_conf_recover();
 
   // confidence mech object
   ConfMechBase* conf_mech;

@@ -245,8 +245,6 @@ void cmp_cores(void) {
       update_fdip();
       update_eip();
 
-      node_sched_ops();
-
       cmp_measure_chip_util();
     }
   }

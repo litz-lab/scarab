@@ -1,7 +1,31 @@
+/*
+ * Copyright 2025 University of California Santa Cruz
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 /***************************************************************************************
- * File         : uop_cache.h
+ * File         : uop_cache.cc
  * Author       : Peter Braun
+ *                Litz Lab
  * Date         : 10.28.2020
+ *                6. 8. 2025
  * Description  : Interface for interacting with uop cache object.
  *                  Following Kotra et. al.'s MICRO 2020 description of uop cache baseline
  ***************************************************************************************/
@@ -74,25 +98,6 @@ uns Uop_Cache::set_idx_hash(Uop_Cache_Key key) {
   return (key.first >> offset_bits) % num_sets;
 }
 
-// overload operator == of FT_Info_Static type
-bool operator==(const FT_Info_Static& lhs, const FT_Info_Static& rhs) {
-  return lhs.start == rhs.start && lhs.length == rhs.length && lhs.n_uops == rhs.n_uops;
-}
-
-// overload operator == of Uop_Cache_Key type
-bool operator==(const Uop_Cache_Key& lhs, const Uop_Cache_Key& rhs) {
-  bool pc_match = lhs.first == rhs.first;
-
-  FT_Info_Static l_info = lhs.second;
-  FT_Info_Static r_info = rhs.second;
-
-  return pc_match && l_info == r_info;
-}
-
-inline bool operator==(const Uop_Cache_Data& lhs, const Uop_Cache_Data& rhs) {
-  return lhs.n_uops == rhs.n_uops && lhs.offset == rhs.offset && lhs.end_of_ft == rhs.end_of_ft;
-}
-
 typedef struct Uop_Cache_Stage_Cpp_struct {
   Uop_Cache* uop_cache;
 
@@ -119,6 +124,24 @@ typedef struct Uop_Cache_Stage_Cpp_struct {
 static std::vector<Uop_Cache_Stage_Cpp> per_core_uc_stage;
 Uop_Cache_Stage* uc = NULL;
 
+/**************************************************************************************/
+/* Operator Overload */
+
+inline bool operator==(const FT_Info_Static& lhs, const FT_Info_Static& rhs) {
+  return lhs.start == rhs.start && lhs.length == rhs.length && lhs.n_uops == rhs.n_uops;
+}
+
+inline bool operator==(const Uop_Cache_Key& lhs, const Uop_Cache_Key& rhs) {
+  return lhs.first == rhs.first && lhs.second == rhs.second;
+}
+
+inline bool operator==(const Uop_Cache_Data& lhs, const Uop_Cache_Data& rhs) {
+  return lhs.n_uops == rhs.n_uops && lhs.offset == rhs.offset && lhs.end_of_ft == rhs.end_of_ft;
+}
+
+/**************************************************************************************/
+/* External Vanilla Model Func */
+
 void alloc_mem_uop_cache(uns num_cores) {
   if (!UOP_CACHE_ENABLE) {
     return;
@@ -126,8 +149,6 @@ void alloc_mem_uop_cache(uns num_cores) {
 
   per_core_uc_stage.resize(num_cores);
 }
-
-/**************************************************************************************/
 
 void set_uop_cache_stage(Uop_Cache_Stage* new_uc) {
   if (!UOP_CACHE_ENABLE) {
@@ -160,6 +181,43 @@ void init_uop_cache_stage(uns8 proc_id, const char* name) {
   per_core_uc_stage[proc_id].uop_cache =
       new Uop_Cache(UOP_CACHE_LINES, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE, (Repl_Policy)UOP_CACHE_REPL);
 }
+
+void recover_uop_cache(void) {
+  if (!UOP_CACHE_ENABLE) {
+    return;
+  }
+  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
+
+  // no accumulation on-going
+  if (uc_cpp->accumulation_buffer.size() == 0 && uc_cpp->accumulating_line.n_uops == 0) {
+    ASSERT(uc->proc_id, uc_cpp->accumulating_ft.static_info == FT_Info_Static{} && uc_cpp->accumulating_op_num == 0);
+    return;
+  }
+
+  if (uc_cpp->accumulating_op_num >= bp_recovery_info->recovery_op_num) {
+    clear_accumulation(TRUE);
+    return;
+  }
+
+  /*
+   * Ops may be decoded out of order:
+   *    an older op may be stalled in decode, and a younger op is speculatively fetched from the uop cache.
+   * As a result, ops preceding the recovering op may not have called accumulate_op yet.
+   * Thus, The recovery should not affect the current FT accumulation.
+   */
+
+  if (bp_recovery_info->recovery_op->ft_info.static_info == uc_cpp->accumulating_ft.static_info) {
+    /*
+     * A FT currently accumulating is caught up in a recovery
+     * This is likely a corner case where the FT is already in the uop cache due to a short reuse distance.
+     */
+    ASSERT(uc->proc_id,
+           uop_cache_lookup_line(uc_cpp->accumulating_ft.static_info.start, uc_cpp->accumulating_ft, FALSE) != NULL);
+  }
+}
+
+/**************************************************************************************/
+/* Uop Cache Lookup Buffer Func */
 
 Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
   if (!UOP_CACHE_ENABLE) {
@@ -199,7 +257,6 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
   return TRUE;
 }
 
-/**************************************************************************************/
 /* uop_cache_consume_uops_from_lookup_buffer: consume some uops from the uopc lookup buffer
  * if the uop num of the current line > requested, it will be partially consumed and the line index is unchanged
  * if the uop num of the current line <= requested, it will be fully consumed and the line index is incremented
@@ -497,34 +554,5 @@ void accumulate_op(Op* op) {
     }
 
     end_line_accumulate(end_condition_1);
-  }
-}
-
-void recover_uop_cache(void) {
-  if (!UOP_CACHE_ENABLE) {
-    return;
-  }
-
-  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
-  if (uc_cpp->accumulation_buffer.size() != 0 || uc_cpp->accumulating_line.n_uops != 0) {
-    if (uc_cpp->accumulating_op_num >= bp_recovery_info->recovery_op_num) {
-      clear_accumulation(TRUE);
-    } else {
-      // Ops may be decoded out of order: e.g. when a previous op is slowly getting
-      // decoded, and the current op is (speculatively) fetched already-decoded from the uop cache.
-      // So, ops preceding the recovering op may not have called accumulate_op yet.
-      // should not affect the current FT accumulation.
-
-      if (bp_recovery_info->recovery_op->ft_info.static_info == uc_cpp->accumulating_ft.static_info) {
-        // a FT currently accumulating is caught up in a recovery... how come?
-        // recall the corner case where the accumulated FT is already in the uop cache because the reuse distance is
-        // small. that should be the case here.
-        ASSERT(uc->proc_id, uop_cache_lookup_line(uc_cpp->accumulating_ft.static_info.start, uc_cpp->accumulating_ft,
-                                                  FALSE) != NULL);
-      }
-    }
-  } else {
-    // no accumulation on-going
-    ASSERT(uc->proc_id, uc_cpp->accumulating_ft.static_info == FT_Info_Static{} && uc_cpp->accumulating_op_num == 0);
   }
 }

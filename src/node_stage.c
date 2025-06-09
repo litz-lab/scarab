@@ -52,6 +52,7 @@
 
 #include "decoupled_frontend.h"
 #include "exec_ports.h"
+#include "lsq.h"
 #include "map.h"
 #include "map_rename.h"
 #include "node_issue_queue.h"
@@ -120,6 +121,8 @@ void init_node_stage(uns8 proc_id, const char* name) {
   node->sd.ops = (Op**)malloc(sizeof(Op*) * node->sd.max_op_count);
 
   reset_node_stage();
+
+  lsq_init();
 }
 
 /**************************************************************************************/
@@ -173,6 +176,8 @@ void recover_node_stage() {
   // recover last_scheduled_opnum
   if (node->last_scheduled_opnum >= bp_recovery_info->recovery_op_num)
     node->last_scheduled_opnum = bp_recovery_info->recovery_op_num;
+
+  lsq_recover(bp_recovery_info->recovery_op_num);
 
   if (ENABLE_GLOBAL_DEBUG_PRINT && DEBUG_NODE_STAGE && DEBUG_RANGE_COND(node->proc_id))
     debug_node_stage();
@@ -419,6 +424,15 @@ void node_fill_rob(Stage_Data* src_sd) {
     if (!op)
       continue;
 
+    if (op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) {
+      if (!lsq_available(op)) {
+        STAT_EVENT(op->proc_id, NODE_LSQ_FULL);
+        return;
+      }
+
+      lsq_dispatch(op);
+    }
+
     ASSERT(node->proc_id, node->proc_id == op->proc_id);
     /* check if it's a synchronizing op that can't issue  */
     if ((op->table_info->bar_type & BAR_ISSUE) && (node->node_count > 0))
@@ -653,6 +667,10 @@ void node_retire() {
     reg_file_commit(op);
 
     node_precommit_retire(op);
+
+    if (op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) {
+      lsq_commit(op);
+    }
 
     if (model->op_retired_hook)
       model->op_retired_hook(op);

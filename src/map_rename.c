@@ -194,7 +194,6 @@ static inline void reg_file_extract_arch_reg_id(Op *op) {
 
 static inline void reg_file_collect_rename_stat(Op *op) {
   ASSERT(op->proc_id, op != &invalid_op);
-
   STAT_EVENT(map_data->proc_id, MAP_STAGE_RENAME_OP_ONPATH + op->off_path);
 
   for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
@@ -202,22 +201,11 @@ static inline void reg_file_collect_rename_stat(Op *op) {
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
-    switch (reg_type) {
-      case REG_FILE_REG_TYPE_GENERAL_PURPOSE:
-        STAT_EVENT(map_data->proc_id, MAP_STAGE_RENAME_INT_REG_ONPATH + op->off_path);
-        break;
-
-      case REG_FILE_REG_TYPE_VECTOR:
-        STAT_EVENT(map_data->proc_id, MAP_STAGE_RENAME_VEC_REG_ONPATH + op->off_path);
-        break;
-
-      default:
-        break;
-    }
+    STAT_EVENT(map_data->proc_id, MAP_STAGE_RENAME_INT_REG_ONPATH + op->off_path + reg_type * 2);
   }
 }
 
-static inline void reg_file_collect_entry_stat(struct reg_table_entry *entry) {
+static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *entry) {
   if (entry->op_num == 0)
     return;
 
@@ -237,46 +225,21 @@ static inline void reg_file_collect_entry_stat(struct reg_table_entry *entry) {
   ASSERT(map_data->proc_id, entry->consumed_cycle >= entry->produced_cycle);
   ASSERT(map_data->proc_id, cycle_count >= entry->consumed_cycle);
 
-  switch (entry->reg_type) {
-    case REG_FILE_REG_TYPE_GENERAL_PURPOSE:
-      STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ALLOC);
-      if (entry->num_consumers == 0)
-        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_UNCONSUME);
-      if (entry->num_consumers == 1)
-        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ONEUSE);
-      if (entry->num_consumers != 0 && entry->consumed_cycle - entry->produced_cycle == 1)
-        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_SHORTLIVE);
+  ASSERT(map_data->proc_id, entry->reg_type < REG_FILE_REG_TYPE_NUM);
+  STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ALLOC + entry->reg_type);
 
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_EMPTY,
-                     entry->produced_cycle - entry->allocated_cycle);
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_IN_USE,
-                     entry->consumed_cycle - entry->allocated_cycle);
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_LASTUSE_COMMITTED,
-                     entry->lastuse_committed_cycle - entry->allocated_cycle);
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_TOTAL, cycle_count - entry->allocated_cycle);
-      break;
+  if (entry->num_consumers != 0 && entry->consumed_cycle - entry->produced_cycle == 1)
+    STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_SHORTLIVE + entry->reg_type);
 
-    case REG_FILE_REG_TYPE_VECTOR:
-      STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_NUM_ALLOC);
-      if (entry->num_consumers == 0)
-        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_NUM_UNCONSUME);
-      if (entry->num_consumers == 1)
-        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_NUM_ONEUSE);
-      if (entry->num_consumers != 0 && entry->consumed_cycle - entry->produced_cycle == 1)
-        STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_NUM_SHORTLIVE);
+  int clamped_consumers = entry->num_consumers < 7 ? entry->num_consumers : 7;
+  int index = clamped_consumers * 2 + entry->reg_type;
+  STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_USE_COUNT_UNUSED + index);
 
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_EMPTY,
-                     entry->produced_cycle - entry->allocated_cycle);
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_IN_USE,
-                     entry->consumed_cycle - entry->allocated_cycle);
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_LASTUSE_COMMITTED,
-                     entry->lastuse_committed_cycle - entry->allocated_cycle);
-      INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_VEC_REG_LIFECYCLE_TOTAL, cycle_count - entry->allocated_cycle);
-      break;
-
-    default:
-      break;
-  }
+  INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_EMPTY + entry->reg_type,
+                 entry->produced_cycle - entry->allocated_cycle);
+  INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_IN_USE + entry->reg_type,
+                 entry->consumed_cycle - entry->allocated_cycle);
+  INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_TOTAL, cycle_count - entry->allocated_cycle);
 }
 
 /**************************************************************************************/
@@ -712,7 +675,7 @@ int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id) {
 /* clear all the info of the entry and insert it to the free list */
 void reg_table_free(struct reg_table *reg_table, struct reg_table_entry *entry) {
   // collect the counter stat before clearing
-  reg_file_collect_entry_stat(entry);
+  reg_file_collect_released_entry_stat(entry);
 
   // clear the entry value
   entry->ops->clear(entry);

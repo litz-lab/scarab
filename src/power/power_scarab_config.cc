@@ -302,11 +302,11 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
 
   /* if OoO processor, phy_reg number is needed for renaming logic, renaming
    * logic is for both integer and floating point insts.*/
-  ADD_XML_PARAM(out, header, "phy_Regs_IRF_size", NODE_TABLE_SIZE,
+  ADD_XML_PARAM(out, header, "phy_Regs_IRF_size", REG_TABLE_INTEGER_PHYSICAL_SIZE,
                 "Number of integer physical registers needed for renaming in OoO mode. In "
                 "Scarab these are tied to ROB."); /*Scarab: Scarab does not model physical
                                                      registers, this is an approximation*/
-  ADD_XML_PARAM(out, header, "phy_Regs_FRF_size", NODE_TABLE_SIZE,
+  ADD_XML_PARAM(out, header, "phy_Regs_FRF_size", REG_TABLE_VECTOR_PHYSICAL_SIZE,
                 "Number of floating point physical registers needed for "
                 "renaming OoO mode. In scarab these are tied to ROB.");
 

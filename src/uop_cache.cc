@@ -159,11 +159,11 @@ void set_uop_cache_stage(Uop_Cache_Stage* new_uc) {
 }
 
 void init_uop_cache_stage(uns8 proc_id, const char* name) {
-  uc->current_ft = NULL;
-
   if (!UOP_CACHE_ENABLE) {
     return;
   }
+
+  uc->current_ft = NULL;
 
   DEBUG(proc_id, "Initializing %s stage\n", name);
 

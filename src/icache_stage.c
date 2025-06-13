@@ -242,7 +242,9 @@ void recover_icache_stage() {
 
   uop_cache_clear_lookup_buffer();
 
-  uc->current_ft = NULL;
+  if (UOP_CACHE_ENABLE) {
+    uc->current_ft = NULL;
+  }
   ic->current_ft = NULL;
 }
 
@@ -403,9 +405,11 @@ uint64_t get_next_unconsumed_ft_pos() {
 }
 
 FT_Arbitration_Result ft_arbitration() {
-  if (uc->current_ft) {
-    ft_set_consumed(uc->current_ft);
-    uc->current_ft = NULL;
+  if (UOP_CACHE_ENABLE) {
+    if (uc->current_ft) {
+      ft_set_consumed(uc->current_ft);
+      uc->current_ft = NULL;
+    }
   }
   if (ic->current_ft) {
     ft_set_consumed(ic->current_ft);
@@ -425,9 +429,10 @@ FT_Arbitration_Result ft_arbitration() {
 
     // look up uop cache
     Flag ft_in_uop_cache = uop_cache_lookup_ft_and_fill_lookup_buffer(ft_info, ic->off_path);
-    uc->lookups_per_cycle_count++;
-    ASSERT(ic->proc_id, uc->lookups_per_cycle_count <= UOP_CACHE_READ_PORTS);
-
+    if (UOP_CACHE_ENABLE) {
+      uc->lookups_per_cycle_count++;
+      ASSERT(ic->proc_id, uc->lookups_per_cycle_count <= UOP_CACHE_READ_PORTS);
+    }
     // look up icache if uop miss (inlcuding when uop cache disabled) or if requested
     if (!ft_in_uop_cache || ALWAYS_LOOKUP_ICACHE) {
       ic->line = lookup_icache();
@@ -457,8 +462,10 @@ FT_Arbitration_Result ft_arbitration() {
         }
       }
 
-      ASSERT(ic->proc_id, !uc->current_ft);
-      uc->current_ft = ft;
+      if (UOP_CACHE_ENABLE) {
+        ASSERT(ic->proc_id, !uc->current_ft);
+        uc->current_ft = ft;
+      }
 
       return FT_HIT_UOP_CACHE;
     } else if (ic->line) {
@@ -515,7 +522,7 @@ Icache_State icache_wait_for_miss_actions(Break_Reason* break_fetch) {
   *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
   if (ic->icache_miss_fulfilled) {
     return ICACHE_SERVING;
-  } else {
+  } else if (UOP_CACHE_ENABLE && uc->sd.op_count) {
     return ICACHE_WAIT_FOR_MISS;
   }
 }
@@ -731,7 +738,9 @@ void execute_coupled_FSM() {
     ic->next_state = ICACHE_STAGE_RESTEER;
     break_fetch = BREAK_ICACHE_STAGE_RESTEER;
   } else if (ic->state == ICACHE_STAGE_RESTEER) {
-    ASSERT(ic->proc_id, !uc->current_ft || !ft_can_fetch_op(uc->current_ft));
+    if (UOP_CACHE_ENABLE) {
+      ASSERT(ic->proc_id, !uc->current_ft || !ft_can_fetch_op(uc->current_ft));
+    }
     ASSERT(ic->proc_id, !ic->current_ft || !ft_can_fetch_op(ic->current_ft));
 
     FT_Arbitration_Result result = ft_arbitration();
@@ -747,7 +756,9 @@ void execute_coupled_FSM() {
         ic->next_state = icache_serving_actions(&break_fetch);
         break;
       case FT_HIT_UOP_CACHE:
-        ic->next_state = uop_cache_serving_actions(&break_fetch);
+        if (UOP_CACHE_ENABLE) {
+          ic->next_state = uop_cache_serving_actions(&break_fetch);
+        }
         break;
       default:
         ASSERT(ic->proc_id, 0);
@@ -764,7 +775,9 @@ void execute_coupled_FSM() {
     ASSERT(ic->proc_id, 0);
   }
   ASSERT(ic->proc_id, break_fetch != BREAK_DONT);
-  ASSERT(ic->proc_id, ic->sd.op_count * uc->sd.op_count == 0);
+  if (UOP_CACHE_ENABLE) {
+    ASSERT(ic->proc_id, ic->sd.op_count * uc->sd.op_count == 0);
+  }
 
   Stage_Data* cur_data = get_current_stage_data();
   INC_STAT_EVENT(ic->proc_id, INST_LOST_TOTAL, cur_data->max_op_count);
@@ -792,7 +805,9 @@ void execute_coupled_FSM() {
 
 void update_icache_stage() {
   ic->lookups_per_cycle_count = 0;
-  uc->lookups_per_cycle_count = 0;
+  if (UOP_CACHE_ENABLE) {
+    uc->lookups_per_cycle_count = 0;
+  }
 
   execute_coupled_FSM();
 }

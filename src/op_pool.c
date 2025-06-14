@@ -217,6 +217,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->in_node_list = FALSE;
   op->precommitted = FALSE;
   op->macro_fused = FALSE;
+  op->move_eliminated = FALSE;
 
   op->req = NULL;
 

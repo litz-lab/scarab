@@ -144,6 +144,7 @@ DEF_PARAM(reg_table_integer_physical_size, REG_TABLE_INTEGER_PHYSICAL_SIZE, uns,
 DEF_PARAM(reg_table_vector_physical_size, REG_TABLE_VECTOR_PHYSICAL_SIZE, uns, uns, 256, )
 DEF_PARAM(reg_table_integer_virtual_size, REG_TABLE_INTEGER_VIRTUAL_SIZE, uns, uns, 256, )
 DEF_PARAM(reg_table_vector_virtual_size, REG_TABLE_VECTOR_VIRTUAL_SIZE, uns, uns, 256, )
+DEF_PARAM(reg_renaming_move_eliminate, REG_RENAMING_MOVE_ELIMINATE, Flag, Flag, FALSE, )
 
 /********ISSUE QUEUE
  * PARAMETERS********************************************************/

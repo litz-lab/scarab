@@ -101,6 +101,9 @@ struct reg_table_entry {
   Counter consumed_cycle;
   Counter lastuse_committed_cycle;
 
+  // physical register inlining for move elimination
+  int num_refs;  // the number of in-flight operands using this entry
+
   // consumer counter
   int num_consumers;   // the number of registered (at rename) consumers of a registers
   int consumed_count;  // the number of issued (at execute) consumers of a register

@@ -243,6 +243,85 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
 }
 
 /**************************************************************************************/
+/* move elimination:
+ *    The destination register of an instruction can be renamed to the same physical register as the source
+ *    if all the bellow conditions are met:
+ *    - The instruction is a register-to-register move (e.g., XED_ICLASS_MOV)
+ *    - It has exactly one source and one destination
+ *    - Both source and destination operands are general-purpose or SIMD registers
+ *    - There is no memory access involved (i.e., no load or store)
+ *    - The source and destination registers have the same width
+ *    - The move has no side effects (e.g., it does not update flags)
+ */
+
+uns16 MOVE_ELIMINATION_OP_CODE[] = {
+    XED_ICLASS_MOV,
+};
+#define NUM_MOVE_ELIM_OP_CODES (sizeof(MOVE_ELIMINATION_OP_CODE) / sizeof(MOVE_ELIMINATION_OP_CODE[0]))
+
+static inline Flag reg_file_check_move_elim_candidate(uns16 op_code) {
+  ASSERT(map_data->proc_id, REG_RENAMING_MOVE_ELIMINATE);
+
+  for (int ii = 0; ii < NUM_MOVE_ELIM_OP_CODES; ii++) {
+    if (op_code == MOVE_ELIMINATION_OP_CODE[ii]) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+static inline Flag reg_file_check_same_reg_width(int src_reg_id, int dst_reg_id) {
+  ASSERT(map_data->proc_id, REG_RENAMING_MOVE_ELIMINATE);
+
+  // Match 64-bit GPRs
+  if ((src_reg_id >= REG_RAX && src_reg_id <= REG_R15) && (dst_reg_id >= REG_RAX && dst_reg_id <= REG_R15))
+    return TRUE;
+
+  // Match Flags
+  if ((src_reg_id >= REG_ZPS && src_reg_id <= REG_DF) && (dst_reg_id >= REG_ZPS && dst_reg_id <= REG_DF))
+    return TRUE;
+
+  // Match Tmps
+  if ((src_reg_id >= REG_TMP0 && src_reg_id <= REG_TMP4) && (dst_reg_id >= REG_TMP0 && dst_reg_id <= REG_TMP4))
+    return TRUE;
+
+  // Match 512-bit SIMD (ZMM)
+  if ((src_reg_id >= REG_ZMM0 && src_reg_id <= REG_ZMM31) && (dst_reg_id >= REG_ZMM0 && dst_reg_id <= REG_ZMM31))
+    return TRUE;
+
+  return FALSE;
+}
+
+static inline void reg_file_move_eliminate(Op *op) {
+  if (!REG_RENAMING_MOVE_ELIMINATE)
+    return;
+
+  if (op->table_info->mem_type)
+    return;
+
+  if (op->table_info->num_src_regs != 1 || op->table_info->num_dest_regs != 1)
+    return;
+
+  int src_reg_id = op->src_reg_id[0][REG_TABLE_TYPE_ARCHITECTURAL];
+  int dst_reg_id = op->dst_reg_id[0][REG_TABLE_TYPE_ARCHITECTURAL];
+  if (reg_file_get_reg_type(src_reg_id) == REG_FILE_REG_TYPE_OTHER)
+    return;
+
+  if (reg_file_get_reg_type(dst_reg_id) == REG_FILE_REG_TYPE_OTHER)
+    return;
+
+  if (!reg_file_check_same_reg_width(src_reg_id, dst_reg_id))
+    return;
+
+  if (!reg_file_check_move_elim_candidate(op->inst_info->table_info->true_op_type))
+    return;
+
+  op->move_eliminated = TRUE;
+  STAT_EVENT(map_data->proc_id, MAP_STAGE_RENAME_MOVE_ELIM_ONPATH + op->off_path);
+}
+
+/**************************************************************************************/
 /* reg file operation functions for all register schemes */
 
 static inline void reg_file_init_reg_table(int self_reg_table_type, struct reg_table *parent_reg_table,
@@ -296,6 +375,12 @@ static inline void reg_file_write_dst(Op *op, int self_reg_table_type, int paren
 
     // allocate the dst register and write meta info
     int self_reg_id = reg_table->ops->alloc(reg_table, op, parent_reg_id);
+
+    // increase the reference number for register sharing
+    reg_table->entries[self_reg_id].num_refs++;
+
+    // update the parent table to ensure the latest assignment
+    reg_table->parent_reg_table->entries[parent_reg_id].child_reg_id = self_reg_id;
 
     // update the dst register id into the op
     ASSERT(op->proc_id, op->dst_reg_id[ii][self_reg_table_type] == REG_TABLE_REG_ID_INVALID);
@@ -358,10 +443,15 @@ static inline void reg_file_flush_mispredict(Op *op, int *reg_table_types, int r
       // release the current mispredicted register entry
       struct reg_table *reg_table = reg_file[reg_type]->reg_table[table_type];
       struct reg_table_entry *entry = &reg_table->entries[reg_id];
+      ASSERT(op->proc_id, entry != NULL);
 
-      ASSERT(op->proc_id, entry != NULL && entry->off_path);
-      ASSERT(op->proc_id,
-             entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC || entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED);
+      entry->num_refs--;
+      ASSERT(op->proc_id, entry->off_path || entry->num_refs > 0);
+      if (entry->num_refs > 0) {
+        continue;
+      }
+
+      ASSERT(op->proc_id, entry->reg_state != REG_TABLE_ENTRY_STATE_FREE);
       reg_table->ops->free(reg_table, entry);
     }
   }
@@ -401,7 +491,8 @@ static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_t
 
       struct reg_table *reg_table = reg_file[reg_type]->reg_table[table_type];
       struct reg_table_entry *entry = &reg_table->entries[reg_id];
-      ASSERT(op->proc_id, entry != NULL && entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED);
+      ASSERT(op->proc_id, entry != NULL);
+      ASSERT(op->proc_id, entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED || REG_RENAMING_MOVE_ELIMINATE);
 
       // mark register as committed at retirement
       ASSERT(op->proc_id,
@@ -411,8 +502,13 @@ static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_t
       int prev_reg_id = op->prev_dst_reg_id[ii][table_type];
       ASSERT(op->proc_id, prev_reg_id != REG_TABLE_REG_ID_INVALID);
 
-      // release the previous op before the current committed op
       struct reg_table_entry *prev_entry = &reg_table->entries[prev_reg_id];
+      prev_entry->num_refs--;
+      ASSERT(op->proc_id, prev_entry->num_refs >= 0);
+      if (prev_entry->num_refs > 0)
+        continue;
+
+      // release the previous op before the current committed op
       ASSERT(op->proc_id, prev_entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT || prev_entry->op == &invalid_op);
       ASSERT(op->proc_id, prev_entry->consumed_count == prev_entry->num_consumers);
       reg_table->ops->free(reg_table, prev_entry);
@@ -523,6 +619,8 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->consumed_cycle = MAX_CTR;
   entry->lastuse_committed_cycle = MAX_CTR;
 
+  entry->num_refs = 0;
+
   entry->num_consumers = 0;
   entry->consumed_count = 0;
 
@@ -578,6 +676,9 @@ void reg_table_entry_consume(struct reg_table_entry *entry, Op *op) {
 
 /* update the register state to indicate the value is produced during execution*/
 void reg_table_entry_produce(struct reg_table_entry *entry, Op *op) {
+  if (op->move_eliminated) {
+    return;
+  }
   ASSERT(map_data->proc_id, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
 
   entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
@@ -634,6 +735,7 @@ void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_ta
 
     struct reg_table_entry *entry = reg_table->free_list->ops->alloc(reg_table->free_list);
     entry->ops->write(entry, &invalid_op, ii);
+    entry->num_refs++;
     reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->self_reg_id;
   }
 }
@@ -662,12 +764,14 @@ int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id) {
 int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id) {
   ASSERT(0, REG_RENAMING_SCHEME && reg_table != NULL && op != NULL);
 
+  if (REG_RENAMING_MOVE_ELIMINATE && op->move_eliminated) {
+    ASSERT(op->proc_id, op->table_info->num_src_regs == 1);
+    return op->src_reg_id[0][reg_table->reg_table_type];
+  }
+
   // get the entry from the free list and write the metadata
   struct reg_table_entry *entry = reg_table->free_list->ops->alloc(reg_table->free_list);
   entry->ops->write(entry, op, parent_reg_id);
-
-  // update the parent table to ensure the latest assignment
-  reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->self_reg_id;
 
   return entry->self_reg_id;
 }
@@ -835,9 +939,6 @@ Flag reg_renaming_scheme_realistic_available(uns stage_op_count) {
 
 // allocate physical registers of the op and write the ptag info into the op
 void reg_renaming_scheme_realistic_rename(Op *op) {
-  // update the arch register id in the op for child tables processing
-  reg_file_extract_arch_reg_id(op);
-
   // read the physical register table by looking up the arch register table
   reg_file_read_src(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
@@ -953,9 +1054,6 @@ Flag reg_renaming_scheme_late_allocation_available(uns stage_op_count) {
 
 // allocate only virtual registers and write the vtag info into the op
 void reg_renaming_scheme_late_allocation_rename(Op *op) {
-  // update the arch register id in the op for child tables processing
-  reg_file_extract_arch_reg_id(op);
-
   // read the virtaul register table by looking up the arch register table
   reg_file_read_src(op, REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
@@ -1440,6 +1538,14 @@ Flag reg_file_available(uns stage_op_count) {
 */
 void reg_file_rename(Op *op) {
   ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+
+  // update the arch register id in the op for child tables processing
+  reg_file_extract_arch_reg_id(op);
+
+  // check if the op can be move eliminated before inlining
+  reg_file_move_eliminate(op);
+
+  // allocate physical registers
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].rename(op);
 
   reg_file_collect_rename_stat(op);

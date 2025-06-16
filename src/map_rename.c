@@ -262,6 +262,7 @@ uns16 MOVE_ELIMINATION_OP_CODE[] = {
 static inline Flag reg_file_check_move_elim_candidate(uns16 op_code) {
   ASSERT(map_data->proc_id, REG_RENAMING_MOVE_ELIMINATE);
 
+  // TODO: use hashmap when increasing op_code candidates
   for (int ii = 0; ii < NUM_MOVE_ELIM_OP_CODES; ii++) {
     if (op_code == MOVE_ELIMINATION_OP_CODE[ii]) {
       return TRUE;
@@ -276,14 +277,6 @@ static inline Flag reg_file_check_same_reg_width(int src_reg_id, int dst_reg_id)
 
   // Match 64-bit GPRs
   if ((src_reg_id >= REG_RAX && src_reg_id <= REG_R15) && (dst_reg_id >= REG_RAX && dst_reg_id <= REG_R15))
-    return TRUE;
-
-  // Match Flags
-  if ((src_reg_id >= REG_ZPS && src_reg_id <= REG_DF) && (dst_reg_id >= REG_ZPS && dst_reg_id <= REG_DF))
-    return TRUE;
-
-  // Match Tmps
-  if ((src_reg_id >= REG_TMP0 && src_reg_id <= REG_TMP4) && (dst_reg_id >= REG_TMP0 && dst_reg_id <= REG_TMP4))
     return TRUE;
 
   // Match 512-bit SIMD (ZMM)
@@ -764,7 +757,8 @@ int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id) {
 int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id) {
   ASSERT(0, REG_RENAMING_SCHEME && reg_table != NULL && op != NULL);
 
-  if (REG_RENAMING_MOVE_ELIMINATE && op->move_eliminated) {
+  if (op->move_eliminated) {
+    ASSERT(op->proc_id, REG_RENAMING_MOVE_ELIMINATE);
     ASSERT(op->proc_id, op->table_info->num_src_regs == 1);
     return op->src_reg_id[0][reg_table->reg_table_type];
   }

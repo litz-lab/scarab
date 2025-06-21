@@ -290,9 +290,11 @@ void memtrace_setup(uns proc_id) {
     const InstInfo* insi;
     do {
       insi = trace_readers[proc_id]->nextInstruction();
-      ins_id++;
-      if (insi->fetched_instruction) {
-        ins_id_fetched++;
+      if (insi->valid) {
+        ins_id++;
+        if (insi->fetched_instruction) {
+          ins_id_fetched++;
+        }
       }
 
       inst_count_to_use = USE_FETCHED_COUNT ? ins_id_fetched : ins_id;

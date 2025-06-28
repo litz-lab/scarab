@@ -27,6 +27,8 @@
 
 #include "ft.h"
 
+#include <functional>
+
 #include "globals/assert.h"
 
 #include "memory/memory.param.h"
@@ -36,6 +38,8 @@
 #include "op_pool.h"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
+
+uint64_t FT_id_count = 0;
 
 /* FT member functions */
 FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
@@ -132,6 +136,42 @@ void FT::add_op(Op* op, FT_Ended_By ft_ended_by) {
   }
 }
 
+void FT::build_on_path_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path,
+                          Flag from_lookahead_buffer) {
+  FT_Ended_By ft_ended_by = FT_NOT_ENDED;
+  ft_info.dynamic_info.FT_id = FT_id_count++;
+
+  while (ft_ended_by == FT_NOT_ENDED) {
+    Op* op = alloc_op(proc_id);
+    bool fetched = fetch_op_fn(proc_id, op);
+    if (!fetched)
+      return;
+    op->off_path = off_path;
+    ft_ended_by = get_ft_ended_by(op, false);
+
+    add_op(op, ft_ended_by);
+  }
+  if (ft_ended_by != FT_NOT_ENDED) {
+    set_per_op_ft_info();
+
+    if (last_ft.get_ft_info().static_info.start) {
+      Op* last_op = last_ft.peek_last_op();
+      ASSERT(proc_id, last_op);
+      FT_Ended_By prev_end_type = last_ft.get_ft_info().dynamic_info.ended_by;
+      Addr start_addr = ft_info.static_info.start;
+
+      if (prev_end_type == FT_TAKEN_BRANCH) {
+        ASSERT(proc_id, last_op->oracle_info.pred_npc == start_addr || last_op->oracle_info.npc == start_addr);
+      } else if (prev_end_type == FT_BAR_FETCH) {
+        ASSERT(proc_id, last_op->oracle_info.npc == start_addr ||
+                            last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == start_addr);
+      } else {
+        ASSERT(proc_id, last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == start_addr);
+      }
+    }
+  }
+}
+
 FT_Info FT::get_ft_info() {
   return ft_info;
 }
@@ -146,6 +186,10 @@ void FT::set_consumed() {
 
 std::vector<Op*>& FT::get_ops() {
   return ops;
+}
+
+Op* FT::peek_last_op() {
+  return ops.back();
 }
 
 /* FT wrappers */
@@ -167,4 +211,26 @@ void ft_set_consumed(FT* ft) {
 
 FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
+}
+
+FT_Ended_By get_ft_ended_by(Op* op, bool use_pred = true) {
+  if (op->eom) {
+    uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
+                 ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
+    bool end_of_icache_line = offset >= ICACHE_LINE_SIZE;
+    bool cf_taken = use_pred ? (op->table_info->cf_type && op->oracle_info.pred == TAKEN)
+                             : (op->table_info->cf_type && op->oracle_info.dir == TAKEN);
+    bool bar_fetch = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH;
+
+    if (op->exit) {
+      return FT_APP_EXIT;
+    } else if (bar_fetch) {
+      return FT_BAR_FETCH;
+    } else if (cf_taken) {
+      return FT_TAKEN_BRANCH;
+    } else if (end_of_icache_line) {
+      return FT_ICACHE_LINE_BOUNDARY;
+    }
+  }
+  return FT_NOT_ENDED;
 }

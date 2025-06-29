@@ -522,7 +522,7 @@ Icache_State icache_wait_for_miss_actions(Break_Reason* break_fetch) {
   *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
   if (ic->icache_miss_fulfilled) {
     return ICACHE_SERVING;
-  } else if (UOP_CACHE_ENABLE && uc->sd.op_count) {
+  } else {
     return ICACHE_WAIT_FOR_MISS;
   }
 }
@@ -578,9 +578,13 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
   if (ic->sd.op_count) {
     *break_fetch = BREAK_ICACHE_STALLED;
     return ICACHE_SERVING;
-  } else if (uc->sd.op_count) {
-    *break_fetch = BREAK_UOP_CACHE_STALLED;
-    return ICACHE_SERVING;
+  } else {
+    if (UOP_CACHE_ENABLE) {
+      if (uc->sd.op_count) {
+        *break_fetch = BREAK_UOP_CACHE_STALLED;
+        return ICACHE_SERVING;
+      }
+    }
   }
 
   // ft_can_fetch_op denotes if the fetched ft has more uops,

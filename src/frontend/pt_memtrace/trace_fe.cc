@@ -236,6 +236,7 @@ void ext_trace_fetch_op(uns proc_id, Op *op) {
       uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id]);
     } else {
       uop_generator_get_uop(proc_id, op, &next_offpath_pi[proc_id]);
+      op->exit = false;
     }
   } else {
     uop_generator_get_uop(proc_id, op, NULL);

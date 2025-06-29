@@ -79,8 +79,8 @@ class FT {
   bool is_consumed();
   void set_consumed();
   std::vector<Op*>& get_ops();
-  void build_on_path_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path,
-                        Flag from_lookahead_buffer);
+  void build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path,
+                     Flag from_lookahead_buffer);
   Op* peek_last_op();
 
  private:

@@ -279,7 +279,8 @@ void Decoupled_FE::recover() {
   if (CONFIDENCE_ENABLE)
     conf->recover(op);
 }
-
+Flag have_seen_exit_on_ftq = 0;
+Flag have_seen_exit_on_prebuilt = 0;
 void Decoupled_FE::update() {
   uns cf_num = 0;
   uint64_t bytes_this_cycle = 0;
@@ -346,7 +347,8 @@ void Decoupled_FE::update() {
         STAT_EVENT(proc_id, FTQ_BREAK_BAR_FETCH_ONPATH);
       break;
     }
-    if (!frontend_can_fetch_op(proc_id)) {
+
+    if (!frontend_can_fetch_op(proc_id) && !save_ft.ft_info.static_info.start) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
       break;
     }
@@ -361,7 +363,7 @@ void Decoupled_FE::update() {
       save_ft = FT(proc_id);
     } else {
       // fetch op and build a new FT
-      pre_built_ft.build_on_path_ft(
+      pre_built_ft.build_full_ft(
           proc_id,
           [](uns8 pid, Op* op) -> bool {
             frontend_fetch_op(pid, op);
@@ -370,7 +372,7 @@ void Decoupled_FE::update() {
           ftq.empty() ? FT() : ftq.back(), off_path, 0);
     }
 
-    int index = bp_predict_ft(pre_built_ft, cf_num, pre_built_ft.op_pos);
+    int index = bp_predict_ft(pre_built_ft, cf_num, 0);
 
     FT alter_ft = FT();
     FT_Ended_By ft_ended_by = FT_NOT_ENDED;
@@ -461,11 +463,9 @@ void Decoupled_FE::update() {
                               current_ft_to_push.ft_info.static_info.start);
         }
       }
-      // push the current FT to the FTQ
       ftq.emplace_back(current_ft_to_push);
       bytes_this_cycle += current_ft_to_push.ft_info.static_info.length;
 
-      //   saved_FT_buffer.push_back(current_ft_to_push);
       for (auto it = current_ft_to_push.ops.begin(); it != current_ft_to_push.ops.end(); it++) {
         if ((*it)->eom) {
           bool cf_taken = (*it)->table_info->cf_type && (*it)->oracle_info.pred == TAKEN;
@@ -481,6 +481,9 @@ void Decoupled_FE::update() {
         ASSERT(proc_id, recovery_addr == current_ft_to_push.ft_info.static_info.start);
         recovery_addr = 0;
       }
+      DEBUG(proc_id, "Push new FT to FTQ start_addr0x:%llx off_path:%i \n",
+            current_ft_to_push.ft_info.static_info.start, current_ft_to_push.ops.front()->off_path);
+
       current_ft_to_push = FT(proc_id);
       if (ft_ended_by == FT_ICACHE_LINE_BOUNDARY) {
         current_ft_to_push.set_ft_started_by(FT_STARTED_BY_ICACHE_LINE_BOUNDARY);
@@ -498,10 +501,6 @@ void Decoupled_FE::update() {
       STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH);
     }
 
-    DEBUG(proc_id,
-          "Push new op to FTQ fetch_addr0x:%llx off_path:%i op_num:%llu dis:%s recovery_addr:%lx fetch_bar:%i\n",
-          op->inst_info->addr, op->off_path, op->op_num, disasm_op(op, TRUE), recovery_addr,
-          op->table_info->bar_type & BAR_FETCH);
   }
 }
 
@@ -658,7 +657,7 @@ Flag Decoupled_FE::bp_predict_one_op_dfe(Op* op, uns& cf_num) {
     ASSERT(proc_id, op->eom);
     Addr pred_addr = bp_predict_op(g_bp_data, op, cf_num++, op->inst_info->addr);
     DEBUG(proc_id,
-          "Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%lx mispred:%i misfetch:%i btb miss:%i taken:%i "
+          "Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
           "recover_at_decode:%i recover_at_exec:%i off_path:%i bar_fetch:%i\n",
           op->inst_info->addr, op->oracle_info.npc, pred_addr, op->oracle_info.mispred, op->oracle_info.misfetch,
           op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN, op->oracle_info.recover_at_decode,
@@ -678,7 +677,9 @@ Flag Decoupled_FE::bp_predict_one_op_dfe(Op* op, uns& cf_num) {
         op->oracle_info.recover_at_exec = FALSE;
       }
       off_path = true;
-      // printf("Decoupled fetch proc_id:%i off_path:%i op_num:%llu\n", proc_id, off_path, op->op_num);
+      // if(have_seen_exit_on_prebuilt)
+      //   printf("mispred redirect Decoupled fetch proc_id:%i off_path:%i redirect addr is:%llx\n", proc_id, off_path,
+      //   pred_addr);
       frontend_redirect(proc_id, op->inst_uid, pred_addr);
       redirect_cycle = cycle_count;
       return true;  // Return the index of mispredicted branch
@@ -688,6 +689,9 @@ Flag Decoupled_FE::bp_predict_one_op_dfe(Op* op, uns& cf_num) {
       // and this should be last op in the FT
       // no misprediction, just manually redirect
       ASSERT(proc_id, op->oracle_info.dir == TAKEN);
+      // if(have_seen_exit_on_prebuilt)
+      //   printf("no mispred redirect Decoupled fetch proc_id:%i off_path:%i redirect addr is:%llx\n", proc_id,
+      //   off_path, pred_addr);
       frontend_redirect(proc_id, op->inst_uid, pred_addr);
     }
   } else {

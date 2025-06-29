@@ -136,8 +136,8 @@ void FT::add_op(Op* op, FT_Ended_By ft_ended_by) {
   }
 }
 
-void FT::build_on_path_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path,
-                          Flag from_lookahead_buffer) {
+void FT::build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path,
+                       Flag from_lookahead_buffer) {
   FT_Ended_By ft_ended_by = FT_NOT_ENDED;
   ft_info.dynamic_info.FT_id = FT_id_count++;
 

@@ -429,10 +429,7 @@ FT_Arbitration_Result ft_arbitration() {
 
     // look up uop cache
     Flag ft_in_uop_cache = uop_cache_lookup_ft_and_fill_lookup_buffer(ft_info, ic->off_path);
-    if (UOP_CACHE_ENABLE) {
-      uc->lookups_per_cycle_count++;
-      ASSERT(ic->proc_id, uc->lookups_per_cycle_count <= UOP_CACHE_READ_PORTS);
-    }
+
     // look up icache if uop miss (inlcuding when uop cache disabled) or if requested
     if (!ft_in_uop_cache || ALWAYS_LOOKUP_ICACHE) {
       ic->line = lookup_icache();
@@ -462,10 +459,8 @@ FT_Arbitration_Result ft_arbitration() {
         }
       }
 
-      if (UOP_CACHE_ENABLE) {
-        ASSERT(ic->proc_id, !uc->current_ft);
-        uc->current_ft = ft;
-      }
+      ASSERT(ic->proc_id, !uc->current_ft);
+      uc->current_ft = ft;
 
       return FT_HIT_UOP_CACHE;
     } else if (ic->line) {
@@ -579,11 +574,9 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
     *break_fetch = BREAK_ICACHE_STALLED;
     return ICACHE_SERVING;
   } else {
-    if (UOP_CACHE_ENABLE) {
-      if (uc->sd.op_count) {
-        *break_fetch = BREAK_UOP_CACHE_STALLED;
-        return ICACHE_SERVING;
-      }
+    if (uc && uc->sd.op_count) {
+      *break_fetch = BREAK_UOP_CACHE_STALLED;
+      return ICACHE_SERVING;
     }
   }
 
@@ -742,9 +735,7 @@ void execute_coupled_FSM() {
     ic->next_state = ICACHE_STAGE_RESTEER;
     break_fetch = BREAK_ICACHE_STAGE_RESTEER;
   } else if (ic->state == ICACHE_STAGE_RESTEER) {
-    if (UOP_CACHE_ENABLE) {
-      ASSERT(ic->proc_id, !uc->current_ft || !ft_can_fetch_op(uc->current_ft));
-    }
+    ASSERT(ic->proc_id, !uc || !uc->current_ft || !ft_can_fetch_op(uc->current_ft));
     ASSERT(ic->proc_id, !ic->current_ft || !ft_can_fetch_op(ic->current_ft));
 
     FT_Arbitration_Result result = ft_arbitration();
@@ -760,9 +751,7 @@ void execute_coupled_FSM() {
         ic->next_state = icache_serving_actions(&break_fetch);
         break;
       case FT_HIT_UOP_CACHE:
-        if (UOP_CACHE_ENABLE) {
-          ic->next_state = uop_cache_serving_actions(&break_fetch);
-        }
+        ic->next_state = uop_cache_serving_actions(&break_fetch);
         break;
       default:
         ASSERT(ic->proc_id, 0);

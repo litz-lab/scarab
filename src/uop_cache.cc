@@ -254,6 +254,9 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
     lookup_addr += uoc_data->offset;
   } while (!uoc_data->end_of_ft);
 
+  uc->lookups_per_cycle_count++;
+  ASSERT(ic->proc_id, uc->lookups_per_cycle_count <= UOP_CACHE_READ_PORTS);
+
   return TRUE;
 }
 

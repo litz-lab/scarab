@@ -719,8 +719,10 @@ void node_fill_rs() {
 
     // This is the max number of ops we can fill into the RS per cycle.
     // 0 means infinite.
-    if (RS_FILL_WIDTH && (num_fill_rs == RS_FILL_WIDTH))
+    if (RS_FILL_WIDTH && (num_fill_rs == RS_FILL_WIDTH)) {
+      op = op->next_node;
       break;
+    }
   }
 
   // had to stop issuing, this is the next node that should be issued to the RS

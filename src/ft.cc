@@ -102,13 +102,12 @@ void FT::add_op(Op* op, FT_Ended_By ft_ended_by) {
     }
   }
   ops.emplace_back(op);
+  ft_info.dynamic_info.ended_by = ft_ended_by;
   if (ft_ended_by != FT_NOT_ENDED) {
     ASSERT(proc_id, op->eom && !ft_info.static_info.length);
     ASSERT(proc_id, ft_info.static_info.start);
     ft_info.static_info.n_uops = ops.size();
     ft_info.static_info.length = op->inst_info->addr + op->inst_info->trace_info.inst_size - ft_info.static_info.start;
-    ASSERT(proc_id, ft_info.dynamic_info.ended_by == FT_NOT_ENDED);
-    ft_info.dynamic_info.ended_by = ft_ended_by;
 
     // counting extremely short FT reason
     if (!ft_info.dynamic_info.first_op_off_path) {
@@ -136,8 +135,7 @@ void FT::add_op(Op* op, FT_Ended_By ft_ended_by) {
   }
 }
 
-void FT::build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path,
-                       Flag from_lookahead_buffer) {
+void FT::build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path) {
   FT_Ended_By ft_ended_by = FT_NOT_ENDED;
   ft_info.dynamic_info.FT_id = FT_id_count++;
 
@@ -147,7 +145,8 @@ void FT::build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn,
     if (!fetched)
       return;
     op->off_path = off_path;
-    ft_ended_by = get_ft_ended_by(op, false);
+
+    ft_ended_by = ft_get_ended_by(op, false);
 
     add_op(op, ft_ended_by);
   }
@@ -170,6 +169,22 @@ void FT::build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn,
       }
     }
   }
+}
+
+FT FT::copy_ft(uns start_idx, uns end_idx, Flag use_pred) {
+  FT dest_ft = FT(0);
+  ASSERT(0, start_idx <= end_idx && end_idx < ops.size());
+  for (uns i = start_idx; i <= end_idx; i++) {
+    Op* op = ops[i];
+    FT_Ended_By ft_ended_by = FT_NOT_ENDED;
+
+    ft_ended_by = ft_get_ended_by(op, use_pred);
+
+    dest_ft.add_op(op, ft_ended_by);
+    op_pos++;
+  }
+  return dest_ft;
+
 }
 
 FT_Info FT::get_ft_info() {
@@ -213,7 +228,7 @@ FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
 
-FT_Ended_By get_ft_ended_by(Op* op, bool use_pred = true) {
+FT_Ended_By ft_get_ended_by(Op* op, bool use_pred = true) {
   if (op->eom) {
     uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
                  ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);

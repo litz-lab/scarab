@@ -60,7 +60,7 @@ class Decoupled_FE {
   std::deque<FT> ftq;
   // keep track of the current FT to be pushed next
   FT current_ft_to_push;
-  FT save_ft;
+  FT saved_recovery_ft;
 
   int off_path;
   int sched_off_path;
@@ -213,8 +213,8 @@ void Decoupled_FE::init(uns _proc_id) {
 
   current_ft_to_push = FT(proc_id);
   current_ft_to_push.set_ft_started_by(FT_STARTED_BY_APP);
-  save_ft = FT(proc_id);
-  save_ft.set_ft_started_by(FT_STARTED_BY_APP);
+  saved_recovery_ft = FT(proc_id);
+  saved_recovery_ft.set_ft_started_by(FT_STARTED_BY_APP);
 
   if (CONFIDENCE_ENABLE)
     conf = new Conf(_proc_id);
@@ -264,11 +264,11 @@ void Decoupled_FE::recover() {
 
   // FIXME always fetch off path ops? should we get rid of this parameter?
   frontend_recover(proc_id, bp_recovery_info->recovery_inst_uid);
-  if (save_ft.ft_info.static_info.start != 0) {
-    ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == save_ft.ft_info.static_info.start,
+  if (saved_recovery_ft.ft_info.static_info.start != 0) {
+    ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == saved_recovery_ft.ft_info.static_info.start,
             "Scarab's recovery addr 0x%llx does not match save ft pos"
             "addr 0x%llx\n",
-            bp_recovery_info->recovery_fetch_addr, save_ft.ft_info.static_info.start);
+            bp_recovery_info->recovery_fetch_addr, saved_recovery_ft.ft_info.static_info.start);
 
   } else {
     ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == frontend_next_fetch_addr(proc_id),
@@ -348,7 +348,7 @@ void Decoupled_FE::update() {
       break;
     }
 
-    if (!frontend_can_fetch_op(proc_id) && !save_ft.ft_info.static_info.start) {
+    if (!frontend_can_fetch_op(proc_id) && !saved_recovery_ft.ft_info.static_info.start) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
       break;
     }
@@ -358,9 +358,9 @@ void Decoupled_FE::update() {
     pre_built_ft = FT(proc_id);
     pre_built_ft.set_ft_started_by(FT_STARTED_BY_APP);
     // if not off path, either use left ops if available or
-    if (!off_path && save_ft.ft_info.static_info.start != 0) {
-      pre_built_ft = save_ft;
-      save_ft = FT(proc_id);
+    if (!off_path && saved_recovery_ft.ft_info.static_info.start != 0) {
+      pre_built_ft = saved_recovery_ft;
+      saved_recovery_ft = FT(proc_id);
     } else {
       // fetch op and build a new FT
       pre_built_ft.build_full_ft(
@@ -369,14 +369,13 @@ void Decoupled_FE::update() {
             frontend_fetch_op(pid, op);
             return true;  // always succeeds
           },
-          ftq.empty() ? FT() : ftq.back(), off_path, 0);
+          ftq.empty() ? FT() : ftq.back(), off_path);
     }
 
     int index = bp_predict_ft(pre_built_ft, cf_num, 0);
 
     FT alter_ft = FT();
     FT_Ended_By ft_ended_by = FT_NOT_ENDED;
-    FT_Ended_By save_ft_ended_by = FT_NOT_ENDED;
     if (index != -1) {
       // if we see a misprediction, we must be on off_path
       ASSERT(proc_id, off_path);
@@ -389,36 +388,23 @@ void Decoupled_FE::update() {
       ASSERT(proc_id, index_uns < pre_built_ft.ops.size() && index_uns >= 0);
       // copy over ops to build one or two FTs
       // everything up to mis-predicted branch goes to alter_ft
-      // then save the rest to save_ft
-      for (uns i = 0; i < pre_built_ft.ops.size(); i++) {
-        // copy over the ops to alt_ft
-        if (i <= index_uns) {
-          ft_ended_by = get_ft_ended_by(pre_built_ft.ops[i], 1);
-          alter_ft.add_op(pre_built_ft.ops[i], ft_ended_by);
-          pre_built_ft.op_pos++;
-        } else {
-          // save the rest to save_ft if not the last op and not off_path
-          if (i > index_uns && !pre_built_ft.ops[0]->off_path) {
-            save_ft_ended_by = get_ft_ended_by(pre_built_ft.ops[i], 0);
-            save_ft.add_op(pre_built_ft.ops[i], save_ft_ended_by);
-            pre_built_ft.op_pos++;
-          } else {
-            // if not saved to save_ft, we free the op
-            free_op(pre_built_ft.ops[i]);
-            pre_built_ft.op_pos++;
-          }
-        }
+     
+      alter_ft = pre_built_ft.copy_ft(0, index_uns, 1);
+      ft_ended_by = alter_ft.ft_info.dynamic_info.ended_by;
+      if (index_uns < pre_built_ft.ops.size() - 1 && !pre_built_ft.ops[0]->off_path){
+        // if mispredicted branch is not the last op, we need to save recovery ft
+        saved_recovery_ft = pre_built_ft.copy_ft(index_uns + 1, pre_built_ft.ops.size() - 1, 0);
+        ASSERT(proc_id, saved_recovery_ft.ft_info.static_info.start && saved_recovery_ft.ft_info.static_info.length &&
+                            saved_recovery_ft.ops.size());
       }
       // should went through all ops
       ASSERT(proc_id, pre_built_ft.op_pos == pre_built_ft.ops.size());
-      // save_ft should have value and end if index is not the last op
-      if (index_uns < pre_built_ft.ops.size() - 1 && !pre_built_ft.ops[0]->off_path)
-        ASSERT(proc_id, save_ft.ft_info.static_info.start && save_ft.ft_info.static_info.length && save_ft.ops.size());
+        
+      pre_built_ft.free_ops_and_clear();
 
       // now we re-evaluate the alter_ft
       // pad more ops if needed
       while (ft_ended_by == FT_NOT_ENDED) {
-        // Addr pred_addr = 3;
         Op* op = alloc_op(proc_id);
         frontend_fetch_op(proc_id, op);
         op->op_num = dfe_op_count++;
@@ -427,7 +413,7 @@ void Decoupled_FE::update() {
         // need to check if new op is branch && misprediction
         bp_predict_one_op_dfe(op, cf_num);
 
-        ft_ended_by = get_ft_ended_by(op, 1);
+        ft_ended_by = ft_get_ended_by(op, 1);
         alter_ft.add_op(op, ft_ended_by);
       }
       ASSERT(proc_id, alter_ft.ft_info.static_info.start && alter_ft.ft_info.static_info.length &&
@@ -677,9 +663,6 @@ Flag Decoupled_FE::bp_predict_one_op_dfe(Op* op, uns& cf_num) {
         op->oracle_info.recover_at_exec = FALSE;
       }
       off_path = true;
-      // if(have_seen_exit_on_prebuilt)
-      //   printf("mispred redirect Decoupled fetch proc_id:%i off_path:%i redirect addr is:%llx\n", proc_id, off_path,
-      //   pred_addr);
       frontend_redirect(proc_id, op->inst_uid, pred_addr);
       redirect_cycle = cycle_count;
       return true;  // Return the index of mispredicted branch
@@ -689,9 +672,6 @@ Flag Decoupled_FE::bp_predict_one_op_dfe(Op* op, uns& cf_num) {
       // and this should be last op in the FT
       // no misprediction, just manually redirect
       ASSERT(proc_id, op->oracle_info.dir == TAKEN);
-      // if(have_seen_exit_on_prebuilt)
-      //   printf("no mispred redirect Decoupled fetch proc_id:%i off_path:%i redirect addr is:%llx\n", proc_id,
-      //   off_path, pred_addr);
       frontend_redirect(proc_id, op->inst_uid, pred_addr);
     }
   } else {

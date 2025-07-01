@@ -47,7 +47,7 @@ Op* ft_fetch_op(FT* ft);
 bool ft_is_consumed(FT* ft);
 void ft_set_consumed(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
-FT_Ended_By get_ft_ended_by(Op* op, bool use_pred);
+FT_Ended_By ft_get_ended_by(Op* op, bool use_pred);
 
 #ifdef __cplusplus
 }  // extern "C"
@@ -75,12 +75,11 @@ class FT {
   Op* fetch_op();
   void set_per_op_ft_info();
   FT_Info get_ft_info();
-  FT_Info get_save_ft_info();
   bool is_consumed();
   void set_consumed();
+  FT copy_ft(uns start_idx, uns end_idx, Flag use_pred);
   std::vector<Op*>& get_ops();
-  void build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path,
-                     Flag from_lookahead_buffer);
+  void build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path);
   Op* peek_last_op();
 
  private:

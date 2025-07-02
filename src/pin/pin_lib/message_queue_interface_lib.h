@@ -213,12 +213,14 @@ Message<std::deque<T>>& Message<std::deque<T>>::operator=(
 template <typename T>
 Message<std::deque<T>>::operator std::deque<T>() const {
   uint32_t      size_of_deque = data_size / sizeof(T);
-  std::deque<T> object(size_of_deque);
+  std::deque<T> object;
+  object.resize(0);
 
   for(uint32_t i = 0; i < size_of_deque; ++i) {
     uint32_t start_idx = i * sizeof(T);
-    uint32_t stop_idx  = (i + 1) * sizeof(T);
-    std::copy(&data[start_idx], &data[stop_idx], (char*)&object[i]);
+    T tmp;
+    memcpy(&tmp, &data[start_idx], sizeof(T));
+    object.push_back(tmp);
   }
   return object;
 }
@@ -230,9 +232,9 @@ void Message<std::deque<T>>::copy(const std::deque<T>& object) {
                                         "sending messages larger than "
                                         "MAX_PACKET_SIZE.\n");
 
-  for(uint32_t i = 0; i < object.size(); ++i) {
-    char* object_ptr = (char*)&object[i];
-    data.insert(data.end(), object_ptr, object_ptr + sizeof(T));
+  for (const T& elem : object) {
+    const char* ptr = reinterpret_cast<const char*>(&elem);
+    data.insert(data.end(), ptr, ptr + sizeof(T));
   }
 }
 

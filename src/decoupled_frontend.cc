@@ -388,18 +388,19 @@ void Decoupled_FE::update() {
       ASSERT(proc_id, index_uns < pre_built_ft.ops.size() && index_uns >= 0);
       // copy over ops to build one or two FTs
       // everything up to mis-predicted branch goes to alter_ft
-     
-      alter_ft = pre_built_ft.copy_ft(0, index_uns, 1);
+
+      alter_ft = pre_built_ft.move_over_ft(0, index_uns, 1);
       ft_ended_by = alter_ft.ft_info.dynamic_info.ended_by;
-      if (index_uns < pre_built_ft.ops.size() - 1 && !pre_built_ft.ops[0]->off_path){
+      if (index_uns < pre_built_ft.ops.size() - 1 && !pre_built_ft.ops[0]->off_path) {
         // if mispredicted branch is not the last op, we need to save recovery ft
-        saved_recovery_ft = pre_built_ft.copy_ft(index_uns + 1, pre_built_ft.ops.size() - 1, 0);
+        saved_recovery_ft = pre_built_ft.move_over_ft(index_uns + 1, pre_built_ft.ops.size() - 1, 0);
         ASSERT(proc_id, saved_recovery_ft.ft_info.static_info.start && saved_recovery_ft.ft_info.static_info.length &&
                             saved_recovery_ft.ops.size());
       }
-      // should went through all ops
-      ASSERT(proc_id, pre_built_ft.op_pos == pre_built_ft.ops.size());
-        
+      // should went through all ops if not off-path
+      if (!pre_built_ft.ops[0]->off_path)
+        ASSERT(proc_id, pre_built_ft.op_pos == pre_built_ft.ops.size());
+
       pre_built_ft.free_ops_and_clear();
 
       // now we re-evaluate the alter_ft

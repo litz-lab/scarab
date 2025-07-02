@@ -171,7 +171,7 @@ void FT::build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn,
   }
 }
 
-FT FT::copy_ft(uns start_idx, uns end_idx, Flag use_pred) {
+FT FT::move_over_ft(uns start_idx, uns end_idx, Flag use_pred) {
   FT dest_ft = FT(0);
   ASSERT(0, start_idx <= end_idx && end_idx < ops.size());
   for (uns i = start_idx; i <= end_idx; i++) {
@@ -184,7 +184,6 @@ FT FT::copy_ft(uns start_idx, uns end_idx, Flag use_pred) {
     op_pos++;
   }
   return dest_ft;
-
 }
 
 FT_Info FT::get_ft_info() {

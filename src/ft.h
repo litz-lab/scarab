@@ -77,7 +77,7 @@ class FT {
   FT_Info get_ft_info();
   bool is_consumed();
   void set_consumed();
-  FT copy_ft(uns start_idx, uns end_idx, Flag use_pred);
+  FT move_over_ft(uns start_idx, uns end_idx, Flag use_pred);
   std::vector<Op*>& get_ops();
   void build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path);
   Op* peek_last_op();

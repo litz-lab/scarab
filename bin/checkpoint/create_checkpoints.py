@@ -191,7 +191,6 @@ SIMPOINTS_RUN_CMD_TEMPLATE = (
 'export PATH=$PIN_ROOT/extras/pinplay/PinPoints/bin/:$PATH\n'
 'export OMP_NUM_THREADS=1\n'
 'cd {run_dir_path}\n'
-'setarch x86_64 -R $PIN_ROOT/pin '
 '-t $PIN_ROOT/extras/pinplay/bin/intel64/pinplay-driver.so -bbprofile '
 '-slice_size {slice_size} -o {simpoints_relative_dir}/simpoints -- '
 '{run_command}\n'

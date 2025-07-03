@@ -25,8 +25,7 @@
 
 #include "../pin_lib/decoder.h"
 #include "../pin_lib/gather_scatter_addresses.h"
-static const ADDRINT DUMMY_NOP_BASE = (ADDRINT)0x00007FFF00000000ULL;
-
+static const ADDRINT DUMMY_NOP_BASE = ADDR_MASK((ADDRINT)(~0UL));
 
 #define ENABLE_HYPER_FF_HEARTBEAT
 void PIN_FAST_ANALYSIS_CALL docount(UINT32 c) {

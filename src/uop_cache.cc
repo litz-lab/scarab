@@ -159,11 +159,11 @@ void set_uop_cache_stage(Uop_Cache_Stage* new_uc) {
 }
 
 void init_uop_cache_stage(uns8 proc_id, const char* name) {
-  uc->current_ft = NULL;
-
   if (!UOP_CACHE_ENABLE) {
     return;
   }
+
+  uc->current_ft = NULL;
 
   DEBUG(proc_id, "Initializing %s stage\n", name);
 
@@ -253,6 +253,9 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
     ASSERT(uc->proc_id, (uoc_data->offset == 0) == uoc_data->end_of_ft);
     lookup_addr += uoc_data->offset;
   } while (!uoc_data->end_of_ft);
+
+  uc->lookups_per_cycle_count++;
+  ASSERT(ic->proc_id, uc->lookups_per_cycle_count <= UOP_CACHE_READ_PORTS);
 
   return TRUE;
 }

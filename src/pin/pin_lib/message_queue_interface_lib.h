@@ -213,14 +213,12 @@ Message<std::deque<T>>& Message<std::deque<T>>::operator=(
 template <typename T>
 Message<std::deque<T>>::operator std::deque<T>() const {
   uint32_t      size_of_deque = data_size / sizeof(T);
-  std::deque<T> object;
-  object.resize(0);
+  std::deque<T> object(size_of_deque);
 
   for(uint32_t i = 0; i < size_of_deque; ++i) {
     uint32_t start_idx = i * sizeof(T);
-    T tmp;
-    memcpy(&tmp, &data[start_idx], sizeof(T));
-    object.push_back(tmp);
+    uint32_t stop_idx = (i + 1) * sizeof(T);
+    std::copy(&data[start_idx], &data[stop_idx], (char*)&object[i]);
   }
   return object;
 }

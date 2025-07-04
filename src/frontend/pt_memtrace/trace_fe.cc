@@ -298,7 +298,10 @@ void ext_trace_fetch_op(uns proc_id, Op *op) {
 }
 
 Flag ext_trace_can_fetch_op(uns proc_id) {
-  return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
+  if (!off_path_mode[proc_id])
+    return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
+  else
+    return true;
 }
 
 void ext_trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {

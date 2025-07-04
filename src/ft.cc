@@ -28,6 +28,7 @@
 #include "ft.h"
 
 #include <functional>
+#include <iostream>
 
 #include "globals/assert.h"
 
@@ -135,20 +136,42 @@ void FT::add_op(Op* op, FT_Ended_By ft_ended_by) {
   }
 }
 
-void FT::build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path) {
-  FT_Ended_By ft_ended_by = FT_NOT_ENDED;
-  ft_info.dynamic_info.FT_id = FT_id_count++;
+void FT::build_full_ft(uns start_index, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path,
+                       Flag use_pred, uns cf_num, uint64_t& dfe_op_count) {
+  if (!frontend_can_fetch_op(proc_id)) {
+    std::cout << "Warning could not fetch inst from frontend" << std::endl;
+    *this = FT(proc_id);
+    return;
+  }
+  if (last_ft.ft_info.dynamic_info.ended_by == FT_APP_EXIT) {
+    *this = FT(proc_id);
+    return;
+  }
 
+  FT_Ended_By ft_ended_by = FT_NOT_ENDED;
+  if (start_index == 0) {
+    ft_info.dynamic_info.FT_id = FT_id_count++;
+  }
+
+  if (start_index > 0) {
+    ft_ended_by = ft_get_ended_by(ops[start_index - 1], use_pred);
+  }
   while (ft_ended_by == FT_NOT_ENDED) {
     Op* op = alloc_op(proc_id);
     bool fetched = fetch_op_fn(proc_id, op);
     if (!fetched)
       return;
     op->off_path = off_path;
-
-    ft_ended_by = ft_get_ended_by(op, false);
-
+    if (op->off_path && start_index != 0) {
+      predict_one_cf_op(op, cf_num, dfe_op_count);
+    }
+    ft_ended_by = ft_get_ended_by(op, use_pred);
     add_op(op, ft_ended_by);
+    if (off_path) {
+      STAT_EVENT(proc_id, FTQ_FETCHED_INS_OFFPATH);
+    } else {
+      STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH);
+    }
   }
   if (ft_ended_by != FT_NOT_ENDED) {
     set_per_op_ft_info();
@@ -171,19 +194,79 @@ void FT::build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn,
   }
 }
 
+std::pair<FT, FT> FT::re_evaluate_ft(uns index, std::function<bool(uns8, Op*)> fetch_op_fn, uint64_t& dfe_op_count,
+                                     uns cf_num, FT last_ft) {
+  uns index_uns = static_cast<uns>(index);
+  FT tailing_FT = FT();
+  FT alter_ft = FT();
+  // FT_Ended_By ft_ended_by = FT_NOT_ENDED;
+  ASSERT(proc_id, index_uns < ops.size() && index_uns >= 0);
+  // copy over ops to build one or two FTs
+
+  alter_ft = move_over_ft(0, index_uns, 1);
+
+  if (index_uns < ops.size() - 1) {
+    // if mispredicted branch is not the last op, we need to save recovery ft
+    tailing_FT = move_over_ft(index_uns + 1, ops.size() - 1, 0);
+    ASSERT(proc_id,
+           tailing_FT.ft_info.static_info.start && tailing_FT.ft_info.static_info.length && tailing_FT.ops.size());
+    ASSERT(proc_id, ops.size() == alter_ft.ops.size() + tailing_FT.ops.size());
+    // if it is off-path, no need to save recovery ft
+    // notice we still want to remove and free tailing ops for off-path ft upon misprediction
+    if (tailing_FT.ft_info.dynamic_info.first_op_off_path) {
+      // if we are off-path, we can just use the tailing FT as is
+      tailing_FT.free_ops_and_clear();
+    }
+  }
+  alter_ft.build_full_ft(
+      index_uns + 1,
+      [](uns8 proc_id, Op* op) {
+        frontend_fetch_op(proc_id, op);
+        return true;  // always succeeds
+      },
+      last_ft, true, true, cf_num, dfe_op_count);
+  return {alter_ft, tailing_FT};
+}
+
 FT FT::move_over_ft(uns start_idx, uns end_idx, Flag use_pred) {
   FT dest_ft = FT(0);
-  ASSERT(0, start_idx <= end_idx && end_idx < ops.size());
-  for (uns i = start_idx; i <= end_idx; i++) {
+  ASSERT(0, start_idx <= end_idx && end_idx < ops.size() && start_idx >= 0);
+
+  for (uns i = start_idx; i <= end_idx; ++i) {
     Op* op = ops[i];
-    FT_Ended_By ft_ended_by = FT_NOT_ENDED;
-
-    ft_ended_by = ft_get_ended_by(op, use_pred);
-
+    FT_Ended_By ft_ended_by = ft_get_ended_by(op, use_pred);
     dest_ft.add_op(op, ft_ended_by);
-    op_pos++;
   }
+
   return dest_ft;
+}
+
+Flag FT::predict_one_cf_op(Op* op, uns cf_num, uint64_t& dfe_op_count) {
+  op->op_num = dfe_op_count++;
+  if (op->table_info->cf_type) {
+    ASSERT(proc_id, op->eom);
+    Addr pred_addr = bp_predict_op(g_bp_data, op, cf_num++, op->inst_info->addr);
+    DEBUG(proc_id,
+          "Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
+          "recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
+          op->inst_info->addr, op->oracle_info.npc, pred_addr, op->oracle_info.mispred, op->oracle_info.misfetch,
+          op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN, op->oracle_info.recover_at_decode,
+          op->oracle_info.recover_at_exec, op->table_info->bar_type & BAR_FETCH);
+    return decoupled_fe_update_dfe_on_cf_op(op, pred_addr);
+
+  } else
+    return false;
+}
+
+int FT::bp_predict_ft(uns cf_num, uint64_t& dfe_op_count, uns start_pos) {
+  for (uns idx = start_pos; idx < ops.size(); idx++) {
+    Op* op = ops[idx];
+    if (predict_one_cf_op(op, cf_num, dfe_op_count)) {
+      return idx;
+    }
+  }
+
+  return -1;  // No misprediction requiring recovery
 }
 
 FT_Info FT::get_ft_info() {

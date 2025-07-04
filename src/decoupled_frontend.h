@@ -130,6 +130,7 @@ Off_Path_Reason decoupled_fe_get_off_path_reason();
 Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason();
 void decoupled_fe_conf_resovle_cf(Op* op);
 void decoupled_fe_print_conf_data();
+Flag decoupled_fe_update_dfe_on_cf_op(Op* op, Addr pred_addr);
 #ifdef __cplusplus
 }
 #endif

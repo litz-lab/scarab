@@ -77,10 +77,15 @@ class FT {
   FT_Info get_ft_info();
   bool is_consumed();
   void set_consumed();
-  FT move_over_ft(uns start_idx, uns end_idx, Flag use_pred);
+
   std::vector<Op*>& get_ops();
-  void build_full_ft(uns8 proc_id, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path);
+  void build_full_ft(uns start_index, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path,
+                     Flag use_pred, uns cf_num, uint64_t& dfe_op_count);
   Op* peek_last_op();
+
+  int bp_predict_ft(uns cf_num, uint64_t& dfe_op_count, uns start_pos);
+  std::pair<FT, FT> re_evaluate_ft(uns index, std::function<bool(uns8, Op*)> fetch_op_fn, uint64_t& dfe_op_count,
+                                   uns cf_num, FT last_ft);
 
  private:
   uns proc_id;
@@ -88,6 +93,8 @@ class FT {
   FT_Info ft_info;
   std::vector<Op*> ops;
   bool consumed;
+  Flag predict_one_cf_op(Op* op, uns cf_num, uint64_t& dfe_op_count);
+  FT move_over_ft(uns start_idx, uns end_idx, Flag use_pred);
 
   friend class Decoupled_FE;
 };

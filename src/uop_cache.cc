@@ -159,6 +159,8 @@ void set_uop_cache_stage(Uop_Cache_Stage* new_uc) {
 }
 
 void init_uop_cache_stage(uns8 proc_id, const char* name) {
+  printf("test\n");
+
   if (!UOP_CACHE_ENABLE) {
     return;
   }

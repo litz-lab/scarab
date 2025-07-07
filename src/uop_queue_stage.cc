@@ -48,6 +48,9 @@ void init_uop_queue_stage() {
 
 // Get ops from the uop cache.
 void update_uop_queue_stage(Stage_Data* src_sd) {
+  if (!UOP_CACHE_ENABLE)
+    return;
+
   // If the front of the queue was consumed, remove that stage.
   if (q.size() && q.front()->op_count == 0) {
     free_sds.push_back(q.front());

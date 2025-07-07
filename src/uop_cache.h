@@ -51,7 +51,6 @@ extern Uop_Cache_Stage* uc;
 
 void set_uop_cache_stage(Uop_Cache_Stage* new_uc);
 void init_uop_cache_stage(uns8 proc_id, const char* name);
-
 void alloc_mem_uop_cache(uns num_cores);
 void recover_uop_cache(void);
 
@@ -60,10 +59,8 @@ Uop_Cache_Data uop_cache_consume_uops_from_lookup_buffer(uns requested);
 void uop_cache_clear_lookup_buffer(void);
 Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag update_repl);
 
-void clear_accumulation(Flag clear_line_only);
-void end_line_accumulate(Flag last_line_of_ft);
-/* accumulate uop into buffer. If terminating condition reached, call insert_uop_cache */
-void accumulate_op(Op* op);
+void uop_cache_accumulation_buffer_clear();
+void uop_cache_accumulation_buffer_update(Op* op);
 
 #ifdef __cplusplus
 }

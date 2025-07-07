@@ -226,12 +226,17 @@ void cmp_cores(void) {
       update_node_stage(map->last_sd);
       update_map_stage(idq_stage_get_stage_data());
 
-      /* IDQ stage that bridges the front-end and back-end */
-      /* This stage can get uops from the uc->sd, cache queue, or decoder. */
-      update_idq_stage(dec->last_sd, &uc->sd, uop_queue_stage_get_latest_sd());
+      if (UOP_CACHE_ENABLE) {
+        /* IDQ stage that bridges the front-end and back-end */
+        /* This stage can get uops from the uc->sd, cache queue, or decoder. */
+        update_idq_stage(dec->last_sd, &uc->sd, uop_queue_stage_get_latest_sd());
 
-      /* Front-end pipiline */
-      update_uop_queue_stage(&uc->sd);
+        /* Front-end pipiline */
+        update_uop_queue_stage(&uc->sd);
+      } else {
+        update_idq_stage(dec->last_sd, NULL, NULL);
+        update_uop_queue_stage(NULL);
+      }
       update_decode_stage(&ic->sd);
       update_icache_stage();
 

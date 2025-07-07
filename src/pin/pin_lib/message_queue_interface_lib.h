@@ -231,8 +231,8 @@ void Message<std::deque<T>>::copy(const std::deque<T>& object) {
                                         "MAX_PACKET_SIZE.\n");
 
   for (const T& elem : object) {
-    const char* ptr = reinterpret_cast<const char*>(&elem);
-    data.insert(data.end(), ptr, ptr + sizeof(T));
+    const char* object_ptr = reinterpret_cast<const char*>(&elem);
+    data.insert(data.end(), object_ptr, object_ptr + sizeof(T));
   }
 }
 

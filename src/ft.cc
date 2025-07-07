@@ -34,6 +34,7 @@
 
 #include "memory/memory.param.h"
 
+#include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
 
 #include "op_pool.h"
@@ -241,7 +242,12 @@ FT FT::move_over_ft(uns start_idx, uns end_idx, Flag use_pred) {
   return dest_ft;
 }
 
-Flag FT::predict_one_cf_op(Op* op, uns cf_num, uint64_t& dfe_op_count) {
+FT_Event FT::predict_one_cf_op(Op* op, uns cf_num, uint64_t& dfe_op_count) {
+  bool trace_mode = false;
+
+#ifdef ENABLE_PT_MEMTRACE
+  trace_mode |= (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE);
+#endif
   op->op_num = dfe_op_count++;
   if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
@@ -252,21 +258,58 @@ Flag FT::predict_one_cf_op(Op* op, uns cf_num, uint64_t& dfe_op_count) {
           op->inst_info->addr, op->oracle_info.npc, pred_addr, op->oracle_info.mispred, op->oracle_info.misfetch,
           op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN, op->oracle_info.recover_at_decode,
           op->oracle_info.recover_at_exec, op->table_info->bar_type & BAR_FETCH);
-    return decoupled_fe_update_dfe_on_cf_op(op, pred_addr);
-
-  } else
-    return false;
-}
-
-int FT::bp_predict_ft(uns cf_num, uint64_t& dfe_op_count, uns start_pos) {
-  for (uns idx = start_pos; idx < ops.size(); idx++) {
-    Op* op = ops[idx];
-    if (predict_one_cf_op(op, cf_num, dfe_op_count)) {
-      return idx;
+    if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
+      {
+        op->oracle_info.recover_at_decode = FALSE;
+        op->oracle_info.recover_at_exec = FALSE;
+        STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
+        return FT_EVENT_FETCH_BARRIER;
+      }
     }
+    if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
+      ASSERT(0, (int)op->oracle_info.recover_at_decode + (int)op->oracle_info.recover_at_exec < 2);
+
+      if (op->off_path) {
+        op->oracle_info.recover_at_decode = FALSE;
+        op->oracle_info.recover_at_exec = FALSE;
+      }
+
+      frontend_redirect(proc_id, op->inst_uid, pred_addr);
+      return FT_EVENT_MISPREDICT;
+    } else if (trace_mode && op->off_path && op->oracle_info.pred == TAKEN) {
+      // in this case, not a misprediction pred is taken so oracle info should be taken
+      // and this should be last op in the FT
+      // no misprediction, just manually redirect
+      ASSERT(proc_id, op->oracle_info.dir == TAKEN);
+      frontend_redirect(proc_id, op->inst_uid, pred_addr);
+    }
+
+  } else if (op->table_info->bar_type & BAR_FETCH) {
+    ASSERT(0, !(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
+    if (op->off_path)
+      STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_OFFPATH);
+    else
+      STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_ONPATH);
+    return FT_EVENT_FETCH_BARRIER;
   }
 
-  return -1;  // No misprediction requiring recovery
+  return FT_EVENT_NONE;
+}
+
+FT_PredictResult FT::bp_predict_ft(uns cf_num, uint64_t& dfe_op_count, uns start_pos) {
+  uns cf_num_processed = 0;
+  for (uns idx = start_pos; idx < ops.size(); idx++) {
+    Op* op = ops[idx];
+    if (op->table_info->cf_type)
+      cf_num_processed++;
+    FT_Event event = predict_one_cf_op(op, cf_num, dfe_op_count);
+    if (event != FT_EVENT_NONE) {
+      uns return_idx = (event == FT_EVENT_MISPREDICT) ? idx : -1;
+      Addr pred_addr = op->oracle_info.pred_npc;  // or however you get it
+      return {static_cast<int>(return_idx), event, cf_num_processed, op, pred_addr};
+    }
+  }
+  return {-1, FT_EVENT_NONE, cf_num_processed, nullptr, 0};
 }
 
 FT_Info FT::get_ft_info() {
@@ -287,6 +330,23 @@ std::vector<Op*>& FT::get_ops() {
 
 Op* FT::peek_last_op() {
   return ops.back();
+}
+
+// Add this method to FT class implementation
+int FT::count_cfs_taken_this_cycle() const {
+  int count = 0;
+  for (auto op : ops) {
+    if (op->eom) {
+      bool cf_taken = op->table_info->cf_type && op->oracle_info.pred == TAKEN;
+      bool bar_fetch = IS_CALLSYS(op->table_info) || (op->table_info->bar_type & BAR_FETCH);
+      count += (cf_taken || bar_fetch);
+    }
+  }
+  return count;
+}
+
+bool FT::is_valid() const {
+  return ft_info.static_info.start != 0;
 }
 
 /* FT wrappers */

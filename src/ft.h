@@ -65,6 +65,21 @@ FT_Ended_By ft_get_ended_by(Op* op, bool use_pred);
 #include "decoupled_frontend.h"
 
 // C++ class definition
+enum FT_Event {
+  FT_EVENT_NONE,
+  FT_EVENT_MISPREDICT,
+  FT_EVENT_FETCH_BARRIER,
+  // ... add more as needed
+};
+
+struct FT_PredictResult {
+  int index;
+  FT_Event event;
+  uns cf_num_processed;
+  Op* op;          // Optionally, if DFE needs to know which op
+  Addr pred_addr;  // Optionally, if DFE needs the predicted address
+};
+
 class FT {
  public:
   FT(uns _proc_id = 0);
@@ -83,9 +98,12 @@ class FT {
                      Flag use_pred, uns cf_num, uint64_t& dfe_op_count);
   Op* peek_last_op();
 
-  int bp_predict_ft(uns cf_num, uint64_t& dfe_op_count, uns start_pos);
+  FT_PredictResult bp_predict_ft(uns cf_num, uint64_t& dfe_op_count, uns start_pos);
   std::pair<FT, FT> re_evaluate_ft(uns index, std::function<bool(uns8, Op*)> fetch_op_fn, uint64_t& dfe_op_count,
                                    uns cf_num, FT last_ft);
+
+  int count_cfs_taken_this_cycle() const;
+  bool is_valid() const;
 
  private:
   uns proc_id;
@@ -93,7 +111,7 @@ class FT {
   FT_Info ft_info;
   std::vector<Op*> ops;
   bool consumed;
-  Flag predict_one_cf_op(Op* op, uns cf_num, uint64_t& dfe_op_count);
+  FT_Event predict_one_cf_op(Op* op, uns cf_num, uint64_t& dfe_op_count);
   FT move_over_ft(uns start_idx, uns end_idx, Flag use_pred);
 
   friend class Decoupled_FE;

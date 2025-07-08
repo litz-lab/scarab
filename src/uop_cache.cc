@@ -95,17 +95,39 @@ uns Uop_Cache::set_idx_hash(Uop_Cache_Key key) {
   return (key.first >> offset_bits) % num_sets;
 }
 
+/*
+ * the accumulation buffer stores the uop cache lines of an FT accumulated at the end of decoding pipeline.
+ * all lines are inserted into the uop cache when the entire FT has been accumulated
+ */
+class Accumulation_Buffer {
+ private:
+  std::vector<Uop_Cache_Data> buffer;
+  Uop_Cache_Data line;  // the current line being accumulated
+  FT_Info ft;           // the current FT being accumulated
+  Counter op_num;       // the latest accumulated op_num
+
+  const static int UOP_CACHE_STAT_OFFSET = 4;
+
+  Flag if_insertable();
+  void insert_cache();
+  void evict_FT(const Entry<Uop_Cache_Key, Uop_Cache_Data>& evicted_entry);
+  void update_stat();
+
+ public:
+  Accumulation_Buffer() : op_num(0) {}
+
+  const std::vector<Uop_Cache_Data>& get_buffer() const { return buffer; }
+  const Uop_Cache_Data& get_line() const { return line; }
+  const FT_Info& get_ft() const { return ft; }
+  Counter get_op_num() const { return op_num; }
+
+  void clear();
+  void update(Op* op);
+};
+
 typedef struct Uop_Cache_Stage_Cpp_struct {
   Uop_Cache* uop_cache;
-
-  /*
-   * the accumulation buffer stores the uop cache lines of an FT accumulated at the end of decoding pipeline.
-   * all lines are inserted into the uop cache when the entire FT has been accumulated
-   */
-  std::vector<Uop_Cache_Data> accumulation_buffer;
-  Uop_Cache_Data accumulating_line;
-  FT_Info accumulating_ft;
-  Counter accumulating_op_num;
+  Accumulation_Buffer accumulation_buffer;
 
   /*
    * the lookup buffer stores the uop cache lines of an FT to be consumed by the icache stage.
@@ -183,16 +205,16 @@ void recover_uop_cache(void) {
   if (!UOP_CACHE_ENABLE) {
     return;
   }
-  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
+  auto& acc_buf = per_core_uc_stage[uc->proc_id].accumulation_buffer;
 
   // no accumulation on-going
-  if (uc_cpp->accumulation_buffer.size() == 0 && uc_cpp->accumulating_line.n_uops == 0) {
-    ASSERT(uc->proc_id, uc_cpp->accumulating_ft.static_info == FT_Info_Static{} && uc_cpp->accumulating_op_num == 0);
+  if (acc_buf.get_buffer().empty() && acc_buf.get_line().n_uops == 0) {
+    ASSERT(uc->proc_id, acc_buf.get_ft().static_info == FT_Info_Static{} && acc_buf.get_op_num() == 0);
     return;
   }
 
-  if (uc_cpp->accumulating_op_num >= bp_recovery_info->recovery_op_num) {
-    uop_cache_accumulation_buffer_clear();
+  if (acc_buf.get_op_num() >= bp_recovery_info->recovery_op_num) {
+    acc_buf.clear();
     return;
   }
 
@@ -203,13 +225,12 @@ void recover_uop_cache(void) {
    * Thus, The recovery should not affect the current FT accumulation.
    */
 
-  if (bp_recovery_info->recovery_op->ft_info.static_info == uc_cpp->accumulating_ft.static_info) {
+  if (bp_recovery_info->recovery_op->ft_info.static_info == acc_buf.get_ft().static_info) {
     /*
      * A FT currently accumulating is caught up in a recovery
      * This is likely a corner case where the FT is already in the uop cache due to a short reuse distance.
      */
-    ASSERT(uc->proc_id,
-           uop_cache_lookup_line(uc_cpp->accumulating_ft.static_info.start, uc_cpp->accumulating_ft, FALSE) != NULL);
+    ASSERT(uc->proc_id, uop_cache_lookup_line(acc_buf.get_ft().static_info.start, acc_buf.get_ft(), FALSE) != NULL);
   }
 }
 
@@ -303,14 +324,11 @@ Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag upd
 /**************************************************************************************/
 /* Uop Cache Accumulation Buffer Func */
 
-const static int UOP_CACHE_STAT_OFFSET = 4;
-
-void uop_cache_accumulation_buffer_clear() {
-  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
-  uc_cpp->accumulating_line = {};
-  uc_cpp->accumulation_buffer.clear();
-  uc_cpp->accumulating_ft = {};
-  uc_cpp->accumulating_op_num = 0;
+void Accumulation_Buffer::clear() {
+  buffer.clear();
+  line = {};
+  ft = {};
+  op_num = 0;
 }
 
 /*
@@ -318,12 +336,9 @@ void uop_cache_accumulation_buffer_clear() {
  *   1. An instruction generates more uops than the uop cache line width.
  *   2. The FT spans more lines than the uop cache associativity.
  */
-Flag uop_cache_accumulation_buffer_if_insertable() {
+Flag Accumulation_Buffer::if_insertable() {
   ASSERT(uc->proc_id, UOP_CACHE_ENABLE);
-  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
-  FT_Info* buffer_ft_info = &uc_cpp->accumulating_ft;
-  std::vector<Uop_Cache_Data>* accumulation_buffer = &uc_cpp->accumulation_buffer;
-  Flag ft_off_path = buffer_ft_info->dynamic_info.first_op_off_path;
+  Flag ft_off_path = ft.dynamic_info.first_op_off_path;
 
   /* if asked to only insert on-path FTs and the current FT is off-path */
   if (UOP_CACHE_INSERT_ONLY_ONPATH && ft_off_path) {
@@ -335,26 +350,26 @@ Flag uop_cache_accumulation_buffer_if_insertable() {
    * consecutive lines might share the same start address (indicated by a zero offset).
    * It causes ambiguity and we do not insert the FT.
    */
-  for (const auto& it : uc_cpp->accumulation_buffer) {
+  for (const auto& it : buffer) {
     if (it.end_of_ft || it.offset != 0)
       continue;
 
-    Uop_Cache_Data* uop_cache_line = uop_cache_lookup_line(buffer_ft_info->static_info.start, *buffer_ft_info, FALSE);
+    Uop_Cache_Data* uop_cache_line = uop_cache_lookup_line(ft.static_info.start, ft, FALSE);
     ASSERT(uc->proc_id, !uop_cache_line);
     STAT_EVENT(uc->proc_id, UOP_CACHE_FT_INSERT_FAILED_INST_TOO_BIG_ON_PATH + ft_off_path * UOP_CACHE_STAT_OFFSET);
     INC_STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERT_FAILED_INST_TOO_BIG_ON_PATH + ft_off_path * UOP_CACHE_STAT_OFFSET,
-                   accumulation_buffer->size());
+                   buffer.size());
 
     return FALSE;
   }
 
   /* if the FT is too big, do not insert */
-  if (accumulation_buffer->size() > UOP_CACHE_ASSOC) {
-    Uop_Cache_Data* uop_cache_line = uop_cache_lookup_line(buffer_ft_info->static_info.start, *buffer_ft_info, FALSE);
+  if (buffer.size() > UOP_CACHE_ASSOC) {
+    Uop_Cache_Data* uop_cache_line = uop_cache_lookup_line(ft.static_info.start, ft, FALSE);
     ASSERT(uc->proc_id, !uop_cache_line);
     STAT_EVENT(uc->proc_id, UOP_CACHE_FT_INSERT_FAILED_FT_TOO_BIG_ON_PATH + ft_off_path * UOP_CACHE_STAT_OFFSET);
     INC_STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERT_FAILED_FT_TOO_BIG_ON_PATH + ft_off_path * UOP_CACHE_STAT_OFFSET,
-                   accumulation_buffer->size());
+                   buffer.size());
 
     return FALSE;
   }
@@ -366,7 +381,7 @@ Flag uop_cache_accumulation_buffer_if_insertable() {
  * The insertion evicted a cache line.
  * To maintain consistency, all lines belonging to the same FT must now be invalidated.
  */
-void uop_cache_accumulation_buffer_evict_FT(const Entry<Uop_Cache_Key, Uop_Cache_Data>& evicted_entry) {
+void Accumulation_Buffer::evict_FT(const Entry<Uop_Cache_Key, Uop_Cache_Data>& evicted_entry) {
   Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
   FT_Info_Static evicted_ft_info_static = evicted_entry.key.second;
   Addr invalidate_addr = evicted_ft_info_static.start;
@@ -391,18 +406,17 @@ void uop_cache_accumulation_buffer_evict_FT(const Entry<Uop_Cache_Key, Uop_Cache
 /*
  * Insert the uop cache line buffer of an FT into the uop cache.
  */
-void uop_cache_accumulation_buffer_insert_cache() {
+void Accumulation_Buffer::insert_cache() {
   ASSERT(uc->proc_id, UOP_CACHE_ENABLE);
   Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
-  FT_Info* buffer_ft_info = &uc_cpp->accumulating_ft;
-  Flag off_path = buffer_ft_info->dynamic_info.first_op_off_path;
+  Flag off_path = ft.dynamic_info.first_op_off_path;
 
   /*
    * If the first line from the FT is already in the uop cache, all lines of the FT should be in the uop cache;
    * otherwise, all lines should not be in the uop cache.
    */
-  auto first_line = uc_cpp->accumulation_buffer.begin();
-  Uop_Cache_Data* first_lookup = uop_cache_lookup_line(first_line->line_start, *buffer_ft_info, TRUE);
+  auto first_line = buffer.begin();
+  Uop_Cache_Data* first_lookup = uop_cache_lookup_line(first_line->line_start, ft, TRUE);
 
   bool lines_exist = first_lookup != nullptr;
   if (lines_exist) {
@@ -411,9 +425,9 @@ void uop_cache_accumulation_buffer_insert_cache() {
     STAT_EVENT(uc->proc_id, UOP_CACHE_FT_INSERT_SUCCEEDED_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
   }
 
-  for (const auto& it : uc_cpp->accumulation_buffer) {
+  for (const auto& it : buffer) {
     Uop_Cache_Data* uop_cache_line =
-        (it == *first_line) ? first_lookup : uop_cache_lookup_line(it.line_start, *buffer_ft_info, TRUE);
+        (it == *first_line) ? first_lookup : uop_cache_lookup_line(it.line_start, ft, TRUE);
 
     /*
      * This line may already exist in the uop cache if the reuse distance in cycles is too short.
@@ -429,35 +443,31 @@ void uop_cache_accumulation_buffer_insert_cache() {
     }
     ASSERT(uc->proc_id, !uop_cache_line);
 
-    Uop_Cache_Key uop_cache_key = {it.line_start, buffer_ft_info->static_info};
+    Uop_Cache_Key uop_cache_key = {it.line_start, ft.static_info};
     Entry<Uop_Cache_Key, Uop_Cache_Data> evicted_entry = uc_cpp->uop_cache->insert(uop_cache_key, it);
     DEBUG(uc->proc_id, "uop cache line inserted. off_path=%u, addr=0x%llx\n", off_path, it.line_start);
 
     if (evicted_entry.valid) {
-      uop_cache_accumulation_buffer_evict_FT(evicted_entry);
+      evict_FT(evicted_entry);
     }
     STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERT_SUCCEEDED_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
   }
 }
 
-void uop_cache_accumulation_buffer_update_stat() {
+void Accumulation_Buffer::update_stat() {
   ASSERT(uc->proc_id, UOP_CACHE_ENABLE);
-  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
 
-  FT_Info* buffer_ft_info = &uc_cpp->accumulating_ft;
-  std::vector<Uop_Cache_Data>* accumulation_buffer = &uc_cpp->accumulation_buffer;
-
-  if (accumulation_buffer->size() > UOP_CACHE_FT_LINES_8_OFF_PATH - UOP_CACHE_FT_LINES_1_OFF_PATH + 1) {
-    if (buffer_ft_info->dynamic_info.first_op_off_path) {
+  if (buffer.size() > UOP_CACHE_FT_LINES_8_OFF_PATH - UOP_CACHE_FT_LINES_1_OFF_PATH + 1) {
+    if (ft.dynamic_info.first_op_off_path) {
       STAT_EVENT(uc->proc_id, UOP_CACHE_FT_LINES_9_AND_MORE_OFF_PATH);
     } else {
       STAT_EVENT(uc->proc_id, UOP_CACHE_FT_LINES_9_AND_MORE_ON_PATH);
     }
   } else {
-    if (buffer_ft_info->dynamic_info.first_op_off_path) {
-      STAT_EVENT(uc->proc_id, UOP_CACHE_FT_LINES_1_OFF_PATH + accumulation_buffer->size() - 1);
+    if (ft.dynamic_info.first_op_off_path) {
+      STAT_EVENT(uc->proc_id, UOP_CACHE_FT_LINES_1_OFF_PATH + buffer.size() - 1);
     } else {
-      STAT_EVENT(uc->proc_id, UOP_CACHE_FT_LINES_1_ON_PATH + accumulation_buffer->size() - 1);
+      STAT_EVENT(uc->proc_id, UOP_CACHE_FT_LINES_1_ON_PATH + buffer.size() - 1);
     }
   }
 }
@@ -472,17 +482,12 @@ void uop_cache_accumulation_buffer_update_stat() {
  *    2. max imm/disp per line (not simulated)
  *    3. max micro-coded instr per line (not simulated)
  */
-void uop_cache_accumulation_buffer_update(Op* op) {
+void Accumulation_Buffer::update(Op* op) {
   if (!UOP_CACHE_ENABLE) {
     return;
   }
 
-  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
-  auto& buffer = uc_cpp->accumulation_buffer;
-  auto& line = uc_cpp->accumulating_line;
-  auto& ft = uc_cpp->accumulating_ft;
-
-  bool is_line_start = (buffer.size() == 0 && line.n_uops == 0);
+  bool is_line_start = (buffer.empty() && line.n_uops == 0);
   bool is_ft_start = (op->bom && op->inst_info->addr == op->ft_info.static_info.start);
   ASSERT(uc->proc_id, is_line_start == is_ft_start);
 
@@ -501,7 +506,7 @@ void uop_cache_accumulation_buffer_update(Op* op) {
                           ft.static_info.length == op->ft_info.static_info.length);
 
   line.n_uops++;
-  uc_cpp->accumulating_op_num = op->op_num;
+  op_num = op->op_num;
 
   // detect line termination conditions
   Addr ft_end_addr = ft.static_info.start + ft.static_info.length;
@@ -524,21 +529,29 @@ void uop_cache_accumulation_buffer_update(Op* op) {
     ASSERT(uc->proc_id, valid_npc || recover);
 
     // end line accumulation
-    uc_cpp->accumulation_buffer.emplace_back(uc_cpp->accumulating_line);
-    uc_cpp->accumulating_line = {};
+    buffer.emplace_back(line);
+    line = {};
     return;
   }
 
   line.end_of_ft = TRUE;
-  uc_cpp->accumulation_buffer.emplace_back(uc_cpp->accumulating_line);
+  buffer.emplace_back(line);
 
   // the entire buffer is inserted into the uop cache when the FT has ended
-  Flag if_insertable = uop_cache_accumulation_buffer_if_insertable();
-  if (if_insertable) {
+  if (if_insertable()) {
     // inserting an FT entirely avoids corner cases, but is not the most accurate
-    uop_cache_accumulation_buffer_insert_cache();
+    insert_cache();
   }
 
-  uop_cache_accumulation_buffer_update_stat();
-  uop_cache_accumulation_buffer_clear();
+  update_stat();
+  clear();
+}
+
+void uop_cache_accumulation_buffer_update(Op* op) {
+  if (!UOP_CACHE_ENABLE) {
+    return;
+  }
+
+  auto& accumulation_buffer = per_core_uc_stage[uc->proc_id].accumulation_buffer;
+  accumulation_buffer.update(op);
 }

@@ -59,7 +59,6 @@ Uop_Cache_Data uop_cache_consume_uops_from_lookup_buffer(uns requested);
 void uop_cache_clear_lookup_buffer(void);
 Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag update_repl);
 
-void uop_cache_accumulation_buffer_clear();
 void uop_cache_accumulation_buffer_update(Op* op);
 
 #ifdef __cplusplus

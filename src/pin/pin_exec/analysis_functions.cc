@@ -25,6 +25,7 @@
 
 #include "../pin_lib/decoder.h"
 #include "../pin_lib/gather_scatter_addresses.h"
+static const ADDRINT DUMMY_NOP_BASE = (ADDRINT)0x40;
 
 #define ENABLE_HYPER_FF_HEARTBEAT
 void PIN_FAST_ANALYSIS_CALL docount(UINT32 c) {
@@ -415,7 +416,7 @@ void check_ret_control_ins(ADDRINT read_addr, UINT32 read_size, CONTEXT* ctxt) {
       wrongpath_nop_mode_reason = WPNM_REASON_RETURN_TO_NOT_INSTRUMENTED;
       target_addr = ADDR_MASK(target_addr);  // 48 bit canonical VA
       if(!target_addr) {
-        next_eip = 1;
+        next_eip = DUMMY_NOP_BASE;
       } else {
         next_eip = ADDR_MASK(target_addr);
       }
@@ -439,7 +440,7 @@ void check_nonret_control_ins(BOOL taken, ADDRINT target_addr) {
       wrongpath_nop_mode_reason = WPNM_REASON_NONRET_CF_TO_NOT_INSTRUMENTED;
       target_addr = ADDR_MASK(target_addr);  // 48 bit canonical VA
       if(!target_addr) {
-        next_eip = 1;
+        next_eip = DUMMY_NOP_BASE;
       } else {
         next_eip = ADDR_MASK(target_addr);
       }

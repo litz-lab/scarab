@@ -45,7 +45,6 @@ extern "C" {
 }
 
 #include <deque>
-#include <unordered_map>
 
 /**************************************************************************************/
 /* Definition */
@@ -72,7 +71,6 @@ class LSQ {
   size_t entry_num;
 
   std::deque<LSQ_Entry> entries;
-  std::unordered_map<Addr, std::deque<LSQ_Entry*>> addr_map;
 
  public:
   void init(int proc_id, size_t entry_num);
@@ -83,7 +81,6 @@ class LSQ {
 
   LSQ(){};
   const std::deque<LSQ_Entry>& get_entries() const { return entries; }
-  const std::unordered_map<Addr, std::deque<LSQ_Entry*>>& get_addr_map() const { return addr_map; }
 };
 
 /**************************************************************************************/
@@ -99,31 +96,18 @@ void LSQ::allocate(Op* op) {
   ASSERT(proc_id, op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST);
 
   entries.emplace_back(op);
-  auto& new_entry = entries.back();
-  addr_map[op->oracle_info.va].emplace_back(&new_entry);
 }
 
 void LSQ::free(Op* op) {
   ASSERT(proc_id, !entries.empty());
-
-  auto& addr_deque = addr_map[op->oracle_info.va];
-  ASSERT(proc_id, !addr_deque.empty());
+  ASSERT(op->proc_id, op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST);
 
   if (!op->off_path) {
     ASSERT(proc_id, entries.front().op_num == op->op_num);
-    ASSERT(proc_id, addr_deque.front()->op_num == op->op_num);
-    addr_deque.pop_front();
     entries.pop_front();
   } else {
     ASSERT(proc_id, entries.back().op_num == op->op_num);
-    ASSERT(proc_id, addr_deque.back()->op_num == op->op_num);
-    addr_deque.pop_back();
     entries.pop_back();
-  }
-
-  // Remove the key entirely if the per-address deque is now empty
-  if (addr_deque.empty()) {
-    addr_map.erase(op->oracle_info.va);
   }
 }
 
@@ -221,30 +205,6 @@ void lsq_dispatch(Op* op) {
       ASSERT(op->proc_id, FALSE);
       break;
   }
-}
-
-/*
-  Called by:
-  --- dcache_stage.c -> when the address of a mem op is generated
-  Desc:
-  --- check the latest store addr and do forwarding
-*/
-Flag lsq_forward(Op* op) {
-  if (!LSQ_ENABLE)
-    return FALSE;
-  ASSERT(op->proc_id, op->table_info->mem_type == MEM_LD);
-
-  const auto& addr_map = store_queue.get_addr_map();
-  const auto& it = addr_map.find(op->oracle_info.va);
-  if (it == addr_map.end())
-    return FALSE;
-
-  const auto& st_entry = it->second.back();
-  if (st_entry->op_num >= op->op_num)
-    return FALSE;
-
-  // TODO: add forward logic
-  return TRUE;
 }
 
 /*

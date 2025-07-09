@@ -383,7 +383,7 @@ void update_node_stage(Stage_Data* src_sd) {
   node_fill_rs();
 
   /* first schedule 1 ready op per NUM_FUS  */
-  // node_sched_ops();
+  node_sched_ops();
 
   /* get rid of the ops that are finished */
   node_retire();

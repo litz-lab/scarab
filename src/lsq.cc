@@ -57,12 +57,12 @@ struct LSQ_Entry {
   Mem_Type mem_type;
 
   LSQ_Entry() {}
-  LSQ_Entry(Op* op)
-      : op(op),
-        op_num(op->op_num),
-        unique_num(op->unique_num),
-        off_path(op->off_path),
-        mem_type(op->table_info->mem_type) {}
+  LSQ_Entry(Op* mem_op)
+      : op(mem_op),
+        op_num(mem_op->op_num),
+        unique_num(mem_op->unique_num),
+        off_path(mem_op->off_path),
+        mem_type(mem_op->table_info->mem_type) {}
 };
 
 class LSQ {
@@ -74,8 +74,8 @@ class LSQ {
 
  public:
   void init(int proc_id, size_t entry_num);
-  void allocate(Op* op);
-  void free(Op* op);
+  void allocate(Op* mem_op);
+  void free(Op* mem_op);
   bool available();
   void recover(Counter op_num);
 
@@ -91,22 +91,22 @@ void LSQ::init(const int proc_id, const size_t entry_num) {
   entries.clear();
 }
 
-void LSQ::allocate(Op* op) {
+void LSQ::allocate(Op* mem_op) {
   ASSERT(proc_id, entries.size() < entry_num);
-  ASSERT(proc_id, op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST);
+  ASSERT(proc_id, mem_op->table_info->mem_type == MEM_LD || mem_op->table_info->mem_type == MEM_ST);
 
-  entries.emplace_back(op);
+  entries.emplace_back(mem_op);
 }
 
-void LSQ::free(Op* op) {
+void LSQ::free(Op* mem_op) {
   ASSERT(proc_id, !entries.empty());
-  ASSERT(op->proc_id, op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST);
+  ASSERT(mem_op->proc_id, mem_op->table_info->mem_type == MEM_LD || mem_op->table_info->mem_type == MEM_ST);
 
-  if (!op->off_path) {
-    ASSERT(proc_id, entries.front().op_num == op->op_num);
+  if (!mem_op->off_path) {
+    ASSERT(proc_id, entries.front().op_num == mem_op->op_num);
     entries.pop_front();
   } else {
-    ASSERT(proc_id, entries.back().op_num == op->op_num);
+    ASSERT(proc_id, entries.back().op_num == mem_op->op_num);
     entries.pop_back();
   }
 }
@@ -129,7 +129,7 @@ void LSQ::recover(Counter op_num) {
       break;
     }
 
-    // Free this off-path op from the back
+    // Free this off-path mem op from the back
     free(back_entry.op);
   }
 }
@@ -161,12 +161,12 @@ void lsq_init(void) {
   Desc:
   --- return TRUE if there is an available entry
 */
-Flag lsq_available(Op* op) {
+Flag lsq_available(Op* mem_op) {
   if (!LSQ_ENABLE)
     return TRUE;
 
-  ASSERT(op->proc_id, op->table_info->mem_type);
-  switch (op->table_info->mem_type) {
+  ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
+  switch (mem_op->table_info->mem_type) {
     case MEM_LD:
       return static_cast<Flag>(load_queue.available());
 
@@ -174,7 +174,7 @@ Flag lsq_available(Op* op) {
       return static_cast<Flag>(store_queue.available());
 
     default:
-      ASSERT(op->proc_id, FALSE);
+      ASSERT(mem_op->proc_id, FALSE);
       break;
   }
 
@@ -187,22 +187,22 @@ Flag lsq_available(Op* op) {
   Desc:
   --- allocate an load/store entry
 */
-void lsq_dispatch(Op* op) {
+void lsq_dispatch(Op* mem_op) {
   if (!LSQ_ENABLE)
     return;
 
-  ASSERT(op->proc_id, op->table_info->mem_type);
-  switch (op->table_info->mem_type) {
+  ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
+  switch (mem_op->table_info->mem_type) {
     case MEM_LD:
-      load_queue.allocate(op);
+      load_queue.allocate(mem_op);
       break;
 
     case MEM_ST:
-      store_queue.allocate(op);
+      store_queue.allocate(mem_op);
       break;
 
     default:
-      ASSERT(op->proc_id, FALSE);
+      ASSERT(mem_op->proc_id, FALSE);
       break;
   }
 }
@@ -223,26 +223,26 @@ void lsq_recover(Counter op_num) {
 
 /*
   Called by:
-  --- node_stage.c -> when the op is retired
+  --- node_stage.c -> when a mem op is retired
   Desc:
   --- free the entry
 */
-void lsq_commit(Op* op) {
+void lsq_commit(Op* mem_op) {
   if (!LSQ_ENABLE)
     return;
 
-  ASSERT(op->proc_id, op->table_info->mem_type);
-  switch (op->table_info->mem_type) {
+  ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
+  switch (mem_op->table_info->mem_type) {
     case MEM_LD:
-      load_queue.free(op);
+      load_queue.free(mem_op);
       break;
 
     case MEM_ST:
-      store_queue.free(op);
+      store_queue.free(mem_op);
       break;
 
     default:
-      ASSERT(op->proc_id, FALSE);
+      ASSERT(mem_op->proc_id, FALSE);
       break;
   }
 }

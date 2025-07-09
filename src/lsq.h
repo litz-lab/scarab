@@ -40,10 +40,10 @@ extern "C" {
 /* External Methods */
 
 void lsq_init();                   // clear the lsq queue and set the max size
-Flag lsq_available(Op* op);        // check if there is an available LSQ entry
-void lsq_dispatch(Op* op);         // insert mem op into LSQ when mem op is inserted into ROB
+Flag lsq_available(Op* mem_op);    // check if there is an available LSQ entry
+void lsq_dispatch(Op* mem_op);     // insert mem op into LSQ when mem op is inserted into ROB
 void lsq_recover(Counter op_num);  // clear the off-path entry when there is a flushing event
-void lsq_commit(Op* op);           // free the entry when the mem op is retired
+void lsq_commit(Op* mem_op);       // free the entry when the mem op is retired
 
 #ifdef __cplusplus
 }

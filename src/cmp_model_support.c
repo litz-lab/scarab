@@ -41,6 +41,7 @@
 #include "prefetcher/fdip.h"
 
 #include "cmp_model.h"
+#include "lsq.h"
 #include "statistics.h"
 
 /**************************************************************************************/
@@ -68,6 +69,7 @@ void cmp_init_cmp_model() {
   alloc_mem_fnlmma(NUM_CORES);
   alloc_mem_uop_cache(NUM_CORES);
   alloc_mem_idq_stage(NUM_CORES);
+  alloc_mem_lsq(NUM_CORES);
 }
 
 void cmp_init_thread_data(uns8 proc_id) {

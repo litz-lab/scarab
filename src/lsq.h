@@ -22,8 +22,8 @@
 
 /***************************************************************************************
  * File         : lsq.h
- * Author       : Yinyuan Zhao, Litz Lab
- * Date         : 2025
+ * Author       : Litz Lab
+ * Date         : 7/2025
  * Description  :
  ***************************************************************************************/
 
@@ -39,7 +39,7 @@ extern "C" {
 /**************************************************************************************/
 /* External Methods */
 
-void lsq_init();                   // clear the lsq queue and set the max size
+void alloc_mem_lsq(uns num_cores);
 Flag lsq_available(Op* mem_op);    // check if there is an available LSQ entry
 void lsq_dispatch(Op* mem_op);     // insert mem op into LSQ when mem op is inserted into ROB
 void lsq_recover(Counter op_num);  // clear the off-path entry when there is a flushing event

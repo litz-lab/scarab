@@ -22,9 +22,9 @@
 
 /***************************************************************************************
  * File         : lsq.cc
- * Author       : Yinyuan Zhao, Litz Lab
- * Date         : 2025
- * Description  :
+ * Author       : Litz Lab
+ * Date         : 7/2025
+ * Description  : Load/Store Queue
  ***************************************************************************************/
 
 #include "lsq.h"
@@ -45,6 +45,7 @@ extern "C" {
 }
 
 #include <deque>
+#include <vector>
 
 /**************************************************************************************/
 /* Definition */
@@ -122,7 +123,7 @@ bool LSQ::available() {
 
 void LSQ::recover(Counter op_num) {
   while (!entries.empty()) {
-    LSQ_Entry& back_entry = entries.back();
+    auto& back_entry = entries.back();
 
     // Stop when reaching on-path ops earlier than the branch
     if (back_entry.op_num < op_num) {
@@ -135,10 +136,14 @@ void LSQ::recover(Counter op_num) {
 }
 
 /**************************************************************************************/
-/* Values */
+/* Global Values */
 
-LSQ load_queue;
-LSQ store_queue;
+struct LSQ_Unit {
+  LSQ load_queue;
+  LSQ store_queue;
+};
+
+static std::vector<LSQ_Unit> lsq_unit_per_core;
 
 /**************************************************************************************/
 /* External Methods */
@@ -146,13 +151,18 @@ LSQ store_queue;
 /*
   Called by:
   --- cmp.c
-  Desc:
-  --- return TRUE if there is an available entry
 */
 
-void lsq_init(void) {
-  load_queue.init(0, LOAD_QUEUE_ENTRY_NUM);
-  store_queue.init(0, STORE_QUEUE_ENTRY_NUM);
+void alloc_mem_lsq(uns num_cores) {
+  if (!LSQ_ENABLE) {
+    return;
+  }
+
+  lsq_unit_per_core.resize(num_cores);
+  for (uns ii = 0; ii < num_cores; ii++) {
+    lsq_unit_per_core[ii].load_queue.init(ii, LOAD_QUEUE_ENTRY_NUM);
+    lsq_unit_per_core[ii].store_queue.init(ii, STORE_QUEUE_ENTRY_NUM);
+  }
 }
 
 /*
@@ -166,12 +176,14 @@ Flag lsq_available(Op* mem_op) {
     return TRUE;
 
   ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
+  auto& lsq_unit = lsq_unit_per_core[mem_op->proc_id];
+
   switch (mem_op->table_info->mem_type) {
     case MEM_LD:
-      return static_cast<Flag>(load_queue.available());
+      return static_cast<Flag>(lsq_unit.load_queue.available());
 
     case MEM_ST:
-      return static_cast<Flag>(store_queue.available());
+      return static_cast<Flag>(lsq_unit.store_queue.available());
 
     default:
       ASSERT(mem_op->proc_id, FALSE);
@@ -192,13 +204,15 @@ void lsq_dispatch(Op* mem_op) {
     return;
 
   ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
+  auto& lsq_unit = lsq_unit_per_core[mem_op->proc_id];
+
   switch (mem_op->table_info->mem_type) {
     case MEM_LD:
-      load_queue.allocate(mem_op);
+      lsq_unit.load_queue.allocate(mem_op);
       break;
 
     case MEM_ST:
-      store_queue.allocate(mem_op);
+      lsq_unit.store_queue.allocate(mem_op);
       break;
 
     default:
@@ -217,8 +231,9 @@ void lsq_recover(Counter op_num) {
   if (!LSQ_ENABLE)
     return;
 
-  load_queue.recover(op_num);
-  store_queue.recover(op_num);
+  auto& lsq_unit = lsq_unit_per_core[node->proc_id];
+  lsq_unit.load_queue.recover(op_num);
+  lsq_unit.store_queue.recover(op_num);
 }
 
 /*
@@ -232,13 +247,15 @@ void lsq_commit(Op* mem_op) {
     return;
 
   ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
+  auto& lsq_unit = lsq_unit_per_core[mem_op->proc_id];
+
   switch (mem_op->table_info->mem_type) {
     case MEM_LD:
-      load_queue.free(mem_op);
+      lsq_unit.load_queue.free(mem_op);
       break;
 
     case MEM_ST:
-      store_queue.free(mem_op);
+      lsq_unit.store_queue.free(mem_op);
       break;
 
     default:

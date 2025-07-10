@@ -104,14 +104,10 @@ void LSQ::allocate(Op* mem_op) {
 void LSQ::free(Op* mem_op) {
   ASSERT(proc_id, !entries.empty());
   ASSERT(proc_id, mem_op->table_info->mem_type == this->mem_type);
+  ASSERT(proc_id, !mem_op->off_path);
 
-  if (!mem_op->off_path) {
-    ASSERT(proc_id, entries.front().op_num == mem_op->op_num);
-    entries.pop_front();
-  } else {
-    ASSERT(proc_id, entries.back().op_num == mem_op->op_num);
-    entries.pop_back();
-  }
+  ASSERT(proc_id, entries.front().op_num == mem_op->op_num);
+  entries.pop_front();
 }
 
 bool LSQ::available() {
@@ -133,7 +129,11 @@ void LSQ::recover(Counter flush_op_num) {
     }
 
     // Free this off-path mem op from the back
-    free(back_entry.op);
+    ASSERT(proc_id, !entries.empty());
+    ASSERT(proc_id, back_entry.op->off_path);
+    ASSERT(proc_id, entries.back().op_num == back_entry.op->op_num);
+    ASSERT(proc_id, back_entry.op->table_info->mem_type == this->mem_type);
+    entries.pop_back();
   }
 }
 

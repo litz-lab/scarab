@@ -175,8 +175,6 @@ void recover_node_stage() {
   if (node->last_scheduled_opnum >= bp_recovery_info->recovery_op_num)
     node->last_scheduled_opnum = bp_recovery_info->recovery_op_num;
 
-  lsq_recover(bp_recovery_info->recovery_op_num);
-
   if (ENABLE_GLOBAL_DEBUG_PRINT && DEBUG_NODE_STAGE && DEBUG_RANGE_COND(node->proc_id))
     debug_node_stage();
 }

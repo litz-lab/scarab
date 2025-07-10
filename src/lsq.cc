@@ -40,6 +40,8 @@ extern "C" {
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
 
+#include "bp/bp.h"
+
 #include "exec_ports.h"
 #include "node_stage.h"
 }
@@ -68,40 +70,40 @@ struct LSQ_Entry {
 
 class LSQ {
  private:
-  int proc_id;
+  uns8 proc_id;
+  Mem_Type mem_type;
   size_t entry_num;
 
   std::deque<LSQ_Entry> entries;
 
  public:
-  void init(int proc_id, size_t entry_num);
+  void init(uns8 proc_id, Mem_Type mem_type, size_t entry_num);
   void allocate(Op* mem_op);
   void free(Op* mem_op);
   bool available();
-  void recover(Counter op_num);
+  void recover(Counter flush_op_num);
 
   LSQ(){};
   const std::deque<LSQ_Entry>& get_entries() const { return entries; }
 };
 
-/**************************************************************************************/
-
-void LSQ::init(const int proc_id, const size_t entry_num) {
+void LSQ::init(const uns8 proc_id, const Mem_Type mem_type, const size_t entry_num) {
   this->proc_id = proc_id;
+  this->mem_type = mem_type;
   this->entry_num = entry_num;
   entries.clear();
 }
 
 void LSQ::allocate(Op* mem_op) {
   ASSERT(proc_id, entries.size() < entry_num);
-  ASSERT(proc_id, mem_op->table_info->mem_type == MEM_LD || mem_op->table_info->mem_type == MEM_ST);
+  ASSERT(proc_id, mem_op->table_info->mem_type == this->mem_type);
 
   entries.emplace_back(mem_op);
 }
 
 void LSQ::free(Op* mem_op) {
   ASSERT(proc_id, !entries.empty());
-  ASSERT(mem_op->proc_id, mem_op->table_info->mem_type == MEM_LD || mem_op->table_info->mem_type == MEM_ST);
+  ASSERT(proc_id, mem_op->table_info->mem_type == this->mem_type);
 
   if (!mem_op->off_path) {
     ASSERT(proc_id, entries.front().op_num == mem_op->op_num);
@@ -121,12 +123,12 @@ bool LSQ::available() {
   return true;
 }
 
-void LSQ::recover(Counter op_num) {
+void LSQ::recover(Counter flush_op_num) {
   while (!entries.empty()) {
     auto& back_entry = entries.back();
 
     // Stop when reaching on-path ops earlier than the branch
-    if (back_entry.op_num < op_num) {
+    if (back_entry.op_num < flush_op_num) {
       break;
     }
 
@@ -136,34 +138,125 @@ void LSQ::recover(Counter op_num) {
 }
 
 /**************************************************************************************/
-/* Global Values */
 
-struct LSQ_Unit {
+class LSQ_Unit {
+ private:
+  uns8 proc_id;
   LSQ load_queue;
   LSQ store_queue;
+
+ public:
+  LSQ_Unit(uns8 proc_id);
+
+  void init(uns8 proc_id);
+  Flag available(Op* mem_op);
+  void dispatch(Op* mem_op);
+  void recover(Counter flush_op_num);
+  void commit(Op* mem_op);
 };
 
-static std::vector<LSQ_Unit> lsq_unit_per_core;
+LSQ_Unit::LSQ_Unit(uns8 proc_id) {
+  this->init(proc_id);
+}
+
+void LSQ_Unit::init(uns8 proc_id) {
+  load_queue.init(proc_id, MEM_LD, LOAD_QUEUE_ENTRY_NUM);
+  store_queue.init(proc_id, MEM_ST, STORE_QUEUE_ENTRY_NUM);
+}
+
+Flag LSQ_Unit::available(Op* mem_op) {
+  switch (mem_op->table_info->mem_type) {
+    case MEM_LD:
+      return static_cast<Flag>(load_queue.available());
+
+    case MEM_ST:
+      return static_cast<Flag>(store_queue.available());
+
+    default:
+      ASSERT(this->proc_id, FALSE);
+      break;
+  }
+
+  return FALSE;
+}
+
+void LSQ_Unit::dispatch(Op* mem_op) {
+  switch (mem_op->table_info->mem_type) {
+    case MEM_LD:
+      load_queue.allocate(mem_op);
+      break;
+
+    case MEM_ST:
+      store_queue.allocate(mem_op);
+      break;
+
+    default:
+      ASSERT(this->proc_id, FALSE);
+      break;
+  }
+}
+
+void LSQ_Unit::recover(Counter flush_op_num) {
+  load_queue.recover(flush_op_num);
+  store_queue.recover(flush_op_num);
+}
+
+void LSQ_Unit::commit(Op* mem_op) {
+  switch (mem_op->table_info->mem_type) {
+    case MEM_LD:
+      load_queue.free(mem_op);
+      break;
+
+    case MEM_ST:
+      store_queue.free(mem_op);
+      break;
+
+    default:
+      ASSERT(mem_op->proc_id, FALSE);
+      break;
+  }
+}
+
+/**************************************************************************************/
+/* Global Values */
+
+static std::vector<LSQ_Unit> per_core_lsq_unit;
+LSQ_Unit* lsq_unit = nullptr;
 
 /**************************************************************************************/
 /* External Methods */
 
-/*
-  Called by:
-  --- cmp.c
-*/
-
 void alloc_mem_lsq(uns num_cores) {
-  if (!LSQ_ENABLE) {
+  if (!LSQ_ENABLE)
     return;
-  }
 
-  lsq_unit_per_core.resize(num_cores);
   for (uns ii = 0; ii < num_cores; ii++) {
-    lsq_unit_per_core[ii].load_queue.init(ii, LOAD_QUEUE_ENTRY_NUM);
-    lsq_unit_per_core[ii].store_queue.init(ii, STORE_QUEUE_ENTRY_NUM);
+    per_core_lsq_unit.push_back(LSQ_Unit(ii));
   }
 }
+
+void set_lsq(uns8 proc_id) {
+  if (!LSQ_ENABLE)
+    return;
+
+  lsq_unit = &per_core_lsq_unit[proc_id];
+}
+
+void init_lsq(uns8 proc_id, const char* name) {
+  if (!LSQ_ENABLE)
+    return;
+
+  lsq_unit->init(proc_id);
+}
+
+void recover_lsq() {
+  if (!LSQ_ENABLE)
+    return;
+
+  lsq_unit->recover(bp_recovery_info->recovery_op_num);
+}
+
+/**************************************************************************************/
 
 /*
   Called by:
@@ -176,21 +269,7 @@ Flag lsq_available(Op* mem_op) {
     return TRUE;
 
   ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
-  auto& lsq_unit = lsq_unit_per_core[mem_op->proc_id];
-
-  switch (mem_op->table_info->mem_type) {
-    case MEM_LD:
-      return static_cast<Flag>(lsq_unit.load_queue.available());
-
-    case MEM_ST:
-      return static_cast<Flag>(lsq_unit.store_queue.available());
-
-    default:
-      ASSERT(mem_op->proc_id, FALSE);
-      break;
-  }
-
-  return FALSE;
+  return lsq_unit->available(mem_op);
 }
 
 /*
@@ -204,36 +283,7 @@ void lsq_dispatch(Op* mem_op) {
     return;
 
   ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
-  auto& lsq_unit = lsq_unit_per_core[mem_op->proc_id];
-
-  switch (mem_op->table_info->mem_type) {
-    case MEM_LD:
-      lsq_unit.load_queue.allocate(mem_op);
-      break;
-
-    case MEM_ST:
-      lsq_unit.store_queue.allocate(mem_op);
-      break;
-
-    default:
-      ASSERT(mem_op->proc_id, FALSE);
-      break;
-  }
-}
-
-/*
-  Called by:
-  --- node_stage.c -> when there is a flushing event
-  Desc:
-  --- clear the off-path entry
-*/
-void lsq_recover(Counter op_num) {
-  if (!LSQ_ENABLE)
-    return;
-
-  auto& lsq_unit = lsq_unit_per_core[node->proc_id];
-  lsq_unit.load_queue.recover(op_num);
-  lsq_unit.store_queue.recover(op_num);
+  lsq_unit->dispatch(mem_op);
 }
 
 /*
@@ -247,19 +297,5 @@ void lsq_commit(Op* mem_op) {
     return;
 
   ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
-  auto& lsq_unit = lsq_unit_per_core[mem_op->proc_id];
-
-  switch (mem_op->table_info->mem_type) {
-    case MEM_LD:
-      lsq_unit.load_queue.free(mem_op);
-      break;
-
-    case MEM_ST:
-      lsq_unit.store_queue.free(mem_op);
-      break;
-
-    default:
-      ASSERT(mem_op->proc_id, FALSE);
-      break;
-  }
+  lsq_unit->commit(mem_op);
 }

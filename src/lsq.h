@@ -40,10 +40,13 @@ extern "C" {
 /* External Methods */
 
 void alloc_mem_lsq(uns num_cores);
-Flag lsq_available(Op* mem_op);    // check if there is an available LSQ entry
-void lsq_dispatch(Op* mem_op);     // insert mem op into LSQ when mem op is inserted into ROB
-void lsq_recover(Counter op_num);  // clear the off-path entry when there is a flushing event
-void lsq_commit(Op* mem_op);       // free the entry when the mem op is retired
+void set_lsq(uns8 proc_id);
+void init_lsq(uns8 proc_id, const char* name);
+void recover_lsq();
+
+Flag lsq_available(Op* mem_op);  // check if there is an available LSQ entry
+void lsq_dispatch(Op* mem_op);   // insert mem op into LSQ when mem op is inserted into ROB
+void lsq_commit(Op* mem_op);     // free the entry when the mem op is retired
 
 #ifdef __cplusplus
 }

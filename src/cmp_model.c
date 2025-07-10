@@ -55,6 +55,7 @@
 #include "decoupled_frontend.h"
 #include "freq.h"
 #include "idq_stage.h"
+#include "lsq.h"
 #include "map_rename.h"
 #include "op_pool.h"
 #include "sim.h"
@@ -114,6 +115,7 @@ void cmp_init(uns mode) {
     init_idq_stage(proc_id, "IDQ");
     init_map_stage(proc_id, "MAP");
     init_node_stage(proc_id, "NODE");
+    init_lsq(proc_id, "LSQ");
     init_exec_stage(proc_id, "EXEC");
     init_exec_ports(proc_id, "EXEC_PORTS");
     init_dcache_stage(proc_id, "DCACHE");
@@ -377,6 +379,7 @@ void cmp_recover() {
   recover_idq_stage();
   recover_map_stage();
   recover_node_stage();
+  recover_lsq();
   recover_exec_stage();
   recover_dcache_stage();
   recover_memory();

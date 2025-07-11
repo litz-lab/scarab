@@ -66,7 +66,6 @@ class Decoupled_FE {
   // keep track of the current FT to be pushed next
   FT current_ft_to_push;
   FT saved_recovery_ft;
-  uns cf_num = 0;
 
   int off_path;
   int sched_off_path;
@@ -293,8 +292,6 @@ Flag have_seen_exit_on_ftq = 0;
 Flag have_seen_exit_on_prebuilt = 0;
 
 void Decoupled_FE::update() {
-  cf_num = 0;
-  uint64_t bytes_this_cycle = 0;
   uint64_t cfs_taken_this_cycle = 0;
   static int fwd_progress = 0;
   fwd_progress++;
@@ -326,23 +323,6 @@ void Decoupled_FE::update() {
         STAT_EVENT(proc_id, FTQ_BREAK_FULL_FT_ONPATH);
       break;
     }
-    if (cfs_taken_this_cycle == FE_FTQ_TAKEN_CFS_PER_CYCLE) {
-      DEBUG(proc_id, "Break due to max cfs taken per cycle\n");
-      if (off_path)
-        STAT_EVENT(proc_id, FTQ_BREAK_MAX_CFS_TAKEN_OFFPATH);
-      else
-        STAT_EVENT(proc_id, FTQ_BREAK_MAX_CFS_TAKEN_ONPATH);
-      break;
-    }
-    // use `>=` because inst size does not necessarily align with FE_FTQ_BYTES_PER_CYCLE
-    if (bytes_this_cycle >= FE_FTQ_BYTES_PER_CYCLE) {
-      DEBUG(proc_id, "Break due to max bytes per cycle\n");
-      if (off_path)
-        STAT_EVENT(proc_id, FTQ_BREAK_MAX_BYTES_OFFPATH);
-      else
-        STAT_EVENT(proc_id, FTQ_BREAK_MAX_BYTES_ONPATH);
-      break;
-    }
     if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, proc_id)) {
       DEBUG(proc_id, "Break due to limited branch predictor\n");
       if (off_path)
@@ -364,14 +344,13 @@ void Decoupled_FE::update() {
     switch (state) {
       case RECOVERING:
         // After recovery, we expect to serve the saved recovery FT
+        state = SERVING_ON_PATH;  // Transition to ON_PATH after serving recovery FT
         if (saved_recovery_ft.is_valid()) {
+          // if not ft saved, will call build_full_ft next iteration of the while loop in SERVING_ON_PATH state
           current_ft_to_push = saved_recovery_ft;
           // Reset the saved recovery FT after use
           saved_recovery_ft = FT();
-          state = SERVING_ON_PATH;  // Transition to ON_PATH after serving recovery FT
         } else {
-          // Should not happen, but fallback to ON_PATH
-          state = SERVING_ON_PATH;
           current_ft_to_push = FT(proc_id);
         }
         break;
@@ -379,23 +358,23 @@ void Decoupled_FE::update() {
         // Normal operation, build new FT
         current_ft_to_push = FT(proc_id);
         current_ft_to_push.build_full_ft(
-            0,
+            0, [](uns8 pid) { return frontend_can_fetch_op(pid); },
             [](uns8 pid, Op* op) -> bool {
               frontend_fetch_op(pid, op);
               return true;
             },
-            ftq.empty() ? FT() : ftq.back(), off_path, false, cf_num, dfe_op_count);
+            ftq.empty() ? FT() : ftq.back(), off_path, false, dfe_op_count);
         break;
       case SERVING_OFF_PATH:
         // currently still use same api to fetch off-path ops
         current_ft_to_push = FT(proc_id);
         current_ft_to_push.build_full_ft(
-            0,
+            0, [](uns8 pid) { return frontend_can_fetch_op(pid); },
             [](uns8 pid, Op* op) -> bool {
               frontend_fetch_op(pid, op);
               return true;
             },
-            ftq.empty() ? FT() : ftq.back(), off_path, false, cf_num, dfe_op_count);
+            ftq.empty() ? FT() : ftq.back(), off_path, false, dfe_op_count);
         break;
       default:
         // Fallback
@@ -408,40 +387,47 @@ void Decoupled_FE::update() {
     }
 
     fwd_progress = 0;
-    auto result = current_ft_to_push.bp_predict_ft(cf_num, dfe_op_count, 0);
-    int index = result.index;
+    auto result = current_ft_to_push.bp_predict_ft(dfe_op_count, 0);
     if (result.event == FT_EVENT_MISPREDICT) {
       off_path = true;
       redirect_cycle = cycle_count;
       state = SERVING_OFF_PATH;
-      // Already called frontend_redirect in FT
+      frontend_redirect(proc_id, result.op->inst_uid, result.pred_addr);
+    } else if (result.event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
+      frontend_redirect(proc_id, result.op->inst_uid, result.pred_addr);
     } else if (result.event == FT_EVENT_FETCH_BARRIER) {
       stall(result.op);  // Only call stall here
     }
-    cf_num += result.cf_num_processed;
 
     FT_Ended_By ft_ended_by = FT_NOT_ENDED;
     // if we see a misprediction, we must be on off_path
-    ASSERT(proc_id, (index != -1) == (result.event == FT_EVENT_MISPREDICT));
-    ASSERT(proc_id, index == -1 || off_path);
+    ASSERT(proc_id, (result.index != -1) == (result.event == FT_EVENT_MISPREDICT));
+    ASSERT(proc_id, result.index == -1 || off_path);
 
-    if (index != -1 && result.event == FT_EVENT_MISPREDICT) {
+    if (result.index != -1 && result.event == FT_EVENT_MISPREDICT) {
       // If index is not -1 we need to re-evaluate the FT
-      std::pair<FT, FT> result = current_ft_to_push.re_evaluate_ft(
-          index,
-          [](uns8 pid, Op* op) -> bool {
-            frontend_fetch_op(pid, op);
-            return true;  // always succeeds
-          },
-          dfe_op_count, cf_num, ftq.empty() ? FT() : ftq.back());
-      current_ft_to_push = result.first;
-      if (result.second.ft_info.static_info.start != 0) {
+      std::pair<FT, FT> reevaluated = current_ft_to_push.split_ft(result.index);
+      current_ft_to_push = reevaluated.first;
+      while (!current_ft_to_push.is_ended()) {
+        auto build_result = current_ft_to_push.build_full_ft(
+            current_ft_to_push.ops.size(), [](uns8 pid) { return frontend_can_fetch_op(pid); },
+            [](uns8 pid, Op* op) -> bool {
+              frontend_fetch_op(pid, op);
+              return true;
+            },
+            ftq.empty() ? FT() : ftq.back(), off_path, true, dfe_op_count);
+        if (build_result.redirect_needed) {
+          frontend_redirect(proc_id, build_result.redirect_op->inst_uid, build_result.redirect_addr);
+        }
+      }
+
+      if (reevaluated.second.is_valid()) {
         // If we have a saved recovery FT, we save it for later
-        saved_recovery_ft = result.second;
+        saved_recovery_ft = reevaluated.second;
       }
 
       ft_ended_by = current_ft_to_push.ft_info.dynamic_info.ended_by;
-    } else if (index == -1) {
+    } else if (result.index == -1) {
       // If we have no mispredicted branch, we can just use the pre_built_ft as is
       ft_ended_by = current_ft_to_push.ft_info.dynamic_info.ended_by;
     }
@@ -451,24 +437,7 @@ void Decoupled_FE::update() {
                           current_ft_to_push.ops.size());
       ASSERT(proc_id, current_ft_to_push.ops.front()->bom && current_ft_to_push.ops.back()->eom);
       current_ft_to_push.set_per_op_ft_info();
-      if (!ftq.empty()) {
-        // sanity check of consecutivity
-        Op* last_op = ftq.back().ops.back();
-        if (ftq.back().ft_info.dynamic_info.ended_by == FT_TAKEN_BRANCH) {
-          ASSERT(proc_id, last_op->oracle_info.pred_npc == current_ft_to_push.ft_info.static_info.start);
-        } else if (ftq.back().ft_info.dynamic_info.ended_by == FT_BAR_FETCH) {
-          ASSERT(proc_id, last_op->oracle_info.pred_npc == current_ft_to_push.ft_info.static_info.start ||
-                              last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size ==
-                                  current_ft_to_push.ft_info.static_info.start);
-        } else {
-          ASSERT(proc_id, last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size ==
-                              current_ft_to_push.ft_info.static_info.start);
-        }
-      }
       ftq.emplace_back(current_ft_to_push);
-      bytes_this_cycle += current_ft_to_push.ft_info.static_info.length;
-
-      cfs_taken_this_cycle += current_ft_to_push.count_cfs_taken_this_cycle();
 
       if (CONFIDENCE_ENABLE) {
         conf->update(current_ft_to_push);
@@ -482,13 +451,7 @@ void Decoupled_FE::update() {
             current_ft_to_push.ft_info.static_info.start, current_ft_to_push.ops.front()->off_path);
 
       current_ft_to_push = FT(proc_id);
-      if (ft_ended_by == FT_ICACHE_LINE_BOUNDARY) {
-        current_ft_to_push.set_ft_started_by(FT_STARTED_BY_ICACHE_LINE_BOUNDARY);
-      } else if (ft_ended_by == FT_TAKEN_BRANCH) {
-        current_ft_to_push.set_ft_started_by(FT_STARTED_BY_TAKEN_BRANCH);
-      } else if (ft_ended_by == FT_BAR_FETCH) {
-        current_ft_to_push.set_ft_started_by(FT_STARTED_BY_BAR_FETCH);
-      }
+
       STAT_EVENT(proc_id, POWER_BTB_READ);
     }
   }

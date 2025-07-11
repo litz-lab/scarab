@@ -69,15 +69,24 @@ enum FT_Event {
   FT_EVENT_NONE,
   FT_EVENT_MISPREDICT,
   FT_EVENT_FETCH_BARRIER,
+  FT_EVENT_OFFPATH_TAKEN_REDIRECT,
   // ... add more as needed
 };
 
 struct FT_PredictResult {
   int index;
   FT_Event event;
-  uns cf_num_processed;
   Op* op;          // Optionally, if DFE needs to know which op
   Addr pred_addr;  // Optionally, if DFE needs the predicted address
+};
+
+// Add a struct to hold build result info
+struct FT_BuildResult {
+  bool build_complete = false;
+  bool redirect_needed = false;
+  Op* redirect_op = nullptr;
+  uns64 redirect_uid = 0;
+  Addr redirect_addr = 0;
 };
 
 class FT {
@@ -94,16 +103,18 @@ class FT {
   void set_consumed();
 
   std::vector<Op*>& get_ops();
-  void build_full_ft(uns start_index, std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path,
-                     Flag use_pred, uns cf_num, uint64_t& dfe_op_count);
+  // Change return type to FT_BuildResult
+  FT_BuildResult build_full_ft(uns start_index, std::function<bool(uns8)> can_fetch_op_fn,
+                               std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path, Flag use_pred,
+                               uint64_t& dfe_op_count);
   Op* peek_last_op();
 
-  FT_PredictResult bp_predict_ft(uns cf_num, uint64_t& dfe_op_count, uns start_pos);
-  std::pair<FT, FT> re_evaluate_ft(uns index, std::function<bool(uns8, Op*)> fetch_op_fn, uint64_t& dfe_op_count,
-                                   uns cf_num, FT last_ft);
+  FT_PredictResult bp_predict_ft(uint64_t& dfe_op_count, uns start_pos);
+  std::pair<FT, FT> split_ft(uns index);
 
-  int count_cfs_taken_this_cycle() const;
+  int count_cfs_taken_this_ft() const;
   bool is_valid() const;
+  bool is_ended() const;
 
  private:
   uns proc_id;
@@ -111,7 +122,7 @@ class FT {
   FT_Info ft_info;
   std::vector<Op*> ops;
   bool consumed;
-  FT_Event predict_one_cf_op(Op* op, uns cf_num, uint64_t& dfe_op_count);
+  FT_Event predict_one_cf_op(Op* op, uint64_t& dfe_op_count);
   FT move_over_ft(uns start_idx, uns end_idx, Flag use_pred);
 
   friend class Decoupled_FE;

@@ -77,12 +77,13 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
                         Stage_Data* consume_from_sd) {
   INC_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS, ISSUE_WIDTH);
   if (!node->node_stall) {
-    INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES, ISSUE_WIDTH - count_available);
-    if (count_available == 0)
-      STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GREATER_THAN_MIW);
-
-    if (!consume_from_sd)
+    if (!consume_from_sd) {
       INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES, ISSUE_WIDTH - count_available);
+    } else {
+      INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES, ISSUE_WIDTH - count_available);
+      if (count_available == 0)
+        STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GREATER_THAN_MIW);
+    }
   }
 
   INC_STAT_EVENT(proc_id, TOPDOWN_SLOTS_ISSUED, count_issued);

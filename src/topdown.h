@@ -39,7 +39,8 @@
 #include "stage_data.h"
 
 void topdown_bp_recovery(uns proc_id, Op* op);
-void topdown_idq_update(uns proc_id, int count_total, int count_on_path, Stage_Data* consume_from_sd);
+void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path,
+                        Stage_Data* consume_from_sd);
 void topdown_exec_update(uns proc_id, uns8 fus_busy);
 void topdown_done(uns proc_id);
 

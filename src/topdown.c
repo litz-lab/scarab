@@ -73,19 +73,20 @@ void topdown_bp_recovery(uns proc_id, Op* op) {
     STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED);
 }
 
-void topdown_idq_update(uns proc_id, int count_total, int count_on_path, Stage_Data* consume_from_sd) {
+void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path,
+                        Stage_Data* consume_from_sd) {
   INC_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS, ISSUE_WIDTH);
   if (!node->node_stall) {
-    INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES, ISSUE_WIDTH - count_total);
-    if (count_total == 0)
+    INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES, ISSUE_WIDTH - count_available);
+    if (count_available == 0)
       STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GREATER_THAN_MIW);
 
     if (!consume_from_sd)
-      INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES, ISSUE_WIDTH - count_total);
+      INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES, ISSUE_WIDTH - count_available);
   }
 
-  INC_STAT_EVENT(proc_id, TOPDOWN_SLOTS_ISSUED, count_total);
-  INC_STAT_EVENT(proc_id, TOPDOWN_SLOTS_RETIRED, count_on_path);
+  INC_STAT_EVENT(proc_id, TOPDOWN_SLOTS_ISSUED, count_issued);
+  INC_STAT_EVENT(proc_id, TOPDOWN_SLOTS_RETIRED, count_issued_on_path);
 }
 
 void topdown_exec_update(uns proc_id, uns8 fus_busy) {

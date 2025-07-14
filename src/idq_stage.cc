@@ -184,8 +184,9 @@ Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Dat
 
 void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
   /* Fill the IDQ output stage data with uops from IDQ. */
-  int count_total = 0;
-  int count_on_path = 0;
+  int count_issued = 0;
+  int count_issued_on_path = 0;
+  int count_available = 0;
   for (int i = idq_sd.op_count; i < idq_sd.max_op_count; i++) {
     Op* op = dequeue();
     if (!op) {
@@ -196,15 +197,16 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
     idq_sd.op_count++;
 
     if (!op->off_path) {
-      count_on_path++;
+      count_issued_on_path++;
     }
-    count_total++;
+    count_issued++;
   }
+  count_available = idq_sd.op_count;
 
   /* Select the input stage data. */
   Stage_Data* consume_from_sd = select_input_stage_data(dec_src_sd, ic_uopc_sd, uop_queue_sd);
 
-  topdown_idq_update(proc_id, count_total, count_on_path, consume_from_sd);
+  topdown_idq_update(proc_id, count_available, count_issued, count_issued_on_path, consume_from_sd);
 
   /* Return if the next expected uop has not yet arrived. */
   if (!consume_from_sd) {

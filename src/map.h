@@ -32,6 +32,7 @@
 #include "isa/isa_macros.h"
 #include "libs/hash_lib.h"
 
+#include "map_rename.h"
 #include "op.h"
 
 /**************************************************************************************/
@@ -57,6 +58,9 @@ typedef struct Map_Data_struct {
   Wake_Up_Entry* free_list_head;
   uns wake_up_entries;
   uns active_wake_up_entries;
+
+  /* register files for INT/FP with arch/physical tables */
+  Reg_File* reg_file[REG_FILE_REG_TYPE_NUM];
 } Map_Data;
 
 /**************************************************************************************/

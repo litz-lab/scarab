@@ -40,6 +40,7 @@
 #include "isa/isa.h"
 #include "isa/isa_macros.h"
 
+#include "map_stage.h"
 #include "node_stage.h"
 #include "op.h"
 #include "thread.h"
@@ -48,7 +49,7 @@
 /**************************************************************************************/
 /* Extern Definition */
 
-struct reg_file *reg_file[REG_FILE_REG_TYPE_NUM];
+struct reg_file **reg_file;
 
 extern Op invalid_op;
 
@@ -94,7 +95,7 @@ static inline void reg_file_debug_print_entry(struct reg_table_entry *entry, int
 }
 
 static inline void reg_file_debug_print_op(Op *op, int state) {
-  ASSERT(0, op != NULL);
+  ASSERT(op->proc_id, op != NULL);
   if (op->table_info->num_dest_regs == 0)
     return;
 
@@ -558,7 +559,7 @@ static inline void reg_file_rollback_srt() {
 /* register free list operation */
 
 void reg_free_list_init(struct reg_free_list *reg_free_list) {
-  ASSERT(0, reg_free_list != NULL);
+  ASSERT(map_data->proc_id, reg_free_list != NULL);
 
   reg_free_list->reg_free_num = 0;
   reg_free_list->reg_free_list_head = NULL;
@@ -566,7 +567,7 @@ void reg_free_list_init(struct reg_free_list *reg_free_list) {
 
 /* push the entry to the free list */
 void reg_free_list_free(struct reg_free_list *reg_free_list, struct reg_table_entry *entry) {
-  ASSERT(0, reg_free_list != NULL && entry->next_free == NULL);
+  ASSERT(map_data->proc_id, reg_free_list != NULL && entry->next_free == NULL);
 
   entry->next_free = reg_free_list->reg_free_list_head;
   reg_free_list->reg_free_list_head = entry;
@@ -575,7 +576,7 @@ void reg_free_list_free(struct reg_free_list *reg_free_list, struct reg_table_en
 
 /* pop the entry from the free list */
 struct reg_table_entry *reg_free_list_alloc(struct reg_free_list *reg_free_list) {
-  ASSERT(0, reg_free_list != NULL && reg_free_list->reg_free_list_head != NULL);
+  ASSERT(map_data->proc_id, reg_free_list != NULL && reg_free_list->reg_free_list_head != NULL);
 
   struct reg_table_entry *entry = reg_free_list->reg_free_list_head;
   reg_free_list->reg_free_list_head = entry->next_free;
@@ -596,7 +597,7 @@ struct reg_free_list_ops reg_free_list_ops = {
 
 /* set the invalid value into the entry */
 void reg_table_entry_clear(struct reg_table_entry *entry) {
-  ASSERT(0, entry != NULL && entry->self_reg_id != REG_TABLE_REG_ID_INVALID);
+  ASSERT(map_data->proc_id, entry != NULL && entry->self_reg_id != REG_TABLE_REG_ID_INVALID);
 
   entry->op = &invalid_op;
   entry->op_num = 0;
@@ -743,7 +744,7 @@ int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id) {
 
   // lookup the parent table to get the latest self reg id
   int self_reg_id = reg_table->parent_reg_table->entries[parent_reg_id].child_reg_id;
-  ASSERT(0, self_reg_id != REG_TABLE_REG_ID_INVALID);
+  ASSERT(map_data->proc_id, self_reg_id != REG_TABLE_REG_ID_INVALID);
 
   struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
   entry->ops->read(entry, op);
@@ -755,7 +756,7 @@ int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id) {
   --- 2. store the op info into the register entry
 */
 int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id) {
-  ASSERT(0, REG_RENAMING_SCHEME && reg_table != NULL && op != NULL);
+  ASSERT(map_data->proc_id, REG_RENAMING_SCHEME && reg_table != NULL && op != NULL);
 
   if (op->move_eliminated) {
     ASSERT(op->proc_id, REG_RENAMING_MOVE_ELIMINATE);
@@ -795,7 +796,7 @@ void reg_table_consume(struct reg_table *reg_table, int reg_id, Op *op) {
 
 /* update the register state to indicate the value is produced */
 void reg_table_produce(struct reg_table *reg_table, int self_reg_id, Op *op) {
-  ASSERT(0, REG_RENAMING_SCHEME && self_reg_id != REG_TABLE_REG_ID_INVALID);
+  ASSERT(map_data->proc_id, REG_RENAMING_SCHEME && self_reg_id != REG_TABLE_REG_ID_INVALID);
   struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
 
   entry->ops->produce(entry, op);
@@ -906,6 +907,7 @@ void reg_renaming_scheme_realistic_init(void) {
   int reg_file_physical_size[REG_FILE_REG_TYPE_NUM] = {REG_TABLE_INTEGER_PHYSICAL_SIZE, REG_TABLE_VECTOR_PHYSICAL_SIZE};
 
   for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+    ASSERT(map_data->proc_id, reg_file[ii] == NULL);
     reg_file[ii] = (struct reg_file *)malloc(sizeof(struct reg_file));
     reg_file[ii]->reg_type = ii;
 
@@ -1008,12 +1010,13 @@ void reg_renaming_scheme_late_allocation_commit(Op *op);
 
 // allocate entries and assign the parent-child relationship for arch, vtag, and ptag tables
 void reg_renaming_scheme_late_allocation_init(void) {
-  ASSERT(0, REG_TABLE_INTEGER_VIRTUAL_SIZE >= REG_TABLE_INTEGER_PHYSICAL_SIZE);
-  ASSERT(0, REG_TABLE_VECTOR_VIRTUAL_SIZE >= REG_TABLE_VECTOR_PHYSICAL_SIZE);
+  ASSERT(map_data->proc_id, REG_TABLE_INTEGER_VIRTUAL_SIZE >= REG_TABLE_INTEGER_PHYSICAL_SIZE);
+  ASSERT(map_data->proc_id, REG_TABLE_VECTOR_VIRTUAL_SIZE >= REG_TABLE_VECTOR_PHYSICAL_SIZE);
   int reg_file_physical_size[REG_FILE_REG_TYPE_NUM] = {REG_TABLE_INTEGER_PHYSICAL_SIZE, REG_TABLE_VECTOR_PHYSICAL_SIZE};
   int reg_file_virtual_size[REG_FILE_REG_TYPE_NUM] = {REG_TABLE_INTEGER_VIRTUAL_SIZE, REG_TABLE_VECTOR_VIRTUAL_SIZE};
 
   for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+    ASSERT(map_data->proc_id, reg_file[ii] == NULL);
     reg_file[ii] = (struct reg_file *)malloc(sizeof(struct reg_file));
     reg_file[ii]->reg_type = ii;
 
@@ -1076,11 +1079,11 @@ Flag reg_renaming_scheme_late_allocation_issue(Op *op) {
     }
     reserve_op = reserve_op->next_node;
   }
-  ASSERT(0, reserve_op != NULL);
+  ASSERT(op->proc_id, reserve_op != NULL);
 
   // do not need to reserve if the reserving head has allocated physical register
   if (reserve_op->dst_reg_id[0][REG_TABLE_TYPE_PHYSICAL] != REG_TABLE_REG_ID_INVALID) {
-    ASSERT(0, reserve_op->op_num <= op->op_num);
+    ASSERT(op->proc_id, reserve_op->op_num <= op->op_num);
     return reg_file_check_reg_num(REG_TABLE_TYPE_PHYSICAL, 1);
   }
 
@@ -1508,7 +1511,9 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
   --- allocate the register table entries by the config size
 */
 void reg_file_init(void) {
-  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  ASSERT(map_data->proc_id,
+         REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_file = map_data->reg_file;
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].init();
 }
 
@@ -1519,7 +1524,9 @@ void reg_file_init(void) {
   --- check if there are enough register entries
 */
 Flag reg_file_available(uns stage_op_count) {
-  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  ASSERT(map_data->proc_id,
+         REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_file = map_data->reg_file;
   return reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].available(stage_op_count);
 }
 
@@ -1531,7 +1538,9 @@ Flag reg_file_available(uns stage_op_count) {
   --- allocate an entry and store the op info into the register entry
 */
 void reg_file_rename(Op *op) {
-  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  ASSERT(map_data->proc_id,
+         REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_file = map_data->reg_file;
 
   // update the arch register id in the op for child tables processing
   reg_file_extract_arch_reg_id(op);
@@ -1552,7 +1561,9 @@ void reg_file_rename(Op *op) {
   --- do additional checking before execution
 */
 Flag reg_file_issue(Op *op) {
-  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  ASSERT(map_data->proc_id,
+         REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_file = map_data->reg_file;
   return reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].issue(op);
 }
 
@@ -1563,7 +1574,9 @@ Flag reg_file_issue(Op *op) {
   --- consume the src registers
 */
 void reg_file_consume(Op *op) {
-  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  ASSERT(map_data->proc_id,
+         REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_file = map_data->reg_file;
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].consume(op);
 }
 
@@ -1574,7 +1587,9 @@ void reg_file_consume(Op *op) {
   --- write back the dst registers
 */
 void reg_file_produce(Op *op) {
-  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  ASSERT(map_data->proc_id,
+         REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_file = map_data->reg_file;
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].produce(op);
 }
 
@@ -1585,7 +1600,9 @@ void reg_file_produce(Op *op) {
   --- flush registers of misprediction operands
 */
 void reg_file_recover(Op *op) {
-  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  ASSERT(map_data->proc_id,
+         REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_file = map_data->reg_file;
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].recover(op);
 }
 
@@ -1596,7 +1613,9 @@ void reg_file_recover(Op *op) {
   --- update the register metadata when an op is non-spec
 */
 void reg_file_precommit(Op *op) {
-  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  ASSERT(map_data->proc_id,
+         REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_file = map_data->reg_file;
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].precommit(op);
 }
 
@@ -1607,6 +1626,8 @@ void reg_file_precommit(Op *op) {
   --- release the previous register with same architectural id
 */
 void reg_file_commit(Op *op) {
-  ASSERT(0, REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  ASSERT(map_data->proc_id,
+         REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
+  reg_file = map_data->reg_file;
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].commit(op);
 }

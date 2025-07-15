@@ -161,6 +161,8 @@ struct reg_file {
   struct reg_table *reg_table[REG_TABLE_TYPE_NUM];
 };
 
+typedef struct reg_file Reg_File;
+
 /**************************************************************************************/
 /* Operations */
 

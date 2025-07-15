@@ -94,6 +94,9 @@ void collect_not_ready_to_retire_stats(Op* op);
 Flag is_node_table_full(void);
 void collect_node_table_full_stats(Op* op);
 
+void node_fill_rob(Stage_Data*);
+void node_retire(void);
+
 void node_precommit_update(void);
 void node_precommit_retire(Op* op);
 
@@ -377,14 +380,7 @@ void update_node_stage(Stage_Data* src_sd) {
   /* update the precommit pointer in the ROB */
   node_precommit_update();
 
-  /* remove scheduled ops from RS and ready list */
-  node_handle_scheduled_ops();
-
-  /* fill RS with oldest ops waiting for it */
-  node_fill_rs();
-
-  /* first schedule 1 ready op per NUM_FUS  */
-  node_sched_ops();
+  node_issue_queue_update();
 
   /* get rid of the ops that are finished */
   node_retire();
@@ -475,77 +471,6 @@ void node_fill_rob(Stage_Data* src_sd) {
     /* always stop issuing after a synchronizing op */
     if (op->table_info->bar_type & BAR_ISSUE)
       break;
-  }
-}
-
-/**************************************************************************************/
-/* check_if_mem_blocked: Memory is blocked when there are no more MSHRs in the
- * L1 Q (i.e., there is no way to handle a D-Cache miss). This function checks
- * to see if any of the L1 MSHRs have become available.*/
-
-void check_if_mem_blocked() {
-  /* if we are stalled due to lack of MSHRs to the L1, check to see if there is space now. */
-  if (node->mem_blocked && mem_can_allocate_req_buffer(node->proc_id, MRT_DFETCH, FALSE)) {
-    node->mem_blocked = FALSE;
-    STAT_EVENT(node->proc_id, MEM_BLOCK_LENGTH_0 + MIN2(node->mem_block_length, 5000) / 100);
-    if (DIE_ON_MEM_BLOCK_THRESH) {
-      if (node->proc_id == DIE_ON_MEM_BLOCK_CORE) {
-        ASSERTM(node->proc_id, node->mem_block_length < DIE_ON_MEM_BLOCK_THRESH,
-                "Core blocked on memory for %u cycles (%llu--%llu)\n", node->mem_block_length,
-                cycle_count - node->mem_block_length, cycle_count);
-      }
-    }
-    node->mem_block_length = 0;
-  }
-  INC_STAT_EVENT(node->proc_id, CORE_MEM_BLOCKED, node->mem_blocked);
-  node->mem_block_length += node->mem_blocked;
-}
-
-/**************************************************************************************/
-/* node_sched_ops: schedule read ops (ops that are currently in the ready list).
- *   All of the scheduling algs take the ready_list as input and produce
- * node->sd as output. node->sd are the ops that are being passed to the
- * functional units. If the FUs are availible, they will grab the op and it
- * will be removed from the ready_list. If they are not available, then the op
- * will remain in the ready_list for the next round of scheduling. There is
- * only one ready list that holds all of the ops that are ready from each of
- * the reservation stations.*/
-
-void node_sched_ops() {
-  Op* op;
-
-  /* the next stage is supposed to clear them out, regardless of
-     whether they are actually sent to a functional unit */
-  ASSERT(node->proc_id, node->sd.op_count == 0);
-
-  // Check to see if the L1 Q is (still) full
-  check_if_mem_blocked();
-
-  for (op = node->rdy_head; op; op = op->next_rdy) {
-    ASSERT(node->proc_id, node->proc_id == op->proc_id);
-    ASSERTM(node->proc_id, op->in_rdy_list, "op_num %llu\n", op->op_num);
-    if (op->state == OS_WAIT_MEM) {
-      if (node->mem_blocked)
-        continue;
-      else
-        op->state = OS_READY;
-    }
-    if (op->state == OS_TENTATIVE || op->state == OS_WAIT_DCACHE)
-      continue;
-    ASSERTM(node->proc_id, op->state == OS_IN_RS || op->state == OS_READY || op->state == OS_WAIT_FWD,
-            "op_num: %llu, op_state: %s\n", op->op_num, Op_State_str(op->state));
-    DEBUG(node->proc_id, "Scheduler examining    op_num:%s op:%s l1:%d st:%s rdy:%s exec:%s done:%s\n",
-          unsstr64(op->op_num), disasm_op(op, TRUE), op->engine_info.l1_miss, Op_State_str(op->state),
-          unsstr64(op->rdy_cycle), unsstr64(op->exec_cycle), unsstr64(op->done_cycle));
-
-    /* op will be ready next cycle, try to schedule */
-    if (cycle_count >= op->rdy_cycle - 1) {
-      ASSERT(node->proc_id, op->srcs_not_rdy_vector == 0x0);
-      DEBUG(node->proc_id, "Scheduler considering  op_num:%s op:%s l1:%d\n", unsstr64(op->op_num), disasm_op(op, TRUE),
-            op->engine_info.l1_miss);
-
-      node_issue_queue_schedule(op);
-    }
   }
 }
 
@@ -690,80 +615,6 @@ void node_retire() {
   if (op == NULL) {
     node->node_tail = NULL;
     ASSERTM(node->proc_id, node->node_count == 0, "Node table must be empty if next node is null!\n");
-  }
-}
-
-/**************************************************************************************/
-/* node_fill_rs: fill the scheduling window (RS) with oldest available ops.
- * Adding ops to their reservation stations. If they are ready, also add them to
- * the ready list.*/
-
-void node_fill_rs() {
-  int64 rs_id;
-  Op* op = NULL;
-  uns32 num_fill_rs = 0;
-
-  // Scan through issued nodes in node table that have not been issued to RS yet.
-  for (op = node->next_op_into_rs; op; op = op->next_node) {
-    // Put your own issue functions here.
-    rs_id = node_issue_queue_dispatch(op);
-
-    if (rs_id == -1)
-      break;
-
-    Reservation_Station* rs = &node->rs[rs_id];
-    ASSERT(node->proc_id, rs_id < NUM_RS);
-    ASSERTM(node->proc_id, !rs->size || rs->rs_op_count < rs->size,
-            "There must be at least one free space in selected RS!\n");
-
-    ASSERT(node->proc_id, op->state == OS_IN_ROB);
-    op->state = OS_IN_RS;
-    op->rs_id = (Counter)rs_id;
-    rs->rs_op_count++;
-    num_fill_rs++;
-    DEBUG(node->proc_id, "Filling %s with op_num:%s (%d)\n", rs->name, unsstr64(op->op_num), rs->rs_op_count);
-    if (op->srcs_not_rdy_vector == 0) {
-      /* op is ready to issue right now */
-      DEBUG(node->proc_id, "Adding to ready list  op_num:%s op:%s l1:%d\n", unsstr64(op->op_num), disasm_op(op, TRUE),
-            op->engine_info.l1_miss);
-      op->state = (cycle_count + 1 >= op->rdy_cycle ? OS_READY : OS_WAIT_FWD);
-      op->next_rdy = node->rdy_head;
-      node->rdy_head = op;
-      op->in_rdy_list = TRUE;
-    }
-
-    // This is the max number of ops we can fill into the RS per cycle.
-    // 0 means infinite.
-    if (RS_FILL_WIDTH && (num_fill_rs == RS_FILL_WIDTH)) {
-      op = op->next_node;
-      break;
-    }
-  }
-
-  // had to stop issuing, this is the next node that should be issued to the RS
-  node->next_op_into_rs = op;
-}
-
-/**************************************************************************************/
-/* node_handle_scheduled_ops: Once the op is scheduled (i.e., going from RS to
- * FUs), we need to remove scheduled ops from the RS and ready queue */
-
-void node_handle_scheduled_ops() {
-  /* this traversal could be made more efficient since we know what
-     ops we tried to schedule last cycle, but for now let's look at the whole ready list */
-  Op** last = &node->rdy_head;
-  for (Op* op = node->rdy_head; op; op = op->next_rdy) {
-    if (op->state == OS_SCHEDULED || op->state == OS_MISS) {
-      DEBUG(node->proc_id, "Removing from RS (and ready list)  op_num:%s op:%s l1:%d\n", unsstr64(op->op_num),
-            disasm_op(op, TRUE), op->engine_info.l1_miss);
-      *last = op->next_rdy;
-      op->in_rdy_list = FALSE;
-      ASSERT(node->proc_id, node->rs[op->rs_id].rs_op_count > 0);
-      node->rs[op->rs_id].rs_op_count--;
-      STAT_EVENT(node->proc_id, OP_ISSUED);
-    } else {
-      last = &op->next_rdy;
-    }
   }
 }
 

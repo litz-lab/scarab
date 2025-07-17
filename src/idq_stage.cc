@@ -56,6 +56,9 @@ class IDQ_Stage {
   void update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd);
   Stage_Data* get_output_stage_data();
 
+  void set_recovery_cycle(int recovery_cycle);
+  int get_recovery_cycle() const;
+
  private:
   uns8 proc_id;
   int capacity;
@@ -64,6 +67,7 @@ class IDQ_Stage {
   int head;
   int tail;
   Counter next_op_num;
+  int recovery_cycle;
 
   /* the IDQ outpur stage data */
   Stage_Data idq_sd;
@@ -102,6 +106,7 @@ void IDQ_Stage::reset() {
   occupied_count = 0;
   head = 0;
   tail = 0;
+  recovery_cycle = 0;
 
   for (int i = 0; i < idq_sd.max_op_count; i++) {
     idq_sd.ops[i] = NULL;
@@ -203,10 +208,10 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
   }
   count_available = idq_sd.op_count;
 
+  topdown_idq_update(proc_id, count_available, count_issued, count_issued_on_path);
+
   /* Select the input stage data. */
   Stage_Data* consume_from_sd = select_input_stage_data(dec_src_sd, ic_uopc_sd, uop_queue_sd);
-
-  topdown_idq_update(proc_id, count_available, count_issued, count_issued_on_path, consume_from_sd);
 
   /* Return if the next expected uop has not yet arrived. */
   if (!consume_from_sd) {
@@ -278,6 +283,14 @@ int IDQ_Stage::wrap_around(int index) {
   return (index + capacity) % capacity;
 }
 
+void IDQ_Stage::set_recovery_cycle(int recovery_cycle) {
+  this->recovery_cycle = recovery_cycle;
+}
+
+int IDQ_Stage::get_recovery_cycle() const {
+  return recovery_cycle;
+}
+
 Stage_Data* IDQ_Stage::get_output_stage_data() {
   return &idq_sd;
 }
@@ -313,4 +326,12 @@ void update_idq_stage(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data
 
 Stage_Data* idq_stage_get_stage_data() {
   return idq_stage->get_output_stage_data();
+}
+
+void idq_stage_set_recovery_cycle(int recovery_cycle) {
+  idq_stage->set_recovery_cycle(recovery_cycle);
+}
+
+int idq_stage_get_recovery_cycle() {
+  return idq_stage->get_recovery_cycle();
 }

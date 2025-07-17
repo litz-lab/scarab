@@ -38,6 +38,7 @@
 #include "globals/utils.h"
 
 #include "dcache_stage.h"
+#include "idq_stage.h"
 #include "lsq.h"
 #include "node_stage.h"
 #include "op.h"
@@ -68,26 +69,34 @@
 void topdown_bp_recovery(uns proc_id, Op* op) {
   ASSERT(op->proc_id, op->table_info->cf_type);
 
+  idq_stage_set_recovery_cycle(DECODE_CYCLES);
+
   STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEARS);
   if (op->oracle_info.recover_at_exec)
     STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED);
 }
 
-void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path,
-                        Stage_Data* consume_from_sd) {
+void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path) {
   INC_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS, ISSUE_WIDTH);
-  if (!node->node_stall) {
-    if (!consume_from_sd) {
-      INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES, ISSUE_WIDTH - count_available);
-    } else {
-      INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES, ISSUE_WIDTH - count_available);
-      if (count_available == 0)
-        STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GREATER_THAN_MIW);
-    }
-  }
-
   INC_STAT_EVENT(proc_id, TOPDOWN_SLOTS_ISSUED, count_issued);
   INC_STAT_EVENT(proc_id, TOPDOWN_SLOTS_RETIRED, count_issued_on_path);
+
+  int recovery_cycle = idq_stage_get_recovery_cycle();
+  if (recovery_cycle != 0) {
+    ASSERT(proc_id, recovery_cycle > 0);
+    idq_stage_set_recovery_cycle(recovery_cycle - 1);
+    INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES, ISSUE_WIDTH - count_available);
+    return;
+  }
+
+  // only increment frontend-stall when there is no backend-stall
+  if (node->node_stall) {
+    return;
+  }
+
+  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES, ISSUE_WIDTH - count_available);
+  if (count_available == 0)
+    STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GREATER_THAN_MIW);
 }
 
 void topdown_exec_update(uns proc_id, uns8 fus_busy) {

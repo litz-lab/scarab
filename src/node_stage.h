@@ -68,8 +68,6 @@ typedef struct Node_Stage_struct {
   Flag mem_blocked;      // are we out of mem req buffers for this core
   uns mem_block_length;  // length of the current memory block
   uns ret_stall_length;  // length of the current retirement stall
-
-  Flag node_stall;
 } Node_Stage;
 
 /**************************************************************************************/

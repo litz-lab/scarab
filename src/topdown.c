@@ -90,7 +90,7 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
   }
 
   // only increment frontend-stall when there is no backend-stall
-  if (node->node_stall) {
+  if (is_node_stage_stalled()) {
     return;
   }
 

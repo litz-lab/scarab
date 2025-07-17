@@ -149,8 +149,6 @@ void reset_node_stage() {
 
   node->node_precommit = NULL;
   node->prev_op_fusable = FALSE;
-
-  node->node_stall = FALSE;
 }
 
 /**************************************************************************************/
@@ -609,12 +607,6 @@ void node_retire() {
   }
 
   STAT_EVENT(node->proc_id, ROW_SIZE_0 + ret_count);
-
-  if (ret_count < NODE_RET_WIDTH && node->node_count != 0) {
-    node->node_stall = TRUE;
-  } else {
-    node->node_stall = FALSE;
-  }
 
   // op should be pointing to first op that was not retired because of the above for-loop
   node->node_head = op;

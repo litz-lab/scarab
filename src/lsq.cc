@@ -319,11 +319,18 @@ void lsq_commit(Op* mem_op) {
 
 /**************************************************************************************/
 
-int lsq_get_load_num() {
+int lsq_get_in_flight_load_num() {
   if (!LSQ_ENABLE)
     return 0;
 
-  return lsq_unit->get_queue(MEM_LD)->get_entries().size();
+  int in_flight_num = 0;
+  const auto& store_entries = lsq_unit->get_queue(MEM_LD)->get_entries();
+  for (const auto& entry : store_entries) {
+    if (entry.op->state >= OS_IN_RS)
+      in_flight_num++;
+  }
+
+  return in_flight_num;
 }
 
 int lsq_get_unready_store_num() {
@@ -333,7 +340,7 @@ int lsq_get_unready_store_num() {
   int unready_num = 0;
   const auto& store_entries = lsq_unit->get_queue(MEM_ST)->get_entries();
   for (const auto& entry : store_entries) {
-    if (entry.op->state < OS_READY && entry.op->state > OS_IN_RS)
+    if (entry.op->state < OS_READY && entry.op->state >= OS_IN_RS)
       unready_num++;
   }
 

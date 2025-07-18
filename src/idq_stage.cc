@@ -146,6 +146,8 @@ void IDQ_Stage::recover() {
       idq_sd.op_count--;
     }
   }
+
+  recovery_cycle = DECODE_CYCLES;
 }
 
 void IDQ_Stage::debug() {

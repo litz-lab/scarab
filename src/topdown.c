@@ -40,6 +40,7 @@
 #include "dcache_stage.h"
 #include "idq_stage.h"
 #include "lsq.h"
+#include "map_stage.h"
 #include "node_stage.h"
 #include "op.h"
 
@@ -69,11 +70,11 @@
 void topdown_bp_recovery(uns proc_id, Op* op) {
   ASSERT(op->proc_id, op->table_info->cf_type);
 
-  idq_stage_set_recovery_cycle(DECODE_CYCLES);
-
-  STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEARS);
-  if (op->oracle_info.recover_at_exec)
+  STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_EVENTS);
+  if (op->oracle_info.recover_at_exec) {
+    ASSERT(op->proc_id, !op->off_path);
     STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED);
+  }
 }
 
 void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path) {
@@ -81,16 +82,21 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
   INC_STAT_EVENT(proc_id, TOPDOWN_SLOTS_ISSUED, count_issued);
   INC_STAT_EVENT(proc_id, TOPDOWN_SLOTS_RETIRED, count_issued_on_path);
 
+  Flag in_recovery = FALSE;
   int recovery_cycle = idq_stage_get_recovery_cycle();
   if (recovery_cycle != 0) {
     ASSERT(proc_id, recovery_cycle > 0);
     idq_stage_set_recovery_cycle(recovery_cycle - 1);
-    INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES, ISSUE_WIDTH - count_available);
+    in_recovery = TRUE;
+  }
+
+  // only increment frontend-stall/recovery-bubbles when there is no backend-stall
+  if (is_node_stage_stalled() || map->reg_file_stall) {
     return;
   }
 
-  // only increment frontend-stall when there is no backend-stall
-  if (is_node_stage_stalled() || reg_file_available(ISSUE_WIDTH)) {
+  if (in_recovery) {
+    INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES, ISSUE_WIDTH - count_available);
     return;
   }
 
@@ -102,7 +108,7 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
 void topdown_exec_update(uns proc_id, uns8 fus_busy) {
   if (fus_busy <= TOPDOWN_FU_EXEC_FEW && node->node_count != 0) {
     STAT_EVENT(proc_id, TOPDOWN_EXEC_STALLS);
-    if (lsq_get_load_num() > 0 && fus_busy == 0) {
+    if (lsq_get_in_flight_load_num() > 0 && fus_busy == 0) {
       STAT_EVENT(proc_id, TOPDOWN_MEM_STALLS_LOAD);
     } else if (lsq_get_unready_store_num() > 0) {
       STAT_EVENT(proc_id, TOPDOWN_MEM_STALLS_STORE);
@@ -182,5 +188,10 @@ void topdown_done(uns proc_id) {
                      GET_STAT_EVENT(proc_id, TOPDOWN_FETCH_LATENCY));
 
   /* Bad Spec Breakdown */
-  // TODO: off-path flush is not enabling currently
+  INC_STAT_EVENT(proc_id, TOPDOWN_BR_MISPREDICTS,
+                 GET_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC) * GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED) /
+                     (GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED) +
+                      GET_STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_EVENTS)));
+  INC_STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEARS,
+                 GET_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC) - GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPREDICTS));
 }

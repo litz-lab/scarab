@@ -142,7 +142,8 @@ FT_BuildResult FT::build_full_ft(uns start_index, std::function<bool(uns8)> can_
   FT_BuildResult result;
   result.build_complete = false;
   result.redirect_needed = false;
-  result.redirect_op = nullptr;
+  result.fetch_bar_needed = false;
+  result.trigger_op = nullptr;
   result.redirect_uid = 0;
   result.redirect_addr = 0;
 
@@ -178,9 +179,13 @@ FT_BuildResult FT::build_full_ft(uns start_index, std::function<bool(uns8)> can_
     add_op(op, ft_ended_by);
     if (event == FT_EVENT_MISPREDICT || event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
       result.redirect_needed = true;
-      result.redirect_op = op;
+      result.trigger_op = op;
       result.redirect_uid = op->inst_uid;
       result.redirect_addr = op->oracle_info.pred_npc;
+      return result;
+    } else if (event == FT_EVENT_FETCH_BARRIER) {
+      result.trigger_op = op;
+      result.fetch_bar_needed = true;
       return result;
     }
     if (off_path) {
@@ -328,13 +333,14 @@ FT_Event FT::predict_one_cf_op(Op* op, uint64_t& dfe_op_count) {
 }
 
 FT_PredictResult FT::bp_predict_ft(uint64_t& dfe_op_count, uns start_pos) {
-  for (uns idx = start_pos; idx < ops.size(); idx++) {
+  for (size_t idx = start_pos; idx < ops.size(); idx++) {
     Op* op = ops[idx];
     FT_Event event = predict_one_cf_op(op, dfe_op_count);
     if (event != FT_EVENT_NONE) {
-      uns return_idx = (event == FT_EVENT_MISPREDICT) ? idx : -1;
+      int return_idx = (event == FT_EVENT_MISPREDICT) ? static_cast<int>(idx) : -1;
       Addr pred_addr = op->oracle_info.pred_npc;  // or however you get it
-      return {static_cast<int>(return_idx), event, op, pred_addr};
+      ASSERT(proc_id, (return_idx != -1) == (event == FT_EVENT_MISPREDICT));
+      return {return_idx, event, op, pred_addr};
     }
   }
   return {-1, FT_EVENT_NONE, nullptr, 0};

@@ -84,7 +84,8 @@ struct FT_PredictResult {
 struct FT_BuildResult {
   bool build_complete = false;
   bool redirect_needed = false;
-  Op* redirect_op = nullptr;
+  bool fetch_bar_needed = false;
+  Op* trigger_op = nullptr;
   uns64 redirect_uid = 0;
   Addr redirect_addr = 0;
 };

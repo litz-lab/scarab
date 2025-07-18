@@ -24,7 +24,7 @@
 class Decoupled_FE {
  public:
   Decoupled_FE(uns _proc_id);
-  int is_off_path() { return off_path; }
+  int is_off_path() { return is_off_path_state(); }
   void recover();
   void update();
   FT* get_ft(uint64_t ft_pos);
@@ -67,7 +67,6 @@ class Decoupled_FE {
   FT current_ft_to_push;
   FT saved_recovery_ft;
 
-  int off_path;
   int sched_off_path;
   uint64_t dfe_op_count;
   std::vector<decoupled_fe_iter> ftq_iterators;
@@ -80,6 +79,9 @@ class Decoupled_FE {
   Conf* conf;
 
   DFE_STATE state;  // FSM state
+
+  // Helper for off-path state
+  bool is_off_path_state() const { return state == SERVING_OFF_PATH; }
 };
 
 /* Global Variables */
@@ -209,7 +211,6 @@ void Decoupled_FE::init(uns _proc_id) {
   trace_mode |= (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE);
 #endif
   proc_id = _proc_id;
-  off_path = false;
   sched_off_path = false;
   dfe_op_count = 1;
   recovery_addr = 0;
@@ -228,7 +229,7 @@ void Decoupled_FE::init(uns _proc_id) {
 }
 
 void Decoupled_FE::recover() {
-  off_path = false;
+  state = RECOVERING;
   sched_off_path = false;
   cur_op = nullptr;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
@@ -271,7 +272,7 @@ void Decoupled_FE::recover() {
 
   // FIXME always fetch off path ops? should we get rid of this parameter?
   frontend_recover(proc_id, bp_recovery_info->recovery_inst_uid);
-  if (saved_recovery_ft.ft_info.static_info.start != 0) {
+  if (saved_recovery_ft.is_valid()) {
     ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == saved_recovery_ft.ft_info.static_info.start,
             "Scarab's recovery addr 0x%llx does not match save ft pos"
             "addr 0x%llx\n",
@@ -285,8 +286,6 @@ void Decoupled_FE::recover() {
   }
   if (CONFIDENCE_ENABLE)
     conf->recover(op);
-  // After recovery, transition to RECOVERING state so next update() uses saved_recovery_ft
-  state = RECOVERING;
 }
 Flag have_seen_exit_on_ftq = 0;
 Flag have_seen_exit_on_prebuilt = 0;
@@ -299,8 +298,8 @@ void Decoupled_FE::update() {
     std::cout << "No forward progress for 1000000 cycles" << std::endl;
     ASSERT(0, 0);
   }
-  ASSERT(0, off_path == (state == SERVING_OFF_PATH));
-  if (off_path)
+
+  if (is_off_path_state())
     STAT_EVENT(proc_id, FTQ_CYCLES_OFFPATH);
   else
     STAT_EVENT(proc_id, FTQ_CYCLES_ONPATH);
@@ -317,7 +316,7 @@ void Decoupled_FE::update() {
 
     if (ftq_num_fts() == ftq_ft_num) {
       DEBUG(proc_id, "Break due to full FTQ\n");
-      if (off_path)
+      if (is_off_path_state())
         STAT_EVENT(proc_id, FTQ_BREAK_FULL_FT_OFFPATH);
       else
         STAT_EVENT(proc_id, FTQ_BREAK_FULL_FT_ONPATH);
@@ -325,7 +324,7 @@ void Decoupled_FE::update() {
     }
     if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, proc_id)) {
       DEBUG(proc_id, "Break due to limited branch predictor\n");
-      if (off_path)
+      if (is_off_path_state())
         STAT_EVENT(proc_id, FTQ_BREAK_PRED_BR_OFFPATH);
       else
         STAT_EVENT(proc_id, FTQ_BREAK_PRED_BR_ONPATH);
@@ -333,7 +332,7 @@ void Decoupled_FE::update() {
     }
     if (stalled) {
       DEBUG(proc_id, "Break due to wait for fetch barrier resolved\n");
-      if (off_path)
+      if (is_off_path_state())
         STAT_EVENT(proc_id, FTQ_BREAK_BAR_FETCH_OFFPATH);
       else
         STAT_EVENT(proc_id, FTQ_BREAK_BAR_FETCH_ONPATH);
@@ -351,8 +350,17 @@ void Decoupled_FE::update() {
           // Reset the saved recovery FT after use
           saved_recovery_ft = FT();
         } else {
-          current_ft_to_push = FT(proc_id);
+          // if no saved recovery FT, we build a new one
+          current_ft_to_push.build_full_ft(
+              0, [](uns8 pid) { return frontend_can_fetch_op(pid); },
+              [](uns8 pid, Op* op) -> bool {
+                frontend_fetch_op(pid, op);
+                return true;
+              },
+              ftq.empty() ? FT() : ftq.back(), is_off_path_state(), false, dfe_op_count);
         }
+        if (current_ft_to_push.is_valid())
+          STAT_EVENT(proc_id, DFE_GEN_ON_PATH_FT);
         break;
       case SERVING_ON_PATH:
         // Normal operation, build new FT
@@ -363,7 +371,9 @@ void Decoupled_FE::update() {
               frontend_fetch_op(pid, op);
               return true;
             },
-            ftq.empty() ? FT() : ftq.back(), off_path, false, dfe_op_count);
+            ftq.empty() ? FT() : ftq.back(), is_off_path_state(), false, dfe_op_count);
+        if (current_ft_to_push.is_valid())
+          STAT_EVENT(proc_id, DFE_GEN_ON_PATH_FT);
         break;
       case SERVING_OFF_PATH:
         // currently still use same api to fetch off-path ops
@@ -374,14 +384,17 @@ void Decoupled_FE::update() {
               frontend_fetch_op(pid, op);
               return true;
             },
-            ftq.empty() ? FT() : ftq.back(), off_path, false, dfe_op_count);
+            ftq.empty() ? FT() : ftq.back(), is_off_path_state(), false, dfe_op_count);
+        if (current_ft_to_push.is_valid())
+          STAT_EVENT(proc_id, DFE_GEN_OFF_PATH_FT);
         break;
       default:
         // Fallback
         current_ft_to_push = FT(proc_id);
         break;
     }
-
+    if (!current_ft_to_push.is_valid())
+      STAT_EVENT(proc_id, DFE_GEN_NO_FT);
     if (current_ft_to_push.ops.empty()) {
       break;
     }
@@ -389,7 +402,6 @@ void Decoupled_FE::update() {
     fwd_progress = 0;
     auto result = current_ft_to_push.bp_predict_ft(dfe_op_count, 0);
     if (result.event == FT_EVENT_MISPREDICT) {
-      off_path = true;
       redirect_cycle = cycle_count;
       state = SERVING_OFF_PATH;
       frontend_redirect(proc_id, result.op->inst_uid, result.pred_addr);
@@ -399,12 +411,11 @@ void Decoupled_FE::update() {
       stall(result.op);  // Only call stall here
     }
 
-    FT_Ended_By ft_ended_by = FT_NOT_ENDED;
+    // FT_Ended_By ft_ended_by = FT_NOT_ENDED;
     // if we see a misprediction, we must be on off_path
-    ASSERT(proc_id, (result.index != -1) == (result.event == FT_EVENT_MISPREDICT));
-    ASSERT(proc_id, result.index == -1 || off_path);
+    ASSERT(proc_id, result.event != FT_EVENT_MISPREDICT || is_off_path_state());
 
-    if (result.index != -1 && result.event == FT_EVENT_MISPREDICT) {
+    if (result.event == FT_EVENT_MISPREDICT) {
       // If index is not -1 we need to re-evaluate the FT
       std::pair<FT, FT> reevaluated = current_ft_to_push.split_ft(result.index);
       current_ft_to_push = reevaluated.first;
@@ -415,9 +426,11 @@ void Decoupled_FE::update() {
               frontend_fetch_op(pid, op);
               return true;
             },
-            ftq.empty() ? FT() : ftq.back(), off_path, true, dfe_op_count);
+            ftq.empty() ? FT() : ftq.back(), is_off_path_state(), true, dfe_op_count);
         if (build_result.redirect_needed) {
-          frontend_redirect(proc_id, build_result.redirect_op->inst_uid, build_result.redirect_addr);
+          frontend_redirect(proc_id, build_result.trigger_op->inst_uid, build_result.redirect_addr);
+        } else if (build_result.fetch_bar_needed) {
+          stall(build_result.trigger_op);
         }
       }
 
@@ -426,13 +439,13 @@ void Decoupled_FE::update() {
         saved_recovery_ft = reevaluated.second;
       }
 
-      ft_ended_by = current_ft_to_push.ft_info.dynamic_info.ended_by;
-    } else if (result.index == -1) {
+      // ft_ended_by = current_ft_to_push.ft_info.dynamic_info.ended_by;
+      // } else if (result.index == -1) {
       // If we have no mispredicted branch, we can just use the pre_built_ft as is
-      ft_ended_by = current_ft_to_push.ft_info.dynamic_info.ended_by;
+      // ft_ended_by = current_ft_to_push.ft_info.dynamic_info.ended_by;
     }
 
-    if (ft_ended_by != FT_NOT_ENDED) {
+    if (current_ft_to_push.is_valid() && current_ft_to_push.is_ended()) {
       ASSERT(proc_id, current_ft_to_push.ft_info.static_info.start && current_ft_to_push.ft_info.static_info.length &&
                           current_ft_to_push.ops.size());
       ASSERT(proc_id, current_ft_to_push.ops.front()->bom && current_ft_to_push.ops.back()->eom);

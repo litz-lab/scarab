@@ -87,7 +87,9 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
   if (recovery_cycle != 0) {
     ASSERT(proc_id, recovery_cycle > 0);
     idq_stage_set_recovery_cycle(recovery_cycle - 1);
-    in_recovery = TRUE;
+    if (count_available == 0) {
+      in_recovery = TRUE;
+    }
   }
 
   // only increment frontend-stall/recovery-bubbles when there is no backend-stall

@@ -190,6 +190,8 @@ void topdown_done(uns proc_id) {
                      GET_STAT_EVENT(proc_id, TOPDOWN_FETCH_LATENCY));
 
   /* Bad Spec Breakdown */
+  if (GET_STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_EVENTS) == 0)
+    STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_EVENTS);
   INC_STAT_EVENT(proc_id, TOPDOWN_BR_MISPREDICTS,
                  GET_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC) * GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED) /
                      (GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED) +

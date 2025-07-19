@@ -136,9 +136,8 @@ void FT::add_op(Op* op, FT_Ended_By ft_ended_by) {
   }
 }
 
-FT_BuildResult FT::build_full_ft(uns start_index, std::function<bool(uns8)> can_fetch_op_fn,
-                                 std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path, Flag use_pred,
-                                 uint64_t& dfe_op_count) {
+FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
+                                 Flag off_path, Flag use_pred, uint64_t& dfe_op_count) {
   FT_BuildResult result;
   result.build_complete = false;
   result.redirect_needed = false;
@@ -152,18 +151,14 @@ FT_BuildResult FT::build_full_ft(uns start_index, std::function<bool(uns8)> can_
     *this = FT(proc_id);
     return result;
   }
-  if (last_ft.ft_info.dynamic_info.ended_by == FT_APP_EXIT) {
-    *this = FT(proc_id);
-    return result;
-  }
 
   FT_Ended_By ft_ended_by = FT_NOT_ENDED;
-  if (start_index == 0) {
+  if (ops.size() == 0) {
     ft_info.dynamic_info.FT_id = FT_id_count++;
   }
 
-  if (start_index > 0) {
-    ft_ended_by = ft_get_ended_by(ops[start_index - 1], use_pred);
+  if (ops.size() > 0) {
+    ft_ended_by = ft_get_ended_by(ops.back(), use_pred);
   }
   while (ft_ended_by == FT_NOT_ENDED) {
     Op* op = alloc_op(proc_id);
@@ -172,11 +167,16 @@ FT_BuildResult FT::build_full_ft(uns start_index, std::function<bool(uns8)> can_
       return result;
     op->off_path = off_path;
     FT_Event event = FT_EVENT_NONE;
-    if (op->off_path && start_index != 0) {
+    if (op->off_path && use_pred) {
       event = predict_one_cf_op(op, dfe_op_count);
     }
     ft_ended_by = ft_get_ended_by(op, use_pred);
     add_op(op, ft_ended_by);
+    if (off_path) {
+      STAT_EVENT(proc_id, FTQ_FETCHED_INS_OFFPATH);
+    } else {
+      STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH);
+    }
     if (event == FT_EVENT_MISPREDICT || event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
       result.redirect_needed = true;
       result.trigger_op = op;
@@ -188,38 +188,16 @@ FT_BuildResult FT::build_full_ft(uns start_index, std::function<bool(uns8)> can_
       result.fetch_bar_needed = true;
       return result;
     }
-    if (off_path) {
-      STAT_EVENT(proc_id, FTQ_FETCHED_INS_OFFPATH);
-    } else {
-      STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH);
-    }
   }
-  // If no new ops were added in the loop, but FT ended at start_index, update ft_info accordingly
-  if (ft_ended_by != FT_NOT_ENDED || (start_index > 0 && ops.size() == start_index)) {
-    // If we didn't add a new op, but FT ended at the previous op, update ft_info
-    if (ops.size() > 0) {
-      ft_info.static_info.n_uops = ops.size();
-      Op* last_op = ops.back();
-      ft_info.static_info.length =
-          last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size - ft_info.static_info.start;
-    }
+
+  if (ft_ended_by != FT_NOT_ENDED) {
+    ft_info.static_info.n_uops = ops.size();
     ft_info.dynamic_info.ended_by = ft_ended_by;
+    Op* last_op = ops.back();
+    ft_info.static_info.length =
+        last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size - ft_info.static_info.start;
     set_per_op_ft_info();
-    if (last_ft.get_ft_info().static_info.start) {
-      Op* last_op = last_ft.peek_last_op();
-      ASSERT(proc_id, last_op);
-      FT_Ended_By prev_end_type = last_ft.get_ft_info().dynamic_info.ended_by;
-      Addr start_addr = ft_info.static_info.start;
-      if (prev_end_type == FT_TAKEN_BRANCH) {
-        ASSERT(proc_id, last_op->oracle_info.pred_npc == start_addr || last_op->oracle_info.npc == start_addr);
-      } else if (prev_end_type == FT_BAR_FETCH) {
-        ASSERT(proc_id, last_op->oracle_info.npc == start_addr ||
-                            last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == start_addr);
-      } else {
-        if (last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size != start_addr)
-          ASSERT(proc_id, last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == start_addr);
-      }
-    }
+
     if (ft_ended_by == FT_ICACHE_LINE_BOUNDARY) {
       set_ft_started_by(FT_STARTED_BY_ICACHE_LINE_BOUNDARY);
     } else if (ft_ended_by == FT_TAKEN_BRANCH) {
@@ -346,7 +324,7 @@ FT_PredictResult FT::bp_predict_ft(uint64_t& dfe_op_count, uns start_pos) {
   return {-1, FT_EVENT_NONE, nullptr, 0};
 }
 
-FT_Info FT::get_ft_info() {
+FT_Info FT::get_ft_info() const {
   return ft_info;
 }
 
@@ -362,7 +340,7 @@ std::vector<Op*>& FT::get_ops() {
   return ops;
 }
 
-Op* FT::peek_last_op() {
+Op* FT::peek_last_op() const {
   return ops.back();
 }
 
@@ -385,6 +363,28 @@ bool FT::is_valid() const {
 
 bool FT::is_ended() const {
   return ft_info.dynamic_info.ended_by != FT_NOT_ENDED;
+}
+
+bool FT::is_consecutive(const FT& last_ft) const {
+  if (!last_ft.get_ft_info().static_info.start)
+    return true;
+  Op* last_op = last_ft.peek_last_op();
+  if (!last_op)
+    return false;
+  FT_Ended_By prev_end_type = last_ft.get_ft_info().dynamic_info.ended_by;
+  Addr start_addr = ft_info.static_info.start;
+  if (prev_end_type == FT_TAKEN_BRANCH) {
+    if (!(last_op->oracle_info.pred_npc == start_addr || last_op->oracle_info.npc == start_addr))
+      return false;
+  } else if (prev_end_type == FT_BAR_FETCH) {
+    if (!(last_op->oracle_info.npc == start_addr ||
+          last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == start_addr))
+      return false;
+  } else {
+    if (last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size != start_addr)
+      return false;
+  }
+  return true;
 }
 /* FT wrappers */
 bool ft_can_fetch_op(FT* ft) {

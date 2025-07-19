@@ -99,16 +99,15 @@ class FT {
   bool can_fetch_op();
   Op* fetch_op();
   void set_per_op_ft_info();
-  FT_Info get_ft_info();
+  FT_Info get_ft_info() const;
   bool is_consumed();
   void set_consumed();
 
   std::vector<Op*>& get_ops();
   // Change return type to FT_BuildResult
-  FT_BuildResult build_full_ft(uns start_index, std::function<bool(uns8)> can_fetch_op_fn,
-                               std::function<bool(uns8, Op*)> fetch_op_fn, FT last_ft, Flag off_path, Flag use_pred,
-                               uint64_t& dfe_op_count);
-  Op* peek_last_op();
+  FT_BuildResult build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
+                               Flag off_path, Flag use_pred, uint64_t& dfe_op_count);
+  Op* peek_last_op() const;
 
   FT_PredictResult bp_predict_ft(uint64_t& dfe_op_count, uns start_pos);
   std::pair<FT, FT> split_ft(uns index);
@@ -116,6 +115,7 @@ class FT {
   int count_cfs_taken_this_ft() const;
   bool is_valid() const;
   bool is_ended() const;
+  bool is_consecutive(const FT& last_ft) const;
 
  private:
   uns proc_id;

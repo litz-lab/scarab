@@ -172,7 +172,7 @@ void debug_exec_stage() {
       DPRINTF(" ");
     DPRINTF("%d", fu->idle_cycle > cycle_count);
   }
-  DPRINTF("  mem_stalls:");
+  DPRINTF("  mem_stalls_cycles:");
   for (ii = 0; ii < NUM_FUS; ii++) {
     Func_Unit* fu = &exec->fus[ii];
     if (ii % 4 == 0)

@@ -150,7 +150,7 @@ class LSQ_Unit {
   const LSQ* get_queue(Mem_Type mem_type) const;
 
   void init(uns8 proc_id);
-  Flag available(Op* mem_op);
+  Flag available(Mem_Type mem_type);
   void dispatch(Op* mem_op);
   void recover(Counter flush_op_num);
   void commit(Op* mem_op);
@@ -181,8 +181,8 @@ void LSQ_Unit::init(uns8 proc_id) {
   store_queue.init(proc_id, MEM_ST, STORE_QUEUE_ENTRY_NUM);
 }
 
-Flag LSQ_Unit::available(Op* mem_op) {
-  switch (mem_op->table_info->mem_type) {
+Flag LSQ_Unit::available(Mem_Type mem_type) {
+  switch (mem_type) {
     case MEM_LD:
       return static_cast<Flag>(load_queue.available());
 
@@ -286,7 +286,7 @@ Flag lsq_available(Op* mem_op) {
     return TRUE;
 
   ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
-  return lsq_unit->available(mem_op);
+  return lsq_unit->available(mem_op->table_info->mem_type);
 }
 
 /*
@@ -333,16 +333,9 @@ int lsq_get_in_flight_load_num() {
   return in_flight_num;
 }
 
-int lsq_get_unready_store_num() {
+Flag lsq_store_queue_available() {
   if (!LSQ_ENABLE)
-    return 0;
+    return TRUE;
 
-  int unready_num = 0;
-  const auto& store_entries = lsq_unit->get_queue(MEM_ST)->get_entries();
-  for (const auto& entry : store_entries) {
-    if (entry.op->state < OS_READY && entry.op->state >= OS_IN_RS)
-      unready_num++;
-  }
-
-  return unready_num;
+  return lsq_unit->available(MEM_ST);
 }

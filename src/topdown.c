@@ -44,6 +44,8 @@
 #include "node_stage.h"
 #include "op.h"
 
+const static uns64 TOPDOWN_SCALE_FACTOR = 10000;
+
 /**************************************************************************************/
 /* Events Update */
 
@@ -70,17 +72,17 @@
 void topdown_bp_recovery(uns proc_id, Op* op) {
   ASSERT(op->proc_id, op->table_info->cf_type);
 
-  STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_EVENTS);
+  STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_CYCLES);
   if (op->oracle_info.recover_at_exec) {
     ASSERT(op->proc_id, !op->off_path);
-    STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED);
+    STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED_CYCLES);
   }
 }
 
 void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path) {
   INC_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS, ISSUE_WIDTH);
-  INC_STAT_EVENT(proc_id, TOPDOWN_SLOTS_ISSUED, count_issued);
-  INC_STAT_EVENT(proc_id, TOPDOWN_SLOTS_RETIRED, count_issued_on_path);
+  INC_STAT_EVENT(proc_id, TOPDOWN_ISSUED_SLOTS, count_issued);
+  INC_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS, count_issued_on_path);
 
   Flag in_recovery = FALSE;
   int recovery_cycle = idq_stage_get_recovery_cycle();
@@ -98,22 +100,22 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
   }
 
   if (in_recovery) {
-    INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES, ISSUE_WIDTH - count_available);
+    INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES_SLOTS, ISSUE_WIDTH - count_available);
     return;
   }
 
-  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES, ISSUE_WIDTH - count_available);
+  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS, ISSUE_WIDTH - count_available);
   if (count_available == 0)
-    STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GREATER_THAN_MIW);
+    STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GT_MIW_CYCLES);
 }
 
 void topdown_exec_update(uns proc_id, uns8 fus_busy) {
   if (fus_busy <= TOPDOWN_FU_EXEC_FEW && node->node_count != 0) {
-    STAT_EVENT(proc_id, TOPDOWN_EXEC_STALLS);
+    STAT_EVENT(proc_id, TOPDOWN_EXEC_STALLS_CYCLES);
     if (lsq_get_in_flight_load_num() > 0 && fus_busy == 0) {
-      STAT_EVENT(proc_id, TOPDOWN_MEM_STALLS_LOAD);
-    } else if (lsq_get_unready_store_num() > 0) {
-      STAT_EVENT(proc_id, TOPDOWN_MEM_STALLS_STORE);
+      STAT_EVENT(proc_id, TOPDOWN_MEM_LOAD_STALLS_CYCLES);
+    } else if (!lsq_store_queue_available()) {
+      STAT_EVENT(proc_id, TOPDOWN_MEM_STORE_STALLS_CYCLES);
     }
   }
 }
@@ -159,43 +161,56 @@ void topdown_exec_update(uns proc_id, uns8 fus_busy) {
 
 void topdown_done(uns proc_id) {
   /* Top-Level Breakdown */
-  INC_STAT_EVENT(proc_id, TOPDOWN_FRONTEND_BOUND, GET_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES));
-  INC_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC,
-                 GET_STAT_EVENT(proc_id, TOPDOWN_SLOTS_ISSUED) - GET_STAT_EVENT(proc_id, TOPDOWN_SLOTS_RETIRED) +
-                     GET_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES));
-  INC_STAT_EVENT(proc_id, TOPDOWN_RETIRING, GET_STAT_EVENT(proc_id, TOPDOWN_SLOTS_RETIRED));
-  INC_STAT_EVENT(proc_id, TOPDOWN_BACKEND_BOUND,
-                 GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS) - GET_STAT_EVENT(proc_id, TOPDOWN_FRONTEND_BOUND) -
-                     GET_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC) - GET_STAT_EVENT(proc_id, TOPDOWN_RETIRING));
+  uns64 frontend_bound = GET_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS) * TOPDOWN_SCALE_FACTOR /
+                         GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS);
+  INC_STAT_EVENT(proc_id, TOPDOWN_FRONTEND_BOUND, frontend_bound);
+
+  uns64 bad_spec_slots = GET_STAT_EVENT(proc_id, TOPDOWN_ISSUED_SLOTS) -
+                         GET_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS) +
+                         GET_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES_SLOTS);
+  uns64 bad_spec_bound = bad_spec_slots * TOPDOWN_SCALE_FACTOR / GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS);
+  INC_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC_BOUND, bad_spec_bound);
+
+  uns64 retiring_bound = GET_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS) * TOPDOWN_SCALE_FACTOR /
+                         GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS);
+  INC_STAT_EVENT(proc_id, TOPDOWN_RETIRING_BOUND, retiring_bound);
+
+  uns64 backend_bound = TOPDOWN_SCALE_FACTOR - frontend_bound - bad_spec_bound - retiring_bound;
+  INC_STAT_EVENT(proc_id, TOPDOWN_BACKEND_BOUND, backend_bound);
 
   /* Backend Breakdown */
-  if (GET_STAT_EVENT(proc_id, TOPDOWN_EXEC_STALLS) == 0)
-    STAT_EVENT(proc_id, TOPDOWN_EXEC_STALLS);
-  INC_STAT_EVENT(
-      proc_id, TOPDOWN_MEM_BOUND,
-      (GET_STAT_EVENT(proc_id, TOPDOWN_MEM_STALLS_LOAD) + GET_STAT_EVENT(proc_id, TOPDOWN_MEM_STALLS_STORE)) *
-          GET_STAT_EVENT(proc_id, TOPDOWN_BACKEND_BOUND) / GET_STAT_EVENT(proc_id, TOPDOWN_EXEC_STALLS));
-  INC_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND,
-                 GET_STAT_EVENT(proc_id, TOPDOWN_BACKEND_BOUND) - GET_STAT_EVENT(proc_id, TOPDOWN_MEM_BOUND));
+  // prevent division by zero
+  uns64 exec_stalls_cycles = GET_STAT_EVENT(proc_id, TOPDOWN_EXEC_STALLS_CYCLES);
+  if (exec_stalls_cycles == 0) {
+    exec_stalls_cycles++;
+  }
+
+  uns64 mem_stalls_cycles = (GET_STAT_EVENT(proc_id, TOPDOWN_MEM_LOAD_STALLS_CYCLES) +
+                             GET_STAT_EVENT(proc_id, TOPDOWN_MEM_STORE_STALLS_CYCLES));
+  uns64 mem_bound = backend_bound * mem_stalls_cycles / exec_stalls_cycles;
+  INC_STAT_EVENT(proc_id, TOPDOWN_MEM_BOUND, mem_bound);
+  INC_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND, backend_bound - mem_bound);
 
   /* Retiring Breakdown */
   // TODO: need more metadata from the simulation frontend to determine if an operand requires MicroSequencer
 
   /* Front-End Breakdown */
   ASSERT(proc_id, GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS) != 0);
-  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_LATENCY, GET_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GREATER_THAN_MIW));
-  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BANDWIDTH,
-                 GET_STAT_EVENT(proc_id, TOPDOWN_FRONTEND_BOUND) * GET_STAT_EVENT(proc_id, NODE_CYCLE) /
-                         GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS) -
-                     GET_STAT_EVENT(proc_id, TOPDOWN_FETCH_LATENCY));
+  uns64 latency_bound = GET_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GT_MIW_CYCLES) * TOPDOWN_SCALE_FACTOR /
+                        GET_STAT_EVENT(proc_id, NODE_CYCLE);
+  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_LATENCY_BOUND, latency_bound);
+  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BANDWIDTH_BOUND, frontend_bound - latency_bound);
 
   /* Bad Spec Breakdown */
-  if (GET_STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_EVENTS) == 0)
-    STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_EVENTS);
-  INC_STAT_EVENT(proc_id, TOPDOWN_BR_MISPREDICTS,
-                 GET_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC) * GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED) /
-                     (GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED) +
-                      GET_STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_EVENTS)));
-  INC_STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEARS,
-                 GET_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC) - GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPREDICTS));
+  // prevent division by zero
+  uns64 bad_spec_cycles = GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED_CYCLES) +
+                          GET_STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_CYCLES);
+  if (bad_spec_cycles == 0) {
+    bad_spec_cycles++;
+  }
+
+  INC_STAT_EVENT(proc_id, TOPDOWN_BR_MISPREDICTS_BOUND,
+                 bad_spec_bound * GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED_CYCLES) / bad_spec_cycles);
+  INC_STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEARS_BOUND,
+                 bad_spec_bound - GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPREDICTS_BOUND));
 }

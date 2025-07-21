@@ -49,7 +49,7 @@ void lsq_dispatch(Op* mem_op);   // insert mem op into LSQ when mem op is insert
 void lsq_commit(Op* mem_op);     // free the entry when the mem op is retired
 
 int lsq_get_in_flight_load_num();
-int lsq_get_unready_store_num();
+Flag lsq_store_queue_available();
 
 #ifdef __cplusplus
 }

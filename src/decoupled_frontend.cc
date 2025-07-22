@@ -69,6 +69,7 @@ class Decoupled_FE {
 
   int sched_off_path;
   uint64_t dfe_op_count;
+  uint64_t current_off_path_dfe_op_count;
   std::vector<decoupled_fe_iter> ftq_iterators;
   uint64_t recovery_addr;
   uint64_t redirect_cycle;
@@ -220,7 +221,6 @@ void Decoupled_FE::init(uns _proc_id) {
   cur_op = nullptr;
 
   current_ft_to_push = FT(proc_id);
-  current_ft_to_push.set_ft_started_by(FT_STARTED_BY_APP);
 
   if (CONFIDENCE_ENABLE)
     conf = new Conf(_proc_id);
@@ -240,9 +240,8 @@ void Decoupled_FE::recover() {
   ftq.clear();
 
   current_ft_to_push.free_ops_and_clear();
-  current_ft_to_push.set_ft_started_by(FT_STARTED_BY_RECOVERY);
 
-  dfe_op_count = bp_recovery_info->recovery_op_num + 1;
+  // dfe_op_count = bp_recovery_info->recovery_op_num + 1;
   DEBUG(proc_id, "Recovery signalled fetch_addr0x:%llx\n", bp_recovery_info->recovery_fetch_addr);
 
   for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
@@ -272,7 +271,7 @@ void Decoupled_FE::recover() {
 
   // FIXME always fetch off path ops? should we get rid of this parameter?
   frontend_recover(proc_id, bp_recovery_info->recovery_inst_uid);
-  if (saved_recovery_ft.is_valid()) {
+  if (saved_recovery_ft.get_start_addr()) {
     ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == saved_recovery_ft.ft_info.static_info.start,
             "Scarab's recovery addr 0x%llx does not match save ft pos"
             "addr 0x%llx\n",
@@ -343,25 +342,29 @@ void Decoupled_FE::update() {
     }
 
     // FSM-based FT build logic
+    // FSM-based FT build logic - Three main states:
+    // RECOVERING: Handle recovery after misprediction
+    // SERVING_ON_PATH: Normal execution mode
+    // SERVING_OFF_PATH: Speculative execution after misprediction
     switch (state) {
       case RECOVERING:
         // After recovery, we expect to serve the saved recovery FT
         state = SERVING_ON_PATH;  // Transition to ON_PATH after serving recovery FT
-        if (saved_recovery_ft.is_valid()) {
-          // if not ft saved, will call build_full_ft next iteration of the while loop in SERVING_ON_PATH state
+        if (saved_recovery_ft.get_start_addr()) {
+          // Use the saved recovery FT if available
           current_ft_to_push = saved_recovery_ft;
-          // Reset the saved recovery FT after use
           saved_recovery_ft = FT();
         } else {
-          // if no saved recovery FT, we build a new one
+          // Build new FT from recovery point
           current_ft_to_push.build_full_ft([](uns8 pid) { return frontend_can_fetch_op(pid); },
                                            [](uns8 pid, Op* op) -> bool {
                                              frontend_fetch_op(pid, op);
                                              return true;
                                            },
                                            is_off_path_state(), false, dfe_op_count);
+          dfe_op_count += current_ft_to_push.get_ft_info().static_info.n_uops;
         }
-        if (current_ft_to_push.is_valid())
+        if (current_ft_to_push.get_start_addr())
           STAT_EVENT(proc_id, DFE_GEN_ON_PATH_FT);
         break;
       case SERVING_ON_PATH:
@@ -373,8 +376,9 @@ void Decoupled_FE::update() {
                                            return true;
                                          },
                                          is_off_path_state(), false, dfe_op_count);
-        if (current_ft_to_push.is_valid())
+        if (current_ft_to_push.get_start_addr())
           STAT_EVENT(proc_id, DFE_GEN_ON_PATH_FT);
+        dfe_op_count += current_ft_to_push.get_ft_info().static_info.n_uops;
         break;
       case SERVING_OFF_PATH:
         // currently still use same api to fetch off-path ops
@@ -384,31 +388,36 @@ void Decoupled_FE::update() {
                                            frontend_fetch_op(pid, op);
                                            return true;
                                          },
-                                         is_off_path_state(), false, dfe_op_count);
-        if (current_ft_to_push.is_valid())
+                                         is_off_path_state(), false, current_off_path_dfe_op_count);
+        if (current_ft_to_push.get_start_addr())
           STAT_EVENT(proc_id, DFE_GEN_OFF_PATH_FT);
+        current_off_path_dfe_op_count += current_ft_to_push.get_ft_info().static_info.n_uops;
         break;
       default:
         // Fallback
         current_ft_to_push = FT(proc_id);
         break;
     }
-    if (!current_ft_to_push.is_valid())
+    if (!current_ft_to_push.get_start_addr())
       STAT_EVENT(proc_id, DFE_GEN_NO_FT);
-    if (current_ft_to_push.ops.empty()) {
+    if (!current_ft_to_push.get_start_addr()) {
       break;
     }
 
     fwd_progress = 0;
-    auto result = current_ft_to_push.bp_predict_ft(dfe_op_count, 0);
+    // Branch prediction and redirection handling
+    auto result = current_ft_to_push.predict_ft(0);
     if (result.event == FT_EVENT_MISPREDICT) {
+      // Misprediction: Switch to off-path execution
       redirect_cycle = cycle_count;
       state = SERVING_OFF_PATH;
       frontend_redirect(proc_id, result.op->inst_uid, result.pred_addr);
     } else if (result.event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
+      // Taken branch while off-path: just redirect
       frontend_redirect(proc_id, result.op->inst_uid, result.pred_addr);
     } else if (result.event == FT_EVENT_FETCH_BARRIER) {
-      stall(result.op);  // Only call stall here
+      // Fetch barrier encountered: stall frontend
+      stall(result.op);
     }
 
     // FT_Ended_By ft_ended_by = FT_NOT_ENDED;
@@ -416,51 +425,56 @@ void Decoupled_FE::update() {
     ASSERT(proc_id, result.event != FT_EVENT_MISPREDICT || is_off_path_state());
 
     if (result.event == FT_EVENT_MISPREDICT) {
-      // If index is not -1 we need to re-evaluate the FT
       std::pair<FT, FT> reevaluated = current_ft_to_push.split_ft(result.index);
-      current_ft_to_push = reevaluated.first;
-      while (!current_ft_to_push.is_ended()) {
+      auto n_uop_before_padding = current_ft_to_push.get_ft_info().static_info.n_uops;
+      current_off_path_dfe_op_count = current_ft_to_push.get_last_op()->op_num + 1;
+      while (1) {
         auto build_result = current_ft_to_push.build_full_ft([](uns8 pid) { return frontend_can_fetch_op(pid); },
                                                              [](uns8 pid, Op* op) -> bool {
                                                                frontend_fetch_op(pid, op);
                                                                return true;
                                                              },
-                                                             is_off_path_state(), true, dfe_op_count);
+                                                             is_off_path_state(), true, current_off_path_dfe_op_count);
         if (build_result.redirect_needed) {
           frontend_redirect(proc_id, build_result.trigger_op->inst_uid, build_result.redirect_addr);
         } else if (build_result.fetch_bar_needed) {
           stall(build_result.trigger_op);
         }
+        current_off_path_dfe_op_count += current_ft_to_push.get_ft_info().static_info.n_uops - n_uop_before_padding;
+        n_uop_before_padding = current_ft_to_push.get_ft_info().static_info.n_uops;
+        if (build_result.build_complete)
+          break;
       }
-
-      if (reevaluated.second.is_valid()) {
+      if (reevaluated.second.get_start_addr()) {
         // If we have a saved recovery FT, we save it for later
         saved_recovery_ft = reevaluated.second;
       }
     }
 
-    if (current_ft_to_push.is_valid() && current_ft_to_push.is_ended()) {
+    // Finalize and push the FT if it was successfully built
+    if (current_ft_to_push.get_start_addr()) {
       ASSERT(proc_id, current_ft_to_push.ft_info.static_info.start && current_ft_to_push.ft_info.static_info.length &&
-                          current_ft_to_push.ops.size());
-      ASSERT(proc_id, current_ft_to_push.ops.front()->bom && current_ft_to_push.ops.back()->eom);
+                          current_ft_to_push.get_ft_info().static_info.n_uops);
+      ASSERT(proc_id, current_ft_to_push.get_first_op()->bom && current_ft_to_push.get_last_op()->eom);
       current_ft_to_push.set_per_op_ft_info();
       ASSERT(proc_id, current_ft_to_push.is_consecutive(ftq.size() ? ftq.back() : FT(proc_id)));
-      ftq.emplace_back(current_ft_to_push);
 
+      // Push to FTQ and update confidence if enabled
+      ftq.emplace_back(current_ft_to_push);
       if (CONFIDENCE_ENABLE) {
         conf->update(current_ft_to_push);
       }
       // Recovery sanity check
       if (recovery_addr) {
-        ASSERT(proc_id, recovery_addr == current_ft_to_push.ft_info.static_info.start);
+        ASSERT(proc_id, recovery_addr == current_ft_to_push.get_ft_info().static_info.start);
         recovery_addr = 0;
       }
+
       DEBUG(proc_id, "Push new FT to FTQ start_addr0x:%llx off_path:%i \n",
-            current_ft_to_push.ft_info.static_info.start, current_ft_to_push.ops.front()->off_path);
+            current_ft_to_push.ft_info.static_info.start, current_ft_to_push.get_first_op()->off_path);
 
+      // Reset for next iteration
       current_ft_to_push = FT(proc_id);
-
-      STAT_EVENT(proc_id, POWER_BTB_READ);
     }
   }
 }

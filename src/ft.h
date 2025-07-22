@@ -47,7 +47,7 @@ Op* ft_fetch_op(FT* ft);
 bool ft_is_consumed(FT* ft);
 void ft_set_consumed(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
-FT_Ended_By ft_get_ended_by(Op* op, bool use_pred);
+FT_Ended_By check_op_ft_end_condition(Op* op);
 
 #ifdef __cplusplus
 }  // extern "C"
@@ -93,8 +93,7 @@ struct FT_BuildResult {
 class FT {
  public:
   FT(uns _proc_id = 0);
-  void set_ft_started_by(FT_Started_By ft_started_by);
-  void add_op(Op* op, FT_Ended_By ft_ended_by);
+  void add_op(Op* op);
   void free_ops_and_clear();
   bool can_fetch_op();
   Op* fetch_op();
@@ -106,15 +105,14 @@ class FT {
   std::vector<Op*>& get_ops();
   // Change return type to FT_BuildResult
   FT_BuildResult build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
-                               Flag off_path, Flag use_pred, uint64_t& dfe_op_count);
-  Op* peek_last_op() const;
+                               bool off_path, bool use_pred, uint64_t start_op_num);
 
-  FT_PredictResult bp_predict_ft(uint64_t& dfe_op_count, uns start_pos);
-  std::pair<FT, FT> split_ft(uns index);
+  FT_PredictResult predict_ft(uns start_pos);
+  std::pair<FT, FT> split_ft(uns split_pos);
 
-  int count_cfs_taken_this_ft() const;
-  bool is_valid() const;
-  bool is_ended() const;
+  Op* get_last_op() const;
+  Op* get_first_op() const;
+  Addr get_start_addr() const;
   bool is_consecutive(const FT& last_ft) const;
 
  private:
@@ -123,8 +121,12 @@ class FT {
   FT_Info ft_info;
   std::vector<Op*> ops;
   bool consumed;
-  FT_Event predict_one_cf_op(Op* op, uint64_t& dfe_op_count);
-  FT move_over_ft(uns start_idx, uns end_idx, Flag use_pred);
+  FT_Event predict_one_cf_op(Op* op);
+  FT move_over_ft(uns start_idx, uns end_idx, bool use_pred);
+  FT_BuildResult init_build_result();
+  FT_Ended_By initialize_ft_state();
+  void finalize_ft_build(FT_Ended_By end_by, FT_BuildResult* result);
+  bool handle_op_prediction(Op* op, bool use_pred, FT_BuildResult& result);
 
   friend class Decoupled_FE;
 };

@@ -59,7 +59,6 @@ void FT::free_ops_and_clear() {
   ft_info.static_info.start = 0;
   ft_info.static_info.length = 0;
   ft_info.static_info.n_uops = 0;
-  ft_info.dynamic_info.started_by = FT_NOT_STARTED;
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   ft_info.dynamic_info.first_op_off_path = FALSE;
 }
@@ -85,11 +84,7 @@ void FT::set_per_op_ft_info() {
   }
 }
 
-void FT::set_ft_started_by(FT_Started_By ft_started_by) {
-  ft_info.dynamic_info.started_by = ft_started_by;
-}
-
-void FT::add_op(Op* op, FT_Ended_By ft_ended_by) {
+void FT::add_op(Op* op) {
   if (ops.empty()) {
     ASSERT(proc_id, op->bom && !ft_info.static_info.start);
     ft_info.static_info.start = op->inst_info->addr;
@@ -103,48 +98,11 @@ void FT::add_op(Op* op, FT_Ended_By ft_ended_by) {
     }
   }
   ops.emplace_back(op);
-  ft_info.dynamic_info.ended_by = ft_ended_by;
-  if (ft_ended_by != FT_NOT_ENDED) {
-    ASSERT(proc_id, op->eom && !ft_info.static_info.length);
-    ASSERT(proc_id, ft_info.static_info.start);
-    ft_info.static_info.n_uops = ops.size();
-    ft_info.static_info.length = op->inst_info->addr + op->inst_info->trace_info.inst_size - ft_info.static_info.start;
-
-    // counting extremely short FT reason
-    if (!ft_info.dynamic_info.first_op_off_path) {
-      if (ft_info.static_info.n_uops <= (int)UOP_CACHE_WIDTH) {
-        if (ft_info.dynamic_info.started_by == FT_STARTED_BY_ICACHE_LINE_BOUNDARY) {
-          STAT_EVENT(proc_id, FT_SHORT_ICACHE_LINE_BOUNDARY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1);
-          INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_ICACHE_LINE_BOUNDARY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
-                         UOP_CACHE_WIDTH - ft_info.static_info.n_uops);
-        } else if (ft_info.dynamic_info.started_by == FT_STARTED_BY_TAKEN_BRANCH) {
-          STAT_EVENT(proc_id, FT_SHORT_TAKEN_BRANCH_ICACHE_LINE_BOUNDARY + ft_ended_by - 1);
-          INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_TAKEN_BRANCH_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
-                         UOP_CACHE_WIDTH - ft_info.static_info.n_uops);
-        } else if (ft_info.dynamic_info.started_by == FT_STARTED_BY_RECOVERY) {
-          STAT_EVENT(proc_id, FT_SHORT_RECOVERY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1);
-          INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_RECOVERY_ICACHE_LINE_BOUNDARY + ft_ended_by - 1,
-                         UOP_CACHE_WIDTH - ft_info.static_info.n_uops);
-        } else {
-          STAT_EVENT(proc_id, FT_SHORT_OTHER + ft_ended_by - 1);
-          INC_STAT_EVENT(proc_id, FT_SHORT_UOP_LOST_OTHER, UOP_CACHE_WIDTH - ft_info.static_info.n_uops);
-        }
-      } else {
-        STAT_EVENT(proc_id, FT_NOT_SHORT);
-      }
-    }
-  }
 }
 
 FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
-                                 Flag off_path, Flag use_pred, uint64_t& dfe_op_count) {
-  FT_BuildResult result;
-  result.build_complete = false;
-  result.redirect_needed = false;
-  result.fetch_bar_needed = false;
-  result.trigger_op = nullptr;
-  result.redirect_uid = 0;
-  result.redirect_addr = 0;
+                                 bool off_path, bool use_pred, uint64_t start_op_num) {
+  FT_BuildResult result = init_build_result();
 
   if (!can_fetch_op_fn(proc_id)) {
     std::cout << "Warning could not fetch inst from frontend" << std::endl;
@@ -152,74 +110,48 @@ FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std:
     return result;
   }
 
-  FT_Ended_By ft_ended_by = FT_NOT_ENDED;
-  if (ops.size() == 0) {
-    ft_info.dynamic_info.FT_id = FT_id_count++;
-  }
+  FT_Ended_By ft_build_end_condition = initialize_ft_state();
+  if (!ft_build_end_condition) {
+    while (1) {
+      bool should_break_for_redirect = false;
+      Op* op = alloc_op(proc_id);
+      fetch_op_fn(proc_id, op);
+      op->off_path = off_path;
+      op->op_num = start_op_num++;
 
-  if (ops.size() > 0) {
-    ft_ended_by = ft_get_ended_by(ops.back(), use_pred);
-  }
-  while (ft_ended_by == FT_NOT_ENDED) {
-    Op* op = alloc_op(proc_id);
-    bool fetched = fetch_op_fn(proc_id, op);
-    if (!fetched)
-      return result;
-    op->off_path = off_path;
-    FT_Event event = FT_EVENT_NONE;
-    if (op->off_path && use_pred) {
-      event = predict_one_cf_op(op, dfe_op_count);
-    }
-    ft_ended_by = ft_get_ended_by(op, use_pred);
-    add_op(op, ft_ended_by);
-    if (off_path) {
-      STAT_EVENT(proc_id, FTQ_FETCHED_INS_OFFPATH);
-    } else {
-      STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH);
-    }
-    if (event == FT_EVENT_MISPREDICT || event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
-      result.redirect_needed = true;
-      result.trigger_op = op;
-      result.redirect_uid = op->inst_uid;
-      result.redirect_addr = op->oracle_info.pred_npc;
-      return result;
-    } else if (event == FT_EVENT_FETCH_BARRIER) {
-      result.trigger_op = op;
-      result.fetch_bar_needed = true;
-      return result;
+      should_break_for_redirect = handle_op_prediction(op, use_pred, result);
+      ft_build_end_condition = check_op_ft_end_condition(op);
+      add_op(op);
+
+      if (off_path) {
+        STAT_EVENT(proc_id, FTQ_FETCHED_INS_OFFPATH);
+      } else {
+        STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH);
+      }
+      if (should_break_for_redirect || ft_build_end_condition) {
+        break;
+      }
     }
   }
 
-  if (ft_ended_by != FT_NOT_ENDED) {
-    ft_info.static_info.n_uops = ops.size();
-    ft_info.dynamic_info.ended_by = ft_ended_by;
-    Op* last_op = ops.back();
-    ft_info.static_info.length =
-        last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size - ft_info.static_info.start;
-    set_per_op_ft_info();
-
-    if (ft_ended_by == FT_ICACHE_LINE_BOUNDARY) {
-      set_ft_started_by(FT_STARTED_BY_ICACHE_LINE_BOUNDARY);
-    } else if (ft_ended_by == FT_TAKEN_BRANCH) {
-      set_ft_started_by(FT_STARTED_BY_TAKEN_BRANCH);
-    } else if (ft_ended_by == FT_BAR_FETCH) {
-      set_ft_started_by(FT_STARTED_BY_BAR_FETCH);
-    }
-    result.build_complete = true;
-  }
+  finalize_ft_build(ft_build_end_condition, &result);
   return result;
 }
 
 // will split the FT into two parts, the first part contains ops from 0 to index,
 // the second part contains ops from index + 1 to the end of the FT for now to keep ft_info same as before
 // can change to save the old ft and move read pointer in a later patch
-std::pair<FT, FT> FT::split_ft(uns index) {
-  uns index_uns = static_cast<uns>(index);
-  FT tailing_FT = FT();
+std::pair<FT, FT> FT::split_ft(uns split_pos) {
+  uns index_uns = static_cast<uns>(split_pos);
   ASSERT(proc_id, index_uns < ops.size() && index_uns >= 0);
 
-  // Move out tailing FT as before
-  if (index_uns < ops.size() - 1) {
+  // Initialize tailing FT that will contain ops after split position
+  FT tailing_FT = FT();
+
+  // Only perform split if there are operations after the split point
+  bool has_trailing_ops = (index_uns < ops.size() - 1);
+  if (has_trailing_ops) {
+    // Create new FT with trailing operations
     tailing_FT = move_over_ft(index_uns + 1, ops.size() - 1, 0);
     ASSERT(proc_id,
            tailing_FT.ft_info.static_info.start && tailing_FT.ft_info.static_info.length && tailing_FT.ops.size());
@@ -227,44 +159,43 @@ std::pair<FT, FT> FT::split_ft(uns index) {
     if (tailing_FT.ft_info.dynamic_info.first_op_off_path) {
       tailing_FT.free_ops_and_clear();
     }
-    // Remove moved ops from original FT
+
+    // Truncate current FT to split position
     ops.erase(ops.begin() + index_uns + 1, ops.end());
-    // Assert ops length is updated to index_uns + 1
     ASSERT(proc_id, ops.size() == index_uns + 1);
   }
 
   // Reset the 'end' part of ft_info before rebuilding
   ft_info.static_info.length = 0;
-  ft_info.static_info.n_uops = 0;
+  ft_info.static_info.n_uops = ops.size();
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
 
   return {*this, tailing_FT};
 }
 
-FT FT::move_over_ft(uns start_idx, uns end_idx, Flag use_pred) {
+FT FT::move_over_ft(uns start_idx, uns end_idx, bool use_pred) {
   FT dest_ft = FT(0);
-  ASSERT(0, start_idx <= end_idx && end_idx < ops.size() && start_idx >= 0);
+
+  // Validate index range
+  bool valid_range = (start_idx <= end_idx && end_idx < ops.size() && start_idx >= 0);
+  ASSERT(0, valid_range);
 
   for (uns i = start_idx; i <= end_idx; ++i) {
-    Op* op = ops[i];
-    FT_Ended_By ft_ended_by = ft_get_ended_by(op, use_pred);
-    dest_ft.add_op(op, ft_ended_by);
+    dest_ft.add_op(ops[i]);
   }
+  dest_ft.finalize_ft_build(check_op_ft_end_condition(dest_ft.ops.back()), nullptr);
 
   return dest_ft;
 }
 
-FT_Event FT::predict_one_cf_op(Op* op, uint64_t& dfe_op_count) {
+FT_Event FT::predict_one_cf_op(Op* op) {
   bool trace_mode = false;
 
 #ifdef ENABLE_PT_MEMTRACE
   trace_mode |= (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE);
 #endif
-  op->op_num = dfe_op_count++;
   if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
-    if (!op->off_path)
-      STAT_EVENT(proc_id, FT_CF_ON);
     bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
     DEBUG(proc_id,
           "Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
@@ -287,14 +218,12 @@ FT_Event FT::predict_one_cf_op(Op* op, uint64_t& dfe_op_count) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = FALSE;
       }
-      STAT_EVENT(proc_id, REDIRECT_FROM_ON);
       return FT_EVENT_MISPREDICT;
     } else if (trace_mode && op->off_path && op->oracle_info.pred == TAKEN) {
       // in this case, not a misprediction pred is taken so oracle info should be taken
       // and this should be last op in the FT
       // no misprediction, just manually redirect
       ASSERT(proc_id, op->oracle_info.dir == TAKEN);
-      STAT_EVENT(proc_id, REDIRECT_FROM_OFF);
       return FT_EVENT_OFFPATH_TAKEN_REDIRECT;
     }
 
@@ -310,13 +239,13 @@ FT_Event FT::predict_one_cf_op(Op* op, uint64_t& dfe_op_count) {
   return FT_EVENT_NONE;
 }
 
-FT_PredictResult FT::bp_predict_ft(uint64_t& dfe_op_count, uns start_pos) {
+FT_PredictResult FT::predict_ft(uns start_pos) {
   for (size_t idx = start_pos; idx < ops.size(); idx++) {
     Op* op = ops[idx];
-    FT_Event event = predict_one_cf_op(op, dfe_op_count);
+    FT_Event event = predict_one_cf_op(op);
     if (event != FT_EVENT_NONE) {
       int return_idx = (event == FT_EVENT_MISPREDICT) ? static_cast<int>(idx) : -1;
-      Addr pred_addr = op->oracle_info.pred_npc;  // or however you get it
+      Addr pred_addr = op->oracle_info.pred_npc;
       ASSERT(proc_id, (return_idx != -1) == (event == FT_EVENT_MISPREDICT));
       return {return_idx, event, op, pred_addr};
     }
@@ -340,35 +269,21 @@ std::vector<Op*>& FT::get_ops() {
   return ops;
 }
 
-Op* FT::peek_last_op() const {
+Op* FT::get_last_op() const {
   return ops.back();
 }
-
-// Add this method to FT class implementation
-int FT::count_cfs_taken_this_ft() const {
-  int count = 0;
-  for (auto op : ops) {
-    if (op->eom) {
-      bool cf_taken = op->table_info->cf_type && op->oracle_info.pred == TAKEN;
-      bool bar_fetch = IS_CALLSYS(op->table_info) || (op->table_info->bar_type & BAR_FETCH);
-      count += (cf_taken || bar_fetch);
-    }
-  }
-  return count;
+Op* FT::get_first_op() const {
+  return ops.front();
 }
 
-bool FT::is_valid() const {
-  return ft_info.static_info.start != 0;
-}
-
-bool FT::is_ended() const {
-  return ft_info.dynamic_info.ended_by != FT_NOT_ENDED;
+Addr FT::get_start_addr() const {
+  return ft_info.static_info.start;
 }
 
 bool FT::is_consecutive(const FT& last_ft) const {
   if (!last_ft.get_ft_info().static_info.start)
     return true;
-  Op* last_op = last_ft.peek_last_op();
+  Op* last_op = last_ft.get_last_op();
   if (!last_op)
     return false;
   FT_Ended_By prev_end_type = last_ft.get_ft_info().dynamic_info.ended_by;
@@ -407,13 +322,12 @@ FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
 
-FT_Ended_By ft_get_ended_by(Op* op, bool use_pred = true) {
+FT_Ended_By check_op_ft_end_condition(Op* op) {
   if (op->eom) {
     uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
                  ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
     bool end_of_icache_line = offset >= ICACHE_LINE_SIZE;
-    bool cf_taken = use_pred ? (op->table_info->cf_type && op->oracle_info.pred == TAKEN)
-                             : (op->table_info->cf_type && op->oracle_info.dir == TAKEN);
+    bool cf_taken = (op->table_info->cf_type && op->oracle_info.pred == TAKEN);
     bool bar_fetch = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH;
 
     if (op->exit) {
@@ -427,4 +341,71 @@ FT_Ended_By ft_get_ended_by(Op* op, bool use_pred = true) {
     }
   }
   return FT_NOT_ENDED;
+}
+
+FT_BuildResult FT::init_build_result() {
+  FT_BuildResult result;
+  result.build_complete = false;
+  result.redirect_needed = false;
+  result.fetch_bar_needed = false;
+  result.trigger_op = nullptr;
+  result.redirect_uid = 0;
+  result.redirect_addr = 0;
+  return result;
+}
+
+FT_Ended_By FT::initialize_ft_state() {
+  if (ops.empty()) {
+    ft_info.dynamic_info.FT_id = FT_id_count++;
+    return FT_NOT_ENDED;
+  }
+  return check_op_ft_end_condition(ops.back());
+}
+
+bool FT::handle_op_prediction(Op* op, bool use_pred, FT_BuildResult& result) {
+  // copy over oracle info if no pred, should only happen for prebuilt
+  if (!use_pred) {
+    op->oracle_info.pred_npc = op->oracle_info.npc;
+    op->oracle_info.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
+  }
+  if (!op->off_path || !use_pred) {
+    return false;
+  }
+
+  auto event = predict_one_cf_op(op);
+
+  if (event == FT_EVENT_MISPREDICT || event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
+    result.redirect_needed = true;
+    result.trigger_op = op;
+    result.redirect_uid = op->inst_uid;
+    result.redirect_addr = op->oracle_info.pred_npc;
+    return true;
+  }
+
+  if (event == FT_EVENT_FETCH_BARRIER) {
+    result.trigger_op = op;
+    result.fetch_bar_needed = true;
+    return true;
+  }
+
+  return false;
+}
+
+void FT::finalize_ft_build(FT_Ended_By ft_build_end_condition, FT_BuildResult* result) {
+  ft_info.static_info.n_uops = ops.size();
+  if (ft_build_end_condition != FT_NOT_ENDED) {
+    Op* last_op = ops.back();
+    ASSERT(proc_id, last_op->eom && !ft_info.static_info.length);
+    ASSERT(proc_id, ft_info.static_info.start);
+    ft_info.static_info.n_uops = ops.size();
+    ft_info.static_info.length =
+        last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size - ft_info.static_info.start;
+    ft_info.dynamic_info.ended_by = ft_build_end_condition;
+
+    if (result) {
+      result->build_complete = true;
+    }
+
+    STAT_EVENT(proc_id, POWER_BTB_READ);
+  }
 }

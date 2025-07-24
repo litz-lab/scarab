@@ -100,6 +100,10 @@ void FT::add_op(Op* op) {
   ops.emplace_back(op);
 }
 
+size_t FT::get_op_count() const {
+  return ops.size();
+}
+
 FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
                                  bool off_path, bool use_pred, uint64_t start_op_num) {
   FT_BuildResult result = init_build_result();
@@ -113,13 +117,13 @@ FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std:
   FT_Ended_By ft_build_end_condition = initialize_ft_state();
   if (!ft_build_end_condition) {
     while (1) {
-      bool should_break_for_redirect = false;
+      // bool should_break_for_redirect = false;
       Op* op = alloc_op(proc_id);
       fetch_op_fn(proc_id, op);
       op->off_path = off_path;
       op->op_num = start_op_num++;
 
-      should_break_for_redirect = handle_op_prediction(op, use_pred, result);
+      handle_op_prediction(op, use_pred, result);
       ft_build_end_condition = check_op_ft_end_condition(op);
       add_op(op);
 
@@ -128,12 +132,12 @@ FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std:
       } else {
         STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH);
       }
-      if (should_break_for_redirect || ft_build_end_condition) {
+      if (ft_build_end_condition) {
         break;
       }
     }
   }
-
+  ASSERT(0, ft_build_end_condition);
   finalize_ft_build(ft_build_end_condition, &result);
   return result;
 }
@@ -151,7 +155,6 @@ std::pair<FT, FT> FT::split_ft(uns split_pos) {
   // Only perform split if there are operations after the split point
   bool has_trailing_ops = (index_uns < ops.size() - 1);
   if (has_trailing_ops) {
-    // Create new FT with trailing operations
     tailing_FT = move_over_ft(index_uns + 1, ops.size() - 1, 0);
     ASSERT(proc_id,
            tailing_FT.ft_info.static_info.start && tailing_FT.ft_info.static_info.length && tailing_FT.ops.size());
@@ -159,7 +162,6 @@ std::pair<FT, FT> FT::split_ft(uns split_pos) {
     if (tailing_FT.ft_info.dynamic_info.first_op_off_path) {
       tailing_FT.free_ops_and_clear();
     }
-
     // Truncate current FT to split position
     ops.erase(ops.begin() + index_uns + 1, ops.end());
     ASSERT(proc_id, ops.size() == index_uns + 1);
@@ -174,8 +176,7 @@ std::pair<FT, FT> FT::split_ft(uns split_pos) {
 }
 
 FT FT::move_over_ft(uns start_idx, uns end_idx, bool use_pred) {
-  FT dest_ft = FT(0);
-
+  FT dest_ft = FT();
   // Validate index range
   bool valid_range = (start_idx <= end_idx && end_idx < ops.size() && start_idx >= 0);
   ASSERT(0, valid_range);
@@ -217,6 +218,11 @@ FT_Event FT::predict_one_cf_op(Op* op) {
       if (op->off_path) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = FALSE;
+      }
+      if (op->off_path && op->oracle_info.pred == NOT_TAKEN) {
+        // if off path and not taken no redirect needed
+        // just return FT_EVENT_NONE
+        return FT_EVENT_NONE;
       }
       return FT_EVENT_MISPREDICT;
     } else if (trace_mode && op->off_path && op->oracle_info.pred == TAKEN) {
@@ -392,20 +398,22 @@ bool FT::handle_op_prediction(Op* op, bool use_pred, FT_BuildResult& result) {
 }
 
 void FT::finalize_ft_build(FT_Ended_By ft_build_end_condition, FT_BuildResult* result) {
+  Op* last_op = ops.back();
+  // ASSERT if the ft is built correctly
+  ASSERT(proc_id, last_op->eom && !ft_info.static_info.length);
+  ASSERT(proc_id, ft_info.static_info.start);
+
+  ASSERT(proc_id, get_first_op()->bom && get_last_op()->eom);
   ft_info.static_info.n_uops = ops.size();
-  if (ft_build_end_condition != FT_NOT_ENDED) {
-    Op* last_op = ops.back();
-    ASSERT(proc_id, last_op->eom && !ft_info.static_info.length);
-    ASSERT(proc_id, ft_info.static_info.start);
-    ft_info.static_info.n_uops = ops.size();
-    ft_info.static_info.length =
-        last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size - ft_info.static_info.start;
-    ft_info.dynamic_info.ended_by = ft_build_end_condition;
+  ft_info.static_info.length =
+      last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size - ft_info.static_info.start;
+  ft_info.dynamic_info.ended_by = ft_build_end_condition;
 
-    if (result) {
-      result->build_complete = true;
-    }
+  ASSERT(proc_id, ft_info.static_info.start && ft_info.static_info.length && ft_info.static_info.n_uops);
 
-    STAT_EVENT(proc_id, POWER_BTB_READ);
+  if (result) {
+    result->build_complete = true;
   }
+
+  STAT_EVENT(proc_id, POWER_BTB_READ);
 }

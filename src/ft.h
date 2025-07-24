@@ -88,6 +88,7 @@ struct FT_BuildResult {
   Op* trigger_op = nullptr;
   uns64 redirect_uid = 0;
   Addr redirect_addr = 0;
+  bool contain_exit = false;
 };
 
 class FT {
@@ -103,6 +104,7 @@ class FT {
   void set_consumed();
 
   std::vector<Op*>& get_ops();
+
   // Change return type to FT_BuildResult
   FT_BuildResult build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
                                bool off_path, bool use_pred, uint64_t start_op_num);
@@ -114,6 +116,9 @@ class FT {
   Op* get_first_op() const;
   Addr get_start_addr() const;
   bool is_consecutive(const FT& last_ft) const;
+  size_t get_op_count() const;
+  bool exists() const { return ft_info.static_info.start != 0; }                       // Check if FT exists/is valid
+  bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }  // Check if FT exists/is valid
 
  private:
   uns proc_id;

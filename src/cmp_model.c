@@ -368,6 +368,8 @@ void cmp_recover() {
     op->oracle_info.recovery_sch = FALSE;
   }
 
+  topdown_bp_recovery(bp_recovery_info->proc_id, bp_recovery_info->recovery_op);
+
   reg_file_recover(bp_recovery_info->recovery_op);
   recover_thread(td, bp_recovery_info->recovery_fetch_addr, bp_recovery_info->recovery_op_num,
                  bp_recovery_info->recovery_inst_uid, bp_recovery_info->late_bp_recovery_wrong);

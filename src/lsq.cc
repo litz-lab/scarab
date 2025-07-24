@@ -281,12 +281,11 @@ void recover_lsq() {
   Desc:
   --- return TRUE if there is an available entry
 */
-Flag lsq_available(Op* mem_op) {
+Flag lsq_available(Mem_Type mem_type) {
   if (!LSQ_ENABLE)
     return TRUE;
 
-  ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
-  return lsq_unit->available(mem_op->table_info->mem_type);
+  return lsq_unit->available(mem_type);
 }
 
 /*
@@ -331,11 +330,4 @@ int lsq_get_in_flight_load_num() {
   }
 
   return in_flight_num;
-}
-
-Flag lsq_store_queue_available() {
-  if (!LSQ_ENABLE)
-    return TRUE;
-
-  return lsq_unit->available(MEM_ST);
 }

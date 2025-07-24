@@ -45,6 +45,7 @@
 #include "op.h"
 
 const static uns64 TOPDOWN_SCALE_FACTOR = 10000;
+const static int TOPDOWN_RECOVERY_DEPTH = 2;
 
 /**************************************************************************************/
 /* Events Update */
@@ -76,6 +77,7 @@ void topdown_bp_recovery(uns proc_id, Op* op) {
   if (op->oracle_info.recover_at_exec) {
     ASSERT(op->proc_id, !op->off_path);
     STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED_CYCLES);
+    idq_stage_set_recovery_cycle(TOPDOWN_RECOVERY_DEPTH);
   }
 }
 
@@ -84,23 +86,17 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
   INC_STAT_EVENT(proc_id, TOPDOWN_ISSUED_SLOTS, count_issued);
   INC_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS, count_issued_on_path);
 
-  Flag in_recovery = FALSE;
   int recovery_cycle = idq_stage_get_recovery_cycle();
   if (recovery_cycle != 0) {
     ASSERT(proc_id, recovery_cycle > 0);
+    ASSERT(proc_id, count_available == 0);
     idq_stage_set_recovery_cycle(recovery_cycle - 1);
-    if (count_available == 0) {
-      in_recovery = TRUE;
-    }
-  }
-
-  // only increment frontend-stall/recovery-bubbles when there is no backend-stall
-  if (is_node_stage_stalled() || map->reg_file_stall) {
+    INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES_SLOTS, ISSUE_WIDTH - count_available);
     return;
   }
 
-  if (in_recovery) {
-    INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES_SLOTS, ISSUE_WIDTH - count_available);
+  // only increment frontend-stall when there is no backend-stall
+  if (is_node_stage_stalled() || map->reg_file_stall) {
     return;
   }
 
@@ -114,7 +110,7 @@ void topdown_exec_update(uns proc_id, uns8 fus_busy) {
     STAT_EVENT(proc_id, TOPDOWN_EXEC_STALLS_CYCLES);
     if (lsq_get_in_flight_load_num() > 0 && fus_busy == 0) {
       STAT_EVENT(proc_id, TOPDOWN_MEM_LOAD_STALLS_CYCLES);
-    } else if (!lsq_store_queue_available()) {
+    } else if (!lsq_available(MEM_ST)) {
       STAT_EVENT(proc_id, TOPDOWN_MEM_STORE_STALLS_CYCLES);
     }
   }

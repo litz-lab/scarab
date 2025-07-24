@@ -417,7 +417,7 @@ void node_fill_rob(Stage_Data* src_sd) {
       continue;
 
     if (op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) {
-      if (!lsq_available(op)) {
+      if (!lsq_available(op->table_info->mem_type)) {
         STAT_EVENT(op->proc_id, LSQ_FULL_TOTAL);
         STAT_EVENT(op->proc_id, LSQ_FULL_TOTAL + op->table_info->mem_type);
         return;

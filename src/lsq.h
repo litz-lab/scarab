@@ -44,12 +44,11 @@ void set_lsq(uns8 proc_id);
 void init_lsq(uns8 proc_id, const char* name);
 void recover_lsq();
 
-Flag lsq_available(Op* mem_op);  // check if there is an available LSQ entry
-void lsq_dispatch(Op* mem_op);   // insert mem op into LSQ when mem op is inserted into ROB
-void lsq_commit(Op* mem_op);     // free the entry when the mem op is retired
+Flag lsq_available(Mem_Type mem_type);  // check if there is an available LSQ entry
+void lsq_dispatch(Op* mem_op);          // insert mem op into LSQ when mem op is inserted into ROB
+void lsq_commit(Op* mem_op);            // free the entry when the mem op is retired
 
 int lsq_get_in_flight_load_num();
-Flag lsq_store_queue_available();
 
 #ifdef __cplusplus
 }

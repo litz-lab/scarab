@@ -146,8 +146,6 @@ void IDQ_Stage::recover() {
       idq_sd.op_count--;
     }
   }
-
-  recovery_cycle = DECODE_CYCLES;
 }
 
 void IDQ_Stage::debug() {
@@ -194,6 +192,7 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
   int count_issued = 0;
   int count_issued_on_path = 0;
   int count_available = 0;
+
   for (int i = idq_sd.op_count; i < idq_sd.max_op_count; i++) {
     Op* op = dequeue();
     if (!op) {
@@ -210,19 +209,19 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
   }
   count_available = idq_sd.op_count;
 
-  topdown_idq_update(proc_id, count_available, count_issued, count_issued_on_path);
-
   /* Select the input stage data. */
   Stage_Data* consume_from_sd = select_input_stage_data(dec_src_sd, ic_uopc_sd, uop_queue_sd);
 
   /* Return if the next expected uop has not yet arrived. */
   if (!consume_from_sd) {
+    topdown_idq_update(proc_id, count_available, count_issued, count_issued_on_path);
     return;
   }
 
   /* Return if there is no enough space. */
   if (capacity - occupied_count < consume_from_sd->op_count) {
     ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count);
+    topdown_idq_update(proc_id, count_available, count_issued, count_issued_on_path);
     return;
   }
 
@@ -243,6 +242,10 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
     if (idq_sd.op_count < idq_sd.max_op_count) {
       ASSERT(proc_id, !occupied_count);
       idq_sd.ops[idq_sd.op_count++] = op;
+      if (!op->off_path) {
+        count_issued_on_path++;
+      }
+      count_issued++;
     } else {
       bool success = enqueue(op);
       ASSERT(proc_id, success);
@@ -254,6 +257,9 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
   ASSERT(proc_id, !consume_from_sd->op_count);
   /* The output stage data should be full unless the IDQ is empty. */
   ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count || !occupied_count);
+
+  count_available = idq_sd.op_count;
+  topdown_idq_update(proc_id, count_available, count_issued, count_issued_on_path);
 }
 
 bool IDQ_Stage::enqueue(Op* op) {

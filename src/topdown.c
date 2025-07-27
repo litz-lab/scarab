@@ -101,7 +101,7 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
   }
 
   // only increment frontend-stall when there is no backend-stall
-  if (count_issued == 0 && idq_stage_get_stage_data()->op_count == idq_stage_get_stage_data()->max_op_count) {
+  if (count_issued == 0 && idq_stage_get_stage_data()->op_count > 0) {
     STAT_EVENT(proc_id, TOPDOWN_BACKEND_STALLS_CYCLES);
     return;
   }

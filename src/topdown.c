@@ -114,6 +114,7 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
 void topdown_exec_update(uns proc_id, uns8 fus_busy) {
   if (!lsq_available(MEM_ST)) {
     STAT_EVENT(proc_id, TOPDOWN_MEM_STORE_STALLS_CYCLES);
+    return;
   }
 
   if (fus_busy <= TOPDOWN_FU_EXEC_FEW && node->node_count != 0) {

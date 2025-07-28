@@ -22,8 +22,8 @@
 
 /***************************************************************************************
  * File         : map_rename.h
- * Author       : Y. Zhao, Litz Lab
- * Date         : 03/2024
+ * Author       : Yinyuan Zhao (Litz Lab)
+ * Date         : 03/2024, 07/2025
  * Description  : Register Renaming
  ***************************************************************************************/
 
@@ -63,6 +63,7 @@ const static int REG_TABLE_REG_ID_INVALID = -1;
 const static int REG_TABLE_TYPE_INVALID = -1;
 const static int REG_FILE_REG_TYPE_OTHER = -1;
 const static uns REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM = 1;
+const static int REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX = 7;
 
 // CPUID instruction will need 4 int register destination
 const static uns REG_FILE_MAX_DESTS[] = {4, 2};
@@ -99,19 +100,19 @@ struct reg_table_entry {
   Counter allocated_cycle;
   Counter produced_cycle;
   Counter consumed_cycle;
-  Counter lastuse_committed_cycle;
 
-  // physical register inlining for move elimination
+  // reference num for shared physical registers
   int num_refs;  // the number of in-flight operands using this entry
 
   // consumer counter
   int num_consumers;   // the number of registered (at rename) consumers of a registers
   int consumed_count;  // the number of issued (at execute) consumers of a register
 
-  // metadata for early release
+  // metadata for spec/nonspec early release
   Flag redefined_rename;     // indicate if it is overwritten by an instruction with the same arch id during renaming
   Flag redefined_precommit;  // indicate if the redefine-instruction is precommitted
 
+  // metadata for last-use early release
   Counter lastuse_op_num;
   Flag lastuse_committed;
 };

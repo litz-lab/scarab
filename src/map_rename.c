@@ -22,8 +22,8 @@
 
 /***************************************************************************************
  * File         : map_rename.c
- * Author       : Y. Zhao, Litz Lab
- * Date         : 03/2024
+ * Author       : Yinyuan Zhao (Litz Lab)
+ * Date         : 03/2024, 07/2025
  * Description  : Register Renaming
  ***************************************************************************************/
 
@@ -207,21 +207,21 @@ static inline void reg_file_collect_rename_stat(Op *op) {
 }
 
 static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *entry) {
+  // do not collect the dummy register stat
   if (entry->op_num == 0)
     return;
 
+  // do not collect the stat of virtual table registers
   if (entry->reg_table_type != REG_TABLE_TYPE_PHYSICAL)
     return;
 
+  // do not collect the off-path register stat during flushing
   if (entry->off_path)
     return;
 
-  // update the cycle counts for unconsumed ops
+  // set the cycle counts for unconsumed registers
   entry->produced_cycle = entry->produced_cycle == MAX_CTR ? cycle_count : entry->produced_cycle;
   entry->consumed_cycle = entry->consumed_cycle == MAX_CTR ? cycle_count : entry->consumed_cycle;
-  entry->lastuse_committed_cycle =
-      entry->lastuse_committed_cycle == MAX_CTR ? cycle_count : entry->lastuse_committed_cycle;
-
   ASSERT(map_data->proc_id, entry->produced_cycle >= entry->allocated_cycle);
   ASSERT(map_data->proc_id, entry->consumed_cycle >= entry->produced_cycle);
   ASSERT(map_data->proc_id, cycle_count >= entry->consumed_cycle);
@@ -229,13 +229,18 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
   ASSERT(map_data->proc_id, entry->reg_type < REG_FILE_REG_TYPE_NUM);
   STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ALLOC + entry->reg_type);
 
+  // cyclecounts between critical events
   if (entry->num_consumers != 0 && entry->consumed_cycle - entry->produced_cycle == 1)
     STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_SHORTLIVE + entry->reg_type);
 
-  int clamped_consumers = entry->num_consumers < 7 ? entry->num_consumers : 7;
-  int index = clamped_consumers * 2 + entry->reg_type;
-  STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_USE_COUNT_UNUSED + index);
+  // consumer sensitivity
+  int cap_consumers = entry->num_consumers < REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX
+                          ? entry->num_consumers
+                          : REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX;
+  int index = cap_consumers * 2 + entry->reg_type;
+  STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_USE_COUNT_0 + index);
 
+  // lifetime cyclecount distribution
   INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_EMPTY + entry->reg_type,
                  entry->produced_cycle - entry->allocated_cycle);
   INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_IN_USE + entry->reg_type,
@@ -468,7 +473,6 @@ static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_t
       struct reg_table_entry *entry = &reg_table->entries[reg_id];
 
       ASSERT(op->proc_id, entry != NULL && entry->num_consumers > 0);
-      entry->lastuse_committed_cycle = cycle_count;
     }
   }
 
@@ -611,7 +615,6 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->allocated_cycle = MAX_CTR;
   entry->produced_cycle = MAX_CTR;
   entry->consumed_cycle = MAX_CTR;
-  entry->lastuse_committed_cycle = MAX_CTR;
 
   entry->num_refs = 0;
 

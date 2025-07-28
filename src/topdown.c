@@ -192,6 +192,9 @@ void topdown_done(uns proc_id) {
 
   uns64 mem_stalls_cycles = (GET_STAT_EVENT(proc_id, TOPDOWN_MEM_LOAD_STALLS_CYCLES) +
                              GET_STAT_EVENT(proc_id, TOPDOWN_MEM_STORE_STALLS_CYCLES));
+  if (mem_stalls_cycles > backend_stalls_cycles) {
+    mem_stalls_cycles = backend_stalls_cycles;
+  }
   uns64 mem_bound = backend_bound * mem_stalls_cycles / backend_stalls_cycles;
   INC_STAT_EVENT(proc_id, TOPDOWN_MEM_BOUND, mem_bound);
   INC_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND, backend_bound - mem_bound);

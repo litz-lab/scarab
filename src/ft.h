@@ -74,7 +74,7 @@ enum FT_Event {
 };
 
 struct FT_PredictResult {
-  int index;
+  uint64_t index;
   FT_Event event;
   Op* op;          // Optionally, if DFE needs to know which op
   Addr pred_addr;  // Optionally, if DFE needs the predicted address
@@ -96,6 +96,7 @@ class FT {
   FT(uns _proc_id = 0);
   void add_op(Op* op);
   void free_ops_and_clear();
+  void clear();
   bool can_fetch_op();
   Op* fetch_op();
   void set_per_op_ft_info();
@@ -110,15 +111,16 @@ class FT {
                                bool off_path, bool use_pred, uint64_t start_op_num);
 
   FT_PredictResult predict_ft(uns start_pos);
-  std::pair<FT, FT> split_ft(uns split_pos);
+  FT split_ft(uns split_pos);
 
   Op* get_last_op() const;
   Op* get_first_op() const;
   Addr get_start_addr() const;
   bool is_consecutive(const FT& last_ft) const;
   size_t get_op_count() const;
-  bool exists() const { return ft_info.static_info.start != 0; }                       // Check if FT exists/is valid
-  bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }  // Check if FT exists/is valid
+  bool exists() const { return ft_info.static_info.start != 0; }  // Check if FT exists/is valid
+  bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }
+  bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT exists/is valid
 
  private:
   uns proc_id;
@@ -131,7 +133,7 @@ class FT {
   FT_BuildResult init_build_result();
   FT_Ended_By initialize_ft_state();
   void finalize_ft_build(FT_Ended_By end_by, FT_BuildResult* result);
-  bool handle_op_prediction(Op* op, bool use_pred, FT_BuildResult& result);
+  FT_BuildResult handle_op_prediction(Op* op, bool use_pred, FT_BuildResult result);
 
   friend class Decoupled_FE;
 };

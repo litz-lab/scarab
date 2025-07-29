@@ -48,6 +48,17 @@ FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
   free_ops_and_clear();
 }
 
+void FT::clear() {
+  ops.clear();
+  op_pos = 0;
+  ft_info.static_info.start = 0;
+  ft_info.static_info.length = 0;
+  ft_info.static_info.n_uops = 0;
+  ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
+  ft_info.dynamic_info.first_op_off_path = FALSE;
+  consumed = false;
+}
+
 void FT::free_ops_and_clear() {
   while (op_pos < ops.size()) {
     free_op(ops[op_pos]);
@@ -115,26 +126,18 @@ FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std:
   }
 
   FT_Ended_By ft_build_end_condition = initialize_ft_state();
-  if (!ft_build_end_condition) {
-    while (1) {
-      // bool should_break_for_redirect = false;
-      Op* op = alloc_op(proc_id);
-      fetch_op_fn(proc_id, op);
-      op->off_path = off_path;
-      op->op_num = start_op_num++;
+  while (1) {
+    Op* op = alloc_op(proc_id);
+    fetch_op_fn(proc_id, op);
+    op->off_path = off_path;
+    op->op_num = start_op_num++;
 
-      handle_op_prediction(op, use_pred, result);
-      ft_build_end_condition = check_op_ft_end_condition(op);
-      add_op(op);
-
-      if (off_path) {
-        STAT_EVENT(proc_id, FTQ_FETCHED_INS_OFFPATH);
-      } else {
-        STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH);
-      }
-      if (ft_build_end_condition) {
-        break;
-      }
+    result = handle_op_prediction(op, use_pred, result);
+    ft_build_end_condition = check_op_ft_end_condition(op);
+    add_op(op);
+    STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
+    if (ft_build_end_condition) {
+      break;
     }
   }
   ASSERT(0, ft_build_end_condition);
@@ -145,7 +148,7 @@ FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std:
 // will split the FT into two parts, the first part contains ops from 0 to index,
 // the second part contains ops from index + 1 to the end of the FT for now to keep ft_info same as before
 // can change to save the old ft and move read pointer in a later patch
-std::pair<FT, FT> FT::split_ft(uns split_pos) {
+FT FT::split_ft(uns split_pos) {
   uns index_uns = static_cast<uns>(split_pos);
   ASSERT(proc_id, index_uns < ops.size() && index_uns >= 0);
 
@@ -171,8 +174,12 @@ std::pair<FT, FT> FT::split_ft(uns split_pos) {
   ft_info.static_info.length = 0;
   ft_info.static_info.n_uops = ops.size();
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
+  FT_Ended_By ft_build_end_condition = check_op_ft_end_condition(ops.back());
+  if (ft_build_end_condition) {
+    finalize_ft_build(ft_build_end_condition, nullptr);
+  }
 
-  return {*this, tailing_FT};
+  return tailing_FT;
 }
 
 FT FT::move_over_ft(uns start_idx, uns end_idx, bool use_pred) {
@@ -250,13 +257,12 @@ FT_PredictResult FT::predict_ft(uns start_pos) {
     Op* op = ops[idx];
     FT_Event event = predict_one_cf_op(op);
     if (event != FT_EVENT_NONE) {
-      int return_idx = (event == FT_EVENT_MISPREDICT) ? static_cast<int>(idx) : -1;
+      uint64_t return_idx = (event == FT_EVENT_MISPREDICT) ? (idx) : 0;
       Addr pred_addr = op->oracle_info.pred_npc;
-      ASSERT(proc_id, (return_idx != -1) == (event == FT_EVENT_MISPREDICT));
       return {return_idx, event, op, pred_addr};
     }
   }
-  return {-1, FT_EVENT_NONE, nullptr, 0};
+  return {0, FT_EVENT_NONE, nullptr, 0};
 }
 
 FT_Info FT::get_ft_info() const {
@@ -368,14 +374,14 @@ FT_Ended_By FT::initialize_ft_state() {
   return check_op_ft_end_condition(ops.back());
 }
 
-bool FT::handle_op_prediction(Op* op, bool use_pred, FT_BuildResult& result) {
+FT_BuildResult FT::handle_op_prediction(Op* op, bool use_pred, FT_BuildResult result) {
   // copy over oracle info if no pred, should only happen for prebuilt
   if (!use_pred) {
     op->oracle_info.pred_npc = op->oracle_info.npc;
     op->oracle_info.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
   }
   if (!op->off_path || !use_pred) {
-    return false;
+    return result;
   }
 
   auto event = predict_one_cf_op(op);
@@ -385,16 +391,16 @@ bool FT::handle_op_prediction(Op* op, bool use_pred, FT_BuildResult& result) {
     result.trigger_op = op;
     result.redirect_uid = op->inst_uid;
     result.redirect_addr = op->oracle_info.pred_npc;
-    return true;
+    return result;
   }
 
   if (event == FT_EVENT_FETCH_BARRIER) {
     result.trigger_op = op;
     result.fetch_bar_needed = true;
-    return true;
+    return result;
   }
 
-  return false;
+  return result;
 }
 
 void FT::finalize_ft_build(FT_Ended_By ft_build_end_condition, FT_BuildResult* result) {

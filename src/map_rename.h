@@ -42,6 +42,8 @@ enum reg_renaming_scheme {
   REG_RENAMING_SCHEME_EARLY_RELEASE_SPEC,
   REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC,
   REG_RENAMING_SCHEME_EARLY_RELEASE_LASTUSE,
+  REG_RENAMING_SCHEME_EARLY_RELEASE_ATOMIC,
+  REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC_ATOMIC,
   REG_RENAMING_SCHEME_NUM
 };
 
@@ -115,6 +117,15 @@ struct reg_table_entry {
   // metadata for last-use early release
   Counter lastuse_op_num;
   Flag lastuse_committed;
+
+  /* metadata for atomic early release */
+  // only used for software assertion and stat collection
+  Flag if_branch;
+  Flag if_except;
+  Flag if_atomic;
+
+  // 3-bit consumer counter maintained by hardware
+  int atomic_pending_consumed;
 };
 
 struct reg_free_list {

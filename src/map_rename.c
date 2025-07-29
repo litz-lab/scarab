@@ -229,6 +229,13 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
   ASSERT(map_data->proc_id, entry->reg_type < REG_FILE_REG_TYPE_NUM);
   STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ALLOC + entry->reg_type);
 
+  if (!entry->if_branch)
+    STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_NONBRANCH + entry->reg_type);
+  if (!entry->if_except)
+    STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_NONEXCEPT + entry->reg_type);
+  if (entry->if_atomic)
+    STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ATOMIC + entry->reg_type);
+
   // cyclecounts between critical events
   if (entry->num_consumers != 0 && entry->consumed_cycle - entry->produced_cycle == 1)
     STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_SHORTLIVE + entry->reg_type);
@@ -626,6 +633,11 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
 
   entry->lastuse_op_num = 0;
   entry->lastuse_committed = FALSE;
+
+  entry->if_branch = FALSE;
+  entry->if_except = FALSE;
+  entry->if_atomic = TRUE;
+  entry->atomic_pending_consumed = 0;
 }
 
 /* update the metadata when it is read during renaming */
@@ -634,6 +646,11 @@ void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
     traditionally, fill src info from the entry and update not ready bit for wake up
     since the dependency is tracked in the map module, only update the metadata for the research reg file schemes
   */
+
+  if (entry->atomic_pending_consumed != REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX) {
+    entry->atomic_pending_consumed++;
+  }
+
   if (op->off_path)
     return;
 
@@ -664,6 +681,10 @@ void reg_table_entry_write(struct reg_table_entry *entry, Op *op, int parent_reg
 
 /* update the metadata when it is consumed during execution */
 void reg_table_entry_consume(struct reg_table_entry *entry, Op *op) {
+  if (entry->atomic_pending_consumed != REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX) {
+    entry->atomic_pending_consumed--;
+  }
+
   if (op->off_path)
     return;
 
@@ -1274,7 +1295,10 @@ void reg_renaming_scheme_early_release_spec_commit(Op *op) {
 
     // make sure the redefined one is early freed
     int prev_reg_id = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
-    ASSERT(op->proc_id, prev_reg_id != REG_TABLE_REG_ID_INVALID);
+    ASSERT(op->proc_id,
+           prev_reg_id != REG_TABLE_REG_ID_INVALID || REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_EARLY_RELEASE_ATOMIC);
+    if (prev_reg_id == REG_TABLE_REG_ID_INVALID)
+      continue;
 
     struct reg_table_entry *prev_entry = &reg_table->entries[prev_reg_id];
     ASSERT(op->proc_id, prev_entry->op_num == 0 || prev_entry->op_num > op->op_num);
@@ -1306,7 +1330,10 @@ void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
 
     struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
     int prev_ptag = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
-    ASSERT(op->proc_id, prev_ptag != REG_TABLE_REG_ID_INVALID);
+    ASSERT(op->proc_id,
+           prev_ptag != REG_TABLE_REG_ID_INVALID || REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_EARLY_RELEASE_ATOMIC);
+    if (prev_ptag == REG_TABLE_REG_ID_INVALID)
+      continue;
 
     struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
     prev_entry->redefined_precommit = TRUE;
@@ -1413,6 +1440,212 @@ void reg_renaming_scheme_early_release_lastuse_commit(Op *op) {
 }
 
 /**************************************************************************************/
+/* Atomic Early Release Register Scheme */
+
+/*
+ * In this mechanism, a physical register is freed once all of its consumer instructions
+ * have executed when there are not conditional branches or exception-causing instructions
+ * between the renaming instruction and the redefining instruction. A 3-bit counter is
+ * used to track the number of pending consumers.
+ *
+ * This technique was first introduced in:
+ *    "ATR: Out-of-Order Register Release Exploiting Atomic Regions"
+ *    Y. Zhao, S. Oh, M. Xu, and H. Litz
+ *    (MICRO) International Symposium on Microarchitecture, 2025
+ *
+ * This ALGO will do the register early release if the following holds:
+ *    (1) the register have been redefined
+ *    (2) the register is atomic
+ *    (3) all of its consumer instructions have executed
+ */
+
+static void reg_early_release_atomic_identify(Op *op) {
+  Flag if_branch = FALSE;
+  Flag if_except = FALSE;
+
+  // control flows may lead to mispredictions
+  if (op->table_info->cf_type) {
+    if_branch = TRUE;
+  }
+
+  // store/load/div may lead to exceptions
+  if ((op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) ||
+      (op->inst_info->table_info->true_op_type >= XED_ICLASS_DIV &&
+       op->inst_info->table_info->true_op_type <= XED_ICLASS_DIVSS)) {
+    if_except = TRUE;
+  }
+
+  if (!if_branch && !if_except)
+    return;
+
+  // deactivate the atomic entries if there are branches or exception-causing instructions
+  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
+    struct reg_table *reg_table_arch = reg_file[ii]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL];
+    for (uns jj = 0; jj < reg_table_arch->size; ++jj) {
+      int ptag = reg_table_arch->entries[jj].child_reg_id;
+      if (ptag == REG_TABLE_REG_ID_INVALID)
+        continue;
+
+      struct reg_table_entry *entry = &reg_file[ii]->reg_table[REG_TABLE_TYPE_PHYSICAL]->entries[ptag];
+      ASSERT(op->proc_id, entry->self_reg_id == ptag && entry->parent_reg_id == jj);
+      ASSERT(op->proc_id, entry->reg_state != REG_TABLE_ENTRY_STATE_FREE);
+      ASSERT(op->proc_id, !entry->redefined_rename || !entry->if_atomic);
+
+      if (!if_branch && !if_except)
+        continue;
+
+      entry->atomic_pending_consumed = REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX;
+      entry->if_atomic = FALSE;
+      if (if_branch)
+        entry->if_branch = TRUE;
+      if (if_except)
+        entry->if_except = TRUE;
+    }
+  }
+}
+
+void reg_renaming_scheme_early_release_atomic_rename(Op *op);
+void reg_renaming_scheme_early_release_atomic_consume(Op *op);
+void reg_renaming_scheme_early_release_atomic_commit(Op *op);
+
+void reg_renaming_scheme_early_release_atomic_rename(Op *op) {
+  reg_renaming_scheme_realistic_rename(op);
+
+  reg_early_release_atomic_identify(op);
+
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    int prev_ptag = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, prev_ptag != REG_TABLE_REG_ID_INVALID);
+
+    // update metadata for assertion only
+    struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
+    prev_entry->redefined_rename = TRUE;
+
+    int arch_id = op->inst_info->dests[ii].id;
+    int ptag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->entries[arch_id].child_reg_id;
+    Flag redefined = (prev_entry->self_reg_id != ptag);
+    Flag atomic = (prev_entry->atomic_pending_consumed != REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX);
+
+    if (redefined && atomic) {
+      ASSERT(op->proc_id, prev_entry->redefined_rename && prev_entry->if_atomic);
+
+      // avoid multiple releasing when this op is committed
+      op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL] = REG_TABLE_REG_ID_INVALID;
+
+      // early release the prev reg if: 1. it is redefined; 2. it is atomic; 3. no more pending consumers
+      if (prev_entry->atomic_pending_consumed == 0) {
+        reg_early_release_free(reg_table, prev_entry);
+      }
+    }
+  }
+}
+
+void reg_renaming_scheme_early_release_atomic_consume(Op *op) {
+  reg_renaming_scheme_realistic_consume(op);
+
+  for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    int src_reg_id = op->src_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, src_reg_id != REG_TABLE_REG_ID_INVALID);
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    struct reg_table_entry *src_entry = &reg_table->entries[src_reg_id];
+
+    int arch_id = op->inst_info->srcs[ii].id;
+    int ptag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->entries[arch_id].child_reg_id;
+    Flag redefined = (src_entry->self_reg_id != ptag);
+
+    // early release the src reg if: 1. it is redefined; 2. it is atomic; 3. no more pending consumers
+    if (redefined && src_entry->atomic_pending_consumed == 0) {
+      ASSERT(op->proc_id, src_entry->redefined_rename && src_entry->if_atomic);
+      reg_early_release_free(reg_table, src_entry);
+    }
+  }
+}
+
+void reg_renaming_scheme_early_release_atomic_commit(Op *op) {
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+
+    // do conventional register release if the register is not atomic (the prev_reg_id is not cleared)
+    int prev_reg_id = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    if (prev_reg_id != REG_TABLE_REG_ID_INVALID) {
+      struct reg_table_entry *prev_entry = &reg_table->entries[prev_reg_id];
+      ASSERT(op->proc_id, prev_entry->consumed_count == prev_entry->num_consumers || !prev_entry->if_atomic);
+      reg_table->ops->free(reg_table, prev_entry);
+    }
+
+    // mark register as committed at retirement for metadata clear
+    int reg_id = op->dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    if (reg_id != REG_TABLE_REG_ID_INVALID) {
+      struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+      struct reg_table_entry *entry = &reg_table->entries[reg_id];
+      ASSERT(op->proc_id, entry != NULL && entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED);
+
+      ASSERT(op->proc_id,
+             reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id != REG_TABLE_REG_ID_INVALID);
+      entry->reg_state = REG_TABLE_ENTRY_STATE_COMMIT;
+    }
+  }
+}
+
+/**************************************************************************************/
+/* Non-Spec Atomic Early Release Register Scheme */
+
+/*
+ * This mechanism combines both the atomic early release scheme and the non-spec early
+ * release scheme.
+ *
+ * This ALGO will do the register early release if the following holds:
+ *    (1) the register have been redefined
+ *    (2) all of its consumer instructions have executed
+ *    (3) the register is atomic or its redefining instruction becomes non-speculative
+ */
+
+void reg_renaming_scheme_early_release_nonspec_atomic_consume(Op *op);
+
+void reg_renaming_scheme_early_release_nonspec_atomic_consume(Op *op) {
+  reg_renaming_scheme_realistic_consume(op);
+
+  for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    int src_reg_id = op->src_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, src_reg_id != REG_TABLE_REG_ID_INVALID);
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    struct reg_table_entry *src_entry = &reg_table->entries[src_reg_id];
+
+    int arch_id = op->inst_info->srcs[ii].id;
+    int ptag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->entries[arch_id].child_reg_id;
+    Flag redefined = (src_entry->self_reg_id != ptag);
+
+    // early release the atomic register
+    if (redefined && src_entry->atomic_pending_consumed == 0) {
+      ASSERT(op->proc_id, src_entry->redefined_rename && src_entry->if_atomic);
+      reg_early_release_free(reg_table, src_entry);
+      continue;
+    }
+
+    // early release the nonspec register
+    if (src_entry->num_consumers == src_entry->consumed_count && src_entry->redefined_precommit) {
+      reg_early_release_free(reg_table, src_entry);
+    }
+  }
+}
+
+/**************************************************************************************/
 /* Register File Function Driven Table */
 
 struct reg_renaming_scheme_func {
@@ -1500,6 +1733,30 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .recover = reg_renaming_scheme_realistic_recover,
     .precommit = reg_renaming_scheme_early_release_lastuse_precommit,
     .commit = reg_renaming_scheme_early_release_lastuse_commit
+  },
+  // REG_RENAMING_SCHEME_EARLY_RELEASE_ATOMIC
+  {
+    .init = reg_renaming_scheme_realistic_init,
+    .available = reg_renaming_scheme_realistic_available,
+    .rename = reg_renaming_scheme_early_release_atomic_rename,
+    .issue = reg_renaming_scheme_realistic_issue,
+    .consume = reg_renaming_scheme_early_release_atomic_consume,
+    .produce = reg_renaming_scheme_realistic_produce,
+    .recover = reg_renaming_scheme_realistic_recover,
+    .precommit = reg_renaming_scheme_realistic_precommit,
+    .commit = reg_renaming_scheme_early_release_atomic_commit
+  },
+  // REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC_ATOMIC
+  {
+    .init = reg_renaming_scheme_realistic_init,
+    .available = reg_renaming_scheme_realistic_available,
+    .rename = reg_renaming_scheme_early_release_atomic_rename,
+    .issue = reg_renaming_scheme_realistic_issue,
+    .consume = reg_renaming_scheme_early_release_nonspec_atomic_consume,
+    .produce = reg_renaming_scheme_realistic_produce,
+    .recover = reg_renaming_scheme_realistic_recover,
+    .precommit = reg_renaming_scheme_early_release_nonspec_precommit,
+    .commit = reg_renaming_scheme_early_release_spec_commit
   },
 };
 // clang-format on

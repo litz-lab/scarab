@@ -226,6 +226,10 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
   ASSERT(map_data->proc_id, entry->consumed_cycle >= entry->produced_cycle);
   ASSERT(map_data->proc_id, cycle_count >= entry->consumed_cycle);
 
+  entry->redefined_cycle = entry->redefined_cycle == MAX_CTR ? cycle_count : entry->redefined_cycle;
+  entry->spec_release_cycle = entry->spec_release_cycle == MAX_CTR ? cycle_count : entry->spec_release_cycle;
+  entry->nonspec_release_cycle = entry->nonspec_release_cycle == MAX_CTR ? cycle_count : entry->nonspec_release_cycle;
+
   ASSERT(map_data->proc_id, entry->reg_type < REG_FILE_REG_TYPE_NUM);
   STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ALLOC + entry->reg_type);
 
@@ -239,6 +243,14 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
   // cyclecounts between critical events
   if (entry->num_consumers != 0 && entry->consumed_cycle - entry->produced_cycle == 1)
     STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_SHORTLIVE + entry->reg_type);
+  if (entry->is_atomic) {
+    INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_ATOMIC_REDEFINED_DIST_TOTAL + entry->reg_type,
+                   entry->redefined_cycle - entry->allocated_cycle);
+    INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_ATOMIC_CONSUMED_DIST_TOTAL + entry->reg_type,
+                   entry->consumed_cycle - entry->allocated_cycle);
+    INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_ATOMIC_RELEASE_DIST_TOTAL + entry->reg_type,
+                   cycle_count - entry->allocated_cycle);
+  }
 
   // consumer sensitivity
   int cap_consumers = entry->num_consumers < REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX
@@ -252,7 +264,12 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
                  entry->produced_cycle - entry->allocated_cycle);
   INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_IN_USE + entry->reg_type,
                  entry->consumed_cycle - entry->allocated_cycle);
-  INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_TOTAL, cycle_count - entry->allocated_cycle);
+  INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_SPEC_RELEASE + entry->reg_type,
+                 entry->spec_release_cycle - entry->allocated_cycle);
+  INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_NONSPEC_RELEASE + entry->reg_type,
+                 entry->nonspec_release_cycle - entry->allocated_cycle);
+  INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_TOTAL + entry->reg_type,
+                 cycle_count - entry->allocated_cycle);
 }
 
 /**************************************************************************************/
@@ -622,6 +639,9 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->allocated_cycle = MAX_CTR;
   entry->produced_cycle = MAX_CTR;
   entry->consumed_cycle = MAX_CTR;
+  entry->redefined_cycle = MAX_CTR;
+  entry->spec_release_cycle = MAX_CTR;
+  entry->nonspec_release_cycle = MAX_CTR;
 
   entry->num_refs = 0;
 
@@ -1244,6 +1264,7 @@ void reg_renaming_scheme_early_release_spec_rename(Op *op) {
 
     // speculative early release mechanisms provide backup storage for recovering, which allows aggressively redefining
     prev_entry->redefined_rename = TRUE;
+    prev_entry->redefined_cycle = cycle_count;
 
     // do register early release
     if (prev_entry->num_consumers == prev_entry->consumed_count && prev_entry->redefined_rename) {
@@ -1337,6 +1358,7 @@ void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
 
     struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
     prev_entry->redefined_precommit = TRUE;
+    prev_entry->redefined_cycle = cycle_count;
 
     // do register early release
     if (prev_entry->num_consumers == prev_entry->consumed_count && prev_entry->redefined_precommit) {
@@ -1525,6 +1547,7 @@ void reg_renaming_scheme_early_release_atomic_rename(Op *op) {
     // update metadata for assertion only
     struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
     prev_entry->redefined_rename = TRUE;
+    prev_entry->redefined_cycle = cycle_count;
 
     int arch_id = op->inst_info->dests[ii].id;
     int ptag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->entries[arch_id].child_reg_id;

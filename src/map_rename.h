@@ -102,6 +102,9 @@ struct reg_table_entry {
   Counter allocated_cycle;
   Counter produced_cycle;
   Counter consumed_cycle;
+  Counter redefined_cycle;
+  Counter spec_release_cycle;
+  Counter nonspec_release_cycle;
 
   // reference num for shared physical registers
   int num_refs;  // the number of in-flight operands using this entry

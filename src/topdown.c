@@ -103,6 +103,9 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
   // only increment frontend-stall when there is no backend-stall
   if (count_issued == 0 && idq_stage_get_stage_data()->op_count > 0) {
     STAT_EVENT(proc_id, TOPDOWN_BACKEND_STALLS_CYCLES);
+    if (lsq_get_in_flight_load_num() > 0) {
+      STAT_EVENT(proc_id, TOPDOWN_MEM_LOAD_STALLS_CYCLES);
+    }
     return;
   }
 
@@ -119,9 +122,6 @@ void topdown_exec_update(uns proc_id, uns8 fus_busy) {
 
   if (fus_busy <= TOPDOWN_FU_EXEC_FEW && node->node_count != 0) {
     STAT_EVENT(proc_id, TOPDOWN_EXEC_STALLS_CYCLES);
-    if (lsq_get_in_flight_load_num() > 0 && fus_busy == 0) {
-      STAT_EVENT(proc_id, TOPDOWN_MEM_LOAD_STALLS_CYCLES);
-    }
   }
 }
 

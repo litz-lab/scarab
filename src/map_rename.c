@@ -226,6 +226,7 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
   ASSERT(map_data->proc_id, entry->consumed_cycle >= entry->produced_cycle);
   ASSERT(map_data->proc_id, cycle_count >= entry->consumed_cycle);
 
+  // these cycle counters are only set in some specific schemes
   entry->redefined_cycle = entry->redefined_cycle == MAX_CTR ? cycle_count : entry->redefined_cycle;
   entry->spec_release_cycle = entry->spec_release_cycle == MAX_CTR ? cycle_count : entry->spec_release_cycle;
   entry->nonspec_release_cycle = entry->nonspec_release_cycle == MAX_CTR ? cycle_count : entry->nonspec_release_cycle;

@@ -110,15 +110,15 @@ class FT {
   FT_BuildResult build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
                                bool off_path, bool use_pred, uint64_t start_op_num);
 
-  FT_PredictResult predict_ft(uns start_pos);
-  FT split_ft(uns split_pos);
+  FT_PredictResult predict_ft();
+  bool split_ft(uns split_pos, FT& tailing_FT);
 
   Op* get_last_op() const;
   Op* get_first_op() const;
   Addr get_start_addr() const;
   bool is_consecutive(const FT& last_ft) const;
   size_t get_op_count() const;
-  bool exists() const { return ft_info.static_info.start != 0; }  // Check if FT exists/is valid
+  size_t get_size() const { return ops.size(); }  // Check if FT exists/is valid
   bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }
   bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT exists/is valid
 

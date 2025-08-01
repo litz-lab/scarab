@@ -148,12 +148,13 @@ FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std:
 // will split the FT into two parts, the first part contains ops from 0 to index,
 // the second part contains ops from index + 1 to the end of the FT for now to keep ft_info same as before
 // can change to save the old ft and move read pointer in a later patch
-FT FT::split_ft(uns split_pos) {
+// returns if front part of the FT needs rebuild
+bool FT::split_ft(uns split_pos, FT& tailing_FT) {
   uns index_uns = static_cast<uns>(split_pos);
   ASSERT(proc_id, index_uns < ops.size() && index_uns >= 0);
 
   // Initialize tailing FT that will contain ops after split position
-  FT tailing_FT = FT();
+  tailing_FT = FT();
 
   // Only perform split if there are operations after the split point
   bool has_trailing_ops = (index_uns < ops.size() - 1);
@@ -170,16 +171,18 @@ FT FT::split_ft(uns split_pos) {
     ASSERT(proc_id, ops.size() == index_uns + 1);
   }
 
-  // Reset the 'end' part of ft_info before rebuilding
+  // Reset the 'end' part of ft_info before possible rebuilding
   ft_info.static_info.length = 0;
   ft_info.static_info.n_uops = ops.size();
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
+  // Check if the current FT needs to be rebuilt
   FT_Ended_By ft_build_end_condition = check_op_ft_end_condition(ops.back());
+  // if no rebuild needed, just finalize without adding new ops
   if (ft_build_end_condition) {
     finalize_ft_build(ft_build_end_condition, nullptr);
   }
 
-  return tailing_FT;
+  return !ft_build_end_condition;
 }
 
 FT FT::move_over_ft(uns start_idx, uns end_idx, bool use_pred) {
@@ -252,8 +255,8 @@ FT_Event FT::predict_one_cf_op(Op* op) {
   return FT_EVENT_NONE;
 }
 
-FT_PredictResult FT::predict_ft(uns start_pos) {
-  for (size_t idx = start_pos; idx < ops.size(); idx++) {
+FT_PredictResult FT::predict_ft() {
+  for (size_t idx = 0; idx < ops.size(); idx++) {
     Op* op = ops[idx];
     FT_Event event = predict_one_cf_op(op);
     if (event != FT_EVENT_NONE) {

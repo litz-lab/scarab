@@ -120,9 +120,9 @@ struct reg_table_entry {
 
   /* metadata for atomic early release */
   // only used for software assertion and stat collection
-  Flag if_branch;
-  Flag if_except;
-  Flag if_atomic;
+  Flag is_branch;
+  Flag is_except;
+  Flag is_atomic;
 
   // 3-bit consumer counter maintained by hardware
   int atomic_pending_consumed;

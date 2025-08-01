@@ -349,9 +349,12 @@ void update_exec_stage(Stage_Data* src_sd) {
      * of its pipeline unless it's stalled by memory
      */
     if (fu->idle_cycle > cycle_count) {
-      fu_busy_num++;
       if (!fu->held_by_mem)
         exec->fus_busy++;
+    }
+
+    if (fu->avail_cycle > cycle_count) {
+      fu_busy_num++;
     }
   }
 

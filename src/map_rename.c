@@ -263,6 +263,8 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
                           : REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX;
   int index = cap_consumers * 2 + entry->reg_type;
   STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_USE_COUNT_0 + index);
+  if (entry->is_atomic)
+    STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_ATOMIC_USE_COUNT_0 + index);
 
   // lifetime cyclecount distribution
   INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_EMPTY + entry->reg_type,
@@ -1852,6 +1854,95 @@ void reg_renaming_scheme_early_release_nonspec_atomic_consume(Op *op) {
 }
 
 /**************************************************************************************/
+
+void reg_renaming_scheme_stat_rename(Op *op);
+void reg_renaming_scheme_stat_consume(Op *op);
+void reg_renaming_scheme_stat_precommit(Op *op);
+
+void reg_renaming_scheme_stat_rename(Op *op) {
+  reg_renaming_scheme_realistic_rename(op);
+
+  reg_early_release_atomic_identify(op);
+
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    int prev_ptag = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, prev_ptag != REG_TABLE_REG_ID_INVALID);
+
+    // update redefine metadata
+    struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
+    prev_entry->redefined_rename = TRUE;
+    prev_entry->redefined_cycle = cycle_count;
+
+    int arch_id = op->inst_info->dests[ii].id;
+    int ptag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->entries[arch_id].child_reg_id;
+    Flag redefined = (prev_entry->self_reg_id != ptag);
+    Flag atomic = (prev_entry->atomic_pending_consumed != REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX);
+
+    if (redefined && atomic) {
+      ASSERT(op->proc_id, prev_entry->redefined_rename && prev_entry->is_atomic);
+    }
+
+    if (prev_entry->num_consumers == prev_entry->consumed_count && prev_entry->redefined_rename) {
+      prev_entry->spec_release_cycle = cycle_count;
+    }
+  }
+}
+
+void reg_renaming_scheme_stat_consume(Op *op) {
+  reg_renaming_scheme_realistic_consume(op);
+
+  for (uns ii = 0; ii < op->table_info->num_src_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    int src_reg_id = op->src_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, src_reg_id != REG_TABLE_REG_ID_INVALID);
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    struct reg_table_entry *src_entry = &reg_table->entries[src_reg_id];
+
+    if (src_entry->num_consumers == src_entry->consumed_count && src_entry->redefined_rename) {
+      src_entry->spec_release_cycle = cycle_count;
+    }
+    if (src_entry->num_consumers == src_entry->consumed_count && src_entry->redefined_precommit) {
+      src_entry->nonspec_release_cycle = cycle_count;
+    }
+
+    int arch_id = op->inst_info->srcs[ii].id;
+    int ptag = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->entries[arch_id].child_reg_id;
+    Flag redefined = (src_entry->self_reg_id != ptag);
+
+    if (redefined && src_entry->atomic_pending_consumed == 0) {
+      ASSERT(op->proc_id, src_entry->redefined_rename && src_entry->is_atomic);
+    }
+  }
+}
+
+void reg_renaming_scheme_stat_precommit(Op *op) {
+  for (uns ii = 0; ii < op->table_info->num_dest_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    struct reg_table *reg_table = reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    int prev_ptag = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, prev_ptag != REG_TABLE_REG_ID_INVALID);
+
+    struct reg_table_entry *prev_entry = &reg_table->entries[prev_ptag];
+    prev_entry->redefined_precommit = TRUE;
+
+    if (prev_entry->num_consumers == prev_entry->consumed_count && prev_entry->redefined_precommit) {
+      prev_entry->nonspec_release_cycle = cycle_count;
+    }
+  }
+}
+
+/**************************************************************************************/
 /* Register File Function Driven Table */
 
 struct reg_renaming_scheme_func {
@@ -1963,6 +2054,18 @@ struct reg_renaming_scheme_func reg_renaming_scheme_func_table[REG_RENAMING_SCHE
     .recover = reg_renaming_scheme_realistic_recover,
     .precommit = reg_renaming_scheme_early_release_nonspec_precommit,
     .commit = reg_renaming_scheme_early_release_spec_commit
+  },
+  // REG_RENAMING_SCHEME_STAT
+  {
+    .init = reg_renaming_scheme_realistic_init,
+    .available = reg_renaming_scheme_realistic_available,
+    .rename = reg_renaming_scheme_stat_rename,
+    .issue = reg_renaming_scheme_realistic_issue,
+    .consume = reg_renaming_scheme_stat_consume,
+    .produce = reg_renaming_scheme_realistic_produce,
+    .recover = reg_renaming_scheme_realistic_recover,
+    .precommit = reg_renaming_scheme_stat_precommit,
+    .commit = reg_renaming_scheme_realistic_commit
   },
 };
 // clang-format on

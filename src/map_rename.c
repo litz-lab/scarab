@@ -55,6 +55,8 @@ extern Op invalid_op;
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_MAP, ##args)
 
+#define STAGE_MAX_OP_COUNT ISSUE_WIDTH
+
 /**************************************************************************************/
 /* Prototypes */
 
@@ -82,6 +84,8 @@ void reg_table_produce(struct reg_table *reg_table, int self_reg_id, Op *op);
 // special init func for the architectural table
 void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size,
                          int reg_type, int reg_table_type);
+
+static void reg_early_release_free(struct reg_table *reg_table, struct reg_table_entry *entry);
 
 /**************************************************************************************/
 /* Inline Methods */
@@ -649,6 +653,9 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->num_consumers = 0;
   entry->consumed_count = 0;
 
+  entry->release_delay_cycle = -1;
+  entry->release_delay_pos = -1;
+
   entry->redefined_rename = FALSE;
   entry->redefined_precommit = FALSE;
 
@@ -733,6 +740,162 @@ struct reg_table_entry_ops reg_table_entry_ops = {
 };
 
 /**************************************************************************************/
+/* register early-release delay simulation */
+
+static void reg_release_delay_queue_init(struct reg_release_delay_queue *delay_queue, int depth, int max_reg_count) {
+  ASSERT(map_data->proc_id, delay_queue != NULL);
+  delay_queue->depth = depth;
+  delay_queue->max_reg_count = max_reg_count;
+
+  delay_queue->reg_id_queue = (int **)malloc(sizeof(int *) * depth);
+  delay_queue->reg_count = (int *)malloc(sizeof(int) * depth);
+
+  for (int ii = 0; ii < depth; ii++) {
+    delay_queue->reg_count[ii] = 0;
+    delay_queue->reg_id_queue[ii] = (int *)malloc(sizeof(int) * max_reg_count);
+    for (int jj = 0; jj < max_reg_count; jj++) {
+      delay_queue->reg_id_queue[ii][jj] = REG_TABLE_REG_ID_INVALID;
+    }
+  }
+}
+
+static void reg_release_delay_queue_recover(struct reg_table *reg_table) {
+  ASSERT(map_data->proc_id, REG_TABLE_EARLY_RELEASE_DELAY_ENABLE);
+  struct reg_release_delay_queue *delay_queue = reg_table->delay_queue;
+  ASSERT(map_data->proc_id, delay_queue != NULL);
+  ASSERT(map_data->proc_id, delay_queue->depth > 0);
+
+  for (int ii = 0; ii < delay_queue->depth; ii++) {
+    for (int jj = 0; jj < delay_queue->max_reg_count; jj++) {
+      int ptag = delay_queue->reg_id_queue[ii][jj];
+      if (ptag == REG_TABLE_REG_ID_INVALID)
+        continue;
+
+      ASSERT(map_data->proc_id, reg_table->entries[ptag].reg_state != REG_TABLE_ENTRY_STATE_FREE);
+      if (reg_table->entries[ptag].off_path) {
+        delay_queue->reg_id_queue[ii][jj] = REG_TABLE_REG_ID_INVALID;
+      }
+    }
+  }
+}
+
+static void reg_release_delay_queue_insert(struct reg_table *reg_table, int reg_id) {
+  if (!REG_TABLE_EARLY_RELEASE_DELAY_ENABLE)
+    return;
+
+  struct reg_release_delay_queue *delay_queue = reg_table->delay_queue;
+  ASSERT(map_data->proc_id, delay_queue != NULL);
+
+  int depth_idx = delay_queue->depth - 1;
+  ASSERT(map_data->proc_id, depth_idx >= 0);
+
+  int pos = delay_queue->reg_count[depth_idx];
+  ASSERT(map_data->proc_id, pos < delay_queue->max_reg_count);
+
+  delay_queue->reg_id_queue[depth_idx][pos] = reg_id;
+  delay_queue->reg_count[depth_idx]++;
+
+  // update metadata for tracking
+  struct reg_table_entry *entry = &reg_table->entries[reg_id];
+  ASSERT(map_data->proc_id, entry->reg_state != REG_TABLE_ENTRY_STATE_FREE);
+  ASSERT(map_data->proc_id, entry->is_atomic);
+  entry->release_delay_cycle = delay_queue->depth;
+  entry->release_delay_pos = pos;
+}
+
+// decrement the release delay counter for all in-queue registers
+static void reg_release_delay_queue_tick(struct reg_table *reg_table) {
+  ASSERT(map_data->proc_id, REG_TABLE_EARLY_RELEASE_DELAY_ENABLE);
+  struct reg_release_delay_queue *delay_queue = reg_table->delay_queue;
+  ASSERT(map_data->proc_id, delay_queue != NULL);
+  ASSERT(map_data->proc_id, delay_queue->depth > 0);
+
+  for (int ii = 0; ii < delay_queue->depth; ii++) {
+    for (int jj = 0; jj < delay_queue->reg_count[ii]; jj++) {
+      int reg_id = delay_queue->reg_id_queue[ii][jj];
+      if (reg_id == REG_TABLE_REG_ID_INVALID)
+        continue;
+
+      ASSERT(map_data->proc_id, reg_table->entries[reg_id].reg_state != REG_TABLE_ENTRY_STATE_FREE);
+      reg_table->entries[reg_id].release_delay_cycle--;
+
+      if (ii == 0)
+        ASSERT(map_data->proc_id, reg_table->entries[reg_id].release_delay_cycle == 0);
+      else
+        ASSERT(map_data->proc_id, reg_table->entries[reg_id].release_delay_cycle > 0);
+    }
+  }
+}
+
+// release registers whose delay counter has reached 0
+static void reg_release_delay_queue_wakeup(struct reg_table *reg_table) {
+  ASSERT(map_data->proc_id, REG_TABLE_EARLY_RELEASE_DELAY_ENABLE);
+  struct reg_release_delay_queue *delay_queue = reg_table->delay_queue;
+  ASSERT(map_data->proc_id, delay_queue != NULL);
+
+  for (int ii = 0; ii < delay_queue->reg_count[0]; ii++) {
+    int reg_id = delay_queue->reg_id_queue[0][ii];
+    if (reg_id == REG_TABLE_REG_ID_INVALID)
+      continue;
+
+    struct reg_table_entry *entry = &reg_table->entries[reg_id];
+    ASSERT(map_data->proc_id, entry->reg_state != REG_TABLE_ENTRY_STATE_FREE);
+    ASSERT(map_data->proc_id, entry->release_delay_cycle == 0);
+
+    if (entry->redefined_rename && entry->atomic_pending_consumed == 0)
+      reg_early_release_free(reg_table, entry);
+
+    DEBUG(map_data->proc_id, "wake[%lld, %d]: %d, %d\n", entry->op_num, entry->off_path, reg_id, ii);
+    delay_queue->reg_id_queue[0][ii] = REG_TABLE_REG_ID_INVALID;
+  }
+
+  delay_queue->reg_count[0] = 0;
+}
+
+// shift the delay queue forward by one cycle
+static void reg_release_delay_queue_shift(struct reg_table *reg_table) {
+  ASSERT(map_data->proc_id, REG_TABLE_EARLY_RELEASE_DELAY_ENABLE);
+  struct reg_release_delay_queue *delay_queue = reg_table->delay_queue;
+  ASSERT(map_data->proc_id, delay_queue != NULL);
+  ASSERT(map_data->proc_id, delay_queue->depth > 0);
+
+  // shift content
+  for (int ii = 0; ii < delay_queue->depth - 1; ii++) {
+    for (int jj = 0; jj < delay_queue->max_reg_count; jj++) {
+      delay_queue->reg_id_queue[ii][jj] = delay_queue->reg_id_queue[ii + 1][jj];
+    }
+    delay_queue->reg_count[ii] = delay_queue->reg_count[ii + 1];
+  }
+
+  // clear last row
+  if (delay_queue->depth > 1) {
+    for (int ii = 0; ii < delay_queue->max_reg_count; ii++) {
+      delay_queue->reg_id_queue[delay_queue->depth - 1][ii] = REG_TABLE_REG_ID_INVALID;
+    }
+    delay_queue->reg_count[delay_queue->depth - 1] = 0;
+  }
+}
+
+// called once per cycle to update all delay queues
+void reg_release_delay_queue_update(void) {
+  if (!REG_TABLE_EARLY_RELEASE_DELAY_ENABLE)
+    return;
+
+  for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ii++) {
+    struct reg_table *reg_table = reg_file[ii]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+
+    // decrement counters
+    reg_release_delay_queue_tick(reg_table);
+
+    // release ready registers
+    reg_release_delay_queue_wakeup(reg_table);
+
+    // move queue forward
+    reg_release_delay_queue_shift(reg_table);
+  }
+}
+
+/**************************************************************************************/
 /* register table operation */
 
 void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size, int reg_type,
@@ -776,6 +939,12 @@ void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_ta
     entry->ops->write(entry, &invalid_op, ii);
     entry->num_refs++;
     reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->self_reg_id;
+  }
+
+  if (REG_TABLE_EARLY_RELEASE_DELAY_ENABLE) {
+    reg_table->delay_queue = (struct reg_release_delay_queue *)malloc(sizeof(struct reg_release_delay_queue));
+    reg_release_delay_queue_init(reg_table->delay_queue, REG_TABLE_EARLY_RELEASE_DELAY_CYCLE,
+                                 STAGE_MAX_OP_COUNT * REG_FILE_MAX_DESTS[0]);
   }
 }
 
@@ -1021,6 +1190,13 @@ void reg_renaming_scheme_realistic_recover(Op *op) {
 
   // rollback to the status that does not contain any off_path entries
   reg_file_rollback_srt();
+
+  if (REG_TABLE_EARLY_RELEASE_DELAY_ENABLE) {
+    for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ii++) {
+      struct reg_table *reg_table = reg_file[ii]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+      reg_release_delay_queue_recover(reg_table);
+    }
+  }
 
   // release the registers from the youngest to the flush point
   int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
@@ -1558,12 +1734,16 @@ void reg_renaming_scheme_early_release_atomic_rename(Op *op) {
     if (redefined && atomic) {
       ASSERT(op->proc_id, prev_entry->redefined_rename && prev_entry->is_atomic);
 
+      // delay due to timing
+      reg_release_delay_queue_insert(reg_table, prev_ptag);
+
       // avoid multiple releasing when this op is committed
       op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL] = REG_TABLE_REG_ID_INVALID;
 
       // early release the prev reg if: 1. it is redefined; 2. it is atomic; 3. no more pending consumers
       if (prev_entry->atomic_pending_consumed == 0) {
-        reg_early_release_free(reg_table, prev_entry);
+        if (!REG_TABLE_EARLY_RELEASE_DELAY_ENABLE || prev_entry->release_delay_cycle == 0)
+          reg_early_release_free(reg_table, prev_entry);
       }
     }
   }
@@ -1589,7 +1769,8 @@ void reg_renaming_scheme_early_release_atomic_consume(Op *op) {
     // early release the src reg if: 1. it is redefined; 2. it is atomic; 3. no more pending consumers
     if (redefined && src_entry->atomic_pending_consumed == 0) {
       ASSERT(op->proc_id, src_entry->redefined_rename && src_entry->is_atomic);
-      reg_early_release_free(reg_table, src_entry);
+      if (!REG_TABLE_EARLY_RELEASE_DELAY_ENABLE || src_entry->release_delay_cycle == 0)
+        reg_early_release_free(reg_table, src_entry);
     }
   }
 }
@@ -1658,7 +1839,8 @@ void reg_renaming_scheme_early_release_nonspec_atomic_consume(Op *op) {
     // early release the atomic register
     if (redefined && src_entry->atomic_pending_consumed == 0) {
       ASSERT(op->proc_id, src_entry->redefined_rename && src_entry->is_atomic);
-      reg_early_release_free(reg_table, src_entry);
+      if (!REG_TABLE_EARLY_RELEASE_DELAY_ENABLE || src_entry->release_delay_cycle == 0)
+        reg_early_release_free(reg_table, src_entry);
       continue;
     }
 

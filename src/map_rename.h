@@ -44,6 +44,7 @@ enum reg_renaming_scheme {
   REG_RENAMING_SCHEME_EARLY_RELEASE_LASTUSE,
   REG_RENAMING_SCHEME_EARLY_RELEASE_ATOMIC,
   REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC_ATOMIC,
+  REG_RENAMING_SCHEME_STAT,
   REG_RENAMING_SCHEME_NUM
 };
 
@@ -65,7 +66,6 @@ const static int REG_TABLE_REG_ID_INVALID = -1;
 const static int REG_TABLE_TYPE_INVALID = -1;
 const static int REG_FILE_REG_TYPE_OTHER = -1;
 const static uns REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM = 1;
-const static int REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX = 7;
 
 // CPUID instruction will need 4 int register destination
 const static uns REG_FILE_MAX_DESTS[] = {4, 2};
@@ -113,6 +113,10 @@ struct reg_table_entry {
   int num_consumers;   // the number of registered (at rename) consumers of a registers
   int consumed_count;  // the number of issued (at execute) consumers of a register
 
+  // early release delay simulation for critical path
+  int release_delay_cycle;
+  int release_delay_pos;
+
   // metadata for spec/nonspec early release
   Flag redefined_rename;     // indicate if it is overwritten by an instruction with the same arch id during renaming
   Flag redefined_precommit;  // indicate if the redefine-instruction is precommitted
@@ -140,6 +144,20 @@ struct reg_free_list {
   struct reg_free_list_ops *ops;
 };
 
+struct reg_release_delay_queue {
+  // each row represents a cycle offset, and each contains up to max_reg_count registers to be released in that cycle.
+  int **reg_id_queue;
+
+  // the number of registers stored in each row
+  int *reg_count;
+
+  // maximum number of registers that can be stored per cycle (per row).
+  int max_reg_count;
+
+  // number of future cycles tracked by the queue
+  int depth;
+};
+
 struct reg_table {
   // the type of the corresponding reg file and reg table
   int reg_type;        // INT or FP
@@ -154,6 +172,9 @@ struct reg_table {
 
   // reserve the parent table pointer for backtracking
   struct reg_table *parent_reg_table;
+
+  // delay release due to critical path timing penalty
+  struct reg_release_delay_queue *delay_queue;
 
   // register table operation
   struct reg_table_ops *ops;
@@ -217,5 +238,7 @@ void reg_file_produce(Op *op);                // write back the dst registers
 void reg_file_recover(Op *op);                // flush registers of misprediction operands
 void reg_file_precommit(Op *op);              // update the register metadata when an op is non-spec
 void reg_file_commit(Op *op);                 // release the previous register with same architectural register id
+
+void reg_release_delay_queue_update(void);  // called once per cycle to update all delay queues
 
 #endif /* #ifndef __MAP_RENAME_H__ */

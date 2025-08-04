@@ -169,6 +169,8 @@ void debug_map_stage() {
 /* map_cycle: */
 
 void update_map_stage(Stage_Data* src_sd) {
+  reg_release_delay_queue_update();
+
   /* stall if the renaming table is full */
   if (!reg_file_available(STAGE_MAX_OP_COUNT)) {
     STAT_EVENT(map->proc_id, MAP_STAGE_STALL_ITSELF);

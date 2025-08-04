@@ -145,6 +145,9 @@ DEF_PARAM(reg_table_vector_physical_size, REG_TABLE_VECTOR_PHYSICAL_SIZE, uns, u
 DEF_PARAM(reg_table_integer_virtual_size, REG_TABLE_INTEGER_VIRTUAL_SIZE, uns, uns, 256, )
 DEF_PARAM(reg_table_vector_virtual_size, REG_TABLE_VECTOR_VIRTUAL_SIZE, uns, uns, 256, )
 DEF_PARAM(reg_renaming_move_eliminate, REG_RENAMING_MOVE_ELIMINATE, Flag, Flag, FALSE, )
+DEF_PARAM(reg_table_early_release_delay_enable, REG_TABLE_EARLY_RELEASE_DELAY_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(reg_table_early_release_delay_cycle, REG_TABLE_EARLY_RELEASE_DELAY_CYCLE, uns, uns, 1, )
+DEF_PARAM(reg_renaming_scheme_early_release_pending_consumed_max, REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX, uns, uns, 7, )
 
 /********ISSUE QUEUE
  * PARAMETERS********************************************************/

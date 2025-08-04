@@ -110,7 +110,7 @@ class FT {
   FT_BuildResult build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
                                bool off_path, bool use_pred, uint64_t start_op_num);
 
-  FT_PredictResult predict_ft();
+  FT_PredictResult predict_ft(bool to_end);
   bool split_ft(uns split_pos, FT& tailing_FT);
 
   Op* get_last_op() const;

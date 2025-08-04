@@ -163,9 +163,7 @@ bool FT::split_ft(uns split_pos, FT& tailing_FT) {
     ASSERT(proc_id,
            tailing_FT.ft_info.static_info.start && tailing_FT.ft_info.static_info.length && tailing_FT.ops.size());
     ASSERT(proc_id, ops.size() == (ops.size() - tailing_FT.ops.size()) + tailing_FT.ops.size());
-    if (tailing_FT.ft_info.dynamic_info.first_op_off_path) {
-      tailing_FT.free_ops_and_clear();
-    }
+    ASSERT(proc_id, tailing_FT.ft_info.dynamic_info.first_op_off_path == 0);
     // Truncate current FT to split position
     ops.erase(ops.begin() + index_uns + 1, ops.end());
     ASSERT(proc_id, ops.size() == index_uns + 1);
@@ -255,14 +253,15 @@ FT_Event FT::predict_one_cf_op(Op* op) {
   return FT_EVENT_NONE;
 }
 
-FT_PredictResult FT::predict_ft() {
+FT_PredictResult FT::predict_ft(bool to_end) {
   for (size_t idx = 0; idx < ops.size(); idx++) {
     Op* op = ops[idx];
     FT_Event event = predict_one_cf_op(op);
     if (event != FT_EVENT_NONE) {
       uint64_t return_idx = (event == FT_EVENT_MISPREDICT) ? (idx) : 0;
       Addr pred_addr = op->oracle_info.pred_npc;
-      return {return_idx, event, op, pred_addr};
+      if (!to_end)
+        return {return_idx, event, op, pred_addr};
     }
   }
   return {0, FT_EVENT_NONE, nullptr, 0};

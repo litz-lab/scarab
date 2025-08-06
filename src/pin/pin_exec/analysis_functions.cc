@@ -25,7 +25,8 @@
 
 #include "../pin_lib/decoder.h"
 #include "../pin_lib/gather_scatter_addresses.h"
-static const ADDRINT DUMMY_NOP_BASE = (ADDRINT)0x40;
+// 256 bytes, safe for any realistic cache line size
+static const ADDRINT DUMMY_NOP_BASE = (ADDRINT)0x100;
 
 #define ENABLE_HYPER_FF_HEARTBEAT
 void PIN_FAST_ANALYSIS_CALL docount(UINT32 c) {
@@ -419,6 +420,9 @@ void check_ret_control_ins(ADDRINT read_addr, UINT32 read_size, CONTEXT* ctxt) {
         next_eip = DUMMY_NOP_BASE;
       } else {
         next_eip = ADDR_MASK(target_addr);
+        if(next_eip < DUMMY_NOP_BASE) {
+          next_eip = DUMMY_NOP_BASE;
+        }
       }
     }
 #endif
@@ -443,6 +447,9 @@ void check_nonret_control_ins(BOOL taken, ADDRINT target_addr) {
         next_eip = DUMMY_NOP_BASE;
       } else {
         next_eip = ADDR_MASK(target_addr);
+        if(next_eip < DUMMY_NOP_BASE) {
+          next_eip = DUMMY_NOP_BASE;
+        }
       }
     }
   }

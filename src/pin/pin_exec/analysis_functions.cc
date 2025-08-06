@@ -420,7 +420,7 @@ void check_ret_control_ins(ADDRINT read_addr, UINT32 read_size, CONTEXT* ctxt) {
         next_eip = DUMMY_NOP_BASE;
       } else {
         next_eip = ADDR_MASK(target_addr);
-        if(next_eip < DUMMY_NOP_BASE) {
+        if (next_eip < DUMMY_NOP_BASE) {
           next_eip = DUMMY_NOP_BASE;
         }
       }
@@ -447,7 +447,7 @@ void check_nonret_control_ins(BOOL taken, ADDRINT target_addr) {
         next_eip = DUMMY_NOP_BASE;
       } else {
         next_eip = ADDR_MASK(target_addr);
-        if(next_eip < DUMMY_NOP_BASE) {
+        if (next_eip < DUMMY_NOP_BASE) {
           next_eip = DUMMY_NOP_BASE;
         }
       }

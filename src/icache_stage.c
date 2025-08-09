@@ -315,7 +315,7 @@ Inst_Info** lookup_icache() {
   if (WP_COLLECT_STATS) {  // CMP remove?
     Addr dummy_addr;
     Icache_Data* line_info = (Icache_Data*)cache_access(&ic->icache_line_info, ic->fetch_addr, &dummy_addr, TRUE);
-    if (line && !PERFECT_ICACHE) {
+    if (line && (line != (Inst_Info**)INIT_CACHE_DATA_VALUE)) {
       ASSERT(ic->proc_id, line_info);
       wp_process_icache_hit(line_info, ic->fetch_addr);
     }

@@ -221,7 +221,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
       }
     }
     if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
-      ASSERT(0, (int)op->oracle_info.recover_at_decode + (int)op->oracle_info.recover_at_exec < 2);
+      ASSERT(0, !(op->oracle_info.recover_at_decode && op->oracle_info.recover_at_exec));
 
       if (op->off_path) {
         op->oracle_info.recover_at_decode = FALSE;

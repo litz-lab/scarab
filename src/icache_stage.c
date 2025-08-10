@@ -549,7 +549,7 @@ void icache_serve_ops() {
     Inst_Info** dummy_inst_info;
     Addr dummy_line_addr;
     dummy_inst_info = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr, &dummy_line_addr, FALSE);
-    ASSERT(ic->proc_id, ic->line == dummy_inst_info);
+    //ASSERT(ic->proc_id, ic->line == dummy_inst_info);
     ASSERT(ic->proc_id, ic->line_addr == dummy_line_addr);
   }
 

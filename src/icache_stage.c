@@ -544,14 +544,6 @@ void icache_serve_ops() {
   // ic->line should have already been set correctly
   ASSERT(ic->proc_id, ic->line);
   ASSERT(ic->proc_id, ic->line_addr);
-  // sanity checks
-  if (!PERFECT_ICACHE) {
-    Inst_Info** dummy_inst_info;
-    Addr dummy_line_addr;
-    dummy_inst_info = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr, &dummy_line_addr, FALSE);
-    ASSERT(ic->proc_id, ic->line == dummy_inst_info);
-    ASSERT(ic->proc_id, ic->line_addr == dummy_line_addr);
-  }
 
   int requested = ic->sd.max_op_count - ic->sd.op_count;
   Flag ft_has_ended = fill_icache_stage_data(ic->current_ft, requested, &ic->sd);

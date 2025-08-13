@@ -21,7 +21,7 @@
 
 #### ICache
 --icache_size                   65536
---icache_assoc                  1
+--icache_assoc                  2
 --icache_line_size              64
 --icache_latency                1
 

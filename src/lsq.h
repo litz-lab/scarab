@@ -21,14 +21,14 @@
  */
 
 /***************************************************************************************
- * File         : node_issue_queue.h
- * Author       : Yinyuan Zhao, Litz Lab
- * Date         : 4/15/2025
+ * File         : lsq.h
+ * Author       : Litz Lab
+ * Date         : 7/2025
  * Description  :
  ***************************************************************************************/
 
-#ifndef __NODE_ISSUE_QUEUE_H__
-#define __NODE_ISSUE_QUEUE_H__
+#ifndef __LSQ_H__
+#define __LSQ_H__
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,28 +37,19 @@ extern "C" {
 #include "op.h"
 
 /**************************************************************************************/
-/* Constexpr */
-
-typedef enum NODE_ISSUE_QUEUE_DISPATCH_SCHEME_enum {
-  NODE_ISSUE_QUEUE_DISPATCH_SCHEME_FIND_EMPTIEST_RS,
-  NODE_ISSUE_QUEUE_DISPATCH_SCHEME_NUM
-} Node_Issue_Queue_Dispatch_Scheme;
-
-typedef enum NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_enum {
-  NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_OLDEST_FIRST,
-  NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_NUM
-} Node_Issue_Queue_Schedule_Scheme;
-
-const static int64 NODE_ISSUE_QUEUE_RS_SLOT_INVALID = -1;
-const static int32 NODE_ISSUE_QUEUE_FU_SLOT_INVALID = -1;
-
-/**************************************************************************************/
 /* External Methods */
 
-void node_issue_queue_update();
+void alloc_mem_lsq(uns num_cores);
+void set_lsq(uns8 proc_id);
+void init_lsq(uns8 proc_id, const char* name);
+void recover_lsq();
+
+Flag lsq_available(Op* mem_op);  // check if there is an available LSQ entry
+void lsq_dispatch(Op* mem_op);   // insert mem op into LSQ when mem op is inserted into ROB
+void lsq_commit(Op* mem_op);     // free the entry when the mem op is retired
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* #ifndef __NODE_ISSUE_QUEUE_H__ */
+#endif /* #ifndef __LSQ_H__ */

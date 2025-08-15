@@ -174,6 +174,13 @@ DEF_PARAM(rs_connections, RS_CONNECTIONS, char*, string, "xF", )
  * exec_ports for more info.*/
 DEF_PARAM(fu_types, FU_TYPES, char*, string, "0, 0, 0, 0", )
 
+/********DCACHE
+ * PARAMETERS*********************************************************/
+
+DEF_PARAM(lsq_enable, LSQ_ENABLE, Flag, Flag, TRUE, )
+DEF_PARAM(load_queue_entry_num, LOAD_QUEUE_ENTRY_NUM, uns, uns, 128, )
+DEF_PARAM(store_queue_entry_num, STORE_QUEUE_ENTRY_NUM, uns, uns, 72, )
+
 /********FRONT END STAGE
  * LATENCIES****************************************************/
 DEF_PARAM(decode_cycles, DECODE_CYCLES, uns, uns, 1, )

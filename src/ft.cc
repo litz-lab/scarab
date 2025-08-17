@@ -117,7 +117,7 @@ size_t FT::get_op_count() const {
 
 FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
                                  bool off_path, bool use_pred, uint64_t start_op_num) {
-  FT_BuildResult result = init_build_result();
+  FT_BuildResult result;
 
   if (!can_fetch_op_fn(proc_id)) {
     std::cout << "Warning could not fetch inst from frontend" << std::endl;
@@ -125,8 +125,15 @@ FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std:
     return result;
   }
 
-  FT_Ended_By ft_build_end_condition = initialize_ft_state();
-  while (1) {
+  FT_Ended_By ft_build_end_condition;
+  if (ops.empty()) {
+    ft_info.dynamic_info.FT_id = FT_id_count++;
+    ft_build_end_condition = FT_NOT_ENDED;
+  } else {
+    ft_build_end_condition = check_op_ft_end_condition(ops.back());
+  }
+
+  do {
     Op* op = alloc_op(proc_id);
     fetch_op_fn(proc_id, op);
     op->off_path = off_path;
@@ -136,11 +143,7 @@ FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std:
     ft_build_end_condition = check_op_ft_end_condition(op);
     add_op(op);
     STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
-    if (ft_build_end_condition) {
-      break;
-    }
-  }
-  ASSERT(0, ft_build_end_condition);
+  } while (!ft_build_end_condition);
   finalize_ft_build(ft_build_end_condition, &result);
   return result;
 }
@@ -159,7 +162,15 @@ bool FT::split_ft(uns split_pos, FT& tailing_FT) {
   // Only perform split if there are operations after the split point
   bool has_trailing_ops = (index_uns < ops.size() - 1);
   if (has_trailing_ops) {
-    tailing_FT = move_over_ft(index_uns + 1, ops.size() - 1, 0);
+    // Inline move_over_ft logic
+    FT dest_ft = FT();
+    bool valid_range = (index_uns + 1 <= ops.size() - 1 && ops.size() - 1 < ops.size() && index_uns + 1 >= 0);
+    ASSERT(0, valid_range);
+    for (uns i = index_uns + 1; i <= ops.size() - 1; ++i) {
+      dest_ft.add_op(ops[i]);
+    }
+    dest_ft.finalize_ft_build(check_op_ft_end_condition(dest_ft.ops.back()), nullptr);
+    tailing_FT = dest_ft;
     ASSERT(proc_id,
            tailing_FT.ft_info.static_info.start && tailing_FT.ft_info.static_info.length && tailing_FT.ops.size());
     ASSERT(proc_id, ops.size() == (ops.size() - tailing_FT.ops.size()) + tailing_FT.ops.size());
@@ -181,20 +192,6 @@ bool FT::split_ft(uns split_pos, FT& tailing_FT) {
   }
 
   return !ft_build_end_condition;
-}
-
-FT FT::move_over_ft(uns start_idx, uns end_idx, bool use_pred) {
-  FT dest_ft = FT();
-  // Validate index range
-  bool valid_range = (start_idx <= end_idx && end_idx < ops.size() && start_idx >= 0);
-  ASSERT(0, valid_range);
-
-  for (uns i = start_idx; i <= end_idx; ++i) {
-    dest_ft.add_op(ops[i]);
-  }
-  dest_ft.finalize_ft_build(check_op_ft_end_condition(dest_ft.ops.back()), nullptr);
-
-  return dest_ft;
 }
 
 FT_Event FT::predict_one_cf_op(Op* op) {
@@ -253,14 +250,14 @@ FT_Event FT::predict_one_cf_op(Op* op) {
   return FT_EVENT_NONE;
 }
 
-FT_PredictResult FT::predict_ft(bool to_end) {
+FT_PredictResult FT::predict_ft() {
   for (size_t idx = 0; idx < ops.size(); idx++) {
     Op* op = ops[idx];
     FT_Event event = predict_one_cf_op(op);
     if (event != FT_EVENT_NONE) {
       uint64_t return_idx = (event == FT_EVENT_MISPREDICT) ? (idx) : 0;
       Addr pred_addr = op->oracle_info.pred_npc;
-      if (!to_end)
+      if (!ended_by_exit())
         return {return_idx, event, op, pred_addr};
     }
   }
@@ -294,26 +291,32 @@ Addr FT::get_start_addr() const {
   return ft_info.static_info.start;
 }
 
-bool FT::is_consecutive(const FT& last_ft) const {
-  if (!last_ft.get_ft_info().static_info.start)
-    return true;
-  Op* last_op = last_ft.get_last_op();
+bool FT::is_consecutive(const FT& previous_ft) const {
+  ASSERT(0, previous_ft.get_size());
+  Op* last_op = previous_ft.get_last_op();
   if (!last_op)
     return false;
-  FT_Ended_By prev_end_type = last_ft.get_ft_info().dynamic_info.ended_by;
+  FT_Ended_By prev_end_type = previous_ft.get_ft_info().dynamic_info.ended_by;
   Addr start_addr = ft_info.static_info.start;
-  if (prev_end_type == FT_TAKEN_BRANCH) {
-    if (!(last_op->oracle_info.pred_npc == start_addr || last_op->oracle_info.npc == start_addr))
-      return false;
-  } else if (prev_end_type == FT_BAR_FETCH) {
-    if (!(last_op->oracle_info.npc == start_addr ||
-          last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size == start_addr))
-      return false;
-  } else {
-    if (last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size != start_addr)
-      return false;
+  Addr pred_npc = last_op->oracle_info.pred_npc;
+  Addr npc = last_op->oracle_info.npc;
+  Addr end_addr = last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
+  bool matches = false;
+  switch (prev_end_type) {
+    case FT_TAKEN_BRANCH:
+      // Next FT must start at the predicted or actual NPC.
+      matches = (pred_npc == start_addr) || (npc == start_addr);
+      break;
+    case FT_BAR_FETCH:
+      // Barrier-fetch allows either fall-through to end_addr or NPC.
+      matches = (npc == start_addr) || (end_addr == start_addr);
+      break;
+    default:
+      // Normal fall-through: next start must equal the end of last instruction.
+      matches = (end_addr == start_addr);
+      break;
   }
-  return true;
+  return matches;
 }
 /* FT wrappers */
 bool ft_can_fetch_op(FT* ft) {
@@ -355,25 +358,6 @@ FT_Ended_By check_op_ft_end_condition(Op* op) {
     }
   }
   return FT_NOT_ENDED;
-}
-
-FT_BuildResult FT::init_build_result() {
-  FT_BuildResult result;
-  result.build_complete = false;
-  result.redirect_needed = false;
-  result.fetch_bar_needed = false;
-  result.trigger_op = nullptr;
-  result.redirect_uid = 0;
-  result.redirect_addr = 0;
-  return result;
-}
-
-FT_Ended_By FT::initialize_ft_state() {
-  if (ops.empty()) {
-    ft_info.dynamic_info.FT_id = FT_id_count++;
-    return FT_NOT_ENDED;
-  }
-  return check_op_ft_end_condition(ops.back());
 }
 
 FT_BuildResult FT::handle_op_prediction(Op* op, bool use_pred, FT_BuildResult result) {

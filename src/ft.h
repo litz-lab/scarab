@@ -82,13 +82,22 @@ struct FT_PredictResult {
 
 // Add a struct to hold build result info
 struct FT_BuildResult {
-  bool build_complete = false;
-  bool redirect_needed = false;
-  bool fetch_bar_needed = false;
-  Op* trigger_op = nullptr;
-  uns64 redirect_uid = 0;
-  Addr redirect_addr = 0;
-  bool contain_exit = false;
+  bool build_complete;
+  bool redirect_needed;
+  bool fetch_bar_needed;
+  Op* trigger_op;
+  uns64 redirect_uid;
+  Addr redirect_addr;
+  bool contain_exit;
+
+  FT_BuildResult()
+      : build_complete(false),
+        redirect_needed(false),
+        fetch_bar_needed(false),
+        trigger_op(nullptr),
+        redirect_uid(0),
+        redirect_addr(0),
+        contain_exit(false) {}
 };
 
 class FT {
@@ -110,13 +119,13 @@ class FT {
   FT_BuildResult build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
                                bool off_path, bool use_pred, uint64_t start_op_num);
 
-  FT_PredictResult predict_ft(bool to_end);
+  FT_PredictResult predict_ft();
   bool split_ft(uns split_pos, FT& tailing_FT);
 
   Op* get_last_op() const;
   Op* get_first_op() const;
   Addr get_start_addr() const;
-  bool is_consecutive(const FT& last_ft) const;
+  bool is_consecutive(const FT& previous_ft) const;
   size_t get_op_count() const;
   size_t get_size() const { return ops.size(); }  // Check if FT exists/is valid
   bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }
@@ -130,8 +139,6 @@ class FT {
   bool consumed;
   FT_Event predict_one_cf_op(Op* op);
   FT move_over_ft(uns start_idx, uns end_idx, bool use_pred);
-  FT_BuildResult init_build_result();
-  FT_Ended_By initialize_ft_state();
   void finalize_ft_build(FT_Ended_By end_by, FT_BuildResult* result);
   FT_BuildResult handle_op_prediction(Op* op, bool use_pred, FT_BuildResult result);
 

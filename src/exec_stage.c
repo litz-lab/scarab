@@ -187,6 +187,7 @@ void debug_exec_stage() {
 
 void update_exec_stage(Stage_Data* src_sd) {
   ASSERT(exec->proc_id, exec->sd.op_count <= exec->sd.max_op_count);
+  exec->is_issue_stall = TRUE;
 
   if (!exec_off_path) {
     if (!exec->sd.op_count)
@@ -256,6 +257,8 @@ void update_exec_stage(Stage_Data* src_sd) {
 
     // PMU stat counters update
     exec_stage_inc_power_stats(op);
+
+    exec->is_issue_stall = FALSE;
   }
 
   /* phase 2 - actual latching of instructions and setting of state */
@@ -327,6 +330,13 @@ void update_exec_stage(Stage_Data* src_sd) {
 
     /* value prediction recovery/resolution code  */
     // if we know the value at this point if not ? then we need to wait.
+  }
+
+  if (!exec->is_issue_stall) {
+    STAT_EVENT(exec->proc_id, EXEC_STAGE_NO_ISSUE_STALL_CYCLE);
+    if (!exec_off_path) {
+      STAT_EVENT(exec->proc_id, EXEC_STAGE_NO_ISSUE_STALL_CYCLE_ONPATH);
+    }
   }
 
   exec->fus_busy = 0;

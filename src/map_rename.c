@@ -91,7 +91,7 @@ static inline void reg_file_debug_print_entry(struct reg_table_entry *entry, int
   printf("op_num: %lld, off_path: %d, state: %d,\n", entry->op_num, entry->off_path, entry->reg_state);
   printf("parent: %d, self: %d, child: %d\n", entry->parent_reg_id, entry->self_reg_id, entry->child_reg_id);
   printf("table type: %d, reg type: %d\n", entry->reg_table_type, entry->reg_type);
-  printf("read: %d, consume: %d\n", entry->num_consumers, entry->consumed_count);
+  printf("read: %d, consume: %d\n", entry->onpath_consumers_num, entry->onpath_consumed_count);
 }
 
 static inline void reg_file_debug_print_op(Op *op, int state) {
@@ -221,10 +221,10 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
 
   // set the cycle counts for unconsumed registers
   entry->produced_cycle = entry->produced_cycle == MAX_CTR ? cycle_count : entry->produced_cycle;
-  entry->consumed_cycle = entry->consumed_cycle == MAX_CTR ? cycle_count : entry->consumed_cycle;
+  entry->onpath_consumed_cycle = entry->onpath_consumed_cycle == MAX_CTR ? cycle_count : entry->onpath_consumed_cycle;
   ASSERT(map_data->proc_id, entry->produced_cycle >= entry->allocated_cycle);
-  ASSERT(map_data->proc_id, entry->consumed_cycle >= entry->produced_cycle);
-  ASSERT(map_data->proc_id, cycle_count >= entry->consumed_cycle);
+  ASSERT(map_data->proc_id, entry->onpath_consumed_cycle >= entry->produced_cycle);
+  ASSERT(map_data->proc_id, cycle_count >= entry->onpath_consumed_cycle);
 
   // these cycle counters are only set in some specific schemes
   entry->redefined_cycle = entry->redefined_cycle == MAX_CTR ? cycle_count : entry->redefined_cycle;
@@ -242,29 +242,30 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
     STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_ATOMIC + entry->reg_type);
 
   // cyclecounts between critical events
-  if (entry->num_consumers != 0 && entry->consumed_cycle - entry->produced_cycle == 1)
+  if (entry->onpath_consumers_num != 0 && entry->onpath_consumed_cycle - entry->produced_cycle == 1)
     STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_NUM_SHORTLIVE + entry->reg_type);
   if (entry->is_atomic) {
     INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_ATOMIC_REDEFINED_DIST_TOTAL + entry->reg_type,
                    entry->redefined_cycle - entry->allocated_cycle);
     INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_ATOMIC_CONSUMED_DIST_TOTAL + entry->reg_type,
-                   entry->consumed_cycle - entry->allocated_cycle);
+                   entry->onpath_consumed_cycle - entry->allocated_cycle);
     INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_ATOMIC_RELEASE_DIST_TOTAL + entry->reg_type,
                    cycle_count - entry->allocated_cycle);
   }
 
   // consumer sensitivity
-  int cap_consumers = entry->num_consumers < REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX
-                          ? entry->num_consumers
+  int cap_consumers = entry->onpath_consumers_num < REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX
+                          ? entry->onpath_consumers_num
                           : REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX;
   int index = cap_consumers * 2 + entry->reg_type;
   STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_USE_COUNT_0 + index);
+  INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_CONSUME_DIST_0 + index, entry->onpath_consumed_dist);
 
   // lifetime cyclecount distribution
   INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_EMPTY + entry->reg_type,
                  entry->produced_cycle - entry->allocated_cycle);
   INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_IN_USE + entry->reg_type,
-                 entry->consumed_cycle - entry->allocated_cycle);
+                 entry->onpath_consumed_cycle - entry->allocated_cycle);
   INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_SPEC_RELEASE + entry->reg_type,
                  entry->spec_release_cycle - entry->allocated_cycle);
   INC_STAT_EVENT(map_data->proc_id, MAP_STAGE_ONPATH_INT_REG_LIFECYCLE_NONSPEC_RELEASE + entry->reg_type,
@@ -497,7 +498,7 @@ static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_t
       struct reg_table *reg_table = reg_file[reg_type]->reg_table[table_type];
       struct reg_table_entry *entry = &reg_table->entries[reg_id];
 
-      ASSERT(op->proc_id, entry != NULL && entry->num_consumers > 0);
+      ASSERT(op->proc_id, entry != NULL && entry->onpath_consumers_num > 0);
     }
   }
 
@@ -533,7 +534,7 @@ static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_t
 
       // release the previous op before the current committed op
       ASSERT(op->proc_id, prev_entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT || prev_entry->op == &invalid_op);
-      ASSERT(op->proc_id, prev_entry->consumed_count == prev_entry->num_consumers);
+      ASSERT(op->proc_id, prev_entry->onpath_consumed_count == prev_entry->onpath_consumers_num);
       reg_table->ops->free(reg_table, prev_entry);
     }
   }
@@ -639,15 +640,17 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
 
   entry->allocated_cycle = MAX_CTR;
   entry->produced_cycle = MAX_CTR;
-  entry->consumed_cycle = MAX_CTR;
+  entry->spec_consumed_cycle = MAX_CTR;
+  entry->onpath_consumed_cycle = MAX_CTR;
   entry->redefined_cycle = MAX_CTR;
   entry->spec_release_cycle = MAX_CTR;
   entry->nonspec_release_cycle = MAX_CTR;
 
   entry->num_refs = 0;
 
-  entry->num_consumers = 0;
-  entry->consumed_count = 0;
+  entry->onpath_consumers_num = 0;
+  entry->onpath_consumed_count = 0;
+  entry->onpath_consumed_dist = 0;
 
   entry->redefined_rename = FALSE;
   entry->redefined_precommit = FALSE;
@@ -675,7 +678,7 @@ void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
   if (op->off_path)
     return;
 
-  entry->num_consumers++;
+  entry->onpath_consumers_num++;
   entry->lastuse_op_num = op->op_num;
   entry->lastuse_committed = FALSE;
 }
@@ -706,11 +709,29 @@ void reg_table_entry_consume(struct reg_table_entry *entry, Op *op) {
     entry->atomic_pending_consumed--;
   }
 
+  STAT_EVENT(map_data->proc_id, MAP_STAGE_INT_REG_ISSUE_READ_TOTAL_CONSUMED + entry->reg_type);
+  if (entry->spec_consumed_cycle != MAX_CTR) {
+    STAT_EVENT(map_data->proc_id, MAP_STAGE_INT_REG_ISSUE_READ_MULTI_CONSUMED + entry->reg_type);
+    if (entry->spec_consumed_cycle == cycle_count) {
+      STAT_EVENT(map_data->proc_id, MAP_STAGE_INT_REG_ISSUE_READ_SAME_CYCLE_CONSUMED + entry->reg_type);
+    }
+  }
+  entry->spec_consumed_cycle = cycle_count;
+
   if (op->off_path)
     return;
 
-  entry->consumed_count++;
-  entry->consumed_cycle = cycle_count;
+  entry->onpath_consumed_count++;
+
+  STAT_EVENT(map_data->proc_id, MAP_STAGE_INT_REG_ISSUE_READ_TOTAL_CONSUMED_ONPATH + entry->reg_type);
+  if (entry->onpath_consumed_cycle != MAX_CTR) {
+    entry->onpath_consumed_dist += (cycle_count - entry->onpath_consumed_cycle);
+    STAT_EVENT(map_data->proc_id, MAP_STAGE_INT_REG_ISSUE_READ_MULTI_CONSUMED_ONPATH + entry->reg_type);
+    if (entry->onpath_consumed_cycle == cycle_count) {
+      STAT_EVENT(map_data->proc_id, MAP_STAGE_INT_REG_ISSUE_READ_SAME_CYCLE_CONSUMED_ONPATH + entry->reg_type);
+    }
+  }
+  entry->onpath_consumed_cycle = cycle_count;
 }
 
 /* update the register state to indicate the value is produced during execution*/
@@ -1268,7 +1289,7 @@ void reg_renaming_scheme_early_release_spec_rename(Op *op) {
     prev_entry->redefined_cycle = cycle_count;
 
     // do register early release
-    if (prev_entry->num_consumers == prev_entry->consumed_count && prev_entry->redefined_rename) {
+    if (prev_entry->onpath_consumers_num == prev_entry->onpath_consumed_count && prev_entry->redefined_rename) {
       reg_early_release_free(reg_table, prev_entry);
     }
   }
@@ -1288,7 +1309,7 @@ void reg_renaming_scheme_early_release_spec_consume(Op *op) {
     struct reg_table_entry *src_entry = &reg_table->entries[src_reg_id];
 
     // do register early release
-    if (src_entry->num_consumers == src_entry->consumed_count && src_entry->redefined_rename) {
+    if (src_entry->onpath_consumers_num == src_entry->onpath_consumed_count && src_entry->redefined_rename) {
       reg_early_release_free(reg_table, src_entry);
     }
   }
@@ -1362,7 +1383,7 @@ void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
     prev_entry->redefined_cycle = cycle_count;
 
     // do register early release
-    if (prev_entry->num_consumers == prev_entry->consumed_count && prev_entry->redefined_precommit) {
+    if (prev_entry->onpath_consumers_num == prev_entry->onpath_consumed_count && prev_entry->redefined_precommit) {
       reg_early_release_free(reg_table, prev_entry);
     }
   }
@@ -1382,7 +1403,7 @@ void reg_renaming_scheme_early_release_nonspec_consume(Op *op) {
     struct reg_table_entry *src_entry = &reg_table->entries[src_reg_id];
 
     // do register early release
-    if (src_entry->num_consumers == src_entry->consumed_count && src_entry->redefined_precommit) {
+    if (src_entry->onpath_consumers_num == src_entry->onpath_consumed_count && src_entry->redefined_precommit) {
       reg_early_release_free(reg_table, src_entry);
     }
   }
@@ -1423,7 +1444,7 @@ void reg_renaming_scheme_early_release_lastuse_precommit(Op *op) {
     prev_entry->redefined_precommit = TRUE;
 
     // directly early release for unconsumed producers
-    if (prev_entry->num_consumers == 0) {
+    if (prev_entry->onpath_consumers_num == 0) {
       prev_entry->lastuse_committed = TRUE;
     }
 
@@ -1605,7 +1626,8 @@ void reg_renaming_scheme_early_release_atomic_commit(Op *op) {
     int prev_reg_id = op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
     if (prev_reg_id != REG_TABLE_REG_ID_INVALID) {
       struct reg_table_entry *prev_entry = &reg_table->entries[prev_reg_id];
-      ASSERT(op->proc_id, prev_entry->consumed_count == prev_entry->num_consumers || !prev_entry->is_atomic);
+      ASSERT(op->proc_id,
+             prev_entry->onpath_consumed_count == prev_entry->onpath_consumers_num || !prev_entry->is_atomic);
       reg_table->ops->free(reg_table, prev_entry);
     }
 
@@ -1663,7 +1685,7 @@ void reg_renaming_scheme_early_release_nonspec_atomic_consume(Op *op) {
     }
 
     // early release the nonspec register
-    if (src_entry->num_consumers == src_entry->consumed_count && src_entry->redefined_precommit) {
+    if (src_entry->onpath_consumers_num == src_entry->onpath_consumed_count && src_entry->redefined_precommit) {
       reg_early_release_free(reg_table, src_entry);
     }
   }

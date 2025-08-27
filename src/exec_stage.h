@@ -53,6 +53,8 @@ typedef struct Exec_Stage_struct {
 
   FILE* fu_util_plot_file;
   uns8 fus_busy; /* for FU util plot and performance prediction, does not include mem stalls */
+
+  Flag is_issue_stall;
 } Exec_Stage;
 
 /**************************************************************************************/

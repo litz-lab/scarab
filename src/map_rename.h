@@ -101,7 +101,8 @@ struct reg_table_entry {
   // lifecycle counter
   Counter allocated_cycle;
   Counter produced_cycle;
-  Counter consumed_cycle;
+  Counter spec_consumed_cycle;
+  Counter onpath_consumed_cycle;
   Counter redefined_cycle;
   Counter spec_release_cycle;
   Counter nonspec_release_cycle;
@@ -110,8 +111,9 @@ struct reg_table_entry {
   int num_refs;  // the number of in-flight operands using this entry
 
   // consumer counter
-  int num_consumers;   // the number of registered (at rename) consumers of a registers
-  int consumed_count;  // the number of issued (at execute) consumers of a register
+  int onpath_consumers_num;   // the number of registered (at rename) consumers of a registers
+  int onpath_consumed_count;  // the number of issued (at execute) consumers of a register
+  int onpath_consumed_dist;   // the cyclecout between the first consumer and the last consumer
 
   // metadata for spec/nonspec early release
   Flag redefined_rename;     // indicate if it is overwritten by an instruction with the same arch id during renaming

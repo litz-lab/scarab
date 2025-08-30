@@ -898,6 +898,11 @@ const InstInfo* TraceReaderMemtrace::getNextInstruction() {
 }
 
 bool TraceReaderMemtrace::locationForVAddr(uint64_t _vaddr, uint8_t** _loc, uint64_t* _size) {
+  if (module_mapper_ == nullptr) {
+    warn("Module mapper not initialized\n");
+    return false;
+  }
+
   app_pc module_start;
   size_t module_size;
 

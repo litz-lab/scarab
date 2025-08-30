@@ -835,7 +835,7 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   // Get the XED info from the cache, creating it if needed
   auto xed_map_iter = xed_map_.find(mt_ref_.instr.addr);
   if (xed_map_iter == xed_map_.end()) {
-    if (trace_has_encodings_)
+    if (mt_ref_.instr.encoding != nullptr || trace_has_encodings_)
       fillCache(mt_ref_.instr.addr, mt_ref_.instr.size, mt_ref_.instr.encoding);
     else
       fillCache(mt_ref_.instr.addr, mt_ref_.instr.size);
@@ -898,10 +898,7 @@ const InstInfo* TraceReaderMemtrace::getNextInstruction() {
 }
 
 bool TraceReaderMemtrace::locationForVAddr(uint64_t _vaddr, uint8_t** _loc, uint64_t* _size) {
-  if (module_mapper_ == nullptr) {
-    warn("Module mapper not initialized\n");
-    return false;
-  }
+  assert(module_mapper_ != nullptr && "Module mapper is not initialized");
 
   app_pc module_start;
   size_t module_size;

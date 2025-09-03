@@ -41,7 +41,7 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
-uint64_t FT_id_count = 0;
+uint64_t FT_id_counter = 0;
 
 /* FT member functions */
 FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
@@ -127,10 +127,10 @@ FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std:
 
   FT_Ended_By ft_build_end_condition;
   if (ops.empty()) {
-    ft_info.dynamic_info.FT_id = FT_id_count++;
+    ft_info.dynamic_info.FT_id = FT_id_counter++;
     ft_build_end_condition = FT_NOT_ENDED;
   } else {
-    ft_build_end_condition = check_op_ft_end_condition(ops.back());
+    ft_build_end_condition = check_and_set_end_condition();
   }
 
   do {
@@ -140,8 +140,10 @@ FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std:
     op->op_num = start_op_num++;
 
     result = handle_op_prediction(op, use_pred, result);
-    ft_build_end_condition = check_op_ft_end_condition(op);
+
+    // printf("adding to new ft\n");
     add_op(op);
+    ft_build_end_condition = check_and_set_end_condition();
     STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
   } while (!ft_build_end_condition);
   finalize_ft_build(ft_build_end_condition, &result);
@@ -163,18 +165,18 @@ bool FT::split_ft(uns split_pos, FT& tailing_FT) {
   bool has_trailing_ops = (index_uns < ops.size() - 1);
   if (has_trailing_ops) {
     // Inline move_over_ft logic
-    FT dest_ft = FT();
     bool valid_range = (index_uns + 1 <= ops.size() - 1 && ops.size() - 1 < ops.size() && index_uns + 1 >= 0);
     ASSERT(0, valid_range);
     for (uns i = index_uns + 1; i <= ops.size() - 1; ++i) {
-      dest_ft.add_op(ops[i]);
+      // printf("Moving op %d to tailing FT\n", i);
+      tailing_FT.add_op(ops[i]);
     }
-    dest_ft.finalize_ft_build(check_op_ft_end_condition(dest_ft.ops.back()), nullptr);
-    tailing_FT = dest_ft;
+    tailing_FT.finalize_ft_build(tailing_FT.check_and_set_end_condition(), nullptr);
     ASSERT(proc_id,
            tailing_FT.ft_info.static_info.start && tailing_FT.ft_info.static_info.length && tailing_FT.ops.size());
     ASSERT(proc_id, ops.size() == (ops.size() - tailing_FT.ops.size()) + tailing_FT.ops.size());
     ASSERT(proc_id, tailing_FT.ft_info.dynamic_info.first_op_off_path == 0);
+    ASSERT(proc_id, tailing_FT.ft_info.dynamic_info.ended_by != 0);
     // Truncate current FT to split position
     ops.erase(ops.begin() + index_uns + 1, ops.end());
     ASSERT(proc_id, ops.size() == index_uns + 1);
@@ -185,7 +187,7 @@ bool FT::split_ft(uns split_pos, FT& tailing_FT) {
   ft_info.static_info.n_uops = ops.size();
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   // Check if the current FT needs to be rebuilt
-  FT_Ended_By ft_build_end_condition = check_op_ft_end_condition(ops.back());
+  FT_Ended_By ft_build_end_condition = check_and_set_end_condition();
   // if no rebuild needed, just finalize without adding new ops
   if (ft_build_end_condition) {
     finalize_ft_build(ft_build_end_condition, nullptr);
@@ -339,27 +341,6 @@ FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
 
-FT_Ended_By check_op_ft_end_condition(Op* op) {
-  if (op->eom) {
-    uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
-                 ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
-    bool end_of_icache_line = offset >= ICACHE_LINE_SIZE;
-    bool cf_taken = (op->table_info->cf_type && op->oracle_info.pred == TAKEN);
-    bool bar_fetch = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH;
-
-    if (op->exit) {
-      return FT_APP_EXIT;
-    } else if (bar_fetch) {
-      return FT_BAR_FETCH;
-    } else if (cf_taken) {
-      return FT_TAKEN_BRANCH;
-    } else if (end_of_icache_line) {
-      return FT_ICACHE_LINE_BOUNDARY;
-    }
-  }
-  return FT_NOT_ENDED;
-}
-
 FT_BuildResult FT::handle_op_prediction(Op* op, bool use_pred, FT_BuildResult result) {
   // copy over oracle info if no pred, should only happen for prebuilt
   if (!use_pred) {
@@ -399,7 +380,6 @@ void FT::finalize_ft_build(FT_Ended_By ft_build_end_condition, FT_BuildResult* r
   ft_info.static_info.n_uops = ops.size();
   ft_info.static_info.length =
       last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size - ft_info.static_info.start;
-  ft_info.dynamic_info.ended_by = ft_build_end_condition;
 
   ASSERT(proc_id, ft_info.static_info.start && ft_info.static_info.length && ft_info.static_info.n_uops);
 
@@ -408,4 +388,38 @@ void FT::finalize_ft_build(FT_Ended_By ft_build_end_condition, FT_BuildResult* r
   }
 
   STAT_EVENT(proc_id, POWER_BTB_READ);
+}
+
+FT_Ended_By FT::check_and_set_end_condition() {
+  if (ops.empty()) {
+    return FT_NOT_ENDED;
+  }
+
+  Op* op = ops.back();  // Get the last op
+
+  if (op->eom) {
+    uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
+                 ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
+    bool end_of_icache_line = offset >= ICACHE_LINE_SIZE;
+    bool cf_taken = (op->table_info->cf_type && op->oracle_info.pred == TAKEN);
+    bool bar_fetch = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH;
+
+    if (op->exit) {
+      ft_info.dynamic_info.ended_by = FT_APP_EXIT;
+      return ft_info.dynamic_info.ended_by;
+    } else if (bar_fetch) {
+      ft_info.dynamic_info.ended_by = FT_BAR_FETCH;
+      return ft_info.dynamic_info.ended_by;
+    } else if (cf_taken) {
+      ft_info.dynamic_info.ended_by = FT_TAKEN_BRANCH;
+      return ft_info.dynamic_info.ended_by;
+    } else if (end_of_icache_line) {
+      ft_info.dynamic_info.ended_by = FT_ICACHE_LINE_BOUNDARY;
+      return ft_info.dynamic_info.ended_by;
+    }
+  }
+
+  // Set the end condition in ft_info
+  ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
+  return ft_info.dynamic_info.ended_by;
 }

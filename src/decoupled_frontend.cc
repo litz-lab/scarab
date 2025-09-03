@@ -86,7 +86,7 @@ class Decoupled_FE {
   void validate_ft_and_push_to_ftq(FT& current_ft_to_push);
   void process_on_path_ft(FT& current_ft_to_push, FT_PredictResult result);
   inline FT_BuildResult build_off_path_ft(FT& ft, uint64_t op_count);
-  inline uint64_t FTQ_MAX_SIZE() { return ftq_ft_num; }
+  inline uint64_t ftq_max_size() { return ftq_ft_num; }
 };
 
 /* Global Variables */
@@ -306,10 +306,10 @@ void Decoupled_FE::update() {
     conf->per_cycle_update();
 
   while (1) {
-    ASSERT(proc_id, ftq.size() <= FTQ_MAX_SIZE());
+    ASSERT(proc_id, ftq.size() <= ftq_max_size());
     ASSERT(proc_id, cfs_taken_this_cycle <= FE_FTQ_TAKEN_CFS_PER_CYCLE);
 
-    if (ftq.size() == FTQ_MAX_SIZE()) {
+    if (ftq.size() == ftq_max_size()) {
       DEBUG(proc_id, "Break due to full FTQ\n");
       STAT_EVENT(proc_id, FTQ_BREAK_FULL_FT_ONPATH + is_off_path_state());
       break;
@@ -543,7 +543,7 @@ void Decoupled_FE::process_on_path_ft(FT& current_ft_to_push, FT_PredictResult r
     if (tailing_ft.get_size() != 0) {
       saved_recovery_ft = tailing_ft;
     }
-    // if mispred happens at the last op of the on-path FT, we fetch the next on-path ft then redirect
+    // misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
     else {
       ASSERT(proc_id, result.index == current_ft_to_push.get_op_count() - 1);
       ASSERT(proc_id, saved_recovery_ft.get_size() == 0);
@@ -559,7 +559,7 @@ void Decoupled_FE::process_on_path_ft(FT& current_ft_to_push, FT_PredictResult r
     redirect_cycle = cycle_count;
     state = SERVING_OFF_PATH;
     frontend_redirect(proc_id, result.op->inst_uid, result.pred_addr);
-    // set off-path op count when going off-path
+    // set the current op number as the beginning op count of this off-path divergence
     current_off_path_dfe_op_count = current_ft_to_push.get_last_op()->op_num + 1;
     // patching/modify the current FT if current FT not ended
     if (need_rebuild) {

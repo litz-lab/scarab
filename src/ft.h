@@ -47,7 +47,6 @@ Op* ft_fetch_op(FT* ft);
 bool ft_is_consumed(FT* ft);
 void ft_set_consumed(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
-FT_Ended_By check_op_ft_end_condition(Op* op);
 
 #ifdef __cplusplus
 }  // extern "C"
@@ -141,6 +140,7 @@ class FT {
   FT move_over_ft(uns start_idx, uns end_idx, bool use_pred);
   void finalize_ft_build(FT_Ended_By end_by, FT_BuildResult* result);
   FT_BuildResult handle_op_prediction(Op* op, bool use_pred, FT_BuildResult result);
+  FT_Ended_By check_and_set_end_condition();
 
   friend class Decoupled_FE;
 };

@@ -290,15 +290,13 @@ bool TraceReaderMemtrace::initTrace() {
   {
     // temporary scope only for reading filetype
     std::vector<dynamorio::drmemtrace::scheduler_t::input_workload_t> sched_inputs;
-    sched_inputs.emplace_back(trace_); // None ROI for scaning the filetype first
+    sched_inputs.emplace_back(trace_);  // None ROI for scanning the filetype first
 
     dynamorio::drmemtrace::scheduler_t tmp_scheduler;
-    if (tmp_scheduler.init(sched_inputs, 1,
-                          dynamorio::drmemtrace::scheduler_t::make_scheduler_serial_options())
-        != dynamorio::drmemtrace::scheduler_t::STATUS_SUCCESS) {
-        panic("failed to initialize tmp scheduler: %s",
-              tmp_scheduler.get_error_string().c_str());
-        return false;
+    if (tmp_scheduler.init(sched_inputs, 1, dynamorio::drmemtrace::scheduler_t::make_scheduler_serial_options()) !=
+        dynamorio::drmemtrace::scheduler_t::STATUS_SUCCESS) {
+      panic("failed to initialize tmp scheduler: %s", tmp_scheduler.get_error_string().c_str());
+      return false;
     }
 
     // Detect trace type
@@ -308,9 +306,9 @@ bool TraceReaderMemtrace::initTrace() {
 
     trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
     if (type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ARCH_REGDEPS) {
-        dr_isa_mode_t dummy;
-        dcontext_ = dr_standalone_init();
-        dr_set_isa_mode(dcontext_, DR_ISA_REGDEPS, &dummy);
+      dr_isa_mode_t dummy;
+      dcontext_ = dr_standalone_init();
+      dr_set_isa_mode(dcontext_, DR_ISA_REGDEPS, &dummy);
     }
   }
 

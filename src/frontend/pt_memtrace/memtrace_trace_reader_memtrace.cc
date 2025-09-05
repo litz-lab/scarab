@@ -851,7 +851,7 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   // Get the XED info from the cache, creating it if needed
   auto xed_map_iter = xed_map_.find(mt_ref_.instr.addr);
   if (xed_map_iter == xed_map_.end()) {
-    if (mt_ref_.instr.encoding != nullptr || trace_has_encodings_)
+    if (trace_has_encodings_)
       fillCache(mt_ref_.instr.addr, mt_ref_.instr.size, mt_ref_.instr.encoding);
     else
       fillCache(mt_ref_.instr.addr, mt_ref_.instr.size);

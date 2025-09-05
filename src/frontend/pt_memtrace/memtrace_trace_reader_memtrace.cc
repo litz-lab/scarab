@@ -309,6 +309,9 @@ bool TraceReaderMemtrace::initTrace() {
       dr_isa_mode_t dummy;
       dcontext_ = dr_standalone_init();
       dr_set_isa_mode(dcontext_, DR_ISA_REGDEPS, &dummy);
+    } else {
+        warn("Warning: Scarab expects the trace file type to include OFFLINE_FILE_TYPE_ARCH_REGDEPS (0x%lx), but got type: 0x%lx\n",
+            (unsigned long)dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ARCH_REGDEPS, (unsigned long)type);
     }
   }
 

@@ -104,7 +104,6 @@ class FT {
   FT(uns _proc_id = 0);
   void add_op(Op* op);
   void free_ops_and_clear();
-  void clear();
   bool can_fetch_op();
   Op* fetch_op();
   void set_per_op_ft_info();
@@ -115,11 +114,11 @@ class FT {
   std::vector<Op*>& get_ops();
 
   // Change return type to FT_BuildResult
-  FT_BuildResult build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
-                               bool off_path, bool use_pred, uint64_t start_op_num);
+  FT_BuildResult build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
+                       bool off_path, bool use_pred, uint64_t start_op_num);
 
   FT_PredictResult predict_ft();
-  bool split_ft(uns split_pos, FT& tailing_FT);
+  std::pair<bool, FT> split_ft(uns split_index);
 
   Op* get_last_op() const;
   Op* get_first_op() const;
@@ -137,10 +136,9 @@ class FT {
   std::vector<Op*> ops;
   bool consumed;
   FT_Event predict_one_cf_op(Op* op);
-  FT move_over_ft(uns start_idx, uns end_idx, bool use_pred);
-  void finalize_ft_build(FT_Ended_By end_by, FT_BuildResult* result);
+  void validate();
   FT_BuildResult handle_op_prediction(Op* op, bool use_pred, FT_BuildResult result);
-  FT_Ended_By check_and_set_end_condition();
+  FT_Ended_By is_complete() const;
 
   friend class Decoupled_FE;
 };

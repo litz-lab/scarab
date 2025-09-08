@@ -45,18 +45,8 @@ uint64_t FT_id_counter = 0;
 
 /* FT member functions */
 FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
+  ft_info.dynamic_info.FT_id = FT_id_counter++;
   free_ops_and_clear();
-}
-
-void FT::clear() {
-  ops.clear();
-  op_pos = 0;
-  ft_info.static_info.start = 0;
-  ft_info.static_info.length = 0;
-  ft_info.static_info.n_uops = 0;
-  ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
-  ft_info.dynamic_info.first_op_off_path = FALSE;
-  consumed = false;
 }
 
 void FT::free_ops_and_clear() {
@@ -115,22 +105,13 @@ size_t FT::get_op_count() const {
   return ops.size();
 }
 
-FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
-                                 bool off_path, bool use_pred, uint64_t start_op_num) {
+FT_BuildResult FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
+                         bool off_path, bool use_pred, uint64_t start_op_num) {
   FT_BuildResult result;
-
   if (!can_fetch_op_fn(proc_id)) {
     std::cout << "Warning could not fetch inst from frontend" << std::endl;
-    *this = FT(proc_id);
+    free_ops_and_clear();
     return result;
-  }
-
-  FT_Ended_By ft_build_end_condition;
-  if (ops.empty()) {
-    ft_info.dynamic_info.FT_id = FT_id_counter++;
-    ft_build_end_condition = FT_NOT_ENDED;
-  } else {
-    ft_build_end_condition = check_and_set_end_condition();
   }
 
   do {
@@ -138,15 +119,13 @@ FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std:
     fetch_op_fn(proc_id, op);
     op->off_path = off_path;
     op->op_num = start_op_num++;
-
     result = handle_op_prediction(op, use_pred, result);
-
-    // printf("adding to new ft\n");
     add_op(op);
-    ft_build_end_condition = check_and_set_end_condition();
     STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
-  } while (!ft_build_end_condition);
-  finalize_ft_build(ft_build_end_condition, &result);
+  } while (!is_complete());
+
+  validate();
+  result.build_complete = true;
   return result;
 }
 
@@ -154,12 +133,12 @@ FT_BuildResult FT::build_full_ft(std::function<bool(uns8)> can_fetch_op_fn, std:
 // the second part contains ops from index + 1 to the end of the FT for now to keep ft_info same as before
 // can change to save the old ft and move read pointer in a later patch
 // returns if front part of the FT needs rebuild
-bool FT::split_ft(uns split_pos, FT& tailing_FT) {
-  uns index_uns = static_cast<uns>(split_pos);
+std::pair<bool, FT> FT::split_ft(uns split_index) {
+  uns index_uns = static_cast<uns>(split_index);
   ASSERT(proc_id, index_uns < ops.size() && index_uns >= 0);
 
   // Initialize tailing FT that will contain ops after split position
-  tailing_FT = FT();
+  FT trailing_FT(proc_id);
 
   // Only perform split if there are operations after the split point
   bool has_trailing_ops = (index_uns < ops.size() - 1);
@@ -169,14 +148,15 @@ bool FT::split_ft(uns split_pos, FT& tailing_FT) {
     ASSERT(0, valid_range);
     for (uns i = index_uns + 1; i <= ops.size() - 1; ++i) {
       // printf("Moving op %d to tailing FT\n", i);
-      tailing_FT.add_op(ops[i]);
+      trailing_FT.add_op(ops[i]);
     }
-    tailing_FT.finalize_ft_build(tailing_FT.check_and_set_end_condition(), nullptr);
+    ASSERT(proc_id, trailing_FT.is_complete());
+    trailing_FT.validate();
     ASSERT(proc_id,
-           tailing_FT.ft_info.static_info.start && tailing_FT.ft_info.static_info.length && tailing_FT.ops.size());
-    ASSERT(proc_id, ops.size() == (ops.size() - tailing_FT.ops.size()) + tailing_FT.ops.size());
-    ASSERT(proc_id, tailing_FT.ft_info.dynamic_info.first_op_off_path == 0);
-    ASSERT(proc_id, tailing_FT.ft_info.dynamic_info.ended_by != 0);
+           trailing_FT.ft_info.static_info.start && trailing_FT.ft_info.static_info.length && trailing_FT.ops.size());
+    ASSERT(proc_id, ops.size() == (ops.size() - trailing_FT.ops.size()) + trailing_FT.ops.size());
+    ASSERT(proc_id, trailing_FT.ft_info.dynamic_info.first_op_off_path == 0);
+    ASSERT(proc_id, trailing_FT.ft_info.dynamic_info.ended_by != 0);
     // Truncate current FT to split position
     ops.erase(ops.begin() + index_uns + 1, ops.end());
     ASSERT(proc_id, ops.size() == index_uns + 1);
@@ -187,13 +167,12 @@ bool FT::split_ft(uns split_pos, FT& tailing_FT) {
   ft_info.static_info.n_uops = ops.size();
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   // Check if the current FT needs to be rebuilt
-  FT_Ended_By ft_build_end_condition = check_and_set_end_condition();
   // if no rebuild needed, just finalize without adding new ops
-  if (ft_build_end_condition) {
-    finalize_ft_build(ft_build_end_condition, nullptr);
-  }
+  if (is_complete())
+    validate();
 
-  return !ft_build_end_condition;
+  bool needs_rebuild = !is_complete();
+  return std::make_pair(needs_rebuild, std::move(trailing_FT));
 }
 
 FT_Event FT::predict_one_cf_op(Op* op) {
@@ -370,33 +349,29 @@ FT_BuildResult FT::handle_op_prediction(Op* op, bool use_pred, FT_BuildResult re
   return result;
 }
 
-void FT::finalize_ft_build(FT_Ended_By ft_build_end_condition, FT_BuildResult* result) {
+void FT::validate() {
   Op* last_op = ops.back();
   // ASSERT if the ft is built correctly
   ASSERT(proc_id, last_op->eom && !ft_info.static_info.length);
   ASSERT(proc_id, ft_info.static_info.start);
-
   ASSERT(proc_id, get_first_op()->bom && get_last_op()->eom);
+  ASSERT(proc_id, is_complete());
+
   ft_info.static_info.n_uops = ops.size();
+  ft_info.dynamic_info.ended_by = is_complete();
   ft_info.static_info.length =
       last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size - ft_info.static_info.start;
 
   ASSERT(proc_id, ft_info.static_info.start && ft_info.static_info.length && ft_info.static_info.n_uops);
-
-  if (result) {
-    result->build_complete = true;
-  }
-
   STAT_EVENT(proc_id, POWER_BTB_READ);
 }
 
-FT_Ended_By FT::check_and_set_end_condition() {
+FT_Ended_By FT::is_complete() const {
   if (ops.empty()) {
     return FT_NOT_ENDED;
   }
 
   Op* op = ops.back();  // Get the last op
-
   if (op->eom) {
     uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
                  ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
@@ -405,21 +380,15 @@ FT_Ended_By FT::check_and_set_end_condition() {
     bool bar_fetch = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH;
 
     if (op->exit) {
-      ft_info.dynamic_info.ended_by = FT_APP_EXIT;
-      return ft_info.dynamic_info.ended_by;
+      return FT_APP_EXIT;
     } else if (bar_fetch) {
-      ft_info.dynamic_info.ended_by = FT_BAR_FETCH;
-      return ft_info.dynamic_info.ended_by;
+      return FT_BAR_FETCH;
     } else if (cf_taken) {
-      ft_info.dynamic_info.ended_by = FT_TAKEN_BRANCH;
-      return ft_info.dynamic_info.ended_by;
+      return FT_TAKEN_BRANCH;
     } else if (end_of_icache_line) {
-      ft_info.dynamic_info.ended_by = FT_ICACHE_LINE_BOUNDARY;
-      return ft_info.dynamic_info.ended_by;
+      return FT_ICACHE_LINE_BOUNDARY;
     }
   }
 
-  // Set the end condition in ft_info
-  ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
-  return ft_info.dynamic_info.ended_by;
+  return FT_NOT_ENDED;
 }

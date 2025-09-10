@@ -79,26 +79,6 @@ struct FT_PredictResult {
   Addr pred_addr;  // Optionally, if DFE needs the predicted address
 };
 
-// Add a struct to hold build result info
-struct FT_BuildResult {
-  bool build_complete;
-  bool redirect_needed;
-  bool fetch_bar_needed;
-  Op* trigger_op;
-  uns64 redirect_uid;
-  Addr redirect_addr;
-  bool contain_exit;
-
-  FT_BuildResult()
-      : build_complete(false),
-        redirect_needed(false),
-        fetch_bar_needed(false),
-        trigger_op(nullptr),
-        redirect_uid(0),
-        redirect_addr(0),
-        contain_exit(false) {}
-};
-
 class FT {
  public:
   FT(uns _proc_id = 0);
@@ -114,8 +94,8 @@ class FT {
   std::vector<Op*>& get_ops();
 
   // Change return type to FT_BuildResult
-  FT_BuildResult build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
-                       bool off_path, bool use_pred, uint64_t start_op_num);
+  bool build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
+             uint64_t start_op_num);
 
   FT_PredictResult predict_ft();
   std::pair<bool, FT> split_ft(uns split_index);
@@ -124,10 +104,11 @@ class FT {
   Op* get_first_op() const;
   Addr get_start_addr() const;
   bool is_consecutive(const FT& previous_ft) const;
-  size_t get_op_count() const;
   size_t get_size() const { return ops.size(); }  // Check if FT exists/is valid
   bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }
   bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT exists/is valid
+  bool is_complete() const;
+  FT_Ended_By get_end_reason() const;
 
  private:
   uns proc_id;
@@ -137,8 +118,7 @@ class FT {
   bool consumed;
   FT_Event predict_one_cf_op(Op* op);
   void validate();
-  FT_BuildResult handle_op_prediction(Op* op, bool use_pred, FT_BuildResult result);
-  FT_Ended_By is_complete() const;
+  void set_ended_by();
 
   friend class Decoupled_FE;
 };

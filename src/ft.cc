@@ -101,32 +101,29 @@ void FT::add_op(Op* op) {
   ops.emplace_back(op);
 }
 
-size_t FT::get_op_count() const {
-  return ops.size();
-}
-
-FT_BuildResult FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn,
-                         bool off_path, bool use_pred, uint64_t start_op_num) {
-  FT_BuildResult result;
-  if (!can_fetch_op_fn(proc_id)) {
-    std::cout << "Warning could not fetch inst from frontend" << std::endl;
-    free_ops_and_clear();
-    return result;
-  }
-
+bool FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
+               uint64_t start_op_num) {
   do {
+    if (!can_fetch_op_fn(proc_id)) {
+      std::cout << "Warning could not fetch inst from frontend" << std::endl;
+      free_ops_and_clear();
+      return false;
+    }
     Op* op = alloc_op(proc_id);
     fetch_op_fn(proc_id, op);
     op->off_path = off_path;
     op->op_num = start_op_num++;
-    result = handle_op_prediction(op, use_pred, result);
+    op->oracle_info.pred_npc = op->oracle_info.npc;
+    op->oracle_info.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
+    if (off_path)
+      predict_one_cf_op(op);
     add_op(op);
     STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
   } while (!is_complete());
-
   validate();
-  result.build_complete = true;
-  return result;
+  set_ended_by();
+
+  return true;
 }
 
 // will split the FT into two parts, the first part contains ops from 0 to index,
@@ -147,11 +144,12 @@ std::pair<bool, FT> FT::split_ft(uns split_index) {
     bool valid_range = (index_uns + 1 <= ops.size() - 1 && ops.size() - 1 < ops.size() && index_uns + 1 >= 0);
     ASSERT(0, valid_range);
     for (uns i = index_uns + 1; i <= ops.size() - 1; ++i) {
-      // printf("Moving op %d to tailing FT\n", i);
       trailing_FT.add_op(ops[i]);
     }
     ASSERT(proc_id, trailing_FT.is_complete());
     trailing_FT.validate();
+    trailing_FT.set_ended_by();
+
     ASSERT(proc_id,
            trailing_FT.ft_info.static_info.start && trailing_FT.ft_info.static_info.length && trailing_FT.ops.size());
     ASSERT(proc_id, ops.size() == (ops.size() - trailing_FT.ops.size()) + trailing_FT.ops.size());
@@ -168,10 +166,14 @@ std::pair<bool, FT> FT::split_ft(uns split_index) {
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   // Check if the current FT needs to be rebuilt
   // if no rebuild needed, just finalize without adding new ops
-  if (is_complete())
+  bool needs_rebuild = false;
+  if (is_complete()) {
     validate();
+    set_ended_by();
+  } else {
+    needs_rebuild = true;
+  }
 
-  bool needs_rebuild = !is_complete();
   return std::make_pair(needs_rebuild, std::move(trailing_FT));
 }
 
@@ -299,55 +301,6 @@ bool FT::is_consecutive(const FT& previous_ft) const {
   }
   return matches;
 }
-/* FT wrappers */
-bool ft_can_fetch_op(FT* ft) {
-  return ft->can_fetch_op();
-}
-
-Op* ft_fetch_op(FT* ft) {
-  return ft->fetch_op();
-}
-
-bool ft_is_consumed(FT* ft) {
-  return ft->is_consumed();
-}
-
-void ft_set_consumed(FT* ft) {
-  ft->set_consumed();
-}
-
-FT_Info ft_get_ft_info(FT* ft) {
-  return ft->get_ft_info();
-}
-
-FT_BuildResult FT::handle_op_prediction(Op* op, bool use_pred, FT_BuildResult result) {
-  // copy over oracle info if no pred, should only happen for prebuilt
-  if (!use_pred) {
-    op->oracle_info.pred_npc = op->oracle_info.npc;
-    op->oracle_info.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
-  }
-  if (!op->off_path || !use_pred) {
-    return result;
-  }
-
-  auto event = predict_one_cf_op(op);
-
-  if (event == FT_EVENT_MISPREDICT || event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
-    result.redirect_needed = true;
-    result.trigger_op = op;
-    result.redirect_uid = op->inst_uid;
-    result.redirect_addr = op->oracle_info.pred_npc;
-    return result;
-  }
-
-  if (event == FT_EVENT_FETCH_BARRIER) {
-    result.trigger_op = op;
-    result.fetch_bar_needed = true;
-    return result;
-  }
-
-  return result;
-}
 
 void FT::validate() {
   Op* last_op = ops.back();
@@ -355,10 +308,8 @@ void FT::validate() {
   ASSERT(proc_id, last_op->eom && !ft_info.static_info.length);
   ASSERT(proc_id, ft_info.static_info.start);
   ASSERT(proc_id, get_first_op()->bom && get_last_op()->eom);
-  ASSERT(proc_id, is_complete());
 
   ft_info.static_info.n_uops = ops.size();
-  ft_info.dynamic_info.ended_by = is_complete();
   ft_info.static_info.length =
       last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size - ft_info.static_info.start;
 
@@ -366,7 +317,7 @@ void FT::validate() {
   STAT_EVENT(proc_id, POWER_BTB_READ);
 }
 
-FT_Ended_By FT::is_complete() const {
+FT_Ended_By FT::get_end_reason() const {
   if (ops.empty()) {
     return FT_NOT_ENDED;
   }
@@ -391,4 +342,33 @@ FT_Ended_By FT::is_complete() const {
   }
 
   return FT_NOT_ENDED;
+}
+
+bool FT::is_complete() const {
+  return get_end_reason() != FT_NOT_ENDED;
+}
+
+void FT::set_ended_by() {
+  ft_info.dynamic_info.ended_by = get_end_reason();
+}
+
+/* FT wrappers */
+bool ft_can_fetch_op(FT* ft) {
+  return ft->can_fetch_op();
+}
+
+Op* ft_fetch_op(FT* ft) {
+  return ft->fetch_op();
+}
+
+bool ft_is_consumed(FT* ft) {
+  return ft->is_consumed();
+}
+
+void ft_set_consumed(FT* ft) {
+  ft->set_consumed();
+}
+
+FT_Info ft_get_ft_info(FT* ft) {
+  return ft->get_ft_info();
 }

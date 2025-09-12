@@ -355,13 +355,7 @@ void Decoupled_FE::update() {
         result = current_ft_to_push.predict_ft();
 
         if (current_ft_to_push.ended_by_exit()) {
-          current_ft_to_push.clear_recovery_info();
-          check_consecutivity_and_push_to_ftq();
-          state = EXITING;
-          return;
-        }
-
-        if (current_ft_to_push.ended_by_exit()) {
+          // Ensure that the very last simulated FT does not cause a recovery
           current_ft_to_push.clear_recovery_info();
           check_consecutivity_and_push_to_ftq();
           state = EXITING;
@@ -392,7 +386,7 @@ void Decoupled_FE::update() {
         // if current FT is the exit one, skip mispredict handling and directly push
         // set state and early return
         if (current_ft_to_push.ended_by_exit()) {
-          current_ft_to_push.clear_recovery_info();
+          // Ensure that the very last simulated FT does not cause a recovery
           current_ft_to_push.clear_recovery_info();
           check_consecutivity_and_push_to_ftq();
           state = EXITING;
@@ -572,16 +566,15 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
 }
 
 void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
-  current_ft_to_push.set_per_op_ft_info();
   if (ftq.size())
     ASSERT(proc_id, current_ft_to_push.is_consecutive(ftq.back()));
-  ftq.emplace_back(std::move(current_ft_to_push));
   if (CONFIDENCE_ENABLE)
-    conf->update(ftq.back());
+    conf->update(current_ft_to_push);
   if (recovery_addr) {
-    ASSERT(proc_id, recovery_addr == ftq.back().get_start_addr());
+    ASSERT(proc_id, recovery_addr == current_ft_to_push.get_start_addr());
     recovery_addr = 0;
   }
+  ftq.emplace_back(std::move(current_ft_to_push));
 }
 
 void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {

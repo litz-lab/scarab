@@ -119,9 +119,9 @@ bool FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns
       predict_one_cf_op(op);
     add_op(op);
     STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
-  } while (!is_complete());
+  } while (get_end_reason() == FT_NOT_ENDED);
   validate();
-  set_ended_by();
+  generate_ft_info();
 
   return true;
 }
@@ -146,9 +146,9 @@ std::pair<bool, FT> FT::split_ft(uns split_index) {
     for (uns i = index_uns + 1; i <= ops.size() - 1; ++i) {
       trailing_FT.add_op(ops[i]);
     }
-    ASSERT(proc_id, trailing_FT.is_complete());
+    ASSERT(proc_id, trailing_FT.get_end_reason() != FT_NOT_ENDED);
     trailing_FT.validate();
-    trailing_FT.set_ended_by();
+    trailing_FT.generate_ft_info();
 
     ASSERT(proc_id,
            trailing_FT.ft_info.static_info.start && trailing_FT.ft_info.static_info.length && trailing_FT.ops.size());
@@ -167,9 +167,9 @@ std::pair<bool, FT> FT::split_ft(uns split_index) {
   // Check if the current FT needs to be rebuilt
   // if no rebuild needed, just finalize without adding new ops
   bool needs_rebuild = false;
-  if (is_complete()) {
+  if (get_end_reason() != FT_NOT_ENDED) {
     validate();
-    set_ended_by();
+    generate_ft_info();
   } else {
     needs_rebuild = true;
   }
@@ -186,6 +186,8 @@ FT_Event FT::predict_one_cf_op(Op* op) {
   if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
     bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
+    const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
+
     DEBUG(proc_id,
           "Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
           "recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
@@ -217,7 +219,8 @@ FT_Event FT::predict_one_cf_op(Op* op) {
       // in this case, not a misprediction pred is taken so oracle info should be taken
       // and this should be last op in the FT
       // no misprediction, just manually redirect
-      ASSERT(proc_id, op->oracle_info.dir == TAKEN);
+      if (pc_plus_offset != op->oracle_info.target)
+        ASSERT(proc_id, op->oracle_info.dir == TAKEN);
       return FT_EVENT_OFFPATH_TAKEN_REDIRECT;
     }
 
@@ -302,19 +305,10 @@ bool FT::is_consecutive(const FT& previous_ft) const {
   return matches;
 }
 
-void FT::validate() {
-  Op* last_op = ops.back();
-  // ASSERT if the ft is built correctly
-  ASSERT(proc_id, last_op->eom && !ft_info.static_info.length);
+void FT::validate() const {
+  ASSERT(proc_id, ops.back()->eom && !ft_info.static_info.length);
   ASSERT(proc_id, ft_info.static_info.start);
   ASSERT(proc_id, get_first_op()->bom && get_last_op()->eom);
-
-  ft_info.static_info.n_uops = ops.size();
-  ft_info.static_info.length =
-      last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size - ft_info.static_info.start;
-
-  ASSERT(proc_id, ft_info.static_info.start && ft_info.static_info.length && ft_info.static_info.n_uops);
-  STAT_EVENT(proc_id, POWER_BTB_READ);
 }
 
 FT_Ended_By FT::get_end_reason() const {
@@ -344,12 +338,21 @@ FT_Ended_By FT::get_end_reason() const {
   return FT_NOT_ENDED;
 }
 
-bool FT::is_complete() const {
-  return get_end_reason() != FT_NOT_ENDED;
+void FT::generate_ft_info() {
+  ft_info.dynamic_info.ended_by = get_end_reason();
+  ft_info.static_info.n_uops = ops.size();
+  ft_info.static_info.length =
+      ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size - ft_info.static_info.start;
+
+  ASSERT(proc_id, ft_info.static_info.start && ft_info.static_info.length && ft_info.static_info.n_uops);
+  STAT_EVENT(proc_id, POWER_BTB_READ);
 }
 
-void FT::set_ended_by() {
-  ft_info.dynamic_info.ended_by = get_end_reason();
+void FT::clear_recovery_info() {
+  for (auto op : ops) {
+    op->oracle_info.recover_at_decode = FALSE;
+    op->oracle_info.recover_at_exec = FALSE;
+  }
 }
 
 /* FT wrappers */

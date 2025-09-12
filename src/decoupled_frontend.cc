@@ -287,6 +287,7 @@ void Decoupled_FE::recover() {
 
 void Decoupled_FE::update() {
   uint64_t cfs_taken_this_cycle = 0;
+  uint64_t ft_pushed_this_cycle = 0;
   static int fwd_progress = 0;
   fwd_progress++;
   if (fwd_progress >= 1000000) {
@@ -312,6 +313,17 @@ void Decoupled_FE::update() {
     if (ftq.size() == ftq_max_size()) {
       DEBUG(proc_id, "Break due to full FTQ\n");
       STAT_EVENT(proc_id, FTQ_BREAK_FULL_FT_ONPATH + is_off_path_state());
+      break;
+    }
+    if (cfs_taken_this_cycle >= FE_FTQ_TAKEN_CFS_PER_CYCLE) {
+      DEBUG(proc_id, "Break due to max cfs taken per cycle\n");
+      STAT_EVENT(proc_id, FTQ_BREAK_MAX_CFS_TAKEN_ONPATH + is_off_path_state());
+      break;
+    }
+    // use `>=` because inst size does not necessarily align with FE_FTQ_BYTES_PER_CYCLE
+    if (ft_pushed_this_cycle >= FE_FTQ_FT_PER_CYCLE) {
+      DEBUG(proc_id, "Break due to max bytes per cycle\n");
+      STAT_EVENT(proc_id, FTQ_BREAK_MAX_FT_ONPATH + is_off_path_state());
       break;
     }
     if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, proc_id)) {
@@ -342,6 +354,20 @@ void Decoupled_FE::update() {
         current_ft_to_push = std::move(saved_recovery_ft);
         result = current_ft_to_push.predict_ft();
 
+        if (current_ft_to_push.ended_by_exit()) {
+          current_ft_to_push.clear_recovery_info();
+          check_consecutivity_and_push_to_ftq();
+          state = EXITING;
+          return;
+        }
+
+        if (current_ft_to_push.ended_by_exit()) {
+          current_ft_to_push.clear_recovery_info();
+          check_consecutivity_and_push_to_ftq();
+          state = EXITING;
+          return;
+        }
+
         if (result.event == FT_EVENT_FETCH_BARRIER) {
           stall(result.op);
         } else if (result.event == FT_EVENT_MISPREDICT) {
@@ -366,6 +392,8 @@ void Decoupled_FE::update() {
         // if current FT is the exit one, skip mispredict handling and directly push
         // set state and early return
         if (current_ft_to_push.ended_by_exit()) {
+          current_ft_to_push.clear_recovery_info();
+          current_ft_to_push.clear_recovery_info();
           check_consecutivity_and_push_to_ftq();
           state = EXITING;
           return;
@@ -403,6 +431,9 @@ void Decoupled_FE::update() {
     }
     STAT_EVENT(proc_id, DFE_GEN_ON_PATH_FT + is_off_path_state());
     check_consecutivity_and_push_to_ftq();
+    cfs_taken_this_cycle += (current_ft_to_push.get_end_reason() == FT_TAKEN_BRANCH) ||
+                            (current_ft_to_push.get_end_reason() == FT_BAR_FETCH);
+    ft_pushed_this_cycle++;
   }
 }
 
@@ -599,5 +630,5 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
     }
     current_off_path_dfe_op_count += current_ft_to_push.get_size() - n_uop_before_padding;
   }
-  ASSERT(proc_id, current_ft_to_push.is_complete());
+  ASSERT(proc_id, current_ft_to_push.get_end_reason() != FT_NOT_ENDED);
 }

@@ -107,8 +107,8 @@ class FT {
   size_t get_size() const { return ops.size(); }  // Check if FT exists/is valid
   bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }
   bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT exists/is valid
-  bool is_complete() const;
   FT_Ended_By get_end_reason() const;
+  void clear_recovery_info();
 
  private:
   uns proc_id;
@@ -117,8 +117,8 @@ class FT {
   std::vector<Op*> ops;
   bool consumed;
   FT_Event predict_one_cf_op(Op* op);
-  void validate();
-  void set_ended_by();
+  void validate() const;
+  void generate_ft_info();
 
   friend class Decoupled_FE;
 };

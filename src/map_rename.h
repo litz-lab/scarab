@@ -22,8 +22,8 @@
 
 /***************************************************************************************
  * File         : map_rename.h
- * Author       : Y. Zhao, Litz Lab
- * Date         : 03/2024
+ * Author       : Yinyuan Zhao (Litz Lab)
+ * Date         : 03/2024, 07/2025
  * Description  : Register Renaming
  ***************************************************************************************/
 
@@ -42,6 +42,8 @@ enum reg_renaming_scheme {
   REG_RENAMING_SCHEME_EARLY_RELEASE_SPEC,
   REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC,
   REG_RENAMING_SCHEME_EARLY_RELEASE_LASTUSE,
+  REG_RENAMING_SCHEME_EARLY_RELEASE_ATOMIC,
+  REG_RENAMING_SCHEME_EARLY_RELEASE_NONSPEC_ATOMIC,
   REG_RENAMING_SCHEME_NUM
 };
 
@@ -63,6 +65,7 @@ const static int REG_TABLE_REG_ID_INVALID = -1;
 const static int REG_TABLE_TYPE_INVALID = -1;
 const static int REG_FILE_REG_TYPE_OTHER = -1;
 const static uns REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM = 1;
+const static int REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX = 7;
 
 // CPUID instruction will need 4 int register destination
 const static uns REG_FILE_MAX_DESTS[] = {4, 2};
@@ -98,22 +101,36 @@ struct reg_table_entry {
   // lifecycle counter
   Counter allocated_cycle;
   Counter produced_cycle;
-  Counter consumed_cycle;
-  Counter lastuse_committed_cycle;
+  Counter spec_consumed_cycle;
+  Counter onpath_consumed_cycle;
+  Counter redefined_cycle;
+  Counter spec_release_cycle;
+  Counter nonspec_release_cycle;
 
-  // physical register inlining for move elimination
+  // reference num for shared physical registers
   int num_refs;  // the number of in-flight operands using this entry
 
   // consumer counter
-  int num_consumers;   // the number of registered (at rename) consumers of a registers
-  int consumed_count;  // the number of issued (at execute) consumers of a register
+  int onpath_consumers_num;   // the number of registered (at rename) consumers of a registers
+  int onpath_consumed_count;  // the number of issued (at execute) consumers of a register
+  int onpath_consumed_dist;   // the cyclecout between the first consumer and the last consumer
 
-  // metadata for early release
+  // metadata for spec/nonspec early release
   Flag redefined_rename;     // indicate if it is overwritten by an instruction with the same arch id during renaming
   Flag redefined_precommit;  // indicate if the redefine-instruction is precommitted
 
+  // metadata for last-use early release
   Counter lastuse_op_num;
   Flag lastuse_committed;
+
+  /* metadata for atomic early release */
+  // only used for software assertion and stat collection
+  Flag is_branch;
+  Flag is_except;
+  Flag is_atomic;
+
+  // 3-bit consumer counter maintained by hardware
+  int atomic_pending_consumed;
 };
 
 struct reg_free_list {
@@ -160,6 +177,8 @@ struct reg_file {
   /* register table instances */
   struct reg_table *reg_table[REG_TABLE_TYPE_NUM];
 };
+
+typedef struct reg_file Reg_File;
 
 /**************************************************************************************/
 /* Operations */

@@ -44,6 +44,7 @@ extern "C" {
 
 #include "decode_stage.h"
 #include "op_pool.h"
+#include "topdown.h"
 }
 
 class IDQ_Stage {
@@ -55,6 +56,9 @@ class IDQ_Stage {
   void update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd);
   Stage_Data* get_output_stage_data();
 
+  void set_recovery_cycle(int recovery_cycle);
+  int get_recovery_cycle() const;
+
  private:
   uns8 proc_id;
   int capacity;
@@ -63,11 +67,13 @@ class IDQ_Stage {
   int head;
   int tail;
   Counter next_op_num;
+  int recovery_cycle;
 
   /* the IDQ outpur stage data */
   Stage_Data idq_sd;
 
   Stage_Data* select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd);
+  void process_input_stage_data(Stage_Data* consume_from_sd, int& count_issued, int& count_issued_on_path);
   bool enqueue(Op* op);
   Op* dequeue();
   inline int wrap_around(int);
@@ -101,6 +107,7 @@ void IDQ_Stage::reset() {
   occupied_count = 0;
   head = 0;
   tail = 0;
+  recovery_cycle = 0;
 
   for (int i = 0; i < idq_sd.max_op_count; i++) {
     idq_sd.ops[i] = NULL;
@@ -181,24 +188,12 @@ Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Dat
   return consume_from_sd;
 }
 
-void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
-  /* Fill the IDQ output stage data with uops from IDQ. */
-  for (int i = idq_sd.op_count; i < idq_sd.max_op_count; i++) {
-    Op* op = dequeue();
-    if (!op) {
-      ASSERT(proc_id, !occupied_count);
-      break;
-    }
-    idq_sd.ops[i] = op;
-    idq_sd.op_count++;
-  }
-
-  /* Select the input stage data. */
-  Stage_Data* consume_from_sd = select_input_stage_data(dec_src_sd, ic_uopc_sd, uop_queue_sd);
+void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd, int& count_issued, int& count_issued_on_path) {
   /* Return if the next expected uop has not yet arrived. */
   if (!consume_from_sd) {
     return;
   }
+
   /* Return if there is no enough space. */
   if (capacity - occupied_count < consume_from_sd->op_count) {
     ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count);
@@ -222,6 +217,10 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
     if (idq_sd.op_count < idq_sd.max_op_count) {
       ASSERT(proc_id, !occupied_count);
       idq_sd.ops[idq_sd.op_count++] = op;
+      if (!op->off_path) {
+        count_issued_on_path++;
+      }
+      count_issued++;
     } else {
       bool success = enqueue(op);
       ASSERT(proc_id, success);
@@ -231,8 +230,35 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
     next_op_num++;
   }
   ASSERT(proc_id, !consume_from_sd->op_count);
+
   /* The output stage data should be full unless the IDQ is empty. */
   ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count || !occupied_count);
+}
+
+void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
+  /* Fill the IDQ output stage data with uops from IDQ. */
+  int count_issued = 0;
+  int count_issued_on_path = 0;
+  for (int i = idq_sd.op_count; i < idq_sd.max_op_count; i++) {
+    Op* op = dequeue();
+    if (!op) {
+      ASSERT(proc_id, !occupied_count);
+      break;
+    }
+    idq_sd.ops[i] = op;
+    idq_sd.op_count++;
+
+    if (!op->off_path) {
+      count_issued_on_path++;
+    }
+    count_issued++;
+  }
+
+  /* Select the input stage data. */
+  Stage_Data* consume_from_sd = select_input_stage_data(dec_src_sd, ic_uopc_sd, uop_queue_sd);
+  process_input_stage_data(consume_from_sd, count_issued, count_issued_on_path);
+
+  topdown_idq_update(proc_id, idq_sd.op_count, count_issued, count_issued_on_path);
 }
 
 bool IDQ_Stage::enqueue(Op* op) {
@@ -262,6 +288,14 @@ Op* IDQ_Stage::dequeue() {
 
 int IDQ_Stage::wrap_around(int index) {
   return (index + capacity) % capacity;
+}
+
+void IDQ_Stage::set_recovery_cycle(int recovery_cycle) {
+  this->recovery_cycle = recovery_cycle;
+}
+
+int IDQ_Stage::get_recovery_cycle() const {
+  return recovery_cycle;
 }
 
 Stage_Data* IDQ_Stage::get_output_stage_data() {
@@ -299,4 +333,12 @@ void update_idq_stage(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data
 
 Stage_Data* idq_stage_get_stage_data() {
   return idq_stage->get_output_stage_data();
+}
+
+void idq_stage_set_recovery_cycle(int recovery_cycle) {
+  idq_stage->set_recovery_cycle(recovery_cycle);
+}
+
+int idq_stage_get_recovery_cycle() {
+  return idq_stage->get_recovery_cycle();
 }

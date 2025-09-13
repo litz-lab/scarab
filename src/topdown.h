@@ -1,4 +1,5 @@
-/* Copyright 2020 HPS/SAFARI Research Groups
+/*
+ * Copyright (c) 2025 University of California, Santa Cruz
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,45 +21,25 @@
  */
 
 /***************************************************************************************
- * File         : map_stage.h
- * Author       : HPS Research Group
- * Date         : 2/4/1999
+ * File         : topdown.h
+ * Author       : Yinyuan Zhao, Litz Lab
+ * Date         : 05/2025
  * Description  :
+ *    Implements the Top-Down performance analysis methodology based on:
+ *      Yasin, A. "A Top-Down Method for Performance Analysis and Counters Architecture,"
+ *      2014 IEEE International Symposium on Performance Analysis of Systems and Software.
  ***************************************************************************************/
 
-#ifndef __MAP_STAGE_H__
-#define __MAP_STAGE_H__
+#ifndef __TOPDOWN_H__
+#define __TOPDOWN_H__
 
-#include "idq_stage.h"
-#include "stage_data.h"
+#include "globals/global_types.h"
 
-/**************************************************************************************/
-/* Types */
+#include "op.h"
 
-typedef struct Map_Stage_struct {
-  uns proc_id;
-  Stage_Data* sds;     /* stage interface data (dynamically allocated number of pipe stages) */
-  Stage_Data* last_sd; /* pointer to last decode pipeline stage (for passing ops to map) */
+void topdown_bp_recovery(uns proc_id, Op* op);
+void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path);
+void topdown_exec_update(uns proc_id, uns8 fus_busy);
+void topdown_done(uns proc_id);
 
-  Flag reg_file_stall;
-} Map_Stage;
-
-/**************************************************************************************/
-/* External Variables */
-
-extern Map_Stage* map;
-
-/**************************************************************************************/
-/* prototypes */
-
-/* vanilla hps model */
-void set_map_stage(Map_Stage*);
-void init_map_stage(uns8, const char*);
-void reset_map_stage(void);
-void recover_map_stage(void);
-void debug_map_stage(void);
-void update_map_stage(Stage_Data*);
-
-/**************************************************************************************/
-
-#endif /* #ifndef __MAP_STAGE_H__ */
+#endif /* #ifndef __TOPDOWN_H__ */

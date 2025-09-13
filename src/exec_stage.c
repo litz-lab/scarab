@@ -54,6 +54,7 @@
 #include "map.h"
 #include "map_rename.h"
 #include "statistics.h"
+#include "topdown.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -171,7 +172,7 @@ void debug_exec_stage() {
       DPRINTF(" ");
     DPRINTF("%d", fu->idle_cycle > cycle_count);
   }
-  DPRINTF("  mem_stalls:");
+  DPRINTF("  mem_stalls_cycles:");
   for (ii = 0; ii < NUM_FUS; ii++) {
     Func_Unit* fu = &exec->fus[ii];
     if (ii % 4 == 0)
@@ -187,6 +188,7 @@ void debug_exec_stage() {
 
 void update_exec_stage(Stage_Data* src_sd) {
   ASSERT(exec->proc_id, exec->sd.op_count <= exec->sd.max_op_count);
+  exec->is_issue_stall = TRUE;
 
   if (!exec_off_path) {
     if (!exec->sd.op_count)
@@ -256,6 +258,8 @@ void update_exec_stage(Stage_Data* src_sd) {
 
     // PMU stat counters update
     exec_stage_inc_power_stats(op);
+
+    exec->is_issue_stall = FALSE;
   }
 
   /* phase 2 - actual latching of instructions and setting of state */
@@ -329,18 +333,32 @@ void update_exec_stage(Stage_Data* src_sd) {
     // if we know the value at this point if not ? then we need to wait.
   }
 
+  if (!exec->is_issue_stall) {
+    STAT_EVENT(exec->proc_id, EXEC_STAGE_NO_ISSUE_STALL_CYCLE);
+    if (!exec_off_path) {
+      STAT_EVENT(exec->proc_id, EXEC_STAGE_NO_ISSUE_STALL_CYCLE_ONPATH);
+    }
+  }
+
   exec->fus_busy = 0;
+  Counter fu_busy_num = 0;
   for (uns ii = 0; ii < src_sd->max_op_count; ii++) {
     Func_Unit* fu = &exec->fus[ii];
     /*
      * a functional unit is busy if there's an op in any stage
      * of its pipeline unless it's stalled by memory
      */
-    if (fu->idle_cycle > cycle_count && !fu->held_by_mem) {
-      exec->fus_busy++;
+    if (fu->idle_cycle > cycle_count) {
+      if (!fu->held_by_mem)
+        exec->fus_busy++;
+    }
+
+    if (fu->avail_cycle > cycle_count) {
+      fu_busy_num++;
     }
   }
 
+  topdown_exec_update(exec->proc_id, fu_busy_num);
   memview_fus_busy(exec->proc_id, exec->fus_busy);
 }
 

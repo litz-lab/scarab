@@ -55,8 +55,7 @@ const static int32 NODE_ISSUE_QUEUE_FU_SLOT_INVALID = -1;
 /**************************************************************************************/
 /* External Methods */
 
-int64 node_issue_queue_dispatch(Op* op);
-void node_issue_queue_schedule(Op* op);
+void node_issue_queue_update();
 
 #ifdef __cplusplus
 }

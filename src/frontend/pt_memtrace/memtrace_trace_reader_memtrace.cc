@@ -287,6 +287,36 @@ const char* TraceReaderMemtrace::parse_buildid_string(const char* src, OUT void*
 #endif
 
 bool TraceReaderMemtrace::initTrace() {
+  {
+    // temporary scope only for reading filetype
+    std::vector<dynamorio::drmemtrace::scheduler_t::input_workload_t> sched_inputs;
+    sched_inputs.emplace_back(trace_);  // None ROI for scanning the filetype first
+
+    dynamorio::drmemtrace::scheduler_t tmp_scheduler;
+    if (tmp_scheduler.init(sched_inputs, 1, dynamorio::drmemtrace::scheduler_t::make_scheduler_serial_options()) !=
+        dynamorio::drmemtrace::scheduler_t::STATUS_SUCCESS) {
+      panic("failed to initialize tmp scheduler: %s", tmp_scheduler.get_error_string().c_str());
+      return false;
+    }
+
+    // Detect trace type
+    auto* tmp_stream = tmp_scheduler.get_stream(0);
+    auto type = tmp_stream->get_filetype();
+    ASSERT(0, type != 0 && "Filetype detection failed: got 0x0 (trace file is missing header)");
+
+    trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
+    if (type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ARCH_REGDEPS) {
+      dr_isa_mode_t dummy;
+      dcontext_ = dr_standalone_init();
+      dr_set_isa_mode(dcontext_, DR_ISA_REGDEPS, &dummy);
+    } else {
+      warn(
+          "Warning: Scarab expects the trace file type to include OFFLINE_FILE_TYPE_ARCH_REGDEPS (0x%lx), but got "
+          "type: 0x%lx\n",
+          (unsigned long)dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ARCH_REGDEPS, (unsigned long)type);
+    }
+  }
+
   std::vector<dynamorio::drmemtrace::scheduler_t::input_workload_t> sched_inputs;
   // memtrace region of interest provides a view of the trace only of interest
   // inst count satrt with 1
@@ -306,17 +336,6 @@ bool TraceReaderMemtrace::initTrace() {
       dynamorio::drmemtrace::scheduler_t::STATUS_SUCCESS) {
     panic("failed to initialize scheduler: %s", scheduler.get_error_string().c_str());
     return false;
-  }
-
-  // Detect trace type
-  auto* stream = scheduler.get_stream(0);
-  dcontext_ = dr_standalone_init();
-  dr_isa_mode_t dummy;
-  auto type = stream->get_filetype();
-  trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
-  auto is_dr_isa_regdeps = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ARCH_REGDEPS;
-  if (is_dr_isa_regdeps) {
-    dr_set_isa_mode(dcontext_, DR_ISA_REGDEPS, &dummy);
   }
 
   // Set info 'A' to the first complete instruction.
@@ -898,6 +917,8 @@ const InstInfo* TraceReaderMemtrace::getNextInstruction() {
 }
 
 bool TraceReaderMemtrace::locationForVAddr(uint64_t _vaddr, uint8_t** _loc, uint64_t* _size) {
+  assert(module_mapper_ != nullptr && "Module mapper is not initialized");
+
   app_pc module_start;
   size_t module_size;
 

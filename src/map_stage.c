@@ -119,6 +119,8 @@ void reset_map_stage() {
     for (jj = 0; jj < STAGE_MAX_OP_COUNT; jj++)
       cur->ops[jj] = NULL;
   }
+
+  map->reg_file_stall = FALSE;
 }
 
 /**************************************************************************************/
@@ -171,9 +173,11 @@ void debug_map_stage() {
 void update_map_stage(Stage_Data* src_sd) {
   /* stall if the renaming table is full */
   if (!reg_file_available(STAGE_MAX_OP_COUNT)) {
+    map->reg_file_stall = TRUE;
     STAT_EVENT(map->proc_id, MAP_STAGE_STALL_ITSELF);
     return;
   }
+  map->reg_file_stall = FALSE;
   STAT_EVENT(map->proc_id, MAP_STAGE_NOT_STALL_ITSELF);
 
   Flag stall = (map->last_sd->op_count > 0);

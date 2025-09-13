@@ -117,6 +117,10 @@ DEF_PARAM(core_61_cycle_time, CORE_61_CYCLE_TIME, uns, uns, 312500, )
 DEF_PARAM(core_62_cycle_time, CORE_62_CYCLE_TIME, uns, uns, 312500, )
 DEF_PARAM(core_63_cycle_time, CORE_63_CYCLE_TIME, uns, uns, 312500, )
 
+/********TOP-DOWN
+ * PARAMETERS********************************************************/
+DEF_PARAM(topdown_fu_exec_few, TOPDOWN_FU_EXEC_FEW, uns, uns, 0, )
+
 /********NODE TABLE
  * PARAMETERS********************************************************/
 DEF_PARAM(issue_width, ISSUE_WIDTH, uns, uns, 4, )
@@ -173,6 +177,13 @@ DEF_PARAM(rs_connections, RS_CONNECTIONS, char*, string, "xF", )
  * string since it is an array of values, will parse in exec_ports.c. See
  * exec_ports for more info.*/
 DEF_PARAM(fu_types, FU_TYPES, char*, string, "0, 0, 0, 0", )
+
+/********DCACHE
+ * PARAMETERS*********************************************************/
+
+DEF_PARAM(lsq_enable, LSQ_ENABLE, Flag, Flag, TRUE, )
+DEF_PARAM(load_queue_entry_num, LOAD_QUEUE_ENTRY_NUM, uns, uns, 128, )
+DEF_PARAM(store_queue_entry_num, STORE_QUEUE_ENTRY_NUM, uns, uns, 72, )
 
 /********FRONT END STAGE
  * LATENCIES****************************************************/

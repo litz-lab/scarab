@@ -1,4 +1,5 @@
-/* Copyright 2020 HPS/SAFARI Research Groups
+/*
+ * Copyright 2025 University of California Santa Cruz
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,45 +21,37 @@
  */
 
 /***************************************************************************************
- * File         : map_stage.h
- * Author       : HPS Research Group
- * Date         : 2/4/1999
+ * File         : lsq.h
+ * Author       : Litz Lab
+ * Date         : 7/2025
  * Description  :
  ***************************************************************************************/
 
-#ifndef __MAP_STAGE_H__
-#define __MAP_STAGE_H__
+#ifndef __LSQ_H__
+#define __LSQ_H__
 
-#include "idq_stage.h"
-#include "stage_data.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-/**************************************************************************************/
-/* Types */
-
-typedef struct Map_Stage_struct {
-  uns proc_id;
-  Stage_Data* sds;     /* stage interface data (dynamically allocated number of pipe stages) */
-  Stage_Data* last_sd; /* pointer to last decode pipeline stage (for passing ops to map) */
-
-  Flag reg_file_stall;
-} Map_Stage;
+#include "op.h"
 
 /**************************************************************************************/
-/* External Variables */
+/* External Methods */
 
-extern Map_Stage* map;
+void alloc_mem_lsq(uns num_cores);
+void set_lsq(uns8 proc_id);
+void init_lsq(uns8 proc_id, const char* name);
+void recover_lsq();
 
-/**************************************************************************************/
-/* prototypes */
+Flag lsq_available(Mem_Type mem_type);  // check if there is an available LSQ entry
+void lsq_dispatch(Op* mem_op);          // insert mem op into LSQ when mem op is inserted into ROB
+void lsq_commit(Op* mem_op);            // free the entry when the mem op is retired
 
-/* vanilla hps model */
-void set_map_stage(Map_Stage*);
-void init_map_stage(uns8, const char*);
-void reset_map_stage(void);
-void recover_map_stage(void);
-void debug_map_stage(void);
-void update_map_stage(Stage_Data*);
+int lsq_get_in_flight_load_num();
 
-/**************************************************************************************/
+#ifdef __cplusplus
+}
+#endif
 
-#endif /* #ifndef __MAP_STAGE_H__ */
+#endif /* #ifndef __LSQ_H__ */

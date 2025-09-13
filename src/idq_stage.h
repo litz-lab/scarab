@@ -56,6 +56,8 @@ void recover_idq_stage(void);
 void debug_idq_stage(void);
 void update_idq_stage(Stage_Data*, Stage_Data*, Stage_Data*);
 Stage_Data* idq_stage_get_stage_data(void);
+void idq_stage_set_recovery_cycle(int recovery_cycle);
+int idq_stage_get_recovery_cycle();
 
 #ifdef __cplusplus
 }

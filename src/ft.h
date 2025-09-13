@@ -86,7 +86,6 @@ class FT {
   void free_ops_and_clear();
   bool can_fetch_op();
   Op* fetch_op();
-  void set_per_op_ft_info();
   FT_Info get_ft_info() const;
   bool is_consumed();
   void set_consumed();

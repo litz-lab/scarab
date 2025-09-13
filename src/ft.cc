@@ -79,12 +79,6 @@ Op* FT::fetch_op() {
   return op;
 }
 
-void FT::set_per_op_ft_info() {
-  for (auto op : ops) {
-    op->ft_info = ft_info;
-  }
-}
-
 void FT::add_op(Op* op) {
   if (ops.empty()) {
     ASSERT(proc_id, op->bom && !ft_info.static_info.start);
@@ -343,7 +337,9 @@ void FT::generate_ft_info() {
   ft_info.static_info.n_uops = ops.size();
   ft_info.static_info.length =
       ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size - ft_info.static_info.start;
-  set_per_op_ft_info();
+  for (auto op : ops) {
+    op->ft_info = ft_info;
+  }
   ASSERT(proc_id, ft_info.static_info.start && ft_info.static_info.length && ft_info.static_info.n_uops);
   STAT_EVENT(proc_id, POWER_BTB_READ);
 }

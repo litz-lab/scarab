@@ -268,6 +268,8 @@ struct Op_struct {
   int dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];       // the reg id of allocated reg file entries
   int prev_dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];  // the previous dst reg id with the same parent register id
   // }}}
+  Flag end_of_prebuilt_ft;
+  uint64_t FT_id;
 };
 
 /**************************************************************************************/

@@ -51,7 +51,7 @@ FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
 
 void FT::free_ops_and_clear() {
   while (op_pos < ops.size()) {
-    free_op(ops[op_pos]);
+    free_single_op(ops[op_pos]);
     op_pos++;
   }
 

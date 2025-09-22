@@ -4,6 +4,7 @@
 #include <deque>
 #include <iostream>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 #include "memory/memory.param.h"
@@ -91,9 +92,24 @@ class Decoupled_FE {
 /* Global Variables */
 Decoupled_FE* dfe = nullptr;
 Flag have_seen_exit_on_prebuilt = 0;
+std::unordered_map<uint64_t, FT> prebuilt_ft_map;
 
 // Per core decoupled frontend
 std::vector<Decoupled_FE> per_core_dfe;
+
+void add_prebuilt_ft(const FT& ft) {
+  if (ft.get_size() == 0)
+    return;
+  FT ft_copy = ft;  // Make a copy
+  Op* last_op = ft_copy.get_last_op();
+  if (last_op) {
+    ASSERT(0, !last_op->end_of_prebuilt_ft);
+    ASSERT(0, last_op->FT_id == 0);
+    last_op->end_of_prebuilt_ft = true;
+    last_op->FT_id = ft.get_ft_info().dynamic_info.FT_id;
+  }
+  prebuilt_ft_map[ft_copy.get_ft_info().dynamic_info.FT_id] = std::move(ft_copy);
+}
 
 /* Wrapper functions */
 void alloc_mem_decoupled_fe(uns numCores) {
@@ -202,6 +218,16 @@ void decoupled_fe_conf_resovle_cf(Op* op) {
 
 void decoupled_fe_print_conf_data() {
   dfe->print_conf_data();
+}
+
+void free_ft_and_remove_from_map(uint64_t ft_id) {
+  auto it = prebuilt_ft_map.find(ft_id);
+  if (it != prebuilt_ft_map.end()) {
+    it->second.free_ops_and_clear();
+    prebuilt_ft_map.erase(it);
+  } else {
+    ASSERT(0, 0);
+  }
 }
 
 /* Decoupled_FE member functions */
@@ -381,6 +407,7 @@ void Decoupled_FE::update() {
                                                       },
                                                       false, dfe_op_count);
         ASSERT(proc_id, build_success);
+        add_prebuilt_ft(current_ft_to_push);
         dfe_op_count += current_ft_to_push.get_size();
         result = current_ft_to_push.predict_ft();
         // if current FT is the exit one, skip mispredict handling and directly push
@@ -598,6 +625,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
                                                  },
                                                  false, dfe_op_count);
     ASSERT(proc_id, build_success);
+    add_prebuilt_ft(saved_recovery_ft);
     dfe_op_count += saved_recovery_ft.get_size();
   }
   redirect_cycle = cycle_count;

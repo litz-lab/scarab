@@ -48,6 +48,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #include "frontend/frontend_intf.h"
 #include "frontend/pin_trace_fe.h"
 
+#include "decoupled_frontend.h"
 #include "map.h"
 #include "model.h"
 #include "sim.h"
@@ -127,15 +128,9 @@ Op* alloc_op(uns proc_id) {
 
   return new_op;
 }
-
 /**************************************************************************************/
-/* free_op:  "frees" an op */
-
-void free_op(Op* op) {
-  ASSERT(0, op);
-  ASSERT(0, op->op_pool_valid);
-  ASSERT(0, !op->marked);
-
+/* free_single_op: Direct freeing of an op (original free_op implementation) */
+void free_single_op(Op* op) {
   if (PIPEVIEW)
     pipeview_print_op(op);
 
@@ -161,6 +156,22 @@ void free_op(Op* op) {
   op->op_pool_next = op_pool_free_head;
   op_pool_free_head = op;
   free_wake_up_list(op);
+}
+
+/**************************************************************************************/
+/* free_op: Smart freeing - FT-based for on-path ops, direct for off-path ops */
+
+void free_op(Op* op) {
+  ASSERT(0, op);
+  ASSERT(0, op->op_pool_valid);
+  ASSERT(0, !op->marked);
+
+  if (op->off_path) {
+    // Off-path ops: free immediately (no FT tracking needed)
+    free_single_op(op);
+  } else if (op->end_of_prebuilt_ft) {
+    free_ft_and_remove_from_map(op->FT_id);
+  }
 }
 
 /**************************************************************************************/

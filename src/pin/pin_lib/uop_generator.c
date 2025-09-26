@@ -358,8 +358,8 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
 
   op->req = NULL;
   op->marked = FALSE;
-  op->end_of_prebuilt_ft = FALSE;
-  op->FT_id = 0;
+
+  op->parent_FT = NULL;
 
   /* pipelined scheduler fields */
   op->chkpt_num = MAX_CTR;

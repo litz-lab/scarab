@@ -36,6 +36,10 @@
 #include "inst_info.h"
 #include "op_info.h"
 #include "table_info.h"
+// Forward declaration to avoid circular dependency
+
+// In C, FT is a struct (matches ft.h declaration)
+typedef struct FT FT;
 
 /**************************************************************************************/
 // Macro Defines
@@ -268,8 +272,7 @@ struct Op_struct {
   int dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];       // the reg id of allocated reg file entries
   int prev_dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];  // the previous dst reg id with the same parent register id
   // }}}
-  Flag end_of_prebuilt_ft;
-  uint64_t FT_id;
+  FT* parent_FT;
 };
 
 /**************************************************************************************/

@@ -47,6 +47,7 @@ Op* ft_fetch_op(FT* ft);
 bool ft_is_consumed(FT* ft);
 void ft_set_consumed(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
+void ft_free_op(Op* op);
 
 #ifdef __cplusplus
 }  // extern "C"
@@ -82,13 +83,14 @@ struct FT_PredictResult {
 class FT {
  public:
   FT(uns _proc_id = 0);
-  void add_op(Op* op);
-  void free_ops_and_clear();
+  void add_op(Op* op, Flag set_parent_FT);
   bool can_fetch_op();
   Op* fetch_op();
   FT_Info get_ft_info() const;
   bool is_consumed();
   void set_consumed();
+  void free_ops_and_clear();
+  void free_ft();
 
   std::vector<Op*>& get_ops();
 
@@ -97,7 +99,7 @@ class FT {
              uint64_t start_op_num);
 
   FT_PredictResult predict_ft();
-  std::pair<bool, FT> split_ft(uns split_index);
+  std::pair<FT*, FT*> split_ft(uns split_index);
 
   Op* get_last_op() const;
   Op* get_first_op() const;
@@ -118,7 +120,7 @@ class FT {
   FT_Event predict_one_cf_op(Op* op);
   void validate() const;
   void generate_ft_info();
-
+  bool is_recovery;
   friend class Decoupled_FE;
 };
 

@@ -130,7 +130,6 @@ Off_Path_Reason decoupled_fe_get_off_path_reason();
 Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason();
 void decoupled_fe_conf_resovle_cf(Op* op);
 void decoupled_fe_print_conf_data();
-void free_ft_and_remove_from_map(uint64_t ft_id);
 #ifdef __cplusplus
 }
 #endif

@@ -37,31 +37,60 @@
 #include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
 
+#include "decoupled_frontend.h"
 #include "op_pool.h"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
 uint64_t FT_id_counter = 0;
 
+/* helper function only called in this file */
+/* save an FT to new on-the-fly, op will refer to the otf ft for freeing list */
+void add_on_the_fly_ft(const FT& ft) {
+  if (ft.get_size() == 0)
+    return;
+  FT* ft_copy = new FT(ft);  // Make a copy
+  Op* last_op = ft_copy->get_last_op();
+  ASSERT(0, last_op);
+  for (auto op : ft_copy->get_ops()) {
+    // for partial off-path FT, only write to the off-path part
+    if (op->off_path == last_op->off_path) {
+      ASSERT(0, op->parent_FT == nullptr);
+      op->parent_FT = ft_copy;
+    }
+  }
+}
+
 /* FT member functions */
 FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
   ft_info.dynamic_info.FT_id = FT_id_counter++;
   free_ops_and_clear();
+  ops.clear();
 }
 
 void FT::free_ops_and_clear() {
   while (op_pos < ops.size()) {
-    free_single_op(ops[op_pos]);
+    free_op(ops[op_pos]);
     op_pos++;
   }
 
-  ops.clear();
   op_pos = 0;
+  is_recovery = false;
   ft_info.static_info.start = 0;
   ft_info.static_info.length = 0;
   ft_info.static_info.n_uops = 0;
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   ft_info.dynamic_info.first_op_off_path = FALSE;
+}
+
+/* frees all ops in an all-on-path FT or any off-path ops in a hybrid or off-path ft*/
+void FT::free_ft() {
+  Flag all_on_path = !ops[0]->off_path && !ops.back()->off_path;
+  for (auto op : ops) {
+    if (all_on_path || op->off_path)
+      free_single_op(op);
+  }
+  delete this;
 }
 
 bool FT::can_fetch_op() {
@@ -79,7 +108,7 @@ Op* FT::fetch_op() {
   return op;
 }
 
-void FT::add_op(Op* op) {
+void FT::add_op(Op* op, Flag set_parent_ft) {
   if (ops.empty()) {
     ASSERT(proc_id, op->bom && !ft_info.static_info.start);
     ft_info.static_info.start = op->inst_info->addr;
@@ -91,6 +120,9 @@ void FT::add_op(Op* op) {
       // assert all uops of the same inst share the same addr
       ASSERT(proc_id, ops.back()->inst_info->addr == op->inst_info->addr);
     }
+  }
+  if (set_parent_ft) {
+    op->parent_FT = this;
   }
   ops.emplace_back(op);
 }
@@ -111,12 +143,13 @@ bool FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns
     op->oracle_info.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     if (off_path)
       predict_one_cf_op(op);
-    add_op(op);
+    add_op(op, true);
     STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
   } while (get_end_reason() == FT_NOT_ENDED);
   validate();
   generate_ft_info();
 
+  // add_on_the_fly_ft(*this);
   return true;
 }
 
@@ -124,12 +157,16 @@ bool FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns
 // the second part contains ops from index + 1 to the end of the FT for now to keep ft_info same as before
 // can change to save the old ft and move read pointer in a later patch
 // returns if front part of the FT needs rebuild
-std::pair<bool, FT> FT::split_ft(uns split_index) {
+std::pair<FT*, FT*> FT::split_ft(uns split_index) {
   uns index_uns = static_cast<uns>(split_index);
   ASSERT(proc_id, index_uns < ops.size() && index_uns >= 0);
 
-  // Initialize tailing FT that will contain ops after split position
-  FT trailing_FT(proc_id);
+  // Initialize head FT that will contain off-path ops after split position
+  FT* head_FT = new FT(*this);
+  // don't save trailing FT to heap cause the ops already in original on-path FT
+  FT* trailing_FT = new FT();
+
+  trailing_FT->is_recovery = true;
 
   // Only perform split if there are operations after the split point
   bool has_trailing_ops = (index_uns < ops.size() - 1);
@@ -138,37 +175,38 @@ std::pair<bool, FT> FT::split_ft(uns split_index) {
     bool valid_range = (index_uns + 1 <= ops.size() - 1 && ops.size() - 1 < ops.size() && index_uns + 1 >= 0);
     ASSERT(0, valid_range);
     for (uns i = index_uns + 1; i <= ops.size() - 1; ++i) {
-      trailing_FT.add_op(ops[i]);
+      // don't overwrite parent_FT pointer for trailing FT
+      trailing_FT->add_op(ops[i], false);
     }
-    ASSERT(proc_id, trailing_FT.get_end_reason() != FT_NOT_ENDED);
-    trailing_FT.validate();
-    trailing_FT.generate_ft_info();
+    ASSERT(proc_id, trailing_FT->get_end_reason() != FT_NOT_ENDED);
+    trailing_FT->validate();
+    trailing_FT->generate_ft_info();
 
-    ASSERT(proc_id,
-           trailing_FT.ft_info.static_info.start && trailing_FT.ft_info.static_info.length && trailing_FT.ops.size());
-    ASSERT(proc_id, ops.size() == (ops.size() - trailing_FT.ops.size()) + trailing_FT.ops.size());
-    ASSERT(proc_id, trailing_FT.ft_info.dynamic_info.first_op_off_path == 0);
-    ASSERT(proc_id, trailing_FT.ft_info.dynamic_info.ended_by != 0);
+    ASSERT(proc_id, trailing_FT->ft_info.static_info.start && trailing_FT->ft_info.static_info.length &&
+                        trailing_FT->ops.size());
+    ASSERT(proc_id, ops.size() == (ops.size() - trailing_FT->ops.size()) + trailing_FT->ops.size());
+    ASSERT(proc_id, trailing_FT->ft_info.dynamic_info.first_op_off_path == 0);
+    ASSERT(proc_id, trailing_FT->ft_info.dynamic_info.ended_by != 0);
     // Truncate current FT to split position
-    ops.erase(ops.begin() + index_uns + 1, ops.end());
-    ASSERT(proc_id, ops.size() == index_uns + 1);
+
+    ASSERT(proc_id, get_end_reason() != FT_NOT_ENDED);
+    // Truncate current FT to split position
+    head_FT->ops.erase(head_FT->ops.begin() + index_uns + 1, head_FT->ops.end());
   }
 
   // Reset the 'end' part of ft_info before possible rebuilding
-  ft_info.static_info.length = 0;
-  ft_info.static_info.n_uops = ops.size();
-  ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
+  ASSERT(proc_id, head_FT->ops.size() == index_uns + 1);
+  head_FT->ft_info.static_info.length = 0;
+  head_FT->ft_info.static_info.n_uops = ops.size();
+  head_FT->ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   // Check if the current FT needs to be rebuilt
   // if no rebuild needed, just finalize without adding new ops
-  bool needs_rebuild = false;
-  if (get_end_reason() != FT_NOT_ENDED) {
-    validate();
-    generate_ft_info();
-  } else {
-    needs_rebuild = true;
+  if (head_FT->get_end_reason() != FT_NOT_ENDED) {
+    head_FT->validate();
+    head_FT->generate_ft_info();
   }
 
-  return std::make_pair(needs_rebuild, std::move(trailing_FT));
+  return {head_FT, trailing_FT};
 }
 
 FT_Event FT::predict_one_cf_op(Op* op) {
@@ -231,7 +269,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 }
 
 FT_PredictResult FT::predict_ft() {
-  for (size_t idx = 0; idx < ops.size(); idx++) {
+  for (size_t idx = op_pos; idx < ops.size(); idx++) {
     Op* op = ops[idx];
     FT_Event event = predict_one_cf_op(op);
     if (event != FT_EVENT_NONE) {
@@ -351,7 +389,7 @@ void FT::clear_recovery_info() {
   }
 }
 
-/* FT wrappers */
+/* FT wrappers - C linkage handled by header */
 bool ft_can_fetch_op(FT* ft) {
   return ft->can_fetch_op();
 }
@@ -370,4 +408,14 @@ void ft_set_consumed(FT* ft) {
 
 FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
+}
+
+/* called in op_pool.c, free all ops in a FT when last op is freed*/
+void ft_free_op(Op* op) {
+  if (!op->off_path)
+    ASSERT(0, op->parent_FT);
+  if (op->parent_FT) {
+    if (op->parent_FT->get_last_op() == op)
+      op->parent_FT->free_ft();
+  }
 }

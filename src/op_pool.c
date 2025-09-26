@@ -48,7 +48,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #include "frontend/frontend_intf.h"
 #include "frontend/pin_trace_fe.h"
 
-#include "decoupled_frontend.h"
+#include "ft.h"
 #include "map.h"
 #include "model.h"
 #include "sim.h"
@@ -159,19 +159,14 @@ void free_single_op(Op* op) {
 }
 
 /**************************************************************************************/
-/* free_op: Smart freeing - FT-based for on-path ops, direct for off-path ops */
+/* free_op: Smart freeing - call FT-based freeing2*/
 
 void free_op(Op* op) {
   ASSERT(0, op);
-  ASSERT(0, op->op_pool_valid);
+  if (!op->off_path)
+    ASSERT(0, op->op_pool_valid);
   ASSERT(0, !op->marked);
-
-  if (op->off_path) {
-    // Off-path ops: free immediately (no FT tracking needed)
-    free_single_op(op);
-  } else if (op->end_of_prebuilt_ft) {
-    free_ft_and_remove_from_map(op->FT_id);
-  }
+  ft_free_op(op);
 }
 
 /**************************************************************************************/

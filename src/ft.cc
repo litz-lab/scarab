@@ -62,25 +62,27 @@ void add_on_the_fly_ft(const FT& ft) {
 }
 
 /* FT member functions */
-FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
+FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false), is_recovery(false) {
   ft_info.dynamic_info.FT_id = FT_id_counter++;
-  free_ops_and_clear();
+  flush();
   ops.clear();
-}
-
-void FT::free_ops_and_clear() {
-  while (op_pos < ops.size()) {
-    free_op(ops[op_pos]);
-    op_pos++;
-  }
 
   op_pos = 0;
-  is_recovery = false;
   ft_info.static_info.start = 0;
   ft_info.static_info.length = 0;
   ft_info.static_info.n_uops = 0;
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   ft_info.dynamic_info.first_op_off_path = FALSE;
+}
+
+void FT::flush() {
+  if (!ops.empty()) {  // Add safety check
+    while (op_pos < ops.size()) {
+      free_op(ops[op_pos]);
+      op_pos++;
+    }
+  }
+  op_pos = 0;
 }
 
 /* frees all ops in an all-on-path FT or any off-path ops in a hybrid or off-path ft*/
@@ -108,12 +110,8 @@ Op* FT::fetch_op() {
   return op;
 }
 
-void FT::add_op(Op* op, Flag set_parent_ft) {
-  if (ops.empty()) {
-    ASSERT(proc_id, op->bom && !ft_info.static_info.start);
-    ft_info.static_info.start = op->inst_info->addr;
-    ft_info.dynamic_info.first_op_off_path = op->off_path;
-  } else {
+void FT::add_op(Op* op) {
+  if (!ops.empty()) {
     if (op->bom) {
       ASSERT(proc_id, ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size == op->inst_info->addr);
     } else {
@@ -121,18 +119,21 @@ void FT::add_op(Op* op, Flag set_parent_ft) {
       ASSERT(proc_id, ops.back()->inst_info->addr == op->inst_info->addr);
     }
   }
-  if (set_parent_ft) {
-    op->parent_FT = this;
-  }
+  op->parent_FT = this;
+
   ops.emplace_back(op);
 }
-
+void FT::set_start_ft_info(Op* op) {
+  ASSERT(proc_id, op->bom && !ft_info.static_info.start);
+  ft_info.static_info.start = op->inst_info->addr;
+  ft_info.dynamic_info.first_op_off_path = op->off_path;
+}
 bool FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
                uint64_t start_op_num) {
   do {
     if (!can_fetch_op_fn(proc_id)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
-      free_ops_and_clear();
+      flush();
       return false;
     }
     Op* op = alloc_op(proc_id);
@@ -143,7 +144,9 @@ bool FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns
     op->oracle_info.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     if (off_path)
       predict_one_cf_op(op);
-    add_op(op, true);
+    if (ops.empty())
+      set_start_ft_info(op);
+    add_op(op);
     STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
   } while (get_end_reason() == FT_NOT_ENDED);
   validate();
@@ -162,10 +165,13 @@ std::pair<FT*, FT*> FT::split_ft(uns split_index) {
   ASSERT(proc_id, index_uns < ops.size() && index_uns >= 0);
 
   // Initialize head FT that will contain off-path ops after split position
-  FT* head_FT = new FT(*this);
+  FT* head_FT = new FT(proc_id);
   // don't save trailing FT to heap cause the ops already in original on-path FT
-  FT* trailing_FT = new FT();
+  FT* trailing_FT = new FT(proc_id);
 
+  for (uns i = 0; i <= split_index; i++) {
+    head_FT->ops.push_back(ops[i]);
+  }
   trailing_FT->is_recovery = true;
 
   // Only perform split if there are operations after the split point
@@ -176,8 +182,9 @@ std::pair<FT*, FT*> FT::split_ft(uns split_index) {
     ASSERT(0, valid_range);
     for (uns i = index_uns + 1; i <= ops.size() - 1; ++i) {
       // don't overwrite parent_FT pointer for trailing FT
-      trailing_FT->add_op(ops[i], false);
+      trailing_FT->ops.push_back(ops[i]);
     }
+    trailing_FT->set_start_ft_info(trailing_FT->get_first_op());
     ASSERT(proc_id, trailing_FT->get_end_reason() != FT_NOT_ENDED);
     trailing_FT->validate();
     trailing_FT->generate_ft_info();
@@ -196,6 +203,7 @@ std::pair<FT*, FT*> FT::split_ft(uns split_index) {
 
   // Reset the 'end' part of ft_info before possible rebuilding
   ASSERT(proc_id, head_FT->ops.size() == index_uns + 1);
+  head_FT->set_start_ft_info(head_FT->get_first_op());
   head_FT->ft_info.static_info.length = 0;
   head_FT->ft_info.static_info.n_uops = ops.size();
   head_FT->ft_info.dynamic_info.ended_by = FT_NOT_ENDED;

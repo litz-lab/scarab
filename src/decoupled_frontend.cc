@@ -238,7 +238,7 @@ void Decoupled_FE::recover() {
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
 
   for (auto it = ftq.begin(); it != ftq.end(); it++) {
-    (*it)->free_ops_and_clear();
+    (*it)->flush();
   }
   ftq.clear();
 
@@ -440,7 +440,7 @@ FT* Decoupled_FE::get_ft(uint64_t ft_pos) {
 void Decoupled_FE::pop_fts() {
   while (!ftq.empty() && ftq.front()->consumed) {
     uint64_t ft_num_ops = ftq.front()->ops.size();
-    ftq.front()->free_ops_and_clear();
+    ftq.front()->flush();
     if (ftq.front()->is_recovery) {
       delete ftq.front();
     }

@@ -83,13 +83,14 @@ struct FT_PredictResult {
 class FT {
  public:
   FT(uns _proc_id = 0);
-  void add_op(Op* op, Flag set_parent_FT);
+  void add_op(Op* op);
+  void set_start_ft_info(Op* op);
   bool can_fetch_op();
   Op* fetch_op();
   FT_Info get_ft_info() const;
   bool is_consumed();
   void set_consumed();
-  void free_ops_and_clear();
+  void flush();
   void free_ft();
 
   std::vector<Op*>& get_ops();

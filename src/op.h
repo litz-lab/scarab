@@ -36,9 +36,8 @@
 #include "inst_info.h"
 #include "op_info.h"
 #include "table_info.h"
-// Forward declaration to avoid circular dependency
 
-// In C, FT is a struct (matches ft.h declaration)
+// forward declaration of FT
 typedef struct FT FT;
 
 /**************************************************************************************/

@@ -54,6 +54,7 @@
 
 #include "decoupled_frontend.h"
 #include "freq.h"
+#include "ft.h"
 #include "idq_stage.h"
 #include "lsq.h"
 #include "map_rename.h"
@@ -408,7 +409,7 @@ void cmp_redirect() {
 // cmp_retire_hook:  Called right before the op retires
 
 void cmp_retire_hook(Op* op) {
-  free_op(op);
+  ft_free_op(op);
 }
 
 void warmup_uncore(uns proc_id, Addr addr, Flag write) {

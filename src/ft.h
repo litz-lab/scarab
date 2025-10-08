@@ -90,8 +90,7 @@ class FT {
   FT_Info get_ft_info() const;
   bool is_consumed();
   void set_consumed();
-  void flush();
-  void free_ft();
+  void free_ops();
 
   std::vector<Op*>& get_ops();
 
@@ -106,7 +105,7 @@ class FT {
   Op* get_first_op() const;
   Addr get_start_addr() const;
   bool is_consecutive(const FT& previous_ft) const;
-  size_t get_size() const { return ops.size(); }  // Check if FT exists/is valid
+  size_t get_size() const { return ops.size() - op_pos; }  // Check if FT exists/is valid
   bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }
   bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT exists/is valid
   FT_Ended_By get_end_reason() const;
@@ -121,7 +120,6 @@ class FT {
   FT_Event predict_one_cf_op(Op* op);
   void validate() const;
   void generate_ft_info();
-  bool is_recovery;
   friend class Decoupled_FE;
 };
 

@@ -43,6 +43,7 @@
 
 #include "frontend/frontend.h"
 
+#include "ft.h"
 #include "op_pool.h"
 
 /**************************************************************************************/
@@ -176,7 +177,7 @@ void reset_seq_op_list(Thread_Data* td) {
   Op** op_p = (Op**)list_start_head_traversal(&td->seq_op_list);
   for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
     ASSERT(td->proc_id, td->proc_id == (*op_p)->proc_id);
-    free_op(*op_p);
+    ft_free_op(*op_p);
   }
   clear_list(&td->seq_op_list);
 

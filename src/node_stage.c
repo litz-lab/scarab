@@ -52,6 +52,7 @@
 
 #include "decoupled_frontend.h"
 #include "exec_ports.h"
+#include "ft.h"
 #include "lsq.h"
 #include "map.h"
 #include "map_rename.h"
@@ -242,7 +243,7 @@ void flush_window() {
         ASSERT(op->proc_id, node->rs[op->rs_id].rs_op_count > 0);
         node->rs[op->rs_id].rs_op_count--;
       }
-      free_op(op);
+      ft_free_op(op);
     } else {
       /* Keep op */
 
@@ -597,7 +598,7 @@ void node_retire() {
     if (model->op_retired_hook)
       model->op_retired_hook(op);
     else
-      free_op(op);
+      ft_free_op(op);
 
     // the fused op does not occupy the ROB entry
     if (!op->macro_fused)

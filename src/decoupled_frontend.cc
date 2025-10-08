@@ -238,7 +238,7 @@ void Decoupled_FE::recover() {
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
 
   for (auto it = ftq.begin(); it != ftq.end(); it++) {
-    (*it)->flush();
+    (*it)->free_ops();
   }
   ftq.clear();
 
@@ -274,7 +274,7 @@ void Decoupled_FE::recover() {
   if (state != EXITING) {
     ASSERT(proc_id, saved_recovery_ft->get_size() != 0);
     ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == saved_recovery_ft->get_ft_info().static_info.start,
-            "Scarab's recovery addr 0x%llx does not match save ft"
+            "Scarab's recovery addr 0x%llx does not match save ft "
             "addr 0x%llx\n",
             bp_recovery_info->recovery_fetch_addr, saved_recovery_ft->get_ft_info().static_info.start);
     state = RECOVERING;
@@ -334,7 +334,6 @@ void Decoupled_FE::update() {
       STAT_EVENT(proc_id, FTQ_BREAK_BAR_FETCH_ONPATH + is_off_path_state());
       break;
     }
-    current_ft_to_push = new FT();
     fwd_progress = 0;
     // FSM-based FT build logic - four states:
     // EXITING: stop whend end of track seen
@@ -348,10 +347,8 @@ void Decoupled_FE::update() {
       case RECOVERING: {
         // After recovery, we expect to serve the saved recovery FT
         state = SERVING_ON_PATH;
-        delete current_ft_to_push;
         current_ft_to_push = saved_recovery_ft;
         result = current_ft_to_push->predict_ft();
-
         if (current_ft_to_push->ended_by_exit()) {
           // Ensure that the very last simulated FT does not cause a recovery
           current_ft_to_push->clear_recovery_info();
@@ -370,6 +367,7 @@ void Decoupled_FE::update() {
       }
       // recover will fall through to on-path exec
       case SERVING_ON_PATH: {
+        current_ft_to_push = new FT();
         // Build new on-path FT if no recovery ft availble
         ASSERT(proc_id, current_ft_to_push->get_size() == 0);
         auto build_success = current_ft_to_push->build([](uns8 pid) { return frontend_can_fetch_op(pid); },
@@ -403,6 +401,7 @@ void Decoupled_FE::update() {
       case SERVING_OFF_PATH: {
         // for off-path just build and. redirect
         // cf processed while building
+        current_ft_to_push = new FT();
         ASSERT(proc_id, current_ft_to_push->get_size() == 0);
         auto build_success = current_ft_to_push->build([](uns8 pid) { return frontend_can_fetch_op(pid); },
                                                        [](uns8 pid, Op* op) -> bool {
@@ -440,11 +439,7 @@ FT* Decoupled_FE::get_ft(uint64_t ft_pos) {
 void Decoupled_FE::pop_fts() {
   while (!ftq.empty() && ftq.front()->consumed) {
     uint64_t ft_num_ops = ftq.front()->ops.size();
-    ftq.front()->flush();
-    if (ftq.front()->is_recovery) {
-      delete ftq.front();
-    }
-
+    ftq.front()->free_ops();
     ftq.pop_front();
     for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
       // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before
@@ -591,9 +586,10 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   }
   // misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
-    delete trailing_ft;
+    // delete trailing_ft;
     saved_recovery_ft = new FT();
-    ASSERT(proc_id, result.index == current_ft_to_push->get_size() - 1);
+    if (result.index != current_ft_to_push->get_size() - 1)
+      ASSERT(proc_id, result.index == current_ft_to_push->ops.size() - 1);
     ASSERT(proc_id, !saved_recovery_ft->consumed);
     auto build_success = saved_recovery_ft->build([](uns8 pid) { return frontend_can_fetch_op(pid); },
                                                   [](uns8 pid, Op* op) -> bool {

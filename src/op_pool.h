@@ -49,7 +49,6 @@ void init_op_pool(void);
 void reset_op_pool(void);
 Op* alloc_op(uns proc_id);
 void free_op(Op*);
-void free_single_op(Op* op);
 void op_pool_init_op(Op*);
 void op_pool_setup_op(uns proc_id, Op* op);
 

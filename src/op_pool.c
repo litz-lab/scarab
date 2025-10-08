@@ -48,7 +48,6 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #include "frontend/frontend_intf.h"
 #include "frontend/pin_trace_fe.h"
 
-#include "ft.h"
 #include "map.h"
 #include "model.h"
 #include "sim.h"
@@ -128,9 +127,15 @@ Op* alloc_op(uns proc_id) {
 
   return new_op;
 }
+
 /**************************************************************************************/
-/* free_single_op: Direct freeing of an op (original free_op implementation) */
-void free_single_op(Op* op) {
+/* free_op:  "frees" an op */
+
+void free_op(Op* op) {
+  ASSERT(0, op);
+  ASSERT(0, op->op_pool_valid);
+  ASSERT(0, !op->marked);
+
   if (PIPEVIEW)
     pipeview_print_op(op);
 
@@ -156,17 +161,6 @@ void free_single_op(Op* op) {
   op->op_pool_next = op_pool_free_head;
   op_pool_free_head = op;
   free_wake_up_list(op);
-}
-
-/**************************************************************************************/
-/* free_op: Smart freeing - call FT-based freeing2*/
-
-void free_op(Op* op) {
-  ASSERT(0, op);
-  if (!op->off_path)
-    ASSERT(0, op->op_pool_valid);
-  ASSERT(0, !op->marked);
-  ft_free_op(op);
 }
 
 /**************************************************************************************/

@@ -41,6 +41,7 @@
 #include "prefetcher/fdip.h"
 
 #include "cmp_model.h"
+#include "load_value_pred.h"
 #include "lsq.h"
 #include "statistics.h"
 
@@ -70,6 +71,7 @@ void cmp_init_cmp_model() {
   alloc_mem_uop_cache(NUM_CORES);
   alloc_mem_idq_stage(NUM_CORES);
   alloc_mem_lsq(NUM_CORES);
+  alloc_mem_load_value_predictor(NUM_CORES);
 }
 
 void cmp_init_thread_data(uns8 proc_id) {
@@ -98,6 +100,7 @@ void cmp_set_all_stages(uns8 proc_id) {
   set_lsq(proc_id);
   set_exec_stage(&cmp_model.exec_stage[proc_id]);
   set_dcache_stage(&cmp_model.dcache_stage[proc_id]);
+  set_load_value_predictor(proc_id);
 }
 
 /**************************************************************************************/

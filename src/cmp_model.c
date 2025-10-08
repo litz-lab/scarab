@@ -55,6 +55,7 @@
 #include "decoupled_frontend.h"
 #include "freq.h"
 #include "idq_stage.h"
+#include "load_value_pred.h"
 #include "lsq.h"
 #include "map_rename.h"
 #include "op_pool.h"
@@ -120,6 +121,7 @@ void cmp_init(uns mode) {
     init_exec_stage(proc_id, "EXEC");
     init_exec_ports(proc_id, "EXEC_PORTS");
     init_dcache_stage(proc_id, "DCACHE");
+    init_load_value_predictor(proc_id, "LOAD_VALUE_PRED");
 
     /* initialize the common data structures */
     init_bp_recovery_info(proc_id, &cmp_model.bp_recovery_info[proc_id]);
@@ -387,6 +389,7 @@ void cmp_recover() {
   recover_exec_stage();
   recover_dcache_stage();
   recover_memory();
+  recover_load_value_predictor();
 }
 
 /**************************************************************************************/

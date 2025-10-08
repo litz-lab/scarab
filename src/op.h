@@ -190,6 +190,8 @@ struct Op_struct {
   Flag precommitted;            // if the op is pre-commit in the ROB
   Flag macro_fused;             // if the op should be fused with the previous op (CMP/TEST)
   Flag move_eliminated;         // if the op can be move-eliminated
+  Flag load_value_predicted;    // if consumers of the op can be ready before this load
+  Flag load_value_flush;        // if this is the eom of a load value predict inst
   Flag replay;                  // is the op waiting to replay?
   uns replay_count;             // number of times the op has replayed
   Flag dont_cause_replays;      // true if the op should not cause other ops to replay (like a correct value prediction)

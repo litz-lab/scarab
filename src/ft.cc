@@ -47,9 +47,6 @@ uint64_t FT_id_counter = 0;
 /* FT member functions */
 FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
   ft_info.dynamic_info.FT_id = FT_id_counter++;
-  free_ops();
-  ops.clear();
-
   op_pos = 0;
   ft_info.static_info.start = 0;
   ft_info.static_info.length = 0;
@@ -59,12 +56,12 @@ FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
 }
 
 void FT::free_ops() {
-  if (!ops.empty()) {  // Add safety check
-    while (op_pos < ops.size()) {
-      ft_free_op(ops[op_pos]);
-      op_pos++;
+  if (!ops.empty()) {
+    for (uns i = op_pos; i < ops.size(); i++) {
+      ft_free_op(ops[i]);
     }
   }
+
   op_pos = 0;
 }
 
@@ -118,8 +115,6 @@ bool FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns
     op->oracle_info.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     if (off_path)
       predict_one_cf_op(op);
-    if (ops.empty())
-      set_start_ft_info(op);
     add_op(op);
     STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
   } while (get_end_reason() == FT_NOT_ENDED);
@@ -155,7 +150,6 @@ std::pair<FT*, FT*> FT::split_ft(uns split_index) {
     bool valid_range = (index_uns + 1 <= ops.size() - 1 && ops.size() - 1 < ops.size() && index_uns + 1 >= 0);
     ASSERT(0, valid_range);
 
-    set_start_ft_info(ops[op_pos]);
     ASSERT(proc_id, get_end_reason() != FT_NOT_ENDED);
     generate_ft_info();
 
@@ -172,7 +166,6 @@ std::pair<FT*, FT*> FT::split_ft(uns split_index) {
 
   // Reset the 'end' part of ft_info before possible rebuilding
   ASSERT(proc_id, head_FT->ops.size() == index_uns + 1);
-  head_FT->set_start_ft_info(head_FT->ops[head_FT->op_pos]);
   head_FT->ft_info.static_info.length = 0;
   head_FT->ft_info.static_info.n_uops = ops.size();
   head_FT->ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
@@ -316,7 +309,6 @@ bool FT::is_consecutive(const FT& previous_ft) const {
 
 void FT::validate() const {
   ASSERT(proc_id, ops.back()->eom && !ft_info.static_info.length);
-  ASSERT(proc_id, ft_info.static_info.start);
   ASSERT(proc_id, get_first_op()->bom && get_last_op()->eom);
 }
 
@@ -348,6 +340,11 @@ FT_Ended_By FT::get_end_reason() const {
 }
 
 void FT::generate_ft_info() {
+  auto op = ops[op_pos];
+  ASSERT(proc_id, op);
+  ASSERT(proc_id, op->bom);
+  ft_info.static_info.start = op->inst_info->addr;
+  ft_info.dynamic_info.first_op_off_path = op->off_path;
   ft_info.dynamic_info.ended_by = get_end_reason();
   ft_info.static_info.n_uops = ops.size() - op_pos;
   ft_info.static_info.length =

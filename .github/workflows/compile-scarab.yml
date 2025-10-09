@@ -62,6 +62,11 @@ jobs:
           ref: refs/heads/main
           fetch-depth: 0
 
+      - name: Allow Git in container
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/infra"
+
       - name: Install workflow prerequisites
         run: |
           apt-get update
@@ -207,6 +212,11 @@ jobs:
           path: infra
           ref: refs/heads/main
           fetch-depth: 0
+
+      - name: Allow Git in container
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/infra"
 
       - name: Install workflow prerequisites
         run: |

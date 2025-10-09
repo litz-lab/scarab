@@ -77,15 +77,17 @@ jobs:
         working-directory: infra
         run: |
           python3 - <<'PY' > env_path.txt
-          import importlib.util
           import pathlib
+          from importlib.machinery import SourceFileLoader
+          import importlib.util
 
           script_path = pathlib.Path("sci").resolve()
-          spec = importlib.util.spec_from_file_location("sci", script_path)
+          if not script_path.exists():
+              raise FileNotFoundError(f"Unable to locate {script_path}")
+          loader = SourceFileLoader("scarab_sci", str(script_path))
+          spec = importlib.util.spec_from_loader("scarab_sci", loader)
           module = importlib.util.module_from_spec(spec)
-          if spec.loader is None:
-              raise RuntimeError(f"Unable to load module from {script_path}")
-          spec.loader.exec_module(module)
+          loader.exec_module(module)
           env_path, _ = module.resolve_conda_env_path()
           print(f"SCARABINFRA_ENV={env_path}")
           PY
@@ -220,15 +222,17 @@ jobs:
         working-directory: infra
         run: |
           python3 - <<'PY' > env_path.txt
-          import importlib.util
           import pathlib
+          from importlib.machinery import SourceFileLoader
+          import importlib.util
 
           script_path = pathlib.Path("sci").resolve()
-          spec = importlib.util.spec_from_file_location("sci", script_path)
+          if not script_path.exists():
+              raise FileNotFoundError(f"Unable to locate {script_path}")
+          loader = SourceFileLoader("scarab_sci", str(script_path))
+          spec = importlib.util.spec_from_loader("scarab_sci", loader)
           module = importlib.util.module_from_spec(spec)
-          if spec.loader is None:
-              raise RuntimeError(f"Unable to load module from {script_path}")
-          spec.loader.exec_module(module)
+          loader.exec_module(module)
           env_path, _ = module.resolve_conda_env_path()
           print(f"SCARABINFRA_ENV={env_path}")
           PY

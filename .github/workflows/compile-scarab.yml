@@ -61,6 +61,11 @@ jobs:
           path: infra
           ref: refs/heads/main
 
+      - name: Install workflow prerequisites
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y curl
+
       - name: Initialize environment
         working-directory: infra
         env:
@@ -190,6 +195,11 @@ jobs:
           repository: litz-lab/scarab-infra
           path: infra
           ref: refs/heads/main
+
+      - name: Install workflow prerequisites
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y curl
 
       - name: Initialize environment (idempotent)
         working-directory: infra

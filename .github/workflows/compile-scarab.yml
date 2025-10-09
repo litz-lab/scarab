@@ -59,7 +59,7 @@ jobs:
         with:
           repository: litz-lab/scarab-infra
           path: infra
-          ref: ${{ needs.get_tag.outputs.tag }}
+          ref: refs/heads/main
 
       - name: Download traces
         run: |
@@ -125,7 +125,7 @@ jobs:
         with:
           repository: litz-lab/scarab-infra
           path: infra
-          ref: ${{ needs.get_tag.outputs.tag }}
+          ref: refs/heads/main
 
       - name: Download traces
         run: |

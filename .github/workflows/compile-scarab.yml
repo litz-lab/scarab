@@ -60,6 +60,7 @@ jobs:
           repository: litz-lab/scarab-infra
           path: infra
           ref: refs/heads/main
+          fetch-depth: 0
 
       - name: Install workflow prerequisites
         run: |
@@ -205,6 +206,7 @@ jobs:
           repository: litz-lab/scarab-infra
           path: infra
           ref: refs/heads/main
+          fetch-depth: 0
 
       - name: Install workflow prerequisites
         run: |

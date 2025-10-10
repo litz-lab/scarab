@@ -118,7 +118,6 @@ class FT {
   std::vector<Op*> ops;
   bool consumed;
   FT_Event predict_one_cf_op(Op* op);
-  void validate() const;
   void generate_ft_info();
   friend class Decoupled_FE;
 };

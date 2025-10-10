@@ -439,7 +439,6 @@ FT* Decoupled_FE::get_ft(uint64_t ft_pos) {
 void Decoupled_FE::pop_fts() {
   while (!ftq.empty() && ftq.front()->consumed) {
     uint64_t ft_num_ops = ftq.front()->ops.size();
-    ftq.front()->free_ops();
     ftq.pop_front();
     for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
       // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before

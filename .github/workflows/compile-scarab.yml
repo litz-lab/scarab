@@ -117,13 +117,6 @@ jobs:
       ipc: ${{ steps.ipc.outputs.value }}
       kips: ${{ steps.kips.outputs.value }}
     steps:
-
-      - name: Run scarab simulation
-        working-directory: infra
-        env:
-          trace_home: ${{ github.workspace }}
-        run: ./sci --sim top_simpoint
-
       - name: Checkout Scarab
         uses: actions/checkout@v4
 
@@ -219,6 +212,12 @@ jobs:
         env:
           trace_home: ${{ github.workspace }}
         run: ./sci --build-scarab top_simpoint
+
+      - name: Run scarab simulation
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: ./sci --sim top_simpoint
 
       - id: kips
         name: Grab KIPS

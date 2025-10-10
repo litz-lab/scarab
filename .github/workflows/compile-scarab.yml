@@ -101,7 +101,7 @@ jobs:
               json.dump(data, handle, indent=2)
           PY2
 
-      - name: Build Scarab (${{ matrix.mode }})
+      - name: Build Scarab dbg
         working-directory: infra
         env:
           trace_home: ${{ github.workspace }}
@@ -207,7 +207,7 @@ jobs:
 
           PY
 
-      - name: Build Scarab (${{ matrix.mode }})
+      - name: Build Scarab opt
         working-directory: infra
         env:
           trace_home: ${{ github.workspace }}

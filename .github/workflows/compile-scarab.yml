@@ -160,7 +160,7 @@ jobs:
           with desc_path.open("r", encoding="utf-8") as handle:
               data = json.load(handle)
           data["root_dir"] = f"{ws}/"
-          data["scarab_path"] = str(ws / "src")
+          data["scarab_path"] = f"{ws}/"
           data["traces_dir"] = str(ws / "traces_top_simpoint")
           data["scarab_build"] = os.environ["BUILD_MODE"]
           with desc_path.open("w", encoding="utf-8") as handle:

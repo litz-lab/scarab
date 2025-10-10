@@ -23,32 +23,107 @@ env:
 # Jobs
 ############################################################
 jobs:
-  get_tag:
+  build-scarab-dbg:
     ########################################################
-    # Job: resolve scarab-infra container tag
-    ########################################################
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.tag.outputs.short }}
-    steps:
-      - id: tag
-        name: Latest scarab-infra tag
-        run: |
-          LATEST=$(curl -s https://raw.githubusercontent.com/litz-lab/scarab-infra/main/last_built_tag.txt)
-          echo "short=${LATEST}" >>"$GITHUB_OUTPUT"
-
-  build-scarab:
-    ########################################################
-    # Job: build scarab (dbg + opt)
+    # Job: build scarab dbg
     ########################################################
     runs-on: ubuntu-latest
-    needs: get_tag
     if: github.event_name == 'pull_request'
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [dbg, opt]
     steps:
+      - name: Checkout Scarab
+        uses: actions/checkout@v4
+
+      - name: Checkout scarab-infra
+        uses: actions/checkout@v4
+        with:
+          repository: litz-lab/scarab-infra
+          path: infra
+          ref: refs/heads/main
+          fetch-depth: 0
+
+      - name: Allow Git in container
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/infra"
+
+      - name: Initialize environment
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: ./sci --init
+
+      - name: Locate scarabinfra conda env
+        id: conda-env
+        working-directory: infra
+        run: |
+          python3 - <<'PY' > env_path.txt
+          import pathlib
+          from importlib.machinery import SourceFileLoader
+          import importlib.util
+
+          script_path = pathlib.Path("sci").resolve()
+          if not script_path.exists():
+              raise FileNotFoundError(f"Unable to locate {script_path}")
+          loader = SourceFileLoader("scarab_sci", str(script_path))
+          spec = importlib.util.spec_from_loader("scarab_sci", loader)
+          module = importlib.util.module_from_spec(spec)
+          loader.exec_module(module)
+          env_path, _ = module.resolve_conda_env_path()
+          print(f"SCARABINFRA_ENV={env_path}")
+          PY
+          cat env_path.txt >> "$GITHUB_ENV"
+          rm env_path.txt
+
+      - name: Patch descriptor for workflow
+        working-directory: infra
+        env:
+          PYTHON_BIN: ${{ env.SCARABINFRA_ENV }}/bin/python
+        run: |
+          if [ -z "$PYTHON_BIN" ]; then
+            echo "scarabinfra conda environment not detected"
+            exit 1
+          fi
+          "$PYTHON_BIN" - <<'PY2'
+          import json
+          import os
+          import pathlib
+
+          # On host runners this resolves to /home/runner/work/<repo>/<repo>
+          ws = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          desc_path = pathlib.Path("json/top_simpoint.json")
+          with desc_path.open("r", encoding="utf-8") as handle:
+              data = json.load(handle)
+          data["root_dir"] = f"{ws}/"
+          data["scarab_path"] = f"{ws}/"
+          data["traces_dir"] = str(ws / "traces_top_simpoint")
+          data["scarab_build"] = "dbg"
+          with desc_path.open("w", encoding="utf-8") as handle:
+              json.dump(data, handle, indent=2)
+          PY2
+
+      - name: Build Scarab (${{ matrix.mode }})
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: ./sci --build-scarab top_simpoint
+
+  build-and-run-scarab-opt:
+    ###############################################################
+    # Job: build scarab opt and run simulation and collect metrics
+    ###############################################################
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    outputs:
+      ipc: ${{ steps.ipc.outputs.value }}
+      kips: ${{ steps.kips.outputs.value }}
+    steps:
+
+      - name: Run scarab simulation
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: ./sci --sim top_simpoint
+
       - name: Checkout Scarab
         uses: actions/checkout@v4
 
@@ -139,193 +214,11 @@ jobs:
 
           PY
 
-      - name: Patch descriptor for workflow
-        working-directory: infra
-        env:
-          PYTHON_BIN: ${{ env.SCARABINFRA_ENV }}/bin/python
-          BUILD_MODE: ${{ matrix.mode }}
-        run: |
-          if [ -z "$PYTHON_BIN" ]; then
-            echo "scarabinfra conda environment not detected"
-            exit 1
-          fi
-          "$PYTHON_BIN" - <<'PY2'
-          import json
-          import os
-          import pathlib
-
-          # On host runners this resolves to /home/runner/work/<repo>/<repo>
-          ws = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-          desc_path = pathlib.Path("json/top_simpoint.json")
-          with desc_path.open("r", encoding="utf-8") as handle:
-              data = json.load(handle)
-          data["root_dir"] = f"{ws}/"
-          data["scarab_path"] = f"{ws}/"
-          data["traces_dir"] = str(ws / "traces_top_simpoint")
-          data["scarab_build"] = os.environ["BUILD_MODE"]
-          with desc_path.open("w", encoding="utf-8") as handle:
-              json.dump(data, handle, indent=2)
-          PY2
-
       - name: Build Scarab (${{ matrix.mode }})
         working-directory: infra
         env:
           trace_home: ${{ github.workspace }}
         run: ./sci --build-scarab top_simpoint
-
-      - name: Upload opt build artifact
-        if: matrix.mode == 'opt'
-        uses: actions/upload-artifact@v4
-        with:
-          name: scarab-opt-build
-          path: src/build/opt
-
-  run-scarab:
-    ########################################################
-    # Job: run simulation and collect metrics
-    ########################################################
-    runs-on: ubuntu-latest
-    needs: [get_tag, build-scarab]
-    env:
-      TAG: ${{ needs.get_tag.outputs.tag }}
-    outputs:
-      ipc: ${{ steps.ipc.outputs.value }}
-      kips: ${{ steps.kips.outputs.value }}
-    steps:
-      - name: Checkout Scarab
-        uses: actions/checkout@v4
-        with:
-          path: scarab_ll
-
-      - name: Checkout scarab-infra
-        uses: actions/checkout@v4
-        with:
-          repository: litz-lab/scarab-infra
-          path: infra
-          ref: refs/heads/main
-          fetch-depth: 0
-
-      - name: Allow Git in container
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git config --global --add safe.directory "$GITHUB_WORKSPACE/infra"
-
-      - name: Install workflow prerequisites
-        run: |
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y curl
-
-      - name: Initialize environment (idempotent)
-        working-directory: infra
-        env:
-          trace_home: ${{ github.workspace }}
-        run: ./sci --init
-
-      - name: Locate scarabinfra conda env
-        id: run-conda-env
-        working-directory: infra
-        run: |
-          python3 - <<'PY' > env_path.txt
-          import pathlib
-          from importlib.machinery import SourceFileLoader
-          import importlib.util
-
-          script_path = pathlib.Path("sci").resolve()
-          if not script_path.exists():
-              raise FileNotFoundError(f"Unable to locate {script_path}")
-          loader = SourceFileLoader("scarab_sci", str(script_path))
-          spec = importlib.util.spec_from_loader("scarab_sci", loader)
-          module = importlib.util.module_from_spec(spec)
-          loader.exec_module(module)
-          env_path, _ = module.resolve_conda_env_path()
-          print(f"SCARABINFRA_ENV={env_path}")
-          PY
-          cat env_path.txt >> "$GITHUB_ENV"
-          rm env_path.txt
-
-      - name: Download traces
-        env:
-          PYTHON_BIN: ${{ env.SCARABINFRA_ENV }}/bin/python
-        run: |
-          if [ -z "$PYTHON_BIN" ]; then
-            echo "scarabinfra conda environment not detected"
-            exit 1
-          fi
-          "$PYTHON_BIN" - <<'PY'
-          import os
-          import pathlib
-          import shutil
-          import tarfile
-          import urllib.request
-
-          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-          archive = workspace / "traces.tar.gz"
-          target_dir = workspace / "traces_top_simpoint"
-          url = "https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz"
-
-          def safe_extract(tar_obj: tarfile.TarFile, destination: pathlib.Path) -> None:
-              dest_root = destination.resolve()
-              for member in tar_obj.getmembers():
-                  member_path = (dest_root / member.name).resolve()
-                  if dest_root != member_path and dest_root not in member_path.parents:
-                      raise RuntimeError(f"Unsafe path in archive: {member.name}")
-              tar_obj.extractall(path=dest_root)
-
-          if target_dir.exists():
-              print(f"Reusing existing traces at {target_dir}")
-          else:
-              print(f"Downloading traces to {archive}")
-              with urllib.request.urlopen(url) as response:
-                  status = getattr(response, "status", 200)
-                  if status != 200:
-                      raise RuntimeError(f"Download failed with HTTP status {status}")
-                  with archive.open("wb") as dest:
-                      shutil.copyfileobj(response, dest)
-              with tarfile.open(archive, "r:gz") as tar_obj:
-                  safe_extract(tar_obj, workspace)
-              if archive.exists():
-                  archive.unlink()
-              print(f"Extracted traces to {target_dir}")
-
-          PY
-
-      - name: Restore opt build
-        uses: actions/download-artifact@v4
-        with:
-          name: scarab-opt-build
-          path: scarab_ll/src/build/opt
-
-      - name: Patch descriptor for simulation
-        working-directory: infra
-        env:
-          PYTHON_BIN: ${{ env.SCARABINFRA_ENV }}/bin/python
-        run: |
-          if [ -z "$PYTHON_BIN" ]; then
-            echo "scarabinfra conda environment not detected"
-            exit 1
-          fi
-          "$PYTHON_BIN" - <<'PY2'
-          import json
-          import os
-          import pathlib
-
-          ws = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-          desc_path = pathlib.Path("json/top_simpoint.json")
-          with desc_path.open("r", encoding="utf-8") as handle:
-              data = json.load(handle)
-          data["root_dir"] = f"{ws}/"
-          data["scarab_path"] = str(ws / "scarab_ll/src")
-          data["traces_dir"] = str(ws / "traces_top_simpoint")
-          data["scarab_build"] = "opt"
-          with desc_path.open("w", encoding="utf-8") as handle:
-              json.dump(data, handle, indent=2)
-          PY2
-
-      - name: Run scarab simulation
-        working-directory: infra
-        env:
-          trace_home: ${{ github.workspace }}
-        run: ./sci --sim top_simpoint
 
       - id: kips
         name: Grab KIPS
@@ -361,7 +254,7 @@ jobs:
     # Job: comment on PR with metrics
     ########################################################
     if: github.event_name == 'pull_request'
-    needs: [run-scarab]
+    needs: [build-and-run-scarab-opt]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -382,8 +275,8 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const simKips  = parseFloat("${{ needs.run-scarab.outputs.kips }}");
-            const simIpc   = parseFloat("${{ needs.run-scarab.outputs.ipc  }}");
+            const simKips  = parseFloat("${{ needs.build-and-run-scarab-opt.outputs.kips }}");
+            const simIpc   = parseFloat("${{ needs.build-and-run-scarab-opt.outputs.ipc  }}");
             const baseKips = parseFloat("${{ steps.base.outputs.kips      }}");
             const baseIpc  = parseFloat("${{ steps.base.outputs.ipc       }}");
 
@@ -417,7 +310,7 @@ jobs:
     # Job: update perf baseline on push
     ########################################################
     if: github.event_name == 'push'
-    needs: [run-scarab]
+    needs: [build-and-run-scarab-opt]
     runs-on: ubuntu-latest
     env:
       PAT: ${{ secrets.SCARAB_PERF_PAT }}
@@ -452,7 +345,7 @@ jobs:
       # 4) Append the new line
       - name: Append new metrics line
         run: |
-          echo "${COMMIT_SHA},${{ needs.run-scarab.outputs.ipc }},${{ needs.run-scarab.outputs.kips }}" \
+          echo "${COMMIT_SHA},${{ needs.build-and-run-scarab-opt.outputs.ipc }},${{ needs.build-and-run-scarab-opt.outputs.kips }}" \
             >> perf/scarab_perf.log
 
       # 5) Commit & push back to the perf repo using the “public” remote

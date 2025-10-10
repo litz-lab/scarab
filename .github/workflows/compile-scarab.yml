@@ -221,7 +221,7 @@ jobs:
 
       - id: kips
         name: Grab KIPS
-        working-directory: simulations/top_simpoint
+        working-directory: simulations
         run: |
           v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' \
               github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/sim.log | head -n1)
@@ -235,7 +235,7 @@ jobs:
 
       - id: ipc
         name: Grab IPC
-        working-directory: simulations/top_simpoint
+        working-directory: simulations
         run: |
           v=$(grep "Cumulative:" \
                github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out | \

@@ -45,6 +45,17 @@
 uint64_t FT_id_counter = 0;
 
 /* FT member functions */
+FT::~FT() {
+  ASSERT(proc_id, !ops.empty());
+  Flag all_on_path = !ops[0]->off_path && !ops.back()->off_path;
+  for (auto ft_op : ops) {
+    if (all_on_path || ft_op->off_path) {
+      ft_op->parent_FT = nullptr;
+      free_op(ft_op);
+    }
+  }
+}
+
 FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
   ft_info.dynamic_info.FT_id = FT_id_counter++;
   op_pos = 0;
@@ -53,15 +64,6 @@ FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
   ft_info.static_info.n_uops = 0;
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   ft_info.dynamic_info.first_op_off_path = FALSE;
-}
-
-void FT::free_ops() {
-  ASSERT(proc_id, !ops.empty());
-  ASSERT(proc_id, op_pos <= ops.size());
-  for (uns i = op_pos; i < ops.size(); i++) {
-    ft_free_op(ops[i]);
-  }
-  op_pos = 0;
 }
 
 bool FT::can_fetch_op() {
@@ -103,7 +105,7 @@ bool FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns
   do {
     if (!can_fetch_op_fn(proc_id)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
-      free_ops();
+      delete this;
       return false;
     }
     Op* op = alloc_op(proc_id);
@@ -123,10 +125,10 @@ bool FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns
   return true;
 }
 
-// will split the FT into two parts, the first part contains ops from 0 to index,
-// the second part contains ops from index + 1 to the end of the FT for now to modify ft_info to truncated version
-// returns off_path and recovery FT
-std::pair<FT*, FT*> FT::split_ft(uns split_index) {
+// will extract ops from 0 to index and form a new FT as off-path FT,
+// the original FT have op_pos moved and modify ft_info to truncated version
+// returns off_path and original FT
+std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
   uns index_uns = static_cast<uns>(split_index);
   ASSERT(proc_id, index_uns < ops.size() && index_uns >= 0);
 
@@ -363,17 +365,11 @@ FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
 
-/* retire and flush, free all ops in a FT when last op is freed*/
+/* retire and flush, free all ops in a FT when last op is freed */
 void ft_free_op(Op* op) {
-  ASSERT(0, op->parent_FT);
-  if (op->parent_FT->get_last_op() == op) {
-    // Inlined FT::free_ft() implementation:
-    FT* ft = op->parent_FT;
-    Flag all_on_path = !ft->get_ops()[0]->off_path && !ft->get_ops().back()->off_path;
-    for (auto ft_op : ft->get_ops()) {
-      if (all_on_path || ft_op->off_path)
-        free_op(ft_op);
+  if (op && op->parent_FT) {
+    if (op->parent_FT->get_last_op() == op) {
+      delete op->parent_FT;
     }
-    delete ft;
   }
 }

@@ -238,7 +238,9 @@ void Decoupled_FE::recover() {
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
 
   for (auto it = ftq.begin(); it != ftq.end(); it++) {
-    (*it)->free_ops();
+    if (*it)
+
+      delete (*it);
   }
   ftq.clear();
 
@@ -577,15 +579,14 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling
   ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT);
   // Misprediction: Switch to off-path execution
-  auto [heading_FT, trailing_ft] = current_ft_to_push->split_ft(result.index);
-  current_ft_to_push = heading_FT;
+  auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
+  current_ft_to_push = off_path_FT;
   // if we have a tailing ft, save it for recovery
   if (trailing_ft->get_size() != 0) {
     saved_recovery_ft = trailing_ft;
   }
   // misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
-    // delete trailing_ft;
     saved_recovery_ft = new FT();
     if (result.index != current_ft_to_push->get_size() - 1)
       ASSERT(proc_id, result.index == current_ft_to_push->ops.size() - 1);

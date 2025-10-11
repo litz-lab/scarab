@@ -83,6 +83,7 @@ struct FT_PredictResult {
 class FT {
  public:
   FT(uns _proc_id = 0);
+  ~FT();
   void add_op(Op* op);
   void set_start_ft_info(Op* op);
   bool can_fetch_op();
@@ -90,7 +91,6 @@ class FT {
   FT_Info get_ft_info() const;
   bool is_consumed();
   void set_consumed();
-  void free_ops();
 
   std::vector<Op*>& get_ops();
 
@@ -99,7 +99,7 @@ class FT {
              uint64_t start_op_num);
 
   FT_PredictResult predict_ft();
-  std::pair<FT*, FT*> split_ft(uns split_index);
+  std::pair<FT*, FT*> extract_off_path_ft(uns split_index);
 
   Op* get_last_op() const;
   Op* get_first_op() const;

@@ -568,11 +568,11 @@ void ext_trace_extract_basic_block_vectors() {
     // a sequence of rep of same pc is a bb executed multiple times
     cur_bb.ins_list.push_back(*inst);
 
-    // increment unique inst frequency
-    footprint[inst->instruction_addr]++;
 
     // increment fetched count if it is fetched
     if (inst->fetched_instruction) {
+      // increment unique inst frequency
+      footprint[inst->instruction_addr]++;
       cur_bb.inst_count_fetched++;
     }
 
@@ -619,7 +619,8 @@ void ext_trace_extract_basic_block_vectors() {
           if (cur_bb != bb_identity_map[bb_key][i]) {
           } else {
             find = true;
-            bb_identity_map[bb_key][i].freq++;
+            if (cur_bb.inst_count_fetched)
+              bb_identity_map[bb_key][i].freq++;
             break;
           }
         }
@@ -664,7 +665,8 @@ void ext_trace_extract_basic_block_vectors() {
         // fprintf(stderr, "======================\n");
       }
 
-      counts_dynamic.blocks++;
+      if (cur_bb.inst_count_fetched)
+        counts_dynamic.blocks++;
       counts_dynamic.total_size += cur_bb.ins_list.size();
       counts_dynamic.fetched_size += cur_bb.inst_count_fetched;
       cur_counter += cur_bb.ins_list.size();
@@ -707,7 +709,9 @@ void ext_trace_extract_basic_block_vectors() {
         for (uint i = 0; i < cur_bb.ins_list.size(); i++) {
           if (to_new) {
             to_new_vector_count++;
-            to_new_vector_count_fetched++;
+            if (cur_bb.ins_list[i].fetched_instruction) {
+              to_new_vector_count_fetched++;
+            }
           } else {
             cur_counter++;
             if (cur_bb.ins_list[i].fetched_instruction) {
@@ -744,11 +748,13 @@ void ext_trace_extract_basic_block_vectors() {
       // ASSERT(proc_id, ((USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) > SEGMENT_INSTR_COUNT) ==
       // (to_new_vector_count > 0));
 
-      if (SIM_MODE == TRACE_BBV_MODE) {
-        fingerprint[cur_bb.bb_id] += to_last_vector_count;
-      } else {
-        // TRACE_BBV_DISTRIBUTED_MODE
-        fingerprint[cur_bb.ins_list.front().instruction_addr] += to_last_vector_count;
+      if (cur_bb.inst_count_fetched) {
+        if (SIM_MODE == TRACE_BBV_MODE) {
+          fingerprint[cur_bb.bb_id] += to_last_vector_count;
+        } else {
+          // TRACE_BBV_DISTRIBUTED_MODE
+          fingerprint[cur_bb.ins_list.front().instruction_addr] += to_last_vector_count;
+        }
       }
 
       // perfect alignment

@@ -39,6 +39,7 @@
 
 #include "decoupled_frontend.h"
 #include "op_pool.h"
+#include "uop_cache.h"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
@@ -47,17 +48,25 @@ uint64_t FT_id_counter = 0;
 /* FT member functions */
 FT::~FT() {
   ASSERT(proc_id, !ops.empty());
-  Flag all_on_path = !ops[0]->off_path && !ops.back()->off_path;
+
   for (auto ft_op : ops) {
-    if (all_on_path || ft_op->off_path) {
+    if (on_path_parent_FT && !ft_op->off_path) {
+      ft_op->parent_FT = on_path_parent_FT;
+    }
+    if ((on_path_parent_FT == nullptr) || ft_op->off_path) {
+      ft_op->parent_FT = nullptr;
       free_op(ft_op);
     }
   }
+  on_path_parent_FT = nullptr;
+  ops.clear();
 }
 
 FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
   ft_info.dynamic_info.FT_id = FT_id_counter++;
   op_pos = 0;
+  ops.clear();
+  on_path_parent_FT = nullptr;
   ft_info.static_info.start = 0;
   ft_info.static_info.length = 0;
   ft_info.static_info.n_uops = 0;
@@ -76,7 +85,6 @@ Op* FT::fetch_op() {
 
   DEBUG(proc_id, "Fetch op from FT fetch_addr0x:%llx off_path:%i op_num:%llu\n", op->inst_info->addr, op->off_path,
         op->op_num);
-
   return op;
 }
 
@@ -133,15 +141,19 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
   }
   // Initialize off-path FT that will contain off-path ops after split position
   FT* off_path_ft = new FT(proc_id);
+  off_path_ft->on_path_parent_FT = this;
 
-  for (uns i = 0; i <= split_index; i++) {
+  bool has_trailing_ops = (index_uns + 1 < ops.size());
+
+  for (uns i = op_pos; i <= split_index; i++) {
     off_path_ft->ops.push_back(ops[i]);
+    if (has_trailing_ops)
+      ops[i]->parent_FT = off_path_ft;
   }
-  off_path_ft->op_pos = op_pos;
 
-  // Only save original FT as recovery FT if there are ops after the split point
+  off_path_ft->op_pos = 0;
+  ASSERT(proc_id, off_path_ft->ops.size() == index_uns + 1 - op_pos);
   op_pos = index_uns + 1;
-  bool has_trailing_ops = (op_pos < ops.size());
   if (has_trailing_ops) {
     // Inline move_over_ft logic
     ASSERT(0, (index_uns + 1 <= ops.size() - 1 && ops.size() - 1 < ops.size() && index_uns + 1 >= 0));
@@ -155,8 +167,6 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
     ASSERT(proc_id, get_end_reason() != FT_NOT_ENDED);
   }
 
-  // Reset the 'end' part of ft_info before possible rebuilding
-  ASSERT(proc_id, off_path_ft->ops.size() == index_uns + 1);
   off_path_ft->generate_ft_info();
 
   return {off_path_ft, this};
@@ -341,6 +351,70 @@ void FT::clear_recovery_info() {
     op->oracle_info.recover_at_decode = FALSE;
     op->oracle_info.recover_at_exec = FALSE;
   }
+}
+
+std::vector<Uop_Cache_Data> FT::generate_uop_cache_data() {
+  std::vector<Uop_Cache_Data> uop_cache_buffer;
+  // Initialize current line tracking
+  Uop_Cache_Data current_line = {};
+  FT_Info current_ft = ft_info;
+  bool line_started = false;
+  bool is_ft_end = false;
+
+  for (size_t i = 0; i < ops.size(); ++i) {
+    Op* op = ops[i];
+
+    // Start a new line if needed
+    if (!line_started) {
+      current_line.line_start = op->inst_info->addr;
+      current_line.ft_info_dynamic = current_ft.dynamic_info;
+      current_line.n_uops = 0;
+      current_line.end_of_ft = FALSE;
+      current_line.used = 0;
+      current_line.priority = 0;
+      line_started = true;
+    }
+
+    current_line.n_uops++;
+
+    // Check for line termination conditions
+    Addr ft_end_addr = current_ft.static_info.start + current_ft.static_info.length;
+    Addr inst_end_addr = op->inst_info->addr + op->inst_info->trace_info.inst_size;
+
+    is_ft_end = op->eom && (inst_end_addr == ft_end_addr);
+    bool is_line_end = (current_line.n_uops >= UOP_CACHE_WIDTH);
+
+    // Determine if this is the last op in the current line
+    if (is_ft_end || is_line_end || i == ops.size() - 1) {
+      if (is_ft_end) {
+        current_line.end_of_ft = TRUE;
+        current_line.offset = 0;  // No next line for FT end
+      } else if (i + 1 < ops.size()) {
+        // Calculate offset to next line start
+        Op* next_op = ops[i + 1];
+        Addr next_line_start = next_op->inst_info->addr;
+        current_line.offset = next_line_start - current_line.line_start;
+        current_line.end_of_ft = FALSE;
+      } else {
+        // Last op but not FT end
+        current_line.offset = inst_end_addr - current_line.line_start;
+        current_line.end_of_ft = TRUE;  // Assume end of FT if we're at the last op
+      }
+
+      // Add completed line to buffer
+      uop_cache_buffer.push_back(current_line);
+
+      // Reset for next line
+      current_line = {};
+      line_started = false;
+    }
+  }
+  ASSERT(proc_id, op_pos == ops.size());
+  op_pos = 0;
+  generate_ft_info();
+  ASSERT(proc_id, !line_started && is_ft_end);  // Ensure no partial line remains
+
+  return uop_cache_buffer;
 }
 
 /* FT wrappers */

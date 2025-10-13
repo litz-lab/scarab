@@ -21,6 +21,8 @@ extern "C" {
 
 #define CPPC_DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CPP_CACHE, ##args)
 
+static Counter global_sub_cycle_counter = 0;
+
 template <typename User_Key_Type, typename User_Data_Type>
 struct Entry {
   Flag valid;
@@ -28,6 +30,7 @@ struct Entry {
   User_Data_Type data;
   // for LRU replacement policy
   Counter accessed_cycle;
+  uns sub_cycle_counter;  // Add this field to break ties within the same cycle
 };
 
 template <typename User_Key_Type, typename User_Data_Type>
@@ -79,6 +82,7 @@ void Cpp_Cache<User_Key_Type, User_Data_Type>::update_repl_states(Set<User_Key_T
   switch (repl_policy) {
     case REPL_TRUE_LRU: {
       set.entries[hit_idx].accessed_cycle = cycle_count;
+      set.entries[hit_idx].sub_cycle_counter = global_sub_cycle_counter;  // Update sub-cycle
     } break;
     case REPL_RANDOM: {
     } break;
@@ -104,12 +108,18 @@ uns Cpp_Cache<User_Key_Type, User_Data_Type>::get_repl_idx(Set<User_Key_Type, Us
   switch (repl_policy) {
     case REPL_TRUE_LRU: {
       Counter lru_cycle = std::numeric_limits<Counter>::max();
+      uns lru_sub_cycle = std::numeric_limits<uns>::max();
       for (uns i = 0; i < assoc; i++) {
         Entry<User_Key_Type, User_Data_Type> entry = set.entries[i];
-        // find smallest access cycle
-        if (entry.accessed_cycle < lru_cycle) {
+        
+        // Find entry with smallest access cycle, break ties with sub_cycle_counter
+        bool is_older = (entry.accessed_cycle < lru_cycle) || 
+                       (entry.accessed_cycle == lru_cycle && entry.sub_cycle_counter < lru_sub_cycle);
+        
+        if (is_older) {
           repl_idx = i;
           lru_cycle = entry.accessed_cycle;
+          lru_sub_cycle = entry.sub_cycle_counter;
         }
       }
     } break;
@@ -156,6 +166,8 @@ Entry<User_Key_Type, User_Data_Type> Cpp_Cache<User_Key_Type, User_Data_Type>::i
   uns repl_idx = get_repl_idx(sets[set_idx]);
 
   Entry<User_Key_Type, User_Data_Type> evicted_entry = sets[set_idx].entries[repl_idx];
+
+  global_sub_cycle_counter++;
   sets[set_idx].entries[repl_idx] = Entry<User_Key_Type, User_Data_Type>{TRUE, key, data, 0};
   update_repl_states(sets[set_idx], repl_idx);
 

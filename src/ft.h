@@ -63,6 +63,7 @@ void ft_free_op(Op* op);
 #include "globals/global_types.h"
 
 #include "decoupled_frontend.h"
+#include "uop_cache.h"
 
 // C++ class definition
 enum FT_Event {
@@ -92,6 +93,7 @@ class FT {
   void set_consumed();
 
   std::vector<Op*>& get_ops();
+  std::vector<Uop_Cache_Data> generate_uop_cache_data();
 
   // Change return type to FT_BuildResult
   Flag build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
@@ -109,6 +111,8 @@ class FT {
   bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT is properly ended
   FT_Ended_By get_end_reason() const;
   void clear_recovery_info();
+
+  FT* on_path_parent_FT;
 
  private:
   uns proc_id;

@@ -56,6 +56,7 @@ extern "C" {
 
 int64 node_dispatch_find_emptiest_rs(Op*);
 void node_schedule_oldest_first_sched(Op*);
+void node_track_fu_idle_stats();
 
 /**************************************************************************************/
 /* Issuers:
@@ -166,6 +167,11 @@ void node_schedule_oldest_first_sched(Op* op) {
 
   /* Did not find an empty slot or a slot that is younger than me, do nothing */
   if (youngest_slot_op_id == NODE_ISSUE_QUEUE_FU_SLOT_INVALID) {
+    // Track statistics for ready ops that couldn't be issued
+    STAT_EVENT(node->proc_id, RS_OP_READY_NOT_ISSUED_TOTAL);
+    if (op->rs_id < 8)
+      STAT_EVENT(node->proc_id, RS_0_OP_READY_NOT_ISSUED + op->rs_id);
+
     return;
   }
 
@@ -338,6 +344,73 @@ void node_issue_queue_schedule() {
             op->engine_info.l1_miss);
 
       schedule_func_table[NODE_ISSUE_QUEUE_SCHEDULE_SCHEME](op);
+    }
+  }
+  // Track statistics for idle FUs when no ready ops are available
+  node_track_fu_idle_stats();
+}
+
+/**************************************************************************************/
+/* FU idle tracking function */
+/*
+ * Track statistics for FUs that are idle when no ready ops are available
+ * This function checks each FU to see if it's idle and whether there are
+ * ready ops that could potentially be executed on it.
+ */
+void node_track_fu_idle_stats(void) {
+  extern Exec_Stage* exec;  // Access to FUs through exec stage
+
+  // Safety checks
+  if (!exec || !exec->fus || !node || !node->rs)
+    return;
+
+  for (uns32 fu_id = 0; fu_id < NUM_FUS; ++fu_id) {
+    if (node->sd.ops[fu_id] != NULL)
+      continue;  // FU has op scheduled to it
+
+    Func_Unit* fu = &exec->fus[fu_id];
+    if (fu->avail_cycle > cycle_count || fu->held_by_mem)
+      continue;  // FU is not available
+
+    // FU is idle and available - find which RS it belongs to
+    Flag found_ready_op_for_fu = FALSE;
+
+    // Since each FU is connected to only one RS, find that RS directly
+    for (uns32 rs_id = 0; rs_id < NUM_RS && !found_ready_op_for_fu; ++rs_id) {
+      Reservation_Station* rs = &node->rs[rs_id];
+
+      // Check if this RS is connected to the current FU
+      Flag rs_connected_to_fu = FALSE;
+      for (uns32 i = 0; i < rs->num_fus; ++i) {
+        if (rs->connected_fus[i] && rs->connected_fus[i]->fu_id == fu_id) {
+          rs_connected_to_fu = TRUE;
+          break;
+        }
+      }
+
+      if (!rs_connected_to_fu)
+        continue;
+
+      // Found the RS for this FU - check if it has ready ops
+      if (rs->rs_op_count > 0) {
+        // Check if any ready ops in the ready list could use this FU
+        for (Op* op = node->rdy_head; op; op = op->next_rdy) {
+          if (op->rs_id == rs_id && (op->state == OS_READY || op->state == OS_WAIT_FWD) &&
+              cycle_count >= op->rdy_cycle - 1) {
+            // Found a ready op that could use this FU
+            found_ready_op_for_fu = TRUE;
+            break;
+          }
+        }
+      }
+      // Since each FU belongs to only one RS, break here
+      break;
+    }
+
+    if (!found_ready_op_for_fu) {
+      STAT_EVENT(node->proc_id, FU_IDLE_NO_READY_OPS_TOTAL);
+      if (fu_id < 32)
+        STAT_EVENT(node->proc_id, FU_0_IDLE_NO_READY_OPS + fu_id);
     }
   }
 }

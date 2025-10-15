@@ -357,7 +357,7 @@ void node_issue_queue_schedule() {
  * This function checks each FU to see if it's idle and whether there are
  * ready ops that could potentially be executed on it.
  */
-void node_track_fu_idle_stats(void) {
+void node_track_fu_idle_stats() {
   extern Exec_Stage* exec;  // Access to FUs through exec stage
 
   // Safety checks

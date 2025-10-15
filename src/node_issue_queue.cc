@@ -396,7 +396,7 @@ void node_track_fu_idle_stats() {
         // Check if any ready ops in the ready list could use this FU
         for (Op* op = node->rdy_head; op; op = op->next_rdy) {
           if (op->rs_id == rs_id && (op->state == OS_READY || op->state == OS_WAIT_FWD) &&
-              cycle_count >= op->rdy_cycle - 1) {
+              cycle_count >= op->rdy_cycle) {
             // Found a ready op that could use this FU
             found_ready_op_for_fu = TRUE;
             break;

@@ -220,16 +220,49 @@ void ConstantLoadAddrPredictor::recover() {
 }
 
 PredictorEntry* ConstantLoadAddrPredictor::lookup(Op* op) {
-  // TODO
-  return nullptr;
+  ASSERT(op->proc_id, op->table_info->mem_type == MEM_LD);
+  Addr pc = op->inst_info->addr;
+
+  auto it = prediction_table.find(pc);
+  if (it != prediction_table.end()) {
+    it->second.found = true;
+    return &(it->second);
+  }
+
+  // Return a new entry that represents "not found"
+  static ConstantLoadAddrPredEntry not_found_entry;
+  not_found_entry.found = false;
+  return &not_found_entry;
 }
 
 void ConstantLoadAddrPredictor::train(Op* op, PredictorEntry* entry) {
-  // TODO
+  // If this PC has not been seen before
+  //   → create a new prediction entry with current VA
+  //   → store it in the prediction table
+  //   → return
+
+  // If predicted address matches actual address
+  //   → increase confidence counter
+  // Else
+  //   → update stored address to new VA
+  //   → reset confidence to zero
 }
 
 void ConstantLoadAddrPredictor::infer(Op* op, PredictorEntry* entry) {
-  // TODO
+  // If no valid entry exists for this PC
+  //   → return (no prediction can be made)
+
+  // Check confidence level
+  // If confidence is below threshold
+  //   → return (not confident enough to predict)
+
+  // Attempt to access L1 cache using predicted address
+  // l1_data = do_l1_access_addr(pred_addr)
+  // If access fails (no cache data)
+  //   → return (prediction not usable)
+
+  // Flag is_mispred = (pred_addr != op->oracle_info.va);
+  // load_value_predictor_process_predict_op(op, is_mispred);
 }
 
 /**************************************************************************************/

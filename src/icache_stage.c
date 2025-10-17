@@ -897,6 +897,10 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       // pass the global branch history to all the instructions
       op->oracle_info.pred_global_hist = g_bp_data->global_hist;
     }
+
+    if (op->load_value_flush) {
+      ic->off_path = ic->off_path || op->oracle_info.recover_at_exec;
+    }
   }
 }
 

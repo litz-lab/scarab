@@ -37,6 +37,7 @@
 #include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
 
+#include "load_value_pred.h"
 #include "op_pool.h"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
@@ -225,6 +226,17 @@ FT_Event FT::predict_one_cf_op(Op* op) {
     else
       STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_ONPATH);
     return FT_EVENT_FETCH_BARRIER;
+  }
+
+  load_value_predictor_predict_op(op);
+  if (op->load_value_flush) {
+    if (op->off_path) {
+      op->oracle_info.recover_at_exec = FALSE;
+    }
+
+    if (op->oracle_info.recover_at_exec) {
+      return FT_EVENT_MISPREDICT;
+    }
   }
 
   return FT_EVENT_NONE;

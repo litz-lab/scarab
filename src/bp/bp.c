@@ -195,6 +195,9 @@ void inc_bstat_fetched(Op* op) {
 }
 
 void inc_bstat_miss(Op* op) {
+  if (op->load_value_flush)
+    return;
+
   int64 key = convert_to_cmp_addr(op->table_info->cf_type, op->inst_info->addr);
   Per_Branch_Stat* bstat = (Per_Branch_Stat*)hash_table_access(&per_branch_stat, key);
   ASSERT(bp_recovery_info->proc_id, bstat);
@@ -960,6 +963,10 @@ void bp_retire_op(Bp_Data* bp_data, Op* op) {
 void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   STAT_EVENT(0, PERFORMED_EXEC_RECOVERIES);
   INC_STAT_EVENT(0, PERFORMED_RECOVERY_LAT, cycle_count - info->predict_cycle);
+
+  if (!info->cf_type)
+    return;
+
   /* always recover the global history */
   if (cf_type == CF_CBR) {
     bp_data->global_hist = (info->pred_global_hist >> 1) | (info->new_dir << 31);

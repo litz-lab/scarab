@@ -695,6 +695,10 @@ void add_src_from_op(Op* op, Op* src_op, Dep_Type type) {
   info->op_num = src_op->op_num;
   info->unique_num = src_op->unique_num;
 
+  if (src_op->load_value_predicted) {
+    return;
+  }
+
   /* for memory dependencies, derived_from_prog_input incremented in track_addr */
   set_not_rdy_bit(op, src_num);
   if (type == MEM_DATA_DEP) {
@@ -726,6 +730,10 @@ void add_src_from_map_entry(Op* op, Map_Entry* map_entry, Dep_Type type) {
   info->op = map_entry->op;
   info->op_num = map_entry->op_num;
   info->unique_num = map_entry->unique_num;
+
+  if (map_entry->op->load_value_predicted) {
+    return;
+  }
 
   /* always start with the not ready bit set */
   set_not_rdy_bit(op, src_num);

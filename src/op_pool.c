@@ -218,6 +218,8 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->precommitted = FALSE;
   op->macro_fused = FALSE;
   op->move_eliminated = FALSE;
+  op->load_value_predicted = FALSE;
+  op->load_value_flush = FALSE;
 
   op->req = NULL;
 

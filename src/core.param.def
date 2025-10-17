@@ -185,6 +185,10 @@ DEF_PARAM(lsq_enable, LSQ_ENABLE, Flag, Flag, TRUE, )
 DEF_PARAM(load_queue_entry_num, LOAD_QUEUE_ENTRY_NUM, uns, uns, 128, )
 DEF_PARAM(store_queue_entry_num, STORE_QUEUE_ENTRY_NUM, uns, uns, 72, )
 
+/****************** LOAD VALUE PREDICTOR ******************/
+DEF_PARAM(load_value_pred_scheme, LOAD_VALUE_PRED_SCHEME, uns, uns, 0, )
+DEF_PARAM(const_load_addr_pred_threshold, CONST_LOAD_ADDR_PRED_THRESHOLD, uns, uns, 10, )
+
 /********FRONT END STAGE
  * LATENCIES****************************************************/
 DEF_PARAM(decode_cycles, DECODE_CYCLES, uns, uns, 1, )

@@ -320,7 +320,7 @@ void update_exec_stage(Stage_Data* src_sd) {
 
     /* branch recovery/resolution */
     Flag is_replay = FALSE;  // TODO: check if this val is needed
-    if (op->table_info->cf_type && !is_replay) {
+    if ((op->table_info->cf_type || op->load_value_flush) && !is_replay) {
       /*
        * branch recovery currently does not like to be done more than 1 time.
        * since we don't have any way to know if an op is going to be replayed,
@@ -535,6 +535,8 @@ static inline void exec_stage_process_op(Op* op) {
   STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST + op->off_path);
   STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST_MEM + (op->table_info->mem_type == NOT_MEM) + 2 * op->off_path);
   STAT_EVENT(op->proc_id, EXEC_ALL_INST);
+
+  STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_SAVED_CYCLES_ON_PATH);
 
   DEBUG(exec->proc_id, "op_num:%s fu_num:%d exec_cycle:%s done_cycle:%s off_path:%d\n", unsstr64(op->op_num),
         op->fu_num, unsstr64(op->exec_cycle), unsstr64(op->done_cycle), op->off_path);

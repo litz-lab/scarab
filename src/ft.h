@@ -85,7 +85,6 @@ class FT {
   FT(uns _proc_id = 0);
   ~FT();
   void add_op(Op* op);
-  void set_start_ft_info(Op* op);
   bool can_fetch_op();
   Op* fetch_op();
   FT_Info get_ft_info() const;
@@ -95,8 +94,8 @@ class FT {
   std::vector<Op*>& get_ops();
 
   // Change return type to FT_BuildResult
-  bool build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
-             uint64_t start_op_num);
+  uint8_t build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
+                uint64_t start_op_num);
 
   FT_PredictResult predict_ft();
   std::pair<FT*, FT*> extract_off_path_ft(uns split_index);
@@ -105,9 +104,9 @@ class FT {
   Op* get_first_op() const;
   Addr get_start_addr() const;
   bool is_consecutive(const FT& previous_ft) const;
-  size_t get_size() const { return ops.size() - op_pos; }  // Check if FT exists/is valid
+  bool has_unread_ops() const { return ops.size() - op_pos != 0; }
   bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }
-  bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT exists/is valid
+  bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT is properly ended
   FT_Ended_By get_end_reason() const;
   void clear_recovery_info();
 

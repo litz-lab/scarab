@@ -94,22 +94,19 @@ void FT::add_op(Op* op) {
 
   ops.emplace_back(op);
 }
-void FT::set_start_ft_info(Op* op) {
-  ASSERT(proc_id, op->bom);
-  ft_info.static_info.start = op->inst_info->addr;
-  ft_info.dynamic_info.first_op_off_path = op->off_path;
-}
 
-bool FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
-               uint64_t start_op_num) {
+uint8_t FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
+                  uint64_t start_op_num) {
+  uint8_t fetched_uops = 0;
   do {
     if (!can_fetch_op_fn(proc_id)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
       delete this;
-      return false;
+      return fetched_uops;
     }
     Op* op = alloc_op(proc_id);
     fetch_op_fn(proc_id, op);
+    fetched_uops++;
     op->off_path = off_path;
     op->op_num = start_op_num++;
     op->oracle_info.pred_npc = op->oracle_info.npc;
@@ -122,7 +119,7 @@ bool FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns
 
   generate_ft_info();
 
-  return true;
+  return fetched_uops;
 }
 
 // will extract ops from 0 to index and form a new FT as off-path FT,
@@ -367,9 +364,7 @@ FT_Info ft_get_ft_info(FT* ft) {
 
 /* retire and flush, free all ops in a FT when last op is freed */
 void ft_free_op(Op* op) {
-  if (op && op->parent_FT) {
-    if (op->parent_FT->get_last_op() == op) {
-      delete op->parent_FT;
-    }
+  if (op->parent_FT && op->parent_FT->get_last_op() == op) {
+    delete op->parent_FT;
   }
 }

@@ -54,7 +54,6 @@ FT::~FT() {
       ft_op->parent_FT = on_path_parent_FT;
     }
     if ((on_path_parent_FT == nullptr) || ft_op->off_path) {
-      ft_op->parent_FT = nullptr;
       free_op(ft_op);
     }
   }
@@ -339,9 +338,7 @@ void FT::generate_ft_info() {
   ft_info.static_info.n_uops = ops.size() - op_pos;
   ft_info.static_info.length =
       ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size - ft_info.static_info.start;
-  for (uns i = op_pos; i <= ops.size() - 1; ++i) {
-    ops[i]->ft_info = ft_info;
-  }
+
   ASSERT(proc_id, ft_info.static_info.start && ft_info.static_info.length && ft_info.static_info.n_uops);
   STAT_EVENT(proc_id, POWER_BTB_READ);
 }

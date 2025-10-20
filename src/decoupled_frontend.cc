@@ -585,7 +585,6 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
 void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling
   ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT);
-  uint64_t front_length = result.index - current_ft_to_push->op_pos;
   // Misprediction: Switch to off-path execution
   auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
   current_ft_to_push = off_path_FT;

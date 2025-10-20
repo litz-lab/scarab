@@ -32,6 +32,7 @@
 
 #include "uop_cache.h"
 
+#include <map>
 #include <vector>
 
 #include "globals/assert.h"
@@ -83,9 +84,8 @@ class Uop_Cache : public Cpp_Cache<Uop_Cache_Key, Uop_Cache_Data> {
    */
   uns offset_bits;
 
-  uns set_idx_hash(Uop_Cache_Key key) override;
-
  public:
+  uns set_idx_hash(Uop_Cache_Key key) override;
   Uop_Cache(uns nl, uns asc, uns lb, Repl_Policy rp)
       : Cpp_Cache<Uop_Cache_Key, Uop_Cache_Data>(nl, asc, lb, rp),
         offset_bits(static_cast<uns>(std::log2(line_bytes))) {}
@@ -338,17 +338,45 @@ void uop_cache_evict_FT(const Entry<Uop_Cache_Key, Uop_Cache_Data>& evicted_entr
   } while (!invalidated_entry.data.end_of_ft);
 }
 
-/*
- * Insert the uop cache line buffer of an FT into the uop cache.
- */
+void uop_cache_preallocate_space(const std::vector<Uop_Cache_Data>& inserting_FT, FT_Info inserting_FT_info) {
+  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
+
+  // Track which slots we've already pre-allocated per set
+  std::map<uns, uns> preallocated_count_per_set;
+
+  for (const auto& it : inserting_FT) {
+    Uop_Cache_Key uop_cache_key = {it.line_start, inserting_FT_info.static_info};
+    uns set_idx = uc_cpp->uop_cache->set_idx_hash(uop_cache_key);
+
+    // Check if this key already exists in cache
+    if (uc_cpp->uop_cache->access(uop_cache_key, FALSE) != NULL) {
+      continue;  // Key already exists, no space needed
+    }
+
+    // Count how many slots we've already pre-allocated for this set
+    uns already_preallocated = preallocated_count_per_set[set_idx];
+
+    if (uc_cpp->uop_cache->has_no_space_for_key_with_preallocated(uop_cache_key, already_preallocated)) {
+      Entry<Uop_Cache_Key, Uop_Cache_Data> evicted_entry = uc_cpp->uop_cache->make_space_for_key(uop_cache_key);
+
+      if (evicted_entry.valid) {
+        DEBUG(uc->proc_id, "Pre-allocation evicted FT start=0x%llx, line=0x%llx for set %u\n",
+              evicted_entry.key.second.start, evicted_entry.key.first, set_idx);
+        uop_cache_evict_FT(evicted_entry);
+      }
+    }
+
+    // Increment our pre-allocated count for this set
+    preallocated_count_per_set[set_idx]++;
+  }
+}
+
 void uop_cache_insert_FT(const std::vector<Uop_Cache_Data> inserting_FT, FT_Info inserting_FT_info) {
   ASSERT(uc->proc_id, UOP_CACHE_ENABLE);
   Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
   Flag off_path = inserting_FT_info.dynamic_info.first_op_off_path;
-  /*
-   * If the first line from the FT is already in the uop cache, all lines of the FT should be in the uop cache;
-   * otherwise, all lines should not be in the uop cache.
-   */
+
+  // Check if first line already exists
   auto first_line = inserting_FT.begin();
   Uop_Cache_Data* first_lookup = uop_cache_lookup_line(first_line->line_start, inserting_FT_info, TRUE);
 
@@ -357,6 +385,11 @@ void uop_cache_insert_FT(const std::vector<Uop_Cache_Data> inserting_FT, FT_Info
     STAT_EVENT(uc->proc_id, UOP_CACHE_FT_INSERT_CONFLICTED_SHORT_REUSE_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
   } else {
     STAT_EVENT(uc->proc_id, UOP_CACHE_FT_INSERT_SUCCEEDED_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
+  }
+
+  // Pre-allocate space for the entire FT before insertion
+  if (!lines_exist) {
+    uop_cache_preallocate_space(inserting_FT, inserting_FT_info);
   }
 
   for (const auto& it : inserting_FT) {
@@ -369,21 +402,49 @@ void uop_cache_insert_FT(const std::vector<Uop_Cache_Data> inserting_FT, FT_Info
      * So by the time the second occurrence was inserted, the first occurrence was already in the uop cache.
      * As a result, the look-up above has updated the replacement policy, and we skip the insertion.
      */
-    if (lines_exist) {
-      ASSERT(uc->proc_id, uop_cache_line && *uop_cache_line == it);
-      STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERT_CONFLICTED_SHORT_REUSE_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
 
+    if (lines_exist && uop_cache_line) {
+      if (!(uop_cache_line && *uop_cache_line == it)) {
+        DEBUG(uc->proc_id, "Inconsistency detected - invalidating FT from addr=0x%llx\n", it.line_start);
+        // Replace this line and invalidate all following lines in the FT
+        Addr invalidate_addr = it.line_start;
+        Entry<Uop_Cache_Key, Uop_Cache_Data> invalidated_entry;
+
+        // First, replace the inconsistent line with new data
+        Uop_Cache_Key uop_cache_key = {invalidate_addr, inserting_FT_info.static_info};
+        invalidated_entry = uc_cpp->uop_cache->replace_if_exists(uop_cache_key, it);
+        ASSERT(uc->proc_id, invalidated_entry.valid);  // Should always succeed since line exists
+
+        // Now invalidate all subsequent lines in the FT
+        while (!invalidated_entry.data.end_of_ft) {
+          invalidate_addr += invalidated_entry.data.offset;
+          Uop_Cache_Key next_key = {invalidate_addr, inserting_FT_info.static_info};
+          invalidated_entry = uc_cpp->uop_cache->invalidate(next_key);
+
+          if (invalidated_entry.valid) {
+            DEBUG(uc->proc_id, "Invalidated following line at addr=0x%llx\n", invalidate_addr);
+          } else {
+            // No more lines found - this can happen if the FT was partially cached
+            break;
+          }
+        }
+
+        DEBUG(uc->proc_id, "Completed invalidation of inconsistent FT from addr=0x%llx\n", it.line_start);
+      }
+
+      STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERT_CONFLICTED_SHORT_REUSE_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
       continue;
     }
     ASSERT(uc->proc_id, !uop_cache_line);
 
     Uop_Cache_Key uop_cache_key = {it.line_start, inserting_FT_info.static_info};
+
     Entry<Uop_Cache_Key, Uop_Cache_Data> evicted_entry = uc_cpp->uop_cache->insert(uop_cache_key, it);
     DEBUG(uc->proc_id, "uop cache line inserted. off_path=%u, addr=0x%llx\n", off_path, it.line_start);
 
-    if (evicted_entry.valid) {
-      uop_cache_evict_FT(evicted_entry);
-    }
+    // Since we pre-allocated space, no eviction should occur during insertion
+    ASSERT(uc->proc_id, !evicted_entry.valid);
+
     STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERT_SUCCEEDED_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
   }
 }

@@ -260,7 +260,6 @@ struct Op_struct {
   Flag redirect_scheduled;
   // }}}
 
-  FT_Info ft_info;  // FT the op associated with
   // {{{ uop cache
   Flag fetched_from_uop_cache;
   // }}}

@@ -50,7 +50,6 @@ FT::~FT() {
   Flag all_on_path = !ops[0]->off_path && !ops.back()->off_path;
   for (auto ft_op : ops) {
     if (all_on_path || ft_op->off_path) {
-      ft_op->parent_FT = nullptr;
       free_op(ft_op);
     }
   }
@@ -95,20 +94,18 @@ void FT::add_op(Op* op) {
   ops.emplace_back(op);
 }
 
-uint8_t FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
-                  uint64_t start_op_num) {
-  uint8_t fetched_uops = 0;
+Flag FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
+               std::function<uint64_t()> get_next_op_id_fn) {
   do {
     if (!can_fetch_op_fn(proc_id)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
       delete this;
-      return fetched_uops;
+      return false;
     }
     Op* op = alloc_op(proc_id);
     fetch_op_fn(proc_id, op);
-    fetched_uops++;
     op->off_path = off_path;
-    op->op_num = start_op_num++;
+    op->op_num = get_next_op_id_fn();
     op->oracle_info.pred_npc = op->oracle_info.npc;
     op->oracle_info.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     if (off_path)
@@ -119,7 +116,7 @@ uint8_t FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(
 
   generate_ft_info();
 
-  return fetched_uops;
+  return true;
 }
 
 // will extract ops from 0 to index and form a new FT as off-path FT,
@@ -129,6 +126,11 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
   uns index_uns = static_cast<uns>(split_index);
   ASSERT(proc_id, index_uns < ops.size() && index_uns >= 0);
 
+  // if split at the last op and FT already ended, no need to create new FT, just update end condition
+  if (split_index == ops.size() - 1 && get_end_reason() != FT_NOT_ENDED) {
+    generate_ft_info();
+    return {this, nullptr};
+  }
   // Initialize off-path FT that will contain off-path ops after split position
   FT* off_path_ft = new FT(proc_id);
 
@@ -364,6 +366,7 @@ FT_Info ft_get_ft_info(FT* ft) {
 
 /* retire and flush, free all ops in a FT when last op is freed */
 void ft_free_op(Op* op) {
+  ASSERT(0, op->parent_FT);
   if (op->parent_FT && op->parent_FT->get_last_op() == op) {
     delete op->parent_FT;
   }

@@ -94,8 +94,8 @@ class FT {
   std::vector<Op*>& get_ops();
 
   // Change return type to FT_BuildResult
-  uint8_t build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
-                uint64_t start_op_num);
+  Flag build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
+             std::function<uint64_t()> get_next_op_id_fn);
 
   FT_PredictResult predict_ft();
   std::pair<FT*, FT*> extract_off_path_ft(uns split_index);

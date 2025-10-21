@@ -407,12 +407,10 @@ uint64_t get_next_unconsumed_ft_pos() {
 FT_Arbitration_Result ft_arbitration() {
   if (UOP_CACHE_ENABLE) {
     if (uc->current_ft) {
-      ft_set_consumed(uc->current_ft);
       uc->current_ft = NULL;
     }
   }
   if (ic->current_ft) {
-    ft_set_consumed(ic->current_ft);
     ic->current_ft = NULL;
   }
 
@@ -534,8 +532,10 @@ Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data* sd) {
     sd->op_count++;
     requested--;
   }
-
-  return !ft_can_fetch_op(ft);
+  Flag ft_has_ended = !ft_can_fetch_op(ft);
+  if (ft_has_ended)
+    ft_set_consumed(ft);
+  return ft_has_ended;
 }
 
 void icache_serve_ops() {
@@ -795,6 +795,7 @@ void update_icache_stage() {
   }
 
   execute_coupled_FSM();
+  pop_fts_decoupled_fe();
 }
 
 /**************************************************************************************/

@@ -100,6 +100,7 @@ void debug_decoupled_fe();
 void update_decoupled_fe();
 // Icache/Core API
 void recover_decoupled_fe();
+void pop_fts_decoupled_fe();
 bool decoupled_fe_is_off_path();
 void decoupled_fe_retire(Op* op, int proc_id, uns64 inst_uid);
 

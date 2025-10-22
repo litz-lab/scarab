@@ -44,8 +44,6 @@ typedef struct FT FT;
 // C-compatible API
 bool ft_can_fetch_op(FT* ft);
 Op* ft_fetch_op(FT* ft);
-bool ft_is_consumed(FT* ft);
-void ft_set_consumed(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
 void ft_free_op(Op* op);
 
@@ -88,8 +86,6 @@ class FT {
   bool can_fetch_op();
   Op* fetch_op();
   FT_Info get_ft_info() const;
-  bool is_consumed();
-  void set_consumed();
 
   std::vector<Op*>& get_ops();
 
@@ -115,7 +111,6 @@ class FT {
   uint64_t op_pos;
   FT_Info ft_info;
   std::vector<Op*> ops;
-  bool consumed;
   FT_Event predict_one_cf_op(Op* op);
   void generate_ft_info();
   friend class Decoupled_FE;

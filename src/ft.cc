@@ -55,7 +55,7 @@ FT::~FT() {
   }
 }
 
-FT::FT(uns _proc_id) : proc_id(_proc_id), consumed(false) {
+FT::FT(uns _proc_id) : proc_id(_proc_id) {
   ft_info.dynamic_info.FT_id = FT_id_counter++;
   op_pos = 0;
   ft_info.static_info.start = 0;
@@ -239,14 +239,6 @@ FT_Info FT::get_ft_info() const {
   return ft_info;
 }
 
-bool FT::is_consumed() {
-  return consumed;
-}
-
-void FT::set_consumed() {
-  consumed = true;
-}
-
 std::vector<Op*>& FT::get_ops() {
   return ops;
 }
@@ -352,14 +344,6 @@ Op* ft_fetch_op(FT* ft) {
   return ft->fetch_op();
 }
 
-bool ft_is_consumed(FT* ft) {
-  return ft->is_consumed();
-}
-
-void ft_set_consumed(FT* ft) {
-  ft->set_consumed();
-}
-
 FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
@@ -367,7 +351,7 @@ FT_Info ft_get_ft_info(FT* ft) {
 /* retire and flush, free all ops in a FT when last op is freed */
 void ft_free_op(Op* op) {
   ASSERT(0, op->parent_FT);
-  if (op->parent_FT && op->parent_FT->get_last_op() == op) {
+  if (op->parent_FT->get_last_op() == op) {
     delete op->parent_FT;
   }
 }

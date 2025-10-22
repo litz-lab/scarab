@@ -27,8 +27,8 @@ class Decoupled_FE {
   int is_off_path() { return is_off_path_state(); }
   void recover();
   void update();
-  FT* get_ft(uint64_t ft_pos);
-  void pop_fts();
+  FT* get_ft();
+  void pop_ft(FT* ft);
   decoupled_fe_iter* new_ftq_iter();
   Op* ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft);
   Op* ftq_iter_get_next(decoupled_fe_iter* iter, bool* end_of_ft);
@@ -138,12 +138,12 @@ void update_decoupled_fe() {
   dfe->update();
 }
 
-void pop_fts_decoupled_fe() {
-  dfe->pop_fts();
+void pop_ft_decoupled_fe(FT* ft) {
+  dfe->pop_ft(ft);
 }
 
-FT* decoupled_fe_get_ft(uint64_t ft_pos) {
-  return dfe->get_ft(ft_pos);
+FT* decoupled_fe_get_ft() {
+  return dfe->get_ft();
 }
 
 decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id) {
@@ -437,29 +437,26 @@ void Decoupled_FE::update() {
   }
 }
 
-FT* Decoupled_FE::get_ft(uint64_t ft_pos) {
-  if (ft_pos < ftq.size()) {
-    return ftq[ft_pos];
-  } else {
-    return NULL;
-  }
+FT* Decoupled_FE::get_ft() {
+  if (!ftq.size())
+    return nullptr;
+  return ftq.front();
 }
 
-void Decoupled_FE::pop_fts() {
-  while (!ftq.empty() && ftq.front()->consumed) {
-    uint64_t ft_num_ops = ftq.front()->ops.size();
-    ftq.pop_front();
-    for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
-      // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before
-      if (it->ft_pos > 0) {
-        ASSERT(proc_id, it->flattened_op_pos >= ft_num_ops);
-        it->flattened_op_pos -= ft_num_ops;
-        it->ft_pos--;
-      } else {
-        ASSERT(proc_id, it->flattened_op_pos < ft_num_ops);
-        it->flattened_op_pos = 0;
-        it->op_pos = 0;
-      }
+void Decoupled_FE::pop_ft(FT* ft) {
+  ASSERT(proc_id, ft == ftq.front());
+  uint64_t ft_num_ops = ftq.front()->ops.size();
+  ftq.pop_front();
+  for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
+    // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before
+    if (it->ft_pos > 0) {
+      ASSERT(proc_id, it->flattened_op_pos >= ft_num_ops);
+      it->flattened_op_pos -= ft_num_ops;
+      it->ft_pos--;
+    } else {
+      ASSERT(proc_id, it->flattened_op_pos < ft_num_ops);
+      it->flattened_op_pos = 0;
+      it->op_pos = 0;
     }
   }
 }
@@ -581,6 +578,54 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
   }
   ftq.emplace_back(std::move(current_ft_to_push));
 }
+
+/***************************************************************************************
+ * redirect_to_off_path() Cases Documentation
+ *
+ * This function handles branch misprediction by transitioning to off-path execution.
+ * The behavior depends on where the misprediction occurs and the current (off path) FT state.
+ *
+ *
+ * Code Flow:
+ * 1. Extract on-path op from current FT at misprediction index as the current (off path) FT
+ * 2. Set up recovery FT (either use trailing_ft or build new one)
+ * 3. Transition to off-path state and redirect frontend
+ * 4. Continue building off-path FT if needed (cases 2)
+ *
+ * - split_last:      Misprediction occurred at the last operation of the FT
+ * - ft_ended:        splitted front part FT was already terminated before misprediction
+ * - generate off FT: Need to building/padding the current off-path FT
+ * - trailing_ft:     Remaining on-path operations after misprediction point
+ *
+ *
+ * +------+------------+----------+-----------------+----------------------------------+
+ * | Case | Split Last | FT Ended | Generate Off FT | Description                      |
+ * +------+------------+----------+-----------------+----------------------------------+
+ * |  1   |    Yes     |   Yes    |       No        | Mispred branch at end of line    |
+ * |      |            |          |                 | - Misprediction at last op       |
+ * |      |            |          |                 | - FT already ended               |
+ * |      |            |          |                 | - Build New recovery FT          |
+ * +------+------------+----------+-----------------+----------------------------------+
+ * |  2   |    Yes     |   No     |      Yes        | Last op mispred not-taken        |
+ * |      |            |          |                 | - Misprediction at last op       |
+ * |      |            |          |                 | - FT not ended (pred not-taken)  |
+ * |      |            |          |                 | - Need to pad/continue off-path  |
+ * |      |            |          |                 | - Build New recovery FT          |
+ * +------+------------+----------+-----------------+----------------------------------+
+ * |  3   |    No      |   Yes    |      No         | Mispred in middle as taken       |
+ * |      |            |          |                 | - Misprediction in middle of FT  |
+ * |      |            |          |                 | - FT ends (pred taken branch)    |
+ * |      |            |          |                 | - No need to pad off-path        |
+ * |      |            |          |                 | - Use trailing_ft for recovery   |
+ * +------+------------+----------+-----------------+----------------------------------+
+ * |  4   |    No      |   No     |      Yes        | Mispred in middle not taken (btb)|
+ * |      |            |          |                 | - btb miss result in mispred     |
+ * |      |            |          |                 | - Misprediction in middle of FT  |
+ * |      |            |          |                 | - FT not end                     |
+ * |      |            |          |                 | - Need to pad off-path           |
+ * |      |            |          |                 | - Use trailing_ft for recovery   |
+ * +------+------------+----------+-----------------+----------------------------------+
+ ***************************************************************************************/
 
 void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling

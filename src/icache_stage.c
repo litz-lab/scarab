@@ -100,7 +100,6 @@ static inline void log_stats_ic_miss(void);
 static inline void log_stats_ic_hit(void);
 static inline void log_stats_mshr_hit(Addr line_addr);
 
-static inline uint64_t get_next_unconsumed_ft_pos(void);
 static inline FT_Arbitration_Result ft_arbitration(void);
 static inline Icache_State icache_mem_req_actions(Break_Reason*);
 static inline Icache_State icache_wait_for_miss_actions(Break_Reason*);
@@ -394,16 +393,6 @@ Flag mem_req_on_icache_miss() {
   return TRUE;
 }
 
-uint64_t get_next_unconsumed_ft_pos() {
-  for (uint64_t i = 0; i < decoupled_fe_ftq_num_fts(); i++) {
-    FT* ft = decoupled_fe_get_ft(i);
-    if (!ft_is_consumed(ft)) {
-      return i;
-    }
-  }
-  return decoupled_fe_ftq_num_fts();
-}
-
 FT_Arbitration_Result ft_arbitration() {
   if (UOP_CACHE_ENABLE) {
     if (uc->current_ft) {
@@ -414,12 +403,10 @@ FT_Arbitration_Result ft_arbitration() {
     ic->current_ft = NULL;
   }
 
-  uint64_t ft_pos = get_next_unconsumed_ft_pos();
-  FT* ft = decoupled_fe_get_ft(ft_pos);
+  FT* ft = decoupled_fe_get_ft();
   if (!ft) {
     return FT_UNAVAILABLE;
   } else {
-    ASSERT(ic->proc_id, !ft_is_consumed(ft));
     FT_Info ft_info = ft_get_ft_info(ft);
     // set the current fetch address
     ic->fetch_addr = ft_info.static_info.start;
@@ -534,7 +521,7 @@ Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data* sd) {
   }
   Flag ft_has_ended = !ft_can_fetch_op(ft);
   if (ft_has_ended)
-    ft_set_consumed(ft);
+    pop_ft_decoupled_fe(ft);
   return ft_has_ended;
 }
 
@@ -795,7 +782,6 @@ void update_icache_stage() {
   }
 
   execute_coupled_FSM();
-  pop_fts_decoupled_fe();
 }
 
 /**************************************************************************************/

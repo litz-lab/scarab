@@ -375,7 +375,6 @@ void cmp_recover() {
   recover_thread(td, bp_recovery_info->recovery_fetch_addr, bp_recovery_info->recovery_op_num,
                  bp_recovery_info->recovery_inst_uid, bp_recovery_info->late_bp_recovery_wrong);
 
-  recover_decoupled_fe();
   recover_fdip();
   recover_icache_stage();
   recover_uop_cache();
@@ -388,6 +387,7 @@ void cmp_recover() {
   recover_exec_stage();
   recover_dcache_stage();
   recover_memory();
+  recover_decoupled_fe();
 }
 
 /**************************************************************************************/

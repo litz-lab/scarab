@@ -521,7 +521,7 @@ Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data* sd) {
   }
   Flag ft_has_ended = !ft_can_fetch_op(ft);
   if (ft_has_ended)
-    pop_ft_decoupled_fe(ft);
+    decoupled_fe_pop_ft(ft);
   return ft_has_ended;
 }
 

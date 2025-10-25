@@ -138,7 +138,7 @@ void update_decoupled_fe() {
   dfe->update();
 }
 
-void pop_ft_decoupled_fe(FT* ft) {
+void decoupled_fe_pop_ft(FT* ft) {
   dfe->pop_ft(ft);
 }
 
@@ -578,54 +578,6 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
   }
   ftq.emplace_back(std::move(current_ft_to_push));
 }
-
-/***************************************************************************************
- * redirect_to_off_path() Cases Documentation
- *
- * This function handles branch misprediction by transitioning to off-path execution.
- * The behavior depends on where the misprediction occurs and the current (off path) FT state.
- *
- *
- * Code Flow:
- * 1. Extract on-path op from current FT at misprediction index as the current (off path) FT
- * 2. Set up recovery FT (either use trailing_ft or build new one)
- * 3. Transition to off-path state and redirect frontend
- * 4. Continue building off-path FT if needed (cases 2)
- *
- * - split_last:      Misprediction occurred at the last operation of the FT
- * - ft_ended:        splitted front part FT was already terminated before misprediction
- * - generate off FT: Need to building/padding the current off-path FT
- * - trailing_ft:     Remaining on-path operations after misprediction point
- *
- *
- * +------+------------+----------+-----------------+----------------------------------+
- * | Case | Split Last | FT Ended | Generate Off FT | Description                      |
- * +------+------------+----------+-----------------+----------------------------------+
- * |  1   |    Yes     |   Yes    |       No        | Mispred branch at end of line    |
- * |      |            |          |                 | - Misprediction at last op       |
- * |      |            |          |                 | - FT already ended               |
- * |      |            |          |                 | - Build New recovery FT          |
- * +------+------------+----------+-----------------+----------------------------------+
- * |  2   |    Yes     |   No     |      Yes        | Last op mispred not-taken        |
- * |      |            |          |                 | - Misprediction at last op       |
- * |      |            |          |                 | - FT not ended (pred not-taken)  |
- * |      |            |          |                 | - Need to pad/continue off-path  |
- * |      |            |          |                 | - Build New recovery FT          |
- * +------+------------+----------+-----------------+----------------------------------+
- * |  3   |    No      |   Yes    |      No         | Mispred in middle as taken       |
- * |      |            |          |                 | - Misprediction in middle of FT  |
- * |      |            |          |                 | - FT ends (pred taken branch)    |
- * |      |            |          |                 | - No need to pad off-path        |
- * |      |            |          |                 | - Use trailing_ft for recovery   |
- * +------+------------+----------+-----------------+----------------------------------+
- * |  4   |    No      |   No     |      Yes        | Mispred in middle not taken (btb)|
- * |      |            |          |                 | - btb miss result in mispred     |
- * |      |            |          |                 | - Misprediction in middle of FT  |
- * |      |            |          |                 | - FT not end                     |
- * |      |            |          |                 | - Need to pad off-path           |
- * |      |            |          |                 | - Use trailing_ft for recovery   |
- * +------+------------+----------+-----------------+----------------------------------+
- ***************************************************************************************/
 
 void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling

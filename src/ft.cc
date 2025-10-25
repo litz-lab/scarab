@@ -122,6 +122,56 @@ Flag FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns
 // will extract ops from 0 to index and form a new FT as off-path FT,
 // the original FT have op_pos moved and modify ft_info to truncated version
 // returns off_path and original FT
+
+/***************************************************************************************
+ * redirect_to_off_path() Cases Documentation
+ *
+ * This function handles branch misprediction by transitioning to off-path execution.
+ * The behavior depends on where the misprediction occurs and the current (off path) FT state.
+ *
+ *
+ * Code Flow:
+ * 1. Extract on-path op from current FT at misprediction index as the current (off path) FT
+ * 2. Set up recovery FT (either use trailing_ft or build new one)
+ * 3. Transition to off-path state and redirect frontend
+ * 4. Continue building off-path FT if needed (cases 2)
+ *
+ * - split_last:      Misprediction occurred at the last operation of the FT
+ * - ft_ended:        splitted front part FT was already terminated before misprediction
+ * - generate off FT: Need to building/padding the current off-path FT
+ * - trailing_ft:     Remaining on-path operations after misprediction point
+ *
+ *
+ * +------+------------+----------+-----------------+----------------------------------+
+ * | Case | Split Last | FT Ended | Generate Off FT | Description                      |
+ * +------+------------+----------+-----------------+----------------------------------+
+ * |  1   |    Yes     |   Yes    |       No        | Mispred branch at end of line    |
+ * |      |            |          |                 | - Misprediction at last op       |
+ * |      |            |          |                 | - FT already ended               |
+ * |      |            |          |                 | - Build New recovery FT          |
+ * +------+------------+----------+-----------------+----------------------------------+
+ * |  2   |    Yes     |   No     |      Yes        | Last op mispred not-taken        |
+ * |      |            |          |                 | - Misprediction at last op       |
+ * |      |            |          |                 | - FT not ended (pred not-taken)  |
+ * |      |            |          |                 | - Need to pad/continue off-path  |
+ * |      |            |          |                 | - Build New recovery FT          |
+ * +------+------------+----------+-----------------+----------------------------------+
+ * |  3   |    No      |   Yes    |      Yes        | Mispred in middle as taken       |
+ * |      |            |          |                 | - Misprediction in middle of FT  |
+ * |      |            |          |                 | - FT ends (pred taken branch)    |
+ * |      |            |          |                 | - needs new off-path FT          |
+ * |      |            |          |                 | - No need to pad off-path        |
+ * |      |            |          |                 | - Use trailing_ft for recovery   |
+ * +------+------------+----------+-----------------+----------------------------------+
+ * |  4   |    No      |   No     |      Yes        | Mispred in middle not taken (btb)|
+ * |      |            |          |                 | - btb miss result in mispred     |
+ * |      |            |          |                 | - Misprediction in middle of FT  |
+ * |      |            |          |                 | - FT not end                     |
+ * |      |            |          |                 | - Need to pad off-path           |
+ * |      |            |          |                 | - Use trailing_ft for recovery   |
+ * +------+------------+----------+-----------------+----------------------------------+
+ ***************************************************************************************/
+
 std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
   uns index_uns = static_cast<uns>(split_index);
   ASSERT(proc_id, index_uns < ops.size() && index_uns >= 0);

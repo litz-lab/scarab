@@ -122,6 +122,8 @@ void init_node_stage(uns8 proc_id, const char* name) {
   // allocate wires to functional units
   node->sd.max_op_count = NUM_FUS;  // Bandwidth between schedule and FUS
   node->sd.ops = (Op**)malloc(sizeof(Op*) * node->sd.max_op_count);
+  // allocate FU to RS mapping array
+  node->fu_to_rs_map = (int32*)malloc(sizeof(int32) * NUM_FUS);
 
   reset_node_stage();
 }
@@ -131,8 +133,10 @@ void init_node_stage(uns8 proc_id, const char* name) {
 
 void reset_node_stage() {
   uns ii;
-  for (ii = 0; ii < NUM_FUS; ii++)
+  for (ii = 0; ii < NUM_FUS; ii++) {
     node->sd.ops[ii] = NULL;
+    node->fu_to_rs_map[ii] = -1;  // Initialize to invalid RS ID
+  }
   node->sd.op_count = 0;
 
   node->node_head = NULL;

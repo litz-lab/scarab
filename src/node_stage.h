@@ -65,6 +65,8 @@ typedef struct Node_Stage_struct {
   Op* next_op_into_rs;      // oldest issued op not yet in the scheduling window (RS)
   Reservation_Station* rs;  // information about all of the reservation stations
 
+  int32* fu_to_rs_map;  // mapping from FU ID to RS ID (-1 for unconnected FUs)
+
   Flag mem_blocked;      // are we out of mem req buffers for this core
   uns mem_block_length;  // length of the current memory block
   uns ret_stall_length;  // length of the current retirement stall

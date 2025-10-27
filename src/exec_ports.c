@@ -242,6 +242,8 @@ void init_exec_ports_rs_list(uns proc_id, Reservation_Station* rs, Func_Unit* lo
       idx = idx - 1;                  // built in returns 1 + the true index
       ASSERTM(proc_id, idx < NUM_FUS, "Attempted connections with an FU that does not exist\n");
       rs[i].connected_fus[num_fus] = &local_fus[idx];
+      // Update the FU to RS mapping
+      node->fu_to_rs_map[idx] = i;
       num_fus++;
       next = next & ~(0x01 << idx);  // Clear the bit we just connected
       idx = __builtin_ffs(next);     // Find the next set bit

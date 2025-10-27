@@ -169,9 +169,7 @@ void node_schedule_oldest_first_sched(Op* op) {
   if (youngest_slot_op_id == NODE_ISSUE_QUEUE_FU_SLOT_INVALID) {
     // Track statistics for ready ops that couldn't be issued
     STAT_EVENT(node->proc_id, RS_OP_READY_NOT_ISSUED_TOTAL);
-    if (op->rs_id < 8)
-      STAT_EVENT(node->proc_id, RS_0_OP_READY_NOT_ISSUED + op->rs_id);
-
+    STAT_EVENT(node->proc_id, RS_0_OP_READY_NOT_ISSUED + (op->rs_id < 8 ? op->rs_id : 8));
     return;
   }
 
@@ -360,24 +358,10 @@ void node_issue_queue_schedule() {
 void node_track_fu_idle_stats(void) {
   extern Exec_Stage* exec;  // Access to FUs through exec stage
 
-  // First loop: count ready ops per RS AND fill FU-to-RS mapping - O(RS)
+  // Count ready ops per RS - O(RS)
   uns32 ready_ops_per_rs[NUM_RS] = {0};
-  int32 fu_to_rs_map[NUM_FUS];
-
-  // Initialize FU-to-RS mapping to invalid
-  for (uns32 fu_id = 0; fu_id < NUM_FUS; ++fu_id) {
-    fu_to_rs_map[fu_id] = -1;
-  }
 
   for (uns32 rs_id = 0; rs_id < NUM_RS; ++rs_id) {
-    Reservation_Station* rs = &node->rs[rs_id];
-
-    // Fill FU-to-RS mapping for this RS
-    for (uns32 i = 0; i < rs->num_fus; ++i) {
-      uns32 fu_id = rs->connected_fus[i]->fu_id;
-      fu_to_rs_map[fu_id] = rs_id;
-    }
-
     // Count ready ops for this RS
     for (Op* op = node->rdy_head; op; op = op->next_rdy) {
       if (op->rs_id == rs_id && (op->state == OS_READY || op->state == OS_WAIT_FWD) &&
@@ -387,7 +371,7 @@ void node_track_fu_idle_stats(void) {
     }
   }
 
-  // Second loop: check FU availability then use mapping to find connected RS - O(FU)
+  // Second loop: check FU availability then use global mapping to find connected RS - O(FU)
   for (uns32 fu_id = 0; fu_id < NUM_FUS; ++fu_id) {
     // Check if this FU is currently idle (no op scheduled to it and FU is available)
     if (node->sd.ops[fu_id] != NULL)
@@ -398,17 +382,14 @@ void node_track_fu_idle_stats(void) {
     if (fu->avail_cycle > cycle_count || fu->held_by_mem)
       continue;  // FU is not available, skip
 
-    // FU is available - use mapping to find connected RS
-    int32 rs_id = fu_to_rs_map[fu_id];
-    if (rs_id == NODE_ISSUE_QUEUE_RS_SLOT_INVALID)
-      continue;  // FU not connected to any RS (shouldn't happen)
-
+    // FU is available - use global mapping to find connected RS
+    int32 rs_id = node->fu_to_rs_map[fu_id];
+    ASSERT(0, rs_id != NODE_ISSUE_QUEUE_RS_SLOT_INVALID);
     // Check if this RS has ready ops
     if (ready_ops_per_rs[rs_id] == 0) {
       STAT_EVENT(node->proc_id, FU_IDLE_NO_READY_OPS_TOTAL);
       // Per-FU counter for idle cycles with no ready ops
-      if (fu_id < 32)
-        STAT_EVENT(node->proc_id, FU_0_IDLE_NO_READY_OPS + fu_id);
+      STAT_EVENT(node->proc_id, FU_0_IDLE_NO_READY_OPS + (fu_id < 32 ? fu_id : 32));
     }
   }
 }

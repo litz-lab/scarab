@@ -1,8 +1,7 @@
-# .github/workflows/compile-scarab.yml
 name: Compile PR in Container
 
 ############################################################
-# 1 ─── Triggers ────────────────────────────────────────────
+# Triggers
 ############################################################
 on:
   pull_request:
@@ -11,128 +10,215 @@ on:
     branches: [main]
   workflow_dispatch: # Allows manual triggering of the workflow to test before merging
 
+
 ############################################################
-# 2 ─── Shared variables ───────────────────────────────────
+# Global variables
 ############################################################
 env:
   # SHA of the code being tested (PR head or merge commit)
   COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
+
 ############################################################
-# 3 ─── Job 0: look up infra‑container tag ─────────────────
+# Jobs
 ############################################################
 jobs:
-
-  get_tag:
+  build-scarab-dbg:
+    ########################################################
+    # Job: build scarab dbg
+    ########################################################
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.tag.outputs.short }}
+    if: github.event_name == 'pull_request'
     steps:
-      - id: tag
-        name: Latest scarab‑infra SHA
+      - name: Checkout Scarab
+        uses: actions/checkout@v4
+
+      - name: Checkout scarab-infra
+        uses: actions/checkout@v4
+        with:
+          repository: litz-lab/scarab-infra
+          path: infra
+          ref: refs/heads/main
+          fetch-depth: 0
+
+      - name: Allow Git in container
         run: |
-          LATEST=$(curl -s https://raw.githubusercontent.com/litz-lab/scarab-infra/main/last_built_tag.txt)
-          echo "short=${LATEST}" >>"$GITHUB_OUTPUT"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/infra"
 
-############################################################
-# 4 ─── Job 1: build (opt) ─────────────────────────────────
-############################################################
- 
-  build-opt:
+      - name: Initialize environment
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: ./sci --init
+
+      - name: Locate scarabinfra conda env
+        id: conda-env
+        working-directory: infra
+        run: |
+          python3 - <<'PY' > env_path.txt
+          import pathlib
+          from importlib.machinery import SourceFileLoader
+          import importlib.util
+
+          script_path = pathlib.Path("sci").resolve()
+          if not script_path.exists():
+              raise FileNotFoundError(f"Unable to locate {script_path}")
+          loader = SourceFileLoader("scarab_sci", str(script_path))
+          spec = importlib.util.spec_from_loader("scarab_sci", loader)
+          module = importlib.util.module_from_spec(spec)
+          loader.exec_module(module)
+          env_path, _ = module.resolve_conda_env_path()
+          print(f"SCARABINFRA_ENV={env_path}")
+          PY
+          cat env_path.txt >> "$GITHUB_ENV"
+          rm env_path.txt
+
+      - name: Patch descriptor for workflow
+        working-directory: infra
+        env:
+          PYTHON_BIN: ${{ env.SCARABINFRA_ENV }}/bin/python
+        run: |
+          if [ -z "$PYTHON_BIN" ]; then
+            echo "scarabinfra conda environment not detected"
+            exit 1
+          fi
+          "$PYTHON_BIN" - <<'PY2'
+          import json
+          import os
+          import pathlib
+
+          # On host runners this resolves to /home/runner/work/<repo>/<repo>
+          ws = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          desc_path = pathlib.Path("json/top_simpoint.json")
+          with desc_path.open("r", encoding="utf-8") as handle:
+              data = json.load(handle)
+          data["root_dir"] = f"{ws}/"
+          data["scarab_path"] = f"{ws}/"
+          data["traces_dir"] = str(ws / "traces_top_simpoint")
+          data["scarab_build"] = "dbg"
+          with desc_path.open("w", encoding="utf-8") as handle:
+              json.dump(data, handle, indent=2)
+          PY2
+
+      - name: Build Scarab dbg
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: ./sci --build-scarab top_simpoint
+
+  build-and-run-scarab-opt:
+    ###############################################################
+    # Job: build scarab opt and run simulation and collect metrics
+    ###############################################################
     runs-on: ubuntu-latest
-    needs: get_tag
     if: github.event_name == 'pull_request'
-    container:
-      image: ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Mark Git repo as safe
-        run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
-
-      - name: Build Scarab Opt
-        working-directory: src
-        run: make opt -j
-
-############################################################
-# 5 ─── Job 2: build (dbg) ─────────────────────────────────
-############################################################ 
-
-  build-dbg:
-    runs-on: ubuntu-latest
-    needs: get_tag
-    if: github.event_name == 'pull_request'
-    container:
-      image: ghcr.io/litz-lab/scarab-infra/allbench_traces:${{ needs.get_tag.outputs.tag }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Mark Git repo as safe
-        run: git config --global --add safe.directory /__w/scarab_ll/scarab_ll
-
-      - name: Build Scarab Dbg
-        working-directory: src
-        run: make dbg -j
-
-############################################################
-# 6 ─── Job 3: run simulation & extract metrics ────────────
-############################################################
-  run-scarab:
-    needs: get_tag
-    runs-on: ubuntu-latest
     outputs:
-      ipc:  ${{ steps.ipc.outputs.value }}
+      ipc: ${{ steps.ipc.outputs.value }}
       kips: ${{ steps.kips.outputs.value }}
-    env:
-      TAG: ${{ needs.get_tag.outputs.tag }}
     steps:
-      # Traces ------------------------------------------------
-      - name: Fetch traces
-        run: |
-          curl -L -o traces.tar.gz \
-            https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz
-          tar -xzf traces.tar.gz
+      - name: Checkout Scarab
+        uses: actions/checkout@v4
 
-      # Code --------------------------------------------------
-      - uses: actions/checkout@v4            # PR or main code
+      - name: Checkout scarab-infra
+        uses: actions/checkout@v4
         with:
-          path: scarab_ll
-      - name: Clone scarab‑infra
-        run: git clone https://github.com/litz-lab/scarab-infra.git
+          repository: litz-lab/scarab-infra
+          path: infra
+          ref: refs/heads/main
+          fetch-depth: 0
 
-      # Docker image -----------------------------------------
-      - name: Pull sim container
-        working-directory: scarab-infra
+      - name: Allow Git in container
         run: |
-          LATEST=$(curl -s https://api.github.com/repos/litz-lab/scarab-infra/commits/main | jq -r '.sha')
-          echo "Pulling image with tag $TAG"
-          docker pull ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG}
-          echo "Tagging it as ${LATEST:0:7}"
-          docker tag  ghcr.io/litz-lab/scarab-infra/allbench_traces:${TAG} allbench_traces:${LATEST:0:7}
-          echo "Local images:"
-          docker images | grep allbench_traces
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/infra"
 
-      # Conda Environment
-      - name: Set up Miniconda
-        uses: conda-incubator/setup-miniconda@v2
-        with:
-          auto-activate-base: false
-          activate-environment: scarabinfra
-          environment-file: scarab-infra/quickstart_env.yaml
-          python-version: 3.12
+      - name: Initialize environment
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: ./sci --init
 
-      # Simulation -------------------------------------------
-      - name: Run simulation
-        working-directory: scarab-infra
-        shell: bash -l {0}
+      - name: Locate scarabinfra conda env
+        id: conda-env
+        working-directory: infra
         run: |
-          set -e
-          chmod +x run.sh
-          ./run.sh --simulation top_simpoint
+          python3 - <<'PY' > env_path.txt
+          import pathlib
+          from importlib.machinery import SourceFileLoader
+          import importlib.util
 
-      # Extract KIPS -----------------------------------------
+          script_path = pathlib.Path("sci").resolve()
+          if not script_path.exists():
+              raise FileNotFoundError(f"Unable to locate {script_path}")
+          loader = SourceFileLoader("scarab_sci", str(script_path))
+          spec = importlib.util.spec_from_loader("scarab_sci", loader)
+          module = importlib.util.module_from_spec(spec)
+          loader.exec_module(module)
+          env_path, _ = module.resolve_conda_env_path()
+          print(f"SCARABINFRA_ENV={env_path}")
+          PY
+          cat env_path.txt >> "$GITHUB_ENV"
+          rm env_path.txt
+
+      - name: Download traces
+        env:
+          PYTHON_BIN: ${{ env.SCARABINFRA_ENV }}/bin/python
+        run: |
+          if [ -z "$PYTHON_BIN" ]; then
+            echo "scarabinfra conda environment not detected"
+            exit 1
+          fi
+          "$PYTHON_BIN" - <<'PY'
+          import os
+          import pathlib
+          import shutil
+          import tarfile
+          import urllib.request
+
+          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          archive = workspace / "traces.tar.gz"
+          target_dir = workspace / "traces_top_simpoint"
+          url = "https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz"
+
+          def safe_extract(tar_obj: tarfile.TarFile, destination: pathlib.Path) -> None:
+              dest_root = destination.resolve()
+              for member in tar_obj.getmembers():
+                  member_path = (dest_root / member.name).resolve()
+                  if dest_root != member_path and dest_root not in member_path.parents:
+                      raise RuntimeError(f"Unsafe path in archive: {member.name}")
+              tar_obj.extractall(path=dest_root)
+
+          if target_dir.exists():
+              print(f"Reusing existing traces at {target_dir}")
+          else:
+              print(f"Downloading traces to {archive}")
+              with urllib.request.urlopen(url) as response:
+                  status = getattr(response, "status", 200)
+                  if status != 200:
+                      raise RuntimeError(f"Download failed with HTTP status {status}")
+                  with archive.open("wb") as dest:
+                      shutil.copyfileobj(response, dest)
+              with tarfile.open(archive, "r:gz") as tar_obj:
+                  safe_extract(tar_obj, workspace)
+              if archive.exists():
+                  archive.unlink()
+              print(f"Extracted traces to {target_dir}")
+
+          PY
+
+      - name: Build Scarab opt
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: ./sci --build-scarab top_simpoint
+
+      - name: Run scarab simulation
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: ./sci --sim top_simpoint
+
       - id: kips
         name: Grab KIPS
         working-directory: simulations
@@ -147,7 +233,6 @@ jobs:
           fi
           echo "value=$v" >>"$GITHUB_OUTPUT"
 
-      # Extract IPC ------------------------------------------
       - id: ipc
         name: Grab IPC
         working-directory: simulations
@@ -163,15 +248,14 @@ jobs:
           fi
           echo "value=$v" >>"$GITHUB_OUTPUT"
 
-############################################################
-# 7 ─── Job 3A: compare & comment (PRs only) ───────────────
-############################################################
   comment-pr:
+    ########################################################
+    # Job: comment on PR with metrics
+    ########################################################
     if: github.event_name == 'pull_request'
-    needs: [run-scarab]
+    needs: [build-and-run-scarab-opt]
     runs-on: ubuntu-latest
     steps:
-      # Baseline file ---------------------------------------
       - uses: actions/checkout@v4
         with:
           repository: litz-lab/scarab_perf
@@ -190,8 +274,8 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const simKips  = parseFloat("${{ needs.run-scarab.outputs.kips }}");
-            const simIpc   = parseFloat("${{ needs.run-scarab.outputs.ipc  }}");
+            const simKips  = parseFloat("${{ needs.build-and-run-scarab-opt.outputs.kips }}");
+            const simIpc   = parseFloat("${{ needs.build-and-run-scarab-opt.outputs.ipc  }}");
             const baseKips = parseFloat("${{ steps.base.outputs.kips      }}");
             const baseIpc  = parseFloat("${{ steps.base.outputs.ipc       }}");
 
@@ -220,12 +304,12 @@ jobs:
               body
             });
 
-############################################################
-# 8 ─── Job 3B: append to scarab_perf (push only) ──────────
-############################################################
   update-baseline:
+    ########################################################
+    # Job: update perf baseline on push
+    ########################################################
     if: github.event_name == 'push'
-    needs: [run-scarab]
+    needs: [build-and-run-scarab-opt]
     runs-on: ubuntu-latest
     env:
       PAT: ${{ secrets.SCARAB_PERF_PAT }}
@@ -247,7 +331,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       # 3) “Force Authentication” remote add/set‑url exactly like your sync job
-      - name: Force Authentication with Fine‑Grained PAT
+      - name: Force Authentication with Fine-Grained PAT
         run: |
           cd perf
           if git remote get-url public > /dev/null 2>&1; then
@@ -260,7 +344,7 @@ jobs:
       # 4) Append the new line
       - name: Append new metrics line
         run: |
-          echo "${COMMIT_SHA},${{ needs.run-scarab.outputs.ipc }},${{ needs.run-scarab.outputs.kips }}" \
+          echo "${COMMIT_SHA},${{ needs.build-and-run-scarab-opt.outputs.ipc }},${{ needs.build-and-run-scarab-opt.outputs.kips }}" \
             >> perf/scarab_perf.log
 
       # 5) Commit & push back to the perf repo using the “public” remote

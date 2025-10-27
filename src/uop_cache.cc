@@ -340,34 +340,25 @@ void uop_cache_evict_FT(const Entry<Uop_Cache_Key, Uop_Cache_Data>& evicted_entr
 
 void uop_cache_preallocate_space(const std::vector<Uop_Cache_Data>& inserting_FT, FT_Info inserting_FT_info) {
   Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
+  uns lines_needed = inserting_FT.size();
 
-  // Track which slots we've already pre-allocated per set
-  std::map<uns, uns> preallocated_count_per_set;
+  if (lines_needed == 0)
+    return;
 
-  for (const auto& it : inserting_FT) {
-    Uop_Cache_Key uop_cache_key = {it.line_start, inserting_FT_info.static_info};
-    uns set_idx = uc_cpp->uop_cache->set_idx_hash(uop_cache_key);
+  Uop_Cache_Key uop_cache_key = {inserting_FT[0].line_start, inserting_FT_info.static_info};
+  uns set_idx = uc_cpp->uop_cache->set_idx_hash(uop_cache_key);
 
-    // Check if this key already exists in cache
-    if (uc_cpp->uop_cache->access(uop_cache_key, FALSE) != NULL) {
-      continue;  // Key already exists, no space needed
+  uns free_space = uc_cpp->uop_cache->get_free_space(set_idx);
+
+  while (free_space < lines_needed) {
+    Entry<Uop_Cache_Key, Uop_Cache_Data> evicted_entry = uc_cpp->uop_cache->evict_one_line(set_idx);
+
+    if (evicted_entry.valid) {
+      DEBUG(uc->proc_id, "Pre-allocation evicted FT start=0x%llx, line=0x%llx from set %u\n",
+            evicted_entry.key.second.start, evicted_entry.key.first, set_idx);
+      uop_cache_evict_FT(evicted_entry);
     }
-
-    // Count how many slots we've already pre-allocated for this set
-    uns already_preallocated = preallocated_count_per_set[set_idx];
-
-    if (uc_cpp->uop_cache->has_no_space_for_key_with_preallocated(uop_cache_key, already_preallocated)) {
-      Entry<Uop_Cache_Key, Uop_Cache_Data> evicted_entry = uc_cpp->uop_cache->make_space_for_key(uop_cache_key);
-
-      if (evicted_entry.valid) {
-        DEBUG(uc->proc_id, "Pre-allocation evicted FT start=0x%llx, line=0x%llx for set %u\n",
-              evicted_entry.key.second.start, evicted_entry.key.first, set_idx);
-        uop_cache_evict_FT(evicted_entry);
-      }
-    }
-
-    // Increment our pre-allocated count for this set
-    preallocated_count_per_set[set_idx]++;
+    free_space = uc_cpp->uop_cache->get_free_space(set_idx);
   }
 }
 
@@ -387,6 +378,19 @@ void uop_cache_insert_FT(const std::vector<Uop_Cache_Data> inserting_FT, FT_Info
     STAT_EVENT(uc->proc_id, UOP_CACHE_FT_INSERT_SUCCEEDED_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
   }
 
+  // evict the uop cache entry with nop contained
+  // so we can insert new ft with valid ops
+  if (lines_exist && first_lookup->ft_info_dynamic.contains_nop) {
+    Uop_Cache_Key key = {first_line->line_start, inserting_FT_info.static_info};
+    Entry<Uop_Cache_Key, Uop_Cache_Data> invalidated_entry;
+    invalidated_entry = uc_cpp->uop_cache->invalidate(key);
+    if (invalidated_entry.valid) {
+      uop_cache_evict_FT(invalidated_entry);
+    }
+    first_lookup = uop_cache_lookup_line(first_line->line_start, inserting_FT_info, TRUE);
+    lines_exist = first_lookup != nullptr;
+  }
+
   // Pre-allocate space for the entire FT before insertion
   if (!lines_exist) {
     uop_cache_preallocate_space(inserting_FT, inserting_FT_info);
@@ -402,49 +406,20 @@ void uop_cache_insert_FT(const std::vector<Uop_Cache_Data> inserting_FT, FT_Info
      * So by the time the second occurrence was inserted, the first occurrence was already in the uop cache.
      * As a result, the look-up above has updated the replacement policy, and we skip the insertion.
      */
-
-    if (lines_exist && uop_cache_line) {
-      if (!(uop_cache_line && *uop_cache_line == it)) {
-        DEBUG(uc->proc_id, "Inconsistency detected - invalidating FT from addr=0x%llx\n", it.line_start);
-        // Replace this line and invalidate all following lines in the FT
-        Addr invalidate_addr = it.line_start;
-        Entry<Uop_Cache_Key, Uop_Cache_Data> invalidated_entry;
-
-        // First, replace the inconsistent line with new data
-        Uop_Cache_Key uop_cache_key = {invalidate_addr, inserting_FT_info.static_info};
-        invalidated_entry = uc_cpp->uop_cache->replace_if_exists(uop_cache_key, it);
-        ASSERT(uc->proc_id, invalidated_entry.valid);  // Should always succeed since line exists
-
-        // Now invalidate all subsequent lines in the FT
-        while (!invalidated_entry.data.end_of_ft) {
-          invalidate_addr += invalidated_entry.data.offset;
-          Uop_Cache_Key next_key = {invalidate_addr, inserting_FT_info.static_info};
-          invalidated_entry = uc_cpp->uop_cache->invalidate(next_key);
-
-          if (invalidated_entry.valid) {
-            DEBUG(uc->proc_id, "Invalidated following line at addr=0x%llx\n", invalidate_addr);
-          } else {
-            // No more lines found - this can happen if the FT was partially cached
-            break;
-          }
-        }
-
-        DEBUG(uc->proc_id, "Completed invalidation of inconsistent FT from addr=0x%llx\n", it.line_start);
-      }
-
+    if (lines_exist) {
+      ASSERT(uc->proc_id, uop_cache_line && *uop_cache_line == it);
       STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERT_CONFLICTED_SHORT_REUSE_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
       continue;
     }
     ASSERT(uc->proc_id, !uop_cache_line);
 
     Uop_Cache_Key uop_cache_key = {it.line_start, inserting_FT_info.static_info};
-
     Entry<Uop_Cache_Key, Uop_Cache_Data> evicted_entry = uc_cpp->uop_cache->insert(uop_cache_key, it);
     DEBUG(uc->proc_id, "uop cache line inserted. off_path=%u, addr=0x%llx\n", off_path, it.line_start);
 
-    // Since we pre-allocated space, no eviction should occur during insertion
-    ASSERT(uc->proc_id, !evicted_entry.valid);
-
+    if (evicted_entry.valid) {
+      uop_cache_evict_FT(evicted_entry);
+    }
     STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERT_SUCCEEDED_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
   }
 }

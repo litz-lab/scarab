@@ -48,7 +48,6 @@ uint64_t FT_id_counter = 0;
 /* FT member functions */
 FT::~FT() {
   ASSERT(proc_id, !ops.empty());
-
   for (auto ft_op : ops) {
     if (on_path_parent_FT && !ft_op->off_path) {
       ft_op->parent_FT = on_path_parent_FT;
@@ -117,6 +116,9 @@ Flag FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns
     op->oracle_info.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     if (off_path)
       predict_one_cf_op(op);
+    if (op->table_info->op_type == OP_NOP) {
+      ft_info.dynamic_info.contains_nop = TRUE;
+    }
     add_op(op);
     STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
   } while (get_end_reason() == FT_NOT_ENDED);
@@ -338,7 +340,6 @@ void FT::generate_ft_info() {
   ft_info.static_info.n_uops = ops.size() - op_pos;
   ft_info.static_info.length =
       ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size - ft_info.static_info.start;
-
   ASSERT(proc_id, ft_info.static_info.start && ft_info.static_info.length && ft_info.static_info.n_uops);
   STAT_EVENT(proc_id, POWER_BTB_READ);
 }
@@ -371,7 +372,6 @@ std::vector<Uop_Cache_Data> FT::generate_uop_cache_data() {
       current_line.priority = 0;
       line_started = true;
     }
-
     current_line.n_uops++;
 
     // Check for line termination conditions
@@ -397,11 +397,7 @@ std::vector<Uop_Cache_Data> FT::generate_uop_cache_data() {
         current_line.offset = inst_end_addr - current_line.line_start;
         current_line.end_of_ft = TRUE;  // Assume end of FT if we're at the last op
       }
-
-      // Add completed line to buffer
       uop_cache_buffer.push_back(current_line);
-
-      // Reset for next line
       current_line = {};
       line_started = false;
     }
@@ -409,7 +405,7 @@ std::vector<Uop_Cache_Data> FT::generate_uop_cache_data() {
   ASSERT(proc_id, op_pos == ops.size());
   op_pos = 0;
   generate_ft_info();
-  ASSERT(proc_id, !line_started && is_ft_end);  // Ensure no partial line remains
+  ASSERT(proc_id, !line_started && is_ft_end);
 
   return uop_cache_buffer;
 }

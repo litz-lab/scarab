@@ -21,8 +21,6 @@ extern "C" {
 
 #define CPPC_DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CPP_CACHE, ##args)
 
-static Counter global_sub_cycle_counter = 0;
-
 template <typename User_Key_Type, typename User_Data_Type>
 struct Entry {
   Flag valid;
@@ -30,7 +28,6 @@ struct Entry {
   User_Data_Type data;
   // for LRU replacement policy
   Counter accessed_cycle;
-  uns sub_cycle_counter;  // Add this field to break ties within the same cycle
 };
 
 template <typename User_Key_Type, typename User_Data_Type>
@@ -50,12 +47,10 @@ class Cpp_Cache {
   uns num_sets;
   uns line_bytes;
 
-
-
   // replacement policy functions
   virtual void update_repl_states(Set<User_Key_Type, User_Data_Type>& set, uns hit_idx);
   virtual uns get_repl_idx(Set<User_Key_Type, User_Data_Type>& set);
-  virtual uns get_repl_idx_by_policy(Set<User_Key_Type, User_Data_Type>& set);
+  virtual uns get_victim_index_by_policy(Set<User_Key_Type, User_Data_Type>& set);
 
  public:
   Cpp_Cache() = default;
@@ -75,10 +70,9 @@ class Cpp_Cache {
   User_Data_Type* access(User_Key_Type key, bool update_repl);
   Entry<User_Key_Type, User_Data_Type> insert(User_Key_Type key, User_Data_Type data);
   Entry<User_Key_Type, User_Data_Type> invalidate(User_Key_Type key);
-  // New methods for space management
-  Entry<User_Key_Type, User_Data_Type> make_space_for_key(User_Key_Type key);
-  Flag has_no_space_for_key_with_preallocated(User_Key_Type key, uns already_preallocated);  // ← Add this line
-  Entry<User_Key_Type, User_Data_Type>  replace_if_exists(User_Key_Type key, User_Data_Type data);
+  // New APIs for refactored preallocation
+  uns get_free_space(uns set_idx);
+  Entry<User_Key_Type, User_Data_Type> evict_one_line(uns set_idx);
 };
 
 template <typename User_Key_Type, typename User_Data_Type>
@@ -87,7 +81,6 @@ void Cpp_Cache<User_Key_Type, User_Data_Type>::update_repl_states(Set<User_Key_T
   switch (repl_policy) {
     case REPL_TRUE_LRU: {
       set.entries[hit_idx].accessed_cycle = cycle_count;
-      set.entries[hit_idx].sub_cycle_counter = global_sub_cycle_counter;  // Update sub-cycle
     } break;
     case REPL_RANDOM: {
     } break;
@@ -109,58 +102,49 @@ uns Cpp_Cache<User_Key_Type, User_Data_Type>::get_repl_idx(Set<User_Key_Type, Us
   }
 
   // otherwise, replace according to the policy using the new function
-  return get_repl_idx_by_policy(set);
+  return get_victim_index_by_policy(set);
 }
 
+// ignores invalid entry and select a victim among valid entries only
 template <typename User_Key_Type, typename User_Data_Type>
-uns Cpp_Cache<User_Key_Type, User_Data_Type>::get_repl_idx_by_policy(Set<User_Key_Type, User_Data_Type>& set) {
+uns Cpp_Cache<User_Key_Type, User_Data_Type>::get_victim_index_by_policy(Set<User_Key_Type, User_Data_Type>& set) {
   // Apply replacement policy but ignore invalid entries
   uns repl_idx = 0;
   switch (repl_policy) {
     case REPL_TRUE_LRU: {
       Counter lru_cycle = std::numeric_limits<Counter>::max();
-      uns lru_sub_cycle = std::numeric_limits<uns>::max();
       bool found_valid = false;
       
       for (uns i = 0; i < assoc; i++) {
         Entry<User_Key_Type, User_Data_Type> entry = set.entries[i];
-        
         // Skip invalid entries
-        if (!entry.valid) {
+        if (!entry.valid)
           continue;
-        }
-        
-        // Find entry with smallest access cycle, break ties with sub_cycle_counter
-        bool is_older = (entry.accessed_cycle < lru_cycle) || 
-                       (entry.accessed_cycle == lru_cycle && entry.sub_cycle_counter < lru_sub_cycle);
-        
-        if (is_older) {
+        // Find entry with smallest access cycle
+        if (entry.accessed_cycle < lru_cycle) {
           repl_idx = i;
           lru_cycle = entry.accessed_cycle;
-          lru_sub_cycle = entry.sub_cycle_counter;
           found_valid = true;
         }
       }
       
       // If no valid entries found, fallback to first entry
-      if (!found_valid) {
+      if (!found_valid) 
         repl_idx = 0;
-      }
     } break;
     case REPL_RANDOM: {
       // Collect valid indices and pick randomly from them
       std::vector<uns> valid_indices;
       for (uns i = 0; i < assoc; i++) {
-        if (set.entries[i].valid) {
+        if (set.entries[i].valid)
           valid_indices.push_back(i);
-        }
       }
       
-      if (!valid_indices.empty()) {
+      if (!valid_indices.empty())
         repl_idx = valid_indices[rand() % valid_indices.size()];
-      } else {
+      else
         repl_idx = rand() % assoc; // Fallback if no valid entries
-      }
+
     } break;
     case REPL_ROUND_ROBIN: {
       // Find next valid entry in round-robin fashion
@@ -187,76 +171,6 @@ uns Cpp_Cache<User_Key_Type, User_Data_Type>::get_repl_idx_by_policy(Set<User_Ke
       ASSERT(0, FALSE);  // unsupported
   }
   return repl_idx;
-}
-
-template <typename User_Key_Type, typename User_Data_Type>
-Flag Cpp_Cache<User_Key_Type, User_Data_Type>::has_no_space_for_key_with_preallocated(
-    User_Key_Type key, uns already_preallocated) {
-  
-  // Check if key already exists
-  if (access(key, FALSE) != NULL) {
-    return FALSE;  // Key exists, no additional space needed
-  }
-  
-  uns set_idx = set_idx_hash(key);
-  Set<User_Key_Type, User_Data_Type>& set = sets[set_idx];
-  
-  // Count available invalid entries
-  uns available_invalid = 0;
-  for (uns i = 0; i < assoc; i++) {
-    if (!set.entries[i].valid) {
-      available_invalid++;
-    }
-  }
-  
-  // We need space if: (available slots - already preallocated slots) <= 0
-  // This accounts for slots we've already marked as invalid for previous lines
-  return (available_invalid <= already_preallocated);
-}
-
-template <typename User_Key_Type, typename User_Data_Type>
-Entry<User_Key_Type, User_Data_Type> Cpp_Cache<User_Key_Type, User_Data_Type>::make_space_for_key(User_Key_Type key) {
-  // Check if key already exists
-  if (access(key, FALSE) != NULL) {
-    // Key already exists, no space needed
-    return Entry<User_Key_Type, User_Data_Type>{FALSE, User_Key_Type{}, User_Data_Type{}, 0, 0};
-  }
-  
-  uns set_idx = set_idx_hash(key);
-  Set<User_Key_Type, User_Data_Type>& set = sets[set_idx];
-  
-  // ALWAYS evict a valid entry to reserve space for pre-allocation
-  // Use get_repl_idx_by_policy to ignore invalid entries and only select valid ones
-  uns victim_idx = get_repl_idx_by_policy(set);
-  Entry<User_Key_Type, User_Data_Type> evicted_entry = set.entries[victim_idx];
-  
-  // Mark the victim as invalid to make space (whether it was valid or not)
-  set.entries[victim_idx].valid = FALSE;
-  
-  return evicted_entry;
-}
-
-template <typename User_Key_Type, typename User_Data_Type>
-Entry<User_Key_Type, User_Data_Type> Cpp_Cache<User_Key_Type, User_Data_Type>::replace_if_exists(User_Key_Type key, User_Data_Type data) {
-  uns set_idx = set_idx_hash(key);
-  
-  for (uns i = 0; i < assoc; i++) {
-    if (sets[set_idx].entries[i].valid && sets[set_idx].entries[i].key == key) {
-      // Store the old entry before replacement
-      Entry<User_Key_Type, User_Data_Type> old_entry = sets[set_idx].entries[i];
-      
-      // Replace the existing data
-      sets[set_idx].entries[i].data = data;
-      sets[set_idx].entries[i].accessed_cycle = cycle_count;
-      sets[set_idx].entries[i].sub_cycle_counter = ++global_sub_cycle_counter;
-      update_repl_states(sets[set_idx], i);
-      
-      return old_entry;  // Return the old entry
-    }
-  }
-  
-  // Key not found - return invalid entry
-  return Entry<User_Key_Type, User_Data_Type>{FALSE, User_Key_Type{}, User_Data_Type{}, 0, 0};
 }
 
 // access: Looks up the cache based on key. Returns pointer to line data if found
@@ -289,8 +203,6 @@ Entry<User_Key_Type, User_Data_Type> Cpp_Cache<User_Key_Type, User_Data_Type>::i
   uns repl_idx = get_repl_idx(sets[set_idx]);
 
   Entry<User_Key_Type, User_Data_Type> evicted_entry = sets[set_idx].entries[repl_idx];
-
-  global_sub_cycle_counter++;
   sets[set_idx].entries[repl_idx] = Entry<User_Key_Type, User_Data_Type>{TRUE, key, data, 0};
   update_repl_states(sets[set_idx], repl_idx);
 
@@ -311,4 +223,32 @@ Entry<User_Key_Type, User_Data_Type> Cpp_Cache<User_Key_Type, User_Data_Type>::i
     }
   }
   return invalidated_entry;
+}
+
+template <typename User_Key_Type, typename User_Data_Type>
+uns Cpp_Cache<User_Key_Type, User_Data_Type>::get_free_space(uns set_idx) {
+  Set<User_Key_Type, User_Data_Type>& set = sets[set_idx];
+  uns free_count = 0;
+  
+  for (uns i = 0; i < assoc; i++) {
+    if (!set.entries[i].valid) {
+      free_count++;
+    }
+  }
+  
+  return free_count;
+}
+
+template <typename User_Key_Type, typename User_Data_Type>
+Entry<User_Key_Type, User_Data_Type> Cpp_Cache<User_Key_Type, User_Data_Type>::evict_one_line(uns set_idx) {
+  Set<User_Key_Type, User_Data_Type>& set = sets[set_idx];
+  
+  // Use the replacement policy to select a victim
+  uns victim_idx = get_victim_index_by_policy(set);
+  Entry<User_Key_Type, User_Data_Type> evicted_entry = set.entries[victim_idx];
+  
+  // Mark the victim as invalid
+  set.entries[victim_idx].valid = FALSE;
+  
+  return evicted_entry;
 }

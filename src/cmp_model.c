@@ -377,7 +377,6 @@ void cmp_recover() {
 
   recover_fdip();
   recover_icache_stage();
-  recover_uop_cache();
   recover_decode_stage();
   recover_uop_queue_stage();
   recover_idq_stage();

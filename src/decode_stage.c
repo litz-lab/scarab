@@ -225,7 +225,7 @@ void update_decode_stage(Stage_Data* src_sd) {
     ASSERT(dec->proc_id, !op->fetched_from_uop_cache);
     DEBUG(dec->proc_id, "Decoding op op_num=%llu, addr=%llx\n", op->op_num, op->inst_info->addr);
     decode_stage_process_op(op);
-    uop_cache_accumulation_buffer_update(op);
+    uop_cache_insert_op(op);
   }
 }
 

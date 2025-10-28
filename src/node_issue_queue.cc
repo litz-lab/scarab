@@ -358,20 +358,18 @@ void node_issue_queue_schedule() {
 void node_track_fu_idle_stats(void) {
   extern Exec_Stage* exec;  // Access to FUs through exec stage
 
-  // Count ready ops per RS - O(RS)
-  uns32 ready_ops_per_rs[NUM_RS] = {0};
+  // Create ready_type vector for each RS to track which op types have ready ops
+  uns64 ready_type_per_rs[NUM_RS] = {0};
 
-  for (uns32 rs_id = 0; rs_id < NUM_RS; ++rs_id) {
-    // Count ready ops for this RS
-    for (Op* op = node->rdy_head; op; op = op->next_rdy) {
-      if (op->rs_id == rs_id && (op->state == OS_READY || op->state == OS_WAIT_FWD) &&
-          cycle_count >= op->rdy_cycle - 1) {
-        ready_ops_per_rs[rs_id]++;
-      }
+  // Iterate over ready ops and set bits in ready_type corresponding to FU_TYPE of each op
+  for (Op* op = node->rdy_head; op; op = op->next_rdy) {
+    if ((op->state == OS_READY || op->state == OS_WAIT_FWD) && cycle_count >= op->rdy_cycle - 1) {
+      uns64 op_fu_type = get_fu_type(op->table_info->op_type, op->table_info->is_simd);
+      ready_type_per_rs[op->rs_id] |= op_fu_type;
     }
   }
 
-  // Second loop: check FU availability then use global mapping to find connected RS - O(FU)
+  // Iterate over FUs and check if FU can handle any ready op types from its connected RS
   for (uns32 fu_id = 0; fu_id < NUM_FUS; ++fu_id) {
     // Check if this FU is currently idle (no op scheduled to it and FU is available)
     if (node->sd.ops[fu_id] != NULL)
@@ -385,8 +383,9 @@ void node_track_fu_idle_stats(void) {
     // FU is available - use global mapping to find connected RS
     int32 rs_id = node->fu_to_rs_map[fu_id];
     ASSERT(0, rs_id != NODE_ISSUE_QUEUE_RS_SLOT_INVALID);
-    // Check if this RS has ready ops
-    if (ready_ops_per_rs[rs_id] == 0) {
+
+    // Check if this FU can handle any ready op types from its connected RS
+    if ((ready_type_per_rs[rs_id] & fu->type) == 0) {
       STAT_EVENT(node->proc_id, FU_IDLE_NO_READY_OPS_TOTAL);
       // Per-FU counter for idle cycles with no ready ops
       STAT_EVENT(node->proc_id, FU_0_IDLE_NO_READY_OPS + (fu_id < 32 ? fu_id : 32));

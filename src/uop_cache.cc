@@ -84,9 +84,8 @@ class Uop_Cache : public Cpp_Cache<Uop_Cache_Key, Uop_Cache_Data> {
    */
   uns offset_bits;
 
-  uns set_idx_hash(Uop_Cache_Key key) override;
-
  public:
+  uns set_idx_hash(Uop_Cache_Key key) override;
   Uop_Cache(uns nl, uns asc, uns lb, Repl_Policy rp)
       : Cpp_Cache<Uop_Cache_Key, Uop_Cache_Data>(nl, asc, lb, rp),
         offset_bits(static_cast<uns>(std::log2(line_bytes))) {}
@@ -343,10 +342,10 @@ void uop_cache_preallocate_space(const std::vector<Uop_Cache_Data>& inserting_FT
   Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
   uns lines_needed = inserting_FT.size();
 
-  if (lines_needed == 0)
-    return;
+  ASSERT(uc->proc_id, lines_needed != 0);
 
   Uop_Cache_Key uop_cache_key = {inserting_FT[0].line_start, inserting_FT_info.static_info};
+
   uns free_space = uc_cpp->uop_cache->get_free_space(uop_cache_key);
 
   while (free_space < lines_needed) {
@@ -357,6 +356,7 @@ void uop_cache_preallocate_space(const std::vector<Uop_Cache_Data>& inserting_FT
             evicted_entry.key.second.start, evicted_entry.key.first, set_idx);
       uop_cache_evict_FT(evicted_entry);
     }
+    ASSERT(uc->proc_id, uc_cpp->uop_cache->get_free_space(uop_cache_key) > free_space);
     free_space = uc_cpp->uop_cache->get_free_space(uop_cache_key);
   }
 }
@@ -372,27 +372,28 @@ void uop_cache_insert_FT(const std::vector<Uop_Cache_Data> inserting_FT, FT_Info
 
   bool lines_exist = first_lookup != nullptr;
   if (lines_exist) {
-    STAT_EVENT(uc->proc_id, UOP_CACHE_FT_INSERT_CONFLICTED_SHORT_REUSE_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
+    STAT_EVENT(uc->proc_id, UOP_CACHE_FT_SHORT_REUSE_CONFLICTED_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
   } else {
     STAT_EVENT(uc->proc_id, UOP_CACHE_FT_INSERT_SUCCEEDED_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
   }
 
-  // evict the uop cache entry with nop contained
-  // so we can insert new ft with valid ops
-  if (lines_exist && first_lookup->ft_info_dynamic.contains_nop) {
+  // evict the uop cache entry with fake nop contained when the inserting FT has same start addr and length
+  // so we can insert the new ft with valid ops
+  if (lines_exist && first_lookup->ft_info_dynamic.contain_fake_nop) {
     Uop_Cache_Key key = {first_line->line_start, inserting_FT_info.static_info};
     Entry<Uop_Cache_Key, Uop_Cache_Data> invalidated_entry;
     invalidated_entry = uc_cpp->uop_cache->invalidate(key);
-    if (invalidated_entry.valid)
+    if (invalidated_entry.valid) {
       uop_cache_evict_FT(invalidated_entry);
-
+    }
     first_lookup = uop_cache_lookup_line(first_line->line_start, inserting_FT_info, TRUE);
     lines_exist = first_lookup != nullptr;
   }
 
   // Pre-allocate space for the entire FT before insertion
-  if (!lines_exist)
+  if (!lines_exist) {
     uop_cache_preallocate_space(inserting_FT, inserting_FT_info);
+  }
 
   for (const auto& it : inserting_FT) {
     Uop_Cache_Data* uop_cache_line =
@@ -406,7 +407,7 @@ void uop_cache_insert_FT(const std::vector<Uop_Cache_Data> inserting_FT, FT_Info
      */
     if (lines_exist) {
       ASSERT(uc->proc_id, uop_cache_line && *uop_cache_line == it);
-      STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERT_CONFLICTED_SHORT_REUSE_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
+      STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_SHORT_REUSE_CONFLICTED_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
       continue;
     }
     ASSERT(uc->proc_id, !uop_cache_line);
@@ -440,27 +441,30 @@ void uop_cache_insert_FT_update_stat(const std::vector<Uop_Cache_Data> inserting
   }
 }
 
+void uop_cache_insert_FT(FT* ft) {
+  ASSERT(uc->proc_id, ft);
+  auto buffer = ft->generate_uop_cache_data();
+
+  auto ft_info = ft->get_ft_info();
+  // the entire buffer is inserted into the uop cache when the FT has ended
+  Flag if_insertable = uop_cache_FT_if_insertable(buffer, ft_info);
+  if (if_insertable) {
+    // inserting an FT entirely avoids corner cases, but is not the most accurate
+    uop_cache_insert_FT(buffer, ft_info);
+  }
+
+  uop_cache_insert_FT_update_stat(buffer, ft_info);
+}
+
 /*
  * Accumulation:
  *    tried to insert op
  *    will insert the whole FT if last op of FT detected
  */
 void uop_cache_insert_op(Op* op) {
-  if (!UOP_CACHE_ENABLE) {
+  if (!UOP_CACHE_ENABLE)
     return;
-  }
-
-  if (op && op->parent_FT && op == op->parent_FT->get_last_op()) {
-    auto buffer = op->parent_FT->generate_uop_cache_data();
-
-    auto ft = op->parent_FT->get_ft_info();
-    // the entire buffer is inserted into the uop cache when the FT has ended
-    Flag if_insertable = uop_cache_FT_if_insertable(buffer, ft);
-    if (if_insertable) {
-      // inserting an FT entirely avoids corner cases, but is not the most accurate
-      uop_cache_insert_FT(buffer, ft);
-    }
-
-    uop_cache_insert_FT_update_stat(buffer, ft);
-  }
+  ASSERT(uc->proc_id, op && op->parent_FT);
+  if (op == op->parent_FT->get_last_op())
+    uop_cache_insert_FT(op->parent_FT);
 }

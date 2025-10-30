@@ -107,8 +107,6 @@ class FT {
   FT_Ended_By get_end_reason() const;
   void clear_recovery_info();
 
-  FT* on_path_parent_FT;
-
  private:
   uns proc_id;
   uint64_t op_pos;

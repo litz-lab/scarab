@@ -116,7 +116,7 @@ Flag FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns
     if (off_path)
       predict_one_cf_op(op);
     if (op->inst_info->fake_inst == 1)
-      ft_info.dynamic_info.contain_fake_nop = TRUE;
+      ft_info.dynamic_info.contains_fake_nop = TRUE;
     add_op(op);
     STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
   } while (get_end_reason() == FT_NOT_ENDED);
@@ -194,11 +194,9 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
 
   for (uns i = op_pos; i <= split_index; i++) {
     off_path_ft->ops.push_back(ops[i]);
-    ops[i]->parent_FT_second = this;
-    ops[i]->parent_FT = off_path_ft;
+    ops[i]->parent_FT_off_path = off_path_ft;
   }
 
-  off_path_ft->op_pos = 0;
   ASSERT(proc_id, off_path_ft->ops.size() == index_uns + 1 - op_pos);
   op_pos = index_uns + 1;
   if (has_trailing_ops) {
@@ -387,65 +385,10 @@ void FT::clear_recovery_info() {
   }
 }
 
-std::vector<Uop_Cache_Data> FT::generate_uop_cache_data() {
-  std::vector<Uop_Cache_Data> uop_cache_buffer;
-  // Initialize current line tracking
-  Uop_Cache_Data current_line = {};
-  FT_Info current_ft = ft_info;
-  bool line_started = false;
-  bool is_ft_end = false;
-
-  for (size_t i = 0; i < ops.size(); ++i) {
-    Op* op = ops[i];
-
-    // Start a new line if needed
-    if (!line_started) {
-      current_line.line_start = op->inst_info->addr;
-      current_line.ft_info_dynamic = current_ft.dynamic_info;
-      current_line.n_uops = 0;
-      current_line.end_of_ft = FALSE;
-      current_line.used = 0;
-      current_line.priority = 0;
-      line_started = true;
-    }
-    current_line.n_uops++;
-
-    // Check for line termination conditions
-    Addr ft_end_addr = current_ft.static_info.start + current_ft.static_info.length;
-    Addr inst_end_addr = op->inst_info->addr + op->inst_info->trace_info.inst_size;
-
-    is_ft_end = op->eom && (inst_end_addr == ft_end_addr);
-    bool is_line_end = (current_line.n_uops == UOP_CACHE_WIDTH);
-    ASSERT(proc_id, current_line.n_uops <= UOP_CACHE_WIDTH);
-
-    // Determine if this is the last op in the current line
-    if (is_ft_end || is_line_end || i == ops.size() - 1) {
-      if (is_ft_end) {
-        current_line.end_of_ft = TRUE;
-        current_line.offset = 0;  // No next line for FT end
-      } else if (i + 1 < ops.size()) {
-        // Calculate offset to next line start
-        Op* next_op = ops[i + 1];
-        Addr next_line_start = next_op->inst_info->addr;
-        current_line.offset = next_line_start - current_line.line_start;
-        current_line.end_of_ft = FALSE;
-      } else {
-        // Last op but not FT end
-        current_line.offset = inst_end_addr - current_line.line_start;
-        current_line.end_of_ft = TRUE;  // Assume end of FT if we're at the last op
-      }
-      uop_cache_buffer.push_back(current_line);
-      current_line = {};
-      line_started = false;
-    }
-  }
-  ASSERT(proc_id, op_pos == ops.size());
-  op_pos = 0;
-  generate_ft_info();
-  ASSERT(proc_id, !line_started && is_ft_end);
-
-  return uop_cache_buffer;
-}
+// generate_uop_cache_data was moved to uop_cache.cc as
+// generate_uop_cache_data_from_FT(FT*, std::vector<Uop_Cache_Data>&)
+// to keep FT class focused on FT semantics. Implementation lives in
+// uop_cache.cc and is declared a friend of FT (see ft.h).
 
 /* FT wrappers */
 bool ft_can_fetch_op(FT* ft) {
@@ -463,6 +406,8 @@ FT_Info ft_get_ft_info(FT* ft) {
 /* retire and flush, free all ops in a FT when last op is freed */
 void ft_free_op(Op* op) {
   ASSERT(0, op->parent_FT);
-  if (op->parent_FT->get_last_op() == op)
+  if (op->parent_FT_off_path && op->parent_FT_off_path->get_last_op() == op)
+    delete op->parent_FT_off_path;
+  if (!op->parent_FT_off_path && op->parent_FT->get_last_op() == op)
     delete op->parent_FT;
 }

@@ -88,7 +88,14 @@ class FT {
   FT_Info get_ft_info() const;
 
   std::vector<Op*>& get_ops();
-  std::vector<Uop_Cache_Data> generate_uop_cache_data();
+
+  /*
+   * generate_uop_cache_data was moved out of the FT class into uop_cache APIs
+   * to avoid keeping FT-specific cache logic inside the class. A free
+   * function in `uop_cache.cc` is declared as a friend so it may access FT
+   * internals safely where necessary.
+   */
+  friend void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out);
 
   // Change return type to FT_BuildResult
   Flag build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,

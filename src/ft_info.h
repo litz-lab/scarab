@@ -59,7 +59,7 @@ typedef struct FT_Info_Dynamic_struct {
   // unique ID for this FT, used for debugging and tracking
   uint64_t FT_id;
 
-  Flag contain_fake_nop;
+  Flag contains_fake_nop;
 } FT_Info_Dynamic;
 
 struct FT_Info_struct {

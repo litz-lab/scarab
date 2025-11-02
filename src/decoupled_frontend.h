@@ -100,10 +100,11 @@ void debug_decoupled_fe();
 void update_decoupled_fe();
 // Icache/Core API
 void recover_decoupled_fe();
+void decoupled_fe_pop_ft(FT* ft);
 bool decoupled_fe_is_off_path();
 void decoupled_fe_retire(Op* op, int proc_id, uns64 inst_uid);
 
-FT* decoupled_fe_get_ft(uint64_t ft_pos);
+FT* decoupled_fe_get_ft();
 // FTQ API
 decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id);
 /* Returns the Op at current iterator position or NULL if FTQ is empty or the end of FTQ was reached

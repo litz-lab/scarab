@@ -30,6 +30,8 @@
 
 #include <vector>
 
+#include "ft.h"
+
 extern "C" {
 #include "globals/assert.h"
 #include "globals/enum.h"
@@ -121,7 +123,7 @@ void IDQ_Stage::recover() {
     do {
       if (FLUSH_OP(ops[i])) {
         ASSERT(proc_id, i == wrap_around(tail - 1));
-        free_op(ops[i]);
+        ft_free_op(ops[i]);
         ops[i] = NULL;
         occupied_count--;
         tail = wrap_around(tail - 1);
@@ -142,7 +144,7 @@ void IDQ_Stage::recover() {
     Op* op = idq_sd.ops[i];
     if (op && FLUSH_OP(op)) {
       ASSERT(proc_id, i == idq_sd.op_count - 1);
-      free_op(op);
+      ft_free_op(op);
       idq_sd.ops[i] = NULL;
       idq_sd.op_count--;
     }

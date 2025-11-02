@@ -54,6 +54,7 @@
 
 #include "decoupled_frontend.h"
 #include "freq.h"
+#include "ft.h"
 #include "idq_stage.h"
 #include "lsq.h"
 #include "map_rename.h"
@@ -374,7 +375,6 @@ void cmp_recover() {
   recover_thread(td, bp_recovery_info->recovery_fetch_addr, bp_recovery_info->recovery_op_num,
                  bp_recovery_info->recovery_inst_uid, bp_recovery_info->late_bp_recovery_wrong);
 
-  recover_decoupled_fe();
   recover_fdip();
   recover_icache_stage();
   recover_uop_cache();
@@ -387,6 +387,7 @@ void cmp_recover() {
   recover_exec_stage();
   recover_dcache_stage();
   recover_memory();
+  recover_decoupled_fe();
 }
 
 /**************************************************************************************/
@@ -408,7 +409,7 @@ void cmp_redirect() {
 // cmp_retire_hook:  Called right before the op retires
 
 void cmp_retire_hook(Op* op) {
-  free_op(op);
+  ft_free_op(op);
 }
 
 void warmup_uncore(uns proc_id, Addr addr, Flag write) {

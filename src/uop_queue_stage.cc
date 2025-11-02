@@ -22,6 +22,7 @@ extern "C" {
 #include "statistics.h"
 #include "uop_cache.h"
 }
+#include "ft.h"
 
 // Macros
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_UOP_QUEUE_STAGE, ##args)
@@ -112,7 +113,7 @@ void recover_uop_queue_stage(void) {
       Op* op = sd->ops[op_idx];
       if (op && FLUSH_OP(op)) {
         ASSERT(op->proc_id, op->off_path);
-        free_op(op);
+        ft_free_op(op);
         sd->ops[op_idx] = NULL;
       } else if (op) {
         sd->op_count++;

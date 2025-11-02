@@ -37,6 +37,9 @@
 #include "op_info.h"
 #include "table_info.h"
 
+// forward declaration of FT
+typedef struct FT FT;
+
 /**************************************************************************************/
 // Macro Defines
 
@@ -268,6 +271,7 @@ struct Op_struct {
   int dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];       // the reg id of allocated reg file entries
   int prev_dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];  // the previous dst reg id with the same parent register id
   // }}}
+  FT* parent_FT;
 };
 
 /**************************************************************************************/

@@ -44,9 +44,8 @@ typedef struct FT FT;
 // C-compatible API
 bool ft_can_fetch_op(FT* ft);
 Op* ft_fetch_op(FT* ft);
-bool ft_is_consumed(FT* ft);
-void ft_set_consumed(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
+void ft_free_op(Op* op);
 
 #ifdef __cplusplus
 }  // extern "C"
@@ -82,30 +81,28 @@ struct FT_PredictResult {
 class FT {
  public:
   FT(uns _proc_id = 0);
+  ~FT();
   void add_op(Op* op);
-  void free_ops_and_clear();
   bool can_fetch_op();
   Op* fetch_op();
   FT_Info get_ft_info() const;
-  bool is_consumed();
-  void set_consumed();
 
   std::vector<Op*>& get_ops();
 
   // Change return type to FT_BuildResult
-  bool build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
-             uint64_t start_op_num);
+  Flag build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
+             std::function<uint64_t()> get_next_op_id_fn);
 
   FT_PredictResult predict_ft();
-  std::pair<bool, FT> split_ft(uns split_index);
+  std::pair<FT*, FT*> extract_off_path_ft(uns split_index);
 
   Op* get_last_op() const;
   Op* get_first_op() const;
   Addr get_start_addr() const;
   bool is_consecutive(const FT& previous_ft) const;
-  size_t get_size() const { return ops.size(); }  // Check if FT exists/is valid
+  bool has_unread_ops() const { return ops.size() - op_pos != 0; }
   bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }
-  bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT exists/is valid
+  bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT is properly ended
   FT_Ended_By get_end_reason() const;
   void clear_recovery_info();
 
@@ -114,11 +111,8 @@ class FT {
   uint64_t op_pos;
   FT_Info ft_info;
   std::vector<Op*> ops;
-  bool consumed;
   FT_Event predict_one_cf_op(Op* op);
-  void validate() const;
   void generate_ft_info();
-
   friend class Decoupled_FE;
 };
 

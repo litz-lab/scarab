@@ -49,6 +49,7 @@
 #include "prefetcher/branch_misprediction_table.h"
 
 #include "decoupled_frontend.h"
+#include "ft.h"
 #include "op_pool.h"
 #include "statistics.h"
 #include "thread.h" /* for td */
@@ -132,7 +133,7 @@ void recover_decode_stage() {
       if (cur->ops[jj]) {
         if (FLUSH_OP(cur->ops[jj])) {
           ASSERT(cur->ops[jj]->proc_id, cur->ops[jj]->off_path);
-          free_op(cur->ops[jj]);
+          ft_free_op(cur->ops[jj]);
           cur->ops[jj] = NULL;
         } else {
           cur->op_count++;

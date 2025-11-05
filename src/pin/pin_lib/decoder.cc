@@ -49,6 +49,7 @@ static ctype_pin_inst  tmp_inst_info;
 // Globals used for communication between analysis functions
 uint32_t       glb_opcode, glb_actually_taken;
 deque<ADDRINT> glb_ld_vaddrs, glb_st_vaddrs;
+deque<PIN_REGISTER> glb_src_vector_vals, glb_dst_vector_vals;
 
 std::ostream*                                    glb_err_ostream;
 bool                                             glb_translate_x87_regs;
@@ -70,7 +71,11 @@ void get_ld_ea(ADDRINT addr);
 void get_ld_ea2(ADDRINT addr1, ADDRINT addr2);
 void get_st_ea(ADDRINT addr);
 void get_branch_dir(bool taken);
+void get_src_vector_vals(CONTEXT* ctxt, ADDRINT reg_id);
+void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT reg_id);
+void fill_register_values(ctype_pin_inst* info, bool is_dst, const deque<PIN_REGISTER>& global_vals, int reg_count);
 void create_compressed_op(ADDRINT iaddr);
+void create_compressed_op_after(ADDRINT iaddr);
 
 void update_gather_scatter_num_ld_or_st(const ADDRINT                   iaddr,
                                         const gather_scatter_info::type type,
@@ -187,8 +192,33 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
                    IARG_BRANCH_TAKEN, IARG_END);
   }
 
+  if (INS_Valid(ins)) {
+    for (int i = 0; i < info->num_src_regs; i++) {
+      REG src_reg = INS_RegR(ins, i);
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_src_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT, src_reg, IARG_END);
+    }
+  }
+
+  if (INS_IsValidForIpointAfter(ins) && INS_Valid(ins)) {
+    for (int i = 0; i < info->num_dst_regs; i++) {
+      REG dst_reg = INS_RegW(ins, i);
+      INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)get_dst_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT, dst_reg, IARG_END);
+    }
+    INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)create_compressed_op_after, IARG_INST_PTR, IARG_END);
+  }  
+
   INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)create_compressed_op,
                  IARG_INST_PTR, IARG_END);
+}
+
+
+void create_compressed_op_after(ADDRINT iaddr) {
+  if(!fast_forward_count) {
+    assert(inst_info_storage.count(iaddr) == 1);
+    filled_inst_info = inst_info_storage[iaddr];
+    assert(glb_dst_vector_vals.size() == filled_inst_info->num_dst_regs);
+    fill_register_values(filled_inst_info, true, glb_dst_vector_vals, filled_inst_info->num_dst_regs);
+  }
 }
 
 // int64_t heartbeat = 0;
@@ -210,6 +240,8 @@ void create_compressed_op(ADDRINT iaddr) {
         filled_inst_info->dst_regs[i] = absolute_reg(
           filled_inst_info->dst_regs[i], glb_opcode, true);
       }
+      assert(glb_src_vector_vals.size() == filled_inst_info->num_src_regs);
+      fill_register_values(filled_inst_info, false, glb_src_vector_vals, filled_inst_info->num_src_regs);
       // update x87 state
       update_x87_stack_state(glb_opcode);
     }
@@ -239,6 +271,8 @@ void create_compressed_op(ADDRINT iaddr) {
     filled_inst_info->actually_taken = glb_actually_taken;
   }
   glb_opcode = 0;
+  glb_dst_vector_vals.clear();
+  glb_src_vector_vals.clear();
   glb_ld_vaddrs.clear();
   glb_st_vaddrs.clear();
   glb_actually_taken = 0;
@@ -302,6 +336,28 @@ void get_st_ea(ADDRINT addr) {
 
 void get_branch_dir(bool taken) {
   glb_actually_taken = taken;
+}
+
+void get_src_vector_vals(CONTEXT* ctxt, ADDRINT reg_id) {
+  PIN_REGISTER reg_val;
+  PIN_GetContextRegval(ctxt, (REG)reg_id, (UINT8*)&reg_val);
+  glb_src_vector_vals.push_back(reg_val);
+}
+
+void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT reg_id) {
+  PIN_REGISTER reg_val;
+  PIN_GetContextRegval(ctxt, (REG)reg_id, (UINT8*)&reg_val);
+  glb_dst_vector_vals.push_back(reg_val);
+}
+
+void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<PIN_REGISTER>& global_vals, int reg_count) {
+  for (int i = 0; i < reg_count; ++i) {
+    if (is_dst) {
+      inst->dests[i] = global_vals[i].qword[0];
+    } else {
+      inst->srcs[i] = global_vals[i].qword[0];
+    }
+  }
 }
 
 void update_gather_scatter_num_ld_or_st(const ADDRINT                   iaddr,

@@ -32,33 +32,15 @@
 #include "ctype_pin_inst.h"
 #include "table_info.h"
 
-/**************************************************************************************/
-// Defines
-
-#define MAX_SRCS 32  // up to 16 for a gather instruction
-#define MAX_DESTS 6
 
 /**************************************************************************************/
 
-enum reg_table_type {
-  REG_TABLE_TYPE_ARCHITECTURAL,
-  REG_TABLE_TYPE_PHYSICAL,
-  REG_TABLE_TYPE_VIRTUAL,
-  REG_TABLE_TYPE_NUM,
-};
-
-typedef enum Reg_Type_enum {
-  INT_REG,
-  FP_REG,
-  SPEC_REG,
-  EXTRA_REG,
-  NUM_REG_MAPS,
-} Reg_Type;
 
 typedef struct Reg_Info_struct {
   uns16 reg;      // register number within the register set
   Reg_Type type;  // integer, floating point, extra
   uns16 id;       // flattened register number (unique across sets)
+  uint64_t val;
 } Reg_Info;
 
 /**************************************************************************************/

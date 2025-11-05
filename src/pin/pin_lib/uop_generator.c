@@ -475,6 +475,7 @@ void convert_t_uop_to_info(uns8 proc_id, Trace_Uop* t_uop, Inst_Info* info) {
     info->srcs[ii].type = INT_REG;
     info->srcs[ii].id = t_uop->srcs[ii].id;
     info->srcs[ii].reg = t_uop->srcs[ii].reg;
+    info->srcs[ii].val = t_uop->srcs[ii].val;
     /* If an op sources a predicate, it is always the last source - here we
      * avoid sourcing the last source */
   }
@@ -484,6 +485,7 @@ void convert_t_uop_to_info(uns8 proc_id, Trace_Uop* t_uop, Inst_Info* info) {
     info->dests[ii].type = INT_REG;
     info->dests[ii].id = t_uop->dests[ii].id;
     info->dests[ii].reg = t_uop->dests[ii].reg;
+    info->dests[ii].val = t_uop->dests[ii].val;
   }
 
   info->latency = op_type_delays[t_uop->op_type];

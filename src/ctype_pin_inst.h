@@ -33,12 +33,35 @@
 
 #include "table_info.h"
 
+/**************************************************************************************/
+// Defines
+
+#define REG_INVALID_VAL 0xFFFFFFFFFFFFFFFFUL
+#define MAX_SRCS 24  // up to 16 for a gather instruction
+#define MAX_DESTS 8
 #define MAX_SRC_REGS_NUM 8
 #define MAX_DST_REGS_NUM 8
 #define MAX_MEM_ADDR_REGS_NUM 2
 #define MAX_LD_NUM 8
 #define MAX_ST_NUM 8
 #define DUMMY_NOP_SIZE 3
+
+enum reg_table_type {
+  REG_TABLE_TYPE_ARCHITECTURAL,
+  REG_TABLE_TYPE_PHYSICAL,
+  REG_TABLE_TYPE_VIRTUAL,
+  REG_TABLE_TYPE_NUM,
+};
+
+/**************************************************************************************/
+
+typedef enum Reg_Type_enum {
+  INT_REG,
+  FP_REG,
+  SPEC_REG,
+  EXTRA_REG,
+  NUM_REG_MAPS,
+} Reg_Type;
 
 typedef uint8_t compressed_reg_t;
 
@@ -102,6 +125,8 @@ typedef struct ctype_pin_inst_struct {
 
   /* dynamic information */
 
+  uint64_t srcs[MAX_SRCS];
+  uint64_t dests[MAX_DESTS];
   uint64_t ld_vaddr[MAX_LD_NUM];
   uint64_t st_vaddr[MAX_ST_NUM];
   uint8_t ld_size;

@@ -511,7 +511,7 @@ static Flag is_reg_already_added(Reg_Id reg, Reg_Info* reg_array, uns num_regs) 
   return 0;
 }
 
-static void add_t_uop_src_reg(Trace_Uop* uop, Reg_Id reg) {
+static void add_t_uop_src_reg(Trace_Uop* uop, Reg_Id reg, ctype_pin_inst* pi) {
   if (is_reg_already_added(reg, uop->srcs, uop->num_src_regs))
     return;
 
@@ -519,10 +519,11 @@ static void add_t_uop_src_reg(Trace_Uop* uop, Reg_Id reg) {
   uop->srcs[uop->num_src_regs].type = 0;
   uop->srcs[uop->num_src_regs].id = reg;
   uop->srcs[uop->num_src_regs].reg = reg;
+  uop->srcs[uop->num_src_regs].val = pi->srcs[uop->num_src_regs];
   uop->num_src_regs++;
 }
 
-static void add_t_uop_dest_reg(Trace_Uop* uop, Reg_Id reg) {
+static void add_t_uop_dest_reg(Trace_Uop* uop, Reg_Id reg, ctype_pin_inst* pi) {
   if (is_reg_already_added(reg, uop->dests, uop->num_dest_regs))
     return;
 
@@ -530,6 +531,7 @@ static void add_t_uop_dest_reg(Trace_Uop* uop, Reg_Id reg) {
   uop->dests[uop->num_dest_regs].type = 0;
   uop->dests[uop->num_dest_regs].id = reg;
   uop->dests[uop->num_dest_regs].reg = reg;
+  uop->dests[uop->num_dest_regs].val = pi->dests[uop->num_dest_regs];
   uop->num_dest_regs++;
 }
 
@@ -565,8 +567,8 @@ static void add_rep_uops(ctype_pin_inst* pi, Trace_Uop** trace_uop, uns* idx) {
     clear_t_uop(uop);
     uop->op_type = OP_IADD;
     uop->alu_uop = TRUE;
-    add_t_uop_src_reg(uop, REG_RSI);
-    add_t_uop_dest_reg(uop, REG_RSI);
+    add_t_uop_src_reg(uop, REG_RSI, pi);
+    add_t_uop_dest_reg(uop, REG_RSI, pi);
     *idx = *idx + 1;
   }
 
@@ -575,8 +577,8 @@ static void add_rep_uops(ctype_pin_inst* pi, Trace_Uop** trace_uop, uns* idx) {
     clear_t_uop(uop);
     uop->op_type = OP_IADD;
     uop->alu_uop = TRUE;
-    add_t_uop_src_reg(uop, REG_RDI);
-    add_t_uop_dest_reg(uop, REG_RDI);
+    add_t_uop_src_reg(uop, REG_RDI, pi);
+    add_t_uop_dest_reg(uop, REG_RDI, pi);
     *idx = *idx + 1;
   }
 
@@ -586,15 +588,15 @@ static void add_rep_uops(ctype_pin_inst* pi, Trace_Uop** trace_uop, uns* idx) {
     clear_t_uop(uop);
     uop->op_type = OP_IADD;
     uop->alu_uop = TRUE;
-    add_t_uop_src_reg(uop, REG_RCX);
-    add_t_uop_dest_reg(uop, REG_RCX);
+    add_t_uop_src_reg(uop, REG_RCX, pi);
+    add_t_uop_dest_reg(uop, REG_RCX, pi);
     *idx = *idx + 1;
     // Control flow micro-op
     uop = trace_uop[*idx];
     clear_t_uop(uop);
     uop->op_type = OP_CF;
     uop->cf_type = CF_CBR;
-    add_t_uop_src_reg(uop, REG_ZPS);
+    add_t_uop_src_reg(uop, REG_ZPS, pi);
     *idx = *idx + 1;
   }
 }
@@ -643,18 +645,18 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
 
     for (uns j = 0; j < pi->num_ld1_addr_regs; ++j) {
       Reg_Id reg = (use_ld1_addr_regs(proc_id, pi, uop->load_seq_num) ? pi->ld1_addr_regs : pi->ld2_addr_regs)[j];
-      add_t_uop_src_reg(uop, reg);
+      add_t_uop_src_reg(uop, reg, pi);
     }
 
     if ((has_alu && !has_push && !has_pop) || has_store || has_control) {  // load result used further down
       Reg_Id dest_reg = REG_TMP0 + i;
       ASSERT(proc_id, dest_reg <= REG_OTHER);
-      add_t_uop_dest_reg(uop, dest_reg);
+      add_t_uop_dest_reg(uop, dest_reg, pi);
     } else {
       for (uns j = 0; j < pi->num_dst_regs; ++j) {
         Reg_Id dest_reg = pi->dst_regs[j];
         ASSERT(proc_id, dest_reg <= REG_OTHER);
-        add_t_uop_dest_reg(uop, dest_reg);
+        add_t_uop_dest_reg(uop, dest_reg, pi);
       }
     }
   }
@@ -672,11 +674,11 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
     uop->alu_uop = TRUE;
 
     if (has_push || has_pop) {  // ALU op only changes the stack pointer in stack insts
-      add_t_uop_src_reg(uop, REG_RSP);
-      add_t_uop_dest_reg(uop, REG_RSP);
+      add_t_uop_src_reg(uop, REG_RSP, pi);
+      add_t_uop_dest_reg(uop, REG_RSP, pi);
     } else if (!is_rep_st) {
       for (uns i = 0; i < pi->num_ld; ++i) {
-        add_t_uop_src_reg(uop, REG_TMP0 + i);
+        add_t_uop_src_reg(uop, REG_TMP0 + i, pi);
       }
     }
 
@@ -685,20 +687,20 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
 
       if (has_push || has_pop) {
         if (is_stack_reg(reg))
-          add_t_uop_src_reg(uop, reg);
+          add_t_uop_src_reg(uop, reg, pi);
       } else {
-        add_t_uop_src_reg(uop, reg);
+        add_t_uop_src_reg(uop, reg, pi);
       }
     }
 
     if ((!has_push && !has_pop) && (has_store || has_control) && !is_rep_st) {
-      add_t_uop_dest_reg(uop, REG_TMP2);
+      add_t_uop_dest_reg(uop, REG_TMP2, pi);
     }
 
     if (!has_push && !has_pop) {
       for (uns j = 0; j < pi->num_dst_regs; ++j) {
         Reg_Id reg = pi->dst_regs[j];
-        add_t_uop_dest_reg(uop, reg);
+        add_t_uop_dest_reg(uop, reg, pi);
       }
     }
   }
@@ -719,22 +721,22 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
         // only storing (invisible) EIP on calls
       } else if (!has_alu || has_pop || has_push || is_rep_st) {
         for (uns i = 0; i < pi->num_ld; ++i) {
-          add_t_uop_src_reg(uop, REG_TMP0 + i);
+          add_t_uop_src_reg(uop, REG_TMP0 + i, pi);
         }
       } else if (has_alu && !has_push && !has_pop) {
-        add_t_uop_src_reg(uop, REG_TMP2);
+        add_t_uop_src_reg(uop, REG_TMP2, pi);
       }
 
       for (uns j = 0; j < pi->num_st_addr_regs; ++j) {
         Reg_Id reg = pi->st_addr_regs[j];
-        add_t_uop_src_reg(uop, reg);
+        add_t_uop_src_reg(uop, reg, pi);
       }
 
       for (uns j = 0; j < pi->num_src_regs; ++j) {
         Reg_Id reg = pi->src_regs[j];
 
         if (!has_load && (!has_alu || has_push))
-          add_t_uop_src_reg(uop, reg);
+          add_t_uop_src_reg(uop, reg, pi);
       }
       // store has no dest regs
     }
@@ -751,7 +753,7 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
 
     if (has_load) {
       for (uns i = 0; i < pi->num_ld; ++i) {
-        add_t_uop_src_reg(uop, REG_TMP0 + i);
+        add_t_uop_src_reg(uop, REG_TMP0 + i, pi);
       }
     } else {
       for (uns j = 0; j < pi->num_src_regs; ++j) {
@@ -759,7 +761,7 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
 
         // When calling/returning, the control op does not use the stack pointer
         if (!is_stack_reg(reg) || !(has_pop || has_push))
-          add_t_uop_src_reg(uop, reg);
+          add_t_uop_src_reg(uop, reg, pi);
       }
     }
   }

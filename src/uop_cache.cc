@@ -193,14 +193,14 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
         return FALSE;
       }
       if (!uoc_data->used && !offpath) {
-        STAT_EVENT(uc->proc_id, UOP_CACHE_FT_INSERTED_ONPATH_USED_ONPATH + uoc_data->ft_info_dynamic.first_op_off_path);
+        STAT_EVENT(uc->proc_id, UOP_CACHE_FT_INSERTED_ONPATH_USED_ONPATH + uoc_data->ft_first_op_off_path);
       }
     }
 
     ASSERT(uc->proc_id, uoc_data);
 
     if (!uoc_data->used && !offpath) {
-      STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERTED_ONPATH_USED_ONPATH + uoc_data->ft_info_dynamic.first_op_off_path);
+      STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERTED_ONPATH_USED_ONPATH + uoc_data->ft_first_op_off_path);
       uoc_data->used += 1;
     }
 
@@ -377,7 +377,7 @@ void uop_cache_insert_FT(const std::vector<Uop_Cache_Data> inserting_FT, FT_Info
 
   // evict the uop cache entry with fake nop contained when the inserting FT has same start addr and length
   // so we can insert the new ft with valid ops
-  if (lines_exist && first_lookup->ft_info_dynamic.contains_fake_nop) {
+  if (lines_exist && first_lookup->contains_fake_nop) {
     Uop_Cache_Key key = {first_line->line_start, inserting_FT_info.static_info};
     Entry<Uop_Cache_Key, Uop_Cache_Data> invalidated_entry;
     invalidated_entry = uc_cpp->uop_cache->invalidate(key);
@@ -447,7 +447,7 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
   out.clear();
   // Initialize current line tracking
   Uop_Cache_Data current_line = {};
-  FT_Info current_ft = ft->ft_info;
+  FT_Info ft_info = ft->get_ft_info();
   bool line_started = false;
   bool is_ft_end = false;
 
@@ -458,7 +458,8 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
     // Start a new line if needed
     if (!line_started) {
       current_line.line_start = op->inst_info->addr;
-      current_line.ft_info_dynamic = current_ft.dynamic_info;
+      current_line.ft_first_op_off_path = ft->get_first_op_off_path();
+      current_line.contains_fake_nop = ft->get_contains_fake_nop();
       current_line.n_uops = 0;
       current_line.end_of_ft = FALSE;
       current_line.used = 0;
@@ -468,12 +469,12 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
     current_line.n_uops++;
 
     // Check for line termination conditions
-    Addr ft_end_addr = current_ft.static_info.start + current_ft.static_info.length;
+    Addr ft_end_addr = ft->get_start_addr() + ft_info.static_info.length;
     Addr inst_end_addr = op->inst_info->addr + op->inst_info->trace_info.inst_size;
 
     is_ft_end = op->eom && (inst_end_addr == ft_end_addr);
     bool is_line_end = (current_line.n_uops == UOP_CACHE_WIDTH);
-    ASSERT(ft->proc_id, current_line.n_uops <= UOP_CACHE_WIDTH);
+    ASSERT(uc->proc_id, current_line.n_uops <= UOP_CACHE_WIDTH);
 
     // Determine if this is the last op in the current line
     if (is_ft_end || is_line_end || i == ops.size() - 1) {
@@ -496,10 +497,10 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
       line_started = false;
     }
   }
-  ASSERT(ft->proc_id, ft->op_pos == ft->ops.size());
+  ASSERT(uc->proc_id, ft->op_pos == ft->ops.size());
   ft->op_pos = 0;
   ft->generate_ft_info();
-  ASSERT(ft->proc_id, !line_started && is_ft_end);
+  ASSERT(uc->proc_id, !line_started && is_ft_end);
 }
 
 void uop_cache_insert_FT(FT* ft) {

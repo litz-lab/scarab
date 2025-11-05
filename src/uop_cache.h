@@ -26,7 +26,8 @@ typedef struct Uop_Cache_Data_struct {
   uns n_uops;
   // the offset for calculating the next line
   Addr offset;
-  FT_Info_Dynamic ft_info_dynamic;
+  Flag ft_first_op_off_path;
+  Flag contains_fake_nop;
   // is this line the end of the FT?
   Flag end_of_ft;
 

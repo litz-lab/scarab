@@ -89,12 +89,7 @@ class FT {
 
   std::vector<Op*>& get_ops();
 
-  /*
-   * generate_uop_cache_data was moved out of the FT class into uop_cache APIs
-   * to avoid keeping FT-specific cache logic inside the class. A free
-   * function in `uop_cache.cc` is declared as a friend so it may access FT
-   * internals safely where necessary.
-   */
+  /* kept as friend so that it can access FT internals like ops and op_pos */
   friend void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out);
 
   // Change return type to FT_BuildResult
@@ -111,6 +106,10 @@ class FT {
   bool has_unread_ops() const { return ops.size() - op_pos != 0; }
   bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }
   bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT is properly ended
+  bool get_first_op_off_path() const { return ft_info.dynamic_info.first_op_off_path; }
+  bool get_contains_fake_nop() const { return ft_info.dynamic_info.contains_fake_nop; }
+  bool get_length() const { return ft_info.static_info.length; }
+
   FT_Ended_By get_end_reason() const;
   void clear_recovery_info();
 

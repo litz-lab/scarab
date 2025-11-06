@@ -64,6 +64,7 @@ void ft_free_op(Op* op);
 
 // C++ class definition
 enum FT_Event {
+  FT_EVENT_BUILD_FAIL,
   FT_EVENT_NONE,
   FT_EVENT_MISPREDICT,
   FT_EVENT_FETCH_BARRIER,
@@ -90,8 +91,10 @@ class FT {
   std::vector<Op*>& get_ops();
 
   // Change return type to FT_BuildResult
-  Flag build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
-             std::function<uint64_t()> get_next_op_id_fn);
+  FT_Event build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
+                 std::function<uint64_t()> get_next_op_id_fn);
+
+  void update_after_exec_recover(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn);
 
   FT_PredictResult predict_ft();
   std::pair<FT*, FT*> extract_off_path_ft(uns split_index);

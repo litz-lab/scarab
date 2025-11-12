@@ -40,7 +40,6 @@ typedef struct Reg_Info_struct {
   uns16 reg;      // register number within the register set
   Reg_Type type;  // integer, floating point, extra
   uns16 id;       // flattened register number (unique across sets)
-  uint64_t val;
 } Reg_Info;
 
 /**************************************************************************************/

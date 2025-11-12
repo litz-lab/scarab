@@ -742,7 +742,7 @@ void reg_table_entry_produce(struct reg_table_entry *entry, Op *op, uns dst_reg_
   }
   ASSERT(map_data->proc_id, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
 
-  entry->reg_val = op->inst_info->dests[dst_reg_idx].val;
+  entry->reg_val = op->dst_val[dst_reg_idx];
   entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
   entry->produced_cycle = cycle_count;
 }

@@ -266,6 +266,11 @@ struct Op_struct {
   // }}}
   int bp_confidence;
 
+  // {{{ source and destination values
+  uint64_t src_val[MAX_SRCS];
+  uint64_t dst_val[MAX_DESTS];
+  // }}}
+
   // {{{ register renaming
   int src_reg_id[MAX_SRCS][REG_TABLE_TYPE_NUM];        // the reg id of the source reg file entries
   int dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];       // the reg id of allocated reg file entries

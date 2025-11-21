@@ -377,10 +377,10 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   /* multi path support */
 
   /* execute op */
-  for (uns ii = 0; ii < inst->num_src_regs; ii++) {
+  for (uns ii = 0; ii < trace_uop->num_src_regs; ii++) {
     op->src_val[ii] = trace_uop->src_val[ii];
   }
-  for (uns ii = 0; ii < inst->num_dst_regs; ii++) {
+  for (uns ii = 0; ii < trace_uop->num_dest_regs; ii++) {
     op->dst_val[ii] = trace_uop->dst_val[ii];
   }
 

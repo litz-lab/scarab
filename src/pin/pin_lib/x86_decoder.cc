@@ -275,6 +275,8 @@ void fill_in_simd_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins,
       return;
     }
   }
+  if (info->is_gather_scatter)
+    info->is_simd = 1;
 }
 
 void apply_x87_bug_workaround(ctype_pin_inst*           info,

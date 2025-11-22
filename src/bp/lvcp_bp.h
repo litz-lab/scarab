@@ -19,28 +19,30 @@
  * SOFTWARE.
  */
 
-#ifndef __GSHARE_H__
-#define __GSHARE_H__
+#ifndef __LVCP_BP_H__
+#define __LVCP_BP_H__
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "bp/bp.h"
+// #include "bp/bp.h"
 
-/*************Interface to Scarab***************/
-void bp_gshare_init(void);
-void bp_gshare_timestamp(Op*);
-uns8 bp_gshare_pred(Op*);
-void bp_gshare_spec_update(Op*);
-void bp_gshare_update(Op*);
-void bp_gshare_retire(Op*);
-void bp_gshare_recover(Recovery_Info*);
-uns8 bp_gshare_full(uns);
-void bp_gshare_special(Op*);
+// void bp_lvcp_init(void);
+// void bp_lvcp_timestamp(Op*);
+// uns8 bp_lvcp_pred(Op*);
+// void bp_lvcp_spec_update(Op*);
+// void bp_lvcp_update(Op*);
+// void bp_lvcp_retire(Op*);
+// void bp_lvcp_recover(Recovery_Info*);
+// uns8 bp_lvcp_full(uns);
+// void bp_lvcp_notify_instr_decode(Addr pc, Op* op, const Counter decode_cycle);
+// void bp_lvcp_notify_agen_complete(Addr pc, Op* op, const uint64_t mem_va, const uint64_t mem_sz, const Counter agen_cycle);
+// void bp_lvcp_notify_load_instr_execute_resolve(Addr pc, Op* op, const Counter execute_cycle);
+// void bp_lvcp_notify_instr_commit(Addr pc, Op* op);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif  // __GSHARE_H__
+#endif  // __LVCP_BP_H__

@@ -1859,6 +1859,22 @@ void reg_file_rename(Op *op) {
   // allocate physical registers
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].rename(op);
 
+  // if (op->oracle_info.pred != op->oracle_info.dir){
+  //   printf("off-path:%u ", op->oracle_info.pred);
+  // } else {
+  //   printf("on-path:%u ", op->oracle_info.pred);
+  // }
+
+  // printf("%s: Srcs: ", op->table_info->name);
+  // for (uns i = 0; i < op->table_info->num_src_regs; ++i) {
+  //   printf("%s:%lu ", disasm_reg(op->inst_info->srcs[i].id), op->src_val[i]);
+  // }
+  // printf(" Dests: ");
+  // for (uns i = 0; i < op->table_info->num_dest_regs; ++i) {
+  //   printf("%s:%lu ", disasm_reg(op->inst_info->dests[i].id), op->dst_val[i]);
+  // }
+  // printf("\n");
+
   reg_file_collect_rename_stat(op);
 }
 

@@ -990,7 +990,7 @@ MTAGE::MTAGE(void) {
   initSC();
 }
 
-bool MTAGE::GetPrediction(UINT64 PC, int* bp_confidence) {
+bool MTAGE::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
   *bp_confidence = 0;
   return GetPrediction(PC);
 };
@@ -1064,7 +1064,7 @@ bool MTAGE::GetPrediction(uint64_t PC) {
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 
-void MTAGE::UpdatePredictor(uint64_t PC, OpType OPTYPE, bool resolveDir, bool predDir, uint64_t branchTarget) {
+void MTAGE::UpdatePredictor(uint64_t PC, OpType OPTYPE, bool resolveDir, bool predDir, uint64_t branchTarget, Op* op) {
   if (PERFECT_BP && !subp[0])
     GetPrediction(PC);
 
@@ -1127,7 +1127,7 @@ void MTAGE::UpdatePredictor(uint64_t PC, OpType OPTYPE, bool resolveDir, bool pr
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
-void MTAGE::TrackOtherInst(uint64_t PC, OpType opType, bool taken, uint64_t branchTarget) {
+void MTAGE::TrackOtherInst(uint64_t PC, OpType opType, bool taken, uint64_t branchTarget, Op* op) {
   // also update the global path with unconditional branches
   uint64_t PC0 = (PC ^ (PC >> 2));
   uint64_t branchTarget0 = (branchTarget ^ (branchTarget >> 2));

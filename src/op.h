@@ -56,6 +56,7 @@ typedef struct FT FT;
 // clang-format off
 #define OP_STATE_LIST(elem)                                                                 \
     elem(FETCHED)      /* op has been fetched, awaiting issue */                            \
+    elem(DECODED)      /* op has been decoded, awaiting issue */                        \
     elem(IN_ROB)       /* op is in the node table (reorder buffer) */                       \
     elem(IN_RS)        /* op is in the scheduling window (RS), waiting for its sources */   \
     elem(SLEEP)        /* for pipelined schedule: wake up NEXT cycle */                     \

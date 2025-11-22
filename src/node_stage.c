@@ -45,6 +45,7 @@
 #include "core.param.h"
 #include "memory/memory.param.h"
 
+#include "bp/lvcp_bp.h"
 #include "bp/bp.h"
 #include "bp/tagescl.h"
 #include "frontend/frontend.h"
@@ -577,6 +578,12 @@ void node_retire() {
           bp_target_known_op(g_bp_data, op);
 
         bp_resolve_op(g_bp_data, op);
+      }
+      bp_retire_op(g_bp_data, op);
+    }
+    if (SUPPORT_BP_MECH == LVCP_BP && op->table_info->mem_type == MEM_LD) {
+      if (BP_UPDATE_AT_RETIRE) {
+        bp_special_op(g_bp_data, op);
       }
       bp_retire_op(g_bp_data, op);
     }

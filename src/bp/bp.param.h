@@ -39,6 +39,7 @@
 #undef DEF_PARAM
 
 extern Flag USE_LATE_BP;
+extern Flag USE_SUPPORT_BP;
 
 /**************************************************************************************/
 

@@ -81,6 +81,7 @@ static inline void exec_stage_clear_fu(int ii);
 static inline void exec_stage_dep_wakeup(Op* op);
 static inline void exec_stage_process_op(Op* op);
 static inline void exec_stage_bp_resolve(Op* op);
+static inline void exec_stage_bp_special(Op* op);
 
 /**************************************************************************************/
 /* set_exec_stage: */
@@ -328,6 +329,7 @@ void update_exec_stage(Stage_Data* src_sd) {
        */
       exec_stage_bp_resolve(op);
     }
+    exec_stage_bp_special(op);
 
     /* value prediction recovery/resolution code  */
     // if we know the value at this point if not ? then we need to wait.
@@ -570,4 +572,12 @@ static inline void exec_stage_bp_resolve(Op* op) {
     ASSERT(0, 0);
   }
 #endif
+}
+
+static inline void exec_stage_bp_special(Op* op) {
+  if (SUPPORT_BP_MECH == LVCP_BP && op->table_info->mem_type == MEM_LD) {
+    if (!BP_UPDATE_AT_RETIRE) {
+      bp_special_op(g_bp_data, op);
+    }
+  }
 }

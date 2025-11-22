@@ -421,3 +421,6 @@ uns8 bp_hybridgp_full(uns proc_id) {
 
   return hybridgp_state.in_flight.is_full();
 }
+
+void bp_hybridgp_special(Op* op) {
+}

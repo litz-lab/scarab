@@ -63,6 +63,7 @@ DEF_PARAM(  bp_update_at_retire       , BP_UPDATE_AT_RETIRE       , Flag    , Fl
 
 // conditional branch predictor
 DEF_PARAM(  bp_mech                   , BP_MECH                   , uns     , bp_mech    , TAGE64K_BP ,        )
+DEF_PARAM(  support_bp_mech           , SUPPORT_BP_MECH           , uns     , bp_mech    , NUM_BP     ,        )
 DEF_PARAM(  late_bp_mech              , LATE_BP_MECH              , uns     , bp_mech    , NUM_BP     ,        )
 DEF_PARAM(  late_bp_latency           , LATE_BP_LATENCY           , uns     , uns        , 5          ,        )
 DEF_PARAM(  hist_length               , HIST_LENGTH               , uns     , uns        , 16         ,        )

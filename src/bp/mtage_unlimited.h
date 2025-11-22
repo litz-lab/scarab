@@ -326,9 +326,9 @@ class MTAGE {
  public:
   MTAGE(void);
   bool GetPrediction(uint64_t PC);
-  bool GetPrediction(UINT64 PC, int* bp_confidence);
-  void UpdatePredictor(uint64_t PC, OpType OPTYPE, bool resolveDir, bool predDir, uint64_t branchTarget);
-  void TrackOtherInst(uint64_t PC, OpType opType, bool taken, uint64_t branchTarget);
+  bool GetPrediction(UINT64 PC, int* bp_confidence, Op* op);
+  void UpdatePredictor(uint64_t PC, OpType OPTYPE, bool resolveDir, bool predDir, uint64_t branchTarget, Op* op);
+  void TrackOtherInst(uint64_t PC, OpType opType, bool taken, uint64_t branchTarget, Op* op);
   uns8 IsFull(void);
 
   void initSC();

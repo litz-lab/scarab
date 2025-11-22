@@ -12,6 +12,7 @@
 /**Add CBP Header Below**/
 #include "cbp_tagescl_64k.h"
 #include "mtage_unlimited.h"
+#include "cbp_lvcp.h"
 /************************/
 
 /******DO NOT MODIFY BELOW THIS POINT*****/
@@ -41,15 +42,14 @@ class CBP_To_Scarab_Intf {
   }
 
   void timestamp(Op* op) {
-    /* CBP Interface does not support speculative updates */
-    op->recovery_info.branch_id = 0;
+    /* Default CBP interface doesn't need a branch_id; leave existing value intact. */
   }
 
   uns8 pred(Op* op) {
     uns proc_id = op->proc_id;
     if (op->off_path)
       return op->oracle_info.dir;
-    return cbp_predictors.at(proc_id).GetPrediction(op->inst_info->addr, &op->bp_confidence);
+    return cbp_predictors.at(proc_id).GetPrediction(op->inst_info->addr, &op->bp_confidence, op);
   }
 
   void spec_update(Op* op) {
@@ -62,10 +62,10 @@ class CBP_To_Scarab_Intf {
 
     if (is_conditional_branch(op->table_info->cf_type)) {
       cbp_predictors.at(proc_id).UpdatePredictor(op->inst_info->addr, optype, op->oracle_info.dir, op->oracle_info.pred,
-                                                 op->oracle_info.target);
+                                                 op->oracle_info.target, op);
     } else {
       cbp_predictors.at(proc_id).TrackOtherInst(op->inst_info->addr, optype, op->oracle_info.dir,
-                                                op->oracle_info.target);
+                                                op->oracle_info.target, op);
     }
   }
 
@@ -76,6 +76,8 @@ class CBP_To_Scarab_Intf {
   void recover(Recovery_Info*) { /* CBP Interface does not support speculative updates */ }
 
   Flag full(uns proc_id) { return cbp_predictors.at(proc_id).IsFull(); }
+
+  void special(Op* op) {}
 };
 
 // Specialization for TAGE64K
@@ -182,6 +184,32 @@ void CBP_To_Scarab_Intf<TAGE64K>::timestamp(Op* op) {
   op->recovery_info.branch_id = cbp_predictors.at(proc_id).KeyGeneration();
 }
 
+// Specialization for LVCP
+template <>
+void CBP_To_Scarab_Intf<LVCP>::update(Op* op) {
+  Flag is_conditional = is_conditional_branch(op->table_info->cf_type);
+  if (is_conditional) {
+    cbp_predictors.at(op->proc_id).cond_branch_update(op->inst_info->addr, op, op->oracle_info.dir);  
+    return;
+  }
+}
+
+template <>
+void CBP_To_Scarab_Intf<LVCP>::special(Op* op) {
+  if (op->table_info->mem_type != MEM_LD)
+    return;
+  if (op->state == OS_DECODED)
+    cbp_predictors.at(op->proc_id).notify_instr_decode(op->inst_info->addr, op);
+  else
+    cbp_predictors.at(op->proc_id).notify_load_instr_execute_resolve(op->inst_info->addr, op);
+}
+
+template <>
+void CBP_To_Scarab_Intf<LVCP>::retire(Op* op) {
+  if (op->table_info->mem_type != MEM_LD)
+    return;
+  cbp_predictors.at(op->proc_id).notify_instr_commit(op->inst_info->addr, op);
+}
 /******DO NOT MODIFY BELOW THIS POINT*****/
 
 /**
@@ -208,7 +236,8 @@ void CBP_To_Scarab_Intf<TAGE64K>::timestamp(Op* op) {
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, update, , void, Op*, op)               \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, retire, , void, Op*, op)               \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, recover, , void, Recovery_Info*, info) \
-  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, full, return, Flag, uns, proc_id)
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, full, return, Flag, uns, proc_id)      \
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, special, , void, Op*, op)
 
 #include "cbp_table.def"
 

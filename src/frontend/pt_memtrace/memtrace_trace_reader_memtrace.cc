@@ -250,6 +250,12 @@ uint8_t dr_isa_to_scarab_reg(reg_id_t reg) {
 // Trace Reader
 TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace, uint32_t _bufsize)
     : TraceReader(_trace, _bufsize),
+      module_mapper_(nullptr),
+      directory_(),
+      dcontext_(nullptr),
+      knob_verbose_(0),
+      trace_has_encodings_(false),
+      is_dr_isa(false),
       mt_state_(MTState::INST),
       mt_use_next_ref_(true),
       mt_mem_ops_(0),
@@ -304,10 +310,13 @@ bool TraceReaderMemtrace::initTrace() {
     auto type = tmp_stream->get_filetype();
     ASSERT(0, type != 0 && "Filetype detection failed: got 0x0 (trace file is missing header)");
 
+    if (dcontext_ == nullptr) {
+      dcontext_ = dr_standalone_init();
+    }
+
     trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
     if (type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ARCH_REGDEPS) {
       dr_isa_mode_t dummy;
-      dcontext_ = dr_standalone_init();
       dr_set_isa_mode(dcontext_, DR_ISA_REGDEPS, &dummy);
     } else {
       warn(

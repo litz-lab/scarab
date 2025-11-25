@@ -123,7 +123,8 @@ void IDQ_Stage::recover() {
     do {
       if (FLUSH_OP(ops[i])) {
         ASSERT(proc_id, i == wrap_around(tail - 1));
-        ft_free_op(ops[i]);
+        if (ops[i]->parent_FT)
+          ft_free_op(ops[i]);
         ops[i] = NULL;
         occupied_count--;
         tail = wrap_around(tail - 1);
@@ -144,7 +145,8 @@ void IDQ_Stage::recover() {
     Op* op = idq_sd.ops[i];
     if (op && FLUSH_OP(op)) {
       ASSERT(proc_id, i == idq_sd.op_count - 1);
-      ft_free_op(op);
+      if (op->parent_FT)
+        ft_free_op(op);
       idq_sd.ops[i] = NULL;
       idq_sd.op_count--;
     }

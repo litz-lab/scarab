@@ -138,7 +138,8 @@ void recover_map_stage() {
     for (jj = 0, kk = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
       if (cur->ops[jj]) {
         if (FLUSH_OP(cur->ops[jj])) {
-          ft_free_op(cur->ops[jj]);
+          if (cur->ops[jj]->parent_FT)
+            ft_free_op(cur->ops[jj]);
           cur->ops[jj] = NULL;
         } else {
           Op* op = cur->ops[jj];

@@ -222,7 +222,8 @@ void recover_icache_stage() {
     if (cur_data->ops[ii]) {
       ASSERT(ic->proc_id, FLUSH_OP(cur_data->ops[ii]));
       ASSERT(ic->proc_id, cur_data->ops[ii]->off_path);
-      ft_free_op(cur_data->ops[ii]);
+      if (cur_data->ops[ii]->parent_FT)
+        ft_free_op(cur_data->ops[ii]);
       cur_data->ops[ii] = NULL;
     }
   }

@@ -113,7 +113,8 @@ void recover_uop_queue_stage(void) {
       Op* op = sd->ops[op_idx];
       if (op && FLUSH_OP(op)) {
         ASSERT(op->proc_id, op->off_path);
-        ft_free_op(op);
+        if (op->parent_FT)
+          ft_free_op(op);
         sd->ops[op_idx] = NULL;
       } else if (op) {
         sd->op_count++;

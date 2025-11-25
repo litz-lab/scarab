@@ -247,7 +247,8 @@ void flush_window() {
         ASSERT(op->proc_id, node->rs[op->rs_id].rs_op_count > 0);
         node->rs[op->rs_id].rs_op_count--;
       }
-      ft_free_op(op);
+      if (op->parent_FT)
+        ft_free_op(op);
     } else {
       /* Keep op */
 

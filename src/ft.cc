@@ -51,6 +51,7 @@ FT::~FT() {
   for (auto ft_op : ops) {
     if (all_on_path || ft_op->off_path) {
       free_op(ft_op);
+      ft_op->parent_FT = nullptr;
     }
   }
 }

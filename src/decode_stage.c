@@ -133,7 +133,8 @@ void recover_decode_stage() {
       if (cur->ops[jj]) {
         if (FLUSH_OP(cur->ops[jj])) {
           ASSERT(cur->ops[jj]->proc_id, cur->ops[jj]->off_path);
-          ft_free_op(cur->ops[jj]);
+          if (cur->ops[jj]->parent_FT)
+            ft_free_op(cur->ops[jj]);
           cur->ops[jj] = NULL;
         } else {
           cur->op_count++;

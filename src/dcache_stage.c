@@ -46,7 +46,6 @@
 #include "prefetcher/pref.param.h"
 
 #include "bp/bp.h"
-#include "bp/lvcp_bp.h"
 #include "prefetcher/l2l1pref.h"
 #include "prefetcher/pref_common.h"
 #include "prefetcher/stream_pref.h"

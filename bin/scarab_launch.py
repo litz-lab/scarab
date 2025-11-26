@@ -25,6 +25,7 @@ import shutil
 import subprocess
 import sys
 import time
+import shlex
 
 from scarab_globals import *
 
@@ -54,7 +55,26 @@ parser.add_argument('--frontend_pin_tool', default=scarab_paths.pin_bin, help="P
 parser.add_argument('--checkpoint_loader', default=scarab_paths.checkpoint_loader_bin, help="Path to checkpoint loader executable.")
 parser.add_argument('--frontend', default="exec", choices=["exec", "trace"], help="Selects between the Trace fronend and the Exec-driven frontend.")
 
-args = parser.parse_args()
+def _combine_flag_and_value(argv, flag):
+  """Ensure values that start with '-' are not mistaken for parser options."""
+  normalized = []
+  skip_next = False
+  for idx, token in enumerate(argv):
+    if skip_next:
+      skip_next = False
+      continue
+    if token == flag and idx + 1 < len(argv):
+      normalized.append(f"{flag}={argv[idx + 1]}")
+      skip_next = True
+    else:
+      normalized.append(token)
+  return normalized
+
+raw_argv = sys.argv[1:]
+for flag in ['--pintool_args', '--scarab_args']:
+  raw_argv = _combine_flag_and_value(raw_argv, flag)
+
+args = parser.parse_args(raw_argv)
 
 def determine_frontend():
   trace_mode = args.trace
@@ -147,7 +167,16 @@ class Pin:
   def __init__(self, core_id, socket_path, program_path, is_checkpoint):
     self.core_id = str(core_id)
     self.socket_path = os.path.abspath(socket_path)
-    self.program_path = os.path.realpath(program_path)
+    # Split the program string into binary + args so realpath is applied only to the binary.
+    program_tokens = shlex.split(program_path.strip())
+    assert program_tokens, "Program path cannot be empty"
+    binary = program_tokens[0]
+    # If the binary is relative, resolve it from simdir (the run_dir used later)
+    if not os.path.isabs(binary):
+      binary = os.path.realpath(os.path.join(args.simdir, binary))
+    else:
+      binary = os.path.realpath(binary)
+    self.program_path = " ".join([binary] + program_tokens[1:])
     self.is_checkpoint = is_checkpoint
 
   def __get_pin_command(self):

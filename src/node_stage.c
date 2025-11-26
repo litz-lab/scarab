@@ -45,7 +45,6 @@
 #include "core.param.h"
 #include "memory/memory.param.h"
 
-#include "bp/lvcp_bp.h"
 #include "bp/bp.h"
 #include "bp/tagescl.h"
 #include "frontend/frontend.h"

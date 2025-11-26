@@ -39,16 +39,15 @@
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
 
+#include "bp/bp.param.h"
 #include "core.param.h"
 #include "general.param.h"
 #include "memory/memory.param.h"
 #include "prefetcher/pref.param.h"
 
 #include "bp/bp.h"
-#include "bp/bp.param.h"
 #include "isa/isa_macros.h"
 #include "prefetcher/branch_misprediction_table.h"
-#include "bp/lvcp_bp.h"
 
 #include "decoupled_frontend.h"
 #include "ft.h"
@@ -238,7 +237,7 @@ void decode_stage_process_op(Op* op) {
   Cf_Type cf = op->table_info->cf_type;
   op->decode_cycle = cycle_count;
   op->state = OS_DECODED;
-  if (SUPPORT_BP_MECH == LVCP_BP && op->table_info->mem_type == MEM_LD){
+  if (SUPPORT_BP_MECH == LVCP_BP && op->table_info->mem_type == MEM_LD) {
     bp_special_op(g_bp_data, op);
   }
 

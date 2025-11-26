@@ -47,7 +47,6 @@
 #include "bp/cbp_to_scarab.h"
 #include "bp/gshare.h"
 #include "bp/hybridgp.h"
-#include "bp/lvcp_bp.h"
 #include "bp/tagescl.h"
 #include "frontend/pin_trace_fe.h"
 #include "isa/isa_macros.h"
@@ -496,7 +495,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       } else {
         ASSERT(op->proc_id, !PERFECT_NT_BTB);  // currently not supported
         op->oracle_info.pred = bp_data->bp->pred_func(op);
-        op->oracle_info.pred_orig = op->oracle_info.pred;        
+        op->oracle_info.pred_orig = op->oracle_info.pred;
         if (USE_SUPPORT_BP) {
           op->oracle_info.pred = bp_data->support_bp->pred_func(op);
         }
@@ -1035,11 +1034,10 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
     increment_branch_mispredictions(info->PC);
 }
 
-
-/* bp_special_op: Special handlers, espeically for data-dependent branches. It can be called by load instructions 
+/* bp_special_op: Special handlers, espeically for data-dependent branches. It can be called by load instructions
     or conditional branches. */
 void bp_special_op(Bp_Data* bp_data, Op* op) {
   if (SUPPORT_BP_MECH == LVCP_BP) {
-      bp_data->support_bp->special_func(op);
+    bp_data->support_bp->special_func(op);
   }
 }

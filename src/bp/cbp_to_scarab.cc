@@ -10,9 +10,9 @@
  */
 
 /**Add CBP Header Below**/
+#include "cbp_lvcp.h"
 #include "cbp_tagescl_64k.h"
 #include "mtage_unlimited.h"
-#include "cbp_lvcp.h"
 /************************/
 
 /******DO NOT MODIFY BELOW THIS POINT*****/
@@ -41,9 +41,7 @@ class CBP_To_Scarab_Intf {
     ASSERTM(0, cbp_predictors.size() == NUM_CORES, "cbp_predictors not initialized correctly");
   }
 
-  void timestamp(Op* op) {
-    /* Default CBP interface doesn't need a branch_id; leave existing value intact. */
-  }
+  void timestamp(Op* op) { /* Default CBP interface doesn't need a branch_id; leave existing value intact. */ }
 
   uns8 pred(Op* op) {
     uns proc_id = op->proc_id;
@@ -189,7 +187,7 @@ template <>
 void CBP_To_Scarab_Intf<LVCP>::update(Op* op) {
   Flag is_conditional = is_conditional_branch(op->table_info->cf_type);
   if (is_conditional) {
-    cbp_predictors.at(op->proc_id).cond_branch_update(op->inst_info->addr, op, op->oracle_info.dir);  
+    cbp_predictors.at(op->proc_id).cond_branch_update(op->inst_info->addr, op, op->oracle_info.dir);
     return;
   }
 }

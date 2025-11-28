@@ -1,0 +1,14 @@
+// Format: enum name, text name, function name prefix
+BOTTLENECK_IMPL(MEM_LATENCY_LIMITED,        "mem_latency_limited")
+BOTTLENECK_IMPL(MEM_BANDWIDTH_LIMITED,      "mem_bandwidth_limited")
+BOTTLENECK_IMPL(ILP_LIMITED,                "ilp_limited")
+BOTTLENECK_IMPL(CBR_LIMITED,                "cbr_limited")
+BOTTLENECK_IMPL(BTB_LIMITED,                "btb_limited")
+BOTTLENECK_IMPL(BTB_ASSOCIATIVITY_LIMITED,  "btb_assoc_limited")
+BOTTLENECK_IMPL(ICACHE_LIMITED,             "icache_limited")
+BOTTLENECK_IMPL(IBR_LIMITED,                "ibr_limited")
+
+/*
+    Considerations
+    The BtB limited workload necessitates a large uop cache to prevent frontend stalls. 
+*/

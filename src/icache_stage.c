@@ -244,8 +244,6 @@ void recover_icache_stage() {
   ic->back_on_path = !bp_recovery_info->recovery_force_offpath;
   ic->fetch_barrier_pending = FALSE;
   ic->fetch_barrier_inst_uid = 0;
-  ic->state = ICACHE_STAGE_RESTEER;
-  ic->next_state = ICACHE_STAGE_RESTEER;
 
   Op* op = bp_recovery_info->recovery_op;
   if (bp_recovery_info->late_bp_recovery && op->oracle_info.btb_miss && !op->oracle_info.btb_miss_resolved) {
@@ -294,16 +292,9 @@ void icache_resolve_fetch_barrier(uns8 proc_id, uns64 inst_uid) {
     set_icache_stage(&cmp_model.icache_stage[proc_id]);
   }
 
-  ASSERT(proc_id, ic);
-  ASSERT(proc_id, ic->proc_id == proc_id);
-
-  if (!ic->fetch_barrier_pending) {
-    return;
-  }
-
-  if (ic->fetch_barrier_inst_uid && ic->fetch_barrier_inst_uid != inst_uid) {
-    return;
-  }
+  ASSERT(proc_id,
+         ic && ic->fetch_barrier_pending && ic->fetch_barrier_inst_uid && ic->fetch_barrier_inst_uid == inst_uid);
+  ASSERT(proc_id, ic->state == ICACHE_STALLED);
 
   ic->fetch_barrier_pending = FALSE;
   ic->fetch_barrier_inst_uid = 0;
@@ -316,9 +307,6 @@ void icache_resolve_fetch_barrier(uns8 proc_id, uns64 inst_uid) {
   }
   ic->current_ft = NULL;
   ic->icache_stage_resteer_signaled = TRUE;
-  if (ic->state == ICACHE_STALLED) {
-    ic->next_state = ICACHE_STAGE_RESTEER;
-  }
 
   DEBUG(proc_id, "Fetch barrier resolved by ROB for inst_uid:%llu\n", (uns64)inst_uid);
 }
@@ -603,10 +591,7 @@ void icache_serve_ops() {
 
 Icache_State icache_serving_actions(Break_Reason* break_fetch) {
   STAT_EVENT(ic->proc_id, ICACHE_SERVING_CYCLE_ON_PATH + ic->off_path);
-  if (ic->fetch_barrier_pending) {
-    *break_fetch = BREAK_ICACHE_STALLED;
-    return ICACHE_STALLED;
-  }
+  ASSERT(ic->proc_id, !ic->fetch_barrier_pending);
   if (ic->sd.op_count) {
     *break_fetch = BREAK_ICACHE_STALLED;
     return ICACHE_SERVING;
@@ -632,12 +617,11 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
     occupied_lookup_buffer = 1;
   }
   while (ic->sd.op_count < ic->sd.max_op_count) {
-    if (ic->fetch_barrier_pending) {
-      *break_fetch = BREAK_ICACHE_STALLED;
-      return ICACHE_STALLED;
-    }
     if (ft_can_fetch_op(ic->current_ft)) {
       icache_serve_ops();
+    } else if (ic->fetch_barrier_pending) {
+      *break_fetch = BREAK_ICACHE_STALLED;
+      return ICACHE_STALLED;
     } else if (ic->lookups_per_cycle_count + occupied_lookup_buffer < ICACHE_READ_PORTS) {
       FT_Arbitration_Result result = ft_arbitration();
       switch (result) {
@@ -705,11 +689,8 @@ void uop_cache_serve_ops() {
 Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
   ASSERT(ic->proc_id, UOP_CACHE_ENABLE);
   STAT_EVENT(ic->proc_id, UCACHE_SERVING_CYCLE_ON_PATH + ic->off_path);
+  ASSERT(ic->proc_id, !ic->fetch_barrier_pending);
 
-  if (ic->fetch_barrier_pending) {
-    *break_fetch = BREAK_ICACHE_STALLED;
-    return ICACHE_STALLED;
-  }
   if (ic->sd.op_count) {
     *break_fetch = BREAK_ICACHE_STALLED;
     return UOP_CACHE_SERVING;
@@ -733,12 +714,11 @@ Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
     occupied_lookup_buffer = 1;
   }
   while (uc->sd.op_count < uc->sd.max_op_count) {
-    if (ic->fetch_barrier_pending) {
-      *break_fetch = BREAK_ICACHE_STALLED;
-      return ICACHE_STALLED;
-    }
     if (ft_can_fetch_op(uc->current_ft)) {
       uop_cache_serve_ops();
+    } else if (ic->fetch_barrier_pending) {
+      *break_fetch = BREAK_ICACHE_STALLED;
+      return ICACHE_STALLED;
     } else if (uc->lookups_per_cycle_count + occupied_lookup_buffer < UOP_CACHE_READ_PORTS) {
       FT_Arbitration_Result result = ft_arbitration();
       switch (result) {
@@ -824,13 +804,9 @@ void execute_coupled_FSM() {
   } else if (ic->state == UOP_CACHE_SERVING) {
     ic->next_state = uop_cache_serving_actions(&break_fetch);
   } else if (ic->state == ICACHE_STALLED) {
-    if (ic->fetch_barrier_pending) {
-      ic->next_state = ICACHE_STALLED;
-      break_fetch = BREAK_ICACHE_STALLED;
-    } else {
-      ic->next_state = ICACHE_STAGE_RESTEER;
-      break_fetch = BREAK_ICACHE_STAGE_RESTEER;
-    }
+    ASSERT(ic->proc_id, ic->fetch_barrier_pending);
+    ic->next_state = ICACHE_STALLED;
+    break_fetch = BREAK_ICACHE_STALLED;
   } else {
     ASSERT(ic->proc_id, 0);
   }
@@ -928,7 +904,9 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
 
     op->fetch_cycle = cycle_count;
 
-    if (!ic->fetch_barrier_pending && is_fetch_barrier_op(op)) {
+    if (is_fetch_barrier_op(op)) {
+      ASSERT(ic->proc_id, !ic->fetch_barrier_pending);
+      ASSERT(ic->proc_id, ii == cur_data->op_count - 1);
       ic->fetch_barrier_pending = TRUE;
       ic->fetch_barrier_inst_uid = op->inst_uid;
       DEBUG(ic->proc_id, "Fetch barrier encountered op_num:%s inst_uid:%llu\n", unsstr64(op->op_num),

@@ -302,7 +302,6 @@ void icache_resolve_fetch_barrier(uns8 proc_id, uns64 inst_uid) {
     uop_cache_clear_lookup_buffer();
   }
   ic->current_ft = NULL;
-  ic->icache_stage_resteer_signaled = TRUE;
 
   DEBUG(proc_id, "Fetch barrier resolved by ROB for inst_uid:%llu\n", (uns64)inst_uid);
 }
@@ -800,9 +799,8 @@ void execute_coupled_FSM() {
   } else if (ic->state == UOP_CACHE_SERVING) {
     ic->next_state = uop_cache_serving_actions(&break_fetch);
   } else if (ic->state == ICACHE_STALLED) {
-    ASSERT(ic->proc_id, ic->fetch_barrier_pending);
-    ic->next_state = ICACHE_STALLED;
-    break_fetch = BREAK_ICACHE_STALLED;
+    ic->next_state = ic->fetch_barrier_pending ? ICACHE_STALLED : ICACHE_STAGE_RESTEER;
+    break_fetch = ic->fetch_barrier_pending ? BREAK_ICACHE_STALLED : BREAK_ICACHE_STAGE_RESTEER;
   } else {
     ASSERT(ic->proc_id, 0);
   }

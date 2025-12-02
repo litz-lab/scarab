@@ -196,8 +196,6 @@ void reset_icache_stage() {
   ic->back_on_path = FALSE;
   ic->fetch_barrier_pending = FALSE;
   ic->fetch_barrier_inst_uid = 0;
-  ic->state = ICACHE_STAGE_RESTEER;
-  ic->next_state = ICACHE_STAGE_RESTEER;
   op_count[ic->proc_id] = 1;
   unique_count_per_core[ic->proc_id] = 1;
 }
@@ -216,8 +214,6 @@ void reset_all_ops_icache_stage() {
   ic->back_on_path = FALSE;
   ic->fetch_barrier_pending = FALSE;
   ic->fetch_barrier_inst_uid = 0;
-  ic->state = ICACHE_STAGE_RESTEER;
-  ic->next_state = ICACHE_STAGE_RESTEER;
 }
 
 /**************************************************************************************/

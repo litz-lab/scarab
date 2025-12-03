@@ -839,7 +839,6 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
   if (!op->bp_cycle)
     op->bp_cycle = cycle_count;
 
-
   STAT_EVENT(op->proc_id, LATE_BP_ON_PATH_CORRECT + op->oracle_info.late_mispred + 2 * op->oracle_info.late_misfetch +
                               3 * op->off_path);
 

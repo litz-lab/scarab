@@ -324,8 +324,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
     if (BTB_L1_PRESENT) {
       Addr* l1_line = (Addr*)cache_access(&bp_data->btb_l1, fetch_addr, &btb_line_addr, TRUE);
       if (!l1_line) {
-        l1_line =
-            (Addr*)cache_insert(&bp_data->btb_l1, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
+        l1_line = (Addr*)cache_insert(&bp_data->btb_l1, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
       }
       *l1_line = op->oracle_info.target;
       STAT_EVENT(op->proc_id, BTB_L1_FILL);
@@ -334,8 +333,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
     if (BTB_L2_PRESENT) {
       Addr* l2_line = (Addr*)cache_access(&bp_data->btb_l2, fetch_addr, &btb_line_addr, TRUE);
       if (!l2_line) {
-        l2_line =
-            (Addr*)cache_insert(&bp_data->btb_l2, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
+        l2_line = (Addr*)cache_insert(&bp_data->btb_l2, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
       }
       *l2_line = op->oracle_info.target;
       STAT_EVENT(op->proc_id, BTB_L2_FILL);

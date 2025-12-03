@@ -640,15 +640,13 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
     }
   }
 
-  if (ic->fetch_barrier_pending) {
-    *break_fetch = BREAK_ICACHE_STALLED;
-    return ICACHE_STALLED;
-  }
-
   ASSERT(ic->proc_id, ic->sd.op_count == ic->sd.max_op_count);
   *break_fetch = BREAK_ICACHE_ISSUE_WIDTH;
   if (ft_can_fetch_op(ic->current_ft)) {
     return ICACHE_SERVING;
+  } else if (ic->fetch_barrier_pending) {
+    *break_fetch = BREAK_ICACHE_STALLED;
+    return ICACHE_STALLED;
   } else {
     return ICACHE_STAGE_RESTEER;
   }
@@ -737,15 +735,13 @@ Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
     }
   }
 
-  if (ic->fetch_barrier_pending) {
-    *break_fetch = BREAK_ICACHE_STALLED;
-    return ICACHE_STALLED;
-  }
-
   ASSERT(ic->proc_id, uc->sd.op_count == uc->sd.max_op_count);
   *break_fetch = BREAK_UOP_CACHE_ISSUE_WIDTH;
   if (ft_can_fetch_op(uc->current_ft)) {
     return UOP_CACHE_SERVING;
+  } else if (ic->fetch_barrier_pending) {
+    *break_fetch = BREAK_ICACHE_STALLED;
+    return ICACHE_STALLED;
   } else {
     return ICACHE_STAGE_RESTEER;
   }

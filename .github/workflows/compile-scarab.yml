@@ -112,7 +112,6 @@ jobs:
     # Job: build scarab opt and run simulation and collect metrics
     ###############################################################
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     outputs:
       ipc: ${{ steps.ipc.outputs.value }}
       kips: ${{ steps.kips.outputs.value }}

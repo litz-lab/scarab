@@ -53,6 +53,7 @@
 #include "decoupled_frontend.h"
 #include "exec_ports.h"
 #include "ft.h"
+#include "icache_stage.h"
 #include "lsq.h"
 #include "map.h"
 #include "map_rename.h"
@@ -556,6 +557,9 @@ void node_retire() {
         retired_exit[op->proc_id] = TRUE;
         decoupled_fe_retire(op, op->proc_id, -1);
       } else if (retire_op) {
+        if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
+          icache_resolve_fetch_barrier(op->proc_id, op->inst_uid);
+        }
         decoupled_fe_retire(op, op->proc_id, op->inst_uid);
       }
     }

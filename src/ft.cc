@@ -231,12 +231,10 @@ FT_Event FT::predict_one_cf_op(Op* op) {
           op->oracle_info.misfetch, op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN,
           op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec, op->table_info->bar_type & BAR_FETCH);
     if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
-      {
-        op->oracle_info.recover_at_decode = FALSE;
-        op->oracle_info.recover_at_exec = FALSE;
-        STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
-        return FT_EVENT_FETCH_BARRIER;
-      }
+      op->oracle_info.recover_at_decode = FALSE;
+      op->oracle_info.recover_at_exec = FALSE;
+      STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
+      return FT_EVENT_NONE;
     }
     if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
       ASSERT(0, !(op->oracle_info.recover_at_decode && op->oracle_info.recover_at_exec));
@@ -266,7 +264,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
       STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_OFFPATH);
     else
       STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_ONPATH);
-    return FT_EVENT_FETCH_BARRIER;
+    return FT_EVENT_NONE;
   }
 
   return FT_EVENT_NONE;

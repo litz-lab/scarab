@@ -66,7 +66,6 @@ void ft_free_op(Op* op);
 enum FT_Event {
   FT_EVENT_NONE,
   FT_EVENT_MISPREDICT,
-  FT_EVENT_FETCH_BARRIER,
   FT_EVENT_OFFPATH_TAKEN_REDIRECT,
   // ... add more as needed
 };

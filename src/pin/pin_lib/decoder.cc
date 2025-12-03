@@ -195,7 +195,8 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
   if (INS_Valid(ins)) {
     for (int i = 0; i < info->num_src_regs; i++) {
       REG src_reg = INS_RegR(ins, i);
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_src_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT, src_reg, IARG_END);
+      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_src_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT, src_reg,
+                     IARG_END);
     }
   }
 
@@ -203,19 +204,19 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
     if (INS_IsValidForIpointAfter(ins)) {
       for (int i = 0; i < info->num_dst_regs; i++) {
         REG dst_reg = INS_RegW(ins, i);
-        INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)get_dst_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT, dst_reg, IARG_END);
+        INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)get_dst_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT, dst_reg,
+                       IARG_END);
       }
       INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)create_compressed_op_after, IARG_INST_PTR, IARG_END);
-    }  
+    }
   }
 
   INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)create_compressed_op,
                  IARG_INST_PTR, IARG_END);
 }
 
-
 void create_compressed_op_after(ADDRINT iaddr) {
-  if(!fast_forward_count) {
+  if (!fast_forward_count) {
     assert(inst_info_storage.count(iaddr) == 1);
     filled_inst_info = inst_info_storage[iaddr];
     assert(glb_dst_vector_vals.size() == filled_inst_info->num_dst_regs);

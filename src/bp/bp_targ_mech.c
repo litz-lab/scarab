@@ -255,6 +255,12 @@ void bp_crs_realistic_recover(Bp_Data* bp_data, Recovery_Info* info) {
 void bp_btb_gen_init(Bp_Data* bp_data) {
   // btb line size set to 1
   init_cache(&bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  if (BTB_L1_PRESENT) {
+    init_cache(&bp_data->btb_l1, "BTB_L1", BTB_L1_ENTRIES, BTB_L1_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  }
+  if (BTB_L2_PRESENT) {
+    init_cache(&bp_data->btb_l2, "BTB_L2", BTB_L2_ENTRIES, BTB_L2_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  }
 }
 
 /**************************************************************************************/
@@ -262,9 +268,35 @@ void bp_btb_gen_init(Bp_Data* bp_data) {
 
 Addr* bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Addr line_addr;
+  Addr* btb_entry = NULL;
+  uns level_misses = 0;
 
-  return PERFECT_BTB ? &op->oracle_info.target
-                     : (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, TRUE);
+  if (PERFECT_BTB)
+    return &op->oracle_info.target;
+
+  /* L0 */
+  btb_entry = (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, TRUE);
+  STAT_EVENT(op->proc_id, btb_entry ? BTB_L0_HIT : BTB_L0_MISS);
+
+  /* L1 */
+  if (!btb_entry && BTB_L1_PRESENT) {
+    level_misses++;
+    btb_entry = (Addr*)cache_access(&bp_data->btb_l1, op->oracle_info.pred_addr, &line_addr, TRUE);
+    STAT_EVENT(op->proc_id, btb_entry ? BTB_L1_HIT : BTB_L1_MISS);
+  }
+
+  /* L2 */
+  if (!btb_entry && BTB_L2_PRESENT) {
+    level_misses++;
+    btb_entry = (Addr*)cache_access(&bp_data->btb_l2, op->oracle_info.pred_addr, &line_addr, TRUE);
+    STAT_EVENT(op->proc_id, btb_entry ? BTB_L2_HIT : BTB_L2_MISS);
+  }
+
+  if (btb_entry && level_misses && BTB_LEVEL_MISS_LATENCY) {
+    op->bp_cycle = cycle_count + level_misses * BTB_LEVEL_MISS_LATENCY;
+  }
+
+  return btb_entry;
 }
 
 /**************************************************************************************/
@@ -285,8 +317,29 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
       btb_line = (Addr*)cache_insert(&bp_data->btb, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
     }
     *btb_line = op->oracle_info.target;
+    STAT_EVENT(op->proc_id, BTB_L0_FILL);
     // FIXME: the exceptions to this assert are really about x86 vs Alpha
     ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
+
+    if (BTB_L1_PRESENT) {
+      Addr* l1_line = (Addr*)cache_access(&bp_data->btb_l1, fetch_addr, &btb_line_addr, TRUE);
+      if (!l1_line) {
+        l1_line =
+            (Addr*)cache_insert(&bp_data->btb_l1, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
+      }
+      *l1_line = op->oracle_info.target;
+      STAT_EVENT(op->proc_id, BTB_L1_FILL);
+    }
+
+    if (BTB_L2_PRESENT) {
+      Addr* l2_line = (Addr*)cache_access(&bp_data->btb_l2, fetch_addr, &btb_line_addr, TRUE);
+      if (!l2_line) {
+        l2_line =
+            (Addr*)cache_insert(&bp_data->btb_l2, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
+      }
+      *l2_line = op->oracle_info.target;
+      STAT_EVENT(op->proc_id, BTB_L2_FILL);
+    }
   }
 }
 

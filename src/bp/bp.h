@@ -137,7 +137,9 @@ typedef struct Bp_Data_struct {
   struct Br_Conf_struct* br_conf;
 
   uns32 global_hist;
-  Cache btb;
+  Cache btb;    // L0 (always present)
+  Cache btb_l1; // optional L1
+  Cache btb_l2; // optional L2
 
   struct {
     Crs_Entry* entries;

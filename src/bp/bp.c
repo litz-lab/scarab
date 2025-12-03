@@ -836,7 +836,8 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
     op->oracle_info.late_misfetch = !op->oracle_info.late_mispred && late_prediction != op->oracle_info.npc;
   }
 
-  op->bp_cycle = cycle_count;
+  if (!op->bp_cycle)
+    op->bp_cycle = cycle_count;
 
 
   STAT_EVENT(op->proc_id, LATE_BP_ON_PATH_CORRECT + op->oracle_info.late_mispred + 2 * op->oracle_info.late_misfetch +

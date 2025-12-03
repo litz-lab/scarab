@@ -615,8 +615,7 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
     if (ft_can_fetch_op(ic->current_ft)) {
       icache_serve_ops();
     } else if (ic->fetch_barrier_pending) {
-      *break_fetch = BREAK_ICACHE_STALLED;
-      return ICACHE_STALLED;
+      break;
     } else if (ic->lookups_per_cycle_count + occupied_lookup_buffer < ICACHE_READ_PORTS) {
       FT_Arbitration_Result result = ft_arbitration();
       switch (result) {
@@ -640,14 +639,16 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
     }
   }
 
-  ASSERT(ic->proc_id, ic->sd.op_count == ic->sd.max_op_count);
-  *break_fetch = BREAK_ICACHE_ISSUE_WIDTH;
   if (ft_can_fetch_op(ic->current_ft)) {
+    ASSERT(ic->proc_id, ic->sd.op_count == ic->sd.max_op_count);
+    *break_fetch = BREAK_ICACHE_ISSUE_WIDTH;
     return ICACHE_SERVING;
   } else if (ic->fetch_barrier_pending) {
     *break_fetch = BREAK_ICACHE_STALLED;
     return ICACHE_STALLED;
   } else {
+    ASSERT(ic->proc_id, ic->sd.op_count == ic->sd.max_op_count);
+    *break_fetch = BREAK_ICACHE_ISSUE_WIDTH;
     return ICACHE_STAGE_RESTEER;
   }
 }
@@ -710,8 +711,7 @@ Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
     if (ft_can_fetch_op(uc->current_ft)) {
       uop_cache_serve_ops();
     } else if (ic->fetch_barrier_pending) {
-      *break_fetch = BREAK_ICACHE_STALLED;
-      return ICACHE_STALLED;
+      break;
     } else if (uc->lookups_per_cycle_count + occupied_lookup_buffer < UOP_CACHE_READ_PORTS) {
       FT_Arbitration_Result result = ft_arbitration();
       switch (result) {
@@ -735,14 +735,16 @@ Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
     }
   }
 
-  ASSERT(ic->proc_id, uc->sd.op_count == uc->sd.max_op_count);
-  *break_fetch = BREAK_UOP_CACHE_ISSUE_WIDTH;
   if (ft_can_fetch_op(uc->current_ft)) {
+    ASSERT(ic->proc_id, uc->sd.op_count == uc->sd.max_op_count);
+    *break_fetch = BREAK_UOP_CACHE_ISSUE_WIDTH;
     return UOP_CACHE_SERVING;
   } else if (ic->fetch_barrier_pending) {
     *break_fetch = BREAK_ICACHE_STALLED;
     return ICACHE_STALLED;
   } else {
+    ASSERT(ic->proc_id, uc->sd.op_count == uc->sd.max_op_count);
+    *break_fetch = BREAK_UOP_CACHE_ISSUE_WIDTH;
     return ICACHE_STAGE_RESTEER;
   }
 }

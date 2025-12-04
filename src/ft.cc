@@ -49,7 +49,7 @@ uint64_t FT_id_counter = 0;
 FT::~FT() {
   ASSERT(proc_id, !ops.empty());
   for (auto ft_op : ops) {
-    if (!ft_op->parent_FT_off_path || ft_op->off_path){
+    if (!ft_op->parent_FT_off_path || ft_op->off_path) {
       ft_op->parent_FT = nullptr;
       free_op(ft_op);
     }

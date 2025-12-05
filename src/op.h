@@ -272,6 +272,7 @@ struct Op_struct {
   int prev_dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];  // the previous dst reg id with the same parent register id
   // }}}
   FT* parent_FT;
+  FT* parent_FT_off_path;
 };
 
 /**************************************************************************************/

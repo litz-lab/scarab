@@ -360,6 +360,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->marked = FALSE;
 
   op->parent_FT = NULL;
+  op->parent_FT_off_path = NULL;
 
   /* pipelined scheduler fields */
   op->chkpt_num = MAX_CTR;

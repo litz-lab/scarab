@@ -61,6 +61,7 @@ void ft_free_op(Op* op);
 #include "globals/global_types.h"
 
 #include "decoupled_frontend.h"
+#include "uop_cache.h"
 
 // C++ class definition
 enum FT_Event {
@@ -88,6 +89,9 @@ class FT {
 
   std::vector<Op*>& get_ops();
 
+  /* kept as friend so that it can access FT internals like ops and op_pos */
+  friend void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out);
+
   // Change return type to FT_BuildResult
   Flag build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
              std::function<uint64_t()> get_next_op_id_fn);
@@ -102,6 +106,10 @@ class FT {
   bool has_unread_ops() const { return ops.size() - op_pos != 0; }
   bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }
   bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT is properly ended
+  bool get_first_op_off_path() const { return ft_info.dynamic_info.first_op_off_path; }
+  bool get_contains_fake_nop() const { return ft_info.dynamic_info.contains_fake_nop; }
+  bool get_length() const { return ft_info.static_info.length; }
+
   FT_Ended_By get_end_reason() const;
   void clear_recovery_info();
 

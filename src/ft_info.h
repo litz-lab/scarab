@@ -58,6 +58,8 @@ typedef struct FT_Info_Dynamic_struct {
   Flag first_op_off_path;
   // unique ID for this FT, used for debugging and tracking
   uint64_t FT_id;
+
+  Flag contains_fake_nop;
 } FT_Info_Dynamic;
 
 struct FT_Info_struct {

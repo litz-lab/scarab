@@ -1139,7 +1139,7 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_e
       STAT_EVENT(req->proc_id, L1_WB_MISS);
       STAT_EVENT(req->proc_id, CORE_L1_WB_MISS);
     }
-    
+
     STAT_EVENT_ALL(L1_MISS_ALL);
     STAT_EVENT_ALL(L1_MISS_ALL_ONPATH + req->off_path);
 

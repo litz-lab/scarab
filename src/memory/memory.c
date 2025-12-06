@@ -990,15 +990,6 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry, Ad
         "size:%d\n",
         (long int)(req - mem->req_buffer), Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->l1_bank, req->size);
 
-  if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
-    STAT_EVENT(req->proc_id, L1_HIT);
-    STAT_EVENT(req->proc_id, CORE_L1_HIT);
-    STAT_EVENT(req->proc_id, L1_HIT_ONPATH + req->off_path);
-    if (0 && DEBUG_EXC_INSERTS) {
-      printf("addr:%s hit in L1 type:%s\n", hexstr64s(req->addr), Mem_Req_Type_str(req->type));
-    }
-  }
-
   STAT_EVENT_ALL(L1_HIT_ALL);
   STAT_EVENT_ALL(L1_HIT_ALL_ONPATH + req->off_path);
 
@@ -1093,15 +1084,6 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_entry, 
       data->dirty |= (req->type == MRT_WB);
     }
 
-    if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
-      STAT_EVENT(req->proc_id, MLC_HIT);
-      STAT_EVENT(req->proc_id, CORE_MLC_HIT);
-      STAT_EVENT(req->proc_id, MLC_HIT_ONPATH + req->off_path);
-      if (0 && DEBUG_EXC_INSERTS) {
-        printf("addr:%s hit in MLC type:%s\n", hexstr64s(req->addr), Mem_Req_Type_str(req->type));
-      }
-    }
-
     STAT_EVENT_ALL(MLC_HIT_ALL);
     STAT_EVENT_ALL(MLC_HIT_ALL_ONPATH + req->off_path);
 
@@ -1157,13 +1139,7 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_e
       STAT_EVENT(req->proc_id, L1_WB_MISS);
       STAT_EVENT(req->proc_id, CORE_L1_WB_MISS);
     }
-
-    if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
-      STAT_EVENT(req->proc_id, L1_MISS);
-      STAT_EVENT(req->proc_id, CORE_L1_MISS);
-      STAT_EVENT(req->proc_id, L1_MISS_ONPATH + req->off_path);
-      STAT_EVENT(req->proc_id, PER1K_L1_DEMAND_MISS_ONPATH + req->off_path);
-    }
+    
     STAT_EVENT_ALL(L1_MISS_ALL);
     STAT_EVENT_ALL(L1_MISS_ALL_ONPATH + req->off_path);
 
@@ -1290,11 +1266,6 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue
       STAT_EVENT(req->proc_id, CORE_MLC_WB_MISS);
     }
 
-    if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
-      STAT_EVENT(req->proc_id, MLC_MISS);
-      STAT_EVENT(req->proc_id, CORE_MLC_MISS);
-      STAT_EVENT(req->proc_id, MLC_MISS_ONPATH + req->off_path);
-    }
     STAT_EVENT(req->proc_id, MLC_MISS_ALL);
     STAT_EVENT(req->proc_id, MLC_MISS_ALL_ONPATH + req->off_path);
 
@@ -1428,15 +1399,6 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
   cache_part_l1_access(req);
   if (FORCE_L1_MISS)
     data = NULL;
-
-  // cmp FIXME prefetchers
-  if ((req->type == MRT_DPRF || req->type == MRT_IPRF || req->type == MRT_UOCPRF || req->type == MRT_FDIPPRFON ||
-       req->type == MRT_FDIPPRFOFF || req->demand_match_prefetch) &&
-      req->prefetcher_id != 0) {
-    STAT_EVENT(req->proc_id, L1_PREF_ACCESS);
-  } else {
-    STAT_EVENT(req->proc_id, L1_DEMAND_ACCESS);
-  }
 
   if (req->type == MRT_WB || req->type == MRT_WB_NODIRTY) {
     STAT_EVENT(req->proc_id, POWER_LLC_WRITE_ACCESS);
@@ -1652,7 +1614,7 @@ static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_ent
         mem_insert_req_into_queue(req, req->queue, ALL_FIFO_QUEUES ? l1_seq_num : 0);
         l1_seq_num++;
         (*l1_queue_insertion_count) += 1;
-        STAT_EVENT(req->proc_id, L1_ACCESS);
+        STAT_EVENT(req->proc_id, L1_WB_FROM_MLC);
       }
       return TRUE;
     }
@@ -1674,7 +1636,6 @@ static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_ent
         (*reserved_entry_count) += 1;
         req->reserved_entry_count += 1;
       }
-      STAT_EVENT(req->proc_id, L1_ACCESS);
 
       if (!PREF_ORACLE_TRAIN_ON &&
           ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (PREF_I_TOGETHER && req->type == MRT_IFETCH) ||
@@ -1734,6 +1695,8 @@ static void mem_process_l1_reqs() {
       if (req->type == MRT_DPRF || req->type == MRT_IPRF || req->type == MRT_UOCPRF || req->type == MRT_FDIPPRFON ||
           req->type == MRT_FDIPPRFOFF)
         STAT_EVENT(req->proc_id, L1_PREF_ACCESS);
+      else if (req->type == MRT_WB || req->type == MRT_WB_NODIRTY)
+        STAT_EVENT(req->proc_id, L1_WB_ACCESS);
       else
         STAT_EVENT(req->proc_id, L1_DEMAND_ACCESS);
     } else {

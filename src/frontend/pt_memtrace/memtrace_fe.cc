@@ -174,27 +174,32 @@ int roi(const xed_decoded_inst_t* ins) {
 int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   InstInfo* insi;
 
+  bool skip;
   do {
-    insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
+    do {
+      insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
 
-    if (prior_pid == 0) {
-      ASSERT(proc_id, prior_tid == 0);
-      ASSERT(proc_id, insi->valid);
-      prior_pid = insi->pid;
-      prior_tid = insi->tid;
-      ASSERT(proc_id, prior_tid);
-      ASSERT(proc_id, prior_pid);
-    }
-    if (insi->valid) {
-      ins_id++;
-      if (insi->fetched_instruction) {
-        ins_id_fetched++;
+      if (prior_pid == 0) {
+        ASSERT(proc_id, prior_tid == 0);
+        ASSERT(proc_id, insi->valid);
+        prior_pid = insi->pid;
+        prior_tid = insi->tid;
+        ASSERT(proc_id, prior_tid);
+        ASSERT(proc_id, prior_pid);
       }
-    } else {
-      std::cout << "Reached end of trace" << std::endl;
-      return 0;  // end of trace
-    }
-  } while (insi->pid != prior_pid || insi->tid != prior_tid);
+      if (insi->valid) {
+        ins_id++;
+        if (insi->fetched_instruction) {
+          ins_id_fetched++;
+        }
+      } else {
+        std::cout << "Reached end of trace" << std::endl;
+        return 0;  // end of trace
+      }
+    } while (insi->pid != prior_pid || insi->tid != prior_tid);
+
+    skip = (USE_FETCHED_COUNT && !insi->fetched_instruction);
+  } while (skip);
 
   if (insi->is_dr_ins) {
     memcpy(next_onpath_pi, insi->info, sizeof(ctype_pin_inst));

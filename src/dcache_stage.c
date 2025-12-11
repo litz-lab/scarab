@@ -231,6 +231,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
           (op->table_info->mem_type == MEM_ST) ? "ST" : "LD", bank);
     if (!PERFECT_DCACHE && ((op->table_info->mem_type == MEM_ST && !get_write_port(&dc->ports[bank])) ||
                             (op->table_info->mem_type != MEM_ST && !get_read_port(&dc->ports[bank])))) {
+      STAT_EVENT(dc->proc_id, DCACHE_READ_PORT_UNAVAILABLE_ONPATH + op->off_path);
       op->state = OS_WAIT_DCACHE;
       continue;
     }
@@ -247,6 +248,14 @@ void update_dcache_stage(Stage_Data* src_sd) {
     Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, TRUE);
     op->dcache_cycle = cycle_count;
     dc->idle_cycle = MAX2(dc->idle_cycle, cycle_count + DCACHE_CYCLES);
+    
+    STAT_EVENT(op->proc_id, DCACHE_ACCESS);
+
+    if (!op->off_path) {
+      STAT_EVENT(op->proc_id, DCACHE_ACCESS_ONPATH);
+    } else {
+      STAT_EVENT(op->proc_id, DCACHE_ACCESS_OFFPATH);
+    }
 
     if (op->table_info->mem_type == MEM_ST)
       STAT_EVENT(op->proc_id, POWER_DCACHE_WRITE_ACCESS);
@@ -268,6 +277,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
       }
 
       op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
+
       if (op->table_info->mem_type != MEM_ST) {
         op->wake_cycle = op->done_cycle;
         wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
@@ -506,7 +516,7 @@ static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr
   if (extra_line) {
     STAT_EVENT_ALL(ONE_MORE_DISCARDED_L0CACHE);
     return;
-  }
+}
 
   Flag ret = new_mem_req(MRT_DFETCH, proc_id, extra_line_addr, cache->line_size,
                          cache_cycle - 1 + op->inst_info->extra_ld_latency, NULL, NULL, op->unique_num, 0);
@@ -557,6 +567,17 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
 
   /* update cacheline state */
   op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
+  
+Counter lat = op->done_cycle - op->dcache_cycle;
+
+if (!op->off_path) {
+    // sum of cycles
+    INC_STAT_EVENT(op->proc_id, DCACHE_HIT_LAT_CYCLES_ONPATH, lat);
+} else {
+    INC_STAT_EVENT(op->proc_id, DCACHE_HIT_LAT_CYCLES_OFFPATH,  lat);
+}
+
+  
   line->read_count[op->off_path] = line->read_count[op->off_path] + (op->table_info->mem_type == MEM_LD);
   line->write_count[op->off_path] = line->write_count[op->off_path] + (op->table_info->mem_type == MEM_ST);
   line->misc_state = (line->misc_state & 2) | op->off_path;
@@ -834,6 +855,16 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     ASSERT(dc->proc_id, !op->in_rdy_list);
 
     op->done_cycle = cycle_count + 1;
+
+Counter lat = op->done_cycle - op->dcache_cycle;
+
+if (!op->off_path) {
+    // sum of cycles
+    INC_STAT_EVENT(op->proc_id, DCACHE_MISS_LAT_CYCLES_ONPATH, lat);
+} else {
+    INC_STAT_EVENT(op->proc_id, DCACHE_MISS_LAT_CYCLES_OFFPATH,  lat);
+}
+
     op->state = OS_SCHEDULED;
 
     if (op->table_info->mem_type != MEM_ST) {

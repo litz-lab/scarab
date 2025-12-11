@@ -880,7 +880,17 @@ void mem_start_mlc_access(Mem_Req* req) {
 
     avail = TRUE;
     req->state = MRS_MLC_WAIT;
+
+if (req->mlc_start_cycle == 0)
+  req->mlc_start_cycle = cycle_count;
+
     req->rdy_cycle = cycle_count + MLC_CYCLES;
+  }
+  else if (need_rp){
+    STAT_EVENT(req->proc_id, MLC_READ_PORT_UNAVAILABLE_ONPATH + req->off_path);
+  }
+  else if (need_wp){
+    STAT_EVENT(req->proc_id, MLC_WRITE_PORT_UNAVAILABLE_ONPATH + req->off_path);
   }
 
   if (need_wp)
@@ -913,8 +923,11 @@ void mem_start_l1_access(Mem_Req* req) {
       // useful for modeling per-core DVFS with private LLCs
       Freq_Domain_Id core_domain = FREQ_DOMAIN_CORES[req->proc_id];
       Counter core_cycle_count = freq_cycle_count(core_domain);
+
+      req->l1_start_cycle = freq_convert_future_cycle(core_domain, core_cycle_count, FREQ_DOMAIN_L1);
       req->rdy_cycle = freq_convert_future_cycle(core_domain, core_cycle_count + L1_CYCLES, FREQ_DOMAIN_L1);
     } else {
+      req->l1_start_cycle = cycle_count;
       req->rdy_cycle = cycle_count + L1_CYCLES;
     }
 
@@ -1440,6 +1453,12 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
         if (!l1_hit_access) {
           // request rejected by Ramulator, so restore state to
           // MRS_L1_WAIT to try again later
+
+  if (req->off_path)
+    STAT_EVENT(req->proc_id, MEM_CTRL_ENQ_BLOCK_CYCLES_OFFPATH);
+  else
+    STAT_EVENT(req->proc_id, MEM_CTRL_ENQ_BLOCK_CYCLES_ONPATH);
+
           req->state = MRS_L1_WAIT;
           access_done = FALSE;
         } else {
@@ -1489,7 +1508,7 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
         req->state = MRS_MEM_NEW;
         l1_miss_access = ramulator_send(req);
         if (!l1_miss_access) {
-          // STAT_EVENT(req->proc_id, REJECTED_QUEUE_BUS_OUT);
+           STAT_EVENT(req->proc_id, REJECTED_QUEUE_BUS_OUT);
 
           req->state = MRS_L1_WAIT;
           access_done = FALSE;
@@ -1569,6 +1588,33 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
   }
 
   if (access_done) {
+
+if (req->l1_start_cycle) {
+    Counter lat = cycle_count - req->l1_start_cycle;
+
+    /* Use req->l1_miss (set in the miss path) to choose HIT vs MISS counters */
+    if (req->l1_miss) {
+      if (req->off_path) {
+        STAT_EVENT(req->proc_id, L1_MISS_LAT_COUNT_OFFPATH);
+        INC_STAT_EVENT(req->proc_id, L1_MISS_LAT_CYCLES_OFFPATH, lat);
+      } else {
+        STAT_EVENT(req->proc_id, L1_MISS_LAT_COUNT_ONPATH);
+        INC_STAT_EVENT(req->proc_id, L1_MISS_LAT_CYCLES_ONPATH,  lat);
+      }
+    } else { /* treat as HIT (covers normal hits and PERFECT_L1) */
+      if (req->off_path) {
+        STAT_EVENT(req->proc_id, L1_HIT_LAT_COUNT_OFFPATH);
+        INC_STAT_EVENT(req->proc_id, L1_HIT_LAT_CYCLES_OFFPATH, lat);
+      } else {
+        STAT_EVENT(req->proc_id, L1_HIT_LAT_COUNT_ONPATH);
+        INC_STAT_EVENT(req->proc_id, L1_HIT_LAT_CYCLES_ONPATH,  lat);
+      }
+    }
+
+    /* optional hygiene: req->l1_start_cycle = 0; */
+  }
+
+
     ASSERT(req->proc_id, mem->uncores[req->proc_id].num_outstanding_l1_accesses > 0);
     mem->uncores[req->proc_id].num_outstanding_l1_accesses--;
   }
@@ -1616,6 +1662,14 @@ static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_ent
         (*l1_queue_insertion_count) += 1;
         STAT_EVENT(req->proc_id, L1_WB_FROM_MLC);
       }
+      if (req->mlc_start_cycle) {
+  Counter lat = cycle_count - req->mlc_start_cycle;
+  if (req->off_path) {
+    INC_STAT_EVENT(req->proc_id, MLC_HIT_LAT_CYCLES_OFFPATH, lat);
+  } else {
+    INC_STAT_EVENT(req->proc_id, MLC_HIT_LAT_CYCLES_ONPATH,  lat);
+  }
+}
       return TRUE;
     }
   } else { /* mlc miss */
@@ -1644,10 +1698,29 @@ static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_ent
         pref_umlc_miss(req->proc_id, req->addr, req->loadPC, req->global_hist);
       }
 
+if (req->mlc_start_cycle) {
+  Counter lat = cycle_count - req->mlc_start_cycle;
+  if (req->off_path) {
+    INC_STAT_EVENT(req->proc_id, MLC_MISS_LAT_CYCLES_OFFPATH, lat);
+  } else {
+    INC_STAT_EVENT(req->proc_id, MLC_MISS_LAT_CYCLES_ONPATH,  lat);
+  }
+}
+
       return TRUE;
     } else if (!mlc_miss_access) {
       return FALSE;
     }
+
+if (req->mlc_start_cycle) {
+  Counter lat = cycle_count - req->mlc_start_cycle;
+  if (req->off_path) {
+    INC_STAT_EVENT(req->proc_id, MLC_MISS_LAT_CYCLES_OFFPATH, lat);
+  } else {
+    INC_STAT_EVENT(req->proc_id, MLC_MISS_LAT_CYCLES_ONPATH,  lat);
+  }
+}
+
     return TRUE;
   }
   ASSERT(req->proc_id, 0);
@@ -2113,6 +2186,18 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
 
   /* Crossing frequency domain boundary between the chip and memory controller */
   req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + 1;
+
+if (req->mem_resp_ready_cycle) {
+  Counter wait = req->rdy_cycle - req->mem_resp_ready_cycle;
+  if (req->off_path) {
+    STAT_EVENT(req->proc_id, MEM_RESP_TO_L1FILL_COUNT_OFFPATH);
+    INC_STAT_EVENT(req->proc_id, MEM_RESP_TO_L1FILL_CYCLES_OFFPATH, wait);
+  } else {
+    STAT_EVENT(req->proc_id, MEM_RESP_TO_L1FILL_COUNT_ONPATH);
+    INC_STAT_EVENT(req->proc_id, MEM_RESP_TO_L1FILL_CYCLES_ONPATH,  wait);
+  }
+}
+
 
   req->queue = &(mem->l1fill_queue);
 
@@ -3123,6 +3208,9 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
   new_req->type = type;
   new_req->types = 0;
   new_req->emitted_cycle = cycle_count;
+  new_req->mlc_start_cycle = 0;
+  new_req->l1_start_cycle  = 0;
+  new_req->mem_resp_ready_cycle = 0;
   if (type == MRT_IFETCH) {
     new_req->demand_icache_emitted_cycle = cycle_count;
     new_req->fdip_emitted_cycle = 0;

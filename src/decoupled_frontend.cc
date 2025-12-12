@@ -44,6 +44,8 @@ class Decoupled_FE {
   void conf_resolve_cf(Op* op) { conf->resolve_cf(op); }
   Off_Path_Reason eval_off_path_reason(Op* op);
   void print_conf_data() { conf->print_data(); }
+  uint64_t get_next_on_path_op_num() { return op_num++; }
+  uint64_t get_next_off_path_op_num() { return current_off_path_op_num++; }
 
   // FSM states for DFE
   enum DFE_STATE {
@@ -68,6 +70,8 @@ class Decoupled_FE {
   FT* saved_recovery_ft;
 
   int sched_off_path;
+  uint64_t op_num = 1;
+  uint64_t current_off_path_op_num = 0;
   std::vector<decoupled_fe_iter> ftq_iterators;
   uint64_t recovery_addr;
   uint64_t redirect_cycle;
@@ -82,23 +86,11 @@ class Decoupled_FE {
   void check_consecutivity_and_push_to_ftq();
   void redirect_to_off_path(FT_PredictResult result);
   inline uint64_t ftq_max_size() { return ftq_ft_num; }
+  void set_off_path_op_num(uint64_t op_num) { current_off_path_op_num = op_num; }
 };
 
 /* Global Variables */
 Decoupled_FE* dfe = nullptr;
-Flag have_seen_exit_on_prebuilt = 0;
-uint64_t op_num_count = 1;
-uint64_t current_off_path_op_num_count = 0;
-
-uint64_t get_next_on_path_op_id() {
-  return op_num_count++;
-}
-uint64_t get_next_off_path_op_id() {
-  return current_off_path_op_num_count++;
-}
-void set_off_path_op_id(uint64_t op_num_count) {
-  current_off_path_op_num_count = op_num_count;
-};
 
 // Per core decoupled frontend
 std::vector<Decoupled_FE> per_core_dfe;
@@ -190,6 +182,14 @@ void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num) {
 
 uint64_t decoupled_fe_get_ftq_num() {
   return dfe->get_ftq_num();
+}
+
+uint64_t decoupled_fe_get_next_on_path_op_num() {
+  return dfe->get_next_on_path_op_num();
+}
+
+uint64_t decoupled_fe_get_next_off_path_op_num() {
+  return dfe->get_next_off_path_op_num();
 }
 
 Op* decoupled_fe_get_cur_op() {
@@ -370,7 +370,7 @@ void Decoupled_FE::update() {
                                                          frontend_fetch_op(pid, op);
                                                          return true;
                                                        },
-                                                       false, []() { return get_next_on_path_op_id(); });
+                                                       false, []() { return decoupled_fe_get_next_on_path_op_num(); });
         ASSERT(proc_id, build_success);
         result = current_ft_to_push->predict_ft();
         // if current FT is the exit one, skip mispredict handling and directly push
@@ -400,7 +400,7 @@ void Decoupled_FE::update() {
                                                          frontend_fetch_op(pid, op);
                                                          return true;
                                                        },
-                                                       true, []() { return get_next_off_path_op_id(); });
+                                                       true, []() { return decoupled_fe_get_next_off_path_op_num(); });
         ASSERT(proc_id, build_success);
         if (current_ft_to_push->get_end_reason() == FT_TAKEN_BRANCH) {
           frontend_redirect(proc_id, current_ft_to_push->get_last_op()->inst_uid,
@@ -569,14 +569,14 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
                                                     frontend_fetch_op(pid, op);
                                                     return true;
                                                   },
-                                                  false, []() { return get_next_on_path_op_id(); });
+                                                  false, []() { return decoupled_fe_get_next_on_path_op_num(); });
     ASSERT(proc_id, build_success);
   }
   redirect_cycle = cycle_count;
   state = SERVING_OFF_PATH;
   frontend_redirect(proc_id, result.op->inst_uid, result.pred_addr);
   // set the current op number as the beginning op count of this off-path divergence
-  set_off_path_op_id(current_ft_to_push->get_last_op()->op_num + 1);
+  set_off_path_op_num(current_ft_to_push->get_last_op()->op_num + 1);
   // patching/modify the current FT with off-path op if current FT not ended
   if (current_ft_to_push->get_end_reason() == FT_NOT_ENDED) {
     auto build_success = current_ft_to_push->build([](uns8 pid) { return frontend_can_fetch_op(pid); },
@@ -584,7 +584,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
                                                      frontend_fetch_op(pid, op);
                                                      return true;
                                                    },
-                                                   true, []() { return get_next_off_path_op_id(); });
+                                                   true, []() { return decoupled_fe_get_next_off_path_op_num(); });
     ASSERT(proc_id, build_success);
     if (current_ft_to_push->get_end_reason() == FT_TAKEN_BRANCH) {
       frontend_redirect(proc_id, current_ft_to_push->get_last_op()->inst_uid,

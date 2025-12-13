@@ -125,6 +125,8 @@ uint64_t decoupled_fe_ftq_num_ops();
 uint64_t decoupled_fe_ftq_num_fts();
 void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num);
 uint64_t decoupled_fe_get_ftq_num();
+uint64_t decoupled_fe_get_next_on_path_op_num();
+uint64_t decoupled_fe_get_next_off_path_op_num();
 Op* decoupled_fe_get_cur_op();
 uns decoupled_fe_get_conf();
 Off_Path_Reason decoupled_fe_get_off_path_reason();

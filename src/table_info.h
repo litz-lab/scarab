@@ -112,7 +112,7 @@ typedef enum Cf_Type_enum {
   CF_CBR,   // a conditional branch
   CF_CALL,  // a call
   // above this point are known target cfs
-  CF_REP,    // a repeat instruction
+  CF_REP,  // a repeat instruction
   // below this point are indirect cfs
   CF_IBR,    // an indirect branch
   CF_ICALL,  // an indirect call

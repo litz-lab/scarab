@@ -380,7 +380,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   /* execute op */
 
   if (op->table_info->op_type == OP_CF) {
-    if (op->table_info->cf_type == CF_CBR) {
+    if (op->table_info->cf_type == CF_CBR || op->table_info->cf_type == CF_REP) {
       op->oracle_info.dir = (trace_uop->actual_taken == 0) ? NOT_TAKEN : TAKEN;
     } else {
       /* assume that all CFs besides CBR are actually always taken. This fixes the

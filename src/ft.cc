@@ -223,7 +223,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 #ifdef ENABLE_PT_MEMTRACE
   trace_mode |= (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE);
 #endif
-  if (op->table_info->cf_type && op->table_info->cf_type != CF_REP) {
+  if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
     bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);

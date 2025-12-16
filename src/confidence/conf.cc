@@ -215,7 +215,7 @@ void Conf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
   // log conf stats
   // if it is a cf with bp conf
   if ((op)->table_info->cf_type == CF_CBR || (op)->table_info->cf_type == CF_IBR ||
-      (op)->table_info->cf_type == CF_ICALL) {
+      (op)->table_info->cf_type == CF_ICALL || (op)->table_info->cf_type == CF_REP) {
     if (op->oracle_info.mispred) {
       // reorder stats
       STAT_EVENT(proc_id, DFE_CONF_0_MISPRED + op->bp_confidence);

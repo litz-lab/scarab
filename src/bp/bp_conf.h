@@ -36,8 +36,9 @@
 /**************************************************************************************/
 // Macros
 
-#define IS_CONF_CF(op) \
-  ((op)->table_info->cf_type == CF_CBR || (op)->table_info->cf_type == CF_IBR || (op)->table_info->cf_type == CF_ICALL)
+#define IS_CONF_CF(op)                                                           \
+  ((op)->table_info->cf_type == CF_CBR || (op)->table_info->cf_type == CF_IBR || \
+   (op)->table_info->cf_type == CF_ICALL || (op)->table_info->cf_type == CF_REP)
 
 /**************************************************************************************/
 /* Types */

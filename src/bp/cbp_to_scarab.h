@@ -125,7 +125,7 @@ static inline UINT32 SatDecrement(UINT32 x) {
 }
 
 static inline Flag is_conditional_branch(Cf_Type cf_type) {
-  return cf_type == CF_CBR;
+  return cf_type == CF_CBR || cf_type == CF_REP;
 }
 
 static inline OpType scarab_to_cbp_optype(Cf_Type cf_type) {
@@ -139,6 +139,7 @@ static inline OpType scarab_to_cbp_optype(Cf_Type cf_type) {
       optype = OPTYPE_CALL_DIRECT_UNCOND;
       break;
     case CF_CBR:
+    case CF_REP:
       optype = OPTYPE_JMP_DIRECT_COND;
       break;
     case CF_IBR:

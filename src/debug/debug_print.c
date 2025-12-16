@@ -92,8 +92,8 @@ DEFINE_ENUM(Op_Type, OP_TYPE_LIST);
 
 const char* const mem_type_names[] = {"NOT_MEM", "MEM_LD", "MEM_ST", "MEM_PF"};
 
-const char* const cf_type_names[] = {"NOT_CF",   "CF_BR",  "CF_CBR", "CF_CALL", "CF_IBR",
-                                     "CF_ICALL", "CF_ICO", "CF_RET", "CF_SYS"};
+const char* const cf_type_names[] = {"NOT_CF", "CF_BR",    "CF_CBR", "CF_REP", "CF_CALL",
+                                     "CF_IBR", "CF_ICALL", "CF_ICO", "CF_RET", "CF_SYS"};
 
 const char* const bar_type_names[] = {"NOT_BAR"};
 

@@ -594,7 +594,8 @@ static void add_rep_uops(ctype_pin_inst* pi, Trace_Uop** trace_uop, uns* idx) {
     uop = trace_uop[*idx];
     clear_t_uop(uop);
     uop->op_type = OP_CF;
-    uop->cf_type = CF_CBR;
+    uop->cf_type = CF_REP;
+    STAT_EVENT(0, REP_FIRST);
     add_t_uop_src_reg(uop, REG_ZPS);
     *idx = *idx + 1;
   }

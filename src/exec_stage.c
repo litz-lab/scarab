@@ -546,7 +546,8 @@ static inline void exec_stage_bp_resolve(Op* op) {
     if (op->table_info->cf_type >= CF_IBR)
       bp_target_known_op(g_bp_data, op);
 
-    bp_resolve_op(g_bp_data, op);
+    if (op->table_info->cf_type != CF_REP)
+      bp_resolve_op(g_bp_data, op);
   }
 
   if (op->oracle_info.recover_at_exec) {

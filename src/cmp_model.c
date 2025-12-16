@@ -502,7 +502,7 @@ void cmp_warmup(Op* op) {
   }
 
   // Warmup BP for CF instructions
-  if (op->table_info->cf_type != NOT_CF) {
+  if (op->table_info->cf_type != NOT_CF && op->table_info->cf_type != CF_REP) {
     Bp_Data* bp_data = &(cmp_model.bp_data[proc_id]);
     bp_predict_op(bp_data, op, 1, ia);
     bp_target_known_op(bp_data, op);

@@ -574,7 +574,7 @@ void node_retire() {
 
     remove_from_seq_op_list(td, op);
 
-    if (op->table_info->cf_type) {
+    if (op->table_info->cf_type && op->table_info->cf_type != CF_REP) {
       if (BP_UPDATE_AT_RETIRE) {
         // this code updates the branch prediction structures
         if (op->table_info->cf_type >= CF_IBR)

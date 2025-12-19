@@ -110,7 +110,9 @@ typedef enum Cf_Type_enum {
   NOT_CF,   // not a control flow instruction
   CF_BR,    // an unconditional branch
   CF_CBR,   // a conditional branch
+  CF_REP,   // a repeat instruction
   CF_CALL,  // a call
+  // above this point are known target cfs
   // below this point are indirect cfs
   CF_IBR,    // an indirect branch
   CF_ICALL,  // an indirect call

@@ -199,7 +199,8 @@ void inc_bstat_miss(Op* op) {
   Per_Branch_Stat* bstat = (Per_Branch_Stat*)hash_table_access(&per_branch_stat, key);
   ASSERT(bp_recovery_info->proc_id, bstat);
 
-  const uns8 mispred = (op->table_info->cf_type == CF_CBR) && !op->oracle_info.btb_miss;
+  const uns8 mispred =
+      (op->table_info->cf_type == CF_CBR || op->table_info->cf_type == CF_REP) && !op->oracle_info.btb_miss;
   const uns8 misfetch = op->oracle_info.misfetch;
   const uns8 btb_miss = op->oracle_info.btb_miss;
 
@@ -467,7 +468,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         STAT_EVENT(op->proc_id, op->off_path ? BR_RECOVER_OFF_PATH : BR_RECOVER);
       }
       break;
-
+    case CF_REP:
     case CF_CBR:
       // Branch predictors may use pred_global_hist as input.
       op->oracle_info.pred_global_hist = bp_data->global_hist;
@@ -849,7 +850,7 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
       td->td_info.corrpred_counter++;
   }
 
-  if (op->table_info->cf_type == CF_CBR) {
+  if (op->table_info->cf_type == CF_CBR || op->table_info->cf_type == CF_REP) {
     if (!op->off_path) {
       if (op->oracle_info.mispred)
         _DEBUGA(op->proc_id, 0, "ON PATH HW MISPRED  addr:0x%s  pghist:0x%s\n", hexstr64s(op->inst_info->addr),
@@ -961,7 +962,7 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   STAT_EVENT(0, PERFORMED_EXEC_RECOVERIES);
   INC_STAT_EVENT(0, PERFORMED_RECOVERY_LAT, cycle_count - info->predict_cycle);
   /* always recover the global history */
-  if (cf_type == CF_CBR) {
+  if (cf_type == CF_CBR || cf_type == CF_REP) {
     bp_data->global_hist = (info->pred_global_hist >> 1) | (info->new_dir << 31);
   } else {
     bp_data->global_hist = info->pred_global_hist;

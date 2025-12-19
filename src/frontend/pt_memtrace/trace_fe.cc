@@ -453,9 +453,9 @@ void output_counts(uint64_t num_of_segments, bb_counts counts_dynamic, bb_counts
                    uint64_t *op_taken_count,
                    std::unordered_map<uint64_t, std::vector<basic_block_info>> bb_identity_map) {
   const char *op_type_strings[] = {
-      "TRACE_INST_TAKEN_NOT_CF",  "TRACE_INST_TAKEN_CF_BR",  "TRACE_INST_TAKEN_CF_CBR",
-      "TRACE_INST_TAKEN_CF_CALL", "TRACE_INST_TAKEN_CF_IBR", "TRACE_INST_TAKEN_CF_ICALL",
-      "TRACE_INST_TAKEN_CF_ICO",  "TRACE_INST_TAKEN_CF_RET", "TRACE_INST_TAKEN_CF_SYS",
+      "TRACE_INST_TAKEN_NOT_CF",  "TRACE_INST_TAKEN_CF_BR",  "TRACE_INST_TAKEN_CF_CBR",   "TRACE_INST_TAKEN_CF_REP",
+      "TRACE_INST_TAKEN_CF_CALL", "TRACE_INST_TAKEN_CF_IBR", "TRACE_INST_TAKEN_CF_ICALL", "TRACE_INST_TAKEN_CF_ICO",
+      "TRACE_INST_TAKEN_CF_RET",  "TRACE_INST_TAKEN_CF_SYS",
   };
 
   printf("to be appened segment num %ld\n", num_of_segments);

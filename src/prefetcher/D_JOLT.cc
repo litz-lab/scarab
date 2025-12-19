@@ -630,7 +630,7 @@ void D_JOLT_PREFETCHER::branch_operate(uint64_t ip, uint8_t branch_type, uint64_
   uint32_t sig_1;
   uint32_t sig_2;
 
-  if (branch_type == CF_CBR || branch_type == CF_IBR) {
+  if (branch_type == CF_CBR || branch_type == CF_IBR || branch_type == CF_REP) {
     sig_1 = siggen_1.onCallInstruction(ip, branch_target);
     sig_2 = siggen_2.onCallInstruction(ip, branch_target);
   } else if (branch_type == CF_RET) {

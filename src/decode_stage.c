@@ -39,6 +39,7 @@
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
 
+#include "bp/bp.param.h"
 #include "core.param.h"
 #include "general.param.h"
 #include "memory/memory.param.h"
@@ -235,6 +236,10 @@ void update_decode_stage(Stage_Data* src_sd) {
 void decode_stage_process_op(Op* op) {
   Cf_Type cf = op->table_info->cf_type;
   op->decode_cycle = cycle_count;
+  op->state = OS_DECODED;
+  if (SUPPORT_BP_MECH == LVCP_BP && op->table_info->mem_type == MEM_LD) {
+    bp_special_op(g_bp_data, op);
+  }
 
   if (cf) {
     DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",

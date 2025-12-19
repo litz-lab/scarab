@@ -37,6 +37,7 @@ void bp_hybridgp_update(Op*);
 void bp_hybridgp_retire(Op*);
 void bp_hybridgp_recover(Recovery_Info*);
 uns8 bp_hybridgp_full(uns);
+void bp_hybridgp_special(Op*);
 
 #ifdef __cplusplus
 }

@@ -56,6 +56,7 @@ typedef struct FT FT;
 // clang-format off
 #define OP_STATE_LIST(elem)                                                                 \
     elem(FETCHED)      /* op has been fetched, awaiting issue */                            \
+    elem(DECODED)      /* op has been decoded, awaiting issue */                        \
     elem(IN_ROB)       /* op is in the node table (reorder buffer) */                       \
     elem(IN_RS)        /* op is in the scheduling window (RS), waiting for its sources */   \
     elem(SLEEP)        /* for pipelined schedule: wake up NEXT cycle */                     \
@@ -265,6 +266,11 @@ struct Op_struct {
   Flag fetched_from_uop_cache;
   // }}}
   int bp_confidence;
+
+  // {{{ source and destination values
+  uint64_t src_val[MAX_SRCS];
+  uint64_t dst_val[MAX_DESTS];
+  // }}}
 
   // {{{ register renaming
   int src_reg_id[MAX_SRCS][REG_TABLE_TYPE_NUM];        // the reg id of the source reg file entries

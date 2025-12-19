@@ -68,6 +68,9 @@ uns8 bp_gshare_full(uns proc_id) {
   return 0;
 }
 
+void bp_gshare_special(Op* op) {
+}
+
 void bp_gshare_init() {
   gshare_state_all_cores.resize(NUM_CORES);
   for (auto& gshare_state : gshare_state_all_cores) {

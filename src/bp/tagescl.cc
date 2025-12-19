@@ -124,3 +124,6 @@ void bp_tagescl_recover(Recovery_Info* recovery_info) {
 uns8 bp_tagescl_full(uns proc_id) {
   return tagescl_predictors.at(proc_id)->is_full();
 }
+
+void bp_tagescl_special(Op* op) {
+}

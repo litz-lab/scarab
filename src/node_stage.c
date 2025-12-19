@@ -584,6 +584,12 @@ void node_retire() {
       }
       bp_retire_op(g_bp_data, op);
     }
+    if (SUPPORT_BP_MECH == LVCP_BP && op->table_info->mem_type == MEM_LD) {
+      if (BP_UPDATE_AT_RETIRE) {
+        bp_special_op(g_bp_data, op);
+      }
+      bp_retire_op(g_bp_data, op);
+    }
 
     if (op->table_info->mem_type == MEM_LD && (op->done_cycle - op->sched_cycle) < 5) {
       STAT_EVENT(op->proc_id, LD_EXEC_CYCLES_0 + (op->done_cycle - op->sched_cycle));

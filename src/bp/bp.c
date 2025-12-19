@@ -84,6 +84,7 @@ extern void tc_do_stat(Op*, Flag);
 Bp_Recovery_Info* bp_recovery_info = NULL;
 Bp_Data* g_bp_data = NULL;
 Flag USE_LATE_BP = FALSE;
+Flag USE_SUPPORT_BP = FALSE;
 extern List op_buf;
 extern uns operating_mode;
 
@@ -263,6 +264,15 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
     bp_data->late_bp = NULL;
   }
 
+  USE_SUPPORT_BP = (SUPPORT_BP_MECH != NUM_BP);
+
+  if (USE_SUPPORT_BP) {
+    bp_data->support_bp = &bp_table[SUPPORT_BP_MECH];
+    bp_data->support_bp->init_func();
+  } else {
+    bp_data->support_bp = NULL;
+  }
+
   /* init btb structure */
   bp_data->bp_btb = &bp_btb_table[BTB_MECH];
   bp_data->bp_btb->init_func(bp_data);
@@ -337,6 +347,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   op->recovery_info.predict_cycle = cycle_count;
 
   bp_data->bp->timestamp_func(op);
+  if (USE_SUPPORT_BP) {
+    bp_data->support_bp->timestamp_func(op);
+  }
   if (USE_LATE_BP) {
     bp_data->late_bp->timestamp_func(op);
   }
@@ -379,6 +392,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     op->oracle_info.pred_npc = op->oracle_info.npc;
     op->oracle_info.late_pred_npc = op->oracle_info.npc;
     bp_data->bp->spec_update_func(op);
+    if (USE_SUPPORT_BP) {
+      bp_data->support_bp->spec_update_func(op);
+    }
     if (USE_LATE_BP) {
       bp_data->late_bp->spec_update_func(op);
     }
@@ -480,6 +496,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         ASSERT(op->proc_id, !PERFECT_NT_BTB);  // currently not supported
         op->oracle_info.pred = bp_data->bp->pred_func(op);
         op->oracle_info.pred_orig = op->oracle_info.pred;
+        if (USE_SUPPORT_BP) {
+          op->oracle_info.pred = bp_data->support_bp->pred_func(op);
+        }
         if (USE_LATE_BP) {
           op->oracle_info.late_pred = bp_data->late_bp->pred_func(op);
         }
@@ -783,6 +802,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     btb_miss_nt = TRUE;
 
   bp_data->bp->spec_update_func(op);
+  if (USE_SUPPORT_BP) {
+    bp_data->support_bp->spec_update_func(op);
+  }
   if (USE_LATE_BP) {
     bp_data->late_bp->spec_update_func(op);
   }
@@ -930,6 +952,12 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
     return;
   }
   bp_data->bp->update_func(op);
+  if (USE_SUPPORT_BP) {
+    bp_data->support_bp->update_func(op);
+    if (SUPPORT_BP_MECH == LVCP_BP) {
+      bp_data->support_bp->update_func(op);
+    }
+  }
   if (USE_LATE_BP) {
     bp_data->late_bp->update_func(op);
   }
@@ -947,9 +975,21 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
  */
 
 void bp_retire_op(Bp_Data* bp_data, Op* op) {
-  bp_data->bp->retire_func(op);
-  if (USE_LATE_BP) {
-    bp_data->late_bp->retire_func(op);
+  if (op->table_info->cf_type) {
+    bp_data->bp->retire_func(op);
+    if (USE_SUPPORT_BP) {
+      bp_data->support_bp->retire_func(op);
+    }
+    if (USE_LATE_BP) {
+      bp_data->late_bp->retire_func(op);
+    }
+    return;
+  }
+
+  // Non-control ops should not reach the main predictor retire path. LVCP support
+  // predictor wants load commits, so send them only to the support BP.
+  if (USE_SUPPORT_BP && SUPPORT_BP_MECH == LVCP_BP && op->table_info->mem_type == MEM_LD) {
+    bp_data->support_bp->retire_func(op);
   }
 }
 
@@ -977,6 +1017,9 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
     bp_data->bp_ibtb->recover_func(bp_data, info);
   }
   bp_data->bp->recover_func(info);
+  if (USE_SUPPORT_BP) {
+    bp_data->support_bp->recover_func(info);
+  }
   if (USE_LATE_BP) {
     bp_data->late_bp->recover_func(info);
   }
@@ -989,4 +1032,12 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
 
   if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)
     increment_branch_mispredictions(info->PC);
+}
+
+/* bp_special_op: Special handlers, espeically for data-dependent branches. It can be called by load instructions
+    or conditional branches. */
+void bp_special_op(Bp_Data* bp_data, Op* op) {
+  if (SUPPORT_BP_MECH == LVCP_BP) {
+    bp_data->support_bp->special_func(op);
+  }
 }

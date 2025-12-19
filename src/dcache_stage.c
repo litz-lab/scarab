@@ -557,6 +557,8 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
 
   /* update cacheline state */
   op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
+  if (SUPPORT_BP_MECH == LVCP_BP && op->table_info->mem_type == MEM_LD)
+    bp_special_op(g_bp_data, op);
   line->read_count[op->off_path] = line->read_count[op->off_path] + (op->table_info->mem_type == MEM_LD);
   line->write_count[op->off_path] = line->write_count[op->off_path] + (op->table_info->mem_type == MEM_ST);
   line->misc_state = (line->misc_state & 2) | op->off_path;
@@ -594,6 +596,8 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
         }
 
         op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
+        if (SUPPORT_BP_MECH == LVCP_BP)
+          bp_special_op(g_bp_data, op);
         op->wake_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
         wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
         break;

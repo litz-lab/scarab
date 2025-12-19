@@ -142,6 +142,10 @@ DEF_PARAM( tagescl64kb_sc                 , TAGESCL64KB_SC                 , Fla
 DEF_PARAM( tagescl64kb_loop               , TAGESCL64KB_LOOP               , Flag    , Flag       , TRUE       ,        )
 DEF_PARAM( tagescl64kb_alt                , TAGESCL64KB_ALT           , Flag    , Flag       , TRUE       ,        )
 
+// perfect tag for tage-sc-l-64kb
+DEF_PARAM( use_perfect_tag                , USE_PERFECT_TAG                , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM( infinite_tage                , INFINITE_TAGE                , Flag    , Flag       , FALSE      ,        )
+
 ///////////////////////////////////////////////////////////////////////////
 // confidence estimator based on perceptron
 

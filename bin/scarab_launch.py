@@ -156,8 +156,8 @@ class Pin:
     else:
       self.__get_pin_program_command()
 
-    if not args.enable_aslr:
-      self.cmd = scarab_utils.get_disable_aslr_prefix() + " " + self.cmd
+    # if not args.enable_aslr:
+    #   self.cmd = scarab_utils.get_disable_aslr_prefix() + " " + self.cmd
     
     print("{cmd}\n".format(cmd=self.cmd))
 

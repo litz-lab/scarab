@@ -366,8 +366,10 @@ void Decoupled_FE::update() {
     switch (state) {
       case EXITING:
         return;
-      case EXITING_OFFPATH:
+      case EXITING_OFFPATH: {
+        ASSERT(proc_id, FRONTEND == FE_PIN_EXEC_DRIVEN);
         return;
+      }
       case RECOVERING: {
         // After recovery, we expect to serve the saved recovery FT
         state = SERVING_ON_PATH;
@@ -645,6 +647,8 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
       stall(current_ft_to_push->get_last_op());
     }
   }
+  if (current_ft_to_push->ended_by_exit())
+    state = EXITING_OFFPATH;
   if (current_ft_to_push->ended_by_exit())
     state = EXITING_OFFPATH;
   ASSERT(proc_id, current_ft_to_push->get_end_reason() != FT_NOT_ENDED);

@@ -101,14 +101,28 @@ void FT::add_op(Op* op) {
 
   ops.emplace_back(op);
 }
+void FT::update_after_exec_recover(std::function<bool(uns8)> can_fetch_op_fn,
+                                   std::function<bool(uns8, Op*)> fetch_op_fn) {
+  for (uns i = op_pos; i < ops.size(); ++i) {
+    if (!can_fetch_op_fn(proc_id)) {
+      std::cout << "Warning could not fetch inst from frontend" << std::endl;
+      return;
+    }
+    Op* op = alloc_op(proc_id);
+    fetch_op_fn(proc_id, op);
+    ASSERT(proc_id, op->inst_info->addr == ops[i]->inst_info->addr);
+    ops[i]->inst_uid = op->inst_uid;
+    free_op(op);
+  }
+}
 
-Flag FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
-               bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn) {
+FT_Event FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
+                   std::function<uint64_t()> get_next_op_id_fn) {
+  FT_Event event = FT_EVENT_NONE;
   do {
     if (!can_fetch_op_fn(proc_id, bp_id)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
-      delete this;
-      return false;
+      return FT_EVENT_BUILD_FAIL;
     }
     Op* op = alloc_op(proc_id, bp_id);
     fetch_op_fn(proc_id, bp_id, op);
@@ -118,16 +132,20 @@ Flag FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bo
     op->oracle_info.pred_npc = op->oracle_info.npc;
     op->oracle_info.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     if (off_path)
-      predict_one_cf_op(op);
+      event = predict_one_cf_op(op);
     if (op->inst_info->fake_inst == 1)
       ft_info.dynamic_info.contains_fake_nop = TRUE;
     add_op(op);
+    if ((event == FT_EVENT_MISPREDICT || event == FT_EVENT_FETCH_BARRIER) && off_path) {
+      generate_ft_info();
+      return event;
+    }
     STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
   } while (get_end_reason() == FT_NOT_ENDED);
 
   generate_ft_info();
 
-  return true;
+  return event;
 }
 
 // will extract ops from 0 to index and form a new FT as off-path FT,
@@ -245,7 +263,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
       op->oracle_info.recover_at_decode = FALSE;
       op->oracle_info.recover_at_exec = FALSE;
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
-      return FT_EVENT_NONE;
+      return FT_EVENT_FETCH_BARRIER;
     }
     if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
       ASSERT(0, !(op->oracle_info.recover_at_decode && op->oracle_info.recover_at_exec));
@@ -253,11 +271,6 @@ FT_Event FT::predict_one_cf_op(Op* op) {
       if (op->off_path) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = FALSE;
-      }
-      if (op->off_path && op->oracle_info.pred == NOT_TAKEN) {
-        // if off path and not taken no redirect needed
-        // just return FT_EVENT_NONE
-        return FT_EVENT_NONE;
       }
       return FT_EVENT_MISPREDICT;
     } else if (trace_mode && op->off_path && op->oracle_info.pred == TAKEN) {
@@ -275,7 +288,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
       STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_OFFPATH);
     else
       STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_ONPATH);
-    return FT_EVENT_NONE;
+    return FT_EVENT_FETCH_BARRIER;
   }
 
   return FT_EVENT_NONE;

@@ -256,7 +256,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
       op->oracle_info.recover_at_decode = FALSE;
       op->oracle_info.recover_at_exec = FALSE;
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
-      return FT_EVENT_NONE;
+      return FT_EVENT_FETCH_BARRIER;
     }
     if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
       ASSERT(0, !(op->oracle_info.recover_at_decode && op->oracle_info.recover_at_exec));
@@ -281,7 +281,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
       STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_OFFPATH);
     else
       STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_ONPATH);
-    return FT_EVENT_NONE;
+    return FT_EVENT_FETCH_BARRIER;
   }
 
   return FT_EVENT_NONE;

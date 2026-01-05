@@ -61,7 +61,7 @@ FT::~FT() {
   }
 }
 
-FT::FT(uns _proc_id) : proc_id(_proc_id) {
+FT::FT(uns _proc_id) : proc_id(_proc_id), from_lookahead(false) {
   ft_info.dynamic_info.FT_id = FT_id_counter++;
   op_pos = 0;
   ft_info.static_info.start = 0;
@@ -97,6 +97,10 @@ void FT::add_op(Op* op) {
   op->parent_FT = this;
 
   ops.emplace_back(op);
+}
+
+void FT::set_from_lookahead(bool value) {
+  from_lookahead = value;
 }
 
 Flag FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
@@ -362,19 +366,25 @@ FT_Ended_By FT::get_end_reason() const {
   return FT_NOT_ENDED;
 }
 
-void FT::generate_ft_info() {
-  // first op to be read at op_pos
-  auto op = ops[op_pos];
+FT_Info FT::build_ft_info_from_index(size_t start_idx) const {
+  ASSERT(proc_id, start_idx < ops.size());
+  auto op = ops[start_idx];
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->bom && get_last_op()->eom);
 
-  ft_info.static_info.start = op->inst_info->addr;
-  ft_info.dynamic_info.first_op_off_path = op->off_path;
-  ft_info.dynamic_info.ended_by = get_end_reason();
-  ft_info.static_info.n_uops = ops.size() - op_pos;
-  ft_info.static_info.length =
-      ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size - ft_info.static_info.start;
-  ASSERT(proc_id, ft_info.static_info.start && ft_info.static_info.length && ft_info.static_info.n_uops);
+  FT_Info info = ft_info;  // preserve existing dynamic fields like contains_fake_nop
+  info.static_info.start = op->inst_info->addr;
+  info.dynamic_info.first_op_off_path = op->off_path;
+  info.dynamic_info.ended_by = get_end_reason();
+  info.static_info.n_uops = ops.size() - start_idx;
+  info.static_info.length =
+      ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size - info.static_info.start;
+  ASSERT(proc_id, info.static_info.start && info.static_info.length && info.static_info.n_uops);
+  return info;
+}
+
+void FT::generate_ft_info() {
+  ft_info = build_ft_info_from_index(op_pos);
   STAT_EVENT(proc_id, POWER_BTB_READ);
 }
 
@@ -410,4 +420,14 @@ void ft_free_op(Op* op) {
     delete op->parent_FT_off_path;
   if (!op->parent_FT_off_path && op->parent_FT->get_last_op() == op)
     delete op->parent_FT;
+}
+
+std::vector<Addr> FT::get_all_pc() {
+  std::vector<Addr> pc_list;
+  for (auto op : ops) {
+    if (op && op->inst_info) {
+      pc_list.push_back(op->inst_info->addr);
+    }
+  }
+  return pc_list;
 }

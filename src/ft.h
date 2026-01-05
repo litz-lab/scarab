@@ -88,6 +88,7 @@ class FT {
   FT_Info get_ft_info() const;
 
   std::vector<Op*>& get_ops();
+  std::vector<Addr> get_all_pc();
 
   /* kept as friend so that it can access FT internals like ops and op_pos */
   friend void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out);
@@ -109,6 +110,10 @@ class FT {
   bool get_first_op_off_path() const { return ft_info.dynamic_info.first_op_off_path; }
   bool get_contains_fake_nop() const { return ft_info.dynamic_info.contains_fake_nop; }
   bool get_length() const { return ft_info.static_info.length; }
+  void set_from_lookahead(bool value);
+  bool is_from_lookahead() const { return from_lookahead; }
+
+  FT_Info build_ft_info_from_index(size_t start_idx) const;
 
   FT_Ended_By get_end_reason() const;
   void clear_recovery_info();
@@ -118,6 +123,7 @@ class FT {
   uint64_t op_pos;
   FT_Info ft_info;
   std::vector<Op*> ops;
+  bool from_lookahead;
   FT_Event predict_one_cf_op(Op* op);
   void generate_ft_info();
   friend class Decoupled_FE;

@@ -31,13 +31,12 @@ const int CLINE = ~0x3F;
 
 std::vector<FT*> FT_buffer;
 
-std::vector<std::pair<FT_Info_Static, std::vector<unsigned long long>>> ft_info_to_orders;
+std::vector<std::pair<FT_Info_Static, std::vector<uint64_t>>> ft_info_to_orders;
 std::vector<std::pair<FT_Info_Static, std::vector<uint64_t>>> ft_info_to_buf_pos;
 std::map<uint64_t, std::vector<FT*>> pc_to_fts;
 std::map<uint64_t, std::vector<FT*>> line_addr_to_fts;
 
 uint64_t insert_order = 0;
-
 
 Flag have_seen_exit = 0;
 
@@ -180,7 +179,7 @@ void init_lookahead_buffer() {
   }
 }
 
-void FT_buffer_insert_FT(uns8 proc_id) {
+void FT_buffer_insert_FT(uns proc_id) {
   ASSERT(proc_id, have_seen_exit == 0);
   FT* new_ft = new FT(proc_id);
   Flag build_success = new_ft->build([&](uns8 pid) { return frontend_can_fetch_op(pid); },
@@ -211,8 +210,9 @@ void lookahead_buffer_pop_ft(uns proc_id, Addr addr, Flag from_lookahead_buffer,
                              uint64_t pop_count) {
   (void)pop_count;
   // only pop FT if FT op is from lookahead buffer and consumed
-  if ((FT_buffer[rdptr_lb_in_ftq]->get_ft_info().static_info.start == addr) && from_lookahead_buffer &&
-      n_uops >= FT_buffer[rdptr_lb_in_ftq]->get_ft_info().static_info.n_uops) {
+  FT* current_ft = FT_buffer[rdptr_lb_in_ftq];
+  if (current_ft && (current_ft->get_ft_info().static_info.start == addr) && from_lookahead_buffer &&
+      n_uops >= current_ft->get_ft_info().static_info.n_uops) {
     ft_info_to_orders_remove();
     FT_buffer[rdptr_lb_in_ftq] = nullptr;
     rdptr_lb_in_ftq = (rdptr_lb_in_ftq + 1) % LOOKAHEAD_BUF_SIZE;
@@ -222,7 +222,6 @@ void lookahead_buffer_pop_ft(uns proc_id, Addr addr, Flag from_lookahead_buffer,
     if (!off_path)
       lookahead_buffer_refill(proc_id);
   }
-
 }
 
 Addr lookahead_buffer_next_addr() {
@@ -356,11 +355,16 @@ uint64_t lookahead_buffer_FT_search_buf_pos(FT_Info_Static static_info) {
 }
 
 FT_Info_Static lookahead_buffer_ptr_search(uint64_t ptr_pos) {
-  if (FT_buffer[ptr_pos] == nullptr)
+  // Ensure ptr_pos is within bounds before accessing FT_buffer
+  if (ptr_pos >= FT_buffer.size())
     return FT_Info_Static();
-  // Skip freed entries
-  if (FT_buffer[ptr_pos]->get_ft_info().static_info.start)
-    return FT_buffer[ptr_pos]->get_ft_info().static_info;
+
+  FT* ft_entry = FT_buffer[ptr_pos];
+  if (ft_entry == nullptr)
+    return FT_Info_Static();  // Skip freed entries
+
+  if (ft_entry->get_ft_info().static_info.start)
+    return ft_entry->get_ft_info().static_info;
   else
     return FT_Info_Static();
 }

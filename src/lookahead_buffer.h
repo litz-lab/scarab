@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <map>
-
 #include <stdbool.h>
 #include <vector>
 

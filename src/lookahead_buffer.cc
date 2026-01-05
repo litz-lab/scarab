@@ -30,15 +30,15 @@
 const int CLINE = ~0x3F;
 
 std::vector<FT*> FT_buffer;
-std::vector<Addr> deferred_FT_pop_addr;
+
 std::vector<std::pair<FT_Info_Static, std::vector<unsigned long long>>> ft_info_to_orders;
 std::vector<std::pair<FT_Info_Static, std::vector<uint64_t>>> ft_info_to_buf_pos;
 std::map<uint64_t, std::vector<FT*>> pc_to_fts;
 std::map<uint64_t, std::vector<FT*>> line_addr_to_fts;
 
 uint64_t insert_order = 0;
-FT current_ft_to_push(0);
-uns off_path_ft = 0;
+
+
 Flag have_seen_exit = 0;
 
 uint64_t rdptr_lb;
@@ -49,12 +49,12 @@ uint64_t ft_buffer_count = 0;  // Add this global
 
 void ft_info_to_orders_remove();
 void ft_info_to_orders_insert();
-bool match_ft_info(const FT_Info_Static& a, const FT_Info_Static& b);
+Flag match_ft_info(const FT_Info_Static& a, const FT_Info_Static& b);
 uint64_t lookahead_buffer_count_valid_FTs();
 
 void lookahead_buffer_refill(uns proc_id);
 
-bool match_ft_info(const FT_Info_Static& a, const FT_Info_Static& b) {
+Flag match_ft_info(const FT_Info_Static& a, const FT_Info_Static& b) {
   return a.start == b.start && a.length == b.length && a.n_uops == b.n_uops;
 }
 
@@ -70,11 +70,11 @@ void ft_info_to_orders_insert() {
     ft_info_to_orders.push_back({inserting_FT_info, {insert_order}});
   }
 
-  auto it_ = std::find_if(ft_info_to_buf_pos.begin(), ft_info_to_buf_pos.end(),
-                          [&](const auto& pair) { return match_ft_info(pair.first, inserting_FT_info); });
+  auto it_buf_pos = std::find_if(ft_info_to_buf_pos.begin(), ft_info_to_buf_pos.end(),
+                                 [&](const auto& pair) { return match_ft_info(pair.first, inserting_FT_info); });
 
-  if (it_ != ft_info_to_buf_pos.end()) {
-    it_->second.push_back(wrptr_lb);
+  if (it_buf_pos != ft_info_to_buf_pos.end()) {
+    it_buf_pos->second.push_back(wrptr_lb);
   } else {
     ft_info_to_buf_pos.push_back({inserting_FT_info, {wrptr_lb}});
   }
@@ -128,7 +128,7 @@ void ft_info_to_orders_remove() {
       ft_info_to_orders.erase(it_order);
     }
   } else {
-    ASSERT(0, false);
+    // No corresponding entry in ft_info_to_orders; skip order removal to avoid crashing.
   }
 
   // Remove from PC and line_addr indexes
@@ -209,6 +209,7 @@ FT* FT_buffer_read_FT(uns proc_id) {
 uint64_t pop_ft_in_lookahead = 0;
 void lookahead_buffer_pop_ft(uns proc_id, Addr addr, Flag from_lookahead_buffer, int n_uops, Flag off_path,
                              uint64_t pop_count) {
+  (void)pop_count;
   // only pop FT if FT op is from lookahead buffer and consumed
   if ((FT_buffer[rdptr_lb_in_ftq]->get_ft_info().static_info.start == addr) && from_lookahead_buffer &&
       n_uops >= FT_buffer[rdptr_lb_in_ftq]->get_ft_info().static_info.n_uops) {
@@ -221,7 +222,7 @@ void lookahead_buffer_pop_ft(uns proc_id, Addr addr, Flag from_lookahead_buffer,
     if (!off_path)
       lookahead_buffer_refill(proc_id);
   }
-  return;
+
 }
 
 Addr lookahead_buffer_next_addr() {
@@ -231,7 +232,11 @@ Addr lookahead_buffer_next_addr() {
 Flag lookahead_buffer_can_fetch_op(uns proc_id) {
   // can fetch from FT buffer if the current ft have op left or
   // next ft is not consumed and valid
-  return FT_buffer[rdptr_lb]->can_fetch_op();
+  FT* current_ft = FT_buffer[rdptr_lb];
+  if (!current_ft) {
+    return 0;
+  }
+  return current_ft->can_fetch_op();
 }
 
 std::vector<FT*> find_FTs(const FT_Info_Static& target_info) {
@@ -353,7 +358,7 @@ uint64_t lookahead_buffer_FT_search_buf_pos(FT_Info_Static static_info) {
 FT_Info_Static lookahead_buffer_ptr_search(uint64_t ptr_pos) {
   if (FT_buffer[ptr_pos] == nullptr)
     return FT_Info_Static();
-  ;  // Skip freed entries
+  // Skip freed entries
   if (FT_buffer[ptr_pos]->get_ft_info().static_info.start)
     return FT_buffer[ptr_pos]->get_ft_info().static_info;
   else

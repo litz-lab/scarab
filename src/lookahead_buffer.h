@@ -3,7 +3,7 @@
 
 #include <cstdint>
 #include <map>
-#include <math.h>
+
 #include <stdbool.h>
 #include <vector>
 
@@ -20,7 +20,7 @@
 void init_lookahead_buffer();
 
 /* Build a FT and insert it into the lookahead buffer*/
-void FT_buffer_insert_FT(uns8 proc_id);
+void FT_buffer_insert_FT(uns proc_id);
 
 /* Returns a uop from the buffer to the DFE */
 FT* FT_buffer_read_FT(uns proc_id);

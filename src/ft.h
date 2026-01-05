@@ -123,7 +123,7 @@ class FT {
   uint64_t op_pos;
   FT_Info ft_info;
   std::vector<Op*> ops;
-  bool from_lookahead;
+  bool from_lookahead = false;
   FT_Event predict_one_cf_op(Op* op);
   void generate_ft_info();
   friend class Decoupled_FE;

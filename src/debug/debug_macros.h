@@ -54,11 +54,24 @@ output when
 
 /**************************************************************************************/
 /* Returns whether simulation progress is within the debugging range */
-#define DEBUG_RANGE_COND(proc_id)                                                                                 \
-  (((inst_count[proc_id] >= DEBUG_INST_START) && (!DEBUG_INST_STOP || inst_count[proc_id] <= DEBUG_INST_STOP)) || \
-   ((cycle_count >= DEBUG_CYCLE_START) && (!DEBUG_CYCLE_STOP || cycle_count <= DEBUG_CYCLE_STOP)) ||              \
-   ((freq_time() >= DEBUG_TIME_START) && (!DEBUG_TIME_STOP || freq_time() <= DEBUG_TIME_STOP)) ||                 \
-   ((op_count[proc_id] >= DEBUG_OP_START) && (!DEBUG_OP_STOP || op_count[proc_id] <= DEBUG_OP_STOP)))
+#define DEBUG_UNS_STOP_SET(stop) ((stop) && ((stop) != (uns) - 1))
+#define DEBUG_UNS64_STOP_SET(stop) ((stop) && ((stop) != (uns64) - 1))
+
+#define DEBUG_INST_RANGE_SET (DEBUG_INST_START || DEBUG_UNS_STOP_SET(DEBUG_INST_STOP))
+#define DEBUG_CYCLE_RANGE_SET (DEBUG_CYCLE_START || DEBUG_UNS_STOP_SET(DEBUG_CYCLE_STOP))
+#define DEBUG_TIME_RANGE_SET (DEBUG_TIME_START || DEBUG_UNS64_STOP_SET(DEBUG_TIME_STOP))
+#define DEBUG_OP_RANGE_SET (DEBUG_OP_START || DEBUG_UNS_STOP_SET(DEBUG_OP_STOP))
+
+#define DEBUG_RANGE_COND(proc_id)                                                                        \
+  (((!DEBUG_INST_RANGE_SET && !DEBUG_CYCLE_RANGE_SET && !DEBUG_TIME_RANGE_SET && !DEBUG_OP_RANGE_SET) || \
+    (DEBUG_INST_RANGE_SET && (inst_count[proc_id] >= DEBUG_INST_START) &&                                \
+     (!DEBUG_UNS_STOP_SET(DEBUG_INST_STOP) || inst_count[proc_id] <= DEBUG_INST_STOP)) ||                \
+    (DEBUG_CYCLE_RANGE_SET && (cycle_count >= DEBUG_CYCLE_START) &&                                      \
+     (!DEBUG_UNS_STOP_SET(DEBUG_CYCLE_STOP) || cycle_count <= DEBUG_CYCLE_STOP)) ||                      \
+    (DEBUG_TIME_RANGE_SET && (freq_time() >= DEBUG_TIME_START) &&                                        \
+     (!DEBUG_UNS64_STOP_SET(DEBUG_TIME_STOP) || freq_time() <= DEBUG_TIME_STOP)) ||                      \
+    (DEBUG_OP_RANGE_SET && (op_count[proc_id] >= DEBUG_OP_START) &&                                      \
+     (!DEBUG_UNS_STOP_SET(DEBUG_OP_STOP) || op_count[proc_id] <= DEBUG_OP_STOP))))
 
 #ifdef NO_DEBUG
 #define ENABLE_GLOBAL_DEBUG_PRINT FALSE /* default FALSE */

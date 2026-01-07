@@ -128,7 +128,7 @@ uint64_t decoupled_fe_ftq_iter_offset(Decoupled_FE* dfe, uns iter_idx) {
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */
 uint64_t decoupled_fe_ftq_iter_ft_offset(Decoupled_FE* dfe, uns iter_idx) {
-  return dfe->ftq_iter_offset(iter_idx);
+  return dfe->ftq_iter_ft_offset(iter_idx);
 }
 
 uint64_t decoupled_fe_ftq_num_ops(Decoupled_FE* dfe) {

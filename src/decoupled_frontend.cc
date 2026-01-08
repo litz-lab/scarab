@@ -80,7 +80,7 @@ class Decoupled_FE {
   Op* cur_op;
   Conf* conf;
 
-  DFE_STATE state;  // FSM state (applied each update)
+  DFE_STATE state;       // FSM state (applied each update)
   DFE_STATE next_state;  // requested next state, applied to state inside update()
   bool is_off_path_state() const { return state == SERVING_OFF_PATH; }
 

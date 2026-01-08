@@ -49,10 +49,10 @@ class Decoupled_FE {
 
   // FSM states for DFE
   enum DFE_STATE {
+    INACTIVE,
     SERVING_ON_PATH,
     SERVING_OFF_PATH,
-    RECOVERING,
-    EXITING
+    RECOVERING
     // Add more states as needed
   };
 
@@ -80,7 +80,8 @@ class Decoupled_FE {
   Op* cur_op;
   Conf* conf;
 
-  DFE_STATE state;  // FSM state
+  DFE_STATE state;       // FSM state (applied each update)
+  DFE_STATE next_state;  // requested next state, applied to state inside update()
   bool is_off_path_state() const { return state == SERVING_OFF_PATH; }
 
   void check_consecutivity_and_push_to_ftq();
@@ -240,6 +241,7 @@ void Decoupled_FE::init(uns _proc_id) {
     conf = new Conf(_proc_id);
 
   state = SERVING_ON_PATH;
+  next_state = state;
 }
 
 void Decoupled_FE::recover() {
@@ -275,13 +277,13 @@ void Decoupled_FE::recover() {
 
   // FIXME always fetch off path ops? should we get rid of this parameter?
   frontend_recover(proc_id, bp_recovery_info->recovery_inst_uid);
-  if (state != EXITING) {
+  if (state != INACTIVE) {
     ASSERT(proc_id, saved_recovery_ft->has_unread_ops());
     ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == saved_recovery_ft->get_ft_info().static_info.start,
             "Scarab's recovery addr 0x%llx does not match save ft "
             "addr 0x%llx\n",
             bp_recovery_info->recovery_fetch_addr, saved_recovery_ft->get_ft_info().static_info.start);
-    state = RECOVERING;
+    next_state = RECOVERING;
   }
 
   if (CONFIDENCE_ENABLE)
@@ -307,6 +309,7 @@ void Decoupled_FE::update() {
     conf->per_cycle_update();
 
   while (1) {
+    state = next_state;
     ASSERT(proc_id, ftq.size() <= ftq_max_size());
     ASSERT(proc_id, cfs_taken_this_cycle <= FE_FTQ_TAKEN_CFS_PER_CYCLE);
 
@@ -339,18 +342,18 @@ void Decoupled_FE::update() {
     // SERVING_OFF_PATH: fetching off-path operations
     FT_PredictResult result;
     switch (state) {
-      case EXITING:
+      case INACTIVE:
         return;
       case RECOVERING: {
         // After recovery, we expect to serve the saved recovery FT
-        state = SERVING_ON_PATH;
+        next_state = SERVING_ON_PATH;
         current_ft_to_push = saved_recovery_ft;
         result = current_ft_to_push->predict_ft();
         if (current_ft_to_push->ended_by_exit()) {
           // Ensure that the very last simulated FT does not cause a recovery
           current_ft_to_push->clear_recovery_info();
           check_consecutivity_and_push_to_ftq();
-          state = EXITING;
+          next_state = INACTIVE;
           return;
         }
 
@@ -379,7 +382,7 @@ void Decoupled_FE::update() {
           // Ensure that the very last simulated FT does not cause a recovery
           current_ft_to_push->clear_recovery_info();
           check_consecutivity_and_push_to_ftq();
-          state = EXITING;
+          next_state = INACTIVE;
           return;
         }
 
@@ -573,7 +576,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
     ASSERT(proc_id, build_success);
   }
   redirect_cycle = cycle_count;
-  state = SERVING_OFF_PATH;
+  next_state = SERVING_OFF_PATH;
   frontend_redirect(proc_id, result.op->inst_uid, result.pred_addr);
   // set the current op number as the beginning op count of this off-path divergence
   set_off_path_op_num(current_ft_to_push->get_last_op()->op_num + 1);

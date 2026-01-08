@@ -20,6 +20,7 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
+
 /* Global Variables */
 Decoupled_FE* g_dfe = nullptr;
 static int fwd_progress = 0;
@@ -198,6 +199,8 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_re
   bp_data = _bp_data;
   dfe_recovery_policy = _dfe_recovery_policy;
   stalled = false;
+  exit_on_off_path = false;
+  ftq_ft_num = FE_FTQ_BLOCK_NUM;
   cur_op = nullptr;
   current_ft_to_push = nullptr;
 
@@ -246,6 +249,7 @@ void Decoupled_FE::dfe_recover_op() {
 
 
   if (stalled) {
+    ASSERT(proc_id, FRONTEND == FE_PIN_EXEC_DRIVEN);
     DEBUG(proc_id, "Unstalled off-path fetch barrier due to recovery fetch_addr0x:%llx off_path:%i op_num:%llu\n",
           op->inst_info->addr, op->off_path, op->op_num);
     stalled = false;
@@ -420,7 +424,9 @@ void Decoupled_FE::update() {
       case SERVING_OFF_PATH: {
         // for off-path just build and. redirect
         // cf processed while building
-        current_ft_to_push = new FT(proc_id, bp_id);
+        if (exit_on_off_path)
+          return;
+        current_ft_to_push = new FT();
         ASSERT(proc_id, !current_ft_to_push->has_unread_ops());
         while (current_ft_to_push->get_end_reason() == FT_NOT_ENDED) {
           auto build_event =
@@ -435,7 +441,8 @@ void Decoupled_FE::update() {
             // Ensure that the very last simulated FT does not cause a recovery
             current_ft_to_push->clear_recovery_info();
             check_consecutivity_and_push_to_ftq();
-            state = EXITING_OFFPATH;
+            next_state = INACTIVE;
+            exit_on_off_path = true;
             return;
           }
           if (build_event == FT_EVENT_MISPREDICT || build_event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
@@ -673,7 +680,10 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
       stall(current_ft_to_push->get_last_op());
     }
   }
-  if (current_ft_to_push->ended_by_exit())
-    state = EXITING_OFFPATH;
+  if (current_ft_to_push->ended_by_exit()) {
+    next_state = INACTIVE;
+    exit_on_off_path = true;
+  }
+
   ASSERT(proc_id, current_ft_to_push->get_end_reason() != FT_NOT_ENDED);
 }

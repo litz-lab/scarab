@@ -44,6 +44,8 @@ void recover_to_past_checkpoint(UINT64 uid, bool is_redirect_recover,
   while(!checkpoints.empty()) {
     if(checkpoints[idx].uid == uid) {
       // Resumes execution at the saved context
+      // reset uid counter to one past the recovered uid
+      uid_ctr = uid + 1;
 
       ADDRINT this_eip;
 

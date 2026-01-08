@@ -101,18 +101,23 @@ void FT::add_op(Op* op) {
 
   ops.emplace_back(op);
 }
-void FT::update_after_exec_recover(std::function<bool(uns8)> can_fetch_op_fn,
-                                   std::function<bool(uns8, Op*)> fetch_op_fn) {
+
+/* Skips some ops fetched after recovery in execution-driven (PIN) mode.
+ * in PIN execution-driven mode, after recovery, some ops may have been already saved as
+ * recovery FT so we skip them
+ */
+void FT::resync_ops_after_exec_recover(std::function<bool(uns8)> can_fetch_op_fn,
+                                       std::function<bool(uns8, Op*)> fetch_op_fn) {
+  ASSERT(proc_id, FRONTEND == FE_PIN_EXEC_DRIVEN);
   for (uns i = op_pos; i < ops.size(); ++i) {
     if (!can_fetch_op_fn(proc_id)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
       return;
     }
-    Op* op = alloc_op(proc_id);
-    fetch_op_fn(proc_id, op);
-    ASSERT(proc_id, op->inst_info->addr == ops[i]->inst_info->addr);
-    ops[i]->inst_uid = op->inst_uid;
-    free_op(op);
+    Op stack_op;  // Just allocate on stack
+    fetch_op_fn(proc_id, &stack_op);
+    ASSERT(proc_id, ops[i]->inst_uid == stack_op.inst_uid);
+    ASSERT(proc_id, ops[i]->inst_info->addr == stack_op.inst_info->addr);
   }
 }
 

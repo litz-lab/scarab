@@ -64,7 +64,7 @@ void bp_gshare_spec_update(Op* op) {
 void bp_gshare_retire(Op* op) {
 }
 
-uns8 bp_gshare_full(uns proc_id) {
+uns8 bp_gshare_full(Bp_Data* bp_data) {
   return 0;
 }
 

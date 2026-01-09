@@ -91,6 +91,7 @@ typedef struct Per_Branch_Stat_struct {
 // this information is used when the op mispredicts
 typedef struct Recovery_Info_struct {  // QUESTION no proc_id?
   uns proc_id;
+  uns bp_id;
   uns32 pred_global_hist;                  // the global history used for the prediction
   uns64 conf_perceptron_global_hist;       // Only for confidnece perceptron, a copy of the correct global history
   uns64 conf_perceptron_global_misp_hist;  // Only for confidnece perceptron, a copy of the correct global history
@@ -135,6 +136,7 @@ struct Op_struct {
 
   // {{{ op numbers and info pointers
   uns proc_id;                  // processor id for cmp model
+  uns bp_id;                    // branch predictor id for cmp model
   uns thread_id;                // id number for the thread to which this op belongs
   Flag bom;                     // begining of macro instruction when we use op as a uop
   Flag eom;                     // end of macro instruction when we use op as a uop

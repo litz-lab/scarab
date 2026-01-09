@@ -101,6 +101,7 @@ void cmp_init(uns mode) {
   ASSERT(0, mode == WARMUP_MODE);
 
   uns8 proc_id;
+  uns8 bp_id;
 
   freq_init();
   cmp_init_cmp_model();
@@ -108,6 +109,8 @@ void cmp_init(uns mode) {
   for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     /* initialize the stages */
     cmp_set_all_stages(proc_id);
+    cmp_set_all_data(proc_id, 0);
+
     cmp_init_thread_data(proc_id);
 
     init_uop_cache_stage(proc_id, "UOP_CACHE");
@@ -123,12 +126,20 @@ void cmp_init(uns mode) {
     init_dcache_stage(proc_id, "DCACHE");
 
     /* initialize the common data structures */
+    // Only one recovery info for all the BPs
     init_bp_recovery_info(proc_id, &cmp_model.bp_recovery_info[proc_id]);
-    init_bp_data(proc_id, &cmp_model.bp_data[proc_id]);
+    // The width of the decoupled frontend: NUM_BPS
+    // decoupled fe, fdip should scale with NUM_BPS
+    for (bp_id = 0; bp_id < NUM_BPS; bp_id++) {
+      cmp_set_all_data(proc_id, bp_id);
 
-    init_decoupled_fe(proc_id, "DCFE");
+      init_bp_data(proc_id, bp_id, &cmp_model.bp_data[proc_id][bp_id], &cmp_model.bp_data[proc_id][0]);
 
-    init_fdip(proc_id);
+      init_decoupled_fe(proc_id, bp_id, &cmp_model.bp_data[proc_id][bp_id]);
+
+      init_fdip(proc_id, bp_id, &cmp_model.icache_stage[proc_id]);
+    }
+    cmp_set_all_data(proc_id, 0);
     init_eip(proc_id);
     init_djolt(proc_id);
     init_fnlmma(proc_id);
@@ -197,11 +208,8 @@ void cmp_istreams(void) {
       cycle_count = freq_cycle_count(FREQ_DOMAIN_CORES[proc_id]);
 
       set_bp_recovery_info(&cmp_model.bp_recovery_info[proc_id]);
-      if (cycle_count >= bp_recovery_info->recovery_cycle) {
-        set_bp_data(&cmp_model.bp_data[proc_id]);
-        cmp_set_all_stages(proc_id);
+      if (cycle_count >= bp_recovery_info->recovery_cycle)
         cmp_recover();
-      }
       if (cycle_count >= bp_recovery_info->redirect_cycle) {
         set_icache_stage(&cmp_model.icache_stage[proc_id]);
         ASSERT(proc_id, proc_id == bp_recovery_info->redirect_op->proc_id);
@@ -220,9 +228,9 @@ void cmp_cores(void) {
     if (freq_is_ready(FREQ_DOMAIN_CORES[proc_id])) {
       cycle_count = freq_cycle_count(FREQ_DOMAIN_CORES[proc_id]);
 
-      set_bp_data(&cmp_model.bp_data[proc_id]);
       set_bp_recovery_info(&cmp_model.bp_recovery_info[proc_id]);
       cmp_set_all_stages(proc_id);
+      cmp_set_all_data(proc_id, 0);
 
       /* Back-end pipeline */
       update_dcache_stage(&exec->sd);
@@ -245,8 +253,12 @@ void cmp_cores(void) {
       update_icache_stage();
 
       /* Decoupled branch prediction and prefetching */
-      update_decoupled_fe();
-      update_fdip();
+      for (uns8 bp_id = 0; bp_id < NUM_BPS; bp_id++) {
+        cmp_set_all_data(proc_id, bp_id);
+        update_decoupled_fe(proc_id, bp_id);
+        update_fdip(proc_id, bp_id);
+      }
+      cmp_set_all_data(proc_id, 0);
       update_eip();
 
       cmp_measure_chip_util();
@@ -354,7 +366,13 @@ void cmp_recover() {
   ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == map_data->proc_id);
   bp_recovery_info->recovery_cycle = MAX_CTR;
   bp_recovery_info->redirect_cycle = MAX_CTR;
-  bp_recover_op(g_bp_data, bp_recovery_info->recovery_cf_type, &bp_recovery_info->recovery_info);
+  cmp_set_all_stages(bp_recovery_info->proc_id);
+  for (int bp_id = NUM_BPS - 1; bp_id >= 0; --bp_id) {
+    cmp_set_all_data(bp_recovery_info->proc_id, bp_id);
+    recover_decoupled_fe(bp_recovery_info->proc_id, bp_id, bp_recovery_info->recovery_cf_type,
+                         &bp_recovery_info->recovery_info);
+    recover_fdip(bp_recovery_info->proc_id, bp_id);
+  }
 
   if (USE_LATE_BP && bp_recovery_info->late_bp_recovery) {
     Op* op = bp_recovery_info->recovery_op;
@@ -375,8 +393,6 @@ void cmp_recover() {
   recover_thread(td, bp_recovery_info->recovery_fetch_addr, bp_recovery_info->recovery_op_num,
                  bp_recovery_info->recovery_inst_uid, bp_recovery_info->late_bp_recovery_wrong);
 
-  recover_decoupled_fe();
-  recover_fdip();
   recover_icache_stage();
   recover_decode_stage();
   recover_uop_queue_stage();
@@ -503,7 +519,7 @@ void cmp_warmup(Op* op) {
 
   // Warmup BP for CF instructions
   if (op->table_info->cf_type != NOT_CF) {
-    Bp_Data* bp_data = &(cmp_model.bp_data[proc_id]);
+    Bp_Data* bp_data = &(cmp_model.bp_data[proc_id][0]);
     bp_predict_op(bp_data, op, 1, ia);
     bp_target_known_op(bp_data, op);
     bp_resolve_op(bp_data, op);

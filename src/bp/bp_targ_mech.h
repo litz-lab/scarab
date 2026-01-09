@@ -41,22 +41,23 @@ void bp_crs_recover(Bp_Data*);
 Addr bp_crs_realistic_pop(Bp_Data*, Op*);
 void bp_crs_realistic_push(Bp_Data*, Op*);
 void bp_crs_realistic_recover(Bp_Data*, Recovery_Info*);
+void bp_crs_sync(Bp_Data*, Bp_Data*);
 
-void bp_btb_gen_init(Bp_Data*);
+void bp_btb_gen_init(Bp_Data*, Bp_Data*);
 Addr* bp_btb_gen_pred(Bp_Data*, Op*);
 void bp_btb_gen_update(Bp_Data*, Op*);
 
-void bp_ibtb_tc_tagged_init(Bp_Data*);
+void bp_ibtb_tc_tagged_init(Bp_Data*, Bp_Data*);
 Addr bp_ibtb_tc_tagged_pred(Bp_Data*, Op*);
 void bp_ibtb_tc_tagged_update(Bp_Data*, Op*);
 void bp_ibtb_tc_tagged_recover(Bp_Data*, Recovery_Info*);
 
-void bp_ibtb_tc_tagless_init(Bp_Data*);
+void bp_ibtb_tc_tagless_init(Bp_Data*, Bp_Data*);
 Addr bp_ibtb_tc_tagless_pred(Bp_Data*, Op*);
 void bp_ibtb_tc_tagless_update(Bp_Data*, Op*);
 void bp_ibtb_tc_tagless_recover(Bp_Data*, Recovery_Info*);
 
-void bp_ibtb_tc_hybrid_init(Bp_Data*);
+void bp_ibtb_tc_hybrid_init(Bp_Data*, Bp_Data*);
 Addr bp_ibtb_tc_hybrid_pred(Bp_Data*, Op*);
 void bp_ibtb_tc_hybrid_update(Bp_Data*, Op*);
 void bp_ibtb_tc_hybrid_recover(Bp_Data*, Recovery_Info*);

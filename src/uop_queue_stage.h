@@ -3,16 +3,15 @@
 #ifndef __UOP_QUEUE_STAGE_H_
 #define __UOP_QUEUE_STAGE_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "globals/global_types.h"
-
 #include "decode_stage.h"
 #include "op.h"
 #include "stage_data.h"
 #include "uop_cache.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 void init_uop_queue_stage(void);
 void update_uop_queue_stage(Stage_Data* src_sd);

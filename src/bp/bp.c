@@ -243,14 +243,19 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
 /******************************************************************************/
 /* init_bp:  initializes all branch prediction structures */
 
-void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
+void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_bp_data) {
   uns ii;
   if (SPEC_LEVEL)
     ASSERT(proc_id, BP_MECH == TAGE64K_BP);
   ASSERT(bp_data->proc_id, bp_data);
   memset(bp_data, 0, sizeof(Bp_Data));
 
+  if (!bp_id) {
+    bp_data->btb = (Cache*)malloc(sizeof(Cache));
+    bp_data->tc_tagged = (Cache*)malloc(sizeof(Cache));
+  }
   bp_data->proc_id = proc_id;
+  bp_data->bp_id = bp_id;
   /* initialize branch predictor */
   bp_data->bp = &bp_table[BP_MECH];
   bp_data->bp->init_func();
@@ -266,7 +271,7 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
 
   /* init btb structure */
   bp_data->bp_btb = &bp_btb_table[BTB_MECH];
-  bp_data->bp_btb->init_func(bp_data);
+  bp_data->bp_btb->init_func(bp_data, primary_bp_data);
 
   /* init call-return stack */
   bp_data->crs.entries = (Crs_Entry*)malloc(sizeof(Crs_Entry) * CRS_ENTRIES * 2);
@@ -282,7 +287,7 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
 
   /* initialize the indirect target branch predictor */
   bp_data->bp_ibtb = &bp_ibtb_table[IBTB_MECH];
-  bp_data->bp_ibtb->init_func(bp_data);
+  bp_data->bp_ibtb->init_func(bp_data, primary_bp_data);
   bp_data->target_bit_length = IBTB_HIST_LENGTH / TARGETS_IN_HIST;
   if (!USE_PAT_HIST)
     ASSERTM(bp_data->proc_id, bp_data->target_bit_length * TARGETS_IN_HIST == IBTB_HIST_LENGTH,
@@ -297,8 +302,8 @@ void init_bp_data(uns8 proc_id, Bp_Data* bp_data) {
   }
 }
 
-Flag bp_is_predictable(Bp_Data* bp_data, uns proc_id) {
-  return !bp_data->bp->full_func(proc_id);
+Flag bp_is_predictable(Bp_Data* bp_data) {
+  return !bp_data->bp->full_func(bp_data);
 }
 
 /******************************************************************************/
@@ -324,6 +329,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
      overwritten by a prediction function that uses and
      speculatively updates global history */
   op->recovery_info.proc_id = op->proc_id;
+  op->recovery_info.bp_id = op->bp_id;
   op->recovery_info.pred_global_hist = bp_data->global_hist;
   op->recovery_info.targ_hist = bp_data->targ_hist;
   op->recovery_info.new_dir = op->oracle_info.dir;
@@ -899,7 +905,7 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
     // or For indirects we want to update the BTB if the target changes, even on btb hit
     // The detection relies on the target stored in the btb
     Addr line_addr;
-    Addr* btb_entry = (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, FALSE);
+    Addr* btb_entry = (Addr*)cache_access(bp_data->btb, op->oracle_info.pred_addr, &line_addr, FALSE);
     // The following assertion can fail (due to eviction?)
     // ASSERT(bp_data->proc_id, btb_entry);
     if (btb_entry && *btb_entry != op->oracle_info.target) {
@@ -990,4 +996,14 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
 
   if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)
     increment_branch_mispredictions(info->PC);
+}
+
+void bp_sync(Bp_Data* bp_data_src, Bp_Data* bp_data_dst) {
+  bp_data_dst->global_hist = bp_data_src->global_hist;
+  bp_data_dst->targ_hist = bp_data_src->targ_hist;
+  bp_data_dst->targ_index = bp_data_src->targ_index;
+  bp_data_dst->target_bit_length = bp_data_src->target_bit_length;
+  bp_data_dst->on_path_pred = bp_data_src->on_path_pred;
+  bp_crs_sync(bp_data_src, bp_data_dst);
+  bp_predictors_sync(bp_data_src, bp_data_dst);
 }

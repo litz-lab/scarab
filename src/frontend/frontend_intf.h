@@ -51,16 +51,16 @@ typedef struct Frontend_Intf_struct {
 
   /* Check whether we can get an op from the frontend (that is,
      process proc_id is running) */
-  Flag (*can_fetch_op)(uns proc_id);
+  Flag (*can_fetch_op)(uns proc_id, uns bp_id);
 
   /* Get an op from the frontend */
-  void (*fetch_op)(uns proc_id, struct Op_struct* op);
+  void (*fetch_op)(uns proc_id, uns bp_id, struct Op_struct* op);
 
   /* Redirect the front end (down the wrong path) */
-  void (*redirect)(uns proc_id, uns64 inst_uid, Addr fetch_addr);
+  void (*redirect)(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr);
 
   /* Recover the front end (restart the right path) */
-  void (*recover)(uns proc_id, uns64 inst_uid);
+  void (*recover)(uns proc_id, uns bp_id, uns64 inst_uid);
 
   /* Let the frontend know that this instruction is retired) */
   void (*retire)(uns proc_id, uns64 inst_uid);

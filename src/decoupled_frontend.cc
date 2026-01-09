@@ -3,6 +3,7 @@
 #include <cmath>
 #include <deque>
 #include <iostream>
+#include <memory>
 #include <tuple>
 #include <vector>
 
@@ -17,234 +18,211 @@
 #include "op_pool.h"
 #include "thread.h"
 
-#include "confidence/conf.hpp"
-
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_DECOUPLED_FE, ##args)
 
-class Decoupled_FE {
- public:
-  Decoupled_FE(uns _proc_id);
-  int is_off_path() { return is_off_path_state(); }
-  void recover();
-  void update();
-  FT* get_ft();
-  void pop_ft(FT* ft);
-  decoupled_fe_iter* new_ftq_iter();
-  Op* ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft);
-  Op* ftq_iter_get_next(decoupled_fe_iter* iter, bool* end_of_ft);
-  uint64_t ftq_num_ops();
-  uint64_t ftq_num_fts() { return ftq.size(); }
-  void retire(Op* op, int op_proc_id, uns64 inst_uid);
-  void set_ftq_num(uint64_t set_ftq_ft_num) { ftq_ft_num = set_ftq_ft_num; }
-  uint64_t get_ftq_num() { return ftq_ft_num; }
-  Op* get_cur_op() { return cur_op; }
-  uns get_conf() { return conf->get_conf(); }
-  Off_Path_Reason get_off_path_reason() { return conf->get_off_path_reason(); }
-  Conf_Off_Path_Reason get_conf_off_path_reason() { return conf->get_conf_off_path_reason(); }
-  void conf_resolve_cf(Op* op) { conf->resolve_cf(op); }
-  Off_Path_Reason eval_off_path_reason(Op* op);
-  void print_conf_data() { conf->print_data(); }
-  uint64_t get_next_on_path_op_num() { return op_num++; }
-  uint64_t get_next_off_path_op_num() { return current_off_path_op_num++; }
-
-  // FSM states for DFE
-  enum DFE_STATE {
-    INACTIVE,
-    SERVING_ON_PATH,
-    SERVING_OFF_PATH,
-    RECOVERING
-    // Add more states as needed
-  };
-
- private:
-  void init(uns proc_id);
-
-  uns proc_id;
-
-  // Per core fetch target queue:
-  // Each core has a queue of FTs,
-  // where each FT contains a queue of micro instructions.
-  std::deque<FT*> ftq;
-  // keep track of the current FT to be pushed next
-  FT* current_ft_to_push;
-  FT* saved_recovery_ft;
-
-  int sched_off_path;
-  uint64_t op_num = 1;
-  uint64_t current_off_path_op_num = 0;
-  std::vector<decoupled_fe_iter> ftq_iterators;
-  uint64_t recovery_addr;
-  uint64_t redirect_cycle;
-  uint64_t ftq_ft_num;
-  bool trace_mode;
-  Op* cur_op;
-  Conf* conf;
-
-  DFE_STATE state;       // FSM state (applied each update)
-  DFE_STATE next_state;  // requested next state, applied to state inside update()
-  bool is_off_path_state() const { return state == SERVING_OFF_PATH; }
-
-  void check_consecutivity_and_push_to_ftq();
-  void redirect_to_off_path(FT_PredictResult result);
-  inline uint64_t ftq_max_size() { return ftq_ft_num; }
-  void set_off_path_op_num(uint64_t op_num) { current_off_path_op_num = op_num; }
-};
-
 /* Global Variables */
-Decoupled_FE* dfe = nullptr;
+Decoupled_FE* g_dfe = nullptr;
+static int fwd_progress = 0;
 
 // Per core decoupled frontend
-std::vector<Decoupled_FE> per_core_dfe;
+std::vector<std::vector<std::unique_ptr<Decoupled_FE>>> per_core_dfe;
+
+extern "C" {
 
 /* Wrapper functions */
-void alloc_mem_decoupled_fe(uns numCores) {
-  for (uns i = 0; i < numCores; ++i)
-    per_core_dfe.push_back(Decoupled_FE(i));
-  ASSERT(0, per_core_dfe.size() == numCores);
+void alloc_mem_decoupled_fe(uns numCores, uns numBPs) {
+  per_core_dfe.reserve(numCores);
+  for (uns i = 0; i < numCores; ++i) {
+    std::vector<std::unique_ptr<Decoupled_FE>> dfe_vec;
+    dfe_vec.reserve(numBPs);
+    for (uns j = 0; j < numBPs; ++j)
+      dfe_vec.emplace_back(std::make_unique<Decoupled_FE>());
+    per_core_dfe.emplace_back(std::move(dfe_vec));
+  }
 }
 
-void init_decoupled_fe(uns proc_id, const char*) {
+void init_decoupled_fe(uns proc_id, uns bp_id, Bp_Data* bp_data) {
+  ASSERT(0, NUM_BPS <= 5);  // Currently support five BPs at maximum
+  switch (bp_id) {
+    case 0:
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE0_RECOVERY_POLICY);  // should always be 0
+      break;
+    case 1:
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE1_RECOVERY_POLICY);
+      break;
+    case 2:
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE2_RECOVERY_POLICY);
+      break;
+    case 3:
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE3_RECOVERY_POLICY);
+      break;
+    case 4:
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE4_RECOVERY_POLICY);
+      break;
+  }
 }
 
 bool decoupled_fe_is_off_path() {
-  return dfe->is_off_path();
+  ASSERT(0, g_dfe->get_bp_id() == 0);
+  return g_dfe->is_off_path();
 }
 
-void set_decoupled_fe(uns proc_id) {
-  dfe = &per_core_dfe[proc_id];
-  ASSERT(proc_id, dfe);
+void set_decoupled_fe(uns proc_id, uns bp_id) {
+  g_dfe = per_core_dfe[proc_id][bp_id].get();
+  ASSERT(proc_id, g_dfe);
 }
 
 void reset_decoupled_fe() {
 }
 
-void recover_decoupled_fe() {
-  dfe->recover();
+void recover_decoupled_fe(uns proc_id, uns bp_id, Cf_Type cf_type, Recovery_Info* info) {
+  g_dfe = per_core_dfe[proc_id][bp_id].get();
+  ASSERT(proc_id, g_dfe);
+  ASSERT(proc_id, g_dfe->get_proc_id() == proc_id);
+  ASSERT(proc_id, g_dfe->get_bp_id() == bp_id);
+  per_core_dfe[proc_id][bp_id]->recover(cf_type, info);
 }
 
 void debug_decoupled_fe() {
 }
 
-void update_decoupled_fe() {
-  dfe->update();
+void update_decoupled_fe(uns proc_id, uns bp_id) {
+  ASSERT(proc_id, g_dfe->get_proc_id() == proc_id);
+  ASSERT(proc_id, g_dfe->get_bp_id() == bp_id);
+  per_core_dfe[proc_id][bp_id]->update();
 }
 
 void decoupled_fe_pop_ft(FT* ft) {
-  dfe->pop_ft(ft);
+  ASSERT(0, g_dfe->get_bp_id() == 0);
+  g_dfe->pop_ft(ft);
 }
 
 FT* decoupled_fe_get_ft() {
-  return dfe->get_ft();
+  ASSERT(0, g_dfe->get_bp_id() == 0);
+  return g_dfe->get_ft();
 }
 
-decoupled_fe_iter* decoupled_fe_new_ftq_iter(uns proc_id) {
-  return per_core_dfe[proc_id].new_ftq_iter();
+Decoupled_FE* decoupled_fe_new_ftq_iter(uns proc_id, uns bp_id, uns* ftq_idx) {
+  *ftq_idx = per_core_dfe[proc_id][bp_id]->new_ftq_iter();
+  return per_core_dfe[proc_id][bp_id].get();
 }
 
 /* Returns the Op at current FTQ iterator position. Returns NULL if the FTQ is empty */
-Op* decoupled_fe_ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft) {
-  return dfe->ftq_iter_get(iter, end_of_ft);
+Op* decoupled_fe_ftq_iter_get(Decoupled_FE* dfe, uns iter_idx, bool* end_of_ft) {
+  return dfe->ftq_iter_get(iter_idx, end_of_ft);
 }
 
 /* Increments the iterator and returns the Op at FTQ iterator position. Returns NULL if the FTQ is empty */
-Op* decoupled_fe_ftq_iter_get_next(decoupled_fe_iter* iter, bool* end_of_ft) {
-  return dfe->ftq_iter_get_next(iter, end_of_ft);
+Op* decoupled_fe_ftq_iter_get_next(Decoupled_FE* dfe, uns iter_idx, bool* end_of_ft) {
+  return dfe->ftq_iter_get_next(iter_idx, end_of_ft);
 }
 
 /* Returns iter flattened offset from the start of the FTQ, this offset gets incremented
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */
-uint64_t decoupled_fe_ftq_iter_offset(decoupled_fe_iter* iter) {
-  return iter->flattened_op_pos;
+uint64_t decoupled_fe_ftq_iter_offset(Decoupled_FE* dfe, uns iter_idx) {
+  return dfe->ftq_iter_offset(iter_idx);
 }
 
 /* Returns iter ft offset from the start of the FTQ, this offset gets incremented
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */
-uint64_t decoupled_fe_ftq_iter_ft_offset(decoupled_fe_iter* iter) {
-  return iter->ft_pos;
+uint64_t decoupled_fe_ftq_iter_ft_offset(Decoupled_FE* dfe, uns iter_idx) {
+  return dfe->ftq_iter_ft_offset(iter_idx);
 }
 
-uint64_t decoupled_fe_ftq_num_ops() {
+uint64_t decoupled_fe_ftq_num_ops(Decoupled_FE* dfe) {
   return dfe->ftq_num_ops();
 }
 
-uint64_t decoupled_fe_ftq_num_fts() {
+uint64_t decoupled_fe_ftq_num_fts(Decoupled_FE* dfe) {
   return dfe->ftq_num_fts();
 }
 
 void decoupled_fe_retire(Op* op, int op_proc_id, uns64 inst_uid) {
-  dfe->retire(op, op_proc_id, inst_uid);
+  ASSERT(0, g_dfe->get_bp_id() == 0);
+  g_dfe->retire(op, op_proc_id, inst_uid);
 }
 
 void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num) {
-  dfe->set_ftq_num(ftq_ft_num);
+  ASSERT(0, g_dfe->get_bp_id() == 0);
+  g_dfe->set_ftq_num(ftq_ft_num);
 }
 
 uint64_t decoupled_fe_get_ftq_num() {
-  return dfe->get_ftq_num();
+  ASSERT(0, g_dfe->get_bp_id() == 0);
+  return g_dfe->get_ftq_num();
 }
 
 uint64_t decoupled_fe_get_next_on_path_op_num() {
-  return dfe->get_next_on_path_op_num();
+  return g_dfe->get_next_on_path_op_num();
 }
 
 uint64_t decoupled_fe_get_next_off_path_op_num() {
-  return dfe->get_next_off_path_op_num();
+  return g_dfe->get_next_off_path_op_num();
 }
 
 Op* decoupled_fe_get_cur_op() {
-  return dfe->get_cur_op();
+  return g_dfe->get_cur_op();
 }
 
-uns decoupled_fe_get_conf() {
-  return dfe->get_conf();
+uns decoupled_fe_get_conf_off_path() {
+  return g_dfe->get_conf_off_path();
 }
 
 Off_Path_Reason decoupled_fe_get_off_path_reason() {
-  return dfe->get_off_path_reason();
+  return g_dfe->get_off_path_reason();
 }
 
 Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason() {
-  return dfe->get_conf_off_path_reason();
+  return g_dfe->get_conf_off_path_reason();
 }
 
 void decoupled_fe_conf_resovle_cf(Op* op) {
-  dfe->conf_resolve_cf(op);
+  g_dfe->conf_resolve_cf(op);
 }
 
 void decoupled_fe_print_conf_data() {
-  dfe->print_conf_data();
+  g_dfe->print_conf_data();
 }
+
+}  // extern "C"
 
 /* Decoupled_FE member functions */
-Decoupled_FE::Decoupled_FE(uns _proc_id) : proc_id(_proc_id) {
-  init(_proc_id);
-}
-
-void Decoupled_FE::init(uns _proc_id) {
-  trace_mode = false;
-
+void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_recovery_policy) {
 #ifdef ENABLE_PT_MEMTRACE
   trace_mode |= (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE);
 #endif
   proc_id = _proc_id;
-  sched_off_path = false;
-  recovery_addr = 0;
-  redirect_cycle = 0;
-  ftq_ft_num = FE_FTQ_BLOCK_NUM;
+  bp_id = _bp_id;
+  bp_data = _bp_data;
+  dfe_recovery_policy = _dfe_recovery_policy;
   cur_op = nullptr;
-
   current_ft_to_push = nullptr;
 
-  if (CONFIDENCE_ENABLE)
-    conf = new Conf(_proc_id);
+  if (CONFIDENCE_ENABLE) {
+    if (bp_id)
+      conf = per_core_dfe[proc_id][0]->get_conf();
+    else
+      conf = new Conf(_proc_id);
+  }
 
-  state = SERVING_ON_PATH;
+  state = bp_id ? INACTIVE : SERVING_ON_PATH;
   next_state = state;
 }
 
-void Decoupled_FE::recover() {
+Op* Decoupled_FE::get_last_fetch_op() {
+  ASSERT(proc_id, current_ft_to_push);
+  // Get the address to continue before flushing the primary FTQ
+  if (current_ft_to_push->ops.size())
+    return current_ft_to_push->ops.back();
+  else if (!ftq.empty())
+    return ftq.back()->ops.back();
+  return nullptr;
+}
+
+void Decoupled_FE::dfe_recover_op() {
+  off_path = false;
   sched_off_path = false;
   cur_op = nullptr;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
@@ -254,9 +232,9 @@ void Decoupled_FE::recover() {
   }
   ftq.clear();
 
-  DEBUG(proc_id, "Recovery signalled fetch_addr0x:%llx\n", bp_recovery_info->recovery_fetch_addr);
+  DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx\n", bp_id, bp_recovery_info->recovery_fetch_addr);
 
-  for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
+  for (auto&& it : ftq_iterators) {
     // When the FTQ flushes, reset all iterators
     it->ft_pos = 0;
     it->op_pos = 0;
@@ -265,48 +243,75 @@ void Decoupled_FE::recover() {
 
   auto op = bp_recovery_info->recovery_op;
 
-  if (op->oracle_info.recover_at_decode)
-    STAT_EVENT(proc_id, FTQ_RECOVER_DECODE);
-  else if (op->oracle_info.recover_at_exec)
-    STAT_EVENT(proc_id, FTQ_RECOVER_EXEC);
+  if (!bp_id) {
+    if (op->oracle_info.recover_at_decode)
+      STAT_EVENT(proc_id, FTQ_RECOVER_DECODE);
+    else if (op->oracle_info.recover_at_exec)
+      STAT_EVENT(proc_id, FTQ_RECOVER_EXEC);
 
-  uint64_t offpath_cycles = cycle_count - redirect_cycle;
-  ASSERT(proc_id, cycle_count > redirect_cycle);
-  INC_STAT_EVENT(proc_id, FTQ_OFFPATH_CYCLES, offpath_cycles);
-  redirect_cycle = 0;
+    uint64_t offpath_cycles = cycle_count - redirect_cycle;
+    ASSERT(proc_id, cycle_count > redirect_cycle);
+    INC_STAT_EVENT(proc_id, FTQ_OFFPATH_CYCLES, offpath_cycles);
 
-  // FIXME always fetch off path ops? should we get rid of this parameter?
-  frontend_recover(proc_id, bp_recovery_info->recovery_inst_uid);
-  if (state != INACTIVE) {
-    ASSERT(proc_id, saved_recovery_ft->has_unread_ops());
-    ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == saved_recovery_ft->get_ft_info().static_info.start,
-            "Scarab's recovery addr 0x%llx does not match save ft "
-            "addr 0x%llx\n",
-            bp_recovery_info->recovery_fetch_addr, saved_recovery_ft->get_ft_info().static_info.start);
-    next_state = RECOVERING;
+    // FIXME always fetch off path ops? should we get rid of this parameter?
+    frontend_recover(proc_id, bp_id, bp_recovery_info->recovery_inst_uid);
+    if (CONFIDENCE_ENABLE)
+      conf->recover(op);
   }
+  redirect_cycle = 0;
+}
 
-  if (CONFIDENCE_ENABLE)
-    conf->recover(op);
+void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
+  // Get the last addr from the primary FTQ
+  Op* alt_op = per_core_dfe[proc_id][0]->get_last_fetch_op();
+  info->bp_id = bp_id;
+  bp_recover_op(bp_data, cf_type, info);
+  dfe_recover_op();
+  switch (dfe_recovery_policy) {
+    case PRIMARY_DFE:
+      if (state != INACTIVE) {
+        ASSERT(proc_id, saved_recovery_ft->has_unread_ops());
+        ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == saved_recovery_ft->get_ft_info().static_info.start,
+                "Scarab's recovery addr 0x%llx does not match save ft "
+                "addr 0x%llx\n",
+                bp_recovery_info->recovery_fetch_addr, saved_recovery_ft->get_ft_info().static_info.start);
+        next_state = RECOVERING;
+      }
+      break;
+    case CONTINUE_ON_RECOVERY:
+      if (alt_op)
+        frontend_redirect(proc_id, bp_id, alt_op->inst_uid, alt_op->inst_info->addr);
+      else  // If it was stalled due to a fetch barrier, can be nullptr
+        frontend_redirect(proc_id, bp_id, 0, 0);
+      bp_sync(per_core_dfe[proc_id][0]->get_bp_data(), per_core_dfe[proc_id][bp_id]->get_bp_data());
+      next_state = SERVING_OFF_PATH;
+      set_conf_off_path();
+      break;
+    case CONTINUE_ON_PREDICTION:
+      frontend_redirect(proc_id, bp_id, 0, 0);  // Passing fetch_addr = 0 will stop fetching the secondary
+      next_state = INACTIVE;
+      break;
+  }
 }
 
 void Decoupled_FE::update() {
   uint64_t cfs_taken_this_cycle = 0;
   uint64_t ft_pushed_this_cycle = 0;
-  static int fwd_progress = 0;
-  fwd_progress++;
-  if (fwd_progress >= 1000000) {
-    std::cout << "No forward progress for 1000000 cycles" << std::endl;
-    ASSERT(0, 0);
-  }
-  if (is_off_path_state())
-    STAT_EVENT(proc_id, FTQ_CYCLES_OFFPATH);
-  else
-    STAT_EVENT(proc_id, FTQ_CYCLES_ONPATH);
+  if (!bp_id) {
+    fwd_progress++;
+    if (fwd_progress >= 1000000) {
+      std::cout << "No forward progress for 1000000 cycles" << std::endl;
+      ASSERT(0, 0);
+    }
+    if (is_off_path_state())
+      STAT_EVENT(proc_id, FTQ_CYCLES_OFFPATH);
+    else
+      STAT_EVENT(proc_id, FTQ_CYCLES_ONPATH);
 
-  // update per-cycle confidence mechanism state
-  if (CONFIDENCE_ENABLE)
-    conf->per_cycle_update();
+    // update per-cycle confidence mechanism state
+    if (CONFIDENCE_ENABLE)
+      conf->per_cycle_update();
+  }
 
   while (1) {
     state = next_state;
@@ -314,29 +319,31 @@ void Decoupled_FE::update() {
     ASSERT(proc_id, cfs_taken_this_cycle <= FE_FTQ_TAKEN_CFS_PER_CYCLE);
 
     if (ftq.size() == ftq_max_size()) {
-      DEBUG(proc_id, "Break due to full FTQ\n");
+      DEBUG(proc_id, "[DFE%u] Break due to full FTQ\n", bp_id);
       STAT_EVENT(proc_id, FTQ_BREAK_FULL_FT_ONPATH + is_off_path_state());
       break;
     }
     if (cfs_taken_this_cycle >= FE_FTQ_TAKEN_CFS_PER_CYCLE) {
-      DEBUG(proc_id, "Break due to max cfs taken per cycle\n");
+      DEBUG(proc_id, "[DFE%u] Break due to max cfs taken per cycle\n", bp_id);
       STAT_EVENT(proc_id, FTQ_BREAK_MAX_CFS_TAKEN_ONPATH + is_off_path_state());
       break;
     }
     // use `>=` because inst size does not necessarily align with FE_FTQ_BYTES_PER_CYCLE
     if (ft_pushed_this_cycle >= FE_FTQ_FT_PER_CYCLE) {
-      DEBUG(proc_id, "Break due to max bytes per cycle\n");
+      DEBUG(proc_id, "[DFE%u] Break due to max bytes per cycle\n", bp_id);
       STAT_EVENT(proc_id, FTQ_BREAK_MAX_FT_ONPATH + is_off_path_state());
       break;
     }
-    if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data, proc_id)) {
-      DEBUG(proc_id, "Break due to limited branch predictor\n");
+    if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data)) {
+      DEBUG(proc_id, "[DFE%u] Break due to limited branch predictor\n", bp_id);
       STAT_EVENT(proc_id, FTQ_BREAK_PRED_BR_ONPATH + is_off_path_state());
       break;
     }
-    fwd_progress = 0;
-    // FSM-based FT build logic - four states:
-    // EXITING: stop whend end of track seen
+
+    if (!bp_id)
+      fwd_progress = 0;
+    // FSM-based FT build logic - states:
+    // INACTIVE: idle until triggered or stop when end of trace seen
     // RECOVERING: handle recovery after misprediction
     // SERVING_ON_PATH: normal execution mode
     // SERVING_OFF_PATH: fetching off-path operations
@@ -365,15 +372,16 @@ void Decoupled_FE::update() {
       }
       // recover will fall through to on-path exec
       case SERVING_ON_PATH: {
-        current_ft_to_push = new FT();
+        current_ft_to_push = new FT(proc_id, bp_id);
         // Build new on-path FT if no recovery ft availble
         ASSERT(proc_id, !current_ft_to_push->has_unread_ops());
-        auto build_success = current_ft_to_push->build([](uns8 pid) { return frontend_can_fetch_op(pid); },
-                                                       [](uns8 pid, Op* op) -> bool {
-                                                         frontend_fetch_op(pid, op);
-                                                         return true;
-                                                       },
-                                                       false, []() { return decoupled_fe_get_next_on_path_op_num(); });
+        auto build_success =
+            current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                      [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                        frontend_fetch_op(pid, bid, op);
+                                        return true;
+                                      },
+                                      false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
         ASSERT(proc_id, build_success);
         result = current_ft_to_push->predict_ft();
         // if current FT is the exit one, skip mispredict handling and directly push
@@ -396,17 +404,18 @@ void Decoupled_FE::update() {
       case SERVING_OFF_PATH: {
         // for off-path just build and. redirect
         // cf processed while building
-        current_ft_to_push = new FT();
+        current_ft_to_push = new FT(proc_id, bp_id);
         ASSERT(proc_id, !current_ft_to_push->has_unread_ops());
-        auto build_success = current_ft_to_push->build([](uns8 pid) { return frontend_can_fetch_op(pid); },
-                                                       [](uns8 pid, Op* op) -> bool {
-                                                         frontend_fetch_op(pid, op);
-                                                         return true;
-                                                       },
-                                                       true, []() { return decoupled_fe_get_next_off_path_op_num(); });
+        auto build_success =
+            current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                      [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                        frontend_fetch_op(pid, bid, op);
+                                        return true;
+                                      },
+                                      true, conf_off_path, []() { return decoupled_fe_get_next_off_path_op_num(); });
         ASSERT(proc_id, build_success);
         if (current_ft_to_push->get_end_reason() == FT_TAKEN_BRANCH) {
-          frontend_redirect(proc_id, current_ft_to_push->get_last_op()->inst_uid,
+          frontend_redirect(proc_id, bp_id, current_ft_to_push->get_last_op()->inst_uid,
                             current_ft_to_push->get_last_op()->oracle_info.pred_npc);
         }
         break;
@@ -430,7 +439,7 @@ void Decoupled_FE::pop_ft(FT* ft) {
   ASSERT(proc_id, ft == ftq.front());
   uint64_t ft_num_ops = ftq.front()->ops.size();
   ftq.pop_front();
-  for (auto it = ftq_iterators.begin(); it != ftq_iterators.end(); it++) {
+  for (auto&& it : ftq_iterators) {
     // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before
     if (it->ft_pos > 0) {
       ASSERT(proc_id, it->flattened_op_pos >= ft_num_ops);
@@ -444,16 +453,20 @@ void Decoupled_FE::pop_ft(FT* ft) {
   }
 }
 
-decoupled_fe_iter* Decoupled_FE::new_ftq_iter() {
-  ftq_iterators.push_back(decoupled_fe_iter());
-  return &(ftq_iterators.back());
+uns Decoupled_FE::new_ftq_iter() {
+  ftq_iterators.push_back(std::make_unique<decoupled_fe_iter>());
+  ftq_iterators.back().get()->ft_pos = 0;
+  ftq_iterators.back().get()->op_pos = 0;
+  ftq_iterators.back().get()->flattened_op_pos = 0;
+  return ftq_iterators.size() - 1;
 }
 
-Op* Decoupled_FE::ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft) {
+Op* Decoupled_FE::ftq_iter_get(uns iter_idx, bool* end_of_ft) {
+  decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
   // if FTQ is empty or if iter has seen all FTs
   if (ftq.empty() || iter->ft_pos == ftq.size()) {
     if (ftq.empty())
-      ASSERT(proc_id, iter->ft_pos == 0 && iter->op_pos == 0 && iter->flattened_op_pos == 0);
+      ASSERT(proc_id, iter[iter_idx].ft_pos == 0 && iter[iter_idx].op_pos == 0 && iter[iter_idx].flattened_op_pos == 0);
     return NULL;
   }
 
@@ -465,7 +478,8 @@ Op* Decoupled_FE::ftq_iter_get(decoupled_fe_iter* iter, bool* end_of_ft) {
   return ftq.at(iter->ft_pos)->ops[iter->op_pos];
 }
 
-Op* Decoupled_FE::ftq_iter_get_next(decoupled_fe_iter* iter, bool* end_of_ft) {
+Op* Decoupled_FE::ftq_iter_get_next(uns iter_idx, bool* end_of_ft) {
+  decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
   if (iter->ft_pos + 1 == ftq.size() && iter->op_pos + 1 == ftq.at(iter->ft_pos)->ops.size()) {
     // if iter is at the last op and the last FT
     iter->ft_pos += 1;
@@ -489,7 +503,15 @@ Op* Decoupled_FE::ftq_iter_get_next(decoupled_fe_iter* iter, bool* end_of_ft) {
     iter->op_pos++;
     iter->flattened_op_pos++;
   }
-  return decoupled_fe_ftq_iter_get(iter, end_of_ft);
+  return ftq_iter_get(iter_idx, end_of_ft);
+}
+
+uint64_t Decoupled_FE::ftq_iter_offset(uns iter_idx) {
+  return ftq_iterators[iter_idx]->flattened_op_pos;
+}
+
+uint64_t Decoupled_FE::ftq_iter_ft_offset(uns iter_idx) {
+  return ftq_iterators[iter_idx]->ft_pos;
 }
 
 uint64_t Decoupled_FE::ftq_num_ops() {
@@ -502,7 +524,8 @@ uint64_t Decoupled_FE::ftq_num_ops() {
 
 void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
   if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
-    DEBUG(proc_id, "Decoupled fetch saw barrier retire fetch_addr0x:%llx off_path:%i op_num:%llu list_count:%i\n",
+    DEBUG(proc_id,
+          "[DFE%u] Decoupled fetch saw barrier retire fetch_addr:0x%llx off_path:%i op_num:%llu list_count:%i\n", bp_id,
           op->inst_info->addr, op->off_path, op->op_num, td->seq_op_list.count);
     ASSERT(proc_id, td->seq_op_list.count == 1);
   }
@@ -545,9 +568,9 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
 void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
   if (ftq.size())
     ASSERT(proc_id, current_ft_to_push->is_consecutive(*ftq.back()));
-  if (CONFIDENCE_ENABLE)
+  if (CONFIDENCE_ENABLE && !bp_id)
     conf->update(*current_ft_to_push);
-  if (recovery_addr) {
+  if (!bp_id && recovery_addr) {
     ASSERT(proc_id, recovery_addr == current_ft_to_push->get_start_addr());
     recovery_addr = 0;
   }
@@ -566,31 +589,49 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   }
   // no trailing ft, misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
-    saved_recovery_ft = new FT();
-    auto build_success = saved_recovery_ft->build([](uns8 pid) { return frontend_can_fetch_op(pid); },
-                                                  [](uns8 pid, Op* op) -> bool {
-                                                    frontend_fetch_op(pid, op);
-                                                    return true;
-                                                  },
-                                                  false, []() { return decoupled_fe_get_next_on_path_op_num(); });
+    saved_recovery_ft = new FT(proc_id, bp_id);
+    auto build_success =
+        saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                 [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                   frontend_fetch_op(pid, bid, op);
+                                   return true;
+                                 },
+                                 false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
     ASSERT(proc_id, build_success);
   }
   redirect_cycle = cycle_count;
   next_state = SERVING_OFF_PATH;
-  frontend_redirect(proc_id, result.op->inst_uid, result.pred_addr);
+  frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);
+  if (!bp_id) {
+    for (uns _bp_id = 1; _bp_id < NUM_BPS; ++_bp_id) {
+      if (per_core_dfe[proc_id][_bp_id]->get_dfe_recovery_policy() == CONTINUE_ON_PREDICTION &&
+          !per_core_dfe[proc_id][_bp_id]->is_off_path()) {
+        ASSERT(proc_id, !per_core_dfe[proc_id][_bp_id]->ftq_num_fts());
+        Op alt_op = *result.op;
+        Addr alt_pred_addr =
+            bp_predict_op(per_core_dfe[proc_id][_bp_id]->bp_data, &alt_op, 0, result.op->inst_info->addr);
+        frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);
+        per_core_dfe[proc_id][_bp_id]->next_state = SERVING_OFF_PATH;
+        per_core_dfe[proc_id][_bp_id]->set_conf_off_path();
+        bp_sync(per_core_dfe[proc_id][bp_id]->get_bp_data(), per_core_dfe[proc_id][_bp_id]->get_bp_data());
+      }
+    }
+  }
+
   // set the current op number as the beginning op count of this off-path divergence
   set_off_path_op_num(current_ft_to_push->get_last_op()->op_num + 1);
   // patching/modify the current FT with off-path op if current FT not ended
   if (current_ft_to_push->get_end_reason() == FT_NOT_ENDED) {
-    auto build_success = current_ft_to_push->build([](uns8 pid) { return frontend_can_fetch_op(pid); },
-                                                   [](uns8 pid, Op* op) -> bool {
-                                                     frontend_fetch_op(pid, op);
-                                                     return true;
-                                                   },
-                                                   true, []() { return decoupled_fe_get_next_off_path_op_num(); });
+    auto build_success =
+        current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                  [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                    frontend_fetch_op(pid, bid, op);
+                                    return true;
+                                  },
+                                  true, conf_off_path, []() { return decoupled_fe_get_next_off_path_op_num(); });
     ASSERT(proc_id, build_success);
     if (current_ft_to_push->get_end_reason() == FT_TAKEN_BRANCH) {
-      frontend_redirect(proc_id, current_ft_to_push->get_last_op()->inst_uid,
+      frontend_redirect(proc_id, bp_id, current_ft_to_push->get_last_op()->inst_uid,
                         current_ft_to_push->get_last_op()->oracle_info.pred_npc);
     }
   }

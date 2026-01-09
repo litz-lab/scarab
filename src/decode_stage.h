@@ -31,6 +31,10 @@
 
 #include "stage_data.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**************************************************************************************/
 /* Types */
 
@@ -59,5 +63,9 @@ void update_decode_stage(Stage_Data*);
 void decode_stage_process_op(Op*);
 
 /**************************************************************************************/
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* #ifndef __DECODE_STAGE_H__ */

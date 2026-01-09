@@ -2867,7 +2867,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
   // update the actual fdip on/off-path flag for accurate stats
   // MRT_FDIPPRFON/OFF is based on fdip confidence not the correct on/off-path
   if ((mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF)) &&
-      (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF) && req->fdip_pref_off_path != fdip_off_path())
+      (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF) && req->fdip_pref_off_path != fdip_off_path(req->proc_id, 0))
     req->fdip_pref_off_path = 2;
 
   update_mem_req_occupancy_counter(old_type, -1);
@@ -3248,7 +3248,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
   // All oracle (correct-path) prefetches are on path.
   if (((new_req->type == MRT_UOCPRF && !UOC_ORACLE_PREF) || new_req->type == MRT_FDIPPRFON ||
        new_req->type == MRT_FDIPPRFOFF) &&
-      fdip_off_path())
+      fdip_off_path(proc_id, 0))
     new_req->off_path = TRUE;
 
   STAT_EVENT(proc_id, MEM_REQ_INIT_IFETCH + type);
@@ -3557,11 +3557,11 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   new_req->bw_prefetch = (pref_info ? pref_info->bw_limited : FALSE);
   new_req->destination = destination;
   if (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF) {
-    if (fdip_off_path())
+    if (fdip_off_path(proc_id, 0))
       new_req->fdip_pref_off_path = 1;
     else
       new_req->fdip_pref_off_path = 0;
-    new_req->ghist = fdip_get_ghist();
+    new_req->ghist = g_bp_data->global_hist;
   }
   new_req->cyc_hit_by_demand_load = 0;
   if (PREF_FRAMEWORK_ON) {

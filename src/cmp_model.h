@@ -55,7 +55,7 @@ typedef struct Cmp_Model_struct {
 
   Map_Data* map_data;
   Bp_Recovery_Info* bp_recovery_info;
-  Bp_Data* bp_data;
+  Bp_Data** bp_data;  // multiple BPs available for each core
 
   Memory memory;
 

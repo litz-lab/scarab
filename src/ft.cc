@@ -102,27 +102,27 @@ void FT::add_op(Op* op) {
   ops.emplace_back(op);
 }
 
-/* Skips some ops fetched after recovery in execution-driven (PIN) mode.
+/* refetch some ops fetched after recovery in execution-driven (PIN) mode.
  * in PIN execution-driven mode, after recovery, some ops may have been already saved as
- * recovery FT so we skip them
+ * recovery FT so we delete those ops and refetch them to rebuild the FT.
  */
-void FT::resync_ops_after_exec_recover(std::function<bool(uns8)> can_fetch_op_fn,
-                                       std::function<bool(uns8, Op*)> fetch_op_fn) {
+void FT::rebuild_after_exec_recover() {
   ASSERT(proc_id, FRONTEND == FE_PIN_EXEC_DRIVEN);
-  for (uns i = op_pos; i < ops.size(); ++i) {
-    if (!can_fetch_op_fn(proc_id)) {
-      std::cout << "Warning could not fetch inst from frontend" << std::endl;
-      return;
-    }
-    Op stack_op;  // Just allocate on stack
-    fetch_op_fn(proc_id, &stack_op);
-    ASSERT(proc_id, ops[i]->inst_uid == stack_op.inst_uid);
-    ASSERT(proc_id, ops[i]->inst_info->addr == stack_op.inst_info->addr);
+  remove_op_from_pos(op_pos);
+}
+
+void FT::remove_op_from_pos(uint64_t pos) {
+  ASSERT(proc_id, pos <= ops.size());
+  while (ops.size() > pos) {
+    Op* op = ops.back();
+    ops.pop_back();
+    op->parent_FT = nullptr;
+    free_op(op);
   }
 }
 
 FT_Event FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
-                   std::function<uint64_t()> get_next_op_id_fn) {
+                   bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn) {
   FT_Event event = FT_EVENT_NONE;
   do {
     if (!can_fetch_op_fn(proc_id, bp_id)) {

@@ -109,9 +109,9 @@
 
 ### DCache
 --dcache_size 	 	        65536
---dcache_read_ports             2
+--dcache_read_ports             1
 --dcache_write_ports            1
---dcache_banks                  1
+--dcache_banks                  8
 --dcache_assoc                  4
 --dcache_line_size              64
 --dcache_cycles                 1

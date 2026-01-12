@@ -117,9 +117,9 @@
 
 ### DCache
 --dcache_size 	 	        49152
---dcache_read_ports             2
+--dcache_read_ports             1
 --dcache_write_ports            1
---dcache_banks                  1
+--dcache_banks                  8
 --dcache_assoc		            12
 --dcache_line_size              64
 --dcache_cycles                 5
@@ -153,7 +153,7 @@
 ### LLC
 # 3 MiB per core, 16-way
 --l1_size                       3145728
---l1_banks                      1           // not sure
+--l1_banks                      8
 --l1_cycles		                36          // just a guess
 --l1_assoc                      16
 --l1_line_size                  64

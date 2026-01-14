@@ -198,6 +198,7 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
 
   for (uns i = op_pos; i <= split_index; i++) {
     off_path_ft->ops.push_back(ops[i]);
+    ops[i]->off_path = true;
     ops[i]->parent_FT_off_path = off_path_ft;
   }
 

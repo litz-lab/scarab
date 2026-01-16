@@ -102,13 +102,14 @@ void FT::add_op(Op* op) {
   ops.emplace_back(op);
 }
 
-/* refetch some ops fetched after recovery in execution-driven (PIN) mode.
+/* remove some pre-built ops after recovery in execution-driven (PIN) mode.
  * in PIN execution-driven mode, after recovery, some ops may have been already saved as
  * recovery FT so we delete those ops and refetch them to rebuild the FT.
  */
-void FT::rebuild_after_exec_recover() {
+void FT::remove_op_after_exec_recover() {
   ASSERT(proc_id, FRONTEND == FE_PIN_EXEC_DRIVEN);
   remove_op_from_pos(op_pos);
+  ASSERT(proc_id, get_end_reason() == FT_NOT_ENDED || get_end_reason() == FT_TAKEN_BRANCH);
 }
 
 void FT::remove_op_from_pos(uint64_t pos) {
@@ -121,12 +122,13 @@ void FT::remove_op_from_pos(uint64_t pos) {
   }
 }
 
-FT_Event FT::build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
-                   bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn) {
+FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
+                   bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn) {
   FT_Event event = FT_EVENT_NONE;
   do {
     if (!can_fetch_op_fn(proc_id, bp_id)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
+      delete this;
       return FT_EVENT_BUILD_FAIL;
     }
     Op* op = alloc_op(proc_id, bp_id);

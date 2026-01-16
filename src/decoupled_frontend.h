@@ -184,6 +184,7 @@ class Decoupled_FE {
   uint64_t ftq_iter_ft_offset(uns iter_idx);
   uint64_t ftq_num_ops();
   uint64_t ftq_num_fts() { return ftq.size(); }
+  void stall(Op* op);
   void retire(Op* op, int op_proc_id, uns64 inst_uid);
   void set_ftq_num(uint64_t set_ftq_ft_num) { ftq_ft_num = set_ftq_ft_num; }
   uint64_t get_ftq_num() { return ftq_ft_num; }
@@ -220,6 +221,7 @@ class Decoupled_FE {
   void redirect_to_off_path(FT_PredictResult result);
   inline uint64_t ftq_max_size() { return ftq_ft_num; }
   void set_off_path_op_num(uint64_t op_num) { current_off_path_op_num = op_num; }
+  void set_on_path_op_num(uint64_t op_num) { this->op_num = op_num; }
 
   uns proc_id;
   uns bp_id;
@@ -237,6 +239,8 @@ class Decoupled_FE {
   int off_path;
   int conf_off_path;
   int sched_off_path;
+  bool stalled;
+  bool exit_on_off_path;
   uint64_t op_num;
   uint64_t current_off_path_op_num;
   std::vector<std::unique_ptr<decoupled_fe_iter>> ftq_iterators;

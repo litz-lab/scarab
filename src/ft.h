@@ -44,7 +44,9 @@ typedef struct FT FT;
 enum FT_Event {
   FT_EVENT_NONE,
   FT_EVENT_MISPREDICT,
+  FT_EVENT_FETCH_BARRIER,
   FT_EVENT_OFFPATH_TAKEN_REDIRECT,
+  FT_EVENT_BUILD_FAIL
   // ... add more as needed
 };
 
@@ -81,22 +83,6 @@ void ft_free_op(Op* op);
 class Decoupled_FE;
 
 // C++ class definition
-enum FT_Event {
-  FT_EVENT_BUILD_FAIL,
-  FT_EVENT_NONE,
-  FT_EVENT_MISPREDICT,
-  FT_EVENT_FETCH_BARRIER,
-  FT_EVENT_OFFPATH_TAKEN_REDIRECT,
-  // ... add more as needed
-};
-
-struct FT_PredictResult {
-  uint64_t index;
-  FT_Event event;
-  Op* op;          // Optionally, if DFE needs to know which op
-  Addr pred_addr;  // Optionally, if DFE needs the predicted address
-};
-
 class FT {
  public:
   FT(uns _proc_id, uns _bp_id);
@@ -112,10 +98,9 @@ class FT {
   friend void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out);
 
   // Change return type to FT_BuildResult
-  FT_Event build(std::function<bool(uns8)> can_fetch_op_fn, std::function<bool(uns8, Op*)> fetch_op_fn, bool off_path,
-                 bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn);
-
-  void rebuild_after_exec_recover();
+  FT_Event build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
+                 bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn);
+  void remove_op_after_exec_recover();
   void remove_op_from_pos(uint64_t pos);
 
   FT_PredictResult predict_ft();

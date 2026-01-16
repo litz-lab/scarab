@@ -108,18 +108,14 @@ void FT::add_op(Op* op) {
  */
 void FT::remove_op_after_exec_recover() {
   ASSERT(proc_id, FRONTEND == FE_PIN_EXEC_DRIVEN);
-  remove_op_from_pos(op_pos);
-  ASSERT(proc_id, get_end_reason() == FT_NOT_ENDED || get_end_reason() == FT_TAKEN_BRANCH);
-}
-
-void FT::remove_op_from_pos(uint64_t pos) {
-  ASSERT(proc_id, pos <= ops.size());
-  while (ops.size() > pos) {
+  ASSERT(proc_id, op_pos <= ops.size());
+  while (ops.size() > op_pos) {
     Op* op = ops.back();
     ops.pop_back();
     op->parent_FT = nullptr;
     free_op(op);
   }
+  ASSERT(proc_id, get_end_reason() == FT_NOT_ENDED || get_end_reason() == FT_TAKEN_BRANCH);
 }
 
 FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,

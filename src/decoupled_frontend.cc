@@ -269,14 +269,34 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
   dfe_recover_op();
   switch (dfe_recovery_policy) {
     case PRIMARY_DFE:
-      if (state != INACTIVE) {
+      if (stalled) {
+        ASSERT(proc_id, FRONTEND == FE_PIN_EXEC_DRIVEN);
+        stalled = false;
+      }
+      // In Pin-driven frontend, we could see exit on off-path
+      if (state != INACTIVE || (state == INACTIVE && exit_on_off_path)) {
         ASSERT(proc_id, saved_recovery_ft->has_unread_ops());
         ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == saved_recovery_ft->get_ft_info().static_info.start,
                 "Scarab's recovery addr 0x%llx does not match save ft "
                 "addr 0x%llx\n",
                 bp_recovery_info->recovery_fetch_addr, saved_recovery_ft->get_ft_info().static_info.start);
+        exit_on_off_path = false;
+        // In Pin-driven frontend, we need to adjust the on-path op num and remove ops from saved recovery FT
+        if (FRONTEND == FE_PIN_EXEC_DRIVEN) {
+          set_on_path_op_num(bp_recovery_info->recovery_op->op_num + 1);
+          saved_recovery_ft->remove_op_after_exec_recover();
+          auto build_event =
+              saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                       [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                         frontend_fetch_op(pid, bid, op);
+                                         return true;
+                                       },
+                                       false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
+          ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+        }
         next_state = RECOVERING;
       }
+
       break;
     case CONTINUE_ON_RECOVERY:
       if (alt_op)
@@ -339,6 +359,11 @@ void Decoupled_FE::update() {
       STAT_EVENT(proc_id, FTQ_BREAK_PRED_BR_ONPATH + is_off_path_state());
       break;
     }
+    if (stalled) {
+      DEBUG(proc_id, "Break due to wait for fetch barrier resolved\n");
+      STAT_EVENT(proc_id, FTQ_BREAK_BAR_FETCH_ONPATH + is_off_path_state());
+      break;
+    }
 
     if (!bp_id)
       fwd_progress = 0;
@@ -364,7 +389,9 @@ void Decoupled_FE::update() {
           return;
         }
 
-        if (result.event == FT_EVENT_MISPREDICT) {
+        if (result.event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
+          stall(result.op);
+        } else if (result.event == FT_EVENT_MISPREDICT) {
           redirect_to_off_path(result);
         }
 
@@ -375,14 +402,14 @@ void Decoupled_FE::update() {
         current_ft_to_push = new FT(proc_id, bp_id);
         // Build new on-path FT if no recovery ft availble
         ASSERT(proc_id, !current_ft_to_push->has_unread_ops());
-        auto build_success =
+        auto build_event =
             current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
                                       [](uns8 pid, uns8 bid, Op* op) -> bool {
                                         frontend_fetch_op(pid, bid, op);
                                         return true;
                                       },
                                       false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
-        ASSERT(proc_id, build_success);
+        ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
         result = current_ft_to_push->predict_ft();
         // if current FT is the exit one, skip mispredict handling and directly push
         // set state and early return
@@ -393,8 +420,9 @@ void Decoupled_FE::update() {
           next_state = INACTIVE;
           return;
         }
-
-        if (result.event == FT_EVENT_MISPREDICT) {
+        if (result.event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
+          stall(result.op);
+        } else if (result.event == FT_EVENT_MISPREDICT) {
           redirect_to_off_path(result);
         }
 
@@ -404,19 +432,33 @@ void Decoupled_FE::update() {
       case SERVING_OFF_PATH: {
         // for off-path just build and. redirect
         // cf processed while building
+        if (exit_on_off_path)
+          return;
         current_ft_to_push = new FT(proc_id, bp_id);
         ASSERT(proc_id, !current_ft_to_push->has_unread_ops());
-        auto build_success =
-            current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                                      [](uns8 pid, uns8 bid, Op* op) -> bool {
-                                        frontend_fetch_op(pid, bid, op);
-                                        return true;
-                                      },
-                                      true, conf_off_path, []() { return decoupled_fe_get_next_off_path_op_num(); });
-        ASSERT(proc_id, build_success);
-        if (current_ft_to_push->get_end_reason() == FT_TAKEN_BRANCH) {
-          frontend_redirect(proc_id, bp_id, current_ft_to_push->get_last_op()->inst_uid,
-                            current_ft_to_push->get_last_op()->oracle_info.pred_npc);
+        while (current_ft_to_push->get_end_reason() == FT_NOT_ENDED) {
+          auto build_event =
+              current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                        [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                          frontend_fetch_op(pid, bid, op);
+                                          return true;
+                                        },
+                                        true, conf_off_path, []() { return decoupled_fe_get_next_off_path_op_num(); });
+          ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+          if (current_ft_to_push->ended_by_exit()) {
+            // Ensure that the very last simulated FT does not cause a recovery
+            current_ft_to_push->clear_recovery_info();
+            check_consecutivity_and_push_to_ftq();
+            next_state = INACTIVE;
+            exit_on_off_path = true;
+            return;
+          }
+          if (build_event == FT_EVENT_MISPREDICT || build_event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
+            frontend_redirect(proc_id, bp_id, current_ft_to_push->get_last_op()->inst_uid,
+                              current_ft_to_push->get_last_op()->oracle_info.pred_npc);
+          } else if (build_event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
+            stall(current_ft_to_push->get_last_op());
+          }
         }
         break;
       }
@@ -522,12 +564,19 @@ uint64_t Decoupled_FE::ftq_num_ops() {
   return num_ops;
 }
 
+void Decoupled_FE::stall(Op* op) {
+  stalled = true;
+  DEBUG(proc_id, "Decoupled fetch stalled due to barrier fetch_addr0x:%llx off_path:%i op_num:%llu\n",
+        op->inst_info->addr, op->off_path, op->op_num);
+}
+
 void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
   if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
     DEBUG(proc_id,
           "[DFE%u] Decoupled fetch saw barrier retire fetch_addr:0x%llx off_path:%i op_num:%llu list_count:%i\n", bp_id,
           op->inst_info->addr, op->off_path, op->op_num, td->seq_op_list.count);
     ASSERT(proc_id, td->seq_op_list.count == 1);
+    stalled = false;
   }
 
   // unblock pin exec driven, trace frontends do not need to block/unblock
@@ -590,14 +639,14 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // no trailing ft, misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
     saved_recovery_ft = new FT(proc_id, bp_id);
-    auto build_success =
+    auto build_event =
         saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
                                  [](uns8 pid, uns8 bid, Op* op) -> bool {
                                    frontend_fetch_op(pid, bid, op);
                                    return true;
                                  },
                                  false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
-    ASSERT(proc_id, build_success);
+    ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
   }
   redirect_cycle = cycle_count;
   next_state = SERVING_OFF_PATH;
@@ -621,19 +670,25 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // set the current op number as the beginning op count of this off-path divergence
   set_off_path_op_num(current_ft_to_push->get_last_op()->op_num + 1);
   // patching/modify the current FT with off-path op if current FT not ended
-  if (current_ft_to_push->get_end_reason() == FT_NOT_ENDED) {
-    auto build_success =
+  while (current_ft_to_push->get_end_reason() == FT_NOT_ENDED) {
+    auto build_event =
         current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
                                   [](uns8 pid, uns8 bid, Op* op) -> bool {
                                     frontend_fetch_op(pid, bid, op);
                                     return true;
                                   },
                                   true, conf_off_path, []() { return decoupled_fe_get_next_off_path_op_num(); });
-    ASSERT(proc_id, build_success);
-    if (current_ft_to_push->get_end_reason() == FT_TAKEN_BRANCH) {
+    ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+    if (build_event == FT_EVENT_MISPREDICT || build_event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
       frontend_redirect(proc_id, bp_id, current_ft_to_push->get_last_op()->inst_uid,
                         current_ft_to_push->get_last_op()->oracle_info.pred_npc);
+    } else if (build_event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
+      stall(current_ft_to_push->get_last_op());
     }
+  }
+  if (current_ft_to_push->ended_by_exit()) {
+    next_state = INACTIVE;
+    exit_on_off_path = true;
   }
   ASSERT(proc_id, current_ft_to_push->get_end_reason() != FT_NOT_ENDED);
 }

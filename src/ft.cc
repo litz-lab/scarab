@@ -69,6 +69,7 @@ FT::FT(uns _proc_id, uns _bp_id) : proc_id(_proc_id), bp_id(_bp_id) {
   ft_info.static_info.n_uops = 0;
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   ft_info.dynamic_info.first_op_off_path = FALSE;
+  is_prebuilt = false;
 }
 
 bool FT::can_fetch_op() {
@@ -206,6 +207,7 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
 std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
   uns index_uns = static_cast<uns>(split_index);
   ASSERT(proc_id, index_uns < ops.size() && index_uns >= 0);
+  ASSERT(proc_id, get_is_prebuilt());
 
   // if split at the last op and FT already ended, no need to create new FT, just update end condition
   if (split_index == ops.size() - 1 && get_end_reason() != FT_NOT_ENDED) {
@@ -235,7 +237,13 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
     ASSERT(proc_id, ft_info.dynamic_info.first_op_off_path == 0);
     ASSERT(proc_id, ft_info.dynamic_info.ended_by != FT_NOT_ENDED);
     ASSERT(proc_id, get_end_reason() != FT_NOT_ENDED);
+  } else {
+    off_path_ft->is_prebuilt = 1;
+    this->is_prebuilt = 0;
   }
+
+  ASSERT(proc_id, this->is_prebuilt || off_path_ft->is_prebuilt);
+  ASSERT(proc_id, !(this->is_prebuilt && off_path_ft->is_prebuilt));
 
   off_path_ft->generate_ft_info();
 
@@ -433,4 +441,19 @@ void ft_free_op(Op* op) {
     delete op->parent_FT_off_path;
   if (!op->parent_FT_off_path && op->parent_FT->get_last_op() == op)
     delete op->parent_FT;
+}
+
+/* get unique pc of this FT */
+std::set<Addr> FT::get_unique_pc_list() {
+  std::set<Addr> pc_list;
+  for (auto op : ops) {
+    if (op && op->inst_info) {
+      Addr pc = op->inst_info->addr;
+      // Only add if not already in the list (preserves order, removes duplicates)
+      if (std::find(pc_list.begin(), pc_list.end(), pc) == pc_list.end()) {
+        pc_list.insert(pc);
+      }
+    }
+  }
+  return pc_list;
 }

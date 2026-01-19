@@ -118,7 +118,7 @@ class FT {
   bool get_length() const { return ft_info.static_info.length; }
   void set_prebuilt(bool val) { is_prebuilt = val; }
   bool get_is_prebuilt() const { return is_prebuilt; }
-  std::set<Addr> get_unique_pc_list();
+  std::set<Addr> get_pcs();
 
   FT_Ended_By get_end_reason() const;
   void clear_recovery_info();

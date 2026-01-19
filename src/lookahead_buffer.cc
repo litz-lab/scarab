@@ -6,7 +6,6 @@
 #include <iostream>
 #include <map>
 #include <tuple>
-#include <unordered_map>
 #include <vector>
 
 #include "globals/assert.h"
@@ -67,21 +66,35 @@ struct LookaheadIndexMapImpl<FT_Info_Static> {
 template <typename Key>
 using LookaheadIndexMap = typename LookaheadIndexMapImpl<Key>::type;
 
-/* Helper template to remove a position from any index */
+/* Wrapper template for lookahead index with STL-like interface */
 template <typename Key>
-void remove_from_index(LookaheadIndexMap<Key>& index, const Key& key, uint64_t buf_pos) {
-  auto it = index.find(key);
-  if (it != index.end()) {
-    auto& pos_deque = it->second;
-    auto it_pos = std::find(pos_deque.begin(), pos_deque.end(), buf_pos);
-    if (it_pos != pos_deque.end()) {
-      pos_deque.erase(it_pos);
-    }
-    if (pos_deque.empty()) {
-      index.erase(it);
+class LookaheadIndex {
+ private:
+  LookaheadIndexMap<Key> data;
+
+ public:
+  /* Insert a buffer position for a key */
+  void insert(const Key& key, uint64_t buf_pos) { data[key].push_back(buf_pos); }
+
+  /* Erase a buffer position for a key */
+  void erase(const Key& key, uint64_t buf_pos) {
+    auto it = data.find(key);
+    if (it != data.end()) {
+      auto& pos_deque = it->second;
+      auto it_pos = std::find(pos_deque.begin(), pos_deque.end(), buf_pos);
+      if (it_pos != pos_deque.end()) {
+        pos_deque.erase(it_pos);
+      }
+      if (pos_deque.empty()) {
+        data.erase(it);
+      }
     }
   }
-}
+
+  auto find(const Key& key) { return data.find(key); }
+  auto end() { return data.end(); }
+  auto begin() { return data.begin(); }
+};
 
 /* ============================================================================
  * LookaheadBuffer Class Definition
@@ -91,11 +104,11 @@ class LookaheadBuffer {
   /* the lookahead buffer, contains FT pointers */
   std::vector<FT*> lookahead_buffer;
   /* the mapping from FT info to buffer position, support searching buffer position by FT info */
-  LookaheadIndexMap<FT_Info_Static> ft_info_to_buf_pos_index;
+  LookaheadIndex<FT_Info_Static> ft_info_to_buf_pos;
   /* the mapping from PC to buffer positions, support searching buffer positions by PC  */
-  LookaheadIndexMap<Addr> pc_to_buf_pos_index;
+  LookaheadIndex<Addr> pc_to_buf_pos;
   /* the mapping from line address to buffer positions, support searching buffer positions by line address */
-  LookaheadIndexMap<Addr> line_addr_to_buf_pos_index;
+  LookaheadIndex<Addr> line_addr_to_buf_pos;
 
   Flag have_seen_exit;
 
@@ -126,7 +139,7 @@ class LookaheadBuffer {
   /* Refills lookahead buffer to the parameter size */
   void refill(uns proc_id);
 
-  /* Returns FT_Info for the FT at read pointer */
+  /* Returns the start address for the FT at read pointer */
   FT_Info peek();
 
   /* Returns whether lookahead buffer can currently provide an op */
@@ -147,11 +160,11 @@ class LookaheadBuffer {
   /* Returns list of FTs containing the given line address */
   std::deque<FT*> find_fts_enclosing_line_addr(Addr line_addr);
 
-  /* returns oldest FT of given FT info */
+  /* returns oldest insertion order of given FT info */
   FT* find_oldest_FT_by_ft_info(FT_Info_Static static_info);
 
   /* Searches for FT static info by buffer position; used in scanning */
-  FT* get_FT_at_buf_pos(uint64_t ptr_pos);
+  FT* get_FT(uint64_t ptr_pos);
 
   /* Returns current read pointer position included in FTQ */
   uint64_t get_rdptr();
@@ -167,38 +180,33 @@ class LookaheadBuffer {
 void LookaheadBuffer::update_search_indexes_on_insert() {
   FT_Info_Static inserting_FT_info = lookahead_buffer[wrptr_lb]->get_ft_info().static_info;
 
-  /* Insert/update buffer position lookup (now O(1) with unordered_map) */
-  ft_info_to_buf_pos_index[inserting_FT_info].push_back(wrptr_lb);
+  ft_info_to_buf_pos.insert(inserting_FT_info, wrptr_lb);
 
   FT* ft_ptr = lookahead_buffer[wrptr_lb];
-  for (Addr pc : ft_ptr->get_unique_pc_list()) {
-    pc_to_buf_pos_index[pc].push_back(wrptr_lb);
+  for (Addr pc : ft_ptr->get_pcs()) {
+    pc_to_buf_pos.insert(pc, wrptr_lb);
   }
 
-  // Insert into line_addr_to_fts_index using only ft_info.Static_info.start
   Addr line_addr = ft_ptr->get_ft_info().static_info.start & CLINE;
-  line_addr_to_buf_pos_index[line_addr].push_back(wrptr_lb);
+  line_addr_to_buf_pos.insert(line_addr, wrptr_lb);
 }
 
 /* updates all lookup map/vectors when removing FTs */
 void LookaheadBuffer::update_search_indexes_on_remove() {
   FT* ft = lookahead_buffer[rdptr_lb];
   if (!ft)
-    return;  // Safety check for null entries
+    return;
 
   FT_Info_Static removing_FT_info = ft->get_ft_info().static_info;
 
-  /* Remove from ft_info_to_buf_pos_index */
-  remove_from_index(ft_info_to_buf_pos_index, removing_FT_info, rdptr_lb);
+  ft_info_to_buf_pos.erase(removing_FT_info, rdptr_lb);
 
-  /* Remove from pc_to_buf_pos_index for all PCs */
-  for (Addr pc : ft->get_unique_pc_list()) {
-    remove_from_index(pc_to_buf_pos_index, pc, rdptr_lb);
+  for (Addr pc : ft->get_pcs()) {
+    pc_to_buf_pos.erase(pc, rdptr_lb);
   }
 
-  /* Remove from line_addr_to_buf_pos_index */
   Addr line_addr = removing_FT_info.start & CLINE;
-  remove_from_index(line_addr_to_buf_pos_index, line_addr, rdptr_lb);
+  line_addr_to_buf_pos.erase(line_addr, rdptr_lb);
 }
 
 uint64_t LookaheadBuffer::count_valid_fts() {
@@ -266,7 +274,7 @@ FT* LookaheadBuffer::pop_ft(uns proc_id) {
   return current_read_FT;
 }
 
-/* Returns FT_Info for the FT at read pointer */
+/* Returns the start address for the FT at read pointer */
 FT_Info LookaheadBuffer::peek() {
   ASSERT(0, lookahead_buffer[rdptr_lb] != nullptr);
   return lookahead_buffer[(rdptr_lb) % LOOKAHEAD_BUF_SIZE]->get_ft_info();
@@ -286,9 +294,9 @@ Flag LookaheadBuffer::can_fetch_op(uns proc_id) {
 std::vector<FT*> LookaheadBuffer::find_fts_by_ft_info(const FT_Info_Static& target_info) {
   std::vector<FT*> result;
 
-  auto it = ft_info_to_buf_pos_index.find(target_info);
+  auto it = ft_info_to_buf_pos.find(target_info);
 
-  if (it != ft_info_to_buf_pos_index.end()) {
+  if (it != ft_info_to_buf_pos.end()) {
     for (uint64_t pos : it->second) {
       if (pos < lookahead_buffer.size() && lookahead_buffer[pos] != nullptr) {  // Check for freed entries
         result.push_back(lookahead_buffer[pos]);
@@ -306,14 +314,13 @@ std::vector<FT*> LookaheadBuffer::find_fts_by_ft_info(const FT_Info_Static& targ
 std::map<FT_Info_Static, std::vector<FT*>> LookaheadBuffer::find_fts_by_start_addr(uint64_t FT_start_addr) {
   std::map<FT_Info_Static, std::vector<FT*>> result;
 
-  for (const auto& [static_info, pos_deque] : ft_info_to_buf_pos_index) {
+  for (const auto& [static_info, pos_deque] : ft_info_to_buf_pos) {
     if (static_info.start != FT_start_addr)
       continue;
 
-    auto& vec = result[static_info];
     for (uint64_t pos : pos_deque) {
       if (pos < lookahead_buffer.size() && lookahead_buffer[pos]) {
-        vec.push_back(lookahead_buffer[pos]);
+        result[static_info].push_back(lookahead_buffer[pos]);
       }
     }
   }
@@ -325,8 +332,8 @@ std::map<FT_Info_Static, std::vector<FT*>> LookaheadBuffer::find_fts_by_start_ad
 std::deque<FT*> LookaheadBuffer::find_fts_enclosing_pc(Addr PC) {
   std::deque<FT*> result;
   // Look up the PC in the map
-  auto it = pc_to_buf_pos_index.find(PC);
-  if (it != pc_to_buf_pos_index.end()) {
+  auto it = pc_to_buf_pos.find(PC);
+  if (it != pc_to_buf_pos.end()) {
     for (uint64_t pos : it->second) {
       if (pos < lookahead_buffer.size() && lookahead_buffer[pos] != nullptr) {
         result.push_back(lookahead_buffer[pos]);
@@ -341,8 +348,8 @@ std::deque<FT*> LookaheadBuffer::find_fts_enclosing_pc(Addr PC) {
 std::deque<FT*> LookaheadBuffer::find_fts_enclosing_line_addr(Addr line_addr) {
   std::deque<FT*> result;
   // Look up the line address in the map
-  auto it = line_addr_to_buf_pos_index.find(line_addr);
-  if (it != line_addr_to_buf_pos_index.end()) {
+  auto it = line_addr_to_buf_pos.find(line_addr);
+  if (it != line_addr_to_buf_pos.end()) {
     for (uint64_t pos : it->second) {
       if (pos < lookahead_buffer.size() && lookahead_buffer[pos] != nullptr) {
         result.push_back(lookahead_buffer[pos]);
@@ -353,24 +360,25 @@ std::deque<FT*> LookaheadBuffer::find_fts_enclosing_line_addr(Addr line_addr) {
   return result;
 }
 
-/* returns oldest FT of given FT info; uses O(1) unordered_map lookup */
+/* returns oldest FT_id of given FT info
+   Now uses O(1) unordered_map lookup */
 FT* LookaheadBuffer::find_oldest_FT_by_ft_info(FT_Info_Static static_info) {
-  auto it = ft_info_to_buf_pos_index.find(static_info);
-  if (it != ft_info_to_buf_pos_index.end() && !it->second.empty()) {
+  auto it = ft_info_to_buf_pos.find(static_info);
+  if (it != ft_info_to_buf_pos.end() && !it->second.empty()) {
     // Verify the FT is actually in the buffer
-    auto it_pos = ft_info_to_buf_pos_index.find(static_info);
+    auto it_pos = ft_info_to_buf_pos.find(static_info);
 
-    if (it_pos != ft_info_to_buf_pos_index.end() && !it_pos->second.empty()) {
+    if (it_pos != ft_info_to_buf_pos.end() && !it_pos->second.empty()) {
       uint64_t buf_pos = it_pos->second.front(); /* deque provides efficient front() access */
       if (buf_pos < lookahead_buffer.size() && lookahead_buffer[buf_pos] != nullptr)
-        return lookahead_buffer[buf_pos];
+        return lookahead_buffer[buf_pos]; /* deque provides efficient front() access */
     }
   }
   return nullptr;
 }
 
 /* return FT static info of given buffer position; used in scanning */
-FT* LookaheadBuffer::get_FT_at_buf_pos(uint64_t ptr_pos) {
+FT* LookaheadBuffer::get_FT(uint64_t ptr_pos) {
   // Ensure ptr_pos is within bounds before accessing lookahead_buffer
   if (ptr_pos >= lookahead_buffer.size())
     return nullptr;
@@ -408,12 +416,12 @@ FT* lookahead_buffer_pop_ft(uns proc_id) {
   return g_lookahead_buffer.pop_ft(proc_id);
 }
 
-/* Returns FT_Info for the FT at read pointer */
+/* Returns the FT to be read next */
 FT_Info lookahead_buffer_peek() {
   return g_lookahead_buffer.peek();
 }
 
-/* Returns whether lookahead buffer can currently provide an op */
+/* Returns whether lookahead buffer can currently provide FT */
 Flag lookahead_buffer_can_fetch_op(uns proc_id) {
   return g_lookahead_buffer.can_fetch_op(proc_id);
 }
@@ -457,8 +465,8 @@ FT* lookahead_buffer_find_oldest_FT_by_FT_info(FT_Info_Static static_info) {
 }
 
 /* Searches for FT static info by buffer position; used in scanning */
-FT* lookahead_buffer_get_FT_at_buf_pos(uint64_t ptr_pos) {
-  return g_lookahead_buffer.get_FT_at_buf_pos(ptr_pos);
+FT* lookahead_buffer_get_FT(uint64_t ptr_pos) {
+  return g_lookahead_buffer.get_FT(ptr_pos);
 }
 
 /* Returns current read pointer position included in FTQ */

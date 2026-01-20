@@ -740,6 +740,19 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       break;
   }
   // }}}
+  if (USE_LATE_BP) {
+    Addr late_pred_npc = op->oracle_info.pred_npc;
+    if (op->oracle_info.late_pred != op->oracle_info.pred) {
+      if (op->oracle_info.late_pred == NOT_TAKEN) {
+        late_pred_npc = pc_plus_offset;
+      } else if (btb_target) {
+        late_pred_npc = *btb_target;
+      } else {
+        late_pred_npc = pc_plus_offset;
+      }
+    }
+    op->oracle_info.late_pred_npc = late_pred_npc;
+  }
 
   pred_target = convert_to_cmp_addr(op->proc_id, pred_target);
   if (op->oracle_info.btb_miss && op->oracle_info.pred == NOT_TAKEN)

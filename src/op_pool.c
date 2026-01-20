@@ -236,6 +236,10 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   op->oracle_info.recovery_sch = FALSE;
   op->oracle_info.recover_at_decode = FALSE;
   op->oracle_info.recover_at_exec = FALSE;
+  op->oracle_info.late_pred = NOT_TAKEN;
+  op->oracle_info.late_pred_npc = 0;
+  op->oracle_info.late_misfetch = FALSE;
+  op->oracle_info.late_mispred = FALSE;
 
   op->oracle_cp_num = -1;
   op->engine_info.dcmiss = FALSE;

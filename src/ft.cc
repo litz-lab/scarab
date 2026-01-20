@@ -271,6 +271,9 @@ FT_Event FT::predict_one_cf_op(Op* op) {
     if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
       ASSERT(0, !(op->oracle_info.recover_at_decode && op->oracle_info.recover_at_exec));
 
+      if (USE_LATE_BP && !op->off_path && !op->oracle_info.late_mispred && !op->oracle_info.late_misfetch) {
+        return FT_EVENT_LATE_PREDICT;
+      }
       if (op->off_path) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = FALSE;
@@ -302,8 +305,9 @@ FT_PredictResult FT::predict_ft() {
     Op* op = ops[idx];
     FT_Event event = predict_one_cf_op(op);
     if (event != FT_EVENT_NONE) {
-      uint64_t return_idx = (event == FT_EVENT_MISPREDICT) ? (idx) : 0;
-      Addr pred_addr = op->oracle_info.pred_npc;
+      uint64_t return_idx = (event == FT_EVENT_MISPREDICT || event == FT_EVENT_LATE_PREDICT) ? (idx) : 0;
+      Addr pred_addr =
+          event == FT_EVENT_LATE_PREDICT ? op->oracle_info.late_pred_npc : op->oracle_info.pred_npc;
       if (!ended_by_exit())
         return {return_idx, event, op, pred_addr};
     }

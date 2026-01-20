@@ -392,7 +392,7 @@ void Decoupled_FE::update() {
 
         if (result.event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
           stall(result.op);
-        } else if (result.event == FT_EVENT_MISPREDICT) {
+        } else if (result.event == FT_EVENT_MISPREDICT || result.event == FT_EVENT_LATE_PREDICT) {
           redirect_to_off_path(result);
         }
 
@@ -423,7 +423,7 @@ void Decoupled_FE::update() {
         }
         if (result.event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
           stall(result.op);
-        } else if (result.event == FT_EVENT_MISPREDICT) {
+        } else if (result.event == FT_EVENT_MISPREDICT || result.event == FT_EVENT_LATE_PREDICT) {
           redirect_to_off_path(result);
         }
 

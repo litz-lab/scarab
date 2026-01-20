@@ -263,6 +263,7 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
   USE_LATE_BP = (LATE_BP_MECH != NUM_BP);
 
   if (USE_LATE_BP) {
+    ASSERT(proc_id, LATE_BP_LATENCY < (DECODE_CYCLES + 1));
     bp_data->late_bp = &bp_table[LATE_BP_MECH];
     bp_data->late_bp->init_func();
   } else {

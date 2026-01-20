@@ -199,6 +199,9 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_re
   dfe_recovery_policy = _dfe_recovery_policy;
   cur_op = nullptr;
   current_ft_to_push = nullptr;
+  late_bp_ft = nullptr;
+  late_bp_sched_op = nullptr;
+  late_bp_iter_idx = -1;
 
   if (CONFIDENCE_ENABLE) {
     if (bp_id)
@@ -227,12 +230,37 @@ void Decoupled_FE::dfe_recover_op() {
   cur_op = nullptr;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
 
-  for (auto it = ftq.begin(); it != ftq.end(); it++) {
-    delete (*it);
+  if (bp_recovery_info->late_bp_recovery && late_bp_ft && late_bp_iter_idx >= 0 &&
+      late_bp_iter_idx < static_cast<int>(ftq_iterators.size())) {
+    decoupled_fe_iter* iter = ftq_iterators[late_bp_iter_idx].get();
+    if (iter->ft_pos < ftq.size() && ftq.at(iter->ft_pos) == late_bp_ft) {
+      ASSERT(proc_id, saved_recovery_ft);
+      if (late_bp_ft != saved_recovery_ft) {
+        delete late_bp_ft;
+        ftq.at(iter->ft_pos) = saved_recovery_ft;
+      }
+      saved_recovery_ft->op_pos = 0;
+      saved_recovery_ft->generate_ft_info();
+      for (size_t ii = iter->ft_pos + 1; ii < ftq.size(); ++ii) {
+        delete ftq.at(ii);
+      }
+      ftq.erase(ftq.begin() + iter->ft_pos + 1, ftq.end());
+      late_bp_ft = nullptr;
+      late_bp_sched_op = nullptr;
+      late_bp_iter_idx = -1;
+    } else {
+      late_bp_ft = nullptr;
+      late_bp_sched_op = nullptr;
+      late_bp_iter_idx = -1;
+    }
+  } else {
+    for (auto it = ftq.begin(); it != ftq.end(); it++) {
+      delete (*it);
+    }
+    ftq.clear();
   }
-  ftq.clear();
 
-  DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx\n", bp_id, bp_recovery_info->recovery_fetch_addr);
+  DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx late_bp recovery:%i\n", bp_id, bp_recovery_info->recovery_fetch_addr, bp_recovery_info->late_bp_recovery);
 
   for (auto&& it : ftq_iterators) {
     // When the FTQ flushes, reset all iterators
@@ -392,8 +420,10 @@ void Decoupled_FE::update() {
 
         if (result.event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
           stall(result.op);
-        } else if (result.event == FT_EVENT_MISPREDICT || result.event == FT_EVENT_LATE_PREDICT) {
+        } else if (result.event == FT_EVENT_MISPREDICT) {
           redirect_to_off_path(result);
+        } else if (result.event == FT_EVENT_LATE_PREDICT) {
+          redirect_to_late_bp_off_path(result);
         }
 
         break;
@@ -421,10 +451,13 @@ void Decoupled_FE::update() {
           next_state = INACTIVE;
           return;
         }
+
         if (result.event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
           stall(result.op);
-        } else if (result.event == FT_EVENT_MISPREDICT || result.event == FT_EVENT_LATE_PREDICT) {
+        } else if (result.event == FT_EVENT_MISPREDICT) {
           redirect_to_off_path(result);
+        } else if (result.event == FT_EVENT_LATE_PREDICT) {
+          redirect_to_late_bp_off_path(result);
         }
 
         break;
@@ -501,11 +534,31 @@ uns Decoupled_FE::new_ftq_iter() {
   ftq_iterators.back().get()->ft_pos = 0;
   ftq_iterators.back().get()->op_pos = 0;
   ftq_iterators.back().get()->flattened_op_pos = 0;
+  ftq_iterators.back().get()->pinned = false;
   return ftq_iterators.size() - 1;
+}
+
+uns Decoupled_FE::new_pinned_ftq_iter() {
+  ftq_iterators.push_back(std::make_unique<decoupled_fe_iter>());
+  ftq_iterators.back().get()->ft_pos = 0;
+  ftq_iterators.back().get()->op_pos = 0;
+  ftq_iterators.back().get()->flattened_op_pos = 0;
+  ftq_iterators.back().get()->pinned = true;
+  return ftq_iterators.size() - 1;
+}
+
+void Decoupled_FE::set_pinned_iter_ft_pos(uns iter_idx, uint64_t ft_pos) {
+  ASSERT(proc_id, iter_idx < ftq_iterators.size());
+  decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
+  ASSERT(proc_id, iter->pinned);
+  iter->ft_pos = ft_pos;
+  iter->op_pos = 0;
+  iter->flattened_op_pos = 0;
 }
 
 Op* Decoupled_FE::ftq_iter_get(uns iter_idx, bool* end_of_ft) {
   decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
+  ASSERT(proc_id, !iter->pinned);
   // if FTQ is empty or if iter has seen all FTs
   if (ftq.empty() || iter->ft_pos == ftq.size()) {
     if (ftq.empty())
@@ -523,6 +576,7 @@ Op* Decoupled_FE::ftq_iter_get(uns iter_idx, bool* end_of_ft) {
 
 Op* Decoupled_FE::ftq_iter_get_next(uns iter_idx, bool* end_of_ft) {
   decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
+  ASSERT(proc_id, !iter->pinned);
   if (iter->ft_pos + 1 == ftq.size() && iter->op_pos + 1 == ftq.at(iter->ft_pos)->ops.size()) {
     // if iter is at the last op and the last FT
     iter->ft_pos += 1;
@@ -625,11 +679,16 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
     recovery_addr = 0;
   }
   ftq.emplace_back(std::move(current_ft_to_push));
+  if (late_bp_ft && late_bp_ft == ftq.back()) {
+    ASSERT(proc_id, late_bp_iter_idx < 0);
+    late_bp_iter_idx = new_pinned_ftq_iter();
+    set_pinned_iter_ft_pos(late_bp_iter_idx, ftq.size() - 1);
+  }
 }
 
 void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling
-  ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT);
+  ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT || result.event == FT_EVENT_LATE_PREDICT);
   // Misprediction: Switch to off-path execution
   auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
   current_ft_to_push = off_path_FT;
@@ -692,4 +751,13 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
     exit_on_off_path = true;
   }
   ASSERT(proc_id, current_ft_to_push->get_end_reason() != FT_NOT_ENDED);
+}
+
+void Decoupled_FE::redirect_to_late_bp_off_path(FT_PredictResult result) {
+  ASSERT(proc_id, result.event == FT_EVENT_LATE_PREDICT);
+  redirect_to_off_path(result);
+  late_bp_sched_op = result.op;
+  late_bp_ft = current_ft_to_push;
+  ASSERT(proc_id, late_bp_sched_op);
+  bp_sched_recovery(bp_recovery_info, late_bp_sched_op, cycle_count, /*late_bp_recovery=*/TRUE, /*force_offpath=*/FALSE);
 }

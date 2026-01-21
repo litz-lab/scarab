@@ -163,6 +163,8 @@ class Decoupled_FE {
       : off_path(0),
         conf_off_path(0),
         sched_off_path(0),
+        stalled(false),
+        exit_on_off_path(false),
         op_num(1),
         current_off_path_op_num(0),
         recovery_addr(0),

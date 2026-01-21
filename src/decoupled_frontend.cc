@@ -360,6 +360,7 @@ void Decoupled_FE::update() {
       break;
     }
     if (stalled) {
+      ASSERT(proc_id, FRONTEND == FE_PIN_EXEC_DRIVEN);
       DEBUG(proc_id, "Break due to wait for fetch barrier resolved\n");
       STAT_EVENT(proc_id, FTQ_BREAK_BAR_FETCH_ONPATH + is_off_path_state());
       break;

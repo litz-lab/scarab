@@ -28,9 +28,6 @@ jobs:
     uses: ./.github/workflows/scarab-sim.yml
     with:
       sci_id: top_simpoint_dbg
-      patch_descriptor: true
-      descriptor_path: json/top_simpoint_dbg.json
-      scarab_build: dbg
       collect_metrics: true
 
   build-and-run-scarab-opt:

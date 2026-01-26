@@ -7,21 +7,6 @@ on:
         description: sci descriptor id to build and simulate
         required: true
         type: string
-      patch_descriptor:
-        description: Whether to patch the descriptor json for the workflow
-        required: false
-        default: false
-        type: boolean
-      descriptor_path:
-        description: Path to descriptor json (relative to infra)
-        required: false
-        default: ""
-        type: string
-      scarab_build:
-        description: Scarab build type written into the descriptor
-        required: false
-        default: ""
-        type: string
       collect_metrics:
         description: Whether to parse IPC/KIPS outputs
         required: false
@@ -85,39 +70,6 @@ jobs:
           PY
           cat env_path.txt >> "$GITHUB_ENV"
           rm env_path.txt
-
-      - name: Patch descriptor for workflow
-        if: inputs.patch_descriptor
-        working-directory: infra
-        env:
-          PYTHON_BIN: ${{ env.SCARABINFRA_ENV }}/bin/python
-          DESC_PATH: ${{ inputs.descriptor_path }}
-          SCARAB_BUILD: ${{ inputs.scarab_build }}
-        run: |
-          if [ -z "$PYTHON_BIN" ]; then
-            echo "scarabinfra conda environment not detected"
-            exit 1
-          fi
-          if [ -z "$DESC_PATH" ] || [ -z "$SCARAB_BUILD" ]; then
-            echo "descriptor_path and scarab_build must be set when patch_descriptor is true"
-            exit 1
-          fi
-          "$PYTHON_BIN" - <<'PY2'
-          import json
-          import os
-          import pathlib
-
-          ws = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-          desc_path = pathlib.Path(os.environ["DESC_PATH"])
-          with desc_path.open("r", encoding="utf-8") as handle:
-              data = json.load(handle)
-          data["root_dir"] = f"{ws}/"
-          data["scarab_path"] = f"{ws}/"
-          data["traces_dir"] = str(ws / "traces_top_simpoint")
-          data["scarab_build"] = os.environ["SCARAB_BUILD"]
-          with desc_path.open("w", encoding="utf-8") as handle:
-              json.dump(data, handle, indent=2)
-          PY2
 
       - name: Download traces
         env:

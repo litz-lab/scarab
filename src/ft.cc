@@ -443,15 +443,12 @@ void ft_free_op(Op* op) {
     delete op->parent_FT;
 }
 
+/* use set to avoid duplicates and keep PC order */
 std::set<Addr> FT::get_pcs() {
   std::set<Addr> pc_set;
   for (auto op : ops) {
     if (op && op->inst_info) {
-      Addr pc = op->inst_info->addr;
-      // Only add if not already in the list (preserves order, removes duplicates)
-      if (std::find(pc_set.begin(), pc_set.end(), pc) == pc_set.end()) {
-        pc_set.insert(pc);
-      }
+      pc_set.insert(op->inst_info->addr);
     }
   }
   return pc_set;

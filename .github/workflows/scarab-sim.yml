@@ -148,9 +148,12 @@ jobs:
           fi
           completed=$(printf '%s\n' "$status_line" | awk -F'|' '{gsub(/^[[:space:]]+|[[:space:]]+$/,"",$2); print $2}')
           if [ "$completed" != "1" ]; then
-            if [ "${{ inputs.allow_failed_report_ignored }}" = "true" ] && \
-               printf '%s\n' "$status_output" | grep -q "Failed report ignored"; then
-              echo "Status contains 'Failed report ignored'; continuing."
+            if [ "${{ inputs.allow_failed_report_ignored }}" = "true" ]; then
+              if printf '%s\n' "$status_output" | grep -q "Failed report ignored"; then
+                echo "Status contains 'Failed report ignored'; continuing."
+              else
+                echo "Status verification skipped due to allow_failed_report_ignored=true."
+              fi
             else
               echo "Expected 1 completed simulation for this_pr, got '$completed'"
               exit 1

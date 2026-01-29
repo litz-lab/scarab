@@ -928,8 +928,6 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       ASSERT(ic->proc_id,
              (op->oracle_info.mispred << 2 | op->oracle_info.misfetch << 1 | op->oracle_info.btb_miss) <= 0x7);
 
-      inc_bstat_fetched(op);
-
       ic->off_path = ic->off_path || op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec;
 
       // Measuring basic block lengths

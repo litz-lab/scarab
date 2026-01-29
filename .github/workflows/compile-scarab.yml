@@ -64,7 +64,7 @@ jobs:
     # Job: comment on PR with metrics
     ########################################################
     if: github.event_name == 'pull_request'
-    needs: [build-and-run-scarab-opt]
+    needs: [build-and-run-scarab-opt, build-and-run-scarab-dbg, compare-ipc]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

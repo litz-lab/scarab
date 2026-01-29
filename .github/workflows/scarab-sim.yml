@@ -160,12 +160,40 @@ jobs:
             fi
           fi
 
+      - id: simdir
+        if: inputs.collect_metrics
+        name: Resolve simulation directory
+        working-directory: simulations
+        run: |
+          sci_id="${{ inputs.sci_id }}"
+          base="${sci_id%_dbg}"
+          candidates=(
+            "github_${sci_id}_workflow"
+            "github_${sci_id}_workflow_dbg"
+          )
+          if [ "$base" != "$sci_id" ]; then
+            candidates+=("github_${base}_workflow_dbg" "github_${base}_workflow")
+          fi
+          for d in "${candidates[@]}"; do
+            if [ -d "$d" ]; then
+              echo "path=$d" >>"$GITHUB_OUTPUT"
+              echo "Resolved simulation dir: $d"
+              exit 0
+            fi
+          done
+          echo "No simulation directory found. Tried: ${candidates[*]}"
+          exit 1
+
       - id: kips
         if: inputs.collect_metrics
         name: Grab KIPS
         working-directory: simulations
         run: |
-          sim_dir="github_${{ inputs.sci_id }}_workflow"
+          sim_dir="${{ steps.simdir.outputs.path }}"
+          if [ -z "$sim_dir" ]; then
+            echo "Simulation directory was not resolved"
+            exit 1
+          fi
           v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' \
               "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/sim.log" | head -n1)
           if ! [[ "$v" =~ ^[0-9]+$ ]]; then
@@ -181,7 +209,11 @@ jobs:
         name: Grab IPC
         working-directory: simulations
         run: |
-          sim_dir="github_${{ inputs.sci_id }}_workflow"
+          sim_dir="${{ steps.simdir.outputs.path }}"
+          if [ -z "$sim_dir" ]; then
+            echo "Simulation directory was not resolved"
+            exit 1
+          fi
           v=$(grep "Cumulative:" \
                "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out" | \
                sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')

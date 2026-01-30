@@ -87,7 +87,6 @@ Flag USE_LATE_BP = FALSE;
 extern List op_buf;
 extern uns operating_mode;
 
-Hash_Table per_branch_stat;
 
 /******************************************************************************/
 // Local prototypes
@@ -120,8 +119,6 @@ void init_bp_recovery_info(uns8 proc_id, Bp_Recovery_Info* new_bp_recovery_info)
 
   bp_recovery_info = new_bp_recovery_info;
 
-  init_hash_table(&per_branch_stat, "Per Branch Hit/Miss and Recovery/Redirect Stall cycles", 15000000,
-                  sizeof(Per_Branch_Stat));
 }
 
 /******************************************************************************/
@@ -146,7 +143,6 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
     const uns latency = late_bp_recovery ? LATE_BP_LATENCY : 1;
     DEBUG(bp_recovery_info->proc_id, "Recovery signaled for op_num:%s @ 0x%s  next_fetch:0x%s offpath:%d\n",
           unsstr64(op->op_num), hexstr64s(op->inst_info->addr), hexstr64s(next_fetch_addr), op->off_path);
-    inc_bstat_miss(op);
     ASSERT(op->proc_id, !op->oracle_info.recovery_sch);
     op->oracle_info.recovery_sch = TRUE;
     bp_recovery_info->recovery_cycle = cycle + latency;
@@ -179,45 +175,6 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
   }
 }
 
-void inc_bstat_fetched(Op* op) {
-  Flag new_entry;
-  int64 key = convert_to_cmp_addr(op->table_info->cf_type, op->inst_info->addr);
-  Per_Branch_Stat* bstat = (Per_Branch_Stat*)hash_table_access_create(&per_branch_stat, key, &new_entry);
-  if (new_entry) {
-    memset(bstat, 0, sizeof(*bstat));
-    bstat->addr = op->inst_info->addr;
-    bstat->cf_type = op->table_info->cf_type;
-  }
-
-  // target if taken
-  if (op->oracle_info.pred == TAKEN && !(op->oracle_info.recover_at_exec || op->oracle_info.recover_at_decode))
-    bstat->target = op->oracle_info.npc;
-}
-
-void inc_bstat_miss(Op* op) {
-  int64 key = convert_to_cmp_addr(op->table_info->cf_type, op->inst_info->addr);
-  Per_Branch_Stat* bstat = (Per_Branch_Stat*)hash_table_access(&per_branch_stat, key);
-  ASSERT(bp_recovery_info->proc_id, bstat);
-
-  const uns8 mispred =
-      (op->table_info->cf_type == CF_CBR || op->table_info->cf_type == CF_REP) && !op->oracle_info.btb_miss;
-  const uns8 misfetch = op->oracle_info.misfetch;
-  const uns8 btb_miss = op->oracle_info.btb_miss;
-
-  ASSERT(bp_recovery_info->proc_id, op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec);
-
-  if (op->off_path)
-    return;  // TODO(peterbraun): add off-path branch stats
-
-  if (!(mispred | misfetch | btb_miss)) {
-    // FIXME: Add stats for recovering syscalls
-    // ASSERT(bp_recovery_info->proc_id, IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH);
-    return;
-  }
-
-  if (op->fetched_from_uop_cache && op->oracle_info.recover_at_decode)
-    STAT_EVENT(bp_recovery_info->proc_id, RECOVER_AT_DECODE_BR_FROM_UOC);
-}
 
 /******************************************************************************/
 /* bp_sched_redirect: called on an op that caused the fetch stage to suspend
@@ -228,7 +185,6 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
     DEBUG(bp_recovery_info->proc_id, "Redirect signaled for op_num:%s @ 0x%s\n", unsstr64(op->op_num),
           hexstr64s(op->inst_info->addr));
 
-    inc_bstat_miss(op);  // shouldn't double count if both btb miss and predictor wrong.
     bp_recovery_info->redirect_cycle = cycle + 1 + (op->table_info->cf_type == CF_SYS ? EXTRA_CALLSYS_CYCLES : 0);
     bp_recovery_info->redirect_op = op;
     bp_recovery_info->redirect_op_num = op->op_num;

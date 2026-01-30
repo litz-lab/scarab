@@ -81,13 +81,6 @@ typedef struct Wake_Up_Entry_struct {
   struct Wake_Up_Entry_struct* next;
 } Wake_Up_Entry;
 
-// per branch stats
-typedef struct Per_Branch_Stat_struct {
-  Addr addr;
-  Cf_Type cf_type;
-  Addr target;
-} Per_Branch_Stat;
-
 // this information is used when the op mispredicts
 typedef struct Recovery_Info_struct {  // QUESTION no proc_id?
   uns proc_id;

@@ -23,236 +23,48 @@ env:
 # Jobs
 ############################################################
 jobs:
-  build-scarab-dbg:
-    ########################################################
-    # Job: build scarab dbg
-    ########################################################
-    runs-on: ubuntu-latest
+  build-and-run-scarab-dbg:
     if: github.event_name == 'pull_request'
-    steps:
-      - name: Checkout Scarab
-        uses: actions/checkout@v4
-
-      - name: Checkout scarab-infra
-        uses: actions/checkout@v4
-        with:
-          repository: litz-lab/scarab-infra
-          path: infra
-          ref: refs/heads/main
-          fetch-depth: 0
-
-      - name: Allow Git in container
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git config --global --add safe.directory "$GITHUB_WORKSPACE/infra"
-
-      - name: Initialize environment
-        working-directory: infra
-        env:
-          trace_home: ${{ github.workspace }}
-        run: ./sci --init
-
-      - name: Locate scarabinfra conda env
-        id: conda-env
-        working-directory: infra
-        run: |
-          python3 - <<'PY' > env_path.txt
-          import pathlib
-          from importlib.machinery import SourceFileLoader
-          import importlib.util
-
-          script_path = pathlib.Path("sci").resolve()
-          if not script_path.exists():
-              raise FileNotFoundError(f"Unable to locate {script_path}")
-          loader = SourceFileLoader("scarab_sci", str(script_path))
-          spec = importlib.util.spec_from_loader("scarab_sci", loader)
-          module = importlib.util.module_from_spec(spec)
-          loader.exec_module(module)
-          env_path, _ = module.resolve_conda_env_path()
-          print(f"SCARABINFRA_ENV={env_path}")
-          PY
-          cat env_path.txt >> "$GITHUB_ENV"
-          rm env_path.txt
-
-      - name: Patch descriptor for workflow
-        working-directory: infra
-        env:
-          PYTHON_BIN: ${{ env.SCARABINFRA_ENV }}/bin/python
-        run: |
-          if [ -z "$PYTHON_BIN" ]; then
-            echo "scarabinfra conda environment not detected"
-            exit 1
-          fi
-          "$PYTHON_BIN" - <<'PY2'
-          import json
-          import os
-          import pathlib
-
-          # On host runners this resolves to /home/runner/work/<repo>/<repo>
-          ws = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-          desc_path = pathlib.Path("json/top_simpoint.json")
-          with desc_path.open("r", encoding="utf-8") as handle:
-              data = json.load(handle)
-          data["root_dir"] = f"{ws}/"
-          data["scarab_path"] = f"{ws}/"
-          data["traces_dir"] = str(ws / "traces_top_simpoint")
-          data["scarab_build"] = "dbg"
-          with desc_path.open("w", encoding="utf-8") as handle:
-              json.dump(data, handle, indent=2)
-          PY2
-
-      - name: Build Scarab dbg
-        working-directory: infra
-        env:
-          trace_home: ${{ github.workspace }}
-        run: ./sci --build-scarab top_simpoint
+    uses: ./.github/workflows/scarab-sim.yml
+    with:
+      sci_id: top_simpoint_dbg
+      collect_metrics: true
+      allow_failed_report_ignored: true
 
   build-and-run-scarab-opt:
-    ###############################################################
-    # Job: build scarab opt and run simulation and collect metrics
-    ###############################################################
+    uses: ./.github/workflows/scarab-sim.yml
+    with:
+      sci_id: top_simpoint
+      collect_metrics: true
+
+  compare-ipc:
+    ########################################################
+    # Job: ensure opt and dbg IPC match
+    ########################################################
+    if: github.event_name == 'pull_request'
+    needs: [build-and-run-scarab-opt, build-and-run-scarab-dbg]
     runs-on: ubuntu-latest
-    outputs:
-      ipc: ${{ steps.ipc.outputs.value }}
-      kips: ${{ steps.kips.outputs.value }}
     steps:
-      - name: Checkout Scarab
-        uses: actions/checkout@v4
-
-      - name: Checkout scarab-infra
-        uses: actions/checkout@v4
-        with:
-          repository: litz-lab/scarab-infra
-          path: infra
-          ref: refs/heads/main
-          fetch-depth: 0
-
-      - name: Allow Git in container
+      - name: Compare IPC values
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git config --global --add safe.directory "$GITHUB_WORKSPACE/infra"
-
-      - name: Initialize environment
-        working-directory: infra
-        env:
-          trace_home: ${{ github.workspace }}
-        run: ./sci --init
-
-      - name: Locate scarabinfra conda env
-        id: conda-env
-        working-directory: infra
-        run: |
-          python3 - <<'PY' > env_path.txt
-          import pathlib
-          from importlib.machinery import SourceFileLoader
-          import importlib.util
-
-          script_path = pathlib.Path("sci").resolve()
-          if not script_path.exists():
-              raise FileNotFoundError(f"Unable to locate {script_path}")
-          loader = SourceFileLoader("scarab_sci", str(script_path))
-          spec = importlib.util.spec_from_loader("scarab_sci", loader)
-          module = importlib.util.module_from_spec(spec)
-          loader.exec_module(module)
-          env_path, _ = module.resolve_conda_env_path()
-          print(f"SCARABINFRA_ENV={env_path}")
-          PY
-          cat env_path.txt >> "$GITHUB_ENV"
-          rm env_path.txt
-
-      - name: Download traces
-        env:
-          PYTHON_BIN: ${{ env.SCARABINFRA_ENV }}/bin/python
-        run: |
-          if [ -z "$PYTHON_BIN" ]; then
-            echo "scarabinfra conda environment not detected"
+          opt_ipc="${{ needs.build-and-run-scarab-opt.outputs.ipc }}"
+          dbg_ipc="${{ needs.build-and-run-scarab-dbg.outputs.ipc }}"
+          if [ -z "$opt_ipc" ] || [ -z "$dbg_ipc" ]; then
+            echo "Missing IPC outputs: opt='$opt_ipc' dbg='$dbg_ipc'"
             exit 1
           fi
-          "$PYTHON_BIN" - <<'PY'
-          import os
-          import pathlib
-          import shutil
-          import tarfile
-          import urllib.request
-
-          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-          archive = workspace / "traces.tar.gz"
-          target_dir = workspace / "traces_top_simpoint"
-          url = "https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz"
-
-          def safe_extract(tar_obj: tarfile.TarFile, destination: pathlib.Path) -> None:
-              dest_root = destination.resolve()
-              for member in tar_obj.getmembers():
-                  member_path = (dest_root / member.name).resolve()
-                  if dest_root != member_path and dest_root not in member_path.parents:
-                      raise RuntimeError(f"Unsafe path in archive: {member.name}")
-              tar_obj.extractall(path=dest_root)
-
-          if target_dir.exists():
-              print(f"Reusing existing traces at {target_dir}")
-          else:
-              print(f"Downloading traces to {archive}")
-              with urllib.request.urlopen(url) as response:
-                  status = getattr(response, "status", 200)
-                  if status != 200:
-                      raise RuntimeError(f"Download failed with HTTP status {status}")
-                  with archive.open("wb") as dest:
-                      shutil.copyfileobj(response, dest)
-              with tarfile.open(archive, "r:gz") as tar_obj:
-                  safe_extract(tar_obj, workspace)
-              if archive.exists():
-                  archive.unlink()
-              print(f"Extracted traces to {target_dir}")
-
-          PY
-
-      - name: Build Scarab opt
-        working-directory: infra
-        env:
-          trace_home: ${{ github.workspace }}
-        run: ./sci --build-scarab top_simpoint
-
-      - name: Run scarab simulation
-        working-directory: infra
-        env:
-          trace_home: ${{ github.workspace }}
-        run: ./sci --sim top_simpoint
-
-      - id: kips
-        name: Grab KIPS
-        working-directory: simulations
-        run: |
-          v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' \
-              github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/sim.log | head -n1)
-          if ! [[ "$v" =~ ^[0-9]+$ ]]; then
-            echo "KIPS value is not a valid integer: '$v' Run failed!"
-            echo "Contents of sim.log for debugging:"
-            cat github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/sim.log
+          if [ "$opt_ipc" != "$dbg_ipc" ]; then
+            echo "IPC mismatch: opt=$opt_ipc dbg=$dbg_ipc"
             exit 1
           fi
-          echo "value=$v" >>"$GITHUB_OUTPUT"
-
-      - id: ipc
-        name: Grab IPC
-        working-directory: simulations
-        run: |
-          v=$(grep "Cumulative:" \
-               github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out | \
-               sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
-          if ! [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-            echo "IPC value is not a valid floating point number: '$v' Run failed!"
-            echo "Contents of core.stat.0.out for debugging:"
-            cat github_top_simpoint_workflow/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out
-            exit 1
-          fi
-          echo "value=$v" >>"$GITHUB_OUTPUT"
+          echo "IPC match: $opt_ipc"
 
   comment-pr:
     ########################################################
     # Job: comment on PR with metrics
     ########################################################
     if: github.event_name == 'pull_request'
-    needs: [build-and-run-scarab-opt]
+    needs: [build-and-run-scarab-opt, build-and-run-scarab-dbg, compare-ipc]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

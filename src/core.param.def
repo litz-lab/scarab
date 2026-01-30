@@ -383,3 +383,5 @@ DEF_PARAM(dfe1_recovery_policy, DFE1_RECOVERY_POLICY, uns, uns, 1, )
 DEF_PARAM(dfe2_recovery_policy, DFE2_RECOVERY_POLICY, uns, uns, 1, )
 DEF_PARAM(dfe3_recovery_policy, DFE3_RECOVERY_POLICY, uns, uns, 1, )
 DEF_PARAM(dfe4_recovery_policy, DFE4_RECOVERY_POLICY, uns, uns, 1, )
+
+DEF_PARAM(lookahead_buf_size, LOOKAHEAD_BUF_SIZE, uns, uns, 0, )

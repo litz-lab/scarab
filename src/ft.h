@@ -73,6 +73,7 @@ void ft_free_op(Op* op);
 
 // C++-only includes
 #include <functional>
+#include <set>
 #include <vector>
 
 #include "globals/global_defs.h"
@@ -115,6 +116,9 @@ class FT {
   bool get_first_op_off_path() const { return ft_info.dynamic_info.first_op_off_path; }
   bool get_contains_fake_nop() const { return ft_info.dynamic_info.contains_fake_nop; }
   bool get_length() const { return ft_info.static_info.length; }
+  void set_prebuilt(bool val) { is_prebuilt = val; }
+  bool get_is_prebuilt() const { return is_prebuilt; }
+  std::set<Addr> get_pcs();
 
   FT_Ended_By get_end_reason() const;
   void clear_recovery_info();
@@ -124,6 +128,7 @@ class FT {
   uns bp_id;
   uint64_t op_pos;
   FT_Info ft_info;
+  bool is_prebuilt;
   std::vector<Op*> ops;
   FT_Event predict_one_cf_op(Op* op);
   void generate_ft_info();

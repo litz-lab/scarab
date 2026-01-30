@@ -411,6 +411,7 @@ void Decoupled_FE::update() {
                                       },
                                       false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
         ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+        current_ft_to_push->set_prebuilt(true);
         result = current_ft_to_push->predict_ft();
         // if current FT is the exit one, skip mispredict handling and directly push
         // set state and early return
@@ -649,6 +650,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
                                  false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
     ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
   }
+  saved_recovery_ft->set_prebuilt(true);
   redirect_cycle = cycle_count;
   next_state = SERVING_OFF_PATH;
   frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);

@@ -151,14 +151,17 @@ class LookaheadBuffer {
   /* Returns all FTs in the buffer matching given static FT info */
   std::vector<FT*> find_fts_by_ft_info(const FT_Info_Static& target_info);
 
-  /* Returns map of FT info to FTs for a given FT start address */
-  std::map<FT_Info_Static, std::vector<FT*>> find_fts_by_start_addr(uint64_t FT_start_addr);
+  /* Returns all FTs with a given start address */
+  std::vector<FT*> find_fts_by_start_addr(uint64_t FT_start_addr);
+
+  /* Returns FTs grouped by static info for a given start address */
+  std::map<FT_Info_Static, std::vector<FT*>> get_fts_bygrouped_by_(uint64_t FT_start_addr);
 
   /* Returns list of FTs containing the given PC */
-  std::deque<FT*> find_fts_enclosing_pc(Addr PC);
+  std::vector<FT*> find_fts_enclosing_pc(Addr PC);
 
   /* Returns list of FTs containing the given line address */
-  std::deque<FT*> find_fts_enclosing_line_addr(Addr line_addr);
+  std::vector<FT*> find_fts_enclosing_line_addr(Addr line_addr);
 
   /* returns oldest oldest FT (by insertion time) of given FT info */
   FT* find_oldest_FT_by_ft_info(FT_Info_Static static_info);
@@ -310,9 +313,9 @@ std::vector<FT*> LookaheadBuffer::find_fts_by_ft_info(const FT_Info_Static& targ
   return result;
 }
 
-/* Returns map of FT info to FTs for a given FT start address */
-std::map<FT_Info_Static, std::vector<FT*>> LookaheadBuffer::find_fts_by_start_addr(uint64_t FT_start_addr) {
-  std::map<FT_Info_Static, std::vector<FT*>> result;
+/* Returns all FTs with a given start address */
+std::vector<FT*> LookaheadBuffer::find_fts_by_start_addr(uint64_t FT_start_addr) {
+  std::vector<FT*> result;
 
   for (const auto& [static_info, pos_deque] : ft_info_to_buf_pos) {
     if (static_info.start != FT_start_addr)
@@ -320,7 +323,7 @@ std::map<FT_Info_Static, std::vector<FT*>> LookaheadBuffer::find_fts_by_start_ad
 
     for (uint64_t pos : pos_deque) {
       if (pos < lookahead_buffer.size() && lookahead_buffer[pos]) {
-        result[static_info].push_back(lookahead_buffer[pos]);
+        result.push_back(lookahead_buffer[pos]);
       }
     }
   }
@@ -329,8 +332,8 @@ std::map<FT_Info_Static, std::vector<FT*>> LookaheadBuffer::find_fts_by_start_ad
 }
 
 /* Returns list of FTs containing the given PC */
-std::deque<FT*> LookaheadBuffer::find_fts_enclosing_pc(Addr PC) {
-  std::deque<FT*> result;
+std::vector<FT*> LookaheadBuffer::find_fts_enclosing_pc(Addr PC) {
+  std::vector<FT*> result;
   // Look up the PC in the map
   auto it = pc_to_buf_pos.find(PC);
   if (it != pc_to_buf_pos.end()) {
@@ -345,8 +348,8 @@ std::deque<FT*> LookaheadBuffer::find_fts_enclosing_pc(Addr PC) {
 }
 
 /* Returns list of FTs containing the given line address */
-std::deque<FT*> LookaheadBuffer::find_fts_enclosing_line_addr(Addr line_addr) {
-  std::deque<FT*> result;
+std::vector<FT*> LookaheadBuffer::find_fts_enclosing_line_addr(Addr line_addr) {
+  std::vector<FT*> result;
   // Look up the line address in the map
   auto it = line_addr_to_buf_pos.find(line_addr);
   if (it != line_addr_to_buf_pos.end()) {
@@ -444,18 +447,18 @@ FT* lookahead_buffer_find_youngest_FT_by_static_info(const FT_Info_Static& targe
   return youngest;
 }
 
-/* Returns map of FT info to FTs for a given FT start address */
-std::map<FT_Info_Static, std::vector<FT*>> lookahead_buffer_find_FTs_by_start_addr(uint64_t FT_start_addr) {
+/* Returns all FTs with a given start address */
+std::vector<FT*> lookahead_buffer_find_FTs_by_start_addr(uint64_t FT_start_addr) {
   return g_lookahead_buffer.find_fts_by_start_addr(FT_start_addr);
 }
 
 /* Returns list of FTs containing the given PC */
-std::deque<FT*> lookahead_buffer_find_FTs_enclosing_PC(Addr PC) {
+std::vector<FT*> lookahead_buffer_find_FTs_enclosing_PC(Addr PC) {
   return g_lookahead_buffer.find_fts_enclosing_pc(PC);
 }
 
 /* Returns list of FTs containing the given line address */
-std::deque<FT*> lookahead_buffer_find_FTs_enclosing_line_addr(Addr line_addr) {
+std::vector<FT*> lookahead_buffer_find_FTs_enclosing_line_addr(Addr line_addr) {
   return g_lookahead_buffer.find_fts_enclosing_line_addr(line_addr);
 }
 

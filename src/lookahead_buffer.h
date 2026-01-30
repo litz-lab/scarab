@@ -33,14 +33,14 @@ std::vector<FT*> lookahead_buffer_find_FTs_by_ft_info(const FT_Info_Static& targ
    built from find_by_static_info primitive */
 FT* lookahead_buffer_find_youngest_FT_by_static_info(const FT_Info_Static& target_info);
 
-/* Returns map of FT info to FTs for a given FT start address */
-std::map<FT_Info_Static, std::vector<FT*>> lookahead_buffer_find_FTs_by_start_addr(uint64_t FT_start_addr);
+/* Returns all FTs with a given start address */
+std::vector<FT*> lookahead_buffer_find_FTs_by_start_addr(uint64_t FT_start_addr);
 
 /* Returns list of FTs containing the given PC */
-std::deque<FT*> lookahead_buffer_find_FTs_enclosing_PC(Addr PC);
+std::vector<FT*> lookahead_buffer_find_FTs_enclosing_PC(Addr PC);
 
 /* Returns list of FTs containing the given line address */
-std::deque<FT*> lookahead_buffer_find_FTs_enclosing_line_addr(Addr line_addr);
+std::vector<FT*> lookahead_buffer_find_FTs_enclosing_line_addr(Addr line_addr);
 
 /* returns oldest insertion order of given FT info */
 FT* lookahead_buffer_find_oldest_FT_by_FT_info(FT_Info_Static static_info);

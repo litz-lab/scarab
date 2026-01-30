@@ -274,9 +274,6 @@ void bp_retire_op(Bp_Data*, Op*);
 void bp_recover_op(Bp_Data*, Cf_Type, Recovery_Info*);
 void bp_sync(Bp_Data*, Bp_Data*);
 
-void inc_bstat_fetched(Op* op);
-void inc_bstat_miss(Op* op);
-
 /**************************************************************************************/
 
 #endif /* #ifndef __BP_H__ */

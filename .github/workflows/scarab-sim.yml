@@ -1,0 +1,226 @@
+name: Scarab simulation (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      sci_id:
+        description: sci descriptor id to build and simulate
+        required: true
+        type: string
+      allow_failed_report_ignored:
+        description: Allow a "Failed report ignored" status line to pass verification
+        required: false
+        default: false
+        type: boolean
+      collect_metrics:
+        description: Whether to parse IPC/KIPS outputs
+        required: false
+        default: false
+        type: boolean
+    outputs:
+      ipc:
+        description: Parsed IPC value
+        value: ${{ jobs.run.outputs.ipc }}
+      kips:
+        description: Parsed KIPS value
+        value: ${{ jobs.run.outputs.kips }}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    outputs:
+      ipc: ${{ steps.ipc.outputs.value }}
+      kips: ${{ steps.kips.outputs.value }}
+    steps:
+      - name: Checkout Scarab
+        uses: actions/checkout@v4
+
+      - name: Checkout scarab-infra
+        uses: actions/checkout@v4
+        with:
+          repository: litz-lab/scarab-infra
+          path: infra
+          ref: refs/heads/main
+          fetch-depth: 0
+
+      - name: Allow Git in container
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/infra"
+
+      - name: Initialize environment
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: ./sci --init
+
+      - name: Locate scarabinfra conda env
+        id: conda-env
+        working-directory: infra
+        run: |
+          python3 - <<'PY' > env_path.txt
+          import pathlib
+          from importlib.machinery import SourceFileLoader
+          import importlib.util
+
+          script_path = pathlib.Path("sci").resolve()
+          if not script_path.exists():
+              raise FileNotFoundError(f"Unable to locate {script_path}")
+          loader = SourceFileLoader("scarab_sci", str(script_path))
+          spec = importlib.util.spec_from_loader("scarab_sci", loader)
+          module = importlib.util.module_from_spec(spec)
+          loader.exec_module(module)
+          env_path, _ = module.resolve_conda_env_path()
+          print(f"SCARABINFRA_ENV={env_path}")
+          PY
+          cat env_path.txt >> "$GITHUB_ENV"
+          rm env_path.txt
+
+      - name: Download traces
+        env:
+          PYTHON_BIN: ${{ env.SCARABINFRA_ENV }}/bin/python
+        run: |
+          if [ -z "$PYTHON_BIN" ]; then
+            echo "scarabinfra conda environment not detected"
+            exit 1
+          fi
+          "$PYTHON_BIN" - <<'PY'
+          import os
+          import pathlib
+          import shutil
+          import tarfile
+          import urllib.request
+
+          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          archive = workspace / "traces.tar.gz"
+          target_dir = workspace / "traces_top_simpoint"
+          url = "https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz"
+
+          def safe_extract(tar_obj: tarfile.TarFile, destination: pathlib.Path) -> None:
+              dest_root = destination.resolve()
+              for member in tar_obj.getmembers():
+                  member_path = (dest_root / member.name).resolve()
+                  if dest_root != member_path and dest_root not in member_path.parents:
+                      raise RuntimeError(f"Unsafe path in archive: {member.name}")
+              tar_obj.extractall(path=dest_root)
+
+          if target_dir.exists():
+              print(f"Reusing existing traces at {target_dir}")
+          else:
+              print(f"Downloading traces to {archive}")
+              with urllib.request.urlopen(url) as response:
+                  status = getattr(response, "status", 200)
+                  if status != 200:
+                      raise RuntimeError(f"Download failed with HTTP status {status}")
+                  with archive.open("wb") as dest:
+                      shutil.copyfileobj(response, dest)
+              with tarfile.open(archive, "r:gz") as tar_obj:
+                  safe_extract(tar_obj, workspace)
+              if archive.exists():
+                  archive.unlink()
+              print(f"Extracted traces to {target_dir}")
+
+          PY
+
+      - name: Build Scarab
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: ./sci --build-scarab ${{ inputs.sci_id }}
+
+      - name: Run scarab simulation
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: ./sci --sim ${{ inputs.sci_id }}
+
+      - name: Verify simulation status
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}
+        run: |
+          status_output=$(./sci --status ${{ inputs.sci_id }})
+          echo "$status_output"
+          status_line=$(printf '%s\n' "$status_output" | awk -F'|' '/^this_pr[[:space:]]*\|/ {print; exit}')
+          if [ -z "$status_line" ]; then
+            echo "Missing status line for this_pr"
+            exit 1
+          fi
+          completed=$(printf '%s\n' "$status_line" | awk -F'|' '{gsub(/^[[:space:]]+|[[:space:]]+$/,"",$2); print $2}')
+          if [ "$completed" != "1" ]; then
+            if [ "${{ inputs.allow_failed_report_ignored }}" = "true" ]; then
+              if printf '%s\n' "$status_output" | grep -q "Failed report ignored"; then
+                echo "Status contains 'Failed report ignored'; continuing."
+              else
+                echo "Status verification skipped due to allow_failed_report_ignored=true."
+              fi
+            else
+              echo "Expected 1 completed simulation for this_pr, got '$completed'"
+              exit 1
+            fi
+          fi
+
+      - id: simdir
+        if: inputs.collect_metrics
+        name: Resolve simulation directory
+        working-directory: simulations
+        run: |
+          sci_id="${{ inputs.sci_id }}"
+          base="${sci_id%_dbg}"
+          candidates=(
+            "github_${sci_id}_workflow"
+            "github_${sci_id}_workflow_dbg"
+          )
+          if [ "$base" != "$sci_id" ]; then
+            candidates+=("github_${base}_workflow_dbg" "github_${base}_workflow")
+          fi
+          for d in "${candidates[@]}"; do
+            if [ -d "$d" ]; then
+              echo "path=$d" >>"$GITHUB_OUTPUT"
+              echo "Resolved simulation dir: $d"
+              exit 0
+            fi
+          done
+          echo "No simulation directory found. Tried: ${candidates[*]}"
+          exit 1
+
+      - id: kips
+        if: inputs.collect_metrics
+        name: Grab KIPS
+        working-directory: simulations
+        run: |
+          sim_dir="${{ steps.simdir.outputs.path }}"
+          if [ -z "$sim_dir" ]; then
+            echo "Simulation directory was not resolved"
+            exit 1
+          fi
+          v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' \
+              "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/sim.log" | head -n1)
+          if ! [[ "$v" =~ ^[0-9]+$ ]]; then
+            echo "KIPS value is not a valid integer: '$v' Run failed!"
+            echo "Contents of sim.log for debugging:"
+            cat "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/sim.log"
+            exit 1
+          fi
+          echo "value=$v" >>"$GITHUB_OUTPUT"
+
+      - id: ipc
+        if: inputs.collect_metrics
+        name: Grab IPC
+        working-directory: simulations
+        run: |
+          sim_dir="${{ steps.simdir.outputs.path }}"
+          if [ -z "$sim_dir" ]; then
+            echo "Simulation directory was not resolved"
+            exit 1
+          fi
+          v=$(grep "Cumulative:" \
+               "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out" | \
+               sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
+          if ! [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+            echo "IPC value is not a valid floating point number: '$v' Run failed!"
+            echo "Contents of core.stat.0.out for debugging:"
+            cat "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out"
+            exit 1
+          fi
+          echo "value=$v" >>"$GITHUB_OUTPUT"

@@ -660,6 +660,8 @@ void full_sim() {
     memview_init();
 
   init_op_pool();
+  if (LOOKAHEAD_BUF_SIZE)
+    init_lookahead_buffer_wrapper();
   unique_count = 1;
 
   sim_limit = trigger_create("SIM_LIMIT", SIM_LIMIT, TRIGGER_ONCE);

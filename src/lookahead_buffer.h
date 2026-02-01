@@ -18,7 +18,7 @@
 void init_lookahead_buffer();
 
 /* Pops an ft, Synchronizes lookahead buffer when FT is removed from FTQ */
-FT* lookahead_buffer_pop_ft(uns proc_id);
+FT* lookahead_buffer_pop_ft(uns proc_id, uns8 bp_id);
 
 /* Returns the start address for the FT at read pointer */
 FT_Info lookahead_buffer_peek();

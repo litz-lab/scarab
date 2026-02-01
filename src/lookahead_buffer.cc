@@ -134,7 +134,7 @@ class LookaheadBuffer {
   void init();
 
   /* Returns a FT at the current read pointer and pops it from the buffer */
-  FT* pop_ft(uns proc_id);
+  FT* pop_ft(uns proc_id, uns8 bp_id);
 
   /* Refills lookahead buffer to the parameter size */
   void refill(uns proc_id);
@@ -231,7 +231,6 @@ void LookaheadBuffer::refill(uns proc_id) {
 void LookaheadBuffer::init() {
   if (!LOOKAHEAD_BUF_SIZE)
     return;
-
   lookahead_buffer.resize(LOOKAHEAD_BUF_SIZE);
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     rdptr_lb = 0;
@@ -248,13 +247,13 @@ void LookaheadBuffer::init() {
 void LookaheadBuffer::insert_ft(uns8 proc_id) {
   ASSERT(proc_id, have_seen_exit == 0);
   FT* new_ft = new FT(proc_id, 0);
-  Flag build_success = new_ft->build([&](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                                     [&](uns8 pid, uns8 bid, Op* op) {
-                                       frontend_fetch_op(pid, bid, op);
-                                       return true;
-                                     },
-                                     false, false, []() { return decoupled_fe_get_next_on_path_op_num(); });
-  ASSERT(proc_id, build_success);
+  FT_Event build_success = new_ft->build([&](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                         [&](uns8 pid, uns8 bid, Op* op) {
+                                           frontend_fetch_op(pid, bid, op);
+                                           return true;
+                                         },
+                                         false, false, []() { return decoupled_fe_get_next_on_path_op_num(); });
+  ASSERT(proc_id, build_success != FT_EVENT_BUILD_FAIL);
   new_ft->set_prebuilt(true);
   lookahead_buffer[wrptr_lb] = new_ft;
   update_search_indexes_on_insert(wrptr_lb);
@@ -265,7 +264,7 @@ void LookaheadBuffer::insert_ft(uns8 proc_id) {
 }
 
 /* Returns a FT at the current read pointer */
-FT* LookaheadBuffer::pop_ft(uns proc_id) {
+FT* LookaheadBuffer::pop_ft(uns proc_id, uns8 bp_id) {
   FT* current_read_FT = lookahead_buffer[rdptr_lb];
 
   update_search_indexes_on_remove(rdptr_lb);
@@ -273,6 +272,7 @@ FT* LookaheadBuffer::pop_ft(uns proc_id) {
   rdptr_lb = (rdptr_lb + 1) % LOOKAHEAD_BUF_SIZE;
   ft_buffer_count--;
   refill(proc_id);
+  current_read_FT->set_bp_id(bp_id);
 
   return current_read_FT;
 }
@@ -414,9 +414,9 @@ void lookahead_buffer_refill(uns proc_id) {
 }
 
 /* Pops an ft, Synchronizes lookahead buffer when FT is removed from FTQ */
-FT* lookahead_buffer_pop_ft(uns proc_id) {
+FT* lookahead_buffer_pop_ft(uns proc_id, uns8 bp_id) {
   ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);
-  return g_lookahead_buffer.pop_ft(proc_id);
+  return g_lookahead_buffer.pop_ft(proc_id, bp_id);
 }
 
 /* Returns the FT to be read next */

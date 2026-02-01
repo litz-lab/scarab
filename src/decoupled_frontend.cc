@@ -14,6 +14,7 @@
 #include "isa/isa_macros.h"
 
 #include "ft.h"
+#include "lookahead_buffer.h"
 #include "op.h"
 #include "op_pool.h"
 #include "thread.h"
@@ -60,6 +61,10 @@ void init_decoupled_fe(uns proc_id, uns bp_id, Bp_Data* bp_data) {
       per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE4_RECOVERY_POLICY);
       break;
   }
+}
+
+void init_lookahead_buffer_wrapper() {
+  init_lookahead_buffer();
 }
 
 bool decoupled_fe_is_off_path() {
@@ -400,18 +405,24 @@ void Decoupled_FE::update() {
       }
       // recover will fall through to on-path exec
       case SERVING_ON_PATH: {
-        current_ft_to_push = new FT(proc_id, bp_id);
-        // Build new on-path FT if no recovery ft availble
-        ASSERT(proc_id, !current_ft_to_push->has_unread_ops());
-        auto build_event =
-            current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                                      [](uns8 pid, uns8 bid, Op* op) -> bool {
-                                        frontend_fetch_op(pid, bid, op);
-                                        return true;
-                                      },
-                                      false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
-        ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
-        current_ft_to_push->set_prebuilt(true);
+        if (LOOKAHEAD_BUF_SIZE) {
+          current_ft_to_push = lookahead_buffer_pop_ft(proc_id, bp_id);
+          ASSERT(proc_id, current_ft_to_push->get_is_prebuilt());
+        } else {
+          current_ft_to_push = new FT(proc_id, bp_id);
+          // Build new on-path FT if no recovery ft availble
+          ASSERT(proc_id, !current_ft_to_push->has_unread_ops());
+          auto build_event =
+              current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                        [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                          frontend_fetch_op(pid, bid, op);
+                                          return true;
+                                        },
+                                        false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
+          ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+          current_ft_to_push->set_prebuilt(true);
+        }
+
         result = current_ft_to_push->predict_ft();
         // if current FT is the exit one, skip mispredict handling and directly push
         // set state and early return
@@ -640,15 +651,20 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   }
   // no trailing ft, misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
-    saved_recovery_ft = new FT(proc_id, bp_id);
-    auto build_event =
-        saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                                 [](uns8 pid, uns8 bid, Op* op) -> bool {
-                                   frontend_fetch_op(pid, bid, op);
-                                   return true;
-                                 },
-                                 false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
-    ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+    if (LOOKAHEAD_BUF_SIZE) {
+      saved_recovery_ft = lookahead_buffer_pop_ft(proc_id, bp_id);
+      ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
+    } else {
+      saved_recovery_ft = new FT(proc_id, bp_id);
+      auto build_event =
+          saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                   [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                     frontend_fetch_op(pid, bid, op);
+                                     return true;
+                                   },
+                                   false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
+      ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+    }
   }
   saved_recovery_ft->set_prebuilt(true);
   redirect_cycle = cycle_count;

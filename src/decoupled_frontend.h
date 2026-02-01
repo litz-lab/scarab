@@ -102,6 +102,7 @@ struct decoupled_fe_iter {
 // Simulator API
 void alloc_mem_decoupled_fe(uns numProcs, uns numBPs);
 void init_decoupled_fe(uns proc_id, uns bp_id, Bp_Data* bp_data);
+void init_lookahead_buffer_wrapper();
 void set_decoupled_fe(uns proc_id, uns bp_id);
 void reset_decoupled_fe();
 void debug_decoupled_fe();

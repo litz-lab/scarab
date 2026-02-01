@@ -59,6 +59,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #define DEBUGU(proc_id, args...) _DEBUGU(proc_id, DEBUG_OP_POOL, ##args)
 
 // TODO: it should be increased to 512 to use more than 50,000 FDIP lookahead buffer entries
+// Also need to increase if enabling large lookahead buffer
 #define OP_POOL_ENTRIES_INC 128 /* default 128 */
 
 /**************************************************************************************/

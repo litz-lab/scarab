@@ -118,7 +118,15 @@ class FT {
   bool get_length() const { return ft_info.static_info.length; }
   void set_prebuilt(bool val) { is_prebuilt = val; }
   bool get_is_prebuilt() const { return is_prebuilt; }
-  void set_bp_id(uns8 id) { bp_id = id; }
+  void set_bp_id(uns8 id) {
+    bp_id = id;
+    // Ensure all contained ops reflect the FT's branch predictor id
+    for (Op* op : ops) {
+      if (op) {
+        op->bp_id = id;
+      }
+    }
+  }
   std::set<Addr> get_pcs();
 
   FT_Ended_By get_end_reason() const;

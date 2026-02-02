@@ -7,6 +7,7 @@
 #include <tuple>
 #include <vector>
 
+#include "core.param.h"
 #include "memory/memory.param.h"
 #include "prefetcher/pref.param.h"
 

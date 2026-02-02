@@ -10,6 +10,8 @@
 #include "memory/memory.param.h"
 #include "prefetcher/pref.param.h"
 
+#include "core.param.h"
+
 #include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
 

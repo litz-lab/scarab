@@ -1037,7 +1037,7 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 void reg_renaming_scheme_realistic_recover(Op *op) {
   // do not need to do flushing if it is a decoding flush
   ASSERT(op->proc_id, op->table_info->cf_type);
-  if (op->oracle_info.recover_at_decode)
+  if (!op->oracle_info.recover_at_exec)
     return;
 
   // rollback to the status that does not contain any off_path entries

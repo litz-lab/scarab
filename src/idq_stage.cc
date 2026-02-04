@@ -181,6 +181,8 @@ Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Dat
   Stage_Data* consume_from_sd = NULL;
   Stage_Data* uopc_src_sd = uop_queue_sd->op_count ? uop_queue_sd : ic_uopc_sd;
   if (uop_queue_sd->op_count && ic_uopc_sd->op_count) {
+    ASSERT(proc_id, uop_queue_sd->ops[0]);
+    ASSERT(proc_id, ic_uopc_sd->ops[0]);
     /* The stage data from the uop queue should be older. */
     ASSERT(proc_id, uop_queue_sd->ops[uop_queue_sd->op_count - 1]->op_num < ic_uopc_sd->ops[0]->op_num);
   }

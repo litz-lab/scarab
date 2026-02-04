@@ -226,16 +226,19 @@ void recover_icache_stage() {
   ASSERT(ic->proc_id, ic->proc_id == bp_recovery_info->proc_id);
   DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s\n",
         hexstr64s(bp_recovery_info->recovery_fetch_addr));
+  cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {
     if (cur_data->ops[ii]) {
-      ASSERT(ic->proc_id, FLUSH_OP(cur_data->ops[ii]));
-      ASSERT(ic->proc_id, cur_data->ops[ii]->off_path);
-      if (cur_data->ops[ii]->parent_FT)
-        ft_free_op(cur_data->ops[ii]);
-      cur_data->ops[ii] = NULL;
+      if (FLUSH_OP(cur_data->ops[ii])) {
+        ASSERT(ic->proc_id, cur_data->ops[ii]->off_path);
+        if (cur_data->ops[ii]->parent_FT)
+          ft_free_op(cur_data->ops[ii]);
+        cur_data->ops[ii] = NULL;
+      } else {
+        cur_data->op_count++;
+      }
     }
   }
-  cur_data->op_count = 0;
 
   ic->back_on_path = !bp_recovery_info->recovery_force_offpath;
   ic->fetch_barrier_pending = FALSE;
@@ -858,6 +861,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
 
   for (uns ii = start_idx; ii < cur_data->op_count; ii++) {
     Op* op = cur_data->ops[ii];
+    ASSERT(ic->proc_id, !cur_data->op_count || cur_data->ops[0]);
 
     if (fetched_from_uop_cache) {
       uc->sd.ops[ii]->fetched_from_uop_cache = TRUE;

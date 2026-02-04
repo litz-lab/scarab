@@ -38,6 +38,8 @@
 #include "globals/utils.h"
 
 #include "dcache_stage.h"
+#include "bp/bp.h"
+#include "bp/bp.param.h"
 #include "idq_stage.h"
 #include "lsq.h"
 #include "map_stage.h"
@@ -75,7 +77,8 @@ const static int TOPDOWN_RECOVERY_DEPTH = 2;
  * BackendStalls = CoreStalls + (∑OpsExecuted[= FEW]) + StoreStalls
  * =================================================================================== */
 
-void topdown_bp_recovery(uns proc_id, Op* op) {
+void topdown_bp_recovery(uns proc_id, Bp_Recovery_Info* bp_recovery_info) {
+  Op* op = bp_recovery_info->recovery_op;
   ASSERT(op->proc_id, op->table_info->cf_type);
 
   STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_CYCLES);
@@ -84,7 +87,7 @@ void topdown_bp_recovery(uns proc_id, Op* op) {
     STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED_CYCLES);
   }
 
-  idq_stage_set_recovery_cycle(TOPDOWN_RECOVERY_DEPTH);
+  idq_stage_set_recovery_cycle(bp_recovery_info->late_bp_recovery? LATE_BP_LATENCY : TOPDOWN_RECOVERY_DEPTH);
 }
 
 void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path) {

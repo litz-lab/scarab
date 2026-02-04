@@ -37,9 +37,18 @@
 
 #include "op.h"
 
-void topdown_bp_recovery(uns proc_id, Op* op);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+struct Bp_Recovery_Info_struct;
+void topdown_bp_recovery(uns proc_id, struct Bp_Recovery_Info_struct* bp_recovery_info);
 void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path);
 void topdown_exec_update(uns proc_id, uns8 fus_busy);
 void topdown_done(uns proc_id);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* #ifndef __TOPDOWN_H__ */

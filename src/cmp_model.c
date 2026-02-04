@@ -381,13 +381,15 @@ void cmp_recover() {
     ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.pred_npc);
     op->oracle_info.mispred = op->oracle_info.late_mispred;
     op->oracle_info.misfetch = op->oracle_info.late_misfetch;
+    op->oracle_info.recover_at_decode = FALSE;
+    op->oracle_info.recover_at_exec = FALSE;
 
     /* Reset to FALSE to allow for another potential recovery after the branch
      * is resolved when executed. */
     op->oracle_info.recovery_sch = FALSE;
   }
 
-  topdown_bp_recovery(bp_recovery_info->proc_id, bp_recovery_info->recovery_op);
+  topdown_bp_recovery(bp_recovery_info->proc_id, bp_recovery_info);
 
   reg_file_recover(bp_recovery_info->recovery_op);
   recover_thread(td, bp_recovery_info->recovery_fetch_addr, bp_recovery_info->recovery_op_num,

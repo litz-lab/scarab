@@ -199,12 +199,42 @@ typedef enum Br_Conf_Id_eunm {
   NUM_BR_CONF,
 } Br_Conf_Id;
 
+typedef enum Bp_PredictMask_enum {
+  BP_PRED_WRITE_MAIN = 1 << 0,
+  BP_PRED_WRITE_LATE = 1 << 1,
+  BP_PRED_UPDATE_GHIST = 1 << 2,
+  BP_PRED_SPEC_UPDATE = 1 << 3,
+  BP_PRED_TIMESTAMP = 1 << 4,
+} Bp_PredictMask;
+
+typedef struct Bp_PredictBase_struct {
+  Addr pc_plus_offset;
+  Addr pred_target;
+  Addr ibp_target;
+  Addr* btb_target;
+  Flag btb_miss_nt;
+  Flag btb_miss_but_target_correct;
+} Bp_PredictBase;
+
+typedef struct Bp_PredictResult_struct {
+  uns8 pred_dir;
+  uns8 pred_orig;
+  Addr pred_npc;
+  Flag recover_at_decode;
+  Flag recover_at_exec;
+  Flag btb_miss_nt;
+  Flag local_btb_miss;
+  Flag local_no_target;
+  Flag local_misfetch;
+} Bp_PredictResult;
+
 typedef struct Bp_struct {
   Bp_Id id;
   const char* name;
   void (*init_func)(void);              /* called to initialize the predictor */
   void (*timestamp_func)(Op*);          /* called to timestamp a branch for prediction, update, and recovery */
   uns8 (*pred_func)(Op*);               /* called to predict a branch instruction */
+  Flag (*pred_op_func)(Bp_Data*, Op*, uns, Addr, const Bp_PredictBase*, Bp_PredictMask);
   void (*spec_update_func)(Op*);        /* called to update the speculative state of the predictor in the front-end */
   void (*update_func)(Op*);             /* called to update the bp when a branch is resolved
                                          * (at the end of execute or retire) */

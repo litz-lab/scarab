@@ -96,6 +96,7 @@ struct decoupled_fe_iter {
   uint64_t op_pos;
   // the flattened op index, as if the ftq is an 1-d array
   uint64_t flattened_op_pos;
+  bool pinned;
 };
 
 // C-compatible API
@@ -167,6 +168,9 @@ class Decoupled_FE {
         exit_on_off_path(false),
         op_num(1),
         current_off_path_op_num(0),
+        late_bp_ft(nullptr),
+        late_bp_sched_op(nullptr),
+        late_bp_iter_idx(-1),
         recovery_addr(0),
         redirect_cycle(0),
         ftq_ft_num(FE_FTQ_BLOCK_NUM),
@@ -180,6 +184,7 @@ class Decoupled_FE {
   FT* get_ft();
   void pop_ft(FT* ft);
   uns new_ftq_iter();
+  uns new_pinned_ftq_iter();
   Op* ftq_iter_get(uns iter_idx, bool* end_of_ft);
   Op* ftq_iter_get_next(uns iter_idx, bool* end_of_ft);
   uint64_t ftq_iter_offset(uns iter_idx);
@@ -221,6 +226,8 @@ class Decoupled_FE {
   bool is_off_path_state() const { return state == SERVING_OFF_PATH; }
   void check_consecutivity_and_push_to_ftq();
   void redirect_to_off_path(FT_PredictResult result);
+  void redirect_to_late_bp_override(FT_PredictResult result);
+  void set_pinned_iter_ft_pos(uns iter_idx, uint64_t ft_pos);
   inline uint64_t ftq_max_size() { return ftq_ft_num; }
   void set_off_path_op_num(uint64_t op_num) { current_off_path_op_num = op_num; }
   void set_on_path_op_num(uint64_t op_num) { this->op_num = op_num; }
@@ -246,6 +253,9 @@ class Decoupled_FE {
   uint64_t op_num;
   uint64_t current_off_path_op_num;
   std::vector<std::unique_ptr<decoupled_fe_iter>> ftq_iterators;
+  FT* late_bp_ft;
+  Op* late_bp_sched_op;
+  int late_bp_iter_idx;
   uint64_t recovery_addr;
   uint64_t redirect_cycle;
   uint64_t ftq_ft_num;

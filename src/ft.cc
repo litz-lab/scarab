@@ -291,7 +291,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
       }
 
       if (USE_LATE_BP && !op->off_path && (op->oracle_info.late_mispred || op->oracle_info.late_misfetch))
-          return FT_EVENT_LATE_BP_MISPREDICT;
+        return FT_EVENT_LATE_BP_MISPREDICT;
       return FT_EVENT_MISPREDICT;
     } else if (trace_mode && op->off_path) {
       // in this case, not a misprediction pred is taken so oracle info should be taken

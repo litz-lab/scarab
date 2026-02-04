@@ -578,12 +578,12 @@ static Bp_PredictResult bp_predict_compute(Bp_Data* bp_data, Op* op, const Bp_Pr
         ASSERT(op->proc_id, 0);
       }
       DEBUG(op->proc_id,
-          "BP_DECIDE op_num:%s bp:%s case:%s dir:%d pred:%d btb_miss:%d pred_npc:%llx npc:%llx pc+off:%llx "
-          "rec_dec:%d rec_exec:%d\n",
-          unsstr64(op->op_num), record_main ? "main" : "late", debug_case ? debug_case : "UNKNOWN",
-          op->oracle_info.dir, res.pred_dir, res.local_btb_miss, (unsigned long long)res.pred_npc,
-          (unsigned long long)op->oracle_info.npc, (unsigned long long)pc_plus_offset, res.recover_at_decode,
-          res.recover_at_exec);
+            "BP_DECIDE op_num:%s bp:%s case:%s dir:%d pred:%d btb_miss:%d pred_npc:%llx npc:%llx pc+off:%llx "
+            "rec_dec:%d rec_exec:%d\n",
+            unsstr64(op->op_num), record_main ? "main" : "late", debug_case ? debug_case : "UNKNOWN",
+            op->oracle_info.dir, res.pred_dir, res.local_btb_miss, (unsigned long long)res.pred_npc,
+            (unsigned long long)op->oracle_info.npc, (unsigned long long)pc_plus_offset, res.recover_at_decode,
+            res.recover_at_exec);
       break;
     }
     case CF_CALL:
@@ -966,8 +966,8 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
         unsstr64(op->op_num), op->off_path, cf_type_names[op->table_info->cf_type], hexstr64s(op->inst_info->addr),
         hexstr64s(prediction), hexstr64s(op->oracle_info.npc), op->oracle_info.btb_miss, op->oracle_info.mispred,
         op->oracle_info.misfetch, op->oracle_info.no_target, op->oracle_info.late_pred,
-        hexstr64s(op->oracle_info.late_pred_npc), op->oracle_info.late_mispred,
-        op->oracle_info.late_misfetch, op->oracle_info.use_late_pred_for_ft);
+        hexstr64s(op->oracle_info.late_pred_npc), op->oracle_info.late_mispred, op->oracle_info.late_misfetch,
+        op->oracle_info.use_late_pred_for_ft);
 
   if (ENABLE_BP_CONF && IS_CONF_CF(op)) {
     bp_data->br_conf->pred_func(op);

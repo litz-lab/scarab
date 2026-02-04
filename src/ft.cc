@@ -290,21 +290,19 @@ FT_Event FT::predict_one_cf_op(Op* op) {
         op->oracle_info.recover_at_exec = FALSE;
       }
 
-      if (USE_LATE_BP && !op->off_path) {
-        if (op->oracle_info.late_mispred || op->oracle_info.late_misfetch) {
+      if (USE_LATE_BP && !op->off_path && (op->oracle_info.late_mispred || op->oracle_info.late_misfetch))
           return FT_EVENT_LATE_BP_MISPREDICT;
-        } else {
-          op->oracle_info.recover_at_exec = FALSE;
-        }
-      }
       return FT_EVENT_MISPREDICT;
-    } else if (trace_mode && op->off_path && op->oracle_info.pred == TAKEN) {
+    } else if (trace_mode && op->off_path) {
       // in this case, not a misprediction pred is taken so oracle info should be taken
       // and this should be last op in the FT
       // no misprediction, just manually redirect
-      if (pc_plus_offset != op->oracle_info.target)
-        ASSERT(proc_id, op->oracle_info.dir == TAKEN);
-      return FT_EVENT_OFFPATH_TAKEN_REDIRECT;
+      const uns8 eff_pred = (USE_LATE_BP ? op->oracle_info.late_pred : op->oracle_info.pred);
+      if (eff_pred == TAKEN) {
+        if (pc_plus_offset != op->oracle_info.target)
+          ASSERT(proc_id, op->oracle_info.dir == TAKEN);
+        return FT_EVENT_OFFPATH_TAKEN_REDIRECT;
+      }
     }
 
   } else if (op->table_info->bar_type & BAR_FETCH) {
@@ -364,6 +362,8 @@ bool FT::is_consecutive(const FT& previous_ft) const {
   FT_Ended_By prev_end_type = previous_ft.get_ft_info().dynamic_info.ended_by;
   Addr start_addr = ft_info.static_info.start;
   Addr pred_npc = last_op->oracle_info.pred_npc;
+  if (last_op->oracle_info.use_late_pred_for_ft)
+    pred_npc = last_op->oracle_info.late_pred_npc;
   Addr npc = last_op->oracle_info.npc;
   Addr end_addr = last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
   bool matches = false;
@@ -394,7 +394,9 @@ FT_Ended_By FT::get_end_reason() const {
     uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
                  ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
     bool end_of_icache_line = offset >= ICACHE_LINE_SIZE;
-    bool cf_taken = (op->table_info->cf_type && op->oracle_info.pred == TAKEN);
+    const Flag use_late = op->oracle_info.use_late_pred_for_ft;
+    const uns8 pred_dir = use_late ? op->oracle_info.late_pred : op->oracle_info.pred;
+    bool cf_taken = (op->table_info->cf_type && pred_dir == TAKEN);
     bool bar_fetch = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH;
 
     if (op->exit) {

@@ -101,6 +101,7 @@ struct Op_Info_struct {
   Flag late_misfetch;      // true if target address is the ONLY thing that was wrong after the multi-cycle branch
                            // prediction kicks in
   Flag late_mispred;       // true if the multi-cycle branch predictor mispredicted
+  Flag use_late_pred_for_ft;  // select late prediction for FT end/consecutivity
   Flag recovery_sch;       // true if this op has scheduled a recovery
   Flag recover_at_decode;  // op will schedule recovery at decode
   Flag recover_at_exec;    // op will schedule recovery at exec

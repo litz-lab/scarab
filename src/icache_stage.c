@@ -553,6 +553,7 @@ Icache_State icache_wait_for_miss_actions(Break_Reason* break_fetch) {
 Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data* sd) {
   ASSERT(ic->proc_id, requested && requested <= sd->max_op_count - sd->op_count);
   ASSERT(ic->proc_id, ft_can_fetch_op(ft));
+  DEBUG(ic->proc_id, "Icache fill icache stage data ic->off_path:%i\n", ic->off_path);
 
   while (requested && ft_can_fetch_op(ft)) {
     sd->ops[sd->op_count] = ft_fetch_op(ft);

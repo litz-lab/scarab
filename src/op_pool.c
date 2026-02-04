@@ -240,6 +240,7 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   op->oracle_info.late_pred_npc = 0;
   op->oracle_info.late_misfetch = FALSE;
   op->oracle_info.late_mispred = FALSE;
+  op->oracle_info.use_late_pred_for_ft = FALSE;
 
   op->oracle_cp_num = -1;
   op->engine_info.dcmiss = FALSE;

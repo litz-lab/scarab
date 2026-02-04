@@ -214,9 +214,8 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
 
   // if split at the last op and FT already ended, no need to create new FT, just update end condition
   if (split_index == ops.size() - 1 && get_end_reason() != FT_NOT_ENDED) {
-    DEBUG(proc_id,
-          "[DFE%u] extract_off_path_ft split_last=1 end_reason=%d ops=%zu op_pos=%zu\n",
-          bp_id, get_end_reason(), ops.size(), op_pos);
+    DEBUG(proc_id, "[DFE%u] extract_off_path_ft split_last=1 end_reason=%d ops=%zu op_pos=%zu\n", bp_id,
+          get_end_reason(), ops.size(), op_pos);
     generate_ft_info();
     return {this, nullptr};
   }
@@ -272,11 +271,13 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 
     DEBUG(proc_id,
           "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
-          "late_pred_npc:%llx late_mispred:%i late_misfetch:%i late_taken:%i recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
+          "late_pred_npc:%llx late_mispred:%i late_misfetch:%i late_taken:%i recover_at_decode:%i recover_at_exec:%i, "
+          "bar_fetch:%i\n",
           bp_id, op->inst_info->addr, op->oracle_info.npc, op->oracle_info.pred_npc, op->oracle_info.mispred,
           op->oracle_info.misfetch, op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN,
-          op->oracle_info.late_pred_npc, op->oracle_info.late_mispred, op->oracle_info.late_misfetch, op->oracle_info.late_pred == TAKEN,
-          op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec, op->table_info->bar_type & BAR_FETCH);
+          op->oracle_info.late_pred_npc, op->oracle_info.late_mispred, op->oracle_info.late_misfetch,
+          op->oracle_info.late_pred == TAKEN, op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec,
+          op->table_info->bar_type & BAR_FETCH);
     if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
       op->oracle_info.recover_at_decode = FALSE;
       op->oracle_info.recover_at_exec = FALSE;
@@ -323,9 +324,9 @@ FT_PredictResult FT::predict_ft() {
     FT_Event event = predict_one_cf_op(op);
     if (event != FT_EVENT_NONE) {
       uint64_t return_idx = (event == FT_EVENT_MISPREDICT || event == FT_EVENT_LATE_BP_MISPREDICT) ? (idx) : 0;
-      Addr pred_addr = (event == FT_EVENT_LATE_BP_MISPREDICT)? op->oracle_info.late_pred_npc : op->oracle_info.pred_npc;
-      DEBUG(proc_id,
-            "[DFE%u] predict_ft stop idx=%zu ops=%zu event=%d op_num=%s pred_npc=%llx late_pred_npc=%llx\n",
+      Addr pred_addr =
+          (event == FT_EVENT_LATE_BP_MISPREDICT) ? op->oracle_info.late_pred_npc : op->oracle_info.pred_npc;
+      DEBUG(proc_id, "[DFE%u] predict_ft stop idx=%zu ops=%zu event=%d op_num=%s pred_npc=%llx late_pred_npc=%llx\n",
             bp_id, idx, ops.size(), event, unsstr64(op->op_num), (unsigned long long)op->oracle_info.pred_npc,
             (unsigned long long)op->oracle_info.late_pred_npc);
       if (!ended_by_exit())

@@ -409,8 +409,8 @@ static Bp_PredictResult bp_predict_compute(Bp_Data* bp_data, Op* op, const Bp_Pr
   const Stat_Enum per_path = (Stat_Enum)(IBTB_INCORRECT - CBR_CORRECT + 1);
   const Stat_Enum off_path_offset = per_path;
   const Stat_Enum late_offset = (Stat_Enum)(2 * per_path);
-  const Stat_Enum stat_offset = (Stat_Enum)(op->off_path ? off_path_offset : 0) +
-                                (Stat_Enum)(record_late_stats ? late_offset : 0);
+  const Stat_Enum stat_offset =
+      (Stat_Enum)(op->off_path ? off_path_offset : 0) + (Stat_Enum)(record_late_stats ? late_offset : 0);
 
   res.pred_dir = NOT_TAKEN;
   res.pred_orig = NOT_TAKEN;
@@ -641,25 +641,25 @@ static Bp_PredictResult bp_predict_compute(Bp_Data* bp_data, Op* op, const Bp_Pr
           res.recover_at_decode = FALSE;
           res.recover_at_exec = FALSE;
           res.pred_npc = pred_target;
-        STAT_EVENT(op->proc_id, IBR_CORRECT_IBTB + stat_offset);
+          STAT_EVENT(op->proc_id, IBR_CORRECT_IBTB + stat_offset);
         } else {
           res.recover_at_decode = FALSE;
           res.recover_at_exec = TRUE;
           res.pred_npc = pred_target;
-        STAT_EVENT(op->proc_id, IBR_RECOVER_IBTB_MISFETCH + stat_offset);
+          STAT_EVENT(op->proc_id, IBR_RECOVER_IBTB_MISFETCH + stat_offset);
         }
       } else if (btb_target) {
         if (op->oracle_info.target == pred_target) {
           res.recover_at_decode = FALSE;
           res.recover_at_exec = FALSE;
           res.pred_npc = pred_target;
-        STAT_EVENT(op->proc_id, IBR_CORRECT_BTB + stat_offset);
+          STAT_EVENT(op->proc_id, IBR_CORRECT_BTB + stat_offset);
         } else {
           res.recover_at_decode = FALSE;
           res.recover_at_exec = TRUE;
           res.pred_npc = pred_target;
           res.local_misfetch = TRUE;
-        STAT_EVENT(op->proc_id, IBR_RECOVER_BTB_MISFETCH + stat_offset);
+          STAT_EVENT(op->proc_id, IBR_RECOVER_BTB_MISFETCH + stat_offset);
         }
       }
       // If BTB and iBTB miss we can detect the mispredition at decode but we need to wait
@@ -692,25 +692,25 @@ static Bp_PredictResult bp_predict_compute(Bp_Data* bp_data, Op* op, const Bp_Pr
           res.recover_at_decode = FALSE;
           res.recover_at_exec = FALSE;
           res.pred_npc = pred_target;
-        STAT_EVENT(op->proc_id, ICALL_CORRECT_IBTB + stat_offset);
+          STAT_EVENT(op->proc_id, ICALL_CORRECT_IBTB + stat_offset);
         } else {
           res.recover_at_decode = FALSE;
           res.recover_at_exec = TRUE;
           res.pred_npc = pred_target;
           res.local_misfetch = TRUE;
-        STAT_EVENT(op->proc_id, ICALL_RECOVER_IBTB_MISFETCH + stat_offset);
+          STAT_EVENT(op->proc_id, ICALL_RECOVER_IBTB_MISFETCH + stat_offset);
         }
       } else if (btb_target) {
         if (op->oracle_info.target == pred_target) {
           res.recover_at_decode = FALSE;
           res.recover_at_exec = FALSE;
           res.pred_npc = pred_target;
-        STAT_EVENT(op->proc_id, ICALL_CORRECT_BTB + stat_offset);
+          STAT_EVENT(op->proc_id, ICALL_CORRECT_BTB + stat_offset);
         } else {
           res.recover_at_decode = FALSE;
           res.recover_at_exec = TRUE;
           res.pred_npc = pred_target;
-        STAT_EVENT(op->proc_id, ICALL_RECOVER_BTB_MISFETCH + stat_offset);
+          STAT_EVENT(op->proc_id, ICALL_RECOVER_BTB_MISFETCH + stat_offset);
         }
       }
       // If BTB and iBTB miss we can detect the mispredition at decode but we need to wait
@@ -858,8 +858,8 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     return op->oracle_info.npc;
   }
 
-  btb_miss_nt = bp_data->bp->pred_op_func(bp_data, op, br_num, fetch_addr, &base,
-                                          BP_PRED_WRITE_MAIN | BP_PRED_UPDATE_GHIST);
+  btb_miss_nt =
+      bp_data->bp->pred_op_func(bp_data, op, br_num, fetch_addr, &base, BP_PRED_WRITE_MAIN | BP_PRED_UPDATE_GHIST);
   if (USE_LATE_BP) {
     bp_data->late_bp->pred_op_func(bp_data, op, br_num, fetch_addr, &base, BP_PRED_WRITE_LATE);
   }
@@ -874,8 +874,8 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         "t_npc:0x%s  btb_miss:%d  mispred:%d  misfetch:%d  no_tar:%d dir%d pred%d offset %llx target %llx\n",
         unsstr64(op->op_num), op->off_path, cf_type_names[op->table_info->cf_type], hexstr64s(op->inst_info->addr),
         hexstr64s(op->oracle_info.pred_npc), hexstr64s(op->oracle_info.npc), op->oracle_info.btb_miss,
-        op->oracle_info.mispred, op->oracle_info.misfetch, op->oracle_info.no_target,
-        op->oracle_info.dir, op->oracle_info.pred, base.pc_plus_offset, op->oracle_info.target);
+        op->oracle_info.mispred, op->oracle_info.misfetch, op->oracle_info.no_target, op->oracle_info.dir,
+        op->oracle_info.pred, base.pc_plus_offset, op->oracle_info.target);
 
   ASSERT(op->proc_id, op->oracle_info.pred_npc);
   if (op->oracle_info.dir != op->oracle_info.pred && base.pc_plus_offset != op->oracle_info.target) {

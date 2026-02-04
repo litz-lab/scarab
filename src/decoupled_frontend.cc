@@ -235,9 +235,8 @@ void Decoupled_FE::dfe_recover_op() {
     decoupled_fe_iter* iter = ftq_iterators[late_bp_iter_idx].get();
     if (iter->ft_pos < ftq.size() && ftq.at(iter->ft_pos) == late_bp_ft) {
       ASSERT(proc_id, saved_recovery_ft);
-      DEBUG(proc_id,
-            "[DFE%u] Late-BP recovery: replacing late-bp FT with saved_recovery_ft at ft_pos=%llu\n",
-            bp_id, (unsigned long long)iter->ft_pos);
+      DEBUG(proc_id, "[DFE%u] Late-BP recovery: replacing late-bp FT with saved_recovery_ft at ft_pos=%llu\n", bp_id,
+            (unsigned long long)iter->ft_pos);
       for (auto* op : saved_recovery_ft->ops) {
         if (op->parent_FT_off_path == late_bp_ft)
           op->parent_FT_off_path = nullptr;
@@ -267,7 +266,8 @@ void Decoupled_FE::dfe_recover_op() {
     ftq.clear();
   }
 
-  DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx late_bp recovery:%i\n", bp_id, bp_recovery_info->recovery_fetch_addr, bp_recovery_info->late_bp_recovery);
+  DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx late_bp recovery:%i\n", bp_id,
+        bp_recovery_info->recovery_fetch_addr, bp_recovery_info->late_bp_recovery);
 
   for (auto&& it : ftq_iterators) {
     // When the FTQ flushes, reset all iterators
@@ -312,8 +312,7 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
       if (state != INACTIVE || (state == INACTIVE && exit_on_off_path)) {
         if (!bp_recovery_info->late_bp_recovery) {
           ASSERT(proc_id, saved_recovery_ft->has_unread_ops());
-          ASSERTM(proc_id,
-                  bp_recovery_info->recovery_fetch_addr == saved_recovery_ft->get_ft_info().static_info.start,
+          ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == saved_recovery_ft->get_ft_info().static_info.start,
                   "Scarab's recovery addr 0x%llx does not match save ft "
                   "addr 0x%llx\n",
                   bp_recovery_info->recovery_fetch_addr, saved_recovery_ft->get_ft_info().static_info.start);
@@ -571,9 +570,8 @@ void Decoupled_FE::set_pinned_iter_ft_pos(uns iter_idx, uint64_t ft_pos) {
   ASSERT(proc_id, iter_idx < ftq_iterators.size());
   decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
   ASSERT(proc_id, iter->pinned);
-  DEBUG(proc_id,
-        "[DFE%u] set_pinned_iter_ft_pos: this=%p iter_idx=%u ft_pos=%llu ftq.size=%zu\n",
-        bp_id, this, iter_idx, (unsigned long long)ft_pos, ftq.size());
+  DEBUG(proc_id, "[DFE%u] set_pinned_iter_ft_pos: this=%p iter_idx=%u ft_pos=%llu ftq.size=%zu\n", bp_id, this,
+        iter_idx, (unsigned long long)ft_pos, ftq.size());
   iter->ft_pos = ft_pos;
   iter->op_pos = 0;
   iter->flattened_op_pos = 0;
@@ -705,9 +703,8 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
   if (late_bp_ft && late_bp_ft == ftq.back()) {
     ASSERT(proc_id, late_bp_iter_idx < 0);
     late_bp_iter_idx = new_pinned_ftq_iter();
-    DEBUG(proc_id,
-          "[DFE%u] pin late-bp: this=%p ftq.size=%zu late_bp_iter_idx=%d ft_pos=%zu\n",
-          bp_id, this, ftq.size(), late_bp_iter_idx, ftq.size() - 1);
+    DEBUG(proc_id, "[DFE%u] pin late-bp: this=%p ftq.size=%zu late_bp_iter_idx=%d ft_pos=%zu\n", bp_id, this,
+          ftq.size(), late_bp_iter_idx, ftq.size() - 1);
     set_pinned_iter_ft_pos(late_bp_iter_idx, ftq.size() - 1);
   }
 }
@@ -812,7 +809,7 @@ void Decoupled_FE::redirect_to_late_bp_override(FT_PredictResult result) {
   ASSERT(proc_id, !late_bp_sched_op->oracle_info.recover_at_exec);
   redirect_to_off_path(result);
   DEBUG(proc_id, "[DFE%u] Late-BP correct: off-path to early target op_num=%llu ft_id=%llu\n", bp_id,
-        (unsigned long long)late_bp_sched_op->op_num,
-        (unsigned long long)late_bp_ft->get_ft_info().dynamic_info.FT_id);
-  bp_sched_recovery(bp_recovery_info, late_bp_sched_op, cycle_count, /*late_bp_recovery=*/TRUE, /*force_offpath=*/FALSE);
+        (unsigned long long)late_bp_sched_op->op_num, (unsigned long long)late_bp_ft->get_ft_info().dynamic_info.FT_id);
+  bp_sched_recovery(bp_recovery_info, late_bp_sched_op, cycle_count, /*late_bp_recovery=*/TRUE,
+                    /*force_offpath=*/FALSE);
 }

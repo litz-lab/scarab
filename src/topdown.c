@@ -37,9 +37,11 @@
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 
-#include "dcache_stage.h"
-#include "bp/bp.h"
 #include "bp/bp.param.h"
+
+#include "bp/bp.h"
+
+#include "dcache_stage.h"
 #include "idq_stage.h"
 #include "lsq.h"
 #include "map_stage.h"
@@ -87,7 +89,7 @@ void topdown_bp_recovery(uns proc_id, Bp_Recovery_Info* bp_recovery_info) {
     STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED_CYCLES);
   }
 
-  idq_stage_set_recovery_cycle(bp_recovery_info->late_bp_recovery? LATE_BP_LATENCY : TOPDOWN_RECOVERY_DEPTH);
+  idq_stage_set_recovery_cycle(bp_recovery_info->late_bp_recovery ? LATE_BP_LATENCY : TOPDOWN_RECOVERY_DEPTH);
 }
 
 void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path) {

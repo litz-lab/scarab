@@ -140,6 +140,8 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
     if (op->inst_info->fake_inst == 1)
       ft_info.dynamic_info.contains_fake_nop = TRUE;
     add_op(op);
+    DEBUG(proc_id, "[DFE%u] FT::build add_op op_num=%s addr=%llx off_path=%d end_reason=%d event=%d\n", bp_id,
+          unsstr64(op->op_num), (unsigned long long)op->inst_info->addr, off_path, get_end_reason(), event);
     if ((event == FT_EVENT_MISPREDICT || event == FT_EVENT_FETCH_BARRIER) && off_path) {
       generate_ft_info();
       return event;
@@ -147,6 +149,7 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
     STAT_EVENT(proc_id, FTQ_FETCHED_INS_ONPATH + off_path);
   } while (get_end_reason() == FT_NOT_ENDED);
 
+  DEBUG(proc_id, "[DFE%u] FT::build done end_reason=%d event=%d\n", bp_id, get_end_reason(), event);
   generate_ft_info();
 
   return event;
@@ -211,6 +214,9 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
 
   // if split at the last op and FT already ended, no need to create new FT, just update end condition
   if (split_index == ops.size() - 1 && get_end_reason() != FT_NOT_ENDED) {
+    DEBUG(proc_id,
+          "[DFE%u] extract_off_path_ft split_last=1 end_reason=%d ops=%zu op_pos=%zu\n",
+          bp_id, get_end_reason(), ops.size(), op_pos);
     generate_ft_info();
     return {this, nullptr};
   }
@@ -266,9 +272,10 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 
     DEBUG(proc_id,
           "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
-          "recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
+          "late_pred_npc:%llx late_mispred:%i late_misfetch:%i late_taken:%i recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
           bp_id, op->inst_info->addr, op->oracle_info.npc, op->oracle_info.pred_npc, op->oracle_info.mispred,
           op->oracle_info.misfetch, op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN,
+          op->oracle_info.late_pred_npc, op->oracle_info.late_mispred, op->oracle_info.late_misfetch, op->oracle_info.late_pred == TAKEN,
           op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec, op->table_info->bar_type & BAR_FETCH);
     if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
       op->oracle_info.recover_at_decode = FALSE;
@@ -278,10 +285,17 @@ FT_Event FT::predict_one_cf_op(Op* op) {
     }
     if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
       ASSERT(0, !(op->oracle_info.recover_at_decode && op->oracle_info.recover_at_exec));
-
       if (op->off_path) {
         op->oracle_info.recover_at_decode = FALSE;
         op->oracle_info.recover_at_exec = FALSE;
+      }
+
+      if (USE_LATE_BP && !op->off_path) {
+        if (op->oracle_info.late_mispred || op->oracle_info.late_misfetch) {
+          return FT_EVENT_LATE_BP_MISPREDICT;
+        } else {
+          op->oracle_info.recover_at_exec = FALSE;
+        }
       }
       return FT_EVENT_MISPREDICT;
     } else if (trace_mode && op->off_path && op->oracle_info.pred == TAKEN) {
@@ -310,8 +324,12 @@ FT_PredictResult FT::predict_ft() {
     Op* op = ops[idx];
     FT_Event event = predict_one_cf_op(op);
     if (event != FT_EVENT_NONE) {
-      uint64_t return_idx = (event == FT_EVENT_MISPREDICT) ? (idx) : 0;
-      Addr pred_addr = op->oracle_info.pred_npc;
+      uint64_t return_idx = (event == FT_EVENT_MISPREDICT || event == FT_EVENT_LATE_BP_MISPREDICT) ? (idx) : 0;
+      Addr pred_addr = (event == FT_EVENT_LATE_BP_MISPREDICT)? op->oracle_info.late_pred_npc : op->oracle_info.pred_npc;
+      DEBUG(proc_id,
+            "[DFE%u] predict_ft stop idx=%zu ops=%zu event=%d op_num=%s pred_npc=%llx late_pred_npc=%llx\n",
+            bp_id, idx, ops.size(), event, unsstr64(op->op_num), (unsigned long long)op->oracle_info.pred_npc,
+            (unsigned long long)op->oracle_info.late_pred_npc);
       if (!ended_by_exit())
         return {return_idx, event, op, pred_addr};
     }

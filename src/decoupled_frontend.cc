@@ -192,6 +192,12 @@ void decoupled_fe_print_conf_data() {
   g_dfe->print_conf_data();
 }
 
+/* Helper function to get bp_id from an op */
+uns op_get_bp_id(Op* op) {
+  ASSERT(0, op->parent_FT);
+  return op->parent_FT->get_bp_id();
+}
+
 }  // extern "C"
 
 /* Decoupled_FE member functions */
@@ -406,7 +412,7 @@ void Decoupled_FE::update() {
       }
       // recover will fall through to on-path exec
       case SERVING_ON_PATH: {
-        if (LOOKAHEAD_BUF_SIZE) {
+        if (LOOKAHEAD_BUF_SIZE && bp_id == 0) {
           current_ft_to_push = lookahead_buffer_pop_ft(proc_id, bp_id);
           ASSERT(proc_id, current_ft_to_push->get_is_prebuilt());
         } else {
@@ -652,7 +658,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   }
   // no trailing ft, misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
-    if (LOOKAHEAD_BUF_SIZE) {
+    if (LOOKAHEAD_BUF_SIZE && bp_id == 0) {
       saved_recovery_ft = lookahead_buffer_pop_ft(proc_id, bp_id);
       ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
     } else {

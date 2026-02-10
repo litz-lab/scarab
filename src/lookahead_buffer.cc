@@ -266,13 +266,13 @@ void LookaheadBuffer::insert_ft(uns8 proc_id) {
 /* Returns a FT at the current read pointer */
 FT* LookaheadBuffer::pop_ft(uns proc_id, uns8 bp_id) {
   FT* current_read_FT = lookahead_buffer[rdptr_lb];
+  ASSERT(proc_id, bp_id == 0);  // Only main DFE should read from lookahead buffer
 
   update_search_indexes_on_remove(rdptr_lb);
   lookahead_buffer[rdptr_lb] = nullptr;
   rdptr_lb = (rdptr_lb + 1) % LOOKAHEAD_BUF_SIZE;
   ft_buffer_count--;
   refill(proc_id);
-  current_read_FT->set_bp_id(bp_id);
 
   return current_read_FT;
 }

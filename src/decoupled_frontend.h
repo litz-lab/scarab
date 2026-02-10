@@ -142,6 +142,8 @@ uint64_t decoupled_fe_ftq_iter_offset(Decoupled_FE* dfe, uns iter_idx);
 uint64_t decoupled_fe_ftq_iter_ft_offset(Decoupled_FE* dfe, uns iter_idx);
 uint64_t decoupled_fe_ftq_num_ops(Decoupled_FE* dfe);
 uint64_t decoupled_fe_ftq_num_fts(Decoupled_FE* dfe);
+
+uns op_get_bp_id(Op* op);
 #ifdef __cplusplus
 }  // extern "C"
 #endif

@@ -103,6 +103,8 @@ struct Op_Info_struct {
   Flag late_mispred;       // true if the multi-cycle branch predictor mispredicted
   Flag use_late_pred_for_ft;  // select late prediction for FT end/consecutivity
   Flag recovery_sch;       // true if this op has scheduled a recovery
+  Flag main_recover_at_decode;  // recovery-at-decode as set by the main predictor
+  Flag main_recover_at_exec;    // recovery-at-exec as set by the main predictor
   Flag recover_at_decode;  // op will schedule recovery at decode
   Flag recover_at_exec;    // op will schedule recovery at exec
   int8 off_path_reason;    // reason this of will cause a recovery (Off_Path_Reason enum)

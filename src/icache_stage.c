@@ -27,6 +27,7 @@
  ***************************************************************************************/
 
 #include "icache_stage.h"
+#include "bp/bp.h"
 
 #include <math.h>
 
@@ -224,6 +225,8 @@ void recover_icache_stage() {
   uns ii;
 
   ASSERT(ic->proc_id, ic->proc_id == bp_recovery_info->proc_id);
+  DEBUG(ic->proc_id, "recover_icache_stage: ic->current_ft=%p uc->current_ft=%p\n",
+        (void*)ic->current_ft, (void*)(uc ? uc->current_ft : NULL));
   DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s\n",
         hexstr64s(bp_recovery_info->recovery_fetch_addr));
   cur_data->op_count = 0;
@@ -448,12 +451,23 @@ FT_Arbitration_Result ft_arbitration() {
     return FT_UNAVAILABLE;
   } else {
     FT_Info ft_info = ft_get_ft_info(ft);
+    DEBUG(ic->proc_id, "FT arbitration select ft_id=%llu op_pos=%llu start=0x%llx\n",
+          (unsigned long long)ft_info.dynamic_info.FT_id, (unsigned long long)ft_get_op_pos(ft),
+          (unsigned long long)ft_info.static_info.start);
     // set the current fetch address
     ic->fetch_addr = ft_info.static_info.start;
     ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr);
 
-    // look up uop cache
-    Flag ft_in_uop_cache = uop_cache_lookup_ft_and_fill_lookup_buffer(ft_info, ic->off_path);
+    // look up uop cache (skip for partial FTs)
+    Flag ft_in_uop_cache = FALSE;
+    if (!ft_is_partial(ft)) {
+      ft_in_uop_cache = uop_cache_lookup_ft_and_fill_lookup_buffer(ft_info, ic->off_path);
+    } else {
+      DEBUG(ic->proc_id, "FT arbitration skip uop_cache for partial ft_id=%llu op_pos=%llu\n",
+            (unsigned long long)ft_info.dynamic_info.FT_id, (unsigned long long)ft_get_op_pos(ft));
+    }
+    DEBUG(ic->proc_id, "FT arbitration uop_cache_hit=%d ft_id=%llu\n", ft_in_uop_cache,
+          (unsigned long long)ft_info.dynamic_info.FT_id);
 
     // look up icache if uop miss (inlcuding when uop cache disabled) or if requested
     if (!ft_in_uop_cache || ALWAYS_LOOKUP_ICACHE) {
@@ -557,6 +571,9 @@ Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data* sd) {
 
   while (requested && ft_can_fetch_op(ft)) {
     sd->ops[sd->op_count] = ft_fetch_op(ft);
+    if (USE_LATE_BP && bp_recovery_info->late_bp_pending && sd->ops[sd->op_count]->off_path) {
+      bp_recovery_info->late_bp_offpath_fetch_ops++;
+    }
     sd->op_count++;
     requested--;
   }

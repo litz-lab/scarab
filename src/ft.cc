@@ -119,6 +119,37 @@ void FT::remove_op_after_exec_recover() {
   ASSERT(proc_id, get_end_reason() == FT_NOT_ENDED || get_end_reason() == FT_TAKEN_BRANCH);
 }
 
+void FT::trim_offpath_suffix() {
+  uint64_t trimmed = 0;
+  while (!ops.empty()) {
+    Op* op = ops.back();
+    if (!op->off_path)
+      break;
+    ops.pop_back();
+    op->parent_FT = nullptr;
+    free_op(op);
+    trimmed++;
+  }
+  if (trimmed) {
+    DEBUG(proc_id, "[DFE%u] trim_offpath_suffix trimmed_ops=%llu ft_id=%llu\n", bp_id,
+          (unsigned long long)trimmed, (unsigned long long)ft_info.dynamic_info.FT_id);
+  }
+  if (!ops.empty())
+    generate_ft_info();
+}
+
+void FT::force_use_late_pred_for_ft_on_last_op() {
+  if (ops.empty())
+    return;
+  Op* last_op = ops.back();
+  //FT_Ended_By prev_end = ft_info.dynamic_info.ended_by;
+  last_op->oracle_info.use_late_pred_for_ft = TRUE;
+  generate_ft_info();
+  //DEBUG(proc_id,
+        //"[DFE%u] force_use_late_pred_for_ft_on_last_op op_num=%s prev_end=%d new_end=%d\n",
+        //bp_id, unsstr64(last_op->op_num), prev_end, ft_info.dynamic_info.ended_by);
+}
+
 FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
                    bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn) {
   FT_Event event = FT_EVENT_NONE;
@@ -176,36 +207,36 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
  * - generate off FT: Need to building/padding the current off-path FT
  * - trailing_ft:     Remaining on-path operations after misprediction point
  *
- *
- * +------+------------+----------+-----------------+----------------------------------+
- * | Case | Split Last | FT Ended | Generate Off FT | Description                      |
- * +------+------------+----------+-----------------+----------------------------------+
- * |  1   |    Yes     |   Yes    |       No        | Mispred branch at end of line    |
- * |      |            |          |                 | - Misprediction at last op       |
- * |      |            |          |                 | - FT already ended               |
- * |      |            |          |                 | - Build New recovery FT          |
- * +------+------------+----------+-----------------+----------------------------------+
- * |  2   |    Yes     |   No     |      Yes        | Last op mispred not-taken        |
- * |      |            |          |                 | - Misprediction at last op       |
- * |      |            |          |                 | - FT not ended (pred not-taken)  |
- * |      |            |          |                 | - Need to pad/continue off-path  |
- * |      |            |          |                 | - Build New recovery FT          |
- * +------+------------+----------+-----------------+----------------------------------+
- * |  3   |    No      |   Yes    |      Yes        | Mispred in middle as taken       |
- * |      |            |          |                 | - Misprediction in middle of FT  |
- * |      |            |          |                 | - FT ends (pred taken branch)    |
- * |      |            |          |                 | - needs new off-path FT          |
- * |      |            |          |                 | - No need to pad off-path        |
- * |      |            |          |                 | - Use trailing_ft for recovery   |
- * +------+------------+----------+-----------------+----------------------------------+
- * |  4   |    No      |   No     |      Yes        | Mispred in middle not taken (btb)|
- * |      |            |          |                 | - btb miss result in mispred     |
- * |      |            |          |                 | - Misprediction in middle of FT  |
- * |      |            |          |                 | - FT not end                     |
- * |      |            |          |                 | - Need to pad off-path           |
- * |      |            |          |                 | - Use trailing_ft for recovery   |
- * +------+------------+----------+-----------------+----------------------------------+
- ***************************************************************************************/
+ * +------+------------+----------+-----------------+----------------------------------+------------------------------------+
+ * | Case | Split Last | FT Ended | Generate Off FT | Description                      | Late-BP Correct Recovery           |
+ * +------+------------+----------+-----------------+----------------------------------+------------------------------------+
+ * |  1   |    Yes     |   Yes    |       No        | Mispred branch at end of line    | Keep mispred FT in FTQ             |
+ * |      |            |          |                 | - Misprediction at last op       | - Update ft_info to use            |
+ * |      |            |          |                 | - FT already ended               |   late-pred end reason             |
+ * |      |            |          |                 | - Build New recovery FT          | - Flush following off-path FTs     |
+ * |      |            |          |                 |                                  | - Insert new recovery FT           |
+ * +------+------------+----------+-----------------+----------------------------------+------------------------------------+
+ * |  2   |    Yes     |   No     |      Yes        | Last op mispred not-taken        | Keep mispred FT in FTQ             |
+ * |      |            |          |                 | - Misprediction at last op       | - Trim off-path suffix             |
+ * |      |            |          |                 | - FT not ended (pred not-taken)  | - Update ft_info to use late-pred  |
+ * |      |            |          |                 | - Need to continue off-path      | - Flush following off-path FTs     |
+ * |      |            |          |                 | - Build New recovery FT          | - Insert new recovery FT           |
+ * +------+------------+----------+-----------------+----------------------------------+------------------------------------+
+ * |  3   |    No      |   Yes    |      Yes        | Mispred in middle as taken       | Replace mispred FT with trailing_ft|
+ * |      |            |          |                 | - Misprediction in middle of FT  | with op_pos = 0                    |
+ * |      |            |          |                 | - FT ends (pred taken branch)    | - Flush mispred FT onward          |
+ * |      |            |          |                 | - needs new off-path FT          | - Insert trailing_ft with op_pos 0 |
+ * |      |            |          |                 | - No need to pad off-path        |                                    |
+ * |      |            |          |                 | - Use trailing_ft for recovery   |                                    |
+ * +------+------------+----------+-----------------+----------------------------------+------------------------------------+
+ * |  4   |    No      |   No     |      Yes        | Mispred in middle not taken (btb)| Replace mispred FT with trailing_ft|
+ * |      |            |          |                 | - btb miss result in mispred     | with op_pos = 0                    |
+ * |      |            |          |                 | - Misprediction in middle of FT  | - Flush mispred FT onward          |
+ * |      |            |          |                 | - FT not end                     | - Insert trailing ft with op_pos 0 |
+ * |      |            |          |                 | - Need to pad off-path           |                                    |
+ * |      |            |          |                 | - Use trailing_ft for recovery   |                                    |
+ * +------+------------+----------+-----------------+----------------------------------+------------------------------------+
+ ***************************************************************************************************************************/
 
 std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
   uns index_uns = static_cast<uns>(split_index);
@@ -284,6 +315,14 @@ FT_Event FT::predict_one_cf_op(Op* op) {
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
       return FT_EVENT_FETCH_BARRIER;
     }
+    const Flag main_wrong = op->oracle_info.mispred || op->oracle_info.misfetch;
+    const Flag late_wrong = op->oracle_info.late_mispred || op->oracle_info.late_misfetch;
+    const Flag main_recover =
+        op->oracle_info.main_recover_at_decode || op->oracle_info.main_recover_at_exec;
+    if (USE_LATE_BP && !op->off_path && main_recover && main_wrong && !late_wrong) {
+      op->oracle_info.recover_at_decode = op->oracle_info.main_recover_at_decode;
+      op->oracle_info.recover_at_exec = op->oracle_info.main_recover_at_exec;
+    }
     if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
       ASSERT(0, !(op->oracle_info.recover_at_decode && op->oracle_info.recover_at_exec));
       if (op->off_path) {
@@ -291,8 +330,12 @@ FT_Event FT::predict_one_cf_op(Op* op) {
         op->oracle_info.recover_at_exec = FALSE;
       }
 
-      if (USE_LATE_BP && !op->off_path && (op->oracle_info.late_mispred || op->oracle_info.late_misfetch))
-        return FT_EVENT_LATE_BP_MISPREDICT;
+      if (USE_LATE_BP && !op->off_path) {
+        if (late_wrong)
+          return FT_EVENT_LATE_BP_MISPREDICT;
+        if (main_recover && main_wrong && !late_wrong)
+          return FT_EVENT_LATE_BP_CORRECT_OVERRIDE;
+      }
       return FT_EVENT_MISPREDICT;
     } else if (trace_mode && op->off_path) {
       // in this case, not a misprediction pred is taken so oracle info should be taken
@@ -323,9 +366,12 @@ FT_PredictResult FT::predict_ft() {
     Op* op = ops[idx];
     FT_Event event = predict_one_cf_op(op);
     if (event != FT_EVENT_NONE) {
-      uint64_t return_idx = (event == FT_EVENT_MISPREDICT || event == FT_EVENT_LATE_BP_MISPREDICT) ? (idx) : 0;
-      Addr pred_addr =
-          (event == FT_EVENT_LATE_BP_MISPREDICT) ? op->oracle_info.late_pred_npc : op->oracle_info.pred_npc;
+      uint64_t return_idx = (event == FT_EVENT_MISPREDICT || event == FT_EVENT_LATE_BP_MISPREDICT ||
+                             event == FT_EVENT_LATE_BP_CORRECT_OVERRIDE)
+                                ? (idx)
+                                : 0;
+      Addr pred_addr = (event == FT_EVENT_LATE_BP_MISPREDICT) ? op->oracle_info.late_pred_npc
+                                                              : op->oracle_info.pred_npc;
       DEBUG(proc_id, "[DFE%u] predict_ft stop idx=%zu ops=%zu event=%d op_num=%s pred_npc=%llx late_pred_npc=%llx\n",
             bp_id, idx, ops.size(), event, unsstr64(op->op_num), (unsigned long long)op->oracle_info.pred_npc,
             (unsigned long long)op->oracle_info.late_pred_npc);
@@ -382,6 +428,11 @@ bool FT::is_consecutive(const FT& previous_ft) const {
       matches = (end_addr == start_addr);
       break;
   }
+  DEBUG(proc_id,
+        "[DFE%u] is_consecutive prev_end=%d start=%llx pred_npc=%llx late_pred_npc=%llx npc=%llx end_addr=%llx use_late=%d matches=%d\n",
+        bp_id, prev_end_type, (unsigned long long)start_addr, (unsigned long long)pred_npc,
+        (unsigned long long)last_op->oracle_info.late_pred_npc, (unsigned long long)npc,
+        (unsigned long long)end_addr, last_op->oracle_info.use_late_pred_for_ft, matches);
   return matches;
 }
 
@@ -453,6 +504,14 @@ Op* ft_fetch_op(FT* ft) {
 
 FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
+}
+
+uint64_t ft_get_op_pos(FT* ft) {
+  return ft->get_op_pos();
+}
+
+Flag ft_is_partial(FT* ft) {
+  return ft->get_op_pos() > 0;
 }
 
 /* retire and flush, free all ops in a FT when last op is freed */

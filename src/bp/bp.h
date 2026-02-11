@@ -63,6 +63,9 @@ typedef struct Bp_Recovery_Info_struct {
 
   Flag late_bp_recovery;        // TRUE if recovery is due to a late branch prediction.
   Flag late_bp_recovery_wrong;  // TRUE if recovery is due to a late branch prediction that is wrong.
+  Flag late_bp_pending;         // TRUE if a late-bp recovery is pending.
+  Counter late_bp_sched_cycle;  // Cycle when late-bp recovery was scheduled.
+  Counter late_bp_offpath_fetch_ops;  // Off-path ops fetched while late-bp recovery pending.
 
 } Bp_Recovery_Info;
 

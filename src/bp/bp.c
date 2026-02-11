@@ -119,6 +119,9 @@ void init_bp_recovery_info(uns8 proc_id, Bp_Recovery_Info* new_bp_recovery_info)
 
   new_bp_recovery_info->recovery_cycle = MAX_CTR;
   new_bp_recovery_info->redirect_cycle = MAX_CTR;
+  new_bp_recovery_info->late_bp_pending = FALSE;
+  new_bp_recovery_info->late_bp_sched_cycle = 0;
+  new_bp_recovery_info->late_bp_offpath_fetch_ops = 0;
 
   bp_recovery_info = new_bp_recovery_info;
 
@@ -141,6 +144,10 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
   }
 
   if (bp_recovery_info->recovery_cycle == MAX_CTR || op->op_num <= bp_recovery_info->recovery_op_num) {
+    if (bp_recovery_info->late_bp_pending && !late_bp_recovery) {
+      STAT_EVENT(op->proc_id, LATE_BP_RECOVERY_SUPERSEDED);
+      bp_recovery_info->late_bp_pending = FALSE;
+    }
     const Addr next_fetch_addr = late_bp_recovery ? op->oracle_info.late_pred_npc : op->oracle_info.npc;
     ASSERT(0, next_fetch_addr);
     const uns latency = late_bp_recovery ? LATE_BP_LATENCY : 1;
@@ -158,6 +165,10 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
     bp_recovery_info->recovery_info = op->recovery_info;
     if (late_bp_recovery) {
       bp_recovery_info->recovery_info.new_dir = op->oracle_info.late_pred;
+      bp_recovery_info->late_bp_pending = TRUE;
+      bp_recovery_info->late_bp_sched_cycle = cycle;
+      bp_recovery_info->late_bp_offpath_fetch_ops = 0;
+      STAT_EVENT(op->proc_id, LATE_BP_RECOVERY_SCHEDULED);
     }
     bp_recovery_info->recovery_info.op_num = op->op_num;
     bp_recovery_info->recovery_inst_info = op->inst_info;
@@ -803,6 +814,8 @@ static void bp_predict_commit(Op* op, const Bp_PredictResult* res, Bp_PredictMas
     op->oracle_info.pred_npc = res->pred_npc;
     op->oracle_info.btb_miss = res->local_btb_miss;
     op->oracle_info.no_target = res->local_no_target;
+    op->oracle_info.main_recover_at_decode = res->recover_at_decode;
+    op->oracle_info.main_recover_at_exec = res->recover_at_exec;
     if (res->local_misfetch)
       op->oracle_info.misfetch = TRUE;
   }
@@ -926,6 +939,18 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
       const Flag main_wrong = op->oracle_info.mispred || op->oracle_info.misfetch;
       const Flag late_wrong = op->oracle_info.late_mispred || op->oracle_info.late_misfetch;
       op->oracle_info.use_late_pred_for_ft = !(main_wrong && !late_wrong);
+      if (main_wrong && !late_wrong) {
+        STAT_EVENT(op->proc_id, LATE_BP_EARLY_WRONG_LATE_CORRECT);
+      } else if (!main_wrong && late_wrong) {
+        STAT_EVENT(op->proc_id, LATE_BP_EARLY_CORRECT_LATE_WRONG);
+      }
+      if (op->oracle_info.use_late_pred_for_ft) {
+        STAT_EVENT(op->proc_id, LATE_BP_USE_LATE_FT);
+      }
+      if (op->oracle_info.use_late_pred_for_ft) {
+        // Override global history with late prediction when late prediction is selected.
+        bp_data->global_hist = (op->oracle_info.pred_global_hist >> 1) | (op->oracle_info.late_pred << 31);
+      }
     }
   } else {
     op->oracle_info.use_late_pred_for_ft = FALSE;

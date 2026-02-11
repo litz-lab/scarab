@@ -375,6 +375,14 @@ void cmp_recover() {
   }
 
   if (USE_LATE_BP && bp_recovery_info->late_bp_recovery) {
+    STAT_EVENT(bp_recovery_info->proc_id, LATE_BP_RECOVERY_FIRED);
+    if (bp_recovery_info->late_bp_pending) {
+      INC_STAT_EVENT(bp_recovery_info->proc_id, LATE_BP_RECOVERY_LAT,
+                     cycle_count - bp_recovery_info->late_bp_sched_cycle);
+      INC_STAT_EVENT(bp_recovery_info->proc_id, LATE_BP_RECOVERY_OFFPATH_FETCHED,
+                     bp_recovery_info->late_bp_offpath_fetch_ops);
+      bp_recovery_info->late_bp_pending = FALSE;
+    }
     Op* op = bp_recovery_info->recovery_op;
     op->oracle_info.pred = op->oracle_info.late_pred;
     op->oracle_info.pred_npc = op->oracle_info.late_pred_npc;

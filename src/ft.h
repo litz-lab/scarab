@@ -45,6 +45,7 @@ enum FT_Event {
   FT_EVENT_NONE,
   FT_EVENT_MISPREDICT,
   FT_EVENT_LATE_BP_MISPREDICT,
+  FT_EVENT_LATE_BP_CORRECT_OVERRIDE,
   FT_EVENT_FETCH_BARRIER,
   FT_EVENT_OFFPATH_TAKEN_REDIRECT,
   FT_EVENT_BUILD_FAIL
@@ -65,6 +66,8 @@ bool ft_can_fetch_op(FT* ft);
 Op* ft_fetch_op(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
 void ft_free_op(Op* op);
+uint64_t ft_get_op_pos(FT* ft);
+Flag ft_is_partial(FT* ft);
 
 #ifdef __cplusplus
 }  // extern "C"
@@ -103,6 +106,8 @@ class FT {
   FT_Event build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
                  bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn);
   void remove_op_after_exec_recover();
+  void trim_offpath_suffix();
+  void force_use_late_pred_for_ft_on_last_op();
 
   FT_PredictResult predict_ft();
   std::pair<FT*, FT*> extract_off_path_ft(uns split_index);
@@ -110,6 +115,7 @@ class FT {
   Op* get_last_op() const;
   Op* get_first_op() const;
   Addr get_start_addr() const;
+  uint64_t get_op_pos() const { return op_pos; }
   bool is_consecutive(const FT& previous_ft) const;
   bool has_unread_ops() const { return ops.size() - op_pos != 0; }
   bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }

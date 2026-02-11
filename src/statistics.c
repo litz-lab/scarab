@@ -212,26 +212,26 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
       fprintf(file_stream,
               "Cumulative:        Cycles: %-20llu  Instructions: %-20llu  IPC: "
               "%.5f\n",
-              cycle_count, inst_count[proc_id], (double)inst_count[proc_id] / cycle_count);
+              cycle_count, inst_count_fetched[proc_id], (double)inst_count_fetched[proc_id] / cycle_count);
       fprintf(file_stream, "\n");
 
-      fprintf(
-          file_stream,
-          "Periodic:          Cycles: %-20llu  Instructions: %-20llu  IPC: "
-          "%.5f\n",
-          cycle_count - period_last_cycle_count, inst_count[proc_id] - period_last_inst_count[proc_id],
-          (double)(inst_count[proc_id] - period_last_inst_count[proc_id]) / (cycle_count - period_last_cycle_count));
+      fprintf(file_stream,
+              "Periodic:          Cycles: %-20llu  Instructions: %-20llu  IPC: "
+              "%.5f\n",
+              cycle_count - period_last_cycle_count, inst_count_fetched[proc_id] - period_last_inst_count[proc_id],
+              (double)(inst_count_fetched[proc_id] - period_last_inst_count[proc_id]) /
+                  (cycle_count - period_last_cycle_count));
       fprintf(file_stream, "\n");
 
       //.csv file
       fprintf(csv_file_stream, "Core, %d, %u\n", STATISTICS_CSV_NO_GROUP, proc_id);
 
       fprintf(csv_file_stream, "Cumulative_Cycles, %d, %-20llu\nCumulative_Instructions, %d, %-20llu\n",
-              STATISTICS_CSV_NO_GROUP, cycle_count, STATISTICS_CSV_NO_GROUP, inst_count[proc_id]);
+              STATISTICS_CSV_NO_GROUP, cycle_count, STATISTICS_CSV_NO_GROUP, inst_count_fetched[proc_id]);
 
       fprintf(csv_file_stream, "Periodic_Cycles, %d, %-20llu\nPeriodic_Instructions, %d, %-20llu\n",
               STATISTICS_CSV_NO_GROUP, cycle_count - period_last_cycle_count, STATISTICS_CSV_NO_GROUP,
-              inst_count[proc_id] - period_last_inst_count[proc_id]);
+              inst_count_fetched[proc_id] - period_last_inst_count[proc_id]);
     }
 
     if (s->type == LINE_TYPE_STAT) {

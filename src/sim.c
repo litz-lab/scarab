@@ -206,8 +206,8 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
     ASSERT(proc_id, !PERIODIC_DUMP);
     dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
     period_last_cycle_count = cycle_count;
-    // this number is used to calcute IPC, so it uses inst_count always
-    period_last_inst_count[proc_id] = inst_count[proc_id];
+    // this number is used to calcute IPC, so it uses inst_count_fetched always
+    period_last_inst_count[proc_id] = inst_count_fetched[proc_id];
     warmup_dump_done[proc_id] = TRUE;
   }
 
@@ -216,8 +216,8 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
     if (PERIODIC_DUMP) {
       dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
       period_last_cycle_count = cycle_count;
-      // this number is used to calcute IPC, so it uses inst_count always
-      period_last_inst_count[proc_id] = inst_count[proc_id];
+      // this number is used to calcute IPC, so it uses inst_count_fetched always
+      period_last_inst_count[proc_id] = inst_count_fetched[proc_id];
       period_ID++;
     }
 

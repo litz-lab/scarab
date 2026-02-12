@@ -149,11 +149,11 @@ jobs:
             exit 1
           fi
           v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' \
-              "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/sim.log" | head -n1)
+              "${sim_dir}/this_pr/spec2017/rate_int_v2/perlbench_r/109678/sim.log" | head -n1)
           if ! [[ "$v" =~ ^[0-9]+$ ]]; then
             echo "KIPS value is not a valid integer: '$v' Run failed!"
             echo "Contents of sim.log for debugging:"
-            cat "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/sim.log"
+            cat "${sim_dir}/this_pr/spec2017/rate_int_v2/perlbench_r/109678/sim.log"
             exit 1
           fi
           echo "value=$v" >>"$GITHUB_OUTPUT"
@@ -169,12 +169,12 @@ jobs:
             exit 1
           fi
           v=$(grep "Cumulative:" \
-               "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out" | \
+               "${sim_dir}/this_pr/spec2017/rate_int_v2/perlbench_r/109678/core.stat.0.out" | \
                sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
           if ! [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
             echo "IPC value is not a valid floating point number: '$v' Run failed!"
             echo "Contents of core.stat.0.out for debugging:"
-            cat "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out"
+            cat "${sim_dir}/this_pr/spec2017/rate_int_v2/perlbench_r/109678/core.stat.0.out"
             exit 1
           fi
           echo "value=$v" >>"$GITHUB_OUTPUT"

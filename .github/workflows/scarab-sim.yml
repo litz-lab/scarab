@@ -138,22 +138,78 @@ jobs:
           echo "No simulation directory found. Tried: ${candidates[*]}"
           exit 1
 
+      - id: simworkload
+        if: inputs.collect_metrics
+        name: Resolve workload path
+        working-directory: infra
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sci_id = os.environ.get("SCI_ID", "").strip()
+          if not sci_id:
+              raise SystemExit("SCI_ID is not set.")
+
+          candidates = [Path("json") / f"{sci_id}.json"]
+          if sci_id.endswith("_dbg"):
+              candidates.append(Path("json") / f"{sci_id[:-4]}.json")
+
+          descriptor_path = None
+          for path in candidates:
+              if path.is_file():
+                  descriptor_path = path
+                  break
+          if descriptor_path is None:
+              raise SystemExit(f"No descriptor json found. Tried: {', '.join(str(p) for p in candidates)}")
+
+          with descriptor_path.open(encoding="utf-8") as handle:
+              data = json.load(handle)
+
+          sims = data.get("simulations") or []
+          if not sims:
+              raise SystemExit("Descriptor has no simulations.")
+          sim = sims[0]
+          suite = sim.get("suite")
+          subsuite = sim.get("subsuite")
+          workload = sim.get("workload")
+          cluster_id = sim.get("cluster_id")
+          if not all([suite, subsuite, workload, cluster_id]):
+              raise SystemExit(f"Missing workload fields in descriptor: {sim}")
+
+          workload_path = f"{suite}/{subsuite}/{workload}/{cluster_id}"
+          print(f"Resolved workload path: {workload_path}")
+          output = os.environ.get("GITHUB_OUTPUT")
+          if not output:
+              raise SystemExit("GITHUB_OUTPUT not set.")
+          with open(output, "a", encoding="utf-8") as out:
+              out.write(f"path={workload_path}\n")
+          PY
+        env:
+          SCI_ID: ${{ inputs.sci_id }}
+
       - id: kips
         if: inputs.collect_metrics
         name: Grab KIPS
         working-directory: simulations
         run: |
           sim_dir="${{ steps.simdir.outputs.path }}"
+          workload_path="${{ steps.simworkload.outputs.path }}"
           if [ -z "$sim_dir" ]; then
             echo "Simulation directory was not resolved"
             exit 1
           fi
+          if [ -z "$workload_path" ]; then
+            echo "Workload path was not resolved"
+            exit 1
+          fi
           v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' \
-              "${sim_dir}/this_pr/spec2017/rate_int_v2/perlbench_r/109678/sim.log" | head -n1)
+              "${sim_dir}/this_pr/${workload_path}/sim.log" | head -n1)
           if ! [[ "$v" =~ ^[0-9]+$ ]]; then
             echo "KIPS value is not a valid integer: '$v' Run failed!"
             echo "Contents of sim.log for debugging:"
-            cat "${sim_dir}/this_pr/spec2017/rate_int_v2/perlbench_r/109678/sim.log"
+            cat "${sim_dir}/this_pr/${workload_path}/sim.log"
             exit 1
           fi
           echo "value=$v" >>"$GITHUB_OUTPUT"
@@ -164,17 +220,22 @@ jobs:
         working-directory: simulations
         run: |
           sim_dir="${{ steps.simdir.outputs.path }}"
+          workload_path="${{ steps.simworkload.outputs.path }}"
           if [ -z "$sim_dir" ]; then
             echo "Simulation directory was not resolved"
             exit 1
           fi
+          if [ -z "$workload_path" ]; then
+            echo "Workload path was not resolved"
+            exit 1
+          fi
           v=$(grep "Cumulative:" \
-               "${sim_dir}/this_pr/spec2017/rate_int_v2/perlbench_r/109678/core.stat.0.out" | \
+               "${sim_dir}/this_pr/${workload_path}/core.stat.0.out" | \
                sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
           if ! [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
             echo "IPC value is not a valid floating point number: '$v' Run failed!"
             echo "Contents of core.stat.0.out for debugging:"
-            cat "${sim_dir}/this_pr/spec2017/rate_int_v2/perlbench_r/109678/core.stat.0.out"
+            cat "${sim_dir}/this_pr/${workload_path}/core.stat.0.out"
             exit 1
           fi
           echo "value=$v" >>"$GITHUB_OUTPUT"

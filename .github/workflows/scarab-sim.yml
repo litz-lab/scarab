@@ -52,7 +52,7 @@ jobs:
         working-directory: infra
         env:
           trace_home: ${{ github.workspace }}
-        run: ./sci --init
+        run: ./sci --ci-init
 
       - name: Locate scarabinfra conda env
         id: conda-env
@@ -75,52 +75,6 @@ jobs:
           PY
           cat env_path.txt >> "$GITHUB_ENV"
           rm env_path.txt
-
-      - name: Download traces
-        env:
-          PYTHON_BIN: ${{ env.SCARABINFRA_ENV }}/bin/python
-        run: |
-          if [ -z "$PYTHON_BIN" ]; then
-            echo "scarabinfra conda environment not detected"
-            exit 1
-          fi
-          "$PYTHON_BIN" - <<'PY'
-          import os
-          import pathlib
-          import shutil
-          import tarfile
-          import urllib.request
-
-          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-          archive = workspace / "traces.tar.gz"
-          target_dir = workspace / "traces_top_simpoint"
-          url = "https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz"
-
-          def safe_extract(tar_obj: tarfile.TarFile, destination: pathlib.Path) -> None:
-              dest_root = destination.resolve()
-              for member in tar_obj.getmembers():
-                  member_path = (dest_root / member.name).resolve()
-                  if dest_root != member_path and dest_root not in member_path.parents:
-                      raise RuntimeError(f"Unsafe path in archive: {member.name}")
-              tar_obj.extractall(path=dest_root)
-
-          if target_dir.exists():
-              print(f"Reusing existing traces at {target_dir}")
-          else:
-              print(f"Downloading traces to {archive}")
-              with urllib.request.urlopen(url) as response:
-                  status = getattr(response, "status", 200)
-                  if status != 200:
-                      raise RuntimeError(f"Download failed with HTTP status {status}")
-                  with archive.open("wb") as dest:
-                      shutil.copyfileobj(response, dest)
-              with tarfile.open(archive, "r:gz") as tar_obj:
-                  safe_extract(tar_obj, workspace)
-              if archive.exists():
-                  archive.unlink()
-              print(f"Extracted traces to {target_dir}")
-
-          PY
 
       - name: Build Scarab
         working-directory: infra

@@ -51,7 +51,7 @@ jobs:
       - name: Initialize environment
         working-directory: infra
         env:
-          trace_home: ${{ github.workspace }}
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
         run: ./sci --ci-init
 
       - name: Locate scarabinfra conda env
@@ -79,19 +79,19 @@ jobs:
       - name: Build Scarab
         working-directory: infra
         env:
-          trace_home: ${{ github.workspace }}
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
         run: ./sci --build-scarab ${{ inputs.sci_id }}
 
       - name: Run scarab simulation
         working-directory: infra
         env:
-          trace_home: ${{ github.workspace }}
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
         run: ./sci --sim ${{ inputs.sci_id }}
 
       - name: Verify simulation status
         working-directory: infra
         env:
-          trace_home: ${{ github.workspace }}
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
         run: |
           status_output=$(./sci --status ${{ inputs.sci_id }})
           echo "$status_output"

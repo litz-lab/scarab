@@ -202,9 +202,9 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_re
   current_ft_to_push = nullptr;
   saved_recovery_ft = nullptr;
   saved_recovery_from_trailing = false;
-  late_bp_ft_id = 0;
-  late_bp_sched_op = nullptr;
-  late_bp_iter_idx = USE_LATE_BP ? static_cast<int>(new_ftq_iter()) : -1;
+  main_bp_ft_id = 0;
+  main_bp_sched_op = nullptr;
+  main_bp_iter_idx = (MAIN_BP_MECH != NUM_BP) ? static_cast<int>(new_ftq_iter()) : -1;
 
   if (CONFIDENCE_ENABLE) {
     if (bp_id)
@@ -233,22 +233,22 @@ void Decoupled_FE::dfe_recover_op() {
   cur_op = nullptr;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
 
-  if (bp_recovery_info->late_bp_recovery) {
+  if (bp_recovery_info->recover_to_main_bp) {
     auto full_flush_ftq = [&]() {
       for (auto it = ftq.begin(); it != ftq.end(); it++) {
         delete (*it);
       }
       ftq.clear();
     };
-    ASSERT(proc_id, late_bp_iter_idx >= 0);
-    decoupled_fe_iter* iter = ftq_iterators[late_bp_iter_idx].get();
+    ASSERT(proc_id, main_bp_iter_idx >= 0);
+    decoupled_fe_iter* iter = ftq_iterators[main_bp_iter_idx].get();
     ASSERT(proc_id, iter->ft_pos < ftq.size());
     if (iter->pinned) {
-      ASSERT(proc_id, ftq.at(iter->ft_pos)->get_ft_info().dynamic_info.FT_id == late_bp_ft_id);
+      ASSERT(proc_id, ftq.at(iter->ft_pos)->get_ft_info().dynamic_info.FT_id == main_bp_ft_id);
       ASSERT(proc_id, saved_recovery_ft);
       if (saved_recovery_from_trailing) {
         DEBUG(proc_id,
-              "[DFE%u] Late-BP recovery (case 3/4): replace FT_c with trailing_ft (op_pos=0) at ft_pos=%llu\n", bp_id,
+              "[DFE%u] Main-BP recovery (case 3/4): replace FT_c with trailing_ft (op_pos=0) at ft_pos=%llu\n", bp_id,
               (unsigned long long)iter->ft_pos);
         // Replace the original FT entirely so the recovery FT starts from the same entry.
         saved_recovery_ft->op_pos = 0;
@@ -266,7 +266,7 @@ void Decoupled_FE::dfe_recover_op() {
           ASSERT(proc_id, !iter->ft_pos);
           // icache_stage recovery will flush the off-path ops
           DEBUG(proc_id,
-                "[DFE%u] Late-BP recovery (case 1/2): keep FT_c in-flight (op_pos=%llu), flush following FTs\n", bp_id,
+                "[DFE%u] Main-BP recovery (case 1/2): keep FT_c in-flight (op_pos=%llu), flush following FTs\n", bp_id,
                 (unsigned long long)late_ft->op_pos);
           // Update ft_info to reflect current op_pos and late-pred end_reason without trimming.
           late_ft->force_use_late_pred_for_ft_on_last_op();
@@ -274,7 +274,7 @@ void Decoupled_FE::dfe_recover_op() {
           ASSERT(proc_id, iter->ft_pos);
           DEBUG(
               proc_id,
-              "[DFE%u] Late-BP recovery (case 1/2): keep FT_c, trim off-path suffix, flush following FTs at ft_pos=%llu\n",
+              "[DFE%u] Main-BP recovery (case 1/2): keep FT_c, trim off-path suffix, flush following FTs at ft_pos=%llu\n",
               bp_id, (unsigned long long)iter->ft_pos);
           // Keep the last on-path FT, drop any off-path padding.
           late_ft->trim_offpath_suffix();
@@ -287,16 +287,16 @@ void Decoupled_FE::dfe_recover_op() {
         ftq.erase(ftq.begin() + iter->ft_pos + 1, ftq.end());
         ASSERT(proc_id, ftq.size() == iter->ft_pos + 1);
       }
-      unset_pinned_iter_ft_pos(late_bp_iter_idx);
+      unset_pinned_iter_ft_pos(main_bp_iter_idx);
     } else {
-      DEBUG(proc_id, "[DFE%u] Late-BP recovery (full flush): late-bp FT already popped\n", bp_id);
+      DEBUG(proc_id, "[DFE%u] Main-BP recovery (full flush): main-bp FT already popped\n", bp_id);
       if (ftq.size())
-        ASSERT(proc_id, ftq.at(0)->get_ft_info().dynamic_info.FT_id > late_bp_ft_id);
-      // The late bp recovery op has already been popped from the FTQ
+        ASSERT(proc_id, ftq.at(0)->get_ft_info().dynamic_info.FT_id > main_bp_ft_id);
+      // The main bp recovery op has already been popped from the FTQ
       full_flush_ftq();
     }
-    late_bp_ft_id = 0;
-    late_bp_sched_op = nullptr;
+    main_bp_ft_id = 0;
+    main_bp_sched_op = nullptr;
   } else {
     for (auto it = ftq.begin(); it != ftq.end(); it++) {
       delete (*it);
@@ -307,8 +307,8 @@ void Decoupled_FE::dfe_recover_op() {
   DEBUG(proc_id, "[DFE%u] after recovery: ftq.size=%zu state=%d next_state=%d\n", bp_id, ftq.size(), state,
         next_state);
 
-  DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx late_bp recovery:%i\n", bp_id,
-        bp_recovery_info->recovery_fetch_addr, bp_recovery_info->late_bp_recovery);
+  DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx main_bp recovery:%i\n", bp_id,
+        bp_recovery_info->recovery_fetch_addr, bp_recovery_info->recover_to_main_bp);
 
   for (auto&& it : ftq_iterators) {
     // When the FTQ flushes, reset all iterators
@@ -320,11 +320,11 @@ void Decoupled_FE::dfe_recover_op() {
   auto op = bp_recovery_info->recovery_op;
 
   if (!bp_id) {
-    if (bp_recovery_info->late_bp_recovery)
-      STAT_EVENT(proc_id, FTQ_RECOVER_LATE_BP);
-    else if (op->oracle_info.recover_at_decode)
+    if (bp_recovery_info->recover_to_main_bp)
+      STAT_EVENT(proc_id, FTQ_RECOVER_MAIN_BP);
+    else if (op->bp_pred_main.recover_at_decode)
       STAT_EVENT(proc_id, FTQ_RECOVER_DECODE);
-    else if (op->oracle_info.recover_at_exec)
+    else if (op->bp_pred_main.recover_at_exec)
       STAT_EVENT(proc_id, FTQ_RECOVER_EXEC);
 
     uint64_t offpath_cycles = cycle_count - redirect_cycle;
@@ -353,7 +353,7 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
       }
       // In Pin-driven frontend, we could see exit on off-path
       if (state != INACTIVE || (state == INACTIVE && exit_on_off_path)) {
-        if (!bp_recovery_info->late_bp_recovery) {
+        if (!bp_recovery_info->recover_to_main_bp) {
           ASSERT(proc_id, saved_recovery_ft->has_unread_ops());
           ASSERTM(proc_id, bp_recovery_info->recovery_fetch_addr == saved_recovery_ft->get_ft_info().static_info.start,
                   "Scarab's recovery addr 0x%llx does not match save ft "
@@ -416,9 +416,9 @@ void Decoupled_FE::update() {
   while (1) {
     state = next_state;
     DEBUG(proc_id,
-          "[DFE%u] state=%d next_state=%d ftq.size=%zu off_path=%d stalled=%d exit_on_off_path=%d late_bp_pending=%d\n",
+          "[DFE%u] state=%d next_state=%d ftq.size=%zu off_path=%d stalled=%d exit_on_off_path=%d main_bp_pending=%d\n",
           bp_id, state, next_state, ftq.size(), is_off_path_state(), stalled, exit_on_off_path,
-          bp_recovery_info ? bp_recovery_info->late_bp_pending : -1);
+          bp_recovery_info ? bp_recovery_info->main_bp_pending : -1);
     ASSERT(proc_id, ftq.size() <= ftq_max_size());
     ASSERT(proc_id, cfs_taken_this_cycle <= FE_FTQ_TAKEN_CFS_PER_CYCLE);
 
@@ -438,7 +438,7 @@ void Decoupled_FE::update() {
       STAT_EVENT(proc_id, FTQ_BREAK_MAX_FT_ONPATH + is_off_path_state());
       break;
     }
-    if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data)) {
+    if (EARLY_BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data)) {
       DEBUG(proc_id, "[DFE%u] Break due to limited branch predictor\n", bp_id);
       STAT_EVENT(proc_id, FTQ_BREAK_PRED_BR_ONPATH + is_off_path_state());
       break;
@@ -483,10 +483,10 @@ void Decoupled_FE::update() {
           stall(result.op);
         } else if (result.event == FT_EVENT_MISPREDICT) {
           redirect_to_off_path(result);
-        } else if (result.event == FT_EVENT_LATE_BP_MISPREDICT) {
-          redirect_to_late_bp_wrong(result);
-        } else if (result.event == FT_EVENT_LATE_BP_CORRECT_OVERRIDE) {
-          redirect_to_late_bp_correct(result);
+        } else if (result.event == FT_EVENT_MAIN_BP_MISPREDICT) {
+          redirect_to_main_bp_wrong(result);
+        } else if (result.event == FT_EVENT_MAIN_BP_CORRECT_OVERRIDE) {
+          redirect_to_main_bp_correct(result);
         }
 
         break;
@@ -525,10 +525,10 @@ void Decoupled_FE::update() {
           stall(result.op);
         } else if (result.event == FT_EVENT_MISPREDICT) {
           redirect_to_off_path(result);
-        } else if (result.event == FT_EVENT_LATE_BP_MISPREDICT) {
-          redirect_to_late_bp_wrong(result);
-        } else if (result.event == FT_EVENT_LATE_BP_CORRECT_OVERRIDE) {
-          redirect_to_late_bp_correct(result);
+        } else if (result.event == FT_EVENT_MAIN_BP_MISPREDICT) {
+          redirect_to_main_bp_wrong(result);
+        } else if (result.event == FT_EVENT_MAIN_BP_CORRECT_OVERRIDE) {
+          redirect_to_main_bp_correct(result);
         }
 
         break;
@@ -559,7 +559,7 @@ void Decoupled_FE::update() {
           }
           if (build_event == FT_EVENT_MISPREDICT || build_event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
             frontend_redirect(proc_id, bp_id, current_ft_to_push->get_last_op()->inst_uid,
-                              current_ft_to_push->get_last_op()->oracle_info.pred_npc);
+                              current_ft_to_push->get_last_op()->bp_pred_main.pred_npc);
           } else if (build_event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
             stall(current_ft_to_push->get_last_op());
           }
@@ -596,8 +596,8 @@ void Decoupled_FE::pop_ft(FT* ft) {
       it->flattened_op_pos = 0;
       it->op_pos = 0;
       if (it->pinned) {
-        ASSERT(proc_id, ft->get_ft_info().dynamic_info.FT_id == late_bp_ft_id);
-        DEBUG(proc_id, "[DFE%u] late-bp FT (ft_id=%ld) popped\n", bp_id, late_bp_ft_id);
+        ASSERT(proc_id, ft->get_ft_info().dynamic_info.FT_id == main_bp_ft_id);
+        DEBUG(proc_id, "[DFE%u] main-bp FT (ft_id=%ld) popped\n", bp_id, main_bp_ft_id);
         it->pinned = false;
       }
     }
@@ -721,29 +721,29 @@ void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
 }
 
 Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
-  if (!(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec)) {
+  if (!(op->bp_pred_main.recover_at_decode || op->bp_pred_main.recover_at_exec)) {
     return REASON_NOT_IDENTIFIED;
   }
   // mispred
-  if (op->oracle_info.pred_orig != op->oracle_info.dir && !op->oracle_info.btb_miss) {
+  if (op->bp_pred_main.pred_orig != op->oracle_info.dir && !op->btb_pred.btb_miss) {
     return REASON_MISPRED;
   }
   // misfetch
-  else if (!op->oracle_info.btb_miss && op->oracle_info.pred_orig == op->oracle_info.dir &&
-           op->oracle_info.pred_npc != op->oracle_info.npc) {
+  else if (!op->btb_pred.btb_miss && op->bp_pred_main.pred_orig == op->oracle_info.dir &&
+           op->bp_pred_main.pred_npc != op->oracle_info.npc) {
     return REASON_MISFETCH;
   }
   // ibtb miss
   else if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) &&
-           op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN) {
+           op->btb_pred.btb_miss && op->btb_pred.ibp_miss && op->bp_pred_main.pred_orig == TAKEN) {
     return REASON_IBTB_MISS;
   }
   // btb miss and mispred (would have been incorrect with or without btb miss)
-  else if (op->oracle_info.pred_orig != op->oracle_info.dir && op->oracle_info.btb_miss) {
+  else if (op->bp_pred_main.pred_orig != op->oracle_info.dir && op->btb_pred.btb_miss) {
     return REASON_BTB_MISS_MISPRED;
   }
   // true btb miss
-  else if (op->oracle_info.btb_miss) {
+  else if (op->btb_pred.btb_miss) {
     return REASON_BTB_MISS;
   } else {
     // all cases should be covered
@@ -762,18 +762,18 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
   }
   ftq.emplace_back(std::move(current_ft_to_push));
   ASSERT(proc_id, ftq.size() <= ftq_max_size());
-  if (late_bp_ft_id && ftq.back()->get_ft_info().dynamic_info.FT_id == late_bp_ft_id) {
-    DEBUG(proc_id, "[DFE%u] pin late-bp: this=%p ftq.size=%zu late_bp_iter_idx=%d ft_pos=%zu\n", bp_id, this,
-          ftq.size(), late_bp_iter_idx, ftq.size() - 1);
-    set_pinned_iter_ft_pos(late_bp_iter_idx, ftq.size() - 1);
+  if (main_bp_ft_id && ftq.back()->get_ft_info().dynamic_info.FT_id == main_bp_ft_id) {
+    DEBUG(proc_id, "[DFE%u] pin main-bp: this=%p ftq.size=%zu main_bp_iter_idx=%d ft_pos=%zu\n", bp_id, this,
+          ftq.size(), main_bp_iter_idx, ftq.size() - 1);
+    set_pinned_iter_ft_pos(main_bp_iter_idx, ftq.size() - 1);
   }
 }
 
 
 void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling
-  ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT || result.event == FT_EVENT_LATE_BP_MISPREDICT ||
-                      result.event == FT_EVENT_LATE_BP_CORRECT_OVERRIDE);
+  ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT || result.event == FT_EVENT_MAIN_BP_MISPREDICT ||
+                      result.event == FT_EVENT_MAIN_BP_CORRECT_OVERRIDE);
   DEBUG(proc_id, "[DFE%u] redirect_to_off_path event=%d idx=%llu op_num=%s pred_addr=%llx\n", bp_id, result.event,
         (unsigned long long)result.index, result.op ? unsstr64(result.op->op_num) : "none",
         (unsigned long long)result.pred_addr);
@@ -832,7 +832,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
     ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
     if (build_event == FT_EVENT_MISPREDICT || build_event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
       frontend_redirect(proc_id, bp_id, current_ft_to_push->get_last_op()->inst_uid,
-                        current_ft_to_push->get_last_op()->oracle_info.pred_npc);
+                        current_ft_to_push->get_last_op()->bp_pred_main.pred_npc);
     } else if (build_event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
       stall(current_ft_to_push->get_last_op());
     }
@@ -844,48 +844,48 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   ASSERT(proc_id, current_ft_to_push->get_end_reason() != FT_NOT_ENDED);
 }
 
-void Decoupled_FE::redirect_to_late_bp_wrong(FT_PredictResult result) {
-  ASSERT(proc_id, result.event == FT_EVENT_LATE_BP_MISPREDICT);
-  STAT_EVENT(proc_id, LATE_BP_OVERRIDE_CALLED);
-  DEBUG(proc_id, "[DFE%u] redirect_to_late_bp_wrong idx=%llu op_num=%s pred_addr=%llx\n", bp_id,
+void Decoupled_FE::redirect_to_main_bp_wrong(FT_PredictResult result) {
+  ASSERT(proc_id, result.event == FT_EVENT_MAIN_BP_MISPREDICT);
+  STAT_EVENT(proc_id, MAIN_BP_OVERRIDE_CALLED);
+  DEBUG(proc_id, "[DFE%u] redirect_to_main_bp_wrong idx=%llu op_num=%s pred_addr=%llx\n", bp_id,
         (unsigned long long)result.index, result.op ? unsstr64(result.op->op_num) : "none",
         (unsigned long long)result.pred_addr);
   if (result.op) {
-    late_bp_sched_op = result.op;
+    main_bp_sched_op = result.op;
   } else {
     ASSERT(proc_id, current_ft_to_push);
-    late_bp_sched_op = current_ft_to_push->get_last_op();
+    main_bp_sched_op = current_ft_to_push->get_last_op();
   }
-  ASSERT(proc_id, late_bp_sched_op);
+  ASSERT(proc_id, main_bp_sched_op);
 
-  STAT_EVENT(proc_id, LATE_BP_OVERRIDE_LATE_WRONG);
-  late_bp_ft_id = 0;
-  result.pred_addr = late_bp_sched_op->oracle_info.late_pred_npc;
+  STAT_EVENT(proc_id, MAIN_BP_OVERRIDE_LATE_WRONG);
+  main_bp_ft_id = 0;
+  result.pred_addr = main_bp_sched_op->bp_pred_main.pred_npc;
   redirect_to_off_path(result);
-  DEBUG(proc_id, "[DFE%u] Late-BP wrong: off-path to late target op_num=%llu\n", bp_id,
-        (unsigned long long)late_bp_sched_op->op_num);
+  DEBUG(proc_id, "[DFE%u] Main-BP wrong: off-path to main target op_num=%llu\n", bp_id,
+        (unsigned long long)main_bp_sched_op->op_num);
 }
 
-void Decoupled_FE::redirect_to_late_bp_correct(FT_PredictResult result) {
-  ASSERT(proc_id, result.event == FT_EVENT_LATE_BP_CORRECT_OVERRIDE);
-  STAT_EVENT(proc_id, LATE_BP_OVERRIDE_CALLED);
-  STAT_EVENT(proc_id, LATE_BP_OVERRIDE_LATE_CORRECT);
-  DEBUG(proc_id, "[DFE%u] redirect_to_late_bp_correct idx=%llu op_num=%s pred_addr=%llx\n", bp_id,
+void Decoupled_FE::redirect_to_main_bp_correct(FT_PredictResult result) {
+  ASSERT(proc_id, result.event == FT_EVENT_MAIN_BP_CORRECT_OVERRIDE);
+  STAT_EVENT(proc_id, MAIN_BP_OVERRIDE_CALLED);
+  STAT_EVENT(proc_id, MAIN_BP_OVERRIDE_LATE_CORRECT);
+  DEBUG(proc_id, "[DFE%u] redirect_to_main_bp_correct idx=%llu op_num=%s pred_addr=%llx\n", bp_id,
         (unsigned long long)result.index, result.op ? unsstr64(result.op->op_num) : "none",
         (unsigned long long)result.pred_addr);
   if (result.op) {
-    late_bp_sched_op = result.op;
+    main_bp_sched_op = result.op;
   } else {
     ASSERT(proc_id, current_ft_to_push);
-    late_bp_sched_op = current_ft_to_push->get_last_op();
+    main_bp_sched_op = current_ft_to_push->get_last_op();
   }
-  ASSERT(proc_id, late_bp_sched_op);
+  ASSERT(proc_id, main_bp_sched_op);
   // Early predictor may request exec recovery; allow it here since we override to late-correct path.
   redirect_to_off_path(result);
   // Pin the off-path FT for late recovery replacement.
-  late_bp_ft_id = current_ft_to_push->get_ft_info().dynamic_info.FT_id;
-  DEBUG(proc_id, "[DFE%u] Late-BP correct: off-path to early target op_num=%llu ft_id=%llu\n", bp_id,
-        (unsigned long long)late_bp_sched_op->op_num, (unsigned long long)late_bp_ft_id);
-  bp_sched_recovery(bp_recovery_info, late_bp_sched_op, cycle_count, /*late_bp_recovery=*/TRUE,
+  main_bp_ft_id = current_ft_to_push->get_ft_info().dynamic_info.FT_id;
+  DEBUG(proc_id, "[DFE%u] Main-BP correct: off-path to early target op_num=%llu ft_id=%llu\n", bp_id,
+        (unsigned long long)main_bp_sched_op->op_num, (unsigned long long)main_bp_ft_id);
+  bp_sched_recovery(bp_recovery_info, main_bp_sched_op, cycle_count, /*recover_to_main_bp=*/TRUE,
                     /*force_offpath=*/FALSE);
 }

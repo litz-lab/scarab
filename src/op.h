@@ -143,6 +143,9 @@ struct Op_struct {
   Inst_Info* inst_info;         // pointer to unique struct for each static instruction
   Op_Info oracle_info;          // information about the execution of the op in the oracle
   Op_Info engine_info;          // information about the execution of the op in the engine
+  Bp_PredictResult bp_pred_early;  // early predictor results
+  Bp_PredictResult bp_pred_main;   // main (late) predictor results
+  Btb_PredictResult btb_pred;   // BTB/IBTB prediction results
   int oracle_cp_num;            // if the op has created an oracle checkpointed this is not -1
   // }}}
 
@@ -240,7 +243,7 @@ struct Op_struct {
 
   struct Mbp7gshare_Info_struct* mbp7_info;  // multiple branch predictor information
 
-  // Use oracle_info.pred_npc instead
+  // Use bp_pred_main.pred_npc instead
   // Addr pred_target; // last predicted target for this op.
 
   // {{{ temporary fields -> will be deleted later (move these)

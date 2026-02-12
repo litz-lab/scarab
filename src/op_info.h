@@ -29,6 +29,7 @@
 #ifndef __OP_INFO_H__
 #define __OP_INFO_H__
 
+#include "globals/global_types.h"
 #include "inst_info.h"
 #include "table_info.h"
 
@@ -67,6 +68,60 @@ typedef struct Src_Info_struct {
  * current instance of the instruction (data values, etc.)
  * typedef in globals/global_types.h */
 
+typedef struct Bp_PredictResult_struct {
+  // Core prediction results (from predictor)
+  uns8 pred_dir;
+  uns8 pred_orig;
+  Addr pred_npc;
+  Addr pred_addr;
+  Flag recover_at_decode;
+  Flag recover_at_exec;
+  Flag btb_miss_nt;
+  Flag local_btb_miss;
+  Flag local_no_target;
+  Flag local_misfetch;
+
+  // Derived/evaluated results (after oracle comparison)
+  Flag misfetch;
+  Flag mispred;
+  Flag btb_miss;
+  Flag btb_miss_resolved;
+  Flag no_target;
+  Flag recovery_sch;
+  Flag use_late_pred_for_ft;
+  int8 off_path_reason;
+
+  // Predictor state/history and confidence bookkeeping
+  uns64 pred_perceptron_global_hist;
+  uns64 pred_conf_perceptron_global_hist;
+  uns64 pred_conf_perceptron_global_misp_hist;
+  uns8* pred_gpht_entry;
+  uns8* pred_ppht_entry;
+  uns8* pred_spht_entry;
+  uns32 pred_local_hist;
+  uns32 pred_global_hist;
+  uns32 pred_targ_hist;
+  uns8 pred_tc_selector_entry;
+  uns8 hybridgp_gpred;
+  uns8 hybridgp_ppred;
+  Flag ibp_miss;
+  Flag pred_conf;
+  Addr pred_conf_index;
+} Bp_PredictResult;
+
+typedef struct Btb_PredictResult_struct {
+  Flag btb_miss;
+  Flag btb_miss_nt;
+  Flag btb_miss_resolved;
+  Flag btb_miss_but_target_correct;
+  Flag no_target;
+  Flag ibp_miss;
+  Flag btb_target_valid;
+  Addr btb_target;
+  Addr ibp_target;
+  Addr pred_target;
+} Btb_PredictResult;
+
 struct Op_Info_struct {
   struct Table_Info_struct* table_info;  // copy of op->table_info
   struct Inst_Info_struct* inst_info;    // copy of op->inst_info
@@ -82,53 +137,17 @@ struct Op_Info_struct {
 
   // all op fields
   Addr npc;  // the true next pc after the instruction
+  Addr pc_plus_offset;  // addr + inst size (fall-through)
 
   // control flow fields
   Addr target;             // decoded target of branch, set by oracle
   uns8 dir;                // true direction of branch, set by oracle
-  Addr pred_npc;           // predicted next pc field
-  Addr pred_addr;          // address used to predict branch (might be fetch_addr)
-  uns8 pred;               // predicted direction of branch, set by the branch predictor
-  uns8 pred_orig;          // predicted direction of branch, not overwritten on BTB miss (for fdip)
-  Flag misfetch;           // true if target address is the ONLY thing that was wrong
-  Flag mispred;            // true if the direction of the branch was mispredicted and the
-                           // branch should cause a recovery, set by the branch predictor
-  Flag btb_miss;           // true if the target is not known at prediction time
-  Flag btb_miss_resolved;  // true if the btb miss is resolved by the pipeline.
-  Flag no_target;          // true if there is no target for this branch at prediction time
-  uns8 late_pred;          // predicted direction of branch, set by the multi-cycle branch predictor
-  Addr late_pred_npc;      // predicted next pc field by the multi-cycle branch predictor
-  Flag late_misfetch;      // true if target address is the ONLY thing that was wrong after the multi-cycle branch
-                           // prediction kicks in
-  Flag late_mispred;       // true if the multi-cycle branch predictor mispredicted
-  Flag use_late_pred_for_ft;  // select late prediction for FT end/consecutivity
-  Flag recovery_sch;       // true if this op has scheduled a recovery
   Flag main_recover_at_decode;  // recovery-at-decode as set by the main predictor
   Flag main_recover_at_exec;    // recovery-at-exec as set by the main predictor
-  Flag recover_at_decode;  // op will schedule recovery at decode
-  Flag recover_at_exec;    // op will schedule recovery at exec
-  int8 off_path_reason;    // reason this of will cause a recovery (Off_Path_Reason enum)
-
-  // Only for perceptron
-  uns64 pred_perceptron_global_hist;            // global history used to predict the branch
-  uns64 pred_conf_perceptron_global_hist;       // global history used to confidence predict the branch
-  uns64 pred_conf_perceptron_global_misp_hist;  // global history used to confidence predict the branch
-
-  uns8* pred_gpht_entry;        // entry used for interference free pred
-  uns8* pred_ppht_entry;        // entry used for interference free pred
-  uns8* pred_spht_entry;        // entry used for interference free pred
-  uns32 pred_local_hist;        // local history used to predict the branch
-  uns32 pred_global_hist;       // global history used to predict the branch
-  uns32 pred_targ_hist;         // global history used to predict the indirect branch
-  uns8 hybridgp_gpred;          // hybridgp's global prediction
-  uns8 hybridgp_ppred;          // hybridgp's pred-address prediction
-  uns8 pred_tc_selector_entry;  // which ibtb predicted this op?
-  Flag ibp_miss;                // true if the target is not predicted by the indirect pred
+  // prediction state moved to Bp_PredictResult
 
   Flag dcmiss;  // dcache miss has occurred
 
-  Flag pred_conf;
-  Addr pred_conf_index;
   uns opc_index;
 
   Counter inst_sim_cycle;  // cycle oracle executes op

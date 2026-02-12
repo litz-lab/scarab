@@ -28,6 +28,8 @@
 
 #include "uop_generator.h"
 
+#include "isa/isa_macros.h"
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
@@ -354,7 +356,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->exec_count = 0;
   op->in_rdy_list = FALSE;
   op->in_node_list = FALSE;
-  op->oracle_info.recovery_sch = FALSE;
+  op->bp_pred_main.recovery_sch = FALSE;
 
   op->req = NULL;
   op->marked = FALSE;
@@ -398,6 +400,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->oracle_info.target = convert_to_cmp_addr(0, trace_uop->target) ? trace_uop->target : trace_uop->npc;
   op->oracle_info.va = trace_uop->va;
   op->oracle_info.npc = trace_uop->npc;
+  op->oracle_info.pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
   if (op->proc_id)
     ASSERT(op->proc_id, op->oracle_info.npc);
   op->oracle_info.mem_size = trace_uop->mem_size;

@@ -65,12 +65,12 @@ extern "C" {
 /*************Interface to Scarab***************/
 #define DEF_CBP(CBP_NAME, CBP_CLASS)                            \
   void SCARAB_BP_INTF_FUNC(CBP_CLASS, init)();                  \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, timestamp)(Op * op);      \
-  uns8 SCARAB_BP_INTF_FUNC(CBP_CLASS, pred)(Op*);               \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, spec_update)(Op * op);    \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, update)(Op * op);         \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, retire)(Op * op);         \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, recover)(Recovery_Info*); \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, timestamp)(Op * op, Bp_PredictResult* pred);      \
+  uns8 SCARAB_BP_INTF_FUNC(CBP_CLASS, pred)(Op* op, Bp_PredictResult* pred);            \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, spec_update)(Op * op, const Bp_PredictResult* pred); \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, update)(Op * op, const Bp_PredictResult* pred);      \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, retire)(Op * op, const Bp_PredictResult* pred);      \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, recover)(Recovery_Info* info, const Bp_PredictResult* pred); \
   Flag SCARAB_BP_INTF_FUNC(CBP_CLASS, full)(Bp_Data*);
 #include "cbp_table.def"
 #undef DEF_CBP

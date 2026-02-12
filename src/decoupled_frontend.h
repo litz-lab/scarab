@@ -168,9 +168,9 @@ class Decoupled_FE {
         exit_on_off_path(false),
         op_num(1),
         current_off_path_op_num(0),
-        late_bp_ft_id(0),
-        late_bp_sched_op(nullptr),
-        late_bp_iter_idx(-1),
+        main_bp_ft_id(0),
+        main_bp_sched_op(nullptr),
+        main_bp_iter_idx(-1),
         recovery_addr(0),
         redirect_cycle(0),
         ftq_ft_num(FE_FTQ_BLOCK_NUM),
@@ -226,8 +226,8 @@ class Decoupled_FE {
   bool is_off_path_state() const { return state == SERVING_OFF_PATH; }
   void check_consecutivity_and_push_to_ftq();
   void redirect_to_off_path(FT_PredictResult result);
-  void redirect_to_late_bp_wrong(FT_PredictResult result);
-  void redirect_to_late_bp_correct(FT_PredictResult result);
+  void redirect_to_main_bp_wrong(FT_PredictResult result);
+  void redirect_to_main_bp_correct(FT_PredictResult result);
   void set_pinned_iter_ft_pos(uns iter_idx, uint64_t ft_pos);
   inline uint64_t ftq_max_size() { return ftq_ft_num; }
   void set_off_path_op_num(uint64_t op_num) { current_off_path_op_num = op_num; }
@@ -255,9 +255,9 @@ class Decoupled_FE {
   uint64_t op_num;
   uint64_t current_off_path_op_num;
   std::vector<std::unique_ptr<decoupled_fe_iter>> ftq_iterators;
-  uint64_t late_bp_ft_id;
-  Op* late_bp_sched_op;
-  int late_bp_iter_idx;
+  uint64_t main_bp_ft_id;
+  Op* main_bp_sched_op;
+  int main_bp_iter_idx;
   uint64_t recovery_addr;
   uint64_t redirect_cycle;
   uint64_t ftq_ft_num;

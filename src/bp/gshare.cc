@@ -52,16 +52,24 @@ uns32 get_pht_index(const Addr addr, const uns32 hist) {
 
 // The only speculative state of gshare is the global history which is managed
 // by bp.c. Thus, no internal timestamping and recovery mechanism is needed.
-void bp_gshare_timestamp(Op* op) {
+void bp_gshare_timestamp(Op* op, Bp_PredictResult* pred) {
+  (void)op;
+  (void)pred;
 }
 
-void bp_gshare_recover(Recovery_Info* info) {
+void bp_gshare_recover(Recovery_Info* info, const Bp_PredictResult* pred) {
+  (void)info;
+  (void)pred;
 }
 
-void bp_gshare_spec_update(Op* op) {
+void bp_gshare_spec_update(Op* op, const Bp_PredictResult* pred) {
+  (void)op;
+  (void)pred;
 }
 
-void bp_gshare_retire(Op* op) {
+void bp_gshare_retire(Op* op, const Bp_PredictResult* pred) {
+  (void)op;
+  (void)pred;
 }
 
 uns8 bp_gshare_full(Bp_Data* bp_data) {
@@ -75,24 +83,24 @@ void bp_gshare_init() {
   }
 }
 
-uns8 bp_gshare_pred(Op* op) {
+uns8 bp_gshare_pred(Op* op, Bp_PredictResult* pred) {
   const uns proc_id = op->proc_id;
   const auto& gshare_state = gshare_state_all_cores.at(proc_id);
 
-  const Addr addr = op->oracle_info.pred_addr;
-  const uns32 hist = op->oracle_info.pred_global_hist;
+  const Addr addr = pred->pred_addr;
+  const uns32 hist = pred->pred_global_hist;
   const uns32 pht_index = get_pht_index(addr, hist);
   const uns8 pht_entry = gshare_state.pht[pht_index];
-  const uns8 pred = pht_entry >> (PHT_CTR_BITS - 1) & 0x1;
+  const uns8 pred_dir = pht_entry >> (PHT_CTR_BITS - 1) & 0x1;
 
   DEBUG(proc_id, "Predicting with gshare for  op_num:%s  index:%d\n", unsstr64(op->op_num), pht_index);
-  DEBUG(proc_id, "Predicting  addr:%s  pht:%u  pred:%d  dir:%d\n", hexstr64s(addr), pht_index, pred,
+  DEBUG(proc_id, "Predicting  addr:%s  pht:%u  pred:%d  dir:%d\n", hexstr64s(addr), pht_index, pred_dir,
         op->oracle_info.dir);
 
-  return pred;
+  return pred_dir;
 }
 
-void bp_gshare_update(Op* op) {
+void bp_gshare_update(Op* op, const Bp_PredictResult* pred) {
   if (op->table_info->cf_type != CF_CBR) {
     // If op is not a conditional branch, we do not interact with gshare.
     return;
@@ -100,8 +108,8 @@ void bp_gshare_update(Op* op) {
 
   const uns proc_id = op->proc_id;
   auto& gshare_state = gshare_state_all_cores.at(proc_id);
-  const Addr addr = op->oracle_info.pred_addr;
-  const uns32 hist = op->oracle_info.pred_global_hist;
+  const Addr addr = pred->pred_addr;
+  const uns32 hist = pred->pred_global_hist;
   const uns32 pht_index = get_pht_index(addr, hist);
   const uns8 pht_entry = gshare_state.pht[pht_index];
 

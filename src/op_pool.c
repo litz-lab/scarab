@@ -30,6 +30,8 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 
 #include "op_pool.h"
 
+#include <string.h>
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
@@ -82,7 +84,7 @@ void init_op_pool() {
   DEBUGU(0, "Initializing op pool...\n");
 
   /* set up invalid op (for use as default value various places) */
-  op_pool_init_op(&invalid_op);
+  op_pool_setup_op(0, 0, &invalid_op);
   invalid_op.op_pool_valid = FALSE;
   invalid_op.op_num = 0;
   invalid_op.unique_num = 0;
@@ -164,17 +166,7 @@ void free_op(Op* op) {
 }
 
 /**************************************************************************************/
-/* op_pool_init_op: this function is called only once per op
-   struct---when it is first allocated.  Intialization put in here
-   should be for things that never change. */
-
-void op_pool_init_op(Op* op) {
-  op->oracle_info.mispred = FALSE;
-  op->oracle_info.misfetch = FALSE;
-}
-
-/**************************************************************************************/
-/* op_pool_init_op: this function is called every time an op is
+/* op_pool_setup_op: this function is called every time an op is
    taken from the pool to be used */
 
 void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
@@ -189,6 +181,9 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   op->sources_addr_reg = 0;
   op->sched_info = NULL;
   op->marked = FALSE;
+  memset(&op->bp_pred_early, 0, sizeof(op->bp_pred_early));
+  memset(&op->bp_pred_main, 0, sizeof(op->bp_pred_main));
+  memset(&op->btb_pred, 0, sizeof(op->btb_pred));
 
   op->op_num = op_count[proc_id];
   op->unique_num = unique_count;
@@ -231,16 +226,17 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   op->oracle_info.num_srcs = 0;
   op->oracle_info.update_fpcr = FALSE;
   op->oracle_info.error_event = 0;
-  op->oracle_info.mispred = FALSE;
-  op->oracle_info.misfetch = FALSE;
-  op->oracle_info.recovery_sch = FALSE;
-  op->oracle_info.recover_at_decode = FALSE;
-  op->oracle_info.recover_at_exec = FALSE;
-  op->oracle_info.late_pred = NOT_TAKEN;
-  op->oracle_info.late_pred_npc = 0;
-  op->oracle_info.late_misfetch = FALSE;
-  op->oracle_info.late_mispred = FALSE;
-  op->oracle_info.use_late_pred_for_ft = FALSE;
+  op->bp_pred_early.mispred = FALSE;
+  op->bp_pred_early.misfetch = FALSE;
+  op->bp_pred_early.recovery_sch = FALSE;
+  op->bp_pred_early.recover_at_decode = FALSE;
+  op->bp_pred_early.recover_at_exec = FALSE;
+  op->bp_pred_main.pred_dir = NOT_TAKEN;
+  op->bp_pred_main.pred_npc = 0;
+  op->bp_pred_main.misfetch = FALSE;
+  op->bp_pred_main.mispred = FALSE;
+  op->bp_pred_early.use_late_pred_for_ft = FALSE;
+  op->bp_pred_main.use_late_pred_for_ft = FALSE;
 
   op->oracle_cp_num = -1;
   op->engine_info.dcmiss = FALSE;
@@ -284,12 +280,10 @@ static inline void expand_op_pool() {
     new_pool[ii].op_pool_valid = FALSE;
     new_pool[ii].op_pool_next = &new_pool[ii + 1];
     new_pool[ii].op_pool_id = op_pool_entries++;
-    op_pool_init_op(&new_pool[ii]);
   }
   new_pool[ii].op_pool_valid = FALSE;
   new_pool[ii].op_pool_next = op_pool_free_head;
   new_pool[ii].op_pool_id = op_pool_entries++;
-  op_pool_init_op(&new_pool[ii]);
 
   op_pool_free_head = &new_pool[0];
   ASSERT(0, op_pool_entries <= OP_POOL_ENTRIES_INC * 128);

@@ -248,7 +248,7 @@ void recover_icache_stage() {
   ic->fetch_barrier_inst_uid = 0;
 
   Op* op = bp_recovery_info->recovery_op;
-  if (bp_recovery_info->late_bp_recovery && op->oracle_info.btb_miss && !op->oracle_info.btb_miss_resolved) {
+  if (bp_recovery_info->recover_to_main_bp && op->btb_pred.btb_miss && !op->btb_pred.btb_miss_resolved) {
     // Late branch predictor recovered before btb miss is resolved (i.e., icache
     // stage should still wait for redirect)
   } else {
@@ -571,8 +571,8 @@ Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data* sd) {
 
   while (requested && ft_can_fetch_op(ft)) {
     sd->ops[sd->op_count] = ft_fetch_op(ft);
-    if (USE_LATE_BP && bp_recovery_info->late_bp_pending && sd->ops[sd->op_count]->off_path) {
-      bp_recovery_info->late_bp_offpath_fetch_ops++;
+    if ((MAIN_BP_MECH != NUM_BP) && bp_recovery_info->main_bp_pending && sd->ops[sd->op_count]->off_path) {
+      bp_recovery_info->main_bp_offpath_fetch_ops++;
     }
     sd->op_count++;
     requested--;
@@ -945,12 +945,12 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     if (op->table_info->cf_type) {
       // TODO: can we move this prefetch update to decoupled front-end or need it be here?
       if (DJOLT_ENABLE)
-        update_djolt(ic->proc_id, op->inst_info->addr, op->table_info->cf_type, op->oracle_info.pred_npc);
+        update_djolt(ic->proc_id, op->inst_info->addr, op->table_info->cf_type, op->bp_pred_main.pred_npc);
 
       ASSERT(ic->proc_id,
-             (op->oracle_info.mispred << 2 | op->oracle_info.misfetch << 1 | op->oracle_info.btb_miss) <= 0x7);
+             (op->bp_pred_main.mispred << 2 | op->bp_pred_main.misfetch << 1 | op->btb_pred.btb_miss) <= 0x7);
 
-      ic->off_path = ic->off_path || op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec;
+      ic->off_path = ic->off_path || op->bp_pred_main.recover_at_decode || op->bp_pred_main.recover_at_exec;
 
       // Measuring basic block lengths
       /*static int bbl_len = 0;
@@ -960,14 +960,14 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       if (op->table_info->cf_type) {
         STAT_EVENT(ic->proc_id, BBL_LENGTH_1 + bbl_len-1);
         bbl_len = 0;
-        if (op->oracle_info.pred == TAKEN) {
+        if (op->bp_pred_main.pred_dir == TAKEN) {
           STAT_EVENT(ic->proc_id, BBL_DONT_END_PRED_NT_LENGTH_1 + bbl_len_dont_end_pred_nt-1);
           bbl_len_dont_end_pred_nt = 0;
         }
       }*/
     } else {
       // pass the global branch history to all the instructions
-      op->oracle_info.pred_global_hist = g_bp_data->global_hist;
+      op->bp_pred_main.pred_global_hist = g_bp_data->global_hist;
     }
   }
 }

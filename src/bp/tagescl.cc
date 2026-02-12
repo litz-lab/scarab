@@ -74,7 +74,7 @@ void bp_tagescl_init() {
   if (tagescl_predictors.size() == 0) {
     tagescl_predictors.reserve(NUM_CORES);
     for (uns i = 0; i < NUM_CORES; ++i) {
-      if (BP_MECH == TAGESCL_BP) {
+      if (EARLY_BP_MECH == TAGESCL_BP) {
         tagescl_predictors.push_back(std::make_unique<Tage_SC_L<TAGE_SC_L_CONFIG_64KB>>(NODE_TABLE_SIZE));
       } else {
         tagescl_predictors.push_back(std::make_unique<Tage_SC_L<TAGE_SC_L_CONFIG_80KB>>(NODE_TABLE_SIZE));
@@ -84,38 +84,43 @@ void bp_tagescl_init() {
   ASSERTM(0, tagescl_predictors.size() == NUM_CORES, "tagescl_predictors not initialized correctly");
 }
 
-void bp_tagescl_timestamp(Op* op) {
+void bp_tagescl_timestamp(Op* op, Bp_PredictResult* pred) {
   uns proc_id = op->proc_id;
   op->recovery_info.branch_id = tagescl_predictors.at(proc_id)->get_new_branch_id();
+  (void)pred;
 }
 
-uns8 bp_tagescl_pred(Op* op) {
+uns8 bp_tagescl_pred(Op* op, Bp_PredictResult* pred) {
   uns proc_id = op->proc_id;
+  (void)pred;
   return tagescl_predictors.at(proc_id)->get_prediction(op->recovery_info.branch_id, op->inst_info->addr);
 }
 
-void bp_tagescl_spec_update(Op* op) {
+void bp_tagescl_spec_update(Op* op, const Bp_PredictResult* pred) {
   uns proc_id = op->proc_id;
   tagescl_predictors.at(proc_id)->update_speculative_state(op->recovery_info.branch_id, op->inst_info->addr,
                                                            get_branch_type(proc_id, op->table_info->cf_type),
-                                                           op->oracle_info.pred, op->oracle_info.target);
+                                                           pred->pred_dir, op->oracle_info.target);
 }
 
-void bp_tagescl_update(Op* op) {
+void bp_tagescl_update(Op* op, const Bp_PredictResult* pred) {
   uns proc_id = op->proc_id;
+  (void)pred;
   tagescl_predictors.at(proc_id)->commit_state(op->recovery_info.branch_id, op->inst_info->addr,
                                                get_branch_type(proc_id, op->table_info->cf_type), op->oracle_info.dir);
 }
 
-void bp_tagescl_retire(Op* op) {
+void bp_tagescl_retire(Op* op, const Bp_PredictResult* pred) {
   uns proc_id = op->proc_id;
+  (void)pred;
   tagescl_predictors.at(proc_id)->commit_state_at_retire(op->recovery_info.branch_id, op->inst_info->addr,
                                                          get_branch_type(proc_id, op->table_info->cf_type),
                                                          op->oracle_info.dir, op->oracle_info.target);
 }
 
-void bp_tagescl_recover(Recovery_Info* recovery_info) {
+void bp_tagescl_recover(Recovery_Info* recovery_info, const Bp_PredictResult* pred) {
   uns proc_id = recovery_info->proc_id;
+  (void)pred;
   tagescl_predictors.at(proc_id)->flush_branch_and_repair_state(recovery_info->branch_id, recovery_info->PC,
                                                                 get_branch_type(proc_id, recovery_info->cf_type),
                                                                 recovery_info->new_dir, recovery_info->branchTarget);

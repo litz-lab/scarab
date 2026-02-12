@@ -38,7 +38,7 @@
 #include "bp/bp.param.def"
 #undef DEF_PARAM
 
-extern Flag USE_LATE_BP;
+extern Flag USE_EARLY_BP;
 
 /**************************************************************************************/
 

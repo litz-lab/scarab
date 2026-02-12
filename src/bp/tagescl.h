@@ -30,12 +30,12 @@ extern "C" {
 
 /*************Interface to Scarab***************/
 void bp_tagescl_init();
-void bp_tagescl_timestamp(Op* op);
-uns8 bp_tagescl_pred(Op*);
-void bp_tagescl_spec_update(Op* op);
-void bp_tagescl_update(Op* op);
-void bp_tagescl_retire(Op* op);
-void bp_tagescl_recover(Recovery_Info*);
+void bp_tagescl_timestamp(Op* op, Bp_PredictResult* pred);
+uns8 bp_tagescl_pred(Op* op, Bp_PredictResult* pred);
+void bp_tagescl_spec_update(Op* op, const Bp_PredictResult* pred);
+void bp_tagescl_update(Op* op, const Bp_PredictResult* pred);
+void bp_tagescl_retire(Op* op, const Bp_PredictResult* pred);
+void bp_tagescl_recover(Recovery_Info* info, const Bp_PredictResult* pred);
 uns8 bp_tagescl_full(Bp_Data*);
 
 #ifdef __cplusplus

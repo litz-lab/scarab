@@ -84,7 +84,7 @@ void topdown_bp_recovery(uns proc_id, Bp_Recovery_Info* bp_recovery_info) {
   ASSERT(op->proc_id, op->table_info->cf_type);
 
   STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_CYCLES);
-  if (op->bp_pred_early.recover_at_exec) {
+  if (op->bp_pred_main.recover_at_exec) {
     ASSERT(op->proc_id, !op->off_path);
     STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED_CYCLES);
   }

@@ -200,8 +200,8 @@ void get_btb_mech_param(const char* name, uns* variable) {
   if (optarg) {
     uns ii;
 
-    for (ii = 0; bp_ibtb_table[ii].name; ii++)
-      if (strncmp(optarg, bp_ibtb_table[ii].name, MAX_STR_LENGTH) == 0) {
+    for (ii = 0; bp_btb_table[ii].name; ii++)
+      if (strncmp(optarg, bp_btb_table[ii].name, MAX_STR_LENGTH) == 0) {
         *variable = ii;
         return;
       }

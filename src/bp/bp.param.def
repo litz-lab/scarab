@@ -78,7 +78,7 @@ DEF_PARAM(  inf_hybridgp              , INF_HYBRIDGP              , Flag    , Fl
 DEF_PARAM(  bp_hash_tos               , BP_HASH_TOS               , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM(  ibtb_hash_tos             , IBTB_HASH_TOS             , Flag    , Flag       , FALSE      ,        )
 
-DEF_PARAM(  btb_mech                  , BTB_MECH                  , uns     , uns        , 0          ,        )
+DEF_PARAM(  btb_mech                  , BTB_MECH                  , uns     , btb_mech   , GENERIC_BTB,        )
 DEF_PARAM(  btb_entries               , BTB_ENTRIES               , uns     , uns        , (4 * 1024) ,        )
 DEF_PARAM(  btb_assoc                 , BTB_ASSOC                 , uns     , uns        , 4          ,        )
 DEF_PARAM(  btb_off_path_writes       , BTB_OFF_PATH_WRITES       , Flag    , Flag       , TRUE       ,        ) /* const */

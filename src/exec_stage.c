@@ -550,7 +550,7 @@ static inline void exec_stage_bp_resolve(Op* op) {
   }
 
   if (op->oracle_info.recover_at_exec) {
-    bp_sched_recovery(bp_recovery_info, op, op->exec_cycle, FALSE, FALSE);
+    bp_sched_recovery(bp_recovery_info, op, op->exec_cycle);
     if (!op->off_path)
       op->recovery_scheduled = TRUE;
 

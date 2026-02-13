@@ -157,9 +157,6 @@ void cmp_init(uns mode) {
 
   cache_part_init();
 
-  ASSERTM(0, !USE_LATE_BP || LATE_BP_LATENCY < (DECODE_CYCLES + MAP_CYCLES),
-          "Late branch prediction latency should be less than the total "
-          "latency of the frontend stages of the pipeline (decode + map)");
 }
 
 /**************************************************************************************/
@@ -374,24 +371,11 @@ void cmp_recover() {
     recover_fdip(bp_recovery_info->proc_id, bp_id);
   }
 
-  if (USE_LATE_BP && bp_recovery_info->late_bp_recovery) {
-    Op* op = bp_recovery_info->recovery_op;
-    op->oracle_info.pred = op->oracle_info.late_pred;
-    op->oracle_info.pred_npc = op->oracle_info.late_pred_npc;
-    ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.pred_npc);
-    op->oracle_info.mispred = op->oracle_info.late_mispred;
-    op->oracle_info.misfetch = op->oracle_info.late_misfetch;
-
-    /* Reset to FALSE to allow for another potential recovery after the branch
-     * is resolved when executed. */
-    op->oracle_info.recovery_sch = FALSE;
-  }
-
   topdown_bp_recovery(bp_recovery_info->proc_id, bp_recovery_info->recovery_op);
 
   reg_file_recover(bp_recovery_info->recovery_op);
   recover_thread(td, bp_recovery_info->recovery_fetch_addr, bp_recovery_info->recovery_op_num,
-                 bp_recovery_info->recovery_inst_uid, bp_recovery_info->late_bp_recovery_wrong);
+                 bp_recovery_info->recovery_inst_uid, FALSE);
 
   recover_icache_stage();
   recover_decode_stage();

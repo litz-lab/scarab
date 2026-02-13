@@ -248,8 +248,7 @@ void decode_stage_process_op(Op* op) {
     // we can schedule a redirect. If the branch was not taken we are on the on-path.
     // If the branch is condidtional or indirect, we will schedule recovery at exec
     if (op->oracle_info.recover_at_decode) {
-      bp_sched_recovery(bp_recovery_info, op, cycle_count,
-                        /*late_bp_recovery=*/FALSE, /*force_offpath=*/FALSE);
+      bp_sched_recovery(bp_recovery_info, op, cycle_count);
 
       // After recovery remove misfetch/mispred/btb_miss flags so it does not trigger flush by exec again
       op->oracle_info.misfetch = FALSE;

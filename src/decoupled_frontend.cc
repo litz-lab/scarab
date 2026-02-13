@@ -269,7 +269,7 @@ void Decoupled_FE::dfe_recover_op() {
                 "[DFE%u] Main-BP recovery (case 1/2): keep FT_c in-flight (op_pos=%llu), flush following FTs\n", bp_id,
                 (unsigned long long)late_ft->op_pos);
           // Update ft_info to reflect current op_pos and late-pred end_reason without trimming.
-          late_ft->force_use_late_pred_for_ft_on_last_op();
+          late_ft->force_use_for_ft_on_last_op();
         } else {
           ASSERT(proc_id, iter->ft_pos);
           DEBUG(
@@ -278,7 +278,7 @@ void Decoupled_FE::dfe_recover_op() {
               bp_id, (unsigned long long)iter->ft_pos);
           // Keep the last on-path FT, drop any off-path padding.
           late_ft->trim_offpath_suffix();
-          late_ft->force_use_late_pred_for_ft_on_last_op();
+          late_ft->force_use_for_ft_on_last_op();
         }
         // Flush following FTs in both paths.
         for (size_t ii = iter->ft_pos + 1; ii < ftq.size(); ++ii) {
@@ -438,7 +438,7 @@ void Decoupled_FE::update() {
       STAT_EVENT(proc_id, FTQ_BREAK_MAX_FT_ONPATH + is_off_path_state());
       break;
     }
-    if (EARLY_BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data)) {
+    if (MAIN_BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data)) {
       DEBUG(proc_id, "[DFE%u] Break due to limited branch predictor\n", bp_id);
       STAT_EVENT(proc_id, FTQ_BREAK_PRED_BR_ONPATH + is_off_path_state());
       break;
@@ -483,9 +483,9 @@ void Decoupled_FE::update() {
           stall(result.op);
         } else if (result.event == FT_EVENT_MISPREDICT) {
           redirect_to_off_path(result);
-        } else if (result.event == FT_EVENT_MAIN_BP_MISPREDICT) {
+        } else if (result.event == FT_EVENT_LATE_BP_MISPREDICT) {
           redirect_to_main_bp_wrong(result);
-        } else if (result.event == FT_EVENT_MAIN_BP_CORRECT_OVERRIDE) {
+        } else if (result.event == FT_EVENT_LATE_BP_CORRECT_OVERRIDE) {
           redirect_to_main_bp_correct(result);
         }
 
@@ -525,9 +525,9 @@ void Decoupled_FE::update() {
           stall(result.op);
         } else if (result.event == FT_EVENT_MISPREDICT) {
           redirect_to_off_path(result);
-        } else if (result.event == FT_EVENT_MAIN_BP_MISPREDICT) {
+        } else if (result.event == FT_EVENT_LATE_BP_MISPREDICT) {
           redirect_to_main_bp_wrong(result);
-        } else if (result.event == FT_EVENT_MAIN_BP_CORRECT_OVERRIDE) {
+        } else if (result.event == FT_EVENT_LATE_BP_CORRECT_OVERRIDE) {
           redirect_to_main_bp_correct(result);
         }
 
@@ -772,8 +772,8 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
 
 void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling
-  ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT || result.event == FT_EVENT_MAIN_BP_MISPREDICT ||
-                      result.event == FT_EVENT_MAIN_BP_CORRECT_OVERRIDE);
+  ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT || result.event == FT_EVENT_LATE_BP_MISPREDICT ||
+                      result.event == FT_EVENT_LATE_BP_CORRECT_OVERRIDE);
   DEBUG(proc_id, "[DFE%u] redirect_to_off_path event=%d idx=%llu op_num=%s pred_addr=%llx\n", bp_id, result.event,
         (unsigned long long)result.index, result.op ? unsstr64(result.op->op_num) : "none",
         (unsigned long long)result.pred_addr);
@@ -845,7 +845,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
 }
 
 void Decoupled_FE::redirect_to_main_bp_wrong(FT_PredictResult result) {
-  ASSERT(proc_id, result.event == FT_EVENT_MAIN_BP_MISPREDICT);
+  ASSERT(proc_id, result.event == FT_EVENT_LATE_BP_MISPREDICT);
   STAT_EVENT(proc_id, MAIN_BP_OVERRIDE_CALLED);
   DEBUG(proc_id, "[DFE%u] redirect_to_main_bp_wrong idx=%llu op_num=%s pred_addr=%llx\n", bp_id,
         (unsigned long long)result.index, result.op ? unsstr64(result.op->op_num) : "none",
@@ -867,7 +867,7 @@ void Decoupled_FE::redirect_to_main_bp_wrong(FT_PredictResult result) {
 }
 
 void Decoupled_FE::redirect_to_main_bp_correct(FT_PredictResult result) {
-  ASSERT(proc_id, result.event == FT_EVENT_MAIN_BP_CORRECT_OVERRIDE);
+  ASSERT(proc_id, result.event == FT_EVENT_LATE_BP_CORRECT_OVERRIDE);
   STAT_EVENT(proc_id, MAIN_BP_OVERRIDE_CALLED);
   STAT_EVENT(proc_id, MAIN_BP_OVERRIDE_LATE_CORRECT);
   DEBUG(proc_id, "[DFE%u] redirect_to_main_bp_correct idx=%llu op_num=%s pred_addr=%llx\n", bp_id,

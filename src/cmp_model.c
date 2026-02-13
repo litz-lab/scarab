@@ -384,8 +384,8 @@ void cmp_recover() {
       bp_recovery_info->main_bp_pending = FALSE;
     }
     Op* op = bp_recovery_info->recovery_op;
-    op->bp_pred_early.use_late_pred_for_ft = TRUE;
-    op->bp_pred_main.use_late_pred_for_ft = TRUE;
+    op->bp_pred_early.use_for_ft = FALSE;
+    op->bp_pred_main.use_for_ft = TRUE;
     ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->bp_pred_main.pred_npc);
     op->bp_pred_early.recover_at_decode = FALSE;
     op->bp_pred_early.recover_at_exec = FALSE;
@@ -531,10 +531,10 @@ void cmp_warmup(Op* op) {
     bp_predict_op(bp_data, op, 1, ia);
     bp_target_known_op(bp_data, op);
     bp_resolve_op(bp_data, op);
-    if (op->bp_pred_early.mispred || op->bp_pred_early.misfetch) {
+    if (op->bp_pred_main.mispred || op->bp_pred_main.misfetch) {
       bp_recover_op(bp_data, op->table_info->cf_type, &op->recovery_info);
     }
-    bp_data->early_bp->retire_func(op, &op->bp_pred_early);
+    bp_data->main_bp->retire_func(op);
   }
 }
 

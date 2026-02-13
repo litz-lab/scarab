@@ -138,16 +138,16 @@ void FT::trim_offpath_suffix() {
     generate_ft_info();
 }
 
-void FT::force_use_late_pred_for_ft_on_last_op() {
+void FT::force_use_for_ft_on_last_op() {
   if (ops.empty())
     return;
   Op* last_op = ops.back();
   FT_Ended_By prev_end = ft_info.dynamic_info.ended_by;
-  last_op->bp_pred_early.use_late_pred_for_ft = TRUE;
-  last_op->bp_pred_main.use_late_pred_for_ft = TRUE;
+  last_op->bp_pred_early.use_for_ft = TRUE;
+  last_op->bp_pred_main.use_for_ft = TRUE;
   generate_ft_info();
   DEBUG(proc_id,
-        "[DFE%u] force_use_late_pred_for_ft_on_last_op op_num=%s prev_end=%d new_end=%d\n",
+        "[DFE%u] force_use_for_ft_on_last_op op_num=%s prev_end=%d new_end=%d\n",
         bp_id, unsstr64(last_op->op_num), prev_end, ft_info.dynamic_info.ended_by);
   (void)prev_end;
 }
@@ -337,9 +337,9 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 
       if (USE_EARLY_BP && !op->off_path) {
         if (late_wrong)
-          return FT_EVENT_MAIN_BP_MISPREDICT;
+          return FT_EVENT_LATE_BP_MISPREDICT;
         if (main_recover && main_wrong && !late_wrong)
-          return FT_EVENT_MAIN_BP_CORRECT_OVERRIDE;
+          return FT_EVENT_LATE_BP_CORRECT_OVERRIDE;
       }
       return FT_EVENT_MISPREDICT;
     } else if (trace_mode && op->off_path) {
@@ -371,12 +371,12 @@ FT_PredictResult FT::predict_ft() {
     Op* op = ops[idx];
     FT_Event event = predict_one_cf_op(op);
     if (event != FT_EVENT_NONE) {
-      uint64_t return_idx = (event == FT_EVENT_MISPREDICT || event == FT_EVENT_MAIN_BP_MISPREDICT ||
-                             event == FT_EVENT_MAIN_BP_CORRECT_OVERRIDE)
+      uint64_t return_idx = (event == FT_EVENT_MISPREDICT || event == FT_EVENT_LATE_BP_MISPREDICT ||
+                             event == FT_EVENT_LATE_BP_CORRECT_OVERRIDE)
                                 ? (idx)
                                 : 0;
       Addr pred_addr =
-          (event == FT_EVENT_MAIN_BP_MISPREDICT) ? op->bp_pred_main.pred_npc : op->bp_pred_early.pred_npc;
+          (event == FT_EVENT_LATE_BP_MISPREDICT) ? op->bp_pred_main.pred_npc : op->bp_pred_early.pred_npc;
       DEBUG(proc_id, "[DFE%u] predict_ft stop idx=%zu ops=%zu event=%d op_num=%s pred_npc=%llx late_pred_npc=%llx\n",
             bp_id, idx, ops.size(), event, unsstr64(op->op_num), (unsigned long long)op->bp_pred_early.pred_npc,
             (unsigned long long)op->bp_pred_main.pred_npc);
@@ -413,9 +413,9 @@ bool FT::is_consecutive(const FT& previous_ft) const {
     return false;
   FT_Ended_By prev_end_type = previous_ft.get_ft_info().dynamic_info.ended_by;
   Addr start_addr = ft_info.static_info.start;
-  Addr pred_npc = last_op->bp_pred_early.pred_npc;
-  if (last_op->bp_pred_early.use_late_pred_for_ft)
-    pred_npc = last_op->bp_pred_main.pred_npc;
+  Addr pred_npc = last_op->bp_pred_main.pred_npc;
+  if (last_op->bp_pred_early.use_for_ft)
+    pred_npc = last_op->bp_pred_early.pred_npc;
   Addr npc = last_op->oracle_info.npc;
   Addr end_addr = last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
   bool matches = false;
@@ -434,10 +434,10 @@ bool FT::is_consecutive(const FT& previous_ft) const {
       break;
   }
   DEBUG(proc_id,
-        "[DFE%u] is_consecutive prev_end=%d start=%llx pred_npc=%llx late_pred_npc=%llx npc=%llx end_addr=%llx use_late=%d matches=%d\n",
+        "[DFE%u] is_consecutive prev_end=%d start=%llx pred_npc=%llx main_pred_npc=%llx npc=%llx end_addr=%llx use_early=%d matches=%d\n",
         bp_id, prev_end_type, (unsigned long long)start_addr, (unsigned long long)pred_npc,
         (unsigned long long)last_op->bp_pred_main.pred_npc, (unsigned long long)npc, (unsigned long long)end_addr,
-        last_op->bp_pred_early.use_late_pred_for_ft, matches);
+        last_op->bp_pred_early.use_for_ft, matches);
   return matches;
 }
 
@@ -451,8 +451,8 @@ FT_Ended_By FT::get_end_reason() const {
     uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
                  ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
     bool end_of_icache_line = offset >= ICACHE_LINE_SIZE;
-    const Flag use_late = op->bp_pred_early.use_late_pred_for_ft;
-    const uns8 pred_dir = use_late ? op->bp_pred_main.pred_dir : op->bp_pred_early.pred_dir;
+    const Flag use_early = op->bp_pred_early.use_for_ft;
+    const uns8 pred_dir = use_early ? op->bp_pred_early.pred_dir : op->bp_pred_main.pred_dir;
     bool cf_taken = (op->table_info->cf_type && pred_dir == TAKEN);
     bool bar_fetch = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH;
 

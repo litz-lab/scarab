@@ -374,10 +374,9 @@ void bp_hybridgp_update(Op* op, const Bp_PredictResult* pred) {
   }
 }
 
-void bp_hybridgp_recover(Recovery_Info* recovery_info, const Bp_PredictResult* pred) {
+void bp_hybridgp_recover(Recovery_Info* recovery_info) {
   const uns proc_id = recovery_info->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
-  (void)pred;
 
   const auto branch_id = recovery_info->branch_id;
   hybridgp_state.in_flight.deallocate_after(branch_id);
@@ -404,20 +403,18 @@ void bp_hybridgp_recover(Recovery_Info* recovery_info, const Bp_PredictResult* p
   *local_history_entry = (hybridgp_state.in_flight[branch_id].pred_phist >> 1) | (recovery_info->new_dir << 31);
 }
 
-void bp_hybridgp_timestamp(Op* op, Bp_PredictResult* pred) {
+void bp_hybridgp_timestamp(Op* op) {
   const uns proc_id = op->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
-  (void)pred;
 
   const int64 branch_id = hybridgp_state.in_flight.allocate_back();
   hybridgp_state.in_flight[branch_id].updated_local_history = false;
   op->recovery_info.branch_id = branch_id;
 }
 
-void bp_hybridgp_retire(Op* op, const Bp_PredictResult* pred) {
+void bp_hybridgp_retire(Op* op) {
   const uns proc_id = op->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
-  (void)pred;
 
   hybridgp_state.in_flight.deallocate_front(op->recovery_info.branch_id);
 }

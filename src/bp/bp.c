@@ -438,8 +438,8 @@ static void bp_predict_prepare(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_
   btb_predict(bp_data, op);
 }
 
-static Bp_PredictResult bp_predict_compute(Bp_Data* bp_data, Op* op, const Bp* active_bp, Flag update_ghist,
-                                           Bp_PredictResult* pred) {
+static void bp_predict_compute(Bp_Data* bp_data, Op* op, const Bp* active_bp, Flag update_ghist,
+                               Bp_PredictResult* pred) {
   ASSERT(bp_data->proc_id, pred);
   const Flag is_main_pred = (pred == &op->bp_pred_main);
   Bp_PredictResult res;
@@ -851,29 +851,27 @@ static Bp_PredictResult bp_predict_compute(Bp_Data* bp_data, Op* op, const Bp* a
       STAT_EVENT(0, MAIN_BP_DECODE_RECOVERIES);
   }
 
-  return res;
+  return;
 }
 
-Flag bp_predict_op_with(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr, Bp_PredictResult* pred) {
+void bp_predict_op_with(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr, Bp_PredictResult* pred) {
   (void)br_num;
   (void)fetch_addr;
 
   const Flag is_early_pred = (pred == &op->bp_pred_early);
   const Flag update_ghist = !is_early_pred;
   const Bp* active_bp = is_early_pred ? bp_data->early_bp : bp_data->main_bp;
-  Bp_PredictResult res = bp_predict_compute(bp_data, op, active_bp, update_ghist, pred);
-  return is_early_pred ? res.btb_miss_nt : FALSE;
+  bp_predict_compute(bp_data, op, active_bp, update_ghist, pred);
 }
 
 Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   Flag is_syscall = FALSE;
-  Flag btb_miss_nt = FALSE;
   op->oracle_info.pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
   if (USE_EARLY_BP) {
-    bp_data->early_bp->timestamp_func(op, &op->bp_pred_early);
+    bp_data->early_bp->timestamp_func(op);
   }
-  bp_data->main_bp->timestamp_func(op, &op->bp_pred_main);
+  bp_data->main_bp->timestamp_func(op);
 
   bp_predict_prepare(bp_data, op, br_num, fetch_addr, &is_syscall);
   if (is_syscall) {
@@ -885,9 +883,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   }
 
   if (USE_EARLY_BP) {
-    btb_miss_nt = bp_data->early_bp->pred_op_func(bp_data, op, br_num, fetch_addr, &op->bp_pred_early);
+    bp_data->early_bp->pred_op_func(bp_data, op, br_num, fetch_addr, &op->bp_pred_early);
   }
-  btb_miss_nt = bp_data->main_bp->pred_op_func(bp_data, op, br_num, fetch_addr, &op->bp_pred_main);
+  bp_data->main_bp->pred_op_func(bp_data, op, br_num, fetch_addr, &op->bp_pred_main);
 
   if (USE_EARLY_BP) {
     bp_data->early_bp->spec_update_func(op, &op->bp_pred_early);
@@ -903,22 +901,18 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->bp_pred_main.pred_dir, op->oracle_info.pc_plus_offset, op->oracle_info.target);
 
   ASSERT(op->proc_id, op->bp_pred_main.pred_npc);
-  if (op->oracle_info.dir != op->bp_pred_main.pred_dir && op->oracle_info.pc_plus_offset != op->oracle_info.target) {
-    if (!(op->bp_pred_main.recover_at_exec || op->bp_pred_main.recover_at_decode) && !USE_EARLY_BP)
-      ASSERT(op->proc_id, op->bp_pred_main.recover_at_exec || op->bp_pred_main.recover_at_decode);
-  }
-  if (USE_EARLY_BP && op->bp_pred_early.use_late_pred_for_ft) {
-    if (op->bp_pred_main.mispred || op->bp_pred_main.misfetch) {
-      ASSERT(op->proc_id, op->bp_pred_early.recover_at_exec || op->bp_pred_early.recover_at_decode);
-    }
-  }
+  if (op->oracle_info.dir != op->bp_pred_main.pred_dir && op->oracle_info.pc_plus_offset != op->oracle_info.target)
+    ASSERT(op->proc_id, op->bp_pred_main.recover_at_exec || op->bp_pred_main.recover_at_decode);
 
   ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->bp_pred_main.pred_npc);
-  bp_predict_op_evaluate(bp_data, op, op->bp_pred_main.pred_npc);
+  bp_predict_op_evaluate(bp_data, op);
+  if (USE_EARLY_BP && op->bp_pred_early.use_for_ft) {
+    ASSERT(op->proc_id, (op->bp_pred_early.recover_at_exec || op->bp_pred_early.recover_at_decode) && !op->bp_pred_main.recover_at_exec && !op->bp_pred_main.recover_at_decode);
+  }
 
   // The case where BTB-miss not-taken branch pollute global hist
   // mispred || misfetch will trigger a re-steer but no chance to fix the global hist
-  if (btb_miss_nt &&
+  if (op->bp_pred_main.btb_miss_nt &&
       (((op->bp_pred_main.pred_dir != op->oracle_info.dir) && (op->bp_pred_main.pred_npc != op->oracle_info.npc)) ||
        (!op->bp_pred_main.mispred && op->bp_pred_main.pred_npc != op->oracle_info.npc)))
     STAT_EVENT(op->proc_id, FDIP_BTB_MISS_NT_RESTEER_ONPATH + op->off_path);
@@ -935,18 +929,11 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 /* Separate performing branch prediction from evaluating the prediction into
  * two functions, enabling FDIP.
  */
-Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
-  (void)prediction;
+void bp_predict_op_evaluate(Bp_Data* bp_data, Op* op) {
+  ASSERT(op->proc_id, op->bp_pred_main.pred_npc);
+  ASSERT(op->proc_id, !USE_EARLY_BP || op->bp_pred_early.pred_npc);
   // If the direction prediction is wrong, but next address happens to be right
   // anyway, do not treat this as a misprediction.
-  if (op->table_info->cf_type) {
-    ASSERT(op->proc_id, op->bp_pred_main.pred_npc);
-    ASSERT(op->proc_id, (op->bp_pred_main.pred_dir == TAKEN) || (op->bp_pred_main.pred_dir == NOT_TAKEN));
-    if (USE_EARLY_BP) {
-      ASSERT(op->proc_id, op->bp_pred_early.pred_npc);
-      ASSERT(op->proc_id, (op->bp_pred_early.pred_dir == TAKEN) || (op->bp_pred_early.pred_dir == NOT_TAKEN));
-    }
-  }
   op->bp_pred_main.mispred =
       (op->bp_pred_main.pred_dir != op->oracle_info.dir) && (op->bp_pred_main.pred_npc != op->oracle_info.npc);
   op->bp_pred_main.misfetch = !op->bp_pred_main.mispred && op->bp_pred_main.pred_npc != op->oracle_info.npc;
@@ -957,30 +944,28 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
     op->bp_pred_early.misfetch = !op->bp_pred_early.mispred && op->bp_pred_early.pred_npc != op->oracle_info.npc;
 
     if (!op->off_path) {
-      const Flag main_wrong = op->bp_pred_early.mispred || op->bp_pred_early.misfetch;
-      const Flag late_wrong = op->bp_pred_main.mispred || op->bp_pred_main.misfetch;
-      op->bp_pred_early.use_late_pred_for_ft = !(main_wrong && !late_wrong);
-      if (main_wrong && !late_wrong) {
+      const Flag early_wrong = op->bp_pred_early.mispred || op->bp_pred_early.misfetch;
+      const Flag main_wrong = op->bp_pred_main.mispred || op->bp_pred_main.misfetch;
+      op->bp_pred_early.use_for_ft = (early_wrong && !main_wrong);
+      if (early_wrong && !main_wrong) {
         STAT_EVENT(op->proc_id, MAIN_BP_EARLY_WRONG_LATE_CORRECT);
-      } else if (!main_wrong && late_wrong) {
+      } else if (!early_wrong && main_wrong) {
         STAT_EVENT(op->proc_id, MAIN_BP_EARLY_CORRECT_LATE_WRONG);
       }
-      if (op->bp_pred_early.use_late_pred_for_ft) {
-        STAT_EVENT(op->proc_id, MAIN_BP_USE_LATE_FT);
+      if (op->bp_pred_early.use_for_ft) {
+        STAT_EVENT(op->proc_id, MAIN_BP_USE_EARLY_FT);
       }
-      if (op->bp_pred_early.use_late_pred_for_ft) {
-        // Override global history with late prediction when late prediction is selected.
-        bp_data->global_hist = (op->bp_pred_early.pred_global_hist >> 1) | (op->bp_pred_main.pred_dir << 31);
+      if (op->bp_pred_early.use_for_ft) {
+        // Override global history with early prediction when early prediction is selected.
+        bp_data->global_hist = (op->bp_pred_early.pred_global_hist >> 1) | (op->bp_pred_early.pred_dir << 31);
       }
     }
   } else {
-    op->bp_pred_early.use_late_pred_for_ft = FALSE;
+    op->bp_pred_early.use_for_ft = FALSE;
   }
 
-  op->bp_pred_main.use_late_pred_for_ft = op->bp_pred_early.use_late_pred_for_ft;
-
+  op->bp_pred_main.use_for_ft = !op->bp_pred_early.use_for_ft;
   op->bp_cycle = cycle_count;
-
 
   STAT_EVENT(op->proc_id, MAIN_BP_ON_PATH_CORRECT + op->bp_pred_main.mispred + 2 * op->bp_pred_main.misfetch +
                               3 * op->off_path);
@@ -1008,24 +993,24 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
             op->btb_pred.btb_miss);
 
   DEBUG(bp_data->proc_id,
-        "BP:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
-        "t_npc:0x%s  btb_miss:%d  mispred:%d  misfetch:%d  no_tar:%d  "
-        "late_pred:%d late_p_npc:%s late_mispred:%d late_misfetch:%d use_late_ft:%d\n",
+        "BP:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  t_npc:%s  btb_miss:%d  no_tar:%d  "
+        "pred:%d  p_npc:%s  mispred:%d  misfetch:%d  "
+        "early_pred:%d  early_p_npc:%s  early_mispred:%d  early_misfetch:%d  use_early_ft:%d\n",
         unsstr64(op->op_num), op->off_path, cf_type_names[op->table_info->cf_type], hexstr64s(op->inst_info->addr),
-        hexstr64s(prediction), hexstr64s(op->oracle_info.npc), op->btb_pred.btb_miss, op->bp_pred_early.mispred,
-        op->bp_pred_early.misfetch, op->btb_pred.no_target, op->bp_pred_main.pred_dir,
-        hexstr64s(op->bp_pred_main.pred_npc), op->bp_pred_main.mispred, op->bp_pred_main.misfetch,
-        op->bp_pred_early.use_late_pred_for_ft);
+        hexstr64s(op->oracle_info.npc), op->btb_pred.btb_miss, op->btb_pred.no_target,
+        hexstr64s(op->bp_pred_main.pred_dir), hexstr64s(op->bp_pred_main.pred_npc), op->bp_pred_main.mispred,
+        op->bp_pred_main.misfetch, op->bp_pred_early.pred_dir, hexstr64s(op->bp_pred_early.pred_npc),
+        op->bp_pred_early.mispred, op->bp_pred_early.misfetch, op->bp_pred_early.use_for_ft);
 
   if (ENABLE_BP_CONF && IS_CONF_CF(op)) {
     bp_data->br_conf->pred_func(op);
 
-    if (!(op->bp_pred_early.pred_conf))
+    if (!(op->bp_pred_main.pred_conf))
       td->td_info.low_conf_count++;
     DEBUG(bp_data->proc_id, "low_conf_count:%d \n", td->td_info.low_conf_count);
   }
 
-  return prediction;
+  return;
 }
 
 /******************************************************************************/
@@ -1093,9 +1078,9 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
  */
 
 void bp_retire_op(Bp_Data* bp_data, Op* op) {
-  bp_data->main_bp->retire_func(op, &op->bp_pred_main);
+  bp_data->main_bp->retire_func(op);
   if (USE_EARLY_BP) {
-    bp_data->early_bp->retire_func(op, &op->bp_pred_early);
+    bp_data->early_bp->retire_func(op);
   }
 }
 
@@ -1122,9 +1107,9 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   if (cf_type == CF_ICALL || cf_type == CF_IBR) {
     bp_data->bp_ibtb->recover_func(bp_data, info);
   }
-  bp_data->main_bp->recover_func(info, NULL);
+  bp_data->main_bp->recover_func(info);
   if (USE_EARLY_BP) {
-    bp_data->early_bp->recover_func(info, NULL);
+    bp_data->early_bp->recover_func(info);
   }
 
   /* always recover the call return stack */

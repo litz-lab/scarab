@@ -235,8 +235,8 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   op->bp_pred_main.pred_npc = 0;
   op->bp_pred_main.misfetch = FALSE;
   op->bp_pred_main.mispred = FALSE;
-  op->bp_pred_early.use_late_pred_for_ft = FALSE;
-  op->bp_pred_main.use_late_pred_for_ft = FALSE;
+  op->bp_pred_early.use_for_ft = FALSE;
+  op->bp_pred_main.use_for_ft = FALSE;
 
   op->oracle_cp_num = -1;
   op->engine_info.dcmiss = FALSE;

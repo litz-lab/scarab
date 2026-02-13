@@ -84,10 +84,9 @@ void bp_tagescl_init() {
   ASSERTM(0, tagescl_predictors.size() == NUM_CORES, "tagescl_predictors not initialized correctly");
 }
 
-void bp_tagescl_timestamp(Op* op, Bp_PredictResult* pred) {
+void bp_tagescl_timestamp(Op* op) {
   uns proc_id = op->proc_id;
   op->recovery_info.branch_id = tagescl_predictors.at(proc_id)->get_new_branch_id();
-  (void)pred;
 }
 
 uns8 bp_tagescl_pred(Op* op, Bp_PredictResult* pred) {
@@ -110,17 +109,15 @@ void bp_tagescl_update(Op* op, const Bp_PredictResult* pred) {
                                                get_branch_type(proc_id, op->table_info->cf_type), op->oracle_info.dir);
 }
 
-void bp_tagescl_retire(Op* op, const Bp_PredictResult* pred) {
+void bp_tagescl_retire(Op* op) {
   uns proc_id = op->proc_id;
-  (void)pred;
   tagescl_predictors.at(proc_id)->commit_state_at_retire(op->recovery_info.branch_id, op->inst_info->addr,
                                                          get_branch_type(proc_id, op->table_info->cf_type),
                                                          op->oracle_info.dir, op->oracle_info.target);
 }
 
-void bp_tagescl_recover(Recovery_Info* recovery_info, const Bp_PredictResult* pred) {
+void bp_tagescl_recover(Recovery_Info* recovery_info) {
   uns proc_id = recovery_info->proc_id;
-  (void)pred;
   tagescl_predictors.at(proc_id)->flush_branch_and_repair_state(recovery_info->branch_id, recovery_info->PC,
                                                                 get_branch_type(proc_id, recovery_info->cf_type),
                                                                 recovery_info->new_dir, recovery_info->branchTarget);

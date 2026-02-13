@@ -88,7 +88,7 @@ typedef struct Bp_PredictResult_struct {
   Flag btb_miss_resolved;
   Flag no_target;
   Flag recovery_sch;
-  Flag use_late_pred_for_ft;
+  Flag use_for_ft;
   int8 off_path_reason;
 
   // Predictor state/history and confidence bookkeeping

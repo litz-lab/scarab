@@ -30,12 +30,12 @@ extern "C" {
 
 /*************Interface to Scarab***************/
 void bp_gshare_init(void);
-void bp_gshare_timestamp(Op*, Bp_PredictResult*);
+void bp_gshare_timestamp(Op*);
 uns8 bp_gshare_pred(Op*, Bp_PredictResult*);
 void bp_gshare_spec_update(Op*, const Bp_PredictResult*);
 void bp_gshare_update(Op*, const Bp_PredictResult*);
-void bp_gshare_retire(Op*, const Bp_PredictResult*);
-void bp_gshare_recover(Recovery_Info*, const Bp_PredictResult*);
+void bp_gshare_retire(Op*);
+void bp_gshare_recover(Recovery_Info*);
 uns8 bp_gshare_full(Bp_Data*);
 
 #ifdef __cplusplus

@@ -206,15 +206,15 @@ typedef struct Bp_struct {
   Bp_Id id;
   const char* name;
   void (*init_func)(void);                               /* called to initialize the predictor */
-  void (*timestamp_func)(Op*, Bp_PredictResult*);        /* called to timestamp a branch for prediction, update, and recovery */
+  void (*timestamp_func)(Op*);                          /* called to timestamp a branch for prediction, update, and recovery */
   uns8 (*pred_func)(Op*, Bp_PredictResult*);             /* called to predict a branch instruction */
-  Flag (*pred_op_func)(Bp_Data*, Op*, uns, Addr, Bp_PredictResult* pred);
+  void (*pred_op_func)(Bp_Data*, Op*, uns, Addr, Bp_PredictResult* pred);
   void (*spec_update_func)(Op*, const Bp_PredictResult*); /* called to update the speculative state of the predictor in the front-end */
   void (*update_func)(Op*, const Bp_PredictResult*);      /* called to update the bp when a branch is resolved
                                          * (at the end of execute or retire) */
-  void (*retire_func)(Op*, const Bp_PredictResult*);      /* called to retire a branch and update the state of the bp that has to be
+  void (*retire_func)(Op*);                               /* called to retire a branch and update the state of the bp that has to be
                                          * updated after retirement*/
-  void (*recover_func)(Recovery_Info*, const Bp_PredictResult*); /* called to recover the bp when a misprediction is realized */
+  void (*recover_func)(Recovery_Info*);                   /* called to recover the bp when a misprediction is realized */
   uns8 (*full_func)(Bp_Data*);
 } Bp;
 
@@ -271,8 +271,8 @@ void bp_sched_redirect(Bp_Recovery_Info*, Op*, Counter);
 void init_bp_data(uns8, uns8, Bp_Data*, Bp_Data*);
 Flag bp_is_predictable(Bp_Data*);
 Addr bp_predict_op(Bp_Data*, Op*, uns, Addr);
-Addr bp_predict_op_evaluate(Bp_Data*, Op*, Addr);
-Flag bp_predict_op_with(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr, Bp_PredictResult* pred);
+void bp_predict_op_evaluate(Bp_Data*, Op*);
+void bp_predict_op_with(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr, Bp_PredictResult* pred);
 void bp_target_known_op(Bp_Data*, Op*);
 void bp_resolve_op(Bp_Data*, Op*);
 void bp_retire_op(Bp_Data*, Op*);

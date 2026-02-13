@@ -44,8 +44,8 @@ typedef struct FT FT;
 enum FT_Event {
   FT_EVENT_NONE,
   FT_EVENT_MISPREDICT,
-  FT_EVENT_MAIN_BP_MISPREDICT,
-  FT_EVENT_MAIN_BP_CORRECT_OVERRIDE,
+  FT_EVENT_LATE_BP_MISPREDICT,
+  FT_EVENT_LATE_BP_CORRECT_OVERRIDE,
   FT_EVENT_FETCH_BARRIER,
   FT_EVENT_OFFPATH_TAKEN_REDIRECT,
   FT_EVENT_BUILD_FAIL
@@ -107,7 +107,7 @@ class FT {
                  bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn);
   void remove_op_after_exec_recover();
   void trim_offpath_suffix();
-  void force_use_late_pred_for_ft_on_last_op();
+  void force_use_for_ft_on_last_op();
 
   FT_PredictResult predict_ft();
   std::pair<FT*, FT*> extract_off_path_ft(uns split_index);

@@ -30,12 +30,12 @@ extern "C" {
 
 /*************Interface to Scarab***************/
 void bp_hybridgp_init(void);
-void bp_hybridgp_timestamp(Op*, Bp_PredictResult*);
+void bp_hybridgp_timestamp(Op*);
 uns8 bp_hybridgp_pred(Op*, Bp_PredictResult*);
 void bp_hybridgp_spec_update(Op*, const Bp_PredictResult*);
 void bp_hybridgp_update(Op*, const Bp_PredictResult*);
-void bp_hybridgp_retire(Op*, const Bp_PredictResult*);
-void bp_hybridgp_recover(Recovery_Info*, const Bp_PredictResult*);
+void bp_hybridgp_retire(Op*);
+void bp_hybridgp_recover(Recovery_Info*);
 uns8 bp_hybridgp_full(Bp_Data*);
 
 #ifdef __cplusplus

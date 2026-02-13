@@ -52,14 +52,12 @@ uns32 get_pht_index(const Addr addr, const uns32 hist) {
 
 // The only speculative state of gshare is the global history which is managed
 // by bp.c. Thus, no internal timestamping and recovery mechanism is needed.
-void bp_gshare_timestamp(Op* op, Bp_PredictResult* pred) {
+void bp_gshare_timestamp(Op* op) {
   (void)op;
-  (void)pred;
 }
 
-void bp_gshare_recover(Recovery_Info* info, const Bp_PredictResult* pred) {
+void bp_gshare_recover(Recovery_Info* info) {
   (void)info;
-  (void)pred;
 }
 
 void bp_gshare_spec_update(Op* op, const Bp_PredictResult* pred) {
@@ -67,9 +65,8 @@ void bp_gshare_spec_update(Op* op, const Bp_PredictResult* pred) {
   (void)pred;
 }
 
-void bp_gshare_retire(Op* op, const Bp_PredictResult* pred) {
+void bp_gshare_retire(Op* op) {
   (void)op;
-  (void)pred;
 }
 
 uns8 bp_gshare_full(Bp_Data* bp_data) {

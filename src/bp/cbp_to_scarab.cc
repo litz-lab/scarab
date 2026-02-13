@@ -53,10 +53,9 @@ class CBP_To_Scarab_Intf {
     ASSERTM(0, cbp_predictors_all_cores.size() == NUM_CORES, "cbp_predictors_all_cores not initialized correctly");
   }
 
-  void timestamp(Op* op, Bp_PredictResult* pred) {
+  void timestamp(Op* op) {
     /* CBP Interface does not support speculative updates */
     op->recovery_info.branch_id = 0;
-    (void)pred;
   }
 
   uns8 pred(Op* op, Bp_PredictResult* pred) {
@@ -92,15 +91,13 @@ class CBP_To_Scarab_Intf {
     /* CBP Interface does not support update at exec */
   }
 
-  void retire(Op* op, const Bp_PredictResult* pred) {
+  void retire(Op* op) {
     (void)op;
-    (void)pred;
     /* CBP Interface updates predictor at speculative update time */
   }
 
-  void recover(Recovery_Info* info, const Bp_PredictResult* pred) {
+  void recover(Recovery_Info* info) {
     (void)info;
-    (void)pred;
     /* CBP Interface does not support speculative updates */
   }
 
@@ -200,20 +197,18 @@ void CBP_To_Scarab_Intf<TAGE64K>::update(Op* op, const Bp_PredictResult* pred) {
 }
 
 template <>
-void CBP_To_Scarab_Intf<TAGE64K>::retire(Op* op, const Bp_PredictResult* pred) {
+void CBP_To_Scarab_Intf<TAGE64K>::retire(Op* op) {
   if (SPEC_LEVEL == BP_PRED_ON || op->bp_id)
     return;
-  (void)pred;
   uns proc_id = op->proc_id;
   uns bp_id = op->bp_id;
   cbp_predictors_all_cores.at(proc_id).at(bp_id).RetireCheckpoint(op->recovery_info.branch_id);
 }
 
 template <>
-void CBP_To_Scarab_Intf<TAGE64K>::recover(Recovery_Info* recovery_info, const Bp_PredictResult* pred) {
+void CBP_To_Scarab_Intf<TAGE64K>::recover(Recovery_Info* recovery_info) {
   if (SPEC_LEVEL == BP_PRED_ON || recovery_info->bp_id)
     return;
-  (void)pred;
   uns proc_id = recovery_info->proc_id;
   uns bp_id = recovery_info->bp_id;
   OpType optype = scarab_to_cbp_optype(recovery_info->cf_type);
@@ -224,11 +219,10 @@ void CBP_To_Scarab_Intf<TAGE64K>::recover(Recovery_Info* recovery_info, const Bp
 }
 
 template <>
-void CBP_To_Scarab_Intf<TAGE64K>::timestamp(Op* op, Bp_PredictResult* pred) {
+void CBP_To_Scarab_Intf<TAGE64K>::timestamp(Op* op) {
   uns proc_id = op->proc_id;
   uns bp_id = op->bp_id;
   op->recovery_info.branch_id = cbp_predictors_all_cores.at(proc_id).at(bp_id).KeyGeneration();
-  (void)pred;
 }
 
 /******DO NOT MODIFY BELOW THIS POINT*****/
@@ -249,14 +243,14 @@ void CBP_To_Scarab_Intf<TAGE64K>::timestamp(Op* op, Bp_PredictResult* pred) {
     Ret CBP_PREDICTOR(CBP_CLASS).FCN_NAME Call;                                \
   }
 
-#define DEF_CBP(CBP_NAME, CBP_CLASS)                                                                     \
-  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, init, , void, (), ())                                              \
-  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, timestamp, , void, (Op* op, Bp_PredictResult* pred), (op, pred))    \
-  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, pred, return, uns8, (Op* op, Bp_PredictResult* pred), (op, pred))   \
+#define DEF_CBP(CBP_NAME, CBP_CLASS)                                                                 \
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, init, , void, (), ())                                          \
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, timestamp, , void, (Op* op), (op))                             \
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, pred, return, uns8, (Op* op, Bp_PredictResult* pred), (op, pred)) \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, spec_update, , void, (Op* op, const Bp_PredictResult* pred), (op, pred)) \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, update, , void, (Op* op, const Bp_PredictResult* pred), (op, pred))       \
-  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, retire, , void, (Op* op, const Bp_PredictResult* pred), (op, pred))       \
-  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, recover, , void, (Recovery_Info* info, const Bp_PredictResult* pred), (info, pred)) \
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, retire, , void, (Op* op), (op))                               \
+  SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, recover, , void, (Recovery_Info* info), (info))               \
   SCARAB_BP_INTF_FUNC_IMPL(CBP_CLASS, full, return, Flag, (Bp_Data* bp_data), (bp_data))
 
 #include "cbp_table.def"

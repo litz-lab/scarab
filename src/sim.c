@@ -256,7 +256,8 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
           fprintf(mystdout,
                   "** WARMUP End:   insts:%-10s  cycles:%-10s  time:%-18s  -- "
                   "%.2f IPC (%.2f IPC) --  N/A  KIPS (%.2f KIPS)\n",
-                  unsstr64(inst_count_fetched[proc_id]), unsstr64(cycle_count), unsstr64(sim_time), cum_ipc, cum_ipc, cum_khz);
+                  unsstr64(inst_count_fetched[proc_id]), unsstr64(cycle_count), unsstr64(sim_time), cum_ipc, cum_ipc,
+                  cum_khz);
           fflush(mystdout);
           break;
 
@@ -265,8 +266,8 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
                   "** Core %u Finished:    insts:%-10s  cycles:%-10s  "
                   "time:%-18s  -- %.2f IPC (%.2f IPC) --  N/A  KIPS (%.2f "
                   "KIPS)\n",
-                  proc_id, unsstr64(inst_count_fetched[proc_id]), unsstr64(cycle_count), unsstr64(sim_time), cum_ipc, cum_ipc,
-                  cum_khz);
+                  proc_id, unsstr64(inst_count_fetched[proc_id]), unsstr64(cycle_count), unsstr64(sim_time), cum_ipc,
+                  cum_ipc, cum_khz);
           break;
 
         default:

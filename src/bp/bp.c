@@ -162,7 +162,6 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
   }
 }
 
-
 /******************************************************************************/
 /* bp_sched_redirect: called on an op that caused the fetch stage to suspend
    (eg. a btb miss).  The pred_npc is what is used for the new pc. */

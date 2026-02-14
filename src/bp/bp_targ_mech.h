@@ -47,6 +47,10 @@ void bp_btb_gen_init(Bp_Data*, Bp_Data*);
 Addr* bp_btb_gen_pred(Bp_Data*, Op*);
 void bp_btb_gen_update(Bp_Data*, Op*);
 
+void bp_btb_block_init(Bp_Data*, Bp_Data*);
+Addr* bp_btb_block_pred(Bp_Data*, Op*);
+void bp_btb_block_update(Bp_Data*, Op*);
+
 void bp_ibtb_tc_tagged_init(Bp_Data*, Bp_Data*);
 Addr bp_ibtb_tc_tagged_pred(Bp_Data*, Op*);
 void bp_ibtb_tc_tagged_update(Bp_Data*, Op*);

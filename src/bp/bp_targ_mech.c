@@ -311,6 +311,27 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 }
 
 /**************************************************************************************/
+/* bp_btb_block_init: */
+
+void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
+  bp_btb_gen_init(bp_data, primary_bp);
+}
+
+/**************************************************************************************/
+/* bp_btb_block_pred: */
+
+Addr* bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
+  return bp_btb_gen_pred(bp_data, op);
+}
+
+/**************************************************************************************/
+/* bp_btb_block_update: */
+
+void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
+  bp_btb_gen_update(bp_data, op);
+}
+
+/**************************************************************************************/
 /* bp_tc_tagged_init: */
 
 void bp_ibtb_tc_tagged_init(Bp_Data* bp_data, Bp_Data* primary_bp) {

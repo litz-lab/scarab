@@ -30,6 +30,8 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 
 #include "op_pool.h"
 
+#include <string.h>
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
@@ -169,8 +171,10 @@ void free_op(Op* op) {
    should be for things that never change. */
 
 void op_pool_init_op(Op* op) {
-  op->oracle_info.mispred = FALSE;
-  op->oracle_info.misfetch = FALSE;
+  op->bp_pred_info = &op->bp_pred_main;
+  op->btb_pred_info = &op->btb_pred;
+  memset(&op->bp_pred_main, 0, sizeof(op->bp_pred_main));
+  memset(&op->btb_pred, 0, sizeof(op->btb_pred));
 }
 
 /**************************************************************************************/
@@ -228,14 +232,14 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   op->rs_id = MAX_CTR;
   op->same_src_last_op = 0;
 
+  op->bp_pred_info = &op->bp_pred_main;
+  op->btb_pred_info = &op->btb_pred;
+  memset(&op->bp_pred_main, 0, sizeof(op->bp_pred_main));
+  memset(&op->btb_pred, 0, sizeof(op->btb_pred));
+
   op->oracle_info.num_srcs = 0;
   op->oracle_info.update_fpcr = FALSE;
   op->oracle_info.error_event = 0;
-  op->oracle_info.mispred = FALSE;
-  op->oracle_info.misfetch = FALSE;
-  op->oracle_info.recovery_sch = FALSE;
-  op->oracle_info.recover_at_decode = FALSE;
-  op->oracle_info.recover_at_exec = FALSE;
 
   op->oracle_cp_num = -1;
   op->engine_info.dcmiss = FALSE;

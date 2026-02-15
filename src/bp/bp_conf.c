@@ -97,7 +97,7 @@ void bp_conf_pred(Op* op) {
   uns32 index;
   uns entry;
   Flag pred_conf;
-  Flag mispred = op->oracle_info.mispred | op->oracle_info.misfetch;
+  Flag mispred = op->bp_pred_info->mispred | op->bp_pred_info->misfetch;
 
   // only updated on conditional branches
   Addr addr = op->inst_info->addr;
@@ -122,13 +122,13 @@ void bp_conf_pred(Op* op) {
   }
 
   if (PERF_BP_CONF_PRED)
-    pred_conf = !(op->oracle_info.mispred || op->oracle_info.misfetch);
+    pred_conf = !(op->bp_pred_info->mispred || op->bp_pred_info->misfetch);
 
   _DEBUG(0, DEBUG_BP_CONF, "bp_conf_pred: op:%s mispred:%d, pred:%d,%d\n", unsstr64(op->op_num), mispred, pred_conf,
          pred_conf != mispred);
 
-  op->oracle_info.pred_conf_index = index;
-  op->oracle_info.pred_conf = pred_conf;
+  op->bp_pred_info->pred_conf_index = index;
+  op->bp_pred_info->pred_conf = pred_conf;
 
   STAT_EVENT(op->proc_id, BP_ON_PATH_CONF_MISPRED + 2 * op->off_path + (pred_conf != mispred));
   STAT_EVENT(op->proc_id, BP_ON_PATH_PRED_MIS_CONF_MISPRED + 4 * op->off_path + 2 * pred_conf + (pred_conf != mispred));
@@ -140,9 +140,9 @@ void bp_conf_pred(Op* op) {
 // 1: confident branch will go the right direction
 
 void bp_update_conf(Op* op) {
-  uns32 index = op->oracle_info.pred_conf_index;
+  uns32 index = op->bp_pred_info->pred_conf_index;
   uns* entry = &bpc_data->bpc_ctr_table[index];
-  Flag mispred = op->oracle_info.mispred | op->oracle_info.misfetch;
+  Flag mispred = op->bp_pred_info->mispred | op->bp_pred_info->misfetch;
 
   _DEBUG(0, DEBUG_BP_CONF, "bp_update_conf: op:%s mispred:%d\n", unsstr64(op->op_num), mispred);
 
@@ -174,8 +174,8 @@ void pred_onpath_conf(Op* op) {
 
   // update the opc_table
   ASSERT(0, bpc_data->count < OPC_SIZE);
-  opc_table->mispred = op->oracle_info.mispred | op->oracle_info.misfetch;
-  opc_table->pred_conf = op->oracle_info.pred_conf;
+  opc_table->mispred = op->bp_pred_info->mispred | op->bp_pred_info->misfetch;
+  opc_table->pred_conf = op->bp_pred_info->pred_conf;
   opc_table->off_path = op->off_path;
   opc_table->verified = FALSE;
   opc_table->op_num = op->op_num;
@@ -183,7 +183,7 @@ void pred_onpath_conf(Op* op) {
   ;
   bpc_data->count++;
 
-  op->oracle_info.opc_index = head;
+  op->bp_pred_info->opc_index = head;
 
   pred_onpath = compute_onpath_conf(FALSE);
 
@@ -207,8 +207,8 @@ void pred_onpath_conf(Op* op) {
 // update_onpath_conf: called by bp_resolve_op in bp.c
 
 void update_onpath_conf(Op* op) {
-  uns index = op->oracle_info.opc_index;
-  Flag mispred = op->oracle_info.mispred | op->oracle_info.misfetch;
+  uns index = op->bp_pred_info->opc_index;
+  Flag mispred = op->bp_pred_info->mispred | op->bp_pred_info->misfetch;
   uns ii;
 
   _DEBUG(0, DEBUG_ONPATH_CONF, "update_onpath_conf: %s ind:%u mispred:%d off_path:%d\n", unsstr64(op->op_num), index,
@@ -392,7 +392,7 @@ void conf_perceptron_pred(Op* op) {
   uns64 hist = 0;
   uns32 index = CONF_PERCEPTRON_HASH(addr);
   uns8 pred_conf = 0;
-  Flag mispred = op->oracle_info.mispred | op->oracle_info.misfetch;
+  Flag mispred = op->bp_pred_info->mispred | op->bp_pred_info->misfetch;
   int32 output = 0;
   uns ii;
   uns64 mask;
@@ -455,17 +455,17 @@ void conf_perceptron_pred(Op* op) {
   }
 
   _DEBUG(0, DEBUG_BP_CONF, "index:%d hist:%s output:%d conf_th:%d pred_conf:%d bp_pred:%d \n", index, hexstr64(hist),
-         output, CONF_PERCEPTRON_TH, pred_conf, op->oracle_info.mispred);
+         output, CONF_PERCEPTRON_TH, pred_conf, op->bp_pred_info->mispred);
 
   x_i = op->oracle_info.dir ? 1 : -1;
 
-  op->oracle_info.pred_conf_perceptron_global_hist = percep_bpc_data->conf_perceptron_global_hist;
+  op->bp_pred_info->pred_conf_perceptron_global_hist = percep_bpc_data->conf_perceptron_global_hist;
   percep_bpc_data->conf_perceptron_global_hist >>= 1;
   percep_bpc_data->conf_perceptron_global_misp_hist >>= 1;
 
   if (PERCEPTRON_CONF_USE_CONF) {
     // mispred x_i = 1, correct pred: 0
-    if ((op->oracle_info.mispred && !pred_conf) || (!(op->oracle_info.mispred) && pred_conf))
+    if ((op->bp_pred_info->mispred && !pred_conf) || (!(op->bp_pred_info->mispred) && pred_conf))
       x_i = 0;
     else
       x_i = 1;
@@ -480,13 +480,13 @@ void conf_perceptron_pred(Op* op) {
     percep_bpc_data->conf_perceptron_global_hist |= (((uns64)(op->oracle_info.dir)) << 63);
 
     op->recovery_info.conf_perceptron_global_misp_hist =
-        (percep_bpc_data->conf_perceptron_global_misp_hist) | ((uns64)(op->oracle_info.mispred) << 63);
+        (percep_bpc_data->conf_perceptron_global_misp_hist) | ((uns64)(op->bp_pred_info->mispred) << 63);
 
-    percep_bpc_data->conf_perceptron_global_misp_hist |= (((uns64)(op->oracle_info.mispred)) << 63);
+    percep_bpc_data->conf_perceptron_global_misp_hist |= (((uns64)(op->bp_pred_info->mispred)) << 63);
   }
 
   op->conf_perceptron_output = output;
-  op->oracle_info.pred_conf = pred_conf;
+  op->bp_pred_info->pred_conf = pred_conf;
 
   STAT_EVENT(op->proc_id, BP_ON_PATH_CONF_MISPRED + 2 * op->off_path + (pred_conf != mispred));
   STAT_EVENT(op->proc_id, BP_ON_PATH_PRED_MIS_CONF_MISPRED + 4 * op->off_path + 2 * pred_conf + (pred_conf != mispred));
@@ -514,12 +514,12 @@ void conf_perceptron_update(Op* op) {
           // predicted
   int c;  // c = 1 : low confidence , c = -1: high confidence
 
-  if (op->oracle_info.mispred)
+  if (op->bp_pred_info->mispred)
     p = 1;
   else
     p = -1;
 
-  if (op->oracle_info.pred_conf)
+  if (op->bp_pred_info->pred_conf)
     c = -1;  // high confidnece
   else
     c = 1;  // low confidence
@@ -527,10 +527,10 @@ void conf_perceptron_update(Op* op) {
   w = &(percep_bpc_data->conf_pt[index].weights[0]);
 
   // overwrite his
-  hist = op->oracle_info.pred_conf_perceptron_global_hist;
+  hist = op->bp_pred_info->pred_conf_perceptron_global_hist;
 
   if (PERCEPTRON_CONF_HIS_BOTH) {
-    hist = PERCEPTRON_HIS(op->oracle_info.pred_conf_perceptron_global_hist,
+    hist = PERCEPTRON_HIS(op->bp_pred_info->pred_conf_perceptron_global_hist,
                           op->recovery_info.conf_perceptron_global_misp_hist);
   }
 
@@ -560,7 +560,7 @@ void conf_perceptron_update(Op* op) {
       *w = MIN_WEIGHT;
 
     _DEBUG(0, DEBUG_BP_CONF, "index:%d *w[%d] :%d->%d  p:%d c:%d bp_mis_pred:%d conf:%d y:%d \n", index, ii, old_w, *w,
-           p, c, op->oracle_info.mispred, op->oracle_info.pred_conf, y);
+           p, c, op->bp_pred_info->mispred, op->bp_pred_info->pred_conf, y);
 
     w++;
 
@@ -582,7 +582,7 @@ void conf_perceptron_update(Op* op) {
           *w = MIN_WEIGHT;
       }
       _DEBUG(0, DEBUG_BP_CONF, "index:%d *w[%d] :%d->%d  p:%d c:%d  bp_mis_pred:%d conf:%d y:%d \n", index, ii, old_w,
-             *w, p, c, op->oracle_info.mispred, op->oracle_info.pred_conf, y);
+             *w, p, c, op->bp_pred_info->mispred, op->bp_pred_info->pred_conf, y);
     }
     return;
   }
@@ -610,7 +610,7 @@ void conf_perceptron_update(Op* op) {
       *w = MIN_WEIGHT;
 
     _DEBUG(0, DEBUG_BP_CONF, "index:%d *w[%d] :%d->%d  p:%d c:%d bp_mis_pred:%d conf:%d y:%d \n", index, ii, old_w, *w,
-           p, c, op->oracle_info.mispred, op->oracle_info.pred_conf, y);
+           p, c, op->bp_pred_info->mispred, op->bp_pred_info->pred_conf, y);
 
     w++;
     if ((y == 2) || (c != p)) {
@@ -648,7 +648,7 @@ void conf_perceptron_update(Op* op) {
           }
         }
         _DEBUG(0, DEBUG_BP_CONF, "index:%d *w[%d] :%d->%d  p:%d c:%d  bp_mis_pred:%d conf:%d y:%d \n", index, ii, old_w,
-               *w, p, c, op->oracle_info.mispred, op->oracle_info.pred_conf, y);
+               *w, p, c, op->bp_pred_info->mispred, op->bp_pred_info->pred_conf, y);
       }
     }
     return;
@@ -685,7 +685,7 @@ void conf_perceptron_update(Op* op) {
       _DEBUG(0, DEBUG_BP_CONF,
              "index:%d *w[%d] :%d->%d  p:%d c:%d x_i:%d bp_mis_pred:%d conf:%d "
              "y:%d \n",
-             index, ii, old_w, *w, p, c, x_i, op->oracle_info.mispred, op->oracle_info.pred_conf, y);
+             index, ii, old_w, *w, p, c, x_i, op->bp_pred_info->mispred, op->bp_pred_info->pred_conf, y);
     }
   }
 }

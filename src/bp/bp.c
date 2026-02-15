@@ -83,7 +83,6 @@ extern void tc_do_stat(Op*, Flag);
 
 Bp_Recovery_Info* bp_recovery_info = NULL;
 Bp_Data* g_bp_data = NULL;
-Flag USE_LATE_BP = FALSE;
 extern List op_buf;
 extern uns operating_mode;
 
@@ -125,8 +124,7 @@ void init_bp_recovery_info(uns8 proc_id, Bp_Recovery_Info* new_bp_recovery_info)
 /* bp_sched_recover: called on a mispredicted op when it's misprediction is
    first realized */
 
-void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle, Flag late_bp_recovery,
-                       Flag force_offpath) {
+void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle) {
   ASSERT(op->proc_id, bp_recovery_info->proc_id == op->proc_id);
   ASSERT(0, !op->off_path);
   if (op->oracle_info.recover_at_exec) {
@@ -140,7 +138,7 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
   if (bp_recovery_info->recovery_cycle == MAX_CTR || op->op_num <= bp_recovery_info->recovery_op_num) {
     const Addr next_fetch_addr = op->oracle_info.npc;
     ASSERT(0, op->oracle_info.npc);
-    const uns latency = late_bp_recovery ? LATE_BP_LATENCY : 1;
+    const uns latency = 1;
     DEBUG(bp_recovery_info->proc_id, "Recovery signaled for op_num:%s @ 0x%s  next_fetch:0x%s offpath:%d\n",
           unsstr64(op->op_num), hexstr64s(op->inst_info->addr), hexstr64s(next_fetch_addr), op->off_path);
     ASSERT(op->proc_id, !op->oracle_info.recovery_sch);
@@ -161,20 +159,8 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
     bp_recovery_info->recovery_unique_num = op->unique_num;
     bp_recovery_info->recovery_inst_uid = op->inst_uid;
     bp_recovery_info->wpe_flag = FALSE;
-    bp_recovery_info->late_bp_recovery = late_bp_recovery;
-
-    if (force_offpath) {
-      ASSERT(op->proc_id, late_bp_recovery);
-      bp_recovery_info->recovery_fetch_addr = op->oracle_info.late_pred_npc;
-      bp_recovery_info->recovery_info.new_dir = op->oracle_info.late_pred;
-      bp_recovery_info->recovery_force_offpath = TRUE;
-      bp_recovery_info->late_bp_recovery_wrong = TRUE;
-    } else {
-      bp_recovery_info->late_bp_recovery_wrong = FALSE;
-    }
   }
 }
-
 
 /******************************************************************************/
 /* bp_sched_redirect: called on an op that caused the fetch stage to suspend
@@ -215,15 +201,6 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
   /* initialize branch predictor */
   bp_data->bp = &bp_table[BP_MECH];
   bp_data->bp->init_func();
-
-  USE_LATE_BP = (LATE_BP_MECH != NUM_BP);
-
-  if (USE_LATE_BP) {
-    bp_data->late_bp = &bp_table[LATE_BP_MECH];
-    bp_data->late_bp->init_func();
-  } else {
-    bp_data->late_bp = NULL;
-  }
 
   /* init btb structure */
   bp_data->bp_btb = &bp_btb_table[BTB_MECH];
@@ -300,9 +277,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   op->recovery_info.predict_cycle = cycle_count;
 
   bp_data->bp->timestamp_func(op);
-  if (USE_LATE_BP) {
-    bp_data->late_bp->timestamp_func(op);
-  }
 
   if (BP_HASH_TOS || IBTB_HASH_TOS) {
     Addr tos_addr;
@@ -331,8 +305,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     op->oracle_info.pred = TAKEN;
     op->oracle_info.misfetch = FALSE;
     op->oracle_info.mispred = FALSE;
-    op->oracle_info.late_misfetch = FALSE;
-    op->oracle_info.late_mispred = FALSE;
     op->oracle_info.btb_miss = FALSE;
     op->oracle_info.no_target = FALSE;
     // Syscalls cause flush of later ops at decode
@@ -340,11 +312,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     op->oracle_info.recover_at_exec = FALSE;
     ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.npc);
     op->oracle_info.pred_npc = op->oracle_info.npc;
-    op->oracle_info.late_pred_npc = op->oracle_info.npc;
     bp_data->bp->spec_update_func(op);
-    if (USE_LATE_BP) {
-      bp_data->late_bp->spec_update_func(op);
-    }
     return op->oracle_info.npc;
   } else
     ASSERT(0, !(op->table_info->bar_type & BAR_FETCH));
@@ -413,7 +381,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   switch (op->table_info->cf_type) {
     case CF_BR:
       // BR will be predicted at decode, but fill in the info here
-      op->oracle_info.late_pred = TAKEN;
       op->oracle_info.pred_orig = TAKEN;
       // On BTB hit, ensure that target is correct (no aliasing or jitted code)
       if (btb_target && pred_target == op->oracle_info.npc) {
@@ -443,9 +410,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         ASSERT(op->proc_id, !PERFECT_NT_BTB);  // currently not supported
         op->oracle_info.pred = bp_data->bp->pred_func(op);
         op->oracle_info.pred_orig = op->oracle_info.pred;
-        if (USE_LATE_BP) {
-          op->oracle_info.late_pred = bp_data->late_bp->pred_func(op);
-        }
       }
       // Update history used by the rest of Scarab.
       bp_data->global_hist = (bp_data->global_hist >> 1) | (op->oracle_info.pred << 31);
@@ -538,7 +502,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     case CF_CALL:
       op->oracle_info.pred = TAKEN;
       op->oracle_info.pred_orig = TAKEN;
-      op->oracle_info.late_pred = TAKEN;
       if (ENABLE_CRS)
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) : bp_crs_push(bp_data, op);
       // On BTB hit, ensure that target is correct (no aliasing or jitted code)
@@ -578,11 +541,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       if (PERFECT_BP) {
         op->oracle_info.pred = op->oracle_info.dir;
         op->oracle_info.pred_orig = op->oracle_info.dir;
-        op->oracle_info.late_pred = op->oracle_info.dir;
       } else {
         op->oracle_info.pred = TAKEN;
         op->oracle_info.pred_orig = TAKEN;
-        op->oracle_info.late_pred = TAKEN;
       }
       if (ENABLE_IBP && ibp_target) {
         ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
@@ -628,11 +589,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       if (PERFECT_BP) {
         op->oracle_info.pred = op->oracle_info.dir;
         op->oracle_info.pred_orig = op->oracle_info.dir;
-        op->oracle_info.late_pred = op->oracle_info.dir;
       } else {
         op->oracle_info.pred = TAKEN;
         op->oracle_info.pred_orig = TAKEN;
-        op->oracle_info.late_pred = TAKEN;
       }
       if (ENABLE_CRS)
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) : bp_crs_push(bp_data, op);
@@ -680,7 +639,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     case CF_ICO:
       op->oracle_info.pred = TAKEN;
       op->oracle_info.pred_orig = TAKEN;
-      op->oracle_info.late_pred = TAKEN;
       if (ENABLE_CRS) {
         pred_target = CRS_REALISTIC ? bp_crs_realistic_pop(bp_data, op) : bp_crs_pop(bp_data, op);
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) : bp_crs_push(bp_data, op);
@@ -705,11 +663,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       if (PERFECT_BP) {
         op->oracle_info.pred = op->oracle_info.dir;
         op->oracle_info.pred_orig = op->oracle_info.dir;
-        op->oracle_info.late_pred = op->oracle_info.dir;
       } else {
         op->oracle_info.pred = TAKEN;
         op->oracle_info.pred_orig = TAKEN;
-        op->oracle_info.late_pred = TAKEN;
       }
       if (ENABLE_CRS)
         pred_target = CRS_REALISTIC ? bp_crs_realistic_pop(bp_data, op) : bp_crs_pop(bp_data, op);
@@ -736,7 +692,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       ASSERT(op->proc_id, 0);  // should not happen
       op->oracle_info.pred = TAKEN;
       op->oracle_info.pred_orig = TAKEN;
-      op->oracle_info.late_pred = TAKEN;
       break;
   }
   // }}}
@@ -746,9 +701,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     btb_miss_nt = TRUE;
 
   bp_data->bp->spec_update_func(op);
-  if (USE_LATE_BP) {
-    bp_data->late_bp->spec_update_func(op);
-  }
 
   DEBUG(bp_data->proc_id,
         "BP:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
@@ -792,18 +744,7 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
   op->oracle_info.mispred = (op->oracle_info.pred != op->oracle_info.dir) && (prediction != op->oracle_info.npc);
   op->oracle_info.misfetch = !op->oracle_info.mispred && prediction != op->oracle_info.npc;
 
-  if (USE_LATE_BP) {
-    const Addr late_prediction = op->oracle_info.late_pred_npc;
-    op->oracle_info.late_mispred =
-        (op->oracle_info.late_pred != op->oracle_info.dir) && (late_prediction != op->oracle_info.npc);
-    op->oracle_info.late_misfetch = !op->oracle_info.late_mispred && late_prediction != op->oracle_info.npc;
-  }
-
   op->bp_cycle = cycle_count;
-
-
-  STAT_EVENT(op->proc_id, LATE_BP_ON_PATH_CORRECT + op->oracle_info.late_mispred + 2 * op->oracle_info.late_misfetch +
-                              3 * op->off_path);
 
   if (!op->off_path) {
     if (op->oracle_info.mispred)
@@ -893,9 +834,6 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
     return;
   }
   bp_data->bp->update_func(op);
-  if (USE_LATE_BP) {
-    bp_data->late_bp->update_func(op);
-  }
 
   if (ENABLE_BP_CONF && IS_CONF_CF(op)) {
     bp_data->br_conf->update_func(op);
@@ -911,9 +849,6 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
 
 void bp_retire_op(Bp_Data* bp_data, Op* op) {
   bp_data->bp->retire_func(op);
-  if (USE_LATE_BP) {
-    bp_data->late_bp->retire_func(op);
-  }
 }
 
 /******************************************************************************/
@@ -940,9 +875,6 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
     bp_data->bp_ibtb->recover_func(bp_data, info);
   }
   bp_data->bp->recover_func(info);
-  if (USE_LATE_BP) {
-    bp_data->late_bp->recover_func(info);
-  }
 
   /* always recover the call return stack */
   CRS_REALISTIC ? bp_crs_realistic_recover(bp_data, info) : bp_crs_recover(bp_data);

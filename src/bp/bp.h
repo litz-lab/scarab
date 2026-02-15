@@ -61,9 +61,6 @@ typedef struct Bp_Recovery_Info_struct {
   Flag wpe_flag;     /* This CFI has a WPE associated with it */
   Counter wpe_cycle; /* The cycle in which the WPE occurred */
 
-  Flag late_bp_recovery;        // TRUE if recovery is due to a late branch prediction.
-  Flag late_bp_recovery_wrong;  // TRUE if recovery is due to a late branch prediction that is wrong.
-
 } Bp_Recovery_Info;
 
 /**************************************************************************************/
@@ -144,8 +141,7 @@ typedef struct Bp_Data_struct {
   uns proc_id;
   uns bp_id;
   /* predictor data */
-  struct Bp_struct* bp;       // main branch predictor.
-  struct Bp_struct* late_bp;  // late multi-cycle branch predictor. (Could be null)
+  struct Bp_struct* bp;  // main branch predictor.
   struct Bp_Btb_struct* bp_btb;
   struct Bp_Ibtb_struct* bp_ibtb;
   struct Br_Conf_struct* br_conf;
@@ -261,8 +257,7 @@ void set_bp_data(Bp_Data* new_bp_data);
 void set_bp_recovery_info(Bp_Recovery_Info* new_bp_recovery_info);
 
 void init_bp_recovery_info(uns8, Bp_Recovery_Info*);
-void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle, Flag late_bp_recovery,
-                       Flag force_offpath);
+void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle);
 void bp_sched_redirect(Bp_Recovery_Info*, Op*, Counter);
 
 void init_bp_data(uns8, uns8, Bp_Data*, Bp_Data*);

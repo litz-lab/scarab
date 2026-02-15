@@ -241,13 +241,7 @@ void recover_icache_stage() {
   ic->fetch_barrier_pending = FALSE;
   ic->fetch_barrier_inst_uid = 0;
 
-  Op* op = bp_recovery_info->recovery_op;
-  if (bp_recovery_info->late_bp_recovery && op->oracle_info.btb_miss && !op->oracle_info.btb_miss_resolved) {
-    // Late branch predictor recovered before btb miss is resolved (i.e., icache
-    // stage should still wait for redirect)
-  } else {
-    ic->icache_stage_resteer_signaled = TRUE;
-  }
+  ic->icache_stage_resteer_signaled = TRUE;
   op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
 
   uop_cache_clear_lookup_buffer();

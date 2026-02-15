@@ -96,11 +96,6 @@ struct Op_Info_struct {
   Flag btb_miss;           // true if the target is not known at prediction time
   Flag btb_miss_resolved;  // true if the btb miss is resolved by the pipeline.
   Flag no_target;          // true if there is no target for this branch at prediction time
-  uns8 late_pred;          // predicted direction of branch, set by the multi-cycle branch predictor
-  Addr late_pred_npc;      // predicted next pc field by the multi-cycle branch predictor
-  Flag late_misfetch;      // true if target address is the ONLY thing that was wrong after the multi-cycle branch
-                           // prediction kicks in
-  Flag late_mispred;       // true if the multi-cycle branch predictor mispredicted
   Flag recovery_sch;       // true if this op has scheduled a recovery
   Flag recover_at_decode;  // op will schedule recovery at decode
   Flag recover_at_exec;    // op will schedule recovery at exec

@@ -938,7 +938,7 @@ void FDIP::update() {
       DEBUG(proc_id, "[FDIP%u] fdip off path: %d, conf off path: %d\n", bp_id, op->off_path, op->conf_off_path);
       if (!bp_id)
         log_stats_path_conf_per_pref_candidate();
-      emit_new_prefetch = determine_usefulness(line_addr, op, op->oracle_info.pred_global_hist);
+      emit_new_prefetch = determine_usefulness(line_addr, op, op->bp_pred_info->pred_global_hist);
 
       Flag demand_hit_prefetch = FALSE;
       Flag demand_hit_writeback = FALSE;
@@ -980,7 +980,7 @@ void FDIP::update() {
 
       Mem_Req_Type mem_type = is_conf_off_path() ? MRT_FDIPPRFOFF : MRT_FDIPPRFON;
       if (!emit_new_prefetch && !line && !mem_req)  // TODO: whether to insert the candidate for the subsidiary
-        insert_pref_candidate_to_seniority_ftq(line_addr, op->oracle_info.pred_global_hist);
+        insert_pref_candidate_to_seniority_ftq(line_addr, op->bp_pred_info->pred_global_hist);
       if (!bp_id && (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER))
         INC_STAT_EVENT(proc_id, FDIP_SENIORITY_FTQ_ACCUMULATED, udp->seniority_ftq.size());
       Flag mem_req_buf_full = FALSE;
@@ -1511,7 +1511,7 @@ void FDIP::log_stats_path_conf_per_pref_candidate() {
   if (!is_conf_off_path()) {
     if (is_off_path()) {
       STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_PREF_CANDIDATES);
-      STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NOT_IDENTIFIED_PREF_CANDIDATES + cur_op->oracle_info.off_path_reason);
+      STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NOT_IDENTIFIED_PREF_CANDIDATES + cur_op->bp_pred_info->off_path_reason);
     } else
       STAT_EVENT(proc_id, FDIP_ON_CONF_ON_PREF_CANDIDATES);
   } else {
@@ -1534,7 +1534,7 @@ void FDIP::log_stats_path_conf_emitted() {
     // actually off
     if (is_off_path()) {
       STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_EMITTED);
-      STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NOT_IDENTIFIED_EMITTED + cur_op->oracle_info.off_path_reason);
+      STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NOT_IDENTIFIED_EMITTED + cur_op->bp_pred_info->off_path_reason);
     } else {
       STAT_EVENT(proc_id, FDIP_ON_CONF_ON_EMITTED);
     }

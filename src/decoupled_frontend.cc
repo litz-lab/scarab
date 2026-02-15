@@ -244,9 +244,9 @@ void Decoupled_FE::dfe_recover_op() {
   auto op = bp_recovery_info->recovery_op;
 
   if (!bp_id) {
-    if (op->oracle_info.recover_at_decode)
+    if (op->bp_pred_info->recover_at_decode)
       STAT_EVENT(proc_id, FTQ_RECOVER_DECODE);
-    else if (op->oracle_info.recover_at_exec)
+    else if (op->bp_pred_info->recover_at_exec)
       STAT_EVENT(proc_id, FTQ_RECOVER_EXEC);
 
     uint64_t offpath_cycles = cycle_count - redirect_cycle;
@@ -457,7 +457,7 @@ void Decoupled_FE::update() {
           }
           if (build_event == FT_EVENT_MISPREDICT || build_event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
             frontend_redirect(proc_id, bp_id, current_ft_to_push->get_last_op()->inst_uid,
-                              current_ft_to_push->get_last_op()->oracle_info.pred_npc);
+                              current_ft_to_push->get_last_op()->bp_pred_info->pred_npc);
           } else if (build_event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
             stall(current_ft_to_push->get_last_op());
           }
@@ -586,29 +586,29 @@ void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
 }
 
 Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
-  if (!(op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec)) {
+  if (!(op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec)) {
     return REASON_NOT_IDENTIFIED;
   }
   // mispred
-  if (op->oracle_info.pred_orig != op->oracle_info.dir && !op->oracle_info.btb_miss) {
+  if (op->bp_pred_info->pred_orig != op->oracle_info.dir && !op->btb_pred_info->btb_miss) {
     return REASON_MISPRED;
   }
   // misfetch
-  else if (!op->oracle_info.btb_miss && op->oracle_info.pred_orig == op->oracle_info.dir &&
-           op->oracle_info.pred_npc != op->oracle_info.npc) {
+  else if (!op->btb_pred_info->btb_miss && op->bp_pred_info->pred_orig == op->oracle_info.dir &&
+           op->bp_pred_info->pred_npc != op->oracle_info.npc) {
     return REASON_MISFETCH;
   }
   // ibtb miss
   else if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) &&
-           op->oracle_info.btb_miss && op->oracle_info.ibp_miss && op->oracle_info.pred_orig == TAKEN) {
+           op->btb_pred_info->btb_miss && op->btb_pred_info->ibp_miss && op->bp_pred_info->pred_orig == TAKEN) {
     return REASON_IBTB_MISS;
   }
   // btb miss and mispred (would have been incorrect with or without btb miss)
-  else if (op->oracle_info.pred_orig != op->oracle_info.dir && op->oracle_info.btb_miss) {
+  else if (op->bp_pred_info->pred_orig != op->oracle_info.dir && op->btb_pred_info->btb_miss) {
     return REASON_BTB_MISS_MISPRED;
   }
   // true btb miss
-  else if (op->oracle_info.btb_miss) {
+  else if (op->btb_pred_info->btb_miss) {
     return REASON_BTB_MISS;
   } else {
     // all cases should be covered
@@ -660,6 +660,8 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
           !per_core_dfe[proc_id][_bp_id]->is_off_path()) {
         ASSERT(proc_id, !per_core_dfe[proc_id][_bp_id]->ftq_num_fts());
         Op alt_op = *result.op;
+        alt_op.bp_pred_info = &alt_op.bp_pred_main;
+        alt_op.btb_pred_info = &alt_op.btb_pred;
         Addr alt_pred_addr =
             bp_predict_op(per_core_dfe[proc_id][_bp_id]->bp_data, &alt_op, 0, result.op->inst_info->addr);
         frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);
@@ -684,7 +686,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
     ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
     if (build_event == FT_EVENT_MISPREDICT || build_event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
       frontend_redirect(proc_id, bp_id, current_ft_to_push->get_last_op()->inst_uid,
-                        current_ft_to_push->get_last_op()->oracle_info.pred_npc);
+                        current_ft_to_push->get_last_op()->bp_pred_info->pred_npc);
     } else if (build_event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
       stall(current_ft_to_push->get_last_op());
     }

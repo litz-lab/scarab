@@ -424,7 +424,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->btb_pred_info->no_target = FALSE;
       }
 
-
       // pred_target is set by BTB on hit. For CBR we may however, still want to execute fall-through
       if (op->bp_pred_info->pred == NOT_TAKEN) {
         pred_target = pc_plus_offset;
@@ -476,7 +475,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->bp_pred_info->recover_at_exec = TRUE;
         op->bp_pred_info->pred = NOT_TAKEN;
         op->bp_pred_info->pred_npc = pred_target;  // Not accurate. At fetch it would execute pc_plus_offset, at decode
-                                                 // would resteer frontend to pred_taken
+                                                   // would resteer frontend to pred_taken
         STAT_EVENT(op->proc_id, op->off_path ? CBR_RECOVER_BTB_MISS_T_NT_OFF_PATH : CBR_RECOVER_BTB_MISS_T_NT);
       }
       // 3. Branch is predicted not-taken causing branch to continue to exec where the flush is triggered

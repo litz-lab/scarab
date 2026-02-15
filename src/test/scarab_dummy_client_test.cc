@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <cstring>
+
 #include "../frontend/pin_exec_driven_fe.h"
 #include "../frontend/pin_trace_read.h"
 #include "../op.h"

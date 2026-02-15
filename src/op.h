@@ -148,7 +148,7 @@ struct Op_struct {
   Bp_Pred_Info bp_pred_main;    // main branch prediction info
   Btb_Pred_Info btb_pred;       // btb prediction info
   Bp_Pred_Info* bp_pred_info;   // selected/active branch prediction info
-  Btb_Pred_Info* btb_pred_info; // selected/active btb prediction info
+  Btb_Pred_Info* btb_pred_info;  // selected/active btb prediction info
   int oracle_cp_num;            // if the op has created an oracle checkpointed this is not -1
   // }}}
 

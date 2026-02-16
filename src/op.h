@@ -138,7 +138,6 @@ struct Op_struct {
   Counter unique_num;           // unique number for each instance of an op (not reset on recovery)
   Counter unique_num_per_proc;  // unique number per core
   uns64 inst_uid;               // unique number for the macro instruction provided by the frontend (PIN)
-  Counter addr_pred_num;        // unique number for each address prediction
   Table_Info* table_info;       // copy of info->table_info to limit pointer chasing
   Inst_Info* inst_info;         // pointer to unique struct for each static instruction
   Op_Info oracle_info;          // information about the execution of the op in the oracle
@@ -170,7 +169,6 @@ struct Op_struct {
   Flag off_path;                // is the op on the correct path of the program? - oracle information
   Flag conf_off_path;           // is the op on the correct path of the program? - confidence information
   Flag exit;                    // is this the last instruction to execute?
-  Flag prog_input;              // is this op directly related to an input value of the program ?
   uns cf_within_fetch;          // branch number within a fetch cycle
   Recovery_Info recovery_info;  // information that will be used to recover a mispredict by the op
   // }}}
@@ -214,28 +212,15 @@ struct Op_struct {
 
   // {{{ pipelined scheduler specific fields (move these)
   struct Sched_Info_struct* sched_info;
-  Counter request_cycle;     // first cycle inst can request func unit i.e. is awake
-  uns gps_not_rdy;           // vector for determining which gs's aren't ready.
   uns delay_bit;             // rejected ops in pipelined schedule is delayed
   uns first;                 // op's sources were ready when dispatched => op is first in dep chain
-  uns src_same_chkpt;        // bookkeeping info: set if any parent is in same chkpt
-  uns parent_load;           // vector for determining which parents are loads
   Counter same_src_last_op;  // bit vector indicating if any src of last op in same slot was the same
-  int dup_fu_num;
-  int dup_cluster;
   // }}}
 
   /* predict wait time specific fields */
 
   // {{{ predict wait time specific fields (move these)
-  uns trigger_parent;       // parent number from which trigger is received.
-  Counter pred_wait_time;   // number of cycles the op should wait before waking
-  Counter reject_count;     // number of times the op has been rejected
-  Src_Info wakeup_trigger;  // op used to trigger wakeup. not necessarily parent op.
-  uns trigger_type;         // does op have a valid trigger.
-
   uns fetch_lag;  // num cycles since the previous group was issued.
-  Flag dcache_miss;
   // }}}
 
   struct Mbp7gshare_Info_struct* mbp7_info;  // multiple branch predictor information
@@ -244,18 +229,10 @@ struct Op_struct {
   // Addr pred_target; // last predicted target for this op.
 
   // {{{ temporary fields -> will be deleted later (move these)
-  int derived_from_prog_input;  // derivation level from program read()
-  int min_input_id;
-  int max_input_id;
-  Flag sources_addr_reg;
-  uns addr_pred_flags;
-  uns stephan_corr_index;
-  Addr pred_addr;
   Flag recovery_scheduled;
   Flag redirect_scheduled;
   // }}}
 
-  FT_Info ft_info;  // FT the op associated with
   // {{{ uop cache
   Flag fetched_from_uop_cache;
   // }}}

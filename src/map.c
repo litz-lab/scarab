@@ -695,7 +695,6 @@ void add_src_from_op(Op* op, Op* src_op, Dep_Type type) {
   info->op_num = src_op->op_num;
   info->unique_num = src_op->unique_num;
 
-  /* for memory dependencies, derived_from_prog_input incremented in track_addr */
   set_not_rdy_bit(op, src_num);
   if (type == MEM_DATA_DEP) {
     ASSERT(op->proc_id, src_op->table_info->mem_type == MEM_ST && op->table_info->mem_type == MEM_LD);

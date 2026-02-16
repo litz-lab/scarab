@@ -203,10 +203,6 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   op->thread_id = 0;
   op->table_info = NULL;
   op->inst_info = NULL;
-  op->oracle_info.table_info = NULL;
-  op->oracle_info.inst_info = NULL;
-  op->engine_info.table_info = NULL;
-  op->engine_info.inst_info = NULL;
   op->off_path = FALSE;  // FIXME: check
   op->state = OS_FETCHED;
   op->fu_num = -1;
@@ -259,48 +255,10 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   op->parent_FT = NULL;
   op->parent_FT_off_path = NULL;
 
-  op->oracle_info.num_srcs = 0;
-  op->oracle_info.update_fpcr = FALSE;
-  op->oracle_info.error_event = 0;
-  op->oracle_info.mispred = FALSE;
-  op->oracle_info.misfetch = FALSE;
-  op->oracle_info.recovery_sch = FALSE;
-  op->oracle_info.recover_at_decode = FALSE;
-  op->oracle_info.recover_at_exec = FALSE;
-  op->oracle_info.pred_npc = 0;
-  op->oracle_info.pred_addr = 0;
-  op->oracle_info.pred = 0;
-  op->oracle_info.pred_orig = 0;
-  op->oracle_info.btb_miss = FALSE;
-  op->oracle_info.btb_miss_resolved = FALSE;
-  op->oracle_info.no_target = FALSE;
-  op->oracle_info.pred_perceptron_global_hist = 0;
-  op->oracle_info.pred_conf_perceptron_global_hist = 0;
-  op->oracle_info.pred_conf_perceptron_global_misp_hist = 0;
-  op->oracle_info.pred_gpht_entry = NULL;
-  op->oracle_info.pred_ppht_entry = NULL;
-  op->oracle_info.pred_spht_entry = NULL;
-  op->oracle_info.pred_local_hist = 0;
-  op->oracle_info.pred_global_hist = 0;
-  op->oracle_info.pred_targ_hist = 0;
-  op->oracle_info.hybridgp_gpred = 0;
-  op->oracle_info.hybridgp_ppred = 0;
-  op->oracle_info.pred_tc_selector_entry = 0;
-  op->oracle_info.ibp_miss = FALSE;
-  op->oracle_info.pred_conf = FALSE;
-  op->oracle_info.pred_conf_index = 0;
-  op->oracle_info.opc_index = 0;
+  memset(&op->oracle_info, 0, sizeof(op->oracle_info));
 
   op->oracle_cp_num = -1;
-  op->engine_info.dcmiss = FALSE;
-  op->engine_info.mlc_miss = FALSE;
-  op->engine_info.mlc_miss_satisfied = FALSE;
-  op->engine_info.l1_miss = FALSE;
-  op->engine_info.l1_miss_satisfied = FALSE;
-  op->engine_info.dep_on_l1_miss = FALSE;
-  op->engine_info.was_dep_on_l1_miss = FALSE;
-  op->engine_info.num_srcs = 0;
-  op->engine_info.update_fpcr = FALSE;
+  memset(&op->engine_info, 0, sizeof(op->engine_info));
 
   op->recovery_scheduled = FALSE;
   op->redirect_scheduled = FALSE;

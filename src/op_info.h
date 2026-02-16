@@ -29,8 +29,6 @@
 #ifndef __OP_INFO_H__
 #define __OP_INFO_H__
 
-#include "inst_info.h"
-#include "table_info.h"
 
 /**************************************************************************************/
 // Defines
@@ -68,9 +66,6 @@ typedef struct Src_Info_struct {
  * typedef in globals/global_types.h */
 
 struct Op_Info_struct {
-  struct Table_Info_struct* table_info;  // copy of op->table_info
-  struct Inst_Info_struct* inst_info;    // copy of op->inst_info
-
   uns num_srcs;                 // number of dependencies to obey
   Src_Info src_info[MAX_DEPS];  // information about each source
   Flag update_fpcr;             // need to update the fpcr

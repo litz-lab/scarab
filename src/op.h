@@ -126,6 +126,8 @@ struct Op_struct {
   Op* op_pool_next;    // either next free or next active op
   uns op_pool_id;      // unique identifier for op (doesn't change)
   // }}}
+  // NOTE: op_pool_setup_op zeroes everything after this prefix using
+  // offsetof(Op, proc_id). Keep proc_id as the first non-pool field.
 
   // {{{ op numbers and info pointers
   uns proc_id;                  // processor id for cmp model

@@ -30,6 +30,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 
 #include "op_pool.h"
 
+#include <stddef.h>
 #include <string.h>
 
 #include "globals/assert.h"
@@ -183,27 +184,13 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   uns ii, jj;
   /* only initialize here what is independent of the engine (the
      rest should be in the fetch stage) */
-  op->bom = FALSE;
-  op->eom = FALSE;
-  op->exit = FALSE;
-  op->fetched_instruction = FALSE;
-  op->conf_off_path = FALSE;
-  op->cf_within_fetch = 0;
-  op->srcs_not_rdy_vector = 0x0;
-  op->sched_info = NULL;
-  op->mbp7_info = NULL;
-  op->marked = FALSE;
-
+  size_t clear_off = offsetof(Op, proc_id);
+  memset((char*)op + clear_off, 0, sizeof(*op) - clear_off);
   op->op_num = op_count[proc_id];
   op->unique_num = unique_count;
   op->unique_num_per_proc = unique_count_per_core[proc_id];
-  op->inst_uid = 0;
   op->proc_id = proc_id;
   op->bp_id = bp_id;
-  op->thread_id = 0;
-  op->table_info = NULL;
-  op->inst_info = NULL;
-  op->off_path = FALSE;  // FIXME: check
   op->state = OS_FETCHED;
   op->fu_num = -1;
   op->fetch_cycle = MAX_CTR;
@@ -219,53 +206,14 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   op->replay_cycle = MAX_CTR;
   op->pred_cycle = MAX_CTR;
   op->precommit_cycle = MAX_CTR;
-  op->decode_cycle = 0;
-  op->perceptron_output = 0;
-  op->conf_perceptron_output = 0;
-  op->replay = FALSE;
-  op->replay_count = 0;
-  op->dont_cause_replays = FALSE;
-  op->exec_count = 0;
-  op->in_rdy_list = FALSE;
-  op->in_node_list = FALSE;
-  op->precommitted = FALSE;
-  op->macro_fused = FALSE;
-  op->move_eliminated = FALSE;
-
-  op->next_rdy = NULL;
-  op->next_node = NULL;
-  op->wake_up_head = NULL;
-  op->wake_up_tail = NULL;
-  op->wake_up_count = 0;
   op->wake_cycle = MAX_CTR;
-
-  op->req = NULL;
 
   /* pipelined scheduler fields */
   op->chkpt_num = MAX_CTR;
   op->node_id = MAX_CTR;
   op->rs_id = MAX_CTR;
-  op->delay_bit = 0;
-  op->first = 0;
-  op->same_src_last_op = 0;
-  op->fetch_lag = 0;
-
-  memset(&op->recovery_info, 0, sizeof(op->recovery_info));
-  op->bp_confidence = 0;
-  op->parent_FT = NULL;
-  op->parent_FT_off_path = NULL;
-
-  memset(&op->oracle_info, 0, sizeof(op->oracle_info));
 
   op->oracle_cp_num = -1;
-  memset(&op->engine_info, 0, sizeof(op->engine_info));
-
-  op->recovery_scheduled = FALSE;
-  op->redirect_scheduled = FALSE;
-  op->fetched_from_uop_cache = FALSE;
-
-  for (ii = 0; ii < NUM_DEP_TYPES; ii++)
-    op->wake_up_signaled[ii] = FALSE;
 
   for (ii = 0; ii < MAX_SRCS; ++ii) {
     for (jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {

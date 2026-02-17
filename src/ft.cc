@@ -133,8 +133,8 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
     op->off_path = off_path;
     op->conf_off_path = conf_off_path;
     op->op_num = get_next_op_id_fn();
-    op->oracle_info.pred_npc = op->oracle_info.npc;
-    op->oracle_info.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
+    op->bp_pred_info->pred_npc = op->oracle_info.npc;
+    op->bp_pred_info->pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     if (off_path)
       event = predict_one_cf_op(op);
     if (op->inst_info->fake_inst == 1)
@@ -259,32 +259,35 @@ FT_Event FT::predict_one_cf_op(Op* op) {
   if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
     Op alt_op;
-    if (!bp_id)
+    if (!bp_id) {
       alt_op = *op;
+      alt_op.bp_pred_info = &alt_op.bp_pred_main;
+      alt_op.btb_pred_info = &alt_op.btb_pred;
+    }
     bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
     DEBUG(proc_id,
           "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
           "recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
-          bp_id, op->inst_info->addr, op->oracle_info.npc, op->oracle_info.pred_npc, op->oracle_info.mispred,
-          op->oracle_info.misfetch, op->oracle_info.btb_miss, op->oracle_info.pred == TAKEN,
-          op->oracle_info.recover_at_decode, op->oracle_info.recover_at_exec, op->table_info->bar_type & BAR_FETCH);
+          bp_id, op->inst_info->addr, op->oracle_info.npc, op->bp_pred_info->pred_npc, op->bp_pred_info->mispred,
+          op->bp_pred_info->misfetch, op->btb_pred_info->btb_miss, op->bp_pred_info->pred == TAKEN,
+          op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec, op->table_info->bar_type & BAR_FETCH);
     if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
-      op->oracle_info.recover_at_decode = FALSE;
-      op->oracle_info.recover_at_exec = FALSE;
+      op->bp_pred_info->recover_at_decode = FALSE;
+      op->bp_pred_info->recover_at_exec = FALSE;
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
       return FT_EVENT_FETCH_BARRIER;
     }
-    if (op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec) {
-      ASSERT(0, !(op->oracle_info.recover_at_decode && op->oracle_info.recover_at_exec));
+    if (op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec) {
+      ASSERT(0, !(op->bp_pred_info->recover_at_decode && op->bp_pred_info->recover_at_exec));
 
       if (op->off_path) {
-        op->oracle_info.recover_at_decode = FALSE;
-        op->oracle_info.recover_at_exec = FALSE;
+        op->bp_pred_info->recover_at_decode = FALSE;
+        op->bp_pred_info->recover_at_exec = FALSE;
       }
       return FT_EVENT_MISPREDICT;
-    } else if (trace_mode && op->off_path && op->oracle_info.pred == TAKEN) {
+    } else if (trace_mode && op->off_path && op->bp_pred_info->pred == TAKEN) {
       // in this case, not a misprediction pred is taken so oracle info should be taken
       // and this should be last op in the FT
       // no misprediction, just manually redirect
@@ -294,7 +297,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
     }
 
   } else if (op->table_info->bar_type & BAR_FETCH) {
-    ASSERT(0, !(op->oracle_info.recover_at_decode | op->oracle_info.recover_at_exec));
+    ASSERT(0, !(op->bp_pred_info->recover_at_decode | op->bp_pred_info->recover_at_exec));
     if (op->off_path)
       STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_OFFPATH);
     else
@@ -311,7 +314,7 @@ FT_PredictResult FT::predict_ft() {
     FT_Event event = predict_one_cf_op(op);
     if (event != FT_EVENT_NONE) {
       uint64_t return_idx = (event == FT_EVENT_MISPREDICT) ? (idx) : 0;
-      Addr pred_addr = op->oracle_info.pred_npc;
+      Addr pred_addr = op->bp_pred_info->pred_npc;
       if (!ended_by_exit())
         return {return_idx, event, op, pred_addr};
     }
@@ -345,7 +348,7 @@ bool FT::is_consecutive(const FT& previous_ft) const {
     return false;
   FT_Ended_By prev_end_type = previous_ft.get_ft_info().dynamic_info.ended_by;
   Addr start_addr = ft_info.static_info.start;
-  Addr pred_npc = last_op->oracle_info.pred_npc;
+  Addr pred_npc = last_op->bp_pred_info->pred_npc;
   Addr npc = last_op->oracle_info.npc;
   Addr end_addr = last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
   bool matches = false;
@@ -376,7 +379,7 @@ FT_Ended_By FT::get_end_reason() const {
     uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
                  ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
     bool end_of_icache_line = offset >= ICACHE_LINE_SIZE;
-    bool cf_taken = (op->table_info->cf_type && op->oracle_info.pred == TAKEN);
+    bool cf_taken = (op->table_info->cf_type && op->bp_pred_info->pred == TAKEN);
     bool bar_fetch = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH;
 
     if (op->exit) {
@@ -411,8 +414,8 @@ void FT::generate_ft_info() {
 
 void FT::clear_recovery_info() {
   for (auto op : ops) {
-    op->oracle_info.recover_at_decode = FALSE;
-    op->oracle_info.recover_at_exec = FALSE;
+    op->bp_pred_info->recover_at_decode = FALSE;
+    op->bp_pred_info->recover_at_exec = FALSE;
   }
 }
 

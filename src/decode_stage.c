@@ -239,7 +239,7 @@ void decode_stage_process_op(Op* op) {
   if (cf) {
     DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",
           op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE, op->inst_info->addr, op->op_num,
-          op->oracle_info.recover_at_decode);
+          op->bp_pred_info->recover_at_decode);
     // it is a direct branch, so the target is now known
     if (cf <= CF_CALL) {
       bp_target_known_op(g_bp_data, op);
@@ -247,14 +247,14 @@ void decode_stage_process_op(Op* op) {
     // If the CF was unconditional and direct and taken and there was a BTB miss
     // we can schedule a redirect. If the branch was not taken we are on the on-path.
     // If the branch is condidtional or indirect, we will schedule recovery at exec
-    if (op->oracle_info.recover_at_decode) {
+    if (op->bp_pred_info->recover_at_decode) {
       bp_sched_recovery(bp_recovery_info, op, cycle_count);
 
       // After recovery remove misfetch/mispred/btb_miss flags so it does not trigger flush by exec again
-      op->oracle_info.misfetch = FALSE;
-      op->oracle_info.btb_miss = FALSE;
-      op->oracle_info.pred = op->oracle_info.dir;
-      op->oracle_info.mispred = FALSE;
+      op->bp_pred_info->misfetch = FALSE;
+      op->btb_pred_info->btb_miss = FALSE;
+      op->bp_pred_info->pred = op->oracle_info.dir;
+      op->bp_pred_info->mispred = FALSE;
 
       // stats for the reason of resteer
       STAT_EVENT(dec->proc_id, RESTEER_BTB_MISS_CF_BR + cf);

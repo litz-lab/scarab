@@ -917,12 +917,12 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     if (op->table_info->cf_type) {
       // TODO: can we move this prefetch update to decoupled front-end or need it be here?
       if (DJOLT_ENABLE)
-        update_djolt(ic->proc_id, op->inst_info->addr, op->table_info->cf_type, op->oracle_info.pred_npc);
+        update_djolt(ic->proc_id, op->inst_info->addr, op->table_info->cf_type, op->bp_pred_info->pred_npc);
 
       ASSERT(ic->proc_id,
-             (op->oracle_info.mispred << 2 | op->oracle_info.misfetch << 1 | op->oracle_info.btb_miss) <= 0x7);
+             (op->bp_pred_info->mispred << 2 | op->bp_pred_info->misfetch << 1 | op->btb_pred_info->btb_miss) <= 0x7);
 
-      ic->off_path = ic->off_path || op->oracle_info.recover_at_decode || op->oracle_info.recover_at_exec;
+      ic->off_path = ic->off_path || op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec;
 
       // Measuring basic block lengths
       /*static int bbl_len = 0;
@@ -932,14 +932,14 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       if (op->table_info->cf_type) {
         STAT_EVENT(ic->proc_id, BBL_LENGTH_1 + bbl_len-1);
         bbl_len = 0;
-        if (op->oracle_info.pred == TAKEN) {
+        if (op->bp_pred_info->pred == TAKEN) {
           STAT_EVENT(ic->proc_id, BBL_DONT_END_PRED_NT_LENGTH_1 + bbl_len_dont_end_pred_nt-1);
           bbl_len_dont_end_pred_nt = 0;
         }
       }*/
     } else {
       // pass the global branch history to all the instructions
-      op->oracle_info.pred_global_hist = g_bp_data->global_hist;
+      op->bp_pred_info->pred_global_hist = g_bp_data->global_hist;
     }
   }
 }

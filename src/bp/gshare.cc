@@ -79,8 +79,8 @@ uns8 bp_gshare_pred(Op* op) {
   const uns proc_id = op->proc_id;
   const auto& gshare_state = gshare_state_all_cores.at(proc_id);
 
-  const Addr addr = op->oracle_info.pred_addr;
-  const uns32 hist = op->oracle_info.pred_global_hist;
+  const Addr addr = op->bp_pred_info->pred_addr;
+  const uns32 hist = op->bp_pred_info->pred_global_hist;
   const uns32 pht_index = get_pht_index(addr, hist);
   const uns8 pht_entry = gshare_state.pht[pht_index];
   const uns8 pred = pht_entry >> (PHT_CTR_BITS - 1) & 0x1;
@@ -100,8 +100,8 @@ void bp_gshare_update(Op* op) {
 
   const uns proc_id = op->proc_id;
   auto& gshare_state = gshare_state_all_cores.at(proc_id);
-  const Addr addr = op->oracle_info.pred_addr;
-  const uns32 hist = op->oracle_info.pred_global_hist;
+  const Addr addr = op->bp_pred_info->pred_addr;
+  const uns32 hist = op->bp_pred_info->pred_global_hist;
   const uns32 pht_index = get_pht_index(addr, hist);
   const uns8 pht_entry = gshare_state.pht[pht_index];
 

@@ -282,7 +282,7 @@ Addr* bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Addr line_addr;
 
   return PERFECT_BTB ? &op->oracle_info.target
-                     : (Addr*)cache_access(bp_data->btb, op->oracle_info.pred_addr, &line_addr,
+                     : (Addr*)cache_access(bp_data->btb, op->bp_pred_info->pred_addr, &line_addr,
                                            bp_data->bp_id ? FALSE : TRUE);  // TODO
 }
 
@@ -290,7 +290,7 @@ Addr* bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
 /* bp_btb_gen_update: */
 
 void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
-  Addr fetch_addr = op->oracle_info.pred_addr;
+  Addr fetch_addr = op->bp_pred_info->pred_addr;
   Addr *btb_line, btb_line_addr, repl_line_addr;
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
@@ -360,15 +360,15 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
   /* 1. branch history (USE_PAT_HIST) */
   /* 2. path history */
   if (USE_PAT_HIST) {
-    addr = op->oracle_info.pred_addr;
+    addr = op->bp_pred_info->pred_addr;
     bp_data->targ_hist = bp_data->global_hist; /* use global history from conditional branches */
     hist = bp_data->targ_hist;
-    op->oracle_info.pred_targ_hist = bp_data->targ_hist;
+    op->bp_pred_info->pred_targ_hist = bp_data->targ_hist;
     op->recovery_info.targ_hist = bp_data->targ_hist;
   } else {
-    addr = op->oracle_info.pred_addr;
+    addr = op->bp_pred_info->pred_addr;
     hist = bp_data->targ_hist;
-    op->oracle_info.pred_targ_hist = bp_data->targ_hist;
+    op->bp_pred_info->pred_targ_hist = bp_data->targ_hist;
     bp_data->targ_hist >>= bp_data->target_bit_length;
     op->recovery_info.targ_hist =
         bp_data->targ_hist |
@@ -398,8 +398,8 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
 /* bp_tc_tagged_update: */
 
 void bp_ibtb_tc_tagged_update(Bp_Data* bp_data, Op* op) {
-  Addr addr = op->oracle_info.pred_addr;
-  uns32 hist = op->oracle_info.pred_targ_hist;
+  Addr addr = op->bp_pred_info->pred_addr;
+  uns32 hist = op->bp_pred_info->pred_targ_hist;
   uns32 tc_index = hist ^ addr;
   Addr* tc_line;
   Addr tc_line_addr;
@@ -412,9 +412,9 @@ void bp_ibtb_tc_tagged_update(Bp_Data* bp_data, Op* op) {
   DEBUG(bp_data->proc_id, "Writing target cache target for op_num:%s\n", unsstr64(op->op_num));
   tc_line = (Addr*)cache_access(bp_data->tc_tagged, tc_index, &tc_line_addr, bp_data->bp_id ? FALSE : TRUE);
   if (tc_line) {
-    // ASSERT(bp_data->proc_id, !op->oracle_info.ibp_miss);
+    // ASSERT(bp_data->proc_id, !op->btb_pred_info->ibp_miss);
   } else {
-    // ASSERT(bp_data->proc_id, op->oracle_info.ibp_miss);
+    // ASSERT(bp_data->proc_id, op->btb_pred_info->ibp_miss);
     tc_line = (Addr*)cache_insert(bp_data->tc_tagged, bp_data->proc_id, tc_index, &tc_line_addr, &repl_line_addr);
   }
   *tc_line = op->oracle_info.target;
@@ -465,15 +465,15 @@ Addr bp_ibtb_tc_tagless_pred(Bp_Data* bp_data, Op* op) {
   /* 1. branch history (USE_PAT_HIST) */
   /* 2. path history */
   if (USE_PAT_HIST) {
-    addr = op->oracle_info.pred_addr;
+    addr = op->bp_pred_info->pred_addr;
     bp_data->targ_hist = bp_data->global_hist; /* use global history from conditional branches */
     hist = bp_data->targ_hist;
-    op->oracle_info.pred_targ_hist = bp_data->targ_hist;
+    op->bp_pred_info->pred_targ_hist = bp_data->targ_hist;
     op->recovery_info.targ_hist = bp_data->targ_hist;
   } else {
-    addr = op->oracle_info.pred_addr;
+    addr = op->bp_pred_info->pred_addr;
     hist = bp_data->targ_hist;
-    op->oracle_info.pred_targ_hist = bp_data->targ_hist;
+    op->bp_pred_info->pred_targ_hist = bp_data->targ_hist;
     bp_data->targ_hist >>= bp_data->target_bit_length;
     op->recovery_info.targ_hist =
         bp_data->targ_hist |
@@ -505,8 +505,8 @@ Addr bp_ibtb_tc_tagless_pred(Bp_Data* bp_data, Op* op) {
 /* bp_tc_tagless_update */
 
 void bp_ibtb_tc_tagless_update(Bp_Data* bp_data, Op* op) {
-  Addr addr = op->oracle_info.pred_addr;
-  uns32 hist = op->oracle_info.pred_targ_hist;
+  Addr addr = op->bp_pred_info->pred_addr;
+  uns32 hist = op->bp_pred_info->pred_targ_hist;
   uns32 cooked_hist = COOK_HIST_BITS(hist, 0);
   uns32 cooked_addr = COOK_ADDR_BITS(addr, 2);
   uns32 tc_index = cooked_hist ^ cooked_addr;
@@ -567,7 +567,7 @@ void bp_ibtb_tc_hybrid_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 
 Addr bp_ibtb_tc_hybrid_pred(Bp_Data* bp_data, Op* op) {
   Addr target;
-  Addr addr = op->oracle_info.pred_addr;
+  Addr addr = op->bp_pred_info->pred_addr;
   uns32 hist = bp_data->global_hist;
   uns32 cooked_hist = COOK_HIST_BITS(hist, 0);
   uns32 cooked_addr = COOK_ADDR_BITS(addr, 2);
@@ -591,8 +591,8 @@ Addr bp_ibtb_tc_hybrid_pred(Bp_Data* bp_data, Op* op) {
     target = bp_ibtb_tc_tagless_pred(bp_data, op);
   }
 
-  op->oracle_info.pred_global_hist = bp_data->global_hist;
-  op->oracle_info.pred_tc_selector_entry = sel_entry;
+  op->bp_pred_info->pred_global_hist = bp_data->global_hist;
+  op->bp_pred_info->pred_tc_selector_entry = sel_entry;
 
   return target;
 }
@@ -601,13 +601,13 @@ Addr bp_ibtb_tc_hybrid_pred(Bp_Data* bp_data, Op* op) {
 /* bp_tc_hybrid_update: */
 
 void bp_ibtb_tc_hybrid_update(Bp_Data* bp_data, Op* op) {
-  Addr addr = op->oracle_info.pred_addr;
-  uns32 hist = op->oracle_info.pred_global_hist;
+  Addr addr = op->bp_pred_info->pred_addr;
+  uns32 hist = op->bp_pred_info->pred_global_hist;
   uns32 cooked_hist = COOK_HIST_BITS(hist, 0);
   uns32 cooked_addr = COOK_ADDR_BITS(addr, 2);
   uns32 sel_index = cooked_hist ^ cooked_addr;
   uns8 sel_entry = bp_data->tc_selector[sel_index];
-  Flag predicted_tagged = op->oracle_info.pred_tc_selector_entry >= TC_SELECTOR_TAGGED_WEAK;
+  Flag predicted_tagged = op->bp_pred_info->pred_tc_selector_entry >= TC_SELECTOR_TAGGED_WEAK;
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
 
@@ -618,16 +618,16 @@ void bp_ibtb_tc_hybrid_update(Bp_Data* bp_data, Op* op) {
     sel_entry = bp_data->tc_selector[sel_index];
   }
 
-  ASSERT(bp_data->proc_id, !op->oracle_info.mispred);
+  ASSERT(bp_data->proc_id, !op->bp_pred_info->mispred);
 
-  if (op->oracle_info.no_target) {  // branch was not predicted at all
+  if (op->btb_pred_info->no_target) {  // branch was not predicted at all
     // Update both predictors
     // No change to selector
     bp_ibtb_tc_tagged_update(bp_data, op);
     bp_ibtb_tc_tagless_update(bp_data, op);
     if (!op->off_path)
       STAT_EVENT(op->proc_id, TARG_HYBRID_NO_PRED);
-  } else if (op->oracle_info.misfetch) {
+  } else if (op->bp_pred_info->misfetch) {
     // Update the predictor that made the prediction
     // Change the selector so that it does not use this predictor again
     if (predicted_tagged) {  // predicted by tagged predictor

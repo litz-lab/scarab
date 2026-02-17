@@ -194,7 +194,7 @@ void print_op_field(FILE* stream, Op* op, uns field) {
             fprintf(stream, "%c%c", Op_State_str(op->state)[0], op->replay ? 'r' : ' ');
         }
         if (op->table_info->cf_type) {
-          Flag bits = op->oracle_info.mispred << 2 | op->oracle_info.misfetch << 1 | op->oracle_info.btb_miss;
+          Flag bits = op->bp_pred_info->mispred << 2 | op->bp_pred_info->misfetch << 1 | op->btb_pred_info->btb_miss;
           switch (bits) {
             case 0x4:
               fprintf(stream, "P|");

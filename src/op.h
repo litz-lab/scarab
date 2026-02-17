@@ -35,6 +35,7 @@
 #include "ft_info.h"
 #include "inst_info.h"
 #include "op_info.h"
+#include "pred_info.h"
 #include "table_info.h"
 
 // forward declaration of FT
@@ -144,6 +145,10 @@ struct Op_struct {
   Inst_Info* inst_info;         // pointer to unique struct for each static instruction
   Op_Info oracle_info;          // information about the execution of the op in the oracle
   Op_Info engine_info;          // information about the execution of the op in the engine
+  Bp_Pred_Info bp_pred_main;    // main branch prediction info
+  Btb_Pred_Info btb_pred;       // btb prediction info
+  Bp_Pred_Info* bp_pred_info;   // selected/active branch prediction info
+  Btb_Pred_Info* btb_pred_info;  // selected/active btb prediction info
   int oracle_cp_num;            // if the op has created an oracle checkpointed this is not -1
   // }}}
 
@@ -227,7 +232,7 @@ struct Op_struct {
 
   struct Mbp7gshare_Info_struct* mbp7_info;  // multiple branch predictor information
 
-  // Use oracle_info.pred_npc instead
+  // Use bp_pred_info->pred_npc instead
   // Addr pred_target; // last predicted target for this op.
 
   // {{{ temporary fields -> will be deleted later (move these)

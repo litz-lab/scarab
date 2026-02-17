@@ -27,6 +27,8 @@
  ***************************************************************************************/
 
 #include <algorithm>
+#include <cstring>
+
 #include "../frontend/pin_exec_driven_fe.h"
 #include "../frontend/pin_trace_read.h"
 #include "../op.h"
@@ -153,6 +155,10 @@ void* scarab_test_FetchOp(void* ptr) {
   for(uint32_t j = 0; j < trace.size(); ++j) {
     for(uint32_t i = 0; i < NUM_CLIENTS; ++i) {
       Op op;
+      op.bp_pred_info = &op.bp_pred_main;
+      op.btb_pred_info = &op.btb_pred;
+      memset(&op.bp_pred_main, 0, sizeof(op.bp_pred_main));
+      memset(&op.btb_pred, 0, sizeof(op.btb_pred));
 
       do {
         pin_exec_driven_can_fetch_op(i);

@@ -74,7 +74,7 @@ void BTBMissBPTakenConfStat::print_data() {
 void BTBMissBPTakenConfStat::log_phase_cycles(Op* op) {
   if (!CONFIDENCE_ENABLE || !CONF_LOG_PHASE_CYCLES)
     return;
-  Off_Path_Reason op_reason = (Off_Path_Reason)op->oracle_info.off_path_reason;
+  Off_Path_Reason op_reason = (Off_Path_Reason)op->bp_pred_info->off_path_reason;
   switch (op_reason) {
     case REASON_NOT_IDENTIFIED: {
       break;
@@ -121,7 +121,7 @@ void BTBMissBPTakenConfStat::log_phase_cycles(Op* op) {
 void BTBMissBPTakenConfStat::log_off_path_event(Op* op) {
   if (!CONFIDENCE_ENABLE || !CONF_LOG_DFE_TO_REC)
     return;
-  Off_Path_Reason op_reason = (Off_Path_Reason)op->oracle_info.off_path_reason;
+  Off_Path_Reason op_reason = (Off_Path_Reason)op->bp_pred_info->off_path_reason;
   if (!op_reason)
     return;
   std::get<0>(resteer_ops_cycles[op->op_num]) = cycle_count;
@@ -136,7 +136,7 @@ void BTBMissBPTakenConfStat::log_off_path_event(Op* op) {
 void BTBMissBPTakenConfStat::log_resolution(Op* op) {
   if (!CONFIDENCE_ENABLE || !CONF_LOG_DFE_TO_REC)
     return;
-  Off_Path_Reason op_reason = (Off_Path_Reason)op->oracle_info.off_path_reason;
+  Off_Path_Reason op_reason = (Off_Path_Reason)op->bp_pred_info->off_path_reason;
   std::get<1>(resteer_ops_cycles[op->op_num]) = cycle_count;
   std::get<2>(resteer_ops_cycles[op->op_num]) = op_reason;
 
@@ -156,13 +156,13 @@ void BTBMissBPTakenConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason)
 
 // TO-DO: how to handle perfect mispred conf here?
 void BTBMissBPTakenConf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
-  if (CONF_BTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_BTB_MISS_CONF && op->oracle_info.btb_miss &&
-      (op->oracle_info.pred_orig == TAKEN) && (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
+  if (CONF_BTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_BTB_MISS_CONF && op->btb_pred_info->btb_miss &&
+      (op->bp_pred_info->pred_orig == TAKEN) && (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
     low_confidence_cnt = ~0U;
     ASSERT(proc_id, op->bp_confidence >= 0 && op->bp_confidence <= 3);
     new_reason = static_cast<Conf_Off_Path_Reason>(REASON_BTB_MISS_BP_TAKEN_CONF_0 + op->bp_confidence);
-  } else if (CONF_IBTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_IBTB_MISS_CONF && op->oracle_info.btb_miss &&
-             (op->oracle_info.pred_orig == TAKEN) && (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
+  } else if (CONF_IBTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_IBTB_MISS_CONF && op->btb_pred_info->btb_miss &&
+             (op->bp_pred_info->pred_orig == TAKEN) && (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
     new_reason = (Conf_Off_Path_Reason)(REASON_IBTB_MISS_BP_TAKEN);
   } else if (!CONF_INV_BP_CONF) {  // update confidence
     low_confidence_cnt += 3 - op->bp_confidence;
@@ -234,7 +234,7 @@ void BTBMissBPTakenConf::update_state_perfect_conf(Op* op) {
 }
 
 void BTBMissBPTakenConf::recover(Op* op) {
-  Off_Path_Reason op_reason = (Off_Path_Reason)op->oracle_info.off_path_reason;
+  Off_Path_Reason op_reason = (Off_Path_Reason)op->bp_pred_info->off_path_reason;
   switch (op_reason) {
     case REASON_NOT_IDENTIFIED: {
       ASSERT(proc_id, 0);

@@ -63,6 +63,7 @@ struct FT_PredictResult {
 bool ft_can_fetch_op(FT* ft);
 Op* ft_fetch_op(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
+void ft_generate_ft_info(FT* ft);
 void ft_free_op(Op* op);
 
 #ifdef __cplusplus

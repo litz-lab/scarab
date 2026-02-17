@@ -232,7 +232,8 @@ void Decoupled_FE::dfe_recover_op() {
   }
   ftq.clear();
 
-  DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx\n", bp_id, bp_recovery_info->recovery_fetch_addr);
+  DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx recovery_op_num:%llu\n", bp_id,
+        bp_recovery_info->recovery_fetch_addr, (unsigned long long)bp_recovery_info->recovery_op_num);
 
   for (auto&& it : ftq_iterators) {
     // When the FTQ flushes, reset all iterators

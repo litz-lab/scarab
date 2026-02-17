@@ -151,7 +151,8 @@ void recover_exec_stage() {
   for (ii = 0; ii < NUM_FUS; ii++) {
     Func_Unit* fu = &exec->fus[ii];
     Op* op = exec->sd.ops[ii];
-    if (op && op->op_num > bp_recovery_info->recovery_op_num) {
+    if (op && FLUSH_OP(op)) {
+      DEBUG(exec->proc_id, "Exec flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
       exec->sd.ops[ii] = NULL;
       exec->sd.op_count--;
       fu->avail_cycle = cycle_count + 1;
@@ -550,6 +551,8 @@ static inline void exec_stage_bp_resolve(Op* op) {
   }
 
   if (op->bp_pred_info->recover_at_exec) {
+    DEBUG(exec->proc_id, "Exec schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
+          (unsigned long long)op->exec_cycle);
     bp_sched_recovery(bp_recovery_info, op, op->exec_cycle);
     if (!op->off_path)
       op->recovery_scheduled = TRUE;

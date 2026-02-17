@@ -222,31 +222,59 @@ void reset_all_ops_icache_stage() {
 void recover_icache_stage() {
   Stage_Data* cur_data = get_current_stage_data();
   uns ii;
+  Flag flushed = FALSE;
+  Flag has_surviving_current_ft = FALSE;
 
   ASSERT(ic->proc_id, ic->proc_id == bp_recovery_info->proc_id);
-  DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s\n",
-        hexstr64s(bp_recovery_info->recovery_fetch_addr));
+  DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s recovery_op_num:%llu\n",
+        hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
+
+  if (UOP_CACHE_ENABLE) {
+    if (uc->current_ft) {
+      recover_ft(uc->current_ft);
+      if (ft_can_fetch_op(uc->current_ft)) {
+        ASSERT(ic->proc_id, ft_recovery_addr_is_consecutive(uc->current_ft, bp_recovery_info->recovery_fetch_addr));
+        has_surviving_current_ft = TRUE;
+      } else {
+        uc->current_ft = NULL;
+      }
+    }
+  }
+  if (ic->current_ft) {
+    recover_ft(ic->current_ft);
+    if (ft_can_fetch_op(ic->current_ft)) {
+      ASSERT(ic->proc_id, ft_recovery_addr_is_consecutive(ic->current_ft, bp_recovery_info->recovery_fetch_addr));
+      has_surviving_current_ft = TRUE;
+    } else {
+      ic->current_ft = NULL;
+    }
+  }
 
   cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {
     if (cur_data->ops[ii]) {
       if (FLUSH_OP(cur_data->ops[ii])) {
+        DEBUG(ic->proc_id, "Icache flushing op_num:%llu off_path:%u\n", (unsigned long long)cur_data->ops[ii]->op_num,
+              cur_data->ops[ii]->off_path);
+        flushed = TRUE;
         ASSERT(ic->proc_id, cur_data->ops[ii]->off_path);
         if (cur_data->ops[ii]->parent_FT)
           ft_free_op(cur_data->ops[ii]);
         cur_data->ops[ii] = NULL;
       } else {
-        cur_data->op_count++;
+        Op* op = cur_data->ops[ii];
+        cur_data->ops[ii] = NULL;
+        cur_data->ops[cur_data->op_count++] = op;
       }
     }
   }
 
   // Re-generate FT info from the last surviving op in this stage.
-  if (cur_data->op_count > 0) {
+  if (cur_data->op_count > 0 && flushed) {
     Op* op = cur_data->ops[cur_data->op_count - 1];
-    if (op && op->parent_FT) {
-      ft_generate_ft_info(op->parent_FT);
-    }
+    ASSERT(ic->proc_id, op);
+    ASSERT(ic->proc_id, op->parent_FT);
+    ASSERT(ic->proc_id, ft_recovery_addr_is_consecutive(op->parent_FT, bp_recovery_info->recovery_fetch_addr));
   }
 
   ic->back_on_path = !bp_recovery_info->recovery_force_offpath;
@@ -256,12 +284,15 @@ void recover_icache_stage() {
   ic->icache_stage_resteer_signaled = TRUE;
   op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
 
-  uop_cache_clear_lookup_buffer();
-
-  if (UOP_CACHE_ENABLE) {
-    uc->current_ft = NULL;
+  if (!has_surviving_current_ft) {
+    uop_cache_clear_lookup_buffer();
+    if (UOP_CACHE_ENABLE)
+      uc->current_ft = NULL;
+    ic->current_ft = NULL;
+    ic->icache_stage_resteer_signaled = TRUE;
+  } else {
+    ic->icache_stage_resteer_signaled = FALSE;
   }
-  ic->current_ft = NULL;
 }
 
 /**************************************************************************************/
@@ -450,6 +481,9 @@ FT_Arbitration_Result ft_arbitration() {
   if (!ft) {
     return FT_UNAVAILABLE;
   } else {
+    // Transfer FT ownership from FTQ to the icache/uop-cache current_ft holder.
+    decoupled_fe_pop_ft(ft);
+
     FT_Info ft_info = ft_get_ft_info(ft);
     // set the current fetch address
     ic->fetch_addr = ft_info.static_info.start;
@@ -556,11 +590,6 @@ Icache_State icache_wait_for_miss_actions(Break_Reason* break_fetch) {
 Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data* sd) {
   ASSERT(ic->proc_id, requested && requested <= sd->max_op_count - sd->op_count);
   ASSERT(ic->proc_id, ft_can_fetch_op(ft));
-
-  // Remove FT from FTQ when the stage starts consuming it (not when fully consumed).
-  if (decoupled_fe_get_ft() == ft) {
-    decoupled_fe_pop_ft(ft);
-  }
 
   while (requested && ft_can_fetch_op(ft)) {
     sd->ops[sd->op_count] = ft_fetch_op(ft);

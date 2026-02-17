@@ -226,16 +226,28 @@ void recover_icache_stage() {
   ASSERT(ic->proc_id, ic->proc_id == bp_recovery_info->proc_id);
   DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s\n",
         hexstr64s(bp_recovery_info->recovery_fetch_addr));
+
+  cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {
     if (cur_data->ops[ii]) {
-      ASSERT(ic->proc_id, FLUSH_OP(cur_data->ops[ii]));
-      ASSERT(ic->proc_id, cur_data->ops[ii]->off_path);
-      if (cur_data->ops[ii]->parent_FT)
-        ft_free_op(cur_data->ops[ii]);
-      cur_data->ops[ii] = NULL;
+      if (FLUSH_OP(cur_data->ops[ii])) {
+        ASSERT(ic->proc_id, cur_data->ops[ii]->off_path);
+        if (cur_data->ops[ii]->parent_FT)
+          ft_free_op(cur_data->ops[ii]);
+        cur_data->ops[ii] = NULL;
+      } else {
+        cur_data->op_count++;
+      }
     }
   }
-  cur_data->op_count = 0;
+
+  // Re-generate FT info from the last surviving op in this stage.
+  if (cur_data->op_count > 0) {
+    Op* op = cur_data->ops[cur_data->op_count - 1];
+    if (op && op->parent_FT) {
+      ft_generate_ft_info(op->parent_FT);
+    }
+  }
 
   ic->back_on_path = !bp_recovery_info->recovery_force_offpath;
   ic->fetch_barrier_pending = FALSE;
@@ -545,14 +557,17 @@ Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data* sd) {
   ASSERT(ic->proc_id, requested && requested <= sd->max_op_count - sd->op_count);
   ASSERT(ic->proc_id, ft_can_fetch_op(ft));
 
+  // Remove FT from FTQ when the stage starts consuming it (not when fully consumed).
+  if (decoupled_fe_get_ft() == ft) {
+    decoupled_fe_pop_ft(ft);
+  }
+
   while (requested && ft_can_fetch_op(ft)) {
     sd->ops[sd->op_count] = ft_fetch_op(ft);
     sd->op_count++;
     requested--;
   }
   Flag ft_has_ended = !ft_can_fetch_op(ft);
-  if (ft_has_ended)
-    decoupled_fe_pop_ft(ft);
   return ft_has_ended;
 }
 

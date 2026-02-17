@@ -437,6 +437,12 @@ FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
 
+void ft_generate_ft_info(FT* ft) {
+  if (ft && ft->has_unread_ops()) {
+    ft->generate_ft_info();
+  }
+}
+
 /* retire and flush, free all ops in a FT when last op is freed */
 void ft_free_op(Op* op) {
   ASSERT(0, op->parent_FT);

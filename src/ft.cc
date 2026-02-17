@@ -31,6 +31,7 @@
 #include <iostream>
 
 #include "globals/assert.h"
+#include "globals/utils.h"
 
 #include "memory/memory.param.h"
 
@@ -117,6 +118,23 @@ void FT::remove_op_after_exec_recover() {
     free_op(op);
   }
   ASSERT(proc_id, get_end_reason() == FT_NOT_ENDED || get_end_reason() == FT_TAKEN_BRANCH);
+}
+
+void FT::recover_ft() {
+  ASSERT(proc_id, op_pos <= ops.size());
+  while (ops.size() > op_pos) {
+    Op* op = ops.back();
+    if (!FLUSH_OP(op))
+      break;
+    DEBUG(proc_id, "FT recovery flushing unread op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
+          op->off_path);
+    ops.pop_back();
+    op->parent_FT = nullptr;
+    if (op->parent_FT_off_path) {
+      op->parent_FT_off_path = nullptr;
+    }
+    free_op(op);
+  }
 }
 
 FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
@@ -437,10 +455,30 @@ FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
 
-void ft_generate_ft_info(FT* ft) {
-  if (ft && ft->has_unread_ops()) {
-    ft->generate_ft_info();
+bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start) {
+  ASSERT(0, ft);
+
+  Op* last_op = ft->get_last_op();
+  ASSERT(0, last_op);
+
+  FT_Ended_By end_reason = ft->get_end_reason();
+  Addr pred_npc = last_op->bp_pred_info->pred_npc;
+  Addr npc = last_op->oracle_info.npc;
+  Addr end_addr = last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
+
+  switch (end_reason) {
+    case FT_TAKEN_BRANCH:
+      return (pred_npc == next_start) || (npc == next_start);
+    case FT_BAR_FETCH:
+      return (npc == next_start) || (end_addr == next_start);
+    default:
+      return (end_addr == next_start);
   }
+}
+
+void recover_ft(FT* ft) {
+  ASSERT(0, ft);
+  ft->recover_ft();
 }
 
 /* retire and flush, free all ops in a FT when last op is freed */

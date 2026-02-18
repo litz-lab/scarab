@@ -269,7 +269,6 @@ void recover_icache_stage() {
     }
   }
 
-  // Re-generate FT info from the last surviving op in this stage.
   if (cur_data->op_count > 0 && flushed) {
     Op* op = cur_data->ops[cur_data->op_count - 1];
     ASSERT(ic->proc_id, op);

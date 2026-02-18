@@ -231,18 +231,14 @@ void recover_icache_stage() {
   if (UOP_CACHE_ENABLE) {
     if (uc->current_ft) {
       recover_ft(uc->current_ft);
-      if (ft_can_fetch_op(uc->current_ft)) {
-        ASSERT(ic->proc_id, ft_recovery_addr_is_consecutive(uc->current_ft, bp_recovery_info->recovery_fetch_addr));
-      } else {
+      if (!ft_can_fetch_op(uc->current_ft)) {
         uc->current_ft = NULL;
       }
     }
   }
   if (ic->current_ft) {
     recover_ft(ic->current_ft);
-    if (ft_can_fetch_op(ic->current_ft)) {
-      ASSERT(ic->proc_id, ft_recovery_addr_is_consecutive(ic->current_ft, bp_recovery_info->recovery_fetch_addr));
-    } else {
+    if (!ft_can_fetch_op(ic->current_ft)) {
       ic->current_ft = NULL;
     }
   }

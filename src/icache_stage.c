@@ -223,7 +223,6 @@ void recover_icache_stage() {
   Stage_Data* cur_data = get_current_stage_data();
   uns ii;
   Flag flushed = FALSE;
-  Flag has_surviving_current_ft = FALSE;
 
   ASSERT(ic->proc_id, ic->proc_id == bp_recovery_info->proc_id);
   DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s recovery_op_num:%llu\n",
@@ -234,7 +233,6 @@ void recover_icache_stage() {
       recover_ft(uc->current_ft);
       if (ft_can_fetch_op(uc->current_ft)) {
         ASSERT(ic->proc_id, ft_recovery_addr_is_consecutive(uc->current_ft, bp_recovery_info->recovery_fetch_addr));
-        has_surviving_current_ft = TRUE;
       } else {
         uc->current_ft = NULL;
       }
@@ -244,7 +242,6 @@ void recover_icache_stage() {
     recover_ft(ic->current_ft);
     if (ft_can_fetch_op(ic->current_ft)) {
       ASSERT(ic->proc_id, ft_recovery_addr_is_consecutive(ic->current_ft, bp_recovery_info->recovery_fetch_addr));
-      has_surviving_current_ft = TRUE;
     } else {
       ic->current_ft = NULL;
     }
@@ -258,8 +255,14 @@ void recover_icache_stage() {
               cur_data->ops[ii]->off_path);
         flushed = TRUE;
         ASSERT(ic->proc_id, cur_data->ops[ii]->off_path);
-        if (cur_data->ops[ii]->parent_FT)
+        if (cur_data->ops[ii]->parent_FT) {
+          FT* parent_ft = cur_data->ops[ii]->parent_FT;
+          if (UOP_CACHE_ENABLE && uc->current_ft == parent_ft)
+            uc->current_ft = NULL;
+          if (ic->current_ft == parent_ft)
+            ic->current_ft = NULL;
           ft_free_op(cur_data->ops[ii]);
+        }
         cur_data->ops[ii] = NULL;
       } else {
         Op* op = cur_data->ops[ii];
@@ -282,16 +285,10 @@ void recover_icache_stage() {
 
   ic->icache_stage_resteer_signaled = TRUE;
   op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
-
-  if (!has_surviving_current_ft) {
-    uop_cache_clear_lookup_buffer();
-    if (UOP_CACHE_ENABLE)
-      uc->current_ft = NULL;
-    ic->current_ft = NULL;
-    ic->icache_stage_resteer_signaled = TRUE;
-  } else {
-    ic->icache_stage_resteer_signaled = FALSE;
-  }
+  uop_cache_clear_lookup_buffer();
+  if (UOP_CACHE_ENABLE)
+    uc->current_ft = NULL;
+  ic->current_ft = NULL;
 }
 
 /**************************************************************************************/

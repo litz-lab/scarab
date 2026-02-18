@@ -202,6 +202,7 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
   }
 
   /* dump warmup stats for all cores when core 0 reaches FULL_WARMUP */
+  /* Notice: we only check core 0. The cores are not synchronized. The other core can be have different progress */
   if (FULL_WARMUP && !warmup_dump_done[0] && inst_count_to_use >= FULL_WARMUP) {
     ASSERT(proc_id, !PERIODIC_DUMP);
     for (uns i = 0; i < NUM_CORES; i++) {
@@ -727,28 +728,26 @@ void full_sim() {
         any_sim_done = TRUE;
         check_heartbeat(proc_id, TRUE);
 
-        if (retired_exit[proc_id] && (FRONTEND == FE_TRACE
-#ifdef ENABLE_PT_MEMTRACE
-                                      || FRONTEND == FE_MEMTRACE || FRONTEND == FE_PT
-#endif
-                                      )) {
-          set_last_sim_param(proc_id);
-          // rerun the corresponding benchmark again.
-          // (reset retired_exit and reached_exit)
-          cmp_init_bogus_sim(proc_id);
+        if (retired_exit[proc_id]) {
+          if (FRONTEND == FE_TRACE) {
+            set_last_sim_param(proc_id);
+            // rerun the corresponding benchmark again.
+            // (reset retired_exit and reached_exit)
+            // other sim mode should not trigger bogus mode including FT_MEMRACE
+            cmp_init_bogus_sim(proc_id);
+          } else {
+            // For PT/MEMTRACE: core stays done, no bogus mode support
+            // Clear retired_exit so we don't hit the else-if branch below
+            retired_exit[proc_id] = FALSE;
+          }
         }
       } else if (sim_done[proc_id] && retired_exit[proc_id]) {
-        // rerun the corresponding benchmark again (trace mode only)
-        if (FRONTEND == FE_TRACE
-#ifdef ENABLE_PT_MEMTRACE
-            || FRONTEND == FE_MEMTRACE || FRONTEND == FE_PT
-#endif
-        ) {
-          print_bogus_sim_param(proc_id);
-          set_last_sim_param(proc_id);
-          cmp_init_bogus_sim(proc_id);
-        }
-        // In execution-driven mode, just let the core stay done
+        // Core already done but retired_exit triggered again
+        // This should only happen in FE_TRACE bogus mode
+        ASSERTM(proc_id, FRONTEND == FE_TRACE, "retired_exit set on finished core for non-trace frontend\n");
+        print_bogus_sim_param(proc_id);
+        set_last_sim_param(proc_id);
+        cmp_init_bogus_sim(proc_id);
       }
 
       all_sim_done &= sim_done[proc_id];

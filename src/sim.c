@@ -201,14 +201,15 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
     inst_diff = inst_count_to_use - rounded_interval * period_ID;
   }
 
-  /* dump warmup stats */
-  if (FULL_WARMUP && !warmup_dump_done[proc_id] && inst_count_to_use >= FULL_WARMUP) {
+  /* dump warmup stats for all cores when core 0 reaches FULL_WARMUP */
+  if (FULL_WARMUP && !warmup_dump_done[0] && inst_count_to_use >= FULL_WARMUP) {
     ASSERT(proc_id, !PERIODIC_DUMP);
-    dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
+    for (uns i = 0; i < NUM_CORES; i++) {
+      dump_stats(i, TRUE, global_stat_array[i], NUM_GLOBAL_STATS);
+      period_last_inst_count[i] = inst_count_fetched[i];
+      warmup_dump_done[i] = TRUE;
+    }
     period_last_cycle_count = cycle_count;
-    // this number is used to calcute IPC, so it uses inst_count_fetched always
-    period_last_inst_count[proc_id] = inst_count_fetched[proc_id];
-    warmup_dump_done[proc_id] = TRUE;
   }
 
   /* print heartbeat message if necessary */
@@ -611,7 +612,15 @@ void uop_sim() {
       case WARMUP_MODE:
         if (inst_count[0] == WARMUP || retired_exit[0]) {
           uop_sim_done = TRUE;
-          check_heartbeat(0, TRUE);
+          // Reset counts and flags for ALL cores when transitioning to simulation
+          for (uns i = 0; i < NUM_CORES; i++) {
+            if (DUMB_CORE_ON && DUMB_CORE == i)
+              continue;
+            inst_count[i] = 0;
+            op_count[i] = 0;
+            retired_exit[i] = FALSE;  // Reset so cores don't immediately finish
+            check_heartbeat(i, TRUE);
+          }
         }
         // HACK that ensures that cache replacement works in warmup
         do {
@@ -718,20 +727,28 @@ void full_sim() {
         any_sim_done = TRUE;
         check_heartbeat(proc_id, TRUE);
 
-        if (retired_exit[proc_id] && FRONTEND == FE_TRACE) {
+        if (retired_exit[proc_id] && (FRONTEND == FE_TRACE
+#ifdef ENABLE_PT_MEMTRACE
+                                      || FRONTEND == FE_MEMTRACE || FRONTEND == FE_PT
+#endif
+                                      )) {
           set_last_sim_param(proc_id);
           // rerun the corresponding benchmark again.
           // (reset retired_exit and reached_exit)
           cmp_init_bogus_sim(proc_id);
         }
       } else if (sim_done[proc_id] && retired_exit[proc_id]) {
-        ASSERTM(proc_id, FRONTEND == FE_TRACE, "Unhandled case: benchmark finished in execution-driven mode\n");
-        // rerun the corresponding benchmark again.
-        if (FRONTEND == FE_TRACE) {
+        // rerun the corresponding benchmark again (trace mode only)
+        if (FRONTEND == FE_TRACE
+#ifdef ENABLE_PT_MEMTRACE
+            || FRONTEND == FE_MEMTRACE || FRONTEND == FE_PT
+#endif
+        ) {
           print_bogus_sim_param(proc_id);
           set_last_sim_param(proc_id);
           cmp_init_bogus_sim(proc_id);
         }
+        // In execution-driven mode, just let the core stay done
       }
 
       all_sim_done &= sim_done[proc_id];

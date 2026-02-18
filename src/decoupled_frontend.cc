@@ -92,14 +92,12 @@ void update_decoupled_fe(uns proc_id, uns bp_id) {
   per_core_dfe[proc_id][bp_id]->update();
 }
 
-void decoupled_fe_pop_ft(FT* ft) {
+FT* decoupled_fe_pop_ft() {
   ASSERT(0, g_dfe->get_bp_id() == 0);
-  g_dfe->pop_ft(ft);
-}
-
-FT* decoupled_fe_get_ft() {
-  ASSERT(0, g_dfe->get_bp_id() == 0);
-  return g_dfe->get_ft();
+  FT* ft = g_dfe->get_ft();
+  if (ft)
+    g_dfe->pop_ft(ft);
+  return ft;
 }
 
 Decoupled_FE* decoupled_fe_new_ftq_iter(uns proc_id, uns bp_id, uns* ftq_idx) {

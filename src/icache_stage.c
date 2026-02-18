@@ -469,13 +469,10 @@ FT_Arbitration_Result ft_arbitration() {
     ic->current_ft = NULL;
   }
 
-  FT* ft = decoupled_fe_get_ft();
+  FT* ft = decoupled_fe_pop_ft();
   if (!ft) {
     return FT_UNAVAILABLE;
   } else {
-    // Transfer FT ownership from FTQ to the icache/uop-cache current_ft holder.
-    decoupled_fe_pop_ft(ft);
-
     FT_Info ft_info = ft_get_ft_info(ft);
     // set the current fetch address
     ic->fetch_addr = ft_info.static_info.start;

@@ -51,8 +51,8 @@ jobs:
       - name: Initialize environment
         working-directory: infra
         env:
-          trace_home: ${{ github.workspace }}
-        run: ./sci --init
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
+        run: ./sci --ci-init
 
       - name: Locate scarabinfra conda env
         id: conda-env
@@ -76,68 +76,22 @@ jobs:
           cat env_path.txt >> "$GITHUB_ENV"
           rm env_path.txt
 
-      - name: Download traces
-        env:
-          PYTHON_BIN: ${{ env.SCARABINFRA_ENV }}/bin/python
-        run: |
-          if [ -z "$PYTHON_BIN" ]; then
-            echo "scarabinfra conda environment not detected"
-            exit 1
-          fi
-          "$PYTHON_BIN" - <<'PY'
-          import os
-          import pathlib
-          import shutil
-          import tarfile
-          import urllib.request
-
-          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-          archive = workspace / "traces.tar.gz"
-          target_dir = workspace / "traces_top_simpoint"
-          url = "https://github.com/litz-lab/scarab-infra/releases/download/top_simpoint_perlbench/traces_top_simpoint.tar.gz"
-
-          def safe_extract(tar_obj: tarfile.TarFile, destination: pathlib.Path) -> None:
-              dest_root = destination.resolve()
-              for member in tar_obj.getmembers():
-                  member_path = (dest_root / member.name).resolve()
-                  if dest_root != member_path and dest_root not in member_path.parents:
-                      raise RuntimeError(f"Unsafe path in archive: {member.name}")
-              tar_obj.extractall(path=dest_root)
-
-          if target_dir.exists():
-              print(f"Reusing existing traces at {target_dir}")
-          else:
-              print(f"Downloading traces to {archive}")
-              with urllib.request.urlopen(url) as response:
-                  status = getattr(response, "status", 200)
-                  if status != 200:
-                      raise RuntimeError(f"Download failed with HTTP status {status}")
-                  with archive.open("wb") as dest:
-                      shutil.copyfileobj(response, dest)
-              with tarfile.open(archive, "r:gz") as tar_obj:
-                  safe_extract(tar_obj, workspace)
-              if archive.exists():
-                  archive.unlink()
-              print(f"Extracted traces to {target_dir}")
-
-          PY
-
       - name: Build Scarab
         working-directory: infra
         env:
-          trace_home: ${{ github.workspace }}
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
         run: ./sci --build-scarab ${{ inputs.sci_id }}
 
       - name: Run scarab simulation
         working-directory: infra
         env:
-          trace_home: ${{ github.workspace }}
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
         run: ./sci --sim ${{ inputs.sci_id }}
 
       - name: Verify simulation status
         working-directory: infra
         env:
-          trace_home: ${{ github.workspace }}
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
         run: |
           status_output=$(./sci --status ${{ inputs.sci_id }})
           echo "$status_output"
@@ -184,22 +138,78 @@ jobs:
           echo "No simulation directory found. Tried: ${candidates[*]}"
           exit 1
 
+      - id: simworkload
+        if: inputs.collect_metrics
+        name: Resolve workload path
+        working-directory: infra
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sci_id = os.environ.get("SCI_ID", "").strip()
+          if not sci_id:
+              raise SystemExit("SCI_ID is not set.")
+
+          candidates = [Path("json") / f"{sci_id}.json"]
+          if sci_id.endswith("_dbg"):
+              candidates.append(Path("json") / f"{sci_id[:-4]}.json")
+
+          descriptor_path = None
+          for path in candidates:
+              if path.is_file():
+                  descriptor_path = path
+                  break
+          if descriptor_path is None:
+              raise SystemExit(f"No descriptor json found. Tried: {', '.join(str(p) for p in candidates)}")
+
+          with descriptor_path.open(encoding="utf-8") as handle:
+              data = json.load(handle)
+
+          sims = data.get("simulations") or []
+          if not sims:
+              raise SystemExit("Descriptor has no simulations.")
+          sim = sims[0]
+          suite = sim.get("suite")
+          subsuite = sim.get("subsuite")
+          workload = sim.get("workload")
+          cluster_id = sim.get("cluster_id")
+          if not all([suite, subsuite, workload, cluster_id]):
+              raise SystemExit(f"Missing workload fields in descriptor: {sim}")
+
+          workload_path = f"{suite}/{subsuite}/{workload}/{cluster_id}"
+          print(f"Resolved workload path: {workload_path}")
+          output = os.environ.get("GITHUB_OUTPUT")
+          if not output:
+              raise SystemExit("GITHUB_OUTPUT not set.")
+          with open(output, "a", encoding="utf-8") as out:
+              out.write(f"path={workload_path}\n")
+          PY
+        env:
+          SCI_ID: ${{ inputs.sci_id }}
+
       - id: kips
         if: inputs.collect_metrics
         name: Grab KIPS
         working-directory: simulations
         run: |
           sim_dir="${{ steps.simdir.outputs.path }}"
+          workload_path="${{ steps.simworkload.outputs.path }}"
           if [ -z "$sim_dir" ]; then
             echo "Simulation directory was not resolved"
             exit 1
           fi
+          if [ -z "$workload_path" ]; then
+            echo "Workload path was not resolved"
+            exit 1
+          fi
           v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' \
-              "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/sim.log" | head -n1)
+              "${sim_dir}/this_pr/${workload_path}/sim.log" | head -n1)
           if ! [[ "$v" =~ ^[0-9]+$ ]]; then
             echo "KIPS value is not a valid integer: '$v' Run failed!"
             echo "Contents of sim.log for debugging:"
-            cat "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/sim.log"
+            cat "${sim_dir}/this_pr/${workload_path}/sim.log"
             exit 1
           fi
           echo "value=$v" >>"$GITHUB_OUTPUT"
@@ -210,17 +220,22 @@ jobs:
         working-directory: simulations
         run: |
           sim_dir="${{ steps.simdir.outputs.path }}"
+          workload_path="${{ steps.simworkload.outputs.path }}"
           if [ -z "$sim_dir" ]; then
             echo "Simulation directory was not resolved"
             exit 1
           fi
+          if [ -z "$workload_path" ]; then
+            echo "Workload path was not resolved"
+            exit 1
+          fi
           v=$(grep "Cumulative:" \
-               "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out" | \
+               "${sim_dir}/this_pr/${workload_path}/core.stat.0.out" | \
                sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
           if ! [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
             echo "IPC value is not a valid floating point number: '$v' Run failed!"
             echo "Contents of core.stat.0.out for debugging:"
-            cat "${sim_dir}/this_pr/spec2017/rate_int/perlbench/29229/core.stat.0.out"
+            cat "${sim_dir}/this_pr/${workload_path}/core.stat.0.out"
             exit 1
           fi
           echo "value=$v" >>"$GITHUB_OUTPUT"

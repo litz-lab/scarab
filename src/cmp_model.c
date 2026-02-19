@@ -157,9 +157,6 @@ void cmp_init(uns mode) {
 
   cache_part_init();
 
-  ASSERTM(0, !USE_LATE_BP || LATE_BP_LATENCY < (DECODE_CYCLES + MAP_CYCLES),
-          "Late branch prediction latency should be less than the total "
-          "latency of the frontend stages of the pipeline (decode + map)");
 }
 
 /**************************************************************************************/
@@ -213,7 +210,7 @@ void cmp_istreams(void) {
       if (cycle_count >= bp_recovery_info->redirect_cycle) {
         set_icache_stage(&cmp_model.icache_stage[proc_id]);
         ASSERT(proc_id, proc_id == bp_recovery_info->redirect_op->proc_id);
-        ASSERT_PROC_ID_IN_ADDR(proc_id, bp_recovery_info->redirect_op->oracle_info.pred_npc);
+        ASSERT_PROC_ID_IN_ADDR(proc_id, bp_recovery_info->redirect_op->bp_pred_info->pred_npc);
         cmp_redirect();
       }
     }
@@ -374,24 +371,11 @@ void cmp_recover() {
     recover_fdip(bp_recovery_info->proc_id, bp_id);
   }
 
-  if (USE_LATE_BP && bp_recovery_info->late_bp_recovery) {
-    Op* op = bp_recovery_info->recovery_op;
-    op->oracle_info.pred = op->oracle_info.late_pred;
-    op->oracle_info.pred_npc = op->oracle_info.late_pred_npc;
-    ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.pred_npc);
-    op->oracle_info.mispred = op->oracle_info.late_mispred;
-    op->oracle_info.misfetch = op->oracle_info.late_misfetch;
-
-    /* Reset to FALSE to allow for another potential recovery after the branch
-     * is resolved when executed. */
-    op->oracle_info.recovery_sch = FALSE;
-  }
-
   topdown_bp_recovery(bp_recovery_info->proc_id, bp_recovery_info->recovery_op);
 
   reg_file_recover(bp_recovery_info->recovery_op);
   recover_thread(td, bp_recovery_info->recovery_fetch_addr, bp_recovery_info->recovery_op_num,
-                 bp_recovery_info->recovery_inst_uid, bp_recovery_info->late_bp_recovery_wrong);
+                 bp_recovery_info->recovery_inst_uid, FALSE);
 
   recover_icache_stage();
   recover_decode_stage();
@@ -415,8 +399,8 @@ void cmp_redirect() {
          unsstr64(bp_recovery_info->redirect_op_num));
   ASSERT(bp_recovery_info->proc_id, bp_recovery_info->redirect_cycle != MAX_CTR);
   bp_recovery_info->redirect_cycle = MAX_CTR;
-  bp_recovery_info->redirect_op->oracle_info.btb_miss_resolved = TRUE;
-  ASSERT_PROC_ID_IN_ADDR(bp_recovery_info->proc_id, bp_recovery_info->redirect_op->oracle_info.pred_npc);
+  bp_recovery_info->redirect_op->btb_pred_info->btb_miss_resolved = TRUE;
+  ASSERT_PROC_ID_IN_ADDR(bp_recovery_info->proc_id, bp_recovery_info->redirect_op->bp_pred_info->pred_npc);
   redirect_icache_stage();
 }
 
@@ -523,7 +507,7 @@ void cmp_warmup(Op* op) {
     bp_predict_op(bp_data, op, 1, ia);
     bp_target_known_op(bp_data, op);
     bp_resolve_op(bp_data, op);
-    if (op->oracle_info.mispred || op->oracle_info.misfetch) {
+    if (op->bp_pred_info->mispred || op->bp_pred_info->misfetch) {
       bp_recover_op(bp_data, op->table_info->cf_type, &op->recovery_info);
     }
     bp_data->bp->retire_func(op);

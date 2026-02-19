@@ -30,6 +30,9 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 
 #include "op_pool.h"
 
+#include <stddef.h>
+#include <string.h>
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
@@ -169,8 +172,10 @@ void free_op(Op* op) {
    should be for things that never change. */
 
 void op_pool_init_op(Op* op) {
-  op->oracle_info.mispred = FALSE;
-  op->oracle_info.misfetch = FALSE;
+  op->bp_pred_info = &op->bp_pred_main;
+  op->btb_pred_info = &op->btb_pred;
+  memset(&op->bp_pred_main, 0, sizeof(op->bp_pred_main));
+  memset(&op->btb_pred, 0, sizeof(op->btb_pred));
 }
 
 /**************************************************************************************/
@@ -181,24 +186,17 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   uns ii, jj;
   /* only initialize here what is independent of the engine (the
      rest should be in the fetch stage) */
-  op->bom = FALSE;
-  op->eom = FALSE;
-  op->exit = FALSE;
-  op->srcs_not_rdy_vector = 0x0;
-  op->derived_from_prog_input = 0;
-  op->sources_addr_reg = 0;
-  op->sched_info = NULL;
-  op->marked = FALSE;
-
+  size_t clear_off = offsetof(Op, proc_id);
+  memset((char*)op + clear_off, 0, sizeof(*op) - clear_off);
   op->op_num = op_count[proc_id];
   op->unique_num = unique_count;
   op->unique_num_per_proc = unique_count_per_core[proc_id];
   op->proc_id = proc_id;
   op->bp_id = bp_id;
-  op->thread_id = 0;
-  op->off_path = FALSE;  // FIXME: check
   op->state = OS_FETCHED;
   op->fu_num = -1;
+  op->fetch_cycle = MAX_CTR;
+  op->bp_cycle = MAX_CTR;
   op->issue_cycle = MAX_CTR;
   op->map_cycle = MAX_CTR;
   op->rdy_cycle = 1;
@@ -208,50 +206,21 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   op->done_cycle = MAX_CTR;
   op->retire_cycle = MAX_CTR;
   op->replay_cycle = MAX_CTR;
+  op->pred_cycle = MAX_CTR;
   op->precommit_cycle = MAX_CTR;
-  op->decode_cycle = 0;
-  op->replay = FALSE;
-  op->replay_count = 0;
-  op->dont_cause_replays = FALSE;
-  op->exec_count = 0;
-  op->in_rdy_list = FALSE;
-  op->in_node_list = FALSE;
-  op->precommitted = FALSE;
-  op->macro_fused = FALSE;
-  op->move_eliminated = FALSE;
-
-  op->req = NULL;
+  op->wake_cycle = MAX_CTR;
 
   /* pipelined scheduler fields */
   op->chkpt_num = MAX_CTR;
   op->node_id = MAX_CTR;
   op->rs_id = MAX_CTR;
-  op->same_src_last_op = 0;
 
-  op->oracle_info.num_srcs = 0;
-  op->oracle_info.update_fpcr = FALSE;
-  op->oracle_info.error_event = 0;
-  op->oracle_info.mispred = FALSE;
-  op->oracle_info.misfetch = FALSE;
-  op->oracle_info.recovery_sch = FALSE;
-  op->oracle_info.recover_at_decode = FALSE;
-  op->oracle_info.recover_at_exec = FALSE;
+  op->bp_pred_info = &op->bp_pred_main;
+  op->btb_pred_info = &op->btb_pred;
+  memset(&op->bp_pred_main, 0, sizeof(op->bp_pred_main));
+  memset(&op->btb_pred, 0, sizeof(op->btb_pred));
 
   op->oracle_cp_num = -1;
-  op->engine_info.dcmiss = FALSE;
-  op->engine_info.l1_miss = FALSE;
-  op->engine_info.l1_miss_satisfied = FALSE;
-  op->engine_info.dep_on_l1_miss = FALSE;
-  op->engine_info.was_dep_on_l1_miss = FALSE;
-  op->engine_info.num_srcs = 0;
-  op->engine_info.update_fpcr = FALSE;
-
-  op->recovery_scheduled = FALSE;
-  op->redirect_scheduled = FALSE;
-  op->fetched_from_uop_cache = FALSE;
-
-  for (ii = 0; ii < NUM_DEP_TYPES; ii++)
-    op->wake_up_signaled[ii] = FALSE;
 
   for (ii = 0; ii < MAX_SRCS; ++ii) {
     for (jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {

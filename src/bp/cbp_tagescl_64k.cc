@@ -819,7 +819,7 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
 
   if (!TAGESCL64KB_SC) {
     if (!op->off_path)
-      STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_BASE_CORRECT + op->oracle_info.mispred + tage_component * 2);
+      STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_BASE_CORRECT + op->bp_pred_info->mispred + tage_component * 2);
   }
 
   if (TAGESCL64KB_LOOP) {
@@ -925,7 +925,7 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
   if (!op->off_path) {
     STAT_EVENT(op->proc_id,
                TAGESCL_COMP_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) + tage_component * 2);
-    if (op->oracle_info.btb_miss)
+    if (op->btb_pred_info->btb_miss)
       STAT_EVENT(op->proc_id, TAGESCL_COMP_BTB_MISS_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) +
                                   tage_component * 2);
   }

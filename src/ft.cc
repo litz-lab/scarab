@@ -261,7 +261,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
     Op alt_op;
     if (!bp_id)
       alt_op = *op;
-    bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
+    bp_predict_op(g_bp_data, op, bp_id, 1, op->inst_info->addr);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
     DEBUG(proc_id,

@@ -660,8 +660,13 @@ void full_sim() {
     memview_init();
 
   init_op_pool();
-  if (LOOKAHEAD_BUF_SIZE)
-    init_lookahead_buffer_wrapper();
+
+  // need to fill lookahead buffer after init_op_pool
+  for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+    ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);
+    decoupled_fe_refill_lookahead_buffer(proc_id);
+  }
+
   unique_count = 1;
 
   sim_limit = trigger_create("SIM_LIMIT", SIM_LIMIT, TRIGGER_ONCE);

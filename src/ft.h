@@ -83,6 +83,16 @@ void ft_free_op(Op* op);
 
 class Decoupled_FE;
 
+// operator== for FT_Info_Static
+inline bool operator==(const FT_Info_Static& a, const FT_Info_Static& b) {
+  return a.start == b.start && a.length == b.length && a.n_uops == b.n_uops;
+}
+
+// operator< for FT_Info_Static (used for map key comparison)
+inline bool operator<(const FT_Info_Static& a, const FT_Info_Static& b) {
+  return std::tie(a.start, a.length, a.n_uops) < std::tie(b.start, b.length, b.n_uops);
+}
+
 // C++ class definition
 class FT {
  public:

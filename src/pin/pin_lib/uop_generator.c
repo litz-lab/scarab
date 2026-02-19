@@ -332,10 +332,6 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->fetched_instruction = fetched_instruction[proc_id];
   op->inst_info = info;
   op->table_info = info->table_info;
-  op->oracle_info.inst_info = info;
-  op->oracle_info.table_info = info->table_info;
-  op->engine_info.inst_info = info;
-  op->engine_info.table_info = info->table_info;
   op->off_path = FALSE;
   op->state = OS_FETCHED;
   op->fu_num = -1;
@@ -354,7 +350,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->exec_count = 0;
   op->in_rdy_list = FALSE;
   op->in_node_list = FALSE;
-  op->oracle_info.recovery_sch = FALSE;
+  op->bp_pred_info->recovery_sch = FALSE;
 
   op->req = NULL;
   op->marked = FALSE;

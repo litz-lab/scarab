@@ -47,6 +47,7 @@ Bp_Btb bp_btb_table [] = {
     /* Enum        Name       init             pred             update             recover */
     /* ----------------------------------------------------------------------------------- */
     { GENERIC_BTB, "generic", bp_btb_gen_init, bp_btb_gen_pred, bp_btb_gen_update, NULL  },
+    { BLOCK_BTB,   "block",   bp_btb_block_init, bp_btb_block_pred, bp_btb_block_update, NULL  },
     { NUM_BTB,     0,         NULL,            NULL,            NULL,              NULL, }
 };
 

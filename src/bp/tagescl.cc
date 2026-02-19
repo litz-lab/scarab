@@ -98,7 +98,7 @@ void bp_tagescl_spec_update(Op* op) {
   uns proc_id = op->proc_id;
   tagescl_predictors.at(proc_id)->update_speculative_state(op->recovery_info.branch_id, op->inst_info->addr,
                                                            get_branch_type(proc_id, op->table_info->cf_type),
-                                                           op->oracle_info.pred, op->oracle_info.target);
+                                                           op->bp_pred_info->pred, op->oracle_info.target);
 }
 
 void bp_tagescl_update(Op* op) {

@@ -176,8 +176,7 @@ FT* lookahead_buffer_find_oldest_FT_by_FT_info(uns proc_id, FT_Info_Static stati
 class Decoupled_FE {
  public:
   Decoupled_FE()
-      : lookahead_buffer(),
-        off_path(0),
+      : off_path(0),
         conf_off_path(0),
         sched_off_path(0),
         stalled(false),

@@ -1,5 +1,6 @@
 #include "trace_fe.h"
 
+#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -325,6 +326,10 @@ void ext_trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr)
 
 void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
   Op dummy_op;
+  dummy_op.bp_pred_info = &dummy_op.bp_pred_main;
+  dummy_op.btb_pred_info = &dummy_op.btb_pred;
+  memset(&dummy_op.bp_pred_main, 0, sizeof(dummy_op.bp_pred_main));
+  memset(&dummy_op.btb_pred, 0, sizeof(dummy_op.btb_pred));
   if (bp_id) {
     off_path_addr[proc_id][bp_id] = 0;
     memset(&next_offpath_pi[proc_id][bp_id], 0, sizeof(next_offpath_pi[proc_id][bp_id]));

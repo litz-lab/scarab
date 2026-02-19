@@ -86,8 +86,8 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
           decoupled_fe_get_cur_op()->table_info->cf_type);
     ASSERT(proc_id, off_path_reason == REASON_NOT_IDENTIFIED);
     ASSERT(proc_id, prev_op->table_info->cf_type);  // must be a cf as the last on-path op
-    ASSERT(proc_id, prev_op->oracle_info.off_path_reason != REASON_NOT_IDENTIFIED);
-    off_path_reason = (Off_Path_Reason)prev_op->oracle_info.off_path_reason;
+    ASSERT(proc_id, prev_op->bp_pred_info->off_path_reason != REASON_NOT_IDENTIFIED);
+    off_path_reason = (Off_Path_Reason)prev_op->bp_pred_info->off_path_reason;
 
     if (!op->conf_off_path) {
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NUM_EVENTS);
@@ -179,10 +179,10 @@ void Conf::perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason) {
       !CONF_PERFECT_MISFETCH_CONF && !CONF_PERFECT_MISPRED_CONF)
     return;
   if (PERFECT_CONFIDENCE) {
-    if (op->oracle_info.off_path_reason) {
+    if (op->bp_pred_info->off_path_reason) {
       ASSERT(proc_id, conf_mech->conf_mech_stat->perfect_off_path == false);
       DEBUG(proc_id, "Perfect conf update for op %llu, off_path_reason: %d, off_path %d\n", op->op_num,
-            op->oracle_info.off_path_reason, op->off_path);
+            op->bp_pred_info->off_path_reason, op->off_path);
       new_reason = REASON_PERFECT_CONF;
       conf_mech->conf_mech_stat->perfect_off_path = true;
     }
@@ -190,7 +190,7 @@ void Conf::perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason) {
       ASSERT(proc_id, decoupled_fe_is_off_path());
     update_state_perfect_conf(op);
   } else {
-    Off_Path_Reason off_path_reason = (Off_Path_Reason)op->oracle_info.off_path_reason;
+    Off_Path_Reason off_path_reason = (Off_Path_Reason)op->bp_pred_info->off_path_reason;
     // add perfect to conf_op_reason
     if ((CONF_PERFECT_MISPRED_CONF &&
          (off_path_reason == REASON_MISPRED || off_path_reason == REASON_BTB_MISS_MISPRED)) ||
@@ -216,7 +216,7 @@ void Conf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
   // if it is a cf with bp conf
   if ((op)->table_info->cf_type == CF_CBR || (op)->table_info->cf_type == CF_IBR ||
       (op)->table_info->cf_type == CF_ICALL || (op)->table_info->cf_type == CF_REP) {
-    if (op->oracle_info.mispred) {
+    if (op->bp_pred_info->mispred) {
       // reorder stats
       STAT_EVENT(proc_id, DFE_CONF_0_MISPRED + op->bp_confidence);
     } else {

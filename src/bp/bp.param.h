@@ -38,8 +38,6 @@
 #include "bp/bp.param.def"
 #undef DEF_PARAM
 
-extern Flag USE_LATE_BP;
-
 /**************************************************************************************/
 
 #endif /* #ifndef __BP.PARAM_H__ */

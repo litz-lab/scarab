@@ -90,6 +90,8 @@ void pt_fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
   info->actually_taken = insi->taken;
   info->branch_target = insi->target;
   info->inst_uid = pt_ins_id;
+  // Note: Unlike DynamoRIO's memtrace, Intel PT does not distinguish between fetched and non-fetched instructions.
+  info->fetched_instruction = true;
 
 #ifdef PRINT_INSTRUCTION_INFO
   std::cout << std::hex << info->instruction_addr << " Next " << info->instruction_next_addr << " size "

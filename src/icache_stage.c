@@ -142,6 +142,9 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   ic->sd.max_op_count = IC_ISSUE_WIDTH;
   ic->sd.ops = (Op**)malloc(sizeof(Op*) * IC_ISSUE_WIDTH);
 
+  if (UOP_CACHE_ENABLE)
+    uc->current_ft = NULL;
+
   ic->current_ft = NULL;
 
   /* initialize the cache structure */
@@ -228,20 +231,11 @@ void recover_icache_stage() {
   DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s recovery_op_num:%llu\n",
         hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
 
-  if (UOP_CACHE_ENABLE) {
-    if (uc->current_ft) {
+  if (UOP_CACHE_ENABLE && uc->current_ft)
       recover_ft(uc->current_ft);
-      if (!ft_can_fetch_op(uc->current_ft)) {
-        uc->current_ft = NULL;
-      }
-    }
-  }
-  if (ic->current_ft) {
+
+  if (ic->current_ft)
     recover_ft(ic->current_ft);
-    if (!ft_can_fetch_op(ic->current_ft)) {
-      ic->current_ft = NULL;
-    }
-  }
 
   cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {
@@ -251,28 +245,18 @@ void recover_icache_stage() {
               cur_data->ops[ii]->off_path);
         flushed = TRUE;
         ASSERT(ic->proc_id, cur_data->ops[ii]->off_path);
-        if (cur_data->ops[ii]->parent_FT) {
-          FT* parent_ft = cur_data->ops[ii]->parent_FT;
-          if (UOP_CACHE_ENABLE && uc->current_ft == parent_ft)
-            uc->current_ft = NULL;
-          if (ic->current_ft == parent_ft)
-            ic->current_ft = NULL;
+        if (cur_data->ops[ii]->parent_FT)
           ft_free_op(cur_data->ops[ii]);
-        }
         cur_data->ops[ii] = NULL;
       } else {
-        Op* op = cur_data->ops[ii];
-        cur_data->ops[ii] = NULL;
-        cur_data->ops[cur_data->op_count++] = op;
+        cur_data->op_count++;
       }
     }
   }
 
   if (cur_data->op_count > 0 && flushed) {
     Op* op = cur_data->ops[cur_data->op_count - 1];
-    ASSERT(ic->proc_id, op);
-    ASSERT(ic->proc_id, op->parent_FT);
-    ASSERT(ic->proc_id, ft_recovery_addr_is_consecutive(op->parent_FT, bp_recovery_info->recovery_fetch_addr));
+    assert_ft_after_recovery(ic->proc_id, op, bp_recovery_info->recovery_fetch_addr);
   }
 
   ic->back_on_path = !bp_recovery_info->recovery_force_offpath;
@@ -281,9 +265,12 @@ void recover_icache_stage() {
 
   ic->icache_stage_resteer_signaled = TRUE;
   op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
+
   uop_cache_clear_lookup_buffer();
-  if (UOP_CACHE_ENABLE)
+
+  if (UOP_CACHE_ENABLE) {
     uc->current_ft = NULL;
+  }
   ic->current_ft = NULL;
 }
 

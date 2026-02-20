@@ -104,37 +104,42 @@ void FT::add_op(Op* op) {
   ops.emplace_back(op);
 }
 
+void FT::trim_unread_tail(const std::function<bool(Op*)>& should_remove) {
+  ASSERT(proc_id, op_pos <= ops.size());
+  while (ops.size() > op_pos) {
+    Op* op = ops.back();
+    if (!should_remove(op))
+      break;
+    ops.pop_back();
+    op->parent_FT = nullptr;
+    if (op->parent_FT_off_path)
+      op->parent_FT_off_path = nullptr;
+    free_op(op);
+  }
+}
+
 /* remove some pre-built ops after recovery in execution-driven (PIN) mode.
  * in PIN execution-driven mode, after recovery, some ops may have been already saved as
  * recovery FT so we delete those ops and refetch them to rebuild the FT.
  */
 void FT::remove_op_after_exec_recover() {
   ASSERT(proc_id, FRONTEND == FE_PIN_EXEC_DRIVEN);
-  ASSERT(proc_id, op_pos <= ops.size());
-  while (ops.size() > op_pos) {
-    Op* op = ops.back();
-    ops.pop_back();
-    op->parent_FT = nullptr;
-    free_op(op);
-  }
+  trim_unread_tail([](Op*) { return true; });
   ASSERT(proc_id, get_end_reason() == FT_NOT_ENDED || get_end_reason() == FT_TAKEN_BRANCH);
 }
 
 void FT::recover_ft() {
-  ASSERT(proc_id, op_pos <= ops.size());
-  while (ops.size() > op_pos) {
-    Op* op = ops.back();
+  // This path is for an FT already popped from FTQ and currently in-flight
+  // (e.g., ic/uc current_ft). We only trim unread tail ops that are newer
+  // than recovery_op_num. Older/read ops are handled by stage-data recovery.
+  trim_unread_tail([&](Op* op) {
     if (!FLUSH_OP(op))
-      break;
-    DEBUG(proc_id, "FT recovery flushing unread op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
-          op->off_path);
-    ops.pop_back();
-    op->parent_FT = nullptr;
-    if (op->parent_FT_off_path) {
-      op->parent_FT_off_path = nullptr;
-    }
-    free_op(op);
-  }
+      return false;
+    DEBUG(proc_id, "FT recovery flushing unread op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
+    ASSERT(proc_id, op->off_path);
+    ASSERT(proc_id, op->parent_FT == this);
+    return true;
+  });
 }
 
 FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
@@ -474,6 +479,14 @@ bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start) {
     default:
       return (end_addr == next_start);
   }
+}
+
+void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr) {
+  ASSERT(proc_id, op);
+  ASSERT(proc_id, op->parent_FT);
+  ASSERT(proc_id, ft_recovery_addr_is_consecutive(op->parent_FT, recovery_fetch_addr));
+  ASSERT(proc_id, IS_FLUSHING_OP(op));
+  ASSERT(proc_id, op->eom);
 }
 
 void recover_ft(FT* ft) {

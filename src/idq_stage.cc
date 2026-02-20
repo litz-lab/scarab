@@ -174,11 +174,7 @@ void IDQ_Stage::recover() {
   }
 
   if (flushed && youngest_survivor) {
-    ASSERT(proc_id, youngest_survivor->parent_FT);
-    ASSERT(proc_id, youngest_survivor->op_num == bp_recovery_info->recovery_op_num);
-    ASSERT(proc_id, youngest_survivor->eom);
-    ASSERT(proc_id,
-           ft_recovery_addr_is_consecutive(youngest_survivor->parent_FT, bp_recovery_info->recovery_fetch_addr));
+    assert_ft_after_recovery(proc_id, youngest_survivor, bp_recovery_info->recovery_fetch_addr);
   }
 }
 

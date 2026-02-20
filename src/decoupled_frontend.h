@@ -176,8 +176,7 @@ class Decoupled_FE {
   int is_off_path() { return is_off_path_state(); }
   void recover(Cf_Type cf_type, Recovery_Info* info);
   void update();
-  FT* get_ft();
-  void pop_ft(FT* ft);
+  FT* pop_ft();
   uns new_ftq_iter();
   Op* ftq_iter_get(uns iter_idx, bool* end_of_ft);
   Op* ftq_iter_get_next(uns iter_idx, bool* end_of_ft);

@@ -148,11 +148,7 @@ void recover_decode_stage() {
 
     if (cur->op_count > 0 && flushed) {
       Op* op = cur->ops[cur->op_count - 1];
-      ASSERT(dec->proc_id, op);
-      ASSERT(dec->proc_id, op->parent_FT);
-      ASSERT(dec->proc_id, op->op_num == bp_recovery_info->recovery_op_num);
-      ASSERT(dec->proc_id, op->eom);
-      ASSERT(dec->proc_id, ft_recovery_addr_is_consecutive(op->parent_FT, bp_recovery_info->recovery_fetch_addr));
+      assert_ft_after_recovery(dec->proc_id, op, bp_recovery_info->recovery_fetch_addr);
     }
   }
 }

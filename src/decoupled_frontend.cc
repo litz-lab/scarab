@@ -94,10 +94,7 @@ void update_decoupled_fe(uns proc_id, uns bp_id) {
 
 FT* decoupled_fe_pop_ft() {
   ASSERT(0, g_dfe->get_bp_id() == 0);
-  FT* ft = g_dfe->get_ft();
-  if (ft)
-    g_dfe->pop_ft(ft);
-  return ft;
+  return g_dfe->pop_ft();
 }
 
 Decoupled_FE* decoupled_fe_new_ftq_iter(uns proc_id, uns bp_id, uns* ftq_idx) {
@@ -472,15 +469,12 @@ void Decoupled_FE::update() {
   }
 }
 
-FT* Decoupled_FE::get_ft() {
+FT* Decoupled_FE::pop_ft() {
   if (!ftq.size())
     return nullptr;
-  return ftq.front();
-}
 
-void Decoupled_FE::pop_ft(FT* ft) {
-  ASSERT(proc_id, ft == ftq.front());
-  uint64_t ft_num_ops = ftq.front()->ops.size();
+  FT* ft = ftq.front();
+  uint64_t ft_num_ops = ft->ops.size();
   ftq.pop_front();
   for (auto&& it : ftq_iterators) {
     // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before
@@ -494,6 +488,7 @@ void Decoupled_FE::pop_ft(FT* ft) {
       it->op_pos = 0;
     }
   }
+  return ft;
 }
 
 uns Decoupled_FE::new_ftq_iter() {

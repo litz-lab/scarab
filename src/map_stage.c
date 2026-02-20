@@ -153,11 +153,7 @@ void recover_map_stage() {
 
     if (cur->op_count > 0 && flushed) {
       Op* op = cur->ops[cur->op_count - 1];
-      ASSERT(map->proc_id, op);
-      ASSERT(map->proc_id, op->parent_FT);
-      ASSERT(map->proc_id, op->op_num == bp_recovery_info->recovery_op_num);
-      ASSERT(map->proc_id, op->eom);
-      ASSERT(map->proc_id, ft_recovery_addr_is_consecutive(op->parent_FT, bp_recovery_info->recovery_fetch_addr));
+      assert_ft_after_recovery(map->proc_id, op, bp_recovery_info->recovery_fetch_addr);
     }
   }
 

@@ -34,6 +34,7 @@
 #include "core.param.h"
 #include "general.param.h"
 
+#include "frontend/frontend_intf.h"
 #include "frontend/pin_trace_fe.h"
 #include "prefetcher/D_JOLT.h"
 #include "prefetcher/FNL+MMA.h"
@@ -43,6 +44,7 @@
 #include "cmp_model.h"
 #include "lsq.h"
 #include "statistics.h"
+#include "uop_queue_stage.h"
 
 /**************************************************************************************/
 /* cmp_init_cmp_model  */
@@ -71,6 +73,7 @@ void cmp_init_cmp_model() {
   alloc_mem_djolt(NUM_CORES);
   alloc_mem_fnlmma(NUM_CORES);
   alloc_mem_uop_cache(NUM_CORES);
+  alloc_mem_uop_queue_stage(NUM_CORES);
   alloc_mem_idq_stage(NUM_CORES);
   alloc_mem_lsq(NUM_CORES);
 }
@@ -93,6 +96,7 @@ void cmp_set_all_stages(uns8 proc_id) {
   set_icache_stage(&cmp_model.icache_stage[proc_id]);
   set_decode_stage(&cmp_model.decode_stage[proc_id]);
   set_uop_cache_stage(&cmp_model.uop_cache_stage[proc_id]);
+  set_uop_queue_stage(proc_id);
   set_idq_stage(proc_id);
   set_map_stage(&cmp_model.map_stage[proc_id]);
   set_node_stage(&cmp_model.node_stage[proc_id]);
@@ -125,11 +129,13 @@ void cmp_init_bogus_sim(uns8 proc_id) {
 
   cmp_set_all_stages(proc_id);
 
-  trace_close_trace_file(proc_id);
-
-  op_count[proc_id] = uop_count[proc_id] + 1;
-
-  trace_setup(proc_id);
+  /* Only close/reopen trace for FE_TRACE frontend.
+     PT/MEMTRACE frontends don't support bogus mode restart. */
+  if (FRONTEND == FE_TRACE) {
+    trace_close_trace_file(proc_id);
+    op_count[proc_id] = uop_count[proc_id] + 1;
+    trace_setup(proc_id);
+  }
 
   reset_seq_op_list(td);
   reset_map();

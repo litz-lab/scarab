@@ -960,6 +960,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
   // cmp
   if (model->id == CMP_MODEL) {
     set_icache_stage(&cmp_model.icache_stage[req->proc_id]);
+    set_fdip(req->proc_id, 0);
   }
 
   ASSERT(ic->proc_id, ic->proc_id == req->proc_id);

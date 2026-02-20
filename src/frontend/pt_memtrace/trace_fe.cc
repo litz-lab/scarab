@@ -41,48 +41,55 @@ static ctype_pin_inst next_onpath_pi[MAX_NUM_PROCS];
 static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS][MAX_NUM_BPS];
 static bool off_path_mode[MAX_NUM_PROCS][MAX_NUM_BPS] = {false};
 static uint64_t off_path_addr[MAX_NUM_PROCS][MAX_NUM_BPS] = {0};
-static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
+static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst[MAX_NUM_PROCS];
 
-uint64_t rdptr = 0;
-uint64_t wrptr = 0;
-std::vector<ctype_pin_inst> circ_buf;
-std::unordered_map<Addr, Counter> buf_map;
+/* Per-core circular buffer state */
+struct TraceBufState {
+  uint64_t rdptr = 0;
+  uint64_t wrptr = 0;
+  std::vector<ctype_pin_inst> circ_buf;
+  std::unordered_map<Addr, Counter> buf_map;
+};
+static TraceBufState trace_buf_state[MAX_NUM_PROCS];
+
 const int CLINE = ~0x3F;
 
 extern uint64_t ins_id;
 extern uint64_t ins_id_fetched;
 
-Flag buf_map_find(Addr line_addr) {
-  return buf_map.find(line_addr) != buf_map.end();
+Flag buf_map_find(uns proc_id, Addr line_addr) {
+  return trace_buf_state[proc_id].buf_map.find(line_addr) != trace_buf_state[proc_id].buf_map.end();
 }
 
 // inserts the inst written to write_ptr location
-void buf_map_insert() {
-  Addr line_addr = circ_buf[wrptr].instruction_addr & CLINE;
-  auto it = buf_map.find(line_addr);
-  if (it != buf_map.end()) {
+void buf_map_insert(uns proc_id) {
+  TraceBufState &state = trace_buf_state[proc_id];
+  Addr line_addr = state.circ_buf[state.wrptr].instruction_addr & CLINE;
+  auto it = state.buf_map.find(line_addr);
+  if (it != state.buf_map.end()) {
     it->second++;
   } else {
-    buf_map.insert(std::pair<Addr, Counter>(line_addr, 1));
+    state.buf_map.insert(std::pair<Addr, Counter>(line_addr, 1));
   }
-  wrptr = (wrptr + 1) % TRACE_BUF_SIZE;
+  state.wrptr = (state.wrptr + 1) % TRACE_BUF_SIZE;
 }
 
-void buf_map_remove() {
-  Addr line_addr = circ_buf[rdptr].instruction_addr & CLINE;
-  auto it = buf_map.find(line_addr);
-  assert(it != buf_map.end());
+void buf_map_remove(uns proc_id) {
+  TraceBufState &state = trace_buf_state[proc_id];
+  Addr line_addr = state.circ_buf[state.rdptr].instruction_addr & CLINE;
+  auto it = state.buf_map.find(line_addr);
+  assert(it != state.buf_map.end());
   if (it->second > 1) {
     it->second--;
   } else {
-    buf_map.erase(it);
+    state.buf_map.erase(it);
   }
-  rdptr = (rdptr + 1) % TRACE_BUF_SIZE;
+  state.rdptr = (state.rdptr + 1) % TRACE_BUF_SIZE;
 }
 
 void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
-  auto op_iter = pc_to_inst.find(*off_path_addr);
-  if (op_iter != pc_to_inst.end()) {
+  auto op_iter = pc_to_inst[proc_id].find(*off_path_addr);
+  if (op_iter != pc_to_inst[proc_id].end()) {
     *inst = op_iter->second;
     (*off_path_addr) += inst->size;
     DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->instruction_addr, inst->size);
@@ -194,18 +201,19 @@ void trace_buf_init() {
     return;
 
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-    circ_buf.resize(TRACE_BUF_SIZE);
-    rdptr = 0;
-    wrptr = 0;
+    TraceBufState &state = trace_buf_state[proc_id];
+    state.circ_buf.resize(TRACE_BUF_SIZE);
+    state.rdptr = 0;
+    state.wrptr = 0;
     if (FRONTEND == FE_PT) {
       for (uint i = 0; i < TRACE_BUF_SIZE; i++) {
-        pt_trace_read(proc_id, &circ_buf[wrptr]);
-        buf_map_insert();
+        pt_trace_read(proc_id, &state.circ_buf[state.wrptr]);
+        buf_map_insert(proc_id);
       }
     } else if (FRONTEND == FE_MEMTRACE) {
       for (uint i = 0; i < TRACE_BUF_SIZE; i++) {
-        memtrace_trace_read(proc_id, &circ_buf[wrptr]);
-        buf_map_insert();
+        memtrace_trace_read(proc_id, &state.circ_buf[state.wrptr]);
+        buf_map_insert(proc_id);
       }
     }
   }
@@ -220,14 +228,15 @@ int trace_read(int proc_id, ctype_pin_inst *next_onpath_pi) {
   }
 
   ASSERT(0, TRACE_BUF_SIZE);
-  *next_onpath_pi = circ_buf[rdptr];
-  buf_map_remove();
+  TraceBufState &state = trace_buf_state[proc_id];
+  *next_onpath_pi = state.circ_buf[state.rdptr];
+  buf_map_remove(proc_id);
   int ret = 0;
   if (FRONTEND == FE_PT)
-    ret = pt_trace_read(proc_id, &circ_buf[wrptr]);
+    ret = pt_trace_read(proc_id, &state.circ_buf[state.wrptr]);
   else if (FRONTEND == FE_MEMTRACE)
-    ret = memtrace_trace_read(proc_id, &circ_buf[wrptr]);
-  buf_map_insert();
+    ret = memtrace_trace_read(proc_id, &state.circ_buf[state.wrptr]);
+  buf_map_insert(proc_id);
   return ret;
 }
 
@@ -257,13 +266,13 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
         op->exit = TRUE;
       } else {
         uint64_t addr = next_onpath_pi[proc_id].instruction_addr;
-        auto find = pc_to_inst.find(addr);
-        if (find == pc_to_inst.end()) {
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+        auto find = pc_to_inst[proc_id].find(addr);
+        if (find == pc_to_inst[proc_id].end()) {
+          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         } else if (next_onpath_pi[proc_id].encoding_is_new) {
           STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
-          pc_to_inst.erase(addr);
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+          pc_to_inst[proc_id].erase(addr);
+          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         } else if (next_onpath_pi[proc_id].inst_binary_lsb != find->second.inst_binary_lsb ||
                    next_onpath_pi[proc_id].inst_binary_msb != find->second.inst_binary_msb) {
           DEBUG(proc_id, "Previously seen PC references new instruction addr:%lx inst_size:%i lsb:%lx msb:%lx\n ", addr,
@@ -271,8 +280,8 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
                 next_onpath_pi[proc_id].inst_binary_msb);
           // Handle jitted code
           STAT_EVENT(proc_id, INST_MAP_UPDATE_JITTED);
-          pc_to_inst.erase(addr);
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+          pc_to_inst[proc_id].erase(addr);
+          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         } else if (next_onpath_pi[proc_id].instruction_next_addr != find->second.instruction_next_addr) {
           ASSERT(proc_id, next_onpath_pi[proc_id].op_type == find->second.op_type);
           if (next_onpath_pi[proc_id].cf_type) {
@@ -283,13 +292,13 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
             //                 next_onpath_pi[proc_id].last_inst_from_trace);
           }
           STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + next_onpath_pi[proc_id].op_type);
-          pc_to_inst.erase(addr);
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+          pc_to_inst[proc_id].erase(addr);
+          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         } else if (!ctype_pin_inst_same_mem_vaddr(next_onpath_pi[proc_id], find->second)) {
           ASSERT(proc_id, next_onpath_pi[proc_id].op_type == find->second.op_type);
           STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + next_onpath_pi[proc_id].op_type);
-          pc_to_inst.erase(addr);
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+          pc_to_inst[proc_id].erase(addr);
+          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         } else {
           assert_ctype_pin_inst_same(proc_id, next_onpath_pi[proc_id], find->second);
         }

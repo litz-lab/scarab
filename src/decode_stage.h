@@ -42,6 +42,9 @@ typedef struct Decode_Stage_struct {
   uns proc_id;
   Stage_Data* sds;     /* stage interface data (dynamically allocated number of pipe stages) */
   Stage_Data* last_sd; /* pointer to last decode pipeline stage (for passing ops to map) */
+
+  /* Per-core state (moved from global variable) */
+  Flag off_path; /* off-path flag for this core */
 } Decode_Stage;
 
 /**************************************************************************************/

@@ -54,6 +54,7 @@
 #include "map.h"
 #include "model.h"
 #include "statistics.h"
+#include "thread.h"
 
 /**************************************************************************************/
 /* Macros */
@@ -296,6 +297,8 @@ void update_dcache_stage(Stage_Data* src_sd) {
 
 Flag dcache_fill_line(Mem_Req* req) {
   set_dcache_stage(&cmp_model.dcache_stage[req->proc_id]);
+  set_thread_data(&cmp_model.thread_data[req->proc_id]);
+  set_map_data(&td->map_data);
   Counter old_cycle_count = cycle_count;  // FIXME HACK!
   cycle_count = freq_cycle_count(FREQ_DOMAIN_CORES[req->proc_id]);
 
@@ -811,12 +814,14 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     Op* op = *op_p;
     ASSERT(dc->proc_id, op);
     ASSERT(dc->proc_id, op_unique);
-    ASSERT(dc->proc_id, dc->proc_id == op->proc_id);
-    ASSERT(dc->proc_id, op->proc_id == req->proc_id);
 
     if (op->unique_num != *op_unique || !op->op_pool_valid) {
       continue;
     }
+
+    /* Verify proc_id consistency only for valid ops we're going to process */
+    ASSERT(dc->proc_id, dc->proc_id == op->proc_id);
+    ASSERT(dc->proc_id, op->proc_id == req->proc_id);
 
     /* update cacheline metadata */
     if (!op->off_path && op->table_info->mem_type == MEM_ST)

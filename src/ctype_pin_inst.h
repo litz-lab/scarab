@@ -145,10 +145,15 @@ typedef struct ctype_pin_inst_struct {
 
 typedef ctype_pin_inst compressed_op;
 
+inline void init_ctype_pin_inst(ctype_pin_inst* inst) {
+  memset(inst, 0, sizeof(ctype_pin_inst));
+  inst->fetched_instruction = 1;
+}
+
 inline ctype_pin_inst create_sentinel() {
   printf("CREATE SENTINEL\n");
   ctype_pin_inst inst;
-  memset(&inst, 0, sizeof(inst));
+  init_ctype_pin_inst(&inst);
   inst.op_type = OP_INV;
   inst.is_sentinel = 1;
   strcpy(inst.pin_iclass, "SENTINEL");
@@ -157,7 +162,7 @@ inline ctype_pin_inst create_sentinel() {
 
 inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt) {
   ctype_pin_inst inst;
-  memset(&inst, 0, sizeof(inst));
+  init_ctype_pin_inst(&inst);
   inst.instruction_addr = eip;
   inst.size = 1;
   inst.op_type = OP_IADD;
@@ -173,7 +178,7 @@ inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt) {
 
 inline ctype_pin_inst create_dummy_nop(uint64_t eip, Wrongpath_Nop_Mode_Reason reason) {
   ctype_pin_inst inst;
-  memset(&inst, 0, sizeof(inst));
+  init_ctype_pin_inst(&inst);
   inst.instruction_addr = eip;
   inst.instruction_next_addr = eip + DUMMY_NOP_SIZE;
   inst.size = DUMMY_NOP_SIZE;

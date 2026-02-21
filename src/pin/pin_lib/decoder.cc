@@ -145,6 +145,7 @@ void pin_decoder_print_unknown_opcodes() {
 /*************************** Private Functions  *******************************/
 ctype_pin_inst* get_inst_info_obj(const INS& ins) {
   ctype_pin_inst* info = (ctype_pin_inst*)calloc(1, sizeof(ctype_pin_inst));
+  init_ctype_pin_inst(info);
   inst_info_map_p lp   = inst_info_storage.find(INS_Address(ins));
   if(lp == inst_info_storage.end()) {
     inst_info_storage[INS_Address(ins)] = info;
@@ -198,7 +199,7 @@ void create_compressed_op(ADDRINT iaddr) {
     filled_inst_info = inst_info_storage[iaddr];
     if(glb_translate_x87_regs) {
       // copy ctype_pin_inst to avoid clobbering it
-      memcpy(&tmp_inst_info, filled_inst_info, sizeof(ctype_pin_inst));
+      init_ctype_pin_inst(&tmp_inst_info);
       filled_inst_info = &tmp_inst_info;
       // translate registers (no need to translate agen, since they won't be
       // FP)

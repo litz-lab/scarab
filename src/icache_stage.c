@@ -232,7 +232,7 @@ void recover_icache_stage() {
         hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
 
   if (UOP_CACHE_ENABLE && uc->current_ft)
-      recover_ft(uc->current_ft);
+    recover_ft(uc->current_ft);
 
   if (ic->current_ft)
     recover_ft(ic->current_ft);

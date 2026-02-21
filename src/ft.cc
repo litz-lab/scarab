@@ -135,7 +135,8 @@ void FT::recover_ft() {
   trim_unread_tail([&](Op* op) {
     if (!FLUSH_OP(op))
       return false;
-    DEBUG(proc_id, "FT recovery flushing unread op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
+    DEBUG(proc_id, "FT recovery flushing unread op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
+          op->off_path);
     ASSERT(proc_id, op->off_path);
     ASSERT(proc_id, op->parent_FT == this);
     return true;

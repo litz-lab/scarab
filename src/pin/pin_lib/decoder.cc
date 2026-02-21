@@ -199,7 +199,7 @@ void create_compressed_op(ADDRINT iaddr) {
     filled_inst_info = inst_info_storage[iaddr];
     if(glb_translate_x87_regs) {
       // copy ctype_pin_inst to avoid clobbering it
-      init_ctype_pin_inst(&tmp_inst_info);
+      memcpy(&tmp_inst_info, filled_inst_info, sizeof(ctype_pin_inst));
       filled_inst_info = &tmp_inst_info;
       // translate registers (no need to translate agen, since they won't be
       // FP)

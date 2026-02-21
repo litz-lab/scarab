@@ -145,7 +145,7 @@ typedef struct ctype_pin_inst_struct {
 
 typedef ctype_pin_inst compressed_op;
 
-inline void init_ctype_pin_inst(ctype_pin_inst* inst) {
+static inline void init_ctype_pin_inst(ctype_pin_inst* inst) {
   memset(inst, 0, sizeof(ctype_pin_inst));
   inst->fetched_instruction = 1;
 }

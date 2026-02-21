@@ -150,7 +150,7 @@ static inline void init_ctype_pin_inst(ctype_pin_inst* inst) {
   inst->fetched_instruction = 1;
 }
 
-inline ctype_pin_inst create_sentinel() {
+static inline ctype_pin_inst create_sentinel() {
   printf("CREATE SENTINEL\n");
   ctype_pin_inst inst;
   init_ctype_pin_inst(&inst);
@@ -160,7 +160,7 @@ inline ctype_pin_inst create_sentinel() {
   return inst;
 }
 
-inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt) {
+static inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt) {
   ctype_pin_inst inst;
   init_ctype_pin_inst(&inst);
   inst.instruction_addr = eip;
@@ -176,7 +176,7 @@ inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt) {
   return inst;
 }
 
-inline ctype_pin_inst create_dummy_nop(uint64_t eip, Wrongpath_Nop_Mode_Reason reason) {
+static inline ctype_pin_inst create_dummy_nop(uint64_t eip, Wrongpath_Nop_Mode_Reason reason) {
   ctype_pin_inst inst;
   init_ctype_pin_inst(&inst);
   inst.instruction_addr = eip;

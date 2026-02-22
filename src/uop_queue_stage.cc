@@ -135,11 +135,14 @@ void recover_uop_queue_stage(void) {
   ASSERT(0, uopq);
   uopq->off_path = false;
   for (std::deque<Stage_Data*>::iterator it = uopq->q.begin(); it != uopq->q.end();) {
+    Flag flushed = FALSE;
     Stage_Data* sd = *it;
     sd->op_count = 0;
     for (uns op_idx = 0; op_idx < STAGE_MAX_OP_COUNT; op_idx++) {
       Op* op = sd->ops[op_idx];
       if (op && FLUSH_OP(op)) {
+        DEBUG(op->proc_id, "UopQ flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
+        flushed = TRUE;
         ASSERT(op->proc_id, op->off_path);
         if (op->parent_FT)
           ft_free_op(op);
@@ -147,6 +150,11 @@ void recover_uop_queue_stage(void) {
       } else if (op) {
         sd->op_count++;
       }
+    }
+
+    if (sd->op_count > 0 && flushed) {
+      Op* op = sd->ops[sd->op_count - 1];
+      assert_ft_after_recovery(dec->proc_id, op, bp_recovery_info->recovery_fetch_addr);
     }
 
     if (sd->op_count == 0) {  // entire stage data was off-path

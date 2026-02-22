@@ -92,14 +92,9 @@ void update_decoupled_fe(uns proc_id, uns bp_id) {
   per_core_dfe[proc_id][bp_id]->update();
 }
 
-void decoupled_fe_pop_ft(FT* ft) {
+FT* decoupled_fe_pop_ft() {
   ASSERT(0, g_dfe->get_bp_id() == 0);
-  g_dfe->pop_ft(ft);
-}
-
-FT* decoupled_fe_get_ft() {
-  ASSERT(0, g_dfe->get_bp_id() == 0);
-  return g_dfe->get_ft();
+  return g_dfe->pop_ft();
 }
 
 Decoupled_FE* decoupled_fe_new_ftq_iter(uns proc_id, uns bp_id, uns* ftq_idx) {
@@ -232,7 +227,8 @@ void Decoupled_FE::dfe_recover_op() {
   }
   ftq.clear();
 
-  DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx\n", bp_id, bp_recovery_info->recovery_fetch_addr);
+  DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx recovery_op_num:%llu\n", bp_id,
+        bp_recovery_info->recovery_fetch_addr, (unsigned long long)bp_recovery_info->recovery_op_num);
 
   for (auto&& it : ftq_iterators) {
     // When the FTQ flushes, reset all iterators
@@ -473,15 +469,12 @@ void Decoupled_FE::update() {
   }
 }
 
-FT* Decoupled_FE::get_ft() {
+FT* Decoupled_FE::pop_ft() {
   if (!ftq.size())
     return nullptr;
-  return ftq.front();
-}
 
-void Decoupled_FE::pop_ft(FT* ft) {
-  ASSERT(proc_id, ft == ftq.front());
-  uint64_t ft_num_ops = ftq.front()->ops.size();
+  FT* ft = ftq.front();
+  uint64_t ft_num_ops = ft->ops.size();
   ftq.pop_front();
   for (auto&& it : ftq_iterators) {
     // When the icache consumes an FT decrement the iter's offset so it points to the same entry as before
@@ -495,6 +488,7 @@ void Decoupled_FE::pop_ft(FT* ft) {
       it->op_pos = 0;
     }
   }
+  return ft;
 }
 
 uns Decoupled_FE::new_ftq_iter() {

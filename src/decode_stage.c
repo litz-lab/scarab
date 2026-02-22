@@ -127,11 +127,15 @@ void recover_decode_stage() {
   dec->off_path = FALSE;
   ASSERT(0, dec);
   for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
+    Flag flushed = FALSE;
     Stage_Data* cur = &dec->sds[ii];
     cur->op_count = 0;
     for (jj = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
       if (cur->ops[jj]) {
         if (FLUSH_OP(cur->ops[jj])) {
+          DEBUG(dec->proc_id, "Decode flushing op_num:%llu off_path:%u\n", (unsigned long long)cur->ops[jj]->op_num,
+                cur->ops[jj]->off_path);
+          flushed = TRUE;
           ASSERT(cur->ops[jj]->proc_id, cur->ops[jj]->off_path);
           if (cur->ops[jj]->parent_FT)
             ft_free_op(cur->ops[jj]);
@@ -140,6 +144,11 @@ void recover_decode_stage() {
           cur->op_count++;
         }
       }
+    }
+
+    if (cur->op_count > 0 && flushed) {
+      Op* op = cur->ops[cur->op_count - 1];
+      assert_ft_after_recovery(dec->proc_id, op, bp_recovery_info->recovery_fetch_addr);
     }
   }
 }
@@ -248,6 +257,8 @@ void decode_stage_process_op(Op* op) {
     // we can schedule a redirect. If the branch was not taken we are on the on-path.
     // If the branch is condidtional or indirect, we will schedule recovery at exec
     if (op->bp_pred_info->recover_at_decode) {
+      DEBUG(dec->proc_id, "Decode schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
+            (unsigned long long)cycle_count);
       bp_sched_recovery(bp_recovery_info, op, cycle_count);
 
       // After recovery remove misfetch/mispred/btb_miss flags so it does not trigger flush by exec again

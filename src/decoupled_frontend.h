@@ -108,10 +108,9 @@ void debug_decoupled_fe();
 void update_decoupled_fe(uns proc_id, uns bp_id);
 // Icache/Core API
 void recover_decoupled_fe(uns proc_id, uns bp_id, Cf_Type cf_type, Recovery_Info* info);
-void decoupled_fe_pop_ft(FT* ft);
+FT* decoupled_fe_pop_ft();
 bool decoupled_fe_is_off_path();
 void decoupled_fe_retire(Op* op, int proc_id, uns64 inst_uid);
-FT* decoupled_fe_get_ft();
 // FTQ API
 void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num);
 uint64_t decoupled_fe_get_ftq_num();
@@ -177,8 +176,7 @@ class Decoupled_FE {
   int is_off_path() { return is_off_path_state(); }
   void recover(Cf_Type cf_type, Recovery_Info* info);
   void update();
-  FT* get_ft();
-  void pop_ft(FT* ft);
+  FT* pop_ft();
   uns new_ftq_iter();
   Op* ftq_iter_get(uns iter_idx, bool* end_of_ft);
   Op* ftq_iter_get_next(uns iter_idx, bool* end_of_ft);

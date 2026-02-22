@@ -145,6 +145,7 @@ void pin_decoder_print_unknown_opcodes() {
 /*************************** Private Functions  *******************************/
 ctype_pin_inst* get_inst_info_obj(const INS& ins) {
   ctype_pin_inst* info = (ctype_pin_inst*)calloc(1, sizeof(ctype_pin_inst));
+  init_ctype_pin_inst(info);
   inst_info_map_p lp   = inst_info_storage.find(INS_Address(ins));
   if(lp == inst_info_storage.end()) {
     inst_info_storage[INS_Address(ins)] = info;

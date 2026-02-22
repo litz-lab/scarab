@@ -148,7 +148,7 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
       return 0;  // end of trace
   } while (insi->pid != pt_prior_pid || insi->tid != pt_prior_tid);
 
-  memset(pt_next_pi, 0, sizeof(ctype_pin_inst));
+  init_ctype_pin_inst(pt_next_pi);
   pt_fill_in_dynamic_info(pt_next_pi, insi);
   fill_in_basic_info(pt_next_pi, insi->ins);
   assert(pt_next_pi->instruction_next_addr && "instruction_next_addr not set");

@@ -69,6 +69,8 @@ void trace_init() {
   uop_generator_init(NUM_CORES);
 
   next_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));
+  for (uns i = 0; i < NUM_CORES; i++)
+    init_ctype_pin_inst(&next_pi[i]);
 
   pin_trace_file_pointer_init(NUM_CORES);
 

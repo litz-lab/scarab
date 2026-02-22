@@ -112,8 +112,7 @@ void FT::trim_unread_tail(const std::function<bool(Op*)>& should_remove) {
       break;
     ops.pop_back();
     op->parent_FT = nullptr;
-    if (op->parent_FT_off_path)
-      op->parent_FT_off_path = nullptr;
+    op->parent_FT_off_path = nullptr;
     free_op(op);
   }
 }

@@ -142,6 +142,9 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   ic->sd.max_op_count = IC_ISSUE_WIDTH;
   ic->sd.ops = (Op**)malloc(sizeof(Op*) * IC_ISSUE_WIDTH);
 
+  if (UOP_CACHE_ENABLE)
+    uc->current_ft = NULL;
+
   ic->current_ft = NULL;
 
   /* initialize the cache structure */
@@ -222,20 +225,39 @@ void reset_all_ops_icache_stage() {
 void recover_icache_stage() {
   Stage_Data* cur_data = get_current_stage_data();
   uns ii;
+  Flag flushed = FALSE;
 
   ASSERT(ic->proc_id, ic->proc_id == bp_recovery_info->proc_id);
-  DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s\n",
-        hexstr64s(bp_recovery_info->recovery_fetch_addr));
+  DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s recovery_op_num:%llu\n",
+        hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
+
+  if (UOP_CACHE_ENABLE && uc->current_ft)
+    recover_ft(uc->current_ft);
+
+  if (ic->current_ft)
+    recover_ft(ic->current_ft);
+
+  cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {
     if (cur_data->ops[ii]) {
-      ASSERT(ic->proc_id, FLUSH_OP(cur_data->ops[ii]));
-      ASSERT(ic->proc_id, cur_data->ops[ii]->off_path);
-      if (cur_data->ops[ii]->parent_FT)
-        ft_free_op(cur_data->ops[ii]);
-      cur_data->ops[ii] = NULL;
+      if (FLUSH_OP(cur_data->ops[ii])) {
+        DEBUG(ic->proc_id, "Icache flushing op_num:%llu off_path:%u\n", (unsigned long long)cur_data->ops[ii]->op_num,
+              cur_data->ops[ii]->off_path);
+        flushed = TRUE;
+        ASSERT(ic->proc_id, cur_data->ops[ii]->off_path);
+        if (cur_data->ops[ii]->parent_FT)
+          ft_free_op(cur_data->ops[ii]);
+        cur_data->ops[ii] = NULL;
+      } else {
+        cur_data->op_count++;
+      }
     }
   }
-  cur_data->op_count = 0;
+
+  if (cur_data->op_count > 0 && flushed) {
+    Op* op = cur_data->ops[cur_data->op_count - 1];
+    assert_ft_after_recovery(ic->proc_id, op, bp_recovery_info->recovery_fetch_addr);
+  }
 
   ic->back_on_path = !bp_recovery_info->recovery_force_offpath;
   ic->fetch_barrier_pending = FALSE;
@@ -434,7 +456,7 @@ FT_Arbitration_Result ft_arbitration() {
     ic->current_ft = NULL;
   }
 
-  FT* ft = decoupled_fe_get_ft();
+  FT* ft = decoupled_fe_pop_ft();
   if (!ft) {
     return FT_UNAVAILABLE;
   } else {
@@ -551,8 +573,6 @@ Flag fill_icache_stage_data(FT* ft, int requested, Stage_Data* sd) {
     requested--;
   }
   Flag ft_has_ended = !ft_can_fetch_op(ft);
-  if (ft_has_ended)
-    decoupled_fe_pop_ft(ft);
   return ft_has_ended;
 }
 

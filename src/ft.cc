@@ -31,6 +31,7 @@
 #include <iostream>
 
 #include "globals/assert.h"
+#include "globals/utils.h"
 
 #include "memory/memory.param.h"
 
@@ -103,20 +104,42 @@ void FT::add_op(Op* op) {
   ops.emplace_back(op);
 }
 
+void FT::trim_unread_tail(const std::function<bool(Op*)>& should_remove) {
+  ASSERT(proc_id, op_pos <= ops.size());
+  while (ops.size() > op_pos) {
+    Op* op = ops.back();
+    if (!should_remove(op))
+      break;
+    ops.pop_back();
+    op->parent_FT = nullptr;
+    op->parent_FT_off_path = nullptr;
+    free_op(op);
+  }
+}
+
 /* remove some pre-built ops after recovery in execution-driven (PIN) mode.
  * in PIN execution-driven mode, after recovery, some ops may have been already saved as
  * recovery FT so we delete those ops and refetch them to rebuild the FT.
  */
 void FT::remove_op_after_exec_recover() {
   ASSERT(proc_id, FRONTEND == FE_PIN_EXEC_DRIVEN);
-  ASSERT(proc_id, op_pos <= ops.size());
-  while (ops.size() > op_pos) {
-    Op* op = ops.back();
-    ops.pop_back();
-    op->parent_FT = nullptr;
-    free_op(op);
-  }
+  trim_unread_tail([](Op*) { return true; });
   ASSERT(proc_id, get_end_reason() == FT_NOT_ENDED || get_end_reason() == FT_TAKEN_BRANCH);
+}
+
+void FT::recover_ft() {
+  // This path is for an FT already popped from FTQ and currently in-flight
+  // (e.g., ic/uc current_ft). We only trim unread tail ops that are newer
+  // than recovery_op_num. Older/read ops are handled by stage-data recovery.
+  trim_unread_tail([&](Op* op) {
+    if (!FLUSH_OP(op))
+      return false;
+    DEBUG(proc_id, "FT recovery flushing unread op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
+          op->off_path);
+    ASSERT(proc_id, op->off_path);
+    ASSERT(proc_id, op->parent_FT == this);
+    return true;
+  });
 }
 
 FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
@@ -435,6 +458,40 @@ Op* ft_fetch_op(FT* ft) {
 
 FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
+}
+
+bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start) {
+  ASSERT(0, ft);
+
+  Op* last_op = ft->get_last_op();
+  ASSERT(0, last_op);
+
+  FT_Ended_By end_reason = ft->get_end_reason();
+  Addr pred_npc = last_op->bp_pred_info->pred_npc;
+  Addr npc = last_op->oracle_info.npc;
+  Addr end_addr = last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
+
+  switch (end_reason) {
+    case FT_TAKEN_BRANCH:
+      return (pred_npc == next_start) || (npc == next_start);
+    case FT_BAR_FETCH:
+      return (npc == next_start) || (end_addr == next_start);
+    default:
+      return (end_addr == next_start);
+  }
+}
+
+void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr) {
+  ASSERT(proc_id, op);
+  ASSERT(proc_id, op->parent_FT);
+  ASSERT(proc_id, ft_recovery_addr_is_consecutive(op->parent_FT, recovery_fetch_addr));
+  ASSERT(proc_id, IS_FLUSHING_OP(op));
+  ASSERT(proc_id, op->eom);
+}
+
+void recover_ft(FT* ft) {
+  ASSERT(0, ft);
+  ft->recover_ft();
 }
 
 /* retire and flush, free all ops in a FT when last op is freed */

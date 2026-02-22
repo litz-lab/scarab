@@ -63,6 +63,9 @@ struct FT_PredictResult {
 bool ft_can_fetch_op(FT* ft);
 Op* ft_fetch_op(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
+bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start);
+void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr);
+void recover_ft(FT* ft);
 void ft_free_op(Op* op);
 
 #ifdef __cplusplus
@@ -102,6 +105,9 @@ class FT {
   FT_Event build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
                  bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn);
   void remove_op_after_exec_recover();
+  // Recovery cleanup for an in-flight FT (already handed to icache/uop-cache, not FTQ-resident):
+  // removes only unread tail ops [op_pos, end) that satisfy FLUSH_OP.
+  void recover_ft();
 
   FT_PredictResult predict_ft();
   std::pair<FT*, FT*> extract_off_path_ft(uns split_index);
@@ -116,6 +122,7 @@ class FT {
   bool get_first_op_off_path() const { return ft_info.dynamic_info.first_op_off_path; }
   bool get_contains_fake_nop() const { return ft_info.dynamic_info.contains_fake_nop; }
   bool get_length() const { return ft_info.static_info.length; }
+  uint64_t get_op_pos() const { return op_pos; }
   void set_prebuilt(bool val) { is_prebuilt = val; }
   bool get_is_prebuilt() const { return is_prebuilt; }
   std::set<Addr> get_pcs();
@@ -132,6 +139,9 @@ class FT {
   std::vector<Op*> ops;
   FT_Event predict_one_cf_op(Op* op);
   void generate_ft_info();
+  // Common helper used by recovery/exec-recovery trimming paths.
+  // Only touches unread ops [op_pos, end) from the back (youngest first).
+  void trim_unread_tail(const std::function<bool(Op*)>& should_remove);
   friend class Decoupled_FE;
 };
 

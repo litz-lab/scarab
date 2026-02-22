@@ -40,6 +40,8 @@ extern "C" {
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 
+#include "debug/debug_macros.h"
+
 #include "memory/memory.param.h"
 
 #include "bp/bp.h"
@@ -48,6 +50,8 @@ extern "C" {
 #include "op_pool.h"
 #include "topdown.h"
 }
+
+#define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_IDQ_STAGE, ##args)
 
 class IDQ_Stage {
  public:
@@ -118,10 +122,16 @@ void IDQ_Stage::reset() {
 }
 
 void IDQ_Stage::recover() {
+  Op* youngest_survivor = NULL;
+  Flag flushed = FALSE;
+
   if (occupied_count != 0) {
     int i = wrap_around(tail - 1);
     do {
       if (FLUSH_OP(ops[i])) {
+        DEBUG(proc_id, "IDQ queue flushing op_num:%llu off_path:%u\n", (unsigned long long)ops[i]->op_num,
+              ops[i]->off_path);
+        flushed = TRUE;
         ASSERT(proc_id, i == wrap_around(tail - 1));
         if (ops[i]->parent_FT)
           ft_free_op(ops[i]);
@@ -135,6 +145,8 @@ void IDQ_Stage::recover() {
 
   if (occupied_count == 0) {
     ASSERT(proc_id, head == tail);
+  } else {
+    youngest_survivor = ops[wrap_around(tail - 1)];
   }
 
   if (next_op_num > bp_recovery_info->recovery_op_num) {
@@ -144,12 +156,25 @@ void IDQ_Stage::recover() {
   for (int i = idq_sd.op_count - 1; i >= 0; i--) {
     Op* op = idq_sd.ops[i];
     if (op && FLUSH_OP(op)) {
+      DEBUG(proc_id, "IDQ output flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
+      flushed = TRUE;
       ASSERT(proc_id, i == idq_sd.op_count - 1);
       if (op->parent_FT)
         ft_free_op(op);
       idq_sd.ops[i] = NULL;
       idq_sd.op_count--;
     }
+  }
+
+  if (idq_sd.op_count > 0) {
+    Op* sd_last = idq_sd.ops[idq_sd.op_count - 1];
+    if (!youngest_survivor || (sd_last && sd_last->op_num > youngest_survivor->op_num)) {
+      youngest_survivor = sd_last;
+    }
+  }
+
+  if (flushed && youngest_survivor) {
+    assert_ft_after_recovery(proc_id, youngest_survivor, bp_recovery_info->recovery_fetch_addr);
   }
 }
 

@@ -129,12 +129,16 @@ void recover_map_stage() {
   map->off_path = 0;
   ASSERT(0, map);
   for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
+    Flag flushed = FALSE;
     Stage_Data* cur = &map->sds[ii];
     cur->op_count = 0;
 
     for (jj = 0, kk = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
       if (cur->ops[jj]) {
         if (FLUSH_OP(cur->ops[jj])) {
+          DEBUG(map->proc_id, "Map flushing op_num:%llu off_path:%u\n", (unsigned long long)cur->ops[jj]->op_num,
+                cur->ops[jj]->off_path);
+          flushed = TRUE;
           if (cur->ops[jj]->parent_FT)
             ft_free_op(cur->ops[jj]);
           cur->ops[jj] = NULL;
@@ -145,6 +149,11 @@ void recover_map_stage() {
           cur->ops[kk++] = op;
         }
       }
+    }
+
+    if (cur->op_count > 0 && flushed) {
+      Op* op = cur->ops[cur->op_count - 1];
+      assert_ft_after_recovery(map->proc_id, op, bp_recovery_info->recovery_fetch_addr);
     }
   }
 

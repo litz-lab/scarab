@@ -136,6 +136,7 @@ void recover_dcache_stage() {
   for (ii = 0; ii < NUM_FUS; ii++) {
     Op* op = dc->sd.ops[ii];
     if (op && op->op_num > bp_recovery_info->recovery_op_num) {
+      DEBUG(dc->proc_id, "Dcache flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
       dc->sd.ops[ii] = NULL;
       dc->sd.op_count--;
     }

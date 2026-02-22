@@ -363,8 +363,9 @@ void cmp_wake(Op* src_op, Op* dep_op, uns8 rdy_bit) {
 /* cmp_recover: */
 
 void cmp_recover() {
-  _DEBUG(bp_recovery_info->proc_id, DEBUG_BP, "Recovery caused by op_num:%s\n",
-         unsstr64(bp_recovery_info->recovery_op_num));
+  _DEBUG(bp_recovery_info->proc_id, DEBUG_BP, "Recovery fired op_num:%s at cycle:%s (scheduled:%s)\n",
+         unsstr64(bp_recovery_info->recovery_op_num), unsstr64(cycle_count),
+         unsstr64(bp_recovery_info->recovery_cycle));
   ASSERT(bp_recovery_info->proc_id, bp_recovery_info->recovery_cycle != MAX_CTR);
   ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == g_bp_data->proc_id);
   ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == map_data->proc_id);

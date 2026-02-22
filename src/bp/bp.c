@@ -139,8 +139,6 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
     const Addr next_fetch_addr = op->oracle_info.npc;
     ASSERT(0, op->oracle_info.npc);
     const uns latency = 1;
-    DEBUG(bp_recovery_info->proc_id, "Recovery signaled for op_num:%s @ 0x%s  next_fetch:0x%s offpath:%d\n",
-          unsstr64(op->op_num), hexstr64s(op->inst_info->addr), hexstr64s(next_fetch_addr), op->off_path);
     ASSERT(op->proc_id, !op->bp_pred_info->recovery_sch);
     op->bp_pred_info->recovery_sch = TRUE;
     bp_recovery_info->recovery_cycle = cycle + latency;
@@ -159,6 +157,10 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
     bp_recovery_info->recovery_unique_num = op->unique_num;
     bp_recovery_info->recovery_inst_uid = op->inst_uid;
     bp_recovery_info->wpe_flag = FALSE;
+    DEBUG(bp_recovery_info->proc_id,
+          "Recovery scheduled op_num:%s @ 0x%s next_fetch:0x%s offpath:%d recovery_cycle:%s (now:%s)\n",
+          unsstr64(op->op_num), hexstr64s(op->inst_info->addr), hexstr64s(next_fetch_addr), op->off_path,
+          unsstr64(bp_recovery_info->recovery_cycle), unsstr64(cycle_count));
   }
 }
 

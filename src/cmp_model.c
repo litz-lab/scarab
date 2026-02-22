@@ -116,7 +116,7 @@ void cmp_init(uns mode) {
     init_uop_cache_stage(proc_id, "UOP_CACHE");
     init_icache_stage(proc_id, "ICACHE");
     init_decode_stage(proc_id, "DECODE");
-    init_uop_queue_stage();
+    init_uop_queue_stage(proc_id);
     init_idq_stage(proc_id, "IDQ");
     init_map_stage(proc_id, "MAP");
     init_node_stage(proc_id, "NODE");
@@ -200,11 +200,16 @@ void cmp_istreams(void) {
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     if (DUMB_CORE_ON && DUMB_CORE == proc_id)
       continue;
+    if (sim_done[proc_id])  // Skip finished cores (all modes)
+      continue;
 
     if (freq_is_ready(FREQ_DOMAIN_CORES[proc_id])) {
       cycle_count = freq_cycle_count(FREQ_DOMAIN_CORES[proc_id]);
 
       set_bp_recovery_info(&cmp_model.bp_recovery_info[proc_id]);
+      set_bp_data(&cmp_model.bp_data[proc_id][0]);
+      set_thread_data(&cmp_model.thread_data[proc_id]);
+      set_map_data(&td->map_data);
       if (cycle_count >= bp_recovery_info->recovery_cycle)
         cmp_recover();
       if (cycle_count >= bp_recovery_info->redirect_cycle) {
@@ -220,6 +225,8 @@ void cmp_istreams(void) {
 void cmp_cores(void) {
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     if (DUMB_CORE_ON && DUMB_CORE == proc_id)
+      continue;
+    if (sim_done[proc_id])  // Skip finished cores (all modes)
       continue;
 
     if (freq_is_ready(FREQ_DOMAIN_CORES[proc_id])) {
@@ -450,6 +457,9 @@ void cmp_warmup(Op* op) {
   Addr dummy_line_addr;
   Addr dummy_line_addr2;
   Icache_Data* line_info = NULL;
+
+  // Set FDIP for this core before calling FDIP functions
+  set_fdip(proc_id, 0);
 
   // Warmup caches for instructions
   Icache_Stage* ic = &(cmp_model.icache_stage[proc_id]);

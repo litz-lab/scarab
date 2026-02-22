@@ -13,7 +13,9 @@
 extern "C" {
 #endif
 
-void init_uop_queue_stage(void);
+void alloc_mem_uop_queue_stage(uns num_cores);
+void set_uop_queue_stage(uns8 proc_id);
+void init_uop_queue_stage(uns8 proc_id);
 void update_uop_queue_stage(Stage_Data* src_sd);
 void recover_uop_queue_stage(void);
 Stage_Data* uop_queue_stage_get_latest_sd(void);

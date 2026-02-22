@@ -41,6 +41,10 @@ typedef struct Map_Stage_struct {
   Stage_Data* last_sd; /* pointer to last decode pipeline stage (for passing ops to map) */
 
   Flag reg_file_stall;
+
+  /* Per-core state (moved from global variables) */
+  int off_path;        /* off-path flag for this core */
+  Counter next_op_num; /* next op number for this core */
 } Map_Stage;
 
 /**************************************************************************************/

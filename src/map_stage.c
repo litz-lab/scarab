@@ -64,11 +64,6 @@
 
 Map_Stage* map = NULL;
 
-int map_off_path = 0;
-Counter map_stage_next_op_num = 1;
-/* The next op number is used when deciding whether to consume ops from the uop
- * cache: i.e. check if any preceding instructions are still in the decoder. */
-
 /**************************************************************************************/
 /* Local prototypes */
 
@@ -105,6 +100,8 @@ void init_map_stage(uns8 proc_id, const char* name) {
     cur->ops = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
   }
   map->last_sd = &map->sds[0];
+  map->off_path = 0;
+  map->next_op_num = 1;
   reset_map_stage();
 }
 
@@ -129,7 +126,7 @@ void reset_map_stage() {
 
 void recover_map_stage() {
   uns ii, jj, kk;
-  map_off_path = 0;
+  map->off_path = 0;
   ASSERT(0, map);
   for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &map->sds[ii];
@@ -151,9 +148,9 @@ void recover_map_stage() {
     }
   }
 
-  if (map_stage_next_op_num > bp_recovery_info->recovery_op_num) {
-    map_stage_next_op_num = bp_recovery_info->recovery_op_num + 1;
-    DEBUG(map->proc_id, "Recovering map_stage_next_op_num to %llu\n", map_stage_next_op_num);
+  if (map->next_op_num > bp_recovery_info->recovery_op_num) {
+    map->next_op_num = bp_recovery_info->recovery_op_num + 1;
+    DEBUG(map->proc_id, "Recovering map->next_op_num to %llu\n", map->next_op_num);
   }
 }
 
@@ -241,7 +238,7 @@ static inline void stage_process_op(Op* op) {
 }
 
 static inline void map_stage_collect_stat(Flag stall, Flag starved) {
-  if (map_off_path) {
+  if (map->off_path) {
     STAT_EVENT(map->proc_id, MAP_STAGE_OFF_PATH);
     return;
   }
@@ -263,7 +260,7 @@ static inline void map_stage_fetch_op(Stage_Data* src_sd) {
 
   for (int ii = 0; ii < op_count_before_fetch; ii++) {
     Op* op = src_sd->ops[ii];
-    ASSERT(map->proc_id, op->op_num == map_stage_next_op_num);
+    ASSERT(map->proc_id, op->op_num == map->next_op_num);
     DEBUG(map->proc_id, "Fetching opnum=%llu at idx=%i\n", op->op_num, ii);
 
     op->map_cycle = cycle_count;
@@ -273,14 +270,14 @@ static inline void map_stage_fetch_op(Stage_Data* src_sd) {
     src_sd->ops[ii] = NULL;
     src_sd->op_count--;
 
-    map_stage_next_op_num++;
+    map->next_op_num++;
     if (op->off_path) {
-      map_off_path = 1;
+      map->off_path = 1;
     }
   }
 
   // TODO: probably should count number of on-path ops.
-  if (!map_off_path)
+  if (!map->off_path)
     STAT_EVENT(map->proc_id, MAP_STAGE_RECEIVED_OPS_0 + first_sd->op_count);
 
   // Any stage can receive a mix of on/off-path ops in a single cycle.

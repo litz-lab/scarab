@@ -60,6 +60,7 @@
 #include "cmp_model.h"
 #include "dumb_model.h"
 #include "freq.h"
+#include "lookahead_buffer.h"
 #include "model.h"
 #include "op_pool.h"
 #include "optimizer2.h"
@@ -667,9 +668,11 @@ void full_sim() {
   init_op_pool();
 
   // need to fill lookahead buffer after init_op_pool
-  for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-    ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);
-    decoupled_fe_refill_lookahead_buffer(proc_id);
+  if (LOOKAHEAD_BUF_SIZE) {
+    for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+      ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);
+      lookahead_buffer_refill(proc_id);
+    }
   }
 
   unique_count = 1;

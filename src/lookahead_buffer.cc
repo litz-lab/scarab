@@ -1,10 +1,11 @@
-#include "lookahead_buffer.h"
+#include "lookahead_buffer.hpp"
 
 #include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <tuple>
 #include <vector>
 
@@ -30,9 +31,18 @@
 
 const int CLINE = ~0x3F;
 
+std::vector<std::unique_ptr<LookaheadBuffer>> per_core_lookahead;
+
 /* ============================================================================
  * LookaheadBuffer Implementation
  * ============================================================================ */
+
+LookaheadBuffer::LookaheadBuffer(uns proc_id)
+    : have_seen_exit(0), proc_id(proc_id), rdptr_lb(0), wrptr_lb(0), ft_buffer_count(0) {
+  if (!LOOKAHEAD_BUF_SIZE)
+    return;
+  lookahead_buffer.resize(LOOKAHEAD_BUF_SIZE, nullptr);
+}
 
 /* updates all lookup map/vectors according to new FT inserted at buf pos */
 void LookaheadBuffer::update_search_indexes_on_insert(uint64_t buf_pos) {
@@ -81,15 +91,6 @@ void LookaheadBuffer::refill() {
       break;
     insert_ft();
   }
-}
-
-void LookaheadBuffer::init(uns proc_id) {
-  if (!LOOKAHEAD_BUF_SIZE)
-    return;
-  lookahead_buffer.resize(LOOKAHEAD_BUF_SIZE);
-  rdptr_lb = 0;
-  wrptr_lb = 0;
-  proc_id = proc_id;
 }
 
 /* Reads from frontend until a complete FT is ready, inserts it into the buffer;
@@ -243,4 +244,95 @@ FT* LookaheadBuffer::get_FT(uint64_t ptr_pos) {
 
 uint64_t LookaheadBuffer::get_rdptr() {
   return rdptr_lb;
+}
+
+extern "C" {
+
+void alloc_mem_lookahead_buffer(uns num_cores) {
+  per_core_lookahead.clear();
+  per_core_lookahead.reserve(num_cores);
+  for (uns proc_id = 0; proc_id < num_cores; ++proc_id) {
+    per_core_lookahead.emplace_back(std::make_unique<LookaheadBuffer>(proc_id));
+  }
+}
+
+FT* lookahead_buffer_pop_ft(uns proc_id) {
+  ASSERT(proc_id, proc_id < per_core_lookahead.size());
+  ASSERT(proc_id, per_core_lookahead[proc_id]);
+  return per_core_lookahead[proc_id]->pop_ft();
+}
+
+void lookahead_buffer_refill(uns proc_id) {
+  if (!LOOKAHEAD_BUF_SIZE)
+    return;
+  ASSERT(proc_id, proc_id < per_core_lookahead.size());
+  ASSERT(proc_id, per_core_lookahead[proc_id]);
+  per_core_lookahead[proc_id]->refill();
+}
+
+Flag lookahead_buffer_can_fetch_op(uns proc_id) {
+  ASSERT(proc_id, proc_id < per_core_lookahead.size());
+  ASSERT(proc_id, per_core_lookahead[proc_id]);
+  return per_core_lookahead[proc_id]->can_fetch_op();
+}
+
+FT* lookahead_buffer_get_FT(uns proc_id, uint64_t ptr_pos) {
+  ASSERT(proc_id, proc_id < per_core_lookahead.size());
+  ASSERT(proc_id, per_core_lookahead[proc_id]);
+  return per_core_lookahead[proc_id]->get_FT(ptr_pos);
+}
+
+uint64_t lookahead_buffer_rdptr(uns proc_id) {
+  ASSERT(proc_id, proc_id < per_core_lookahead.size());
+  ASSERT(proc_id, per_core_lookahead[proc_id]);
+  return per_core_lookahead[proc_id]->get_rdptr();
+}
+
+uint64_t lookahead_buffer_count(uns proc_id) {
+  ASSERT(proc_id, proc_id < per_core_lookahead.size());
+  ASSERT(proc_id, per_core_lookahead[proc_id]);
+  return per_core_lookahead[proc_id]->count();
+}
+
+}  // extern "C"
+
+std::vector<FT*> lookahead_buffer_cpp_find_fts_by_ft_info(uns proc_id, const FT_Info_Static& target_info) {
+  ASSERT(proc_id, proc_id < per_core_lookahead.size());
+  ASSERT(proc_id, per_core_lookahead[proc_id]);
+  return per_core_lookahead[proc_id]->find_fts_by_ft_info(target_info);
+}
+
+FT* lookahead_buffer_cpp_find_youngest_ft_by_static_info(uns proc_id, const FT_Info_Static& target_info) {
+  auto fts = lookahead_buffer_cpp_find_fts_by_ft_info(proc_id, target_info);
+  FT* youngest = nullptr;
+  for (auto ft : fts) {
+    if (!youngest || ft->get_ft_info().dynamic_info.FT_id > youngest->get_ft_info().dynamic_info.FT_id) {
+      youngest = ft;
+    }
+  }
+  return youngest;
+}
+
+std::vector<FT*> lookahead_buffer_cpp_find_fts_by_start_addr(uns proc_id, uint64_t ft_start_addr) {
+  ASSERT(proc_id, proc_id < per_core_lookahead.size());
+  ASSERT(proc_id, per_core_lookahead[proc_id]);
+  return per_core_lookahead[proc_id]->find_fts_by_start_addr(ft_start_addr);
+}
+
+std::vector<FT*> lookahead_buffer_cpp_find_fts_enclosing_pc(uns proc_id, Addr pc) {
+  ASSERT(proc_id, proc_id < per_core_lookahead.size());
+  ASSERT(proc_id, per_core_lookahead[proc_id]);
+  return per_core_lookahead[proc_id]->find_fts_enclosing_pc(pc);
+}
+
+std::vector<FT*> lookahead_buffer_cpp_find_fts_enclosing_line_addr(uns proc_id, Addr line_addr) {
+  ASSERT(proc_id, proc_id < per_core_lookahead.size());
+  ASSERT(proc_id, per_core_lookahead[proc_id]);
+  return per_core_lookahead[proc_id]->find_fts_enclosing_line_addr(line_addr);
+}
+
+FT* lookahead_buffer_cpp_find_oldest_ft_by_info(uns proc_id, FT_Info_Static static_info) {
+  ASSERT(proc_id, proc_id < per_core_lookahead.size());
+  ASSERT(proc_id, per_core_lookahead[proc_id]);
+  return per_core_lookahead[proc_id]->find_oldest_FT_by_ft_info(static_info);
 }

@@ -140,13 +140,11 @@ uint64_t decoupled_fe_ftq_iter_offset(Decoupled_FE* dfe, uns iter_idx);
 uint64_t decoupled_fe_ftq_iter_ft_offset(Decoupled_FE* dfe, uns iter_idx);
 uint64_t decoupled_fe_ftq_num_ops(Decoupled_FE* dfe);
 uint64_t decoupled_fe_ftq_num_fts(Decoupled_FE* dfe);
-void decoupled_fe_refill_lookahead_buffer(uns proc_id);
 Flag lookahead_buffer_can_fetch_op(uns proc_id);
 FT* lookahead_buffer_get_FT(uns proc_id, uint64_t ptr_pos);
 uint64_t lookahead_buffer_rdptr(uns proc_id);
 uint64_t lookahead_buffer_count(uns proc_id);
 
-uns op_get_bp_id(Op* op);
 #ifdef __cplusplus
 }  // extern "C"
 #endif
@@ -158,20 +156,10 @@ uns op_get_bp_id(Op* op);
 #include <memory>
 #include <vector>
 
-#include "lookahead_buffer.h"
-
 #include "confidence/conf.hpp"
 
 class FT;
 struct FT_PredictResult;
-
-// C++-only lookahead buffer helper wrappers
-std::vector<FT*> lookahead_buffer_find_FTs_by_ft_info(uns proc_id, const FT_Info_Static& target_info);
-FT* lookahead_buffer_find_youngest_FT_by_static_info(uns proc_id, const FT_Info_Static& target_info);
-std::vector<FT*> lookahead_buffer_find_FTs_by_start_addr(uns proc_id, uint64_t FT_start_addr);
-std::vector<FT*> lookahead_buffer_find_FTs_enclosing_PC(uns proc_id, Addr PC);
-std::vector<FT*> lookahead_buffer_find_FTs_enclosing_line_addr(uns proc_id, Addr line_addr);
-FT* lookahead_buffer_find_oldest_FT_by_FT_info(uns proc_id, FT_Info_Static static_info);
 
 class Decoupled_FE {
  public:
@@ -222,18 +210,6 @@ class Decoupled_FE {
   Op* get_last_fetch_op();
   uns get_dfe_recovery_policy() { return dfe_recovery_policy; }
 
-  void refill_lookahead_buffer();
-  FT_Info lookahead_buffer_peek_info();
-  Flag lookahead_buffer_can_fetch_op();
-  std::vector<FT*> lookahead_buffer_find_FTs_by_ft_info(const FT_Info_Static& target_info);
-  std::vector<FT*> lookahead_buffer_find_FTs_by_start_addr(uint64_t FT_start_addr);
-  std::vector<FT*> lookahead_buffer_find_FTs_enclosing_pc(Addr PC);
-  std::vector<FT*> lookahead_buffer_find_FTs_enclosing_line_addr(Addr line_addr);
-  FT* lookahead_buffer_find_oldest_FT_by_ft_info(FT_Info_Static static_info);
-  FT* lookahead_buffer_get_FT(uint64_t ptr_pos);
-  uint64_t lookahead_buffer_rdptr();
-  uint64_t lookahead_buffer_count();
-
   // FSM states for DFE
   enum DFE_STATE {
     INACTIVE,
@@ -262,8 +238,6 @@ class Decoupled_FE {
   // Each core has a queue of FTs,
   // where each FT contains a queue of micro instructions.
   std::deque<FT*> ftq;
-  // Lookahead buffer for pre-built FTs, used when redirecting to off-path after mispredictions
-  LookaheadBuffer lookahead_buffer;
   // keep track of the current FT to be pushed next
   FT* current_ft_to_push;
   FT* saved_recovery_ft;

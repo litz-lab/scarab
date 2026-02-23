@@ -4290,6 +4290,8 @@ Flag mlc_fill_line(Mem_Req* req) {
   } else {
     data = (MLC_Data*)cache_insert(&MLC(req->proc_id)->cache, req->proc_id, req->addr, &line_addr, &repl_line_addr);
   }
+  /* this will make it bring the line into the mlc and then modify it */
+  data->proc_id = req->proc_id;
 
   if (req->type == MRT_WB_NODIRTY || req->type == MRT_WB) {
     STAT_EVENT(req->proc_id, MLC_WB_FILL);
@@ -4412,9 +4414,6 @@ Flag mlc_fill_line(Mem_Req* req) {
         STAT_EVENT(data->proc_id, CORE_PREF_MLC_DEMAND_LATENCY300);
     }
   }
-
-  /* this will make it bring the line into the mlc and then modify it */
-  data->proc_id = req->proc_id;
 
   // write back can fill mlc directly - reqs filling core should not dirty the line
   data->dirty = ((req->type == MRT_WB) && (req->state != MRS_FILL_MLC));

@@ -188,12 +188,6 @@ void decoupled_fe_print_conf_data() {
   g_dfe->print_conf_data();
 }
 
-/* Helper function to get bp_id from an op */
-uns op_get_bp_id(Op* op) {
-  ASSERT(0, op->parent_FT);
-  return op->parent_FT->get_bp_id();
-}
-
 }  // extern "C"
 
 /* Decoupled_FE member functions */
@@ -214,8 +208,6 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_re
     else
       conf = new Conf(_proc_id);
   }
-  lookahead_buffer = LookaheadBuffer();
-  lookahead_buffer.init(proc_id);
 
   state = bp_id ? INACTIVE : SERVING_ON_PATH;
   next_state = state;
@@ -274,7 +266,6 @@ void Decoupled_FE::dfe_recover_op() {
 void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
   // Get the last addr from the primary FTQ
   Op* alt_op = per_core_dfe[proc_id][0]->get_last_fetch_op();
-  info->bp_id = bp_id;
   bp_recover_op(bp_data, cf_type, info);
   dfe_recover_op();
   switch (dfe_recovery_policy) {
@@ -415,8 +406,24 @@ void Decoupled_FE::update() {
         // All other BPs use the same update() function, so this check is necessary here.
         // The lookahead buffer is a simulation feature, not a typical CPU component.
         // Lookahead buffer size is default to 1.
-        ASSERT(proc_id, bp_id == 0 && LOOKAHEAD_BUF_SIZE);
-        current_ft_to_push = lookahead_buffer.pop_ft();
+        if (LOOKAHEAD_BUF_SIZE) {
+          ASSERT(proc_id, bp_id == 0 && LOOKAHEAD_BUF_SIZE);
+          current_ft_to_push = lookahead_buffer_pop_ft(proc_id);
+
+        } else {
+          current_ft_to_push = new FT(proc_id, bp_id);
+          // Build new on-path FT if no recovery ft availble
+          ASSERT(proc_id, !current_ft_to_push->has_unread_ops());
+          auto build_event =
+              current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                        [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                          frontend_fetch_op(pid, bid, op);
+                                          return true;
+                                        },
+                                        false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
+          ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+          current_ft_to_push->set_prebuilt(true);
+        }
         ASSERT(proc_id, current_ft_to_push->get_is_prebuilt());
 
         result = current_ft_to_push->predict_ft();
@@ -648,7 +655,20 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   }
   // no trailing ft, misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
-    saved_recovery_ft = lookahead_buffer.pop_ft();
+    if (LOOKAHEAD_BUF_SIZE) {
+      saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
+    } else {
+      saved_recovery_ft = new FT(proc_id, bp_id);
+      auto build_event =
+          saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                   [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                     frontend_fetch_op(pid, bid, op);
+                                     return true;
+                                   },
+                                   false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
+      ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+      saved_recovery_ft->set_prebuilt(true);
+    }
     ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
   }
   saved_recovery_ft->set_prebuilt(true);
@@ -664,7 +684,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
         alt_op.bp_pred_info = &alt_op.bp_pred_main;
         alt_op.btb_pred_info = &alt_op.btb_pred;
         Addr alt_pred_addr =
-            bp_predict_op(per_core_dfe[proc_id][_bp_id]->bp_data, &alt_op, bp_id, 0, result.op->inst_info->addr);
+            bp_predict_op(per_core_dfe[proc_id][_bp_id]->bp_data, &alt_op, _bp_id, 0, result.op->inst_info->addr);
         frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);
         per_core_dfe[proc_id][_bp_id]->next_state = SERVING_OFF_PATH;
         per_core_dfe[proc_id][_bp_id]->set_conf_off_path();
@@ -697,123 +717,4 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
     exit_on_off_path = true;
   }
   ASSERT(proc_id, current_ft_to_push->get_end_reason() != FT_NOT_ENDED);
-}
-
-// lookahead buffer APIs - these are just forwarding functions
-void Decoupled_FE::refill_lookahead_buffer() {
-  ASSERT(proc_id, bp_id == 0);
-  lookahead_buffer.refill();
-}
-
-FT_Info Decoupled_FE::lookahead_buffer_peek_info() {
-  return lookahead_buffer.peek()->get_ft_info();
-}
-
-Flag Decoupled_FE::lookahead_buffer_can_fetch_op() {
-  return lookahead_buffer.can_fetch_op();
-}
-
-std::vector<FT*> Decoupled_FE::lookahead_buffer_find_FTs_by_ft_info(const FT_Info_Static& target_info) {
-  return lookahead_buffer.find_fts_by_ft_info(target_info);
-}
-
-std::vector<FT*> Decoupled_FE::lookahead_buffer_find_FTs_by_start_addr(uint64_t FT_start_addr) {
-  return lookahead_buffer.find_fts_by_start_addr(FT_start_addr);
-}
-
-std::vector<FT*> Decoupled_FE::lookahead_buffer_find_FTs_enclosing_pc(Addr PC) {
-  return lookahead_buffer.find_fts_enclosing_pc(PC);
-}
-
-std::vector<FT*> Decoupled_FE::lookahead_buffer_find_FTs_enclosing_line_addr(Addr line_addr) {
-  return lookahead_buffer.find_fts_enclosing_line_addr(line_addr);
-}
-
-FT* Decoupled_FE::lookahead_buffer_find_oldest_FT_by_ft_info(FT_Info_Static static_info) {
-  return lookahead_buffer.find_oldest_FT_by_ft_info(static_info);
-}
-
-FT* Decoupled_FE::lookahead_buffer_get_FT(uint64_t ptr_pos) {
-  return lookahead_buffer.get_FT(ptr_pos);
-}
-
-uint64_t Decoupled_FE::lookahead_buffer_rdptr() {
-  return lookahead_buffer.get_rdptr();
-}
-
-uint64_t Decoupled_FE::lookahead_buffer_count() {
-  return lookahead_buffer.count();
-}
-
-// /* ============================================================================
-//  * C-Style Wrapper Functions for Backward Compatibility for lookahead buffer APIs
-//  * now in DFE because DFE owns the lookahead buffer and all the wrapper functions are just forwarding calls to the
-//  global instance
-//  * ============================================================================ */
-
-void decoupled_fe_refill_lookahead_buffer(uns proc_id) {
-  per_core_dfe[proc_id][0]->refill_lookahead_buffer();
-}
-
-/* Returns the FT to be read next */
-FT_Info lookahead_buffer_peek(uns proc_id) {
-  return per_core_dfe[proc_id][0]->lookahead_buffer_peek_info();
-}
-
-/* Returns whether lookahead buffer can currently provide FT */
-Flag lookahead_buffer_can_fetch_op(uns proc_id) {
-  return per_core_dfe[proc_id][0]->lookahead_buffer_can_fetch_op();
-}
-
-/* Returns all FTs in the buffer matching given static FT info */
-std::vector<FT*> lookahead_buffer_find_FTs_by_ft_info(uns proc_id, const FT_Info_Static& target_info) {
-  return per_core_dfe[proc_id][0]->lookahead_buffer_find_FTs_by_ft_info(target_info);
-}
-
-/* find youngest FT by static info
-   built from find_by_ft_info primitive */
-FT* lookahead_buffer_find_youngest_FT_by_static_info(uns proc_id, const FT_Info_Static& target_info) {
-  auto fts = per_core_dfe[proc_id][0]->lookahead_buffer_find_FTs_by_ft_info(target_info);
-  FT* youngest = nullptr;
-  for (auto ft : fts) {
-    if (!youngest || ft->get_ft_info().dynamic_info.FT_id > youngest->get_ft_info().dynamic_info.FT_id) {
-      youngest = ft;
-    }
-  }
-  return youngest;
-}
-
-/* Returns all FTs with a given start address */
-std::vector<FT*> lookahead_buffer_find_FTs_by_start_addr(uns proc_id, uint64_t FT_start_addr) {
-  return per_core_dfe[proc_id][0]->lookahead_buffer_find_FTs_by_start_addr(FT_start_addr);
-}
-
-/* Returns list of FTs containing the given PC */
-std::vector<FT*> lookahead_buffer_find_FTs_enclosing_PC(uns proc_id, Addr PC) {
-  return per_core_dfe[proc_id][0]->lookahead_buffer_find_FTs_enclosing_pc(PC);
-}
-
-/* Returns list of FTs containing the given line address */
-std::vector<FT*> lookahead_buffer_find_FTs_enclosing_line_addr(uns proc_id, Addr line_addr) {
-  return per_core_dfe[proc_id][0]->lookahead_buffer_find_FTs_enclosing_line_addr(line_addr);
-}
-
-/* returns oldest FT of given FT info */
-FT* lookahead_buffer_find_oldest_FT_by_FT_info(uns proc_id, FT_Info_Static static_info) {
-  return per_core_dfe[proc_id][0]->lookahead_buffer_find_oldest_FT_by_ft_info(static_info);
-}
-
-/* Searches for FT static info by buffer position; used in scanning */
-FT* lookahead_buffer_get_FT(uns proc_id, uint64_t ptr_pos) {
-  return per_core_dfe[proc_id][0]->lookahead_buffer_get_FT(ptr_pos);
-}
-
-/* Returns current read pointer position included in FTQ */
-uint64_t lookahead_buffer_rdptr(uns proc_id) {
-  return per_core_dfe[proc_id][0]->lookahead_buffer_rdptr();
-}
-
-/* Returns number of FTs in buffer */
-uint64_t lookahead_buffer_count(uns proc_id) {
-  return per_core_dfe[proc_id][0]->lookahead_buffer_count();
 }

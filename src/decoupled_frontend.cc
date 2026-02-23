@@ -402,24 +402,10 @@ void Decoupled_FE::update() {
         // All other BPs use the same update() function, so this check is necessary here.
         // The lookahead buffer is a simulation feature, not a typical CPU component.
         // Lookahead buffer size is default to 1.
-        if (LOOKAHEAD_BUF_SIZE) {
-          ASSERT(proc_id, bp_id == 0 && LOOKAHEAD_BUF_SIZE);
-          current_ft_to_push = lookahead_buffer_pop_ft(proc_id);
-
-        } else {
-          current_ft_to_push = new FT(proc_id, bp_id);
-          // Build new on-path FT if no recovery ft availble
-          ASSERT(proc_id, !current_ft_to_push->has_unread_ops());
-          auto build_event =
-              current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                                        [](uns8 pid, uns8 bid, Op* op) -> bool {
-                                          frontend_fetch_op(pid, bid, op);
-                                          return true;
-                                        },
-                                        false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
-          ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
-          current_ft_to_push->set_prebuilt(true);
-        }
+        ASSERT(proc_id, bp_id == 0);
+        ASSERT(proc_id,
+               LOOKAHEAD_BUF_SIZE);  // should always be true because we need lookahead buffer to save recovery ft
+        current_ft_to_push = lookahead_buffer_pop_ft(proc_id);
         ASSERT(proc_id, current_ft_to_push->get_is_prebuilt());
 
         result = current_ft_to_push->predict_ft();
@@ -649,20 +635,8 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   }
   // no trailing ft, misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
-    if (LOOKAHEAD_BUF_SIZE) {
-      saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
-    } else {
-      saved_recovery_ft = new FT(proc_id, bp_id);
-      auto build_event =
-          saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                                   [](uns8 pid, uns8 bid, Op* op) -> bool {
-                                     frontend_fetch_op(pid, bid, op);
-                                     return true;
-                                   },
-                                   false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
-      ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
-      saved_recovery_ft->set_prebuilt(true);
-    }
+    ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);  // should always be true because we need lookahead buffer to save recovery ft
+    saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
     ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
   }
   saved_recovery_ft->set_prebuilt(true);

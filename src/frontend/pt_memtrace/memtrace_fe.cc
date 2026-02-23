@@ -201,7 +201,7 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
     // dr_ins ctype_pin_inst are already populated in memtrace_reader_memtrace
     fill_in_dynamic_info(next_onpath_pi, insi);
   } else {
-    memset(next_onpath_pi, 0, sizeof(ctype_pin_inst));
+    init_ctype_pin_inst(next_onpath_pi);
     fill_in_dynamic_info(next_onpath_pi, insi);
     fill_in_basic_info(next_onpath_pi, insi->ins);
     if (XED_INS_IsVgather(insi->ins) || XED_INS_IsVscatter(insi->ins)) {

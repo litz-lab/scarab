@@ -370,8 +370,13 @@ void ext_trace_init() {
     memtrace_init();
 
   trace_buf_init();
-  for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++)
-    trace_read(proc_id, &next_onpath_pi[proc_id]);
+  for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+    if (!trace_read(proc_id, &next_onpath_pi[proc_id])) {
+      // Allow cores whose trace cannot provide an initial instruction to be treated as finished.
+      trace_read_done[proc_id] = TRUE;
+      reached_exit[proc_id] = TRUE;
+    }
+  }
 }
 
 void ext_trace_done() {

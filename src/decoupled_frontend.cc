@@ -221,11 +221,43 @@ void Decoupled_FE::dfe_recover_op() {
   sched_off_path = false;
   cur_op = nullptr;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
+  bool found_recovery_ft = false;
+  bool recovery_op_is_last = false;
+  auto erase_from = ftq.begin();
 
-  for (auto it = ftq.begin(); it != ftq.end(); it++) {
-    delete (*it);
+  for (auto it = ftq.begin(); it != ftq.end(); ++it) {
+    FT* ft = *it;
+
+    for (uint64_t op_idx = 0; op_idx < ft->ops.size(); ++op_idx) {
+      Op* op = ft->ops[op_idx];
+      if (IS_FLUSHING_OP(op)) {
+        found_recovery_ft = true;
+        recovery_op_is_last = (op_idx == ft->ops.size() - 1);
+        break;
+      }
+    }
+
+    if (found_recovery_ft) {
+      erase_from = recovery_op_is_last ? std::next(it) : it;
+      break;
+    }
   }
-  ftq.clear();
+
+  if (erase_from != ftq.end()) {
+    for (auto it = erase_from; it != ftq.end(); ++it)
+      delete (*it);
+    ftq.erase(erase_from, ftq.end());
+  }
+
+  if (found_recovery_ft && !recovery_op_is_last) {
+    ASSERT(proc_id, saved_recovery_ft);
+    ASSERT(proc_id, !saved_recovery_ft->ops.empty());
+    saved_recovery_ft->op_pos = 0;
+    saved_recovery_ft->generate_ft_info();
+  }
+
+  // Before introducing any early recovery, it should not find recovery ft
+  ASSERT(proc_id, !found_recovery_ft);
 
   DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx recovery_op_num:%llu\n", bp_id,
         bp_recovery_info->recovery_fetch_addr, (unsigned long long)bp_recovery_info->recovery_op_num);

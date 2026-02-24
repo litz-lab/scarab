@@ -135,6 +135,9 @@ struct Mem_Req_struct {
                                           req - may not be in the machine any more */
   Counter oldest_op_addr;              /* PC of the oldest op that is waiting for this req -
                                           may not be in the machine any more */
+Counter mlc_start_cycle;   // when MLC grants a port (start of the MLC lookup)
+Counter l1_start_cycle;    // when L1/LLC grants a port (start of the L1 lookup)
+Counter mem_resp_ready_cycle;   // set by the Ramulator response callback
   List op_ptrs;
   List op_uniques;
   uns op_count;                              /* number of ops that are waiting for the miss */

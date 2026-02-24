@@ -880,7 +880,17 @@ void mem_start_mlc_access(Mem_Req* req) {
 
     avail = TRUE;
     req->state = MRS_MLC_WAIT;
+
+if (req->mlc_start_cycle == 0)
+  req->mlc_start_cycle = cycle_count;
+
     req->rdy_cycle = cycle_count + MLC_CYCLES;
+  }
+  else if (need_rp){
+    STAT_EVENT(req->proc_id, MLC_READ_PORT_UNAVAILABLE_ONPATH + req->off_path);
+  }
+  else if (need_wp){
+    STAT_EVENT(req->proc_id, MLC_WRITE_PORT_UNAVAILABLE_ONPATH + req->off_path);
   }
 
   if (need_wp)
@@ -913,8 +923,11 @@ void mem_start_l1_access(Mem_Req* req) {
       // useful for modeling per-core DVFS with private LLCs
       Freq_Domain_Id core_domain = FREQ_DOMAIN_CORES[req->proc_id];
       Counter core_cycle_count = freq_cycle_count(core_domain);
+
+      req->l1_start_cycle = freq_convert_future_cycle(core_domain, core_cycle_count, FREQ_DOMAIN_L1);
       req->rdy_cycle = freq_convert_future_cycle(core_domain, core_cycle_count + L1_CYCLES, FREQ_DOMAIN_L1);
     } else {
+      req->l1_start_cycle = cycle_count;
       req->rdy_cycle = cycle_count + L1_CYCLES;
     }
 
@@ -989,15 +1002,6 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry, Ad
         "Mem request hit in the L1  index:%ld  type:%s  addr:0x%s  l1_bank:%d  "
         "size:%d\n",
         (long int)(req - mem->req_buffer), Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->l1_bank, req->size);
-
-  if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
-    STAT_EVENT(req->proc_id, L1_HIT);
-    STAT_EVENT(req->proc_id, CORE_L1_HIT);
-    STAT_EVENT(req->proc_id, L1_HIT_ONPATH + req->off_path);
-    if (0 && DEBUG_EXC_INSERTS) {
-      printf("addr:%s hit in L1 type:%s\n", hexstr64s(req->addr), Mem_Req_Type_str(req->type));
-    }
-  }
 
   STAT_EVENT_ALL(L1_HIT_ALL);
   STAT_EVENT_ALL(L1_HIT_ALL_ONPATH + req->off_path);
@@ -1093,15 +1097,6 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_entry, 
       data->dirty |= (req->type == MRT_WB);
     }
 
-    if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
-      STAT_EVENT(req->proc_id, MLC_HIT);
-      STAT_EVENT(req->proc_id, CORE_MLC_HIT);
-      STAT_EVENT(req->proc_id, MLC_HIT_ONPATH + req->off_path);
-      if (0 && DEBUG_EXC_INSERTS) {
-        printf("addr:%s hit in MLC type:%s\n", hexstr64s(req->addr), Mem_Req_Type_str(req->type));
-      }
-    }
-
     STAT_EVENT_ALL(MLC_HIT_ALL);
     STAT_EVENT_ALL(MLC_HIT_ALL_ONPATH + req->off_path);
 
@@ -1157,13 +1152,7 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_e
       STAT_EVENT(req->proc_id, L1_WB_MISS);
       STAT_EVENT(req->proc_id, CORE_L1_WB_MISS);
     }
-
-    if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
-      STAT_EVENT(req->proc_id, L1_MISS);
-      STAT_EVENT(req->proc_id, CORE_L1_MISS);
-      STAT_EVENT(req->proc_id, L1_MISS_ONPATH + req->off_path);
-      STAT_EVENT(req->proc_id, PER1K_L1_DEMAND_MISS_ONPATH + req->off_path);
-    }
+    
     STAT_EVENT_ALL(L1_MISS_ALL);
     STAT_EVENT_ALL(L1_MISS_ALL_ONPATH + req->off_path);
 
@@ -1290,11 +1279,6 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue
       STAT_EVENT(req->proc_id, CORE_MLC_WB_MISS);
     }
 
-    if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
-      STAT_EVENT(req->proc_id, MLC_MISS);
-      STAT_EVENT(req->proc_id, CORE_MLC_MISS);
-      STAT_EVENT(req->proc_id, MLC_MISS_ONPATH + req->off_path);
-    }
     STAT_EVENT(req->proc_id, MLC_MISS_ALL);
     STAT_EVENT(req->proc_id, MLC_MISS_ALL_ONPATH + req->off_path);
 
@@ -1429,15 +1413,6 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
   if (FORCE_L1_MISS)
     data = NULL;
 
-  // cmp FIXME prefetchers
-  if ((req->type == MRT_DPRF || req->type == MRT_IPRF || req->type == MRT_UOCPRF || req->type == MRT_FDIPPRFON ||
-       req->type == MRT_FDIPPRFOFF || req->demand_match_prefetch) &&
-      req->prefetcher_id != 0) {
-    STAT_EVENT(req->proc_id, L1_PREF_ACCESS);
-  } else {
-    STAT_EVENT(req->proc_id, L1_DEMAND_ACCESS);
-  }
-
   if (req->type == MRT_WB || req->type == MRT_WB_NODIRTY) {
     STAT_EVENT(req->proc_id, POWER_LLC_WRITE_ACCESS);
   } else {
@@ -1478,6 +1453,12 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
         if (!l1_hit_access) {
           // request rejected by Ramulator, so restore state to
           // MRS_L1_WAIT to try again later
+
+  if (req->off_path)
+    STAT_EVENT(req->proc_id, MEM_CTRL_ENQ_BLOCK_CYCLES_OFFPATH);
+  else
+    STAT_EVENT(req->proc_id, MEM_CTRL_ENQ_BLOCK_CYCLES_ONPATH);
+
           req->state = MRS_L1_WAIT;
           access_done = FALSE;
         } else {
@@ -1527,7 +1508,7 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
         req->state = MRS_MEM_NEW;
         l1_miss_access = ramulator_send(req);
         if (!l1_miss_access) {
-          // STAT_EVENT(req->proc_id, REJECTED_QUEUE_BUS_OUT);
+           STAT_EVENT(req->proc_id, REJECTED_QUEUE_BUS_OUT);
 
           req->state = MRS_L1_WAIT;
           access_done = FALSE;
@@ -1607,6 +1588,33 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
   }
 
   if (access_done) {
+
+if (req->l1_start_cycle) {
+    Counter lat = cycle_count - req->l1_start_cycle;
+
+    /* Use req->l1_miss (set in the miss path) to choose HIT vs MISS counters */
+    if (req->l1_miss) {
+      if (req->off_path) {
+        STAT_EVENT(req->proc_id, L1_MISS_LAT_COUNT_OFFPATH);
+        INC_STAT_EVENT(req->proc_id, L1_MISS_LAT_CYCLES_OFFPATH, lat);
+      } else {
+        STAT_EVENT(req->proc_id, L1_MISS_LAT_COUNT_ONPATH);
+        INC_STAT_EVENT(req->proc_id, L1_MISS_LAT_CYCLES_ONPATH,  lat);
+      }
+    } else { /* treat as HIT (covers normal hits and PERFECT_L1) */
+      if (req->off_path) {
+        STAT_EVENT(req->proc_id, L1_HIT_LAT_COUNT_OFFPATH);
+        INC_STAT_EVENT(req->proc_id, L1_HIT_LAT_CYCLES_OFFPATH, lat);
+      } else {
+        STAT_EVENT(req->proc_id, L1_HIT_LAT_COUNT_ONPATH);
+        INC_STAT_EVENT(req->proc_id, L1_HIT_LAT_CYCLES_ONPATH,  lat);
+      }
+    }
+
+    /* optional hygiene: req->l1_start_cycle = 0; */
+  }
+
+
     ASSERT(req->proc_id, mem->uncores[req->proc_id].num_outstanding_l1_accesses > 0);
     mem->uncores[req->proc_id].num_outstanding_l1_accesses--;
   }
@@ -1652,8 +1660,16 @@ static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_ent
         mem_insert_req_into_queue(req, req->queue, ALL_FIFO_QUEUES ? l1_seq_num : 0);
         l1_seq_num++;
         (*l1_queue_insertion_count) += 1;
-        STAT_EVENT(req->proc_id, L1_ACCESS);
+        STAT_EVENT(req->proc_id, L1_WB_FROM_MLC);
       }
+      if (req->mlc_start_cycle) {
+  Counter lat = cycle_count - req->mlc_start_cycle;
+  if (req->off_path) {
+    INC_STAT_EVENT(req->proc_id, MLC_HIT_LAT_CYCLES_OFFPATH, lat);
+  } else {
+    INC_STAT_EVENT(req->proc_id, MLC_HIT_LAT_CYCLES_ONPATH,  lat);
+  }
+}
       return TRUE;
     }
   } else { /* mlc miss */
@@ -1674,7 +1690,6 @@ static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_ent
         (*reserved_entry_count) += 1;
         req->reserved_entry_count += 1;
       }
-      STAT_EVENT(req->proc_id, L1_ACCESS);
 
       if (!PREF_ORACLE_TRAIN_ON &&
           ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (PREF_I_TOGETHER && req->type == MRT_IFETCH) ||
@@ -1683,10 +1698,29 @@ static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_ent
         pref_umlc_miss(req->proc_id, req->addr, req->loadPC, req->global_hist);
       }
 
+if (req->mlc_start_cycle) {
+  Counter lat = cycle_count - req->mlc_start_cycle;
+  if (req->off_path) {
+    INC_STAT_EVENT(req->proc_id, MLC_MISS_LAT_CYCLES_OFFPATH, lat);
+  } else {
+    INC_STAT_EVENT(req->proc_id, MLC_MISS_LAT_CYCLES_ONPATH,  lat);
+  }
+}
+
       return TRUE;
     } else if (!mlc_miss_access) {
       return FALSE;
     }
+
+if (req->mlc_start_cycle) {
+  Counter lat = cycle_count - req->mlc_start_cycle;
+  if (req->off_path) {
+    INC_STAT_EVENT(req->proc_id, MLC_MISS_LAT_CYCLES_OFFPATH, lat);
+  } else {
+    INC_STAT_EVENT(req->proc_id, MLC_MISS_LAT_CYCLES_ONPATH,  lat);
+  }
+}
+
     return TRUE;
   }
   ASSERT(req->proc_id, 0);
@@ -1734,6 +1768,8 @@ static void mem_process_l1_reqs() {
       if (req->type == MRT_DPRF || req->type == MRT_IPRF || req->type == MRT_UOCPRF || req->type == MRT_FDIPPRFON ||
           req->type == MRT_FDIPPRFOFF)
         STAT_EVENT(req->proc_id, L1_PREF_ACCESS);
+      else if (req->type == MRT_WB || req->type == MRT_WB_NODIRTY)
+        STAT_EVENT(req->proc_id, L1_WB_ACCESS);
       else
         STAT_EVENT(req->proc_id, L1_DEMAND_ACCESS);
     } else {
@@ -2150,6 +2186,18 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
 
   /* Crossing frequency domain boundary between the chip and memory controller */
   req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + 1;
+
+if (req->mem_resp_ready_cycle) {
+  Counter wait = req->rdy_cycle - req->mem_resp_ready_cycle;
+  if (req->off_path) {
+    STAT_EVENT(req->proc_id, MEM_RESP_TO_L1FILL_COUNT_OFFPATH);
+    INC_STAT_EVENT(req->proc_id, MEM_RESP_TO_L1FILL_CYCLES_OFFPATH, wait);
+  } else {
+    STAT_EVENT(req->proc_id, MEM_RESP_TO_L1FILL_COUNT_ONPATH);
+    INC_STAT_EVENT(req->proc_id, MEM_RESP_TO_L1FILL_CYCLES_ONPATH,  wait);
+  }
+}
+
 
   req->queue = &(mem->l1fill_queue);
 
@@ -3160,6 +3208,9 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
   new_req->type = type;
   new_req->types = 0;
   new_req->emitted_cycle = cycle_count;
+  new_req->mlc_start_cycle = 0;
+  new_req->l1_start_cycle  = 0;
+  new_req->mem_resp_ready_cycle = 0;
   if (type == MRT_IFETCH) {
     new_req->demand_icache_emitted_cycle = cycle_count;
     new_req->fdip_emitted_cycle = 0;

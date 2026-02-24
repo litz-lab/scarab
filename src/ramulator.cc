@@ -196,6 +196,11 @@ int ramulator_send(Mem_Req* scarab_req) {
 
   if (is_sent) {
     STAT_EVENT(scarab_req->proc_id, POWER_MEMORY_CTRL_ACCESS);
+    STAT_EVENT(scarab_req->proc_id, MEM_CTRL_ACCESS);
+    if (scarab_req->off_path)
+      STAT_EVENT(scarab_req->proc_id, MEM_CTRL_ACCESS_OFFPATH);
+    else
+      STAT_EVENT(scarab_req->proc_id, MEM_CTRL_ACCESS_ONPATH);
 
     if (req.type == Request::Type::READ) {
       ASSERTM(0, inflight_read_reqs.find(req.addr) == inflight_read_reqs.end(),
@@ -210,6 +215,14 @@ int ramulator_send(Mem_Req* scarab_req) {
 
     scarab_req->mem_queue_cycle = cycle_count;
   }
+  else
+  {
+    STAT_EVENT(scarab_req->proc_id, MEM_CTRL_QUEUE_FULL);
+    if (scarab_req->off_path)
+      STAT_EVENT(scarab_req->proc_id, MEM_CTRL_QUEUE_FULL_OFFPATH);
+    else
+      STAT_EVENT(scarab_req->proc_id, MEM_CTRL_QUEUE_FULL_ONPATH);
+  }
 
   if (is_sent) {
     DEBUG(scarab_req->proc_id, "Ramulator: The request has been enqueued.\n");
@@ -222,17 +235,35 @@ int ramulator_send(Mem_Req* scarab_req) {
 
 void enqueue_response(Request& req) {
   // This should only be called by READ requests
-  ASSERTM(0, req.type == Request::Type::READ, "ERROR: Responses should be sent only for read requests! \n");
-  ASSERTM(0, inflight_read_reqs.find(req.addr) != inflight_read_reqs.end(),
-          "ERROR: A corresponding Scarab request was not found for the "
-          "Ramulator request that read address: %lu\n",
-          req.addr);
+ASSERTM(0, req.type == Request::Type::READ, "ERROR: Responses should be sent only for read requests! \n");
+ASSERTM(0, inflight_read_reqs.find(req.addr) != inflight_read_reqs.end(),
+        "ERROR: A corresponding Scarab request was not found for the "
+        "Ramulator request that read address: %lu\n",
+        req.addr);
 
-  auto it_scarab_req = inflight_read_reqs.find(req.addr);
-  for (auto req : it_scarab_req->second)
-    resp_queue.push_back(make_pair(it_scarab_req->first, req));
-  // resp_queue.push_back(make_pair(it_scarab_req->first, it_scarab_req->second));
-  inflight_read_reqs.erase(it_scarab_req);
+auto it_scarab_req = inflight_read_reqs.find(req.addr);
+
+/* For every Scarab Mem_Req that this Ramulator response satisfies: */
+for (auto scarab_req : it_scarab_req->second) {
+  /* DRAM finished service at this cycle */
+  scarab_req->mem_resp_ready_cycle = cycle_count;
+
+  /* Pure DRAM service time = (data-ready) - (accepted by controller) */
+  if (scarab_req->mem_queue_cycle) {
+    Counter svc = scarab_req->mem_resp_ready_cycle - scarab_req->mem_queue_cycle;
+    if (scarab_req->off_path) {
+      STAT_EVENT(scarab_req->proc_id, MEM_DRAM_SERVICE_COUNT_OFFPATH);
+      INC_STAT_EVENT(scarab_req->proc_id, MEM_DRAM_SERVICE_CYCLES_OFFPATH, svc);
+    } else {
+      STAT_EVENT(scarab_req->proc_id, MEM_DRAM_SERVICE_COUNT_ONPATH);
+      INC_STAT_EVENT(scarab_req->proc_id, MEM_DRAM_SERVICE_CYCLES_ONPATH,  svc);
+    }
+  }
+
+  /* Hand to the L1-fill drain path (same as before) */
+  resp_queue.push_back(std::make_pair(it_scarab_req->first, scarab_req));
+}
+inflight_read_reqs.erase(it_scarab_req);
 }
 
 bool try_completing_request(Mem_Req* req) {
@@ -287,10 +318,17 @@ void to_ramulator_req(const Mem_Req* scarab_req, Request* ramulator_req) {
 void ramulator_tick() {
   wrapper->tick();
 
-  if (resp_queue.size() > 0) {
-    if (try_completing_request(resp_queue.front().second))
-      resp_queue.pop_front();
+if (resp_queue.size() > 0) {
+  Mem_Req* r = resp_queue.front().second;
+  if (try_completing_request(r)) {
+    resp_queue.pop_front();
+  } else {
+    if (r->off_path)
+      STAT_EVENT(r->proc_id, L1_FILL_QUEUE_BLOCK_CYCLES_OFFPATH);
+    else
+      STAT_EVENT(r->proc_id, L1_FILL_QUEUE_BLOCK_CYCLES_ONPATH);
   }
+}
 }
 
 int ramulator_get_chip_width() {

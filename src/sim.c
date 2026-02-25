@@ -680,7 +680,7 @@ void full_sim() {
   // need to fill lookahead buffer after init_op_pool
   ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);
   for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-    lookahead_buffer_refill(proc_id);
+    init_lookahead_buffer(proc_id);
   }
 
   unique_count = 1;

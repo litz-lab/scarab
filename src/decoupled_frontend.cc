@@ -403,8 +403,8 @@ void Decoupled_FE::update() {
         // The lookahead buffer is a simulation feature, not a typical CPU component.
         // Lookahead buffer size is default to 1.
         ASSERT(proc_id, bp_id == 0);
-        ASSERT(proc_id,
-               LOOKAHEAD_BUF_SIZE);  // should always be true because we need lookahead buffer to save recovery ft
+        // Lookahead buffer always enabled
+        ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);
         current_ft_to_push = lookahead_buffer_pop_ft(proc_id);
         ASSERT(proc_id, current_ft_to_push->get_is_prebuilt());
 

@@ -1,4 +1,4 @@
-#include "lookahead_buffer.hpp"
+#include "lookahead_buffer.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -39,9 +39,6 @@ std::vector<std::unique_ptr<LookaheadBuffer>> per_core_lookahead;
 
 LookaheadBuffer::LookaheadBuffer(uns proc_id)
     : have_seen_exit(0), proc_id(proc_id), rdptr_lb(0), wrptr_lb(0), ft_buffer_count(0) {
-  if (!LOOKAHEAD_BUF_SIZE)
-    return;
-  lookahead_buffer.resize(LOOKAHEAD_BUF_SIZE, nullptr);
 }
 
 /* updates all lookup map/vectors according to new FT inserted at buf pos */
@@ -81,10 +78,13 @@ uint64_t LookaheadBuffer::count_valid_fts() {
   return ft_buffer_count;
 }
 
-/* Refills lookahead buffer to the parameter size*/
-void LookaheadBuffer::refill() {
+/* fill lookahead buffer to the parameter size*/
+void LookaheadBuffer::init() {
   if (have_seen_exit)
     return;
+
+  // need to resize because we use indexed access based on rd/wr pointers and need to guarantee those positions exist
+  lookahead_buffer.resize(LOOKAHEAD_BUF_SIZE, nullptr);
 
   while (ft_buffer_count < LOOKAHEAD_BUF_SIZE) {
     if (have_seen_exit)
@@ -122,7 +122,8 @@ FT* LookaheadBuffer::pop_ft() {
   lookahead_buffer[rdptr_lb] = nullptr;
   rdptr_lb = (rdptr_lb + 1) % LOOKAHEAD_BUF_SIZE;
   ft_buffer_count--;
-  refill();
+  if (!have_seen_exit && (ft_buffer_count < LOOKAHEAD_BUF_SIZE))
+    insert_ft();
 
   return current_read_FT;
 }
@@ -249,7 +250,6 @@ uint64_t LookaheadBuffer::get_rdptr() {
 extern "C" {
 
 void alloc_mem_lookahead_buffer(uns num_cores) {
-  per_core_lookahead.clear();
   per_core_lookahead.reserve(num_cores);
   for (uns proc_id = 0; proc_id < num_cores; ++proc_id) {
     per_core_lookahead.emplace_back(std::make_unique<LookaheadBuffer>(proc_id));
@@ -262,12 +262,12 @@ FT* lookahead_buffer_pop_ft(uns proc_id) {
   return per_core_lookahead[proc_id]->pop_ft();
 }
 
-void lookahead_buffer_refill(uns proc_id) {
+void init_lookahead_buffer(uns proc_id) {
   if (!LOOKAHEAD_BUF_SIZE)
     return;
   ASSERT(proc_id, proc_id < per_core_lookahead.size());
   ASSERT(proc_id, per_core_lookahead[proc_id]);
-  per_core_lookahead[proc_id]->refill();
+  per_core_lookahead[proc_id]->init();
 }
 
 Flag lookahead_buffer_can_fetch_op(uns proc_id) {

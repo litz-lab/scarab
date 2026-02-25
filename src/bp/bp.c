@@ -219,12 +219,17 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
   if (SPEC_LEVEL)
     ASSERTM(proc_id, BP_MECH == TAGE64K_BP || BP_MECH == BIMODAL_BP,
             "SPEC_LEVEL currently supports BP_MECH=tage64k or bp_mech=bimodal\n");
-  if (bp_id == 0 && bp_l0_enabled()) {
-    ASSERTM(proc_id, BP_MECH_L0 == BIMODAL_BP, "BP_MECH_L0 must be bimodal when L0 is enabled\n");
-    ASSERTM(proc_id, BP_L0_LATENCY == 1, "BP_L0_LATENCY must be 1 when L0 is enabled\n");
-    ASSERTM(proc_id, BP_MAIN_LATENCY > 1, "BP_MAIN_LATENCY must be > 1 when L0 is enabled\n");
-    ASSERTM(proc_id, BP_MAIN_LATENCY < DECODE_CYCLES, "BP_MAIN_LATENCY must be < DECODE_CYCLES\n");
-    bp_table[BP_MECH_L0].init_func();
+  if (bp_id == 0) {
+    if (bp_l0_enabled()) {
+      ASSERTM(proc_id, BP_MECH_L0 == BIMODAL_BP, "BP_MECH_L0 must be bimodal when L0 is enabled\n");
+      ASSERTM(proc_id, BP_L0_LATENCY == 1, "BP_L0_LATENCY must be 1 when L0 is enabled\n");
+      ASSERTM(proc_id, BP_MAIN_LATENCY >= 1, "BP_MAIN_LATENCY must be >= 1 when L0 is enabled\n");
+      ASSERTM(proc_id, BP_MAIN_LATENCY < DECODE_CYCLES, "BP_MAIN_LATENCY must be < DECODE_CYCLES\n");
+      bp_table[BP_MECH_L0].init_func();
+    } else {
+      ASSERTM(proc_id, BP_MAIN_LATENCY == 1,
+              "BP_MAIN_LATENCY must be 1 when early predictor is disabled\n");
+    }
   }
   ASSERTM(proc_id, BP_MAIN_PREDICTIONS == BP_L0_PREDICTIONS + 1,
           "BP level stats must be contiguous: BP_{L0,MAIN}_PREDICTIONS\n");

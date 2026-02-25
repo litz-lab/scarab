@@ -668,6 +668,8 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
           (unsigned long long)result.op->bp_pred_main.bp_ready_cycle);
     op_select_bp_pred_info(result.op, BP_PRED_MAIN);
     bp_sched_recovery(bp_recovery_info, result.op, result.op->bp_pred_main.bp_ready_cycle);
+    // Keep winner selection unchanged for ongoing off-path generation.
+    op_select_bp_pred_info(result.op, BP_PRED_L0);
   }
 
   // Misprediction: Switch to off-path execution

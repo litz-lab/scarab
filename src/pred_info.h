@@ -34,6 +34,8 @@
 typedef struct Bp_Pred_Info_struct {
   Addr pred_addr;          // address used to predict branch (might be fetch_addr)
   Addr pred_npc;           // predicted next pc field
+  Counter bp_ready_cycle;  // cycle when this level's prediction becomes available
+  int64 pred_branch_id;    // predictor-local branch id for speculative checkpoint/recover
   uns8 pred;               // predicted direction of branch, set by the branch predictor
   uns8 pred_orig;          // predicted direction of branch, not overwritten on BTB miss (for fdip)
   Flag misfetch;           // true if target address is the ONLY thing that was wrong
@@ -72,5 +74,10 @@ typedef struct Btb_Pred_Info_struct {
   Flag ibp_miss;           // true if the target is not predicted by the indirect pred
   Addr pred_target;        // selected target from BTB/IBTB (if any)
 } Btb_Pred_Info;
+
+typedef enum Bp_Pred_Level_enum {
+  BP_PRED_L0,
+  BP_PRED_MAIN,
+} Bp_Pred_Level;
 
 #endif /* #ifndef __PRED_INFO_H__ */

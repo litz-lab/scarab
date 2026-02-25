@@ -33,6 +33,7 @@
 #include "globals/assert.h"
 #include "globals/utils.h"
 
+#include "bp/bp.param.h"
 #include "memory/memory.param.h"
 
 #include "frontend/frontend_intf.h"
@@ -281,13 +282,36 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 #endif
   if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
-    Op alt_op;
-    if (!bp_id) {
-      alt_op = *op;
-      alt_op.bp_pred_info = &alt_op.bp_pred_main;
-      alt_op.btb_pred_info = &alt_op.btb_pred;
+    const Flag l0_enabled = (bp_id == 0 && BP_MECH_L0 != NUM_BP && BP_L0_LATENCY > 0);
+    if (l0_enabled) {
+      INC_STAT_EVENT(proc_id, DFE_L0_ENABLED_PREDICTIONS, 1);
+      op_select_bp_pred_info(op, BP_PRED_L0);
+      bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
+
+      const Flag l0_wrong = op->bp_pred_l0.mispred || op->bp_pred_l0.misfetch;
+
+      op_select_bp_pred_info(op, BP_PRED_MAIN);
+      bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
+
+      const Flag main_wrong = op->bp_pred_main.mispred || op->bp_pred_main.misfetch;
+
+      if (l0_wrong && !main_wrong) {
+        STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
+        op_select_bp_pred_info(op, BP_PRED_L0);
+      } else if (l0_wrong && main_wrong) {
+        STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_WRONG);
+        op_select_bp_pred_info(op, BP_PRED_MAIN);
+      } else if (!l0_wrong && main_wrong) {
+        STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_WRONG);
+        op_select_bp_pred_info(op, BP_PRED_MAIN);
+      } else {
+        STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_CORRECT);
+        op_select_bp_pred_info(op, BP_PRED_MAIN);
+      }
+    } else {
+      op_select_bp_pred_info(op, BP_PRED_MAIN);
+      bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
     }
-    bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
     DEBUG(proc_id,

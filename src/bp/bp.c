@@ -87,6 +87,19 @@ Bp_Data* g_bp_data = NULL;
 extern List op_buf;
 extern uns operating_mode;
 
+/******************************************************************************/
+// Local helpers
+
+static inline Flag bp_l0_enabled(void) {
+  return (BP_MECH_L0 != NUM_BP) && (BP_L0_LATENCY > 0);
+}
+
+static inline Bp* bp_get_active_predictor(Bp_Data* bp_data, const Op* op) {
+  if (bp_l0_enabled() && op->bp_pred_level == BP_PRED_L0 && bp_data->bp_l0)
+    return bp_data->bp_l0;
+  return bp_data->bp;
+}
+
 
 /******************************************************************************/
 // Local prototypes
@@ -193,6 +206,13 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
   if (SPEC_LEVEL)
     ASSERTM(proc_id, BP_MECH == TAGE64K_BP || BP_MECH == BIMODAL_BP,
             "SPEC_LEVEL currently supports BP_MECH=tage64k or bp_mech=bimodal\n");
+  if (bp_id == 0 && bp_l0_enabled()) {
+    ASSERTM(proc_id, BP_MECH_L0 == BIMODAL_BP, "BP_MECH_L0 must be bimodal when L0 is enabled\n");
+    ASSERTM(proc_id, BP_L0_LATENCY == 1, "BP_L0_LATENCY must be 1 when L0 is enabled\n");
+    ASSERTM(proc_id, BP_MAIN_LATENCY > 1, "BP_MAIN_LATENCY must be > 1 when L0 is enabled\n");
+    ASSERTM(proc_id, BP_MAIN_LATENCY < DECODE_CYCLES, "BP_MAIN_LATENCY must be < DECODE_CYCLES\n");
+    bp_table[BP_MECH_L0].init_func();
+  }
   ASSERT(bp_data->proc_id, bp_data);
   memset(bp_data, 0, sizeof(Bp_Data));
 
@@ -204,6 +224,7 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
   bp_data->bp_id = bp_id;
   /* initialize branch predictor */
   bp_data->bp = &bp_table[BP_MECH];
+  bp_data->bp_l0 = bp_l0_enabled() ? &bp_table[BP_MECH_L0] : NULL;
   bp_data->bp->init_func();
 
   /* init btb structure */
@@ -255,6 +276,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, op->table_info->cf_type);
+  Bp* pred_bp = bp_get_active_predictor(bp_data, op);
 
   /* set address used to predict branch */
   // op->bp_pred_info->pred_addr         = addr;
@@ -267,6 +289,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
      speculatively updates global history */
   op->recovery_info.proc_id = op->proc_id;
   op->recovery_info.bp_id = op->bp_id;
+  op->recovery_info.bp_pred_level = op->bp_pred_level;
   op->recovery_info.pred_global_hist = bp_data->global_hist;
   op->recovery_info.targ_hist = bp_data->targ_hist;
   op->recovery_info.new_dir = op->oracle_info.dir;
@@ -280,7 +303,9 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   op->recovery_info.branchTarget = op->oracle_info.target;
   op->recovery_info.predict_cycle = cycle_count;
 
-  bp_data->bp->timestamp_func(op);
+  pred_bp->timestamp_func(op);
+  op->bp_pred_info->pred_branch_id = op->recovery_info.branch_id;
+  op->bp_pred_info->bp_ready_cycle = cycle_count + (op->bp_pred_level == BP_PRED_L0 ? BP_L0_LATENCY : BP_MAIN_LATENCY);
 
   if (BP_HASH_TOS || IBTB_HASH_TOS) {
     Addr tos_addr;
@@ -317,7 +342,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.npc);
     op->bp_pred_info->pred_npc = op->oracle_info.npc;
     op->btb_pred_info->pred_target = op->oracle_info.npc;
-    bp_data->bp->spec_update_func(op);
+    pred_bp->spec_update_func(op);
     return op->oracle_info.npc;
   } else
     ASSERT(0, !(op->table_info->bar_type & BAR_FETCH));
@@ -413,11 +438,12 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->btb_pred_info->no_target = FALSE;
       } else {
         ASSERT(op->proc_id, !PERFECT_NT_BTB);  // currently not supported
-        op->bp_pred_info->pred = bp_data->bp->pred_func(op);
+        op->bp_pred_info->pred = pred_bp->pred_func(op);
         op->bp_pred_info->pred_orig = op->bp_pred_info->pred;
       }
       // Update history used by the rest of Scarab.
-      bp_data->global_hist = (bp_data->global_hist >> 1) | (op->bp_pred_info->pred << 31);
+      if (!(bp_l0_enabled() && op->bp_pred_level == BP_PRED_L0))
+        bp_data->global_hist = (bp_data->global_hist >> 1) | (op->bp_pred_info->pred << 31);
 
       if (op->btb_pred_info->btb_miss && op->bp_pred_info->pred == NOT_TAKEN)
         btb_miss_nt = TRUE;
@@ -705,12 +731,13 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   if (op->btb_pred_info->btb_miss && op->bp_pred_info->pred == NOT_TAKEN)
     btb_miss_nt = TRUE;
 
-  bp_data->bp->spec_update_func(op);
+  pred_bp->spec_update_func(op);
 
   DEBUG(bp_data->proc_id,
-        "BP:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
+        "BP[%s,%s]:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
         "t_npc:0x%s  btb_miss:%d  mispred:%d  misfetch:%d  no_tar:%d dir%d pred%d offset %llx target %llx\n",
-        unsstr64(op->op_num), op->off_path, cf_type_names[op->table_info->cf_type], hexstr64s(op->inst_info->addr),
+        pred_bp->name, op->bp_pred_level == BP_PRED_L0 ? "l0" : "main", unsstr64(op->op_num), op->off_path,
+        cf_type_names[op->table_info->cf_type], hexstr64s(op->inst_info->addr),
         hexstr64s(op->bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc), op->btb_pred_info->btb_miss,
         op->bp_pred_info->mispred, op->bp_pred_info->recover_at_exec, op->bp_pred_info->recover_at_decode,
         op->oracle_info.dir, op->bp_pred_info->pred, pc_plus_offset, op->oracle_info.target);
@@ -838,7 +865,9 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
   if (!UPDATE_BP_OFF_PATH && op->off_path) {
     return;
   }
-  bp_data->bp->update_func(op);
+  Bp* pred_bp = bp_get_active_predictor(bp_data, op);
+  op->recovery_info.branch_id = op->bp_pred_info->pred_branch_id;
+  pred_bp->update_func(op);
 
   if (ENABLE_BP_CONF && IS_CONF_CF(op)) {
     bp_data->br_conf->update_func(op);
@@ -853,7 +882,9 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
  */
 
 void bp_retire_op(Bp_Data* bp_data, Op* op) {
-  bp_data->bp->retire_func(op);
+  Bp* pred_bp = bp_get_active_predictor(bp_data, op);
+  op->recovery_info.branch_id = op->bp_pred_info->pred_branch_id;
+  pred_bp->retire_func(op);
 }
 
 /******************************************************************************/
@@ -879,7 +910,8 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   if (cf_type == CF_ICALL || cf_type == CF_IBR) {
     bp_data->bp_ibtb->recover_func(bp_data, info);
   }
-  bp_data->bp->recover_func(info);
+  Bp* pred_bp = (bp_l0_enabled() && info->bp_pred_level == BP_PRED_L0 && bp_data->bp_l0) ? bp_data->bp_l0 : bp_data->bp;
+  pred_bp->recover_func(info);
 
   /* always recover the call return stack */
   CRS_REALISTIC ? bp_crs_realistic_recover(bp_data, info) : bp_crs_recover(bp_data);

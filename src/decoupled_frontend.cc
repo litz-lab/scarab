@@ -256,8 +256,7 @@ void Decoupled_FE::dfe_recover_op() {
     saved_recovery_ft->generate_ft_info();
   }
 
-  // Before introducing any early recovery, it should not find recovery ft
-  ASSERT(proc_id, !found_recovery_ft);
+  // Early recovery (e.g., L0 wrong / main correct) may recover into an FT already in FTQ.
 
   DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx recovery_op_num:%llu\n", bp_id,
         bp_recovery_info->recovery_fetch_addr, (unsigned long long)bp_recovery_info->recovery_op_num);
@@ -657,6 +656,20 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
 void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling
   ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT);
+  const Flag l0_enabled = (!bp_id && BP_MECH_L0 != NUM_BP && BP_L0_LATENCY > 0);
+  const Flag l0_wrong = result.op->bp_pred_l0.mispred || result.op->bp_pred_l0.misfetch;
+  const Flag main_wrong = result.op->bp_pred_main.mispred || result.op->bp_pred_main.misfetch;
+
+  if (l0_enabled && l0_wrong && !main_wrong) {
+    STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT_RECOVERY_SCHEDULED);
+    DEBUG(proc_id,
+          "[DFE%u] Early/Late mismatch op_num:%llu PC:0x%llx -> schedule recovery at main_ready:%llu\n",
+          bp_id, (unsigned long long)result.op->op_num, (unsigned long long)result.op->inst_info->addr,
+          (unsigned long long)result.op->bp_pred_main.bp_ready_cycle);
+    op_select_bp_pred_info(result.op, BP_PRED_MAIN);
+    bp_sched_recovery(bp_recovery_info, result.op, result.op->bp_pred_main.bp_ready_cycle);
+  }
+
   // Misprediction: Switch to off-path execution
   auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
   current_ft_to_push = off_path_FT;
@@ -686,8 +699,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
           !per_core_dfe[proc_id][_bp_id]->is_off_path()) {
         ASSERT(proc_id, !per_core_dfe[proc_id][_bp_id]->ftq_num_fts());
         Op alt_op = *result.op;
-        alt_op.bp_pred_info = &alt_op.bp_pred_main;
-        alt_op.btb_pred_info = &alt_op.btb_pred;
+        op_rebind_pred_info(&alt_op);
         Addr alt_pred_addr =
             bp_predict_op(per_core_dfe[proc_id][_bp_id]->bp_data, &alt_op, 0, result.op->inst_info->addr);
         frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);

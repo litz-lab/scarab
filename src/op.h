@@ -86,6 +86,7 @@ typedef struct Wake_Up_Entry_struct {
 typedef struct Recovery_Info_struct {  // QUESTION no proc_id?
   uns proc_id;
   uns bp_id;
+  Bp_Pred_Level bp_pred_level;             // prediction level that produced this recovery snapshot
   uns32 pred_global_hist;                  // the global history used for the prediction
   uns64 conf_perceptron_global_hist;       // Only for confidnece perceptron, a copy of the correct global history
   uns64 conf_perceptron_global_misp_hist;  // Only for confidnece perceptron, a copy of the correct global history
@@ -145,8 +146,10 @@ struct Op_struct {
   Inst_Info* inst_info;         // pointer to unique struct for each static instruction
   Op_Info oracle_info;          // information about the execution of the op in the oracle
   Op_Info engine_info;          // information about the execution of the op in the engine
+  Bp_Pred_Info bp_pred_l0;      // l0 branch prediction info
   Bp_Pred_Info bp_pred_main;    // main branch prediction info
   Btb_Pred_Info btb_pred;       // btb prediction info
+  Bp_Pred_Level bp_pred_level;  // selected/active branch prediction level
   Bp_Pred_Info* bp_pred_info;   // selected/active branch prediction info
   Btb_Pred_Info* btb_pred_info;  // selected/active btb prediction info
   int oracle_cp_num;            // if the op has created an oracle checkpointed this is not -1
@@ -253,6 +256,18 @@ struct Op_struct {
   FT* parent_FT;
   FT* parent_FT_off_path;
 };
+
+/**************************************************************************************/
+
+static inline void op_rebind_pred_info(Op* op) {
+  op->bp_pred_info = (op->bp_pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+  op->btb_pred_info = &op->btb_pred;
+}
+
+static inline void op_select_bp_pred_info(Op* op, Bp_Pred_Level level) {
+  op->bp_pred_level = level;
+  op_rebind_pred_info(op);
+}
 
 /**************************************************************************************/
 

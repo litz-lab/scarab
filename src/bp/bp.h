@@ -142,6 +142,7 @@ typedef struct Bp_Data_struct {
   uns bp_id;
   /* predictor data */
   struct Bp_struct* bp;  // main branch predictor.
+  struct Bp_struct* bp_l0;  // l0 branch predictor.
   struct Bp_Btb_struct* bp_btb;
   struct Bp_Ibtb_struct* bp_ibtb;
   struct Br_Conf_struct* br_conf;

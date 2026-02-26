@@ -297,7 +297,9 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 
       if (l0_wrong && !main_wrong) {
         STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
-        op_select_bp_pred_info(op, BP_PRED_L0);
+        if (!op->off_path) {
+          op_select_bp_pred_info(op, BP_PRED_L0);
+        }
       } else if (l0_wrong && main_wrong) {
         STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_WRONG);
         op_select_bp_pred_info(op, BP_PRED_MAIN);
@@ -316,22 +318,25 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 
     DEBUG(proc_id,
           "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
-          "recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
+          "recover_at_fe:%i recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
           bp_id, op->inst_info->addr, op->oracle_info.npc, op->bp_pred_info->pred_npc, op->bp_pred_info->mispred,
           op->bp_pred_info->misfetch, op->btb_pred_info->btb_miss, op->bp_pred_info->pred == TAKEN,
-          op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec, op->table_info->bar_type & BAR_FETCH);
+          op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec,
+          op->table_info->bar_type & BAR_FETCH);
     if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
       op->bp_pred_info->recover_at_decode = FALSE;
       op->bp_pred_info->recover_at_exec = FALSE;
+      op->bp_pred_info->recover_at_fe = FALSE;
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
       return FT_EVENT_FETCH_BARRIER;
     }
-    if (op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec) {
+    if (op->bp_pred_info->recover_at_fe || op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec) {
       ASSERT(0, !(op->bp_pred_info->recover_at_decode && op->bp_pred_info->recover_at_exec));
 
       if (op->off_path) {
         op->bp_pred_info->recover_at_decode = FALSE;
         op->bp_pred_info->recover_at_exec = FALSE;
+        op->bp_pred_info->recover_at_fe = FALSE;
       }
       return FT_EVENT_MISPREDICT;
     } else if (trace_mode && op->off_path && op->bp_pred_info->pred == TAKEN) {
@@ -344,7 +349,8 @@ FT_Event FT::predict_one_cf_op(Op* op) {
     }
 
   } else if (op->table_info->bar_type & BAR_FETCH) {
-    ASSERT(0, !(op->bp_pred_info->recover_at_decode | op->bp_pred_info->recover_at_exec));
+    ASSERT(0, !(op->bp_pred_info->recover_at_fe | op->bp_pred_info->recover_at_decode |
+                op->bp_pred_info->recover_at_exec));
     if (op->off_path)
       STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_OFFPATH);
     else
@@ -463,6 +469,7 @@ void FT::clear_recovery_info() {
   for (auto op : ops) {
     op->bp_pred_info->recover_at_decode = FALSE;
     op->bp_pred_info->recover_at_exec = FALSE;
+    op->bp_pred_info->recover_at_fe = FALSE;
   }
 }
 
@@ -484,31 +491,37 @@ FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
 
-bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start) {
+bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start, Counter recovery_op_num) {
   ASSERT(0, ft);
 
-  Op* last_op = ft->get_last_op();
-  ASSERT(0, last_op);
-
-  FT_Ended_By end_reason = ft->get_end_reason();
-  Addr pred_npc = last_op->bp_pred_info->pred_npc;
-  Addr npc = last_op->oracle_info.npc;
-  Addr end_addr = last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
-
-  switch (end_reason) {
-    case FT_TAKEN_BRANCH:
-      return (pred_npc == next_start) || (npc == next_start);
-    case FT_BAR_FETCH:
-      return (npc == next_start) || (end_addr == next_start);
-    default:
-      return (end_addr == next_start);
+  Op* recovery_op = nullptr;
+  for (auto* ft_op : ft->get_ops()) {
+    if (ft_op && ft_op->op_num == recovery_op_num) {
+      recovery_op = ft_op;
+      break;
+    }
   }
+
+  if (!recovery_op) {
+    Op* last_op = ft->get_last_op();
+    ASSERT(0, last_op);
+    DEBUG(last_op->proc_id,
+          "FT recovery consecutivity skipped: recovery_op_num:%llu not in FT[start:%llx]\n",
+          (unsigned long long)recovery_op_num, (unsigned long long)ft->get_ft_info().static_info.start);
+    return TRUE;
+  }
+
+  Addr npc = recovery_op->oracle_info.npc;
+  DEBUG(recovery_op->proc_id, "FT recovery consecutivity: winner:%s op_num:%llu npc:%llx next_start:%llx\n",
+        (recovery_op->bp_pred_level == BP_PRED_L0) ? "l0" : "main", (unsigned long long)recovery_op->op_num,
+        (unsigned long long)npc, (unsigned long long)next_start);
+  return npc == next_start;
 }
 
-void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr) {
+void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr, Counter recovery_op_num) {
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->parent_FT);
-  ASSERT(proc_id, ft_recovery_addr_is_consecutive(op->parent_FT, recovery_fetch_addr));
+  ASSERT(proc_id, ft_recovery_addr_is_consecutive(op->parent_FT, recovery_fetch_addr, recovery_op_num));
   ASSERT(proc_id, IS_FLUSHING_OP(op));
   ASSERT(proc_id, op->eom);
 }

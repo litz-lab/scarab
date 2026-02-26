@@ -63,8 +63,8 @@ struct FT_PredictResult {
 bool ft_can_fetch_op(FT* ft);
 Op* ft_fetch_op(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
-bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start);
-void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr);
+bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start, Counter recovery_op_num);
+void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr, Counter recovery_op_num);
 void recover_ft(FT* ft);
 void ft_free_op(Op* op);
 

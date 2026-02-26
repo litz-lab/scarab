@@ -114,6 +114,12 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op) {
   Flag is_conditional = is_conditional_branch(op->table_info->cf_type);
   Flag pred_dir =
       (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON) ? op->oracle_info.dir : op->bp_pred_info->pred;
+  const Flag l0_enabled = (BP_MECH_L0 != NUM_BP) && (BP_L0_LATENCY > 0);
+  const Flag l0_wrong = op->bp_pred_l0.mispred || op->bp_pred_l0.misfetch;
+  const Flag main_wrong = op->bp_pred_main.mispred || op->bp_pred_main.misfetch;
+  const Flag late_recovery_candidate = l0_enabled && l0_wrong && !main_wrong;
+  const Flag checkpoint_needed =
+      late_recovery_candidate || op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec;
 
   if (op->off_path) {
     if (SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON)
@@ -127,7 +133,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op) {
 
   cbp_predictors_all_cores.at(proc_id).at(bp_id).SavePredictorStates(op->recovery_info.branch_id);
   if (!(SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON) && !bp_id) {
-    if (op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec)
+    if (checkpoint_needed)
       cbp_predictors_all_cores.at(proc_id).at(bp_id).TakeCheckpoint(op->recovery_info.branch_id);
   }
 
@@ -153,7 +159,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op) {
     return;
 
   if ((SPEC_LEVEL > BP_PRED_ON) && (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON)) {
-    if (op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec) {
+    if (checkpoint_needed) {
       cbp_predictors_all_cores.at(proc_id).at(bp_id).TakeCheckpoint(op->recovery_info.branch_id);
       if (SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON)
         cbp_predictors_all_cores.at(proc_id).at(bp_id).VerifyPredictorStates(op->recovery_info.branch_id);

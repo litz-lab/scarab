@@ -154,7 +154,8 @@ void recover_uop_queue_stage(void) {
 
     if (sd->op_count > 0 && flushed) {
       Op* op = sd->ops[sd->op_count - 1];
-      assert_ft_after_recovery(dec->proc_id, op, bp_recovery_info->recovery_fetch_addr);
+      assert_ft_after_recovery(dec->proc_id, op, bp_recovery_info->recovery_fetch_addr,
+                               bp_recovery_info->recovery_op_num);
     }
 
     if (sd->op_count == 0) {  // entire stage data was off-path

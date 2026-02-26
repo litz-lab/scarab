@@ -256,7 +256,7 @@ void recover_icache_stage() {
 
   if (cur_data->op_count > 0 && flushed) {
     Op* op = cur_data->ops[cur_data->op_count - 1];
-    assert_ft_after_recovery(ic->proc_id, op, bp_recovery_info->recovery_fetch_addr);
+    assert_ft_after_recovery(ic->proc_id, op, bp_recovery_info->recovery_fetch_addr, bp_recovery_info->recovery_op_num);
   }
 
   ic->back_on_path = !bp_recovery_info->recovery_force_offpath;
@@ -942,7 +942,8 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       ASSERT(ic->proc_id,
              (op->bp_pred_info->mispred << 2 | op->bp_pred_info->misfetch << 1 | op->btb_pred_info->btb_miss) <= 0x7);
 
-      ic->off_path = ic->off_path || op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec;
+      ic->off_path = ic->off_path || op->bp_pred_info->recover_at_fe || op->bp_pred_info->recover_at_decode ||
+                     op->bp_pred_info->recover_at_exec;
 
       // Measuring basic block lengths
       /*static int bbl_len = 0;

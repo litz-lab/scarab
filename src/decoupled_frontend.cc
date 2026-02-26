@@ -222,8 +222,12 @@ void Decoupled_FE::dfe_recover_op() {
   cur_op = nullptr;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
   bool found_recovery_ft = false;
+  FT* recovery_ft = nullptr;
+  Op* recovery_ft_op = nullptr;
   bool recovery_op_is_last = false;
   auto erase_from = ftq.begin();
+  const size_t ftq_size_before = ftq.size();
+  (void)ftq_size_before;
 
   for (auto it = ftq.begin(); it != ftq.end(); ++it) {
     FT* ft = *it;
@@ -232,6 +236,8 @@ void Decoupled_FE::dfe_recover_op() {
       Op* op = ft->ops[op_idx];
       if (IS_FLUSHING_OP(op)) {
         found_recovery_ft = true;
+        recovery_ft = ft;
+        recovery_ft_op = op;
         recovery_op_is_last = (op_idx == ft->ops.size() - 1);
         break;
       }
@@ -248,10 +254,16 @@ void Decoupled_FE::dfe_recover_op() {
       delete (*it);
     ftq.erase(erase_from, ftq.end());
   }
-
-  if (found_recovery_ft && !recovery_op_is_last) {
+  if (found_recovery_ft && recovery_op_is_last) {
+    ASSERT(proc_id, recovery_ft);
+    ASSERT(proc_id, recovery_ft_op);
+    op_select_bp_pred_info(recovery_ft_op, bp_recovery_info->recovery_info.bp_pred_level);
+    // Update end_reason of recovery_ft
+    recovery_ft->generate_ft_info();
+  } else if (found_recovery_ft && !recovery_op_is_last) {
     ASSERT(proc_id, saved_recovery_ft);
     ASSERT(proc_id, !saved_recovery_ft->ops.empty());
+    // Update start address
     saved_recovery_ft->op_pos = 0;
     saved_recovery_ft->generate_ft_info();
   }
@@ -260,12 +272,32 @@ void Decoupled_FE::dfe_recover_op() {
 
   DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx recovery_op_num:%llu\n", bp_id,
         bp_recovery_info->recovery_fetch_addr, (unsigned long long)bp_recovery_info->recovery_op_num);
+  if (found_recovery_ft) {
+    DEBUG(proc_id, "[DFE%u] FTQ recover resize: before:%zu after:%zu diff:%lld\n", bp_id, ftq_size_before, ftq.size(),
+          (long long)ftq.size() - (long long)ftq_size_before);
+  }
+  if (bp_recovery_info->recovery_op_num == 5359) {
+    printf("Break here\n");
+  }
 
   for (auto&& it : ftq_iterators) {
-    // When the FTQ flushes, reset all iterators
-    it->ft_pos = 0;
-    it->op_pos = 0;
-    it->flattened_op_pos = 0;
+    if (ftq.empty()) {
+      it->ft_pos = 0;
+      it->op_pos = 0;
+      it->flattened_op_pos = 0;
+      continue;
+    }
+
+    if (it->ft_pos > ftq.size()) {
+      it->ft_pos = ftq.size();
+      it->op_pos = 0;
+
+      uint64_t flat = it->op_pos;
+      for (uint64_t ft_idx = 0; ft_idx < it->ft_pos; ft_idx++) {
+        flat += ftq.at(ft_idx)->ops.size();
+      }
+      it->flattened_op_pos = flat;
+    }
   }
 
   auto op = bp_recovery_info->recovery_op;
@@ -504,6 +536,7 @@ FT* Decoupled_FE::pop_ft() {
   if (!ftq.size())
     return nullptr;
 
+  const size_t ftq_size_before = ftq.size();
   FT* ft = ftq.front();
   uint64_t ft_num_ops = ft->ops.size();
   ftq.pop_front();
@@ -519,6 +552,10 @@ FT* Decoupled_FE::pop_ft() {
       it->op_pos = 0;
     }
   }
+  DEBUG(proc_id,
+        "[DFE%u] Pop FT from FTQ: ft_id:%llu ft_ops:%llu off_path:%u end_reason:%d ftq_size_before:%zu after:%zu\n",
+        bp_id, (unsigned long long)ft->get_ft_info().dynamic_info.FT_id, (unsigned long long)ft_num_ops,
+        ft->get_ft_info().dynamic_info.first_op_off_path, (int)ft->get_end_reason(), ftq_size_before, ftq.size());
   return ft;
 }
 
@@ -611,7 +648,7 @@ void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
 }
 
 Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
-  if (!(op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec)) {
+  if (!(op->bp_pred_info->recover_at_fe || op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec)) {
     return REASON_NOT_IDENTIFIED;
   }
   // mispred
@@ -650,6 +687,11 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
     ASSERT(proc_id, recovery_addr == current_ft_to_push->get_start_addr());
     recovery_addr = 0;
   }
+  DEBUG(proc_id,
+        "[DFE%u] Push FT to FTQ: ft_id:%llu ft_ops:%zu off_path:%u end_reason:%d ftq_size_before:%zu after:%zu\n",
+        bp_id, (unsigned long long)current_ft_to_push->get_ft_info().dynamic_info.FT_id, current_ft_to_push->ops.size(),
+        current_ft_to_push->get_ft_info().dynamic_info.first_op_off_path, (int)current_ft_to_push->get_end_reason(),
+        ftq.size(), ftq.size() + 1);
   ftq.emplace_back(std::move(current_ft_to_push));
 }
 

@@ -842,10 +842,12 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
 
   DEBUG(bp_data->proc_id,
         "BP:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
-        "t_npc:0x%s  btb_miss:%d  mispred:%d  misfetch:%d  no_tar:%d\n",
+        "t_npc:0x%s  btb_miss:%d  mispred:%d  misfetch:%d  recover_at_fe:%d  recover_at_decode:%d  "
+        "recover_at_exec:%d  no_tar:%d\n",
         unsstr64(op->op_num), op->off_path, cf_type_names[op->table_info->cf_type], hexstr64s(op->inst_info->addr),
         hexstr64s(prediction), hexstr64s(op->oracle_info.npc), op->btb_pred_info->btb_miss, op->bp_pred_info->mispred,
-        op->bp_pred_info->misfetch, op->btb_pred_info->no_target);
+        op->bp_pred_info->misfetch, op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode,
+        op->bp_pred_info->recover_at_exec, op->btb_pred_info->no_target);
 
   if (ENABLE_BP_CONF && IS_CONF_CF(op)) {
     bp_data->br_conf->pred_func(op);
@@ -853,6 +855,14 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
     if (!(op->bp_pred_info->pred_conf))
       td->td_info.low_conf_count++;
     DEBUG(bp_data->proc_id, "low_conf_count:%d \n", td->td_info.low_conf_count);
+  }
+
+  if (op->bp_pred_level == BP_PRED_L0) {
+    op->bp_pred_info->recover_at_fe = op->bp_pred_info->mispred || op->bp_pred_info->misfetch;
+    if (op->bp_pred_info->recover_at_fe) {
+      op->bp_pred_info->recover_at_decode = FALSE;
+      op->bp_pred_info->recover_at_exec = FALSE;
+    }
   }
 
   return prediction;

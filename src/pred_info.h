@@ -42,6 +42,7 @@ typedef struct Bp_Pred_Info_struct {
   Flag mispred;            // true if the direction of the branch was mispredicted and the
                            // branch should cause a recovery, set by the branch predictor
   Flag recovery_sch;       // true if this op has scheduled a recovery
+  Flag recover_at_fe;      // op will schedule recovery in frontend (early correction)
   Flag recover_at_decode;  // op will schedule recovery at decode
   Flag recover_at_exec;    // op will schedule recovery at exec
 

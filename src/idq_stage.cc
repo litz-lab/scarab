@@ -174,7 +174,8 @@ void IDQ_Stage::recover() {
   }
 
   if (flushed && youngest_survivor) {
-    assert_ft_after_recovery(proc_id, youngest_survivor, bp_recovery_info->recovery_fetch_addr);
+    assert_ft_after_recovery(proc_id, youngest_survivor, bp_recovery_info->recovery_fetch_addr,
+                             bp_recovery_info->recovery_op_num);
   }
 }
 

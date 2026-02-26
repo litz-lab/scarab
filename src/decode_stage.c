@@ -148,7 +148,8 @@ void recover_decode_stage() {
 
     if (cur->op_count > 0 && flushed) {
       Op* op = cur->ops[cur->op_count - 1];
-      assert_ft_after_recovery(dec->proc_id, op, bp_recovery_info->recovery_fetch_addr);
+      assert_ft_after_recovery(dec->proc_id, op, bp_recovery_info->recovery_fetch_addr,
+                               bp_recovery_info->recovery_op_num);
     }
   }
 }
@@ -223,7 +224,8 @@ void update_decode_stage(Stage_Data* src_sd) {
 
   /* if the last decode stage is stalled, don't re-process the ops  */
   if (stall) {
-    DEBUG(dec->proc_id, "Decode Stage stalled\n");
+    Op* stall_op = dec->last_sd->op_count ? dec->last_sd->ops[0] : NULL;
+    DEBUG(dec->proc_id, "Decode Stage stalled op_num:%s\n", stall_op ? unsstr64(stall_op->op_num) : "none");
     return;
   }
 

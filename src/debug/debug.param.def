@@ -129,3 +129,5 @@ DEF_PARAM( debug_fdip                              , DEBUG_FDIP                 
 DEF_PARAM( debug_eip                               , DEBUG_EIP                            , Flag    , Flag      , FALSE   ,       )
 DEF_PARAM( debug_djolt                             , DEBUG_DJOLT                          , Flag    , Flag      , FALSE   ,       )
 DEF_PARAM( debug_fnlmma                            , DEBUG_FNLMMA                         , Flag    , Flag      , FALSE   ,       )
+
+DEF_PARAM( debug_synth                             , DEBUG_SYNTHETIC_INST                 , Flag    , Flag      , FALSE   ,       )

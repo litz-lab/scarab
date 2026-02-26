@@ -48,6 +48,8 @@ void get_sim_mode_param(const char*, Generic_Enum*);
 void get_exit_cond_param(const char*, Generic_Enum*);
 void get_sim_model_param(const char*, uns*);
 void get_frontend_param(const char*, uns*);
+void get_kernel_param(const char*, uns*);
+
 // void get_dram_sched_param(const char *, uns *); // Ramulator_remove
 void get_float_param(const char*, float*);
 void get_int_param(const char*, int*);

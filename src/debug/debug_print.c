@@ -180,7 +180,7 @@ void print_op_field(FILE* stream, Op* op, uns field) {
         fprintf(stream, "xxxxxxxxxxxxxxxxxxxx|");
       break;
     case ADDR_FIELD:
-      if (op) {
+      if (op && op->inst_info && op->table_info) {
         fprintf(stream, "a:%-9s f:%-2d%c", hexstr64s(op->inst_info->addr), op->fu_num, (op->off_path ? 'O' : ' '));
         if (OP_DONE(op))
           fprintf(stream, "D ");
@@ -193,7 +193,7 @@ void print_op_field(FILE* stream, Op* op, uns field) {
           else
             fprintf(stream, "%c%c", Op_State_str(op->state)[0], op->replay ? 'r' : ' ');
         }
-        if (op->table_info->cf_type) {
+        if (op->table_info->cf_type && op->bp_pred_info && op->btb_pred_info) {
           Flag bits = op->bp_pred_info->mispred << 2 | op->bp_pred_info->misfetch << 1 | op->btb_pred_info->btb_miss;
           switch (bits) {
             case 0x4:
@@ -237,13 +237,13 @@ void print_op_field(FILE* stream, Op* op, uns field) {
         fprintf(stream, "xxxxxxxxxxxxxxxxxxxx|");
       break;
     case OP_TYPE_FIELD:
-      if (op)
+      if (op && op->inst_info && op->inst_info->table_info)
         fprintf(stream, "%19s |", Op_Type_str(op->inst_info->table_info->op_type));
       else
         fprintf(stream, "xxxxxxxxxxxxxxxxxxxx|");
       break;
     case MEM_INFO_FIELD:
-      if (!op || op->table_info->mem_type == NOT_MEM)
+      if (!op || !op->table_info || op->table_info->mem_type == NOT_MEM)
         fprintf(stream, "xxxxxxxxxxxxxxxxxxxx|");
       else {
         Counter addr_dep = 0;

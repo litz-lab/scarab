@@ -276,9 +276,6 @@ void Decoupled_FE::dfe_recover_op() {
     DEBUG(proc_id, "[DFE%u] FTQ recover resize: before:%zu after:%zu diff:%lld\n", bp_id, ftq_size_before, ftq.size(),
           (long long)ftq.size() - (long long)ftq_size_before);
   }
-  if (bp_recovery_info->recovery_op_num == 5359) {
-    printf("Break here\n");
-  }
 
   for (auto&& it : ftq_iterators) {
     if (ftq.empty()) {
@@ -536,7 +533,6 @@ FT* Decoupled_FE::pop_ft() {
   if (!ftq.size())
     return nullptr;
 
-  const size_t ftq_size_before = ftq.size();
   FT* ft = ftq.front();
   uint64_t ft_num_ops = ft->ops.size();
   ftq.pop_front();
@@ -555,7 +551,7 @@ FT* Decoupled_FE::pop_ft() {
   DEBUG(proc_id,
         "[DFE%u] Pop FT from FTQ: ft_id:%llu ft_ops:%llu off_path:%u end_reason:%d ftq_size_before:%zu after:%zu\n",
         bp_id, (unsigned long long)ft->get_ft_info().dynamic_info.FT_id, (unsigned long long)ft_num_ops,
-        ft->get_ft_info().dynamic_info.first_op_off_path, (int)ft->get_end_reason(), ftq_size_before, ftq.size());
+        ft->get_ft_info().dynamic_info.first_op_off_path, (int)ft->get_end_reason(), ftq.size() + 1, ftq.size());
   return ft;
 }
 
@@ -708,10 +704,9 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
           "[DFE%u] Early/Late mismatch op_num:%llu PC:0x%llx -> schedule recovery at main_ready:%llu\n",
           bp_id, (unsigned long long)result.op->op_num, (unsigned long long)result.op->inst_info->addr,
           (unsigned long long)result.op->bp_pred_main.bp_ready_cycle);
-    op_select_bp_pred_info(result.op, BP_PRED_MAIN);
-    bp_sched_recovery(bp_recovery_info, result.op, result.op->bp_pred_main.bp_ready_cycle);
     // Keep winner selection unchanged for ongoing off-path generation.
     op_select_bp_pred_info(result.op, BP_PRED_L0);
+    bp_sched_recovery(bp_recovery_info, result.op, result.op->bp_pred_main.bp_ready_cycle);
   }
 
   // Misprediction: Switch to off-path execution

@@ -415,8 +415,10 @@ void node_fill_rob(Stage_Data* src_sd) {
   uns ii;
 
   /* if nothing to process, return */
-  if (src_sd->op_count == 0)
+  if (src_sd->op_count == 0) {
+    DEBUG(node->proc_id, "Node fill starved: src_sd_op_count:0 node_count:%d\n", node->node_count);
     return;
+  }
 
   // Go through all the ops in the issue buffer and stick them into the Node Table.
   // We will stick them into the RS later
@@ -436,6 +438,9 @@ void node_fill_rob(Stage_Data* src_sd) {
 
     if (op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) {
       if (!lsq_available(op->table_info->mem_type)) {
+        DEBUG(node->proc_id,
+              "Node fill stalled: LSQ full for op_num:%s mem_type:%s src_sd_op_count:%d node_count:%d\n",
+              unsstr64(op->op_num), op->table_info->mem_type == MEM_LD ? "LD" : "ST", src_sd->op_count, node->node_count);
         STAT_EVENT(op->proc_id, LSQ_FULL_TOTAL);
         STAT_EVENT(op->proc_id, LSQ_FULL_TOTAL + op->table_info->mem_type);
         return;
@@ -500,8 +505,19 @@ void node_retire() {
   Op* op = NULL;
 
   // If node table is empty, then there is nothing to retire
-  if (is_node_table_empty())
+  if (is_node_table_empty()) {
+    DEBUG(node->proc_id, "Node retire skipped: node table empty\n");
     return;
+  }
+
+  if (node->node_head) {
+    DEBUG(node->proc_id,
+          "Node retire head candidate op_num:%s state:%s off_path:%u recovery_scheduled:%u redirect_scheduled:%u "
+          "done_cycle:%s cycle:%s op_done_now:%u\n",
+          unsstr64(node->node_head->op_num), Op_State_str(node->node_head->state), node->node_head->off_path,
+          node->node_head->recovery_scheduled, node->node_head->redirect_scheduled,
+          unsstr64(node->node_head->done_cycle), unsstr64(cycle_count), (unsigned)(OP_DONE(node->node_head) ? 1 : 0));
+  }
 
   // Iterate through the first NODE_RET_WIDTH number of ops and try to retire them
   for (op = node->node_head; op && ret_count < NODE_RET_WIDTH; op = op->next_node) {
@@ -509,6 +525,11 @@ void node_retire() {
 
     // check to see if the head of the node table is ready to retire
     if (op_not_ready_for_retire(op)) {
+      DEBUG(node->proc_id,
+            "Node retire stalled head_op_num:%s state:%s off_path:%u recovery_scheduled:%u redirect_scheduled:%u "
+            "done_cycle:%s cycle:%s op_done_now:%u\n",
+            unsstr64(op->op_num), Op_State_str(op->state), op->off_path, op->recovery_scheduled, op->redirect_scheduled,
+            unsstr64(op->done_cycle), unsstr64(cycle_count), (unsigned)(OP_DONE(op) ? 1 : 0));
       // op is not ready to retire
       collect_not_ready_to_retire_stats(op);
       break;

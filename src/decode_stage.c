@@ -224,8 +224,8 @@ void update_decode_stage(Stage_Data* src_sd) {
 
   /* if the last decode stage is stalled, don't re-process the ops  */
   if (stall) {
-    Op* stall_op = dec->last_sd->op_count ? dec->last_sd->ops[0] : NULL;
-    DEBUG(dec->proc_id, "Decode Stage stalled op_num:%s\n", stall_op ? unsstr64(stall_op->op_num) : "none");
+    DEBUG(dec->proc_id, "Decode Stage stalled op_num:%s\n",
+          (dec->last_sd->op_count && dec->last_sd->ops[0]) ? unsstr64(dec->last_sd->ops[0]->op_num) : "none");
     return;
   }
 

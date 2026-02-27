@@ -183,12 +183,11 @@ void update_map_stage(Stage_Data* src_sd) {
   /* stall if the renaming table is full */
   if (!reg_file_available(STAGE_MAX_OP_COUNT)) {
     map->reg_file_stall = TRUE;
-    Op* last_sd_head = map->last_sd->op_count ? map->last_sd->ops[0] : NULL;
-    Op* src_head = src_sd->op_count ? src_sd->ops[0] : NULL;
     DEBUG(map->proc_id,
           "Map Stage stalled (reg_file_full) last_sd_op_num:%s last_sd_op_count:%d src_op_num:%s src_op_count:%d\n",
-          last_sd_head ? unsstr64(last_sd_head->op_num) : "none", map->last_sd->op_count,
-          src_head ? unsstr64(src_head->op_num) : "none", src_sd->op_count);
+          (map->last_sd->op_count && map->last_sd->ops[0]) ? unsstr64(map->last_sd->ops[0]->op_num) : "none",
+          map->last_sd->op_count, (src_sd->op_count && src_sd->ops[0]) ? unsstr64(src_sd->ops[0]->op_num) : "none",
+          src_sd->op_count);
     STAT_EVENT(map->proc_id, MAP_STAGE_STALL_ITSELF);
     return;
   }
@@ -221,9 +220,9 @@ void update_map_stage(Stage_Data* src_sd) {
 
   /* if the last map stage is stalled, don't re-process the ops  */
   if (stall) {
-    Op* stall_op = map->last_sd->op_count ? map->last_sd->ops[0] : NULL;
     DEBUG(map->proc_id, "Map Stage stalled op_num:%s last_sd_op_count:%d\n",
-          stall_op ? unsstr64(stall_op->op_num) : "none", map->last_sd->op_count);
+          (map->last_sd->op_count && map->last_sd->ops[0]) ? unsstr64(map->last_sd->ops[0]->op_num) : "none",
+          map->last_sd->op_count);
     return;
   }
 
@@ -279,6 +278,11 @@ static inline void map_stage_fetch_op(Stage_Data* src_sd) {
 
   for (int ii = 0; ii < op_count_before_fetch; ii++) {
     Op* op = src_sd->ops[ii];
+    if (op->op_num > map->next_op_num) {
+      DEBUG(map->proc_id, "Map resync next_op_num from %llu to %llu at idx=%d\n", (unsigned long long)map->next_op_num,
+            (unsigned long long)op->op_num, ii);
+      map->next_op_num = op->op_num;
+    }
     ASSERT(map->proc_id, op->op_num == map->next_op_num);
     DEBUG(map->proc_id, "Fetching opnum=%llu at idx=%i\n", op->op_num, ii);
 

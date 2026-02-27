@@ -82,7 +82,7 @@ extern void tc_do_stat(Op*, Flag);
   do {                                                                                             \
     STAT_EVENT((op)->proc_id, (op)->off_path ? (off_stat) : (on_stat));                          \
     STAT_EVENT((op)->proc_id, ((op)->off_path ? (off_stat##_L0) : (on_stat##_L0)) +              \
-                                   bp_pred_level_stat_offset(op));                                \
+                                   (op)->bp_pred_level);                                \
   } while (0)
 
 /******************************************************************************/
@@ -104,10 +104,6 @@ static inline Bp* bp_get_active_predictor(Bp_Data* bp_data, const Op* op) {
   if (bp_l0_enabled() && op->bp_pred_level == BP_PRED_L0 && bp_data->bp_l0)
     return bp_data->bp_l0;
   return bp_data->bp;
-}
-
-static inline uns bp_pred_level_stat_offset(const Op* op) {
-  return (op->bp_pred_level == BP_PRED_L0) ? 0 : 1;
 }
 
 
@@ -151,15 +147,15 @@ void init_bp_recovery_info(uns8 proc_id, Bp_Recovery_Info* new_bp_recovery_info)
 void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle) {
   ASSERT(op->proc_id, bp_recovery_info->proc_id == op->proc_id);
   ASSERT(0, !op->off_path);
-  const uns level_off = bp_pred_level_stat_offset(op);
-  if (op->bp_pred_info->recover_at_exec) {
-    INC_STAT_EVENT(0, SCHEDULED_EXEC_LAT, cycle_count - op->recovery_info.predict_cycle);
-    STAT_EVENT(0, SCHEDULED_EXEC_RECOVERIES);
-    STAT_EVENT(op->proc_id, SCHEDULED_L0_EXEC_RECOVERIES + level_off);
+  if (op->bp_pred_info->recover_at_fe) {
+    INC_STAT_EVENT(op->proc_id, SCHEDULED_L0_EARLY_LAT, cycle_count - op->recovery_info.predict_cycle);
+    STAT_EVENT(op->proc_id, SCHEDULED_L0_EARLY_RECOVERIES);
+  } else if (op->bp_pred_info->recover_at_exec) {
+    INC_STAT_EVENT(op->proc_id, SCHEDULED_MAIN_EXEC_LAT, cycle_count - op->recovery_info.predict_cycle);
+    STAT_EVENT(op->proc_id, SCHEDULED_MAIN_EXEC_RECOVERIES);
   } else if (op->bp_pred_info->recover_at_decode) {
-    INC_STAT_EVENT(0, SCHEDULED_DECODE_LAT, cycle_count - op->recovery_info.predict_cycle);
-    STAT_EVENT(0, SCHEDULED_DECODE_RECOVERIES);
-    STAT_EVENT(op->proc_id, SCHEDULED_L0_DECODE_RECOVERIES + level_off);
+    INC_STAT_EVENT(op->proc_id, SCHEDULED_MAIN_DECODE_LAT, cycle_count - op->recovery_info.predict_cycle);
+    STAT_EVENT(op->proc_id, SCHEDULED_MAIN_DECODE_RECOVERIES);
   }
 
   if (bp_recovery_info->recovery_cycle == MAX_CTR || op->op_num <= bp_recovery_info->recovery_op_num) {
@@ -237,14 +233,6 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
           "BP level stats must be contiguous: BP_{L0,MAIN}_MISPRED\n");
   ASSERTM(proc_id, BP_MAIN_MISFETCH == BP_L0_MISFETCH + 1,
           "BP level stats must be contiguous: BP_{L0,MAIN}_MISFETCH\n");
-  ASSERTM(proc_id, BP_MAIN_EXEC_RECOVERIES == BP_L0_EXEC_RECOVERIES + 1,
-          "BP level stats must be contiguous: BP_{L0,MAIN}_EXEC_RECOVERIES\n");
-  ASSERTM(proc_id, BP_MAIN_DECODE_RECOVERIES == BP_L0_DECODE_RECOVERIES + 1,
-          "BP level stats must be contiguous: BP_{L0,MAIN}_DECODE_RECOVERIES\n");
-  ASSERTM(proc_id, SCHEDULED_MAIN_EXEC_RECOVERIES == SCHEDULED_L0_EXEC_RECOVERIES + 1,
-          "BP level stats must be contiguous: SCHEDULED_{L0,MAIN}_EXEC_RECOVERIES\n");
-  ASSERTM(proc_id, SCHEDULED_MAIN_DECODE_RECOVERIES == SCHEDULED_L0_DECODE_RECOVERIES + 1,
-          "BP level stats must be contiguous: SCHEDULED_{L0,MAIN}_DECODE_RECOVERIES\n");
   ASSERT(bp_data->proc_id, bp_data);
   memset(bp_data, 0, sizeof(Bp_Data));
 
@@ -781,12 +769,11 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 
   ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->bp_pred_info->pred_npc);
   bp_predict_op_evaluate(bp_data, op, op->bp_pred_info->pred_npc);
-  const uns level_off = bp_pred_level_stat_offset(op);
-  STAT_EVENT(op->proc_id, BP_L0_PREDICTIONS + level_off);
+  STAT_EVENT(op->proc_id, BP_L0_PREDICTIONS + op->bp_pred_level);
   if (op->bp_pred_info->mispred)
-    STAT_EVENT(op->proc_id, BP_L0_MISPRED + level_off);
+    STAT_EVENT(op->proc_id, BP_L0_MISPRED + op->bp_pred_level);
   if (op->bp_pred_info->misfetch)
-    STAT_EVENT(op->proc_id, BP_L0_MISFETCH + level_off);
+    STAT_EVENT(op->proc_id, BP_L0_MISFETCH + op->bp_pred_level);
 
   // The case where BTB-miss not-taken branch pollute global hist
   // mispred || misfetch will trigger a re-steer but no chance to fix the global hist
@@ -796,12 +783,12 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
     STAT_EVENT(op->proc_id, FDIP_BTB_MISS_NT_RESTEER_ONPATH + op->off_path);
 
   if (!op->off_path) {
-    if (op->bp_pred_info->recover_at_exec) {
-      STAT_EVENT(0, BP_EXEC_RECOVERIES);
-      STAT_EVENT(op->proc_id, BP_L0_EXEC_RECOVERIES + level_off);
+    if (op->bp_pred_info->recover_at_fe) {
+      STAT_EVENT(op->proc_id, BP_L0_EARLY_RECOVERIES);
+    } else if (op->bp_pred_info->recover_at_exec) {
+      STAT_EVENT(op->proc_id, BP_MAIN_EXEC_RECOVERIES);
     } else if (op->bp_pred_info->recover_at_decode) {
-      STAT_EVENT(0, BP_DECODE_RECOVERIES);
-      STAT_EVENT(op->proc_id, BP_L0_DECODE_RECOVERIES + level_off);
+      STAT_EVENT(op->proc_id, BP_MAIN_DECODE_RECOVERIES);
     }
   }
   return op->bp_pred_info->pred_npc;

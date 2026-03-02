@@ -912,9 +912,14 @@ void FDIP::init(uns _proc_id, uns _bp_id, Icache_Stage* _ic) {
 
 void FDIP::recover() {
   last_line_addr = 0;
+  const bool iter_passed_recovery_ft = decoupled_fe_ftq_iter_passed_recovery_ft(dfe, ftq_idx);
   DEBUG(proc_id, "[FDIP%u] recover cycle from %llu", bp_id, fdip_stat->last_recover_cycle);
-  fdip_stat->last_recover_cycle = cycle_count;
-  DEBUG(proc_id, " to %llu\n", fdip_stat->last_recover_cycle);
+  if (!iter_passed_recovery_ft) {
+    fdip_stat->last_recover_cycle = cycle_count;
+    DEBUG(proc_id, " to %llu\n", fdip_stat->last_recover_cycle);
+  } else {
+    DEBUG(proc_id, " unchanged (iter already passed recovery FT)\n");
+  }
 
   if (!bp_id && FDIP_ADJUSTABLE_FTQ)
     uftq->set_ftq_ft_num();

@@ -174,7 +174,7 @@ void init_uop_cache_stage(uns8 proc_id, const char* name) {
 /**************************************************************************************/
 /* Uop Cache Lookup Buffer Func */
 
-Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
+static Flag uop_cache_lookup_ft_and_fill_lookup_buffer_internal(FT_Info ft_info, Flag offpath, Flag count_port) {
   if (!UOP_CACHE_ENABLE) {
     return FALSE;
   }
@@ -209,10 +209,20 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
     lookup_addr += uoc_data->offset;
   } while (!uoc_data->end_of_ft);
 
-  uc->lookups_per_cycle_count++;
-  ASSERT(ic->proc_id, uc->lookups_per_cycle_count <= UOP_CACHE_READ_PORTS);
+  if (count_port) {
+    uc->lookups_per_cycle_count++;
+    ASSERT(ic->proc_id, uc->lookups_per_cycle_count <= UOP_CACHE_READ_PORTS);
+  }
 
   return TRUE;
+}
+
+Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
+  return uop_cache_lookup_ft_and_fill_lookup_buffer_internal(ft_info, offpath, TRUE);
+}
+
+Flag uop_cache_lookup_ft_and_fill_lookup_buffer_recovery(FT_Info ft_info, Flag offpath) {
+  return uop_cache_lookup_ft_and_fill_lookup_buffer_internal(ft_info, offpath, FALSE);
 }
 
 /* uop_cache_consume_uops_from_lookup_buffer: consume some uops from the uopc lookup buffer
@@ -246,6 +256,82 @@ void uop_cache_clear_lookup_buffer() {
   Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
   uc_cpp->lookup_buffer.clear();
   uc_cpp->num_looked_up_lines = 0;
+}
+
+Flag uop_cache_seek_lookup_buffer_to_unread_ops(FT* ft) {
+  if (!UOP_CACHE_ENABLE)
+    return TRUE;
+  ASSERT(uc->proc_id, ft);
+
+  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
+  uint64_t unread_uops = ft_get_num_unread_ops(ft);
+
+  // Count total uops currently represented by the lookup buffer tail.
+  uint64_t total_uops = 0;
+  for (size_t i = uc_cpp->num_looked_up_lines; i < uc_cpp->lookup_buffer.size(); i++) {
+    total_uops += uc_cpp->lookup_buffer[i].n_uops;
+  }
+
+  if (unread_uops > total_uops)
+    return FALSE;
+
+  // Skip already-consumed prefix uops so lookup buffer starts at FT op_pos.
+  uint64_t to_skip = total_uops - unread_uops;
+  while (to_skip > 0) {
+    if (uc_cpp->num_looked_up_lines >= uc_cpp->lookup_buffer.size())
+      return FALSE;
+
+    Uop_Cache_Data* line = &uc_cpp->lookup_buffer[uc_cpp->num_looked_up_lines];
+    if (line->n_uops <= to_skip) {
+      to_skip -= line->n_uops;
+      uc_cpp->num_looked_up_lines += 1;
+    } else {
+      line->n_uops -= to_skip;
+      to_skip = 0;
+    }
+  }
+
+  return TRUE;
+}
+
+Flag uop_cache_adjust_lookup_buffer_to_unread_ops(FT* ft) {
+  if (!UOP_CACHE_ENABLE)
+    return TRUE;
+  ASSERT(uc->proc_id, ft);
+
+  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
+  size_t line_idx = uc_cpp->num_looked_up_lines;
+  uint64_t remaining_uops = ft_get_num_unread_ops(ft);
+
+  // If no uops remain, no lookup lines should remain either.
+  if (remaining_uops == 0) {
+    uc_cpp->lookup_buffer.resize(line_idx);
+    return TRUE;
+  }
+
+  while (line_idx < uc_cpp->lookup_buffer.size()) {
+    Uop_Cache_Data* line = &uc_cpp->lookup_buffer[line_idx];
+    if (line->n_uops == 0)
+      return FALSE;
+
+    if (line->n_uops < remaining_uops) {
+      // This full line is still needed and not FT end yet.
+      line->end_of_ft = FALSE;
+      remaining_uops -= line->n_uops;
+      line_idx++;
+      continue;
+    }
+
+    // This line is the recovered FT tail line.
+    line->n_uops = remaining_uops;
+    line->end_of_ft = TRUE;
+    line->offset = 0;
+    uc_cpp->lookup_buffer.resize(line_idx + 1);
+    return TRUE;
+  }
+
+  // Existing lookup buffer does not have enough uops for surviving FT.
+  return FALSE;
 }
 
 Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag update_repl) {
@@ -322,20 +408,40 @@ void uop_cache_evict_FT(const Entry<Uop_Cache_Key, Uop_Cache_Data>& evicted_entr
   Addr invalidate_addr = evicted_ft_info_static.start;
   Entry<Uop_Cache_Key, Uop_Cache_Data> invalidated_entry{};
 
-  do {
+  while (true) {
     invalidated_entry = uc_cpp->uop_cache->invalidate({invalidate_addr, evicted_ft_info_static});
     if (invalidate_addr == evicted_entry.key.first) {
       // this was the one evicted at first
       ASSERT(uc->proc_id, !invalidated_entry.valid);
       invalidated_entry = evicted_entry;
     }
-    invalidate_addr += invalidated_entry.data.offset;
+
+    // Defensive stop: if a line in the FT chain is missing, do not livelock.
+    if (!invalidated_entry.valid) {
+      DEBUG(uc->proc_id, "UOC evict chain break: missing line start=0x%llx ft_start=0x%llx len=%llu\n",
+            (unsigned long long)invalidate_addr, (unsigned long long)evicted_ft_info_static.start,
+            (unsigned long long)evicted_ft_info_static.length);
+      break;
+    }
 
     if (invalidated_entry.data.used)
       STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_EVICTED_USEFUL);
     else
       STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_EVICTED_USELESS);
-  } while (!invalidated_entry.data.end_of_ft);
+
+    if (invalidated_entry.data.end_of_ft)
+      break;
+
+    // Non-terminal lines must advance the chain.
+    if (invalidated_entry.data.offset == 0) {
+      DEBUG(uc->proc_id, "UOC evict chain break: zero offset start=0x%llx ft_start=0x%llx len=%llu\n",
+            (unsigned long long)invalidate_addr, (unsigned long long)evicted_ft_info_static.start,
+            (unsigned long long)evicted_ft_info_static.length);
+      break;
+    }
+
+    invalidate_addr += invalidated_entry.data.offset;
+  }
 }
 
 void uop_cache_preallocate_space(const std::vector<Uop_Cache_Data>& inserting_FT, FT_Info inserting_FT_info) {
@@ -408,7 +514,18 @@ void uop_cache_insert_FT(const std::vector<Uop_Cache_Data> inserting_FT, FT_Info
       STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_SHORT_REUSE_CONFLICTED_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
       continue;
     }
-    ASSERT(uc->proc_id, !uop_cache_line);
+
+    // After preallocation/eviction, a line may still exist due to short-reuse
+    // races or partial FT-chain eviction. Treat as conflicted reuse instead of
+    // asserting.
+    if (uop_cache_line) {
+      DEBUG(uc->proc_id,
+            "UOC insert skip existing line after prealloc. off_path=%u addr=0x%llx ft_start=0x%llx len=%llu\n",
+            off_path, (unsigned long long)it.line_start, (unsigned long long)inserting_FT_info.static_info.start,
+            (unsigned long long)inserting_FT_info.static_info.length);
+      STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_SHORT_REUSE_CONFLICTED_ON_PATH + off_path * UOP_CACHE_STAT_OFFSET);
+      continue;
+    }
 
     Uop_Cache_Key uop_cache_key = {it.line_start, inserting_FT_info.static_info};
     Entry<Uop_Cache_Key, Uop_Cache_Data> evicted_entry = uc_cpp->uop_cache->insert(uop_cache_key, it);
@@ -498,17 +615,42 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
     }
   }
   ASSERT(uc->proc_id, ft->op_pos == ft->ops.size());
-  ft->op_pos = 0;
-  ft->generate_ft_info();
+  DEBUG(uc->proc_id,
+        "UOC gen end: ft_id:%llu out_lines:%zu line_started:%u is_ft_end:%u new_start:0x%llx new_len:%llu "
+        "new_n_uops:%llu new_end_reason:%d\n",
+        (unsigned long long)ft->get_ft_info().dynamic_info.FT_id, out.size(), (unsigned)line_started, (unsigned)is_ft_end,
+        (unsigned long long)ft->get_ft_info().static_info.start, (unsigned long long)ft->get_ft_info().static_info.length,
+        (unsigned long long)ft->get_ft_info().static_info.n_uops, (int)ft->get_end_reason());
   ASSERT(uc->proc_id, !line_started && is_ft_end);
 }
 
 void uop_cache_insert_FT(FT* ft) {
   ASSERT(uc->proc_id, ft);
+  const std::vector<Op*>& ops = ft->get_ops();
+  Op* last = ops.empty() ? nullptr : ft->get_last_op();
+  FT_Info ft_info = ft->get_ft_info();
+  DEBUG(uc->proc_id,
+        "UOC insert FT check: ft_id:%llu start:0x%llx len:%llu n_uops:%llu op_pos:%llu ops:%zu end_reason:%d "
+        "last_op:%s last_op_num:%llu last_addr:0x%llx last_eom:%u\n",
+        (unsigned long long)ft_info.dynamic_info.FT_id, (unsigned long long)ft_info.static_info.start,
+        (unsigned long long)ft_info.static_info.length, (unsigned long long)ft_info.static_info.n_uops,
+        (unsigned long long)ft->get_op_pos(), ops.size(), (int)ft->get_end_reason(), last ? "yes" : "no",
+        (unsigned long long)(last ? last->op_num : 0), (unsigned long long)(last ? last->inst_info->addr : 0),
+        (unsigned)(last ? last->eom : 0));
+  ASSERT(uc->proc_id, last && last->eom);
+  if (ft_info.dynamic_info.ended_by == FT_NOT_ENDED) {
+    DEBUG(uc->proc_id,
+          "UOC insert skipped: stale/unfinished FT metadata ft_id:%llu start:0x%llx len:%llu n_uops:%llu "
+          "cached_end_reason:%d live_end_reason:%d\n",
+          (unsigned long long)ft_info.dynamic_info.FT_id, (unsigned long long)ft_info.static_info.start,
+          (unsigned long long)ft_info.static_info.length, (unsigned long long)ft_info.static_info.n_uops,
+          (int)ft_info.dynamic_info.ended_by, (int)ft->get_end_reason());
+    return;
+  }
+
   std::vector<Uop_Cache_Data> buffer;
   generate_uop_cache_data_from_FT(ft, buffer);
 
-  auto ft_info = ft->get_ft_info();
   // the entire buffer is inserted into the uop cache when the FT has ended
   Flag if_insertable = uop_cache_FT_if_insertable(buffer, ft_info);
   if (if_insertable) {

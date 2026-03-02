@@ -63,10 +63,12 @@ struct FT_PredictResult {
 bool ft_can_fetch_op(FT* ft);
 Op* ft_fetch_op(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
+uint64_t ft_get_num_unread_ops(FT* ft);
 bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start, Counter recovery_op_num);
 void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr, Counter recovery_op_num);
 void recover_ft(FT* ft);
-void ft_free_op(Op* op);
+void ft_free_op(Op* op, FT** ft_ref0, FT** ft_ref1);
+void ft_regenerate_info_after_recovery(FT* ft, Counter recovery_op_num, Bp_Pred_Level bp_pred_level);
 
 #ifdef __cplusplus
 }  // extern "C"
@@ -129,6 +131,7 @@ class FT {
 
   FT_Ended_By get_end_reason() const;
   void clear_recovery_info();
+  void regenerate_ft_info_after_recovery(Counter recovery_op_num, Bp_Pred_Level bp_pred_level);
 
  private:
   uns proc_id;

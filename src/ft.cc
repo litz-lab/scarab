@@ -132,6 +132,22 @@ void FT::recover_ft() {
   // This path is for an FT already popped from FTQ and currently in-flight
   // (e.g., ic/uc current_ft). We only trim unread tail ops that are newer
   // than recovery_op_num. Older/read ops are handled by stage-data recovery.
+  FT_Info before_info = get_ft_info();
+  size_t before_ops = ops.size();
+  uint64_t before_op_pos = op_pos;
+  Op* before_last = ops.empty() ? nullptr : ops.back();
+  UNUSED(before_info);
+  UNUSED(before_ops);
+  UNUSED(before_op_pos);
+  UNUSED(before_last);
+  DEBUG(proc_id,
+        "FT recover start: ft_id:%llu start:0x%llx len:%llu n_uops:%llu op_pos:%llu ops:%zu end_reason:%d last_op:%s "
+        "last_addr:0x%llx last_eom:%u\n",
+        (unsigned long long)before_info.dynamic_info.FT_id, (unsigned long long)before_info.static_info.start,
+        (unsigned long long)before_info.static_info.length, (unsigned long long)before_info.static_info.n_uops,
+        (unsigned long long)before_op_pos, before_ops, (int)get_end_reason(), before_last ? "yes" : "no",
+        (unsigned long long)(before_last ? before_last->inst_info->addr : 0), (unsigned)(before_last ? before_last->eom : 0));
+
   trim_unread_tail([&](Op* op) {
     if (!FLUSH_OP(op))
       return false;
@@ -141,6 +157,18 @@ void FT::recover_ft() {
     ASSERT(proc_id, op->parent_FT == this);
     return true;
   });
+
+  FT_Info after_info = get_ft_info();
+  Op* after_last = ops.empty() ? nullptr : ops.back();
+  UNUSED(after_info);
+  UNUSED(after_last);
+  DEBUG(proc_id,
+        "FT recover end: ft_id:%llu start:0x%llx len:%llu n_uops:%llu op_pos:%llu ops:%zu end_reason:%d last_op:%s "
+        "last_addr:0x%llx last_eom:%u\n",
+        (unsigned long long)after_info.dynamic_info.FT_id, (unsigned long long)after_info.static_info.start,
+        (unsigned long long)after_info.static_info.length, (unsigned long long)after_info.static_info.n_uops,
+        (unsigned long long)op_pos, ops.size(), (int)get_end_reason(), after_last ? "yes" : "no",
+        (unsigned long long)(after_last ? after_last->inst_info->addr : 0), (unsigned)(after_last ? after_last->eom : 0));
 }
 
 FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
@@ -282,52 +310,12 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 #endif
   if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
-    const Flag l0_enabled = (bp_id == 0 && BP_MECH_L0 != NUM_BP && BP_L0_LATENCY > 0);
-    if (l0_enabled) {
-      INC_STAT_EVENT(proc_id, DFE_L0_ENABLED_PREDICTIONS, 1);
-      op_select_bp_pred_info(op, BP_PRED_L0);
-      bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
-
-      const Flag l0_wrong = op->bp_pred_l0.mispred || op->bp_pred_l0.misfetch;
-
-      op_select_bp_pred_info(op, BP_PRED_MAIN);
-      bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
-
-      const Flag main_wrong = op->bp_pred_main.mispred || op->bp_pred_main.misfetch;
-
-      if (l0_wrong && !main_wrong) {
-        STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
-        if (!op->off_path) {
-          op_select_bp_pred_info(op, BP_PRED_L0);
-        }
-      } else if (l0_wrong && main_wrong) {
-        STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_WRONG);
-        op_select_bp_pred_info(op, BP_PRED_MAIN);
-      } else if (!l0_wrong && main_wrong) {
-        STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_WRONG);
-        op_select_bp_pred_info(op, BP_PRED_MAIN);
-      } else {
-        STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_CORRECT);
-        op_select_bp_pred_info(op, BP_PRED_MAIN);
-      }
-    } else {
-      op_select_bp_pred_info(op, BP_PRED_MAIN);
-      bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
-    }
+    bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
-
-    DEBUG(proc_id,
-          "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
-          "recover_at_fe:%i recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
-          bp_id, op->inst_info->addr, op->oracle_info.npc, op->bp_pred_info->pred_npc, op->bp_pred_info->mispred,
-          op->bp_pred_info->misfetch, op->btb_pred_info->btb_miss, op->bp_pred_info->pred == TAKEN,
-          op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec,
-          op->table_info->bar_type & BAR_FETCH);
     if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
       op->bp_pred_info->recover_at_decode = FALSE;
       op->bp_pred_info->recover_at_exec = FALSE;
       op->bp_pred_info->recover_at_fe = FALSE;
-      STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
       return FT_EVENT_FETCH_BARRIER;
     }
     if (op->bp_pred_info->recover_at_fe || op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec) {
@@ -351,10 +339,6 @@ FT_Event FT::predict_one_cf_op(Op* op) {
   } else if (op->table_info->bar_type & BAR_FETCH) {
     ASSERT(0, !(op->bp_pred_info->recover_at_fe | op->bp_pred_info->recover_at_decode |
                 op->bp_pred_info->recover_at_exec));
-    if (op->off_path)
-      STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_OFFPATH);
-    else
-      STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_ONPATH);
     return FT_EVENT_FETCH_BARRIER;
   }
 
@@ -364,7 +348,63 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 FT_PredictResult FT::predict_ft() {
   for (size_t idx = op_pos; idx < ops.size(); idx++) {
     Op* op = ops[idx];
-    FT_Event event = predict_one_cf_op(op);
+    FT_Event event = FT_EVENT_NONE;
+    if (op->table_info->cf_type) {
+      ASSERT(proc_id, op->eom);
+      const Flag l0_enabled = (bp_id == 0 && BP_MECH_L0 != NUM_BP && BP_L0_LATENCY > 0);
+      if (l0_enabled) {
+        INC_STAT_EVENT(proc_id, DFE_L0_ENABLED_PREDICTIONS, 1);
+
+        op->bp_pred_level = BP_PRED_L0;
+        op_select_bp_pred_info(op, op->bp_pred_level);
+        const FT_Event l0_event = predict_one_cf_op(op);
+        const Flag l0_wrong = op->bp_pred_l0.mispred || op->bp_pred_l0.misfetch;
+
+        op->bp_pred_level = BP_PRED_MAIN;
+        op_select_bp_pred_info(op, op->bp_pred_level);
+        const FT_Event main_event = predict_one_cf_op(op);
+        const Flag main_wrong = op->bp_pred_main.mispred || op->bp_pred_main.misfetch;
+
+        if (l0_wrong && !main_wrong) {
+          STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
+          if (!op->off_path) {
+            op->bp_pred_level = BP_PRED_L0;
+            op_select_bp_pred_info(op, op->bp_pred_level);
+            event = l0_event;
+          } else {
+            event = main_event;
+          }
+        } else if (l0_wrong && main_wrong) {
+          STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_WRONG);
+          event = main_event;
+        } else if (!l0_wrong && main_wrong) {
+          STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_WRONG);
+          event = main_event;
+        } else {
+          STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_CORRECT);
+          event = main_event;
+        }
+      } else {
+        op->bp_pred_level = BP_PRED_MAIN;
+        op_select_bp_pred_info(op, op->bp_pred_level);
+        event = predict_one_cf_op(op);
+      }
+
+      DEBUG(proc_id,
+            "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
+            "recover_at_fe:%i recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
+            bp_id, op->inst_info->addr, op->oracle_info.npc, op->bp_pred_info->pred_npc, op->bp_pred_info->mispred,
+            op->bp_pred_info->misfetch, op->btb_pred_info->btb_miss, op->bp_pred_info->pred == TAKEN,
+            op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec,
+            op->table_info->bar_type & BAR_FETCH);
+    } else {
+      event = predict_one_cf_op(op);
+    }
+
+    if (event == FT_EVENT_FETCH_BARRIER) {
+      STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
+    }
+
     if (event != FT_EVENT_NONE) {
       uint64_t return_idx = (event == FT_EVENT_MISPREDICT) ? (idx) : 0;
       Addr pred_addr = op->bp_pred_info->pred_npc;
@@ -465,6 +505,51 @@ void FT::generate_ft_info() {
   STAT_EVENT(proc_id, POWER_BTB_READ);
 }
 
+void FT::regenerate_ft_info_after_recovery(Counter recovery_op_num, Bp_Pred_Level bp_pred_level) {
+  if (ops.empty()) {
+    DEBUG(proc_id, "FT regenerate info: found_recovery:0 recovery_op_is_last:0 (empty FT) recovery_op_num:%llu\n",
+          (unsigned long long)recovery_op_num);
+    return;
+  }
+
+  bool found_recovery = false;
+  for (auto* op : ops) {
+    if (op && op->op_num == recovery_op_num) {
+      found_recovery = true;
+      break;
+    }
+  }
+  UNUSED(found_recovery);
+
+  Op* last = get_last_op();
+  ASSERT(proc_id, last);
+  bool recovery_op_is_last = (last->op_num == recovery_op_num);
+
+  DEBUG(proc_id,
+        "FT regenerate info: found_recovery:%u recovery_op_is_last:%u recovery_op_num:%llu ft_id:%llu op_pos:%llu "
+        "ops:%zu last_op_num:%llu last_addr:0x%llx last_eom:%u last_cf:%u level:%u pred:%u pred_npc:0x%llx "
+        "oracle_npc:0x%llx main_pred:%u l0_pred:%u\n",
+        (unsigned)found_recovery, (unsigned)recovery_op_is_last, (unsigned long long)recovery_op_num,
+        (unsigned long long)ft_info.dynamic_info.FT_id, (unsigned long long)op_pos, ops.size(),
+        (unsigned long long)last->op_num, (unsigned long long)last->inst_info->addr, (unsigned)last->eom,
+        (unsigned)last->table_info->cf_type, (unsigned)bp_pred_level, (unsigned)last->bp_pred_info->pred,
+        (unsigned long long)last->bp_pred_info->pred_npc, (unsigned long long)last->oracle_info.npc,
+        (unsigned)last->bp_pred_main.pred, (unsigned)last->bp_pred_l0.pred);
+
+  if (recovery_op_is_last) {
+    op_select_bp_pred_info(last, bp_pred_level);
+  }
+
+  uint64_t saved_op_pos = op_pos;
+  op_pos = 0;
+  generate_ft_info();
+  DEBUG(proc_id, "FT regenerate result: ft_id:%llu start:0x%llx len:%llu n_uops:%llu ended_by:%d\n",
+        (unsigned long long)ft_info.dynamic_info.FT_id, (unsigned long long)ft_info.static_info.start,
+        (unsigned long long)ft_info.static_info.length, (unsigned long long)ft_info.static_info.n_uops,
+        (int)ft_info.dynamic_info.ended_by);
+  op_pos = saved_op_pos;
+}
+
 void FT::clear_recovery_info() {
   for (auto op : ops) {
     op->bp_pred_info->recover_at_decode = FALSE;
@@ -489,6 +574,11 @@ Op* ft_fetch_op(FT* ft) {
 
 FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
+}
+
+uint64_t ft_get_num_unread_ops(FT* ft) {
+  ASSERT(0, ft);
+  return ft->get_ops().size() - ft->get_op_pos();
 }
 
 bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start, Counter recovery_op_num) {
@@ -531,13 +621,47 @@ void recover_ft(FT* ft) {
   ft->recover_ft();
 }
 
+void ft_regenerate_info_after_recovery(FT* ft, Counter recovery_op_num, Bp_Pred_Level bp_pred_level) {
+  if (!ft)
+    return;
+  ft->regenerate_ft_info_after_recovery(recovery_op_num, bp_pred_level);
+}
+
 /* retire and flush, free all ops in a FT when last op is freed */
-void ft_free_op(Op* op) {
+void ft_free_op(Op* op, FT** ft_ref0, FT** ft_ref1) {
+  ASSERT(0, op);
   ASSERT(0, op->parent_FT);
-  if (op->parent_FT_off_path && op->parent_FT_off_path->get_last_op() == op)
-    delete op->parent_FT_off_path;
-  if (!op->parent_FT_off_path && op->parent_FT->get_last_op() == op)
-    delete op->parent_FT;
+
+  FT* primary_ft = op->parent_FT;
+  FT* off_path_ft = op->parent_FT_off_path;
+  const bool delete_off_path_ft = (off_path_ft && off_path_ft->get_last_op() == op);
+  bool delete_primary_ft = (primary_ft && primary_ft->get_last_op() == op);
+
+  // If the op is still shared with an off-path FT that is not ending now,
+  // primary FT deletion must be deferred.
+  if (delete_primary_ft && off_path_ft && !delete_off_path_ft) {
+    delete_primary_ft = false;
+  }
+
+  // Clear only refs to FT objects that are actually deleted.
+  auto clear_if_deleted = [&](FT** ft_ref) {
+    if (!ft_ref || !*ft_ref)
+      return;
+    if (delete_off_path_ft && *ft_ref == off_path_ft) {
+      *ft_ref = NULL;
+      return;
+    }
+    if (delete_primary_ft && *ft_ref == primary_ft)
+      *ft_ref = NULL;
+  };
+  clear_if_deleted(ft_ref0);
+  clear_if_deleted(ft_ref1);
+
+  // Delete off-path FT first so shared ops clear parent_FT_off_path.
+  if (delete_off_path_ft)
+    delete off_path_ft;
+  if (delete_primary_ft)
+    delete primary_ft;
 }
 
 /* use set to avoid duplicates and keep PC order */

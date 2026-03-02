@@ -71,6 +71,7 @@ Decode_Stage* dec = NULL;
 /* Local prototypes */
 
 static inline void update_cycles_stats(Stage_Data* src_sd, int empty_stage_idx);
+static void print_stage_op_nums(FILE* stream, Op** ops, int count);
 
 /**************************************************************************************/
 /* set_decode_stage: */
@@ -132,13 +133,18 @@ void recover_decode_stage() {
     cur->op_count = 0;
     for (jj = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
       if (cur->ops[jj]) {
+        if (IS_FLUSHING_OP(cur->ops[jj])) {
+          DEBUG(dec->proc_id, "Recovery op found in Decode stage:%u slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii, jj,
+                (unsigned long long)cur->ops[jj]->op_num, cur->ops[jj]->off_path,
+                (unsigned long long)cur->ops[jj]->inst_info->addr);
+        }
         if (FLUSH_OP(cur->ops[jj])) {
           DEBUG(dec->proc_id, "Decode flushing op_num:%llu off_path:%u\n", (unsigned long long)cur->ops[jj]->op_num,
                 cur->ops[jj]->off_path);
           flushed = TRUE;
           ASSERT(cur->ops[jj]->proc_id, cur->ops[jj]->off_path);
           if (cur->ops[jj]->parent_FT)
-            ft_free_op(cur->ops[jj]);
+            ft_free_op(cur->ops[jj], NULL, NULL);
           cur->ops[jj] = NULL;
         } else {
           cur->op_count++;
@@ -162,6 +168,9 @@ void debug_decode_stage() {
   for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &dec->sds[STAGE_MAX_DEPTH - ii - 1];
     DPRINTF("# %-10s  op_count:%d\n", cur->name, cur->op_count);
+    DPRINTF("# %-10s  op_nums:", cur->name);
+    print_stage_op_nums(GLOBAL_DEBUG_STREAM, cur->ops, cur->op_count);
+    DPRINTF("\n");
     print_op_array(GLOBAL_DEBUG_STREAM, cur->ops, STAGE_MAX_OP_COUNT, cur->op_count);
   }
 }
@@ -234,7 +243,8 @@ void update_decode_stage(Stage_Data* src_sd) {
     Op* op = dec->last_sd->ops[ii];
     ASSERT(dec->proc_id, op != NULL);
     ASSERT(dec->proc_id, !op->fetched_from_uop_cache);
-    DEBUG(dec->proc_id, "Decoding op op_num=%llu, addr=%llx\n", op->op_num, op->inst_info->addr);
+    DEBUG(dec->proc_id, "Decoding op op_num=%llu, addr=%llx off_path:%i\n", op->op_num, op->inst_info->addr,
+          op->off_path);
     decode_stage_process_op(op);
     uop_cache_insert_op(op);
   }
@@ -286,4 +296,20 @@ static inline void update_cycles_stats(Stage_Data* src_sd, int empty_stage_idx) 
   // Only count stats if the icache is not stalled due to a full decode stage.
   if (decode_stages_empty && src_sd->op_count)
     last_op = src_sd->ops[src_sd->op_count - 1];
+}
+
+static void print_stage_op_nums(FILE* stream, Op** ops, int count) {
+  fprintf(stream, " [");
+  for (int i = 0; i < count; i++) {
+    if (i) {
+      fprintf(stream, " ");
+    }
+    Op* op = ops[i];
+    if (!op) {
+      fprintf(stream, "-");
+      continue;
+    }
+    fprintf(stream, "%llu%s", (unsigned long long)op->op_num, op->off_path ? "o" : "n");
+  }
+  fprintf(stream, "]");
 }

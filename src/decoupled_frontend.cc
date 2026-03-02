@@ -112,6 +112,10 @@ Op* decoupled_fe_ftq_iter_get_next(Decoupled_FE* dfe, uns iter_idx, bool* end_of
   return dfe->ftq_iter_get_next(iter_idx, end_of_ft);
 }
 
+bool decoupled_fe_ftq_iter_passed_recovery_ft(Decoupled_FE* dfe, uns iter_idx) {
+  return dfe->ftq_iter_passed_recovery_ft(iter_idx);
+}
+
 /* Returns iter flattened offset from the start of the FTQ, this offset gets incremented
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */
@@ -225,9 +229,14 @@ void Decoupled_FE::dfe_recover_op() {
   FT* recovery_ft = nullptr;
   Op* recovery_ft_op = nullptr;
   bool recovery_op_is_last = false;
+  uint64_t recovery_ft_pos = 0;
   auto erase_from = ftq.begin();
   const size_t ftq_size_before = ftq.size();
   (void)ftq_size_before;
+
+  ASSERT(proc_id, ftq_iter_passed_recovery_ft_flags.size() == ftq_iterators.size());
+  for (size_t iter_idx = 0; iter_idx < ftq_iter_passed_recovery_ft_flags.size(); iter_idx++)
+    ftq_iter_passed_recovery_ft_flags[iter_idx] = false;
 
   for (auto it = ftq.begin(); it != ftq.end(); ++it) {
     FT* ft = *it;
@@ -238,12 +247,29 @@ void Decoupled_FE::dfe_recover_op() {
         found_recovery_ft = true;
         recovery_ft = ft;
         recovery_ft_op = op;
-        recovery_op_is_last = (op_idx == ft->ops.size() - 1);
+        // Treat as last if all subsequent ops in the FT are off-path.
+        // When the off-path extension loop in redirect_to_off_path appends off-path
+        // ops after a not-taken mispredicted branch, the recovery op is still the
+        // last on-path op even though it is not ft->ops.back().
+        recovery_op_is_last = true;
+        for (uint64_t j = op_idx + 1; j < ft->ops.size(); j++) {
+          if (!ft->ops[j]->off_path) {
+            recovery_op_is_last = false;
+            break;
+          }
+        }
+        DEBUG(proc_id,
+              "[DFE%u] FTQ scan: recovery op_num:%llu found in ft_id:%llu at idx:%llu/%zu"
+              " literal_last:%u recovery_op_is_last:%u\n",
+              bp_id, (unsigned long long)op->op_num,
+              (unsigned long long)ft->get_ft_info().dynamic_info.FT_id, (unsigned long long)op_idx,
+              ft->ops.size(), (unsigned)(op_idx == ft->ops.size() - 1), (unsigned)recovery_op_is_last);
         break;
       }
     }
 
     if (found_recovery_ft) {
+      recovery_ft_pos = std::distance(ftq.begin(), it);
       erase_from = recovery_op_is_last ? std::next(it) : it;
       break;
     }
@@ -254,15 +280,35 @@ void Decoupled_FE::dfe_recover_op() {
       delete (*it);
     ftq.erase(erase_from, ftq.end());
   }
+  if (!found_recovery_ft)
+    ASSERT(proc_id, !ftq.size());
+
   if (found_recovery_ft && recovery_op_is_last) {
     ASSERT(proc_id, recovery_ft);
     ASSERT(proc_id, recovery_ft_op);
     op_select_bp_pred_info(recovery_ft_op, bp_recovery_info->recovery_info.bp_pred_level);
+    // Trim any off-path ops that were appended after the recovery op by the
+    // off-path extension loop in redirect_to_off_path (e.g. when the mispredicted
+    // branch was not-taken so the FT was not yet ended at the split point).
+    size_t ops_before_trim = recovery_ft->ops.size();
+    UNUSED(ops_before_trim);
+    recovery_ft->trim_unread_tail([](Op* op) { return op->off_path; });
+    DEBUG(proc_id,
+          "[DFE%u] FTQ recover (last): ft_id:%llu ops_before_trim:%zu ops_after_trim:%zu recovery_op_num:%llu\n",
+          bp_id, (unsigned long long)recovery_ft->get_ft_info().dynamic_info.FT_id, ops_before_trim,
+          recovery_ft->ops.size(), (unsigned long long)bp_recovery_info->recovery_op_num);
     // Update end_reason of recovery_ft
     recovery_ft->generate_ft_info();
   } else if (found_recovery_ft && !recovery_op_is_last) {
     ASSERT(proc_id, saved_recovery_ft);
     ASSERT(proc_id, !saved_recovery_ft->ops.empty());
+    DEBUG(proc_id,
+          "[DFE%u] FTQ recover (not last): recovery_op_num:%llu ft_id:%llu ft_ops:%zu"
+          " saved_recovery_ft_id:%llu saved_op_pos:%llu\n",
+          bp_id, (unsigned long long)bp_recovery_info->recovery_op_num,
+          (unsigned long long)recovery_ft->get_ft_info().dynamic_info.FT_id, recovery_ft->ops.size(),
+          (unsigned long long)saved_recovery_ft->get_ft_info().dynamic_info.FT_id,
+          (unsigned long long)saved_recovery_ft->op_pos);
     // Update start address
     saved_recovery_ft->op_pos = 0;
     saved_recovery_ft->generate_ft_info();
@@ -277,7 +323,12 @@ void Decoupled_FE::dfe_recover_op() {
           (long long)ftq.size() - (long long)ftq_size_before);
   }
 
-  for (auto&& it : ftq_iterators) {
+  for (size_t iter_idx = 0; iter_idx < ftq_iterators.size(); iter_idx++) {
+    auto&& it = ftq_iterators[iter_idx];
+    const uint64_t original_ft_pos = it->ft_pos;
+    if (found_recovery_ft)
+      ftq_iter_passed_recovery_ft_flags[iter_idx] = original_ft_pos > recovery_ft_pos;
+
     if (ftq.empty()) {
       it->ft_pos = 0;
       it->op_pos = 0;
@@ -560,6 +611,7 @@ uns Decoupled_FE::new_ftq_iter() {
   ftq_iterators.back().get()->ft_pos = 0;
   ftq_iterators.back().get()->op_pos = 0;
   ftq_iterators.back().get()->flattened_op_pos = 0;
+  ftq_iter_passed_recovery_ft_flags.push_back(false);
   return ftq_iterators.size() - 1;
 }
 
@@ -697,6 +749,8 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   const Flag l0_enabled = (!bp_id && BP_MECH_L0 != NUM_BP && BP_L0_LATENCY > 0);
   const Flag l0_wrong = result.op->bp_pred_l0.mispred || result.op->bp_pred_l0.misfetch;
   const Flag main_wrong = result.op->bp_pred_main.mispred || result.op->bp_pred_main.misfetch;
+  const char* selected_pred = (result.op->bp_pred_info == &result.op->bp_pred_l0) ? "L0" : "MAIN";
+  UNUSED(selected_pred);
 
   if (l0_enabled && l0_wrong && !main_wrong) {
     STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT_RECOVERY_SCHEDULED);
@@ -711,10 +765,31 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
 
   // Misprediction: Switch to off-path execution
   auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
+  DEBUG(proc_id,
+        "[DFE%u] redirect_to_off_path: selected:%s op_num:%llu split_idx:%llu pred_npc:0x%llx main_npc:0x%llx "
+        "l0_npc:0x%llx off_path_ft_id:%llu off_path_start:0x%llx off_path_ops:%zu trailing:%s\n",
+        bp_id, selected_pred, (unsigned long long)result.op->op_num, (unsigned long long)result.index,
+        (unsigned long long)result.op->bp_pred_info->pred_npc, (unsigned long long)result.op->bp_pred_main.pred_npc,
+        (unsigned long long)result.op->bp_pred_l0.pred_npc,
+        (unsigned long long)off_path_FT->get_ft_info().dynamic_info.FT_id,
+        (unsigned long long)off_path_FT->get_ft_info().static_info.start, off_path_FT->ops.size(),
+        (trailing_ft ? "yes" : "no"));
+  if (trailing_ft) {
+    DEBUG(proc_id,
+          "[DFE%u] redirect trailing_ft: id:%llu start:0x%llx ops:%zu unread:%u first_op_num:%llu first_addr:0x%llx\n",
+          bp_id, (unsigned long long)trailing_ft->get_ft_info().dynamic_info.FT_id,
+          (unsigned long long)trailing_ft->get_ft_info().static_info.start, trailing_ft->ops.size(),
+          trailing_ft->has_unread_ops(),
+          (unsigned long long)(trailing_ft->ops.size() ? trailing_ft->ops.front()->op_num : 0),
+          (unsigned long long)(trailing_ft->ops.size() ? trailing_ft->ops.front()->inst_info->addr : 0));
+  }
   current_ft_to_push = off_path_FT;
   // if we have a tailing ft, save it for recovery
   if (trailing_ft && trailing_ft->has_unread_ops()) {
     saved_recovery_ft = trailing_ft;
+    DEBUG(proc_id, "[DFE%u] saved_recovery_ft<-trailing_ft id:%llu start:0x%llx ops:%zu\n", bp_id,
+          (unsigned long long)saved_recovery_ft->get_ft_info().dynamic_info.FT_id,
+          (unsigned long long)saved_recovery_ft->get_ft_info().static_info.start, saved_recovery_ft->ops.size());
   }
   // no trailing ft, misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
@@ -727,6 +802,10 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
                                  },
                                  false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
     ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+    DEBUG(proc_id, "[DFE%u] saved_recovery_ft<-newly_built id:%llu start:0x%llx ops:%zu build_event:%d\n", bp_id,
+          (unsigned long long)saved_recovery_ft->get_ft_info().dynamic_info.FT_id,
+          (unsigned long long)saved_recovery_ft->get_ft_info().static_info.start, saved_recovery_ft->ops.size(),
+          (int)build_event);
   }
   saved_recovery_ft->set_prebuilt(true);
   redirect_cycle = cycle_count;

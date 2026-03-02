@@ -196,6 +196,7 @@ void flush_ready_list() {
     if (FLUSH_OP(op)) {
       DEBUG(node->proc_id, "Node ready-list flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
             op->off_path);
+      ASSERT(node->proc_id, op->off_path);
       ASSERT(node->proc_id, op->op_num > bp_recovery_info->recovery_op_num);
       *last = op->next_rdy;
       op->in_rdy_list = FALSE;
@@ -212,6 +213,7 @@ void flush_scheduling_buffer() {
       DEBUG(node->proc_id, "Node sched-buffer flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
             op->off_path);
       ASSERT(node->proc_id, node->proc_id == op->proc_id);
+      ASSERT(node->proc_id, op->off_path);
       ASSERTM(node->proc_id, op->op_num > bp_recovery_info->recovery_op_num, "op_num:%s\n", unsstr64(op->op_num));
 
       node->sd.ops[ii] = NULL;
@@ -228,6 +230,7 @@ void flush_rs() {
     DEBUG(node->proc_id, "Node RS-input flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
           op->off_path);
     ASSERT(node->proc_id, node->proc_id == op->proc_id);
+    ASSERT(node->proc_id, op->off_path);
     ASSERTM(node->proc_id, op->op_num > bp_recovery_info->recovery_op_num, "op_num:%s\n", unsstr64(op->op_num));
     node->next_op_into_rs = NULL;  // all later ops will also be flushed
   }
@@ -246,6 +249,7 @@ void flush_window() {
     if (FLUSH_OP(op)) {
       DEBUG(node->proc_id, "Node window flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
             op->off_path);
+      ASSERT(node->proc_id, op->off_path);
       if (!op->macro_fused)
         flush_ops++;
       ASSERT(node->proc_id, op->op_num > bp_recovery_info->recovery_op_num);
@@ -256,7 +260,7 @@ void flush_window() {
         node->rs[op->rs_id].rs_op_count--;
       }
       if (op->parent_FT)
-        ft_free_op(op);
+        ft_free_op(op, NULL, NULL);
     } else {
       /* Keep op */
 
@@ -639,7 +643,7 @@ void node_retire() {
     if (model->op_retired_hook)
       model->op_retired_hook(op);
     else
-      ft_free_op(op);
+      ft_free_op(op, NULL, NULL);
 
     // the fused op does not occupy the ROB entry
     if (!op->macro_fused)

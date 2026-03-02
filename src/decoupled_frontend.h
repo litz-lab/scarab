@@ -130,6 +130,7 @@ Op* decoupled_fe_ftq_iter_get(Decoupled_FE* dfe, uns iter_idx, bool* end_of_ft);
 /* Increments iterator and returns the Op at iterator position or NULL if FTQ is empty or the end of FTQ was reached
    if end_of_ft is true the Op is the last one in a fetch target (cache-line boundary of taken branch)*/
 Op* decoupled_fe_ftq_iter_get_next(Decoupled_FE* dfe, uns iter_idx, bool* end_of_ft);
+bool decoupled_fe_ftq_iter_passed_recovery_ft(Decoupled_FE* dfe, uns iter_idx);
 /* Returns iter flattened offset from the start of the FTQ, this offset gets incremented
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */
@@ -180,6 +181,10 @@ class Decoupled_FE {
   uns new_ftq_iter();
   Op* ftq_iter_get(uns iter_idx, bool* end_of_ft);
   Op* ftq_iter_get_next(uns iter_idx, bool* end_of_ft);
+  bool ftq_iter_passed_recovery_ft(uns iter_idx) {
+    ASSERT(proc_id, iter_idx < ftq_iter_passed_recovery_ft_flags.size());
+    return ftq_iter_passed_recovery_ft_flags[iter_idx];
+  }
   uint64_t ftq_iter_offset(uns iter_idx);
   uint64_t ftq_iter_ft_offset(uns iter_idx);
   uint64_t ftq_num_ops();
@@ -244,6 +249,7 @@ class Decoupled_FE {
   uint64_t op_num;
   uint64_t current_off_path_op_num;
   std::vector<std::unique_ptr<decoupled_fe_iter>> ftq_iterators;
+  std::vector<bool> ftq_iter_passed_recovery_ft_flags;
   uint64_t recovery_addr;
   uint64_t redirect_cycle;
   uint64_t ftq_ft_num;

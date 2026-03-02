@@ -70,6 +70,7 @@ Map_Stage* map = NULL;
 static inline void stage_process_op(Op*);
 static inline void map_stage_collect_stat(Flag, Flag);
 static inline void map_stage_fetch_op(Stage_Data*);
+static void print_stage_op_nums(FILE* stream, Op** ops, int count);
 
 /**************************************************************************************/
 /* set_map_stage: */
@@ -135,12 +136,18 @@ void recover_map_stage() {
 
     for (jj = 0, kk = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
       if (cur->ops[jj]) {
+        if (IS_FLUSHING_OP(cur->ops[jj])) {
+          DEBUG(map->proc_id, "Recovery op found in Map stage:%u slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii, jj,
+                (unsigned long long)cur->ops[jj]->op_num, cur->ops[jj]->off_path,
+                (unsigned long long)cur->ops[jj]->inst_info->addr);
+        }
         if (FLUSH_OP(cur->ops[jj])) {
           DEBUG(map->proc_id, "Map flushing op_num:%llu off_path:%u\n", (unsigned long long)cur->ops[jj]->op_num,
                 cur->ops[jj]->off_path);
           flushed = TRUE;
+          ASSERT(map->proc_id, cur->ops[jj]->off_path);
           if (cur->ops[jj]->parent_FT)
-            ft_free_op(cur->ops[jj]);
+            ft_free_op(cur->ops[jj], NULL, NULL);
           cur->ops[jj] = NULL;
         } else {
           Op* op = cur->ops[jj];
@@ -172,6 +179,9 @@ void debug_map_stage() {
   for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &map->sds[STAGE_MAX_DEPTH - ii - 1];
     DPRINTF("# %-10s  op_count:%d\n", cur->name, cur->op_count);
+    DPRINTF("# %-10s  op_nums:", cur->name);
+    print_stage_op_nums(GLOBAL_DEBUG_STREAM, cur->ops, cur->op_count);
+    DPRINTF("\n");
     print_op_array(GLOBAL_DEBUG_STREAM, cur->ops, STAGE_MAX_OP_COUNT, STAGE_MAX_OP_COUNT);
   }
 }
@@ -305,4 +315,20 @@ static inline void map_stage_fetch_op(Stage_Data* src_sd) {
 
   // Any stage can receive a mix of on/off-path ops in a single cycle.
   ASSERT(map->proc_id, first_sd->op_count <= MAP_STAGE_RECEIVED_OPS_MAX);
+}
+
+static void print_stage_op_nums(FILE* stream, Op** ops, int count) {
+  fprintf(stream, " [");
+  for (int i = 0; i < count; i++) {
+    if (i) {
+      fprintf(stream, " ");
+    }
+    Op* op = ops[i];
+    if (!op) {
+      fprintf(stream, "-");
+      continue;
+    }
+    fprintf(stream, "%llu%s", (unsigned long long)op->op_num, op->off_path ? "o" : "n");
+  }
+  fprintf(stream, "]");
 }

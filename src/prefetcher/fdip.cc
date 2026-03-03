@@ -304,53 +304,73 @@ void fdip_stats(uns proc_id) {
 }
 
 void inc_cnt_useful(uns proc_id, Addr line_addr, Flag pref_miss) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(proc_id, g_fdip->get_proc_id() == proc_id);
   ASSERT(proc_id, g_fdip->get_bp_id() == 0);
   g_fdip->inc_cnt_useful(line_addr, pref_miss);
 }
 
 void inc_cnt_unuseful(uns proc_id, Addr line_addr) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(proc_id, g_fdip->get_proc_id() == proc_id);
   ASSERT(proc_id, g_fdip->get_bp_id() == 0);
   g_fdip->inc_cnt_unuseful(line_addr);
 }
 
 void inc_cnt_useful_signed(Addr line_addr) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   g_fdip->inc_cnt_useful_signed(line_addr);
 }
 
 void dec_cnt_useful_signed(Addr line_addr) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   g_fdip->dec_cnt_useful_signed(line_addr);
 }
 
 void inc_icache_miss(Addr line_addr) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   g_fdip->inc_icache_miss(line_addr);
 }
 
 void inc_off_fetched_cls(Addr line_addr) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   g_fdip->inc_off_fetched_cls(line_addr);
 }
 
 void evict_prefetched_cls(Addr line_addr, Flag by_fdip) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   g_fdip->evict_prefetched_cls(line_addr, by_fdip);
 }
 
 uns get_miss_reason(Addr line_addr) {
+  if (!FDIP_ENABLE)
+    return IMISS_NOT_PREFETCHED;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   return g_fdip->get_miss_reason(line_addr);
 }
 
 uns get_last_miss_reason() {
+  if (!FDIP_ENABLE)
+    return IMISS_NOT_PREFETCHED;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   return g_fdip->get_last_miss_reason();
 }
 
 void set_last_miss_reason(uns reason) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   g_fdip->set_last_miss_reason(reason);
 }

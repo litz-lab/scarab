@@ -97,7 +97,7 @@ void LookaheadBuffer::init() {
    used to prefill and refill the buffer */
 void LookaheadBuffer::insert_ft() {
   ASSERT(proc_id, have_seen_exit == 0);
-  FT* new_ft = new FT(proc_id, 0);
+  FT* new_ft = new FT(proc_id, MAIN_BP);
   FT_Event build_success = new_ft->build([&](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
                                          [&](uns8 pid, uns8 bid, Op* op) {
                                            frontend_fetch_op(pid, bid, op);

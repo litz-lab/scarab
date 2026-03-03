@@ -84,6 +84,14 @@ typedef enum DFE_Recovery_Policy_enum {
   CONTINUE_ON_PREDICTION,
 } DFE_Recovery_Policy;
 
+typedef enum BpId_enum {
+  MAIN_BP = 0,
+  ALT_BP_1,
+  ALT_BP_2,
+  ALT_BP_3,
+  ALT_BP_4,
+} BpId;
+
 typedef struct FT FT;
 typedef struct Decoupled_FE Decoupled_FE;
 

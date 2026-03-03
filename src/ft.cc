@@ -72,7 +72,6 @@ FT::FT(uns _proc_id, uns _bp_id) : proc_id(_proc_id), bp_id(_bp_id) {
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   ft_info.dynamic_info.first_op_off_path = FALSE;
   is_prebuilt = false;
-  iterated = false;
 }
 
 bool FT::can_fetch_op() {

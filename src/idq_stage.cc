@@ -313,15 +313,17 @@ void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd, int& count
 }
 
 void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
-  DEBUG(proc_id,
-        "IDQ heads next_op_num:%llu dec_head:%s dec_count:%d uopq_head:%s uopq_count:%d ic_uopc_head:%s ic_uopc_count:%d "
-        "idq_out_count:%d idq_q_occupied:%d\n",
-        (unsigned long long)next_op_num,
-        (dec_src_sd->op_count && dec_src_sd->ops[0]) ? unsstr64(dec_src_sd->ops[0]->op_num) : "none", dec_src_sd->op_count,
-        (uop_queue_sd->op_count && uop_queue_sd->ops[0]) ? unsstr64(uop_queue_sd->ops[0]->op_num) : "none",
-        uop_queue_sd->op_count,
-        (ic_uopc_sd->op_count && ic_uopc_sd->ops[0]) ? unsstr64(ic_uopc_sd->ops[0]->op_num) : "none", ic_uopc_sd->op_count,
-        idq_sd.op_count, occupied_count);
+  DEBUG(
+      proc_id,
+      "IDQ heads next_op_num:%llu dec_head:%s dec_count:%d uopq_head:%s uopq_count:%d ic_uopc_head:%s ic_uopc_count:%d "
+      "idq_out_count:%d idq_q_occupied:%d\n",
+      (unsigned long long)next_op_num,
+      (dec_src_sd->op_count && dec_src_sd->ops[0]) ? unsstr64(dec_src_sd->ops[0]->op_num) : "none",
+      dec_src_sd->op_count,
+      (uop_queue_sd->op_count && uop_queue_sd->ops[0]) ? unsstr64(uop_queue_sd->ops[0]->op_num) : "none",
+      uop_queue_sd->op_count,
+      (ic_uopc_sd->op_count && ic_uopc_sd->ops[0]) ? unsstr64(ic_uopc_sd->ops[0]->op_num) : "none",
+      ic_uopc_sd->op_count, idq_sd.op_count, occupied_count);
 
   /* Fill the IDQ output stage data with uops from IDQ. */
   int count_issued = 0;
@@ -344,10 +346,10 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
   /* Select the input stage data. */
   Stage_Data* consume_from_sd = select_input_stage_data(dec_src_sd, ic_uopc_sd, uop_queue_sd);
   DEBUG(proc_id, "IDQ selected input:%s\n",
-        consume_from_sd == dec_src_sd      ? "decode"
-        : consume_from_sd == uop_queue_sd  ? "uop_queue"
-        : consume_from_sd == ic_uopc_sd    ? "ic_uopc"
-                                           : "none");
+        consume_from_sd == dec_src_sd     ? "decode"
+        : consume_from_sd == uop_queue_sd ? "uop_queue"
+        : consume_from_sd == ic_uopc_sd   ? "ic_uopc"
+                                          : "none");
   process_input_stage_data(consume_from_sd, count_issued, count_issued_on_path);
 
   topdown_idq_update(proc_id, idq_sd.op_count, count_issued, count_issued_on_path);

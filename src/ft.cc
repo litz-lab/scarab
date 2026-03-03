@@ -146,7 +146,8 @@ void FT::recover_ft() {
         (unsigned long long)before_info.dynamic_info.FT_id, (unsigned long long)before_info.static_info.start,
         (unsigned long long)before_info.static_info.length, (unsigned long long)before_info.static_info.n_uops,
         (unsigned long long)before_op_pos, before_ops, (int)get_end_reason(), before_last ? "yes" : "no",
-        (unsigned long long)(before_last ? before_last->inst_info->addr : 0), (unsigned)(before_last ? before_last->eom : 0));
+        (unsigned long long)(before_last ? before_last->inst_info->addr : 0),
+        (unsigned)(before_last ? before_last->eom : 0));
 
   trim_unread_tail([&](Op* op) {
     if (!FLUSH_OP(op))
@@ -168,7 +169,8 @@ void FT::recover_ft() {
         (unsigned long long)after_info.dynamic_info.FT_id, (unsigned long long)after_info.static_info.start,
         (unsigned long long)after_info.static_info.length, (unsigned long long)after_info.static_info.n_uops,
         (unsigned long long)op_pos, ops.size(), (int)get_end_reason(), after_last ? "yes" : "no",
-        (unsigned long long)(after_last ? after_last->inst_info->addr : 0), (unsigned)(after_last ? after_last->eom : 0));
+        (unsigned long long)(after_last ? after_last->inst_info->addr : 0),
+        (unsigned)(after_last ? after_last->eom : 0));
 }
 
 FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
@@ -390,13 +392,14 @@ FT_PredictResult FT::predict_ft() {
         event = predict_one_cf_op(op);
       }
 
-      DEBUG(proc_id,
-            "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
-            "recover_at_fe:%i recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
-            bp_id, op->inst_info->addr, op->oracle_info.npc, op->bp_pred_info->pred_npc, op->bp_pred_info->mispred,
-            op->bp_pred_info->misfetch, op->btb_pred_info->btb_miss, op->bp_pred_info->pred == TAKEN,
-            op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec,
-            op->table_info->bar_type & BAR_FETCH);
+      DEBUG(
+          proc_id,
+          "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
+          "recover_at_fe:%i recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
+          bp_id, op->inst_info->addr, op->oracle_info.npc, op->bp_pred_info->pred_npc, op->bp_pred_info->mispred,
+          op->bp_pred_info->misfetch, op->btb_pred_info->btb_miss, op->bp_pred_info->pred == TAKEN,
+          op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec,
+          op->table_info->bar_type & BAR_FETCH);
     } else {
       event = predict_one_cf_op(op);
     }
@@ -595,8 +598,7 @@ bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start, Counter recovery_o
   if (!recovery_op) {
     Op* last_op = ft->get_last_op();
     ASSERT(0, last_op);
-    DEBUG(last_op->proc_id,
-          "FT recovery consecutivity skipped: recovery_op_num:%llu not in FT[start:%llx]\n",
+    DEBUG(last_op->proc_id, "FT recovery consecutivity skipped: recovery_op_num:%llu not in FT[start:%llx]\n",
           (unsigned long long)recovery_op_num, (unsigned long long)ft->get_ft_info().static_info.start);
     return TRUE;
   }

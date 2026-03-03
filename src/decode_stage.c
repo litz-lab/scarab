@@ -134,8 +134,8 @@ void recover_decode_stage() {
     for (jj = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
       if (cur->ops[jj]) {
         if (IS_FLUSHING_OP(cur->ops[jj])) {
-          DEBUG(dec->proc_id, "Recovery op found in Decode stage:%u slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii, jj,
-                (unsigned long long)cur->ops[jj]->op_num, cur->ops[jj]->off_path,
+          DEBUG(dec->proc_id, "Recovery op found in Decode stage:%u slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
+                jj, (unsigned long long)cur->ops[jj]->op_num, cur->ops[jj]->off_path,
                 (unsigned long long)cur->ops[jj]->inst_info->addr);
         }
         if (FLUSH_OP(cur->ops[jj])) {

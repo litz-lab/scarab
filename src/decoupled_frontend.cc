@@ -261,9 +261,9 @@ void Decoupled_FE::dfe_recover_op() {
         DEBUG(proc_id,
               "[DFE%u] FTQ scan: recovery op_num:%llu found in ft_id:%llu at idx:%llu/%zu"
               " literal_last:%u recovery_op_is_last:%u\n",
-              bp_id, (unsigned long long)op->op_num,
-              (unsigned long long)ft->get_ft_info().dynamic_info.FT_id, (unsigned long long)op_idx,
-              ft->ops.size(), (unsigned)(op_idx == ft->ops.size() - 1), (unsigned)recovery_op_is_last);
+              bp_id, (unsigned long long)op->op_num, (unsigned long long)ft->get_ft_info().dynamic_info.FT_id,
+              (unsigned long long)op_idx, ft->ops.size(), (unsigned)(op_idx == ft->ops.size() - 1),
+              (unsigned)recovery_op_is_last);
         break;
       }
     }
@@ -294,9 +294,9 @@ void Decoupled_FE::dfe_recover_op() {
     UNUSED(ops_before_trim);
     recovery_ft->trim_unread_tail([](Op* op) { return op->off_path; });
     DEBUG(proc_id,
-          "[DFE%u] FTQ recover (last): ft_id:%llu ops_before_trim:%zu ops_after_trim:%zu recovery_op_num:%llu\n",
-          bp_id, (unsigned long long)recovery_ft->get_ft_info().dynamic_info.FT_id, ops_before_trim,
-          recovery_ft->ops.size(), (unsigned long long)bp_recovery_info->recovery_op_num);
+          "[DFE%u] FTQ recover (last): ft_id:%llu ops_before_trim:%zu ops_after_trim:%zu recovery_op_num:%llu\n", bp_id,
+          (unsigned long long)recovery_ft->get_ft_info().dynamic_info.FT_id, ops_before_trim, recovery_ft->ops.size(),
+          (unsigned long long)bp_recovery_info->recovery_op_num);
     // Update end_reason of recovery_ft
     recovery_ft->generate_ft_info();
   } else if (found_recovery_ft && !recovery_op_is_last) {
@@ -754,9 +754,8 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
 
   if (l0_enabled && l0_wrong && !main_wrong) {
     STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT_RECOVERY_SCHEDULED);
-    DEBUG(proc_id,
-          "[DFE%u] Early/Late mismatch op_num:%llu PC:0x%llx -> schedule recovery at main_ready:%llu\n",
-          bp_id, (unsigned long long)result.op->op_num, (unsigned long long)result.op->inst_info->addr,
+    DEBUG(proc_id, "[DFE%u] Early/Late mismatch op_num:%llu PC:0x%llx -> schedule recovery at main_ready:%llu\n", bp_id,
+          (unsigned long long)result.op->op_num, (unsigned long long)result.op->inst_info->addr,
           (unsigned long long)result.op->bp_pred_main.bp_ready_cycle);
     // Keep winner selection unchanged for ongoing off-path generation.
     op_select_bp_pred_info(result.op, BP_PRED_L0);

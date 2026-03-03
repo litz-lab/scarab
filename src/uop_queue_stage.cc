@@ -93,7 +93,8 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
   DEBUG(uopq->proc_id,
         "UopQ state q_size:%zu free_sds:%zu src_head:%s src_count:%d q_front_head:%s q_front_count:%d q_back_tail:%s "
         "q_back_count:%d\n",
-        uopq->q.size(), uopq->free_sds.size(), (src_sd && src_sd->op_count && src_sd->ops[0]) ? unsstr64(src_sd->ops[0]->op_num) : "none",
+        uopq->q.size(), uopq->free_sds.size(),
+        (src_sd && src_sd->op_count && src_sd->ops[0]) ? unsstr64(src_sd->ops[0]->op_num) : "none",
         src_sd ? src_sd->op_count : 0, uopq->q.size() ? sd_head_op_num_str(uopq->q.front()) : "none",
         uopq->q.size() ? uopq->q.front()->op_count : 0, uopq->q.size() ? sd_tail_op_num_str(uopq->q.back()) : "none",
         uopq->q.size() ? uopq->q.back()->op_count : 0);
@@ -150,8 +151,8 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
   }
 
   if (new_sd->op_count > 0) {
-    DEBUG(uopq->proc_id, "UopQ push stage head:%s tail:%s count:%d\n", sd_head_op_num_str(new_sd), sd_tail_op_num_str(new_sd),
-          new_sd->op_count);
+    DEBUG(uopq->proc_id, "UopQ push stage head:%s tail:%s count:%d\n", sd_head_op_num_str(new_sd),
+          sd_tail_op_num_str(new_sd), new_sd->op_count);
     uopq->free_sds.pop_front();
     uopq->q.push_back(new_sd);
   }
@@ -165,8 +166,8 @@ void recover_uop_queue_stage(void) {
   for (std::deque<Stage_Data*>::iterator it = uopq->q.begin(); it != uopq->q.end();) {
     Flag flushed = FALSE;
     Stage_Data* sd = *it;
-    DEBUG(uopq->proc_id, "UopQ recover stage before head:%s tail:%s count:%d\n", sd_head_op_num_str(sd), sd_tail_op_num_str(sd),
-          sd->op_count);
+    DEBUG(uopq->proc_id, "UopQ recover stage before head:%s tail:%s count:%d\n", sd_head_op_num_str(sd),
+          sd_tail_op_num_str(sd), sd->op_count);
     sd->op_count = 0;
     for (uns op_idx = 0; op_idx < STAGE_MAX_OP_COUNT; op_idx++) {
       Op* op = sd->ops[op_idx];

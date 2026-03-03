@@ -78,11 +78,10 @@ extern void tc_do_stat(Op*, Flag);
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_BP, ##args)
 #define DEBUG_BTB(proc_id, args...) _DEBUG(proc_id, DEBUG_BTB, ##args)
-#define STAT_EVENT_BP_SPLIT_PATH(op, on_stat, off_stat)                                         \
-  do {                                                                                             \
-    STAT_EVENT((op)->proc_id, (op)->off_path ? (off_stat) : (on_stat));                          \
-    STAT_EVENT((op)->proc_id, ((op)->off_path ? (off_stat##_L0) : (on_stat##_L0)) +              \
-                                   (op)->bp_pred_level);                                \
+#define STAT_EVENT_BP_SPLIT_PATH(op, on_stat, off_stat)                                                   \
+  do {                                                                                                    \
+    STAT_EVENT((op)->proc_id, (op)->off_path ? (off_stat) : (on_stat));                                   \
+    STAT_EVENT((op)->proc_id, ((op)->off_path ? (off_stat##_L0) : (on_stat##_L0)) + (op)->bp_pred_level); \
   } while (0)
 
 /******************************************************************************/
@@ -105,7 +104,6 @@ static inline Bp* bp_get_active_predictor(Bp_Data* bp_data, const Op* op) {
     return bp_data->bp_l0;
   return bp_data->bp;
 }
-
 
 /******************************************************************************/
 // Local prototypes
@@ -223,14 +221,12 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
       ASSERTM(proc_id, BP_MAIN_LATENCY < DECODE_CYCLES, "BP_MAIN_LATENCY must be < DECODE_CYCLES\n");
       bp_table[BP_MECH_L0].init_func();
     } else {
-      ASSERTM(proc_id, BP_MAIN_LATENCY == 1,
-              "BP_MAIN_LATENCY must be 1 when early predictor is disabled\n");
+      ASSERTM(proc_id, BP_MAIN_LATENCY == 1, "BP_MAIN_LATENCY must be 1 when early predictor is disabled\n");
     }
   }
   ASSERTM(proc_id, BP_MAIN_PREDICTIONS == BP_L0_PREDICTIONS + 1,
           "BP level stats must be contiguous: BP_{L0,MAIN}_PREDICTIONS\n");
-  ASSERTM(proc_id, BP_MAIN_MISPRED == BP_L0_MISPRED + 1,
-          "BP level stats must be contiguous: BP_{L0,MAIN}_MISPRED\n");
+  ASSERTM(proc_id, BP_MAIN_MISPRED == BP_L0_MISPRED + 1, "BP level stats must be contiguous: BP_{L0,MAIN}_MISPRED\n");
   ASSERTM(proc_id, BP_MAIN_MISFETCH == BP_L0_MISFETCH + 1,
           "BP level stats must be contiguous: BP_{L0,MAIN}_MISFETCH\n");
   ASSERT(bp_data->proc_id, bp_data);
@@ -756,10 +752,10 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         "BP[%s,%s]:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
         "t_npc:0x%s  btb_miss:%d  mispred:%d  misfetch:%d  no_tar:%d dir%d pred%d offset %llx target %llx\n",
         pred_bp->name, op->bp_pred_level == BP_PRED_L0 ? "l0" : "main", unsstr64(op->op_num), op->off_path,
-        cf_type_names[op->table_info->cf_type], hexstr64s(op->inst_info->addr),
-        hexstr64s(op->bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc), op->btb_pred_info->btb_miss,
-        op->bp_pred_info->mispred, op->bp_pred_info->recover_at_exec, op->bp_pred_info->recover_at_decode,
-        op->oracle_info.dir, op->bp_pred_info->pred, pc_plus_offset, op->oracle_info.target);
+        cf_type_names[op->table_info->cf_type], hexstr64s(op->inst_info->addr), hexstr64s(op->bp_pred_info->pred_npc),
+        hexstr64s(op->oracle_info.npc), op->btb_pred_info->btb_miss, op->bp_pred_info->mispred,
+        op->bp_pred_info->recover_at_exec, op->bp_pred_info->recover_at_decode, op->oracle_info.dir,
+        op->bp_pred_info->pred, pc_plus_offset, op->oracle_info.target);
 
   ASSERT(op->proc_id, op->bp_pred_info->pred_npc);
   if (op->oracle_info.dir != op->bp_pred_info->pred && pc_plus_offset != op->oracle_info.target) {

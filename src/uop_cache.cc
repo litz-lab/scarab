@@ -618,8 +618,9 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
   DEBUG(uc->proc_id,
         "UOC gen end: ft_id:%llu out_lines:%zu line_started:%u is_ft_end:%u new_start:0x%llx new_len:%llu "
         "new_n_uops:%llu new_end_reason:%d\n",
-        (unsigned long long)ft->get_ft_info().dynamic_info.FT_id, out.size(), (unsigned)line_started, (unsigned)is_ft_end,
-        (unsigned long long)ft->get_ft_info().static_info.start, (unsigned long long)ft->get_ft_info().static_info.length,
+        (unsigned long long)ft->get_ft_info().dynamic_info.FT_id, out.size(), (unsigned)line_started,
+        (unsigned)is_ft_end, (unsigned long long)ft->get_ft_info().static_info.start,
+        (unsigned long long)ft->get_ft_info().static_info.length,
         (unsigned long long)ft->get_ft_info().static_info.n_uops, (int)ft->get_end_reason());
   ASSERT(uc->proc_id, !line_started && is_ft_end);
 }

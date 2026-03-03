@@ -174,7 +174,7 @@ void init_uop_cache_stage(uns8 proc_id, const char* name) {
 /**************************************************************************************/
 /* Uop Cache Lookup Buffer Func */
 
-static Flag uop_cache_lookup_ft_and_fill_lookup_buffer_internal(FT_Info ft_info, Flag offpath, Flag count_port) {
+Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
   if (!UOP_CACHE_ENABLE) {
     return FALSE;
   }
@@ -209,16 +209,10 @@ static Flag uop_cache_lookup_ft_and_fill_lookup_buffer_internal(FT_Info ft_info,
     lookup_addr += uoc_data->offset;
   } while (!uoc_data->end_of_ft);
 
-  if (count_port) {
-    uc->lookups_per_cycle_count++;
-    ASSERT(ic->proc_id, uc->lookups_per_cycle_count <= UOP_CACHE_READ_PORTS);
-  }
+  uc->lookups_per_cycle_count++;
+  ASSERT(ic->proc_id, uc->lookups_per_cycle_count <= UOP_CACHE_READ_PORTS);
 
   return TRUE;
-}
-
-Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
-  return uop_cache_lookup_ft_and_fill_lookup_buffer_internal(ft_info, offpath, TRUE);
 }
 
 /* uop_cache_consume_uops_from_lookup_buffer: consume some uops from the uopc lookup buffer

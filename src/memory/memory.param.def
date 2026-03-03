@@ -165,7 +165,7 @@ DEF_PARAM(pref_insert_dynacc, PREF_INSERT_DYNACC, Flag, Flag,
           FALSE, ) /* Use Dynamic accuracy */
 
 
-DEF_PARAM(mem_req_buffer_entries, MEM_REQ_BUFFER_ENTRIES, uns, uns, 48, )
+DEF_PARAM(mem_req_buffer_entries, MEM_REQ_BUFFER_ENTRIES, uns, uns, 32, )
 DEF_PARAM(private_mshr_on, PRIVATE_MSHR_ON, Flag, Flag, TRUE, )
 DEF_PARAM(mem_priority_ifetch, MEM_PRIORITY_IFETCH, uns, uns, 0, )
 DEF_PARAM(mem_priority_dfetch, MEM_PRIORITY_DFETCH, uns, uns, 0, )

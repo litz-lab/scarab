@@ -746,7 +746,7 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
 void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling
   ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT);
-  const Flag l0_enabled = (!bp_id && BP_MECH_L0 != NUM_BP && BP_L0_LATENCY > 0);
+  const Flag l0_enabled = (!bp_id && bp_l0_enabled());
   const Flag l0_wrong = result.op->bp_pred_l0.mispred || result.op->bp_pred_l0.misfetch;
   const Flag main_wrong = result.op->bp_pred_main.mispred || result.op->bp_pred_main.misfetch;
   const char* selected_pred = (result.op->bp_pred_info == &result.op->bp_pred_l0) ? "L0" : "MAIN";

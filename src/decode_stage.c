@@ -30,6 +30,7 @@
 #include "decode_stage.h"
 
 #include "globals/assert.h"
+#include "globals/debug_stage.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
@@ -71,7 +72,6 @@ Decode_Stage* dec = NULL;
 /* Local prototypes */
 
 static inline void update_cycles_stats(Stage_Data* src_sd, int empty_stage_idx);
-static void print_stage_op_nums(FILE* stream, Op** ops, int count);
 
 /**************************************************************************************/
 /* set_decode_stage: */
@@ -296,20 +296,4 @@ static inline void update_cycles_stats(Stage_Data* src_sd, int empty_stage_idx) 
   // Only count stats if the icache is not stalled due to a full decode stage.
   if (decode_stages_empty && src_sd->op_count)
     last_op = src_sd->ops[src_sd->op_count - 1];
-}
-
-static void print_stage_op_nums(FILE* stream, Op** ops, int count) {
-  fprintf(stream, " [");
-  for (int i = 0; i < count; i++) {
-    if (i) {
-      fprintf(stream, " ");
-    }
-    Op* op = ops[i];
-    if (!op) {
-      fprintf(stream, "-");
-      continue;
-    }
-    fprintf(stream, "%llu%s", (unsigned long long)op->op_num, op->off_path ? "o" : "n");
-  }
-  fprintf(stream, "]");
 }

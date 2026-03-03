@@ -294,46 +294,6 @@ Flag uop_cache_seek_lookup_buffer_to_unread_ops(FT* ft) {
   return TRUE;
 }
 
-Flag uop_cache_adjust_lookup_buffer_to_unread_ops(FT* ft) {
-  if (!UOP_CACHE_ENABLE)
-    return TRUE;
-  ASSERT(uc->proc_id, ft);
-
-  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
-  size_t line_idx = uc_cpp->num_looked_up_lines;
-  uint64_t remaining_uops = ft_get_num_unread_ops(ft);
-
-  // If no uops remain, no lookup lines should remain either.
-  if (remaining_uops == 0) {
-    uc_cpp->lookup_buffer.resize(line_idx);
-    return TRUE;
-  }
-
-  while (line_idx < uc_cpp->lookup_buffer.size()) {
-    Uop_Cache_Data* line = &uc_cpp->lookup_buffer[line_idx];
-    if (line->n_uops == 0)
-      return FALSE;
-
-    if (line->n_uops < remaining_uops) {
-      // This full line is still needed and not FT end yet.
-      line->end_of_ft = FALSE;
-      remaining_uops -= line->n_uops;
-      line_idx++;
-      continue;
-    }
-
-    // This line is the recovered FT tail line.
-    line->n_uops = remaining_uops;
-    line->end_of_ft = TRUE;
-    line->offset = 0;
-    uc_cpp->lookup_buffer.resize(line_idx + 1);
-    return TRUE;
-  }
-
-  // Existing lookup buffer does not have enough uops for surviving FT.
-  return FALSE;
-}
-
 Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag update_repl) {
   if (!UOP_CACHE_ENABLE) {
     return NULL;

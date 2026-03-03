@@ -31,6 +31,7 @@
 #include "map_stage.h"
 
 #include "globals/assert.h"
+#include "globals/debug_stage.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
@@ -70,7 +71,6 @@ Map_Stage* map = NULL;
 static inline void stage_process_op(Op*);
 static inline void map_stage_collect_stat(Flag, Flag);
 static inline void map_stage_fetch_op(Stage_Data*);
-static void print_stage_op_nums(FILE* stream, Op** ops, int count);
 
 /**************************************************************************************/
 /* set_map_stage: */
@@ -288,11 +288,6 @@ static inline void map_stage_fetch_op(Stage_Data* src_sd) {
 
   for (int ii = 0; ii < op_count_before_fetch; ii++) {
     Op* op = src_sd->ops[ii];
-    if (op->op_num > map->next_op_num) {
-      DEBUG(map->proc_id, "Map resync next_op_num from %llu to %llu at idx=%d\n", (unsigned long long)map->next_op_num,
-            (unsigned long long)op->op_num, ii);
-      map->next_op_num = op->op_num;
-    }
     ASSERT(map->proc_id, op->op_num == map->next_op_num);
     DEBUG(map->proc_id, "Fetching opnum=%llu at idx=%i\n", op->op_num, ii);
 
@@ -315,20 +310,4 @@ static inline void map_stage_fetch_op(Stage_Data* src_sd) {
 
   // Any stage can receive a mix of on/off-path ops in a single cycle.
   ASSERT(map->proc_id, first_sd->op_count <= MAP_STAGE_RECEIVED_OPS_MAX);
-}
-
-static void print_stage_op_nums(FILE* stream, Op** ops, int count) {
-  fprintf(stream, " [");
-  for (int i = 0; i < count; i++) {
-    if (i) {
-      fprintf(stream, " ");
-    }
-    Op* op = ops[i];
-    if (!op) {
-      fprintf(stream, "-");
-      continue;
-    }
-    fprintf(stream, "%llu%s", (unsigned long long)op->op_num, op->off_path ? "o" : "n");
-  }
-  fprintf(stream, "]");
 }

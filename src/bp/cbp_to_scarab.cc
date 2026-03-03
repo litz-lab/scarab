@@ -114,7 +114,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op) {
   Flag is_conditional = is_conditional_branch(op->table_info->cf_type);
   Flag pred_dir =
       (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON) ? op->oracle_info.dir : op->bp_pred_info->pred;
-  const Flag l0_enabled = (BP_MECH_L0 != NUM_BP) && (BP_L0_LATENCY > 0);
+  const Flag l0_enabled = (!bp_id && bp_l0_enabled());
   const Flag l0_wrong = op->bp_pred_l0.mispred || op->bp_pred_l0.misfetch;
   const Flag main_wrong = op->bp_pred_main.mispred || op->bp_pred_main.misfetch;
   const Flag late_recovery_candidate = l0_enabled && l0_wrong && !main_wrong;

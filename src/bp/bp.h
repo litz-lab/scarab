@@ -31,6 +31,8 @@
 
 #include "globals/global_types.h"
 
+#include "bp/bp.param.h"
+
 #include "libs/cache_lib.h"
 #include "libs/hash_lib.h"
 
@@ -252,6 +254,15 @@ extern Bp_Ibtb bp_ibtb_table[];
 extern Bp_Data* g_bp_data;
 extern Bp_Recovery_Info* bp_recovery_info;
 extern Br_Conf br_conf_table[];
+
+/**************************************************************************************/
+/* Inline helpers */
+
+// Returns TRUE if the L0 (early) branch predictor is enabled.
+// L0 runs in parallel with the main BP at a shorter latency.
+static inline Flag bp_l0_enabled(void) {
+  return (BP_MECH_L0 != NUM_BP) && (BP_L0_LATENCY > 0);
+}
 
 /**************************************************************************************/
 /* Prototypes */

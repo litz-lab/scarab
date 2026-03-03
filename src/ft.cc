@@ -353,7 +353,7 @@ FT_PredictResult FT::predict_ft() {
     FT_Event event = FT_EVENT_NONE;
     if (op->table_info->cf_type) {
       ASSERT(proc_id, op->eom);
-      const Flag l0_enabled = (bp_id == 0 && BP_MECH_L0 != NUM_BP && BP_L0_LATENCY > 0);
+      const Flag l0_enabled = (bp_id == 0 && bp_l0_enabled());
       if (l0_enabled) {
         INC_STAT_EVENT(proc_id, DFE_L0_ENABLED_PREDICTIONS, 1);
 

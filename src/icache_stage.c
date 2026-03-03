@@ -31,6 +31,7 @@
 #include <math.h>
 
 #include "globals/assert.h"
+#include "globals/debug_stage.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
@@ -355,22 +356,6 @@ void redirect_icache_stage() {
 
 /**************************************************************************************/
 /* debug_icache_stage: */
-
-static void print_stage_op_nums(FILE* stream, Op** ops, int count) {
-  fprintf(stream, " [");
-  for (int i = 0; i < count; i++) {
-    if (i) {
-      fprintf(stream, " ");
-    }
-    Op* op = ops[i];
-    if (!op) {
-      fprintf(stream, "-");
-      continue;
-    }
-    fprintf(stream, "%llu%s", (unsigned long long)op->op_num, op->off_path ? "o" : "n");
-  }
-  fprintf(stream, "]");
-}
 
 void debug_icache_stage() {
   Stage_Data* cur_data = get_current_stage_data();
@@ -907,23 +892,6 @@ void execute_coupled_FSM() {
   } else if (ic->state == ICACHE_STALLED) {
     ic->next_state = ic->fetch_barrier_pending ? ICACHE_STALLED : ICACHE_STAGE_RESTEER;
     break_fetch = ic->fetch_barrier_pending ? BREAK_ICACHE_STALLED : BREAK_ICACHE_STAGE_RESTEER;
-    /*    if (ic->fetch_barrier_pending) {*/
-    /*ic->next_state = ICACHE_STALLED;*/
-    /*break_fetch = BREAK_ICACHE_STALLED;*/
-    /*} else if (UOP_CACHE_ENABLE && uc->current_ft && ft_can_fetch_op(uc->current_ft)) {*/
-    /*// Recovery can clear the fetch barrier while leaving a valid surviving FT.*/
-    /*// Resume serving instead of forcing a resteer.*/
-    /*ic->next_state = UOP_CACHE_SERVING;*/
-    /*break_fetch = BREAK_UOP_CACHE_STALLED;*/
-    /*} else if (ic->current_ft && ft_can_fetch_op(ic->current_ft)) {*/
-    /*// Recovery can clear the fetch barrier while leaving a valid surviving FT.*/
-    /*// Resume serving instead of forcing a resteer.*/
-    /*ic->next_state = ICACHE_SERVING;*/
-    /*break_fetch = BREAK_ICACHE_STALLED;*/
-    /*} else {*/
-    /*ic->next_state = ICACHE_STAGE_RESTEER;*/
-    /*break_fetch = BREAK_ICACHE_STAGE_RESTEER;*/
-    /*}*/
   } else {
     ASSERT(ic->proc_id, 0);
   }

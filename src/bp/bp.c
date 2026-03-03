@@ -95,10 +95,6 @@ extern uns operating_mode;
 /******************************************************************************/
 // Local helpers
 
-static inline Flag bp_l0_enabled(void) {
-  return (BP_MECH_L0 != NUM_BP) && (BP_L0_LATENCY > 0);
-}
-
 static inline Bp* bp_get_active_predictor(Bp_Data* bp_data, const Op* op) {
   if (bp_l0_enabled() && op->bp_pred_level == BP_PRED_L0 && bp_data->bp_l0)
     return bp_data->bp_l0;
@@ -759,8 +755,8 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 
   ASSERT(op->proc_id, op->bp_pred_info->pred_npc);
   if (op->oracle_info.dir != op->bp_pred_info->pred && pc_plus_offset != op->oracle_info.target) {
-    if (!(op->bp_pred_info->recover_at_exec || op->bp_pred_info->recover_at_decode))
-      ASSERT(op->proc_id, op->bp_pred_info->recover_at_exec || op->bp_pred_info->recover_at_decode);
+    ASSERT(op->proc_id,
+           op->bp_pred_info->recover_at_fe || op->bp_pred_info->recover_at_exec || op->bp_pred_info->recover_at_decode);
   }
 
   ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->bp_pred_info->pred_npc);

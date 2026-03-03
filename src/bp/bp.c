@@ -96,7 +96,7 @@ extern uns operating_mode;
 // Local helpers
 
 static inline Bp* bp_get_active_predictor(Bp_Data* bp_data, const Op* op) {
-  if (bp_l0_enabled() && op->bp_pred_info == &op->bp_pred_l0 && bp_data->bp_l0)
+  if (bp_l0_enabled() && op->bp_pred_info == &op->bp_pred_l0)
     return bp_data->bp_l0;
   return bp_data->bp;
 }
@@ -213,7 +213,7 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
     if (bp_l0_enabled()) {
       ASSERTM(proc_id, BP_MECH_L0 == BIMODAL_BP, "BP_MECH_L0 must be bimodal when L0 is enabled\n");
       ASSERTM(proc_id, BP_L0_LATENCY == 1, "BP_L0_LATENCY must be 1 when L0 is enabled\n");
-      ASSERTM(proc_id, BP_MAIN_LATENCY >= 1, "BP_MAIN_LATENCY must be >= 1 when L0 is enabled\n");
+      ASSERTM(proc_id, BP_MAIN_LATENCY > 1, "BP_MAIN_LATENCY must be > 1 when L0 is enabled\n");
       ASSERTM(proc_id, BP_MAIN_LATENCY < DECODE_CYCLES, "BP_MAIN_LATENCY must be < DECODE_CYCLES\n");
       bp_table[BP_MECH_L0].init_func();
     } else {

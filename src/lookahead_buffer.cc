@@ -296,14 +296,14 @@ uint64_t lookahead_buffer_count(uns proc_id) {
 
 }  // extern "C"
 
-std::vector<FT*> lookahead_buffer_cpp_find_fts_by_ft_info(uns proc_id, const FT_Info_Static& target_info) {
+std::vector<FT*> lookahead_buffer_find_fts_by_ft_info(uns proc_id, const FT_Info_Static& target_info) {
   ASSERT(proc_id, proc_id < per_core_lookahead.size());
   ASSERT(proc_id, per_core_lookahead[proc_id]);
   return per_core_lookahead[proc_id]->find_fts_by_ft_info(target_info);
 }
 
-FT* lookahead_buffer_cpp_find_youngest_ft_by_static_info(uns proc_id, const FT_Info_Static& target_info) {
-  auto fts = lookahead_buffer_cpp_find_fts_by_ft_info(proc_id, target_info);
+FT* lookahead_buffer_find_youngest_ft_by_static_info(uns proc_id, const FT_Info_Static& target_info) {
+  auto fts = lookahead_buffer_find_fts_by_ft_info(proc_id, target_info);
   FT* youngest = nullptr;
   for (auto ft : fts) {
     if (!youngest || ft->get_ft_info().dynamic_info.FT_id > youngest->get_ft_info().dynamic_info.FT_id) {
@@ -313,25 +313,25 @@ FT* lookahead_buffer_cpp_find_youngest_ft_by_static_info(uns proc_id, const FT_I
   return youngest;
 }
 
-std::vector<FT*> lookahead_buffer_cpp_find_fts_by_start_addr(uns proc_id, uint64_t ft_start_addr) {
+std::vector<FT*> lookahead_buffer_find_fts_by_start_addr(uns proc_id, uint64_t ft_start_addr) {
   ASSERT(proc_id, proc_id < per_core_lookahead.size());
   ASSERT(proc_id, per_core_lookahead[proc_id]);
   return per_core_lookahead[proc_id]->find_fts_by_start_addr(ft_start_addr);
 }
 
-std::vector<FT*> lookahead_buffer_cpp_find_fts_enclosing_pc(uns proc_id, Addr pc) {
+std::vector<FT*> lookahead_buffer_find_fts_enclosing_pc(uns proc_id, Addr pc) {
   ASSERT(proc_id, proc_id < per_core_lookahead.size());
   ASSERT(proc_id, per_core_lookahead[proc_id]);
   return per_core_lookahead[proc_id]->find_fts_enclosing_pc(pc);
 }
 
-std::vector<FT*> lookahead_buffer_cpp_find_fts_enclosing_line_addr(uns proc_id, Addr line_addr) {
+std::vector<FT*> lookahead_buffer_find_fts_enclosing_line_addr(uns proc_id, Addr line_addr) {
   ASSERT(proc_id, proc_id < per_core_lookahead.size());
   ASSERT(proc_id, per_core_lookahead[proc_id]);
   return per_core_lookahead[proc_id]->find_fts_enclosing_line_addr(line_addr);
 }
 
-FT* lookahead_buffer_cpp_find_oldest_ft_by_info(uns proc_id, FT_Info_Static static_info) {
+FT* lookahead_buffer_find_oldest_ft_by_info(uns proc_id, FT_Info_Static static_info) {
   ASSERT(proc_id, proc_id < per_core_lookahead.size());
   ASSERT(proc_id, per_core_lookahead[proc_id]);
   return per_core_lookahead[proc_id]->find_oldest_FT_by_ft_info(static_info);

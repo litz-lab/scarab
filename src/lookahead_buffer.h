@@ -165,22 +165,22 @@ class LookaheadBuffer {
 };
 
 /* Returns all FTs in the buffer matching given static FT info */
-std::vector<FT*> lookahead_buffer_cpp_find_fts_by_ft_info(uns proc_id, const FT_Info_Static& target_info);
+std::vector<FT*> lookahead_buffer_find_fts_by_ft_info(uns proc_id, const FT_Info_Static& target_info);
 
 /* find youngest FT by static info built from find_by_static_info primitive */
-FT* lookahead_buffer_cpp_find_youngest_ft_by_static_info(uns proc_id, const FT_Info_Static& target_info);
+FT* lookahead_buffer_find_youngest_ft_by_static_info(uns proc_id, const FT_Info_Static& target_info);
 
 /* Returns all FTs with a given start address */
-std::vector<FT*> lookahead_buffer_cpp_find_fts_by_start_addr(uns proc_id, uint64_t ft_start_addr);
+std::vector<FT*> lookahead_buffer_find_fts_by_start_addr(uns proc_id, uint64_t ft_start_addr);
 
 /* Returns list of FTs containing the given PC */
-std::vector<FT*> lookahead_buffer_cpp_find_fts_enclosing_pc(uns proc_id, Addr pc);
+std::vector<FT*> lookahead_buffer_find_fts_enclosing_pc(uns proc_id, Addr pc);
 
 /* Returns list of FTs containing the given line address */
-std::vector<FT*> lookahead_buffer_cpp_find_fts_enclosing_line_addr(uns proc_id, Addr line_addr);
+std::vector<FT*> lookahead_buffer_find_fts_enclosing_line_addr(uns proc_id, Addr line_addr);
 
 /* returns oldest insertion order FT of given FT info */
-FT* lookahead_buffer_cpp_find_oldest_ft_by_info(uns proc_id, FT_Info_Static static_info);
+FT* lookahead_buffer_find_oldest_ft_by_info(uns proc_id, FT_Info_Static static_info);
 #endif
 
 #endif

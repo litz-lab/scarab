@@ -283,7 +283,7 @@ void Decoupled_FE::dfe_recover_op() {
   if (found_recovery_ft && recovery_op_is_last) {
     ASSERT(proc_id, recovery_ft);
     ASSERT(proc_id, recovery_ft_op);
-    op_select_bp_pred_info(recovery_ft_op, bp_recovery_info->recovery_info.bp_pred_level);
+    op_select_bp_pred_info(recovery_ft_op, BP_PRED_MAIN);
     // Trim any off-path ops that were appended after the recovery op by the
     // off-path extension loop in redirect_to_off_path (e.g. when the mispredicted
     // branch was not-taken so the FT was not yet ended at the split point).

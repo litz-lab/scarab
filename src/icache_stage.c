@@ -301,32 +301,26 @@ void recover_icache_stage() {
     ic->fetch_barrier_op_num = 0;
   }
 
+  FT* uc_ft_before = UOP_CACHE_ENABLE ? uc->current_ft : NULL;
   if (UOP_CACHE_ENABLE) {
-    ft_regenerate_info_after_recovery(uc->current_ft, bp_recovery_info->recovery_op_num,
-                                      bp_recovery_info->recovery_info.bp_pred_level);
-    // Recovery changes FT boundaries/op_pos, so restart UOC lookup state instead
-    // of trying to keep a partially consumed lookup buffer in place.
-    uop_cache_clear_lookup_buffer();
+    ft_regenerate_info_after_recovery(uc->current_ft, bp_recovery_info->recovery_op_num);
     if (!uc->current_ft || !ft_can_fetch_op(uc->current_ft)) {
       uc->current_ft = NULL;
+      uop_cache_clear_lookup_buffer();
+    } else if (uop_cache_lookup_buffer_synced_with_ft(uc->current_ft)) {
+      // No trimming occurred: buffer cursor == op_pos, continue UOP_CACHE_SERVING.
     } else {
-      FT_Info recovered_ft_info = ft_get_ft_info(uc->current_ft);
-      Flag recovered_ft_in_uop_cache =
-          uop_cache_lookup_ft_and_fill_lookup_buffer_recovery(recovered_ft_info, ic->off_path);
-      if (!recovered_ft_in_uop_cache || !uop_cache_seek_lookup_buffer_to_unread_ops(uc->current_ft)) {
-        // Cannot continue UOC serving for recovered FT; fall back to icache path.
-        // Transfer the recovered FT to the icache provider so the on-path ops
-        // it still holds are not lost. Also override next_state so the FSM
-        // runs icache_serving_actions() instead of uop_cache_serving_actions().
-        uop_cache_clear_lookup_buffer();
-        ic->current_ft = uc->current_ft;
-        uc->current_ft = NULL;
-        ic->next_state = ICACHE_SERVING;
-      }
+      // Trimming occurred: buffer is stale, fall back to icache path.
+      // Transfer the recovered FT so its remaining on-path ops are not lost.
+      uop_cache_clear_lookup_buffer();
+      ic->current_ft = uc->current_ft;
+      uc->current_ft = NULL;
+      ic->next_state = ICACHE_SERVING;
     }
   }
-  ft_regenerate_info_after_recovery(ic->current_ft, bp_recovery_info->recovery_op_num,
-                                    bp_recovery_info->recovery_info.bp_pred_level);
+  // Only regenerate ic->current_ft if it wasn't already regenerated in the UOC block above.
+  if (ic->current_ft != uc_ft_before)
+    ft_regenerate_info_after_recovery(ic->current_ft, bp_recovery_info->recovery_op_num);
   if (!ic->current_ft || !ft_can_fetch_op(ic->current_ft))
     ic->current_ft = NULL;
 

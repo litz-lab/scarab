@@ -211,7 +211,7 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
             "SPEC_LEVEL currently supports BP_MECH=tage64k or bp_mech=bimodal\n");
   if (bp_id == 0) {
     if (bp_l0_enabled()) {
-      ASSERTM(proc_id, BP_MECH_L0 == BIMODAL_BP, "BP_MECH_L0 must be bimodal when L0 is enabled\n");
+      ASSERTM(proc_id, BP_MECH_L0 == BIMODAL_BP, "BP_MECH_L0 must be bimodal when L0 is enabled as the other BPs do not support off-path prediction\n");
       ASSERTM(proc_id, BP_L0_LATENCY == 1, "BP_L0_LATENCY must be 1 when L0 is enabled\n");
       ASSERTM(proc_id, BP_MAIN_LATENCY > 1, "BP_MAIN_LATENCY must be > 1 when L0 is enabled\n");
       ASSERTM(proc_id, BP_MAIN_LATENCY < DECODE_CYCLES, "BP_MAIN_LATENCY must be < DECODE_CYCLES\n");
@@ -302,7 +302,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
      speculatively updates global history */
   op->recovery_info.proc_id = op->proc_id;
   op->recovery_info.bp_id = op->bp_id;
-  op->recovery_info.bp_pred_level = pred_level;
   op->recovery_info.pred_global_hist = bp_data->global_hist;
   op->recovery_info.targ_hist = bp_data->targ_hist;
   op->recovery_info.new_dir = op->oracle_info.dir;
@@ -941,8 +940,7 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   if (cf_type == CF_ICALL || cf_type == CF_IBR) {
     bp_data->bp_ibtb->recover_func(bp_data, info);
   }
-  Bp* pred_bp = (bp_l0_enabled() && info->bp_pred_level == BP_PRED_L0 && bp_data->bp_l0) ? bp_data->bp_l0 : bp_data->bp;
-  pred_bp->recover_func(info);
+  bp_data->bp->recover_func(info);
 
   /* always recover the call return stack */
   CRS_REALISTIC ? bp_crs_realistic_recover(bp_data, info) : bp_crs_recover(bp_data);

@@ -86,7 +86,6 @@ typedef struct Wake_Up_Entry_struct {
 typedef struct Recovery_Info_struct {  // QUESTION no proc_id?
   uns proc_id;
   uns bp_id;
-  Bp_Pred_Level bp_pred_level;             // prediction level that produced this recovery snapshot
   uns32 pred_global_hist;                  // the global history used for the prediction
   uns64 conf_perceptron_global_hist;       // Only for confidnece perceptron, a copy of the correct global history
   uns64 conf_perceptron_global_misp_hist;  // Only for confidnece perceptron, a copy of the correct global history

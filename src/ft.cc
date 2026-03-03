@@ -503,7 +503,7 @@ void FT::generate_ft_info() {
   STAT_EVENT(proc_id, POWER_BTB_READ);
 }
 
-void FT::regenerate_ft_info_after_recovery(Counter recovery_op_num, Bp_Pred_Level bp_pred_level) {
+void FT::regenerate_ft_info_after_recovery(Counter recovery_op_num) {
   if (ops.empty()) {
     DEBUG(proc_id, "FT regenerate info: found_recovery:0 recovery_op_is_last:0 (empty FT) recovery_op_num:%llu\n",
           (unsigned long long)recovery_op_num);
@@ -525,17 +525,17 @@ void FT::regenerate_ft_info_after_recovery(Counter recovery_op_num, Bp_Pred_Leve
 
   DEBUG(proc_id,
         "FT regenerate info: found_recovery:%u recovery_op_is_last:%u recovery_op_num:%llu ft_id:%llu op_pos:%llu "
-        "ops:%zu last_op_num:%llu last_addr:0x%llx last_eom:%u last_cf:%u level:%u pred:%u pred_npc:0x%llx "
+        "ops:%zu last_op_num:%llu last_addr:0x%llx last_eom:%u last_cf:%u pred:%u pred_npc:0x%llx "
         "oracle_npc:0x%llx main_pred:%u l0_pred:%u\n",
         (unsigned)found_recovery, (unsigned)recovery_op_is_last, (unsigned long long)recovery_op_num,
         (unsigned long long)ft_info.dynamic_info.FT_id, (unsigned long long)op_pos, ops.size(),
         (unsigned long long)last->op_num, (unsigned long long)last->inst_info->addr, (unsigned)last->eom,
-        (unsigned)last->table_info->cf_type, (unsigned)bp_pred_level, (unsigned)last->bp_pred_info->pred,
+        (unsigned)last->table_info->cf_type, (unsigned)last->bp_pred_info->pred,
         (unsigned long long)last->bp_pred_info->pred_npc, (unsigned long long)last->oracle_info.npc,
         (unsigned)last->bp_pred_main.pred, (unsigned)last->bp_pred_l0.pred);
 
   if (recovery_op_is_last) {
-    op_select_bp_pred_info(last, bp_pred_level);
+    op_select_bp_pred_info(last, BP_PRED_MAIN);
   }
 
   uint64_t saved_op_pos = op_pos;
@@ -618,10 +618,10 @@ void recover_ft(FT* ft) {
   ft->recover_ft();
 }
 
-void ft_regenerate_info_after_recovery(FT* ft, Counter recovery_op_num, Bp_Pred_Level bp_pred_level) {
+void ft_regenerate_info_after_recovery(FT* ft, Counter recovery_op_num) {
   if (!ft)
     return;
-  ft->regenerate_ft_info_after_recovery(recovery_op_num, bp_pred_level);
+  ft->regenerate_ft_info_after_recovery(recovery_op_num);
 }
 
 /* retire and flush, free all ops in a FT when last op is freed */

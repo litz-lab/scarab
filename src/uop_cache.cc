@@ -221,10 +221,6 @@ Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath) {
   return uop_cache_lookup_ft_and_fill_lookup_buffer_internal(ft_info, offpath, TRUE);
 }
 
-Flag uop_cache_lookup_ft_and_fill_lookup_buffer_recovery(FT_Info ft_info, Flag offpath) {
-  return uop_cache_lookup_ft_and_fill_lookup_buffer_internal(ft_info, offpath, FALSE);
-}
-
 /* uop_cache_consume_uops_from_lookup_buffer: consume some uops from the uopc lookup buffer
  * if the uop num of the current line > requested, it will be partially consumed and the line index is unchanged
  * if the uop num of the current line <= requested, it will be fully consumed and the line index is incremented
@@ -258,7 +254,12 @@ void uop_cache_clear_lookup_buffer() {
   uc_cpp->num_looked_up_lines = 0;
 }
 
-Flag uop_cache_seek_lookup_buffer_to_unread_ops(FT* ft) {
+/* uop_cache_lookup_buffer_synced_with_ft: check if the lookup buffer's remaining
+ * uop count matches ft's unread op count.
+ * Returns TRUE if the buffer cursor is in sync with ft->op_pos (no trimming
+ * occurred during recovery), FALSE if trimming caused a desync.
+ */
+Flag uop_cache_lookup_buffer_synced_with_ft(FT* ft) {
   if (!UOP_CACHE_ENABLE)
     return TRUE;
   ASSERT(uc->proc_id, ft);
@@ -266,32 +267,12 @@ Flag uop_cache_seek_lookup_buffer_to_unread_ops(FT* ft) {
   Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
   uint64_t unread_uops = ft_get_num_unread_ops(ft);
 
-  // Count total uops currently represented by the lookup buffer tail.
-  uint64_t total_uops = 0;
+  uint64_t buffer_remaining_uops = 0;
   for (size_t i = uc_cpp->num_looked_up_lines; i < uc_cpp->lookup_buffer.size(); i++) {
-    total_uops += uc_cpp->lookup_buffer[i].n_uops;
+    buffer_remaining_uops += uc_cpp->lookup_buffer[i].n_uops;
   }
 
-  if (unread_uops > total_uops)
-    return FALSE;
-
-  // Skip already-consumed prefix uops so lookup buffer starts at FT op_pos.
-  uint64_t to_skip = total_uops - unread_uops;
-  while (to_skip > 0) {
-    if (uc_cpp->num_looked_up_lines >= uc_cpp->lookup_buffer.size())
-      return FALSE;
-
-    Uop_Cache_Data* line = &uc_cpp->lookup_buffer[uc_cpp->num_looked_up_lines];
-    if (line->n_uops <= to_skip) {
-      to_skip -= line->n_uops;
-      uc_cpp->num_looked_up_lines += 1;
-    } else {
-      line->n_uops -= to_skip;
-      to_skip = 0;
-    }
-  }
-
-  return TRUE;
+  return (buffer_remaining_uops == unread_uops) ? TRUE : FALSE;
 }
 
 Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag update_repl) {

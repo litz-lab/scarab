@@ -57,10 +57,9 @@ void init_uop_cache_stage(uns8 proc_id, const char* name);
 void alloc_mem_uop_cache(uns num_cores);
 
 Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath);
-Flag uop_cache_lookup_ft_and_fill_lookup_buffer_recovery(FT_Info ft_info, Flag offpath);
 Uop_Cache_Data uop_cache_consume_uops_from_lookup_buffer(uns requested);
 void uop_cache_clear_lookup_buffer(void);
-Flag uop_cache_seek_lookup_buffer_to_unread_ops(FT* ft);
+Flag uop_cache_lookup_buffer_synced_with_ft(FT* ft);
 Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag update_repl);
 
 void uop_cache_insert_op(Op* op);

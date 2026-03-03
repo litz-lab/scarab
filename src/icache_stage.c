@@ -315,7 +315,14 @@ void recover_icache_stage() {
       uop_cache_clear_lookup_buffer();
       ic->current_ft = uc->current_ft;
       uc->current_ft = NULL;
-      ic->next_state = ICACHE_SERVING;
+      // ICACHE_SERVING requires ic->line/ic->line_addr to be set (invariant
+      // checked by icache_serve_ops). This FT was served via UOC so ic->line
+      // was never fetched. Do a silent cache_access — same address ft_arbitration
+      // would use — to establish the line pointer before entering ICACHE_SERVING.
+      FT_Info recovered_ft_info = ft_get_ft_info(ic->current_ft);
+      ic->fetch_addr = recovered_ft_info.static_info.start;
+      ic->line = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr, &ic->line_addr, TRUE);
+      ic->next_state = ic->line ? ICACHE_SERVING : ICACHE_MEM_REQ;
     }
   }
   // Only regenerate ic->current_ft if it wasn't already regenerated in the UOC block above.

@@ -28,8 +28,10 @@
 #define __DEBUG_STAGE_H__
 
 #include <stdio.h>
-#include "op.h"
+
 #include "globals/utils.h"
+
+#include "op.h"
 
 /* Print op_num and on/off-path flag for each op in an array.
  * NULL slots are shown as '-'. */

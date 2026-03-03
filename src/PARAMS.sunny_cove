@@ -182,7 +182,7 @@
 --mem_priority_wb            5
 --mem_priority_wb_nodirty    5
 
---mem_req_buffer_entries        32
+--mem_req_buffer_entries        48
 --bus_width_in_bytes            8
 
 --ramulator_standard		DDR4
@@ -196,7 +196,7 @@
 --ramulator_rows		65536
 --ramulator_cols		1024
 --ramulator_scheduling_policy	FRFCFS_Cap		
---ramulator_readq_entries	32		
+--ramulator_readq_entries	48		
 --ramulator_writeq_entries	32		
 --ramulator_record_cmd_trace	FALSE		
 --ramulator_print_cmd_trace	FALSE		

@@ -78,10 +78,10 @@ extern void tc_do_stat(Op*, Flag);
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_BP, ##args)
 #define DEBUG_BTB(proc_id, args...) _DEBUG(proc_id, DEBUG_BTB, ##args)
-#define STAT_EVENT_BP_SPLIT_PATH(op, on_stat, off_stat)                                                   \
-  do {                                                                                                    \
-    STAT_EVENT((op)->proc_id, (op)->off_path ? (off_stat) : (on_stat));                                   \
-    STAT_EVENT((op)->proc_id, ((op)->off_path ? (off_stat##_L0) : (on_stat##_L0)) + (op)->bp_pred_level); \
+#define STAT_EVENT_BP_SPLIT_PATH(op, on_stat, off_stat)                                            \
+  do {                                                                                             \
+    STAT_EVENT((op)->proc_id, (op)->off_path ? (off_stat) : (on_stat));                            \
+    STAT_EVENT((op)->proc_id, ((op)->off_path ? (off_stat##_L0) : (on_stat##_L0)) + (pred_level)); \
   } while (0)
 
 /******************************************************************************/
@@ -96,7 +96,7 @@ extern uns operating_mode;
 // Local helpers
 
 static inline Bp* bp_get_active_predictor(Bp_Data* bp_data, const Op* op) {
-  if (bp_l0_enabled() && op->bp_pred_level == BP_PRED_L0 && bp_data->bp_l0)
+  if (bp_l0_enabled() && op->bp_pred_info == &op->bp_pred_l0 && bp_data->bp_l0)
     return bp_data->bp_l0;
   return bp_data->bp;
 }
@@ -280,6 +280,7 @@ Flag bp_is_predictable(Bp_Data* bp_data) {
 /* bp_predict_op:  predicts the target of a control flow instruction */
 
 Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
+  const Bp_Pred_Level pred_level = (op->bp_pred_info == &op->bp_pred_l0) ? BP_PRED_L0 : BP_PRED_MAIN;
   Addr* btb_target;
   Addr ibp_target;
   Addr pred_target;
@@ -301,7 +302,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
      speculatively updates global history */
   op->recovery_info.proc_id = op->proc_id;
   op->recovery_info.bp_id = op->bp_id;
-  op->recovery_info.bp_pred_level = op->bp_pred_level;
+  op->recovery_info.bp_pred_level = pred_level;
   op->recovery_info.pred_global_hist = bp_data->global_hist;
   op->recovery_info.targ_hist = bp_data->targ_hist;
   op->recovery_info.new_dir = op->oracle_info.dir;
@@ -317,7 +318,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 
   pred_bp->timestamp_func(op);
   op->bp_pred_info->pred_branch_id = op->recovery_info.branch_id;
-  op->bp_pred_info->bp_ready_cycle = cycle_count + (op->bp_pred_level == BP_PRED_L0 ? BP_L0_LATENCY : BP_MAIN_LATENCY);
+  op->bp_pred_info->bp_ready_cycle = cycle_count + (pred_level == BP_PRED_L0 ? BP_L0_LATENCY : BP_MAIN_LATENCY);
 
   if (BP_HASH_TOS || IBTB_HASH_TOS) {
     Addr tos_addr;
@@ -453,7 +454,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
         op->bp_pred_info->pred_orig = op->bp_pred_info->pred;
       }
       // Update history used by the rest of Scarab.
-      if (!(bp_l0_enabled() && op->bp_pred_level == BP_PRED_L0))
+      if (!(bp_l0_enabled() && pred_level == BP_PRED_L0))
         bp_data->global_hist = (bp_data->global_hist >> 1) | (op->bp_pred_info->pred << 31);
 
       if (op->btb_pred_info->btb_miss && op->bp_pred_info->pred == NOT_TAKEN)
@@ -747,7 +748,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   DEBUG(bp_data->proc_id,
         "BP[%s,%s]:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
         "t_npc:0x%s  btb_miss:%d  mispred:%d  misfetch:%d  no_tar:%d dir%d pred%d offset %llx target %llx\n",
-        pred_bp->name, op->bp_pred_level == BP_PRED_L0 ? "l0" : "main", unsstr64(op->op_num), op->off_path,
+        pred_bp->name, pred_level == BP_PRED_L0 ? "l0" : "main", unsstr64(op->op_num), op->off_path,
         cf_type_names[op->table_info->cf_type], hexstr64s(op->inst_info->addr), hexstr64s(op->bp_pred_info->pred_npc),
         hexstr64s(op->oracle_info.npc), op->btb_pred_info->btb_miss, op->bp_pred_info->mispred,
         op->bp_pred_info->recover_at_exec, op->bp_pred_info->recover_at_decode, op->oracle_info.dir,
@@ -761,11 +762,11 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 
   ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->bp_pred_info->pred_npc);
   bp_predict_op_evaluate(bp_data, op, op->bp_pred_info->pred_npc);
-  STAT_EVENT(op->proc_id, BP_L0_PREDICTIONS + op->bp_pred_level);
+  STAT_EVENT(op->proc_id, BP_L0_PREDICTIONS + pred_level);
   if (op->bp_pred_info->mispred)
-    STAT_EVENT(op->proc_id, BP_L0_MISPRED + op->bp_pred_level);
+    STAT_EVENT(op->proc_id, BP_L0_MISPRED + pred_level);
   if (op->bp_pred_info->misfetch)
-    STAT_EVENT(op->proc_id, BP_L0_MISFETCH + op->bp_pred_level);
+    STAT_EVENT(op->proc_id, BP_L0_MISFETCH + pred_level);
 
   // The case where BTB-miss not-taken branch pollute global hist
   // mispred || misfetch will trigger a re-steer but no chance to fix the global hist
@@ -790,6 +791,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
  * two functions, enabling FDIP.
  */
 Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
+  const Bp_Pred_Level pred_level = (op->bp_pred_info == &op->bp_pred_l0) ? BP_PRED_L0 : BP_PRED_MAIN;
   // If the direction prediction is wrong, but next address happens to be right
   // anyway, do not treat this as a misprediction.
   op->bp_pred_info->mispred = (op->bp_pred_info->pred != op->oracle_info.dir) && (prediction != op->oracle_info.npc);
@@ -836,7 +838,7 @@ Addr bp_predict_op_evaluate(Bp_Data* bp_data, Op* op, Addr prediction) {
     DEBUG(bp_data->proc_id, "low_conf_count:%d \n", td->td_info.low_conf_count);
   }
 
-  if (op->bp_pred_level == BP_PRED_L0) {
+  if (pred_level == BP_PRED_L0) {
     op->bp_pred_info->recover_at_fe = op->bp_pred_info->mispred || op->bp_pred_info->misfetch;
     if (op->bp_pred_info->recover_at_fe) {
       op->bp_pred_info->recover_at_decode = FALSE;

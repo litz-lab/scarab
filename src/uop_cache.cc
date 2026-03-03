@@ -525,11 +525,26 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
   // Initialize current line tracking
   Uop_Cache_Data current_line = {};
   FT_Info ft_info = ft->get_ft_info();
+  const std::vector<Op*>& ops = ft->get_ops();
   bool line_started = false;
   bool is_ft_end = false;
+  size_t generated_uops = 0;
 
-  auto& ops = ft->ops;
+  // FT metadata may describe a slice of ft->ops (e.g., recovered trailing FT).
+  // Generate uop-cache lines from the metadata window, not the full ops vector.
+  size_t start_idx = ops.size();
   for (size_t i = 0; i < ops.size(); ++i) {
+    if (ops[i]->inst_info->addr == ft_info.static_info.start && ops[i]->bom) {
+      start_idx = i;
+      break;
+    }
+  }
+  ASSERT(uc->proc_id, start_idx < ops.size());
+  ASSERT(uc->proc_id, ft_info.static_info.n_uops > 0);
+  ASSERT(uc->proc_id, start_idx + ft_info.static_info.n_uops <= ops.size());
+  size_t end_idx = start_idx + ft_info.static_info.n_uops;
+
+  for (size_t i = start_idx; i < end_idx; ++i) {
     Op* op = ops[i];
 
     // Start a new line if needed
@@ -544,6 +559,7 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
       line_started = true;
     }
     current_line.n_uops++;
+    generated_uops++;
 
     // Check for line termination conditions
     Addr ft_end_addr = ft->get_start_addr() + ft_info.static_info.length;
@@ -551,14 +567,15 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
 
     is_ft_end = op->eom && (inst_end_addr == ft_end_addr);
     bool is_line_end = (current_line.n_uops == UOP_CACHE_WIDTH);
+    bool is_last_uop_in_ft = (i + 1 == end_idx);
     ASSERT(uc->proc_id, current_line.n_uops <= UOP_CACHE_WIDTH);
 
     // Determine if this is the last op in the current line
-    if (is_ft_end || is_line_end || i == ops.size() - 1) {
+    if (is_ft_end || is_line_end || is_last_uop_in_ft) {
       if (is_ft_end) {
         current_line.end_of_ft = TRUE;
         current_line.offset = 0;  // No next line for FT end
-      } else if (i + 1 < ops.size()) {
+      } else if (i + 1 < end_idx) {
         // Calculate offset to next line start
         Op* next_op = ops[i + 1];
         Addr next_line_start = next_op->inst_info->addr;
@@ -574,7 +591,7 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
       line_started = false;
     }
   }
-  ASSERT(uc->proc_id, ft->op_pos == ft->ops.size());
+  ASSERT(uc->proc_id, (uint64_t)generated_uops == (uint64_t)ft_info.static_info.n_uops);
   DEBUG(uc->proc_id,
         "UOC gen end: ft_id:%llu out_lines:%zu line_started:%u is_ft_end:%u new_start:0x%llx new_len:%llu "
         "new_n_uops:%llu new_end_reason:%d\n",

@@ -149,7 +149,6 @@ struct Op_struct {
   Bp_Pred_Info bp_pred_l0;      // l0 branch prediction info
   Bp_Pred_Info bp_pred_main;    // main branch prediction info
   Btb_Pred_Info btb_pred;       // btb prediction info
-  Bp_Pred_Level bp_pred_level;  // selected/active branch prediction level
   Bp_Pred_Info* bp_pred_info;   // selected/active branch prediction info
   Btb_Pred_Info* btb_pred_info;  // selected/active btb prediction info
   int oracle_cp_num;            // if the op has created an oracle checkpointed this is not -1
@@ -259,14 +258,9 @@ struct Op_struct {
 
 /**************************************************************************************/
 
-static inline void op_rebind_pred_info(Op* op) {
-  op->bp_pred_info = (op->bp_pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
-  op->btb_pred_info = &op->btb_pred;
-}
-
 static inline void op_select_bp_pred_info(Op* op, Bp_Pred_Level level) {
-  op->bp_pred_level = level;
-  op_rebind_pred_info(op);
+  op->bp_pred_info = (level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+  op->btb_pred_info = &op->btb_pred;
 }
 
 /**************************************************************************************/

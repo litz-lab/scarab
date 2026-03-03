@@ -229,14 +229,12 @@ void Decoupled_FE::dfe_recover_op() {
   FT* recovery_ft = nullptr;
   Op* recovery_ft_op = nullptr;
   bool recovery_op_is_last = false;
-  uint64_t recovery_ft_pos = 0;
   auto erase_from = ftq.begin();
   const size_t ftq_size_before = ftq.size();
   (void)ftq_size_before;
 
-  ASSERT(proc_id, ftq_iter_passed_recovery_ft_flags.size() == ftq_iterators.size());
-  for (size_t iter_idx = 0; iter_idx < ftq_iter_passed_recovery_ft_flags.size(); iter_idx++)
-    ftq_iter_passed_recovery_ft_flags[iter_idx] = false;
+  for (size_t iter_idx = 0; iter_idx < ftq_iterators.size(); iter_idx++)
+    ftq_iterators[iter_idx]->passed_recovery_ft = false;
 
   for (auto it = ftq.begin(); it != ftq.end(); ++it) {
     FT* ft = *it;
@@ -269,7 +267,6 @@ void Decoupled_FE::dfe_recover_op() {
     }
 
     if (found_recovery_ft) {
-      recovery_ft_pos = std::distance(ftq.begin(), it);
       erase_from = recovery_op_is_last ? std::next(it) : it;
       break;
     }
@@ -325,11 +322,15 @@ void Decoupled_FE::dfe_recover_op() {
 
   for (size_t iter_idx = 0; iter_idx < ftq_iterators.size(); iter_idx++) {
     auto&& it = ftq_iterators[iter_idx];
-    const uint64_t original_ft_pos = it->ft_pos;
-    if (found_recovery_ft)
-      ftq_iter_passed_recovery_ft_flags[iter_idx] = original_ft_pos > recovery_ft_pos;
+    if (found_recovery_ft) {
+      it->passed_recovery_ft = recovery_ft->get_iterated();
+      DEBUG(proc_id, "[DFE%u] FTQ iter recover: iter:%zu recovery_ft_iterated:%u passed_recovery_ft:%u\n", bp_id,
+            iter_idx, (unsigned)recovery_ft->get_iterated(), (unsigned)it->passed_recovery_ft);
+    }
 
     if (ftq.empty()) {
+      DEBUG(proc_id, "[DFE%u] FTQ iter reset: iter:%zu ft_pos:%llu->0 (ftq empty)\n", bp_id, iter_idx,
+            (unsigned long long)it->ft_pos);
       it->ft_pos = 0;
       it->op_pos = 0;
       it->flattened_op_pos = 0;
@@ -337,6 +338,8 @@ void Decoupled_FE::dfe_recover_op() {
     }
 
     if (it->ft_pos > ftq.size()) {
+      DEBUG(proc_id, "[DFE%u] FTQ iter clamp: iter:%zu ft_pos:%llu->%zu (after recover resize)\n", bp_id, iter_idx,
+            (unsigned long long)it->ft_pos, ftq.size());
       it->ft_pos = ftq.size();
       it->op_pos = 0;
 
@@ -595,6 +598,8 @@ FT* Decoupled_FE::pop_ft() {
       it->ft_pos--;
     } else {
       ASSERT(proc_id, it->flattened_op_pos < ft_num_ops);
+      DEBUG(proc_id, "[DFE%u] FTQ iter reset: iter ft_pos:%llu op_pos:%llu->0 (popped front FT)\n", bp_id,
+            (unsigned long long)it->ft_pos, (unsigned long long)it->op_pos);
       it->flattened_op_pos = 0;
       it->op_pos = 0;
     }
@@ -611,7 +616,7 @@ uns Decoupled_FE::new_ftq_iter() {
   ftq_iterators.back().get()->ft_pos = 0;
   ftq_iterators.back().get()->op_pos = 0;
   ftq_iterators.back().get()->flattened_op_pos = 0;
-  ftq_iter_passed_recovery_ft_flags.push_back(false);
+  ftq_iterators.back().get()->passed_recovery_ft = false;
   return ftq_iterators.size() - 1;
 }
 
@@ -636,6 +641,7 @@ Op* Decoupled_FE::ftq_iter_get_next(uns iter_idx, bool* end_of_ft) {
   decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
   if (iter->ft_pos + 1 == ftq.size() && iter->op_pos + 1 == ftq.at(iter->ft_pos)->ops.size()) {
     // if iter is at the last op and the last FT
+    ftq.at(iter->ft_pos)->set_iterated(true);
     iter->ft_pos += 1;
     // at this moment iter is at the last FT
     // but later FTQ will receive new FT
@@ -649,6 +655,7 @@ Op* Decoupled_FE::ftq_iter_get_next(uns iter_idx, bool* end_of_ft) {
     return NULL;
   } else if (iter->op_pos + 1 == ftq.at(iter->ft_pos)->ops.size()) {
     // if iter is at the last op, but not the last FT
+    ftq.at(iter->ft_pos)->set_iterated(true);
     iter->ft_pos += 1;
     iter->op_pos = 0;
     iter->flattened_op_pos++;
@@ -816,7 +823,9 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
           !per_core_dfe[proc_id][_bp_id]->is_off_path()) {
         ASSERT(proc_id, !per_core_dfe[proc_id][_bp_id]->ftq_num_fts());
         Op alt_op = *result.op;
-        op_rebind_pred_info(&alt_op);
+        const Bp_Pred_Level alt_pred_level =
+            (result.op->bp_pred_info == &result.op->bp_pred_l0) ? BP_PRED_L0 : BP_PRED_MAIN;
+        op_select_bp_pred_info(&alt_op, alt_pred_level);
         Addr alt_pred_addr =
             bp_predict_op(per_core_dfe[proc_id][_bp_id]->bp_data, &alt_op, 0, result.op->inst_info->addr);
         frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);

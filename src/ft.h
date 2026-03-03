@@ -127,6 +127,8 @@ class FT {
   uint64_t get_op_pos() const { return op_pos; }
   void set_prebuilt(bool val) { is_prebuilt = val; }
   bool get_is_prebuilt() const { return is_prebuilt; }
+  bool get_iterated() const { return iterated; }
+  void set_iterated(bool val) { iterated = val; }
   std::set<Addr> get_pcs();
 
   FT_Ended_By get_end_reason() const;
@@ -139,8 +141,9 @@ class FT {
   uint64_t op_pos;
   FT_Info ft_info;
   bool is_prebuilt;
+  bool iterated;
   std::vector<Op*> ops;
-  FT_Event predict_one_cf_op(Op* op);
+  FT_Event predict_one_cf_op(Op* op, Bp_Pred_Level pred_level);
   void generate_ft_info();
   // Common helper used by recovery/exec-recovery trimming paths.
   // Only touches unread ops [op_pos, end) from the back (youngest first).

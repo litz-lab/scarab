@@ -955,9 +955,12 @@ void FDIP::update() {
 
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;
+    uint64_t ft_id = (op->parent_FT) ? op->parent_FT->get_ft_info().dynamic_info.FT_id : 0;
+    UNUSED(ft_id);
     DEBUG(proc_id,
-          "[FDIP%u] op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, off-path: %d\n",
-          bp_id, op->op_num, op->inst_info->addr, line_addr, last_line_addr, op->off_path);
+          "[FDIP%u] ft_id: %llu, op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, "
+          "off-path: %d\n",
+          bp_id, (unsigned long long)ft_id, op->op_num, op->inst_info->addr, line_addr, last_line_addr, op->off_path);
     if (line_addr != last_line_addr) {
       STAT_EVENT(proc_id, FDIP_ATTEMPTED_PREF_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
       DEBUG(proc_id, "[FDIP%u] fdip off path: %d, conf off path: %d\n", bp_id, op->off_path, op->conf_off_path);

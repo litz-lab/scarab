@@ -96,6 +96,8 @@ struct decoupled_fe_iter {
   uint64_t op_pos;
   // the flattened op index, as if the ftq is an 1-d array
   uint64_t flattened_op_pos;
+  // sticky result computed at recovery time for this iterator
+  bool passed_recovery_ft;
 };
 
 // C-compatible API
@@ -182,8 +184,8 @@ class Decoupled_FE {
   Op* ftq_iter_get(uns iter_idx, bool* end_of_ft);
   Op* ftq_iter_get_next(uns iter_idx, bool* end_of_ft);
   bool ftq_iter_passed_recovery_ft(uns iter_idx) {
-    ASSERT(proc_id, iter_idx < ftq_iter_passed_recovery_ft_flags.size());
-    return ftq_iter_passed_recovery_ft_flags[iter_idx];
+    ASSERT(proc_id, iter_idx < ftq_iterators.size());
+    return ftq_iterators[iter_idx]->passed_recovery_ft;
   }
   uint64_t ftq_iter_offset(uns iter_idx);
   uint64_t ftq_iter_ft_offset(uns iter_idx);
@@ -249,7 +251,6 @@ class Decoupled_FE {
   uint64_t op_num;
   uint64_t current_off_path_op_num;
   std::vector<std::unique_ptr<decoupled_fe_iter>> ftq_iterators;
-  std::vector<bool> ftq_iter_passed_recovery_ft_flags;
   uint64_t recovery_addr;
   uint64_t redirect_cycle;
   uint64_t ftq_ft_num;

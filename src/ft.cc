@@ -72,6 +72,7 @@ FT::FT(uns _proc_id, uns _bp_id) : proc_id(_proc_id), bp_id(_bp_id) {
   ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
   ft_info.dynamic_info.first_op_off_path = FALSE;
   is_prebuilt = false;
+  iterated = false;
 }
 
 bool FT::can_fetch_op() {
@@ -190,7 +191,7 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
     op->bp_pred_info->pred_npc = op->oracle_info.npc;
     op->bp_pred_info->pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     if (off_path)
-      event = predict_one_cf_op(op);
+      event = predict_one_cf_op(op, BP_PRED_MAIN);
     if (op->inst_info->fake_inst == 1)
       ft_info.dynamic_info.contains_fake_nop = TRUE;
     add_op(op);
@@ -304,7 +305,7 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
   return {off_path_ft, this};
 }
 
-FT_Event FT::predict_one_cf_op(Op* op) {
+FT_Event FT::predict_one_cf_op(Op* op, Bp_Pred_Level pred_level) {
   bool trace_mode = false;
 
 #ifdef ENABLE_PT_MEMTRACE
@@ -312,6 +313,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 #endif
   if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
+    op_select_bp_pred_info(op, pred_level);
     bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
     if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
@@ -357,21 +359,16 @@ FT_PredictResult FT::predict_ft() {
       if (l0_enabled) {
         INC_STAT_EVENT(proc_id, DFE_L0_ENABLED_PREDICTIONS, 1);
 
-        op->bp_pred_level = BP_PRED_L0;
-        op_select_bp_pred_info(op, op->bp_pred_level);
-        const FT_Event l0_event = predict_one_cf_op(op);
+        const FT_Event l0_event = predict_one_cf_op(op, BP_PRED_L0);
         const Flag l0_wrong = op->bp_pred_l0.mispred || op->bp_pred_l0.misfetch;
 
-        op->bp_pred_level = BP_PRED_MAIN;
-        op_select_bp_pred_info(op, op->bp_pred_level);
-        const FT_Event main_event = predict_one_cf_op(op);
+        const FT_Event main_event = predict_one_cf_op(op, BP_PRED_MAIN);
         const Flag main_wrong = op->bp_pred_main.mispred || op->bp_pred_main.misfetch;
 
         if (l0_wrong && !main_wrong) {
           STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
           if (!op->off_path) {
-            op->bp_pred_level = BP_PRED_L0;
-            op_select_bp_pred_info(op, op->bp_pred_level);
+            op_select_bp_pred_info(op, BP_PRED_L0);
             event = l0_event;
           } else {
             event = main_event;
@@ -387,9 +384,7 @@ FT_PredictResult FT::predict_ft() {
           event = main_event;
         }
       } else {
-        op->bp_pred_level = BP_PRED_MAIN;
-        op_select_bp_pred_info(op, op->bp_pred_level);
-        event = predict_one_cf_op(op);
+        event = predict_one_cf_op(op, BP_PRED_MAIN);
       }
 
       DEBUG(
@@ -401,7 +396,7 @@ FT_PredictResult FT::predict_ft() {
           op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec,
           op->table_info->bar_type & BAR_FETCH);
     } else {
-      event = predict_one_cf_op(op);
+      event = predict_one_cf_op(op, BP_PRED_MAIN);
     }
 
     if (event == FT_EVENT_FETCH_BARRIER) {
@@ -605,8 +600,8 @@ bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start, Counter recovery_o
 
   Addr npc = recovery_op->oracle_info.npc;
   DEBUG(recovery_op->proc_id, "FT recovery consecutivity: winner:%s op_num:%llu npc:%llx next_start:%llx\n",
-        (recovery_op->bp_pred_level == BP_PRED_L0) ? "l0" : "main", (unsigned long long)recovery_op->op_num,
-        (unsigned long long)npc, (unsigned long long)next_start);
+        (recovery_op->bp_pred_info == &recovery_op->bp_pred_l0) ? "l0" : "main",
+        (unsigned long long)recovery_op->op_num, (unsigned long long)npc, (unsigned long long)next_start);
   return npc == next_start;
 }
 
@@ -636,34 +631,30 @@ void ft_free_op(Op* op, FT** ft_ref0, FT** ft_ref1) {
 
   FT* primary_ft = op->parent_FT;
   FT* off_path_ft = op->parent_FT_off_path;
-  const bool delete_off_path_ft = (off_path_ft && off_path_ft->get_last_op() == op);
-  bool delete_primary_ft = (primary_ft && primary_ft->get_last_op() == op);
 
-  // If the op is still shared with an off-path FT that is not ending now,
-  // primary FT deletion must be deferred.
-  if (delete_primary_ft && off_path_ft && !delete_off_path_ft) {
-    delete_primary_ft = false;
-  }
-
-  // Clear only refs to FT objects that are actually deleted.
-  auto clear_if_deleted = [&](FT** ft_ref) {
+  auto clear_ref_if_matches = [&](FT** ft_ref, FT* victim) {
     if (!ft_ref || !*ft_ref)
       return;
-    if (delete_off_path_ft && *ft_ref == off_path_ft) {
-      *ft_ref = NULL;
-      return;
-    }
-    if (delete_primary_ft && *ft_ref == primary_ft)
+    if (*ft_ref == victim)
       *ft_ref = NULL;
   };
-  clear_if_deleted(ft_ref0);
-  clear_if_deleted(ft_ref1);
 
-  // Delete off-path FT first so shared ops clear parent_FT_off_path.
-  if (delete_off_path_ft)
+  auto clear_refs_for_victim = [&](FT* victim) {
+    clear_ref_if_matches(ft_ref0, victim);
+    clear_ref_if_matches(ft_ref1, victim);
+  };
+
+  // Deletion semantics:
+  // 1) Delete off-path FT if this op is its last op.
+  // 2) Delete primary FT only when there is no remaining off-path share.
+  if (off_path_ft && off_path_ft->get_last_op() == op) {
+    clear_refs_for_victim(off_path_ft);
     delete off_path_ft;
-  if (delete_primary_ft)
+  }
+  if (!op->parent_FT_off_path && primary_ft && primary_ft->get_last_op() == op) {
+    clear_refs_for_victim(primary_ft);
     delete primary_ft;
+  }
 }
 
 /* use set to avoid duplicates and keep PC order */

@@ -168,6 +168,7 @@ typedef struct Bp_Data_struct {
  * order in bp/bp_table.def !!!!!!! */
 typedef enum Bp_Id_enum {
   GSHARE_BP,
+  BIMODAL_BP,
   HYBRIDGP_BP,
   TAGESCL_BP,
   TAGESCL80_BP,

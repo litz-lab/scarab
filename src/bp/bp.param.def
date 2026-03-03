@@ -63,6 +63,7 @@ DEF_PARAM(  bp_update_at_retire       , BP_UPDATE_AT_RETIRE       , Flag    , Fl
 
 // conditional branch predictor
 DEF_PARAM(  bp_mech                   , BP_MECH                   , uns     , bp_mech    , TAGE64K_BP ,        )
+DEF_PARAM(  bimodal_entries           , BIMODAL_ENTRIES           , uns     , uns        , (4 * 1024) ,        )
 DEF_PARAM(  hist_length               , HIST_LENGTH               , uns     , uns        , 16         ,        )
 DEF_PARAM(  pht_ctr_bits              , PHT_CTR_BITS              , uns     , uns        , 2          , const  ) /* const */
 DEF_PARAM(  bht_entries               , BHT_ENTRIES               , uns     , uns        , (4 * 1024) ,        )

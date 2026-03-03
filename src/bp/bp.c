@@ -43,6 +43,7 @@
 #include "prefetcher/pref.param.h"
 
 #include "bp//bp_conf.h"
+#include "bp/bimodal.h"
 #include "bp/bp_targ_mech.h"
 #include "bp/cbp_to_scarab.h"
 #include "bp/gshare.h"
@@ -190,7 +191,8 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
 void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_bp_data) {
   uns ii;
   if (SPEC_LEVEL)
-    ASSERT(proc_id, BP_MECH == TAGE64K_BP);
+    ASSERTM(proc_id, BP_MECH == TAGE64K_BP || BP_MECH == BIMODAL_BP,
+            "SPEC_LEVEL currently supports BP_MECH=tage64k or bp_mech=bimodal\n");
   ASSERT(bp_data->proc_id, bp_data);
   memset(bp_data, 0, sizeof(Bp_Data));
 

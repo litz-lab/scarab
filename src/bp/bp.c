@@ -211,7 +211,8 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
             "SPEC_LEVEL currently supports BP_MECH=tage64k or bp_mech=bimodal\n");
   if (bp_id == 0) {
     if (bp_l0_enabled()) {
-      ASSERTM(proc_id, BP_MECH_L0 == BIMODAL_BP, "BP_MECH_L0 must be bimodal when L0 is enabled as the other BPs do not support off-path prediction\n");
+      ASSERTM(proc_id, BP_MECH_L0 == BIMODAL_BP,
+              "BP_MECH_L0 must be bimodal when L0 is enabled as the other BPs do not support off-path prediction\n");
       ASSERTM(proc_id, BP_L0_LATENCY == 1, "BP_L0_LATENCY must be 1 when L0 is enabled\n");
       ASSERTM(proc_id, BP_MAIN_LATENCY > 1, "BP_MAIN_LATENCY must be > 1 when L0 is enabled\n");
       ASSERTM(proc_id, BP_MAIN_LATENCY < DECODE_CYCLES, "BP_MAIN_LATENCY must be < DECODE_CYCLES\n");

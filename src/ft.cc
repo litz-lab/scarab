@@ -130,8 +130,9 @@ void FT::remove_op_after_exec_recover() {
 
 void FT::recover_ft() {
   // This path is for an FT already popped from FTQ and currently in-flight
-  // (e.g., ic/uc current_ft). We only trim unread tail ops that are newer
-  // than recovery_op_num. Older/read ops are handled by stage-data recovery.
+  // (e.g., ic/uc current_ft). Trim unread tail ops newer than recovery_op_num,
+  // then regenerate ft_info so metadata reflects the trimmed ops vector.
+  // Older/read ops are handled by stage-data recovery.
   FT_Info before_info = get_ft_info();
   size_t before_ops = ops.size();
   uint64_t before_op_pos = op_pos;
@@ -158,6 +159,21 @@ void FT::recover_ft() {
     ASSERT(proc_id, op->parent_FT == this);
     return true;
   });
+
+  // Regenerate ft_info now that the ops vector has been trimmed.
+  // Only do so when the FT is in a valid ended state (last op has eom). If
+  // not, the FT is broken (all surviving ops are already dispatched and will be
+  // freed by the stage-data flush, which will delete the FT entirely). Leave
+  // ft_info stale in that case — the caller will discard this FT.
+  if (!ops.empty() && ops.back()->eom) {
+    Op* last = get_last_op();
+    if (last->op_num == bp_recovery_info->recovery_op_num)
+      op_select_bp_pred_info(last, BP_PRED_MAIN);
+    uint64_t saved_op_pos = op_pos;
+    op_pos = 0;
+    generate_ft_info();
+    op_pos = saved_op_pos;
+  }
 
   FT_Info after_info = get_ft_info();
   Op* after_last = ops.empty() ? nullptr : ops.back();
@@ -502,51 +518,6 @@ void FT::generate_ft_info() {
   STAT_EVENT(proc_id, POWER_BTB_READ);
 }
 
-void FT::regenerate_ft_info_after_recovery(Counter recovery_op_num) {
-  if (ops.empty()) {
-    DEBUG(proc_id, "FT regenerate info: found_recovery:0 recovery_op_is_last:0 (empty FT) recovery_op_num:%llu\n",
-          (unsigned long long)recovery_op_num);
-    return;
-  }
-
-  bool found_recovery = false;
-  for (auto* op : ops) {
-    if (op && op->op_num == recovery_op_num) {
-      found_recovery = true;
-      break;
-    }
-  }
-  UNUSED(found_recovery);
-
-  Op* last = get_last_op();
-  ASSERT(proc_id, last);
-  bool recovery_op_is_last = (last->op_num == recovery_op_num);
-
-  DEBUG(proc_id,
-        "FT regenerate info: found_recovery:%u recovery_op_is_last:%u recovery_op_num:%llu ft_id:%llu op_pos:%llu "
-        "ops:%zu last_op_num:%llu last_addr:0x%llx last_eom:%u last_cf:%u pred:%u pred_npc:0x%llx "
-        "oracle_npc:0x%llx main_pred:%u l0_pred:%u\n",
-        (unsigned)found_recovery, (unsigned)recovery_op_is_last, (unsigned long long)recovery_op_num,
-        (unsigned long long)ft_info.dynamic_info.FT_id, (unsigned long long)op_pos, ops.size(),
-        (unsigned long long)last->op_num, (unsigned long long)last->inst_info->addr, (unsigned)last->eom,
-        (unsigned)last->table_info->cf_type, (unsigned)last->bp_pred_info->pred,
-        (unsigned long long)last->bp_pred_info->pred_npc, (unsigned long long)last->oracle_info.npc,
-        (unsigned)last->bp_pred_main.pred, (unsigned)last->bp_pred_l0.pred);
-
-  if (recovery_op_is_last) {
-    op_select_bp_pred_info(last, BP_PRED_MAIN);
-  }
-
-  uint64_t saved_op_pos = op_pos;
-  op_pos = 0;
-  generate_ft_info();
-  DEBUG(proc_id, "FT regenerate result: ft_id:%llu start:0x%llx len:%llu n_uops:%llu ended_by:%d\n",
-        (unsigned long long)ft_info.dynamic_info.FT_id, (unsigned long long)ft_info.static_info.start,
-        (unsigned long long)ft_info.static_info.length, (unsigned long long)ft_info.static_info.n_uops,
-        (int)ft_info.dynamic_info.ended_by);
-  op_pos = saved_op_pos;
-}
-
 void FT::clear_recovery_info() {
   for (auto op : ops) {
     op->bp_pred_info->recover_at_decode = FALSE;
@@ -615,12 +586,6 @@ void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr, Co
 void recover_ft(FT* ft) {
   ASSERT(0, ft);
   ft->recover_ft();
-}
-
-void ft_regenerate_info_after_recovery(FT* ft, Counter recovery_op_num) {
-  if (!ft)
-    return;
-  ft->regenerate_ft_info_after_recovery(recovery_op_num);
 }
 
 /* retire and flush, free all ops in a FT when last op is freed */

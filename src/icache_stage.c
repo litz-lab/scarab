@@ -301,9 +301,8 @@ void recover_icache_stage() {
     ic->fetch_barrier_op_num = 0;
   }
 
-  FT* uc_ft_before = UOP_CACHE_ENABLE ? uc->current_ft : NULL;
+  // recover_ft() above already trimmed and regenerated ft_info for both FTs.
   if (UOP_CACHE_ENABLE) {
-    ft_regenerate_info_after_recovery(uc->current_ft, bp_recovery_info->recovery_op_num);
     if (!uc->current_ft || !ft_can_fetch_op(uc->current_ft)) {
       uc->current_ft = NULL;
       uop_cache_clear_lookup_buffer();
@@ -325,9 +324,6 @@ void recover_icache_stage() {
       ic->next_state = ic->line ? ICACHE_SERVING : ICACHE_MEM_REQ;
     }
   }
-  // Only regenerate ic->current_ft if it wasn't already regenerated in the UOC block above.
-  if (ic->current_ft != uc_ft_before)
-    ft_regenerate_info_after_recovery(ic->current_ft, bp_recovery_info->recovery_op_num);
   if (!ic->current_ft || !ft_can_fetch_op(ic->current_ft))
     ic->current_ft = NULL;
 

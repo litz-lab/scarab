@@ -21,7 +21,6 @@
 
 #include "bp/bimodal.h"
 
-#include <deque>
 #include <vector>
 
 #include "bp/cbp_to_scarab.h"
@@ -41,16 +40,8 @@ extern "C" {
 
 namespace {
 
-struct Bimodal_Log_Entry_struct {
-  int64 branch_id;
-  uns32 pht_index;
-  uns8 old_ctr;
-};
-
 struct Bimodal_State {
   std::vector<uns8> pht;
-  std::deque<Bimodal_Log_Entry_struct> speculative_log;
-  int64 next_branch_id;
 };
 
 std::vector<Bimodal_State> bimodal_state_all_cores;
@@ -68,57 +59,22 @@ inline void update_pht_entry(std::vector<uns8>& pht, const uns32 pht_index, cons
   }
 }
 
-inline void speculative_update(Bimodal_State& bimodal_state, const int64 branch_id, const uns32 pht_index,
-                               const Flag dir) {
-  bimodal_state.speculative_log.push_back({branch_id, pht_index, bimodal_state.pht[pht_index]});
-  update_pht_entry(bimodal_state.pht, pht_index, dir);
-}
 }  // namespace
 
-// The only speculative state of bimodal is updated by bp.c retirement/update flow.
 void bp_bimodal_timestamp(Op* op) {
-  auto& bimodal_state = bimodal_state_all_cores.at(op->proc_id);
-  op->recovery_info.branch_id = ++bimodal_state.next_branch_id;
+  (void)op;
 }
 
 void bp_bimodal_recover(Recovery_Info* info) {
-  // Roll back speculative updates from younger branches.
-  auto& bimodal_state = bimodal_state_all_cores.at(info->proc_id);
-  while (!bimodal_state.speculative_log.empty() && bimodal_state.speculative_log.back().branch_id > info->branch_id) {
-    const auto& log_entry = bimodal_state.speculative_log.back();
-    bimodal_state.pht[log_entry.pht_index] = log_entry.old_ctr;
-    bimodal_state.speculative_log.pop_back();
-  }
+  (void)info;
 }
 
 void bp_bimodal_spec_update(Op* op) {
-  if (op->table_info->cf_type != CF_CBR) {
-    return;
-  }
-
-  // SPEC_LEVEL 4 moves non-spec update to bp_bimodal_update().
-  if (SPEC_LEVEL >= BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON) {
-    return;
-  }
-
-  // Off-path speculative updates are enabled only from SPEC_LEVEL 2.
-  if (op->off_path && SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON) {
-    return;
-  }
-
-  const uns proc_id = op->proc_id;
-  auto& bimodal_state = bimodal_state_all_cores.at(proc_id);
-  const uns32 pht_index = get_pht_index(op->bp_pred_info->pred_addr);
-  const Flag train_dir = op->oracle_info.dir;
-  speculative_update(bimodal_state, op->recovery_info.branch_id, pht_index, train_dir);
+  (void)op;
 }
 
 void bp_bimodal_retire(Op* op) {
-  auto& bimodal_state = bimodal_state_all_cores.at(op->proc_id);
-  while (!bimodal_state.speculative_log.empty() &&
-         bimodal_state.speculative_log.front().branch_id <= op->recovery_info.branch_id) {
-    bimodal_state.speculative_log.pop_front();
-  }
+  (void)op;
 }
 
 uns8 bp_bimodal_full(Bp_Data* bp_data) {
@@ -130,8 +86,6 @@ void bp_bimodal_init() {
   bimodal_state_all_cores.resize(NUM_CORES);
   for (auto& bimodal_state : bimodal_state_all_cores) {
     bimodal_state.pht.resize(BIMODAL_ENTRIES, PHT_INIT_VALUE);
-    bimodal_state.speculative_log.clear();
-    bimodal_state.next_branch_id = 0;
   }
 }
 
@@ -160,10 +114,7 @@ void bp_bimodal_update(Op* op) {
     return;
   }
 
-  // For SPEC_LEVEL 0..3, bp_bimodal_spec_update() performed the update.
-  if (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON) {
-    return;
-  }
+  // Train at resolve stage only.
   if (op->off_path) {
     return;
   }

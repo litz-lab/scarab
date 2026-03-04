@@ -294,7 +294,8 @@ void debug_print_node_table() {
   Counter row = 0;
   Flag empty = TRUE;
   uns32 slot_num = 0;
-  uns printed = 0;
+  uns printed_all = 0;
+  uns printed_non_fused = 0;
 
   Op** temp = (Op**)calloc(DEBUG_NODE_WIDTH, sizeof(Op*));
 
@@ -303,7 +304,9 @@ void debug_print_node_table() {
     ASSERT(node->proc_id, node->proc_id == op->proc_id);
     ASSERT(node->proc_id, temp[slot_num] == NULL);
     temp[slot_num] = op;
-    printed++;
+    printed_all++;
+    if (!op->macro_fused)
+      printed_non_fused++;
     empty = FALSE;
 
     // we have populated entire row, print and reinitialize
@@ -320,10 +323,11 @@ void debug_print_node_table() {
     }
   }
 
-  ASSERTM(node->proc_id, printed == node->node_count, "printed=%d, node_count=%d", printed, node->node_count);
+  ASSERTM(node->proc_id, printed_non_fused == node->node_count, "printed_non_fused=%d, node_count=%d, printed_all=%d",
+          printed_non_fused, node->node_count, printed_all);
 
   // If node table is empty, print a blank row. Or if there is a remainder, print that too
-  if (printed == 0 || slot_num < DEBUG_NODE_WIDTH - 1)
+  if (printed_all == 0 || slot_num < DEBUG_NODE_WIDTH - 1)
     print_open_op_array(GLOBAL_DEBUG_STREAM, temp, DEBUG_NODE_WIDTH, DEBUG_NODE_WIDTH);
 
   print_open_op_array_end(GLOBAL_DEBUG_STREAM, DEBUG_NODE_WIDTH);

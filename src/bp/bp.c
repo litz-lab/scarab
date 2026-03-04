@@ -95,12 +95,6 @@ extern uns operating_mode;
 /******************************************************************************/
 // Local helpers
 
-static inline Bp* bp_get_active_predictor(Bp_Data* bp_data, const Op* op) {
-  if (bp_l0_enabled() && op->bp_pred_info == &op->bp_pred_l0)
-    return bp_data->bp_l0;
-  return bp_data->bp;
-}
-
 /******************************************************************************/
 // Local prototypes
 
@@ -281,8 +275,9 @@ Flag bp_is_predictable(Bp_Data* bp_data) {
 /******************************************************************************/
 /* bp_predict_op:  predicts the target of a control flow instruction */
 
-Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
-  const Bp_Pred_Level pred_level = (op->bp_pred_info == &op->bp_pred_l0) ? BP_PRED_L0 : BP_PRED_MAIN;
+Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr, Bp_Pred_Level pred_level) {
+  op->bp_pred_info = (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+  Bp* pred_bp = (pred_level == BP_PRED_L0) ? bp_data->bp_l0 : bp_data->bp;
   Addr* btb_target;
   Addr ibp_target;
   Addr pred_target;
@@ -291,7 +286,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, op->table_info->cf_type);
-  Bp* pred_bp = bp_get_active_predictor(bp_data, op);
 
   /* set address used to predict branch */
   // op->bp_pred_info->pred_addr         = addr;

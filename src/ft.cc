@@ -328,8 +328,7 @@ FT_Event FT::predict_one_cf_op(Op* op, Bp_Pred_Level pred_level) {
 #endif
   if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
-    op_select_bp_pred_info(op, pred_level);
-    bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
+    bp_predict_op(g_bp_data, op, 1, op->inst_info->addr, pred_level);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
     if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
       op->bp_pred_info->recover_at_decode = FALSE;

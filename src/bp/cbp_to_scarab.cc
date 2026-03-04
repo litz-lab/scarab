@@ -11,6 +11,7 @@
 
 /**Add CBP Header Below**/
 #include "cbp_tagescl_64k.h"
+#include "decoupled_frontend.h"
 #include "mtage_unlimited.h"
 /************************/
 
@@ -60,7 +61,7 @@ class CBP_To_Scarab_Intf {
 
   uns8 pred(Op* op) {
     uns proc_id = op->proc_id;
-    uns bp_id = op->bp_id;
+    uns bp_id = op->parent_FT->get_bp_id();
     if (op->off_path)
       return op->oracle_info.dir;
     return cbp_predictors_all_cores.at(proc_id).at(bp_id).GetPrediction(op->inst_info->addr, &op->bp_confidence);
@@ -72,7 +73,7 @@ class CBP_To_Scarab_Intf {
       return;
 
     uns proc_id = op->proc_id;
-    uns bp_id = op->bp_id;
+    uns bp_id = op->parent_FT->get_bp_id();
     OpType optype = scarab_to_cbp_optype(op->table_info->cf_type);
 
     if (is_conditional_branch(op->table_info->cf_type)) {
@@ -97,7 +98,7 @@ class CBP_To_Scarab_Intf {
 template <>
 uns8 CBP_To_Scarab_Intf<TAGE64K>::pred(Op* op) {
   uns proc_id = op->proc_id;
-  uns bp_id = op->bp_id;
+  uns bp_id = op->parent_FT->get_bp_id();
   if (op->off_path)
     if (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON)
       return op->oracle_info.dir;
@@ -109,7 +110,7 @@ uns8 CBP_To_Scarab_Intf<TAGE64K>::pred(Op* op) {
 template <>
 void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op) {
   uns proc_id = op->proc_id;
-  uns bp_id = op->bp_id;
+  uns bp_id = op->parent_FT->get_bp_id();
   OpType optype = scarab_to_cbp_optype(op->table_info->cf_type);
   Flag is_conditional = is_conditional_branch(op->table_info->cf_type);
   Flag pred_dir =
@@ -169,7 +170,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::update(Op* op) { /* CBP Interface does not sup
     return;
 
   uns proc_id = op->proc_id;
-  uns bp_id = op->bp_id;
+  uns bp_id = op->parent_FT->get_bp_id();
   OpType optype = scarab_to_cbp_optype(op->table_info->cf_type);
   Flag is_conditional = is_conditional_branch(op->table_info->cf_type);
 
@@ -184,10 +185,10 @@ void CBP_To_Scarab_Intf<TAGE64K>::update(Op* op) { /* CBP Interface does not sup
 
 template <>
 void CBP_To_Scarab_Intf<TAGE64K>::retire(Op* op) {
-  if (SPEC_LEVEL == BP_PRED_ON || op->bp_id)
+  if (SPEC_LEVEL == BP_PRED_ON || op->parent_FT->get_bp_id() == 0)
     return;
   uns proc_id = op->proc_id;
-  uns bp_id = op->bp_id;
+  uns bp_id = op->parent_FT->get_bp_id();
   cbp_predictors_all_cores.at(proc_id).at(bp_id).RetireCheckpoint(op->recovery_info.branch_id);
 }
 
@@ -207,7 +208,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::recover(Recovery_Info* recovery_info) {
 template <>
 void CBP_To_Scarab_Intf<TAGE64K>::timestamp(Op* op) {
   uns proc_id = op->proc_id;
-  uns bp_id = op->bp_id;
+  uns bp_id = op->parent_FT->get_bp_id();
   op->recovery_info.branch_id = cbp_predictors_all_cores.at(proc_id).at(bp_id).KeyGeneration();
 }
 

@@ -7,6 +7,7 @@
 #include <tuple>
 #include <vector>
 
+#include "core.param.h"
 #include "memory/memory.param.h"
 #include "prefetcher/pref.param.h"
 
@@ -14,6 +15,7 @@
 #include "isa/isa_macros.h"
 
 #include "ft.h"
+#include "lookahead_buffer.h"
 #include "op.h"
 #include "op_pool.h"
 #include "thread.h"
@@ -44,26 +46,26 @@ void alloc_mem_decoupled_fe(uns numCores, uns numBPs) {
 void init_decoupled_fe(uns proc_id, uns bp_id, Bp_Data* bp_data) {
   ASSERT(0, NUM_BPS <= 5);  // Currently support five BPs at maximum
   switch (bp_id) {
-    case 0:
+    case MAIN_BP:
       per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE0_RECOVERY_POLICY);  // should always be 0
       break;
-    case 1:
+    case ALT_BP_1:
       per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE1_RECOVERY_POLICY);
       break;
-    case 2:
+    case ALT_BP_2:
       per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE2_RECOVERY_POLICY);
       break;
-    case 3:
+    case ALT_BP_3:
       per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE3_RECOVERY_POLICY);
       break;
-    case 4:
+    case ALT_BP_4:
       per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE4_RECOVERY_POLICY);
       break;
   }
 }
 
 bool decoupled_fe_is_off_path() {
-  ASSERT(0, g_dfe->get_bp_id() == 0);
+  ASSERT(0, g_dfe->get_bp_id() == MAIN_BP);
   return g_dfe->is_off_path();
 }
 
@@ -93,7 +95,7 @@ void update_decoupled_fe(uns proc_id, uns bp_id) {
 }
 
 FT* decoupled_fe_pop_ft() {
-  ASSERT(0, g_dfe->get_bp_id() == 0);
+  ASSERT(0, g_dfe->get_bp_id() == MAIN_BP);
   return g_dfe->pop_ft();
 }
 
@@ -135,17 +137,17 @@ uint64_t decoupled_fe_ftq_num_fts(Decoupled_FE* dfe) {
 }
 
 void decoupled_fe_retire(Op* op, int op_proc_id, uns64 inst_uid) {
-  ASSERT(0, g_dfe->get_bp_id() == 0);
+  ASSERT(0, g_dfe->get_bp_id() == MAIN_BP);
   g_dfe->retire(op, op_proc_id, inst_uid);
 }
 
 void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num) {
-  ASSERT(0, g_dfe->get_bp_id() == 0);
+  ASSERT(0, g_dfe->get_bp_id() == MAIN_BP);
   g_dfe->set_ftq_num(ftq_ft_num);
 }
 
 uint64_t decoupled_fe_get_ftq_num() {
-  ASSERT(0, g_dfe->get_bp_id() == 0);
+  ASSERT(0, g_dfe->get_bp_id() == MAIN_BP);
   return g_dfe->get_ftq_num();
 }
 
@@ -196,13 +198,13 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_re
   current_ft_to_push = nullptr;
 
   if (CONFIDENCE_ENABLE) {
-    if (bp_id)
-      conf = per_core_dfe[proc_id][0]->get_conf();
+    if (bp_id != MAIN_BP)
+      conf = per_core_dfe[proc_id][MAIN_BP]->get_conf();
     else
       conf = new Conf(_proc_id);
   }
 
-  state = bp_id ? INACTIVE : SERVING_ON_PATH;
+  state = (bp_id != MAIN_BP) ? INACTIVE : SERVING_ON_PATH;
   next_state = state;
 }
 
@@ -271,7 +273,7 @@ void Decoupled_FE::dfe_recover_op() {
 
   auto op = bp_recovery_info->recovery_op;
 
-  if (!bp_id) {
+  if (bp_id == MAIN_BP) {
     if (op->bp_pred_info->recover_at_decode)
       STAT_EVENT(proc_id, FTQ_RECOVER_DECODE);
     else if (op->bp_pred_info->recover_at_exec)
@@ -291,8 +293,7 @@ void Decoupled_FE::dfe_recover_op() {
 
 void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
   // Get the last addr from the primary FTQ
-  Op* alt_op = per_core_dfe[proc_id][0]->get_last_fetch_op();
-  info->bp_id = bp_id;
+  Op* alt_op = per_core_dfe[proc_id][MAIN_BP]->get_last_fetch_op();
   bp_recover_op(bp_data, cf_type, info);
   dfe_recover_op();
   switch (dfe_recovery_policy) {
@@ -331,7 +332,7 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
         frontend_redirect(proc_id, bp_id, alt_op->inst_uid, alt_op->inst_info->addr);
       else  // If it was stalled due to a fetch barrier, can be nullptr
         frontend_redirect(proc_id, bp_id, 0, 0);
-      bp_sync(per_core_dfe[proc_id][0]->get_bp_data(), per_core_dfe[proc_id][bp_id]->get_bp_data());
+      bp_sync(per_core_dfe[proc_id][MAIN_BP]->get_bp_data(), per_core_dfe[proc_id][bp_id]->get_bp_data());
       next_state = SERVING_OFF_PATH;
       set_conf_off_path();
       break;
@@ -345,7 +346,7 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
 void Decoupled_FE::update() {
   uint64_t cfs_taken_this_cycle = 0;
   uint64_t ft_pushed_this_cycle = 0;
-  if (!bp_id) {
+  if (bp_id == MAIN_BP) {
     fwd_progress++;
     if (fwd_progress >= 1000000) {
       std::cout << "No forward progress for 1000000 cycles" << std::endl;
@@ -394,7 +395,7 @@ void Decoupled_FE::update() {
       break;
     }
 
-    if (!bp_id)
+    if (bp_id == MAIN_BP)
       fwd_progress = 0;
     // FSM-based FT build logic - states:
     // INACTIVE: idle until triggered or stop when end of trace seen
@@ -406,6 +407,7 @@ void Decoupled_FE::update() {
       case INACTIVE:
         return;
       case RECOVERING: {
+        ASSERT(proc_id, bp_id == MAIN_BP);
         // After recovery, we expect to serve the saved recovery FT
         next_state = SERVING_ON_PATH;
         current_ft_to_push = saved_recovery_ft;
@@ -428,18 +430,16 @@ void Decoupled_FE::update() {
       }
       // recover will fall through to on-path exec
       case SERVING_ON_PATH: {
-        current_ft_to_push = new FT(proc_id, bp_id);
-        // Build new on-path FT if no recovery ft availble
-        ASSERT(proc_id, !current_ft_to_push->has_unread_ops());
-        auto build_event =
-            current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                                      [](uns8 pid, uns8 bid, Op* op) -> bool {
-                                        frontend_fetch_op(pid, bid, op);
-                                        return true;
-                                      },
-                                      false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
-        ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
-        current_ft_to_push->set_prebuilt(true);
+        // Only main BP should read from lookahead buffer in multi-BP setups.
+        // All other BPs use the same update() function, so this check is necessary here.
+        // The lookahead buffer is a simulation feature, not a typical CPU component.
+        // Lookahead buffer size is default to 1.
+        ASSERT(proc_id, bp_id == MAIN_BP);
+        // Lookahead buffer always enabled
+        ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);
+        current_ft_to_push = lookahead_buffer_pop_ft(proc_id);
+        ASSERT(proc_id, current_ft_to_push->get_is_prebuilt());
+
         result = current_ft_to_push->predict_ft();
         // if current FT is the exit one, skip mispredict handling and directly push
         // set state and early return
@@ -645,9 +645,9 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
 void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
   if (ftq.size())
     ASSERT(proc_id, current_ft_to_push->is_consecutive(*ftq.back()));
-  if (CONFIDENCE_ENABLE && !bp_id)
+  if (CONFIDENCE_ENABLE && bp_id == MAIN_BP)
     conf->update(*current_ft_to_push);
-  if (!bp_id && recovery_addr) {
+  if (bp_id == MAIN_BP && recovery_addr) {
     ASSERT(proc_id, recovery_addr == current_ft_to_push->get_start_addr());
     recovery_addr = 0;
   }
@@ -656,6 +656,7 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
 
 void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling
+  ASSERT(proc_id, bp_id == MAIN_BP);
   ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT);
   // Misprediction: Switch to off-path execution
   auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
@@ -666,22 +667,16 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   }
   // no trailing ft, misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
-    saved_recovery_ft = new FT(proc_id, bp_id);
-    auto build_event =
-        saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                                 [](uns8 pid, uns8 bid, Op* op) -> bool {
-                                   frontend_fetch_op(pid, bid, op);
-                                   return true;
-                                 },
-                                 false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
-    ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+    ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);  // should always be true because we need lookahead buffer to save recovery ft
+    saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
+    ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
   }
   saved_recovery_ft->set_prebuilt(true);
   redirect_cycle = cycle_count;
   next_state = SERVING_OFF_PATH;
   frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);
-  if (!bp_id) {
-    for (uns _bp_id = 1; _bp_id < NUM_BPS; ++_bp_id) {
+  if (bp_id == MAIN_BP) {
+    for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
       if (per_core_dfe[proc_id][_bp_id]->get_dfe_recovery_policy() == CONTINUE_ON_PREDICTION &&
           !per_core_dfe[proc_id][_bp_id]->is_off_path()) {
         ASSERT(proc_id, !per_core_dfe[proc_id][_bp_id]->ftq_num_fts());
@@ -689,7 +684,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
         alt_op.bp_pred_info = &alt_op.bp_pred_main;
         alt_op.btb_pred_info = &alt_op.btb_pred;
         Addr alt_pred_addr =
-            bp_predict_op(per_core_dfe[proc_id][_bp_id]->bp_data, &alt_op, 0, result.op->inst_info->addr);
+            bp_predict_op(per_core_dfe[proc_id][_bp_id]->bp_data, &alt_op, _bp_id, 0, result.op->inst_info->addr);
         frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);
         per_core_dfe[proc_id][_bp_id]->next_state = SERVING_OFF_PATH;
         per_core_dfe[proc_id][_bp_id]->set_conf_off_path();

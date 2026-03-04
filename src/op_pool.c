@@ -62,6 +62,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #define DEBUGU(proc_id, args...) _DEBUGU(proc_id, DEBUG_OP_POOL, ##args)
 
 // TODO: it should be increased to 512 to use more than 50,000 FDIP lookahead buffer entries
+// Also need to increase if enabling large lookahead buffer
 #define OP_POOL_ENTRIES_INC 128 /* default 128 */
 
 /**************************************************************************************/
@@ -109,7 +110,7 @@ void reset_op_pool() {
 /**************************************************************************************/
 /* alloc_op:  returns a pointer to the next available op */
 
-Op* alloc_op(uns proc_id, uns bp_id) {
+Op* alloc_op(uns proc_id) {
   Op* new_op;
 
   if (op_pool_free_head == NULL) {
@@ -121,7 +122,7 @@ Op* alloc_op(uns proc_id, uns bp_id) {
   ASSERT(0, !new_op->op_pool_valid);
   new_op->op_pool_valid = TRUE;
 
-  op_pool_setup_op(proc_id, bp_id, new_op);
+  op_pool_setup_op(proc_id, new_op);
 
   op_pool_active_ops++;
   DEBUG(0, "Allocating op  id:%u  op_pool_active_ops:%u  op_pool_entries:%d\n", new_op->op_pool_id, op_pool_active_ops,
@@ -182,7 +183,7 @@ void op_pool_init_op(Op* op) {
 /* op_pool_init_op: this function is called every time an op is
    taken from the pool to be used */
 
-void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
+void op_pool_setup_op(uns proc_id, Op* op) {
   uns ii, jj;
   /* only initialize here what is independent of the engine (the
      rest should be in the fetch stage) */
@@ -192,7 +193,6 @@ void op_pool_setup_op(uns proc_id, uns bp_id, Op* op) {
   op->unique_num = unique_count;
   op->unique_num_per_proc = unique_count_per_core[proc_id];
   op->proc_id = proc_id;
-  op->bp_id = bp_id;
   op->state = OS_FETCHED;
   op->fu_num = -1;
   op->fetch_cycle = MAX_CTR;

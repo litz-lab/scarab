@@ -84,6 +84,14 @@ typedef enum DFE_Recovery_Policy_enum {
   CONTINUE_ON_PREDICTION,
 } DFE_Recovery_Policy;
 
+typedef enum BpId_enum {
+  MAIN_BP = 0,
+  ALT_BP_1,
+  ALT_BP_2,
+  ALT_BP_3,
+  ALT_BP_4,
+} BpId;
+
 typedef struct FT FT;
 typedef struct Decoupled_FE Decoupled_FE;
 
@@ -117,7 +125,6 @@ uint64_t decoupled_fe_get_ftq_num();
 uint64_t decoupled_fe_get_next_on_path_op_num();
 uint64_t decoupled_fe_get_next_off_path_op_num();
 Op* decoupled_fe_get_cur_op();
-uns decoupled_fe_get_conf();
 Off_Path_Reason decoupled_fe_get_off_path_reason();
 Conf_Off_Path_Reason decoupled_fe_get_conf_off_path_reason();
 void decoupled_fe_conf_resovle_cf(Op* op);
@@ -140,6 +147,11 @@ uint64_t decoupled_fe_ftq_iter_offset(Decoupled_FE* dfe, uns iter_idx);
 uint64_t decoupled_fe_ftq_iter_ft_offset(Decoupled_FE* dfe, uns iter_idx);
 uint64_t decoupled_fe_ftq_num_ops(Decoupled_FE* dfe);
 uint64_t decoupled_fe_ftq_num_fts(Decoupled_FE* dfe);
+Flag lookahead_buffer_can_fetch_op(uns proc_id);
+FT* lookahead_buffer_get_FT(uns proc_id, uint64_t ptr_pos);
+uint64_t lookahead_buffer_rdptr(uns proc_id);
+uint64_t lookahead_buffer_count(uns proc_id);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

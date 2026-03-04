@@ -4200,8 +4200,6 @@ Flag l1_fill_line(Mem_Req* req) {
     }
   }
 
-  /* this will make it bring the line into the l1 and then modify it */
-  data->proc_id = req->proc_id;
   // write back can fill l1 directly - reqs filling core should not dirty the line
   data->dirty = ((req->type == MRT_WB) && (req->state != MRS_FILL_L1));
   data->prefetch = req->type == MRT_DPRF || req->type == MRT_IPRF || req->demand_match_prefetch;
@@ -4290,6 +4288,8 @@ Flag mlc_fill_line(Mem_Req* req) {
   } else {
     data = (MLC_Data*)cache_insert(&MLC(req->proc_id)->cache, req->proc_id, req->addr, &line_addr, &repl_line_addr);
   }
+  /* this will make it bring the line into the mlc and then modify it */
+  data->proc_id = req->proc_id;
 
   /* Immediately set proc_id after cache_insert to avoid stale data issues.
      The data area still contains values from the evicted line until we update them. */

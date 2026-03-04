@@ -276,19 +276,7 @@ void Decoupled_FE::dfe_recover_op() {
   if (found_recovery_ft && recovery_op_is_last) {
     ASSERT(proc_id, recovery_ft);
     ASSERT(proc_id, recovery_ft_op);
-    op_select_bp_pred_info(recovery_ft_op, BP_PRED_MAIN);
-    // Trim any off-path ops that were appended after the recovery op by the
-    // off-path extension loop in redirect_to_off_path (e.g. when the mispredicted
-    // branch was not-taken so the FT was not yet ended at the split point).
-    size_t ops_before_trim = recovery_ft->ops.size();
-    UNUSED(ops_before_trim);
-    recovery_ft->trim_unread_tail([](Op* op) { return op->off_path; });
-    DEBUG(proc_id,
-          "[DFE%u] FTQ recover (last): ft_id:%llu ops_before_trim:%zu ops_after_trim:%zu recovery_op_num:%llu\n", bp_id,
-          (unsigned long long)recovery_ft->get_ft_info().dynamic_info.FT_id, ops_before_trim, recovery_ft->ops.size(),
-          (unsigned long long)bp_recovery_info->recovery_op_num);
-    // Update end_reason of recovery_ft
-    recovery_ft->generate_ft_info();
+    recovery_ft->recover_ft();
   } else if (found_recovery_ft && !recovery_op_is_last) {
     ASSERT(proc_id, saved_recovery_ft);
     ASSERT(proc_id, !saved_recovery_ft->ops.empty());
@@ -823,8 +811,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
         const Bp_Pred_Level alt_pred_level =
             (result.op->bp_pred_info == &result.op->bp_pred_l0) ? BP_PRED_L0 : BP_PRED_MAIN;
         Bp_Data* alt_bp_data = per_core_dfe[proc_id][_bp_id]->bp_data;
-        Addr alt_pred_addr =
-            bp_predict_op(alt_bp_data, &alt_op, 0, result.op->inst_info->addr, alt_pred_level);
+        Addr alt_pred_addr = bp_predict_op(alt_bp_data, &alt_op, 0, result.op->inst_info->addr, alt_pred_level);
         frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);
         per_core_dfe[proc_id][_bp_id]->next_state = SERVING_OFF_PATH;
         per_core_dfe[proc_id][_bp_id]->set_conf_off_path();

@@ -335,6 +335,19 @@ void Decoupled_FE::dfe_recover_op() {
         flat += ftq.at(ft_idx)->ops.size();
       }
       it->flattened_op_pos = flat;
+    } else if (it->op_pos >= ftq.at(it->ft_pos)->ops.size()) {
+      // op_pos is out of range: the FT at ft_pos had its off-path tail trimmed
+      // during recovery. Advance iterator to start of next FT.
+      DEBUG(proc_id, "[DFE%u] FTQ iter op_pos clamp: iter:%zu ft_pos:%llu op_pos:%llu->0 ft+1 (tail trimmed)\n", bp_id,
+            iter_idx, (unsigned long long)it->ft_pos, (unsigned long long)it->op_pos);
+      it->ft_pos += 1;
+      it->op_pos = 0;
+
+      uint64_t flat = 0;
+      for (uint64_t ft_idx = 0; ft_idx < it->ft_pos; ft_idx++) {
+        flat += ftq.at(ft_idx)->ops.size();
+      }
+      it->flattened_op_pos = flat;
     }
   }
 

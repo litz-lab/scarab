@@ -225,11 +225,23 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
   ASSERTM(proc_id, BP_MAIN_MISPRED == BP_L0_MISPRED + 1, "BP level stats must be contiguous: BP_{L0,MAIN}_MISPRED\n");
   ASSERTM(proc_id, BP_MAIN_MISFETCH == BP_L0_MISFETCH + 1,
           "BP level stats must be contiguous: BP_{L0,MAIN}_MISFETCH\n");
+  if (BTB_L0_PRESENT && BTB_L1_PRESENT)
+    ASSERTM(proc_id, BTB_L0_LATENCY < BTB_L1_LATENCY, "BTB_L0_LATENCY(%u) must be < BTB_L1_LATENCY(%u)\n",
+            BTB_L0_LATENCY, BTB_L1_LATENCY);
+  if (BTB_L1_PRESENT)
+    ASSERTM(proc_id, BTB_L1_LATENCY < BTB_MAIN_LATENCY, "BTB_L1_LATENCY(%u) must be < BTB_MAIN_LATENCY(%u)\n",
+            BTB_L1_LATENCY, BTB_MAIN_LATENCY);
+  if (bp_l0_enabled())
+    ASSERTM(proc_id, BTB_MAIN_LATENCY <= BP_MAIN_LATENCY,
+            "BTB_MAIN_LATENCY(%u) must be <= BP_MAIN_LATENCY(%u) so bp_main can always use BTB_MAIN\n",
+            BTB_MAIN_LATENCY, BP_MAIN_LATENCY);
   ASSERT(bp_data->proc_id, bp_data);
   memset(bp_data, 0, sizeof(Bp_Data));
 
   if (!bp_id) {
     bp_data->btb = (Cache*)malloc(sizeof(Cache));
+    bp_data->btb_l0 = BTB_L0_PRESENT ? (Cache*)malloc(sizeof(Cache)) : NULL;
+    bp_data->btb_l1 = BTB_L1_PRESENT ? (Cache*)malloc(sizeof(Cache)) : NULL;
     bp_data->tc_tagged = (Cache*)malloc(sizeof(Cache));
   }
   bp_data->proc_id = proc_id;
@@ -417,6 +429,16 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
       op->btb_pred_info->ibp_miss = TRUE;
       STAT_EVENT_BP_SPLIT_PATH(op, IBTB_INCORRECT, IBTB_INCORRECT_OFF_PATH);
     }
+  }
+
+  // Probe BTB_L1 (read-only) during MAIN prediction so that redirect_to_off_path
+  // can use the result for an earlier recovery when L0 is wrong and MAIN is correct.
+  if (pred_level == BP_PRED_MAIN && BTB_L1_PRESENT && bp_data->btb_l1) {
+    op->btb_pred_info = &op->btb_pred_l1;
+    Addr* l1_result = bp_data->bp_btb->pred_func(bp_data, op);
+    op->btb_pred_l1.btb_miss = (l1_result == NULL);
+    op->btb_pred_l1.pred_target = l1_result ? *l1_result : 0;
+    op->btb_pred_info = &op->btb_pred_main;  // restore
   }
 
   // }}}

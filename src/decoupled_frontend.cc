@@ -758,12 +758,23 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
 
   if (l0_enabled && l0_wrong && !main_wrong) {
     STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT_RECOVERY_SCHEDULED);
-    DEBUG(proc_id, "[DFE%u] Early/Late mismatch op_num:%llu PC:0x%llx -> schedule recovery at main_ready:%llu\n", bp_id,
+    Counter early_cycle = result.op->bp_pred_main.bp_ready_cycle;
+    // If BTB_L1 already has the correct target, we can recover at BTB_L1 latency
+    // rather than waiting for the full MAIN predictor latency.
+    if (BTB_L1_PRESENT && bp_data->btb_l1 && !result.op->btb_pred_l1.btb_miss &&
+        result.op->btb_pred_l1.pred_target == result.op->oracle_info.npc) {
+      Counter l1_cycle = result.op->recovery_info.predict_cycle + BTB_L1_LATENCY;
+      if (l1_cycle < early_cycle) {
+        early_cycle = l1_cycle;
+        STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT_BTB_L1_EARLY_RECOVERY);
+      }
+    }
+    DEBUG(proc_id, "[DFE%u] Early/Late mismatch op_num:%llu PC:0x%llx -> schedule recovery at cycle:%llu\n", bp_id,
           (unsigned long long)result.op->op_num, (unsigned long long)result.op->inst_info->addr,
-          (unsigned long long)result.op->bp_pred_main.bp_ready_cycle);
+          (unsigned long long)early_cycle);
     // Keep winner selection unchanged for ongoing off-path generation.
     op_select_bp_pred_info(result.op, BP_PRED_L0);
-    bp_sched_recovery(bp_recovery_info, result.op, result.op->bp_pred_main.bp_ready_cycle);
+    bp_sched_recovery(bp_recovery_info, result.op, early_cycle);
   }
 
   // Misprediction: Switch to off-path execution

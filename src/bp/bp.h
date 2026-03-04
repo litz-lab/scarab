@@ -150,7 +150,9 @@ typedef struct Bp_Data_struct {
   struct Br_Conf_struct* br_conf;
 
   uns32 global_hist;
-  Cache* btb;  // BTB is shared over all the BPs (only allocated on the primary BP)
+  Cache* btb;     // main BTB (shared over all BPs, allocated on primary)
+  Cache* btb_l0;  // L0 BTB (shared over all BPs, allocated on primary)
+  Cache* btb_l1;  // L1 BTB (shared over all BPs, allocated on primary)
 
   CRS crs;
 

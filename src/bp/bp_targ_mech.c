@@ -269,29 +269,66 @@ void bp_crs_sync(Bp_Data* bp_data_src, Bp_Data* bp_data_dst) {
 
 void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   // btb line size set to 1
-  if (!bp_data->bp_id)
-    init_cache(bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
-  else  // points to the primary BP's shared BTB
+  if (!bp_data->bp_id) {
+    init_cache(bp_data->btb, "BTB_MAIN", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+    if (BTB_L0_PRESENT)
+      init_cache(bp_data->btb_l0, "BTB_L0", BTB_L0_ENTRIES, BTB_L0_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+    if (BTB_L1_PRESENT)
+      init_cache(bp_data->btb_l1, "BTB_L1", BTB_L1_ENTRIES, BTB_L1_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  } else {
+    // secondary BPs share the primary's BTBs
     bp_data->btb = primary_bp->btb;
+    bp_data->btb_l0 = primary_bp->btb_l0;
+    bp_data->btb_l1 = primary_bp->btb_l1;
+  }
 }
 
 /**************************************************************************************/
 /* bp_btb_gen_pred: */
 
 Addr* bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
-  Addr line_addr;
+  if (PERFECT_BTB)
+    return &op->oracle_info.target;
 
-  return PERFECT_BTB ? &op->oracle_info.target
-                     : (Addr*)cache_access(bp_data->btb, op->bp_pred_info->pred_addr, &line_addr,
-                                           bp_data->bp_id ? FALSE : TRUE);  // TODO
+  Addr line_addr;
+  Cache* btb;
+  Flag do_update;
+
+  if (!BTB_L0_PRESENT) {
+    // legacy single-level path
+    return (Addr*)cache_access(bp_data->btb, op->bp_pred_info->pred_addr, &line_addr, bp_data->bp_id ? FALSE : TRUE);
+  }
+
+  // Route to the correct BTB level based on which btb_pred_info is active.
+  // btb_pred_l1 is probe-only (read-only, no LRU update).
+  if (op->btb_pred_info == &op->btb_pred_l1) {
+    btb = bp_data->btb_l1;
+    do_update = FALSE;
+  } else if (op->btb_pred_info == &op->btb_pred_l0) {
+    btb = bp_data->btb_l0;
+    do_update = !bp_data->bp_id;
+  } else {
+    // btb_pred_main (or any other level) uses the main BTB
+    btb = bp_data->btb;
+    do_update = !bp_data->bp_id;
+  }
+  return (Addr*)cache_access(btb, op->bp_pred_info->pred_addr, &line_addr, do_update);
 }
 
 /**************************************************************************************/
 /* bp_btb_gen_update: */
 
+// btb_update_one: write a target entry to a single BTB cache level.
+static void btb_update_one(Bp_Data* bp_data, Cache* btb, Addr fetch_addr, Addr target) {
+  Addr *btb_line, btb_line_addr, repl_line_addr;
+  btb_line = (Addr*)cache_access(btb, fetch_addr, &btb_line_addr, TRUE);
+  if (!btb_line)
+    btb_line = (Addr*)cache_insert(btb, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
+  *btb_line = target;
+}
+
 void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
   Addr fetch_addr = op->bp_pred_info->pred_addr;
-  Addr *btb_line, btb_line_addr, repl_line_addr;
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
@@ -300,13 +337,13 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
               hexstr64s(op->oracle_info.target));
     STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
 
-    btb_line = (Addr*)cache_access(bp_data->btb, fetch_addr, &btb_line_addr, TRUE);
-    if (!btb_line) {
-      btb_line = (Addr*)cache_insert(bp_data->btb, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
-    }
-    *btb_line = op->oracle_info.target;
-    // FIXME: the exceptions to this assert are really about x86 vs Alpha
-    ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
+    // Inclusive write policy: update all BTB levels so that
+    // BTB_MAIN ⊇ BTB_L1 ⊇ BTB_L0 holds in practice.
+    btb_update_one(bp_data, bp_data->btb, fetch_addr, op->oracle_info.target);
+    if (BTB_L1_PRESENT && bp_data->btb_l1)
+      btb_update_one(bp_data, bp_data->btb_l1, fetch_addr, op->oracle_info.target);
+    if (BTB_L0_PRESENT && bp_data->btb_l0)
+      btb_update_one(bp_data, bp_data->btb_l0, fetch_addr, op->oracle_info.target);
   }
 }
 

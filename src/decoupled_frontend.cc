@@ -324,7 +324,7 @@ void Decoupled_FE::dfe_recover_op() {
       continue;
     }
 
-    if (it->ft_pos > ftq.size()) {
+    if (it->ft_pos >= ftq.size()) {
       DEBUG(proc_id, "[DFE%u] FTQ iter clamp: iter:%zu ft_pos:%llu->%zu (after recover resize)\n", bp_id, iter_idx,
             (unsigned long long)it->ft_pos, ftq.size());
       it->ft_pos = ftq.size();

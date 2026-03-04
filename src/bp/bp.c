@@ -216,7 +216,6 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
       ASSERTM(proc_id, BP_L0_LATENCY == 1, "BP_L0_LATENCY must be 1 when L0 is enabled\n");
       ASSERTM(proc_id, BP_MAIN_LATENCY > 1, "BP_MAIN_LATENCY must be > 1 when L0 is enabled\n");
       ASSERTM(proc_id, BP_MAIN_LATENCY < DECODE_CYCLES, "BP_MAIN_LATENCY must be < DECODE_CYCLES\n");
-      bp_table[BP_MECH_L0].init_func();
     } else {
       ASSERTM(proc_id, BP_MAIN_LATENCY == 1, "BP_MAIN_LATENCY must be 1 when early predictor is disabled\n");
     }
@@ -239,6 +238,8 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
   bp_data->bp = &bp_table[BP_MECH];
   bp_data->bp_l0 = bp_l0_enabled() ? &bp_table[BP_MECH_L0] : NULL;
   bp_data->bp->init_func();
+  if (bp_data->bp_l0)
+    bp_data->bp_l0->init_func();
 
   /* init btb structure */
   bp_data->bp_btb = &bp_btb_table[BTB_MECH];
@@ -896,9 +897,11 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
   if (!UPDATE_BP_OFF_PATH && op->off_path) {
     return;
   }
-  Bp* pred_bp = bp_get_active_predictor(bp_data, op);
-  op->recovery_info.branch_id = op->bp_pred_info->pred_branch_id;
-  pred_bp->update_func(op);
+  // Always train both predictors regardless of which one made the active prediction.
+  op->recovery_info.branch_id = op->bp_pred_main.pred_branch_id;
+  bp_data->bp->update_func(op);
+  if (bp_data->bp_l0)
+    bp_data->bp_l0->update_func(op);
 
   if (ENABLE_BP_CONF && IS_CONF_CF(op)) {
     bp_data->br_conf->update_func(op);
@@ -913,9 +916,11 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
  */
 
 void bp_retire_op(Bp_Data* bp_data, Op* op) {
-  Bp* pred_bp = bp_get_active_predictor(bp_data, op);
-  op->recovery_info.branch_id = op->bp_pred_info->pred_branch_id;
-  pred_bp->retire_func(op);
+  // Always retire both predictors regardless of which one made the active prediction.
+  op->recovery_info.branch_id = op->bp_pred_main.pred_branch_id;
+  bp_data->bp->retire_func(op);
+  if (bp_data->bp_l0)
+    bp_data->bp_l0->retire_func(op);
 }
 
 /******************************************************************************/
@@ -942,6 +947,8 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
     bp_data->bp_ibtb->recover_func(bp_data, info);
   }
   bp_data->bp->recover_func(info);
+  if (bp_data->bp_l0)
+    bp_data->bp_l0->recover_func(info);
 
   /* always recover the call return stack */
   CRS_REALISTIC ? bp_crs_realistic_recover(bp_data, info) : bp_crs_recover(bp_data);

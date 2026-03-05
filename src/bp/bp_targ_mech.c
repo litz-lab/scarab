@@ -295,18 +295,41 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
-  if (BTB_OFF_PATH_WRITES || !op->off_path) {
-    DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
-              hexstr64s(op->oracle_info.target));
-    STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
 
-    btb_line = (Addr*)cache_access(bp_data->btb, fetch_addr, &btb_line_addr, TRUE);
-    if (!btb_line) {
-      btb_line = (Addr*)cache_insert(bp_data->btb, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
+  // if it was a btb miss, it is time to write it into the btb
+  if (op->btb_pred_info->btb_miss && op->oracle_info.dir == TAKEN) {
+    if (BTB_OFF_PATH_WRITES || !op->off_path) {
+      DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
+                hexstr64s(op->oracle_info.target));
+      STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
+
+      btb_line = (Addr*)cache_access(bp_data->btb, fetch_addr, &btb_line_addr, TRUE);
+      if (!btb_line) {
+        btb_line = (Addr*)cache_insert(bp_data->btb, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
+      }
+      *btb_line = op->oracle_info.target;
+      // FIXME: the exceptions to this assert are really about x86 vs Alpha
+      ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
     }
-    *btb_line = op->oracle_info.target;
-    // FIXME: the exceptions to this assert are really about x86 vs Alpha
-    ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
+  } else if (op->btb_pred_info->btb_miss == FALSE && op->oracle_info.dir == TAKEN) {
+    // For jitted CF we want to update the BTB if the target changes, even on btb hit
+    // or For indirects we want to update the BTB if the target changes, even on btb hit
+    // The detection relies on the target stored in the btb
+    btb_line = (Addr*)cache_access(bp_data->btb, fetch_addr, &btb_line_addr, FALSE);
+    // The following assertion can fail (due to eviction?)
+    // ASSERT(bp_data->proc_id, btb_entry);
+    if (btb_line && *btb_line != op->oracle_info.target) {
+      cache_access(bp_data->btb, fetch_addr, &btb_line_addr, TRUE);
+      if (BTB_OFF_PATH_WRITES || !op->off_path) {
+        DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
+                  hexstr64s(op->oracle_info.target));
+        STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
+        *btb_line = op->oracle_info.target;
+        // FIXME: the exceptions to this assert are really about x86 vs Alpha
+        ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
+      }
+      STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_JITTED_NOT_CF + op->table_info->cf_type);
+    }
   }
 }
 

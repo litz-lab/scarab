@@ -311,6 +311,13 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 }
 
 /**************************************************************************************/
+/* bp_btb_gen_recover: */
+
+void bp_btb_gen_recover(Bp_Data* bp_data, Recovery_Info* info) {
+  return;
+}
+
+/**************************************************************************************/
 /* bp_btb_block_init: */
 
 void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {

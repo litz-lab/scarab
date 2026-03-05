@@ -875,6 +875,8 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   STAT_EVENT(bp_data->proc_id, POWER_BRANCH_MISPREDICT);
   STAT_EVENT(bp_data->proc_id, POWER_BTB_WRITE);
 
+  bp_data->bp_btb->recover_func(bp_data, info);
+
   /* type-specific recovery */
   if (cf_type == CF_ICALL || cf_type == CF_IBR) {
     bp_data->bp_ibtb->recover_func(bp_data, info);

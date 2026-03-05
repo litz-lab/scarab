@@ -46,6 +46,7 @@ void bp_crs_sync(Bp_Data*, Bp_Data*);
 void bp_btb_gen_init(Bp_Data*, Bp_Data*);
 Addr* bp_btb_gen_pred(Bp_Data*, Op*);
 void bp_btb_gen_update(Bp_Data*, Op*);
+void bp_btb_gen_recover(Bp_Data*, Recovery_Info*);
 
 void bp_btb_block_init(Bp_Data*, Bp_Data*);
 Addr* bp_btb_block_pred(Bp_Data*, Op*);

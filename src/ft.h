@@ -86,6 +86,16 @@ void ft_free_op(Op* op);
 
 class Decoupled_FE;
 
+// operator== for FT_Info_Static
+inline bool operator==(const FT_Info_Static& a, const FT_Info_Static& b) {
+  return a.start == b.start && a.length == b.length && a.n_uops == b.n_uops;
+}
+
+// operator< for FT_Info_Static (used for map key comparison)
+inline bool operator<(const FT_Info_Static& a, const FT_Info_Static& b) {
+  return std::tie(a.start, a.length, a.n_uops) < std::tie(b.start, b.length, b.n_uops);
+}
+
 // C++ class definition
 class FT {
  public:
@@ -125,6 +135,8 @@ class FT {
   uint64_t get_op_pos() const { return op_pos; }
   void set_prebuilt(bool val) { is_prebuilt = val; }
   bool get_is_prebuilt() const { return is_prebuilt; }
+  uns get_bp_id() const { return bp_id; }
+
   std::set<Addr> get_pcs();
 
   FT_Ended_By get_end_reason() const;

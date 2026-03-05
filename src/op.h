@@ -48,6 +48,7 @@ typedef struct FT FT;
 #define OP_DONE(x) (cycle_count >= (x)->done_cycle)
 #define OP_BROADCAST(x) ((cycle_count + 1) >= (x)->done_cycle)
 #define MULTI_CYCLE_OP(x) ((x)->inst_info->latency > 1 + RFILE_STAGE || (x)->table_info->mem_type == MEM_LD)
+#define OP_BP_ID(x) ((x)->parent_FT->bp_id)
 #define MAX_STRANDS 400
 #define MAX_STRAND_BYTES (MAX_STRANDS / 8)
 #define STRAND_BYTE(number) (((number) >> 3) % MAX_STRAND_BYTES)
@@ -132,7 +133,6 @@ struct Op_struct {
 
   // {{{ op numbers and info pointers
   uns proc_id;                  // processor id for cmp model
-  uns bp_id;                    // branch predictor id for cmp model
   uns thread_id;                // id number for the thread to which this op belongs
   Flag bom;                     // begining of macro instruction when we use op as a uop
   Flag eom;                     // end of macro instruction when we use op as a uop

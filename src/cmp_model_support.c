@@ -42,6 +42,7 @@
 #include "prefetcher/fdip.h"
 
 #include "cmp_model.h"
+#include "lookahead_buffer.h"
 #include "lsq.h"
 #include "statistics.h"
 #include "uop_queue_stage.h"
@@ -68,6 +69,7 @@ void cmp_init_cmp_model() {
   cmp_model.dcache_stage = (Dcache_Stage*)malloc(sizeof(Dcache_Stage) * NUM_CORES);
   alloc_mem_decoupled_fe(NUM_CORES, NUM_BPS);
   alloc_mem_fdip(NUM_CORES, NUM_BPS);
+  alloc_mem_lookahead_buffer(NUM_CORES);
   // TODO: support NUM_BPS
   alloc_mem_eip(NUM_CORES);
   alloc_mem_djolt(NUM_CORES);

@@ -60,6 +60,7 @@
 #include "cmp_model.h"
 #include "dumb_model.h"
 #include "freq.h"
+#include "lookahead_buffer.h"
 #include "model.h"
 #include "op_pool.h"
 #include "optimizer2.h"
@@ -675,6 +676,13 @@ void full_sim() {
     memview_init();
 
   init_op_pool();
+
+  // need to fill lookahead buffer after init_op_pool
+  ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);
+  for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+    init_lookahead_buffer(proc_id);
+  }
+
   unique_count = 1;
 
   sim_limit = trigger_create("SIM_LIMIT", SIM_LIMIT, TRIGGER_ONCE);

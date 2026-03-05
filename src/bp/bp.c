@@ -246,7 +246,7 @@ Flag bp_is_predictable(Bp_Data* bp_data) {
 /******************************************************************************/
 /* bp_predict_op:  predicts the target of a control flow instruction */
 
-Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
+Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_addr) {
   Addr* btb_target;
   Addr ibp_target;
   Addr pred_target;
@@ -266,7 +266,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
      overwritten by a prediction function that uses and
      speculatively updates global history */
   op->recovery_info.proc_id = op->proc_id;
-  op->recovery_info.bp_id = op->bp_id;
+  op->recovery_info.bp_id = bp_id;
   op->recovery_info.pred_global_hist = bp_data->global_hist;
   op->recovery_info.targ_hist = bp_data->targ_hist;
   op->recovery_info.new_dir = op->oracle_info.dir;

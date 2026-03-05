@@ -116,10 +116,6 @@ Uop_Cache_Stage* uc = NULL;
 /**************************************************************************************/
 /* Operator Overload */
 
-inline bool operator==(const FT_Info_Static& lhs, const FT_Info_Static& rhs) {
-  return lhs.start == rhs.start && lhs.length == rhs.length && lhs.n_uops == rhs.n_uops;
-}
-
 inline bool operator==(const Uop_Cache_Key& lhs, const Uop_Cache_Key& rhs) {
   return lhs.first == rhs.first && lhs.second == rhs.second;
 }

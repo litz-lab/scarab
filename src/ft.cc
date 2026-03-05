@@ -151,18 +151,18 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
       delete this;
       return FT_EVENT_BUILD_FAIL;
     }
-    Op* op = alloc_op(proc_id, bp_id);
+    Op* op = alloc_op(proc_id);
     fetch_op_fn(proc_id, bp_id, op);
     op->off_path = off_path;
     op->conf_off_path = conf_off_path;
     op->op_num = get_next_op_id_fn();
     op->bp_pred_info->pred_npc = op->oracle_info.npc;
     op->bp_pred_info->pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
+    add_op(op);
     if (off_path)
       event = predict_one_cf_op(op);
     if (op->inst_info->fake_inst == 1)
       ft_info.dynamic_info.contains_fake_nop = TRUE;
-    add_op(op);
     if ((event == FT_EVENT_MISPREDICT || event == FT_EVENT_FETCH_BARRIER) && off_path) {
       generate_ft_info();
       return event;
@@ -287,7 +287,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
       alt_op.bp_pred_info = &alt_op.bp_pred_main;
       alt_op.btb_pred_info = &alt_op.btb_pred;
     }
-    bp_predict_op(g_bp_data, op, 1, op->inst_info->addr);
+    bp_predict_op(g_bp_data, op, op->parent_FT->bp_id, 1, op->inst_info->addr);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
     DEBUG(proc_id,

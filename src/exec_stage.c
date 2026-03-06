@@ -151,8 +151,13 @@ void recover_exec_stage() {
   for (ii = 0; ii < NUM_FUS; ii++) {
     Func_Unit* fu = &exec->fus[ii];
     Op* op = exec->sd.ops[ii];
+    if (op && IS_FLUSHING_OP(op)) {
+      DEBUG(exec->proc_id, "Recovery op found in Exec FU:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
+            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
+    }
     if (op && FLUSH_OP(op)) {
       DEBUG(exec->proc_id, "Exec flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
+      ASSERT(exec->proc_id, op->off_path);
       exec->sd.ops[ii] = NULL;
       exec->sd.op_count--;
       fu->avail_cycle = cycle_count + 1;

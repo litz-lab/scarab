@@ -131,6 +131,18 @@ void FT::recover_ft() {
   // This path is for an FT already popped from FTQ and currently in-flight
   // (e.g., ic/uc current_ft). We only trim unread tail ops that are newer
   // than recovery_op_num. Older/read ops are handled by stage-data recovery.
+  FT_Info before_info = get_ft_info();
+  Op* before_last = ops.empty() ? nullptr : ops.back();
+  UNUSED(before_info);
+  UNUSED(before_last);
+  DEBUG(proc_id,
+        "FT recover start: ft_id:%llu start:0x%llx len:%llu n_uops:%llu op_pos:%llu ops:%zu end_reason:%d last_op:%s "
+        "last_addr:0x%llx last_eom:%u\n",
+        (unsigned long long)before_info.dynamic_info.FT_id, (unsigned long long)before_info.static_info.start,
+        (unsigned long long)before_info.static_info.length, (unsigned long long)before_info.static_info.n_uops,
+        (unsigned long long)op_pos, ops.size(), (int)get_end_reason(), before_last ? "yes" : "no",
+        (unsigned long long)(before_last ? before_last->inst_info->addr : 0),
+        (unsigned)(before_last ? before_last->eom : 0));
   trim_unread_tail([&](Op* op) {
     if (!FLUSH_OP(op))
       return false;
@@ -140,6 +152,18 @@ void FT::recover_ft() {
     ASSERT(proc_id, op->parent_FT == this);
     return true;
   });
+  FT_Info after_info = get_ft_info();
+  Op* after_last = ops.empty() ? nullptr : ops.back();
+  UNUSED(after_info);
+  UNUSED(after_last);
+  DEBUG(proc_id,
+        "FT recover end: ft_id:%llu start:0x%llx len:%llu n_uops:%llu op_pos:%llu ops:%zu end_reason:%d last_op:%s "
+        "last_addr:0x%llx last_eom:%u\n",
+        (unsigned long long)after_info.dynamic_info.FT_id, (unsigned long long)after_info.static_info.start,
+        (unsigned long long)after_info.static_info.length, (unsigned long long)after_info.static_info.n_uops,
+        (unsigned long long)op_pos, ops.size(), (int)get_end_reason(), after_last ? "yes" : "no",
+        (unsigned long long)(after_last ? after_last->inst_info->addr : 0),
+        (unsigned)(after_last ? after_last->eom : 0));
 }
 
 FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,

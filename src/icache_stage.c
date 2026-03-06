@@ -31,6 +31,7 @@
 #include <math.h>
 
 #include "globals/assert.h"
+#include "globals/debug_stage.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
@@ -240,6 +241,11 @@ void recover_icache_stage() {
   cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {
     if (cur_data->ops[ii]) {
+      if (IS_FLUSHING_OP(cur_data->ops[ii])) {
+        DEBUG(ic->proc_id, "Recovery op found in %s slot:%u op_num:%llu off_path:%u addr:0x%llx\n", cur_data->name, ii,
+              (unsigned long long)cur_data->ops[ii]->op_num, cur_data->ops[ii]->off_path,
+              (unsigned long long)cur_data->ops[ii]->inst_info->addr);
+      }
       if (FLUSH_OP(cur_data->ops[ii])) {
         DEBUG(ic->proc_id, "Icache flushing op_num:%llu off_path:%u\n", (unsigned long long)cur_data->ops[ii]->op_num,
               cur_data->ops[ii]->off_path);
@@ -290,6 +296,9 @@ void debug_icache_stage() {
   DPRINTF("# %-10s  op_count:%d ", cur_data->name, cur_data->op_count);
   DPRINTF("fetch_addr:0x%s  path:%s  state:%s  next_state:%s\n", hexstr64s(ic->fetch_addr),
           ic->off_path ? "OFF_PATH" : "ON_PATH ", icache_state_names[ic->state], icache_state_names[ic->next_state]);
+  DPRINTF("# %-10s  op_nums:", cur_data->name);
+  print_stage_op_nums(GLOBAL_DEBUG_STREAM, cur_data->ops, cur_data->op_count);
+  DPRINTF("\n");
 
   // print icache stage
   DPRINTF("# %-10s  op_count:%d\n", "ICache", cur_data->op_count);
@@ -692,6 +701,9 @@ void uop_cache_serve_ops() {
 
   // process the fetched ops
   icache_process_ops(&uc->sd, TRUE, op_num_prev_fetch_target);
+  DEBUG(ic->proc_id, "ic_uopc filled added:%u sd_head:%s sd_tail:%s sd_count:%d ft_ended:%u end_of_ft:%u\n",
+        uop_cache_line.n_uops, sd_head_opnum_str(&uc->sd), sd_tail_opnum_str(&uc->sd), uc->sd.op_count, ft_has_ended,
+        uop_cache_line.end_of_ft);
 }
 
 Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {

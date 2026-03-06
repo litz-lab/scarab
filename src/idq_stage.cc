@@ -34,6 +34,7 @@
 
 extern "C" {
 #include "globals/assert.h"
+#include "globals/debug_stage.h"
 #include "globals/enum.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
@@ -128,10 +129,15 @@ void IDQ_Stage::recover() {
   if (occupied_count != 0) {
     int i = wrap_around(tail - 1);
     do {
+      if (ops[i] && IS_FLUSHING_OP(ops[i])) {
+        DEBUG(proc_id, "Recovery op found in IDQ queue idx:%d op_num:%llu off_path:%u addr:0x%llx\n", i,
+              (unsigned long long)ops[i]->op_num, ops[i]->off_path, (unsigned long long)ops[i]->inst_info->addr);
+      }
       if (FLUSH_OP(ops[i])) {
         DEBUG(proc_id, "IDQ queue flushing op_num:%llu off_path:%u\n", (unsigned long long)ops[i]->op_num,
               ops[i]->off_path);
         flushed = TRUE;
+        ASSERT(proc_id, ops[i]->off_path);
         ASSERT(proc_id, i == wrap_around(tail - 1));
         if (ops[i]->parent_FT)
           ft_free_op(ops[i]);
@@ -155,9 +161,14 @@ void IDQ_Stage::recover() {
 
   for (int i = idq_sd.op_count - 1; i >= 0; i--) {
     Op* op = idq_sd.ops[i];
+    if (op && IS_FLUSHING_OP(op)) {
+      DEBUG(proc_id, "Recovery op found in IDQ output idx:%d op_num:%llu off_path:%u addr:0x%llx\n", i,
+            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
+    }
     if (op && FLUSH_OP(op)) {
       DEBUG(proc_id, "IDQ output flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
       flushed = TRUE;
+      ASSERT(proc_id, op->off_path);
       ASSERT(proc_id, i == idq_sd.op_count - 1);
       if (op->parent_FT)
         ft_free_op(op);
@@ -179,6 +190,27 @@ void IDQ_Stage::recover() {
 }
 
 void IDQ_Stage::debug() {
+  DPRINTF("# IDQ next_op_num:%llu out_count:%d q_occupied:%d head:%d tail:%d\n", (unsigned long long)next_op_num,
+          idq_sd.op_count, occupied_count, head, tail);
+
+  DPRINTF("# IDQ out ");
+  print_stage_op_nums(GLOBAL_DEBUG_STREAM, idq_sd.ops, idq_sd.op_count);
+  DPRINTF("\n");
+
+  DPRINTF("# IDQ q   [");
+  for (int i = 0; i < occupied_count; i++) {
+    if (i) {
+      DPRINTF(" ");
+    }
+    int idx = wrap_around(head + i);
+    Op* op = ops[idx];
+    if (!op) {
+      DPRINTF("-");
+    } else {
+      DPRINTF("%llu%s", (unsigned long long)op->op_num, op->off_path ? "o" : "n");
+    }
+  }
+  DPRINTF("]\n");
 }
 
 Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd,
@@ -265,6 +297,17 @@ void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd, int& count
 }
 
 void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
+  DEBUG(
+      proc_id,
+      "IDQ heads next_op_num:%llu dec_head:%s dec_count:%d uopq_head:%s uopq_count:%d ic_uopc_head:%s ic_uopc_count:%d "
+      "idq_out_count:%d idq_q_occupied:%d\n",
+      (unsigned long long)next_op_num,
+      (dec_src_sd->op_count && dec_src_sd->ops[0]) ? unsstr64(dec_src_sd->ops[0]->op_num) : "none",
+      dec_src_sd->op_count,
+      (uop_queue_sd->op_count && uop_queue_sd->ops[0]) ? unsstr64(uop_queue_sd->ops[0]->op_num) : "none",
+      uop_queue_sd->op_count,
+      (ic_uopc_sd->op_count && ic_uopc_sd->ops[0]) ? unsstr64(ic_uopc_sd->ops[0]->op_num) : "none",
+      ic_uopc_sd->op_count, idq_sd.op_count, occupied_count);
   /* Fill the IDQ output stage data with uops from IDQ. */
   int count_issued = 0;
   int count_issued_on_path = 0;
@@ -285,6 +328,11 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
 
   /* Select the input stage data. */
   Stage_Data* consume_from_sd = select_input_stage_data(dec_src_sd, ic_uopc_sd, uop_queue_sd);
+  DEBUG(proc_id, "IDQ selected input:%s\n",
+        consume_from_sd == dec_src_sd     ? "decode"
+        : consume_from_sd == uop_queue_sd ? "uop_queue"
+        : consume_from_sd == ic_uopc_sd   ? "ic_uopc"
+                                          : "none");
   process_input_stage_data(consume_from_sd, count_issued, count_issued_on_path);
 
   topdown_idq_update(proc_id, idq_sd.op_count, count_issued, count_issued_on_path);

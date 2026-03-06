@@ -7,6 +7,7 @@
 
 extern "C" {
 #include "globals/assert.h"
+#include "globals/debug_stage.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
@@ -74,9 +75,18 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
     return;
 
   ASSERT(0, uopq);
+  DEBUG(uopq->proc_id,
+        "UopQ state q_size:%zu free_sds:%zu src_head:%s src_count:%d q_front_head:%s q_front_count:%d q_back_tail:%s "
+        "q_back_count:%d\n",
+        uopq->q.size(), uopq->free_sds.size(),
+        (src_sd && src_sd->op_count && src_sd->ops[0]) ? unsstr64(src_sd->ops[0]->op_num) : "none",
+        src_sd ? src_sd->op_count : 0, uopq->q.size() ? sd_head_opnum_str(uopq->q.front()) : "none",
+        uopq->q.size() ? uopq->q.front()->op_count : 0, uopq->q.size() ? sd_tail_opnum_str(uopq->q.back()) : "none",
+        uopq->q.size() ? uopq->q.back()->op_count : 0);
 
   // If the front of the queue was consumed, remove that stage.
   if (uopq->q.size() && uopq->q.front()->op_count == 0) {
+    DEBUG(uopq->proc_id, "UopQ pop empty front stage\n");
     uopq->free_sds.push_back(uopq->q.front());
     uopq->q.pop_front();
     ASSERT(0, !uopq->q.size() || uopq->q.front()->op_count > 0);  // Only one stage is consumed per cycle
@@ -126,6 +136,8 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
   }
 
   if (new_sd->op_count > 0) {
+    DEBUG(uopq->proc_id, "UopQ push stage head:%s tail:%s count:%d\n", sd_head_opnum_str(new_sd),
+          sd_tail_opnum_str(new_sd), new_sd->op_count);
     uopq->free_sds.pop_front();
     uopq->q.push_back(new_sd);
   }
@@ -133,13 +145,21 @@ void update_uop_queue_stage(Stage_Data* src_sd) {
 
 void recover_uop_queue_stage(void) {
   ASSERT(0, uopq);
+  DEBUG(uopq->proc_id, "UopQ recover start q_size:%zu recovery_op_num:%llu\n", uopq->q.size(),
+        (unsigned long long)bp_recovery_info->recovery_op_num);
   uopq->off_path = false;
   for (std::deque<Stage_Data*>::iterator it = uopq->q.begin(); it != uopq->q.end();) {
     Flag flushed = FALSE;
     Stage_Data* sd = *it;
+    DEBUG(uopq->proc_id, "UopQ recover stage before head:%s tail:%s count:%d\n", sd_head_opnum_str(sd),
+          sd_tail_opnum_str(sd), sd->op_count);
     sd->op_count = 0;
     for (uns op_idx = 0; op_idx < STAGE_MAX_OP_COUNT; op_idx++) {
       Op* op = sd->ops[op_idx];
+      if (op && IS_FLUSHING_OP(op)) {
+        DEBUG(uopq->proc_id, "Recovery op found in UopQ slot:%u op_num:%llu off_path:%u addr:0x%llx\n", op_idx,
+              (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
+      }
       if (op && FLUSH_OP(op)) {
         DEBUG(op->proc_id, "UopQ flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
         flushed = TRUE;
@@ -158,12 +178,16 @@ void recover_uop_queue_stage(void) {
     }
 
     if (sd->op_count == 0) {  // entire stage data was off-path
+      DEBUG(uopq->proc_id, "UopQ recover stage removed (empty after flush)\n");
       uopq->free_sds.push_back(sd);
       it = uopq->q.erase(it);
     } else {
+      DEBUG(uopq->proc_id, "UopQ recover stage after head:%s tail:%s count:%d\n", sd_head_opnum_str(sd),
+            sd_tail_opnum_str(sd), sd->op_count);
       ++it;
     }
   }
+  DEBUG(uopq->proc_id, "UopQ recover end q_size:%zu\n", uopq->q.size());
 }
 
 Stage_Data* uop_queue_stage_get_latest_sd(void) {

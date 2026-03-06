@@ -235,6 +235,12 @@ void Decoupled_FE::dfe_recover_op() {
       if (IS_FLUSHING_OP(op)) {
         found_recovery_ft = true;
         recovery_op_is_last = (op_idx == ft->ops.size() - 1);
+        DEBUG(proc_id,
+              "[DFE%u] FTQ scan: recovery op_num:%llu found in ft_id:%llu at idx:%llu/%zu"
+              " literal_last:%u recovery_op_is_last:%u\n",
+              bp_id, (unsigned long long)op->op_num, (unsigned long long)ft->get_ft_info().dynamic_info.FT_id,
+              (unsigned long long)op_idx, ft->ops.size(), (unsigned)(op_idx == ft->ops.size() - 1),
+              (unsigned)recovery_op_is_last);
         break;
       }
     }
@@ -516,10 +522,16 @@ FT* Decoupled_FE::pop_ft() {
       it->ft_pos--;
     } else {
       ASSERT(proc_id, it->flattened_op_pos < ft_num_ops);
+      DEBUG(proc_id, "[DFE%u] FTQ iter reset: iter ft_pos:%llu op_pos:%llu->0 (popped front FT)\n", bp_id,
+            (unsigned long long)it->ft_pos, (unsigned long long)it->op_pos);
       it->flattened_op_pos = 0;
       it->op_pos = 0;
     }
   }
+  DEBUG(proc_id,
+        "[DFE%u] Pop FT from FTQ: ft_id:%llu ft_ops:%llu off_path:%u end_reason:%d ftq_size_before:%zu after:%zu\n",
+        bp_id, (unsigned long long)ft->get_ft_info().dynamic_info.FT_id, (unsigned long long)ft_num_ops,
+        ft->get_ft_info().dynamic_info.first_op_off_path, (int)ft->get_end_reason(), ftq.size() + 1, ftq.size());
   return ft;
 }
 
@@ -651,6 +663,11 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
     ASSERT(proc_id, recovery_addr == current_ft_to_push->get_start_addr());
     recovery_addr = 0;
   }
+  DEBUG(proc_id,
+        "[DFE%u] Push FT to FTQ: ft_id:%llu ft_ops:%zu off_path:%u end_reason:%d ftq_size_before:%zu after:%zu\n",
+        bp_id, (unsigned long long)current_ft_to_push->get_ft_info().dynamic_info.FT_id, current_ft_to_push->ops.size(),
+        current_ft_to_push->get_ft_info().dynamic_info.first_op_off_path, (int)current_ft_to_push->get_end_reason(),
+        ftq.size(), ftq.size() + 1);
   ftq.emplace_back(std::move(current_ft_to_push));
 }
 
@@ -664,12 +681,18 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // if we have a tailing ft, save it for recovery
   if (trailing_ft && trailing_ft->has_unread_ops()) {
     saved_recovery_ft = trailing_ft;
+    DEBUG(proc_id, "[DFE%u] saved_recovery_ft<-trailing_ft id:%llu start:0x%llx ops:%zu\n", bp_id,
+          (unsigned long long)saved_recovery_ft->get_ft_info().dynamic_info.FT_id,
+          (unsigned long long)saved_recovery_ft->get_ft_info().static_info.start, saved_recovery_ft->ops.size());
   }
   // no trailing ft, misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
     ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);  // should always be true because we need lookahead buffer to save recovery ft
     saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
     ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
+    DEBUG(proc_id, "[DFE%u] saved_recovery_ft<-newly_built id:%llu start:0x%llx ops:%zu\n", bp_id,
+          (unsigned long long)saved_recovery_ft->get_ft_info().dynamic_info.FT_id,
+          (unsigned long long)saved_recovery_ft->get_ft_info().static_info.start, saved_recovery_ft->ops.size());
   }
   saved_recovery_ft->set_prebuilt(true);
   redirect_cycle = cycle_count;

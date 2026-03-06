@@ -31,6 +31,8 @@
 
 #include "globals/global_types.h"
 
+#include "bp/bp.param.h"
+
 #include "libs/cache_lib.h"
 #include "libs/hash_lib.h"
 
@@ -142,6 +144,7 @@ typedef struct Bp_Data_struct {
   uns bp_id;
   /* predictor data */
   struct Bp_struct* bp;  // main branch predictor.
+  struct Bp_struct* bp_l0;  // l0 branch predictor.
   struct Bp_Btb_struct* bp_btb;
   struct Bp_Ibtb_struct* bp_ibtb;
   struct Br_Conf_struct* br_conf;
@@ -253,6 +256,15 @@ extern Bp_Recovery_Info* bp_recovery_info;
 extern Br_Conf br_conf_table[];
 
 /**************************************************************************************/
+/* Inline helpers */
+
+// Returns TRUE if the L0 (early) branch predictor is enabled.
+// L0 runs in parallel with the main BP at a shorter latency.
+static inline Flag bp_l0_enabled(void) {
+  return (BP_MECH_L0 != NUM_BP) && (BP_L0_LATENCY > 0);
+}
+
+/**************************************************************************************/
 /* Prototypes */
 void set_bp_data(Bp_Data* new_bp_data);
 void set_bp_recovery_info(Bp_Recovery_Info* new_bp_recovery_info);
@@ -263,7 +275,7 @@ void bp_sched_redirect(Bp_Recovery_Info*, Op*, Counter);
 
 void init_bp_data(uns8, uns8, Bp_Data*, Bp_Data*);
 Flag bp_is_predictable(Bp_Data*);
-Addr bp_predict_op(Bp_Data*, Op*, uns, uns, Addr);
+Addr bp_predict_op(Bp_Data*, Op*, uns, uns, Addr, Bp_Pred_Level);
 Addr bp_predict_op_evaluate(Bp_Data*, Op*, Addr);
 void bp_target_known_op(Bp_Data*, Op*);
 void bp_resolve_op(Bp_Data*, Op*);

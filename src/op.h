@@ -145,6 +145,7 @@ struct Op_struct {
   Inst_Info* inst_info;         // pointer to unique struct for each static instruction
   Op_Info oracle_info;          // information about the execution of the op in the oracle
   Op_Info engine_info;          // information about the execution of the op in the engine
+  Bp_Pred_Info bp_pred_l0;      // l0 branch prediction info
   Bp_Pred_Info bp_pred_main;    // main branch prediction info
   Btb_Pred_Info btb_pred;       // btb prediction info
   Bp_Pred_Info* bp_pred_info;   // selected/active branch prediction info
@@ -253,6 +254,11 @@ struct Op_struct {
   FT* parent_FT;
   FT* parent_FT_off_path;
 };
+
+static inline void op_select_bp_pred_info(Op* op, Bp_Pred_Level level) {
+  op->bp_pred_info = (level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+  op->btb_pred_info = &op->btb_pred;
+}
 
 /**************************************************************************************/
 

@@ -552,8 +552,8 @@ void uop_sim() {
   op.table_info = &table_info;
   op.inst_info = &inst_info;
   op.mbp7_info = NULL;
-  op.bp_pred_info = &op.bp_pred_main;
-  op.btb_pred_info = &op.btb_pred;
+  op_select_bp_pred_info(&op, BP_PRED_MAIN);
+  memset(&op.bp_pred_l0, 0, sizeof(op.bp_pred_l0));
   memset(&op.bp_pred_main, 0, sizeof(op.bp_pred_main));
   memset(&op.btb_pred, 0, sizeof(op.btb_pred));
 

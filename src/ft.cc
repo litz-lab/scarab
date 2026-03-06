@@ -144,6 +144,10 @@ void FT::recover_ft() {
         (unsigned long long)(before_last ? before_last->inst_info->addr : 0),
         (unsigned)(before_last ? before_last->eom : 0));
   trim_unread_tail([&](Op* op) {
+    if (IS_FLUSHING_OP(op)) {
+      ASSERT(proc_id, op->eom);
+      op_select_bp_pred_info(op, BP_PRED_MAIN);
+    }
     if (!FLUSH_OP(op))
       return false;
     DEBUG(proc_id, "FT recovery flushing unread op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
@@ -184,7 +188,7 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
     op->bp_pred_info->pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     add_op(op);
     if (off_path)
-      event = predict_op_ft_event(op);
+      event = predict_op_ft_event(op, BP_PRED_MAIN);
     if (op->inst_info->fake_inst == 1)
       ft_info.dynamic_info.contains_fake_nop = TRUE;
     if ((event == FT_EVENT_MISPREDICT || event == FT_EVENT_FETCH_BARRIER) && off_path) {
@@ -297,7 +301,7 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
   return {off_path_ft, this};
 }
 
-FT_Event FT::predict_op_ft_event(Op* op) {
+FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
   bool trace_mode = false;
 
 #ifdef ENABLE_PT_MEMTRACE
@@ -305,7 +309,7 @@ FT_Event FT::predict_op_ft_event(Op* op) {
 #endif
   if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
-    bp_predict_op(g_bp_data, op, op->parent_FT->bp_id, 1, op->inst_info->addr);
+    bp_predict_op(g_bp_data, op, op->parent_FT->bp_id, 1, op->inst_info->addr, pred_level);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
     DEBUG(proc_id,
@@ -352,7 +356,7 @@ FT_Event FT::predict_op_ft_event(Op* op) {
 FT_PredictResult FT::predict_ft() {
   for (size_t idx = op_pos; idx < ops.size(); idx++) {
     Op* op = ops[idx];
-    FT_Event event = predict_op_ft_event(op);
+    FT_Event event = predict_op_ft_event(op, BP_PRED_MAIN);
     if (event != FT_EVENT_NONE) {
       uint64_t return_idx = (event == FT_EVENT_MISPREDICT) ? (idx) : 0;
       Addr pred_addr = op->bp_pred_info->pred_npc;
@@ -457,6 +461,7 @@ void FT::clear_recovery_info() {
   for (auto op : ops) {
     op->bp_pred_info->recover_at_decode = FALSE;
     op->bp_pred_info->recover_at_exec = FALSE;
+    op->bp_pred_info->recover_at_fe = FALSE;
   }
 }
 

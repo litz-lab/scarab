@@ -33,6 +33,7 @@
 #include "globals/assert.h"
 #include "globals/utils.h"
 
+#include "bp/bp.param.h"
 #include "memory/memory.param.h"
 
 #include "frontend/frontend_intf.h"
@@ -127,10 +128,46 @@ void FT::remove_op_after_exec_recover() {
   ASSERT(proc_id, get_end_reason() == FT_NOT_ENDED || get_end_reason() == FT_TAKEN_BRANCH);
 }
 
+// Recovery may change FT metadata (e.g., predictor selection/end reason)
+// even when no ops are removed, and may leave op_pos == ops.size() after
+// trimming unread tail.
+//
+/***************************************************************************************
+ * recover_ft() Cases Documentation
+ * This API trims unread tail ops newer than recovery_op_num, then regenerate ft_info
+ * so metadata reflects the trimmed ops vector. Older/read ops are handled by stage-data recovery.
+ *
+ * Caller context (where this FT lives when recover_ft() is invoked):
+ * 1) FTQ-resident FT
+ * - recovered from Decoupled_FE::dfe_recover_op when the recovery op is inside an FT that remains in FTQ.
+ * - op_pos is usually 0 (not consumed by icache/uoc yet) if the FT does not include off-path ops.
+ * - mapping: usually Case A, sometimes Case C after trimming; Case B is not expected in normal FTQ flow.
+ *
+ * 2) In-flight FT in icache/uop-cache stage
+ * - recovered from stage-level recovery path while serving: ICACHE_SERVING or UOP_CACHE_SERVING
+ * - op_pos may be mid-FT or at end depending on how many uops were already consumed when recovery fires.
+ * - mapping: can be Case A / Case B / Case C.
+ *
+ * Cases (ops index view):
+ * [ consumed ... | unread ... ]  where op_pos is the split point.
+ *
+ * Case A: op_pos < ops.size(), ops.back()->eom, ops[op_pos]->bom
+ * before: [ consumed | unread-valid-FT ]
+ * action: regenerate from op_pos (metadata should describe unread window)
+ * common context: in-flight icache/uoc FT after partial consumption.
+ *
+ * Case B: op_pos == ops.size(), ops.back()->eom
+ * before: [ fully-consumed ]
+ * action: regenerate from 0 (metadata for whole surviving FT)
+ * common context: in-flight FT where recovery arrives at/after last uop.
+ *
+ * Case C: chosen regeneration point is not BOM, or ops.back()->!eom
+ * before: [ consumed | unread-partial ] or [ partial tail after trim ]
+ * action: do not call generate_ft_info(); conservatively bound metadata to surviving ops
+ * to avoid stale/out-of-range FT windows.
+ * common context: trimmed in-flight FT with non-canonical FT boundary.
+ ***************************************************************************************/
 void FT::recover_ft() {
-  // This path is for an FT already popped from FTQ and currently in-flight
-  // (e.g., ic/uc current_ft). We only trim unread tail ops that are newer
-  // than recovery_op_num. Older/read ops are handled by stage-data recovery.
   FT_Info before_info = get_ft_info();
   Op* before_last = ops.empty() ? nullptr : ops.back();
   UNUSED(before_info);
@@ -156,6 +193,42 @@ void FT::recover_ft() {
     ASSERT(proc_id, op->parent_FT == this);
     return true;
   });
+  if (!ops.empty()) {
+    ASSERT(proc_id, op_pos <= ops.size());
+    if (ops.back()->eom) {
+      uint64_t saved_op_pos = op_pos;
+      uint64_t regen_pos = (saved_op_pos < ops.size()) ? saved_op_pos : 0;
+      if (ops[regen_pos]->bom) {
+        op_pos = regen_pos;
+        generate_ft_info();
+        op_pos = saved_op_pos;
+      } else {
+        // Keep metadata bounded if we cannot represent this position as a valid
+        // FT start (must begin at BOM).
+        ft_info.dynamic_info.ended_by = get_end_reason();
+        const size_t info_n_uops = static_cast<size_t>(ft_info.static_info.n_uops);
+        if (info_n_uops > ops.size())
+          ft_info.static_info.n_uops = static_cast<decltype(ft_info.static_info.n_uops)>(ops.size());
+        if (ft_info.static_info.start) {
+          Addr end_addr = ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size;
+          if (end_addr >= ft_info.static_info.start)
+            ft_info.static_info.length = end_addr - ft_info.static_info.start;
+        }
+      }
+    } else {
+      // The recovered FT may end at a partial instruction boundary after
+      // trimming unread off-path tail. Keep metadata bounded to surviving ops.
+      ft_info.dynamic_info.ended_by = get_end_reason();
+      const size_t info_n_uops = static_cast<size_t>(ft_info.static_info.n_uops);
+      if (info_n_uops > ops.size())
+        ft_info.static_info.n_uops = static_cast<decltype(ft_info.static_info.n_uops)>(ops.size());
+      if (ft_info.static_info.start) {
+        Addr end_addr = ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size;
+        if (end_addr >= ft_info.static_info.start)
+          ft_info.static_info.length = end_addr - ft_info.static_info.start;
+      }
+    }
+  }
   FT_Info after_info = get_ft_info();
   Op* after_last = ops.empty() ? nullptr : ops.back();
   UNUSED(after_info);
@@ -330,6 +403,7 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
       if (op->off_path) {
         op->bp_pred_info->recover_at_decode = FALSE;
         op->bp_pred_info->recover_at_exec = FALSE;
+        op->bp_pred_info->recover_at_fe = FALSE;
       }
       return FT_EVENT_MISPREDICT;
     } else if (trace_mode && op->off_path && op->bp_pred_info->pred == TAKEN) {
@@ -342,11 +416,8 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
     }
 
   } else if (op->table_info->bar_type & BAR_FETCH) {
-    ASSERT(0, !(op->bp_pred_info->recover_at_decode | op->bp_pred_info->recover_at_exec));
-    if (op->off_path)
-      STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_OFFPATH);
-    else
-      STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_ONPATH);
+    ASSERT(0, !(op->bp_pred_info->recover_at_fe | op->bp_pred_info->recover_at_decode |
+                op->bp_pred_info->recover_at_exec));
     return FT_EVENT_FETCH_BARRIER;
   }
 
@@ -358,6 +429,8 @@ FT_PredictResult FT::predict_ft() {
     Op* op = ops[idx];
     FT_Event event = predict_op_ft_event(op, BP_PRED_MAIN);
     if (event != FT_EVENT_NONE) {
+      if (event == FT_EVENT_FETCH_BARRIER)
+        STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
       uint64_t return_idx = (event == FT_EVENT_MISPREDICT) ? (idx) : 0;
       Addr pred_addr = op->bp_pred_info->pred_npc;
       if (!ended_by_exit())
@@ -483,6 +556,11 @@ FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
 
+uint64_t ft_get_num_unread_ops(FT* ft) {
+  ASSERT(0, ft);
+  return ft->get_ops().size() - ft->get_op_pos();
+}
+
 bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start) {
   ASSERT(0, ft);
 
@@ -518,12 +596,36 @@ void recover_ft(FT* ft) {
 }
 
 /* retire and flush, free all ops in a FT when last op is freed */
-void ft_free_op(Op* op) {
+void ft_free_op(Op* op, FT** ft_ref0, FT** ft_ref1) {
+  ASSERT(0, op);
   ASSERT(0, op->parent_FT);
-  if (op->parent_FT_off_path && op->parent_FT_off_path->get_last_op() == op)
-    delete op->parent_FT_off_path;
-  if (!op->parent_FT_off_path && op->parent_FT->get_last_op() == op)
-    delete op->parent_FT;
+
+  FT* primary_ft = op->parent_FT;
+  FT* off_path_ft = op->parent_FT_off_path;
+
+  auto clear_ref_if_matches = [&](FT** ft_ref, FT* victim) {
+    if (!ft_ref || !*ft_ref)
+      return;
+    if (*ft_ref == victim)
+      *ft_ref = NULL;
+  };
+
+  auto clear_refs_for_victim = [&](FT* victim) {
+    clear_ref_if_matches(ft_ref0, victim);
+    clear_ref_if_matches(ft_ref1, victim);
+  };
+
+  // Deletion semantics:
+  // 1) Delete off-path FT if this op is its last op.
+  // 2) Delete primary FT only when there is no remaining off-path share.
+  if (off_path_ft && off_path_ft->get_last_op() == op) {
+    clear_refs_for_victim(off_path_ft);
+    delete off_path_ft;
+  }
+  if (!op->parent_FT_off_path && primary_ft && primary_ft->get_last_op() == op) {
+    clear_refs_for_victim(primary_ft);
+    delete primary_ft;
+  }
 }
 
 /* use set to avoid duplicates and keep PC order */

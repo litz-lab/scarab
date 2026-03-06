@@ -244,6 +244,27 @@ void uop_cache_clear_lookup_buffer() {
   uc_cpp->num_looked_up_lines = 0;
 }
 
+/* uop_cache_lookup_buffer_synced_with_ft: check if the lookup buffer's remaining
+ * uop count matches ft's unread op count.
+ * Returns TRUE if the buffer cursor is in sync with ft->op_pos (no trimming
+ * occurred during recovery), FALSE if trimming caused a desync.
+ */
+Flag uop_cache_lookup_buffer_synced_with_ft(FT* ft) {
+  if (!UOP_CACHE_ENABLE)
+    return TRUE;
+  ASSERT(uc->proc_id, ft);
+
+  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
+  uint64_t unread_uops = ft_get_num_unread_ops(ft);
+
+  uint64_t buffer_remaining_uops = 0;
+  for (size_t i = uc_cpp->num_looked_up_lines; i < uc_cpp->lookup_buffer.size(); i++) {
+    buffer_remaining_uops += uc_cpp->lookup_buffer[i].n_uops;
+  }
+
+  return (buffer_remaining_uops == unread_uops) ? TRUE : FALSE;
+}
+
 Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag update_repl) {
   if (!UOP_CACHE_ENABLE) {
     return NULL;

@@ -165,7 +165,7 @@ void recover_uop_queue_stage(void) {
         flushed = TRUE;
         ASSERT(op->proc_id, op->off_path);
         if (op->parent_FT)
-          ft_free_op(op);
+          ft_free_op(op, NULL, NULL);
         sd->ops[op_idx] = NULL;
       } else if (op) {
         sd->op_count++;

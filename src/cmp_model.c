@@ -416,7 +416,7 @@ void cmp_redirect() {
 // cmp_retire_hook:  Called right before the op retires
 
 void cmp_retire_hook(Op* op) {
-  ft_free_op(op);
+  ft_free_op(op, NULL, NULL);
 }
 
 void warmup_uncore(uns proc_id, Addr addr, Flag write) {

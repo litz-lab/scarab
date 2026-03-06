@@ -260,7 +260,7 @@ void flush_window() {
         node->rs[op->rs_id].rs_op_count--;
       }
       if (op->parent_FT)
-        ft_free_op(op);
+        ft_free_op(op, NULL, NULL);
     } else {
       /* Keep op */
 
@@ -634,7 +634,7 @@ void node_retire() {
     if (model->op_retired_hook)
       model->op_retired_hook(op);
     else
-      ft_free_op(op);
+      ft_free_op(op, NULL, NULL);
 
     // the fused op does not occupy the ROB entry
     if (!op->macro_fused)

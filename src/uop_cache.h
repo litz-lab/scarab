@@ -59,6 +59,7 @@ void alloc_mem_uop_cache(uns num_cores);
 Flag uop_cache_lookup_ft_and_fill_lookup_buffer(FT_Info ft_info, Flag offpath);
 Uop_Cache_Data uop_cache_consume_uops_from_lookup_buffer(uns requested);
 void uop_cache_clear_lookup_buffer(void);
+Flag uop_cache_lookup_buffer_synced_with_ft(FT* ft);
 Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag update_repl);
 
 void uop_cache_insert_op(Op* op);

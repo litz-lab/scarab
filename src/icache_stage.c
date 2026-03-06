@@ -200,6 +200,7 @@ void reset_icache_stage() {
   ic->back_on_path = FALSE;
   ic->fetch_barrier_pending = FALSE;
   ic->fetch_barrier_inst_uid = 0;
+  ic->fetch_barrier_op_num = 0;
   op_count[ic->proc_id] = 1;
   unique_count_per_core[ic->proc_id] = 1;
 }
@@ -218,6 +219,7 @@ void reset_all_ops_icache_stage() {
   ic->back_on_path = FALSE;
   ic->fetch_barrier_pending = FALSE;
   ic->fetch_barrier_inst_uid = 0;
+  ic->fetch_barrier_op_num = 0;
 }
 
 /**************************************************************************************/
@@ -232,10 +234,14 @@ void recover_icache_stage() {
   DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s recovery_op_num:%llu\n",
         hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
 
-  if (UOP_CACHE_ENABLE && uc->current_ft)
+  // Recover in-flight current FT(s) first. Avoid double recovery when ic and
+  // uop cache share the same FT pointer.
+  FT* recovered_ft = NULL;
+  if (UOP_CACHE_ENABLE && uc->current_ft) {
     recover_ft(uc->current_ft);
-
-  if (ic->current_ft)
+    recovered_ft = uc->current_ft;
+  }
+  if (ic->current_ft && ic->current_ft != recovered_ft)
     recover_ft(ic->current_ft);
 
   cur_data->op_count = 0;
@@ -251,8 +257,10 @@ void recover_icache_stage() {
               cur_data->ops[ii]->off_path);
         flushed = TRUE;
         ASSERT(ic->proc_id, cur_data->ops[ii]->off_path);
-        if (cur_data->ops[ii]->parent_FT)
-          ft_free_op(cur_data->ops[ii]);
+        if (cur_data->ops[ii]->parent_FT) {
+          FT** uc_current_ft_ref = UOP_CACHE_ENABLE ? &uc->current_ft : NULL;
+          ft_free_op(cur_data->ops[ii], uc_current_ft_ref, &ic->current_ft);
+        }
         cur_data->ops[ii] = NULL;
       } else {
         cur_data->op_count++;
@@ -266,18 +274,60 @@ void recover_icache_stage() {
   }
 
   ic->back_on_path = !bp_recovery_info->recovery_force_offpath;
-  ic->fetch_barrier_pending = FALSE;
-  ic->fetch_barrier_inst_uid = 0;
 
-  ic->icache_stage_resteer_signaled = TRUE;
-  op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
-
-  uop_cache_clear_lookup_buffer();
-
-  if (UOP_CACHE_ENABLE) {
-    uc->current_ft = NULL;
+  // Only clear the fetch barrier if the barrier op is off-path (op_num is
+  // newer than the recovery point and will be flushed). If the barrier op is
+  // on-path (op_num <= recovery_op_num) it will still retire from the ROB, so
+  // keep the barrier pending and let icache_resolve_fetch_barrier() handle it.
+  if (ic->fetch_barrier_pending && ic->fetch_barrier_op_num > bp_recovery_info->recovery_op_num) {
+    ic->fetch_barrier_pending = FALSE;
+    ic->fetch_barrier_inst_uid = 0;
+    ic->fetch_barrier_op_num = 0;
   }
-  ic->current_ft = NULL;
+
+  // recover_ft() above already trimmed and regenerated ft_info for both FTs.
+  if (UOP_CACHE_ENABLE) {
+    if (!uc->current_ft || !ft_can_fetch_op(uc->current_ft)) {
+      uc->current_ft = NULL;
+      uop_cache_clear_lookup_buffer();
+    } else if (uop_cache_lookup_buffer_synced_with_ft(uc->current_ft)) {
+      // No trimming occurred: buffer cursor == op_pos, continue UOP_CACHE_SERVING.
+    } else {
+      // Trimming occurred: buffer is stale, fall back to icache path.
+      // Transfer the recovered FT so its remaining on-path ops are not lost.
+      uop_cache_clear_lookup_buffer();
+      ic->current_ft = uc->current_ft;
+      uc->current_ft = NULL;
+      // ICACHE_SERVING requires ic->line/ic->line_addr to be set (invariant
+      // checked by icache_serve_ops). This FT was served via UOC so ic->line
+      // was never fetched. Do a silent cache_access — same address ft_arbitration
+      // would use — to establish the line pointer before entering ICACHE_SERVING.
+      FT_Info recovered_ft_info = ft_get_ft_info(ic->current_ft);
+      ic->fetch_addr = recovered_ft_info.static_info.start;
+      ic->line = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr, &ic->line_addr, TRUE);
+      ic->next_state = ic->line ? ICACHE_SERVING : ICACHE_MEM_REQ;
+    }
+  }
+  if (!ic->current_ft || !ft_can_fetch_op(ic->current_ft))
+    ic->current_ft = NULL;
+
+  // Single-provider invariant: only one of UOC/IC should actively serve.
+  if (UOP_CACHE_ENABLE && uc->current_ft) {
+    ASSERT(ic->proc_id, !ic->current_ft);
+    ASSERT(ic->proc_id, ic->next_state == UOP_CACHE_SERVING);
+  }
+
+  Flag has_surviving_current_ft = (ic->current_ft && ft_can_fetch_op(ic->current_ft)) ||
+                                  (UOP_CACHE_ENABLE && uc->current_ft && ft_can_fetch_op(uc->current_ft));
+
+  // Do not signal resteer if a fetch barrier is still pending: the icache must
+  // remain STALLED until icache_resolve_fetch_barrier() is called at ROB
+  // retirement.  Setting the signal here would cause execute_coupled_FSM() to
+  // override the STALLED state and skip the barrier wait.
+  if (!has_surviving_current_ft && !ic->fetch_barrier_pending) {
+    ic->icache_stage_resteer_signaled = TRUE;
+    op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
+  }
 }
 
 /**************************************************************************************/
@@ -319,6 +369,7 @@ void icache_resolve_fetch_barrier(uns8 proc_id, uns64 inst_uid) {
 
   ic->fetch_barrier_pending = FALSE;
   ic->fetch_barrier_inst_uid = 0;
+  ic->fetch_barrier_op_num = 0;
 
   // Drop any stale FT pointers; the barrier op may have been the last op and
   // its FT freed at retirement, so force a resteer to pick up a fresh FT.
@@ -927,6 +978,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       ASSERT(ic->proc_id, ii == cur_data->op_count - 1);
       ic->fetch_barrier_pending = TRUE;
       ic->fetch_barrier_inst_uid = op->inst_uid;
+      ic->fetch_barrier_op_num = op->op_num;
       DEBUG(ic->proc_id, "Fetch barrier encountered op_num:%s inst_uid:%llu\n", unsstr64(op->op_num),
             (uns64)op->inst_uid);
     }

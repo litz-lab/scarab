@@ -144,7 +144,7 @@ void recover_decode_stage() {
           flushed = TRUE;
           ASSERT(cur->ops[jj]->proc_id, cur->ops[jj]->off_path);
           if (cur->ops[jj]->parent_FT)
-            ft_free_op(cur->ops[jj]);
+            ft_free_op(cur->ops[jj], NULL, NULL);
           cur->ops[jj] = NULL;
         } else {
           cur->op_count++;

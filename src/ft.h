@@ -63,10 +63,11 @@ struct FT_PredictResult {
 bool ft_can_fetch_op(FT* ft);
 Op* ft_fetch_op(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
+uint64_t ft_get_num_unread_ops(FT* ft);
 bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start);
 void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr);
 void recover_ft(FT* ft);
-void ft_free_op(Op* op);
+void ft_free_op(Op* op, FT** ft_ref0, FT** ft_ref1);
 
 #ifdef __cplusplus
 }  // extern "C"
@@ -116,7 +117,7 @@ class FT {
                  bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn);
   void remove_op_after_exec_recover();
   // Recovery cleanup for an in-flight FT (already handed to icache/uop-cache, not FTQ-resident):
-  // removes only unread tail ops [op_pos, end) that satisfy FLUSH_OP.
+  // removes unread tail ops [op_pos, end) that satisfy FLUSH_OP, then regenerates ft_info.
   void recover_ft();
 
   FT_PredictResult predict_ft();

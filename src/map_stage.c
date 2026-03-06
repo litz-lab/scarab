@@ -147,7 +147,7 @@ void recover_map_stage() {
           flushed = TRUE;
           ASSERT(map->proc_id, cur->ops[jj]->off_path);
           if (cur->ops[jj]->parent_FT)
-            ft_free_op(cur->ops[jj]);
+            ft_free_op(cur->ops[jj], NULL, NULL);
           cur->ops[jj] = NULL;
         } else {
           Op* op = cur->ops[jj];

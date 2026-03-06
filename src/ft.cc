@@ -160,7 +160,7 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
     op->bp_pred_info->pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     add_op(op);
     if (off_path)
-      event = predict_one_cf_op(op);
+      event = predict_op_ft_event(op);
     if (op->inst_info->fake_inst == 1)
       ft_info.dynamic_info.contains_fake_nop = TRUE;
     if ((event == FT_EVENT_MISPREDICT || event == FT_EVENT_FETCH_BARRIER) && off_path) {
@@ -273,7 +273,7 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
   return {off_path_ft, this};
 }
 
-FT_Event FT::predict_one_cf_op(Op* op) {
+FT_Event FT::predict_op_ft_event(Op* op) {
   bool trace_mode = false;
 
 #ifdef ENABLE_PT_MEMTRACE
@@ -281,12 +281,6 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 #endif
   if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
-    Op alt_op;
-    if (!bp_id) {
-      alt_op = *op;
-      alt_op.bp_pred_info = &alt_op.bp_pred_main;
-      alt_op.btb_pred_info = &alt_op.btb_pred;
-    }
     bp_predict_op(g_bp_data, op, op->parent_FT->bp_id, 1, op->inst_info->addr);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
@@ -334,7 +328,7 @@ FT_Event FT::predict_one_cf_op(Op* op) {
 FT_PredictResult FT::predict_ft() {
   for (size_t idx = op_pos; idx < ops.size(); idx++) {
     Op* op = ops[idx];
-    FT_Event event = predict_one_cf_op(op);
+    FT_Event event = predict_op_ft_event(op);
     if (event != FT_EVENT_NONE) {
       uint64_t return_idx = (event == FT_EVENT_MISPREDICT) ? (idx) : 0;
       Addr pred_addr = op->bp_pred_info->pred_npc;

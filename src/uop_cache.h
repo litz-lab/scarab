@@ -41,7 +41,6 @@ typedef struct Uop_Cache_Stage_struct {
   uns8 proc_id;
   Stage_Data sd;
   uns8 lookups_per_cycle_count;
-  FT* current_ft;
 } Uop_Cache_Stage;
 
 /**************************************************************************************/

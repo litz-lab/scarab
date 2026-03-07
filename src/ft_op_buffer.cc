@@ -57,6 +57,13 @@ Op* ft_op_buffer_peek(Icache_Stage* ic) {
   return buf->ops.front();
 }
 
+Op* ft_op_buffer_get(Icache_Stage* ic, uns idx) {
+  ASSERT(0, ic && ic->ft_op_buffer);
+  FT_Op_Buffer_Cpp* buf = (FT_Op_Buffer_Cpp*)ic->ft_op_buffer;
+  ASSERT(ic->proc_id, idx < buf->ops.size());
+  return buf->ops[idx];
+}
+
 Op* ft_op_buffer_pop(Icache_Stage* ic) {
   ASSERT(0, ic && ic->ft_op_buffer);
   FT_Op_Buffer_Cpp* buf = (FT_Op_Buffer_Cpp*)ic->ft_op_buffer;

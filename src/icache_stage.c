@@ -230,9 +230,24 @@ void recover_icache_stage() {
   DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s recovery_op_num:%llu\n",
         hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
 
-  Op* buf_head = ft_op_buffer_peek(ic);
-  if (buf_head && buf_head->parent_FT)
-    recover_ft(buf_head->parent_FT);
+  uns ft_buf_count = ft_op_buffer_count(ic);
+  for (ii = 0; ii < ft_buf_count; ii++) {
+    Op* op = ft_op_buffer_get(ic, ii);
+    if (!op)
+      continue;
+    if (IS_FLUSHING_OP(op)) {
+      DEBUG(ic->proc_id, "Recovery op found in FT buffer idx:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
+            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
+    }
+    if (FLUSH_OP(op)) {
+      DEBUG(ic->proc_id, "Icache buffer flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
+            op->off_path);
+      flushed = TRUE;
+      ASSERT(ic->proc_id, op->off_path);
+      if (op->parent_FT)
+        ft_free_op(op);
+    }
+  }
 
   cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {

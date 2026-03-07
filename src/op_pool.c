@@ -173,7 +173,7 @@ void free_op(Op* op) {
    should be for things that never change. */
 
 void op_pool_init_op(Op* op) {
-  op_select_bp_pred_info(op, BP_PRED_MAIN);
+  op->bp_pred_info = NULL;
   memset(&op->bp_pred_l0, 0, sizeof(op->bp_pred_l0));
   memset(&op->bp_pred_main, 0, sizeof(op->bp_pred_main));
   memset(&op->btb_pred, 0, sizeof(op->btb_pred));
@@ -215,7 +215,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->node_id = MAX_CTR;
   op->rs_id = MAX_CTR;
 
-  op_select_bp_pred_info(op, BP_PRED_MAIN);
+  op->bp_pred_info = NULL;
   memset(&op->bp_pred_l0, 0, sizeof(op->bp_pred_l0));
   memset(&op->bp_pred_main, 0, sizeof(op->bp_pred_main));
   memset(&op->btb_pred, 0, sizeof(op->btb_pred));

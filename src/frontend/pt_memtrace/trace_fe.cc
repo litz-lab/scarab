@@ -335,7 +335,6 @@ void ext_trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr)
 
 void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
   Op dummy_op;
-  op_select_bp_pred_info(&dummy_op, BP_PRED_MAIN);
   memset(&dummy_op.bp_pred_l0, 0, sizeof(dummy_op.bp_pred_l0));
   memset(&dummy_op.bp_pred_main, 0, sizeof(dummy_op.bp_pred_main));
   memset(&dummy_op.btb_pred, 0, sizeof(dummy_op.btb_pred));

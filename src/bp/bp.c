@@ -505,7 +505,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
         bp_pred_info->recover_at_exec = TRUE;
         bp_pred_info->pred = NOT_TAKEN;
         bp_pred_info->pred_npc = pred_target;  // Not accurate. At fetch it would execute pc_plus_offset, at decode
-                                                   // would resteer frontend to pred_taken
+                                               // would resteer frontend to pred_taken
         STAT_EVENT_BP_SPLIT_PATH(op, CBR_RECOVER_BTB_MISS_T_NT, CBR_RECOVER_BTB_MISS_T_NT_OFF_PATH);
       }
       // 3. Branch is predicted not-taken causing branch to continue to exec where the flush is triggered
@@ -753,8 +753,8 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
         pred_bp->name, pred_level == BP_PRED_L0 ? "l0" : "main", unsstr64(op->op_num), op->off_path,
         cf_type_names[op->table_info->cf_type], hexstr64s(op->inst_info->addr), hexstr64s(bp_pred_info->pred_npc),
         hexstr64s(op->oracle_info.npc), op->btb_pred_info->btb_miss, bp_pred_info->mispred,
-        bp_pred_info->recover_at_exec, bp_pred_info->recover_at_decode, op->oracle_info.dir,
-        bp_pred_info->pred, pc_plus_offset, op->oracle_info.target);
+        bp_pred_info->recover_at_exec, bp_pred_info->recover_at_decode, op->oracle_info.dir, bp_pred_info->pred,
+        pc_plus_offset, op->oracle_info.target);
 
   ASSERT(op->proc_id, bp_pred_info->pred_npc);
   if (op->oracle_info.dir != bp_pred_info->pred && pc_plus_offset != op->oracle_info.target) {

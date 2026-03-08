@@ -205,10 +205,11 @@ typedef struct Bp_struct {
   const char* name;
   void (*init_func)(void);              /* called to initialize the predictor */
   void (*timestamp_func)(Op*);          /* called to timestamp a branch for prediction, update, and recovery */
-  uns8 (*pred_func)(Op*);               /* called to predict a branch instruction */
-  void (*spec_update_func)(Op*);        /* called to update the speculative state of the predictor in the front-end */
-  void (*update_func)(Op*);             /* called to update the bp when a branch is resolved
-                                         * (at the end of execute or retire) */
+  uns8 (*pred_func)(Op*, Bp_Pred_Level); /* called to predict a branch instruction */
+  void (*spec_update_func)(
+      Op*, Bp_Pred_Level); /* called to update the speculative state of the predictor in the front-end */
+  void (*update_func)(Op*, Bp_Pred_Level); /* called to update the bp when a branch is resolved
+                                            * (at the end of execute or retire) */
   void (*retire_func)(Op*);             /* called to retire a branch and update the state of the bp that has to be
                                          * updated after retirement*/
   void (*recover_func)(Recovery_Info*); /* called to recover the bp when a misprediction is realized */
@@ -228,8 +229,9 @@ typedef struct Bp_Ibtb_struct {
   Ibtb_Id id;
   const char* name;
   void (*init_func)(Bp_Data*, Bp_Data*); /* called to initialize the indirect target predictor (shares primary) */
-  Addr (*pred_func)(Bp_Data*, Op*);   /* called to predict an indirect branch target */
-  void (*update_func)(Bp_Data*, Op*); /* called to update the indirect branch target when a branch is resolved */
+  Addr (*pred_func)(Bp_Data*, Op*, Bp_Pred_Level); /* called to predict an indirect branch target */
+  void (*update_func)(Bp_Data*, Op*,
+                      Bp_Pred_Level); /* called to update the indirect branch target when a branch is resolved */
   void (*recover_func)(Bp_Data*, Recovery_Info*); /* called to recover the indirect branch target when
                                                    * a misprediction is realized */
 } Bp_Ibtb;
@@ -238,7 +240,7 @@ typedef struct Br_Conf_struct {
   Br_Conf_Id id;
   const char* name;
   void (*init_func)(void);    /* called to initialize the confidence estimator */
-  void (*pred_func)(Op*);     /* called to predict confidence */
+  void (*pred_func)(Op*, Bp_Pred_Level); /* called to predict confidence */
   void (*update_func)(Op*);   /* called to update the confidence estimator when a
                                  branch is resolved */
   void (*recover_func)(void); /* called to recover the confidence estimator

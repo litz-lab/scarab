@@ -89,19 +89,22 @@ void bp_tagescl_timestamp(Op* op) {
   op->recovery_info.branch_id = tagescl_predictors.at(proc_id)->get_new_branch_id();
 }
 
-uns8 bp_tagescl_pred(Op* op) {
+uns8 bp_tagescl_pred(Op* op, Bp_Pred_Level pred_level) {
+  (void)pred_level;
   uns proc_id = op->proc_id;
   return tagescl_predictors.at(proc_id)->get_prediction(op->recovery_info.branch_id, op->inst_info->addr);
 }
 
-void bp_tagescl_spec_update(Op* op) {
+void bp_tagescl_spec_update(Op* op, Bp_Pred_Level pred_level) {
+  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
   uns proc_id = op->proc_id;
   tagescl_predictors.at(proc_id)->update_speculative_state(op->recovery_info.branch_id, op->inst_info->addr,
                                                            get_branch_type(proc_id, op->table_info->cf_type),
-                                                           op->bp_pred_info->pred, op->oracle_info.target);
+                                                           bp_pred_info->pred, op->oracle_info.target);
 }
 
-void bp_tagescl_update(Op* op) {
+void bp_tagescl_update(Op* op, Bp_Pred_Level pred_level) {
+  (void)pred_level;
   uns proc_id = op->proc_id;
   tagescl_predictors.at(proc_id)->commit_state(op->recovery_info.branch_id, op->inst_info->addr,
                                                get_branch_type(proc_id, op->table_info->cf_type), op->oracle_info.dir);

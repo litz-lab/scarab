@@ -972,7 +972,8 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       }*/
     } else {
       // pass the global branch history to all the instructions
-      op->bp_pred_info->pred_global_hist = g_bp_data->global_hist;
+      op->bp_pred_l0.pred_global_hist = g_bp_data->global_hist;
+      op->bp_pred_main.pred_global_hist = g_bp_data->global_hist;
     }
   }
 }

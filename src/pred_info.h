@@ -32,7 +32,6 @@
 #include "globals/global_types.h"
 
 typedef struct Bp_Pred_Info_struct {
-  Addr pred_addr;          // address used to predict branch (might be fetch_addr)
   Addr pred_npc;           // predicted next pc field
   Counter bp_ready_cycle;  // cycle when this level's prediction becomes available
   int64 pred_branch_id;    // predictor-local branch id for speculative checkpoint/recover

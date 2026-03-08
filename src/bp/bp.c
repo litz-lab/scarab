@@ -283,9 +283,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, op->table_info->cf_type);
 
-  /* set address used to predict branch */
-  // op->bp_pred_info->pred_addr         = addr;
-  bp_pred_info->pred_addr = op->inst_info->addr;
   op->btb_pred_info->btb_miss_resolved = FALSE;
   op->cf_within_fetch = br_num;
 
@@ -346,7 +343,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
     ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.npc);
     bp_pred_info->pred_npc = op->oracle_info.npc;
     op->btb_pred_info->pred_target = op->oracle_info.npc;
-    pred_bp->spec_update_func(op);
+    pred_bp->spec_update_func(op, pred_level);
     return op->oracle_info.npc;
   } else
     ASSERT(0, !(op->table_info->bar_type & BAR_FETCH));
@@ -397,7 +394,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
   }
   // overwrite pred_target with indirect predictor
   if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL)) {
-    ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op);
+    ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op, pred_level);
     if (ibp_target) {
       pred_target = ibp_target;
       op->btb_pred_info->no_target = FALSE;
@@ -441,7 +438,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
         op->btb_pred_info->no_target = FALSE;
       } else {
         ASSERT(op->proc_id, !PERFECT_NT_BTB);  // currently not supported
-        bp_pred_info->pred = pred_bp->pred_func(op);
+        bp_pred_info->pred = pred_bp->pred_func(op, pred_level);
         bp_pred_info->pred_orig = bp_pred_info->pred;
       }
       // Update history used by the rest of Scarab.
@@ -734,7 +731,21 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
   if (op->btb_pred_info->btb_miss && bp_pred_info->pred == NOT_TAKEN)
     btb_miss_nt = TRUE;
 
-  pred_bp->spec_update_func(op);
+  // If the direction prediction is wrong, but next address happens to be right
+  // anyway, do not treat this as a misprediction.
+  bp_pred_info->mispred =
+      (bp_pred_info->pred != op->oracle_info.dir) && (bp_pred_info->pred_npc != op->oracle_info.npc);
+  bp_pred_info->misfetch = !bp_pred_info->mispred && bp_pred_info->pred_npc != op->oracle_info.npc;
+
+  if (pred_level == BP_PRED_L0) {
+    bp_pred_info->recover_at_fe = bp_pred_info->mispred || bp_pred_info->misfetch;
+    if (bp_pred_info->recover_at_fe) {
+      bp_pred_info->recover_at_decode = FALSE;
+      bp_pred_info->recover_at_exec = FALSE;
+    }
+  }
+
+  pred_bp->spec_update_func(op, pred_level);
 
   DEBUG(bp_data->proc_id,
         "BP[%s,%s]:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
@@ -752,10 +763,6 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
   }
 
   ASSERT_PROC_ID_IN_ADDR(op->proc_id, bp_pred_info->pred_npc);
-  // If the direction prediction is wrong, but next address happens to be right
-  // anyway, do not treat this as a misprediction.
-  bp_pred_info->mispred = (bp_pred_info->pred != op->oracle_info.dir) && (bp_pred_info->pred_npc != op->oracle_info.npc);
-  bp_pred_info->misfetch = !bp_pred_info->mispred && bp_pred_info->pred_npc != op->oracle_info.npc;
 
   op->bp_cycle = cycle_count;
 
@@ -791,20 +798,13 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
         bp_pred_info->recover_at_exec, op->btb_pred_info->no_target);
 
   if (ENABLE_BP_CONF && IS_CONF_CF(op)) {
-    bp_data->br_conf->pred_func(op);
+    bp_data->br_conf->pred_func(op, pred_level);
 
     if (!(bp_pred_info->pred_conf))
       td->td_info.low_conf_count++;
     DEBUG(bp_data->proc_id, "low_conf_count:%d \n", td->td_info.low_conf_count);
   }
 
-  if (pred_level == BP_PRED_L0) {
-    bp_pred_info->recover_at_fe = bp_pred_info->mispred || bp_pred_info->misfetch;
-    if (bp_pred_info->recover_at_fe) {
-      bp_pred_info->recover_at_decode = FALSE;
-      bp_pred_info->recover_at_exec = FALSE;
-    }
-  }
   STAT_EVENT(op->proc_id, BP_L0_PREDICTIONS + pred_level);
   if (bp_pred_info->mispred)
     STAT_EVENT(op->proc_id, BP_L0_MISPRED + pred_level);
@@ -846,7 +846,7 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
     case CF_IBR:
       if (ENABLE_IBP) {
         if (IBTB_OFF_PATH_WRITES || !op->off_path) {
-          bp_data->bp_ibtb->update_func(bp_data, op);
+          bp_data->bp_ibtb->update_func(bp_data, op, BP_PRED_MAIN);
         }
       }
       break;
@@ -864,9 +864,9 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
   }
   // Always train both predictors regardless of which one made the active prediction.
   op->recovery_info.branch_id = op->bp_pred_main.pred_branch_id;
-  bp_data->bp->update_func(op);
+  bp_data->bp->update_func(op, BP_PRED_MAIN);
   if (bp_data->bp_l0)
-    bp_data->bp_l0->update_func(op);
+    bp_data->bp_l0->update_func(op, BP_PRED_L0);
 
   if (ENABLE_BP_CONF && IS_CONF_CF(op)) {
     bp_data->br_conf->update_func(op);

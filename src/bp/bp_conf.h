@@ -70,10 +70,10 @@ typedef struct PERCEP_Bpc_Data_struct {
 /* Prototypes */
 
 void init_bp_conf(void);
-void bp_conf_pred(Op*);
+void bp_conf_pred(Op*, Bp_Pred_Level);
 void bp_update_conf(Op*);
 
-void pred_onpath_conf(Op*);
+void pred_onpath_conf(Op*, Bp_Pred_Level);
 void update_onpath_conf(Op*);
 void recover_onpath_conf(void);
 uns read_conf_head(void);
@@ -82,7 +82,7 @@ uns8 compute_spawn_path_conf(uns);
 /**************************************************************************************/
 /* perceptron based confidece estimator */
 void conf_perceptron_init(void);
-void conf_perceptron_pred(Op*);
+void conf_perceptron_pred(Op*, Bp_Pred_Level);
 void conf_perceptron_update(Op*);
 
 /**************************************************************************************/

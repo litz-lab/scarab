@@ -799,22 +799,7 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, op->table_info->cf_type);
 
-  // if it was a btb miss, it is time to write it into the btb
-  if (op->btb_pred_info->btb_miss && op->oracle_info.dir == TAKEN) {
-    bp_data->bp_btb->update_func(bp_data, op);
-  } else if (op->btb_pred_info->btb_miss == FALSE && op->oracle_info.dir == TAKEN) {
-    // For jitted CF we want to update the BTB if the target changes, even on btb hit
-    // or For indirects we want to update the BTB if the target changes, even on btb hit
-    // The detection relies on the target stored in the btb
-    Addr line_addr;
-    Addr* btb_entry = (Addr*)cache_access(bp_data->btb, op->bp_pred_info->pred_addr, &line_addr, FALSE);
-    // The following assertion can fail (due to eviction?)
-    // ASSERT(bp_data->proc_id, btb_entry);
-    if (btb_entry && *btb_entry != op->oracle_info.target) {
-      bp_data->bp_btb->update_func(bp_data, op);
-      STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_JITTED_NOT_CF + op->table_info->cf_type);
-    }
-  }
+  bp_data->bp_btb->update_func(bp_data, op);
 
   // special case updates
   switch (op->table_info->cf_type) {

@@ -226,10 +226,13 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
   bp_data->bp_id = bp_id;
   /* initialize branch predictor */
   bp_data->bp = &bp_table[BP_MECH];
-  bp_data->bp_l0 = bp_l0_enabled() ? &bp_table[BP_MECH_L0] : NULL;
   bp_data->bp->init_func();
-  if (bp_data->bp_l0)
+  if (bp_l0_enabled()) {
+    bp_data->bp_l0 = &bp_table[BP_MECH_L0];
     bp_data->bp_l0->init_func();
+  } else {
+    bp_data->bp_l0 = NULL;
+  }
 
   /* init btb structure */
   bp_data->bp_btb = &bp_btb_table[BTB_MECH];

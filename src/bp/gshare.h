@@ -31,9 +31,9 @@ extern "C" {
 /*************Interface to Scarab***************/
 void bp_gshare_init(void);
 void bp_gshare_timestamp(Op*);
-uns8 bp_gshare_pred(Op*);
-void bp_gshare_spec_update(Op*);
-void bp_gshare_update(Op*);
+uns8 bp_gshare_pred(Op*, Bp_Pred_Level);
+void bp_gshare_spec_update(Op*, Bp_Pred_Level);
+void bp_gshare_update(Op*, Bp_Pred_Level);
 void bp_gshare_retire(Op*);
 void bp_gshare_recover(Recovery_Info*);
 uns8 bp_gshare_full(Bp_Data*);

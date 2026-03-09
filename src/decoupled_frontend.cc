@@ -704,10 +704,9 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
           !per_core_dfe[proc_id][_bp_id]->is_off_path()) {
         ASSERT(proc_id, !per_core_dfe[proc_id][_bp_id]->ftq_num_fts());
         Op alt_op = *result.op;
-        alt_op.bp_pred_info = &alt_op.bp_pred_main;
-        alt_op.btb_pred_info = &alt_op.btb_pred;
-        Addr alt_pred_addr =
-            bp_predict_op(per_core_dfe[proc_id][_bp_id]->bp_data, &alt_op, _bp_id, 0, result.op->inst_info->addr);
+        Bp_Data* alt_bp_data = per_core_dfe[proc_id][_bp_id]->bp_data;
+        Addr alt_pred_addr = bp_predict_op(alt_bp_data, &alt_op, _bp_id, 0, result.op->inst_info->addr, BP_PRED_MAIN);
+        op_select_bp_pred_info(&alt_op, BP_PRED_MAIN);
         frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);
         per_core_dfe[proc_id][_bp_id]->next_state = SERVING_OFF_PATH;
         per_core_dfe[proc_id][_bp_id]->set_conf_off_path();

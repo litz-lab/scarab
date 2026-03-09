@@ -31,6 +31,8 @@
 
 #include "globals/global_types.h"
 
+#include "bp/bp.param.h"
+
 #include "libs/cache_lib.h"
 #include "libs/hash_lib.h"
 
@@ -142,6 +144,7 @@ typedef struct Bp_Data_struct {
   uns bp_id;
   /* predictor data */
   struct Bp_struct* bp;  // main branch predictor.
+  struct Bp_struct* bp_l0;  // l0 branch predictor.
   struct Bp_Btb_struct* bp_btb;
   struct Bp_Ibtb_struct* bp_ibtb;
   struct Br_Conf_struct* br_conf;
@@ -202,10 +205,11 @@ typedef struct Bp_struct {
   const char* name;
   void (*init_func)(void);              /* called to initialize the predictor */
   void (*timestamp_func)(Op*);          /* called to timestamp a branch for prediction, update, and recovery */
-  uns8 (*pred_func)(Op*);               /* called to predict a branch instruction */
-  void (*spec_update_func)(Op*);        /* called to update the speculative state of the predictor in the front-end */
-  void (*update_func)(Op*);             /* called to update the bp when a branch is resolved
-                                         * (at the end of execute or retire) */
+  uns8 (*pred_func)(Op*, Bp_Pred_Level); /* called to predict a branch instruction */
+  void (*spec_update_func)(
+      Op*, Bp_Pred_Level); /* called to update the speculative state of the predictor in the front-end */
+  void (*update_func)(Op*, Bp_Pred_Level); /* called to update the bp when a branch is resolved
+                                            * (at the end of execute or retire) */
   void (*retire_func)(Op*);             /* called to retire a branch and update the state of the bp that has to be
                                          * updated after retirement*/
   void (*recover_func)(Recovery_Info*); /* called to recover the bp when a misprediction is realized */
@@ -225,8 +229,9 @@ typedef struct Bp_Ibtb_struct {
   Ibtb_Id id;
   const char* name;
   void (*init_func)(Bp_Data*, Bp_Data*); /* called to initialize the indirect target predictor (shares primary) */
-  Addr (*pred_func)(Bp_Data*, Op*);   /* called to predict an indirect branch target */
-  void (*update_func)(Bp_Data*, Op*); /* called to update the indirect branch target when a branch is resolved */
+  Addr (*pred_func)(Bp_Data*, Op*, Bp_Pred_Level); /* called to predict an indirect branch target */
+  void (*update_func)(Bp_Data*, Op*,
+                      Bp_Pred_Level); /* called to update the indirect branch target when a branch is resolved */
   void (*recover_func)(Bp_Data*, Recovery_Info*); /* called to recover the indirect branch target when
                                                    * a misprediction is realized */
 } Bp_Ibtb;
@@ -235,7 +240,7 @@ typedef struct Br_Conf_struct {
   Br_Conf_Id id;
   const char* name;
   void (*init_func)(void);    /* called to initialize the confidence estimator */
-  void (*pred_func)(Op*);     /* called to predict confidence */
+  void (*pred_func)(Op*, Bp_Pred_Level); /* called to predict confidence */
   void (*update_func)(Op*);   /* called to update the confidence estimator when a
                                  branch is resolved */
   void (*recover_func)(void); /* called to recover the confidence estimator
@@ -253,6 +258,15 @@ extern Bp_Recovery_Info* bp_recovery_info;
 extern Br_Conf br_conf_table[];
 
 /**************************************************************************************/
+/* Inline helpers */
+
+// Returns TRUE if the L0 (early) branch predictor is enabled.
+// L0 runs in parallel with the main BP at a shorter latency.
+static inline Flag bp_l0_enabled(void) {
+  return (BP_MECH_L0 != NUM_BP) && (BP_L0_LATENCY > 0);
+}
+
+/**************************************************************************************/
 /* Prototypes */
 void set_bp_data(Bp_Data* new_bp_data);
 void set_bp_recovery_info(Bp_Recovery_Info* new_bp_recovery_info);
@@ -263,8 +277,7 @@ void bp_sched_redirect(Bp_Recovery_Info*, Op*, Counter);
 
 void init_bp_data(uns8, uns8, Bp_Data*, Bp_Data*);
 Flag bp_is_predictable(Bp_Data*);
-Addr bp_predict_op(Bp_Data*, Op*, uns, uns, Addr);
-Addr bp_predict_op_evaluate(Bp_Data*, Op*, Addr);
+Addr bp_predict_op(Bp_Data*, Op*, uns, uns, Addr, Bp_Pred_Level);
 void bp_target_known_op(Bp_Data*, Op*);
 void bp_resolve_op(Bp_Data*, Op*);
 void bp_retire_op(Bp_Data*, Op*);

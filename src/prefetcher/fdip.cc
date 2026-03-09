@@ -912,9 +912,16 @@ void FDIP::init(uns _proc_id, uns _bp_id, Icache_Stage* _ic) {
 
 void FDIP::recover() {
   last_line_addr = 0;
+  const bool is_early_recovery = bp_l0_enabled() && bp_recovery_info->recovery_op->bp_pred_l0.recover_at_fe &&
+                                 !bp_recovery_info->recovery_op->bp_pred_main.recover_at_exec &&
+                                 !bp_recovery_info->recovery_op->bp_pred_main.recover_at_decode;
   DEBUG(proc_id, "[FDIP%u] recover cycle from %llu", bp_id, fdip_stat->last_recover_cycle);
-  fdip_stat->last_recover_cycle = cycle_count;
-  DEBUG(proc_id, " to %llu\n", fdip_stat->last_recover_cycle);
+  if (!is_early_recovery) {
+    fdip_stat->last_recover_cycle = cycle_count;
+    DEBUG(proc_id, " to %llu\n", fdip_stat->last_recover_cycle);
+  } else {
+    DEBUG(proc_id, " unchanged (early recovery)\n");
+  }
 
   if (!bp_id && FDIP_ADJUSTABLE_FTQ)
     uftq->set_ftq_ft_num();
@@ -950,9 +957,12 @@ void FDIP::update() {
 
     uint64_t pc_addr = op->inst_info->addr;
     Addr line_addr = op->inst_info->addr & ~0x3F;
+    uint64_t ft_id = (op->parent_FT) ? op->parent_FT->get_ft_info().dynamic_info.FT_id : 0;
     DEBUG(proc_id,
-          "[FDIP%u] op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, off-path: %d\n",
-          bp_id, op->op_num, op->inst_info->addr, line_addr, last_line_addr, op->off_path);
+          "[FDIP%u] ft_id: %llu, op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, "
+          "off-path: %d\n",
+          bp_id, (unsigned long long)ft_id, op->op_num, op->inst_info->addr, line_addr, last_line_addr, op->off_path);
+    UNUSED(ft_id);
     if (line_addr != last_line_addr) {
       STAT_EVENT(proc_id, FDIP_ATTEMPTED_PREF_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
       DEBUG(proc_id, "[FDIP%u] fdip off path: %d, conf off path: %d\n", bp_id, op->off_path, op->conf_off_path);

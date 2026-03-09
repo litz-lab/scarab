@@ -62,6 +62,9 @@ static PERCEP_Bpc_Data* percep_bpc_data = NULL;
 static Flag compute_onpath_conf(Flag);
 static void print_onpath_conf(void);
 static uns count_zeros(uns, uns);
+static inline Bp_Pred_Info* conf_get_bp_pred_info(Op* op, Bp_Pred_Level pred_level) {
+  return (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+}
 
 /**************************************************************************************/
 // init_bp_conf:
@@ -93,11 +96,12 @@ void init_bp_conf() {
 #define COOK_HIST_BITS(hist, untouched) ((uns32)(hist) >> (32 - BPC_BITS + (untouched)) << (untouched))
 #define COOK_ADDR_BITS(addr, shift) (((uns32)(addr) >> (shift)) & (N_BIT_MASK(BPC_BITS)))
 
-void bp_conf_pred(Op* op) {
+void bp_conf_pred(Op* op, Bp_Pred_Level pred_level) {
+  Bp_Pred_Info* bp_pred_info = conf_get_bp_pred_info(op, pred_level);
   uns32 index;
   uns entry;
   Flag pred_conf;
-  Flag mispred = op->bp_pred_info->mispred | op->bp_pred_info->misfetch;
+  Flag mispred = bp_pred_info->mispred | bp_pred_info->misfetch;
 
   // only updated on conditional branches
   Addr addr = op->inst_info->addr;
@@ -122,13 +126,13 @@ void bp_conf_pred(Op* op) {
   }
 
   if (PERF_BP_CONF_PRED)
-    pred_conf = !(op->bp_pred_info->mispred || op->bp_pred_info->misfetch);
+    pred_conf = !(bp_pred_info->mispred || bp_pred_info->misfetch);
 
   _DEBUG(0, DEBUG_BP_CONF, "bp_conf_pred: op:%s mispred:%d, pred:%d,%d\n", unsstr64(op->op_num), mispred, pred_conf,
          pred_conf != mispred);
 
-  op->bp_pred_info->pred_conf_index = index;
-  op->bp_pred_info->pred_conf = pred_conf;
+  bp_pred_info->pred_conf_index = index;
+  bp_pred_info->pred_conf = pred_conf;
 
   STAT_EVENT(op->proc_id, BP_ON_PATH_CONF_MISPRED + 2 * op->off_path + (pred_conf != mispred));
   STAT_EVENT(op->proc_id, BP_ON_PATH_PRED_MIS_CONF_MISPRED + 4 * op->off_path + 2 * pred_conf + (pred_conf != mispred));
@@ -167,15 +171,16 @@ void bp_update_conf(Op* op) {
 // 1: onpath
 // 0: offpath
 
-void pred_onpath_conf(Op* op) {
+void pred_onpath_conf(Op* op, Bp_Pred_Level pred_level) {
+  Bp_Pred_Info* bp_pred_info = conf_get_bp_pred_info(op, pred_level);
   Flag pred_onpath;
   uns head = bpc_data->head;
   Opc_Table* opc_table = &bpc_data->opc_table[head];
 
   // update the opc_table
   ASSERT(0, bpc_data->count < OPC_SIZE);
-  opc_table->mispred = op->bp_pred_info->mispred | op->bp_pred_info->misfetch;
-  opc_table->pred_conf = op->bp_pred_info->pred_conf;
+  opc_table->mispred = bp_pred_info->mispred | bp_pred_info->misfetch;
+  opc_table->pred_conf = bp_pred_info->pred_conf;
   opc_table->off_path = op->off_path;
   opc_table->verified = FALSE;
   opc_table->op_num = op->op_num;
@@ -183,7 +188,7 @@ void pred_onpath_conf(Op* op) {
   ;
   bpc_data->count++;
 
-  op->bp_pred_info->opc_index = head;
+  bp_pred_info->opc_index = head;
 
   pred_onpath = compute_onpath_conf(FALSE);
 
@@ -387,12 +392,13 @@ void conf_perceptron_init(void) {
    ((((misp_hist) >> (64 - PERCEPTRON_CONF_HIS_BOTH_LENGTH)) & N_BIT_MASK(PERCEPTRON_CONF_HIS_BOTH_LENGTH)) \
     << (64 - PERCEPTRON_CONF_HIS_BOTH_LENGTH)))
 
-void conf_perceptron_pred(Op* op) {
+void conf_perceptron_pred(Op* op, Bp_Pred_Level pred_level) {
+  Bp_Pred_Info* bp_pred_info = conf_get_bp_pred_info(op, pred_level);
   Addr addr = op->inst_info->addr;
   uns64 hist = 0;
   uns32 index = CONF_PERCEPTRON_HASH(addr);
   uns8 pred_conf = 0;
-  Flag mispred = op->bp_pred_info->mispred | op->bp_pred_info->misfetch;
+  Flag mispred = bp_pred_info->mispred | bp_pred_info->misfetch;
   int32 output = 0;
   uns ii;
   uns64 mask;
@@ -455,17 +461,17 @@ void conf_perceptron_pred(Op* op) {
   }
 
   _DEBUG(0, DEBUG_BP_CONF, "index:%d hist:%s output:%d conf_th:%d pred_conf:%d bp_pred:%d \n", index, hexstr64(hist),
-         output, CONF_PERCEPTRON_TH, pred_conf, op->bp_pred_info->mispred);
+         output, CONF_PERCEPTRON_TH, pred_conf, bp_pred_info->mispred);
 
   x_i = op->oracle_info.dir ? 1 : -1;
 
-  op->bp_pred_info->pred_conf_perceptron_global_hist = percep_bpc_data->conf_perceptron_global_hist;
+  bp_pred_info->pred_conf_perceptron_global_hist = percep_bpc_data->conf_perceptron_global_hist;
   percep_bpc_data->conf_perceptron_global_hist >>= 1;
   percep_bpc_data->conf_perceptron_global_misp_hist >>= 1;
 
   if (PERCEPTRON_CONF_USE_CONF) {
     // mispred x_i = 1, correct pred: 0
-    if ((op->bp_pred_info->mispred && !pred_conf) || (!(op->bp_pred_info->mispred) && pred_conf))
+    if ((bp_pred_info->mispred && !pred_conf) || (!(bp_pred_info->mispred) && pred_conf))
       x_i = 0;
     else
       x_i = 1;
@@ -480,13 +486,13 @@ void conf_perceptron_pred(Op* op) {
     percep_bpc_data->conf_perceptron_global_hist |= (((uns64)(op->oracle_info.dir)) << 63);
 
     op->recovery_info.conf_perceptron_global_misp_hist =
-        (percep_bpc_data->conf_perceptron_global_misp_hist) | ((uns64)(op->bp_pred_info->mispred) << 63);
+        (percep_bpc_data->conf_perceptron_global_misp_hist) | ((uns64)(bp_pred_info->mispred) << 63);
 
-    percep_bpc_data->conf_perceptron_global_misp_hist |= (((uns64)(op->bp_pred_info->mispred)) << 63);
+    percep_bpc_data->conf_perceptron_global_misp_hist |= (((uns64)(bp_pred_info->mispred)) << 63);
   }
 
   op->conf_perceptron_output = output;
-  op->bp_pred_info->pred_conf = pred_conf;
+  bp_pred_info->pred_conf = pred_conf;
 
   STAT_EVENT(op->proc_id, BP_ON_PATH_CONF_MISPRED + 2 * op->off_path + (pred_conf != mispred));
   STAT_EVENT(op->proc_id, BP_ON_PATH_PRED_MIS_CONF_MISPRED + 4 * op->off_path + 2 * pred_conf + (pred_conf != mispred));

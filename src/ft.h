@@ -149,7 +149,7 @@ class FT {
   FT_Info ft_info;
   bool is_prebuilt;
   std::vector<Op*> ops;
-  FT_Event predict_op_ft_event(Op* op);
+  FT_Event predict_op_ft_event(Op* op, Bp_Pred_Level pred_level);
   void generate_ft_info();
   // Common helper used by recovery/exec-recovery trimming paths.
   // Only touches unread ops [op_pos, end) from the back (youngest first).

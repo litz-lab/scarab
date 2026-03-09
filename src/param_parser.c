@@ -193,6 +193,28 @@ void get_bp_mech_param(const char* name, uns* variable) {
 }
 
 /**************************************************************************************/
+/* get_bp_mech_l0: Converts the optarg into a number by looking it up in the
+ * bp_table. Also accepts \"num\"/\"none\" to disable L0 predictor. */
+
+void get_bp_mech_l0_param(const char* name, uns* variable) {
+  if (optarg) {
+    if (strncmp(optarg, "num", MAX_STR_LENGTH) == 0 || strncmp(optarg, "none", MAX_STR_LENGTH) == 0) {
+      *variable = NUM_BP;
+      return;
+    }
+
+    uns ii;
+    for (ii = 0; bp_table[ii].name; ii++)
+      if (strncmp(optarg, bp_table[ii].name, MAX_STR_LENGTH) == 0) {
+        *variable = ii;
+        return;
+      }
+    FATAL_ERROR(0, "Invalid value ('%s') for parameter '%s' --- Ignored.\n", optarg, name);
+  } else
+    FATAL_ERROR(0, "Parameter '%s' missing value --- Ignored.\n", name);
+}
+
+/**************************************************************************************/
 /* get_btb_mech: Converts the optarg into a number by looking it up in the
  * bp_btb_table. */
 

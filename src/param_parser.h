@@ -41,6 +41,7 @@ extern const char* sim_mode_names[];
 
 char** get_params(int, char*[]);
 void get_bp_mech_param(const char*, uns*);
+void get_bp_mech_l0_param(const char*, uns*);
 void get_btb_mech_param(const char*, uns*);
 void get_ibtb_mech_param(const char*, uns*);
 void get_conf_mech_param(const char*, uns*);

@@ -30,6 +30,7 @@
 #include "decode_stage.h"
 
 #include "globals/assert.h"
+#include "globals/debug_stage.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
@@ -132,6 +133,11 @@ void recover_decode_stage() {
     cur->op_count = 0;
     for (jj = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
       if (cur->ops[jj]) {
+        if (IS_FLUSHING_OP(cur->ops[jj])) {
+          DEBUG(dec->proc_id, "Recovery op found in Decode stage:%u slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
+                jj, (unsigned long long)cur->ops[jj]->op_num, cur->ops[jj]->off_path,
+                (unsigned long long)cur->ops[jj]->inst_info->addr);
+        }
         if (FLUSH_OP(cur->ops[jj])) {
           DEBUG(dec->proc_id, "Decode flushing op_num:%llu off_path:%u\n", (unsigned long long)cur->ops[jj]->op_num,
                 cur->ops[jj]->off_path);
@@ -161,6 +167,9 @@ void debug_decode_stage() {
   for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &dec->sds[STAGE_MAX_DEPTH - ii - 1];
     DPRINTF("# %-10s  op_count:%d\n", cur->name, cur->op_count);
+    DPRINTF("# %-10s  op_nums:", cur->name);
+    print_stage_op_nums(GLOBAL_DEBUG_STREAM, cur->ops, cur->op_count);
+    DPRINTF("\n");
     print_op_array(GLOBAL_DEBUG_STREAM, cur->ops, STAGE_MAX_OP_COUNT, cur->op_count);
   }
 }
@@ -223,7 +232,8 @@ void update_decode_stage(Stage_Data* src_sd) {
 
   /* if the last decode stage is stalled, don't re-process the ops  */
   if (stall) {
-    DEBUG(dec->proc_id, "Decode Stage stalled\n");
+    DEBUG(dec->proc_id, "Decode Stage stalled op_num:%s\n",
+          (dec->last_sd->op_count && dec->last_sd->ops[0]) ? unsstr64(dec->last_sd->ops[0]->op_num) : "none");
     return;
   }
 
@@ -232,7 +242,8 @@ void update_decode_stage(Stage_Data* src_sd) {
     Op* op = dec->last_sd->ops[ii];
     ASSERT(dec->proc_id, op != NULL);
     ASSERT(dec->proc_id, !op->fetched_from_uop_cache);
-    DEBUG(dec->proc_id, "Decoding op op_num=%llu, addr=%llx\n", op->op_num, op->inst_info->addr);
+    DEBUG(dec->proc_id, "Decoding op op_num=%llu, addr=%llx off_path:%i\n", op->op_num, op->inst_info->addr,
+          op->off_path);
     decode_stage_process_op(op);
     uop_cache_insert_op(op);
   }

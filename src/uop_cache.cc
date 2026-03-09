@@ -505,6 +505,18 @@ void uop_cache_insert_FT(FT* ft) {
   generate_uop_cache_data_from_FT(ft, buffer);
 
   auto ft_info = ft->get_ft_info();
+  const std::vector<Op*>& ops = ft->get_ops();
+  Op* last = ops.empty() ? nullptr : ft->get_last_op();
+  DEBUG(uc->proc_id,
+        "UOC insert FT check: ft_id:%llu start:0x%llx len:%llu n_uops:%llu op_pos:%llu ops:%zu end_reason:%d "
+        "last_op:%s last_op_num:%llu last_addr:0x%llx last_eom:%u\n",
+        (unsigned long long)ft_info.dynamic_info.FT_id, (unsigned long long)ft_info.static_info.start,
+        (unsigned long long)ft_info.static_info.length, (unsigned long long)ft_info.static_info.n_uops,
+        (unsigned long long)ft->get_op_pos(), ops.size(), (int)ft->get_end_reason(), last ? "yes" : "no",
+        (unsigned long long)(last ? last->op_num : 0), (unsigned long long)(last ? last->inst_info->addr : 0),
+        (unsigned)(last ? last->eom : 0));
+  UNUSED(last);
+
   // the entire buffer is inserted into the uop cache when the FT has ended
   Flag if_insertable = uop_cache_FT_if_insertable(buffer, ft_info);
   if (if_insertable) {

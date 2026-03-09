@@ -230,24 +230,7 @@ void recover_icache_stage() {
   DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s recovery_op_num:%llu\n",
         hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
 
-  uns ft_buf_count = ft_op_buffer_count(ic);
-  for (ii = 0; ii < ft_buf_count; ii++) {
-    Op* op = ft_op_buffer_get(ic, ii);
-    if (!op)
-      continue;
-    if (IS_FLUSHING_OP(op)) {
-      DEBUG(ic->proc_id, "Recovery op found in FT buffer idx:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
-            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
-    }
-    if (FLUSH_OP(op)) {
-      DEBUG(ic->proc_id, "Icache buffer flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
-            op->off_path);
-      flushed = TRUE;
-      ASSERT(ic->proc_id, op->off_path);
-      if (op->parent_FT)
-        ft_free_op(op);
-    }
-  }
+  flushed |= recover_ft_op_buffer(ic);
 
   cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {
@@ -271,21 +254,20 @@ void recover_icache_stage() {
     }
   }
 
-  if (cur_data->op_count > 0 && flushed) {
-    Op* op = cur_data->ops[cur_data->op_count - 1];
-    assert_ft_after_recovery(ic->proc_id, op, bp_recovery_info->recovery_fetch_addr);
-  }
-
   ic->back_on_path = !bp_recovery_info->recovery_force_offpath;
   ic->fetch_barrier_pending = FALSE;
   ic->fetch_barrier_inst_uid = 0;
+
+  /* Without early icache-stage recovery, all ops in the FT op buffer and stage
+     data must have been flushed: the resteer is unconditional. */
+  ASSERT(ic->proc_id, !ft_op_buffer_count(ic));
+  ASSERT(ic->proc_id, !cur_data->op_count);
 
   ic->icache_stage_resteer_signaled = TRUE;
   op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
 
   if (UOP_CACHE_ENABLE)
     uop_cache_clear_lookup_buffer();
-  ft_op_buffer_reset(ic);
 }
 
 /**************************************************************************************/

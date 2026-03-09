@@ -503,8 +503,6 @@ void ft_free_op(Op* op) {
       while (!ft_ops.empty() && ft_ops.back()->off_path) {
         Op* tail = ft_ops.back();
         ft_ops.pop_back();
-        tail->parent_FT = nullptr;
-        tail->parent_FT_off_path = nullptr;
         free_op(tail);
       }
       return;

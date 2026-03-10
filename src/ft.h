@@ -65,7 +65,6 @@ Op* ft_fetch_op(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
 bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start);
 void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr);
-void recover_ft(FT* ft);
 void ft_free_op(Op* op);
 
 #ifdef __cplusplus
@@ -115,9 +114,6 @@ class FT {
   FT_Event build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
                  bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn);
   void remove_op_after_exec_recover();
-  // Recovery cleanup for an in-flight FT (already handed to icache/uop-cache, not FTQ-resident):
-  // removes only unread tail ops [op_pos, end) that satisfy FLUSH_OP.
-  void recover_ft();
 
   FT_PredictResult predict_ft();
   std::pair<FT*, FT*> extract_off_path_ft(uns split_index);

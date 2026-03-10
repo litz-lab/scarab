@@ -105,8 +105,7 @@ typedef struct Icache_Stage_struct {
   Inst_Info** line; /* pointer to current line on a hit */
   Addr line_addr;   /* address of the last cache line hit */
   Addr fetch_addr;  /* address to fetch or fetching */
-  // keep track of the current FT being used by the icache / uop cache
-  FT* current_ft;
+  void* ft_op_buffer; /* opaque std::vector-backed FT op buffer */
   Flag off_path;     /* is the icache fetching on the correct path? */
   Flag back_on_path; /* did a recovery happen to put the machine back on path? */
 

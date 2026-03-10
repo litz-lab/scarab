@@ -131,49 +131,6 @@ void FT::remove_op_after_exec_recover() {
   ASSERT(proc_id, get_end_reason() == FT_NOT_ENDED || get_end_reason() == FT_TAKEN_BRANCH);
 }
 
-void FT::recover_ft() {
-  // This path is for an FT already popped from FTQ and currently in-flight
-  // (e.g., ic/uc current_ft). We only trim unread tail ops that are newer
-  // than recovery_op_num. Older/read ops are handled by stage-data recovery.
-  FT_Info before_info = get_ft_info();
-  Op* before_last = ops.empty() ? nullptr : ops.back();
-  UNUSED(before_info);
-  UNUSED(before_last);
-  DEBUG(proc_id,
-        "FT recover start: ft_id:%llu start:0x%llx len:%llu n_uops:%llu op_pos:%llu ops:%zu end_reason:%d last_op:%s "
-        "last_addr:0x%llx last_eom:%u\n",
-        (unsigned long long)before_info.dynamic_info.FT_id, (unsigned long long)before_info.static_info.start,
-        (unsigned long long)before_info.static_info.length, (unsigned long long)before_info.static_info.n_uops,
-        (unsigned long long)op_pos, ops.size(), (int)get_end_reason(), before_last ? "yes" : "no",
-        (unsigned long long)(before_last ? before_last->inst_info->addr : 0),
-        (unsigned)(before_last ? before_last->eom : 0));
-  trim_unread_tail([&](Op* op) {
-    if (IS_FLUSHING_OP(op)) {
-      ASSERT(proc_id, op->eom);
-      op_select_bp_pred_info(op, BP_PRED_MAIN);
-    }
-    if (!FLUSH_OP(op))
-      return false;
-    DEBUG(proc_id, "FT recovery flushing unread op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
-          op->off_path);
-    ASSERT(proc_id, op->off_path);
-    ASSERT(proc_id, op->parent_FT == this);
-    return true;
-  });
-  FT_Info after_info = get_ft_info();
-  Op* after_last = ops.empty() ? nullptr : ops.back();
-  UNUSED(after_info);
-  UNUSED(after_last);
-  DEBUG(proc_id,
-        "FT recover end: ft_id:%llu start:0x%llx len:%llu n_uops:%llu op_pos:%llu ops:%zu end_reason:%d last_op:%s "
-        "last_addr:0x%llx last_eom:%u\n",
-        (unsigned long long)after_info.dynamic_info.FT_id, (unsigned long long)after_info.static_info.start,
-        (unsigned long long)after_info.static_info.length, (unsigned long long)after_info.static_info.n_uops,
-        (unsigned long long)op_pos, ops.size(), (int)get_end_reason(), after_last ? "yes" : "no",
-        (unsigned long long)(after_last ? after_last->inst_info->addr : 0),
-        (unsigned)(after_last ? after_last->eom : 0));
-}
-
 FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
                    bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn) {
   FT_Event event = FT_EVENT_NONE;
@@ -523,18 +480,37 @@ void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr) {
   ASSERT(proc_id, op->eom);
 }
 
-void recover_ft(FT* ft) {
-  ASSERT(0, ft);
-  ft->recover_ft();
-}
-
 /* retire and flush, free all ops in a FT when last op is freed */
 void ft_free_op(Op* op) {
   ASSERT(0, op->parent_FT);
   if (op->parent_FT_off_path && op->parent_FT_off_path->get_last_op() == op)
     delete op->parent_FT_off_path;
-  if (!op->parent_FT_off_path && op->parent_FT->get_last_op() == op)
-    delete op->parent_FT;
+  if (!op->parent_FT_off_path && op->parent_FT->get_last_op() == op) {
+    FT* ft = op->parent_FT;
+    std::vector<Op*>& ft_ops = ft->get_ops();
+
+    Flag has_on_path = FALSE;
+    Flag has_off_path = FALSE;
+    for (Op* ft_op : ft_ops) {
+      has_off_path |= ft_op->off_path;
+      has_on_path |= !ft_op->off_path;
+      if (has_on_path && has_off_path)
+        break;
+    }
+
+    // Mixed-path FT: trim only trailing off-path ops instead of deleting FT.
+    if (has_on_path && has_off_path) {
+      while (!ft_ops.empty() && ft_ops.back()->off_path) {
+        Op* tail = ft_ops.back();
+        ft_ops.pop_back();
+        free_op(tail);
+      }
+      return;
+    }
+
+    // Uniform-path FT (all on-path or all off-path): delete FT as before.
+    delete ft;
+  }
 }
 
 /* use set to avoid duplicates and keep PC order */

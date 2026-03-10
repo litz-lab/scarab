@@ -262,13 +262,13 @@ void Decoupled_FE::dfe_recover_op() {
         }
         if (recovery_op_is_last) {
           recovery_ft->trim_unread_tail([&](Op* op) {
-              if (!FLUSH_OP(op))
+            if (!FLUSH_OP(op))
               return false;
-              DEBUG(proc_id, "FT recovery flushing unread op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
+            DEBUG(proc_id, "FT recovery flushing unread op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
                   op->off_path);
-              ASSERT(proc_id, op->off_path);
-              return true;
-              });
+            ASSERT(proc_id, op->off_path);
+            return true;
+          });
         }
 
         DEBUG(proc_id,
@@ -355,7 +355,6 @@ void Decoupled_FE::dfe_recover_op() {
       }
       it->flattened_op_pos = flat;
     }
-
   }
 
   auto op = bp_recovery_info->recovery_op;
@@ -758,42 +757,8 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling
   ASSERT(proc_id, bp_id == MAIN_BP);
   ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT);
-  const Flag l0_enabled = (!bp_id && bp_l0_enabled());
-  const Flag l0_wrong = result.op->bp_pred_l0.mispred || result.op->bp_pred_l0.misfetch;
-  const Flag main_wrong = result.op->bp_pred_main.mispred || result.op->bp_pred_main.misfetch;
-  const char* selected_pred = (result.op->bp_pred_info == &result.op->bp_pred_l0) ? "L0" : "MAIN";
-  UNUSED(selected_pred);
-
-  if (l0_enabled && l0_wrong && !main_wrong) {
-    STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT_RECOVERY_SCHEDULED);
-    DEBUG(proc_id, "[DFE%u] Early/Late mismatch op_num:%llu PC:0x%llx -> schedule recovery at main_ready:%llu\n", bp_id,
-          (unsigned long long)result.op->op_num, (unsigned long long)result.op->inst_info->addr,
-          (unsigned long long)result.op->bp_pred_main.bp_ready_cycle);
-    // Keep winner selection unchanged for ongoing off-path generation.
-    op_select_bp_pred_info(result.op, BP_PRED_L0);
-    bp_sched_recovery(bp_recovery_info, result.op, result.op->bp_pred_main.bp_ready_cycle);
-  }
-
   // Misprediction: Switch to off-path execution
   auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
-  DEBUG(proc_id,
-        "[DFE%u] redirect_to_off_path: selected:%s op_num:%llu split_idx:%llu pred_npc:0x%llx main_npc:0x%llx "
-        "l0_npc:0x%llx off_path_ft_id:%llu off_path_start:0x%llx off_path_ops:%zu trailing:%s\n",
-        bp_id, selected_pred, (unsigned long long)result.op->op_num, (unsigned long long)result.index,
-        (unsigned long long)result.op->bp_pred_info->pred_npc, (unsigned long long)result.op->bp_pred_main.pred_npc,
-        (unsigned long long)result.op->bp_pred_l0.pred_npc,
-        (unsigned long long)off_path_FT->get_ft_info().dynamic_info.FT_id,
-        (unsigned long long)off_path_FT->get_ft_info().static_info.start, off_path_FT->ops.size(),
-        (trailing_ft ? "yes" : "no"));
-  if (trailing_ft) {
-    DEBUG(proc_id,
-          "[DFE%u] redirect trailing_ft: id:%llu start:0x%llx ops:%zu unread:%u first_op_num:%llu first_addr:0x%llx\n",
-          bp_id, (unsigned long long)trailing_ft->get_ft_info().dynamic_info.FT_id,
-          (unsigned long long)trailing_ft->get_ft_info().static_info.start, trailing_ft->ops.size(),
-          trailing_ft->has_unread_ops(),
-          (unsigned long long)(trailing_ft->ops.size() ? trailing_ft->ops.front()->op_num : 0),
-          (unsigned long long)(trailing_ft->ops.size() ? trailing_ft->ops.front()->inst_info->addr : 0));
-  }
   current_ft_to_push = off_path_FT;
   // if we have a tailing ft, save it for recovery
   if (trailing_ft && trailing_ft->has_unread_ops()) {

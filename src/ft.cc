@@ -323,8 +323,7 @@ FT_PredictResult FT::predict_ft() {
     FT_Event event = FT_EVENT_NONE;
     if (op->table_info->cf_type) {
       ASSERT(proc_id, op->eom);
-      const Flag l0_enabled = (bp_id == 0 && bp_l0_enabled());
-      if (l0_enabled) {
+      if (bp_l0_enabled()) {
         INC_STAT_EVENT(proc_id, DFE_L0_ENABLED_PREDICTIONS, 1);
 
         const FT_Event l0_event = predict_op_ft_event(op, BP_PRED_L0);
@@ -337,6 +336,7 @@ FT_PredictResult FT::predict_ft() {
           STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
           if (!op->off_path) {
             op_select_bp_pred_info(op, BP_PRED_L0);
+            bp_sched_recovery(bp_recovery_info, op, op->bp_pred_main.bp_ready_cycle);
             event = l0_event;
           } else {
             event = main_event;
@@ -512,7 +512,7 @@ bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start) {
 
   const Bp_Pred_Info* bp_pred_info = ft_active_or_main_bp_pred_info(last_op);
   Addr pred_npc = bp_pred_info->pred_npc;
-  Addr npc      = last_op->oracle_info.npc;
+  Addr npc = last_op->oracle_info.npc;
   Addr end_addr = last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
 
   return (pred_npc == next_start) || (npc == next_start) || (end_addr == next_start);
@@ -521,9 +521,8 @@ bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start) {
 void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr) {
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->parent_FT);
-  FT* ft_for_check = (op->parent_FT_off_path && op->parent_FT_off_path->get_last_op() == op)
-                         ? op->parent_FT_off_path
-                         : op->parent_FT;
+  FT* ft_for_check =
+      (op->parent_FT_off_path && op->parent_FT_off_path->get_last_op() == op) ? op->parent_FT_off_path : op->parent_FT;
   const bool consecutive = ft_recovery_addr_is_consecutive(ft_for_check, recovery_fetch_addr);
   ASSERT(proc_id, consecutive);
   ASSERT(proc_id, IS_FLUSHING_OP(op));
@@ -550,8 +549,7 @@ void ft_free_op(Op* op) {
 
     // Mixed-path FT: drop all off-path ops so recovery sees a pure on-path FT.
     if (has_on_path && has_off_path) {
-      DEBUG(op->proc_id,
-            "[DFE%u] ft_free_op mixed FT cleanup: ft_id:%llu trigger_op:%llu total_ops:%zu\n",
+      DEBUG(op->proc_id, "[DFE%u] ft_free_op mixed FT cleanup: ft_id:%llu trigger_op:%llu total_ops:%zu\n",
             ft->get_bp_id(), (unsigned long long)ft->get_ft_info().dynamic_info.FT_id, (unsigned long long)op->op_num,
             ft_ops.size());
       for (auto it = ft_ops.begin(); it != ft_ops.end();) {

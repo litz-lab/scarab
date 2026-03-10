@@ -242,6 +242,48 @@ void uop_cache_clear_lookup_buffer() {
   uc_cpp->num_looked_up_lines = 0;
 }
 
+/* uop_cache_trim_lookup_buffer_to_n_ops:
+ * Trim the lookup buffer so it covers exactly n ops, starting from the
+ * current consumption point (num_looked_up_lines).  Called after a partial
+ * ft_op_buffer flush caused by a mixed-FT recovery (L0 early recovery
+ * followed by a main-predictor recovery): the lookup buffer was loaded for
+ * the original pre-flush FT but ft_op_buffer now has fewer ops, so we must
+ * bring the two back into sync.
+ *
+ * The entry that straddles the n-op boundary is capped to the remaining
+ * count and marked end_of_ft; all later entries are dropped.
+ * If the buffer is already empty or n == 0, the buffer is cleared.
+ */
+void uop_cache_trim_lookup_buffer_to_n_ops(uns n) {
+  if (!UOP_CACHE_ENABLE) {
+    return;
+  }
+
+  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
+
+  if (uc_cpp->lookup_buffer.empty() || n == 0) {
+    uc_cpp->lookup_buffer.clear();
+    uc_cpp->num_looked_up_lines = 0;
+    return;
+  }
+
+  uns remaining = n;
+  for (size_t i = uc_cpp->num_looked_up_lines; i < uc_cpp->lookup_buffer.size(); i++) {
+    Uop_Cache_Data& line = uc_cpp->lookup_buffer[i];
+    if (line.n_uops >= remaining) {
+      line.n_uops = remaining;
+      line.end_of_ft = TRUE;
+      uc_cpp->lookup_buffer.resize(i + 1);
+      return;
+    }
+    remaining -= line.n_uops;
+  }
+
+  // n exceeds the total uops in the buffer — should never happen when called
+  // with ft_op_buffer_count() after a partial flush of a UOP-cache-served FT.
+  ASSERT(uc->proc_id, 0);
+}
+
 Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag update_repl) {
   if (!UOP_CACHE_ENABLE) {
     return NULL;

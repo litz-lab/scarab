@@ -280,6 +280,14 @@ void recover_icache_stage() {
     op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
     if (UOP_CACHE_ENABLE)
       uop_cache_clear_lookup_buffer();
+  } else if (UOP_CACHE_ENABLE) {
+    // ft_op_buffer has surviving on-path ops after a partial flush (mixed-FT
+    // recovery: L0 early recovery followed by a main-predictor recovery).
+    // The UOP cache lookup buffer was loaded for the original pre-flush FT and
+    // now covers more ops than ft_op_buffer. Trim it to the surviving count so
+    // that uop_cache_serve_ops() sees end_of_ft exactly when ft_op_buffer is
+    // exhausted, preserving the invariant between the two buffers.
+    uop_cache_trim_lookup_buffer_to_n_ops(ft_op_buffer_count(ic));
   }
 
   // Do not signal resteer if a fetch barrier is still pending: the icache must

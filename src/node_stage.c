@@ -249,6 +249,7 @@ void flush_window() {
     if (FLUSH_OP(op)) {
       DEBUG(node->proc_id, "Node window flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
             op->off_path);
+      ASSERT(node->proc_id, op->off_path);
       if (!op->macro_fused)
         flush_ops++;
       ASSERT(node->proc_id, op->off_path);
@@ -265,6 +266,7 @@ void flush_window() {
       /* Keep op */
 
       if (IS_FLUSHING_OP(op)) {
+        op_select_bp_pred_info(op, BP_PRED_MAIN);
         /* Mark that the scheduled recovery has occurred */
         op->recovery_scheduled = FALSE;
       }

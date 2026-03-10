@@ -137,6 +137,7 @@ void recover_map_stage() {
     for (jj = 0, kk = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
       if (cur->ops[jj]) {
         if (IS_FLUSHING_OP(cur->ops[jj])) {
+          op_select_bp_pred_info(cur->ops[jj], BP_PRED_MAIN);
           DEBUG(map->proc_id, "Recovery op found in Map stage:%u slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii, jj,
                 (unsigned long long)cur->ops[jj]->op_num, cur->ops[jj]->off_path,
                 (unsigned long long)cur->ops[jj]->inst_info->addr);

@@ -76,16 +76,20 @@ Op* ft_op_buffer_pop(Icache_Stage* ic) {
   return buf->ops[buf->head++];
 }
 
-Flag recover_ft_op_buffer(Icache_Stage* ic) {
+void recover_ft_op_buffer(Icache_Stage* ic) {
   ASSERT(0, ic && ic->ft_op_buffer);
   Flag flushed = FALSE;
-  uns count = ft_op_buffer_count(ic);
-  for (uns ii = 0; ii < count; ii++) {
-    Op* op = ft_op_buffer_pop(ic);
+  FT_Op_Buffer_Cpp* buf = (FT_Op_Buffer_Cpp*)ic->ft_op_buffer;
+  std::vector<Op*> survivors;
+  survivors.reserve(ft_op_buffer_count(ic));
+  for (size_t ii = buf->head; ii < buf->ops.size(); ii++) {
+    Op* op = buf->ops[ii];
     ASSERT(ic->proc_id, op);
     if (IS_FLUSHING_OP(op)) {
-      DEBUG(ic->proc_id, "Recovery op found in FT buffer idx:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
-            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
+      op_select_bp_pred_info(op, BP_PRED_MAIN);
+      DEBUG(ic->proc_id, "Recovery op found in FT buffer idx:%llu op_num:%llu off_path:%u addr:0x%llx\n",
+            (unsigned long long)ii, (unsigned long long)op->op_num, op->off_path,
+            (unsigned long long)op->inst_info->addr);
     }
     if (FLUSH_OP(op)) {
       DEBUG(ic->proc_id, "Icache buffer flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
@@ -94,7 +98,15 @@ Flag recover_ft_op_buffer(Icache_Stage* ic) {
       ASSERT(ic->proc_id, op->off_path);
       ASSERT(ic->proc_id, op->parent_FT);
       ft_free_op(op);
+    } else {
+      survivors.emplace_back(op);
     }
   }
-  return flushed;
+  buf->ops.swap(survivors);
+  buf->head = 0;
+
+  if (buf->ops.size() && flushed) {
+    Op* op = buf->ops[buf->ops.size() - 1];
+    assert_ft_after_recovery(ic->proc_id, op, bp_recovery_info->recovery_fetch_addr);
+  }
 }

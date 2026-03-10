@@ -19,7 +19,7 @@ Flag ft_op_buffer_can_fetch_op(Icache_Stage* ic);
 uns ft_op_buffer_count(Icache_Stage* ic);
 Op* ft_op_buffer_peek(Icache_Stage* ic);
 Op* ft_op_buffer_pop(Icache_Stage* ic);
-Flag recover_ft_op_buffer(Icache_Stage* ic);
+void recover_ft_op_buffer(Icache_Stage* ic);
 
 #ifdef __cplusplus
 }

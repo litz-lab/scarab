@@ -155,8 +155,8 @@ void* scarab_test_FetchOp(void* ptr) {
   for(uint32_t j = 0; j < trace.size(); ++j) {
     for(uint32_t i = 0; i < NUM_CLIENTS; ++i) {
       Op op;
-      op.bp_pred_info = &op.bp_pred_main;
-      op.btb_pred_info = &op.btb_pred;
+      op_select_bp_pred_info(&op, BP_PRED_MAIN);
+      memset(&op.bp_pred_l0, 0, sizeof(op.bp_pred_l0));
       memset(&op.bp_pred_main, 0, sizeof(op.bp_pred_main));
       memset(&op.btb_pred, 0, sizeof(op.btb_pred));
 

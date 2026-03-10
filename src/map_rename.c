@@ -1035,7 +1035,7 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 void reg_renaming_scheme_realistic_recover(Op *op) {
   // do not need to do flushing if it is a decoding flush
   ASSERT(op->proc_id, op->table_info->cf_type);
-  if (op->bp_pred_info->recover_at_decode)
+  if (!op->bp_pred_info->recover_at_exec)
     return;
 
   // rollback to the status that does not contain any off_path entries
@@ -1182,9 +1182,10 @@ void reg_renaming_scheme_late_allocation_produce(Op *op) {
 }
 
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
-  // do not need to do flushing if it is a decoding flush
+  // Only execution-time recoveries take/consume SRT checkpoints.
+  // Decode-time and early frontend-only recoveries should not rollback SRT.
   ASSERT(op->proc_id, op->table_info->cf_type);
-  if (op->bp_pred_info->recover_at_decode)
+  if (!op->bp_pred_info->recover_at_exec)
     return;
 
   // rollback to the status that does not contain any off_path entries

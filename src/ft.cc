@@ -552,16 +552,21 @@ void ft_free_op(Op* op) {
       DEBUG(op->proc_id, "[DFE%u] ft_free_op mixed FT cleanup: ft_id:%llu trigger_op:%llu total_ops:%zu\n",
             ft->get_bp_id(), (unsigned long long)ft->get_ft_info().dynamic_info.FT_id, (unsigned long long)op->op_num,
             ft_ops.size());
-      for (auto it = ft_ops.begin(); it != ft_ops.end();) {
-        Op* ft_op = *it;
+      bool seen_off_path = false;
+      for (Op* ft_op : ft_ops) {
         if (ft_op->off_path) {
-          DEBUG(op->proc_id, "[DFE%u] ft_free_op removing off-path op_num:%llu addr:0x%llx\n", ft->get_bp_id(),
-                (unsigned long long)ft_op->op_num, (unsigned long long)ft_op->inst_info->addr);
-          it = ft_ops.erase(it);
-          free_op(ft_op);
+          seen_off_path = true;
         } else {
-          ++it;
+          ASSERT(proc_id, !seen_off_path);
         }
+      }
+
+      while (!ft_ops.empty() && ft_ops.back()->off_path) {
+        Op* tail = ft_ops.back();
+        DEBUG(op->proc_id, "[DFE%u] ft_free_op removing off-path op_num:%llu addr:0x%llx\n", ft->get_bp_id(),
+              (unsigned long long)tail->op_num, (unsigned long long)tail->inst_info->addr);
+        ft_ops.pop_back();
+        free_op(tail);
       }
       // Regenerate ft_info to reflect the on-path-only ops, then mark all as fetched.
       ft->op_pos = 0;

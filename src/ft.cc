@@ -321,52 +321,37 @@ FT_PredictResult FT::predict_ft() {
     Op* op = ops[idx];
     bp_predict_btb(g_bp_data, op);
     FT_Event event = FT_EVENT_NONE;
-    if (op->table_info->cf_type) {
-      ASSERT(proc_id, op->eom);
-      if (bp_l0_enabled()) {
-        INC_STAT_EVENT(proc_id, DFE_L0_ENABLED_PREDICTIONS, 1);
+    if (bp_l0_enabled()) {
+      INC_STAT_EVENT(proc_id, DFE_L0_ENABLED_PREDICTIONS, 1);
 
-        const FT_Event l0_event = predict_op_ft_event(op, BP_PRED_L0);
-        const Flag l0_wrong = op->bp_pred_l0.mispred || op->bp_pred_l0.misfetch;
+      const FT_Event l0_event = predict_op_ft_event(op, BP_PRED_L0);
+      const Flag l0_wrong = op->bp_pred_l0.mispred || op->bp_pred_l0.misfetch;
 
-        const FT_Event main_event = predict_op_ft_event(op, BP_PRED_MAIN);
-        const Flag main_wrong = op->bp_pred_main.mispred || op->bp_pred_main.misfetch;
+      const FT_Event main_event = predict_op_ft_event(op, BP_PRED_MAIN);
+      const Flag main_wrong = op->bp_pred_main.mispred || op->bp_pred_main.misfetch;
 
-        if (l0_wrong && !main_wrong) {
-          STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
-          if (!op->off_path) {
-            op_select_bp_pred_info(op, BP_PRED_L0);
-            bp_sched_recovery(bp_recovery_info, op, op->bp_pred_main.bp_ready_cycle);
-            event = l0_event;
-          } else {
-            event = main_event;
-          }
-        } else if (l0_wrong && main_wrong) {
-          STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_WRONG);
-          op_select_bp_pred_info(op, BP_PRED_MAIN);
-          event = main_event;
-        } else if (!l0_wrong && main_wrong) {
-          STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_WRONG);
-          op_select_bp_pred_info(op, BP_PRED_MAIN);
-          event = main_event;
+      if (l0_wrong && !main_wrong) {
+        STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
+        if (!op->off_path) {
+          op_select_bp_pred_info(op, BP_PRED_L0);
+          bp_sched_recovery(bp_recovery_info, op, op->bp_pred_main.bp_ready_cycle);
+          event = l0_event;
         } else {
-          STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_CORRECT);
-          op_select_bp_pred_info(op, BP_PRED_MAIN);
           event = main_event;
         }
-      } else {
-        event = predict_op_ft_event(op, BP_PRED_MAIN);
+      } else if (l0_wrong && main_wrong) {
+        STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_WRONG);
         op_select_bp_pred_info(op, BP_PRED_MAIN);
+        event = main_event;
+      } else if (!l0_wrong && main_wrong) {
+        STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_WRONG);
+        op_select_bp_pred_info(op, BP_PRED_MAIN);
+        event = main_event;
+      } else {
+        STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_CORRECT);
+        op_select_bp_pred_info(op, BP_PRED_MAIN);
+        event = main_event;
       }
-
-      DEBUG(
-          proc_id,
-          "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
-          "recover_at_fe:%i recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
-          bp_id, op->inst_info->addr, op->oracle_info.npc, op->bp_pred_info->pred_npc, op->bp_pred_info->mispred,
-          op->bp_pred_info->misfetch, op->btb_pred_info->btb_miss, op->bp_pred_info->pred == TAKEN,
-          op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec,
-          op->table_info->bar_type & BAR_FETCH);
     } else {
       event = predict_op_ft_event(op, BP_PRED_MAIN);
       op_select_bp_pred_info(op, BP_PRED_MAIN);

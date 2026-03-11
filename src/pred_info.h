@@ -75,6 +75,12 @@ typedef struct Btb_Pred_Info_struct {
   // Pre-computed BTB lookup result, populated once by bp_predict_btb() before
   // bp_predict_op() is called.  Both BP_PRED_L0 and BP_PRED_MAIN read from
   // these fields instead of querying the BTB cache directly.
+  Flag btb_l0_hit;     // TRUE if L0 BTB holds an entry for this branch
+  Addr btb_l0_target;  // target stored in L0 BTB (valid when btb_l0_hit)
+
+  Flag btb_l1_hit;     // TRUE if L1 BTB holds an entry for this branch
+  Addr btb_l1_target;  // target stored in L1 BTB (valid when btb_l1_hit)
+
   Flag btb_main_hit;     // TRUE if the main BTB holds an entry for this branch
   Addr btb_main_target;  // branch target stored in the BTB (valid when btb_main_hit)
 

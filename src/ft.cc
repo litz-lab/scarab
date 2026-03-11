@@ -334,7 +334,21 @@ FT_PredictResult FT::predict_ft() {
         STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
         if (!op->off_path) {
           op_select_bp_pred_info(op, BP_PRED_L0);
-          bp_sched_recovery(bp_recovery_info, op, op->bp_pred_main.bp_ready_cycle);
+
+          // Default: recover when MAIN prediction is ready.
+          Counter recovery_cycle = op->bp_pred_main.bp_ready_cycle;
+          const Addr correct_target = op->bp_pred_main.pred_npc;
+          const Counter fetch_cycle = op->bp_pred_main.bp_ready_cycle - BP_MAIN_LATENCY;
+
+          // If L1 BTB already has the correct target, we can recover one cycle
+          // earlier (at BTB_L1_LATENCY rather than BP_MAIN_LATENCY).
+          // L0 BTB is not checked here because l0_wrong means L0 prediction was
+          // wrong, so the L0 BTB did not produce the correct result.
+          if (BTB_L1_PRESENT && op->btb_pred_info->btb_l1_hit && op->btb_pred_info->btb_l1_target == correct_target) {
+            recovery_cycle = fetch_cycle + BTB_L1_LATENCY;
+          }
+
+          bp_sched_recovery(bp_recovery_info, op, recovery_cycle);
           event = l0_event;
         } else {
           event = main_event;
@@ -346,6 +360,12 @@ FT_PredictResult FT::predict_ft() {
       } else if (!l0_wrong && main_wrong) {
         STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_WRONG);
         op_select_bp_pred_info(op, BP_PRED_MAIN);
+        // If main BTB was too slow to be used (BTB_MAIN_LATENCY > BP_MAIN_LATENCY)
+        // but has the correct target, tighten the recovery cycle to BTB_MAIN_LATENCY.
+        if (BTB_MAIN_LATENCY > BP_MAIN_LATENCY && op->btb_pred_info->btb_main_hit) {
+          const Counter fetch_cycle = op->bp_pred_main.bp_ready_cycle - BP_MAIN_LATENCY;
+          op->bp_pred_main.bp_ready_cycle = fetch_cycle + BTB_MAIN_LATENCY;
+        }
         event = main_event;
       } else {
         STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_CORRECT);

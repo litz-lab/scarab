@@ -43,10 +43,19 @@
 
 # BTB model to use.
 --btb_mech                      generic
---btb_entries                   8192
+--btb_entries                   12288
 --btb_assoc                     4
+--btb_main_latency              3
+--btb_l0_present                1
+--btb_l0_entries                256
+--btb_l0_assoc                  4
+--btb_l0_latency                1
+--btb_l1_present                1
+--btb_l1_entries                5120
+--btb_l1_assoc                  4
+--btb_l1_latency                2
 
-# Allow the BTB to be updated by off path ops. 
+# Allow the BTB to be updated by off path ops.
 --btb_off_path_writes           1
 
 # NT branches are not inserted in BTB, but do not trigger resteer

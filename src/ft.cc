@@ -149,6 +149,7 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
     op->bp_pred_main.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     add_op(op);
     if (off_path) {
+      bp_predict_btb(g_bp_data, op);
       event = predict_op_ft_event(op, BP_PRED_MAIN);
       op_select_bp_pred_info(op, BP_PRED_MAIN);
     }
@@ -320,6 +321,7 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
 FT_PredictResult FT::predict_ft() {
   for (size_t idx = op_pos; idx < ops.size(); idx++) {
     Op* op = ops[idx];
+    bp_predict_btb(g_bp_data, op);
     FT_Event event = predict_op_ft_event(op, BP_PRED_MAIN);
     op_select_bp_pred_info(op, BP_PRED_MAIN);
     if (event != FT_EVENT_NONE) {

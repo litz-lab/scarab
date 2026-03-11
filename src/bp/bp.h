@@ -277,6 +277,7 @@ void bp_sched_redirect(Bp_Recovery_Info*, Op*, Counter);
 
 void init_bp_data(uns8, uns8, Bp_Data*, Bp_Data*);
 Flag bp_is_predictable(Bp_Data*);
+void bp_predict_btb(Bp_Data*, Op*);
 Addr bp_predict_op(Bp_Data*, Op*, uns, uns, Addr, Bp_Pred_Level);
 void bp_target_known_op(Bp_Data*, Op*);
 void bp_resolve_op(Bp_Data*, Op*);

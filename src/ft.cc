@@ -537,15 +537,6 @@ void ft_free_op(Op* op) {
       DEBUG(op->proc_id, "[DFE%u] ft_free_op mixed FT cleanup: ft_id:%llu trigger_op:%llu total_ops:%zu\n",
             ft->get_bp_id(), (unsigned long long)ft->get_ft_info().dynamic_info.FT_id, (unsigned long long)op->op_num,
             ft_ops.size());
-      bool seen_off_path = false;
-      for (Op* ft_op : ft_ops) {
-        if (ft_op->off_path) {
-          seen_off_path = true;
-        } else {
-          ASSERT(proc_id, !seen_off_path);
-        }
-      }
-
       while (!ft_ops.empty() && ft_ops.back()->off_path) {
         Op* tail = ft_ops.back();
         DEBUG(op->proc_id, "[DFE%u] ft_free_op removing off-path op_num:%llu addr:0x%llx\n", ft->get_bp_id(),

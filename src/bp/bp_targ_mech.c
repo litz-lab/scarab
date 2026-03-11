@@ -277,14 +277,7 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   op->btb_pred_info->btb_main_hit = FALSE;
   op->btb_pred_info->btb_main_target = 0;
 
-  if (PERFECT_BTB) {
-    op->btb_pred_info->btb_main_hit = TRUE;
-    op->btb_pred_info->btb_main_target = op->oracle_info.target;
-    return;
-  }
-
-  Addr line_addr;
-  Addr* entry = (Addr*)cache_access(bp_data->btb, op->inst_info->addr, &line_addr, bp_data->bp_id ? FALSE : TRUE);
+  Addr* entry = bp_data->bp_btb->pred_func(bp_data, op);
   if (entry) {
     op->btb_pred_info->btb_main_hit = TRUE;
     op->btb_pred_info->btb_main_target = *entry;

@@ -265,6 +265,33 @@ void bp_crs_sync(Bp_Data* bp_data_src, Bp_Data* bp_data_dst) {
 }
 
 /**************************************************************************************/
+/* bp_predict_btb: query all BTB levels once per branch and cache results in
+ * op->btb_pred_info so that bp_predict_op() can read them without touching the
+ * cache structures again.  Must be called before any bp_predict_op() call for
+ * the same op. */
+
+void bp_predict_btb(Bp_Data* bp_data, Op* op) {
+  if (!op->table_info->cf_type)
+    return;
+
+  op->btb_pred_info->btb_main_hit = FALSE;
+  op->btb_pred_info->btb_main_target = 0;
+
+  if (PERFECT_BTB) {
+    op->btb_pred_info->btb_main_hit = TRUE;
+    op->btb_pred_info->btb_main_target = op->oracle_info.target;
+    return;
+  }
+
+  Addr line_addr;
+  Addr* entry = (Addr*)cache_access(bp_data->btb, op->inst_info->addr, &line_addr, bp_data->bp_id ? FALSE : TRUE);
+  if (entry) {
+    op->btb_pred_info->btb_main_hit = TRUE;
+    op->btb_pred_info->btb_main_target = *entry;
+  }
+}
+
+/**************************************************************************************/
 /* bp_btb_init: */
 
 void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {

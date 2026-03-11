@@ -73,6 +73,12 @@ typedef struct Btb_Pred_Info_struct {
   Flag no_target;          // true if there is no target for this branch at prediction time
   Flag ibp_miss;           // true if the target is not predicted by the indirect pred
   Addr pred_target;        // selected target from BTB/IBTB (if any)
+
+  // Pre-computed BTB lookup result, populated once by bp_predict_btb() before
+  // bp_predict_op() is called.  Both BP_PRED_L0 and BP_PRED_MAIN read from
+  // these fields instead of querying the BTB cache directly.
+  Flag btb_main_hit;     // TRUE if the main BTB holds an entry for this branch
+  Addr btb_main_target;  // branch target stored in the BTB (valid when btb_main_hit)
 } Btb_Pred_Info;
 
 // Prediction levels for the two-level (L0 + main) branch predictor hierarchy.

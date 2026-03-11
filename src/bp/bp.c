@@ -358,9 +358,13 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
   // In the event of a btb miss, the branch will predicted as
   // normal, but will incur the redirect penalty for missing in the
   // btb.  btb_miss and pred_target are set appropriately.
+  //
+  // BTB lookup results were already computed by bp_predict_btb() and stored in
+  // op->btb_pred_info.  Read the pre-computed result instead of hitting the
+  // cache again.
   op->btb_pred_info->no_target = TRUE;
   bp_pred_info->misfetch = FALSE;
-  btb_target = bp_data->bp_btb->pred_func(bp_data, op);
+  btb_target = op->btb_pred_info->btb_main_hit ? &op->btb_pred_info->btb_main_target : NULL;
   if (btb_target) {
     // btb hit
     op->btb_pred_info->btb_miss = FALSE;

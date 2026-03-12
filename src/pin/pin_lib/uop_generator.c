@@ -783,7 +783,7 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
 void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop) {
   Flag new_entry = FALSE;
   Inst_Info* info;
-  // Keep instruction-cache lookup independent of per-core CMP address tagging.
+  // Use canonical address (proc_id=0) for consistent hash key within per-core table.
   // The uop cache key should use the original program address bits only.
   Addr lookup_addr = convert_to_cmp_addr(0, pi->instruction_addr);
   // Due to JIT compilation, each branch must be decoded to verify which instruction the PC maps to.

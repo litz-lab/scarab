@@ -171,7 +171,13 @@ struct FT_PredictResult;
 class Decoupled_FE {
  public:
   Decoupled_FE()
-      : off_path(0),
+      : proc_id(0),
+        bp_id(0),
+        bp_data(nullptr),
+        dfe_recovery_policy(0),
+        current_ft_to_push(nullptr),
+        saved_recovery_ft(nullptr),
+        off_path(0),
         conf_off_path(0),
         sched_off_path(0),
         stalled(false),
@@ -182,6 +188,8 @@ class Decoupled_FE {
         redirect_cycle(0),
         ftq_ft_num(FE_FTQ_BLOCK_NUM),
         trace_mode(false),
+        cur_op(nullptr),
+        conf(nullptr),
         state(INACTIVE),
         next_state(INACTIVE) {}
   void init(uns proc_id, uns bp_id, Bp_Data* bp_data, uns dfe_recovery_policy);

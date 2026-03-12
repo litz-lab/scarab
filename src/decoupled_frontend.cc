@@ -196,6 +196,7 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_re
   dfe_recovery_policy = _dfe_recovery_policy;
   cur_op = nullptr;
   current_ft_to_push = nullptr;
+  saved_recovery_ft = nullptr;
 
   if (CONFIDENCE_ENABLE) {
     if (bp_id != MAIN_BP)
@@ -417,12 +418,14 @@ void Decoupled_FE::update() {
         // After recovery, we expect to serve the saved recovery FT
         next_state = SERVING_ON_PATH;
         current_ft_to_push = saved_recovery_ft;
+        saved_recovery_ft = nullptr;
         result = current_ft_to_push->predict_ft();
         if (current_ft_to_push->ended_by_exit()) {
           // Ensure that the very last simulated FT does not cause a recovery
           current_ft_to_push->clear_recovery_info();
           check_consecutivity_and_push_to_ftq();
           next_state = INACTIVE;
+          saved_recovery_ft = nullptr;
           return;
         }
 

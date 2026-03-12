@@ -186,6 +186,14 @@ void decoupled_fe_print_conf_data() {
 }  // extern "C"
 
 /* Decoupled_FE member functions */
+Decoupled_FE::~Decoupled_FE() {
+  ASSERT(proc_id, ftq.empty());
+  ASSERT(proc_id, saved_recovery_ft == nullptr);
+  if (CONFIDENCE_ENABLE && bp_id == MAIN_BP) {
+    delete conf;
+  }
+}
+
 void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_recovery_policy) {
 #ifdef ENABLE_PT_MEMTRACE
   trace_mode |= (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE);

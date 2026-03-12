@@ -120,6 +120,7 @@ class LookaheadBuffer {
  public:
   /* Constructor initializes per-core lookahead buffer state */
   explicit LookaheadBuffer(uns proc_id);
+  ~LookaheadBuffer();
 
   /* Pops an FT and synchronizes lookahead buffer when FT is removed from FTQ */
   FT* pop_ft();

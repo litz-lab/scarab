@@ -175,6 +175,7 @@ class Decoupled_FE {
         bp_id(0),
         bp_data(nullptr),
         dfe_recovery_policy(0),
+        ftq(),
         current_ft_to_push(nullptr),
         saved_recovery_ft(nullptr),
         off_path(0),
@@ -184,6 +185,7 @@ class Decoupled_FE {
         exit_on_off_path(false),
         op_num(1),
         current_off_path_op_num(0),
+        ftq_iterators(),
         recovery_addr(0),
         redirect_cycle(0),
         ftq_ft_num(FE_FTQ_BLOCK_NUM),
@@ -192,6 +194,7 @@ class Decoupled_FE {
         conf(nullptr),
         state(INACTIVE),
         next_state(INACTIVE) {}
+  ~Decoupled_FE();
   void init(uns proc_id, uns bp_id, Bp_Data* bp_data, uns dfe_recovery_policy);
   int is_off_path() { return is_off_path_state(); }
   void recover(Cf_Type cf_type, Recovery_Info* info);

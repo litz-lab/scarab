@@ -150,7 +150,17 @@ class FDIP_Stat {
 
 class FDIP {
  public:
-  FDIP() : ic_ref(nullptr), cur_op(nullptr), last_line_addr(0), warmed_up(FALSE), udp(nullptr), uftq(nullptr) {}
+  FDIP()
+      : ic_ref(nullptr),
+        cur_op(nullptr),
+        last_line_addr(0),
+        warmed_up(FALSE),
+        fdip_stat(nullptr),
+        ftq_idx(0),
+        dfe(nullptr),
+        udp(nullptr),
+        uftq(nullptr) {}
+  ~FDIP();
   void init(uns proc_id, uns bp_id, Icache_Stage* _ic);
   void recover();
   void update();
@@ -891,6 +901,14 @@ void FDIP_Stat::inc_icache_hit(Addr line_addr) {
 }
 
 /* FDIP member functions */
+FDIP::~FDIP() {
+  if (bp_id)
+    return;
+
+  delete fdip_stat;
+  delete uftq;
+}
+
 void FDIP::init(uns _proc_id, uns _bp_id, Icache_Stage* _ic) {
   proc_id = _proc_id;
   bp_id = _bp_id;

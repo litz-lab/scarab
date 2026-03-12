@@ -41,6 +41,13 @@ LookaheadBuffer::LookaheadBuffer(uns proc_id)
     : have_seen_exit(0), proc_id(proc_id), rdptr_lb(0), wrptr_lb(0), ft_buffer_count(0) {
 }
 
+LookaheadBuffer::~LookaheadBuffer() {
+  ASSERT(proc_id, ft_buffer_count == 0);
+  for (FT* ft : lookahead_buffer) {
+    ASSERT(proc_id, ft == nullptr);
+  }
+}
+
 /* updates all lookup map/vectors according to new FT inserted at buf pos */
 void LookaheadBuffer::update_search_indexes_on_insert(uint64_t buf_pos) {
   FT_Info_Static inserting_FT_info = lookahead_buffer[buf_pos]->get_ft_info().static_info;

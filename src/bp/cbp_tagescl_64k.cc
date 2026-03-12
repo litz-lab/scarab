@@ -52,6 +52,12 @@ TAGE64K::TAGE64K(void) {
   // #endif
 }
 
+TAGE64K::~TAGE64K() {
+  delete[] gtable[1];
+  delete[] gtable[BORN];
+  delete[] btable;
+}
+
 TAGE64K& TAGE64K::operator=(const TAGE64K& other) {
   memcpy(Im, other.Im, sizeof(Im));
   memcpy(IGEHLA, other.IGEHLA, sizeof(IGEHLA));

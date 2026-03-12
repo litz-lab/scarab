@@ -61,7 +61,6 @@ extern "C" {
 
 static char* trace_files[MAX_NUM_PROCS];
 TraceReader* trace_readers[MAX_NUM_PROCS];
-// TODO: Make per proc?
 uint64_t ins_id = 0;
 uint64_t ins_id_fetched = 0;
 uint64_t prior_tid[MAX_NUM_PROCS] = {0};
@@ -245,8 +244,6 @@ void memtrace_init(void) {
   uop_generator_init(NUM_CORES);
   init_x86_decoder(nullptr);
   init_x87_stack_delta();
-  memset(prior_tid, 0, sizeof(prior_tid));
-  memset(prior_pid, 0, sizeof(prior_pid));
 
   // next_onpath_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));
 

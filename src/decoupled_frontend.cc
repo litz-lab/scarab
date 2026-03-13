@@ -233,6 +233,8 @@ void Decoupled_FE::dfe_recover_op() {
   cur_op = nullptr;
   recovery_addr = bp_recovery_info->recovery_fetch_addr;
   bool found_recovery_ft = false;
+  FT* recovery_ft = nullptr;
+  Op* recovery_ft_op = nullptr;
   bool recovery_op_is_last = false;
   auto erase_from = ftq.begin();
 
@@ -243,7 +245,25 @@ void Decoupled_FE::dfe_recover_op() {
       Op* op = ft->ops[op_idx];
       if (IS_FLUSHING_OP(op)) {
         found_recovery_ft = true;
-        recovery_op_is_last = (op_idx == ft->ops.size() - 1);
+        recovery_ft = ft;
+        recovery_ft_op = op;
+        op_select_bp_pred_info(op, BP_PRED_MAIN);
+
+        // FT layout is guaranteed to be an on-path prefix followed by an optional
+        // off-path suffix, so a recovery op is the last on-path op iff it is the
+        // literal last op or the FT ends with an off-path suffix.
+        recovery_op_is_last = (op_idx == ft->ops.size() - 1) || ft->ops.back()->off_path;
+        if (recovery_op_is_last) {
+          recovery_ft->trim_unread_tail([&](Op* op) {
+            if (!FLUSH_OP(op))
+              return false;
+            DEBUG(proc_id, "FT recovery flushing unread op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
+                  op->off_path);
+            ASSERT(proc_id, op->off_path);
+            return true;
+          });
+        }
+
         DEBUG(proc_id,
               "[DFE%u] FTQ scan: recovery op_num:%llu found in ft_id:%llu at idx:%llu/%zu"
               " literal_last:%u recovery_op_is_last:%u\n",
@@ -266,24 +286,68 @@ void Decoupled_FE::dfe_recover_op() {
     ftq.erase(erase_from, ftq.end());
   }
 
-  if (found_recovery_ft && !recovery_op_is_last) {
+  if (!found_recovery_ft)
+    ASSERT(proc_id, !ftq.size());
+
+  if (found_recovery_ft && recovery_op_is_last) {
+    ASSERT(proc_id, recovery_ft);
+    ASSERT(proc_id, recovery_ft_op);
+    recovery_ft->generate_ft_info();
+  } else if (found_recovery_ft && !recovery_op_is_last) {
     ASSERT(proc_id, saved_recovery_ft);
     ASSERT(proc_id, !saved_recovery_ft->ops.empty());
+    DEBUG(proc_id,
+          "[DFE%u] FTQ recover (not last): recovery_op_num:%llu ft_id:%llu ft_ops:%zu"
+          " saved_recovery_ft_id:%llu saved_op_pos:%llu\n",
+          bp_id, (unsigned long long)bp_recovery_info->recovery_op_num,
+          (unsigned long long)recovery_ft->get_ft_info().dynamic_info.FT_id, recovery_ft->ops.size(),
+          (unsigned long long)saved_recovery_ft->get_ft_info().dynamic_info.FT_id,
+          (unsigned long long)saved_recovery_ft->op_pos);
+    // Update start address
     saved_recovery_ft->op_pos = 0;
     saved_recovery_ft->generate_ft_info();
   }
 
-  // Before introducing any early recovery, it should not find recovery ft
-  ASSERT(proc_id, !found_recovery_ft);
+  // Early recovery (e.g., L0 wrong / main correct) may recover into an FT already in FTQ.
 
   DEBUG(proc_id, "[DFE%u] Recovery signalled fetch_addr:0x%llx recovery_op_num:%llu\n", bp_id,
         bp_recovery_info->recovery_fetch_addr, (unsigned long long)bp_recovery_info->recovery_op_num);
+  for (size_t iter_idx = 0; iter_idx < ftq_iterators.size(); iter_idx++) {
+    auto&& it = ftq_iterators[iter_idx];
+    if (ftq.empty()) {
+      DEBUG(proc_id, "[DFE%u] FTQ iter reset: iter:%zu ft_pos:%llu->0 (ftq empty)\n", bp_id, iter_idx,
+            (unsigned long long)it->ft_pos);
+      it->ft_pos = 0;
+      it->op_pos = 0;
+      it->flattened_op_pos = 0;
+      continue;
+    }
 
-  for (auto&& it : ftq_iterators) {
-    // When the FTQ flushes, reset all iterators
-    it->ft_pos = 0;
-    it->op_pos = 0;
-    it->flattened_op_pos = 0;
+    if (it->ft_pos >= ftq.size()) {
+      DEBUG(proc_id, "[DFE%u] FTQ iter clamp: iter:%zu ft_pos:%llu->%zu (after recover resize)\n", bp_id, iter_idx,
+            (unsigned long long)it->ft_pos, ftq.size());
+      it->ft_pos = ftq.size();
+      it->op_pos = 0;
+
+      uint64_t flat = it->op_pos;
+      for (uint64_t ft_idx = 0; ft_idx < it->ft_pos; ft_idx++) {
+        flat += ftq.at(ft_idx)->ops.size();
+      }
+      it->flattened_op_pos = flat;
+    } else if (it->op_pos >= ftq.at(it->ft_pos)->ops.size()) {
+      // op_pos is out of range: the FT at ft_pos had its off-path tail trimmed
+      // during recovery. Advance iterator to start of next FT.
+      DEBUG(proc_id, "[DFE%u] FTQ iter op_pos clamp: iter:%zu ft_pos:%llu op_pos:%llu->0 ft+1 (tail trimmed)\n", bp_id,
+            iter_idx, (unsigned long long)it->ft_pos, (unsigned long long)it->op_pos);
+      it->ft_pos += 1;
+      it->op_pos = 0;
+
+      uint64_t flat = 0;
+      for (uint64_t ft_idx = 0; ft_idx < it->ft_pos; ft_idx++) {
+        flat += ftq.at(ft_idx)->ops.size();
+      }
+      it->flattened_op_pos = flat;
+    }
   }
 
   auto op = bp_recovery_info->recovery_op;
@@ -635,7 +699,7 @@ void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
 }
 
 Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
-  if (!(op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec)) {
+  if (!(op->bp_pred_info->recover_at_fe || op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec)) {
     return REASON_NOT_IDENTIFIED;
   }
   // mispred
@@ -715,9 +779,11 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
           !per_core_dfe[proc_id][_bp_id]->is_off_path()) {
         ASSERT(proc_id, !per_core_dfe[proc_id][_bp_id]->ftq_num_fts());
         Op alt_op = *result.op;
+        const Bp_Pred_Level alt_pred_level =
+            (result.op->bp_pred_info == &result.op->bp_pred_l0) ? BP_PRED_L0 : BP_PRED_MAIN;
         Bp_Data* alt_bp_data = per_core_dfe[proc_id][_bp_id]->bp_data;
-        Addr alt_pred_addr = bp_predict_op(alt_bp_data, &alt_op, _bp_id, 0, result.op->inst_info->addr, BP_PRED_MAIN);
-        op_select_bp_pred_info(&alt_op, BP_PRED_MAIN);
+        Addr alt_pred_addr = bp_predict_op(alt_bp_data, &alt_op, _bp_id, 0, result.op->inst_info->addr, alt_pred_level);
+        op_select_bp_pred_info(&alt_op, alt_pred_level);
         frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);
         per_core_dfe[proc_id][_bp_id]->next_state = SERVING_OFF_PATH;
         per_core_dfe[proc_id][_bp_id]->set_conf_off_path();

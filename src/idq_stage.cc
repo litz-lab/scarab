@@ -130,6 +130,7 @@ void IDQ_Stage::recover() {
     int i = wrap_around(tail - 1);
     do {
       if (ops[i] && IS_FLUSHING_OP(ops[i])) {
+        op_select_bp_pred_info(ops[i], BP_PRED_MAIN);
         DEBUG(proc_id, "Recovery op found in IDQ queue idx:%d op_num:%llu off_path:%u addr:0x%llx\n", i,
               (unsigned long long)ops[i]->op_num, ops[i]->off_path, (unsigned long long)ops[i]->inst_info->addr);
       }
@@ -162,6 +163,7 @@ void IDQ_Stage::recover() {
   for (int i = idq_sd.op_count - 1; i >= 0; i--) {
     Op* op = idq_sd.ops[i];
     if (op && IS_FLUSHING_OP(op)) {
+      op_select_bp_pred_info(op, BP_PRED_MAIN);
       DEBUG(proc_id, "Recovery op found in IDQ output idx:%d op_num:%llu off_path:%u addr:0x%llx\n", i,
             (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
     }

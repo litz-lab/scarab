@@ -109,6 +109,7 @@ class FT {
 
   /* kept as friend so that it can access FT internals like ops and op_pos */
   friend void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out);
+  friend void ft_free_op(Op* op);
 
   // Change return type to FT_BuildResult
   FT_Event build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,

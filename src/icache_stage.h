@@ -101,6 +101,7 @@ typedef struct Icache_Stage_struct {
   Flag icache_stage_resteer_signaled;
   Flag fetch_barrier_pending;
   uns64 fetch_barrier_inst_uid;
+  Counter fetch_barrier_op_num;
 
   Inst_Info** line; /* pointer to current line on a hit */
   Addr line_addr;   /* address of the last cache line hit */

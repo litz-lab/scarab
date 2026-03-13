@@ -136,6 +136,7 @@ void recover_dcache_stage() {
   for (ii = 0; ii < NUM_FUS; ii++) {
     Op* op = dc->sd.ops[ii];
     if (op && IS_FLUSHING_OP(op)) {
+      op_select_bp_pred_info(op, BP_PRED_MAIN);
       DEBUG(dc->proc_id, "Recovery op found in Dcache slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
             (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
     }

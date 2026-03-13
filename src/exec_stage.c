@@ -152,6 +152,7 @@ void recover_exec_stage() {
     Func_Unit* fu = &exec->fus[ii];
     Op* op = exec->sd.ops[ii];
     if (op && IS_FLUSHING_OP(op)) {
+      op_select_bp_pred_info(op, BP_PRED_MAIN);
       DEBUG(exec->proc_id, "Recovery op found in Exec FU:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
             (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
     }

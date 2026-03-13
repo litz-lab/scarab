@@ -33,6 +33,7 @@
 #include "globals/assert.h"
 #include "globals/utils.h"
 
+#include "bp/bp.param.h"
 #include "memory/memory.param.h"
 
 #include "frontend/frontend_intf.h"
@@ -289,12 +290,13 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
       return FT_EVENT_FETCH_BARRIER;
     }
-    if (bp_pred_info->recover_at_decode || bp_pred_info->recover_at_exec) {
+    if (bp_pred_info->recover_at_fe || bp_pred_info->recover_at_decode || bp_pred_info->recover_at_exec) {
       ASSERT(0, !(bp_pred_info->recover_at_decode && bp_pred_info->recover_at_exec));
 
       if (op->off_path) {
         bp_pred_info->recover_at_decode = FALSE;
         bp_pred_info->recover_at_exec = FALSE;
+        bp_pred_info->recover_at_fe = FALSE;
       }
       return FT_EVENT_MISPREDICT;
     } else if (trace_mode && op->off_path && bp_pred_info->pred == TAKEN) {
@@ -307,11 +309,7 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
     }
 
   } else if (op->table_info->bar_type & BAR_FETCH) {
-    ASSERT(0, !(bp_pred_info->recover_at_decode | bp_pred_info->recover_at_exec));
-    if (op->off_path)
-      STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_OFFPATH);
-    else
-      STAT_EVENT(proc_id, FTQ_SAW_BAR_FETCH_ONPATH);
+    ASSERT(0, !(bp_pred_info->recover_at_fe | bp_pred_info->recover_at_decode | bp_pred_info->recover_at_exec));
     return FT_EVENT_FETCH_BARRIER;
   }
 
@@ -322,8 +320,47 @@ FT_PredictResult FT::predict_ft() {
   for (size_t idx = op_pos; idx < ops.size(); idx++) {
     Op* op = ops[idx];
     bp_predict_btb(g_bp_data, op);
-    FT_Event event = predict_op_ft_event(op, BP_PRED_MAIN);
-    op_select_bp_pred_info(op, BP_PRED_MAIN);
+    FT_Event event = FT_EVENT_NONE;
+    if (bp_l0_enabled()) {
+      INC_STAT_EVENT(proc_id, DFE_L0_ENABLED_PREDICTIONS, 1);
+
+      const FT_Event l0_event = predict_op_ft_event(op, BP_PRED_L0);
+      const Flag l0_wrong = op->bp_pred_l0.mispred || op->bp_pred_l0.misfetch;
+
+      const FT_Event main_event = predict_op_ft_event(op, BP_PRED_MAIN);
+      const Flag main_wrong = op->bp_pred_main.mispred || op->bp_pred_main.misfetch;
+
+      if (l0_wrong && !main_wrong) {
+        STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
+        if (!op->off_path) {
+          op_select_bp_pred_info(op, BP_PRED_L0);
+          bp_sched_recovery(bp_recovery_info, op, op->bp_pred_main.bp_ready_cycle);
+          event = l0_event;
+        } else {
+          event = main_event;
+        }
+      } else if (l0_wrong && main_wrong) {
+        STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_WRONG);
+        op_select_bp_pred_info(op, BP_PRED_MAIN);
+        event = main_event;
+      } else if (!l0_wrong && main_wrong) {
+        STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_WRONG);
+        op_select_bp_pred_info(op, BP_PRED_MAIN);
+        event = main_event;
+      } else {
+        STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_CORRECT);
+        op_select_bp_pred_info(op, BP_PRED_MAIN);
+        event = main_event;
+      }
+    } else {
+      event = predict_op_ft_event(op, BP_PRED_MAIN);
+      op_select_bp_pred_info(op, BP_PRED_MAIN);
+    }
+
+    if (event == FT_EVENT_FETCH_BARRIER) {
+      STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
+    }
+
     if (event != FT_EVENT_NONE) {
       uint64_t return_idx = (event == FT_EVENT_MISPREDICT) ? (idx) : 0;
       Addr pred_addr = op->bp_pred_info->pred_npc;
@@ -458,26 +495,21 @@ bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start) {
   Op* last_op = ft->get_last_op();
   ASSERT(0, last_op);
 
-  FT_Ended_By end_reason = ft->get_end_reason();
   const Bp_Pred_Info* bp_pred_info = ft_active_or_main_bp_pred_info(last_op);
   Addr pred_npc = bp_pred_info->pred_npc;
   Addr npc = last_op->oracle_info.npc;
   Addr end_addr = last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
 
-  switch (end_reason) {
-    case FT_TAKEN_BRANCH:
-      return (pred_npc == next_start) || (npc == next_start);
-    case FT_BAR_FETCH:
-      return (npc == next_start) || (end_addr == next_start);
-    default:
-      return (end_addr == next_start);
-  }
+  return (pred_npc == next_start) || (npc == next_start) || (end_addr == next_start);
 }
 
 void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr) {
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->parent_FT);
-  ASSERT(proc_id, ft_recovery_addr_is_consecutive(op->parent_FT, recovery_fetch_addr));
+  FT* ft_for_check =
+      (op->parent_FT_off_path && op->parent_FT_off_path->get_last_op() == op) ? op->parent_FT_off_path : op->parent_FT;
+  const bool consecutive = ft_recovery_addr_is_consecutive(ft_for_check, recovery_fetch_addr);
+  ASSERT(proc_id, consecutive);
   ASSERT(proc_id, IS_FLUSHING_OP(op));
   ASSERT(proc_id, op->eom);
 }
@@ -500,13 +532,22 @@ void ft_free_op(Op* op) {
         break;
     }
 
-    // Mixed-path FT: trim only trailing off-path ops instead of deleting FT.
+    // Mixed-path FT: drop all off-path ops so recovery sees a pure on-path FT.
     if (has_on_path && has_off_path) {
+      DEBUG(op->proc_id, "[DFE%u] ft_free_op mixed FT cleanup: ft_id:%llu trigger_op:%llu total_ops:%zu\n",
+            ft->get_bp_id(), (unsigned long long)ft->get_ft_info().dynamic_info.FT_id, (unsigned long long)op->op_num,
+            ft_ops.size());
       while (!ft_ops.empty() && ft_ops.back()->off_path) {
         Op* tail = ft_ops.back();
+        DEBUG(op->proc_id, "[DFE%u] ft_free_op removing off-path op_num:%llu addr:0x%llx\n", ft->get_bp_id(),
+              (unsigned long long)tail->op_num, (unsigned long long)tail->inst_info->addr);
         ft_ops.pop_back();
         free_op(tail);
       }
+      // Regenerate ft_info to reflect the on-path-only ops, then mark all as fetched.
+      ft->op_pos = 0;
+      ft->generate_ft_info();
+      ft->op_pos = ft_ops.size();
       return;
     }
 

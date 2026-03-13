@@ -198,6 +198,7 @@ void reset_icache_stage() {
   ic->back_on_path = FALSE;
   ic->fetch_barrier_pending = FALSE;
   ic->fetch_barrier_inst_uid = 0;
+  ic->fetch_barrier_op_num = 0;
   op_count[ic->proc_id] = 1;
   unique_count_per_core[ic->proc_id] = 1;
 }
@@ -216,6 +217,7 @@ void reset_all_ops_icache_stage() {
   ic->back_on_path = FALSE;
   ic->fetch_barrier_pending = FALSE;
   ic->fetch_barrier_inst_uid = 0;
+  ic->fetch_barrier_op_num = 0;
 }
 
 /**************************************************************************************/
@@ -230,12 +232,13 @@ void recover_icache_stage() {
   DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s recovery_op_num:%llu\n",
         hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
 
-  flushed |= recover_ft_op_buffer(ic);
+  recover_ft_op_buffer(ic);
 
   cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {
     if (cur_data->ops[ii]) {
       if (IS_FLUSHING_OP(cur_data->ops[ii])) {
+        op_select_bp_pred_info(cur_data->ops[ii], BP_PRED_MAIN);
         DEBUG(ic->proc_id, "Recovery op found in %s slot:%u op_num:%llu off_path:%u addr:0x%llx\n", cur_data->name, ii,
               (unsigned long long)cur_data->ops[ii]->op_num, cur_data->ops[ii]->off_path,
               (unsigned long long)cur_data->ops[ii]->inst_info->addr);
@@ -254,20 +257,44 @@ void recover_icache_stage() {
     }
   }
 
+  /* Only assert when cur_data itself had flushes: in that case the youngest
+     survivor in cur_data IS the recovery op (IS_FLUSHING_OP). */
+  if (cur_data->op_count > 0 && flushed) {
+    Op* op = cur_data->ops[cur_data->op_count - 1];
+    assert_ft_after_recovery(ic->proc_id, op, bp_recovery_info->recovery_fetch_addr);
+  }
+
   ic->back_on_path = !bp_recovery_info->recovery_force_offpath;
-  ic->fetch_barrier_pending = FALSE;
-  ic->fetch_barrier_inst_uid = 0;
 
-  /* Without early icache-stage recovery, all ops in the FT op buffer and stage
-     data must have been flushed: the resteer is unconditional. */
-  ASSERT(ic->proc_id, !ft_op_buffer_count(ic));
-  ASSERT(ic->proc_id, !cur_data->op_count);
+  // Only clear the fetch barrier if the barrier op is off-path (op_num is
+  // newer than the recovery point and will be flushed). If the barrier op is
+  // on-path (op_num <= recovery_op_num) it will still retire from the ROB, so
+  // keep the barrier pending and let icache_resolve_fetch_barrier() handle it.
+  if (ic->fetch_barrier_pending && ic->fetch_barrier_op_num > bp_recovery_info->recovery_op_num) {
+    ic->fetch_barrier_pending = FALSE;
+    ic->fetch_barrier_inst_uid = 0;
+    ic->fetch_barrier_op_num = 0;
+  }
 
-  ic->icache_stage_resteer_signaled = TRUE;
-  op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
+  if (!ft_op_buffer_can_fetch_op(ic)) {
+    op_count[ic->proc_id] = bp_recovery_info->recovery_op_num + 1;
+    if (UOP_CACHE_ENABLE)
+      uop_cache_clear_lookup_buffer();
+  } else if (UOP_CACHE_ENABLE) {
+    // ft_op_buffer has surviving on-path ops after a partial flush (mixed-FT
+    // recovery: L0 early recovery followed by a main-predictor recovery).
+    // The UOP cache lookup buffer was loaded for the original pre-flush FT and
+    // now covers more ops than ft_op_buffer. Trim it to the surviving count so
+    // that uop_cache_serve_ops() sees end_of_ft exactly when ft_op_buffer is
+    // exhausted, preserving the invariant between the two buffers.
+    uop_cache_trim_lookup_buffer_to_n_ops(ft_op_buffer_count(ic));
+  }
 
-  if (UOP_CACHE_ENABLE)
-    uop_cache_clear_lookup_buffer();
+  // Do not signal resteer if a fetch barrier is still pending: the icache must
+  // remain STALLED until icache_resolve_fetch_barrier() is called at ROB
+  // retirement.  Setting the signal here would cause execute_coupled_FSM() to
+  // override the STALLED state and skip the barrier wait.
+  ic->icache_stage_resteer_signaled = !ft_op_buffer_can_fetch_op(ic) && !ic->fetch_barrier_pending;
 }
 
 /**************************************************************************************/
@@ -309,6 +336,7 @@ void icache_resolve_fetch_barrier(uns8 proc_id, uns64 inst_uid) {
 
   ic->fetch_barrier_pending = FALSE;
   ic->fetch_barrier_inst_uid = 0;
+  ic->fetch_barrier_op_num = 0;
 
   // Drop any stale FT pointers; the barrier op may have been the last op and
   // its FT freed at retirement, so force a resteer to pick up a fresh FT.
@@ -809,6 +837,10 @@ void execute_coupled_FSM() {
   ASSERT(ic->proc_id, break_fetch != BREAK_DONT);
   if (UOP_CACHE_ENABLE) {
     ASSERT(ic->proc_id, ic->sd.op_count * uc->sd.op_count == 0);
+    DEBUG(ic->proc_id,
+          "IC/UOC stage snapshot ic_head:%s ic_tail:%s ic_count:%d uopc_head:%s uopc_tail:%s uopc_count:%d\n",
+          sd_head_opnum_str(&ic->sd), sd_tail_opnum_str(&ic->sd), ic->sd.op_count, sd_head_opnum_str(&uc->sd),
+          sd_tail_opnum_str(&uc->sd), uc->sd.op_count);
   }
 
   Stage_Data* cur_data = get_current_stage_data();
@@ -905,6 +937,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       ASSERT(ic->proc_id, ii == cur_data->op_count - 1);
       ic->fetch_barrier_pending = TRUE;
       ic->fetch_barrier_inst_uid = op->inst_uid;
+      ic->fetch_barrier_op_num = op->op_num;
       DEBUG(ic->proc_id, "Fetch barrier encountered op_num:%s inst_uid:%llu\n", unsstr64(op->op_num),
             (uns64)op->inst_uid);
     }

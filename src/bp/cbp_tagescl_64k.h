@@ -527,6 +527,7 @@ class TAGE64K {
 
  public:
   TAGE64K(void);
+  ~TAGE64K();
   TAGE64K& operator=(const TAGE64K& other);  // Copy assignment
   TAGE64K(TAGE64K&&) = default;
   TAGE64K(const TAGE64K&) = default;

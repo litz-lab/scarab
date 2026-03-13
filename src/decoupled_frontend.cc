@@ -249,17 +249,10 @@ void Decoupled_FE::dfe_recover_op() {
         recovery_ft_op = op;
         op_select_bp_pred_info(op, BP_PRED_MAIN);
 
-        // Treat as last if all subsequent ops in the FT are off-path.
-        // When the off-path extension loop in redirect_to_off_path appends off-path
-        // ops after a not-taken mispredicted branch, the recovery op is still the
-        // last on-path op even though it is not ft->ops.back().
-        recovery_op_is_last = true;
-        for (uint64_t j = op_idx + 1; j < ft->ops.size(); j++) {
-          if (!ft->ops[j]->off_path) {
-            recovery_op_is_last = false;
-            break;
-          }
-        }
+        // FT layout is guaranteed to be an on-path prefix followed by an optional
+        // off-path suffix, so a recovery op is the last on-path op iff it is the
+        // literal last op or the FT ends with an off-path suffix.
+        recovery_op_is_last = (op_idx == ft->ops.size() - 1) || ft->ops.back()->off_path;
         if (recovery_op_is_last) {
           recovery_ft->trim_unread_tail([&](Op* op) {
             if (!FLUSH_OP(op))

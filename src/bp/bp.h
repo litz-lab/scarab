@@ -229,9 +229,8 @@ typedef struct Bp_Ibtb_struct {
   Ibtb_Id id;
   const char* name;
   void (*init_func)(Bp_Data*, Bp_Data*); /* called to initialize the indirect target predictor (shares primary) */
-  Addr (*pred_func)(Bp_Data*, Op*, Bp_Pred_Level); /* called to predict an indirect branch target */
-  void (*update_func)(Bp_Data*, Op*,
-                      Bp_Pred_Level); /* called to update the indirect branch target when a branch is resolved */
+  Addr (*pred_func)(Bp_Data*, Op*);      /* called to predict an indirect branch target */
+  void (*update_func)(Bp_Data*, Op*);    /* called to update the indirect branch target when a branch is resolved */
   void (*recover_func)(Bp_Data*, Recovery_Info*); /* called to recover the indirect branch target when
                                                    * a misprediction is realized */
 } Bp_Ibtb;

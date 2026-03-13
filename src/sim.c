@@ -556,7 +556,7 @@ void uop_sim() {
   memset(&op.bp_pred_l0, 0, sizeof(op.bp_pred_l0));
   memset(&op.bp_pred_main, 0, sizeof(op.bp_pred_main));
   memset(&op.btb_pred, 0, sizeof(op.btb_pred));
-  op.btb_pred_info = &op.btb_pred;
+  op.btb_pred_info = NULL;
 
   Flag uop_sim_done = FALSE;
 

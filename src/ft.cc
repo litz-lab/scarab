@@ -346,6 +346,7 @@ FT_PredictResult FT::predict_ft() {
           // wrong, so the L0 BTB did not produce the correct result.
           if (BTB_L1_PRESENT && op->btb_pred_info->btb_l1_hit && op->btb_pred_info->btb_l1_target == correct_target) {
             recovery_cycle = fetch_cycle + BTB_L1_LATENCY;
+            STAT_EVENT(proc_id, BTB_L1_HIT_SCHED_EARLY_RECOVERY);
           }
 
           bp_sched_recovery(bp_recovery_info, op, recovery_cycle);
@@ -365,6 +366,7 @@ FT_PredictResult FT::predict_ft() {
         if (BTB_MAIN_LATENCY > BP_MAIN_LATENCY && op->btb_pred_info->btb_main_hit) {
           const Counter fetch_cycle = op->bp_pred_main.bp_ready_cycle - BP_MAIN_LATENCY;
           op->bp_pred_main.bp_ready_cycle = fetch_cycle + BTB_MAIN_LATENCY;
+          STAT_EVENT(proc_id, BTB_MAIN_HIT_TIGHT_RECOVERY);
         }
         event = main_event;
       } else {

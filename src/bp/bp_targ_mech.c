@@ -341,6 +341,22 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
     }
   }
 
+  /* Per-BTB-level hit/miss stats */
+  if (op->table_info->cf_type != CF_ICO && op->table_info->cf_type != CF_RET &&
+      !(op->table_info->bar_type & BAR_FETCH)) {
+    if (BTB_L0_PRESENT) {
+      STAT_EVENT(op->proc_id, op->off_path ? (btb_pred_info->btb_l0_hit ? BTB_L0_HIT_OFF_PATH : BTB_L0_MISS_OFF_PATH)
+                                           : (btb_pred_info->btb_l0_hit ? BTB_L0_HIT : BTB_L0_MISS));
+    }
+    if (BTB_L1_PRESENT) {
+      STAT_EVENT(op->proc_id, op->off_path ? (btb_pred_info->btb_l1_hit ? BTB_L1_HIT_OFF_PATH : BTB_L1_MISS_OFF_PATH)
+                                           : (btb_pred_info->btb_l1_hit ? BTB_L1_HIT : BTB_L1_MISS));
+    }
+    STAT_EVENT(op->proc_id, op->off_path
+                                ? (btb_pred_info->btb_main_hit ? BTB_MAIN_HIT_OFF_PATH : BTB_MAIN_MISS_OFF_PATH)
+                                : (btb_pred_info->btb_main_hit ? BTB_MAIN_HIT : BTB_MAIN_MISS));
+  }
+
   /* PERFECT_CBR_BTB: use oracle target for conditional branches */
   if (PERFECT_CBR_BTB && (op->table_info->cf_type == CF_CBR || op->table_info->cf_type == CF_REP)) {
     btb_pred_info->btb_miss = FALSE;

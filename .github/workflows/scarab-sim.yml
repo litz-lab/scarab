@@ -229,7 +229,7 @@ jobs:
             echo "Workload path was not resolved"
             exit 1
           fi
-          v=$(grep "Cumulative:" \
+          v=$(grep "Periodic:" \
                "${sim_dir}/this_pr/${workload_path}/core.stat.0.out" | \
                sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
           if ! [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]]; then

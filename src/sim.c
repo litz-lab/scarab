@@ -57,6 +57,7 @@
 #include "prefetcher/eip.h"
 #include "prefetcher/fdip.h"
 
+#include "debug/cfg.h"
 #include "cmp_model.h"
 #include "dumb_model.h"
 #include "freq.h"
@@ -497,6 +498,8 @@ void init_global(char* argv[], char* envp[]) {
   stat_trace_init();
   if (SIM_MODEL != DUMB_MODEL)
     frontend_init();
+  if (DEBUG_CFG)
+    cfg_init();
   power_intf_init();
   init_thread(td, argv, envp);  // Remove later may be? This is here for
                                 // execution driven version
@@ -793,6 +796,9 @@ void full_sim() {
   }
 
   // fdip_print_hash_tables();
+
+  if (DEBUG_CFG)
+    cfg_dump(OUTPUT_DIR);
 
   trigger_free(sim_limit);
   trigger_free(clear_stats);

@@ -41,6 +41,8 @@
 #include "debug/debug_print.h"
 #include "debug/memview.h"
 
+#include "debug/cfg.h"
+
 #include "bp/bp.param.h"
 #include "core.param.h"
 #include "memory/memory.param.h"
@@ -631,6 +633,14 @@ void node_retire() {
 
     if (op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) {
       lsq_commit(op);
+    }
+
+    /* CFG collection: track BB starts and CF-instruction transitions */
+    if (DEBUG_CFG) {
+      if (op->bom)
+        cfg_track_inst(op);
+      if (op->eom && op->table_info->cf_type != NOT_CF)
+        cfg_retire_op(op);
     }
 
     if (model->op_retired_hook)

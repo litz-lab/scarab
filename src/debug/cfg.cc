@@ -58,6 +58,17 @@ struct CfgNode {
   Addr     end_pc;      /* PC of the CF instruction that ends the BB      */
   Cf_Type  cf_type;     /* control-flow type of the terminating CF        */
   uint64_t count;       /* number of times this BB was retired through    */
+
+  /* Per-uop pipeline stage cycle accumulators (summed over all uops in   *
+   * all executions of this BB).  Divide by uop_count for per-uop avg.   */
+  uint64_t uop_count;     /* total uops retired through this BB           */
+  uint64_t inst_count;    /* total instructions (eom ops) retired         */
+  uint64_t fetch_cycles;  /* sum of (decode_cycle  - fetch_cycle)         */
+  uint64_t decode_cycles; /* sum of (map_cycle     - decode_cycle)        */
+  uint64_t map_cycles;    /* sum of (issue_cycle   - map_cycle)           */
+  uint64_t issue_cycles;  /* sum of (sched_cycle   - issue_cycle)  RS wait*/
+  uint64_t exec_cycles;   /* sum of (done_cycle    - sched_cycle)         */
+  uint64_t rob_cycles;    /* sum of (retire_cycle  - done_cycle)   ROB wait*/
 };
 
 struct CfgEdge {
@@ -116,6 +127,31 @@ void cfg_track_inst(Op* op) {
   uns proc_id = op->proc_id;
   if (current_bb_start[proc_id] == 0)
     current_bb_start[proc_id] = op->inst_info->addr;
+}
+
+void cfg_accum_uop(Op* op) {
+  uns proc_id = op->proc_id;
+  if (current_bb_start[proc_id] == 0) return;
+
+  auto& node = cfg_nodes[proc_id][current_bb_start[proc_id]];
+
+  node.uop_count++;
+  if (op->eom) node.inst_count++;
+
+/* Helper: accumulate a stage delta only when both stamps are valid and  *
+ * the end stamp is >= the start stamp (guards against unset fields).    */
+#define ACCUM_STAGE(field, start, end)            \
+  if ((end) > 0 && (end) >= (start))              \
+    node.field += (end) - (start);
+
+  ACCUM_STAGE(fetch_cycles,  op->fetch_cycle,  op->decode_cycle)
+  ACCUM_STAGE(decode_cycles, op->decode_cycle, op->map_cycle)
+  ACCUM_STAGE(map_cycles,    op->map_cycle,    op->issue_cycle)
+  ACCUM_STAGE(issue_cycles,  op->issue_cycle,  op->sched_cycle)
+  ACCUM_STAGE(exec_cycles,   op->sched_cycle,  op->done_cycle)
+  ACCUM_STAGE(rob_cycles,    op->done_cycle,   op->retire_cycle)
+
+#undef ACCUM_STAGE
 }
 
 void cfg_retire_op(Op* op) {
@@ -190,11 +226,27 @@ void cfg_dump(const char* output_dir) {
               "    {\"start_pc\": \"0x%" PRIx64 "\","
               " \"end_pc\": \"0x%" PRIx64 "\","
               " \"cf_type\": \"%s\","
-              " \"count\": %" PRIu64 "}",
+              " \"count\": %" PRIu64 ","
+              " \"uop_count\": %" PRIu64 ","
+              " \"inst_count\": %" PRIu64 ","
+              " \"fetch_cycles\": %" PRIu64 ","
+              " \"decode_cycles\": %" PRIu64 ","
+              " \"map_cycles\": %" PRIu64 ","
+              " \"issue_cycles\": %" PRIu64 ","
+              " \"exec_cycles\": %" PRIu64 ","
+              " \"rob_cycles\": %" PRIu64 "}",
               (uint64_t)n.start_pc,
               (uint64_t)n.end_pc,
               cf_type_name(n.cf_type),
-              n.count);
+              n.count,
+              n.uop_count,
+              n.inst_count,
+              n.fetch_cycles,
+              n.decode_cycles,
+              n.map_cycles,
+              n.issue_cycles,
+              n.exec_cycles,
+              n.rob_cycles);
       first_node = false;
     }
     fprintf(f, "\n  ],\n");

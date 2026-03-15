@@ -635,10 +635,11 @@ void node_retire() {
       lsq_commit(op);
     }
 
-    /* CFG collection: track BB starts and CF-instruction transitions */
+    /* CFG collection: track BB starts, accumulate stage latencies, record transitions */
     if (DEBUG_CFG) {
       if (op->bom)
         cfg_track_inst(op);
+      cfg_accum_uop(op);
       if (op->eom && op->table_info->cf_type != NOT_CF)
         cfg_retire_op(op);
     }

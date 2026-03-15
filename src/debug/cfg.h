@@ -52,6 +52,13 @@ void cfg_init(void);
 void cfg_track_inst(struct Op_struct* op);
 
 /*
+ * Accumulate per-pipeline-stage cycle latency for one uop into the current
+ * BB's node (call for every retired op, before cfg_retire_op).
+ * Tracks: fetch, decode, map, RS-wait, execution, and ROB-wait cycles.
+ */
+void cfg_accum_uop(struct Op_struct* op);
+
+/*
  * Record a basic-block transition (call for every op with eom==TRUE and
  * table_info->cf_type != NOT_CF).  Updates the node for the current BB
  * (start_pc → end_pc) and the edge to the next BB (oracle_info.npc).

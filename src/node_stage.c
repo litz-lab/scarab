@@ -36,12 +36,11 @@
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 
+#include "debug/cfg.h"
 #include "debug/debug.param.h"
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
 #include "debug/memview.h"
-
-#include "debug/cfg.h"
 
 #include "bp/bp.param.h"
 #include "core.param.h"

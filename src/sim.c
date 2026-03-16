@@ -39,6 +39,7 @@
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 
+#include "debug/cfg.h"
 #include "debug/debug.param.h"
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
@@ -57,7 +58,6 @@
 #include "prefetcher/eip.h"
 #include "prefetcher/fdip.h"
 
-#include "debug/cfg.h"
 #include "cmp_model.h"
 #include "dumb_model.h"
 #include "freq.h"

@@ -61,11 +61,10 @@ extern "C" {
 
 static char* trace_files[MAX_NUM_PROCS];
 TraceReader* trace_readers[MAX_NUM_PROCS];
-// TODO: Make per proc?
 uint64_t ins_id = 0;
 uint64_t ins_id_fetched = 0;
-uint64_t prior_tid = 0;
-uint64_t prior_pid = 0;
+uint64_t prior_tid[MAX_NUM_PROCS] = {0};
+uint64_t prior_pid[MAX_NUM_PROCS] = {0};
 
 extern scatter_info_map scatter_info_storage;
 
@@ -177,13 +176,13 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   do {
     insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
 
-    if (prior_pid == 0) {
-      ASSERT(proc_id, prior_tid == 0);
+    if (prior_pid[proc_id] == 0) {
+      ASSERT(proc_id, prior_tid[proc_id] == 0);
       ASSERT(proc_id, insi->valid);
-      prior_pid = insi->pid;
-      prior_tid = insi->tid;
-      ASSERT(proc_id, prior_tid);
-      ASSERT(proc_id, prior_pid);
+      prior_pid[proc_id] = insi->pid;
+      prior_tid[proc_id] = insi->tid;
+      ASSERT(proc_id, prior_tid[proc_id]);
+      ASSERT(proc_id, prior_pid[proc_id]);
     }
     if (insi->valid) {
       ins_id++;
@@ -194,7 +193,7 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
       std::cout << "Reached end of trace" << std::endl;
       return 0;  // end of trace
     }
-  } while (insi->pid != prior_pid || insi->tid != prior_tid);
+  } while (insi->pid != prior_pid[proc_id] || insi->tid != prior_tid[proc_id]);
 
   if (insi->is_dr_ins) {
     memcpy(next_onpath_pi, insi->info, sizeof(ctype_pin_inst));

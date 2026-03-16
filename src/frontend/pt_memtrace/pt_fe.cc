@@ -67,8 +67,8 @@ extern "C" {
 char* pt_trace_files[MAX_NUM_PROCS];
 TraceReaderPT* pt_trace_readers[MAX_NUM_PROCS];
 uint64_t pt_ins_id = 0;
-uint64_t pt_prior_tid = 0;
-uint64_t pt_prior_pid = 0;
+uint64_t pt_prior_tid[MAX_NUM_PROCS] = {0};
+uint64_t pt_prior_pid[MAX_NUM_PROCS] = {0};
 
 std::mt19937 gen(0);
 // Generate random addresses near the mean (1GB)
@@ -146,7 +146,7 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
     pt_ins_id++;
     if (!insi->valid)
       return 0;  // end of trace
-  } while (insi->pid != pt_prior_pid || insi->tid != pt_prior_tid);
+  } while (insi->pid != pt_prior_pid[proc_id] || insi->tid != pt_prior_tid[proc_id]);
 
   init_ctype_pin_inst(pt_next_pi);
   pt_fill_in_dynamic_info(pt_next_pi, insi);
@@ -179,6 +179,8 @@ void pt_init(void) {
   uop_generator_init(NUM_CORES);
   init_x86_decoder(nullptr);
   init_x87_stack_delta();
+  memset(pt_prior_tid, 0, sizeof(pt_prior_tid));
+  memset(pt_prior_pid, 0, sizeof(pt_prior_pid));
 
   // pt_next_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));
   for (int i = 0; i < MAX_NUM_PROCS; ++i) {
@@ -236,8 +238,8 @@ void pt_setup(uns proc_id) {
     std::cout << "Exit fast forward " << pt_ins_id << std::endl;
   }
 
-  pt_prior_pid = insi->pid;
-  pt_prior_tid = insi->tid;
-  assert(pt_prior_tid);
-  assert(pt_prior_pid);
+  pt_prior_pid[proc_id] = insi->pid;
+  pt_prior_tid[proc_id] = insi->tid;
+  assert(pt_prior_tid[proc_id]);
+  assert(pt_prior_pid[proc_id]);
 }

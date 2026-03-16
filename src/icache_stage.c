@@ -540,7 +540,7 @@ FT_Arbitration_Result ft_arbitration() {
       }
       icache_miss_events();
 
-      ft_op_buffer_fill_from_ft(ic, ft);
+      ft_op_buffer_fill_from_ft(ic, ft); /* fetch_cycle stamped before miss stall */
 
       return FT_MISS_BOTH;
     }
@@ -930,7 +930,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     STAT_EVENT(op->proc_id, ORACLE_ON_PATH_INST + op->off_path);
     STAT_EVENT(op->proc_id, ORACLE_ON_PATH_INST_MEM + (op->table_info->mem_type == NOT_MEM) + 2 * op->off_path);
 
-    op->fetch_cycle = cycle_count;
+    ASSERT(ic->proc_id, op->fetch_cycle != MAX_CTR);
 
     if (is_fetch_barrier_op(op)) {
       ASSERT(ic->proc_id, !ic->fetch_barrier_pending);

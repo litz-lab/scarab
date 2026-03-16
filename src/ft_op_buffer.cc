@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "globals/assert.h"
+#include "globals/global_vars.h"
 #include "globals/utils.h"
 
 #include "debug/debug.param.h"
@@ -44,7 +45,9 @@ void ft_op_buffer_fill_from_ft(Icache_Stage* ic, FT* ft) {
   buf->ops.clear();
   buf->head = 0;
   while (ft_can_fetch_op(ft)) {
-    buf->ops.emplace_back(ft_fetch_op(ft));
+    Op* op = ft_fetch_op(ft);
+    op->fetch_cycle = cycle_count;
+    buf->ops.emplace_back(op);
   }
 }
 

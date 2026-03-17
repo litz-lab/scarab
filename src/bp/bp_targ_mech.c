@@ -425,6 +425,8 @@ Addr* bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
       bpi->btb_l1_hit = TRUE;
       bpi->btb_l1_target = op->oracle_info.target;
     }
+    // btb_main_hit is set by bp_predict_btb() based on the non-NULL return
+    // value below, so no need to set it here explicitly.
     return &op->oracle_info.target;
   }
 

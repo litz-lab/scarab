@@ -28,6 +28,8 @@
 
 #include "bp/bp_targ_mech.h"
 
+#include <string.h>
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
@@ -275,16 +277,8 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, !op->btb_pred_info);
   Btb_Pred_Info* btb_pred_info = &op->btb_pred;
 
-  btb_pred_info->btb_miss_resolved = FALSE;
-  btb_pred_info->btb_miss = FALSE;
+  memset(btb_pred_info, 0, sizeof(*btb_pred_info));
   btb_pred_info->no_target = TRUE;
-  btb_pred_info->ibp_miss = FALSE;
-  btb_pred_info->pred_target = 0;
-  btb_pred_info->btb_main_hit = FALSE;
-  btb_pred_info->btb_main_target = 0;
-  btb_pred_info->ibp_pred_targ_hist = 0;
-  btb_pred_info->ibp_pred_global_hist = 0;
-  btb_pred_info->ibp_pred_tc_selector_entry = 0;
 
   if (!op->table_info->cf_type)
     return;

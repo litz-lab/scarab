@@ -305,6 +305,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
   op->recovery_info.branchTarget = op->oracle_info.target;
   op->recovery_info.predict_cycle = cycle_count;
 
+
   pred_bp->timestamp_func(op);
   bp_pred_info->pred_branch_id = op->recovery_info.branch_id;
   bp_pred_info->bp_ready_cycle = cycle_count + (pred_level == BP_PRED_L0 ? BP_L0_LATENCY : BP_MAIN_LATENCY);

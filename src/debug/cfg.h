@@ -52,9 +52,8 @@ void cfg_init(void);
 void cfg_track_inst(struct Op_struct* op);
 
 /*
- * Accumulate per-pipeline-stage cycle latency for one uop into the current
- * BB's node (call for every retired op, before cfg_retire_op).
- * Tracks: fetch, decode, map, RS-wait, execution, and ROB-wait cycles.
+ * Count uops and instructions for the current BB (call for every retired op,
+ * before cfg_retire_op).
  */
 void cfg_accum_uop(struct Op_struct* op);
 
@@ -62,8 +61,23 @@ void cfg_accum_uop(struct Op_struct* op);
  * Record a basic-block transition (call for every op with eom==TRUE and
  * table_info->cf_type != NOT_CF).  Updates the node for the current BB
  * (start_pc → end_pc) and the edge to the next BB (oracle_info.npc).
+ * Accumulates the inter-BBL retire-cycle delta for the node.
  */
 void cfg_retire_op(struct Op_struct* op);
+
+/*
+ * Record a BBL prediction event (call for the first op of a predicted BBL,
+ * at prediction time, using op->pred_cycle).  Accumulates the inter-BBL
+ * predict-cycle delta for the node.
+ */
+void cfg_predict_BBL(struct Op_struct* op);
+
+/*
+ * Record a BBL fetch event (call for the first op of a fetched BBL, using
+ * op->fetch_cycle).  Accumulates the inter-BBL fetch-cycle delta for the
+ * node.
+ */
+void cfg_fetch_BBL(struct Op_struct* op);
 
 /*
  * Write cfg_data.json into output_dir.  Call once at the end of simulation

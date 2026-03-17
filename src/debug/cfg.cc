@@ -42,6 +42,7 @@
 #include <string.h>
 #include <unordered_map>
 
+#include "globals/assert.h"
 #include "globals/global_defs.h" /* MAX_NUM_PROCS, Addr, uns, ... */
 #include "globals/global_types.h"
 #include "globals/utils.h" /* MAX_STR_LENGTH */
@@ -59,16 +60,17 @@ struct CfgNode {
   Cf_Type cf_type; /* control-flow type of the terminating CF        */
   uint64_t count;  /* number of times this BB was retired through    */
 
-  /* Per-uop pipeline stage cycle accumulators (summed over all uops in   *
-   * all executions of this BB).  Divide by uop_count for per-uop avg.   */
-  uint64_t uop_count;     /* total uops retired through this BB           */
-  uint64_t inst_count;    /* total instructions (eom ops) retired         */
-  uint64_t fetch_cycles;  /* sum of (decode_cycle  - fetch_cycle)         */
-  uint64_t decode_cycles; /* sum of (map_cycle     - decode_cycle)        */
-  uint64_t map_cycles;    /* sum of (issue_cycle   - map_cycle)           */
-  uint64_t issue_cycles;  /* sum of (sched_cycle   - issue_cycle)  RS wait*/
-  uint64_t exec_cycles;   /* sum of (done_cycle    - sched_cycle)         */
-  uint64_t rob_cycles;    /* sum of (retire_cycle  - done_cycle)   ROB wait*/
+  uint64_t uop_count;  /* total uops retired through this BB             */
+  uint64_t inst_count; /* total instructions (eom ops) retired           */
+
+  /* BBL-level cycle-delta accumulators.  Each records the sum of          *
+   * (cycle[n] - cycle[n-1]) across consecutive BBL occurrences.           *
+   * Divide by count/predict_count/fetch_count for the average interval.   */
+  uint64_t retire_delta_sum;  /* sum of retire_cycle deltas between BBLs  */
+  uint64_t predict_count;     /* times this BB was predicted              */
+  uint64_t predict_delta_sum; /* sum of predict_cycle deltas between BBLs */
+  uint64_t fetch_count;       /* times this BB was fetched                */
+  uint64_t fetch_delta_sum;   /* sum of fetch_cycle deltas between BBLs   */
 };
 
 struct CfgEdge {
@@ -80,6 +82,10 @@ struct CfgEdge {
 
 /* Per-proc state */
 static Addr current_bb_start[MAX_NUM_PROCS];
+static bool bb_in_flight[MAX_NUM_PROCS]; /* true while a BBL is open  */
+static Counter last_retire_cycle[MAX_NUM_PROCS];
+static Counter last_predict_cycle[MAX_NUM_PROCS];
+static Counter last_fetch_cycle[MAX_NUM_PROCS];
 static uint64_t total_retired_cf[MAX_NUM_PROCS];
 
 static std::unordered_map<Addr, CfgNode> cfg_nodes[MAX_NUM_PROCS];
@@ -128,6 +134,10 @@ static const char* cf_type_name(Cf_Type t) {
 void cfg_init(void) {
   for (uns p = 0; p < MAX_NUM_PROCS; p++) {
     current_bb_start[p] = 0;
+    bb_in_flight[p] = false;
+    last_retire_cycle[p] = 0;
+    last_predict_cycle[p] = 0;
+    last_fetch_cycle[p] = 0;
     total_retired_cf[p] = 0;
     cfg_nodes[p].clear();
     cfg_edges[p].clear();
@@ -136,8 +146,16 @@ void cfg_init(void) {
 
 void cfg_track_inst(Op* op) {
   uns proc_id = op->proc_id;
+  Addr pc = op->inst_info->addr;
+
   if (current_bb_start[proc_id] == 0)
-    current_bb_start[proc_id] = op->inst_info->addr;
+    current_bb_start[proc_id] = pc;
+
+  /* Opening a new BBL: assert we finished the previous one first. */
+  if (pc == current_bb_start[proc_id]) {
+    ASSERT(proc_id, !bb_in_flight[proc_id]);
+    bb_in_flight[proc_id] = true;
+  }
 }
 
 void cfg_accum_uop(Op* op) {
@@ -146,29 +164,16 @@ void cfg_accum_uop(Op* op) {
     return;
 
   auto& node = cfg_nodes[proc_id][current_bb_start[proc_id]];
-
   node.uop_count++;
   if (op->eom)
     node.inst_count++;
-
-/* Helper: accumulate a stage delta only when both stamps are valid and  *
- * the end stamp is >= the start stamp (guards against unset fields).    */
-#define ACCUM_STAGE(field, start, end) \
-  if ((end) > 0 && (end) >= (start))   \
-    node.field += (end) - (start);
-
-  ACCUM_STAGE(fetch_cycles, op->fetch_cycle, op->decode_cycle)
-  ACCUM_STAGE(decode_cycles, op->decode_cycle, op->map_cycle)
-  ACCUM_STAGE(map_cycles, op->map_cycle, op->issue_cycle)
-  ACCUM_STAGE(issue_cycles, op->issue_cycle, op->sched_cycle)
-  ACCUM_STAGE(exec_cycles, op->sched_cycle, op->done_cycle)
-  ACCUM_STAGE(rob_cycles, op->done_cycle, op->retire_cycle)
-
-#undef ACCUM_STAGE
 }
 
 void cfg_retire_op(Op* op) {
   uns proc_id = op->proc_id;
+  ASSERT(proc_id, bb_in_flight[proc_id]);
+  bb_in_flight[proc_id] = false;
+
   Addr bb_start = current_bb_start[proc_id];
   Addr bb_end = op->inst_info->addr;  /* PC of the CF instr      */
   Addr next_pc = op->oracle_info.npc; /* true architectural NPC  */
@@ -182,6 +187,13 @@ void cfg_retire_op(Op* op) {
   }
   node.end_pc = bb_end; /* update in case warmup shifted the first entry */
   node.count++;
+
+  /* BBL-level retire-cycle delta: gap between this BBL retiring and the  *
+   * previous one.  Skip the very first BBL (no prior reference point).   */
+  Counter retire_cycle = op->retire_cycle;
+  if (last_retire_cycle[proc_id] > 0)
+    node.retire_delta_sum += (uint64_t)(retire_cycle - last_retire_cycle[proc_id]);
+  last_retire_cycle[proc_id] = retire_cycle;
 
   /* --- update / insert edge ------------------------------------------- */
   uint64_t ek = edge_key(bb_start, next_pc);
@@ -197,6 +209,30 @@ void cfg_retire_op(Op* op) {
 
   /* next BB starts where execution actually continues */
   current_bb_start[proc_id] = next_pc;
+}
+
+void cfg_predict_BBL(Op* op) {
+  uns proc_id = op->proc_id;
+  Addr bb_start = op->inst_info->addr;
+  Counter cycle = (Counter)op->pred_cycle;
+
+  auto& node = cfg_nodes[proc_id][bb_start];
+  node.predict_count++;
+  if (last_predict_cycle[proc_id] > 0)
+    node.predict_delta_sum += (uint64_t)(cycle - last_predict_cycle[proc_id]);
+  last_predict_cycle[proc_id] = cycle;
+}
+
+void cfg_fetch_BBL(Op* op) {
+  uns proc_id = op->proc_id;
+  Addr bb_start = op->inst_info->addr;
+  Counter cycle = op->fetch_cycle;
+
+  auto& node = cfg_nodes[proc_id][bb_start];
+  node.fetch_count++;
+  if (last_fetch_cycle[proc_id] > 0)
+    node.fetch_delta_sum += (uint64_t)(cycle - last_fetch_cycle[proc_id]);
+  last_fetch_cycle[proc_id] = cycle;
 }
 
 void cfg_dump(const char* output_dir) {
@@ -247,19 +283,17 @@ void cfg_dump(const char* output_dir) {
               ","
               " \"inst_count\": %" PRIu64
               ","
-              " \"fetch_cycles\": %" PRIu64
+              " \"retire_delta_sum\": %" PRIu64
               ","
-              " \"decode_cycles\": %" PRIu64
+              " \"predict_count\": %" PRIu64
               ","
-              " \"map_cycles\": %" PRIu64
+              " \"predict_delta_sum\": %" PRIu64
               ","
-              " \"issue_cycles\": %" PRIu64
+              " \"fetch_count\": %" PRIu64
               ","
-              " \"exec_cycles\": %" PRIu64
-              ","
-              " \"rob_cycles\": %" PRIu64 "}",
+              " \"fetch_delta_sum\": %" PRIu64 "}",
               (uint64_t)n.start_pc, (uint64_t)n.end_pc, cf_type_name(n.cf_type), n.count, n.uop_count, n.inst_count,
-              n.fetch_cycles, n.decode_cycles, n.map_cycles, n.issue_cycles, n.exec_cycles, n.rob_cycles);
+              n.retire_delta_sum, n.predict_count, n.predict_delta_sum, n.fetch_count, n.fetch_delta_sum);
       first_node = false;
     }
     fprintf(f, "\n  ],\n");

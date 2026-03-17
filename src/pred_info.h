@@ -54,11 +54,9 @@ typedef struct Bp_Pred_Info_struct {
   uns8* pred_ppht_entry;        // entry used for interference free pred
   uns8* pred_spht_entry;        // entry used for interference free pred
   uns32 pred_local_hist;        // local history used to predict the branch
-  uns32 pred_global_hist;       // global history used to predict the branch
-  uns32 pred_targ_hist;         // global history used to predict the indirect branch
+  uns32 pred_global_hist;       // global history used to predict the branch (CBR/REP direction)
   uns8 hybridgp_gpred;          // hybridgp's global prediction
   uns8 hybridgp_ppred;          // hybridgp's pred-address prediction
-  uns8 pred_tc_selector_entry;  // which ibtb predicted this op?
 
   Flag pred_conf;
   Addr pred_conf_index;
@@ -79,6 +77,13 @@ typedef struct Btb_Pred_Info_struct {
   // these fields instead of querying the BTB cache directly.
   Flag btb_main_hit;     // TRUE if the main BTB holds an entry for this branch
   Addr btb_main_target;  // branch target stored in the BTB (valid when btb_main_hit)
+
+  // IBP-specific history saved during bp_predict_btb() for use in the
+  // corresponding update call.  Kept here (not Bp_Pred_Info) so that they are
+  // available before bp_predict_op() populates bp_pred_l0/bp_pred_main.
+  uns32 ibp_pred_targ_hist;         // target history used by tc_tagged / tc_tagless IBP
+  uns32 ibp_pred_global_hist;       // global history used by tc_hybrid IBP
+  uns8 ibp_pred_tc_selector_entry;  // selector entry saved by tc_hybrid IBP
 } Btb_Pred_Info;
 
 // Prediction levels for the two-level (L0 + main) branch predictor hierarchy.

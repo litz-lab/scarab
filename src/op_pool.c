@@ -177,7 +177,7 @@ void op_pool_init_op(Op* op) {
   memset(&op->bp_pred_l0, 0, sizeof(op->bp_pred_l0));
   memset(&op->bp_pred_main, 0, sizeof(op->bp_pred_main));
   memset(&op->btb_pred, 0, sizeof(op->btb_pred));
-  op->btb_pred_info = &op->btb_pred;
+  op->btb_pred_info = NULL;
 }
 
 /**************************************************************************************/
@@ -220,7 +220,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   memset(&op->bp_pred_l0, 0, sizeof(op->bp_pred_l0));
   memset(&op->bp_pred_main, 0, sizeof(op->bp_pred_main));
   memset(&op->btb_pred, 0, sizeof(op->btb_pred));
-  op->btb_pred_info = &op->btb_pred;
+  op->btb_pred_info = NULL;
 
   op->oracle_cp_num = -1;
 

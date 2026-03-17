@@ -257,7 +257,7 @@ struct Op_struct {
 
 static inline void op_select_bp_pred_info(Op* op, Bp_Pred_Level level) {
   op->bp_pred_info = (level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
-  op->btb_pred_info = &op->btb_pred;
+  // btb_pred_info is set exclusively by bp_predict_btb(); do not touch it here.
 }
 
 /**************************************************************************************/

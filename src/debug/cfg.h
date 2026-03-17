@@ -68,19 +68,11 @@ void cfg_retire_op(struct Op_struct* op);
 /*
  * Record a BBL prediction event (call for the CF op that terminates the BBL,
  * using op->pred_cycle and the explicit bb_start of its enclosing BBL).
- * The inter-BBL predict delta captures BTB-miss and misprediction-recovery
- * overhead between consecutive BBL predictions.
+ * Accumulates redirect_cycle_sum: the BTB-miss / misprediction-recovery delay
+ * that BBL bb_start paid before it could be predicted (caused by the
+ * predecessor's CF instruction).
  */
 void cfg_predict_BBL(struct Op_struct* op, Addr bb_start);
-
-/*
- * Record a BBL fetch event (call for the first op of a fetched BBL, using
- * op->fetch_cycle).  The inter-BBL fetch delta captures the icache miss stall
- * of the *preceding* BBL plus normal fetch throughput (off-by-one-BBL
- * attribution); complementary to fetch_latency_sum in cfg_track_inst which
- * attributes the stall to the BBL that caused it.
- */
-void cfg_fetch_BBL(struct Op_struct* op);
 
 /*
  * Write cfg_data.json into output_dir.  Call once at the end of simulation

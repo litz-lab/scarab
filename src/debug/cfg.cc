@@ -63,22 +63,24 @@ struct CfgNode {
   uint64_t uop_count;  /* total uops retired through this BB             */
   uint64_t inst_count; /* total instructions (eom ops) retired           */
 
-  /* BBL-level cycle-delta accumulators.  Each records the sum of          *
-   * (cycle[n] - cycle[n-1]) across consecutive BBL occurrences.           *
-   * Divide by count/predict_count/fetch_count for the average interval.   */
-  uint64_t retire_delta_sum;  /* sum of retire_cycle deltas between BBLs  */
-  uint64_t predict_count;     /* times this BB was predicted              */
-  uint64_t predict_delta_sum; /* sum of pred_cycle deltas between BBLs    */
-  uint64_t fetch_count;       /* times this BB was fetched                */
-  uint64_t fetch_delta_sum;   /* sum of fetch_cycle deltas between BBLs;  *
-                               * each delta captures the icache stall of  *
-                               * the preceding BBL (off-by-one BBL)       */
+  /* Per-BBL pipeline cost accumulators — all attributed to BBL n itself.  *
+   * Divide each sum by count (or pred_count) for the per-execution avg.   */
 
-  /* fetch_latency_sum: sum of (decode_cycle - fetch_cycle) for the first     *
-   * instruction of each BBL execution.  Since fetch_cycle is stamped at      *
-   * fetch-request time (before icache stall), this directly measures icache  *
-   * miss latency for this BBL.  Divide by count for the per-exec avg.        */
-  uint64_t fetch_latency_sum;
+  /* exec_cycle_sum: sum of (retire_cycle[n] - retire_cycle[n-1]).         *
+   * Measures BBL n's own execution/retirement cost.                       */
+  uint64_t exec_cycle_sum;
+
+  /* pred_count / redirect_cycle_sum: sum of (pred_cycle[n] - pred_cycle[n-1]). *
+   * Measures the prediction-recovery delay BBL n paid because of its      *
+   * predecessor's BTB miss or misprediction.                              */
+  uint64_t pred_count;
+  uint64_t redirect_cycle_sum;
+
+  /* icache_cycle_sum: sum of (decode_cycle - fetch_cycle) for the first   *
+   * instruction of each BBL execution.  fetch_cycle is stamped before the *
+   * icache stall; decode_cycle after — so this directly measures BBL n's  *
+   * own icache miss latency.  Divide by count for the per-exec avg.       */
+  uint64_t icache_cycle_sum;
 };
 
 struct CfgEdge {
@@ -92,8 +94,7 @@ struct CfgEdge {
 static Addr current_bb_start[MAX_NUM_PROCS];
 static bool bb_in_flight[MAX_NUM_PROCS]; /* true while a BBL is open  */
 static Counter last_retire_cycle[MAX_NUM_PROCS];
-static Counter last_predict_cycle[MAX_NUM_PROCS];
-static Counter last_fetch_cycle[MAX_NUM_PROCS];
+static Counter last_redirect_cycle[MAX_NUM_PROCS];
 static uint64_t total_retired_cf[MAX_NUM_PROCS];
 
 static std::unordered_map<Addr, CfgNode> cfg_nodes[MAX_NUM_PROCS];
@@ -144,8 +145,7 @@ void cfg_init(void) {
     current_bb_start[p] = 0;
     bb_in_flight[p] = false;
     last_retire_cycle[p] = 0;
-    last_predict_cycle[p] = 0;
-    last_fetch_cycle[p] = 0;
+    last_redirect_cycle[p] = 0;
     total_retired_cf[p] = 0;
     cfg_nodes[p].clear();
     cfg_edges[p].clear();
@@ -168,7 +168,7 @@ void cfg_track_inst(Op* op) {
      * instruction of the BBL.  fetch_cycle is pre-miss, decode_cycle is      *
      * post-miss, so the delta captures any icache stall.                     */
     if (op->decode_cycle >= op->fetch_cycle)
-      cfg_nodes[proc_id][pc].fetch_latency_sum += (uint64_t)(op->decode_cycle - op->fetch_cycle);
+      cfg_nodes[proc_id][pc].icache_cycle_sum += (uint64_t)(op->decode_cycle - op->fetch_cycle);
   }
 }
 
@@ -206,7 +206,7 @@ void cfg_retire_op(Op* op) {
    * previous one.  Skip the very first BBL (no prior reference point).   */
   Counter retire_cycle = op->retire_cycle;
   if (last_retire_cycle[proc_id] > 0)
-    node.retire_delta_sum += (uint64_t)(retire_cycle - last_retire_cycle[proc_id]);
+    node.exec_cycle_sum += (uint64_t)(retire_cycle - last_retire_cycle[proc_id]);
   last_retire_cycle[proc_id] = retire_cycle;
 
   /* --- update / insert edge ------------------------------------------- */
@@ -230,22 +230,10 @@ void cfg_predict_BBL(Op* op, Addr bb_start) {
   Counter cycle = (Counter)op->pred_cycle;
 
   auto& node = cfg_nodes[proc_id][bb_start];
-  node.predict_count++;
-  if (last_predict_cycle[proc_id] > 0)
-    node.predict_delta_sum += (uint64_t)(cycle - last_predict_cycle[proc_id]);
-  last_predict_cycle[proc_id] = cycle;
-}
-
-void cfg_fetch_BBL(Op* op) {
-  uns proc_id = op->proc_id;
-  Addr bb_start = op->inst_info->addr;
-  Counter cycle = op->fetch_cycle;
-
-  auto& node = cfg_nodes[proc_id][bb_start];
-  node.fetch_count++;
-  if (last_fetch_cycle[proc_id] > 0)
-    node.fetch_delta_sum += (uint64_t)(cycle - last_fetch_cycle[proc_id]);
-  last_fetch_cycle[proc_id] = cycle;
+  node.pred_count++;
+  if (last_redirect_cycle[proc_id] > 0)
+    node.redirect_cycle_sum += (uint64_t)(cycle - last_redirect_cycle[proc_id]);
+  last_redirect_cycle[proc_id] = cycle;
 }
 
 void cfg_dump(const char* output_dir) {
@@ -296,20 +284,15 @@ void cfg_dump(const char* output_dir) {
               ","
               " \"inst_count\": %" PRIu64
               ","
-              " \"retire_delta_sum\": %" PRIu64
+              " \"exec_cycle_sum\": %" PRIu64
               ","
-              " \"predict_count\": %" PRIu64
+              " \"pred_count\": %" PRIu64
               ","
-              " \"predict_delta_sum\": %" PRIu64
+              " \"redirect_cycle_sum\": %" PRIu64
               ","
-              " \"fetch_count\": %" PRIu64
-              ","
-              " \"fetch_delta_sum\": %" PRIu64
-              ","
-              " \"fetch_latency_sum\": %" PRIu64 "}",
+              " \"icache_cycle_sum\": %" PRIu64 "}",
               (uint64_t)n.start_pc, (uint64_t)n.end_pc, cf_type_name(n.cf_type), n.count, n.uop_count, n.inst_count,
-              n.retire_delta_sum, n.predict_count, n.predict_delta_sum, n.fetch_count, n.fetch_delta_sum,
-              n.fetch_latency_sum);
+              n.exec_cycle_sum, n.pred_count, n.redirect_cycle_sum, n.icache_cycle_sum);
       first_node = false;
     }
     fprintf(f, "\n  ],\n");

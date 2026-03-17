@@ -33,6 +33,9 @@
 #include "globals/assert.h"
 #include "globals/utils.h"
 
+#include "debug/cfg.h"
+#include "debug/debug.param.h"
+
 #include "bp/bp.param.h"
 #include "memory/memory.param.h"
 
@@ -276,6 +279,8 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
   if (op->table_info->cf_type) {
     ASSERT(proc_id, op->eom);
     bp_predict_op(g_bp_data, op, op->parent_FT->bp_id, 1, op->inst_info->addr, pred_level);
+    if (DEBUG_CFG && !op->off_path)
+      cfg_predict_BBL(op, op->parent_FT->ft_info.static_info.start);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
     DEBUG(proc_id,

@@ -6,6 +6,7 @@
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 
+#include "debug/cfg.h"
 #include "debug/debug.param.h"
 #include "debug/debug_macros.h"
 
@@ -47,6 +48,8 @@ void ft_op_buffer_fill_from_ft(Icache_Stage* ic, FT* ft) {
   while (ft_can_fetch_op(ft)) {
     Op* op = ft_fetch_op(ft);
     op->fetch_cycle = cycle_count;
+    if (DEBUG_CFG && op->bom && !op->off_path)
+      cfg_fetch_BBL(op);
     buf->ops.emplace_back(op);
   }
 }

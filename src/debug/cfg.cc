@@ -68,9 +68,17 @@ struct CfgNode {
    * Divide by count/predict_count/fetch_count for the average interval.   */
   uint64_t retire_delta_sum;  /* sum of retire_cycle deltas between BBLs  */
   uint64_t predict_count;     /* times this BB was predicted              */
-  uint64_t predict_delta_sum; /* sum of predict_cycle deltas between BBLs */
+  uint64_t predict_delta_sum; /* sum of pred_cycle deltas between BBLs    */
   uint64_t fetch_count;       /* times this BB was fetched                */
-  uint64_t fetch_delta_sum;   /* sum of fetch_cycle deltas between BBLs   */
+  uint64_t fetch_delta_sum;   /* sum of fetch_cycle deltas between BBLs;  *
+                               * each delta captures the icache stall of  *
+                               * the preceding BBL (off-by-one BBL)       */
+
+  /* fetch_latency_sum: sum of (decode_cycle - fetch_cycle) for the first     *
+   * instruction of each BBL execution.  Since fetch_cycle is stamped at      *
+   * fetch-request time (before icache stall), this directly measures icache  *
+   * miss latency for this BBL.  Divide by count for the per-exec avg.        */
+  uint64_t fetch_latency_sum;
 };
 
 struct CfgEdge {
@@ -155,6 +163,12 @@ void cfg_track_inst(Op* op) {
   if (pc == current_bb_start[proc_id]) {
     ASSERT(proc_id, !bb_in_flight[proc_id]);
     bb_in_flight[proc_id] = true;
+
+    /* Icache miss latency: decode_cycle - fetch_cycle for the first          *
+     * instruction of the BBL.  fetch_cycle is pre-miss, decode_cycle is      *
+     * post-miss, so the delta captures any icache stall.                     */
+    if (op->decode_cycle >= op->fetch_cycle)
+      cfg_nodes[proc_id][pc].fetch_latency_sum += (uint64_t)(op->decode_cycle - op->fetch_cycle);
   }
 }
 
@@ -211,9 +225,8 @@ void cfg_retire_op(Op* op) {
   current_bb_start[proc_id] = next_pc;
 }
 
-void cfg_predict_BBL(Op* op) {
+void cfg_predict_BBL(Op* op, Addr bb_start) {
   uns proc_id = op->proc_id;
-  Addr bb_start = op->inst_info->addr;
   Counter cycle = (Counter)op->pred_cycle;
 
   auto& node = cfg_nodes[proc_id][bb_start];
@@ -291,9 +304,12 @@ void cfg_dump(const char* output_dir) {
               ","
               " \"fetch_count\": %" PRIu64
               ","
-              " \"fetch_delta_sum\": %" PRIu64 "}",
+              " \"fetch_delta_sum\": %" PRIu64
+              ","
+              " \"fetch_latency_sum\": %" PRIu64 "}",
               (uint64_t)n.start_pc, (uint64_t)n.end_pc, cf_type_name(n.cf_type), n.count, n.uop_count, n.inst_count,
-              n.retire_delta_sum, n.predict_count, n.predict_delta_sum, n.fetch_count, n.fetch_delta_sum);
+              n.retire_delta_sum, n.predict_count, n.predict_delta_sum, n.fetch_count, n.fetch_delta_sum,
+              n.fetch_latency_sum);
       first_node = false;
     }
     fprintf(f, "\n  ],\n");

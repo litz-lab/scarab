@@ -283,6 +283,8 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   if (!op->table_info->cf_type)
     return;
 
+  op->btb_pred_info = btb_pred_info;
+
   const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
   /* Syscall: target is always known from oracle */
@@ -290,7 +292,6 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
     btb_pred_info->btb_miss = FALSE;
     btb_pred_info->no_target = FALSE;
     btb_pred_info->pred_target = convert_to_cmp_addr(bp_data->proc_id, op->oracle_info.npc);
-    op->btb_pred_info = btb_pred_info;
     return;
   }
 
@@ -352,7 +353,6 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   }
 
   btb_pred_info->pred_target = convert_to_cmp_addr(bp_data->proc_id, btb_pred_info->pred_target);
-  op->btb_pred_info = btb_pred_info;
 }
 
 /**************************************************************************************/
@@ -372,6 +372,7 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 Addr* bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Addr line_addr;
 
+  op->btb_pred_info->btb_index_addr = op->inst_info->addr;
   return PERFECT_BTB ? &op->oracle_info.target
                      : (Addr*)cache_access(bp_data->btb, op->inst_info->addr, &line_addr,
                                            bp_data->bp_id ? FALSE : TRUE);  // TODO

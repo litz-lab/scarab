@@ -153,6 +153,8 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
       bp_predict_btb(g_bp_data, op);
       event = predict_op_ft_event(op, BP_PRED_MAIN);
       op_select_bp_pred_info(op, BP_PRED_MAIN);
+      if (op->table_info->cf_type)
+        g_bp_data->prev_cf_pred = op->bp_pred_info->pred;  // for next BTB access
     }
     if (op->inst_info->fake_inst == 1)
       ft_info.dynamic_info.contains_fake_nop = TRUE;
@@ -356,6 +358,8 @@ FT_PredictResult FT::predict_ft() {
       event = predict_op_ft_event(op, BP_PRED_MAIN);
       op_select_bp_pred_info(op, BP_PRED_MAIN);
     }
+    if (op->table_info->cf_type)
+      g_bp_data->prev_cf_pred = op->bp_pred_info->pred;  // for next BTB access
 
     if (event == FT_EVENT_FETCH_BARRIER) {
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);

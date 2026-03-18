@@ -519,6 +519,8 @@ void cmp_warmup(Op* op) {
     bp_predict_btb(bp_data, op);
     op_select_bp_pred_info(op, BP_PRED_MAIN);
     bp_predict_op(bp_data, op, MAIN_BP, 1, ia, BP_PRED_MAIN);
+    if (op->table_info->cf_type)
+      bp_data->prev_cf_pred = op->bp_pred_info->pred;  // for next BTB access
     bp_target_known_op(bp_data, op);
     bp_resolve_op(bp_data, op);
     if (op->bp_pred_info->mispred || op->bp_pred_info->misfetch) {

@@ -514,9 +514,8 @@ void Decoupled_FE::update() {
         // Only main BP should read from lookahead buffer in multi-BP setups.
         // All other BPs use the same update() function, so this check is necessary here.
         // The lookahead buffer is a simulation feature, not a typical CPU component.
-        // Lookahead buffer size is default to 1.
+        // Its use is controlled by LOOKAHEAD_BUF_SIZE.
         ASSERT(proc_id, bp_id == MAIN_BP);
-        // Lookahead buffer always enabled
         if (LOOKAHEAD_BUF_SIZE) {
           current_ft_to_push = lookahead_buffer_pop_ft(proc_id);
         } else {

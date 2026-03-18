@@ -45,10 +45,10 @@
 
 #include "bp/bp.h"
 #include "bp/btb.h"
-#include "ft.h"
 #include "isa/isa_macros.h"
 #include "libs/cache_lib.h"
 
+#include "ft.h"
 #include "statistics.h"
 
 /**************************************************************************************/
@@ -441,7 +441,8 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   if (!bp_data->bp_id) {
     DEBUG_BTB(bp_data->proc_id, "Initializing BLOCK_BTB\n");
     ASSERT(bp_data->proc_id, BTB_NUM_BRSLOT > 0);
-    init_cache(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BTB_NUM_BRSLOT * sizeof(Blk_Btb_BrSlot), REPL_TRUE_LRU);
+    init_cache(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BTB_NUM_BRSLOT * sizeof(Blk_Btb_BrSlot),
+               REPL_TRUE_LRU);
   } else  // points to the primary BP's shared BTB
     bp_data->btb = primary_bp->btb;
 }
@@ -450,7 +451,8 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 /* bp_btb_block_pred: */
 
 Addr* bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
-  if (PERFECT_BTB) return &op->oracle_info.target;
+  if (PERFECT_BTB)
+    return &op->oracle_info.target;
 
   Addr btb_index_addr = 0;
   // Actual BTB does not require this because the index addr to look up BTB is given,
@@ -515,13 +517,15 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
       Blk_Btb_BrSlot* br_slots = (Blk_Btb_BrSlot*)cache_access(bp_data->btb, btb_index_addr, &btb_line_addr, TRUE);
 
       if (!br_slots) {
-        br_slots = (Blk_Btb_BrSlot*)cache_insert(bp_data->btb, bp_data->proc_id, btb_index_addr, &btb_line_addr, &repl_line_addr);
+        br_slots = (Blk_Btb_BrSlot*)cache_insert(bp_data->btb, bp_data->proc_id, btb_index_addr, &btb_line_addr,
+                                                 &repl_line_addr);
         br_slots[0].addr = op->inst_info->addr;
         br_slots[0].type = op->table_info->cf_type;
         br_slots[0].target = op->oracle_info.target;
         br_slots[0].valid = TRUE;
         // Invalidate the remaining slots
-        for (uns ii = 1; ii < BTB_NUM_BRSLOT; ii++) br_slots[ii].valid = FALSE;
+        for (uns ii = 1; ii < BTB_NUM_BRSLOT; ii++)
+          br_slots[ii].valid = FALSE;
       } else {
         uns insert_pos = BTB_NUM_BRSLOT;
         for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
@@ -545,7 +549,8 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
                 br_slots[ii].type = op->table_info->cf_type;
                 br_slots[ii].target = op->oracle_info.target;
                 br_slots[ii].valid = TRUE;
-                for (uns jj = ii; jj < BTB_NUM_BRSLOT; jj++) br_slots[jj].valid = FALSE;
+                for (uns jj = ii; jj < BTB_NUM_BRSLOT; jj++)
+                  br_slots[jj].valid = FALSE;
                 return;
               }
               break;

@@ -43,6 +43,7 @@
 #include "memory/memory.param.h"
 #include "prefetcher/pref.param.h"
 
+#include "bp/bp_targ_mech.h"
 #include "dvfs/dvfs.h"
 #include "dvfs/perf_pred.h"
 #include "memory/cache_part.h"

@@ -309,14 +309,12 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
     return;
   }
 
-  /* Main BTB lookup (bp_btb_gen_pred populates l0/l1 fields as a side effect) */
-  Addr* entry = bp_data->bp_btb->pred_func(bp_data, op);
-  if (entry) {
-    btb_pred_info->btb_main_hit = TRUE;
-    btb_pred_info->btb_main_target = *entry;
+  /* Main BTB lookup (pred_func populates BTB hit/target fields as a side effect) */
+  bp_data->bp_btb->pred_func(bp_data, op);
+  if (btb_pred_info->btb_main_hit) {
     btb_pred_info->btb_miss = FALSE;
     btb_pred_info->no_target = FALSE;
-    btb_pred_info->pred_target = *entry;
+    btb_pred_info->pred_target = btb_pred_info->btb_main_target;
     if (op->table_info->cf_type != CF_ICO && op->table_info->cf_type != CF_RET &&
         !(op->table_info->bar_type & BAR_FETCH)) {
       STAT_EVENT(op->proc_id, op->off_path ? BTB_CORRECT_OFF_PATH : BTB_CORRECT);
@@ -411,7 +409,7 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 /**************************************************************************************/
 /* bp_btb_gen_pred: */
 
-Addr* bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
+void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Btb_Pred_Info* bpi = op->btb_pred_info;
   Addr line_addr;
   Flag lru = bp_data->bp_id ? FALSE : TRUE;
@@ -425,9 +423,9 @@ Addr* bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
       bpi->btb_l1_hit = TRUE;
       bpi->btb_l1_target = op->oracle_info.target;
     }
-    // btb_main_hit is set by bp_predict_btb() based on the non-NULL return
-    // value below, so no need to set it here explicitly.
-    return &op->oracle_info.target;
+    bpi->btb_main_hit = TRUE;
+    bpi->btb_main_target = op->oracle_info.target;
+    return;
   }
 
   if (BTB_L0_PRESENT) {
@@ -445,7 +443,11 @@ Addr* bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
     }
   }
 
-  return (Addr*)cache_access(bp_data->btb, op->inst_info->addr, &line_addr, lru);
+  Addr* e = (Addr*)cache_access(bp_data->btb, op->inst_info->addr, &line_addr, lru);
+  if (e) {
+    bpi->btb_main_hit = TRUE;
+    bpi->btb_main_target = *e;
+  }
 }
 
 /**************************************************************************************/
@@ -522,8 +524,8 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 /**************************************************************************************/
 /* bp_btb_block_pred: */
 
-Addr* bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
-  return bp_btb_gen_pred(bp_data, op);
+void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
+  bp_btb_gen_pred(bp_data, op);
 }
 
 /**************************************************************************************/

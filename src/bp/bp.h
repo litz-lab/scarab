@@ -222,7 +222,7 @@ typedef struct Bp_Btb_struct {
   Btb_Id id;
   const char* name;
   void (*init_func)(Bp_Data*, Bp_Data*);          /* called to initialize the branch target buffer (shares primary) */
-  Addr* (*pred_func)(Bp_Data*, Op*);              /* called to predict the branch target */
+  void (*pred_func)(Bp_Data*, Op*);               /* called to predict the branch target */
   void (*update_func)(Bp_Data*, Op*);             /* */
   void (*recover_func)(Bp_Data*, Recovery_Info*); /* */
 } Bp_Btb;

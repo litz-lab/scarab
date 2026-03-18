@@ -516,8 +516,10 @@ void Decoupled_FE::update() {
         // The lookahead buffer is a simulation feature, not a typical CPU component.
         // Its use is controlled by LOOKAHEAD_BUF_SIZE.
         ASSERT(proc_id, bp_id == MAIN_BP);
+        // Lookahead buffer always enabled
         if (LOOKAHEAD_BUF_SIZE) {
           current_ft_to_push = lookahead_buffer_pop_ft(proc_id);
+          ASSERT(proc_id, current_ft_to_push->get_is_prebuilt());
         } else {
           current_ft_to_push = new FT(proc_id, bp_id);
           auto build_event =
@@ -530,8 +532,6 @@ void Decoupled_FE::update() {
           ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
           current_ft_to_push->set_prebuilt(true);
         }
-
-        ASSERT(proc_id, current_ft_to_push->get_is_prebuilt());
 
         result = current_ft_to_push->predict_ft();
         // if current FT is the exit one, skip mispredict handling and directly push

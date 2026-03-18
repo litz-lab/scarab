@@ -36,7 +36,9 @@
 #include "bp/bp.param.h"
 #include "memory/memory.param.h"
 
+extern "C" {
 #include "bp/bp_targ_mech.h"
+}
 #include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
 

@@ -164,11 +164,11 @@ typedef struct Bp_Data_struct {
   Flag on_path_pred;
 
   // used for next index computation in some BTB mechanisms
-  Flag btb_recovered;   // TRUE if btb_recover is called right before pred
-  uns8 prev_cf_dir;     // valid only after recovery
-  Addr prev_cf_target;  // valid only after recovery
+  Flag btb_recovered;           // TRUE if btb_recover is called right before pred
+  uns8 prev_cf_dir;             // valid only after recovery
+  Addr prev_cf_target;          // valid only after recovery
   Addr prev_cf_btb_index_addr;  // valid only after recovery
-  Op* prev_cf_op;  // NOT valid after recovery
+  Op* prev_cf_op;               // NOT valid after recovery
 } Bp_Data;
 
 /**************************************************************************************/

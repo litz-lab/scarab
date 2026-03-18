@@ -517,8 +517,21 @@ void Decoupled_FE::update() {
         // Lookahead buffer size is default to 1.
         ASSERT(proc_id, bp_id == MAIN_BP);
         // Lookahead buffer always enabled
-        ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);
-        current_ft_to_push = lookahead_buffer_pop_ft(proc_id);
+        if (LOOKAHEAD_BUF_SIZE) {
+          current_ft_to_push = lookahead_buffer_pop_ft(proc_id);
+        } else {
+          current_ft_to_push = new FT(proc_id, bp_id);
+          auto build_event =
+              current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                        [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                          frontend_fetch_op(pid, bid, op);
+                                          return true;
+                                        },
+                                        false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
+          ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+          current_ft_to_push->set_prebuilt(true);
+        }
+
         ASSERT(proc_id, current_ft_to_push->get_is_prebuilt());
 
         result = current_ft_to_push->predict_ft();
@@ -762,14 +775,26 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   }
   // no trailing ft, misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
-    ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);  // should always be true because we need lookahead buffer to save recovery ft
-    saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
-    ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
+    if (LOOKAHEAD_BUF_SIZE) {
+      saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
+      ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
+    } else {
+      saved_recovery_ft = new FT(proc_id, bp_id);
+      auto build_event =
+          saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                   [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                     frontend_fetch_op(pid, bid, op);
+                                     return true;
+                                   },
+                                   false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
+      ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+      saved_recovery_ft->set_prebuilt(true);
+    }
+
     DEBUG(proc_id, "[DFE%u] saved_recovery_ft<-newly_built id:%llu start:0x%llx ops:%zu\n", bp_id,
           (unsigned long long)saved_recovery_ft->get_ft_info().dynamic_info.FT_id,
           (unsigned long long)saved_recovery_ft->get_ft_info().static_info.start, saved_recovery_ft->ops.size());
   }
-  saved_recovery_ft->set_prebuilt(true);
   redirect_cycle = cycle_count;
   next_state = SERVING_OFF_PATH;
   frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);

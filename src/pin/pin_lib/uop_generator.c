@@ -783,6 +783,9 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
 void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop) {
   Flag new_entry = FALSE;
   Inst_Info* info;
+  // Use canonical address (proc_id=0) for consistent hash key within per-core table.
+  // The uop cache key should use the original program address bits only.
+  Addr lookup_addr = convert_to_cmp_addr(0, pi->instruction_addr);
   // Due to JIT compilation, each branch must be decoded to verify which instruction the PC maps to.
   // To decrease unnecessary malloc/free, fetch inst_info from hashmap
   // instead of allocating. However first instruction must be decoded.
@@ -797,7 +800,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
     info->fake_inst = TRUE;
     info->fake_inst_reason = pi->fake_inst_reason;
   } else {
-    info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb, 0,
+    info = cpp_hash_table_access_create(proc_id, lookup_addr, pi->inst_binary_lsb, pi->inst_binary_msb, 0,
                                         &new_entry);
     info->fake_inst = FALSE;
     info->fake_inst_reason = WPNM_NOT_IN_WPNM;
@@ -838,7 +841,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
           info->fake_inst = TRUE;
           info->fake_inst_reason = pi->fake_inst_reason;
         } else {
-          info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb,
+          info = cpp_hash_table_access_create(proc_id, lookup_addr, pi->inst_binary_lsb, pi->inst_binary_msb,
                                               ii, &new_entry);
 
           info->fake_inst = FALSE;
@@ -889,14 +892,18 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
 
     for (ii = 0; ii < num_uop; ii++) {
       if (ii > 0) {
-        info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb, ii,
+        info = cpp_hash_table_access_create(proc_id, lookup_addr, pi->inst_binary_lsb, pi->inst_binary_msb, ii,
                                             &new_entry);
       }
       ASSERT(proc_id, !new_entry);
 
       trace_uop[ii]->info = info;
       trace_uop[ii]->eom = FALSE;
-      ASSERT(proc_id, info->addr == pi->instruction_addr);
+      if (info->addr != pi->instruction_addr) {
+        // A stale entry can differ only by CMP core bits; rebind it to this core's tagged address.
+        ASSERT(proc_id, convert_to_cmp_addr(0, info->addr) == convert_to_cmp_addr(0, pi->instruction_addr));
+        info->addr = pi->instruction_addr;
+      }
       ASSERT(proc_id, info->trace_info.inst_size == pi->size);
 
       Flag is_last_uop = (ii == (num_uop - 1));

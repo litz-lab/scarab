@@ -486,7 +486,7 @@ void handle_scarab_marker(ADDRINT op) {
 }
 
 void PIN_FAST_ANALYSIS_CALL docount_rep(ADDRINT iaddr) {
-  if(iaddr != prior_rep_eip) {
+  if (iaddr != prior_rep_eip) {
     docount(1);
     prior_rep_eip = iaddr;
   }

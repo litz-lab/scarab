@@ -199,21 +199,19 @@ void instrumentation_func_per_trace(TRACE trace, void* v) {
   // used to be IPOINT_ANYWHERE
   if(hyper_ff) {
     for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
-        UINT32 non_rep_count = 0;
-        for(INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
-            if(INS_HasRealRep(ins)) {
-                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)docount_rep,
-                               IARG_FAST_ANALYSIS_CALL, IARG_INST_PTR, IARG_END);
-            } else {
-                non_rep_count++;
-            }
+      UINT32 non_rep_count = 0;
+      for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+        if (INS_HasRealRep(ins)) {
+          INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)docount_rep, IARG_FAST_ANALYSIS_CALL, IARG_INST_PTR, IARG_END);
+        } else {
+          non_rep_count++;
         }
+      }
 
-        if(non_rep_count > 0) {
-            BBL_InsertCall(bbl, IPOINT_BEFORE, (AFUNPTR)docount,
-                           IARG_FAST_ANALYSIS_CALL, IARG_UINT32, non_rep_count,
-                           IARG_END);
-        }
+      if (non_rep_count > 0) {
+        BBL_InsertCall(bbl, IPOINT_BEFORE, (AFUNPTR)docount, IARG_FAST_ANALYSIS_CALL, IARG_UINT32, non_rep_count,
+                       IARG_END);
+      }
     }
   }
 }

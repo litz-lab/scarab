@@ -78,6 +78,9 @@ class IDQ_Stage {
 
   /* the IDQ outpur stage data */
   Stage_Data idq_sd;
+  // Backing storage for `idq_sd.ops` (avoids explicit per-init malloc).
+  // Note: `ISSUE_WIDTH` is a parameter and may not be a compile-time constant.
+  std::vector<Op*> idq_ops;
 
   Stage_Data* select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd);
   void process_input_stage_data(Stage_Data* consume_from_sd, int& count_issued, int& count_issued_on_path);
@@ -102,7 +105,8 @@ void IDQ_Stage::init(uns8 _proc_id, const char* name) {
   snprintf(tmp_name, MAX_STR_LENGTH, "%s %d", name, 0);
   idq_sd.name = (char*)strdup(tmp_name);
   idq_sd.max_op_count = ISSUE_WIDTH;
-  idq_sd.ops = (Op**)malloc(sizeof(Op*) * ISSUE_WIDTH);
+  idq_ops.assign(ISSUE_WIDTH, NULL);
+  idq_sd.ops = idq_ops.data();
   idq_sd.op_count = 0;
 
   reset();

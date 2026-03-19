@@ -81,9 +81,18 @@ DEF_PARAM(  bp_hash_tos               , BP_HASH_TOS               , Flag    , Fl
 DEF_PARAM(  ibtb_hash_tos             , IBTB_HASH_TOS             , Flag    , Flag       , FALSE      ,        )
 
 DEF_PARAM(  btb_mech                  , BTB_MECH                  , uns     , btb_mech   , GENERIC_BTB,        )
-DEF_PARAM(  btb_entries               , BTB_ENTRIES               , uns     , uns        , (4 * 1024) ,        )
+DEF_PARAM(  btb_entries               , BTB_ENTRIES               , uns     , uns        , 12288      ,        )
 DEF_PARAM(  btb_assoc                 , BTB_ASSOC                 , uns     , uns        , 4          ,        )
 DEF_PARAM(  btb_off_path_writes       , BTB_OFF_PATH_WRITES       , Flag    , Flag       , TRUE       ,        ) /* const */
+DEF_PARAM(  btb_main_latency         , BTB_MAIN_LATENCY          , uns     , uns        , 3          ,        )
+DEF_PARAM(  btb_l0_present           , BTB_L0_PRESENT            , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  btb_l0_entries           , BTB_L0_ENTRIES            , uns     , uns        , 128        ,        )
+DEF_PARAM(  btb_l0_assoc             , BTB_L0_ASSOC              , uns     , uns        , 4          ,        )
+DEF_PARAM(  btb_l0_latency           , BTB_L0_LATENCY            , uns     , uns        , 1          ,        )
+DEF_PARAM(  btb_l1_present           , BTB_L1_PRESENT            , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  btb_l1_entries           , BTB_L1_ENTRIES            , uns     , uns        , 6144       ,        )
+DEF_PARAM(  btb_l1_assoc             , BTB_L1_ASSOC              , uns     , uns        , 4          ,        )
+DEF_PARAM(  btb_l1_latency           , BTB_L1_LATENCY            , uns     , uns        , 2          ,        )
 
 DEF_PARAM(  enable_crs                , ENABLE_CRS                , Flag    , Flag       , TRUE       ,        )
 DEF_PARAM(  crs_entries               , CRS_ENTRIES               , uns     , uns        , 32         ,        )

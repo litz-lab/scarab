@@ -267,6 +267,17 @@ void bp_crs_sync(Bp_Data* bp_data_src, Bp_Data* bp_data_dst) {
 }
 
 /**************************************************************************************/
+/* btb_update_level: write (or update) one BTB-level cache entry for op. */
+
+static void btb_update_level(Cache* cache, uns proc_id, Addr fetch_addr, Addr target) {
+  Addr line_addr, repl_line_addr;
+  Addr* btb_line = (Addr*)cache_access(cache, fetch_addr, &line_addr, TRUE);
+  if (!btb_line)
+    btb_line = (Addr*)cache_insert(cache, proc_id, fetch_addr, &line_addr, &repl_line_addr);
+  *btb_line = target;
+}
+
+/**************************************************************************************/
 /* bp_predict_btb: query the BTB and IBP once per branch and populate all
  * Btb_Pred_Info fields.  Must be called before any bp_predict_op() call for
  * the same op.  On entry op->btb_pred_info must be NULL; this function sets it
@@ -283,6 +294,11 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   if (!op->table_info->cf_type)
     return;
 
+  // Set pointer and init l0/l1 fields so bp_btb_gen_pred can populate them.
+  op->btb_pred_info = btb_pred_info;
+  btb_pred_info->btb_l0_hit = btb_pred_info->btb_l1_hit = FALSE;
+  btb_pred_info->btb_l0_target = btb_pred_info->btb_l1_target = 0;
+
   const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
   /* Syscall: target is always known from oracle */
@@ -290,18 +306,15 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
     btb_pred_info->btb_miss = FALSE;
     btb_pred_info->no_target = FALSE;
     btb_pred_info->pred_target = convert_to_cmp_addr(bp_data->proc_id, op->oracle_info.npc);
-    op->btb_pred_info = btb_pred_info;
     return;
   }
 
-  /* Main BTB lookup */
-  Addr* entry = bp_data->bp_btb->pred_func(bp_data, op);
-  if (entry) {
-    btb_pred_info->btb_main_hit = TRUE;
-    btb_pred_info->btb_main_target = *entry;
+  /* Main BTB lookup (pred_func populates BTB hit/target fields as a side effect) */
+  bp_data->bp_btb->pred_func(bp_data, op);
+  if (btb_pred_info->btb_main_hit) {
     btb_pred_info->btb_miss = FALSE;
     btb_pred_info->no_target = FALSE;
-    btb_pred_info->pred_target = *entry;
+    btb_pred_info->pred_target = btb_pred_info->btb_main_target;
     if (op->table_info->cf_type != CF_ICO && op->table_info->cf_type != CF_RET &&
         !(op->table_info->bar_type & BAR_FETCH)) {
       STAT_EVENT(op->proc_id, op->off_path ? BTB_CORRECT_OFF_PATH : BTB_CORRECT);
@@ -324,6 +337,22 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
         STAT_EVENT(op->proc_id, op->off_path ? BTB_INCORRECT_OFF_PATH : BTB_INCORRECT);
       }
     }
+  }
+
+  /* Per-BTB-level hit/miss stats */
+  if (op->table_info->cf_type != CF_ICO && op->table_info->cf_type != CF_RET &&
+      !(op->table_info->bar_type & BAR_FETCH)) {
+    if (BTB_L0_PRESENT) {
+      STAT_EVENT(op->proc_id, op->off_path ? (btb_pred_info->btb_l0_hit ? BTB_L0_HIT_OFF_PATH : BTB_L0_MISS_OFF_PATH)
+                                           : (btb_pred_info->btb_l0_hit ? BTB_L0_HIT : BTB_L0_MISS));
+    }
+    if (BTB_L1_PRESENT) {
+      STAT_EVENT(op->proc_id, op->off_path ? (btb_pred_info->btb_l1_hit ? BTB_L1_HIT_OFF_PATH : BTB_L1_MISS_OFF_PATH)
+                                           : (btb_pred_info->btb_l1_hit ? BTB_L1_HIT : BTB_L1_MISS));
+    }
+    STAT_EVENT(op->proc_id, op->off_path
+                                ? (btb_pred_info->btb_main_hit ? BTB_MAIN_HIT_OFF_PATH : BTB_MAIN_MISS_OFF_PATH)
+                                : (btb_pred_info->btb_main_hit ? BTB_MAIN_HIT : BTB_MAIN_MISS));
   }
 
   /* PERFECT_CBR_BTB: use oracle target for conditional branches */
@@ -352,7 +381,6 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   }
 
   btb_pred_info->pred_target = convert_to_cmp_addr(bp_data->proc_id, btb_pred_info->pred_target);
-  op->btb_pred_info = btb_pred_info;
 }
 
 /**************************************************************************************/
@@ -360,21 +388,62 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
 
 void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   // btb line size set to 1
-  if (!bp_data->bp_id)
+  if (!bp_data->bp_id) {
     init_cache(bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
-  else  // points to the primary BP's shared BTB
+    if (BTB_L0_PRESENT)
+      init_cache(bp_data->btb_l0, "BTB_L0", BTB_L0_ENTRIES, BTB_L0_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+    if (BTB_L1_PRESENT)
+      init_cache(bp_data->btb_l1, "BTB_L1", BTB_L1_ENTRIES, BTB_L1_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+  } else {
+    // points to the primary BP's shared caches
     bp_data->btb = primary_bp->btb;
+    bp_data->btb_l0 = primary_bp->btb_l0;
+    bp_data->btb_l1 = primary_bp->btb_l1;
+  }
 }
 
 /**************************************************************************************/
 /* bp_btb_gen_pred: */
 
-Addr* bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
+void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
+  Btb_Pred_Info* bpi = op->btb_pred_info;
   Addr line_addr;
+  Flag lru = bp_data->bp_id ? FALSE : TRUE;
 
-  return PERFECT_BTB ? &op->oracle_info.target
-                     : (Addr*)cache_access(bp_data->btb, op->inst_info->addr, &line_addr,
-                                           bp_data->bp_id ? FALSE : TRUE);  // TODO
+  if (PERFECT_BTB) {
+    if (BTB_L0_PRESENT) {
+      bpi->btb_l0_hit = TRUE;
+      bpi->btb_l0_target = op->oracle_info.target;
+    }
+    if (BTB_L1_PRESENT) {
+      bpi->btb_l1_hit = TRUE;
+      bpi->btb_l1_target = op->oracle_info.target;
+    }
+    bpi->btb_main_hit = TRUE;
+    bpi->btb_main_target = op->oracle_info.target;
+    return;
+  }
+
+  if (BTB_L0_PRESENT) {
+    Addr* e = (Addr*)cache_access(bp_data->btb_l0, op->inst_info->addr, &line_addr, lru);
+    if (e) {
+      bpi->btb_l0_hit = TRUE;
+      bpi->btb_l0_target = *e;
+    }
+  }
+  if (BTB_L1_PRESENT) {
+    Addr* e = (Addr*)cache_access(bp_data->btb_l1, op->inst_info->addr, &line_addr, lru);
+    if (e) {
+      bpi->btb_l1_hit = TRUE;
+      bpi->btb_l1_target = *e;
+    }
+  }
+
+  Addr* e = (Addr*)cache_access(bp_data->btb, op->inst_info->addr, &line_addr, lru);
+  if (e) {
+    bpi->btb_main_hit = TRUE;
+    bpi->btb_main_target = *e;
+  }
 }
 
 /**************************************************************************************/
@@ -422,6 +491,16 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
       STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_JITTED_NOT_CF + op->table_info->cf_type);
     }
   }
+
+  // Update L0 BTB
+  if (BTB_L0_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
+    btb_update_level(bp_data->btb_l0, bp_data->proc_id, fetch_addr, op->oracle_info.target);
+  }
+
+  // Update L1 BTB
+  if (BTB_L1_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
+    btb_update_level(bp_data->btb_l1, bp_data->proc_id, fetch_addr, op->oracle_info.target);
+  }
 }
 
 /**************************************************************************************/
@@ -441,8 +520,8 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 /**************************************************************************************/
 /* bp_btb_block_pred: */
 
-Addr* bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
-  return bp_btb_gen_pred(bp_data, op);
+void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
+  bp_btb_gen_pred(bp_data, op);
 }
 
 /**************************************************************************************/

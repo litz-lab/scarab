@@ -36,6 +36,9 @@
 #include "bp/bp.param.h"
 #include "memory/memory.param.h"
 
+extern "C" {
+#include "bp/bp_targ_mech.h"
+}
 #include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
 
@@ -334,7 +337,27 @@ FT_PredictResult FT::predict_ft() {
         STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
         if (!op->off_path) {
           op_select_bp_pred_info(op, BP_PRED_L0);
-          bp_sched_recovery(bp_recovery_info, op, op->bp_pred_main.bp_ready_cycle);
+
+          // Default: recover when MAIN prediction is ready.
+          Counter recovery_cycle = op->bp_pred_main.bp_ready_cycle;
+          const Addr correct_target = op->bp_pred_main.pred_npc;
+          const Counter fetch_cycle = op->bp_pred_main.bp_ready_cycle - BP_MAIN_LATENCY;
+
+          // If L1 BTB already has the correct target, we can recover one cycle
+          // earlier (at BTB_L1_LATENCY rather than BP_MAIN_LATENCY).
+          // This only applies when L0 was wrong because of a missing/stale BTB
+          // target (BTB miss or wrong entry).  If L0 had the correct target but
+          // a CBR direction predictor was wrong, the L1 BTB cannot help: the
+          // recovery is bounded by the direction prediction, not the target.
+          const Flag l0_btb_failed_target =
+              !op->btb_pred_info->btb_l0_hit || op->btb_pred_info->btb_l0_target != correct_target;
+          if (BTB_L1_PRESENT && l0_btb_failed_target && op->btb_pred_info->btb_l1_hit &&
+              op->btb_pred_info->btb_l1_target == correct_target) {
+            recovery_cycle = fetch_cycle + BTB_L1_LATENCY;
+            STAT_EVENT(proc_id, BTB_L1_HIT_SCHED_EARLY_RECOVERY);
+          }
+
+          bp_sched_recovery(bp_recovery_info, op, recovery_cycle);
           event = l0_event;
         } else {
           event = main_event;
@@ -346,6 +369,17 @@ FT_PredictResult FT::predict_ft() {
       } else if (!l0_wrong && main_wrong) {
         STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_WRONG);
         op_select_bp_pred_info(op, BP_PRED_MAIN);
+        // If main BTB was too slow to be used (BTB_MAIN_LATENCY > BP_MAIN_LATENCY)
+        // but has the correct target, tighten the recovery cycle to BTB_MAIN_LATENCY.
+        // Only applicable when the prediction was wrong due to a wrong target
+        // (misfetch): the BTB arriving late caused the miss.  A CBR direction
+        // misprediction (mispred) is not BTB-latency-induced, so the main BTB
+        // hit cannot advance the recovery cycle in that case.
+        if (BTB_MAIN_LATENCY > BP_MAIN_LATENCY && op->bp_pred_main.misfetch && op->btb_pred_info->btb_main_hit) {
+          const Counter fetch_cycle = op->bp_pred_main.bp_ready_cycle - BP_MAIN_LATENCY;
+          op->bp_pred_main.bp_ready_cycle = fetch_cycle + BTB_MAIN_LATENCY;
+          STAT_EVENT(proc_id, BTB_MAIN_HIT_TIGHT_RECOVERY);
+        }
         event = main_event;
       } else {
         STAT_EVENT(proc_id, DFE_L0_CORRECT_MAIN_CORRECT);

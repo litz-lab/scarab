@@ -150,7 +150,9 @@ typedef struct Bp_Data_struct {
   struct Br_Conf_struct* br_conf;
 
   uns32 global_hist;
-  Cache* btb;  // BTB is shared over all the BPs (only allocated on the primary BP)
+  Cache* btb;     // BTB is shared over all the BPs (only allocated on the primary BP)
+  Cache* btb_l0;  // L0 BTB cache (only allocated on primary BP)
+  Cache* btb_l1;  // L1 BTB cache (only allocated on primary BP)
 
   CRS crs;
 
@@ -220,7 +222,7 @@ typedef struct Bp_Btb_struct {
   Btb_Id id;
   const char* name;
   void (*init_func)(Bp_Data*, Bp_Data*);          /* called to initialize the branch target buffer (shares primary) */
-  Addr* (*pred_func)(Bp_Data*, Op*);              /* called to predict the branch target */
+  void (*pred_func)(Bp_Data*, Op*);               /* called to predict the branch target */
   void (*update_func)(Bp_Data*, Op*);             /* */
   void (*recover_func)(Bp_Data*, Recovery_Info*); /* */
 } Bp_Btb;
@@ -265,6 +267,19 @@ static inline Flag bp_l0_enabled(void) {
   return (BP_MECH_L0 != NUM_BP) && (BP_L0_LATENCY > 0);
 }
 
+// Returns a pointer to the BTB target that bp_main should use, based on which
+// BTB levels are available within BP_MAIN_LATENCY.  Prefers the largest (main)
+// BTB when it fits; falls back to L1 then L0.  Returns NULL if none fits.
+static inline Addr* bp_btb_for_main(Btb_Pred_Info* bpi) {
+  if (BTB_MAIN_LATENCY <= BP_MAIN_LATENCY && bpi->btb_main_hit)
+    return &bpi->btb_main_target;
+  if (BTB_L1_PRESENT && BTB_L1_LATENCY <= BP_MAIN_LATENCY && bpi->btb_l1_hit)
+    return &bpi->btb_l1_target;
+  if (BTB_L0_PRESENT && BTB_L0_LATENCY <= BP_MAIN_LATENCY && bpi->btb_l0_hit)
+    return &bpi->btb_l0_target;
+  return NULL;
+}
+
 /**************************************************************************************/
 /* Prototypes */
 void set_bp_data(Bp_Data* new_bp_data);
@@ -276,7 +291,6 @@ void bp_sched_redirect(Bp_Recovery_Info*, Op*, Counter);
 
 void init_bp_data(uns8, uns8, Bp_Data*, Bp_Data*);
 Flag bp_is_predictable(Bp_Data*);
-void bp_predict_btb(Bp_Data*, Op*);
 Addr bp_predict_op(Bp_Data*, Op*, uns, uns, Addr, Bp_Pred_Level);
 void bp_target_known_op(Bp_Data*, Op*);
 void bp_resolve_op(Bp_Data*, Op*);

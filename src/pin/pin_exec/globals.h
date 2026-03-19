@@ -95,5 +95,6 @@ extern bool     heartbeat_enabled;
 extern uint32_t max_buffer_size;
 extern uint64_t start_rip;
 
+extern ADDRINT prior_rep_eip;
 
 #endif  // PIN_EXEC_GLOBALS_H__

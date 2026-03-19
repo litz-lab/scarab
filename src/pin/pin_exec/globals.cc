@@ -77,3 +77,5 @@ int64_t  orig_hyper_fast_forward_count;
 bool     heartbeat_enabled;
 uint32_t max_buffer_size;
 uint64_t start_rip;
+
+ADDRINT prior_rep_eip = 0;

@@ -565,30 +565,70 @@ static inline void exec_stage_bp_resolve(Op* op) {
 
     // stats for the reason of resteer
     if (op->bp_pred_info->mispred) {
-      switch(op->table_info->cf_type) {
-        case NOT_CF:   STAT_EVENT(op->proc_id, RESTEER_MISPRED_NOT_CF);   break;
-        case CF_BR:    STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_BR);    break;
-        case CF_CBR:   STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_CBR);   break;
-        case CF_CALL:  STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_CALL);  break;
-        case CF_IBR:   STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_IBR);   break;
-        case CF_ICALL: STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_ICALL); break;
-        case CF_ICO:   STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_ICO);   break;
-        case CF_RET:   STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_RET);   break;
-        case CF_REP:   STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_REP);   break;
-        default: ASSERTM(op->proc_id, 0, "Unknown cf_type: %d\n", op->table_info->cf_type); break;
+      switch (op->table_info->cf_type) {
+        case NOT_CF:
+          STAT_EVENT(op->proc_id, RESTEER_MISPRED_NOT_CF);
+          break;
+        case CF_BR:
+          STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_BR);
+          break;
+        case CF_CBR:
+          STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_CBR);
+          break;
+        case CF_CALL:
+          STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_CALL);
+          break;
+        case CF_IBR:
+          STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_IBR);
+          break;
+        case CF_ICALL:
+          STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_ICALL);
+          break;
+        case CF_ICO:
+          STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_ICO);
+          break;
+        case CF_RET:
+          STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_RET);
+          break;
+        case CF_REP:
+          STAT_EVENT(op->proc_id, RESTEER_MISPRED_CF_REP);
+          break;
+        default:
+          ASSERTM(op->proc_id, 0, "Unknown cf_type: %d\n", op->table_info->cf_type);
+          break;
       }
     } else {
-      switch(op->table_info->cf_type) {
-        case NOT_CF:   STAT_EVENT(op->proc_id, RESTEER_MISFETCH_NOT_CF);   break;
-        case CF_BR:    STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_BR);    break;
-        case CF_CBR:   STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_CBR);   break;
-        case CF_CALL:  STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_CALL);  break;
-        case CF_IBR:   STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_IBR);   break;
-        case CF_ICALL: STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_ICALL); break;
-        case CF_ICO:   STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_ICO);   break;
-        case CF_RET:   STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_RET);   break;
-        case CF_REP:   STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_REP);   break;
-        default: ASSERTM(op->proc_id, 0, "Unknown cf_type: %d\n", op->table_info->cf_type); break;
+      switch (op->table_info->cf_type) {
+        case NOT_CF:
+          STAT_EVENT(op->proc_id, RESTEER_MISFETCH_NOT_CF);
+          break;
+        case CF_BR:
+          STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_BR);
+          break;
+        case CF_CBR:
+          STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_CBR);
+          break;
+        case CF_CALL:
+          STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_CALL);
+          break;
+        case CF_IBR:
+          STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_IBR);
+          break;
+        case CF_ICALL:
+          STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_ICALL);
+          break;
+        case CF_ICO:
+          STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_ICO);
+          break;
+        case CF_RET:
+          STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_RET);
+          break;
+        case CF_REP:
+          STAT_EVENT(op->proc_id, RESTEER_MISFETCH_CF_REP);
+          break;
+        default:
+          ASSERTM(op->proc_id, 0, "Unknown cf_type: %d\n", op->table_info->cf_type);
+          break;
       }
     }
   }

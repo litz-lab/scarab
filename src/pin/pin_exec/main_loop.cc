@@ -324,11 +324,11 @@ void do_fe_null(bool& have_consumed_op) {
       }
       cop->inst_uid = uid_ctr;
 
-      if(cop->is_repeat && cop->instruction_addr == prior_rep_eip)
+      if (cop->is_repeat && cop->instruction_addr == prior_rep_eip)
         cop->fetched_instruction = 0;
       else
         cop->fetched_instruction = 1;
-      
+
       prior_rep_eip = cop->is_repeat ? cop->instruction_addr : 0;
 
       if(pending_syscall && exit_syscall_found) {

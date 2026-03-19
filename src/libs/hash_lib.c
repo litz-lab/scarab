@@ -72,7 +72,8 @@ void init_hash_table(Hash_Table* table, const char* name, uns buckets, uns data_
 
 void init_complex_hash_table(Hash_Table* table, const char* name, uns buckets, uns data_size,
                              Flag (*eq_func)(void const*, void const*)) {
-  table->name = strdup(name);
+  // `name` is expected to be long-lived (caller passes string literals/constants).
+  table->name = (char*)name;
   table->buckets = buckets;
   table->data_size = data_size;
   table->count = 0;

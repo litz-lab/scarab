@@ -137,7 +137,8 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   memset(ic, 0, sizeof(Icache_Stage));
 
   ic->proc_id = proc_id;
-  ic->sd.name = (char*)strdup(name);
+  /* `name` is expected to be long-lived (caller passes string literals). */
+  ic->sd.name = (char*)name;
 
   /* initialize the ops array */
   ASSERT(proc_id, IC_ISSUE_WIDTH);

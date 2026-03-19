@@ -121,7 +121,8 @@ void init_exec_stage(uns8 proc_id, const char* name) {
 
   exec->proc_id = proc_id;
 
-  exec->sd.name = (char*)strdup(name);
+  /* `name` is expected to be long-lived (caller passes string literals). */
+  exec->sd.name = (char*)name;
   exec->sd.max_op_count = NUM_FUS;
   exec->sd.ops = (Op**)malloc(sizeof(Op*) * NUM_FUS);
   exec->fus_busy = 0;

@@ -84,7 +84,6 @@ void set_decode_stage(Decode_Stage* new_dec) {
 /* init_decode_stage: */
 
 void init_decode_stage(uns8 proc_id, const char* name) {
-  char tmp_name[MAX_STR_LENGTH + 1];
   uns ii;
   ASSERT(0, dec);
   ASSERT(0, STAGE_MAX_DEPTH > 0);
@@ -96,8 +95,10 @@ void init_decode_stage(uns8 proc_id, const char* name) {
   dec->sds = (Stage_Data*)malloc(sizeof(Stage_Data) * STAGE_MAX_DEPTH);
   for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &dec->sds[ii];
-    snprintf(tmp_name, MAX_STR_LENGTH, "%s %d", name, STAGE_MAX_DEPTH - ii - 1);
-    cur->name = (char*)strdup(tmp_name);
+    /* Stage_Data::name is only used for debugging/printing; reuse the long-lived
+     * stage name pointer passed into init_decode_stage().
+     */
+    cur->name = (char*)name;
     cur->max_op_count = STAGE_MAX_OP_COUNT;
     cur->ops = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
   }

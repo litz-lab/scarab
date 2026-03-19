@@ -119,7 +119,8 @@ void init_node_stage(uns8 proc_id, const char* name) {
   DEBUG(proc_id, "Initializing %s stage\n", name);
 
   node->proc_id = proc_id;
-  node->sd.name = (char*)strdup(name);
+  /* `name` is expected to be long-lived (caller passes string literals). */
+  node->sd.name = (char*)name;
 
   // allocate wires to functional units
   node->sd.max_op_count = NUM_FUS;  // Bandwidth between schedule and FUS

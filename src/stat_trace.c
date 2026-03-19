@@ -81,7 +81,8 @@ void stat_trace_init(void) {
   /* parse the stats to trace */
   num_stats = num_tokens(STATS_TO_TRACE, DELIMITERS);
   stat_indices = malloc(num_stats * sizeof(Stat_Enum));
-  char* stats_str = strdup(STATS_TO_TRACE);
+  char stats_str[MAX_STR_LENGTH + 1];
+  snprintf(stats_str, sizeof(stats_str), "%s", STATS_TO_TRACE);
   char* stat_name = strtok(stats_str, DELIMITERS);
   uns ii = 0;
   fprintf(file, "Instructions");
@@ -97,7 +98,6 @@ void stat_trace_init(void) {
   }
   fprintf(file, "\n");
   ASSERT(0, ii == num_stats);
-  free(stats_str);
 
   stat_mon = stat_mon_create_from_array(stat_indices, num_stats);
 
@@ -141,13 +141,13 @@ void stat_trace_done(void) {
 
 uns num_tokens(const char* str, const char* delim) {
   uns n = 0;
-  char* buf = strdup(str);
+  char buf[MAX_STR_LENGTH + 1];
+  snprintf(buf, sizeof(buf), "%s", str);
   char* token = strtok(buf, delim);
   while (token) {
     n += 1;
     token = strtok(NULL, delim);
   }
-  free(buf);
   return n;
 }
 

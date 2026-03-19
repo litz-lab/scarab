@@ -99,7 +99,8 @@ void init_dcache_stage(uns8 proc_id, const char* name) {
   memset(dc, 0, sizeof(Dcache_Stage));
 
   dc->proc_id = proc_id;
-  dc->sd.name = (char*)strdup(name);
+  /* `name` is expected to be long-lived (caller passes string literals). */
+  dc->sd.name = (char*)name;
   dc->sd.max_op_count = STAGE_MAX_OP_COUNT;
   dc->sd.ops = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
 

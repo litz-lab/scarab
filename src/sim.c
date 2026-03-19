@@ -799,6 +799,29 @@ void full_sim() {
     }
   }
 
+  /* Tear down list backing allocations (free-list chunk pools). */
+  if (td)
+    destroy_list(&td->seq_op_list);
+
+  if (mem) {
+    destroy_list(&mem->req_buffer_free_list);
+
+    if (mem->l1_in_buffer_core) {
+      for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+        destroy_list(&mem->l1_in_buffer_core[proc_id]);
+      }
+      free(mem->l1_in_buffer_core);
+      mem->l1_in_buffer_core = NULL;
+    }
+
+    if (mem->req_buffer && mem->total_mem_req_buffers) {
+      for (uns ii = 0; ii < mem->total_mem_req_buffers; ii++) {
+        destroy_list(&mem->req_buffer[ii].op_ptrs);
+        destroy_list(&mem->req_buffer[ii].op_uniques);
+      }
+    }
+  }
+
   // fdip_print_hash_tables();
 
   trigger_free(sim_limit);

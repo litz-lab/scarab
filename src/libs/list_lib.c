@@ -53,6 +53,8 @@
 static inline List_Entry* get_list_entry(List*);
 static inline void free_list_entry(List*, List_Entry*);
 static inline void verify_list_counts(List*);
+static inline void free_all_free_list_chunks(List* list);
+static inline void record_free_list_chunk(List* list, void* chunk_base);
 
 /**************************************************************************************/
 /* init_list: */
@@ -71,6 +73,10 @@ void init_list(List* list, char name[], uns data_size, Flag use_free_list) {
 
   list->free_count = 0;
   list->total_count = 0;
+
+  list->free_list_chunks = NULL;
+  list->free_list_chunks_count = 0;
+  list->free_list_chunks_capacity = 0;
 }
 
 /**************************************************************************************/
@@ -78,18 +84,30 @@ void init_list(List* list, char name[], uns data_size, Flag use_free_list) {
 
 void clear_list(List* list) {
   DEBUG(0, "Clearing list '%s'.\n", list->name);
-  if (list->tail) {
-    if (list->use_free_list) {
-      list->tail->next = list->free;
-      list->free = list->head;
 
-      list->free_count += list->count;
-    } else {
-      List_Entry *temp0, *temp1;
-      for (temp0 = list->head; temp0 != NULL; temp0 = temp1) {
-        temp1 = temp0->next;
-        free(temp0);
-      }
+  /* In free-list mode we may have allocated backing chunk blocks at
+   * get_list_entry() time. clear_list() must free those blocks, otherwise
+   * the allocations are leaked even if all elements are returned to the
+   * list->free chain. */
+  if (list->use_free_list) {
+    free_all_free_list_chunks(list);
+    list->head = NULL;
+    list->tail = NULL;
+    list->current = NULL;
+    list->free = NULL;
+    list->count = 0;
+    list->place = 0;
+    list->free_count = 0;
+    list->total_count = 0;
+    verify_list_counts(list);
+    return;
+  }
+
+  if (list->tail) {
+    List_Entry *temp0, *temp1;
+    for (temp0 = list->head; temp0 != NULL; temp0 = temp1) {
+      temp1 = temp0->next;
+      free(temp0);
     }
     list->head = NULL;
     list->tail = NULL;
@@ -98,6 +116,27 @@ void clear_list(List* list) {
     ASSERT(0, list->count == 0);
 
   verify_list_counts(list);
+}
+
+/**************************************************************************************/
+/* destroy_list: */
+
+void destroy_list(List* list) {
+  if (!list)
+    return;
+
+  /* clear_list() frees backing chunk blocks when use_free_list==TRUE */
+  clear_list(list);
+
+  free(list->name);
+  list->name = NULL;
+
+  if (list->use_free_list) {
+    free(list->free_list_chunks);
+    list->free_list_chunks = NULL;
+    list->free_list_chunks_count = 0;
+    list->free_list_chunks_capacity = 0;
+  }
 }
 
 /**************************************************************************************/
@@ -148,6 +187,9 @@ static inline List_Entry* get_list_entry(List* list) {
     ASSERT(0, FREE_LIST_ALLOC_SIZE > 1);
     rval = (List_Entry*)malloc(size * FREE_LIST_ALLOC_SIZE);
     ASSERT(0, rval);
+
+    record_free_list_chunk(list, rval);
+
     temp = (List_Entry*)((char*)rval + size);
     list->free = temp;
     list->total_count += FREE_LIST_ALLOC_SIZE;
@@ -168,6 +210,38 @@ static inline List_Entry* get_list_entry(List* list) {
   }
 
   return rval;
+}
+
+/**************************************************************************************/
+/* free_all_free_list_chunks: */
+
+static inline void free_all_free_list_chunks(List* list) {
+  if (list->free_list_chunks == NULL)
+    return;
+
+  for (int i = 0; i < list->free_list_chunks_count; i++) {
+    free(list->free_list_chunks[i]);
+  }
+
+  free(list->free_list_chunks);
+  list->free_list_chunks = NULL;
+  list->free_list_chunks_count = 0;
+  list->free_list_chunks_capacity = 0;
+}
+
+/**************************************************************************************/
+/* record_free_list_chunk: */
+
+static inline void record_free_list_chunk(List* list, void* chunk_base) {
+  if (list->free_list_chunks_count == list->free_list_chunks_capacity) {
+    int new_cap = (list->free_list_chunks_capacity == 0) ? 4 : (list->free_list_chunks_capacity * 2);
+    void** new_arr = (void**)realloc(list->free_list_chunks, sizeof(void*) * new_cap);
+    ASSERT(0, new_arr);
+    list->free_list_chunks = new_arr;
+    list->free_list_chunks_capacity = new_cap;
+  }
+
+  list->free_list_chunks[list->free_list_chunks_count++] = chunk_base;
 }
 
 /**************************************************************************************/

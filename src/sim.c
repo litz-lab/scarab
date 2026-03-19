@@ -58,6 +58,7 @@
 #include "prefetcher/fdip.h"
 
 #include "cmp_model.h"
+#include "cmp_model_support.h"
 #include "dumb_model.h"
 #include "freq.h"
 #include "lookahead_buffer.h"
@@ -679,9 +680,12 @@ void full_sim() {
   init_op_pool();
 
   // need to fill lookahead buffer after init_op_pool
-  ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);
-  for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-    init_lookahead_buffer(proc_id);
+  if (LOOKAHEAD_BUF_SIZE) {
+    for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+      cmp_set_all_stages(proc_id);
+      cmp_set_all_data(proc_id, 0);
+      init_lookahead_buffer(proc_id);
+    }
   }
 
   unique_count = 1;

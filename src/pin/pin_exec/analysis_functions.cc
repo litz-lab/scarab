@@ -48,6 +48,7 @@ void PIN_FAST_ANALYSIS_CALL docount(UINT32 c) {
 
   if(hyper_fast_forward_count <= 0) {
     hyper_ff = false;
+    prior_rep_eip = 0;
     *out << "Exiting Hyper Fast Forward Mode." << endl;
 
     if(hyper_fast_forward_delta > 0) {

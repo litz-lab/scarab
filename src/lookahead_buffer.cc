@@ -270,6 +270,8 @@ FT* lookahead_buffer_pop_ft(uns proc_id) {
 }
 
 void init_lookahead_buffer(uns proc_id) {
+  // LOOKAHEAD buffer should be disabled if we're using pin-exec-driven
+  ASSERT(proc_id, !(LOOKAHEAD_BUF_SIZE && (FRONTEND == FE_PIN_EXEC_DRIVEN)));
   if (!LOOKAHEAD_BUF_SIZE)
     return;
   ASSERT(proc_id, proc_id < per_core_lookahead.size());

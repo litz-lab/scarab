@@ -4201,6 +4201,7 @@ Flag l1_fill_line(Mem_Req* req) {
   }
 
   // write back can fill l1 directly - reqs filling core should not dirty the line
+  data->proc_id = req->proc_id;
   data->dirty = ((req->type == MRT_WB) && (req->state != MRS_FILL_L1));
   data->prefetch = req->type == MRT_DPRF || req->type == MRT_IPRF || req->demand_match_prefetch;
 

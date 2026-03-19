@@ -390,14 +390,10 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   // btb line size set to 1
   if (!bp_data->bp_id) {
     init_cache(bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
-    if (BTB_L0_PRESENT) {
-      bp_data->btb_l0 = (Cache*)malloc(sizeof(Cache));
+    if (BTB_L0_PRESENT)
       init_cache(bp_data->btb_l0, "BTB_L0", BTB_L0_ENTRIES, BTB_L0_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
-    }
-    if (BTB_L1_PRESENT) {
-      bp_data->btb_l1 = (Cache*)malloc(sizeof(Cache));
+    if (BTB_L1_PRESENT)
       init_cache(bp_data->btb_l1, "BTB_L1", BTB_L1_ENTRIES, BTB_L1_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
-    }
   } else {
     // points to the primary BP's shared caches
     bp_data->btb = primary_bp->btb;

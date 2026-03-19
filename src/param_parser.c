@@ -447,12 +447,11 @@ void get_Flag_param(const char* name, Flag* variable) {
 
 void get_string_param(const char* name, char** variable) {
   if (optarg)
-    /* this may waste some memory...screw it */
-    {
-      *variable = strdup(optarg);
-      track_param_strdup(*variable);
-    }
-  else
+  /* this may waste some memory...screw it */
+  {
+    *variable = strdup(optarg);
+    track_param_strdup(*variable);
+  } else
     FATAL_ERROR(0, "Parameter '%s' missing value --- Ignored.\n", name);
 }
 

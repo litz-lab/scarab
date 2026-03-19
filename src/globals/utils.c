@@ -614,7 +614,6 @@ void cfprintf(FILE* stream, const char* passed_format, ...) {
   vsprintf(cur, start, ap);
   cur += strlen(cur);
   ASSERT(0, strlen(strings[lines]) <= MAX_LINE_CHARS);
-
 }
 
 /**************************************************************************************/

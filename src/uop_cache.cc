@@ -165,7 +165,7 @@ void init_uop_cache_stage(uns8 proc_id, const char* name) {
 
   // The cache library computes the number of entries from cache_size_bytes/cache_line_size_bytes
   per_core_uc_stage[proc_id].uop_cache.emplace(UOP_CACHE_LINES, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
-                                                  (Repl_Policy)UOP_CACHE_REPL);
+                                               (Repl_Policy)UOP_CACHE_REPL);
 }
 
 /**************************************************************************************/

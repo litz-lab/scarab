@@ -306,7 +306,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
           hexstr64s(inst->instruction_addr), hexstr64s(inst->instruction_next_addr), Op_Type_str(inst->op_type),
           inst->num_st, inst->num_ld, inst->is_fp, inst->cf_type, inst->size, hexstr64s(inst->branch_target),
           inst->ld_size, inst->st_size, ctype_pin_inst_ld_and_st_addrs(proc_id, inst), inst->actually_taken,
-          num_uops[proc_id], eom[proc_id], info->table_info->bar_type);
+          num_uops[proc_id], eom[proc_id], info->table_info.bar_type);
   } else {
     trace_uop = trace_uop_array[num_sending_uop[proc_id]];
     ASSERTM(proc_id, trace_uop, "%i\n", num_sending_uop[proc_id]);
@@ -331,7 +331,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->eom = trace_uop->eom;
   op->fetched_instruction = fetched_instruction[proc_id];
   op->inst_info = info;
-  op->table_info = info->table_info;
+  op->table_info = &info->table_info;
   op->off_path = FALSE;
   op->state = OS_FETCHED;
   op->fu_num = -1;
@@ -420,16 +420,16 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
         hexstr64s(op->oracle_info.va), op->table_info->mem_type, op->oracle_info.mem_size, op->table_info->cf_type,
         hexstr64s(op->oracle_info.target), op->oracle_info.dir);
 
-  for (ii = 0; ii < op->inst_info->table_info->num_src_regs; ii++) {
+  for (ii = 0; ii < op->inst_info->table_info.num_src_regs; ii++) {
     DEBUG(proc_id, "op_num:%s unique_num:%s pc:0x%s npc:0x%s, src(%d/%d):%s \n", unsstr64(op->op_num),
           unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc), ii + 1,
-          op->inst_info->table_info->num_src_regs, disasm_reg(op->inst_info->srcs[ii].id));
+          op->inst_info->table_info.num_src_regs, disasm_reg(op->inst_info->srcs[ii].id));
   }
 
-  for (ii = 0; ii < op->inst_info->table_info->num_dest_regs; ii++) {
+  for (ii = 0; ii < op->inst_info->table_info.num_dest_regs; ii++) {
     DEBUG(proc_id, "op_num:%s unique_num:%s pc:0x%s npc:0x%s, dest(%d/%d):%s \n", unsstr64(op->op_num),
           unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc), ii + 1,
-          op->inst_info->table_info->num_dest_regs, disasm_reg(op->inst_info->dests[ii].id));
+          op->inst_info->table_info.num_dest_regs, disasm_reg(op->inst_info->dests[ii].id));
   }
 }
 
@@ -447,31 +447,28 @@ void convert_t_uop_to_info(uns8 proc_id, Trace_Uop* t_uop, Inst_Info* info) {
   // build info
   // we can optimize to build this info only once
   // FIXME. at least a hash function based on the same table info.
-  info->table_info = (Table_Info*)malloc(sizeof(Table_Info));
-
   ASSERT(proc_id, info);
-  ASSERT(proc_id, info->table_info);
 
-  info->table_info->op_type = t_uop->op_type;
-  info->table_info->mem_type = t_uop->mem_type;
-  info->table_info->cf_type = t_uop->cf_type;
-  info->table_info->bar_type = t_uop->bar_type;
-  info->table_info->num_dest_regs = t_uop->num_dest_regs;
-  info->table_info->num_src_regs = t_uop->num_src_regs;
-  info->table_info->mem_size = t_uop->mem_size;  // IGNORED FOR REP STRING instructions
+  info->table_info.op_type = t_uop->op_type;
+  info->table_info.mem_type = t_uop->mem_type;
+  info->table_info.cf_type = t_uop->cf_type;
+  info->table_info.bar_type = t_uop->bar_type;
+  info->table_info.num_dest_regs = t_uop->num_dest_regs;
+  info->table_info.num_src_regs = t_uop->num_src_regs;
+  info->table_info.mem_size = t_uop->mem_size;  // IGNORED FOR REP STRING instructions
 
-  info->table_info->type = 0;        /* scarab internals, ignore */
-  info->table_info->mask = 0;        /* scarab internals, ignore */
-  info->table_info->dec_func = NULL; /* FIXME */
-  info->table_info->src_func = NULL; /* FIXME */
-  info->table_info->sim_func = NULL; /* FIXME */
-  info->table_info->qualifiers = 0;  /* FIXME */
+  info->table_info.type = 0;        /* scarab internals, ignore */
+  info->table_info.mask = 0;        /* scarab internals, ignore */
+  info->table_info.dec_func = NULL; /* FIXME */
+  info->table_info.src_func = NULL; /* FIXME */
+  info->table_info.sim_func = NULL; /* FIXME */
+  info->table_info.qualifiers = 0;  /* FIXME */
 
   /* op->inst_info */
   info->addr = t_uop->addr;
   info->trace_info.inst_size = (t_uop->inst_size);  // FIXME
 
-  for (ii = 0; ii < info->table_info->num_src_regs; ii++) {
+  for (ii = 0; ii < info->table_info.num_src_regs; ii++) {
     info->srcs[ii].type = INT_REG;
     info->srcs[ii].id = t_uop->srcs[ii].id;
     info->srcs[ii].reg = t_uop->srcs[ii].reg;
@@ -480,7 +477,7 @@ void convert_t_uop_to_info(uns8 proc_id, Trace_Uop* t_uop, Inst_Info* info) {
   }
 
   /* only one destination - temporary that is going to be read by the second t_uop */
-  for (ii = 0; ii < info->table_info->num_dest_regs; ii++) {
+  for (ii = 0; ii < info->table_info.num_dest_regs; ii++) {
     info->dests[ii].type = INT_REG;
     info->dests[ii].id = t_uop->dests[ii].id;
     info->dests[ii].reg = t_uop->dests[ii].reg;
@@ -862,20 +859,20 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
       convert_t_uop_to_info(proc_id, trace_uop[ii], info);
       trace_uop[ii]->info = info;
 
-      info->table_info->true_op_type = pi->true_op_type;
-      trace_uop[ii]->info->table_info->is_simd = pi->is_simd;
+      info->table_info.true_op_type = pi->true_op_type;
+      trace_uop[ii]->info->table_info.is_simd = pi->is_simd;
       trace_uop[ii]->info->uop_seq_num = ii;
-      strcpy(trace_uop[ii]->info->table_info->name, pi->pin_iclass);
+      strcpy(trace_uop[ii]->info->table_info.name, pi->pin_iclass);
       if (trace_uop[ii]->alu_uop) {
-        trace_uop[ii]->info->table_info->num_simd_lanes = pi->num_simd_lanes;
-        trace_uop[ii]->info->table_info->lane_width_bytes = pi->lane_width_bytes;
+        trace_uop[ii]->info->table_info.num_simd_lanes = pi->num_simd_lanes;
+        trace_uop[ii]->info->table_info.lane_width_bytes = pi->lane_width_bytes;
       }
       trace_uop[ii]->info->trace_info.is_gather_scatter = pi->is_gather_scatter;
 
       ASSERT(proc_id, info->trace_info.inst_size == pi->size);
 
       Flag is_last_uop = (ii == (num_uop - 1));
-      convert_dyn_uop(proc_id, info, pi, trace_uop[ii], info->table_info->mem_size, is_last_uop);
+      convert_dyn_uop(proc_id, info, pi, trace_uop[ii], info->table_info.mem_size, is_last_uop);
       if (pi->fake_inst) {
         ASSERT(0, generated_dummy_nop);
         dummy_nop = *info;
@@ -900,7 +897,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
       ASSERT(proc_id, info->trace_info.inst_size == pi->size);
 
       Flag is_last_uop = (ii == (num_uop - 1));
-      convert_dyn_uop(proc_id, info, pi, trace_uop[ii], info->table_info->mem_size, is_last_uop);
+      convert_dyn_uop(proc_id, info, pi, trace_uop[ii], info->table_info.mem_size, is_last_uop);
     }
   }
 
@@ -916,11 +913,11 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
   trace_uop->va = 0;
   trace_uop->mem_size = 0;
 
-  if (info->table_info->cf_type) {
+  if (info->table_info.cf_type) {
     trace_uop->actual_taken = pi->actually_taken;
     trace_uop->target = pi->branch_target;  // FIXME
-  } else if (info->table_info->mem_type) {
-    if (info->table_info->mem_type == MEM_ST) {
+  } else if (info->table_info.mem_type) {
+    if (info->table_info.mem_type == MEM_ST) {
       trace_uop->store_seq_num = info->trace_info.store_seq_num;
       ASSERT(proc_id, trace_uop->store_seq_num < MAX_ST_NUM);
       trace_uop->va = pi->st_vaddr[trace_uop->store_seq_num];
@@ -930,7 +927,7 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
             (long long unsigned int)pi->instruction_addr, Op_Type_str(pi->op_type), pi->num_ld, pi->num_st,
             hexstr64s(trace_uop->va), pi->st_size);
       trace_uop->mem_size = mem_size;
-    } else if (info->table_info->mem_type == MEM_LD) {
+    } else if (info->table_info.mem_type == MEM_LD) {
       trace_uop->load_seq_num = info->trace_info.load_seq_num;
       ASSERT(proc_id, trace_uop->load_seq_num < MAX_LD_NUM);
       trace_uop->va = pi->ld_vaddr[trace_uop->load_seq_num];

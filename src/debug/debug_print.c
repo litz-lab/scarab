@@ -237,8 +237,8 @@ void print_op_field(FILE* stream, Op* op, uns field) {
         fprintf(stream, "xxxxxxxxxxxxxxxxxxxx|");
       break;
     case OP_TYPE_FIELD:
-      if (op && op->inst_info && op->inst_info->table_info)
-        fprintf(stream, "%19s |", Op_Type_str(op->inst_info->table_info->op_type));
+      if (op && op->inst_info)
+        fprintf(stream, "%19s |", Op_Type_str(op->inst_info->table_info.op_type));
       else
         fprintf(stream, "xxxxxxxxxxxxxxxxxxxx|");
       break;

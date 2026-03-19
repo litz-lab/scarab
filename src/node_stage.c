@@ -817,7 +817,7 @@ void node_precommit_retire(Op* op) {
 
 /* Marcro-Fusion op */
 void node_fuse_op(Op* op) {
-  uns16 op_code = op->inst_info->table_info->true_op_type;
+  uns16 op_code = op->inst_info->table_info.true_op_type;
 
   if (op_code == XED_ICLASS_CMP || op_code == XED_ICLASS_TEST) {
     node->prev_op_fusable = TRUE;

@@ -552,6 +552,7 @@ void uop_sim() {
   Inst_Info inst_info;
   op.table_info = &table_info;
   op.inst_info = &inst_info;
+  memset(&inst_info, 0, sizeof(inst_info));
   op.mbp7_info = NULL;
   op.bp_pred_info = NULL;
   memset(&op.bp_pred_l0, 0, sizeof(op.bp_pred_l0));
@@ -570,6 +571,8 @@ void uop_sim() {
       if (!retired_exit[proc_id]) {
         do {
           frontend_fetch_op(proc_id, 0, &op);
+          // Keep Inst_Info's by-value table_info consistent with Op's pointer.
+          inst_info.table_info = table_info;
 
           if (op.table_info->mem_type != NOT_MEM && op.oracle_info.va == 0) {
             FATAL_ERROR(proc_id, "Access to 0x0\n");

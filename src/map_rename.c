@@ -98,33 +98,33 @@ static inline void reg_file_debug_print_op(Op *op, int state) {
     return;
 
   Inst_Info *inst_info = op->inst_info;
-  uns16 op_code = inst_info->table_info->true_op_type;
+  uns16 op_code = inst_info->table_info.true_op_type;
 
   printf("[OP: %d]\n", state);
   printf("op_num: %lld, off_path: %d, ", op->op_num, op->off_path);
   printf("pc: %lld, opcode: 0x%x(%s), cf: %d, mem: %d\n", inst_info->addr, op_code, xed_iclass_enum_t2str(op_code),
-         inst_info->table_info->cf_type, inst_info->table_info->mem_type);
+         inst_info->table_info.cf_type, inst_info->table_info.mem_type);
 
-  printf("src#%d: <", inst_info->table_info->num_src_regs);
-  for (int ii = 0; ii < inst_info->table_info->num_src_regs; ii++)
+  printf("src#%d: <", inst_info->table_info.num_src_regs);
+  for (int ii = 0; ii < inst_info->table_info.num_src_regs; ii++)
     printf("%d, ", inst_info->srcs[ii].id);
-  printf(">, dest#%d: <", inst_info->table_info->num_dest_regs);
-  for (int ii = 0; ii < inst_info->table_info->num_dest_regs; ii++)
+  printf(">, dest#%d: <", inst_info->table_info.num_dest_regs);
+  for (int ii = 0; ii < inst_info->table_info.num_dest_regs; ii++)
     printf("%d, ", inst_info->dests[ii].id);
   printf(">\n");
 
-  printf("src_ptag#%d: <", inst_info->table_info->num_src_regs);
-  for (int ii = 0; ii < inst_info->table_info->num_src_regs; ii++)
+  printf("src_ptag#%d: <", inst_info->table_info.num_src_regs);
+  for (int ii = 0; ii < inst_info->table_info.num_src_regs; ii++)
     printf("%d, ", op->src_reg_id[ii][REG_TABLE_TYPE_PHYSICAL]);
   printf(">\n");
 
-  printf("dst_ptag#%d: <", inst_info->table_info->num_dest_regs);
-  for (int ii = 0; ii < inst_info->table_info->num_dest_regs; ii++)
+  printf("dst_ptag#%d: <", inst_info->table_info.num_dest_regs);
+  for (int ii = 0; ii < inst_info->table_info.num_dest_regs; ii++)
     printf("%d, ", op->dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL]);
   printf(">\n");
 
-  printf("prev_ptag#%d: <", inst_info->table_info->num_dest_regs);
-  for (int ii = 0; ii < inst_info->table_info->num_dest_regs; ii++)
+  printf("prev_ptag#%d: <", inst_info->table_info.num_dest_regs);
+  for (int ii = 0; ii < inst_info->table_info.num_dest_regs; ii++)
     printf("%d, ", op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL]);
   printf(">\n");
 }
@@ -337,7 +337,7 @@ static inline void reg_file_move_eliminate(Op *op) {
   if (!reg_file_check_same_reg_width(src_reg_id, dst_reg_id))
     return;
 
-  if (!reg_file_check_move_elim_candidate(op->inst_info->table_info->true_op_type))
+  if (!reg_file_check_move_elim_candidate(op->inst_info->table_info.true_op_type))
     return;
 
   op->move_eliminated = TRUE;
@@ -1513,8 +1513,8 @@ static void reg_early_release_atomic_identify(Op *op) {
 
   // store/load/div may lead to exceptions
   if ((op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) ||
-      (op->inst_info->table_info->true_op_type >= XED_ICLASS_DIV &&
-       op->inst_info->table_info->true_op_type <= XED_ICLASS_DIVSS)) {
+      (op->inst_info->table_info.true_op_type >= XED_ICLASS_DIV &&
+       op->inst_info->table_info.true_op_type <= XED_ICLASS_DIVSS)) {
     is_except = TRUE;
   }
 

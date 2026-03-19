@@ -155,7 +155,7 @@ void free_op(Op* op) {
     delete_store_hash_entry(op);
 
   if (op->inst_info && op->inst_info->fake_inst) {
-    ASSERT(0, op->table_info == op->inst_info->table_info);
+    ASSERT(0, op->table_info == &op->inst_info->table_info);
     // we no longer allocate memory for fake nops
     // free(op->inst_info->table_info);
     free(op->inst_info);

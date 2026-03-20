@@ -214,7 +214,7 @@ void rebuild_offpath_map() {
   /* rebuild the map starting with the first offpath op */
   for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
     update_map(*op_p);
-    if ((*op_p)->table_info->mem_type == MEM_ST) {
+    if ((*op_p)->inst_info->table_info.mem_type == MEM_ST) {
       update_store_hash(*op_p);
     }
   }
@@ -261,7 +261,7 @@ void map_op(Op* op) {
 static inline void read_reg_map(Op* op) {
   uns ii;
 
-  for (ii = 0; ii < op->table_info->num_src_regs; ii++) {
+  for (ii = 0; ii < op->inst_info->table_info.num_src_regs; ii++) {
     uns id = op->inst_info->srcs[ii].id;
     ASSERT(map_data->proc_id, id < NUM_REG_IDS);
 
@@ -285,7 +285,7 @@ static inline void read_store_map(Op* op) {
   if (!MEM_OBEY_STORE_DEP || MEM_OOO_STORES)
     return;
 
-  if (op->table_info->mem_type) {
+  if (op->inst_info->table_info.mem_type) {
     uns ind = map_data->last_store_flag;
     Map_Entry* map_entry = &map_data->last_store[ind];
 
@@ -303,7 +303,7 @@ static inline void update_map(Op* op) {
 
   ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
   /* update the register map if the op produces a value */
-  for (ii = 0; ii < op->table_info->num_dest_regs; ii++) {
+  for (ii = 0; ii < op->inst_info->table_info.num_dest_regs; ii++) {
     uns id = op->inst_info->dests[ii].id;
     ASSERT(map_data->proc_id, id < NUM_REG_IDS);
 
@@ -320,7 +320,7 @@ static inline void update_map(Op* op) {
   }
 
   /* update the map if the op is a store */
-  if (op->table_info->mem_type == MEM_ST) {
+  if (op->inst_info->table_info.mem_type == MEM_ST) {
     uns ind = op->off_path;
     Map_Entry* map_entry = &map_data->last_store[ind];
 
@@ -351,9 +351,9 @@ inline void update_map_entry(Op* op, Map_Entry* map_entry) {
 void map_mem_dep(Op* op) {
   if (!MEM_OBEY_STORE_DEP)
     return;
-  if (op->table_info->mem_type == MEM_ST)
+  if (op->inst_info->table_info.mem_type == MEM_ST)
     update_store_hash(op);
-  if (op->table_info->mem_type == MEM_LD)
+  if (op->inst_info->table_info.mem_type == MEM_LD)
     add_store_deps(op);
 }
 
@@ -697,7 +697,8 @@ void add_src_from_op(Op* op, Op* src_op, Dep_Type type) {
 
   set_not_rdy_bit(op, src_num);
   if (type == MEM_DATA_DEP) {
-    ASSERT(op->proc_id, src_op->table_info->mem_type == MEM_ST && op->table_info->mem_type == MEM_LD);
+    ASSERT(op->proc_id,
+           src_op->inst_info->table_info.mem_type == MEM_ST && op->inst_info->table_info.mem_type == MEM_LD);
   }
   DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d\n", unsstr64(op->op_num),
         unsstr64(src_op->op_num), src_num);
@@ -717,7 +718,7 @@ void add_src_from_map_entry(Op* op, Map_Entry* map_entry, Dep_Type type) {
           map_entry->op, map_entry->op_num, map_entry->unique_num);
   ASSERT(map_data->proc_id, type < NUM_DEP_TYPES);
   ASSERTM(map_data->proc_id, src_num < MAX_DEPS, "op_num: %llu, op_type %u, src_num: %u\n", op->op_num,
-          op->table_info->op_type, src_num);
+          op->inst_info->table_info.op_type, src_num);
   ASSERTM(map_data->proc_id, map_entry->op_num < op->op_num, "op:%s  src_op:%s\n", unsstr64(op->op_num),
           unsstr64(map_entry->op->op_num));
 

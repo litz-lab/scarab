@@ -490,8 +490,8 @@ void cmp_warmup(Op* op) {
   }
 
   // Warmup caches for data
-  Flag is_load = op->table_info->mem_type == MEM_LD;
-  Flag is_store = op->table_info->mem_type == MEM_ST;
+  Flag is_load = op->inst_info->table_info.mem_type == MEM_LD;
+  Flag is_store = op->inst_info->table_info.mem_type == MEM_ST;
   if (is_load || is_store) {
     Cache* dcache = &(cmp_model.dcache_stage[proc_id].dcache);
     Dcache_Data* dc_data = cache_access(dcache, va, &dummy_line_addr, TRUE);
@@ -514,7 +514,7 @@ void cmp_warmup(Op* op) {
   }
 
   // Warmup BP for CF instructions
-  if (op->table_info->cf_type != NOT_CF) {
+  if (op->inst_info->table_info.cf_type != NOT_CF) {
     Bp_Data* bp_data = &(cmp_model.bp_data[proc_id][0]);
     op->btb_pred_info = NULL;  // reset so bp_predict_btb() can set it (op may be reused)
     bp_predict_btb(bp_data, op);
@@ -523,7 +523,7 @@ void cmp_warmup(Op* op) {
     bp_target_known_op(bp_data, op);
     bp_resolve_op(bp_data, op);
     if (op->bp_pred_info->mispred || op->bp_pred_info->misfetch) {
-      bp_recover_op(bp_data, op->table_info->cf_type, &op->recovery_info);
+      bp_recover_op(bp_data, op->inst_info->table_info.cf_type, &op->recovery_info);
     }
     bp_data->bp->retire_func(op);
   }

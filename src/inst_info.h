@@ -77,7 +77,7 @@ typedef struct Trace_Info_struct {
 struct Inst_Info_struct {
   Addr addr;               // address of the instruction
   uns uop_seq_num;         // static op num used to differentiate ops with same pc
-  Table_Info* table_info;  // pointer into the table of static instruction information
+  Table_Info table_info;   // static instruction information (by value)
 
   Reg_Info srcs[MAX_SRCS];    // source register information
   Reg_Info dests[MAX_DESTS];  // destination register information

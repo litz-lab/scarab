@@ -47,7 +47,7 @@ typedef struct FT FT;
 #define OP_SRCS_RDY(x) ((x)->srcs_not_rdy_vector == 0 && cycle_count >= (x)->rdy_cycle)
 #define OP_DONE(x) (cycle_count >= (x)->done_cycle)
 #define OP_BROADCAST(x) ((cycle_count + 1) >= (x)->done_cycle)
-#define MULTI_CYCLE_OP(x) ((x)->inst_info->latency > 1 + RFILE_STAGE || (x)->table_info->mem_type == MEM_LD)
+#define MULTI_CYCLE_OP(x) ((x)->inst_info->latency > 1 + RFILE_STAGE || (x)->inst_info->table_info.mem_type == MEM_LD)
 #define OP_BP_ID(x) ((x)->parent_FT->bp_id)
 #define MAX_STRANDS 400
 #define MAX_STRAND_BYTES (MAX_STRANDS / 8)
@@ -141,7 +141,6 @@ struct Op_struct {
   Counter unique_num;           // unique number for each instance of an op (not reset on recovery)
   Counter unique_num_per_proc;  // unique number per core
   uns64 inst_uid;               // unique number for the macro instruction provided by the frontend (PIN)
-  Table_Info* table_info;       // copy of info->table_info to limit pointer chasing
   Inst_Info* inst_info;         // pointer to unique struct for each static instruction
   Op_Info oracle_info;          // information about the execution of the op in the oracle
   Op_Info engine_info;          // information about the execution of the op in the engine

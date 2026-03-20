@@ -29,6 +29,7 @@
 #include "libs/hash_lib.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "globals/assert.h"
 #include "globals/global_defs.h"
@@ -72,7 +73,8 @@ void init_hash_table(Hash_Table* table, const char* name, uns buckets, uns data_
 
 void init_complex_hash_table(Hash_Table* table, const char* name, uns buckets, uns data_size,
                              Flag (*eq_func)(void const*, void const*)) {
-  table->name = strdup(name);
+  // `name` is expected to be long-lived (caller passes string literals/constants).
+  table->name = (char*)name;
   table->buckets = buckets;
   table->data_size = data_size;
   table->count = 0;
@@ -144,6 +146,8 @@ void* hash_table_access_create(Hash_Table* table, int64 key, Flag* new_entry) {
   new_hash->next = NULL;
   new_hash->data = (void*)smalloc(table->data_size);
   ASSERT(0, new_hash->data);
+  /* smalloc() does not zero memory. Ensure the payload starts clean. */
+  memset(new_hash->data, 0, table->data_size);
 
   if (prev)
     prev->next = new_hash;
@@ -184,6 +188,8 @@ void* complex_hash_table_access_create(Hash_Table* table, int64 key, void const*
   new_hash->next = NULL;
   new_hash->data = (void*)smalloc(table->data_size);
   ASSERT(0, new_hash->data);
+  /* smalloc() does not zero memory. Ensure the payload starts clean. */
+  memset(new_hash->data, 0, table->data_size);
 
   if (prev)
     prev->next = new_hash;

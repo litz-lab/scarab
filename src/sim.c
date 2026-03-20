@@ -315,8 +315,8 @@ static inline Counter check_forward_progress(uns8 proc_id) {
           "%llu, state: %u\n",
           cmp_model.node_stage[proc_id].node_head->unique_num, cmp_model.node_stage[proc_id].node_head->op_pool_valid,
           cmp_model.node_stage[proc_id].node_head->oracle_info.va, cmp_model.node_stage[proc_id].node_head->state,
-          cmp_model.node_stage[proc_id].node_head->table_info->op_type,
-          cmp_model.node_stage[proc_id].node_head->table_info->mem_type,
+          cmp_model.node_stage[proc_id].node_head->inst_info->table_info.op_type,
+          cmp_model.node_stage[proc_id].node_head->inst_info->table_info.mem_type,
           cmp_model.node_stage[proc_id].node_head->req ? cmp_model.node_stage[proc_id].node_head->req : 0,
           cmp_model.node_stage[proc_id].node_head->req ? cmp_model.node_stage[proc_id].node_head->req->proc_id : 0,
           cmp_model.node_stage[proc_id].node_head->req ? cmp_model.node_stage[proc_id].node_head->req->addr : 0,
@@ -550,8 +550,8 @@ void uop_sim() {
   Op op;
   Table_Info table_info;
   Inst_Info inst_info;
-  op.table_info = &table_info;
   op.inst_info = &inst_info;
+  memset(&inst_info, 0, sizeof(inst_info));
   op.mbp7_info = NULL;
   op.bp_pred_info = NULL;
   memset(&op.bp_pred_l0, 0, sizeof(op.bp_pred_l0));
@@ -570,8 +570,10 @@ void uop_sim() {
       if (!retired_exit[proc_id]) {
         do {
           frontend_fetch_op(proc_id, 0, &op);
+          // Keep Inst_Info's embedded table_info consistent with local copy.
+          inst_info.table_info = table_info;
 
-          if (op.table_info->mem_type != NOT_MEM && op.oracle_info.va == 0) {
+          if (op.inst_info->table_info.mem_type != NOT_MEM && op.oracle_info.va == 0) {
             FATAL_ERROR(proc_id, "Access to 0x0\n");
           }
 
@@ -793,6 +795,29 @@ void full_sim() {
         dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
       }
       check_heartbeat(proc_id, TRUE);
+    }
+  }
+
+  /* Tear down list backing allocations (free-list chunk pools). */
+  if (td)
+    destroy_list(&td->seq_op_list);
+
+  if (mem) {
+    destroy_list(&mem->req_buffer_free_list);
+
+    if (mem->l1_in_buffer_core) {
+      for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+        destroy_list(&mem->l1_in_buffer_core[proc_id]);
+      }
+      free(mem->l1_in_buffer_core);
+      mem->l1_in_buffer_core = NULL;
+    }
+
+    if (mem->req_buffer && mem->total_mem_req_buffers) {
+      for (uns ii = 0; ii < mem->total_mem_req_buffers; ii++) {
+        destroy_list(&mem->req_buffer[ii].op_ptrs);
+        destroy_list(&mem->req_buffer[ii].op_uniques);
+      }
     }
   }
 

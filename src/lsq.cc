@@ -65,7 +65,7 @@ struct LSQ_Entry {
         op_num(mem_op->op_num),
         unique_num(mem_op->unique_num),
         off_path(mem_op->off_path),
-        mem_type(mem_op->table_info->mem_type) {}
+        mem_type(mem_op->inst_info->table_info.mem_type) {}
 };
 
 class LSQ {
@@ -96,14 +96,14 @@ void LSQ::init(const uns8 proc_id, const Mem_Type mem_type, const size_t entry_n
 
 void LSQ::allocate(Op* mem_op) {
   ASSERT(proc_id, entries.size() < entry_num);
-  ASSERT(proc_id, mem_op->table_info->mem_type == this->mem_type);
+  ASSERT(proc_id, mem_op->inst_info->table_info.mem_type == this->mem_type);
 
   entries.emplace_back(mem_op);
 }
 
 void LSQ::free(Op* mem_op) {
   ASSERT(proc_id, !entries.empty());
-  ASSERT(proc_id, mem_op->table_info->mem_type == this->mem_type);
+  ASSERT(proc_id, mem_op->inst_info->table_info.mem_type == this->mem_type);
   ASSERT(proc_id, !mem_op->off_path);
 
   ASSERT(proc_id, entries.front().op_num == mem_op->op_num);
@@ -132,7 +132,7 @@ void LSQ::recover(Counter flush_op_num) {
     ASSERT(proc_id, !entries.empty());
     ASSERT(proc_id, back_entry.op->off_path);
     ASSERT(proc_id, entries.back().op_num == back_entry.op->op_num);
-    ASSERT(proc_id, back_entry.op->table_info->mem_type == this->mem_type);
+    ASSERT(proc_id, back_entry.op->inst_info->table_info.mem_type == this->mem_type);
     entries.pop_back();
   }
 }
@@ -198,7 +198,7 @@ Flag LSQ_Unit::available(Mem_Type mem_type) {
 }
 
 void LSQ_Unit::dispatch(Op* mem_op) {
-  switch (mem_op->table_info->mem_type) {
+  switch (mem_op->inst_info->table_info.mem_type) {
     case MEM_LD:
       load_queue.allocate(mem_op);
       break;
@@ -219,7 +219,7 @@ void LSQ_Unit::recover(Counter flush_op_num) {
 }
 
 void LSQ_Unit::commit(Op* mem_op) {
-  switch (mem_op->table_info->mem_type) {
+  switch (mem_op->inst_info->table_info.mem_type) {
     case MEM_LD:
       load_queue.free(mem_op);
       break;
@@ -298,7 +298,7 @@ void lsq_dispatch(Op* mem_op) {
   if (!LSQ_ENABLE)
     return;
 
-  ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
+  ASSERT(mem_op->proc_id, mem_op->inst_info->table_info.mem_type);
   lsq_unit->dispatch(mem_op);
 }
 
@@ -312,7 +312,7 @@ void lsq_commit(Op* mem_op) {
   if (!LSQ_ENABLE)
     return;
 
-  ASSERT(mem_op->proc_id, mem_op->table_info->mem_type);
+  ASSERT(mem_op->proc_id, mem_op->inst_info->table_info.mem_type);
   lsq_unit->commit(mem_op);
 }
 

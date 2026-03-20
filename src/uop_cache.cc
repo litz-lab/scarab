@@ -33,6 +33,7 @@
 #include "uop_cache.h"
 
 #include <map>
+#include <optional>
 #include <vector>
 
 #include "globals/assert.h"
@@ -97,7 +98,8 @@ uns Uop_Cache::set_idx_hash(Uop_Cache_Key key) {
 }
 
 typedef struct Uop_Cache_Stage_Cpp_struct {
-  Uop_Cache* uop_cache;
+  // Store cache by value to avoid `new` allocations.
+  std::optional<Uop_Cache> uop_cache;
 
   /*
    * the lookup buffer stores the uop cache lines of an FT to be consumed by the icache stage.
@@ -154,15 +156,16 @@ void init_uop_cache_stage(uns8 proc_id, const char* name) {
   memset(uc, 0, sizeof(Uop_Cache_Stage));
 
   uc->proc_id = proc_id;
-  uc->sd.name = (char*)strdup(name);
+  // `name` is expected to be a long-lived string (caller passes string literals).
+  uc->sd.name = (char*)name;
 
   uc->sd.max_op_count = UOPC_ISSUE_WIDTH;
   uc->sd.op_count = 0;
   uc->sd.ops = (Op**)calloc(UOPC_ISSUE_WIDTH, sizeof(Op*));
 
   // The cache library computes the number of entries from cache_size_bytes/cache_line_size_bytes
-  per_core_uc_stage[proc_id].uop_cache =
-      new Uop_Cache(UOP_CACHE_LINES, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE, (Repl_Policy)UOP_CACHE_REPL);
+  per_core_uc_stage[proc_id].uop_cache.emplace(UOP_CACHE_LINES, UOP_CACHE_ASSOC, UOP_CACHE_LINE_SIZE,
+                                               (Repl_Policy)UOP_CACHE_REPL);
 }
 
 /**************************************************************************************/

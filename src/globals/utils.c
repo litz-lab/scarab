@@ -396,7 +396,14 @@ uns log2_ctr(Counter n) {
 #define DEFAULT_COL_SEPARATOR "  "
 
 void cfprintf(FILE* stream, const char* passed_format, ...) {
-  char* format = passed_format == NULL ? NULL : strdup(passed_format);
+  char format_buf[MAX_LINE_CHARS];
+  char* format = NULL;
+  if (passed_format != NULL) {
+    /* cfprintf mutates the format string while parsing ($ columns). */
+    ASSERT(0, strlen(passed_format) < MAX_LINE_CHARS);
+    snprintf(format_buf, sizeof(format_buf), "%s", passed_format);
+    format = format_buf;
+  }
 
   static Flag in_table = 0;
   static int lines;
@@ -607,8 +614,6 @@ void cfprintf(FILE* stream, const char* passed_format, ...) {
   vsprintf(cur, start, ap);
   cur += strlen(cur);
   ASSERT(0, strlen(strings[lines]) <= MAX_LINE_CHARS);
-
-  free(format);
 }
 
 /**************************************************************************************/

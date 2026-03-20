@@ -3,6 +3,7 @@
 #include "uop_queue_stage.h"
 
 #include <deque>
+#include <string>
 #include <vector>
 
 extern "C" {
@@ -37,6 +38,11 @@ struct Uop_Queue_Stage_Data {
   std::deque<Stage_Data*> free_sds;
   bool off_path;
   uns8 proc_id;
+
+  // Backing storage to avoid per-init heap allocations.
+  std::vector<Stage_Data> stage_sds;
+  std::vector<std::vector<Op*>> stage_ops;
+  std::vector<std::string> stage_names;
 };
 
 static std::vector<Uop_Queue_Stage_Data> per_core_uop_queue;
@@ -58,14 +64,24 @@ void init_uop_queue_stage(uns8 proc_id) {
   char tmp_name[MAX_STR_LENGTH + 1];
   Uop_Queue_Stage_Data& state = per_core_uop_queue[proc_id];
   state.off_path = false;
+  state.q.clear();
+  state.free_sds.clear();
+  state.stage_sds.resize(UOP_QUEUE_STAGE_LENGTH);
+  state.stage_ops.resize(UOP_QUEUE_STAGE_LENGTH);
+  state.stage_names.resize(UOP_QUEUE_STAGE_LENGTH);
+
   for (uns ii = 0; ii < UOP_QUEUE_STAGE_LENGTH; ii++) {
-    Stage_Data* sd = (Stage_Data*)calloc(1, sizeof(Stage_Data));
     snprintf(tmp_name, MAX_STR_LENGTH, "UOP QUEUE STAGE %d", ii);
-    sd->name = (char*)strdup(tmp_name);
-    sd->max_op_count = STAGE_MAX_OP_COUNT;
-    sd->op_count = 0;
-    sd->ops = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
-    state.free_sds.push_back(sd);
+    state.stage_names[ii] = tmp_name;
+
+    state.stage_ops[ii].assign(STAGE_MAX_OP_COUNT, nullptr);
+    Stage_Data& sd = state.stage_sds[ii];
+    sd.name = (char*)state.stage_names[ii].c_str();  // read-only usage
+    sd.max_op_count = STAGE_MAX_OP_COUNT;
+    sd.op_count = 0;
+    sd.ops = state.stage_ops[ii].data();
+
+    state.free_sds.push_back(&sd);
   }
 }
 

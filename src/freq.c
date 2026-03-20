@@ -52,7 +52,7 @@ typedef struct Domain_Info_struct {
   Counter cycles;
   uns cycle_time;
   uns time_until_next_cycle;
-  char* name;
+  char name[MAX_STR_LENGTH + 1];
 } Domain_Info;
 
 /**************************************************************************************/
@@ -125,7 +125,7 @@ static Freq_Domain_Id freq_domain_create(char* name, uns cycle_time) {
   domains[num_domains].cycle_time = cycle_time;
   // every domain's first cycle can start at time zero
   domains[num_domains].time_until_next_cycle = 0;
-  domains[num_domains].name = strdup(name);
+  snprintf(domains[num_domains].name, sizeof(domains[num_domains].name), "%s", name);
   num_domains++;
   return num_domains - 1;
 }
@@ -239,7 +239,5 @@ Counter freq_convert_future_cycle(Freq_Domain_Id src, Counter src_cycle_count, F
 }
 
 void freq_done(void) {
-  for (uns i = 0; i < num_domains; i++) {
-    free(domains[i].name);
-  }
+  /* nothing to clean up */
 }

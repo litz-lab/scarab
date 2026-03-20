@@ -84,7 +84,6 @@ void set_decode_stage(Decode_Stage* new_dec) {
 /* init_decode_stage: */
 
 void init_decode_stage(uns8 proc_id, const char* name) {
-  char tmp_name[MAX_STR_LENGTH + 1];
   uns ii;
   ASSERT(0, dec);
   ASSERT(0, STAGE_MAX_DEPTH > 0);
@@ -96,8 +95,10 @@ void init_decode_stage(uns8 proc_id, const char* name) {
   dec->sds = (Stage_Data*)malloc(sizeof(Stage_Data) * STAGE_MAX_DEPTH);
   for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &dec->sds[ii];
-    snprintf(tmp_name, MAX_STR_LENGTH, "%s %d", name, STAGE_MAX_DEPTH - ii - 1);
-    cur->name = (char*)strdup(tmp_name);
+    /* Stage_Data::name is only used for debugging/printing; reuse the long-lived
+     * stage name pointer passed into init_decode_stage().
+     */
+    cur->name = (char*)name;
     cur->max_op_count = STAGE_MAX_OP_COUNT;
     cur->ops = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
   }
@@ -254,12 +255,12 @@ void update_decode_stage(Stage_Data* src_sd) {
 /* process_decode_op: This function may also be called by ops from the uop cache.     */
 
 void decode_stage_process_op(Op* op) {
-  Cf_Type cf = op->table_info->cf_type;
+  Cf_Type cf = op->inst_info->table_info.cf_type;
   op->decode_cycle = cycle_count;
 
   if (cf) {
     DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",
-          op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE, op->inst_info->addr, op->op_num,
+          op->inst_info->table_info.bar_type & BAR_FETCH ? TRUE : FALSE, op->inst_info->addr, op->op_num,
           op->bp_pred_info->recover_at_decode);
     // it is a direct branch, so the target is now known
     if (cf <= CF_CALL) {

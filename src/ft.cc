@@ -276,7 +276,7 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
 #ifdef ENABLE_PT_MEMTRACE
   trace_mode |= (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE);
 #endif
-  if (op->table_info->cf_type) {
+  if (op->inst_info->table_info.cf_type) {
     ASSERT(proc_id, op->eom);
     bp_predict_op(g_bp_data, op, op->parent_FT->bp_id, 1, op->inst_info->addr, pred_level);
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
@@ -286,8 +286,9 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
           "recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
           bp_id, op->inst_info->addr, op->oracle_info.npc, bp_pred_info->pred_npc, bp_pred_info->mispred,
           bp_pred_info->misfetch, op->btb_pred_info->btb_miss, bp_pred_info->pred == TAKEN,
-          bp_pred_info->recover_at_decode, bp_pred_info->recover_at_exec, op->table_info->bar_type & BAR_FETCH);
-    if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
+          bp_pred_info->recover_at_decode, bp_pred_info->recover_at_exec,
+          op->inst_info->table_info.bar_type & BAR_FETCH);
+    if ((op->inst_info->table_info.bar_type & BAR_FETCH) || IS_CALLSYS(&op->inst_info->table_info)) {
       bp_pred_info->recover_at_decode = FALSE;
       bp_pred_info->recover_at_exec = FALSE;
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
@@ -311,7 +312,7 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
       return FT_EVENT_OFFPATH_TAKEN_REDIRECT;
     }
 
-  } else if (op->table_info->bar_type & BAR_FETCH) {
+  } else if (op->inst_info->table_info.bar_type & BAR_FETCH) {
     ASSERT(0, !(bp_pred_info->recover_at_fe | bp_pred_info->recover_at_decode | bp_pred_info->recover_at_exec));
     return FT_EVENT_FETCH_BARRIER;
   }
@@ -464,8 +465,8 @@ FT_Ended_By FT::get_end_reason() const {
     uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
                  ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
     bool end_of_icache_line = offset >= ICACHE_LINE_SIZE;
-    bool cf_taken = (op->table_info->cf_type && bp_pred_info->pred == TAKEN);
-    bool bar_fetch = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH;
+    bool cf_taken = (op->inst_info->table_info.cf_type && bp_pred_info->pred == TAKEN);
+    bool bar_fetch = IS_CALLSYS(&op->inst_info->table_info) || op->inst_info->table_info.bar_type & BAR_FETCH;
 
     if (op->exit) {
       return FT_APP_EXIT;

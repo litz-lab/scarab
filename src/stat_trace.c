@@ -29,6 +29,7 @@
 #include "stat_trace.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #include "globals/assert.h"
 
@@ -78,10 +79,14 @@ void stat_trace_init(void) {
   file = fopen(stats_trace_file, "w");
   ASSERTM(0, file, "Could not open %s", STAT_TRACE_FILE);
 
+  /* snprintf into stats_str / num_tokens buf truncates if longer than MAX_STR_LENGTH */
+  ASSERTM(0, strlen(STATS_TO_TRACE) <= MAX_STR_LENGTH, "STATS_TO_TRACE longer than %d", MAX_STR_LENGTH);
+
   /* parse the stats to trace */
   num_stats = num_tokens(STATS_TO_TRACE, DELIMITERS);
   stat_indices = malloc(num_stats * sizeof(Stat_Enum));
-  char* stats_str = strdup(STATS_TO_TRACE);
+  char stats_str[MAX_STR_LENGTH + 1];
+  snprintf(stats_str, sizeof(stats_str), "%s", STATS_TO_TRACE);
   char* stat_name = strtok(stats_str, DELIMITERS);
   uns ii = 0;
   fprintf(file, "Instructions");
@@ -97,7 +102,6 @@ void stat_trace_init(void) {
   }
   fprintf(file, "\n");
   ASSERT(0, ii == num_stats);
-  free(stats_str);
 
   stat_mon = stat_mon_create_from_array(stat_indices, num_stats);
 
@@ -141,13 +145,13 @@ void stat_trace_done(void) {
 
 uns num_tokens(const char* str, const char* delim) {
   uns n = 0;
-  char* buf = strdup(str);
+  char buf[MAX_STR_LENGTH + 1];
+  snprintf(buf, sizeof(buf), "%s", str);
   char* token = strtok(buf, delim);
   while (token) {
     n += 1;
     token = strtok(NULL, delim);
   }
-  free(buf);
   return n;
 }
 

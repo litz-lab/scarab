@@ -119,7 +119,8 @@ void init_node_stage(uns8 proc_id, const char* name) {
   DEBUG(proc_id, "Initializing %s stage\n", name);
 
   node->proc_id = proc_id;
-  node->sd.name = (char*)strdup(name);
+  /* `name` is expected to be long-lived (caller passes string literals). */
+  node->sd.name = (char*)name;
 
   // allocate wires to functional units
   node->sd.max_op_count = NUM_FUS;  // Bandwidth between schedule and FUS
@@ -442,13 +443,13 @@ void node_fill_rob(Stage_Data* src_sd) {
     if (!op)
       continue;
 
-    if (op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) {
-      if (!lsq_available(op->table_info->mem_type)) {
+    if (op->inst_info->table_info.mem_type == MEM_LD || op->inst_info->table_info.mem_type == MEM_ST) {
+      if (!lsq_available(op->inst_info->table_info.mem_type)) {
         DEBUG(node->proc_id, "Node fill stalled: LSQ full for op_num:%s mem_type:%s src_sd_op_count:%d node_count:%d\n",
-              unsstr64(op->op_num), op->table_info->mem_type == MEM_LD ? "LD" : "ST", src_sd->op_count,
+              unsstr64(op->op_num), op->inst_info->table_info.mem_type == MEM_LD ? "LD" : "ST", src_sd->op_count,
               node->node_count);
         STAT_EVENT(op->proc_id, LSQ_FULL_TOTAL);
-        STAT_EVENT(op->proc_id, LSQ_FULL_TOTAL + op->table_info->mem_type);
+        STAT_EVENT(op->proc_id, LSQ_FULL_TOTAL + op->inst_info->table_info.mem_type);
         return;
       }
 
@@ -457,7 +458,7 @@ void node_fill_rob(Stage_Data* src_sd) {
 
     ASSERT(node->proc_id, node->proc_id == op->proc_id);
     /* check if it's a synchronizing op that can't issue  */
-    if ((op->table_info->bar_type & BAR_ISSUE) && (node->node_count > 0))
+    if ((op->inst_info->table_info.bar_type & BAR_ISSUE) && (node->node_count > 0))
       break;
 
     /* remove op from previous stage */
@@ -498,7 +499,7 @@ void node_fill_rob(Stage_Data* src_sd) {
     op->state = OS_IN_ROB;
 
     /* always stop issuing after a synchronizing op */
-    if (op->table_info->bar_type & BAR_ISSUE)
+    if (op->inst_info->table_info.bar_type & BAR_ISSUE)
       break;
   }
 }
@@ -579,14 +580,14 @@ void node_retire() {
         STAT_EVENT(op->proc_id, NODE_INST_COUNT_FETCHED);
       }
 
-      Flag retire_op = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH ||
+      Flag retire_op = IS_CALLSYS(&op->inst_info->table_info) || op->inst_info->table_info.bar_type & BAR_FETCH ||
                        (inst_count[node->proc_id] % NODE_RETIRE_RATE == 0);
 
       if (op->exit) {
         retired_exit[op->proc_id] = TRUE;
         decoupled_fe_retire(op, op->proc_id, -1);
       } else if (retire_op) {
-        if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
+        if ((op->inst_info->table_info.bar_type & BAR_FETCH) || IS_CALLSYS(&op->inst_info->table_info)) {
           icache_resolve_fetch_barrier(op->proc_id, op->inst_uid);
         }
         decoupled_fe_retire(op, op->proc_id, op->inst_uid);
@@ -603,10 +604,10 @@ void node_retire() {
 
     remove_from_seq_op_list(td, op);
 
-    if (op->table_info->cf_type) {
+    if (op->inst_info->table_info.cf_type) {
       if (BP_UPDATE_AT_RETIRE) {
         // this code updates the branch prediction structures
-        if (op->table_info->cf_type >= CF_IBR)
+        if (op->inst_info->table_info.cf_type >= CF_IBR)
           bp_target_known_op(g_bp_data, op);
 
         bp_resolve_op(g_bp_data, op);
@@ -614,10 +615,10 @@ void node_retire() {
       bp_retire_op(g_bp_data, op);
     }
 
-    if (op->table_info->mem_type == MEM_LD && (op->done_cycle - op->sched_cycle) < 5) {
+    if (op->inst_info->table_info.mem_type == MEM_LD && (op->done_cycle - op->sched_cycle) < 5) {
       STAT_EVENT(op->proc_id, LD_EXEC_CYCLES_0 + (op->done_cycle - op->sched_cycle));
     }
-    if (op->table_info->mem_type == MEM_LD) {
+    if (op->inst_info->table_info.mem_type == MEM_LD) {
       STAT_EVENT(op->proc_id, LD_NO_DEPENDENTS + (op->wake_up_head ? 1 : 0));
     }
     STAT_EVENT(op->proc_id, RET_OP_EXEC_COUNT_0 + MIN2(32, op->exec_count));
@@ -629,7 +630,7 @@ void node_retire() {
 
     node_precommit_retire(op);
 
-    if (op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) {
+    if (op->inst_info->table_info.mem_type == MEM_LD || op->inst_info->table_info.mem_type == MEM_ST) {
       lsq_commit(op);
     }
 
@@ -670,18 +671,18 @@ Flag is_node_stage_stalled() {
 void debug_print_retired_uop(Op* op) {
   PRINT_RETIRED_UOP(node->proc_id, "============================\n");
   PRINT_RETIRED_UOP(node->proc_id, "EIP: 0x%llx\n", op->inst_info->addr);
-  PRINT_RETIRED_UOP(node->proc_id, "Op Type: %s\n", Op_Type_str(op->table_info->op_type));
-  PRINT_RETIRED_UOP(node->proc_id, "Mem Type: %d\n", op->table_info->mem_type);
-  PRINT_RETIRED_UOP(node->proc_id, "CF Type: %d\n", op->table_info->cf_type);
-  PRINT_RETIRED_UOP(node->proc_id, "Barrier Type: %d\n", op->table_info->bar_type);
-  PRINT_RETIRED_UOP(node->proc_id, "Is SIMD: %d\n", op->table_info->is_simd);
+  PRINT_RETIRED_UOP(node->proc_id, "Op Type: %s\n", Op_Type_str(op->inst_info->table_info.op_type));
+  PRINT_RETIRED_UOP(node->proc_id, "Mem Type: %d\n", op->inst_info->table_info.mem_type);
+  PRINT_RETIRED_UOP(node->proc_id, "CF Type: %d\n", op->inst_info->table_info.cf_type);
+  PRINT_RETIRED_UOP(node->proc_id, "Barrier Type: %d\n", op->inst_info->table_info.bar_type);
+  PRINT_RETIRED_UOP(node->proc_id, "Is SIMD: %d\n", op->inst_info->table_info.is_simd);
   PRINT_RETIRED_UOP(node->proc_id, "Srcs: ");
-  for (uns i = 0; i < op->table_info->num_src_regs; ++i) {
+  for (uns i = 0; i < op->inst_info->table_info.num_src_regs; ++i) {
     PRINT_RETIRED_UOP(node->proc_id, "%s ", disasm_reg(op->inst_info->srcs[i].id));
   }
   PRINT_RETIRED_UOP(node->proc_id, "\n");
   PRINT_RETIRED_UOP(node->proc_id, "Dests: ");
-  for (uns i = 0; i < op->table_info->num_dest_regs; ++i) {
+  for (uns i = 0; i < op->inst_info->table_info.num_dest_regs; ++i) {
     PRINT_RETIRED_UOP(node->proc_id, "%s ", disasm_reg(op->inst_info->dests[i].id));
   }
   PRINT_RETIRED_UOP(node->proc_id, "\n");
@@ -752,10 +753,10 @@ Flag is_node_table_full() {
 
 void collect_node_table_full_stats(Op* op) {
   if (!(op->state == OS_DONE || OP_DONE(op))) {
-    if (op->table_info->op_type == OP_ILD || op->table_info->op_type == OP_IST || op->table_info->op_type == OP_FLD ||
-        op->table_info->op_type == OP_FST) {
+    if (op->inst_info->table_info.op_type == OP_ILD || op->inst_info->table_info.op_type == OP_IST ||
+        op->inst_info->table_info.op_type == OP_FLD || op->inst_info->table_info.op_type == OP_FST) {
       STAT_EVENT(node->proc_id, FULL_WINDOW_MEM_OP);
-    } else if (op->table_info->op_type >= OP_FCVT && op->table_info->op_type <= OP_FCMOV) {
+    } else if (op->inst_info->table_info.op_type >= OP_FCVT && op->inst_info->table_info.op_type <= OP_FCMOV) {
       STAT_EVENT(node->proc_id, FULL_WINDOW_FP_OP);
     } else {
       STAT_EVENT(node->proc_id, FULL_WINDOW_OTHER_OP);
@@ -777,11 +778,12 @@ void node_precommit_update(void) {
   uns precommit_count = 0;
   for (; op != NULL && precommit_count < NODE_RET_WIDTH; op = op->next_node) {
     // wait until the results usable for branches
-    if (op->table_info->cf_type && op->exec_cycle > cycle_count)
+    if (op->inst_info->table_info.cf_type && op->exec_cycle > cycle_count)
       return;
 
     // wait until looking up the d-cache for memory operands
-    if ((op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) && op->dcache_cycle > cycle_count)
+    if ((op->inst_info->table_info.mem_type == MEM_LD || op->inst_info->table_info.mem_type == MEM_ST) &&
+        op->dcache_cycle > cycle_count)
       return;
 
     if (op->off_path)
@@ -817,7 +819,7 @@ void node_precommit_retire(Op* op) {
 
 /* Marcro-Fusion op */
 void node_fuse_op(Op* op) {
-  uns16 op_code = op->inst_info->table_info->true_op_type;
+  uns16 op_code = op->inst_info->table_info.true_op_type;
 
   if (op_code == XED_ICLASS_CMP || op_code == XED_ICLASS_TEST) {
     node->prev_op_fusable = TRUE;

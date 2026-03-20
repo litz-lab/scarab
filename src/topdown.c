@@ -76,7 +76,7 @@ const static int TOPDOWN_RECOVERY_DEPTH = 2;
  * =================================================================================== */
 
 void topdown_bp_recovery(uns proc_id, Op* op) {
-  ASSERT(op->proc_id, op->table_info->cf_type);
+  ASSERT(op->proc_id, op->inst_info->table_info.cf_type);
 
   STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_CYCLES);
   if (op->bp_pred_info->recover_at_exec) {

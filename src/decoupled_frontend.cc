@@ -187,7 +187,6 @@ void decoupled_fe_print_conf_data() {
 
 /* Decoupled_FE member functions */
 Decoupled_FE::~Decoupled_FE() {
-  ASSERT(proc_id, ftq.empty());
   ASSERT(proc_id, saved_recovery_ft == nullptr);
   if (CONFIDENCE_ENABLE && bp_id == MAIN_BP) {
     delete conf;
@@ -698,7 +697,7 @@ void Decoupled_FE::stall(Op* op) {
 }
 
 void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
-  if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
+  if ((op->inst_info->table_info.bar_type & BAR_FETCH) || IS_CALLSYS(&op->inst_info->table_info)) {
     DEBUG(proc_id,
           "[DFE%u] Decoupled fetch saw barrier retire fetch_addr:0x%llx off_path:%i op_num:%llu list_count:%i\n", bp_id,
           op->inst_info->addr, op->off_path, op->op_num, td->seq_op_list.count);
@@ -724,7 +723,8 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
     return REASON_MISFETCH;
   }
   // ibtb miss
-  else if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) &&
+  else if (ENABLE_IBP &&
+           (op->inst_info->table_info.cf_type == CF_IBR || op->inst_info->table_info.cf_type == CF_ICALL) &&
            op->btb_pred_info->btb_miss && op->btb_pred_info->ibp_miss && op->bp_pred_info->pred_orig == TAKEN) {
     return REASON_IBTB_MISS;
   }

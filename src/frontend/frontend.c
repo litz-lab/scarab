@@ -146,10 +146,10 @@ static void collect_op_stats(Op* op) {
     STAT_EVENT(op->proc_id, ST_OP_ONPATH);
     if (op->eom)
       STAT_EVENT(op->proc_id, ST_INST_ONPATH);
-    STAT_EVENT(op->proc_id, ST_OP_INV + op->table_info->op_type);
-    STAT_EVENT(op->proc_id, ST_NOT_CF + op->table_info->cf_type);
-    STAT_EVENT(op->proc_id, ST_BAR_NONE + op->table_info->bar_type);
-    STAT_EVENT(op->proc_id, ST_NOT_MEM + op->table_info->mem_type);
+    STAT_EVENT(op->proc_id, ST_OP_INV + op->inst_info->table_info.op_type);
+    STAT_EVENT(op->proc_id, ST_NOT_CF + op->inst_info->table_info.cf_type);
+    STAT_EVENT(op->proc_id, ST_BAR_NONE + op->inst_info->table_info.bar_type);
+    STAT_EVENT(op->proc_id, ST_NOT_MEM + op->inst_info->table_info.mem_type);
   } else {
     STAT_EVENT(op->proc_id, ST_OP_OFFPATH);
     STAT_EVENT(op->proc_id, ST_FAKE_REASON_NOT_FAKE + op->inst_info->fake_inst_reason);
@@ -160,7 +160,7 @@ static void collect_op_stats(Op* op) {
     }
     if (op->eom)
       STAT_EVENT(op->proc_id, ST_INST_OFFPATH);
-    STAT_EVENT(op->proc_id, ST_NOT_MEM_OFFPATH + op->table_info->mem_type);
+    STAT_EVENT(op->proc_id, ST_NOT_MEM_OFFPATH + op->inst_info->table_info.mem_type);
   }
 }
 

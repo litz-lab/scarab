@@ -175,7 +175,9 @@ void init_exec_ports_fu_list(uns proc_id, Func_Unit* fu) {
   ASSERT(proc_id, strlen(base_name) + 5 < EXEC_PORTS_MAX_NAME_LEN);
   uns64 check_fu_type = 0;
 
-  char* fu_types_copy = strdup(FU_TYPES);
+  char fu_types_copy_buf[MAX_STR_LENGTH + 1];
+  snprintf(fu_types_copy_buf, sizeof(fu_types_copy_buf), "%s", FU_TYPES);
+  char* fu_types_copy = fu_types_copy_buf;
   Flag tmp = parse_next_elt(fu_types_copy, &next_type);
   for (i = 0; i < NUM_FUS; ++i, tmp = parse_next_elt(NULL, &next_type)) {
     ASSERT(proc_id, FU_TYPE_WIDTH <= sizeof(fu[i].type) * CHAR_BIT);
@@ -193,7 +195,6 @@ void init_exec_ports_fu_list(uns proc_id, Func_Unit* fu) {
   }
   ASSERTM(proc_id, tmp == FALSE, "Found more FU_TYPES than expected\n");
   ASSERTM(proc_id, check_fu_type == N_BIT_MASK(FU_TYPE_WIDTH), "FU types do not cover all possible ops");
-  free(fu_types_copy);
 }
 
 void init_exec_ports_rs_list(uns proc_id, Reservation_Station* rs, Func_Unit* local_fus) {
@@ -202,7 +203,9 @@ void init_exec_ports_rs_list(uns proc_id, Reservation_Station* rs, Func_Unit* lo
   const char* base_name = "RS";
   ASSERT(proc_id, strlen(base_name) + 5 < EXEC_PORTS_MAX_NAME_LEN);
 
-  char* rs_sizes_copy = strdup(RS_SIZES);
+  char rs_sizes_copy_buf[MAX_STR_LENGTH + 1];
+  snprintf(rs_sizes_copy_buf, sizeof(rs_sizes_copy_buf), "%s", RS_SIZES);
+  char* rs_sizes_copy = rs_sizes_copy_buf;
   Flag tmp = parse_next_elt(rs_sizes_copy, &next);
   POWER_TOTAL_RS_SIZE = 0;
   POWER_TOTAL_INT_RS_SIZE = 0;
@@ -217,9 +220,10 @@ void init_exec_ports_rs_list(uns proc_id, Reservation_Station* rs, Func_Unit* lo
     rs[i].size = next;
   }
   ASSERTM(proc_id, tmp == FALSE, "Found more RS_SIZES than expected\n");
-  free(rs_sizes_copy);
 
-  char* rs_connections_copy = strdup(RS_CONNECTIONS);
+  char rs_connections_copy_buf[MAX_STR_LENGTH + 1];
+  snprintf(rs_connections_copy_buf, sizeof(rs_connections_copy_buf), "%s", RS_CONNECTIONS);
+  char* rs_connections_copy = rs_connections_copy_buf;
   tmp = parse_next_elt(rs_connections_copy, &next);
   for (i = 0; i < NUM_RS; ++i, tmp = parse_next_elt(NULL, &next)) {
     ASSERTM(proc_id, tmp, "Found less RS_CONNECTIONS than expected\n");
@@ -256,7 +260,6 @@ void init_exec_ports_rs_list(uns proc_id, Reservation_Station* rs, Func_Unit* lo
     power_calc_instruction_window_size(&rs[i]);
   }
   ASSERTM(proc_id, tmp == FALSE, "Found more RS_CONNECTIONS than expected\n");
-  free(rs_connections_copy);
 }
 
 // Note: this function must be called *after* init_node_stage and

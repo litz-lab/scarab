@@ -40,6 +40,8 @@ extern const char* sim_mode_names[];
 /* Prototypes */
 
 char** get_params(int, char*[]);
+void free_params_arg_list(void);
+void free_params_string_allocs(void);
 void get_bp_mech_param(const char*, uns*);
 void get_bp_mech_l0_param(const char*, uns*);
 void get_btb_mech_param(const char*, uns*);

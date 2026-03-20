@@ -29,6 +29,7 @@
 #include "stat_trace.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #include "globals/assert.h"
 
@@ -77,6 +78,9 @@ void stat_trace_init(void) {
   sprintf(stats_trace_file, "%s%s", FILE_TAG, STAT_TRACE_FILE);
   file = fopen(stats_trace_file, "w");
   ASSERTM(0, file, "Could not open %s", STAT_TRACE_FILE);
+
+  /* snprintf into stats_str / num_tokens buf truncates if longer than MAX_STR_LENGTH */
+  ASSERTM(0, strlen(STATS_TO_TRACE) <= MAX_STR_LENGTH, "STATS_TO_TRACE longer than %d", MAX_STR_LENGTH);
 
   /* parse the stats to trace */
   num_stats = num_tokens(STATS_TO_TRACE, DELIMITERS);

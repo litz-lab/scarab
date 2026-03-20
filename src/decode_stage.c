@@ -255,12 +255,12 @@ void update_decode_stage(Stage_Data* src_sd) {
 /* process_decode_op: This function may also be called by ops from the uop cache.     */
 
 void decode_stage_process_op(Op* op) {
-  Cf_Type cf = op->table_info->cf_type;
+  Cf_Type cf = op->inst_info->table_info.cf_type;
   op->decode_cycle = cycle_count;
 
   if (cf) {
     DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",
-          op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE, op->inst_info->addr, op->op_num,
+          op->inst_info->table_info.bar_type & BAR_FETCH ? TRUE : FALSE, op->inst_info->addr, op->op_num,
           op->bp_pred_info->recover_at_decode);
     // it is a direct branch, so the target is now known
     if (cf <= CF_CALL) {

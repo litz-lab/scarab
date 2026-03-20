@@ -177,23 +177,23 @@ static void print_op_fields(uns proc_id, Op* op) {
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS inst addrs fake: %llx %d %d\n", op->inst_info->addr, op->inst_info->fake_inst,
                 op->inst_info->fake_inst_reason);
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op: %s\n", disasm_op(op, FALSE));
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op cf dir: %d %d %d\n", op->table_info->op_type, op->table_info->cf_type,
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op cf dir: %d %d %d\n", op->inst_info->table_info.op_type, op->inst_info->table_info.cf_type,
                 op->oracle_info.dir);
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS src regs: ");
-    for (int i = 0; i < op->table_info->num_src_regs; ++i) {
+    for (int i = 0; i < op->inst_info->table_info.num_src_regs; ++i) {
       DEBUG_PRINT(proc_id, "%d ", op->inst_info->srcs[i].id);
     }
     DEBUG_PRINT(proc_id, "\n");
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS dst regs: ");
-    for (int i = 0; i < op->table_info->num_dest_regs; ++i) {
+    for (int i = 0; i < op->inst_info->table_info.num_dest_regs; ++i) {
       DEBUG_PRINT(proc_id, "%d ", op->inst_info->dests[i].id);
     }
     DEBUG_PRINT(proc_id, "\n");
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS simd: %d %d %d\n", op->table_info->is_simd,
-                op->table_info->is_simd ? op->table_info->num_simd_lanes : 0,
-                op->table_info->is_simd ? op->table_info->lane_width_bytes : 0);
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS mem_type addr mem_size: %d %llx %d\n", op->table_info->mem_type,
-                op->oracle_info.va, op->table_info->mem_size);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS simd: %d %d %d\n", op->inst_info->table_info.is_simd,
+                op->inst_info->table_info.is_simd ? op->inst_info->table_info.num_simd_lanes : 0,
+                op->inst_info->table_info.is_simd ? op->inst_info->table_info.lane_width_bytes : 0);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS mem_type addr mem_size: %d %llx %d\n", op->inst_info->table_info.mem_type,
+                op->oracle_info.va, op->inst_info->table_info.mem_size);
   }
 }
 
@@ -331,7 +331,6 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->eom = trace_uop->eom;
   op->fetched_instruction = fetched_instruction[proc_id];
   op->inst_info = info;
-  op->table_info = &info->table_info;
   op->off_path = FALSE;
   op->state = OS_FETCHED;
   op->fu_num = -1;
@@ -376,8 +375,8 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
 
   /* execute op */
 
-  if (op->table_info->op_type == OP_CF) {
-    if (op->table_info->cf_type == CF_CBR || op->table_info->cf_type == CF_REP) {
+  if (op->inst_info->table_info.op_type == OP_CF) {
+    if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP) {
       op->oracle_info.dir = (trace_uop->actual_taken == 0) ? NOT_TAKEN : TAKEN;
     } else {
       /* assume that all CFs besides CBR are actually always taken. This fixes the
@@ -387,8 +386,8 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   } else
     op->oracle_info.dir = NOT_TAKEN;
 
-  if ((op->table_info->cf_type == CF_ICALL) || (op->table_info->cf_type == CF_IBR) ||
-      (op->table_info->cf_type == CF_ICO))
+  if ((op->inst_info->table_info.cf_type == CF_ICALL) || (op->inst_info->table_info.cf_type == CF_IBR) ||
+      (op->inst_info->table_info.cf_type == CF_ICO))
     op->oracle_info.dir = 1;  // FIXME Hack!! because of StringMOV
 
   /* removing proc_id from target before compare with zero */
@@ -399,9 +398,9 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
     ASSERT(op->proc_id, op->oracle_info.npc);
   op->oracle_info.mem_size = trace_uop->mem_size;
   // because of repeat move mem size is dynamic info  WRONG!!!!
-  // op->table_info->mem_size = trace_uop->mem_size;
+  // op->inst_info->table_info.mem_size = trace_uop->mem_size;
 
-  if (op->table_info->mem_type && !(op->oracle_info.va)) {
+  if (op->inst_info->table_info.mem_type && !(op->oracle_info.va)) {
     // QUESTION why? //TODO: Really why?
     op->oracle_info.va = last_ga_va[proc_id];
   } else if (op->oracle_info.va)
@@ -417,7 +416,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
         "op_num:%s unique_num:%s pc:0x%s npc:0x%s va:0x%s mem_type:%d "
         "mem_size:%d cf_type:%d oracle_target:%s dir:%d\n",
         unsstr64(op->op_num), unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc),
-        hexstr64s(op->oracle_info.va), op->table_info->mem_type, op->oracle_info.mem_size, op->table_info->cf_type,
+        hexstr64s(op->oracle_info.va), op->inst_info->table_info.mem_type, op->oracle_info.mem_size, op->inst_info->table_info.cf_type,
         hexstr64s(op->oracle_info.target), op->oracle_info.dir);
 
   for (ii = 0; ii < op->inst_info->table_info.num_src_regs; ii++) {

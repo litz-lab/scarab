@@ -1062,7 +1062,7 @@ void FDIP::update() {
           req.oldest_op_unique_num = (Counter)0;
           req.oldest_op_op_num = (Counter)0;
           req.oldest_op_addr = (Addr)0;
-          req.dirty_l0 = op && op->table_info->mem_type == MEM_ST && !op->off_path;
+          req.dirty_l0 = op && op->inst_info->table_info.mem_type == MEM_ST && !op->off_path;
           req.fdip_pref_off_path = op->off_path;
           req.demand_icache_emitted_cycle = 0;
           req.fdip_emitted_cycle = cycle_count;

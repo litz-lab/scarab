@@ -80,9 +80,9 @@ class CBP_To_Scarab_Intf {
 
     uns proc_id = op->proc_id;
     uns bp_id = op->parent_FT->get_bp_id();
-    OpType optype = scarab_to_cbp_optype(op->table_info->cf_type);
+    OpType optype = scarab_to_cbp_optype(op->inst_info->table_info.cf_type);
 
-    if (is_conditional_branch(op->table_info->cf_type)) {
+    if (is_conditional_branch(op->inst_info->table_info.cf_type)) {
       cbp_predictors_all_cores.at(proc_id).at(bp_id).UpdatePredictor(op->inst_info->addr, optype, op->oracle_info.dir,
                                                                      bp_pred_info->pred, op->oracle_info.target);
     } else {
@@ -123,8 +123,8 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op, Bp_Pred_Level pred_level) 
   Bp_Pred_Info* bp_pred_info = cbp_get_bp_pred_info(op, pred_level);
   uns proc_id = op->proc_id;
   uns bp_id = op->parent_FT->get_bp_id();
-  OpType optype = scarab_to_cbp_optype(op->table_info->cf_type);
-  Flag is_conditional = is_conditional_branch(op->table_info->cf_type);
+  OpType optype = scarab_to_cbp_optype(op->inst_info->table_info.cf_type);
+  Flag is_conditional = is_conditional_branch(op->inst_info->table_info.cf_type);
   Flag pred_dir =
       (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON) ? op->oracle_info.dir : bp_pred_info->pred;
   const Flag l0_wrong = op->bp_pred_l0.mispred || op->bp_pred_l0.misfetch;
@@ -193,8 +193,8 @@ void CBP_To_Scarab_Intf<TAGE64K>::update(Op* op,
 
   uns proc_id = op->proc_id;
   uns bp_id = op->parent_FT->get_bp_id();
-  OpType optype = scarab_to_cbp_optype(op->table_info->cf_type);
-  Flag is_conditional = is_conditional_branch(op->table_info->cf_type);
+  OpType optype = scarab_to_cbp_optype(op->inst_info->table_info.cf_type);
+  Flag is_conditional = is_conditional_branch(op->inst_info->table_info.cf_type);
 
   if (is_conditional)
     cbp_predictors_all_cores.at(proc_id).at(bp_id).NonSpecUpdateAtCond(op->inst_info->addr, optype, op->oracle_info.dir,

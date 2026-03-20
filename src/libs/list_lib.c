@@ -85,20 +85,19 @@ void init_list(List* list, char name[], uns data_size, Flag use_free_list) {
 void clear_list(List* list) {
   DEBUG(0, "Clearing list '%s'.\n", list->name);
 
-  /* In free-list mode we may have allocated backing chunk blocks at
-   * get_list_entry() time. clear_list() must free those blocks, otherwise
-   * the allocations are leaked even if all elements are returned to the
-   * list->free chain. */
+  /* Free-list mode: return all live entries to the pool without freeing
+   * backing chunks. Chunk malloc blocks are released only in destroy_list(). */
   if (list->use_free_list) {
-    free_all_free_list_chunks(list);
+    if (list->head) {
+      list->tail->next = list->free;
+      list->free = list->head;
+      list->free_count += list->count;
+    }
     list->head = NULL;
     list->tail = NULL;
     list->current = NULL;
-    list->free = NULL;
     list->count = 0;
     list->place = 0;
-    list->free_count = 0;
-    list->total_count = 0;
     verify_list_counts(list);
     return;
   }
@@ -125,18 +124,18 @@ void destroy_list(List* list) {
   if (!list)
     return;
 
-  /* clear_list() frees backing chunk blocks when use_free_list==TRUE */
+  /* Empty the live list; pool entries remain valid until chunks are freed. */
   clear_list(list);
+
+  if (list->use_free_list) {
+    free_all_free_list_chunks(list);
+    list->free = NULL;
+    list->free_count = 0;
+    list->total_count = 0;
+  }
 
   free(list->name);
   list->name = NULL;
-
-  if (list->use_free_list) {
-    free(list->free_list_chunks);
-    list->free_list_chunks = NULL;
-    list->free_list_chunks_count = 0;
-    list->free_list_chunks_capacity = 0;
-  }
 }
 
 /**************************************************************************************/

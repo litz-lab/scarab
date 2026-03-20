@@ -148,9 +148,6 @@ void free_op(Op* op) {
   ASSERTM(0, op_pool_active_ops >= 0, "op_pool_active_ops:%u\n", op_pool_active_ops);
   DEBUG(0, "Freed op  id:%u  op_pool_active_ops: %u\n", op->op_pool_id, op_pool_active_ops);
 
-  if (op->sched_info)
-    free(op->sched_info);
-
   if (op->inst_info && op->inst_info->table_info.mem_type == MEM_ST)
     delete_store_hash_entry(op);
 
@@ -172,11 +169,6 @@ void free_op(Op* op) {
    should be for things that never change. */
 
 void op_pool_init_op(Op* op) {
-  op->bp_pred_info = NULL;
-  memset(&op->bp_pred_l0, 0, sizeof(op->bp_pred_l0));
-  memset(&op->bp_pred_main, 0, sizeof(op->bp_pred_main));
-  memset(&op->btb_pred, 0, sizeof(op->btb_pred));
-  op->btb_pred_info = NULL;
 }
 
 /**************************************************************************************/
@@ -216,23 +208,18 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->rs_id = MAX_CTR;
 
   op->bp_pred_info = NULL;
-  memset(&op->bp_pred_l0, 0, sizeof(op->bp_pred_l0));
-  memset(&op->bp_pred_main, 0, sizeof(op->bp_pred_main));
-  memset(&op->btb_pred, 0, sizeof(op->btb_pred));
   op->btb_pred_info = NULL;
-
-  op->oracle_cp_num = -1;
 
   for (ii = 0; ii < MAX_SRCS; ++ii) {
     for (jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
-      op->src_reg_id[ii][jj] = -1;
+      op->src_reg_id[ii][jj] = OP_REG_ID_INVALID;
     }
   }
 
   for (ii = 0; ii < MAX_DESTS; ++ii) {
     for (jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
-      op->dst_reg_id[ii][jj] = -1;
-      op->prev_dst_reg_id[ii][jj] = -1;
+      op->dst_reg_id[ii][jj] = OP_REG_ID_INVALID;
+      op->prev_dst_reg_id[ii][jj] = OP_REG_ID_INVALID;
     }
   }
 }

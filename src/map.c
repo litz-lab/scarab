@@ -439,7 +439,7 @@ void delete_store_hash_entry(Op* op) {
 static inline Op* add_store_deps(Op* op) {
   Addr va = op->oracle_info.va;
   Op* last_src_op = NULL;
-  uns orig_num_srcs = op->oracle_info.num_srcs;
+  uns orig_num_srcs = op->num_srcs;
   Mem_Map_Traversal traversal;
 
   ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
@@ -483,9 +483,9 @@ static inline Op* add_store_deps(Op* op) {
   ASSERT(op->proc_id, last_src_op->op_num < op->op_num || op->off_path);
   if (MEM_OOO_STORES) {
     /* unmark all ops we marked earlier */
-    for (uns ii = orig_num_srcs; ii < op->oracle_info.num_srcs; ii++) {
-      ASSERT(op->proc_id, op->oracle_info.src_info[ii].op->marked);
-      op->oracle_info.src_info[ii].op->marked = FALSE;
+    for (uns ii = orig_num_srcs; ii < op->num_srcs; ii++) {
+      ASSERT(op->proc_id, op->src_info[ii].op->marked);
+      op->src_info[ii].op->marked = FALSE;
     }
   } else {
     add_src_from_op(op, last_src_op, MEM_DATA_DEP);
@@ -575,17 +575,16 @@ void wake_up_ops(Op* op, Dep_Type type, void (*wake_action)(Op*, Op*, uns8)) {
 /**************************************************************************************/
 /* add to wake up lists */
 
-void add_to_wake_up_lists(Op* op, Op_Info* op_info, void (*wake_action)(Op*, Op*, uns8)) {
+void add_to_wake_up_lists(Op* op, void (*wake_action)(Op*, Op*, uns8)) {
   uns ii;
   Flag dep_on_in_window_store = FALSE;
   UNUSED(dep_on_in_window_store);
 
   ASSERT(map_data->proc_id, op);
-  ASSERT(map_data->proc_id, op_info);
   ASSERT(map_data->proc_id, op->proc_id == map_data->proc_id);
 
-  for (ii = 0; ii < op_info->num_srcs; ii++) {
-    Src_Info* src_info = &op_info->src_info[ii];
+  for (ii = 0; ii < op->num_srcs; ii++) {
+    Src_Info* src_info = &op->src_info[ii];
     Op* src_op = src_info->op;
 
     /* CMP proc_id comparison here because it happens that an op object can be reused with same unique number but
@@ -678,8 +677,8 @@ void free_wake_up_list(Op* op) {
 /* add_src_from_op: . */
 
 void add_src_from_op(Op* op, Op* src_op, Dep_Type type) {
-  uns src_num = op->oracle_info.num_srcs++;
-  Src_Info* info = &op->oracle_info.src_info[src_num];
+  uns src_num = op->num_srcs++;
+  Src_Info* info = &op->src_info[src_num];
 
   ASSERT(map_data->proc_id, op);
   ASSERT(map_data->proc_id, src_op);
@@ -708,8 +707,8 @@ void add_src_from_op(Op* op, Op* src_op, Dep_Type type) {
 /* add_src_from_map_entry: set the src_info array */
 
 void add_src_from_map_entry(Op* op, Map_Entry* map_entry, Dep_Type type) {
-  uns src_num = op->oracle_info.num_srcs++;
-  Src_Info* info = &op->oracle_info.src_info[src_num];
+  uns src_num = op->num_srcs++;
+  Src_Info* info = &op->src_info[src_num];
 
   ASSERT(map_data->proc_id, op);
   ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
@@ -738,7 +737,7 @@ void add_src_from_map_entry(Op* op, Map_Entry* map_entry, Dep_Type type) {
 
 void clear_not_rdy_bit(Op* op, uns bit) {
   ASSERT(map_data->proc_id, op);
-  ASSERT(map_data->proc_id, bit < op->oracle_info.num_srcs);
+  ASSERT(map_data->proc_id, bit < op->num_srcs);
   DEBUG(map_data->proc_id, "Clearing not rdy bit  op_num:%s  bit:%d\n", unsstr64(op->op_num), bit);
   op->srcs_not_rdy_vector &= ~(0x1 << bit);
 }
@@ -748,7 +747,7 @@ void clear_not_rdy_bit(Op* op, uns bit) {
 
 void set_not_rdy_bit(Op* op, uns bit) {
   ASSERT(map_data->proc_id, op);
-  ASSERT(map_data->proc_id, bit < op->oracle_info.num_srcs);
+  ASSERT(map_data->proc_id, bit < op->num_srcs);
   /*  this message gets annoying
       DEBUG("Setting not rdy bit  op_num:%s  bit:%d\n", unsstr64(op->op_num),
      bit);
@@ -761,7 +760,7 @@ void set_not_rdy_bit(Op* op, uns bit) {
 
 Flag test_not_rdy_bit(Op* op, uns bit) {
   ASSERT(map_data->proc_id, op);
-  ASSERT(map_data->proc_id, bit < op->oracle_info.num_srcs);
+  ASSERT(map_data->proc_id, bit < op->num_srcs);
   return (op->srcs_not_rdy_vector & (0x1 << bit)) > 0;
 }
 

@@ -557,7 +557,6 @@ void uop_sim() {
   Inst_Info inst_info;
   op.inst_info = &inst_info;
   memset(&inst_info, 0, sizeof(inst_info));
-  op.mbp7_info = NULL;
   op.bp_pred_info = NULL;
   memset(&op.bp_pred_l0, 0, sizeof(op.bp_pred_l0));
   memset(&op.bp_pred_main, 0, sizeof(op.bp_pred_main));

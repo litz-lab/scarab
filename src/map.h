@@ -80,7 +80,7 @@ void map_op(Op*);
 void map_mem_dep(Op*);
 void wake_up_ops(Op*, Dep_Type, void (*)(Op*, Op*, uns8));
 void free_wake_up_list(Op*);
-void add_to_wake_up_lists(Op*, Op_Info*, void (*)(Op*, Op*, uns8));
+void add_to_wake_up_lists(Op*, void (*)(Op*, Op*, uns8));
 
 void add_src_from_op(Op*, Op*, Dep_Type);
 void add_src_from_map_entry(Op*, Map_Entry*, Dep_Type);

@@ -327,7 +327,6 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->unique_num = unique_count;
   op->unique_num_per_proc = unique_count_per_core[proc_id];
   op->proc_id = proc_id;
-  op->thread_id = 0;
   op->eom = trace_uop->eom;
   op->fetched_instruction = fetched_instruction[proc_id];
   op->inst_info = info;
@@ -344,8 +343,6 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->replay_cycle = MAX_CTR;
   op->retire_cycle = MAX_CTR;
   op->replay = FALSE;
-  op->replay_count = 0;
-  op->dont_cause_replays = FALSE;
   op->exec_count = 0;
   op->in_rdy_list = FALSE;
   op->in_node_list = FALSE;
@@ -363,9 +360,6 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   // op->row_num = MAX_CTR;
   op->node_id = MAX_CTR;
   op->rs_id = MAX_CTR;
-  op->same_src_last_op = 0;
-
-  op->oracle_cp_num = -1;
   op->engine_info.l1_miss = FALSE;
   op->engine_info.l1_miss_satisfied = FALSE;
   op->engine_info.dep_on_l1_miss = FALSE;

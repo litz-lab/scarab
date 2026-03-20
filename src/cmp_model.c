@@ -31,6 +31,7 @@
 #include "cmp_model.h"
 
 #include "globals/assert.h"
+#include "globals/global_vars.h"
 
 #include "debug/debug.param.h"
 #include "debug/debug_macros.h"
@@ -391,11 +392,12 @@ void cmp_recover() {
   recover_uop_queue_stage();
   recover_idq_stage();
   recover_map_stage();
-  recover_node_stage();
   recover_lsq();
   recover_exec_stage();
   recover_dcache_stage();
   recover_memory();
+  recover_node_stage();
+
 }
 
 /**************************************************************************************/

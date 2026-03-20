@@ -2724,7 +2724,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
     op_unique = sl_list_add_tail(&req->op_uniques);
     *op_unique = op->unique_num;
 
-    if (op->table_info->mem_type == MEM_ST && !op->off_path)
+    if (op->inst_info->table_info.mem_type == MEM_ST && !op->off_path)
       req->dirty_l0 = TRUE;
 
     if (req->oldest_op_unique_num) {
@@ -3213,7 +3213,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
   new_req->unique_num = unique_num;  // this is for icache requests for now
   new_req->onpath_match_offpath = FALSE;
   new_req->demand_match_prefetch = FALSE;
-  new_req->dirty_l0 = op && op->table_info->mem_type == MEM_ST && !op->off_path;
+  new_req->dirty_l0 = op && op->inst_info->table_info.mem_type == MEM_ST && !op->off_path;
   new_req->wb_requested_back = FALSE;
   new_req->wb_used_onpath = FALSE;
   new_req->mem_seq_num = 0;
@@ -4582,8 +4582,8 @@ void mark_ops_as_l1_miss_satisfied(Mem_Req* req) {
       ASSERTM(req->proc_id, req->proc_id == op->proc_id,
               "req addr: %llx, valid_op: %u, op_proc_id: %u op_num: %llu, "
               "offpath: %u op_type: %u, mem_type: %u\n",
-              req->addr, op->op_pool_valid, op->proc_id, op->op_num, op->off_path, op->table_info->op_type,
-              op->table_info->mem_type);
+              req->addr, op->op_pool_valid, op->proc_id, op->op_num, op->off_path, op->inst_info->table_info.op_type,
+              op->inst_info->table_info.mem_type);
 
       if (op->req == req) {
         op->engine_info.l1_miss_satisfied = TRUE;
@@ -4619,7 +4619,7 @@ static void mark_l1_miss_deps(Op* op) {
          unsstr64(dep_op->oracle_info.va), unsstr64(op->unique_num),
          unsstr64(op->exec_cycle), disasm_op(op, TRUE),
          unsstr64(op->oracle_info.va)); */
-      ASSERT(dep_op->proc_id, !dep_op->engine_info.l1_miss || dep_op->table_info->mem_type == MEM_ST);
+      ASSERT(dep_op->proc_id, !dep_op->engine_info.l1_miss || dep_op->inst_info->table_info.mem_type == MEM_ST);
       if (!dep_op->engine_info.dep_on_l1_miss) {
         dep_op->engine_info.dep_on_l1_miss = TRUE;
         mark_l1_miss_deps(dep_op);

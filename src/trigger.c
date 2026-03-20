@@ -44,7 +44,7 @@
 struct Trigger_struct {
   Flag armed;
   const Stat* stat;
-  char* name;
+  const char* name;
   Trigger_Type type;
   Counter period;
   Counter next_threshold;
@@ -57,7 +57,8 @@ Trigger* trigger_create(const char* name, const char* spec, Trigger_Type type) {
   ASSERT(0, name);
   ASSERT(0, spec);
   Trigger* trigger = malloc(sizeof(Trigger));
-  trigger->name = strdup(name);
+  /* `name` is expected to be long-lived (call sites pass string literals). */
+  trigger->name = name;
   ASSERT(0, type < TRIGGER_NUM_ELEMS);
   trigger->type = type;
 
@@ -66,7 +67,9 @@ Trigger* trigger_create(const char* name, const char* spec, Trigger_Type type) {
     trigger->armed = FALSE;  // will never trigger
     return trigger;
   }
-  char* buf = strdup(spec);
+  /* Make a mutable copy for parsing (avoid heap/strdup). */
+  char buf[MAX_STR_LENGTH + 1];
+  snprintf(buf, sizeof(buf), "%s", spec);
 
   char* colon = strchr(buf, ':');
   ASSERTM(0, colon,
@@ -165,6 +168,5 @@ double trigger_progress(Trigger* trigger) {
 }
 
 void trigger_free(Trigger* trigger) {
-  free(trigger->name);
   free(trigger);
 }

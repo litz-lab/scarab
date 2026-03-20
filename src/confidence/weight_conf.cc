@@ -6,7 +6,7 @@ WeightConfStat::WeightConfStat(uns _proc_id, WeightConf* _conf_mech) : ConfMechS
 }
 
 void WeightConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
-  if (!CONF_BTB_MISS_RATE_CONF && !(op->table_info->cf_type)) {
+  if (!CONF_BTB_MISS_RATE_CONF && !(op->inst_info->table_info.cf_type)) {
     if (cf_op_distance >= CONF_OFF_PATH_THRESHOLD) {
       low_confidence_cnt += CONF_OFF_PATH_INC + (double)CONF_BTB_MISS_RATE_WEIGHT * btb_miss_rate;
       cf_op_distance = 0.0;

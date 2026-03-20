@@ -292,5 +292,10 @@ int main(int argc, char* argv[], char* envp[]) {
   if (opt2_in_use())
     opt2_sim_complete();
 
+  /* Free heap-allocated merged argv created by get_params(). */
+  free_params_arg_list();
+  /* Free strdup()-allocated parameter strings. */
+  free_params_string_allocs();
+
   return 0;
 }

@@ -151,11 +151,10 @@ void free_op(Op* op) {
   if (op->sched_info)
     free(op->sched_info);
 
-  if (op->table_info->mem_type == MEM_ST)
+  if (op->inst_info && op->inst_info->table_info.mem_type == MEM_ST)
     delete_store_hash_entry(op);
 
   if (op->inst_info && op->inst_info->fake_inst) {
-    ASSERT(0, op->table_info == op->inst_info->table_info);
     // we no longer allocate memory for fake nops
     // free(op->inst_info->table_info);
     free(op->inst_info);

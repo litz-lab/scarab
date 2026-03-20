@@ -99,7 +99,8 @@ void init_dcache_stage(uns8 proc_id, const char* name) {
   memset(dc, 0, sizeof(Dcache_Stage));
 
   dc->proc_id = proc_id;
-  dc->sd.name = (char*)strdup(name);
+  /* `name` is expected to be long-lived (caller passes string literals). */
+  dc->sd.name = (char*)name;
   dc->sd.max_op_count = STAGE_MAX_OP_COUNT;
   dc->sd.ops = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
 
@@ -236,9 +237,9 @@ void update_dcache_stage(Stage_Data* src_sd) {
     // the bank bits are the lowest order cache index bits
     uns bank = BANK(op->oracle_info.va, DCACHE_BANKS, DCACHE_INTERLEAVE_FACTOR);
     DEBUG(dc->proc_id, "check_read and write port availiabilty mem_type:%s bank:%d \n",
-          (op->table_info->mem_type == MEM_ST) ? "ST" : "LD", bank);
-    if (!PERFECT_DCACHE && ((op->table_info->mem_type == MEM_ST && !get_write_port(&dc->ports[bank])) ||
-                            (op->table_info->mem_type != MEM_ST && !get_read_port(&dc->ports[bank])))) {
+          (op->inst_info->table_info.mem_type == MEM_ST) ? "ST" : "LD", bank);
+    if (!PERFECT_DCACHE && ((op->inst_info->table_info.mem_type == MEM_ST && !get_write_port(&dc->ports[bank])) ||
+                            (op->inst_info->table_info.mem_type != MEM_ST && !get_read_port(&dc->ports[bank])))) {
       op->state = OS_WAIT_DCACHE;
       STAT_EVENT(dc->proc_id, DCACHE_READ_PORT_UNAVAILABLE_ONPATH + op->off_path);
       continue;
@@ -256,7 +257,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
     op->dcache_cycle = cycle_count;
     dc->idle_cycle = MAX2(dc->idle_cycle, cycle_count + DCACHE_CYCLES);
 
-    if (op->table_info->mem_type == MEM_ST)
+    if (op->inst_info->table_info.mem_type == MEM_ST)
       STAT_EVENT(op->proc_id, POWER_DCACHE_WRITE_ACCESS);
     else
       STAT_EVENT(op->proc_id, POWER_DCACHE_READ_ACCESS);
@@ -276,7 +277,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
       }
 
       op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
-      if (op->table_info->mem_type != MEM_ST) {
+      if (op->inst_info->table_info.mem_type != MEM_ST) {
         op->wake_cycle = op->done_cycle;
         wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
       }
@@ -402,12 +403,12 @@ static inline Flag dcache_stage_addr_unready(Op* op) {
 
 static inline Flag dcache_stage_check_mem_type(Op* op) {
   /* just squish non-memory ops */
-  if (op->table_info->mem_type == NOT_MEM) {
+  if (op->inst_info->table_info.mem_type == NOT_MEM) {
     return FALSE;
   }
 
   /* skip prefetch ops if software prefetching is disabled */
-  if (op->table_info->mem_type == MEM_PF && !ENABLE_SWPRF) {
+  if (op->inst_info->table_info.mem_type == MEM_PF && !ENABLE_SWPRF) {
     op->done_cycle = cycle_count + DCACHE_CYCLES;
     op->state = OS_SCHEDULED;
     return FALSE;
@@ -567,22 +568,22 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
 
   /* update cacheline state */
   op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
-  line->read_count[op->off_path] = line->read_count[op->off_path] + (op->table_info->mem_type == MEM_LD);
-  line->write_count[op->off_path] = line->write_count[op->off_path] + (op->table_info->mem_type == MEM_ST);
+  line->read_count[op->off_path] = line->read_count[op->off_path] + (op->inst_info->table_info.mem_type == MEM_LD);
+  line->write_count[op->off_path] = line->write_count[op->off_path] + (op->inst_info->table_info.mem_type == MEM_ST);
   line->misc_state = (line->misc_state & 2) | op->off_path;
   if (!op->off_path) {
-    line->dirty |= op->table_info->mem_type == MEM_ST;
+    line->dirty |= op->inst_info->table_info.mem_type == MEM_ST;
   }
 
   /* wake up source inst if the op is completed */
-  if (op->table_info->mem_type != MEM_ST) {
+  if (op->inst_info->table_info.mem_type != MEM_ST) {
     op->wake_cycle = op->done_cycle;
     wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
   }
 }
 
 static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
-  if (op->table_info->mem_type == MEM_ST)
+  if (op->inst_info->table_info.mem_type == MEM_ST)
     STAT_EVENT(op->proc_id, POWER_DCACHE_WRITE_MISS);
   else
     STAT_EVENT(op->proc_id, POWER_DCACHE_READ_MISS);
@@ -592,7 +593,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
 
   Flag wrongpath_dcmiss = FALSE;
 
-  switch (op->table_info->mem_type) {
+  switch (op->inst_info->table_info.mem_type) {
     case MEM_LD:
       // scan the store forwarding buffer
       if (scan_stores(op->oracle_info.va, op->oracle_info.mem_size)) {
@@ -666,7 +667,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
         wrongpath_dcmiss = FALSE;
       }
       op->state = OS_MISS;
-      if (PREFS_DO_NOT_BLOCK_WINDOW || op->table_info->mem_type == MEM_PF) {
+      if (PREFS_DO_NOT_BLOCK_WINDOW || op->inst_info->table_info.mem_type == MEM_PF) {
         op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
         op->state = OS_SCHEDULED;
       }
@@ -710,7 +711,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
 
   if (STREAM_PREFETCH_ON && (op->oracle_info.dcmiss || (STREAM_TRAIN_ON_WRONGPATH && wrongpath_dcmiss))) {
     _DEBUG(dc->proc_id, DEBUG_STREAM_MEM, "dl0 miss : line_addr :%d op_count %lld  type :%d\n", (int)line_addr,
-           op->op_num, (int)op->table_info->mem_type);
+           op->op_num, (int)op->inst_info->table_info.mem_type);
     stream_dl0_miss(line_addr);
   }
 }
@@ -831,12 +832,12 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     ASSERT(dc->proc_id, op->proc_id == req->proc_id);
 
     /* update cacheline metadata */
-    if (!op->off_path && op->table_info->mem_type == MEM_ST)
+    if (!op->off_path && op->inst_info->table_info.mem_type == MEM_ST)
       ASSERT(dc->proc_id, data->dirty);
 
-    data->prefetch &= op->table_info->mem_type == MEM_PF || op->table_info->mem_type == MEM_WH;
-    data->read_count[op->off_path] += (op->table_info->mem_type == MEM_LD);
-    data->write_count[op->off_path] += (op->table_info->mem_type == MEM_ST);
+    data->prefetch &= op->inst_info->table_info.mem_type == MEM_PF || op->inst_info->table_info.mem_type == MEM_WH;
+    data->read_count[op->off_path] += (op->inst_info->table_info.mem_type == MEM_LD);
+    data->write_count[op->off_path] += (op->inst_info->table_info.mem_type == MEM_ST);
 
     DEBUG(dc->proc_id, "%s: %s line addr:0x%s: %7d\n", unsstr64(op->op_num), disasm_op(op, FALSE), hexstr64s(req->addr),
           (int)(req->addr >> LOG2(DCACHE_LINE_SIZE)));
@@ -848,7 +849,7 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     op->done_cycle = cycle_count + 1;
     op->state = OS_SCHEDULED;
 
-    if (op->table_info->mem_type != MEM_ST) {
+    if (op->inst_info->table_info.mem_type != MEM_ST) {
       op->wake_cycle = op->done_cycle;
       wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
     }

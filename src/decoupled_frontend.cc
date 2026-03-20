@@ -723,7 +723,8 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
     return REASON_MISFETCH;
   }
   // ibtb miss
-  else if (ENABLE_IBP && (op->inst_info->table_info.cf_type == CF_IBR || op->inst_info->table_info.cf_type == CF_ICALL) &&
+  else if (ENABLE_IBP &&
+           (op->inst_info->table_info.cf_type == CF_IBR || op->inst_info->table_info.cf_type == CF_ICALL) &&
            op->btb_pred_info->btb_miss && op->btb_pred_info->ibp_miss && op->bp_pred_info->pred_orig == TAKEN) {
     return REASON_IBTB_MISS;
   }

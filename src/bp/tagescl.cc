@@ -107,7 +107,8 @@ void bp_tagescl_update(Op* op, Bp_Pred_Level pred_level) {
   (void)pred_level;
   uns proc_id = op->proc_id;
   tagescl_predictors.at(proc_id)->commit_state(op->recovery_info.branch_id, op->inst_info->addr,
-                                               get_branch_type(proc_id, op->inst_info->table_info.cf_type), op->oracle_info.dir);
+                                               get_branch_type(proc_id, op->inst_info->table_info.cf_type),
+                                               op->oracle_info.dir);
 }
 
 void bp_tagescl_retire(Op* op) {

@@ -931,7 +931,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     STAT_EVENT(op->proc_id, FETCH_ALL_INST);
     STAT_EVENT(op->proc_id, ORACLE_ON_PATH_INST + op->off_path);
     STAT_EVENT(op->proc_id,
-                ORACLE_ON_PATH_INST_MEM + (op->inst_info->table_info.mem_type == NOT_MEM) + 2 * op->off_path);
+               ORACLE_ON_PATH_INST_MEM + (op->inst_info->table_info.mem_type == NOT_MEM) + 2 * op->off_path);
 
     op->fetch_cycle = cycle_count;
 

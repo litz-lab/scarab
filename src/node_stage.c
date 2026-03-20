@@ -753,8 +753,8 @@ Flag is_node_table_full() {
 
 void collect_node_table_full_stats(Op* op) {
   if (!(op->state == OS_DONE || OP_DONE(op))) {
-    if (op->inst_info->table_info.op_type == OP_ILD || op->inst_info->table_info.op_type == OP_IST || op->inst_info->table_info.op_type == OP_FLD ||
-        op->inst_info->table_info.op_type == OP_FST) {
+    if (op->inst_info->table_info.op_type == OP_ILD || op->inst_info->table_info.op_type == OP_IST ||
+        op->inst_info->table_info.op_type == OP_FLD || op->inst_info->table_info.op_type == OP_FST) {
       STAT_EVENT(node->proc_id, FULL_WINDOW_MEM_OP);
     } else if (op->inst_info->table_info.op_type >= OP_FCVT && op->inst_info->table_info.op_type <= OP_FCMOV) {
       STAT_EVENT(node->proc_id, FULL_WINDOW_FP_OP);
@@ -782,7 +782,8 @@ void node_precommit_update(void) {
       return;
 
     // wait until looking up the d-cache for memory operands
-    if ((op->inst_info->table_info.mem_type == MEM_LD || op->inst_info->table_info.mem_type == MEM_ST) && op->dcache_cycle > cycle_count)
+    if ((op->inst_info->table_info.mem_type == MEM_LD || op->inst_info->table_info.mem_type == MEM_ST) &&
+        op->dcache_cycle > cycle_count)
       return;
 
     if (op->off_path)

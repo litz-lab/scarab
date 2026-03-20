@@ -177,8 +177,8 @@ static void print_op_fields(uns proc_id, Op* op) {
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS inst addrs fake: %llx %d %d\n", op->inst_info->addr, op->inst_info->fake_inst,
                 op->inst_info->fake_inst_reason);
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op: %s\n", disasm_op(op, FALSE));
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op cf dir: %d %d %d\n", op->inst_info->table_info.op_type, op->inst_info->table_info.cf_type,
-                op->oracle_info.dir);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op cf dir: %d %d %d\n", op->inst_info->table_info.op_type,
+                op->inst_info->table_info.cf_type, op->oracle_info.dir);
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS src regs: ");
     for (int i = 0; i < op->inst_info->table_info.num_src_regs; ++i) {
       DEBUG_PRINT(proc_id, "%d ", op->inst_info->srcs[i].id);
@@ -416,8 +416,8 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
         "op_num:%s unique_num:%s pc:0x%s npc:0x%s va:0x%s mem_type:%d "
         "mem_size:%d cf_type:%d oracle_target:%s dir:%d\n",
         unsstr64(op->op_num), unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc),
-        hexstr64s(op->oracle_info.va), op->inst_info->table_info.mem_type, op->oracle_info.mem_size, op->inst_info->table_info.cf_type,
-        hexstr64s(op->oracle_info.target), op->oracle_info.dir);
+        hexstr64s(op->oracle_info.va), op->inst_info->table_info.mem_type, op->oracle_info.mem_size,
+        op->inst_info->table_info.cf_type, hexstr64s(op->oracle_info.target), op->oracle_info.dir);
 
   for (ii = 0; ii < op->inst_info->table_info.num_src_regs; ii++) {
     DEBUG(proc_id, "op_num:%s unique_num:%s pc:0x%s npc:0x%s, src(%d/%d):%s \n", unsstr64(op->op_num),

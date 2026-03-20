@@ -697,7 +697,8 @@ void add_src_from_op(Op* op, Op* src_op, Dep_Type type) {
 
   set_not_rdy_bit(op, src_num);
   if (type == MEM_DATA_DEP) {
-    ASSERT(op->proc_id, src_op->inst_info->table_info.mem_type == MEM_ST && op->inst_info->table_info.mem_type == MEM_LD);
+    ASSERT(op->proc_id,
+           src_op->inst_info->table_info.mem_type == MEM_ST && op->inst_info->table_info.mem_type == MEM_LD);
   }
   DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d\n", unsstr64(op->op_num),
         unsstr64(src_op->op_num), src_num);

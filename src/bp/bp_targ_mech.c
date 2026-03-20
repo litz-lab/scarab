@@ -233,8 +233,9 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
             "POP        next:%d  tos:%d  depth:%d  old_tos:%d  op:%s  "
             "addr:0x%s  type:%s  offpath:%d  true:0x%s  miss:%d\n",
             bp_data->crs.next, bp_data->crs.tos, bp_data->crs.depth, old_tos,
-            unsstr64(bp_data->crs.entries[old_tos].op_num), hexstr64s(addr), cf_type_names[op->inst_info->table_info.cf_type],
-            op->off_path, hexstr64s(op->oracle_info.npc), addr != op->oracle_info.npc);
+            unsstr64(bp_data->crs.entries[old_tos].op_num), hexstr64s(addr),
+            cf_type_names[op->inst_info->table_info.cf_type], op->off_path, hexstr64s(op->oracle_info.npc),
+            addr != op->oracle_info.npc);
   mispred = PERFECT_CRS ? 0 : addr != op->oracle_info.npc;
   STAT_EVENT(op->proc_id, CRS_MISS_ON_PATH + !mispred + 2 * op->off_path);
   return PERFECT_CRS ? op->oracle_info.target : addr;

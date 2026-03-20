@@ -697,10 +697,10 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
         "BP[%s,%s]:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
         "t_npc:0x%s  btb_miss:%d  mispred:%d  misfetch:%d  no_tar:%d dir%d pred%d offset %llx target %llx\n",
         pred_bp->name, pred_level == BP_PRED_L0 ? "l0" : "main", unsstr64(op->op_num), op->off_path,
-        cf_type_names[op->inst_info->table_info.cf_type], hexstr64s(op->inst_info->addr), hexstr64s(bp_pred_info->pred_npc),
-        hexstr64s(op->oracle_info.npc), op->btb_pred_info->btb_miss, bp_pred_info->mispred,
-        bp_pred_info->recover_at_exec, bp_pred_info->recover_at_decode, op->oracle_info.dir, bp_pred_info->pred,
-        pc_plus_offset, op->oracle_info.target);
+        cf_type_names[op->inst_info->table_info.cf_type], hexstr64s(op->inst_info->addr),
+        hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc), op->btb_pred_info->btb_miss,
+        bp_pred_info->mispred, bp_pred_info->recover_at_exec, bp_pred_info->recover_at_decode, op->oracle_info.dir,
+        bp_pred_info->pred, pc_plus_offset, op->oracle_info.target);
 
   ASSERT(op->proc_id, bp_pred_info->pred_npc);
   if (op->oracle_info.dir != bp_pred_info->pred && pc_plus_offset != op->oracle_info.target) {
@@ -731,17 +731,17 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
   }
 
   DEBUG_BTB(bp_data->proc_id, "BTB:  op_num:%s  off_path:%d  cf_type:%s  addr:0x%s  btb_miss:%d\n",
-            unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type], hexstr64s(op->inst_info->addr),
-            op->btb_pred_info->btb_miss);
+            unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
+            hexstr64s(op->inst_info->addr), op->btb_pred_info->btb_miss);
 
   DEBUG(bp_data->proc_id,
         "BP:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
         "t_npc:0x%s  btb_miss:%d  mispred:%d  misfetch:%d  recover_at_fe:%d  recover_at_decode:%d  "
         "recover_at_exec:%d  no_tar:%d\n",
-        unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type], hexstr64s(op->inst_info->addr),
-        hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc), op->btb_pred_info->btb_miss,
-        bp_pred_info->mispred, bp_pred_info->misfetch, bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
-        bp_pred_info->recover_at_exec, op->btb_pred_info->no_target);
+        unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
+        hexstr64s(op->inst_info->addr), hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc),
+        op->btb_pred_info->btb_miss, bp_pred_info->mispred, bp_pred_info->misfetch, bp_pred_info->recover_at_fe,
+        bp_pred_info->recover_at_decode, bp_pred_info->recover_at_exec, op->btb_pred_info->no_target);
 
   if (ENABLE_BP_CONF && IS_CONF_CF(op)) {
     bp_data->br_conf->pred_func(op, pred_level);

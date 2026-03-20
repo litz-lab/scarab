@@ -247,8 +247,7 @@ void update_exec_stage(Stage_Data* src_sd) {
 
     ASSERTM(exec->proc_id, OP_SRCS_RDY(op), "op_num:%s\n", unsstr64(op->op_num));
     ASSERT(exec->proc_id,
-           get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) &
-               exec->fus[ii].type);
+           get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & exec->fus[ii].type);
 
     /* if we get to here, then it means the op is going into the functional unit. */
     op->sched_cycle = cycle_count;
@@ -543,8 +542,7 @@ static inline void exec_stage_process_op(Op* op) {
     op->done_cycle = op->exec_cycle;
 
   STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST + op->off_path);
-  STAT_EVENT(op->proc_id,
-              EXEC_ON_PATH_INST_MEM + (op->inst_info->table_info.mem_type == NOT_MEM) + 2 * op->off_path);
+  STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST_MEM + (op->inst_info->table_info.mem_type == NOT_MEM) + 2 * op->off_path);
   STAT_EVENT(op->proc_id, EXEC_ALL_INST);
 
   DEBUG(exec->proc_id, "op_num:%s fu_num:%d exec_cycle:%s done_cycle:%s off_path:%d\n", unsstr64(op->op_num),

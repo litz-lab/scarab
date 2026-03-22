@@ -91,9 +91,8 @@ class TraceReader {
 
   void init_buffer();
 
-  std::unique_ptr<xed_decoded_inst_t> makeNop(uint8_t _length);
-
  protected:
+  std::unique_ptr<xed_decoded_inst_t> makeNop(uint8_t _length);
   std::string trace_;
   InstInfo info_;
   InstInfo invalid_info_;

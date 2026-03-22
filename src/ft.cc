@@ -426,6 +426,8 @@ Addr FT::get_start_addr() const {
 }
 
 bool FT::is_consecutive(const FT& previous_ft) const {
+  if (ft_info.dynamic_info.first_op_off_path)
+    return true;
   ASSERT(0, previous_ft.get_last_op());
   Op* last_op = previous_ft.get_last_op();
   if (!last_op)

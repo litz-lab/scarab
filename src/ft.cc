@@ -436,8 +436,8 @@ bool FT::is_consecutive(const FT& previous_ft) const {
   Addr pred_npc = bp_pred_info->pred_npc;
   Addr npc = last_op->oracle_info.npc;
   Addr end_addr = (FRONTEND == FE_PIN_EXEC_DRIVEN)
-      ? ADDR_MASK(last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size)
-      : last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
+                      ? ADDR_MASK(last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size)
+                      : last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
   bool matches = false;
   switch (prev_end_type) {
     case FT_TAKEN_BRANCH:

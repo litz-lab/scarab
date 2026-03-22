@@ -255,7 +255,7 @@ extern "C" {
 #define CHANNEL(bank, num) ((bank) >> LOG2(num))
 #define BANK_IN_CHANNEL(bank, num) ((bank) & N_BIT_MASK(LOG2(num)))
 
-#define ADDR_MASK(x) ((x)&0x0000FFFFFFFFFFFFULL)
+#define ADDR_MASK(x) ((x) & 0x0000FFFFFFFFFFFFULL)
 
 /* Model 32 bit wraparound while maintaining the proc_id bits */
 #define ADDR_PLUS_OFFSET(addr, offset) \

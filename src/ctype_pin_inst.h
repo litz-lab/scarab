@@ -164,15 +164,15 @@ static inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt) {
   ctype_pin_inst inst;
   init_ctype_pin_inst(&inst);
   inst.instruction_addr = eip;
-  inst.size = 1;
+  inst.size = 5;
   inst.op_type = OP_IADD;
   inst.cf_type = CF_BR;
   inst.num_simd_lanes = 1;
-  inst.lane_width_bytes = 1;
+  inst.lane_width_bytes = 8;
   inst.branch_target = tgt;
   inst.actually_taken = 1;
   inst.fake_inst = 1;
-  strcpy(inst.pin_iclass, "DUMMY_JMP");
+  strcpy(inst.pin_iclass, "JMP");
   return inst;
 }
 

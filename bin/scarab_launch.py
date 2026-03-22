@@ -210,7 +210,7 @@ class Pin:
     self.__get_stdout()
     self.__get_stderr()
 
-    cmd = command.Command(self.cmd, run_dir=args.simdir, stdout=self.stdout, stderr=self.stderr)
+    cmd = command.Command(self.cmd, stdout=self.stdout, stderr=self.stderr)
     cmd.run_in_background()
     return cmd
 

@@ -28,6 +28,10 @@
 
 #include "frontend/pt_memtrace/memtrace_trace_reader_memtrace.h"
 
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+
 #include "directory_iterator.h"
 #include "compressed_file_reader.h"
 #include "snappy_file_reader.h"
@@ -693,7 +697,6 @@ void TraceReaderMemtrace::fill_in_basic_info(ctype_pin_inst* info, instr_t* drin
   info->cf_type = NOT_CF;
   info->lane_width_bytes = instr_get_operation_size(drinst);
   info->num_simd_lanes = 4;  // Guess
-  info->encoding_is_new = true;
   info->num_st = (cat & DR_INSTR_CATEGORY_STORE) ? 1 : 0;
   info->num_ld = (cat & DR_INSTR_CATEGORY_LOAD) ? 1 : 0;
   info->is_fp = (cat & DR_INSTR_CATEGORY_FP) ? 1 : 0;
@@ -848,6 +851,9 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
   bool unknown_type, cond_branch;
   instr_init(dcontext_, &drinst);
   _info->pc = mt_ref_.instr.addr;
+  if (mt_ref_.instr.encoding_is_new) {
+    ctype_inst_map.erase(mt_ref_.instr.addr);
+  }
   auto ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
   if (mt_ref_.instr.encoding_is_new) {
     ctype_pin_inst cinst;
@@ -856,7 +862,7 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
 
     fill_in_basic_info(&cinst, &drinst, mt_ref_.instr.size, mt_ref_.instr.type);
     add_dependency_info(&cinst, &drinst);
-    ctype_inst_map.erase(mt_ref_.instr.addr);
+    cinst.encoding_is_new = mt_ref_.instr.encoding_is_new;
     ctype_inst_map.emplace(mt_ref_.instr.addr,
                            std::make_tuple(cinst.num_ld + cinst.num_st, false, cinst.cf_type, false, cinst));
     ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
@@ -865,7 +871,7 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
     // trace_type_to_string(mt_ref_.instr.type));
   } else {
     assert(ctype_inst_iter != ctype_inst_map.end());
-    std::get<MAP_XED>(ctype_inst_iter->second).encoding_is_new = false;
+    std::get<MAP_XED>(ctype_inst_iter->second).encoding_is_new = mt_ref_.instr.encoding_is_new;
   }
 
   tie(mt_mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) = ctype_inst_iter->second;
@@ -897,6 +903,9 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   _info->pc = mt_ref_.instr.addr;
   mt_prior_isize_ = mt_ref_.instr.size;
 
+  if (mt_ref_.instr.encoding_is_new) {
+    ctype_inst_map.erase(mt_ref_.instr.addr);
+  }
   auto ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
   if (ctype_inst_iter == ctype_inst_map.end()) {
     // XED decode into a stack-local inst (only the ctype_pin_inst is cached)
@@ -915,10 +924,10 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
 
     uint8_t isize = static_cast<uint8_t>(mt_ref_.instr.size);
     if (!unknown_type) {
-      xed_error_enum_t res = xed_decode(&xed_inst, loc, isize);
-      if (res != XED_ERROR_NONE) {
+      xed_error_enum_t xed_decode_res = xed_decode(&xed_inst, loc, isize);
+      if (xed_decode_res != XED_ERROR_NONE) {
         warn("XED decode error for 0x%lx: %s %u, replacing with nop\n",
-             mt_ref_.instr.addr, xed_error_enum_t2str(res), isize);
+             mt_ref_.instr.addr, xed_error_enum_t2str(xed_decode_res), isize);
         xed_inst = *makeNop(isize);
       }
     } else {
@@ -959,13 +968,14 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
     fill_in_simd_info(&cinst, xed_ins, max_op_width);
     apply_x87_bug_workaround(&cinst, xed_ins);
     fill_in_cf_info(&cinst, xed_ins);
+    cinst.encoding_is_new = mt_ref_.instr.encoding_is_new;
 
     ctype_inst_map.emplace(mt_ref_.instr.addr,
                            std::make_tuple(n_used_mem_ops, unknown_type,
                                            cinst.cf_type != NOT_CF, is_rep, cinst));
     ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
   } else {
-    std::get<MAP_XED>(ctype_inst_iter->second).encoding_is_new = false;
+    std::get<MAP_XED>(ctype_inst_iter->second).encoding_is_new = mt_ref_.instr.encoding_is_new;
   }
 
   bool unknown_type, cond_branch;

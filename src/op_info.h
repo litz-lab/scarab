@@ -29,11 +29,12 @@
 #ifndef __OP_INFO_H__
 #define __OP_INFO_H__
 
+#include "globals/global_types.h"
 
 /**************************************************************************************/
 // Defines
 
-#define MAX_DEPS 4
+#define MAX_DEPS 10
 #define MAX_OUTS 3
 
 /**************************************************************************************/
@@ -58,6 +59,18 @@ typedef struct Src_Info_struct {
   Counter op_num;
   Counter unique_num;
 } Src_Info;
+
+/**************************************************************************************/
+/* Dynamic src_info[] on Op: capacity grows 2 -> 8 -> 128, then doubles.
+ * Use op_sources_add() for every oracle dependency (reg, mem addr, mem data, etc.). */
+
+uns op_sources_add(Op* op, Dep_Type type, Op* src_op, Counter src_op_num, Counter src_unique_num);
+void op_sources_free(Op* op);
+
+void op_sources_set_not_rdy(Op* op, uns bit);
+void op_sources_clear_not_rdy(Op* op, uns bit);
+Flag op_sources_test_not_rdy(const Op* op, uns bit);
+Flag op_sources_not_rdy_is_clear(const Op* op);
 
 /**************************************************************************************/
 /* The 'Op_Info' struct holds information that is unique to the

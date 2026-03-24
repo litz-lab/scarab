@@ -47,7 +47,8 @@ typedef struct FT FT;
 /**************************************************************************************/
 // Macro Defines
 
-#define OP_SRCS_RDY(x) ((x)->srcs_not_rdy_vector == 0 && cycle_count >= (x)->rdy_cycle)
+/* OP_SRCS_RDY uses op_sources_not_rdy_is_clear (op_info.c). */
+#define OP_SRCS_RDY(x) (op_sources_not_rdy_is_clear((x)) && cycle_count >= (x)->rdy_cycle)
 #define OP_DONE(x) (cycle_count >= (x)->done_cycle)
 #define OP_BROADCAST(x) ((cycle_count + 1) >= (x)->done_cycle)
 #define MULTI_CYCLE_OP(x) ((x)->inst_info->latency > 1 + RFILE_STAGE || (x)->inst_info->table_info.mem_type == MEM_LD)
@@ -82,7 +83,7 @@ typedef struct Wake_Up_Entry_struct {
   Op* op;
   Counter unique_num;
   Dep_Type dep_type;
-  uns8 rdy_bit;
+  uns rdy_bit; /* index into dep_op->src_info; may exceed 255 */
   struct Wake_Up_Entry_struct* next;
 } Wake_Up_Entry;
 
@@ -146,8 +147,9 @@ struct Op_struct {
   Inst_Info* inst_info;         // pointer to unique struct for each static instruction
   Op_Info oracle_info;          // information about the execution of the op in the oracle
   Op_Info engine_info;          // information about the execution of the op in the engine
-  uns num_srcs;                 // number of map dependencies (order matches srcs_not_rdy_vector / wake-up)
-  Src_Info src_info[MAX_DEPS];  // information about each source dependency
+  uns num_srcs;     // number of map dependencies (order matches srcs_not_rdy_words / wake-up)
+  Src_Info* src_info; /* grown by map (2 -> 8 -> 128, then x2); freed in free_op */
+  uns src_info_cap;
   Bp_Pred_Info bp_pred_l0;      // l0 branch prediction info
   Bp_Pred_Info bp_pred_main;    // main branch prediction info
   Btb_Pred_Info btb_pred;       // btb prediction info
@@ -199,7 +201,8 @@ struct Op_struct {
   // }}}
 
   // {{{ dependency information
-  uns srcs_not_rdy_vector;               // bits as given by order in the src_info array
+  uns64* srcs_not_rdy_words; /* ceil(src_info_cap/64) words; bit i == src i not ready */
+  uns srcs_not_rdy_nwords;
   Flag wake_up_signaled[NUM_DEP_TYPES];  // set to true once a wake up has been signaled by the op for the given type
   Wake_Up_Entry* wake_up_head;           // list of ops that are dependent on this op, by dependency type
   Wake_Up_Entry* wake_up_tail;           // last entry in each wake up list (for speed)

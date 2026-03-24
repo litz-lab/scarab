@@ -132,9 +132,8 @@ void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
 }
 
 static bool is_xchg_rcx_rcx(const ctype_pin_inst* pi) {
-  return pi->true_op_type == XED_ICLASS_XCHG &&
-         pi->num_src_regs >= 1 && pi->src_regs[0] == SCARAB_REG_RCX &&
-         pi->num_dst_regs >= 1 && pi->dst_regs[0] == SCARAB_REG_RCX;
+  return pi->true_op_type == XED_ICLASS_XCHG && pi->num_src_regs > 1
+    && pi->src_regs[0] == SCARAB_REG_RCX && pi->src_regs[1] == SCARAB_REG_RCX;
 }
 
 int ffwd(const ctype_pin_inst* pi) {

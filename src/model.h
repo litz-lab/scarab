@@ -62,7 +62,7 @@ typedef struct Model_struct {
 
   /* these are general hook functions for various processor events
      that can be handled differently by different models */
-  void (*wake_hook)(Op*, Op*, uns8);
+  void (*wake_hook)(Op*, Op*, uns);
   void (*op_fetched_hook)(Op*);
   void (*op_retired_hook)(Op*);  // called just before the op is freed
   void (*warmup_func)(Op* op);   // called for warmup(may be NULL)

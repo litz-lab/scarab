@@ -31,6 +31,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #include "op_pool.h"
 
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "globals/assert.h"
@@ -52,6 +53,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #include "frontend/pin_trace_fe.h"
 
 #include "map.h"
+#include "op_info.h"
 #include "model.h"
 #include "sim.h"
 
@@ -157,6 +159,8 @@ void free_op(Op* op) {
     free(op->inst_info);
     op->inst_info = NULL;
   }
+
+  op_sources_free(op);
 
   op->op_pool_next = op_pool_free_head;
   op_pool_free_head = op;

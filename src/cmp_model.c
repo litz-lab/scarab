@@ -332,7 +332,7 @@ void cmp_per_core_done(uns8 proc_id) {
 /**************************************************************************************/
 /* cmp_wake: */
 
-void cmp_wake(Op* src_op, Op* dep_op, uns8 rdy_bit) {
+void cmp_wake(Op* src_op, Op* dep_op, uns rdy_bit) {
   /* Make the op independent, if it is dependent on a BOGUS op */
 
   // cmp: since this function use node, we need to set node properly
@@ -353,7 +353,7 @@ void cmp_wake(Op* src_op, Op* dep_op, uns8 rdy_bit) {
 
   simple_wake(src_op, dep_op, rdy_bit);
 
-  if (dep_op->srcs_not_rdy_vector == 0x0 && cycle_count >= dep_op->issue_cycle && !dep_op->in_rdy_list) {
+  if (op_sources_not_rdy_is_clear(dep_op) && cycle_count >= dep_op->issue_cycle && !dep_op->in_rdy_list) {
     _DEBUG(dep_op->proc_id, DEBUG_NODE_STAGE, "Adding to ready list  op_num:%s\n", unsstr64(dep_op->op_num));
     dep_op->next_rdy = node->rdy_head;
     node->rdy_head = dep_op;

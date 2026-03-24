@@ -522,19 +522,15 @@ FT_Arbitration_Result ft_arbitration() {
       return FT_HIT_UOP_CACHE;
     } else if (ic->line) {
       // uop cache miss and icache hit
-      // Skip icache hit processing for fake NOP FTs with invalid addresses
-      // to prevent ASSERT failure from 48-bit overflow in icache line_addr.
-      if (!ft_info.dynamic_info.contains_fake_nop || ic->line_addr != 0) {
-        if (!ic->off_path) {
-          STAT_EVENT(ic->proc_id, FT_UOP_CACHE_MISS_ICACHE_HIT_ON_PATH);
-        } else {
-          STAT_EVENT(ic->proc_id, FT_UOP_CACHE_MISS_ICACHE_HIT_OFF_PATH);
-        }
-        icache_hit_events();
+      if (!ic->off_path) {
+        STAT_EVENT(ic->proc_id, FT_UOP_CACHE_MISS_ICACHE_HIT_ON_PATH);
       } else {
-        ic->line_addr = ic->fetch_addr;
+        STAT_EVENT(ic->proc_id, FT_UOP_CACHE_MISS_ICACHE_HIT_OFF_PATH);
       }
+      icache_hit_events();
+
       ft_op_buffer_fill_from_ft(ic, ft);
+
       return FT_HIT_ICACHE;
     } else {
       // uop cache miss and icache miss

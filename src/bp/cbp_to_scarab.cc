@@ -207,7 +207,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::update(Op* op,
 
 template <>
 void CBP_To_Scarab_Intf<TAGE64K>::retire(Op* op) {
-  if (SPEC_LEVEL == BP_PRED_ON || op->parent_FT->get_bp_id() == 0)
+  if (SPEC_LEVEL == BP_PRED_ON || op->parent_FT->get_bp_id())
     return;
   uns proc_id = op->proc_id;
   uns bp_id = op->parent_FT->get_bp_id();

@@ -237,7 +237,7 @@ void Decoupled_FE::dfe_recover_op() {
   bool recovery_op_is_last = false;
   auto erase_from = ftq.begin();
 
-  for (auto it = ftq.begin(); it != ftq.end(); ++it) {
+  for (auto it = ftq.begin(); it != ftq.end() && bp_id == MAIN_BP; ++it) {
     FT* ft = *it;
 
     for (uint64_t op_idx = 0; op_idx < ft->ops.size(); ++op_idx) {

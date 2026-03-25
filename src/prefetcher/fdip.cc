@@ -421,6 +421,8 @@ void inc_timeliness_info(Flag mshr_hit) {
 }
 
 Flag fdip_search_pref_candidate(Addr addr) {
+  if (!FDIP_ENABLE)
+    return TRUE;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   if (!FDIP_UTILITY_HASH_ENABLE && !FDIP_UC_SIZE && !FDIP_BLOOM_FILTER)
     return TRUE;
@@ -428,6 +430,8 @@ Flag fdip_search_pref_candidate(Addr addr) {
 }
 
 void inc_useful_lines_uc(Addr line_addr) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   if (!FDIP_UC_SIZE)
     return;
@@ -435,6 +439,8 @@ void inc_useful_lines_uc(Addr line_addr) {
 }
 
 void dec_useful_lines_uc(Addr line_addr) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   if (!FDIP_UC_SIZE)
     return;

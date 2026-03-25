@@ -88,6 +88,9 @@ bool FT::can_fetch_op() {
 Op* FT::fetch_op() {
   ASSERT(proc_id, can_fetch_op());
   Op* op = ops[op_pos];
+  ASSERT(proc_id, op);
+  ASSERT(proc_id, op->op_pool_valid);
+  ASSERT(proc_id, op->inst_info);
   op_pos++;
 
   DEBUG(proc_id, "Fetch op from FT fetch_addr0x:%llx off_path:%i op_num:%llu\n", op->inst_info->addr, op->off_path,
@@ -96,7 +99,13 @@ Op* FT::fetch_op() {
 }
 
 void FT::add_op(Op* op) {
+  ASSERT(proc_id, op);
+  ASSERT(proc_id, op->op_pool_valid);
+  ASSERT(proc_id, op->inst_info);
   if (!ops.empty()) {
+    ASSERT(proc_id, ops.back());
+    ASSERT(proc_id, ops.back()->op_pool_valid);
+    ASSERT(proc_id, ops.back()->inst_info);
     if (op->bom) {
       // assert consecutivity
       DEBUG(proc_id, "back addr + size %llx fetch addr %llx\n",
@@ -467,6 +476,9 @@ FT_Ended_By FT::get_end_reason() const {
   }
 
   Op* op = ops.back();  // Get the last op
+  ASSERT(proc_id, op);
+  ASSERT(proc_id, op->op_pool_valid);
+  ASSERT(proc_id, op->inst_info);
   if (op->eom) {
     const Bp_Pred_Info* bp_pred_info = ft_active_or_main_bp_pred_info(op);
     uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
@@ -493,6 +505,11 @@ void FT::generate_ft_info() {
   // first op to be read at op_pos
   auto op = ops[op_pos];
   ASSERT(proc_id, op);
+  ASSERT(proc_id, op->op_pool_valid);
+  ASSERT(proc_id, op->inst_info);
+  ASSERT(proc_id, get_last_op());
+  ASSERT(proc_id, get_last_op()->op_pool_valid);
+  ASSERT(proc_id, get_last_op()->inst_info);
   ASSERT(proc_id, op->bom && get_last_op()->eom);
 
   ft_info.static_info.start = op->inst_info->addr;

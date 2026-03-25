@@ -74,7 +74,7 @@ void BTBMissBPTakenConfStat::print_data() {
 void BTBMissBPTakenConfStat::log_phase_cycles(Op* op) {
   if (!CONFIDENCE_ENABLE || !CONF_LOG_PHASE_CYCLES)
     return;
-  Off_Path_Reason op_reason = (Off_Path_Reason)op->bp_pred_info->off_path_reason;
+  Off_Path_Reason op_reason = (Off_Path_Reason)get_off_path_reason();
   switch (op_reason) {
     case REASON_NOT_IDENTIFIED: {
       break;
@@ -121,7 +121,7 @@ void BTBMissBPTakenConfStat::log_phase_cycles(Op* op) {
 void BTBMissBPTakenConfStat::log_off_path_event(Op* op) {
   if (!CONFIDENCE_ENABLE || !CONF_LOG_DFE_TO_REC)
     return;
-  Off_Path_Reason op_reason = (Off_Path_Reason)op->bp_pred_info->off_path_reason;
+  Off_Path_Reason op_reason = (Off_Path_Reason)get_off_path_reason();
   if (!op_reason)
     return;
   std::get<0>(resteer_ops_cycles[op->op_num]) = cycle_count;
@@ -136,7 +136,7 @@ void BTBMissBPTakenConfStat::log_off_path_event(Op* op) {
 void BTBMissBPTakenConfStat::log_resolution(Op* op) {
   if (!CONFIDENCE_ENABLE || !CONF_LOG_DFE_TO_REC)
     return;
-  Off_Path_Reason op_reason = (Off_Path_Reason)op->bp_pred_info->off_path_reason;
+  Off_Path_Reason op_reason = (Off_Path_Reason)get_off_path_reason();
   std::get<1>(resteer_ops_cycles[op->op_num]) = cycle_count;
   std::get<2>(resteer_ops_cycles[op->op_num]) = op_reason;
 
@@ -234,7 +234,7 @@ void BTBMissBPTakenConf::update_state_perfect_conf(Op* op) {
 }
 
 void BTBMissBPTakenConf::recover(Op* op) {
-  Off_Path_Reason op_reason = (Off_Path_Reason)op->bp_pred_info->off_path_reason;
+  Off_Path_Reason op_reason = (Off_Path_Reason)conf_mech_stat->get_off_path_reason();
   switch (op_reason) {
     case REASON_NOT_IDENTIFIED: {
       ASSERT(proc_id, 0);

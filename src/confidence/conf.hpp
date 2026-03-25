@@ -52,6 +52,7 @@ class ConfMechStatBase {
   virtual void recover(Op* op);
   virtual void print_data();
   void set_prev_op(Op* op);
+  void set_off_path_reason(Off_Path_Reason reason) { off_path_reason = reason; }
 
   Off_Path_Reason get_off_path_reason() { return off_path_reason; }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_off_path_reason; }
@@ -99,7 +100,8 @@ class Conf {
   uns get_conf() { return conf_off_path; }
   void recover(Op* op);
   void set_prev_op(Op* op);
-  void update(FT ft_pushed);
+  void set_off_path_reason(Off_Path_Reason reason) { conf_mech->conf_mech_stat->set_off_path_reason(reason); }
+  void update(FT& ft_pushed);
   void resolve_cf(Op* op) { conf_mech->resolve_cf(op); }
   Off_Path_Reason get_off_path_reason() { return conf_mech->conf_mech_stat->get_off_path_reason(); }
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_mech->conf_mech_stat->get_conf_off_path_reason(); }

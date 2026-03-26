@@ -397,7 +397,6 @@ void cmp_recover() {
   recover_dcache_stage();
   recover_memory();
   recover_node_stage();
-
 }
 
 /**************************************************************************************/

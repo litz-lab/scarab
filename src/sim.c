@@ -28,8 +28,8 @@
 
 #include "sim.h"
 
-#include <fcntl.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
@@ -120,7 +120,7 @@ Flag* warmup_dump_done;
 time_t sim_start_time; /* the time that the simulator was started */
 
 struct timespec sim_wall_mono_start;
-Flag            sim_wall_mono_valid = FALSE;
+Flag sim_wall_mono_valid = FALSE;
 
 FILE* mystdout;      /* default output (can be redirected via --stdout) */
 FILE* mystderr;      /* default error (can be redirected via --stderr) */
@@ -685,6 +685,11 @@ void full_sim() {
   }
 
   init_model(operating_mode);
+
+  if (clock_gettime(CLOCK_MONOTONIC, &sim_wall_mono_start) == 0)
+    sim_wall_mono_valid = TRUE;
+  else
+    sim_wall_mono_valid = FALSE;
 
   if (PIPEVIEW)
     pipeview_init();

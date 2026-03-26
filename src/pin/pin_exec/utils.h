@@ -35,6 +35,7 @@
 #undef WARNING
 
 #define ADDR_MASK(x) ((x)&0x0000FFFFFFFFFFFFULL)
+#define USER_SPACE_ADDR_MAX ((ADDRINT)0x00007FFFFFFFFFFFULL)
 
 #ifdef DEBUG_PRINT
 #define DBG_PRINT(uid, start_print_uid, end_print_uid, ...)  \

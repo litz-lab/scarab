@@ -52,7 +52,7 @@ endif()
 
 set(srcs)
 foreach(dir IN LISTS scarab_dirs) 
-    file(GLOB dir_srcs
+    file(GLOB dir_srcs CONFIGURE_DEPENDS
       ${dir}/*.h
       ${dir}/*.cc
       ${dir}/*.c

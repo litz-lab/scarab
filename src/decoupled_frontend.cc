@@ -237,7 +237,7 @@ void Decoupled_FE::dfe_recover_op() {
   bool recovery_op_is_last = false;
   auto erase_from = ftq.begin();
 
-  for (auto it = ftq.begin(); it != ftq.end(); ++it) {
+  for (auto it = ftq.begin(); it != ftq.end() && bp_id == MAIN_BP; ++it) {
     FT* ft = *it;
 
     for (uint64_t op_idx = 0; op_idx < ft->ops.size(); ++op_idx) {
@@ -763,6 +763,10 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   ASSERT(proc_id, bp_id == MAIN_BP);
   ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT);
   // Misprediction: Switch to off-path execution
+  const Off_Path_Reason reason = eval_off_path_reason(result.op);
+  ASSERT(proc_id, reason != REASON_NOT_IDENTIFIED);
+  if (CONFIDENCE_ENABLE)
+    conf->set_off_path_reason(reason);
   auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
   current_ft_to_push = off_path_FT;
   // if we have a tailing ft, save it for recovery

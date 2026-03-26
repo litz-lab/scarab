@@ -88,6 +88,9 @@ bool FT::can_fetch_op() {
 Op* FT::fetch_op() {
   ASSERT(proc_id, can_fetch_op());
   Op* op = ops[op_pos];
+  ASSERT(proc_id, op);
+  ASSERT(proc_id, op->op_pool_valid);
+  ASSERT(proc_id, op->inst_info);
   op_pos++;
 
   DEBUG(proc_id, "Fetch op from FT fetch_addr0x:%llx off_path:%i op_num:%llu\n", op->inst_info->addr, op->off_path,
@@ -96,7 +99,13 @@ Op* FT::fetch_op() {
 }
 
 void FT::add_op(Op* op) {
+  ASSERT(proc_id, op);
+  ASSERT(proc_id, op->op_pool_valid);
+  ASSERT(proc_id, op->inst_info);
   if (!ops.empty()) {
+    ASSERT(proc_id, ops.back());
+    ASSERT(proc_id, ops.back()->op_pool_valid);
+    ASSERT(proc_id, ops.back()->inst_info);
     if (op->bom) {
       // assert consecutivity
       DEBUG(proc_id, "back addr + size %llx fetch addr %llx\n",
@@ -337,29 +346,34 @@ FT_PredictResult FT::predict_ft() {
       if (l0_wrong && !main_wrong) {
         STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
         if (!op->off_path) {
-          op_select_bp_pred_info(op, BP_PRED_L0);
+          if (ended_by_exit()) {
+            op_select_bp_pred_info(op, BP_PRED_MAIN);
+            event = FT_EVENT_NONE;
+          } else {
+            op_select_bp_pred_info(op, BP_PRED_L0);
 
-          // Default: recover when MAIN prediction is ready.
-          Counter recovery_cycle = op->bp_pred_main.bp_ready_cycle;
-          const Addr correct_target = op->bp_pred_main.pred_npc;
-          const Counter fetch_cycle = op->bp_pred_main.bp_ready_cycle - BP_MAIN_LATENCY;
+            // Default: recover when MAIN prediction is ready.
+            Counter recovery_cycle = op->bp_pred_main.bp_ready_cycle;
+            const Addr correct_target = op->bp_pred_main.pred_npc;
+            const Counter fetch_cycle = op->bp_pred_main.bp_ready_cycle - BP_MAIN_LATENCY;
 
-          // If L1 BTB already has the correct target, we can recover one cycle
-          // earlier (at BTB_L1_LATENCY rather than BP_MAIN_LATENCY).
-          // This only applies when L0 was wrong because of a missing/stale BTB
-          // target (BTB miss or wrong entry).  If L0 had the correct target but
-          // a CBR direction predictor was wrong, the L1 BTB cannot help: the
-          // recovery is bounded by the direction prediction, not the target.
-          const Flag l0_btb_failed_target =
-              !op->btb_pred_info->btb_l0_hit || op->btb_pred_info->btb_l0_target != correct_target;
-          if (BTB_L1_PRESENT && l0_btb_failed_target && op->btb_pred_info->btb_l1_hit &&
-              op->btb_pred_info->btb_l1_target == correct_target) {
-            recovery_cycle = fetch_cycle + BTB_L1_LATENCY;
-            STAT_EVENT(proc_id, BTB_L1_HIT_SCHED_EARLY_RECOVERY);
+            // If L1 BTB already has the correct target, we can recover one cycle
+            // earlier (at BTB_L1_LATENCY rather than BP_MAIN_LATENCY).
+            // This only applies when L0 was wrong because of a missing/stale BTB
+            // target (BTB miss or wrong entry).  If L0 had the correct target but
+            // a CBR direction predictor was wrong, the L1 BTB cannot help: the
+            // recovery is bounded by the direction prediction, not the target.
+            const Flag l0_btb_failed_target =
+                !op->btb_pred_info->btb_l0_hit || op->btb_pred_info->btb_l0_target != correct_target;
+            if (BTB_L1_PRESENT && l0_btb_failed_target && op->btb_pred_info->btb_l1_hit &&
+                op->btb_pred_info->btb_l1_target == correct_target) {
+              recovery_cycle = fetch_cycle + BTB_L1_LATENCY;
+              STAT_EVENT(proc_id, BTB_L1_HIT_SCHED_EARLY_RECOVERY);
+            }
+
+            bp_sched_recovery(bp_recovery_info, op, recovery_cycle);
+            event = l0_event;
           }
-
-          bp_sched_recovery(bp_recovery_info, op, recovery_cycle);
-          event = l0_event;
         } else {
           event = main_event;
         }
@@ -435,7 +449,9 @@ bool FT::is_consecutive(const FT& previous_ft) const {
   const Bp_Pred_Info* bp_pred_info = ft_active_or_main_bp_pred_info(last_op);
   Addr pred_npc = bp_pred_info->pred_npc;
   Addr npc = last_op->oracle_info.npc;
-  Addr end_addr = last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
+  Addr end_addr = (FRONTEND == FE_PIN_EXEC_DRIVEN)
+                      ? ADDR_PLUS_OFFSET(last_op->inst_info->addr, last_op->inst_info->trace_info.inst_size)
+                      : last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
   bool matches = false;
   switch (prev_end_type) {
     case FT_TAKEN_BRANCH:
@@ -460,6 +476,9 @@ FT_Ended_By FT::get_end_reason() const {
   }
 
   Op* op = ops.back();  // Get the last op
+  ASSERT(proc_id, op);
+  ASSERT(proc_id, op->op_pool_valid);
+  ASSERT(proc_id, op->inst_info);
   if (op->eom) {
     const Bp_Pred_Info* bp_pred_info = ft_active_or_main_bp_pred_info(op);
     uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
@@ -486,6 +505,11 @@ void FT::generate_ft_info() {
   // first op to be read at op_pos
   auto op = ops[op_pos];
   ASSERT(proc_id, op);
+  ASSERT(proc_id, op->op_pool_valid);
+  ASSERT(proc_id, op->inst_info);
+  ASSERT(proc_id, get_last_op());
+  ASSERT(proc_id, get_last_op()->op_pool_valid);
+  ASSERT(proc_id, get_last_op()->inst_info);
   ASSERT(proc_id, op->bom && get_last_op()->eom);
 
   ft_info.static_info.start = op->inst_info->addr;

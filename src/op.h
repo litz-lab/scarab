@@ -147,8 +147,8 @@ struct Op_struct {
   Inst_Info* inst_info;         // pointer to unique struct for each static instruction
   Op_Info oracle_info;          // information about the execution of the op in the oracle
   Op_Info engine_info;          // information about the execution of the op in the engine
-  uns num_srcs;     // number of map dependencies (order matches srcs_not_rdy_words / wake-up)
-  Src_Info* src_info; /* grown by map (2 -> 8 -> 128, then x2); freed in free_op */
+  uns num_srcs;                 // number of map dependencies (order matches srcs_not_rdy_words / wake-up)
+  Src_Info* src_info;           /* grown by map (2 -> 8 -> 128, then x2); freed in free_op */
   uns src_info_cap;
   Bp_Pred_Info bp_pred_l0;      // l0 branch prediction info
   Bp_Pred_Info bp_pred_main;    // main branch prediction info

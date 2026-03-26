@@ -53,8 +53,8 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #include "frontend/pin_trace_fe.h"
 
 #include "map.h"
-#include "op_info.h"
 #include "model.h"
+#include "op_info.h"
 #include "sim.h"
 
 /**************************************************************************************/

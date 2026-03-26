@@ -32,7 +32,6 @@
 #include <string.h>
 
 #include "globals/assert.h"
-#include "op_info.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
@@ -50,6 +49,7 @@
 #include "cmp_model.h"
 #include "map_rename.h"
 #include "model.h"
+#include "op_info.h"
 #include "statistics.h"
 #include "thread.h"
 
@@ -501,8 +501,8 @@ static inline Op* add_store_deps(Op* op) {
   } else {
     op_sources_add(op, MEM_DATA_DEP, last_src_op, last_src_op->op_num, last_src_op->unique_num);
     STAT_EVENT(op->proc_id, FORWARDED_LD);
-    DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d  op:%s  src:%s\n",
-          unsstr64(op->op_num), unsstr64(last_src_op->op_num), op->num_srcs - 1, op->inst_info->table_info.name,
+    DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d  op:%s  src:%s\n", unsstr64(op->op_num),
+          unsstr64(last_src_op->op_num), op->num_srcs - 1, op->inst_info->table_info.name,
           last_src_op->inst_info->table_info.name);
   }
   return last_src_op;

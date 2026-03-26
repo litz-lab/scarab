@@ -71,8 +71,7 @@ static void op_sources_ensure_capacity(Op* op, uns need) {
   new_si = (Src_Info*)realloc(op->src_info, new_cap * sizeof(Src_Info));
   ASSERTM(op->proc_id, new_si, "realloc src_info cap %u -> %u\n", op->src_info_cap, new_cap);
   if (new_cap > op->src_info_cap)
-    memset((char*)new_si + op->src_info_cap * sizeof(Src_Info), 0,
-           (new_cap - op->src_info_cap) * sizeof(Src_Info));
+    memset((char*)new_si + op->src_info_cap * sizeof(Src_Info), 0, (new_cap - op->src_info_cap) * sizeof(Src_Info));
   op->src_info = new_si;
 
   new_words = (uns64*)realloc(op->srcs_not_rdy_words, new_nwords * sizeof(uns64));

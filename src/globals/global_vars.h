@@ -80,7 +80,8 @@ extern time_t sim_start_time;
 
 /* Monotonic wall clock: set when entering SIMULATION_MODE in full_sim(). */
 extern struct timespec sim_wall_mono_start;
-extern Flag            sim_wall_mono_valid;
+extern Flag sim_wall_mono_valid;
+
 /**************************************************************************************/
 
 #endif /* #ifndef __GLOBAL_VARS_H__ */

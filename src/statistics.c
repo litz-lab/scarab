@@ -44,9 +44,6 @@ working on this (ob).
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 
-/* Defined in sim.c (init_global). SIM_HOST_WALL_SECONDS calendar fallback; also in global_vars.h. */
-extern time_t sim_start_time;
-
 #include "core.param.h"
 #include "general.param.h"
 
@@ -177,7 +174,7 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
           struct timespec now;
           if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
             wall->value = (double)(now.tv_sec - sim_wall_mono_start.tv_sec) +
-                           (double)(now.tv_nsec - sim_wall_mono_start.tv_nsec) * 1e-9;
+                          (double)(now.tv_nsec - sim_wall_mono_start.tv_nsec) * 1e-9;
           }
         } else {
           /* No monotonic anchor: calendar time since init_global (includes warmup). */

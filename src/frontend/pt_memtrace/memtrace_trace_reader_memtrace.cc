@@ -32,14 +32,14 @@
 #include <cstring>
 #include <iostream>
 
-#include "directory_iterator.h"
+#include "pin/pin_lib/gather_scatter_addresses.h"
+#include "pin/pin_lib/x86_decoder.h"
+
 #include "compressed_file_reader.h"
+#include "directory_iterator.h"
+#include "file_reader.h"
 #include "snappy_file_reader.h"
 #include "zipfile_file_reader.h"
-#include "file_reader.h"
-
-#include "pin/pin_lib/x86_decoder.h"
-#include "pin/pin_lib/gather_scatter_addresses.h"
 
 extern scatter_info_map scatter_info_storage;
 
@@ -926,8 +926,8 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
     if (!unknown_type) {
       xed_error_enum_t xed_decode_res = xed_decode(&xed_inst, loc, isize);
       if (xed_decode_res != XED_ERROR_NONE) {
-        warn("XED decode error for 0x%lx: %s %u, replacing with nop\n",
-             mt_ref_.instr.addr, xed_error_enum_t2str(xed_decode_res), isize);
+        warn("XED decode error for 0x%lx: %s %u, replacing with nop\n", mt_ref_.instr.addr,
+             xed_error_enum_t2str(xed_decode_res), isize);
         xed_inst = *makeNop(isize);
       }
     } else {
@@ -971,8 +971,7 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
     cinst.encoding_is_new = mt_ref_.instr.encoding_is_new;
 
     ctype_inst_map.emplace(mt_ref_.instr.addr,
-                           std::make_tuple(n_used_mem_ops, unknown_type,
-                                           cinst.cf_type != NOT_CF, is_rep, cinst));
+                           std::make_tuple(n_used_mem_ops, unknown_type, cinst.cf_type != NOT_CF, is_rep, cinst));
     ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
   } else {
     std::get<MAP_XED>(ctype_inst_iter->second).encoding_is_new = mt_ref_.instr.encoding_is_new;

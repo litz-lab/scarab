@@ -448,7 +448,7 @@ void check_nonret_control_ins(BOOL taken, ADDRINT target_addr) {
         next_eip = DUMMY_NOP_BASE;
       } else {
         next_eip = ADDR_MASK(target_addr);
-        if (next_eip < DUMMY_NOP_BASE) {
+        if (next_eip < DUMMY_NOP_BASE || next_eip > USER_SPACE_ADDR_MAX) {
           next_eip = DUMMY_NOP_BASE;
         }
       }

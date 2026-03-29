@@ -629,7 +629,8 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
               break;
             } else {
               // This assertion holds only when there is no self-modification code (e.g. SPEC 2017)
-              ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP);
+              ASSERT(bp_data->proc_id,
+                     op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP);
               if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP) {
                 // If this op is NOT always-taken, it needs to be inserted, not just appended
                 insert_pos = ii;

@@ -87,7 +87,7 @@ int64 node_dispatch_find_emptiest_rs(Op* op) {
     for (uns32 i = 0; i < rs->num_fus; ++i) {
       // find the FU that can execute this op
       Func_Unit* fu = rs->connected_fus[i];
-      if (!(get_fu_type(op->table_info->op_type, op->table_info->is_simd) & fu->type)) {
+      if (!(get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & fu->type)) {
         continue;
       }
 
@@ -128,7 +128,7 @@ void node_schedule_oldest_first_sched(Op* op) {
   for (uns32 i = 0; i < rs->num_fus; ++i) {
     // check if this op can be executed by this FU
     Func_Unit* fu = rs->connected_fus[i];
-    if (!(get_fu_type(op->table_info->op_type, op->table_info->is_simd) & fu->type)) {
+    if (!(get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & fu->type)) {
       continue;
     }
 
@@ -364,7 +364,7 @@ void node_track_fu_idle_stats(void) {
   // Iterate over ready ops and set bits in ready_type corresponding to FU_TYPE of each op
   for (Op* op = node->rdy_head; op; op = op->next_rdy) {
     if ((op->state == OS_READY || op->state == OS_WAIT_FWD) && cycle_count >= op->rdy_cycle - 1) {
-      uns64 op_fu_type = get_fu_type(op->table_info->op_type, op->table_info->is_simd);
+      uns64 op_fu_type = get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd);
       ready_type_per_rs[op->rs_id] |= op_fu_type;
     }
   }

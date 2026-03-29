@@ -421,6 +421,8 @@ void inc_timeliness_info(Flag mshr_hit) {
 }
 
 Flag fdip_search_pref_candidate(Addr addr) {
+  if (!FDIP_ENABLE)
+    return TRUE;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   if (!FDIP_UTILITY_HASH_ENABLE && !FDIP_UC_SIZE && !FDIP_BLOOM_FILTER)
     return TRUE;
@@ -428,6 +430,8 @@ Flag fdip_search_pref_candidate(Addr addr) {
 }
 
 void inc_useful_lines_uc(Addr line_addr) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   if (!FDIP_UC_SIZE)
     return;
@@ -435,6 +439,8 @@ void inc_useful_lines_uc(Addr line_addr) {
 }
 
 void dec_useful_lines_uc(Addr line_addr) {
+  if (!FDIP_ENABLE)
+    return;
   ASSERT(0, g_fdip->get_bp_id() == 0);
   if (!FDIP_UC_SIZE)
     return;
@@ -1062,7 +1068,7 @@ void FDIP::update() {
           req.oldest_op_unique_num = (Counter)0;
           req.oldest_op_op_num = (Counter)0;
           req.oldest_op_addr = (Addr)0;
-          req.dirty_l0 = op && op->table_info->mem_type == MEM_ST && !op->off_path;
+          req.dirty_l0 = op && op->inst_info->table_info.mem_type == MEM_ST && !op->off_path;
           req.fdip_pref_off_path = op->off_path;
           req.demand_icache_emitted_cycle = 0;
           req.fdip_emitted_cycle = cycle_count;
@@ -1559,7 +1565,7 @@ void FDIP::log_stats_path_conf_per_pref_candidate() {
   if (!is_conf_off_path()) {
     if (is_off_path()) {
       STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_PREF_CANDIDATES);
-      STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NOT_IDENTIFIED_PREF_CANDIDATES + cur_op->bp_pred_info->off_path_reason);
+      STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NOT_IDENTIFIED_PREF_CANDIDATES + decoupled_fe_get_off_path_reason());
     } else
       STAT_EVENT(proc_id, FDIP_ON_CONF_ON_PREF_CANDIDATES);
   } else {
@@ -1582,7 +1588,7 @@ void FDIP::log_stats_path_conf_emitted() {
     // actually off
     if (is_off_path()) {
       STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_EMITTED);
-      STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NOT_IDENTIFIED_EMITTED + cur_op->bp_pred_info->off_path_reason);
+      STAT_EVENT(proc_id, FDIP_OFF_CONF_ON_NOT_IDENTIFIED_EMITTED + decoupled_fe_get_off_path_reason());
     } else {
       STAT_EVENT(proc_id, FDIP_ON_CONF_ON_EMITTED);
     }

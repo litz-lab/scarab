@@ -187,7 +187,6 @@ void decoupled_fe_print_conf_data() {
 
 /* Decoupled_FE member functions */
 Decoupled_FE::~Decoupled_FE() {
-  ASSERT(proc_id, ftq.empty());
   ASSERT(proc_id, saved_recovery_ft == nullptr);
   if (CONFIDENCE_ENABLE && bp_id == MAIN_BP) {
     delete conf;
@@ -238,7 +237,7 @@ void Decoupled_FE::dfe_recover_op() {
   bool recovery_op_is_last = false;
   auto erase_from = ftq.begin();
 
-  for (auto it = ftq.begin(); it != ftq.end(); ++it) {
+  for (auto it = ftq.begin(); it != ftq.end() && bp_id == MAIN_BP; ++it) {
     FT* ft = *it;
 
     for (uint64_t op_idx = 0; op_idx < ft->ops.size(); ++op_idx) {
@@ -514,12 +513,24 @@ void Decoupled_FE::update() {
         // Only main BP should read from lookahead buffer in multi-BP setups.
         // All other BPs use the same update() function, so this check is necessary here.
         // The lookahead buffer is a simulation feature, not a typical CPU component.
-        // Lookahead buffer size is default to 1.
+        // Its use is controlled by LOOKAHEAD_BUF_SIZE.
         ASSERT(proc_id, bp_id == MAIN_BP);
         // Lookahead buffer always enabled
-        ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);
-        current_ft_to_push = lookahead_buffer_pop_ft(proc_id);
-        ASSERT(proc_id, current_ft_to_push->get_is_prebuilt());
+        if (LOOKAHEAD_BUF_SIZE) {
+          current_ft_to_push = lookahead_buffer_pop_ft(proc_id);
+          ASSERT(proc_id, current_ft_to_push->get_is_prebuilt());
+        } else {
+          current_ft_to_push = new FT(proc_id, bp_id);
+          auto build_event =
+              current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                        [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                          frontend_fetch_op(pid, bid, op);
+                                          return true;
+                                        },
+                                        false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
+          ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+          current_ft_to_push->set_prebuilt(true);
+        }
 
         result = current_ft_to_push->predict_ft();
         // if current FT is the exit one, skip mispredict handling and directly push
@@ -686,7 +697,7 @@ void Decoupled_FE::stall(Op* op) {
 }
 
 void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
-  if ((op->table_info->bar_type & BAR_FETCH) || IS_CALLSYS(op->table_info)) {
+  if ((op->inst_info->table_info.bar_type & BAR_FETCH) || IS_CALLSYS(&op->inst_info->table_info)) {
     DEBUG(proc_id,
           "[DFE%u] Decoupled fetch saw barrier retire fetch_addr:0x%llx off_path:%i op_num:%llu list_count:%i\n", bp_id,
           op->inst_info->addr, op->off_path, op->op_num, td->seq_op_list.count);
@@ -712,7 +723,8 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
     return REASON_MISFETCH;
   }
   // ibtb miss
-  else if (ENABLE_IBP && (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL) &&
+  else if (ENABLE_IBP &&
+           (op->inst_info->table_info.cf_type == CF_IBR || op->inst_info->table_info.cf_type == CF_ICALL) &&
            op->btb_pred_info->btb_miss && op->btb_pred_info->ibp_miss && op->bp_pred_info->pred_orig == TAKEN) {
     return REASON_IBTB_MISS;
   }
@@ -751,6 +763,10 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   ASSERT(proc_id, bp_id == MAIN_BP);
   ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT);
   // Misprediction: Switch to off-path execution
+  const Off_Path_Reason reason = eval_off_path_reason(result.op);
+  ASSERT(proc_id, reason != REASON_NOT_IDENTIFIED);
+  if (CONFIDENCE_ENABLE)
+    conf->set_off_path_reason(reason);
   auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
   current_ft_to_push = off_path_FT;
   // if we have a tailing ft, save it for recovery
@@ -762,14 +778,26 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   }
   // no trailing ft, misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
   else {
-    ASSERT(proc_id, LOOKAHEAD_BUF_SIZE);  // should always be true because we need lookahead buffer to save recovery ft
-    saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
-    ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
+    if (LOOKAHEAD_BUF_SIZE) {
+      saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
+      ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
+    } else {
+      saved_recovery_ft = new FT(proc_id, bp_id);
+      auto build_event =
+          saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                   [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                     frontend_fetch_op(pid, bid, op);
+                                     return true;
+                                   },
+                                   false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
+      ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+      saved_recovery_ft->set_prebuilt(true);
+    }
+
     DEBUG(proc_id, "[DFE%u] saved_recovery_ft<-newly_built id:%llu start:0x%llx ops:%zu\n", bp_id,
           (unsigned long long)saved_recovery_ft->get_ft_info().dynamic_info.FT_id,
           (unsigned long long)saved_recovery_ft->get_ft_info().static_info.start, saved_recovery_ft->ops.size());
   }
-  saved_recovery_ft->set_prebuilt(true);
   redirect_cycle = cycle_count;
   next_state = SERVING_OFF_PATH;
   frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);

@@ -53,6 +53,14 @@ typedef struct List_struct {
 
   int free_count;
   int total_count;
+
+  /* When use_free_list==TRUE, get_list_entry() may allocate backing chunks
+   * containing many List_Entry nodes. We store every allocated chunk base
+   * here so destroy_list() can free them; clear_list() only returns entries
+   * to the free pool and keeps chunks allocated. */
+  void** free_list_chunks;
+  int free_list_chunks_count;
+  int free_list_chunks_capacity;
 } List;
 
 /**************************************************************************************/
@@ -60,6 +68,7 @@ typedef struct List_struct {
 
 void init_list(List*, char[], uns, Flag);
 void clear_list(List*);
+void destroy_list(List*);
 void clip_list_at_current(List*);
 void* sl_list_add_tail(List*);
 void* dl_list_add_tail(List*);

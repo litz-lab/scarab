@@ -83,7 +83,6 @@ void set_map_stage(Map_Stage* new_map) {
 /* init_map_stage: */
 
 void init_map_stage(uns8 proc_id, const char* name) {
-  char tmp_name[MAX_STR_LENGTH + 1];
   uns ii;
   ASSERT(proc_id, map);
   ASSERT(proc_id, STAGE_MAX_DEPTH > 0);
@@ -95,8 +94,10 @@ void init_map_stage(uns8 proc_id, const char* name) {
   map->sds = (Stage_Data*)malloc(sizeof(Stage_Data) * STAGE_MAX_DEPTH);
   for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &map->sds[ii];
-    snprintf(tmp_name, MAX_STR_LENGTH, "%s %d", name, STAGE_MAX_DEPTH - ii - 1);
-    cur->name = (char*)strdup(tmp_name);
+    /* Stage_Data::name is only used for debugging/printing; reuse the long-lived
+     * stage name pointer passed into init_map_stage().
+     */
+    cur->name = (char*)name;
     cur->max_op_count = STAGE_MAX_OP_COUNT;
     cur->ops = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
   }

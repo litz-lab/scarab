@@ -48,6 +48,7 @@ void PIN_FAST_ANALYSIS_CALL docount(UINT32 c) {
 
   if(hyper_fast_forward_count <= 0) {
     hyper_ff = false;
+    prior_rep_eip = 0;
     *out << "Exiting Hyper Fast Forward Mode." << endl;
 
     if(hyper_fast_forward_delta > 0) {
@@ -447,7 +448,7 @@ void check_nonret_control_ins(BOOL taken, ADDRINT target_addr) {
         next_eip = DUMMY_NOP_BASE;
       } else {
         next_eip = ADDR_MASK(target_addr);
-        if (next_eip < DUMMY_NOP_BASE) {
+        if (next_eip < DUMMY_NOP_BASE || next_eip > USER_SPACE_ADDR_MAX) {
           next_eip = DUMMY_NOP_BASE;
         }
       }
@@ -481,5 +482,12 @@ void handle_scarab_marker(ADDRINT op) {
     default:
       *out << "Error: Found Scarab Marker that does not have known code."
            << endl;
+  }
+}
+
+void PIN_FAST_ANALYSIS_CALL docount_rep(ADDRINT iaddr) {
+  if (iaddr != prior_rep_eip) {
+    docount(1);
+    prior_rep_eip = iaddr;
   }
 }

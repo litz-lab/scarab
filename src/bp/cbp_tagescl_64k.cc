@@ -609,6 +609,8 @@ void TAGE64K::RestorePredictorstates(Counter key) {
 }
 
 void TAGE64K::TakeCheckpoint(Counter key) {
+  // Guard against checkpoint leaks: there should never be more checkpoints than ROB entries
+  ASSERTM(0, checkpoints.size() < NODE_TABLE_SIZE, "TAGE Checkpoint leak\n");
   auto& key_index = checkpoints.get<0>();  // Get the key index
   auto it = key_index.find(key);
   assert(it == key_index.end());

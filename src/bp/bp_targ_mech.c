@@ -604,16 +604,19 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
                 hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
 
+      Blk_Btb_BrSlot br_slot;
+      br_slot.addr = op->inst_info->addr;
+      br_slot.type = op->inst_info->table_info.cf_type;
+      br_slot.target = op->oracle_info.target;
+      br_slot.valid = TRUE;
+
       Addr btb_line_addr, repl_line_addr;
       Blk_Btb_BrSlot* br_slots = (Blk_Btb_BrSlot*)cache_access(bp_data->btb, btb_index_addr, &btb_line_addr, TRUE);
 
       if (!br_slots) {
         br_slots = (Blk_Btb_BrSlot*)cache_insert(bp_data->btb, bp_data->proc_id, btb_index_addr, &btb_line_addr,
                                                  &repl_line_addr);
-        br_slots[0].addr = op->inst_info->addr;
-        br_slots[0].type = op->inst_info->table_info.cf_type;
-        br_slots[0].target = op->oracle_info.target;
-        br_slots[0].valid = TRUE;
+        br_slots[0] = br_slot;
         // Invalidate the remaining slots
         for (uns ii = 1; ii < BTB_NUM_BRSLOT; ii++)
           br_slots[ii].valid = FALSE;
@@ -624,8 +627,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
             if (br_slots[ii].addr < op->inst_info->addr) {
               continue;
             } else if (br_slots[ii].addr == op->inst_info->addr) {
-              br_slots[ii].type = op->inst_info->table_info.cf_type;
-              br_slots[ii].target = op->oracle_info.target;
+              br_slots[ii] = br_slot;
               break;
             } else {
               // This assertion holds only when there is no self-modification code (e.g. SPEC 2017)
@@ -634,25 +636,17 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
               if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP) {
                 // If this op is NOT always-taken, it needs to be inserted, not just appended
                 insert_pos = ii;
-                break;
               } else {
                 // If this op is always-taken, invalidate the rest as the block ends here
-                br_slots[ii].addr = op->inst_info->addr;
-                br_slots[ii].type = op->inst_info->table_info.cf_type;
-                br_slots[ii].target = op->oracle_info.target;
-                br_slots[ii].valid = TRUE;
-                for (uns jj = ii; jj < BTB_NUM_BRSLOT; jj++)
+                br_slots[ii] = br_slot;
+                for (uns jj = ii + 1; jj < BTB_NUM_BRSLOT; jj++)
                   br_slots[jj].valid = FALSE;
-                return;
               }
               break;
             }
           } else {
             // br_slots[ii] does not store a valid op yet
-            br_slots[ii].addr = op->inst_info->addr;
-            br_slots[ii].type = op->inst_info->table_info.cf_type;
-            br_slots[ii].target = op->oracle_info.target;
-            br_slots[ii].valid = TRUE;
+            br_slots[ii] = br_slot;
             break;
           }
         }
@@ -660,15 +654,11 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
         if (insert_pos < BTB_NUM_BRSLOT) {
           // Naive replacement policy: op with the largest addr will be discarded
           for (uns ii = BTB_NUM_BRSLOT - 1; ii > insert_pos; ii--) {
-            br_slots[ii].addr = br_slots[ii - 1].addr;
-            br_slots[ii].type = br_slots[ii - 1].type;
-            br_slots[ii].target = br_slots[ii - 1].target;
-            br_slots[ii].valid = br_slots[ii - 1].valid;
+            if (br_slots[ii - 1].valid) {
+              br_slots[ii] = br_slots[ii - 1];
+            }
           }
-          br_slots[insert_pos].addr = op->inst_info->addr;
-          br_slots[insert_pos].type = op->inst_info->table_info.cf_type;
-          br_slots[insert_pos].target = op->oracle_info.target;
-          br_slots[insert_pos].valid = TRUE;
+          br_slots[insert_pos] = br_slot;
         }
       }
 

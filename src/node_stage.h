@@ -29,20 +29,11 @@
 #ifndef __NODE_STAGE_H__
 #define __NODE_STAGE_H__
 
-#include "exec_stage.h"
+#include "node_issue_queue.h"
 #include "stage_data.h"
 
 /**************************************************************************************/
 // Types
-
-typedef struct Reservation_Station_struct {
-  uns proc_id;
-  char name[EXEC_PORTS_MAX_NAME_LEN];  // unique name of the RS, from exec_ports.def
-  uns32 size;                          // 0 is infinite
-  Func_Unit** connected_fus;           // FUs that this reservation station is connected to.
-  uns32 num_fus;                       // number of fus that this rs is connected to.
-  uns32 rs_op_count;                   // number of ops in this reservation station
-} Reservation_Station;
 
 typedef struct Node_Stage_struct {
   uns proc_id;

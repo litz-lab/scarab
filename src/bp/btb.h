@@ -11,4 +11,6 @@ typedef struct Blk_Btb_BrSlot_struct {
   Flag valid;    // 1 bit
 } Blk_Btb_BrSlot;
 
+#define BLK_BTB_ENTRY_SIZE BTB_NUM_BRSLOT * sizeof(Blk_Btb_BrSlot)
+
 #endif /* #ifndef __BTB_H__ */

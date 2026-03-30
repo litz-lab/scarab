@@ -522,8 +522,7 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   if (!bp_data->bp_id) {
     DEBUG_BTB(bp_data->proc_id, "Initializing BLOCK_BTB\n");
     ASSERT(bp_data->proc_id, BTB_NUM_BRSLOT > 0);
-    init_cache(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BTB_NUM_BRSLOT * sizeof(Blk_Btb_BrSlot),
-               REPL_TRUE_LRU);
+    init_cache(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BLK_BTB_ENTRY_SIZE, REPL_TRUE_LRU);
   } else  // points to the primary BP's shared BTB
     bp_data->btb = primary_bp->btb;
 }

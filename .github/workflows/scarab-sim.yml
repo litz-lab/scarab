@@ -76,6 +76,26 @@ jobs:
           cat env_path.txt >> "$GITHUB_ENV"
           rm env_path.txt
 
+      - name: Patch descriptor for CI
+        working-directory: infra
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sci_id = os.environ["SCI_ID"]
+          src = Path(f"json/{sci_id}.json")
+          if not src.exists():
+              raise SystemExit(f"Descriptor not found: {src}")
+          with open(src) as f:
+              d = json.load(f)
+          d["application_dir"] = os.environ["GITHUB_WORKSPACE"] + "/"
+          src.write_text(json.dumps(d, indent=2, separators=(',', ':')) + "\n")
+          PY
+        env:
+          SCI_ID: ${{ inputs.sci_id }}
+
       - name: Build Scarab
         working-directory: infra
         env:

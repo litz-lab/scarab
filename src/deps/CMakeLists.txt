@@ -43,6 +43,7 @@ if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
     ${CMAKE_CURRENT_SOURCE_DIR}/dynamorio/clients/drcachesim/tracer/
     ${CMAKE_CURRENT_SOURCE_DIR}/dynamorio/clients/drcachesim/scheduler/
     ${CMAKE_CURRENT_SOURCE_DIR}/dynamorio/clients/drcachesim/
+    ${CMAKE_CURRENT_SOURCE_DIR}/dynamorio/third_party/zlib/contrib/
     )
 
   target_link_libraries(pt_memtrace
@@ -60,6 +61,7 @@ if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
     drreg_static
     drcontainers
     drmemtrace_analyzer
+    minizip
     xed
     snappy
     dl

@@ -47,6 +47,8 @@ void PIN_FAST_ANALYSIS_CALL docount(UINT32 c) {
 #endif
 
   if(hyper_fast_forward_count <= 0) {
+    if (!hyper_ff)
+      return;
     hyper_ff = false;
     prior_rep_eip = 0;
     *out << "Exiting Hyper Fast Forward Mode." << endl;
@@ -448,7 +450,7 @@ void check_nonret_control_ins(BOOL taken, ADDRINT target_addr) {
         next_eip = DUMMY_NOP_BASE;
       } else {
         next_eip = ADDR_MASK(target_addr);
-        if (next_eip < DUMMY_NOP_BASE) {
+        if (next_eip < DUMMY_NOP_BASE || next_eip > USER_SPACE_ADDR_MAX) {
           next_eip = DUMMY_NOP_BASE;
         }
       }

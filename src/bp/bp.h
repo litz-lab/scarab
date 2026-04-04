@@ -56,7 +56,6 @@ typedef struct Bp_Recovery_Info_struct {
   Op* redirect_op;         /* pointer to op that caused redirect */
 
   Op* recovery_op;             /* pointer to op that caused recovery */
-  int oracle_cp_num;           /* checkpoint num that we need to return to - if using oracle checkpointing */
   Counter recovery_unique_num; /* unique_num of op that caused recovery */
   uns64 recovery_inst_uid;     /* unique id of the instruction that caused  */
 

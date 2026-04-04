@@ -32,6 +32,7 @@
 /**************************************************************************************/
 
 #include <stdio.h>
+#include <time.h>
 
 #include "globals/global_types.h"
 
@@ -73,6 +74,14 @@ extern uns num_fetched_lowconf_brs;
 
 extern Flag roi_dump_began;
 extern Counter roi_dump_ID;
+
+/* Set in init_global(); used for heartbeat KIPS and SIM_HOST_WALL_SECONDS fallback. */
+extern time_t sim_start_time;
+
+/* Monotonic wall clock: set when entering SIMULATION_MODE in full_sim(). */
+extern struct timespec sim_wall_mono_start;
+extern Flag sim_wall_mono_valid;
+
 /**************************************************************************************/
 
 #endif /* #ifndef __GLOBAL_VARS_H__ */

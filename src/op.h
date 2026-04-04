@@ -41,10 +41,14 @@
 // forward declaration of FT
 typedef struct FT FT;
 
+/* Register id slots on Op; must match REG_TABLE_REG_ID_INVALID in map_rename.h (0xFFFF). */
+#define OP_REG_ID_INVALID ((uns16)0xFFFF)
+
 /**************************************************************************************/
 // Macro Defines
 
-#define OP_SRCS_RDY(x) ((x)->srcs_not_rdy_vector == 0 && cycle_count >= (x)->rdy_cycle)
+/* OP_SRCS_RDY uses op_sources_not_rdy_is_clear (op_info.c). */
+#define OP_SRCS_RDY(x) (op_sources_not_rdy_is_clear((x)) && cycle_count >= (x)->rdy_cycle)
 #define OP_DONE(x) (cycle_count >= (x)->done_cycle)
 #define OP_BROADCAST(x) ((cycle_count + 1) >= (x)->done_cycle)
 #define MULTI_CYCLE_OP(x) ((x)->inst_info->latency > 1 + RFILE_STAGE || (x)->inst_info->table_info.mem_type == MEM_LD)
@@ -79,7 +83,7 @@ typedef struct Wake_Up_Entry_struct {
   Op* op;
   Counter unique_num;
   Dep_Type dep_type;
-  uns8 rdy_bit;
+  uns rdy_bit; /* index into dep_op->src_info; may exceed 255 */
   struct Wake_Up_Entry_struct* next;
 } Wake_Up_Entry;
 
@@ -133,7 +137,6 @@ struct Op_struct {
 
   // {{{ op numbers and info pointers
   uns proc_id;                  // processor id for cmp model
-  uns thread_id;                // id number for the thread to which this op belongs
   Flag bom;                     // begining of macro instruction when we use op as a uop
   Flag eom;                     // end of macro instruction when we use op as a uop
   Flag fetched_instruction;     // is this op fetched or a rep op?
@@ -144,15 +147,16 @@ struct Op_struct {
   Inst_Info* inst_info;         // pointer to unique struct for each static instruction
   Op_Info oracle_info;          // information about the execution of the op in the oracle
   Op_Info engine_info;          // information about the execution of the op in the engine
+  uns num_srcs;                 // number of map dependencies (order matches srcs_not_rdy_words / wake-up)
+  Src_Info* src_info;           /* grown by map (2 -> 8 -> 128, then x2); freed in free_op */
+  uns src_info_cap;
   Bp_Pred_Info bp_pred_l0;      // l0 branch prediction info
   Bp_Pred_Info bp_pred_main;    // main branch prediction info
   Btb_Pred_Info btb_pred;       // btb prediction info
   Bp_Pred_Info* bp_pred_info;   // selected/active branch prediction info
   Btb_Pred_Info* btb_pred_info;  // selected/active btb prediction info
-  int oracle_cp_num;            // if the op has created an oracle checkpointed this is not -1
   // }}}
 
-  int32 perceptron_output;
   int32 conf_perceptron_output;  // confidece perceptron
   // {{{ state and event cycle counters
   Op_State state;        // the state of the op in the datapath
@@ -176,7 +180,6 @@ struct Op_struct {
   Flag off_path;                // is the op on the correct path of the program? - oracle information
   Flag conf_off_path;           // is the op on the correct path of the program? - confidence information
   Flag exit;                    // is this the last instruction to execute?
-  uns cf_within_fetch;          // branch number within a fetch cycle
   Recovery_Info recovery_info;  // information that will be used to recover a mispredict by the op
   // }}}
 
@@ -194,13 +197,12 @@ struct Op_struct {
   Flag macro_fused;             // if the op should be fused with the previous op (CMP/TEST)
   Flag move_eliminated;         // if the op can be move-eliminated
   Flag replay;                  // is the op waiting to replay?
-  uns replay_count;             // number of times the op has replayed
-  Flag dont_cause_replays;      // true if the op should not cause other ops to replay (like a correct value prediction)
   uns exec_count;               // how many times has this op been executed?
   // }}}
 
   // {{{ dependency information
-  uns srcs_not_rdy_vector;               // bits as given by order in the src_info array
+  uns64* srcs_not_rdy_words; /* ceil(src_info_cap/64) words; bit i == src i not ready */
+  uns srcs_not_rdy_nwords;
   Flag wake_up_signaled[NUM_DEP_TYPES];  // set to true once a wake up has been signaled by the op for the given type
   Wake_Up_Entry* wake_up_head;           // list of ops that are dependent on this op, by dependency type
   Wake_Up_Entry* wake_up_tail;           // last entry in each wake up list (for speed)
@@ -209,28 +211,12 @@ struct Op_struct {
   // }}}
 
   struct Mem_Req_struct* req;  // pointer to memory request responsible for waking up the op
-  // }}}
 
   Flag marked;  // for algorithms that mark already seen ops
 
   /*------------------------------------------------------------------------------------*/
   // FIELDS BELOW THIS POINT SHOULD BE MOVED INTO OTHER HEADERS
   // (along with any related structs above)
-
-  // {{{ pipelined scheduler specific fields (move these)
-  struct Sched_Info_struct* sched_info;
-  uns delay_bit;             // rejected ops in pipelined schedule is delayed
-  uns first;                 // op's sources were ready when dispatched => op is first in dep chain
-  Counter same_src_last_op;  // bit vector indicating if any src of last op in same slot was the same
-  // }}}
-
-  /* predict wait time specific fields */
-
-  // {{{ predict wait time specific fields (move these)
-  uns fetch_lag;  // num cycles since the previous group was issued.
-  // }}}
-
-  struct Mbp7gshare_Info_struct* mbp7_info;  // multiple branch predictor information
 
   // Use bp_pred_info->pred_npc instead
   // Addr pred_target; // last predicted target for this op.
@@ -246,9 +232,9 @@ struct Op_struct {
   int bp_confidence;
 
   // {{{ register renaming
-  int src_reg_id[MAX_SRCS][REG_TABLE_TYPE_NUM];        // the reg id of the source reg file entries
-  int dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];       // the reg id of allocated reg file entries
-  int prev_dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];  // the previous dst reg id with the same parent register id
+  uns16 src_reg_id[MAX_SRCS][REG_TABLE_TYPE_NUM];        // the reg id of the source reg file entries
+  uns16 dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];       // the reg id of allocated reg file entries
+  uns16 prev_dst_reg_id[MAX_DESTS][REG_TABLE_TYPE_NUM];  // the previous dst reg id with the same parent register id
   // }}}
   FT* parent_FT;
   FT* parent_FT_off_path;

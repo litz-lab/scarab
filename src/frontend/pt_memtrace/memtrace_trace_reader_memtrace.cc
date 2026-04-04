@@ -28,7 +28,20 @@
 
 #include "frontend/pt_memtrace/memtrace_trace_reader_memtrace.h"
 
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+
+#include "pin/pin_lib/gather_scatter_addresses.h"
 #include "pin/pin_lib/x86_decoder.h"
+
+#include "compressed_file_reader.h"
+#include "directory_iterator.h"
+#include "file_reader.h"
+#include "snappy_file_reader.h"
+#include "zipfile_file_reader.h"
+
+extern scatter_info_map scatter_info_storage;
 
 #include "dr_api.h"
 #include "dr_ir_instr.h"
@@ -256,6 +269,9 @@ TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace, uint32_t _bu
       knob_verbose_(0),
       trace_has_encodings_(false),
       is_dr_isa(false),
+      reader_at_eof_(false),
+      reader_first_read_(true),
+      roi_end_(0),
       mt_state_(MTState::INST),
       mt_use_next_ref_(true),
       mt_mem_ops_(0),
@@ -292,59 +308,87 @@ const char* TraceReaderMemtrace::parse_buildid_string(const char* src, OUT void*
 }
 #endif
 
+static std::unique_ptr<reader_t> create_trace_reader(const std::string& path, int verbosity) {
+  if (directory_iterator_t::is_directory(path)) {
+    directory_iterator_t end;
+    directory_iterator_t iter(path);
+    for (; iter != end; ++iter) {
+      const std::string fname = *iter;
+      if (fname == "." || fname == "..")
+        continue;
+      if (ends_with(fname, ".sz"))
+        return std::unique_ptr<reader_t>(new snappy_file_reader_t(path, verbosity));
+      if (ends_with(fname, ".zip"))
+        return std::unique_ptr<reader_t>(new zipfile_file_reader_t(path, verbosity));
+    }
+  } else {
+    if (ends_with(path, ".sz"))
+      return std::unique_ptr<reader_t>(new snappy_file_reader_t(path, verbosity));
+    if (ends_with(path, ".zip"))
+      return std::unique_ptr<reader_t>(new zipfile_file_reader_t(path, verbosity));
+  }
+  return std::unique_ptr<reader_t>(new compressed_file_reader_t(path, verbosity));
+}
+
+bool TraceReaderMemtrace::advanceReader() {
+  if (reader_at_eof_)
+    return false;
+  if (reader_first_read_) {
+    reader_first_read_ = false;
+  } else {
+    ++(*reader_);
+  }
+  if (*reader_ == *reader_end_) {
+    reader_at_eof_ = true;
+    return false;
+  }
+  if (roi_end_ && reader_->get_instruction_ordinal() > roi_end_) {
+    reader_at_eof_ = true;
+    return false;
+  }
+  mt_ref_ = **reader_;
+  return true;
+}
+
 bool TraceReaderMemtrace::initTrace() {
-  {
-    // temporary scope only for reading filetype
-    std::vector<dynamorio::drmemtrace::scheduler_t::input_workload_t> sched_inputs;
-    sched_inputs.emplace_back(trace_);  // None ROI for scanning the filetype first
-
-    dynamorio::drmemtrace::scheduler_t tmp_scheduler;
-    if (tmp_scheduler.init(sched_inputs, 1, dynamorio::drmemtrace::scheduler_t::make_scheduler_serial_options()) !=
-        dynamorio::drmemtrace::scheduler_t::STATUS_SUCCESS) {
-      panic("failed to initialize tmp scheduler: %s", tmp_scheduler.get_error_string().c_str());
-      return false;
-    }
-
-    // Detect trace type
-    auto* tmp_stream = tmp_scheduler.get_stream(0);
-    auto type = tmp_stream->get_filetype();
-    ASSERT(0, type != 0 && "Filetype detection failed: got 0x0 (trace file is missing header)");
-
-    if (dcontext_ == nullptr) {
-      dcontext_ = dr_standalone_init();
-    }
-
-    trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
-    if (type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ARCH_REGDEPS) {
-      dr_isa_mode_t dummy;
-      dr_set_isa_mode(dcontext_, DR_ISA_REGDEPS, &dummy);
-    } else {
-      warn(
-          "Warning: Scarab expects the trace file type to include OFFLINE_FILE_TYPE_ARCH_REGDEPS (0x%lx), but got "
-          "type: 0x%lx\n",
-          (unsigned long)dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ARCH_REGDEPS, (unsigned long)type);
-    }
+  reader_ = create_trace_reader(trace_, 0);
+  // EOF sentinel: default-constructed reader with at_eof_ = true
+  reader_end_.reset(new compressed_file_reader_t());
+  if (!reader_ || !reader_->init()) {
+    panic("failed to initialize trace reader for: %s\n", trace_.c_str());
+    return false;
   }
 
-  std::vector<dynamorio::drmemtrace::scheduler_t::input_workload_t> sched_inputs;
-  // memtrace region of interest provides a view of the trace only of interest
-  // inst count satrt with 1
-  // begin 0 is invalid
-  // end is inclusive
-  // end 0 is end of trace
+  // reader_t::init() only advances past the first visible marker (typically
+  // VERSION).  We must continue advancing so the reader processes the FILETYPE
+  // marker, which populates get_filetype().
+  while (reader_->get_filetype() == 0) {
+    if (!advanceReader())
+      break;
+  }
+  auto type = reader_->get_filetype();
+  ASSERT(0, type != 0 && "Filetype detection failed: got 0x0 (trace file is missing header)");
+
+  if (dcontext_ == nullptr) {
+    dcontext_ = dr_standalone_init();
+  }
+
+  trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
+  if (type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ARCH_REGDEPS) {
+    dr_isa_mode_t dummy;
+    dr_set_isa_mode(dcontext_, DR_ISA_REGDEPS, &dummy);
+  } else {
+    warn(
+        "Warning: Scarab expects the trace file type to include OFFLINE_FILE_TYPE_ARCH_REGDEPS (0x%lx), but got "
+        "type: 0x%lx\n",
+        (unsigned long)dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ARCH_REGDEPS, (unsigned long)type);
+  }
+
+  // Handle region of interest (instruction-count based)
   if (MEMTRACE_ROI_BEGIN) {
     ASSERT(0, MEMTRACE_ROI_BEGIN < MEMTRACE_ROI_END || MEMTRACE_ROI_END == 0);
-    dynamorio::drmemtrace::scheduler_t::range_t roi(static_cast<uint64_t>(MEMTRACE_ROI_BEGIN),
-                                                    static_cast<uint64_t>(MEMTRACE_ROI_END));
-    sched_inputs.emplace_back(trace_, std::vector<dynamorio::drmemtrace::scheduler_t::range_t>{roi});
-  } else {
-    sched_inputs.emplace_back(trace_);
-  }
-
-  if (scheduler.init(sched_inputs, 1, dynamorio::drmemtrace::scheduler_t::make_scheduler_serial_options()) !=
-      dynamorio::drmemtrace::scheduler_t::STATUS_SUCCESS) {
-    panic("failed to initialize scheduler: %s", scheduler.get_error_string().c_str());
-    return false;
+    reader_->skip_instructions(static_cast<uint64_t>(MEMTRACE_ROI_BEGIN) - 1);
+    roi_end_ = MEMTRACE_ROI_END ? static_cast<uint64_t>(MEMTRACE_ROI_END) : 0;
   }
 
   // Set info 'A' to the first complete instruction.
@@ -354,29 +398,22 @@ bool TraceReaderMemtrace::initTrace() {
   return true;
 }
 
+std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, ctype_pin_inst>> ctype_inst_map;
+
 bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior) {
   static bool first_instr = true;
   uint32_t prior_isize = mt_prior_isize_;
   bool complete = false;
 
-  auto* stream = scheduler.get_stream(0);
-
   if (mt_use_next_ref_) {
-    // start with the next entry
-    mt_status_ = stream->next_record(mt_ref_);
+    if (!advanceReader())
+      reader_at_eof_ = true;
   } else {
-    // mt_use_next_ref_ is false following a REP BUG
-    // start with the current entry because it needs to be processed
-    // otherwise it will be skipped
-    assert(mt_status_ != dynamorio::drmemtrace::scheduler_t::STATUS_EOF);
+    assert(!reader_at_eof_);
     assert(mt_state_ == MTState::INST);
-    // will use the next entry the next time if not set to false again
     mt_use_next_ref_ = true;
   }
-  while (mt_status_ != dynamorio::drmemtrace::scheduler_t::STATUS_EOF) {
-    if (mt_status_ != dynamorio::drmemtrace::scheduler_t::STATUS_OK) {
-      panic("scheduler failed to advance: %d", mt_status_);
-    }
+  while (!reader_at_eof_) {
     // there can be mt_ref types other than inst and mem
     // the FSM will skip those if they appear within MTState::INST state
     switch (mt_state_) {
@@ -409,7 +446,7 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
         } else if (mt_ref_.instr.type == dynamorio::drmemtrace::TRACE_TYPE_INSTR_NO_FETCH) {
           // a repeated rep
           if (!is_dr_isa) {  // impossible to check DR_ISA_REGDEPS for REP
-            bool is_rep = std::get<MAP_REP>(xed_map_.at(_prior->pc));
+            bool is_rep = std::get<MAP_REP>(ctype_inst_map.at(_prior->pc));
             assert(is_rep && ((uint32_t)mt_ref_.instr.pid == _prior->pid) &&
                    ((uint32_t)mt_ref_.instr.tid == _prior->tid) && (mt_ref_.instr.addr == _prior->pc));
           }
@@ -494,13 +531,15 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
       break;
     }
     // advance to the next entry if the instruction has not yet completed
-    mt_status_ = stream->next_record(mt_ref_);
+    if (!advanceReader())
+      reader_at_eof_ = true;
   }
 PATCH_REP:
   _info->valid &= complete;
   // Compute the branch target information for the prior instruction
   if (_info->valid) {
-    bool is_rep = xed_map_.find(_prior->pc) != xed_map_.end() ? std::get<MAP_REP>(xed_map_.at(_prior->pc)) : 0;
+    auto ctype_prior_iter = ctype_inst_map.find(_prior->pc);
+    bool is_rep = (ctype_prior_iter != ctype_inst_map.end()) ? std::get<MAP_REP>(ctype_prior_iter->second) : false;
     bool non_seq = _info->pc != (_prior->pc + prior_isize);
 
     if (_prior->taken) {  // currently set iif branch
@@ -523,13 +562,15 @@ PATCH_REP:
       _prior->taken = non_seq;
     } else if (_prior->pc && non_seq &&
                (!is_rep || (_prior->pc != _info->pc && (_prior->pc + prior_isize) != _info->pc))) {
-      _prior->ins = createJmp(_info->pc - _prior->pc);
+      gap_patch_jmp_ = create_dummy_jump(_prior->pc, _info->pc);
+      gap_patch_jmp_.fake_inst = 0;
+      gap_patch_jmp_.true_op_type = XED_ICLASS_JMP;
+      _prior->info = &gap_patch_jmp_;
       _prior->target = _info->pc;
       _prior->taken = true;
       _prior->mem_used[0] = false;
       _prior->mem_used[1] = false;
-      _prior->is_dr_ins = false;
-      ;
+      _prior->is_dr_ins = true;
       warn("Patching gap in trace by injecting a Jmp, prior PC: %lx next PC: %lx\n", _prior->pc, _info->pc);
     }
     _prior->target = _info->pc;  // TODO(granta): Invalid for pid/tid switch
@@ -656,7 +697,6 @@ void TraceReaderMemtrace::fill_in_basic_info(ctype_pin_inst* info, instr_t* drin
   info->cf_type = NOT_CF;
   info->lane_width_bytes = instr_get_operation_size(drinst);
   info->num_simd_lanes = 4;  // Guess
-  info->encoding_is_new = true;
   info->num_st = (cat & DR_INSTR_CATEGORY_STORE) ? 1 : 0;
   info->num_ld = (cat & DR_INSTR_CATEGORY_LOAD) ? 1 : 0;
   info->is_fp = (cat & DR_INSTR_CATEGORY_FP) ? 1 : 0;
@@ -805,15 +845,15 @@ void TraceReaderMemtrace::fill_in_basic_info(ctype_pin_inst* info, instr_t* drin
   info->scarab_marker_roi_end = false;
 }
 
-std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, ctype_pin_inst>> ctype_inst_map;
-
-
 void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem) {
   assert(mt_ref_.instr.size);
   instr_t drinst;
   bool unknown_type, cond_branch;
   instr_init(dcontext_, &drinst);
   _info->pc = mt_ref_.instr.addr;
+  if (mt_ref_.instr.encoding_is_new) {
+    ctype_inst_map.erase(mt_ref_.instr.addr);
+  }
   auto ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
   if (mt_ref_.instr.encoding_is_new) {
     ctype_pin_inst cinst;
@@ -822,7 +862,7 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
 
     fill_in_basic_info(&cinst, &drinst, mt_ref_.instr.size, mt_ref_.instr.type);
     add_dependency_info(&cinst, &drinst);
-    ctype_inst_map.erase(mt_ref_.instr.addr);
+    cinst.encoding_is_new = mt_ref_.instr.encoding_is_new;
     ctype_inst_map.emplace(mt_ref_.instr.addr,
                            std::make_tuple(cinst.num_ld + cinst.num_st, false, cinst.cf_type, false, cinst));
     ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
@@ -831,7 +871,7 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
     // trace_type_to_string(mt_ref_.instr.type));
   } else {
     assert(ctype_inst_iter != ctype_inst_map.end());
-    std::get<MAP_XED>(ctype_inst_iter->second).encoding_is_new = false;
+    std::get<MAP_XED>(ctype_inst_iter->second).encoding_is_new = mt_ref_.instr.encoding_is_new;
   }
 
   tie(mt_mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) = ctype_inst_iter->second;
@@ -860,35 +900,92 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
 }
 
 void TraceReaderMemtrace::processInst(InstInfo* _info) {
-  // Get the XED info from the cache, creating it if needed
-  auto xed_map_iter = xed_map_.find(mt_ref_.instr.addr);
-  if (xed_map_iter == xed_map_.end()) {
-    if (trace_has_encodings_)
-      fillCache(mt_ref_.instr.addr, mt_ref_.instr.size, mt_ref_.instr.encoding);
-    else
-      fillCache(mt_ref_.instr.addr, mt_ref_.instr.size);
-    xed_map_iter = xed_map_.find(mt_ref_.instr.addr);
-    assert((xed_map_iter != xed_map_.end()));
-  }
-  bool unknown_type, cond_branch;
-  xed_decoded_inst_t* xed_ins;
-  auto& xed_tuple = (*xed_map_iter).second;
-
-  tie(mt_mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) = xed_tuple;
-  mt_prior_isize_ = mt_ref_.instr.size;
-  xed_ins = std::get<MAP_XED>(xed_tuple).get();
-
-  xed_category_enum_t category = xed_decoded_inst_get_category(xed_ins);
-  _info->is_dr_ins = false;
   _info->pc = mt_ref_.instr.addr;
-  _info->ins = xed_ins;
+  mt_prior_isize_ = mt_ref_.instr.size;
+
+  if (mt_ref_.instr.encoding_is_new) {
+    ctype_inst_map.erase(mt_ref_.instr.addr);
+  }
+  auto ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
+  if (ctype_inst_iter == ctype_inst_map.end()) {
+    // XED decode into a stack-local inst (only the ctype_pin_inst is cached)
+    xed_decoded_inst_t xed_inst;
+    xed_decoded_inst_zero_set_mode(&xed_inst, &xed_state_);
+    uint8_t* loc = nullptr;
+    bool unknown_type = false;
+    if (trace_has_encodings_) {
+      loc = mt_ref_.instr.encoding;
+    } else {
+      uint64_t size;
+      if (!locationForVAddr(mt_ref_.instr.addr, &loc, &size)) {
+        unknown_type = true;
+      }
+    }
+
+    uint8_t isize = static_cast<uint8_t>(mt_ref_.instr.size);
+    if (!unknown_type) {
+      xed_error_enum_t xed_decode_res = xed_decode(&xed_inst, loc, isize);
+      if (xed_decode_res != XED_ERROR_NONE) {
+        warn("XED decode error for 0x%lx: %s %u, replacing with nop\n", mt_ref_.instr.addr,
+             xed_error_enum_t2str(xed_decode_res), isize);
+        xed_inst = *makeNop(isize);
+      }
+    } else {
+      xed_inst = *makeNop(isize);
+    }
+
+    xed_decoded_inst_t* xed_ins = &xed_inst;
+
+    // Count memory ops (same logic as fillCache)
+    int n_used_mem_ops = 0;
+    uint32_t n_mem_ops = xed_decoded_inst_number_of_memory_operands(xed_ins);
+    if (n_mem_ops > 0) {
+      xed_category_enum_t category = xed_decoded_inst_get_category(xed_ins);
+      if (category != XED_CATEGORY_NOP && category != XED_CATEGORY_WIDENOP) {
+        for (uint32_t i = 0; i < n_mem_ops; i++) {
+          if (xed_decoded_inst_mem_read(xed_ins, i))
+            n_used_mem_ops++;
+          if (xed_decoded_inst_mem_written(xed_ins, i))
+            n_used_mem_ops++;
+        }
+      }
+    }
+
+    bool is_rep = xed_decoded_inst_get_attribute(xed_ins, XED_ATTRIBUTE_REP) > 0;
+
+    // Build the ctype_pin_inst
+    ctype_pin_inst cinst;
+    init_ctype_pin_inst(&cinst);
+    cinst.instruction_addr = mt_ref_.instr.addr;
+
+    ::fill_in_basic_info(&cinst, xed_ins);
+    if (XED_INS_IsVgather(xed_ins) || XED_INS_IsVscatter(xed_ins)) {
+      xed_category_enum_t cat = XED_INS_Category(xed_ins);
+      scatter_info_storage[mt_ref_.instr.addr] = add_to_gather_scatter_info_storage(
+          mt_ref_.instr.addr, XED_INS_IsVgather(xed_ins), XED_INS_IsVscatter(xed_ins), cat);
+    }
+    uint32_t max_op_width = ::add_dependency_info(&cinst, xed_ins);
+    fill_in_simd_info(&cinst, xed_ins, max_op_width);
+    apply_x87_bug_workaround(&cinst, xed_ins);
+    fill_in_cf_info(&cinst, xed_ins);
+    cinst.encoding_is_new = mt_ref_.instr.encoding_is_new;
+
+    ctype_inst_map.emplace(mt_ref_.instr.addr,
+                           std::make_tuple(n_used_mem_ops, unknown_type, cinst.cf_type != NOT_CF, is_rep, cinst));
+    ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
+  } else {
+    std::get<MAP_XED>(ctype_inst_iter->second).encoding_is_new = mt_ref_.instr.encoding_is_new;
+  }
+
+  bool unknown_type, cond_branch;
+  tie(mt_mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) = ctype_inst_iter->second;
+
+  _info->is_dr_ins = true;
+  _info->info = &(std::get<MAP_XED>(ctype_inst_iter->second));
   _info->pid = mt_ref_.instr.pid;
   _info->tid = mt_ref_.instr.tid;
-  _info->target = 0;  // Set when the next instruction is evaluated
-  // Set as taken if it's a branch.
-  // Conditional branches are patched when the next instruction is evaluated.
-  _info->taken = category == XED_CATEGORY_UNCOND_BR || category == XED_CATEGORY_COND_BR ||
-                 category == XED_CATEGORY_CALL || category == XED_CATEGORY_RET;
+  _info->target = 0;
+  _info->taken = std::get<MAP_XED>(ctype_inst_iter->second).cf_type != NOT_CF;
   _info->mem_addr[0] = 0;
   _info->mem_addr[1] = 0;
   _info->mem_used[0] = false;
@@ -898,9 +995,7 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   _info->mem_is_wr[0] = false;
   _info->mem_is_wr[1] = false;
   _info->unknown_type = unknown_type;
-  // correct this later at getNextInstruction if it is the last instruction
   _info->last_inst_from_trace = false;
-  // non-fetched instructions will be set within FSM
   _info->fetched_instruction = true;
 }
 

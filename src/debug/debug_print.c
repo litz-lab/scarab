@@ -227,12 +227,12 @@ void print_op_field(FILE* stream, Op* op, uns field) {
     case OP_NUM_FIELD:
       if (op)
         fprintf(stream, "o:%-3d %3d%c %3d%c %3d%c|", (int)(op->op_num % 1000),
-                op->oracle_info.num_srcs > 0 ? (int)(op->oracle_info.src_info[0].op_num % 1000) : -1,
-                ((op->srcs_not_rdy_vector & 1) == 0 ? 'r' : 'w'),
-                op->oracle_info.num_srcs > 1 ? (int)(op->oracle_info.src_info[1].op_num % 1000) : -1,
-                ((op->srcs_not_rdy_vector & 2) == 0 ? 'r' : 'w'),
-                op->oracle_info.num_srcs > 2 ? (int)(op->oracle_info.src_info[2].op_num % 1000) : -1,
-                ((op->srcs_not_rdy_vector & 4) == 0 ? 'r' : 'w'));
+                (op->num_srcs > 0 && op->src_info) ? (int)(op->src_info[0].op_num % 1000) : -1,
+                !op_sources_test_not_rdy(op, 0) ? 'r' : 'w',
+                (op->num_srcs > 1 && op->src_info) ? (int)(op->src_info[1].op_num % 1000) : -1,
+                !op_sources_test_not_rdy(op, 1) ? 'r' : 'w',
+                (op->num_srcs > 2 && op->src_info) ? (int)(op->src_info[2].op_num % 1000) : -1,
+                !op_sources_test_not_rdy(op, 2) ? 'r' : 'w');
       else
         fprintf(stream, "xxxxxxxxxxxxxxxxxxxx|");
       break;
@@ -249,8 +249,8 @@ void print_op_field(FILE* stream, Op* op, uns field) {
         Counter addr_dep = 0;
         Counter data_dep = 0;
         uns ii;
-        for (ii = 0; ii < op->oracle_info.num_srcs; ii++) {
-          Src_Info* src = &op->oracle_info.src_info[ii];
+        for (ii = 0; ii < op->num_srcs && op->src_info; ii++) {
+          Src_Info* src = &op->src_info[ii];
           if (src->type == MEM_ADDR_DEP)
             addr_dep = src->op_num;
           if (src->type == MEM_DATA_DEP)

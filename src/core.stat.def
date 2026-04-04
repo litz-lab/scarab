@@ -59,6 +59,9 @@
 			                                                                  
 DEF_STAT(  EXECUTION_TIME,     COUNT,    NO_RATIO    )
 
+/* Host wall seconds (CLOCK_MONOTONIC) since SIMULATION_MODE; gauge (interval==cumulative). */
+DEF_STAT(  SIM_HOST_WALL_SECONDS, FLOAT, NO_RATIO    )
+
 DEF_STAT(  NODE_CYCLE,         COUNT,    NO_RATIO    )
 
 DEF_STAT(  NODE_INST_COUNT,    COUNT,    NO_RATIO    )

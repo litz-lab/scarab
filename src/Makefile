@@ -14,7 +14,7 @@ CC = gcc
 endif
 CXX ?= g++
 
-TARGETS := opt dbg vgr gpf
+TARGETS := opt opt-avx dbg vgr gpf
 
 .PHONY: all default clean clean_pin_exec pin_exec $(TARGETS) $(subst %, clean%, $(TARGETS))
 
@@ -22,8 +22,11 @@ default: opt
 
 all: $(TARGETS)
 
-opt: BUILD_TYPE = ScarabOpt
-opt: $(BUILD_DIR_PREFIX)/opt/scarab_phony ## Build Scarab with optimization flags
+opt: BUILD_TYPE = SCARABOPT
+opt: $(BUILD_DIR_PREFIX)/opt/scarab_phony ## Build Scarab optimized (-O3 -g3), portable x86-64 (no -march)
+
+opt-avx: BUILD_TYPE = OPT_AVX
+opt-avx: $(BUILD_DIR_PREFIX)/opt-avx/scarab_phony ## Same as opt with -march=skylake-avx512
 
 dbg: BUILD_TYPE := Debug
 dbg: $(BUILD_DIR_PREFIX)/dbg/scarab_phony ## Build Scarab in debug mode

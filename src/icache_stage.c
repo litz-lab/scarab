@@ -887,12 +887,6 @@ void update_icache_stage() {
  * start_idx indicates the op index the processing should start at.
  */
 static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uop_cache, uns start_idx) {
-  static uns last_icache_issue_time = 0; /* for computing fetch break latency */
-  uns fetch_lag;
-
-  fetch_lag = cycle_count - last_icache_issue_time;
-  last_icache_issue_time = cycle_count;
-
   for (uns ii = start_idx; ii < cur_data->op_count; ii++) {
     Op* op = cur_data->ops[ii];
 
@@ -924,9 +918,6 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     if (DIE_ON_CALLSYS && !op->off_path) {
       ASSERT(ic->proc_id, op->inst_info->table_info.cf_type != CF_SYS);
     }
-
-    /* num cycles since last group issued */
-    op->fetch_lag = fetch_lag;
 
     STAT_EVENT(op->proc_id, FETCH_ALL_INST);
     STAT_EVENT(op->proc_id, ORACLE_ON_PATH_INST + op->off_path);

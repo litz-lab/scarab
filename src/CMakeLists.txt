@@ -1,6 +1,8 @@
-cmake_minimum_required (VERSION 3.5)
+cmake_minimum_required(VERSION 3.13)
 
 project(scarab C CXX ASM)
+
+option(SCARAB_ENABLE_LTO "Link-time optimization for the scarab executable" ON)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
@@ -13,8 +15,12 @@ if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
   set(flags_enable_pt_memtrace "-DENABLE_PT_MEMTRACE")
 endif()
 
-set(CMAKE_C_FLAGS_SCARABOPT   "-O3 -g3 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
+# SCARABOPT: -O3 portable x86-64 (make opt). OPT_AVX: same + -march=skylake-avx512 (make opt-avx).
+set(CMAKE_C_FLAGS_SCARABOPT "-O3 -g3 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
 set(CMAKE_CXX_FLAGS_SCARABOPT "-O3 -g3 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
+set(CMAKE_C_FLAGS_OPT_AVX "-O3 -g3 -march=skylake-avx512 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
+set(CMAKE_CXX_FLAGS_OPT_AVX "-O3 -g3 -march=skylake-avx512 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
+
 set(CMAKE_C_FLAGS_VALGRIND    "-O0 -g3 -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
 set(CMAKE_CXX_FLAGS_VALGRIND  "-O0 -g3 -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
 set(CMAKE_C_FLAGS_GPROF       "${CMAKE_CXX_FLAGS_SCARABOPT} -pg -g3 ${flags_enable_pt_memtrace}")
@@ -64,6 +70,17 @@ add_executable(scarab
     ${srcs}
 )
 
+# GCC only: silence "variable tracking size limit exceeded" for this huge TU (not globally).
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  get_target_property(_scarab_srcs scarab SOURCES)
+  foreach(_s IN LISTS _scarab_srcs)
+    if(_s MATCHES "power_scarab_config\\.cc$")
+      set_source_files_properties("${_s}" PROPERTIES COMPILE_OPTIONS "-fno-var-tracking-assignments")
+      break()
+    endif()
+  endforeach()
+endif()
+
 target_include_directories(scarab PRIVATE .)
 
 target_link_libraries(scarab
@@ -73,4 +90,14 @@ target_link_libraries(scarab
 )
 if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
   target_link_libraries(scarab PRIVATE dynamorio pt_memtrace)
+endif()
+
+if(SCARAB_ENABLE_LTO)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT _scarab_lto_ok OUTPUT _scarab_lto_reason LANGUAGES C CXX)
+  if(_scarab_lto_ok)
+    set_property(TARGET scarab PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+  else()
+    message(STATUS "Scarab LTO not enabled: ${_scarab_lto_reason}")
+  endif()
 endif()

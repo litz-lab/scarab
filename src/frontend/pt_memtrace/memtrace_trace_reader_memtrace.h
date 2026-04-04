@@ -70,13 +70,16 @@ class TraceReaderMemtrace : public TraceReader {
     MEM2,
   };
 
-  // std::unique_ptr<dynamorio::drmemtrace::analyzer_t> mt_reader_;
+  std::unique_ptr<dynamorio::drmemtrace::reader_t> reader_;
+  std::unique_ptr<dynamorio::drmemtrace::reader_t> reader_end_;
+  bool reader_at_eof_;
+  bool reader_first_read_;
+  uint64_t roi_end_;
 
-  dynamorio::drmemtrace::scheduler_t scheduler;
+  bool advanceReader();
 
   MTState mt_state_;
   dynamorio::drmemtrace::memref_t mt_ref_;
-  dynamorio::drmemtrace::scheduler_t::stream_status_t mt_status_;
   bool mt_use_next_ref_;
   int mt_mem_ops_;
   uint64_t mt_seq_;
@@ -84,6 +87,7 @@ class TraceReaderMemtrace : public TraceReader {
   InstInfo mt_info_a_;
   InstInfo mt_info_b_;
   bool mt_using_info_a_;
+  ctype_pin_inst gap_patch_jmp_;
   uint64_t mt_warn_target_;
 };
 

@@ -28,6 +28,9 @@
 
 #include "map.h"
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
@@ -46,6 +49,7 @@
 #include "cmp_model.h"
 #include "map_rename.h"
 #include "model.h"
+#include "op_info.h"
 #include "statistics.h"
 #include "thread.h"
 
@@ -271,7 +275,9 @@ static inline void read_reg_map(Op* op) {
     DEBUG(map_data->proc_id, "Reading map  op_num:%s  off_path:%d  id:%d  flag:%d  ind:%d\n", unsstr64(op->op_num),
           op->off_path, id, map_data->map_flags[id], ind);
 
-    add_src_from_map_entry(op, map_entry, REG_DATA_DEP);
+    op_sources_add(op, REG_DATA_DEP, map_entry->op, map_entry->op_num, map_entry->unique_num);
+    DEBUG(map_data->proc_id, "Added dep  op_num:%s  src_op_num:%s  src_num:%d\n", unsstr64(op->op_num),
+          unsstr64(map_entry->op_num), op->num_srcs - 1);
     /* address predictor is called if op is a load & this is first mem op reg
      * read for this reg instance */
   }
@@ -291,7 +297,9 @@ static inline void read_store_map(Op* op) {
 
     DEBUG(map_data->proc_id, "Reading store map  op_num:%s  off_path:%d  flag:%d  ind:%d\n", unsstr64(op->op_num),
           op->off_path, map_data->last_store_flag, ind);
-    add_src_from_map_entry(op, map_entry, MEM_ADDR_DEP);
+    op_sources_add(op, MEM_ADDR_DEP, map_entry->op, map_entry->op_num, map_entry->unique_num);
+    DEBUG(map_data->proc_id, "Added dep  op_num:%s  src_op_num:%s  src_num:%d\n", unsstr64(op->op_num),
+          unsstr64(map_entry->op_num), op->num_srcs - 1);
   }
 }
 
@@ -439,7 +447,7 @@ void delete_store_hash_entry(Op* op) {
 static inline Op* add_store_deps(Op* op) {
   Addr va = op->oracle_info.va;
   Op* last_src_op = NULL;
-  uns orig_num_srcs = op->oracle_info.num_srcs;
+  uns orig_num_srcs = op->num_srcs;
   Mem_Map_Traversal traversal;
 
   ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
@@ -465,9 +473,12 @@ static inline Op* add_store_deps(Op* op) {
               "%d@0x%08x and %d@0x%08x\n", src_op->oracle_info.mem_size, (uns32)src_op->oracle_info.va,
               op->oracle_info.mem_size, (uns32)va);
       if (MEM_OOO_STORES && !src_op->marked) {
-        add_src_from_op(op, src_op, MEM_DATA_DEP);
+        op_sources_add(op, MEM_DATA_DEP, src_op, src_op->op_num, src_op->unique_num);
         src_op->marked = TRUE;  // mark op to avoid adding duplicate sources
         STAT_EVENT(op->proc_id, FORWARDED_LD);
+        DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d  op:%s  src:%s\n",
+              unsstr64(op->op_num), unsstr64(src_op->op_num), op->num_srcs - 1, op->inst_info->table_info.name,
+              src_op->inst_info->table_info.name);
       }
       if (!last_src_op || last_src_op->op_num < src_op->op_num) { /* take latest store dependency only */
         last_src_op = src_op;
@@ -483,13 +494,16 @@ static inline Op* add_store_deps(Op* op) {
   ASSERT(op->proc_id, last_src_op->op_num < op->op_num || op->off_path);
   if (MEM_OOO_STORES) {
     /* unmark all ops we marked earlier */
-    for (uns ii = orig_num_srcs; ii < op->oracle_info.num_srcs; ii++) {
-      ASSERT(op->proc_id, op->oracle_info.src_info[ii].op->marked);
-      op->oracle_info.src_info[ii].op->marked = FALSE;
+    for (uns ii = orig_num_srcs; ii < op->num_srcs; ii++) {
+      ASSERT(op->proc_id, op->src_info[ii].op->marked);
+      op->src_info[ii].op->marked = FALSE;
     }
   } else {
-    add_src_from_op(op, last_src_op, MEM_DATA_DEP);
+    op_sources_add(op, MEM_DATA_DEP, last_src_op, last_src_op->op_num, last_src_op->unique_num);
     STAT_EVENT(op->proc_id, FORWARDED_LD);
+    DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d  op:%s  src:%s\n", unsstr64(op->op_num),
+          unsstr64(last_src_op->op_num), op->num_srcs - 1, op->inst_info->table_info.name,
+          last_src_op->inst_info->table_info.name);
   }
   return last_src_op;
 }
@@ -530,7 +544,7 @@ static inline void update_store_hash(Op* op) {
 /**************************************************************************************/
 /* wake_up_ops: */
 
-void wake_up_ops(Op* op, Dep_Type type, void (*wake_action)(Op*, Op*, uns8)) {
+void wake_up_ops(Op* op, Dep_Type type, void (*wake_action)(Op*, Op*, uns)) {
   Wake_Up_Entry* temp;
 
   _DEBUG(op->proc_id, DEBUG_REPLAY, "Waking up ops from src_op:%s unique:%s type:%s\n", unsstr64(op->op_num),
@@ -555,14 +569,15 @@ void wake_up_ops(Op* op, Dep_Type type, void (*wake_action)(Op*, Op*, uns8)) {
     if (dep_op->unique_num == dep_unique_num && dep_op->op_pool_valid) {
       ASSERTM(op->proc_id, op->proc_id == dep_op->proc_id, "dep_op proc_id: %u, valid: %u\n", dep_op->proc_id,
               dep_op->op_pool_valid);
-      if (test_not_rdy_bit(dep_op, temp->rdy_bit)) {
+      if (op_sources_test_not_rdy(dep_op, temp->rdy_bit)) {
         DEBUG(dep_op->proc_id, "Waking up  op_num:%s\n", unsstr64(dep_op->op_num));
 
-        ASSERTM(dep_op->proc_id, test_not_rdy_bit(dep_op, temp->rdy_bit), "dep_op_num:%s  not_rdy_vector:%x\n",
-                unsstr64(dep_op->op_num), dep_op->srcs_not_rdy_vector);
+        ASSERTM(dep_op->proc_id, op_sources_test_not_rdy(dep_op, temp->rdy_bit), "dep_op_num:%s  rdy_w0:%llx\n",
+                unsstr64(dep_op->op_num),
+                dep_op->srcs_not_rdy_words ? (unsigned long long)dep_op->srcs_not_rdy_words[0] : 0ull);
 
         /* unset the not ready bit for this source */
-        clear_not_rdy_bit(dep_op, temp->rdy_bit);
+        op_sources_clear_not_rdy(dep_op, temp->rdy_bit);
 
         /* call the wake action function */
         wake_action(op, dep_op, temp->rdy_bit);
@@ -575,17 +590,16 @@ void wake_up_ops(Op* op, Dep_Type type, void (*wake_action)(Op*, Op*, uns8)) {
 /**************************************************************************************/
 /* add to wake up lists */
 
-void add_to_wake_up_lists(Op* op, Op_Info* op_info, void (*wake_action)(Op*, Op*, uns8)) {
+void add_to_wake_up_lists(Op* op, void (*wake_action)(Op*, Op*, uns)) {
   uns ii;
   Flag dep_on_in_window_store = FALSE;
   UNUSED(dep_on_in_window_store);
 
   ASSERT(map_data->proc_id, op);
-  ASSERT(map_data->proc_id, op_info);
   ASSERT(map_data->proc_id, op->proc_id == map_data->proc_id);
 
-  for (ii = 0; ii < op_info->num_srcs; ii++) {
-    Src_Info* src_info = &op_info->src_info[ii];
+  for (ii = 0; ii < op->num_srcs; ii++) {
+    Src_Info* src_info = &op->src_info[ii];
     Op* src_op = src_info->op;
 
     /* CMP proc_id comparison here because it happens that an op object can be reused with same unique number but
@@ -639,7 +653,7 @@ void add_to_wake_up_lists(Op* op, Op_Info* op_info, void (*wake_action)(Op*, Op*
       }
 
       if (src_op->wake_up_signaled[src_info->type]) {
-        clear_not_rdy_bit(op, ii);
+        op_sources_clear_not_rdy(op, ii);
         wake_action(src_op, op, ii);
       }
 
@@ -648,7 +662,7 @@ void add_to_wake_up_lists(Op* op, Op_Info* op_info, void (*wake_action)(Op*, Op*
     } else {
       /* the src op must have retired already  */
       src_info->op = &invalid_op;
-      clear_not_rdy_bit(op, ii);
+      op_sources_clear_not_rdy(op, ii);
     }
   }
 }
@@ -675,105 +689,15 @@ void free_wake_up_list(Op* op) {
 }
 
 /**************************************************************************************/
-/* add_src_from_op: . */
-
-void add_src_from_op(Op* op, Op* src_op, Dep_Type type) {
-  uns src_num = op->oracle_info.num_srcs++;
-  Src_Info* info = &op->oracle_info.src_info[src_num];
-
-  ASSERT(map_data->proc_id, op);
-  ASSERT(map_data->proc_id, src_op);
-  ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
-  ASSERT(op->proc_id, op->proc_id == src_op->proc_id);
-  ASSERT(op->proc_id, type < NUM_DEP_TYPES);
-  ASSERTM(op->proc_id, src_num < MAX_DEPS, "src_num: %i\n", src_num);
-  ASSERTM(op->proc_id, src_op->op_num < op->op_num, "op:%s  src_op:%s\n", unsstr64(op->op_num),
-          unsstr64(src_op->op_num));
-
-  info->type = type;
-  info->op = src_op;
-  info->op_num = src_op->op_num;
-  info->unique_num = src_op->unique_num;
-
-  set_not_rdy_bit(op, src_num);
-  if (type == MEM_DATA_DEP) {
-    ASSERT(op->proc_id,
-           src_op->inst_info->table_info.mem_type == MEM_ST && op->inst_info->table_info.mem_type == MEM_LD);
-  }
-  DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d\n", unsstr64(op->op_num),
-        unsstr64(src_op->op_num), src_num);
-}
-
-/**************************************************************************************/
-/* add_src_from_map_entry: set the src_info array */
-
-void add_src_from_map_entry(Op* op, Map_Entry* map_entry, Dep_Type type) {
-  uns src_num = op->oracle_info.num_srcs++;
-  Src_Info* info = &op->oracle_info.src_info[src_num];
-
-  ASSERT(map_data->proc_id, op);
-  ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
-  ASSERT(map_data->proc_id, map_entry);
-  ASSERTM(map_data->proc_id, map_entry->op, "sop_off_path: %u, op: %p, op_num: %llu, unique_num: %llu\n", op->off_path,
-          map_entry->op, map_entry->op_num, map_entry->unique_num);
-  ASSERT(map_data->proc_id, type < NUM_DEP_TYPES);
-  ASSERTM(map_data->proc_id, src_num < MAX_DEPS, "op_num: %llu, op_type %u, src_num: %u\n", op->op_num,
-          op->inst_info->table_info.op_type, src_num);
-  ASSERTM(map_data->proc_id, map_entry->op_num < op->op_num, "op:%s  src_op:%s\n", unsstr64(op->op_num),
-          unsstr64(map_entry->op->op_num));
-
-  info->type = type;
-  info->op = map_entry->op;
-  info->op_num = map_entry->op_num;
-  info->unique_num = map_entry->unique_num;
-
-  /* always start with the not ready bit set */
-  set_not_rdy_bit(op, src_num);
-  DEBUG(map_data->proc_id, "Added dep  op_num:%s  src_op_num:%s  src_num:%d\n", unsstr64(op->op_num),
-        unsstr64(map_entry->op_num), src_num);
-}
-
-/**************************************************************************************/
-/* clear_not_rdy_bit: */
-
-void clear_not_rdy_bit(Op* op, uns bit) {
-  ASSERT(map_data->proc_id, op);
-  ASSERT(map_data->proc_id, bit < op->oracle_info.num_srcs);
-  DEBUG(map_data->proc_id, "Clearing not rdy bit  op_num:%s  bit:%d\n", unsstr64(op->op_num), bit);
-  op->srcs_not_rdy_vector &= ~(0x1 << bit);
-}
-
-/**************************************************************************************/
-/* set_not_rdy_bit: */
-
-void set_not_rdy_bit(Op* op, uns bit) {
-  ASSERT(map_data->proc_id, op);
-  ASSERT(map_data->proc_id, bit < op->oracle_info.num_srcs);
-  /*  this message gets annoying
-      DEBUG("Setting not rdy bit  op_num:%s  bit:%d\n", unsstr64(op->op_num),
-     bit);
-  */
-  op->srcs_not_rdy_vector |= (0x1 << bit);
-}
-
-/**************************************************************************************/
-/* test_not_rdy_bit: */
-
-Flag test_not_rdy_bit(Op* op, uns bit) {
-  ASSERT(map_data->proc_id, op);
-  ASSERT(map_data->proc_id, bit < op->oracle_info.num_srcs);
-  return (op->srcs_not_rdy_vector & (0x1 << bit)) > 0;
-}
-
-/**************************************************************************************/
 /* simple_wake: wake dest_op based on src_op based only on src_op's exec_cycle */
 
-void simple_wake(Op* src_op, Op* dep_op, uns8 rdy_bit) {
+void simple_wake(Op* src_op, Op* dep_op, uns rdy_bit) {
   ASSERT(src_op->proc_id, src_op->proc_id == dep_op->proc_id);
   ASSERT(src_op->proc_id, src_op && src_op != &invalid_op);
   ASSERT(src_op->proc_id, dep_op && dep_op != &invalid_op);
+  UNUSED(rdy_bit);
   dep_op->rdy_cycle = MAX2(dep_op->rdy_cycle, src_op->wake_cycle);
-  if (dep_op->srcs_not_rdy_vector == 0)
+  if (op_sources_not_rdy_is_clear(dep_op))
     dep_op->state = dep_op->rdy_cycle == cycle_count + 1 ? OS_READY : OS_WAIT_FWD;
 }
 

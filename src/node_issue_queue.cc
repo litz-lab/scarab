@@ -274,7 +274,7 @@ void node_issue_queue_dispatch() {
 
     DEBUG(node->proc_id, "Filling %s with op_num:%s (%d)\n", rs->name, unsstr64(op->op_num), rs->rs_op_count);
 
-    if (op->srcs_not_rdy_vector == 0) {
+    if (op_sources_not_rdy_is_clear(op)) {
       /* op is ready to issue right now */
       DEBUG(node->proc_id, "Adding to ready list  op_num:%s op:%s l1:%d\n", unsstr64(op->op_num), disasm_op(op, TRUE),
             op->engine_info.l1_miss);
@@ -337,7 +337,7 @@ void node_issue_queue_schedule() {
 
     /* op will be ready next cycle, try to schedule */
     if (cycle_count >= op->rdy_cycle - 1) {
-      ASSERT(node->proc_id, op->srcs_not_rdy_vector == 0x0);
+      ASSERT(node->proc_id, op_sources_not_rdy_is_clear(op));
       DEBUG(node->proc_id, "Scheduler considering  op_num:%s op:%s l1:%d\n", unsstr64(op->op_num), disasm_op(op, TRUE),
             op->engine_info.l1_miss);
 

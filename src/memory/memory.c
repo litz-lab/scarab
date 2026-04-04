@@ -2749,15 +2749,12 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
 
     if (!req->done_func)
       req->done_func = done_func;
-    if (req->mlc_miss)
-      op->engine_info.mlc_miss = TRUE;
     if (req->l1_miss) {
       op->engine_info.l1_miss = TRUE;
       if (TRACK_L1_MISS_DEPS)
         mark_l1_miss_deps(op);
     }
 
-    op->engine_info.mlc_miss_satisfied = req->mlc_miss_satisfied ? TRUE : op->engine_info.mlc_miss_satisfied;
     op->engine_info.l1_miss_satisfied = req->l1_miss_satisfied ? TRUE : op->engine_info.l1_miss_satisfied;
 
     // cmp FIXME prefetchers
@@ -4647,7 +4644,6 @@ static void unmark_l1_miss_deps(Op* op) {
 
     if (dep_op->unique_num == dep_unique_num && dep_op->op_pool_valid) {
       int ii;
-      Op_Info* op_info = &dep_op->oracle_info;
       Flag still_dep_on_l1_miss = FALSE;
 
       ASSERT(op->proc_id, op->proc_id == dep_op->proc_id);
@@ -4655,8 +4651,8 @@ static void unmark_l1_miss_deps(Op* op) {
 
       if (dep_op->engine_info.dep_on_l1_miss) {
         /* Determine if the op is dependent on another l1_miss */
-        for (ii = 0; ii < op_info->num_srcs; ii++) {
-          Src_Info* src_info = &op_info->src_info[ii];
+        for (ii = 0; ii < dep_op->num_srcs; ii++) {
+          Src_Info* src_info = &dep_op->src_info[ii];
           Op* src_op = src_info->op;
 
           if (src_op->unique_num == src_info->unique_num && src_op->op_pool_valid) {

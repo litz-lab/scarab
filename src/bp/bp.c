@@ -162,7 +162,6 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
     bp_recovery_info->recovery_inst_info = op->inst_info;
     bp_recovery_info->recovery_force_offpath = op->off_path;
     bp_recovery_info->recovery_op = op;
-    bp_recovery_info->oracle_cp_num = op->oracle_cp_num;
     bp_recovery_info->recovery_unique_num = op->unique_num;
     bp_recovery_info->recovery_inst_uid = op->inst_uid;
     bp_recovery_info->wpe_flag = FALSE;
@@ -286,11 +285,11 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
   Flag btb_miss_nt = FALSE;
   const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
+  (void)br_num;
+
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
   ASSERT(bp_data->proc_id, op->btb_pred_info);  // must have been set by bp_predict_btb()
-
-  op->cf_within_fetch = br_num;
 
   /* initialize recovery information---this stuff might be
      overwritten by a prediction function that uses and

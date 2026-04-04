@@ -78,19 +78,12 @@ void rebuild_offpath_map(void);
 void reset_map(void);
 void map_op(Op*);
 void map_mem_dep(Op*);
-void wake_up_ops(Op*, Dep_Type, void (*)(Op*, Op*, uns8));
+void wake_up_ops(Op*, Dep_Type, void (*)(Op*, Op*, uns));
 void free_wake_up_list(Op*);
-void add_to_wake_up_lists(Op*, Op_Info*, void (*)(Op*, Op*, uns8));
+void add_to_wake_up_lists(Op*, void (*)(Op*, Op*, uns));
 
-void add_src_from_op(Op*, Op*, Dep_Type);
-void add_src_from_map_entry(Op*, Map_Entry*, Dep_Type);
-
-void simple_wake(Op*, Op*, uns8);
+void simple_wake(Op*, Op*, uns);
 void delete_store_hash_entry(Op*);
-
-void clear_not_rdy_bit(Op*, uns);
-Flag test_not_rdy_bit(Op*, uns);
-void set_not_rdy_bit(Op*, uns);
 
 /**************************************************************************************/
 

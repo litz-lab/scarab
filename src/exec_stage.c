@@ -477,7 +477,6 @@ static inline void exec_stage_dep_wakeup(Op* op) {
 static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event) {
   Op* op = src_sd->ops[ii];
 
-  op->delay_bit = 1;
   src_sd->ops[ii] = NULL;
   src_sd->op_count--;
 
@@ -573,7 +572,7 @@ static inline void exec_stage_bp_resolve(Op* op) {
   }
 
 #if 0
-  if (op->inst_info->table_info.cf_type >= CF_IBR && op->btb_pred_info->no_target) {
+  if (op->inst_info->table_info.cf_type >= CF_IBR && OP_CF_BTB_PRED_INFO(op)->no_target) {
     ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == op->proc_id);
     bp_sched_redirect(bp_recovery_info, op, op->exec_cycle);
     // stats for the reason of resteer

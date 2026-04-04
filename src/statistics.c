@@ -28,9 +28,15 @@ declared in the various '.stat.def' files and included for form an enum.  Events
 are tracked using the STAT_EVENT macros given in the header file.  I'm still
 working on this (ob).
 ***************************************************************************************/
+#if defined(__linux__) && !defined(_GNU_SOURCE) && !defined(_DEFAULT_SOURCE)
+#define _DEFAULT_SOURCE /* clock_gettime, CLOCK_MONOTONIC */
+#endif
+
 #include "statistics.h"
 
 #include <math.h>
+#include <string.h>
+#include <time.h>
 
 #include "globals/assert.h"
 #include "globals/global_defs.h"
@@ -158,13 +164,41 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
   if (!DUMP_STATS)
     return;
 
+  /* Gauge: host wall seconds (see sim.c). Resolve by name so index tracks .def order. */
+  {
+    Stat_Enum wall_i = get_stat_idx("SIM_HOST_WALL_SECONDS");
+    if (wall_i < NUM_GLOBAL_STATS) {
+      Stat* wall = &stat_array[wall_i];
+      if (wall->type == FLOAT_TYPE_STAT && !strcmp(wall->name, "SIM_HOST_WALL_SECONDS")) {
+        if (sim_wall_mono_valid) {
+          struct timespec now;
+          if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
+            wall->value = (double)(now.tv_sec - sim_wall_mono_start.tv_sec) +
+                          (double)(now.tv_nsec - sim_wall_mono_start.tv_nsec) * 1e-9;
+          }
+        } else {
+          /* No monotonic anchor: calendar time since init_global (includes warmup). */
+          time_t now = time(NULL);
+          if (now != (time_t)-1) {
+            double sec = difftime(now, sim_start_time);
+            if (sec >= 0)
+              wall->value = sec;
+          }
+        }
+      }
+    }
+  }
+
   for (ii = 0; ii < num_stats; ii++) {
     Stat* s = &stat_array[ii];
 
     /* update the total counter for this interval */
-    if (s->type == FLOAT_TYPE_STAT)
-      s->total_value += s->value;
-    else
+    if (s->type == FLOAT_TYPE_STAT) {
+      if (!strcmp(s->name, "SIM_HOST_WALL_SECONDS"))
+        s->total_value = s->value;
+      else
+        s->total_value += s->value;
+    } else
       s->total_count += s->count;
   }
 

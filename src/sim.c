@@ -28,9 +28,11 @@
 
 #include "sim.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #include "globals/assert.h"
@@ -116,6 +118,9 @@ Counter period_ID = 0;
 Flag* warmup_dump_done;
 
 time_t sim_start_time; /* the time that the simulator was started */
+
+struct timespec sim_wall_mono_start;
+Flag sim_wall_mono_valid = FALSE;
 
 FILE* mystdout;      /* default output (can be redirected via --stdout) */
 FILE* mystderr;      /* default error (can be redirected via --stderr) */
@@ -552,7 +557,6 @@ void uop_sim() {
   Inst_Info inst_info;
   op.inst_info = &inst_info;
   memset(&inst_info, 0, sizeof(inst_info));
-  op.mbp7_info = NULL;
   op.bp_pred_info = NULL;
   memset(&op.bp_pred_l0, 0, sizeof(op.bp_pred_l0));
   memset(&op.bp_pred_main, 0, sizeof(op.bp_pred_main));
@@ -672,7 +676,20 @@ void full_sim() {
   }
 
   operating_mode = SIMULATION_MODE;
+  if (clock_gettime(CLOCK_MONOTONIC, &sim_wall_mono_start) == 0)
+    sim_wall_mono_valid = TRUE;
+  else {
+    memset(&sim_wall_mono_start, 0, sizeof(sim_wall_mono_start));
+    sim_wall_mono_valid = FALSE;
+    fprintf(mystderr, "clock_gettime(CLOCK_MONOTONIC) failed: %s\n", strerror(errno));
+  }
+
   init_model(operating_mode);
+
+  if (clock_gettime(CLOCK_MONOTONIC, &sim_wall_mono_start) == 0)
+    sim_wall_mono_valid = TRUE;
+  else
+    sim_wall_mono_valid = FALSE;
 
   if (PIPEVIEW)
     pipeview_init();

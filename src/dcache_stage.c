@@ -403,6 +403,7 @@ static inline Flag dcache_stage_addr_unready(Op* op) {
 
 static inline Flag dcache_stage_check_mem_type(Op* op) {
   /* just squish non-memory ops */
+
   if (op->inst_info->table_info.mem_type == NOT_MEM) {
     return FALSE;
   }

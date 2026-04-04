@@ -61,7 +61,8 @@ enum reg_file_reg_type {
   REG_FILE_REG_TYPE_NUM,
 };
 
-const static int REG_TABLE_REG_ID_INVALID = -1;
+/* Sentinel for Op reg-id arrays (uns16); must match OP_REG_ID_INVALID in op.h. */
+const static int REG_TABLE_REG_ID_INVALID = 0xFFFF;
 const static int REG_TABLE_TYPE_INVALID = -1;
 const static int REG_FILE_REG_TYPE_OTHER = -1;
 const static uns REG_RENAMING_SCHEME_LATE_ALLOCATION_RESERVE_NUM = 1;

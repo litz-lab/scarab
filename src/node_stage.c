@@ -28,6 +28,7 @@
 
 #include "node_stage.h"
 
+#include <stdio.h>
 #include <unistd.h>
 
 #include "globals/assert.h"
@@ -517,8 +518,10 @@ void node_retire() {
     return;
   }
 
-  // Iterate through the first NODE_RET_WIDTH number of ops and try to retire them
-  for (op = node->node_head; op && ret_count < NODE_RET_WIDTH; op = op->next_node) {
+  // Iterate through the first NODE_RET_WIDTH number of ops and try to retire them.
+  // Advance with a saved next_node: ft_free_op() may delete the FT and free this op when it
+  // is get_last_op(), so we must not read op->next_node after free.
+  for (op = node->node_head; op && ret_count < NODE_RET_WIDTH;) {
     ASSERT(node->proc_id, node->proc_id == op->proc_id);
 
     // check to see if the head of the node table is ready to retire
@@ -634,16 +637,22 @@ void node_retire() {
       lsq_commit(op);
     }
 
+    Op* next_retired = op->next_node;
+    Flag macro_fused_saved = op->macro_fused;
+
     if (model->op_retired_hook)
       model->op_retired_hook(op);
-    else
+    else {
+      printf("[ft_free_op] stage=node_stage:retire op_num=%llu op=%p\n", (unsigned long long)op->op_num, (void*)op);
       ft_free_op(op);
-
+    }
     // the fused op does not occupy the ROB entry
-    if (!op->macro_fused)
+    if (!macro_fused_saved)
       node->node_count--;
 
     ASSERT(node->proc_id, node->node_count >= 0);
+
+    op = next_retired;
   }
 
   STAT_EVENT(node->proc_id, ROW_SIZE_0 + ret_count);

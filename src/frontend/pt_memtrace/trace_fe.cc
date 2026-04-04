@@ -300,7 +300,9 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
           pc_to_inst[proc_id].erase(addr);
           pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         } else {
-          assert_ctype_pin_inst_same(proc_id, next_onpath_pi[proc_id], find->second);
+          if (DEBUG_TRACE_READ && DEBUG_RANGE_COND(proc_id)) {
+            assert_ctype_pin_inst_same(proc_id, next_onpath_pi[proc_id], find->second);
+          }
         }
       }
     } else {

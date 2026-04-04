@@ -99,7 +99,7 @@ void pipeview_print_op(struct Op_struct* op) {
   print_event(file, op, "map_done", op->map_cycle + MAP_CYCLES);
   print_event(file, op, "issue", op->issue_cycle);
   print_event(file, op, "issue_done", op->issue_cycle + 1);
-  if (op->srcs_not_rdy_vector == 0) {
+  if (op_sources_not_rdy_is_clear(op)) {
     // op was ready at rdy_cycle only if all sources are ready
     print_event(file, op, "ready", MAX2(op->rdy_cycle, op->issue_cycle + 1));
   } else {

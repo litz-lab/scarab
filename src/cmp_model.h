@@ -85,7 +85,7 @@ void cmp_cycle(void);
 void cmp_debug(void);
 void cmp_per_core_done(uns8);
 void cmp_done(void);
-void cmp_wake(Op*, Op*, uns8);
+void cmp_wake(Op*, Op*, uns);
 void cmp_retire_hook(Op*);
 void cmp_warmup(Op*);
 

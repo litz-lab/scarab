@@ -447,8 +447,8 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
             complete = true;
           }
         } else if (mt_ref_.instr.type == dynamorio::drmemtrace::TRACE_TYPE_INSTR_NO_FETCH) {
-          // a repeated rep
-          if (!_prior->is_dr_ins) {  // impossible to check DR_ISA_REGDEPS for REP
+          // a repeated rep — MAP_REP is not set for DR_ISA_REGDEPS (see processDrIsaInst tuple), so only assert for XED path
+          if (!_prior->is_dr_ins) {
             bool is_rep = std::get<MAP_REP>(ctype_inst_map.at(_prior->pc));
             assert(is_rep && ((uint32_t)mt_ref_.instr.pid == _prior->pid) &&
                    ((uint32_t)mt_ref_.instr.tid == _prior->tid) && (mt_ref_.instr.addr == _prior->pc));
@@ -571,8 +571,14 @@ PATCH_REP:
       _prior->info = &gap_patch_jmp_;
       _prior->target = _info->pc;
       _prior->taken = true;
-      _prior->mem_used[0] = false;
-      _prior->mem_used[1] = false;
+      _prior->mem_addr[0]  = 0;
+      _prior->mem_addr[1]  = 0;
+      _prior->mem_used[0]  = false;
+      _prior->mem_used[1]  = false;
+      _prior->mem_is_rd[0] = false;
+      _prior->mem_is_rd[1] = false;
+      _prior->mem_is_wr[0] = false;
+      _prior->mem_is_wr[1] = false;
       _prior->is_dr_ins = false;
       warn("Patching gap in trace by injecting a Jmp, prior PC: %lx next PC: %lx\n", _prior->pc, _info->pc);
     }

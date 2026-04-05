@@ -180,7 +180,7 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
 
   // Static info (basic_info, deps, simd, cf, etc.) is pre-built in
   // processInst / processDrIsaInst and cached via ctype_inst_map.
-  assert(insi->is_dr_ins);
+  assert(insi->info != nullptr);
   memcpy(next_onpath_pi, insi->info, sizeof(ctype_pin_inst));
   fill_in_dynamic_info(next_onpath_pi, insi);
 

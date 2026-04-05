@@ -51,8 +51,10 @@ class TraceReaderMemtrace : public TraceReader {
   void init(const std::string& _trace);
   static const char* parse_buildid_string(const char* src, OUT void** data);
   bool getNextInstruction__(InstInfo* _info, InstInfo* _prior);
-  void processInst(InstInfo* _info);
-  void processDrIsaInst(InstInfo* _info, bool has_another_mem);
+  /// predecoded_dr: DR decode from the trace probe (same bytes); XED still decodes below.
+  void processInst(InstInfo* _info, instr_t* predecoded_dr);
+  /// When non-null and encoding_is_new, use this instead of decoding again (caller-owned).
+  void processDrIsaInst(InstInfo* _info, bool has_another_mem, instr_t* predecoded);
   uint32_t add_dependency_info(ctype_pin_inst* info, instr_t* drinst);
   void fill_in_basic_info(ctype_pin_inst* info, instr_t* drinst, size_t size, dynamorio::drmemtrace::trace_type_t type);
   bool typeIsMem(dynamorio::drmemtrace::trace_type_t _type);
@@ -62,7 +64,6 @@ class TraceReaderMemtrace : public TraceReader {
   void* dcontext_;
   unsigned int knob_verbose_;
   bool trace_has_encodings_;
-  bool is_dr_isa;
 
   enum class MTState {
     INST,

@@ -59,6 +59,20 @@ typedef enum Reg_Id_struct {
 
 using namespace dynamorio::drmemtrace;
 
+namespace {
+
+// Ensures instr_free on every exit from getNextInstruction__ (loop break, goto PATCH_REP, return).
+struct DrInstProbe {
+  void* dcontext;
+  instr_t instr;
+  explicit DrInstProbe(void* dc) : dcontext(dc) { instr_init(dc, &instr); }
+  ~DrInstProbe() { instr_free(dcontext, &instr); }
+  DrInstProbe(const DrInstProbe&) = delete;
+  DrInstProbe& operator=(const DrInstProbe&) = delete;
+};
+
+}  // namespace
+
 const char* trace_type_to_string(dynamorio::drmemtrace::trace_type_t type) {
   switch (type) {
     case TRACE_TYPE_INSTR:
@@ -268,7 +282,6 @@ TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace, uint32_t _bu
       dcontext_(nullptr),
       knob_verbose_(0),
       trace_has_encodings_(false),
-      is_dr_isa(false),
       reader_at_eof_(false),
       reader_first_read_(true),
       roi_end_(0),
@@ -401,9 +414,10 @@ bool TraceReaderMemtrace::initTrace() {
 std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, ctype_pin_inst>> ctype_inst_map;
 
 bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior) {
-  static bool first_instr = true;
   uint32_t prior_isize = mt_prior_isize_;
   bool complete = false;
+
+  DrInstProbe probe(dcontext_);
 
   if (mt_use_next_ref_) {
     if (!advanceReader())
@@ -419,24 +433,13 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
     switch (mt_state_) {
       case (MTState::INST):
         if (type_is_instr(mt_ref_.instr.type)) {
-          if (first_instr) {
-            // if this is the first instruction ever,
-            // the file type marker of the trace should have been processed internally by DynamoRIO.
-            // it is time to see if encodings are available.
-            first_instr = false;
-            instr_t drinst;
-            instr_init(dcontext_, &drinst);
-            decode(dcontext_, mt_ref_.instr.encoding, &drinst);
-            if (instr_get_isa_mode(&drinst) == DR_ISA_REGDEPS) {
-              is_dr_isa = true;
-            } else {
-              is_dr_isa = false;
-            }
-          }
-          if (is_dr_isa) {
-            processDrIsaInst(_info, 0);
+          instr_reset(dcontext_, &probe.instr);
+          decode(dcontext_, mt_ref_.instr.encoding, &probe.instr);
+          const bool is_regdeps = (instr_get_isa_mode(&probe.instr) == DR_ISA_REGDEPS);
+          if (is_regdeps) {
+            processDrIsaInst(_info, 0, &probe.instr);
           } else {
-            processInst(_info);
+            processInst(_info, &probe.instr);
           }
           if (mt_mem_ops_ > 0) {
             mt_state_ = MTState::MEM1;
@@ -444,8 +447,9 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
             complete = true;
           }
         } else if (mt_ref_.instr.type == dynamorio::drmemtrace::TRACE_TYPE_INSTR_NO_FETCH) {
-          // a repeated rep
-          if (!is_dr_isa) {  // impossible to check DR_ISA_REGDEPS for REP
+          // a repeated rep — MAP_REP is not set for DR_ISA_REGDEPS (see processDrIsaInst tuple), so only assert for XED
+          // path
+          if (!_prior->is_dr_ins) {
             bool is_rep = std::get<MAP_REP>(ctype_inst_map.at(_prior->pc));
             assert(is_rep && ((uint32_t)mt_ref_.instr.pid == _prior->pid) &&
                    ((uint32_t)mt_ref_.instr.tid == _prior->tid) && (mt_ref_.instr.addr == _prior->pc));
@@ -568,9 +572,15 @@ PATCH_REP:
       _prior->info = &gap_patch_jmp_;
       _prior->target = _info->pc;
       _prior->taken = true;
+      _prior->mem_addr[0] = 0;
+      _prior->mem_addr[1] = 0;
       _prior->mem_used[0] = false;
       _prior->mem_used[1] = false;
-      _prior->is_dr_ins = true;
+      _prior->mem_is_rd[0] = false;
+      _prior->mem_is_rd[1] = false;
+      _prior->mem_is_wr[0] = false;
+      _prior->mem_is_wr[1] = false;
+      _prior->is_dr_ins = false;
       warn("Patching gap in trace by injecting a Jmp, prior PC: %lx next PC: %lx\n", _prior->pc, _info->pc);
     }
     _prior->target = _info->pc;  // TODO(granta): Invalid for pid/tid switch
@@ -845,30 +855,25 @@ void TraceReaderMemtrace::fill_in_basic_info(ctype_pin_inst* info, instr_t* drin
   info->scarab_marker_roi_end = false;
 }
 
-void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem) {
+void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem, instr_t* predecoded) {
   assert(mt_ref_.instr.size);
-  instr_t drinst;
   bool unknown_type, cond_branch;
-  instr_init(dcontext_, &drinst);
   _info->pc = mt_ref_.instr.addr;
   if (mt_ref_.instr.encoding_is_new) {
     ctype_inst_map.erase(mt_ref_.instr.addr);
   }
   auto ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
   if (mt_ref_.instr.encoding_is_new) {
+    assert(predecoded != nullptr);
     ctype_pin_inst cinst;
     memset(&cinst, 0, sizeof(cinst));
-    decode(dcontext_, mt_ref_.instr.encoding, &drinst);
 
-    fill_in_basic_info(&cinst, &drinst, mt_ref_.instr.size, mt_ref_.instr.type);
-    add_dependency_info(&cinst, &drinst);
+    fill_in_basic_info(&cinst, predecoded, mt_ref_.instr.size, mt_ref_.instr.type);
+    add_dependency_info(&cinst, predecoded);
     cinst.encoding_is_new = mt_ref_.instr.encoding_is_new;
     ctype_inst_map.emplace(mt_ref_.instr.addr,
                            std::make_tuple(cinst.num_ld + cinst.num_st, false, cinst.cf_type, false, cinst));
     ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
-    // printf("PC %lx cat %i, str:%s ld %i st %i type %s \n", mt_ref_.instr.addr, instr_get_category(&drinst),
-    // category_to_str(instr_get_category(&drinst)), cinst.num_ld, cinst.num_st,
-    // trace_type_to_string(mt_ref_.instr.type));
   } else {
     assert(ctype_inst_iter != ctype_inst_map.end());
     std::get<MAP_XED>(ctype_inst_iter->second).encoding_is_new = mt_ref_.instr.encoding_is_new;
@@ -876,7 +881,7 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
 
   tie(mt_mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) = ctype_inst_iter->second;
   mt_prior_isize_ = mt_ref_.instr.size;
-  _info->is_dr_ins = is_dr_isa;
+  _info->is_dr_ins = true;
   _info->info = &(std::get<MAP_XED>(ctype_inst_iter->second));
   _info->pid = mt_ref_.instr.pid;
   _info->tid = mt_ref_.instr.tid;
@@ -899,7 +904,8 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
   _info->fetched_instruction = true;
 }
 
-void TraceReaderMemtrace::processInst(InstInfo* _info) {
+void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t* predecoded_dr) {
+  // Same bytes as predecoded_dr; XED decode below is still required for mem-op/REP/SIMD/x87/cf helpers.
   _info->pc = mt_ref_.instr.addr;
   mt_prior_isize_ = mt_ref_.instr.size;
 
@@ -980,7 +986,7 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   bool unknown_type, cond_branch;
   tie(mt_mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) = ctype_inst_iter->second;
 
-  _info->is_dr_ins = true;
+  _info->is_dr_ins = false;
   _info->info = &(std::get<MAP_XED>(ctype_inst_iter->second));
   _info->pid = mt_ref_.instr.pid;
   _info->tid = mt_ref_.instr.tid;

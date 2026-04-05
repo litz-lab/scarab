@@ -28,6 +28,14 @@ set(CMAKE_CXX_FLAGS_GPROF     "${CMAKE_CXX_FLAGS_SCARABOPT} -pg -g3 ${flags_enab
 set(CMAKE_C_FLAGS_DEBUG       "-O0 -g3 -DLINUX -DX86_64 -fsanitize=address -fsanitize-address-use-after-scope ${flags_enable_pt_memtrace}")
 set(CMAKE_CXX_FLAGS_DEBUG     "-O0 -g3 -DLINUX -DX86_64 -fsanitize=address -fsanitize-address-use-after-scope ${flags_enable_pt_memtrace}")
 
+# Default ASan runtime options (embedded; ASAN_OPTIONS in the environment still overrides).
+set(SCARAB_ASAN_DEFAULT_OPTIONS
+  "check_initialization_order=true:detect_stack_use_after_return=true:strict_string_checks=true")
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/support/asan_default_options.cc.in
+  ${CMAKE_CURRENT_BINARY_DIR}/asan_default_options.cc
+  @ONLY)
+
 # Turn off doc generation before adding the subdirectory
 set(BUILD_DOCS OFF CACHE BOOL "Disable DynamoRIO doc generation" FORCE)
 #build dependencies with default warn flags, otherwise dynamorio will not build
@@ -80,6 +88,10 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     endif()
   endforeach()
 endif()
+
+target_sources(scarab PRIVATE
+  $<$<CONFIG:Debug>:${CMAKE_CURRENT_BINARY_DIR}/asan_default_options.cc>
+)
 
 target_include_directories(scarab PRIVATE .)
 

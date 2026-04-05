@@ -7,11 +7,6 @@ on:
         description: sci descriptor id to build and simulate
         required: true
         type: string
-      allow_failed_report_ignored:
-        description: Allow a "Failed report ignored" status line to pass verification
-        required: false
-        default: false
-        type: boolean
       collect_metrics:
         description: Whether to parse IPC/KIPS outputs
         required: false
@@ -122,16 +117,8 @@ jobs:
           fi
           completed=$(printf '%s\n' "$status_line" | awk -F'|' '{gsub(/^[[:space:]]+|[[:space:]]+$/,"",$2); print $2}')
           if [ "$completed" != "1" ]; then
-            if [ "${{ inputs.allow_failed_report_ignored }}" = "true" ]; then
-              if printf '%s\n' "$status_output" | grep -q "Failed report ignored"; then
-                echo "Status contains 'Failed report ignored'; continuing."
-              else
-                echo "Status verification skipped due to allow_failed_report_ignored=true."
-              fi
-            else
-              echo "Expected 1 completed simulation for this_pr, got '$completed'"
-              exit 1
-            fi
+            echo "Expected 1 completed simulation for this_pr, got '$completed'"
+            exit 1
           fi
 
       - id: simdir

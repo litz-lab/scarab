@@ -73,13 +73,15 @@ void pref_stridepc_init(HWP* hwp) {
   hwp->hwp_info->enabled = TRUE;
 
   if (PREF_UMLC_ON) {
-    stridepc_prefetche_array.stridepc_hwp_core_umlc = (Pref_StridePC*)malloc(sizeof(Pref_StridePC) * NUM_CORES);
-    stridepc_prefetche_array.stridepc_hwp_core_umlc->type = UMLC;
+    stridepc_prefetche_array.stridepc_hwp_core_umlc = (Pref_StridePC*)calloc(NUM_CORES, sizeof(Pref_StridePC));
+    for (uns i = 0; i < NUM_CORES; i++)
+      stridepc_prefetche_array.stridepc_hwp_core_umlc[i].type = UMLC;
     init_stridepc(hwp, stridepc_prefetche_array.stridepc_hwp_core_umlc);
   }
   if (PREF_UL1_ON) {
-    stridepc_prefetche_array.stridepc_hwp_core_ul1 = (Pref_StridePC*)malloc(sizeof(Pref_StridePC) * NUM_CORES);
-    stridepc_prefetche_array.stridepc_hwp_core_ul1->type = UL1;
+    stridepc_prefetche_array.stridepc_hwp_core_ul1 = (Pref_StridePC*)calloc(NUM_CORES, sizeof(Pref_StridePC));
+    for (uns i = 0; i < NUM_CORES; i++)
+      stridepc_prefetche_array.stridepc_hwp_core_ul1[i].type = UL1;
     init_stridepc(hwp, stridepc_prefetche_array.stridepc_hwp_core_ul1);
   }
 }

@@ -390,6 +390,8 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->oracle_info.npc = trace_uop->npc;
   if (op->proc_id)
     ASSERT(op->proc_id, op->oracle_info.npc);
+  if (op->inst_info->table_info.cf_type == CF_BR || op->inst_info->table_info.cf_type == CF_CALL)
+    ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
   op->oracle_info.mem_size = trace_uop->mem_size;
   // because of repeat move mem size is dynamic info  WRONG!!!!
   // op->inst_info->table_info.mem_size = trace_uop->mem_size;

@@ -84,10 +84,10 @@ void l2way_init(void) {
   l2way_table = (L2way_Rec**)malloc(sizeof(L2way_Rec*) * num_sets);
 
   for (ii = 0; ii < num_sets; ii++) {
-    l2way_table[ii] = (L2way_Rec*)malloc(sizeof(L2way_Rec) * assoc);
+    l2way_table[ii] = (L2way_Rec*)calloc(assoc, sizeof(L2way_Rec));
   }
   if (!L1PREF_IMMEDIATE)
-    l1pref_req_queue = (L1pref_Req*)malloc(sizeof(L1pref_Req) * L1PREF_REQ_QUEUE_SIZE);
+    l1pref_req_queue = (L1pref_Req*)calloc(L1PREF_REQ_QUEUE_SIZE, sizeof(L1pref_Req));
 
   if (model->mem == MODEL_MEM) {
     ASSERTM(0, !PRIVATE_L1, "L2 Way Prefetcher assumes shared L1\n");

@@ -122,18 +122,20 @@ class TraceReaderPT : public TraceReader {
   xed_decoded_inst_t *createNop(uint64_t length) {
     xed_state_t state;
     state.mmode = XED_MACHINE_MODE_LONG_64;
-    uint8_t buf[10];
+    uint8_t *buf = new uint8_t[10];
     xed_error_enum_t res = xed_encode_nop(buf, length);
     if (res != XED_ERROR_NONE) {
       panic("Failed to encode due to %s\n", xed_error_enum_t2str(res));
+      delete[] buf;
       return nullptr;
     }
     xed_decoded_inst_t *decoded_inst = new xed_decoded_inst_t;
     xed_decoded_inst_zero_set_mode(decoded_inst, &state);
-    res = xed_decode(decoded_inst, buf, sizeof(buf));
+    res = xed_decode(decoded_inst, buf, 10);
     if (res != XED_ERROR_NONE) {
       panic("XED NOP decode error! %s\n", xed_error_enum_t2str(res));
       delete decoded_inst;
+      delete[] buf;
       return nullptr;
     }
     return decoded_inst;

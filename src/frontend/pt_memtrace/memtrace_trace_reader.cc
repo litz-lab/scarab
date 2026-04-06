@@ -200,12 +200,12 @@ unique_ptr<xed_decoded_inst_t> TraceReader::makeNop(uint8_t _length) {
     const uint8_t* pos = reinterpret_cast<const uint8_t*>(nop15 + offset);
     res = xed_decode(ins, pos, 15 - offset);
   } else {
-    uint8_t buf[10];
-    res = xed_encode_nop(&buf[0], _length);
+    uint8_t* buf = new uint8_t[10];
+    res = xed_encode_nop(buf, _length);
     if (res != XED_ERROR_NONE) {
       warn("XED NOP encode error: %s", xed_error_enum_t2str(res));
     }
-    res = xed_decode(ins, buf, sizeof(buf));
+    res = xed_decode(ins, buf, 10);
   }
   if (res != XED_ERROR_NONE) {
     warn("XED NOP decode error: %s", xed_error_enum_t2str(res));
@@ -227,11 +227,12 @@ xed_decoded_inst_t* TraceReader::createJmp(uint64_t displacement) {
     panic("Encoder conversion failed! Is the displacement too large?");
     return nullptr;
   }
-  xed_uint8_t encodedBytes[15];
+  xed_uint8_t* encodedBytes = new xed_uint8_t[15];
   unsigned int numBytesUsed = 0;
-  xed_error_enum_t error = xed_encode(&req, encodedBytes, sizeof(encodedBytes), &numBytesUsed);
+  xed_error_enum_t error = xed_encode(&req, encodedBytes, 15, &numBytesUsed);
   if (error != XED_ERROR_NONE) {
     panic("Failed to encode due to: %s\n", xed_error_enum_t2str(error));
+    delete[] encodedBytes;
     return nullptr;
   }
   xed_decoded_inst_t* decoded_inst = new xed_decoded_inst_t;
@@ -245,6 +246,7 @@ xed_decoded_inst_t* TraceReader::createJmp(uint64_t displacement) {
     return decoded_inst;
   }
   delete decoded_inst;
+  delete[] encodedBytes;
   panic("Could not decode due to %s\n", xed_error_enum_t2str(error));
   return nullptr;
 }

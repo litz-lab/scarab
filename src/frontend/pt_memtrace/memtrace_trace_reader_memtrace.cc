@@ -306,6 +306,9 @@ TraceReaderMemtrace::~TraceReaderMemtrace() {
 }
 
 void TraceReaderMemtrace::init(const std::string& _trace) {
+  memset(&mt_info_a_, 0, sizeof(mt_info_a_));
+  memset(&mt_info_b_, 0, sizeof(mt_info_b_));
+  mt_info_a_.custom_op = CustomOp::NONE;
   mt_info_a_.custom_op = CustomOp::NONE;
   mt_info_b_.custom_op = CustomOp::NONE;
   mt_info_a_.valid = true;

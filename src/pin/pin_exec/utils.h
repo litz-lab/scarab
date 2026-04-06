@@ -121,20 +121,15 @@ struct ProcState {
     wpnm_eip                 = _wpnm_eip;
 
     if(_num_mem_state > num_mem_state) {
-      if(NULL != mem_state_list) {
-        free(mem_state_list);
-      }
-
-      mem_state_list = (MemState*)malloc(_num_mem_state * sizeof(MemState));
+      delete[] mem_state_list;
+      mem_state_list = new MemState[_num_mem_state];
     }
 
     num_mem_state = _num_mem_state;
   }
 
   ~ProcState() {
-    if(NULL != mem_state_list) {
-      free(mem_state_list);
-    }
+    delete[] mem_state_list;
   }
 };
 

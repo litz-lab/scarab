@@ -65,6 +65,8 @@ struct InstInfo {
   bool last_inst_from_trace;
   // used by MEMTRACE frontend to distinguish fetched/non-fetched inst
   bool fetched_instruction;
+  // DynamoRIO trace_type_t for this instruction (set by memtrace reader)
+  int dr_trace_type;
 };
 
 #define XED_OP_NAME(ins, op) \

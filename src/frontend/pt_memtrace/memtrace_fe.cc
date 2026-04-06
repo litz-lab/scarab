@@ -89,9 +89,25 @@ void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
   // For direct branches, fill_in_cf_info already set branch_target to the
   // static destination in the cached ctype_pin_inst.  Preserve it so the
   // BTB/predictor sees the correct target even for not-taken CBRs.
-  // For indirect branches and non-CF the cached value is 0; use the dynamic target.
-  if (info->branch_target == 0)
+  // Indirect branches have a different target on every execution, so always
+  // use the dynamic target from the trace.
+  // For REGDEPS CBRs not yet observed taken, branch_target is still 0; mark
+  // it ADDR_INVALID so downstream code never silently uses the fall-through.
+  if (info->cf_type == CF_CBR) {
+    // CBR: preserve static target from fill_in_cf_info / learning cache.
+    // If still unknown (REGDEPS, never seen taken), mark ADDR_INVALID.
+    if (info->branch_target == 0) {
+      if (!insi->taken)
+        info->branch_target = ADDR_INVALID;
+      else
+        info->branch_target = insi->target;
+    }
+  } else {
+    // Everything else (BR, CALL, IBR, ICALL, RET, ICO, SYS, non-CF):
+    // always use the dynamic target — covers indirect branches whose
+    // target varies, and direct branches/jitted code whose target may change.
     info->branch_target = insi->target;
+  }
   info->inst_uid = ins_id;
   info->last_inst_from_trace = insi->last_inst_from_trace;
   info->fetched_instruction = insi->fetched_instruction;
@@ -168,12 +184,16 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
       ASSERT(proc_id, prior_pid);
     }
     if (insi->valid) {
+      if (insi->last_inst_from_trace) {
+        std::cout << "Reached end of trace (last_inst) pc=0x" << std::hex << insi->pc << std::dec << std::endl;
+        return 0;  // don't simulate the sentinel instruction
+      }
       ins_id++;
       if (insi->fetched_instruction) {
         ins_id_fetched++;
       }
     } else {
-      std::cout << "Reached end of trace" << std::endl;
+      std::cout << "Reached end of trace pc=0x" << std::hex << insi->pc << std::dec << std::endl;
       return 0;  // end of trace
     }
   } while (insi->pid != prior_pid || insi->tid != prior_tid);

@@ -216,6 +216,11 @@ void instrumentation_func_per_trace(TRACE trace, void* v) {
   }
 }
 
+void track_rip_at_execution(ADDRINT ip) {
+  if (!on_wrongpath) {
+    instrumented_rip_tracker.insert(ip);
+  }
+}
 
 void instrumentation_func_per_instruction(INS ins, void* v) {
   if(!started) {
@@ -223,7 +228,8 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
                    IARG_END);
   } else {
     if(!hyper_ff) {
-      instrumented_rip_tracker.insert(INS_Address(ins));
+      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)track_rip_at_execution,
+                     IARG_INST_PTR, IARG_END);
 
       DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
                 "Instrument from Instruction() eip=%" PRIx64 "\n",

@@ -228,8 +228,7 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
                    IARG_END);
   } else {
     if(!hyper_ff) {
-      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)track_rip_at_execution,
-                     IARG_INST_PTR, IARG_END);
+      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)track_rip_at_execution, IARG_INST_PTR, IARG_END);
 
       DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
                 "Instrument from Instruction() eip=%" PRIx64 "\n",

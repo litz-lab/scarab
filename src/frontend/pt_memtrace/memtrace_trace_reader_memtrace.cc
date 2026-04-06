@@ -750,7 +750,7 @@ void TraceReaderMemtrace::fill_in_basic_info(ctype_pin_inst* info, instr_t* drin
         info->cf_type = CF_BR;
         iclass = XED_ICLASS_JMP;
         break;
-      case TRACE_TYPE_INSTR: // For some branches, DRINST does not state type, they seem to be direct jumps
+      case TRACE_TYPE_INSTR:  // For some branches, DRINST does not state type, they seem to be direct jumps
       case TRACE_TYPE_INSTR_INDIRECT_JUMP:
         info->cf_type = CF_IBR;
         iclass = XED_ICLASS_JMP;
@@ -774,8 +774,8 @@ void TraceReaderMemtrace::fill_in_basic_info(ctype_pin_inst* info, instr_t* drin
         iclass = XED_ICLASS_RET_NEAR;
         break;
       default:
-        printf("fill_in_basic_info: branch with unknown trace type %d at pc=0x%lx cat=0x%x size=%u\n",
-               (int)type, (unsigned long)info->instruction_addr, (unsigned)cat, (unsigned)size);
+        printf("fill_in_basic_info: branch with unknown trace type %d at pc=0x%lx cat=0x%x size=%u\n", (int)type,
+               (unsigned long)info->instruction_addr, (unsigned)cat, (unsigned)size);
         fflush(stdout);
         info->cf_type = CF_CBR;
         iclass = XED_ICLASS_JNZ;

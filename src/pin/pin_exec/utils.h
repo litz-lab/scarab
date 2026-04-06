@@ -128,9 +128,7 @@ struct ProcState {
     num_mem_state = _num_mem_state;
   }
 
-  ~ProcState() {
-    delete[] mem_state_list;
-  }
+  ~ProcState() { delete[] mem_state_list; }
 };
 
 template <typename T, int INIT_CAPACITY>

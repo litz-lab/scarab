@@ -38,6 +38,7 @@
 #include "general.param.h"
 
 #include "exec_stage.h"
+#include "node_issue_queue.h"
 #include "node_stage.h"
 #include "stat_trace.h"
 #include "table_info.h"

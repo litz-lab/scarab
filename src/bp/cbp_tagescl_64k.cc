@@ -128,19 +128,12 @@ TAGE64K& TAGE64K::operator=(const TAGE64K& other) {
     Sstate.ltable[i].age = other.Sstate.ltable[i].age;
     Sstate.ltable[i].dir = other.Sstate.ltable[i].dir;
   }
-  memcpy(Sstate.GGEHL, other.Sstate.GGEHL, sizeof(Sstate.GGEHL));
-  memcpy(Sstate.PGEHL, other.Sstate.PGEHL, sizeof(Sstate.PGEHL));
   memcpy(Sstate.ghist, other.Sstate.ghist, sizeof(Sstate.ghist));
 
   memcpy(Bias, other.Bias, sizeof(Bias));
   memcpy(BiasSK, other.BiasSK, sizeof(BiasSK));
   memcpy(BiasBank, other.BiasBank, sizeof(BiasBank));
-  memcpy(LGEHL, other.LGEHL, sizeof(LGEHL));
-  memcpy(SGEHL, other.SGEHL, sizeof(SGEHL));
-  memcpy(TGEHL, other.TGEHL, sizeof(TGEHL));
 #ifdef IMLI
-  memcpy(IMGEHL, other.IMGEHL, sizeof(IMGEHL));
-  memcpy(IGEHL, other.IGEHL, sizeof(IGEHL));
   memcpy(IMHIST, other.IMHIST, sizeof(IMHIST));
   IMLIcount = other.IMLIcount;
 #endif

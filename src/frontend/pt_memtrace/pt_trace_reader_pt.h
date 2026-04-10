@@ -40,6 +40,7 @@
 #include "general.param.h"
 
 #include "frontend/pt_memtrace/memtrace_trace_reader.h"
+
 #include "ctype_pin_inst.h"
 
 #define GZ_BUFFER_SIZE 80
@@ -151,8 +152,7 @@ class TraceReaderPT : public TraceReader {
       bool orig_is_rep = ins.ins && XED_INS_IsRep(ins.ins);
       bool orig_changes_cf = ins.ins && XED_INS_ChangeControlFlow(ins.ins);
       bool orig_is_direct_br = ins.ins && XED_INS_IsDirectBranchOrCall(ins.ins);
-      uint64_t orig_direct_target = orig_is_direct_br
-          ? XED_INS_DirectBranchOrCallTargetAddress(ins.pc, ins.ins) : 0;
+      uint64_t orig_direct_target = orig_is_direct_br ? XED_INS_DirectBranchOrCallTargetAddress(ins.pc, ins.ins) : 0;
       uint8_t orig_size = ins.ins ? (uint8_t)XED_INS_Size(ins.ins) : 0;
       auto orig_category = ins.ins ? XED_INS_Category(ins.ins) : 0;
 
@@ -170,8 +170,7 @@ class TraceReaderPT : public TraceReader {
       }
 
       bool changes_cf = inserted_nop ? false : orig_changes_cf;
-      bool incorrect_branch = !inserted_nop && orig_is_direct_br &&
-                              next_line.pc != orig_direct_target &&
+      bool incorrect_branch = !inserted_nop && orig_is_direct_br && next_line.pc != orig_direct_target &&
                               next_line.pc != (ins.pc + orig_size);
       uint8_t prior_size = inserted_nop ? patch_inst_.size : orig_size;
 

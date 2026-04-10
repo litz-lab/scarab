@@ -60,7 +60,7 @@ struct InstInfo {
   bool unknown_type;  // No available decode info (presents a nop)
   bool valid;         // True until the end of the sequence
   bool is_dr_ins;     // True if the ins is of type DR_ISA_REGDEPS
-  bool is_ctype_inst; // True when `info` union member is a pre-built ctype_pin_inst
+  bool is_ctype_inst;  // True when `info` union member is a pre-built ctype_pin_inst
 
   // used by MEMTRACE frontend to flag the last inst from the trace
   bool last_inst_from_trace;

@@ -894,8 +894,8 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
 
       for (ii = 0; ii < num_uop; ii++) {
         if (ii > 0) {
-          info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb, ii,
-                                              &new_entry);
+          info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb,
+                                              ii, &new_entry);
         }
         ASSERT(proc_id, !new_entry);
 

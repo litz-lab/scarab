@@ -396,6 +396,7 @@ void TAGE64K::reinit() {
     WS[i] = 7;
     WT[i] = 7;
     WI[i] = 7;
+    WIM[i] = 7;
     WB[i] = 4;
   }
   for (int i = 0; i < NLOCAL; i++) {

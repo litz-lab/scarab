@@ -210,6 +210,7 @@ struct PredictorStates {
 
   // Constructor
   PredictorStates(bool snapshot = false) {
+    init();
     int size = snapshot ? NOSKIPCNT : (NHIST + 1);
     GI = std::make_unique<int[]>(size);
     GTAG = std::make_unique<uint[]>(size);

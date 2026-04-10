@@ -159,13 +159,8 @@ TAGE64K& TAGE64K::operator=(const TAGE64K& other) {
     btable[i].hyst = other.btable[i].hyst;
     btable[i].pred = other.btable[i].pred;
   }
-  for (int i = 1; i < NHIST + 1; ++i) {
-    for (int j = 0; j < NBANKLOW * (1 << LOGG); ++j) {
-      gtable[i][j].ctr = other.gtable[i][j].ctr;
-      gtable[i][j].tag = other.gtable[i][j].tag;
-      gtable[i][j].u = other.gtable[i][j].u;
-    }
-  }
+  memcpy(gtable[1], other.gtable[1], NBANKLOW * (1 << LOGG) * sizeof(cbp64_gentry));
+  memcpy(gtable[BORN], other.gtable[BORN], NBANKHIGH * (1 << LOGG) * sizeof(cbp64_gentry));
   TICK = other.TICK;
   branch_id = other.branch_id;
   Seed = other.Seed;

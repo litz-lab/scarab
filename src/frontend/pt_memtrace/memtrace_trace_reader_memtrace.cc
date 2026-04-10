@@ -596,7 +596,6 @@ PATCH_REP:
     } else if (_prior->pc && non_seq &&
                (!is_rep || (_prior->pc != _info->pc && (_prior->pc + prior_isize) != _info->pc))) {
       gap_patch_jmp_ = create_dummy_jump(_prior->pc, _info->pc);
-      gap_patch_jmp_.fake_inst = 0;
       gap_patch_jmp_.true_op_type = XED_ICLASS_JMP;
       _prior->info = &gap_patch_jmp_;
       _prior->target = _info->pc;

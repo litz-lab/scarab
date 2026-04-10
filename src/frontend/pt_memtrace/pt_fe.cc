@@ -148,6 +148,12 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
       return 0;  // end of trace
   } while (insi->pid != pt_prior_pid || insi->tid != pt_prior_tid);
 
+  if (insi->is_ctype_inst) {
+    *pt_next_pi = *insi->info;
+    pt_next_pi->inst_uid = pt_ins_id;
+    return 1;
+  }
+
   init_ctype_pin_inst(pt_next_pi);
   pt_fill_in_dynamic_info(pt_next_pi, insi);
   fill_in_basic_info(pt_next_pi, insi->ins);

@@ -97,6 +97,7 @@ class TraceReader {
   InstInfo info_ = {};
   InstInfo invalid_info_ = {};
   bool trace_ready_ = false;
+  bool has_trace_encodings_ = false;
   xed_state_t xed_state_ = {};
   std::vector<std::tuple<uint64_t, uint64_t, uint8_t*>> sections_ = {};
   std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, std::unique_ptr<xed_decoded_inst_t>>> xed_map_ = {};
@@ -108,7 +109,6 @@ class TraceReader {
   void init(const std::string& _trace);
   void fillCache(uint64_t _vAddr, uint8_t _reported_size, uint8_t* inst_bytes = NULL);
   void traceFileIs(const std::string& _trace);
-  xed_decoded_inst_t* createJmp(uint64_t displacement);
 };
 
 #endif

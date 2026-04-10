@@ -61,6 +61,8 @@ typedef enum Wrongpath_Nop_Mode_Reason_enum {
   WPNM_REASON_NONRET_CF_TO_NOT_INSTRUMENTED,
   WPNM_REASON_NOT_TAKEN_TO_NOT_INSTRUMENTED,
   WPNM_REASON_WRONG_PATH_STORE_TO_NEW_REGION,
+  WPNM_FAKE_NOP,
+  WPNM_FAKE_JMP,
   WPNM_NUM_REASONS
 } Wrongpath_Nop_Mode_Reason;
 
@@ -172,6 +174,7 @@ static inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt) {
   inst.branch_target = tgt;
   inst.actually_taken = 1;
   inst.fake_inst = 1;
+  inst.fake_inst_reason = WPNM_FAKE_JMP;
   strcpy(inst.pin_iclass, "JMP");
   return inst;
 }

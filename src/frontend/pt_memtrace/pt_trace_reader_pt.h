@@ -157,7 +157,7 @@ class TraceReaderPT : public TraceReader {
       auto orig_category = ins.ins ? XED_INS_Category(ins.ins) : 0;
 
       if (orig_is_rep) {
-        patch_inst_ = create_dummy_nop(_prior.pc, WPNM_NOT_IN_WPNM);
+        patch_inst_ = create_dummy_nop(_prior.pc, WPNM_FAKE_NOP);
         patch_inst_.size = orig_size;
         patch_inst_.instruction_next_addr = _prior.pc + orig_size;
         _prior.info = &patch_inst_;
@@ -186,7 +186,7 @@ class TraceReaderPT : public TraceReader {
         ++num_inserted_direct_brs;
         _prior.static_target = next_line.pc;
       } else if (!inserted_nop && orig_is_rep) {
-        patch_inst_ = create_dummy_nop(_prior.pc, WPNM_NOT_IN_WPNM);
+        patch_inst_ = create_dummy_nop(_prior.pc, WPNM_FAKE_NOP);
         patch_inst_.size = orig_size;
         patch_inst_.instruction_next_addr = _prior.pc + orig_size;
         _prior.info = &patch_inst_;

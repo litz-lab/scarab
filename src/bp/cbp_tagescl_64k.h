@@ -529,8 +529,8 @@ class TAGE64K {
   TAGE64K(void);
   ~TAGE64K();
   TAGE64K& operator=(const TAGE64K& other);  // Copy assignment
-  TAGE64K(TAGE64K&&) = default;
-  TAGE64K(const TAGE64K&) = default;
+  TAGE64K(TAGE64K&&) = delete;
+  TAGE64K(const TAGE64K&) = delete;
   uns8 IsFull(void);
   void reinit();
   int F(long long A, int size, int bank);

@@ -46,6 +46,9 @@ TAGE64K::TAGE64K(void) {
   tage_component_inter = 0;
   tage_component_tage = 0;
   tage_component_alt = 0;
+  btable = nullptr;
+  gtable[1] = nullptr;
+  gtable[BORN] = nullptr;
   reinit();
   // #ifdef PRINTSIZE
   // predictorsize ();
@@ -216,6 +219,10 @@ void TAGE64K::reinit() {
     TB[i] = TBITS + 4 * (i >= BORN);
     logg[i] = LOGG;
   }
+
+  delete[] gtable[1];
+  delete[] gtable[BORN];
+  delete[] btable;
 
   gtable[1] = new cbp64_gentry[NBANKLOW * (1 << LOGG)];
   SizeTable[1] = NBANKLOW * (1 << LOGG);

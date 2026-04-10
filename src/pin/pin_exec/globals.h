@@ -94,6 +94,7 @@ extern int64_t  orig_hyper_fast_forward_count;
 extern bool     heartbeat_enabled;
 extern uint32_t max_buffer_size;
 extern uint64_t start_rip;
+extern bool track_at_instr;
 
 extern ADDRINT prior_rep_eip;
 

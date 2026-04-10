@@ -88,7 +88,7 @@ KNOB<UINT64> KnobDebugPrintEndUid(KNOB_MODE_WRITEONCE, "pintool",
 KNOB<UINT64> KnobStartRip(KNOB_MODE_WRITEONCE, "pintool", "rip", "0",
                           "the starting rip of the program");
 
-KNOB<bool> KnobTrackAtInstrumentation(KNOB_MODE_WRITEONCE, "pintool", "track_at_instr", "false",
+KNOB<bool> KnobTrackAtInstrumentation(KNOB_MODE_WRITEONCE, "pintool", "track_at_instr", "true",
                                       "Track RIP at instrumentation time instead of execution time");
 /* ===================================================================== */
 /* ===================================================================== */

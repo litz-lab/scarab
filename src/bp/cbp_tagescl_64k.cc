@@ -249,7 +249,7 @@ void TAGE64K::reinit() {
   Seed = 0;
 
   for (int i = 0; i < HISTBUFFERLENGTH; i++)
-    Sstate.ghist[0] = 0;
+    Sstate.ghist[i] = 0;
   Sstate.ptghist = 0;
   updatethreshold = 35 << 3;
 

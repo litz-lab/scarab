@@ -271,6 +271,7 @@ void bp_crs_sync(Bp_Data* bp_data_src, Bp_Data* bp_data_dst) {
 /* btb_update_level: write (or update) one BTB-level cache entry for op. */
 
 static void btb_update_level(Cache* cache, uns proc_id, Addr fetch_addr, Addr target) {
+  ASSERT(proc_id, target != ADDR_INVALID);
   Addr line_addr, repl_line_addr;
   Addr* btb_line = (Addr*)cache_access(cache, fetch_addr, &line_addr, TRUE);
   if (!btb_line)
@@ -360,6 +361,7 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   if (PERFECT_CBR_BTB && (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP)) {
     btb_pred_info->btb_miss = FALSE;
     btb_pred_info->no_target = FALSE;
+    ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
     btb_pred_info->pred_target = op->oracle_info.target;
   }
 
@@ -412,6 +414,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Flag lru = bp_data->bp_id ? FALSE : TRUE;
 
   if (PERFECT_BTB) {
+    ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
     if (BTB_L0_PRESENT) {
       bpi->btb_l0_hit = TRUE;
       bpi->btb_l0_target = op->oracle_info.target;
@@ -459,6 +462,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
   // if it was a btb miss, it is time to write it into the btb
   if (op->btb_pred_info->btb_miss && op->oracle_info.dir == TAKEN) {
+    ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
     if (BTB_OFF_PATH_WRITES || !op->off_path) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
                 hexstr64s(op->oracle_info.target));
@@ -473,10 +477,13 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
       ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
     }
   } else if (op->btb_pred_info->btb_miss == FALSE && op->oracle_info.dir == TAKEN) {
+    ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
     // For jitted CF we want to update the BTB if the target changes, even on btb hit
     // or For indirects we want to update the BTB if the target changes, even on btb hit
     // The detection relies on the target stored in the btb
+
     btb_line = (Addr*)cache_access(bp_data->btb, fetch_addr, &btb_line_addr, FALSE);
+
     // The following assertion can fail (due to eviction?)
     // ASSERT(bp_data->proc_id, btb_entry);
     if (btb_line && *btb_line != op->oracle_info.target) {

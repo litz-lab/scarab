@@ -172,7 +172,7 @@ void dvfs_init(void) {
     ASSERTM(0, dvfs_log, "Could not open DVFS log file\n");
   }
 
-  proc_infos = malloc(NUM_CORES * sizeof(Proc_Info));
+  proc_infos = calloc(NUM_CORES, sizeof(Proc_Info));
 
   if (!DVFS_STATIC) {
     /* set the processor to the initial config */

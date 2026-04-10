@@ -291,7 +291,7 @@ void init_memory() {
 
   /* Initialize request buffers */
   mem->total_mem_req_buffers = MEM_REQ_BUFFER_ENTRIES * (PRIVATE_MSHR_ON ? NUM_CORES : 1);
-  mem->req_buffer = (Mem_Req*)malloc(sizeof(Mem_Req) * mem->total_mem_req_buffers);
+  mem->req_buffer = (Mem_Req*)calloc(mem->total_mem_req_buffers, sizeof(Mem_Req));
   for (ii = 0; ii < mem->total_mem_req_buffers; ii++) {
     mem->req_buffer[ii].state = MRS_INV;
   }

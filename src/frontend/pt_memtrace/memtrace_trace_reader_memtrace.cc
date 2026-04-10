@@ -87,6 +87,10 @@ const char* trace_type_to_string(dynamorio::drmemtrace::trace_type_t type) {
       return "TRACE_TYPE_INSTR_RETURN";
     case TRACE_TYPE_INSTR_CONDITIONAL_JUMP:
       return "TRACE_TYPE_INSTR_CONDITIONAL_JUMP";
+    case TRACE_TYPE_INSTR_TAKEN_JUMP:
+      return "TRACE_TYPE_INSTR_TAKEN_JUMP";
+    case TRACE_TYPE_INSTR_UNTAKEN_JUMP:
+      return "TRACE_TYPE_INSTR_UNTAKEN_JUMP";
     case TRACE_TYPE_INSTR_DIRECT_JUMP:
       return "TRACE_TYPE_INSTR_DIRECT_JUMP";
     case TRACE_TYPE_INSTR_INDIRECT_JUMP:
@@ -302,6 +306,9 @@ TraceReaderMemtrace::~TraceReaderMemtrace() {
 }
 
 void TraceReaderMemtrace::init(const std::string& _trace) {
+  memset(&mt_info_a_, 0, sizeof(mt_info_a_));
+  memset(&mt_info_b_, 0, sizeof(mt_info_b_));
+  mt_info_a_.custom_op = CustomOp::NONE;
   mt_info_a_.custom_op = CustomOp::NONE;
   mt_info_b_.custom_op = CustomOp::NONE;
   mt_info_a_.valid = true;
@@ -355,7 +362,12 @@ bool TraceReaderMemtrace::advanceReader() {
     reader_at_eof_ = true;
     return false;
   }
-  if (roi_end_ && reader_->get_instruction_ordinal() > roi_end_) {
+  // Allow one extra instruction past roi_end_ so the last ROI instruction
+  // gets its target/npc set from the following instruction's PC.
+  if (roi_end_ && reader_->get_instruction_ordinal() > roi_end_ + 1) {
+    printf("advanceReader: ROI end reached (ordinal %lu > roi_end %lu)\n",
+           (unsigned long)reader_->get_instruction_ordinal(), (unsigned long)roi_end_);
+    fflush(stdout);
     reader_at_eof_ = true;
     return false;
   }
@@ -563,7 +575,24 @@ PATCH_REP:
         mt_warn_target_++;
         non_seq = false;
       }
-      _prior->taken = non_seq;
+      // non_seq tells us whether the branch was taken for conditional branches.
+      // Unconditional branches are always taken even if the target equals fall-through.
+      if (_prior->info && _prior->info->cf_type != CF_CBR && _prior->info->cf_type != CF_REP)
+        _prior->taken = true;
+      else
+        _prior->taken = non_seq;
+      // For REGDEPS traces the static branch target for direct CBRs is
+      // unavailable from the synthetic encoding.  Learn it from the first
+      // taken instance so that subsequent not-taken CBRs still expose the
+      // correct target to the BTB.  Indirect branches are excluded because
+      // their target varies per execution.
+
+      if (non_seq && _prior->info && _prior->info->cf_type == CF_CBR) {
+        if (_prior->info->branch_target != (Addr)_info->pc) {
+          const_cast<ctype_pin_inst*>(_prior->info)->branch_target = _info->pc;
+          const_cast<ctype_pin_inst*>(_prior->info)->encoding_is_new = true;
+        }
+      }
     } else if (_prior->pc && non_seq &&
                (!is_rep || (_prior->pc != _info->pc && (_prior->pc + prior_isize) != _info->pc))) {
       gap_patch_jmp_ = create_dummy_jump(_prior->pc, _info->pc);
@@ -585,12 +614,13 @@ PATCH_REP:
     }
     _prior->target = _info->pc;  // TODO(granta): Invalid for pid/tid switch
   } else {
-    // for the last instruction of the trace, the npc cannot be set by the next one
-    // set the npc to itself because of the frontend assertion
-    // bp_recovery_info->recovery_fetch_addr == frontend_next_fetch_addr(proc_id)
-    // at /home/mxu61_bak/scarab_hlitz/src/decoupled_frontend.cc
+    // Last instruction of the trace (EOF or ROI): the next PC cannot be
+    // derived from a following instruction.  Pretend the branch is not-taken
+    // and set target to the fall-through address so the branch predictor
+    // sees consistent npc == pc + size.
     _prior->last_inst_from_trace = true;
-    _prior->target = _prior->pc;
+    _prior->taken = false;
+    _prior->target = _prior->pc + prior_isize;
   }
 
   return complete;
@@ -720,11 +750,14 @@ void TraceReaderMemtrace::fill_in_basic_info(ctype_pin_inst* info, instr_t* drin
         info->cf_type = CF_BR;
         iclass = XED_ICLASS_JMP;
         break;
+      case TRACE_TYPE_INSTR:  // For some branches, DRINST does not state type, they seem to be direct jumps
       case TRACE_TYPE_INSTR_INDIRECT_JUMP:
         info->cf_type = CF_IBR;
         iclass = XED_ICLASS_JMP;
         break;
       case TRACE_TYPE_INSTR_CONDITIONAL_JUMP:
+      case TRACE_TYPE_INSTR_TAKEN_JUMP:
+      case TRACE_TYPE_INSTR_UNTAKEN_JUMP:
         info->cf_type = CF_CBR;
         iclass = XED_ICLASS_JNZ;
         break;
@@ -741,8 +774,12 @@ void TraceReaderMemtrace::fill_in_basic_info(ctype_pin_inst* info, instr_t* drin
         iclass = XED_ICLASS_RET_NEAR;
         break;
       default:
+        printf("fill_in_basic_info: branch with unknown trace type %d at pc=0x%lx cat=0x%x size=%u\n", (int)type,
+               (unsigned long)info->instruction_addr, (unsigned)cat, (unsigned)size);
+        fflush(stdout);
         info->cf_type = CF_CBR;
         iclass = XED_ICLASS_JNZ;
+        assert(0);
         break;
     }
   } else if (cat & DR_INSTR_CATEGORY_MATH) {
@@ -902,6 +939,7 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
   _info->last_inst_from_trace = false;
   // non-fetched instructions will be set within FSM
   _info->fetched_instruction = true;
+  _info->dr_trace_type = (int)mt_ref_.instr.type;
 }
 
 void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t* predecoded_dr) {
@@ -1003,6 +1041,7 @@ void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t*
   _info->unknown_type = unknown_type;
   _info->last_inst_from_trace = false;
   _info->fetched_instruction = true;
+  _info->dr_trace_type = (int)mt_ref_.instr.type;
 }
 
 bool TraceReaderMemtrace::typeIsMem(dynamorio::drmemtrace::trace_type_t _type) {

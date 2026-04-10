@@ -155,10 +155,10 @@ void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns l
 
   /* For cache partitioning */
   if (cache->repl_policy == REPL_PARTITION) {
-    cache->num_ways_allocted_core = (uns*)malloc(sizeof(uns) * NUM_CORES);
-    cache->num_ways_occupied_core = (uns*)malloc(sizeof(uns) * NUM_CORES);
-    cache->lru_index_core = (uns*)malloc(sizeof(uns) * NUM_CORES);
-    cache->lru_time_core = (Counter*)malloc(sizeof(Counter) * NUM_CORES);
+    cache->num_ways_allocted_core = (uns*)calloc(NUM_CORES, sizeof(uns));
+    cache->num_ways_occupied_core = (uns*)calloc(NUM_CORES, sizeof(uns));
+    cache->lru_index_core = (uns*)calloc(NUM_CORES, sizeof(uns));
+    cache->lru_time_core = (Counter*)calloc(NUM_CORES, sizeof(Counter));
   }
 
   /* allocate memory for the back-up lists (if necessary) */
@@ -779,8 +779,8 @@ static inline Cache_Entry* insert_sure_line(Cache* cache, uns set, Addr tag) {
       if (entry->valid) {
         Cache_Entry* temp = (Cache_Entry*)dl_list_add_tail(list);
         memcpy(temp, entry, sizeof(Cache_Entry));
-        temp->data = malloc(sizeof(cache->data_size));
-        memcpy(entry->data, temp->data, sizeof(cache->data_size));
+        temp->data = malloc(cache->data_size);
+        memcpy(temp->data, entry->data, cache->data_size);
         entry->valid = FALSE;
         count++;
       }

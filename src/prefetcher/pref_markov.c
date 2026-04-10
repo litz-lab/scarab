@@ -73,14 +73,16 @@ void pref_markov_init(HWP* hwp) {
   hwp->hwp_info->enabled = TRUE;
 
   if (PREF_UMLC_ON) {
-    markov_prefetchers_array.markov_hwp_core_umlc = (Pref_Markov*)malloc(sizeof(Pref_Markov) * NUM_CORES);
-    markov_prefetchers_array.markov_hwp_core_umlc->type = UMLC;
+    markov_prefetchers_array.markov_hwp_core_umlc = (Pref_Markov*)calloc(NUM_CORES, sizeof(Pref_Markov));
+    for (uns i = 0; i < NUM_CORES; i++)
+      markov_prefetchers_array.markov_hwp_core_umlc[i].type = UMLC;
     markov_prefetchers_array.last_miss_addr_core_umlc = malloc(sizeof(Addr) * NUM_CORES);
     init_markov(hwp, markov_prefetchers_array.markov_hwp_core_umlc, markov_prefetchers_array.last_miss_addr_core_umlc);
   }
   if (PREF_UL1_ON) {
-    markov_prefetchers_array.markov_hwp_core_ul1 = (Pref_Markov*)malloc(sizeof(Pref_Markov) * NUM_CORES);
-    markov_prefetchers_array.markov_hwp_core_ul1->type = UL1;
+    markov_prefetchers_array.markov_hwp_core_ul1 = (Pref_Markov*)calloc(NUM_CORES, sizeof(Pref_Markov));
+    for (uns i = 0; i < NUM_CORES; i++)
+      markov_prefetchers_array.markov_hwp_core_ul1[i].type = UL1;
     markov_prefetchers_array.last_miss_addr_core_ul1 = malloc(sizeof(Addr) * NUM_CORES);
     init_markov(hwp, markov_prefetchers_array.markov_hwp_core_ul1, markov_prefetchers_array.last_miss_addr_core_ul1);
   }

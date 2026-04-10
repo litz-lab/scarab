@@ -104,11 +104,11 @@ void pref_stream_init(HWP* hwp) {
   hwp->hwp_info->enabled = TRUE;
 
   if (PREF_UMLC_ON) {
-    stream_prefetchers_array.pref_stream_core_umlc = (Pref_Stream*)malloc(sizeof(Pref_Stream) * NUM_CORES);
+    stream_prefetchers_array.pref_stream_core_umlc = (Pref_Stream*)calloc(NUM_CORES, sizeof(Pref_Stream));
     init_stream_core(hwp, stream_prefetchers_array.pref_stream_core_umlc);
   }
   if (PREF_UL1_ON) {
-    stream_prefetchers_array.pref_stream_core_ul1 = (Pref_Stream*)malloc(sizeof(Pref_Stream) * NUM_CORES);
+    stream_prefetchers_array.pref_stream_core_ul1 = (Pref_Stream*)calloc(NUM_CORES, sizeof(Pref_Stream));
     init_stream_core(hwp, stream_prefetchers_array.pref_stream_core_ul1);
   }
 }

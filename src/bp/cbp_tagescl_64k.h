@@ -293,12 +293,31 @@ struct SpeculativeStatesBase {
   void init() {
     ptghist = 0;
     phist = 0;
-    memset(ch_i, 0, sizeof(ch_i));
-    memset(ch_t, 0, sizeof(ch_t));
+    for (auto& e : ch_i) {
+      e.comp = 0;
+      e.CLENGTH = 0;
+      e.OLENGTH = 0;
+      e.OUTPOINT = 0;
+    }
+    for (auto& row : ch_t) {
+      for (auto& e : row) {
+        e.comp = 0;
+        e.CLENGTH = 0;
+        e.OLENGTH = 0;
+        e.OUTPOINT = 0;
+      }
+    }
     GHIST = 0;
     memset(WG, 0, sizeof(WG));
     memset(WP, 0, sizeof(WP));
-    memset(ltable, 0, sizeof(ltable));
+    for (auto& e : ltable) {
+      e.NbIter = 0;
+      e.confid = 0;
+      e.CurrentIter = 0;
+      e.TAG = 0;
+      e.age = 0;
+      e.dir = false;
+    }
   }
 
   std::string to_string() const {

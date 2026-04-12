@@ -113,7 +113,8 @@ uns8 CBP_To_Scarab_Intf<TAGE64K>::pred(Op* op, Bp_Pred_Level pred_level) {
   if (op->off_path)
     if (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON)
       return op->oracle_info.dir;
-  uns8 pred = cbp_predictors_all_cores.at(proc_id).at(bp_id)->GetPrediction(op->inst_info->addr, &op->bp_confidence, op);
+  uns8 pred =
+      cbp_predictors_all_cores.at(proc_id).at(bp_id)->GetPrediction(op->inst_info->addr, &op->bp_confidence, op);
 
   return pred;
 }
@@ -197,9 +198,9 @@ void CBP_To_Scarab_Intf<TAGE64K>::update(Op* op,
   Flag is_conditional = is_conditional_branch(op->inst_info->table_info.cf_type);
 
   if (is_conditional)
-    cbp_predictors_all_cores.at(proc_id).at(bp_id)->NonSpecUpdateAtCond(op->inst_info->addr, optype, op->oracle_info.dir,
-                                                                        bp_pred_info->pred, op->oracle_info.target,
-                                                                        op->recovery_info.branch_id);
+    cbp_predictors_all_cores.at(proc_id).at(bp_id)->NonSpecUpdateAtCond(
+        op->inst_info->addr, optype, op->oracle_info.dir, bp_pred_info->pred, op->oracle_info.target,
+        op->recovery_info.branch_id);
   else
     cbp_predictors_all_cores.at(proc_id).at(bp_id)->TrackOtherInst(op->inst_info->addr, optype, op->oracle_info.dir,
                                                                    op->oracle_info.target);

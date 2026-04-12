@@ -363,8 +363,11 @@ Addr ext_trace_next_fetch_addr(uns proc_id) {
 }
 
 void ext_trace_init() {
-  memset(next_offpath_pi, 0, sizeof(next_offpath_pi));
-  memset(next_onpath_pi, 0, sizeof(next_onpath_pi));
+  for (uns i = 0; i < MAX_NUM_PROCS; i++) {
+    init_ctype_pin_inst(&next_onpath_pi[i]);
+    for (uns j = 0; j < MAX_NUM_BPS; j++)
+      init_ctype_pin_inst(&next_offpath_pi[i][j]);
+  }
 
   if (FRONTEND == FE_PT)
     pt_init();

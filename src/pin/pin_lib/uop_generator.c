@@ -233,6 +233,8 @@ void uop_generator_init(uint32_t num_cores) {
   fake_nop_template.table_info.true_op_type = nop_pi.true_op_type;
   fake_nop_template.table_info.is_simd = nop_pi.is_simd;
   strcpy(fake_nop_template.table_info.name, nop_pi.pin_iclass);
+  fake_nop_template.trace_info.num_uop = 1;
+  fake_nop_template.uop_seq_num = 0;
   fake_nop_template.fake_inst = TRUE;
   fake_nop_template.fake_inst_reason = WPNM_FAKE_NOP;
 
@@ -243,6 +245,8 @@ void uop_generator_init(uint32_t num_cores) {
   fake_jmp_template.table_info.true_op_type = jmp_pi.true_op_type;
   fake_jmp_template.table_info.is_simd = jmp_pi.is_simd;
   strcpy(fake_jmp_template.table_info.name, jmp_pi.pin_iclass);
+  fake_jmp_template.trace_info.num_uop = 1;
+  fake_jmp_template.uop_seq_num = 0;
   fake_jmp_template.fake_inst = TRUE;
   fake_jmp_template.fake_inst_reason = WPNM_FAKE_JMP;
 

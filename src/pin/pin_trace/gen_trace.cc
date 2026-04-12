@@ -233,6 +233,7 @@ int main(int argc, char* argv[]) {
   trace_insts_left        = KnobTraceLen.Value();
   fast_forward_insts_left = KnobFastForward.Value();
 
+  init_ctype_pin_inst(&mailbox);
   pin_decoder_init(true, &std::cerr);
 
   TRACE_AddInstrumentFunction(insert_instrumentation, 0);

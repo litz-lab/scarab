@@ -368,6 +368,7 @@ void uop_cache_evict_FT(const Entry<Uop_Cache_Key, Uop_Cache_Data>& evicted_entr
       ASSERT(uc->proc_id, !invalidated_entry.valid);
       invalidated_entry = evicted_entry;
     }
+
     invalidate_addr += invalidated_entry.data.offset;
 
     if (invalidated_entry.data.used)

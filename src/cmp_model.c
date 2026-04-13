@@ -58,6 +58,7 @@
 #include "freq.h"
 #include "ft.h"
 #include "idq_stage.h"
+#include "issue_queue.h"
 #include "lsq.h"
 #include "map_rename.h"
 #include "op_pool.h"
@@ -158,7 +159,6 @@ void cmp_init(uns mode) {
     dvfs_init();
 
   cache_part_init();
-
 }
 
 /**************************************************************************************/
@@ -358,6 +358,7 @@ void cmp_wake(Op* src_op, Op* dep_op, uns rdy_bit) {
     dep_op->next_rdy = node->rdy_head;
     node->rdy_head = dep_op;
     dep_op->in_rdy_list = TRUE;
+    issue_queue_wakeup(dep_op);
   }
 }
 
@@ -393,6 +394,7 @@ void cmp_recover() {
   recover_idq_stage();
   recover_map_stage();
   recover_lsq();
+  recover_issue_queue();
   recover_exec_stage();
   recover_dcache_stage();
   recover_memory();

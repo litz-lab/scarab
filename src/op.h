@@ -189,6 +189,9 @@ struct Op_struct {
   Counter rs_id;      // id for which Reservation Station (RS) this op is assigned to
   Counter chkpt_num;  // id for chkpt (WARNING: this can change due to recoveries)
 
+  uns16 queue_id;         // id for which issue queue this op is assigned to
+  uns16 queue_entry_id;   // id for which entry in the issue queue this op is
+
   struct Op_struct* next_rdy;   // pointer to next ready op (node table)
   Flag in_rdy_list;             // is the op in the node stage's ready list?
   struct Op_struct* next_node;  // pointer to the next op in the node table

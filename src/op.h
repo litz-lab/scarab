@@ -151,10 +151,10 @@ struct Op_struct {
   uns num_srcs;                 // number of map dependencies (order matches srcs_not_rdy_words / wake-up)
   Src_Info* src_info;           /* grown by map (2 -> 8 -> 128, then x2); freed in free_op */
   uns src_info_cap;
-  Bp_Pred_Info bp_pred_l0;      // l0 branch prediction info
-  Bp_Pred_Info bp_pred_main;    // main branch prediction info
-  Btb_Pred_Info btb_pred;       // btb prediction info
-  Bp_Pred_Info* bp_pred_info;   // selected/active branch prediction info
+  Bp_Pred_Info bp_pred_l0;       // l0 branch prediction info
+  Bp_Pred_Info bp_pred_main;     // main branch prediction info
+  Btb_Pred_Info btb_pred;        // btb prediction info
+  Bp_Pred_Info* bp_pred_info;    // selected/active branch prediction info
   Btb_Pred_Info* btb_pred_info;  // selected/active btb prediction info
   // }}}
 
@@ -189,6 +189,9 @@ struct Op_struct {
   Counter node_id;    // id for position in the node table
   Counter rs_id;      // id for which Reservation Station (RS) this op is assigned to
   Counter chkpt_num;  // id for chkpt (WARNING: this can change due to recoveries)
+
+  uns16 queue_id;        // id for which issue queue this op is assigned to
+  uns16 queue_entry_id;  // id for which entry in the issue queue this op is
 
   struct Op_struct* next_rdy;   // pointer to next ready op (node table)
   Flag in_rdy_list;             // is the op in the node stage's ready list?

@@ -55,6 +55,7 @@
 #include "exec_ports.h"
 #include "ft.h"
 #include "icache_stage.h"
+#include "issue_queue.h"
 #include "lsq.h"
 #include "map.h"
 #include "map_rename.h"
@@ -177,7 +178,6 @@ void recover_node_stage() {
   if (ENABLE_GLOBAL_DEBUG_PRINT && DEBUG_NODE_STAGE && DEBUG_RANGE_COND(node->proc_id))
     debug_node_stage();
 
-  flush_ready_list();
   flush_scheduling_buffer();
   flush_rs();
   flush_window();
@@ -258,10 +258,6 @@ void flush_window() {
       ASSERT(node->proc_id, op->op_num > bp_recovery_info->recovery_op_num);
       op->in_node_list = FALSE;
       *last = op->next_node;
-      if (op->state == OS_IN_RS || op->state == OS_READY || op->state == OS_WAIT_FWD) {
-        ASSERT(op->proc_id, node->rs[op->rs_id].rs_op_count > 0);
-        node->rs[op->rs_id].rs_op_count--;
-      }
       if (op->parent_FT)
         ft_free_op(op);
     } else {
@@ -406,7 +402,8 @@ void update_node_stage(Stage_Data* src_sd) {
   /* update the precommit pointer in the ROB */
   node_precommit_update();
 
-  node_issue_queue_update();
+  /* dispatch ops to the issue queue and issue ops into FUs */
+  issue_queue_update();
 
   /* get rid of the ops that are finished */
   node_retire();

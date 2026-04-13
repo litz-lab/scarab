@@ -59,6 +59,7 @@
 #define MAX_INT 0x7fffffff
 #define MAX_UNS64 0xffffffffffffffffULL
 #define MAX_UNS 0xffffffffU
+#define MAX_UNS16 0xffffU
 #define MAX_ADDR 0xffffffffffffffffULL
 
 #undef UNUSED

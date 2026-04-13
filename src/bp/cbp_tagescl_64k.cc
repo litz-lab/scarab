@@ -46,6 +46,9 @@ TAGE64K::TAGE64K(void) {
   tage_component_inter = 0;
   tage_component_tage = 0;
   tage_component_alt = 0;
+  btable = nullptr;
+  gtable[1] = nullptr;
+  gtable[BORN] = nullptr;
   reinit();
   // #ifdef PRINTSIZE
   // predictorsize ();
@@ -128,19 +131,12 @@ TAGE64K& TAGE64K::operator=(const TAGE64K& other) {
     Sstate.ltable[i].age = other.Sstate.ltable[i].age;
     Sstate.ltable[i].dir = other.Sstate.ltable[i].dir;
   }
-  memcpy(Sstate.GGEHL, other.Sstate.GGEHL, sizeof(Sstate.GGEHL));
-  memcpy(Sstate.PGEHL, other.Sstate.PGEHL, sizeof(Sstate.PGEHL));
   memcpy(Sstate.ghist, other.Sstate.ghist, sizeof(Sstate.ghist));
 
   memcpy(Bias, other.Bias, sizeof(Bias));
   memcpy(BiasSK, other.BiasSK, sizeof(BiasSK));
   memcpy(BiasBank, other.BiasBank, sizeof(BiasBank));
-  memcpy(LGEHL, other.LGEHL, sizeof(LGEHL));
-  memcpy(SGEHL, other.SGEHL, sizeof(SGEHL));
-  memcpy(TGEHL, other.TGEHL, sizeof(TGEHL));
 #ifdef IMLI
-  memcpy(IMGEHL, other.IMGEHL, sizeof(IMGEHL));
-  memcpy(IGEHL, other.IGEHL, sizeof(IGEHL));
   memcpy(IMHIST, other.IMHIST, sizeof(IMHIST));
   IMLIcount = other.IMLIcount;
 #endif
@@ -166,13 +162,8 @@ TAGE64K& TAGE64K::operator=(const TAGE64K& other) {
     btable[i].hyst = other.btable[i].hyst;
     btable[i].pred = other.btable[i].pred;
   }
-  for (int i = 1; i < NHIST + 1; ++i) {
-    for (int j = 0; j < NBANKLOW * (1 << LOGG); ++j) {
-      gtable[i][j].ctr = other.gtable[i][j].ctr;
-      gtable[i][j].tag = other.gtable[i][j].tag;
-      gtable[i][j].u = other.gtable[i][j].u;
-    }
-  }
+  memcpy(gtable[1], other.gtable[1], NBANKLOW * (1 << LOGG) * sizeof(cbp64_gentry));
+  memcpy(gtable[BORN], other.gtable[BORN], NBANKHIGH * (1 << LOGG) * sizeof(cbp64_gentry));
   TICK = other.TICK;
   branch_id = other.branch_id;
   Seed = other.Seed;
@@ -229,6 +220,10 @@ void TAGE64K::reinit() {
     logg[i] = LOGG;
   }
 
+  delete[] gtable[1];
+  delete[] gtable[BORN];
+  delete[] btable;
+
   gtable[1] = new cbp64_gentry[NBANKLOW * (1 << LOGG)];
   SizeTable[1] = NBANKLOW * (1 << LOGG);
 
@@ -256,7 +251,7 @@ void TAGE64K::reinit() {
   Seed = 0;
 
   for (int i = 0; i < HISTBUFFERLENGTH; i++)
-    Sstate.ghist[0] = 0;
+    Sstate.ghist[i] = 0;
   Sstate.ptghist = 0;
   updatethreshold = 35 << 3;
 
@@ -401,6 +396,7 @@ void TAGE64K::reinit() {
     WS[i] = 7;
     WT[i] = 7;
     WI[i] = 7;
+    WIM[i] = 7;
     WB[i] = 4;
   }
   for (int i = 0; i < NLOCAL; i++) {

@@ -226,7 +226,7 @@ void uop_generator_init(uint32_t num_cores) {
 
   Trace_Uop** tuop = trace_uop_bulk[0];
 
-  ctype_pin_inst nop_pi = create_dummy_nop(0, WPNM_FAKE_NOP);
+  ctype_pin_inst nop_pi = create_dummy_nop(0, WPNM_FAKE_NOP, DUMMY_NOP_SIZE);
   uns nop_nuop = generate_uops(0, &nop_pi, tuop);
   ASSERT(0, nop_nuop == 1);
   convert_t_uop_to_info(0, tuop[0], &fake_nop_template);
@@ -238,7 +238,7 @@ void uop_generator_init(uint32_t num_cores) {
   fake_nop_template.fake_inst = TRUE;
   fake_nop_template.fake_inst_reason = WPNM_FAKE_NOP;
 
-  ctype_pin_inst jmp_pi = create_dummy_jump(0, 0);
+  ctype_pin_inst jmp_pi = create_dummy_jump(0, 0, 0);
   uns jmp_nuop = generate_uops(0, &jmp_pi, tuop);
   ASSERT(0, jmp_nuop == 1);
   convert_t_uop_to_info(0, tuop[0], &fake_jmp_template);

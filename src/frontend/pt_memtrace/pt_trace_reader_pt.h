@@ -139,7 +139,7 @@ class TraceReaderPT : public TraceReader {
     InstInfo &_info = (use_info_a ? inst_info_a : inst_info_b);
     InstInfo &_prior = (use_info_a ? inst_info_b : inst_info_a);
     bool inserted_nop = false;
-    if (_prior.valid && !_prior.is_ctype_inst) {
+    if (_prior.valid && !_prior.fake_inst) {
       auto &ins = _prior;
       if (ins.ins) {
         if (XED_INS_Category(ins.ins) == XED_CATEGORY_NOP) {
@@ -157,11 +157,9 @@ class TraceReaderPT : public TraceReader {
       auto orig_category = ins.ins ? XED_INS_Category(ins.ins) : 0;
 
       if (orig_is_rep) {
-        patch_inst_ = create_dummy_nop(_prior.pc, WPNM_FAKE_NOP);
-        patch_inst_.size = orig_size;
-        patch_inst_.instruction_next_addr = _prior.pc + orig_size;
+        patch_inst_ = create_dummy_nop(_prior.pc, WPNM_FAKE_NOP, orig_size);
         _prior.info = &patch_inst_;
-        _prior.is_ctype_inst = true;
+        _prior.fake_inst = true;
         inserted_nop = true;
         if (_prior.pc == next_line.pc) {
           _info = _prior;
@@ -176,20 +174,16 @@ class TraceReaderPT : public TraceReader {
 
       if (_prior.valid && (!changes_cf || orig_category == XC(SYSCALL) || incorrect_branch) &&
           next_line.pc != _prior.pc + prior_size) {
-        patch_inst_ = create_dummy_jump(_prior.pc, next_line.pc);
-        patch_inst_.instruction_next_addr = next_line.pc;
-        patch_inst_.true_op_type = XED_ICLASS_JMP;
+        patch_inst_ = create_dummy_jump(_prior.pc, next_line.pc, XED_ICLASS_JMP);
         _prior.info = &patch_inst_;
-        _prior.is_ctype_inst = true;
+        _prior.fake_inst = true;
         inserted_nop = false;
         ++num_inserted_direct_brs;
         _prior.static_target = next_line.pc;
       } else if (!inserted_nop && orig_is_rep) {
-        patch_inst_ = create_dummy_nop(_prior.pc, WPNM_FAKE_NOP);
-        patch_inst_.size = orig_size;
-        patch_inst_.instruction_next_addr = _prior.pc + orig_size;
+        patch_inst_ = create_dummy_nop(_prior.pc, WPNM_FAKE_NOP, orig_size);
         _prior.info = &patch_inst_;
-        _prior.is_ctype_inst = true;
+        _prior.fake_inst = true;
         ++num_inserted_nops;
         if (_prior.pc == next_line.pc) {
           _info = _prior;
@@ -201,7 +195,7 @@ class TraceReaderPT : public TraceReader {
       ++num_inserted_nops;
     _info.pc = next_line.pc;
     _info.ins = xed_ins;
-    _info.is_ctype_inst = false;
+    _info.fake_inst = false;
     _info.pid = 1;
     _info.tid = 1;
     _info.target = 0;
@@ -223,7 +217,7 @@ class TraceReaderPT : public TraceReader {
       _info.mem_used[i] = true;
     }
     if (_prior.valid) {
-      if (_prior.is_ctype_inst)
+      if (_prior.fake_inst)
         _prior.taken = _info.pc != (_prior.pc + _prior.info->size);
       else
         _prior.taken = _info.pc != (_prior.pc + XED_INS_Size(_prior.ins));
@@ -241,9 +235,9 @@ class TraceReaderPT : public TraceReader {
     prev_to_new_bbl_address_map = _prev_to_new_bbl_address_map;
     has_trace_encodings_ = true;
     inst_info_a.valid = false;
-    inst_info_a.is_ctype_inst = false;
+    inst_info_a.fake_inst = false;
     inst_info_b.valid = false;
-    inst_info_b.is_ctype_inst = false;
+    inst_info_b.fake_inst = false;
     init("");
     initTrace();
   }

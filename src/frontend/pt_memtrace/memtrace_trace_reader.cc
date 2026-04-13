@@ -103,7 +103,7 @@ void TraceReader::init(const std::string& _trace) {
   invalid_info_.taken = false;
   invalid_info_.unknown_type = false;
   invalid_info_.valid = false;
-  invalid_info_.is_ctype_inst = false;
+  invalid_info_.fake_inst = false;
 
   if (_trace.size())
     traceFileIs(_trace);

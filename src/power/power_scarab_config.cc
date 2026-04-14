@@ -181,32 +181,8 @@ void power_print_system_params(std::ofstream& out) {
   ADD_XML_CORE_STAT(out, header, 0, "busy_cycles", POWER_CYCLE, "Scarab: McPAT ignores this");
 }
 
-void power_print_core_params(std::ofstream& out, uint32_t core_id) {
-  uns PIPELINE_DEPTH = DECODE_CYCLES + MAP_CYCLES + 1 + 1 + 1 + 1;  // icache, node, exec, retire
-
-  /* Scarab: theoretical peak ops per cycle */
-  uns32 peak_ops_per_cycle =
-      std::min(std::min(NUM_FUS, ISSUE_WIDTH), std::min(RS_FILL_WIDTH == 0 ? MAX_INT : RS_FILL_WIDTH, NODE_RET_WIDTH));
-  DEBUG(core_id, "peak_ops_per_cycle: %d\n", peak_ops_per_cycle);
-
-  double ops_per_cycle =
-      GET_TOTAL_STAT_EVENT(core_id, POWER_CYCLE)
-          ? ((double)GET_TOTAL_STAT_EVENT(core_id, POWER_OP)) / GET_TOTAL_STAT_EVENT(core_id, POWER_CYCLE)
-          : 0.0; /*Actual ops per cycle*/
-  DEBUG(core_id, "ops_per_cycle: %f\n", ops_per_cycle);
-
-  double OPC_TO_PEAK_OPC_RATIO = ops_per_cycle / peak_ops_per_cycle;
-  DEBUG(core_id, "OPC_TO_PEAK_OPC_RATIO: %f\n", OPC_TO_PEAK_OPC_RATIO);
-  ASSERTM(core_id, OPC_TO_PEAK_OPC_RATIO <= 1, "OPC_TO_PEAK_OPC_RATIO should be less than one\n");
-
+static void power_print_core_params_block(std::ofstream& out, uns pipeline_depth) {
   std::string header = "\t";
-
-  ADD_XML_COMPONENT(out, header, "system.core" + std::to_string(core_id), "core" + std::to_string(core_id), );
-
-  /*******************************************************************************************************************
-   * Core Params
-   *******************************************************************************************************************/
-
   ADD_XML_PARAM(out, header, "clock_rate", CHIP_FREQ_IN_MHZ, );
   ADD_XML_PARAM(out, header, "opt_local", 0, "for cores with unknow timing, set to 0 to force off the opt flag");
   ADD_XML_PARAM(out, header, "instruction_length", 32, );
@@ -259,7 +235,7 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
                     "integer_pipeline and floating_pipelines, if the floating_pipelines is 0, "
                     "then the pipeline is shared");
   ADD_XML_PARAM_str(out, header, "pipeline_depth",
-                    std::to_string(PIPELINE_DEPTH) + "," + std::to_string(PIPELINE_DEPTH),
+                    std::to_string(pipeline_depth) + "," + std::to_string(pipeline_depth),
                     "pipeline depth of int and fp, if pipeline is shared, the "
                     "second number is the average cycles of fp ops issue and "
                     "exe unit"); /*Scarab: FP pipeline depth is not used*/
@@ -344,11 +320,10 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
                 "of Dcache which is connected to LSU. dual-pumped Dcache can "
                 "be used to save the extra read/write ports");
   ADD_XML_PARAM(out, header, "RAS_size", CRS_ENTRIES, "Size of return address stack");
+}
 
-  /*******************************************************************************************************************
-   * Core Stats
-   *******************************************************************************************************************/
-
+static void power_print_core_stats_block(std::ofstream& out, uint32_t core_id, double opc_to_peak_opc_ratio) {
+  std::string header = "\t";
   /* general stats, defines simulation periods; require total, idle, and busy
    * cycles for sanity check please note: if target architecture is X86, then
    * all the instrucions refer to (fused) micro-ops*/
@@ -363,7 +338,7 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
   ADD_XML_CORE_STAT(out, header, core_id, "committed_int_instructions", POWER_COMMITTED_INT_OP, );
   ADD_XML_CORE_STAT(out, header, core_id, "committed_fp_instructions", POWER_COMMITTED_FP_OP, );
 
-  ADD_XML_STAT(out, header, "pipeline_duty_cycle", OPC_TO_PEAK_OPC_RATIO,
+  ADD_XML_STAT(out, header, "pipeline_duty_cycle", opc_to_peak_opc_ratio,
                "<=1, runtime_ipc/peak_ipc; averaged for all cores if homogenous");
 
   /* the following cycle stats are used for heterogeneouse cores only, please
@@ -442,12 +417,11 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
 
   /* Note: McPat does not use number_of_BPT param. */
   ADD_XML_PARAM(out, header, "number_of_BPT", 2, );
+}
 
-  /***********************************************************************/
-  header = "\t\t";
-
+static void power_print_core_predictor(std::ofstream& out, uint32_t core_id) {
+  std::string header = "\t\t";
   ADD_XML_COMPONENT(out, header, "system.core" + std::to_string(core_id) + ".predictor", "PBT", );
-
   /*branch predictor; tournament predictor see Alpha implementation*/
   // TODO: these bp params need to look like the new TAGE predictor that scarab has
   ADD_XML_PARAM_str(out, header, "local_predictor_size", "10,3", );
@@ -465,9 +439,10 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
    *
    * Scarab: do we need to update the params to look like this?*/
   END_OF_COMPONENT(out, header);
+}
 
-  /***********************************************************************/
-
+static void power_print_core_itlb(std::ofstream& out, uint32_t core_id) {
+  std::string header = "\t\t";
   ADD_XML_COMPONENT(out, header, "system.core" + std::to_string(core_id) + ".itlb", "itlb", );
   ADD_XML_PARAM(out, header, "number_entries", 128,
                 "Scarab: models perfect tlb, this number is hard coded in the power file");
@@ -481,11 +456,11 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
    * miss, which is actually a replacement */
 
   END_OF_COMPONENT(out, header);
+}
 
-  /***********************************************************************/
-
+static void power_print_core_icache(std::ofstream& out, uint32_t core_id) {
+  std::string header = "\t\t";
   ADD_XML_COMPONENT(out, header, "system.core" + std::to_string(core_id) + ".icache", "icache", );
-
   /* Note: icache cycles (scarab assumes 1, that may be too fast for McPAT,
    * bug #25). */
   ADD_XML_PARAM_str(out, header, "icache_config",
@@ -513,9 +488,10 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
   ADD_XML_STAT(out, header, "conflicts", 0, );
 
   END_OF_COMPONENT(out, header);
+}
 
-  /***********************************************************************/
-
+static void power_print_core_dtlb(std::ofstream& out, uint32_t core_id) {
+  std::string header = "\t\t";
   ADD_XML_COMPONENT(out, header, "system.core" + std::to_string(core_id) + ".dtlb", "dtlb", );
   ADD_XML_PARAM(out, header, "number_entries", 128, "dual threads");
   ADD_XML_CORE_STAT(out, header, core_id, "total_accesses", POWER_DTLB_ACCESS, );
@@ -525,9 +501,10 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
   ADD_XML_STAT(out, header, "conflicts", 0, );
 
   END_OF_COMPONENT(out, header);
+}
 
-  /***********************************************************************/
-
+static void power_print_core_dcache(std::ofstream& out, uint32_t core_id) {
+  std::string header = "\t\t";
   ADD_XML_COMPONENT(out, header, "system.core" + std::to_string(core_id) + ".dcache", "dcache", );
   /*all the buffer related are optional*/
   ADD_XML_PARAM_str(out, header, "dcache_config",
@@ -559,9 +536,10 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
   ADD_XML_STAT(out, header, "conflicts", 0, );
 
   END_OF_COMPONENT(out, header);
+}
 
-  /***********************************************************************/
-
+static void power_print_core_btb(std::ofstream& out, uint32_t core_id) {
+  std::string header = "\t\t";
   /* Note: McPat does not use number_of_BTB param. */
   ADD_XML_PARAM(out, header, "number_of_BTB", 1, );
   ADD_XML_COMPONENT(out, header, "system.core" + std::to_string(core_id) + ".BTB", "BTB", );
@@ -580,10 +558,38 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
   ADD_XML_CORE_STAT(out, header, core_id, "write_accesses", POWER_BTB_WRITE, );
 
   END_OF_COMPONENT(out, header);
+}
 
-  /***********************************************************************/
+void power_print_core_params(std::ofstream& out, uint32_t core_id) {
+  uns pipeline_depth = DECODE_CYCLES + MAP_CYCLES + 1 + 1 + 1 + 1;  // icache, node, exec, retire
 
-  header = "\t";
+  /* Scarab: theoretical peak ops per cycle */
+  uns32 peak_ops_per_cycle =
+      std::min(std::min(NUM_FUS, ISSUE_WIDTH), std::min(RS_FILL_WIDTH == 0 ? MAX_INT : RS_FILL_WIDTH, NODE_RET_WIDTH));
+  DEBUG(core_id, "peak_ops_per_cycle: %d\n", peak_ops_per_cycle);
+
+  double ops_per_cycle =
+      GET_TOTAL_STAT_EVENT(core_id, POWER_CYCLE)
+          ? ((double)GET_TOTAL_STAT_EVENT(core_id, POWER_OP)) / GET_TOTAL_STAT_EVENT(core_id, POWER_CYCLE)
+          : 0.0; /*Actual ops per cycle*/
+  DEBUG(core_id, "ops_per_cycle: %f\n", ops_per_cycle);
+
+  double opc_to_peak_opc_ratio = ops_per_cycle / peak_ops_per_cycle;
+  DEBUG(core_id, "OPC_TO_PEAK_OPC_RATIO: %f\n", opc_to_peak_opc_ratio);
+  ASSERTM(core_id, opc_to_peak_opc_ratio <= 1, "OPC_TO_PEAK_OPC_RATIO should be less than one\n");
+
+  std::string header = "\t";
+  ADD_XML_COMPONENT(out, header, "system.core" + std::to_string(core_id), "core" + std::to_string(core_id), );
+
+  power_print_core_params_block(out, pipeline_depth);
+  power_print_core_stats_block(out, core_id, opc_to_peak_opc_ratio);
+  power_print_core_predictor(out, core_id);
+  power_print_core_itlb(out, core_id);
+  power_print_core_icache(out, core_id);
+  power_print_core_dtlb(out, core_id);
+  power_print_core_dcache(out, core_id);
+  power_print_core_btb(out, core_id);
+
   END_OF_COMPONENT(out, header);
 }
 

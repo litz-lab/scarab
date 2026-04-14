@@ -831,6 +831,12 @@ void bp_retire_op(Bp_Data* bp_data, Op* op) {
   bp_data->bp->retire_func(op);
   if (bp_data->bp_l0)
     bp_data->bp_l0->retire_func(op);
+
+  if ((op->inst_info->table_info.cf_type == CF_CBR ||
+       op->inst_info->table_info.cf_type == CF_REP) &&
+      op->bp_pred_main.mispred) {
+      STAT_EVENT(op->proc_id, PURE_BRANCH_MISPRED);
+  }
 }
 
 /******************************************************************************/

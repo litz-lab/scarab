@@ -522,6 +522,8 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   if (!bp_data->bp_id) {
     DEBUG_BTB(bp_data->proc_id, "Initializing BLOCK_BTB\n");
     ASSERT(bp_data->proc_id, BTB_NUM_BRSLOT > 0);
+    ASSERT(bp_data->proc_id, BTB_BLOCK_SIZE > 0);
+    ASSERT(bp_data->proc_id, (1 << LOG2(BTB_BLOCK_SIZE)) == BTB_BLOCK_SIZE);
     init_cache(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BLK_BTB_ENTRY_SIZE, REPL_TRUE_LRU);
   } else  // points to the primary BP's shared BTB
     bp_data->btb = primary_bp->btb;
@@ -552,8 +554,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
       btb_index_addr = bp_data->prev_cf_btb_index_addr;
     }
   }
-  uns64 _blk_idx = (op->inst_info->addr - btb_index_addr) / BTB_BLOCK_SIZE;
-  btb_index_addr += BTB_BLOCK_SIZE * _blk_idx;
+  btb_index_addr += (op->inst_info->addr - btb_index_addr) & ~(BTB_BLOCK_SIZE - 1);
   ASSERT(bp_data->proc_id, btb_index_addr <= op->inst_info->addr);
 
   // Store index for update

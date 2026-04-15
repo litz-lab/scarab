@@ -55,8 +55,6 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FRONTEND, ##args)
 
-static void collect_op_stats(Op* op);
-
 extern int op_type_delays[];
 
 void frontend_init() {
@@ -118,7 +116,6 @@ Flag frontend_can_fetch_op(uns proc_id, uns bp_id) {
 
 void frontend_fetch_op(uns proc_id, uns bp_id, Op* op) {
   frontend->fetch_op(proc_id, bp_id, op);
-  collect_op_stats(op);
 }
 
 void frontend_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr) {
@@ -141,7 +138,7 @@ void frontend_retire(uns proc_id, uns64 inst_uid) {
   DEBUG(proc_id, "Retiring inst_uid %lld end\n", inst_uid);
 }
 
-static void collect_op_stats(Op* op) {
+void collect_op_stats(Op* op) {
   if (!op->off_path) {
     STAT_EVENT(op->proc_id, ST_OP_ONPATH);
     if (op->eom)

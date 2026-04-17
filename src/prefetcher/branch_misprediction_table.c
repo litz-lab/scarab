@@ -197,3 +197,16 @@ void register_loop_range(Addr start, Addr end) {
   }
   loop_ranges[loop_range_count++] = (Loop_Range){start, end};
 }
+
+void reset_branch_misprediction_counts(void) {
+  if (BRANCH_MISPREDICTION_TABLE_SIZE != 0) return;
+
+  for (uns i = 0; i < inf_size_bm_table.buckets; i++) {
+    for (Hash_Table_Entry* e = inf_size_bm_table.entries[i]; e; e = e->next) {
+      Bm_Info* info = (Bm_Info*)e->data;
+      info->branch_count         = 0;
+      info->branch_mispred_count = 0;
+      // is_data_dep, is_in_loop는 유지
+    }
+  }
+}

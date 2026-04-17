@@ -73,6 +73,8 @@
 #include "thread.h"
 #include "trigger.h"
 
+#include "prefetcher/branch_misprediction_table.h"
+
 /**************************************************************************************/
 /* Macros */
 
@@ -218,6 +220,7 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
       warmup_dump_done[i] = TRUE;
     }
     period_last_cycle_count = cycle_count;
+    reset_branch_misprediction_counts();   // ← 추가
   }
 
   /* print heartbeat message if necessary */

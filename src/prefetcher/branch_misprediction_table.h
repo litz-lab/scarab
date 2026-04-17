@@ -25,5 +25,6 @@ void increment_branch_mispredictions(Addr pc);
 void count_h2p_branches(uns8 proc_id);
 void set_branch_data_dep(Addr pc);
 void register_loop_range(Addr loop_start, Addr loop_end);
+void reset_branch_misprediction_counts(void);
 
 #endif /* #ifndef __BRANCH_MISPREDICTION_TABLE_H__ */

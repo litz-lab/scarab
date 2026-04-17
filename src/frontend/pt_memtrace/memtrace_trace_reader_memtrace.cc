@@ -64,7 +64,7 @@ namespace {
 // Ensures instr_free on every exit from getNextInstruction__ (loop break, goto PATCH_REP, return).
 struct DrInstProbe {
   void* dcontext;
-  instr_t instr;
+  instr_t instr = {};
   explicit DrInstProbe(void* dc) : dcontext(dc) { instr_init(dc, &instr); }
   ~DrInstProbe() { instr_free(dcontext, &instr); }
   DrInstProbe(const DrInstProbe&) = delete;
@@ -306,8 +306,8 @@ TraceReaderMemtrace::~TraceReaderMemtrace() {
 }
 
 void TraceReaderMemtrace::init(const std::string& _trace) {
-  memset(&mt_info_a_, 0, sizeof(mt_info_a_));
-  memset(&mt_info_b_, 0, sizeof(mt_info_b_));
+  mt_info_a_ = {};
+  mt_info_b_ = {};
   mt_info_a_.custom_op = CustomOp::NONE;
   mt_info_a_.custom_op = CustomOp::NONE;
   mt_info_b_.custom_op = CustomOp::NONE;
@@ -902,8 +902,7 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
   auto ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
   if (mt_ref_.instr.encoding_is_new) {
     assert(predecoded != nullptr);
-    ctype_pin_inst cinst;
-    memset(&cinst, 0, sizeof(cinst));
+    ctype_pin_inst cinst = {};
 
     fill_in_basic_info(&cinst, predecoded, mt_ref_.instr.size, mt_ref_.instr.type);
     add_dependency_info(&cinst, predecoded);
@@ -970,11 +969,13 @@ void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t*
     if (!unknown_type) {
       xed_error_enum_t xed_decode_res = xed_decode(&xed_inst, loc, isize);
       if (xed_decode_res != XED_ERROR_NONE) {
+        assert(!trace_has_encodings_ || !"decode should not fail with trace-provided encodings");
         warn("XED decode error for 0x%lx: %s %u, replacing with nop\n", mt_ref_.instr.addr,
              xed_error_enum_t2str(xed_decode_res), isize);
         xed_inst = *makeNop(isize);
       }
     } else {
+      assert(!trace_has_encodings_ || !"should not reach unknown_type path with trace-provided encodings");
       xed_inst = *makeNop(isize);
     }
 

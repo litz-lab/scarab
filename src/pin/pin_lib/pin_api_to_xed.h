@@ -44,7 +44,7 @@ enum class CustomOp : uint8_t { NONE, PREFETCH_CODE };
 struct InstInfo {
   uint64_t                  pc;           // instruction address
   union {
-    const xed_decoded_inst_t* ins;  // XED info
+    const xed_decoded_inst_t* ins = nullptr;  // XED info
     const ctype_pin_inst* info;
   };
   uint64_t                  pid;          // process ID

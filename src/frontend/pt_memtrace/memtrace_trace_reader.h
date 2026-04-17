@@ -94,16 +94,16 @@ class TraceReader {
  protected:
   std::unique_ptr<xed_decoded_inst_t> makeNop(uint8_t _length);
   std::string trace_;
-  InstInfo info_;
-  InstInfo invalid_info_;
-  bool trace_ready_;
-  xed_state_t xed_state_;
-  std::vector<std::tuple<uint64_t, uint64_t, uint8_t*>> sections_;
-  std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, std::unique_ptr<xed_decoded_inst_t>>> xed_map_;
-  int warn_not_found_;
-  uint64_t skipped_;
-  uint32_t buf_size_;
-  std::deque<InstInfo> ins_buffer;
+  InstInfo info_ = {};
+  InstInfo invalid_info_ = {};
+  bool trace_ready_ = false;
+  xed_state_t xed_state_ = {};
+  std::vector<std::tuple<uint64_t, uint64_t, uint8_t*>> sections_ = {};
+  std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, std::unique_ptr<xed_decoded_inst_t>>> xed_map_ = {};
+  int warn_not_found_ = 0;
+  uint64_t skipped_ = 0;
+  uint32_t buf_size_ = 0;
+  std::deque<InstInfo> ins_buffer = {};
 
   void init(const std::string& _trace);
   void fillCache(uint64_t _vAddr, uint8_t _reported_size, uint8_t* inst_bytes = NULL);

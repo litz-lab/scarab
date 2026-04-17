@@ -68,17 +68,17 @@ class IDQ_Stage {
   int get_recovery_cycle() const;
 
  private:
-  uns8 proc_id;
-  int capacity;
+  uns8 proc_id = 0;
+  int capacity = 0;
   std::vector<Op*> ops;
-  int occupied_count;
-  int head;
-  int tail;
-  Counter next_op_num;
-  int recovery_cycle;
+  int occupied_count = 0;
+  int head = 0;
+  int tail = 0;
+  Counter next_op_num = 0;
+  int recovery_cycle = 0;
 
   /* the IDQ outpur stage data */
-  Stage_Data idq_sd;
+  Stage_Data idq_sd = {};
   // Backing storage for `idq_sd.ops` (avoids explicit per-init malloc).
   // Note: `ISSUE_WIDTH` is a parameter and may not be a compile-time constant.
   std::vector<Op*> idq_ops;

@@ -106,7 +106,7 @@ typedef struct Uop_Cache_Stage_Cpp_struct {
    * all lines are cleared when the entire FT has been consumed by the icache stage
    */
   std::vector<Uop_Cache_Data> lookup_buffer;
-  uns num_looked_up_lines;
+  uns num_looked_up_lines = 0;
 } Uop_Cache_Stage_Cpp;
 
 /**************************************************************************************/
@@ -153,7 +153,7 @@ void init_uop_cache_stage(uns8 proc_id, const char* name) {
   DEBUG(proc_id, "Initializing %s stage\n", name);
 
   ASSERT(0, uc);
-  memset(uc, 0, sizeof(Uop_Cache_Stage));
+  *uc = {};
 
   uc->proc_id = proc_id;
   // `name` is expected to be a long-lived string (caller passes string literals).

@@ -180,7 +180,7 @@ bool excp_main_loop(int sig) {
   bool need_scarab_cmd                 = false;
 
   while(true) {
-    Scarab_To_Pin_Msg cmd;
+    Scarab_To_Pin_Msg cmd = {};
     cmd.type = FE_NULL;
 
     if(need_scarab_cmd) {

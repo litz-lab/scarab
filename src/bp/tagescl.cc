@@ -41,7 +41,7 @@ std::vector<std::unique_ptr<Tage_SC_L_Base>> tagescl_predictors;
 
 // Helper function for producing a Branch_Type struct.
 Branch_Type get_branch_type(uns proc_id, Cf_Type cf_type) {
-  Branch_Type br_type;
+  Branch_Type br_type = {};
   switch (cf_type) {
     case CF_BR:
     case CF_CALL:

@@ -213,7 +213,7 @@ class UpperBitTable {
 
 template <size_t N>
 std::array<size_t, N> make_initialized_lru_order() {
-  std::array<size_t, N> ret;
+  std::array<size_t, N> ret = {};
   std::iota(ret.begin(), ret.end(), 0);
   return ret;
 }

@@ -53,7 +53,6 @@
 #include "prefetcher/eip.h"
 #include "prefetcher/fdip.h"
 #include "prefetcher/pref_common.h"
-#include "prefetcher/branch_misprediction_table.h" 
 
 #include "decoupled_frontend.h"
 #include "freq.h"
@@ -142,7 +141,6 @@ void cmp_init(uns mode) {
 
       init_fdip(proc_id, bp_id, &cmp_model.icache_stage[proc_id]);
     }
-    init_branch_misprediction_table(proc_id);
     cmp_set_all_data(proc_id, 0);
     init_eip(proc_id);
     init_djolt(proc_id);
@@ -330,7 +328,6 @@ void cmp_per_core_done(uns8 proc_id) {
   stats_per_core_collect(proc_id);
   if (PREF_FRAMEWORK_ON)
     pref_per_core_done(proc_id);
-  count_h2p_branches(proc_id);
 }
 /**************************************************************************************/
 /* cmp_wake: */

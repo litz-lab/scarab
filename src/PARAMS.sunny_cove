@@ -252,4 +252,3 @@
 --mem_obey_store_dep            1
 
 --fdip_dual_path_pref_uoc_online_enable 1
---perfect_bp                    1

@@ -68,6 +68,110 @@
 
 #include "bp/bp_table.def"
 
+#include "libs/hash_lib.h"
+
+typedef struct { 
+  Addr pc; 
+  Counter exec_count, mispred_count; 
+} Branch_PC_Stats;
+
+static Hash_Table branch_pc_stats_table;
+static Flag branch_pc_stats_inited = FALSE;
+
+#define H2P_MIN_EXEC    5000
+#define H2P_MIN_MISPRED 333
+/* accuracy < 99% ⟺ mispred_rate > 0.01 */
+
+void clear_branch_pc_stats(void) {
+    fprintf(stderr, "[H2P] clear called: inited=%d count=%d\n",
+            branch_pc_stats_inited,
+            branch_pc_stats_inited ? branch_pc_stats_table.count : -1);
+    fflush(stderr);
+    if (branch_pc_stats_inited) {
+        hash_table_clear(&branch_pc_stats_table);
+    }
+}
+
+static void dump_one_pc_entry(void* data, void* arg) {
+    Branch_PC_Stats* s = (Branch_PC_Stats*)data;
+    FILE* f = (FILE*)arg;
+
+    if (s->exec_count    < H2P_MIN_EXEC)    return;
+    if (s->mispred_count < H2P_MIN_MISPRED) return;
+    double mispred_rate = (double)s->mispred_count / (double)s->exec_count;
+    if (mispred_rate <= 0.01) return;
+
+    double accuracy = 1.0 - mispred_rate;
+
+    fprintf(f, "0x%llx,%llu,%llu,%.6f\n",
+            (unsigned long long)s->pc,
+            (unsigned long long)s->exec_count,
+            (unsigned long long)s->mispred_count,
+            accuracy);
+}
+
+static void sum_h2p_mispred(void* data, void* arg) {
+    Branch_PC_Stats* s = (Branch_PC_Stats*)data;
+    Counter* total = (Counter*)arg;
+
+    if (s->exec_count    < H2P_MIN_EXEC)    return;
+    if (s->mispred_count < H2P_MIN_MISPRED) return;
+    if ((double)s->mispred_count / (double)s->exec_count <= 0.01) return;
+
+    *total += s->mispred_count;
+}
+
+static void count_h2p(void* data, void* arg) {
+    Branch_PC_Stats* s = (Branch_PC_Stats*)data;
+    Counter* cnt = (Counter*)arg;
+
+    if (s->exec_count    < H2P_MIN_EXEC)    return;
+    if (s->mispred_count < H2P_MIN_MISPRED) return;
+    if ((double)s->mispred_count / (double)s->exec_count <= 0.01) return;
+
+    (*cnt)++;
+}
+
+void dump_branch_pc_stats(uns8 proc_id) {
+    static Flag dumped[64] = {FALSE};
+    fprintf(stderr, "[H2P] dump called: proc=%u already_dumped=%d inited=%d count=%d\n",
+            proc_id, dumped[proc_id], branch_pc_stats_inited,
+            branch_pc_stats_inited ? branch_pc_stats_table.count : -1);
+    fflush(stderr);
+    if (dumped[proc_id]) return;
+    dumped[proc_id] = TRUE;
+    if (!branch_pc_stats_inited) return;
+    char fn[256];
+    snprintf(fn, sizeof(fn), "h2p_branches.%u.csv", proc_id);
+    FILE* f = fopen(fn, "w");
+    if (!f) return;
+
+    fprintf(f, "pc,exec_count,mispred_count,accuracy\n");
+    hash_table_scan(&branch_pc_stats_table, dump_one_pc_entry, f);
+
+    Counter total_h2p_mispred = 0;
+    hash_table_scan(&branch_pc_stats_table, sum_h2p_mispred, &total_h2p_mispred);
+    fprintf(f, "TOTAL_H2P_MISPRED,%llu\n", (unsigned long long)total_h2p_mispred);
+
+    Counter total_h2p_cnt = 0;
+    hash_table_scan(&branch_pc_stats_table, count_h2p, &total_h2p_cnt);
+    fprintf(f, "TOTAL_H2P_CNT,%llu\n", (unsigned long long)total_h2p_cnt);
+
+    for (Counter i = 0; i < total_h2p_mispred; i++)
+      STAT_EVENT(proc_id, H2P_BRANCH_MISPRED);
+
+    for (Counter i = 0; i < total_h2p_cnt; i++)
+      STAT_EVENT(proc_id, H2P_BRANCH_CNT);
+
+    fclose(f);
+}
+
+static void init_branch_pc_stats(void) {
+    init_hash_table(&branch_pc_stats_table, "branch_pc_stats",
+                    16384, sizeof(Branch_PC_Stats));
+    branch_pc_stats_inited = TRUE;
+}
+
 /******************************************************************************/
 /* Collect stats for tcache */
 
@@ -832,10 +936,25 @@ void bp_retire_op(Bp_Data* bp_data, Op* op) {
   if (bp_data->bp_l0)
     bp_data->bp_l0->retire_func(op);
 
-  if ((op->inst_info->table_info.cf_type == CF_CBR ||
-       op->inst_info->table_info.cf_type == CF_REP) &&
-      op->bp_pred_main.mispred) {
-      STAT_EVENT(op->proc_id, PURE_BRANCH_MISPRED);
+  if (op->inst_info->table_info.cf_type == CF_CBR ||
+    op->inst_info->table_info.cf_type == CF_REP) {
+
+    if (!branch_pc_stats_inited) init_branch_pc_stats();
+
+    Flag new_entry;
+    Branch_PC_Stats* s = (Branch_PC_Stats*)hash_table_access_create(
+        &branch_pc_stats_table, op->inst_info->addr, &new_entry);
+    if (new_entry) {
+        s->pc = op->inst_info->addr; 
+        s->exec_count = 0;
+        s->mispred_count = 0;
+    }
+    s->exec_count++;
+
+    if (op->bp_pred_main.mispred) {
+        s->mispred_count++;
+        STAT_EVENT(op->proc_id, PURE_BRANCH_MISPRED);
+    }
   }
 }
 

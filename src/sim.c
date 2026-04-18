@@ -219,8 +219,8 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
       period_last_inst_count[i] = inst_count_fetched[i];
       warmup_dump_done[i] = TRUE;
     }
+    clear_branch_pc_stats();
     period_last_cycle_count = cycle_count;
-    reset_branch_misprediction_counts();   // ← 추가
   }
 
   /* print heartbeat message if necessary */
@@ -758,6 +758,7 @@ void full_sim() {
           fdip_stats(proc_id);
         if (EIP_ENABLE)
           print_eip_stats(proc_id);
+        dump_branch_pc_stats(proc_id);
         if (PERIODIC_DUMP == FALSE)
           dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
         sim_done[proc_id] = TRUE;

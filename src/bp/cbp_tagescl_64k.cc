@@ -46,20 +46,13 @@ TAGE64K::TAGE64K(void) {
   tage_component_inter = 0;
   tage_component_tage = 0;
   tage_component_alt = 0;
-  btable = nullptr;
-  gtable[1] = nullptr;
-  gtable[BORN] = nullptr;
   reinit();
   // #ifdef PRINTSIZE
   // predictorsize ();
   // #endif
 }
 
-TAGE64K::~TAGE64K() {
-  delete[] gtable[1];
-  delete[] gtable[BORN];
-  delete[] btable;
-}
+TAGE64K::~TAGE64K() = default;
 
 TAGE64K& TAGE64K::operator=(const TAGE64K& other) {
   memcpy(Im, other.Im, sizeof(Im));
@@ -101,8 +94,8 @@ TAGE64K& TAGE64K::operator=(const TAGE64K& other) {
   Pstate.AltBank = other.Pstate.AltBank;
   Pstate.on_path_ptghist = other.Pstate.on_path_ptghist;
   Pstate.on_path_phist = other.Pstate.on_path_phist;
-  memcpy(Pstate.GI.get(), other.Pstate.GI.get(), (NHIST + 1) * sizeof(int));
-  memcpy(Pstate.GTAG.get(), other.Pstate.GTAG.get(), (NHIST + 1) * sizeof(uint));
+  Pstate.GI = other.Pstate.GI;
+  Pstate.GTAG = other.Pstate.GTAG;
 
   Sstate.ptghist = other.Sstate.ptghist;
   Sstate.phist = other.Sstate.phist;
@@ -162,8 +155,14 @@ TAGE64K& TAGE64K::operator=(const TAGE64K& other) {
     btable[i].hyst = other.btable[i].hyst;
     btable[i].pred = other.btable[i].pred;
   }
-  memcpy(gtable[1], other.gtable[1], NBANKLOW * (1 << LOGG) * sizeof(cbp64_gentry));
-  memcpy(gtable[BORN], other.gtable[BORN], NBANKHIGH * (1 << LOGG) * sizeof(cbp64_gentry));
+  gtable_low = other.gtable_low;
+  gtable_high = other.gtable_high;
+  gtable[1] = gtable_low.data();
+  gtable[BORN] = gtable_high.data();
+  for (int i = BORN + 1; i <= NHIST; i++)
+    gtable[i] = gtable[BORN];
+  for (int i = 2; i <= BORN - 1; i++)
+    gtable[i] = gtable[1];
   TICK = other.TICK;
   branch_id = other.branch_id;
   Seed = other.Seed;
@@ -220,21 +219,19 @@ void TAGE64K::reinit() {
     logg[i] = LOGG;
   }
 
-  delete[] gtable[1];
-  delete[] gtable[BORN];
-  delete[] btable;
-
-  gtable[1] = new cbp64_gentry[NBANKLOW * (1 << LOGG)];
+  gtable_low.assign(NBANKLOW * (1 << LOGG), cbp64_gentry{});
   SizeTable[1] = NBANKLOW * (1 << LOGG);
 
-  gtable[BORN] = new cbp64_gentry[NBANKHIGH * (1 << LOGG)];
+  gtable_high.assign(NBANKHIGH * (1 << LOGG), cbp64_gentry{});
   SizeTable[BORN] = NBANKHIGH * (1 << LOGG);
 
+  gtable[1] = gtable_low.data();
+  gtable[BORN] = gtable_high.data();
   for (int i = BORN + 1; i <= NHIST; i++)
     gtable[i] = gtable[BORN];
   for (int i = 2; i <= BORN - 1; i++)
     gtable[i] = gtable[1];
-  btable = new cbp64_bentry[1 << LOGB];
+  btable.assign(1 << LOGB, cbp64_bentry{});
 
   for (int i = 1; i <= NHIST; i++) {
     Sstate.ch_i[i].init(m[i], (logg[i]));

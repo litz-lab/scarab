@@ -204,23 +204,21 @@ struct PredictorStates {
   int on_path_ptghist = 0;
   long long on_path_phist = 0;
 
-  // regular pointer incurs Segmentation fault + automatic memory management
-  std::unique_ptr<int[]> GI;     // hashed index set for gtable
-  std::unique_ptr<uint[]> GTAG;  // hashed tag set for gtable
+  // Hashed index/tag sets for gtable. std::vector owns its storage and value-
+  // initializes to zero, so no explicit new/delete or make_unique is needed.
+  std::vector<int> GI;     // hashed index set for gtable
+  std::vector<uint> GTAG;  // hashed tag set for gtable
 
-  // Constructor
   PredictorStates(bool snapshot = false) {
     init();
     int size = snapshot ? NOSKIPCNT : (NHIST + 1);
-    GI = std::make_unique<int[]>(size);
-    GTAG = std::make_unique<uint[]>(size);
+    GI.assign(size, 0);
+    GTAG.assign(size, 0);
   }
 
-  // Move constructor & assignment
   PredictorStates(PredictorStates&& other) noexcept = default;
   PredictorStates& operator=(PredictorStates&& other) noexcept = default;
 
-  // Delete copy constructor and assignment
   PredictorStates(const PredictorStates&) = delete;
   PredictorStates& operator=(const PredictorStates&) = delete;
 
@@ -612,9 +610,13 @@ class TAGE64K {
   int LTAG;  // tag on the loop predictor
   // ALT
   int8_t use_alt_on_na[SIZEUSEALT] = {};  // N: counters to choose between longest match and second longest match on TAGE
-  // TAGE
-  cbp64_bentry* btable = nullptr;              // N: bimodal TAGE table
-  cbp64_gentry* gtable[NHIST + 1] = {};   // N: tagged TAGE tables
+  // TAGE. btable/gtable_{low,high} own their storage via std::vector so that
+  // construction/destruction and deep copy are handled without explicit
+  // new/delete. gtable[] holds non-owning row pointers into that storage.
+  std::vector<cbp64_bentry> btable;       // N: bimodal TAGE table storage
+  std::vector<cbp64_gentry> gtable_low;   // N: backing storage for short-history TAGE tables
+  std::vector<cbp64_gentry> gtable_high;  // N: backing storage for long-history TAGE tables
+  cbp64_gentry* gtable[NHIST + 1] = {};   // N: tagged TAGE tables (non-owning row pointers)
 
   // utility variables
   int TICK;  // N: for the reset of the u counter

@@ -62,7 +62,7 @@ class Fake_Scarab {
   Process_Runner          pintool_process_;
   std::unique_ptr<Server> server_communicator_ = nullptr;
 
-  ScarabOpBuffer_type       op_buffer_ = {};
+  ScarabOpBuffer_type op_buffer_ = {};
   std::deque<compressed_op> fetched_ops_ = {};
 };
 

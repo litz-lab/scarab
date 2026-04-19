@@ -188,18 +188,19 @@ struct PredictorStates {
   int LHIT = 0;           // hitting way in LOOP predictor
   bool LVALID = false;    // validity of LOOP predictor prediction
   // TAGE
-  bool pred_taken = false;        // final prediction
-  bool tage_pred = false;         // prediction of TAGE: one of LongestMatchPred or alttaken
-  bool pred_inter = false;        // intermediate result: one of TAGE or LOOP
-  bool LongestMatchPred = false;  // prediction of selected bank which has the longest history length among hit banks in TAGE
-  bool HighConf = false;          // Set high confidence when 2*|ctr + 1| >= 7
-  bool MedConf = false;           // Set med confidence when 2*|ctr + 1| == 5
-  bool LowConf = false;           // Set low confidence when 2*|ctr + 1| == 1
-  int HitBank = 0;                // index of the bank with the longest history among matching tags in TAGE table
+  bool pred_taken = false;  // final prediction
+  bool tage_pred = false;   // prediction of TAGE: one of LongestMatchPred or alttaken
+  bool pred_inter = false;  // intermediate result: one of TAGE or LOOP
+  bool LongestMatchPred =
+      false;              // prediction of selected bank which has the longest history length among hit banks in TAGE
+  bool HighConf = false;  // Set high confidence when 2*|ctr + 1| >= 7
+  bool MedConf = false;   // Set med confidence when 2*|ctr + 1| == 5
+  bool LowConf = false;   // Set low confidence when 2*|ctr + 1| == 1
+  int HitBank = 0;        // index of the bank with the longest history among matching tags in TAGE table
   // ALT
-  bool alttaken = false;          // prediction of alternative predictor
-  bool AltConf = false;           // Set med confidence when 2*|ctr + 1| > 1
-  int AltBank = 0;                // index of the bank with 2nd longest history among matching tags in TAGE table
+  bool alttaken = false;  // prediction of alternative predictor
+  bool AltConf = false;   // Set med confidence when 2*|ctr + 1| > 1
+  int AltBank = 0;        // index of the bank with 2nd longest history among matching tags in TAGE table
   // We are using on-path history as a seed for MYRANDOM() to ensure deterministic behavior.
   // Using both on/off-path history info should not change entropy of MYRANDOM() substantially
   int on_path_ptghist = 0;
@@ -284,9 +285,9 @@ struct SpeculativeStatesBase {
   // folded global history using cyclic shift register to generate i'th TAGE tag
   std::array<std::array<cbp64_folded_history, NHIST + 1>, 2> ch_t = {};
   // SC
-  long long GHIST = 0;                              // global history which is specialized to conditional branch
-  std::array<int8_t, 1 << LOGSIZEUPS> WG = {};      // GGEHL's weight table
-  std::array<int8_t, 1 << LOGSIZEUPS> WP = {};      // PGEHL's weight table
+  long long GHIST = 0;                          // global history which is specialized to conditional branch
+  std::array<int8_t, 1 << LOGSIZEUPS> WG = {};  // GGEHL's weight table
+  std::array<int8_t, 1 << LOGSIZEUPS> WP = {};  // PGEHL's weight table
   // LOOP
   std::array<cbp64_lentry, 1 << LOGL> ltable = {};  // entire loop table.
 
@@ -349,10 +350,10 @@ struct SpeculativeStatesBase {
 
 struct SpeculativeStates : public SpeculativeStatesBase {
   // Copy data from GGEHLA and PGEHLA to GGEHL and PGEHL to share GEHL functions
-  std::array<int8_t*, GNB> GGEHL = {};                      // GEHL component which exploits 'GHIST'
-  std::array<int8_t*, PNB> PGEHL = {};                      // GEHL component which exploits 'phist'
+  std::array<int8_t*, GNB> GGEHL = {};  // GEHL component which exploits 'GHIST'
+  std::array<int8_t*, PNB> PGEHL = {};  // GEHL component which exploits 'phist'
   // This is restored by ptghist so you don't need to snapshot it
-  std::array<uint8_t, HISTBUFFERLENGTH> ghist = {};         // S: 3000-bit global history buffer (circular buffer)
+  std::array<uint8_t, HISTBUFFERLENGTH> ghist = {};  // S: 3000-bit global history buffer (circular buffer)
 
   void init() {
     SpeculativeStatesBase::init();
@@ -586,23 +587,23 @@ class TAGE64K {
   std::array<int8_t*, SNB> SGEHL = {};             // N: GEHL for second local history
   std::array<int8_t*, TNB> TGEHL = {};             // N: GEHL for third local history
 #ifdef IMLI
-  std::array<int8_t*, IMNB> IMGEHL = {};    // N: GEHL for IMLI
-  std::array<int8_t*, INB> IGEHL = {};      // N: GEHL for IMLI
-  std::array<long long, 256> IMHIST = {};   // N: IMHIST
-  long long IMLIcount = 0;                  // N: use to monitor the iteration number
+  std::array<int8_t*, IMNB> IMGEHL = {};   // N: GEHL for IMLI
+  std::array<int8_t*, INB> IGEHL = {};     // N: GEHL for IMLI
+  std::array<long long, 256> IMHIST = {};  // N: IMHIST
+  long long IMLIcount = 0;                 // N: use to monitor the iteration number
 #endif
-  std::array<long long, NLOCAL> L_shist = {};        // N: local histories
-  std::array<long long, NSECLOCAL> S_slhist = {};    // N: second local history
-  std::array<long long, NTLOCAL> T_slhist = {};      // N: third local history
+  std::array<long long, NLOCAL> L_shist = {};      // N: local histories
+  std::array<long long, NSECLOCAL> S_slhist = {};  // N: second local history
+  std::array<long long, NTLOCAL> T_slhist = {};    // N: third local history
   // playing with putting more weights (x2)  on some of the SC components
-  int updatethreshold = 0;                           // N: update threshold for the statistical corrector
+  int updatethreshold = 0;                                // N: update threshold for the statistical corrector
   std::array<int, 1 << LOGSIZEUP> Pupdatethreshold = {};  // N: size is fixed by LOGSIZEUP
-  std::array<int8_t, 1 << LOGSIZEUPS> WL = {};       // N: GEHL weights for local history
-  std::array<int8_t, 1 << LOGSIZEUPS> WS = {};       // N: GEHL weights for second local history
-  std::array<int8_t, 1 << LOGSIZEUPS> WT = {};       // N: GEHL weights for third local history
-  std::array<int8_t, 1 << LOGSIZEUPS> WI = {};       // N: GEHL weights for IMLI
-  std::array<int8_t, 1 << LOGSIZEUPS> WIM = {};      // N: GEHL weights for IMHIST
-  std::array<int8_t, 1 << LOGSIZEUPS> WB = {};       // N: GEHL weights for Bias
+  std::array<int8_t, 1 << LOGSIZEUPS> WL = {};            // N: GEHL weights for local history
+  std::array<int8_t, 1 << LOGSIZEUPS> WS = {};            // N: GEHL weights for second local history
+  std::array<int8_t, 1 << LOGSIZEUPS> WT = {};            // N: GEHL weights for third local history
+  std::array<int8_t, 1 << LOGSIZEUPS> WI = {};            // N: GEHL weights for IMLI
+  std::array<int8_t, 1 << LOGSIZEUPS> WIM = {};           // N: GEHL weights for IMHIST
+  std::array<int8_t, 1 << LOGSIZEUPS> WB = {};            // N: GEHL weights for Bias
   int8_t FirstH = 0;
   int8_t SecondH = 0;
   // LOOP
@@ -611,7 +612,8 @@ class TAGE64K {
   int LI = 0;
   int LTAG = 0;  // tag on the loop predictor
   // ALT
-  std::array<int8_t, SIZEUSEALT> use_alt_on_na = {};  // N: counters to choose between longest match and second longest match on TAGE
+  std::array<int8_t, SIZEUSEALT> use_alt_on_na =
+      {};  // N: counters to choose between longest match and second longest match on TAGE
   // TAGE. btable/gtable_{low,high} own their storage via std::vector so that
   // construction/destruction and deep copy are handled without explicit
   // new/delete. gtable[] holds non-owning row pointers into that storage.
@@ -623,7 +625,7 @@ class TAGE64K {
   // utility variables
   int TICK = 0;  // N: for the reset of the u counter
   Counter branch_id = 0;
-  int Seed = 0;       // for the pseudo-random number generator
+  int Seed = 0;  // for the pseudo-random number generator
   // snapshot containers
   CheckpointContainer checkpoints;
   PredictorContainer predictor_states;

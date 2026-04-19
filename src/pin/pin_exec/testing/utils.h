@@ -83,7 +83,7 @@ class Process_Runner {
   void execute_cmd();
 
   std::string run_cmd_;
-  pid_t       child_pid_ = 0;
+  pid_t child_pid_ = 0;
   bool        running_ = false;
 };
 

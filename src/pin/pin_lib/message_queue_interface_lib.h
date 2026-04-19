@@ -60,7 +60,7 @@ T move(const T& rhs) {
 class MessageBase {
  protected:
   std::vector<char> data;
-  uint32_t          data_size = 0;
+  uint32_t data_size = 0;
 
   void init();
 
@@ -245,8 +245,8 @@ class TCPSocket {
  protected:
   typedef int32_t SocketDescriptor;
 
-  bool               is_server = false;
-  SocketDescriptor   socket_fd = -1;
+  bool is_server = false;
+  SocketDescriptor socket_fd = -1;
   struct sockaddr_un socket_address = {};
   int32_t            socket_address_length;
   std::string        socket_path;  // TODO: initialize this
@@ -289,7 +289,7 @@ class Server : public TCPSocket {
 
   std::vector<SocketDescriptor> client_fds;
   std::vector<uint32_t>         requested_client_ids;
-  OptionType                    option = 0;
+  OptionType option = 0;
 
   void listen_and_connect_clients();
   void listen_for_clients();

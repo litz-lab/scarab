@@ -208,8 +208,8 @@ struct PredictorStates {
 
   // Hashed index/tag sets for gtable. std::vector owns its storage and value-
   // initializes to zero, so no explicit new/delete or make_unique is needed.
-  std::vector<int> GI;     // hashed index set for gtable
-  std::vector<uint> GTAG;  // hashed tag set for gtable
+  std::vector<int> GI = {};     // hashed index set for gtable
+  std::vector<uint> GTAG = {};  // hashed tag set for gtable
 
   PredictorStates(bool snapshot = false) {
     init();
@@ -617,9 +617,9 @@ class TAGE64K {
   // TAGE. btable/gtable_{low,high} own their storage via std::vector so that
   // construction/destruction and deep copy are handled without explicit
   // new/delete. gtable[] holds non-owning row pointers into that storage.
-  std::vector<cbp64_bentry> btable;       // N: bimodal TAGE table storage
-  std::vector<cbp64_gentry> gtable_low;   // N: backing storage for short-history TAGE tables
-  std::vector<cbp64_gentry> gtable_high;  // N: backing storage for long-history TAGE tables
+  std::vector<cbp64_bentry> btable = {};       // N: bimodal TAGE table storage
+  std::vector<cbp64_gentry> gtable_low = {};   // N: backing storage for short-history TAGE tables
+  std::vector<cbp64_gentry> gtable_high = {};  // N: backing storage for long-history TAGE tables
   cbp64_gentry* gtable[NHIST + 1] = {};   // N: tagged TAGE tables (non-owning row pointers)
 
   // utility variables
@@ -627,8 +627,8 @@ class TAGE64K {
   Counter branch_id = 0;
   int Seed = 0;  // for the pseudo-random number generator
   // snapshot containers
-  CheckpointContainer checkpoints;
-  PredictorContainer predictor_states;
+  CheckpointContainer checkpoints = {};
+  PredictorContainer predictor_states = {};
 
   int8_t tage_component = 0;
   int8_t tage_component_inter = 0;

@@ -409,6 +409,8 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 /* bp_btb_gen_pred: */
 
 void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
+  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+
   Btb_Pred_Info* bpi = op->btb_pred_info;
   Addr line_addr;
   Flag lru = bp_data->bp_id ? FALSE : TRUE;
@@ -460,6 +462,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
+  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
 
   // if it was a btb miss, it is time to write it into the btb
   if (op->btb_pred_info->btb_miss && op->oracle_info.dir == TAKEN) {
@@ -533,6 +536,8 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 /* bp_btb_block_pred: */
 
 void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
+  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+
   Btb_Pred_Info* bpi = op->btb_pred_info;
 
   if (PERFECT_BTB) {
@@ -589,6 +594,9 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
 
 void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
+  ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
+  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+
   if (BTB_OFF_PATH_WRITES || !op->off_path) {
     Addr btb_index_addr = op->btb_pred_info->btb_index_addr;
     ASSERT(bp_data->proc_id, btb_index_addr <= op->inst_info->addr);

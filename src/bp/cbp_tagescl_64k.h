@@ -620,7 +620,7 @@ class TAGE64K {
   std::vector<cbp64_bentry> btable = {};       // N: bimodal TAGE table storage
   std::vector<cbp64_gentry> gtable_low = {};   // N: backing storage for short-history TAGE tables
   std::vector<cbp64_gentry> gtable_high = {};  // N: backing storage for long-history TAGE tables
-  cbp64_gentry* gtable[NHIST + 1] = {};   // N: tagged TAGE tables (non-owning row pointers)
+  cbp64_gentry* gtable[NHIST + 1] = {};        // N: tagged TAGE tables (non-owning row pointers)
 
   // utility variables
   int TICK = 0;  // N: for the reset of the u counter

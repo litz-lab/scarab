@@ -55,16 +55,16 @@ class Simple_Binary_Loop_Info {
 
   struct Wrong_Path_Test_Info {
     // Normal execution split
-    size_t                branch_instruction_addr;
-    std::vector<uint64_t> expected_instruction_addresses_before_redirect;
-    std::vector<uint64_t> expected_instruction_addresses_after_recovery;
+    size_t branch_instruction_addr = 0;
+    std::vector<uint64_t> expected_instruction_addresses_before_redirect = {};
+    std::vector<uint64_t> expected_instruction_addresses_after_recovery = {};
 
-    uint64_t redirect_fetch_addr;
+    uint64_t redirect_fetch_addr = 0;
 
     // Could be empty if WRONGPATH NOP mode
-    bool                      is_wrong_path_nop_mode;
-    Wrongpath_Nop_Mode_Reason wrong_path_nop_reason;
-    std::vector<uint64_t>     wrongpath_expected_instruction_addresses;
+    bool is_wrong_path_nop_mode = false;
+    Wrongpath_Nop_Mode_Reason wrong_path_nop_reason = {};
+    std::vector<uint64_t> wrongpath_expected_instruction_addresses = {};
   };
 
   Wrong_Path_Test_Info get_wrongpath_nop_node_test_info() {
@@ -173,8 +173,8 @@ class Simple_Binary_Loop_Info {
   }
 
   // Holds a vector char strings of the opcodes for each basic block.
-  const std::vector<std::vector<const char*>> basic_block_opcodes_;
-  const std::vector<std::vector<uint64_t>>    basic_block_addresses_;
+  const std::vector<std::vector<const char*>> basic_block_opcodes_ = {};
+  const std::vector<std::vector<uint64_t>> basic_block_addresses_ = {};
 };
 
 class Simple_Loop_Test : public ::testing::Test {
@@ -185,7 +185,7 @@ class Simple_Loop_Test : public ::testing::Test {
   }
   void TearDown() override {}
 
-  std::unique_ptr<Simple_Binary_Loop_Info> simple_loop_info_;
+  std::unique_ptr<Simple_Binary_Loop_Info> simple_loop_info_ = nullptr;
 };
 
 TEST_F(Simple_Loop_Test, OnPathExecutesCorrectly) {

@@ -32,13 +32,13 @@ struct Loop_Predictor_Indices {
 
 template <class LOOP_CONFIG>
 struct Loop_Prediction_Info {
-  int8_t hit_bank;
-  bool valid;
-  bool prediction;
+  int8_t hit_bank = 0;
+  bool valid = false;
+  bool prediction = false;
 
   // Information needed for table updates.
-  Loop_Predictor_Indices indices;
-  int16_t tag;
+  Loop_Predictor_Indices indices = {};
+  int16_t tag = 0;
   Saturating_Counter<LOOP_CONFIG::ITERATION_COUNTER_WIDTH, false> current_iter_checkpoint;
 };
 
@@ -221,7 +221,7 @@ class Loop_Predictor {
 
 template <class LOOP_CONFIG>
 Loop_Predictor_Indices Loop_Predictor<LOOP_CONFIG>::get_indices(uint64_t br_pc) const {
-  Loop_Predictor_Indices indices;
+  Loop_Predictor_Indices indices = {};
   int component1 = ((br_pc ^ (br_pc >> 2)) & ((1 << (LOOP_CONFIG::LOG_NUM_ENTRIES - 2)) - 1)) << 2;
   int component2 = (br_pc >> (LOOP_CONFIG::LOG_NUM_ENTRIES - 2)) & ((1 << (LOOP_CONFIG::LOG_NUM_ENTRIES - 2)) - 1);
 

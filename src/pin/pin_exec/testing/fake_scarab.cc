@@ -110,7 +110,7 @@ bool Fake_Scarab::has_reached_end() {
 
 void Fake_Scarab::recover(uint64_t inst_uid) {
   flush_cops_after_uid(inst_uid);
-  Scarab_To_Pin_Msg msg;
+  Scarab_To_Pin_Msg msg = {};
   msg.type      = FE_RECOVER_AFTER;
   msg.inst_addr = 0;
   msg.inst_uid  = inst_uid;
@@ -120,7 +120,7 @@ void Fake_Scarab::recover(uint64_t inst_uid) {
 void Fake_Scarab::redirect(uint64_t fetch_addr) {
   op_buffer_.clear();
 
-  Scarab_To_Pin_Msg msg;
+  Scarab_To_Pin_Msg msg = {};
   msg.type      = FE_REDIRECT;
   msg.inst_addr = fetch_addr;
   msg.inst_uid  = fetched_ops_.back().inst_uid;
@@ -155,7 +155,7 @@ void Fake_Scarab::flush_cops_after_uid(uint64_t inst_uid) {
 
 void Fake_Scarab::refill_op_buffer() {
   ASSERT_TRUE(op_buffer_.empty());
-  Scarab_To_Pin_Msg msg;
+  Scarab_To_Pin_Msg msg = {};
   msg.type      = FE_FETCH_OP;
   msg.inst_addr = 0;
   msg.inst_uid  = 0;
@@ -166,7 +166,7 @@ void Fake_Scarab::refill_op_buffer() {
 }
 
 void Fake_Scarab::retire(uint64_t inst_uid) {
-  Scarab_To_Pin_Msg msg;
+  Scarab_To_Pin_Msg msg = {};
   msg.type      = FE_RETIRE;
   msg.inst_addr = 0;
   msg.inst_uid  = inst_uid;

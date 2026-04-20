@@ -26,12 +26,12 @@
 
 template <class CONFIG>
 struct Tage_SC_L_Prediction_Info {
-  Tage_Prediction_Info<typename CONFIG::TAGE> tage;
-  Loop_Prediction_Info<typename CONFIG::LOOP> loop;
-  bool tage_or_loop_prediction;
-  SC_Prediction_Info sc;
-  bool final_prediction;
-  uint64_t br_pc;
+  Tage_Prediction_Info<typename CONFIG::TAGE> tage = {};
+  Loop_Prediction_Info<typename CONFIG::LOOP> loop = {};
+  bool tage_or_loop_prediction = false;
+  SC_Prediction_Info sc = {};
+  bool final_prediction = false;
+  uint64_t br_pc = 0;
 };
 
 class Tage_SC_L_Base {

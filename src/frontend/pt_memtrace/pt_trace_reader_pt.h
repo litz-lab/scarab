@@ -53,15 +53,15 @@ struct PTInst {
 class TraceReaderPT : public TraceReader {
  private:
   gzFile raw_file = NULL;
-  InstInfo inst_info_a;
-  InstInfo inst_info_b;
-  PTInst pt_inst_a, pt_inst_b;
+  InstInfo inst_info_a = {};
+  InstInfo inst_info_b = {};
+  PTInst pt_inst_a = {}, pt_inst_b = {};
   bool enable_code_bloat_effect = false;
   bool use_info_a = true;  // true when filling info a, false when filling info b
   std::map<uint64_t, uint64_t> *prev_to_new_bbl_address_map = nullptr;
   uint64_t num_nops_in_trace = 0, num_inserted_nops = 0;
   uint64_t num_direct_brs_in_trace = 0, num_inserted_direct_brs = 0;
-  std::vector<std::string> parsed;
+  std::vector<std::string> parsed = {};
 
  public:
   bool read_next_line(PTInst &inst) {

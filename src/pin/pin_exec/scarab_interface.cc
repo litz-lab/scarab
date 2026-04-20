@@ -22,7 +22,7 @@
 #include "scarab_interface.h"
 
 Scarab_To_Pin_Msg get_scarab_cmd() {
-  Scarab_To_Pin_Msg cmd;
+  Scarab_To_Pin_Msg cmd = {};
 
   DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
             "START: Receiving from Scarab\n");

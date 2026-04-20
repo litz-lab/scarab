@@ -32,7 +32,7 @@ static inline Bp_Pred_Info* cbp_get_bp_pred_info(Op* op, Bp_Pred_Level pred_leve
 
 template <typename CBP_CLASS>
 class CBP_To_Scarab_Intf {
-  std::vector<std::vector<std::unique_ptr<CBP_CLASS>>> cbp_predictors_all_cores;
+  std::vector<std::vector<std::unique_ptr<CBP_CLASS>>> cbp_predictors_all_cores = {};
 
  public:
   CBP_CLASS* get_predictor(uns proc_id, uns bp_id) { return cbp_predictors_all_cores.at(proc_id).at(bp_id).get(); }

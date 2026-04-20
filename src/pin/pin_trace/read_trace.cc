@@ -59,7 +59,7 @@ int main(int argc, char* argv[]) {
   char cmdline[1024];
   sprintf(cmdline, "bzip2 -dc %s", argv[1]);
   orig_stream = popen(cmdline, "r");
-  ctype_pin_inst_struct pin_inst;
+  ctype_pin_inst_struct pin_inst = {};
   init_ctype_pin_inst(&pin_inst);
   int                   inst_count = 0;
 

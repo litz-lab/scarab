@@ -75,7 +75,7 @@ class Local_History_Table {
     return (br_pc ^ (br_pc >> pc_shift)) & (table_size - 1);
   }
 
-  int pc_shift_;
+  int pc_shift_ = 0;
   int64_t table_[table_size];
 };
 

@@ -610,12 +610,12 @@ protected:
 
    std::vector<bloom_type>    salt_;
    std::vector<unsigned char> bit_table_;
-   unsigned int               salt_count_;
-   unsigned long long int     table_size_;
-   unsigned long long int     projected_element_count_;
-   unsigned long long int     inserted_element_count_;
-   unsigned long long int     random_seed_;
-   double                     desired_false_positive_probability_;
+   unsigned int salt_count_ = 0;
+   unsigned long long int table_size_ = 0;
+   unsigned long long int projected_element_count_ = 0;
+   unsigned long long int inserted_element_count_ = 0;
+   unsigned long long int random_seed_ = 0;
+   double desired_false_positive_probability_ = 0.0;
 };
 
 inline bloom_filter operator & (const bloom_filter& a, const bloom_filter& b)

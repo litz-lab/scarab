@@ -189,7 +189,7 @@ class ClientTest : public ::testing::Test {
 
   void client_bandwidth_test();
 
-  Client*         client;
+  Client* client = nullptr;
   MessageTestCase message_test;
 };
 

@@ -214,7 +214,7 @@ void main_loop(CONTEXT* ctxt) {
             "main loop next_eip=%" PRIx64 "\n", (uint64_t)next_eip);
 
   while(true) {
-    Scarab_To_Pin_Msg cmd;
+    Scarab_To_Pin_Msg cmd = {};
     cmd.type = FE_NULL;
     if(excp_rewind_msg) {
       excp_rewind_msg = false;

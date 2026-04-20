@@ -53,11 +53,11 @@ extern "C" {
 /* Definition */
 
 struct LSQ_Entry {
-  Op* op;
-  Counter op_num;
-  Counter unique_num;
-  Flag off_path;
-  Mem_Type mem_type;
+  Op* op = nullptr;
+  Counter op_num = 0;
+  Counter unique_num = 0;
+  Flag off_path = 0;
+  Mem_Type mem_type = {};
 
   LSQ_Entry() {}
   LSQ_Entry(Op* mem_op)
@@ -70,9 +70,9 @@ struct LSQ_Entry {
 
 class LSQ {
  private:
-  uns8 proc_id;
-  Mem_Type mem_type;
-  size_t entry_num;
+  uns8 proc_id = 0;
+  Mem_Type mem_type = {};
+  size_t entry_num = 0;
 
   std::deque<LSQ_Entry> entries;
 
@@ -141,7 +141,7 @@ void LSQ::recover(Counter flush_op_num) {
 
 class LSQ_Unit {
  private:
-  uns8 proc_id;
+  uns8 proc_id = 0;
   LSQ load_queue;
   LSQ store_queue;
 

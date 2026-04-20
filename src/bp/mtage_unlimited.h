@@ -161,13 +161,13 @@ class path_history {
 class compressed_history {
   // used in the hash functions
  public:
-  unsigned comp;
-  int clength;
-  int olength;
-  int nbits;
-  int outpoint;
-  unsigned mask1;
-  unsigned mask2;
+  unsigned comp = 0;
+  int clength = 0;
+  int olength = 0;
+  int nbits = 0;
+  int outpoint = 0;
+  unsigned mask1 = 0;
+  unsigned mask2 = 0;
 
   compressed_history();
   void reset();
@@ -179,7 +179,7 @@ class compressed_history {
 class coltentry {
   // COLT entry (holds 2^NPRED counters)
  public:
-  int8_t c[1 << NPRED];
+  int8_t c[1 << NPRED] = {};
   coltentry();
   int8_t& ctr(bool predtaken[NPRED]);
 };
@@ -197,7 +197,7 @@ class colt {
 class bftable {
   // branch frequency table (BFT)
  public:
-  int freq[BFTSIZE];
+  int freq[BFTSIZE] = {};
   bftable();
   int& getfreq(uint64_t pc);
 };
@@ -256,30 +256,30 @@ class tage {
  public:
   string name;
 
-  int8_t* b;   // tagless (bimodal) table
-  gentry** g;  // tagged tables
-  int bi;
-  int* gi;
+  int8_t* b = nullptr;
+  gentry** g = nullptr;
+  int bi = 0;
+  int* gi = nullptr;
   vector<int> hit;
-  bool predtaken;
-  bool altpredtaken;
-  int ppi;
-  int8_t* postp;  // post-predictor
-  bool postpredtaken;
-  bool mispred;
-  int allocfail;
-  int nmisp;
+  bool predtaken = false;
+  bool altpredtaken = false;
+  int ppi = 0;
+  int8_t* postp = nullptr;
+  bool postpredtaken = false;
+  bool mispred = false;
+  int allocfail = 0;
+  int nmisp = 0;
 
-  int numg;
-  int bsize;
-  int gsize;
-  int tagbits;
-  int ctrbits;
-  int postpbits;
-  int postpsize;
-  int rampup;
-  int hashp;
-  int caphist;
+  int numg = 0;
+  int bsize = 0;
+  int gsize = 0;
+  int tagbits = 0;
+  int ctrbits = 0;
+  int postpbits = 0;
+  int postpsize = 0;
+  int rampup = 0;
+  int hashp = 0;
+  int caphist = 0;
 
   tage();
   void init(const char* nm, int ng, int logb, int logg, int tagb, int ctrb, int ppb, int ru, int caph);
@@ -305,10 +305,10 @@ class folded_history {
   // a long global history into a smaller number of bits; see P. Michaud's
   // PPM-like predictor at CBP-1
  public:
-  unsigned comp;
-  int CLENGTH;
-  int OLENGTH;
-  int OUTPOINT;
+  unsigned comp = 0;
+  int CLENGTH = 0;
+  int OLENGTH = 0;
+  int OUTPOINT = 0;
   void init(int original_length, int compressed_length, int N);
   void update(uint8_t* h, int PT);
 };
@@ -316,11 +316,11 @@ class folded_history {
 class MTAGE {
  private:
   bftable bft;
-  freqbins bfreq;
+  freqbins bfreq = {};
   spectrum sp[NPRED];
   tage pred[NPRED];
-  subpath* subp[NPRED];
-  bool predtaken[NPRED];
+  subpath* subp[NPRED] = {};
+  bool predtaken[NPRED] = {};
   colt co;
 
  public:

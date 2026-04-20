@@ -25,7 +25,7 @@ class BTBMissBPTakenConfStat : public ConfMechStatBase {
 
   BTBMissBPTakenConf* conf_mech;
 
-  Counter cnt_total_ops;
+  Counter cnt_total_ops = 0;
   // for csvs
   typedef std::tuple<Counter, Counter, Counter, double> phase_cycles_line;
   std::vector<phase_cycles_line> btb_miss_event_cycles;

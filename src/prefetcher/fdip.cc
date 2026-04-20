@@ -210,8 +210,8 @@ class FDIP {
   UFTQ* get_uftq() { return uftq; }
 
  protected:
-  uns proc_id;
-  uns bp_id;
+  uns proc_id = 0;
+  uns bp_id = 0;
   Icache_Stage* ic_ref;
   Op* cur_op;
   Addr last_line_addr;

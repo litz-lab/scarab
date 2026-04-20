@@ -58,7 +58,7 @@ class ConfMechStatBase {
   Conf_Off_Path_Reason get_conf_off_path_reason() { return conf_off_path_reason; }
 
   // pointer to outer class, use this to access mech-specific data
-  ConfMechBase* conf_mech;
+  ConfMechBase* conf_mech = nullptr;
 
   uns proc_id;
   Op* prev_op;
@@ -89,7 +89,7 @@ class ConfMechBase {
 
   uns proc_id;
 
-  ConfMechStatBase* conf_mech_stat;
+  ConfMechStatBase* conf_mech_stat = nullptr;
 
   friend ConfMechStatBase;
 };

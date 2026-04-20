@@ -289,9 +289,9 @@ class Tage_Histories {
   std::vector<Folded_History<TAGE_CONFIG::MAX_HISTORY_SIZE>> folded_histories_for_tags_0_;
   std::vector<Folded_History<TAGE_CONFIG::MAX_HISTORY_SIZE>> folded_histories_for_tags_1_;
 
-  int64_t path_history_;
-  int64_t head_old_;
-  int64_t path_history_old_;
+  int64_t path_history_ = 0;
+  int64_t head_old_ = 0;
+  int64_t path_history_old_ = 0;
 };
 
 template <class TAGE_CONFIG>
@@ -600,7 +600,7 @@ class Tage {
 
   Saturating_Counter<TAGE_CONFIG::ALT_SELECTOR_ENTRY_WIDTH, true>
       alt_selector_table_[1 << TAGE_CONFIG::ALT_SELECTOR_LOG_TABLE_SIZE];
-  int tick_;  // for resetting the useful bits
+  int tick_ = 0;  // for resetting the useful bits
 
   Random_Number_Generator& random_number_gen_;
 };
@@ -726,7 +726,7 @@ void Tage<TAGE_CONFIG>::fill_table_indices_tags(uint64_t br_pc, Tage_Prediction_
 
 template <class TAGE_CONFIG>
 Bimodal_Output Tage<TAGE_CONFIG>::get_bimodal_prediction_confidence(uint64_t br_pc) const {
-  Bimodal_Output output;
+  Bimodal_Output output = {};
   int index = (br_pc ^ (br_pc >> 2)) & ((1 << TAGE_CONFIG::BIMODAL_LOG_TABLES_SIZE) - 1);
   int8_t bimodal_output = (bimodal_table_[index].prediction << 1) +
                           (bimodal_table_[index >> TAGE_CONFIG::BIMODAL_HYSTERESIS_SHIFT].hysteresis);

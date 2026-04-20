@@ -479,7 +479,7 @@ void Decoupled_FE::update() {
     // RECOVERING: handle recovery after misprediction
     // SERVING_ON_PATH: normal execution mode
     // SERVING_OFF_PATH: fetching off-path operations
-    FT_PredictResult result;
+    FT_PredictResult result = {};
     switch (state) {
       case INACTIVE:
         return;

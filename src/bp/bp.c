@@ -63,6 +63,8 @@
 #include "thread.h"
 #include "uop_cache.h"
 
+#include "cmp_model.h"
+
 /******************************************************************************/
 /* include the table of possible branch predictors */
 
@@ -412,6 +414,16 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
   op->recovery_info.oracle_dir = op->oracle_info.dir;
   op->recovery_info.branchTarget = op->oracle_info.target;
   op->recovery_info.predict_cycle = cycle_count;
+
+  if (!op->off_path && pred_level == BP_PRED_MAIN &&
+      op->inst_info->table_info.cf_type == CF_CBR) {
+    Counter frontier = cmp_model.node_stage[op->proc_id].max_execed_opnum;
+    Counter dist = (op->op_num > frontier) ? (op->op_num - frontier) : 0;
+    uns bucket = MIN2((uns)(dist / 10), 1000);  // 10-wide buckets, cap at 200+
+    STAT_EVENT(op->proc_id, RUNAHEAD_DIST_BUCKET_0 + bucket);
+    INC_STAT_EVENT(op->proc_id, RUNAHEAD_DIST_SUM, dist);
+    STAT_EVENT(op->proc_id, RUNAHEAD_DIST_COUNT);
+  }
 
   pred_bp->timestamp_func(op);
   bp_pred_info->pred_branch_id = op->recovery_info.branch_id;

@@ -151,6 +151,7 @@ void reset_node_stage() {
   node->node_count = 0;
   node->ret_op = 1;
   node->last_scheduled_opnum = 0;
+  node->max_execed_opnum = 0;
   node->mem_blocked = FALSE;
   node->mem_block_length = 0;
   node->ret_stall_length = 0;

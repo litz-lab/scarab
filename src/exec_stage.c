@@ -540,6 +540,9 @@ static inline void exec_stage_process_op(Op* op) {
   if (op->inst_info->table_info.mem_type == NOT_MEM)
     op->done_cycle = op->exec_cycle;
 
+  if (!op->off_path && op->op_num > cmp_model.node_stage[op->proc_id].max_execed_opnum)
+    cmp_model.node_stage[op->proc_id].max_execed_opnum = op->op_num;
+
   STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST + op->off_path);
   STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST_MEM + (op->inst_info->table_info.mem_type == NOT_MEM) + 2 * op->off_path);
   STAT_EVENT(op->proc_id, EXEC_ALL_INST);

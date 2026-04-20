@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 3.13)
 
 project(scarab C CXX ASM)
 
+# Always emit build/<mode>/compile_commands.json. Consumed by:
+#   - clangd / VS Code / any LSP-based editor for accurate include resolution.
+#   - scarab-infra's `./sci --lint-scarab` (clang-tidy needs it to parse TUs).
+#   - iwyu, clang-check, and other static analyzers.
+# Cost is a single JSON file; does not affect compilation.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 option(SCARAB_ENABLE_LTO "Link-time optimization for the scarab executable" ON)
 
 set(CMAKE_C_STANDARD 99)
@@ -77,17 +84,6 @@ endforeach()
 add_executable(scarab 
     ${srcs}
 )
-
-# GCC only: silence "variable tracking size limit exceeded" for this huge TU (not globally).
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  get_target_property(_scarab_srcs scarab SOURCES)
-  foreach(_s IN LISTS _scarab_srcs)
-    if(_s MATCHES "power_scarab_config\\.cc$")
-      set_source_files_properties("${_s}" PROPERTIES COMPILE_OPTIONS "-fno-var-tracking-assignments")
-      break()
-    endif()
-  endforeach()
-endif()
 
 target_sources(scarab PRIVATE
   $<$<CONFIG:Debug>:${CMAKE_CURRENT_BINARY_DIR}/asan_default_options.cc>

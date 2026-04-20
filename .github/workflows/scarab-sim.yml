@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      run_lint:
+        description: Run clang-tidy against the just-built tree (reuses the build, no recompile).
+        required: false
+        default: false
+        type: boolean
     outputs:
       ipc:
         description: Parsed IPC value
@@ -96,6 +101,15 @@ jobs:
         env:
           trace_home: ${{ github.workspace }}/traces_top_simpoint
         run: ./sci --build-scarab ${{ inputs.sci_id }}
+
+      # Piggyback clang-tidy on the existing build runner: compile_commands.json
+      # and the docker image are already present, so this is just the lint pass.
+      - name: Lint Scarab
+        if: inputs.run_lint
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
+        run: ./sci --lint-scarab ${{ inputs.sci_id }}
 
       - name: Run scarab simulation
         working-directory: infra

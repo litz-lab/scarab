@@ -35,6 +35,7 @@ jobs:
     with:
       sci_id: top_simpoint
       collect_metrics: true
+      run_lint: true
 
   compare-ipc:
     ########################################################

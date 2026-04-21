@@ -288,7 +288,7 @@ class Server : public TCPSocket {
   typedef int32_t OptionType;
 
   std::vector<SocketDescriptor> client_fds;
-  std::vector<uint32_t>         requested_client_ids;
+  std::vector<uint32_t> requested_client_ids;
   OptionType option = 0;
 
   void listen_and_connect_clients();

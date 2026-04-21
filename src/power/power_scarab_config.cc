@@ -97,7 +97,6 @@ extern "C" {
 const uint32_t machine_bits = 64;
 const uint32_t virtual_address_length = 64;
 const uint32_t physical_address_length = 52;
-const double time_unit = 1e-15;
 double CHIP_FREQ_IN_MHZ = 0.0;
 uint32_t num_l2_caches;
 uint32_t num_l3_caches;

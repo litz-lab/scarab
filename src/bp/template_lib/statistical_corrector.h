@@ -439,7 +439,6 @@ template <class CONFIG>
 void Statistical_Corrector<CONFIG>::commit_state(
     uint64_t br_pc, bool resolve_dir, const Tage_Prediction_Info<typename CONFIG::TAGE>& tage_prediction_info,
     const SC_Prediction_Info& sc_prediction_info, bool tage_or_loop_prediction) {
-  imli_table_[imli_counter_.get()];
   bool sc_prediction = (sc_prediction_info.gehls_sum >= 0);
   if (tage_or_loop_prediction != sc_prediction) {
     // REVIST: the first if statement seems to be redundant

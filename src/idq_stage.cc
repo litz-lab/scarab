@@ -55,7 +55,10 @@ extern "C" {
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_IDQ_STAGE, ##args)
 
-class IDQ_Stage {
+// Declared as `struct` to match the C-visible `typedef struct IDQ_Stage IDQ_Stage;`
+// in idq_stage.h; semantically identical to `class` (explicit access specifiers
+// below).
+struct IDQ_Stage {
  public:
   void init(uns8 _proc_id, const char* name);
   void reset();

@@ -609,7 +609,7 @@ void FDIP_Stat::inc_cnt_unuseful(Addr line_addr) {
   auto unuseful_iter = cnt_unuseful.find(line_addr);
   if (unuseful_iter == cnt_unuseful.end()) {
     STAT_EVENT(proc_id, ICACHE_UNUSEFUL_FETCHES);
-    cnt_unuseful.insert(make_pair(move(line_addr), 1));
+    cnt_unuseful.insert(make_pair(std::move(line_addr), 1));
   } else {
     unuseful_iter->second++;
   }
@@ -617,7 +617,7 @@ void FDIP_Stat::inc_cnt_unuseful(Addr line_addr) {
   if (g_fdip->get_warmed_up()) {
     auto it = cnt_unuseful_aw.find(line_addr);
     if (it == cnt_unuseful_aw.end())
-      cnt_unuseful_aw.insert(make_pair(move(line_addr), 1));
+      cnt_unuseful_aw.insert(make_pair(std::move(line_addr), 1));
     else
       it->second++;
 
@@ -645,7 +645,7 @@ void FDIP_Stat::inc_cnt_useful(Addr line_addr, Flag pref_miss) {
   if (useful_iter == cnt_useful.end()) {
     DEBUG(proc_id, "%llx useful line new insert\n", line_addr);
     STAT_EVENT(proc_id, ICACHE_USEFUL_FETCHES);
-    cnt_useful.insert(make_pair(move(line_addr), make_pair(1, pref_miss)));
+    cnt_useful.insert(make_pair(std::move(line_addr), make_pair(1, pref_miss)));
   } else {
     useful_iter->second.first++;
     useful_iter->second.second = pref_miss;
@@ -655,7 +655,7 @@ void FDIP_Stat::inc_cnt_useful(Addr line_addr, Flag pref_miss) {
   if (g_fdip->get_warmed_up()) {
     auto it = cnt_useful_aw.find(line_addr);
     if (it == cnt_useful_aw.end())
-      cnt_useful_aw.insert(make_pair(move(line_addr), make_pair(1, pref_miss)));
+      cnt_useful_aw.insert(make_pair(std::move(line_addr), make_pair(1, pref_miss)));
     else {
       it->second.first++;
       it->second.second = pref_miss;
@@ -782,7 +782,7 @@ void FDIP_Stat::inc_prefetched_cls(Addr line_addr, Flag on_path, uns success) {
   if (cl_iter == prefetched_cls.end()) {
     prefetched_cls.insert(pair<Addr, Counter>(line_addr, 1));
     prefetched_cls_info.insert(
-        make_pair(move(line_addr), make_pair(make_pair(move(cycle_count), on_path), make_pair(0, 0))));
+        make_pair(std::move(line_addr), make_pair(make_pair(std::move(cycle_count), on_path), make_pair(0, 0))));
     DEBUG(proc_id, "%llx inserted into prefetched_cls at %llu\n", line_addr, cycle_count);
   } else {
     cl_iter->second++;

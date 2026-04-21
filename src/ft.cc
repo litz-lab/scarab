@@ -39,6 +39,7 @@
 
 extern "C" {
 #include "bp/bp_targ_mech.h"
+#include "frontend/frontend.h"
 }
 #include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
@@ -151,6 +152,7 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
     fetch_op_fn(proc_id, bp_id, op);
     op->off_path = off_path;
     op->conf_off_path = conf_off_path;
+    collect_op_stats(op);
     op->op_num = get_next_op_id_fn();
     op->bp_pred_main.pred_npc = op->oracle_info.npc;
     op->bp_pred_main.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir

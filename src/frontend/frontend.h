@@ -59,6 +59,9 @@ void frontend_recover(uns proc_id, uns bp_id, uns64 inst_uid);
 /* Let the frontend know that this instruction is retired) */
 void frontend_retire(uns proc_id, uns64 inst_uid);
 
+/* Collect statistics for the given op */
+void collect_op_stats(Op* op);
+
 #ifdef ENABLE_PT_MEMTRACE
 /* Trace post-processing to extract basic block vectors */
 void frontend_extract_basic_block_vectors(void);

@@ -57,6 +57,11 @@ class Cpp_Cache {
 
  public:
   Cpp_Cache() = default;
+  // Polymorphic base (has virtual set_idx_hash / repl hooks): a virtual
+  // destructor is required so that any owning container that destroys a
+  // derived instance (e.g. std::optional<Derived>, std::unique_ptr<Base>)
+  // has well-defined behavior.
+  virtual ~Cpp_Cache() = default;
   Cpp_Cache(uns nl, uns asc, uns lb, Repl_Policy rp) {
     assoc = asc;
     num_sets = nl / assoc;

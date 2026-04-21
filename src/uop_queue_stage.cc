@@ -36,8 +36,8 @@ extern "C" {
 struct Uop_Queue_Stage_Data {
   std::deque<Stage_Data*> q;
   std::deque<Stage_Data*> free_sds;
-  bool off_path;
-  uns8 proc_id;
+  bool off_path = false;
+  uns8 proc_id = 0;
 
   // Backing storage to avoid per-init heap allocations.
   std::vector<Stage_Data> stage_sds;

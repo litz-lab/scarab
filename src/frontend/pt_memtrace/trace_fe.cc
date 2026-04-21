@@ -47,8 +47,8 @@ static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst[MAX_NUM_PROCS];
 struct TraceBufState {
   uint64_t rdptr = 0;
   uint64_t wrptr = 0;
-  std::vector<ctype_pin_inst> circ_buf;
-  std::unordered_map<Addr, Counter> buf_map;
+  std::vector<ctype_pin_inst> circ_buf = {};
+  std::unordered_map<Addr, Counter> buf_map = {};
 };
 static TraceBufState trace_buf_state[MAX_NUM_PROCS];
 
@@ -94,7 +94,7 @@ void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst
     (*off_path_addr) += inst->size;
     DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->instruction_addr, inst->size);
   } else {
-    *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED);
+    *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED, DUMMY_NOP_SIZE);
     (*off_path_addr) += DUMMY_NOP_SIZE;
   }
 }
@@ -337,12 +337,12 @@ void ext_trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr)
 
 void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
   Op dummy_op;
-  memset(&dummy_op.bp_pred_l0, 0, sizeof(dummy_op.bp_pred_l0));
-  memset(&dummy_op.bp_pred_main, 0, sizeof(dummy_op.bp_pred_main));
-  memset(&dummy_op.btb_pred, 0, sizeof(dummy_op.btb_pred));
+  dummy_op.bp_pred_l0 = {};
+  dummy_op.bp_pred_main = {};
+  dummy_op.btb_pred = {};
   if (bp_id) {
     off_path_addr[proc_id][bp_id] = 0;
-    memset(&next_offpath_pi[proc_id][bp_id], 0, sizeof(next_offpath_pi[proc_id][bp_id]));
+    next_offpath_pi[proc_id][bp_id] = {};
   } else
     ASSERT(proc_id, off_path_mode[proc_id][bp_id]);
   off_path_mode[proc_id][bp_id] = false;
@@ -363,8 +363,11 @@ Addr ext_trace_next_fetch_addr(uns proc_id) {
 }
 
 void ext_trace_init() {
-  memset(next_offpath_pi, 0, sizeof(next_offpath_pi));
-  memset(next_onpath_pi, 0, sizeof(next_onpath_pi));
+  for (uns i = 0; i < MAX_NUM_PROCS; i++) {
+    init_ctype_pin_inst(&next_onpath_pi[i]);
+    for (uns j = 0; j < MAX_NUM_BPS; j++)
+      init_ctype_pin_inst(&next_offpath_pi[i][j]);
+  }
 
   if (FRONTEND == FE_PT)
     pt_init();
@@ -429,12 +432,12 @@ typedef struct bb_counts {
 
 typedef struct basic_block_info {
   // instruction list contained in this basic block
-  std::vector<ctype_pin_inst> ins_list;
+  std::vector<ctype_pin_inst> ins_list = {};
   // fetched inst count in this basic block
-  uint64_t inst_count_fetched;
+  uint64_t inst_count_fetched = 0;
   // the basic block id
-  uint64_t bb_id;
-  uint64_t freq;
+  uint64_t bb_id = 0;
+  uint64_t freq = 0;
   void clear() {
     inst_count_fetched = 0;
     ins_list.clear();

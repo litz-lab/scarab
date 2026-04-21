@@ -68,9 +68,9 @@
   } while(0)
 
 struct MemState {
-  ADDRINT mem_addr;
-  UINT32  mem_size;
-  VOID*   mem_data_ptr;
+  ADDRINT mem_addr = 0;
+  UINT32 mem_size = 0;
+  VOID* mem_data_ptr = NULL;
 
   MemState() : mem_size(0), mem_data_ptr(NULL) {}
 
@@ -101,14 +101,14 @@ struct MemState {
 };
 
 struct ProcState {
-  UINT64    uid;
+  UINT64 uid = 0;
   MemState* mem_state_list = NULL;
-  UINT      num_mem_state;
-  CONTEXT   ctxt;
-  bool      unretireable_instruction;
-  bool      wrongpath;
-  bool      wrongpath_nop_mode;
-  ADDRINT   wpnm_eip;
+  UINT num_mem_state = 0;
+  CONTEXT ctxt = {};
+  bool unretireable_instruction = false;
+  bool wrongpath = false;
+  bool wrongpath_nop_mode = false;
+  ADDRINT wpnm_eip = 0;
 
   ProcState() : mem_state_list(NULL), num_mem_state(0) {}
 

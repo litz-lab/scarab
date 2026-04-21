@@ -140,12 +140,12 @@ class FT {
   void clear_recovery_info();
 
  private:
-  uns proc_id;
-  uns bp_id;
-  uint64_t op_pos;
-  FT_Info ft_info;
-  bool is_prebuilt;
-  std::vector<Op*> ops;
+  uns proc_id = 0;
+  uns bp_id = 0;
+  uint64_t op_pos = 0;
+  FT_Info ft_info = {};
+  bool is_prebuilt = false;
+  std::vector<Op*> ops = {};
   FT_Event predict_op_ft_event(Op* op, Bp_Pred_Level pred_level);
   void generate_ft_info();
   // Common helper used by recovery/exec-recovery trimming paths.

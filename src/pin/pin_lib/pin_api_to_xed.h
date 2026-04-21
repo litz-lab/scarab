@@ -44,7 +44,7 @@ enum class CustomOp : uint8_t { NONE, PREFETCH_CODE };
 struct InstInfo {
   uint64_t                  pc;           // instruction address
   union {
-    const xed_decoded_inst_t* ins;  // XED info
+    const xed_decoded_inst_t* ins = nullptr;  // XED info
     const ctype_pin_inst* info;
   };
   uint64_t                  pid;          // process ID
@@ -60,6 +60,7 @@ struct InstInfo {
   bool unknown_type;  // No available decode info (presents a nop)
   bool valid;         // True until the end of the sequence
   bool is_dr_ins;     // True if the ins is of type DR_ISA_REGDEPS
+  bool fake_inst;     // True when `info` union member is a pre-built fake ctype_pin_inst
 
   // used by MEMTRACE frontend to flag the last inst from the trace
   bool last_inst_from_trace;

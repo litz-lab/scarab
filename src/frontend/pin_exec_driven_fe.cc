@@ -63,7 +63,7 @@ void invalidate_op_buffer(uns proc_id);
  * Cached Op interface
  **********************************************************/
 void get_next_op_buffer_from_pin(uns proc_id) {
-  Scarab_To_Pin_Msg msg;
+  Scarab_To_Pin_Msg msg = {};
   msg.type = FE_FETCH_OP;
   msg.inst_addr = 0;
   msg.inst_uid = 0;
@@ -160,7 +160,7 @@ void pin_exec_driven_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch
   DEBUG(proc_id, "Fetch Redirect: %llx (%llu)\n", fetch_addr, inst_uid);
   /* PIN will asynchronously redirect, Scarab does not need to wait for PIN to
    * finish. Processes will synchronize when Scarab sends next command to PIN*/
-  Scarab_To_Pin_Msg msg;
+  Scarab_To_Pin_Msg msg = {};
   msg.type = FE_REDIRECT;
   msg.inst_addr = convert_to_cmp_addr(0, fetch_addr);  // removing proc_id
   msg.inst_uid = inst_uid;
@@ -175,7 +175,7 @@ void pin_exec_driven_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
   DEBUG(proc_id, "Fetch Recover: %llu\n", inst_uid);
   /* PIN will asynchronously recover, Scarab does not need to wait for PIN to
    * finish. Processes will synchronize when Scarab sends next command to PIN*/
-  Scarab_To_Pin_Msg msg;
+  Scarab_To_Pin_Msg msg = {};
   msg.type = FE_RECOVER_AFTER;
   msg.inst_addr = 0;
   msg.inst_uid = inst_uid;
@@ -188,7 +188,7 @@ void pin_exec_driven_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
 
 void pin_exec_driven_retire(uns proc_id, uns64 inst_uid) {
   DEBUG(proc_id, "Fetch Retire: %llu\n", inst_uid);
-  Scarab_To_Pin_Msg msg;
+  Scarab_To_Pin_Msg msg = {};
   msg.type = FE_RETIRE;
   msg.inst_addr = inst_uid == (uns64)-1;
   msg.inst_uid = inst_uid;

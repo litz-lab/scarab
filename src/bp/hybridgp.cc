@@ -49,12 +49,12 @@ struct Hybridgp_In_Flight_State {
 };
 
 struct Hybridgp_State {
-  Cache bht;
-  Hash_Table bht_hash;
+  Cache bht = {};
+  Hash_Table bht_hash = {};
   std::vector<uns8> hybspht;
   std::vector<uns8> hybgpht;
   std::vector<uns8> hybppht;
-  Hash_Table hybgpht_hash;
+  Hash_Table hybgpht_hash = {};
   std::vector<uns32> filter;
 
   // Used for update and recovery (checkpointing).

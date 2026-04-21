@@ -137,8 +137,8 @@ class Random_Number_Generator {
   }
 
   int seed_ = 0;
-  int64_t* phist_ptr_;
-  int64_t* ptghist_ptr_;
+  int64_t* phist_ptr_ = nullptr;
+  int64_t* ptghist_ptr_ = nullptr;
 };
 
 struct Branch_Type {

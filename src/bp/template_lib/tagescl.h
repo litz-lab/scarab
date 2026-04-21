@@ -80,9 +80,7 @@ class Tage_SC_L : public Tage_SC_L_Base {
     return branch_id;
   }
 
-  bool is_full() override {
-    return prediction_info_buffer_.is_full();
-  }
+  bool is_full() override { return prediction_info_buffer_.is_full(); }
 
   // It uses the speculative state of the predictor to generate a prediction.
   // Should be called before update_speculative_state.

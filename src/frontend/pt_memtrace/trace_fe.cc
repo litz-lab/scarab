@@ -94,7 +94,7 @@ void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst
     (*off_path_addr) += inst->size;
     DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->instruction_addr, inst->size);
   } else {
-    *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED);
+    *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED, DUMMY_NOP_SIZE);
     (*off_path_addr) += DUMMY_NOP_SIZE;
   }
 }
@@ -363,8 +363,11 @@ Addr ext_trace_next_fetch_addr(uns proc_id) {
 }
 
 void ext_trace_init() {
-  memset(next_offpath_pi, 0, sizeof(next_offpath_pi));
-  memset(next_onpath_pi, 0, sizeof(next_onpath_pi));
+  for (uns i = 0; i < MAX_NUM_PROCS; i++) {
+    init_ctype_pin_inst(&next_onpath_pi[i]);
+    for (uns j = 0; j < MAX_NUM_BPS; j++)
+      init_ctype_pin_inst(&next_offpath_pi[i][j]);
+  }
 
   if (FRONTEND == FE_PT)
     pt_init();

@@ -41,6 +41,8 @@
 
 #include "frontend/pt_memtrace/memtrace_trace_reader.h"
 
+#include "ctype_pin_inst.h"
+
 #define GZ_BUFFER_SIZE 80
 #define panic(...) printf(__VA_ARGS__)
 
@@ -62,6 +64,7 @@ class TraceReaderPT : public TraceReader {
   uint64_t num_nops_in_trace = 0, num_inserted_nops = 0;
   uint64_t num_direct_brs_in_trace = 0, num_inserted_direct_brs = 0;
   std::vector<std::string> parsed = {};
+  ctype_pin_inst patch_inst_{};
 
  public:
   bool read_next_line(PTInst &inst) {
@@ -119,31 +122,8 @@ class TraceReaderPT : public TraceReader {
     return true;
   }
 
-  xed_decoded_inst_t *createNop(uint64_t length) {
-    xed_state_t state;
-    state.mmode = XED_MACHINE_MODE_LONG_64;
-    uint8_t buf[10];
-    xed_error_enum_t res = xed_encode_nop(buf, length);
-    if (res != XED_ERROR_NONE) {
-      panic("Failed to encode due to %s\n", xed_error_enum_t2str(res));
-      return nullptr;
-    }
-    xed_decoded_inst_t *decoded_inst = new xed_decoded_inst_t;
-    xed_decoded_inst_zero_set_mode(decoded_inst, &state);
-    res = xed_decode(decoded_inst, buf, sizeof(buf));
-    if (res != XED_ERROR_NONE) {
-      panic("XED NOP decode error! %s\n", xed_error_enum_t2str(res));
-      delete decoded_inst;
-      return nullptr;
-    }
-    return decoded_inst;
-  }
-
   // ret true when insn is a syscall (and thus should be skipped)
   bool processInst(PTInst &next_line) {
-    /*std::cout << "Processing Inst w/ PC: " << std::hex << next_line.pc << " byt " << *((int*)next_line.inst_bytes) <<
-     * std::endl; */
-    // Get the XED info from the cache, creating it if needed
     auto xed_map_iter = xed_map_.find(next_line.pc);
     if (xed_map_iter == xed_map_.end()) {
       fillCache(next_line.pc, next_line.size, next_line.inst_bytes);
@@ -158,9 +138,9 @@ class TraceReaderPT : public TraceReader {
     xed_ins = std::get<MAP_XED>(xed_tuple).get();
     InstInfo &_info = (use_info_a ? inst_info_a : inst_info_b);
     InstInfo &_prior = (use_info_a ? inst_info_b : inst_info_a);
-    auto &ins = _prior;  // have to do this for the macros to work
     bool inserted_nop = false;
-    if (_prior.valid) {
+    if (_prior.valid && !_prior.fake_inst) {
+      auto &ins = _prior;
       if (ins.ins) {
         if (XED_INS_Category(ins.ins) == XED_CATEGORY_NOP) {
           ++num_nops_in_trace;
@@ -168,49 +148,45 @@ class TraceReaderPT : public TraceReader {
           ++num_direct_brs_in_trace;
         }
       }
-      if (_prior.valid && XED_INS_IsRep(ins.ins)) {
-        // repz insns aren't supported, so just nop them
-        auto length = xed_decoded_inst_get_length(_prior.ins);
-        // std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become
-        // a nop of length " << length << std::endl;
-        _prior.ins = createNop(length);
+
+      bool orig_is_rep = ins.ins && XED_INS_IsRep(ins.ins);
+      bool orig_changes_cf = ins.ins && XED_INS_ChangeControlFlow(ins.ins);
+      bool orig_is_direct_br = ins.ins && XED_INS_IsDirectBranchOrCall(ins.ins);
+      uint64_t orig_direct_target = orig_is_direct_br ? XED_INS_DirectBranchOrCallTargetAddress(ins.pc, ins.ins) : 0;
+      uint8_t orig_size = ins.ins ? (uint8_t)XED_INS_Size(ins.ins) : 0;
+      auto orig_category = ins.ins ? XED_INS_Category(ins.ins) : 0;
+
+      if (orig_is_rep) {
+        patch_inst_ = create_dummy_nop(_prior.pc, WPNM_FAKE_NOP, orig_size);
+        _prior.info = &patch_inst_;
+        _prior.fake_inst = true;
         inserted_nop = true;
         if (_prior.pc == next_line.pc) {
-          _info = _prior;  // skip prior insn
+          _info = _prior;
           return true;
         }
       }
-      bool changes_cf = ins.ins && XED_INS_ChangeControlFlow(ins.ins);
-      bool incorrect_branch = ins.ins && XED_INS_IsDirectBranchOrCall(ins.ins) &&
-                              next_line.pc != XED_INS_DirectBranchOrCallTargetAddress(ins.pc, ins.ins) &&
-                              next_line.pc != (ins.pc + XED_INS_Size(ins.ins));
-      if (incorrect_branch) {
-        // std::cout << "branch " << INS_Address(ins) << " is incorrect!" << std::endl;
-        // std::cout << "xed target: " << INS_DirectBranchOrCallTargetAddress(ins) << " next pc: " << next_line.pc <<
-        // std::endl;
-      }
-      if (_prior.valid && (!changes_cf || XED_INS_Category(ins.ins) == XC(SYSCALL) || incorrect_branch) &&
-          next_line.pc != _prior.pc + XED_INS_Size(_prior.ins)) {
-        // std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become
-        // a jump to " << std::hex << next_line.pc << std::endl;
-        int64_t diff = std::max(next_line.pc, _prior.pc) - std::min(next_line.pc, _prior.pc);
-        if (next_line.pc < _prior.pc)
-          diff *= -1;
-        // std::cout << "Jump: " << diff << std::endl;
-        xed_decoded_inst_t *new_inst = createJmp(diff);
-        _prior.ins = new_inst;
-        inserted_nop = false;  // replaced nop with a jmp, so we really inserted a jmp instead of a nop
+
+      bool changes_cf = inserted_nop ? false : orig_changes_cf;
+      bool incorrect_branch = !inserted_nop && orig_is_direct_br && next_line.pc != orig_direct_target &&
+                              next_line.pc != (ins.pc + orig_size);
+      uint8_t prior_size = inserted_nop ? patch_inst_.size : orig_size;
+
+      if (_prior.valid && (!changes_cf || orig_category == XC(SYSCALL) || incorrect_branch) &&
+          next_line.pc != _prior.pc + prior_size) {
+        patch_inst_ = create_dummy_jump(_prior.pc, next_line.pc, XED_ICLASS_JMP);
+        _prior.info = &patch_inst_;
+        _prior.fake_inst = true;
+        inserted_nop = false;
         ++num_inserted_direct_brs;
         _prior.static_target = next_line.pc;
-      } else if (_prior.valid && XED_INS_IsRep(ins.ins) > 0) {
-        // repz insns aren't supported, so just nop them
-        auto length = XED_INS_Size(_prior.ins);
-        // std::cout << xed_iclass_enum_t2str(INS_Opcode(ins)) << " with PC " << std::hex << _prior.pc << " will become
-        // a nop of length " << length << std::endl;
-        _prior.ins = createNop(length);
+      } else if (!inserted_nop && orig_is_rep) {
+        patch_inst_ = create_dummy_nop(_prior.pc, WPNM_FAKE_NOP, orig_size);
+        _prior.info = &patch_inst_;
+        _prior.fake_inst = true;
         ++num_inserted_nops;
         if (_prior.pc == next_line.pc) {
-          _info = _prior;  // skip prior insn
+          _info = _prior;
           return true;
         }
       }
@@ -219,14 +195,13 @@ class TraceReaderPT : public TraceReader {
       ++num_inserted_nops;
     _info.pc = next_line.pc;
     _info.ins = xed_ins;
+    _info.fake_inst = false;
     _info.pid = 1;
     _info.tid = 1;
-    _info.target = 0;         // Set when the next instruction is evaluated
-    _info.static_target = 0;  // Set when the next instruction is evaluated
+    _info.target = 0;
+    _info.static_target = 0;
     _prior.target = _info.pc;
     xed_category_enum_t category = xed_decoded_inst_get_category(xed_ins);
-    // Set as taken if it's a branch.
-    // Conditional branches are patched when the next instruction is evaluated.
     _info.taken = category == XED_CATEGORY_UNCOND_BR || category == XED_CATEGORY_COND_BR ||
                   category == XED_CATEGORY_CALL || category == XED_CATEGORY_RET;
     _info.mem_addr[0] = 0x4040;
@@ -241,9 +216,12 @@ class TraceReaderPT : public TraceReader {
         break;
       _info.mem_used[i] = true;
     }
-    // TODO add this?
-    if (_prior.valid)
-      _prior.taken = _info.pc != (_prior.pc + XED_INS_Size(ins.ins));
+    if (_prior.valid) {
+      if (_prior.fake_inst)
+        _prior.taken = _info.pc != (_prior.pc + _prior.info->size);
+      else
+        _prior.taken = _info.pc != (_prior.pc + XED_INS_Size(_prior.ins));
+    }
     return false;
   }
   TraceReaderPT(const std::string &_trace, bool _enable_code_bloat_effect = false,
@@ -255,8 +233,11 @@ class TraceReaderPT : public TraceReader {
     }
     enable_code_bloat_effect = _enable_code_bloat_effect;
     prev_to_new_bbl_address_map = _prev_to_new_bbl_address_map;
+    has_trace_encodings_ = true;
     inst_info_a.valid = false;
+    inst_info_a.fake_inst = false;
     inst_info_b.valid = false;
+    inst_info_b.fake_inst = false;
     init("");
     initTrace();
   }

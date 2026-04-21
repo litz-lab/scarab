@@ -81,15 +81,14 @@ const uint64_t offset = 0xFF0000;        // ensure to generate no zero page addr
 /* Private Functions for PT */
 
 void pt_fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
-  uint8_t ld = 0;
-  uint8_t st = 0;
-
-  // Note: should be overwritten for a taken control flow instruction
   info->instruction_addr = insi->pc;
   info->instruction_next_addr = insi->target;
   info->actually_taken = insi->taken;
   info->branch_target = insi->target;
   info->inst_uid = pt_ins_id;
+
+  if (info->fake_inst)
+    return;
 
 #ifdef PRINT_INSTRUCTION_INFO
   std::cout << std::hex << info->instruction_addr << " Next " << info->instruction_next_addr << " size "
@@ -102,10 +101,10 @@ void pt_fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
       xed_decoded_inst_get_iclass(insi->ins) == XED_ICLASS_RET_NEAR)
     info->actually_taken = 1;
 
+  uint8_t ld = 0;
+  uint8_t st = 0;
   for (uint8_t op = 0; op < xed_decoded_inst_number_of_memory_operands(insi->ins); op++) {
-    // generate random address according to normal distribution as PT does not contain memory addresses
     uint64_t fake_addr = std::round(d(gen)) + offset;
-    // predicated true ld/st are handled just as regular ld/st
     if (xed_decoded_inst_mem_read(insi->ins, op) && !insi->mem_used[op]) {
       info->ld_vaddr[ld++] = fake_addr;
     } else if (xed_decoded_inst_mem_read(insi->ins, op)) {
@@ -147,6 +146,12 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
     if (!insi->valid)
       return 0;  // end of trace
   } while (insi->pid != pt_prior_pid || insi->tid != pt_prior_tid);
+
+  if (insi->fake_inst) {
+    *pt_next_pi = *insi->info;
+    pt_fill_in_dynamic_info(pt_next_pi, insi);
+    return 1;
+  }
 
   init_ctype_pin_inst(pt_next_pi);
   pt_fill_in_dynamic_info(pt_next_pi, insi);

@@ -27,6 +27,7 @@
 
 #include "ft.h"
 
+#include <cstdio>
 #include <functional>
 #include <iostream>
 
@@ -72,13 +73,6 @@ FT::~FT() {
 
 FT::FT(uns _proc_id, uns _bp_id) : proc_id(_proc_id), bp_id(_bp_id) {
   ft_info.dynamic_info.FT_id = FT_id_counter++;
-  op_pos = 0;
-  ft_info.static_info.start = 0;
-  ft_info.static_info.length = 0;
-  ft_info.static_info.n_uops = 0;
-  ft_info.dynamic_info.ended_by = FT_NOT_ENDED;
-  ft_info.dynamic_info.first_op_off_path = FALSE;
-  is_prebuilt = false;
 }
 
 bool FT::can_fetch_op() {
@@ -166,8 +160,9 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
       event = predict_op_ft_event(op, BP_PRED_MAIN);
       op_select_bp_pred_info(op, BP_PRED_MAIN);
     }
-    if (op->inst_info->fake_inst == 1)
+    if (op->inst_info->fake_inst == 1) {
       ft_info.dynamic_info.contains_fake_nop = TRUE;
+    }
     if ((event == FT_EVENT_MISPREDICT || event == FT_EVENT_FETCH_BARRIER) && off_path) {
       generate_ft_info();
       return event;

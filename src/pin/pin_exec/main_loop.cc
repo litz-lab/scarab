@@ -300,8 +300,7 @@ void do_fe_null(bool& have_consumed_op) {
     if(!pending_exception) {
       if(generate_dummy_nops) {
         next_eip  = ADDR_MASK(next_eip);
-        dummy_nop = create_dummy_nop((uint64_t)next_eip,
-                                     wrongpath_nop_mode_reason);
+        dummy_nop = create_dummy_nop((uint64_t)next_eip, wrongpath_nop_mode_reason, DUMMY_NOP_SIZE);
         cop       = &dummy_nop;
       } else {
         cop = pin_decoder_get_latest_inst();

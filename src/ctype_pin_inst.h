@@ -61,6 +61,8 @@ typedef enum Wrongpath_Nop_Mode_Reason_enum {
   WPNM_REASON_NONRET_CF_TO_NOT_INSTRUMENTED,
   WPNM_REASON_NOT_TAKEN_TO_NOT_INSTRUMENTED,
   WPNM_REASON_WRONG_PATH_STORE_TO_NEW_REGION,
+  WPNM_FAKE_NOP,
+  WPNM_FAKE_JMP,
   WPNM_NUM_REASONS
 } Wrongpath_Nop_Mode_Reason;
 
@@ -160,7 +162,7 @@ static inline ctype_pin_inst create_sentinel() {
   return inst;
 }
 
-static inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt) {
+static inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt, uint16_t true_op_type) {
   ctype_pin_inst inst;
   init_ctype_pin_inst(&inst);
   inst.instruction_addr = eip;
@@ -171,17 +173,19 @@ static inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt) {
   inst.lane_width_bytes = 8;
   inst.branch_target = tgt;
   inst.actually_taken = 1;
+  inst.true_op_type = true_op_type;
   inst.fake_inst = 1;
+  inst.fake_inst_reason = WPNM_FAKE_JMP;
   strcpy(inst.pin_iclass, "JMP");
   return inst;
 }
 
-static inline ctype_pin_inst create_dummy_nop(uint64_t eip, Wrongpath_Nop_Mode_Reason reason) {
+static inline ctype_pin_inst create_dummy_nop(uint64_t eip, Wrongpath_Nop_Mode_Reason reason, uint8_t size) {
   ctype_pin_inst inst;
   init_ctype_pin_inst(&inst);
   inst.instruction_addr = eip;
-  inst.instruction_next_addr = eip + DUMMY_NOP_SIZE;
-  inst.size = DUMMY_NOP_SIZE;
+  inst.instruction_next_addr = eip + size;
+  inst.size = size;
   inst.op_type = OP_NOP;
   strcpy(inst.pin_iclass, "DUMMY_NOP");
   inst.fake_inst = 1;

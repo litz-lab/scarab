@@ -64,7 +64,7 @@ class TraceReaderPT : public TraceReader {
   uint64_t num_nops_in_trace = 0, num_inserted_nops = 0;
   uint64_t num_direct_brs_in_trace = 0, num_inserted_direct_brs = 0;
   std::vector<std::string> parsed = {};
-  ctype_pin_inst patch_inst_ {};
+  ctype_pin_inst patch_inst_{};
 
  public:
   bool read_next_line(PTInst &inst) {

@@ -36,6 +36,11 @@ struct Tage_SC_L_Prediction_Info {
 
 class Tage_SC_L_Base {
  public:
+  // Polymorphic base: a virtual destructor is required so that
+  // `std::unique_ptr<Tage_SC_L_Base>` can safely delete a derived
+  // Tage_SC_L<CONFIG> through a base pointer.
+  virtual ~Tage_SC_L_Base() = default;
+
   virtual int64_t get_new_branch_id() = 0;
   virtual bool get_prediction(int64_t branch_id, uint64_t br_pc) = 0;
   virtual void update_speculative_state(int64_t branch_id, uint64_t br_pc, Branch_Type br_type, bool branch_dir,
@@ -80,9 +85,7 @@ class Tage_SC_L : public Tage_SC_L_Base {
     return branch_id;
   }
 
-  bool is_full() {
-    return prediction_info_buffer_.is_full();
-  }
+  bool is_full() override { return prediction_info_buffer_.is_full(); }
 
   // It uses the speculative state of the predictor to generate a prediction.
   // Should be called before update_speculative_state.

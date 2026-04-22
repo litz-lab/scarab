@@ -83,7 +83,8 @@ void ft_free_op(Op* op);
 
 #include "uop_cache.h"
 
-class Decoupled_FE;
+// Matches the C-visible `typedef struct Decoupled_FE Decoupled_FE;` above.
+struct Decoupled_FE;
 
 // operator== for FT_Info_Static
 inline bool operator==(const FT_Info_Static& a, const FT_Info_Static& b) {
@@ -95,8 +96,10 @@ inline bool operator<(const FT_Info_Static& a, const FT_Info_Static& b) {
   return std::tie(a.start, a.length, a.n_uops) < std::tie(b.start, b.length, b.n_uops);
 }
 
-// C++ class definition
-class FT {
+// C++ definition. Declared as `struct` to match the C-visible
+// `typedef struct FT FT;` forward declaration above; semantically identical
+// to `class` since the definition uses explicit access specifiers.
+struct FT {
  public:
   FT(uns _proc_id, uns _bp_id);
   ~FT();
@@ -151,7 +154,7 @@ class FT {
   // Common helper used by recovery/exec-recovery trimming paths.
   // Only touches unread ops [op_pos, end) from the back (youngest first).
   void trim_unread_tail(const std::function<bool(Op*)>& should_remove);
-  friend class Decoupled_FE;
+  friend struct Decoupled_FE;
 };
 
 #endif  // __cplusplus

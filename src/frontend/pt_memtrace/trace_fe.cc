@@ -39,8 +39,8 @@
 /* Globals */
 static ctype_pin_inst next_onpath_pi[MAX_NUM_PROCS];
 static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS][MAX_NUM_BPS];
-static bool off_path_mode[MAX_NUM_PROCS][MAX_NUM_BPS] = {false};
-static uint64_t off_path_addr[MAX_NUM_PROCS][MAX_NUM_BPS] = {0};
+static bool off_path_mode[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
+static uint64_t off_path_addr[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
 static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst[MAX_NUM_PROCS];
 
 /* Per-core circular buffer state */
@@ -398,7 +398,6 @@ uint64_t output_fingerprint(std::string file_name, std::map<uint64_t, uint64_t> 
   std::map<uint64_t, uint64_t>::iterator freq;
   uint64_t instrs_count = 0;
 
-  uint64_t nonzero_count = 0;
   // static std::vector<uint64> csv_line(counts_as_built.blocks, 0);
 
   for (freq = fingerprint.begin(); freq != fingerprint.end(); freq++) {
@@ -409,7 +408,6 @@ uint64_t output_fingerprint(std::string file_name, std::map<uint64_t, uint64_t> 
     myfile << ":" << freq->first << ":" << freq->second << " ";
 
     // csv_line[freq->first] = freq->second;
-    nonzero_count++;
 
     // if (freq->first + 1 == counts_as_built.blocks) {
     //     witness_total = true;

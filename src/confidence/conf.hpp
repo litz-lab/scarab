@@ -124,7 +124,6 @@ class Conf {
 
   // confidence counter
   bool conf_off_path;
-  Counter last_cycle_count;
 };
 
 #endif

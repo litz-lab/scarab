@@ -120,7 +120,7 @@ void ConfMechStatBase::set_prev_op(Op* op) {
 }
 
 /* Conf member functions */
-Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false), last_cycle_count(0) {
+Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false) {
   if (CONFIDENCE_MECH == CONF_MECH_BTB_MISS_BP_TAKEN)
     conf_mech = new BTBMissBPTakenConf(_proc_id);
   else if (CONFIDENCE_MECH == CONF_MECH_WEIGHT)

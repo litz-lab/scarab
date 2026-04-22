@@ -42,32 +42,34 @@ extern "C" {
 enum class CustomOp : uint8_t { NONE, PREFETCH_CODE };
 
 struct InstInfo {
-  uint64_t                  pc;           // instruction address
+  uint64_t pc = 0;  // instruction address
   union {
     const xed_decoded_inst_t* ins = nullptr;  // XED info
     const ctype_pin_inst* info;
   };
-  uint64_t                  pid;          // process ID
-  uint64_t                  tid;          // thread ID
-  uint64_t                  target;       // branch target
-  uint64_t                  static_target;// encoded branch target (not dynamic). Only non-zero when the information differs from what XED tells you.
-  uint64_t                  mem_addr[2];  // memory addresses
-  bool                      mem_used[2];  // mem address usage flags
-  bool mem_is_rd[2];                      // mem is load
-  bool mem_is_wr[2];                      // mem is store
-  CustomOp                  custom_op;    // Special or non-x86 ISA instruction
-  bool                      taken;        // branch taken
-  bool unknown_type;  // No available decode info (presents a nop)
-  bool valid;         // True until the end of the sequence
-  bool is_dr_ins;     // True if the ins is of type DR_ISA_REGDEPS
-  bool fake_inst;     // True when `info` union member is a pre-built fake ctype_pin_inst
+
+  uint64_t pid = 0;     // process ID
+  uint64_t tid = 0;     // thread ID
+  uint64_t target = 0;  // branch target
+  uint64_t static_target =
+      0;  // encoded branch target (not dynamic). Only non-zero when the information differs from what XED tells you.
+  uint64_t mem_addr[2] = {};            // memory addresses
+  bool mem_used[2] = {};                // mem address usage flags
+  bool mem_is_rd[2] = {};               // mem is load
+  bool mem_is_wr[2] = {};               // mem is store
+  CustomOp custom_op = CustomOp::NONE;  // Special or non-x86 ISA instruction
+  bool taken = false;                   // branch taken
+  bool unknown_type = false;            // No available decode info (presents a nop)
+  bool valid = false;                   // True until the end of the sequence
+  bool is_dr_ins = false;               // True if the ins is of type DR_ISA_REGDEPS
+  bool fake_inst = false;               // True when `info` union member is a pre-built fake ctype_pin_inst
 
   // used by MEMTRACE frontend to flag the last inst from the trace
-  bool last_inst_from_trace;
+  bool last_inst_from_trace = false;
   // used by MEMTRACE frontend to distinguish fetched/non-fetched inst
-  bool fetched_instruction;
+  bool fetched_instruction = false;
   // DynamoRIO trace_type_t for this instruction (set by memtrace reader)
-  int dr_trace_type;
+  int dr_trace_type = 0;
 };
 
 #define XED_OP_NAME(ins, op) \

@@ -165,10 +165,14 @@ uint64_t lookahead_buffer_count(uns proc_id);
 
 #include "confidence/conf.hpp"
 
-class FT;
+// Note: FT and Decoupled_FE are both forward-declared in the C-visible section
+// above via `typedef struct FT FT;` / `typedef struct Decoupled_FE Decoupled_FE;`.
+// We keep the `struct` tag here to match (C++ struct and class differ only in
+// default access, and both definitions use explicit `public:`).
+struct FT;
 struct FT_PredictResult;
 
-class Decoupled_FE {
+struct Decoupled_FE {
  public:
   Decoupled_FE()
       : proc_id(0),

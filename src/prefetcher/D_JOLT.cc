@@ -54,7 +54,9 @@ static constexpr size_t LongRangePrefetcher_N_Sets = 64;  // For 8K budget (to c
 static constexpr size_t LongRangePrefetcher_N_Ways = 4;
 static constexpr size_t LongRangePrefetcher_N_Vectors = 2;
 static constexpr size_t LongRangePrefetcher_VectorSize = 8;
-static constexpr size_t LongRangePrefetcher_TagBits = 12;
+// Kept for documentation/budget accounting; only referenced from commented-out
+// ASSERTs below (see the two ASSERT lines near sig_1/sig_2 usage).
+[[maybe_unused]] static constexpr size_t LongRangePrefetcher_TagBits = 12;
 // -------------------------------------
 //  miss table of long-range prefetcher
 // -------------------------------------
@@ -94,7 +96,9 @@ static constexpr size_t ShortRangePrefetcher_N_Sets = 32;  // For 8K budget (to 
 static constexpr size_t ShortRangePrefetcher_N_Ways = 4;
 static constexpr size_t ShortRangePrefetcher_N_Vectors = 2;
 static constexpr size_t ShortRangePrefetcher_VectorSize = 8;
-static constexpr size_t ShortRangePrefetcher_TagBits = 13;
+// Kept for documentation/budget accounting; only referenced from commented-out
+// ASSERTs below.
+[[maybe_unused]] static constexpr size_t ShortRangePrefetcher_TagBits = 13;
 // --------------------------------------
 //  miss table of short-range prefetcher
 // --------------------------------------
@@ -180,7 +184,7 @@ class UpperBitTable {
     const bool entry_exists = exists_pos != table.end();
 
     if (entry_exists) {
-      return {true, {static_cast<size_t>(exists_pos - table.begin()) + 1, lower_bits}};
+      return {true, {{static_cast<size_t>(exists_pos - table.begin()) + 1}, lower_bits}};
     } else {
       const auto invalid_pos =
           std::find_if(table.begin(), table.end(), [](const Entry& e) noexcept { return !e.valid; });
@@ -188,7 +192,7 @@ class UpperBitTable {
 
       if (invalid_entry_found) {
         (*invalid_pos) = {true, upper_bits};
-        return {true, {static_cast<size_t>(invalid_pos - table.begin()) + 1, lower_bits}};
+        return {true, {{static_cast<size_t>(invalid_pos - table.begin()) + 1}, lower_bits}};
       } else {
         return {false, {}};
       }

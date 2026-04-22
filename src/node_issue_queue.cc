@@ -46,6 +46,8 @@ extern "C" {
 #include "node_stage.h"
 }
 
+#include <vector>
+
 /**************************************************************************************/
 /* Macros */
 
@@ -189,13 +191,15 @@ void node_schedule_oldest_first_sched(Op* op) {
 /* Driven Table */
 
 using Dispatch_Func = int64 (*)(Op*);
+// Indexed by NODE_ISSUE_QUEUE_DISPATCH_SCHEME_* (currently only FIND_EMPTIEST_RS=0).
 Dispatch_Func dispatch_func_table[NODE_ISSUE_QUEUE_DISPATCH_SCHEME_NUM] = {
-    [NODE_ISSUE_QUEUE_DISPATCH_SCHEME_FIND_EMPTIEST_RS] = {node_dispatch_find_emptiest_rs},
+    node_dispatch_find_emptiest_rs,
 };
 
 using Schedule_Func = void (*)(Op*);
+// Indexed by NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_* (currently only OLDEST_FIRST=0).
 Schedule_Func schedule_func_table[NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_NUM] = {
-    [NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_OLDEST_FIRST] = {node_schedule_oldest_first_sched},
+    node_schedule_oldest_first_sched,
 };
 
 /**************************************************************************************/
@@ -358,8 +362,10 @@ void node_issue_queue_schedule() {
 void node_track_fu_idle_stats(void) {
   extern Exec_Stage* exec;  // Access to FUs through exec stage
 
-  // Create ready_type vector for each RS to track which op types have ready ops
-  uns64 ready_type_per_rs[NUM_RS] = {0};
+  // Create ready_type vector for each RS to track which op types have ready ops.
+  // NUM_RS is a runtime value (extern), so we use std::vector instead of a
+  // C-style VLA (non-standard in C++).
+  std::vector<uns64> ready_type_per_rs(NUM_RS, 0);
 
   // Iterate over ready ops and set bits in ready_type corresponding to FU_TYPE of each op
   for (Op* op = node->rdy_head; op; op = op->next_rdy) {

@@ -280,7 +280,11 @@ class Tage_Histories {
 
   // Derived constants
   static constexpr int twice_num_histories_ = 2 * TAGE_CONFIG::NUM_HISTORIES;
-  static constexpr Tage_History_Sizes<TAGE_CONFIG> history_sizes_ = {};
+  // Tage_History_Sizes's ctor calls std::pow(), which is not constexpr, so we
+  // cannot declare history_sizes_ as `static constexpr`. `inline static const`
+  // gives us one-definition header-only storage with a dynamic initializer
+  // that runs once before main().
+  inline static const Tage_History_Sizes<TAGE_CONFIG> history_sizes_{};
   static constexpr Tage_Tag_Bits<TAGE_CONFIG> tag_bits_ = {};
 
   // Predictor State
@@ -605,8 +609,8 @@ class Tage {
   Random_Number_Generator& random_number_gen_;
 };
 
-template <class TAGE_CONFIG>
-constexpr Tage_History_Sizes<TAGE_CONFIG> Tage_Histories<TAGE_CONFIG>::history_sizes_;
+// Note: Tage_Histories<TAGE_CONFIG>::history_sizes_ is defined inline at the
+// class (see declaration above); no out-of-class definition needed.
 
 template <class TAGE_CONFIG>
 constexpr Tage_Tables_Enabled<TAGE_CONFIG> Tage<TAGE_CONFIG>::tables_enabled_;

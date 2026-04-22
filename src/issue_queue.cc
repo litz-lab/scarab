@@ -89,10 +89,6 @@ struct IssueQueueEntry {
   const uns16 entry_id;
 
   Op* op = nullptr;
-  Counter op_num = 0;
-  Counter unique_num = 0;
-  Flag off_path = FALSE;
-
   ISSUE_QUEUE_ENTRY_STATE state = ISSUE_QUEUE_ENTRY_STATE_EMPTY;
 
   explicit IssueQueueEntry(uns16 queue_id, uns16 entry_id) : queue_id(queue_id), entry_id(entry_id) {}
@@ -102,18 +98,10 @@ struct IssueQueueEntry {
 
 void IssueQueueEntry::clear() {
   op = nullptr;
-  op_num = 0;
-  unique_num = 0;
-  off_path = FALSE;
-
-  state = ISSUE_QUEUE_ENTRY_STATE_EMPTY;
 }
 
 void IssueQueueEntry::fill(Op* op) {
   this->op = op;
-  this->op_num = op->op_num;
-  this->unique_num = op->unique_num;
-  this->off_path = op->off_path;
 }
 
 /**************************************************************************************/
@@ -160,11 +148,7 @@ void SerialOldestFirstSelectLogic::request(Op* op) {
 
 void SerialOldestFirstSelectLogic::release(Op* op) {
   op->in_rdy_list = FALSE;
-  auto it = ready_list.find(op->op_num);
-  if (it == ready_list.end()) {
-    return;
-  }
-  ready_list.erase(it);
+  ready_list.erase(op->op_num);
 }
 
 void SerialOldestFirstSelectLogic::select() {
@@ -232,10 +216,7 @@ void ParallelOldestFirstSelectLogic::request(Op* op) {
 void ParallelOldestFirstSelectLogic::release(Op* op) {
   op->in_rdy_list = FALSE;
   for (size_t i = 0; i < connected_fus.size(); ++i) {
-    auto it = ready_list[i].find(op->op_num);
-    if (it != ready_list[i].end()) {
-      ready_list[i].erase(it);
-    }
+    ready_list[i].erase(op->op_num);
   }
 }
 
@@ -437,8 +418,6 @@ uns16 IssueQueue::allocate_entry(Op* op) {
   IssueQueueEntry& entry = entries[entry_id];
   ASSERT(proc_id, entry.state == ISSUE_QUEUE_ENTRY_STATE_EMPTY);
   entry.fill(op);
-
-  // update metadata
   entry.state = ISSUE_QUEUE_ENTRY_STATE_ALLOC;
 
   return entry_id;
@@ -449,6 +428,7 @@ void IssueQueue::free_entry(uns16 entry_id) {
   ASSERT(proc_id, entry.state != ISSUE_QUEUE_ENTRY_STATE_EMPTY);
 
   entry.clear();
+  entry.state = ISSUE_QUEUE_ENTRY_STATE_EMPTY;
   free_list.push_back(entry_id);
 }
 
@@ -485,12 +465,10 @@ void IssueQueue::grant() {
 
 void IssueQueue::recover() {
   for (IssueQueueEntry& entry : entries) {
-    if (!entry.off_path) {
+    Op* op = entry.op;
+    if (op == nullptr || !op->off_path) {
       continue;
     }
-
-    Op* op = entry.op;
-    ASSERT(proc_id, op != nullptr && op->off_path);
 
     select_logic->release(op);
     free_entry(entry.entry_id);

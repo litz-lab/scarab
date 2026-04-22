@@ -576,15 +576,12 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   bpi->btb_main_hit = FALSE;
   if (br_slots) {
     for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
-      if (br_slots[ii].valid) {
-        if (br_slots[ii].addr == op->inst_info->addr) {
-          bpi->btb_main_hit = TRUE;
-          bpi->btb_main_target = br_slots[ii].target;
-          break;
-        }
-      } else {
+      if (br_slots[ii].valid && br_slots[ii].addr == op->inst_info->addr) {
+        bpi->btb_main_hit = TRUE;
+        bpi->btb_main_target = br_slots[ii].target;
         break;
       }
+      break;
     }
   }
 }
@@ -626,12 +623,12 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
         uns insert_pos = BTB_NUM_BRSLOT;
         for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
           if (br_slots[ii].valid) {
-            if (br_slots[ii].addr < op->inst_info->addr) {
-              continue;
-            } else if (br_slots[ii].addr == op->inst_info->addr) {
+            // if (br_slots[ii].addr < op->inst_info->addr)
+            //   continue;
+            if (br_slots[ii].addr == op->inst_info->addr) {
               br_slots[ii] = br_slot;
               break;
-            } else {
+            } else if (br_slots[ii].addr > op->inst_info->addr) {
               // If there is no self-modifying code (e.g. SPEC 2017 int), op must be conditional in this case.
               // Enable this assertion when debugging.
               // ASSERT(bp_data->proc_id,
@@ -664,7 +661,6 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
         }
       }
 
-      // FIXME: the exceptions to this assert are really about x86 vs Alpha
       ASSERT(bp_data->proc_id, (btb_index_addr == btb_line_addr) || TRUE);
     }
   }

@@ -72,13 +72,6 @@ enum ISSUE_QUEUE_ENTRY_STATE {
 };
 
 /**************************************************************************************/
-/* Prototypes */
-
-static inline void issue_queue_update_mem_block();
-static inline void issue_queue_track_stats();
-static inline uns16 issue_queue_dispatch_find_emptiest(Op* op);
-
-/**************************************************************************************/
 /* Structures */
 
 struct IssueQueueEntry {
@@ -347,6 +340,10 @@ void OldestFirstSelectLogic::parallel_select() {
 }
 
 /**************************************************************************************/
+/*
+ * The issue queue is organized as a random queue, where instructions are dispatched into free entries
+ * without any particular ordering.
+ */
 
 class IssueQueue {
  private:
@@ -467,18 +464,22 @@ class IssueQueues {
   std::vector<uns16> fu_map;
   std::vector<uns64> fu_types;
 
-  static inline const auto parse_mask = [](const std::string& s) -> uns64 {
-    ASSERT(0, !s.empty());
-    switch (s.front()) {
-      case 'x':
-        return static_cast<uns64>(std::stoull(s.substr(1), nullptr, 16));
-      case 'b':
-        return static_cast<uns64>(std::stoull(s.substr(1), nullptr, 2));
-      default:
-        return static_cast<uns64>(std::stoull(s, nullptr, 10));
-    }
-  };
-  static inline const auto split_tokens = [](const std::string& s) {
+  void update_mem_block();
+  void track_stats();
+  uns16 find_emptiest_queue(Op* op);
+
+ public:
+  explicit IssueQueues(uns proc_id);
+
+  void grant();
+  void dispatch();
+  void schedule();
+  void recover();
+  void wakeup(Op* op);
+};
+
+IssueQueues::IssueQueues(uns proc_id) : proc_id(proc_id) {
+  auto split_tokens = [](const std::string& s) {
     std::vector<std::string> tokens;
     for (size_t pos = 0; pos < s.size();) {
       size_t next = s.find(' ', pos);
@@ -489,21 +490,18 @@ class IssueQueues {
     }
     return tokens;
   };
+  auto parse_mask = [](const std::string& s) -> uns64 {
+    ASSERT(0, !s.empty());
+    switch (s.front()) {
+      case 'x':
+        return static_cast<uns64>(std::stoull(s.substr(1), nullptr, 16));
+      case 'b':
+        return static_cast<uns64>(std::stoull(s.substr(1), nullptr, 2));
+      default:
+        return static_cast<uns64>(std::stoull(s, nullptr, 10));
+    }
+  };
 
- public:
-  explicit IssueQueues(uns proc_id);
-  const std::vector<IssueQueue>& get_issue_queues() const { return issue_queues; }
-  const std::vector<uns16>& get_fu_map() const { return fu_map; }
-  uns64 get_fu_types(uns16 i) const { return fu_types[i]; }
-
-  void grant();
-  void dispatch();
-  void schedule();
-  void recover();
-  void wakeup(Op* op);
-};
-
-IssueQueues::IssueQueues(uns proc_id) : proc_id(proc_id) {
   // initialize connection map from FUs to issue queues
   std::vector<std::string> connection_tokens = split_tokens(RS_CONNECTIONS);
   ASSERT(proc_id, connection_tokens.size() == NUM_RS);
@@ -560,24 +558,22 @@ void IssueQueues::dispatch() {
 
   for (op = node->next_op_into_rs; op; op = op->next_node) {
     ASSERT(proc_id, op->queue_id == MAX_UNS16 && op->queue_entry_id == MAX_UNS16);
-    uns16 queue_id = issue_queue_dispatch_find_emptiest(op);
+    uns16 queue_id = find_emptiest_queue(op);
     if (queue_id == MAX_UNS16) {
       break;
     }
 
     IssueQueue& queue = issue_queues[queue_id];
-    op->queue_id = queue_id;
     ASSERT(proc_id, queue.available_entries() > 0);
-
-    uns16 entry_id = queue.allocate_entry(op);
-    ASSERT(proc_id, op->queue_entry_id == MAX_UNS16);
-    op->queue_entry_id = entry_id;
+    op->queue_id = queue_id;
+    op->queue_entry_id = queue.allocate_entry(op);
+    ;
 
     ASSERT(node->proc_id, op->state == OS_IN_ROB);
     op->state = OS_IN_RS;
 
     if (op_sources_not_rdy_is_clear(op)) {
-      queue.wakeup(entry_id);
+      queue.wakeup(op->queue_entry_id);
       op->state = (cycle_count + 1 >= op->rdy_cycle ? OS_READY : OS_WAIT_FWD);
     }
 
@@ -608,7 +604,7 @@ void IssueQueues::schedule() {
   ASSERT(node->proc_id, node->sd.op_count == 0);
 
   // checks if any of the L1 MSHRs have become available
-  issue_queue_update_mem_block();
+  update_mem_block();
 
   // for each issue queue, select ready ops to issue based on the scheduling scheme and FU availability
   for (IssueQueue& queue : issue_queues) {
@@ -630,17 +626,8 @@ void IssueQueues::wakeup(Op* op) {
   queue.wakeup(op->queue_entry_id);
 }
 
-/**************************************************************************************/
-/* Global Values */
-
-static std::vector<IssueQueues> per_core_issue_queues;
-IssueQueues* issue_queues = nullptr;
-
-/**************************************************************************************/
-/* Inline Functions */
-
 // Memory is blocked when there are no more MSHRs in the L1 Q (i.e., there is no way to handle a D-Cache miss)
-static inline void issue_queue_update_mem_block() {
+void IssueQueues::update_mem_block() {
   // if we are stalled due to lack of MSHRs to the L1, check to see if there is space now
   if (node->mem_blocked && mem_can_allocate_req_buffer(node->proc_id, MRT_DFETCH, FALSE)) {
     node->mem_blocked = FALSE;
@@ -652,20 +639,18 @@ static inline void issue_queue_update_mem_block() {
   node->mem_block_length += node->mem_blocked;
 }
 
-static inline void issue_queue_track_stats() {
+void IssueQueues::track_stats() {
   // TODO: track issue queue fu idle stats here
 }
 
-/**************************************************************************************/
-
-uns16 issue_queue_dispatch_find_emptiest(Op* op) {
+uns16 IssueQueues::find_emptiest_queue(Op* op) {
   uns16 emptiest_queue_id = MAX_UNS16;
   size_t emptiest_queue_entries = 0;
 
   uns64 op_fu_type = get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd);
-  for (size_t queue_id = 0; queue_id < issue_queues->get_issue_queues().size(); ++queue_id) {
-    const IssueQueue& queue = issue_queues->get_issue_queues()[queue_id];
-    uns64 queue_fu_types = issue_queues->get_fu_types(queue_id);
+  for (size_t queue_id = 0; queue_id < issue_queues.size(); ++queue_id) {
+    const IssueQueue& queue = issue_queues[queue_id];
+    uns64 queue_fu_types = fu_types[queue_id];
     if (!(op_fu_type & queue_fu_types)) {
       continue;
     }
@@ -683,6 +668,12 @@ uns16 issue_queue_dispatch_find_emptiest(Op* op) {
 
   return emptiest_queue_id;
 }
+
+/**************************************************************************************/
+/* Global Values */
+
+static std::vector<IssueQueues> per_core_issue_queues;
+IssueQueues* issue_queues = nullptr;
 
 /**************************************************************************************/
 /* External Function */

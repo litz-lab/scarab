@@ -75,8 +75,6 @@ enum ISSUE_QUEUE_ENTRY_STATE {
 /* Prototypes */
 
 static inline Flag issue_queue_check_op_ready(Op* op);
-static inline Flag issue_queue_check_fu_available(Op* op, Func_Unit* fu);
-static inline void issue_queue_pick_op(Op* op, uns fu_id);
 static inline void issue_queue_update_mem_block();
 static inline void issue_queue_track_stats();
 static inline uns16 issue_queue_dispatch_find_emptiest(Op* op);
@@ -104,6 +102,41 @@ void IssueQueueEntry::fill(Op* op) {
   this->op = op;
 }
 
+struct FunctionalUnit {
+  const uns proc_id;
+  const uns16 queue_id;
+  const uns32 fu_id;
+  const uns64 fu_type;
+
+  explicit FunctionalUnit(uns proc_id, uns16 queue_id, uns32 fu_id, uns64 fu_type)
+      : proc_id(proc_id), queue_id(queue_id), fu_id(fu_id), fu_type(fu_type) {}
+
+  Flag available(uns64 op_fu_type) const;
+  void issue(Op* op) const;
+};
+
+Flag FunctionalUnit::available(uns64 op_fu_type) const {
+  if (!(op_fu_type & fu_type)) {
+    return FALSE;
+  }
+
+  if (node->sd.ops[fu_id]) {
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+void FunctionalUnit::issue(Op* op) const {
+  ASSERT(proc_id, fu_id < (uns32)node->sd.max_op_count && node->sd.ops[fu_id] == nullptr);
+  ASSERT(proc_id, node->sd.op_count < node->sd.max_op_count);
+
+  op->fu_num = fu_id;
+  node->sd.ops[op->fu_num] = op;
+  node->last_scheduled_opnum = op->op_num;
+  node->sd.op_count += 1;
+}
+
 /**************************************************************************************/
 /*
  * The select logic is responsible for picking ready ops from the wakeup logic in the issue queue. Since the issue
@@ -128,13 +161,13 @@ class SelectLogic {
 class SerialOldestFirstSelectLogic : public SelectLogic {
  private:
   const uns queue_id;
-  const std::vector<int> connected_fus;
+  const std::vector<FunctionalUnit> connected_fus;
 
   std::map<Counter, Op*> ready_list;  // age ordered ready list of ops
   int fu_idx = 0;                     // circular queue idx for round-robin selection
 
  public:
-  SerialOldestFirstSelectLogic(uns queue_id, const std::vector<int>& connected_fus)
+  SerialOldestFirstSelectLogic(uns queue_id, const std::vector<FunctionalUnit>& connected_fus)
       : queue_id(queue_id), connected_fus(connected_fus) {}
   void request(Op* op) override;
   void release(Op* op) override;
@@ -160,18 +193,15 @@ void SerialOldestFirstSelectLogic::select() {
     }
 
     // find a connected FU that can execute this op
+    uns64 op_fu_type = get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd);
     for (uns32 ii = 0; ii < connected_fus.size(); ++ii) {
-      Func_Unit* fu = &exec->fus[connected_fus[(fu_idx + ii) % connected_fus.size()]];
-      if (!issue_queue_check_fu_available(op, fu)) {
+      const FunctionalUnit& fu = connected_fus[(fu_idx + ii) % connected_fus.size()];
+      if (!fu.available(op_fu_type)) {
         continue;
       }
 
-      // select this FU for the op
-      issue_queue_pick_op(op, fu->fu_id);
-
-      // move the circular queue idx to the next position for the next selection
-      fu_idx = (fu_idx + ii + 1) % connected_fus.size();
-
+      fu.issue(op);
+      fu_idx = (fu_idx + ii + 1) % connected_fus.size();  // move the circular queue idx for the next selection
       break;
     }
   }
@@ -183,16 +213,17 @@ void SerialOldestFirstSelectLogic::select() {
  *
  * A round-robin quick cancellation mechanism is used in this arbitration.
  */
+
 class ParallelOldestFirstSelectLogic : public SelectLogic {
  private:
   const uns queue_id;
-  const std::vector<int> connected_fus;
+  const std::vector<FunctionalUnit> connected_fus;
 
   std::vector<std::map<Counter, Op*>> ready_list;  // age ordered ready list of ops for each connected FU
   int fu_idx = 0;                                  // circular queue idx for round-robin selection
 
  public:
-  ParallelOldestFirstSelectLogic(uns queue_id, const std::vector<int>& connected_fus)
+  ParallelOldestFirstSelectLogic(uns queue_id, const std::vector<FunctionalUnit>& connected_fus)
       : queue_id(queue_id), connected_fus(connected_fus) {
     ready_list.resize(connected_fus.size());
   }
@@ -205,8 +236,7 @@ class ParallelOldestFirstSelectLogic : public SelectLogic {
 void ParallelOldestFirstSelectLogic::request(Op* op) {
   op->in_rdy_list = TRUE;
   for (size_t i = 0; i < connected_fus.size(); ++i) {
-    Func_Unit* fu = &exec->fus[connected_fus[i]];
-    if (get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & fu->type) {
+    if (get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & connected_fus[i].fu_type) {
       ready_list[i][op->op_num] = op;
     }
   }
@@ -312,8 +342,8 @@ void ParallelOldestFirstSelectLogic::select() {
       continue;
     }
 
-    Func_Unit* fu = &exec->fus[connected_fus[i]];
-    issue_queue_pick_op(op, fu->fu_id);
+    const FunctionalUnit& fu = connected_fus[i];
+    fu.issue(op);
   }
 
   // move the circular queue idx to the next position for the next selection
@@ -329,20 +359,17 @@ class IssueQueue {
 
   std::vector<IssueQueueEntry> entries;
   std::deque<uns16> free_list;
-  std::vector<int> connected_fus;
+  std::vector<FunctionalUnit> connected_fus;
   std::shared_ptr<SelectLogic> select_logic;
 
-  void init_connected_fus();
-  void init_select_logic();
-
  public:
-  explicit IssueQueue(uns proc_id, uns16 queue_id, uns16 size);
+  explicit IssueQueue(uns proc_id, uns16 queue_id, uns16 size, const std::vector<FunctionalUnit>& connected_fus);
   uns16 allocate_entry(Op* op);
   void free_entry(uns16 entry_id);
 
   size_t available_entries() const { return free_list.size(); }
   const std::vector<IssueQueueEntry>& get_entries() const { return entries; }
-  const std::vector<int>& get_connected_fus() const { return connected_fus; }
+  const std::vector<FunctionalUnit>& get_connected_fus() const { return connected_fus; }
 
   void wakeup(uns16 entry_id);
   void grant();
@@ -350,7 +377,8 @@ class IssueQueue {
   void schedule();
 };
 
-IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size) : proc_id(proc_id), queue_id(queue_id) {
+IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size, const std::vector<FunctionalUnit>& connected_fus)
+    : proc_id(proc_id), queue_id(queue_id), connected_fus(connected_fus) {
   // initialize entries and free list
   entries.reserve(size);
   for (uns16 i = 0; i < size; ++i) {
@@ -359,52 +387,7 @@ IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size) : proc_id(proc_i
   }
   DEBUG(proc_id, "Initializing Issue Queue %d with size %d\n", queue_id, size);
 
-  init_connected_fus();
-  init_select_logic();
-}
-
-// initialize connected FUs based on configuration
-void IssueQueue::init_connected_fus() {
-  // parse the FU mask for this issue queue
-  std::string s = RS_CONNECTIONS;
-  size_t pos = 0;
-  std::string token;
-  for (uns16 i = 0; i <= queue_id; ++i) {
-    size_t next = s.find(' ', pos);
-    token = (next == std::string::npos) ? s.substr(pos) : s.substr(pos, next - pos);
-
-    ASSERT(proc_id, !token.empty());
-    ASSERT(proc_id, next != std::string::npos || i == queue_id);
-    pos = (next == std::string::npos) ? s.size() : next + 1;
-  }
-
-  // transform the token into a FU mask
-  auto parse_mask = [](const std::string& s) -> uns64 {
-    switch (s.front()) {
-      case 'x':
-        return static_cast<uns64>(std::stoull(s.substr(1), nullptr, 16));
-
-      case 'b':
-        return static_cast<uns64>(std::stoull(s.substr(1), nullptr, 2));
-
-      default:
-        return static_cast<uns64>(std::stoull(s, nullptr, 10));
-    }
-  };
-  ASSERT(proc_id, !token.empty());
-  uns64 mask = parse_mask(token);
-  DEBUG(proc_id, "Issue Queue %d connected FU mask: 0x%llx\n", queue_id, mask);
-
-  // determine the connected FUs based on the mask
-  while (mask) {
-    int idx = __builtin_ctzll(mask);
-    connected_fus.push_back(idx);
-    mask &= (mask - 1);
-  }
-}
-
-// initialize select logic based on scheduling scheme
-void IssueQueue::init_select_logic() {
+  // initialize select logic based on scheduling scheme
   select_logic = std::make_shared<ParallelOldestFirstSelectLogic>(queue_id, connected_fus);
 }
 
@@ -485,10 +468,37 @@ class IssueQueues {
  private:
   const uns proc_id;
   std::vector<IssueQueue> issue_queues;
+  std::vector<uns16> fu_map;
+  std::vector<uns64> fu_types;
+
+  static inline const auto parse_mask = [](const std::string& s) -> uns64 {
+    ASSERT(0, !s.empty());
+    switch (s.front()) {
+      case 'x':
+        return static_cast<uns64>(std::stoull(s.substr(1), nullptr, 16));
+      case 'b':
+        return static_cast<uns64>(std::stoull(s.substr(1), nullptr, 2));
+      default:
+        return static_cast<uns64>(std::stoull(s, nullptr, 10));
+    }
+  };
+  static inline const auto split_tokens = [](const std::string& s) {
+    std::vector<std::string> tokens;
+    for (size_t pos = 0; pos < s.size();) {
+      size_t next = s.find(' ', pos);
+      tokens.emplace_back(s.substr(pos, next == std::string::npos ? s.size() - pos : next - pos));
+      if (next == std::string::npos)
+        break;
+      pos = next + 1;
+    }
+    return tokens;
+  };
 
  public:
   explicit IssueQueues(uns proc_id);
   const std::vector<IssueQueue>& get_issue_queues() const { return issue_queues; }
+  const std::vector<uns16>& get_fu_map() const { return fu_map; }
+  uns64 get_fu_types(uns16 i) const { return fu_types[i]; }
 
   void grant();
   void dispatch();
@@ -498,13 +508,37 @@ class IssueQueues {
 };
 
 IssueQueues::IssueQueues(uns proc_id) : proc_id(proc_id) {
+  // initialize connection map from FUs to issue queues
+  std::vector<std::string> connection_tokens = split_tokens(RS_CONNECTIONS);
+  ASSERT(proc_id, connection_tokens.size() == NUM_RS);
+  fu_map.assign(NUM_FUS, MAX_UNS16);
+  for (size_t i = 0; i < NUM_RS; ++i) {
+    for (uns64 mask = parse_mask(connection_tokens[i]); mask; mask &= (mask - 1)) {
+      int idx = __builtin_ctzll(mask);
+      ASSERT(proc_id, idx < (int)NUM_FUS);
+      fu_map[idx] = i;
+    }
+  }
+
+  // initialize the connected FUs for each issue queue
+  std::vector<std::string> fu_tokens = split_tokens(FU_TYPES);
+  ASSERT(proc_id, fu_tokens.size() == NUM_FUS);
+  std::vector<std::vector<FunctionalUnit>> fu_connection(NUM_RS);
+  fu_types.assign(NUM_RS, 0);
+  for (size_t i = 0; i < NUM_FUS; ++i) {
+    uns64 fu_type = parse_mask(fu_tokens[i]);
+    fu_connection[fu_map[i]].emplace_back(proc_id, fu_map[i], i, fu_type);
+    fu_types[fu_map[i]] |= fu_type;
+    DEBUG(proc_id, "FU %ld, queue: %d, type: 0x%llx\n", i, fu_map[i], fu_type);
+  }
+
   // create issue queues based on configuration
   issue_queues.reserve(NUM_RS);
   const char* p = RS_SIZES;
   for (uns16 i = 0; i < NUM_RS; ++i) {
     char* end = nullptr;
     uns64 size = strtoull(p, &end, 10);
-    issue_queues.emplace_back(proc_id, i, size);
+    issue_queues.emplace_back(proc_id, i, size, fu_connection[i]);
     p = end;
   }
 }
@@ -634,28 +668,6 @@ static inline Flag issue_queue_check_op_ready(Op* op) {
   return TRUE;
 }
 
-static inline Flag issue_queue_check_fu_available(Op* op, Func_Unit* fu) {
-  if (!(get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & fu->type)) {
-    return FALSE;
-  }
-
-  if (node->sd.ops[fu->fu_id]) {
-    return FALSE;
-  }
-
-  return TRUE;
-}
-
-static inline void issue_queue_pick_op(Op* op, uns32 fu_id) {
-  ASSERT(node->proc_id, fu_id < (uns32)node->sd.max_op_count);
-  ASSERT(node->proc_id, node->sd.ops[fu_id] == nullptr);
-  op->fu_num = fu_id;
-  node->sd.ops[op->fu_num] = op;
-  node->last_scheduled_opnum = op->op_num;
-  node->sd.op_count += 1;
-  ASSERT(node->proc_id, node->sd.op_count <= node->sd.max_op_count);
-}
-
 // Memory is blocked when there are no more MSHRs in the L1 Q (i.e., there is no way to handle a D-Cache miss)
 static inline void issue_queue_update_mem_block() {
   // if we are stalled due to lack of MSHRs to the L1, check to see if there is space now
@@ -679,24 +691,22 @@ uns16 issue_queue_dispatch_find_emptiest(Op* op) {
   uns16 emptiest_queue_id = MAX_UNS16;
   size_t emptiest_queue_entries = 0;
 
+  uns64 op_fu_type = get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd);
   for (size_t queue_id = 0; queue_id < issue_queues->get_issue_queues().size(); ++queue_id) {
     const IssueQueue& queue = issue_queues->get_issue_queues()[queue_id];
-    for (size_t i = 0; i < queue.get_connected_fus().size(); ++i) {
-      // find the FU that can execute this op
-      Func_Unit* fu = &exec->fus[queue.get_connected_fus()[i]];
-      if (!(get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & fu->type)) {
-        continue;
-      }
+    uns64 queue_fu_types = issue_queues->get_fu_types(queue_id);
+    if (!(op_fu_type & queue_fu_types)) {
+      continue;
+    }
 
-      size_t empty_entries = queue.available_entries();
-      if (empty_entries == 0) {
-        continue;
-      }
+    size_t empty_entries = queue.available_entries();
+    if (empty_entries == 0) {
+      continue;
+    }
 
-      if (emptiest_queue_entries < empty_entries) {
-        emptiest_queue_id = queue_id;
-        emptiest_queue_entries = empty_entries;
-      }
+    if (emptiest_queue_entries < empty_entries) {
+      emptiest_queue_id = queue_id;
+      emptiest_queue_entries = empty_entries;
     }
   }
 

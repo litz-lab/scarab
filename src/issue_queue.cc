@@ -101,23 +101,23 @@ void IssueQueueEntry::fill(Op* op) {
   this->op = op;
 }
 
-struct FunctionalUnit {
+struct FunctionalUnitPicker {
   const uns proc_id;
   const uns16 queue_id;
   const uns32 fu_id;
   const uns64 fu_type;
   using ReadyIter = std::map<Counter, Op*>::iterator;
 
-  explicit FunctionalUnit(uns proc_id, uns16 queue_id, uns32 fu_id, uns64 fu_type)
+  explicit FunctionalUnitPicker(uns proc_id, uns16 queue_id, uns32 fu_id, uns64 fu_type)
       : proc_id(proc_id), queue_id(queue_id), fu_id(fu_id), fu_type(fu_type) {}
 
-  Flag is_available(Op* op) const;
+  Flag check_op_ready(Op* op) const;
   Op* pick(ReadyIter& it, const std::map<Counter, Op*>& ready_list,
            const std::unordered_set<Counter>& picked_mask) const;
-  void issue_into_sd(Op* op);
+  void issue_op_into_sd(Op* op);
 };
 
-Flag FunctionalUnit::is_available(Op* op) const {
+Flag FunctionalUnitPicker::check_op_ready(Op* op) const {
   ASSERT(node->proc_id, op != nullptr);
 
   // if the op is waiting for memory, check if it is still blocked by memory. If not, it becomes ready
@@ -142,25 +142,25 @@ Flag FunctionalUnit::is_available(Op* op) const {
   return TRUE;
 }
 
-Op* FunctionalUnit::pick(ReadyIter& it, const std::map<Counter, Op*>& ready_list,
-                         const std::unordered_set<Counter>& picked_mask) const {
+Op* FunctionalUnitPicker::pick(ReadyIter& it, const std::map<Counter, Op*>& ready_list,
+                               const std::unordered_set<Counter>& picked_mask) const {
   while (it != ready_list.end()) {
     Op* op = it->second;
     ++it;
 
+    // skip if the op has been picked by other FUs
     if (picked_mask.count(op->op_num)) {
       continue;
     }
+    ASSERT(proc_id, node->sd.ops[fu_id] == nullptr);
 
-    if (!is_available(op)) {
+    // check if the op is ready (it may become not ready due to memory blocking or waiting for forwarding)
+    if (!check_op_ready(op)) {
       continue;
     }
 
+    // check if the op can be issued to this FU based on its type
     if (!(get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & fu_type)) {
-      continue;
-    }
-
-    if (node->sd.ops[fu_id]) {
       continue;
     }
 
@@ -170,7 +170,7 @@ Op* FunctionalUnit::pick(ReadyIter& it, const std::map<Counter, Op*>& ready_list
   return nullptr;
 }
 
-void FunctionalUnit::issue_into_sd(Op* op) {
+void FunctionalUnitPicker::issue_op_into_sd(Op* op) {
   ASSERT(proc_id, fu_id < (uns32)node->sd.max_op_count && node->sd.ops[fu_id] == nullptr);
   ASSERT(proc_id, node->sd.op_count < node->sd.max_op_count);
 
@@ -182,9 +182,9 @@ void FunctionalUnit::issue_into_sd(Op* op) {
 
 /**************************************************************************************/
 /*
- * The select logic is responsible for picking ready ops from the wakeup logic in the issue queue. Since the issue
- * queue is organized in a non-ordered (random) manner, the select logic typically relies on an age matrix to track
- * the relative age of entries.
+ * The select logic is responsible for picking ready ops from the wakeup logic in the issue queue.
+ * Since the issue queue is organized in a non-ordered (random) manner, the select logic typically relies
+ * on an age matrix to track the relative age of entries.
  */
 
 class SelectLogic {
@@ -197,26 +197,28 @@ class SelectLogic {
 class OldestFirstSelectLogic : public SelectLogic {
  private:
   const uns queue_id;
-  std::vector<FunctionalUnit> connected_fus;
+  std::vector<FunctionalUnitPicker> connected_fu_pickers;
   std::vector<std::map<Counter, Op*>> ready_lists;  // age ordered ready list of ops for each connected FU
   int fu_idx = 0;                                   // circular queue idx for round-robin selection
 
+  void serial_select();
+  void parallel_select();
+
  public:
-  OldestFirstSelectLogic(uns queue_id, const std::vector<FunctionalUnit>& connected_fus)
-      : queue_id(queue_id), connected_fus(connected_fus) {
-    ready_lists.resize(connected_fus.size());
+  OldestFirstSelectLogic(uns queue_id, const std::vector<FunctionalUnitPicker>& connected_fu_pickers)
+      : queue_id(queue_id), connected_fu_pickers(connected_fu_pickers) {
+    ready_lists.resize(connected_fu_pickers.size());
   }
   void request(Op* op) override;
   void release(Op* op) override;
   void select() override;
-  void serial_select();
-  void paralle_select();
 };
 
 void OldestFirstSelectLogic::request(Op* op) {
   op->in_rdy_list = TRUE;
-  for (size_t i = 0; i < connected_fus.size(); ++i) {
-    if (get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & connected_fus[i].fu_type) {
+  for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
+    if (get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) &
+        connected_fu_pickers[i].fu_type) {
       ready_lists[i][op->op_num] = op;
     }
   }
@@ -224,76 +226,82 @@ void OldestFirstSelectLogic::request(Op* op) {
 
 void OldestFirstSelectLogic::release(Op* op) {
   op->in_rdy_list = FALSE;
-  for (size_t i = 0; i < connected_fus.size(); ++i) {
+  for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
     ready_lists[i].erase(op->op_num);
   }
 }
 
 void OldestFirstSelectLogic::select() {
-  paralle_select();
+  // serial_select();
+  parallel_select();
 }
 
 /*
  * Serial selection is described in "Quantifying the complexity of superscalar processors", 1996.
- * The select logic consists of multiple blocks arranged in series and each block receives request signals that are
- * derived from the requests of the preceding block.
+ * The select logic consists of multiple picking blocks arranged in series and each block receives
+ * request signals that are derived from the requests of the preceding block.
  */
 void OldestFirstSelectLogic::serial_select() {
   std::unordered_set<Counter> picked_mask;
 
-  for (uns32 i = 0; i < connected_fus.size(); ++i) {
-    uns32 idx = (fu_idx + i) % connected_fus.size();
-    FunctionalUnit& fu = connected_fus[idx];
+  for (uns32 i = 0; i < connected_fu_pickers.size(); ++i) {
+    uns32 idx = (fu_idx + i) % connected_fu_pickers.size();
+    FunctionalUnitPicker& fu_picker = connected_fu_pickers[idx];
 
-    FunctionalUnit::ReadyIter it = ready_lists[idx].begin();
-    Op* op = fu.pick(it, ready_lists[idx], picked_mask);
+    FunctionalUnitPicker::ReadyIter it = ready_lists[idx].begin();
+    Op* op = fu_picker.pick(it, ready_lists[idx], picked_mask);
     if (op == nullptr) {
       continue;
     }
 
-    fu.issue_into_sd(op);
+    fu_picker.issue_op_into_sd(op);
     picked_mask.insert(op->op_num);
   }
 
   // move the circular queue idx for the next selection
-  fu_idx = (fu_idx + 1) % connected_fus.size();
+  fu_idx = (fu_idx + 1) % connected_fu_pickers.size();
 }
 
 /*
- * Parallel selection allows each functional unit to independently select a ready op in the same cycle. An arbitration
- * mechanism is then used to resolve conflicts when multiple functional units select the same op.
+ * Parallel selection allows each functional unit to independently select a ready op in the same cycle.
+ * An arbitrator is then used to resolve conflicts when multiple functional units select the same op.
  */
-void OldestFirstSelectLogic::paralle_select() {
-  using ReadyIter = std::map<Counter, Op*>::iterator;
-  std::vector<ReadyIter> cur_iter(connected_fus.size());
-  for (size_t i = 0; i < connected_fus.size(); ++i) {
+void OldestFirstSelectLogic::parallel_select() {
+  std::vector<FunctionalUnitPicker::ReadyIter> cur_iter(connected_fu_pickers.size());
+  for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
     cur_iter[i] = ready_lists[i].begin();
   }
 
-  std::vector<Op*> selected_ops(connected_fus.size(), nullptr);
+  std::vector<Op*> selected_ops(connected_fu_pickers.size(), nullptr);
   std::unordered_map<Counter, std::vector<size_t>> owner;
   std::unordered_set<Counter> conflict_ops;
   std::unordered_set<Counter> picked_mask;
-
-  // parallel pick an op for each connected FU
-  for (size_t i = 0; i < connected_fus.size(); ++i) {
-    Op* op = connected_fus[i].pick(cur_iter[i], ready_lists[i], picked_mask);
+  auto try_pick = [&](size_t i) {
+    FunctionalUnitPicker& fu_picker = connected_fu_pickers[i];
+    Op* op = fu_picker.pick(cur_iter[i], ready_lists[i], picked_mask);
     if (op == nullptr) {
-      continue;
+      return;
     }
 
     selected_ops[i] = op;
     picked_mask.insert(op->op_num);
 
-    auto& vec = owner[op->op_num];
-    vec.push_back(i);
-    if (vec.size() > 1) {
+    auto& v = owner[op->op_num];
+    v.push_back(i);
+    if (v.size() > 1) {
       conflict_ops.insert(op->op_num);
     }
+  };
+
+  // parallel pick an op for each connected FU
+  for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
+    try_pick(i);
   }
 
   // arbitration among the selected ops if there are conflicts
-  auto rr_rank = [&](size_t slot) { return (slot + connected_fus.size() - fu_idx) % connected_fus.size(); };
+  auto rr_rank = [&](size_t slot) {
+    return (slot + connected_fu_pickers.size() - fu_idx) % connected_fu_pickers.size();
+  };
   while (!conflict_ops.empty()) {
     Counter conflict_op_num = *conflict_ops.begin();
     conflict_ops.erase(conflict_ops.begin());
@@ -319,37 +327,23 @@ void OldestFirstSelectLogic::paralle_select() {
       }
 
       selected_ops[s] = nullptr;
-      Op* op = connected_fus[s].pick(cur_iter[s], ready_lists[s], picked_mask);
-
-      if (op == nullptr) {
-        continue;
-      }
-
-      selected_ops[s] = op;
-      picked_mask.insert(op->op_num);
-
-      auto& vec = owner[op->op_num];
-      vec.push_back(s);
-      if (vec.size() > 1) {
-        // new selection may result in new conflicts
-        conflict_ops.insert(op->op_num);
-      }
+      try_pick(s);
     }
   }
 
   // issue the selected ops to their respective FUs
-  for (size_t i = 0; i < connected_fus.size(); ++i) {
+  for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
     Op* op = selected_ops[i];
     if (op == nullptr) {
       continue;
     }
 
-    connected_fus[i].issue_into_sd(op);
+    connected_fu_pickers[i].issue_op_into_sd(op);
     picked_mask.insert(op->op_num);
   }
 
   // move the circular queue idx to the next position for the next selection
-  fu_idx = (fu_idx + 1) % connected_fus.size();
+  fu_idx = (fu_idx + 1) % connected_fu_pickers.size();
 }
 
 /**************************************************************************************/
@@ -361,17 +355,16 @@ class IssueQueue {
 
   std::vector<IssueQueueEntry> entries;
   std::deque<uns16> free_list;
-  std::vector<FunctionalUnit> connected_fus;
   std::shared_ptr<SelectLogic> select_logic;
 
  public:
-  explicit IssueQueue(uns proc_id, uns16 queue_id, uns16 size, const std::vector<FunctionalUnit>& connected_fus);
+  explicit IssueQueue(uns proc_id, uns16 queue_id, uns16 size,
+                      const std::vector<FunctionalUnitPicker>& connected_fu_pickers);
   uns16 allocate_entry(Op* op);
   void free_entry(uns16 entry_id);
 
   size_t available_entries() const { return free_list.size(); }
   const std::vector<IssueQueueEntry>& get_entries() const { return entries; }
-  const std::vector<FunctionalUnit>& get_connected_fus() const { return connected_fus; }
 
   void wakeup(uns16 entry_id);
   void grant();
@@ -379,8 +372,9 @@ class IssueQueue {
   void schedule();
 };
 
-IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size, const std::vector<FunctionalUnit>& connected_fus)
-    : proc_id(proc_id), queue_id(queue_id), connected_fus(connected_fus) {
+IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size,
+                       const std::vector<FunctionalUnitPicker>& connected_fu_pickers)
+    : proc_id(proc_id), queue_id(queue_id) {
   // initialize entries and free list
   entries.reserve(size);
   for (uns16 i = 0; i < size; ++i) {
@@ -390,7 +384,7 @@ IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size, const std::vecto
   DEBUG(proc_id, "Initializing Issue Queue %d with size %d\n", queue_id, size);
 
   // initialize select logic based on scheduling scheme
-  select_logic = std::make_shared<OldestFirstSelectLogic>(queue_id, connected_fus);
+  select_logic = std::make_shared<OldestFirstSelectLogic>(queue_id, connected_fu_pickers);
 }
 
 uns16 IssueQueue::allocate_entry(Op* op) {
@@ -525,7 +519,7 @@ IssueQueues::IssueQueues(uns proc_id) : proc_id(proc_id) {
   // initialize the connected FUs for each issue queue
   std::vector<std::string> fu_tokens = split_tokens(FU_TYPES);
   ASSERT(proc_id, fu_tokens.size() == NUM_FUS);
-  std::vector<std::vector<FunctionalUnit>> fu_connection(NUM_RS);
+  std::vector<std::vector<FunctionalUnitPicker>> fu_connection(NUM_RS);
   fu_types.assign(NUM_RS, 0);
   for (size_t i = 0; i < NUM_FUS; ++i) {
     uns64 fu_type = parse_mask(fu_tokens[i]);

@@ -74,7 +74,6 @@ enum ISSUE_QUEUE_ENTRY_STATE {
 /**************************************************************************************/
 /* Prototypes */
 
-static inline Flag issue_queue_check_op_ready(Op* op);
 static inline void issue_queue_update_mem_block();
 static inline void issue_queue_track_stats();
 static inline uns16 issue_queue_dispatch_find_emptiest(Op* op);
@@ -107,27 +106,71 @@ struct FunctionalUnit {
   const uns16 queue_id;
   const uns32 fu_id;
   const uns64 fu_type;
+  using ReadyIter = std::map<Counter, Op*>::iterator;
 
   explicit FunctionalUnit(uns proc_id, uns16 queue_id, uns32 fu_id, uns64 fu_type)
       : proc_id(proc_id), queue_id(queue_id), fu_id(fu_id), fu_type(fu_type) {}
 
-  Flag available(uns64 op_fu_type) const;
-  void issue(Op* op) const;
+  Flag is_available(Op* op) const;
+  Op* pick(ReadyIter& it, const std::map<Counter, Op*>& ready_list,
+           const std::unordered_set<Counter>& picked_mask) const;
+  void issue_into_sd(Op* op);
 };
 
-Flag FunctionalUnit::available(uns64 op_fu_type) const {
-  if (!(op_fu_type & fu_type)) {
-    return FALSE;
+Flag FunctionalUnit::is_available(Op* op) const {
+  ASSERT(node->proc_id, op != nullptr);
+
+  // if the op is waiting for memory, check if it is still blocked by memory. If not, it becomes ready
+  if (op->state == OS_WAIT_MEM) {
+    if (node->mem_blocked) {
+      return FALSE;
+    }
+    op->state = OS_READY;
   }
 
-  if (node->sd.ops[fu_id]) {
+  if (op->state == OS_TENTATIVE || op->state == OS_WAIT_DCACHE) {
     return FALSE;
   }
+  ASSERT(node->proc_id, op->state == OS_IN_RS || op->state == OS_READY || op->state == OS_WAIT_FWD);
+
+  // if the op is waiting for forwarding, check if it can be forwarded in time to be ready in the next cycle
+  if (cycle_count < op->rdy_cycle - 1) {
+    return FALSE;
+  }
+  ASSERT(node->proc_id, op_sources_not_rdy_is_clear(op));
 
   return TRUE;
 }
 
-void FunctionalUnit::issue(Op* op) const {
+Op* FunctionalUnit::pick(ReadyIter& it, const std::map<Counter, Op*>& ready_list,
+                         const std::unordered_set<Counter>& picked_mask) const {
+  while (it != ready_list.end()) {
+    Op* op = it->second;
+    ++it;
+
+    if (picked_mask.count(op->op_num)) {
+      continue;
+    }
+
+    if (!is_available(op)) {
+      continue;
+    }
+
+    if (!(get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & fu_type)) {
+      continue;
+    }
+
+    if (node->sd.ops[fu_id]) {
+      continue;
+    }
+
+    return op;
+  }
+
+  return nullptr;
+}
+
+void FunctionalUnit::issue_into_sd(Op* op) {
   ASSERT(proc_id, fu_id < (uns32)node->sd.max_op_count && node->sd.ops[fu_id] == nullptr);
   ASSERT(proc_id, node->sd.op_count < node->sd.max_op_count);
 
@@ -151,145 +194,102 @@ class SelectLogic {
   virtual void select() = 0;
 };
 
-/*
- * Serial picking is described in "Quantifying the complexity of superscalar processors", 1996.
- * The select logic consists of multiple blocks arranged in series and each block receives request signals that are
- * derived from the requests of the preceding block.
- *
- * A round-robin oldest-first selection is implemented in each block.
- */
-class SerialOldestFirstSelectLogic : public SelectLogic {
+class OldestFirstSelectLogic : public SelectLogic {
  private:
   const uns queue_id;
-  const std::vector<FunctionalUnit> connected_fus;
-
-  std::map<Counter, Op*> ready_list;  // age ordered ready list of ops
-  int fu_idx = 0;                     // circular queue idx for round-robin selection
+  std::vector<FunctionalUnit> connected_fus;
+  std::vector<std::map<Counter, Op*>> ready_lists;  // age ordered ready list of ops for each connected FU
+  int fu_idx = 0;                                   // circular queue idx for round-robin selection
 
  public:
-  SerialOldestFirstSelectLogic(uns queue_id, const std::vector<FunctionalUnit>& connected_fus)
-      : queue_id(queue_id), connected_fus(connected_fus) {}
+  OldestFirstSelectLogic(uns queue_id, const std::vector<FunctionalUnit>& connected_fus)
+      : queue_id(queue_id), connected_fus(connected_fus) {
+    ready_lists.resize(connected_fus.size());
+  }
   void request(Op* op) override;
   void release(Op* op) override;
   void select() override;
+  void serial_select();
+  void paralle_select();
 };
 
-void SerialOldestFirstSelectLogic::request(Op* op) {
+void OldestFirstSelectLogic::request(Op* op) {
   op->in_rdy_list = TRUE;
-  ready_list[op->op_num] = op;
+  for (size_t i = 0; i < connected_fus.size(); ++i) {
+    if (get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & connected_fus[i].fu_type) {
+      ready_lists[i][op->op_num] = op;
+    }
+  }
 }
 
-void SerialOldestFirstSelectLogic::release(Op* op) {
+void OldestFirstSelectLogic::release(Op* op) {
   op->in_rdy_list = FALSE;
-  ready_list.erase(op->op_num);
+  for (size_t i = 0; i < connected_fus.size(); ++i) {
+    ready_lists[i].erase(op->op_num);
+  }
 }
 
-void SerialOldestFirstSelectLogic::select() {
-  for (auto it = ready_list.begin(); it != ready_list.end(); ++it) {
-    // check if the op is still ready and can be issued
-    Op* op = it->second;
-    if (!issue_queue_check_op_ready(op)) {
+void OldestFirstSelectLogic::select() {
+  paralle_select();
+}
+
+/*
+ * Serial selection is described in "Quantifying the complexity of superscalar processors", 1996.
+ * The select logic consists of multiple blocks arranged in series and each block receives request signals that are
+ * derived from the requests of the preceding block.
+ */
+void OldestFirstSelectLogic::serial_select() {
+  std::unordered_set<Counter> picked_mask;
+
+  for (uns32 i = 0; i < connected_fus.size(); ++i) {
+    uns32 idx = (fu_idx + i) % connected_fus.size();
+    FunctionalUnit& fu = connected_fus[idx];
+
+    FunctionalUnit::ReadyIter it = ready_lists[idx].begin();
+    Op* op = fu.pick(it, ready_lists[idx], picked_mask);
+    if (op == nullptr) {
       continue;
     }
 
-    // find a connected FU that can execute this op
-    uns64 op_fu_type = get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd);
-    for (uns32 ii = 0; ii < connected_fus.size(); ++ii) {
-      const FunctionalUnit& fu = connected_fus[(fu_idx + ii) % connected_fus.size()];
-      if (!fu.available(op_fu_type)) {
-        continue;
-      }
-
-      fu.issue(op);
-      fu_idx = (fu_idx + ii + 1) % connected_fus.size();  // move the circular queue idx for the next selection
-      break;
-    }
+    fu.issue_into_sd(op);
+    picked_mask.insert(op->op_num);
   }
+
+  // move the circular queue idx for the next selection
+  fu_idx = (fu_idx + 1) % connected_fus.size();
 }
 
 /*
  * Parallel selection allows each functional unit to independently select a ready op in the same cycle. An arbitration
  * mechanism is then used to resolve conflicts when multiple functional units select the same op.
- *
- * A round-robin quick cancellation mechanism is used in this arbitration.
  */
-
-class ParallelOldestFirstSelectLogic : public SelectLogic {
- private:
-  const uns queue_id;
-  const std::vector<FunctionalUnit> connected_fus;
-
-  std::vector<std::map<Counter, Op*>> ready_list;  // age ordered ready list of ops for each connected FU
-  int fu_idx = 0;                                  // circular queue idx for round-robin selection
-
- public:
-  ParallelOldestFirstSelectLogic(uns queue_id, const std::vector<FunctionalUnit>& connected_fus)
-      : queue_id(queue_id), connected_fus(connected_fus) {
-    ready_list.resize(connected_fus.size());
-  }
-  void request(Op* op) override;
-  void release(Op* op) override;
-  void select() override;
-};
-
-// The op is added to the ready list of all connected FUs that can execute it
-void ParallelOldestFirstSelectLogic::request(Op* op) {
-  op->in_rdy_list = TRUE;
-  for (size_t i = 0; i < connected_fus.size(); ++i) {
-    if (get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & connected_fus[i].fu_type) {
-      ready_list[i][op->op_num] = op;
-    }
-  }
-}
-
-// The op is removed from the ready list of all connected FUs that can execute it
-void ParallelOldestFirstSelectLogic::release(Op* op) {
-  op->in_rdy_list = FALSE;
-  for (size_t i = 0; i < connected_fus.size(); ++i) {
-    ready_list[i].erase(op->op_num);
-  }
-}
-
-void ParallelOldestFirstSelectLogic::select() {
-  // init iterators
+void OldestFirstSelectLogic::paralle_select() {
   using ReadyIter = std::map<Counter, Op*>::iterator;
   std::vector<ReadyIter> cur_iter(connected_fus.size());
   for (size_t i = 0; i < connected_fus.size(); ++i) {
-    cur_iter[i] = ready_list[i].begin();
+    cur_iter[i] = ready_lists[i].begin();
   }
 
-  // pick next candidate
-  auto pick_next = [&](size_t i) -> Op* {
-    auto& it = cur_iter[i];
-
-    while (it != ready_list[i].end()) {
-      Op* op = it->second;
-      ++it;
-
-      if (!issue_queue_check_op_ready(op)) {
-        continue;
-      }
-      return op;
-    }
-    return nullptr;
-  };
-
-  // parallel pick an op for each connected FU
   std::vector<Op*> selected_ops(connected_fus.size(), nullptr);
   std::unordered_map<Counter, std::vector<size_t>> owner;
   std::unordered_set<Counter> conflict_ops;
+  std::unordered_set<Counter> picked_mask;
+
+  // parallel pick an op for each connected FU
   for (size_t i = 0; i < connected_fus.size(); ++i) {
-    Op* op = pick_next(i);
+    Op* op = connected_fus[i].pick(cur_iter[i], ready_lists[i], picked_mask);
     if (op == nullptr) {
       continue;
     }
-    selected_ops[i] = op;
 
-    auto it = owner.find(op->op_num);
-    if (it != owner.end()) {
+    selected_ops[i] = op;
+    picked_mask.insert(op->op_num);
+
+    auto& vec = owner[op->op_num];
+    vec.push_back(i);
+    if (vec.size() > 1) {
       conflict_ops.insert(op->op_num);
     }
-    owner[op->op_num].push_back(i);
   }
 
   // arbitration among the selected ops if there are conflicts
@@ -319,17 +319,19 @@ void ParallelOldestFirstSelectLogic::select() {
       }
 
       selected_ops[s] = nullptr;
-      Op* op = pick_next(s);
-      selected_ops[s] = op;
+      Op* op = connected_fus[s].pick(cur_iter[s], ready_lists[s], picked_mask);
+
       if (op == nullptr) {
         continue;
       }
 
+      selected_ops[s] = op;
+      picked_mask.insert(op->op_num);
+
       auto& vec = owner[op->op_num];
       vec.push_back(s);
-
-      // new selection may result in new conflicts
       if (vec.size() > 1) {
+        // new selection may result in new conflicts
         conflict_ops.insert(op->op_num);
       }
     }
@@ -342,8 +344,8 @@ void ParallelOldestFirstSelectLogic::select() {
       continue;
     }
 
-    const FunctionalUnit& fu = connected_fus[i];
-    fu.issue(op);
+    connected_fus[i].issue_into_sd(op);
+    picked_mask.insert(op->op_num);
   }
 
   // move the circular queue idx to the next position for the next selection
@@ -388,7 +390,7 @@ IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size, const std::vecto
   DEBUG(proc_id, "Initializing Issue Queue %d with size %d\n", queue_id, size);
 
   // initialize select logic based on scheduling scheme
-  select_logic = std::make_shared<ParallelOldestFirstSelectLogic>(queue_id, connected_fus);
+  select_logic = std::make_shared<OldestFirstSelectLogic>(queue_id, connected_fus);
 }
 
 uns16 IssueQueue::allocate_entry(Op* op) {
@@ -642,31 +644,6 @@ IssueQueues* issue_queues = nullptr;
 
 /**************************************************************************************/
 /* Inline Functions */
-
-static inline Flag issue_queue_check_op_ready(Op* op) {
-  ASSERT(node->proc_id, op != nullptr);
-
-  // if the op is waiting for memory, check if it is still blocked by memory. If not, it becomes ready
-  if (op->state == OS_WAIT_MEM) {
-    if (node->mem_blocked) {
-      return FALSE;
-    }
-    op->state = OS_READY;
-  }
-
-  if (op->state == OS_TENTATIVE || op->state == OS_WAIT_DCACHE) {
-    return FALSE;
-  }
-  ASSERT(node->proc_id, op->state == OS_IN_RS || op->state == OS_READY || op->state == OS_WAIT_FWD);
-
-  // if the op is waiting for forwarding, check if it can be forwarded in time to be ready in the next cycle
-  if (cycle_count < op->rdy_cycle - 1) {
-    return FALSE;
-  }
-  ASSERT(node->proc_id, op_sources_not_rdy_is_clear(op));
-
-  return TRUE;
-}
 
 // Memory is blocked when there are no more MSHRs in the L1 Q (i.e., there is no way to handle a D-Cache miss)
 static inline void issue_queue_update_mem_block() {

@@ -576,12 +576,15 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   bpi->btb_main_hit = FALSE;
   if (br_slots) {
     for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
-      if (br_slots[ii].valid && br_slots[ii].addr == op->inst_info->addr) {
-        bpi->btb_main_hit = TRUE;
-        bpi->btb_main_target = br_slots[ii].target;
+      if (br_slots[ii].valid) {
+        if (br_slots[ii].addr == op->inst_info->addr) {
+          bpi->btb_main_hit = TRUE;
+          bpi->btb_main_target = br_slots[ii].target;
+          break;
+        }
+      } else {
         break;
       }
-      break;
     }
   }
 }
@@ -623,8 +626,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
         uns insert_pos = BTB_NUM_BRSLOT;
         for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
           if (br_slots[ii].valid) {
-            // if (br_slots[ii].addr < op->inst_info->addr)
-            //   continue;
+            // slot that has smaller addr (br_slots[ii].addr < op->inst_info->addr) will be just skipped
             if (br_slots[ii].addr == op->inst_info->addr) {
               br_slots[ii] = br_slot;
               break;
@@ -638,6 +640,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
                 insert_pos = ii;
               } else {
                 // If this op is always-taken, invalidate the rest as the block ends here.
+                // Only happens with self-modifying code.
                 br_slots[ii] = br_slot;
                 for (uns jj = ii + 1; jj < BTB_NUM_BRSLOT; jj++)
                   br_slots[jj].valid = FALSE;

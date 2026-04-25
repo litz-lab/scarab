@@ -92,9 +92,8 @@ typedef struct Btb_Pred_Info_struct {
 // Prediction levels for the two-level (L0 + main) branch predictor hierarchy.
 //
 // IMPORTANT: The numeric values (L0=0, MAIN=1) must remain contiguous and match
-// the order of the per-level stat pairs defined in bp.stat.def (e.g.
-// BP_L0_PREDICTIONS / BP_MAIN_PREDICTIONS).  The STAT_EVENT_BP_SPLIT_PATH macro
-// in bp.c uses `base_stat + bp_pred_level` to index into consecutive stat slots.
+// the order of the per-level aggregate stat pairs in bp.stat.def (e.g.
+// L0_ALL_PREDICTIONS / MAIN_ALL_PREDICTIONS and their OFFPATH variants).
 typedef enum Bp_Pred_Level_enum {
   BP_PRED_L0 = 0,
   BP_PRED_MAIN = 1,

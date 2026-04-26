@@ -37,9 +37,6 @@ typedef struct Bp_Pred_Info_struct {
   int64 pred_branch_id;    // predictor-local branch id for speculative checkpoint/recover
   uns8 pred;               // predicted direction of branch, set by the branch predictor
   uns8 pred_orig;          // predicted direction of branch, not overwritten on BTB miss (for fdip)
-  Flag misfetch;           // true if target address is the ONLY thing that was wrong
-  Flag mispred;            // true if the direction of the branch was mispredicted and the
-                           // branch should cause a recovery, set by the branch predictor
   Flag recovery_sch;       // true if this op has scheduled a recovery
   Flag recover_at_fe;      // op will schedule recovery in frontend (early correction)
   Flag recover_at_decode;  // op will schedule recovery at decode

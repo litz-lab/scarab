@@ -523,7 +523,7 @@ void cmp_warmup(Op* op) {
     bp_predict_op(bp_data, op, MAIN_BP, 1, ia, BP_PRED_MAIN);
     bp_target_known_op(bp_data, op);
     bp_resolve_op(bp_data, op);
-    if (op->bp_pred_info->mispred || op->bp_pred_info->misfetch) {
+    if (op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec) {
       bp_recover_op(bp_data, op->inst_info->table_info.cf_type, &op->recovery_info);
     }
     bp_data->bp->retire_func(op);

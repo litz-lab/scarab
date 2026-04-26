@@ -274,11 +274,8 @@ void decode_stage_process_op(Op* op) {
             (unsigned long long)cycle_count);
       bp_sched_recovery(bp_recovery_info, op, cycle_count);
 
-      // After recovery remove misfetch/mispred/btb_miss flags so it does not trigger flush by exec again
-      op->bp_pred_info->misfetch = FALSE;
       op->btb_pred_info->btb_miss = FALSE;
       op->bp_pred_info->pred = op->oracle_info.dir;
-      op->bp_pred_info->mispred = FALSE;
 
       // stats for the reason of resteer
       STAT_EVENT(dec->proc_id, RESTEER_BTB_MISS_CF_BR + cf);

@@ -390,10 +390,15 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   // {{{ read pre-computed BTB/IBP results from btb_pred_info
 
   // All BTB/IBP lookup results were computed once by bp_predict_btb() and
-  // stored in op->btb_pred_info.  bp_predict_op() is a pure reader of
-  // btb_pred_info; it does not write to it.
-  pred_target = op->btb_pred_info->pred_target;
-  Flag btb_hit = !op->btb_pred_info->btb_miss;
+  // stored in op->btb_pred_info.  The BTB target is usable by this predictor
+  // level only if the BTB level that supplied it is no slower than the BP.
+  const uns bp_latency = pred_level == BP_PRED_L0 ? BP_L0_LATENCY : BP_MAIN_LATENCY;
+  const Flag btb_hit =
+      op->btb_pred_info->btb_pred_latency != MAX_UNS && op->btb_pred_info->btb_pred_latency <= bp_latency;
+  if (btb_hit)
+    pred_target = op->btb_pred_info->pred_target;
+  else
+    pred_target = pc_plus_offset;
 
   // }}}
   // {{{ handle predictions for individual cf types
@@ -433,7 +438,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       if (pred_level == BP_PRED_MAIN)
         bp_data->global_hist = (bp_data->global_hist >> 1) | (bp_pred_info->pred << 31);
 
-      if (op->btb_pred_info->btb_miss && bp_pred_info->pred == NOT_TAKEN)
+      if (!btb_hit && bp_pred_info->pred == NOT_TAKEN)
         btb_miss_nt = TRUE;
 
       // pred_target is set by BTB on hit. For CBR we may however, still want to execute fall-through
@@ -707,7 +712,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   }
   // }}}
 
-  if (op->btb_pred_info->btb_miss && bp_pred_info->pred == NOT_TAKEN)
+  if (!btb_hit && bp_pred_info->pred == NOT_TAKEN)
     btb_miss_nt = TRUE;
 
   if (pred_level == BP_PRED_L0) {

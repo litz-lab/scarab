@@ -194,25 +194,26 @@ void print_op_field(FILE* stream, Op* op, uns field) {
             fprintf(stream, "%c%c", Op_State_str(op->state)[0], op->replay ? 'r' : ' ');
         }
         if (op->inst_info->table_info.cf_type && op->bp_pred_info && op->btb_pred_info) {
-          Flag bits = op->bp_pred_info->mispred << 2 | op->bp_pred_info->misfetch << 1 | op->btb_pred_info->btb_miss;
+          Flag bits = (op->bp_pred_info->recover_at_exec << 2) | (op->bp_pred_info->recover_at_decode << 1) |
+                      op->btb_pred_info->btb_miss;
           switch (bits) {
             case 0x4:
               fprintf(stream, "P|");
-              break; /* mispredict */
+              break; /* exec recovery */
             case 0x3:
             case 0x2:
               fprintf(stream, "F|");
-              break; /* misfetch or (misfetch and btb miss) */
+              break; /* decode recovery or (decode recovery and btb miss) */
             case 0x1:
               fprintf(stream, "M|");
               break; /* btb miss */
             case 0x5:
             case 0x6:
               fprintf(stream, "B|");
-              break; /* mispredict, (misfetch or btb miss) */
+              break; /* exec recovery, (decode recovery or btb miss) */
             case 0x7:
               fprintf(stream, "A|");
-              break; /* mispredict, misfetch, btb miss */
+              break; /* exec recovery, decode recovery, btb miss */
             case 0x0:
               fprintf(stream, " |");
               break;

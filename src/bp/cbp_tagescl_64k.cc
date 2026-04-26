@@ -758,7 +758,7 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
 
   if (!TAGESCL64KB_SC) {
     if (!op->off_path)
-      STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_BASE_CORRECT + op->bp_pred_info->mispred + tage_component * 2);
+      STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_BASE_CORRECT + op->bp_pred_info->recover_at_exec + tage_component * 2);
   }
 
   if (TAGESCL64KB_LOOP) {

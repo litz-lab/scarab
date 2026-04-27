@@ -218,47 +218,16 @@ class SelectLogic {
  public:
   virtual ~SelectLogic() = default;
 
+  void select();
   virtual void request(IssueQueueEntry* entry) = 0;
   virtual void release(IssueQueueEntry* entry) = 0;
-  virtual void select() = 0;
+
+ protected:
+  // helper methods for select logic to interact with the pickers
+  virtual void prepare_picker_order() = 0;
+  virtual FunctionalUnitPicker& picker_at(size_t i) = 0;
+  virtual size_t picker_count() const = 0;
 };
-
-class OldestFirstSelectLogic : public SelectLogic {
- private:
-  const uns queue_id;
-  const size_t fu_num;
-  std::vector<FunctionalUnitPicker> connected_fu_pickers;
-
-  int fu_idx = 0;                    // circular queue idx for round-robin selection
-  std::vector<size_t> picker_order;  // the order of pickers to check in the current selection round
-
- public:
-  OldestFirstSelectLogic(uns queue_id, const std::vector<FunctionalUnitPicker>& connected_fu_pickers)
-      : queue_id(queue_id), fu_num(connected_fu_pickers.size()), connected_fu_pickers(connected_fu_pickers) {}
-  void request(IssueQueueEntry* entry) override;
-  void release(IssueQueueEntry* entry) override;
-  void select() override;
-};
-
-void OldestFirstSelectLogic::request(IssueQueueEntry* entry) {
-  Op* op = entry->op;
-  op->in_rdy_list = TRUE;
-  for (size_t i = 0; i < fu_num; ++i) {
-    FunctionalUnitPicker& fu_picker = connected_fu_pickers[i];
-    if (fu_picker.is_compatible(op->inst_info)) {
-      fu_picker.add_ready_entry(op->op_num, entry);
-    }
-  }
-}
-
-void OldestFirstSelectLogic::release(IssueQueueEntry* entry) {
-  Op* op = entry->op;
-  op->in_rdy_list = FALSE;
-  for (size_t i = 0; i < fu_num; ++i) {
-    FunctionalUnitPicker& fu_picker = connected_fu_pickers[i];
-    fu_picker.remove_ready_entry(op->op_num);
-  }
-}
 
 /*
  * Serial selection is described in "Quantifying the complexity of superscalar processors", 1996.
@@ -269,17 +238,14 @@ void OldestFirstSelectLogic::release(IssueQueueEntry* entry) {
  * An arbitrator is then used to resolve conflicts when multiple functional units select the same op.
  */
 
-void OldestFirstSelectLogic::select() {
-  // determine the order of pickers to check in this round (round-robin across pickers to achieve fairness)
-  picker_order.resize(fu_num);
-  for (size_t i = 0; i < fu_num; ++i) {
-    picker_order[i] = (fu_idx + i) % fu_num;
-  }
-  fu_idx = (fu_idx + 1) % fu_num;
+void SelectLogic::select() {
+  const size_t fu_num = picker_count();
+  prepare_picker_order();
 
-  // reset the ready iter for each picker to start from the oldest ready op
+  // reset the ready iter for each picker to start from the head of the ready list
   for (size_t i = 0; i < fu_num; ++i) {
-    connected_fu_pickers[i].init_ready_iter();
+    FunctionalUnitPicker& fu_picker = picker_at(i);
+    fu_picker.init_ready_iter();
   }
 
   uint64_t active_mask = ((1ULL << fu_num) - 1);
@@ -288,31 +254,87 @@ void OldestFirstSelectLogic::select() {
   while (active_mask) {
     cancelled_mask.clear();
 
-    for (size_t picker_idx : picker_order) {
-      if (!(active_mask & (1ULL << picker_idx))) {
+    for (size_t i = 0; i < fu_num; ++i) {
+      // skip the picker if it has picked an op or does not have any ready op to pick
+      if (!(active_mask & (1ULL << i))) {
         continue;
       }
 
-      FunctionalUnitPicker& fu_picker = connected_fu_pickers[picker_idx];
+      FunctionalUnitPicker& fu_picker = picker_at(i);
       auto ret = fu_picker.pick_next(cancelled_mask);
 
+      // mark the picker inactive if the iterator reaches the end of the ready list
       if (ret.status == FunctionalUnitPicker::PickStatus::EXHAUSTED) {
-        active_mask &= ~(1ULL << picker_idx);
+        active_mask &= ~(1ULL << i);
         continue;
       }
 
+      // do the picking in the next round if it is cancelled due to a conflict in the same round
       if (ret.status == FunctionalUnitPicker::PickStatus::CANCELLED) {
         continue;
       }
 
+      // mark the current pickas the winner to cancel competing picks for the same op in this round
       if (ISSUE_QUEUE_PARALLEL_PICK) {
         cancelled_mask.insert(ret.entry->op->op_num);
       }
 
       fu_picker.grant_op(ret.entry);
-      active_mask &= ~(1ULL << picker_idx);
+      active_mask &= ~(1ULL << i);
     }
   }
+}
+
+/**************************************************************************************/
+
+class RoundRobinOldestFirstSelectLogic : public SelectLogic {
+ private:
+  const uns queue_id;
+  const size_t fu_num;
+  int fu_idx = 0;  // circular queue idx for round-robin selection
+  std::vector<FunctionalUnitPicker> connected_fu_pickers;
+
+ public:
+  RoundRobinOldestFirstSelectLogic(uns queue_id, const std::vector<FunctionalUnitPicker>& connected_fu_pickers)
+      : queue_id(queue_id),
+        fu_num(connected_fu_pickers.size()),
+        fu_idx(fu_num - 1),
+        connected_fu_pickers(connected_fu_pickers) {}
+  void request(IssueQueueEntry* entry) override;
+  void release(IssueQueueEntry* entry) override;
+
+ protected:
+  void prepare_picker_order() override;
+  FunctionalUnitPicker& picker_at(size_t i) override;
+  size_t picker_count() const override { return fu_num; }
+};
+
+// oldest-first policy keeps the ready list of each picker sorted by op age
+void RoundRobinOldestFirstSelectLogic::request(IssueQueueEntry* entry) {
+  for (size_t i = 0; i < fu_num; ++i) {
+    FunctionalUnitPicker& fu_picker = connected_fu_pickers[i];
+    if (fu_picker.is_compatible(entry->op->inst_info)) {
+      fu_picker.add_ready_entry(entry->op->op_num, entry);
+    }
+  }
+}
+
+void RoundRobinOldestFirstSelectLogic::release(IssueQueueEntry* entry) {
+  for (size_t i = 0; i < fu_num; ++i) {
+    FunctionalUnitPicker& fu_picker = connected_fu_pickers[i];
+    fu_picker.remove_ready_entry(entry->op->op_num);
+  }
+}
+
+// round-robin mechanism is used to ensure fairness
+void RoundRobinOldestFirstSelectLogic::prepare_picker_order() {
+  fu_idx = (fu_idx + 1) % fu_num;
+}
+
+FunctionalUnitPicker& RoundRobinOldestFirstSelectLogic::picker_at(size_t i) {
+  size_t picker_idx = (fu_idx + i) % fu_num;
+  ASSERT(node->proc_id, picker_idx < connected_fu_pickers.size());
+  return connected_fu_pickers[picker_idx];
 }
 
 /**************************************************************************************/
@@ -359,7 +381,7 @@ IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size,
   DEBUG(proc_id, "Initializing Issue Queue %d with size %d\n", queue_id, size);
 
   // initialize select logic based on scheduling scheme
-  select_logic = std::make_unique<OldestFirstSelectLogic>(queue_id, connected_fu_pickers);
+  select_logic = std::make_unique<RoundRobinOldestFirstSelectLogic>(queue_id, connected_fu_pickers);
 }
 
 uns16 IssueQueue::allocate_entry(Op* op) {
@@ -394,6 +416,7 @@ void IssueQueue::wakeup(uns16 entry_id) {
   Op* op = entry.op;
   ASSERT(proc_id, op != nullptr);
 
+  op->in_rdy_list = TRUE;
   entry.state = ISSUE_QUEUE_ENTRY_STATE_READY;
   select_logic->request(&entry);
 }
@@ -407,6 +430,7 @@ void IssueQueue::issued(uns16 entry_id) {
   ASSERT(proc_id, op != nullptr);
 
   STAT_EVENT(node->proc_id, OP_ISSUED);
+  op->in_rdy_list = FALSE;
   select_logic->release(&entry);
   free_entry(entry.entry_id);
 }
@@ -426,6 +450,7 @@ void IssueQueue::recover() {
       continue;
     }
 
+    op->in_rdy_list = FALSE;
     select_logic->release(&entry);
     free_entry(entry.entry_id);
   }

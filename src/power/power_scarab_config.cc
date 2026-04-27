@@ -330,7 +330,7 @@ static void power_print_core_stats_block(std::ofstream& out, uint32_t core_id, d
   ADD_XML_CORE_STAT(out, header, core_id, "int_instructions", POWER_INT_OP, );
   ADD_XML_CORE_STAT(out, header, core_id, "fp_instructions", POWER_FP_OP, );
   ADD_XML_CORE_STAT(out, header, core_id, "branch_instructions", POWER_BRANCH_OP, );
-  ADD_XML_CORE_STAT(out, header, core_id, "branch_mispredictions", POWER_BRANCH_MISPREDICT, );
+  ADD_XML_CORE_STAT(out, header, core_id, "branch_mispredictions", POWER_BRANCH_RECOVER_AT_EXEC, );
   ADD_XML_CORE_STAT(out, header, core_id, "load_instructions", POWER_LD_OP, );
   ADD_XML_CORE_STAT(out, header, core_id, "store_instructions", POWER_ST_OP, );
   ADD_XML_CORE_STAT(out, header, core_id, "committed_instructions", POWER_COMMITTED_OP, );

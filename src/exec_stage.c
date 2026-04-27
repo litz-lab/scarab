@@ -566,7 +566,7 @@ static inline void exec_stage_bp_resolve(Op* op) {
       op->recovery_scheduled = TRUE;
 
     // stats for the reason of resteer
-    STAT_EVENT(op->proc_id, RESTEER_MISPRED_NOT_CF + op->inst_info->table_info.cf_type);
+    STAT_EVENT(op->proc_id, RESTEER_RECOVER_AT_EXEC_NOT_CF + op->inst_info->table_info.cf_type);
   }
 
 #if 0

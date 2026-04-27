@@ -61,6 +61,18 @@ Stat global_stat_sample[] = {
 #undef DEF_STAT
 
 Stat** global_stat_array;
+Stat*** alt_bp_stat_array;
+
+static char alt_bp_stat_file_names[MAX_NUM_BPS][32];
+static uns bp_stats_begin = NUM_GLOBAL_STATS;
+static uns bp_stats_end = NUM_GLOBAL_STATS;
+
+static Flag stat_is_bp_stat(const Stat* stat) {
+  return !strcmp(stat->file_name, "bp.stat.def");
+}
+
+static void dump_stats_array(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats);
+static void dump_alt_bp_stats(uns8 proc_id, Flag final);
 
 /**************************************************************************************/
 // init_global_stats_array:
@@ -77,12 +89,33 @@ void init_global_stats_array() {
     if (last_slash)
       stat->file_name = last_slash + 1;
   }
+  for (ii = 0; ii < NUM_GLOBAL_STATS; ii++) {
+    Stat* stat = &global_stat_sample[ii];
+    if (stat_is_bp_stat(stat)) {
+      if (bp_stats_begin == NUM_GLOBAL_STATS)
+        bp_stats_begin = ii;
+      bp_stats_end = ii + 1;
+    }
+  }
+  ASSERT(0, bp_stats_begin < bp_stats_end);
+
+  for (ii = 0; ii < MAX_NUM_BPS; ii++)
+    snprintf(alt_bp_stat_file_names[ii], sizeof(alt_bp_stat_file_names[ii]), "alt%u_bp.stat.def", ii);
 
   // Make a copy of stats array for each core
   global_stat_array = (Stat**)malloc(NUM_CORES * sizeof(Stat*));
+  alt_bp_stat_array = (Stat***)malloc(NUM_CORES * sizeof(Stat**));
   for (ii = 0; ii < NUM_CORES; ii++) {
     global_stat_array[ii] = (Stat*)malloc(NUM_GLOBAL_STATS * sizeof(Stat));
     memcpy(global_stat_array[ii], global_stat_sample, NUM_GLOBAL_STATS * sizeof(Stat));
+
+    alt_bp_stat_array[ii] = (Stat**)malloc(MAX_NUM_BPS * sizeof(Stat*));
+    for (uns bp_id = 0; bp_id < MAX_NUM_BPS; bp_id++) {
+      alt_bp_stat_array[ii][bp_id] = (Stat*)malloc(NUM_GLOBAL_STATS * sizeof(Stat));
+      memcpy(alt_bp_stat_array[ii][bp_id], global_stat_sample, NUM_GLOBAL_STATS * sizeof(Stat));
+      for (uns jj = bp_stats_begin; jj < bp_stats_end; jj++)
+        alt_bp_stat_array[ii][bp_id][jj].file_name = alt_bp_stat_file_names[bp_id];
+    }
   }
 }
 
@@ -154,7 +187,7 @@ void fprint_line(FILE* file) {
 /**************************************************************************************/
 /* dump_stats: */
 
-void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
+static void dump_stats_array(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
   Flag in_dist = FALSE;
 
   uns64 dist_sum = 0, total_dist_sum = 0, dist_vtotal = 0, total_dist_vtotal = 0;
@@ -165,7 +198,7 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
     return;
 
   /* Gauge: host wall seconds (see sim.c). Resolve by name so index tracks .def order. */
-  {
+  if (num_stats == NUM_GLOBAL_STATS) {
     Stat_Enum wall_i = get_stat_idx("SIM_HOST_WALL_SECONDS");
     if (wall_i < NUM_GLOBAL_STATS) {
       Stat* wall = &stat_array[wall_i];
@@ -485,6 +518,22 @@ void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
   }
 }
 
+void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
+  dump_stats_array(proc_id, final, stat_array, num_stats);
+
+  if (stat_array == global_stat_array[proc_id] && num_stats == NUM_GLOBAL_STATS)
+    dump_alt_bp_stats(proc_id, final);
+}
+
+static void dump_alt_bp_stats(uns8 proc_id, Flag final) {
+  if (!alt_bp_stat_array || bp_stats_begin == NUM_GLOBAL_STATS)
+    return;
+
+  for (uns bp_id = 1; bp_id < NUM_BPS && bp_id < MAX_NUM_BPS; bp_id++) {
+    dump_stats_array(proc_id, final, alt_bp_stat_array[proc_id][bp_id] + bp_stats_begin, bp_stats_end - bp_stats_begin);
+  }
+}
+
 /**************************************************************************************/
 /* dump_stats: */
 
@@ -509,6 +558,26 @@ void reset_stats(Flag keep_total) {
         if (keep_total || stat->noreset)
           stat->total_count += stat->count;
         stat->count = 0ULL;
+      }
+    }
+  }
+
+  if (!alt_bp_stat_array || bp_stats_begin == NUM_GLOBAL_STATS)
+    return;
+
+  for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+    for (uns bp_id = 1; bp_id < NUM_BPS && bp_id < MAX_NUM_BPS; bp_id++) {
+      for (ii = bp_stats_begin; ii < bp_stats_end; ii++) {
+        Stat* stat = &alt_bp_stat_array[proc_id][bp_id][ii];
+        if (stat->type == FLOAT_TYPE_STAT) {
+          if (keep_total || stat->noreset)
+            stat->total_value += stat->value;
+          stat->value = 0.0;
+        } else {
+          if (keep_total || stat->noreset)
+            stat->total_count += stat->count;
+          stat->count = 0ULL;
+        }
       }
     }
   }

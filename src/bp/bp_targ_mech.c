@@ -846,12 +846,12 @@ void bp_ibtb_tc_hybrid_update(Bp_Data* bp_data, Op* op) {
       bp_data->tc_selector[sel_index] = SAT_DEC(sel_entry, 0);
       bp_ibtb_tc_tagged_update(bp_data, op);
       if (!op->off_path)
-        STAT_EVENT(op->proc_id, TARG_HYBRID_MISPRED_TAGGED);
+        STAT_EVENT(op->proc_id, TARG_HYBRID_RECOVER_AT_EXEC_TAGGED);
     } else {  // predicted by tagless predictor
       bp_data->tc_selector[sel_index] = SAT_INC(sel_entry, TC_SELECTOR_TAGGED_STRONG);
       bp_ibtb_tc_tagless_update(bp_data, op);
       if (!op->off_path)
-        STAT_EVENT(op->proc_id, TARG_HYBRID_MISPRED_TAGLESS);
+        STAT_EVENT(op->proc_id, TARG_HYBRID_RECOVER_AT_EXEC_TAGLESS);
     }
   } else {                   // branch was correctly predicted
     if (predicted_tagged) {  // correct pred by tagged predictor

@@ -809,8 +809,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
         const Bp_Pred_Level alt_pred_level =
             (result.op->bp_pred_info == &result.op->bp_pred_l0) ? BP_PRED_L0 : BP_PRED_MAIN;
         Bp_Data* alt_bp_data = per_core_dfe[proc_id][_bp_id]->bp_data;
-        Addr alt_pred_addr =
-            bp_predict_op_alt_stats(alt_bp_data, &alt_op, _bp_id, 0, result.op->inst_info->addr, alt_pred_level);
+        Addr alt_pred_addr = bp_predict_op(alt_bp_data, &alt_op, _bp_id, 0, result.op->inst_info->addr, alt_pred_level);
         op_select_bp_pred_info(&alt_op, alt_pred_level);
         frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);
         per_core_dfe[proc_id][_bp_id]->next_state = SERVING_OFF_PATH;

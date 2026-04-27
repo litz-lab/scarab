@@ -216,7 +216,7 @@ void Conf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
       (op)->inst_info->table_info.cf_type == CF_ICALL || (op)->inst_info->table_info.cf_type == CF_REP) {
     if (op->bp_pred_info->recover_at_exec) {
       // reorder stats
-      STAT_EVENT(proc_id, DFE_CONF_0_MISPRED + op->bp_confidence);
+      STAT_EVENT(proc_id, DFE_CONF_0_RECOVER_AT_EXEC + op->bp_confidence);
     } else {
       STAT_EVENT(proc_id, DFE_CONF_0_CORRECT + op->bp_confidence);
     }

@@ -826,8 +826,6 @@ void bp_ibtb_tc_hybrid_update(Bp_Data* bp_data, Op* op) {
     sel_entry = bp_data->tc_selector[sel_index];
   }
 
-  ASSERT(bp_data->proc_id, !op->bp_pred_info->mispred);
-
   if (op->btb_pred_info->no_target) {  // branch was not predicted at all
     // Update both predictors
     // No change to selector
@@ -835,7 +833,7 @@ void bp_ibtb_tc_hybrid_update(Bp_Data* bp_data, Op* op) {
     bp_ibtb_tc_tagless_update(bp_data, op);
     if (!op->off_path)
       STAT_EVENT(op->proc_id, TARG_HYBRID_NO_PRED);
-  } else if (op->bp_pred_info->misfetch) {
+  } else if (op->bp_pred_info->recover_at_decode) {
     // Update the predictor that made the prediction
     // Change the selector so that it does not use this predictor again
     if (predicted_tagged) {  // predicted by tagged predictor

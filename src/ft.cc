@@ -288,12 +288,11 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
     const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
 
     DEBUG(proc_id,
-          "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx mispred:%i misfetch:%i btb miss:%i taken:%i "
+          "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx recover_at_fe:%i btb miss:%i taken:%i "
           "recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
-          bp_id, op->inst_info->addr, op->oracle_info.npc, bp_pred_info->pred_npc, bp_pred_info->mispred,
-          bp_pred_info->misfetch, op->btb_pred_info->btb_miss, bp_pred_info->pred == TAKEN,
-          bp_pred_info->recover_at_decode, bp_pred_info->recover_at_exec,
-          op->inst_info->table_info.bar_type & BAR_FETCH);
+          bp_id, op->inst_info->addr, op->oracle_info.npc, bp_pred_info->pred_npc, bp_pred_info->recover_at_fe,
+          op->btb_pred_info->btb_miss, bp_pred_info->pred == TAKEN, bp_pred_info->recover_at_decode,
+          bp_pred_info->recover_at_exec, op->inst_info->table_info.bar_type & BAR_FETCH);
     if ((op->inst_info->table_info.bar_type & BAR_FETCH) || IS_CALLSYS(&op->inst_info->table_info)) {
       bp_pred_info->recover_at_decode = FALSE;
       bp_pred_info->recover_at_exec = FALSE;
@@ -335,10 +334,10 @@ FT_PredictResult FT::predict_ft() {
       INC_STAT_EVENT(proc_id, DFE_L0_ENABLED_PREDICTIONS, 1);
 
       const FT_Event l0_event = predict_op_ft_event(op, BP_PRED_L0);
-      const Flag l0_wrong = op->bp_pred_l0.mispred || op->bp_pred_l0.misfetch;
+      const Flag l0_wrong = op->bp_pred_l0.recover_at_fe;
 
       const FT_Event main_event = predict_op_ft_event(op, BP_PRED_MAIN);
-      const Flag main_wrong = op->bp_pred_main.mispred || op->bp_pred_main.misfetch;
+      const Flag main_wrong = op->bp_pred_main.recover_at_decode || op->bp_pred_main.recover_at_exec;
 
       if (l0_wrong && !main_wrong) {
         STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
@@ -383,11 +382,12 @@ FT_PredictResult FT::predict_ft() {
         op_select_bp_pred_info(op, BP_PRED_MAIN);
         // If main BTB was too slow to be used (BTB_MAIN_LATENCY > BP_MAIN_LATENCY)
         // but has the correct target, tighten the recovery cycle to BTB_MAIN_LATENCY.
-        // Only applicable when the prediction was wrong due to a wrong target
-        // (misfetch): the BTB arriving late caused the miss.  A CBR direction
-        // misprediction (mispred) is not BTB-latency-induced, so the main BTB
+        // Only applicable when the prediction schedules decode recovery:
+        // the BTB arriving late caused the wrong target.  An exec recovery is
+        // not BTB-latency-induced, so the main BTB
         // hit cannot advance the recovery cycle in that case.
-        if (BTB_MAIN_LATENCY > BP_MAIN_LATENCY && op->bp_pred_main.misfetch && op->btb_pred_info->btb_main_hit) {
+        if (BTB_MAIN_LATENCY > BP_MAIN_LATENCY && op->bp_pred_main.recover_at_decode &&
+            op->btb_pred_info->btb_main_hit) {
           const Counter fetch_cycle = op->bp_pred_main.bp_ready_cycle - BP_MAIN_LATENCY;
           op->bp_pred_main.bp_ready_cycle = fetch_cycle + BTB_MAIN_LATENCY;
           STAT_EVENT(proc_id, BTB_MAIN_HIT_TIGHT_RECOVERY);
@@ -545,26 +545,28 @@ FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
 
-bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start) {
-  ASSERT(0, ft);
+static bool ft_op_recovery_addr_is_consecutive(Op* op, Addr next_start) {
+  ASSERT(0, op);
 
-  Op* last_op = ft->get_last_op();
-  ASSERT(0, last_op);
-
-  const Bp_Pred_Info* bp_pred_info = ft_active_or_main_bp_pred_info(last_op);
+  const Bp_Pred_Info* bp_pred_info = ft_active_or_main_bp_pred_info(op);
   Addr pred_npc = bp_pred_info->pred_npc;
-  Addr npc = last_op->oracle_info.npc;
-  Addr end_addr = last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
+  Addr npc = op->oracle_info.npc;
+  Addr end_addr = (FRONTEND == FE_PIN_EXEC_DRIVEN)
+                      ? ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size)
+                      : op->inst_info->addr + op->inst_info->trace_info.inst_size;
 
   return (pred_npc == next_start) || (npc == next_start) || (end_addr == next_start);
+}
+
+bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start) {
+  ASSERT(0, ft);
+  return ft_op_recovery_addr_is_consecutive(ft->get_last_op(), next_start);
 }
 
 void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr) {
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->parent_FT);
-  FT* ft_for_check =
-      (op->parent_FT_off_path && op->parent_FT_off_path->get_last_op() == op) ? op->parent_FT_off_path : op->parent_FT;
-  const bool consecutive = ft_recovery_addr_is_consecutive(ft_for_check, recovery_fetch_addr);
+  const bool consecutive = ft_op_recovery_addr_is_consecutive(op, recovery_fetch_addr);
   ASSERT(proc_id, consecutive);
   ASSERT(proc_id, IS_FLUSHING_OP(op));
   ASSERT(proc_id, op->eom);

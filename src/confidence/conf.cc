@@ -214,7 +214,7 @@ void Conf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
   // if it is a cf with bp conf
   if ((op)->inst_info->table_info.cf_type == CF_CBR || (op)->inst_info->table_info.cf_type == CF_IBR ||
       (op)->inst_info->table_info.cf_type == CF_ICALL || (op)->inst_info->table_info.cf_type == CF_REP) {
-    if (op->bp_pred_info->mispred) {
+    if (op->bp_pred_info->recover_at_exec) {
       // reorder stats
       STAT_EVENT(proc_id, DFE_CONF_0_MISPRED + op->bp_confidence);
     } else {

@@ -47,8 +47,6 @@ typedef struct Thread_Info_struct {
   int fetch_throttle_adjust;
   // int fetch_throttle_br_th_adjust;
   Op* last_bp_miss_op;
-  Counter corrpred_counter;
-  Counter mispred_counter;
   Counter last_l1_miss_time;
 } Thread_Info;
 

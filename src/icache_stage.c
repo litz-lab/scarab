@@ -956,8 +956,8 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       if (DJOLT_ENABLE)
         update_djolt(ic->proc_id, op->inst_info->addr, op->inst_info->table_info.cf_type, op->bp_pred_info->pred_npc);
 
-      ASSERT(ic->proc_id,
-             (op->bp_pred_info->mispred << 2 | op->bp_pred_info->misfetch << 1 | op->btb_pred_info->btb_miss) <= 0x7);
+      ASSERT(ic->proc_id, ((op->bp_pred_info->recover_at_exec << 2) | (op->bp_pred_info->recover_at_decode << 1) |
+                           op->btb_pred_info->btb_miss) <= 0x7);
 
       ic->off_path = ic->off_path || op->bp_pred_info->recover_at_fe || op->bp_pred_info->recover_at_decode ||
                      op->bp_pred_info->recover_at_exec;

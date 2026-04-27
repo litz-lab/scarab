@@ -450,6 +450,10 @@ void IssueQueue::recover() {
       continue;
     }
 
+    if (!FLUSH_OP(op)) {
+      continue;
+    }
+
     op->in_rdy_list = FALSE;
     select_logic->release(&entry);
     free_entry(entry.entry_id);

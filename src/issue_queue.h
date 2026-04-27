@@ -41,7 +41,7 @@ extern "C" {
 
 void issue_queue_update();
 void issue_queue_wakeup(Op* op);
-void issue_queue_grant(Op* op);
+void issue_queue_issued(Op* op);
 void issue_queue_reject(Op* op);
 
 // vanilla hps interface

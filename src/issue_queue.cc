@@ -112,23 +112,32 @@ struct FunctionalUnitPicker {
   Flag check_op_ready(Op* op) const;
 
  public:
+  enum class PickStatus {
+    PICKED,
+    CANCELLED,
+    EXHAUSTED
+  };
+
+  struct PickResult {
+    PickStatus status;
+    IssueQueueEntry* entry;
+  };
+
   explicit FunctionalUnitPicker(uns proc_id, uns16 queue_id, uns32 fu_id, uns64 fu_type)
       : proc_id(proc_id), queue_id(queue_id), fu_id(fu_id), fu_type(fu_type) {}
 
-  IssueQueueEntry* pick_next(const std::unordered_set<Counter>& cancelled_mask);
-  void issue_op_into_sd(IssueQueueEntry* entry);
+  FunctionalUnitPicker::PickResult pick_next(const std::unordered_set<Counter>& cancelled_mask);
+  void grant_op(IssueQueueEntry* entry);
 
   bool is_compatible(Inst_Info* inst_info) const {
     return get_fu_type(inst_info->table_info.op_type, inst_info->table_info.is_simd) & fu_type;
   }
   void add_ready_entry(Counter key, IssueQueueEntry* entry) { ready_list[key] = entry; }
   void remove_ready_entry(Counter key) { ready_list.erase(key); }
-
   void init_ready_iter() { ready_iter = ready_list.begin(); }
-  bool has_ready_entry() const { return ready_iter != ready_list.end(); }
 };
 
-IssueQueueEntry* FunctionalUnitPicker::pick_next(const std::unordered_set<Counter>& cancelled_mask) {
+FunctionalUnitPicker::PickResult FunctionalUnitPicker::pick_next(const std::unordered_set<Counter>& cancelled_mask) {
   while (ready_iter != ready_list.end()) {
     IssueQueueEntry* entry = ready_iter->second;
     Op* op = entry->op;
@@ -141,7 +150,7 @@ IssueQueueEntry* FunctionalUnitPicker::pick_next(const std::unordered_set<Counte
        * The selection is cancelled and deferred to the next round.
        */
       if (cancelled_mask.count(op->op_num)) {
-        break;
+        return {PickStatus::CANCELLED, nullptr};
       }
 
       continue;
@@ -153,13 +162,13 @@ IssueQueueEntry* FunctionalUnitPicker::pick_next(const std::unordered_set<Counte
     }
 
     ASSERT(proc_id, node->sd.ops[fu_id] == nullptr && is_compatible(op->inst_info));
-    return entry;
+    return {PickStatus::PICKED, entry};
   }
 
-  return nullptr;
+  return {PickStatus::EXHAUSTED, nullptr};
 }
 
-void FunctionalUnitPicker::issue_op_into_sd(IssueQueueEntry* entry) {
+void FunctionalUnitPicker::grant_op(IssueQueueEntry* entry) {
   Op* op = entry->op;
   ASSERT(proc_id, op != nullptr);
   ASSERT(proc_id, fu_id < (uns32)node->sd.max_op_count && node->sd.ops[fu_id] == nullptr);
@@ -207,6 +216,8 @@ Flag FunctionalUnitPicker::check_op_ready(Op* op) const {
 
 class SelectLogic {
  public:
+  virtual ~SelectLogic() = default;
+
   virtual void request(IssueQueueEntry* entry) = 0;
   virtual void release(IssueQueueEntry* entry) = 0;
   virtual void select() = 0;
@@ -283,19 +294,22 @@ void OldestFirstSelectLogic::select() {
       }
 
       FunctionalUnitPicker& fu_picker = connected_fu_pickers[picker_idx];
-      IssueQueueEntry* entry = fu_picker.pick_next(cancelled_mask);
-      if (entry == nullptr) {
-        if (!fu_picker.has_ready_entry()) {
-          active_mask &= ~(1ULL << picker_idx);
-        }
+      auto ret = fu_picker.pick_next(cancelled_mask);
+
+      if (ret.status == FunctionalUnitPicker::PickStatus::EXHAUSTED) {
+        active_mask &= ~(1ULL << picker_idx);
+        continue;
+      }
+
+      if (ret.status == FunctionalUnitPicker::PickStatus::CANCELLED) {
         continue;
       }
 
       if (ISSUE_QUEUE_PARALLEL_PICK) {
-        cancelled_mask.insert(entry->op->op_num);
+        cancelled_mask.insert(ret.entry->op->op_num);
       }
 
-      fu_picker.issue_op_into_sd(entry);
+      fu_picker.grant_op(ret.entry);
       active_mask &= ~(1ULL << picker_idx);
     }
   }
@@ -326,7 +340,7 @@ class IssueQueue {
   const std::vector<IssueQueueEntry>& get_entries() const { return entries; }
 
   void wakeup(uns16 entry_id);
-  void grant(uns16 entry_id);
+  void issued(uns16 entry_id);
   void reject(uns16 entry_id);
 
   void recover();
@@ -384,7 +398,7 @@ void IssueQueue::wakeup(uns16 entry_id) {
   select_logic->request(&entry);
 }
 
-void IssueQueue::grant(uns16 entry_id) {
+void IssueQueue::issued(uns16 entry_id) {
   ASSERT(proc_id, entry_id < entries.size());
   IssueQueueEntry& entry = entries[entry_id];
   ASSERT(proc_id, entry.state == ISSUE_QUEUE_ENTRY_STATE_PICKED);
@@ -442,7 +456,7 @@ class IssueQueues {
   void recover();
 
   void wakeup(Op* op);
-  void grant(Op* op);
+  void issued(Op* op);
   void reject(Op* op);
 };
 
@@ -588,12 +602,12 @@ void IssueQueues::wakeup(Op* op) {
   queue.wakeup(op->queue_entry_id);
 }
 
-void IssueQueues::grant(Op* op) {
+void IssueQueues::issued(Op* op) {
   uns16 queue_id = op->queue_id;
   ASSERT(proc_id, queue_id < issue_queues.size());
   IssueQueue& queue = issue_queues[queue_id];
   ASSERT(proc_id, op->queue_entry_id != MAX_UNS16);
-  queue.grant(op->queue_entry_id);
+  queue.issued(op->queue_entry_id);
 }
 
 void IssueQueues::reject(Op* op) {
@@ -684,9 +698,9 @@ void issue_queue_wakeup(Op* op) {
   issue_queues->wakeup(op);
 }
 
-void issue_queue_grant(Op* op) {
+void issue_queue_issued(Op* op) {
   // release the entries of ops that are scheduled
-  issue_queues->grant(op);
+  issue_queues->issued(op);
 }
 
 void issue_queue_reject(Op* op) {

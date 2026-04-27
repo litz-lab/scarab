@@ -308,7 +308,7 @@ void update_exec_stage(Stage_Data* src_sd) {
     STAT_EVENT(exec->proc_id, FUS_BUSY_ON_PATH + op->off_path);
 
     /* remove the op from the "schedule" list */
-    issue_queue_grant(op);
+    issue_queue_issued(op);
     src_sd->ops[ii] = NULL;
     src_sd->op_count--;
     ASSERT(exec->proc_id, src_sd->op_count >= 0);

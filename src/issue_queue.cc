@@ -112,21 +112,10 @@ struct FunctionalUnitPicker {
   Flag check_op_ready(Op* op) const;
 
  public:
-  enum class PickStatus {
-    PICKED,
-    CANCELLED,
-    EXHAUSTED
-  };
-
-  struct PickResult {
-    PickStatus status;
-    IssueQueueEntry* entry;
-  };
-
   explicit FunctionalUnitPicker(uns proc_id, uns16 queue_id, uns32 fu_id, uns64 fu_type)
       : proc_id(proc_id), queue_id(queue_id), fu_id(fu_id), fu_type(fu_type) {}
 
-  FunctionalUnitPicker::PickResult pick_next(const std::unordered_set<Counter>& cancelled_mask);
+  IssueQueueEntry* pick_next(const std::unordered_set<Counter>& picked_mask);
   void grant_op(IssueQueueEntry* entry);
 
   bool is_compatible(Inst_Info* inst_info) const {
@@ -137,7 +126,7 @@ struct FunctionalUnitPicker {
   void init_ready_iter() { ready_iter = ready_list.begin(); }
 };
 
-FunctionalUnitPicker::PickResult FunctionalUnitPicker::pick_next(const std::unordered_set<Counter>& cancelled_mask) {
+IssueQueueEntry* FunctionalUnitPicker::pick_next(const std::unordered_set<Counter>& picked_mask) {
   while (ready_iter != ready_list.end()) {
     IssueQueueEntry* entry = ready_iter->second;
     Op* op = entry->op;
@@ -149,8 +138,8 @@ FunctionalUnitPicker::PickResult FunctionalUnitPicker::pick_next(const std::unor
        * This picker is unaware of current-round selections and loses arbitration.
        * The selection is cancelled and deferred to the next round.
        */
-      if (cancelled_mask.count(op->op_num)) {
-        return {PickStatus::CANCELLED, nullptr};
+      if (picked_mask.count(entry->entry_id)) {
+        return nullptr;
       }
 
       continue;
@@ -162,10 +151,10 @@ FunctionalUnitPicker::PickResult FunctionalUnitPicker::pick_next(const std::unor
     }
 
     ASSERT(proc_id, node->sd.ops[fu_id] == nullptr && is_compatible(op->inst_info));
-    return {PickStatus::PICKED, entry};
+    return entry;
   }
 
-  return {PickStatus::EXHAUSTED, nullptr};
+  return nullptr;
 }
 
 void FunctionalUnitPicker::grant_op(IssueQueueEntry* entry) {
@@ -274,40 +263,22 @@ void SelectLogic::select() {
     fu_picker.init_ready_iter();
   }
 
-  uint64_t active_mask = ((1ULL << fu_num) - 1);
-  std::unordered_set<Counter> cancelled_mask;
+  std::unordered_set<Counter> picked_mask;
+  for (size_t i = 0; i < fu_num; ++i) {
+    FunctionalUnitPicker& fu_picker = connected_fu_pickers[arbitration_policy->picker_at(i)];
+    IssueQueueEntry* entry = fu_picker.pick_next(picked_mask);
 
-  while (active_mask) {
-    cancelled_mask.clear();
-
-    for (size_t i = 0; i < fu_num; ++i) {
-      // skip the picker if it has picked an op or does not have any ready op to pick
-      if (!(active_mask & (1ULL << i))) {
-        continue;
-      }
-
-      FunctionalUnitPicker& fu_picker = connected_fu_pickers[arbitration_policy->picker_at(i)];
-      auto ret = fu_picker.pick_next(cancelled_mask);
-
-      // mark the picker inactive if the iterator reaches the end of the ready list
-      if (ret.status == FunctionalUnitPicker::PickStatus::EXHAUSTED) {
-        active_mask &= ~(1ULL << i);
-        continue;
-      }
-
-      // do the picking in the next round if it is cancelled due to a conflict in the same round
-      if (ret.status == FunctionalUnitPicker::PickStatus::CANCELLED) {
-        continue;
-      }
-
-      // mark the current pickas the winner to cancel competing picks for the same op in this round
-      if (ISSUE_QUEUE_PARALLEL_PICK) {
-        cancelled_mask.insert(ret.entry->op->op_num);
-      }
-
-      fu_picker.grant_op(ret.entry);
-      active_mask &= ~(1ULL << i);
+    // do the picking in the next round if it is cancelled due to a conflict in the same round
+    if (entry == nullptr) {
+      continue;
     }
+
+    // mark the current pickas the winner to cancel competing picks for the same op in this round
+    if (ISSUE_QUEUE_PARALLEL_PICK) {
+      picked_mask.insert(entry->entry_id);
+    }
+
+    fu_picker.grant_op(entry);
   }
 }
 
@@ -364,19 +335,6 @@ size_t RoundRobinArbitrationPolicy::picker_at(size_t i) {
 
 /**************************************************************************************/
 /*
- * RoundRobineOldestFirstSelectLogic combines OldestFirstSchedulePolicy and RoundRobinArbitrationPolicy
- * to implement a traditional superscalar issue queue with round-robin fairness and oldest-first selection.
- */
-
-class RoundRobineOldestFirstSelectLogic : public SelectLogic {
- public:
-  explicit RoundRobineOldestFirstSelectLogic(const std::vector<FunctionalUnitPicker>& connected_fu_pickers)
-      : SelectLogic(connected_fu_pickers, std::make_unique<OldestFirstSchedulePolicy>(),
-                    std::make_unique<RoundRobinArbitrationPolicy>(connected_fu_pickers.size())) {}
-};
-
-/**************************************************************************************/
-/*
  * The issue queue is organized as a random queue, where instructions are dispatched into free entries
  * without any particular ordering.
  */
@@ -419,7 +377,9 @@ IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size,
   DEBUG(proc_id, "Initializing Issue Queue %d with size %d\n", queue_id, size);
 
   // initialize select logic from the scheduling and arbitration policies.
-  select_logic = std::make_unique<RoundRobineOldestFirstSelectLogic>(connected_fu_pickers);
+  select_logic =
+      std::make_unique<SelectLogic>(connected_fu_pickers, std::make_unique<OldestFirstSchedulePolicy>(),
+                                    std::make_unique<RoundRobinArbitrationPolicy>(connected_fu_pickers.size()));
 }
 
 uns16 IssueQueue::allocate_entry(Op* op) {

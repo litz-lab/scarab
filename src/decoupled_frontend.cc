@@ -805,16 +805,24 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
       if (per_core_dfe[proc_id][_bp_id]->get_dfe_recovery_policy() == CONTINUE_ON_PREDICTION &&
           !per_core_dfe[proc_id][_bp_id]->is_off_path()) {
         ASSERT(proc_id, !per_core_dfe[proc_id][_bp_id]->ftq_num_fts());
+        Decoupled_FE* alt_dfe = per_core_dfe[proc_id][_bp_id].get();
+        FT alt_trigger_ft(proc_id, _bp_id);
         Op alt_op = *result.op;
+        alt_op.bp_pred_l0 = Bp_Pred_Info{};
+        alt_op.bp_pred_main = Bp_Pred_Info{};
+        alt_op.parent_FT = &alt_trigger_ft;
+        alt_op.parent_FT_off_path = nullptr;
+        alt_op.bp_pred_info = nullptr;
+        alt_op.btb_pred_info = &alt_op.btb_pred;
         const Bp_Pred_Level alt_pred_level =
             (result.op->bp_pred_info == &result.op->bp_pred_l0) ? BP_PRED_L0 : BP_PRED_MAIN;
-        Bp_Data* alt_bp_data = per_core_dfe[proc_id][_bp_id]->bp_data;
-        Addr alt_pred_addr = bp_predict_op(alt_bp_data, &alt_op, _bp_id, 0, result.op->inst_info->addr, alt_pred_level);
+        Addr alt_pred_addr =
+            bp_predict_op(alt_dfe->bp_data, &alt_op, _bp_id, 0, result.op->inst_info->addr, alt_pred_level);
         op_select_bp_pred_info(&alt_op, alt_pred_level);
         frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);
-        per_core_dfe[proc_id][_bp_id]->next_state = SERVING_OFF_PATH;
-        per_core_dfe[proc_id][_bp_id]->set_conf_off_path();
-        bp_sync(per_core_dfe[proc_id][bp_id]->get_bp_data(), per_core_dfe[proc_id][_bp_id]->get_bp_data());
+        alt_dfe->next_state = SERVING_OFF_PATH;
+        alt_dfe->set_conf_off_path();
+        bp_sync(per_core_dfe[proc_id][bp_id]->get_bp_data(), alt_dfe->get_bp_data());
       }
     }
   }

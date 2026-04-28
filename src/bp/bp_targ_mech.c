@@ -576,13 +576,9 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   bpi->btb_main_hit = FALSE;
   if (br_slots) {
     for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
-      if (br_slots[ii].valid) {
-        if (br_slots[ii].addr == op->inst_info->addr) {
-          bpi->btb_main_hit = TRUE;
-          bpi->btb_main_target = br_slots[ii].target;
-          break;
-        }
-      } else {
+      if (br_slots[ii].valid && br_slots[ii].addr == op->inst_info->addr) {
+        bpi->btb_main_hit = TRUE;
+        bpi->btb_main_target = br_slots[ii].target;
         break;
       }
     }

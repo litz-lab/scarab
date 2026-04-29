@@ -590,7 +590,7 @@ void node_retire() {
         retired_exit[op->proc_id] = TRUE;
         decoupled_fe_retire(op, op->proc_id, -1);
       } else if (retire_op) {
-        if ((op->inst_info->table_info.bar_type & BAR_FETCH) || IS_CALLSYS(&op->inst_info->table_info)) {
+        if (op->inst_info->table_info.bar_type & BAR_FETCH) {
           icache_resolve_fetch_barrier(op->proc_id, op->inst_uid);
         }
         decoupled_fe_retire(op, op->proc_id, op->inst_uid);

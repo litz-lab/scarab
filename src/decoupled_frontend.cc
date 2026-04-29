@@ -696,7 +696,7 @@ void Decoupled_FE::stall(Op* op) {
 }
 
 void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
-  if ((op->inst_info->table_info.bar_type & BAR_FETCH) || IS_CALLSYS(&op->inst_info->table_info)) {
+  if (op->inst_info->table_info.bar_type & BAR_FETCH) {
     DEBUG(proc_id,
           "[DFE%u] Decoupled fetch saw barrier retire fetch_addr:0x%llx off_path:%i op_num:%llu list_count:%i\n", bp_id,
           op->inst_info->addr, op->off_path, op->op_num, td->seq_op_list.count);

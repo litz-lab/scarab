@@ -117,7 +117,7 @@ static inline void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr);
 static inline void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
 
 static inline Flag is_fetch_barrier_op(Op* op) {
-  return (op->inst_info->table_info.bar_type & BAR_FETCH) || IS_CALLSYS(&op->inst_info->table_info);
+  return (op->inst_info->table_info.bar_type & BAR_FETCH);
 }
 
 /**************************************************************************************/

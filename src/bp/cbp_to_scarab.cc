@@ -147,10 +147,14 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op, Bp_Pred_Level pred_level) 
     return;
   }
 
-  cbp_predictors_all_cores.at(proc_id).at(bp_id)->SavePredictorStates(op->recovery_info.branch_id);
-  if (!(SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON) && !bp_id) {
-    if (checkpoint_needed)
-      cbp_predictors_all_cores.at(proc_id).at(bp_id)->TakeCheckpoint(op->recovery_info.branch_id);
+  if (!bp_id) {
+    cbp_predictors_all_cores.at(proc_id).at(bp_id)->SavePredictorStates(op->recovery_info.branch_id);
+    if (!(SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON)) {
+      if (checkpoint_needed) {
+        ASSERT(op->proc_id, !op->off_path);
+        cbp_predictors_all_cores.at(proc_id).at(bp_id)->TakeCheckpoint(op->recovery_info.branch_id);
+      }
+    }
   }
 
   // Real update start
@@ -176,6 +180,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op, Bp_Pred_Level pred_level) 
 
   if ((SPEC_LEVEL > BP_PRED_ON) && (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON)) {
     if (checkpoint_needed) {
+      ASSERT(op->proc_id, !op->off_path);
       cbp_predictors_all_cores.at(proc_id).at(bp_id)->TakeCheckpoint(op->recovery_info.branch_id);
       if (SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON)
         cbp_predictors_all_cores.at(proc_id).at(bp_id)->VerifyPredictorStates(op->recovery_info.branch_id);

@@ -81,7 +81,7 @@ void topdown_bp_recovery(uns proc_id, Op* op) {
   STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_CYCLES);
   if (op->bp_pred_info->recover_at_exec) {
     ASSERT(op->proc_id, !op->off_path);
-    STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED_CYCLES);
+    STAT_EVENT(proc_id, TOPDOWN_BR_RECOVER_AT_EXEC_RETIRED_CYCLES);
   }
 
   idq_stage_set_recovery_cycle(TOPDOWN_RECOVERY_DEPTH);
@@ -205,14 +205,14 @@ void topdown_done(uns proc_id) {
 
   /* Bad Spec Breakdown */
   // prevent division by zero
-  uns64 bad_spec_cycles = GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED_CYCLES) +
+  uns64 bad_spec_cycles = GET_STAT_EVENT(proc_id, TOPDOWN_BR_RECOVER_AT_EXEC_RETIRED_CYCLES) +
                           GET_STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_CYCLES);
   if (bad_spec_cycles == 0) {
     bad_spec_cycles++;
   }
 
-  INC_STAT_EVENT(proc_id, TOPDOWN_BR_MISPREDICTS_BOUND,
-                 bad_spec_bound * GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPRED_RETIRED_CYCLES) / bad_spec_cycles);
+  INC_STAT_EVENT(proc_id, TOPDOWN_BR_RECOVER_AT_EXEC_BOUND,
+                 bad_spec_bound * GET_STAT_EVENT(proc_id, TOPDOWN_BR_RECOVER_AT_EXEC_RETIRED_CYCLES) / bad_spec_cycles);
   INC_STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEARS_BOUND,
-                 bad_spec_bound - GET_STAT_EVENT(proc_id, TOPDOWN_BR_MISPREDICTS_BOUND));
+                 bad_spec_bound - GET_STAT_EVENT(proc_id, TOPDOWN_BR_RECOVER_AT_EXEC_BOUND));
 }

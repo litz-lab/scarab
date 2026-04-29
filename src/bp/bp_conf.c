@@ -135,8 +135,9 @@ void bp_conf_pred(Op* op, Bp_Pred_Level pred_level) {
   bp_pred_info->pred_conf_index = index;
   bp_pred_info->pred_conf = pred_conf;
 
-  STAT_EVENT(op->proc_id, BP_ON_PATH_CONF_MISPRED + 2 * op->off_path + (pred_conf != recover_at_decode_or_exec));
-  STAT_EVENT(op->proc_id, BP_ON_PATH_PRED_MIS_CONF_MISPRED + 4 * op->off_path + 2 * pred_conf +
+  STAT_EVENT(op->proc_id,
+             BP_ON_PATH_CONF_RECOVER_AT_EXEC + 2 * op->off_path + (pred_conf != recover_at_decode_or_exec));
+  STAT_EVENT(op->proc_id, BP_ON_PATH_PRED_MIS_CONF_RECOVER_AT_EXEC + 4 * op->off_path + 2 * pred_conf +
                               (pred_conf != recover_at_decode_or_exec));
 }
 
@@ -207,9 +208,9 @@ void pred_onpath_conf(Op* op, Bp_Pred_Level pred_level) {
 
   print_onpath_conf();
 
-  STAT_EVENT(op->proc_id, ONPATH_CONF_MISPRED + (pred_onpath != op->off_path));
-  STAT_EVENT(op->proc_id, ONPATH_ON_PATH_CONF_MISPRED + 2 * op->off_path + (pred_onpath != op->off_path));
-  STAT_EVENT(op->proc_id, PRED_ONPATH_CONF_MISPRED + 2 * !pred_onpath + (pred_onpath != op->off_path));
+  STAT_EVENT(op->proc_id, ONPATH_CONF_RECOVER_AT_EXEC + (pred_onpath != op->off_path));
+  STAT_EVENT(op->proc_id, ONPATH_ON_PATH_CONF_RECOVER_AT_EXEC + 2 * op->off_path + (pred_onpath != op->off_path));
+  STAT_EVENT(op->proc_id, PRED_ONPATH_CONF_RECOVER_AT_EXEC + 2 * !pred_onpath + (pred_onpath != op->off_path));
 
   g_bp_data->on_path_pred = pred_onpath;
 }
@@ -502,8 +503,9 @@ void conf_perceptron_pred(Op* op, Bp_Pred_Level pred_level) {
   op->conf_perceptron_output = output;
   bp_pred_info->pred_conf = pred_conf;
 
-  STAT_EVENT(op->proc_id, BP_ON_PATH_CONF_MISPRED + 2 * op->off_path + (pred_conf != recover_at_decode_or_exec));
-  STAT_EVENT(op->proc_id, BP_ON_PATH_PRED_MIS_CONF_MISPRED + 4 * op->off_path + 2 * pred_conf +
+  STAT_EVENT(op->proc_id,
+             BP_ON_PATH_CONF_RECOVER_AT_EXEC + 2 * op->off_path + (pred_conf != recover_at_decode_or_exec));
+  STAT_EVENT(op->proc_id, BP_ON_PATH_PRED_MIS_CONF_RECOVER_AT_EXEC + 4 * op->off_path + 2 * pred_conf +
                               (pred_conf != recover_at_decode_or_exec));
 }
 

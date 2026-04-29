@@ -519,6 +519,8 @@ void cmp_warmup(Op* op) {
     Bp_Data* bp_data = &(cmp_model.bp_data[proc_id][0]);
     op->btb_pred_info = NULL;  // reset so bp_predict_btb() can set it (op may be reused)
     bp_predict_btb(bp_data, op);
+    if (bp_l0_enabled())
+      bp_predict_op(bp_data, op, MAIN_BP, 1, ia, BP_PRED_L0);
     op_select_bp_pred_info(op, BP_PRED_MAIN);
     bp_predict_op(bp_data, op, MAIN_BP, 1, ia, BP_PRED_MAIN);
     bp_target_known_op(bp_data, op);
@@ -526,7 +528,7 @@ void cmp_warmup(Op* op) {
     if (op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec) {
       bp_recover_op(bp_data, op->inst_info->table_info.cf_type, &op->recovery_info);
     }
-    bp_data->bp->retire_func(op);
+    bp_retire_op(bp_data, op);
   }
 }
 

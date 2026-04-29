@@ -159,6 +159,8 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
     add_op(op);
     if (off_path) {
       bp_predict_btb(g_bp_data, op);
+      if (bp_l0_enabled())
+        predict_op_ft_event(op, BP_PRED_L0);
       event = predict_op_ft_event(op, BP_PRED_MAIN);
       op_select_bp_pred_info(op, BP_PRED_MAIN);
     }

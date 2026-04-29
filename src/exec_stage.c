@@ -560,12 +560,13 @@ static inline void exec_stage_bp_resolve(Op* op) {
   if (op->bp_pred_info->recover_at_exec) {
     DEBUG(exec->proc_id, "Exec schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
           (unsigned long long)op->exec_cycle);
+    bp_stat_main_branch_resolve_latency(op, op->exec_cycle, TRUE);
     bp_sched_recovery(bp_recovery_info, op, op->exec_cycle);
     if (!op->off_path)
       op->recovery_scheduled = TRUE;
 
     // stats for the reason of resteer
-    STAT_EVENT(op->proc_id, RESTEER_MISPRED_NOT_CF + op->inst_info->table_info.cf_type);
+    STAT_EVENT(op->proc_id, RESTEER_RECOVER_AT_EXEC_NOT_CF + op->inst_info->table_info.cf_type);
   }
 
 #if 0

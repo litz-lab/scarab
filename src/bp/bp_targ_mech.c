@@ -57,6 +57,24 @@
 #define DEBUGU_CRS(proc_id, args...) _DEBUGU(proc_id, DEBUG_CRS, ##args)
 #define DEBUG_BTB(proc_id, args...) _DEBUG(proc_id, DEBUG_BTB, ##args)
 
+#define STAT_EVENT_BTB_OUTCOME(op, prefix, hit, pred_targ, fallthrough)                            \
+  do {                                                                                             \
+    if ((hit) && (pred_targ) == (op)->oracle_info.target) {                                        \
+      STAT_EVENT((op)->proc_id, (op)->off_path ? prefix##_CORRECT_OFFPATH : prefix##_CORRECT);     \
+    } else if (!(hit) && (fallthrough) == (op)->oracle_info.target) {                              \
+      STAT_EVENT((op)->proc_id, (op)->off_path ? prefix##_INCORRECT_BUT_TARGET_CORRECT_OFFPATH     \
+                                               : prefix##_INCORRECT_BUT_TARGET_CORRECT);           \
+    } else {                                                                                       \
+      STAT_EVENT((op)->proc_id, (op)->off_path ? prefix##_INCORRECT_OFFPATH : prefix##_INCORRECT); \
+    }                                                                                              \
+  } while (0)
+
+#define STAT_EVENT_IBTB_OUTCOME(op, prefix, correct)                                                               \
+  do {                                                                                                             \
+    STAT_EVENT((op)->proc_id, (op)->off_path ? ((correct) ? prefix##_CORRECT_OFFPATH : prefix##_INCORRECT_OFFPATH) \
+                                             : ((correct) ? prefix##_CORRECT : prefix##_INCORRECT));               \
+  } while (0)
+
 /**************************************************************************************/
 /* bp_crs_push: */
 
@@ -107,7 +125,7 @@ Addr bp_crs_pop(Bp_Data* bp_data, Op* op) {
   if (bp_data->crs.depth == 0) {
     DEBUG_CRS(bp_data->proc_id, "UNDERFLOW  head:%d  tail:%d  offpath:%d\n", bp_data->crs.head, bp_data->crs.tail,
               op->off_path);
-    STAT_EVENT(op->proc_id, CRS_MISS_ON_PATH + PERFECT_CRS + 2 * op->off_path);
+    STAT_EVENT(op->proc_id, CRS_MISS + PERFECT_CRS + 2 * op->off_path);
     return PERFECT_CRS ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
   }
   bp_data->crs.tail = new_tail;
@@ -128,7 +146,7 @@ Addr bp_crs_pop(Bp_Data* bp_data, Op* op) {
             cf_type_names[op->inst_info->table_info.cf_type], op->off_path, hexstr64s(op->oracle_info.npc),
             addr != op->oracle_info.npc);
   mispred = PERFECT_CRS ? 0 : addr != op->oracle_info.npc;
-  STAT_EVENT(op->proc_id, CRS_MISS_ON_PATH + !mispred + 2 * op->off_path);
+  STAT_EVENT(op->proc_id, CRS_MISS + !mispred + 2 * op->off_path);
   return PERFECT_CRS ? op->oracle_info.target : addr;
 }
 
@@ -211,7 +229,7 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
   if (bp_data->crs.depth == 0) {
     DEBUG_CRS(bp_data->proc_id, "UNDERFLOW  next:%d  tos: %d  offpath:%d\n", bp_data->crs.next, bp_data->crs.tos,
               op->off_path);
-    STAT_EVENT(op->proc_id, CRS_MISS_ON_PATH + PERFECT_CRS + 2 * op->off_path);
+    STAT_EVENT(op->proc_id, CRS_MISS + PERFECT_CRS + 2 * op->off_path);
     STAT_EVENT(op->proc_id, CRS_UNDERFLOW_ON_PATH + op->off_path); /*CHECK EXCLUSIVE UNDERFLOW*/
     return PERFECT_CRS ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
   }
@@ -237,7 +255,7 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
             cf_type_names[op->inst_info->table_info.cf_type], op->off_path, hexstr64s(op->oracle_info.npc),
             addr != op->oracle_info.npc);
   mispred = PERFECT_CRS ? 0 : addr != op->oracle_info.npc;
-  STAT_EVENT(op->proc_id, CRS_MISS_ON_PATH + !mispred + 2 * op->off_path);
+  STAT_EVENT(op->proc_id, CRS_MISS + !mispred + 2 * op->off_path);
   return PERFECT_CRS ? op->oracle_info.target : addr;
 }
 
@@ -302,6 +320,9 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   btb_pred_info->btb_l0_target = btb_pred_info->btb_l1_target = 0;
 
   const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
+  const Flag collect_btb_stats = op->inst_info->table_info.cf_type != CF_ICO &&
+                                 op->inst_info->table_info.cf_type != CF_RET &&
+                                 !(op->inst_info->table_info.bar_type & BAR_FETCH);
 
   /* Syscall: target is always known from oracle */
   if (op->inst_info->table_info.cf_type == CF_SYS) {
@@ -313,48 +334,33 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
 
   /* Main BTB lookup (pred_func populates BTB hit/target fields as a side effect) */
   bp_data->bp_btb->pred_func(bp_data, op);
+  if (collect_btb_stats) {
+    STAT_EVENT_BTB_OUTCOME(op, ALL_BTB, btb_pred_info->btb_main_hit, btb_pred_info->btb_main_target, pc_plus_offset);
+  }
   if (btb_pred_info->btb_main_hit) {
     btb_pred_info->btb_miss = FALSE;
     btb_pred_info->no_target = FALSE;
     btb_pred_info->pred_target = btb_pred_info->btb_main_target;
-    if (op->inst_info->table_info.cf_type != CF_ICO && op->inst_info->table_info.cf_type != CF_RET &&
-        !(op->inst_info->table_info.bar_type & BAR_FETCH)) {
-      STAT_EVENT(op->proc_id, op->off_path ? BTB_CORRECT_OFF_PATH : BTB_CORRECT);
-    }
   } else {
     btb_pred_info->pred_target = pc_plus_offset;
     if (pc_plus_offset == op->oracle_info.target) {
       /* Fall-through equals the actual target: treat as no miss */
       btb_pred_info->btb_miss = FALSE;
       btb_pred_info->no_target = FALSE;
-      if (op->inst_info->table_info.cf_type != CF_ICO && op->inst_info->table_info.cf_type != CF_RET &&
-          !(op->inst_info->table_info.bar_type & BAR_FETCH)) {
-        STAT_EVENT(op->proc_id,
-                   op->off_path ? BTB_INCORRECT_BUT_TARGET_CORRECT_OFF_PATH : BTB_INCORRECT_BUT_TARGET_CORRECT);
-      }
     } else {
       btb_pred_info->btb_miss = TRUE;
-      if (op->inst_info->table_info.cf_type != CF_ICO && op->inst_info->table_info.cf_type != CF_RET &&
-          !(op->inst_info->table_info.bar_type & BAR_FETCH)) {
-        STAT_EVENT(op->proc_id, op->off_path ? BTB_INCORRECT_OFF_PATH : BTB_INCORRECT);
-      }
     }
   }
 
-  /* Per-BTB-level hit/miss stats */
-  if (op->inst_info->table_info.cf_type != CF_ICO && op->inst_info->table_info.cf_type != CF_RET &&
-      !(op->inst_info->table_info.bar_type & BAR_FETCH)) {
+  /* Per-BTB-level outcome stats */
+  if (collect_btb_stats) {
     if (BTB_L0_PRESENT) {
-      STAT_EVENT(op->proc_id, op->off_path ? (btb_pred_info->btb_l0_hit ? BTB_L0_HIT_OFF_PATH : BTB_L0_MISS_OFF_PATH)
-                                           : (btb_pred_info->btb_l0_hit ? BTB_L0_HIT : BTB_L0_MISS));
+      STAT_EVENT_BTB_OUTCOME(op, BTB_L0, btb_pred_info->btb_l0_hit, btb_pred_info->btb_l0_target, pc_plus_offset);
     }
     if (BTB_L1_PRESENT) {
-      STAT_EVENT(op->proc_id, op->off_path ? (btb_pred_info->btb_l1_hit ? BTB_L1_HIT_OFF_PATH : BTB_L1_MISS_OFF_PATH)
-                                           : (btb_pred_info->btb_l1_hit ? BTB_L1_HIT : BTB_L1_MISS));
+      STAT_EVENT_BTB_OUTCOME(op, BTB_L1, btb_pred_info->btb_l1_hit, btb_pred_info->btb_l1_target, pc_plus_offset);
     }
-    STAT_EVENT(op->proc_id, op->off_path
-                                ? (btb_pred_info->btb_main_hit ? BTB_MAIN_HIT_OFF_PATH : BTB_MAIN_MISS_OFF_PATH)
-                                : (btb_pred_info->btb_main_hit ? BTB_MAIN_HIT : BTB_MAIN_MISS));
+    STAT_EVENT_BTB_OUTCOME(op, BTB_MAIN, btb_pred_info->btb_main_hit, btb_pred_info->btb_main_target, pc_plus_offset);
   }
 
   /* PERFECT_CBR_BTB: use oracle target for conditional branches */
@@ -376,10 +382,10 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
       btb_pred_info->pred_target = ibp_target;
       btb_pred_info->no_target = FALSE;
       btb_pred_info->ibp_miss = FALSE;
-      STAT_EVENT(op->proc_id, op->off_path ? IBTB_CORRECT_OFF_PATH : IBTB_CORRECT);
+      STAT_EVENT_IBTB_OUTCOME(op, ALL_IBTB, ibp_target == op->oracle_info.target);
     } else {
       btb_pred_info->ibp_miss = TRUE;
-      STAT_EVENT(op->proc_id, op->off_path ? IBTB_INCORRECT_OFF_PATH : IBTB_INCORRECT);
+      STAT_EVENT_IBTB_OUTCOME(op, ALL_IBTB, FALSE);
     }
   }
 
@@ -466,7 +472,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
     if (BTB_OFF_PATH_WRITES || !op->off_path) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
                 hexstr64s(op->oracle_info.target));
-      STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
+      STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
 
       btb_line = (Addr*)cache_access(bp_data->btb, fetch_addr, &btb_line_addr, TRUE);
       if (!btb_line) {
@@ -491,7 +497,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
       if (BTB_OFF_PATH_WRITES || !op->off_path) {
         DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
                   hexstr64s(op->oracle_info.target));
-        STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
+        STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
         *btb_line = op->oracle_info.target;
         // FIXME: the exceptions to this assert are really about x86 vs Alpha
         ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
@@ -595,9 +601,9 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
     target = 0;
 
   if (!op->off_path)
-    STAT_EVENT(op->proc_id, TARG_ON_PATH_MISS + (target == op->oracle_info.npc));
+    STAT_EVENT(op->proc_id, IBTB_TARG_CACHE_MISS + (target == op->oracle_info.npc));
   else
-    STAT_EVENT(op->proc_id, TARG_OFF_PATH_MISS + (target == op->oracle_info.npc));
+    STAT_EVENT(op->proc_id, IBTB_TARG_CACHE_MISS_OFFPATH + (target == op->oracle_info.npc));
 
   return target;
 }
@@ -627,7 +633,7 @@ void bp_ibtb_tc_tagged_update(Bp_Data* bp_data, Op* op) {
   }
   *tc_line = op->oracle_info.target;
 
-  STAT_EVENT(op->proc_id, TARG_ON_PATH_WRITE + op->off_path);
+  STAT_EVENT(op->proc_id, IBTB_TARG_CACHE_WRITE + op->off_path);
 }
 
 /**************************************************************************************/
@@ -702,9 +708,9 @@ Addr bp_ibtb_tc_tagless_pred(Bp_Data* bp_data, Op* op) {
   }
 
   if (!op->off_path)
-    STAT_EVENT(op->proc_id, TARG_ON_PATH_MISS + (tc_entry == op->oracle_info.npc));
+    STAT_EVENT(op->proc_id, IBTB_TARG_CACHE_MISS + (tc_entry == op->oracle_info.npc));
   else
-    STAT_EVENT(op->proc_id, TARG_OFF_PATH_MISS + (tc_entry == op->oracle_info.npc));
+    STAT_EVENT(op->proc_id, IBTB_TARG_CACHE_MISS_OFFPATH + (tc_entry == op->oracle_info.npc));
 
   return tc_entry;
 }
@@ -728,7 +734,7 @@ void bp_ibtb_tc_tagless_update(Bp_Data* bp_data, Op* op) {
   DEBUG(bp_data->proc_id, "Writing target cache target for op_num:%s\n", unsstr64(op->op_num));
   bp_data->tc_tagless[tc_index] = op->oracle_info.target;
 
-  STAT_EVENT(op->proc_id, TARG_ON_PATH_WRITE + op->off_path);
+  STAT_EVENT(op->proc_id, IBTB_TARG_CACHE_WRITE + op->off_path);
 }
 
 /**************************************************************************************/
@@ -840,12 +846,12 @@ void bp_ibtb_tc_hybrid_update(Bp_Data* bp_data, Op* op) {
       bp_data->tc_selector[sel_index] = SAT_DEC(sel_entry, 0);
       bp_ibtb_tc_tagged_update(bp_data, op);
       if (!op->off_path)
-        STAT_EVENT(op->proc_id, TARG_HYBRID_MISPRED_TAGGED);
+        STAT_EVENT(op->proc_id, TARG_HYBRID_RECOVER_AT_EXEC_TAGGED);
     } else {  // predicted by tagless predictor
       bp_data->tc_selector[sel_index] = SAT_INC(sel_entry, TC_SELECTOR_TAGGED_STRONG);
       bp_ibtb_tc_tagless_update(bp_data, op);
       if (!op->off_path)
-        STAT_EVENT(op->proc_id, TARG_HYBRID_MISPRED_TAGLESS);
+        STAT_EVENT(op->proc_id, TARG_HYBRID_RECOVER_AT_EXEC_TAGLESS);
     }
   } else {                   // branch was correctly predicted
     if (predicted_tagged) {  // correct pred by tagged predictor

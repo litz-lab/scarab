@@ -49,7 +49,6 @@ extern "C" {
 }
 
 #include <deque>
-#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -81,6 +80,7 @@ struct IssueQueueEntry {
 
   Op* op = nullptr;
   ISSUE_QUEUE_ENTRY_STATE state = ISSUE_QUEUE_ENTRY_STATE_EMPTY;
+  IssueQueueEntry* next_ready = nullptr;
 
   explicit IssueQueueEntry(uns16 queue_id, uns16 entry_id) : queue_id(queue_id), entry_id(entry_id) {}
   void clear();
@@ -96,6 +96,30 @@ void IssueQueueEntry::fill(Op* op) {
 }
 
 /**************************************************************************************/
+/* Virtual Interface */
+
+// SchedulePolicy is responsible for deciding the priority of picking
+class SchedulePolicy {
+ public:
+  virtual ~SchedulePolicy() = default;
+
+  // Return if the lhs entry is the preference
+  virtual bool compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const = 0;
+};
+
+// ArbitrationPolicy is responsible for determining the picker order
+class ArbitrationPolicy {
+ public:
+  virtual ~ArbitrationPolicy() = default;
+
+  // Prepare the picker order for the current selection cycle
+  virtual void prepare_picker_order() = 0;
+
+  // Get the picker index at the given index in the current order
+  virtual size_t picker_at(size_t i) const = 0;
+};
+
+/**************************************************************************************/
 
 struct FunctionalUnitPicker {
  private:
@@ -104,60 +128,54 @@ struct FunctionalUnitPicker {
   const uns32 fu_id;
   const uns64 fu_type;
 
-  using ReadyList = std::map<Counter, IssueQueueEntry*>;
-  using ReadyIter = ReadyList::iterator;
-  ReadyList ready_list;
-  ReadyIter ready_iter;
-
   Flag check_op_ready(Op* op) const;
 
  public:
   explicit FunctionalUnitPicker(uns proc_id, uns16 queue_id, uns32 fu_id, uns64 fu_type)
       : proc_id(proc_id), queue_id(queue_id), fu_id(fu_id), fu_type(fu_type) {}
 
-  IssueQueueEntry* pick_next(const std::unordered_set<Counter>& picked_mask);
-  void grant_op(IssueQueueEntry* entry);
-
-  bool is_compatible(Inst_Info* inst_info) const {
-    return get_fu_type(inst_info->table_info.op_type, inst_info->table_info.is_simd) & fu_type;
-  }
-  void add_ready_entry(uns64 key, IssueQueueEntry* entry) { ready_list[key] = entry; }
-  void remove_ready_entry(uns64 key) { ready_list.erase(key); }
-  void init_ready_iter() { ready_iter = ready_list.begin(); }
+  IssueQueueEntry* pick(IssueQueueEntry* ready_head, const std::unordered_set<uns16>& picked_mask,
+                        const SchedulePolicy& sched_policy);
+  void grant(IssueQueueEntry* entry);
+  bool is_compatible(Inst_Info* inst_info) const;
 };
 
-IssueQueueEntry* FunctionalUnitPicker::pick_next(const std::unordered_set<Counter>& picked_mask) {
-  while (ready_iter != ready_list.end()) {
-    IssueQueueEntry* entry = ready_iter->second;
-    Op* op = entry->op;
-    ++ready_iter;
-
+IssueQueueEntry* FunctionalUnitPicker::pick(IssueQueueEntry* ready_head, const std::unordered_set<uns16>& picked_mask,
+                                            const SchedulePolicy& sched_policy) {
+  IssueQueueEntry* ret = nullptr;
+  for (IssueQueueEntry* entry = ready_head; entry != nullptr; entry = entry->next_ready) {
     if (entry->state == ISSUE_QUEUE_ENTRY_STATE_PICKED) {
-      /*
-       * Conflict with another picker in the same round (parallel selection).
-       * This picker is unaware of current-round selections and loses arbitration.
-       * The selection is cancelled and deferred to the next round.
-       */
-      if (picked_mask.count(entry->entry_id)) {
-        return nullptr;
-      }
+      continue;
+    }
 
+    if (!is_compatible(entry->op->inst_info)) {
       continue;
     }
 
     // check if the op is ready (it may become not ready due to memory blocking or waiting for forwarding)
-    if (!check_op_ready(op)) {
+    if (!check_op_ready(entry->op)) {
       continue;
     }
 
-    ASSERT(proc_id, node->sd.ops[fu_id] == nullptr && is_compatible(op->inst_info));
-    return entry;
+    ASSERT(proc_id, node->sd.ops[fu_id] == nullptr);
+    if (ret == nullptr || sched_policy.compare(entry, ret)) {
+      ret = entry;
+    }
   }
 
-  return nullptr;
+  /*
+   * Conflict with another picker in the same round (parallel selection).
+   * This picker is unaware of current-round selections and loses arbitration.
+   * The selection is cancelled and deferred to the next round.
+   */
+  if (ret != nullptr && picked_mask.count(ret->entry_id)) {
+    return nullptr;
+  }
+
+  return ret;
 }
 
-void FunctionalUnitPicker::grant_op(IssueQueueEntry* entry) {
+void FunctionalUnitPicker::grant(IssueQueueEntry* entry) {
   Op* op = entry->op;
   ASSERT(proc_id, op != nullptr);
   ASSERT(proc_id, fu_id < (uns32)node->sd.max_op_count && node->sd.ops[fu_id] == nullptr);
@@ -169,6 +187,10 @@ void FunctionalUnitPicker::grant_op(IssueQueueEntry* entry) {
   node->sd.op_count += 1;
 
   entry->state = ISSUE_QUEUE_ENTRY_STATE_PICKED;
+}
+
+bool FunctionalUnitPicker::is_compatible(Inst_Info* inst_info) const {
+  return get_fu_type(inst_info->table_info.op_type, inst_info->table_info.is_simd) & fu_type;
 }
 
 Flag FunctionalUnitPicker::check_op_ready(Op* op) const {
@@ -197,30 +219,6 @@ Flag FunctionalUnitPicker::check_op_ready(Op* op) const {
 }
 
 /**************************************************************************************/
-/* Virtual Interface */
-
-// SchedulePolicy is responsible for deciding the sequence of the ready list.
-class SchedulePolicy {
- public:
-  virtual ~SchedulePolicy() = default;
-
-  // Return the key of the entry of the sorted ready list
-  virtual Counter get_key(IssueQueueEntry* entry) = 0;
-};
-
-// ArbitrationPolicy is responsible for determining the picker order
-class ArbitrationPolicy {
- public:
-  virtual ~ArbitrationPolicy() = default;
-
-  // Prepare the picker order for the current selection cycle
-  virtual void prepare_picker_order() = 0;
-
-  // Get the picker index at the given index in the current order
-  virtual size_t picker_at(size_t i) = 0;
-};
-
-/**************************************************************************************/
 /*
  * The select logic is responsible for picking ready ops from the wakeup logic in the issue queue.
  * It is composed of a SchedulePolicy (in what order of ready lists) and an ArbitrationPolicy (in what order to pick).
@@ -231,6 +229,7 @@ class SelectLogic {
   std::vector<FunctionalUnitPicker> connected_fu_pickers;
   std::unique_ptr<SchedulePolicy> sched_policy;
   std::unique_ptr<ArbitrationPolicy> arbitration_policy;
+  IssueQueueEntry* ready_head = nullptr;
 
  public:
   SelectLogic(const std::vector<FunctionalUnitPicker>& connected_fu_pickers,
@@ -257,60 +256,64 @@ void SelectLogic::select() {
   const size_t fu_num = connected_fu_pickers.size();
   arbitration_policy->prepare_picker_order();
 
-  // reset the ready iter for each picker to start from the head of the ready list
-  for (size_t i = 0; i < fu_num; ++i) {
-    FunctionalUnitPicker& fu_picker = connected_fu_pickers[i];
-    fu_picker.init_ready_iter();
-  }
-
-  std::unordered_set<Counter> picked_mask;
+  std::unordered_set<uns16> picked_mask;
   for (size_t i = 0; i < fu_num; ++i) {
     FunctionalUnitPicker& fu_picker = connected_fu_pickers[arbitration_policy->picker_at(i)];
-    IssueQueueEntry* entry = fu_picker.pick_next(picked_mask);
+    IssueQueueEntry* entry = fu_picker.pick(ready_head, picked_mask, *sched_policy);
 
-    // do the picking in the next round if it is cancelled due to a conflict in the same round
+    // if the picking is cancelled due to a conflict in the same round or there is no compatible entry
     if (entry == nullptr) {
       continue;
     }
 
-    // mark the current pickas the winner to cancel competing picks for the same op in this round
+    // mark the current pick as the winner to cancel competing picks for the same op in this round
     if (ISSUE_QUEUE_PARALLEL_PICK) {
       picked_mask.insert(entry->entry_id);
     }
 
-    fu_picker.grant_op(entry);
+    // issue the op into the stage_data
+    fu_picker.grant(entry);
   }
 }
 
 void SelectLogic::request(IssueQueueEntry* entry) {
-  uns64 key = sched_policy->get_key(entry);
-  for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
-    FunctionalUnitPicker& fu_picker = connected_fu_pickers[i];
-    if (fu_picker.is_compatible(entry->op->inst_info)) {
-      fu_picker.add_ready_entry(key, entry);
-    }
-  }
+  ASSERT(node->proc_id, entry->next_ready == nullptr);
+  entry->next_ready = ready_head;
+  ready_head = entry;
 }
 
 void SelectLogic::release(IssueQueueEntry* entry) {
-  uns64 key = sched_policy->get_key(entry);
-  for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
-    FunctionalUnitPicker& fu_picker = connected_fu_pickers[i];
-    fu_picker.remove_ready_entry(key);
+  IssueQueueEntry* prev = nullptr;
+  IssueQueueEntry* curr = ready_head;
+  while (curr != nullptr) {
+    if (curr != entry) {
+      prev = curr;
+      curr = curr->next_ready;
+      continue;
+    }
+
+    if (prev == nullptr) {
+      ready_head = curr->next_ready;
+    } else {
+      prev->next_ready = curr->next_ready;
+    }
+
+    curr->next_ready = nullptr;
+    return;
   }
 }
 
 /**************************************************************************************/
 /* Implementation */
 
-// OldestFirstSchedulePolicy keeps the ready list of each picker sorted by op age.
+// OldestFirstSchedulePolicy prioritize the older ops
 class OldestFirstSchedulePolicy : public SchedulePolicy {
  public:
-  Counter get_key(IssueQueueEntry* entry) override;
+  bool compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const override;
 };
 
-Counter OldestFirstSchedulePolicy::get_key(IssueQueueEntry* entry) {
-  return entry->op->op_num;
+bool OldestFirstSchedulePolicy::compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const {
+  return lhs->op->op_num < rhs->op->op_num;
 }
 
 // RoundRobinArbitrationPolicy ensures fairness by rotating through pickers in a circular manner.
@@ -322,14 +325,14 @@ class RoundRobinArbitrationPolicy : public ArbitrationPolicy {
  public:
   explicit RoundRobinArbitrationPolicy(size_t fu_num) : fu_num(fu_num), fu_idx(fu_num - 1) {}
   void prepare_picker_order() override;
-  size_t picker_at(size_t i) override;
+  size_t picker_at(size_t i) const override;
 };
 
 void RoundRobinArbitrationPolicy::prepare_picker_order() {
   fu_idx = (fu_idx + 1) % fu_num;
 }
 
-size_t RoundRobinArbitrationPolicy::picker_at(size_t i) {
+size_t RoundRobinArbitrationPolicy::picker_at(size_t i) const {
   return (fu_idx + i) % fu_num;
 }
 
@@ -722,6 +725,7 @@ void issue_queue_update() {
 }
 
 void issue_queue_wakeup(Op* op) {
+  // wake up ops and insert them into the ready list for scheduling
   issue_queues->wakeup(op);
 }
 

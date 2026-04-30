@@ -60,6 +60,7 @@ typedef enum OFF_PATH_REASON_enum {
   REASON_BTB_MISS_MISPRED,
   REASON_MISPRED,
   REASON_MISFETCH,
+  REASON_LATE_BTB_HIT,
 } Off_Path_Reason;
 
 typedef enum CONF_OFF_PATH_REASON_enum {

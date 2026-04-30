@@ -112,6 +112,9 @@ void BTBMissBPTakenConfStat::log_phase_cycles(Op* op) {
           cycle_count - (cycle_count % CONF_MISFETCH_SAMPLE_RATE), (double)conf_mech->misfetch_rate));
       break;
     }
+    case REASON_LATE_BTB_HIT: {
+      break;
+    }
     default: {
       ASSERT(proc_id, 0);
     }
@@ -122,7 +125,7 @@ void BTBMissBPTakenConfStat::log_off_path_event(Op* op) {
   if (!CONFIDENCE_ENABLE || !CONF_LOG_DFE_TO_REC)
     return;
   Off_Path_Reason op_reason = (Off_Path_Reason)get_off_path_reason();
-  if (!op_reason)
+  if (!op_reason || op_reason == REASON_LATE_BTB_HIT)
     return;
   std::get<0>(resteer_ops_cycles[op->op_num]) = cycle_count;
   std::get<1>(resteer_ops_cycles[op->op_num]) = 0;
@@ -137,6 +140,8 @@ void BTBMissBPTakenConfStat::log_resolution(Op* op) {
   if (!CONFIDENCE_ENABLE || !CONF_LOG_DFE_TO_REC)
     return;
   Off_Path_Reason op_reason = (Off_Path_Reason)get_off_path_reason();
+  if (op_reason == REASON_LATE_BTB_HIT)
+    return;
   std::get<1>(resteer_ops_cycles[op->op_num]) = cycle_count;
   std::get<2>(resteer_ops_cycles[op->op_num]) = op_reason;
 
@@ -264,6 +269,9 @@ void BTBMissBPTakenConf::recover(Op* op) {
     case REASON_MISFETCH: {
       cnt_misfetch++;
       last_misfetch_recover_cycle = cycle_count;
+      break;
+    }
+    case REASON_LATE_BTB_HIT: {
       break;
     }
     default: {

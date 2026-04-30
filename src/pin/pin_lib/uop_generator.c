@@ -112,9 +112,14 @@ uns* num_sending_uop;
 uns* num_uops;
 Addr* last_ga_va;
 
+static Inst_Info fake_nop_template;
+static Inst_Info fake_jmp_template;
+static Flag fake_templates_ready = FALSE;
+
 /**************************************************************************************/
 /* Local prototypes */
 
+static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop);
 static void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop);
 static void convert_t_uop_to_info(uns8 proc_id, Trace_Uop* t_uop, Inst_Info* info);
 static void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uop* trace_uop, uns mem_size,
@@ -218,6 +223,34 @@ void uop_generator_init(uint32_t num_cores) {
   memset(num_sending_uop, 0, num_cores * sizeof(uns));
 
   last_ga_va = (Addr*)malloc(num_cores * sizeof(Addr));
+
+  Trace_Uop** tuop = trace_uop_bulk[0];
+
+  ctype_pin_inst nop_pi = create_dummy_nop(0, WPNM_FAKE_NOP, DUMMY_NOP_SIZE);
+  uns nop_nuop = generate_uops(0, &nop_pi, tuop);
+  ASSERT(0, nop_nuop == 1);
+  convert_t_uop_to_info(0, tuop[0], &fake_nop_template);
+  fake_nop_template.table_info.true_op_type = nop_pi.true_op_type;
+  fake_nop_template.table_info.is_simd = nop_pi.is_simd;
+  strcpy(fake_nop_template.table_info.name, nop_pi.pin_iclass);
+  fake_nop_template.trace_info.num_uop = 1;
+  fake_nop_template.uop_seq_num = 0;
+  fake_nop_template.fake_inst = TRUE;
+  fake_nop_template.fake_inst_reason = WPNM_FAKE_NOP;
+
+  ctype_pin_inst jmp_pi = create_dummy_jump(0, 0, 0);
+  uns jmp_nuop = generate_uops(0, &jmp_pi, tuop);
+  ASSERT(0, jmp_nuop == 1);
+  convert_t_uop_to_info(0, tuop[0], &fake_jmp_template);
+  fake_jmp_template.table_info.true_op_type = jmp_pi.true_op_type;
+  fake_jmp_template.table_info.is_simd = jmp_pi.is_simd;
+  strcpy(fake_jmp_template.table_info.name, jmp_pi.pin_iclass);
+  fake_jmp_template.trace_info.num_uop = 1;
+  fake_jmp_template.uop_seq_num = 0;
+  fake_jmp_template.fake_inst = TRUE;
+  fake_jmp_template.fake_inst_reason = WPNM_FAKE_JMP;
+
+  fake_templates_ready = TRUE;
 }
 
 Flag uop_generator_extract_op(uns proc_id, Op* op, compressed_op* cop) {
@@ -327,7 +360,6 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->unique_num = unique_count;
   op->unique_num_per_proc = unique_count_per_core[proc_id];
   op->proc_id = proc_id;
-  op->thread_id = 0;
   op->eom = trace_uop->eom;
   op->fetched_instruction = fetched_instruction[proc_id];
   op->inst_info = info;
@@ -344,8 +376,6 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->replay_cycle = MAX_CTR;
   op->retire_cycle = MAX_CTR;
   op->replay = FALSE;
-  op->replay_count = 0;
-  op->dont_cause_replays = FALSE;
   op->exec_count = 0;
   op->in_rdy_list = FALSE;
   op->in_node_list = FALSE;
@@ -363,9 +393,6 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   // op->row_num = MAX_CTR;
   op->node_id = MAX_CTR;
   op->rs_id = MAX_CTR;
-  op->same_src_last_op = 0;
-
-  op->oracle_cp_num = -1;
   op->engine_info.l1_miss = FALSE;
   op->engine_info.l1_miss_satisfied = FALSE;
   op->engine_info.dep_on_l1_miss = FALSE;
@@ -396,6 +423,8 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->oracle_info.npc = trace_uop->npc;
   if (op->proc_id)
     ASSERT(op->proc_id, op->oracle_info.npc);
+  if (op->inst_info->table_info.cf_type == CF_BR || op->inst_info->table_info.cf_type == CF_CALL)
+    ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
   op->oracle_info.mem_size = trace_uop->mem_size;
   // because of repeat move mem size is dynamic info  WRONG!!!!
   // op->inst_info->table_info.mem_size = trace_uop->mem_size;
@@ -779,27 +808,9 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
 void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop) {
   Flag new_entry = FALSE;
   Inst_Info* info;
-  // Due to JIT compilation, each branch must be decoded to verify which instruction the PC maps to.
-  // To decrease unnecessary malloc/free, fetch inst_info from hashmap
-  // instead of allocating. However first instruction must be decoded.
-  static Inst_Info dummy_nop;
-  static Flag generated_dummy_nop = FALSE;
-  if (pi->fake_inst) {
-    info = (Inst_Info*)calloc(1, sizeof(Inst_Info));
-    if (generated_dummy_nop) {
-      *info = dummy_nop;
-      info->addr = pi->instruction_addr;
-    }
-    info->fake_inst = TRUE;
-    info->fake_inst_reason = pi->fake_inst_reason;
-  } else {
-    info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb, 0,
-                                        &new_entry);
-    info->fake_inst = FALSE;
-    info->fake_inst_reason = WPNM_NOT_IN_WPNM;
-  }
   int ii;
   int num_uop = 0;
+
   if (pi->is_string) {
     pi->branch_target = pi->instruction_addr;
     pi->actually_taken = (pi->branch_target == pi->instruction_next_addr);
@@ -815,88 +826,91 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
     pi->st_vaddr[st] = convert_to_cmp_addr(proc_id, pi->st_vaddr[st]);
   }
 
-  /* always regenerate uops for gather/scatter, because the num of uops could be different every time*/
-  Flag need_to_gen_uops = new_entry || (pi->fake_inst && !generated_dummy_nop) || pi->is_gather_scatter;
+  if (pi->fake_inst) {
+    ASSERT(proc_id, fake_templates_ready);
+    info = (Inst_Info*)calloc(1, sizeof(Inst_Info));
+    if (pi->fake_inst_reason == WPNM_FAKE_JMP) {
+      *info = fake_jmp_template;
+    } else {
+      *info = fake_nop_template;
+    }
+    info->addr = pi->instruction_addr;
+    info->trace_info.inst_size = pi->size;
+    info->fake_inst_reason = pi->fake_inst_reason;
 
-  if (pi->fake_inst && !generated_dummy_nop)
-    generated_dummy_nop = TRUE;
+    num_uop = 1;
+    trace_uop[0]->info = info;
+    convert_dyn_uop(proc_id, info, pi, trace_uop[0], info->table_info.mem_size, TRUE);
+  } else {
+    info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb, 0,
+                                        &new_entry);
+    info->fake_inst = FALSE;
+    info->fake_inst_reason = WPNM_NOT_IN_WPNM;
 
-  if (need_to_gen_uops) {
-    num_uop = generate_uops(proc_id, pi, trace_uop);
-    ASSERT(proc_id, num_uop > 0);
+    Flag need_to_gen_uops = new_entry || pi->is_gather_scatter;
 
-    info->trace_info.num_uop = num_uop;
+    if (need_to_gen_uops) {
+      num_uop = generate_uops(proc_id, pi, trace_uop);
+      ASSERT(proc_id, num_uop > 0);
 
-    for (ii = 0; ii < num_uop; ii++) {
-      if (ii > 0) {
-        if (pi->fake_inst) {
-          info = (Inst_Info*)calloc(1, sizeof(Inst_Info));
-          info->fake_inst = TRUE;
-          info->fake_inst_reason = pi->fake_inst_reason;
-        } else {
+      info->trace_info.num_uop = num_uop;
+
+      for (ii = 0; ii < num_uop; ii++) {
+        if (ii > 0) {
           info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb,
                                               ii, &new_entry);
-
           info->fake_inst = FALSE;
           info->fake_inst_reason = WPNM_NOT_IN_WPNM;
         }
-      }
-      need_to_gen_uops = new_entry || pi->fake_inst || pi->is_gather_scatter;
-      ASSERT(proc_id, need_to_gen_uops);
+        need_to_gen_uops = new_entry || pi->is_gather_scatter;
+        ASSERT(proc_id, need_to_gen_uops);
 
-      trace_uop[ii]->addr = pi->instruction_addr;
-      trace_uop[ii]->inst_size = pi->size;
+        trace_uop[ii]->addr = pi->instruction_addr;
+        trace_uop[ii]->inst_size = pi->size;
 
-      if (ii == (num_uop - 1)) {
-        /* last uop's info */
-        if (pi->is_ifetch_barrier && !IGNORE_BAR_FETCH) {
-          // only the last instruction will have bar type
-          trace_uop[num_uop - 1]->bar_type = BAR_FETCH;
+        if (ii == (num_uop - 1)) {
+          if (pi->is_ifetch_barrier && !IGNORE_BAR_FETCH) {
+            trace_uop[num_uop - 1]->bar_type = BAR_FETCH;
+          }
         }
+
+        convert_t_uop_to_info(proc_id, trace_uop[ii], info);
+        trace_uop[ii]->info = info;
+
+        info->table_info.true_op_type = pi->true_op_type;
+        trace_uop[ii]->info->table_info.is_simd = pi->is_simd;
+        trace_uop[ii]->info->uop_seq_num = ii;
+        strcpy(trace_uop[ii]->info->table_info.name, pi->pin_iclass);
+        if (trace_uop[ii]->alu_uop) {
+          trace_uop[ii]->info->table_info.num_simd_lanes = pi->num_simd_lanes;
+          trace_uop[ii]->info->table_info.lane_width_bytes = pi->lane_width_bytes;
+        }
+        trace_uop[ii]->info->trace_info.is_gather_scatter = pi->is_gather_scatter;
+
+        ASSERT(proc_id, info->trace_info.inst_size == pi->size);
+
+        Flag is_last_uop = (ii == (num_uop - 1));
+        convert_dyn_uop(proc_id, info, pi, trace_uop[ii], info->table_info.mem_size, is_last_uop);
       }
+    } else {
+      num_uop = info->trace_info.num_uop;
+      ASSERT(proc_id, !(pi->is_gather_scatter));
 
-      convert_t_uop_to_info(proc_id, trace_uop[ii], info);
-      trace_uop[ii]->info = info;
+      for (ii = 0; ii < num_uop; ii++) {
+        if (ii > 0) {
+          info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb,
+                                              ii, &new_entry);
+        }
+        ASSERT(proc_id, !new_entry);
 
-      info->table_info.true_op_type = pi->true_op_type;
-      trace_uop[ii]->info->table_info.is_simd = pi->is_simd;
-      trace_uop[ii]->info->uop_seq_num = ii;
-      strcpy(trace_uop[ii]->info->table_info.name, pi->pin_iclass);
-      if (trace_uop[ii]->alu_uop) {
-        trace_uop[ii]->info->table_info.num_simd_lanes = pi->num_simd_lanes;
-        trace_uop[ii]->info->table_info.lane_width_bytes = pi->lane_width_bytes;
+        trace_uop[ii]->info = info;
+        trace_uop[ii]->eom = FALSE;
+        ASSERT(proc_id, info->addr == pi->instruction_addr);
+        ASSERT(proc_id, info->trace_info.inst_size == pi->size);
+
+        Flag is_last_uop = (ii == (num_uop - 1));
+        convert_dyn_uop(proc_id, info, pi, trace_uop[ii], info->table_info.mem_size, is_last_uop);
       }
-      trace_uop[ii]->info->trace_info.is_gather_scatter = pi->is_gather_scatter;
-
-      ASSERT(proc_id, info->trace_info.inst_size == pi->size);
-
-      Flag is_last_uop = (ii == (num_uop - 1));
-      convert_dyn_uop(proc_id, info, pi, trace_uop[ii], info->table_info.mem_size, is_last_uop);
-      if (pi->fake_inst) {
-        ASSERT(0, generated_dummy_nop);
-        dummy_nop = *info;
-      }
-    }
-  } else {
-    // instructions is decoded before.
-
-    num_uop = info->trace_info.num_uop;
-    ASSERT(proc_id, !(pi->is_gather_scatter));
-
-    for (ii = 0; ii < num_uop; ii++) {
-      if (ii > 0) {
-        info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb, ii,
-                                            &new_entry);
-      }
-      ASSERT(proc_id, !new_entry);
-
-      trace_uop[ii]->info = info;
-      trace_uop[ii]->eom = FALSE;
-      ASSERT(proc_id, info->addr == pi->instruction_addr);
-      ASSERT(proc_id, info->trace_info.inst_size == pi->size);
-
-      Flag is_last_uop = (ii == (num_uop - 1));
-      convert_dyn_uop(proc_id, info, pi, trace_uop[ii], info->table_info.mem_size, is_last_uop);
     }
   }
 

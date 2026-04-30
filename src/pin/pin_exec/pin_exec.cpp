@@ -88,6 +88,8 @@ KNOB<UINT64> KnobDebugPrintEndUid(KNOB_MODE_WRITEONCE, "pintool",
 KNOB<UINT64> KnobStartRip(KNOB_MODE_WRITEONCE, "pintool", "rip", "0",
                           "the starting rip of the program");
 
+KNOB<bool> KnobTrackAtInstrumentation(KNOB_MODE_WRITEONCE, "pintool", "track_at_instr", "true",
+                                      "Track RIP at instrumentation time instead of execution time");
 /* ===================================================================== */
 /* ===================================================================== */
 
@@ -216,6 +218,11 @@ void instrumentation_func_per_trace(TRACE trace, void* v) {
   }
 }
 
+void track_rip_at_execution(ADDRINT ip) {
+  if (!on_wrongpath) {
+    instrumented_rip_tracker.insert(ip);
+  }
+}
 
 void instrumentation_func_per_instruction(INS ins, void* v) {
   if(!started) {
@@ -223,7 +230,10 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
                    IARG_END);
   } else {
     if(!hyper_ff) {
-      instrumented_rip_tracker.insert(INS_Address(ins));
+      if (track_at_instr)
+        instrumented_rip_tracker.insert(INS_Address(ins));
+      else
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)track_rip_at_execution, IARG_INST_PTR, IARG_END);
 
       DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
                 "Instrument from Instruction() eip=%" PRIx64 "\n",
@@ -287,6 +297,8 @@ int main(int argc, char* argv[]) {
   // and so we have "started"
   started   = (0 == KnobStartRip.Value());
   start_rip = KnobStartRip.Value();
+
+  track_at_instr = KnobTrackAtInstrumentation.Value();
 
   heartbeat_enabled = KnobHeartbeatEnabled.Value();
   max_buffer_size   = KnobMaxBufferSize.Value();

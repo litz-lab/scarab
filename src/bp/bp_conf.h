@@ -45,7 +45,7 @@
 
 typedef struct Opc_Table_struct {
   Flag off_path;
-  Flag mispred;
+  Flag recover_at_decode_or_exec;
   Flag pred_conf;
   Flag verified;
   Counter op_num;  // here for debugging only

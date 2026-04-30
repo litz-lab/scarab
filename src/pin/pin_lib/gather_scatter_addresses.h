@@ -77,17 +77,17 @@ class gather_scatter_info {
                                   const gather_scatter_info& sinfo);
 
  private:
-  gather_scatter_info::type          _type;
-  gather_scatter_info::mask_reg_type _mask_reg_type;
-  uint32_t                           _data_vector_reg_total_width_bytes;
-  uint32_t                           _data_lane_width_bytes;
-  xed_reg_enum_t                     _mask_reg;
-  xed_reg_enum_t                     _base_reg;
-  xed_reg_enum_t                     _index_reg;
-  uint64_t                           _displacement;
-  uint32_t                           _scale;
-  uint32_t                           _index_lane_width_bytes;
-  uint32_t                           _num_mem_ops;
+  gather_scatter_info::type _type = INVALID_TYPE;
+  gather_scatter_info::mask_reg_type _mask_reg_type = INVALID_MASK_REG_TYPE;
+  uint32_t _data_vector_reg_total_width_bytes = 0;
+  uint32_t _data_lane_width_bytes = 0;
+  xed_reg_enum_t _mask_reg = {};
+  xed_reg_enum_t _base_reg = {};
+  xed_reg_enum_t _index_reg = {};
+  uint64_t _displacement = 0;
+  uint32_t _scale = 0;
+  uint32_t _index_lane_width_bytes = 0;
+  uint32_t _num_mem_ops = 0;
 
   bool     is_non_zero_and_powerof2(const uint32_t v) const;
   uint32_t pin_xyzmm_reg_width_in_bytes(

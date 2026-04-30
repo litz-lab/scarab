@@ -7,13 +7,13 @@ on:
         description: sci descriptor id to build and simulate
         required: true
         type: string
-      allow_failed_report_ignored:
-        description: Allow a "Failed report ignored" status line to pass verification
+      collect_metrics:
+        description: Whether to parse IPC/KIPS outputs
         required: false
         default: false
         type: boolean
-      collect_metrics:
-        description: Whether to parse IPC/KIPS outputs
+      run_lint:
+        description: Run clang-tidy against the just-built tree (reuses the build, no recompile).
         required: false
         default: false
         type: boolean
@@ -76,11 +76,40 @@ jobs:
           cat env_path.txt >> "$GITHUB_ENV"
           rm env_path.txt
 
+      - name: Patch descriptor for CI
+        working-directory: infra
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sci_id = os.environ["SCI_ID"]
+          src = Path(f"json/{sci_id}.json")
+          if not src.exists():
+              raise SystemExit(f"Descriptor not found: {src}")
+          with open(src) as f:
+              d = json.load(f)
+          d["application_dir"] = os.environ["GITHUB_WORKSPACE"] + "/"
+          src.write_text(json.dumps(d, indent=2, separators=(',', ':')) + "\n")
+          PY
+        env:
+          SCI_ID: ${{ inputs.sci_id }}
+
       - name: Build Scarab
         working-directory: infra
         env:
           trace_home: ${{ github.workspace }}/traces_top_simpoint
         run: ./sci --build-scarab ${{ inputs.sci_id }}
+
+      # Piggyback clang-tidy on the existing build runner: compile_commands.json
+      # and the docker image are already present, so this is just the lint pass.
+      - name: Lint Scarab
+        if: inputs.run_lint
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
+        run: ./sci --lint-scarab ${{ inputs.sci_id }}
 
       - name: Run scarab simulation
         working-directory: infra
@@ -102,16 +131,8 @@ jobs:
           fi
           completed=$(printf '%s\n' "$status_line" | awk -F'|' '{gsub(/^[[:space:]]+|[[:space:]]+$/,"",$2); print $2}')
           if [ "$completed" != "1" ]; then
-            if [ "${{ inputs.allow_failed_report_ignored }}" = "true" ]; then
-              if printf '%s\n' "$status_output" | grep -q "Failed report ignored"; then
-                echo "Status contains 'Failed report ignored'; continuing."
-              else
-                echo "Status verification skipped due to allow_failed_report_ignored=true."
-              fi
-            else
-              echo "Expected 1 completed simulation for this_pr, got '$completed'"
-              exit 1
-            fi
+            echo "Expected 1 completed simulation for this_pr, got '$completed'"
+            exit 1
           fi
 
       - id: simdir

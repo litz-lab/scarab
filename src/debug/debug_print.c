@@ -194,25 +194,26 @@ void print_op_field(FILE* stream, Op* op, uns field) {
             fprintf(stream, "%c%c", Op_State_str(op->state)[0], op->replay ? 'r' : ' ');
         }
         if (op->inst_info->table_info.cf_type && op->bp_pred_info && op->btb_pred_info) {
-          Flag bits = op->bp_pred_info->mispred << 2 | op->bp_pred_info->misfetch << 1 | op->btb_pred_info->btb_miss;
+          Flag bits = (op->bp_pred_info->recover_at_exec << 2) | (op->bp_pred_info->recover_at_decode << 1) |
+                      op->btb_pred_info->btb_miss;
           switch (bits) {
             case 0x4:
               fprintf(stream, "P|");
-              break; /* mispredict */
+              break; /* exec recovery */
             case 0x3:
             case 0x2:
               fprintf(stream, "F|");
-              break; /* misfetch or (misfetch and btb miss) */
+              break; /* decode recovery or (decode recovery and btb miss) */
             case 0x1:
               fprintf(stream, "M|");
               break; /* btb miss */
             case 0x5:
             case 0x6:
               fprintf(stream, "B|");
-              break; /* mispredict, (misfetch or btb miss) */
+              break; /* exec recovery, (decode recovery or btb miss) */
             case 0x7:
               fprintf(stream, "A|");
-              break; /* mispredict, misfetch, btb miss */
+              break; /* exec recovery, decode recovery, btb miss */
             case 0x0:
               fprintf(stream, " |");
               break;
@@ -227,12 +228,12 @@ void print_op_field(FILE* stream, Op* op, uns field) {
     case OP_NUM_FIELD:
       if (op)
         fprintf(stream, "o:%-3d %3d%c %3d%c %3d%c|", (int)(op->op_num % 1000),
-                op->oracle_info.num_srcs > 0 ? (int)(op->oracle_info.src_info[0].op_num % 1000) : -1,
-                ((op->srcs_not_rdy_vector & 1) == 0 ? 'r' : 'w'),
-                op->oracle_info.num_srcs > 1 ? (int)(op->oracle_info.src_info[1].op_num % 1000) : -1,
-                ((op->srcs_not_rdy_vector & 2) == 0 ? 'r' : 'w'),
-                op->oracle_info.num_srcs > 2 ? (int)(op->oracle_info.src_info[2].op_num % 1000) : -1,
-                ((op->srcs_not_rdy_vector & 4) == 0 ? 'r' : 'w'));
+                (op->num_srcs > 0 && op->src_info) ? (int)(op->src_info[0].op_num % 1000) : -1,
+                !op_sources_test_not_rdy(op, 0) ? 'r' : 'w',
+                (op->num_srcs > 1 && op->src_info) ? (int)(op->src_info[1].op_num % 1000) : -1,
+                !op_sources_test_not_rdy(op, 1) ? 'r' : 'w',
+                (op->num_srcs > 2 && op->src_info) ? (int)(op->src_info[2].op_num % 1000) : -1,
+                !op_sources_test_not_rdy(op, 2) ? 'r' : 'w');
       else
         fprintf(stream, "xxxxxxxxxxxxxxxxxxxx|");
       break;
@@ -249,8 +250,8 @@ void print_op_field(FILE* stream, Op* op, uns field) {
         Counter addr_dep = 0;
         Counter data_dep = 0;
         uns ii;
-        for (ii = 0; ii < op->oracle_info.num_srcs; ii++) {
-          Src_Info* src = &op->oracle_info.src_info[ii];
+        for (ii = 0; ii < op->num_srcs && op->src_info; ii++) {
+          Src_Info* src = &op->src_info[ii];
           if (src->type == MEM_ADDR_DEP)
             addr_dep = src->op_num;
           if (src->type == MEM_DATA_DEP)

@@ -56,7 +56,6 @@ typedef struct Bp_Recovery_Info_struct {
   Op* redirect_op;         /* pointer to op that caused redirect */
 
   Op* recovery_op;             /* pointer to op that caused recovery */
-  int oracle_cp_num;           /* checkpoint num that we need to return to - if using oracle checkpointing */
   Counter recovery_unique_num; /* unique_num of op that caused recovery */
   uns64 recovery_inst_uid;     /* unique id of the instruction that caused  */
 
@@ -293,6 +292,7 @@ void set_bp_recovery_info(Bp_Recovery_Info* new_bp_recovery_info);
 void init_bp_recovery_info(uns8, Bp_Recovery_Info*);
 void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle);
 void bp_sched_redirect(Bp_Recovery_Info*, Op*, Counter);
+void bp_stat_main_branch_resolve_latency(Op* op, Counter resolve_cycle, Flag recover_at_exec);
 
 void init_bp_data(uns8, uns8, Bp_Data*, Bp_Data*);
 Flag bp_is_predictable(Bp_Data*);

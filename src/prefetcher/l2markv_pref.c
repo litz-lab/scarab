@@ -89,12 +89,12 @@ void l2markv_init(void) {
   l2markv_table = (L2markv_Rec**)malloc(sizeof(L2markv_Rec*) * num_sets);
 
   for (ii = 0; ii < num_sets; ii++) {
-    l2markv_table[ii] = (L2markv_Rec*)malloc(sizeof(L2markv_Rec) * assoc);
+    l2markv_table[ii] = (L2markv_Rec*)calloc(assoc, sizeof(L2markv_Rec));
   }
 
   if (!L1MARKV_PREF_IMMEDIATE) {
-    l1pref_markv_req_queue = (L1pref_Req*)malloc(sizeof(L1pref_Req) * L1PREF_MARKV_REQ_QUEUE_SIZE);
-    markv_l2send_req_queue = (L1pref_Req*)malloc(sizeof(L1pref_Req) * L1PREF_MARKV_REQ_QUEUE_SIZE);
+    l1pref_markv_req_queue = (L1pref_Req*)calloc(L1PREF_MARKV_REQ_QUEUE_SIZE, sizeof(L1pref_Req));
+    markv_l2send_req_queue = (L1pref_Req*)calloc(L1PREF_MARKV_REQ_QUEUE_SIZE, sizeof(L1pref_Req));
   }
 }
 

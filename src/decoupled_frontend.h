@@ -165,17 +165,20 @@ uint64_t lookahead_buffer_count(uns proc_id);
 
 #include "confidence/conf.hpp"
 
-class FT;
+// Note: FT and Decoupled_FE are both forward-declared in the C-visible section
+// above via `typedef struct FT FT;` / `typedef struct Decoupled_FE Decoupled_FE;`.
+// We keep the `struct` tag here to match (C++ struct and class differ only in
+// default access, and both definitions use explicit `public:`).
+struct FT;
 struct FT_PredictResult;
 
-class Decoupled_FE {
+struct Decoupled_FE {
  public:
   Decoupled_FE()
       : proc_id(0),
         bp_id(0),
         bp_data(nullptr),
         dfe_recovery_policy(0),
-        ftq(),
         current_ft_to_push(nullptr),
         saved_recovery_ft(nullptr),
         off_path(0),
@@ -185,7 +188,6 @@ class Decoupled_FE {
         exit_on_off_path(false),
         op_num(1),
         current_off_path_op_num(0),
-        ftq_iterators(),
         recovery_addr(0),
         redirect_cycle(0),
         ftq_ft_num(FE_FTQ_BLOCK_NUM),
@@ -254,7 +256,7 @@ class Decoupled_FE {
   // Per core fetch target queue:
   // Each core has a queue of FTs,
   // where each FT contains a queue of micro instructions.
-  std::deque<FT*> ftq;
+  std::deque<FT*> ftq = {};
   // keep track of the current FT to be pushed next
   FT* current_ft_to_push;
   FT* saved_recovery_ft;
@@ -266,7 +268,7 @@ class Decoupled_FE {
   bool exit_on_off_path;
   uint64_t op_num;
   uint64_t current_off_path_op_num;
-  std::vector<std::unique_ptr<decoupled_fe_iter>> ftq_iterators;
+  std::vector<std::unique_ptr<decoupled_fe_iter>> ftq_iterators = {};
   uint64_t recovery_addr;
   uint64_t redirect_cycle;
   uint64_t ftq_ft_num;

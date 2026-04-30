@@ -117,7 +117,7 @@ static inline void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr);
 static inline void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
 
 static inline Flag is_fetch_barrier_op(Op* op) {
-  return (op->inst_info->table_info.bar_type & BAR_FETCH) || IS_CALLSYS(&op->inst_info->table_info);
+  return (op->inst_info->table_info.bar_type & BAR_FETCH);
 }
 
 /**************************************************************************************/
@@ -887,12 +887,6 @@ void update_icache_stage() {
  * start_idx indicates the op index the processing should start at.
  */
 static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uop_cache, uns start_idx) {
-  static uns last_icache_issue_time = 0; /* for computing fetch break latency */
-  uns fetch_lag;
-
-  fetch_lag = cycle_count - last_icache_issue_time;
-  last_icache_issue_time = cycle_count;
-
   for (uns ii = start_idx; ii < cur_data->op_count; ii++) {
     Op* op = cur_data->ops[ii];
 
@@ -924,9 +918,6 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     if (DIE_ON_CALLSYS && !op->off_path) {
       ASSERT(ic->proc_id, op->inst_info->table_info.cf_type != CF_SYS);
     }
-
-    /* num cycles since last group issued */
-    op->fetch_lag = fetch_lag;
 
     STAT_EVENT(op->proc_id, FETCH_ALL_INST);
     STAT_EVENT(op->proc_id, ORACLE_ON_PATH_INST + op->off_path);
@@ -965,8 +956,8 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       if (DJOLT_ENABLE)
         update_djolt(ic->proc_id, op->inst_info->addr, op->inst_info->table_info.cf_type, op->bp_pred_info->pred_npc);
 
-      ASSERT(ic->proc_id,
-             (op->bp_pred_info->mispred << 2 | op->bp_pred_info->misfetch << 1 | op->btb_pred_info->btb_miss) <= 0x7);
+      ASSERT(ic->proc_id, ((op->bp_pred_info->recover_at_exec << 2) | (op->bp_pred_info->recover_at_decode << 1) |
+                           op->btb_pred_info->btb_miss) <= 0x7);
 
       ic->off_path = ic->off_path || op->bp_pred_info->recover_at_fe || op->bp_pred_info->recover_at_decode ||
                      op->bp_pred_info->recover_at_exec;

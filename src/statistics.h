@@ -98,6 +98,11 @@ typedef struct Stat_struct {
     global_stat_array[proc_id][stat].count++; \
   } while (0)
 
+#define ALT_STAT_EVENT(proc_id, bp_id, stat)         \
+  do {                                               \
+    alt_bp_stat_array[proc_id][bp_id][stat].count++; \
+  } while (0)
+
 #define STAT_EVENT_ALL(stat)                              \
   do {                                                    \
     for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) \
@@ -139,6 +144,7 @@ typedef struct Stat_struct {
 #else
 
 #define STAT_EVENT(proc_id, stat)
+#define ALT_STAT_EVENT(proc_id, bp_id, stat)
 #define STAT_EVENT_ALL(stat)
 #define INC_STAT_EVENT(proc_id, stat, inc)
 #define INC_STAT_EVENT_ALL(stat, inc)
@@ -158,6 +164,7 @@ typedef struct Stat_struct {
 
 #ifndef NO_STAT
 extern Stat** global_stat_array;
+extern Stat*** alt_bp_stat_array;
 #endif
 
 /**************************************************************************************/

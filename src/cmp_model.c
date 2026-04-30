@@ -31,6 +31,7 @@
 #include "cmp_model.h"
 
 #include "globals/assert.h"
+#include "globals/global_vars.h"
 
 #include "debug/debug.param.h"
 #include "debug/debug_macros.h"
@@ -331,7 +332,7 @@ void cmp_per_core_done(uns8 proc_id) {
 /**************************************************************************************/
 /* cmp_wake: */
 
-void cmp_wake(Op* src_op, Op* dep_op, uns8 rdy_bit) {
+void cmp_wake(Op* src_op, Op* dep_op, uns rdy_bit) {
   /* Make the op independent, if it is dependent on a BOGUS op */
 
   // cmp: since this function use node, we need to set node properly
@@ -352,7 +353,7 @@ void cmp_wake(Op* src_op, Op* dep_op, uns8 rdy_bit) {
 
   simple_wake(src_op, dep_op, rdy_bit);
 
-  if (dep_op->srcs_not_rdy_vector == 0x0 && cycle_count >= dep_op->issue_cycle && !dep_op->in_rdy_list) {
+  if (op_sources_not_rdy_is_clear(dep_op) && cycle_count >= dep_op->issue_cycle && !dep_op->in_rdy_list) {
     _DEBUG(dep_op->proc_id, DEBUG_NODE_STAGE, "Adding to ready list  op_num:%s\n", unsstr64(dep_op->op_num));
     dep_op->next_rdy = node->rdy_head;
     node->rdy_head = dep_op;
@@ -391,11 +392,11 @@ void cmp_recover() {
   recover_uop_queue_stage();
   recover_idq_stage();
   recover_map_stage();
-  recover_node_stage();
   recover_lsq();
   recover_exec_stage();
   recover_dcache_stage();
   recover_memory();
+  recover_node_stage();
 }
 
 /**************************************************************************************/
@@ -518,16 +519,18 @@ void cmp_warmup(Op* op) {
     Bp_Data* bp_data = &(cmp_model.bp_data[proc_id][0]);
     op->btb_pred_info = NULL;  // reset so bp_predict_btb() can set it (op may be reused)
     bp_predict_btb(bp_data, op);
+    if (bp_l0_enabled())
+      bp_predict_op(bp_data, op, MAIN_BP, 1, ia, BP_PRED_L0);
     op_select_bp_pred_info(op, BP_PRED_MAIN);
     bp_predict_op(bp_data, op, MAIN_BP, 1, ia, BP_PRED_MAIN);
     if (op->inst_info->table_info.cf_type)
       bp_data->prev_cf_pred = op->bp_pred_info->pred;  // for next BTB access
     bp_target_known_op(bp_data, op);
     bp_resolve_op(bp_data, op);
-    if (op->bp_pred_info->mispred || op->bp_pred_info->misfetch) {
+    if (op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec) {
       bp_recover_op(bp_data, op->inst_info->table_info.cf_type, &op->recovery_info);
     }
-    bp_data->bp->retire_func(op);
+    bp_retire_op(bp_data, op);
   }
 }
 

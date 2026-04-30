@@ -37,9 +37,6 @@ typedef struct Bp_Pred_Info_struct {
   int64 pred_branch_id;    // predictor-local branch id for speculative checkpoint/recover
   uns8 pred;               // predicted direction of branch, set by the branch predictor
   uns8 pred_orig;          // predicted direction of branch, not overwritten on BTB miss (for fdip)
-  Flag misfetch;           // true if target address is the ONLY thing that was wrong
-  Flag mispred;            // true if the direction of the branch was mispredicted and the
-                           // branch should cause a recovery, set by the branch predictor
   Flag recovery_sch;       // true if this op has scheduled a recovery
   Flag recover_at_fe;      // op will schedule recovery in frontend (early correction)
   Flag recover_at_decode;  // op will schedule recovery at decode
@@ -96,9 +93,8 @@ typedef struct Btb_Pred_Info_struct {
 // Prediction levels for the two-level (L0 + main) branch predictor hierarchy.
 //
 // IMPORTANT: The numeric values (L0=0, MAIN=1) must remain contiguous and match
-// the order of the per-level stat pairs defined in bp.stat.def (e.g.
-// BP_L0_PREDICTIONS / BP_MAIN_PREDICTIONS).  The STAT_EVENT_BP_SPLIT_PATH macro
-// in bp.c uses `base_stat + bp_pred_level` to index into consecutive stat slots.
+// the order of the per-level aggregate stat pairs in bp.stat.def (e.g.
+// L0_ALL_PREDICTIONS / MAIN_ALL_PREDICTIONS and their OFFPATH variants).
 typedef enum Bp_Pred_Level_enum {
   BP_PRED_L0 = 0,
   BP_PRED_MAIN = 1,

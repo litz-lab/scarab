@@ -49,12 +49,12 @@ struct Hybridgp_In_Flight_State {
 };
 
 struct Hybridgp_State {
-  Cache bht;
-  Hash_Table bht_hash;
+  Cache bht = {};
+  Hash_Table bht_hash = {};
   std::vector<uns8> hybspht;
   std::vector<uns8> hybgpht;
   std::vector<uns8> hybppht;
-  Hash_Table hybgpht_hash;
+  Hash_Table hybgpht_hash = {};
   std::vector<uns32> filter;
 
   // Used for update and recovery (checkpointing).
@@ -371,8 +371,9 @@ void bp_hybridgp_update(Op* op, Bp_Pred_Level pred_level) {
   // 1: confident branch will go the right direction
   if (KNOB_PRINT_BRINFO) {
     ASSERT(proc_id, brmispred != NULL);
-    fprintf(brmispred, "%16llx %d %d %d %d %d\n", addr, bp_pred_info->mispred ? 1 : 0, bp_pred_info->misfetch ? 1 : 0,
-            bp_pred_info->pred_conf ? 1 : 0, op->oracle_info.dir ? 1 : 0, resolution_time);
+    fprintf(brmispred, "%16llx %d %d %d %d %d\n", addr, bp_pred_info->recover_at_exec ? 1 : 0,
+            bp_pred_info->recover_at_decode ? 1 : 0, bp_pred_info->pred_conf ? 1 : 0, op->oracle_info.dir ? 1 : 0,
+            resolution_time);
   }
 }
 

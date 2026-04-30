@@ -17,7 +17,7 @@
 
 typedef struct FT_Op_Buffer_Cpp_struct {
   std::vector<Op*> ops;
-  size_t head;
+  size_t head = 0;
 } FT_Op_Buffer_Cpp;
 
 void ft_op_buffer_init(Icache_Stage* ic) {

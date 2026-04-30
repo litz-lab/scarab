@@ -23,11 +23,11 @@ extern "C" {
 
 template <typename User_Key_Type, typename User_Data_Type>
 struct Entry {
-  Flag valid;
-  User_Key_Type key;
-  User_Data_Type data;
+  Flag valid = 0;
+  User_Key_Type key = {};
+  User_Data_Type data = {};
   // for LRU replacement policy
-  Counter accessed_cycle;
+  Counter accessed_cycle = 0;
 };
 
 template <typename User_Key_Type, typename User_Data_Type>
@@ -35,17 +35,17 @@ class Set {
  public:
   std::vector<Entry<User_Key_Type, User_Data_Type>> entries;
   // for round-robin replacement policy
-  uns next_evict;
+  uns next_evict = 0;
 };
 
 template <typename User_Key_Type, typename User_Data_Type>
 class Cpp_Cache {
  protected:
   std::vector<Set<User_Key_Type, User_Data_Type>> sets;
-  Repl_Policy repl_policy;
-  uns assoc;
-  uns num_sets;
-  uns line_bytes;
+  Repl_Policy repl_policy = {};
+  uns assoc = 0;
+  uns num_sets = 0;
+  uns line_bytes = 0;
 
   // defines how to hash the key to the set index, need to be implemented by the user
   virtual uns set_idx_hash(User_Key_Type key) = 0;
@@ -57,6 +57,11 @@ class Cpp_Cache {
 
  public:
   Cpp_Cache() = default;
+  // Polymorphic base (has virtual set_idx_hash / repl hooks): a virtual
+  // destructor is required so that any owning container that destroys a
+  // derived instance (e.g. std::optional<Derived>, std::unique_ptr<Base>)
+  // has well-defined behavior.
+  virtual ~Cpp_Cache() = default;
   Cpp_Cache(uns nl, uns asc, uns lb, Repl_Policy rp) {
     assoc = asc;
     num_sets = nl / assoc;

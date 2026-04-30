@@ -120,7 +120,7 @@ void ConfMechStatBase::set_prev_op(Op* op) {
 }
 
 /* Conf member functions */
-Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false), last_cycle_count(0) {
+Conf::Conf(uns _proc_id) : proc_id(_proc_id), conf_off_path(false) {
   if (CONFIDENCE_MECH == CONF_MECH_BTB_MISS_BP_TAKEN)
     conf_mech = new BTBMissBPTakenConf(_proc_id);
   else if (CONFIDENCE_MECH == CONF_MECH_WEIGHT)
@@ -214,9 +214,9 @@ void Conf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
   // if it is a cf with bp conf
   if ((op)->inst_info->table_info.cf_type == CF_CBR || (op)->inst_info->table_info.cf_type == CF_IBR ||
       (op)->inst_info->table_info.cf_type == CF_ICALL || (op)->inst_info->table_info.cf_type == CF_REP) {
-    if (op->bp_pred_info->mispred) {
+    if (op->bp_pred_info->recover_at_exec) {
       // reorder stats
-      STAT_EVENT(proc_id, DFE_CONF_0_MISPRED + op->bp_confidence);
+      STAT_EVENT(proc_id, DFE_CONF_0_RECOVER_AT_EXEC + op->bp_confidence);
     } else {
       STAT_EVENT(proc_id, DFE_CONF_0_CORRECT + op->bp_confidence);
     }

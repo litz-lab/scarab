@@ -1,6 +1,15 @@
-cmake_minimum_required (VERSION 3.5)
+cmake_minimum_required(VERSION 3.13)
 
 project(scarab C CXX ASM)
+
+# Always emit build/<mode>/compile_commands.json. Consumed by:
+#   - clangd / VS Code / any LSP-based editor for accurate include resolution.
+#   - scarab-infra's `./sci --lint-scarab` (clang-tidy needs it to parse TUs).
+#   - iwyu, clang-check, and other static analyzers.
+# Cost is a single JSON file; does not affect compilation.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+option(SCARAB_ENABLE_LTO "Link-time optimization for the scarab executable" ON)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
@@ -13,14 +22,26 @@ if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
   set(flags_enable_pt_memtrace "-DENABLE_PT_MEMTRACE")
 endif()
 
-set(CMAKE_C_FLAGS_SCARABOPT   "-O3 -g3 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
+# SCARABOPT: -O3 portable x86-64 (make opt). OPT_AVX: same + -march=skylake-avx512 (make opt-avx).
+set(CMAKE_C_FLAGS_SCARABOPT "-O3 -g3 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
 set(CMAKE_CXX_FLAGS_SCARABOPT "-O3 -g3 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
+set(CMAKE_C_FLAGS_OPT_AVX "-O3 -g3 -march=skylake-avx512 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
+set(CMAKE_CXX_FLAGS_OPT_AVX "-O3 -g3 -march=skylake-avx512 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
+
 set(CMAKE_C_FLAGS_VALGRIND    "-O0 -g3 -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
 set(CMAKE_CXX_FLAGS_VALGRIND  "-O0 -g3 -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
 set(CMAKE_C_FLAGS_GPROF       "${CMAKE_CXX_FLAGS_SCARABOPT} -pg -g3 ${flags_enable_pt_memtrace}")
 set(CMAKE_CXX_FLAGS_GPROF     "${CMAKE_CXX_FLAGS_SCARABOPT} -pg -g3 ${flags_enable_pt_memtrace}")
 set(CMAKE_C_FLAGS_DEBUG       "-O0 -g3 -DLINUX -DX86_64 -fsanitize=address -fsanitize-address-use-after-scope ${flags_enable_pt_memtrace}")
 set(CMAKE_CXX_FLAGS_DEBUG     "-O0 -g3 -DLINUX -DX86_64 -fsanitize=address -fsanitize-address-use-after-scope ${flags_enable_pt_memtrace}")
+
+# Default ASan runtime options (embedded; ASAN_OPTIONS in the environment still overrides).
+set(SCARAB_ASAN_DEFAULT_OPTIONS
+  "check_initialization_order=true:detect_stack_use_after_return=true:strict_string_checks=true")
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/support/asan_default_options.cc.in
+  ${CMAKE_CURRENT_BINARY_DIR}/asan_default_options.cc
+  @ONLY)
 
 # Turn off doc generation before adding the subdirectory
 set(BUILD_DOCS OFF CACHE BOOL "Disable DynamoRIO doc generation" FORCE)
@@ -64,6 +85,10 @@ add_executable(scarab
     ${srcs}
 )
 
+target_sources(scarab PRIVATE
+  $<$<CONFIG:Debug>:${CMAKE_CURRENT_BINARY_DIR}/asan_default_options.cc>
+)
+
 target_include_directories(scarab PRIVATE .)
 
 target_link_libraries(scarab
@@ -73,4 +98,14 @@ target_link_libraries(scarab
 )
 if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
   target_link_libraries(scarab PRIVATE dynamorio pt_memtrace)
+endif()
+
+if(SCARAB_ENABLE_LTO)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT _scarab_lto_ok OUTPUT _scarab_lto_reason LANGUAGES C CXX)
+  if(_scarab_lto_ok)
+    set_property(TARGET scarab PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+  else()
+    message(STATUS "Scarab LTO not enabled: ${_scarab_lto_reason}")
+  endif()
 endif()

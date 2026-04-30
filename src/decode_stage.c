@@ -272,13 +272,11 @@ void decode_stage_process_op(Op* op) {
     if (op->bp_pred_info->recover_at_decode) {
       DEBUG(dec->proc_id, "Decode schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
             (unsigned long long)cycle_count);
+      bp_stat_main_branch_resolve_latency(op, cycle_count, FALSE);
       bp_sched_recovery(bp_recovery_info, op, cycle_count);
 
-      // After recovery remove misfetch/mispred/btb_miss flags so it does not trigger flush by exec again
-      op->bp_pred_info->misfetch = FALSE;
       op->btb_pred_info->btb_miss = FALSE;
       op->bp_pred_info->pred = op->oracle_info.dir;
-      op->bp_pred_info->mispred = FALSE;
 
       // stats for the reason of resteer
       STAT_EVENT(dec->proc_id, RESTEER_BTB_MISS_CF_BR + cf);

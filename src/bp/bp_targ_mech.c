@@ -554,6 +554,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   Btb_Pred_Info* bpi = op->btb_pred_info;
 
   if (PERFECT_BTB) {
+    ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
     bpi->btb_main_hit = TRUE;
     bpi->btb_main_target = op->oracle_info.target;
     return;
@@ -610,10 +611,11 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
     Addr btb_index_addr = op->btb_pred_info->btb_index_addr;
     ASSERT(bp_data->proc_id, btb_index_addr <= op->inst_info->addr);
 
-    if (op->oracle_info.dir) {
+    if (op->oracle_info.dir == TAKEN) {
+      ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  btb addr:0x%s  op addr:0x%s  target:0x%s\n", hexstr64s(btb_index_addr),
                 hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.target));
-      STAT_EVENT(op->proc_id, BTB_ON_PATH_WRITE + op->off_path);
+      STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
 
       Blk_Btb_BrSlot br_slot;
       br_slot.addr = op->inst_info->addr;

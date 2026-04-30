@@ -342,6 +342,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   op->recovery_info.crs_depth = bp_data->crs.depth;
   op->recovery_info.op_num = op->op_num;
   op->recovery_info.PC = op->inst_info->addr;
+  op->recovery_info.op = op;
   op->recovery_info.cf_type = op->inst_info->table_info.cf_type;
   op->recovery_info.oracle_dir = op->oracle_info.dir;
   op->recovery_info.branchTarget = op->oracle_info.target;

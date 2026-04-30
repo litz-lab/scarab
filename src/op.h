@@ -108,8 +108,9 @@ typedef struct Recovery_Info_struct {  // QUESTION no proc_id?
   Flag oracle_dir;  // filled by oracle
   Flag new_dir;     // used to repair predictor state (equals oracle_dir by default).
 
-  Addr PC;
   Cf_Type cf_type;
+  Addr PC;
+  Op* op;
   Addr branchTarget;
   int64 branch_id;  // set by the branch predictor timestamp_func().
   uns64 predict_cycle;

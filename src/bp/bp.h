@@ -163,6 +163,11 @@ typedef struct Bp_Data_struct {
   uns8 target_bit_length;
 
   Flag on_path_pred;
+
+  // used for next index computation at prediction in some BTB mechanisms
+  uns8 prev_cf_pred;  // set after all BPs made pred. Only after recovery, oracle dir is set
+  Addr prev_cf_target;
+  Addr prev_cf_btb_index_addr;
 } Bp_Data;
 
 /**************************************************************************************/

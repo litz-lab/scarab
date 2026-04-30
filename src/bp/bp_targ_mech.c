@@ -44,9 +44,11 @@
 #include "core.param.h"
 
 #include "bp/bp.h"
+#include "bp/btb.h"
 #include "isa/isa_macros.h"
 #include "libs/cache_lib.h"
 
+#include "ft.h"
 #include "statistics.h"
 
 /**************************************************************************************/
@@ -415,9 +417,13 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 /* bp_btb_gen_pred: */
 
 void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
+  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+
   Btb_Pred_Info* bpi = op->btb_pred_info;
   Addr line_addr;
   Flag lru = bp_data->bp_id ? FALSE : TRUE;
+
+  op->btb_pred_info->btb_index_addr = op->inst_info->addr;
 
   if (PERFECT_BTB) {
     ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
@@ -465,6 +471,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
+  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
 
   // if it was a btb miss, it is time to write it into the btb
   if (op->btb_pred_info->btb_miss && op->oracle_info.dir == TAKEN) {
@@ -528,21 +535,159 @@ void bp_btb_gen_recover(Bp_Data* bp_data, Recovery_Info* info) {
 /* bp_btb_block_init: */
 
 void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
-  bp_btb_gen_init(bp_data, primary_bp);
+  if (!bp_data->bp_id) {
+    DEBUG_BTB(bp_data->proc_id, "Initializing BLOCK_BTB\n");
+    ASSERT(bp_data->proc_id, BTB_NUM_BRSLOT > 0);
+    ASSERT(bp_data->proc_id, BTB_BLOCK_SIZE > 0);
+    ASSERT(bp_data->proc_id, (1 << LOG2(BTB_BLOCK_SIZE)) == BTB_BLOCK_SIZE);
+    init_cache(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BLK_BTB_ENTRY_SIZE, REPL_TRUE_LRU);
+  } else  // points to the primary BP's shared BTB
+    bp_data->btb = primary_bp->btb;
 }
 
 /**************************************************************************************/
 /* bp_btb_block_pred: */
 
 void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
-  bp_btb_gen_pred(bp_data, op);
+  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+
+  Btb_Pred_Info* bpi = op->btb_pred_info;
+
+  if (PERFECT_BTB) {
+    ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
+    bpi->btb_main_hit = TRUE;
+    bpi->btb_main_target = op->oracle_info.target;
+    return;
+  }
+
+  Addr btb_index_addr = 0;
+  // Actual BTB does not require this because the index addr to look up BTB is given,
+  // but Scarab needs to memorize the previous target as it looks up BTB without knowing the index addr.
+  if (bp_data->prev_cf_btb_index_addr == 0) {
+    // Only for the very first access
+    btb_index_addr = ft_get_ft_info(op->parent_FT).static_info.start;
+  } else {
+    if (bp_data->prev_cf_pred == TAKEN) {
+      btb_index_addr = bp_data->prev_cf_target;
+    } else {
+      btb_index_addr = bp_data->prev_cf_btb_index_addr;
+    }
+  }
+  // Compute block-size-aligned (fall-through) address from the start of the first block, in case op is far away.
+  btb_index_addr += (op->inst_info->addr - btb_index_addr) & ~(BTB_BLOCK_SIZE - 1);
+  ASSERT(bp_data->proc_id, btb_index_addr <= op->inst_info->addr);
+
+  // Store index for update
+  op->btb_pred_info->btb_index_addr = btb_index_addr;
+
+  // Prepare for next BTB lookup
+  bp_data->prev_cf_target = op->oracle_info.target;
+  bp_data->prev_cf_btb_index_addr = btb_index_addr;
+
+  Addr btb_line_addr;
+  Blk_Btb_BrSlot* br_slots = (Blk_Btb_BrSlot*)cache_access(bp_data->btb, btb_index_addr, &btb_line_addr, TRUE);
+
+  bpi->btb_main_hit = FALSE;
+  if (br_slots) {
+    for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
+      if (br_slots[ii].valid && br_slots[ii].addr == op->inst_info->addr) {
+        bpi->btb_main_hit = TRUE;
+        bpi->btb_main_target = br_slots[ii].target;
+        break;
+      }
+    }
+  }
 }
 
 /**************************************************************************************/
 /* bp_btb_block_update: */
 
 void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
-  bp_btb_gen_update(bp_data, op);
+  ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
+  ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
+  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+
+  if (BTB_OFF_PATH_WRITES || !op->off_path) {
+    Addr btb_index_addr = op->btb_pred_info->btb_index_addr;
+    ASSERT(bp_data->proc_id, btb_index_addr <= op->inst_info->addr);
+
+    if (op->oracle_info.dir == TAKEN) {
+      ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
+      DEBUG_BTB(bp_data->proc_id, "Writing BTB  btb addr:0x%s  op addr:0x%s  target:0x%s\n", hexstr64s(btb_index_addr),
+                hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.target));
+      STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
+
+      Blk_Btb_BrSlot br_slot;
+      br_slot.addr = op->inst_info->addr;
+      br_slot.type = op->inst_info->table_info.cf_type;
+      br_slot.target = op->oracle_info.target;
+      br_slot.valid = TRUE;
+
+      Addr btb_line_addr, repl_line_addr;
+      Blk_Btb_BrSlot* br_slots = (Blk_Btb_BrSlot*)cache_access(bp_data->btb, btb_index_addr, &btb_line_addr, TRUE);
+
+      if (!br_slots) {
+        br_slots = (Blk_Btb_BrSlot*)cache_insert(bp_data->btb, bp_data->proc_id, btb_index_addr, &btb_line_addr,
+                                                 &repl_line_addr);
+        br_slots[0] = br_slot;
+        // Invalidate the remaining slots
+        for (uns ii = 1; ii < BTB_NUM_BRSLOT; ii++)
+          br_slots[ii].valid = FALSE;
+      } else {
+        uns insert_pos = BTB_NUM_BRSLOT;
+        for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
+          if (br_slots[ii].valid) {
+            // slot that has smaller addr (br_slots[ii].addr < op->inst_info->addr) will be just skipped
+            if (br_slots[ii].addr == op->inst_info->addr) {
+              br_slots[ii] = br_slot;
+              break;
+            } else if (br_slots[ii].addr > op->inst_info->addr) {
+              // If there is no self-modifying code (e.g. SPEC 2017 int), op must be conditional in this case.
+              // Enable this assertion when debugging.
+              // ASSERT(bp_data->proc_id,
+              //        op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP);
+              if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP) {
+                // If this op is NOT always-taken, it needs to be inserted, not just appended.
+                insert_pos = ii;
+              } else {
+                // If this op is always-taken, invalidate the rest as the block ends here.
+                // Only happens with self-modifying code.
+                br_slots[ii] = br_slot;
+                for (uns jj = ii + 1; jj < BTB_NUM_BRSLOT; jj++)
+                  br_slots[jj].valid = FALSE;
+              }
+              break;
+            }
+          } else {
+            // br_slots[ii] does not store a valid op yet.
+            br_slots[ii] = br_slot;
+            break;
+          }
+        }
+
+        if (insert_pos < BTB_NUM_BRSLOT) {
+          // Naive replacement policy: op with the largest addr will be discarded.
+          for (uns ii = BTB_NUM_BRSLOT - 1; ii > insert_pos; ii--) {
+            if (br_slots[ii - 1].valid)
+              br_slots[ii] = br_slots[ii - 1];
+          }
+          br_slots[insert_pos] = br_slot;
+        }
+      }
+
+      ASSERT(bp_data->proc_id, (btb_index_addr == btb_line_addr) || TRUE);
+    }
+  }
+}
+
+/**************************************************************************************/
+/* bp_btb_recover: */
+
+void bp_btb_block_recover(Bp_Data* bp_data, Recovery_Info* info) {
+  DEBUG_BTB(bp_data->proc_id, "Recovering BLOCK_BTB prev cf to 0x%llx\n", info->op->inst_info->addr);
+  bp_data->prev_cf_pred = info->op->oracle_info.dir;
+  bp_data->prev_cf_target = info->op->oracle_info.target;
+  bp_data->prev_cf_btb_index_addr = info->op->btb_pred_info->btb_index_addr;
 }
 
 /**************************************************************************************/

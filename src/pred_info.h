@@ -80,6 +80,7 @@ typedef struct Btb_Pred_Info_struct {
 
   Flag btb_main_hit;     // TRUE if the main BTB holds an entry for this branch
   Addr btb_main_target;  // branch target stored in the BTB (valid when btb_main_hit)
+  Addr btb_index_addr;   // address used to look up btb for prediction
 
   // IBP-specific history saved during bp_predict_btb() for use in the
   // corresponding update call.  Kept here (not Bp_Pred_Info) so that they are

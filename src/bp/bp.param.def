@@ -83,6 +83,8 @@ DEF_PARAM(  ibtb_hash_tos             , IBTB_HASH_TOS             , Flag    , Fl
 DEF_PARAM(  btb_mech                  , BTB_MECH                  , uns     , btb_mech   , GENERIC_BTB,        )
 DEF_PARAM(  btb_entries               , BTB_ENTRIES               , uns     , uns        , 12288      ,        )
 DEF_PARAM(  btb_assoc                 , BTB_ASSOC                 , uns     , uns        , 4          ,        )
+DEF_PARAM(  btb_num_brslot            , BTB_NUM_BRSLOT            , uns     , uns        , 1          ,        ) /* number of branch slots per block */
+DEF_PARAM(  btb_block_size            , BTB_BLOCK_SIZE            , uns64   , uns64      , 64         ,        ) /* number of max bytes within a block (Note x86 has variable inst size) */
 DEF_PARAM(  btb_off_path_writes       , BTB_OFF_PATH_WRITES       , Flag    , Flag       , TRUE       ,        ) /* const */
 DEF_PARAM(  btb_main_latency         , BTB_MAIN_LATENCY          , uns     , uns        , 3          ,        )
 DEF_PARAM(  btb_l0_present           , BTB_L0_PRESENT            , Flag    , Flag       , FALSE      ,        )

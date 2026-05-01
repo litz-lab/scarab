@@ -79,6 +79,7 @@ typedef struct Btb_Pred_Info_struct {
 
   Flag btb_main_hit;     // TRUE if the main BTB holds an entry for this branch
   Addr btb_main_target;  // branch target stored in the BTB (valid when btb_main_hit)
+  Addr btb_index_addr;   // address used to look up btb for prediction
 
   uns btb_pred_latency;  // latency of pred_target; MAX_UNS means no prediction-time target
 

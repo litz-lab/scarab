@@ -348,6 +348,7 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
       /* Fall-through equals the actual target: treat as no miss */
       btb_pred_info->btb_miss = FALSE;
       btb_pred_info->no_target = FALSE;
+      btb_pred_info->btb_pred_latency = BTB_L0_LATENCY;
     } else {
       btb_pred_info->btb_miss = TRUE;
     }

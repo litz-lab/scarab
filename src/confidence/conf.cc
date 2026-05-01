@@ -10,14 +10,12 @@
 void ConfMechStatBase::per_cycle_update(Conf_Off_Path_Reason reason) {
   if (conf_off_path_reason == REASON_CONF_NOT_IDENTIFIED && reason != REASON_CONF_NOT_IDENTIFIED)
     conf_off_path_reason = reason;
-  const Off_Path_Reason stat_off_path_reason =
-      (off_path_reason == REASON_LATE_BTB_HIT) ? REASON_NOT_IDENTIFIED : off_path_reason;
   if (off_path_reason) {
     if (conf_off_path_reason) {
       STAT_EVENT(proc_id, DFE_OFF_CONF_OFF_REALISTIC_CYCLES + perfect_off_path);
     } else {
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_CYCLES);
-      STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_CYCLES + stat_off_path_reason);
+      STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_CYCLES + off_path_reason);
     }
   } else {
     if (conf_off_path_reason) {
@@ -38,8 +36,6 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
     conf_off_path_reason = reason;
   DEBUG(proc_id, "prev_op: %p, op: %p\n", prev_op, op);
   DEBUG(proc_id, "off_path_reason: %d, conf_off_path_reason: %d\n", off_path_reason, reason);
-  const Off_Path_Reason stat_off_path_reason =
-      (off_path_reason == REASON_LATE_BTB_HIT) ? REASON_NOT_IDENTIFIED : off_path_reason;
 
   Flag dfe_off_path = op->off_path;
 
@@ -56,7 +52,7 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_OPS);
       if (last_in_ft) {
         STAT_EVENT(proc_id, DFE_OFF_CONF_ON_FETCH_TARGETS);
-        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_FETCH_TARGETS + stat_off_path_reason);
+        STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_FETCH_TARGETS + off_path_reason);
       }
     }
   } else {
@@ -93,7 +89,7 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
 
     if (!op->conf_off_path) {
       STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NUM_EVENTS);
-      STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_EVENTS + stat_off_path_reason);
+      STAT_EVENT(proc_id, DFE_OFF_CONF_ON_NOT_IDENTIFIED_EVENTS + off_path_reason);
     }
   } else if (!dfe_off_path && !prev_op->conf_off_path &&
              op->conf_off_path) {  // the actual path is on, but conf off path

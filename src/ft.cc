@@ -293,7 +293,7 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
           "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx recover_at_fe:%i btb miss:%i taken:%i "
           "recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
           bp_id, op->inst_info->addr, op->oracle_info.npc, bp_pred_info->pred_npc, bp_pred_info->recover_at_fe,
-          op->btb_pred_info->btb_miss, bp_pred_info->pred == TAKEN, bp_pred_info->recover_at_decode,
+          btb_pred_miss(op->btb_pred_info), bp_pred_info->pred == TAKEN, bp_pred_info->recover_at_decode,
           bp_pred_info->recover_at_exec, op->inst_info->table_info.bar_type & BAR_FETCH);
     if ((op->inst_info->table_info.bar_type & BAR_FETCH) || IS_CALLSYS(&op->inst_info->table_info)) {
       bp_pred_info->recover_at_decode = FALSE;

@@ -713,11 +713,11 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
     return REASON_NOT_IDENTIFIED;
   }
   // mispred
-  if (op->bp_pred_info->pred_orig != op->oracle_info.dir && !op->btb_pred_info->btb_miss) {
+  if (op->bp_pred_info->pred_orig != op->oracle_info.dir && !btb_pred_miss(op->btb_pred_info)) {
     return REASON_MISPRED;
   }
   // misfetch
-  else if (!op->btb_pred_info->btb_miss && op->bp_pred_info->pred_orig == op->oracle_info.dir &&
+  else if (!btb_pred_miss(op->btb_pred_info) && op->bp_pred_info->pred_orig == op->oracle_info.dir &&
            op->bp_pred_info->pred_npc != op->oracle_info.npc) {
     return REASON_MISFETCH;
   }
@@ -728,11 +728,11 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
     return REASON_IBTB_MISS;
   }
   // btb miss and mispred (would have been incorrect with or without btb miss)
-  else if (op->bp_pred_info->pred_orig != op->oracle_info.dir && op->btb_pred_info->btb_miss) {
+  else if (op->bp_pred_info->pred_orig != op->oracle_info.dir && btb_pred_miss(op->btb_pred_info)) {
     return REASON_BTB_MISS_MISPRED;
   }
   // true btb miss
-  else if (op->btb_pred_info->btb_miss) {
+  else if (btb_pred_miss(op->btb_pred_info)) {
     return REASON_BTB_MISS;
   }
   // A BTB level hit, but it was not available early enough for the active BP level.
@@ -754,7 +754,7 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
             op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec,
             op->bp_pred_info->pred_orig, op->bp_pred_info->pred, (unsigned long long)op->bp_pred_info->pred_npc,
             op->oracle_info.dir, (unsigned long long)op->oracle_info.npc, (unsigned long long)op->oracle_info.target,
-            op->btb_pred_info->btb_miss, op->btb_pred_info->ibp_miss, op->btb_pred_info->no_target,
+            btb_pred_miss(op->btb_pred_info), op->btb_pred_info->ibp_miss, op->btb_pred_info->no_target,
             op->bp_pred_l0.recover_at_fe, op->bp_pred_l0.recover_at_decode, op->bp_pred_l0.recover_at_exec,
             op->bp_pred_l0.pred_orig, op->bp_pred_l0.pred, (unsigned long long)op->bp_pred_l0.pred_npc,
             op->bp_pred_main.recover_at_fe, op->bp_pred_main.recover_at_decode, op->bp_pred_main.recover_at_exec,

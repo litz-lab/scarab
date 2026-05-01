@@ -393,8 +393,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   // stored in op->btb_pred_info.  The BTB target is usable by this predictor
   // level only if the BTB level that supplied it is no slower than the BP.
   const uns bp_latency = pred_level == BP_PRED_L0 ? BP_L0_LATENCY : BP_MAIN_LATENCY;
-  const Flag btb_hit =
-      op->btb_pred_info->btb_pred_latency != MAX_UNS && op->btb_pred_info->btb_pred_latency <= bp_latency;
+  const Flag btb_hit = btb_pred_hit_by(op->btb_pred_info, bp_latency);
   if (btb_hit)
     pred_target = op->btb_pred_info->pred_target;
   else
@@ -532,7 +531,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
               "t_npc:0x%s  btb_miss:%d  recover_at_fe:%d recover_at_decode:%d recover_at_exec:%d no_tar:%d\n",
               unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
               hexstr64s(op->inst_info->addr), hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc),
-              op->btb_pred_info->btb_miss, bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
+              btb_pred_miss(op->btb_pred_info), bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
               bp_pred_info->recover_at_exec, op->btb_pred_info->no_target);
 
         ASSERT(0, bp_pred_info->pred == op->oracle_info.dir);
@@ -544,7 +543,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
               "predtarg %llx npc %llx\n",
               unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
               hexstr64s(op->inst_info->addr), hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc),
-              op->btb_pred_info->btb_miss, bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
+              btb_pred_miss(op->btb_pred_info), bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
               bp_pred_info->recover_at_exec, op->btb_pred_info->no_target, pred_target, op->oracle_info.npc);
 
         bp_pred_info->recover_at_decode = TRUE;
@@ -732,7 +731,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         "pred%d offset %llx target %llx\n",
         pred_bp->name, pred_level == BP_PRED_L0 ? "l0" : "main", unsstr64(op->op_num), op->off_path,
         cf_type_names[op->inst_info->table_info.cf_type], hexstr64s(op->inst_info->addr),
-        hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc), op->btb_pred_info->btb_miss,
+        hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc), btb_pred_miss(op->btb_pred_info),
         bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode, bp_pred_info->recover_at_exec,
         op->btb_pred_info->no_target, op->oracle_info.dir, bp_pred_info->pred, pc_plus_offset, op->oracle_info.target);
 
@@ -759,14 +758,14 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
 
   DEBUG_BTB(bp_data->proc_id, "BTB:  op_num:%s  off_path:%d  cf_type:%s  addr:0x%s  btb_miss:%d\n",
             unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
-            hexstr64s(op->inst_info->addr), op->btb_pred_info->btb_miss);
+            hexstr64s(op->inst_info->addr), btb_pred_miss(op->btb_pred_info));
 
   DEBUG(bp_data->proc_id,
         "BP:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
         "t_npc:0x%s  btb_miss:%d  recover_at_fe:%d  recover_at_decode:%d  recover_at_exec:%d  no_tar:%d\n",
         unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
         hexstr64s(op->inst_info->addr), hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc),
-        op->btb_pred_info->btb_miss, bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
+        btb_pred_miss(op->btb_pred_info), bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
         bp_pred_info->recover_at_exec, op->btb_pred_info->no_target);
 
   if (bp_id == MAIN_BP && ENABLE_BP_CONF && IS_CONF_CF(op)) {

@@ -865,7 +865,7 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
   if (!op->off_path) {
     STAT_EVENT(op->proc_id,
                TAGESCL_COMP_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) + tage_component * 2);
-    if (op->btb_pred_info->btb_miss)
+    if (btb_pred_miss(op->btb_pred_info))
       STAT_EVENT(op->proc_id, TAGESCL_COMP_BTB_MISS_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) +
                                   tage_component * 2);
   }

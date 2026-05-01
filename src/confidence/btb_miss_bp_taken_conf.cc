@@ -161,12 +161,12 @@ void BTBMissBPTakenConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason)
 
 // TO-DO: how to handle perfect mispred conf here?
 void BTBMissBPTakenConf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
-  if (CONF_BTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_BTB_MISS_CONF && op->btb_pred_info->btb_miss &&
+  if (CONF_BTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_BTB_MISS_CONF && btb_pred_miss(op->btb_pred_info) &&
       (op->bp_pred_info->pred_orig == TAKEN) && (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
     low_confidence_cnt = ~0U;
     ASSERT(proc_id, op->bp_confidence >= 0 && op->bp_confidence <= 3);
     new_reason = static_cast<Conf_Off_Path_Reason>(REASON_BTB_MISS_BP_TAKEN_CONF_0 + op->bp_confidence);
-  } else if (CONF_IBTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_IBTB_MISS_CONF && op->btb_pred_info->btb_miss &&
+  } else if (CONF_IBTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_IBTB_MISS_CONF && btb_pred_miss(op->btb_pred_info) &&
              (op->bp_pred_info->pred_orig == TAKEN) && (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
     new_reason = (Conf_Off_Path_Reason)(REASON_IBTB_MISS_BP_TAKEN);
   } else if (!CONF_INV_BP_CONF) {  // update confidence

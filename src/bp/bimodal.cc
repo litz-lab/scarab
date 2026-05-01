@@ -112,8 +112,8 @@ uns8 bp_bimodal_pred(Op* op, Bp_Pred_Level pred_level) {
 
 void bp_bimodal_update(Op* op, Bp_Pred_Level pred_level) {
   (void)pred_level;
-  if (op->inst_info->table_info.cf_type != CF_CBR) {
-    // If op is not a conditional branch, we do not interact with bimodal.
+  if (op->inst_info->table_info.cf_type != CF_CBR && op->inst_info->table_info.cf_type != CF_REP) {
+    // If op is not a conditional branch/REP, we do not interact with bimodal.
     return;
   }
 

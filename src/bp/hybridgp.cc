@@ -335,8 +335,8 @@ void bp_hybridgp_spec_update(Op* op, Bp_Pred_Level pred_level) {
 
 void bp_hybridgp_update(Op* op, Bp_Pred_Level pred_level) {
   Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
-  if (op->inst_info->table_info.cf_type != CF_CBR) {
-    // If op is not a conditional branch, we do not interact with hybridgp.
+  if (op->inst_info->table_info.cf_type != CF_CBR && op->inst_info->table_info.cf_type != CF_REP) {
+    // If op is not a conditional branch/REP, we do not interact with hybridgp.
     return;
   }
 
@@ -384,8 +384,8 @@ void bp_hybridgp_recover(Recovery_Info* recovery_info) {
   const auto branch_id = recovery_info->branch_id;
   hybridgp_state.in_flight.deallocate_after(branch_id);
 
-  if (recovery_info->cf_type != CF_CBR) {
-    // If op is not a conditional branch, we do not interact with hybridgp.
+  if (recovery_info->cf_type != CF_CBR && recovery_info->cf_type != CF_REP) {
+    // If op is not a conditional branch/REP, we do not interact with hybridgp.
     return;
   }
 

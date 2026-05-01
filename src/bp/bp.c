@@ -252,6 +252,10 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
       ASSERTM(proc_id, BP_L0_LATENCY == 1, "BP_L0_LATENCY must be 1 when L0 is enabled\n");
       ASSERTM(proc_id, BP_MAIN_LATENCY > 1, "BP_MAIN_LATENCY must be > 1 when L0 is enabled\n");
       ASSERTM(proc_id, BP_MAIN_LATENCY < DECODE_CYCLES, "BP_MAIN_LATENCY must be < DECODE_CYCLES\n");
+      // To support a last-level BTB latency greater than BP_MAIN_LATENCY, add
+      // a frontend recovery case for main-correct predictions with a late BTB target.
+      ASSERTM(proc_id, BTB_MAIN_LATENCY <= BP_MAIN_LATENCY,
+              "BTB_MAIN_LATENCY must be <= BP_MAIN_LATENCY when L0 is enabled\n");
     } else {
       ASSERTM(proc_id, BP_MAIN_LATENCY == 1, "BP_MAIN_LATENCY must be 1 when early predictor is disabled\n");
     }

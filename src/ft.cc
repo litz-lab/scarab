@@ -350,15 +350,11 @@ FT_PredictResult FT::predict_ft() {
           } else {
             op_select_bp_pred_info(op, BP_PRED_L0);
 
-            // Default: recover when MAIN prediction is ready.
-            Counter recovery_cycle = op->bp_pred_main.bp_ready_cycle;
             const Counter fetch_cycle = op->bp_pred_main.bp_ready_cycle - BP_MAIN_LATENCY;
-            const uns btb_latency = op->btb_pred_info->btb_pred_latency;
-
-            if (op->btb_pred_info->btb_pred_latency != MAX_UNS) {
-              const uns btb_after_l0 = btb_latency > BP_L0_LATENCY ? btb_latency - BP_L0_LATENCY : 0;
-              recovery_cycle = fetch_cycle + MAX2(BP_MAIN_LATENCY, btb_after_l0);
-            }
+            const Flag l0_dir_wrong = op->bp_pred_l0.pred_orig != op->oracle_info.dir;
+            const uns recovery_latency = l0_dir_wrong ? BP_MAIN_LATENCY : op->btb_pred_info->btb_pred_latency;
+            ASSERT(proc_id, recovery_latency > BP_L0_LATENCY);
+            const Counter recovery_cycle = fetch_cycle + recovery_latency - BP_L0_LATENCY;
 
             bp_sched_recovery(bp_recovery_info, op, recovery_cycle);
             event = l0_event;

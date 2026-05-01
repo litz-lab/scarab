@@ -177,7 +177,8 @@ void Conf::perfect_conf_update(Op* op, Conf_Off_Path_Reason& new_reason) {
       !CONF_PERFECT_MISFETCH_CONF && !CONF_PERFECT_MISPRED_CONF)
     return;
   if (PERFECT_CONFIDENCE) {
-    if (conf_mech->conf_mech_stat->get_off_path_reason()) {
+    if (conf_mech->conf_mech_stat->get_off_path_reason() &&
+        conf_mech->conf_mech_stat->get_off_path_reason() != REASON_LATE_BTB_HIT) {
       ASSERT(proc_id, conf_mech->conf_mech_stat->perfect_off_path == false);
       DEBUG(proc_id, "Perfect conf update for op %llu, off_path_reason: %d, off_path %d\n", op->op_num,
             conf_mech->conf_mech_stat->get_off_path_reason(), op->off_path);

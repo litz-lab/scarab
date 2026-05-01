@@ -252,6 +252,10 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
       ASSERTM(proc_id, BP_L0_LATENCY == 1, "BP_L0_LATENCY must be 1 when L0 is enabled\n");
       ASSERTM(proc_id, BP_MAIN_LATENCY > 1, "BP_MAIN_LATENCY must be > 1 when L0 is enabled\n");
       ASSERTM(proc_id, BP_MAIN_LATENCY < DECODE_CYCLES, "BP_MAIN_LATENCY must be < DECODE_CYCLES\n");
+      // To support a last-level BTB latency greater than BP_MAIN_LATENCY, add
+      // a frontend recovery case for main-correct predictions with a late BTB target.
+      ASSERTM(proc_id, BTB_MAIN_LATENCY <= BP_MAIN_LATENCY,
+              "BTB_MAIN_LATENCY must be <= BP_MAIN_LATENCY when L0 is enabled\n");
     } else {
       ASSERTM(proc_id, BP_MAIN_LATENCY == 1, "BP_MAIN_LATENCY must be 1 when early predictor is disabled\n");
     }
@@ -391,10 +395,14 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   // {{{ read pre-computed BTB/IBP results from btb_pred_info
 
   // All BTB/IBP lookup results were computed once by bp_predict_btb() and
-  // stored in op->btb_pred_info.  bp_predict_op() is a pure reader of
-  // btb_pred_info; it does not write to it.
-  pred_target = op->btb_pred_info->pred_target;
-  Flag btb_hit = !op->btb_pred_info->btb_miss;
+  // stored in op->btb_pred_info.  The BTB target is usable by this predictor
+  // level only if the BTB level that supplied it is no slower than the BP.
+  const uns bp_latency = pred_level == BP_PRED_L0 ? BP_L0_LATENCY : BP_MAIN_LATENCY;
+  const Flag btb_hit = btb_pred_hit_by(op->btb_pred_info, bp_latency);
+  if (btb_hit)
+    pred_target = op->btb_pred_info->pred_target;
+  else
+    pred_target = pc_plus_offset;
 
   // }}}
   // {{{ handle predictions for individual cf types
@@ -434,7 +442,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       if (pred_level == BP_PRED_MAIN)
         bp_data->global_hist = (bp_data->global_hist >> 1) | (bp_pred_info->pred << 31);
 
-      if (op->btb_pred_info->btb_miss && bp_pred_info->pred == NOT_TAKEN)
+      if (!btb_hit && bp_pred_info->pred == NOT_TAKEN)
         btb_miss_nt = TRUE;
 
       // pred_target is set by BTB on hit. For CBR we may however, still want to execute fall-through
@@ -528,7 +536,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
               "t_npc:0x%s  btb_miss:%d  recover_at_fe:%d recover_at_decode:%d recover_at_exec:%d no_tar:%d\n",
               unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
               hexstr64s(op->inst_info->addr), hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc),
-              op->btb_pred_info->btb_miss, bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
+              btb_pred_miss(op->btb_pred_info), bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
               bp_pred_info->recover_at_exec, op->btb_pred_info->no_target);
 
         ASSERT(0, bp_pred_info->pred == op->oracle_info.dir);
@@ -540,7 +548,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
               "predtarg %llx npc %llx\n",
               unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
               hexstr64s(op->inst_info->addr), hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc),
-              op->btb_pred_info->btb_miss, bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
+              btb_pred_miss(op->btb_pred_info), bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
               bp_pred_info->recover_at_exec, op->btb_pred_info->no_target, pred_target, op->oracle_info.npc);
 
         bp_pred_info->recover_at_decode = TRUE;
@@ -708,7 +716,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   }
   // }}}
 
-  if (op->btb_pred_info->btb_miss && bp_pred_info->pred == NOT_TAKEN)
+  if (!btb_hit && bp_pred_info->pred == NOT_TAKEN)
     btb_miss_nt = TRUE;
 
   if (pred_level == BP_PRED_L0) {
@@ -728,7 +736,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         "pred%d offset %llx target %llx\n",
         pred_bp->name, pred_level == BP_PRED_L0 ? "l0" : "main", unsstr64(op->op_num), op->off_path,
         cf_type_names[op->inst_info->table_info.cf_type], hexstr64s(op->inst_info->addr),
-        hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc), op->btb_pred_info->btb_miss,
+        hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc), btb_pred_miss(op->btb_pred_info),
         bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode, bp_pred_info->recover_at_exec,
         op->btb_pred_info->no_target, op->oracle_info.dir, bp_pred_info->pred, pc_plus_offset, op->oracle_info.target);
 
@@ -755,14 +763,14 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
 
   DEBUG_BTB(bp_data->proc_id, "BTB:  op_num:%s  off_path:%d  cf_type:%s  addr:0x%s  btb_miss:%d\n",
             unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
-            hexstr64s(op->inst_info->addr), op->btb_pred_info->btb_miss);
+            hexstr64s(op->inst_info->addr), btb_pred_miss(op->btb_pred_info));
 
   DEBUG(bp_data->proc_id,
         "BP:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
         "t_npc:0x%s  btb_miss:%d  recover_at_fe:%d  recover_at_decode:%d  recover_at_exec:%d  no_tar:%d\n",
         unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
         hexstr64s(op->inst_info->addr), hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc),
-        op->btb_pred_info->btb_miss, bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
+        btb_pred_miss(op->btb_pred_info), bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
         bp_pred_info->recover_at_exec, op->btb_pred_info->no_target);
 
   if (bp_id == MAIN_BP && ENABLE_BP_CONF && IS_CONF_CF(op)) {

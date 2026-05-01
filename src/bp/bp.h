@@ -271,19 +271,6 @@ static inline Flag bp_l0_enabled(void) {
   return (BP_MECH_L0 != NUM_BP) && (BP_L0_LATENCY > 0);
 }
 
-// Returns a pointer to the BTB target that bp_main should use, based on which
-// BTB levels are available within BP_MAIN_LATENCY.  Prefers the largest (main)
-// BTB when it fits; falls back to L1 then L0.  Returns NULL if none fits.
-static inline Addr* bp_btb_for_main(Btb_Pred_Info* bpi) {
-  if (BTB_MAIN_LATENCY <= BP_MAIN_LATENCY && bpi->btb_main_hit)
-    return &bpi->btb_main_target;
-  if (BTB_L1_PRESENT && BTB_L1_LATENCY <= BP_MAIN_LATENCY && bpi->btb_l1_hit)
-    return &bpi->btb_l1_target;
-  if (BTB_L0_PRESENT && BTB_L0_LATENCY <= BP_MAIN_LATENCY && bpi->btb_l0_hit)
-    return &bpi->btb_l0_target;
-  return NULL;
-}
-
 /**************************************************************************************/
 /* Prototypes */
 void set_bp_data(Bp_Data* new_bp_data);

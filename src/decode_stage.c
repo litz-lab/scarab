@@ -275,7 +275,7 @@ void decode_stage_process_op(Op* op) {
       bp_stat_main_branch_resolve_latency(op, cycle_count, FALSE);
       bp_sched_recovery(bp_recovery_info, op, cycle_count);
 
-      op->btb_pred_info->btb_miss = FALSE;
+      op->btb_pred_info->btb_miss_resolved = TRUE;
       op->bp_pred_info->pred = op->oracle_info.dir;
 
       // stats for the reason of resteer

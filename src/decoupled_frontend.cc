@@ -713,30 +713,52 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
     return REASON_NOT_IDENTIFIED;
   }
   // mispred
-  if (op->bp_pred_info->pred_orig != op->oracle_info.dir && !op->btb_pred_info->btb_miss) {
+  if (op->bp_pred_info->pred_orig != op->oracle_info.dir && !btb_pred_miss(op->btb_pred_info)) {
     return REASON_MISPRED;
   }
   // misfetch
-  else if (!op->btb_pred_info->btb_miss && op->bp_pred_info->pred_orig == op->oracle_info.dir &&
+  else if (!btb_pred_miss(op->btb_pred_info) && op->bp_pred_info->pred_orig == op->oracle_info.dir &&
            op->bp_pred_info->pred_npc != op->oracle_info.npc) {
     return REASON_MISFETCH;
   }
   // ibtb miss
   else if (ENABLE_IBP &&
            (op->inst_info->table_info.cf_type == CF_IBR || op->inst_info->table_info.cf_type == CF_ICALL) &&
-           op->btb_pred_info->btb_miss && op->btb_pred_info->ibp_miss && op->bp_pred_info->pred_orig == TAKEN) {
+           op->btb_pred_info->ibp_miss && op->bp_pred_info->pred_orig == TAKEN) {
     return REASON_IBTB_MISS;
   }
   // btb miss and mispred (would have been incorrect with or without btb miss)
-  else if (op->bp_pred_info->pred_orig != op->oracle_info.dir && op->btb_pred_info->btb_miss) {
+  else if (op->bp_pred_info->pred_orig != op->oracle_info.dir && btb_pred_miss(op->btb_pred_info)) {
     return REASON_BTB_MISS_MISPRED;
   }
   // true btb miss
-  else if (op->btb_pred_info->btb_miss) {
+  else if (btb_pred_miss(op->btb_pred_info)) {
     return REASON_BTB_MISS;
+  }
+  // A BTB level hit, but it was not available early enough for the active BP level.
+  else if (op->btb_pred_info->btb_pred_latency != MAX_UNS &&
+           op->btb_pred_info->btb_pred_latency > op->bp_pred_info->bp_ready_cycle - op->recovery_info.predict_cycle) {
+    return REASON_LATE_BTB_HIT;
   } else {
     // all cases should be covered
-    ASSERT(proc_id, FALSE);
+    ASSERTM(proc_id, FALSE,
+            "Unclassified off-path reason: op_num:%llu inst_uid:%llu pc:0x%llx cf_type:%d "
+            "active_is_l0:%d active_rec_fe:%u active_rec_decode:%u active_rec_exec:%u active_pred_orig:%u "
+            "active_pred:%u active_pred_npc:0x%llx oracle_dir:%u oracle_npc:0x%llx oracle_target:0x%llx "
+            "btb_miss:%u ibp_miss:%u no_target:%u "
+            "l0_rec_fe:%u l0_rec_decode:%u l0_rec_exec:%u l0_pred_orig:%u l0_pred:%u l0_pred_npc:0x%llx "
+            "main_rec_fe:%u main_rec_decode:%u main_rec_exec:%u main_pred_orig:%u main_pred:%u "
+            "main_pred_npc:0x%llx\n",
+            (unsigned long long)op->op_num, (unsigned long long)op->inst_uid, (unsigned long long)op->inst_info->addr,
+            (int)op->inst_info->table_info.cf_type, op->bp_pred_info == &op->bp_pred_l0,
+            op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec,
+            op->bp_pred_info->pred_orig, op->bp_pred_info->pred, (unsigned long long)op->bp_pred_info->pred_npc,
+            op->oracle_info.dir, (unsigned long long)op->oracle_info.npc, (unsigned long long)op->oracle_info.target,
+            btb_pred_miss(op->btb_pred_info), op->btb_pred_info->ibp_miss, op->btb_pred_info->no_target,
+            op->bp_pred_l0.recover_at_fe, op->bp_pred_l0.recover_at_decode, op->bp_pred_l0.recover_at_exec,
+            op->bp_pred_l0.pred_orig, op->bp_pred_l0.pred, (unsigned long long)op->bp_pred_l0.pred_npc,
+            op->bp_pred_main.recover_at_fe, op->bp_pred_main.recover_at_decode, op->bp_pred_main.recover_at_exec,
+            op->bp_pred_main.pred_orig, op->bp_pred_main.pred, (unsigned long long)op->bp_pred_main.pred_npc);
   }
 }
 

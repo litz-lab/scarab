@@ -112,6 +112,9 @@ void BTBMissBPTakenConfStat::log_phase_cycles(Op* op) {
           cycle_count - (cycle_count % CONF_MISFETCH_SAMPLE_RATE), (double)conf_mech->misfetch_rate));
       break;
     }
+    case REASON_LATE_BTB_HIT: {
+      break;
+    }
     default: {
       ASSERT(proc_id, 0);
     }
@@ -122,7 +125,7 @@ void BTBMissBPTakenConfStat::log_off_path_event(Op* op) {
   if (!CONFIDENCE_ENABLE || !CONF_LOG_DFE_TO_REC)
     return;
   Off_Path_Reason op_reason = (Off_Path_Reason)get_off_path_reason();
-  if (!op_reason)
+  if (!op_reason || op_reason == REASON_LATE_BTB_HIT)
     return;
   std::get<0>(resteer_ops_cycles[op->op_num]) = cycle_count;
   std::get<1>(resteer_ops_cycles[op->op_num]) = 0;
@@ -137,6 +140,8 @@ void BTBMissBPTakenConfStat::log_resolution(Op* op) {
   if (!CONFIDENCE_ENABLE || !CONF_LOG_DFE_TO_REC)
     return;
   Off_Path_Reason op_reason = (Off_Path_Reason)get_off_path_reason();
+  if (op_reason == REASON_LATE_BTB_HIT)
+    return;
   std::get<1>(resteer_ops_cycles[op->op_num]) = cycle_count;
   std::get<2>(resteer_ops_cycles[op->op_num]) = op_reason;
 
@@ -156,12 +161,12 @@ void BTBMissBPTakenConf::per_op_update(Op* op, Conf_Off_Path_Reason& new_reason)
 
 // TO-DO: how to handle perfect mispred conf here?
 void BTBMissBPTakenConf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
-  if (CONF_BTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_BTB_MISS_CONF && op->btb_pred_info->btb_miss &&
+  if (CONF_BTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_BTB_MISS_CONF && btb_pred_miss(op->btb_pred_info) &&
       (op->bp_pred_info->pred_orig == TAKEN) && (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
     low_confidence_cnt = ~0U;
     ASSERT(proc_id, op->bp_confidence >= 0 && op->bp_confidence <= 3);
     new_reason = static_cast<Conf_Off_Path_Reason>(REASON_BTB_MISS_BP_TAKEN_CONF_0 + op->bp_confidence);
-  } else if (CONF_IBTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_IBTB_MISS_CONF && op->btb_pred_info->btb_miss &&
+  } else if (CONF_IBTB_MISS_BP_TAKEN_CONF && !CONF_PERFECT_IBTB_MISS_CONF && btb_pred_miss(op->btb_pred_info) &&
              (op->bp_pred_info->pred_orig == TAKEN) && (op->bp_confidence >= CONF_BTB_MISS_BP_TAKEN_THRESHOLD)) {
     new_reason = (Conf_Off_Path_Reason)(REASON_IBTB_MISS_BP_TAKEN);
   } else if (!CONF_INV_BP_CONF) {  // update confidence
@@ -264,6 +269,9 @@ void BTBMissBPTakenConf::recover(Op* op) {
     case REASON_MISFETCH: {
       cnt_misfetch++;
       last_misfetch_recover_cycle = cycle_count;
+      break;
+    }
+    case REASON_LATE_BTB_HIT: {
       break;
     }
     default: {

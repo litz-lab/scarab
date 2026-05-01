@@ -63,7 +63,6 @@ typedef struct Bp_Pred_Info_struct {
 } Bp_Pred_Info;
 
 typedef struct Btb_Pred_Info_struct {
-  Flag btb_miss;           // true if the target is not known at prediction time
   Flag btb_miss_resolved;  // true if the btb miss is resolved by the pipeline.
   Flag no_target;          // true if there is no target for this branch at prediction time
   Flag ibp_miss;           // true if the target is not predicted by the indirect pred
@@ -82,6 +81,8 @@ typedef struct Btb_Pred_Info_struct {
   Addr btb_main_target;  // branch target stored in the BTB (valid when btb_main_hit)
   Addr btb_index_addr;   // address used to look up btb for prediction
 
+  uns btb_pred_latency;  // latency of pred_target; MAX_UNS means no prediction-time target
+
   // IBP-specific history saved during bp_predict_btb() for use in the
   // corresponding update call.  Kept here (not Bp_Pred_Info) so that they are
   // available before bp_predict_op() populates bp_pred_l0/bp_pred_main.
@@ -89,6 +90,14 @@ typedef struct Btb_Pred_Info_struct {
   uns32 ibp_pred_global_hist;       // global history used by tc_hybrid IBP
   uns8 ibp_pred_tc_selector_entry;  // selector entry saved by tc_hybrid IBP
 } Btb_Pred_Info;
+
+static inline Flag btb_pred_miss(const Btb_Pred_Info* btb_pred_info) {
+  return btb_pred_info->btb_pred_latency == MAX_UNS;
+}
+
+static inline Flag btb_pred_hit_by(const Btb_Pred_Info* btb_pred_info, uns latency) {
+  return !btb_pred_miss(btb_pred_info) && btb_pred_info->btb_pred_latency <= latency;
+}
 
 // Prediction levels for the two-level (L0 + main) branch predictor hierarchy.
 //

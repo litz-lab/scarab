@@ -195,7 +195,7 @@ void print_op_field(FILE* stream, Op* op, uns field) {
         }
         if (op->inst_info->table_info.cf_type && op->bp_pred_info && op->btb_pred_info) {
           Flag bits = (op->bp_pred_info->recover_at_exec << 2) | (op->bp_pred_info->recover_at_decode << 1) |
-                      op->btb_pred_info->btb_miss;
+                      btb_pred_miss(op->btb_pred_info);
           switch (bits) {
             case 0x4:
               fprintf(stream, "P|");

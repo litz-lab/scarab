@@ -320,6 +320,7 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   op->btb_pred_info = btb_pred_info;
   btb_pred_info->btb_l0_hit = btb_pred_info->btb_l1_hit = FALSE;
   btb_pred_info->btb_l0_target = btb_pred_info->btb_l1_target = 0;
+  btb_pred_info->btb_pred_latency = MAX_UNS;
 
   const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
   const Flag collect_btb_stats = op->inst_info->table_info.cf_type != CF_ICO &&
@@ -328,8 +329,8 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
 
   /* Syscall: target is always known from oracle */
   if (op->inst_info->table_info.cf_type == CF_SYS) {
-    btb_pred_info->btb_miss = FALSE;
     btb_pred_info->no_target = FALSE;
+    btb_pred_info->btb_pred_latency = BTB_L0_LATENCY;
     btb_pred_info->pred_target = convert_to_cmp_addr(bp_data->proc_id, op->oracle_info.npc);
     return;
   }
@@ -339,18 +340,12 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   if (collect_btb_stats) {
     STAT_EVENT_BTB_OUTCOME(op, ALL_BTB, btb_pred_info->btb_main_hit, btb_pred_info->btb_main_target, pc_plus_offset);
   }
-  if (btb_pred_info->btb_main_hit) {
-    btb_pred_info->btb_miss = FALSE;
-    btb_pred_info->no_target = FALSE;
-    btb_pred_info->pred_target = btb_pred_info->btb_main_target;
-  } else {
+  if (btb_pred_info->btb_pred_latency == MAX_UNS) {
     btb_pred_info->pred_target = pc_plus_offset;
     if (pc_plus_offset == op->oracle_info.target) {
       /* Fall-through equals the actual target: treat as no miss */
-      btb_pred_info->btb_miss = FALSE;
       btb_pred_info->no_target = FALSE;
-    } else {
-      btb_pred_info->btb_miss = TRUE;
+      btb_pred_info->btb_pred_latency = BTB_L0_LATENCY;
     }
   }
 
@@ -367,8 +362,8 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
 
   /* PERFECT_CBR_BTB: use oracle target for conditional branches */
   if (PERFECT_CBR_BTB && (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP)) {
-    btb_pred_info->btb_miss = FALSE;
     btb_pred_info->no_target = FALSE;
+    btb_pred_info->btb_pred_latency = BTB_L0_LATENCY;
     ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
     btb_pred_info->pred_target = op->oracle_info.target;
   }
@@ -383,6 +378,7 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
     if (ibp_target) {
       btb_pred_info->pred_target = ibp_target;
       btb_pred_info->no_target = FALSE;
+      btb_pred_info->btb_pred_latency = BTB_MAIN_LATENCY;
       btb_pred_info->ibp_miss = FALSE;
       STAT_EVENT_IBTB_OUTCOME(op, ALL_IBTB, ibp_target == op->oracle_info.target);
     } else {
@@ -391,6 +387,8 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
     }
   }
 
+  if (!btb_pred_miss(btb_pred_info))
+    btb_pred_info->no_target = FALSE;
   btb_pred_info->pred_target = convert_to_cmp_addr(bp_data->proc_id, btb_pred_info->pred_target);
 }
 
@@ -430,13 +428,25 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
     if (BTB_L0_PRESENT) {
       bpi->btb_l0_hit = TRUE;
       bpi->btb_l0_target = op->oracle_info.target;
+      if (BTB_L0_LATENCY < bpi->btb_pred_latency) {
+        bpi->btb_pred_latency = BTB_L0_LATENCY;
+        bpi->pred_target = op->oracle_info.target;
+      }
     }
     if (BTB_L1_PRESENT) {
       bpi->btb_l1_hit = TRUE;
       bpi->btb_l1_target = op->oracle_info.target;
+      if (BTB_L1_LATENCY < bpi->btb_pred_latency) {
+        bpi->btb_pred_latency = BTB_L1_LATENCY;
+        bpi->pred_target = op->oracle_info.target;
+      }
     }
     bpi->btb_main_hit = TRUE;
     bpi->btb_main_target = op->oracle_info.target;
+    if (BTB_MAIN_LATENCY < bpi->btb_pred_latency) {
+      bpi->btb_pred_latency = BTB_MAIN_LATENCY;
+      bpi->pred_target = op->oracle_info.target;
+    }
     return;
   }
 
@@ -445,6 +455,10 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
     if (e) {
       bpi->btb_l0_hit = TRUE;
       bpi->btb_l0_target = *e;
+      if (BTB_L0_LATENCY < bpi->btb_pred_latency) {
+        bpi->btb_pred_latency = BTB_L0_LATENCY;
+        bpi->pred_target = *e;
+      }
     }
   }
   if (BTB_L1_PRESENT) {
@@ -452,6 +466,10 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
     if (e) {
       bpi->btb_l1_hit = TRUE;
       bpi->btb_l1_target = *e;
+      if (BTB_L1_LATENCY < bpi->btb_pred_latency) {
+        bpi->btb_pred_latency = BTB_L1_LATENCY;
+        bpi->pred_target = *e;
+      }
     }
   }
 
@@ -459,6 +477,10 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   if (e) {
     bpi->btb_main_hit = TRUE;
     bpi->btb_main_target = *e;
+    if (BTB_MAIN_LATENCY < bpi->btb_pred_latency) {
+      bpi->btb_pred_latency = BTB_MAIN_LATENCY;
+      bpi->pred_target = *e;
+    }
   }
 }
 
@@ -474,7 +496,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
 
   // if it was a btb miss, it is time to write it into the btb
-  if (op->btb_pred_info->btb_miss && op->oracle_info.dir == TAKEN) {
+  if (btb_pred_miss(op->btb_pred_info) && op->oracle_info.dir == TAKEN) {
     ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
     if (BTB_OFF_PATH_WRITES || !op->off_path) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
@@ -489,7 +511,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
       // FIXME: the exceptions to this assert are really about x86 vs Alpha
       ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
     }
-  } else if (op->btb_pred_info->btb_miss == FALSE && op->oracle_info.dir == TAKEN) {
+  } else if (!btb_pred_miss(op->btb_pred_info) && op->oracle_info.dir == TAKEN) {
     ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
     // For jitted CF we want to update the BTB if the target changes, even on btb hit
     // or For indirects we want to update the BTB if the target changes, even on btb hit

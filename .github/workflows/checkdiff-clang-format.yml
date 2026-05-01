@@ -24,9 +24,6 @@ jobs:
       - name: Install clang-format and clang-format-diff
         run: |
           sudo apt-get update
-          sudo apt-get install -y software-properties-common
-          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-          sudo apt-get update
           sudo apt-get install -y clang-format
 
       - name: Check clang-format on changed portions

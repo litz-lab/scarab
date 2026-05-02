@@ -11,6 +11,9 @@
 #include "memory/memory.param.h"
 #include "prefetcher/pref.param.h"
 
+extern "C" {
+#include "bp/bp_targ_mech.h"
+}
 #include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
 
@@ -847,15 +850,40 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);
   if (bp_id == MAIN_BP) {
     // Force alt to take the opposite direction of main's prediction at the trigger op.
-    // bp_sync inside activate_off_path keeps alt's history/predictor tables aligned
-    // with main's, so divergence has to be forced here at the last branch; from this
-    // point alt fetches a different op stream than main.
+    // After bp_sync (inside activate_off_path) alt mirrors main's just-after-prediction
+    // state, which has main's trigger-op spec_update applied. Roll that back on alt's
+    // bp_data using a Recovery_Info copy with new_dir flipped to alt's direction --
+    // this leaves alt at "main's pre-trigger state with alt's direction at the last
+    // branch": global_hist replayed with alt_dir, predictor structures (TAGE / L0 /
+    // BTB / IBTB / CRS / targ_hist) rewound. Skipping bp_recover_op's stat-side
+    // effects (PERFORMED_RECOVERIES, POWER_BRANCH_RECOVER_AT_EXEC) so those remain
+    // accurate measurements of real recoveries.
     const Addr alt_pred_addr = alt_direction_target(result.op);
+    const Cf_Type trigger_cf = result.op->inst_info->table_info.cf_type;
+    Recovery_Info alt_rec = result.op->recovery_info;
+    alt_rec.new_dir = result.op->bp_pred_info->pred ^ 1;
     for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
       Decoupled_FE* alt_dfe = per_core_dfe[proc_id][_bp_id].get();
       if (alt_dfe->get_dfe_policy() == ALTERNATE_ON_PREDICTION && !alt_dfe->is_off_path()) {
         ASSERT(proc_id, !alt_dfe->ftq_num_fts());
         alt_dfe->activate_off_path(result.op->inst_uid, alt_pred_addr);
+        Bp_Data* alt_bp_data = alt_dfe->get_bp_data();
+        if (trigger_cf == CF_CBR || trigger_cf == CF_REP) {
+          alt_bp_data->global_hist = (alt_rec.pred_global_hist >> 1) | ((uns32)alt_rec.new_dir << 31);
+        } else {
+          alt_bp_data->global_hist = alt_rec.pred_global_hist;
+        }
+        alt_bp_data->targ_hist = alt_rec.targ_hist;
+        alt_bp_data->bp_btb->recover_func(alt_bp_data, &alt_rec);
+        if (trigger_cf == CF_ICALL || trigger_cf == CF_IBR)
+          alt_bp_data->bp_ibtb->recover_func(alt_bp_data, &alt_rec);
+        alt_bp_data->bp->recover_func(&alt_rec);
+        if (alt_bp_data->bp_l0)
+          alt_bp_data->bp_l0->recover_func(&alt_rec);
+        if (CRS_REALISTIC)
+          bp_crs_realistic_recover(alt_bp_data, &alt_rec);
+        else
+          bp_crs_recover(alt_bp_data);
       }
     }
   }

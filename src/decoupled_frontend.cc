@@ -29,6 +29,22 @@ static int fwd_progress = 0;
 // Per core decoupled frontend
 std::vector<std::vector<std::unique_ptr<Decoupled_FE>>> per_core_dfe;
 
+// Compute the alternate-direction redirect target for an alt DFE: the address
+// the alt frontend should fetch from in order to explore the OPPOSITE of main
+// BP's predicted direction at trigger_op (a CF op).
+//   main pred TAKEN     -> fallthrough (pc + inst_size)
+//   main pred NOT_TAKEN -> BTB target if known; oracle target as last-resort
+//                          fallback when BTB missed and the target is unknown
+static Addr alt_direction_target(const Op* trigger_op) {
+  const Addr pc_plus_offset =
+      ADDR_PLUS_OFFSET(trigger_op->inst_info->addr, trigger_op->inst_info->trace_info.inst_size);
+  if (trigger_op->bp_pred_info->pred == TAKEN)
+    return pc_plus_offset;
+  if (!btb_pred_miss(trigger_op->btb_pred_info))
+    return trigger_op->btb_pred_info->pred_target;
+  return trigger_op->oracle_info.target;
+}
+
 extern "C" {
 
 /* Wrapper functions */
@@ -47,19 +63,19 @@ void init_decoupled_fe(uns proc_id, uns bp_id, Bp_Data* bp_data) {
   ASSERT(0, NUM_BPS <= 5);  // Currently support five BPs at maximum
   switch (bp_id) {
     case MAIN_BP:
-      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE0_RECOVERY_POLICY);  // should always be 0
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE0_POLICY);  // should always be 0
       break;
     case ALT_BP_1:
-      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE1_RECOVERY_POLICY);
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE1_POLICY);
       break;
     case ALT_BP_2:
-      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE2_RECOVERY_POLICY);
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE2_POLICY);
       break;
     case ALT_BP_3:
-      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE3_RECOVERY_POLICY);
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE3_POLICY);
       break;
     case ALT_BP_4:
-      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE4_RECOVERY_POLICY);
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE4_POLICY);
       break;
   }
 }
@@ -192,14 +208,14 @@ Decoupled_FE::~Decoupled_FE() {
   }
 }
 
-void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_recovery_policy) {
+void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_policy) {
 #ifdef ENABLE_PT_MEMTRACE
   trace_mode |= (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE);
 #endif
   proc_id = _proc_id;
   bp_id = _bp_id;
   bp_data = _bp_data;
-  dfe_recovery_policy = _dfe_recovery_policy;
+  dfe_policy = _dfe_policy;
   cur_op = nullptr;
   current_ft_to_push = nullptr;
   saved_recovery_ft = nullptr;
@@ -369,11 +385,13 @@ void Decoupled_FE::dfe_recover_op() {
 }
 
 void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
-  // Get the last addr from the primary FTQ
+  // Snapshot main's last-fetched op before main's FTQ is recovered/cleaned up.
+  // For CONTINUE_ON_RECOVERY, alt continues the off-path stream main was on by
+  // resuming from this address (rather than restarting at the misprediction).
   Op* alt_op = per_core_dfe[proc_id][MAIN_BP]->get_last_fetch_op();
   bp_recover_op(bp_data, cf_type, info);
   dfe_recover_op();
-  switch (dfe_recovery_policy) {
+  switch (dfe_policy) {
     case PRIMARY_DFE:
       if (stalled) {
         ASSERT(proc_id, FRONTEND == FE_PIN_EXEC_DRIVEN);
@@ -405,15 +423,12 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
 
       break;
     case CONTINUE_ON_RECOVERY:
-      if (alt_op)
-        frontend_redirect(proc_id, bp_id, alt_op->inst_uid, alt_op->inst_info->addr);
-      else  // If it was stalled due to a fetch barrier, can be nullptr
-        frontend_redirect(proc_id, bp_id, 0, 0);
-      bp_sync(per_core_dfe[proc_id][MAIN_BP]->get_bp_data(), per_core_dfe[proc_id][bp_id]->get_bp_data());
-      next_state = SERVING_OFF_PATH;
-      set_conf_off_path();
+      // Continue alt on the off-path stream main was just on, picking up from
+      // main's last-fetched op address (alt_op may be nullptr when main was
+      // stalled at a fetch barrier; activate_off_path(0, 0) stops alt fetching).
+      activate_off_path(alt_op ? alt_op->inst_uid : 0, alt_op ? alt_op->inst_info->addr : 0);
       break;
-    case CONTINUE_ON_PREDICTION:
+    case ALTERNATE_ON_PREDICTION:
       frontend_redirect(proc_id, bp_id, 0, 0);  // Passing fetch_addr = 0 will stop fetching the secondary
       next_state = INACTIVE;
       break;
@@ -689,6 +704,14 @@ uint64_t Decoupled_FE::ftq_num_ops() {
   return num_ops;
 }
 
+void Decoupled_FE::activate_off_path(uns64 inst_uid, Addr fetch_addr) {
+  ASSERT(proc_id, bp_id != MAIN_BP);
+  bp_sync(per_core_dfe[proc_id][MAIN_BP]->get_bp_data(), bp_data);
+  frontend_redirect(proc_id, bp_id, inst_uid, fetch_addr);
+  next_state = SERVING_OFF_PATH;
+  set_conf_off_path();
+}
+
 void Decoupled_FE::stall(Op* op) {
   stalled = true;
   DEBUG(proc_id, "Decoupled fetch stalled due to barrier fetch_addr0x:%llx off_path:%i op_num:%llu\n",
@@ -823,28 +846,16 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   next_state = SERVING_OFF_PATH;
   frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);
   if (bp_id == MAIN_BP) {
+    // Force alt to take the opposite direction of main's prediction at the trigger op.
+    // bp_sync inside activate_off_path keeps alt's history/predictor tables aligned
+    // with main's, so divergence has to be forced here at the last branch; from this
+    // point alt fetches a different op stream than main.
+    const Addr alt_pred_addr = alt_direction_target(result.op);
     for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
-      if (per_core_dfe[proc_id][_bp_id]->get_dfe_recovery_policy() == CONTINUE_ON_PREDICTION &&
-          !per_core_dfe[proc_id][_bp_id]->is_off_path()) {
-        ASSERT(proc_id, !per_core_dfe[proc_id][_bp_id]->ftq_num_fts());
-        Decoupled_FE* alt_dfe = per_core_dfe[proc_id][_bp_id].get();
-        FT alt_trigger_ft(proc_id, _bp_id);
-        Op alt_op = *result.op;
-        alt_op.bp_pred_l0 = Bp_Pred_Info{};
-        alt_op.bp_pred_main = Bp_Pred_Info{};
-        alt_op.parent_FT = &alt_trigger_ft;
-        alt_op.parent_FT_off_path = nullptr;
-        alt_op.bp_pred_info = nullptr;
-        alt_op.btb_pred_info = &alt_op.btb_pred;
-        const Bp_Pred_Level alt_pred_level =
-            (result.op->bp_pred_info == &result.op->bp_pred_l0) ? BP_PRED_L0 : BP_PRED_MAIN;
-        Addr alt_pred_addr =
-            bp_predict_op(alt_dfe->bp_data, &alt_op, _bp_id, 0, result.op->inst_info->addr, alt_pred_level);
-        op_select_bp_pred_info(&alt_op, alt_pred_level);
-        frontend_redirect(proc_id, _bp_id, alt_op.inst_uid, alt_pred_addr);
-        alt_dfe->next_state = SERVING_OFF_PATH;
-        alt_dfe->set_conf_off_path();
-        bp_sync(per_core_dfe[proc_id][bp_id]->get_bp_data(), alt_dfe->get_bp_data());
+      Decoupled_FE* alt_dfe = per_core_dfe[proc_id][_bp_id].get();
+      if (alt_dfe->get_dfe_policy() == ALTERNATE_ON_PREDICTION && !alt_dfe->is_off_path()) {
+        ASSERT(proc_id, !alt_dfe->ftq_num_fts());
+        alt_dfe->activate_off_path(result.op->inst_uid, alt_pred_addr);
       }
     }
   }

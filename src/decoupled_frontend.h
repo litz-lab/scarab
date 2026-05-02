@@ -78,12 +78,12 @@ typedef enum CONF_OFF_PATH_REASON_enum {
   REASON_CONF_NOT_IDENTIFIED,
 } Conf_Off_Path_Reason;
 
-// DFEx_RECOVERY_POLICY param
-typedef enum DFE_Recovery_Policy_enum {
+// DFEx_POLICY param
+typedef enum DFE_Policy_enum {
   PRIMARY_DFE,
   CONTINUE_ON_RECOVERY,
-  CONTINUE_ON_PREDICTION,
-} DFE_Recovery_Policy;
+  ALTERNATE_ON_PREDICTION,
+} DFE_Policy;
 
 typedef enum BpId_enum {
   MAIN_BP = 0,
@@ -179,7 +179,7 @@ struct Decoupled_FE {
       : proc_id(0),
         bp_id(0),
         bp_data(nullptr),
-        dfe_recovery_policy(0),
+        dfe_policy(0),
         current_ft_to_push(nullptr),
         saved_recovery_ft(nullptr),
         off_path(0),
@@ -198,7 +198,7 @@ struct Decoupled_FE {
         state(INACTIVE),
         next_state(INACTIVE) {}
   ~Decoupled_FE();
-  void init(uns proc_id, uns bp_id, Bp_Data* bp_data, uns dfe_recovery_policy);
+  void init(uns proc_id, uns bp_id, Bp_Data* bp_data, uns dfe_policy);
   int is_off_path() { return is_off_path_state(); }
   void recover(Cf_Type cf_type, Recovery_Info* info);
   void update();
@@ -228,7 +228,12 @@ struct Decoupled_FE {
   uint64_t get_next_on_path_op_num() { return op_num++; }
   uint64_t get_next_off_path_op_num() { return current_off_path_op_num++; }
   Op* get_last_fetch_op();
-  uns get_dfe_recovery_policy() { return dfe_recovery_policy; }
+  uns get_dfe_policy() { return dfe_policy; }
+  // Activate this (secondary) DFE in off-path mode: sync history from MAIN_BP,
+  // redirect this BP's frontend to fetch_addr (use 0 for "stop fetching"), and
+  // transition to SERVING_OFF_PATH. Used by recover() (CONTINUE_ON_RECOVERY) and
+  // redirect_to_off_path() (ALTERNATE_ON_PREDICTION).
+  void activate_off_path(uns64 inst_uid, Addr fetch_addr);
 
   // FSM states for DFE
   enum DFE_STATE {
@@ -252,7 +257,7 @@ struct Decoupled_FE {
   uns proc_id;
   uns bp_id;
   Bp_Data* bp_data;
-  uns dfe_recovery_policy;
+  uns dfe_policy;
 
   // Per core fetch target queue:
   // Each core has a queue of FTs,

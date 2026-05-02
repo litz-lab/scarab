@@ -36,8 +36,10 @@ std::vector<std::vector<std::unique_ptr<Decoupled_FE>>> per_core_dfe;
 // the alt frontend should fetch from in order to explore the OPPOSITE of main
 // BP's predicted direction at trigger_op (a CF op).
 //   main pred TAKEN     -> fallthrough (pc + inst_size)
-//   main pred NOT_TAKEN -> BTB target if known; oracle target as last-resort
-//                          fallback when BTB missed and the target is unknown
+//   main pred NOT_TAKEN -> BTB target if known
+// Returns 0 when no alt target is available (main pred NOT_TAKEN and BTB missed,
+// so the TAKEN target is unknown without consulting oracle); the caller treats
+// 0 as "no alternate path available" and skips alt activation for this trigger.
 static Addr alt_direction_target(const Op* trigger_op) {
   const Addr pc_plus_offset =
       ADDR_PLUS_OFFSET(trigger_op->inst_info->addr, trigger_op->inst_info->trace_info.inst_size);
@@ -45,7 +47,7 @@ static Addr alt_direction_target(const Op* trigger_op) {
     return pc_plus_offset;
   if (!btb_pred_miss(trigger_op->btb_pred_info))
     return trigger_op->btb_pred_info->pred_target;
-  return trigger_op->oracle_info.target;
+  return 0;
 }
 
 extern "C" {
@@ -858,11 +860,14 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
     // BTB / IBTB / CRS / targ_hist) rewound. Skipping bp_recover_op's stat-side
     // effects (PERFORMED_RECOVERIES, POWER_BRANCH_RECOVER_AT_EXEC) so those remain
     // accurate measurements of real recoveries.
+    // alt_direction_target returns 0 when no alt target is available (BTB miss
+    // with main pred NOT_TAKEN). In that case there is no alternate path to
+    // explore at this trigger, so skip alt activation entirely.
     const Addr alt_pred_addr = alt_direction_target(result.op);
     const Cf_Type trigger_cf = result.op->inst_info->table_info.cf_type;
     Recovery_Info alt_rec = result.op->recovery_info;
     alt_rec.new_dir = result.op->bp_pred_info->pred ^ 1;
-    for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
+    for (uns _bp_id = ALT_BP_1; alt_pred_addr && _bp_id < NUM_BPS; ++_bp_id) {
       Decoupled_FE* alt_dfe = per_core_dfe[proc_id][_bp_id].get();
       if (alt_dfe->get_dfe_policy() == ALTERNATE_ON_PREDICTION && !alt_dfe->is_off_path()) {
         ASSERT(proc_id, !alt_dfe->ftq_num_fts());

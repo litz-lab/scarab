@@ -49,6 +49,7 @@ Branch_Type get_branch_type(uns proc_id, Cf_Type cf_type) {
       br_type.is_indirect = false;
       break;
     case CF_CBR:
+    case CF_REP:
       br_type.is_conditional = true;
       br_type.is_indirect = false;
       break;

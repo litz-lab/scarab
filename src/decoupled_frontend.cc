@@ -225,6 +225,12 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_tr
   bp_data = _bp_data;
   dfe_trigger_policy = _dfe_trigger_policy;
   dfe_stop_policy = _dfe_stop_policy;
+  // PRIMARY_DFE_STOP is reserved for the primary DFE (MAIN_BP / PRIMARY_DFE
+  // trigger). Enforce both directions so neither alt configs accidentally pick
+  // it up nor MAIN_BP gets configured with an alt stop policy.
+  ASSERTM(_proc_id, (dfe_trigger_policy == PRIMARY_DFE) == (dfe_stop_policy == PRIMARY_DFE_STOP),
+          "trigger_policy=%u stop_policy=%u: PRIMARY_DFE_STOP is required iff trigger is PRIMARY_DFE\n",
+          dfe_trigger_policy, dfe_stop_policy);
   cur_op = nullptr;
   current_ft_to_push = nullptr;
   saved_recovery_ft = nullptr;

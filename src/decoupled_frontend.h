@@ -86,11 +86,16 @@ typedef enum DFE_Trigger_Policy_enum {
 } DFE_Trigger_Policy;
 
 // DFEx_STOP_POLICY param: when alt DFE is preempted/deactivated.
-//   STOP_ON_RECOVERY    - alt deactivates at the next main recovery (default).
+//   PRIMARY_DFE_STOP    - sentinel for MAIN_BP; the primary DFE is never
+//                         subject to alt stop logic. init() asserts this is
+//                         used iff the trigger policy is PRIMARY_DFE.
+//   STOP_ON_RECOVERY    - alt deactivates at the next main recovery (default
+//                         for alt BPs).
 //   STOP_ON_PREDICTION  - alt is preempted on each new main misprediction; for
 //                         ALTERNATE_ON_PREDICTION this re-triggers alt with
 //                         the new prediction's alternate-direction target.
 typedef enum DFE_Stop_Policy_enum {
+  PRIMARY_DFE_STOP,
   STOP_ON_RECOVERY,
   STOP_ON_PREDICTION,
 } DFE_Stop_Policy;

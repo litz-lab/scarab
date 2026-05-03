@@ -68,19 +68,21 @@ void init_decoupled_fe(uns proc_id, uns bp_id, Bp_Data* bp_data) {
   ASSERT(0, NUM_BPS <= 5);  // Currently support five BPs at maximum
   switch (bp_id) {
     case MAIN_BP:
-      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE0_POLICY);  // should always be 0
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data,
+                                         DFE0_TRIGGER_POLICY,  // should always be 0
+                                         DFE0_STOP_POLICY);
       break;
     case ALT_BP_1:
-      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE1_POLICY);
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE1_TRIGGER_POLICY, DFE1_STOP_POLICY);
       break;
     case ALT_BP_2:
-      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE2_POLICY);
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE2_TRIGGER_POLICY, DFE2_STOP_POLICY);
       break;
     case ALT_BP_3:
-      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE3_POLICY);
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE3_TRIGGER_POLICY, DFE3_STOP_POLICY);
       break;
     case ALT_BP_4:
-      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE4_POLICY);
+      per_core_dfe[proc_id][bp_id]->init(proc_id, bp_id, bp_data, DFE4_TRIGGER_POLICY, DFE4_STOP_POLICY);
       break;
   }
 }
@@ -213,14 +215,16 @@ Decoupled_FE::~Decoupled_FE() {
   }
 }
 
-void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_policy) {
+void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_trigger_policy,
+                        uns _dfe_stop_policy) {
 #ifdef ENABLE_PT_MEMTRACE
   trace_mode |= (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE);
 #endif
   proc_id = _proc_id;
   bp_id = _bp_id;
   bp_data = _bp_data;
-  dfe_policy = _dfe_policy;
+  dfe_trigger_policy = _dfe_trigger_policy;
+  dfe_stop_policy = _dfe_stop_policy;
   cur_op = nullptr;
   current_ft_to_push = nullptr;
   saved_recovery_ft = nullptr;
@@ -396,7 +400,7 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
   Op* alt_op = per_core_dfe[proc_id][MAIN_BP]->get_last_fetch_op();
   bp_recover_op(bp_data, cf_type, info);
   dfe_recover_op();
-  switch (dfe_policy) {
+  switch (dfe_trigger_policy) {
     case PRIMARY_DFE:
       if (stalled) {
         ASSERT(proc_id, FRONTEND == FE_PIN_EXEC_DRIVEN);
@@ -869,7 +873,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
     alt_rec.new_dir = result.op->bp_pred_info->pred ^ 1;
     for (uns _bp_id = ALT_BP_1; alt_pred_addr && _bp_id < NUM_BPS; ++_bp_id) {
       Decoupled_FE* alt_dfe = per_core_dfe[proc_id][_bp_id].get();
-      if (alt_dfe->get_dfe_policy() == ALTERNATE_ON_PREDICTION && !alt_dfe->is_off_path()) {
+      if (alt_dfe->get_dfe_trigger_policy() == ALTERNATE_ON_PREDICTION && !alt_dfe->is_active()) {
         ASSERT(proc_id, !alt_dfe->ftq_num_fts());
         alt_dfe->activate_off_path(result.op->inst_uid, alt_pred_addr);
         Bp_Data* alt_bp_data = alt_dfe->get_bp_data();

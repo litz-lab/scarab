@@ -78,12 +78,18 @@ typedef enum CONF_OFF_PATH_REASON_enum {
   REASON_CONF_NOT_IDENTIFIED,
 } Conf_Off_Path_Reason;
 
-// DFEx_POLICY param
-typedef enum DFE_Policy_enum {
+// DFEx_TRIGGER_POLICY param: when alt DFE is activated.
+typedef enum DFE_Trigger_Policy_enum {
   PRIMARY_DFE,
   CONTINUE_ON_RECOVERY,
   ALTERNATE_ON_PREDICTION,
-} DFE_Policy;
+} DFE_Trigger_Policy;
+
+// DFEx_STOP_POLICY param: when alt DFE is preempted/deactivated.
+//   STOP_ON_RECOVERY - alt deactivates at the next main recovery (default).
+typedef enum DFE_Stop_Policy_enum {
+  STOP_ON_RECOVERY,
+} DFE_Stop_Policy;
 
 typedef enum BpId_enum {
   MAIN_BP = 0,
@@ -179,7 +185,8 @@ struct Decoupled_FE {
       : proc_id(0),
         bp_id(0),
         bp_data(nullptr),
-        dfe_policy(0),
+        dfe_trigger_policy(0),
+        dfe_stop_policy(0),
         current_ft_to_push(nullptr),
         saved_recovery_ft(nullptr),
         off_path(0),
@@ -198,8 +205,13 @@ struct Decoupled_FE {
         state(INACTIVE),
         next_state(INACTIVE) {}
   ~Decoupled_FE();
-  void init(uns proc_id, uns bp_id, Bp_Data* bp_data, uns dfe_policy);
+  void init(uns proc_id, uns bp_id, Bp_Data* bp_data, uns dfe_trigger_policy, uns dfe_stop_policy);
   int is_off_path() { return is_off_path_state(); }
+  // Same predicate as is_off_path(), exposed under the alt-DFE-friendly name.
+  // For an alt DFE the SERVING_OFF_PATH state is precisely the "alt has been
+  // triggered and is in flight" condition, so calling this is_active() at the
+  // alt-iteration call sites reads more clearly than is_off_path().
+  bool is_active() { return is_off_path_state(); }
   void recover(Cf_Type cf_type, Recovery_Info* info);
   void update();
   FT* pop_ft();
@@ -228,7 +240,8 @@ struct Decoupled_FE {
   uint64_t get_next_on_path_op_num() { return op_num++; }
   uint64_t get_next_off_path_op_num() { return current_off_path_op_num++; }
   Op* get_last_fetch_op();
-  uns get_dfe_policy() { return dfe_policy; }
+  uns get_dfe_trigger_policy() { return dfe_trigger_policy; }
+  uns get_dfe_stop_policy() { return dfe_stop_policy; }
   // Activate this (secondary) DFE in off-path mode: sync history from MAIN_BP,
   // redirect this BP's frontend to fetch_addr (use 0 for "stop fetching"), and
   // transition to SERVING_OFF_PATH. Used by recover() (CONTINUE_ON_RECOVERY) and
@@ -257,7 +270,8 @@ struct Decoupled_FE {
   uns proc_id;
   uns bp_id;
   Bp_Data* bp_data;
-  uns dfe_policy;
+  uns dfe_trigger_policy;
+  uns dfe_stop_policy;
 
   // Per core fetch target queue:
   // Each core has a queue of FTs,

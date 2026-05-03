@@ -215,8 +215,7 @@ Decoupled_FE::~Decoupled_FE() {
   }
 }
 
-void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_trigger_policy,
-                        uns _dfe_stop_policy) {
+void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_trigger_policy, uns _dfe_stop_policy) {
 #ifdef ENABLE_PT_MEMTRACE
   trace_mode |= (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE);
 #endif

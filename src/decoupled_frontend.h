@@ -79,25 +79,45 @@ typedef enum CONF_OFF_PATH_REASON_enum {
 } Conf_Off_Path_Reason;
 
 // DFEx_TRIGGER_POLICY param: when alt DFE is activated.
+//   PRIMARY_DFE                - reserved for MAIN_BP.
+//   CONTINUE_ON_RECOVERY       - activate at every main recovery, continuing
+//                                main's just-abandoned off-path stream.
+//   ALTERNATE_ON_PREDICTION    - activate on every CF main predicts (when alt
+//                                is inactive). Realistic: real hardware can
+//                                observe "BP just emitted a prediction" but
+//                                cannot tell if that prediction was wrong.
+//   ALTERNATE_ON_MISPREDICTION - NOT REALISTIC. Activate only on simulator-
+//                                detected mispredictions (oracle-aware).
+//                                Useful for upper-bound studies of an alt-BP
+//                                mechanism that perfectly knows when main is
+//                                wrong; not modelable in real hardware.
 typedef enum DFE_Trigger_Policy_enum {
   PRIMARY_DFE,
   CONTINUE_ON_RECOVERY,
   ALTERNATE_ON_PREDICTION,
+  ALTERNATE_ON_MISPREDICTION,
 } DFE_Trigger_Policy;
 
 // DFEx_STOP_POLICY param: when alt DFE is preempted/deactivated.
-//   PRIMARY_DFE_STOP    - sentinel for MAIN_BP; the primary DFE is never
-//                         subject to alt stop logic. init() asserts this is
-//                         used iff the trigger policy is PRIMARY_DFE.
-//   STOP_ON_RECOVERY    - alt deactivates at the next main recovery (default
-//                         for alt BPs).
-//   STOP_ON_PREDICTION  - alt is preempted on each new main misprediction; for
-//                         ALTERNATE_ON_PREDICTION this re-triggers alt with
-//                         the new prediction's alternate-direction target.
+//   PRIMARY_DFE_STOP      - sentinel for MAIN_BP; the primary DFE is never
+//                           subject to alt stop logic. init() asserts this is
+//                           used iff the trigger policy is PRIMARY_DFE.
+//   STOP_ON_RECOVERY      - alt deactivates at the next main recovery
+//                           (default for alt BPs).
+//   STOP_ON_PREDICTION    - alt is preempted on every CF main predicts (while
+//                           alt is active). Realistic counterpart to
+//                           ALTERNATE_ON_PREDICTION: real hardware can
+//                           observe a prediction event but not its
+//                           correctness.
+//   STOP_ON_MISPREDICTION - NOT REALISTIC. Preempt only on simulator-detected
+//                           mispredictions (oracle-aware). Useful for
+//                           upper-bound studies; not modelable in real
+//                           hardware.
 typedef enum DFE_Stop_Policy_enum {
   PRIMARY_DFE_STOP,
   STOP_ON_RECOVERY,
   STOP_ON_PREDICTION,
+  STOP_ON_MISPREDICTION,
 } DFE_Stop_Policy;
 
 typedef enum BpId_enum {
@@ -254,8 +274,20 @@ struct Decoupled_FE {
   // Activate this (secondary) DFE in off-path mode: sync history from MAIN_BP,
   // redirect this BP's frontend to fetch_addr (use 0 for "stop fetching"), and
   // transition to SERVING_OFF_PATH. Used by recover() (CONTINUE_ON_RECOVERY) and
-  // redirect_to_off_path() (ALTERNATE_ON_PREDICTION).
+  // by trigger_alt_with_rewind() (ALTERNATE_ON_*).
   void activate_off_path(uns64 inst_uid, Addr fetch_addr);
+  // (Alt DFE) Activate alt with trigger_op (a CF main just predicted) and
+  // rewind that op's spec_update on alt's bp_data with alt's direction so
+  // alt sees "main's pre-trigger state + alt's direction at the last branch".
+  // Caller must have checked alt is inactive and alt_direction_target is non-zero.
+  void trigger_alt_with_rewind(Op* trigger_op);
+  // (Alt DFE) Stop a running alt episode: clear FTQ, redirect frontend to 0,
+  // transition to INACTIVE.
+  void stop_alt_episode();
+  // (MAIN_BP) Drive alt DFEs at this main misprediction event: stop any with
+  // STOP_ON_MISPREDICTION (active), trigger any with ALTERNATE_ON_MISPREDICTION
+  // (inactive). Mutually exclusive per alt DFE within one event.
+  void drive_alt_on_misprediction(Op* trigger_op);
 
   // FSM states for DFE
   enum DFE_STATE {

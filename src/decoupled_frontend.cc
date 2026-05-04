@@ -436,15 +436,24 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
       }
 
       break;
-    case CONTINUE_ON_RECOVERY:
-      // Continue alt on the off-path stream main was just on, picking up from
-      // main's last-fetched op address (alt_op may be nullptr when main was
-      // stalled at a fetch barrier; activate_off_path(0, 0) stops alt fetching).
-      activate_off_path(alt_op ? alt_op->inst_uid : 0, alt_op ? alt_op->inst_info->addr : 0);
-      break;
-    case ALTERNATE_ON_PREDICTION:
-      frontend_redirect(proc_id, bp_id, 0, 0);  // Passing fetch_addr = 0 will stop fetching the secondary
-      next_state = INACTIVE;
+    default:
+      // Alt DFE recovery-event handling.
+      // Stop axis: STOP_ON_RECOVERY deactivates a running alt at the recovery.
+      // Other stop policies (STOP_ON_PREDICTION, STOP_ON_MISPREDICTION) leave
+      // alt's state to those event handlers; recovery is a no-op for stop here.
+      if (is_active() && dfe_stop_policy == STOP_ON_RECOVERY) {
+        frontend_redirect(proc_id, bp_id, 0, 0);
+        next_state = INACTIVE;
+      }
+      // Trigger axis: CONTINUE_ON_RECOVERY (re-)activates alt on every recovery,
+      // continuing main's just-abandoned off-path from main's last-fetched op
+      // address. dfe_recover_op above already cleared alt's FTQ, so this can
+      // safely run regardless of whether the stop branch above also fired.
+      // alt_op may be nullptr when main was stalled at a fetch barrier;
+      // activate_off_path(0, 0) then stops alt fetching.
+      if (dfe_trigger_policy == CONTINUE_ON_RECOVERY) {
+        activate_off_path(alt_op ? alt_op->inst_uid : 0, alt_op ? alt_op->inst_info->addr : 0);
+      }
       break;
   }
 }
@@ -726,6 +735,67 @@ void Decoupled_FE::activate_off_path(uns64 inst_uid, Addr fetch_addr) {
   set_conf_off_path();
 }
 
+void Decoupled_FE::trigger_alt_with_rewind(Op* trigger_op) {
+  ASSERT(proc_id, bp_id != MAIN_BP);
+  ASSERT(proc_id, !is_active());
+  ASSERT(proc_id, !ftq_num_fts());
+  const Addr alt_pred_addr = alt_direction_target(trigger_op);
+  ASSERT(proc_id, alt_pred_addr);
+  activate_off_path(trigger_op->inst_uid, alt_pred_addr);
+  // Rewind trigger op's spec_update on alt's bp_data with alt's direction.
+  // bp_sync (in activate_off_path) just copied main's current state, which has
+  // main's spec_update applied with main's predicted direction. Each predictor's
+  // recover_func reads Recovery_Info to undo speculative state; feeding it
+  // alt_rec (a copy with new_dir flipped) makes the recovered structures
+  // consistent with alt's direction at the trigger op. Calling these directly
+  // (not bp_recover_op) skips the recovery stat events (PERFORMED_RECOVERIES,
+  // POWER_BRANCH_RECOVER_AT_EXEC) so those keep counting only real recoveries.
+  Recovery_Info alt_rec = trigger_op->recovery_info;
+  alt_rec.new_dir = trigger_op->bp_pred_info->pred ^ 1;
+  const Cf_Type trigger_cf = trigger_op->inst_info->table_info.cf_type;
+  if (trigger_cf == CF_CBR || trigger_cf == CF_REP) {
+    bp_data->global_hist = (alt_rec.pred_global_hist >> 1) | ((uns32)alt_rec.new_dir << 31);
+  } else {
+    bp_data->global_hist = alt_rec.pred_global_hist;
+  }
+  bp_data->targ_hist = alt_rec.targ_hist;
+  bp_data->bp_btb->recover_func(bp_data, &alt_rec);
+  if (trigger_cf == CF_ICALL || trigger_cf == CF_IBR)
+    bp_data->bp_ibtb->recover_func(bp_data, &alt_rec);
+  bp_data->bp->recover_func(&alt_rec);
+  if (bp_data->bp_l0)
+    bp_data->bp_l0->recover_func(&alt_rec);
+  if (CRS_REALISTIC)
+    bp_crs_realistic_recover(bp_data, &alt_rec);
+  else
+    bp_crs_recover(bp_data);
+}
+
+void Decoupled_FE::stop_alt_episode() {
+  ASSERT(proc_id, bp_id != MAIN_BP);
+  ASSERT(proc_id, is_active());
+  // dfe_recover_op clears alt's FTQ + iterators + off_path/cur_op flags. Safe
+  // on alt: the FTQ-scan branch is gated on MAIN_BP and alt never reads
+  // recovery_addr.
+  dfe_recover_op();
+  frontend_redirect(proc_id, bp_id, 0, 0);
+  next_state = INACTIVE;
+}
+
+void Decoupled_FE::drive_alt_on_misprediction(Op* trigger_op) {
+  ASSERT(proc_id, bp_id == MAIN_BP);
+  for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
+    Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();
+    if (alt->is_active()) {
+      if (alt->get_dfe_stop_policy() == STOP_ON_MISPREDICTION)
+        alt->stop_alt_episode();
+    } else if (alt->get_dfe_trigger_policy() == ALTERNATE_ON_MISPREDICTION) {
+      if (alt_direction_target(trigger_op))
+        alt->trigger_alt_with_rewind(trigger_op);
+    }
+  }
+}
+
 void Decoupled_FE::stall(Op* op) {
   stalled = true;
   DEBUG(proc_id, "Decoupled fetch stalled due to barrier fetch_addr0x:%llx off_path:%i op_num:%llu\n",
@@ -860,86 +930,12 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   next_state = SERVING_OFF_PATH;
   frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);
   if (bp_id == MAIN_BP) {
-    // Drive alt DFEs that are subscribed to this prediction event.
-    //   Stop axis (running alt only):
-    //     STOP_ON_RECOVERY    - leave the in-flight alt episode alone; it
-    //                           will be deactivated at the next main recovery.
-    //     STOP_ON_PREDICTION  - preempt the in-flight alt episode here.
-    //                           For ALTERNATE_ON_PREDICTION trigger the
-    //                           re-trigger phase below revives alt with the
-    //                           new misprediction's alternate-direction target;
-    //                           for CONTINUE_ON_RECOVERY trigger alt stays
-    //                           idle until the next main recovery.
-    //   Trigger axis:
-    //     ALTERNATE_ON_PREDICTION - activate alt with alt_direction_target() of
-    //                               the trigger op (opposite of main's predicted
-    //                               direction), then rewind the trigger op's
-    //                               spec_update on alt's bp_data with
-    //                               new_dir flipped to alt's direction so alt
-    //                               sees "main's pre-trigger state + alt's
-    //                               direction at the last branch".
-    //     CONTINUE_ON_RECOVERY    - does not (re-)trigger here.
-    //   alt_direction_target() returns 0 when no alt target is available
-    //   (BTB miss with main pred NOT_TAKEN); in that case the alt activation
-    //   is skipped (the running-alt preemption above still applies).
-    const Addr alt_pred_addr = alt_direction_target(result.op);
-    const Cf_Type trigger_cf = result.op->inst_info->table_info.cf_type;
-    Recovery_Info alt_rec = result.op->recovery_info;
-    alt_rec.new_dir = result.op->bp_pred_info->pred ^ 1;
-    for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
-      Decoupled_FE* alt_dfe = per_core_dfe[proc_id][_bp_id].get();
-      const uns trigger = alt_dfe->get_dfe_trigger_policy();
-      if (trigger != ALTERNATE_ON_PREDICTION && trigger != CONTINUE_ON_RECOVERY)
-        continue;  // PRIMARY_DFE etc.
-      const uns stop = alt_dfe->get_dfe_stop_policy();
-      const bool running = alt_dfe->is_active();
-      // Stop phase.
-      if (running && stop == STOP_ON_PREDICTION) {
-        // dfe_recover_op clears alt's FTQ, resets iterators, off_path/cur_op
-        // flags. Safe on alt: the FTQ-scan branch is gated on MAIN_BP and alt
-        // never reads recovery_addr. Default to deactivation; the trigger
-        // phase below may revive alt for ALTERNATE_ON_PREDICTION.
-        alt_dfe->dfe_recover_op();
-        frontend_redirect(proc_id, _bp_id, 0, 0);
-        alt_dfe->next_state = INACTIVE;
-      }
-      // Trigger phase: only ALTERNATE_ON_PREDICTION fires on prediction.
-      if (trigger != ALTERNATE_ON_PREDICTION)
-        continue;
-      if (!alt_pred_addr)
-        continue;  // no alt target available
-      if (running && stop != STOP_ON_PREDICTION)
-        continue;  // STOP_ON_RECOVERY: leave the in-flight episode alone
-      ASSERT(proc_id, !alt_dfe->ftq_num_fts());
-      alt_dfe->activate_off_path(result.op->inst_uid, alt_pred_addr);
-      // Rewind the trigger op's spec_update on alt's bp_data so alt sees
-      // "main's pre-trigger state + alt's direction at the last branch".
-      // bp_sync (inside activate_off_path) just copied main's just-after-pred
-      // state, which has main's spec_update applied with main's direction.
-      // Each predictor's recover_func reads Recovery_Info to undo that spec
-      // state; feeding it alt_rec (a copy with new_dir flipped) makes the
-      // recovered structures consistent with alt's direction. Calling these
-      // directly (not bp_recover_op) skips the recovery stat events
-      // (PERFORMED_RECOVERIES, POWER_BRANCH_RECOVER_AT_EXEC) so those keep
-      // counting only real misprediction recoveries.
-      Bp_Data* alt_bp_data = alt_dfe->get_bp_data();
-      if (trigger_cf == CF_CBR || trigger_cf == CF_REP) {
-        alt_bp_data->global_hist = (alt_rec.pred_global_hist >> 1) | ((uns32)alt_rec.new_dir << 31);
-      } else {
-        alt_bp_data->global_hist = alt_rec.pred_global_hist;
-      }
-      alt_bp_data->targ_hist = alt_rec.targ_hist;
-      alt_bp_data->bp_btb->recover_func(alt_bp_data, &alt_rec);
-      if (trigger_cf == CF_ICALL || trigger_cf == CF_IBR)
-        alt_bp_data->bp_ibtb->recover_func(alt_bp_data, &alt_rec);
-      alt_bp_data->bp->recover_func(&alt_rec);
-      if (alt_bp_data->bp_l0)
-        alt_bp_data->bp_l0->recover_func(&alt_rec);
-      if (CRS_REALISTIC)
-        bp_crs_realistic_recover(alt_bp_data, &alt_rec);
-      else
-        bp_crs_recover(alt_bp_data);
-    }
+    // Misprediction event: drive alt DFEs that subscribe to it. The
+    // _ON_MISPREDICTION variants are oracle-aware (gating on simulator-known
+    // misprediction at predict-stage) and not realistic in real hardware --
+    // they're useful for upper-bound studies. Realistic _ON_PREDICTION
+    // semantics are driven from main's update() per CF after predict_ft.
+    drive_alt_on_misprediction(result.op);
   }
 
   // set the current op number as the beginning op count of this off-path divergence

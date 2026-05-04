@@ -735,6 +735,10 @@ void Decoupled_FE::activate_off_path(uns64 inst_uid, Addr fetch_addr) {
   ASSERT(proc_id, bp_id != MAIN_BP);
   bp_sync(per_core_dfe[proc_id][MAIN_BP]->get_bp_data(), bp_data);
   frontend_redirect(proc_id, bp_id, inst_uid, fetch_addr);
+  // Update both state and next_state so is_active() reflects the activation
+  // immediately. The alt-event dispatchers may stop and re-trigger alt within
+  // a single event, and they re-check is_active() between the two steps.
+  state = SERVING_OFF_PATH;
   next_state = SERVING_OFF_PATH;
   set_conf_off_path();
 }
@@ -783,6 +787,9 @@ void Decoupled_FE::stop_alt_episode() {
   // recovery_addr.
   dfe_recover_op();
   frontend_redirect(proc_id, bp_id, 0, 0);
+  // Update both state and next_state so is_active() reflects the stop
+  // immediately for the dispatcher's downstream re-trigger check.
+  state = INACTIVE;
   next_state = INACTIVE;
 }
 
@@ -790,10 +797,13 @@ void Decoupled_FE::drive_alt_on_misprediction(Op* trigger_op) {
   ASSERT(proc_id, bp_id == MAIN_BP);
   for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
     Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();
-    if (alt->is_active()) {
-      if (alt->get_dfe_stop_policy() == STOP_ON_MISPREDICTION)
-        alt->stop_alt_episode();
-    } else if (alt->get_dfe_trigger_policy() == ALTERNATE_ON_MISPREDICTION) {
+    // Stop phase. After this, is_active() reflects the post-stop state.
+    if (alt->is_active() && alt->get_dfe_stop_policy() == STOP_ON_MISPREDICTION)
+      alt->stop_alt_episode();
+    // Trigger phase: independent check (not else-if). A running alt that was
+    // just stopped above may be re-triggered with the new CF as the trigger op
+    // when the trigger policy matches this event.
+    if (!alt->is_active() && alt->get_dfe_trigger_policy() == ALTERNATE_ON_MISPREDICTION) {
       if (alt_direction_target(trigger_op))
         alt->trigger_alt_with_rewind(trigger_op);
     }
@@ -804,10 +814,13 @@ void Decoupled_FE::drive_alt_on_prediction(Op* trigger_op) {
   ASSERT(proc_id, bp_id == MAIN_BP);
   for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
     Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();
-    if (alt->is_active()) {
-      if (alt->get_dfe_stop_policy() == STOP_ON_PREDICTION)
-        alt->stop_alt_episode();
-    } else if (alt->get_dfe_trigger_policy() == ALTERNATE_ON_PREDICTION) {
+    // Stop phase. After this, is_active() reflects the post-stop state.
+    if (alt->is_active() && alt->get_dfe_stop_policy() == STOP_ON_PREDICTION)
+      alt->stop_alt_episode();
+    // Trigger phase: independent check (not else-if). A running alt that was
+    // just stopped above may be re-triggered with the new CF as the trigger op
+    // when the trigger policy matches this event.
+    if (!alt->is_active() && alt->get_dfe_trigger_policy() == ALTERNATE_ON_PREDICTION) {
       if (alt_direction_target(trigger_op))
         alt->trigger_alt_with_rewind(trigger_op);
     }

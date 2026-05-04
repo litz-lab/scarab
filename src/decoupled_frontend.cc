@@ -450,8 +450,9 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
       // Stop axis: STOP_ON_RECOVERY deactivates a running alt at the recovery.
       // Other stop policies (STOP_ON_PREDICTION, STOP_ON_MISPREDICTION) leave
       // alt's state to those event handlers; recovery is a no-op for stop here.
+      // (No frontend_redirect needed; INACTIVE short-circuits alt's update()
+      // before any frontend_fetch_op call. See stop_alt_episode for details.)
       if (is_active() && dfe_stop_policy == STOP_ON_RECOVERY) {
-        frontend_redirect(proc_id, bp_id, 0, 0);
         next_state = INACTIVE;
       }
       // Trigger axis: CONTINUE_ON_RECOVERY (re-)activates alt on every recovery,
@@ -815,7 +816,11 @@ void Decoupled_FE::stop_alt_episode() {
   // on alt: the FTQ-scan branch is gated on MAIN_BP and alt never reads
   // recovery_addr.
   dfe_recover_op();
-  frontend_redirect(proc_id, bp_id, 0, 0);
+  // No frontend_redirect here. state = INACTIVE short-circuits alt's update()
+  // before any frontend_fetch_op call, so the frontend backends (memtrace's
+  // ext_trace_*, pin_exec_driven_*, etc.) are not queried for the dormant alt
+  // stream. The next activation issues a fresh frontend_redirect with the new
+  // fetch_addr, which fully reinitializes the alt's per-bp_id frontend state.
   // Update both state and next_state so is_active() reflects the stop
   // immediately for the dispatcher's downstream re-trigger check.
   state = INACTIVE;

@@ -822,38 +822,35 @@ void Decoupled_FE::stop_alt_episode() {
   next_state = INACTIVE;
 }
 
-void Decoupled_FE::drive_alt_on_misprediction(Op* trigger_op) {
+// Shared dispatcher for the per-event alt drive. Each alt has at most one
+// trigger policy and at most one stop policy, and the two _ON_PREDICTION /
+// _ON_MISPREDICTION variants are mutually exclusive within an alt -- so each
+// caller passes the policy values that match the event it represents.
+//   Stop phase fires if active && stop_policy == match_stop.
+//   Trigger phase fires (independently) if inactive && trigger_policy == match_trigger
+//     and an alt_direction_target is computable. An event can stop a running
+//     alt and re-trigger it on the same CF; the second is_active() check
+//     re-reads state after stop_alt_episode.
+void Decoupled_FE::drive_alt_on_event(Op* trigger_op, DFE_Trigger_Policy match_trigger,
+                                      DFE_Stop_Policy match_stop) {
   ASSERT(proc_id, bp_id == MAIN_BP);
   for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
     Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();
-    // Stop phase. After this, is_active() reflects the post-stop state.
-    if (alt->is_active() && alt->get_dfe_stop_policy() == STOP_ON_MISPREDICTION)
+    if (alt->is_active() && alt->get_dfe_stop_policy() == match_stop)
       alt->stop_alt_episode();
-    // Trigger phase: independent check (not else-if). A running alt that was
-    // just stopped above may be re-triggered with the new CF as the trigger op
-    // when the trigger policy matches this event.
-    if (!alt->is_active() && alt->get_dfe_trigger_policy() == ALTERNATE_ON_MISPREDICTION) {
+    if (!alt->is_active() && alt->get_dfe_trigger_policy() == match_trigger) {
       if (alt_direction_target(trigger_op))
         alt->trigger_alt(trigger_op);
     }
   }
 }
 
+void Decoupled_FE::drive_alt_on_misprediction(Op* trigger_op) {
+  drive_alt_on_event(trigger_op, ALTERNATE_ON_MISPREDICTION, STOP_ON_MISPREDICTION);
+}
+
 void Decoupled_FE::drive_alt_on_prediction(Op* trigger_op) {
-  ASSERT(proc_id, bp_id == MAIN_BP);
-  for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
-    Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();
-    // Stop phase. After this, is_active() reflects the post-stop state.
-    if (alt->is_active() && alt->get_dfe_stop_policy() == STOP_ON_PREDICTION)
-      alt->stop_alt_episode();
-    // Trigger phase: independent check (not else-if). A running alt that was
-    // just stopped above may be re-triggered with the new CF as the trigger op
-    // when the trigger policy matches this event.
-    if (!alt->is_active() && alt->get_dfe_trigger_policy() == ALTERNATE_ON_PREDICTION) {
-      if (alt_direction_target(trigger_op))
-        alt->trigger_alt(trigger_op);
-    }
-  }
+  drive_alt_on_event(trigger_op, ALTERNATE_ON_PREDICTION, STOP_ON_PREDICTION);
 }
 
 void Decoupled_FE::stall(Op* op) {

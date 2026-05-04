@@ -311,17 +311,21 @@ struct Decoupled_FE {
   // (Alt DFE) Stop a running alt episode: clear FTQ, redirect frontend to 0,
   // transition to INACTIVE.
   void stop_alt_episode();
-  // (MAIN_BP) Drive alt DFEs at this main misprediction event: stop any with
-  // STOP_ON_MISPREDICTION (active), trigger any with ALTERNATE_ON_MISPREDICTION
-  // (inactive). Mutually exclusive per alt DFE within one event.
+  // (MAIN_BP) Shared per-event alt-DFE dispatcher. For each alt: stop any
+  // running alt whose stop_policy == match_stop, then (re-)trigger any
+  // currently-inactive alt whose trigger_policy == match_trigger. The pair
+  // (match_trigger, match_stop) identifies one event class; the named
+  // wrappers below pass the values for the prediction or misprediction event
+  // they represent. Mutually-exclusive trigger/stop axes mean alt has at most
+  // one matching policy per axis.
+  void drive_alt_on_event(Op* trigger_op, DFE_Trigger_Policy match_trigger, DFE_Stop_Policy match_stop);
+  // (MAIN_BP) Misprediction-event entry point.
   void drive_alt_on_misprediction(Op* trigger_op);
-  // (MAIN_BP) Drive alt DFEs at every CF main predicts: stop any with
-  // STOP_ON_PREDICTION (active), trigger any with ALTERNATE_ON_PREDICTION
-  // (inactive). Called per CF from FT::predict_ft via the
-  // decoupled_fe_on_main_prediction C wrapper. Off-path predictions
-  // (FT::build with off_path=true) intentionally don't fire this -- alt
-  // _ON_PREDICTION semantics only cover main's on-path/recovery predict_ft
-  // pass.
+  // (MAIN_BP) Per-CF prediction-event entry point. Called per CF from
+  // FT::predict_ft via the decoupled_fe_on_main_prediction C wrapper.
+  // Off-path predictions (FT::build with off_path=true) intentionally don't
+  // fire this -- alt _ON_PREDICTION semantics only cover main's on-path /
+  // recovery predict_ft pass.
   void drive_alt_on_prediction(Op* trigger_op);
 
   // FSM states for DFE

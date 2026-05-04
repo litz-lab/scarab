@@ -206,6 +206,10 @@ void decoupled_fe_print_conf_data() {
   g_dfe->print_conf_data();
 }
 
+void decoupled_fe_on_main_prediction(uns proc_id, Op* op) {
+  per_core_dfe[proc_id][MAIN_BP]->drive_alt_on_prediction(op);
+}
+
 }  // extern "C"
 
 /* Decoupled_FE member functions */
@@ -790,6 +794,20 @@ void Decoupled_FE::drive_alt_on_misprediction(Op* trigger_op) {
       if (alt->get_dfe_stop_policy() == STOP_ON_MISPREDICTION)
         alt->stop_alt_episode();
     } else if (alt->get_dfe_trigger_policy() == ALTERNATE_ON_MISPREDICTION) {
+      if (alt_direction_target(trigger_op))
+        alt->trigger_alt_with_rewind(trigger_op);
+    }
+  }
+}
+
+void Decoupled_FE::drive_alt_on_prediction(Op* trigger_op) {
+  ASSERT(proc_id, bp_id == MAIN_BP);
+  for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
+    Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();
+    if (alt->is_active()) {
+      if (alt->get_dfe_stop_policy() == STOP_ON_PREDICTION)
+        alt->stop_alt_episode();
+    } else if (alt->get_dfe_trigger_policy() == ALTERNATE_ON_PREDICTION) {
       if (alt_direction_target(trigger_op))
         alt->trigger_alt_with_rewind(trigger_op);
     }

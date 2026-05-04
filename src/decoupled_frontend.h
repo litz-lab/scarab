@@ -155,6 +155,10 @@ void recover_decoupled_fe(uns proc_id, uns bp_id, Cf_Type cf_type, Recovery_Info
 FT* decoupled_fe_pop_ft();
 bool decoupled_fe_is_off_path();
 void decoupled_fe_retire(Op* op, int proc_id, uns64 inst_uid);
+// FT::predict_ft calls this after each CF main predicts (per-CF prediction
+// event). Drives ALTERNATE_ON_PREDICTION trigger and STOP_ON_PREDICTION stop
+// across alt DFEs at the moment main's bp_data has just spec-updated for op.
+void decoupled_fe_on_main_prediction(uns proc_id, Op* op);
 // FTQ API
 void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num);
 uint64_t decoupled_fe_get_ftq_num();
@@ -288,6 +292,14 @@ struct Decoupled_FE {
   // STOP_ON_MISPREDICTION (active), trigger any with ALTERNATE_ON_MISPREDICTION
   // (inactive). Mutually exclusive per alt DFE within one event.
   void drive_alt_on_misprediction(Op* trigger_op);
+  // (MAIN_BP) Drive alt DFEs at every CF main predicts: stop any with
+  // STOP_ON_PREDICTION (active), trigger any with ALTERNATE_ON_PREDICTION
+  // (inactive). Called per CF from FT::predict_ft via the
+  // decoupled_fe_on_main_prediction C wrapper. Off-path predictions
+  // (FT::build with off_path=true) intentionally don't fire this -- alt
+  // _ON_PREDICTION semantics only cover main's on-path/recovery predict_ft
+  // pass.
+  void drive_alt_on_prediction(Op* trigger_op);
 
   // FSM states for DFE
   enum DFE_STATE {

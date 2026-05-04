@@ -286,6 +286,11 @@ void bp_predictors_sync(Bp_Data* src, Bp_Data* dst) {
   *tage_dst = *tage_src;
 }
 
+int tage_is_h2p(Bp_Data* bp) {
+  ASSERT(0, (BP_MECH == TAGESCL_BP) || (BP_MECH == TAGE64K_BP));
+  return cbp_predictor_TAGE64K.get_predictor(bp->proc_id, bp->bp_id)->GetH2p();
+}
+
 void bp_alt_spec_update_TAGE64K(uns proc_id, uns alt_bp_id, Op* trigger_op, Flag alt_dir) {
   ASSERT(0, alt_bp_id != 0);  // primary should not call this
   TAGE64K* alt_tage = cbp_predictor_TAGE64K.get_predictor(proc_id, alt_bp_id);

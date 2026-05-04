@@ -410,6 +410,15 @@ void TAGE64K::baseupdate(bool Taken, UINT64 PC) {
   int BI = GET_BI(PC);
   int8_t BIM = (btable[BI].pred << 1) + (btable[BI >> HYSTSHIFT].hyst);
   int inter = BIM;
+
+  // Track the last 8 base-predictor outcomes; bit set == base predictor was
+  // wrong. GetH2p() reads this to flag base entries that mispredicted recently.
+  bi_mispredictionHistory <<= 1;
+  if ((btable[BI].pred > 0) != Taken) {
+    bi_mispredictionHistory |= 1;
+  }
+  bi_mispredictionHistory &= 0xFF;
+
   if (Taken) {
     if (inter < 3)
       inter += 1;
@@ -948,6 +957,31 @@ void TAGE64K::HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target)
       T_slhist[INDTLOCAL] = (T_slhist[INDTLOCAL] << 1) + taken;
     }
     // END UPDATE  HISTORIES
+  }
+}
+
+bool TAGE64K::GetH2p() {
+  // Reads the tage_component recorded by the most recent GetPrediction:
+  //   TAGE_BASE  - h2p iff the base entry has any recent mispredictions.
+  //   TAGE_SHORT - always h2p (short-history TAGE hits are weak).
+  //   TAGE_LONG, TAGE_LOOP - not h2p.
+  //   TAGE_SC    - h2p (statistical corrector kicked in).
+  switch (tage_component) {
+    case TAGE_BASE:
+      if (bi_mispredictionHistory)
+        return true;
+      /* fall through */
+    case TAGE_SHORT:
+      return true;
+    case TAGE_LONG:
+      return false;
+    case TAGE_LOOP:
+      return false;
+    case TAGE_SC:
+      return true;
+    case NOT_TAGE:
+    default:
+      return false;
   }
 }
 

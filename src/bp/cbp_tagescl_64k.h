@@ -573,6 +573,12 @@ class TAGE64K {
   bool getloop(UINT64 PC);
   void SpecLoopUpdate(UINT64 PC, bool Taken, long long on_path_phist, int on_path_ptghist, bool off_path);
   void LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, int lhit, long long on_path_phist, int on_path_ptghist);
+  // Hard-to-predict (H2P) classifier. Returns true when the most recent
+  // GetPrediction call landed in a TAGE component / state that historically
+  // mispredicts: TAGE_BASE with active misprediction history, TAGE_SHORT
+  // (always weak), or TAGE_SC (statistical corrector). Used by alt-DFE
+  // _ON_H2P_* dispatch to filter prediction/misprediction events.
+  bool GetH2p();
 
   // P: Predictor components
   PredictorStates Pstate;
@@ -634,5 +640,10 @@ class TAGE64K {
   int8_t tage_component_inter = 0;
   int8_t tage_component_tage = 0;
   int8_t tage_component_alt = 0;
+
+  // 8-bit shift register tracking the last 8 base-predictor outcomes; non-zero
+  // when any of those was a misprediction. Used by GetH2p() to flag base-pred
+  // entries that have recently been wrong.
+  int bi_mispredictionHistory = 0;
 };
 #endif

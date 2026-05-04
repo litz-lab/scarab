@@ -51,6 +51,14 @@ static Addr alt_direction_target(const Op* trigger_op) {
   return 0;
 }
 
+// Returns true iff the most recent main TAGE prediction was hard-to-predict.
+// Returns false for non-TAGE BP_MECH; init asserts H2P policies require TAGE.
+static inline bool main_h2p_active(uns proc_id) {
+  if (BP_MECH != TAGESCL_BP && BP_MECH != TAGE64K_BP)
+    return false;
+  return tage_is_h2p(per_core_dfe[proc_id][MAIN_BP]->get_bp_data());
+}
+
 extern "C" {
 
 /* Wrapper functions */
@@ -247,6 +255,15 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_tr
     ASSERTM(_proc_id, FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE,
             "alt BP (bp_id=%u, trigger_policy=%u) requires FRONTEND in {FE_PT, FE_MEMTRACE}; got FRONTEND=%u\n", _bp_id,
             dfe_trigger_policy, (uns)FRONTEND);
+  }
+  // H2P-filtered policies need TAGE: tage_ucp_h2p_check reads TAGE's recorded
+  // tage_component / bi_mispredictionHistory.
+  const bool uses_h2p =
+      (dfe_trigger_policy == ALTERNATE_ON_H2P_PREDICTION || dfe_trigger_policy == ALTERNATE_ON_H2P_MISPREDICTION ||
+       dfe_stop_policy == STOP_ON_H2P_PREDICTION || dfe_stop_policy == STOP_ON_H2P_MISPREDICTION);
+  if (uses_h2p) {
+    ASSERTM(_proc_id, BP_MECH == TAGESCL_BP || BP_MECH == TAGE64K_BP,
+            "alt BP _ON_H2P_* policies require BP_MECH in {TAGESCL_BP, TAGE64K_BP}; got BP_MECH=%u\n", (uns)BP_MECH);
   }
   cur_op = nullptr;
   current_ft_to_push = nullptr;
@@ -799,18 +816,26 @@ void Decoupled_FE::capture_main_pre_state_for_alts(Op* trigger_op) {
   // capture main's pre-spec-update state.
   const Flag is_misprediction = trigger_op->bp_pred_main.recover_at_fe || trigger_op->bp_pred_main.recover_at_decode ||
                                 trigger_op->bp_pred_main.recover_at_exec;
+  const bool h2p = main_h2p_active(proc_id);
   for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
     Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();
     const uns trigger_policy = alt->get_dfe_trigger_policy();
     const uns stop_policy = alt->get_dfe_stop_policy();
-    const bool fires_per_cf = (trigger_policy == ALTERNATE_ON_PREDICTION);
-    const bool fires_on_mispred = (trigger_policy == ALTERNATE_ON_MISPREDICTION) && is_misprediction;
+    // The trigger axis fires on this event when the policy matches; H2P
+    // variants additionally require main_h2p_active.
+    const bool fires_per_cf =
+        (trigger_policy == ALTERNATE_ON_PREDICTION) || (trigger_policy == ALTERNATE_ON_H2P_PREDICTION && h2p);
+    const bool fires_on_mispred = is_misprediction && ((trigger_policy == ALTERNATE_ON_MISPREDICTION) ||
+                                                       (trigger_policy == ALTERNATE_ON_H2P_MISPREDICTION && h2p));
     if (!fires_per_cf && !fires_on_mispred)
       continue;
     if (alt->is_active()) {
-      // Will alt actually be stopped + re-triggered by this event?
-      const bool stops_then_triggers = (fires_per_cf && stop_policy == STOP_ON_PREDICTION) ||
-                                       (fires_on_mispred && stop_policy == STOP_ON_MISPREDICTION);
+      // Will alt actually be stopped + re-triggered by this event? Stop axis
+      // matches similarly, with H2P variants gated on h2p.
+      const bool stops_per_cf = (stop_policy == STOP_ON_PREDICTION) || (stop_policy == STOP_ON_H2P_PREDICTION && h2p);
+      const bool stops_on_mispred = is_misprediction && ((stop_policy == STOP_ON_MISPREDICTION) ||
+                                                         (stop_policy == STOP_ON_H2P_MISPREDICTION && h2p));
+      const bool stops_then_triggers = (fires_per_cf && stops_per_cf) || (fires_on_mispred && stops_on_mispred);
       if (!stops_then_triggers)
         continue;  // running alt won't be disturbed; preserve its state
     }
@@ -860,10 +885,20 @@ void Decoupled_FE::drive_alt_on_event(Op* trigger_op, DFE_Trigger_Policy match_t
 
 void Decoupled_FE::drive_alt_on_misprediction(Op* trigger_op) {
   drive_alt_on_event(trigger_op, ALTERNATE_ON_MISPREDICTION, STOP_ON_MISPREDICTION);
+  // H2P-filtered variants fire on the same misprediction event when main's
+  // TAGE flagged this branch as hard-to-predict.
+  if (main_h2p_active(proc_id)) {
+    STAT_EVENT(proc_id, H2P_SEEN_MAIN);
+    drive_alt_on_event(trigger_op, ALTERNATE_ON_H2P_MISPREDICTION, STOP_ON_H2P_MISPREDICTION);
+  }
 }
 
 void Decoupled_FE::drive_alt_on_prediction(Op* trigger_op) {
   drive_alt_on_event(trigger_op, ALTERNATE_ON_PREDICTION, STOP_ON_PREDICTION);
+  // H2P-filtered variants fire on the same per-CF prediction event when
+  // main's TAGE flagged this branch as hard-to-predict.
+  if (main_h2p_active(proc_id))
+    drive_alt_on_event(trigger_op, ALTERNATE_ON_H2P_PREDICTION, STOP_ON_H2P_PREDICTION);
 }
 
 void Decoupled_FE::stall(Op* op) {

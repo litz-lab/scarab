@@ -78,12 +78,47 @@ typedef enum CONF_OFF_PATH_REASON_enum {
   REASON_CONF_NOT_IDENTIFIED,
 } Conf_Off_Path_Reason;
 
-// DFEx_RECOVERY_POLICY param
-typedef enum DFE_Recovery_Policy_enum {
+// DFEx_TRIGGER_POLICY param: when alt DFE is activated.
+//   PRIMARY_DFE                - reserved for MAIN_BP.
+//   CONTINUE_ON_RECOVERY       - activate at every main recovery, continuing
+//                                main's just-abandoned off-path stream.
+//   ALTERNATE_ON_PREDICTION    - activate on every CF main predicts (when alt
+//                                is inactive). Realistic: real hardware can
+//                                observe "BP just emitted a prediction" but
+//                                cannot tell if that prediction was wrong.
+//   ALTERNATE_ON_MISPREDICTION - NOT REALISTIC. Activate only on simulator-
+//                                detected mispredictions (oracle-aware).
+//                                Useful for upper-bound studies of an alt-BP
+//                                mechanism that perfectly knows when main is
+//                                wrong; not modelable in real hardware.
+typedef enum DFE_Trigger_Policy_enum {
   PRIMARY_DFE,
   CONTINUE_ON_RECOVERY,
-  CONTINUE_ON_PREDICTION,
-} DFE_Recovery_Policy;
+  ALTERNATE_ON_PREDICTION,
+  ALTERNATE_ON_MISPREDICTION,
+} DFE_Trigger_Policy;
+
+// DFEx_STOP_POLICY param: when alt DFE is preempted/deactivated.
+//   PRIMARY_DFE_STOP      - sentinel for MAIN_BP; the primary DFE is never
+//                           subject to alt stop logic. init() asserts this is
+//                           used iff the trigger policy is PRIMARY_DFE.
+//   STOP_ON_RECOVERY      - alt deactivates at the next main recovery
+//                           (default for alt BPs).
+//   STOP_ON_PREDICTION    - alt is preempted on every CF main predicts (while
+//                           alt is active). Realistic counterpart to
+//                           ALTERNATE_ON_PREDICTION: real hardware can
+//                           observe a prediction event but not its
+//                           correctness.
+//   STOP_ON_MISPREDICTION - NOT REALISTIC. Preempt only on simulator-detected
+//                           mispredictions (oracle-aware). Useful for
+//                           upper-bound studies; not modelable in real
+//                           hardware.
+typedef enum DFE_Stop_Policy_enum {
+  PRIMARY_DFE_STOP,
+  STOP_ON_RECOVERY,
+  STOP_ON_PREDICTION,
+  STOP_ON_MISPREDICTION,
+} DFE_Stop_Policy;
 
 typedef enum BpId_enum {
   MAIN_BP = 0,
@@ -120,6 +155,16 @@ void recover_decoupled_fe(uns proc_id, uns bp_id, Cf_Type cf_type, Recovery_Info
 FT* decoupled_fe_pop_ft();
 bool decoupled_fe_is_off_path();
 void decoupled_fe_retire(Op* op, int proc_id, uns64 inst_uid);
+// FT::predict_ft calls this after each CF main predicts (per-CF prediction
+// event). Drives ALTERNATE_ON_PREDICTION trigger and STOP_ON_PREDICTION stop
+// across alt DFEs at the moment main's bp_data has just spec-updated for op.
+void decoupled_fe_on_main_prediction(uns proc_id, Op* op);
+// bp_predict_op (in bp.c) calls this just before main's spec_update_func, so
+// any alt that's about to be (re-)triggered by the next main prediction event
+// can capture main's pre-spec-update bp_data via bp_sync. The alt-event
+// dispatcher then re-applies spec_update on alt's TAGE with alt's direction.
+// Skipped during warmup and for off-path predictions.
+void decoupled_fe_capture_main_pre_state(uns proc_id, Op* op);
 // FTQ API
 void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num);
 uint64_t decoupled_fe_get_ftq_num();
@@ -179,7 +224,8 @@ struct Decoupled_FE {
       : proc_id(0),
         bp_id(0),
         bp_data(nullptr),
-        dfe_recovery_policy(0),
+        dfe_trigger_policy(0),
+        dfe_stop_policy(0),
         current_ft_to_push(nullptr),
         saved_recovery_ft(nullptr),
         off_path(0),
@@ -198,8 +244,13 @@ struct Decoupled_FE {
         state(INACTIVE),
         next_state(INACTIVE) {}
   ~Decoupled_FE();
-  void init(uns proc_id, uns bp_id, Bp_Data* bp_data, uns dfe_recovery_policy);
+  void init(uns proc_id, uns bp_id, Bp_Data* bp_data, uns dfe_trigger_policy, uns dfe_stop_policy);
   int is_off_path() { return is_off_path_state(); }
+  // Same predicate as is_off_path(), exposed under the alt-DFE-friendly name.
+  // For an alt DFE the SERVING_OFF_PATH state is precisely the "alt has been
+  // triggered and is in flight" condition, so calling this is_active() at the
+  // alt-iteration call sites reads more clearly than is_off_path().
+  bool is_active() { return is_off_path_state(); }
   void recover(Cf_Type cf_type, Recovery_Info* info);
   void update();
   FT* pop_ft();
@@ -228,7 +279,54 @@ struct Decoupled_FE {
   uint64_t get_next_on_path_op_num() { return op_num++; }
   uint64_t get_next_off_path_op_num() { return current_off_path_op_num++; }
   Op* get_last_fetch_op();
-  uns get_dfe_recovery_policy() { return dfe_recovery_policy; }
+  uns get_dfe_trigger_policy() { return dfe_trigger_policy; }
+  uns get_dfe_stop_policy() { return dfe_stop_policy; }
+  // Copy main's bp_data into this (alt) DFE's bp_data (history, predictor
+  // tables, CRS, ...). Standalone of activate_off_path so the per-CF/per-mispred
+  // dispatch can capture main's PRE-spec-update state via the bp.c pre-hook
+  // and then drive the trigger phase later without re-syncing.
+  void bp_sync_from_main();
+  // Frontend redirect + state transition to SERVING_OFF_PATH (alt-only). No
+  // bp_sync. Use after capture_main_pre_state_for_alts has put alt at main's
+  // pre-state and apply_alt_spec_update has redone the trigger spec_update
+  // with alt's direction.
+  void activate_off_path_only(uns64 inst_uid, Addr fetch_addr);
+  // bp_sync_from_main + activate_off_path_only. Used by recover()
+  // (CONTINUE_ON_RECOVERY) where we just want main's current state.
+  void activate_off_path(uns64 inst_uid, Addr fetch_addr);
+  // (Alt DFE) Re-do the trigger op's spec_update on alt's TAGE with alt's
+  // direction (opposite of main's predicted direction). Caller must have
+  // already captured main's pre-spec-update state on alt's bp_data via the
+  // bp.c pre-hook (capture_main_pre_state_for_alts). After this, alt sees
+  // "main's pre-trigger state + alt's direction at the trigger op".
+  void apply_alt_spec_update(Op* trigger_op);
+  // (Alt DFE) apply_alt_spec_update + activate_off_path_only at
+  // alt_direction_target. Caller must have checked alt is inactive,
+  // ftq is empty, and alt_direction_target(trigger_op) is non-zero.
+  void trigger_alt(Op* trigger_op);
+  // (MAIN_BP) Pre-spec-update hook: for every alt DFE that's about to be
+  // (re-)triggered by the upcoming prediction event, bp_sync_from_main to
+  // capture main's pre-spec-update state on alt's bp_data.
+  void capture_main_pre_state_for_alts(Op* trigger_op);
+  // (Alt DFE) Stop a running alt episode: clear FTQ, redirect frontend to 0,
+  // transition to INACTIVE.
+  void stop_alt_episode();
+  // (MAIN_BP) Shared per-event alt-DFE dispatcher. For each alt: stop any
+  // running alt whose stop_policy == match_stop, then (re-)trigger any
+  // currently-inactive alt whose trigger_policy == match_trigger. The pair
+  // (match_trigger, match_stop) identifies one event class; the named
+  // wrappers below pass the values for the prediction or misprediction event
+  // they represent. Mutually-exclusive trigger/stop axes mean alt has at most
+  // one matching policy per axis.
+  void drive_alt_on_event(Op* trigger_op, DFE_Trigger_Policy match_trigger, DFE_Stop_Policy match_stop);
+  // (MAIN_BP) Misprediction-event entry point.
+  void drive_alt_on_misprediction(Op* trigger_op);
+  // (MAIN_BP) Per-CF prediction-event entry point. Called per CF from
+  // FT::predict_ft via the decoupled_fe_on_main_prediction C wrapper.
+  // Off-path predictions (FT::build with off_path=true) intentionally don't
+  // fire this; alt _ON_PREDICTION semantics only cover main's on-path /
+  // recovery predict_ft pass.
+  void drive_alt_on_prediction(Op* trigger_op);
 
   // FSM states for DFE
   enum DFE_STATE {
@@ -252,7 +350,8 @@ struct Decoupled_FE {
   uns proc_id;
   uns bp_id;
   Bp_Data* bp_data;
-  uns dfe_recovery_policy;
+  uns dfe_trigger_policy;
+  uns dfe_stop_policy;
 
   // Per core fetch target queue:
   // Each core has a queue of FTs,

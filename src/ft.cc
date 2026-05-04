@@ -381,8 +381,18 @@ FT_PredictResult FT::predict_ft() {
       event = predict_op_ft_event(op, BP_PRED_MAIN);
       op_select_bp_pred_info(op, BP_PRED_MAIN);
     }
-    if (op->inst_info->table_info.cf_type)
+    if (op->inst_info->table_info.cf_type) {
       g_bp_data->prev_cf_pred = op->bp_pred_info->pred;  // for next BTB access
+      // Per-CF prediction event: now that main's bp_pred_info is finalized for
+      // op (and main's bp_data has just been spec-updated), fire alt-DFE
+      // _ON_PREDICTION dispatch. Single-op rollback in trigger_alt_with_rewind
+      // works because main's state hasn't advanced past op yet. Off-path
+      // predictions (FT::build with off_path=true) intentionally do not fire
+      // this; alt _ON_PREDICTION semantics only cover main's on-path/recovery
+      // predict_ft pass.
+      if (bp_id == MAIN_BP)
+        decoupled_fe_on_main_prediction(proc_id, op);
+    }
 
     if (event == FT_EVENT_FETCH_BARRIER) {
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);

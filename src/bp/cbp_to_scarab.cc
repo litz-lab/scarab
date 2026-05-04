@@ -285,3 +285,17 @@ void bp_predictors_sync(Bp_Data* src, Bp_Data* dst) {
   TAGE64K* tage_dst = cbp_predictor_TAGE64K.get_predictor(dst->proc_id, dst->bp_id);
   *tage_dst = *tage_src;
 }
+
+void bp_alt_spec_update_TAGE64K(uns proc_id, uns alt_bp_id, Op* trigger_op, Flag alt_dir) {
+  ASSERT(0, alt_bp_id != 0);  // primary should not call this
+  TAGE64K* alt_tage = cbp_predictor_TAGE64K.get_predictor(proc_id, alt_bp_id);
+  OpType optype = scarab_to_cbp_optype(trigger_op->inst_info->table_info.cf_type);
+  Flag is_conditional = is_conditional_branch(trigger_op->inst_info->table_info.cf_type);
+  // Mirrors the spec/non-checkpoint half of CBP_To_Scarab_Intf<TAGE64K>::spec_update,
+  // except: alt_dir overrides bp_pred_info->pred, and we skip SavePredictorStates
+  // / TakeCheckpoint (those are gated on bp_id == 0 in the regular path; alt's
+  // predictor doesn't track those structures).
+  if (is_conditional)
+    alt_tage->SpecUpdateAtCond(trigger_op->inst_info->addr, alt_dir, false);
+  alt_tage->SpecUpdate(trigger_op->inst_info->addr, optype, alt_dir, trigger_op->oracle_info.target);
+}

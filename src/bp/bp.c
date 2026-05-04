@@ -728,6 +728,16 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
     }
   }
 
+  // Pre-spec-update hook for the alt-DFE machinery: alts with
+  // ALTERNATE_ON_PREDICTION / ALTERNATE_ON_MISPREDICTION trigger want main's
+  // PRE-spec-update bp_data state captured (via bp_sync) before the upcoming
+  // spec_update applies main's direction, so the post-hook can re-apply
+  // spec_update on alt's TAGE with alt's direction. Gated on
+  // SIMULATION_MODE (warmup's bp_predict_op should not touch alt) and
+  // on-path predictions only (off-path predictions don't drive alt events).
+  if (bp_id == MAIN_BP && pred_level == BP_PRED_MAIN && operating_mode == SIMULATION_MODE && !op->off_path)
+    decoupled_fe_capture_main_pre_state(op->proc_id, op);
+
   pred_bp->spec_update_func(op, pred_level);
 
   DEBUG(bp_data->proc_id,

@@ -239,6 +239,15 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_tr
   ASSERTM(_proc_id, (dfe_trigger_policy == PRIMARY_DFE) == (dfe_stop_policy == PRIMARY_DFE_STOP),
           "trigger_policy=%u stop_policy=%u: PRIMARY_DFE_STOP is required iff trigger is PRIMARY_DFE\n",
           dfe_trigger_policy, dfe_stop_policy);
+  // Alt-BP per-bp_id frontend dispatch is only implemented on memtrace / PT.
+  // pin_exec_driven_redirect ignores bp_id (would corrupt main's PIN process
+  // state) and trace_redirect FATALs on any redirect call. Fail-fast at init
+  // so misconfigured runs surface clearly instead of silently misbehaving.
+  if (bp_id != MAIN_BP) {
+    ASSERTM(_proc_id, FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE,
+            "alt BP (bp_id=%u, trigger_policy=%u) requires FRONTEND in {FE_PT, FE_MEMTRACE}; got FRONTEND=%u\n",
+            _bp_id, dfe_trigger_policy, (uns)FRONTEND);
+  }
   cur_op = nullptr;
   current_ft_to_push = nullptr;
   saved_recovery_ft = nullptr;

@@ -323,12 +323,11 @@ Flag ext_trace_can_fetch_op(uns proc_id, uns bp_id) {
 }
 
 void ext_trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr) {
-  if (!bp_id)
-    ASSERT(proc_id, fetch_addr);
-  if (!fetch_addr)
-    off_path_mode[proc_id][bp_id] = false;
-  else
-    off_path_mode[proc_id][bp_id] = true;
+  // Redirect always targets a real fetch_addr now; alt deactivation is
+  // handled entirely Scarab-side via state = INACTIVE, so the previous
+  // (fetch_addr == 0) "stop the secondary stream" path is no longer reached.
+  ASSERT(proc_id, fetch_addr);
+  off_path_mode[proc_id][bp_id] = true;
   off_path_addr[proc_id][bp_id] = fetch_addr;
   off_path_generate_inst(proc_id, &off_path_addr[proc_id][bp_id], &next_offpath_pi[proc_id][bp_id]);
   DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].instruction_addr,

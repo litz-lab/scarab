@@ -280,11 +280,20 @@ struct Decoupled_FE {
   // transition to SERVING_OFF_PATH. Used by recover() (CONTINUE_ON_RECOVERY) and
   // by trigger_alt_with_rewind() (ALTERNATE_ON_*).
   void activate_off_path(uns64 inst_uid, Addr fetch_addr);
-  // (Alt DFE) Activate alt with trigger_op (a CF main just predicted) and
-  // rewind that op's spec_update on alt's bp_data with alt's direction so
-  // alt sees "main's pre-trigger state + alt's direction at the last branch".
-  // Caller must have checked alt is inactive and alt_direction_target is non-zero.
-  void trigger_alt_with_rewind(Op* trigger_op);
+  // (Alt DFE) Activate alt with trigger_op (a CF main just predicted) as the
+  // alt's starting point: bp_sync, frontend redirect to the
+  // alt_direction_target, transition to SERVING_OFF_PATH.
+  //
+  // LIMITATION: alt's predictor state is whatever bp_sync just copied from
+  // main's bp_data, which has main's spec_update for trigger_op applied (with
+  // main's direction baked into history). Alt's first prediction therefore
+  // reflects a 1-bit history inaccuracy at trigger_op (main's pred instead of
+  // alt's). Alt's own subsequent predictions overwrite as they go. A full
+  // predictor-level rewind is not feasible without taking a checkpoint per
+  // CF main predicts (TakeCheckpoint is currently gated on misprediction in
+  // CBP_To_Scarab_Intf<TAGE64K>::spec_update); revisiting that gate is a
+  // follow-up.
+  void trigger_alt(Op* trigger_op);
   // (Alt DFE) Stop a running alt episode: clear FTQ, redirect frontend to 0,
   // transition to INACTIVE.
   void stop_alt_episode();

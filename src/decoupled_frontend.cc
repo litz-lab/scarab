@@ -743,40 +743,26 @@ void Decoupled_FE::activate_off_path(uns64 inst_uid, Addr fetch_addr) {
   set_conf_off_path();
 }
 
-void Decoupled_FE::trigger_alt_with_rewind(Op* trigger_op) {
+void Decoupled_FE::trigger_alt(Op* trigger_op) {
   ASSERT(proc_id, bp_id != MAIN_BP);
   ASSERT(proc_id, !is_active());
   ASSERT(proc_id, !ftq_num_fts());
   const Addr alt_pred_addr = alt_direction_target(trigger_op);
   ASSERT(proc_id, alt_pred_addr);
+  // Just bp_sync + redirect + state. No predictor-level rewind:
+  //   - For correctly-predicted trigger_ops (per-CF dispatch), main's TAGE
+  //     took no checkpoint (TakeCheckpoint is gated on misprediction in
+  //     CBP_To_Scarab_Intf<TAGE64K>::spec_update), so RestoreCheckpoint would
+  //     assert.
+  //   - Even for mispredicted trigger_ops, the TAGE recover function indexes
+  //     cbp_predictors_all_cores[proc_id][recovery_info->bp_id] which is
+  //     MAIN's TAGE for main's predictions, so calling it from alt's path
+  //     would mutate main's predictor rather than alt's.
+  // bp_sync still gives alt main's state at the trigger; alt's first
+  // prediction reflects a 1-bit history inaccuracy at trigger_op (main's
+  // direction baked in instead of alt's). Alt's own subsequent predictions
+  // overwrite as they go.
   activate_off_path(trigger_op->inst_uid, alt_pred_addr);
-  // Rewind trigger op's spec_update on alt's bp_data with alt's direction.
-  // bp_sync (in activate_off_path) just copied main's current state, which has
-  // main's spec_update applied with main's predicted direction. Each predictor's
-  // recover_func reads Recovery_Info to undo speculative state; feeding it
-  // alt_rec (a copy with new_dir flipped) makes the recovered structures
-  // consistent with alt's direction at the trigger op. Calling these directly
-  // (not bp_recover_op) skips the recovery stat events (PERFORMED_RECOVERIES,
-  // POWER_BRANCH_RECOVER_AT_EXEC) so those keep counting only real recoveries.
-  Recovery_Info alt_rec = trigger_op->recovery_info;
-  alt_rec.new_dir = trigger_op->bp_pred_info->pred ^ 1;
-  const Cf_Type trigger_cf = trigger_op->inst_info->table_info.cf_type;
-  if (trigger_cf == CF_CBR || trigger_cf == CF_REP) {
-    bp_data->global_hist = (alt_rec.pred_global_hist >> 1) | ((uns32)alt_rec.new_dir << 31);
-  } else {
-    bp_data->global_hist = alt_rec.pred_global_hist;
-  }
-  bp_data->targ_hist = alt_rec.targ_hist;
-  bp_data->bp_btb->recover_func(bp_data, &alt_rec);
-  if (trigger_cf == CF_ICALL || trigger_cf == CF_IBR)
-    bp_data->bp_ibtb->recover_func(bp_data, &alt_rec);
-  bp_data->bp->recover_func(&alt_rec);
-  if (bp_data->bp_l0)
-    bp_data->bp_l0->recover_func(&alt_rec);
-  if (CRS_REALISTIC)
-    bp_crs_realistic_recover(bp_data, &alt_rec);
-  else
-    bp_crs_recover(bp_data);
 }
 
 void Decoupled_FE::stop_alt_episode() {
@@ -805,7 +791,7 @@ void Decoupled_FE::drive_alt_on_misprediction(Op* trigger_op) {
     // when the trigger policy matches this event.
     if (!alt->is_active() && alt->get_dfe_trigger_policy() == ALTERNATE_ON_MISPREDICTION) {
       if (alt_direction_target(trigger_op))
-        alt->trigger_alt_with_rewind(trigger_op);
+        alt->trigger_alt(trigger_op);
     }
   }
 }
@@ -822,7 +808,7 @@ void Decoupled_FE::drive_alt_on_prediction(Op* trigger_op) {
     // when the trigger policy matches this event.
     if (!alt->is_active() && alt->get_dfe_trigger_policy() == ALTERNATE_ON_PREDICTION) {
       if (alt_direction_target(trigger_op))
-        alt->trigger_alt_with_rewind(trigger_op);
+        alt->trigger_alt(trigger_op);
     }
   }
 }

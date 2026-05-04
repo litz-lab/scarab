@@ -13,6 +13,7 @@
 
 extern "C" {
 #include "bp/bp_targ_mech.h"
+#include "bp/cbp_to_scarab.h"
 }
 #include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
@@ -208,6 +209,10 @@ void decoupled_fe_print_conf_data() {
 
 void decoupled_fe_on_main_prediction(uns proc_id, Op* op) {
   per_core_dfe[proc_id][MAIN_BP]->drive_alt_on_prediction(op);
+}
+
+void decoupled_fe_capture_main_pre_state(uns proc_id, Op* op) {
+  per_core_dfe[proc_id][MAIN_BP]->capture_main_pre_state_for_alts(op);
 }
 
 }  // extern "C"
@@ -731,9 +736,13 @@ uint64_t Decoupled_FE::ftq_num_ops() {
   return num_ops;
 }
 
-void Decoupled_FE::activate_off_path(uns64 inst_uid, Addr fetch_addr) {
+void Decoupled_FE::bp_sync_from_main() {
   ASSERT(proc_id, bp_id != MAIN_BP);
   bp_sync(per_core_dfe[proc_id][MAIN_BP]->get_bp_data(), bp_data);
+}
+
+void Decoupled_FE::activate_off_path_only(uns64 inst_uid, Addr fetch_addr) {
+  ASSERT(proc_id, bp_id != MAIN_BP);
   frontend_redirect(proc_id, bp_id, inst_uid, fetch_addr);
   // Update both state and next_state so is_active() reflects the activation
   // immediately. The alt-event dispatchers may stop and re-trigger alt within
@@ -743,26 +752,61 @@ void Decoupled_FE::activate_off_path(uns64 inst_uid, Addr fetch_addr) {
   set_conf_off_path();
 }
 
+void Decoupled_FE::activate_off_path(uns64 inst_uid, Addr fetch_addr) {
+  bp_sync_from_main();
+  activate_off_path_only(inst_uid, fetch_addr);
+}
+
+void Decoupled_FE::apply_alt_spec_update(Op* trigger_op) {
+  ASSERT(proc_id, bp_id != MAIN_BP);
+  // Re-apply the trigger op's spec_update on alt's TAGE with alt's direction.
+  // alt's bp_data was just synced to main's PRE-spec-update state (via the
+  // pre-hook in bp_predict_op_impl); this call extends that state forward
+  // with alt's chosen direction at the trigger op.
+  const Flag alt_dir = trigger_op->bp_pred_info->pred ^ 1;
+  bp_alt_spec_update_TAGE64K(proc_id, bp_id, trigger_op, alt_dir);
+}
+
 void Decoupled_FE::trigger_alt(Op* trigger_op) {
   ASSERT(proc_id, bp_id != MAIN_BP);
   ASSERT(proc_id, !is_active());
   ASSERT(proc_id, !ftq_num_fts());
   const Addr alt_pred_addr = alt_direction_target(trigger_op);
   ASSERT(proc_id, alt_pred_addr);
-  // Just bp_sync + redirect + state. No predictor-level rewind:
-  //   - For correctly-predicted trigger_ops (per-CF dispatch), main's TAGE
-  //     took no checkpoint (TakeCheckpoint is gated on misprediction in
-  //     CBP_To_Scarab_Intf<TAGE64K>::spec_update), so RestoreCheckpoint would
-  //     assert.
-  //   - Even for mispredicted trigger_ops, the TAGE recover function indexes
-  //     cbp_predictors_all_cores[proc_id][recovery_info->bp_id] which is
-  //     MAIN's TAGE for main's predictions, so calling it from alt's path
-  //     would mutate main's predictor rather than alt's.
-  // bp_sync still gives alt main's state at the trigger; alt's first
-  // prediction reflects a 1-bit history inaccuracy at trigger_op (main's
-  // direction baked in instead of alt's). Alt's own subsequent predictions
-  // overwrite as they go.
-  activate_off_path(trigger_op->inst_uid, alt_pred_addr);
+  // alt's bp_data is already at main's pre-spec-update state from the
+  // pre-hook (capture_main_pre_state_for_alts). Re-apply the trigger op's
+  // spec_update with alt's direction so alt sees "main's pre-trigger state +
+  // alt's direction at the last branch", then redirect alt's frontend.
+  apply_alt_spec_update(trigger_op);
+  activate_off_path_only(trigger_op->inst_uid, alt_pred_addr);
+}
+
+void Decoupled_FE::capture_main_pre_state_for_alts(Op* trigger_op) {
+  ASSERT(proc_id, bp_id == MAIN_BP);
+  // Pre-hook fires for every CF main predicts (in FT::predict_ft, gated on
+  // SIMULATION_MODE && !off_path by the caller in bp.c). Determine which alt
+  // DFEs will be (re-)triggered by this prediction event and bp_sync them to
+  // capture main's pre-spec-update state.
+  const Flag is_misprediction = trigger_op->bp_pred_main.recover_at_fe ||
+                                trigger_op->bp_pred_main.recover_at_decode ||
+                                trigger_op->bp_pred_main.recover_at_exec;
+  for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
+    Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();
+    const uns trigger_policy = alt->get_dfe_trigger_policy();
+    const uns stop_policy = alt->get_dfe_stop_policy();
+    const bool fires_per_cf = (trigger_policy == ALTERNATE_ON_PREDICTION);
+    const bool fires_on_mispred = (trigger_policy == ALTERNATE_ON_MISPREDICTION) && is_misprediction;
+    if (!fires_per_cf && !fires_on_mispred)
+      continue;
+    if (alt->is_active()) {
+      // Will alt actually be stopped + re-triggered by this event?
+      const bool stops_then_triggers = (fires_per_cf && stop_policy == STOP_ON_PREDICTION) ||
+                                       (fires_on_mispred && stop_policy == STOP_ON_MISPREDICTION);
+      if (!stops_then_triggers)
+        continue;  // running alt won't be disturbed; preserve its state
+    }
+    alt->bp_sync_from_main();
+  }
 }
 
 void Decoupled_FE::stop_alt_episode() {

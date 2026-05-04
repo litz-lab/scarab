@@ -159,6 +159,12 @@ void decoupled_fe_retire(Op* op, int proc_id, uns64 inst_uid);
 // event). Drives ALTERNATE_ON_PREDICTION trigger and STOP_ON_PREDICTION stop
 // across alt DFEs at the moment main's bp_data has just spec-updated for op.
 void decoupled_fe_on_main_prediction(uns proc_id, Op* op);
+// bp_predict_op (in bp.c) calls this just before main's spec_update_func, so
+// any alt that's about to be (re-)triggered by the next main prediction event
+// can capture main's pre-spec-update bp_data via bp_sync. The alt-event
+// dispatcher then re-applies spec_update on alt's TAGE with alt's direction.
+// Skipped during warmup and for off-path predictions.
+void decoupled_fe_capture_main_pre_state(uns proc_id, Op* op);
 // FTQ API
 void decoupled_fe_set_ftq_num(uint64_t ftq_ft_num);
 uint64_t decoupled_fe_get_ftq_num();
@@ -275,25 +281,33 @@ struct Decoupled_FE {
   Op* get_last_fetch_op();
   uns get_dfe_trigger_policy() { return dfe_trigger_policy; }
   uns get_dfe_stop_policy() { return dfe_stop_policy; }
-  // Activate this (secondary) DFE in off-path mode: sync history from MAIN_BP,
-  // redirect this BP's frontend to fetch_addr (use 0 for "stop fetching"), and
-  // transition to SERVING_OFF_PATH. Used by recover() (CONTINUE_ON_RECOVERY) and
-  // by trigger_alt_with_rewind() (ALTERNATE_ON_*).
+  // Copy main's bp_data into this (alt) DFE's bp_data (history, predictor
+  // tables, CRS, ...). Standalone of activate_off_path so the per-CF/per-mispred
+  // dispatch can capture main's PRE-spec-update state via the bp.c pre-hook
+  // and then drive the trigger phase later without re-syncing.
+  void bp_sync_from_main();
+  // Frontend redirect + state transition to SERVING_OFF_PATH (alt-only). No
+  // bp_sync. Use after capture_main_pre_state_for_alts has put alt at main's
+  // pre-state and apply_alt_spec_update has redone the trigger spec_update
+  // with alt's direction.
+  void activate_off_path_only(uns64 inst_uid, Addr fetch_addr);
+  // bp_sync_from_main + activate_off_path_only. Used by recover()
+  // (CONTINUE_ON_RECOVERY) where we just want main's current state.
   void activate_off_path(uns64 inst_uid, Addr fetch_addr);
-  // (Alt DFE) Activate alt with trigger_op (a CF main just predicted) as the
-  // alt's starting point: bp_sync, frontend redirect to the
-  // alt_direction_target, transition to SERVING_OFF_PATH.
-  //
-  // LIMITATION: alt's predictor state is whatever bp_sync just copied from
-  // main's bp_data, which has main's spec_update for trigger_op applied (with
-  // main's direction baked into history). Alt's first prediction therefore
-  // reflects a 1-bit history inaccuracy at trigger_op (main's pred instead of
-  // alt's). Alt's own subsequent predictions overwrite as they go. A full
-  // predictor-level rewind is not feasible without taking a checkpoint per
-  // CF main predicts (TakeCheckpoint is currently gated on misprediction in
-  // CBP_To_Scarab_Intf<TAGE64K>::spec_update); revisiting that gate is a
-  // follow-up.
+  // (Alt DFE) Re-do the trigger op's spec_update on alt's TAGE with alt's
+  // direction (opposite of main's predicted direction). Caller must have
+  // already captured main's pre-spec-update state on alt's bp_data via the
+  // bp.c pre-hook (capture_main_pre_state_for_alts). After this, alt sees
+  // "main's pre-trigger state + alt's direction at the trigger op".
+  void apply_alt_spec_update(Op* trigger_op);
+  // (Alt DFE) apply_alt_spec_update + activate_off_path_only at
+  // alt_direction_target. Caller must have checked alt is inactive,
+  // ftq is empty, and alt_direction_target(trigger_op) is non-zero.
   void trigger_alt(Op* trigger_op);
+  // (MAIN_BP) Pre-spec-update hook: for every alt DFE that's about to be
+  // (re-)triggered by the upcoming prediction event, bp_sync_from_main to
+  // capture main's pre-spec-update state on alt's bp_data.
+  void capture_main_pre_state_for_alts(Op* trigger_op);
   // (Alt DFE) Stop a running alt episode: clear FTQ, redirect frontend to 0,
   // transition to INACTIVE.
   void stop_alt_episode();

@@ -787,8 +787,7 @@ void Decoupled_FE::capture_main_pre_state_for_alts(Op* trigger_op) {
   // SIMULATION_MODE && !off_path by the caller in bp.c). Determine which alt
   // DFEs will be (re-)triggered by this prediction event and bp_sync them to
   // capture main's pre-spec-update state.
-  const Flag is_misprediction = trigger_op->bp_pred_main.recover_at_fe ||
-                                trigger_op->bp_pred_main.recover_at_decode ||
+  const Flag is_misprediction = trigger_op->bp_pred_main.recover_at_fe || trigger_op->bp_pred_main.recover_at_decode ||
                                 trigger_op->bp_pred_main.recover_at_exec;
   for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
     Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();

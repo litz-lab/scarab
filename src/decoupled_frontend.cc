@@ -245,8 +245,8 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_tr
   // so misconfigured runs surface clearly instead of silently misbehaving.
   if (bp_id != MAIN_BP) {
     ASSERTM(_proc_id, FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE,
-            "alt BP (bp_id=%u, trigger_policy=%u) requires FRONTEND in {FE_PT, FE_MEMTRACE}; got FRONTEND=%u\n",
-            _bp_id, dfe_trigger_policy, (uns)FRONTEND);
+            "alt BP (bp_id=%u, trigger_policy=%u) requires FRONTEND in {FE_PT, FE_MEMTRACE}; got FRONTEND=%u\n", _bp_id,
+            dfe_trigger_policy, (uns)FRONTEND);
   }
   cur_op = nullptr;
   current_ft_to_push = nullptr;

@@ -824,7 +824,7 @@ void Decoupled_FE::stop_alt_episode() {
 
 // Shared dispatcher for the per-event alt drive. Each alt has at most one
 // trigger policy and at most one stop policy, and the two _ON_PREDICTION /
-// _ON_MISPREDICTION variants are mutually exclusive within an alt -- so each
+// _ON_MISPREDICTION variants are mutually exclusive within an alt, so each
 // caller passes the policy values that match the event it represents.
 //   Stop phase fires if active && stop_policy == match_stop.
 //   Trigger phase fires (independently) if inactive && trigger_policy == match_trigger
@@ -989,7 +989,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   if (bp_id == MAIN_BP) {
     // Misprediction event: drive alt DFEs that subscribe to it. The
     // _ON_MISPREDICTION variants are oracle-aware (gating on simulator-known
-    // misprediction at predict-stage) and not realistic in real hardware --
+    // misprediction at predict-stage) and not realistic in real hardware;
     // they're useful for upper-bound studies. Realistic _ON_PREDICTION
     // semantics are driven from main's update() per CF after predict_ft.
     drive_alt_on_misprediction(result.op);

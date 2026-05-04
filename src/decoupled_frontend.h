@@ -324,7 +324,7 @@ struct Decoupled_FE {
   // (MAIN_BP) Per-CF prediction-event entry point. Called per CF from
   // FT::predict_ft via the decoupled_fe_on_main_prediction C wrapper.
   // Off-path predictions (FT::build with off_path=true) intentionally don't
-  // fire this -- alt _ON_PREDICTION semantics only cover main's on-path /
+  // fire this; alt _ON_PREDICTION semantics only cover main's on-path /
   // recovery predict_ft pass.
   void drive_alt_on_prediction(Op* trigger_op);
 

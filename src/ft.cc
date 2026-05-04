@@ -388,7 +388,7 @@ FT_PredictResult FT::predict_ft() {
       // _ON_PREDICTION dispatch. Single-op rollback in trigger_alt_with_rewind
       // works because main's state hasn't advanced past op yet. Off-path
       // predictions (FT::build with off_path=true) intentionally do not fire
-      // this -- alt _ON_PREDICTION semantics only cover main's on-path/recovery
+      // this; alt _ON_PREDICTION semantics only cover main's on-path/recovery
       // predict_ft pass.
       if (bp_id == MAIN_BP)
         decoupled_fe_on_main_prediction(proc_id, op);

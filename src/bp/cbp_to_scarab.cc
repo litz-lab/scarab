@@ -293,7 +293,7 @@ void bp_alt_spec_update_TAGE64K(uns proc_id, uns alt_bp_id, Op* trigger_op, Flag
   Flag is_conditional = is_conditional_branch(trigger_op->inst_info->table_info.cf_type);
   // Mirrors the spec/non-checkpoint half of CBP_To_Scarab_Intf<TAGE64K>::spec_update,
   // except: alt_dir overrides bp_pred_info->pred, and we skip SavePredictorStates
-  // / TakeCheckpoint (those are gated on bp_id == 0 in the regular path -- alt's
+  // / TakeCheckpoint (those are gated on bp_id == 0 in the regular path; alt's
   // predictor doesn't track those structures).
   if (is_conditional)
     alt_tage->SpecUpdateAtCond(trigger_op->inst_info->addr, alt_dir, false);

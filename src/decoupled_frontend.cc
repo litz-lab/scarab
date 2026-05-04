@@ -831,8 +831,7 @@ void Decoupled_FE::stop_alt_episode() {
 //     and an alt_direction_target is computable. An event can stop a running
 //     alt and re-trigger it on the same CF; the second is_active() check
 //     re-reads state after stop_alt_episode.
-void Decoupled_FE::drive_alt_on_event(Op* trigger_op, DFE_Trigger_Policy match_trigger,
-                                      DFE_Stop_Policy match_stop) {
+void Decoupled_FE::drive_alt_on_event(Op* trigger_op, DFE_Trigger_Policy match_trigger, DFE_Stop_Policy match_stop) {
   ASSERT(proc_id, bp_id == MAIN_BP);
   for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
     Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();

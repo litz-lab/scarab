@@ -72,128 +72,9 @@ enum ISSUE_QUEUE_ENTRY_STATE {
 };
 
 /**************************************************************************************/
-/* Structures */
+/* Static methods */
 
-struct IssueQueueEntry {
-  const uns16 queue_id;
-  const uns16 entry_id;
-
-  Op* op = nullptr;
-  ISSUE_QUEUE_ENTRY_STATE state = ISSUE_QUEUE_ENTRY_STATE_EMPTY;
-  IssueQueueEntry* next_ready = nullptr;
-
-  explicit IssueQueueEntry(uns16 queue_id, uns16 entry_id) : queue_id(queue_id), entry_id(entry_id) {}
-  void clear();
-  void fill(Op* op);
-};
-
-void IssueQueueEntry::clear() {
-  op = nullptr;
-}
-
-void IssueQueueEntry::fill(Op* op) {
-  this->op = op;
-}
-
-/**************************************************************************************/
-/* Virtual Interface */
-
-// SchedulePolicy is responsible for deciding the priority of picking
-class SchedulePolicy {
- public:
-  virtual ~SchedulePolicy() = default;
-
-  // Return if the lhs entry is the preference
-  virtual bool compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const = 0;
-};
-
-// ArbitrationPolicy is responsible for determining the picker order
-class ArbitrationPolicy {
- public:
-  virtual ~ArbitrationPolicy() = default;
-
-  // Prepare the picker order for the current selection cycle
-  virtual void prepare_picker_order() = 0;
-
-  // Get the picker index at the given index in the current order
-  virtual size_t picker_at(size_t i) const = 0;
-};
-
-/**************************************************************************************/
-
-struct FunctionalUnitPicker {
- private:
-  const uns proc_id;
-  const uns16 queue_id;
-  const uns32 fu_id;
-  const uns64 fu_type;
-
-  Flag check_op_ready(Op* op) const;
-
- public:
-  explicit FunctionalUnitPicker(uns proc_id, uns16 queue_id, uns32 fu_id, uns64 fu_type)
-      : proc_id(proc_id), queue_id(queue_id), fu_id(fu_id), fu_type(fu_type) {}
-
-  IssueQueueEntry* pick(IssueQueueEntry* ready_head, const std::unordered_set<uns16>& picked_mask,
-                        const SchedulePolicy& sched_policy);
-  void grant(IssueQueueEntry* entry);
-  bool is_compatible(Inst_Info* inst_info) const;
-};
-
-IssueQueueEntry* FunctionalUnitPicker::pick(IssueQueueEntry* ready_head, const std::unordered_set<uns16>& picked_mask,
-                                            const SchedulePolicy& sched_policy) {
-  IssueQueueEntry* ret = nullptr;
-  for (IssueQueueEntry* entry = ready_head; entry != nullptr; entry = entry->next_ready) {
-    if (entry->state == ISSUE_QUEUE_ENTRY_STATE_PICKED) {
-      continue;
-    }
-
-    if (!is_compatible(entry->op->inst_info)) {
-      continue;
-    }
-
-    // check if the op is ready (it may become not ready due to memory blocking or waiting for forwarding)
-    if (!check_op_ready(entry->op)) {
-      continue;
-    }
-
-    ASSERT(proc_id, node->sd.ops[fu_id] == nullptr);
-    if (ret == nullptr || sched_policy.compare(entry, ret)) {
-      ret = entry;
-    }
-  }
-
-  /*
-   * Conflict with another picker in the same round (parallel selection).
-   * This picker is unaware of current-round selections and loses arbitration.
-   * The selection is cancelled and deferred to the next round.
-   */
-  if (ret != nullptr && picked_mask.count(ret->entry_id)) {
-    return nullptr;
-  }
-
-  return ret;
-}
-
-void FunctionalUnitPicker::grant(IssueQueueEntry* entry) {
-  Op* op = entry->op;
-  ASSERT(proc_id, op != nullptr);
-  ASSERT(proc_id, fu_id < (uns32)node->sd.max_op_count && node->sd.ops[fu_id] == nullptr);
-  ASSERT(proc_id, node->sd.op_count < node->sd.max_op_count);
-
-  op->fu_num = fu_id;
-  node->sd.ops[op->fu_num] = op;
-  node->last_scheduled_opnum = op->op_num;
-  node->sd.op_count += 1;
-
-  entry->state = ISSUE_QUEUE_ENTRY_STATE_PICKED;
-}
-
-bool FunctionalUnitPicker::is_compatible(Inst_Info* inst_info) const {
-  return get_fu_type(inst_info->table_info.op_type, inst_info->table_info.is_simd) & fu_type;
-}
-
-Flag FunctionalUnitPicker::check_op_ready(Op* op) const {
+static inline Flag issue_queue_check_op_ready(Op* op) {
   ASSERT(node->proc_id, op != nullptr);
 
   // if the op is waiting for memory, check if it is still blocked by memory. If not, it becomes ready
@@ -219,9 +100,166 @@ Flag FunctionalUnitPicker::check_op_ready(Op* op) const {
 }
 
 /**************************************************************************************/
+/* Structures */
+
+struct IssueQueueEntry {
+  const uns16 queue_id;
+  const uns16 entry_id;
+
+  Op* op = nullptr;
+  ISSUE_QUEUE_ENTRY_STATE state = ISSUE_QUEUE_ENTRY_STATE_EMPTY;
+  IssueQueueEntry* next_ready = nullptr;
+
+  explicit IssueQueueEntry(uns16 queue_id, uns16 entry_id) : queue_id(queue_id), entry_id(entry_id) {}
+  void clear();
+  void fill(Op* op);
+};
+
+void IssueQueueEntry::clear() {
+  op = nullptr;
+  ASSERT(node->proc_id, next_ready == nullptr);
+}
+
+void IssueQueueEntry::fill(Op* op) {
+  this->op = op;
+}
+
+/**************************************************************************************/
+/* Virtual Interface */
+
 /*
- * The select logic is responsible for picking ready ops from the wakeup logic in the issue queue.
- * It is composed of a SchedulePolicy (in what order of ready lists) and an ArbitrationPolicy (in what order to pick).
+ * SchedulePolicy defines the relative priority between ready ops during selection. When
+ * multiple ops compete for the same picker, the policy determines which op is preferred.
+ *
+ * Typical scheduling policies include oldest-first, criticality-based, and dependency-aware
+ * prioritization.
+ */
+class SchedulePolicy {
+ public:
+  virtual ~SchedulePolicy() = default;
+
+  // Return if the lhs entry is the preference
+  virtual bool compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const = 0;
+};
+
+/*
+ * ArbitrationPolicy determines the picker traversal order, where pickers earlier in the
+ * order have higher priority.
+ *
+ * In serial selection, requests for later pickers are derived from the selections made
+ * by earlier pickers.
+ *
+ * In parallel selection, earlier pickers win arbitration and cancel conflicting selections
+ * from later pickers.
+ */
+class ArbitrationPolicy {
+ public:
+  virtual ~ArbitrationPolicy() = default;
+
+  // Prepare the picker order for the current selection cycle
+  virtual void prepare_picker_order() = 0;
+
+  // Get the picker index at the given index in the current order
+  virtual size_t picker_at(size_t i) const = 0;
+};
+
+/**************************************************************************************/
+
+/*
+ * FunctionalUnitPicker selects a single op for a functional unit during the current
+ * scheduling cycle.
+ *
+ * Each picker tracks the currently selected entry and updates the selection according to
+ * the scheduling policy when competing ops are observed.
+ *
+ * In serial selection, a newly selected op may displace the current selection and forward
+ * the displaced request to later pickers.
+ *
+ * In parallel selection, selections are resolved during grant.
+ */
+class FunctionalUnitPicker {
+ private:
+  const uns proc_id;
+  const uns16 queue_id;
+  const uns32 fu_id;
+  const uns64 fu_type;
+
+  // current selection for this cycle
+  IssueQueueEntry* picked_entry = nullptr;
+
+ public:
+  explicit FunctionalUnitPicker(uns proc_id, uns16 queue_id, uns32 fu_id, uns64 fu_type)
+      : proc_id(proc_id), queue_id(queue_id), fu_id(fu_id), fu_type(fu_type) {}
+
+  void pick(IssueQueueEntry*& candidate, const SchedulePolicy& sched_policy);
+  void grant();
+  bool is_compatible(Inst_Info* inst_info) const;
+};
+
+/*
+ * If the incoming request has higher priority than the current
+ * selection, it replaces the existing selection according to the
+ * scheduling policy.
+ */
+void FunctionalUnitPicker::pick(IssueQueueEntry*& candidate, const SchedulePolicy& sched_policy) {
+  ASSERT(node->proc_id, candidate != nullptr);
+  if (!is_compatible(candidate->op->inst_info)) {
+    return;
+  }
+
+  bool replace = (picked_entry == nullptr || sched_policy.compare(candidate, picked_entry));
+  if (!replace) {
+    return;
+  }
+
+  // replace the current selection
+  IssueQueueEntry* displaced_entry = picked_entry;
+  picked_entry = candidate;
+
+  // forward the displaced request to later pickers
+  if (!ISSUE_QUEUE_PARALLEL_PICK) {
+    candidate = displaced_entry;
+  }
+}
+
+void FunctionalUnitPicker::grant() {
+  // no valid selection this cycle
+  if (picked_entry == nullptr) {
+    return;
+  }
+
+  ASSERT(proc_id, ISSUE_QUEUE_PARALLEL_PICK || picked_entry->state == ISSUE_QUEUE_ENTRY_STATE_READY);
+  // another picker has already granted this entry
+  if (picked_entry->state == ISSUE_QUEUE_ENTRY_STATE_PICKED) {
+    picked_entry = nullptr;
+    return;
+  }
+
+  Op* op = picked_entry->op;
+  ASSERT(proc_id, op != nullptr);
+  ASSERT(proc_id, fu_id < (uns32)node->sd.max_op_count);
+  op->fu_num = fu_id;
+
+  // issue the op into the stage data
+  ASSERT(proc_id, node->sd.ops[fu_id] == nullptr && node->sd.op_count < node->sd.max_op_count);
+  node->sd.ops[op->fu_num] = op;
+  node->last_scheduled_opnum = op->op_num;
+  node->sd.op_count += 1;
+
+  picked_entry->state = ISSUE_QUEUE_ENTRY_STATE_PICKED;
+  picked_entry = nullptr;
+}
+
+bool FunctionalUnitPicker::is_compatible(Inst_Info* inst_info) const {
+  return get_fu_type(inst_info->table_info.op_type, inst_info->table_info.is_simd) & fu_type;
+}
+
+/**************************************************************************************/
+/*
+ * The select logic is responsible for choosing ready ops for issue.
+ *
+ * It combines a SchedulePolicy, which defines the relative priority between competing ops,
+ * and an ArbitrationPolicy, which determines the priority of pickers during selection.
  */
 
 class SelectLogic {
@@ -229,6 +267,8 @@ class SelectLogic {
   std::vector<FunctionalUnitPicker> connected_fu_pickers;
   std::unique_ptr<SchedulePolicy> sched_policy;
   std::unique_ptr<ArbitrationPolicy> arbitration_policy;
+
+  // the ready list is un-sorted
   IssueQueueEntry* ready_head = nullptr;
 
  public:
@@ -256,23 +296,23 @@ void SelectLogic::select() {
   const size_t fu_num = connected_fu_pickers.size();
   arbitration_policy->prepare_picker_order();
 
-  std::unordered_set<uns16> picked_mask;
-  for (size_t i = 0; i < fu_num; ++i) {
-    FunctionalUnitPicker& fu_picker = connected_fu_pickers[arbitration_policy->picker_at(i)];
-    IssueQueueEntry* entry = fu_picker.pick(ready_head, picked_mask, *sched_policy);
-
-    // if the picking is cancelled due to a conflict in the same round or there is no compatible entry
-    if (entry == nullptr) {
+  for (IssueQueueEntry* entry = ready_head; entry != nullptr; entry = entry->next_ready) {
+    // check if the op is ready (it may become not ready due to memory blocking or waiting for forwarding)
+    if (entry->state != ISSUE_QUEUE_ENTRY_STATE_READY || !issue_queue_check_op_ready(entry->op)) {
       continue;
     }
 
-    // mark the current pick as the winner to cancel competing picks for the same op in this round
-    if (ISSUE_QUEUE_PARALLEL_PICK) {
-      picked_mask.insert(entry->entry_id);
-    }
+    IssueQueueEntry* candidate = entry;
 
-    // issue the op into the stage_data
-    fu_picker.grant(entry);
+    for (size_t i = 0; i < fu_num && candidate != nullptr; ++i) {
+      FunctionalUnitPicker& fu_picker = connected_fu_pickers[arbitration_policy->picker_at(i)];
+      fu_picker.pick(candidate, *sched_policy);
+    }
+  }
+
+  for (size_t i = 0; i < fu_num; ++i) {
+    FunctionalUnitPicker& fu_picker = connected_fu_pickers[arbitration_policy->picker_at(i)];
+    fu_picker.grant();
   }
 }
 
@@ -313,6 +353,7 @@ class OldestFirstSchedulePolicy : public SchedulePolicy {
 };
 
 bool OldestFirstSchedulePolicy::compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const {
+  ASSERT(node->proc_id, lhs != nullptr && rhs != nullptr);
   return lhs->op->op_num < rhs->op->op_num;
 }
 

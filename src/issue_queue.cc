@@ -157,10 +157,7 @@ class ArbitrationPolicy {
   virtual ~ArbitrationPolicy() = default;
 
   // Prepare the picker order for the current selection cycle
-  virtual void prepare_picker_order() = 0;
-
-  // Get the picker index at the given index in the current order
-  virtual size_t picker_at(size_t i) const = 0;
+  virtual void build_picker_order(std::vector<size_t>& picker_order) = 0;
 };
 
 /**************************************************************************************/
@@ -267,6 +264,7 @@ class SelectLogic {
   std::vector<FunctionalUnitPicker> connected_fu_pickers;
   std::vector<std::unique_ptr<SchedulePolicy>> sched_policies;
   std::unique_ptr<ArbitrationPolicy> arbitration_policy;
+  std::vector<size_t> picker_order;
 
   // the ready list is un-sorted
   IssueQueueEntry* ready_head = nullptr;
@@ -277,7 +275,8 @@ class SelectLogic {
               std::unique_ptr<ArbitrationPolicy> arbitration_policy)
       : connected_fu_pickers(connected_fu_pickers),
         sched_policies(std::move(sched_policies)),
-        arbitration_policy(std::move(arbitration_policy)) {}
+        arbitration_policy(std::move(arbitration_policy)),
+        picker_order(this->connected_fu_pickers.size()) {}
   virtual ~SelectLogic() = default;
 
   void select();
@@ -295,7 +294,7 @@ class SelectLogic {
  */
 void SelectLogic::select() {
   const size_t fu_num = connected_fu_pickers.size();
-  arbitration_policy->prepare_picker_order();
+  arbitration_policy->build_picker_order(picker_order);
 
   for (IssueQueueEntry* entry = ready_head; entry != nullptr; entry = entry->next_ready) {
     // check if the op is ready (it may become not ready due to memory blocking or waiting for forwarding)
@@ -306,7 +305,7 @@ void SelectLogic::select() {
     IssueQueueEntry* candidate = entry;
 
     for (size_t i = 0; i < fu_num && candidate != nullptr; ++i) {
-      size_t picker_idx = arbitration_policy->picker_at(i);
+      size_t picker_idx = picker_order[i];
       FunctionalUnitPicker& fu_picker = connected_fu_pickers[picker_idx];
       fu_picker.pick(candidate, *sched_policies[picker_idx]);
     }
@@ -319,7 +318,7 @@ void SelectLogic::select() {
   }
 
   for (size_t i = 0; i < fu_num; ++i) {
-    FunctionalUnitPicker& fu_picker = connected_fu_pickers[arbitration_policy->picker_at(i)];
+    FunctionalUnitPicker& fu_picker = connected_fu_pickers[picker_order[i]];
     fu_picker.grant();
   }
 }
@@ -373,22 +372,22 @@ class RoundRobinArbitrationPolicy : public ArbitrationPolicy {
 
  public:
   explicit RoundRobinArbitrationPolicy(size_t fu_num) : fu_num(fu_num), fu_idx(fu_num - 1) {}
-  void prepare_picker_order() override;
-  size_t picker_at(size_t i) const override;
+  void build_picker_order(std::vector<size_t>& picker_order) override;
 };
 
-void RoundRobinArbitrationPolicy::prepare_picker_order() {
+void RoundRobinArbitrationPolicy::build_picker_order(std::vector<size_t>& picker_order) {
+  ASSERT(node->proc_id, picker_order.size() == fu_num);
   fu_idx = (fu_idx + 1) % fu_num;
-}
-
-size_t RoundRobinArbitrationPolicy::picker_at(size_t i) const {
-  return (fu_idx + i) % fu_num;
+  for (size_t i = 0; i < fu_num; ++i) {
+    picker_order[i] = (fu_idx + i) % fu_num;
+  }
 }
 
 /**************************************************************************************/
 /* Factory */
 
 static std::unique_ptr<SchedulePolicy> make_schedule_policy(const FunctionalUnitPicker& fu_picker) {
+  (void)fu_picker;
   return std::make_unique<OldestFirstSchedulePolicy>();
 }
 

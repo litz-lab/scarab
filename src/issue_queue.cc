@@ -265,7 +265,7 @@ bool FunctionalUnitPicker::is_compatible(Inst_Info* inst_info) const {
 class SelectLogic {
  protected:
   std::vector<FunctionalUnitPicker> connected_fu_pickers;
-  std::unique_ptr<SchedulePolicy> sched_policy;
+  std::vector<std::unique_ptr<SchedulePolicy>> sched_policies;
   std::unique_ptr<ArbitrationPolicy> arbitration_policy;
 
   // the ready list is un-sorted
@@ -273,9 +273,10 @@ class SelectLogic {
 
  public:
   SelectLogic(const std::vector<FunctionalUnitPicker>& connected_fu_pickers,
-              std::unique_ptr<SchedulePolicy> sched_policy, std::unique_ptr<ArbitrationPolicy> arbitration_policy)
+              std::vector<std::unique_ptr<SchedulePolicy>> sched_policies,
+              std::unique_ptr<ArbitrationPolicy> arbitration_policy)
       : connected_fu_pickers(connected_fu_pickers),
-        sched_policy(std::move(sched_policy)),
+        sched_policies(std::move(sched_policies)),
         arbitration_policy(std::move(arbitration_policy)) {}
   virtual ~SelectLogic() = default;
 
@@ -305,8 +306,15 @@ void SelectLogic::select() {
     IssueQueueEntry* candidate = entry;
 
     for (size_t i = 0; i < fu_num && candidate != nullptr; ++i) {
-      FunctionalUnitPicker& fu_picker = connected_fu_pickers[arbitration_policy->picker_at(i)];
-      fu_picker.pick(candidate, *sched_policy);
+      size_t picker_idx = arbitration_policy->picker_at(i);
+      FunctionalUnitPicker& fu_picker = connected_fu_pickers[picker_idx];
+      fu_picker.pick(candidate, *sched_policies[picker_idx]);
+    }
+
+    if (candidate != nullptr) {
+      Op* op = candidate->op;
+      STAT_EVENT(node->proc_id, RS_OP_READY_NOT_ISSUED_TOTAL);
+      STAT_EVENT(node->proc_id, RS_0_OP_READY_NOT_ISSUED + (op->queue_id < 8 ? op->queue_id : 8));
     }
   }
 
@@ -378,6 +386,17 @@ size_t RoundRobinArbitrationPolicy::picker_at(size_t i) const {
 }
 
 /**************************************************************************************/
+/* Factory */
+
+static std::unique_ptr<SchedulePolicy> make_schedule_policy(const FunctionalUnitPicker& fu_picker) {
+  return std::make_unique<OldestFirstSchedulePolicy>();
+}
+
+static std::unique_ptr<ArbitrationPolicy> make_arbitration_policy(size_t fu_num) {
+  return std::make_unique<RoundRobinArbitrationPolicy>(fu_num);
+}
+
+/**************************************************************************************/
 /*
  * The issue queue is organized as a random queue, where instructions are dispatched into free entries
  * without any particular ordering.
@@ -421,9 +440,13 @@ IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size,
   DEBUG(proc_id, "Initializing Issue Queue %d with size %d\n", queue_id, size);
 
   // initialize select logic from the scheduling and arbitration policies.
-  select_logic =
-      std::make_unique<SelectLogic>(connected_fu_pickers, std::make_unique<OldestFirstSchedulePolicy>(),
-                                    std::make_unique<RoundRobinArbitrationPolicy>(connected_fu_pickers.size()));
+  std::vector<std::unique_ptr<SchedulePolicy>> sched_policies;
+  sched_policies.reserve(connected_fu_pickers.size());
+  for (const FunctionalUnitPicker& fu_picker : connected_fu_pickers) {
+    sched_policies.emplace_back(make_schedule_policy(fu_picker));
+  }
+  select_logic = std::make_unique<SelectLogic>(connected_fu_pickers, std::move(sched_policies),
+                                               make_arbitration_policy(connected_fu_pickers.size()));
 }
 
 uns16 IssueQueue::allocate_entry(Op* op) {

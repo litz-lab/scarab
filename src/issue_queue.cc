@@ -191,6 +191,8 @@ class FunctionalUnitPicker {
   void pick(IssueQueueEntry*& candidate, const SchedulePolicy& sched_policy);
   void grant();
   bool is_compatible(Inst_Info* inst_info) const;
+
+  uns32 get_fu_id() const { return fu_id; }
 };
 
 /*
@@ -198,24 +200,20 @@ class FunctionalUnitPicker {
  * selection, it replaces the existing selection according to the
  * scheduling policy.
  */
-void FunctionalUnitPicker::pick(IssueQueueEntry*& candidate, const SchedulePolicy& sched_policy) {
-  ASSERT(node->proc_id, candidate != nullptr);
-  if (!is_compatible(candidate->op->inst_info)) {
-    return;
-  }
-
-  bool replace = (picked_entry == nullptr || sched_policy.compare(candidate, picked_entry));
+void FunctionalUnitPicker::pick(IssueQueueEntry*& request_entry, const SchedulePolicy& sched_policy) {
+  ASSERT(node->proc_id, request_entry != nullptr);
+  bool replace = (picked_entry == nullptr || sched_policy.compare(request_entry, picked_entry));
   if (!replace) {
     return;
   }
 
   // replace the current selection
   IssueQueueEntry* displaced_entry = picked_entry;
-  picked_entry = candidate;
+  picked_entry = request_entry;
 
   // forward the displaced request to later pickers
   if (!ISSUE_QUEUE_PARALLEL_PICK) {
-    candidate = displaced_entry;
+    request_entry = displaced_entry;
   }
 }
 
@@ -261,23 +259,27 @@ bool FunctionalUnitPicker::is_compatible(Inst_Info* inst_info) const {
 
 class SelectLogic {
  protected:
-  std::vector<FunctionalUnitPicker> connected_fu_pickers;
-  std::vector<std::unique_ptr<SchedulePolicy>> sched_policies;
-  std::unique_ptr<ArbitrationPolicy> arbitration_policy;
-  std::vector<size_t> picker_order;
+  const uns proc_id;
+  const uns16 queue_id;
 
-  // the ready list is un-sorted
-  IssueQueueEntry* ready_head = nullptr;
+  std::vector<FunctionalUnitPicker> connected_fu_pickers;
+  std::vector<std::unique_ptr<SchedulePolicy>> sched_policies;  // per-picker scheduling policies
+  std::unique_ptr<ArbitrationPolicy> arbitration_policy;        // picker traversal policy for the current cycle
+
+  std::vector<size_t> picker_order;       // picker traversal order generated each cycle
+  IssueQueueEntry* ready_head = nullptr;  // head of the unsorted ready request list
+  uns64 ready_op_types = 0;               // bitmask of ready op types in this cycle
 
  public:
-  SelectLogic(const std::vector<FunctionalUnitPicker>& connected_fu_pickers,
-              std::vector<std::unique_ptr<SchedulePolicy>> sched_policies,
-              std::unique_ptr<ArbitrationPolicy> arbitration_policy)
-      : connected_fu_pickers(connected_fu_pickers),
+  explicit SelectLogic(uns proc_id, uns16 queue_id, const std::vector<FunctionalUnitPicker>& connected_fu_pickers,
+                       std::vector<std::unique_ptr<SchedulePolicy>> sched_policies,
+                       std::unique_ptr<ArbitrationPolicy> arbitration_policy)
+      : proc_id(proc_id),
+        queue_id(queue_id),
+        connected_fu_pickers(connected_fu_pickers),
         sched_policies(std::move(sched_policies)),
         arbitration_policy(std::move(arbitration_policy)),
         picker_order(this->connected_fu_pickers.size()) {}
-  virtual ~SelectLogic() = default;
 
   void select();
   void request(IssueQueueEntry* entry);
@@ -295,6 +297,7 @@ class SelectLogic {
 void SelectLogic::select() {
   const size_t fu_num = connected_fu_pickers.size();
   arbitration_policy->build_picker_order(picker_order);
+  ready_op_types = 0;
 
   for (IssueQueueEntry* entry = ready_head; entry != nullptr; entry = entry->next_ready) {
     // check if the op is ready (it may become not ready due to memory blocking or waiting for forwarding)
@@ -302,24 +305,53 @@ void SelectLogic::select() {
       continue;
     }
 
-    IssueQueueEntry* candidate = entry;
+    // track the ready op types for stat collection
+    ready_op_types |= get_fu_type(entry->op->inst_info->table_info.op_type, entry->op->inst_info->table_info.is_simd);
 
-    for (size_t i = 0; i < fu_num && candidate != nullptr; ++i) {
+    // the current request propagated through the serial picker chain
+    IssueQueueEntry* request_entry = entry;
+
+    for (size_t i = 0; i < fu_num; ++i) {
+      // traverse pickers in arbitration order
       size_t picker_idx = picker_order[i];
       FunctionalUnitPicker& fu_picker = connected_fu_pickers[picker_idx];
-      fu_picker.pick(candidate, *sched_policies[picker_idx]);
+
+      if (!fu_picker.is_compatible(request_entry->op->inst_info)) {
+        continue;
+      }
+      fu_picker.pick(request_entry, *sched_policies[picker_idx]);
+
+      // the request has been consumed
+      if (request_entry == nullptr) {
+        break;
+      }
     }
 
-    if (candidate != nullptr) {
-      Op* op = candidate->op;
+    // the entry is not picked or displaced
+    if (request_entry != nullptr) {
       STAT_EVENT(node->proc_id, RS_OP_READY_NOT_ISSUED_TOTAL);
-      STAT_EVENT(node->proc_id, RS_0_OP_READY_NOT_ISSUED + (op->queue_id < 8 ? op->queue_id : 8));
+      STAT_EVENT(node->proc_id, RS_0_OP_READY_NOT_ISSUED + (queue_id < 8 ? queue_id : 8));
     }
   }
 
   for (size_t i = 0; i < fu_num; ++i) {
+    // grant the pick after scanning the ready list
     FunctionalUnitPicker& fu_picker = connected_fu_pickers[picker_order[i]];
     fu_picker.grant();
+
+    // track FU idle stats after scheduling
+    uns32 fu_id = fu_picker.get_fu_id();
+    if (node->sd.ops[fu_id] != NULL)
+      continue;
+
+    Func_Unit* fu = &exec->fus[fu_id];
+    if (fu->avail_cycle > cycle_count || fu->held_by_mem)
+      continue;
+
+    if ((ready_op_types & fu->type) == 0) {
+      STAT_EVENT(node->proc_id, FU_IDLE_NO_READY_OPS_TOTAL);
+      STAT_EVENT(node->proc_id, FU_0_IDLE_NO_READY_OPS + (fu_id < 32 ? fu_id : 32));
+    }
   }
 }
 
@@ -385,15 +417,26 @@ void RoundRobinArbitrationPolicy::build_picker_order(std::vector<size_t>& picker
 
 /**************************************************************************************/
 /* Factory */
+// TODO: abstract factory
 
-static std::unique_ptr<SchedulePolicy> make_schedule_policy(const FunctionalUnitPicker& fu_picker) {
-  (void)fu_picker;
-  return std::make_unique<OldestFirstSchedulePolicy>();
-}
+class IssueQueuePolicyFactory {
+ public:
+  std::vector<std::unique_ptr<SchedulePolicy>> make_schedule_policies(
+      const std::vector<FunctionalUnitPicker>& fu_pickers) {
+    std::vector<std::unique_ptr<SchedulePolicy>> policies;
+    policies.reserve(fu_pickers.size());
 
-static std::unique_ptr<ArbitrationPolicy> make_arbitration_policy(size_t fu_num) {
-  return std::make_unique<RoundRobinArbitrationPolicy>(fu_num);
-}
+    for (size_t i = 0; i < fu_pickers.size(); i++) {
+      policies.emplace_back(std::make_unique<OldestFirstSchedulePolicy>());
+    }
+
+    return policies;
+  }
+
+  std::unique_ptr<ArbitrationPolicy> make_arbitration_policy(size_t fu_num) {
+    return std::make_unique<RoundRobinArbitrationPolicy>(fu_num);
+  }
+};
 
 /**************************************************************************************/
 /*
@@ -415,7 +458,6 @@ class IssueQueue {
                       const std::vector<FunctionalUnitPicker>& connected_fu_pickers);
   uns16 allocate_entry(Op* op);
   void free_entry(uns16 entry_id);
-
   size_t available_entries() const { return free_list.size(); }
   const std::vector<IssueQueueEntry>& get_entries() const { return entries; }
 
@@ -439,13 +481,10 @@ IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size,
   DEBUG(proc_id, "Initializing Issue Queue %d with size %d\n", queue_id, size);
 
   // initialize select logic from the scheduling and arbitration policies.
-  std::vector<std::unique_ptr<SchedulePolicy>> sched_policies;
-  sched_policies.reserve(connected_fu_pickers.size());
-  for (const FunctionalUnitPicker& fu_picker : connected_fu_pickers) {
-    sched_policies.emplace_back(make_schedule_policy(fu_picker));
-  }
-  select_logic = std::make_unique<SelectLogic>(connected_fu_pickers, std::move(sched_policies),
-                                               make_arbitration_policy(connected_fu_pickers.size()));
+  IssueQueuePolicyFactory factory;
+  select_logic = std::make_unique<SelectLogic>(proc_id, queue_id, connected_fu_pickers,
+                                               factory.make_schedule_policies(connected_fu_pickers),
+                                               factory.make_arbitration_policy(connected_fu_pickers.size()));
 }
 
 uns16 IssueQueue::allocate_entry(Op* op) {
@@ -538,7 +577,6 @@ class IssueQueues {
   std::vector<uns64> fu_types;
 
   void update_mem_block();
-  void track_idle_stats();
   uns16 find_emptiest_queue(Op* op);
 
  public:
@@ -676,9 +714,6 @@ void IssueQueues::schedule() {
   for (IssueQueue& queue : issue_queues) {
     queue.schedule();
   }
-
-  // track FU idle stats after scheduling
-  track_idle_stats();
 }
 
 void IssueQueues::recover() {
@@ -722,26 +757,6 @@ void IssueQueues::update_mem_block() {
 
   INC_STAT_EVENT(node->proc_id, CORE_MEM_BLOCKED, node->mem_blocked);
   node->mem_block_length += node->mem_blocked;
-}
-
-void IssueQueues::track_idle_stats() {
-  // Iterate over FUs and check if FU can handle any ready op types from its connected RS
-  for (uns32 fu_id = 0; fu_id < NUM_FUS; ++fu_id) {
-    if (node->sd.ops[fu_id] != NULL)
-      continue;
-
-    Func_Unit* fu = &exec->fus[fu_id];
-    if (fu->avail_cycle > cycle_count || fu->held_by_mem)
-      continue;
-
-    uns16 queue_id = fu_map[fu_id];
-    ASSERT(0, queue_id != MAX_UNS16);
-
-    if ((fu_types[queue_id] & fu->type) == 0) {
-      STAT_EVENT(node->proc_id, FU_IDLE_NO_READY_OPS_TOTAL);
-      STAT_EVENT(node->proc_id, FU_0_IDLE_NO_READY_OPS + (fu_id < 32 ? fu_id : 32));
-    }
-  }
 }
 
 uns16 IssueQueues::find_emptiest_queue(Op* op) {

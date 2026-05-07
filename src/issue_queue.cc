@@ -107,6 +107,7 @@ struct IssueQueueEntry {
   const uns16 entry_id;
 
   Op* op = nullptr;
+  uns64 op_fu_type = 0;
   ISSUE_QUEUE_ENTRY_STATE state = ISSUE_QUEUE_ENTRY_STATE_EMPTY;
   IssueQueueEntry* next_ready = nullptr;
 
@@ -117,11 +118,13 @@ struct IssueQueueEntry {
 
 void IssueQueueEntry::clear() {
   op = nullptr;
+  op_fu_type = 0;
   ASSERT(node->proc_id, next_ready == nullptr);
 }
 
 void IssueQueueEntry::fill(Op* op) {
   this->op = op;
+  op_fu_type = get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd);
 }
 
 /**************************************************************************************/
@@ -190,7 +193,7 @@ class FunctionalUnitPicker {
 
   void pick(IssueQueueEntry*& candidate, const SchedulePolicy& sched_policy);
   void grant();
-  bool is_compatible(Inst_Info* inst_info) const;
+  bool is_compatible(uns64 op_fu_type) const;
 
   uns32 get_fu_id() const { return fu_id; }
 };
@@ -245,8 +248,8 @@ void FunctionalUnitPicker::grant() {
   picked_entry = nullptr;
 }
 
-bool FunctionalUnitPicker::is_compatible(Inst_Info* inst_info) const {
-  return get_fu_type(inst_info->table_info.op_type, inst_info->table_info.is_simd) & fu_type;
+bool FunctionalUnitPicker::is_compatible(uns64 op_fu_type) const {
+  return op_fu_type & fu_type;
 }
 
 /**************************************************************************************/
@@ -306,7 +309,7 @@ void SelectLogic::select() {
     }
 
     // track the ready op types for stat collection
-    ready_op_types |= get_fu_type(entry->op->inst_info->table_info.op_type, entry->op->inst_info->table_info.is_simd);
+    ready_op_types |= entry->op_fu_type;
 
     // the current request propagated through the serial picker chain
     IssueQueueEntry* request_entry = entry;
@@ -316,7 +319,7 @@ void SelectLogic::select() {
       size_t picker_idx = picker_order[i];
       FunctionalUnitPicker& fu_picker = connected_fu_pickers[picker_idx];
 
-      if (!fu_picker.is_compatible(request_entry->op->inst_info)) {
+      if (!fu_picker.is_compatible(request_entry->op_fu_type)) {
         continue;
       }
       fu_picker.pick(request_entry, *sched_policies[picker_idx]);

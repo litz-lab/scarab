@@ -49,6 +49,7 @@ extern "C" {
 }
 
 #include <deque>
+#include <list>
 #include <memory>
 #include <string>
 #include <vector>
@@ -266,7 +267,8 @@ class SelectLogic {
   std::unique_ptr<ArbitrationPolicy> arbitration_policy;
 
   std::vector<size_t> picker_order;  // picker traversal order generated each cycle
-  uns64 ready_op_types = 0;          // bitmask of ready op types in this cycle
+  std::list<IssueQueueEntry*> ready_list;
+  uns64 ready_op_types = 0;  // bitmask of ready op types in this cycle
 
  public:
   explicit SelectLogic(uns proc_id, uns16 queue_id, std::vector<FunctionalUnitPicker> connected_fu_pickers,
@@ -277,7 +279,9 @@ class SelectLogic {
         arbitration_policy(std::move(arbitration_policy)),
         picker_order(this->connected_fu_pickers.size()) {}
 
-  void select(std::vector<IssueQueueEntry>& entries);
+  void select();
+  void request(IssueQueueEntry* entry);
+  void release(IssueQueueEntry* entry);
 };
 
 /*
@@ -288,22 +292,22 @@ class SelectLogic {
  * Parallel selection allows each functional unit to independently select a ready op in the same cycle.
  * An arbitrator is then used to resolve conflicts when multiple functional units select the same op.
  */
-void SelectLogic::select(std::vector<IssueQueueEntry>& entries) {
+void SelectLogic::select() {
   const size_t fu_num = connected_fu_pickers.size();
   arbitration_policy->build_picker_order(picker_order);
   ready_op_types = 0;
 
-  for (IssueQueueEntry& entry : entries) {
+  for (IssueQueueEntry* entry : ready_list) {
     // check if the op is ready (it may become not ready due to memory blocking or waiting for forwarding)
-    if (entry.state != ISSUE_QUEUE_ENTRY_STATE_READY || !issue_queue_check_op_ready(entry.op)) {
+    if (entry->state != ISSUE_QUEUE_ENTRY_STATE_READY || !issue_queue_check_op_ready(entry->op)) {
       continue;
     }
 
     // track the ready op types for stat collection
-    ready_op_types |= entry.op_fu_type;
+    ready_op_types |= entry->op_fu_type;
 
     // the current request propagated through the serial picker chain
-    IssueQueueEntry* request_entry = &entry;
+    IssueQueueEntry* request_entry = entry;
 
     for (size_t i = 0; i < fu_num; ++i) {
       // traverse pickers in arbitration order
@@ -347,6 +351,16 @@ void SelectLogic::select(std::vector<IssueQueueEntry>& entries) {
       STAT_EVENT(node->proc_id, FU_0_IDLE_NO_READY_OPS + (fu_id < 32 ? fu_id : 32));
     }
   }
+}
+
+void SelectLogic::request(IssueQueueEntry* entry) {
+  ASSERT(node->proc_id, entry != nullptr);
+  ready_list.push_front(entry);
+}
+
+void SelectLogic::release(IssueQueueEntry* entry) {
+  ASSERT(node->proc_id, entry != nullptr);
+  ready_list.remove(entry);
 }
 
 /**************************************************************************************/
@@ -439,8 +453,9 @@ IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size, std::vector<Func
 
   // initialize select logic from the scheduling and arbitration policies.
   IssueQueuePolicyFactory factory;
+  size_t fu_num = connected_fu_pickers.size();
   select_logic = std::make_unique<SelectLogic>(proc_id, queue_id, std::move(connected_fu_pickers),
-                                               factory.make_arbitration_policy(connected_fu_pickers.size()));
+                                               factory.make_arbitration_policy(fu_num));
 }
 
 uns16 IssueQueue::allocate_entry(Op* op) {
@@ -477,6 +492,7 @@ void IssueQueue::wakeup(uns16 entry_id) {
 
   op->in_rdy_list = TRUE;
   entry.state = ISSUE_QUEUE_ENTRY_STATE_READY;
+  select_logic->request(&entry);
 }
 
 void IssueQueue::issued(uns16 entry_id) {
@@ -489,6 +505,7 @@ void IssueQueue::issued(uns16 entry_id) {
 
   STAT_EVENT(node->proc_id, OP_ISSUED);
   op->in_rdy_list = FALSE;
+  select_logic->release(&entry);
   free_entry(entry.entry_id);
 }
 
@@ -512,12 +529,13 @@ void IssueQueue::recover() {
     }
 
     op->in_rdy_list = FALSE;
+    select_logic->release(&entry);
     free_entry(entry.entry_id);
   }
 }
 
 void IssueQueue::schedule() {
-  select_logic->select(entries);
+  select_logic->select();
 }
 
 /**************************************************************************************/

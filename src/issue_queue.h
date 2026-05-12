@@ -1,4 +1,5 @@
-/* Copyright 2020 HPS/SAFARI Research Groups
+/*
+ * Copyright 2026 University of California Santa Cruz
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,57 +21,36 @@
  */
 
 /***************************************************************************************
- * File         : globals/global_defs.h
- * Author       : HPS Research Group
- * Date         : 10/15/1997
- * Description  : Global defines that are intended to be included in every
- *source file.
+ * File         : issue_queue.h
+ * Author       : Yinyuan Zhao, Litz Lab
+ * Date         : 4/2026
+ * Description  :
  ***************************************************************************************/
 
-#ifndef __GLOBAL_DEFS_H__
-#define __GLOBAL_DEFS_H__
+#ifndef __ISSUE_QUEUE_H__
+#define __ISSUE_QUEUE_H__
 
-#include <malloc.h>
-#include <string.h>
-#include <time.h>
-
-/**************************************************************************************/
-/* Constants */
-
-#define TRUE 1
-#define FALSE 0
-
-#define SUCCESS 1
-#define FAILURE 0
-
-#define TAKEN 1
-#define NOT_TAKEN 0
-
-#define MAX_NUM_PROCS 64
-#define MAX_NUM_BPS 5
-
-#define MAX_STR_LENGTH 1024
-#define MAX_SIMULTANEOUS_STRINGS 32 /* default 32 */ /* power of 2 */
-
-#define MAX_CTR 0xffffffffffffffffULL
-#define MAX_SCTR 0x7fffffffffffffffLL
-
-#define MAX_INT64 0x7fffffffffffffffLL
-#define MAX_INT 0x7fffffff
-#define MAX_UNS64 0xffffffffffffffffULL
-#define MAX_UNS 0xffffffffU
-#define MAX_UNS16 0xffffU
-#define MAX_ADDR 0xffffffffffffffffULL
-
-#undef UNUSED
-#define UNUSED(X) (void)(X)
-
-/**************************************************************************************/
-
-#ifndef NULL
-#define NULL ((void*)0x0)
+#ifdef __cplusplus
+extern "C" {
 #endif
 
-/**************************************************************************************/
+#include "op.h"
 
-#endif /* #ifndef __GLOBAL_DEFS_H__ */
+/**************************************************************************************/
+/* External Methods */
+
+void issue_queue_update();
+void issue_queue_wakeup(Op* op);
+void issue_queue_issued(Op* op);
+void issue_queue_reject(Op* op);
+
+// vanilla hps interface
+void alloc_mem_issue_queue(uns num_cores);
+void set_issue_queue(uns8 proc_id);
+void recover_issue_queue();
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* #ifndef __ISSUE_QUEUE_H__ */

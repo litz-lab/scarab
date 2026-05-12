@@ -51,6 +51,7 @@
 
 #include "cmp_model.h"
 #include "exec_ports.h"
+#include "issue_queue.h"
 #include "map.h"
 #include "map_rename.h"
 #include "statistics.h"
@@ -307,6 +308,7 @@ void update_exec_stage(Stage_Data* src_sd) {
     STAT_EVENT(exec->proc_id, FUS_BUSY_ON_PATH + op->off_path);
 
     /* remove the op from the "schedule" list */
+    issue_queue_issued(op);
     src_sd->ops[ii] = NULL;
     src_sd->op_count--;
     ASSERT(exec->proc_id, src_sd->op_count >= 0);
@@ -477,6 +479,7 @@ static inline void exec_stage_dep_wakeup(Op* op) {
 static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event) {
   Op* op = src_sd->ops[ii];
 
+  issue_queue_reject(op);
   src_sd->ops[ii] = NULL;
   src_sd->op_count--;
 

@@ -176,3 +176,8 @@ DEF_PARAM(  perceptron_conf_his_both_length  , PERCEPTRON_CONF_HIS_BOTH_LENGTH  
 
 DEF_PARAM(  mtage_realistic_sc_40k  , MTAGE_REALISTIC_SC_40K   , Flag    , Flag        , FALSE     ,           )
 DEF_PARAM(  mtage_realistic_sc_100k  , MTAGE_REALISTIC_SC_100K   , Flag    , Flag        , FALSE     ,           )
+
+DEF_PARAM(  h2p_table_buckets         , H2P_TABLE_BUCKETS         , uns     , uns        , 16384      ,        )
+DEF_PARAM(  h2p_min_exec              , H2P_MIN_EXEC              , uns     , uns        , 5000       ,        )
+DEF_PARAM(  h2p_min_mispred           , H2P_MIN_MISPRED           , uns     , uns        , 333        ,        )
+DEF_PARAM(  h2p_mispred_ratio_pct     , H2P_MISPRED_RATIO_PCT     , uns     , uns        , 1          ,        )

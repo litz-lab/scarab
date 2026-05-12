@@ -104,6 +104,48 @@ Bp_Data* g_bp_data = NULL;
 extern List op_buf;
 extern uns operating_mode;
 
+static Hash_Table branch_pc_stats_table;
+static Flag branch_pc_stats_inited = FALSE;
+
+static void init_branch_pc_stats(void) {
+  init_hash_table(&branch_pc_stats_table, "branch_pc_stats", H2P_TABLE_BUCKETS, sizeof(Branch_PC_Stats));
+  branch_pc_stats_inited = TRUE;
+}
+
+static inline Flag op_was_mispredicted(Op* op) {
+  return op->bp_pred_main.recover_at_fe || op->bp_pred_main.recover_at_decode || op->bp_pred_main.recover_at_exec;
+}
+
+static void branch_pc_stats_update(Op* op) {
+  if (!branch_pc_stats_inited)
+    init_branch_pc_stats();
+
+  Flag new_entry;
+  Branch_PC_Stats* s =
+      (Branch_PC_Stats*)hash_table_access_create(&branch_pc_stats_table, op->inst_info->addr, &new_entry);
+  if (new_entry) {
+    s->pc = op->inst_info->addr;
+    s->exec_count = 0;
+    s->mispred_count = 0;
+  }
+  s->exec_count++;
+  if (op_was_mispredicted(op))
+    s->mispred_count++;
+}
+
+Flag is_h2p(Addr pc) {
+  if (!branch_pc_stats_inited)
+    return FALSE;
+  Branch_PC_Stats* s = (Branch_PC_Stats*)hash_table_access(&branch_pc_stats_table, pc);
+  if (!s)
+    return FALSE;
+  if (s->exec_count < H2P_MIN_EXEC)
+    return FALSE;
+  if (s->mispred_count < H2P_MIN_MISPRED)
+    return FALSE;
+
+  return (s->mispred_count * 100) > (s->exec_count * (Counter)H2P_MISPRED_RATIO_PCT);
+}
 
 /******************************************************************************/
 // Local prototypes
@@ -885,6 +927,9 @@ void bp_retire_op(Bp_Data* bp_data, Op* op) {
   bp_data->bp->retire_func(op);
   if (bp_data->bp_l0)
     bp_data->bp_l0->retire_func(op);
+
+  if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP)
+    branch_pc_stats_update(op);
 }
 
 /******************************************************************************/

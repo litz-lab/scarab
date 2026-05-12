@@ -296,6 +296,7 @@ void bp_retire_op(Bp_Data*, Op*);
 void bp_recover_op(Bp_Data*, Cf_Type, Recovery_Info*);
 void bp_sync(Bp_Data*, Bp_Data*);
 Flag is_h2p(Addr pc);
+void reset_h2p_stats(void);
 
 /**************************************************************************************/
 

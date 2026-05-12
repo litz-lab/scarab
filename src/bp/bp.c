@@ -147,6 +147,11 @@ Flag is_h2p(Addr pc) {
   return (s->mispred_count * 100) > (s->exec_count * (Counter)H2P_MISPRED_RATIO_PCT);
 }
 
+void reset_h2p_stats(void) {
+  if (branch_pc_stats_inited)
+    hash_table_clear(&branch_pc_stats_table);
+}
+
 /******************************************************************************/
 // Local prototypes
 

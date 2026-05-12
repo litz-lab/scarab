@@ -38,7 +38,6 @@
 #include "general.param.h"
 
 #include "exec_stage.h"
-#include "node_issue_queue.h"
 #include "node_stage.h"
 #include "stat_trace.h"
 #include "table_info.h"
@@ -63,13 +62,8 @@ uns POWER_NUM_FPUS = 0;
 /* Local Function Prototypes */
 
 void init_exec_ports_fu_list(uns, Func_Unit*);
-void init_exec_ports_rs_list(uns, Reservation_Station*, Func_Unit*);
 Flag parse_next_elt(char*, uns64*);
-Flag is_fpu_type(uns64 fu_type);
-Flag is_mul_or_div_type(uns64 fu_type);
-Flag is_alu_type(uns64 fu_type);
 void power_count_fu_types(uns64 fu_type);
-void power_calc_instruction_window_size(Reservation_Station* rs);
 
 /**************************************************************************************/
 /* Local Function Definitions */
@@ -142,33 +136,6 @@ void power_count_fu_types(uns64 fu_type) {
     POWER_NUM_ALUS++;
 }
 
-void power_calc_instruction_window_size(Reservation_Station* rs) {
-  uns32 fu_idx;
-  Flag connected_to_fp = FALSE;
-  Flag connected_to_int = FALSE;
-
-  POWER_TOTAL_RS_SIZE += rs->size;
-  for (fu_idx = 0; fu_idx < rs->num_fus; ++fu_idx) {
-    if (is_fpu_type(rs->connected_fus[fu_idx]->type)) {
-      connected_to_fp = TRUE;
-    }
-
-    if (is_alu_type(rs->connected_fus[fu_idx]->type) || is_mul_or_div_type(rs->connected_fus[fu_idx]->type)) {
-      connected_to_int = TRUE;
-    }
-
-    if (connected_to_fp && connected_to_int)
-      break;
-  }
-
-  if (connected_to_fp) {
-    POWER_TOTAL_FP_RS_SIZE += rs->size;
-  }
-  if (connected_to_int) {
-    POWER_TOTAL_INT_RS_SIZE += rs->size;
-  }
-}
-
 void init_exec_ports_fu_list(uns proc_id, Func_Unit* fu) {
   uns32 i;
   uns64 next_type;
@@ -198,71 +165,6 @@ void init_exec_ports_fu_list(uns proc_id, Func_Unit* fu) {
   ASSERTM(proc_id, check_fu_type == N_BIT_MASK(FU_TYPE_WIDTH), "FU types do not cover all possible ops");
 }
 
-void init_exec_ports_rs_list(uns proc_id, Reservation_Station* rs, Func_Unit* local_fus) {
-  uns32 i;
-  uns64 next;
-  const char* base_name = "RS";
-  ASSERT(proc_id, strlen(base_name) + 5 < EXEC_PORTS_MAX_NAME_LEN);
-
-  char rs_sizes_copy_buf[MAX_STR_LENGTH + 1];
-  snprintf(rs_sizes_copy_buf, sizeof(rs_sizes_copy_buf), "%s", RS_SIZES);
-  char* rs_sizes_copy = rs_sizes_copy_buf;
-  Flag tmp = parse_next_elt(rs_sizes_copy, &next);
-  POWER_TOTAL_RS_SIZE = 0;
-  POWER_TOTAL_INT_RS_SIZE = 0;
-  POWER_TOTAL_FP_RS_SIZE = 0;
-  for (i = 0; i < NUM_RS; ++i, tmp = parse_next_elt(NULL, &next)) {
-    rs[i].proc_id = proc_id;
-    ASSERTM(proc_id, i < 99999,
-            "Only 5 digits allocated for name (see above allocation of "
-            "basename and subsequent assert)");
-    sprintf(rs[i].name, "%s%d", base_name, i);
-    ASSERTM(proc_id, tmp, "Found less RS_SIZES than expected\n");
-    rs[i].size = next;
-  }
-  ASSERTM(proc_id, tmp == FALSE, "Found more RS_SIZES than expected\n");
-
-  char rs_connections_copy_buf[MAX_STR_LENGTH + 1];
-  snprintf(rs_connections_copy_buf, sizeof(rs_connections_copy_buf), "%s", RS_CONNECTIONS);
-  char* rs_connections_copy = rs_connections_copy_buf;
-  tmp = parse_next_elt(rs_connections_copy, &next);
-  for (i = 0; i < NUM_RS; ++i, tmp = parse_next_elt(NULL, &next)) {
-    ASSERTM(proc_id, tmp, "Found less RS_CONNECTIONS than expected\n");
-
-    // zero means fully connected
-    if (next == 0) {
-      next = (NUM_FUS == 64) ? N_BIT_MASK_64 : N_BIT_MASK(NUM_FUS);
-    }
-    ASSERTM(proc_id, NUM_FUS <= 64, "NUM_FUS cannot exceed 64 (using a 64 bit int for bitmask)\n");
-
-    int32 num_fus = 0;
-    int32 num_fus_pre = __builtin_popcount(next);
-    // count the number of connections (number of bits set) in the bit vector.
-
-    rs[i].connected_fus = (Func_Unit**)malloc(sizeof(Func_Unit*) * num_fus_pre);
-    ASSERTM(proc_id, rs[i].connected_fus, "Malloc is failing is exec_ports.c\n");
-
-    int32 idx = __builtin_ffs(next);  // Find the first set bit
-    while (idx) {                     // decode the connections bit vector
-      idx = idx - 1;                  // built in returns 1 + the true index
-      ASSERTM(proc_id, idx < NUM_FUS, "Attempted connections with an FU that does not exist\n");
-      rs[i].connected_fus[num_fus] = &local_fus[idx];
-      // Update the FU to RS mapping
-      node->fu_to_rs_map[idx] = i;
-      num_fus++;
-      next = next & ~(0x01 << idx);  // Clear the bit we just connected
-      idx = __builtin_ffs(next);     // Find the next set bit
-    }
-    rs[i].num_fus = num_fus;
-    ASSERTM(proc_id, num_fus <= NUM_FUS, "RS must be connected to less than or equal the total number of FUs\n");
-    ASSERTM(proc_id, num_fus == num_fus_pre || (num_fus_pre == 0 && num_fus == NUM_FUS),
-            "Decoded a different number of connections that was counted before the loop\n");
-
-    power_calc_instruction_window_size(&rs[i]);
-  }
-  ASSERTM(proc_id, tmp == FALSE, "Found more RS_CONNECTIONS than expected\n");
-}
-
 // Note: this function must be called *after* init_node_stage and
 // init_exec_stage.
 void init_exec_ports(uns8 proc_id, const char* name) {
@@ -273,9 +175,6 @@ void init_exec_ports(uns8 proc_id, const char* name) {
 
   exec->fus = (Func_Unit*)calloc(NUM_FUS, sizeof(Func_Unit));
   init_exec_ports_fu_list(proc_id, exec->fus);
-
-  node->rs = (Reservation_Station*)calloc(NUM_RS, sizeof(Reservation_Station));
-  init_exec_ports_rs_list(proc_id, node->rs, exec->fus);
 }
 
 uns64 get_fu_type(Op_Type op_type, Flag is_simd) {

@@ -29,7 +29,6 @@
 #ifndef __NODE_STAGE_H__
 #define __NODE_STAGE_H__
 
-#include "node_issue_queue.h"
 #include "stage_data.h"
 
 /**************************************************************************************/
@@ -46,17 +45,10 @@ typedef struct Node_Stage_struct {
 
   Flag prev_op_fusable;  // if the next dispatched op is macro-fusable
 
-  /* linked-list of ops that are ready to schedule. Ops are put in here when they are issued,
-   * or after they are issued and another op wakes them up. */
-  Op* rdy_head;
-
   Counter ret_op;                // next op number to retire
   Counter last_scheduled_opnum;  // op num of the last scheduled op
 
-  Op* next_op_into_rs;      // oldest issued op not yet in the scheduling window (RS)
-  Reservation_Station* rs;  // information about all of the reservation stations
-
-  int32* fu_to_rs_map;  // mapping from FU ID to RS ID (-1 for unconnected FUs)
+  Op* next_op_into_rs;  // oldest issued op not yet in the scheduling window (RS)
 
   Flag mem_blocked;      // are we out of mem req buffers for this core
   uns mem_block_length;  // length of the current memory block

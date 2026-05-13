@@ -209,7 +209,6 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   /* pipelined scheduler fields */
   op->chkpt_num = MAX_CTR;
   op->node_id = MAX_CTR;
-  op->rs_id = MAX_CTR;
   op->queue_id = MAX_UNS16;
   op->queue_entry_id = MAX_UNS16;
 

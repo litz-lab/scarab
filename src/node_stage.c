@@ -330,6 +330,7 @@ void update_node_stage(Stage_Data* src_sd) {
   /* get rid of the ops that are finished */
   node_retire();
 
+  // TODO: add PMUs to track issue queue and ready list stall
   memview_core_stall(node->proc_id, is_node_stage_stalled(), node->mem_blocked);
 }
 

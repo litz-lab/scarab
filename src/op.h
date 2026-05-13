@@ -187,7 +187,6 @@ struct Op_struct {
   // {{{ scheduler information
   uns fu_num;         // functional unit number the op will or did execute on
   Counter node_id;    // id for position in the node table
-  Counter rs_id;      // id for which Reservation Station (RS) this op is assigned to
   Counter chkpt_num;  // id for chkpt (WARNING: this can change due to recoveries)
 
   uns16 queue_id;        // id for which issue queue this op is assigned to

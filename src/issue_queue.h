@@ -43,6 +43,7 @@ void issue_queue_update();
 void issue_queue_wakeup(Op* op);
 void issue_queue_issued(Op* op);
 void issue_queue_reject(Op* op);
+Flag issue_queue_has_ready_ops();
 
 // vanilla hps interface
 void alloc_mem_issue_queue(uns num_cores);

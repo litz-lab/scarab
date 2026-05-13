@@ -40,10 +40,13 @@ extern "C" {
 #include "debug/debug_macros.h"
 #include "debug/debug_print.h"
 
+#include "core.param.h"
+
 #include "bp/bp.h"
 #include "memory/memory.h"
 
 #include "exec_ports.h"
+#include "exec_stage.h"
 #include "map_rename.h"
 #include "node_stage.h"
 }
@@ -282,6 +285,7 @@ class SelectLogic {
   void select();
   void request(IssueQueueEntry* entry);
   void release(IssueQueueEntry* entry);
+  bool has_ready_ops() const;
 };
 
 /*
@@ -363,6 +367,10 @@ void SelectLogic::release(IssueQueueEntry* entry) {
   ready_list.remove(entry);
 }
 
+bool SelectLogic::has_ready_ops() const {
+  return !ready_list.empty();
+}
+
 /**************************************************************************************/
 /* Implementation */
 
@@ -439,6 +447,7 @@ class IssueQueue {
 
   void recover();
   void schedule();
+  bool has_ready_ops() const;
 };
 
 IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size, std::vector<FunctionalUnitPicker> connected_fu_pickers)
@@ -538,6 +547,10 @@ void IssueQueue::schedule() {
   select_logic->select();
 }
 
+bool IssueQueue::has_ready_ops() const {
+  return select_logic->has_ready_ops();
+}
+
 /**************************************************************************************/
 
 class IssueQueues {
@@ -560,6 +573,7 @@ class IssueQueues {
   void wakeup(Op* op);
   void issued(Op* op);
   void reject(Op* op);
+  bool has_ready_ops() const;
 };
 
 IssueQueues::IssueQueues(uns proc_id) : proc_id(proc_id) {
@@ -603,6 +617,8 @@ IssueQueues::IssueQueues(uns proc_id) : proc_id(proc_id) {
   ASSERT(proc_id, fu_tokens.size() == NUM_FUS);
   std::vector<std::vector<FunctionalUnitPicker>> fu_connection(NUM_RS);
   fu_types.assign(NUM_RS, 0);
+  std::vector<Flag> connected_to_int(NUM_RS, FALSE);
+  std::vector<Flag> connected_to_fp(NUM_RS, FALSE);
   IssueQueuePolicyFactory factory;
   for (size_t i = 0; i < NUM_FUS; ++i) {
     uns16 queue_id = fu_map[i];
@@ -612,16 +628,27 @@ IssueQueues::IssueQueues(uns proc_id) : proc_id(proc_id) {
                                          factory.make_schedule_policy(queue_id, i, fu_type));
     fu_types[queue_id] |= fu_type;
     DEBUG(proc_id, "FU %ld, queue: %d, type: 0x%llx\n", i, queue_id, fu_type);
+
+    connected_to_int[queue_id] |= is_alu_type(fu_type) || is_mul_or_div_type(fu_type);
+    connected_to_fp[queue_id] |= is_fpu_type(fu_type);
   }
 
   // create issue queues based on configuration
   issue_queues.reserve(NUM_RS);
+  POWER_TOTAL_RS_SIZE = 0;
+  POWER_TOTAL_INT_RS_SIZE = 0;
+  POWER_TOTAL_FP_RS_SIZE = 0;
   const char* p = RS_SIZES;
   for (uns16 i = 0; i < NUM_RS; ++i) {
     char* end = nullptr;
     uns64 size = strtoull(p, &end, 10);
-    issue_queues.emplace_back(proc_id, i, size, std::move(fu_connection[i]));
     p = end;
+
+    issue_queues.emplace_back(proc_id, i, size, std::move(fu_connection[i]));
+
+    POWER_TOTAL_RS_SIZE += size;
+    POWER_TOTAL_INT_RS_SIZE += connected_to_int[i] ? size : 0;
+    POWER_TOTAL_FP_RS_SIZE += connected_to_fp[i] ? size : 0;
   }
 }
 
@@ -721,6 +748,15 @@ void IssueQueues::reject(Op* op) {
   queue.reject(op->queue_entry_id);
 }
 
+bool IssueQueues::has_ready_ops() const {
+  for (const IssueQueue& queue : issue_queues) {
+    if (queue.has_ready_ops()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Memory is blocked when there are no more MSHRs in the L1 Q (i.e., there is no way to handle a D-Cache miss)
 void IssueQueues::update_mem_block() {
   // if we are stalled due to lack of MSHRs to the L1, check to see if there is space now
@@ -790,6 +826,10 @@ void issue_queue_issued(Op* op) {
 void issue_queue_reject(Op* op) {
   // update the entries of ops that are rejected during the execution stage
   issue_queues->reject(op);
+}
+
+Flag issue_queue_has_ready_ops() {
+  return issue_queues->has_ready_ops();
 }
 
 /**************************************************************************************/

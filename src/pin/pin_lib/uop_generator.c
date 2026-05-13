@@ -392,7 +392,6 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->chkpt_num = MAX_CTR;
   // op->row_num = MAX_CTR;
   op->node_id = MAX_CTR;
-  op->rs_id = MAX_CTR;
   op->engine_info.l1_miss = FALSE;
   op->engine_info.l1_miss_satisfied = FALSE;
   op->engine_info.dep_on_l1_miss = FALSE;

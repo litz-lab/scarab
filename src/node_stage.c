@@ -59,7 +59,6 @@
 #include "lsq.h"
 #include "map.h"
 #include "map_rename.h"
-#include "node_issue_queue.h"
 #include "op_pool.h"
 #include "sim.h"
 #include "statistics.h"
@@ -72,8 +71,6 @@
 #define PRINT_RETIRED_UOP(proc_id, args...) _DEBUG_LEAN(proc_id, DEBUG_RETIRED_UOPS, ##args)
 
 #define DEBUG_NODE_WIDTH ISSUE_WIDTH
-#define OP_IS_IN_RS(op) (op->state >= OS_IN_RS && op->state < OS_SCHEDULED)
-
 /**************************************************************************************/
 /* Global Variables */
 
@@ -85,13 +82,10 @@ Rob_Block_Issue_Reason rob_block_issue_reason = ROB_BLOCK_ISSUE_NONE;
 /* Prototypes */
 
 void debug_print_retired_uop(Op* op);
-void flush_ready_list(void);
 void flush_scheduling_buffer(void);
 void flush_rs(void);
 void flush_window(void);
 void debug_print_node_table(void);
-void debug_print_rs(void);
-void debug_print_ready_list(void);
 Flag op_not_ready_for_retire(Op* op);
 Flag is_node_table_empty(void);
 void collect_not_ready_to_retire_stats(Op* op);
@@ -127,8 +121,6 @@ void init_node_stage(uns8 proc_id, const char* name) {
   // allocate wires to functional units
   node->sd.max_op_count = NUM_FUS;  // Bandwidth between schedule and FUS
   node->sd.ops = (Op**)malloc(sizeof(Op*) * node->sd.max_op_count);
-  // allocate FU to RS mapping array
-  node->fu_to_rs_map = (int32*)malloc(sizeof(int32) * NUM_FUS);
 
   reset_node_stage();
 }
@@ -140,13 +132,11 @@ void reset_node_stage() {
   uns ii;
   for (ii = 0; ii < NUM_FUS; ii++) {
     node->sd.ops[ii] = NULL;
-    node->fu_to_rs_map[ii] = -1;  // Initialize to invalid RS ID
   }
   node->sd.op_count = 0;
 
   node->node_head = NULL;
   node->node_tail = NULL;
-  node->rdy_head = NULL;
   node->next_op_into_rs = NULL;
 
   node->node_count = 0;
@@ -188,23 +178,6 @@ void recover_node_stage() {
 
   if (ENABLE_GLOBAL_DEBUG_PRINT && DEBUG_NODE_STAGE && DEBUG_RANGE_COND(node->proc_id))
     debug_node_stage();
-}
-
-void flush_ready_list() {
-  Op* op;
-  Op** last;
-  for (op = node->rdy_head, last = &node->rdy_head; op; op = op->next_rdy) {
-    ASSERT(node->proc_id, node->proc_id == op->proc_id);
-    if (FLUSH_OP(op)) {
-      DEBUG(node->proc_id, "Node ready-list flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
-            op->off_path);
-      ASSERT(node->proc_id, op->off_path);
-      ASSERT(node->proc_id, op->op_num > bp_recovery_info->recovery_op_num);
-      *last = op->next_rdy;
-      op->in_rdy_list = FALSE;
-    } else
-      last = &op->next_rdy;
-  }
 }
 
 void flush_scheduling_buffer() {
@@ -288,8 +261,6 @@ void debug_node_stage() {
   DPRINTF("# %-10s  node_count:%d\n", node->sd.name, node->node_count);
 
   debug_print_node_table();
-  debug_print_rs();
-  debug_print_ready_list();
 }
 
 void debug_print_node_table() {
@@ -339,55 +310,6 @@ void debug_print_node_table() {
   free(temp);
 }
 
-void debug_print_rs() {
-  Op* op;
-  uns printed = 0;
-  int32 i, j;
-
-  ASSERT(node->proc_id, node->rs);
-
-  for (i = 0; i < NUM_RS; ++i) {
-    Reservation_Station* rs = &node->rs[i];
-    printed = 0;
-    DPRINTF("%s (%d/%s): ", rs->name, rs->rs_op_count, rs->size == 0 ? "inf" : unsstr64((uns64)rs->size));
-
-    for (j = 0; j < rs->num_fus; ++j) {
-      DPRINTF("%s, ", rs->connected_fus[j]->name);
-    }
-
-    DPRINTF("\n");
-
-    for (op = node->node_head; op && op != node->next_op_into_rs; op = op->next_node) {
-      if (op->rs_id == i && OP_IS_IN_RS(op)) {
-        // Op belongs to this RS
-        DPRINTF("%lld ", op->op_num);
-        printed++;
-        if (printed % 8 == 0)
-          DPRINTF("\n");
-      }
-    }
-
-    if (printed % 8)
-      DPRINTF("\n");
-
-    ASSERTM(node->proc_id, printed == rs->rs_op_count, "printed=%d, rs_op_count=%d\n", printed, rs->rs_op_count);
-  }
-}
-
-void debug_print_ready_list() {
-  Op* op;
-
-  DPRINTF("Ready list:");
-
-  for (op = node->rdy_head; op; op = op->next_rdy) {
-    DPRINTF(" %s", unsstr64(op->op_num));
-  }
-
-  DPRINTF("\n");
-
-  print_op_array(GLOBAL_DEBUG_STREAM, node->sd.ops, node->sd.max_op_count, node->sd.max_op_count);
-}
-
 /**************************************************************************************/
 /* node_cycle: */
 
@@ -408,6 +330,7 @@ void update_node_stage(Stage_Data* src_sd) {
   /* get rid of the ops that are finished */
   node_retire();
 
+  // TODO: add PMUs to track issue queue and ready list stall
   memview_core_stall(node->proc_id, is_node_stage_stalled(), node->mem_blocked);
 }
 
@@ -670,7 +593,7 @@ void node_retire() {
 
 Flag is_node_stage_stalled() {
   return (node->node_count == NODE_TABLE_SIZE) && /* node table is full */
-         !node->rdy_head &&                       /* no ready ops */
+         !issue_queue_has_ready_ops() &&          /* no ready ops in issue queues */
          !node->next_op_into_rs;                  /* no ops waiting to enter RS */
 }
 

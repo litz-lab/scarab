@@ -217,6 +217,7 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
       period_last_inst_count[i] = inst_count_fetched[i];
       warmup_dump_done[i] = TRUE;
     }
+    reset_h2p_stats();
     period_last_cycle_count = cycle_count;
   }
 

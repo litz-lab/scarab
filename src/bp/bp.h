@@ -138,6 +138,15 @@ typedef struct CRS_struct {
   uns next;  // next return address will be written here
 } CRS;
 
+typedef struct Branch_PC_Stats_struct {
+  Addr pc;
+  Counter exec_count;
+  Counter mispred_count;
+  Counter mispred_at_fe_count;
+  Counter mispred_at_decode_count;
+  Counter mispred_at_exec_count;
+} Branch_PC_Stats;
+
 typedef struct Bp_Data_struct {
   uns proc_id;
   uns bp_id;
@@ -289,6 +298,11 @@ void bp_resolve_op(Bp_Data*, Op*);
 void bp_retire_op(Bp_Data*, Op*);
 void bp_recover_op(Bp_Data*, Cf_Type, Recovery_Info*);
 void bp_sync(Bp_Data*, Bp_Data*);
+Flag is_h2p(Addr pc);
+Flag is_h2p_at_fe(Addr pc);
+Flag is_h2p_at_decode(Addr pc);
+Flag is_h2p_at_exec(Addr pc);
+void reset_h2p_stats(void);
 
 /**************************************************************************************/
 

@@ -176,3 +176,15 @@ DEF_PARAM(  perceptron_conf_his_both_length  , PERCEPTRON_CONF_HIS_BOTH_LENGTH  
 
 DEF_PARAM(  mtage_realistic_sc_40k  , MTAGE_REALISTIC_SC_40K   , Flag    , Flag        , FALSE     ,           )
 DEF_PARAM(  mtage_realistic_sc_100k  , MTAGE_REALISTIC_SC_100K   , Flag    , Flag        , FALSE     ,           )
+
+DEF_PARAM(  h2p_table_buckets         , H2P_TABLE_BUCKETS         , uns     , uns        , 16384      ,        )
+DEF_PARAM(  h2p_min_exec              , H2P_MIN_EXEC              , uns     , uns        , 5000       ,        )
+DEF_PARAM(  h2p_min_mispred           , H2P_MIN_MISPRED           , uns     , uns        , 333        ,        )
+DEF_PARAM(  h2p_mispred_ratio_permil  , H2P_MISPRED_RATIO_PERMIL  , uns     , uns        , 10         ,        )
+
+DEF_PARAM(  h2p_track_cbr             , H2P_TRACK_CBR             , Flag    , Flag       , TRUE       ,        )
+DEF_PARAM(  h2p_track_rep             , H2P_TRACK_REP             , Flag    , Flag       , TRUE       ,        )
+DEF_PARAM(  h2p_track_call            , H2P_TRACK_CALL            , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  h2p_track_ibr             , H2P_TRACK_IBR             , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  h2p_track_icall           , H2P_TRACK_ICALL           , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  h2p_track_ret             , H2P_TRACK_RET             , Flag    , Flag       , FALSE      ,        )

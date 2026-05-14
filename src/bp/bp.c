@@ -104,6 +104,97 @@ Bp_Data* g_bp_data = NULL;
 extern List op_buf;
 extern uns operating_mode;
 
+static Hash_Table branch_pc_stats_table;
+static Flag branch_pc_stats_inited = FALSE;
+
+static void init_branch_pc_stats(void) {
+  if (branch_pc_stats_inited)
+    return;
+  init_hash_table(&branch_pc_stats_table, "branch_pc_stats", H2P_TABLE_BUCKETS, sizeof(Branch_PC_Stats));
+  branch_pc_stats_inited = TRUE;
+}
+
+static void branch_pc_stats_update(Op* op) {
+  Flag new_entry;
+  Branch_PC_Stats* s =
+      (Branch_PC_Stats*)hash_table_access_create(&branch_pc_stats_table, op->inst_info->addr, &new_entry);
+  if (new_entry) {
+    s->pc = op->inst_info->addr;
+    s->exec_count = 0;
+    s->mispred_count = 0;
+    s->mispred_at_fe_count = 0;
+    s->mispred_at_decode_count = 0;
+    s->mispred_at_exec_count = 0;
+  }
+  s->exec_count++;
+  if (op->bp_pred_main.recover_at_fe) {
+    s->mispred_count++;
+    s->mispred_at_fe_count++;
+  } else if (op->bp_pred_main.recover_at_decode) {
+    s->mispred_count++;
+    s->mispred_at_decode_count++;
+  } else if (op->bp_pred_main.recover_at_exec) {
+    s->mispred_count++;
+    s->mispred_at_exec_count++;
+  }
+}
+
+static Branch_PC_Stats* lookup_branch_pc_stats(Addr pc) {
+  if (!branch_pc_stats_inited)
+    return NULL;
+  return (Branch_PC_Stats*)hash_table_access(&branch_pc_stats_table, pc);
+}
+
+static Flag h2p_threshold_check(const Branch_PC_Stats* s, Counter mispred) {
+  if (s->exec_count < H2P_MIN_EXEC)
+    return FALSE;
+  if (mispred < H2P_MIN_MISPRED)
+    return FALSE;
+  return (mispred * 1000) > (s->exec_count * (Counter)H2P_MISPRED_RATIO_PERMIL);
+}
+
+Flag is_h2p(Addr pc) {
+  Branch_PC_Stats* s = lookup_branch_pc_stats(pc);
+  return s ? h2p_threshold_check(s, s->mispred_count) : FALSE;
+}
+
+Flag is_h2p_at_fe(Addr pc) {
+  Branch_PC_Stats* s = lookup_branch_pc_stats(pc);
+  return s ? h2p_threshold_check(s, s->mispred_at_fe_count) : FALSE;
+}
+
+Flag is_h2p_at_decode(Addr pc) {
+  Branch_PC_Stats* s = lookup_branch_pc_stats(pc);
+  return s ? h2p_threshold_check(s, s->mispred_at_decode_count) : FALSE;
+}
+
+Flag is_h2p_at_exec(Addr pc) {
+  Branch_PC_Stats* s = lookup_branch_pc_stats(pc);
+  return s ? h2p_threshold_check(s, s->mispred_at_exec_count) : FALSE;
+}
+
+static inline Flag is_h2p_tracked_cf_type(Cf_Type t) {
+  switch (t) {
+    case CF_CBR:
+      return H2P_TRACK_CBR;
+    case CF_REP:
+      return H2P_TRACK_REP;
+    case CF_CALL:
+      return H2P_TRACK_CALL;
+    case CF_IBR:
+      return H2P_TRACK_IBR;
+    case CF_ICALL:
+      return H2P_TRACK_ICALL;
+    case CF_RET:
+      return H2P_TRACK_RET;
+    default:
+      return FALSE;
+  }
+}
+
+void reset_h2p_stats(void) {
+  hash_table_clear(&branch_pc_stats_table);
+}
 
 /******************************************************************************/
 // Local prototypes
@@ -271,6 +362,7 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
   /* initialize branch predictor */
   bp_data->bp = &bp_table[BP_MECH];
   bp_data->bp->init_func();
+  init_branch_pc_stats();
   if (bp_l0_enabled()) {
     bp_data->bp_l0 = &bp_table[BP_MECH_L0];
     bp_data->bp_l0->init_func();
@@ -885,6 +977,9 @@ void bp_retire_op(Bp_Data* bp_data, Op* op) {
   bp_data->bp->retire_func(op);
   if (bp_data->bp_l0)
     bp_data->bp_l0->retire_func(op);
+
+  if (is_h2p_tracked_cf_type(op->inst_info->table_info.cf_type))
+    branch_pc_stats_update(op);
 }
 
 /******************************************************************************/

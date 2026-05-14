@@ -162,6 +162,8 @@ DEF_PARAM(node_issue_queue_dispatch_scheme, NODE_ISSUE_QUEUE_DISPATCH_SCHEME, un
  */
 DEF_PARAM(node_issue_queue_schedule_scheme, NODE_ISSUE_QUEUE_SCHEDULE_SCHEME, uns, uns, 0, )
 
+DEF_PARAM(issue_queue_parallel_pick, ISSUE_QUEUE_PARALLEL_PICK, Flag, Flag, FALSE, )
+
 /********EXEC PORT
  * PARAMETERS*********************************************************/
 /*Size of each RS, length should be NUM_RS, Must be type string since it is an

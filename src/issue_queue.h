@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 University of California Santa Cruz
+ * Copyright 2026 University of California Santa Cruz
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,57 +21,37 @@
  */
 
 /***************************************************************************************
- * File         : node_issue_queue.h
+ * File         : issue_queue.h
  * Author       : Yinyuan Zhao, Litz Lab
- * Date         : 4/15/2025
+ * Date         : 4/2026
  * Description  :
  ***************************************************************************************/
 
-#ifndef __NODE_ISSUE_QUEUE_H__
-#define __NODE_ISSUE_QUEUE_H__
+#ifndef __ISSUE_QUEUE_H__
+#define __ISSUE_QUEUE_H__
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "exec_stage.h"
 #include "op.h"
-
-/**************************************************************************************/
-/* Structures */
-
-typedef struct Reservation_Station_struct {
-  uns proc_id;
-  char name[EXEC_PORTS_MAX_NAME_LEN];  // unique name of the RS, from exec_ports.def
-  uns32 size;                          // 0 is infinite
-  Func_Unit** connected_fus;           // FUs that this reservation station is connected to.
-  uns32 num_fus;                       // number of fus that this rs is connected to.
-  uns32 rs_op_count;                   // number of ops in this reservation station
-} Reservation_Station;
-
-/**************************************************************************************/
-/* Constexpr */
-
-typedef enum NODE_ISSUE_QUEUE_DISPATCH_SCHEME_enum {
-  NODE_ISSUE_QUEUE_DISPATCH_SCHEME_FIND_EMPTIEST_RS,
-  NODE_ISSUE_QUEUE_DISPATCH_SCHEME_NUM
-} Node_Issue_Queue_Dispatch_Scheme;
-
-typedef enum NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_enum {
-  NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_OLDEST_FIRST,
-  NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_NUM
-} Node_Issue_Queue_Schedule_Scheme;
-
-const static int64 NODE_ISSUE_QUEUE_RS_SLOT_INVALID = -1;
-const static int32 NODE_ISSUE_QUEUE_FU_SLOT_INVALID = -1;
 
 /**************************************************************************************/
 /* External Methods */
 
-void node_issue_queue_update();
+void issue_queue_update();
+void issue_queue_wakeup(Op* op);
+void issue_queue_issued(Op* op);
+void issue_queue_reject(Op* op);
+Flag issue_queue_has_ready_ops();
+
+// vanilla hps interface
+void alloc_mem_issue_queue(uns num_cores);
+void set_issue_queue(uns8 proc_id);
+void recover_issue_queue();
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* #ifndef __NODE_ISSUE_QUEUE_H__ */
+#endif /* #ifndef __ISSUE_QUEUE_H__ */

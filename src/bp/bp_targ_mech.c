@@ -421,6 +421,17 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
 }
 
 /**************************************************************************************/
+/* bp_btb_post_bp_predict: stores op's final pred dir in bp_data for next BTB access,
+ * after ALL BPs made predictions. This must be coupled with bp_predict_btb(),
+ * having any bp_predict_op()s in between. */
+void bp_btb_post_bp_predict(Bp_Data* bp_data, Op* op) {
+  if (op->inst_info->table_info.cf_type && op->inst_info->table_info.cf_type != CF_SYS) {
+    // CF_SYS does not terminate an FT / basic block
+    bp_data->prev_cf_pred = op->bp_pred_info->pred;
+  }
+}
+
+/**************************************************************************************/
 /* bp_btb_init: */
 
 void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {

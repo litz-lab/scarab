@@ -186,11 +186,6 @@ void bp_predictors_sync(Bp_Data* src, Bp_Data* dst);
 // alt into main's pre-spec-update state via bp_predictors_sync). Skips the
 // main-only TakeCheckpoint / SavePredictorStates branches.
 void bp_alt_spec_update_TAGE64K(uns proc_id, uns alt_bp_id, Op* trigger_op, Flag alt_dir);
-// Returns 1 if main's most recent TAGE prediction came from an h2p
-// (hard-to-predict) component / state and 0 otherwise. Used by alt-DFE
-// _ON_H2P_* policies to filter trigger / stop events down to h2p branches.
-// TAGE-only; asserts BP_MECH is TAGESCL_BP or TAGE64K_BP.
-int tage_is_h2p(Bp_Data* bp);
 #ifdef __cplusplus
 }
 #endif

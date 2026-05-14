@@ -51,14 +51,6 @@ static Addr alt_direction_target(const Op* trigger_op) {
   return 0;
 }
 
-// Returns true iff the most recent main TAGE prediction was hard-to-predict.
-// Returns false for non-TAGE BP_MECH; init asserts H2P policies require TAGE.
-static inline bool main_h2p_active(uns proc_id) {
-  if (BP_MECH != TAGESCL_BP && BP_MECH != TAGE64K_BP)
-    return false;
-  return tage_is_h2p(per_core_dfe[proc_id][MAIN_BP]->get_bp_data());
-}
-
 extern "C" {
 
 /* Wrapper functions */
@@ -255,15 +247,6 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_tr
     ASSERTM(_proc_id, FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE,
             "alt BP (bp_id=%u, trigger_policy=%u) requires FRONTEND in {FE_PT, FE_MEMTRACE}; got FRONTEND=%u\n", _bp_id,
             dfe_trigger_policy, (uns)FRONTEND);
-  }
-  // H2P-filtered policies need TAGE: tage_ucp_h2p_check reads TAGE's recorded
-  // tage_component / bi_mispredictionHistory.
-  const bool uses_h2p =
-      (dfe_trigger_policy == ALTERNATE_ON_H2P_PREDICTION || dfe_trigger_policy == ALTERNATE_ON_H2P_MISPREDICTION ||
-       dfe_stop_policy == STOP_ON_H2P_PREDICTION || dfe_stop_policy == STOP_ON_H2P_MISPREDICTION);
-  if (uses_h2p) {
-    ASSERTM(_proc_id, BP_MECH == TAGESCL_BP || BP_MECH == TAGE64K_BP,
-            "alt BP _ON_H2P_* policies require BP_MECH in {TAGESCL_BP, TAGE64K_BP}; got BP_MECH=%u\n", (uns)BP_MECH);
   }
   cur_op = nullptr;
   current_ft_to_push = nullptr;
@@ -816,7 +799,7 @@ void Decoupled_FE::capture_main_pre_state_for_alts(Op* trigger_op) {
   // capture main's pre-spec-update state.
   const Flag is_misprediction = trigger_op->bp_pred_main.recover_at_fe || trigger_op->bp_pred_main.recover_at_decode ||
                                 trigger_op->bp_pred_main.recover_at_exec;
-  const bool h2p = main_h2p_active(proc_id);
+  const bool h2p = is_h2p(trigger_op->inst_info->addr);
   for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
     Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();
     const uns trigger_policy = alt->get_dfe_trigger_policy();
@@ -885,9 +868,9 @@ void Decoupled_FE::drive_alt_on_event(Op* trigger_op, DFE_Trigger_Policy match_t
 
 void Decoupled_FE::drive_alt_on_misprediction(Op* trigger_op) {
   drive_alt_on_event(trigger_op, ALTERNATE_ON_MISPREDICTION, STOP_ON_MISPREDICTION);
-  // H2P-filtered variants fire on the same misprediction event when main's
-  // TAGE flagged this branch as hard-to-predict.
-  if (main_h2p_active(proc_id)) {
+  // H2P-filtered variants fire on the same misprediction event when the
+  // online H2P classifier flags this branch PC as hard-to-predict.
+  if (is_h2p(trigger_op->inst_info->addr)) {
     STAT_EVENT(proc_id, H2P_SEEN_MAIN);
     drive_alt_on_event(trigger_op, ALTERNATE_ON_H2P_MISPREDICTION, STOP_ON_H2P_MISPREDICTION);
   }
@@ -895,9 +878,9 @@ void Decoupled_FE::drive_alt_on_misprediction(Op* trigger_op) {
 
 void Decoupled_FE::drive_alt_on_prediction(Op* trigger_op) {
   drive_alt_on_event(trigger_op, ALTERNATE_ON_PREDICTION, STOP_ON_PREDICTION);
-  // H2P-filtered variants fire on the same per-CF prediction event when
-  // main's TAGE flagged this branch as hard-to-predict.
-  if (main_h2p_active(proc_id))
+  // H2P-filtered variants fire on the same per-CF prediction event when the
+  // online H2P classifier flags this branch PC as hard-to-predict.
+  if (is_h2p(trigger_op->inst_info->addr))
     drive_alt_on_event(trigger_op, ALTERNATE_ON_H2P_PREDICTION, STOP_ON_H2P_PREDICTION);
 }
 

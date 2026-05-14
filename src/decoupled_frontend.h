@@ -91,11 +91,9 @@ typedef enum CONF_OFF_PATH_REASON_enum {
 //                                    alt-BP that perfectly knows when main is
 //                                    wrong; not modelable in hardware.
 //   ALTERNATE_ON_H2P_PREDICTION    - H2P-filtered ALTERNATE_ON_PREDICTION:
-//                                    fires only when main's prediction came
-//                                    from a hard-to-predict TAGE component
-//                                    (tage_ucp_h2p_check). Realistic.
-//                                    Requires BP_MECH in {TAGESCL_BP,
-//                                    TAGE64K_BP}.
+//                                    fires only when the online H2P classifier
+//                                    (is_h2p) flags the trigger op's PC as
+//                                    hard-to-predict. Realistic.
 //   ALTERNATE_ON_H2P_MISPREDICTION - NOT REALISTIC. H2P-filtered
 //                                    ALTERNATE_ON_MISPREDICTION: oracle-aware
 //                                    upper-bound, additionally gated on H2P.
@@ -116,8 +114,9 @@ typedef enum DFE_Trigger_Policy_enum {
 //   STOP_ON_MISPREDICTION     - NOT REALISTIC. Preempt only on simulator-
 //                               detected mispredictions; upper-bound.
 //   STOP_ON_H2P_PREDICTION    - H2P-filtered STOP_ON_PREDICTION: preempt only
-//                               when main predicts an H2P CF. Realistic.
-//                               Requires TAGE BP_MECH.
+//                               when main predicts a CF whose PC the online
+//                               H2P classifier (is_h2p) flags as
+//                               hard-to-predict. Realistic.
 //   STOP_ON_H2P_MISPREDICTION - NOT REALISTIC. H2P-filtered upper-bound
 //                               variant of STOP_ON_MISPREDICTION.
 typedef enum DFE_Stop_Policy_enum {

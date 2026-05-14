@@ -318,8 +318,8 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
 
   // Set pointer and init l0/l1 fields so bp_btb_gen_pred can populate them.
   op->btb_pred_info = btb_pred_info;
-  btb_pred_info->btb_l0_hit = btb_pred_info->btb_l1_hit = FALSE;
-  btb_pred_info->btb_l0_target = btb_pred_info->btb_l1_target = 0;
+  btb_pred_info->btb_l0_hit = btb_pred_info->btb_l1_hit = btb_pred_info->btb_main_hit = FALSE;
+  btb_pred_info->btb_l0_target = btb_pred_info->btb_l1_target = btb_pred_info->btb_main_target = 0;
   btb_pred_info->btb_pred_latency = MAX_UNS;
 
   const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);

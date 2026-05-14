@@ -108,7 +108,8 @@ static Hash_Table branch_pc_stats_table;
 static Flag branch_pc_stats_inited = FALSE;
 
 static void init_branch_pc_stats(void) {
-  if (branch_pc_stats_inited) return;
+  if (branch_pc_stats_inited)
+    return;
   init_hash_table(&branch_pc_stats_table, "branch_pc_stats", H2P_TABLE_BUCKETS, sizeof(Branch_PC_Stats));
   branch_pc_stats_inited = TRUE;
 }
@@ -174,13 +175,20 @@ Flag is_h2p_at_exec(Addr pc) {
 
 static inline Flag is_h2p_tracked_cf_type(Cf_Type t) {
   switch (t) {
-    case CF_CBR:   return H2P_TRACK_CBR;
-    case CF_REP:   return H2P_TRACK_REP;
-    case CF_CALL:  return H2P_TRACK_CALL;
-    case CF_IBR:   return H2P_TRACK_IBR;
-    case CF_ICALL: return H2P_TRACK_ICALL;
-    case CF_RET:   return H2P_TRACK_RET;
-    default:       return FALSE;
+    case CF_CBR:
+      return H2P_TRACK_CBR;
+    case CF_REP:
+      return H2P_TRACK_REP;
+    case CF_CALL:
+      return H2P_TRACK_CALL;
+    case CF_IBR:
+      return H2P_TRACK_IBR;
+    case CF_ICALL:
+      return H2P_TRACK_ICALL;
+    case CF_RET:
+      return H2P_TRACK_RET;
+    default:
+      return FALSE;
   }
 }
 

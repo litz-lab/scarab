@@ -185,8 +185,7 @@ static inline Flag is_h2p_tracked_cf_type(Cf_Type t) {
 }
 
 void reset_h2p_stats(void) {
-  if (branch_pc_stats_inited)
-    hash_table_clear(&branch_pc_stats_table);
+  hash_table_clear(&branch_pc_stats_table);
 }
 
 /******************************************************************************/

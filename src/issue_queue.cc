@@ -180,6 +180,7 @@ class ArbitrationPolicy {
 class FunctionalUnitPicker {
  private:
   const uns proc_id;
+  const uns16 queue_id;
   const uns32 fu_id;
   const uns64 fu_type;
 
@@ -189,8 +190,12 @@ class FunctionalUnitPicker {
   IssueQueueEntry* picked_entry = nullptr;
 
  public:
-  explicit FunctionalUnitPicker(uns proc_id, uns32 fu_id, uns64 fu_type, std::unique_ptr<SchedulePolicy> sched_policy)
-      : proc_id(proc_id), fu_id(fu_id), fu_type(fu_type), sched_policy(std::move(sched_policy)) {}
+  explicit FunctionalUnitPicker(uns proc_id, uns16 queue_id, uns32 fu_id, uns64 fu_type,
+                                std::unique_ptr<SchedulePolicy> sched_policy)
+      : proc_id(proc_id), queue_id(queue_id), fu_id(fu_id), fu_type(fu_type), sched_policy(std::move(sched_policy)) {
+    // queue_id is reserved for upcoming use; reference it to silence -Wunused-private-field
+    (void)this->queue_id;
+  }
 
   void pick(IssueQueueEntry*& candidate);
   void grant();
@@ -426,6 +431,7 @@ class IssueQueuePolicyFactory {
 class IssueQueue {
  private:
   const uns proc_id;
+  const uns16 queue_id;
 
   std::vector<IssueQueueEntry> entries;
   std::deque<uns16> free_list;
@@ -448,7 +454,9 @@ class IssueQueue {
 };
 
 IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size, std::vector<FunctionalUnitPicker> connected_fu_pickers)
-    : proc_id(proc_id) {
+    : proc_id(proc_id), queue_id(queue_id) {
+  // this->queue_id is reserved for upcoming use; reference it to silence -Wunused-private-field
+  (void)this->queue_id;
   // initialize entries and free list
   entries.reserve(size);
   for (uns16 i = 0; i < size; ++i) {
@@ -621,7 +629,8 @@ IssueQueues::IssueQueues(uns proc_id) : proc_id(proc_id) {
     uns16 queue_id = fu_map[i];
     ASSERT(proc_id, queue_id != MAX_UNS16);
     uns64 fu_type = parse_mask(fu_tokens[i]);
-    fu_connection[queue_id].emplace_back(proc_id, i, fu_type, factory.make_schedule_policy(queue_id, i, fu_type));
+    fu_connection[queue_id].emplace_back(proc_id, queue_id, i, fu_type,
+                                         factory.make_schedule_policy(queue_id, i, fu_type));
     fu_types[queue_id] |= fu_type;
     DEBUG(proc_id, "FU %ld, queue: %d, type: 0x%llx\n", i, queue_id, fu_type);
 

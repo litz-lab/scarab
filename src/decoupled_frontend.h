@@ -79,45 +79,57 @@ typedef enum CONF_OFF_PATH_REASON_enum {
 } Conf_Off_Path_Reason;
 
 // DFEx_TRIGGER_POLICY param: when alt DFE is activated.
-//   PRIMARY_DFE                - reserved for MAIN_BP.
-//   CONTINUE_ON_RECOVERY       - activate at every main recovery, continuing
-//                                main's just-abandoned off-path stream.
-//   ALTERNATE_ON_PREDICTION    - activate on every CF main predicts (when alt
-//                                is inactive). Realistic: real hardware can
-//                                observe "BP just emitted a prediction" but
-//                                cannot tell if that prediction was wrong.
-//   ALTERNATE_ON_MISPREDICTION - NOT REALISTIC. Activate only on simulator-
-//                                detected mispredictions (oracle-aware).
-//                                Useful for upper-bound studies of an alt-BP
-//                                mechanism that perfectly knows when main is
-//                                wrong; not modelable in real hardware.
+//   PRIMARY_DFE                    - reserved for MAIN_BP.
+//   CONTINUE_ON_RECOVERY           - activate at every main recovery,
+//                                    continuing main's just-abandoned
+//                                    off-path stream.
+//   ALTERNATE_ON_PREDICTION        - activate on every CF main predicts
+//                                    (when alt is inactive). Realistic.
+//   ALTERNATE_ON_MISPREDICTION     - NOT REALISTIC. Activate only on
+//                                    simulator-detected mispredictions
+//                                    (oracle-aware). Upper-bound study of an
+//                                    alt-BP that perfectly knows when main is
+//                                    wrong; not modelable in hardware.
+//   ALTERNATE_ON_H2P_PREDICTION    - H2P-filtered ALTERNATE_ON_PREDICTION:
+//                                    fires only when is_h2p_at_exec flags the
+//                                    trigger op's PC as hard-to-predict (exec-
+//                                    stage mispred ratio over threshold).
+//                                    Realistic. Requires H2P_TRACK_CBR=TRUE
+//                                    and all other H2P_TRACK_* FALSE.
+//   ALTERNATE_ON_H2P_MISPREDICTION - NOT REALISTIC. H2P-filtered
+//                                    ALTERNATE_ON_MISPREDICTION: oracle-aware
+//                                    upper-bound, additionally gated on H2P.
 typedef enum DFE_Trigger_Policy_enum {
   PRIMARY_DFE,
   CONTINUE_ON_RECOVERY,
   ALTERNATE_ON_PREDICTION,
   ALTERNATE_ON_MISPREDICTION,
+  ALTERNATE_ON_H2P_PREDICTION,
+  ALTERNATE_ON_H2P_MISPREDICTION,
 } DFE_Trigger_Policy;
 
 // DFEx_STOP_POLICY param: when alt DFE is preempted/deactivated.
-//   PRIMARY_DFE_STOP      - sentinel for MAIN_BP; the primary DFE is never
-//                           subject to alt stop logic. init() asserts this is
-//                           used iff the trigger policy is PRIMARY_DFE.
-//   STOP_ON_RECOVERY      - alt deactivates at the next main recovery
-//                           (default for alt BPs).
-//   STOP_ON_PREDICTION    - alt is preempted on every CF main predicts (while
-//                           alt is active). Realistic counterpart to
-//                           ALTERNATE_ON_PREDICTION: real hardware can
-//                           observe a prediction event but not its
-//                           correctness.
-//   STOP_ON_MISPREDICTION - NOT REALISTIC. Preempt only on simulator-detected
-//                           mispredictions (oracle-aware). Useful for
-//                           upper-bound studies; not modelable in real
-//                           hardware.
+//   PRIMARY_DFE_STOP          - sentinel for MAIN_BP.
+//   STOP_ON_RECOVERY          - deactivate at the next main recovery (default
+//                               for alt BPs).
+//   STOP_ON_PREDICTION        - preempt on every CF main predicts. Realistic.
+//   STOP_ON_MISPREDICTION     - NOT REALISTIC. Preempt only on simulator-
+//                               detected mispredictions; upper-bound.
+//   STOP_ON_H2P_PREDICTION    - H2P-filtered STOP_ON_PREDICTION: preempt only
+//                               when main predicts a CF whose PC
+//                               is_h2p_at_exec flags as hard-to-predict
+//                               (exec-stage mispred ratio over threshold).
+//                               Realistic. Requires H2P_TRACK_CBR=TRUE and
+//                               all other H2P_TRACK_* FALSE.
+//   STOP_ON_H2P_MISPREDICTION - NOT REALISTIC. H2P-filtered upper-bound
+//                               variant of STOP_ON_MISPREDICTION.
 typedef enum DFE_Stop_Policy_enum {
   PRIMARY_DFE_STOP,
   STOP_ON_RECOVERY,
   STOP_ON_PREDICTION,
   STOP_ON_MISPREDICTION,
+  STOP_ON_H2P_PREDICTION,
+  STOP_ON_H2P_MISPREDICTION,
 } DFE_Stop_Policy;
 
 typedef enum BpId_enum {

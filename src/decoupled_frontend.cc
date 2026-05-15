@@ -248,6 +248,22 @@ void Decoupled_FE::init(uns _proc_id, uns _bp_id, Bp_Data* _bp_data, uns _dfe_tr
             "alt BP (bp_id=%u, trigger_policy=%u) requires FRONTEND in {FE_PT, FE_MEMTRACE}; got FRONTEND=%u\n", _bp_id,
             dfe_trigger_policy, (uns)FRONTEND);
   }
+  // _ON_H2P_* policies gate on is_h2p_at_exec, which only registers a branch
+  // as H2P when its exec-stage mispred ratio crosses the threshold. To keep
+  // that signal clean: track only CBR (true conditional branches). REP-prefix
+  // CFs and the indirect/return families would otherwise add noise to the
+  // per-PC stats hashed by is_h2p.
+  const bool uses_h2p =
+      (dfe_trigger_policy == ALTERNATE_ON_H2P_PREDICTION || dfe_trigger_policy == ALTERNATE_ON_H2P_MISPREDICTION ||
+       dfe_stop_policy == STOP_ON_H2P_PREDICTION || dfe_stop_policy == STOP_ON_H2P_MISPREDICTION);
+  if (uses_h2p) {
+    ASSERTM(_proc_id,
+            H2P_TRACK_CBR && !H2P_TRACK_REP && !H2P_TRACK_CALL && !H2P_TRACK_IBR && !H2P_TRACK_ICALL && !H2P_TRACK_RET,
+            "alt BP _ON_H2P_* policies require H2P_TRACK_CBR=TRUE and all other H2P_TRACK_* (REP/CALL/IBR/ICALL/RET) "
+            "FALSE; got CBR=%u REP=%u CALL=%u IBR=%u ICALL=%u RET=%u\n",
+            (uns)H2P_TRACK_CBR, (uns)H2P_TRACK_REP, (uns)H2P_TRACK_CALL, (uns)H2P_TRACK_IBR, (uns)H2P_TRACK_ICALL,
+            (uns)H2P_TRACK_RET);
+  }
   cur_op = nullptr;
   current_ft_to_push = nullptr;
   saved_recovery_ft = nullptr;
@@ -799,18 +815,26 @@ void Decoupled_FE::capture_main_pre_state_for_alts(Op* trigger_op) {
   // capture main's pre-spec-update state.
   const Flag is_misprediction = trigger_op->bp_pred_main.recover_at_fe || trigger_op->bp_pred_main.recover_at_decode ||
                                 trigger_op->bp_pred_main.recover_at_exec;
+  const bool h2p = is_h2p_at_exec(trigger_op->inst_info->addr);
   for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
     Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();
     const uns trigger_policy = alt->get_dfe_trigger_policy();
     const uns stop_policy = alt->get_dfe_stop_policy();
-    const bool fires_per_cf = (trigger_policy == ALTERNATE_ON_PREDICTION);
-    const bool fires_on_mispred = (trigger_policy == ALTERNATE_ON_MISPREDICTION) && is_misprediction;
+    // The trigger axis fires on this event when the policy matches; H2P
+    // variants additionally require main_h2p_active.
+    const bool fires_per_cf =
+        (trigger_policy == ALTERNATE_ON_PREDICTION) || (trigger_policy == ALTERNATE_ON_H2P_PREDICTION && h2p);
+    const bool fires_on_mispred = is_misprediction && ((trigger_policy == ALTERNATE_ON_MISPREDICTION) ||
+                                                       (trigger_policy == ALTERNATE_ON_H2P_MISPREDICTION && h2p));
     if (!fires_per_cf && !fires_on_mispred)
       continue;
     if (alt->is_active()) {
-      // Will alt actually be stopped + re-triggered by this event?
-      const bool stops_then_triggers = (fires_per_cf && stop_policy == STOP_ON_PREDICTION) ||
-                                       (fires_on_mispred && stop_policy == STOP_ON_MISPREDICTION);
+      // Will alt actually be stopped + re-triggered by this event? Stop axis
+      // matches similarly, with H2P variants gated on h2p.
+      const bool stops_per_cf = (stop_policy == STOP_ON_PREDICTION) || (stop_policy == STOP_ON_H2P_PREDICTION && h2p);
+      const bool stops_on_mispred = is_misprediction && ((stop_policy == STOP_ON_MISPREDICTION) ||
+                                                         (stop_policy == STOP_ON_H2P_MISPREDICTION && h2p));
+      const bool stops_then_triggers = (fires_per_cf && stops_per_cf) || (fires_on_mispred && stops_on_mispred);
       if (!stops_then_triggers)
         continue;  // running alt won't be disturbed; preserve its state
     }
@@ -860,10 +884,22 @@ void Decoupled_FE::drive_alt_on_event(Op* trigger_op, DFE_Trigger_Policy match_t
 
 void Decoupled_FE::drive_alt_on_misprediction(Op* trigger_op) {
   drive_alt_on_event(trigger_op, ALTERNATE_ON_MISPREDICTION, STOP_ON_MISPREDICTION);
+  // H2P-filtered variants fire on the same misprediction event when the
+  // online H2P classifier (exec-stage stats) flags this branch PC as
+  // hard-to-predict.
+  if (is_h2p_at_exec(trigger_op->inst_info->addr)) {
+    STAT_EVENT(proc_id, H2P_SEEN_MAIN);
+    drive_alt_on_event(trigger_op, ALTERNATE_ON_H2P_MISPREDICTION, STOP_ON_H2P_MISPREDICTION);
+  }
 }
 
 void Decoupled_FE::drive_alt_on_prediction(Op* trigger_op) {
   drive_alt_on_event(trigger_op, ALTERNATE_ON_PREDICTION, STOP_ON_PREDICTION);
+  // H2P-filtered variants fire on the same per-CF prediction event when the
+  // online H2P classifier (exec-stage stats) flags this branch PC as
+  // hard-to-predict.
+  if (is_h2p_at_exec(trigger_op->inst_info->addr))
+    drive_alt_on_event(trigger_op, ALTERNATE_ON_H2P_PREDICTION, STOP_ON_H2P_PREDICTION);
 }
 
 void Decoupled_FE::stall(Op* op) {

@@ -192,7 +192,10 @@ class FunctionalUnitPicker {
  public:
   explicit FunctionalUnitPicker(uns proc_id, uns16 queue_id, uns32 fu_id, uns64 fu_type,
                                 std::unique_ptr<SchedulePolicy> sched_policy)
-      : proc_id(proc_id), queue_id(queue_id), fu_id(fu_id), fu_type(fu_type), sched_policy(std::move(sched_policy)) {}
+      : proc_id(proc_id), queue_id(queue_id), fu_id(fu_id), fu_type(fu_type), sched_policy(std::move(sched_policy)) {
+    // queue_id is reserved for upcoming use; reference it to silence -Wunused-private-field
+    (void)this->queue_id;
+  }
 
   void pick(IssueQueueEntry*& candidate);
   void grant();
@@ -452,6 +455,8 @@ class IssueQueue {
 
 IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size, std::vector<FunctionalUnitPicker> connected_fu_pickers)
     : proc_id(proc_id), queue_id(queue_id) {
+  // this->queue_id is reserved for upcoming use; reference it to silence -Wunused-private-field
+  (void)this->queue_id;
   // initialize entries and free list
   entries.reserve(size);
   for (uns16 i = 0; i < size; ++i) {

@@ -90,6 +90,9 @@ KNOB<UINT64> KnobStartRip(KNOB_MODE_WRITEONCE, "pintool", "rip", "0",
 
 KNOB<bool> KnobTrackAtInstrumentation(KNOB_MODE_WRITEONCE, "pintool", "track_at_instr", "true",
                                       "Track RIP at instrumentation time instead of execution time");
+
+KNOB<string> KnobH2PTargetPC(KNOB_MODE_WRITEONCE, "pintool", "h2p_target_pc",
+                             "0", "Target PC for H2P branch reg snapshot");
 /* ===================================================================== */
 /* ===================================================================== */
 
@@ -100,6 +103,141 @@ INT32 Usage() {
   cerr << KNOB_BASE::StringKnobSummary() << endl;
   return -1;
 }
+
+// ==================== H2P reg snapshot logging ====================
+static constexpr size_t H2P_WINDOW = 1000;
+
+struct InstSnapshot {
+  uint64_t uid;
+  uint64_t pc;
+  uint64_t rax, rbx, rcx, rdx;
+  uint64_t rsi, rdi, rbp, rsp;
+  uint64_t r8,  r9,  r10, r11;
+  uint64_t r12, r13, r14, r15;
+  uint64_t rflags;
+};
+
+static InstSnapshot h2p_ring[H2P_WINDOW];
+static size_t   h2p_ring_head = 0;
+static uint64_t h2p_ring_fill = 0;
+static FILE*    h2p_fp = nullptr;
+
+// H2P PCs — hardcoded array (from h2p_branches.csv)
+static uint64_t h2p_target_pc = 0;
+
+static bool is_h2p_pc(uint64_t pc) {
+  return h2p_target_pc != 0 && pc == h2p_target_pc;
+}
+
+static void init_h2p_pcs() {
+  // no-op: static array is initialized at compile time
+  h2p_target_pc = strtoull(KnobH2PTargetPC.Value().c_str(), nullptr, 0);
+}
+
+static uint64_t last_recorded_uid = 0;
+
+static void record_inst_snapshot(
+    ADDRINT ip,
+    ADDRINT rax, ADDRINT rbx, ADDRINT rcx, ADDRINT rdx,
+    ADDRINT rsi, ADDRINT rdi, ADDRINT rbp, ADDRINT rsp,
+    ADDRINT r8,  ADDRINT r9,  ADDRINT r10, ADDRINT r11,
+    ADDRINT r12, ADDRINT r13, ADDRINT r14, ADDRINT r15,
+    ADDRINT rflags) {
+// static void record_inst_snapshot(
+//     ADDRINT ip,
+//     ADDRINT rax, ADDRINT rdx, ADDRINT rdi) {
+  if (on_wrongpath) return;
+  if (hyper_ff) return;
+  if (fast_forward_count > 0) return;
+
+  if (uid_ctr <= last_recorded_uid) return;
+  last_recorded_uid = uid_ctr;
+
+  InstSnapshot& s = h2p_ring[h2p_ring_head];
+  s.uid = uid_ctr;
+  s.pc  = (uint64_t)ip;
+  s.rax = rax; s.rbx = rbx; s.rcx = rcx; s.rdx = rdx;
+  s.rsi = rsi; s.rdi = rdi; s.rbp = rbp; s.rsp = rsp;
+  s.r8  = r8;  s.r9  = r9;  s.r10 = r10; s.r11 = r11;
+  s.r12 = r12; s.r13 = r13; s.r14 = r14; s.r15 = r15;
+  s.rflags = rflags;
+  // s.uid    = uid_ctr;
+  // s.pc     = (uint64_t)ip;
+  // s.rax    = (uint64_t)rax; 
+  // s.rdx    = (uint64_t)rdx;
+  // s.rdi    = (uint64_t)rdi; 
+
+  h2p_ring_head = (h2p_ring_head + 1) % H2P_WINDOW;
+  h2p_ring_fill++;
+}
+
+static void dump_branch_window(ADDRINT ip, BOOL taken) {
+  if (on_wrongpath) return;
+  if (hyper_ff) return;
+  if (fast_forward_count > 0) return;
+  if (!is_h2p_pc((uint64_t)ip)) return;
+
+  static uint64_t last_dumped_uid = 0;
+  if (uid_ctr <= last_dumped_uid) return;
+  last_dumped_uid = uid_ctr;
+
+  if (!h2p_fp) {
+    string out_path = KnobOutputFile.Value();
+    string h2p_path = "branch_context.txt";
+    size_t slash = out_path.find_last_of('/');
+    if (slash != string::npos) {
+        h2p_path = out_path.substr(0, slash + 1) + "branch_context.txt";
+    }
+    h2p_fp = fopen(h2p_path.c_str(), "w");
+
+    if (!h2p_fp) return;
+    fprintf(h2p_fp,
+      "branch_uid,branch_pc,taken,delta,past_uid,past_pc,"
+      "rax,rbx,rcx,rdx,rsi,rdi,rbp,rsp,"
+      "r8,r9,r10,r11,r12,r13,r14,r15,rflags\n");
+    // fprintf(h2p_fp,
+    //   "branch_uid,branch_pc,taken,delta,past_uid,past_pc,"
+    //   "rax,rdi,rdx\n");
+  }
+  if (!h2p_fp) return;
+
+  size_t valid = (h2p_ring_fill < H2P_WINDOW) ? h2p_ring_fill : H2P_WINDOW;
+  if (valid == 0) return;
+
+  for (size_t i = 0; i < valid; i++) {
+    size_t idx = (h2p_ring_head + H2P_WINDOW - valid + i) % H2P_WINDOW;
+    const InstSnapshot& s = h2p_ring[idx];
+    int delta = -(int)(valid - i);
+
+    fprintf(h2p_fp,
+      "%llu,0x%llx,%d,%d,%llu,0x%llx,"
+      "0x%llx,0x%llx,0x%llx,0x%llx,0x%llx,0x%llx,0x%llx,0x%llx,"
+      "0x%llx,0x%llx,0x%llx,0x%llx,0x%llx,0x%llx,0x%llx,0x%llx,0x%llx\n",
+      (unsigned long long)uid_ctr,
+      (unsigned long long)ip,
+      (int)taken, delta,
+      (unsigned long long)s.uid, (unsigned long long)s.pc,
+      (unsigned long long)s.rax, (unsigned long long)s.rbx,
+      (unsigned long long)s.rcx, (unsigned long long)s.rdx,
+      (unsigned long long)s.rsi, (unsigned long long)s.rdi,
+      (unsigned long long)s.rbp, (unsigned long long)s.rsp,
+      (unsigned long long)s.r8,  (unsigned long long)s.r9,
+      (unsigned long long)s.r10, (unsigned long long)s.r11,
+      (unsigned long long)s.r12, (unsigned long long)s.r13,
+      (unsigned long long)s.r14, (unsigned long long)s.r15,
+      (unsigned long long)s.rflags);
+    // fprintf(h2p_fp,
+    //   "%llu,0x%llx,%d,%d,%llu,0x%llx,"
+    //   "0x%llx,0x%llx,0x%llx\n",
+    //   (unsigned long long)uid_ctr,
+    //   (unsigned long long)ip,
+    //   (int)taken, delta,
+    //   (unsigned long long)s.uid, (unsigned long long)s.pc,
+    //   (unsigned long long)s.rax, (unsigned long long)s.rdi,
+    //   (unsigned long long)s.rdx);
+  }
+}
+// ==================================================================
 
 void insert_logging(const INS& ins) {
   if(INS_Category(ins) == XED_CATEGORY_COND_BR) {
@@ -239,6 +377,36 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
                 "Instrument from Instruction() eip=%" PRIx64 "\n",
                 (uint64_t)INS_Address(ins));
 
+      // ==================== H2P snapshot ====================
+      if (INS_Category(ins) == XED_CATEGORY_COND_BR) {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dump_branch_window,
+                       IARG_CALL_ORDER, CALL_ORDER_FIRST + 10,
+                       IARG_INST_PTR,
+                       IARG_BRANCH_TAKEN,
+                       IARG_END);
+      }
+
+      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)record_inst_snapshot,
+                     IARG_CALL_ORDER, CALL_ORDER_FIRST + 20,
+                     IARG_INST_PTR,
+                     IARG_REG_VALUE, REG_RAX, IARG_REG_VALUE, REG_RBX,
+                     IARG_REG_VALUE, REG_RCX, IARG_REG_VALUE, REG_RDX,
+                     IARG_REG_VALUE, REG_RSI, IARG_REG_VALUE, REG_RDI,
+                     IARG_REG_VALUE, REG_RBP, IARG_REG_VALUE, REG_RSP,
+                     IARG_REG_VALUE, REG_R8,  IARG_REG_VALUE, REG_R9,
+                     IARG_REG_VALUE, REG_R10, IARG_REG_VALUE, REG_R11,
+                     IARG_REG_VALUE, REG_R12, IARG_REG_VALUE, REG_R13,
+                     IARG_REG_VALUE, REG_R14, IARG_REG_VALUE, REG_R15,
+                     IARG_REG_VALUE, REG_RFLAGS,
+                     IARG_END);
+      // INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)record_inst_snapshot,
+      //           IARG_CALL_ORDER, CALL_ORDER_FIRST + 20,
+      //           IARG_INST_PTR,
+      //           IARG_REG_VALUE, REG_RAX, IARG_REG_VALUE, REG_RDX,
+      //           IARG_REG_VALUE, REG_RDI,
+      //           IARG_END);
+      // ======================================================
+
       insert_logging(ins);
       insert_check_for_magic_instructions(ins);
 
@@ -277,6 +445,12 @@ void Fini(INT32 code, void* v) {
   DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
             "Fini reached, app exit code=%d\n.", code);
   *out << "End of program reached, disconnect from Scarab.\n" << endl;
+  if (h2p_fp) {
+    fflush(h2p_fp);
+    fclose(h2p_fp);
+    h2p_fp = nullptr;
+    *out << "[H2P] branch_context.csv closed" << endl;
+  }
   scarab->disconnect();
   *out << "Pintool Fini Reached.\n" << endl;
 }
@@ -347,6 +521,9 @@ int main(int argc, char* argv[]) {
   PIN_AddFiniFunction(Fini, 0);
 
   scarab = new Client(KnobSocketPath, KnobCoreId);
+
+  init_h2p_pcs();
+  *out << "[H2P] init_h2p_pcs() called" << endl;
 
   // Start the program, never returns
   PIN_StartProgram();

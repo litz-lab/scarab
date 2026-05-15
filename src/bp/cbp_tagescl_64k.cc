@@ -943,6 +943,8 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
     *bp_confidence += 1;
   assert(*bp_confidence < 4);
 
+  op->tage_component  = tage_component;
+
   if ((Pstate.pred_taken != op->oracle_info.dir) && !op->off_path) {  // collect only for misprediction
     STAT_EVENT(op->proc_id, TAGESCL_CONF_0_PER_BASE_MISPREDICT + *bp_confidence + tage_component * 4);
   }

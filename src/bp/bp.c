@@ -415,6 +415,10 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
   op->recovery_info.branchTarget = op->oracle_info.target;
   op->recovery_info.predict_cycle = cycle_count;
 
+  Counter target_dist = 0;
+  Counter target_uid_dist = 0;
+  Flag target_hit = FALSE;
+
   if (!op->off_path && pred_level == BP_PRED_MAIN &&
       op->inst_info->table_info.cf_type == CF_CBR) {
     Counter frontier = cmp_model.node_stage[op->proc_id].max_execed_opnum;
@@ -423,6 +427,14 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
     STAT_EVENT(op->proc_id, RUNAHEAD_DIST_BUCKET_0 + bucket);
     INC_STAT_EVENT(op->proc_id, RUNAHEAD_DIST_SUM, dist);
     STAT_EVENT(op->proc_id, RUNAHEAD_DIST_COUNT);
+
+    // if (op->inst_info->addr == 0x55555565156cULL) {
+    if (BP_TARGET_PC && op->inst_info->addr == BP_TARGET_PC) {
+      target_dist = dist;
+      Counter uid_frontier = cmp_model.node_stage[op->proc_id].max_execed_inst_uid;
+      target_uid_dist = (op->inst_uid > uid_frontier) ? (op->inst_uid - uid_frontier) : 0;
+      target_hit = TRUE;
+    }
   }
 
   pred_bp->timestamp_func(op);
@@ -509,6 +521,47 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
         ASSERT(op->proc_id, !PERFECT_NT_BTB);  // currently not supported
         bp_pred_info->pred = pred_bp->pred_func(op, pred_level);
         bp_pred_info->pred_orig = bp_pred_info->pred;
+        if (target_hit) {
+          Flag correct = (bp_pred_info->pred == op->oracle_info.dir);
+          static FILE* fc = NULL;
+          static FILE* fm = NULL;
+          static FILE* ft = NULL;
+          FILE** fp = correct ? &fc : &fm;
+          const char* path = correct ? "test_runahead_dist_correct.txt"
+                                    : "test_runahead_dist_mispred.txt";
+          if (!*fp) *fp = fopen(path, "w");
+          if (*fp) { fprintf(*fp, "%llu\n", (unsigned long long)target_dist); fflush(*fp); }
+
+          if (!ft) ft = fopen("test_runahead_dist_total.txt", "w");
+          if (ft) { fprintf(ft, "%llu\n", (unsigned long long)target_dist); fflush(ft); }
+
+          static FILE* fc_uid = NULL;
+          static FILE* fm_uid = NULL;
+          static FILE* ft_uid = NULL;
+          FILE** fp_uid = correct ? &fc_uid : &fm_uid;
+          const char* path_uid = correct ? "test_runahead_uid_dist_correct.txt"
+                                        : "test_runahead_uid_dist_mispred.txt";
+          if (!*fp_uid) *fp_uid = fopen(path_uid, "w");
+          if (*fp_uid) { fprintf(*fp_uid, "%llu\n", (unsigned long long)target_uid_dist); fflush(*fp_uid); }
+
+          if (!ft_uid) ft_uid = fopen("test_runahead_uid_dist_total.txt", "w");
+          if (ft_uid) { fprintf(ft_uid, "%llu\n", (unsigned long long)target_uid_dist); fflush(ft_uid); }
+
+          static FILE* fp_pred = NULL;
+          if (!fp_pred) {
+              fp_pred = fopen("test_pred_result.txt", "w");
+              if (fp_pred) fprintf(fp_pred, "uid,pred,oracle,correct,tage_component\n");
+          }
+          if (fp_pred) {
+              fprintf(fp_pred, "%llu,%d,%d,%d,%d\n",
+                      (unsigned long long)op->inst_uid,
+                      (int)bp_pred_info->pred,
+                      (int)op->oracle_info.dir,
+                      (int)correct,
+                      (int)op->tage_component);
+              fflush(fp_pred);
+          }
+        }
       }
       // Update history used by the rest of Scarab.
       if (pred_level == BP_PRED_MAIN)
@@ -942,6 +995,10 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
  */
 
 void bp_retire_op(Bp_Data* bp_data, Op* op) {
+  if (op->inst_info->table_info.cf_type == CF_CBR && BP_TARGET_PC && op->inst_info->addr == BP_TARGET_PC) {
+    fprintf(stderr, "[H2P] retire uid=%llu\n", (unsigned long long)op->inst_uid);
+  }
+
   // Always retire both predictors regardless of which one made the active prediction.
   op->recovery_info.branch_id = op->bp_pred_main.pred_branch_id;
   bp_data->bp->retire_func(op);

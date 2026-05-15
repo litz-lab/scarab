@@ -63,6 +63,7 @@ typedef struct Node_Stage_struct {
   uns ret_stall_length;  // length of the current retirement stall
 
   Counter max_execed_opnum;
+  Counter max_execed_inst_uid;
 } Node_Stage;
 
 /**************************************************************************************/

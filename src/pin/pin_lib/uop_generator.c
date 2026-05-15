@@ -112,6 +112,8 @@ uns* num_sending_uop;
 uns* num_uops;
 Addr* last_ga_va;
 
+static Counter cf_uid_counters[MAX_NUM_PROCS] = {0};
+
 /**************************************************************************************/
 /* Local prototypes */
 
@@ -330,6 +332,9 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->eom = trace_uop->eom;
   op->fetched_instruction = fetched_instruction[proc_id];
   op->inst_info = info;
+  op->cf_uid = cf_uid_counters[proc_id];
+  if (op->inst_info->table_info.cf_type)
+    cf_uid_counters[proc_id]++;
   op->off_path = FALSE;
   op->state = OS_FETCHED;
   op->fu_num = -1;

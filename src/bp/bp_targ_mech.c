@@ -318,8 +318,8 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
 
   // Set pointer and init l0/l1 fields so bp_btb_gen_pred can populate them.
   op->btb_pred_info = btb_pred_info;
-  btb_pred_info->btb_l0_hit = btb_pred_info->btb_l1_hit = FALSE;
-  btb_pred_info->btb_l0_target = btb_pred_info->btb_l1_target = 0;
+  btb_pred_info->btb_l0_hit = btb_pred_info->btb_l1_hit = btb_pred_info->btb_main_hit = FALSE;
+  btb_pred_info->btb_l0_target = btb_pred_info->btb_l1_target = btb_pred_info->btb_main_target = 0;
   btb_pred_info->btb_pred_latency = MAX_UNS;
 
   const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
@@ -336,7 +336,35 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   }
 
   /* Main BTB lookup (pred_func populates BTB hit/target fields as a side effect) */
-  bp_data->bp_btb->pred_func(bp_data, op);
+  if (PERFECT_BTB) {
+    ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
+    if (BTB_L0_PRESENT) {
+      btb_pred_info->btb_l0_hit = TRUE;
+      btb_pred_info->btb_l0_target = op->oracle_info.target;
+    }
+    if (BTB_L1_PRESENT) {
+      btb_pred_info->btb_l1_hit = TRUE;
+      btb_pred_info->btb_l1_target = op->oracle_info.target;
+    }
+    btb_pred_info->btb_main_hit = TRUE;
+    btb_pred_info->btb_main_target = op->oracle_info.target;
+  } else {
+    bp_data->bp_btb->pred_func(bp_data, op);
+  }
+
+  if (BTB_L0_PRESENT && btb_pred_info->btb_l0_hit && BTB_L0_LATENCY < btb_pred_info->btb_pred_latency) {
+    btb_pred_info->btb_pred_latency = BTB_L0_LATENCY;
+    btb_pred_info->pred_target = btb_pred_info->btb_l0_target;
+  }
+  if (BTB_L1_PRESENT && btb_pred_info->btb_l1_hit && BTB_L1_LATENCY < btb_pred_info->btb_pred_latency) {
+    btb_pred_info->btb_pred_latency = BTB_L1_LATENCY;
+    btb_pred_info->pred_target = btb_pred_info->btb_l1_target;
+  }
+  if (btb_pred_info->btb_main_hit && BTB_MAIN_LATENCY < btb_pred_info->btb_pred_latency) {
+    btb_pred_info->btb_pred_latency = BTB_MAIN_LATENCY;
+    btb_pred_info->pred_target = btb_pred_info->btb_main_target;
+  }
+
   if (collect_btb_stats) {
     STAT_EVENT_BTB_OUTCOME(op, ALL_BTB, btb_pred_info->btb_main_hit, btb_pred_info->btb_main_target, pc_plus_offset);
   }
@@ -393,6 +421,17 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
 }
 
 /**************************************************************************************/
+/* bp_btb_post_bp_predict: stores op's final pred dir in bp_data for next BTB access,
+ * after ALL BPs made predictions. This must be coupled with bp_predict_btb(),
+ * having any bp_predict_op()s in between. */
+void bp_btb_post_bp_predict(Bp_Data* bp_data, Op* op) {
+  if (op->inst_info->table_info.cf_type && op->inst_info->table_info.cf_type != CF_SYS) {
+    // CF_SYS does not terminate an FT / basic block
+    bp_data->prev_cf_pred = op->bp_pred_info->pred;
+  }
+}
+
+/**************************************************************************************/
 /* bp_btb_init: */
 
 void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
@@ -423,42 +462,11 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
 
   op->btb_pred_info->btb_index_addr = op->inst_info->addr;
 
-  if (PERFECT_BTB) {
-    ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
-    if (BTB_L0_PRESENT) {
-      bpi->btb_l0_hit = TRUE;
-      bpi->btb_l0_target = op->oracle_info.target;
-      if (BTB_L0_LATENCY < bpi->btb_pred_latency) {
-        bpi->btb_pred_latency = BTB_L0_LATENCY;
-        bpi->pred_target = op->oracle_info.target;
-      }
-    }
-    if (BTB_L1_PRESENT) {
-      bpi->btb_l1_hit = TRUE;
-      bpi->btb_l1_target = op->oracle_info.target;
-      if (BTB_L1_LATENCY < bpi->btb_pred_latency) {
-        bpi->btb_pred_latency = BTB_L1_LATENCY;
-        bpi->pred_target = op->oracle_info.target;
-      }
-    }
-    bpi->btb_main_hit = TRUE;
-    bpi->btb_main_target = op->oracle_info.target;
-    if (BTB_MAIN_LATENCY < bpi->btb_pred_latency) {
-      bpi->btb_pred_latency = BTB_MAIN_LATENCY;
-      bpi->pred_target = op->oracle_info.target;
-    }
-    return;
-  }
-
   if (BTB_L0_PRESENT) {
     Addr* e = (Addr*)cache_access(bp_data->btb_l0, op->inst_info->addr, &line_addr, lru);
     if (e) {
       bpi->btb_l0_hit = TRUE;
       bpi->btb_l0_target = *e;
-      if (BTB_L0_LATENCY < bpi->btb_pred_latency) {
-        bpi->btb_pred_latency = BTB_L0_LATENCY;
-        bpi->pred_target = *e;
-      }
     }
   }
   if (BTB_L1_PRESENT) {
@@ -466,10 +474,6 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
     if (e) {
       bpi->btb_l1_hit = TRUE;
       bpi->btb_l1_target = *e;
-      if (BTB_L1_LATENCY < bpi->btb_pred_latency) {
-        bpi->btb_pred_latency = BTB_L1_LATENCY;
-        bpi->pred_target = *e;
-      }
     }
   }
 
@@ -477,10 +481,6 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   if (e) {
     bpi->btb_main_hit = TRUE;
     bpi->btb_main_target = *e;
-    if (BTB_MAIN_LATENCY < bpi->btb_pred_latency) {
-      bpi->btb_pred_latency = BTB_MAIN_LATENCY;
-      bpi->pred_target = *e;
-    }
   }
 }
 
@@ -574,13 +574,6 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
 
   Btb_Pred_Info* bpi = op->btb_pred_info;
-
-  if (PERFECT_BTB) {
-    ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
-    bpi->btb_main_hit = TRUE;
-    bpi->btb_main_target = op->oracle_info.target;
-    return;
-  }
 
   Addr btb_index_addr = 0;
   // Actual BTB does not require this because the index addr to look up BTB is given,

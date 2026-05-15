@@ -163,8 +163,7 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
         predict_op_ft_event(op, BP_PRED_L0);
       event = predict_op_ft_event(op, BP_PRED_MAIN);
       op_select_bp_pred_info(op, BP_PRED_MAIN);
-      if (op->inst_info->table_info.cf_type)
-        g_bp_data->prev_cf_pred = op->bp_pred_info->pred;  // for next BTB access
+      bp_btb_post_bp_predict(g_bp_data, op);  // for next BTB access
     }
     if (op->inst_info->fake_inst == 1) {
       ft_info.dynamic_info.contains_fake_nop = TRUE;
@@ -381,8 +380,8 @@ FT_PredictResult FT::predict_ft() {
       event = predict_op_ft_event(op, BP_PRED_MAIN);
       op_select_bp_pred_info(op, BP_PRED_MAIN);
     }
+    bp_btb_post_bp_predict(g_bp_data, op);  // for next BTB access
     if (op->inst_info->table_info.cf_type) {
-      g_bp_data->prev_cf_pred = op->bp_pred_info->pred;  // for next BTB access
       // Per-CF prediction event: now that main's bp_pred_info is finalized for
       // op (and main's bp_data has just been spec-updated), fire alt-DFE
       // _ON_PREDICTION dispatch. Single-op rollback in trigger_alt_with_rewind

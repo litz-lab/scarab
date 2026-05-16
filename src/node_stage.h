@@ -64,6 +64,7 @@ typedef struct Node_Stage_struct {
 
   Counter max_execed_opnum;
   Counter max_execed_inst_uid;
+  Counter max_execed_cf_uid;
 } Node_Stage;
 
 /**************************************************************************************/

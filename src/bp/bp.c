@@ -417,6 +417,8 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
 
   Counter target_dist = 0;
   Counter target_uid_dist = 0;
+  Counter target_cf_uid_dist = 0;
+
   Flag target_hit = FALSE;
 
   if (!op->off_path && pred_level == BP_PRED_MAIN &&
@@ -433,7 +435,43 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
       target_dist = dist;
       Counter uid_frontier = cmp_model.node_stage[op->proc_id].max_execed_inst_uid;
       target_uid_dist = (op->inst_uid > uid_frontier) ? (op->inst_uid - uid_frontier) : 0;
+
+      Counter cf_uid_frontier = cmp_model.node_stage[op->proc_id].max_execed_cf_uid;
+      if (cf_uid_frontier == 0) 
+        target_cf_uid_dist = 0;
+      else
+        target_cf_uid_dist = (op->cf_uid > cf_uid_frontier) ? (op->cf_uid - cf_uid_frontier) : 0;
       target_hit = TRUE;
+      // fprintf(stderr,
+      //   "\n=== FIRST TARGET HIT ===\n"
+      //   "PC               : 0x%llx\n"
+      //   "op_num           : %llu\n"
+      //   "op->inst_uid     : %llu\n"
+      //   "op->cf_uid       : %llu\n"
+      //   "max_execed_opnum : %llu\n"
+      //   "max_execed_inst  : %llu\n"
+      //   "max_execed_cf    : %llu\n"
+      //   "target_dist      : %llu\n"
+      //   "target_uid_dist  : %llu  (op->inst_uid - max_execed_inst)\n"
+      //   "target_cf_uid_dist: %llu  (op->cf_uid - max_execed_cf)\n"
+      //   "INVARIANT op.cf<=op.inst : %s\n"
+      //   "INVARIANT max_cf<=max_inst: %s\n"
+      //   "========================\n",
+      //   (unsigned long long)op->inst_info->addr,
+      //   (unsigned long long)op->op_num,
+      //   (unsigned long long)op->inst_uid,
+      //   (unsigned long long)op->cf_uid,
+      //   (unsigned long long)cmp_model.node_stage[op->proc_id].max_execed_opnum,
+      //   (unsigned long long)uid_frontier,
+      //   (unsigned long long)cf_uid_frontier,
+      //   (unsigned long long)target_dist,
+      //   (unsigned long long)target_uid_dist,
+      //   (unsigned long long)target_cf_uid_dist,
+      //   (op->cf_uid <= op->inst_uid) ? "OK" : "VIOLATED",
+      //   (cf_uid_frontier <= uid_frontier) ? "OK" : "VIOLATED");
+      // fflush(stderr);
+
+      // ASSERT(0, 0);
     }
   }
 
@@ -546,6 +584,18 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
 
           if (!ft_uid) ft_uid = fopen("test_runahead_uid_dist_total.txt", "w");
           if (ft_uid) { fprintf(ft_uid, "%llu\n", (unsigned long long)target_uid_dist); fflush(ft_uid); }
+
+          static FILE* fc_cf = NULL;
+          static FILE* fm_cf = NULL;
+          static FILE* ft_cf = NULL;
+          FILE** fp_cf = correct ? &fc_cf : &fm_cf;
+          const char* path_cf = correct ? "test_runahead_cf_uid_dist_correct.txt"
+                                        : "test_runahead_cf_uid_dist_mispred.txt";
+          if (!*fp_cf) *fp_cf = fopen(path_cf, "w");
+          if (*fp_cf) { fprintf(*fp_cf, "%llu\n", (unsigned long long)target_cf_uid_dist); fflush(*fp_cf); }
+
+          if (!ft_cf) ft_cf = fopen("test_runahead_cf_uid_dist_total.txt", "w");
+          if (ft_cf) { fprintf(ft_cf, "%llu\n", (unsigned long long)target_cf_uid_dist); fflush(ft_cf); }
 
           static FILE* fp_pred = NULL;
           if (!fp_pred) {

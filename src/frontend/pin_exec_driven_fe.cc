@@ -37,6 +37,8 @@ extern "C" {
 
 #include "general.param.h"
 
+#include "bp/bp.h"
+
 #include "op.h"
 #include "sim.h"
 }
@@ -179,6 +181,14 @@ void pin_exec_driven_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
   msg.type = FE_RECOVER_AFTER;
   msg.inst_addr = 0;
   msg.inst_uid = inst_uid;
+
+  Op* rec_op = bp_recovery_info->recovery_op;
+  ASSERT(proc_id, rec_op != NULL);
+  uop_generator_rewind_cf_uid_after(
+      proc_id,
+      rec_op->cf_uid,
+      rec_op->inst_info->table_info.cf_type == CF_CBR);
+
   uop_generator_recover(proc_id);
 
   server->send(proc_id, (Message<Scarab_To_Pin_Msg>)msg);  // blocking

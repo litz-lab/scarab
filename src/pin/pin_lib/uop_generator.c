@@ -333,7 +333,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->fetched_instruction = fetched_instruction[proc_id];
   op->inst_info = info;
   op->cf_uid = cf_uid_counters[proc_id];
-  if (op->inst_info->table_info.cf_type)
+  if (op->inst_info->table_info.cf_type == CF_CBR && op->eom)
     cf_uid_counters[proc_id]++;
   op->off_path = FALSE;
   op->state = OS_FETCHED;
@@ -947,4 +947,8 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
 
 void uop_generator_recover(uns8 proc_id) {
   bom[proc_id] = 1;
+}
+
+void uop_generator_rewind_cf_uid_after(uns8 proc_id, Counter recovery_cf_uid, Flag recovery_is_cbr) {
+  cf_uid_counters[proc_id] = recovery_cf_uid + (recovery_is_cbr ? 1 : 0);
 }

@@ -47,6 +47,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, compressed_op* inst);
 Flag uop_generator_get_bom(uns proc_id);  // Called before uop_generator_get_uop.
 Flag uop_generator_get_eom(uns proc_id);  // Called after uop_generator_get_uop.
 void uop_generator_recover(uns8 proc_id);
+void uop_generator_rewind_cf_uid_after(uns8 proc_id, Counter recovery_cf_uid, Flag recovery_is_cbr);
 
 #ifdef __cplusplus
 }

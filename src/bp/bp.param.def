@@ -95,10 +95,18 @@ DEF_PARAM(  btb_l0_present           , BTB_L0_PRESENT            , Flag    , Fla
 DEF_PARAM(  btb_l0_entries           , BTB_L0_ENTRIES            , uns     , uns        , 128        ,        )
 DEF_PARAM(  btb_l0_assoc             , BTB_L0_ASSOC              , uns     , uns        , 4          ,        )
 DEF_PARAM(  btb_l0_latency           , BTB_L0_LATENCY            , uns     , uns        , 1          ,        )
+DEF_PARAM(  btb_l0_read_ports        , BTB_L0_READ_PORTS         , uns     , uns        , 1          ,        ) /* number of read ports in a bank */
+DEF_PARAM(  btb_l0_write_ports       , BTB_L0_WRITE_PORTS        , uns     , uns        , 1          ,        ) /* number of write ports in a bank */
+DEF_PARAM(  btb_l0_banks             , BTB_L0_BANKS              , uns     , uns        , 1          ,        ) /* number of banks interleaved */
+DEF_PARAM(  btb_l0_interleave_factor , BTB_L0_INTERLEAVE_FACTOR  , uns     , uns        , 1          ,        ) /* how many consecutive bytes form one chunk assigned to a single bank */
 DEF_PARAM(  btb_l1_present           , BTB_L1_PRESENT            , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM(  btb_l1_entries           , BTB_L1_ENTRIES            , uns     , uns        , 6144       ,        )
 DEF_PARAM(  btb_l1_assoc             , BTB_L1_ASSOC              , uns     , uns        , 4          ,        )
 DEF_PARAM(  btb_l1_latency           , BTB_L1_LATENCY            , uns     , uns        , 2          ,        )
+DEF_PARAM(  btb_l1_read_ports        , BTB_L1_READ_PORTS         , uns     , uns        , 1          ,        ) /* number of read ports in a bank */
+DEF_PARAM(  btb_l1_write_ports       , BTB_L1_WRITE_PORTS        , uns     , uns        , 1          ,        ) /* number of write ports in a bank */
+DEF_PARAM(  btb_l1_banks             , BTB_L1_BANKS              , uns     , uns        , 1          ,        ) /* number of banks interleaved */
+DEF_PARAM(  btb_l1_interleave_factor , BTB_L1_INTERLEAVE_FACTOR  , uns     , uns        , 1          ,        ) /* how many consecutive bytes form one chunk assigned to a single bank */
 
 DEF_PARAM(  enable_crs                , ENABLE_CRS                , Flag    , Flag       , TRUE       ,        )
 DEF_PARAM(  crs_entries               , CRS_ENTRIES               , uns     , uns        , 32         ,        )

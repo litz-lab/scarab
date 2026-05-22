@@ -456,6 +456,32 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
     } else {
       bp_data->btb_ports = NULL;  // No banking
     }
+
+    bp_data->btb_l0_num_banks = BTB_L0_BANKS;
+    if (BTB_L0_PRESENT && bp_data->btb_l0_num_banks > 1) {
+      ASSERT(bp_data->proc_id, BTB_L0_INTERLEAVE_FACTOR > 0);
+      bp_data->btb_l0_ports = (Ports*)malloc(sizeof(Ports) * bp_data->btb_l0_num_banks);
+      for (uns ii = 0; ii < bp_data->btb_l0_num_banks; ii++) {
+        char name[MAX_STR_LENGTH + 1];
+        snprintf(name, MAX_STR_LENGTH, "BTB L0 BANK %d PORTS", ii);
+        init_ports(&bp_data->btb_l0_ports[ii], name, BTB_L0_READ_PORTS, BTB_L0_WRITE_PORTS, FALSE);
+      }
+    } else {
+      bp_data->btb_l0_ports = NULL;  // No banking
+    }
+
+    bp_data->btb_l1_num_banks = BTB_L1_BANKS;
+    if (BTB_L1_PRESENT && bp_data->btb_l1_num_banks > 1) {
+      ASSERT(bp_data->proc_id, BTB_L1_INTERLEAVE_FACTOR > 0);
+      bp_data->btb_l1_ports = (Ports*)malloc(sizeof(Ports) * bp_data->btb_l1_num_banks);
+      for (uns ii = 0; ii < bp_data->btb_l1_num_banks; ii++) {
+        char name[MAX_STR_LENGTH + 1];
+        snprintf(name, MAX_STR_LENGTH, "BTB L1 BANK %d PORTS", ii);
+        init_ports(&bp_data->btb_l1_ports[ii], name, BTB_L1_READ_PORTS, BTB_L1_WRITE_PORTS, FALSE);
+      }
+    } else {
+      bp_data->btb_l1_ports = NULL;  // No banking
+    }
   } else {
     // points to the primary BP's shared caches
     bp_data->btb = primary_bp->btb;
@@ -479,17 +505,42 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   op->btb_pred_info->btb_index_addr = op->inst_info->addr;
 
   if (BTB_L0_PRESENT) {
-    Addr* e = (Addr*)cache_access(bp_data->btb_l0, op->inst_info->addr, &line_addr, lru);
-    if (e) {
-      bpi->btb_l0_hit = TRUE;
-      bpi->btb_l0_target = *e;
+    Flag can_read_l0 = TRUE;
+    if (bp_data->btb_l0_num_banks > 1) {
+      uns bank = BANK(op->inst_info->addr, bp_data->btb_l0_num_banks, BTB_L0_INTERLEAVE_FACTOR);
+      if (get_read_port(&bp_data->btb_l0_ports[bank]) == FAILURE) {
+        DEBUG_BTB(bp_data->proc_id, "BTB L0 port unavailable for bank %d addr:0x%llx\n", bank, op->inst_info->addr);
+        STAT_EVENT(op->proc_id, op->off_path ? BTB_L0_READ_PORT_CONFLICT_OFFPATH : BTB_L0_READ_PORT_CONFLICT);
+        can_read_l0 = FALSE;
+      }
+    }
+
+    if (can_read_l0) {
+      Addr* e = (Addr*)cache_access(bp_data->btb_l0, op->inst_info->addr, &line_addr, lru);
+      if (e) {
+        bpi->btb_l0_hit = TRUE;
+        bpi->btb_l0_target = *e;
+      }
     }
   }
+
   if (BTB_L1_PRESENT) {
-    Addr* e = (Addr*)cache_access(bp_data->btb_l1, op->inst_info->addr, &line_addr, lru);
-    if (e) {
-      bpi->btb_l1_hit = TRUE;
-      bpi->btb_l1_target = *e;
+    Flag can_read_l1 = TRUE;
+    if (bp_data->btb_l1_num_banks > 1) {
+      uns bank = BANK(op->inst_info->addr, bp_data->btb_l1_num_banks, BTB_L1_INTERLEAVE_FACTOR);
+      if (get_read_port(&bp_data->btb_l1_ports[bank]) == FAILURE) {
+        DEBUG_BTB(bp_data->proc_id, "BTB L1 port unavailable for bank %d addr:0x%llx\n", bank, op->inst_info->addr);
+        STAT_EVENT(op->proc_id, op->off_path ? BTB_L1_READ_PORT_CONFLICT_OFFPATH : BTB_L1_READ_PORT_CONFLICT);
+        can_read_l1 = FALSE;
+      }
+    }
+
+    if (can_read_l1) {
+      Addr* e = (Addr*)cache_access(bp_data->btb_l1, op->inst_info->addr, &line_addr, lru);
+      if (e) {
+        bpi->btb_l1_hit = TRUE;
+        bpi->btb_l1_target = *e;
+      }
     }
   }
 
@@ -497,7 +548,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
     // Calculate and check read port availability
     uns bank = BANK(op->inst_info->addr, bp_data->btb_num_banks, BTB_INTERLEAVE_FACTOR);
     if (get_read_port(&bp_data->btb_ports[bank]) == FAILURE) {
-      DEBUG_BTB(bp_data->proc_id, "BTB port unavailable for bank %d addr:0x%s\n", bank, hexstr64s(op->inst_info->addr));
+      DEBUG_BTB(bp_data->proc_id, "BTB port unavailable for bank %d addr:0x%llx\n", bank, op->inst_info->addr);
       STAT_EVENT(op->proc_id, op->off_path ? BTB_MAIN_READ_PORT_CONFLICT_OFFPATH : BTB_MAIN_READ_PORT_CONFLICT);
       return;  // Treat port conflict as BTB miss
     }
@@ -523,12 +574,32 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
   // Update L0 BTB
   if (BTB_L0_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
-    btb_update_level(bp_data->btb_l0, bp_data->proc_id, fetch_addr, op->oracle_info.target);
+    Flag can_write_l0 = TRUE;
+    if (bp_data->btb_l0_num_banks > 1) {
+      uns bank = BANK(op->inst_info->addr, bp_data->btb_l0_num_banks, BTB_L0_INTERLEAVE_FACTOR);
+      if (get_read_port(&bp_data->btb_l0_ports[bank]) == FAILURE) {
+        DEBUG_BTB(bp_data->proc_id, "BTB L0 write port unavailable for bank %d\n", bank);
+        STAT_EVENT(op->proc_id, op->off_path ? BTB_L0_WRITE_PORT_CONFLICT_OFFPATH : BTB_L0_WRITE_PORT_CONFLICT);
+        can_write_l0 = FALSE;
+      }
+    }
+    if (can_write_l0)
+      btb_update_level(bp_data->btb_l0, bp_data->proc_id, fetch_addr, op->oracle_info.target);
   }
 
   // Update L1 BTB
   if (BTB_L1_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
-    btb_update_level(bp_data->btb_l1, bp_data->proc_id, fetch_addr, op->oracle_info.target);
+    Flag can_write_l1 = TRUE;
+    if (bp_data->btb_l1_num_banks > 1) {
+      uns bank = BANK(op->inst_info->addr, bp_data->btb_l1_num_banks, BTB_L0_INTERLEAVE_FACTOR);
+      if (get_read_port(&bp_data->btb_l1_ports[bank]) == FAILURE) {
+        DEBUG_BTB(bp_data->proc_id, "BTB L1 write port unavailable for bank %d\n", bank);
+        STAT_EVENT(op->proc_id, op->off_path ? BTB_L1_WRITE_PORT_CONFLICT_OFFPATH : BTB_L1_WRITE_PORT_CONFLICT);
+        can_write_l1 = FALSE;
+      }
+    }
+    if (can_write_l1)
+      btb_update_level(bp_data->btb_l1, bp_data->proc_id, fetch_addr, op->oracle_info.target);
   }
 
   if (bp_data->btb_num_banks > 1) {

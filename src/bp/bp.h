@@ -163,7 +163,11 @@ typedef struct Bp_Data_struct {
   Cache* btb_l1;  // L1 BTB cache (only allocated on primary BP)
 
   uns btb_num_banks;
+  uns btb_l0_num_banks;
+  uns btb_l1_num_banks;
   Ports* btb_ports;
+  Ports* btb_l0_ports;
+  Ports* btb_l1_ports;
 
   CRS crs;
 

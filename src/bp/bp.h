@@ -162,6 +162,9 @@ typedef struct Bp_Data_struct {
   Cache* btb_l0;  // L0 BTB cache (only allocated on primary BP)
   Cache* btb_l1;  // L1 BTB cache (only allocated on primary BP)
 
+  uns btb_num_banks;
+  Ports* btb_ports;
+
   CRS crs;
 
   Cache* tc_tagged;  // tc_tagged is shared over all the BPs

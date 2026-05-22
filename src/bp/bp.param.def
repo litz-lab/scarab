@@ -83,6 +83,10 @@ DEF_PARAM(  ibtb_hash_tos             , IBTB_HASH_TOS             , Flag    , Fl
 DEF_PARAM(  btb_mech                  , BTB_MECH                  , uns     , btb_mech   , GENERIC_BTB,        )
 DEF_PARAM(  btb_entries               , BTB_ENTRIES               , uns     , uns        , 12288      ,        )
 DEF_PARAM(  btb_assoc                 , BTB_ASSOC                 , uns     , uns        , 4          ,        )
+DEF_PARAM(  btb_read_ports            , BTB_READ_PORTS            , uns     , uns        , 1          ,        ) /* number of read ports in a bank */
+DEF_PARAM(  btb_write_ports           , BTB_WRITE_PORTS           , uns     , uns        , 1          ,        ) /* number of write ports in a bank */
+DEF_PARAM(  btb_banks                 , BTB_BANKS                 , uns     , uns        , 1          ,        ) /* number of banks interleaved */
+DEF_PARAM(  btb_interleave_factor     , BTB_INTERLEAVE_FACTOR     , uns     , uns        , 1          ,        ) /* how many consecutive bytes form one chunk assigned to a single bank */
 DEF_PARAM(  btb_num_brslot            , BTB_NUM_BRSLOT            , uns     , uns        , 1          ,        ) /* number of branch slots per block */
 DEF_PARAM(  btb_block_size            , BTB_BLOCK_SIZE            , uns64   , uns64      , 64         ,        ) /* number of max bytes within a block (Note x86 has variable inst size) */
 DEF_PARAM(  btb_off_path_writes       , BTB_OFF_PATH_WRITES       , Flag    , Flag       , TRUE       ,        ) /* const */

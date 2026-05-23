@@ -479,7 +479,6 @@ static inline void exec_stage_dep_wakeup(Op* op) {
 static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event) {
   Op* op = src_sd->ops[ii];
 
-  issue_queue_reject(op);
   src_sd->ops[ii] = NULL;
   src_sd->op_count--;
 

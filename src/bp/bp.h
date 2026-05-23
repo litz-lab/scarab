@@ -162,9 +162,6 @@ typedef struct Bp_Data_struct {
   Cache* btb_l0;  // L0 BTB cache (only allocated on primary BP)
   Cache* btb_l1;  // L1 BTB cache (only allocated on primary BP)
 
-  uns btb_num_banks;
-  uns btb_l0_num_banks;
-  uns btb_l1_num_banks;
   Ports* btb_ports;
   Ports* btb_l0_ports;
   Ports* btb_l1_ports;
@@ -208,6 +205,12 @@ typedef enum Btb_Id_enum {
   BLOCK_BTB,
   NUM_BTB,
 } Btb_Id;
+
+typedef enum Btb_Level_enum {
+  BTB_L0,
+  BTB_L1,
+  BTB_MAIN,
+} Btb_Level;
 
 typedef enum Ibtb_Id_enum {
   TC_TAGLESS_IBTB,
@@ -285,6 +288,19 @@ extern Br_Conf br_conf_table[];
 // L0 runs in parallel with the main BP at a shorter latency.
 static inline Flag bp_l0_enabled(void) {
   return (BP_MECH_L0 != NUM_BP) && (BP_L0_LATENCY > 0);
+}
+
+static inline const char* btb_name(Btb_Level btb_level) {
+  switch (btb_level) {
+    case BTB_MAIN:
+      return "MAIN";
+    case BTB_L0:
+      return "L0";
+    case BTB_L1:
+      return "L1";
+    default:
+      return "";
+  };
 }
 
 /**************************************************************************************/

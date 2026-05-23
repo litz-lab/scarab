@@ -46,6 +46,10 @@ void bp_crs_sync(Bp_Data*, Bp_Data*);
 void bp_predict_btb(Bp_Data*, Op*);
 void bp_btb_post_bp_predict(Bp_Data*, Op*);
 
+void bp_btb_init_ports(uns, Btb_Level, uns, uns, Ports**, uns, uns);
+Flag bp_btb_read_port(uns, Btb_Level, uns, uns, Ports**, Op*);
+Flag bp_btb_write_port(uns, Btb_Level, uns, uns, Ports**, Op*);
+
 void bp_btb_gen_init(Bp_Data*, Bp_Data*);
 void bp_btb_gen_pred(Bp_Data*, Op*);
 void bp_btb_gen_update(Bp_Data*, Op*);

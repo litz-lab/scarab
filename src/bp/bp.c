@@ -350,11 +350,18 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
     } else {
       ASSERTM(proc_id, BP_MAIN_LATENCY == 1, "BP_MAIN_LATENCY must be 1 when early predictor is disabled\n");
     }
-    bp_data->btb = (Cache*)malloc(sizeof(Cache));
-    if (BTB_L0_PRESENT)
-      bp_data->btb_l0 = (Cache*)malloc(sizeof(Cache));
-    if (BTB_L1_PRESENT)
-      bp_data->btb_l1 = (Cache*)malloc(sizeof(Cache));
+
+    ASSERT(proc_id, BTB_BANKS > 0);
+    bp_data->btb = (Cache*)calloc(BTB_BANKS, sizeof(Cache));
+    if (BTB_L0_PRESENT) {
+      ASSERT(proc_id, BTB_L0_BANKS > 0);
+      bp_data->btb_l0 = (Cache*)calloc(BTB_L0_BANKS, sizeof(Cache));
+    }
+    if (BTB_L1_PRESENT) {
+      ASSERT(proc_id, BTB_L1_BANKS > 0);
+      bp_data->btb_l1 = (Cache*)calloc(BTB_L1_BANKS, sizeof(Cache));
+    }
+
     bp_data->tc_tagged = (Cache*)malloc(sizeof(Cache));
   }
   bp_data->proc_id = proc_id;

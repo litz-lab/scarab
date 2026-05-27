@@ -222,11 +222,6 @@ void FunctionalUnitPicker::pick(IssueQueueEntry*& request_entry, const ScheduleP
   IssueQueueEntry* displaced_entry = picked_entry;
   picked_entry = request_entry;
 
-  if (ISSUE_QUEUE_FU_EARLY_BIND) {
-    request_entry = nullptr;
-    return;
-  }
-
   // forward the displaced request to later pickers
   request_entry = displaced_entry;
 }
@@ -331,7 +326,7 @@ void SelectLogic::select() {
       }
 
       // if early binding is enabled, the request can only be picked by the bound picker
-      if (ISSUE_QUEUE_FU_EARLY_BIND && picker_idx != entry->bound_fu_id) {
+      if (entry->bound_fu_id != MAX_UNS && entry->bound_fu_id != picker_idx) {
         continue;
       }
 
@@ -430,52 +425,65 @@ void RoundRobinTraversalPolicy::build_picker_order(std::vector<size_t>& picker_o
   }
 }
 
-// LeastBoundBindPolicy spreads early-bound ops across compatible pickers.
-class LeastBoundBindPolicy : public BindPolicy {
+/**************************************************************************************/
+
+/*
+ * NoneBindPolicy does not perform early binding
+ * Ops can be picked by any compatible picker during selection.
+ */
+class NoneBindPolicy : public BindPolicy {
+ public:
+  void bind(const std::vector<FunctionalUnitPicker>& connected_fu_pickers, IssueQueueEntry* entry) override {}
+  void unbind(IssueQueueEntry* entry) override {}
+};
+
+/*
+ * LeastBindPolicy is described in "Reconstructing Out-of-Order Issue Queue", MICRO 2022.
+ * It binds ops to the compatible picker with the fewest assigned ops to avoid conflicts.
+ */
+class LeastBindPolicy : public BindPolicy {
  private:
   std::vector<size_t> bound_op_counts;
 
  public:
-  explicit LeastBoundBindPolicy(size_t fu_num) : bound_op_counts(fu_num, 0) {}
-  void bind(const std::vector<FunctionalUnitPicker>& connected_fu_pickers, IssueQueueEntry* entry) override;
-  void unbind(IssueQueueEntry* entry) override;
+  explicit LeastBindPolicy(size_t fu_num) : bound_op_counts(fu_num, 0) {}
+
+  void bind(const std::vector<FunctionalUnitPicker>& connected_fu_pickers, IssueQueueEntry* entry) override {
+    ASSERT(node->proc_id, entry != nullptr);
+    ASSERT(node->proc_id, connected_fu_pickers.size() == bound_op_counts.size());
+
+    size_t least_picker_idx = MAX_UNS;
+    size_t least_bound_ops = 0;
+
+    for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
+      const FunctionalUnitPicker& fu_picker = connected_fu_pickers[i];
+      if (!fu_picker.is_compatible(entry->op_fu_type)) {
+        continue;
+      }
+
+      if (least_picker_idx == MAX_UNS || bound_op_counts[i] < least_bound_ops) {
+        least_picker_idx = i;
+        least_bound_ops = bound_op_counts[i];
+      }
+    }
+
+    ASSERT(node->proc_id, least_picker_idx != MAX_UNS);
+    entry->bound_fu_id = least_picker_idx;
+    bound_op_counts[least_picker_idx] += 1;
+  }
+
+  void unbind(IssueQueueEntry* entry) override {
+    ASSERT(node->proc_id, entry != nullptr);
+    if (entry->bound_fu_id == MAX_UNS) {
+      return;
+    }
+
+    ASSERT(node->proc_id, entry->bound_fu_id < bound_op_counts.size());
+    ASSERT(node->proc_id, bound_op_counts[entry->bound_fu_id] > 0);
+    bound_op_counts[entry->bound_fu_id] -= 1;
+    entry->bound_fu_id = MAX_UNS;
+  }
 };
-
-void LeastBoundBindPolicy::bind(const std::vector<FunctionalUnitPicker>& connected_fu_pickers, IssueQueueEntry* entry) {
-  ASSERT(node->proc_id, entry != nullptr);
-  ASSERT(node->proc_id, connected_fu_pickers.size() == bound_op_counts.size());
-
-  size_t emptiest_picker_idx = MAX_UNS;
-  size_t emptiest_bound_ops = 0;
-
-  for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
-    const FunctionalUnitPicker& fu_picker = connected_fu_pickers[i];
-    if (!fu_picker.is_compatible(entry->op_fu_type)) {
-      continue;
-    }
-
-    if (emptiest_picker_idx == MAX_UNS || bound_op_counts[i] < emptiest_bound_ops) {
-      emptiest_picker_idx = i;
-      emptiest_bound_ops = bound_op_counts[i];
-    }
-  }
-
-  ASSERT(node->proc_id, emptiest_picker_idx != MAX_UNS);
-  entry->bound_fu_id = emptiest_picker_idx;
-  bound_op_counts[emptiest_picker_idx] += 1;
-}
-
-void LeastBoundBindPolicy::unbind(IssueQueueEntry* entry) {
-  ASSERT(node->proc_id, entry != nullptr);
-  if (entry->bound_fu_id == MAX_UNS) {
-    return;
-  }
-
-  ASSERT(node->proc_id, entry->bound_fu_id < bound_op_counts.size());
-  ASSERT(node->proc_id, bound_op_counts[entry->bound_fu_id] > 0);
-  bound_op_counts[entry->bound_fu_id] -= 1;
-  entry->bound_fu_id = MAX_UNS;
-}
 
 /**************************************************************************************/
 /* Factory */
@@ -489,7 +497,16 @@ class IssueQueuePolicyFactory {
     return std::make_unique<RoundRobinTraversalPolicy>(fu_num);
   }
 
-  std::unique_ptr<BindPolicy> make_bind_policy(size_t fu_num) { return std::make_unique<LeastBoundBindPolicy>(fu_num); }
+  std::unique_ptr<BindPolicy> make_bind_policy(size_t fu_num) {
+    using BindPolicyMaker = std::unique_ptr<BindPolicy> (*)(size_t);
+    static const BindPolicyMaker bind_policy_makers[ISSUE_QUEUE_EARLY_BIND_POLICY_NUM] = {
+        [](size_t) -> std::unique_ptr<BindPolicy> { return std::make_unique<NoneBindPolicy>(); },
+        [](size_t fu_num) -> std::unique_ptr<BindPolicy> { return std::make_unique<LeastBindPolicy>(fu_num); },
+    };
+
+    ASSERT(0, ISSUE_QUEUE_EARLY_BIND_POLICY < ISSUE_QUEUE_EARLY_BIND_POLICY_NUM);
+    return bind_policy_makers[ISSUE_QUEUE_EARLY_BIND_POLICY](fu_num);
+  }
 };
 
 /**************************************************************************************/
@@ -553,9 +570,7 @@ uns16 IssueQueue::allocate_entry(Op* op) {
   entry.state = ISSUE_QUEUE_ENTRY_STATE_ALLOCATED;
 
   // bind the entry to a picker during dispatching when early bind is enabled
-  if (ISSUE_QUEUE_FU_EARLY_BIND) {
-    select_logic->bind(&entry);
-  }
+  select_logic->bind(&entry);
 
   return entry_id;
 }

@@ -37,6 +37,15 @@ extern "C" {
 #include "op.h"
 
 /**************************************************************************************/
+/* Constexpr */
+
+enum IssueQueueEarlyBindPolicy {
+  ISSUE_QUEUE_EARLY_BIND_POLICY_NONE,
+  ISSUE_QUEUE_EARLY_BIND_POLICY_LEAST,
+  ISSUE_QUEUE_EARLY_BIND_POLICY_NUM
+};
+
+/**************************************************************************************/
 /* External Methods */
 
 void issue_queue_update();

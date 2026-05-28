@@ -117,7 +117,7 @@ void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns l
   cache->tag_bits = tag_bits;
   cache->shift_bits = LOG2(line_size);                /* use for shift amt. */
   cache->set_mask = N_BIT_MASK(LOG2(num_sets));       /* use after shifting */
-  cache->tag_mask = (tag_bits == 64 ? N_BIT_MASK_64 : N_BIT_MASK(tag_bits)) << LOG2(num_sets);  /* use after shifting */
+  cache->tag_mask = (tag_bits == 64 ? N_BIT_MASK_64 : N_BIT_MASK(tag_bits)) << LOG2(num_sets); /* use after shifting */
   cache->offset_mask = N_BIT_MASK(cache->shift_bits); /* use before shifting */
 
   /* allocate memory for NMRU replacement counters  */

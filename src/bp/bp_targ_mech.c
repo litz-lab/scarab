@@ -437,6 +437,7 @@ void bp_btb_post_bp_predict(Bp_Data* bp_data, Op* op) {
 void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   // btb line size set to 1
   if (!bp_data->bp_id) {
+    ASSERT(bp_data->proc_id, BTB_ENTRIES / BTB_BANKS >= BTB_ASSOC);
     for (uns ii = 0; ii < BTB_BANKS; ii++) {
       char name[MAX_STR_LENGTH + 1];
       snprintf(name, MAX_STR_LENGTH, "BTB BANK %d", ii);
@@ -445,6 +446,7 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
     }
 
     if (BTB_L0_PRESENT) {
+      ASSERT(bp_data->proc_id, BTB_L0_ENTRIES / BTB_L0_BANKS >= BTB_L0_ASSOC);
       for (uns ii = 0; ii < BTB_L0_BANKS; ii++) {
         char name[MAX_STR_LENGTH + 1];
         snprintf(name, MAX_STR_LENGTH, "BTB_L0 BANK %d", ii);
@@ -454,6 +456,7 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
     }
 
     if (BTB_L1_PRESENT) {
+      ASSERT(bp_data->proc_id, BTB_L1_ENTRIES / BTB_L1_BANKS >= BTB_L1_ASSOC);
       for (uns ii = 0; ii < BTB_L1_BANKS; ii++) {
         char name[MAX_STR_LENGTH + 1];
         snprintf(name, MAX_STR_LENGTH, "BTB_L1 BANK %d", ii);
@@ -590,6 +593,7 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
     ASSERT(bp_data->proc_id, BTB_BLOCK_SIZE > 0);
     ASSERT(bp_data->proc_id, (1 << LOG2(BTB_BLOCK_SIZE)) == BTB_BLOCK_SIZE);
 
+    ASSERT(bp_data->proc_id, BTB_ENTRIES / BTB_BANKS >= BTB_ASSOC);
     for (uns ii = 0; ii < BTB_BANKS; ii++) {
       char name[MAX_STR_LENGTH + 1];
       snprintf(name, MAX_STR_LENGTH, "B-BTB BANK %d", ii);

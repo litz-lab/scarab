@@ -46,12 +46,9 @@ void bp_crs_sync(Bp_Data*, Bp_Data*);
 void bp_predict_btb(Bp_Data*, Op*);
 void bp_btb_post_bp_predict(Bp_Data*, Op*);
 
-static inline uns get_btb_bank_id(uns num_banks, Addr addr) {
+static inline uns get_btb_bank_id(uns num_banks, Addr addr, Addr* intra_bank_addr) {
+  *intra_bank_addr = addr >> LOG2(num_banks);
   return addr % num_banks;
-}
-
-static inline Cache* get_btb_bank(Cache* btb, uns num_banks, Addr addr) {
-  return &btb[get_btb_bank_id(num_banks, addr)];
 }
 
 void bp_btb_gen_init(Bp_Data*, Bp_Data*);

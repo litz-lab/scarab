@@ -437,11 +437,13 @@ void bp_btb_post_bp_predict(Bp_Data* bp_data, Op* op) {
 void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   // btb line size set to 1
   if (!bp_data->bp_id) {
-    init_cache(bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+    init_cache(bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, BTB_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU);
     if (BTB_L0_PRESENT)
-      init_cache(bp_data->btb_l0, "BTB_L0", BTB_L0_ENTRIES, BTB_L0_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+      init_cache(bp_data->btb_l0, "BTB_L0", BTB_L0_ENTRIES, BTB_L0_ASSOC, 1, BTB_L0_TAG_BITS, sizeof(Addr),
+                 REPL_TRUE_LRU);
     if (BTB_L1_PRESENT)
-      init_cache(bp_data->btb_l1, "BTB_L1", BTB_L1_ENTRIES, BTB_L1_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+      init_cache(bp_data->btb_l1, "BTB_L1", BTB_L1_ENTRIES, BTB_L1_ASSOC, 1, BTB_L1_TAG_BITS, sizeof(Addr),
+                 REPL_TRUE_LRU);
   } else {
     // points to the primary BP's shared caches
     bp_data->btb = primary_bp->btb;
@@ -562,7 +564,7 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
     ASSERT(bp_data->proc_id, BTB_NUM_BRSLOT > 0);
     ASSERT(bp_data->proc_id, BTB_BLOCK_SIZE > 0);
     ASSERT(bp_data->proc_id, (1 << LOG2(BTB_BLOCK_SIZE)) == BTB_BLOCK_SIZE);
-    init_cache(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BLK_BTB_ENTRY_SIZE, REPL_TRUE_LRU);
+    init_cache(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BTB_TAG_BITS, BLK_BTB_ENTRY_SIZE, REPL_TRUE_LRU);
   } else  // points to the primary BP's shared BTB
     bp_data->btb = primary_bp->btb;
 }
@@ -711,7 +713,7 @@ void bp_btb_block_recover(Bp_Data* bp_data, Recovery_Info* info) {
 void bp_ibtb_tc_tagged_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   // line size set to 1
   if (!bp_data->bp_id)
-    init_cache(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+    init_cache(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, TC_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU);
   else  // points to the primary BP's shared tc_tagged
     bp_data->tc_tagged = primary_bp->tc_tagged;
 }
@@ -931,7 +933,7 @@ void bp_ibtb_tc_hybrid_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   /* Init the tagged predictor */
   // line size set to 1
   if (!bp_data->bp_id)
-    init_cache(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+    init_cache(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, TC_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU);
   else  // points to the primary BP's shared tc_tagged
     bp_data->tc_tagged = primary_bp->tc_tagged;
 }

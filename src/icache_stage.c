@@ -148,7 +148,7 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   ft_op_buffer_reset(ic);
 
   /* initialize the cache structure */
-  init_cache(&ic->icache, "ICACHE", ICACHE_SIZE, ICACHE_ASSOC, ICACHE_LINE_SIZE, 0, REPL_TRUE_LRU);
+  init_cache(&ic->icache, "ICACHE", ICACHE_SIZE, ICACHE_ASSOC, ICACHE_LINE_SIZE, ICACHE_TAG_BITS, 0, REPL_TRUE_LRU);
 
   /* init icache_line_info struct - this struct keeps data about corresponding
    * icache lines */
@@ -158,16 +158,16 @@ void init_icache_stage(uns8 proc_id, const char* name) {
     //           sizeof(Icache_Data), REPL_TRUE_LRU);
     /*init_cache(&ic->icache_line_info, "IC LI", ICACHE_SIZE, ICACHE_ASSOC,*/
     /*ICACHE_LINE_SIZE, sizeof(Icache_Data), ICACHE_REPL);*/
-    init_cache(&ic->icache_line_info, "IC LI", ICACHE_SIZE, ICACHE_ASSOC, ICACHE_LINE_SIZE, sizeof(Icache_Data),
-               REPL_TRUE_LRU);
+    init_cache(&ic->icache_line_info, "IC LI", ICACHE_SIZE, ICACHE_ASSOC, ICACHE_LINE_SIZE, ICACHE_TAG_BITS,
+               sizeof(Icache_Data), REPL_TRUE_LRU);
   }
 
   // moved the init code from here to reset
   reset_icache_stage();
 
   if (IC_PREF_CACHE_ENABLE)
-    init_cache(&ic->pref_icache, "IC_PREF_CACHE", IC_PREF_CACHE_SIZE, IC_PREF_CACHE_ASSOC, ICACHE_LINE_SIZE, 0,
-               REPL_TRUE_LRU);
+    init_cache(&ic->pref_icache, "IC_PREF_CACHE", IC_PREF_CACHE_SIZE, IC_PREF_CACHE_ASSOC, ICACHE_LINE_SIZE,
+               IC_PREF_CACHE_TAG_BITS, 0, REPL_TRUE_LRU);
 
   memset(ic->rand_wb_state, 0, NUM_ELEMENTS(ic->rand_wb_state));
 }

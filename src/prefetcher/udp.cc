@@ -138,12 +138,13 @@ UDP::UDP(uns _proc_id)
     fdip_uc_unuseful = (Cache*)malloc(sizeof(Cache));
     fdip_uc_signed = (Cache*)malloc(sizeof(Cache));
     ASSERT(proc_id, !FDIP_BLOOM_FILTER);
-    init_cache(fdip_uc, "FDIP_USEFULNESS_CACHE", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE, 0,
+    init_cache(fdip_uc, "FDIP_USEFULNESS_CACHE", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE, FDIP_UC_TAG_BITS, 0,
                REPL_TRUE_LRU);  // Data size = 2 byte
-    init_cache(fdip_uc_unuseful, "FDIP_USEFULNESS_CACHE_UNUSEFUL", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE, 0,
+    init_cache(fdip_uc_unuseful, "FDIP_USEFULNESS_CACHE_UNUSEFUL", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE,
+               FDIP_UC_TAG_BITS, 0,
                REPL_TRUE_LRU);  // Data size = 2 byte
     init_cache(fdip_uc_signed, "FDIP_USEFULNESS_CACHE_SIGNED", FDIP_UC_SIZE, FDIP_UC_ASSOC, ICACHE_LINE_SIZE,
-               sizeof(int32_t), REPL_TRUE_LRU);
+               FDIP_UC_TAG_BITS, sizeof(int32_t), REPL_TRUE_LRU);
   }
   if (FDIP_BLOOM_FILTER) {
     ASSERT(proc_id, !FDIP_UC_SIZE && !FDIP_UTILITY_HASH_ENABLE);

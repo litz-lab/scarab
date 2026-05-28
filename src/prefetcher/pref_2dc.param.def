@@ -55,6 +55,7 @@ DEF_PARAM(debug_pref_2dc              , DEBUG_PREF_2DC           , Flag   , Flag
 DEF_PARAM(pref_2dc_cache_size         , PREF_2DC_CACHE_SIZE      , uns    , uns       , (1 * 1024)  ,      )
 DEF_PARAM(pref_2dc_cache_assoc        , PREF_2DC_CACHE_ASSOC     , uns    , uns       , 4           ,      )
 DEF_PARAM(pref_2dc_cache_line_size    , PREF_2DC_CACHE_LINE_SIZE , uns    , uns       , 1           ,      ) 
+DEF_PARAM(pref_2dc_cache_tag_bits     , PREF_2DC_CACHE_TAG_BITS  , uns    , uns       , 64          ,      )
 
 DEF_PARAM(pref_2dc_degree             , PREF_2DC_DEGREE          , uns    , uns       , 16          ,      ) 
 

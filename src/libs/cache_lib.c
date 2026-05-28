@@ -90,7 +90,7 @@ uns ext_cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_addr) {
 /**************************************************************************************/
 /* init_cache: */
 
-void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
+void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns tag_bits, uns data_size,
                 Repl_Policy repl_policy) {
   uns num_lines = cache_size / line_size;
   uns num_sets = cache_size / line_size / assoc;
@@ -114,9 +114,10 @@ void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns l
 
   /* set some fields to make indexing quick */
   cache->set_bits = LOG2(num_sets);
+  cache->tag_bits = tag_bits;
   cache->shift_bits = LOG2(line_size);                /* use for shift amt. */
   cache->set_mask = N_BIT_MASK(LOG2(num_sets));       /* use after shifting */
-  cache->tag_mask = ~cache->set_mask;                 /* use after shifting */
+  cache->tag_mask = N_BIT_MASK(tag_bits) << LOG2(num_sets); /* use after shifting */
   cache->offset_mask = N_BIT_MASK(cache->shift_bits); /* use before shifting */
 
   /* allocate memory for NMRU replacement counters  */

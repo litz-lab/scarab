@@ -335,7 +335,7 @@ void init_memory() {
   init_uncores();
 
   init_cache(&mem->pref_l1_cache, "L1_PREF_CACHE", L1_PREF_CACHE_SIZE, L1_PREF_CACHE_ASSOC, L1_LINE_SIZE,
-             sizeof(L1_Data), L1_CACHE_REPL_POLICY);
+             L1_PREF_CACHE_TAG_BITS, sizeof(L1_Data), L1_CACHE_REPL_POLICY);
 
   if (STREAM_PREFETCH_ON)
     init_stream_HWP();
@@ -366,7 +366,8 @@ void init_uncores(void) {
 
   /* Initialize MLC cache (shared only for now) */
   Ported_Cache* mlc = (Ported_Cache*)malloc(sizeof(Ported_Cache));
-  init_cache(&mlc->cache, "MLC_CACHE", MLC_SIZE, MLC_ASSOC, MLC_LINE_SIZE, sizeof(MLC_Data), MLC_CACHE_REPL_POLICY);
+  init_cache(&mlc->cache, "MLC_CACHE", MLC_SIZE, MLC_ASSOC, MLC_LINE_SIZE, MLC_TAG_BITS, sizeof(MLC_Data),
+             MLC_CACHE_REPL_POLICY);
   mlc->num_banks = MLC_BANKS;
   mlc->ports = (Ports*)malloc(sizeof(Ports) * mlc->num_banks);
   for (uns ii = 0; ii < mlc->num_banks; ii++) {
@@ -387,7 +388,8 @@ void init_uncores(void) {
 
       char buf[MAX_STR_LENGTH + 1];
       sprintf(buf, "L1[%d]", proc_id);
-      init_cache(&l1->cache, buf, L1_SIZE / NUM_CORES, L1_ASSOC, L1_LINE_SIZE, sizeof(L1_Data), L1_CACHE_REPL_POLICY);
+      init_cache(&l1->cache, buf, L1_SIZE / NUM_CORES, L1_ASSOC, L1_LINE_SIZE, L1_TAG_BITS, sizeof(L1_Data),
+                 L1_CACHE_REPL_POLICY);
 
       l1->num_banks = L1_BANKS / NUM_CORES;
       l1->ports = (Ports*)malloc(sizeof(Ports) * l1->num_banks);
@@ -400,7 +402,8 @@ void init_uncores(void) {
     }
   } else {
     Ported_Cache* l1 = (Ported_Cache*)malloc(sizeof(Ported_Cache));
-    init_cache(&l1->cache, "L1_CACHE", L1_SIZE, L1_ASSOC, L1_LINE_SIZE, sizeof(L1_Data), L1_CACHE_REPL_POLICY);
+    init_cache(&l1->cache, "L1_CACHE", L1_SIZE, L1_ASSOC, L1_LINE_SIZE, L1_TAG_BITS, sizeof(L1_Data),
+               L1_CACHE_REPL_POLICY);
     l1->num_banks = L1_BANKS;
     l1->ports = (Ports*)malloc(sizeof(Ports) * l1->num_banks);
     for (uns ii = 0; ii < l1->num_banks; ii++) {
@@ -439,7 +442,7 @@ void init_uncores(void) {
       int ii;
 
       for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-        init_cache(&mem->umon_cache_core[proc_id], "UMON_CACHE", L1_SIZE / 32 / L1_LINE_SIZE, L1_ASSOC, 1,
+        init_cache(&mem->umon_cache_core[proc_id], "UMON_CACHE", L1_SIZE / 32 / L1_LINE_SIZE, L1_ASSOC, 1, L1_TAG_BITS,
                    sizeof(Umon_Cache_Data), REPL_TRUE_LRU);
 
         mem->umon_cache_hit_count_core[proc_id] = (double*)malloc(sizeof(double) * L1_ASSOC);

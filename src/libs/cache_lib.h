@@ -114,6 +114,7 @@ typedef struct Cache_struct {
   Repl_Policy repl_policy; /* the replacement policy of the cache */
 
   uns set_bits;     /* number of bits used in the set mask */
+  uns tag_bits;     /* number of bits used in the tag mask */
   uns shift_bits;   /* number of bits to shift an address before using (assuming it is shifted) */
   Addr set_mask;    /* mask applied after shifting to get the index */
   Addr tag_mask;    /* mask used to get the tag after shifting */
@@ -178,7 +179,7 @@ const static Flag CACHE_DEBUG_ENABLE = FALSE;  // To be Changed into DEBUG_PARA
 /**************************************************************************************/
 /* prototypes */
 
-void init_cache(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
+void init_cache(Cache*, const char*, uns, uns, uns, uns, uns, Repl_Policy);
 void* cache_access(Cache*, Addr, Addr*, Flag);
 void* cache_insert(Cache*, uns8, Addr, Addr*, Addr*);
 void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr,

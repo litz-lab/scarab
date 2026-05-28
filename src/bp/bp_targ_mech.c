@@ -71,6 +71,12 @@
     }                                                                                              \
   } while (0)
 
+#define BTB_MAIN_BANKS BTB_BANKS
+#define STAT_EVENT_BTB_BANK(op, addr, level, pred_update)                                                         \
+  do {                                                                                                            \
+    STAT_EVENT((op)->proc_id, BTB_##level##_##pred_update##_BANK_0 + get_btb_bank_id(BTB_##level##_BANKS, addr)); \
+  } while (0)
+
 #define STAT_EVENT_IBTB_OUTCOME(op, prefix, correct)                                                               \
   do {                                                                                                             \
     STAT_EVENT((op)->proc_id, (op)->off_path ? ((correct) ? prefix##_CORRECT_OFFPATH : prefix##_INCORRECT_OFFPATH) \
@@ -485,6 +491,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   op->btb_pred_info->btb_index_addr = op->inst_info->addr;
 
   if (BTB_L0_PRESENT) {
+    STAT_EVENT_BTB_BANK(op, op->inst_info->addr, L0, PRED);
     Addr* e = (Addr*)cache_access(get_btb_bank(bp_data->btb_l0, BTB_L0_BANKS, op->inst_info->addr), op->inst_info->addr,
                                   &line_addr, lru);
     if (e) {
@@ -492,7 +499,9 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
       bpi->btb_l0_target = *e;
     }
   }
+
   if (BTB_L1_PRESENT) {
+    STAT_EVENT_BTB_BANK(op, op->inst_info->addr, L1, PRED);
     Addr* e = (Addr*)cache_access(get_btb_bank(bp_data->btb_l1, BTB_L1_BANKS, op->inst_info->addr), op->inst_info->addr,
                                   &line_addr, lru);
     if (e) {
@@ -501,6 +510,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
     }
   }
 
+  STAT_EVENT_BTB_BANK(op, op->inst_info->addr, MAIN, PRED);
   Addr* e = (Addr*)cache_access(get_btb_bank(bp_data->btb, BTB_BANKS, op->inst_info->addr), op->inst_info->addr,
                                 &line_addr, lru);
   if (e) {
@@ -519,6 +529,8 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
   ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+
+  STAT_EVENT_BTB_BANK(op, fetch_addr, MAIN, UPDATE);
 
   // if it was a btb miss, it is time to write it into the btb
   if (btb_pred_miss(op->btb_pred_info) && op->oracle_info.dir == TAKEN) {
@@ -565,12 +577,14 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
   // Update L0 BTB
   if (BTB_L0_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
+    STAT_EVENT_BTB_BANK(op, fetch_addr, L0, UPDATE);
     btb_update_level(get_btb_bank(bp_data->btb_l0, BTB_L0_BANKS, fetch_addr), bp_data->proc_id, fetch_addr,
                      op->oracle_info.target);
   }
 
   // Update L1 BTB
   if (BTB_L1_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
+    STAT_EVENT_BTB_BANK(op, fetch_addr, L1, UPDATE);
     btb_update_level(get_btb_bank(bp_data->btb_l1, BTB_L1_BANKS, fetch_addr), bp_data->proc_id, fetch_addr,
                      op->oracle_info.target);
   }
@@ -636,6 +650,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   bp_data->prev_cf_target = op->oracle_info.target;
   bp_data->prev_cf_btb_index_addr = btb_index_addr;
 
+  STAT_EVENT_BTB_BANK(op, btb_index_addr, MAIN, PRED);
   Addr btb_line_addr;
   Blk_Btb_BrSlot* br_slots = (Blk_Btb_BrSlot*)cache_access(get_btb_bank(bp_data->btb, BTB_BANKS, btb_index_addr),
                                                            btb_index_addr, &btb_line_addr, TRUE);
@@ -676,6 +691,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
       br_slot.target = op->oracle_info.target;
       br_slot.valid = TRUE;
 
+      STAT_EVENT_BTB_BANK(op, btb_index_addr, MAIN, UPDATE);
       Addr btb_line_addr, repl_line_addr;
       Blk_Btb_BrSlot* br_slots = (Blk_Btb_BrSlot*)cache_access(get_btb_bank(bp_data->btb, BTB_BANKS, btb_index_addr),
                                                                btb_index_addr, &btb_line_addr, TRUE);

@@ -152,16 +152,8 @@ DEF_PARAM(reg_renaming_move_eliminate, REG_RENAMING_MOVE_ELIMINATE, Flag, Flag, 
 
 /********ISSUE QUEUE
  * PARAMETERS********************************************************/
-/*
- * FIND_EMPTIEST_RS : 0 (default)
- */
-DEF_PARAM(node_issue_queue_dispatch_scheme, NODE_ISSUE_QUEUE_DISPATCH_SCHEME, uns, uns, 0, )
-
-/*
- * OLDEST_FIRST : 0 (default)
- */
-DEF_PARAM(node_issue_queue_schedule_scheme, NODE_ISSUE_QUEUE_SCHEDULE_SCHEME, uns, uns, 0, )
-
+DEF_PARAM(issue_queue_schedule_policy, ISSUE_QUEUE_SCHEDULE_POLICY, uns, uns, 0, )
+DEF_PARAM(issue_queue_traversal_policy, ISSUE_QUEUE_TRAVERSAL_POLICY, uns, uns, 0, )
 DEF_PARAM(issue_queue_early_bind_policy, ISSUE_QUEUE_EARLY_BIND_POLICY, uns, uns, 1, )
 
 /********EXEC PORT

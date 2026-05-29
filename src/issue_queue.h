@@ -37,12 +37,20 @@ extern "C" {
 #include "op.h"
 
 /**************************************************************************************/
+/* Constexpr */
+
+enum IssueQueueEarlyBindPolicy {
+  ISSUE_QUEUE_EARLY_BIND_POLICY_NONE,
+  ISSUE_QUEUE_EARLY_BIND_POLICY_LEAST,
+  ISSUE_QUEUE_EARLY_BIND_POLICY_NUM
+};
+
+/**************************************************************************************/
 /* External Methods */
 
 void issue_queue_update();
 void issue_queue_wakeup(Op* op);
 void issue_queue_issued(Op* op);
-void issue_queue_reject(Op* op);
 Flag issue_queue_has_ready_ops();
 
 // vanilla hps interface

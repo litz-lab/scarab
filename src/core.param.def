@@ -162,7 +162,7 @@ DEF_PARAM(node_issue_queue_dispatch_scheme, NODE_ISSUE_QUEUE_DISPATCH_SCHEME, un
  */
 DEF_PARAM(node_issue_queue_schedule_scheme, NODE_ISSUE_QUEUE_SCHEDULE_SCHEME, uns, uns, 0, )
 
-DEF_PARAM(issue_queue_parallel_pick, ISSUE_QUEUE_PARALLEL_PICK, Flag, Flag, FALSE, )
+DEF_PARAM(issue_queue_early_bind_policy, ISSUE_QUEUE_EARLY_BIND_POLICY, uns, uns, 1, )
 
 /********EXEC PORT
  * PARAMETERS*********************************************************/

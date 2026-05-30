@@ -254,7 +254,8 @@ void update_dcache_stage(Stage_Data* src_sd) {
 
     /* now access the dcache with it */
     Addr line_addr;
-    Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, TRUE);
+    Flag tag_aliasing;
+    Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, &tag_aliasing, TRUE);
     op->dcache_cycle = cycle_count;
     dc->idle_cycle = MAX2(dc->idle_cycle, cycle_count + DCACHE_CYCLES);
 
@@ -365,7 +366,8 @@ Flag dcache_fill_line(Mem_Req* req) {
 
 Flag do_oracle_dcache_access(Op* op, Addr* line_addr) {
   Dcache_Data* hit;
-  hit = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, line_addr, FALSE);
+  Flag tag_aliasing;
+  hit = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, line_addr, &tag_aliasing, FALSE);
 
   if (hit)
     return TRUE;
@@ -507,13 +509,14 @@ static inline void dcache_fill_wp_collect_stats(Dcache_Data* line, Mem_Req* req)
 static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle) {
   Addr one_more_addr;
   Addr extra_line_addr;
+  Flag tag_aliasing;
   Dcache_Data* extra_line;
 
   one_more_addr = ((line_addr >> LOG2(cache->line_size)) & 1)
                       ? ((line_addr >> LOG2(cache->line_size)) - 1) << LOG2(cache->line_size)
                       : ((line_addr >> LOG2(cache->line_size)) + 1) << LOG2(cache->line_size);
 
-  extra_line = (Dcache_Data*)cache_access(cache, one_more_addr, &extra_line_addr, FALSE);
+  extra_line = (Dcache_Data*)cache_access(cache, one_more_addr, &extra_line_addr, &tag_aliasing, FALSE);
   ASSERT(proc_id, one_more_addr == extra_line_addr);
 
   if (extra_line) {

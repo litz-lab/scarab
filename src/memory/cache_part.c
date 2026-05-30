@@ -457,8 +457,9 @@ void cache_part_l1_access(Mem_Req* req) {
   Flag untimely_hit = FALSE;
   Flag stalling = mem_req_type_is_stalling(req->type);
   Flag demand = mem_req_type_is_demand(req->type);
+  Flag tag_aliasing;
   if (!miss && L1_PART_FILL_DELAY) {
-    L1_Data* data = (L1_Data*)cache_access(&proc_info->shadow_cache, req->addr, &dummy_line_addr, FALSE);
+    L1_Data* data = (L1_Data*)cache_access(&proc_info->shadow_cache, req->addr, &dummy_line_addr, &tag_aliasing, FALSE);
     ASSERT(req->proc_id, data);
     untimely_hit = data->fetch_cycle > freq_cycle_count(FREQ_DOMAIN_L1);
   }
@@ -487,7 +488,7 @@ void cache_part_l1_access(Mem_Req* req) {
     L1_Data* data = cache_insert(&proc_info->shadow_cache, req->proc_id, req->addr, &dummy_line_addr, &dummy_line_addr);
     data->fetch_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + (stalling || req->type == MRT_WB ? 0 : L1_PART_FILL_DELAY);
   } else {
-    cache_access(&proc_info->shadow_cache, req->addr, &dummy_line_addr, TRUE);
+    cache_access(&proc_info->shadow_cache, req->addr, &dummy_line_addr, &tag_aliasing, TRUE);
   }
 }
 
@@ -497,7 +498,8 @@ void cache_part_l1_access(Mem_Req* req) {
 void cache_part_l1_warmup(uns proc_id, Addr addr) {
   Proc_Info* proc_info = &proc_infos[proc_id];
   Addr dummy_line_addr;
-  L1_Data* data = (L1_Data*)cache_access(&proc_info->shadow_cache, addr, &dummy_line_addr, TRUE);
+  Flag tag_aliasing;
+  L1_Data* data = (L1_Data*)cache_access(&proc_info->shadow_cache, addr, &dummy_line_addr, &tag_aliasing, TRUE);
   if (!data) {
     L1_Data* data = cache_insert(&proc_info->shadow_cache, proc_id, addr, &dummy_line_addr, &dummy_line_addr);
     data->fetch_cycle = 0;
@@ -542,7 +544,7 @@ void cache_part_update(void) {
 
 Flag in_shadow_cache(Addr addr) {
   Addr dummy_addr;
-  uns set = ext_cache_index(&proc_infos[0].shadow_cache, addr, &dummy_addr, &dummy_addr);
+  uns set = ext_cache_index(&proc_infos[0].shadow_cache, addr, &dummy_addr, &dummy_addr, &dummy_addr);
   return set % L1_SHADOW_TAGS_MODULO == 0;
 }
 

@@ -223,11 +223,13 @@ void l2l1pref_dcache(Addr line_addr, Op* op) {
 
 Dcache_Data* dc_pref_cache_access(Op* op) {
   Addr pref_line_addr, repl_line_addr;
+  Flag tag_aliasing;
   Flag pref_cache_hit = FALSE;
   Flag data_hit = FALSE;
   Dcache_Data* old_data = NULL;
 
-  Dcache_Data* data = (Dcache_Data*)cache_access(&dc->pref_dcache, op->oracle_info.va, &pref_line_addr, FALSE);
+  Dcache_Data* data =
+      (Dcache_Data*)cache_access(&dc->pref_dcache, op->oracle_info.va, &pref_line_addr, &tag_aliasing, FALSE);
 
   if (data && (!PREF_CACHE_USE_RDY_CYCLE || (data->rdy_cycle <= cycle_count)))
     data_hit = TRUE;
@@ -260,7 +262,8 @@ Dcache_Data* dc_pref_cache_access(Op* op) {
 
   if (DC_PREF_ONLY_L1HIT) {
     Addr line_addr;
-    L1_Data* l1_data = (L1_Data*)cache_access(l1_cache, op->oracle_info.va, &line_addr, FALSE);
+    Flag tag_aliasing;
+    L1_Data* l1_data = (L1_Data*)cache_access(l1_cache, op->oracle_info.va, &line_addr, &tag_aliasing, FALSE);
     if (!l1_data) {
       pref_cache_hit = FALSE;
       if (data_hit)
@@ -315,7 +318,8 @@ Dcache_Data* dc_pref_cache_access(Op* op) {
     if (PREF_DCACHE_HIT_FILL_L1) {
       if (model->mem == MODEL_MEM) {
         Addr line_addr;
-        L1_Data* l1_data = (L1_Data*)cache_access(l1_cache, op->oracle_info.va, &line_addr, TRUE);
+        Flag tag_aliasing;
+        L1_Data* l1_data = (L1_Data*)cache_access(l1_cache, op->oracle_info.va, &line_addr, &tag_aliasing, TRUE);
         if (!l1_data) {
           Mem_Req tmp_req;
           tmp_req.addr = op->oracle_info.va;
@@ -362,12 +366,13 @@ Flag dc_pref_cache_fill_line(Mem_Req* req) {
 
 void dc_pref_cache_insert(Addr addr) {
   Addr line_addr, repl_line_addr;
+  Flag tag_aliasing;
 
-  Dcache_Data* data = (Dcache_Data*)cache_access(&dc->pref_dcache, addr, &line_addr, FALSE);
+  Dcache_Data* data = (Dcache_Data*)cache_access(&dc->pref_dcache, addr, &line_addr, &tag_aliasing, FALSE);
 
-  Dcache_Data* dc_data = (Dcache_Data*)cache_access(&dc->dcache, addr, &line_addr, FALSE);
+  Dcache_Data* dc_data = (Dcache_Data*)cache_access(&dc->dcache, addr, &line_addr, &tag_aliasing, FALSE);
 
-  L1_Data* l1_data = (L1_Data*)cache_access(l1_cache, addr, &line_addr, FALSE);
+  L1_Data* l1_data = (L1_Data*)cache_access(l1_cache, addr, &line_addr, &tag_aliasing, FALSE);
 
   if (dc_data)
     STAT_EVENT(0, DC_PREF_REQ_DCACHE_HIT);
@@ -393,10 +398,11 @@ void dc_pref_cache_insert(Addr addr) {
 
 void ideal_l2l1_prefetcher(Op* op) {
   Addr line_addr;
-  Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, FALSE);
+  Flag tag_aliasing;
+  Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, &tag_aliasing, FALSE);
 
   if (!line) {  // dcache miss
-    L1_Data* data = (L1_Data*)cache_access(l1_cache, op->oracle_info.va, &line_addr,
+    L1_Data* data = (L1_Data*)cache_access(l1_cache, op->oracle_info.va, &line_addr, &tag_aliasing,
                                            TRUE);  // update the replacement policy
 
     if (data) {  // l1 hit

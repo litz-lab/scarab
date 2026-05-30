@@ -81,6 +81,7 @@ typedef struct Cache_Entry_struct {
   uns8 proc_id;
   Flag valid;               /* valid bit for the line */
   Addr tag;                 /* tag for the line */
+  Addr tag_full;            /* original tag before folding */
   Addr base;                /* address of first element */
   Counter last_access_time; /* for replacement policy */
   Counter insertion_time;   /* for replacement policy */
@@ -158,7 +159,7 @@ struct repl_policy_func {
   Repl_Policy repl_policy_type;
 
   void (*action_init)(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
-  void (*action_repl)(Cache*, Cache_Entry*, uns8, Addr, Addr*, Addr*);
+  void (*action_repl)(Cache*, Cache_Entry*, uns8, Addr, Addr, Addr*, Addr*);
 
   void (*update_hit)(Cache*, uns, uns, void*);
   void (*update_insert)(Cache*, uns8, uns, uns, void*);
@@ -171,7 +172,7 @@ extern struct repl_policy_func repl_policy_func_table[NUM_REPL];
 /* Strategy Function */
 void init_cache_strategy(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
 void* cache_insert_strategy(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr);
-void* cache_access_strategy(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl);
+void* cache_access_strategy(Cache* cache, Addr addr, Addr* line_addr, Flag* tag_aliasing, Flag update_repl);
 Cache_Entry* cache_evict_strategy(Cache* cache, uns8 proc_id, uns set, uns* way);
 
 const static Flag CACHE_DEBUG_ENABLE = FALSE;  // To be Changed into DEBUG_PARA
@@ -180,7 +181,7 @@ const static Flag CACHE_DEBUG_ENABLE = FALSE;  // To be Changed into DEBUG_PARA
 /* prototypes */
 
 void init_cache(Cache*, const char*, uns, uns, uns, uns, uns, Repl_Policy);
-void* cache_access(Cache*, Addr, Addr*, Flag);
+void* cache_access(Cache*, Addr, Addr*, Flag*, Flag);
 void* cache_insert(Cache*, uns8, Addr, Addr*, Addr*);
 void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr,
                            Cache_Insert_Repl insert_repl_policy, Flag isPrefetch);
@@ -189,14 +190,14 @@ void cache_invalidate(Cache*, Addr, Addr*);
 void cache_flush(Cache*);
 void* get_next_repl_line(Cache*, uns8, Addr, Addr*, Flag*);
 void* get_next_valid_repl_line(Cache* cache, uns8 proc_id, Addr addr);
-uns ext_cache_index(Cache*, Addr, Addr*, Addr*);
+uns ext_cache_index(Cache*, Addr, Addr*, Addr*, Addr*);
 Addr get_cache_line_addr(Cache*, Addr);
 uns cache_get_invalid_line_count(Cache* cache, Addr addr);
 void update_repl_resteer_policy(Cache*, Addr);
 
-void* shadow_cache_insert(Cache* cache, uns set, Addr tag, Addr base);
-void* access_shadow_lines(Cache* cache, uns set, Addr tag);
-void* access_ideal_storage(Cache* cache, uns set, Addr tag, Addr addr);
+void* shadow_cache_insert(Cache* cache, uns set, Addr tag, Addr tag_full, Addr base);
+void* access_shadow_lines(Cache* cache, uns set, Addr tag, Addr tag_full, Flag* tag_aliasing);
+void* access_ideal_storage(Cache* cache, uns set, Addr tag, Addr tag_full, Addr addr, Flag* tag_aliasing);
 void reset_cache(Cache*);
 int cache_find_pos_in_lru_stack(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr);
 void set_partition_allocate(Cache* cache, uns8 proc_id, uns num_ways);

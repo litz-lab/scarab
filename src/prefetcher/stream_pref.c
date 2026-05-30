@@ -331,12 +331,13 @@ void update_pref_queue(void) {
       int q_index = l2hit_stream_pref_send_no % L2HIT_PREF_REQ_Q_SIZE;
       Addr req_va = stream_hwp->l2hit_pref_req_queue[q_index].line_addr;
       Addr line_addr;
+      Flag tag_aliasing;
 
       if (stream_hwp->l2hit_pref_req_queue[q_index].valid) {
         uns bank = req_va >> dc->dcache.shift_bits & N_BIT_MASK(LOG2(DCACHE_BANKS));
 
         if (get_read_port(&dc->ports[bank])) {
-          Dcache_Data* data = (Dcache_Data*)cache_access(&dc->dcache, req_va, &line_addr, FALSE);
+          Dcache_Data* data = (Dcache_Data*)cache_access(&dc->dcache, req_va, &line_addr, &tag_aliasing, FALSE);
 
           if (data) {
             // L1 hit

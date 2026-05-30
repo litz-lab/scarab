@@ -999,17 +999,21 @@ void FDIP::update() {
       Mem_Queue_Entry* queue_entry = NULL;
       Flag ramulator_match = FALSE;
       Addr dummy_addr = 0;
+      Flag tag_aliasing;
       bool line = false;
       Mem_Req* mem_req = NULL;
       if (emit_new_prefetch) {
-        line = (Inst_Info**)cache_access(&(ic_ref->icache), pc_addr, &line_addr, TRUE);
+        line = (Inst_Info**)cache_access(&(ic_ref->icache), pc_addr, &line_addr, &tag_aliasing, TRUE);
         // icache_line_info cache should be accessed same times with icache for a consistant line information
         if (WP_COLLECT_STATS) {
-          bool line_info = (Icache_Data*)cache_access(&(ic_ref->icache_line_info), pc_addr, &dummy_addr, TRUE);
+          bool line_info =
+              (Icache_Data*)cache_access(&(ic_ref->icache_line_info), pc_addr, &dummy_addr, &tag_aliasing, TRUE);
           UNUSED(line_info);
         }
-        bool mlc_line = (Inst_Info**)cache_access(&mem->uncores[proc_id].mlc->cache, pc_addr, &dummy_addr, FALSE);
-        bool l1_line = (Inst_Info**)cache_access(&mem->uncores[proc_id].l1->cache, pc_addr, &dummy_addr, FALSE);
+        bool mlc_line =
+            (Inst_Info**)cache_access(&mem->uncores[proc_id].mlc->cache, pc_addr, &dummy_addr, &tag_aliasing, FALSE);
+        bool l1_line =
+            (Inst_Info**)cache_access(&mem->uncores[proc_id].l1->cache, pc_addr, &dummy_addr, &tag_aliasing, FALSE);
         UNUSED(dummy_addr);
         uns pref_from = line ? 0 : (mlc_line ? 1 : (l1_line ? 2 : 3));
         STAT_EVENT(proc_id, FDIP_PREFETCH_HIT_ICACHE0 + 4 * bp_id + pref_from);
@@ -1301,6 +1305,7 @@ void FDIP::determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefe
 
 void FDIP::determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_prefetch, Op* op, uint64_t ghist) {
   Addr uc_line_addr = 0;
+  Flag tag_aliasing;
   uint64_t hashed_line_addr = line_addr;
   if (FDIP_GHIST_HASHING)
     hashed_line_addr = fdip_hash_addr_ghist(line_addr, ghist);
@@ -1312,7 +1317,7 @@ void FDIP::determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_
   } else {
     switch (FDIP_UTILITY_PREF_POLICY) {
       case Utility_Pref_Policy::PREF_CONV_FROM_USEFUL_SET: {
-        void* useful = (void*)cache_access(udp->get_fdip_uc(), hashed_line_addr, &uc_line_addr, TRUE);
+        void* useful = (void*)cache_access(udp->get_fdip_uc(), hashed_line_addr, &uc_line_addr, &tag_aliasing, TRUE);
         if (useful) {
           STAT_EVENT(proc_id, FDIP_UC_HIT);
           *emit_new_prefetch = TRUE;
@@ -1323,7 +1328,8 @@ void FDIP::determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_
         break;
       }
       case Utility_Pref_Policy::PREF_OPT_FROM_UNUSEFUL_SET: {
-        void* unuseful = (void*)cache_access(udp->get_fdip_uc_unuseful(), hashed_line_addr, &uc_line_addr, TRUE);
+        void* unuseful =
+            (void*)cache_access(udp->get_fdip_uc_unuseful(), hashed_line_addr, &uc_line_addr, &tag_aliasing, TRUE);
         if (unuseful) {
           STAT_EVENT(proc_id, FDIP_UC_HIT);
           *emit_new_prefetch = FALSE;
@@ -1334,7 +1340,8 @@ void FDIP::determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_
         break;
       }
       case Utility_Pref_Policy::PREF_CONV_FROM_THROTTLE_CNT: {
-        int32_t* useful = (int32_t*)cache_access(udp->get_fdip_uc_signed(), hashed_line_addr, &uc_line_addr, TRUE);
+        int32_t* useful =
+            (int32_t*)cache_access(udp->get_fdip_uc_signed(), hashed_line_addr, &uc_line_addr, &tag_aliasing, TRUE);
         if (useful) {
           STAT_EVENT(proc_id, FDIP_UC_HIT);
           if (*useful > UDP_USEFUL_THRESHOLD)
@@ -1348,7 +1355,8 @@ void FDIP::determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_
         break;
       }
       case Utility_Pref_Policy::PREF_OPT_FROM_THROTTLE_CNT: {
-        int32_t* useful = (int32_t*)cache_access(udp->get_fdip_uc_signed(), hashed_line_addr, &uc_line_addr, TRUE);
+        int32_t* useful =
+            (int32_t*)cache_access(udp->get_fdip_uc_signed(), hashed_line_addr, &uc_line_addr, &tag_aliasing, TRUE);
         if (useful) {
           STAT_EVENT(proc_id, FDIP_UC_HIT);
           if (*useful < UDP_USEFUL_THRESHOLD) {
@@ -1425,7 +1433,8 @@ void FDIP::update_unuseful_lines_uc(Addr line_addr) {
   Cache* fdip_uc_unuseful = udp->get_fdip_uc_unuseful();
   Addr uc_line_addr = 0;
   Addr repl_uc_line_addr = 0;
-  void* cnt = (void*)cache_access(fdip_uc_unuseful, line_addr, &uc_line_addr, TRUE);
+  Flag tag_aliasing;
+  void* cnt = (void*)cache_access(fdip_uc_unuseful, line_addr, &uc_line_addr, &tag_aliasing, TRUE);
   if (!cnt)
     cache_insert_replpos(fdip_uc_unuseful, proc_id, line_addr, &uc_line_addr, &repl_uc_line_addr,
                          (Cache_Insert_Repl)FDIP_UC_INSERT_REPLPOL, FALSE);
@@ -1438,7 +1447,8 @@ void FDIP::update_useful_lines_uc(Addr line_addr) {
   Cache* fdip_uc = udp->get_fdip_uc();
   Addr uc_line_addr = 0;
   Addr repl_uc_line_addr = 0;
-  void* cnt = (void*)cache_access(fdip_uc, line_addr, &uc_line_addr, TRUE);
+  Flag tag_aliasing;
+  void* cnt = (void*)cache_access(fdip_uc, line_addr, &uc_line_addr, &tag_aliasing, TRUE);
   if (!cnt)
     cache_insert_replpos(fdip_uc, proc_id, line_addr, &uc_line_addr, &repl_uc_line_addr,
                          (Cache_Insert_Repl)FDIP_UC_INSERT_REPLPOL, FALSE);
@@ -1496,7 +1506,8 @@ void FDIP::insert_pref_candidate_to_seniority_ftq(Addr line_addr, uint64_t ghist
 void FDIP::inc_useful_lines_uc(Addr line_addr) {
   Addr uc_line_addr = 0;
   Addr repl_uc_line_addr = 0;
-  int32_t* cnt = (int32_t*)cache_access(udp->get_fdip_uc_signed(), line_addr, &uc_line_addr, TRUE);
+  Flag tag_aliasing;
+  int32_t* cnt = (int32_t*)cache_access(udp->get_fdip_uc_signed(), line_addr, &uc_line_addr, &tag_aliasing, TRUE);
   if (!cnt) {
     cnt = (int32_t*)cache_insert_replpos(udp->get_fdip_uc_signed(), proc_id, line_addr, &uc_line_addr,
                                          &repl_uc_line_addr, (Cache_Insert_Repl)FDIP_UC_INSERT_REPLPOL, FALSE);
@@ -1515,7 +1526,8 @@ void FDIP::inc_useful_lines_uc(Addr line_addr) {
 void FDIP::dec_useful_lines_uc(Addr line_addr) {
   Addr uc_line_addr = 0;
   Addr repl_uc_line_addr = 0;
-  int32_t* cnt = (int32_t*)cache_access(udp->get_fdip_uc_signed(), line_addr, &uc_line_addr, TRUE);
+  Flag tag_aliasing;
+  int32_t* cnt = (int32_t*)cache_access(udp->get_fdip_uc_signed(), line_addr, &uc_line_addr, &tag_aliasing, TRUE);
   if (!cnt) {
     cnt = (int32_t*)cache_insert_replpos(udp->get_fdip_uc_signed(), proc_id, line_addr, &uc_line_addr,
                                          &repl_uc_line_addr, (Cache_Insert_Repl)FDIP_UC_INSERT_REPLPOL, FALSE);

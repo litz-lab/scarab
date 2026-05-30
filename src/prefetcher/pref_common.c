@@ -675,6 +675,7 @@ void pref_update_core(uns proc_id) {
     uns bank;
     Dcache_Data* dc_hit;
     Addr dummy_line_addr;
+    Flag tag_aliasing;
     Flag inc_send_pos = TRUE;
 
     if (dl0req_queue[q_index].valid) {
@@ -693,7 +694,8 @@ void pref_update_core(uns proc_id) {
       }
       // Now, access the cache
 
-      dc_hit = (Dcache_Data*)cache_access(&dc->dcache, dl0req_queue[q_index].line_addr, &dummy_line_addr, FALSE);
+      dc_hit = (Dcache_Data*)cache_access(&dc->dcache, dl0req_queue[q_index].line_addr, &dummy_line_addr, &tag_aliasing,
+                                          FALSE);
 
       if (dc_hit) {
         // nothing for now

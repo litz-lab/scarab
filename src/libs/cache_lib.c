@@ -56,7 +56,7 @@
 /**************************************************************************************/
 /* Static Prototypes */
 
-static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_addr);
+static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* tag_full, Addr* line_addr);
 static inline void update_repl_policy(Cache*, Cache_Entry*, uns, uns, Flag);
 static inline Cache_Entry* find_repl_entry(Cache*, uns8, uns, uns*);
 
@@ -72,19 +72,25 @@ char rand_repl_state[31];
 
 /**************************************************************************************/
 
-static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_addr) {
+static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* tag_full, Addr* line_addr) {
   if (cache->tag_incl_offset) {
-    *tag = addr & ~(cache->set_mask << cache->shift_bits);
+    *tag = *tag_full = addr & ~(cache->set_mask << cache->shift_bits);
     *line_addr = addr;  // When the tag incl offset, cache is BYTE-addressable
   } else {
-    *tag = addr >> cache->shift_bits & cache->tag_mask;
+    Addr _tag;
+    _tag = *tag_full = addr >> cache->shift_bits & ~cache->set_mask;
+    // chunk XOR folding
+    while ((_tag >> cache->tag_bits) != 0) {
+      _tag = (_tag & cache->tag_mask) ^ (_tag >> cache->tag_bits);
+    }
+    *tag = _tag & cache->tag_mask;
     *line_addr = addr & ~cache->offset_mask;
   }
   return addr >> cache->shift_bits & cache->set_mask;
 }
 
-uns ext_cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_addr) {
-  return cache_index(cache, addr, tag, line_addr);
+uns ext_cache_index(Cache* cache, Addr addr, Addr* tag, Addr* tag_full, Addr* line_addr) {
+  return cache_index(cache, addr, tag, tag_full, line_addr);
 }
 
 /**************************************************************************************/
@@ -206,17 +212,17 @@ void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns l
 /* cache_access: Does a cache lookup based on the address.  Returns a pointer
  * to the cache line data if it is found.  */
 
-void* cache_access(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl) {
-  Addr tag;
-  uns set = cache_index(cache, addr, &tag, line_addr);
+void* cache_access(Cache* cache, Addr addr, Addr* line_addr, Flag* tag_aliasing, Flag update_repl) {
+  Addr tag, tag_full;
+  uns set = cache_index(cache, addr, &tag, &tag_full, line_addr);
   uns ii;
   void* line_data = NULL;
 
   if (cache->repl_policy >= REPL_VOID)
-    return cache_access_strategy(cache, addr, line_addr, update_repl);
+    return cache_access_strategy(cache, addr, line_addr, tag_aliasing, update_repl);
 
   if (cache->repl_policy == REPL_IDEAL_STORAGE) {
-    return access_ideal_storage(cache, set, tag, addr);
+    return access_ideal_storage(cache, set, tag, tag_full, addr, tag_aliasing);
   }
 
   for (ii = 0; ii < cache->assoc; ii++) {
@@ -238,6 +244,7 @@ void* cache_access(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl) {
               cache->assoc);
       }
 
+      *tag_aliasing = line->tag_full != tag_full;
       line_data = line->data;
     }
   }
@@ -254,7 +261,7 @@ void* cache_access(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl) {
 
   if (cache->repl_policy == REPL_SHADOW_IDEAL) {
     DEBUG(0, "Checking shadow cache '%s' at (set %u), base 0x%s\n", cache->name, set, hexstr64s(addr));
-    return access_shadow_lines(cache, set, tag);
+    return access_shadow_lines(cache, set, tag, tag_full, tag_aliasing);
   }
 
   DEBUG(0, "Didn't find line in set %u in cache '%s' base 0x%s\n", set, cache->name, hexstr64s(addr));
@@ -287,9 +294,9 @@ void* cache_insert(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr*
 
 void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr,
                            Cache_Insert_Repl insert_repl_policy, Flag isPrefetch) {
-  Addr tag;
+  Addr tag, tag_full;
   uns repl_index;
-  uns set = cache_index(cache, addr, &tag, line_addr);
+  uns set = cache_index(cache, addr, &tag, &tag_full, line_addr);
   Cache_Entry* new_line;
 
   // Sanity check. Ensure that we do not insert the same line twice
@@ -306,7 +313,7 @@ void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr, Addr* line_add
     /* before insert the data into cache, if the cache has shadow entry */
     /* insert that entry to the shadow cache */
     if ((cache->repl_policy == REPL_SHADOW_IDEAL) && new_line->valid)
-      shadow_cache_insert(cache, set, new_line->tag, new_line->base);
+      shadow_cache_insert(cache, set, new_line->tag, new_line->tag_full, new_line->base);
 
     /* bug fixed. 4/26/04 if the entry is not valid, repl_line_addr should be set to 0 */
     if (new_line->valid)
@@ -320,6 +327,7 @@ void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr, Addr* line_add
   new_line->proc_id = proc_id;
   new_line->valid = TRUE;
   new_line->tag = tag;
+  new_line->tag_full = tag_full;
   new_line->base = *line_addr;
   new_line->last_access_time = sim_time;  // FIXME: this fixes valgrind warnings in update_prf_
   new_line->pref = isPrefetch;
@@ -408,6 +416,7 @@ void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr, Addr* line_add
       main_line = &cache->entries[set][lru_ind];
       main_line->valid = TRUE;
       main_line->tag = tag;
+      main_line->tag_full = tag_full;
       main_line->base = *line_addr;
       main_line->last_access_time = sim_time;
     }
@@ -419,8 +428,8 @@ void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr, Addr* line_add
 /* invalidate_line: Invalidates based on the address.  */
 
 void cache_invalidate(Cache* cache, Addr addr, Addr* line_addr) {
-  Addr tag;
-  uns set = cache_index(cache, addr, &tag, line_addr);
+  Addr tag, tag_full;
+  uns set = cache_index(cache, addr, &tag, &tag_full, line_addr);
   uns ii;
 
   for (ii = 0; ii < cache->assoc; ii++) {
@@ -447,9 +456,9 @@ void cache_invalidate(Cache* cache, Addr addr, Addr* line_addr) {
  * @return void*
  */
 void* get_next_repl_line(Cache* cache, uns8 proc_id, Addr addr, Addr* repl_line_addr, Flag* valid) {
-  Addr line_tag, line_addr;
+  Addr line_tag, line_tag_full, line_addr;
   uns repl_index;
-  uns set_index = cache_index(cache, addr, &line_tag, &line_addr);
+  uns set_index = cache_index(cache, addr, &line_tag, &line_tag_full, &line_addr);
   Cache_Entry* new_line = find_repl_entry(cache, proc_id, set_index, &repl_index);
 
   *repl_line_addr = new_line->base;
@@ -596,9 +605,9 @@ Cache_Entry* find_repl_entry(Cache* cache, uns8 proc_id, uns set, uns* way) {
    soonest. This call should not change any of the state information. */
 void* get_next_valid_repl_line(Cache* cache, uns8 proc_id, Addr addr) {
   int ii;
-  Addr line_tag, line_addr;
+  Addr line_tag, line_tag_full, line_addr;
   Cache_Entry* entry = NULL;
-  uns set = cache_index(cache, addr, &line_tag, &line_addr);
+  uns set = cache_index(cache, addr, &line_tag, &line_tag_full, &line_addr);
 
   switch (cache->repl_policy) {
     case REPL_RESTEER:
@@ -701,9 +710,9 @@ static inline void update_repl_policy(Cache* cache, Cache_Entry* cur_entry, uns 
 void update_repl_resteer_policy(Cache* cache, Addr addr) {
   ASSERT(0, cache->repl_policy == REPL_RESTEER);
   int ii;
-  Addr tag;
+  Addr tag, tag_full;
   Addr line_addr;
-  uns set = cache_index(cache, addr, &tag, &line_addr);
+  uns set = cache_index(cache, addr, &tag, &tag_full, &line_addr);
   for (ii = 0; ii < cache->assoc; ii++) {
     Cache_Entry* line = &cache->entries[set][ii];
     if (line->valid && line->tag == tag) {
@@ -720,9 +729,9 @@ void update_repl_resteer_policy(Cache* cache, Addr addr) {
 /*                               address maps to.                                     */
 
 uns cache_get_invalid_line_count(Cache* cache, Addr addr) {
-  Addr tag;
+  Addr tag, tag_full;
   Addr line_addr;
-  uns set = cache_index(cache, addr, &tag, &line_addr);
+  uns set = cache_index(cache, addr, &tag, &tag_full, &line_addr);
   uns invalid_entries = 0;
   for (int ii = 0; ii < cache->assoc; ii++) {
     Cache_Entry* entry = &cache->entries[set][ii];
@@ -818,7 +827,7 @@ static inline void invalidate_unsure_line(Cache* cache, uns set, Addr tag) {
   }
 }
 
-void* access_shadow_lines(Cache* cache, uns set, Addr tag) {
+void* access_shadow_lines(Cache* cache, uns set, Addr tag, Addr tag_full, Flag* tag_aliasing) {
   uns ii;
   uns lru_ind = 0;
   Counter lru_time = MAX_CTR;
@@ -827,6 +836,7 @@ void* access_shadow_lines(Cache* cache, uns set, Addr tag) {
     Cache_Entry* line = &cache->shadow_entries[set][ii];
 
     if (line->tag == tag && line->valid) {
+      *tag_aliasing = line->tag_full != tag_full;
       int jj;
       /* found the entry in the shadow cache */
       ASSERT(0, line->data);
@@ -884,7 +894,7 @@ void* access_shadow_lines(Cache* cache, uns set, Addr tag) {
   return NULL;
 }
 
-void* shadow_cache_insert(Cache* cache, uns set, Addr tag, Addr base) {
+void* shadow_cache_insert(Cache* cache, uns set, Addr tag, Addr tag_full, Addr base) {
   int ii;
   Cache_Entry* new_line;
 
@@ -908,6 +918,7 @@ void* shadow_cache_insert(Cache* cache, uns set, Addr tag, Addr base) {
   new_line = &(cache->shadow_entries[set][lru_ind]);
   new_line->valid = TRUE;
   new_line->tag = tag;
+  new_line->tag_full = tag_full;
   new_line->base = base;
   new_line->last_access_time = sim_time;
   DEBUG(0,
@@ -919,7 +930,7 @@ void* shadow_cache_insert(Cache* cache, uns set, Addr tag, Addr base) {
 
 #define QUEUE_IND(num) (((num) + cache->queue_end[set]) % ideal_num_entries)
 
-void* access_ideal_storage(Cache* cache, uns set, Addr tag, Addr addr) {
+void* access_ideal_storage(Cache* cache, uns set, Addr tag, Addr tag_full, Addr addr, Flag* tag_aliasing) {
   uns ii;
   uns valid_start = 0;
   Cache_Entry* new_line;
@@ -936,6 +947,7 @@ void* access_ideal_storage(Cache* cache, uns set, Addr tag, Addr addr) {
   for (ii = 0; ii < ideal_num_entries; ii++) {
     Cache_Entry* line = &cache->shadow_entries[set][ii];
     if (line->tag == tag && line->valid) {
+      *tag_aliasing = line->tag_full != tag_full;
       uns jj;
       ASSERT(0, line->data);
       if (ii == (cache->queue_end[set] + ideal_num_entries - 1) % ideal_num_entries)
@@ -966,6 +978,7 @@ void* access_ideal_storage(Cache* cache, uns set, Addr tag, Addr addr) {
       new_line = &(cache->shadow_entries[set][cache->queue_end[set]]);
       new_line->valid = TRUE;
       new_line->tag = tag;
+      new_line->tag_full = tag_full;
       new_line->base = addr;
       new_line->last_access_time = cache->assoc;
       cache->queue_end[set] = (cache->queue_end[set] + 1) % ideal_num_entries;
@@ -984,9 +997,9 @@ void* access_ideal_storage(Cache* cache, uns set, Addr tag, Addr addr) {
 /* get_cache_line_addr: */
 
 Addr get_cache_line_addr(Cache* cache, Addr addr) {
-  Addr tag;
+  Addr tag, tag_full;
   Addr line_addr;
-  cache_index(cache, addr, &tag, &line_addr);
+  cache_index(cache, addr, &tag, &tag_full, &line_addr);
 
   return line_addr;
 }
@@ -1003,9 +1016,9 @@ Addr get_cache_line_addr(Cache* cache, Addr addr) {
 */
 
 void* cache_insert_lru(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr) {
-  Addr tag;
+  Addr tag, tag_full;
   uns repl_index;
-  uns set = cache_index(cache, addr, &tag, line_addr);
+  uns set = cache_index(cache, addr, &tag, &tag_full, line_addr);
   Cache_Entry* new_line;
 
   if (cache->repl_policy >= REPL_VOID)
@@ -1019,7 +1032,7 @@ void* cache_insert_lru(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, A
     /* before insert the data into cache, if the cache has shadow entry */
     /* insert that entry to the shadow cache */
     if ((cache->repl_policy == REPL_SHADOW_IDEAL) && new_line->valid)
-      shadow_cache_insert(cache, set, new_line->tag, new_line->base);
+      shadow_cache_insert(cache, set, new_line->tag, new_line->tag_full, new_line->base);
     if (new_line->valid)  // bug fixed. 4/26/04 if the entry is not valid,
                           // repl_line_addr should be set to 0
       *repl_line_addr = new_line->base;
@@ -1034,6 +1047,7 @@ void* cache_insert_lru(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, A
   new_line->proc_id = proc_id;
   new_line->valid = TRUE;
   new_line->tag = tag;
+  new_line->tag_full = tag_full;
   new_line->base = *line_addr;
   update_repl_policy(cache, new_line, set, repl_index, TRUE);
   if (cache->repl_policy == REPL_TRUE_LRU)
@@ -1075,6 +1089,7 @@ void* cache_insert_lru(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, A
       main_line = &cache->entries[set][lru_ind];
       main_line->valid = TRUE;
       main_line->tag = tag;
+      main_line->tag_full = tag_full;
       main_line->base = *line_addr;
       main_line->last_access_time = sim_time;
     }
@@ -1103,8 +1118,8 @@ void reset_cache(Cache* cache) {
 /*   assoc-1 : LRU         */
 
 int cache_find_pos_in_lru_stack(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr) {
-  Addr tag;
-  uns set = cache_index(cache, addr, &tag, line_addr);
+  Addr tag, tag_full;
+  uns set = cache_index(cache, addr, &tag, &tag_full, line_addr);
   uns ii;
   int position;
   Cache_Entry* hit_line = NULL;
@@ -1249,11 +1264,11 @@ void init_cache_strategy(Cache* cache, const char* name, uns cache_size, uns ass
   -- called by external func: cache_insert, cache_insert_replpos, cache_insert_lru
 */
 void* cache_insert_strategy(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr) {
-  Addr tag;
+  Addr tag, tag_full;
   uns repl_index;
   Cache_Entry* new_line;
   int policy;
-  uns set = cache_index(cache, addr, &tag, line_addr);
+  uns set = cache_index(cache, addr, &tag, &tag_full, line_addr);
 
   // Get the selected strategy (policy)
   policy = cache_get_policy_index(cache->repl_policy);
@@ -1270,7 +1285,7 @@ void* cache_insert_strategy(Cache* cache, uns8 proc_id, Addr addr, Addr* line_ad
     *repl_line_addr = new_line->base;
   else
     *repl_line_addr = 0;
-  repl_policy_func_table[policy].action_repl(cache, new_line, proc_id, tag, line_addr, repl_line_addr);
+  repl_policy_func_table[policy].action_repl(cache, new_line, proc_id, tag, tag_full, line_addr, repl_line_addr);
   repl_policy_func_table[policy].update_insert(cache, proc_id, set, repl_index, NULL);
 
   return new_line->data;
@@ -1281,9 +1296,9 @@ void* cache_insert_strategy(Cache* cache, uns8 proc_id, Addr addr, Addr* line_ad
   -- call sub internal func: update_hit
   -- called by external func: cache_access
 */
-void* cache_access_strategy(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl) {
-  Addr tag;
-  uns set = cache_index(cache, addr, &tag, line_addr);
+void* cache_access_strategy(Cache* cache, Addr addr, Addr* line_addr, Flag* tag_aliasing, Flag update_repl) {
+  Addr tag, tag_full;
+  uns set = cache_index(cache, addr, &tag, &tag_full, line_addr);
   uns ii;
   int policy;
 
@@ -1301,6 +1316,7 @@ void* cache_access_strategy(Cache* cache, Addr addr, Addr* line_addr, Flag updat
       if (update_repl)
         repl_policy_func_table[policy].update_hit(cache, set, ii, NULL);
 
+      *tag_aliasing = line->tag_full != tag_full;
       return line->data;
     }
   }
@@ -1333,7 +1349,7 @@ Cache_Entry* cache_evict_strategy(Cache* cache, uns8 proc_id, uns set, uns* way)
 
 void general_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                          Repl_Policy repl_policy);
-void general_action_repl(Cache* cache, Cache_Entry* new_line, uns8 proc_id, Addr tag, Addr* line_addr,
+void general_action_repl(Cache* cache, Cache_Entry* new_line, uns8 proc_id, Addr tag, Addr tag_full, Addr* line_addr,
                          Addr* repl_line_addr);
 
 void general_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
@@ -1376,11 +1392,12 @@ void general_action_init(Cache* cache, const char* name, uns cache_size, uns ass
   }
 }
 
-void general_action_repl(Cache* cache, Cache_Entry* new_line, uns8 proc_id, Addr tag, Addr* line_addr,
+void general_action_repl(Cache* cache, Cache_Entry* new_line, uns8 proc_id, Addr tag, Addr tag_full, Addr* line_addr,
                          Addr* repl_line_addr) {
   new_line->proc_id = proc_id;
   new_line->valid = TRUE;
   new_line->tag = tag;
+  new_line->tag_full = tag_full;
   new_line->base = *line_addr;
 }
 

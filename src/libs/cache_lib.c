@@ -81,9 +81,9 @@ static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* tag_full
     _tag = *tag_full = addr >> cache->shift_bits & ~cache->set_mask;
     // chunk XOR folding
     while ((_tag >> cache->tag_bits) != 0) {
-      _tag = (_tag & cache->tag_mask) ^ (_tag >> cache->tag_bits);
+      _tag = (_tag & cache->tag_pure_mask) ^ (_tag >> cache->tag_bits);
     }
-    *tag = _tag & cache->tag_mask;
+    *tag = _tag & cache->tag_pure_mask;
     *line_addr = addr & ~cache->offset_mask;
   }
   return addr >> cache->shift_bits & cache->set_mask;
@@ -123,7 +123,8 @@ void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns l
   cache->tag_bits = tag_bits;
   cache->shift_bits = LOG2(line_size);                /* use for shift amt. */
   cache->set_mask = N_BIT_MASK(LOG2(num_sets));       /* use after shifting */
-  cache->tag_mask = (tag_bits == 64 ? N_BIT_MASK_64 : N_BIT_MASK(tag_bits)) << LOG2(num_sets); /* use after shifting */
+  cache->tag_pure_mask = tag_bits == 64 ? N_BIT_MASK_64 : N_BIT_MASK(tag_bits);
+  cache->tag_mask = cache->tag_pure_mask << LOG2(num_sets); /* use after shifting */
   cache->offset_mask = N_BIT_MASK(cache->shift_bits); /* use before shifting */
 
   /* allocate memory for NMRU replacement counters  */

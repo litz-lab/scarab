@@ -114,12 +114,20 @@ typedef struct Cache_struct {
   uns line_size;           /* size in bytes of one line */
   Repl_Policy repl_policy; /* the replacement policy of the cache */
 
+  /* each mask looks like this:
+   *      addr: MSB [tag_bits][set_bits][shift_bits] LSB
+   *      set_mask:  00000000  11111111
+   *      tag_mask:  11111111  00000000
+   *    shift_mask:  00000000  00000000  1111111111
+   * tag_pure_mask:  11111111
+   */
   uns set_bits;     /* number of bits used in the set mask */
   uns tag_bits;     /* number of bits used in the tag mask */
   uns shift_bits;   /* number of bits to shift an address before using (assuming it is shifted) */
   Addr set_mask;    /* mask applied after shifting to get the index */
   Addr tag_mask;    /* mask used to get the tag after shifting */
   Addr offset_mask; /* mask used to get the line offset */
+  Addr tag_pure_mask; /* mask used to get the folded tag, no 0-paddings in LSB side */
 
   uns* repl_ctrs; /* replacement info */
 

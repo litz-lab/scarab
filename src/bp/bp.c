@@ -544,7 +544,10 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
 
       // Regular mispredict resolved at exec
       // On dir misprediction, treat as correctly predicted if fall-through happens to match target
-      if (btb_hit && op->oracle_info.dir != bp_pred_info->pred && pc_plus_offset != op->oracle_info.target) {
+      if (btb_hit &&
+          ((op->oracle_info.dir == TAKEN && bp_pred_info->pred == NOT_TAKEN &&
+            pc_plus_offset != op->oracle_info.target) ||
+           (op->oracle_info.dir == NOT_TAKEN && bp_pred_info->pred == TAKEN && pred_target != pc_plus_offset))) {
         bp_pred_info->recover_at_decode = FALSE;
         bp_pred_info->recover_at_exec = TRUE;
         bp_pred_info->pred_npc = pred_target;
@@ -557,7 +560,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         STAT_EVENT_BP_SPLIT_PATH(op, CBR_RECOVER_AT_EXEC);
       }
       // Although the btb hits and cbr is correctly predicted, target address may be wrong (aliasing or jitted code)
-      else if (btb_hit && pred_target != op->oracle_info.npc) {
+      else if (btb_hit && bp_pred_info->pred == TAKEN && pred_target != op->oracle_info.npc) {
         bp_pred_info->recover_at_decode = TRUE;
         bp_pred_info->recover_at_exec = FALSE;
         bp_pred_info->pred_npc = pred_target;

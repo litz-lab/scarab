@@ -71,7 +71,6 @@
     }                                                                                              \
   } while (0)
 
-#define BTB_MAIN_BANKS BTB_BANKS
 #define STAT_EVENT_BTB_BANK(proc_id, level, case, bank_id)        \
   do {                                                            \
     STAT_EVENT(proc_id, BTB_##level##_##case##_BANK_0 + bank_id); \

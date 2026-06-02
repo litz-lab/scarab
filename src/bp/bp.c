@@ -846,7 +846,9 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         op->btb_pred_info->no_target, op->oracle_info.dir, bp_pred_info->pred, pc_plus_offset, op->oracle_info.target);
 
   ASSERT(op->proc_id, bp_pred_info->pred_npc);
-  if (op->oracle_info.dir != bp_pred_info->pred && pc_plus_offset != op->oracle_info.target) {
+  if (op->oracle_info.dir != bp_pred_info->pred &&
+      ((bp_pred_info->pred == TAKEN && pred_target != pc_plus_offset) ||
+       (bp_pred_info->pred == NOT_TAKEN && pc_plus_offset != op->oracle_info.target))) {
     ASSERT(op->proc_id,
            bp_pred_info->recover_at_fe || bp_pred_info->recover_at_exec || bp_pred_info->recover_at_decode);
   }

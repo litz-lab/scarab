@@ -315,7 +315,7 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
       // in this case, not a misprediction pred is taken so oracle info should be taken
       // and this should be last op in the FT
       // no misprediction, just manually redirect
-      if (pc_plus_offset != op->oracle_info.target)
+      if (pc_plus_offset != bp_pred_info->pred_npc)
         ASSERT(proc_id, op->oracle_info.dir == TAKEN);
       return FT_EVENT_OFFPATH_TAKEN_REDIRECT;
     }

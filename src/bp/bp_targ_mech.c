@@ -428,6 +428,7 @@ void bp_btb_post_bp_predict(Bp_Data* bp_data, Op* op) {
   if (op->inst_info->table_info.cf_type && op->inst_info->table_info.cf_type != CF_SYS) {
     // CF_SYS does not terminate an FT / basic block
     bp_data->prev_cf_pred = op->bp_pred_info->pred;
+    bp_data->prev_cf_target = op->bp_pred_info->pred_npc;
   }
 }
 
@@ -596,7 +597,6 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   op->btb_pred_info->btb_index_addr = btb_index_addr;
 
   // Prepare for next BTB lookup
-  bp_data->prev_cf_target = op->oracle_info.target;
   bp_data->prev_cf_btb_index_addr = btb_index_addr;
 
   Addr btb_line_addr;

@@ -80,8 +80,10 @@ static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* tag_full
     Addr _tag;
     _tag = *tag_full = addr >> cache->shift_bits & ~cache->set_mask;
     // chunk XOR folding
-    while ((_tag >> cache->tag_bits) != 0) {
-      _tag = (_tag & cache->tag_pure_mask) ^ (_tag >> cache->tag_bits);
+    if (cache->tag_bits < 64) {
+      while ((_tag >> cache->tag_bits) != 0) {
+        _tag = (_tag & cache->tag_pure_mask) ^ (_tag >> cache->tag_bits);
+      }
     }
     *tag = _tag & cache->tag_pure_mask;
     *line_addr = addr & ~cache->offset_mask;

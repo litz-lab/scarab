@@ -299,25 +299,29 @@ static void btb_update_level(Cache* cache, uns level, uns proc_id, Addr fetch_ad
   ASSERT(proc_id, target != ADDR_INVALID);
   Addr intra_bank_addr, line_addr, repl_line_addr;
   uns bank_id;
-  if (level == 0) {
+  if (level == BTB_L0) {
     bank_id = get_btb_bank_id(BTB_L0_BANKS, fetch_addr, &intra_bank_addr);
     STAT_EVENT_BTB_BANK(proc_id, L0, UPDATE, bank_id);
-  } else if (level == 1) {
+  } else if (level == BTB_L1) {
     bank_id = get_btb_bank_id(BTB_L1_BANKS, fetch_addr, &intra_bank_addr);
     STAT_EVENT_BTB_BANK(proc_id, L1, UPDATE, bank_id);
-  } else {
+  } else if (level == BTB_MAIN) {
     bank_id = get_btb_bank_id(BTB_BANKS, fetch_addr, &intra_bank_addr);
     STAT_EVENT_BTB_BANK(proc_id, MAIN, UPDATE, bank_id);
+  } else {
+    ASSERT(proc_id, FALSE);
   }
   Addr* btb_line = (Addr*)cache_access(&cache[bank_id], intra_bank_addr, &line_addr, TRUE);
 
   if (!btb_line) {
-    if (level == 0) {
+    if (level == BTB_L0) {
       STAT_EVENT_BTB_BANK(proc_id, L0, INSERT, bank_id);
-    } else if (level == 1) {
+    } else if (level == BTB_L1) {
       STAT_EVENT_BTB_BANK(proc_id, L1, INSERT, bank_id);
-    } else {
+    } else if (level == BTB_MAIN) {
       STAT_EVENT_BTB_BANK(proc_id, MAIN, INSERT, bank_id);
+    } else {
+      ASSERT(proc_id, FALSE);
     }
     btb_line = (Addr*)cache_insert(&cache[bank_id], proc_id, intra_bank_addr, &line_addr, &repl_line_addr);
   }
@@ -597,12 +601,12 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
   // Update L0 BTB
   if (BTB_L0_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
-    btb_update_level(bp_data->btb_l0, 0, bp_data->proc_id, fetch_addr, op->oracle_info.target);
+    btb_update_level(bp_data->btb_l0, BTB_L0, bp_data->proc_id, fetch_addr, op->oracle_info.target);
   }
 
   // Update L1 BTB
   if (BTB_L1_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
-    btb_update_level(bp_data->btb_l1, 1, bp_data->proc_id, fetch_addr, op->oracle_info.target);
+    btb_update_level(bp_data->btb_l1, BTB_L1, bp_data->proc_id, fetch_addr, op->oracle_info.target);
   }
 }
 

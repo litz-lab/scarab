@@ -63,16 +63,20 @@ Stat global_stat_sample[] = {
 Stat** global_stat_array;
 Stat*** alt_bp_stat_array;
 
-static char alt_bp_stat_file_names[MAX_NUM_BPS][32];
 static uns bp_stats_begin = NUM_GLOBAL_STATS;
 static uns bp_stats_end = NUM_GLOBAL_STATS;
+static uns pref_stats_begin = NUM_GLOBAL_STATS;
+static uns pref_stats_end = NUM_GLOBAL_STATS;
 
 static Flag stat_is_bp_stat(const Stat* stat) {
   return !strcmp(stat->file_name, "bp.stat.def");
 }
+static Flag stat_is_pref_stat(const Stat* stat) {
+  return !strcmp(stat->file_name, "pref.stat.def");
+}
 
-static void dump_stats_array(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats);
-static void dump_alt_bp_stats(uns8 proc_id, Flag final);
+static void dump_stats_array(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats, uns8 bp_id);
+static void dump_alt_dfe_stats(uns8 proc_id, Flag final);
 
 /**************************************************************************************/
 // init_global_stats_array:
@@ -96,33 +100,40 @@ void init_global_stats_array() {
         bp_stats_begin = ii;
       bp_stats_end = ii + 1;
     }
+    if (stat_is_pref_stat(stat)) {
+      if (pref_stats_begin == NUM_GLOBAL_STATS)
+        pref_stats_begin = ii;
+      pref_stats_end = ii + 1;
+    }
   }
   ASSERT(0, bp_stats_begin < bp_stats_end);
 
-  for (ii = 0; ii < MAX_NUM_BPS; ii++)
-    snprintf(alt_bp_stat_file_names[ii], sizeof(alt_bp_stat_file_names[ii]), "alt%u_bp.stat.def", ii);
-
   // Make a copy of stats array for each core
   global_stat_array = (Stat**)malloc(NUM_CORES * sizeof(Stat*));
-  alt_bp_stat_array = (Stat***)malloc(NUM_CORES * sizeof(Stat**));
   for (ii = 0; ii < NUM_CORES; ii++) {
     global_stat_array[ii] = (Stat*)malloc(NUM_GLOBAL_STATS * sizeof(Stat));
     memcpy(global_stat_array[ii], global_stat_sample, NUM_GLOBAL_STATS * sizeof(Stat));
+  }
 
-    alt_bp_stat_array[ii] = (Stat**)malloc(MAX_NUM_BPS * sizeof(Stat*));
-    for (uns bp_id = 0; bp_id < MAX_NUM_BPS; bp_id++) {
-      alt_bp_stat_array[ii][bp_id] = (Stat*)malloc(NUM_GLOBAL_STATS * sizeof(Stat));
-      memcpy(alt_bp_stat_array[ii][bp_id], global_stat_sample, NUM_GLOBAL_STATS * sizeof(Stat));
-      for (uns jj = bp_stats_begin; jj < bp_stats_end; jj++)
-        alt_bp_stat_array[ii][bp_id][jj].file_name = alt_bp_stat_file_names[bp_id];
+  // Allocate alt BP stat arrays (used when NUM_BPS > 1)
+  if (NUM_BPS > 1) {
+    alt_bp_stat_array = (Stat***)malloc(NUM_CORES * sizeof(Stat**));
+    for (ii = 0; ii < NUM_CORES; ii++) {
+      alt_bp_stat_array[ii] = (Stat**)malloc(MAX_NUM_BPS * sizeof(Stat*));
+      for (uns bp_id = 0; bp_id < MAX_NUM_BPS; bp_id++) {
+        alt_bp_stat_array[ii][bp_id] = (Stat*)malloc(NUM_GLOBAL_STATS * sizeof(Stat));
+        memcpy(alt_bp_stat_array[ii][bp_id], global_stat_sample, NUM_GLOBAL_STATS * sizeof(Stat));
+      }
     }
+  } else {
+    alt_bp_stat_array = NULL;
   }
 }
 
 /**************************************************************************************/
 // gen_stat_output_file:
 
-void gen_stat_output_file(char* buf, uns8 proc_id, Stat* stat, char csv) {
+void gen_stat_output_file(char* buf, uns8 proc_id, Stat* stat, char csv, uns8 bp_id) {
   char temp[MAX_STR_LENGTH + 1];
   char temp2[16];  // assuming proc id can not be more than 15 bytes
 
@@ -132,6 +143,13 @@ void gen_stat_output_file(char* buf, uns8 proc_id, Stat* stat, char csv) {
   temp[strlen(stat->file_name) - 3] = '\0';
   sprintf(temp2, "%u", proc_id);
   strncat(temp, temp2, MAX_STR_LENGTH);
+
+  /* For alt BPs (bp_id > 0), insert .bp_id: e.g. bp.stat.0.1.csv */
+  if (bp_id > 0) {
+    char bp_suffix[8];
+    sprintf(bp_suffix, ".%d", bp_id);
+    strncat(temp, bp_suffix, MAX_STR_LENGTH);
+  }
 
   if (csv)
     strncat(temp, ".csv", MAX_STR_LENGTH);
@@ -187,7 +205,7 @@ void fprint_line(FILE* file) {
 /**************************************************************************************/
 /* dump_stats: */
 
-static void dump_stats_array(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
+static void dump_stats_array(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats, uns8 bp_id) {
   Flag in_dist = FALSE;
 
   uns64 dist_sum = 0, total_dist_sum = 0, dist_vtotal = 0, total_dist_vtotal = 0;
@@ -260,13 +278,13 @@ static void dump_stats_array(uns8 proc_id, Flag final, Stat stat_array[], uns nu
       last_file_name = s->file_name;
       ASSERT(0, !file_stream);
       char buf[MAX_STR_LENGTH + 2];
-      gen_stat_output_file(buf, proc_id, s, 0);
+      gen_stat_output_file(buf, proc_id, s, 0, bp_id);
       file_stream = fopen(buf, "w");
       ASSERTUM(0, file_stream, "Couldn't open statistic output file '%s'.\n", buf);
 
       ASSERT(0, !csv_file_stream);
       char csv_buf[MAX_STR_LENGTH + 2];
-      gen_stat_output_file(csv_buf, proc_id, s, 1);
+      gen_stat_output_file(csv_buf, proc_id, s, 1, bp_id);
       csv_file_stream = fopen(csv_buf, "w");
       ASSERTUM(0, csv_file_stream, "Couldn't open statistic output file '%s'.\n", csv_buf);
 
@@ -519,18 +537,25 @@ static void dump_stats_array(uns8 proc_id, Flag final, Stat stat_array[], uns nu
 }
 
 void dump_stats(uns8 proc_id, Flag final, Stat stat_array[], uns num_stats) {
-  dump_stats_array(proc_id, final, stat_array, num_stats);
+  dump_stats_array(proc_id, final, stat_array, num_stats, 0);
 
   if (stat_array == global_stat_array[proc_id] && num_stats == NUM_GLOBAL_STATS)
-    dump_alt_bp_stats(proc_id, final);
+    dump_alt_dfe_stats(proc_id, final);
 }
 
-static void dump_alt_bp_stats(uns8 proc_id, Flag final) {
-  if (!alt_bp_stat_array || bp_stats_begin == NUM_GLOBAL_STATS)
+static void dump_alt_dfe_stats(uns8 proc_id, Flag final) {
+  if (!alt_bp_stat_array || NUM_BPS <= 1)
     return;
 
-  for (uns bp_id = 1; bp_id < NUM_BPS && bp_id < MAX_NUM_BPS; bp_id++) {
-    dump_stats_array(proc_id, final, alt_bp_stat_array[proc_id][bp_id] + bp_stats_begin, bp_stats_end - bp_stats_begin);
+  for (uns8 bp_id = 1; bp_id < NUM_BPS && bp_id < MAX_NUM_BPS; bp_id++) {
+    /* Dump bp stats for this alt */
+    if (bp_stats_begin < bp_stats_end)
+      dump_stats_array(proc_id, final, alt_bp_stat_array[proc_id][bp_id] + bp_stats_begin,
+                       bp_stats_end - bp_stats_begin, bp_id);
+    /* Dump pref stats for this alt */
+    if (pref_stats_begin < pref_stats_end)
+      dump_stats_array(proc_id, final, alt_bp_stat_array[proc_id][bp_id] + pref_stats_begin,
+                       pref_stats_end - pref_stats_begin, bp_id);
   }
 }
 
@@ -562,12 +587,26 @@ void reset_stats(Flag keep_total) {
     }
   }
 
-  if (!alt_bp_stat_array || bp_stats_begin == NUM_GLOBAL_STATS)
+  if (!alt_bp_stat_array || NUM_BPS <= 1)
     return;
 
   for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-    for (uns bp_id = 1; bp_id < NUM_BPS && bp_id < MAX_NUM_BPS; bp_id++) {
+    for (uns8 bp_id = 1; bp_id < NUM_BPS && bp_id < MAX_NUM_BPS; bp_id++) {
+      /* Reset bp stat range */
       for (ii = bp_stats_begin; ii < bp_stats_end; ii++) {
+        Stat* stat = &alt_bp_stat_array[proc_id][bp_id][ii];
+        if (stat->type == FLOAT_TYPE_STAT) {
+          if (keep_total || stat->noreset)
+            stat->total_value += stat->value;
+          stat->value = 0.0;
+        } else {
+          if (keep_total || stat->noreset)
+            stat->total_count += stat->count;
+          stat->count = 0ULL;
+        }
+      }
+      /* Reset pref stat range */
+      for (ii = pref_stats_begin; ii < pref_stats_end; ii++) {
         Stat* stat = &alt_bp_stat_array[proc_id][bp_id][ii];
         if (stat->type == FLOAT_TYPE_STAT) {
           if (keep_total || stat->noreset)

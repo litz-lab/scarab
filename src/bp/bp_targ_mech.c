@@ -589,9 +589,12 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
       btb_index_addr = bp_data->prev_cf_btb_index_addr;
     }
   }
+  ASSERT(bp_data->proc_id, btb_index_addr <= op->inst_info->addr);
   // Compute block-size-aligned (fall-through) address from the start of the first block, in case op is far away.
   btb_index_addr += (op->inst_info->addr - btb_index_addr) & ~(BTB_BLOCK_SIZE - 1);
+  // Assert btb_index_addr <= op->inst_info->addr < btb_index_addr + BTB_BLOCK_SIZE
   ASSERT(bp_data->proc_id, btb_index_addr <= op->inst_info->addr);
+  ASSERT(bp_data->proc_id, op->inst_info->addr < ADDR_PLUS_OFFSET(btb_index_addr, BTB_BLOCK_SIZE));
 
   // Store index for update
   op->btb_pred_info->btb_index_addr = btb_index_addr;
@@ -605,7 +608,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   bpi->btb_main_hit = FALSE;
   if (br_slots) {
     for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
-      if (br_slots[ii].valid && br_slots[ii].addr == op->inst_info->addr) {
+      if (br_slots[ii].valid == TRUE && br_slots[ii].addr == op->inst_info->addr) {
         bpi->btb_main_hit = TRUE;
         bpi->btb_main_target = br_slots[ii].target;
         break;
@@ -625,6 +628,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
   if (BTB_OFF_PATH_WRITES || !op->off_path) {
     Addr btb_index_addr = op->btb_pred_info->btb_index_addr;
     ASSERT(bp_data->proc_id, btb_index_addr <= op->inst_info->addr);
+    ASSERT(bp_data->proc_id, op->inst_info->addr < ADDR_PLUS_OFFSET(btb_index_addr, BTB_BLOCK_SIZE));
 
     if (op->oracle_info.dir == TAKEN) {
       ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);

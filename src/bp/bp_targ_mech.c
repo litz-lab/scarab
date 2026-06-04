@@ -59,21 +59,23 @@
 #define DEBUGU_CRS(proc_id, args...) _DEBUGU(proc_id, DEBUG_CRS, ##args)
 #define DEBUG_BTB(proc_id, args...) _DEBUG(proc_id, DEBUG_BTB, ##args)
 
-#define STAT_EVENT_BTB_OUTCOME(op, prefix, hit, pred_targ, fallthrough)                            \
-  do {                                                                                             \
-    if ((hit) && (pred_targ) == (op)->oracle_info.target) {                                        \
-      STAT_EVENT((op)->proc_id, (op)->off_path ? prefix##_CORRECT_OFFPATH : prefix##_CORRECT);     \
-    } else if (!(hit) && (fallthrough) == (op)->oracle_info.target) {                              \
-      STAT_EVENT((op)->proc_id, (op)->off_path ? prefix##_INCORRECT_BUT_TARGET_CORRECT_OFFPATH     \
-                                               : prefix##_INCORRECT_BUT_TARGET_CORRECT);           \
-    } else {                                                                                       \
-      STAT_EVENT((op)->proc_id, (op)->off_path ? prefix##_INCORRECT_OFFPATH : prefix##_INCORRECT); \
-    }                                                                                              \
+#define STAT_EVENT_BTB_OUTCOME(op, prefix, hit, pred_targ, fallthrough, tag_alias)                                   \
+  do {                                                                                                               \
+    if ((hit) && (pred_targ) == (op)->oracle_info.target) {                                                          \
+      STAT_EVENT((op)->proc_id, (op)->off_path ? prefix##CORRECT_OFFPATH : prefix##CORRECT);                         \
+    } else if (!(hit) && (fallthrough) == (op)->oracle_info.target) {                                                \
+      STAT_EVENT((op)->proc_id, (op)->off_path ? prefix##INCORRECT_BUT_TARGET_CORRECT_OFFPATH                        \
+                                               : prefix##INCORRECT_BUT_TARGET_CORRECT);                              \
+    } else if ((hit) && (tag_alias)) {                                                                               \
+      STAT_EVENT((op)->proc_id, (op)->off_path ? prefix##INCORRECT_TAG_ALIAS_OFFPATH : prefix##INCORRECT_TAG_ALIAS); \
+    } else {                                                                                                         \
+      STAT_EVENT((op)->proc_id, (op)->off_path ? prefix##INCORRECT_OFFPATH : prefix##INCORRECT);                     \
+    }                                                                                                                \
   } while (0)
 
-#define STAT_EVENT_BTB_TAG_ALIAS(proc_id, level, case)   \
-  do {                                                   \
-    STAT_EVENT(proc_id, BTB_L0_TAG_ALIAS_##case +level); \
+#define STAT_EVENT_BTB_TAG_ALIAS_UPDATE(proc_id, level)   \
+  do {                                                    \
+    STAT_EVENT(proc_id, BTB_L0_TAG_ALIAS_UPDATE + level); \
   } while (0)
 
 #define STAT_EVENT_IBTB_OUTCOME(op, prefix, correct)                                                               \
@@ -302,7 +304,7 @@ static void btb_update_level(Cache* cache, uns level, uns proc_id, Addr fetch_ad
   Addr* btb_line = (Addr*)cache_access(cache, fetch_addr, &line_addr, &tag_aliasing, TRUE);
 
   if (tag_aliasing)
-    STAT_EVENT_BTB_TAG_ALIAS(proc_id, level, UPDATE);
+    STAT_EVENT_BTB_TAG_ALIAS_UPDATE(proc_id, level);
 
   if (!btb_line)
     btb_line = (Addr*)cache_insert(cache, proc_id, fetch_addr, &line_addr, &repl_line_addr);
@@ -376,7 +378,8 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   }
 
   if (collect_btb_stats) {
-    STAT_EVENT_BTB_OUTCOME(op, ALL_BTB, btb_pred_info->btb_main_hit, btb_pred_info->btb_main_target, pc_plus_offset);
+    STAT_EVENT_BTB_OUTCOME(op, ALL_BTB_, btb_pred_info->btb_main_hit, btb_pred_info->btb_main_target, pc_plus_offset,
+                           btb_pred_info->btb_main_tag_alias);
   }
   if (btb_pred_info->btb_pred_latency == MAX_UNS) {
     btb_pred_info->pred_target = pc_plus_offset;
@@ -390,12 +393,15 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   /* Per-BTB-level outcome stats */
   if (collect_btb_stats) {
     if (BTB_L0_PRESENT) {
-      STAT_EVENT_BTB_OUTCOME(op, BTB_L0, btb_pred_info->btb_l0_hit, btb_pred_info->btb_l0_target, pc_plus_offset);
+      STAT_EVENT_BTB_OUTCOME(op, BTB_L0_, btb_pred_info->btb_l0_hit, btb_pred_info->btb_l0_target, pc_plus_offset,
+                             btb_pred_info->btb_l0_tag_alias);
     }
     if (BTB_L1_PRESENT) {
-      STAT_EVENT_BTB_OUTCOME(op, BTB_L1, btb_pred_info->btb_l1_hit, btb_pred_info->btb_l1_target, pc_plus_offset);
+      STAT_EVENT_BTB_OUTCOME(op, BTB_L1_, btb_pred_info->btb_l1_hit, btb_pred_info->btb_l1_target, pc_plus_offset,
+                             btb_pred_info->btb_l1_tag_alias);
     }
-    STAT_EVENT_BTB_OUTCOME(op, BTB_MAIN, btb_pred_info->btb_main_hit, btb_pred_info->btb_main_target, pc_plus_offset);
+    STAT_EVENT_BTB_OUTCOME(op, BTB_MAIN_, btb_pred_info->btb_main_hit, btb_pred_info->btb_main_target, pc_plus_offset,
+                           btb_pred_info->btb_main_tag_alias);
   }
 
   /* PERFECT_CBR_BTB: use oracle target for conditional branches */
@@ -477,29 +483,26 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
 
   if (BTB_L0_PRESENT) {
     Addr* e = (Addr*)cache_access(bp_data->btb_l0, op->inst_info->addr, &line_addr, &tag_aliasing, lru);
-    if (tag_aliasing)
-      STAT_EVENT_BTB_TAG_ALIAS(op->proc_id, L0, PRED);
     if (e) {
       bpi->btb_l0_hit = TRUE;
       bpi->btb_l0_target = *e;
+      bpi->btb_l0_tag_alias = tag_aliasing;
     }
   }
   if (BTB_L1_PRESENT) {
     Addr* e = (Addr*)cache_access(bp_data->btb_l1, op->inst_info->addr, &line_addr, &tag_aliasing, lru);
-    if (tag_aliasing)
-      STAT_EVENT_BTB_TAG_ALIAS(op->proc_id, L1, PRED);
     if (e) {
       bpi->btb_l1_hit = TRUE;
       bpi->btb_l1_target = *e;
+      bpi->btb_l1_tag_alias = tag_aliasing;
     }
   }
 
   Addr* e = (Addr*)cache_access(bp_data->btb, op->inst_info->addr, &line_addr, &tag_aliasing, lru);
-  if (tag_aliasing)
-    STAT_EVENT_BTB_TAG_ALIAS(op->proc_id, MAIN, PRED);
   if (e) {
     bpi->btb_main_hit = TRUE;
     bpi->btb_main_target = *e;
+    bpi->btb_main_tag_alias = tag_aliasing;
   }
 }
 
@@ -525,7 +528,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
       btb_line = (Addr*)cache_access(bp_data->btb, fetch_addr, &btb_line_addr, &tag_aliasing, TRUE);
       if (tag_aliasing)
-        STAT_EVENT_BTB_TAG_ALIAS(op->proc_id, MAIN, UPDATE);
+        STAT_EVENT_BTB_TAG_ALIAS_UPDATE(op->proc_id, BTB_MAIN);
       if (!btb_line) {
         btb_line = (Addr*)cache_insert(bp_data->btb, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
       }
@@ -546,7 +549,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
     if (btb_line && *btb_line != op->oracle_info.target) {
       cache_access(bp_data->btb, fetch_addr, &btb_line_addr, &tag_aliasing, TRUE);
       if (tag_aliasing)
-        STAT_EVENT_BTB_TAG_ALIAS(op->proc_id, MAIN, UPDATE);
+        STAT_EVENT_BTB_TAG_ALIAS_UPDATE(op->proc_id, BTB_MAIN);
       if (BTB_OFF_PATH_WRITES || !op->off_path) {
         DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
                   hexstr64s(op->oracle_info.target));
@@ -561,12 +564,12 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
   // Update L0 BTB
   if (BTB_L0_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
-    btb_update_level(bp_data->btb_l0, L0, bp_data->proc_id, fetch_addr, op->oracle_info.target);
+    btb_update_level(bp_data->btb_l0, BTB_L0, bp_data->proc_id, fetch_addr, op->oracle_info.target);
   }
 
   // Update L1 BTB
   if (BTB_L1_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
-    btb_update_level(bp_data->btb_l1, L1, bp_data->proc_id, fetch_addr, op->oracle_info.target);
+    btb_update_level(bp_data->btb_l1, BTB_L1, bp_data->proc_id, fetch_addr, op->oracle_info.target);
   }
 }
 
@@ -627,8 +630,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   Flag tag_aliasing;
   Blk_Btb_BrSlot* br_slots =
       (Blk_Btb_BrSlot*)cache_access(bp_data->btb, btb_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
-  if (tag_aliasing)
-    STAT_EVENT_BTB_TAG_ALIAS(op->proc_id, MAIN, PRED);
+  bpi->btb_main_tag_alias = tag_aliasing;
 
   bpi->btb_main_hit = FALSE;
   if (br_slots) {
@@ -671,7 +673,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
       Blk_Btb_BrSlot* br_slots =
           (Blk_Btb_BrSlot*)cache_access(bp_data->btb, btb_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
       if (tag_aliasing)
-        STAT_EVENT_BTB_TAG_ALIAS(op->proc_id, MAIN, UPDATE);
+        STAT_EVENT_BTB_TAG_ALIAS_UPDATE(op->proc_id, BTB_MAIN);
 
       if (!br_slots) {
         br_slots = (Blk_Btb_BrSlot*)cache_insert(bp_data->btb, bp_data->proc_id, btb_index_addr, &btb_line_addr,

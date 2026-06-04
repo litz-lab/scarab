@@ -203,9 +203,9 @@ typedef enum Btb_Id_enum {
 } Btb_Id;
 
 typedef enum Btb_Level_enum {
-  L0,
-  L1,
-  MAIN,
+  BTB_L0,
+  BTB_L1,
+  BTB_MAIN,
 } Btb_Level;
 
 typedef enum Ibtb_Id_enum {

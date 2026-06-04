@@ -73,13 +73,17 @@ typedef struct Btb_Pred_Info_struct {
   // these fields instead of querying the BTB cache directly.
   Flag btb_l0_hit;     // TRUE if L0 BTB holds an entry for this branch
   Addr btb_l0_target;  // target stored in L0 BTB (valid when btb_l0_hit)
+  Flag btb_l0_tag_alias;  // TRUE if L0 BTB falsely hits due to tag alias
 
   Flag btb_l1_hit;     // TRUE if L1 BTB holds an entry for this branch
   Addr btb_l1_target;  // target stored in L1 BTB (valid when btb_l1_hit)
+  Flag btb_l1_tag_alias;  // TRUE if L1 BTB falsely hits due to tag alias
 
   Flag btb_main_hit;     // TRUE if the main BTB holds an entry for this branch
   Addr btb_main_target;  // branch target stored in the BTB (valid when btb_main_hit)
-  Addr btb_index_addr;   // address used to look up btb for prediction
+  Flag btb_main_tag_alias;  // TRUE if the main BTB falsely hits due to tag alias
+
+  Addr btb_index_addr;  // address used to look up btb for prediction
 
   uns btb_pred_latency;  // latency of pred_target; MAX_UNS means no prediction-time target
 

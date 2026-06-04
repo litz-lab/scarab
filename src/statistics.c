@@ -117,11 +117,11 @@ void init_global_stats_array() {
 
   // Allocate alt BP stat arrays (used when NUM_BPS > 1)
   if (NUM_BPS > 1) {
-    alt_bp_stat_array = (Stat***)malloc(NUM_CORES * sizeof(Stat**));
+    alt_bp_stat_array = (Stat***)calloc(NUM_CORES, sizeof(Stat**));
     for (ii = 0; ii < NUM_CORES; ii++) {
-      alt_bp_stat_array[ii] = (Stat**)malloc(MAX_NUM_BPS * sizeof(Stat*));
+      alt_bp_stat_array[ii] = (Stat**)calloc(MAX_NUM_BPS, sizeof(Stat*));
       for (uns bp_id = 0; bp_id < MAX_NUM_BPS; bp_id++) {
-        alt_bp_stat_array[ii][bp_id] = (Stat*)malloc(NUM_GLOBAL_STATS * sizeof(Stat));
+        alt_bp_stat_array[ii][bp_id] = (Stat*)calloc(NUM_GLOBAL_STATS, sizeof(Stat));
         memcpy(alt_bp_stat_array[ii][bp_id], global_stat_sample, NUM_GLOBAL_STATS * sizeof(Stat));
       }
     }

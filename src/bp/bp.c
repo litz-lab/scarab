@@ -1039,14 +1039,14 @@ void reg_ring_push(Op* op) {
   uns p = op->proc_id;
   Reg_Ring_Entry* e = &reg_ring[p][reg_ring_head[p]];
   e->inst_uid = op->inst_uid;
-  e->pc       = op->inst_info->addr;
-  
-  for (int i = 0; i < NUM_REG_SNAPSHOT; i++) 
+  e->pc = op->inst_info->addr;
+
+  for (int i = 0; i < NUM_REG_SNAPSHOT; i++)
     e->regs[i] = op->reg_snapshot[i];
 
   reg_ring_head[p] = (reg_ring_head[p] + 1) % REG_RING_LEN;
 
-  if (reg_ring_fill[p] < REG_RING_LEN) 
+  if (reg_ring_fill[p] < REG_RING_LEN)
     reg_ring_fill[p]++;
 }
 
@@ -1056,7 +1056,7 @@ void reg_ring_rewind(uns p, uns64 recovery_inst_uid) {
   while (reg_ring_fill[p] > 0) {
     uns last = (reg_ring_head[p] + REG_RING_LEN - 1) % REG_RING_LEN;
 
-    if (reg_ring[p][last].inst_uid <= recovery_inst_uid) 
+    if (reg_ring[p][last].inst_uid <= recovery_inst_uid)
       break;
 
     reg_ring_head[p] = last;
@@ -1070,7 +1070,7 @@ void reg_ring_rewind(uns p, uns64 recovery_inst_uid) {
 }
 
 const Reg_Ring_Entry* reg_ring_back(uns p, uns n_back) {
-  if (n_back >= reg_ring_fill[p]) 
+  if (n_back >= reg_ring_fill[p])
     return NULL;
 
   uns idx = (reg_ring_head[p] + REG_RING_LEN - 1 - n_back) % REG_RING_LEN;

@@ -37,9 +37,10 @@ extern "C" {
 
 #include "general.param.h"
 
+#include "bp/bp.h"
+
 #include "op.h"
 #include "sim.h"
-#include "bp/bp.h"
 }
 
 #include <time.h>
@@ -135,7 +136,7 @@ void pin_exec_driven_fetch_op(uns proc_id, uns bp_id, Op* op) {
 
   Flag eom = uop_generator_extract_op(proc_id, op, &cached_cop_buffers[proc_id].front());
 
-  if (op->bom) 
+  if (op->bom)
     reg_ring_push(op);
 
   if (eom) {

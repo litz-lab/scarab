@@ -323,12 +323,11 @@ void do_fe_null(bool& have_consumed_op, CONTEXT* ctxt) {
       }
       cop->inst_uid = uid_ctr;
 
-      if(ctxt) {
-        static const REG snap_regs[NUM_REG_SNAPSHOT] = {
-          REG_RAX, REG_RBX, REG_RCX, REG_RDX, REG_RSI, REG_RDI, REG_RBP, REG_RSP,
-          REG_R8,  REG_R9,  REG_R10, REG_R11, REG_R12, REG_R13, REG_R14, REG_R15,
-          REG_RFLAGS};
-        for(int i = 0; i < NUM_REG_SNAPSHOT; i++)
+      if (ctxt) {
+        static const REG snap_regs[NUM_REG_SNAPSHOT] = {REG_RAX, REG_RBX, REG_RCX, REG_RDX, REG_RSI,   REG_RDI,
+                                                        REG_RBP, REG_RSP, REG_R8,  REG_R9,  REG_R10,   REG_R11,
+                                                        REG_R12, REG_R13, REG_R14, REG_R15, REG_RFLAGS};
+        for (int i = 0; i < NUM_REG_SNAPSHOT; i++)
           cop->reg_snapshot[i] = (uint64_t)PIN_GetContextReg(ctxt, snap_regs[i]);
       }
 

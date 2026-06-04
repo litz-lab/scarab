@@ -263,7 +263,7 @@ typedef struct Br_Conf_struct {
 
 typedef struct Reg_Ring_Entry_struct {
   uns64 inst_uid;
-  Addr  pc;
+  Addr pc;
   uns64 regs[NUM_REG_SNAPSHOT];
 } Reg_Ring_Entry;
 

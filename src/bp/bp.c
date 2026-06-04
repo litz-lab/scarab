@@ -96,6 +96,7 @@ extern void tc_do_stat(Op*, Flag);
     }                                                                      \
   } while (0)
 
+#define REG_RING_LEN 4096
 /******************************************************************************/
 /* Global Variables */
 
@@ -106,6 +107,9 @@ extern uns operating_mode;
 
 static Hash_Table branch_pc_stats_table;
 static Flag branch_pc_stats_inited = FALSE;
+static Reg_Ring_Entry reg_ring[MAX_NUM_PROCS][REG_RING_LEN];
+static uns reg_ring_head[MAX_NUM_PROCS];
+static uns reg_ring_fill[MAX_NUM_PROCS];
 
 static void init_branch_pc_stats(void) {
   if (branch_pc_stats_inited)
@@ -1029,4 +1033,47 @@ void bp_sync(Bp_Data* bp_data_src, Bp_Data* bp_data_dst) {
   bp_data_dst->on_path_pred = bp_data_src->on_path_pred;
   bp_crs_sync(bp_data_src, bp_data_dst);
   bp_predictors_sync(bp_data_src, bp_data_dst);
+}
+
+void reg_ring_push(Op* op) {
+  uns p = op->proc_id;
+  Reg_Ring_Entry* e = &reg_ring[p][reg_ring_head[p]];
+  e->inst_uid = op->inst_uid;
+  e->pc       = op->inst_info->addr;
+  
+  for (int i = 0; i < NUM_REG_SNAPSHOT; i++) 
+    e->regs[i] = op->reg_snapshot[i];
+
+  reg_ring_head[p] = (reg_ring_head[p] + 1) % REG_RING_LEN;
+
+  if (reg_ring_fill[p] < REG_RING_LEN) 
+    reg_ring_fill[p]++;
+}
+
+void reg_ring_rewind(uns p, uns64 recovery_inst_uid) {
+  Flag had_entries = (reg_ring_fill[p] > 0);
+
+  while (reg_ring_fill[p] > 0) {
+    uns last = (reg_ring_head[p] + REG_RING_LEN - 1) % REG_RING_LEN;
+
+    if (reg_ring[p][last].inst_uid <= recovery_inst_uid) 
+      break;
+
+    reg_ring_head[p] = last;
+    reg_ring_fill[p]--;
+  }
+
+  ASSERTM(p, !had_entries || reg_ring_fill[p] > 0,
+          "reg_ring overrun: recovery uid %llu overwritten "
+          "(wrong-path depth >= %d). Increase REG_RING_LEN.\n",
+          (unsigned long long)recovery_inst_uid, REG_RING_LEN);
+}
+
+const Reg_Ring_Entry* reg_ring_back(uns p, uns n_back) {
+  if (n_back >= reg_ring_fill[p]) 
+    return NULL;
+
+  uns idx = (reg_ring_head[p] + REG_RING_LEN - 1 - n_back) % REG_RING_LEN;
+
+  return &reg_ring[p][idx];
 }

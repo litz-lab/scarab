@@ -226,7 +226,7 @@ bool excp_main_loop(int sig) {
       if(found_syscall)
         have_consumed_op = true;
       else
-        do_fe_null(have_consumed_op);
+        do_fe_null(have_consumed_op, nullptr);
     }
     // We always have a scarab command
     buffer_ready               = scarab_buffer_full() || pending_syscall;

@@ -39,6 +39,7 @@ extern "C" {
 
 #include "op.h"
 #include "sim.h"
+#include "bp/bp.h"
 }
 
 #include <time.h>
@@ -133,6 +134,10 @@ void pin_exec_driven_fetch_op(uns proc_id, uns bp_id, Op* op) {
   update_op_buffer_if_empty(proc_id);
 
   Flag eom = uop_generator_extract_op(proc_id, op, &cached_cop_buffers[proc_id].front());
+
+  if (op->bom) 
+    reg_ring_push(op);
+
   if (eom) {
     if (!decoupled_fe_is_off_path()) {
       if (cached_cop_buffers[proc_id].front().scarab_marker_roi_begin == true) {
@@ -168,6 +173,7 @@ void pin_exec_driven_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch
 
   server->send(proc_id, (Message<Scarab_To_Pin_Msg>)msg);  // blocking
   invalidate_op_buffer(proc_id);
+  reg_ring_rewind(proc_id, inst_uid);
   DEBUG(proc_id, "Fetch Redirect end: %llx\n", fetch_addr);
 }
 
@@ -183,6 +189,7 @@ void pin_exec_driven_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
 
   server->send(proc_id, (Message<Scarab_To_Pin_Msg>)msg);  // blocking
   invalidate_op_buffer(proc_id);
+  reg_ring_rewind(proc_id, inst_uid);
   DEBUG(proc_id, "Fetch Recover end: %llu\n", inst_uid);
 }
 

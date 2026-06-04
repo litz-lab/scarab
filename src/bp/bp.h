@@ -261,6 +261,12 @@ typedef struct Br_Conf_struct {
                                  when a misprediction is realized */
 } Br_Conf;
 
+typedef struct Reg_Ring_Entry_struct {
+  uns64 inst_uid;
+  Addr  pc;
+  uns64 regs[NUM_REG_SNAPSHOT];
+} Reg_Ring_Entry;
+
 /**************************************************************************************/
 /* External variables */
 
@@ -304,6 +310,9 @@ Flag is_h2p_at_decode(Addr pc);
 Flag is_h2p_at_exec(Addr pc);
 void reset_h2p_stats(void);
 
+void reg_ring_push(Op* op);
+void reg_ring_rewind(uns proc_id, uns64 recovery_inst_uid);
+const Reg_Ring_Entry* reg_ring_back(uns proc_id, uns n_back);
 /**************************************************************************************/
 
 #endif /* #ifndef __BP_H__ */

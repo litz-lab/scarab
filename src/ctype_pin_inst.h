@@ -39,6 +39,7 @@
 #define MAX_LD_NUM 8
 #define MAX_ST_NUM 8
 #define DUMMY_NOP_SIZE 3
+#define NUM_REG_SNAPSHOT 17
 
 typedef uint8_t compressed_reg_t;
 
@@ -143,6 +144,7 @@ typedef struct ctype_pin_inst_struct {
   uint8_t scarab_marker_roi_begin : 1;
   // used to flag scarab marker roi begin
   uint8_t scarab_marker_roi_end : 1;
+  uint64_t reg_snapshot[NUM_REG_SNAPSHOT];
 } __attribute__((packed)) ctype_pin_inst;
 
 typedef ctype_pin_inst compressed_op;

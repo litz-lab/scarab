@@ -31,6 +31,6 @@ bool do_fe_retire(Scarab_To_Pin_Msg& cmd);
 
 void do_fe_fetch_op(bool& syscall_has_been_sent_to_scarab);
 
-void do_fe_null(bool& have_consumed_op);
+void do_fe_null(bool& have_consumed_op, CONTEXT* ctxt);
 
 #endif  // PIN_EXEC_MAIN_LOOP_H__

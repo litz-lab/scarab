@@ -323,6 +323,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
     convert_pinuop_to_t_uop(proc_id, inst, trace_uop_array);
 
     op->bom = TRUE;
+    memcpy(op->reg_snapshot, inst->reg_snapshot, sizeof(op->reg_snapshot));
     trace_uop = trace_uop_array[0];
     info = trace_uop->info;
     num_uops[proc_id] = info->trace_info.num_uop;

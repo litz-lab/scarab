@@ -145,6 +145,7 @@ struct Op_struct {
   Counter unique_num;           // unique number for each instance of an op (not reset on recovery)
   Counter unique_num_per_proc;  // unique number per core
   uns64 inst_uid;               // unique number for the macro instruction provided by the frontend (PIN)
+  uns64 reg_snapshot[NUM_REG_SNAPSHOT];  // GPR(0-15)+RFLAGS(16)
   Inst_Info* inst_info;         // pointer to unique struct for each static instruction
   Op_Info oracle_info;          // information about the execution of the op in the oracle
   Op_Info engine_info;          // information about the execution of the op in the engine

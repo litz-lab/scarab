@@ -238,7 +238,7 @@ void main_loop(CONTEXT* ctxt) {
     } else if(cmd.type == FE_FETCH_OP) {
       do_fe_fetch_op(syscall_has_been_sent_to_scarab);
     } else if(cmd.type == FE_NULL) {
-      do_fe_null(have_consumed_op);
+      do_fe_null(have_consumed_op, ctxt);
     }
 
     buffer_ready               = scarab_buffer_full() || pending_syscall;
@@ -291,7 +291,7 @@ void do_fe_fetch_op(bool& syscall_has_been_sent_to_scarab) {
   }
 }
 
-void do_fe_null(bool& have_consumed_op) {
+void do_fe_null(bool& have_consumed_op, CONTEXT* ctxt) {
   DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
             "fenull curr_uid=%" PRIu64 "\n", uid_ctr);
   if(!have_consumed_op) {
@@ -322,6 +322,15 @@ void do_fe_null(bool& have_consumed_op) {
                   cop->num_ld, cop->num_st, cop->exit, cop->size);
       }
       cop->inst_uid = uid_ctr;
+
+      if(ctxt) {
+        static const REG snap_regs[NUM_REG_SNAPSHOT] = {
+          REG_RAX, REG_RBX, REG_RCX, REG_RDX, REG_RSI, REG_RDI, REG_RBP, REG_RSP,
+          REG_R8,  REG_R9,  REG_R10, REG_R11, REG_R12, REG_R13, REG_R14, REG_R15,
+          REG_RFLAGS};
+        for(int i = 0; i < NUM_REG_SNAPSHOT; i++)
+          cop->reg_snapshot[i] = (uint64_t)PIN_GetContextReg(ctxt, snap_regs[i]);
+      }
 
       if (cop->is_repeat && cop->instruction_addr == prior_rep_eip)
         cop->fetched_instruction = 0;

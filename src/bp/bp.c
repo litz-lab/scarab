@@ -929,7 +929,8 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
 
-  bp_data->bp_btb->update_func(bp_data, op);
+  if (op->inst_info->table_info.cf_type != CF_SYS)
+    bp_data->bp_btb->update_func(bp_data, op);
 
   // special case updates
   switch (op->inst_info->table_info.cf_type) {

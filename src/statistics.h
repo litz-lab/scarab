@@ -103,6 +103,13 @@ typedef struct Stat_struct {
     alt_bp_stat_array[proc_id][bp_id][stat].count++; \
   } while (0)
 
+#define INC_ALT_STAT_EVENT(proc_id, bp_id, stat, inc)       \
+  do {                                                      \
+    alt_bp_stat_array[proc_id][bp_id][stat].count += (inc); \
+  } while (0)
+
+#define GET_ALT_STAT_EVENT(proc_id, bp_id, stat) (alt_bp_stat_array[proc_id][bp_id][stat].count)
+
 #define STAT_EVENT_ALL(stat)                              \
   do {                                                    \
     for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) \
@@ -145,6 +152,8 @@ typedef struct Stat_struct {
 
 #define STAT_EVENT(proc_id, stat)
 #define ALT_STAT_EVENT(proc_id, bp_id, stat)
+#define INC_ALT_STAT_EVENT(proc_id, bp_id, stat, inc)
+#define GET_ALT_STAT_EVENT(proc_id, bp_id, stat) 0
 #define STAT_EVENT_ALL(stat)
 #define INC_STAT_EVENT(proc_id, stat, inc)
 #define INC_STAT_EVENT_ALL(stat, inc)
@@ -174,7 +183,7 @@ extern "C" {
 #endif
 
 void init_global_stats_array(void);
-void gen_stat_output_file(char*, uns8, Stat*, char);
+void gen_stat_output_file(char*, uns8, Stat*, char, uns8 bp_id);
 void init_global_stats(uns8);
 void dump_stats(uns8, Flag, Stat[], uns);
 void reset_stats(Flag);

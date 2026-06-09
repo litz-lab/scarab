@@ -202,6 +202,12 @@ typedef enum Btb_Id_enum {
   NUM_BTB,
 } Btb_Id;
 
+typedef enum Btb_Level_enum {
+  BTB_L0,
+  BTB_L1,
+  BTB_MAIN,
+} Btb_Level;
+
 typedef enum Ibtb_Id_enum {
   TC_TAGLESS_IBTB,
   TC_TAGGED_IBTB,

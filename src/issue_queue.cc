@@ -51,9 +51,11 @@ extern "C" {
 #include "node_stage.h"
 }
 
+#include <algorithm>
 #include <deque>
 #include <list>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -393,18 +395,47 @@ bool SelectLogic::has_ready_ops() const {
 }
 
 /**************************************************************************************/
-/* Implementation */
 
-// OldestFirstSchedulePolicy prioritize the older ops
+/*
+ * OldestFirstSchedulePolicy prioritize the older ops
+ */
 class OldestFirstSchedulePolicy : public SchedulePolicy {
  public:
-  bool compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const override;
+  bool compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const override {
+    return lhs->op->op_num < rhs->op->op_num;
+  }
 };
 
-bool OldestFirstSchedulePolicy::compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const {
-  ASSERT(node->proc_id, lhs != nullptr && rhs != nullptr);
-  return lhs->op->op_num < rhs->op->op_num;
-}
+/*
+ * AMDBulldozerSchedulePolicy is introduced in "40-Entry Unified Out-of-Order Scheduler
+ * and Integer Execution Unit for the AMD Bulldozer x86-64 Core", ISSCC 2011.
+ * The oldest ready instruction will be picked first. Otherwise, a priority encoder scans ready
+ * instructions in physical order.
+ */
+class AMDBulldozerSchedulePolicy : public SchedulePolicy {
+ public:
+  bool compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const override {
+    if (lhs->op->op_num == node->node_head->op_num)
+      return true;
+
+    if (rhs->op->op_num == node->node_head->op_num)
+      return false;
+
+    return lhs->entry_id < rhs->entry_id;
+  }
+};
+
+/*
+ * RandomSchedulePolicy selects ready ops in their physical order in the issue queue
+ */
+class RandomSchedulePolicy : public SchedulePolicy {
+ public:
+  bool compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const override {
+    return lhs->entry_id < rhs->entry_id;
+  }
+};
+
+/**************************************************************************************/
 
 // RoundRobinTraversalPolicy ensures fairness by rotating through pickers in a circular manner.
 class RoundRobinTraversalPolicy : public TraversalPolicy {
@@ -414,16 +445,39 @@ class RoundRobinTraversalPolicy : public TraversalPolicy {
 
  public:
   explicit RoundRobinTraversalPolicy(size_t fu_num) : fu_num(fu_num), rr_idx(fu_num - 1) {}
-  void build_picker_order(std::vector<size_t>& picker_order) override;
+  void build_picker_order(std::vector<size_t>& picker_order) override {
+    ASSERT(node->proc_id, picker_order.size() == fu_num);
+    rr_idx = (rr_idx + 1) % fu_num;
+    for (size_t i = 0; i < fu_num; ++i) {
+      picker_order[i] = (rr_idx + i) % fu_num;
+    }
+  }
 };
 
-void RoundRobinTraversalPolicy::build_picker_order(std::vector<size_t>& picker_order) {
-  ASSERT(node->proc_id, picker_order.size() == fu_num);
-  rr_idx = (rr_idx + 1) % fu_num;
-  for (size_t i = 0; i < fu_num; ++i) {
-    picker_order[i] = (rr_idx + i) % fu_num;
+class PriorityTraversalPolicy : public TraversalPolicy {
+ private:
+  std::vector<size_t> priority_order;
+
+ public:
+  explicit PriorityTraversalPolicy(const std::string& priority_str, size_t fu_num) {
+    std::istringstream ss(priority_str);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+      size_t idx = strtoull(token.c_str(), nullptr, 10);
+      ASSERT(node->proc_id, idx < fu_num);
+      ASSERT(node->proc_id, std::find(priority_order.begin(), priority_order.end(), idx) == priority_order.end());
+      priority_order.push_back(idx);
+    }
+    ASSERT(node->proc_id, priority_order.size() == fu_num);
   }
-}
+
+  void build_picker_order(std::vector<size_t>& picker_order) override {
+    ASSERT(node->proc_id, picker_order.size() == priority_order.size());
+    for (size_t i = 0; i < priority_order.size(); ++i) {
+      picker_order[i] = priority_order[i];
+    }
+  }
+};
 
 /**************************************************************************************/
 
@@ -491,10 +545,40 @@ class LeastBindPolicy : public BindPolicy {
 
 class IssueQueuePolicyFactory {
  public:
-  std::unique_ptr<SchedulePolicy> make_schedule_policy() { return std::make_unique<OldestFirstSchedulePolicy>(); }
+  std::unique_ptr<SchedulePolicy> make_schedule_policy() {
+    using SchedulePolicyMaker = std::unique_ptr<SchedulePolicy> (*)();
+    static const SchedulePolicyMaker schedule_policy_makers[ISSUE_QUEUE_SCHEDULE_POLICY_NUM] = {
+        []() -> std::unique_ptr<SchedulePolicy> { return std::make_unique<OldestFirstSchedulePolicy>(); },
+        []() -> std::unique_ptr<SchedulePolicy> { return std::make_unique<AMDBulldozerSchedulePolicy>(); },
+        []() -> std::unique_ptr<SchedulePolicy> { return std::make_unique<RandomSchedulePolicy>(); },
+    };
 
-  std::unique_ptr<TraversalPolicy> make_traversal_policy(size_t fu_num) {
-    return std::make_unique<RoundRobinTraversalPolicy>(fu_num);
+    ASSERT(node->proc_id, ISSUE_QUEUE_SCHEDULE_POLICY < ISSUE_QUEUE_SCHEDULE_POLICY_NUM);
+    return schedule_policy_makers[ISSUE_QUEUE_SCHEDULE_POLICY]();
+  }
+
+  std::unique_ptr<TraversalPolicy> make_traversal_policy(uns16 queue_id, size_t fu_num) {
+    using TraversalPolicyMaker = std::unique_ptr<TraversalPolicy> (*)(uns16, size_t);
+    static const TraversalPolicyMaker traversal_policy_makers[ISSUE_QUEUE_TRAVERSAL_POLICY_NUM] = {
+        [](uns16, size_t fu_num) -> std::unique_ptr<TraversalPolicy> {
+          return std::make_unique<RoundRobinTraversalPolicy>(fu_num);
+        },
+        [](uns16 queue_id, size_t fu_num) -> std::unique_ptr<TraversalPolicy> {
+          if (!ISSUE_QUEUE_TRAVERSAL_PRIORITY || !*ISSUE_QUEUE_TRAVERSAL_PRIORITY)
+            return std::make_unique<RoundRobinTraversalPolicy>(fu_num);
+
+          std::istringstream ss(ISSUE_QUEUE_TRAVERSAL_PRIORITY);
+          std::string token;
+          for (size_t i = 0; i <= queue_id && std::getline(ss, token, ';'); ++i) {
+            if (i == queue_id && token != "-" && !token.empty())
+              return std::make_unique<PriorityTraversalPolicy>(token, fu_num);
+          }
+          return std::make_unique<RoundRobinTraversalPolicy>(fu_num);
+        },
+    };
+
+    ASSERT(node->proc_id, ISSUE_QUEUE_TRAVERSAL_POLICY < ISSUE_QUEUE_TRAVERSAL_POLICY_NUM);
+    return traversal_policy_makers[ISSUE_QUEUE_TRAVERSAL_POLICY](queue_id, fu_num);
   }
 
   std::unique_ptr<BindPolicy> make_bind_policy(size_t fu_num) {
@@ -504,7 +588,7 @@ class IssueQueuePolicyFactory {
         [](size_t fu_num) -> std::unique_ptr<BindPolicy> { return std::make_unique<LeastBindPolicy>(fu_num); },
     };
 
-    ASSERT(0, ISSUE_QUEUE_EARLY_BIND_POLICY < ISSUE_QUEUE_EARLY_BIND_POLICY_NUM);
+    ASSERT(node->proc_id, ISSUE_QUEUE_EARLY_BIND_POLICY < ISSUE_QUEUE_EARLY_BIND_POLICY_NUM);
     return bind_policy_makers[ISSUE_QUEUE_EARLY_BIND_POLICY](fu_num);
   }
 };
@@ -554,7 +638,7 @@ IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size, std::vector<Func
   size_t fu_num = connected_fu_pickers.size();
   select_logic =
       std::make_unique<SelectLogic>(proc_id, queue_id, std::move(connected_fu_pickers), factory.make_schedule_policy(),
-                                    factory.make_traversal_policy(fu_num), factory.make_bind_policy(fu_num));
+                                    factory.make_traversal_policy(queue_id, fu_num), factory.make_bind_policy(fu_num));
 }
 
 uns16 IssueQueue::allocate_entry(Op* op) {

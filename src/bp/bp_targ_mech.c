@@ -71,6 +71,11 @@
     }                                                                                              \
   } while (0)
 
+#define STAT_EVENT_BTB_BANK(proc_id, level, case, bank_id)        \
+  do {                                                            \
+    STAT_EVENT(proc_id, BTB_##level##_##case##_BANK_0 + bank_id); \
+  } while (0)
+
 #define STAT_EVENT_IBTB_OUTCOME(op, prefix, correct)                                                               \
   do {                                                                                                             \
     STAT_EVENT((op)->proc_id, (op)->off_path ? ((correct) ? prefix##_CORRECT_OFFPATH : prefix##_INCORRECT_OFFPATH) \
@@ -290,12 +295,36 @@ void bp_crs_sync(Bp_Data* bp_data_src, Bp_Data* bp_data_dst) {
 /**************************************************************************************/
 /* btb_update_level: write (or update) one BTB-level cache entry for op. */
 
-static void btb_update_level(Cache* cache, uns proc_id, Addr fetch_addr, Addr target) {
+static void btb_update_level(Cache* cache, uns level, uns proc_id, Addr fetch_addr, Addr target) {
   ASSERT(proc_id, target != ADDR_INVALID);
-  Addr line_addr, repl_line_addr;
-  Addr* btb_line = (Addr*)cache_access(cache, fetch_addr, &line_addr, TRUE);
-  if (!btb_line)
-    btb_line = (Addr*)cache_insert(cache, proc_id, fetch_addr, &line_addr, &repl_line_addr);
+  Addr intra_bank_addr, line_addr, repl_line_addr;
+  uns bank_id;
+  if (level == BTB_L0) {
+    bank_id = get_btb_bank_id(BTB_L0_BANKS, fetch_addr, &intra_bank_addr);
+    STAT_EVENT_BTB_BANK(proc_id, L0, UPDATE, bank_id);
+  } else if (level == BTB_L1) {
+    bank_id = get_btb_bank_id(BTB_L1_BANKS, fetch_addr, &intra_bank_addr);
+    STAT_EVENT_BTB_BANK(proc_id, L1, UPDATE, bank_id);
+  } else if (level == BTB_MAIN) {
+    bank_id = get_btb_bank_id(BTB_BANKS, fetch_addr, &intra_bank_addr);
+    STAT_EVENT_BTB_BANK(proc_id, MAIN, UPDATE, bank_id);
+  } else {
+    ASSERT(proc_id, FALSE);
+  }
+  Addr* btb_line = (Addr*)cache_access(&cache[bank_id], intra_bank_addr, &line_addr, TRUE);
+
+  if (!btb_line) {
+    if (level == BTB_L0) {
+      STAT_EVENT_BTB_BANK(proc_id, L0, INSERT, bank_id);
+    } else if (level == BTB_L1) {
+      STAT_EVENT_BTB_BANK(proc_id, L1, INSERT, bank_id);
+    } else if (level == BTB_MAIN) {
+      STAT_EVENT_BTB_BANK(proc_id, MAIN, INSERT, bank_id);
+    } else {
+      ASSERT(proc_id, FALSE);
+    }
+    btb_line = (Addr*)cache_insert(&cache[bank_id], proc_id, intra_bank_addr, &line_addr, &repl_line_addr);
+  }
   *btb_line = target;
 }
 
@@ -438,11 +467,32 @@ void bp_btb_post_bp_predict(Bp_Data* bp_data, Op* op) {
 void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   // btb line size set to 1
   if (!bp_data->bp_id) {
-    init_cache(bp_data->btb, "BTB", BTB_ENTRIES, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
-    if (BTB_L0_PRESENT)
-      init_cache(bp_data->btb_l0, "BTB_L0", BTB_L0_ENTRIES, BTB_L0_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
-    if (BTB_L1_PRESENT)
-      init_cache(bp_data->btb_l1, "BTB_L1", BTB_L1_ENTRIES, BTB_L1_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+    ASSERT(bp_data->proc_id, BTB_ENTRIES / BTB_BANKS >= BTB_ASSOC);
+    for (uns ii = 0; ii < BTB_BANKS; ii++) {
+      char name[MAX_STR_LENGTH + 1];
+      snprintf(name, MAX_STR_LENGTH, "BTB BANK %d", ii);
+      init_cache(&bp_data->btb[ii], name, BTB_ENTRIES / BTB_BANKS, BTB_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+    }
+
+    if (BTB_L0_PRESENT) {
+      ASSERT(bp_data->proc_id, BTB_L0_ENTRIES / BTB_L0_BANKS >= BTB_L0_ASSOC);
+      for (uns ii = 0; ii < BTB_L0_BANKS; ii++) {
+        char name[MAX_STR_LENGTH + 1];
+        snprintf(name, MAX_STR_LENGTH, "BTB_L0 BANK %d", ii);
+        init_cache(&bp_data->btb_l0[ii], name, BTB_L0_ENTRIES / BTB_L0_BANKS, BTB_L0_ASSOC, 1, sizeof(Addr),
+                   REPL_TRUE_LRU);
+      }
+    }
+
+    if (BTB_L1_PRESENT) {
+      ASSERT(bp_data->proc_id, BTB_L1_ENTRIES / BTB_L1_BANKS >= BTB_L1_ASSOC);
+      for (uns ii = 0; ii < BTB_L1_BANKS; ii++) {
+        char name[MAX_STR_LENGTH + 1];
+        snprintf(name, MAX_STR_LENGTH, "BTB_L1 BANK %d", ii);
+        init_cache(&bp_data->btb_l1[ii], name, BTB_L1_ENTRIES / BTB_L1_BANKS, BTB_L1_ASSOC, 1, sizeof(Addr),
+                   REPL_TRUE_LRU);
+      }
+    }
   } else {
     // points to the primary BP's shared caches
     bp_data->btb = primary_bp->btb;
@@ -458,27 +508,35 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
 
   Btb_Pred_Info* bpi = op->btb_pred_info;
+  Addr intra_bank_addr;
   Addr line_addr;
   Flag lru = bp_data->bp_id ? FALSE : TRUE;
 
   op->btb_pred_info->btb_index_addr = op->inst_info->addr;
 
   if (BTB_L0_PRESENT) {
-    Addr* e = (Addr*)cache_access(bp_data->btb_l0, op->inst_info->addr, &line_addr, lru);
+    uns bank_id = get_btb_bank_id(BTB_L0_BANKS, op->inst_info->addr, &intra_bank_addr);
+    STAT_EVENT_BTB_BANK(op->proc_id, L0, PRED, bank_id);
+    Addr* e = (Addr*)cache_access(&bp_data->btb_l0[bank_id], intra_bank_addr, &line_addr, lru);
     if (e) {
       bpi->btb_l0_hit = TRUE;
       bpi->btb_l0_target = *e;
     }
   }
+
   if (BTB_L1_PRESENT) {
-    Addr* e = (Addr*)cache_access(bp_data->btb_l1, op->inst_info->addr, &line_addr, lru);
+    uns bank_id = get_btb_bank_id(BTB_L1_BANKS, op->inst_info->addr, &intra_bank_addr);
+    STAT_EVENT_BTB_BANK(op->proc_id, L1, PRED, bank_id);
+    Addr* e = (Addr*)cache_access(&bp_data->btb_l1[bank_id], intra_bank_addr, &line_addr, lru);
     if (e) {
       bpi->btb_l1_hit = TRUE;
       bpi->btb_l1_target = *e;
     }
   }
 
-  Addr* e = (Addr*)cache_access(bp_data->btb, op->inst_info->addr, &line_addr, lru);
+  uns bank_id = get_btb_bank_id(BTB_BANKS, op->inst_info->addr, &intra_bank_addr);
+  STAT_EVENT_BTB_BANK(op->proc_id, MAIN, PRED, bank_id);
+  Addr* e = (Addr*)cache_access(&bp_data->btb[bank_id], intra_bank_addr, &line_addr, lru);
   if (e) {
     bpi->btb_main_hit = TRUE;
     bpi->btb_main_target = *e;
@@ -489,12 +547,14 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
 /* bp_btb_gen_update: */
 
 void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
-  Addr fetch_addr = op->inst_info->addr;
-  Addr *btb_line, btb_line_addr, repl_line_addr;
-
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
   ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+
+  Addr fetch_addr = op->inst_info->addr;
+  Addr intra_bank_addr;
+  Addr *btb_line, btb_line_addr, repl_line_addr;
+  uns bank_id = get_btb_bank_id(BTB_BANKS, fetch_addr, &intra_bank_addr);
 
   // if it was a btb miss, it is time to write it into the btb
   if (btb_pred_miss(op->btb_pred_info) && op->oracle_info.dir == TAKEN) {
@@ -503,10 +563,13 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
                 hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
+      STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
 
-      btb_line = (Addr*)cache_access(bp_data->btb, fetch_addr, &btb_line_addr, TRUE);
+      btb_line = (Addr*)cache_access(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, TRUE);
       if (!btb_line) {
-        btb_line = (Addr*)cache_insert(bp_data->btb, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
+        STAT_EVENT_BTB_BANK(op->proc_id, MAIN, INSERT, bank_id);
+        btb_line = (Addr*)cache_insert(&bp_data->btb[bank_id], bp_data->proc_id, intra_bank_addr, &btb_line_addr,
+                                       &repl_line_addr);
       }
       *btb_line = op->oracle_info.target;
       // FIXME: the exceptions to this assert are really about x86 vs Alpha
@@ -518,16 +581,17 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
     // or For indirects we want to update the BTB if the target changes, even on btb hit
     // The detection relies on the target stored in the btb
 
-    btb_line = (Addr*)cache_access(bp_data->btb, fetch_addr, &btb_line_addr, FALSE);
+    btb_line = (Addr*)cache_access(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, FALSE);
 
     // The following assertion can fail (due to eviction?)
     // ASSERT(bp_data->proc_id, btb_entry);
     if (btb_line && *btb_line != op->oracle_info.target) {
-      cache_access(bp_data->btb, fetch_addr, &btb_line_addr, TRUE);
+      cache_access(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, TRUE);
       if (BTB_OFF_PATH_WRITES || !op->off_path) {
         DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
                   hexstr64s(op->oracle_info.target));
         STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
+        STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
         *btb_line = op->oracle_info.target;
         // FIXME: the exceptions to this assert are really about x86 vs Alpha
         ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
@@ -538,12 +602,12 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
   // Update L0 BTB
   if (BTB_L0_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
-    btb_update_level(bp_data->btb_l0, bp_data->proc_id, fetch_addr, op->oracle_info.target);
+    btb_update_level(bp_data->btb_l0, BTB_L0, bp_data->proc_id, fetch_addr, op->oracle_info.target);
   }
 
   // Update L1 BTB
   if (BTB_L1_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
-    btb_update_level(bp_data->btb_l1, bp_data->proc_id, fetch_addr, op->oracle_info.target);
+    btb_update_level(bp_data->btb_l1, BTB_L1, bp_data->proc_id, fetch_addr, op->oracle_info.target);
   }
 }
 
@@ -563,6 +627,9 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
     ASSERT(bp_data->proc_id, BTB_NUM_BRSLOT > 0);
     ASSERT(bp_data->proc_id, BTB_BLOCK_SIZE > 0);
     ASSERT(bp_data->proc_id, (1 << LOG2(BTB_BLOCK_SIZE)) == BTB_BLOCK_SIZE);
+
+    ASSERT(bp_data->proc_id, BTB_BANKS == 1);
+    ASSERT(bp_data->proc_id, BTB_ENTRIES >= BTB_ASSOC);
     init_cache(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BLK_BTB_ENTRY_SIZE, REPL_TRUE_LRU);
   } else  // points to the primary BP's shared BTB
     bp_data->btb = primary_bp->btb;
@@ -602,6 +669,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   // Prepare for next BTB lookup
   bp_data->prev_cf_btb_index_addr = btb_index_addr;
 
+  STAT_EVENT_BTB_BANK(op->proc_id, MAIN, PRED, 0);
   Addr btb_line_addr;
   Blk_Btb_BrSlot* br_slots = (Blk_Btb_BrSlot*)cache_access(bp_data->btb, btb_index_addr, &btb_line_addr, TRUE);
 
@@ -642,10 +710,12 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
       br_slot.target = op->oracle_info.target;
       br_slot.valid = TRUE;
 
+      STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, 0);
       Addr btb_line_addr, repl_line_addr;
       Blk_Btb_BrSlot* br_slots = (Blk_Btb_BrSlot*)cache_access(bp_data->btb, btb_index_addr, &btb_line_addr, TRUE);
 
       if (!br_slots) {
+        STAT_EVENT_BTB_BANK(op->proc_id, MAIN, INSERT, 0);
         br_slots = (Blk_Btb_BrSlot*)cache_insert(bp_data->btb, bp_data->proc_id, btb_index_addr, &btb_line_addr,
                                                  &repl_line_addr);
         br_slots[0] = br_slot;

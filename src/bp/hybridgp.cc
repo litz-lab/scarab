@@ -79,8 +79,7 @@ uns32* get_local_history_entry(Hybridgp_State& hybridgp_state, const Addr addr) 
 
   } else {
     Addr bht_line_addr;
-    Flag tag_aliasing;
-    return (uns32*)cache_access(&hybridgp_state.bht, addr, &bht_line_addr, &tag_aliasing, TRUE);
+    return (uns32*)cache_access(&hybridgp_state.bht, addr, &bht_line_addr, TRUE);
   }
 }
 

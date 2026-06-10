@@ -195,14 +195,13 @@ int l2markv_pref_pred(Mem_Req_Info* req, Addr* req_addr) {
   if (l2markv_table[set][current_way].next_addr_counter > L1MARKV_REQ_TH) {
     Addr req_va = l2markv_table[set][current_way].next_addr;
     Addr line_addr, repl_line_addr;
-    Flag tag_aliasing;
 
     if (L2L1_IMMEDIATE_PREF_CACHE && DC_PREF_CACHE_ENABLE) {
       dc_pref_cache_insert(req_va);
       STAT_EVENT(0, L2MARKV_PREF_REQ);
     } else if (L1MARKV_PREF_IMMEDIATE) {
       Dcache_Data *data, *line;
-      line = (Dcache_Data*)cache_access(&dc->dcache, req_va, &line_addr, &tag_aliasing, FALSE);
+      line = (Dcache_Data*)cache_access(&dc->dcache, req_va, &line_addr, FALSE);
       if (!line) {
         data = (Dcache_Data*)cache_insert(&dc->dcache, dc->proc_id, req_va, &line_addr, &repl_line_addr);
         if (data->dirty) {
@@ -257,7 +256,6 @@ void update_l2markv_pref_req_queue(void) {
 
         Dcache_Data* line;
         Addr line_addr;
-        Flag tag_aliasing;
         int q_index = l1pref_markv_send_no % L1PREF_MARKV_REQ_QUEUE_SIZE;
         Addr req_va = l1pref_markv_req_queue[q_index].va;
         uns bank = req_va >> dc->dcache.shift_bits & N_BIT_MASK(LOG2(DCACHE_BANKS));
@@ -265,7 +263,7 @@ void update_l2markv_pref_req_queue(void) {
         if (get_read_port(&dc->ports[bank]) && get_write_port(&dc->ports[bank])) {  // get ports
           // !!! we need to check whether the data is in the L1 cache (second
           // level cache or not!!!!)
-          line = (Dcache_Data*)cache_access(&dc->dcache, req_va, &line_addr, &tag_aliasing, FALSE);
+          line = (Dcache_Data*)cache_access(&dc->dcache, req_va, &line_addr, FALSE);
           if (!line) {
             markv_l2send_req_queue[markv_l2access_req_no % MARKV_L2ACCESS_REQ_Q_SIZE].va = req_va;
             markv_l2send_req_queue[markv_l2access_req_no % MARKV_L2ACCESS_REQ_Q_SIZE].rdy_cycle =
@@ -329,7 +327,6 @@ void l2next_pref(Mem_Req_Info* req) {
   for (ii = 0; ii < 2; ii++) {
     Addr req_va;
     Addr line_addr;
-    Flag tag_aliasing;
 
     if (ii == 0)
       req_va = req->addr + 64;
@@ -342,14 +339,14 @@ void l2next_pref(Mem_Req_Info* req) {
     } else {
       uns bank = req_va >> dc->dcache.shift_bits & N_BIT_MASK(LOG2(DCACHE_BANKS));
       Cache* l1_cache = &mem->uncores[req->proc_id].l1->cache;
-      L1_Data* l1_data = cache_access(l1_cache, req_va, &line_addr, &tag_aliasing, FALSE);
+      L1_Data* l1_data = cache_access(l1_cache, req_va, &line_addr, FALSE);
 
       if (l1_data) {                                                                // hit l1 cache
         if (get_read_port(&dc->ports[bank]) && get_write_port(&dc->ports[bank])) {  // get ports
           // !!! we need to check whether the data is in the L1 cache (second
           // level cache or not!!!!)
           Addr line_addr, repl_line_addr;
-          Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, req_va, &line_addr, &tag_aliasing, FALSE);
+          Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, req_va, &line_addr, FALSE);
           if (!line) {
             Dcache_Data* data =
                 (Dcache_Data*)cache_insert(&dc->dcache, dc->proc_id, req_va, &line_addr, &repl_line_addr);

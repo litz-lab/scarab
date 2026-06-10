@@ -422,11 +422,10 @@ void cmp_retire_hook(Op* op) {
 
 void warmup_uncore(uns proc_id, Addr addr, Flag write) {
   Addr dummy_line_addr;
-  Flag tag_aliasing;
   ASSERTM(0, !MLC_PRESENT, "Warmup for MLC not implemented\n");
 
   Cache* l1_cache = &(cmp_model.memory.uncores[proc_id].l1->cache);
-  L1_Data* l1_data = cache_access(l1_cache, addr, &dummy_line_addr, &tag_aliasing, TRUE);
+  L1_Data* l1_data = cache_access(l1_cache, addr, &dummy_line_addr, TRUE);
   if (l1_data) {  // hit
     if (write)
       l1_data->dirty = TRUE;
@@ -459,7 +458,6 @@ void cmp_warmup(Op* op) {
   Addr va = op->oracle_info.va;
   Addr dummy_line_addr;
   Addr dummy_line_addr2;
-  Flag tag_aliasing;
   Icache_Data* line_info = NULL;
 
   // Set FDIP for this core before calling FDIP functions
@@ -468,9 +466,9 @@ void cmp_warmup(Op* op) {
   // Warmup caches for instructions
   Icache_Stage* ic = &(cmp_model.icache_stage[proc_id]);
   Cache* icache = &(ic->icache);
-  Inst_Info** ic_data = (Inst_Info**)cache_access(icache, ia, &dummy_line_addr, &tag_aliasing, TRUE);
+  Inst_Info** ic_data = (Inst_Info**)cache_access(icache, ia, &dummy_line_addr, TRUE);
   if (WP_COLLECT_STATS)
-    line_info = (Icache_Data*)cache_access(&ic->icache_line_info, ia, &dummy_line_addr2, &tag_aliasing, TRUE);
+    line_info = (Icache_Data*)cache_access(&ic->icache_line_info, ia, &dummy_line_addr2, TRUE);
 
   if (ic_data == NULL) {
     warmup_uncore(proc_id, ia, FALSE);
@@ -496,7 +494,7 @@ void cmp_warmup(Op* op) {
   Flag is_store = op->inst_info->table_info.mem_type == MEM_ST;
   if (is_load || is_store) {
     Cache* dcache = &(cmp_model.dcache_stage[proc_id].dcache);
-    Dcache_Data* dc_data = cache_access(dcache, va, &dummy_line_addr, &tag_aliasing, TRUE);
+    Dcache_Data* dc_data = cache_access(dcache, va, &dummy_line_addr, TRUE);
     if (dc_data) {
       // set some fields to meet expectations of the simulation mode
       if (is_store)

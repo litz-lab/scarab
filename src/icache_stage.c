@@ -356,8 +356,7 @@ void icache_resolve_fetch_barrier(uns8 proc_id, uns64 inst_uid) {
 
 Flag in_icache(Addr addr) {
   Addr line_addr;
-  Flag tag_aliasing;
-  return cache_access(&ic->icache, addr, &line_addr, &tag_aliasing, FALSE) != NULL;
+  return cache_access(&ic->icache, addr, &line_addr, FALSE) != NULL;
 }
 
 /**************************************************************************************/
@@ -366,10 +365,9 @@ Flag in_icache(Addr addr) {
 Inst_Info** lookup_icache() {
   STAT_EVENT(ic->proc_id, POWER_ICACHE_ACCESS);
   STAT_EVENT(ic->proc_id, POWER_ITLB_ACCESS);
-  Flag tag_aliasing;
 
   Inst_Info** line = NULL;
-  line = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr, &ic->line_addr, &tag_aliasing, TRUE);
+  line = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr, &ic->line_addr, TRUE);
   if (PERFECT_ICACHE && !line)
     line = (Inst_Info**)INIT_CACHE_DATA_VALUE;
 
@@ -378,7 +376,7 @@ Inst_Info** lookup_icache() {
     Addr dummy_line_addr;
     L1_Data* data;
     Cache* l1_cache = model->mem == MODEL_MEM ? &mem->uncores[ic->proc_id].l1->cache : NULL;
-    data = l1_cache ? (L1_Data*)cache_access(l1_cache, ic->fetch_addr, &dummy_line_addr, &tag_aliasing, TRUE) : NULL;
+    data = l1_cache ? (L1_Data*)cache_access(l1_cache, ic->fetch_addr, &dummy_line_addr, TRUE) : NULL;
     if (data) {  // second level cache hit
       STAT_EVENT(ic->proc_id, L2_IDEAL_FILL_ICACHE);
       // actually bring it into the L1 icache
@@ -395,9 +393,7 @@ Inst_Info** lookup_icache() {
 
   if (WP_COLLECT_STATS) {  // CMP remove?
     Addr dummy_addr;
-    Flag tag_aliasing;
-    Icache_Data* line_info =
-        (Icache_Data*)cache_access(&ic->icache_line_info, ic->fetch_addr, &dummy_addr, &tag_aliasing, TRUE);
+    Icache_Data* line_info = (Icache_Data*)cache_access(&ic->icache_line_info, ic->fetch_addr, &dummy_addr, TRUE);
     if (line && (line != (Inst_Info**)INIT_CACHE_DATA_VALUE)) {
       ASSERT(ic->proc_id, line_info);
       wp_process_icache_hit(line_info, ic->fetch_addr);
@@ -449,14 +445,13 @@ Flag mem_req_on_icache_miss() {
       if (ONE_MORE_CACHE_LINE_ENABLE) {
         Addr one_more_addr;
         Addr extra_line_addr;
-        Flag tag_aliasing;
         Icache_Data* extra_line;
 
         one_more_addr = ((ic->line_addr >> LOG2(ICACHE_LINE_SIZE)) & 1)
                             ? ((ic->line_addr >> LOG2(ICACHE_LINE_SIZE)) - 1) << LOG2(ICACHE_LINE_SIZE)
                             : ((ic->line_addr >> LOG2(ICACHE_LINE_SIZE)) + 1) << LOG2(ICACHE_LINE_SIZE);
 
-        extra_line = (Icache_Data*)cache_access(&ic->icache, one_more_addr, &extra_line_addr, &tag_aliasing, FALSE);
+        extra_line = (Icache_Data*)cache_access(&ic->icache, one_more_addr, &extra_line_addr, FALSE);
         ASSERT(ic->proc_id, one_more_addr == extra_line_addr);
         if (!extra_line) {
           if (new_mem_req(MRT_IFETCH, ic->proc_id, extra_line_addr, ICACHE_LINE_SIZE, 0, NULL, NULL, unique_count, 0))
@@ -1167,11 +1162,10 @@ inline Flag icache_off_path(void) {
 
 Inst_Info** ic_pref_cache_access(void) {
   Addr repl_line_addr, inval_line_addr;
-  Flag tag_aliasing;
   Inst_Info** inserted_line = NULL;
 
   ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr)
-  Inst_Info** line = (Inst_Info**)cache_access(&ic->pref_icache, ic->fetch_addr, &ic->line_addr, &tag_aliasing, FALSE);
+  Inst_Info** line = (Inst_Info**)cache_access(&ic->pref_icache, ic->fetch_addr, &ic->line_addr, FALSE);
 
   if (ic->off_path && !PREFCACHE_MOVE_OFFPATH) {
     if (line) {
@@ -1197,9 +1191,8 @@ Inst_Info** ic_pref_cache_access(void) {
     if (PREF_ICACHE_HIT_FILL_L1) {
       if (model->mem == MODEL_MEM) {
         Addr line_addr;
-        Flag tag_aliasing;
         Cache* l1_cache = &mem->uncores[ic->proc_id].l1->cache;
-        L1_Data* l1_data = (L1_Data*)cache_access(l1_cache, ic->fetch_addr, &line_addr, &tag_aliasing, TRUE);
+        L1_Data* l1_data = (L1_Data*)cache_access(l1_cache, ic->fetch_addr, &line_addr, TRUE);
         if (!l1_data) {
           Mem_Req tmp_req;
           tmp_req.addr = ic->fetch_addr;

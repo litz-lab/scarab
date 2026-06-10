@@ -73,11 +73,6 @@
     }                                                                                                                \
   } while (0)
 
-#define STAT_EVENT_BTB_TAG_ALIAS_UPDATE(proc_id, level)   \
-  do {                                                    \
-    STAT_EVENT(proc_id, BTB_L0_TAG_ALIAS_UPDATE + level); \
-  } while (0)
-
 #define STAT_EVENT_IBTB_OUTCOME(op, prefix, correct)                                                               \
   do {                                                                                                             \
     STAT_EVENT((op)->proc_id, (op)->off_path ? ((correct) ? prefix##_CORRECT_OFFPATH : prefix##_INCORRECT_OFFPATH) \
@@ -301,10 +296,7 @@ static void btb_update_level(Cache* cache, uns level, uns proc_id, Addr fetch_ad
   ASSERT(proc_id, target != ADDR_INVALID);
   Addr line_addr, repl_line_addr;
   Flag tag_aliasing;
-  Addr* btb_line = (Addr*)cache_access(cache, fetch_addr, &line_addr, &tag_aliasing, TRUE);
-
-  if (tag_aliasing)
-    STAT_EVENT_BTB_TAG_ALIAS_UPDATE(proc_id, level);
+  Addr* btb_line = (Addr*)cache_access_impl(cache, fetch_addr, &line_addr, &tag_aliasing, TRUE);
 
   if (!btb_line)
     btb_line = (Addr*)cache_insert(cache, proc_id, fetch_addr, &line_addr, &repl_line_addr);
@@ -482,7 +474,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   op->btb_pred_info->btb_index_addr = op->inst_info->addr;
 
   if (BTB_L0_PRESENT) {
-    Addr* e = (Addr*)cache_access(bp_data->btb_l0, op->inst_info->addr, &line_addr, &tag_aliasing, lru);
+    Addr* e = (Addr*)cache_access_impl(bp_data->btb_l0, op->inst_info->addr, &line_addr, &tag_aliasing, lru);
     if (e) {
       bpi->btb_l0_hit = TRUE;
       bpi->btb_l0_target = *e;
@@ -490,7 +482,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
     }
   }
   if (BTB_L1_PRESENT) {
-    Addr* e = (Addr*)cache_access(bp_data->btb_l1, op->inst_info->addr, &line_addr, &tag_aliasing, lru);
+    Addr* e = (Addr*)cache_access_impl(bp_data->btb_l1, op->inst_info->addr, &line_addr, &tag_aliasing, lru);
     if (e) {
       bpi->btb_l1_hit = TRUE;
       bpi->btb_l1_target = *e;
@@ -498,7 +490,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
     }
   }
 
-  Addr* e = (Addr*)cache_access(bp_data->btb, op->inst_info->addr, &line_addr, &tag_aliasing, lru);
+  Addr* e = (Addr*)cache_access_impl(bp_data->btb, op->inst_info->addr, &line_addr, &tag_aliasing, lru);
   if (e) {
     bpi->btb_main_hit = TRUE;
     bpi->btb_main_target = *e;
@@ -526,9 +518,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
                 hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
 
-      btb_line = (Addr*)cache_access(bp_data->btb, fetch_addr, &btb_line_addr, &tag_aliasing, TRUE);
-      if (tag_aliasing)
-        STAT_EVENT_BTB_TAG_ALIAS_UPDATE(op->proc_id, BTB_MAIN);
+      btb_line = (Addr*)cache_access_impl(bp_data->btb, fetch_addr, &btb_line_addr, &tag_aliasing, TRUE);
       if (!btb_line) {
         btb_line = (Addr*)cache_insert(bp_data->btb, bp_data->proc_id, fetch_addr, &btb_line_addr, &repl_line_addr);
       }
@@ -542,14 +532,12 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
     // or For indirects we want to update the BTB if the target changes, even on btb hit
     // The detection relies on the target stored in the btb
 
-    btb_line = (Addr*)cache_access(bp_data->btb, fetch_addr, &btb_line_addr, &tag_aliasing, FALSE);
+    btb_line = (Addr*)cache_access_impl(bp_data->btb, fetch_addr, &btb_line_addr, &tag_aliasing, FALSE);
 
     // The following assertion can fail (due to eviction?)
     // ASSERT(bp_data->proc_id, btb_entry);
     if (btb_line && *btb_line != op->oracle_info.target) {
-      cache_access(bp_data->btb, fetch_addr, &btb_line_addr, &tag_aliasing, TRUE);
-      if (tag_aliasing)
-        STAT_EVENT_BTB_TAG_ALIAS_UPDATE(op->proc_id, BTB_MAIN);
+      cache_access_impl(bp_data->btb, fetch_addr, &btb_line_addr, &tag_aliasing, TRUE);
       if (BTB_OFF_PATH_WRITES || !op->off_path) {
         DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
                   hexstr64s(op->oracle_info.target));
@@ -629,7 +617,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   Addr btb_line_addr;
   Flag tag_aliasing;
   Blk_Btb_BrSlot* br_slots =
-      (Blk_Btb_BrSlot*)cache_access(bp_data->btb, btb_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
+      (Blk_Btb_BrSlot*)cache_access_impl(bp_data->btb, btb_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
   bpi->btb_main_tag_alias = tag_aliasing;
 
   bpi->btb_main_hit = FALSE;
@@ -671,9 +659,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
       Addr btb_line_addr, repl_line_addr;
       Flag tag_aliasing;
       Blk_Btb_BrSlot* br_slots =
-          (Blk_Btb_BrSlot*)cache_access(bp_data->btb, btb_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
-      if (tag_aliasing)
-        STAT_EVENT_BTB_TAG_ALIAS_UPDATE(op->proc_id, BTB_MAIN);
+          (Blk_Btb_BrSlot*)cache_access_impl(bp_data->btb, btb_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
 
       if (!br_slots) {
         br_slots = (Blk_Btb_BrSlot*)cache_insert(bp_data->btb, bp_data->proc_id, btb_index_addr, &btb_line_addr,
@@ -759,7 +745,6 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
   uns32 tc_index;
   Addr* tc_entry;
   Addr line_addr;
-  Flag tag_aliasing;
   Addr target;
 
   if (PERFECT_IBP)
@@ -788,7 +773,7 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
   tc_index = hist ^ addr;
   if (IBTB_HASH_TOS)
     tc_index = tc_index ^ op->recovery_info.tos_addr;
-  tc_entry = (Addr*)cache_access(bp_data->tc_tagged, tc_index, &line_addr, &tag_aliasing,
+  tc_entry = (Addr*)cache_access(bp_data->tc_tagged, tc_index, &line_addr,
                                  bp_data->bp_id ? FALSE : TRUE);  // TODO
 
   if (tc_entry)
@@ -814,15 +799,13 @@ void bp_ibtb_tc_tagged_update(Bp_Data* bp_data, Op* op) {
   Addr* tc_line;
   Addr tc_line_addr;
   Addr repl_line_addr;
-  Flag tag_aliasing;
 
   ASSERT(bp_data->proc_id, !bp_data->bp_id);
   if (IBTB_HASH_TOS)
     tc_index = tc_index ^ op->recovery_info.tos_addr;
 
   DEBUG(bp_data->proc_id, "Writing target cache target for op_num:%s\n", unsstr64(op->op_num));
-  tc_line =
-      (Addr*)cache_access(bp_data->tc_tagged, tc_index, &tc_line_addr, &tag_aliasing, bp_data->bp_id ? FALSE : TRUE);
+  tc_line = (Addr*)cache_access(bp_data->tc_tagged, tc_index, &tc_line_addr, bp_data->bp_id ? FALSE : TRUE);
   if (tc_line) {
     // ASSERT(bp_data->proc_id, !op->btb_pred_info->ibp_miss);
   } else {

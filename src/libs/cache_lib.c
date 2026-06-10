@@ -91,8 +91,9 @@ static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* tag_full
   return addr >> cache->shift_bits & cache->set_mask;
 }
 
-uns ext_cache_index(Cache* cache, Addr addr, Addr* tag, Addr* tag_full, Addr* line_addr) {
-  return cache_index(cache, addr, tag, tag_full, line_addr);
+uns ext_cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_addr) {
+  Addr tag_full;
+  return cache_index(cache, addr, tag, &tag_full, line_addr);
 }
 
 /**************************************************************************************/
@@ -215,7 +216,12 @@ void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns l
 /* cache_access: Does a cache lookup based on the address.  Returns a pointer
  * to the cache line data if it is found.  */
 
-void* cache_access(Cache* cache, Addr addr, Addr* line_addr, Flag* tag_aliasing, Flag update_repl) {
+void* cache_access(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl) {
+  Flag tag_aliasing;
+  return cache_access_impl(cache, addr, line_addr, &tag_aliasing, update_repl);
+}
+
+void* cache_access_impl(Cache* cache, Addr addr, Addr* line_addr, Flag* tag_aliasing, Flag update_repl) {
   Addr tag, tag_full;
   uns set = cache_index(cache, addr, &tag, &tag_full, line_addr);
   uns ii;

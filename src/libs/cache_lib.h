@@ -189,7 +189,8 @@ const static Flag CACHE_DEBUG_ENABLE = FALSE;  // To be Changed into DEBUG_PARA
 /* prototypes */
 
 void init_cache(Cache*, const char*, uns, uns, uns, uns, uns, Repl_Policy);
-void* cache_access(Cache*, Addr, Addr*, Flag*, Flag);
+void* cache_access(Cache*, Addr, Addr*, Flag);
+void* cache_access_impl(Cache*, Addr, Addr*, Flag*, Flag);
 void* cache_insert(Cache*, uns8, Addr, Addr*, Addr*);
 void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr,
                            Cache_Insert_Repl insert_repl_policy, Flag isPrefetch);
@@ -198,7 +199,7 @@ void cache_invalidate(Cache*, Addr, Addr*);
 void cache_flush(Cache*);
 void* get_next_repl_line(Cache*, uns8, Addr, Addr*, Flag*);
 void* get_next_valid_repl_line(Cache* cache, uns8 proc_id, Addr addr);
-uns ext_cache_index(Cache*, Addr, Addr*, Addr*, Addr*);
+uns ext_cache_index(Cache*, Addr, Addr*, Addr*);
 Addr get_cache_line_addr(Cache*, Addr);
 uns cache_get_invalid_line_count(Cache* cache, Addr addr);
 void update_repl_resteer_policy(Cache*, Addr);

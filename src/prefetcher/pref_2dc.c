@@ -128,7 +128,6 @@ void pref_2dc_train(Pref_2DC* tdc_hwp, Addr lineAddr, Addr loadPC, Flag is_hit) 
   Addr hash;
   Addr lineIndex = lineAddr >> LOG2(DCACHE_LINE_SIZE);
   Addr dummy_lineaddr;
-  Flag tag_aliasing;
   Pref_2DC_Region* region = &tdc_hwp->regions[(lineIndex >> PREF_2DC_ZONE_SHIFT) % PREF_2DC_REGION_HASH];
 
   if (tdc_hwp->last_access != 0) {
@@ -142,7 +141,7 @@ void pref_2dc_train(Pref_2DC* tdc_hwp, Addr lineAddr, Addr loadPC, Flag is_hit) 
     if (region->deltaA != 0 && region->deltaB != 0 &&
         (!(region->deltaA == region->deltaB && region->deltaB == delta))) {
       hash = pref_2dc_hash(tdc_hwp, tdc_hwp->last_access, tdc_hwp->last_loadPC, region->deltaA, region->deltaB);
-      Pref_2DC_Cache_Data* data = cache_access(&tdc_hwp->cache, hash, &dummy_lineaddr, &tag_aliasing, TRUE);
+      Pref_2DC_Cache_Data* data = cache_access(&tdc_hwp->cache, hash, &dummy_lineaddr, TRUE);
       if (!data) {
         Addr repl_addr;
         if (!is_hit) {  // insert only on miss
@@ -184,7 +183,7 @@ void pref_2dc_train(Pref_2DC* tdc_hwp, Addr lineAddr, Addr loadPC, Flag is_hit) 
     }
     while (num_pref_sent < tdc_hwp->pref_degree) {
       hash = pref_2dc_hash(tdc_hwp, lineIndex, loadPC, delta1, delta2);
-      data = cache_access(&tdc_hwp->cache, hash, &dummy_lineaddr, &tag_aliasing, TRUE);
+      data = cache_access(&tdc_hwp->cache, hash, &dummy_lineaddr, TRUE);
       if (!data) {  // no hit for this hash
         return;
       }

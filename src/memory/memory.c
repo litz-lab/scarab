@@ -1368,7 +1368,6 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue
 static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry, int* out_queue_insertion_count,
                                    int* reserved_entry_count) {
   Addr line_addr;
-  Flag tag_aliasing;
   L1_Data* data;
   int lru_position = -1;
   Flag update_l1_lru = TRUE;
@@ -1402,8 +1401,7 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
         umon_cache = &mem->umon_cache_core[req->proc_id];
 
         lru_pos = cache_find_pos_in_lru_stack(umon_cache, req->proc_id, conv_addr, &dummy_addr);
-        umon_data = (Umon_Cache_Data*)cache_access(umon_cache, conv_addr, &dummy_addr, &tag_aliasing,
-                                                   TRUE);  // acces umon cache
+        umon_data = (Umon_Cache_Data*)cache_access(umon_cache, conv_addr, &dummy_addr, TRUE);  // acces umon cache
 
         if (!umon_data) {  // miss
           Addr repl_addr;
@@ -1427,7 +1425,7 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
   if (!PREFETCH_UPDATE_LRU_L1 && (req->type == MRT_DPRF || req->type == MRT_IPRF || req->type == MRT_UOCPRF ||
                                   req->type == MRT_FDIPPRFON || req->type == MRT_FDIPPRFOFF))
     update_l1_lru = FALSE;
-  data = (L1_Data*)cache_access(&L1(req->proc_id)->cache, req->addr, &line_addr, &tag_aliasing,
+  data = (L1_Data*)cache_access(&L1(req->proc_id)->cache, req->addr, &line_addr,
                                 update_l1_lru);  // access L2
   req->l1_hit = data ? TRUE : FALSE;
   cache_part_l1_access(req);
@@ -1625,7 +1623,6 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
 static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_entry, int* l1_queue_insertion_count,
                                     int* reserved_entry_count) {
   Addr line_addr;
-  Flag tag_aliasing;
   MLC_Data* data;
   int lru_position = -1;
   Flag update_mlc_lru = TRUE;
@@ -1633,8 +1630,7 @@ static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_ent
   if (!PREFETCH_UPDATE_LRU_MLC && (req->type == MRT_DPRF || req->type == MRT_IPRF || req->type == MRT_UOCPRF ||
                                    req->type == MRT_FDIPPRFON || req->type == MRT_FDIPPRFOFF))
     update_mlc_lru = FALSE;
-  data = (MLC_Data*)cache_access(&MLC(req->proc_id)->cache, req->addr, &line_addr, &tag_aliasing,
-                                 update_mlc_lru);  // access MLC
+  data = (MLC_Data*)cache_access(&MLC(req->proc_id)->cache, req->addr, &line_addr, update_mlc_lru);  // access MLC
   req->mlc_hit = data ? TRUE : FALSE;
 
   if (data || PERFECT_MLC) { /* mlc hit */
@@ -3401,9 +3397,8 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
     }
     STAT_EVENT(proc_id, MLC_NEWREQ_MATCHED_L2_PREF);
     Addr line_addr;
-    Flag tag_aliasing;
 
-    if ((MLC_Data*)cache_access(&MLC(proc_id)->cache, addr, &line_addr, &tag_aliasing, FALSE)) {
+    if ((MLC_Data*)cache_access(&MLC(proc_id)->cache, addr, &line_addr, FALSE)) {
       STAT_EVENT(proc_id, MLC_NEWREQ_MATCHED_L2_PREF_MLC_HIT);
     }
     matching_req->mlc_miss = TRUE;
@@ -3516,10 +3511,9 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       // Train the Data prefetcher
       L1_Data* data;
       Addr line_addr;
-      Flag tag_aliasing;
 
       ASSERTM(0, ADDR_TRANSLATION == ADDR_TRANS_NONE, "PREF_ORACLE_TRAIN_ON && ADDR_TRANSLATION not supported\n");
-      data = (L1_Data*)cache_access(&L1(proc_id)->cache, addr, &line_addr, &tag_aliasing, FALSE);
+      data = (L1_Data*)cache_access(&L1(proc_id)->cache, addr, &line_addr, FALSE);
 
       if (data) {
         pref_ul1_hit(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
@@ -3535,10 +3529,9 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       // Train the Data prefetcher
       MLC_Data* data;
       Addr line_addr;
-      Flag tag_aliasing;
 
       ASSERTM(0, ADDR_TRANSLATION == ADDR_TRANS_NONE, "PREF_ORACLE_TRAIN_ON && ADDR_TRANSLATION not supported\n");
-      data = (MLC_Data*)cache_access(&MLC(proc_id)->cache, addr, &line_addr, &tag_aliasing, FALSE);
+      data = (MLC_Data*)cache_access(&MLC(proc_id)->cache, addr, &line_addr, FALSE);
 
       if (data) {
         pref_umlc_hit(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
@@ -4182,7 +4175,6 @@ Flag l1_fill_line(Mem_Req* req) {
         Umon_Cache_Data* umon_data;
         uns set;
         Addr tag, conv_addr, dummy_addr;
-        Flag tag_aliasing;
 
         l1_cache = &L1(req->proc_id)->cache;
         set = req->addr >> l1_cache->shift_bits & l1_cache->set_mask;
@@ -4193,8 +4185,7 @@ Flag l1_fill_line(Mem_Req* req) {
           umon_cache = &mem->umon_cache_core[req->proc_id];
 
           ASSERT(0, ADDR_TRANSLATION == ADDR_TRANS_NONE);
-          umon_data = (Umon_Cache_Data*)cache_access(umon_cache, conv_addr, &dummy_addr, &tag_aliasing,
-                                                     TRUE);  // acces umon cache
+          umon_data = (Umon_Cache_Data*)cache_access(umon_cache, conv_addr, &dummy_addr, TRUE);  // acces umon cache
 
           if (!umon_data) {  // miss
             Addr repl_addr;
@@ -4504,9 +4495,8 @@ Flag mem_req_older_than_uniquenum(int reqbuf, Counter unique_num) {
 L1_Data* do_l1_access(Op* op) {
   L1_Data* hit;
   Addr line_addr;
-  Flag tag_aliasing;
 
-  hit = (L1_Data*)cache_access(&L1(op->proc_id)->cache, op->oracle_info.va, &line_addr, &tag_aliasing, FALSE);
+  hit = (L1_Data*)cache_access(&L1(op->proc_id)->cache, op->oracle_info.va, &line_addr, FALSE);
 
   return hit;
 }
@@ -4517,9 +4507,8 @@ L1_Data* do_l1_access(Op* op) {
 MLC_Data* do_mlc_access(Op* op) {
   MLC_Data* hit;
   Addr line_addr;
-  Flag tag_aliasing;
 
-  hit = (MLC_Data*)cache_access(&MLC(op->proc_id)->cache, op->oracle_info.va, &line_addr, &tag_aliasing, FALSE);
+  hit = (MLC_Data*)cache_access(&MLC(op->proc_id)->cache, op->oracle_info.va, &line_addr, FALSE);
 
   return hit;
 }
@@ -4530,10 +4519,9 @@ MLC_Data* do_mlc_access(Op* op) {
 L1_Data* do_l1_access_addr(Addr addr) {
   L1_Data* hit;
   Addr line_addr;
-  Flag tag_aliasing;
   uns proc_id = get_proc_id_from_cmp_addr(addr);
 
-  hit = (L1_Data*)cache_access(&L1(proc_id)->cache, addr, &line_addr, &tag_aliasing, FALSE);
+  hit = (L1_Data*)cache_access(&L1(proc_id)->cache, addr, &line_addr, FALSE);
 
   return hit;
 }
@@ -4544,10 +4532,9 @@ L1_Data* do_l1_access_addr(Addr addr) {
 MLC_Data* do_mlc_access_addr(Addr addr) {
   MLC_Data* hit;
   Addr line_addr;
-  Flag tag_aliasing;
   uns proc_id = get_proc_id_from_cmp_addr(addr);
 
-  hit = (MLC_Data*)cache_access(&MLC(proc_id)->cache, addr, &line_addr, &tag_aliasing, FALSE);
+  hit = (MLC_Data*)cache_access(&MLC(proc_id)->cache, addr, &line_addr, FALSE);
 
   return hit;
 }
@@ -4695,9 +4682,8 @@ static void unmark_l1_miss_deps(Op* op) {
 
 L1_Data* l1_pref_cache_access(Mem_Req* req) {
   Addr line_addr, repl_line_addr, pref_line_addr;
-  Flag tag_aliasing;
   L1_Data* data = NULL;
-  L1_Data* pref_data = (L1_Data*)cache_access(&mem->pref_l1_cache, req->addr, &pref_line_addr, &tag_aliasing, FALSE);
+  L1_Data* pref_data = (L1_Data*)cache_access(&mem->pref_l1_cache, req->addr, &pref_line_addr, FALSE);
 
   if (req->off_path && !PREFCACHE_MOVE_OFFPATH)
     return pref_data;  // offpath request doesn't change pref cache and l1 cache

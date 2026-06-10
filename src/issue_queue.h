@@ -37,12 +37,33 @@ extern "C" {
 #include "op.h"
 
 /**************************************************************************************/
+/* Constexpr */
+
+enum IssueQueueSchedulePolicy {
+  ISSUE_QUEUE_SCHEDULE_POLICY_OLDEST_FIRST,
+  ISSUE_QUEUE_SCHEDULE_POLICY_AMD_BULLDOZER,
+  ISSUE_QUEUE_SCHEDULE_POLICY_RANDOM,
+  ISSUE_QUEUE_SCHEDULE_POLICY_NUM
+};
+
+enum IssueQueueTraversalPolicy {
+  ISSUE_QUEUE_TRAVERSAL_POLICY_ROUND_ROBIN,
+  ISSUE_QUEUE_TRAVERSAL_POLICY_PRIORITY,
+  ISSUE_QUEUE_TRAVERSAL_POLICY_NUM
+};
+
+enum IssueQueueEarlyBindPolicy {
+  ISSUE_QUEUE_EARLY_BIND_POLICY_NONE,
+  ISSUE_QUEUE_EARLY_BIND_POLICY_LEAST,
+  ISSUE_QUEUE_EARLY_BIND_POLICY_NUM
+};
+
+/**************************************************************************************/
 /* External Methods */
 
 void issue_queue_update();
 void issue_queue_wakeup(Op* op);
 void issue_queue_issued(Op* op);
-void issue_queue_reject(Op* op);
 Flag issue_queue_has_ready_ops();
 
 // vanilla hps interface

@@ -30,6 +30,7 @@
 #define __CACHE_LIB_H__
 
 #include "globals/global_defs.h"
+#include "globals/utils.h"
 
 #include "libs/list_lib.h"
 
@@ -103,6 +104,18 @@ typedef enum Cache_Insert_Repl_enum {
   NUM_INSERT_REPL
 } Cache_Insert_Repl;
 
+typedef enum Index_Hash_enum {
+  ID_HASH,    /* Identity function */
+  KNUTH_HASH, /* Knuth multiplicative hash */
+  NUM_INDEX_HASH
+} Index_Hash_Id;
+
+typedef struct Index_Hash_struct {
+  Index_Hash_Id id;
+  const char* name;
+  Addr (*hash_func)(Addr, uns);
+} Index_Hash;
+
 typedef struct Cache_struct {
   char name[MAX_STR_LENGTH + 1]; /* name to identify the cache (for debugging) */
   uns data_size;                 /* how big are the data items in each cache entry? (for malloc) */
@@ -112,6 +125,7 @@ typedef struct Cache_struct {
   uns num_sets;            /* number of sets in the cache */
   uns line_size;           /* size in bytes of one line */
   Repl_Policy repl_policy; /* the replacement policy of the cache */
+  Index_Hash* index_hash;  /* index hashing mechanism */
 
   uns set_bits;     /* number of bits used in the set mask */
   uns shift_bits;   /* number of bits to shift an address before using (assuming it is shifted) */
@@ -176,9 +190,25 @@ Cache_Entry* cache_evict_strategy(Cache* cache, uns8 proc_id, uns set, uns* way)
 const static Flag CACHE_DEBUG_ENABLE = FALSE;  // To be Changed into DEBUG_PARA
 
 /**************************************************************************************/
+/* Index Hash Functions */
+
+extern Index_Hash index_hash_table[];
+
+inline static Addr cache_index_id_hash(Addr addr, uns num_sets) {
+  return addr;
+}
+
+inline static Addr cache_index_knuth_hash(Addr addr, uns num_sets) {
+  // Knuth multiplicative hash
+  Addr tmp = addr * 11400714819323197440ULL;
+  return (tmp << LOG2(num_sets)) | (tmp >> (64 - LOG2(num_sets)));
+}
+
+/**************************************************************************************/
 /* prototypes */
 
 void init_cache(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
+void init_cache_impl(Cache*, const char*, uns, uns, uns, uns, Repl_Policy, Index_Hash_Id);
 void* cache_access(Cache*, Addr, Addr*, Flag);
 void* cache_insert(Cache*, uns8, Addr, Addr*, Addr*);
 void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr,

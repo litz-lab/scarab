@@ -1,0 +1,7 @@
+Index_Hash index_hash_table [] = {
+    /* Enum           Name         hash_func              */
+    /* -------------------------------------------------- */
+    { ID_HASH,        "identity",  cache_index_id_hash    },
+    { KNUTH_HASH,     "knuth",     cache_index_knuth_hash },
+    { NUM_INDEX_HASH, 0,           NULL }
+};

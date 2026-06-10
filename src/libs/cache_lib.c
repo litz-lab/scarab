@@ -27,6 +27,7 @@
  ***************************************************************************************/
 
 #include "libs/cache_lib.h"
+#include "libs/cache_lib_table.def"
 
 #include <stdlib.h>
 
@@ -80,7 +81,8 @@ static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_add
     *tag = addr >> cache->shift_bits & cache->tag_mask;
     *line_addr = addr & ~cache->offset_mask;
   }
-  return addr >> cache->shift_bits & cache->set_mask;
+  // return cache->index_hash->hash_func(addr >> cache->shift_bits & cache->set_mask, cache->num_sets) & cache->set_mask;
+  return cache->index_hash->hash_func(addr >> cache->shift_bits, cache->num_sets) & cache->set_mask;
 }
 
 uns ext_cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_addr) {
@@ -92,6 +94,11 @@ uns ext_cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_addr) {
 
 void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                 Repl_Policy repl_policy) {
+  init_cache_impl(cache, name, cache_size, assoc, line_size, data_size, repl_policy, ID_HASH);
+}
+
+void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
+                     Repl_Policy repl_policy, Index_Hash_Id index_hash_id) {
   uns num_lines = cache_size / line_size;
   uns num_sets = cache_size / line_size / assoc;
   uns ii, jj;
@@ -111,6 +118,7 @@ void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns l
   cache->num_sets = num_sets;
   cache->line_size = line_size;
   cache->repl_policy = repl_policy;
+  cache->index_hash = &index_hash_table[index_hash_id];
 
   /* set some fields to make indexing quick */
   cache->set_bits = LOG2(num_sets);

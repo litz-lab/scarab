@@ -81,8 +81,7 @@ static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_add
     *tag = addr >> cache->shift_bits & cache->tag_mask;
     *line_addr = addr & ~cache->offset_mask;
   }
-  // return cache->index_hash->hash_func(addr >> cache->shift_bits & cache->set_mask, cache->num_sets) & cache->set_mask;
-  return cache->index_hash->hash_func(addr >> cache->shift_bits, cache->num_sets) & cache->set_mask;
+  return cache->index_hash->hash_func(addr >> cache->shift_bits, cache->set_bits, cache->set_mask) & cache->set_mask;
 }
 
 uns ext_cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_addr) {

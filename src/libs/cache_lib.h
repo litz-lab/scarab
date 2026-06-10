@@ -107,13 +107,15 @@ typedef enum Cache_Insert_Repl_enum {
 typedef enum Index_Hash_enum {
   ID_HASH,    /* Identity function */
   KNUTH_HASH, /* Knuth multiplicative hash */
+  SIMPLE_XOR, /* XOR only once */
+  XOR_FOLDING, /* XOR 64/set_bits times */
   NUM_INDEX_HASH
 } Index_Hash_Id;
 
 typedef struct Index_Hash_struct {
   Index_Hash_Id id;
   const char* name;
-  Addr (*hash_func)(Addr, uns);
+  Addr (*hash_func)(Addr, uns, Addr);
 } Index_Hash;
 
 typedef struct Cache_struct {
@@ -194,14 +196,28 @@ const static Flag CACHE_DEBUG_ENABLE = FALSE;  // To be Changed into DEBUG_PARA
 
 extern Index_Hash index_hash_table[];
 
-inline static Addr cache_index_id_hash(Addr addr, uns num_sets) {
+inline static Addr cache_index_id_hash(Addr addr, uns set_bits, Addr set_mask) {
   return addr;
 }
 
-inline static Addr cache_index_knuth_hash(Addr addr, uns num_sets) {
+inline static Addr cache_index_knuth_hash(Addr addr, uns set_bits, Addr set_mask) {
   // Knuth multiplicative hash
   Addr tmp = addr * 11400714819323197440ULL;
-  return (tmp << LOG2(num_sets)) | (tmp >> (64 - LOG2(num_sets)));
+  return (tmp << set_bits) | (tmp >> (64 - set_bits));
+}
+
+inline static Addr cache_index_simple_xor(Addr addr, uns set_bits, Addr set_mask) {
+  return (addr >> set_bits) ^ addr;
+}
+
+inline static Addr cache_index_xor_folding(Addr addr, uns set_bits, Addr set_mask) {
+  Addr index = addr;
+  if (set_bits < 64) {
+    while ((index >> set_bits) != 0) {
+      index = (index & set_mask) ^ (index >> set_bits);
+    }
+  }
+  return index & set_mask;
 }
 
 /**************************************************************************************/

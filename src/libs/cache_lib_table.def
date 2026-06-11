@@ -3,7 +3,8 @@ Index_Hash index_hash_table [] = {
     /* -------------------------------------------------------------- */
     { ID_HASH,           "identity",       cache_index_id_hash        },
     { KNUTH_HASH,        "knuth",          cache_index_knuth_hash     },
-    { SIMPLE_XOR,        "simple_xor",     cache_index_simple_xor     },
+    { SINGLE_XOR,        "single_xor",     cache_index_single_xor     },
     { XOR_FOLDING,       "xor_folding",    cache_index_xor_folding    },
+    { PRIME_DISPLACE,    "prime_displace", cache_index_prime_displace },
     { NUM_INDEX_HASH,    0,                NULL }
 };

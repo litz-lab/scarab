@@ -107,16 +107,13 @@ typedef enum Cache_Insert_Repl_enum {
 typedef enum Index_Hash_enum {
   ID_HASH,    /* Identity function */
   KNUTH_HASH, /* Knuth multiplicative hash */
-  SIMPLE_XOR, /* XOR only once */
+  SINGLE_XOR, /* XOR only once */
   XOR_FOLDING, /* XOR 64/set_bits times */
+  PRIME_DISPLACE, /* Displace index by p * tag */
   NUM_INDEX_HASH
 } Index_Hash_Id;
 
-typedef struct Index_Hash_struct {
-  Index_Hash_Id id;
-  const char* name;
-  Addr (*hash_func)(Addr, uns, Addr);
-} Index_Hash;
+typedef struct Index_Hash_struct Index_Hash;
 
 typedef struct Cache_struct {
   char name[MAX_STR_LENGTH + 1]; /* name to identify the cache (for debugging) */
@@ -167,6 +164,12 @@ typedef struct Cache_struct {
   void* predictor;
 } Cache;
 
+struct Index_Hash_struct {
+  Index_Hash_Id id;
+  const char* name;
+  Addr (*hash_func)(Cache*, Addr);
+};
+
 /**************************************************************************************/
 /* Strategy Design */
 struct repl_policy_func {
@@ -196,28 +199,32 @@ const static Flag CACHE_DEBUG_ENABLE = FALSE;  // To be Changed into DEBUG_PARA
 
 extern Index_Hash index_hash_table[];
 
-inline static Addr cache_index_id_hash(Addr addr, uns set_bits, Addr set_mask) {
+inline static Addr cache_index_id_hash(Cache* cache, Addr addr) {
   return addr;
 }
 
-inline static Addr cache_index_knuth_hash(Addr addr, uns set_bits, Addr set_mask) {
+inline static Addr cache_index_knuth_hash(Cache* cache, Addr addr) {
   // Knuth multiplicative hash
   Addr tmp = addr * 11400714819323197440ULL;
-  return (tmp << set_bits) | (tmp >> (64 - set_bits));
+  return (tmp << cache->set_bits) | (tmp >> (64 - cache->set_bits));
 }
 
-inline static Addr cache_index_simple_xor(Addr addr, uns set_bits, Addr set_mask) {
-  return (addr >> set_bits) ^ addr;
+inline static Addr cache_index_single_xor(Cache* cache, Addr addr) {
+  return (addr >> cache->set_bits) ^ addr;
 }
 
-inline static Addr cache_index_xor_folding(Addr addr, uns set_bits, Addr set_mask) {
+inline static Addr cache_index_xor_folding(Cache* cache, Addr addr) {
   Addr index = addr;
-  if (set_bits < 64) {
-    while ((index >> set_bits) != 0) {
-      index = (index & set_mask) ^ (index >> set_bits);
+  if (cache->set_bits < 64) {
+    while ((index >> cache->set_bits) != 0) {
+      index = (index & cache->set_mask) ^ (index >> cache->set_bits);
     }
   }
-  return index & set_mask;
+  return index & cache->set_mask;
+}
+
+inline static Addr cache_index_prime_displace(Cache* cache, Addr addr) {
+  return ((addr & cache->set_mask) + (addr >> cache->set_bits) * 17) & cache->set_mask;
 }
 
 /**************************************************************************************/

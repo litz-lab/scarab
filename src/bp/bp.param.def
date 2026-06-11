@@ -84,6 +84,7 @@ DEF_PARAM(  btb_mech                  , BTB_MECH                  , uns     , bt
 DEF_PARAM(  btb_hash                  , BTB_HASH                  , uns     , index_hash , ID_HASH    ,        )
 DEF_PARAM(  btb_entries               , BTB_ENTRIES               , uns     , uns        , 12288      ,        )
 DEF_PARAM(  btb_assoc                 , BTB_ASSOC                 , uns     , uns        , 4          ,        )
+DEF_PARAM(  btb_banks                 , BTB_BANKS                 , uns     , uns        , 1          ,        ) /* number of banks interleaved */
 DEF_PARAM(  btb_num_brslot            , BTB_NUM_BRSLOT            , uns     , uns        , 1          ,        ) /* number of branch slots per block */
 DEF_PARAM(  btb_block_size            , BTB_BLOCK_SIZE            , uns64   , uns64      , 64         ,        ) /* number of max bytes within a block (Note x86 has variable inst size) */
 DEF_PARAM(  btb_off_path_writes       , BTB_OFF_PATH_WRITES       , Flag    , Flag       , TRUE       ,        ) /* const */
@@ -92,11 +93,13 @@ DEF_PARAM(  btb_l0_present           , BTB_L0_PRESENT            , Flag    , Fla
 DEF_PARAM(  btb_l0_hash              , BTB_L0_HASH               , uns     , index_hash , ID_HASH    ,        )
 DEF_PARAM(  btb_l0_entries           , BTB_L0_ENTRIES            , uns     , uns        , 128        ,        )
 DEF_PARAM(  btb_l0_assoc             , BTB_L0_ASSOC              , uns     , uns        , 4          ,        )
+DEF_PARAM(  btb_l0_banks             , BTB_L0_BANKS              , uns     , uns        , 1          ,        ) /* number of banks interleaved */
 DEF_PARAM(  btb_l0_latency           , BTB_L0_LATENCY            , uns     , uns        , 1          ,        )
 DEF_PARAM(  btb_l1_present           , BTB_L1_PRESENT            , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM(  btb_l1_hash              , BTB_L1_HASH               , uns     , index_hash , ID_HASH    ,        )
 DEF_PARAM(  btb_l1_entries           , BTB_L1_ENTRIES            , uns     , uns        , 6144       ,        )
 DEF_PARAM(  btb_l1_assoc             , BTB_L1_ASSOC              , uns     , uns        , 4          ,        )
+DEF_PARAM(  btb_l1_banks             , BTB_L1_BANKS              , uns     , uns        , 1          ,        ) /* number of banks interleaved */
 DEF_PARAM(  btb_l1_latency           , BTB_L1_LATENCY            , uns     , uns        , 2          ,        )
 
 DEF_PARAM(  enable_crs                , ENABLE_CRS                , Flag    , Flag       , TRUE       ,        )

@@ -350,11 +350,21 @@ void init_bp_data(uns8 proc_id, uns8 bp_id, Bp_Data* bp_data, Bp_Data* primary_b
     } else {
       ASSERTM(proc_id, BP_MAIN_LATENCY == 1, "BP_MAIN_LATENCY must be 1 when early predictor is disabled\n");
     }
-    bp_data->btb = (Cache*)malloc(sizeof(Cache));
-    if (BTB_L0_PRESENT)
-      bp_data->btb_l0 = (Cache*)malloc(sizeof(Cache));
-    if (BTB_L1_PRESENT)
-      bp_data->btb_l1 = (Cache*)malloc(sizeof(Cache));
+
+    ASSERT(proc_id, 0 < BTB_BANKS && BTB_BANKS < 64);
+    ASSERT(proc_id, (1 << LOG2(BTB_BANKS)) == BTB_BANKS);
+    bp_data->btb = (Cache*)calloc(BTB_BANKS, sizeof(Cache));
+    if (BTB_L0_PRESENT) {
+      ASSERT(proc_id, 0 < BTB_L0_BANKS && BTB_L0_BANKS < 64);
+      ASSERT(proc_id, (1 << LOG2(BTB_L0_BANKS)) == BTB_L0_BANKS);
+      bp_data->btb_l0 = (Cache*)calloc(BTB_L0_BANKS, sizeof(Cache));
+    }
+    if (BTB_L1_PRESENT) {
+      ASSERT(proc_id, 0 < BTB_L1_BANKS && BTB_L1_BANKS < 64);
+      ASSERT(proc_id, (1 << LOG2(BTB_L1_BANKS)) == BTB_L1_BANKS);
+      bp_data->btb_l1 = (Cache*)calloc(BTB_L1_BANKS, sizeof(Cache));
+    }
+
     bp_data->tc_tagged = (Cache*)malloc(sizeof(Cache));
   }
   bp_data->proc_id = proc_id;
@@ -929,7 +939,8 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
 
-  bp_data->bp_btb->update_func(bp_data, op);
+  if (op->inst_info->table_info.cf_type != CF_SYS)
+    bp_data->bp_btb->update_func(bp_data, op);
 
   // special case updates
   switch (op->inst_info->table_info.cf_type) {

@@ -105,10 +105,10 @@ typedef enum Cache_Insert_Repl_enum {
 } Cache_Insert_Repl;
 
 typedef enum Index_Hash_enum {
-  ID_HASH,    /* Identity function */
-  KNUTH_HASH, /* Knuth multiplicative hash */
-  SINGLE_XOR, /* XOR only once */
-  XOR_FOLDING, /* XOR 64/set_bits times */
+  ID_HASH,        /* Identity function */
+  KNUTH_HASH,     /* Knuth multiplicative hash */
+  SINGLE_XOR,     /* XOR only once */
+  XOR_FOLDING,    /* XOR 64/set_bits times */
   PRIME_DISPLACE, /* Displace index by p * tag */
   NUM_INDEX_HASH
 } Index_Hash_Id;

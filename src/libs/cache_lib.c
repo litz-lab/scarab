@@ -27,7 +27,6 @@
  ***************************************************************************************/
 
 #include "libs/cache_lib.h"
-#include "libs/cache_lib_table.def"
 
 #include <stdlib.h>
 
@@ -45,6 +44,8 @@
 #include "memory/memory.param.h"
 
 #include "frontend/frontend_intf.h"
+
+#include "libs/cache_lib_table.def"
 
 // DeleteMe
 #define ideal_num_entries 256

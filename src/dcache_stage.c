@@ -105,8 +105,7 @@ void init_dcache_stage(uns8 proc_id, const char* name) {
   dc->sd.ops = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
 
   /* initialize the cache structure */
-  init_cache(&dc->dcache, "DCACHE", DCACHE_SIZE, DCACHE_ASSOC, DCACHE_LINE_SIZE, DCACHE_TAG_BITS, sizeof(Dcache_Data),
-             DCACHE_REPL);
+  init_cache(&dc->dcache, "DCACHE", DCACHE_SIZE, DCACHE_ASSOC, DCACHE_LINE_SIZE, sizeof(Dcache_Data), DCACHE_REPL);
   reset_dcache_stage();
 
   dc->ports = (Ports*)malloc(sizeof(Ports) * DCACHE_BANKS);
@@ -120,7 +119,7 @@ void init_dcache_stage(uns8 proc_id, const char* name) {
 
   if (DC_PREF_CACHE_ENABLE)
     init_cache(&dc->pref_dcache, "DC_PREF_CACHE", DC_PREF_CACHE_SIZE, DC_PREF_CACHE_ASSOC, DCACHE_LINE_SIZE,
-               DC_PREF_CACHE_TAG_BITS, sizeof(Dcache_Data), DCACHE_REPL);
+               sizeof(Dcache_Data), DCACHE_REPL);
 
   memset(dc->rand_wb_state, 0, NUM_ELEMENTS(dc->rand_wb_state));
 }

@@ -102,7 +102,7 @@ void init_2dc(HWP* hwp, Pref_2DC* tdc_hwp_core) {
   tdc_hwp_core->last_loadPC = 0;
 
   init_cache(&tdc_hwp_core->cache, "PREF_2DC_CACHE", PREF_2DC_CACHE_SIZE, PREF_2DC_CACHE_ASSOC,
-             PREF_2DC_CACHE_LINE_SIZE, PREF_2DC_CACHE_TAG_BITS, sizeof(Pref_2DC_Cache_Data), REPL_TRUE_LRU);
+             PREF_2DC_CACHE_LINE_SIZE, sizeof(Pref_2DC_Cache_Data), REPL_TRUE_LRU);
 
   tdc_hwp_core->cache_index_bits = LOG2(PREF_2DC_CACHE_SIZE / 4);
   tdc_hwp_core->hash_func = PREF_2DC_HASH_FUNC_DEFAULT;

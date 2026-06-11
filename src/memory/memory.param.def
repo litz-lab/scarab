@@ -56,7 +56,6 @@ DEF_PARAM(mlc_present, MLC_PRESENT, Flag, Flag, FALSE, )
 DEF_PARAM(mlc_size, MLC_SIZE, uns, uns, (512 * 1024), )
 DEF_PARAM(mlc_assoc, MLC_ASSOC, uns, uns, 4, )
 DEF_PARAM(mlc_line_size, MLC_LINE_SIZE, uns, uns, 64, )
-DEF_PARAM(mlc_tag_bits, MLC_TAG_BITS, uns, uns, 64, )
 DEF_PARAM(mlc_cycles, MLC_CYCLES, uns, uns, 12, )
 DEF_PARAM(perfect_mlc, PERFECT_MLC, Flag, Flag, FALSE, )
 DEF_PARAM(mlc_read_ports, MLC_READ_PORTS, uns, uns, 1, )
@@ -73,7 +72,6 @@ DEF_PARAM(l1_assoc, L1_ASSOC, uns, uns, 8, )
 DEF_PARAM(l1_line_size, L1_LINE_SIZE, uns, uns,
           64, ) /* VA_PAGE_SIZE_BYTES, L1_INTERLEAVE_FACTOR is
                    dependent on this size*/
-DEF_PARAM(l1_tag_bits, L1_TAG_BITS, uns, uns, 64, )
 DEF_PARAM(l1_cycles, L1_CYCLES, uns, uns, 24, )
 DEF_PARAM(perfect_l1, PERFECT_L1, Flag, Flag, FALSE, )
 DEF_PARAM(private_l1, PRIVATE_L1, Flag, Flag, FALSE, )
@@ -106,7 +104,6 @@ DEF_PARAM(icache_size, ICACHE_SIZE, uns, uns,
 DEF_PARAM(icache_assoc, ICACHE_ASSOC, uns, uns, 4, ) /* associativity */
 DEF_PARAM(icache_line_size, ICACHE_LINE_SIZE, uns, uns,
           64, ) /* line size in bytes */
-DEF_PARAM(icache_tag_bits, ICACHE_TAG_BITS, uns, uns, 64, )
 DEF_PARAM(perfect_icache, PERFECT_ICACHE, Flag, Flag,
           FALSE, ) /* it always hits? */
 DEF_PARAM(icache_read_ports, ICACHE_READ_PORTS, uns, uns, 1, )
@@ -137,7 +134,6 @@ DEF_PARAM(no_repl_after_queue_size, NO_REPL_AFTER_QUEUE_SIZE, uns, uns, 0,)
 // The cache line size is fixed to ICACHE_LINE_SIZE (64 by default). The number of entries in a FDIP UC is FDIP_UC_SIZE / ICACHE_LINE_SIZE. To have 16K (16384) entries, FDIP_UC_SIZE should be 1048576.
 DEF_PARAM(  fdip_uc_size                   , FDIP_UC_SIZE                    , uns    , uns     , 0                      ,       )
 DEF_PARAM(  fdip_uc_assoc                  , FDIP_UC_ASSOC                   , uns    , uns     , 4                      ,       )
-DEF_PARAM(  fdip_uc_tag_bits               , FDIP_UC_TAG_BITS                , uns    , uns     , 64                     ,       )
 // The insert replacement policy should be one of INSERT_REP_(DEFAULT/LRU/LOWQTR/MID/MRU)
 DEF_PARAM(  fdip_uc_insert_replpol         , FDIP_UC_INSERT_REPLPOL          , uns    , uns     , 0                      ,       )
 // Allow the map stage to consume ops originating from either the icache or uop cache path in the same cycle.
@@ -149,7 +145,6 @@ DEF_PARAM(  uop_queue_length               , UOP_QUEUE_LENGTH                , u
 DEF_PARAM(dcache_size, DCACHE_SIZE, uns, uns, (64 * 1024), )
 DEF_PARAM(dcache_assoc, DCACHE_ASSOC, uns, uns, 1, )
 DEF_PARAM(dcache_line_size, DCACHE_LINE_SIZE, uns, uns, 64, )
-DEF_PARAM(dcache_tag_bits, DCACHE_TAG_BITS, uns, uns, 64, )
 DEF_PARAM(dcache_cycles, DCACHE_CYCLES, uns, uns, 2, )
 DEF_PARAM(perfect_dcache, PERFECT_DCACHE, Flag, Flag, FALSE, )
 DEF_PARAM(dcache_read_ports, DCACHE_READ_PORTS, uns, uns, 8, )
@@ -261,7 +256,6 @@ DEF_PARAM(dc_pref_cache_cycle, DC_PREF_CACHE_CYCLE, uns, uns, 0, )
 DEF_PARAM(pref_insert_dcache_imm, PREF_INSERT_DCACHE_IMM, Flag, Flag, TRUE, )
 DEF_PARAM(dc_pref_cache_size, DC_PREF_CACHE_SIZE, uns, uns, (64 * 1024), )
 DEF_PARAM(dc_pref_cache_assoc, DC_PREF_CACHE_ASSOC, uns, uns, 4, )
-DEF_PARAM(dc_pref_cache_tag_bits, DC_PREF_CACHE_TAG_BITS, uns, uns, 64, )
 DEF_PARAM(dc_pref_only_l1hit, DC_PREF_ONLY_L1HIT, Flag, Flag, FALSE, )
 
 DEF_PARAM(pref_cache_use_rdy_cycle, PREF_CACHE_USE_RDY_CYCLE, Flag, Flag,
@@ -270,12 +264,10 @@ DEF_PARAM(pref_cache_use_rdy_cycle, PREF_CACHE_USE_RDY_CYCLE, Flag, Flag,
 DEF_PARAM(ic_pref_cache_enable, IC_PREF_CACHE_ENABLE, Flag, Flag, FALSE, )
 DEF_PARAM(ic_pref_cache_size, IC_PREF_CACHE_SIZE, uns, uns, (64 * 1024), )
 DEF_PARAM(ic_pref_cache_assoc, IC_PREF_CACHE_ASSOC, uns, uns, 4, )
-DEF_PARAM(ic_pref_cache_tag_bits, IC_PREF_CACHE_TAG_BITS, uns, uns, 64, )
 
 DEF_PARAM(l1_pref_cache_enable, L1_PREF_CACHE_ENABLE, Flag, Flag, FALSE, )
 DEF_PARAM(l1_pref_cache_size, L1_PREF_CACHE_SIZE, uns, uns, (1024 * 1024), )
 DEF_PARAM(l1_pref_cache_assoc, L1_PREF_CACHE_ASSOC, uns, uns, 8, )
-DEF_PARAM(l1_pref_cache_tag_bits, L1_PREF_CACHE_TAG_BITS, uns, uns, 64, )
 
 DEF_PARAM(set_off_path_confirmed, SET_OFF_PATH_CONFIRMED, Flag, Flag, FALSE, )
 DEF_PARAM(use_confirmed_off, USE_CONFIRMED_OFF, Flag, Flag,

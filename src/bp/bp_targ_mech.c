@@ -479,8 +479,8 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
     for (uns ii = 0; ii < BTB_BANKS; ii++) {
       char name[MAX_STR_LENGTH + 1];
       snprintf(name, MAX_STR_LENGTH, "BTB BANK %d", ii);
-      init_cache(&bp_data->btb[ii], name, BTB_ENTRIES / BTB_BANKS, BTB_ASSOC, 1, BTB_TAG_BITS, sizeof(Addr),
-                 REPL_TRUE_LRU);
+      init_cache_impl(&bp_data->btb[ii], name, BTB_ENTRIES / BTB_BANKS, BTB_ASSOC, 1, BTB_TAG_BITS, sizeof(Addr),
+                      REPL_TRUE_LRU);
     }
 
     if (BTB_L0_PRESENT) {
@@ -488,8 +488,8 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
       for (uns ii = 0; ii < BTB_L0_BANKS; ii++) {
         char name[MAX_STR_LENGTH + 1];
         snprintf(name, MAX_STR_LENGTH, "BTB_L0 BANK %d", ii);
-        init_cache(&bp_data->btb_l0[ii], name, BTB_L0_ENTRIES / BTB_L0_BANKS, BTB_L0_ASSOC, 1, BTB_L0_TAG_BITS,
-                   sizeof(Addr), REPL_TRUE_LRU);
+        init_cache_impl(&bp_data->btb_l0[ii], name, BTB_L0_ENTRIES / BTB_L0_BANKS, BTB_L0_ASSOC, 1, BTB_L0_TAG_BITS,
+                        sizeof(Addr), REPL_TRUE_LRU);
       }
     }
 
@@ -498,8 +498,8 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
       for (uns ii = 0; ii < BTB_L1_BANKS; ii++) {
         char name[MAX_STR_LENGTH + 1];
         snprintf(name, MAX_STR_LENGTH, "BTB_L1 BANK %d", ii);
-        init_cache(&bp_data->btb_l1[ii], name, BTB_L1_ENTRIES / BTB_L1_BANKS, BTB_L1_ASSOC, 1, BTB_L1_TAG_BITS,
-                   sizeof(Addr), REPL_TRUE_LRU);
+        init_cache_impl(&bp_data->btb_l1[ii], name, BTB_L1_ENTRIES / BTB_L1_BANKS, BTB_L1_ASSOC, 1, BTB_L1_TAG_BITS,
+                        sizeof(Addr), REPL_TRUE_LRU);
       }
     }
   } else {
@@ -644,7 +644,7 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 
     ASSERT(bp_data->proc_id, BTB_BANKS == 1);
     ASSERT(bp_data->proc_id, BTB_ENTRIES >= BTB_ASSOC);
-    init_cache(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BTB_TAG_BITS, BLK_BTB_ENTRY_SIZE, REPL_TRUE_LRU);
+    init_cache_impl(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BTB_TAG_BITS, BLK_BTB_ENTRY_SIZE, REPL_TRUE_LRU);
   } else  // points to the primary BP's shared BTB
     bp_data->btb = primary_bp->btb;
 }
@@ -804,7 +804,7 @@ void bp_btb_block_recover(Bp_Data* bp_data, Recovery_Info* info) {
 void bp_ibtb_tc_tagged_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   // line size set to 1
   if (!bp_data->bp_id)
-    init_cache(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, TC_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU);
+    init_cache_impl(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, TC_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU);
   else  // points to the primary BP's shared tc_tagged
     bp_data->tc_tagged = primary_bp->tc_tagged;
 }
@@ -1025,7 +1025,7 @@ void bp_ibtb_tc_hybrid_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   /* Init the tagged predictor */
   // line size set to 1
   if (!bp_data->bp_id)
-    init_cache(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, TC_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU);
+    init_cache_impl(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, TC_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU);
   else  // points to the primary BP's shared tc_tagged
     bp_data->tc_tagged = primary_bp->tc_tagged;
 }

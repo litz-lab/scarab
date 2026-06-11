@@ -104,8 +104,8 @@ void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns l
   init_cache_impl(cache, name, cache_size, assoc, line_size, 64, data_size, repl_policy);
 }
 
-void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns tag_bits, uns data_size,
-                Repl_Policy repl_policy) {
+void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns tag_bits,
+                     uns data_size, Repl_Policy repl_policy) {
   uns num_lines = cache_size / line_size;
   uns num_sets = cache_size / line_size / assoc;
   uns ii, jj;

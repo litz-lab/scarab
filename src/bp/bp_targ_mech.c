@@ -71,6 +71,12 @@
     }                                                                                              \
   } while (0)
 
+#define STAT_EVENT_BTB_ADDR_ENTROPY(proc_id, addr)                        \
+  do {                                                                    \
+    for (uns ii = 0; ii < 64; ii++)                                       \
+      STAT_EVENT(proc_id, BTB_ADDR_0_ZERO + 2 * ii + (addr >> ii & 0b1)); \
+  } while (0)
+
 #define STAT_EVENT_BTB_BANK(proc_id, level, case, bank_id)        \
   do {                                                            \
     STAT_EVENT(proc_id, BTB_##level##_##case##_BANK_0 + bank_id); \
@@ -514,6 +520,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Flag lru = bp_data->bp_id ? FALSE : TRUE;
 
   op->btb_pred_info->btb_index_addr = op->inst_info->addr;
+  STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, op->inst_info->addr);
 
   if (BTB_L0_PRESENT) {
     uns bank_id = get_btb_bank_id(BTB_L0_BANKS, op->inst_info->addr, &intra_bank_addr);
@@ -670,6 +677,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   // Prepare for next BTB lookup
   bp_data->prev_cf_btb_index_addr = btb_index_addr;
 
+  STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, btb_index_addr);
   STAT_EVENT_BTB_BANK(op->proc_id, MAIN, PRED, 0);
   Addr btb_line_addr;
   Blk_Btb_BrSlot* br_slots = (Blk_Btb_BrSlot*)cache_access(bp_data->btb, btb_index_addr, &btb_line_addr, TRUE);

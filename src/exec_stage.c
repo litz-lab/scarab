@@ -51,6 +51,7 @@
 
 #include "cmp_model.h"
 #include "exec_ports.h"
+#include "issue_queue.h"
 #include "map.h"
 #include "map_rename.h"
 #include "statistics.h"
@@ -121,7 +122,8 @@ void init_exec_stage(uns8 proc_id, const char* name) {
 
   exec->proc_id = proc_id;
 
-  exec->sd.name = (char*)strdup(name);
+  /* `name` is expected to be long-lived (caller passes string literals). */
+  exec->sd.name = (char*)name;
   exec->sd.max_op_count = NUM_FUS;
   exec->sd.ops = (Op**)malloc(sizeof(Op*) * NUM_FUS);
   exec->fus_busy = 0;
@@ -151,7 +153,14 @@ void recover_exec_stage() {
   for (ii = 0; ii < NUM_FUS; ii++) {
     Func_Unit* fu = &exec->fus[ii];
     Op* op = exec->sd.ops[ii];
-    if (op && op->op_num > bp_recovery_info->recovery_op_num) {
+    if (op && IS_FLUSHING_OP(op)) {
+      op_select_bp_pred_info(op, BP_PRED_MAIN);
+      DEBUG(exec->proc_id, "Recovery op found in Exec FU:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
+            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
+    }
+    if (op && FLUSH_OP(op)) {
+      DEBUG(exec->proc_id, "Exec flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
+      ASSERT(exec->proc_id, op->off_path);
       exec->sd.ops[ii] = NULL;
       exec->sd.op_count--;
       fu->avail_cycle = cycle_count + 1;
@@ -238,7 +247,8 @@ void update_exec_stage(Stage_Data* src_sd) {
     }
 
     ASSERTM(exec->proc_id, OP_SRCS_RDY(op), "op_num:%s\n", unsstr64(op->op_num));
-    ASSERT(exec->proc_id, get_fu_type(op->table_info->op_type, op->table_info->is_simd) & exec->fus[ii].type);
+    ASSERT(exec->proc_id,
+           get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & exec->fus[ii].type);
 
     /* if we get to here, then it means the op is going into the functional unit. */
     op->sched_cycle = cycle_count;
@@ -280,7 +290,7 @@ void update_exec_stage(Stage_Data* src_sd) {
 
       STAT_EVENT(exec->proc_id, FU_BUSY_0 + ii);
       STAT_EVENT(exec->proc_id, FUS_BUSY_ON_PATH + fop->off_path);
-      if (fop->table_info->mem_type) {
+      if (fop->inst_info->table_info.mem_type) {
         fu->held_by_mem = TRUE;
         STAT_EVENT(exec->proc_id, FU_BUSY_MEM_STALL);
       }
@@ -298,6 +308,7 @@ void update_exec_stage(Stage_Data* src_sd) {
     STAT_EVENT(exec->proc_id, FUS_BUSY_ON_PATH + op->off_path);
 
     /* remove the op from the "schedule" list */
+    issue_queue_issued(op);
     src_sd->ops[ii] = NULL;
     src_sd->op_count--;
     ASSERT(exec->proc_id, src_sd->op_count >= 0);
@@ -320,7 +331,7 @@ void update_exec_stage(Stage_Data* src_sd) {
 
     /* branch recovery/resolution */
     Flag is_replay = FALSE;  // TODO: check if this val is needed
-    if (op->table_info->cf_type && !is_replay) {
+    if (op->inst_info->table_info.cf_type && !is_replay) {
       /*
        * branch recovery currently does not like to be done more than 1 time.
        * since we don't have any way to know if an op is going to be replayed,
@@ -371,37 +382,37 @@ static inline void exec_stage_inc_power_stats(Op* op) {
 
   STAT_EVENT(op->proc_id, POWER_OP);
 
-  if (op->table_info->op_type > OP_NOP && op->table_info->op_type < OP_FLD) {
+  if (op->inst_info->table_info.op_type > OP_NOP && op->inst_info->table_info.op_type < OP_FLD) {
     STAT_EVENT(op->proc_id, POWER_INT_OP);
-  } else if (op->table_info->op_type >= OP_FLD) {
+  } else if (op->inst_info->table_info.op_type >= OP_FLD) {
     STAT_EVENT(op->proc_id, POWER_FP_OP);
   }
 
-  if (op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_PF) {
+  if (op->inst_info->table_info.mem_type == MEM_LD || op->inst_info->table_info.mem_type == MEM_PF) {
     STAT_EVENT(op->proc_id, POWER_LD_OP);
-  } else if (op->table_info->mem_type == MEM_ST) {
+  } else if (op->inst_info->table_info.mem_type == MEM_ST) {
     STAT_EVENT(op->proc_id, POWER_ST_OP);
   }
 
   if (!op->off_path) {
     STAT_EVENT(op->proc_id, POWER_COMMITTED_OP);
 
-    if (op->table_info->op_type > OP_NOP && op->table_info->op_type < OP_FLD) {
+    if (op->inst_info->table_info.op_type > OP_NOP && op->inst_info->table_info.op_type < OP_FLD) {
       STAT_EVENT(op->proc_id, POWER_COMMITTED_INT_OP);
     } else {
       STAT_EVENT(op->proc_id, POWER_COMMITTED_FP_OP);
     }
   }
 
-  if (op->table_info->cf_type == CF_CALL || op->table_info->cf_type == CF_ICALL) {
+  if (op->inst_info->table_info.cf_type == CF_CALL || op->inst_info->table_info.cf_type == CF_ICALL) {
     STAT_EVENT(op->proc_id, POWER_FUNCTION_CALL);
   }
 
-  if (op->table_info->cf_type > NOT_CF) {
+  if (op->inst_info->table_info.cf_type > NOT_CF) {
     STAT_EVENT(op->proc_id, POWER_BRANCH_OP);
   }
 
-  if (power_get_fu_type(op->table_info->op_type, op->table_info->is_simd) != POWER_FU_FPU) {
+  if (power_get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) != POWER_FU_FPU) {
     /* Integer instructions */
     INC_STAT_EVENT(op->proc_id, POWER_RENAME_READ, 2);
     STAT_EVENT(op->proc_id, POWER_RENAME_WRITE);
@@ -410,14 +421,14 @@ static inline void exec_stage_inc_power_stats(Op* op) {
     STAT_EVENT(op->proc_id, POWER_INST_WINDOW_WRITE);
     STAT_EVENT(op->proc_id, POWER_INST_WINDOW_WAKEUP_ACCESS);
 
-    INC_STAT_EVENT(op->proc_id, POWER_INT_REGFILE_READ, op->table_info->num_src_regs);
-    INC_STAT_EVENT(op->proc_id, POWER_INT_REGFILE_WRITE, op->table_info->num_dest_regs);
+    INC_STAT_EVENT(op->proc_id, POWER_INT_REGFILE_READ, op->inst_info->table_info.num_src_regs);
+    INC_STAT_EVENT(op->proc_id, POWER_INT_REGFILE_WRITE, op->inst_info->table_info.num_dest_regs);
 
-    if (power_get_fu_type(op->table_info->op_type, op->table_info->is_simd) == POWER_FU_MUL_DIV) {
-      INC_STAT_EVENT(op->proc_id, POWER_MUL_ACCESS, abs(op_type_delays[op->table_info->type]));
+    if (power_get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) == POWER_FU_MUL_DIV) {
+      INC_STAT_EVENT(op->proc_id, POWER_MUL_ACCESS, abs(op_type_delays[op->inst_info->table_info.type]));
       STAT_EVENT(op->proc_id, POWER_CDB_MUL_ACCESS);
     } else {
-      INC_STAT_EVENT(op->proc_id, POWER_IALU_ACCESS, abs(op_type_delays[op->table_info->type]));
+      INC_STAT_EVENT(op->proc_id, POWER_IALU_ACCESS, abs(op_type_delays[op->inst_info->table_info.type]));
       STAT_EVENT(op->proc_id, POWER_CDB_IALU_ACCESS);
     }
   } else {
@@ -429,14 +440,14 @@ static inline void exec_stage_inc_power_stats(Op* op) {
     STAT_EVENT(op->proc_id, POWER_FP_INST_WINDOW_WRITE);
     STAT_EVENT(op->proc_id, POWER_FP_INST_WINDOW_WAKEUP_ACCESS);
 
-    INC_STAT_EVENT(op->proc_id, POWER_FP_REGFILE_READ, op->table_info->num_src_regs);
-    INC_STAT_EVENT(op->proc_id, POWER_FP_REGFILE_WRITE, op->table_info->num_dest_regs);
+    INC_STAT_EVENT(op->proc_id, POWER_FP_REGFILE_READ, op->inst_info->table_info.num_src_regs);
+    INC_STAT_EVENT(op->proc_id, POWER_FP_REGFILE_WRITE, op->inst_info->table_info.num_dest_regs);
 
-    INC_STAT_EVENT(op->proc_id, POWER_FPU_ACCESS, abs(op_type_delays[op->table_info->type]));
+    INC_STAT_EVENT(op->proc_id, POWER_FPU_ACCESS, abs(op_type_delays[op->inst_info->table_info.type]));
     STAT_EVENT(op->proc_id, POWER_CDB_FPU_ACCESS);
   }
 
-  if (op->table_info->mem_type == MEM_ST) {
+  if (op->inst_info->table_info.mem_type == MEM_ST) {
     STAT_EVENT(op->proc_id, POWER_DTLB_ACCESS);
   }
 }
@@ -445,14 +456,14 @@ static inline void exec_stage_dep_wakeup(Op* op) {
   Counter exec_cycle = cycle_count + abs(op->inst_info->latency);
 
   // non-memory ops will always distribute their results after the op's latency
-  if (op->table_info->mem_type == NOT_MEM) {
+  if (op->inst_info->table_info.mem_type == NOT_MEM) {
     op->wake_cycle = exec_cycle;
     wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
     return;
   }
 
   // stores have their addresses computed in this cycle and also write their data into the store buffer
-  if (op->table_info->mem_type == MEM_ST) {
+  if (op->inst_info->table_info.mem_type == MEM_ST) {
     // only wake up if this is the first time this op executes
     if (op->exec_count == 0) {
       op->wake_cycle = exec_cycle;
@@ -468,7 +479,6 @@ static inline void exec_stage_dep_wakeup(Op* op) {
 static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event) {
   Op* op = src_sd->ops[ii];
 
-  op->delay_bit = 1;
   src_sd->ops[ii] = NULL;
   src_sd->op_count--;
 
@@ -478,8 +488,8 @@ static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event) {
   if (event == FU_OTHER_UNAVAILABLE)
     return;
 
-  int simd_stat_base = op->table_info->is_simd ? FU_REJECTED_OP_INV_SIMD : FU_REJECTED_OP_INV_NOT_SIMD;
-  STAT_EVENT(exec->proc_id, simd_stat_base + op->table_info->op_type);
+  int simd_stat_base = op->inst_info->table_info.is_simd ? FU_REJECTED_OP_INV_SIMD : FU_REJECTED_OP_INV_NOT_SIMD;
+  STAT_EVENT(exec->proc_id, simd_stat_base + op->inst_info->table_info.op_type);
 }
 
 static inline void exec_stage_clear_fu(int ii) {
@@ -504,7 +514,7 @@ static inline int exec_stage_check_fu_available(int ii) {
   }
 
   // remove non-mem op currently in the FU
-  if (!fop->table_info->mem_type) {
+  if (!fop->inst_info->table_info.mem_type) {
     return 0;
   }
 
@@ -520,7 +530,7 @@ static inline int exec_stage_check_fu_available(int ii) {
 
 static inline void exec_stage_process_op(Op* op) {
   // set the op's state to reflect it's execution
-  if (op->table_info->mem_type == NOT_MEM || STALL_ON_WAIT_MEM) {
+  if (op->inst_info->table_info.mem_type == NOT_MEM || STALL_ON_WAIT_MEM) {
     op->state = OS_SCHEDULED;
   } else {
     // mem op may fail if it misses and can't get a mem req buffer
@@ -529,11 +539,11 @@ static inline void exec_stage_process_op(Op* op) {
 
   op->exec_cycle = cycle_count + abs(op->inst_info->latency);
   op->exec_count++;
-  if (op->table_info->mem_type == NOT_MEM)
+  if (op->inst_info->table_info.mem_type == NOT_MEM)
     op->done_cycle = op->exec_cycle;
 
   STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST + op->off_path);
-  STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST_MEM + (op->table_info->mem_type == NOT_MEM) + 2 * op->off_path);
+  STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST_MEM + (op->inst_info->table_info.mem_type == NOT_MEM) + 2 * op->off_path);
   STAT_EVENT(op->proc_id, EXEC_ALL_INST);
 
   DEBUG(exec->proc_id, "op_num:%s fu_num:%d exec_cycle:%s done_cycle:%s off_path:%d\n", unsstr64(op->op_num),
@@ -543,30 +553,31 @@ static inline void exec_stage_process_op(Op* op) {
 static inline void exec_stage_bp_resolve(Op* op) {
   if (!BP_UPDATE_AT_RETIRE) {
     // this code updates the branch prediction structures
-    if (op->table_info->cf_type >= CF_IBR)
+    if (op->inst_info->table_info.cf_type >= CF_IBR)
       bp_target_known_op(g_bp_data, op);
 
     bp_resolve_op(g_bp_data, op);
   }
 
-  if (op->oracle_info.recover_at_exec) {
-    bp_sched_recovery(bp_recovery_info, op, op->exec_cycle, FALSE, FALSE);
+  if (op->bp_pred_info->recover_at_exec) {
+    DEBUG(exec->proc_id, "Exec schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
+          (unsigned long long)op->exec_cycle);
+    bp_stat_main_branch_resolve_latency(op, op->exec_cycle, TRUE);
+    bp_sched_recovery(bp_recovery_info, op, op->exec_cycle);
     if (!op->off_path)
       op->recovery_scheduled = TRUE;
 
     // stats for the reason of resteer
-    if (op->oracle_info.mispred)
-      STAT_EVENT(op->proc_id, RESTEER_MISPRED_NOT_CF + op->table_info->cf_type);
-    else
-      STAT_EVENT(op->proc_id, RESTEER_MISFETCH_NOT_CF + op->table_info->cf_type);
+    STAT_EVENT(op->proc_id, RESTEER_RECOVER_AT_EXEC_NOT_CF + op->inst_info->table_info.cf_type);
   }
 
 #if 0
-  if (op->table_info->cf_type >= CF_IBR && op->oracle_info.no_target) {
+  if (op->inst_info->table_info.cf_type >= CF_IBR && OP_CF_BTB_PRED_INFO(op)->no_target) {
     ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == op->proc_id);
     bp_sched_redirect(bp_recovery_info, op, op->exec_cycle);
     // stats for the reason of resteer
-    STAT_EVENT(op->proc_id, RESTEER_NO_TARGET_CF_IBR + op->table_info->cf_type - CF_IBR);
+    STAT_EVENT(op->proc_id,
+                RESTEER_NO_TARGET_CF_IBR + op->inst_info->table_info.cf_type - CF_IBR);
     ASSERT(0, 0);
   }
 #endif

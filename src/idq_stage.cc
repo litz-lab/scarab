@@ -28,15 +28,21 @@
 
 #include "idq_stage.h"
 
+#include <string>
 #include <vector>
+
+#include "ft.h"
 
 extern "C" {
 #include "globals/assert.h"
+#include "globals/debug_stage.h"
 #include "globals/enum.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
 #include "globals/utils.h"
+
+#include "debug/debug_macros.h"
 
 #include "memory/memory.param.h"
 
@@ -47,7 +53,12 @@ extern "C" {
 #include "topdown.h"
 }
 
-class IDQ_Stage {
+#define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_IDQ_STAGE, ##args)
+
+// Declared as `struct` to match the C-visible `typedef struct IDQ_Stage IDQ_Stage;`
+// in idq_stage.h; semantically identical to `class` (explicit access specifiers
+// below).
+struct IDQ_Stage {
  public:
   void init(uns8 _proc_id, const char* name);
   void reset();
@@ -60,17 +71,24 @@ class IDQ_Stage {
   int get_recovery_cycle() const;
 
  private:
-  uns8 proc_id;
-  int capacity;
+  uns8 proc_id = 0;
+  int capacity = 0;
   std::vector<Op*> ops;
-  int occupied_count;
-  int head;
-  int tail;
-  Counter next_op_num;
-  int recovery_cycle;
+  int occupied_count = 0;
+  int head = 0;
+  int tail = 0;
+  Counter next_op_num = 0;
+  int recovery_cycle = 0;
 
   /* the IDQ outpur stage data */
-  Stage_Data idq_sd;
+  Stage_Data idq_sd = {};
+  // Backing storage for `idq_sd.ops` (avoids explicit per-init malloc).
+  // Note: `ISSUE_WIDTH` is a parameter and may not be a compile-time constant.
+  std::vector<Op*> idq_ops;
+
+  // Backing storage for `idq_sd.name` (avoids per-init `strdup` leaks and
+  // stays valid if `IDQ_Stage` is moved by `std::vector` reallocation).
+  std::string idq_stage_name;
 
   Stage_Data* select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd);
   void process_input_stage_data(Stage_Data* consume_from_sd, int& count_issued, int& count_issued_on_path);
@@ -93,9 +111,11 @@ void IDQ_Stage::init(uns8 _proc_id, const char* name) {
   /* Init the IDQ output stage data. */
   char tmp_name[MAX_STR_LENGTH + 1];
   snprintf(tmp_name, MAX_STR_LENGTH, "%s %d", name, 0);
-  idq_sd.name = (char*)strdup(tmp_name);
+  idq_stage_name = tmp_name;
+  idq_sd.name = idq_stage_name.data();
   idq_sd.max_op_count = ISSUE_WIDTH;
-  idq_sd.ops = (Op**)malloc(sizeof(Op*) * ISSUE_WIDTH);
+  idq_ops.assign(ISSUE_WIDTH, NULL);
+  idq_sd.ops = idq_ops.data();
   idq_sd.op_count = 0;
 
   reset();
@@ -116,12 +136,25 @@ void IDQ_Stage::reset() {
 }
 
 void IDQ_Stage::recover() {
+  Op* youngest_survivor = NULL;
+  Flag flushed = FALSE;
+
   if (occupied_count != 0) {
     int i = wrap_around(tail - 1);
     do {
+      if (ops[i] && IS_FLUSHING_OP(ops[i])) {
+        op_select_bp_pred_info(ops[i], BP_PRED_MAIN);
+        DEBUG(proc_id, "Recovery op found in IDQ queue idx:%d op_num:%llu off_path:%u addr:0x%llx\n", i,
+              (unsigned long long)ops[i]->op_num, ops[i]->off_path, (unsigned long long)ops[i]->inst_info->addr);
+      }
       if (FLUSH_OP(ops[i])) {
+        DEBUG(proc_id, "IDQ queue flushing op_num:%llu off_path:%u\n", (unsigned long long)ops[i]->op_num,
+              ops[i]->off_path);
+        flushed = TRUE;
+        ASSERT(proc_id, ops[i]->off_path);
         ASSERT(proc_id, i == wrap_around(tail - 1));
-        free_op(ops[i]);
+        if (ops[i]->parent_FT)
+          ft_free_op(ops[i]);
         ops[i] = NULL;
         occupied_count--;
         tail = wrap_around(tail - 1);
@@ -132,6 +165,8 @@ void IDQ_Stage::recover() {
 
   if (occupied_count == 0) {
     ASSERT(proc_id, head == tail);
+  } else {
+    youngest_survivor = ops[wrap_around(tail - 1)];
   }
 
   if (next_op_num > bp_recovery_info->recovery_op_num) {
@@ -140,16 +175,57 @@ void IDQ_Stage::recover() {
 
   for (int i = idq_sd.op_count - 1; i >= 0; i--) {
     Op* op = idq_sd.ops[i];
+    if (op && IS_FLUSHING_OP(op)) {
+      op_select_bp_pred_info(op, BP_PRED_MAIN);
+      DEBUG(proc_id, "Recovery op found in IDQ output idx:%d op_num:%llu off_path:%u addr:0x%llx\n", i,
+            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
+    }
     if (op && FLUSH_OP(op)) {
+      DEBUG(proc_id, "IDQ output flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
+      flushed = TRUE;
+      ASSERT(proc_id, op->off_path);
       ASSERT(proc_id, i == idq_sd.op_count - 1);
-      free_op(op);
+      if (op->parent_FT)
+        ft_free_op(op);
       idq_sd.ops[i] = NULL;
       idq_sd.op_count--;
     }
   }
+
+  if (idq_sd.op_count > 0) {
+    Op* sd_last = idq_sd.ops[idq_sd.op_count - 1];
+    if (!youngest_survivor || (sd_last && sd_last->op_num > youngest_survivor->op_num)) {
+      youngest_survivor = sd_last;
+    }
+  }
+
+  if (flushed && youngest_survivor) {
+    assert_ft_after_recovery(proc_id, youngest_survivor, bp_recovery_info->recovery_fetch_addr);
+  }
 }
 
 void IDQ_Stage::debug() {
+  DPRINTF("# IDQ next_op_num:%llu out_count:%d q_occupied:%d head:%d tail:%d\n", (unsigned long long)next_op_num,
+          idq_sd.op_count, occupied_count, head, tail);
+
+  DPRINTF("# IDQ out ");
+  print_stage_op_nums(GLOBAL_DEBUG_STREAM, idq_sd.ops, idq_sd.op_count);
+  DPRINTF("\n");
+
+  DPRINTF("# IDQ q   [");
+  for (int i = 0; i < occupied_count; i++) {
+    if (i) {
+      DPRINTF(" ");
+    }
+    int idx = wrap_around(head + i);
+    Op* op = ops[idx];
+    if (!op) {
+      DPRINTF("-");
+    } else {
+      DPRINTF("%llu%s", (unsigned long long)op->op_num, op->off_path ? "o" : "n");
+    }
+  }
+  DPRINTF("]\n");
 }
 
 Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd,
@@ -236,6 +312,17 @@ void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd, int& count
 }
 
 void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
+  DEBUG(
+      proc_id,
+      "IDQ heads next_op_num:%llu dec_head:%s dec_count:%d uopq_head:%s uopq_count:%d ic_uopc_head:%s ic_uopc_count:%d "
+      "idq_out_count:%d idq_q_occupied:%d\n",
+      (unsigned long long)next_op_num,
+      (dec_src_sd->op_count && dec_src_sd->ops[0]) ? unsstr64(dec_src_sd->ops[0]->op_num) : "none",
+      dec_src_sd->op_count,
+      (uop_queue_sd->op_count && uop_queue_sd->ops[0]) ? unsstr64(uop_queue_sd->ops[0]->op_num) : "none",
+      uop_queue_sd->op_count,
+      (ic_uopc_sd->op_count && ic_uopc_sd->ops[0]) ? unsstr64(ic_uopc_sd->ops[0]->op_num) : "none",
+      ic_uopc_sd->op_count, idq_sd.op_count, occupied_count);
   /* Fill the IDQ output stage data with uops from IDQ. */
   int count_issued = 0;
   int count_issued_on_path = 0;
@@ -256,6 +343,11 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
 
   /* Select the input stage data. */
   Stage_Data* consume_from_sd = select_input_stage_data(dec_src_sd, ic_uopc_sd, uop_queue_sd);
+  DEBUG(proc_id, "IDQ selected input:%s\n",
+        consume_from_sd == dec_src_sd     ? "decode"
+        : consume_from_sd == uop_queue_sd ? "uop_queue"
+        : consume_from_sd == ic_uopc_sd   ? "ic_uopc"
+                                          : "none");
   process_input_stage_data(consume_from_sd, count_issued, count_issued_on_path);
 
   topdown_idq_update(proc_id, idq_sd.op_count, count_issued, count_issued_on_path);

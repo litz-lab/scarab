@@ -28,6 +28,7 @@
 
 #include "node_stage.h"
 
+#include <stdio.h>
 #include <unistd.h>
 
 #include "globals/assert.h"
@@ -52,10 +53,12 @@
 
 #include "decoupled_frontend.h"
 #include "exec_ports.h"
+#include "ft.h"
+#include "icache_stage.h"
+#include "issue_queue.h"
 #include "lsq.h"
 #include "map.h"
 #include "map_rename.h"
-#include "node_issue_queue.h"
 #include "op_pool.h"
 #include "sim.h"
 #include "statistics.h"
@@ -68,8 +71,6 @@
 #define PRINT_RETIRED_UOP(proc_id, args...) _DEBUG_LEAN(proc_id, DEBUG_RETIRED_UOPS, ##args)
 
 #define DEBUG_NODE_WIDTH ISSUE_WIDTH
-#define OP_IS_IN_RS(op) (op->state >= OS_IN_RS && op->state < OS_SCHEDULED)
-
 /**************************************************************************************/
 /* Global Variables */
 
@@ -81,13 +82,10 @@ Rob_Block_Issue_Reason rob_block_issue_reason = ROB_BLOCK_ISSUE_NONE;
 /* Prototypes */
 
 void debug_print_retired_uop(Op* op);
-void flush_ready_list(void);
 void flush_scheduling_buffer(void);
 void flush_rs(void);
 void flush_window(void);
 void debug_print_node_table(void);
-void debug_print_rs(void);
-void debug_print_ready_list(void);
 Flag op_not_ready_for_retire(Op* op);
 Flag is_node_table_empty(void);
 void collect_not_ready_to_retire_stats(Op* op);
@@ -117,7 +115,8 @@ void init_node_stage(uns8 proc_id, const char* name) {
   DEBUG(proc_id, "Initializing %s stage\n", name);
 
   node->proc_id = proc_id;
-  node->sd.name = (char*)strdup(name);
+  /* `name` is expected to be long-lived (caller passes string literals). */
+  node->sd.name = (char*)name;
 
   // allocate wires to functional units
   node->sd.max_op_count = NUM_FUS;  // Bandwidth between schedule and FUS
@@ -131,13 +130,13 @@ void init_node_stage(uns8 proc_id, const char* name) {
 
 void reset_node_stage() {
   uns ii;
-  for (ii = 0; ii < NUM_FUS; ii++)
+  for (ii = 0; ii < NUM_FUS; ii++) {
     node->sd.ops[ii] = NULL;
+  }
   node->sd.op_count = 0;
 
   node->node_head = NULL;
   node->node_tail = NULL;
-  node->rdy_head = NULL;
   node->next_op_into_rs = NULL;
 
   node->node_count = 0;
@@ -169,7 +168,6 @@ void recover_node_stage() {
   if (ENABLE_GLOBAL_DEBUG_PRINT && DEBUG_NODE_STAGE && DEBUG_RANGE_COND(node->proc_id))
     debug_node_stage();
 
-  flush_ready_list();
   flush_scheduling_buffer();
   flush_rs();
   flush_window();
@@ -182,26 +180,15 @@ void recover_node_stage() {
     debug_node_stage();
 }
 
-void flush_ready_list() {
-  Op* op;
-  Op** last;
-  for (op = node->rdy_head, last = &node->rdy_head; op; op = op->next_rdy) {
-    ASSERT(node->proc_id, node->proc_id == op->proc_id);
-    if (FLUSH_OP(op)) {
-      ASSERT(node->proc_id, op->op_num > bp_recovery_info->recovery_op_num);
-      *last = op->next_rdy;
-      op->in_rdy_list = FALSE;
-    } else
-      last = &op->next_rdy;
-  }
-}
-
 void flush_scheduling_buffer() {
   uns ii;
   for (ii = 0; ii < node->sd.max_op_count; ii++) {
     Op* op = node->sd.ops[ii];
     if (op && FLUSH_OP(op)) {
+      DEBUG(node->proc_id, "Node sched-buffer flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
+            op->off_path);
       ASSERT(node->proc_id, node->proc_id == op->proc_id);
+      ASSERT(node->proc_id, op->off_path);
       ASSERTM(node->proc_id, op->op_num > bp_recovery_info->recovery_op_num, "op_num:%s\n", unsstr64(op->op_num));
 
       node->sd.ops[ii] = NULL;
@@ -215,7 +202,10 @@ void flush_scheduling_buffer() {
 void flush_rs() {
   Op* op = node->next_op_into_rs;
   if (op && FLUSH_OP(op)) {
+    DEBUG(node->proc_id, "Node RS-input flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
+          op->off_path);
     ASSERT(node->proc_id, node->proc_id == op->proc_id);
+    ASSERT(node->proc_id, op->off_path);
     ASSERTM(node->proc_id, op->op_num > bp_recovery_info->recovery_op_num, "op_num:%s\n", unsstr64(op->op_num));
     node->next_op_into_rs = NULL;  // all later ops will also be flushed
   }
@@ -232,21 +222,22 @@ void flush_window() {
     ASSERT(node->proc_id, node->proc_id == op->proc_id);
 
     if (FLUSH_OP(op)) {
-      DEBUG(node->proc_id, "Node flushing  op:%s\n", unsstr64(op->op_num));
+      DEBUG(node->proc_id, "Node window flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,
+            op->off_path);
+      ASSERT(node->proc_id, op->off_path);
       if (!op->macro_fused)
         flush_ops++;
+      ASSERT(node->proc_id, op->off_path);
       ASSERT(node->proc_id, op->op_num > bp_recovery_info->recovery_op_num);
       op->in_node_list = FALSE;
       *last = op->next_node;
-      if (op->state == OS_IN_RS || op->state == OS_READY || op->state == OS_WAIT_FWD) {
-        ASSERT(op->proc_id, node->rs[op->rs_id].rs_op_count > 0);
-        node->rs[op->rs_id].rs_op_count--;
-      }
-      free_op(op);
+      if (op->parent_FT)
+        ft_free_op(op);
     } else {
       /* Keep op */
 
       if (IS_FLUSHING_OP(op)) {
+        op_select_bp_pred_info(op, BP_PRED_MAIN);
         /* Mark that the scheduled recovery has occurred */
         op->recovery_scheduled = FALSE;
       }
@@ -270,8 +261,6 @@ void debug_node_stage() {
   DPRINTF("# %-10s  node_count:%d\n", node->sd.name, node->node_count);
 
   debug_print_node_table();
-  debug_print_rs();
-  debug_print_ready_list();
 }
 
 void debug_print_node_table() {
@@ -280,7 +269,8 @@ void debug_print_node_table() {
   Counter row = 0;
   Flag empty = TRUE;
   uns32 slot_num = 0;
-  uns printed = 0;
+  uns printed_all = 0;
+  uns printed_non_fused = 0;
 
   Op** temp = (Op**)calloc(DEBUG_NODE_WIDTH, sizeof(Op*));
 
@@ -289,7 +279,9 @@ void debug_print_node_table() {
     ASSERT(node->proc_id, node->proc_id == op->proc_id);
     ASSERT(node->proc_id, temp[slot_num] == NULL);
     temp[slot_num] = op;
-    printed++;
+    printed_all++;
+    if (!op->macro_fused)
+      printed_non_fused++;
     empty = FALSE;
 
     // we have populated entire row, print and reinitialize
@@ -306,64 +298,16 @@ void debug_print_node_table() {
     }
   }
 
-  ASSERTM(node->proc_id, printed == node->node_count, "printed=%d, node_count=%d", printed, node->node_count);
+  ASSERTM(node->proc_id, printed_non_fused == node->node_count, "printed_non_fused=%d, node_count=%d, printed_all=%d",
+          printed_non_fused, node->node_count, printed_all);
 
   // If node table is empty, print a blank row. Or if there is a remainder, print that too
-  if (printed == 0 || slot_num < DEBUG_NODE_WIDTH - 1)
+  if (printed_all == 0 || slot_num < DEBUG_NODE_WIDTH - 1)
     print_open_op_array(GLOBAL_DEBUG_STREAM, temp, DEBUG_NODE_WIDTH, DEBUG_NODE_WIDTH);
 
   print_open_op_array_end(GLOBAL_DEBUG_STREAM, DEBUG_NODE_WIDTH);
 
   free(temp);
-}
-
-void debug_print_rs() {
-  Op* op;
-  uns printed = 0;
-  int32 i, j;
-
-  ASSERT(node->proc_id, node->rs);
-
-  for (i = 0; i < NUM_RS; ++i) {
-    Reservation_Station* rs = &node->rs[i];
-    printed = 0;
-    DPRINTF("%s (%d/%s): ", rs->name, rs->rs_op_count, rs->size == 0 ? "inf" : unsstr64((uns64)rs->size));
-
-    for (j = 0; j < rs->num_fus; ++j) {
-      DPRINTF("%s, ", rs->connected_fus[j]->name);
-    }
-
-    DPRINTF("\n");
-
-    for (op = node->node_head; op && op != node->next_op_into_rs; op = op->next_node) {
-      if (op->rs_id == i && OP_IS_IN_RS(op)) {
-        // Op belongs to this RS
-        DPRINTF("%lld ", op->op_num);
-        printed++;
-        if (printed % 8 == 0)
-          DPRINTF("\n");
-      }
-    }
-
-    if (printed % 8)
-      DPRINTF("\n");
-
-    ASSERTM(node->proc_id, printed == rs->rs_op_count, "printed=%d, rs_op_count=%d\n", printed, rs->rs_op_count);
-  }
-}
-
-void debug_print_ready_list() {
-  Op* op;
-
-  DPRINTF("Ready list:");
-
-  for (op = node->rdy_head; op; op = op->next_rdy) {
-    DPRINTF(" %s", unsstr64(op->op_num));
-  }
-
-  DPRINTF("\n");
-
-  print_op_array(GLOBAL_DEBUG_STREAM, node->sd.ops, node->sd.max_op_count, node->sd.max_op_count);
 }
 
 /**************************************************************************************/
@@ -380,11 +324,13 @@ void update_node_stage(Stage_Data* src_sd) {
   /* update the precommit pointer in the ROB */
   node_precommit_update();
 
-  node_issue_queue_update();
+  /* dispatch ops to the issue queue and issue ops into FUs */
+  issue_queue_update();
 
   /* get rid of the ops that are finished */
   node_retire();
 
+  // TODO: add PMUs to track issue queue and ready list stall
   memview_core_stall(node->proc_id, is_node_stage_stalled(), node->mem_blocked);
 }
 
@@ -397,8 +343,10 @@ void node_fill_rob(Stage_Data* src_sd) {
   uns ii;
 
   /* if nothing to process, return */
-  if (src_sd->op_count == 0)
+  if (src_sd->op_count == 0) {
+    DEBUG(node->proc_id, "Node fill starved: src_sd_op_count:0 node_count:%d\n", node->node_count);
     return;
+  }
 
   // Go through all the ops in the issue buffer and stick them into the Node Table.
   // We will stick them into the RS later
@@ -416,10 +364,13 @@ void node_fill_rob(Stage_Data* src_sd) {
     if (!op)
       continue;
 
-    if (op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) {
-      if (!lsq_available(op->table_info->mem_type)) {
+    if (op->inst_info->table_info.mem_type == MEM_LD || op->inst_info->table_info.mem_type == MEM_ST) {
+      if (!lsq_available(op->inst_info->table_info.mem_type)) {
+        DEBUG(node->proc_id, "Node fill stalled: LSQ full for op_num:%s mem_type:%s src_sd_op_count:%d node_count:%d\n",
+              unsstr64(op->op_num), op->inst_info->table_info.mem_type == MEM_LD ? "LD" : "ST", src_sd->op_count,
+              node->node_count);
         STAT_EVENT(op->proc_id, LSQ_FULL_TOTAL);
-        STAT_EVENT(op->proc_id, LSQ_FULL_TOTAL + op->table_info->mem_type);
+        STAT_EVENT(op->proc_id, LSQ_FULL_TOTAL + op->inst_info->table_info.mem_type);
         return;
       }
 
@@ -428,7 +379,7 @@ void node_fill_rob(Stage_Data* src_sd) {
 
     ASSERT(node->proc_id, node->proc_id == op->proc_id);
     /* check if it's a synchronizing op that can't issue  */
-    if ((op->table_info->bar_type & BAR_ISSUE) && (node->node_count > 0))
+    if ((op->inst_info->table_info.bar_type & BAR_ISSUE) && (node->node_count > 0))
       break;
 
     /* remove op from previous stage */
@@ -469,7 +420,7 @@ void node_fill_rob(Stage_Data* src_sd) {
     op->state = OS_IN_ROB;
 
     /* always stop issuing after a synchronizing op */
-    if (op->table_info->bar_type & BAR_ISSUE)
+    if (op->inst_info->table_info.bar_type & BAR_ISSUE)
       break;
   }
 }
@@ -482,15 +433,24 @@ void node_retire() {
   Op* op = NULL;
 
   // If node table is empty, then there is nothing to retire
-  if (is_node_table_empty())
+  if (is_node_table_empty()) {
+    DEBUG(node->proc_id, "Node retire skipped: node table empty\n");
     return;
+  }
 
-  // Iterate through the first NODE_RET_WIDTH number of ops and try to retire them
-  for (op = node->node_head; op && ret_count < NODE_RET_WIDTH; op = op->next_node) {
+  // Iterate through the first NODE_RET_WIDTH number of ops and try to retire them.
+  // Advance with a saved next_node: ft_free_op() may delete the FT and free this op when it
+  // is get_last_op(), so we must not read op->next_node after free.
+  for (op = node->node_head; op && ret_count < NODE_RET_WIDTH;) {
     ASSERT(node->proc_id, node->proc_id == op->proc_id);
 
     // check to see if the head of the node table is ready to retire
     if (op_not_ready_for_retire(op)) {
+      DEBUG(node->proc_id,
+            "Node retire stalled head_op_num:%s state:%s off_path:%u recovery_scheduled:%u redirect_scheduled:%u "
+            "done_cycle:%s cycle:%s op_done_now:%u\n",
+            unsstr64(op->op_num), Op_State_str(op->state), op->off_path, op->recovery_scheduled, op->redirect_scheduled,
+            unsstr64(op->done_cycle), unsstr64(cycle_count), (unsigned)(OP_DONE(op) ? 1 : 0));
       // op is not ready to retire
       collect_not_ready_to_retire_stats(op);
       break;
@@ -543,13 +503,16 @@ void node_retire() {
         STAT_EVENT(op->proc_id, NODE_INST_COUNT_FETCHED);
       }
 
-      Flag retire_op = IS_CALLSYS(op->table_info) || op->table_info->bar_type & BAR_FETCH ||
+      Flag retire_op = IS_CALLSYS(&op->inst_info->table_info) || op->inst_info->table_info.bar_type & BAR_FETCH ||
                        (inst_count[node->proc_id] % NODE_RETIRE_RATE == 0);
 
       if (op->exit) {
         retired_exit[op->proc_id] = TRUE;
         decoupled_fe_retire(op, op->proc_id, -1);
       } else if (retire_op) {
+        if (op->inst_info->table_info.bar_type & BAR_FETCH) {
+          icache_resolve_fetch_barrier(op->proc_id, op->inst_uid);
+        }
         decoupled_fe_retire(op, op->proc_id, op->inst_uid);
       }
     }
@@ -564,10 +527,10 @@ void node_retire() {
 
     remove_from_seq_op_list(td, op);
 
-    if (op->table_info->cf_type) {
+    if (op->inst_info->table_info.cf_type) {
       if (BP_UPDATE_AT_RETIRE) {
         // this code updates the branch prediction structures
-        if (op->table_info->cf_type >= CF_IBR)
+        if (op->inst_info->table_info.cf_type >= CF_IBR)
           bp_target_known_op(g_bp_data, op);
 
         bp_resolve_op(g_bp_data, op);
@@ -575,10 +538,10 @@ void node_retire() {
       bp_retire_op(g_bp_data, op);
     }
 
-    if (op->table_info->mem_type == MEM_LD && (op->done_cycle - op->sched_cycle) < 5) {
+    if (op->inst_info->table_info.mem_type == MEM_LD && (op->done_cycle - op->sched_cycle) < 5) {
       STAT_EVENT(op->proc_id, LD_EXEC_CYCLES_0 + (op->done_cycle - op->sched_cycle));
     }
-    if (op->table_info->mem_type == MEM_LD) {
+    if (op->inst_info->table_info.mem_type == MEM_LD) {
       STAT_EVENT(op->proc_id, LD_NO_DEPENDENTS + (op->wake_up_head ? 1 : 0));
     }
     STAT_EVENT(op->proc_id, RET_OP_EXEC_COUNT_0 + MIN2(32, op->exec_count));
@@ -590,20 +553,26 @@ void node_retire() {
 
     node_precommit_retire(op);
 
-    if (op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) {
+    if (op->inst_info->table_info.mem_type == MEM_LD || op->inst_info->table_info.mem_type == MEM_ST) {
       lsq_commit(op);
     }
 
+    Op* next_retired = op->next_node;
+    Flag macro_fused_saved = op->macro_fused;
+
     if (model->op_retired_hook)
       model->op_retired_hook(op);
-    else
-      free_op(op);
-
+    else {
+      printf("[ft_free_op] stage=node_stage:retire op_num=%llu op=%p\n", (unsigned long long)op->op_num, (void*)op);
+      ft_free_op(op);
+    }
     // the fused op does not occupy the ROB entry
-    if (!op->macro_fused)
+    if (!macro_fused_saved)
       node->node_count--;
 
     ASSERT(node->proc_id, node->node_count >= 0);
+
+    op = next_retired;
   }
 
   STAT_EVENT(node->proc_id, ROW_SIZE_0 + ret_count);
@@ -624,25 +593,25 @@ void node_retire() {
 
 Flag is_node_stage_stalled() {
   return (node->node_count == NODE_TABLE_SIZE) && /* node table is full */
-         !node->rdy_head &&                       /* no ready ops */
+         !issue_queue_has_ready_ops() &&          /* no ready ops in issue queues */
          !node->next_op_into_rs;                  /* no ops waiting to enter RS */
 }
 
 void debug_print_retired_uop(Op* op) {
   PRINT_RETIRED_UOP(node->proc_id, "============================\n");
   PRINT_RETIRED_UOP(node->proc_id, "EIP: 0x%llx\n", op->inst_info->addr);
-  PRINT_RETIRED_UOP(node->proc_id, "Op Type: %s\n", Op_Type_str(op->table_info->op_type));
-  PRINT_RETIRED_UOP(node->proc_id, "Mem Type: %d\n", op->table_info->mem_type);
-  PRINT_RETIRED_UOP(node->proc_id, "CF Type: %d\n", op->table_info->cf_type);
-  PRINT_RETIRED_UOP(node->proc_id, "Barrier Type: %d\n", op->table_info->bar_type);
-  PRINT_RETIRED_UOP(node->proc_id, "Is SIMD: %d\n", op->table_info->is_simd);
+  PRINT_RETIRED_UOP(node->proc_id, "Op Type: %s\n", Op_Type_str(op->inst_info->table_info.op_type));
+  PRINT_RETIRED_UOP(node->proc_id, "Mem Type: %d\n", op->inst_info->table_info.mem_type);
+  PRINT_RETIRED_UOP(node->proc_id, "CF Type: %d\n", op->inst_info->table_info.cf_type);
+  PRINT_RETIRED_UOP(node->proc_id, "Barrier Type: %d\n", op->inst_info->table_info.bar_type);
+  PRINT_RETIRED_UOP(node->proc_id, "Is SIMD: %d\n", op->inst_info->table_info.is_simd);
   PRINT_RETIRED_UOP(node->proc_id, "Srcs: ");
-  for (uns i = 0; i < op->table_info->num_src_regs; ++i) {
+  for (uns i = 0; i < op->inst_info->table_info.num_src_regs; ++i) {
     PRINT_RETIRED_UOP(node->proc_id, "%s ", disasm_reg(op->inst_info->srcs[i].id));
   }
   PRINT_RETIRED_UOP(node->proc_id, "\n");
   PRINT_RETIRED_UOP(node->proc_id, "Dests: ");
-  for (uns i = 0; i < op->table_info->num_dest_regs; ++i) {
+  for (uns i = 0; i < op->inst_info->table_info.num_dest_regs; ++i) {
     PRINT_RETIRED_UOP(node->proc_id, "%s ", disasm_reg(op->inst_info->dests[i].id));
   }
   PRINT_RETIRED_UOP(node->proc_id, "\n");
@@ -713,10 +682,10 @@ Flag is_node_table_full() {
 
 void collect_node_table_full_stats(Op* op) {
   if (!(op->state == OS_DONE || OP_DONE(op))) {
-    if (op->table_info->op_type == OP_ILD || op->table_info->op_type == OP_IST || op->table_info->op_type == OP_FLD ||
-        op->table_info->op_type == OP_FST) {
+    if (op->inst_info->table_info.op_type == OP_ILD || op->inst_info->table_info.op_type == OP_IST ||
+        op->inst_info->table_info.op_type == OP_FLD || op->inst_info->table_info.op_type == OP_FST) {
       STAT_EVENT(node->proc_id, FULL_WINDOW_MEM_OP);
-    } else if (op->table_info->op_type >= OP_FCVT && op->table_info->op_type <= OP_FCMOV) {
+    } else if (op->inst_info->table_info.op_type >= OP_FCVT && op->inst_info->table_info.op_type <= OP_FCMOV) {
       STAT_EVENT(node->proc_id, FULL_WINDOW_FP_OP);
     } else {
       STAT_EVENT(node->proc_id, FULL_WINDOW_OTHER_OP);
@@ -738,11 +707,12 @@ void node_precommit_update(void) {
   uns precommit_count = 0;
   for (; op != NULL && precommit_count < NODE_RET_WIDTH; op = op->next_node) {
     // wait until the results usable for branches
-    if (op->table_info->cf_type && op->exec_cycle > cycle_count)
+    if (op->inst_info->table_info.cf_type && op->exec_cycle > cycle_count)
       return;
 
     // wait until looking up the d-cache for memory operands
-    if ((op->table_info->mem_type == MEM_LD || op->table_info->mem_type == MEM_ST) && op->dcache_cycle > cycle_count)
+    if ((op->inst_info->table_info.mem_type == MEM_LD || op->inst_info->table_info.mem_type == MEM_ST) &&
+        op->dcache_cycle > cycle_count)
       return;
 
     if (op->off_path)
@@ -778,7 +748,7 @@ void node_precommit_retire(Op* op) {
 
 /* Marcro-Fusion op */
 void node_fuse_op(Op* op) {
-  uns16 op_code = op->inst_info->table_info->true_op_type;
+  uns16 op_code = op->inst_info->table_info.true_op_type;
 
   if (op_code == XED_ICLASS_CMP || op_code == XED_ICLASS_TEST) {
     node->prev_op_fusable = TRUE;

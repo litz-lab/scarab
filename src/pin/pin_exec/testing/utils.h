@@ -60,7 +60,7 @@ class Binary_Info {
   uint64_t find_addr(const char* opcode, int n = 1);
 
  private:
-  Parsed_Binary binary_;
+  Parsed_Binary binary_ = {};
 };
 
 // A class for asynchronously running a Linux command through a forked process.
@@ -83,7 +83,7 @@ class Process_Runner {
   void execute_cmd();
 
   std::string run_cmd_;
-  pid_t       child_pid_;
+  pid_t child_pid_ = 0;
   bool        running_ = false;
 };
 

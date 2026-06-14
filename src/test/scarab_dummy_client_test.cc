@@ -27,6 +27,8 @@
  ***************************************************************************************/
 
 #include <algorithm>
+#include <cstring>
+
 #include "../frontend/pin_exec_driven_fe.h"
 #include "../frontend/pin_trace_read.h"
 #include "../op.h"
@@ -153,6 +155,10 @@ void* scarab_test_FetchOp(void* ptr) {
   for(uint32_t j = 0; j < trace.size(); ++j) {
     for(uint32_t i = 0; i < NUM_CLIENTS; ++i) {
       Op op;
+      op_select_bp_pred_info(&op, BP_PRED_MAIN);
+      op.bp_pred_l0 = {};
+      op.bp_pred_main = {};
+      op.btb_pred = {};
 
       do {
         pin_exec_driven_can_fetch_op(i);
@@ -195,7 +201,7 @@ void* scarab_test_Retire(void* ptr) {
 void* client_test_Retire(void* ptr) {
   uint32_t client_id = *((uint32_t*)ptr);
   client_setup(client_id);
-  Scarab_To_Pin_Msg msg;
+  Scarab_To_Pin_Msg msg = {};
 
   ::sleep(5);
 

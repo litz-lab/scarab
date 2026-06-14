@@ -63,12 +63,15 @@ DEF_PARAM(  bp_update_at_retire       , BP_UPDATE_AT_RETIRE       , Flag    , Fl
 
 // conditional branch predictor
 DEF_PARAM(  bp_mech                   , BP_MECH                   , uns     , bp_mech    , TAGE64K_BP ,        )
-DEF_PARAM(  late_bp_mech              , LATE_BP_MECH              , uns     , bp_mech    , NUM_BP     ,        )
-DEF_PARAM(  late_bp_latency           , LATE_BP_LATENCY           , uns     , uns        , 5          ,        )
+DEF_PARAM(  bp_mech_l0                , BP_MECH_L0                , uns     , bp_mech_l0 , BIMODAL_BP ,        )
+DEF_PARAM(  bp_l0_latency             , BP_L0_LATENCY             , uns     , uns        , 1          ,        )
+DEF_PARAM(  bp_main_latency           , BP_MAIN_LATENCY           , uns     , uns        , 3          ,        )
+DEF_PARAM(  bimodal_entries           , BIMODAL_ENTRIES           , uns     , uns        , (4 * 1024) ,        )
 DEF_PARAM(  hist_length               , HIST_LENGTH               , uns     , uns        , 16         ,        )
 DEF_PARAM(  pht_ctr_bits              , PHT_CTR_BITS              , uns     , uns        , 2          , const  ) /* const */
 DEF_PARAM(  bht_entries               , BHT_ENTRIES               , uns     , uns        , (4 * 1024) ,        )
 DEF_PARAM(  bht_assoc                 , BHT_ASSOC                 , uns     , uns        , 4          ,        )
+DEF_PARAM(  bht_tag_bits              , BHT_TAG_BITS              , uns     , uns        , 64         ,        )
 DEF_PARAM(  hybrids_index_length      , HYBRIDS_INDEX_LENGTH      , uns     , uns        , 16         ,        )
 DEF_PARAM(  hybridg_hist_length       , HYBRIDG_HIST_LENGTH       , uns     , uns        , 16         ,        )
 DEF_PARAM(  hybridp_hist_length       , HYBRIDP_HIST_LENGTH       , uns     , uns        , 16         ,        )
@@ -78,10 +81,27 @@ DEF_PARAM(  inf_hybridgp              , INF_HYBRIDGP              , Flag    , Fl
 DEF_PARAM(  bp_hash_tos               , BP_HASH_TOS               , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM(  ibtb_hash_tos             , IBTB_HASH_TOS             , Flag    , Flag       , FALSE      ,        )
 
-DEF_PARAM(  btb_mech                  , BTB_MECH                  , uns     , uns        , 0          ,        )
-DEF_PARAM(  btb_entries               , BTB_ENTRIES               , uns     , uns        , (4 * 1024) ,        )
+DEF_PARAM(  btb_mech                  , BTB_MECH                  , uns     , btb_mech   , GENERIC_BTB,        )
+DEF_PARAM(  btb_entries               , BTB_ENTRIES               , uns     , uns        , 12288      ,        )
 DEF_PARAM(  btb_assoc                 , BTB_ASSOC                 , uns     , uns        , 4          ,        )
+DEF_PARAM(  btb_tag_bits              , BTB_TAG_BITS              , uns     , uns        , 64         ,        )
+DEF_PARAM(  btb_banks                 , BTB_BANKS                 , uns     , uns        , 1          ,        ) /* number of banks interleaved */
+DEF_PARAM(  btb_num_brslot            , BTB_NUM_BRSLOT            , uns     , uns        , 1          ,        ) /* number of branch slots per block */
+DEF_PARAM(  btb_block_size            , BTB_BLOCK_SIZE            , uns64   , uns64      , 64         ,        ) /* number of max bytes within a block (Note x86 has variable inst size) */
 DEF_PARAM(  btb_off_path_writes       , BTB_OFF_PATH_WRITES       , Flag    , Flag       , TRUE       ,        ) /* const */
+DEF_PARAM(  btb_main_latency         , BTB_MAIN_LATENCY          , uns     , uns        , 3          ,        )
+DEF_PARAM(  btb_l0_present           , BTB_L0_PRESENT            , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  btb_l0_entries           , BTB_L0_ENTRIES            , uns     , uns        , 128        ,        )
+DEF_PARAM(  btb_l0_assoc             , BTB_L0_ASSOC              , uns     , uns        , 4          ,        )
+DEF_PARAM(  btb_l0_tag_bits          , BTB_L0_TAG_BITS           , uns     , uns        , 64         ,        )
+DEF_PARAM(  btb_l0_banks             , BTB_L0_BANKS              , uns     , uns        , 1          ,        ) /* number of banks interleaved */
+DEF_PARAM(  btb_l0_latency           , BTB_L0_LATENCY            , uns     , uns        , 1          ,        )
+DEF_PARAM(  btb_l1_present           , BTB_L1_PRESENT            , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  btb_l1_entries           , BTB_L1_ENTRIES            , uns     , uns        , 6144       ,        )
+DEF_PARAM(  btb_l1_assoc             , BTB_L1_ASSOC              , uns     , uns        , 4          ,        )
+DEF_PARAM(  btb_l1_tag_bits          , BTB_L1_TAG_BITS           , uns     , uns        , 64         ,        )
+DEF_PARAM(  btb_l1_banks             , BTB_L1_BANKS              , uns     , uns        , 1          ,        ) /* number of banks interleaved */
+DEF_PARAM(  btb_l1_latency           , BTB_L1_LATENCY            , uns     , uns        , 2          ,        )
 
 DEF_PARAM(  enable_crs                , ENABLE_CRS                , Flag    , Flag       , TRUE       ,        )
 DEF_PARAM(  crs_entries               , CRS_ENTRIES               , uns     , uns        , 32         ,        )
@@ -99,6 +119,7 @@ DEF_PARAM(  ibtb_off_path_writes      , IBTB_OFF_PATH_WRITES      , Flag    , Fl
 DEF_PARAM(  targets_in_hist           , TARGETS_IN_HIST           , uns     , uns        , 4          ,        )
 DEF_PARAM(  tc_entries                , TC_ENTRIES                , uns     , uns        , (4 * 1024) ,        )
 DEF_PARAM(  tc_assoc                  , TC_ASSOC                  , uns     , uns        , 4          ,        )
+DEF_PARAM(  tc_tag_bits               , TC_TAG_BITS               , uns     , uns        , 64         ,        )
 
 DEF_PARAM(  num_corr_branches         , NUM_CORR_BRANCHES         , uns     , uns        , 3          ,        )
 DEF_PARAM(  sel_hist_bp_entries       , SEL_HIST_BP_ENTRIES       , uns     , uns        , 8192       ,        )
@@ -163,3 +184,15 @@ DEF_PARAM(  perceptron_conf_his_both_length  , PERCEPTRON_CONF_HIS_BOTH_LENGTH  
 
 DEF_PARAM(  mtage_realistic_sc_40k  , MTAGE_REALISTIC_SC_40K   , Flag    , Flag        , FALSE     ,           )
 DEF_PARAM(  mtage_realistic_sc_100k  , MTAGE_REALISTIC_SC_100K   , Flag    , Flag        , FALSE     ,           )
+
+DEF_PARAM(  h2p_table_buckets         , H2P_TABLE_BUCKETS         , uns     , uns        , 16384      ,        )
+DEF_PARAM(  h2p_min_exec              , H2P_MIN_EXEC              , uns     , uns        , 5000       ,        )
+DEF_PARAM(  h2p_min_mispred           , H2P_MIN_MISPRED           , uns     , uns        , 333        ,        )
+DEF_PARAM(  h2p_mispred_ratio_permil  , H2P_MISPRED_RATIO_PERMIL  , uns     , uns        , 10         ,        )
+
+DEF_PARAM(  h2p_track_cbr             , H2P_TRACK_CBR             , Flag    , Flag       , TRUE       ,        )
+DEF_PARAM(  h2p_track_rep             , H2P_TRACK_REP             , Flag    , Flag       , TRUE       ,        )
+DEF_PARAM(  h2p_track_call            , H2P_TRACK_CALL            , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  h2p_track_ibr             , H2P_TRACK_IBR             , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  h2p_track_icall           , H2P_TRACK_ICALL           , Flag    , Flag       , FALSE      ,        )
+DEF_PARAM(  h2p_track_ret             , H2P_TRACK_RET             , Flag    , Flag       , FALSE      ,        )

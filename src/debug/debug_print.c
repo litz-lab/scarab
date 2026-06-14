@@ -92,15 +92,15 @@ DEFINE_ENUM(Op_Type, OP_TYPE_LIST);
 
 const char* const mem_type_names[] = {"NOT_MEM", "MEM_LD", "MEM_ST", "MEM_PF"};
 
-const char* const cf_type_names[] = {"NOT_CF",   "CF_BR",  "CF_CBR", "CF_CALL", "CF_IBR",
-                                     "CF_ICALL", "CF_ICO", "CF_RET", "CF_SYS"};
+const char* const cf_type_names[] = {"NOT_CF", "CF_BR",    "CF_CBR", "CF_REP", "CF_CALL",
+                                     "CF_IBR", "CF_ICALL", "CF_ICO", "CF_RET", "CF_SYS"};
 
 const char* const bar_type_names[] = {"NOT_BAR"};
 
 DEFINE_ENUM(Op_State, OP_STATE_LIST);
 
-const char* const icache_state_names[] = {"ICACHE_STAGE_RESTEER", "ICACHE_MEM_REQ", "ICACHE_WAIT_FOR_MISS",
-                                          "ICACHE_SERVING", "UOP_CACHE_SERVING"};
+const char* const icache_state_names[] = {"ICACHE_STAGE_RESTEER", "ICACHE_MEM_REQ",    "ICACHE_WAIT_FOR_MISS",
+                                          "ICACHE_SERVING",       "UOP_CACHE_SERVING", "ICACHE_STALLED"};
 
 const char* const tcache_state_names[] = {"TC_FETCH",
                                           "TC_WAIT_FOR_MISS",
@@ -180,7 +180,7 @@ void print_op_field(FILE* stream, Op* op, uns field) {
         fprintf(stream, "xxxxxxxxxxxxxxxxxxxx|");
       break;
     case ADDR_FIELD:
-      if (op) {
+      if (op && op->inst_info) {
         fprintf(stream, "a:%-9s f:%-2d%c", hexstr64s(op->inst_info->addr), op->fu_num, (op->off_path ? 'O' : ' '));
         if (OP_DONE(op))
           fprintf(stream, "D ");
@@ -193,26 +193,27 @@ void print_op_field(FILE* stream, Op* op, uns field) {
           else
             fprintf(stream, "%c%c", Op_State_str(op->state)[0], op->replay ? 'r' : ' ');
         }
-        if (op->table_info->cf_type) {
-          Flag bits = op->oracle_info.mispred << 2 | op->oracle_info.misfetch << 1 | op->oracle_info.btb_miss;
+        if (op->inst_info->table_info.cf_type && op->bp_pred_info && op->btb_pred_info) {
+          Flag bits = (op->bp_pred_info->recover_at_exec << 2) | (op->bp_pred_info->recover_at_decode << 1) |
+                      btb_pred_miss(op->btb_pred_info);
           switch (bits) {
             case 0x4:
               fprintf(stream, "P|");
-              break; /* mispredict */
+              break; /* exec recovery */
             case 0x3:
             case 0x2:
               fprintf(stream, "F|");
-              break; /* misfetch or (misfetch and btb miss) */
+              break; /* decode recovery or (decode recovery and btb miss) */
             case 0x1:
               fprintf(stream, "M|");
               break; /* btb miss */
             case 0x5:
             case 0x6:
               fprintf(stream, "B|");
-              break; /* mispredict, (misfetch or btb miss) */
+              break; /* exec recovery, (decode recovery or btb miss) */
             case 0x7:
               fprintf(stream, "A|");
-              break; /* mispredict, misfetch, btb miss */
+              break; /* exec recovery, decode recovery, btb miss */
             case 0x0:
               fprintf(stream, " |");
               break;
@@ -227,30 +228,30 @@ void print_op_field(FILE* stream, Op* op, uns field) {
     case OP_NUM_FIELD:
       if (op)
         fprintf(stream, "o:%-3d %3d%c %3d%c %3d%c|", (int)(op->op_num % 1000),
-                op->oracle_info.num_srcs > 0 ? (int)(op->oracle_info.src_info[0].op_num % 1000) : -1,
-                ((op->srcs_not_rdy_vector & 1) == 0 ? 'r' : 'w'),
-                op->oracle_info.num_srcs > 1 ? (int)(op->oracle_info.src_info[1].op_num % 1000) : -1,
-                ((op->srcs_not_rdy_vector & 2) == 0 ? 'r' : 'w'),
-                op->oracle_info.num_srcs > 2 ? (int)(op->oracle_info.src_info[2].op_num % 1000) : -1,
-                ((op->srcs_not_rdy_vector & 4) == 0 ? 'r' : 'w'));
+                (op->num_srcs > 0 && op->src_info) ? (int)(op->src_info[0].op_num % 1000) : -1,
+                !op_sources_test_not_rdy(op, 0) ? 'r' : 'w',
+                (op->num_srcs > 1 && op->src_info) ? (int)(op->src_info[1].op_num % 1000) : -1,
+                !op_sources_test_not_rdy(op, 1) ? 'r' : 'w',
+                (op->num_srcs > 2 && op->src_info) ? (int)(op->src_info[2].op_num % 1000) : -1,
+                !op_sources_test_not_rdy(op, 2) ? 'r' : 'w');
       else
         fprintf(stream, "xxxxxxxxxxxxxxxxxxxx|");
       break;
     case OP_TYPE_FIELD:
-      if (op)
-        fprintf(stream, "%19s |", Op_Type_str(op->inst_info->table_info->op_type));
+      if (op && op->inst_info)
+        fprintf(stream, "%19s |", Op_Type_str(op->inst_info->table_info.op_type));
       else
         fprintf(stream, "xxxxxxxxxxxxxxxxxxxx|");
       break;
     case MEM_INFO_FIELD:
-      if (!op || op->table_info->mem_type == NOT_MEM)
+      if (!op || !op->inst_info || op->inst_info->table_info.mem_type == NOT_MEM)
         fprintf(stream, "xxxxxxxxxxxxxxxxxxxx|");
       else {
         Counter addr_dep = 0;
         Counter data_dep = 0;
         uns ii;
-        for (ii = 0; ii < op->oracle_info.num_srcs; ii++) {
-          Src_Info* src = &op->oracle_info.src_info[ii];
+        for (ii = 0; ii < op->num_srcs && op->src_info; ii++) {
+          Src_Info* src = &op->src_info[ii];
           if (src->type == MEM_ADDR_DEP)
             addr_dep = src->op_num;
           if (src->type == MEM_DATA_DEP)
@@ -344,22 +345,22 @@ void print_op(Op* op) {
 
 void print_func_op(Op* op) {
   char opcode[MAX_STR_LENGTH + 1];
-  if (op->table_info->op_type == OP_CF) {
-    sprintf(opcode, "%s", cf_type_names[op->table_info->cf_type]);
-  } else if (op->table_info->op_type == OP_ILD || op->table_info->op_type == OP_IST ||
-             op->table_info->op_type == OP_FLD || op->table_info->op_type == OP_FST) {
-    sprintf(opcode, "%s", mem_type_names[op->table_info->mem_type]);
+  if (op->inst_info->table_info.op_type == OP_CF) {
+    sprintf(opcode, "%s", cf_type_names[op->inst_info->table_info.cf_type]);
+  } else if (op->inst_info->table_info.op_type == OP_ILD || op->inst_info->table_info.op_type == OP_IST ||
+             op->inst_info->table_info.op_type == OP_FLD || op->inst_info->table_info.op_type == OP_FST) {
+    sprintf(opcode, "%s", mem_type_names[op->inst_info->table_info.mem_type]);
   } else {
-    sprintf(opcode, "%s", Op_Type_str(op->table_info->op_type));
+    sprintf(opcode, "%s", Op_Type_str(op->inst_info->table_info.op_type));
   }
 
   fprintf(GLOBAL_DEBUG_STREAM, "%2d  %08x  %10s", op->proc_id, (uns32)op->inst_info->addr, opcode);
 
   char buf[MAX_STR_LENGTH + 1];
-  print_reg_array(buf, op->inst_info->srcs, op->table_info->num_src_regs);
+  print_reg_array(buf, op->inst_info->srcs, op->inst_info->table_info.num_src_regs);
   fprintf(GLOBAL_DEBUG_STREAM, "  in: %-30s", buf);
 
-  print_reg_array(buf, op->inst_info->dests, op->table_info->num_dest_regs);
+  print_reg_array(buf, op->inst_info->dests, op->inst_info->table_info.num_dest_regs);
   fprintf(GLOBAL_DEBUG_STREAM, "  out: %-30s", buf);
 
   if (op->oracle_info.mem_size) {
@@ -419,13 +420,13 @@ char* disasm_op(Op* op, Flag wide) {
   static char buf[MAX_STR_LENGTH + 1];
 
   const char* opcode;
-  if (op->table_info->op_type == OP_CF) {
-    opcode = cf_type_names[op->table_info->cf_type];
-  } else if (op->table_info->op_type == OP_ILD || op->table_info->op_type == OP_IST ||
-             op->table_info->op_type == OP_FLD || op->table_info->op_type == OP_FST) {
-    opcode = mem_type_names[op->table_info->mem_type];
+  if (op->inst_info->table_info.op_type == OP_CF) {
+    opcode = cf_type_names[op->inst_info->table_info.cf_type];
+  } else if (op->inst_info->table_info.op_type == OP_ILD || op->inst_info->table_info.op_type == OP_IST ||
+             op->inst_info->table_info.op_type == OP_FLD || op->inst_info->table_info.op_type == OP_FST) {
+    opcode = mem_type_names[op->inst_info->table_info.mem_type];
   } else {
-    opcode = Op_Type_str(op->table_info->op_type);
+    opcode = Op_Type_str(op->inst_info->table_info.op_type);
   }
 
   uns i = 0;
@@ -433,14 +434,14 @@ char* disasm_op(Op* op, Flag wide) {
 
   if (wide) {
     i += sprintf(&buf[i], "(");
-    i += print_reg_array(&buf[i], op->inst_info->srcs, op->table_info->num_src_regs);
-    if (op->table_info->mem_type == MEM_LD && op->oracle_info.mem_size > 0) {
+    i += print_reg_array(&buf[i], op->inst_info->srcs, op->inst_info->table_info.num_src_regs);
+    if (op->inst_info->table_info.mem_type == MEM_LD && op->oracle_info.mem_size > 0) {
       i += sprintf(&buf[i], " %d@%08x", op->oracle_info.mem_size, (int)op->oracle_info.va);
     }
-    if (op->table_info->num_src_regs + op->table_info->num_dest_regs > 0)
+    if (op->inst_info->table_info.num_src_regs + op->inst_info->table_info.num_dest_regs > 0)
       i += sprintf(&buf[i], " ->");
-    i += print_reg_array(&buf[i], op->inst_info->dests, op->table_info->num_dest_regs);
-    if (op->table_info->mem_type == MEM_ST && op->oracle_info.mem_size > 0) {
+    i += print_reg_array(&buf[i], op->inst_info->dests, op->inst_info->table_info.num_dest_regs);
+    if (op->inst_info->table_info.mem_type == MEM_ST && op->oracle_info.mem_size > 0) {
       i += sprintf(&buf[i], " %d@%08x", op->oracle_info.mem_size, (int)op->oracle_info.va);
     }
     i += sprintf(&buf[i], " )");

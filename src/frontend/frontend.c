@@ -55,8 +55,6 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FRONTEND, ##args)
 
-static void collect_op_stats(Op* op);
-
 extern int op_type_delays[];
 
 void frontend_init() {
@@ -112,25 +110,24 @@ Addr frontend_next_fetch_addr(uns proc_id) {
   return convert_to_cmp_addr(proc_id, frontend->next_fetch_addr(proc_id));
 }
 
-Flag frontend_can_fetch_op(uns proc_id) {
-  return frontend->can_fetch_op(proc_id);
+Flag frontend_can_fetch_op(uns proc_id, uns bp_id) {
+  return frontend->can_fetch_op(proc_id, bp_id);
 }
 
-void frontend_fetch_op(uns proc_id, Op* op) {
-  frontend->fetch_op(proc_id, op);
-  collect_op_stats(op);
+void frontend_fetch_op(uns proc_id, uns bp_id, Op* op) {
+  frontend->fetch_op(proc_id, bp_id, op);
 }
 
-void frontend_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
+void frontend_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr) {
   DEBUG(proc_id, "Redirect after op_num %lld to 0x%08llx\n", op_count[proc_id] - 1, fetch_addr);
-  frontend->redirect(proc_id, inst_uid, fetch_addr);
+  frontend->redirect(proc_id, bp_id, inst_uid, fetch_addr);
 }
 
-void frontend_recover(uns proc_id, uns64 inst_uid) {
+void frontend_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
   DEBUG(proc_id, "Recover after inst_uid %lld\n", inst_uid);
 
   /* Recover to correct path */
-  frontend->recover(proc_id, inst_uid);
+  frontend->recover(proc_id, bp_id, inst_uid);
 }
 
 void frontend_retire(uns proc_id, uns64 inst_uid) {
@@ -141,15 +138,15 @@ void frontend_retire(uns proc_id, uns64 inst_uid) {
   DEBUG(proc_id, "Retiring inst_uid %lld end\n", inst_uid);
 }
 
-static void collect_op_stats(Op* op) {
+void collect_op_stats(Op* op) {
   if (!op->off_path) {
     STAT_EVENT(op->proc_id, ST_OP_ONPATH);
     if (op->eom)
       STAT_EVENT(op->proc_id, ST_INST_ONPATH);
-    STAT_EVENT(op->proc_id, ST_OP_INV + op->table_info->op_type);
-    STAT_EVENT(op->proc_id, ST_NOT_CF + op->table_info->cf_type);
-    STAT_EVENT(op->proc_id, ST_BAR_NONE + op->table_info->bar_type);
-    STAT_EVENT(op->proc_id, ST_NOT_MEM + op->table_info->mem_type);
+    STAT_EVENT(op->proc_id, ST_OP_INV + op->inst_info->table_info.op_type);
+    STAT_EVENT(op->proc_id, ST_NOT_CF + op->inst_info->table_info.cf_type);
+    STAT_EVENT(op->proc_id, ST_BAR_NONE + op->inst_info->table_info.bar_type);
+    STAT_EVENT(op->proc_id, ST_NOT_MEM + op->inst_info->table_info.mem_type);
   } else {
     STAT_EVENT(op->proc_id, ST_OP_OFFPATH);
     STAT_EVENT(op->proc_id, ST_FAKE_REASON_NOT_FAKE + op->inst_info->fake_inst_reason);
@@ -160,7 +157,7 @@ static void collect_op_stats(Op* op) {
     }
     if (op->eom)
       STAT_EVENT(op->proc_id, ST_INST_OFFPATH);
-    STAT_EVENT(op->proc_id, ST_NOT_MEM_OFFPATH + op->table_info->mem_type);
+    STAT_EVENT(op->proc_id, ST_NOT_MEM_OFFPATH + op->inst_info->table_info.mem_type);
   }
 }
 

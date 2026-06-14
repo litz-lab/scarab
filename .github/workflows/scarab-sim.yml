@@ -1,0 +1,262 @@
+name: Scarab simulation (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      sci_id:
+        description: sci descriptor id to build and simulate
+        required: true
+        type: string
+      collect_metrics:
+        description: Whether to parse IPC/KIPS outputs
+        required: false
+        default: false
+        type: boolean
+      run_lint:
+        description: Run clang-tidy against the just-built tree (reuses the build, no recompile).
+        required: false
+        default: false
+        type: boolean
+    outputs:
+      ipc:
+        description: Parsed IPC value
+        value: ${{ jobs.run.outputs.ipc }}
+      kips:
+        description: Parsed KIPS value
+        value: ${{ jobs.run.outputs.kips }}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    outputs:
+      ipc: ${{ steps.ipc.outputs.value }}
+      kips: ${{ steps.kips.outputs.value }}
+    steps:
+      - name: Checkout Scarab
+        uses: actions/checkout@v4
+
+      - name: Checkout scarab-infra
+        uses: actions/checkout@v4
+        with:
+          repository: litz-lab/scarab-infra
+          path: infra
+          ref: refs/heads/main
+          fetch-depth: 0
+
+      - name: Allow Git in container
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/infra"
+
+      - name: Initialize environment
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
+        run: ./sci --ci-init
+
+      - name: Locate scarabinfra conda env
+        id: conda-env
+        working-directory: infra
+        run: |
+          python3 - <<'PY' > env_path.txt
+          import pathlib
+          from importlib.machinery import SourceFileLoader
+          import importlib.util
+
+          script_path = pathlib.Path("sci").resolve()
+          if not script_path.exists():
+              raise FileNotFoundError(f"Unable to locate {script_path}")
+          loader = SourceFileLoader("scarab_sci", str(script_path))
+          spec = importlib.util.spec_from_loader("scarab_sci", loader)
+          module = importlib.util.module_from_spec(spec)
+          loader.exec_module(module)
+          env_path, _ = module.resolve_conda_env_path()
+          print(f"SCARABINFRA_ENV={env_path}")
+          PY
+          cat env_path.txt >> "$GITHUB_ENV"
+          rm env_path.txt
+
+      - name: Patch descriptor for CI
+        working-directory: infra
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sci_id = os.environ["SCI_ID"]
+          src = Path(f"json/{sci_id}.json")
+          if not src.exists():
+              raise SystemExit(f"Descriptor not found: {src}")
+          with open(src) as f:
+              d = json.load(f)
+          d["application_dir"] = os.environ["GITHUB_WORKSPACE"] + "/"
+          src.write_text(json.dumps(d, indent=2, separators=(',', ':')) + "\n")
+          PY
+        env:
+          SCI_ID: ${{ inputs.sci_id }}
+
+      - name: Build Scarab
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
+        run: ./sci --build-scarab ${{ inputs.sci_id }}
+
+      # Piggyback clang-tidy on the existing build runner: compile_commands.json
+      # and the docker image are already present, so this is just the lint pass.
+      - name: Lint Scarab
+        if: inputs.run_lint
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
+        run: ./sci --lint-scarab ${{ inputs.sci_id }}
+
+      - name: Run scarab simulation
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
+        run: ./sci --sim ${{ inputs.sci_id }}
+
+      - name: Verify simulation status
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
+        run: |
+          status_output=$(./sci --status ${{ inputs.sci_id }})
+          echo "$status_output"
+          status_line=$(printf '%s\n' "$status_output" | awk -F'|' '/^this_pr[[:space:]]*\|/ {print; exit}')
+          if [ -z "$status_line" ]; then
+            echo "Missing status line for this_pr"
+            exit 1
+          fi
+          completed=$(printf '%s\n' "$status_line" | awk -F'|' '{gsub(/^[[:space:]]+|[[:space:]]+$/,"",$2); print $2}')
+          if [ "$completed" != "1" ]; then
+            echo "Expected 1 completed simulation for this_pr, got '$completed'"
+            exit 1
+          fi
+
+      - id: simdir
+        if: inputs.collect_metrics
+        name: Resolve simulation directory
+        working-directory: simulations
+        run: |
+          sci_id="${{ inputs.sci_id }}"
+          base="${sci_id%_dbg}"
+          candidates=(
+            "github_${sci_id}_workflow"
+            "github_${sci_id}_workflow_dbg"
+          )
+          if [ "$base" != "$sci_id" ]; then
+            candidates+=("github_${base}_workflow_dbg" "github_${base}_workflow")
+          fi
+          for d in "${candidates[@]}"; do
+            if [ -d "$d" ]; then
+              echo "path=$d" >>"$GITHUB_OUTPUT"
+              echo "Resolved simulation dir: $d"
+              exit 0
+            fi
+          done
+          echo "No simulation directory found. Tried: ${candidates[*]}"
+          exit 1
+
+      - id: simworkload
+        if: inputs.collect_metrics
+        name: Resolve workload path
+        working-directory: infra
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sci_id = os.environ.get("SCI_ID", "").strip()
+          if not sci_id:
+              raise SystemExit("SCI_ID is not set.")
+
+          candidates = [Path("json") / f"{sci_id}.json"]
+          if sci_id.endswith("_dbg"):
+              candidates.append(Path("json") / f"{sci_id[:-4]}.json")
+
+          descriptor_path = None
+          for path in candidates:
+              if path.is_file():
+                  descriptor_path = path
+                  break
+          if descriptor_path is None:
+              raise SystemExit(f"No descriptor json found. Tried: {', '.join(str(p) for p in candidates)}")
+
+          with descriptor_path.open(encoding="utf-8") as handle:
+              data = json.load(handle)
+
+          sims = data.get("simulations") or []
+          if not sims:
+              raise SystemExit("Descriptor has no simulations.")
+          sim = sims[0]
+          suite = sim.get("suite")
+          subsuite = sim.get("subsuite")
+          workload = sim.get("workload")
+          cluster_id = sim.get("cluster_id")
+          if not all([suite, subsuite, workload, cluster_id]):
+              raise SystemExit(f"Missing workload fields in descriptor: {sim}")
+
+          workload_path = f"{suite}/{subsuite}/{workload}/{cluster_id}"
+          print(f"Resolved workload path: {workload_path}")
+          output = os.environ.get("GITHUB_OUTPUT")
+          if not output:
+              raise SystemExit("GITHUB_OUTPUT not set.")
+          with open(output, "a", encoding="utf-8") as out:
+              out.write(f"path={workload_path}\n")
+          PY
+        env:
+          SCI_ID: ${{ inputs.sci_id }}
+
+      - id: kips
+        if: inputs.collect_metrics
+        name: Grab KIPS
+        working-directory: simulations
+        run: |
+          sim_dir="${{ steps.simdir.outputs.path }}"
+          workload_path="${{ steps.simworkload.outputs.path }}"
+          if [ -z "$sim_dir" ]; then
+            echo "Simulation directory was not resolved"
+            exit 1
+          fi
+          if [ -z "$workload_path" ]; then
+            echo "Workload path was not resolved"
+            exit 1
+          fi
+          v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' \
+              "${sim_dir}/this_pr/${workload_path}/sim.log" | head -n1)
+          if ! [[ "$v" =~ ^[0-9]+$ ]]; then
+            echo "KIPS value is not a valid integer: '$v' Run failed!"
+            echo "Contents of sim.log for debugging:"
+            cat "${sim_dir}/this_pr/${workload_path}/sim.log"
+            exit 1
+          fi
+          echo "value=$v" >>"$GITHUB_OUTPUT"
+
+      - id: ipc
+        if: inputs.collect_metrics
+        name: Grab IPC
+        working-directory: simulations
+        run: |
+          sim_dir="${{ steps.simdir.outputs.path }}"
+          workload_path="${{ steps.simworkload.outputs.path }}"
+          if [ -z "$sim_dir" ]; then
+            echo "Simulation directory was not resolved"
+            exit 1
+          fi
+          if [ -z "$workload_path" ]; then
+            echo "Workload path was not resolved"
+            exit 1
+          fi
+          v=$(grep "Periodic:" \
+               "${sim_dir}/this_pr/${workload_path}/core.stat.0.out" | \
+               sed -n 's/.*IPC: \([0-9.]*\).*/\1/p')
+          if ! [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+            echo "IPC value is not a valid floating point number: '$v' Run failed!"
+            echo "Contents of core.stat.0.out for debugging:"
+            cat "${sim_dir}/this_pr/${workload_path}/core.stat.0.out"
+            exit 1
+          fi
+          echo "value=$v" >>"$GITHUB_OUTPUT"

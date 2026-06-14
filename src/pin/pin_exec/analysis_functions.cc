@@ -47,7 +47,10 @@ void PIN_FAST_ANALYSIS_CALL docount(UINT32 c) {
 #endif
 
   if(hyper_fast_forward_count <= 0) {
+    if (!hyper_ff)
+      return;
     hyper_ff = false;
+    prior_rep_eip = 0;
     *out << "Exiting Hyper Fast Forward Mode." << endl;
 
     if(hyper_fast_forward_delta > 0) {
@@ -206,7 +209,7 @@ void add_right_path_exec_br(CONTEXT* ctxt) {
   // Create dummy jmp
   ADDRINT eip;
   PIN_GetContextRegval(ctxt, REG_INST_PTR, (UINT8*)&eip);
-  compressed_op cop = create_dummy_jump(saved_excp_next_eip, eip);
+  compressed_op cop = create_dummy_jump(saved_excp_next_eip, eip, 0);
   cop.inst_uid      = uid_ctr;
   DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
             "Prev EIPs %lx, %lx\n", saved_excp_eip, saved_excp_next_eip);
@@ -420,7 +423,7 @@ void check_ret_control_ins(ADDRINT read_addr, UINT32 read_size, CONTEXT* ctxt) {
         next_eip = DUMMY_NOP_BASE;
       } else {
         next_eip = ADDR_MASK(target_addr);
-        if (next_eip < DUMMY_NOP_BASE) {
+        if (next_eip < DUMMY_NOP_BASE || next_eip > USER_SPACE_ADDR_MAX) {
           next_eip = DUMMY_NOP_BASE;
         }
       }
@@ -447,7 +450,7 @@ void check_nonret_control_ins(BOOL taken, ADDRINT target_addr) {
         next_eip = DUMMY_NOP_BASE;
       } else {
         next_eip = ADDR_MASK(target_addr);
-        if (next_eip < DUMMY_NOP_BASE) {
+        if (next_eip < DUMMY_NOP_BASE || next_eip > USER_SPACE_ADDR_MAX) {
           next_eip = DUMMY_NOP_BASE;
         }
       }
@@ -481,5 +484,12 @@ void handle_scarab_marker(ADDRINT op) {
     default:
       *out << "Error: Found Scarab Marker that does not have known code."
            << endl;
+  }
+}
+
+void PIN_FAST_ANALYSIS_CALL docount_rep(ADDRINT iaddr) {
+  if (iaddr != prior_rep_eip) {
+    docount(1);
+    prior_rep_eip = iaddr;
   }
 }

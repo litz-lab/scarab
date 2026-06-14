@@ -78,13 +78,15 @@ void pref_ghb_init(HWP* hwp) {
     return;
 
   if (PREF_UMLC_ON) {
-    ghb_prefetchers_array.ghb_hwp_core_umlc = (Pref_GHB*)malloc(sizeof(Pref_GHB) * NUM_CORES);
-    ghb_prefetchers_array.ghb_hwp_core_umlc->type = UMLC;
+    ghb_prefetchers_array.ghb_hwp_core_umlc = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
+    for (uns i = 0; i < NUM_CORES; i++)
+      ghb_prefetchers_array.ghb_hwp_core_umlc[i].type = UMLC;
     init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_umlc);
   }
   if (PREF_UL1_ON) {
-    ghb_prefetchers_array.ghb_hwp_core_ul1 = (Pref_GHB*)malloc(sizeof(Pref_GHB) * NUM_CORES);
-    ghb_prefetchers_array.ghb_hwp_core_ul1->type = UL1;
+    ghb_prefetchers_array.ghb_hwp_core_ul1 = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
+    for (uns i = 0; i < NUM_CORES; i++)
+      ghb_prefetchers_array.ghb_hwp_core_ul1[i].type = UL1;
     init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_ul1);
   }
 }

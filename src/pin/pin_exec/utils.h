@@ -35,6 +35,7 @@
 #undef WARNING
 
 #define ADDR_MASK(x) ((x)&0x0000FFFFFFFFFFFFULL)
+#define USER_SPACE_ADDR_MAX ((ADDRINT)0x00007FFFFFFFFFFFULL)
 
 #ifdef DEBUG_PRINT
 #define DBG_PRINT(uid, start_print_uid, end_print_uid, ...)  \
@@ -67,9 +68,9 @@
   } while(0)
 
 struct MemState {
-  ADDRINT mem_addr;
-  UINT32  mem_size;
-  VOID*   mem_data_ptr;
+  ADDRINT mem_addr = 0;
+  UINT32 mem_size = 0;
+  VOID* mem_data_ptr = NULL;
 
   MemState() : mem_size(0), mem_data_ptr(NULL) {}
 
@@ -100,14 +101,14 @@ struct MemState {
 };
 
 struct ProcState {
-  UINT64    uid;
+  UINT64 uid = 0;
   MemState* mem_state_list = NULL;
-  UINT      num_mem_state;
-  CONTEXT   ctxt;
-  bool      unretireable_instruction;
-  bool      wrongpath;
-  bool      wrongpath_nop_mode;
-  ADDRINT   wpnm_eip;
+  UINT num_mem_state = 0;
+  CONTEXT ctxt = {};
+  bool unretireable_instruction = false;
+  bool wrongpath = false;
+  bool wrongpath_nop_mode = false;
+  ADDRINT wpnm_eip = 0;
 
   ProcState() : mem_state_list(NULL), num_mem_state(0) {}
 
@@ -120,21 +121,14 @@ struct ProcState {
     wpnm_eip                 = _wpnm_eip;
 
     if(_num_mem_state > num_mem_state) {
-      if(NULL != mem_state_list) {
-        free(mem_state_list);
-      }
-
-      mem_state_list = (MemState*)malloc(_num_mem_state * sizeof(MemState));
+      delete[] mem_state_list;
+      mem_state_list = new MemState[_num_mem_state];
     }
 
     num_mem_state = _num_mem_state;
   }
 
-  ~ProcState() {
-    if(NULL != mem_state_list) {
-      free(mem_state_list);
-    }
-  }
+  ~ProcState() { delete[] mem_state_list; }
 };
 
 template <typename T, int INIT_CAPACITY>

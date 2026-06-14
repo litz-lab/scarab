@@ -1,55 +1,118 @@
 #include "cbp_tagescl_64k.h"
 
 TAGE64K::TAGE64K(void) {
-  memset(SizeTable, 0, sizeof(SizeTable));
-  memset(NOSKIP, 0, sizeof(NOSKIP));
-  memset(m, 0, sizeof(m));
-  memset(TB, 0, sizeof(TB));
-  memset(logg, 0, sizeof(logg));
-  memset(noskip_index, 0, sizeof(noskip_index));
+  // All scalar members have default member initializers in the header and all
+  // fixed-size tables are std::array members that default-initialize to zero,
+  // so we only need to prepare the embedded speculative/predictor state and
+  // run the predictor-specific reinit().
   Pstate.init();
   Sstate.init();
-  memset(Bias, 0, sizeof(Bias));
-  memset(BiasSK, 0, sizeof(BiasSK));
-  memset(BiasBank, 0, sizeof(BiasBank));
-  memset(LGEHL, 0, sizeof(LGEHL));
-  memset(SGEHL, 0, sizeof(SGEHL));
-  memset(TGEHL, 0, sizeof(TGEHL));
-#ifdef IMLI
-  memset(IMGEHL, 0, sizeof(IMGEHL));
-  memset(IGEHL, 0, sizeof(IGEHL));
-  memset(IMHIST, 0, sizeof(IMHIST));
-  IMLIcount = 0;
-#endif
-  memset(L_shist, 0, sizeof(L_shist));
-  memset(S_slhist, 0, sizeof(S_slhist));
-  memset(T_slhist, 0, sizeof(T_slhist));
-  updatethreshold = 0;
-  memset(Pupdatethreshold, 0, sizeof(Pupdatethreshold));
-  memset(WL, 0, sizeof(WL));
-  memset(WS, 0, sizeof(WS));
-  memset(WT, 0, sizeof(WT));
-  memset(WI, 0, sizeof(WI));
-  memset(WIM, 0, sizeof(WIM));
-  memset(WB, 0, sizeof(WB));
-  FirstH = 0;
-  SecondH = 0;
-  WITHLOOP = 0;
-  LIB = 0;
-  LI = 0;
-  LTAG = 0;
-  memset(use_alt_on_na, 0, sizeof(use_alt_on_na));
-  TICK = 0;
-  branch_id = 0;
-  Seed = 0;
-  tage_component = 0;
-  tage_component_inter = 0;
-  tage_component_tage = 0;
-  tage_component_alt = 0;
   reinit();
   // #ifdef PRINTSIZE
   // predictorsize ();
   // #endif
+}
+
+TAGE64K::~TAGE64K() = default;
+
+TAGE64K& TAGE64K::operator=(const TAGE64K& other) {
+  Im = other.Im;
+  IGEHLA = other.IGEHLA;
+  IMm = other.IMm;
+  IMGEHLA = other.IMGEHLA;
+  Gm = other.Gm;
+  GGEHLA = other.GGEHLA;
+  Pm = other.Pm;
+  PGEHLA = other.PGEHLA;
+  Lm = other.Lm;
+  LGEHLA = other.LGEHLA;
+  Sm = other.Sm;
+  SGEHLA = other.SGEHLA;
+  Tm = other.Tm;
+  TGEHLA = other.TGEHLA;
+  SizeTable = other.SizeTable;
+  NOSKIP = other.NOSKIP;
+  m = other.m;
+  TB = other.TB;
+  logg = other.logg;
+  noskip_index = other.noskip_index;
+
+  Pstate.THRES = other.Pstate.THRES;
+  Pstate.LSUM = other.Pstate.LSUM;
+  Pstate.predloop = other.Pstate.predloop;
+  Pstate.LHIT = other.Pstate.LHIT;
+  Pstate.LVALID = other.Pstate.LVALID;
+  Pstate.pred_taken = other.Pstate.pred_taken;
+  Pstate.tage_pred = other.Pstate.tage_pred;
+  Pstate.pred_inter = other.Pstate.pred_inter;
+  Pstate.LongestMatchPred = other.Pstate.LongestMatchPred;
+  Pstate.HighConf = other.Pstate.HighConf;
+  Pstate.MedConf = other.Pstate.MedConf;
+  Pstate.LowConf = other.Pstate.LowConf;
+  Pstate.HitBank = other.Pstate.HitBank;
+  Pstate.alttaken = other.Pstate.alttaken;
+  Pstate.AltConf = other.Pstate.AltConf;
+  Pstate.AltBank = other.Pstate.AltBank;
+  Pstate.on_path_ptghist = other.Pstate.on_path_ptghist;
+  Pstate.on_path_phist = other.Pstate.on_path_phist;
+  Pstate.GI = other.Pstate.GI;
+  Pstate.GTAG = other.Pstate.GTAG;
+
+  Sstate.ptghist = other.Sstate.ptghist;
+  Sstate.phist = other.Sstate.phist;
+  Sstate.GHIST = other.Sstate.GHIST;
+  Sstate.ch_i = other.Sstate.ch_i;
+  Sstate.ch_t = other.Sstate.ch_t;
+  Sstate.WG = other.Sstate.WG;
+  Sstate.WP = other.Sstate.WP;
+  Sstate.ltable = other.Sstate.ltable;
+  Sstate.ghist = other.Sstate.ghist;
+
+  Bias = other.Bias;
+  BiasSK = other.BiasSK;
+  BiasBank = other.BiasBank;
+#ifdef IMLI
+  IMHIST = other.IMHIST;
+  IMLIcount = other.IMLIcount;
+#endif
+  L_shist = other.L_shist;
+  S_slhist = other.S_slhist;
+  T_slhist = other.T_slhist;
+  updatethreshold = other.updatethreshold;
+  Pupdatethreshold = other.Pupdatethreshold;
+  WL = other.WL;
+  WS = other.WS;
+  WT = other.WT;
+  WI = other.WI;
+  WIM = other.WIM;
+  WB = other.WB;
+  FirstH = other.FirstH;
+  SecondH = other.SecondH;
+  WITHLOOP = other.WITHLOOP;
+  LIB = other.LIB;
+  LI = other.LI;
+  LTAG = other.LTAG;
+  use_alt_on_na = other.use_alt_on_na;
+  btable = other.btable;
+  gtable_low = other.gtable_low;
+  gtable_high = other.gtable_high;
+  gtable[1] = gtable_low.data();
+  gtable[BORN] = gtable_high.data();
+  for (int i = BORN + 1; i <= NHIST; i++)
+    gtable[i] = gtable[BORN];
+  for (int i = 2; i <= BORN - 1; i++)
+    gtable[i] = gtable[1];
+  TICK = other.TICK;
+  branch_id = other.branch_id;
+  Seed = other.Seed;
+
+  // no need to copy checkpoints and predictor_states
+  tage_component = other.tage_component;
+  tage_component_inter = other.tage_component_inter;
+  tage_component_tage = other.tage_component_tage;
+  tage_component_alt = other.tage_component_alt;
+
+  return *this;
 }
 
 uns8 TAGE64K::IsFull(void) {
@@ -95,17 +158,19 @@ void TAGE64K::reinit() {
     logg[i] = LOGG;
   }
 
-  gtable[1] = new cbp64_gentry[NBANKLOW * (1 << LOGG)];
+  gtable_low.assign(NBANKLOW * (1 << LOGG), cbp64_gentry{});
   SizeTable[1] = NBANKLOW * (1 << LOGG);
 
-  gtable[BORN] = new cbp64_gentry[NBANKHIGH * (1 << LOGG)];
+  gtable_high.assign(NBANKHIGH * (1 << LOGG), cbp64_gentry{});
   SizeTable[BORN] = NBANKHIGH * (1 << LOGG);
 
+  gtable[1] = gtable_low.data();
+  gtable[BORN] = gtable_high.data();
   for (int i = BORN + 1; i <= NHIST; i++)
     gtable[i] = gtable[BORN];
   for (int i = 2; i <= BORN - 1; i++)
     gtable[i] = gtable[1];
-  btable = new cbp64_bentry[1 << LOGB];
+  btable.assign(1 << LOGB, cbp64_bentry{});
 
   for (int i = 1; i <= NHIST; i++) {
     Sstate.ch_i[i].init(m[i], (logg[i]));
@@ -122,7 +187,7 @@ void TAGE64K::reinit() {
   Seed = 0;
 
   for (int i = 0; i < HISTBUFFERLENGTH; i++)
-    Sstate.ghist[0] = 0;
+    Sstate.ghist[i] = 0;
   Sstate.ptghist = 0;
   updatethreshold = 35 << 3;
 
@@ -267,6 +332,7 @@ void TAGE64K::reinit() {
     WS[i] = 7;
     WT[i] = 7;
     WI[i] = 7;
+    WIM[i] = 7;
     WB[i] = 4;
   }
   for (int i = 0; i < NLOCAL; i++) {
@@ -475,6 +541,8 @@ void TAGE64K::RestorePredictorstates(Counter key) {
 }
 
 void TAGE64K::TakeCheckpoint(Counter key) {
+  // Guard against checkpoint leaks: there should never be more checkpoints than ROB entries
+  ASSERTM(0, checkpoints.size() < NODE_TABLE_SIZE, "TAGE Checkpoint leak\n");
   auto& key_index = checkpoints.get<0>();  // Get the key index
   auto it = key_index.find(key);
   assert(it == key_index.end());
@@ -483,25 +551,24 @@ void TAGE64K::TakeCheckpoint(Counter key) {
   // Copy scalar values
   state.ptghist = Sstate.ptghist;
   state.phist = Sstate.phist;
-  // Copy folded histories - use memcpy for better performance
-  std::copy(std::begin(Sstate.ch_i), std::end(Sstate.ch_i), std::begin(state.ch_i));
-  std::copy(std::begin(Sstate.ch_t[0]), std::end(Sstate.ch_t[0]), std::begin(state.ch_t[0]));
-  std::copy(std::begin(Sstate.ch_t[1]), std::end(Sstate.ch_t[1]), std::begin(state.ch_t[1]));
+  // Copy folded histories - std::array supports direct element-wise assignment
+  state.ch_i = Sstate.ch_i;
+  state.ch_t = Sstate.ch_t;
   if (TAGESCL64KB_SC) {
     state.GHIST = Sstate.GHIST;
-    // Copy GEHL arrays
+    // GEHL storage in the speculative state is an array of pointers into the
+    // owning 2D tables, so we still have to copy the underlying rows.
     for (int i = 0; i < GNB; ++i) {
-      std::copy(Sstate.GGEHL[i], Sstate.GGEHL[i] + (1 << LOGGNB), state.GGEHL[i]);
+      std::copy(Sstate.GGEHL[i], Sstate.GGEHL[i] + (1 << LOGGNB), state.GGEHL[i].begin());
     }
     for (int i = 0; i < PNB; ++i) {
-      std::copy(Sstate.PGEHL[i], Sstate.PGEHL[i] + (1 << LOGPNB), state.PGEHL[i]);
+      std::copy(Sstate.PGEHL[i], Sstate.PGEHL[i] + (1 << LOGPNB), state.PGEHL[i].begin());
     }
-    // Copy weight tables
-    std::copy(Sstate.WG, Sstate.WG + (1 << LOGSIZEUPS), state.WG);
-    std::copy(Sstate.WP, Sstate.WP + (1 << LOGSIZEUPS), state.WP);
+    state.WG = Sstate.WG;
+    state.WP = Sstate.WP;
   }
   if (TAGESCL64KB_LOOP)
-    std::copy(Sstate.ltable, Sstate.ltable + (1 << LOGL), state.ltable);
+    state.ltable = Sstate.ltable;
   checkpoints.insert(CheckpointEntry(key, state));
   assert(checkpoints.size() == (org_size + 1));
 }
@@ -550,24 +617,24 @@ void TAGE64K::RestoreCheckpoint(Counter key) {
   // Restore global history
   Sstate.phist = it->state.phist;
   Sstate.ptghist = it->state.ptghist;
-  // Restore folded histories
-  std::copy(std::begin(it->state.ch_i), std::end(it->state.ch_i), std::begin(Sstate.ch_i));
-  std::copy(std::begin(it->state.ch_t[0]), std::end(it->state.ch_t[0]), std::begin(Sstate.ch_t[0]));
-  std::copy(std::begin(it->state.ch_t[1]), std::end(it->state.ch_t[1]), std::begin(Sstate.ch_t[1]));
+  // Restore folded histories - std::array supports direct element-wise assignment
+  Sstate.ch_i = it->state.ch_i;
+  Sstate.ch_t = it->state.ch_t;
   if (TAGESCL64KB_SC) {
     Sstate.GHIST = it->state.GHIST;
-    // Restore GEHL arrays
+    // GEHL storage in the speculative state is an array of pointers into the
+    // owning 2D tables, so we still have to copy the underlying rows.
     for (int i = 0; i < GNB; ++i) {
-      std::copy(it->state.GGEHL[i], it->state.GGEHL[i] + (1 << LOGGNB), Sstate.GGEHL[i]);
+      std::copy(it->state.GGEHL[i].begin(), it->state.GGEHL[i].end(), Sstate.GGEHL[i]);
     }
     for (int i = 0; i < PNB; ++i) {
-      std::copy(it->state.PGEHL[i], it->state.PGEHL[i] + (1 << LOGPNB), Sstate.PGEHL[i]);
+      std::copy(it->state.PGEHL[i].begin(), it->state.PGEHL[i].end(), Sstate.PGEHL[i]);
     }
-    std::copy(it->state.WG, it->state.WG + (1 << LOGSIZEUPS), Sstate.WG);
-    std::copy(it->state.WP, it->state.WP + (1 << LOGSIZEUPS), Sstate.WP);
+    Sstate.WG = it->state.WG;
+    Sstate.WP = it->state.WP;
   }
   if (TAGESCL64KB_LOOP)
-    std::copy(it->state.ltable, it->state.ltable + (1 << LOGL), Sstate.ltable);
+    Sstate.ltable = it->state.ltable;
   // Restore predictor states
   RestorePredictorstates(key);
   auto& key_pindex = predictor_states.get<0>();
@@ -620,7 +687,7 @@ void TAGE64K::UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history
 void TAGE64K::Tagepred(UINT64 PC) {
   Pstate.HitBank = 0;
   Pstate.AltBank = 0;
-  UpdateAddr(PC, Sstate.phist, Sstate.ch_i, Sstate.ch_t[0], Sstate.ch_t[1]);
+  UpdateAddr(PC, Sstate.phist, Sstate.ch_i.data(), Sstate.ch_t[0].data(), Sstate.ch_t[1].data());
   Pstate.alttaken = getbim(PC);
   Pstate.tage_pred = Pstate.alttaken;
   Pstate.LongestMatchPred = Pstate.alttaken;
@@ -691,7 +758,7 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
 
   if (!TAGESCL64KB_SC) {
     if (!op->off_path)
-      STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_BASE_CORRECT + op->oracle_info.mispred + tage_component * 2);
+      STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_BASE_CORRECT + op->bp_pred_info->recover_at_exec + tage_component * 2);
   }
 
   if (TAGESCL64KB_LOOP) {
@@ -721,21 +788,22 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
     Pstate.LSUM = (1 + (WB[INDUPDS] >= 0)) * Pstate.LSUM;
 #endif
     // integrate the GEHL predictions
-    Pstate.LSUM += Gpredict((PC << 1) + Pstate.pred_inter, Sstate.GHIST, Gm, Sstate.GGEHL, GNB, LOGGNB, Sstate.WG);
-    Pstate.LSUM += Gpredict(PC, Sstate.phist, Pm, Sstate.PGEHL, PNB, LOGPNB, Sstate.WP);
+    Pstate.LSUM += Gpredict((PC << 1) + Pstate.pred_inter, Sstate.GHIST, Gm.data(), Sstate.GGEHL.data(), GNB, LOGGNB,
+                            Sstate.WG.data());
+    Pstate.LSUM += Gpredict(PC, Sstate.phist, Pm.data(), Sstate.PGEHL.data(), PNB, LOGPNB, Sstate.WP.data());
 #ifdef LOCALH
-    Pstate.LSUM += Gpredict(PC, L_shist[INDLOCAL], Lm, LGEHL, LNB, LOGLNB, WL);
+    Pstate.LSUM += Gpredict(PC, L_shist[INDLOCAL], Lm.data(), LGEHL.data(), LNB, LOGLNB, WL.data());
 #ifdef LOCALS
-    Pstate.LSUM += Gpredict(PC, S_slhist[INDSLOCAL], Sm, SGEHL, SNB, LOGSNB, WS);
+    Pstate.LSUM += Gpredict(PC, S_slhist[INDSLOCAL], Sm.data(), SGEHL.data(), SNB, LOGSNB, WS.data());
 #endif
 #ifdef LOCALT
-    Pstate.LSUM += Gpredict(PC, T_slhist[INDTLOCAL], Tm, TGEHL, TNB, LOGTNB, WT);
+    Pstate.LSUM += Gpredict(PC, T_slhist[INDTLOCAL], Tm.data(), TGEHL.data(), TNB, LOGTNB, WT.data());
 #endif
 #endif
 
 #ifdef IMLI
-    Pstate.LSUM += Gpredict(PC, IMHIST[(IMLIcount)], IMm, IMGEHL, IMNB, LOGIMNB, WIM);
-    Pstate.LSUM += Gpredict(PC, IMLIcount, Im, IGEHL, INB, LOGINB, WI);
+    Pstate.LSUM += Gpredict(PC, IMHIST[(IMLIcount)], IMm.data(), IMGEHL.data(), IMNB, LOGIMNB, WIM.data());
+    Pstate.LSUM += Gpredict(PC, IMLIcount, Im.data(), IGEHL.data(), INB, LOGINB, WI.data());
 #endif
     bool SCPRED = (Pstate.LSUM >= 0);
     // just  an heuristic if the respective contribution of component groups can be multiplied by 2 or not
@@ -797,7 +865,7 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
   if (!op->off_path) {
     STAT_EVENT(op->proc_id,
                TAGESCL_COMP_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) + tage_component * 2);
-    if (op->oracle_info.btb_miss)
+    if (btb_pred_miss(op->btb_pred_info))
       STAT_EVENT(op->proc_id, TAGESCL_COMP_BTB_MISS_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) +
                                   tage_component * 2);
   }
@@ -812,7 +880,7 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
   assert(*bp_confidence < 4);
 
   if ((Pstate.pred_taken != op->oracle_info.dir) && !op->off_path) {  // collect only for misprediction
-    STAT_EVENT(op->proc_id, TAGESCL_CONF_0_PER_BASE_MISPREDICT + *bp_confidence + tage_component * 4);
+    STAT_EVENT(op->proc_id, TAGESCL_CONF_0_PER_BASE_RECOVER_AT_EXEC + *bp_confidence + tage_component * 4);
   }
   return Pstate.pred_taken;
 }
@@ -890,8 +958,9 @@ void TAGE64K::SpecUpdateAtCond(UINT64 PC, bool dir, bool off_path) {
   if (TAGESCL64KB_SC) {
     bool SCPRED = (Pstate.LSUM >= 0);
     if ((SCPRED != dir) || ((abs(Pstate.LSUM) < Pstate.THRES))) {
-      Gupdate((PC << 1) + Pstate.pred_inter, dir, Sstate.GHIST, Gm, Sstate.GGEHL, GNB, LOGGNB, Sstate.WG, Pstate.LSUM);
-      Gupdate(PC, dir, Sstate.phist, Pm, Sstate.PGEHL, PNB, LOGPNB, Sstate.WP, Pstate.LSUM);
+      Gupdate((PC << 1) + Pstate.pred_inter, dir, Sstate.GHIST, Gm.data(), Sstate.GGEHL.data(), GNB, LOGGNB,
+              Sstate.WG.data(), Pstate.LSUM);
+      Gupdate(PC, dir, Sstate.phist, Pm.data(), Sstate.PGEHL.data(), PNB, LOGPNB, Sstate.WP.data(), Pstate.LSUM);
     }
   }
 }
@@ -933,9 +1002,9 @@ void TAGE64K::GlobalStateUpdate(UINT64 PC, UINT64 br_target, int brtype, bool pr
     Sstate.phist = (Sstate.phist << 1) ^ PATHBIT;
 
     for (int i = 1; i <= NHIST; i++) {
-      Sstate.ch_i[i].update(Sstate.ghist, Sstate.ptghist);
-      Sstate.ch_t[0][i].update(Sstate.ghist, Sstate.ptghist);
-      Sstate.ch_t[1][i].update(Sstate.ghist, Sstate.ptghist);
+      Sstate.ch_i[i].update(Sstate.ghist.data(), Sstate.ptghist);
+      Sstate.ch_t[0][i].update(Sstate.ghist.data(), Sstate.ptghist);
+      Sstate.ch_t[1][i].update(Sstate.ghist.data(), Sstate.ptghist);
     }
   }
   Sstate.phist = (Sstate.phist & ((1 << PHISTWIDTH) - 1));  // path history
@@ -1029,18 +1098,18 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
     ctrupdate(BiasSK[INDBIASSK(pstate)], resolveDir, PERCWIDTH);
     ctrupdate(BiasBank[INDBIASBANK(pstate)], resolveDir, PERCWIDTH);
 #ifdef LOCALH
-    Gupdate(PC, resolveDir, L_shist[INDLOCAL], Lm, LGEHL, LNB, LOGLNB, WL, pstate.LSUM);
+    Gupdate(PC, resolveDir, L_shist[INDLOCAL], Lm.data(), LGEHL.data(), LNB, LOGLNB, WL.data(), pstate.LSUM);
 #ifdef LOCALS
-    Gupdate(PC, resolveDir, S_slhist[INDSLOCAL], Sm, SGEHL, SNB, LOGSNB, WS, pstate.LSUM);
+    Gupdate(PC, resolveDir, S_slhist[INDSLOCAL], Sm.data(), SGEHL.data(), SNB, LOGSNB, WS.data(), pstate.LSUM);
 #endif
 #ifdef LOCALT
-    Gupdate(PC, resolveDir, T_slhist[INDTLOCAL], Tm, TGEHL, TNB, LOGTNB, WT, pstate.LSUM);
+    Gupdate(PC, resolveDir, T_slhist[INDTLOCAL], Tm.data(), TGEHL.data(), TNB, LOGTNB, WT.data(), pstate.LSUM);
 #endif
 #endif
 
 #ifdef IMLI
-    Gupdate(PC, resolveDir, IMHIST[(IMLIcount)], IMm, IMGEHL, IMNB, LOGIMNB, WIM, pstate.LSUM);
-    Gupdate(PC, resolveDir, IMLIcount, Im, IGEHL, INB, LOGINB, WI, pstate.LSUM);
+    Gupdate(PC, resolveDir, IMHIST[(IMLIcount)], IMm.data(), IMGEHL.data(), IMNB, LOGIMNB, WIM.data(), pstate.LSUM);
+    Gupdate(PC, resolveDir, IMLIcount, Im.data(), IGEHL.data(), INB, LOGINB, WI.data(), pstate.LSUM);
 #endif
     }
   }

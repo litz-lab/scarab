@@ -44,6 +44,8 @@ void recover_to_past_checkpoint(UINT64 uid, bool is_redirect_recover,
   while(!checkpoints.empty()) {
     if(checkpoints[idx].uid == uid) {
       // Resumes execution at the saved context
+      // reset uid counter to one past the recovered uid
+      uid_ctr = uid + 1;
 
       ADDRINT this_eip;
 
@@ -212,7 +214,7 @@ void main_loop(CONTEXT* ctxt) {
             "main loop next_eip=%" PRIx64 "\n", (uint64_t)next_eip);
 
   while(true) {
-    Scarab_To_Pin_Msg cmd;
+    Scarab_To_Pin_Msg cmd = {};
     cmd.type = FE_NULL;
     if(excp_rewind_msg) {
       excp_rewind_msg = false;
@@ -298,8 +300,7 @@ void do_fe_null(bool& have_consumed_op) {
     if(!pending_exception) {
       if(generate_dummy_nops) {
         next_eip  = ADDR_MASK(next_eip);
-        dummy_nop = create_dummy_nop((uint64_t)next_eip,
-                                     wrongpath_nop_mode_reason);
+        dummy_nop = create_dummy_nop((uint64_t)next_eip, wrongpath_nop_mode_reason, DUMMY_NOP_SIZE);
         cop       = &dummy_nop;
       } else {
         cop = pin_decoder_get_latest_inst();
@@ -321,6 +322,14 @@ void do_fe_null(bool& have_consumed_op) {
                   cop->num_ld, cop->num_st, cop->exit, cop->size);
       }
       cop->inst_uid = uid_ctr;
+
+      if (cop->is_repeat && cop->instruction_addr == prior_rep_eip)
+        cop->fetched_instruction = 0;
+      else
+        cop->fetched_instruction = 1;
+
+      prior_rep_eip = cop->is_repeat ? cop->instruction_addr : 0;
+
       if(pending_syscall && exit_syscall_found) {
         exit_syscall_found = false;
         buffer_sentinel    = true;

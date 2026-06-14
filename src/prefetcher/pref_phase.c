@@ -72,7 +72,7 @@ void pref_phase_init(HWP* hwp) {
   if (!PREF_PHASE_ON)
     return;
 
-  phase_hwp = (Pref_PHASE*)malloc(sizeof(Pref_PHASE));
+  phase_hwp = (Pref_PHASE*)calloc(1, sizeof(Pref_PHASE));
   phase_hwp->hwp_info = hwp->hwp_info;
   phase_hwp->hwp_info->enabled = TRUE;
 

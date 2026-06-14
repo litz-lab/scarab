@@ -152,15 +152,11 @@ DEF_PARAM(reg_renaming_move_eliminate, REG_RENAMING_MOVE_ELIMINATE, Flag, Flag, 
 
 /********ISSUE QUEUE
  * PARAMETERS********************************************************/
-/*
- * FIND_EMPTIEST_RS : 0 (default)
- */
-DEF_PARAM(node_issue_queue_dispatch_scheme, NODE_ISSUE_QUEUE_DISPATCH_SCHEME, uns, uns, 0, )
+DEF_PARAM(issue_queue_schedule_policy, ISSUE_QUEUE_SCHEDULE_POLICY, uns, uns, 0, )
+DEF_PARAM(issue_queue_traversal_policy, ISSUE_QUEUE_TRAVERSAL_POLICY, uns, uns, 0, )
+DEF_PARAM(issue_queue_early_bind_policy, ISSUE_QUEUE_EARLY_BIND_POLICY, uns, uns, 1, )
 
-/*
- * OLDEST_FIRST : 0 (default)
- */
-DEF_PARAM(node_issue_queue_schedule_scheme, NODE_ISSUE_QUEUE_SCHEDULE_SCHEME, uns, uns, 0, )
+DEF_PARAM(issue_queue_traversal_priority, ISSUE_QUEUE_TRAVERSAL_PRIORITY, char*, string, "0,1,2,3,4;-;-", )
 
 /********EXEC PORT
  * PARAMETERS*********************************************************/
@@ -329,7 +325,7 @@ DEF_PARAM(cbp_trace_r63, CBP_TRACE_R63, char*, string, NULL, )
 
 DEF_PARAM(fe_ftq_block_num, FE_FTQ_BLOCK_NUM, uns, uns, 32, )
 DEF_PARAM(fe_ftq_taken_cfs_per_cycle, FE_FTQ_TAKEN_CFS_PER_CYCLE, uns, uns, 2, )
-DEF_PARAM(fe_ftq_bytes_per_cycle, FE_FTQ_BYTES_PER_CYCLE, uns, uns, 128, )
+DEF_PARAM(fe_ftq_FT_per_cycle, FE_FTQ_FT_PER_CYCLE, uns, uns, 1, )
 
 DEF_PARAM(dumb_core_on, DUMB_CORE_ON, Flag, Flag, FALSE, )
 DEF_PARAM(dumb_core, DUMB_CORE, uns, uns, 1, )
@@ -376,3 +372,17 @@ DEF_PARAM(conf_perfect_mispred_conf, CONF_PERFECT_MISPRED_CONF, Flag, Flag, FALS
 
 DEF_PARAM(conf_log_dfe_to_rec, CONF_LOG_DFE_TO_REC, Flag, Flag, FALSE, )
 DEF_PARAM(conf_log_phase_cycles, CONF_LOG_PHASE_CYCLES, Flag, Flag, FALSE, )
+
+DEF_PARAM(num_bps, NUM_BPS, uns, uns, 1, )
+DEF_PARAM(dfe0_trigger_policy, DFE0_TRIGGER_POLICY, uns, uns, 0, )
+DEF_PARAM(dfe1_trigger_policy, DFE1_TRIGGER_POLICY, uns, uns, 1, )
+DEF_PARAM(dfe2_trigger_policy, DFE2_TRIGGER_POLICY, uns, uns, 1, )
+DEF_PARAM(dfe3_trigger_policy, DFE3_TRIGGER_POLICY, uns, uns, 1, )
+DEF_PARAM(dfe4_trigger_policy, DFE4_TRIGGER_POLICY, uns, uns, 1, )
+DEF_PARAM(dfe0_stop_policy, DFE0_STOP_POLICY, uns, uns, 0, )
+DEF_PARAM(dfe1_stop_policy, DFE1_STOP_POLICY, uns, uns, 1, )
+DEF_PARAM(dfe2_stop_policy, DFE2_STOP_POLICY, uns, uns, 1, )
+DEF_PARAM(dfe3_stop_policy, DFE3_STOP_POLICY, uns, uns, 1, )
+DEF_PARAM(dfe4_stop_policy, DFE4_STOP_POLICY, uns, uns, 1, )
+
+DEF_PARAM(lookahead_buf_size, LOOKAHEAD_BUF_SIZE, uns, uns, 0, )

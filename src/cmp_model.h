@@ -55,7 +55,7 @@ typedef struct Cmp_Model_struct {
 
   Map_Data* map_data;
   Bp_Recovery_Info* bp_recovery_info;
-  Bp_Data* bp_data;
+  Bp_Data** bp_data;  // multiple BPs available for each core
 
   Memory memory;
 
@@ -85,7 +85,7 @@ void cmp_cycle(void);
 void cmp_debug(void);
 void cmp_per_core_done(uns8);
 void cmp_done(void);
-void cmp_wake(Op*, Op*, uns8);
+void cmp_wake(Op*, Op*, uns);
 void cmp_retire_hook(Op*);
 void cmp_warmup(Op*);
 

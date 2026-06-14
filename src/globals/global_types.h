@@ -67,6 +67,8 @@ typedef uns64 Addr;
 typedef uns32 Binary;
 typedef uns8 Flag;
 
+#define ADDR_INVALID (~(Addr)0)
+
 typedef uns64 Counter;
 typedef int64 SCounter;
 

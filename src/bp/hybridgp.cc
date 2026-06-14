@@ -49,12 +49,12 @@ struct Hybridgp_In_Flight_State {
 };
 
 struct Hybridgp_State {
-  Cache bht;
-  Hash_Table bht_hash;
+  Cache bht = {};
+  Hash_Table bht_hash = {};
   std::vector<uns8> hybspht;
   std::vector<uns8> hybgpht;
   std::vector<uns8> hybppht;
-  Hash_Table hybgpht_hash;
+  Hash_Table hybgpht_hash = {};
   std::vector<uns32> filter;
 
   // Used for update and recovery (checkpointing).
@@ -208,17 +208,18 @@ bool get_spred(const Hybridgp_State& hybridgp_state, const uns32 spht_index) {
   return spht_entry >> (PHT_CTR_BITS - 1);
 }
 
-bool get_gpred(Op* op, Hybridgp_State& hybridgp_state, const Addr addr, const uns32 gpht_index) {
+bool get_gpred(Op* op, Bp_Pred_Info* bp_pred_info, Hybridgp_State& hybridgp_state, const Addr addr,
+               const uns32 gpht_index) {
   uns8 gpht_entry;
   if (INF_HYBRIDGP) {
     Flag new_entry;
-    const int64 key = addr << 32 | (Addr)op->oracle_info.pred_global_hist;
+    const int64 key = addr << 32 | (Addr)bp_pred_info->pred_global_hist;
     uns8* entry = (uns8*)hash_table_access_create(&hybridgp_state.hybgpht_hash, key, &new_entry);
     if (new_entry) {
       *entry = PHT_INIT_VALUE;
     }
     gpht_entry = *entry;
-    op->oracle_info.pred_gpht_entry = entry;  // need for update
+    bp_pred_info->pred_gpht_entry = entry;  // need for update
   } else {
     gpht_entry = hybridgp_state.hybgpht[gpht_index];
   }
@@ -230,12 +231,13 @@ bool get_ppred(const Hybridgp_State& hybridgp_state, const uns32 ppht_index) {
   return ppht_entry >> (PHT_CTR_BITS - 1);
 }
 
-void update_all_phts(const Op* op, Hybridgp_State& hybridgp_state, const Hybridgp_Indices& indices) {
-  uns8* gpht_entry = INF_HYBRIDGP ? op->oracle_info.pred_gpht_entry : &hybridgp_state.hybgpht[indices.gpht];
+void update_all_phts(const Op* op, Bp_Pred_Info* bp_pred_info, Hybridgp_State& hybridgp_state,
+                     const Hybridgp_Indices& indices) {
+  uns8* gpht_entry = INF_HYBRIDGP ? bp_pred_info->pred_gpht_entry : &hybridgp_state.hybgpht[indices.gpht];
   uns8* spht_entry = &hybridgp_state.hybspht[indices.spht];
   uns8* ppht_entry = &hybridgp_state.hybppht[indices.ppht];
 
-  const uns8 gpred = USE_FILTER ? (*gpht_entry >> (PHT_CTR_BITS - 1)) : op->oracle_info.hybridgp_gpred;
+  const uns8 gpred = USE_FILTER ? (*gpht_entry >> (PHT_CTR_BITS - 1)) : bp_pred_info->hybridgp_gpred;
   const uns8 ppred = *ppht_entry >> (PHT_CTR_BITS - 1);
 
   DEBUG(op->proc_id, "Writing hybridgp PHT for op_num:%s\n", unsstr64(op->op_num));
@@ -270,7 +272,7 @@ void bp_hybridgp_init() {
       init_hash_table(&hybridgp_state.hybgpht_hash, "", 1 << 16, sizeof(uns8));
     } else {
       // line size for table set to 1
-      init_cache(&hybridgp_state.bht, "BHT", BHT_ENTRIES, BHT_ASSOC, 1, sizeof(Addr), REPL_TRUE_LRU);
+      init_cache_impl(&hybridgp_state.bht, "BHT", BHT_ENTRIES, BHT_ASSOC, 1, BHT_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU);
       hybridgp_state.hybgpht.resize(1 << HYBRIDG_HIST_LENGTH, PHT_INIT_VALUE);
     }
 
@@ -283,17 +285,18 @@ void bp_hybridgp_init() {
   }
 }
 
-uns8 bp_hybridgp_pred(Op* op) {
+uns8 bp_hybridgp_pred(Op* op, Bp_Pred_Level pred_level) {
+  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
   const uns proc_id = op->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
 
-  const Addr addr = op->oracle_info.pred_addr;
-  const uns32 ghist = op->oracle_info.pred_global_hist;
+  const Addr addr = op->inst_info->addr;
+  const uns32 ghist = bp_pred_info->pred_global_hist;
   const uns32 phist = get_local_history(hybridgp_state, addr);
   const auto indices = cook_indices(addr, ghist, phist);
 
   const bool spred = get_spred(hybridgp_state, indices.spht);
-  const bool gpred = get_gpred(op, hybridgp_state, addr, indices.gpht);
+  const bool gpred = get_gpred(op, bp_pred_info, hybridgp_state, addr, indices.gpht);
   const bool ppred = get_ppred(hybridgp_state, indices.ppht);
 
   uns8 pred = spred ? gpred : ppred;
@@ -305,9 +308,9 @@ uns8 bp_hybridgp_pred(Op* op) {
   }
 
   op->pred_cycle = cycle_count;
-  op->oracle_info.hybridgp_gpred = gpred;
-  op->oracle_info.hybridgp_ppred = ppred;
-  op->oracle_info.pred_local_hist = phist;
+  bp_pred_info->hybridgp_gpred = gpred;
+  bp_pred_info->hybridgp_ppred = ppred;
+  bp_pred_info->pred_local_hist = phist;
 
   const auto branch_id = op->recovery_info.branch_id;
   hybridgp_state.in_flight[branch_id].updated_local_history = true;
@@ -325,21 +328,24 @@ uns8 bp_hybridgp_pred(Op* op) {
   return pred;
 }
 
-void bp_hybridgp_spec_update(Op* op) {
+void bp_hybridgp_spec_update(Op* op, Bp_Pred_Level pred_level) {
+  (void)op;
+  (void)pred_level;
 }
 
-void bp_hybridgp_update(Op* op) {
-  if (op->table_info->cf_type != CF_CBR) {
-    // If op is not a conditional branch, we do not interact with hybridgp.
+void bp_hybridgp_update(Op* op, Bp_Pred_Level pred_level) {
+  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+  if (op->inst_info->table_info.cf_type != CF_CBR && op->inst_info->table_info.cf_type != CF_REP) {
+    // If op is not a conditional branch/REP, we do not interact with hybridgp.
     return;
   }
 
   const uns proc_id = op->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
 
-  const Addr addr = op->oracle_info.pred_addr;
-  const uns32 ghist = op->oracle_info.pred_global_hist;
-  const uns32 phist = op->oracle_info.pred_local_hist;
+  const Addr addr = op->inst_info->addr;
+  const uns32 ghist = bp_pred_info->pred_global_hist;
+  const uns32 phist = bp_pred_info->pred_local_hist;
   const auto indices = cook_indices(addr, ghist, phist);
 
   const uns32 resolution_time = cycle_count - op->pred_cycle;  // a bucket of 10s
@@ -355,18 +361,18 @@ void bp_hybridgp_update(Op* op) {
     const auto loop_filter_features = get_loop_filter_features(hybridgp_state, indices.filter);
     update_loop_filter(op, hybridgp_state, indices.filter, loop_filter_features);
     if (!is_loop_filter_prediction_valid(loop_filter_features)) {
-      update_all_phts(op, hybridgp_state, indices);
+      update_all_phts(op, bp_pred_info, hybridgp_state, indices);
     }
   } else {
-    update_all_phts(op, hybridgp_state, indices);
+    update_all_phts(op, bp_pred_info, hybridgp_state, indices);
   }
 
   // 0: think branch will mispredict
   // 1: confident branch will go the right direction
   if (KNOB_PRINT_BRINFO) {
     ASSERT(proc_id, brmispred != NULL);
-    fprintf(brmispred, "%16llx %d %d %d %d %d\n", addr, op->oracle_info.mispred ? 1 : 0,
-            op->oracle_info.misfetch ? 1 : 0, op->oracle_info.pred_conf ? 1 : 0, op->oracle_info.dir ? 1 : 0,
+    fprintf(brmispred, "%16llx %d %d %d %d %d\n", addr, bp_pred_info->recover_at_exec ? 1 : 0,
+            bp_pred_info->recover_at_decode ? 1 : 0, bp_pred_info->pred_conf ? 1 : 0, op->oracle_info.dir ? 1 : 0,
             resolution_time);
   }
 }
@@ -378,8 +384,8 @@ void bp_hybridgp_recover(Recovery_Info* recovery_info) {
   const auto branch_id = recovery_info->branch_id;
   hybridgp_state.in_flight.deallocate_after(branch_id);
 
-  if (recovery_info->cf_type != CF_CBR) {
-    // If op is not a conditional branch, we do not interact with hybridgp.
+  if (recovery_info->cf_type != CF_CBR && recovery_info->cf_type != CF_REP) {
+    // If op is not a conditional branch/REP, we do not interact with hybridgp.
     return;
   }
 
@@ -416,8 +422,8 @@ void bp_hybridgp_retire(Op* op) {
   hybridgp_state.in_flight.deallocate_front(op->recovery_info.branch_id);
 }
 
-uns8 bp_hybridgp_full(uns proc_id) {
-  auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
+uns8 bp_hybridgp_full(Bp_Data* bp_data) {
+  auto& hybridgp_state = hybridgp_state_all_cores.at(bp_data->proc_id);
 
   return hybridgp_state.in_flight.is_full();
 }

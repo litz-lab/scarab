@@ -41,12 +41,31 @@ extern "C" {
 // Forward declare FT as an opaque struct for C
 typedef struct FT FT;
 
+enum FT_Event {
+  FT_EVENT_NONE,
+  FT_EVENT_MISPREDICT,
+  FT_EVENT_FETCH_BARRIER,
+  FT_EVENT_OFFPATH_TAKEN_REDIRECT,
+  FT_EVENT_BUILD_FAIL
+  // ... add more as needed
+};
+
+typedef enum FT_Event FT_Event;
+
+struct FT_PredictResult {
+  uint64_t index;
+  FT_Event event;
+  Op* op;          // Optionally, if DFE needs to know which op
+  Addr pred_addr;  // Optionally, if DFE needs the predicted address
+};
+
 // C-compatible API
 bool ft_can_fetch_op(FT* ft);
 Op* ft_fetch_op(FT* ft);
-bool ft_is_consumed(FT* ft);
-void ft_set_consumed(FT* ft);
 FT_Info ft_get_ft_info(FT* ft);
+bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start);
+void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr);
+void ft_free_op(Op* op);
 
 #ifdef __cplusplus
 }  // extern "C"
@@ -55,36 +74,87 @@ FT_Info ft_get_ft_info(FT* ft);
 #ifdef __cplusplus
 
 // C++-only includes
+#include <functional>
+#include <set>
 #include <vector>
 
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 
-#include "decoupled_frontend.h"
+#include "uop_cache.h"
 
-// C++ class definition
-class FT {
+// Matches the C-visible `typedef struct Decoupled_FE Decoupled_FE;` above.
+struct Decoupled_FE;
+
+// operator== for FT_Info_Static
+inline bool operator==(const FT_Info_Static& a, const FT_Info_Static& b) {
+  return a.start == b.start && a.length == b.length && a.n_uops == b.n_uops;
+}
+
+// operator< for FT_Info_Static (used for map key comparison)
+inline bool operator<(const FT_Info_Static& a, const FT_Info_Static& b) {
+  return std::tie(a.start, a.length, a.n_uops) < std::tie(b.start, b.length, b.n_uops);
+}
+
+// C++ definition. Declared as `struct` to match the C-visible
+// `typedef struct FT FT;` forward declaration above; semantically identical
+// to `class` since the definition uses explicit access specifiers.
+struct FT {
  public:
-  FT(uns _proc_id = 0);
-  void set_ft_started_by(FT_Started_By ft_started_by);
-  void add_op(Op* op, FT_Ended_By ft_ended_by);
-  void free_ops_and_clear();
+  FT(uns _proc_id, uns _bp_id);
+  ~FT();
+  void add_op(Op* op);
   bool can_fetch_op();
   Op* fetch_op();
-  void set_per_op_ft_info();
-  FT_Info get_ft_info();
-  bool is_consumed();
-  void set_consumed();
+  FT_Info get_ft_info() const;
+
   std::vector<Op*>& get_ops();
 
- private:
-  uns proc_id;
-  uint64_t op_pos;
-  FT_Info ft_info;
-  std::vector<Op*> ops;
-  bool consumed;
+  /* kept as friend so that it can access FT internals like ops and op_pos */
+  friend void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out);
+  friend void ft_free_op(Op* op);
 
-  friend class Decoupled_FE;
+  // Change return type to FT_BuildResult
+  FT_Event build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,
+                 bool off_path, bool conf_off_path, std::function<uint64_t()> get_next_op_id_fn);
+  void remove_op_after_exec_recover();
+
+  FT_PredictResult predict_ft();
+  std::pair<FT*, FT*> extract_off_path_ft(uns split_index);
+
+  Op* get_last_op() const;
+  Op* get_first_op() const;
+  Addr get_start_addr() const;
+  bool is_consecutive(const FT& previous_ft) const;
+  bool has_unread_ops() const { return ops.size() - op_pos != 0; }
+  bool ended_by_exit() const { return ft_info.dynamic_info.ended_by == FT_APP_EXIT; }
+  bool ended() const { return ft_info.dynamic_info.ended_by != FT_NOT_ENDED; }  // Check if FT is properly ended
+  bool get_first_op_off_path() const { return ft_info.dynamic_info.first_op_off_path; }
+  bool get_contains_fake_nop() const { return ft_info.dynamic_info.contains_fake_nop; }
+  bool get_length() const { return ft_info.static_info.length; }
+  uint64_t get_op_pos() const { return op_pos; }
+  void set_prebuilt(bool val) { is_prebuilt = val; }
+  bool get_is_prebuilt() const { return is_prebuilt; }
+  uns get_bp_id() const { return bp_id; }
+
+  std::set<Addr> get_pcs();
+
+  FT_Ended_By get_end_reason() const;
+  void clear_recovery_info();
+
+ private:
+  uns proc_id = 0;
+  uns bp_id = 0;
+  uint64_t op_pos = 0;
+  FT_Info ft_info = {};
+  bool is_prebuilt = false;
+  std::vector<Op*> ops = {};
+  FT_Event predict_op_ft_event(Op* op, Bp_Pred_Level pred_level);
+  void generate_ft_info();
+  // Common helper used by recovery/exec-recovery trimming paths.
+  // Only touches unread ops [op_pos, end) from the back (youngest first).
+  void trim_unread_tail(const std::function<bool(Op*)>& should_remove);
+  friend struct Decoupled_FE;
 };
 
 #endif  // __cplusplus

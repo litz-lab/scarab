@@ -34,6 +34,7 @@
 #include "core.param.h"
 #include "general.param.h"
 
+#include "frontend/frontend_intf.h"
 #include "frontend/pin_trace_fe.h"
 #include "prefetcher/D_JOLT.h"
 #include "prefetcher/FNL+MMA.h"
@@ -41,8 +42,11 @@
 #include "prefetcher/fdip.h"
 
 #include "cmp_model.h"
+#include "issue_queue.h"
+#include "lookahead_buffer.h"
 #include "lsq.h"
 #include "statistics.h"
+#include "uop_queue_stage.h"
 
 /**************************************************************************************/
 /* cmp_init_cmp_model  */
@@ -54,7 +58,9 @@ void cmp_init_cmp_model() {
   cmp_model.map_data = (Map_Data*)malloc(sizeof(Map_Data) * NUM_CORES);
 
   cmp_model.bp_recovery_info = (Bp_Recovery_Info*)malloc(sizeof(Bp_Recovery_Info) * NUM_CORES);
-  cmp_model.bp_data = (Bp_Data*)malloc(sizeof(Bp_Data) * NUM_CORES);
+  cmp_model.bp_data = (Bp_Data**)malloc(sizeof(Bp_Data*) * NUM_CORES);
+  for (uns i = 0; i < NUM_CORES; i++)
+    cmp_model.bp_data[i] = (Bp_Data*)malloc(sizeof(Bp_Data) * NUM_BPS);
   cmp_model.icache_stage = (Icache_Stage*)malloc(sizeof(Icache_Stage) * NUM_CORES);
   cmp_model.decode_stage = (Decode_Stage*)malloc(sizeof(Decode_Stage) * NUM_CORES);
   cmp_model.uop_cache_stage = (Uop_Cache_Stage*)malloc(sizeof(Uop_Cache_Stage) * NUM_CORES);
@@ -62,14 +68,18 @@ void cmp_init_cmp_model() {
   cmp_model.node_stage = (Node_Stage*)malloc(sizeof(Node_Stage) * NUM_CORES);
   cmp_model.exec_stage = (Exec_Stage*)malloc(sizeof(Exec_Stage) * NUM_CORES);
   cmp_model.dcache_stage = (Dcache_Stage*)malloc(sizeof(Dcache_Stage) * NUM_CORES);
-  alloc_mem_decoupled_fe(NUM_CORES);
-  alloc_mem_fdip(NUM_CORES);
+  alloc_mem_decoupled_fe(NUM_CORES, NUM_BPS);
+  alloc_mem_fdip(NUM_CORES, NUM_BPS);
+  alloc_mem_lookahead_buffer(NUM_CORES);
+  // TODO: support NUM_BPS
   alloc_mem_eip(NUM_CORES);
   alloc_mem_djolt(NUM_CORES);
   alloc_mem_fnlmma(NUM_CORES);
   alloc_mem_uop_cache(NUM_CORES);
+  alloc_mem_uop_queue_stage(NUM_CORES);
   alloc_mem_idq_stage(NUM_CORES);
   alloc_mem_lsq(NUM_CORES);
+  alloc_mem_issue_queue(NUM_CORES);
 }
 
 void cmp_init_thread_data(uns8 proc_id) {
@@ -87,17 +97,25 @@ void cmp_set_all_stages(uns8 proc_id) {
   set_eip(proc_id);
   set_djolt(proc_id);
   set_fnlmma(proc_id);
-  set_fdip(proc_id, &cmp_model.icache_stage[proc_id]);
-  set_decoupled_fe(proc_id);
   set_icache_stage(&cmp_model.icache_stage[proc_id]);
   set_decode_stage(&cmp_model.decode_stage[proc_id]);
   set_uop_cache_stage(&cmp_model.uop_cache_stage[proc_id]);
+  set_uop_queue_stage(proc_id);
   set_idq_stage(proc_id);
   set_map_stage(&cmp_model.map_stage[proc_id]);
   set_node_stage(&cmp_model.node_stage[proc_id]);
   set_lsq(proc_id);
+  set_issue_queue(proc_id);
   set_exec_stage(&cmp_model.exec_stage[proc_id]);
   set_dcache_stage(&cmp_model.dcache_stage[proc_id]);
+}
+
+/**************************************************************************************/
+/* cmp_set_all_data */
+void cmp_set_all_data(uns8 proc_id, uns8 bp_id) {
+  set_bp_data(&cmp_model.bp_data[proc_id][bp_id]);
+  set_fdip(proc_id, bp_id);
+  set_decoupled_fe(proc_id, bp_id);
 }
 
 /**************************************************************************************/
@@ -116,11 +134,13 @@ void cmp_init_bogus_sim(uns8 proc_id) {
 
   cmp_set_all_stages(proc_id);
 
-  trace_close_trace_file(proc_id);
-
-  op_count[proc_id] = uop_count[proc_id] + 1;
-
-  trace_setup(proc_id);
+  /* Only close/reopen trace for FE_TRACE frontend.
+     PT/MEMTRACE frontends don't support bogus mode restart. */
+  if (FRONTEND == FE_TRACE) {
+    trace_close_trace_file(proc_id);
+    op_count[proc_id] = uop_count[proc_id] + 1;
+    trace_setup(proc_id);
+  }
 
   reset_seq_op_list(td);
   reset_map();

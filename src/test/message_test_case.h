@@ -64,17 +64,17 @@ struct MessageTestCase {
   const int32_t               expected_int_message;
   const int64_t               expected_long_int_message;
   const TestMsgStruct         expected_custom_message;
-  const std::vector<uint32_t> expected_vector_message;
-  const std::deque<uint32_t>  expected_deque_message;
-  const std::vector<uint8_t>  expected_super_big_message;
+  const std::vector<uint32_t> expected_vector_message = {};
+  const std::deque<uint32_t> expected_deque_message = {};
+  const std::vector<uint8_t> expected_super_big_message = {};
 
   Message<char>                  char_message;
   Message<int32_t>               int_message;
   Message<int64_t>               long_int_message;
   Message<TestMsgStruct>         custom_message;
-  Message<std::vector<uint32_t>> vector_message;
-  Message<std::deque<uint32_t>>  deque_message;
-  Message<std::vector<uint8_t>>  super_big_message;
+  Message<std::vector<uint32_t>> vector_message = {};
+  Message<std::deque<uint32_t>> deque_message = {};
+  Message<std::vector<uint8_t>> super_big_message = {};
 };
 
 #endif

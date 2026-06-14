@@ -30,6 +30,7 @@
 #include "decode_stage.h"
 
 #include "globals/assert.h"
+#include "globals/debug_stage.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 #include "globals/global_vars.h"
@@ -49,6 +50,7 @@
 #include "prefetcher/branch_misprediction_table.h"
 
 #include "decoupled_frontend.h"
+#include "ft.h"
 #include "op_pool.h"
 #include "statistics.h"
 #include "thread.h" /* for td */
@@ -65,7 +67,6 @@
 /* Global Variables */
 
 Decode_Stage* dec = NULL;
-bool decode_off_path;
 
 /**************************************************************************************/
 /* Local prototypes */
@@ -83,7 +84,6 @@ void set_decode_stage(Decode_Stage* new_dec) {
 /* init_decode_stage: */
 
 void init_decode_stage(uns8 proc_id, const char* name) {
-  char tmp_name[MAX_STR_LENGTH + 1];
   uns ii;
   ASSERT(0, dec);
   ASSERT(0, STAGE_MAX_DEPTH > 0);
@@ -95,12 +95,15 @@ void init_decode_stage(uns8 proc_id, const char* name) {
   dec->sds = (Stage_Data*)malloc(sizeof(Stage_Data) * STAGE_MAX_DEPTH);
   for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &dec->sds[ii];
-    snprintf(tmp_name, MAX_STR_LENGTH, "%s %d", name, STAGE_MAX_DEPTH - ii - 1);
-    cur->name = (char*)strdup(tmp_name);
+    /* Stage_Data::name is only used for debugging/printing; reuse the long-lived
+     * stage name pointer passed into init_decode_stage().
+     */
+    cur->name = (char*)name;
     cur->max_op_count = STAGE_MAX_OP_COUNT;
     cur->ops = (Op**)calloc(STAGE_MAX_OP_COUNT, sizeof(Op*));
   }
   dec->last_sd = &dec->sds[0];
+  dec->off_path = FALSE;
   reset_decode_stage();
 }
 
@@ -123,21 +126,37 @@ void reset_decode_stage() {
 
 void recover_decode_stage() {
   uns ii, jj;
-  decode_off_path = false;
+  dec->off_path = FALSE;
   ASSERT(0, dec);
   for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
+    Flag flushed = FALSE;
     Stage_Data* cur = &dec->sds[ii];
     cur->op_count = 0;
     for (jj = 0; jj < STAGE_MAX_OP_COUNT; jj++) {
       if (cur->ops[jj]) {
+        if (IS_FLUSHING_OP(cur->ops[jj])) {
+          op_select_bp_pred_info(cur->ops[jj], BP_PRED_MAIN);
+          DEBUG(dec->proc_id, "Recovery op found in Decode stage:%u slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
+                jj, (unsigned long long)cur->ops[jj]->op_num, cur->ops[jj]->off_path,
+                (unsigned long long)cur->ops[jj]->inst_info->addr);
+        }
         if (FLUSH_OP(cur->ops[jj])) {
+          DEBUG(dec->proc_id, "Decode flushing op_num:%llu off_path:%u\n", (unsigned long long)cur->ops[jj]->op_num,
+                cur->ops[jj]->off_path);
+          flushed = TRUE;
           ASSERT(cur->ops[jj]->proc_id, cur->ops[jj]->off_path);
-          free_op(cur->ops[jj]);
+          if (cur->ops[jj]->parent_FT)
+            ft_free_op(cur->ops[jj]);
           cur->ops[jj] = NULL;
         } else {
           cur->op_count++;
         }
       }
+    }
+
+    if (cur->op_count > 0 && flushed) {
+      Op* op = cur->ops[cur->op_count - 1];
+      assert_ft_after_recovery(dec->proc_id, op, bp_recovery_info->recovery_fetch_addr);
     }
   }
 }
@@ -150,6 +169,9 @@ void debug_decode_stage() {
   for (ii = 0; ii < STAGE_MAX_DEPTH; ii++) {
     Stage_Data* cur = &dec->sds[STAGE_MAX_DEPTH - ii - 1];
     DPRINTF("# %-10s  op_count:%d\n", cur->name, cur->op_count);
+    DPRINTF("# %-10s  op_nums:", cur->name);
+    print_stage_op_nums(GLOBAL_DEBUG_STREAM, cur->ops, cur->op_count);
+    DPRINTF("\n");
     print_op_array(GLOBAL_DEBUG_STREAM, cur->ops, STAGE_MAX_OP_COUNT, cur->op_count);
   }
 }
@@ -166,7 +188,7 @@ void update_decode_stage(Stage_Data* src_sd) {
   Op** temp;
   uns ii;
 
-  if (!decode_off_path) {
+  if (!dec->off_path) {
     if (stall)
       STAT_EVENT(dec->proc_id, DECODE_STAGE_STALLED);
     else
@@ -198,7 +220,7 @@ void update_decode_stage(Stage_Data* src_sd) {
     for (int i = 0; i < src_sd->max_op_count; i++) {
       Op* src_op = src_sd->ops[i];
       if (src_op && src_op->off_path)
-        decode_off_path = true;
+        dec->off_path = TRUE;
       if (src_op && !src_op->fetched_from_uop_cache) {
         cur->ops[cur->op_count] = src_op;
         src_sd->ops[i] = NULL;
@@ -212,7 +234,8 @@ void update_decode_stage(Stage_Data* src_sd) {
 
   /* if the last decode stage is stalled, don't re-process the ops  */
   if (stall) {
-    DEBUG(dec->proc_id, "Decode Stage stalled\n");
+    DEBUG(dec->proc_id, "Decode Stage stalled op_num:%s\n",
+          (dec->last_sd->op_count && dec->last_sd->ops[0]) ? unsstr64(dec->last_sd->ops[0]->op_num) : "none");
     return;
   }
 
@@ -221,9 +244,10 @@ void update_decode_stage(Stage_Data* src_sd) {
     Op* op = dec->last_sd->ops[ii];
     ASSERT(dec->proc_id, op != NULL);
     ASSERT(dec->proc_id, !op->fetched_from_uop_cache);
-    DEBUG(dec->proc_id, "Decoding op op_num=%llu, addr=%llx\n", op->op_num, op->inst_info->addr);
+    DEBUG(dec->proc_id, "Decoding op op_num=%llu, addr=%llx off_path:%i\n", op->op_num, op->inst_info->addr,
+          op->off_path);
     decode_stage_process_op(op);
-    uop_cache_accumulation_buffer_update(op);
+    uop_cache_insert_op(op);
   }
 }
 
@@ -231,13 +255,13 @@ void update_decode_stage(Stage_Data* src_sd) {
 /* process_decode_op: This function may also be called by ops from the uop cache.     */
 
 void decode_stage_process_op(Op* op) {
-  Cf_Type cf = op->table_info->cf_type;
+  Cf_Type cf = op->inst_info->table_info.cf_type;
   op->decode_cycle = cycle_count;
 
   if (cf) {
     DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",
-          op->table_info->bar_type & BAR_FETCH ? TRUE : FALSE, op->inst_info->addr, op->op_num,
-          op->oracle_info.recover_at_decode);
+          op->inst_info->table_info.bar_type & BAR_FETCH ? TRUE : FALSE, op->inst_info->addr, op->op_num,
+          op->bp_pred_info->recover_at_decode);
     // it is a direct branch, so the target is now known
     if (cf <= CF_CALL) {
       bp_target_known_op(g_bp_data, op);
@@ -245,15 +269,14 @@ void decode_stage_process_op(Op* op) {
     // If the CF was unconditional and direct and taken and there was a BTB miss
     // we can schedule a redirect. If the branch was not taken we are on the on-path.
     // If the branch is condidtional or indirect, we will schedule recovery at exec
-    if (op->oracle_info.recover_at_decode) {
-      bp_sched_recovery(bp_recovery_info, op, cycle_count,
-                        /*late_bp_recovery=*/FALSE, /*force_offpath=*/FALSE);
+    if (op->bp_pred_info->recover_at_decode) {
+      DEBUG(dec->proc_id, "Decode schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
+            (unsigned long long)cycle_count);
+      bp_stat_main_branch_resolve_latency(op, cycle_count, FALSE);
+      bp_sched_recovery(bp_recovery_info, op, cycle_count);
 
-      // After recovery remove misfetch/mispred/btb_miss flags so it does not trigger flush by exec again
-      op->oracle_info.misfetch = FALSE;
-      op->oracle_info.btb_miss = FALSE;
-      op->oracle_info.pred = op->oracle_info.dir;
-      op->oracle_info.mispred = FALSE;
+      op->btb_pred_info->btb_miss_resolved = TRUE;
+      op->bp_pred_info->pred = op->oracle_info.dir;
 
       // stats for the reason of resteer
       STAT_EVENT(dec->proc_id, RESTEER_BTB_MISS_CF_BR + cf);

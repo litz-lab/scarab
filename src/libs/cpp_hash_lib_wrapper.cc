@@ -4,6 +4,10 @@
 #include <unordered_map>
 #include <vector>
 
+extern "C" {
+#include "globals/global_defs.h"
+}
+
 struct key {
   uint64_t addr;
   uint64_t lsb_bytes;
@@ -23,27 +27,37 @@ struct key {
 struct hash_fn {
   // template <class T1, class T2>
   std::size_t operator()(const key &key) const {
-    std::size_t h1 = std::hash<uint64_t>()(key.addr);
-    std::size_t h2 = std::hash<uint64_t>()(key.lsb_bytes);
-    std::size_t h3 = std::hash<uint64_t>()(key.msb_bytes);
-    std::size_t h4 = std::hash<uint8_t>()(key.op_idx);
-    return h1 ^ h2 ^ h3 ^ h4;
+    // Knuth multiplicative hashing to reduce collisions for similar keys.
+    // Constant is derived from the golden ratio: 2^64 / phi.
+    const uint64_t KNUTH64 = 11400714819323198485ull;
+
+    uint64_t h = key.addr;
+    h *= KNUTH64;
+    h += key.lsb_bytes;
+    h *= KNUTH64;
+    h += key.msb_bytes;
+    h *= KNUTH64;
+    h += static_cast<uint64_t>(key.op_idx);
+
+    // Mix down to size_t in a platform-agnostic way.
+    return static_cast<std::size_t>(h ^ (h >> 32));
   }
 };
 
-std::unordered_map<key, Inst_Info *, hash_fn> hash_map;
+// Per-core hash maps for instruction info
+std::unordered_map<key, Inst_Info, hash_fn> per_core_hash_map[MAX_NUM_PROCS];
 
 Inst_Info *cpp_hash_table_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes, uint8_t op_idx,
                                         unsigned char *new_entry) {
   *new_entry = false;
   key _key(addr, lsb_bytes, msb_bytes, op_idx);
+  auto &hash_map = per_core_hash_map[core];
   auto lookup = hash_map.find(_key);
   if (lookup != hash_map.end()) {
-    return lookup->second;
+    return &lookup->second;
   } else {
-    Inst_Info *info = new Inst_Info();  //&vec.back();
-    hash_map.insert(std::pair<key, Inst_Info *>(_key, info));
-    *new_entry = true;
-    return info;
+    auto inserted = hash_map.emplace(_key, Inst_Info{});
+    *new_entry = inserted.second;
+    return &inserted.first->second;
   }
 }

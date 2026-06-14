@@ -30,6 +30,10 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 
 #include "op_pool.h"
 
+#include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
@@ -50,6 +54,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 
 #include "map.h"
 #include "model.h"
+#include "op_info.h"
 #include "sim.h"
 
 /**************************************************************************************/
@@ -59,6 +64,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #define DEBUGU(proc_id, args...) _DEBUGU(proc_id, DEBUG_OP_POOL, ##args)
 
 // TODO: it should be increased to 512 to use more than 50,000 FDIP lookahead buffer entries
+// Also need to increase if enabling large lookahead buffer
 #define OP_POOL_ENTRIES_INC 128 /* default 128 */
 
 /**************************************************************************************/
@@ -144,19 +150,17 @@ void free_op(Op* op) {
   ASSERTM(0, op_pool_active_ops >= 0, "op_pool_active_ops:%u\n", op_pool_active_ops);
   DEBUG(0, "Freed op  id:%u  op_pool_active_ops: %u\n", op->op_pool_id, op_pool_active_ops);
 
-  if (op->sched_info)
-    free(op->sched_info);
-
-  if (op->table_info->mem_type == MEM_ST)
+  if (op->inst_info && op->inst_info->table_info.mem_type == MEM_ST)
     delete_store_hash_entry(op);
 
   if (op->inst_info && op->inst_info->fake_inst) {
-    ASSERT(0, op->table_info == op->inst_info->table_info);
     // we no longer allocate memory for fake nops
     // free(op->inst_info->table_info);
     free(op->inst_info);
     op->inst_info = NULL;
   }
+
+  op_sources_free(op);
 
   op->op_pool_next = op_pool_free_head;
   op_pool_free_head = op;
@@ -169,8 +173,6 @@ void free_op(Op* op) {
    should be for things that never change. */
 
 void op_pool_init_op(Op* op) {
-  op->oracle_info.mispred = FALSE;
-  op->oracle_info.misfetch = FALSE;
 }
 
 /**************************************************************************************/
@@ -181,23 +183,16 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   uns ii, jj;
   /* only initialize here what is independent of the engine (the
      rest should be in the fetch stage) */
-  op->bom = FALSE;
-  op->eom = FALSE;
-  op->exit = FALSE;
-  op->srcs_not_rdy_vector = 0x0;
-  op->derived_from_prog_input = 0;
-  op->sources_addr_reg = 0;
-  op->sched_info = NULL;
-  op->marked = FALSE;
-
+  size_t clear_off = offsetof(Op, proc_id);
+  memset((char*)op + clear_off, 0, sizeof(*op) - clear_off);
   op->op_num = op_count[proc_id];
   op->unique_num = unique_count;
   op->unique_num_per_proc = unique_count_per_core[proc_id];
   op->proc_id = proc_id;
-  op->thread_id = 0;
-  op->off_path = FALSE;  // FIXME: check
   op->state = OS_FETCHED;
   op->fu_num = -1;
+  op->fetch_cycle = MAX_CTR;
+  op->bp_cycle = MAX_CTR;
   op->issue_cycle = MAX_CTR;
   op->map_cycle = MAX_CTR;
   op->rdy_cycle = 1;
@@ -207,61 +202,29 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->done_cycle = MAX_CTR;
   op->retire_cycle = MAX_CTR;
   op->replay_cycle = MAX_CTR;
+  op->pred_cycle = MAX_CTR;
   op->precommit_cycle = MAX_CTR;
-  op->decode_cycle = 0;
-  op->replay = FALSE;
-  op->replay_count = 0;
-  op->dont_cause_replays = FALSE;
-  op->exec_count = 0;
-  op->in_rdy_list = FALSE;
-  op->in_node_list = FALSE;
-  op->precommitted = FALSE;
-  op->macro_fused = FALSE;
-  op->move_eliminated = FALSE;
-
-  op->req = NULL;
+  op->wake_cycle = MAX_CTR;
 
   /* pipelined scheduler fields */
   op->chkpt_num = MAX_CTR;
   op->node_id = MAX_CTR;
-  op->rs_id = MAX_CTR;
-  op->same_src_last_op = 0;
+  op->queue_id = MAX_UNS16;
+  op->queue_entry_id = MAX_UNS16;
 
-  op->oracle_info.num_srcs = 0;
-  op->oracle_info.update_fpcr = FALSE;
-  op->oracle_info.error_event = 0;
-  op->oracle_info.mispred = FALSE;
-  op->oracle_info.misfetch = FALSE;
-  op->oracle_info.recovery_sch = FALSE;
-  op->oracle_info.recover_at_decode = FALSE;
-  op->oracle_info.recover_at_exec = FALSE;
-
-  op->oracle_cp_num = -1;
-  op->engine_info.dcmiss = FALSE;
-  op->engine_info.l1_miss = FALSE;
-  op->engine_info.l1_miss_satisfied = FALSE;
-  op->engine_info.dep_on_l1_miss = FALSE;
-  op->engine_info.was_dep_on_l1_miss = FALSE;
-  op->engine_info.num_srcs = 0;
-  op->engine_info.update_fpcr = FALSE;
-
-  op->recovery_scheduled = FALSE;
-  op->redirect_scheduled = FALSE;
-  op->fetched_from_uop_cache = FALSE;
-
-  for (ii = 0; ii < NUM_DEP_TYPES; ii++)
-    op->wake_up_signaled[ii] = FALSE;
+  op->bp_pred_info = NULL;
+  op->btb_pred_info = NULL;
 
   for (ii = 0; ii < MAX_SRCS; ++ii) {
     for (jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
-      op->src_reg_id[ii][jj] = -1;
+      op->src_reg_id[ii][jj] = OP_REG_ID_INVALID;
     }
   }
 
   for (ii = 0; ii < MAX_DESTS; ++ii) {
     for (jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {
-      op->dst_reg_id[ii][jj] = -1;
-      op->prev_dst_reg_id[ii][jj] = -1;
+      op->dst_reg_id[ii][jj] = OP_REG_ID_INVALID;
+      op->prev_dst_reg_id[ii][jj] = OP_REG_ID_INVALID;
     }
   }
 }

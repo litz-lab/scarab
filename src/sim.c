@@ -28,9 +28,11 @@
 
 #include "sim.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #include "globals/assert.h"
@@ -58,8 +60,10 @@
 #include "prefetcher/fdip.h"
 
 #include "cmp_model.h"
+#include "cmp_model_support.h"
 #include "dumb_model.h"
 #include "freq.h"
+#include "lookahead_buffer.h"
 #include "model.h"
 #include "op_pool.h"
 #include "optimizer2.h"
@@ -114,6 +118,9 @@ Counter period_ID = 0;
 Flag* warmup_dump_done;
 
 time_t sim_start_time; /* the time that the simulator was started */
+
+struct timespec sim_wall_mono_start;
+Flag sim_wall_mono_valid = FALSE;
 
 FILE* mystdout;      /* default output (can be redirected via --stdout) */
 FILE* mystderr;      /* default error (can be redirected via --stderr) */
@@ -201,14 +208,17 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
     inst_diff = inst_count_to_use - rounded_interval * period_ID;
   }
 
-  /* dump warmup stats */
-  if (FULL_WARMUP && !warmup_dump_done[proc_id] && inst_count_to_use >= FULL_WARMUP) {
+  /* dump warmup stats for all cores when core 0 reaches FULL_WARMUP */
+  /* Notice: we only check core 0. The cores are not synchronized. The other core can be have different progress */
+  if (FULL_WARMUP && !warmup_dump_done[0] && inst_count_to_use >= FULL_WARMUP) {
     ASSERT(proc_id, !PERIODIC_DUMP);
-    dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
+    for (uns i = 0; i < NUM_CORES; i++) {
+      dump_stats(i, TRUE, global_stat_array[i], NUM_GLOBAL_STATS);
+      period_last_inst_count[i] = inst_count_fetched[i];
+      warmup_dump_done[i] = TRUE;
+    }
+    reset_h2p_stats();
     period_last_cycle_count = cycle_count;
-    // this number is used to calcute IPC, so it uses inst_count always
-    period_last_inst_count[proc_id] = inst_count[proc_id];
-    warmup_dump_done[proc_id] = TRUE;
   }
 
   /* print heartbeat message if necessary */
@@ -216,8 +226,8 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
     if (PERIODIC_DUMP) {
       dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
       period_last_cycle_count = cycle_count;
-      // this number is used to calcute IPC, so it uses inst_count always
-      period_last_inst_count[proc_id] = inst_count[proc_id];
+      // this number is used to calcute IPC, so it uses inst_count_fetched always
+      period_last_inst_count[proc_id] = inst_count_fetched[proc_id];
       period_ID++;
     }
 
@@ -233,7 +243,7 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
       last_heartbeat_idx = heartbeat_idx;
     }
     time_t cur_time = time(NULL);
-    double cum_ipc = (double)inst_count[proc_id] / cycle_count;
+    double cum_ipc = (double)inst_count_fetched[proc_id] / cycle_count;
     Counter total_inst_count = 0;
     for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
       total_inst_count += USE_FETCHED_COUNT ? inst_count_fetched[proc_id] : inst_count[proc_id];
@@ -256,7 +266,8 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
           fprintf(mystdout,
                   "** WARMUP End:   insts:%-10s  cycles:%-10s  time:%-18s  -- "
                   "%.2f IPC (%.2f IPC) --  N/A  KIPS (%.2f KIPS)\n",
-                  unsstr64(inst_count[proc_id]), unsstr64(cycle_count), unsstr64(sim_time), cum_ipc, cum_ipc, cum_khz);
+                  unsstr64(inst_count_fetched[proc_id]), unsstr64(cycle_count), unsstr64(sim_time), cum_ipc, cum_ipc,
+                  cum_khz);
           fflush(mystdout);
           break;
 
@@ -265,8 +276,8 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
                   "** Core %u Finished:    insts:%-10s  cycles:%-10s  "
                   "time:%-18s  -- %.2f IPC (%.2f IPC) --  N/A  KIPS (%.2f "
                   "KIPS)\n",
-                  proc_id, unsstr64(inst_count[proc_id]), unsstr64(cycle_count), unsstr64(sim_time), cum_ipc, cum_ipc,
-                  cum_khz);
+                  proc_id, unsstr64(inst_count_fetched[proc_id]), unsstr64(cycle_count), unsstr64(sim_time), cum_ipc,
+                  cum_ipc, cum_khz);
           break;
 
         default:
@@ -310,8 +321,8 @@ static inline Counter check_forward_progress(uns8 proc_id) {
           "%llu, state: %u\n",
           cmp_model.node_stage[proc_id].node_head->unique_num, cmp_model.node_stage[proc_id].node_head->op_pool_valid,
           cmp_model.node_stage[proc_id].node_head->oracle_info.va, cmp_model.node_stage[proc_id].node_head->state,
-          cmp_model.node_stage[proc_id].node_head->table_info->op_type,
-          cmp_model.node_stage[proc_id].node_head->table_info->mem_type,
+          cmp_model.node_stage[proc_id].node_head->inst_info->table_info.op_type,
+          cmp_model.node_stage[proc_id].node_head->inst_info->table_info.mem_type,
           cmp_model.node_stage[proc_id].node_head->req ? cmp_model.node_stage[proc_id].node_head->req : 0,
           cmp_model.node_stage[proc_id].node_head->req ? cmp_model.node_stage[proc_id].node_head->req->proc_id : 0,
           cmp_model.node_stage[proc_id].node_head->req ? cmp_model.node_stage[proc_id].node_head->req->addr : 0,
@@ -545,9 +556,13 @@ void uop_sim() {
   Op op;
   Table_Info table_info;
   Inst_Info inst_info;
-  op.table_info = &table_info;
   op.inst_info = &inst_info;
-  op.mbp7_info = NULL;
+  memset(&inst_info, 0, sizeof(inst_info));
+  op.bp_pred_info = NULL;
+  memset(&op.bp_pred_l0, 0, sizeof(op.bp_pred_l0));
+  memset(&op.bp_pred_main, 0, sizeof(op.bp_pred_main));
+  memset(&op.btb_pred, 0, sizeof(op.btb_pred));
+  op.btb_pred_info = NULL;
 
   Flag uop_sim_done = FALSE;
 
@@ -559,9 +574,11 @@ void uop_sim() {
         continue;
       if (!retired_exit[proc_id]) {
         do {
-          frontend_fetch_op(proc_id, &op);
+          frontend_fetch_op(proc_id, 0, &op);
+          // Keep Inst_Info's embedded table_info consistent with local copy.
+          inst_info.table_info = table_info;
 
-          if (op.table_info->mem_type != NOT_MEM && op.oracle_info.va == 0) {
+          if (op.inst_info->table_info.mem_type != NOT_MEM && op.oracle_info.va == 0) {
             FATAL_ERROR(proc_id, "Access to 0x0\n");
           }
 
@@ -607,7 +624,15 @@ void uop_sim() {
       case WARMUP_MODE:
         if (inst_count[0] == WARMUP || retired_exit[0]) {
           uop_sim_done = TRUE;
-          check_heartbeat(0, TRUE);
+          // Reset counts and flags for ALL cores when transitioning to simulation
+          for (uns i = 0; i < NUM_CORES; i++) {
+            if (DUMB_CORE_ON && DUMB_CORE == i)
+              continue;
+            inst_count[i] = 0;
+            op_count[i] = 0;
+            retired_exit[i] = FALSE;  // Reset so cores don't immediately finish
+            check_heartbeat(i, TRUE);
+          }
         }
         // HACK that ensures that cache replacement works in warmup
         do {
@@ -652,7 +677,20 @@ void full_sim() {
   }
 
   operating_mode = SIMULATION_MODE;
+  if (clock_gettime(CLOCK_MONOTONIC, &sim_wall_mono_start) == 0)
+    sim_wall_mono_valid = TRUE;
+  else {
+    memset(&sim_wall_mono_start, 0, sizeof(sim_wall_mono_start));
+    sim_wall_mono_valid = FALSE;
+    fprintf(mystderr, "clock_gettime(CLOCK_MONOTONIC) failed: %s\n", strerror(errno));
+  }
+
   init_model(operating_mode);
+
+  if (clock_gettime(CLOCK_MONOTONIC, &sim_wall_mono_start) == 0)
+    sim_wall_mono_valid = TRUE;
+  else
+    sim_wall_mono_valid = FALSE;
 
   if (PIPEVIEW)
     pipeview_init();
@@ -660,6 +698,16 @@ void full_sim() {
     memview_init();
 
   init_op_pool();
+
+  // need to fill lookahead buffer after init_op_pool
+  if (LOOKAHEAD_BUF_SIZE) {
+    for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+      cmp_set_all_stages(proc_id);
+      cmp_set_all_data(proc_id, 0);
+      init_lookahead_buffer(proc_id);
+    }
+  }
+
   unique_count = 1;
 
   sim_limit = trigger_create("SIM_LIMIT", SIM_LIMIT, TRIGGER_ONCE);
@@ -704,36 +752,36 @@ void full_sim() {
         if (CONFIDENCE_ENABLE) {
           decoupled_fe_print_conf_data();
         }
-        if (FDIP_ENABLE) {
-          if (FDIP_PRINT_CL_INFO)
-            print_cl_info(proc_id);
-          INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY_OPS, get_fdip_ftq_occupancy_ops(proc_id));
-          INC_STAT_EVENT(proc_id, FDIP_AVG_FTQ_OCCUPANCY, get_fdip_ftq_occupancy(proc_id));
-        }
-        if (EIP_ENABLE) {
+        if (FDIP_ENABLE)
+          fdip_stats(proc_id);
+        if (EIP_ENABLE)
           print_eip_stats(proc_id);
-        }
-        if (PERIODIC_DUMP == FALSE) {
+        if (PERIODIC_DUMP == FALSE)
           dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
-        }
         sim_done[proc_id] = TRUE;
         any_sim_done = TRUE;
         check_heartbeat(proc_id, TRUE);
 
-        if (retired_exit[proc_id] && FRONTEND == FE_TRACE) {
-          set_last_sim_param(proc_id);
-          // rerun the corresponding benchmark again.
-          // (reset retired_exit and reached_exit)
-          cmp_init_bogus_sim(proc_id);
+        if (retired_exit[proc_id]) {
+          if (FRONTEND == FE_TRACE) {
+            set_last_sim_param(proc_id);
+            // rerun the corresponding benchmark again.
+            // (reset retired_exit and reached_exit)
+            // other sim mode should not trigger bogus mode including FT_MEMRACE
+            cmp_init_bogus_sim(proc_id);
+          } else {
+            // For PT/MEMTRACE: core stays done, no bogus mode support
+            // Clear retired_exit so we don't hit the else-if branch below
+            retired_exit[proc_id] = FALSE;
+          }
         }
       } else if (sim_done[proc_id] && retired_exit[proc_id]) {
-        ASSERTM(proc_id, FRONTEND == FE_TRACE, "Unhandled case: benchmark finished in execution-driven mode\n");
-        // rerun the corresponding benchmark again.
-        if (FRONTEND == FE_TRACE) {
-          print_bogus_sim_param(proc_id);
-          set_last_sim_param(proc_id);
-          cmp_init_bogus_sim(proc_id);
-        }
+        // Core already done but retired_exit triggered again
+        // This should only happen in FE_TRACE bogus mode
+        ASSERTM(proc_id, FRONTEND == FE_TRACE, "retired_exit set on finished core for non-trace frontend\n");
+        print_bogus_sim_param(proc_id);
+        set_last_sim_param(proc_id);
+        cmp_init_bogus_sim(proc_id);
       }
 
       all_sim_done &= sim_done[proc_id];
@@ -765,6 +813,29 @@ void full_sim() {
         dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
       }
       check_heartbeat(proc_id, TRUE);
+    }
+  }
+
+  /* Tear down list backing allocations (free-list chunk pools). */
+  if (td)
+    destroy_list(&td->seq_op_list);
+
+  if (mem) {
+    destroy_list(&mem->req_buffer_free_list);
+
+    if (mem->l1_in_buffer_core) {
+      for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+        destroy_list(&mem->l1_in_buffer_core[proc_id]);
+      }
+      free(mem->l1_in_buffer_core);
+      mem->l1_in_buffer_core = NULL;
+    }
+
+    if (mem->req_buffer && mem->total_mem_req_buffers) {
+      for (uns ii = 0; ii < mem->total_mem_req_buffers; ii++) {
+        destroy_list(&mem->req_buffer[ii].op_ptrs);
+        destroy_list(&mem->req_buffer[ii].op_uniques);
+      }
     }
   }
 

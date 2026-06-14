@@ -47,6 +47,7 @@
 #define NOT_TAKEN 0
 
 #define MAX_NUM_PROCS 64
+#define MAX_NUM_BPS 5
 
 #define MAX_STR_LENGTH 1024
 #define MAX_SIMULTANEOUS_STRINGS 32 /* default 32 */ /* power of 2 */
@@ -58,6 +59,7 @@
 #define MAX_INT 0x7fffffff
 #define MAX_UNS64 0xffffffffffffffffULL
 #define MAX_UNS 0xffffffffU
+#define MAX_UNS16 0xffffU
 #define MAX_ADDR 0xffffffffffffffffULL
 
 #undef UNUSED

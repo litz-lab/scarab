@@ -69,6 +69,8 @@ void trace_init() {
   uop_generator_init(NUM_CORES);
 
   next_pi = (ctype_pin_inst*)malloc(NUM_CORES * sizeof(ctype_pin_inst));
+  for (uns i = 0; i < NUM_CORES; i++)
+    init_ctype_pin_inst(&next_pi[i]);
 
   pin_trace_file_pointer_init(NUM_CORES);
 
@@ -123,11 +125,11 @@ void trace_close_trace_file(uns proc_id) {
   pin_trace_close(proc_id);
 }
 
-Flag trace_can_fetch_op(uns proc_id) {
+Flag trace_can_fetch_op(uns proc_id, uns bp_id) {
   return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
 }
 
-void trace_fetch_op(uns proc_id, Op* op) {
+void trace_fetch_op(uns proc_id, uns bp_id, Op* op) {
   if (uop_generator_get_bom(proc_id)) {
     ASSERT(proc_id, !trace_read_done[proc_id] && !reached_exit[proc_id]);
     uop_generator_get_uop(proc_id, op, &next_pi[proc_id]);
@@ -148,13 +150,13 @@ void trace_fetch_op(uns proc_id, Op* op) {
   }
 }
 
-void trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
+void trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr) {
   FATAL_ERROR(proc_id,
               "Trace frontend does not support wrong path. Turn off "
               "FETCH_OFF_PATH_OPS\n");
 }
 
-void trace_recover(uns proc_id, uns64 inst_uid) {
+void trace_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
   FATAL_ERROR(proc_id,
               "Trace frontend does not support wrong path. Turn off "
               "FETCH_OFF_PATH_OPS\n");

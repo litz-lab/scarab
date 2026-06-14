@@ -167,17 +167,13 @@ class Pin:
   def __init__(self, core_id, socket_path, program_path, is_checkpoint):
     self.core_id = str(core_id)
     self.socket_path = os.path.abspath(socket_path)
-    # Split the program string into binary + args so realpath is applied only to the binary.
-    program_tokens = shlex.split(program_path.strip())
-    assert program_tokens, "Program path cannot be empty"
-    binary = program_tokens[0]
-    # If the binary is relative, resolve it from simdir (the run_dir used later)
-    if not os.path.isabs(binary):
-      binary = os.path.realpath(os.path.join(args.simdir, binary))
-    else:
-      binary = os.path.realpath(binary)
-    self.program_path = " ".join([binary] + program_tokens[1:])
     self.is_checkpoint = is_checkpoint
+    self.stdin_file = None
+    if not is_checkpoint and ' < ' in program_path:
+        prog_part, stdin_path = program_path.rsplit(' < ', 1)
+        program_path = prog_part.strip()
+        self.stdin_file = os.path.realpath(stdin_path.strip())
+    self.program_path = os.path.realpath(program_path)
 
   def __get_pin_command(self):
     if self.is_checkpoint:
@@ -187,7 +183,11 @@ class Pin:
 
     if not args.enable_aslr:
       self.cmd = scarab_utils.get_disable_aslr_prefix() + " " + self.cmd
-    
+
+    if not self.is_checkpoint and self.stdin_file:
+      inner = "{cmd} < {stdin}".format(cmd=self.cmd, stdin=shlex.quote(self.stdin_file))
+      self.cmd = "bash -c {q}".format(q=shlex.quote(inner))
+
     print("{cmd}\n".format(cmd=self.cmd))
 
     return self.cmd
@@ -239,7 +239,7 @@ class Pin:
     self.__get_stdout()
     self.__get_stderr()
 
-    cmd = command.Command(self.cmd, run_dir=args.simdir, stdout=self.stdout, stderr=self.stderr)
+    cmd = command.Command(self.cmd, stdout=self.stdout, stderr=self.stderr)
     cmd.run_in_background()
     return cmd
 

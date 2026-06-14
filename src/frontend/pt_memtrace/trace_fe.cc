@@ -1,5 +1,6 @@
 #include "trace_fe.h"
 
+#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -37,56 +38,63 @@
 
 /* Globals */
 static ctype_pin_inst next_onpath_pi[MAX_NUM_PROCS];
-static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS];
-static bool off_path_mode[MAX_NUM_PROCS] = {false};
-static uint64_t off_path_addr[MAX_NUM_PROCS] = {0};
-static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst;
+static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS][MAX_NUM_BPS];
+static bool off_path_mode[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
+static uint64_t off_path_addr[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
+static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst[MAX_NUM_PROCS];
 
-uint64_t rdptr = 0;
-uint64_t wrptr = 0;
-std::vector<ctype_pin_inst> circ_buf;
-std::unordered_map<Addr, Counter> buf_map;
+/* Per-core circular buffer state */
+struct TraceBufState {
+  uint64_t rdptr = 0;
+  uint64_t wrptr = 0;
+  std::vector<ctype_pin_inst> circ_buf = {};
+  std::unordered_map<Addr, Counter> buf_map = {};
+};
+static TraceBufState trace_buf_state[MAX_NUM_PROCS];
+
 const int CLINE = ~0x3F;
 
 extern uint64_t ins_id;
 extern uint64_t ins_id_fetched;
 
-Flag buf_map_find(Addr line_addr) {
-  return buf_map.find(line_addr) != buf_map.end();
+Flag buf_map_find(uns proc_id, Addr line_addr) {
+  return trace_buf_state[proc_id].buf_map.find(line_addr) != trace_buf_state[proc_id].buf_map.end();
 }
 
 // inserts the inst written to write_ptr location
-void buf_map_insert() {
-  Addr line_addr = circ_buf[wrptr].instruction_addr & CLINE;
-  auto it = buf_map.find(line_addr);
-  if (it != buf_map.end()) {
+void buf_map_insert(uns proc_id) {
+  TraceBufState &state = trace_buf_state[proc_id];
+  Addr line_addr = state.circ_buf[state.wrptr].instruction_addr & CLINE;
+  auto it = state.buf_map.find(line_addr);
+  if (it != state.buf_map.end()) {
     it->second++;
   } else {
-    buf_map.insert(std::pair<Addr, Counter>(line_addr, 1));
+    state.buf_map.insert(std::pair<Addr, Counter>(line_addr, 1));
   }
-  wrptr = (wrptr + 1) % TRACE_BUF_SIZE;
+  state.wrptr = (state.wrptr + 1) % TRACE_BUF_SIZE;
 }
 
-void buf_map_remove() {
-  Addr line_addr = circ_buf[rdptr].instruction_addr & CLINE;
-  auto it = buf_map.find(line_addr);
-  assert(it != buf_map.end());
+void buf_map_remove(uns proc_id) {
+  TraceBufState &state = trace_buf_state[proc_id];
+  Addr line_addr = state.circ_buf[state.rdptr].instruction_addr & CLINE;
+  auto it = state.buf_map.find(line_addr);
+  assert(it != state.buf_map.end());
   if (it->second > 1) {
     it->second--;
   } else {
-    buf_map.erase(it);
+    state.buf_map.erase(it);
   }
-  rdptr = (rdptr + 1) % TRACE_BUF_SIZE;
+  state.rdptr = (state.rdptr + 1) % TRACE_BUF_SIZE;
 }
 
 void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
-  auto op_iter = pc_to_inst.find(*off_path_addr);
-  if (op_iter != pc_to_inst.end()) {
+  auto op_iter = pc_to_inst[proc_id].find(*off_path_addr);
+  if (op_iter != pc_to_inst[proc_id].end()) {
     *inst = op_iter->second;
-    *off_path_addr += inst->size;
+    (*off_path_addr) += inst->size;
     DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->instruction_addr, inst->size);
   } else {
-    *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED);
+    *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED, DUMMY_NOP_SIZE);
     (*off_path_addr) += DUMMY_NOP_SIZE;
   }
 }
@@ -193,18 +201,19 @@ void trace_buf_init() {
     return;
 
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-    circ_buf.resize(TRACE_BUF_SIZE);
-    rdptr = 0;
-    wrptr = 0;
+    TraceBufState &state = trace_buf_state[proc_id];
+    state.circ_buf.resize(TRACE_BUF_SIZE);
+    state.rdptr = 0;
+    state.wrptr = 0;
     if (FRONTEND == FE_PT) {
       for (uint i = 0; i < TRACE_BUF_SIZE; i++) {
-        pt_trace_read(proc_id, &circ_buf[wrptr]);
-        buf_map_insert();
+        pt_trace_read(proc_id, &state.circ_buf[state.wrptr]);
+        buf_map_insert(proc_id);
       }
     } else if (FRONTEND == FE_MEMTRACE) {
       for (uint i = 0; i < TRACE_BUF_SIZE; i++) {
-        memtrace_trace_read(proc_id, &circ_buf[wrptr]);
-        buf_map_insert();
+        memtrace_trace_read(proc_id, &state.circ_buf[state.wrptr]);
+        buf_map_insert(proc_id);
       }
     }
   }
@@ -219,30 +228,36 @@ int trace_read(int proc_id, ctype_pin_inst *next_onpath_pi) {
   }
 
   ASSERT(0, TRACE_BUF_SIZE);
-  *next_onpath_pi = circ_buf[rdptr];
-  buf_map_remove();
+  TraceBufState &state = trace_buf_state[proc_id];
+  *next_onpath_pi = state.circ_buf[state.rdptr];
+  buf_map_remove(proc_id);
   int ret = 0;
   if (FRONTEND == FE_PT)
-    ret = pt_trace_read(proc_id, &circ_buf[wrptr]);
+    ret = pt_trace_read(proc_id, &state.circ_buf[state.wrptr]);
   else if (FRONTEND == FE_MEMTRACE)
-    ret = memtrace_trace_read(proc_id, &circ_buf[wrptr]);
-  buf_map_insert();
+    ret = memtrace_trace_read(proc_id, &state.circ_buf[state.wrptr]);
+  buf_map_insert(proc_id);
   return ret;
 }
 
-void ext_trace_fetch_op(uns proc_id, Op *op) {
+void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
+  // ext_trace_redirect should be called before fetching from the secondary fetch
+  bool off_path_mode_ = off_path_mode[proc_id][bp_id];
+  ctype_pin_inst *next_offpath_pi_ = &next_offpath_pi[proc_id][bp_id];
+  uint64_t *off_path_addr_ = &off_path_addr[proc_id][bp_id];
   if (uop_generator_get_bom(proc_id)) {
-    if (!off_path_mode[proc_id]) {
+    if (!off_path_mode_) {
       uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id]);
     } else {
-      uop_generator_get_uop(proc_id, op, &next_offpath_pi[proc_id]);
+      uop_generator_get_uop(proc_id, op, next_offpath_pi_);
+      op->exit = false;
     }
   } else {
     uop_generator_get_uop(proc_id, op, NULL);
   }
 
   if (uop_generator_get_eom(proc_id)) {
-    if (!off_path_mode[proc_id]) {
+    if (!off_path_mode_) {
       int success = false;
       success = trace_read(proc_id, &next_onpath_pi[proc_id]);
       if (!success) {
@@ -251,13 +266,13 @@ void ext_trace_fetch_op(uns proc_id, Op *op) {
         op->exit = TRUE;
       } else {
         uint64_t addr = next_onpath_pi[proc_id].instruction_addr;
-        auto find = pc_to_inst.find(addr);
-        if (find == pc_to_inst.end()) {
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+        auto find = pc_to_inst[proc_id].find(addr);
+        if (find == pc_to_inst[proc_id].end()) {
+          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         } else if (next_onpath_pi[proc_id].encoding_is_new) {
           STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
-          pc_to_inst.erase(addr);
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+          pc_to_inst[proc_id].erase(addr);
+          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         } else if (next_onpath_pi[proc_id].inst_binary_lsb != find->second.inst_binary_lsb ||
                    next_onpath_pi[proc_id].inst_binary_msb != find->second.inst_binary_msb) {
           DEBUG(proc_id, "Previously seen PC references new instruction addr:%lx inst_size:%i lsb:%lx msb:%lx\n ", addr,
@@ -265,8 +280,8 @@ void ext_trace_fetch_op(uns proc_id, Op *op) {
                 next_onpath_pi[proc_id].inst_binary_msb);
           // Handle jitted code
           STAT_EVENT(proc_id, INST_MAP_UPDATE_JITTED);
-          pc_to_inst.erase(addr);
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+          pc_to_inst[proc_id].erase(addr);
+          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         } else if (next_onpath_pi[proc_id].instruction_next_addr != find->second.instruction_next_addr) {
           ASSERT(proc_id, next_onpath_pi[proc_id].op_type == find->second.op_type);
           if (next_onpath_pi[proc_id].cf_type) {
@@ -277,43 +292,62 @@ void ext_trace_fetch_op(uns proc_id, Op *op) {
             //                 next_onpath_pi[proc_id].last_inst_from_trace);
           }
           STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + next_onpath_pi[proc_id].op_type);
-          pc_to_inst.erase(addr);
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+          pc_to_inst[proc_id].erase(addr);
+          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         } else if (!ctype_pin_inst_same_mem_vaddr(next_onpath_pi[proc_id], find->second)) {
           ASSERT(proc_id, next_onpath_pi[proc_id].op_type == find->second.op_type);
           STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + next_onpath_pi[proc_id].op_type);
-          pc_to_inst.erase(addr);
-          pc_to_inst.insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+          pc_to_inst[proc_id].erase(addr);
+          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
         } else {
-          assert_ctype_pin_inst_same(proc_id, next_onpath_pi[proc_id], find->second);
+          if (DEBUG_TRACE_READ && DEBUG_RANGE_COND(proc_id)) {
+            assert_ctype_pin_inst_same(proc_id, next_onpath_pi[proc_id], find->second);
+          }
         }
       }
     } else {
-      off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
+      off_path_generate_inst(proc_id, off_path_addr_, next_offpath_pi_);
     }
   }
-  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode[proc_id],
-        next_onpath_pi[proc_id].instruction_addr, next_offpath_pi[proc_id].instruction_addr);
+  DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode_,
+        next_onpath_pi[proc_id].instruction_addr, next_offpath_pi_->instruction_addr);
 }
 
-Flag ext_trace_can_fetch_op(uns proc_id) {
-  return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
+Flag ext_trace_can_fetch_op(uns proc_id, uns bp_id) {
+  if (!bp_id && !off_path_mode[proc_id])
+    return !(uop_generator_get_eom(proc_id) && trace_read_done[proc_id]);
+  else if (bp_id && !off_path_mode[proc_id][bp_id])
+    return FALSE;
+  else
+    return TRUE;
 }
 
-void ext_trace_redirect(uns proc_id, uns64 inst_uid, Addr fetch_addr) {
-  off_path_mode[proc_id] = true;
-  off_path_addr[proc_id] = fetch_addr;
-  off_path_generate_inst(proc_id, &off_path_addr[proc_id], &next_offpath_pi[proc_id]);
+void ext_trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr) {
+  // Redirect always targets a real fetch_addr now; alt deactivation is
+  // handled entirely Scarab-side via state = INACTIVE, so the previous
+  // (fetch_addr == 0) "stop the secondary stream" path is no longer reached.
+  ASSERT(proc_id, fetch_addr);
+  off_path_mode[proc_id][bp_id] = true;
+  off_path_addr[proc_id][bp_id] = fetch_addr;
+  off_path_generate_inst(proc_id, &off_path_addr[proc_id][bp_id], &next_offpath_pi[proc_id][bp_id]);
   DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].instruction_addr,
-        next_offpath_pi[proc_id].instruction_addr);
+        next_offpath_pi[proc_id][bp_id].instruction_addr);
 }
 
-void ext_trace_recover(uns proc_id, uns64 inst_uid) {
+void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
   Op dummy_op;
-  off_path_mode[proc_id] = false;
+  dummy_op.bp_pred_l0 = {};
+  dummy_op.bp_pred_main = {};
+  dummy_op.btb_pred = {};
+  if (bp_id) {
+    off_path_addr[proc_id][bp_id] = 0;
+    next_offpath_pi[proc_id][bp_id] = {};
+  } else
+    ASSERT(proc_id, off_path_mode[proc_id][bp_id]);
+  off_path_mode[proc_id][bp_id] = false;
   // Finish decoding of the current off-path inst before switching to on-path
   while (!uop_generator_get_eom(proc_id)) {
-    uop_generator_get_uop(proc_id, &dummy_op, &next_offpath_pi[proc_id]);
+    uop_generator_get_uop(proc_id, &dummy_op, &next_offpath_pi[proc_id][bp_id]);
   }
   DEBUG(proc_id, "Recover CF:%lx ", next_onpath_pi[proc_id].instruction_addr);
 }
@@ -328,8 +362,11 @@ Addr ext_trace_next_fetch_addr(uns proc_id) {
 }
 
 void ext_trace_init() {
-  memset(next_offpath_pi, 0, sizeof(next_offpath_pi));
-  memset(next_onpath_pi, 0, sizeof(next_onpath_pi));
+  for (uns i = 0; i < MAX_NUM_PROCS; i++) {
+    init_ctype_pin_inst(&next_onpath_pi[i]);
+    for (uns j = 0; j < MAX_NUM_BPS; j++)
+      init_ctype_pin_inst(&next_offpath_pi[i][j]);
+  }
 
   if (FRONTEND == FE_PT)
     pt_init();
@@ -360,7 +397,6 @@ uint64_t output_fingerprint(std::string file_name, std::map<uint64_t, uint64_t> 
   std::map<uint64_t, uint64_t>::iterator freq;
   uint64_t instrs_count = 0;
 
-  uint64_t nonzero_count = 0;
   // static std::vector<uint64> csv_line(counts_as_built.blocks, 0);
 
   for (freq = fingerprint.begin(); freq != fingerprint.end(); freq++) {
@@ -371,7 +407,6 @@ uint64_t output_fingerprint(std::string file_name, std::map<uint64_t, uint64_t> 
     myfile << ":" << freq->first << ":" << freq->second << " ";
 
     // csv_line[freq->first] = freq->second;
-    nonzero_count++;
 
     // if (freq->first + 1 == counts_as_built.blocks) {
     //     witness_total = true;
@@ -394,12 +429,12 @@ typedef struct bb_counts {
 
 typedef struct basic_block_info {
   // instruction list contained in this basic block
-  std::vector<ctype_pin_inst> ins_list;
+  std::vector<ctype_pin_inst> ins_list = {};
   // fetched inst count in this basic block
-  uint64_t inst_count_fetched;
+  uint64_t inst_count_fetched = 0;
   // the basic block id
-  uint64_t bb_id;
-  uint64_t freq;
+  uint64_t bb_id = 0;
+  uint64_t freq = 0;
   void clear() {
     inst_count_fetched = 0;
     ins_list.clear();
@@ -449,9 +484,9 @@ void output_counts(uint64_t num_of_segments, bb_counts counts_dynamic, bb_counts
                    uint64_t *op_taken_count,
                    std::unordered_map<uint64_t, std::vector<basic_block_info>> bb_identity_map) {
   const char *op_type_strings[] = {
-      "TRACE_INST_TAKEN_NOT_CF",  "TRACE_INST_TAKEN_CF_BR",  "TRACE_INST_TAKEN_CF_CBR",
-      "TRACE_INST_TAKEN_CF_CALL", "TRACE_INST_TAKEN_CF_IBR", "TRACE_INST_TAKEN_CF_ICALL",
-      "TRACE_INST_TAKEN_CF_ICO",  "TRACE_INST_TAKEN_CF_RET", "TRACE_INST_TAKEN_CF_SYS",
+      "TRACE_INST_TAKEN_NOT_CF",  "TRACE_INST_TAKEN_CF_BR",  "TRACE_INST_TAKEN_CF_CBR",   "TRACE_INST_TAKEN_CF_REP",
+      "TRACE_INST_TAKEN_CF_CALL", "TRACE_INST_TAKEN_CF_IBR", "TRACE_INST_TAKEN_CF_ICALL", "TRACE_INST_TAKEN_CF_ICO",
+      "TRACE_INST_TAKEN_CF_RET",  "TRACE_INST_TAKEN_CF_SYS",
   };
 
   printf("to be appened segment num %ld\n", num_of_segments);
@@ -564,11 +599,11 @@ void ext_trace_extract_basic_block_vectors() {
     // a sequence of rep of same pc is a bb executed multiple times
     cur_bb.ins_list.push_back(*inst);
 
-    // increment unique inst frequency
-    footprint[inst->instruction_addr]++;
 
     // increment fetched count if it is fetched
     if (inst->fetched_instruction) {
+      // increment unique inst frequency
+      footprint[inst->instruction_addr]++;
       cur_bb.inst_count_fetched++;
     }
 
@@ -615,7 +650,8 @@ void ext_trace_extract_basic_block_vectors() {
           if (cur_bb != bb_identity_map[bb_key][i]) {
           } else {
             find = true;
-            bb_identity_map[bb_key][i].freq++;
+            if (cur_bb.inst_count_fetched)
+              bb_identity_map[bb_key][i].freq++;
             break;
           }
         }
@@ -660,7 +696,8 @@ void ext_trace_extract_basic_block_vectors() {
         // fprintf(stderr, "======================\n");
       }
 
-      counts_dynamic.blocks++;
+      if (cur_bb.inst_count_fetched)
+        counts_dynamic.blocks++;
       counts_dynamic.total_size += cur_bb.ins_list.size();
       counts_dynamic.fetched_size += cur_bb.inst_count_fetched;
       cur_counter += cur_bb.ins_list.size();
@@ -703,7 +740,9 @@ void ext_trace_extract_basic_block_vectors() {
         for (uint i = 0; i < cur_bb.ins_list.size(); i++) {
           if (to_new) {
             to_new_vector_count++;
-            to_new_vector_count_fetched++;
+            if (cur_bb.ins_list[i].fetched_instruction) {
+              to_new_vector_count_fetched++;
+            }
           } else {
             cur_counter++;
             if (cur_bb.ins_list[i].fetched_instruction) {
@@ -740,11 +779,13 @@ void ext_trace_extract_basic_block_vectors() {
       // ASSERT(proc_id, ((USE_FETCHED_COUNT ? cur_counter_fetched : cur_counter) > SEGMENT_INSTR_COUNT) ==
       // (to_new_vector_count > 0));
 
-      if (SIM_MODE == TRACE_BBV_MODE) {
-        fingerprint[cur_bb.bb_id] += to_last_vector_count;
-      } else {
-        // TRACE_BBV_DISTRIBUTED_MODE
-        fingerprint[cur_bb.ins_list.front().instruction_addr] += to_last_vector_count;
+      if (cur_bb.inst_count_fetched) {
+        if (SIM_MODE == TRACE_BBV_MODE) {
+          fingerprint[cur_bb.bb_id] += to_last_vector_count;
+        } else {
+          // TRACE_BBV_DISTRIBUTED_MODE
+          fingerprint[cur_bb.ins_list.front().instruction_addr] += to_last_vector_count;
+        }
       }
 
       // perfect alignment

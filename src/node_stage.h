@@ -29,20 +29,10 @@
 #ifndef __NODE_STAGE_H__
 #define __NODE_STAGE_H__
 
-#include "exec_stage.h"
 #include "stage_data.h"
 
 /**************************************************************************************/
 // Types
-
-typedef struct Reservation_Station_struct {
-  uns proc_id;
-  char name[EXEC_PORTS_MAX_NAME_LEN];  // unique name of the RS, from exec_ports.def
-  uns32 size;                          // 0 is infinite
-  Func_Unit** connected_fus;           // FUs that this reservation station is connected to.
-  uns32 num_fus;                       // number of fus that this rs is connected to.
-  uns32 rs_op_count;                   // number of ops in this reservation station
-} Reservation_Station;
 
 typedef struct Node_Stage_struct {
   uns proc_id;
@@ -55,15 +45,10 @@ typedef struct Node_Stage_struct {
 
   Flag prev_op_fusable;  // if the next dispatched op is macro-fusable
 
-  /* linked-list of ops that are ready to schedule. Ops are put in here when they are issued,
-   * or after they are issued and another op wakes them up. */
-  Op* rdy_head;
-
   Counter ret_op;                // next op number to retire
   Counter last_scheduled_opnum;  // op num of the last scheduled op
 
-  Op* next_op_into_rs;      // oldest issued op not yet in the scheduling window (RS)
-  Reservation_Station* rs;  // information about all of the reservation stations
+  Op* next_op_into_rs;  // oldest issued op not yet in the scheduling window (RS)
 
   Flag mem_blocked;      // are we out of mem req buffers for this core
   uns mem_block_length;  // length of the current memory block

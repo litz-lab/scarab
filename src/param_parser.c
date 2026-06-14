@@ -61,7 +61,6 @@ the program.  This way, an exact duplicate run can be performed.
 
 /**************************************************************************************/
 /* Macros */
-
 #define ARG_FILE_IN                                        \
   "PARAMS.in" /* the name of the parameter file to be used \
                */
@@ -87,7 +86,29 @@ const char* sim_mode_names[] = {"uop", "full"
 #endif
 };
 const char* exit_cond_names[] = {"last_done", "first_done"};
+/* get_params() builds a heap-allocated merged argv (PARAMS.in + command line)
+ * and returns a pointer into it. To avoid leaks, we track the base pointer
+ * so main can free it via free_params_arg_list(). */
+static char** g_arg_list_base = NULL;
 
+/* Track strdup()-allocated parameter strings so ASan/Valgrind don't report leaks.
+ * (This only frees strings allocated by get_string_param/get_strlist_param.) */
+static char** g_param_string_allocs = NULL;
+static uns g_param_string_allocs_count = 0;
+static uns g_param_string_allocs_capacity = 0;
+
+static void track_param_strdup(char* p) {
+  if (!p)
+    return;
+  if (g_param_string_allocs_count == g_param_string_allocs_capacity) {
+    uns new_cap = (g_param_string_allocs_capacity == 0) ? 8 : (g_param_string_allocs_capacity * 2);
+    char** new_arr = (char**)realloc(g_param_string_allocs, sizeof(char*) * new_cap);
+    ASSERTM(0, new_arr, "param_parser: realloc failed\n");
+    g_param_string_allocs = new_arr;
+    g_param_string_allocs_capacity = new_cap;
+  }
+  g_param_string_allocs[g_param_string_allocs_count++] = p;
+}
 /**************************************************************************************/
 /* include all header files with enum declarations used as parameters */
 
@@ -193,6 +214,28 @@ void get_bp_mech_param(const char* name, uns* variable) {
 }
 
 /**************************************************************************************/
+/* get_bp_mech_l0: Converts the optarg into a number by looking it up in the
+ * bp_table. Also accepts \"num\"/\"none\" to disable L0 predictor. */
+
+void get_bp_mech_l0_param(const char* name, uns* variable) {
+  if (optarg) {
+    if (strncmp(optarg, "num", MAX_STR_LENGTH) == 0 || strncmp(optarg, "none", MAX_STR_LENGTH) == 0) {
+      *variable = NUM_BP;
+      return;
+    }
+
+    uns ii;
+    for (ii = 0; bp_table[ii].name; ii++)
+      if (strncmp(optarg, bp_table[ii].name, MAX_STR_LENGTH) == 0) {
+        *variable = ii;
+        return;
+      }
+    FATAL_ERROR(0, "Invalid value ('%s') for parameter '%s' --- Ignored.\n", optarg, name);
+  } else
+    FATAL_ERROR(0, "Parameter '%s' missing value --- Ignored.\n", name);
+}
+
+/**************************************************************************************/
 /* get_btb_mech: Converts the optarg into a number by looking it up in the
  * bp_btb_table. */
 
@@ -200,8 +243,8 @@ void get_btb_mech_param(const char* name, uns* variable) {
   if (optarg) {
     uns ii;
 
-    for (ii = 0; bp_ibtb_table[ii].name; ii++)
-      if (strncmp(optarg, bp_ibtb_table[ii].name, MAX_STR_LENGTH) == 0) {
+    for (ii = 0; bp_btb_table[ii].name; ii++)
+      if (strncmp(optarg, bp_btb_table[ii].name, MAX_STR_LENGTH) == 0) {
         *variable = ii;
         return;
       }
@@ -404,9 +447,11 @@ void get_Flag_param(const char* name, Flag* variable) {
 
 void get_string_param(const char* name, char** variable) {
   if (optarg)
-    /* this may waste some memory...screw it */
+  /* this may waste some memory...screw it */
+  {
     *variable = strdup(optarg);
-  else
+    track_param_strdup(*variable);
+  } else
     FATAL_ERROR(0, "Parameter '%s' missing value --- Ignored.\n", name);
 }
 
@@ -420,6 +465,7 @@ void get_strlist_param(const char* name, char*** variable) {
   if (optarg) {
     *variable = realloc(count == 0 ? NULL : *variable, sizeof(char*) * (count + 2));
     (*variable)[count] = strdup(optarg);
+    track_param_strdup((*variable)[count]);
     (*variable)[++count] = NULL;
   } else
     FATAL_ERROR(0, "Parameter '%s' missing value --- Ignored.\n", name);
@@ -792,7 +838,38 @@ char** get_params(int argc, char* argv[]) {
           "3: Reading in parameters overflowed the space allocated for the "
           "args_list\n");
   dump_params(arg_list, used_params, FALSE);
+
+  /* Track the base pointer so it can be freed by main. */
+  g_arg_list_base = arg_list;
+
   return &arg_list[optind]; /* return pointer to simulated argv */
+}
+
+void free_params_arg_list(void) {
+  if (!g_arg_list_base)
+    return;
+
+  /* arg_list is NULL-terminated via the sentinel written at
+   * arg_list[param_file_arg_count + argc]. */
+  for (char** p = g_arg_list_base; *p; ++p)
+    free(*p);
+  free(g_arg_list_base);
+
+  g_arg_list_base = NULL;
+}
+
+void free_params_string_allocs(void) {
+  if (!g_param_string_allocs)
+    return;
+
+  for (uns i = 0; i < g_param_string_allocs_count; i++) {
+    free(g_param_string_allocs[i]);
+  }
+
+  free(g_param_string_allocs);
+  g_param_string_allocs = NULL;
+  g_param_string_allocs_count = 0;
+  g_param_string_allocs_capacity = 0;
 }
 
 static void print_help(void) {

@@ -29,16 +29,9 @@
 #ifndef __FT_INFO_H__
 #define __FT_INFO_H__
 
-#include "globals/global_types.h"
+#include <stdint.h>
 
-typedef enum FT_Started_By_enum {
-  FT_NOT_STARTED,
-  FT_STARTED_BY_APP,
-  FT_STARTED_BY_ICACHE_LINE_BOUNDARY,
-  FT_STARTED_BY_TAKEN_BRANCH,
-  FT_STARTED_BY_BAR_FETCH,
-  FT_STARTED_BY_RECOVERY
-} FT_Started_By;
+#include "globals/global_types.h"
 
 typedef enum FT_Ended_By_enum {
   FT_NOT_ENDED,
@@ -59,12 +52,14 @@ typedef struct FT_Info_Static_struct {
 
 // two fts with the same static info may have different dynamic info
 typedef struct FT_Info_Dynamic_struct {
-  // the start of the FT
-  FT_Started_By started_by;
   // the termination of the FT
   FT_Ended_By ended_by;
   // if the first op of this FT is off-path
   Flag first_op_off_path;
+  // unique ID for this FT, used for debugging and tracking
+  uint64_t FT_id;
+
+  Flag contains_fake_nop;
 } FT_Info_Dynamic;
 
 struct FT_Info_struct {

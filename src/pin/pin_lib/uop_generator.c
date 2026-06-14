@@ -114,9 +114,14 @@ uns* num_sending_uop;
 uns* num_uops;
 Addr* last_ga_va;
 
+static Inst_Info fake_nop_template;
+static Inst_Info fake_jmp_template;
+static Flag fake_templates_ready = FALSE;
+
 /**************************************************************************************/
 /* Local prototypes */
 
+static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop);
 static void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop);
 static void convert_t_uop_to_info(uns8 proc_id, Trace_Uop* t_uop, Inst_Info* info);
 static void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uop* trace_uop, uns mem_size,
@@ -179,23 +184,23 @@ static void print_op_fields(uns proc_id, Op* op) {
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS inst addrs fake: %llx %d %d\n", op->inst_info->addr, op->inst_info->fake_inst,
                 op->inst_info->fake_inst_reason);
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op: %s\n", disasm_op(op, FALSE));
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op cf dir: %d %d %d\n", op->table_info->op_type, op->table_info->cf_type,
-                op->oracle_info.dir);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op cf dir: %d %d %d\n", op->inst_info->table_info.op_type,
+                op->inst_info->table_info.cf_type, op->oracle_info.dir);
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS src regs: ");
-    for (int i = 0; i < op->table_info->num_src_regs; ++i) {
+    for (int i = 0; i < op->inst_info->table_info.num_src_regs; ++i) {
       DEBUG_PRINT(proc_id, "%d ", op->inst_info->srcs[i].id);
     }
     DEBUG_PRINT(proc_id, "\n");
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS dst regs: ");
-    for (int i = 0; i < op->table_info->num_dest_regs; ++i) {
+    for (int i = 0; i < op->inst_info->table_info.num_dest_regs; ++i) {
       DEBUG_PRINT(proc_id, "%d ", op->inst_info->dests[i].id);
     }
     DEBUG_PRINT(proc_id, "\n");
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS simd: %d %d %d\n", op->table_info->is_simd,
-                op->table_info->is_simd ? op->table_info->num_simd_lanes : 0,
-                op->table_info->is_simd ? op->table_info->lane_width_bytes : 0);
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS mem_type addr mem_size: %d %llx %d\n", op->table_info->mem_type,
-                op->oracle_info.va, op->table_info->mem_size);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS simd: %d %d %d\n", op->inst_info->table_info.is_simd,
+                op->inst_info->table_info.is_simd ? op->inst_info->table_info.num_simd_lanes : 0,
+                op->inst_info->table_info.is_simd ? op->inst_info->table_info.lane_width_bytes : 0);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS mem_type addr mem_size: %d %llx %d\n", op->inst_info->table_info.mem_type,
+                op->oracle_info.va, op->inst_info->table_info.mem_size);
   }
 }
 
@@ -220,6 +225,34 @@ void uop_generator_init(uint32_t num_cores) {
   memset(num_sending_uop, 0, num_cores * sizeof(uns));
 
   last_ga_va = (Addr*)malloc(num_cores * sizeof(Addr));
+
+  Trace_Uop** tuop = trace_uop_bulk[0];
+
+  ctype_pin_inst nop_pi = create_dummy_nop(0, WPNM_FAKE_NOP, DUMMY_NOP_SIZE);
+  uns nop_nuop = generate_uops(0, &nop_pi, tuop);
+  ASSERT(0, nop_nuop == 1);
+  convert_t_uop_to_info(0, tuop[0], &fake_nop_template);
+  fake_nop_template.table_info.true_op_type = nop_pi.true_op_type;
+  fake_nop_template.table_info.is_simd = nop_pi.is_simd;
+  strcpy(fake_nop_template.table_info.name, nop_pi.pin_iclass);
+  fake_nop_template.trace_info.num_uop = 1;
+  fake_nop_template.uop_seq_num = 0;
+  fake_nop_template.fake_inst = TRUE;
+  fake_nop_template.fake_inst_reason = WPNM_FAKE_NOP;
+
+  ctype_pin_inst jmp_pi = create_dummy_jump(0, 0, 0);
+  uns jmp_nuop = generate_uops(0, &jmp_pi, tuop);
+  ASSERT(0, jmp_nuop == 1);
+  convert_t_uop_to_info(0, tuop[0], &fake_jmp_template);
+  fake_jmp_template.table_info.true_op_type = jmp_pi.true_op_type;
+  fake_jmp_template.table_info.is_simd = jmp_pi.is_simd;
+  strcpy(fake_jmp_template.table_info.name, jmp_pi.pin_iclass);
+  fake_jmp_template.trace_info.num_uop = 1;
+  fake_jmp_template.uop_seq_num = 0;
+  fake_jmp_template.fake_inst = TRUE;
+  fake_jmp_template.fake_inst_reason = WPNM_FAKE_JMP;
+
+  fake_templates_ready = TRUE;
 }
 
 Flag uop_generator_extract_op(uns proc_id, Op* op, compressed_op* cop) {
@@ -308,7 +341,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
           hexstr64s(inst->instruction_addr), hexstr64s(inst->instruction_next_addr), Op_Type_str(inst->op_type),
           inst->num_st, inst->num_ld, inst->is_fp, inst->cf_type, inst->size, hexstr64s(inst->branch_target),
           inst->ld_size, inst->st_size, ctype_pin_inst_ld_and_st_addrs(proc_id, inst), inst->actually_taken,
-          num_uops[proc_id], eom[proc_id], info->table_info->bar_type);
+          num_uops[proc_id], eom[proc_id], info->table_info.bar_type);
   } else {
     trace_uop = trace_uop_array[num_sending_uop[proc_id]];
     ASSERTM(proc_id, trace_uop, "%i\n", num_sending_uop[proc_id]);
@@ -329,15 +362,9 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->unique_num = unique_count;
   op->unique_num_per_proc = unique_count_per_core[proc_id];
   op->proc_id = proc_id;
-  op->thread_id = 0;
   op->eom = trace_uop->eom;
   op->fetched_instruction = fetched_instruction[proc_id];
   op->inst_info = info;
-  op->table_info = info->table_info;
-  op->oracle_info.inst_info = info;
-  op->oracle_info.table_info = info->table_info;
-  op->engine_info.inst_info = info;
-  op->engine_info.table_info = info->table_info;
   op->off_path = FALSE;
   op->state = OS_FETCHED;
   op->fu_num = -1;
@@ -351,24 +378,22 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->replay_cycle = MAX_CTR;
   op->retire_cycle = MAX_CTR;
   op->replay = FALSE;
-  op->replay_count = 0;
-  op->dont_cause_replays = FALSE;
   op->exec_count = 0;
   op->in_rdy_list = FALSE;
   op->in_node_list = FALSE;
-  op->oracle_info.recovery_sch = FALSE;
+  op->bp_pred_l0.recovery_sch = FALSE;
+  op->bp_pred_main.recovery_sch = FALSE;
 
   op->req = NULL;
   op->marked = FALSE;
+
+  op->parent_FT = NULL;
+  op->parent_FT_off_path = NULL;
 
   /* pipelined scheduler fields */
   op->chkpt_num = MAX_CTR;
   // op->row_num = MAX_CTR;
   op->node_id = MAX_CTR;
-  op->rs_id = MAX_CTR;
-  op->same_src_last_op = 0;
-
-  op->oracle_cp_num = -1;
   op->engine_info.l1_miss = FALSE;
   op->engine_info.l1_miss_satisfied = FALSE;
   op->engine_info.dep_on_l1_miss = FALSE;
@@ -384,8 +409,8 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
     op->dst_val[ii] = trace_uop->dst_val[ii];
   }
 
-  if (op->table_info->op_type == OP_CF) {
-    if (op->table_info->cf_type == CF_CBR) {
+  if (op->inst_info->table_info.op_type == OP_CF) {
+    if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP) {
       op->oracle_info.dir = (trace_uop->actual_taken == 0) ? NOT_TAKEN : TAKEN;
     } else {
       /* assume that all CFs besides CBR are actually always taken. This fixes the
@@ -395,8 +420,8 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   } else
     op->oracle_info.dir = NOT_TAKEN;
 
-  if ((op->table_info->cf_type == CF_ICALL) || (op->table_info->cf_type == CF_IBR) ||
-      (op->table_info->cf_type == CF_ICO))
+  if ((op->inst_info->table_info.cf_type == CF_ICALL) || (op->inst_info->table_info.cf_type == CF_IBR) ||
+      (op->inst_info->table_info.cf_type == CF_ICO))
     op->oracle_info.dir = 1;  // FIXME Hack!! because of StringMOV
 
   /* removing proc_id from target before compare with zero */
@@ -405,11 +430,13 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->oracle_info.npc = trace_uop->npc;
   if (op->proc_id)
     ASSERT(op->proc_id, op->oracle_info.npc);
+  if (op->inst_info->table_info.cf_type == CF_BR || op->inst_info->table_info.cf_type == CF_CALL)
+    ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
   op->oracle_info.mem_size = trace_uop->mem_size;
   // because of repeat move mem size is dynamic info  WRONG!!!!
-  // op->table_info->mem_size = trace_uop->mem_size;
+  // op->inst_info->table_info.mem_size = trace_uop->mem_size;
 
-  if (op->table_info->mem_type && !(op->oracle_info.va)) {
+  if (op->inst_info->table_info.mem_type && !(op->oracle_info.va)) {
     // QUESTION why? //TODO: Really why?
     op->oracle_info.va = last_ga_va[proc_id];
   } else if (op->oracle_info.va)
@@ -425,19 +452,19 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
         "op_num:%s unique_num:%s pc:0x%s npc:0x%s va:0x%s mem_type:%d "
         "mem_size:%d cf_type:%d oracle_target:%s dir:%d\n",
         unsstr64(op->op_num), unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc),
-        hexstr64s(op->oracle_info.va), op->table_info->mem_type, op->oracle_info.mem_size, op->table_info->cf_type,
-        hexstr64s(op->oracle_info.target), op->oracle_info.dir);
+        hexstr64s(op->oracle_info.va), op->inst_info->table_info.mem_type, op->oracle_info.mem_size,
+        op->inst_info->table_info.cf_type, hexstr64s(op->oracle_info.target), op->oracle_info.dir);
 
-  for (ii = 0; ii < op->inst_info->table_info->num_src_regs; ii++) {
+  for (ii = 0; ii < op->inst_info->table_info.num_src_regs; ii++) {
     DEBUG(proc_id, "op_num:%s unique_num:%s pc:0x%s npc:0x%s, src(%d/%d):%s \n", unsstr64(op->op_num),
           unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc), ii + 1,
-          op->inst_info->table_info->num_src_regs, disasm_reg(op->inst_info->srcs[ii].id));
+          op->inst_info->table_info.num_src_regs, disasm_reg(op->inst_info->srcs[ii].id));
   }
 
-  for (ii = 0; ii < op->inst_info->table_info->num_dest_regs; ii++) {
+  for (ii = 0; ii < op->inst_info->table_info.num_dest_regs; ii++) {
     DEBUG(proc_id, "op_num:%s unique_num:%s pc:0x%s npc:0x%s, dest(%d/%d):%s \n", unsstr64(op->op_num),
           unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc), ii + 1,
-          op->inst_info->table_info->num_dest_regs, disasm_reg(op->inst_info->dests[ii].id));
+          op->inst_info->table_info.num_dest_regs, disasm_reg(op->inst_info->dests[ii].id));
   }
 }
 
@@ -455,31 +482,28 @@ void convert_t_uop_to_info(uns8 proc_id, Trace_Uop* t_uop, Inst_Info* info) {
   // build info
   // we can optimize to build this info only once
   // FIXME. at least a hash function based on the same table info.
-  info->table_info = (Table_Info*)malloc(sizeof(Table_Info));
-
   ASSERT(proc_id, info);
-  ASSERT(proc_id, info->table_info);
 
-  info->table_info->op_type = t_uop->op_type;
-  info->table_info->mem_type = t_uop->mem_type;
-  info->table_info->cf_type = t_uop->cf_type;
-  info->table_info->bar_type = t_uop->bar_type;
-  info->table_info->num_dest_regs = t_uop->num_dest_regs;
-  info->table_info->num_src_regs = t_uop->num_src_regs;
-  info->table_info->mem_size = t_uop->mem_size;  // IGNORED FOR REP STRING instructions
+  info->table_info.op_type = t_uop->op_type;
+  info->table_info.mem_type = t_uop->mem_type;
+  info->table_info.cf_type = t_uop->cf_type;
+  info->table_info.bar_type = t_uop->bar_type;
+  info->table_info.num_dest_regs = t_uop->num_dest_regs;
+  info->table_info.num_src_regs = t_uop->num_src_regs;
+  info->table_info.mem_size = t_uop->mem_size;  // IGNORED FOR REP STRING instructions
 
-  info->table_info->type = 0;        /* scarab internals, ignore */
-  info->table_info->mask = 0;        /* scarab internals, ignore */
-  info->table_info->dec_func = NULL; /* FIXME */
-  info->table_info->src_func = NULL; /* FIXME */
-  info->table_info->sim_func = NULL; /* FIXME */
-  info->table_info->qualifiers = 0;  /* FIXME */
+  info->table_info.type = 0;        /* scarab internals, ignore */
+  info->table_info.mask = 0;        /* scarab internals, ignore */
+  info->table_info.dec_func = NULL; /* FIXME */
+  info->table_info.src_func = NULL; /* FIXME */
+  info->table_info.sim_func = NULL; /* FIXME */
+  info->table_info.qualifiers = 0;  /* FIXME */
 
   /* op->inst_info */
   info->addr = t_uop->addr;
   info->trace_info.inst_size = (t_uop->inst_size);  // FIXME
 
-  for (ii = 0; ii < info->table_info->num_src_regs; ii++) {
+  for (ii = 0; ii < info->table_info.num_src_regs; ii++) {
     info->srcs[ii].type = INT_REG;
     info->srcs[ii].id = t_uop->srcs[ii].id;
     info->srcs[ii].reg = t_uop->srcs[ii].reg;
@@ -488,7 +512,7 @@ void convert_t_uop_to_info(uns8 proc_id, Trace_Uop* t_uop, Inst_Info* info) {
   }
 
   /* only one destination - temporary that is going to be read by the second t_uop */
-  for (ii = 0; ii < info->table_info->num_dest_regs; ii++) {
+  for (ii = 0; ii < info->table_info.num_dest_regs; ii++) {
     info->dests[ii].type = INT_REG;
     info->dests[ii].id = t_uop->dests[ii].id;
     info->dests[ii].reg = t_uop->dests[ii].reg;
@@ -599,7 +623,8 @@ static void add_rep_uops(ctype_pin_inst* pi, Trace_Uop** trace_uop, uns* idx) {
     uop = trace_uop[*idx];
     clear_t_uop(uop);
     uop->op_type = OP_CF;
-    uop->cf_type = CF_CBR;
+    uop->cf_type = CF_REP;
+    STAT_EVENT(0, REP_FIRST);
     add_t_uop_src_reg(uop, REG_ZPS);
     *idx = *idx + 1;
   }
@@ -790,27 +815,9 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
 void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop) {
   Flag new_entry = FALSE;
   Inst_Info* info;
-  // Due to JIT compilation, each branch must be decoded to verify which instruction the PC maps to.
-  // To decrease unnecessary malloc/free, fetch inst_info from hashmap
-  // instead of allocating. However first instruction must be decoded.
-  static Inst_Info dummy_nop;
-  static Flag generated_dummy_nop = FALSE;
-  if (pi->fake_inst) {
-    info = (Inst_Info*)calloc(1, sizeof(Inst_Info));
-    if (generated_dummy_nop) {
-      *info = dummy_nop;
-      info->addr = pi->instruction_addr;
-    }
-    info->fake_inst = TRUE;
-    info->fake_inst_reason = pi->fake_inst_reason;
-  } else {
-    info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb, 0,
-                                        &new_entry);
-    info->fake_inst = FALSE;
-    info->fake_inst_reason = WPNM_NOT_IN_WPNM;
-  }
   int ii;
   int num_uop = 0;
+
   if (pi->is_string) {
     pi->branch_target = pi->instruction_addr;
     pi->actually_taken = (pi->branch_target == pi->instruction_next_addr);
@@ -826,88 +833,91 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
     pi->st_vaddr[st] = convert_to_cmp_addr(proc_id, pi->st_vaddr[st]);
   }
 
-  /* always regenerate uops for gather/scatter, because the num of uops could be different every time*/
-  Flag need_to_gen_uops = new_entry || (pi->fake_inst && !generated_dummy_nop) || pi->is_gather_scatter;
+  if (pi->fake_inst) {
+    ASSERT(proc_id, fake_templates_ready);
+    info = (Inst_Info*)calloc(1, sizeof(Inst_Info));
+    if (pi->fake_inst_reason == WPNM_FAKE_JMP) {
+      *info = fake_jmp_template;
+    } else {
+      *info = fake_nop_template;
+    }
+    info->addr = pi->instruction_addr;
+    info->trace_info.inst_size = pi->size;
+    info->fake_inst_reason = pi->fake_inst_reason;
 
-  if (pi->fake_inst && !generated_dummy_nop)
-    generated_dummy_nop = TRUE;
+    num_uop = 1;
+    trace_uop[0]->info = info;
+    convert_dyn_uop(proc_id, info, pi, trace_uop[0], info->table_info.mem_size, TRUE);
+  } else {
+    info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb, 0,
+                                        &new_entry);
+    info->fake_inst = FALSE;
+    info->fake_inst_reason = WPNM_NOT_IN_WPNM;
 
-  if (need_to_gen_uops) {
-    num_uop = generate_uops(proc_id, pi, trace_uop);
-    ASSERT(proc_id, num_uop > 0);
+    Flag need_to_gen_uops = new_entry || pi->is_gather_scatter;
 
-    info->trace_info.num_uop = num_uop;
+    if (need_to_gen_uops) {
+      num_uop = generate_uops(proc_id, pi, trace_uop);
+      ASSERT(proc_id, num_uop > 0);
 
-    for (ii = 0; ii < num_uop; ii++) {
-      if (ii > 0) {
-        if (pi->fake_inst) {
-          info = (Inst_Info*)calloc(1, sizeof(Inst_Info));
-          info->fake_inst = TRUE;
-          info->fake_inst_reason = pi->fake_inst_reason;
-        } else {
+      info->trace_info.num_uop = num_uop;
+
+      for (ii = 0; ii < num_uop; ii++) {
+        if (ii > 0) {
           info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb,
                                               ii, &new_entry);
-
           info->fake_inst = FALSE;
           info->fake_inst_reason = WPNM_NOT_IN_WPNM;
         }
-      }
-      need_to_gen_uops = new_entry || pi->fake_inst || pi->is_gather_scatter;
-      ASSERT(proc_id, need_to_gen_uops);
+        need_to_gen_uops = new_entry || pi->is_gather_scatter;
+        ASSERT(proc_id, need_to_gen_uops);
 
-      trace_uop[ii]->addr = pi->instruction_addr;
-      trace_uop[ii]->inst_size = pi->size;
+        trace_uop[ii]->addr = pi->instruction_addr;
+        trace_uop[ii]->inst_size = pi->size;
 
-      if (ii == (num_uop - 1)) {
-        /* last uop's info */
-        if (pi->is_ifetch_barrier && !IGNORE_BAR_FETCH) {
-          // only the last instruction will have bar type
-          trace_uop[num_uop - 1]->bar_type = BAR_FETCH;
+        if (ii == (num_uop - 1)) {
+          if (pi->is_ifetch_barrier && !IGNORE_BAR_FETCH) {
+            trace_uop[num_uop - 1]->bar_type = BAR_FETCH;
+          }
         }
+
+        convert_t_uop_to_info(proc_id, trace_uop[ii], info);
+        trace_uop[ii]->info = info;
+
+        info->table_info.true_op_type = pi->true_op_type;
+        trace_uop[ii]->info->table_info.is_simd = pi->is_simd;
+        trace_uop[ii]->info->uop_seq_num = ii;
+        strcpy(trace_uop[ii]->info->table_info.name, pi->pin_iclass);
+        if (trace_uop[ii]->alu_uop) {
+          trace_uop[ii]->info->table_info.num_simd_lanes = pi->num_simd_lanes;
+          trace_uop[ii]->info->table_info.lane_width_bytes = pi->lane_width_bytes;
+        }
+        trace_uop[ii]->info->trace_info.is_gather_scatter = pi->is_gather_scatter;
+
+        ASSERT(proc_id, info->trace_info.inst_size == pi->size);
+
+        Flag is_last_uop = (ii == (num_uop - 1));
+        convert_dyn_uop(proc_id, info, pi, trace_uop[ii], info->table_info.mem_size, is_last_uop);
       }
+    } else {
+      num_uop = info->trace_info.num_uop;
+      ASSERT(proc_id, !(pi->is_gather_scatter));
 
-      convert_t_uop_to_info(proc_id, trace_uop[ii], info);
-      trace_uop[ii]->info = info;
+      for (ii = 0; ii < num_uop; ii++) {
+        if (ii > 0) {
+          info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb,
+                                              ii, &new_entry);
+        }
+        ASSERT(proc_id, !new_entry);
 
-      info->table_info->true_op_type = pi->true_op_type;
-      trace_uop[ii]->info->table_info->is_simd = pi->is_simd;
-      trace_uop[ii]->info->uop_seq_num = ii;
-      strcpy(trace_uop[ii]->info->table_info->name, pi->pin_iclass);
-      if (trace_uop[ii]->alu_uop) {
-        trace_uop[ii]->info->table_info->num_simd_lanes = pi->num_simd_lanes;
-        trace_uop[ii]->info->table_info->lane_width_bytes = pi->lane_width_bytes;
+        trace_uop[ii]->info = info;
+        trace_uop[ii]->eom = FALSE;
+        ASSERT(proc_id, info->addr == pi->instruction_addr);
+        ASSERT(proc_id, info->trace_info.inst_size == pi->size);
+
+        Flag is_last_uop = (ii == (num_uop - 1));
+        convert_dyn_uop(proc_id, info, pi, trace_uop[ii], info->table_info.mem_size, is_last_uop);
       }
-      trace_uop[ii]->info->trace_info.is_gather_scatter = pi->is_gather_scatter;
-
-      ASSERT(proc_id, info->trace_info.inst_size == pi->size);
-
-      Flag is_last_uop = (ii == (num_uop - 1));
-      convert_dyn_uop(proc_id, info, pi, trace_uop[ii], info->table_info->mem_size, is_last_uop);
-      if (pi->fake_inst) {
-        ASSERT(0, generated_dummy_nop);
-        dummy_nop = *info;
-      }
-    }
-  } else {
-    // instructions is decoded before.
-
-    num_uop = info->trace_info.num_uop;
-    ASSERT(proc_id, !(pi->is_gather_scatter));
-
-    for (ii = 0; ii < num_uop; ii++) {
-      if (ii > 0) {
-        info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb, ii,
-                                            &new_entry);
-      }
-      ASSERT(proc_id, !new_entry);
-
-      trace_uop[ii]->info = info;
-      trace_uop[ii]->eom = FALSE;
-      ASSERT(proc_id, info->addr == pi->instruction_addr);
-      ASSERT(proc_id, info->trace_info.inst_size == pi->size);
-
-      Flag is_last_uop = (ii == (num_uop - 1));
-      convert_dyn_uop(proc_id, info, pi, trace_uop[ii], info->table_info->mem_size, is_last_uop);
     }
   }
 
@@ -929,11 +939,11 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
     trace_uop->dst_val[ii] = pi->dests[ii];
   }
 
-  if (info->table_info->cf_type) {
+  if (info->table_info.cf_type) {
     trace_uop->actual_taken = pi->actually_taken;
     trace_uop->target = pi->branch_target;  // FIXME
-  } else if (info->table_info->mem_type) {
-    if (info->table_info->mem_type == MEM_ST) {
+  } else if (info->table_info.mem_type) {
+    if (info->table_info.mem_type == MEM_ST) {
       trace_uop->store_seq_num = info->trace_info.store_seq_num;
       ASSERT(proc_id, trace_uop->store_seq_num < MAX_ST_NUM);
       trace_uop->va = pi->st_vaddr[trace_uop->store_seq_num];
@@ -943,7 +953,7 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
             (long long unsigned int)pi->instruction_addr, Op_Type_str(pi->op_type), pi->num_ld, pi->num_st,
             hexstr64s(trace_uop->va), pi->st_size);
       trace_uop->mem_size = mem_size;
-    } else if (info->table_info->mem_type == MEM_LD) {
+    } else if (info->table_info.mem_type == MEM_LD) {
       trace_uop->load_seq_num = info->trace_info.load_seq_num;
       ASSERT(proc_id, trace_uop->load_seq_num < MAX_LD_NUM);
       trace_uop->va = pi->ld_vaddr[trace_uop->load_seq_num];

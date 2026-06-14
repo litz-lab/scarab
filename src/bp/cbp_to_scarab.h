@@ -63,15 +63,15 @@ extern "C" {
 #define SCARAB_BP_INTF_FUNC(CBP_CLASS, FCN_NAME) bp_##CBP_CLASS##_##FCN_NAME
 
 /*************Interface to Scarab***************/
-#define DEF_CBP(CBP_NAME, CBP_CLASS)                            \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, init)();                  \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, timestamp)(Op * op);      \
-  uns8 SCARAB_BP_INTF_FUNC(CBP_CLASS, pred)(Op*);               \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, spec_update)(Op * op);    \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, update)(Op * op);         \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, retire)(Op * op);         \
-  void SCARAB_BP_INTF_FUNC(CBP_CLASS, recover)(Recovery_Info*); \
-  Flag SCARAB_BP_INTF_FUNC(CBP_CLASS, full)(uns proc_id);
+#define DEF_CBP(CBP_NAME, CBP_CLASS)                                        \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, init)();                              \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, timestamp)(Op * op);                  \
+  uns8 SCARAB_BP_INTF_FUNC(CBP_CLASS, pred)(Op*, Bp_Pred_Level);            \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, spec_update)(Op * op, Bp_Pred_Level); \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, update)(Op * op, Bp_Pred_Level);      \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, retire)(Op * op);                     \
+  void SCARAB_BP_INTF_FUNC(CBP_CLASS, recover)(Recovery_Info*);             \
+  Flag SCARAB_BP_INTF_FUNC(CBP_CLASS, full)(Bp_Data*);
 #include "cbp_table.def"
 #undef DEF_CBP
 
@@ -125,7 +125,7 @@ static inline UINT32 SatDecrement(UINT32 x) {
 }
 
 static inline Flag is_conditional_branch(Cf_Type cf_type) {
-  return cf_type == CF_CBR;
+  return cf_type == CF_CBR || cf_type == CF_REP;
 }
 
 static inline OpType scarab_to_cbp_optype(Cf_Type cf_type) {
@@ -139,6 +139,7 @@ static inline OpType scarab_to_cbp_optype(Cf_Type cf_type) {
       optype = OPTYPE_CALL_DIRECT_UNCOND;
       break;
     case CF_CBR:
+    case CF_REP:
       optype = OPTYPE_JMP_DIRECT_COND;
       break;
     case CF_IBR:
@@ -174,4 +175,18 @@ typedef enum {
   BP_PRED_MAX                                     // + add additional feature or testing
 } BpOffPredType;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+void bp_predictors_sync(Bp_Data* src, Bp_Data* dst);
+// Apply a "what-if" spec_update on an alt BP's TAGE with the given direction
+// and the trigger op's PC/optype/target. Used by the alt-DFE per-CF and
+// per-misprediction dispatch to redo the trigger op's spec_update on alt's
+// TAGE with alt's direction (after capture_main_pre_state_for_alts has put
+// alt into main's pre-spec-update state via bp_predictors_sync). Skips the
+// main-only TakeCheckpoint / SavePredictorStates branches.
+void bp_alt_spec_update_TAGE64K(uns proc_id, uns alt_bp_id, Op* trigger_op, Flag alt_dir);
+#ifdef __cplusplus
+}
+#endif
 #endif

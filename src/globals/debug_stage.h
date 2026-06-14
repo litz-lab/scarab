@@ -1,5 +1,4 @@
-/*
- * Copyright 2025 University of California Santa Cruz
+/* Copyright 2024 Litz Lab
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -19,46 +18,51 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
 /***************************************************************************************
- * File         : node_issue_queue.h
- * Author       : Yinyuan Zhao, Litz Lab
- * Date         : 4/15/2025
- * Description  :
+ * File         : globals/debug_stage.h
+ * Description  : Shared debug-print helper for pipeline stage op arrays.
  ***************************************************************************************/
 
-#ifndef __NODE_ISSUE_QUEUE_H__
-#define __NODE_ISSUE_QUEUE_H__
+#ifndef __DEBUG_STAGE_H__
+#define __DEBUG_STAGE_H__
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <stdio.h>
+
+#include "globals/utils.h"
 
 #include "op.h"
 
-/**************************************************************************************/
-/* Constexpr */
-
-typedef enum NODE_ISSUE_QUEUE_DISPATCH_SCHEME_enum {
-  NODE_ISSUE_QUEUE_DISPATCH_SCHEME_FIND_EMPTIEST_RS,
-  NODE_ISSUE_QUEUE_DISPATCH_SCHEME_NUM
-} Node_Issue_Queue_Dispatch_Scheme;
-
-typedef enum NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_enum {
-  NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_OLDEST_FIRST,
-  NODE_ISSUE_QUEUE_SCHEDULE_SCHEME_NUM
-} Node_Issue_Queue_Schedule_Scheme;
-
-const static int64 NODE_ISSUE_QUEUE_RS_SLOT_INVALID = -1;
-const static int32 NODE_ISSUE_QUEUE_FU_SLOT_INVALID = -1;
-
-/**************************************************************************************/
-/* External Methods */
-
-void node_issue_queue_update();
-
-#ifdef __cplusplus
+/* Print op_num and on/off-path flag for each op in an array.
+ * NULL slots are shown as '-'. */
+static inline void print_stage_op_nums(FILE* stream, Op** ops, int count) {
+  fprintf(stream, " [");
+  for (int i = 0; i < count; i++) {
+    if (i)
+      fprintf(stream, " ");
+    Op* op = ops[i];
+    if (!op) {
+      fprintf(stream, "-");
+      continue;
+    }
+    fprintf(stream, "%llu%s", (unsigned long long)op->op_num, op->off_path ? "o" : "n");
+  }
+  fprintf(stream, "]");
 }
-#endif
 
-#endif /* #ifndef __NODE_ISSUE_QUEUE_H__ */
+static inline const char* sd_head_opnum_str(Stage_Data* sd) {
+  return (sd && sd->op_count > 0 && sd->ops[0]) ? unsstr64(sd->ops[0]->op_num) : "none";
+}
+
+static inline const char* sd_tail_opnum_str(Stage_Data* sd) {
+  if (!sd || sd->op_count <= 0) {
+    return "none";
+  }
+  for (int i = sd->max_op_count - 1; i >= 0; i--) {
+    if (sd->ops[i]) {
+      return unsstr64(sd->ops[i]->op_num);
+    }
+  }
+  return "none";
+}
+
+#endif /* #ifndef __DEBUG_STAGE_H__ */

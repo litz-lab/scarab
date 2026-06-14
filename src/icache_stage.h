@@ -36,6 +36,10 @@
 #include "decoupled_frontend.h"
 #include "stage_data.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define IC_ISSUE_WIDTH DECODE_WIDTH
 #define UOPC_ISSUE_WIDTH UOP_CACHE_WIDTH
 
@@ -54,7 +58,8 @@ typedef enum Icache_State_enum {
   ICACHE_MEM_REQ,
   ICACHE_WAIT_FOR_MISS,
   ICACHE_SERVING,
-  UOP_CACHE_SERVING
+  UOP_CACHE_SERVING,
+  ICACHE_STALLED
 } Icache_State;
 
 // don't change this order without fixing stats in fetch.stat.def
@@ -94,12 +99,14 @@ typedef struct Icache_Stage_struct {
   uint64_t wait_for_miss_start; /* time when cache miss was observed */
   Flag icache_miss_fulfilled;
   Flag icache_stage_resteer_signaled;
+  Flag fetch_barrier_pending;
+  uns64 fetch_barrier_inst_uid;
+  Counter fetch_barrier_op_num;
 
   Inst_Info** line; /* pointer to current line on a hit */
   Addr line_addr;   /* address of the last cache line hit */
   Addr fetch_addr;  /* address to fetch or fetching */
-  // keep track of the current FT being used by the icache / uop cache
-  FT* current_ft;
+  void* ft_op_buffer; /* opaque std::vector-backed FT op buffer */
   Flag off_path;     /* is the icache fetching on the correct path? */
   Flag back_on_path; /* did a recovery happen to put the machine back on path? */
 
@@ -142,6 +149,7 @@ void recover_icache_stage(void);
 void redirect_icache_stage(void);
 void debug_icache_stage(void);
 void update_icache_stage(void);
+void icache_resolve_fetch_barrier(uns8 proc_id, uns64 inst_uid);
 
 Flag icache_fill_line(Mem_Req*);
 Flag icache_off_path(void);
@@ -149,5 +157,9 @@ Flag instr_fill_line(Mem_Req* req);
 Flag in_icache(Addr addr);  // For branch stat collection
 
 /**************************************************************************************/
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* #ifndef __ICACHE_STAGE_H__ */

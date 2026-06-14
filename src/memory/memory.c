@@ -291,7 +291,7 @@ void init_memory() {
 
   /* Initialize request buffers */
   mem->total_mem_req_buffers = MEM_REQ_BUFFER_ENTRIES * (PRIVATE_MSHR_ON ? NUM_CORES : 1);
-  mem->req_buffer = (Mem_Req*)malloc(sizeof(Mem_Req) * mem->total_mem_req_buffers);
+  mem->req_buffer = (Mem_Req*)calloc(mem->total_mem_req_buffers, sizeof(Mem_Req));
   for (ii = 0; ii < mem->total_mem_req_buffers; ii++) {
     mem->req_buffer[ii].state = MRS_INV;
   }
@@ -2724,7 +2724,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
     op_unique = sl_list_add_tail(&req->op_uniques);
     *op_unique = op->unique_num;
 
-    if (op->table_info->mem_type == MEM_ST && !op->off_path)
+    if (op->inst_info->table_info.mem_type == MEM_ST && !op->off_path)
       req->dirty_l0 = TRUE;
 
     if (req->oldest_op_unique_num) {
@@ -2749,15 +2749,12 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
 
     if (!req->done_func)
       req->done_func = done_func;
-    if (req->mlc_miss)
-      op->engine_info.mlc_miss = TRUE;
     if (req->l1_miss) {
       op->engine_info.l1_miss = TRUE;
       if (TRACK_L1_MISS_DEPS)
         mark_l1_miss_deps(op);
     }
 
-    op->engine_info.mlc_miss_satisfied = req->mlc_miss_satisfied ? TRUE : op->engine_info.mlc_miss_satisfied;
     op->engine_info.l1_miss_satisfied = req->l1_miss_satisfied ? TRUE : op->engine_info.l1_miss_satisfied;
 
     // cmp FIXME prefetchers
@@ -2867,7 +2864,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
   // update the actual fdip on/off-path flag for accurate stats
   // MRT_FDIPPRFON/OFF is based on fdip confidence not the correct on/off-path
   if ((mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF)) &&
-      (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF) && req->fdip_pref_off_path != fdip_off_path())
+      (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF) && req->fdip_pref_off_path != fdip_off_path(req->proc_id, 0))
     req->fdip_pref_off_path = 2;
 
   update_mem_req_occupancy_counter(old_type, -1);
@@ -3213,7 +3210,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
   new_req->unique_num = unique_num;  // this is for icache requests for now
   new_req->onpath_match_offpath = FALSE;
   new_req->demand_match_prefetch = FALSE;
-  new_req->dirty_l0 = op && op->table_info->mem_type == MEM_ST && !op->off_path;
+  new_req->dirty_l0 = op && op->inst_info->table_info.mem_type == MEM_ST && !op->off_path;
   new_req->wb_requested_back = FALSE;
   new_req->wb_used_onpath = FALSE;
   new_req->mem_seq_num = 0;
@@ -3248,7 +3245,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
   // All oracle (correct-path) prefetches are on path.
   if (((new_req->type == MRT_UOCPRF && !UOC_ORACLE_PREF) || new_req->type == MRT_FDIPPRFON ||
        new_req->type == MRT_FDIPPRFOFF) &&
-      fdip_off_path())
+      fdip_off_path(proc_id, 0))
     new_req->off_path = TRUE;
 
   STAT_EVENT(proc_id, MEM_REQ_INIT_IFETCH + type);
@@ -3516,10 +3513,10 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       data = (L1_Data*)cache_access(&L1(proc_id)->cache, addr, &line_addr, FALSE);
 
       if (data) {
-        pref_ul1_hit(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->oracle_info.pred_global_hist : 0));
+        pref_ul1_hit(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
       } else {
         // TREAT queue hits as misses
-        pref_ul1_miss(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->oracle_info.pred_global_hist : 0));
+        pref_ul1_miss(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
       }
     }
   } else {
@@ -3534,10 +3531,10 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       data = (MLC_Data*)cache_access(&MLC(proc_id)->cache, addr, &line_addr, FALSE);
 
       if (data) {
-        pref_umlc_hit(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->oracle_info.pred_global_hist : 0));
+        pref_umlc_hit(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
       } else {
         // TREAT queue hits as misses
-        pref_umlc_miss(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->oracle_info.pred_global_hist : 0));
+        pref_umlc_miss(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
       }
     }
   }
@@ -3557,11 +3554,11 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   new_req->bw_prefetch = (pref_info ? pref_info->bw_limited : FALSE);
   new_req->destination = destination;
   if (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF) {
-    if (fdip_off_path())
+    if (fdip_off_path(proc_id, 0))
       new_req->fdip_pref_off_path = 1;
     else
       new_req->fdip_pref_off_path = 0;
-    new_req->ghist = fdip_get_ghist();
+    new_req->ghist = g_bp_data->global_hist;
   }
   new_req->cyc_hit_by_demand_load = 0;
   if (PREF_FRAMEWORK_ON) {
@@ -4200,9 +4197,8 @@ Flag l1_fill_line(Mem_Req* req) {
     }
   }
 
-  /* this will make it bring the line into the l1 and then modify it */
-  data->proc_id = req->proc_id;
   // write back can fill l1 directly - reqs filling core should not dirty the line
+  data->proc_id = req->proc_id;
   data->dirty = ((req->type == MRT_WB) && (req->state != MRS_FILL_L1));
   data->prefetch = req->type == MRT_DPRF || req->type == MRT_IPRF || req->demand_match_prefetch;
 
@@ -4290,6 +4286,12 @@ Flag mlc_fill_line(Mem_Req* req) {
   } else {
     data = (MLC_Data*)cache_insert(&MLC(req->proc_id)->cache, req->proc_id, req->addr, &line_addr, &repl_line_addr);
   }
+  /* this will make it bring the line into the mlc and then modify it */
+  data->proc_id = req->proc_id;
+
+  /* Immediately set proc_id after cache_insert to avoid stale data issues.
+     The data area still contains values from the evicted line until we update them. */
+  data->proc_id = req->proc_id;
 
   if (req->type == MRT_WB_NODIRTY || req->type == MRT_WB) {
     STAT_EVENT(req->proc_id, MLC_WB_FILL);
@@ -4328,93 +4330,95 @@ Flag mlc_fill_line(Mem_Req* req) {
 
   /* If we are replacing anything, check if we need to write it back */
   if (repl_line_valid) {
+    /* Note: data now points to the newly inserted line after cache_insert above.
+       For the evicted line's proc_id, we must extract it from repl_line_addr. */
+    uns repl_proc_id = get_proc_id_from_cmp_addr(repl_line_addr);
     if (!MLC_WRITE_THROUGH && data->dirty) {
       /* need to do a write-back */
       DEBUG(req->proc_id, "Scheduling writeback of addr:0x%s\n", hexstr64s(repl_line_addr));
       if (0 && DEBUG_EXC_INSERTS)
         printf("Scheduling L2 writeback of addr:0x%s ins addr:0x%s\n", hexstr64s(repl_line_addr), hexstr64s(req->addr));
-      if (!new_mem_mlc_wb_req(MRT_WB, data->proc_id, repl_line_addr, MLC_LINE_SIZE, 1, NULL, NULL, unique_count))
+      if (!new_mem_mlc_wb_req(MRT_WB, repl_proc_id, repl_line_addr, MLC_LINE_SIZE, 1, NULL, NULL, unique_count))
         return FAILURE;
       STAT_EVENT(req->proc_id, MLC_FILL_DIRTY);
     }
 
     if (data->prefetch) {
       if (!data->seen_prefetch) {  // prefeched line not used
-        pref_evictline_notused(data->proc_id, repl_line_addr, data->pref_loadPC, data->global_hist);
+        pref_evictline_notused(repl_proc_id, repl_line_addr, data->pref_loadPC, data->global_hist);
 
-        STAT_EVENT(data->proc_id, CORE_EVICTED_MLC_PREF_NOT_USED);
-        INC_STAT_EVENT(data->proc_id, CORE_MEM_LATENCY_AVE_PREF_NOT_USED, data->mlc_miss_latency);
+        STAT_EVENT(repl_proc_id, CORE_EVICTED_MLC_PREF_NOT_USED);
+        INC_STAT_EVENT(repl_proc_id, CORE_MEM_LATENCY_AVE_PREF_NOT_USED, data->mlc_miss_latency);
 
         if (data->mlc_miss_latency > 1600)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_NOT_USED_LATENCY1600MORE);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_NOT_USED_LATENCY1600MORE);
         else if (data->mlc_miss_latency > 1400)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_NOT_USED_LATENCY1600);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_NOT_USED_LATENCY1600);
         else if (data->mlc_miss_latency > 1200)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_NOT_USED_LATENCY1400);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_NOT_USED_LATENCY1400);
         else if (data->mlc_miss_latency > 1000)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_NOT_USED_LATENCY1200);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_NOT_USED_LATENCY1200);
         else if (data->mlc_miss_latency > 800)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_NOT_USED_LATENCY1000);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_NOT_USED_LATENCY1000);
         else if (data->mlc_miss_latency > 600)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_NOT_USED_LATENCY800);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_NOT_USED_LATENCY800);
         else if (data->mlc_miss_latency > 400)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_NOT_USED_LATENCY600);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_NOT_USED_LATENCY600);
         else if (data->mlc_miss_latency > 200)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_NOT_USED_LATENCY400);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_NOT_USED_LATENCY400);
         else
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_NOT_USED_LATENCY200);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_NOT_USED_LATENCY200);
       } else {  // prefeched line used
-        pref_evictline_used(data->proc_id, repl_line_addr, data->pref_loadPC, data->global_hist);
+        pref_evictline_used(repl_proc_id, repl_line_addr, data->pref_loadPC, data->global_hist);
 
-        STAT_EVENT(data->proc_id, CORE_EVICTED_MLC_PREF_USED);
-        INC_STAT_EVENT(data->proc_id, CORE_MEM_LATENCY_AVE_PREF_USED, data->mlc_miss_latency);
+        STAT_EVENT(repl_proc_id, CORE_EVICTED_MLC_PREF_USED);
+        INC_STAT_EVENT(repl_proc_id, CORE_MEM_LATENCY_AVE_PREF_USED, data->mlc_miss_latency);
 
         if (data->mlc_miss_latency > 1600)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_USED_LATENCY1600MORE);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_USED_LATENCY1600MORE);
         else if (data->mlc_miss_latency > 1400)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_USED_LATENCY1600);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_USED_LATENCY1600);
         else if (data->mlc_miss_latency > 1200)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_USED_LATENCY1400);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_USED_LATENCY1400);
         else if (data->mlc_miss_latency > 1000)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_USED_LATENCY1200);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_USED_LATENCY1200);
         else if (data->mlc_miss_latency > 800)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_USED_LATENCY1000);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_USED_LATENCY1000);
         else if (data->mlc_miss_latency > 600)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_USED_LATENCY800);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_USED_LATENCY800);
         else if (data->mlc_miss_latency > 400)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_USED_LATENCY600);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_USED_LATENCY600);
         else if (data->mlc_miss_latency > 200)
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_USED_LATENCY400);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_USED_LATENCY400);
         else
-          STAT_EVENT(data->proc_id, CORE_PREF_MLC_USED_LATENCY200);
+          STAT_EVENT(repl_proc_id, CORE_PREF_MLC_USED_LATENCY200);
       }
     } else {
-      STAT_EVENT(data->proc_id, CORE_EVICTED_MLC_DEMAND);
-      INC_STAT_EVENT(data->proc_id, CORE_MEM_LATENCY_AVE_DEMAND, data->mlc_miss_latency);
+      STAT_EVENT(repl_proc_id, CORE_EVICTED_MLC_DEMAND);
+      INC_STAT_EVENT(repl_proc_id, CORE_MEM_LATENCY_AVE_DEMAND, data->mlc_miss_latency);
 
       if (data->mlc_miss_latency > 1000)
-        STAT_EVENT(data->proc_id, CORE_PREF_MLC_DEMAND_LATENCY1000MORE);
+        STAT_EVENT(repl_proc_id, CORE_PREF_MLC_DEMAND_LATENCY1000MORE);
       else if (data->mlc_miss_latency > 900)
-        STAT_EVENT(data->proc_id, CORE_PREF_MLC_DEMAND_LATENCY1000);
+        STAT_EVENT(repl_proc_id, CORE_PREF_MLC_DEMAND_LATENCY1000);
       else if (data->mlc_miss_latency > 800)
-        STAT_EVENT(data->proc_id, CORE_PREF_MLC_DEMAND_LATENCY900);
+        STAT_EVENT(repl_proc_id, CORE_PREF_MLC_DEMAND_LATENCY900);
       else if (data->mlc_miss_latency > 700)
-        STAT_EVENT(data->proc_id, CORE_PREF_MLC_DEMAND_LATENCY800);
+        STAT_EVENT(repl_proc_id, CORE_PREF_MLC_DEMAND_LATENCY800);
       else if (data->mlc_miss_latency > 600)
-        STAT_EVENT(data->proc_id, CORE_PREF_MLC_DEMAND_LATENCY700);
+        STAT_EVENT(repl_proc_id, CORE_PREF_MLC_DEMAND_LATENCY700);
       else if (data->mlc_miss_latency > 500)
-        STAT_EVENT(data->proc_id, CORE_PREF_MLC_DEMAND_LATENCY600);
+        STAT_EVENT(repl_proc_id, CORE_PREF_MLC_DEMAND_LATENCY600);
       else if (data->mlc_miss_latency > 400)
-        STAT_EVENT(data->proc_id, CORE_PREF_MLC_DEMAND_LATENCY500);
+        STAT_EVENT(repl_proc_id, CORE_PREF_MLC_DEMAND_LATENCY500);
       else if (data->mlc_miss_latency > 300)
-        STAT_EVENT(data->proc_id, CORE_PREF_MLC_DEMAND_LATENCY400);
+        STAT_EVENT(repl_proc_id, CORE_PREF_MLC_DEMAND_LATENCY400);
       else
-        STAT_EVENT(data->proc_id, CORE_PREF_MLC_DEMAND_LATENCY300);
+        STAT_EVENT(repl_proc_id, CORE_PREF_MLC_DEMAND_LATENCY300);
     }
   }
 
-  /* this will make it bring the line into the mlc and then modify it */
-  data->proc_id = req->proc_id;
+  /* Note: data->proc_id was already set immediately after cache_insert above */
 
   // write back can fill mlc directly - reqs filling core should not dirty the line
   data->dirty = ((req->type == MRT_WB) && (req->state != MRS_FILL_MLC));
@@ -4575,8 +4579,8 @@ void mark_ops_as_l1_miss_satisfied(Mem_Req* req) {
       ASSERTM(req->proc_id, req->proc_id == op->proc_id,
               "req addr: %llx, valid_op: %u, op_proc_id: %u op_num: %llu, "
               "offpath: %u op_type: %u, mem_type: %u\n",
-              req->addr, op->op_pool_valid, op->proc_id, op->op_num, op->off_path, op->table_info->op_type,
-              op->table_info->mem_type);
+              req->addr, op->op_pool_valid, op->proc_id, op->op_num, op->off_path, op->inst_info->table_info.op_type,
+              op->inst_info->table_info.mem_type);
 
       if (op->req == req) {
         op->engine_info.l1_miss_satisfied = TRUE;
@@ -4612,7 +4616,7 @@ static void mark_l1_miss_deps(Op* op) {
          unsstr64(dep_op->oracle_info.va), unsstr64(op->unique_num),
          unsstr64(op->exec_cycle), disasm_op(op, TRUE),
          unsstr64(op->oracle_info.va)); */
-      ASSERT(dep_op->proc_id, !dep_op->engine_info.l1_miss || dep_op->table_info->mem_type == MEM_ST);
+      ASSERT(dep_op->proc_id, !dep_op->engine_info.l1_miss || dep_op->inst_info->table_info.mem_type == MEM_ST);
       if (!dep_op->engine_info.dep_on_l1_miss) {
         dep_op->engine_info.dep_on_l1_miss = TRUE;
         mark_l1_miss_deps(dep_op);
@@ -4640,7 +4644,6 @@ static void unmark_l1_miss_deps(Op* op) {
 
     if (dep_op->unique_num == dep_unique_num && dep_op->op_pool_valid) {
       int ii;
-      Op_Info* op_info = &dep_op->oracle_info;
       Flag still_dep_on_l1_miss = FALSE;
 
       ASSERT(op->proc_id, op->proc_id == dep_op->proc_id);
@@ -4648,8 +4651,8 @@ static void unmark_l1_miss_deps(Op* op) {
 
       if (dep_op->engine_info.dep_on_l1_miss) {
         /* Determine if the op is dependent on another l1_miss */
-        for (ii = 0; ii < op_info->num_srcs; ii++) {
-          Src_Info* src_info = &op_info->src_info[ii];
+        for (ii = 0; ii < dep_op->num_srcs; ii++) {
+          Src_Info* src_info = &dep_op->src_info[ii];
           Op* src_op = src_info->op;
 
           if (src_op->unique_num == src_info->unique_num && src_op->op_pool_valid) {

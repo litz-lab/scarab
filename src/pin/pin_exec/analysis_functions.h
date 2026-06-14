@@ -62,4 +62,6 @@ void check_nonret_control_mem_target(BOOL taken, ADDRINT addr, UINT32 ld_size);
 
 void handle_scarab_marker(ADDRINT op);
 
+void PIN_FAST_ANALYSIS_CALL docount_rep(ADDRINT iaddr);
+
 #endif  // PIN_EXEC_ANALYSIS_FUNCTIONS_H__

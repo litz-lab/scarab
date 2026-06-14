@@ -31,6 +31,7 @@
 #include "cmp_model.h"
 
 #include "globals/assert.h"
+#include "globals/global_vars.h"
 
 #include "debug/debug.param.h"
 #include "debug/debug_macros.h"
@@ -43,6 +44,7 @@
 #include "memory/memory.param.h"
 #include "prefetcher/pref.param.h"
 
+#include "bp/bp_targ_mech.h"
 #include "dvfs/dvfs.h"
 #include "dvfs/perf_pred.h"
 #include "memory/cache_part.h"
@@ -54,7 +56,9 @@
 
 #include "decoupled_frontend.h"
 #include "freq.h"
+#include "ft.h"
 #include "idq_stage.h"
+#include "issue_queue.h"
 #include "lsq.h"
 #include "map_rename.h"
 #include "op_pool.h"
@@ -100,6 +104,7 @@ void cmp_init(uns mode) {
   ASSERT(0, mode == WARMUP_MODE);
 
   uns8 proc_id;
+  uns8 bp_id;
 
   freq_init();
   cmp_init_cmp_model();
@@ -107,12 +112,14 @@ void cmp_init(uns mode) {
   for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     /* initialize the stages */
     cmp_set_all_stages(proc_id);
+    cmp_set_all_data(proc_id, 0);
+
     cmp_init_thread_data(proc_id);
 
     init_uop_cache_stage(proc_id, "UOP_CACHE");
     init_icache_stage(proc_id, "ICACHE");
     init_decode_stage(proc_id, "DECODE");
-    init_uop_queue_stage();
+    init_uop_queue_stage(proc_id);
     init_idq_stage(proc_id, "IDQ");
     init_map_stage(proc_id, "MAP");
     init_node_stage(proc_id, "NODE");
@@ -122,12 +129,20 @@ void cmp_init(uns mode) {
     init_dcache_stage(proc_id, "DCACHE");
 
     /* initialize the common data structures */
+    // Only one recovery info for all the BPs
     init_bp_recovery_info(proc_id, &cmp_model.bp_recovery_info[proc_id]);
-    init_bp_data(proc_id, &cmp_model.bp_data[proc_id]);
+    // The width of the decoupled frontend: NUM_BPS
+    // decoupled fe, fdip should scale with NUM_BPS
+    for (bp_id = 0; bp_id < NUM_BPS; bp_id++) {
+      cmp_set_all_data(proc_id, bp_id);
 
-    init_decoupled_fe(proc_id, "DCFE");
+      init_bp_data(proc_id, bp_id, &cmp_model.bp_data[proc_id][bp_id], &cmp_model.bp_data[proc_id][0]);
 
-    init_fdip(proc_id);
+      init_decoupled_fe(proc_id, bp_id, &cmp_model.bp_data[proc_id][bp_id]);
+
+      init_fdip(proc_id, bp_id, &cmp_model.icache_stage[proc_id]);
+    }
+    cmp_set_all_data(proc_id, 0);
     init_eip(proc_id);
     init_djolt(proc_id);
     init_fnlmma(proc_id);
@@ -144,10 +159,6 @@ void cmp_init(uns mode) {
     dvfs_init();
 
   cache_part_init();
-
-  ASSERTM(0, !USE_LATE_BP || LATE_BP_LATENCY < (DECODE_CYCLES + MAP_CYCLES),
-          "Late branch prediction latency should be less than the total "
-          "latency of the frontend stages of the pipeline (decode + map)");
 }
 
 /**************************************************************************************/
@@ -191,20 +202,22 @@ void cmp_istreams(void) {
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     if (DUMB_CORE_ON && DUMB_CORE == proc_id)
       continue;
+    if (sim_done[proc_id])  // Skip finished cores (all modes)
+      continue;
 
     if (freq_is_ready(FREQ_DOMAIN_CORES[proc_id])) {
       cycle_count = freq_cycle_count(FREQ_DOMAIN_CORES[proc_id]);
 
       set_bp_recovery_info(&cmp_model.bp_recovery_info[proc_id]);
-      if (cycle_count >= bp_recovery_info->recovery_cycle) {
-        set_bp_data(&cmp_model.bp_data[proc_id]);
-        cmp_set_all_stages(proc_id);
+      set_bp_data(&cmp_model.bp_data[proc_id][0]);
+      set_thread_data(&cmp_model.thread_data[proc_id]);
+      set_map_data(&td->map_data);
+      if (cycle_count >= bp_recovery_info->recovery_cycle)
         cmp_recover();
-      }
       if (cycle_count >= bp_recovery_info->redirect_cycle) {
         set_icache_stage(&cmp_model.icache_stage[proc_id]);
         ASSERT(proc_id, proc_id == bp_recovery_info->redirect_op->proc_id);
-        ASSERT_PROC_ID_IN_ADDR(proc_id, bp_recovery_info->redirect_op->oracle_info.pred_npc);
+        ASSERT_PROC_ID_IN_ADDR(proc_id, bp_recovery_info->redirect_op->bp_pred_info->pred_npc);
         cmp_redirect();
       }
     }
@@ -215,13 +228,15 @@ void cmp_cores(void) {
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     if (DUMB_CORE_ON && DUMB_CORE == proc_id)
       continue;
+    if (sim_done[proc_id])  // Skip finished cores (all modes)
+      continue;
 
     if (freq_is_ready(FREQ_DOMAIN_CORES[proc_id])) {
       cycle_count = freq_cycle_count(FREQ_DOMAIN_CORES[proc_id]);
 
-      set_bp_data(&cmp_model.bp_data[proc_id]);
       set_bp_recovery_info(&cmp_model.bp_recovery_info[proc_id]);
       cmp_set_all_stages(proc_id);
+      cmp_set_all_data(proc_id, 0);
 
       /* Back-end pipeline */
       update_dcache_stage(&exec->sd);
@@ -244,8 +259,12 @@ void cmp_cores(void) {
       update_icache_stage();
 
       /* Decoupled branch prediction and prefetching */
-      update_decoupled_fe();
-      update_fdip();
+      for (uns8 bp_id = 0; bp_id < NUM_BPS; bp_id++) {
+        cmp_set_all_data(proc_id, bp_id);
+        update_decoupled_fe(proc_id, bp_id);
+        update_fdip(proc_id, bp_id);
+      }
+      cmp_set_all_data(proc_id, 0);
       update_eip();
 
       cmp_measure_chip_util();
@@ -313,7 +332,7 @@ void cmp_per_core_done(uns8 proc_id) {
 /**************************************************************************************/
 /* cmp_wake: */
 
-void cmp_wake(Op* src_op, Op* dep_op, uns8 rdy_bit) {
+void cmp_wake(Op* src_op, Op* dep_op, uns rdy_bit) {
   /* Make the op independent, if it is dependent on a BOGUS op */
 
   // cmp: since this function use node, we need to set node properly
@@ -334,11 +353,9 @@ void cmp_wake(Op* src_op, Op* dep_op, uns8 rdy_bit) {
 
   simple_wake(src_op, dep_op, rdy_bit);
 
-  if (dep_op->srcs_not_rdy_vector == 0x0 && cycle_count >= dep_op->issue_cycle && !dep_op->in_rdy_list) {
+  if (op_sources_not_rdy_is_clear(dep_op) && cycle_count >= dep_op->issue_cycle && !dep_op->in_rdy_list) {
     _DEBUG(dep_op->proc_id, DEBUG_NODE_STAGE, "Adding to ready list  op_num:%s\n", unsstr64(dep_op->op_num));
-    dep_op->next_rdy = node->rdy_head;
-    node->rdy_head = dep_op;
-    dep_op->in_rdy_list = TRUE;
+    issue_queue_wakeup(dep_op);
   }
 }
 
@@ -346,47 +363,39 @@ void cmp_wake(Op* src_op, Op* dep_op, uns8 rdy_bit) {
 /* cmp_recover: */
 
 void cmp_recover() {
-  _DEBUG(bp_recovery_info->proc_id, DEBUG_BP, "Recovery caused by op_num:%s\n",
-         unsstr64(bp_recovery_info->recovery_op_num));
+  _DEBUG(bp_recovery_info->proc_id, DEBUG_BP, "Recovery fired op_num:%s at cycle:%s (scheduled:%s)\n",
+         unsstr64(bp_recovery_info->recovery_op_num), unsstr64(cycle_count),
+         unsstr64(bp_recovery_info->recovery_cycle));
   ASSERT(bp_recovery_info->proc_id, bp_recovery_info->recovery_cycle != MAX_CTR);
   ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == g_bp_data->proc_id);
   ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == map_data->proc_id);
   bp_recovery_info->recovery_cycle = MAX_CTR;
   bp_recovery_info->redirect_cycle = MAX_CTR;
-  bp_recover_op(g_bp_data, bp_recovery_info->recovery_cf_type, &bp_recovery_info->recovery_info);
-
-  if (USE_LATE_BP && bp_recovery_info->late_bp_recovery) {
-    Op* op = bp_recovery_info->recovery_op;
-    op->oracle_info.pred = op->oracle_info.late_pred;
-    op->oracle_info.pred_npc = op->oracle_info.late_pred_npc;
-    ASSERT_PROC_ID_IN_ADDR(op->proc_id, op->oracle_info.pred_npc);
-    op->oracle_info.mispred = op->oracle_info.late_mispred;
-    op->oracle_info.misfetch = op->oracle_info.late_misfetch;
-
-    /* Reset to FALSE to allow for another potential recovery after the branch
-     * is resolved when executed. */
-    op->oracle_info.recovery_sch = FALSE;
+  cmp_set_all_stages(bp_recovery_info->proc_id);
+  for (int bp_id = NUM_BPS - 1; bp_id >= 0; --bp_id) {
+    cmp_set_all_data(bp_recovery_info->proc_id, bp_id);
+    recover_decoupled_fe(bp_recovery_info->proc_id, bp_id, bp_recovery_info->recovery_cf_type,
+                         &bp_recovery_info->recovery_info);
+    recover_fdip(bp_recovery_info->proc_id, bp_id);
   }
 
   topdown_bp_recovery(bp_recovery_info->proc_id, bp_recovery_info->recovery_op);
 
   reg_file_recover(bp_recovery_info->recovery_op);
   recover_thread(td, bp_recovery_info->recovery_fetch_addr, bp_recovery_info->recovery_op_num,
-                 bp_recovery_info->recovery_inst_uid, bp_recovery_info->late_bp_recovery_wrong);
+                 bp_recovery_info->recovery_inst_uid, FALSE);
 
-  recover_decoupled_fe();
-  recover_fdip();
   recover_icache_stage();
-  recover_uop_cache();
   recover_decode_stage();
   recover_uop_queue_stage();
   recover_idq_stage();
   recover_map_stage();
-  recover_node_stage();
   recover_lsq();
+  recover_issue_queue();
   recover_exec_stage();
   recover_dcache_stage();
   recover_memory();
+  recover_node_stage();
 }
 
 /**************************************************************************************/
@@ -399,8 +408,8 @@ void cmp_redirect() {
          unsstr64(bp_recovery_info->redirect_op_num));
   ASSERT(bp_recovery_info->proc_id, bp_recovery_info->redirect_cycle != MAX_CTR);
   bp_recovery_info->redirect_cycle = MAX_CTR;
-  bp_recovery_info->redirect_op->oracle_info.btb_miss_resolved = TRUE;
-  ASSERT_PROC_ID_IN_ADDR(bp_recovery_info->proc_id, bp_recovery_info->redirect_op->oracle_info.pred_npc);
+  bp_recovery_info->redirect_op->btb_pred_info->btb_miss_resolved = TRUE;
+  ASSERT_PROC_ID_IN_ADDR(bp_recovery_info->proc_id, bp_recovery_info->redirect_op->bp_pred_info->pred_npc);
   redirect_icache_stage();
 }
 
@@ -408,7 +417,7 @@ void cmp_redirect() {
 // cmp_retire_hook:  Called right before the op retires
 
 void cmp_retire_hook(Op* op) {
-  free_op(op);
+  ft_free_op(op);
 }
 
 void warmup_uncore(uns proc_id, Addr addr, Flag write) {
@@ -451,6 +460,9 @@ void cmp_warmup(Op* op) {
   Addr dummy_line_addr2;
   Icache_Data* line_info = NULL;
 
+  // Set FDIP for this core before calling FDIP functions
+  set_fdip(proc_id, 0);
+
   // Warmup caches for instructions
   Icache_Stage* ic = &(cmp_model.icache_stage[proc_id]);
   Cache* icache = &(ic->icache);
@@ -478,8 +490,8 @@ void cmp_warmup(Op* op) {
   }
 
   // Warmup caches for data
-  Flag is_load = op->table_info->mem_type == MEM_LD;
-  Flag is_store = op->table_info->mem_type == MEM_ST;
+  Flag is_load = op->inst_info->table_info.mem_type == MEM_LD;
+  Flag is_store = op->inst_info->table_info.mem_type == MEM_ST;
   if (is_load || is_store) {
     Cache* dcache = &(cmp_model.dcache_stage[proc_id].dcache);
     Dcache_Data* dc_data = cache_access(dcache, va, &dummy_line_addr, TRUE);
@@ -502,15 +514,21 @@ void cmp_warmup(Op* op) {
   }
 
   // Warmup BP for CF instructions
-  if (op->table_info->cf_type != NOT_CF) {
-    Bp_Data* bp_data = &(cmp_model.bp_data[proc_id]);
-    bp_predict_op(bp_data, op, 1, ia);
+  if (op->inst_info->table_info.cf_type != NOT_CF) {
+    Bp_Data* bp_data = &(cmp_model.bp_data[proc_id][0]);
+    op->btb_pred_info = NULL;  // reset so bp_predict_btb() can set it (op may be reused)
+    bp_predict_btb(bp_data, op);
+    if (bp_l0_enabled())
+      bp_predict_op(bp_data, op, MAIN_BP, 1, ia, BP_PRED_L0);
+    op_select_bp_pred_info(op, BP_PRED_MAIN);
+    bp_predict_op(bp_data, op, MAIN_BP, 1, ia, BP_PRED_MAIN);
+    bp_btb_post_bp_predict(bp_data, op);  // for next BTB access
     bp_target_known_op(bp_data, op);
     bp_resolve_op(bp_data, op);
-    if (op->oracle_info.mispred || op->oracle_info.misfetch) {
-      bp_recover_op(bp_data, op->table_info->cf_type, &op->recovery_info);
+    if (op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec) {
+      bp_recover_op(bp_data, op->inst_info->table_info.cf_type, &op->recovery_info);
     }
-    bp_data->bp->retire_func(op);
+    bp_retire_op(bp_data, op);
   }
 }
 

@@ -84,6 +84,8 @@ typedef enum Wrongpath_Nop_Mode_Reason_enum {
   WPNM_REASON_NONRET_CF_TO_NOT_INSTRUMENTED,
   WPNM_REASON_NOT_TAKEN_TO_NOT_INSTRUMENTED,
   WPNM_REASON_WRONG_PATH_STORE_TO_NEW_REGION,
+  WPNM_FAKE_NOP,
+  WPNM_FAKE_JMP,
   WPNM_NUM_REASONS
 } Wrongpath_Nop_Mode_Reason;
 
@@ -170,38 +172,45 @@ typedef struct ctype_pin_inst_struct {
 
 typedef ctype_pin_inst compressed_op;
 
-inline ctype_pin_inst create_sentinel() {
+static inline void init_ctype_pin_inst(ctype_pin_inst* inst) {
+  memset(inst, 0, sizeof(ctype_pin_inst));
+  inst->fetched_instruction = 1;
+}
+
+static inline ctype_pin_inst create_sentinel() {
   printf("CREATE SENTINEL\n");
   ctype_pin_inst inst;
-  memset(&inst, 0, sizeof(inst));
+  init_ctype_pin_inst(&inst);
   inst.op_type = OP_INV;
   inst.is_sentinel = 1;
   strcpy(inst.pin_iclass, "SENTINEL");
   return inst;
 }
 
-inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt) {
+static inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt, uint16_t true_op_type) {
   ctype_pin_inst inst;
-  memset(&inst, 0, sizeof(inst));
+  init_ctype_pin_inst(&inst);
   inst.instruction_addr = eip;
-  inst.size = 1;
+  inst.size = 5;
   inst.op_type = OP_IADD;
   inst.cf_type = CF_BR;
   inst.num_simd_lanes = 1;
-  inst.lane_width_bytes = 1;
+  inst.lane_width_bytes = 8;
   inst.branch_target = tgt;
   inst.actually_taken = 1;
+  inst.true_op_type = true_op_type;
   inst.fake_inst = 1;
-  strcpy(inst.pin_iclass, "DUMMY_JMP");
+  inst.fake_inst_reason = WPNM_FAKE_JMP;
+  strcpy(inst.pin_iclass, "JMP");
   return inst;
 }
 
-inline ctype_pin_inst create_dummy_nop(uint64_t eip, Wrongpath_Nop_Mode_Reason reason) {
+static inline ctype_pin_inst create_dummy_nop(uint64_t eip, Wrongpath_Nop_Mode_Reason reason, uint8_t size) {
   ctype_pin_inst inst;
-  memset(&inst, 0, sizeof(inst));
+  init_ctype_pin_inst(&inst);
   inst.instruction_addr = eip;
-  inst.instruction_next_addr = eip + DUMMY_NOP_SIZE;
-  inst.size = DUMMY_NOP_SIZE;
+  inst.instruction_next_addr = eip + size;
+  inst.size = size;
   inst.op_type = OP_NOP;
   strcpy(inst.pin_iclass, "DUMMY_NOP");
   inst.fake_inst = 1;

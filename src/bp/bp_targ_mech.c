@@ -529,7 +529,6 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Flag lru = bp_data->bp_id ? FALSE : TRUE;
 
   op->btb_pred_info->btb_index_addr = op->inst_info->addr;
-  STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, op->inst_info->addr);
 
   if (BTB_L0_PRESENT) {
     uns bank_id = get_btb_bank_id(BTB_L0_BANKS, op->inst_info->addr, &intra_bank_addr);
@@ -585,6 +584,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
                 hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
       STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
+      STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, fetch_addr);
 
       btb_line = (Addr*)cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing, TRUE);
       if (!btb_line) {
@@ -613,6 +613,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
                   hexstr64s(op->oracle_info.target));
         STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
         STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
+        STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, fetch_addr);
         *btb_line = op->oracle_info.target;
         // FIXME: the exceptions to this assert are really about x86 vs Alpha
         ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
@@ -691,7 +692,6 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   // Prepare for next BTB lookup
   bp_data->prev_cf_btb_index_addr = btb_index_addr;
 
-  STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, btb_index_addr);
   STAT_EVENT_BTB_BANK(op->proc_id, MAIN, PRED, 0);
   Addr btb_line_addr;
   Flag tag_aliasing;
@@ -729,6 +729,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  btb addr:0x%s  op addr:0x%s  target:0x%s\n", hexstr64s(btb_index_addr),
                 hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
+      STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, btb_index_addr);
 
       Blk_Btb_BrSlot br_slot;
       br_slot.addr = op->inst_info->addr;

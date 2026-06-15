@@ -80,7 +80,7 @@ static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* tag_full
     *line_addr = addr;  // When the tag incl offset, cache is BYTE-addressable
   } else {
     Addr _tag;
-    _tag = *tag_full = addr >> cache->shift_bits & ~cache->set_mask;
+    _tag = *tag_full = addr >> cache->shift_bits;
     // chunk XOR folding
     if (cache->tag_bits < 64) {
       while ((_tag >> cache->tag_bits) != 0) {

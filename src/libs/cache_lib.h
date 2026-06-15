@@ -82,6 +82,7 @@ typedef struct Cache_Entry_struct {
   uns8 proc_id;
   Flag valid;               /* valid bit for the line */
   Addr tag;                 /* tag for the line */
+  Addr tag_full;            /* original tag before folding */
   Addr base;                /* address of first element */
   Counter last_access_time; /* for replacement policy */
   Counter insertion_time;   /* for replacement policy */
@@ -126,11 +127,20 @@ typedef struct Cache_struct {
   Repl_Policy repl_policy; /* the replacement policy of the cache */
   Index_Hash* index_hash;  /* index hashing mechanism */
 
+  /* each mask looks like this:
+   *      addr: MSB [tag_bits][set_bits][shift_bits] LSB
+   *      set_mask:  00000000  11111111
+   *      tag_mask:  11111111  00000000
+   *    shift_mask:  00000000  00000000  1111111111
+   * tag_pure_mask:  11111111
+   */
   uns set_bits;     /* number of bits used in the set mask */
+  uns tag_bits;     /* number of bits used in the tag mask */
   uns shift_bits;   /* number of bits to shift an address before using (assuming it is shifted) */
   Addr set_mask;    /* mask applied after shifting to get the index */
   Addr tag_mask;    /* mask used to get the tag after shifting */
   Addr offset_mask; /* mask used to get the line offset */
+  Addr tag_pure_mask; /* mask used to get the folded tag, no 0-paddings in LSB side */
 
   uns* repl_ctrs; /* replacement info */
 
@@ -176,7 +186,7 @@ struct repl_policy_func {
   Repl_Policy repl_policy_type;
 
   void (*action_init)(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
-  void (*action_repl)(Cache*, Cache_Entry*, uns8, Addr, Addr*, Addr*);
+  void (*action_repl)(Cache*, Cache_Entry*, uns8, Addr, Addr, Addr*, Addr*);
 
   void (*update_hit)(Cache*, uns, uns, void*);
   void (*update_insert)(Cache*, uns8, uns, uns, void*);
@@ -189,7 +199,7 @@ extern struct repl_policy_func repl_policy_func_table[NUM_REPL];
 /* Strategy Function */
 void init_cache_strategy(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
 void* cache_insert_strategy(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr);
-void* cache_access_strategy(Cache* cache, Addr addr, Addr* line_addr, Flag update_repl);
+void* cache_access_strategy(Cache* cache, Addr addr, Addr* line_addr, Flag* tag_aliasing, Flag update_repl);
 Cache_Entry* cache_evict_strategy(Cache* cache, uns8 proc_id, uns set, uns* way);
 
 const static Flag CACHE_DEBUG_ENABLE = FALSE;  // To be Changed into DEBUG_PARA
@@ -231,8 +241,9 @@ inline static Addr cache_index_prime_displace(Cache* cache, Addr addr) {
 /* prototypes */
 
 void init_cache(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
-void init_cache_impl(Cache*, const char*, uns, uns, uns, uns, Repl_Policy, Index_Hash_Id);
+void init_cache_impl(Cache*, const char*, uns, uns, uns, uns, uns, Repl_Policy, Index_Hash_Id);
 void* cache_access(Cache*, Addr, Addr*, Flag);
+void* cache_access_impl(Cache*, Addr, Addr*, Flag*, Flag);
 void* cache_insert(Cache*, uns8, Addr, Addr*, Addr*);
 void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr,
                            Cache_Insert_Repl insert_repl_policy, Flag isPrefetch);
@@ -246,9 +257,9 @@ Addr get_cache_line_addr(Cache*, Addr);
 uns cache_get_invalid_line_count(Cache* cache, Addr addr);
 void update_repl_resteer_policy(Cache*, Addr);
 
-void* shadow_cache_insert(Cache* cache, uns set, Addr tag, Addr base);
-void* access_shadow_lines(Cache* cache, uns set, Addr tag);
-void* access_ideal_storage(Cache* cache, uns set, Addr tag, Addr addr);
+void* shadow_cache_insert(Cache* cache, uns set, Addr tag, Addr tag_full, Addr base);
+void* access_shadow_lines(Cache* cache, uns set, Addr tag, Addr tag_full, Flag* tag_aliasing);
+void* access_ideal_storage(Cache* cache, uns set, Addr tag, Addr tag_full, Addr addr, Flag* tag_aliasing);
 void reset_cache(Cache*);
 int cache_find_pos_in_lru_stack(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr);
 void set_partition_allocate(Cache* cache, uns8 proc_id, uns num_ways);

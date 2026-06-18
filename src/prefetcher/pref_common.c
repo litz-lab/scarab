@@ -555,6 +555,7 @@ Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id
     return TRUE;
   Pref_Mem_Req* umlc_req_queue = pref.cores[proc_id]->umlc_req_queue;
   int* umlc_req_queue_req_pos = &pref.cores[proc_id]->umlc_req_queue_req_pos;
+
   if (PREF_UMLC_REQ_ADD_FILTER_ON) {
     for (ii = 0; ii < PREF_UMLC_REQ_QUEUE_SIZE; ii++) {
       if (umlc_req_queue[ii].line_index == line_index) {
@@ -813,22 +814,12 @@ void pref_update_core(uns proc_id) {
   }
 }
 
-void pref_ul1sent(uns8 proc_id, Addr addr, uns8 prefetcher_id) {
-  if (!PREF_FRAMEWORK_ON)
-    return;
-  if (prefetcher_id == 0)
-    return;
-
-  if (PREF_POLBV_ON) {
-    // UPDATE prefpolbv reset entry
-    pref_polbv_update_on_repref(proc_id, addr);
-  }
-
-  // prefetch missed in the ul1 and went out on the bus
+// Per-prefetch send bookkeeping shared by the UL1 and UMLC send paths: bump the
+// prefetcher's sent counter and, under PREF_DHAL, adjust its dynamic degree from
+// the recent useful/sent ratio. Touches only per-prefetcher counters, so it is
+// the same regardless of which cache level the prefetch targeted.
+static inline void pref_sent_update_degree(uns8 proc_id, uns8 prefetcher_id) {
   pref_table[prefetcher_id].hwp_info->curr_sent_core[proc_id]++;
-
-  STAT_EVENT_ALL(PREF_L1_TOTAL_SENT);
-  STAT_EVENT(proc_id, CORE_PREF_L1_SENT);
 
   // IGNORE PREF_DHAL
   if (pref_table[prefetcher_id].hwp_info->curr_sent_core[proc_id] == PREF_DHAL_SENTTHRESH && PREF_DHAL) {
@@ -854,6 +845,37 @@ void pref_ul1sent(uns8 proc_id, Addr addr, uns8 prefetcher_id) {
     pref_table[prefetcher_id].hwp_info->curr_sent_core[proc_id] = 0;
     pref_table[prefetcher_id].hwp_info->curr_useful_core[proc_id] = 0;
   }
+}
+
+// A prefetch missed its target cache and went out on the bus. Charge the send
+// to the counters for the level it fills (dest), then run the shared sent /
+// PREF_DHAL degree update. The prefetch send paths currently only emit DEST_MLC
+// (umlc queue) and DEST_L1 (ul1 queue; dl0/dcache prefetches re-issue here on a
+// dcache miss), so those are the live cases; the switch keeps the level->counter
+// mapping explicit and easy to extend.
+void pref_sent(uns8 proc_id, Addr addr, uns8 prefetcher_id, Destination dest) {
+  if (!PREF_FRAMEWORK_ON)
+    return;
+  if (prefetcher_id == 0)
+    return;
+
+  if (PREF_POLBV_ON) {
+    // UPDATE prefpolbv reset entry
+    pref_polbv_update_on_repref(proc_id, addr);
+  }
+
+  switch (dest) {
+    case DEST_MLC:
+      STAT_EVENT_ALL(PREF_MLC_TOTAL_SENT);
+      STAT_EVENT(proc_id, CORE_PREF_MLC_SENT);
+      break;
+    default:  // DEST_L1, and demand-matched prefetches whose dest was demoted
+      STAT_EVENT_ALL(PREF_L1_TOTAL_SENT);
+      STAT_EVENT(proc_id, CORE_PREF_L1_SENT);
+      break;
+  }
+
+  pref_sent_update_degree(proc_id, prefetcher_id);
 }
 
 #define COOK_HIST_BITS(hist, len, untouched) ((uns32)(hist) >> (32 - (len) + (untouched)) << (untouched))

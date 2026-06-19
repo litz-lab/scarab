@@ -276,7 +276,7 @@ class SelectLogic {
   std::list<IssueQueueEntry*> ready_list;
 
   // bitmask of ready but not yet issued op types in this cycle
-  uns64 ready_not_issue_op_types = 0;
+  uns64 ready_not_issued_op_types = 0;
   std::vector<uns64> ready_not_issued_op_types_per_fu;
 
  public:
@@ -300,7 +300,7 @@ class SelectLogic {
   void release(IssueQueueEntry* entry);
 
   bool has_ready_ops() const;
-  uns64 get_ready_not_issued_op_types() const { return ready_not_issue_op_types; }
+  uns64 get_ready_not_issued_op_types() const { return ready_not_issued_op_types; }
 };
 
 /*
@@ -314,7 +314,7 @@ class SelectLogic {
 // pick ready ops for issue according to the scheduling policy and picker traversal order
 void SelectLogic::bid() {
   traversal_policy->build_picker_order(picker_order);
-  ready_not_issue_op_types = 0;
+  ready_not_issued_op_types = 0;
   ready_not_issued_op_types_per_fu.assign(connected_fu_pickers.size(), 0);
 
   for (IssueQueueEntry* entry : ready_list) {
@@ -349,7 +349,7 @@ void SelectLogic::bid() {
 
     // the entry is not picked or displaced
     if (request_entry != nullptr) {
-      ready_not_issue_op_types |= request_entry->op_fu_type;
+      ready_not_issued_op_types |= request_entry->op_fu_type;
       if (request_entry->bound_fu_id != MAX_UNS) {
         ready_not_issued_op_types_per_fu[request_entry->bound_fu_id] |= request_entry->op_fu_type;
       }
@@ -365,7 +365,7 @@ void SelectLogic::grant(uns64 ready_not_issued_op_types_others) {
   for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
     // grant the pick after scanning the ready list
     FunctionalUnitPicker& fu_picker = connected_fu_pickers[picker_order[i]];
-    fu_picker.grant();  // TODO: let grant become certain pick by advance checking fu instead of rejecting in exec
+    fu_picker.grant();
 
     // track FU idle stats after scheduling
     uns32 fu_id = fu_picker.get_fu_id();
@@ -381,18 +381,6 @@ void SelectLogic::grant(uns64 ready_not_issued_op_types_others) {
         STAT_EVENT(proc_id, ISSUE_QUEUE_MATCHING_UNPICK_WITHIN_QUEUE);
         break;
       }
-    }
-
-    /*
-     * TODO: These counter does not make sense, should be updated/deleted.
-     */
-    Func_Unit* fu = &exec->fus[fu_id];
-    if (fu->avail_cycle > cycle_count || fu->held_by_mem)  // TODO: both conditions should use next-cycle situation
-      continue;
-
-    if ((ready_not_issue_op_types & fu->type) == 0) {  // TODO: should be replaced by above
-      STAT_EVENT(node->proc_id, FU_IDLE_NO_READY_OPS_TOTAL);
-      STAT_EVENT(node->proc_id, FU_0_IDLE_NO_READY_OPS + (fu_id < 32 ? fu_id : 32));
     }
   }
 }

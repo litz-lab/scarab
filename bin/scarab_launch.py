@@ -25,7 +25,6 @@ import shutil
 import subprocess
 import sys
 import time
-import shlex
 
 from scarab_globals import *
 
@@ -55,26 +54,7 @@ parser.add_argument('--frontend_pin_tool', default=scarab_paths.pin_bin, help="P
 parser.add_argument('--checkpoint_loader', default=scarab_paths.checkpoint_loader_bin, help="Path to checkpoint loader executable.")
 parser.add_argument('--frontend', default="exec", choices=["exec", "trace"], help="Selects between the Trace fronend and the Exec-driven frontend.")
 
-def _combine_flag_and_value(argv, flag):
-  """Ensure values that start with '-' are not mistaken for parser options."""
-  normalized = []
-  skip_next = False
-  for idx, token in enumerate(argv):
-    if skip_next:
-      skip_next = False
-      continue
-    if token == flag and idx + 1 < len(argv):
-      normalized.append(f"{flag}={argv[idx + 1]}")
-      skip_next = True
-    else:
-      normalized.append(token)
-  return normalized
-
-raw_argv = sys.argv[1:]
-for flag in ['--pintool_args', '--scarab_args']:
-  raw_argv = _combine_flag_and_value(raw_argv, flag)
-
-args = parser.parse_args(raw_argv)
+args = parser.parse_args()
 
 def determine_frontend():
   trace_mode = args.trace

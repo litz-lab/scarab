@@ -443,7 +443,7 @@ static inline void reg_file_produce_dst(Op *op, int *reg_table_types, int reg_ta
       ASSERT(op->proc_id, reg_id != REG_TABLE_REG_ID_INVALID);
 
       struct reg_table *reg_table = map_data->reg_file[reg_type]->reg_table[table_type];
-      reg_table->ops->produce(reg_table, reg_id, op);
+      reg_table->ops->produce(reg_table, reg_id, op, ii);
     }
   }
 }

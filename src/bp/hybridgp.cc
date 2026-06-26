@@ -273,7 +273,7 @@ void bp_hybridgp_init() {
     } else {
       // line size for table set to 1
       init_cache_impl(&hybridgp_state.bht, "BHT", BHT_ENTRIES, BHT_ASSOC, 1, BHT_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU,
-                      ID_HASH);
+                      ID_HASH, ENTROPY_INDEX_MAX_TRACK_BITS, 1000000, 80);
       hybridgp_state.hybgpht.resize(1 << HYBRIDG_HIST_LENGTH, PHT_INIT_VALUE);
     }
 

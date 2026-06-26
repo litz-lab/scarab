@@ -6,5 +6,6 @@ Index_Hash index_hash_table [] = {
     { SINGLE_XOR,        "single_xor",         cache_index_single_xor     },
     { XOR_FOLDING,       "xor_folding",        cache_index_xor_folding    },
     { PRIME_DISPLACE,    "prime_displace",     cache_index_prime_displace },
+    { ENTROPY_INDEX,     "entropy",            cache_index_entropy        },
     { NUM_INDEX_HASH,    0,                    NULL }
 };

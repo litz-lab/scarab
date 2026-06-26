@@ -111,10 +111,12 @@ typedef enum Index_Hash_enum {
   SINGLE_XOR,     /* XOR only once */
   XOR_FOLDING,    /* XOR 64/set_bits times */
   PRIME_DISPLACE, /* Displace index by p * tag */
+  ENTROPY_INDEX,  /* MICRO 2024 EntropyIndex: dynamic entropy-based bit selection */
   NUM_INDEX_HASH
 } Index_Hash_Id;
 
 typedef struct Index_Hash_struct Index_Hash;
+typedef struct Entropy_Index_State_struct Entropy_Index_State;
 
 typedef struct Cache_struct {
   char name[MAX_STR_LENGTH + 1]; /* name to identify the cache (for debugging) */
@@ -126,6 +128,7 @@ typedef struct Cache_struct {
   uns line_size;           /* size in bytes of one line */
   Repl_Policy repl_policy; /* the replacement policy of the cache */
   Index_Hash* index_hash;  /* index hashing mechanism */
+  Entropy_Index_State* entropy_state; /* NULL unless the cache was created with index_hash_id == ENTROPY_INDEX */
 
   /* each mask looks like this:
    *      addr: MSB [tag_bits][set_bits][shift_bits] LSB
@@ -178,6 +181,39 @@ struct Index_Hash_struct {
   Index_Hash_Id id;
   const char* name;
   Addr (*hash_func)(Cache*, Addr);
+};
+
+#define ENTROPY_INDEX_MAX_TRACK_BITS 64
+
+/* EntropyIndex (MICRO 2024) */
+struct Entropy_Index_State_struct {
+  uns num_track_bits; /* T: number of low block-address bits tracked */
+  uns num_index_bits; /* N: log2(num_sets); width of the set index */
+
+  uns flip_counts[ENTROPY_INDEX_MAX_TRACK_BITS]; /* EC[i]; # flips at bit i in current interval */
+  Addr last_miss_blk_addr;                       /* address of the previous miss */
+  Flag have_last_miss;                           /* whether last_miss_addr is valid */
+
+  uns8 x_bits[ENTROPY_INDEX_MAX_TRACK_BITS];
+  uns8 y_bits[ENTROPY_INDEX_MAX_TRACK_BITS];
+
+  Flag remapping;
+  uns8 x_bits_next[ENTROPY_INDEX_MAX_TRACK_BITS];
+  uns8 y_bits_next[ENTROPY_INDEX_MAX_TRACK_BITS];
+
+  uns set_ptr;          /* SP; sets [0, set_ptr) are already using the new function */
+  uns remap_rate;       /* R; remap one set every R accesses */
+  uns remap_access_ctr; /* accesses since the last set was remapped */
+
+  uns interval_size;     /* M: accesses per reselection */
+  uns interval_ctr;      /* accesses since the last reselection */
+  uns switch_thresh_pct; /* require >= this % entropy gain to switch functions */
+
+  /* For debugging. */
+  Counter num_switches;        /* index-function switches committed */
+  Counter num_skipped;         /* reselections that did not switch */
+  Counter num_sets_remapped;   /* sets processed by the set pointer */
+  Counter num_evictions_remap; /* lines evicted due to remapping conflicts */
 };
 
 /**************************************************************************************/
@@ -237,11 +273,31 @@ inline static Addr cache_index_prime_displace(Cache* cache, Addr addr) {
   return ((addr & cache->set_mask) + (addr >> cache->set_bits) * 17) & cache->set_mask;
 }
 
+/* Compute X ^ Y for a given (x_bits, y_bits) selection over a block address. */
+inline static Addr _entropy_index_apply(Entropy_Index_State* s, Addr blk_addr, const uns8* x_bits, const uns8* y_bits) {
+  Addr x = 0, y = 0;
+  for (uns ii = 0; ii < s->num_index_bits; ii++) {
+    x |= ((blk_addr >> x_bits[ii]) & 0x1ULL) << ii;
+    y |= ((blk_addr >> y_bits[ii]) & 0x1ULL) << ii;
+  }
+  return x ^ y;
+}
+
+inline static Addr cache_index_entropy(Cache* cache, Addr addr) {
+  Entropy_Index_State* s = cache->entropy_state;
+  Addr current_set = _entropy_index_apply(s, addr, s->x_bits, s->y_bits);
+  /* During gradual remapping a line is relocated once its old set has been
+     processed by the set pointer; relocated lines live at their new set. */
+  if (s->remapping && current_set < s->set_ptr)
+    return _entropy_index_apply(s, addr, s->x_bits_next, s->y_bits_next);
+  return current_set;
+}
+
 /**************************************************************************************/
 /* prototypes */
 
 void init_cache(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
-void init_cache_impl(Cache*, const char*, uns, uns, uns, uns, uns, Repl_Policy, Index_Hash_Id);
+void init_cache_impl(Cache*, const char*, uns, uns, uns, uns, uns, Repl_Policy, Index_Hash_Id, uns, uns, uns);
 void* cache_access(Cache*, Addr, Addr*, Flag);
 void* cache_access_impl(Cache*, Addr, Addr*, Flag*, Flag);
 void* cache_insert(Cache*, uns8, Addr, Addr*, Addr*);

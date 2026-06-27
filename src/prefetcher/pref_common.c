@@ -555,7 +555,6 @@ Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id
     return TRUE;
   Pref_Mem_Req* umlc_req_queue = pref.cores[proc_id]->umlc_req_queue;
   int* umlc_req_queue_req_pos = &pref.cores[proc_id]->umlc_req_queue_req_pos;
-
   if (PREF_UMLC_REQ_ADD_FILTER_ON) {
     for (ii = 0; ii < PREF_UMLC_REQ_QUEUE_SIZE; ii++) {
       if (umlc_req_queue[ii].line_index == line_index) {
@@ -849,10 +848,14 @@ static inline void pref_sent_update_degree(uns8 proc_id, uns8 prefetcher_id) {
 
 // A prefetch missed its target cache and went out on the bus. Charge the send
 // to the counters for the level it fills (dest), then run the shared sent /
-// PREF_DHAL degree update. The prefetch send paths currently only emit DEST_MLC
-// (umlc queue) and DEST_L1 (ul1 queue; dl0/dcache prefetches re-issue here on a
-// dcache miss), so those are the live cases; the switch keeps the level->counter
-// mapping explicit and easy to extend.
+// PREF_DHAL degree update. Prefetches are created targeting DEST_MLC (umlc
+// queue) or DEST_L1 (ul1 queue; dl0/dcache prefetches re-issue here on a dcache
+// miss). DEST_NONE also reaches here: when a demand matches an in-flight
+// prefetch, mem_adjust_matching_request demotes the prefetch's destination via
+// MIN2(dest, demand_dest=DEST_NONE) -> DEST_NONE, and the bus-out path still
+// sends it as a prefetch (req->demand_match_prefetch). Charge those to L1, the
+// level closest to the core (matches the pre-split pref_ul1sent() behavior).
+// Any other destination is unexpected; default asserts so a new dest is caught.
 void pref_sent(uns8 proc_id, Addr addr, uns8 prefetcher_id, Destination dest) {
   if (!PREF_FRAMEWORK_ON)
     return;
@@ -869,9 +872,13 @@ void pref_sent(uns8 proc_id, Addr addr, uns8 prefetcher_id, Destination dest) {
       STAT_EVENT_ALL(PREF_MLC_TOTAL_SENT);
       STAT_EVENT(proc_id, CORE_PREF_MLC_SENT);
       break;
-    default:  // DEST_L1, and demand-matched prefetches whose dest was demoted
+    case DEST_L1:    // ul1 queue; dl0/dcache prefetches re-issue here on a dcache miss
+    case DEST_NONE:  // demand-matched prefetch demoted to DEST_NONE; count at L1
       STAT_EVENT_ALL(PREF_L1_TOTAL_SENT);
       STAT_EVENT(proc_id, CORE_PREF_L1_SENT);
+      break;
+    default:  // DEST_DCACHE/ICACHE/MEM never reach the send path; catch new dests
+      ASSERTM(proc_id, FALSE, "pref_sent: unhandled prefetch destination %d\n", dest);
       break;
   }
 

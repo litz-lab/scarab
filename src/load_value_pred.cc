@@ -237,6 +237,9 @@ PredictorEntry* ConstantLoadAddrPredictor::lookup(Op* op) {
 
 void ConstantLoadAddrPredictor::train(Op* op, PredictorEntry* entry) {
   ASSERT(op->proc_id, op->table_info->mem_type == MEM_LD);
+  if (op->off_path)
+    return;
+
   Addr pc = op->inst_info->addr;
   Addr va = op->oracle_info.va;
 

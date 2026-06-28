@@ -243,6 +243,20 @@ DEF_STAT(  BTB_MAIN_INCORRECT_BUT_TARGET_CORRECT_OFFPATH, COUNT, NO_RATIO  )
 DEF_STAT(  BTB_MAIN_INCORRECT_TAG_ALIAS_OFFPATH,          COUNT, NO_RATIO  )
 DEF_STAT(  BTB_MAIN_INCORRECT_OFFPATH,                    DIST, NO_RATIO  )
 
+// Stats for entropy_index
+DEF_STAT(  BTB_L0_EI_SWITCHES,        COUNT, NO_RATIO  ) /* index-function switches committed */
+DEF_STAT(  BTB_L0_EI_SKIPS,           COUNT, NO_RATIO  ) /* reselections that did not switch */
+DEF_STAT(  BTB_L0_EI_SETS_REMAPPED,   COUNT, NO_RATIO  ) /* sets processed by the set pointer */
+DEF_STAT(  BTB_L0_EI_REMAP_EVICTIONS, COUNT, NO_RATIO  ) /* lines evicted due to remapping conflicts */
+DEF_STAT(  BTB_L1_EI_SWITCHES,        COUNT, NO_RATIO  ) /* index-function switches committed */
+DEF_STAT(  BTB_L1_EI_SKIPS,           COUNT, NO_RATIO  ) /* reselections that did not switch */
+DEF_STAT(  BTB_L1_EI_SETS_REMAPPED,   COUNT, NO_RATIO  ) /* sets processed by the set pointer */
+DEF_STAT(  BTB_L1_EI_REMAP_EVICTIONS, COUNT, NO_RATIO  ) /* lines evicted due to remapping conflicts */
+DEF_STAT(  BTB_MAIN_EI_SWITCHES,        COUNT, NO_RATIO  ) /* index-function switches committed */
+DEF_STAT(  BTB_MAIN_EI_SKIPS,           COUNT, NO_RATIO  ) /* reselections that did not switch */
+DEF_STAT(  BTB_MAIN_EI_SETS_REMAPPED,   COUNT, NO_RATIO  ) /* sets processed by the set pointer */
+DEF_STAT(  BTB_MAIN_EI_REMAP_EVICTIONS, COUNT, NO_RATIO  ) /* lines evicted due to remapping conflicts */
+
 // Stats to measure the frequency of each bit in address
 DEF_STAT(BTB_ADDR_0_ZERO,  DIST, NO_RATIO  )
 DEF_STAT(BTB_ADDR_0_ONE,   DIST, NO_RATIO  )

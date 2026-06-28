@@ -185,6 +185,14 @@ struct Index_Hash_struct {
 
 #define ENTROPY_INDEX_MAX_TRACK_BITS 64
 
+typedef enum Entropy_Index_Stat_enum {
+  EI_STAT_SWITCH = 0,     /* index function switched */
+  EI_STAT_SKIP,           /* reselection declined to switch */
+  EI_STAT_SET_REMAPPED,   /* one set processed by the set pointer */
+  EI_STAT_REMAP_EVICTION, /* line evicted due to a remap conflict */
+  NUM_EI_STAT
+} Entropy_Index_Stat;
+
 /* EntropyIndex (MICRO 2024) */
 struct Entropy_Index_State_struct {
   uns num_track_bits; /* T: number of low block-address bits tracked */
@@ -210,6 +218,7 @@ struct Entropy_Index_State_struct {
   uns switch_thresh_pct; /* require >= this % entropy gain to switch functions */
 
   /* For debugging. */
+  int stat_base;               /* -1 = no stats */
   Counter num_switches;        /* index-function switches committed */
   Counter num_skipped;         /* reselections that did not switch */
   Counter num_sets_remapped;   /* sets processed by the set pointer */
@@ -297,7 +306,7 @@ inline static Addr cache_index_entropy(Cache* cache, Addr addr) {
 /* prototypes */
 
 void init_cache(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
-void init_cache_impl(Cache*, const char*, uns, uns, uns, uns, uns, Repl_Policy, Index_Hash_Id, uns, uns, uns);
+void init_cache_impl(Cache*, const char*, uns, uns, uns, uns, uns, Repl_Policy, Index_Hash_Id, uns, uns, uns, int);
 void* cache_access(Cache*, Addr, Addr*, Flag);
 void* cache_access_impl(Cache*, Addr, Addr*, Flag*, Flag);
 void* cache_insert(Cache*, uns8, Addr, Addr*, Addr*);

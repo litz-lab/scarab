@@ -31,6 +31,7 @@ jobs:
       collect_metrics: true
 
   build-and-run-scarab-opt:
+    if: github.event_name == 'pull_request' || github.repository == 'litz-lab/scarab'
     uses: ./.github/workflows/scarab-sim.yml
     with:
       sci_id: top_simpoint

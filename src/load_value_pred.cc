@@ -279,9 +279,7 @@ void ConstantLoadAddrPredictor::train(Op* op, PredictorEntry* entry) {
     pred_entry->confidence = 0;
     const uns next_threshold = pred_entry->predict_threshold + CONST_LOAD_ADDR_PRED_MISPRED_PENALTY;
     pred_entry->predict_threshold =
-        next_threshold > CONST_LOAD_ADDR_PRED_MAX_THRESHOLD ?
-          CONST_LOAD_ADDR_PRED_MAX_THRESHOLD :
-          next_threshold;
+        next_threshold > CONST_LOAD_ADDR_PRED_MAX_THRESHOLD ? CONST_LOAD_ADDR_PRED_MAX_THRESHOLD : next_threshold;
     pred_entry->cooldown = pred_entry->predict_threshold;
   }
 }

@@ -80,6 +80,10 @@ uint64_t l1i_last_basic_block;
 uint32_t l1i_consecutive_count;
 uint32_t l1i_basic_block_merge_diff;
 
+/* TC'24 squash-based wrong-path handling */
+static uint64_t l1i_current_op_num = 0;
+static uint64_t l1i_recovery_op_num = UINT64_MAX;
+
 bool debug = 0;
 
 #define L1I_HIST_TABLE_ENTRIES 16
@@ -309,6 +313,7 @@ typedef struct __l1i_hist_entry {
   uint64_t tag;        // L1I_HIST_TAG_BITS bits
   uint64_t time_diff;  // L1I_TIME_DIFF_BITS bits
   uint32_t bb_size;    // L1I_MERGE_BBSIZE_BITS bits
+  uint64_t op_num;     // TC'24: instruction ID for squash-based wrong-path filtering
 } l1i_hist_entry;
 
 // l1i_hist_entry l1i_hist_table[NUM_CPUS][L1I_HIST_TABLE_ENTRIES];
@@ -354,6 +359,7 @@ uint32_t l1i_add_hist_table(uint64_t line_addr) {
   l1i_hist_table[eip_proc_id][l1i_hist_table_head[eip_proc_id]].time_diff =
       (cycle_count - l1i_hist_table_head_time[eip_proc_id]) & L1I_TIME_DIFF_MASK;
   l1i_hist_table[eip_proc_id][l1i_hist_table_head[eip_proc_id]].bb_size = 0;
+  l1i_hist_table[eip_proc_id][l1i_hist_table_head[eip_proc_id]].op_num = l1i_current_op_num;
   uint32_t pos = l1i_hist_table_head[eip_proc_id];
   l1i_hist_table_head[eip_proc_id] = (l1i_hist_table_head[eip_proc_id] + 1) % L1I_HIST_TABLE_ENTRIES;
   l1i_hist_table_head_time[eip_proc_id] = cycle_count;
@@ -432,6 +438,7 @@ typedef struct __l1i_timing_mshr_entry {
   uint64_t timestamp;   // L1I_TIME_BITS bits // time when issued
   bool accessed;        // 1 bit
   uint32_t pos_hist;    // 1 bit
+  uint64_t op_num;      // TC'24: instruction ID for squash-based wrong-path filtering
 } l1i_timing_mshr_entry;
 
 // We do not have access to the cache, so we aproximate it using this structure
@@ -514,6 +521,7 @@ void l1i_add_timing_entry(uint64_t line_addr, uint32_t source_set, uint32_t sour
   l1i_timing_mshr_table[eip_proc_id][i].source_way = source_way;
   l1i_timing_mshr_table[eip_proc_id][i].timestamp = cycle_count & L1I_TIME_MASK;
   l1i_timing_mshr_table[eip_proc_id][i].accessed = false;
+  l1i_timing_mshr_table[eip_proc_id][i].op_num = l1i_current_op_num;
 }
 
 void l1i_invalid_timing_mshr_entry(uint64_t line_addr) {
@@ -616,13 +624,14 @@ bool l1i_ongoing_accessed_request(uint64_t line_addr) {
   return l1i_timing_mshr_table[eip_proc_id][index].accessed;
 }
 
-uint64_t l1i_get_latency_timing_mshr(uint64_t line_addr, uint32_t &pos_hist) {
+uint64_t l1i_get_latency_timing_mshr(uint64_t line_addr, uint32_t &pos_hist, uint64_t &mshr_op_num) {
   uint32_t index = l1i_find_timing_mshr_entry(line_addr);
   if (index == L1I_TIMING_MSHR_SIZE)
     return 0;
   if (!l1i_timing_mshr_table[eip_proc_id][index].accessed)
     return 0;
   pos_hist = l1i_timing_mshr_table[eip_proc_id][index].pos_hist;
+  mshr_op_num = l1i_timing_mshr_table[eip_proc_id][index].op_num;
   return l1i_get_latency(cycle_count, l1i_timing_mshr_table[eip_proc_id][index].timestamp);
 }
 
@@ -989,7 +998,9 @@ void init_eip(uns proc_id) {
   l1i_init_entangled_table();
 }
 
-void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefetch_hit, Flag off_path) {
+void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefetch_hit, Flag off_path,
+                  uint64_t op_num) {
+  l1i_current_op_num = op_num;
   uint64_t line_addr = v_addr >> LOG2(ICACHE_LINE_SIZE);
   DEBUG(proc_id,
         "eip_prefetch 0x%lx, icache_line_addr 0x%lx line_addr 0x%lx, cache hit %d, prefetch_hit %d, "
@@ -1144,6 +1155,33 @@ void update_eip() {
     return;
 }
 
+void eip_recover(uns proc_id, uint64_t recovery_op_num) {
+  if (!EIP_ENABLE)
+    return;
+
+  eip_proc_id = proc_id;
+
+  /* TC'24 squash: invalidate history entries stamped with wrong-path op_nums */
+  for (uint32_t i = 0; i < L1I_HIST_TABLE_ENTRIES; i++) {
+    if (l1i_hist_table[eip_proc_id][i].tag && l1i_hist_table[eip_proc_id][i].op_num > recovery_op_num) {
+      l1i_hist_table[eip_proc_id][i].tag = 0;
+    }
+  }
+
+  /* Invalidate wrong-path timing MSHR entries */
+  for (uint32_t i = 0; i < L1I_TIMING_MSHR_SIZE; i++) {
+    if (l1i_timing_mshr_table[eip_proc_id][i].valid && l1i_timing_mshr_table[eip_proc_id][i].op_num > recovery_op_num) {
+      l1i_timing_mshr_table[eip_proc_id][i].valid = false;
+    }
+  }
+
+  /* Reset BB tracking state — wrong-path BB boundaries are invalid */
+  l1i_consecutive_count = 0;
+
+  /* Save recovery point for fill-time filtering */
+  l1i_recovery_op_num = recovery_op_num;
+}
+
 void eip_cache_fill(uns proc_id, uint64_t v_addr, uint64_t evicted_v_addr) {
   eip_proc_id = proc_id;
   uint64_t line_addr = (v_addr >> LOG2(ICACHE_LINE_SIZE));
@@ -1166,9 +1204,14 @@ void eip_cache_fill(uns proc_id, uint64_t v_addr, uint64_t evicted_v_addr) {
   }
 
   uint32_t pos_hist = L1I_HIST_TABLE_ENTRIES;
-  uint64_t latency = l1i_get_latency_timing_mshr(line_addr, pos_hist);
+  uint64_t mshr_op_num = 0;
+  uint64_t latency = l1i_get_latency_timing_mshr(line_addr, pos_hist, mshr_op_num);
 
   l1i_move_timing_entry(line_addr);
+
+  // TC'24: skip entanglement creation if MSHR entry was from wrong-path
+  if (mshr_op_num > l1i_recovery_op_num)
+    latency = 0;
 
   // Get and update entangled
   if (latency && pos_hist < L1I_HIST_TABLE_ENTRIES) {

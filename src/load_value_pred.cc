@@ -188,10 +188,22 @@ class NoneLoadValuePredictor : public LoadValuePredictor {
 struct ConstantLoadAddrPredEntry : public PredictorEntry {
   Addr oracle_address;
   uns confidence;
+  uns predict_threshold;
+  uns cooldown;
   bool found;
 
-  ConstantLoadAddrPredEntry() : oracle_address(0), confidence(0), found(false) {}
-  ConstantLoadAddrPredEntry(Addr addr) : oracle_address(addr), confidence(0), found(true) {}
+  ConstantLoadAddrPredEntry()
+      : oracle_address(0),
+        confidence(0),
+        predict_threshold(CONST_LOAD_ADDR_PRED_THRESHOLD),
+        cooldown(0),
+        found(false) {}
+  ConstantLoadAddrPredEntry(Addr addr)
+      : oracle_address(addr),
+        confidence(0),
+        predict_threshold(CONST_LOAD_ADDR_PRED_THRESHOLD),
+        cooldown(0),
+        found(true) {}
 
   bool is_found() const override { return found; }
 };
@@ -249,12 +261,26 @@ void ConstantLoadAddrPredictor::train(Op* op, PredictorEntry* entry) {
     return;
   }
 
+  if (pred_entry->cooldown > 0) {
+    pred_entry->cooldown--;
+  }
+
   // Update confidence based on whether prediction matches actual address
   if (pred_entry->oracle_address == va) {
-    pred_entry->confidence++;
+    if (pred_entry->confidence < CONST_LOAD_ADDR_PRED_MAX_CONF) {
+      pred_entry->confidence++;
+    }
+    if (pred_entry->predict_threshold > CONST_LOAD_ADDR_PRED_THRESHOLD &&
+        pred_entry->confidence >= pred_entry->predict_threshold) {
+      pred_entry->predict_threshold--;
+    }
   } else {
     pred_entry->oracle_address = va;
     pred_entry->confidence = 0;
+    const uns next_threshold = pred_entry->predict_threshold + CONST_LOAD_ADDR_PRED_MISPRED_PENALTY;
+    pred_entry->predict_threshold =
+        next_threshold > CONST_LOAD_ADDR_PRED_MAX_THRESHOLD ? CONST_LOAD_ADDR_PRED_MAX_THRESHOLD : next_threshold;
+    pred_entry->cooldown = pred_entry->predict_threshold;
   }
 }
 
@@ -267,7 +293,7 @@ void ConstantLoadAddrPredictor::infer(Op* op, PredictorEntry* entry) {
   }
 
   // Only make prediction if confidence exceeds threshold
-  if (pred_entry->confidence <= CONST_LOAD_ADDR_PRED_THRESHOLD) {
+  if (pred_entry->cooldown > 0 || pred_entry->confidence <= pred_entry->predict_threshold) {
     return;
   }
 

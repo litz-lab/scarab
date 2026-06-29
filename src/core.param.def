@@ -188,6 +188,9 @@ DEF_PARAM(store_queue_entry_num, STORE_QUEUE_ENTRY_NUM, uns, uns, 72, )
 /****************** LOAD VALUE PREDICTOR ******************/
 DEF_PARAM(load_value_pred_scheme, LOAD_VALUE_PRED_SCHEME, uns, uns, 0, )
 DEF_PARAM(const_load_addr_pred_threshold, CONST_LOAD_ADDR_PRED_THRESHOLD, uns, uns, 10, )
+DEF_PARAM(const_load_addr_pred_max_conf, CONST_LOAD_ADDR_PRED_MAX_CONF, uns, uns, 255, )
+DEF_PARAM(const_load_addr_pred_max_threshold, CONST_LOAD_ADDR_PRED_MAX_THRESHOLD, uns, uns, 255, )
+DEF_PARAM(const_load_addr_pred_mispred_penalty, CONST_LOAD_ADDR_PRED_MISPRED_PENALTY, uns, uns, 32, )
 
 /********FRONT END STAGE
  * LATENCIES****************************************************/

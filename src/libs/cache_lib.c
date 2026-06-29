@@ -69,7 +69,8 @@ static inline void update_repl_policy(Cache*, Cache_Entry*, uns, uns, Flag);
 static inline Cache_Entry* find_repl_entry(Cache*, uns8, uns, uns*);
 
 /* EntropyIndex (MICRO 2024) */
-static void entropy_index_init(Cache* cache, uns num_track_bits, uns interval_size, uns remap_rate, int stat_base);
+static void entropy_index_init(Cache* cache, uns num_track_bits, uns interval_size, uns remap_rate,
+                               int switch_thresh_pct, int stat_base);
 static void entropy_index_on_access(Cache* cache, Addr blk_addr, Flag hit);
 static void entropy_index_reselect(Cache* cache);
 static void entropy_index_remap_one_set(Cache* cache);
@@ -116,12 +117,12 @@ uns ext_cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_addr) {
 void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                 Repl_Policy repl_policy) {
   init_cache_impl(cache, name, cache_size, assoc, line_size, 64, data_size, repl_policy, ID_HASH,
-                  ENTROPY_INDEX_MAX_TRACK_BITS, 1000000, 80, -1);
+                  ENTROPY_INDEX_MAX_TRACK_BITS, 1000000, 80, -1, -1);
 }
 
 void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns tag_bits,
                      uns data_size, Repl_Policy repl_policy, Index_Hash_Id index_hash_id, uns ei_num_track_bits,
-                     uns ei_interval_size, uns ei_remap_rate, int ei_stat_base) {
+                     uns ei_interval_size, uns ei_remap_rate, int ei_switch_thresh_pct, int ei_stat_base) {
   uns num_lines = cache_size / line_size;
   uns num_sets = cache_size / line_size / assoc;
   uns ii, jj;
@@ -156,7 +157,7 @@ void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, 
 
   /* set up EntropyIndex state if this cache uses the entropy index hash */
   if (index_hash_id == ENTROPY_INDEX)
-    entropy_index_init(cache, ei_num_track_bits, ei_interval_size, ei_remap_rate, ei_stat_base);
+    entropy_index_init(cache, ei_num_track_bits, ei_interval_size, ei_remap_rate, ei_switch_thresh_pct, ei_stat_base);
 
   /* allocate memory for NMRU replacement counters  */
   cache->repl_ctrs = (uns*)calloc(num_sets, sizeof(uns));
@@ -248,7 +249,8 @@ void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, 
  * toggles between two consecutive misses. At each interval boundary the bits are re-ranked and, if the entropy gain
  * clears a threshold, the index function is switched and the cache is gradually remapped CEASER-style. */
 
-static void entropy_index_init(Cache* cache, uns num_track_bits, uns interval_size, uns remap_rate, int stat_base) {
+static void entropy_index_init(Cache* cache, uns num_track_bits, uns interval_size, uns remap_rate,
+                               int switch_thresh_pct, int stat_base) {
   /* NOTE: EntropyIndex selects bits of the line-addressable block address, so it
      should only be enabled for caches that are NOT byte-addressable (i.e. not
      tag_incl_offset). tag_incl_offset set after this point in init, so the
@@ -276,7 +278,10 @@ static void entropy_index_init(Cache* cache, uns num_track_bits, uns interval_si
   s->remap_access_ctr = 0;
   s->interval_size = interval_size;
   s->interval_ctr = 0;
-  s->switch_thresh_pct = cache->assoc * 100 / remap_rate;
+  if (switch_thresh_pct >= 0)
+    s->switch_thresh_pct = switch_thresh_pct;
+  else
+    s->switch_thresh_pct = cache->assoc * 100 / remap_rate;
 
   s->stat_base = stat_base;
 

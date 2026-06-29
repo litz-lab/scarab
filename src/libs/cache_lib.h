@@ -306,7 +306,7 @@ inline static Addr cache_index_entropy(Cache* cache, Addr addr) {
 /* prototypes */
 
 void init_cache(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
-void init_cache_impl(Cache*, const char*, uns, uns, uns, uns, uns, Repl_Policy, Index_Hash_Id, uns, uns, uns, int);
+void init_cache_impl(Cache*, const char*, uns, uns, uns, uns, uns, Repl_Policy, Index_Hash_Id, uns, uns, uns, int, int);
 void* cache_access(Cache*, Addr, Addr*, Flag);
 void* cache_access_impl(Cache*, Addr, Addr*, Flag*, Flag);
 void* cache_insert(Cache*, uns8, Addr, Addr*, Addr*);

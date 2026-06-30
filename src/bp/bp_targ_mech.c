@@ -496,8 +496,8 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
         char name[MAX_STR_LENGTH + 1];
         snprintf(name, MAX_STR_LENGTH, "BTB_L0 BANK %d", ii);
         init_cache_impl(&bp_data->btb_l0[ii], name, BTB_L0_ENTRIES / BTB_L0_BANKS, BTB_L0_ASSOC, 1, BTB_L0_TAG_BITS,
-                        sizeof(Addr), REPL_TRUE_LRU, BTB_L0_HASH, BTB_NUM_TRACK_BITS, BTB_INTERVAL_SIZE, BTB_REMAP_RATE,
-                        BTB_SWITCH_THRESH_PCT, BTB_L0_EI_SWITCHES);
+                        sizeof(Addr), REPL_TRUE_LRU, BTB_L0_HASH, BTB_L0_NUM_TRACK_BITS, BTB_L0_INTERVAL_SIZE,
+                        BTB_L0_REMAP_RATE, BTB_L0_SWITCH_THRESH_PCT, BTB_L0_EI_SWITCHES);
       }
     }
 
@@ -507,8 +507,8 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
         char name[MAX_STR_LENGTH + 1];
         snprintf(name, MAX_STR_LENGTH, "BTB_L1 BANK %d", ii);
         init_cache_impl(&bp_data->btb_l1[ii], name, BTB_L1_ENTRIES / BTB_L1_BANKS, BTB_L1_ASSOC, 1, BTB_L1_TAG_BITS,
-                        sizeof(Addr), REPL_TRUE_LRU, BTB_L1_HASH, BTB_NUM_TRACK_BITS, BTB_INTERVAL_SIZE, BTB_REMAP_RATE,
-                        BTB_SWITCH_THRESH_PCT, BTB_L1_EI_SWITCHES);
+                        sizeof(Addr), REPL_TRUE_LRU, BTB_L1_HASH, BTB_L1_NUM_TRACK_BITS, BTB_L1_INTERVAL_SIZE,
+                        BTB_L1_REMAP_RATE, BTB_L1_SWITCH_THRESH_PCT, BTB_L1_EI_SWITCHES);
       }
     }
   } else {

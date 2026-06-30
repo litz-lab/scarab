@@ -4222,6 +4222,12 @@ Flag l1_fill_line(Mem_Req* req) {
   data->offpath_op_unique = req->oldest_op_unique_num;
   data->l0_modified_fetched_by_offpath = FALSE;
 
+  /* UL1 (LLC) fill feedback: lets eviction-trained prefetchers learn on fills.
+     demand_match_prefetch covers late prefetches (a demand hit an in-flight prefetch,
+     so req->type was promoted to demand) -- matches data->prefetch above. */
+  pref_ul1_cache_fill(req->proc_id, req->addr, mem_req_type_is_prefetch(req->type) || req->demand_match_prefetch,
+                      repl_line_addr, 0);
+
   // WB from dcache does not need a memory access
   data->l1miss_latency = (req->type == MRT_WB) ? 0 : cycle_count - req->l1_miss_cycle;
   data->fetch_cycle = cycle_count;
@@ -4443,6 +4449,12 @@ Flag mlc_fill_line(Mem_Req* req) {
   data->offpath_op_addr = req->oldest_op_addr;
   data->offpath_op_unique = req->oldest_op_unique_num;
   data->l0_modified_fetched_by_offpath = FALSE;
+
+  /* UMLC (L2) fill feedback: lets an L2 prefetcher count its own fills (accuracy).
+     demand_match_prefetch covers late prefetches (a demand hit an in-flight prefetch,
+     so req->type was promoted to demand) -- matches data->prefetch above. */
+  pref_umlc_cache_fill(req->proc_id, req->addr, mem_req_type_is_prefetch(req->type) || req->demand_match_prefetch,
+                       repl_line_addr, 0);
 
   // WB from dcache does not need a memory access
   data->mlc_miss_latency = (req->type == MRT_WB) ? 0 : cycle_count - req->mlc_miss_cycle;

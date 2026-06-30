@@ -301,6 +301,8 @@ class SelectLogic {
 
   bool has_ready_ops() const;
   uns64 get_ready_not_issued_op_types() const { return ready_not_issued_op_types; }
+
+  void collect_entry_op_stats(IssueQueueEntry* entry);
 };
 
 /*
@@ -322,6 +324,7 @@ void SelectLogic::bid() {
     if (entry->state != ISSUE_QUEUE_ENTRY_STATE_READY || !issue_queue_check_op_ready(entry->op)) {
       continue;
     }
+    STAT_EVENT(node->proc_id, RS_OP_READY);
 
     // the current request propagated through the serial picker chain
     IssueQueueEntry* request_entry = entry;
@@ -353,6 +356,8 @@ void SelectLogic::bid() {
       if (request_entry->bound_fu_id != MAX_UNS) {
         ready_not_issued_op_types_per_fu[request_entry->bound_fu_id] |= request_entry->op_fu_type;
       }
+
+      collect_entry_op_stats(request_entry);
 
       STAT_EVENT(node->proc_id, RS_OP_READY_NOT_ISSUED_TOTAL);
       STAT_EVENT(node->proc_id, RS_0_OP_READY_NOT_ISSUED + (queue_id < 8 ? queue_id : 8));
@@ -409,6 +414,21 @@ void SelectLogic::release(IssueQueueEntry* entry) {
 
 bool SelectLogic::has_ready_ops() const {
   return !ready_list.empty();
+}
+
+void SelectLogic::collect_entry_op_stats(IssueQueueEntry* entry) {
+  Op* op = entry->op;
+  if (op->off_path) {
+    STAT_EVENT(op->proc_id, ST_OP_OFFPATH_READY_NOT_ISSUED);
+    STAT_EVENT(op->proc_id, ST_NOT_MEM_OFFPATH_READY_NOT_ISSUED + op->inst_info->table_info.mem_type);
+    return;
+  }
+
+  STAT_EVENT(op->proc_id, ST_OP_ONPATH_READY_NOT_ISSUED);
+  STAT_EVENT(op->proc_id, ST_OP_INV_READY_NOT_ISSUED + op->inst_info->table_info.op_type);
+  STAT_EVENT(op->proc_id, ST_NOT_CF_READY_NOT_ISSUED + op->inst_info->table_info.cf_type);
+  STAT_EVENT(op->proc_id, ST_BAR_NONE_READY_NOT_ISSUED + op->inst_info->table_info.bar_type);
+  STAT_EVENT(op->proc_id, ST_NOT_MEM_READY_NOT_ISSUED + op->inst_info->table_info.mem_type);
 }
 
 /**************************************************************************************/

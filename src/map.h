@@ -64,7 +64,7 @@ typedef struct Map_Data_struct {
 
   uns64 arch_last_val[NUM_REG_IDS];
   uns64 arch_last_uid[NUM_REG_IDS];
-  Flag  arch_last_valid[NUM_REG_IDS];
+  Flag arch_last_valid[NUM_REG_IDS];
 } Map_Data;
 
 /**************************************************************************************/

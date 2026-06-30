@@ -746,8 +746,8 @@ void reg_table_entry_produce(struct reg_table_entry *entry, Op *op, uns dst_reg_
 
   if (!op->off_path) {
     int arch_id = op->dst_reg_id[dst_reg_idx][REG_TABLE_TYPE_ARCHITECTURAL];
-    map_data->arch_last_val[arch_id]   = op->dst_val[dst_reg_idx];
-    map_data->arch_last_uid[arch_id]   = op->inst_uid;
+    map_data->arch_last_val[arch_id] = op->dst_val[dst_reg_idx];
+    map_data->arch_last_uid[arch_id] = op->inst_uid;
     map_data->arch_last_valid[arch_id] = TRUE;
   }
 }
@@ -1937,7 +1937,7 @@ void reg_file_commit(Op *op) {
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].commit(op);
 }
 
-Flag reg_value_read(int arch_id, uns64* val_out, uns64* uid_out) {
+Flag reg_value_read(int arch_id, uns64 *val_out, uns64 *uid_out) {
   if (!map_data->arch_last_valid[arch_id])
     return FALSE;
 

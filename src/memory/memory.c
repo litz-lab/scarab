@@ -1072,6 +1072,12 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_entry, 
           if (!data->seen_prefetch) {
             data->seen_prefetch = TRUE;
 
+            // Notify the MLC/L2 prefetcher that one of its prefetched lines was
+            // used by a demand access (counterpart of the UL1 hit notification
+            // above); drives the prefetcher's per-prefetcher useful counter.
+            pref_umlc_pref_hit(req->proc_id, req->addr, data->pref_loadPC, data->global_hist, lru_position,
+                               data->prefetcher_id);
+
             STAT_EVENT(req->proc_id, MLC_PREF_UNIQUE_HIT);
             STAT_EVENT(req->proc_id, PREF_MLC_TOTAL_USED);
             STAT_EVENT(req->proc_id, CORE_PREF_MLC_USED);
@@ -1596,7 +1602,9 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
            req->type == MRT_FDIPPRFOFF || req->demand_match_prefetch) &&
           req->prefetcher_id != 0) {  // cmp FIXME What can I do for the prefetcher?
 
-        pref_ul1sent(req->proc_id, req->addr, req->prefetcher_id);
+        // Account the send against the cache level this prefetch targets so the
+        // per-prefetcher sent counters (PREF_*_TOTAL_SENT) track the right level.
+        pref_sent(req->proc_id, req->addr, req->prefetcher_id, req->destination);
         STAT_EVENT(req->proc_id, BUS_PREF_ACCESS);
       } else {
         STAT_EVENT(req->proc_id, BUS_DEMAND_ACCESS);

@@ -215,8 +215,9 @@ Flag pref_addto_ul1req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id);
 Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_id, uns distance, Addr loadAddr,
                                  uns32 global_hist, Flag bw);
 
-// prefetch missed in the ul1 and went out on the bus
-void pref_ul1sent(uns8 proc_id, Addr addr, uns8 prefetcher_id);
+// A prefetch missed its target cache and went out on the bus; charge the send
+// to the counters for the level it fills (dest).
+void pref_sent(uns8 proc_id, Addr addr, uns8 prefetcher_id, Destination dest);
 
 /*************************************************************/
 /* Misc functions */

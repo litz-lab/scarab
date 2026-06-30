@@ -91,6 +91,7 @@ struct reg_table_entry {
   int reg_table_type;  // arch, physical, or virtual
   // register value
   uint64_t reg_val;
+  uns64    produced_uid;
 
   // register state info
   enum reg_table_entry_state reg_state;
@@ -222,5 +223,6 @@ void reg_file_produce(Op *op);                // write back the dst registers
 void reg_file_recover(Op *op);                // flush registers of misprediction operands
 void reg_file_precommit(Op *op);              // update the register metadata when an op is non-spec
 void reg_file_commit(Op *op);                 // release the previous register with same architectural register id
+Flag reg_value_read(int arch_id, uns64* val_out, uns64* uid_out);  // read an arch reg's last produced value and uid
 
 #endif /* #ifndef __MAP_RENAME_H__ */

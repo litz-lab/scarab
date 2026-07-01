@@ -294,15 +294,16 @@ class SelectLogic {
   void bid();
   void grant(uns64 ready_not_issued_op_types_others);
 
-  void bind(IssueQueueEntry* entry);
-  void unbind(IssueQueueEntry* entry);
-  void request(IssueQueueEntry* entry);
-  void release(IssueQueueEntry* entry);
+  void bind(IssueQueueEntry* entry) { bind_policy->bind(connected_fu_pickers, entry); }
+  void unbind(IssueQueueEntry* entry) { bind_policy->unbind(entry); }
+  void request(IssueQueueEntry* entry) { ready_list.push_front(entry); }
+  void release(IssueQueueEntry* entry) { ready_list.remove(entry); }
 
-  bool has_ready_ops() const;
+  bool has_ready_ops() const { return !ready_list.empty(); }
   uns64 get_ready_not_issued_op_types() const { return ready_not_issued_op_types; }
 
-  void collect_entry_op_stats(IssueQueueEntry* entry);
+  void collect_entry_op_ready_stats(IssueQueueEntry* entry);
+  void collect_entry_op_ready_not_issued_stats(IssueQueueEntry* entry);
 };
 
 /*
@@ -324,10 +325,10 @@ void SelectLogic::bid() {
     if (entry->state != ISSUE_QUEUE_ENTRY_STATE_READY || !issue_queue_check_op_ready(entry->op)) {
       continue;
     }
-    STAT_EVENT(node->proc_id, RS_OP_READY);
 
     // the current request propagated through the serial picker chain
     IssueQueueEntry* request_entry = entry;
+    collect_entry_op_ready_stats(request_entry);
 
     for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
       size_t picker_idx = picker_order[i];
@@ -357,10 +358,7 @@ void SelectLogic::bid() {
         ready_not_issued_op_types_per_fu[request_entry->bound_fu_id] |= request_entry->op_fu_type;
       }
 
-      collect_entry_op_stats(request_entry);
-
-      STAT_EVENT(node->proc_id, RS_OP_READY_NOT_ISSUED_TOTAL);
-      STAT_EVENT(node->proc_id, RS_0_OP_READY_NOT_ISSUED + (queue_id < 8 ? queue_id : 8));
+      collect_entry_op_ready_not_issued_stats(request_entry);
     }
   }
 }
@@ -377,46 +375,47 @@ void SelectLogic::grant(uns64 ready_not_issued_op_types_others) {
     if (node->sd.ops[fu_id] != NULL)
       continue;
 
+    bool matching_unpick = false;
     if (ready_not_issued_op_types_others & fu_picker.get_fu_type()) {
       STAT_EVENT(proc_id, ISSUE_QUEUE_MATCHING_UNPICK_ACROSS_QUEUES);
+      matching_unpick = true;
     }
 
     for (size_t j = 0; j < connected_fu_pickers.size(); ++j) {
       if (ready_not_issued_op_types_per_fu[j] & fu_picker.get_fu_type()) {
         STAT_EVENT(proc_id, ISSUE_QUEUE_MATCHING_UNPICK_WITHIN_QUEUE);
+        matching_unpick = true;
         break;
       }
+    }
+
+    if (matching_unpick) {
+      STAT_EVENT(proc_id, ISSUE_QUEUE_MATCHING_UNPICK);
     }
   }
 }
 
-void SelectLogic::bind(IssueQueueEntry* entry) {
-  ASSERT(node->proc_id, entry != nullptr);
-  ASSERT(node->proc_id, entry->bound_fu_id == MAX_UNS);
+void SelectLogic::collect_entry_op_ready_stats(IssueQueueEntry* entry) {
+  STAT_EVENT(node->proc_id, RS_OP_READY);
 
-  bind_policy->bind(connected_fu_pickers, entry);
+  Op* op = entry->op;
+  if (op->off_path) {
+    STAT_EVENT(op->proc_id, ST_OP_OFFPATH_READY);
+    STAT_EVENT(op->proc_id, ST_NOT_MEM_OFFPATH_READY + op->inst_info->table_info.mem_type);
+    return;
+  }
+
+  STAT_EVENT(op->proc_id, ST_OP_ONPATH_READY);
+  STAT_EVENT(op->proc_id, ST_OP_INV_READY + op->inst_info->table_info.op_type);
+  STAT_EVENT(op->proc_id, ST_NOT_CF_READY + op->inst_info->table_info.cf_type);
+  STAT_EVENT(op->proc_id, ST_BAR_NONE_READY + op->inst_info->table_info.bar_type);
+  STAT_EVENT(op->proc_id, ST_NOT_MEM_READY + op->inst_info->table_info.mem_type);
 }
 
-void SelectLogic::unbind(IssueQueueEntry* entry) {
-  ASSERT(node->proc_id, entry != nullptr);
-  bind_policy->unbind(entry);
-}
+void SelectLogic::collect_entry_op_ready_not_issued_stats(IssueQueueEntry* entry) {
+  STAT_EVENT(node->proc_id, RS_OP_READY_NOT_ISSUED_TOTAL);
+  STAT_EVENT(node->proc_id, RS_0_OP_READY_NOT_ISSUED + (queue_id < 8 ? queue_id : 8));
 
-void SelectLogic::request(IssueQueueEntry* entry) {
-  ASSERT(node->proc_id, entry != nullptr);
-  ready_list.push_front(entry);
-}
-
-void SelectLogic::release(IssueQueueEntry* entry) {
-  ASSERT(node->proc_id, entry != nullptr);
-  ready_list.remove(entry);
-}
-
-bool SelectLogic::has_ready_ops() const {
-  return !ready_list.empty();
-}
-
-void SelectLogic::collect_entry_op_stats(IssueQueueEntry* entry) {
   Op* op = entry->op;
   if (op->off_path) {
     STAT_EVENT(op->proc_id, ST_OP_OFFPATH_READY_NOT_ISSUED);
@@ -541,6 +540,7 @@ class LeastBindPolicy : public BindPolicy {
 
   void bind(const std::vector<FunctionalUnitPicker>& connected_fu_pickers, IssueQueueEntry* entry) override {
     ASSERT(node->proc_id, entry != nullptr);
+    ASSERT(node->proc_id, entry->bound_fu_id == MAX_UNS);
     ASSERT(node->proc_id, connected_fu_pickers.size() == bound_op_counts.size());
 
     size_t least_picker_idx = MAX_UNS;

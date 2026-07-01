@@ -76,8 +76,6 @@ struct Trace_Uop_struct {
   Reg_Info dests[MAX_DESTS];
 
   // Dynamic (Runtime) Info
-  uint64_t src_val[MAX_SRCS];
-  uint64_t dst_val[MAX_DESTS];
   uint64_t inst_uid;
   Flag actual_taken;
   Addr va;
@@ -403,10 +401,10 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
 
   /* execute op */
   for (uns ii = 0; ii < trace_uop->num_src_regs; ii++) {
-    op->src_val[ii] = trace_uop->src_val[ii];
+    op->src_val[ii] = trace_uop->srcs[ii].val;
   }
   for (uns ii = 0; ii < trace_uop->num_dest_regs; ii++) {
-    op->dst_val[ii] = trace_uop->dst_val[ii];
+    op->dst_val[ii] = trace_uop->dests[ii].val;
   }
 
   if (op->inst_info->table_info.op_type == OP_CF) {
@@ -933,18 +931,18 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
   trace_uop->va = 0;
   trace_uop->mem_size = 0;
   for (uns ii = 0; ii < info->table_info.num_src_regs; ii++) {
-    trace_uop->src_val[ii] = 0;
+    trace_uop->srcs[ii].val = 0;
     for (uns j = 0; j < pi->num_src_regs; j++)
       if (pi->src_regs[j] == info->srcs[ii].id) {
-        trace_uop->src_val[ii] = pi->srcs[j].val;
+        trace_uop->srcs[ii].val = pi->srcs[j].val;
         break;
       }
   }
   for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++) {
-    trace_uop->dst_val[ii] = 0;
+    trace_uop->dests[ii].val = 0;
     for (uns j = 0; j < pi->num_dst_regs; j++)
       if (pi->dst_regs[j] == info->dests[ii].id) {
-        trace_uop->dst_val[ii] = pi->dests[j].val;
+        trace_uop->dests[ii].val = pi->dests[j].val;
         break;
       }
   }

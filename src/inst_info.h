@@ -40,6 +40,7 @@ typedef struct Reg_Info_struct {
   uns16 reg;      // register number within the register set
   Reg_Type type;  // integer, floating point, extra
   uns16 id;       // flattened register number (unique across sets)
+  uint64_t val;   // runtime register value (valid only in dynamic/Trace_Uop context)
 } Reg_Info;
 
 /**************************************************************************************/

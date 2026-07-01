@@ -33,6 +33,7 @@
 #include "globals/utils.h"
 
 #include "libs/list_lib.h"
+#include "libs/sha256.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -111,6 +112,7 @@ typedef enum Index_Hash_enum {
   SINGLE_XOR,     /* XOR only once */
   XOR_FOLDING,    /* XOR 64/set_bits times */
   PRIME_DISPLACE, /* Displace index by p * tag */
+  SHA256_HASH,    /* SHA-256 of the block address, digest folded to the index */
   ENTROPY_INDEX,  /* MICRO 2024 EntropyIndex: dynamic entropy-based bit selection */
   NUM_INDEX_HASH
 } Index_Hash_Id;
@@ -300,6 +302,10 @@ inline static Addr cache_index_entropy(Cache* cache, Addr addr) {
   if (s->remapping && current_set < s->set_ptr)
     return _entropy_index_apply(s, addr, s->x_bits_next, s->y_bits_next);
   return current_set;
+}
+
+inline static Addr cache_index_sha256(Cache* cache, Addr addr) {
+  return sha256_64bits(addr);
 }
 
 /**************************************************************************************/

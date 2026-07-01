@@ -73,6 +73,12 @@
     }                                                                                                                \
   } while (0)
 
+#define STAT_EVENT_BTB_ADDR_ENTROPY(proc_id, addr)                        \
+  do {                                                                    \
+    for (uns ii = 0; ii < 64; ii++)                                       \
+      STAT_EVENT(proc_id, BTB_ADDR_0_ZERO + 2 * ii + (addr >> ii & 0b1)); \
+  } while (0)
+
 #define STAT_EVENT_BTB_BANK(proc_id, level, case, bank_id)        \
   do {                                                            \
     STAT_EVENT(proc_id, BTB_##level##_##case##_BANK_0 + bank_id); \
@@ -480,7 +486,8 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
       char name[MAX_STR_LENGTH + 1];
       snprintf(name, MAX_STR_LENGTH, "BTB BANK %d", ii);
       init_cache_impl(&bp_data->btb[ii], name, BTB_ENTRIES / BTB_BANKS, BTB_ASSOC, 1, BTB_TAG_BITS, sizeof(Addr),
-                      REPL_TRUE_LRU);
+                      REPL_TRUE_LRU, BTB_HASH, BTB_NUM_TRACK_BITS, BTB_INTERVAL_SIZE, BTB_REMAP_RATE,
+                      BTB_SWITCH_THRESH_PCT, BTB_MAIN_EI_SWITCHES);
     }
 
     if (BTB_L0_PRESENT) {
@@ -489,7 +496,8 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
         char name[MAX_STR_LENGTH + 1];
         snprintf(name, MAX_STR_LENGTH, "BTB_L0 BANK %d", ii);
         init_cache_impl(&bp_data->btb_l0[ii], name, BTB_L0_ENTRIES / BTB_L0_BANKS, BTB_L0_ASSOC, 1, BTB_L0_TAG_BITS,
-                        sizeof(Addr), REPL_TRUE_LRU);
+                        sizeof(Addr), REPL_TRUE_LRU, BTB_L0_HASH, BTB_L0_NUM_TRACK_BITS, BTB_L0_INTERVAL_SIZE,
+                        BTB_L0_REMAP_RATE, BTB_L0_SWITCH_THRESH_PCT, BTB_L0_EI_SWITCHES);
       }
     }
 
@@ -499,7 +507,8 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
         char name[MAX_STR_LENGTH + 1];
         snprintf(name, MAX_STR_LENGTH, "BTB_L1 BANK %d", ii);
         init_cache_impl(&bp_data->btb_l1[ii], name, BTB_L1_ENTRIES / BTB_L1_BANKS, BTB_L1_ASSOC, 1, BTB_L1_TAG_BITS,
-                        sizeof(Addr), REPL_TRUE_LRU);
+                        sizeof(Addr), REPL_TRUE_LRU, BTB_L1_HASH, BTB_L1_NUM_TRACK_BITS, BTB_L1_INTERVAL_SIZE,
+                        BTB_L1_REMAP_RATE, BTB_L1_SWITCH_THRESH_PCT, BTB_L1_EI_SWITCHES);
       }
     }
   } else {
@@ -578,6 +587,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
                 hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
       STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
+      STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, fetch_addr);
 
       btb_line = (Addr*)cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing, TRUE);
       if (!btb_line) {
@@ -606,6 +616,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
                   hexstr64s(op->oracle_info.target));
         STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
         STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
+        STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, fetch_addr);
         *btb_line = op->oracle_info.target;
         // FIXME: the exceptions to this assert are really about x86 vs Alpha
         ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
@@ -644,7 +655,9 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 
     ASSERT(bp_data->proc_id, BTB_BANKS == 1);
     ASSERT(bp_data->proc_id, BTB_ENTRIES >= BTB_ASSOC);
-    init_cache_impl(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BTB_TAG_BITS, BLK_BTB_ENTRY_SIZE, REPL_TRUE_LRU);
+    init_cache_impl(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BTB_TAG_BITS, BLK_BTB_ENTRY_SIZE, REPL_TRUE_LRU,
+                    BTB_HASH, BTB_NUM_TRACK_BITS, BTB_INTERVAL_SIZE, BTB_REMAP_RATE, BTB_SWITCH_THRESH_PCT,
+                    BTB_MAIN_EI_SWITCHES);
   } else  // points to the primary BP's shared BTB
     bp_data->btb = primary_bp->btb;
 }
@@ -720,6 +733,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  btb addr:0x%s  op addr:0x%s  target:0x%s\n", hexstr64s(btb_index_addr),
                 hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
+      STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, btb_index_addr);
 
       Blk_Btb_BrSlot br_slot;
       br_slot.addr = op->inst_info->addr;
@@ -804,7 +818,8 @@ void bp_btb_block_recover(Bp_Data* bp_data, Recovery_Info* info) {
 void bp_ibtb_tc_tagged_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   // line size set to 1
   if (!bp_data->bp_id)
-    init_cache_impl(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, TC_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU);
+    init_cache_impl(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, TC_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU,
+                    ID_HASH, ENTROPY_INDEX_MAX_TRACK_BITS, 1000000, 80, -1, -1);
   else  // points to the primary BP's shared tc_tagged
     bp_data->tc_tagged = primary_bp->tc_tagged;
 }
@@ -846,8 +861,7 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
   tc_index = hist ^ addr;
   if (IBTB_HASH_TOS)
     tc_index = tc_index ^ op->recovery_info.tos_addr;
-  tc_entry = (Addr*)cache_access(bp_data->tc_tagged, tc_index, &line_addr,
-                                 bp_data->bp_id ? FALSE : TRUE);  // TODO
+  tc_entry = (Addr*)cache_access(bp_data->tc_tagged, tc_index, &line_addr, bp_data->bp_id ? FALSE : TRUE);  // TODO
 
   if (tc_entry)
     target = *tc_entry;
@@ -1025,7 +1039,8 @@ void bp_ibtb_tc_hybrid_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
   /* Init the tagged predictor */
   // line size set to 1
   if (!bp_data->bp_id)
-    init_cache_impl(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, TC_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU);
+    init_cache_impl(bp_data->tc_tagged, "TC", TC_ENTRIES, TC_ASSOC, 1, TC_TAG_BITS, sizeof(Addr), REPL_TRUE_LRU,
+                    ID_HASH, ENTROPY_INDEX_MAX_TRACK_BITS, 1000000, 80, -1, -1);
   else  // points to the primary BP's shared tc_tagged
     bp_data->tc_tagged = primary_bp->tc_tagged;
 }

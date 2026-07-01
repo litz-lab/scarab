@@ -67,7 +67,7 @@ typedef uint8_t compressed_reg_t;
 typedef struct Pin_Reg_Val_struct {
   uint16_t id;
   uint64_t val;
-  uint8_t  size;
+  uint8_t size;
 } Pin_Reg_Val;
 
 enum MemHint {

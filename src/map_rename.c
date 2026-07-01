@@ -747,8 +747,8 @@ void reg_table_entry_produce(struct reg_table_entry *entry, Op *op, uns dst_reg_
   if (!op->off_path) {
     int arch_id = op->dst_reg_id[dst_reg_idx][REG_TABLE_TYPE_ARCHITECTURAL];
     ASSERT(map_data->proc_id, op->inst_info->dests[dst_reg_idx].id == arch_id);
-    map_data->arch_last_val[arch_id]   = op->dst_val[dst_reg_idx];
-    map_data->arch_last_uid[arch_id]   = op->inst_uid;
+    map_data->arch_last_val[arch_id] = op->dst_val[dst_reg_idx];
+    map_data->arch_last_uid[arch_id] = op->inst_uid;
     map_data->arch_last_valid[arch_id] = TRUE;
   }
 }

@@ -49,7 +49,7 @@ static ctype_pin_inst  tmp_inst_info;
 // Globals used for communication between analysis functions
 uint32_t       glb_opcode, glb_actually_taken;
 deque<ADDRINT> glb_ld_vaddrs, glb_st_vaddrs;
-deque<PIN_REGISTER> glb_src_vector_vals, glb_dst_vector_vals;
+deque<Pin_Reg_Val> glb_src_vector_vals, glb_dst_vector_vals;
 
 std::ostream*                                    glb_err_ostream;
 bool                                             glb_translate_x87_regs;
@@ -73,7 +73,7 @@ void get_st_ea(ADDRINT addr);
 void get_branch_dir(bool taken);
 void get_src_vector_vals(CONTEXT* ctxt, ADDRINT reg_id);
 void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT reg_id);
-void fill_register_values(ctype_pin_inst* info, bool is_dst, const deque<PIN_REGISTER>& global_vals, int reg_count);
+void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count);
 void create_compressed_op(ADDRINT iaddr);
 void create_compressed_op_after(ADDRINT iaddr);
 
@@ -345,21 +345,25 @@ void get_branch_dir(bool taken) {
 void get_src_vector_vals(CONTEXT* ctxt, ADDRINT reg_id) {
   PIN_REGISTER reg_val;
   PIN_GetContextRegval(ctxt, (REG)reg_id, (UINT8*)&reg_val);
-  glb_src_vector_vals.push_back(reg_val);
+  glb_src_vector_vals.push_back({(uint16_t)reg_id, reg_val.qword[0], (uint8_t)(REG_Size((REG)reg_id) * 8)});
 }
 
 void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT reg_id) {
   PIN_REGISTER reg_val;
   PIN_GetContextRegval(ctxt, (REG)reg_id, (UINT8*)&reg_val);
-  glb_dst_vector_vals.push_back(reg_val);
+  glb_dst_vector_vals.push_back({(uint16_t)reg_id, reg_val.qword[0], (uint8_t)(REG_Size((REG)reg_id) * 8)});
 }
 
-void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<PIN_REGISTER>& global_vals, int reg_count) {
+void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count) {
   for (int i = 0; i < reg_count; ++i) {
     if (is_dst) {
-      inst->dests[i] = global_vals[i].qword[0];
+      inst->dests[i].id   = inst->dst_regs[i];
+      inst->dests[i].val  = global_vals[i].val;
+      inst->dests[i].size = global_vals[i].size;
     } else {
-      inst->srcs[i] = global_vals[i].qword[0];
+      inst->srcs[i].id    = inst->src_regs[i];
+      inst->srcs[i].val   = global_vals[i].val;
+      inst->srcs[i].size  = global_vals[i].size;
     }
   }
 }

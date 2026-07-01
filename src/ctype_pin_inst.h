@@ -64,6 +64,11 @@ typedef enum Reg_Type_enum {
 } Reg_Type;
 
 typedef uint8_t compressed_reg_t;
+typedef struct Pin_Reg_Val_struct {
+  uint16_t id;
+  uint64_t val;
+  uint8_t  size;
+} Pin_Reg_Val;
 
 enum MemHint {
   NONE,
@@ -127,8 +132,8 @@ typedef struct ctype_pin_inst_struct {
 
   /* dynamic information */
 
-  uint64_t srcs[MAX_SRCS];
-  uint64_t dests[MAX_DESTS];
+  Pin_Reg_Val srcs[MAX_SRCS];
+  Pin_Reg_Val dests[MAX_DESTS];
   uint64_t ld_vaddr[MAX_LD_NUM];
   uint64_t st_vaddr[MAX_ST_NUM];
   uint8_t ld_size;

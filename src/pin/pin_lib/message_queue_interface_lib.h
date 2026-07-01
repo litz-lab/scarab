@@ -39,7 +39,7 @@ extern "C" {
 #include <vector>
 #include "pin_scarab_common_lib.h"
 
-#define MAX_PACKET_SIZE (1 << 12)
+#define MAX_PACKET_SIZE (1 << 14)
 
 void assertm(bool p, const char* msg);
 

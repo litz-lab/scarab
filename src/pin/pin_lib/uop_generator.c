@@ -932,11 +932,21 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
   trace_uop->inst_uid = pi->inst_uid;
   trace_uop->va = 0;
   trace_uop->mem_size = 0;
-  for (uns ii = 0; ii < pi->num_src_regs; ii++) {
-    trace_uop->src_val[ii] = pi->srcs[ii];
+  for (uns ii = 0; ii < info->table_info.num_src_regs; ii++) {
+    trace_uop->src_val[ii] = 0;
+    for (uns j = 0; j < pi->num_src_regs; j++)
+      if (pi->src_regs[j] == info->srcs[ii].id) {
+        trace_uop->src_val[ii] = pi->srcs[j].val;
+        break;
+      }
   }
-  for (uns ii = 0; ii < pi->num_dst_regs; ii++) {
-    trace_uop->dst_val[ii] = pi->dests[ii];
+  for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++) {
+    trace_uop->dst_val[ii] = 0;
+    for (uns j = 0; j < pi->num_dst_regs; j++)
+      if (pi->dst_regs[j] == info->dests[ii].id) {
+        trace_uop->dst_val[ii] = pi->dests[j].val;
+        break;
+      }
   }
 
   if (info->table_info.cf_type) {

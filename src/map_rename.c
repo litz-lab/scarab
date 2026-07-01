@@ -66,7 +66,7 @@ void reg_table_entry_clear(struct reg_table_entry *entry);
 void reg_table_entry_read(struct reg_table_entry *entry, Op *op);
 void reg_table_entry_write(struct reg_table_entry *entry, Op *op, int parent_reg_id);
 void reg_table_entry_consume(struct reg_table_entry *entry, Op *op);
-void reg_table_entry_produce(struct reg_table_entry *entry, Op *op);
+void reg_table_entry_produce(struct reg_table_entry *entry, Op *op, uns dst_reg_idx);
 
 // register table operations
 void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size, int reg_type,
@@ -75,7 +75,7 @@ int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id);
 int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id);
 void reg_table_free(struct reg_table *reg_table, struct reg_table_entry *entry);
 void reg_table_consume(struct reg_table *reg_table, int reg_id, Op *op);
-void reg_table_produce(struct reg_table *reg_table, int self_reg_id, Op *op);
+void reg_table_produce(struct reg_table *reg_table, int self_reg_id, Op *op, uns ii);
 
 // special init func for the architectural table
 void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_reg_table, uns reg_table_size,
@@ -443,7 +443,7 @@ static inline void reg_file_produce_dst(Op *op, int *reg_table_types, int reg_ta
       ASSERT(op->proc_id, reg_id != REG_TABLE_REG_ID_INVALID);
 
       struct reg_table *reg_table = map_data->reg_file[reg_type]->reg_table[table_type];
-      reg_table->ops->produce(reg_table, reg_id, op);
+      reg_table->ops->produce(reg_table, reg_id, op, ii);
     }
   }
 }
@@ -631,6 +631,7 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->op_num = 0;
   entry->unique_num = 0;
   entry->off_path = FALSE;
+  entry->reg_val = REG_INVALID_VAL;
 
   entry->reg_state = REG_TABLE_ENTRY_STATE_FREE;
   entry->parent_reg_id = REG_TABLE_REG_ID_INVALID;
@@ -733,14 +734,23 @@ void reg_table_entry_consume(struct reg_table_entry *entry, Op *op) {
 }
 
 /* update the register state to indicate the value is produced during execution*/
-void reg_table_entry_produce(struct reg_table_entry *entry, Op *op) {
+void reg_table_entry_produce(struct reg_table_entry *entry, Op *op, uns dst_reg_idx) {
   if (op->move_eliminated) {
     return;
   }
   ASSERT(map_data->proc_id, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
 
+  entry->reg_val = op->dst_val[dst_reg_idx];
   entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
   entry->produced_cycle = cycle_count;
+
+  if (!op->off_path) {
+    int arch_id = op->dst_reg_id[dst_reg_idx][REG_TABLE_TYPE_ARCHITECTURAL];
+    ASSERT(map_data->proc_id, op->inst_info->dests[dst_reg_idx].id == arch_id);
+    map_data->arch_last_val[arch_id] = op->dst_val[dst_reg_idx];
+    map_data->arch_last_uid[arch_id] = op->inst_uid;
+    map_data->arch_last_valid[arch_id] = TRUE;
+  }
 }
 
 struct reg_table_entry_ops reg_table_entry_ops = {
@@ -859,11 +869,11 @@ void reg_table_consume(struct reg_table *reg_table, int reg_id, Op *op) {
 }
 
 /* update the register state to indicate the value is produced */
-void reg_table_produce(struct reg_table *reg_table, int self_reg_id, Op *op) {
+void reg_table_produce(struct reg_table *reg_table, int self_reg_id, Op *op, uns ii) {
   ASSERT(map_data->proc_id, REG_RENAMING_SCHEME && self_reg_id != REG_TABLE_REG_ID_INVALID);
   struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
 
-  entry->ops->produce(entry, op);
+  entry->ops->produce(entry, op, ii);
 }
 
 struct reg_table_ops reg_table_ops = {
@@ -1926,4 +1936,13 @@ void reg_file_commit(Op *op) {
   ASSERT(map_data->proc_id,
          REG_RENAMING_SCHEME >= REG_RENAMING_SCHEME_INFINITE && REG_RENAMING_SCHEME < REG_RENAMING_SCHEME_NUM);
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].commit(op);
+}
+
+Flag reg_value_read(int arch_id, uns64 *val_out, uns64 *uid_out) {
+  if (!map_data->arch_last_valid[arch_id])
+    return FALSE;
+
+  *val_out = map_data->arch_last_val[arch_id];
+  *uid_out = map_data->arch_last_uid[arch_id];
+  return TRUE;
 }

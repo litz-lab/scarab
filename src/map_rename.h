@@ -89,6 +89,9 @@ struct reg_table_entry {
   // type info
   int reg_type;        // INT or VEC
   int reg_table_type;  // arch, physical, or virtual
+  // register value
+  uint64_t reg_val;
+  uns64 produced_uid;
 
   // register state info
   enum reg_table_entry_state reg_state;
@@ -189,7 +192,7 @@ struct reg_table_entry_ops {
   void (*read)(struct reg_table_entry *entry, Op *op);
   void (*write)(struct reg_table_entry *entry, Op *op, int parent_reg_id);
   void (*consume)(struct reg_table_entry *entry, Op *op);
-  void (*produce)(struct reg_table_entry *entry, Op *op);
+  void (*produce)(struct reg_table_entry *entry, Op *op, uns ii);
 };
 
 struct reg_free_list_ops {
@@ -205,7 +208,7 @@ struct reg_table_ops {
   int (*alloc)(struct reg_table *reg_table, Op *op, int parent_reg_id);
   void (*free)(struct reg_table *reg_table, struct reg_table_entry *entry);
   void (*consume)(struct reg_table *reg_table, int reg_id, Op *op);
-  void (*produce)(struct reg_table *reg_table, int reg_id, Op *op);
+  void (*produce)(struct reg_table *reg_table, int reg_id, Op *op, uns dst_reg_idx);
 };
 
 /**************************************************************************************/
@@ -220,5 +223,6 @@ void reg_file_produce(Op *op);                // write back the dst registers
 void reg_file_recover(Op *op);                // flush registers of misprediction operands
 void reg_file_precommit(Op *op);              // update the register metadata when an op is non-spec
 void reg_file_commit(Op *op);                 // release the previous register with same architectural register id
+Flag reg_value_read(int arch_id, uns64 *val_out, uns64 *uid_out);  // read an arch reg's last produced value and uid
 
 #endif /* #ifndef __MAP_RENAME_H__ */

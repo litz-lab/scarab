@@ -194,8 +194,9 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
   }
 
   if (INS_Valid(ins)) {
-    for (int i = 0; i < info->num_src_regs; i++) {
+    for (UINT32 i = 0; i < INS_MaxNumRRegs(ins); i++) {
       REG src_reg = INS_RegR(ins, i);
+      if (!REG_valid(src_reg)) continue;
       INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_src_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT, src_reg,
                      IARG_END);
     }
@@ -203,8 +204,9 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
 
   if (INS_Valid(ins)) {
     if (INS_IsValidForIpointAfter(ins)) {
-      for (int i = 0; i < info->num_dst_regs; i++) {
+      for (UINT32 i = 0; i < INS_MaxNumWRegs(ins); i++) {
         REG dst_reg = INS_RegW(ins, i);
+        if (!REG_valid(dst_reg)) continue;
         INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)get_dst_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT, dst_reg,
                        IARG_END);
       }
@@ -220,7 +222,6 @@ void create_compressed_op_after(ADDRINT iaddr) {
   if (!fast_forward_count) {
     assert(inst_info_storage.count(iaddr) == 1);
     filled_inst_info = inst_info_storage[iaddr];
-    assert(glb_dst_vector_vals.size() == filled_inst_info->num_dst_regs);
     fill_register_values(filled_inst_info, true, glb_dst_vector_vals, filled_inst_info->num_dst_regs);
   }
 }
@@ -244,7 +245,6 @@ void create_compressed_op(ADDRINT iaddr) {
         filled_inst_info->dst_regs[i] = absolute_reg(
           filled_inst_info->dst_regs[i], glb_opcode, true);
       }
-      assert(glb_src_vector_vals.size() == filled_inst_info->num_src_regs);
       fill_register_values(filled_inst_info, false, glb_src_vector_vals, filled_inst_info->num_src_regs);
       // update x87 state
       update_x87_stack_state(glb_opcode);
@@ -357,11 +357,11 @@ void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT reg_id) {
 void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count) {
   for (int i = 0; i < reg_count; ++i) {
     if (is_dst) {
-      inst->dests[i].id = inst->dst_regs[i];
+      inst->dests[i].id = global_vals[i].id;
       inst->dests[i].val = global_vals[i].val;
       inst->dests[i].size = global_vals[i].size;
     } else {
-      inst->srcs[i].id = inst->src_regs[i];
+      inst->srcs[i].id = global_vals[i].id;
       inst->srcs[i].val = global_vals[i].val;
       inst->srcs[i].size = global_vals[i].size;
     }

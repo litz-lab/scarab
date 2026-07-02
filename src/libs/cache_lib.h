@@ -30,10 +30,9 @@
 #define __CACHE_LIB_H__
 
 #include "globals/global_defs.h"
-#include "globals/utils.h"
 
+#include "libs/cache_index.h"
 #include "libs/list_lib.h"
-#include "libs/sha256.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -106,21 +105,7 @@ typedef enum Cache_Insert_Repl_enum {
   NUM_INSERT_REPL
 } Cache_Insert_Repl;
 
-typedef enum Index_Hash_enum {
-  ID_HASH,        /* Identity function */
-  KNUTH_HASH,     /* Knuth multiplicative hash */
-  SINGLE_XOR,     /* XOR only once */
-  XOR_FOLDING,    /* XOR 64/set_bits times */
-  PRIME_DISPLACE, /* Displace index by p * tag */
-  SHA256_HASH,    /* SHA-256 of the block address, digest folded to the index */
-  ENTROPY_INDEX,  /* MICRO 2024 EntropyIndex: dynamic entropy-based bit selection */
-  NUM_INDEX_HASH
-} Index_Hash_Id;
-
-typedef struct Index_Hash_struct Index_Hash;
-typedef struct Entropy_Index_State_struct Entropy_Index_State;
-
-typedef struct Cache_struct {
+struct Cache_struct {
   char name[MAX_STR_LENGTH + 1]; /* name to identify the cache (for debugging) */
   uns data_size;                 /* how big are the data items in each cache entry? (for malloc) */
 
@@ -129,8 +114,8 @@ typedef struct Cache_struct {
   uns num_sets;            /* number of sets in the cache */
   uns line_size;           /* size in bytes of one line */
   Repl_Policy repl_policy; /* the replacement policy of the cache */
-  Index_Hash* index_hash;  /* index hashing mechanism */
-  Entropy_Index_State* entropy_state; /* NULL unless the cache was created with index_hash_id == ENTROPY_INDEX */
+
+  Cache_Index_State cache_index_state;
 
   /* each mask looks like this:
    *      addr: MSB [tag_bits][set_bits][shift_bits] LSB
@@ -177,54 +162,6 @@ typedef struct Cache_struct {
 
   /* For repl with predictor */
   void* predictor;
-} Cache;
-
-struct Index_Hash_struct {
-  Index_Hash_Id id;
-  const char* name;
-  Addr (*hash_func)(Cache*, Addr);
-};
-
-#define ENTROPY_INDEX_MAX_TRACK_BITS 64
-
-typedef enum Entropy_Index_Stat_enum {
-  EI_STAT_SWITCH = 0,     /* index function switched */
-  EI_STAT_SKIP,           /* reselection declined to switch */
-  EI_STAT_SET_REMAPPED,   /* one set processed by the set pointer */
-  EI_STAT_REMAP_EVICTION, /* line evicted due to a remap conflict */
-  NUM_EI_STAT
-} Entropy_Index_Stat;
-
-/* EntropyIndex (MICRO 2024) */
-struct Entropy_Index_State_struct {
-  uns num_track_bits; /* T: number of low block-address bits tracked */
-  uns num_index_bits; /* N: log2(num_sets); width of the set index */
-
-  uns flip_counts[ENTROPY_INDEX_MAX_TRACK_BITS]; /* EC[i]; # flips at bit i in current interval */
-  Addr last_miss_blk_addr;                       /* address of the previous miss */
-  Flag have_last_miss;                           /* whether last_miss_addr is valid */
-
-  uns8 x_bits[ENTROPY_INDEX_MAX_TRACK_BITS];
-  uns8 y_bits[ENTROPY_INDEX_MAX_TRACK_BITS];
-
-  Flag remapping;
-  uns8 x_bits_next[ENTROPY_INDEX_MAX_TRACK_BITS];
-  uns8 y_bits_next[ENTROPY_INDEX_MAX_TRACK_BITS];
-
-  uns set_ptr;          /* SP; sets [0, set_ptr) are already using the new function */
-  uns remap_rate;       /* R; remap one set every R accesses */
-  uns remap_access_ctr; /* accesses since the last set was remapped */
-
-  uns interval_size;     /* M: accesses per reselection */
-  uns interval_ctr;      /* accesses since the last reselection */
-  uns switch_thresh_pct; /* require >= this % entropy gain to switch functions */
-
-  /* For debugging. */
-  int stat_base;               /* -1 = no stats */
-  Counter num_switches;        /* index-function switches committed */
-  Counter num_skipped;         /* reselections that did not switch */
-  Counter num_sets_remapped;   /* sets processed by the set pointer */
-  Counter num_evictions_remap; /* lines evicted due to remapping conflicts */
 };
 
 /**************************************************************************************/
@@ -252,67 +189,10 @@ Cache_Entry* cache_evict_strategy(Cache* cache, uns8 proc_id, uns set, uns* way)
 const static Flag CACHE_DEBUG_ENABLE = FALSE;  // To be Changed into DEBUG_PARA
 
 /**************************************************************************************/
-/* Index Hash Functions */
-
-extern Index_Hash index_hash_table[];
-
-inline static Addr cache_index_id_hash(Cache* cache, Addr addr) {
-  return addr;
-}
-
-inline static Addr cache_index_knuth_hash(Cache* cache, Addr addr) {
-  // Knuth multiplicative hash
-  Addr tmp = addr * 11400714819323197440ULL;
-  return (tmp << cache->set_bits) | (tmp >> (64 - cache->set_bits));
-}
-
-inline static Addr cache_index_single_xor(Cache* cache, Addr addr) {
-  return (addr >> cache->set_bits) ^ addr;
-}
-
-inline static Addr cache_index_xor_folding(Cache* cache, Addr addr) {
-  Addr index = addr;
-  if (cache->set_bits < 64) {
-    while ((index >> cache->set_bits) != 0) {
-      index = (index & cache->set_mask) ^ (index >> cache->set_bits);
-    }
-  }
-  return index & cache->set_mask;
-}
-
-inline static Addr cache_index_prime_displace(Cache* cache, Addr addr) {
-  return ((addr & cache->set_mask) + (addr >> cache->set_bits) * 17) & cache->set_mask;
-}
-
-/* Compute X ^ Y for a given (x_bits, y_bits) selection over a block address. */
-inline static Addr _entropy_index_apply(Entropy_Index_State* s, Addr blk_addr, const uns8* x_bits, const uns8* y_bits) {
-  Addr x = 0, y = 0;
-  for (uns ii = 0; ii < s->num_index_bits; ii++) {
-    x |= ((blk_addr >> x_bits[ii]) & 0x1ULL) << ii;
-    y |= ((blk_addr >> y_bits[ii]) & 0x1ULL) << ii;
-  }
-  return x ^ y;
-}
-
-inline static Addr cache_index_entropy(Cache* cache, Addr addr) {
-  Entropy_Index_State* s = cache->entropy_state;
-  Addr current_set = _entropy_index_apply(s, addr, s->x_bits, s->y_bits);
-  /* During gradual remapping a line is relocated once its old set has been
-     processed by the set pointer; relocated lines live at their new set. */
-  if (s->remapping && current_set < s->set_ptr)
-    return _entropy_index_apply(s, addr, s->x_bits_next, s->y_bits_next);
-  return current_set;
-}
-
-inline static Addr cache_index_sha256(Cache* cache, Addr addr) {
-  return sha256_64bits(addr);
-}
-
-/**************************************************************************************/
 /* prototypes */
 
 void init_cache(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
-void init_cache_impl(Cache*, const char*, uns, uns, uns, uns, uns, Repl_Policy, Index_Hash_Id, uns, uns, uns, int, int);
+void init_cache_impl(Cache*, const char*, uns, uns, uns, uns, uns, Repl_Policy, Cache_Index_Config);
 void* cache_access(Cache*, Addr, Addr*, Flag);
 void* cache_access_impl(Cache*, Addr, Addr*, Flag*, Flag);
 void* cache_insert(Cache*, uns8, Addr, Addr*, Addr*);

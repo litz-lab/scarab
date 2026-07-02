@@ -45,8 +45,6 @@
 
 #include "frontend/frontend_intf.h"
 
-#include "libs/cache_lib_table.def"
-
 // DeleteMe
 #define ideal_num_entries 256
 
@@ -55,25 +53,12 @@
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_CACHE_LIB, ##args)
 
-#define ENTROPY_INDEX_STAT(state, stat_enum)           \
-  do {                                                 \
-    if ((state)->stat_base >= 0)                       \
-      STAT_EVENT(0, (state)->stat_base + (stat_enum)); \
-  } while (0)
-
 /**************************************************************************************/
 /* Static Prototypes */
 
 static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* tag_full, Addr* line_addr);
 static inline void update_repl_policy(Cache*, Cache_Entry*, uns, uns, Flag);
 static inline Cache_Entry* find_repl_entry(Cache*, uns8, uns, uns*);
-
-/* EntropyIndex (MICRO 2024) */
-static void entropy_index_init(Cache* cache, uns num_track_bits, uns interval_size, uns remap_rate,
-                               int switch_thresh_pct, int stat_base);
-static void entropy_index_on_access(Cache* cache, Addr blk_addr, Flag hit);
-static void entropy_index_reselect(Cache* cache);
-static void entropy_index_remap_one_set(Cache* cache);
 
 /* for ideal replacement */
 static inline void* access_unsure_lines(Cache*, uns, Addr, Flag);
@@ -103,7 +88,7 @@ static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* tag_full
     *tag = _tag & cache->tag_pure_mask;
     *line_addr = addr & ~cache->offset_mask;
   }
-  return cache->index_hash->hash_func(cache, addr >> cache->shift_bits) & cache->set_mask;
+  return cache_index_get_set(cache, addr);
 }
 
 uns ext_cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_addr) {
@@ -116,20 +101,17 @@ uns ext_cache_index(Cache* cache, Addr addr, Addr* tag, Addr* line_addr) {
 
 void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                 Repl_Policy repl_policy) {
-  init_cache_impl(cache, name, cache_size, assoc, line_size, 64, data_size, repl_policy, ID_HASH,
-                  ENTROPY_INDEX_MAX_TRACK_BITS, 1000000, 80, -1, -1);
+  init_cache_impl(cache, name, cache_size, assoc, line_size, 64, data_size, repl_policy,
+                  get_default_cache_index_config());
 }
 
 void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns tag_bits,
-                     uns data_size, Repl_Policy repl_policy, Index_Hash_Id index_hash_id, uns ei_num_track_bits,
-                     uns ei_interval_size, uns ei_remap_rate, int ei_switch_thresh_pct, int ei_stat_base) {
+                     uns data_size, Repl_Policy repl_policy, Cache_Index_Config idx_cfg) {
   uns num_lines = cache_size / line_size;
   uns num_sets = cache_size / line_size / assoc;
   uns ii, jj;
 
   DEBUG(0, "Initializing cache called '%s'.\n", name);
-
-  cache->entropy_state = NULL;
 
   if (repl_policy >= REPL_VOID) {
     init_cache_strategy(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
@@ -144,7 +126,6 @@ void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, 
   cache->num_sets = num_sets;
   cache->line_size = line_size;
   cache->repl_policy = repl_policy;
-  cache->index_hash = &index_hash_table[index_hash_id];
 
   /* set some fields to make indexing quick */
   cache->set_bits = LOG2(num_sets);
@@ -155,9 +136,8 @@ void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, 
   cache->tag_mask = cache->tag_pure_mask << LOG2(num_sets); /* use after shifting */
   cache->offset_mask = N_BIT_MASK(cache->shift_bits); /* use before shifting */
 
-  /* set up EntropyIndex state if this cache uses the entropy index hash */
-  if (index_hash_id == ENTROPY_INDEX)
-    entropy_index_init(cache, ei_num_track_bits, ei_interval_size, ei_remap_rate, ei_switch_thresh_pct, ei_stat_base);
+  /* set up the index-hash state */
+  cache_index_state_init(cache, idx_cfg);
 
   /* allocate memory for NMRU replacement counters  */
   cache->repl_ctrs = (uns*)calloc(num_sets, sizeof(uns));
@@ -239,196 +219,6 @@ void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, 
   }
 
   cache->tag_incl_offset = FALSE;
-
-  ASSERT(0, index_hash_id != ENTROPY_INDEX || !cache->tag_incl_offset);
-}
-
-/**************************************************************************************/
-/* EntropyIndex (MICRO 2024). The set index is X ^ Y, where X is the N highest-entropy block-address bits and
- * Y is the next N (N = log2(num_sets)). "Entropy" is estimated online by a per-bit flip counter incremented when a bit
- * toggles between two consecutive misses. At each interval boundary the bits are re-ranked and, if the entropy gain
- * clears a threshold, the index function is switched and the cache is gradually remapped CEASER-style. */
-
-static void entropy_index_init(Cache* cache, uns num_track_bits, uns interval_size, uns remap_rate,
-                               int switch_thresh_pct, int stat_base) {
-  /* NOTE: EntropyIndex selects bits of the line-addressable block address, so it
-     should only be enabled for caches that are NOT byte-addressable (i.e. not
-     tag_incl_offset). tag_incl_offset set after this point in init, so the
-     caller is responsible for not pairing ENTROPY_INDEX with a uop-style cache. */
-
-  Entropy_Index_State* s = (Entropy_Index_State*)calloc(1, sizeof(Entropy_Index_State));
-
-  s->num_track_bits = MIN2(num_track_bits, ENTROPY_INDEX_MAX_TRACK_BITS - cache->shift_bits);
-  s->num_index_bits = cache->set_bits;
-  // The dual-sequence index needs 2N distinct tracked bits.
-  ASSERT(0, s->num_track_bits >= 2 * s->num_index_bits);
-
-  s->have_last_miss = FALSE;
-
-  // Initial function: X = low N block-address bits, Y = next N bits.
-  for (uns ii = 0; ii < s->num_index_bits; ii++) {
-    s->x_bits[ii] = ii;
-    s->y_bits[ii] = s->num_index_bits + ii;
-  }
-
-  ASSERT(0, cache->num_sets * remap_rate <= interval_size);  // Otherwise remapping will not complete
-  s->remapping = FALSE;
-  s->set_ptr = 0;
-  s->remap_rate = remap_rate;
-  s->remap_access_ctr = 0;
-  s->interval_size = interval_size;
-  s->interval_ctr = 0;
-  if (switch_thresh_pct >= 0)
-    s->switch_thresh_pct = switch_thresh_pct;
-  else
-    s->switch_thresh_pct = cache->assoc * 100 / remap_rate;
-
-  s->stat_base = stat_base;
-
-  cache->entropy_state = s;
-}
-
-/* At the end of each interval (M cache accesses), change index function if it will improve the hit rate.
- * If that's the case, in the next interval, gradually remap sets every R cache accesses. */
-static void entropy_index_on_access(Cache* cache, Addr blk_addr, Flag hit) {
-  Entropy_Index_State* s = cache->entropy_state;
-
-  // (1) Update per-bit flip ("entropy") counters on misses.
-  if (!hit) {
-    if (s->have_last_miss) {
-      Addr diff = blk_addr ^ s->last_miss_blk_addr;
-      for (uns ii = 0; ii < s->num_track_bits; ii++)
-        s->flip_counts[ii] += (diff >> ii) & 0x1ULL;
-    }
-    s->last_miss_blk_addr = blk_addr;
-    s->have_last_miss = TRUE;
-  }
-
-  // (2) Advance gradual (CEASER-style) remapping: one set per remap_rate accesses.
-  if (s->remapping) {
-    if (++s->remap_access_ctr >= s->remap_rate) {
-      s->remap_access_ctr = 0;
-      entropy_index_remap_one_set(cache);
-    }
-  }
-
-  // (3) At each interval boundary, re-rank bits and possibly switch functions.
-  if (++s->interval_ctr >= s->interval_size) {
-    s->interval_ctr = 0;
-    entropy_index_reselect(cache);
-  }
-}
-
-static void entropy_index_reselect(Cache* cache) {
-  Entropy_Index_State* s = cache->entropy_state;
-
-  /* Rank tracked bits by flip count, descending (ties broken by lower bit index
-     for determinism). Selection sort over the small (<= 64) tracked-bit set. */
-  uns8 order[ENTROPY_INDEX_MAX_TRACK_BITS];  // array of array index
-  for (uns ii = 0; ii < s->num_track_bits; ii++)
-    order[ii] = ii;
-  for (uns ii = 0; ii < s->num_track_bits; ii++) {
-    uns best = ii;
-    for (uns jj = ii + 1; jj < s->num_track_bits; jj++) {
-      if (s->flip_counts[order[jj]] > s->flip_counts[order[best]])
-        best = jj;
-      else if (s->flip_counts[order[jj]] == s->flip_counts[order[best]] && order[jj] < order[best])
-        best = jj;
-    }
-    if (best != ii) {
-      uns8 _tmp = order[ii];
-      order[ii] = order[best];
-      order[best] = _tmp;
-    }
-  }
-
-  // Candidate function: X = top N bits, Y = next N bits.
-  uns8 cand_x[ENTROPY_INDEX_MAX_TRACK_BITS], cand_y[ENTROPY_INDEX_MAX_TRACK_BITS];
-  for (uns ii = 0; ii < s->num_index_bits; ii++) {
-    cand_x[ii] = order[ii];
-    cand_y[ii] = order[s->num_index_bits + ii];
-  }
-
-  // Compare total entropy (sum of flip counts) of the candidate against the current.
-  uns64 curr_total_entropy = 0, cand_total_entropy = 0;
-  for (uns ii = 0; ii < s->num_index_bits; ii++) {
-    curr_total_entropy += s->flip_counts[s->x_bits[ii]] + s->flip_counts[s->y_bits[ii]];
-    cand_total_entropy += s->flip_counts[cand_x[ii]] + s->flip_counts[cand_y[ii]];
-  }
-  // Switch only if the entropy gain clears the remap-cost threshold.
-  if ((cand_total_entropy - curr_total_entropy) * 100 > (uns64)s->switch_thresh_pct * curr_total_entropy) {
-    s->remapping = TRUE;
-    for (uns ii = 0; ii < s->num_index_bits; ii++) {
-      s->x_bits_next[ii] = cand_x[ii];
-      s->y_bits_next[ii] = cand_y[ii];
-    }
-    s->set_ptr = 0;
-    s->remap_access_ctr = 0;
-    ENTROPY_INDEX_STAT(s, EI_STAT_SWITCH);
-  } else {
-    ENTROPY_INDEX_STAT(s, EI_STAT_SKIP);
-  }
-
-  /* Start a fresh entropy-measurement window. */
-  for (uns ii = 0; ii < s->num_track_bits; ii++)
-    s->flip_counts[ii] = 0;
-  s->have_last_miss = FALSE;
-}
-
-static void entropy_index_remap_one_set(Cache* cache) {
-  Entropy_Index_State* s = cache->entropy_state;
-
-  // The paper does not specify this, but assume all ways in a set are remapped at once.
-  for (uns way = 0; way < cache->assoc; way++) {
-    Cache_Entry* src_entry = &cache->entries[s->set_ptr][way];
-    if (!src_entry->valid)
-      continue;
-
-    Addr blk_addr = src_entry->base >> cache->shift_bits;
-    Addr dst = _entropy_index_apply(s, blk_addr, s->x_bits_next, s->y_bits_next) & cache->set_mask;
-    if (dst == s->set_ptr)
-      continue; /* line keeps its set under the new function */
-
-    // Pick a victim way in dst (prefer an invalid way, else approximate LRU).
-    // src-clean-dst-dirty case currently evicts dst.
-    uns victim = 0;
-    Counter lru_time = MAX_CTR;
-    Flag found_invalid = FALSE;
-    for (uns v = 0; v < cache->assoc; v++) {
-      if (!cache->entries[dst][v].valid) {
-        victim = v;
-        found_invalid = TRUE;
-        break;
-      }
-      if (cache->entries[dst][v].last_access_time < lru_time) {
-        lru_time = cache->entries[dst][v].last_access_time;
-        victim = v;
-      }
-    }
-    Cache_Entry* dst_entry = &cache->entries[dst][victim];
-
-    /* Swap the full entries so each slot keeps owning its own data buffer: the
-       migrated line (with its data) moves to dst, while the evicted victim lands
-       in src (s->set_ptr) and is invalidated. */
-    Cache_Entry _tmp = *dst_entry;
-    *dst_entry = *src_entry;
-    *src_entry = _tmp;
-    src_entry->valid = FALSE;
-
-    if (!found_invalid && dst_entry->valid)
-      ENTROPY_INDEX_STAT(s, EI_STAT_REMAP_EVICTION);
-  }
-  ENTROPY_INDEX_STAT(s, EI_STAT_SET_REMAPPED);
-
-  if (++s->set_ptr >= cache->num_sets) {
-    // Remapping complete: commit the new function and stop remapping.
-    for (uns ii = 0; ii < s->num_index_bits; ii++) {
-      s->x_bits[ii] = s->x_bits_next[ii];
-      s->y_bits[ii] = s->y_bits_next[ii];
-    }
-    s->remapping = FALSE;
-    s->set_ptr = 0;
-  }
 }
 
 /**************************************************************************************/
@@ -477,10 +267,10 @@ void* cache_access_impl(Cache* cache, Addr addr, Addr* line_addr, Flag* tag_alia
     }
   }
 
-  /* Drive EntropyIndex training/remapping on demand accesses. Done after the
-     lookup so this access used the pre-update index function. */
-  if (cache->entropy_state && update_repl)
-    entropy_index_on_access(cache, addr >> cache->shift_bits, line_data != NULL);
+  /* Drive adaptive-index training/remapping on demand accesses. Done after the lookup
+     so this access used the pre-update index function. No-op for static index hashes. */
+  if (update_repl)
+    cache_index_on_access(cache, addr, line_data != NULL);
 
   if (line_data)
     return line_data;
@@ -1342,17 +1132,8 @@ void reset_cache(Cache* cache) {
     }
   }
 
-  // Clear EntropyIndex state; keep the current index function.
-  if (cache->entropy_state) {
-    Entropy_Index_State* s = cache->entropy_state;
-    s->remapping = FALSE;
-    s->set_ptr = 0;
-    s->remap_access_ctr = 0;
-    s->interval_ctr = 0;
-    s->have_last_miss = FALSE;
-    for (ii = 0; ii < s->num_track_bits; ii++)
-      s->flip_counts[ii] = 0;
-  }
+  // Clear any adaptive-index training state; keep the current index function.
+  cache_index_state_reset(cache);
 }
 
 /**************************************************************************************/
@@ -1635,6 +1416,10 @@ void general_action_init(Cache* cache, const char* name, uns cache_size, uns ass
         cache->entries[ii][jj].data = INIT_CACHE_DATA_VALUE;
     }
   }
+
+  /* Strategy (REPL_VOID and above) caches use the identity index hash. This also initializes
+     the index state for the strategy path, which init_cache_impl skips via its early return. */
+  cache_index_state_init(cache, get_default_cache_index_config());
 }
 
 void general_action_repl(Cache* cache, Cache_Entry* new_line, uns8 proc_id, Addr tag, Addr tag_full, Addr* line_addr,

@@ -396,10 +396,12 @@ void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT pin_reg, ADDRINT scarab_id) {
 void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count) {
   for (int i = 0; i < reg_count; ++i) {
     if (is_dst) {
+      ASSERTX(global_vals[i].id == inst->dst_regs[i]);
       inst->dests[i].id = global_vals[i].id;
       inst->dests[i].val = global_vals[i].val;
       inst->dests[i].size = global_vals[i].size;
     } else {
+      ASSERTX(global_vals[i].id == inst->src_regs[i]);
       inst->srcs[i].id = global_vals[i].id;
       inst->srcs[i].val = global_vals[i].val;
       inst->srcs[i].size = global_vals[i].size;

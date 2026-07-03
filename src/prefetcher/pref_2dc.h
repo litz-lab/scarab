@@ -58,7 +58,7 @@ typedef struct Pref_2DC_Struct {
   Addr last_loadPC;
   Pref_2DC_HashFunc hash_func;
   Pref_2DC_Region* regions;
-  CacheLevel type;
+  HWP_Type type;
 } Pref_2DC;
 
 typedef struct {

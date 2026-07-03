@@ -63,7 +63,7 @@ typedef struct Pref_GHB_Struct {
   uns pref_degree;
 
   uns pref_degree_vals[5];
-  CacheLevel type;
+  HWP_Type type;
 } Pref_GHB;
 
 typedef struct {

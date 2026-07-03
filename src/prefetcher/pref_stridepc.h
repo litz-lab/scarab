@@ -48,7 +48,7 @@ typedef struct StridePC_Table_Entry_Struct {
 typedef struct Pref_StridePC_Struct {
   HWP_Info* hwp_info;
   StridePC_Table_Entry* stride_table;
-  CacheLevel type;
+  HWP_Type type;
 } Pref_StridePC;
 
 typedef struct {

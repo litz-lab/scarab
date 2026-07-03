@@ -656,6 +656,29 @@ Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_
   return TRUE;
 }
 
+/* Route a prefetch to the destination level named by `dest` -- the single choke
+   point that turns a HWP_Type into the matching per-level request queue. The UL1
+   path uses the rich _set enqueue so distance/loadPC/global_hist/bw survive; DL0
+   and UMLC enqueues do not carry those (unchanged from before). */
+Flag pref_addto_dest_req_queue_set(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id, uns distance,
+                                   Addr loadPC, uns32 global_hist, Flag bw) {
+  switch (dest) {
+    case PREF_TO_DL0:
+      return pref_addto_dl0req_queue(proc_id, line_index, prefetcher_id);
+    case PREF_TO_UMLC:
+      return pref_addto_umlc_req_queue(proc_id, line_index, prefetcher_id);
+    case PREF_TO_UL1:
+      return pref_addto_ul1req_queue_set(proc_id, line_index, prefetcher_id, distance, loadPC, global_hist, bw);
+    default:
+      ASSERTM(proc_id, FALSE, "pref_addto_dest_req_queue_set: unhandled destination %d\n", (int)dest);
+      return FALSE;
+  }
+}
+
+Flag pref_addto_dest_req_queue(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id) {
+  return pref_addto_dest_req_queue_set(proc_id, dest, line_index, prefetcher_id, 0, 0, 0, FALSE);
+}
+
 void pref_update(void) {
   if (!PREF_FRAMEWORK_ON)
     return;

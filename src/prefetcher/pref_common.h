@@ -177,11 +177,6 @@ typedef struct HWP_Common_struct {
   uns phase;
 } HWP_Common;
 
-typedef enum {
-  UMLC,
-  UL1
-} CacheLevel;
-
 /**************************************************************/
 /* Framework interface */
 
@@ -226,6 +221,14 @@ Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id
 Flag pref_addto_ul1req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id);
 Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_id, uns distance, Addr loadAddr,
                                  uns32 global_hist, Flag bw);
+
+/* Unified destination-level routing: send a prefetch to the level named by `dest`
+   (PREF_TO_DL0/UMLC/UL1) via the matching per-level request queue. The single choke
+   point for choosing a prefetch's destination cache level. The _set variant carries
+   the rich UL1 metadata (distance/loadPC/global_hist/bw); DL0 and UMLC ignore it. */
+Flag pref_addto_dest_req_queue(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id);
+Flag pref_addto_dest_req_queue_set(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id, uns distance,
+                                   Addr loadPC, uns32 global_hist, Flag bw);
 
 // A prefetch missed its target cache and went out on the bus; charge the send
 // to the counters for the level it fills (dest).

@@ -83,12 +83,12 @@ void pref_2dc_init(HWP* hwp) {
 
   if (PREF_UMLC_ON) {
     tdc_prefetcher_array.tdc_hwp_umlc = (Pref_2DC*)malloc(sizeof(Pref_2DC));
-    tdc_prefetcher_array.tdc_hwp_umlc->type = UMLC;
+    tdc_prefetcher_array.tdc_hwp_umlc->type = PREF_TO_UMLC;
     init_2dc(hwp, tdc_prefetcher_array.tdc_hwp_umlc);
   }
   if (PREF_UL1_ON) {
     tdc_prefetcher_array.tdc_hwp_ul1 = (Pref_2DC*)malloc(sizeof(Pref_2DC));
-    tdc_prefetcher_array.tdc_hwp_ul1->type = UL1;
+    tdc_prefetcher_array.tdc_hwp_ul1->type = PREF_TO_UL1;
     init_2dc(hwp, tdc_prefetcher_array.tdc_hwp_ul1);
   }
 }
@@ -175,10 +175,8 @@ void pref_2dc_train(Pref_2DC* tdc_hwp, Addr lineAddr, Addr loadPC, Flag is_hit) 
       // few.
       for (; num_pref_sent < tdc_hwp->pref_degree; num_pref_sent++) {
         lineIndex += region->deltaA;
-        if (tdc_hwp->type == UMLC)
-          pref_addto_umlc_req_queue(0, lineIndex, tdc_hwp->hwp_info->id);
-        else
-          pref_addto_ul1req_queue_set(0, lineIndex, tdc_hwp->hwp_info->id, 0, loadPC, 0, FALSE);  // FIXME
+        pref_addto_dest_req_queue_set(0, tdc_hwp->type, lineIndex, tdc_hwp->hwp_info->id, 0, loadPC, 0,
+                                      FALSE);  // FIXME
       }
     }
     while (num_pref_sent < tdc_hwp->pref_degree) {
@@ -192,10 +190,7 @@ void pref_2dc_train(Pref_2DC* tdc_hwp, Addr lineAddr, Addr loadPC, Flag is_hit) 
       delta1 = delta2;
       delta2 = data->delta;
 
-      if (tdc_hwp->type == UMLC)
-        pref_addto_umlc_req_queue(0, lineIndex, tdc_hwp->hwp_info->id);
-      else
-        pref_addto_ul1req_queue_set(0, lineIndex, tdc_hwp->hwp_info->id, 0, loadPC, 0, FALSE);  // FIXME
+      pref_addto_dest_req_queue_set(0, tdc_hwp->type, lineIndex, tdc_hwp->hwp_info->id, 0, loadPC, 0, FALSE);  // FIXME
       num_pref_sent++;
     }
   }

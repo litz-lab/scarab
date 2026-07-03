@@ -40,7 +40,7 @@ typedef struct Markov_Table_Entry_Struct {
 typedef struct Pref_Markov_Struct {
   HWP_Info* hwp_info;
   Markov_Table_Entry** markov_table;
-  CacheLevel type;
+  HWP_Type type;
 } Pref_Markov;
 
 typedef struct {

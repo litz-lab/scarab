@@ -75,14 +75,14 @@ void pref_markov_init(HWP* hwp) {
   if (PREF_UMLC_ON) {
     markov_prefetchers_array.markov_hwp_core_umlc = (Pref_Markov*)calloc(NUM_CORES, sizeof(Pref_Markov));
     for (uns i = 0; i < NUM_CORES; i++)
-      markov_prefetchers_array.markov_hwp_core_umlc[i].type = UMLC;
+      markov_prefetchers_array.markov_hwp_core_umlc[i].type = PREF_TO_UMLC;
     markov_prefetchers_array.last_miss_addr_core_umlc = malloc(sizeof(Addr) * NUM_CORES);
     init_markov(hwp, markov_prefetchers_array.markov_hwp_core_umlc, markov_prefetchers_array.last_miss_addr_core_umlc);
   }
   if (PREF_UL1_ON) {
     markov_prefetchers_array.markov_hwp_core_ul1 = (Pref_Markov*)calloc(NUM_CORES, sizeof(Pref_Markov));
     for (uns i = 0; i < NUM_CORES; i++)
-      markov_prefetchers_array.markov_hwp_core_ul1[i].type = UL1;
+      markov_prefetchers_array.markov_hwp_core_ul1[i].type = PREF_TO_UL1;
     markov_prefetchers_array.last_miss_addr_core_ul1 = malloc(sizeof(Addr) * NUM_CORES);
     init_markov(hwp, markov_prefetchers_array.markov_hwp_core_ul1, markov_prefetchers_array.last_miss_addr_core_ul1);
   }
@@ -218,11 +218,8 @@ void pref_markov_send_prefetches(Pref_Markov* markov_hwp, uns8 proc_id, Addr mis
     if (markov_hwp->markov_table[table_index][ii].valid) {
       if ((markov_hwp->markov_table[table_index][ii].tag == miss_lineAddr) &&
           (markov_hwp->markov_table[table_index][ii].count > PREF_MARKOV_SEND_THRESHOLD)) {
-        if (markov_hwp->type == UMLC)
-          pref_addto_umlc_req_queue(proc_id, markov_hwp->markov_table[table_index][ii].next_addr >> LOG2(L1_LINE_SIZE),
-                                    markov_hwp->hwp_info->id);
-        else
-          pref_addto_ul1req_queue(proc_id, markov_hwp->markov_table[table_index][ii].next_addr >> LOG2(L1_LINE_SIZE),
+        pref_addto_dest_req_queue(proc_id, markov_hwp->type,
+                                  markov_hwp->markov_table[table_index][ii].next_addr >> LOG2(L1_LINE_SIZE),
                                   markov_hwp->hwp_info->id);
       }
     } else

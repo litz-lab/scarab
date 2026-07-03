@@ -80,7 +80,7 @@ typedef struct Pref_Stream_struct {
   uns num_tosend;
   uns num_tosend_vals[10];
 
-  CacheLevel type;
+  HWP_Type type;
 
 } Pref_Stream;
 

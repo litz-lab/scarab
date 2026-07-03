@@ -69,7 +69,7 @@ typedef struct Pref_Stride_Struct {
   Stride_Region_Table_Entry* region_table;
   // Index table
   Stride_Index_Table_Entry* index_table;
-  CacheLevel type;
+  HWP_Type type;
 } Pref_Stride;
 
 typedef struct {

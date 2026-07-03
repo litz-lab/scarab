@@ -232,15 +232,10 @@ void pref_stream_train(Pref_Stream* pref_stream, uns8 proc_id, Addr line_addr, A
         } else {
           Addr line_index = stream->ep + stream->dir;
           uns distance = stream->dir > 0 ? line_index - stream->sp : stream->sp - line_index;
-          if (is_mlc) {
-            if (!pref_addto_umlc_req_queue(proc_id, line_index, pref_stream->hwp_info->id)) {
-              return;
-            }
-          } else {
-            if (!pref_addto_ul1req_queue_set(proc_id, line_index, pref_stream->hwp_info->id, distance, load_PC,
-                                             global_hist, stream->buffer_full)) {
-              return;
-            }
+          if (!pref_addto_dest_req_queue_set(proc_id, is_mlc ? PREF_TO_UMLC : PREF_TO_UL1, line_index,
+                                             pref_stream->hwp_info->id, distance, load_PC, global_hist,
+                                             stream->buffer_full)) {
+            return;
           }
         }
 

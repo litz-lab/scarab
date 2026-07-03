@@ -80,13 +80,13 @@ void pref_ghb_init(HWP* hwp) {
   if (PREF_UMLC_ON) {
     ghb_prefetchers_array.ghb_hwp_core_umlc = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
     for (uns i = 0; i < NUM_CORES; i++)
-      ghb_prefetchers_array.ghb_hwp_core_umlc[i].type = UMLC;
+      ghb_prefetchers_array.ghb_hwp_core_umlc[i].type = PREF_TO_UMLC;
     init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_umlc);
   }
   if (PREF_UL1_ON) {
     ghb_prefetchers_array.ghb_hwp_core_ul1 = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
     for (uns i = 0; i < NUM_CORES; i++)
-      ghb_prefetchers_array.ghb_hwp_core_ul1[i].type = UL1;
+      ghb_prefetchers_array.ghb_hwp_core_ul1[i].type = PREF_TO_UL1;
     init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_ul1);
   }
 }
@@ -226,10 +226,8 @@ void pref_ghb_train(Pref_GHB* ghb_hwp, uns8 proc_id, Addr lineAddr, Addr loadPC,
         for (; num_pref_sent < ghb_hwp->pref_degree; num_pref_sent++) {
           lineIndex += delta1;
           ASSERT(proc_id, proc_id == (lineIndex >> (58 - LOG2(DCACHE_LINE_SIZE))));
-          if (ghb_hwp->type == UMLC)
-            pref_addto_umlc_req_queue(proc_id, lineIndex, ghb_hwp->hwp_info->id);
-          else
-            pref_addto_ul1req_queue_set(proc_id, lineIndex, ghb_hwp->hwp_info->id, 0, loadPC, 0, FALSE);  // FIXME
+          pref_addto_dest_req_queue_set(proc_id, ghb_hwp->type, lineIndex, ghb_hwp->hwp_info->id, 0, loadPC, 0,
+                                        FALSE);  // FIXME
         }
       } else {
         if (delta1 == ghb_hwp->delta_buffer[(deltab_head - 1) % ghb_hwp->deltab_size] &&
@@ -241,10 +239,8 @@ void pref_ghb_train(Pref_GHB* ghb_hwp, uns8 proc_id, Addr lineAddr, Addr loadPC,
           for (; num_pref_sent < ghb_hwp->pref_degree; num_pref_sent++) {
             lineIndex += ghb_hwp->delta_buffer[deltab_idx];
             ASSERT(proc_id, proc_id == (lineIndex >> (58 - LOG2(DCACHE_LINE_SIZE))));
-            if (ghb_hwp->type == UMLC)
-              pref_addto_umlc_req_queue(proc_id, lineIndex, ghb_hwp->hwp_info->id);
-            else
-              pref_addto_ul1req_queue_set(proc_id, lineIndex, ghb_hwp->hwp_info->id, 0, loadPC, 0, FALSE);  // FIXME
+            pref_addto_dest_req_queue_set(proc_id, ghb_hwp->type, lineIndex, ghb_hwp->hwp_info->id, 0, loadPC, 0,
+                                          FALSE);  // FIXME
             DEBUG(0, "Sent %llx\n", lineIndex);
             deltab_idx = CIRC_DEC(deltab_idx, ghb_hwp->deltab_size);
             if (deltab_idx > curr_deltab_size) {

@@ -58,6 +58,22 @@ inst_info_map                                    inst_info_storage;
 static std::map<xed_reg_enum_t, LEVEL_BASE::REG> reg_xed_to_pin_map;
 extern scatter_info_map                          scatter_info_storage;
 
+extern uint8_t reg_compress_map[];
+static std::map<uint8_t, LEVEL_BASE::REG> reg_scarab_to_pin_map;
+
+static void init_reg_scarab_to_pin_map() {
+  const xed_reg_enum_t gprs[] = {
+    XED_REG_RAX, XED_REG_RBX, XED_REG_RCX, XED_REG_RDX,
+    XED_REG_RBP, XED_REG_RSI, XED_REG_RDI, XED_REG_RSP,
+    XED_REG_R8,  XED_REG_R9,  XED_REG_R10, XED_REG_R11,
+    XED_REG_R12, XED_REG_R13, XED_REG_R14, XED_REG_R15
+  };
+  for (xed_reg_enum_t x : gprs)
+    reg_scarab_to_pin_map[reg_compress_map[(int)x]] = reg_xed_to_pin_map[x];
+  for (auto& kv : reg_scarab_to_pin_map)
+    fprintf(stderr, "[MAP] scarab=%d -> pin=%d\n", (int)kv.first, (int)kv.second);
+}
+
 /********************* Private Functions Prototypes ***************************/
 ctype_pin_inst* get_inst_info_obj(const INS& ins);
 
@@ -71,8 +87,8 @@ void get_ld_ea(ADDRINT addr);
 void get_ld_ea2(ADDRINT addr1, ADDRINT addr2);
 void get_st_ea(ADDRINT addr);
 void get_branch_dir(bool taken);
-void get_src_vector_vals(CONTEXT* ctxt, ADDRINT reg_id);
-void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT reg_id);
+void get_src_vector_vals(CONTEXT* ctxt, ADDRINT reg_id, ADDRINT scarab_id);
+void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT reg_id, ADDRINT scarab_id);
 void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count);
 void create_compressed_op(ADDRINT iaddr);
 void create_compressed_op_after(ADDRINT iaddr);
@@ -100,6 +116,7 @@ bool extract_mask_on(const PIN_REGISTER& mask_reg_val_buf, const UINT32 lane_id,
 void pin_decoder_init(bool translate_x87_regs, std::ostream* err_ostream) {
   init_x86_decoder(err_ostream);
   init_reg_xed_to_pin_map();
+  init_reg_scarab_to_pin_map();
   init_x87_stack_delta();
   glb_translate_x87_regs = translate_x87_regs;
   if(err_ostream) {
@@ -193,23 +210,29 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
                    IARG_BRANCH_TAKEN, IARG_END);
   }
 
-  if (INS_Valid(ins)) {
-    for (UINT32 i = 0; i < INS_MaxNumRRegs(ins); i++) {
-      REG src_reg = INS_RegR(ins, i);
-      if (!REG_valid(src_reg))
-        continue;
-      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_src_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT, src_reg,
+if (INS_Valid(ins)) {
+    for (uns i = 0; i < info->num_src_regs; i++) {
+      uint8_t scarab_id = info->src_regs[i];
+      auto it = reg_scarab_to_pin_map.find(scarab_id);
+      REG pin_reg = (it != reg_scarab_to_pin_map.end()) ? it->second : REG_INVALID_;
+      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_src_vector_vals,
+                     IARG_CONST_CONTEXT,
+                     IARG_ADDRINT, (ADDRINT)pin_reg,
+                     IARG_ADDRINT, (ADDRINT)scarab_id,
                      IARG_END);
     }
   }
 
   if (INS_Valid(ins)) {
     if (INS_IsValidForIpointAfter(ins)) {
-      for (UINT32 i = 0; i < INS_MaxNumWRegs(ins); i++) {
-        REG dst_reg = INS_RegW(ins, i);
-        if (!REG_valid(dst_reg))
-          continue;
-        INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)get_dst_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT, dst_reg,
+      for (uns i = 0; i < info->num_dst_regs; i++) {
+        uint8_t scarab_id = info->dst_regs[i];
+        auto it = reg_scarab_to_pin_map.find(scarab_id);
+        REG pin_reg = (it != reg_scarab_to_pin_map.end()) ? it->second : REG_INVALID_;
+        INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)get_dst_vector_vals,
+                       IARG_CONST_CONTEXT,
+                       IARG_ADDRINT, (ADDRINT)pin_reg,
+                       IARG_ADDRINT, (ADDRINT)scarab_id,
                        IARG_END);
       }
       INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)create_compressed_op_after, IARG_INST_PTR, IARG_END);
@@ -344,16 +367,30 @@ void get_branch_dir(bool taken) {
   glb_actually_taken = taken;
 }
 
-void get_src_vector_vals(CONTEXT* ctxt, ADDRINT reg_id) {
+void get_src_vector_vals(CONTEXT* ctxt, ADDRINT pin_reg, ADDRINT scarab_id) {
+  REG reg = (REG)pin_reg;
   PIN_REGISTER reg_val;
-  PIN_GetContextRegval(ctxt, (REG)reg_id, (UINT8*)&reg_val);
-  glb_src_vector_vals.push_back({(uint16_t)reg_id, reg_val.qword[0], (uint8_t)(REG_Size((REG)reg_id) * 8)});
+  uint64_t val = 0;
+  uint8_t  size = 0;
+  if (REG_valid(reg)) {
+    PIN_GetContextRegval(ctxt, reg, (UINT8*)&reg_val);
+    val  = reg_val.qword[0];
+    size = (uint8_t)(REG_Size(reg) * 8);
+  }
+  glb_src_vector_vals.push_back({(uint16_t)scarab_id, val, size});
 }
 
-void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT reg_id) {
+void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT pin_reg, ADDRINT scarab_id) {
+  REG reg = (REG)pin_reg;
   PIN_REGISTER reg_val;
-  PIN_GetContextRegval(ctxt, (REG)reg_id, (UINT8*)&reg_val);
-  glb_dst_vector_vals.push_back({(uint16_t)reg_id, reg_val.qword[0], (uint8_t)(REG_Size((REG)reg_id) * 8)});
+  uint64_t val = 0;
+  uint8_t  size = 0;
+  if (REG_valid(reg)) {
+    PIN_GetContextRegval(ctxt, reg, (UINT8*)&reg_val);
+    val  = reg_val.qword[0];
+    size = (uint8_t)(REG_Size(reg) * 8);
+  }
+  glb_dst_vector_vals.push_back({(uint16_t)scarab_id, val, size});
 }
 
 void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count) {

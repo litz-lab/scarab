@@ -67,8 +67,6 @@ static void init_reg_scarab_to_pin_map() {
                                  XED_REG_R12, XED_REG_R13, XED_REG_R14, XED_REG_R15};
   for (xed_reg_enum_t x : gprs)
     reg_scarab_to_pin_map[reg_compress_map[(int)x]] = reg_xed_to_pin_map[x];
-  for (auto& kv : reg_scarab_to_pin_map)
-    fprintf(stderr, "[MAP] scarab=%d -> pin=%d\n", (int)kv.first, (int)kv.second);
 }
 
 /********************* Private Functions Prototypes ***************************/

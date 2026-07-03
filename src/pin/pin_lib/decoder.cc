@@ -30,6 +30,12 @@
 
 #include "pin_scarab_common_lib.h"
 
+#define REG(x) SCARAB_REG_##x,
+typedef enum Reg_Id_struct {
+#include "isa/x86_regs.def"
+  SCARAB_NUM_REGS
+} Reg_Id;
+#undef REG
 
 using namespace std;
 
@@ -382,8 +388,14 @@ void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT pin_reg, ADDRINT scarab_id) {
   glb_dst_vector_vals.push_back({(uint16_t)scarab_id, val, size});
 }
 
+static inline bool is_arch_gpr(uint8_t reg_id) {
+  return reg_id >= SCARAB_REG_RAX && reg_id <= SCARAB_REG_R15;
+}
+
 void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count) {
   for (int i = 0; i < reg_count; ++i) {
+    if (!is_arch_gpr(global_vals[i].id))
+      continue;
     if (is_dst) {
       ASSERTX(global_vals[i].id == inst->dst_regs[i]);
       inst->dests[i].id = global_vals[i].id;

@@ -454,6 +454,28 @@ void pref_ul1_pref_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_
   }
 }
 
+void pref_ul1_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata) {
+  int ii;
+  if (!PREF_FRAMEWORK_ON)
+    return;
+  for (ii = 0; ii < pref_table_size; ii++) {
+    if (pref_table[ii].hwp_info->enabled && pref_table[ii].ul1_cache_fill) {
+      pref_table[ii].ul1_cache_fill(proc_id, fill_addr, prefetch, evicted_addr, metadata);
+    }
+  }
+}
+
+void pref_umlc_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata) {
+  int ii;
+  if (!PREF_FRAMEWORK_ON)
+    return;
+  for (ii = 0; ii < pref_table_size; ii++) {
+    if (pref_table[ii].hwp_info->enabled && pref_table[ii].umlc_cache_fill) {
+      pref_table[ii].umlc_cache_fill(proc_id, fill_addr, prefetch, evicted_addr, metadata);
+    }
+  }
+}
+
 Flag pref_dl0req_queue_filter(Addr line_addr) {
   if (!PREF_DL0REQ_QUEUE_FILTER_ON)
     return FALSE;
@@ -697,6 +719,33 @@ void pref_update_core(uns proc_id) {
 
       if (dc_hit) {
         // nothing for now
+      } else if (PREF_DL0_FILL_DCACHE) {
+        // True L1D prefetch: issue a memory request that fills the dcache on
+        // return (done_func = dcache_fill_line, the same callback a demand dcache
+        // miss uses), rather than forwarding to the UL1 (LLC) queue.
+        Pref_Req_Info info;
+        info.prefetcher_id = dl0req_queue[q_index].prefetcher_id;
+        info.distance = dl0req_queue[q_index].distance;
+        info.loadPC = dl0req_queue[q_index].loadPC;
+        info.global_hist = dl0req_queue[q_index].global_hist;
+        info.bw_limited = dl0req_queue[q_index].bw_limited;
+        info.dest = DEST_DCACHE;
+        // leave room in the mem req buffer for demand traffic
+        if ((model->mem == MODEL_MEM) &&
+            ((MEM_REQ_BUFFER_ENTRIES - mem_get_req_count(proc_id)) < PREF_L1Q_DEMAND_RESERVE)) {
+          STAT_EVENT(0, PREF_MLCQ_STALL);
+          inc_send_pos = FALSE;
+          break;
+        }
+        if ((model->mem == MODEL_MEM) &&
+            new_mem_req(MRT_DPRF, proc_id, dl0req_queue[q_index].line_addr, DCACHE_LINE_SIZE, 1, NULL, dcache_fill_line,
+                        unique_count, &info)) {
+          dl0req_queue[q_index].valid = FALSE;  // issued: free the slot (no re-issue when send_pos wraps)
+        } else {
+          // not MODEL_MEM, or mem req buffer full: keep the entry valid and retry it next time.
+          inc_send_pos = FALSE;
+          break;
+        }
       } else {
         // put req. into the ul1req_queue
         if (!pref_addto_ul1req_queue(proc_id, dl0req_queue[q_index].line_index, dl0req_queue[q_index].prefetcher_id)) {

@@ -810,50 +810,6 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
   return idx;
 }
 
-static inline Flag is_arch_gpr(uns16 reg_id) {
-  return reg_id >= REG_RAX && reg_id <= REG_R15;
-}
-
-static void fill_and_validate_uop_reg_vals(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop, int num_uop) {
-  for (int u = 0; u < num_uop; u++) {
-    Inst_Info* uinfo = trace_uop[u]->info;
-    for (uns ii = 0; ii < uinfo->table_info.num_src_regs; ii++)
-      trace_uop[u]->srcs[ii].val = 0;
-    for (uns ii = 0; ii < uinfo->table_info.num_dest_regs; ii++)
-      trace_uop[u]->dests[ii].val = 0;
-  }
-
-  for (uns j = 0; j < pi->num_src_regs; j++) {
-    uns found = 0;
-    for (int u = 0; u < num_uop; u++) {
-      Inst_Info* uinfo = trace_uop[u]->info;
-      for (uns ii = 0; ii < uinfo->table_info.num_src_regs; ii++)
-        if (uinfo->srcs[ii].id == pi->src_regs[j]) {
-          trace_uop[u]->srcs[ii].val = pi->srcs[j].val;
-          found++;
-        }
-    }
-    Flag not_found = (found == 0);
-    if (is_arch_gpr(pi->src_regs[j]))
-      ASSERT(proc_id, !not_found);
-  }
-
-  for (uns j = 0; j < pi->num_dst_regs; j++) {
-    uns found = 0;
-    for (int u = 0; u < num_uop; u++) {
-      Inst_Info* uinfo = trace_uop[u]->info;
-      for (uns ii = 0; ii < uinfo->table_info.num_dest_regs; ii++)
-        if (uinfo->dests[ii].id == pi->dst_regs[j]) {
-          trace_uop[u]->dests[ii].val = pi->dests[j].val;
-          found++;
-        }
-    }
-    Flag not_found = (found == 0);
-    if (is_arch_gpr(pi->dst_regs[j]))
-      ASSERT(proc_id, !not_found);
-  }
-}
-
 void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop) {
   Flag new_entry = FALSE;
   Inst_Info* info;
@@ -965,7 +921,6 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
 
   ASSERT(proc_id, num_uop > 0);
   trace_uop[num_uop - 1]->eom = TRUE;
-  fill_and_validate_uop_reg_vals(proc_id, pi, trace_uop, num_uop);
 
   trace_uop[num_uop - 1]->npc = pi->instruction_next_addr;
 }
@@ -976,6 +931,25 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
   trace_uop->va = 0;
   trace_uop->mem_size = 0;
 
+  for (uns ii = 0; ii < info->table_info.num_src_regs; ii++) {
+    trace_uop->srcs[ii].val = 0;
+    for (uns j = 0; j < pi->num_src_regs; j++) {
+      if (pi->src_regs[j] == info->srcs[ii].id) {
+        trace_uop->srcs[ii].val = pi->srcs[j].val;
+        break;
+      }
+    }
+  }
+  for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++) {
+    trace_uop->dests[ii].val = 0;
+    for (uns j = 0; j < pi->num_dst_regs; j++) {
+      if (pi->dst_regs[j] == info->dests[ii].id) {
+        trace_uop->dests[ii].val = pi->dests[j].val;
+        break;
+      }
+    }
+  }
+  
   if (info->table_info.cf_type) {
     trace_uop->actual_taken = pi->actually_taken;
     trace_uop->target = pi->branch_target;  // FIXME

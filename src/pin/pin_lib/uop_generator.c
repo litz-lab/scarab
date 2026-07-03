@@ -949,7 +949,7 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
       }
     }
   }
-  
+
   if (info->table_info.cf_type) {
     trace_uop->actual_taken = pi->actually_taken;
     trace_uop->target = pi->branch_target;  // FIXME

@@ -102,6 +102,7 @@ extern Op invalid_op;
 /* Global Variables */
 
 Map_Data* map_data = NULL;
+Arch_Reg_Mirror arch_reg_mirror;
 
 const char* const dep_type_names[NUM_DEP_TYPES] = {
     "REG_DATA",
@@ -147,6 +148,7 @@ void init_map(uns8 proc_id) {
 
   ASSERT(proc_id, map_data == &td->map_data);
   memset(map_data, 0, sizeof(Map_Data));
+  memset(&arch_reg_mirror, 0, sizeof(Arch_Reg_Mirror));
   map_data->proc_id = proc_id;
 
   /* Initialize the register "last write" map */

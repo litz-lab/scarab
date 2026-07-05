@@ -1,5 +1,9 @@
 #include "libs/cache_index.h"
 
+#include <fstream>
+#include <sstream>
+#include <unordered_map>
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/utils.h"
@@ -15,65 +19,6 @@
     if ((state)->stat_base >= 0)                       \
       STAT_EVENT(0, (state)->stat_base + (stat_enum)); \
   } while (0)
-
-/**************************************************************************************/
-/* Set-index hash functions. Referenced only through index_hash_table below, so
- * they are file-local (static). `addr` is the block address (already shifted). */
-
-static Addr cache_index_id_hash(Cache* cache, Addr addr) {
-  return addr;
-}
-
-static Addr cache_index_knuth_hash(Cache* cache, Addr addr) {
-  // Knuth multiplicative hash
-  Addr tmp = addr * 11400714819323197440ULL;
-  return (tmp << cache->set_bits) | (tmp >> (64 - cache->set_bits));
-}
-
-static Addr cache_index_single_xor(Cache* cache, Addr addr) {
-  return (addr >> cache->set_bits) ^ addr;
-}
-
-static Addr cache_index_xor_folding(Cache* cache, Addr addr) {
-  Addr index = addr;
-  if (cache->set_bits < 64) {
-    while ((index >> cache->set_bits) != 0) {
-      index = (index & cache->set_mask) ^ (index >> cache->set_bits);
-    }
-  }
-  return index & cache->set_mask;
-}
-
-static Addr cache_index_prime_displace(Cache* cache, Addr addr) {
-  return ((addr & cache->set_mask) + (addr >> cache->set_bits) * 17) & cache->set_mask;
-}
-
-static Addr cache_index_sha256(Cache* cache, Addr addr) {
-  return sha256_64bits(addr);
-}
-
-/* Compute X ^ Y for a given (x_bits, y_bits) selection over a block address. */
-static Addr _entropy_index_apply(Entropy_Index_State* s, Addr blk_addr, const uns8* x_bits, const uns8* y_bits) {
-  Addr x = 0, y = 0;
-  for (uns ii = 0; ii < s->num_index_bits; ii++) {
-    x |= ((blk_addr >> x_bits[ii]) & 0x1ULL) << ii;
-    y |= ((blk_addr >> y_bits[ii]) & 0x1ULL) << ii;
-  }
-  return x ^ y;
-}
-
-static Addr cache_index_entropy(Cache* cache, Addr addr) {
-  Entropy_Index_State* s = cache->cache_index_state.entropy_state;
-  Addr current_set = _entropy_index_apply(s, addr, s->x_bits, s->y_bits);
-  /* During gradual remapping a line is relocated once its old set has been
-     processed by the set pointer; relocated lines live at their new set. */
-  if (s->remapping && current_set < s->set_ptr)
-    return _entropy_index_apply(s, addr, s->x_bits_next, s->y_bits_next);
-  return current_set;
-}
-
-/* Index_Hash_Id -> {name, hash_func} dispatch table */
-#include "libs/cache_index_table.def"
 
 /**************************************************************************************/
 /* EntropyIndex (MICRO 2024). The set index is X ^ Y, where X is the N highest-entropy block-address bits and
@@ -120,6 +65,7 @@ static void entropy_index_init(Cache* cache, uns num_track_bits, uns interval_si
   cache->cache_index_state.entropy_state = s;
 }
 
+static Addr _entropy_index_apply(Entropy_Index_State* s, Addr blk_addr, const uns8* x_bits, const uns8* y_bits);
 static void entropy_index_remap_one_set(Cache* cache);
 static void entropy_index_reselect(Cache* cache);
 
@@ -267,14 +213,151 @@ static void entropy_index_remap_one_set(Cache* cache) {
 }
 
 /**************************************************************************************/
+/* CSV address->set map. Reads a CSV with (at least) "addr" and "set_index" columns (order not assumed).
+ * `addr` values are full byte addresses and are keyed by their block address (addr >> shift_bits).
+ * Addresses absent from the file map to the last set (num_sets - 1) via cache_index_csv() above. */
+
+struct Csv_Index_State_struct {
+  std::unordered_map<Addr, uns> addr_to_set;
+  uns last_set; /* default set for unlisted addresses */
+};
+
+/* Trim leading/trailing ASCII whitespace from s. */
+static std::string _csv_trim(const std::string& s) {
+  size_t b = s.find_first_not_of(" \t\r\n");
+  if (b == std::string::npos)
+    return "";
+  size_t e = s.find_last_not_of(" \t\r\n");
+  return s.substr(b, e - b + 1);
+}
+
+static void csv_index_init(Cache* cache, const char* path) {
+  ASSERTUM(0, path && path[0], "CSV_MAP index hash selected but no csv_map_path given for cache '%s'.\n", cache->name);
+
+  std::ifstream file(path);
+  ASSERTUM(0, file.is_open(), "Could not open cache index CSV '%s' for cache '%s'.\n", path, cache->name);
+
+  Csv_Index_State* s = new Csv_Index_State();
+  s->last_set = cache->num_sets - 1;
+
+  std::string line;
+  ASSERTUM(0, (bool)std::getline(file, line), "Cache index CSV '%s' is empty.\n", path);
+
+  /* Locate the addr and set_index columns from the header. */
+  int addr_col = -1, set_col = -1;
+  {
+    std::istringstream header(line);
+    std::string cell;
+    for (int col = 0; std::getline(header, cell, ','); col++) {
+      std::string name = _csv_trim(cell);
+      if (name == "addr")
+        addr_col = col;
+      else if (name == "set_index")
+        set_col = col;
+    }
+  }
+  ASSERTUM(0, addr_col >= 0 && set_col >= 0, "Cache index CSV '%s' must have 'addr' and 'set_index' columns.\n", path);
+
+  /* Parse each data row. */
+  while (std::getline(file, line)) {
+    if (_csv_trim(line).empty())
+      continue; /* skip blank lines */
+    std::istringstream row(line);
+    std::string cell, addr_cell, set_cell;
+    for (int col = 0; std::getline(row, cell, ','); col++) {
+      if (col == addr_col)
+        addr_cell = cell;
+      else if (col == set_col)
+        set_cell = cell;
+    }
+    Addr addr = (Addr)std::stoull(_csv_trim(addr_cell), nullptr, 0); /* base 0: 0x-hex or decimal */
+    uns set_index = (uns)std::stoul(_csv_trim(set_cell), nullptr, 0);
+    ASSERTUM(0, set_index < cache->num_sets, "Cache index CSV '%s': set_index %u out of range (num_sets=%u).\n", path,
+             set_index, cache->num_sets);
+    s->addr_to_set[addr >> cache->shift_bits] = set_index;
+  }
+
+  cache->cache_index_state.csv_state = s;
+}
+
+/**************************************************************************************/
+/* Set-index hash functions. Referenced only through index_hash_table below, so
+ * they are file-local (static). `addr` is the block address (already shifted). */
+
+static Addr cache_index_id_hash(Cache* cache, Addr addr) {
+  return addr;
+}
+
+static Addr cache_index_knuth_hash(Cache* cache, Addr addr) {
+  // Knuth multiplicative hash
+  Addr tmp = addr * 11400714819323197440ULL;
+  return (tmp << cache->set_bits) | (tmp >> (64 - cache->set_bits));
+}
+
+static Addr cache_index_single_xor(Cache* cache, Addr addr) {
+  return (addr >> cache->set_bits) ^ addr;
+}
+
+static Addr cache_index_xor_folding(Cache* cache, Addr addr) {
+  Addr index = addr;
+  if (cache->set_bits < 64) {
+    while ((index >> cache->set_bits) != 0) {
+      index = (index & cache->set_mask) ^ (index >> cache->set_bits);
+    }
+  }
+  return index & cache->set_mask;
+}
+
+static Addr cache_index_prime_displace(Cache* cache, Addr addr) {
+  return ((addr & cache->set_mask) + (addr >> cache->set_bits) * 17) & cache->set_mask;
+}
+
+static Addr cache_index_sha256(Cache* cache, Addr addr) {
+  return sha256_64bits(addr);
+}
+
+/* Compute X ^ Y for a given (x_bits, y_bits) selection over a block address. */
+static Addr _entropy_index_apply(Entropy_Index_State* s, Addr blk_addr, const uns8* x_bits, const uns8* y_bits) {
+  Addr x = 0, y = 0;
+  for (uns ii = 0; ii < s->num_index_bits; ii++) {
+    x |= ((blk_addr >> x_bits[ii]) & 0x1ULL) << ii;
+    y |= ((blk_addr >> y_bits[ii]) & 0x1ULL) << ii;
+  }
+  return x ^ y;
+}
+
+static Addr cache_index_entropy(Cache* cache, Addr addr) {
+  Entropy_Index_State* s = cache->cache_index_state.entropy_state;
+  Addr current_set = _entropy_index_apply(s, addr, s->x_bits, s->y_bits);
+  /* During gradual remapping a line is relocated once its old set has been
+     processed by the set pointer; relocated lines live at their new set. */
+  if (s->remapping && current_set < s->set_ptr)
+    return _entropy_index_apply(s, addr, s->x_bits_next, s->y_bits_next);
+  return current_set;
+}
+
+static Addr cache_index_csv(Cache* cache, Addr addr) {
+  Csv_Index_State* s = (Csv_Index_State*)cache->cache_index_state.csv_state;
+  auto it = s->addr_to_set.find(addr);
+  return (it != s->addr_to_set.end()) ? it->second : s->last_set;
+}
+
+/* Index_Hash_Id -> {name, hash_func} dispatch table */
+#include "libs/cache_index_table.def"
+
+/**************************************************************************************/
 /* Index API */
 
 void cache_index_state_init(Cache* cache, Cache_Index_Config cfg) {
   cache->cache_index_state.index_hash = &index_hash_table[cfg.index_hash_id];
   cache->cache_index_state.entropy_state = NULL;
+  cache->cache_index_state.csv_state = NULL;
+
   if (cfg.index_hash_id == ENTROPY_INDEX)
     entropy_index_init(cache, cfg.ei_num_track_bits, cfg.ei_interval_size, cfg.ei_remap_rate, cfg.ei_switch_thresh_pct,
                        cfg.ei_stat_base);
+  else if (cfg.index_hash_id == CSV_MAP)
+    csv_index_init(cache, cfg.csv_map_path);
 }
 
 uns cache_index_get_set(Cache* cache, Addr addr) {

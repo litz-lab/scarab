@@ -490,7 +490,8 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
                                     .ei_interval_size = BTB_INTERVAL_SIZE,
                                     .ei_remap_rate = BTB_REMAP_RATE,
                                     .ei_switch_thresh_pct = BTB_SWITCH_THRESH_PCT,
-                                    .ei_stat_base = BTB_MAIN_EI_SWITCHES};
+                                    .ei_stat_base = BTB_MAIN_EI_SWITCHES,
+                                    .csv_map_path = BTB_CSV_MAP_FILE};
       init_cache_impl(&bp_data->btb[ii], name, BTB_ENTRIES / BTB_BANKS, BTB_ASSOC, 1, BTB_TAG_BITS, sizeof(Addr),
                       REPL_TRUE_LRU, idx_cfg);
     }
@@ -505,7 +506,8 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
                                       .ei_interval_size = BTB_L0_INTERVAL_SIZE,
                                       .ei_remap_rate = BTB_L0_REMAP_RATE,
                                       .ei_switch_thresh_pct = BTB_L0_SWITCH_THRESH_PCT,
-                                      .ei_stat_base = BTB_L0_EI_SWITCHES};
+                                      .ei_stat_base = BTB_L0_EI_SWITCHES,
+                                      .csv_map_path = BTB_L0_CSV_MAP_FILE};
         init_cache_impl(&bp_data->btb_l0[ii], name, BTB_L0_ENTRIES / BTB_L0_BANKS, BTB_L0_ASSOC, 1, BTB_L0_TAG_BITS,
                         sizeof(Addr), REPL_TRUE_LRU, idx_cfg);
       }
@@ -521,7 +523,8 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
                                       .ei_interval_size = BTB_L1_INTERVAL_SIZE,
                                       .ei_remap_rate = BTB_L1_REMAP_RATE,
                                       .ei_switch_thresh_pct = BTB_L1_SWITCH_THRESH_PCT,
-                                      .ei_stat_base = BTB_L1_EI_SWITCHES};
+                                      .ei_stat_base = BTB_L1_EI_SWITCHES,
+                                      .csv_map_path = BTB_L1_CSV_MAP_FILE};
         init_cache_impl(&bp_data->btb_l1[ii], name, BTB_L1_ENTRIES / BTB_L1_BANKS, BTB_L1_ASSOC, 1, BTB_L1_TAG_BITS,
                         sizeof(Addr), REPL_TRUE_LRU, idx_cfg);
       }
@@ -675,7 +678,8 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
                                   .ei_interval_size = BTB_INTERVAL_SIZE,
                                   .ei_remap_rate = BTB_REMAP_RATE,
                                   .ei_switch_thresh_pct = BTB_SWITCH_THRESH_PCT,
-                                  .ei_stat_base = BTB_MAIN_EI_SWITCHES};
+                                  .ei_stat_base = BTB_MAIN_EI_SWITCHES,
+                                  .csv_map_path = BTB_CSV_MAP_FILE};
     init_cache_impl(bp_data->btb, "B-BTB", BTB_ENTRIES, BTB_ASSOC, 1, BTB_TAG_BITS, BLK_BTB_ENTRY_SIZE, REPL_TRUE_LRU,
                     idx_cfg);
   } else  // points to the primary BP's shared BTB

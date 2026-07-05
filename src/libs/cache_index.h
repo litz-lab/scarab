@@ -1,6 +1,7 @@
 #ifndef __CACHE_INDEX_H__
 #define __CACHE_INDEX_H__
 
+#include "globals/global_defs.h"
 #include "globals/global_types.h"
 
 #ifdef __cplusplus
@@ -8,6 +9,7 @@ extern "C" {
 #endif
 
 typedef struct Cache_struct Cache;
+typedef struct Csv_Index_State_struct Csv_Index_State;
 
 /**************************************************************************************/
 /* EntropyIndex (MICRO 2024) types */
@@ -64,6 +66,7 @@ typedef enum Index_Hash_enum {
   PRIME_DISPLACE, /* Displace index by p * tag */
   SHA256_HASH,    /* SHA-256 of the block address, digest folded to the index */
   ENTROPY_INDEX,  /* MICRO 2024 EntropyIndex: dynamic entropy-based bit selection */
+  CSV_MAP,        /* Fixed address->set map loaded from a CSV; misses go to the last set */
   NUM_INDEX_HASH
 } Index_Hash_Id;
 
@@ -82,6 +85,7 @@ extern Index_Hash index_hash_table[];
 typedef struct Cache_Index_State_struct {
   Index_Hash* index_hash;             /* selected set-index hash function */
   Entropy_Index_State* entropy_state; /* non-NULL only when the index hash is ENTROPY_INDEX */
+  Csv_Index_State* csv_state;         /* non-NULL only when the index hash is CSV_MAP */
 } Cache_Index_State;
 
 /**************************************************************************************/
@@ -96,6 +100,9 @@ typedef struct Cache_Index_Config_struct {
   uns ei_remap_rate;
   int ei_switch_thresh_pct;
   int ei_stat_base;
+
+  /* Path to the address->set CSV; referenced only when index_hash_id == CSV_MAP */
+  const char* csv_map_path;
 } Cache_Index_Config;
 
 static inline Cache_Index_Config get_default_cache_index_config(void) {
@@ -107,6 +114,8 @@ static inline Cache_Index_Config get_default_cache_index_config(void) {
       .ei_remap_rate = 80,
       .ei_switch_thresh_pct = -1,
       .ei_stat_base = -1,
+
+      .csv_map_path = NULL,
   };
   return idx_cfg;
 }

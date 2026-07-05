@@ -8,5 +8,6 @@ Index_Hash index_hash_table [] = {
     { PRIME_DISPLACE,    "prime_displace",     cache_index_prime_displace },
     { SHA256_HASH,       "sha256",             cache_index_sha256         },
     { ENTROPY_INDEX,     "entropy",            cache_index_entropy        },
+    { CSV_MAP,           "csv",                cache_index_csv            },
     { NUM_INDEX_HASH,    0,                    NULL }
 };

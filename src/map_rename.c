@@ -632,6 +632,7 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->unique_num = 0;
   entry->off_path = FALSE;
   entry->reg_val = REG_INVALID_VAL;
+  entry->produced_uid = 0;
 
   entry->reg_state = REG_TABLE_ENTRY_STATE_FREE;
   entry->parent_reg_id = REG_TABLE_REG_ID_INVALID;
@@ -741,16 +742,9 @@ void reg_table_entry_produce(struct reg_table_entry *entry, Op *op, uns dst_reg_
   ASSERT(map_data->proc_id, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
 
   entry->reg_val = op->dst_val[dst_reg_idx];
+  entry->produced_uid = op->inst_uid;
   entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
   entry->produced_cycle = cycle_count;
-
-  int arch_id = op->dst_reg_id[dst_reg_idx][REG_TABLE_TYPE_ARCHITECTURAL];
-  ASSERT(map_data->proc_id, op->inst_info->dests[dst_reg_idx].id == arch_id);
-  if (!op->off_path && op->inst_uid >= arch_reg_mirror.last_uid[arch_id]) {
-    arch_reg_mirror.last_val[arch_id] = op->dst_val[dst_reg_idx];
-    arch_reg_mirror.last_uid[arch_id] = op->inst_uid;
-    arch_reg_mirror.last_valid[arch_id] = TRUE;
-  }
 }
 
 struct reg_table_entry_ops reg_table_entry_ops = {
@@ -1939,10 +1933,35 @@ void reg_file_commit(Op *op) {
 }
 
 Flag reg_value_read(int arch_id, uns64 *val_out, uns64 *uid_out) {
-  if (!arch_reg_mirror.last_valid[arch_id])
-    return FALSE;
+  int reg_type = reg_file_get_reg_type(arch_id);
+  struct reg_table *srt  = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL];
+  struct reg_table *ptab = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
 
-  *val_out = arch_reg_mirror.last_val[arch_id];
-  *uid_out = arch_reg_mirror.last_uid[arch_id];
-  return TRUE;
+  int ptag = srt->entries[arch_id].child_reg_id;
+  int guard = ptab->size;
+
+  while (ptag != REG_TABLE_REG_ID_INVALID && guard-- > 0) {
+    struct reg_table_entry *entry = &ptab->entries[ptag];
+
+    if (entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED ||
+        entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT) {
+      *val_out = entry->reg_val;
+      *uid_out = entry->produced_uid;
+      return TRUE;
+    }
+
+    Op *pop = entry->op;
+    if (pop == NULL || pop == &invalid_op)
+      break;
+
+    int prev = REG_TABLE_REG_ID_INVALID;
+    for (uns ii = 0; ii < pop->inst_info->table_info.num_dest_regs; ++ii) {
+      if (pop->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] == arch_id) {
+        prev = pop->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+        break;
+      }
+    }
+    ptag = prev;
+  }
+  return FALSE;
 }

@@ -1934,7 +1934,7 @@ void reg_file_commit(Op *op) {
 
 Flag reg_value_read(int arch_id, uns64 *val_out, uns64 *uid_out) {
   int reg_type = reg_file_get_reg_type(arch_id);
-  struct reg_table *srt  = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL];
+  struct reg_table *srt = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL];
   struct reg_table *ptab = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
 
   int ptag = srt->entries[arch_id].child_reg_id;
@@ -1943,8 +1943,7 @@ Flag reg_value_read(int arch_id, uns64 *val_out, uns64 *uid_out) {
   while (ptag != REG_TABLE_REG_ID_INVALID && guard-- > 0) {
     struct reg_table_entry *entry = &ptab->entries[ptag];
 
-    if (entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED ||
-        entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT) {
+    if (entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED || entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT) {
       *val_out = entry->reg_val;
       *uid_out = entry->produced_uid;
       return TRUE;

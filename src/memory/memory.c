@@ -1075,6 +1075,12 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_entry, 
           if (!data->seen_prefetch) {
             data->seen_prefetch = TRUE;
 
+            // Notify the MLC/L2 prefetcher that one of its prefetched lines was
+            // used by a demand access (counterpart of the UL1 hit notification
+            // above); drives the prefetcher's per-prefetcher useful counter.
+            pref_umlc_pref_hit(req->proc_id, req->addr, data->pref_loadPC, data->global_hist, lru_position,
+                               data->prefetcher_id);
+
             STAT_EVENT(req->proc_id, MLC_PREF_UNIQUE_HIT);
             STAT_EVENT(req->proc_id, PREF_MLC_TOTAL_USED);
             STAT_EVENT(req->proc_id, CORE_PREF_MLC_USED);
@@ -1600,7 +1606,9 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
            req->type == MRT_FDIPPRFOFF || req->type == MRT_FDIPPRFALT || req->demand_match_prefetch) &&
           req->prefetcher_id != 0) {  // cmp FIXME What can I do for the prefetcher?
 
-        pref_ul1sent(req->proc_id, req->addr, req->prefetcher_id);
+        // Account the send against the cache level this prefetch targets so the
+        // per-prefetcher sent counters (PREF_*_TOTAL_SENT) track the right level.
+        pref_sent(req->proc_id, req->addr, req->prefetcher_id, req->destination);
         STAT_EVENT(req->proc_id, BUS_PREF_ACCESS);
       } else {
         STAT_EVENT(req->proc_id, BUS_DEMAND_ACCESS);
@@ -4235,6 +4243,12 @@ Flag l1_fill_line(Mem_Req* req) {
   data->offpath_op_unique = req->oldest_op_unique_num;
   data->l0_modified_fetched_by_offpath = FALSE;
 
+  /* UL1 (LLC) fill feedback: lets eviction-trained prefetchers learn on fills.
+     demand_match_prefetch covers late prefetches (a demand hit an in-flight prefetch,
+     so req->type was promoted to demand) -- matches data->prefetch above. */
+  pref_ul1_cache_fill(req->proc_id, req->addr, mem_req_type_is_prefetch(req->type) || req->demand_match_prefetch,
+                      repl_line_addr, 0);
+
   // WB from dcache does not need a memory access
   data->l1miss_latency = (req->type == MRT_WB) ? 0 : cycle_count - req->l1_miss_cycle;
   data->fetch_cycle = cycle_count;
@@ -4457,6 +4471,12 @@ Flag mlc_fill_line(Mem_Req* req) {
   data->offpath_op_addr = req->oldest_op_addr;
   data->offpath_op_unique = req->oldest_op_unique_num;
   data->l0_modified_fetched_by_offpath = FALSE;
+
+  /* UMLC (L2) fill feedback: lets an L2 prefetcher count its own fills (accuracy).
+     demand_match_prefetch covers late prefetches (a demand hit an in-flight prefetch,
+     so req->type was promoted to demand) -- matches data->prefetch above. */
+  pref_umlc_cache_fill(req->proc_id, req->addr, mem_req_type_is_prefetch(req->type) || req->demand_match_prefetch,
+                       repl_line_addr, 0);
 
   // WB from dcache does not need a memory access
   data->mlc_miss_latency = (req->type == MRT_WB) ? 0 : cycle_count - req->mlc_miss_cycle;

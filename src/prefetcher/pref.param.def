@@ -193,3 +193,9 @@ DEF_PARAM(uoc_pref                      , UOC_PREF                         , Fla
 // Only prefetch the correct path into the uop cache.
 DEF_PARAM(uoc_oracle_pref               , UOC_ORACLE_PREF                  , Flag    , Flag    , FALSE, )
 DEF_PARAM(uoc_zero_latency_pref         , UOC_ZERO_LATENCY_PREF            , Flag    , Flag    , FALSE, )
+
+// When set, a DL0 (L1D) prefetch request issues a real memory request that fills
+// the dcache on return (done_func = dcache_fill_line), instead of forwarding it to
+// the UL1 (LLC) request queue. Lets L1D-targeted prefetchers actually populate the
+// L1D. Default FALSE preserves the legacy forward-to-UL1 behavior.
+DEF_PARAM(pref_dl0_fill_dcache          , PREF_DL0_FILL_DCACHE             , Flag    , Flag    , FALSE, )

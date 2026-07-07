@@ -73,11 +73,16 @@
     }                                                                                                                \
   } while (0)
 
-#define STAT_EVENT_BTB_ADDR_ENTROPY(proc_id, addr)                        \
-  do {                                                                    \
-    for (uns ii = 0; ii < 64; ii++)                                       \
-      STAT_EVENT(proc_id, BTB_ADDR_0_ZERO + 2 * ii + (addr >> ii & 0b1)); \
-  } while (0)
+Addr _prev_stat_event_btb_addr = 0;
+static inline void stat_event_btb_addr(uns proc_id, Addr addr) {
+  Addr diff = addr ^ _prev_stat_event_btb_addr;
+  for (uns ii = 0; ii < 64; ii++) {
+    if ((diff >> ii) & 0b1)
+      STAT_EVENT(proc_id, BTB_ADDR_0_ENTROPY + ii);
+    STAT_EVENT(proc_id, BTB_ADDR_0_ZERO + 2 * ii + (addr >> ii & 0b1));
+  }
+  _prev_stat_event_btb_addr = addr;
+}
 
 #define STAT_EVENT_BTB_BANK(proc_id, level, case, bank_id)        \
   do {                                                            \
@@ -602,7 +607,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
                 hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
       STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
-      STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, fetch_addr);
+      stat_event_btb_addr(op->proc_id, fetch_addr);
 
       btb_line = (Addr*)cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing, TRUE);
       if (!btb_line) {
@@ -631,7 +636,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
                   hexstr64s(op->oracle_info.target));
         STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
         STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
-        STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, fetch_addr);
+        stat_event_btb_addr(op->proc_id, fetch_addr);
         *btb_line = op->oracle_info.target;
         // FIXME: the exceptions to this assert are really about x86 vs Alpha
         ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
@@ -754,7 +759,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  btb addr:0x%s  op addr:0x%s  target:0x%s\n", hexstr64s(btb_index_addr),
                 hexstr64s(op->inst->addr), hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
-      STAT_EVENT_BTB_ADDR_ENTROPY(op->proc_id, btb_index_addr);
+      stat_event_btb_addr(op->proc_id, btb_index_addr);
 
       Blk_Btb_BrSlot br_slot;
       br_slot.addr = op->inst->addr;

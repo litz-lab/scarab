@@ -633,6 +633,7 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->off_path = FALSE;
   entry->reg_val = REG_INVALID_VAL;
   entry->produced_uid = 0;
+  entry->reg_val_on_path = FALSE;
 
   entry->reg_state = REG_TABLE_ENTRY_STATE_FREE;
   entry->parent_reg_id = REG_TABLE_REG_ID_INVALID;
@@ -743,6 +744,7 @@ void reg_table_entry_produce(struct reg_table_entry *entry, Op *op, uns dst_reg_
 
   entry->reg_val = op->dst_val[dst_reg_idx];
   entry->produced_uid = op->inst_uid;
+  entry->reg_val_on_path = !op->off_path;
   entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
   entry->produced_cycle = cycle_count;
 }
@@ -1943,7 +1945,8 @@ Flag reg_value_read(int arch_id, uns64 *val_out, uns64 *uid_out) {
   while (ptag != REG_TABLE_REG_ID_INVALID && guard-- > 0) {
     struct reg_table_entry *entry = &ptab->entries[ptag];
 
-    if (entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED || entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT) {
+    if ((entry->reg_state == REG_TABLE_ENTRY_STATE_PRODUCED || entry->reg_state == REG_TABLE_ENTRY_STATE_COMMIT) &&
+        entry->reg_val_on_path) {
       *val_out = entry->reg_val;
       *uid_out = entry->produced_uid;
       return TRUE;

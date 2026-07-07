@@ -92,6 +92,7 @@ struct reg_table_entry {
   // register value
   uint64_t reg_val;
   uns64 produced_uid;
+  Flag reg_val_on_path;
 
   // register state info
   enum reg_table_entry_state reg_state;

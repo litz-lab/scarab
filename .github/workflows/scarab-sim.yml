@@ -33,10 +33,10 @@ jobs:
       kips: ${{ steps.kips.outputs.value }}
     steps:
       - name: Checkout Scarab
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Checkout scarab-infra
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: litz-lab/scarab-infra
           path: infra

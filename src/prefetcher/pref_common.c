@@ -454,6 +454,28 @@ void pref_ul1_pref_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_
   }
 }
 
+void pref_ul1_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata) {
+  int ii;
+  if (!PREF_FRAMEWORK_ON)
+    return;
+  for (ii = 0; ii < pref_table_size; ii++) {
+    if (pref_table[ii].hwp_info->enabled && pref_table[ii].ul1_cache_fill) {
+      pref_table[ii].ul1_cache_fill(proc_id, fill_addr, prefetch, evicted_addr, metadata);
+    }
+  }
+}
+
+void pref_umlc_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata) {
+  int ii;
+  if (!PREF_FRAMEWORK_ON)
+    return;
+  for (ii = 0; ii < pref_table_size; ii++) {
+    if (pref_table[ii].hwp_info->enabled && pref_table[ii].umlc_cache_fill) {
+      pref_table[ii].umlc_cache_fill(proc_id, fill_addr, prefetch, evicted_addr, metadata);
+    }
+  }
+}
+
 Flag pref_dl0req_queue_filter(Addr line_addr) {
   if (!PREF_DL0REQ_QUEUE_FILTER_ON)
     return FALSE;
@@ -697,6 +719,33 @@ void pref_update_core(uns proc_id) {
 
       if (dc_hit) {
         // nothing for now
+      } else if (PREF_DL0_FILL_DCACHE) {
+        // True L1D prefetch: issue a memory request that fills the dcache on
+        // return (done_func = dcache_fill_line, the same callback a demand dcache
+        // miss uses), rather than forwarding to the UL1 (LLC) queue.
+        Pref_Req_Info info;
+        info.prefetcher_id = dl0req_queue[q_index].prefetcher_id;
+        info.distance = dl0req_queue[q_index].distance;
+        info.loadPC = dl0req_queue[q_index].loadPC;
+        info.global_hist = dl0req_queue[q_index].global_hist;
+        info.bw_limited = dl0req_queue[q_index].bw_limited;
+        info.dest = DEST_DCACHE;
+        // leave room in the mem req buffer for demand traffic
+        if ((model->mem == MODEL_MEM) &&
+            ((MEM_REQ_BUFFER_ENTRIES - mem_get_req_count(proc_id)) < PREF_L1Q_DEMAND_RESERVE)) {
+          STAT_EVENT(0, PREF_MLCQ_STALL);
+          inc_send_pos = FALSE;
+          break;
+        }
+        if ((model->mem == MODEL_MEM) &&
+            new_mem_req(MRT_DPRF, proc_id, dl0req_queue[q_index].line_addr, DCACHE_LINE_SIZE, 1, NULL, dcache_fill_line,
+                        unique_count, &info)) {
+          dl0req_queue[q_index].valid = FALSE;  // issued: free the slot (no re-issue when send_pos wraps)
+        } else {
+          // not MODEL_MEM, or mem req buffer full: keep the entry valid and retry it next time.
+          inc_send_pos = FALSE;
+          break;
+        }
       } else {
         // put req. into the ul1req_queue
         if (!pref_addto_ul1req_queue(proc_id, dl0req_queue[q_index].line_index, dl0req_queue[q_index].prefetcher_id)) {
@@ -813,22 +862,12 @@ void pref_update_core(uns proc_id) {
   }
 }
 
-void pref_ul1sent(uns8 proc_id, Addr addr, uns8 prefetcher_id) {
-  if (!PREF_FRAMEWORK_ON)
-    return;
-  if (prefetcher_id == 0)
-    return;
-
-  if (PREF_POLBV_ON) {
-    // UPDATE prefpolbv reset entry
-    pref_polbv_update_on_repref(proc_id, addr);
-  }
-
-  // prefetch missed in the ul1 and went out on the bus
+// Per-prefetch send bookkeeping shared by the UL1 and UMLC send paths: bump the
+// prefetcher's sent counter and, under PREF_DHAL, adjust its dynamic degree from
+// the recent useful/sent ratio. Touches only per-prefetcher counters, so it is
+// the same regardless of which cache level the prefetch targeted.
+static inline void pref_sent_update_degree(uns8 proc_id, uns8 prefetcher_id) {
   pref_table[prefetcher_id].hwp_info->curr_sent_core[proc_id]++;
-
-  STAT_EVENT_ALL(PREF_L1_TOTAL_SENT);
-  STAT_EVENT(proc_id, CORE_PREF_L1_SENT);
 
   // IGNORE PREF_DHAL
   if (pref_table[prefetcher_id].hwp_info->curr_sent_core[proc_id] == PREF_DHAL_SENTTHRESH && PREF_DHAL) {
@@ -854,6 +893,45 @@ void pref_ul1sent(uns8 proc_id, Addr addr, uns8 prefetcher_id) {
     pref_table[prefetcher_id].hwp_info->curr_sent_core[proc_id] = 0;
     pref_table[prefetcher_id].hwp_info->curr_useful_core[proc_id] = 0;
   }
+}
+
+// A prefetch missed its target cache and went out on the bus. Charge the send
+// to the counters for the level it fills (dest), then run the shared sent /
+// PREF_DHAL degree update. Prefetches are created targeting DEST_MLC (umlc
+// queue) or DEST_L1 (ul1 queue; dl0/dcache prefetches re-issue here on a dcache
+// miss). DEST_NONE also reaches here: when a demand matches an in-flight
+// prefetch, mem_adjust_matching_request demotes the prefetch's destination via
+// MIN2(dest, demand_dest=DEST_NONE) -> DEST_NONE, and the bus-out path still
+// sends it as a prefetch (req->demand_match_prefetch). Charge those to L1, the
+// level closest to the core (matches the pre-split pref_ul1sent() behavior).
+// Any other destination is unexpected; default asserts so a new dest is caught.
+void pref_sent(uns8 proc_id, Addr addr, uns8 prefetcher_id, Destination dest) {
+  if (!PREF_FRAMEWORK_ON)
+    return;
+  if (prefetcher_id == 0)
+    return;
+
+  if (PREF_POLBV_ON) {
+    // UPDATE prefpolbv reset entry
+    pref_polbv_update_on_repref(proc_id, addr);
+  }
+
+  switch (dest) {
+    case DEST_MLC:
+      STAT_EVENT_ALL(PREF_MLC_TOTAL_SENT);
+      STAT_EVENT(proc_id, CORE_PREF_MLC_SENT);
+      break;
+    case DEST_L1:    // ul1 queue; dl0/dcache prefetches re-issue here on a dcache miss
+    case DEST_NONE:  // demand-matched prefetch demoted to DEST_NONE; count at L1
+      STAT_EVENT_ALL(PREF_L1_TOTAL_SENT);
+      STAT_EVENT(proc_id, CORE_PREF_L1_SENT);
+      break;
+    default:  // DEST_DCACHE/ICACHE/MEM never reach the send path; catch new dests
+      ASSERTM(proc_id, FALSE, "pref_sent: unhandled prefetch destination %d\n", dest);
+      break;
+  }
+
+  pref_sent_update_degree(proc_id, prefetcher_id);
 }
 
 #define COOK_HIST_BITS(hist, len, untouched) ((uns32)(hist) >> (32 - (len) + (untouched)) << (untouched))

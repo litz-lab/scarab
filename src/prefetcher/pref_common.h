@@ -121,6 +121,15 @@ struct HWP_struct {
                        uns32 global_hist);  // called when a ul1 access hits a
                                             // prefetched line for the first
                                             // time
+
+  // Called on every UL1 (LLC) fill: fill_addr filled, evicted_addr kicked out
+  // (0 if none), prefetch=TRUE if the filling request was a prefetch. Mirrors
+  // ChampSim's *_prefetcher_cache_fill so eviction-trained prefetchers can learn.
+  // Kept LAST in HWP; pref_table.def rows set these two to NULL explicitly.
+  void (*ul1_cache_fill)(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata);
+  // Same as ul1_cache_fill but for UMLC (L2) fills. Lets an L2 prefetcher count
+  // its own fills (e.g. accuracy accounting). Kept LAST after ul1_cache_fill.
+  void (*umlc_cache_fill)(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata);
 };
 
 /* Per core prefetching data */
@@ -198,6 +207,9 @@ void pref_ul1_pref_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_
                        uns8 prefetcher_id);
 void pref_ul1_pref_hit_late(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist, uns8 prefetcher_id);
 
+void pref_ul1_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata);
+void pref_umlc_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata);
+
 void pref_update(void);
 
 // returns true if req hits in the req queue. It also invalidates the request in
@@ -215,8 +227,9 @@ Flag pref_addto_ul1req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id);
 Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_id, uns distance, Addr loadAddr,
                                  uns32 global_hist, Flag bw);
 
-// prefetch missed in the ul1 and went out on the bus
-void pref_ul1sent(uns8 proc_id, Addr addr, uns8 prefetcher_id);
+// A prefetch missed its target cache and went out on the bus; charge the send
+// to the counters for the level it fills (dest).
+void pref_sent(uns8 proc_id, Addr addr, uns8 prefetcher_id, Destination dest);
 
 /*************************************************************/
 /* Misc functions */

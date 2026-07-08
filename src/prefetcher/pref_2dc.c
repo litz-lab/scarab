@@ -81,15 +81,21 @@ void pref_2dc_init(HWP* hwp) {
   if (!PREF_2DC_ON)
     return;
 
-  if (PREF_UMLC_ON) {
-    tdc_prefetcher_array.tdc_hwp_umlc = (Pref_2DC*)malloc(sizeof(Pref_2DC));
-    tdc_prefetcher_array.tdc_hwp_umlc->type = PREF_TO_UMLC;
-    init_2dc(hwp, tdc_prefetcher_array.tdc_hwp_umlc);
-  }
-  if (PREF_UL1_ON) {
-    tdc_prefetcher_array.tdc_hwp_ul1 = (Pref_2DC*)malloc(sizeof(Pref_2DC));
-    tdc_prefetcher_array.tdc_hwp_ul1->type = PREF_TO_UL1;
-    init_2dc(hwp, tdc_prefetcher_array.tdc_hwp_ul1);
+  // An enabled prefetcher needs a destination: at least one level must be on
+  // (pref_init asserts at most one, so exactly one twin is allocated here).
+  ASSERTM(0, PREF_UMLC_ON || PREF_UL1_ON,
+          "2dc: enable at least one destination level (--pref_umlc_on / --pref_ul1_on)\n");
+  switch ((PREF_UMLC_ON ? 1u : 0u) | (PREF_UL1_ON ? 2u : 0u)) {
+    case 1u:
+      tdc_prefetcher_array.tdc_hwp_umlc = (Pref_2DC*)malloc(sizeof(Pref_2DC));
+      tdc_prefetcher_array.tdc_hwp_umlc->type = PREF_TO_UMLC;
+      init_2dc(hwp, tdc_prefetcher_array.tdc_hwp_umlc);
+      break;
+    case 2u:
+      tdc_prefetcher_array.tdc_hwp_ul1 = (Pref_2DC*)malloc(sizeof(Pref_2DC));
+      tdc_prefetcher_array.tdc_hwp_ul1->type = PREF_TO_UL1;
+      init_2dc(hwp, tdc_prefetcher_array.tdc_hwp_ul1);
+      break;
   }
 }
 void init_2dc(HWP* hwp, Pref_2DC* tdc_hwp_core) {

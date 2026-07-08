@@ -77,17 +77,23 @@ void pref_ghb_init(HWP* hwp) {
   if (!PREF_GHB_ON)
     return;
 
-  if (PREF_UMLC_ON) {
-    ghb_prefetchers_array.ghb_hwp_core_umlc = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
-    for (uns i = 0; i < NUM_CORES; i++)
-      ghb_prefetchers_array.ghb_hwp_core_umlc[i].type = PREF_TO_UMLC;
-    init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_umlc);
-  }
-  if (PREF_UL1_ON) {
-    ghb_prefetchers_array.ghb_hwp_core_ul1 = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
-    for (uns i = 0; i < NUM_CORES; i++)
-      ghb_prefetchers_array.ghb_hwp_core_ul1[i].type = PREF_TO_UL1;
-    init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_ul1);
+  // An enabled prefetcher needs a destination: at least one level must be on
+  // (pref_init asserts at most one, so exactly one twin is allocated here).
+  ASSERTM(0, PREF_UMLC_ON || PREF_UL1_ON,
+          "ghb: enable at least one destination level (--pref_umlc_on / --pref_ul1_on)\n");
+  switch ((PREF_UMLC_ON ? 1u : 0u) | (PREF_UL1_ON ? 2u : 0u)) {
+    case 1u:
+      ghb_prefetchers_array.ghb_hwp_core_umlc = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
+      for (uns i = 0; i < NUM_CORES; i++)
+        ghb_prefetchers_array.ghb_hwp_core_umlc[i].type = PREF_TO_UMLC;
+      init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_umlc);
+      break;
+    case 2u:
+      ghb_prefetchers_array.ghb_hwp_core_ul1 = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
+      for (uns i = 0; i < NUM_CORES; i++)
+        ghb_prefetchers_array.ghb_hwp_core_ul1[i].type = PREF_TO_UL1;
+      init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_ul1);
+      break;
   }
 }
 

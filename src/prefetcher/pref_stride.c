@@ -75,15 +75,21 @@ void pref_stride_init(HWP* hwp) {
           "Stride prefetcher must train on demands matching prefetch request "
           "buffers\n");
 
-  if (PREF_UMLC_ON) {
-    stride_prefetche_array.stride_hwp_umlc = (Pref_Stride*)malloc(sizeof(Pref_Stride));
-    stride_prefetche_array.stride_hwp_umlc->type = PREF_TO_UMLC;
-    init_stride(hwp, stride_prefetche_array.stride_hwp_umlc);
-  }
-  if (PREF_UL1_ON) {
-    stride_prefetche_array.stride_hwp_ul1 = (Pref_Stride*)malloc(sizeof(Pref_Stride));
-    stride_prefetche_array.stride_hwp_ul1->type = PREF_TO_UL1;
-    init_stride(hwp, stride_prefetche_array.stride_hwp_ul1);
+  // An enabled prefetcher needs a destination: at least one level must be on
+  // (pref_init asserts at most one, so exactly one twin is allocated here).
+  ASSERTM(0, PREF_UMLC_ON || PREF_UL1_ON,
+          "stride: enable at least one destination level (--pref_umlc_on / --pref_ul1_on)\n");
+  switch ((PREF_UMLC_ON ? 1u : 0u) | (PREF_UL1_ON ? 2u : 0u)) {
+    case 1u:
+      stride_prefetche_array.stride_hwp_umlc = (Pref_Stride*)malloc(sizeof(Pref_Stride));
+      stride_prefetche_array.stride_hwp_umlc->type = PREF_TO_UMLC;
+      init_stride(hwp, stride_prefetche_array.stride_hwp_umlc);
+      break;
+    case 2u:
+      stride_prefetche_array.stride_hwp_ul1 = (Pref_Stride*)malloc(sizeof(Pref_Stride));
+      stride_prefetche_array.stride_hwp_ul1->type = PREF_TO_UL1;
+      init_stride(hwp, stride_prefetche_array.stride_hwp_ul1);
+      break;
   }
 }
 

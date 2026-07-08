@@ -133,6 +133,11 @@ void pref_init(void) {
   if (!PREF_FRAMEWORK_ON)
     return;
 
+  // A prefetcher targets a single destination level: never enable both.
+  // (Each enabled prefetcher's init additionally asserts at least one is set.)
+  ASSERTM(0, !(PREF_UMLC_ON && PREF_UL1_ON),
+          "enable at most one prefetch destination level (--pref_umlc_on / --pref_ul1_on)\n");
+
   pref.cores_array = (HWP_Core*)calloc(NUM_CORES, sizeof(HWP_Core));
   pref.cores = (HWP_Core**)calloc(NUM_CORES, sizeof(HWP_Core*));
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {

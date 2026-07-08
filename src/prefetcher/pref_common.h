@@ -87,7 +87,11 @@ typedef enum HWP_DynAggr_enum {
 // typedef in globals/global_types.h
 struct HWP_struct {
   char const* const name;
-  HWP_Type hwp_type;
+  // Destination cache level for every prefetch this prefetcher emits, no matter
+  // which level's hooks trained it. The pref_table row sets the default; the
+  // per-prefetcher --pref_<name>_dest_level param overrides it at init via
+  // pref_resolve_dest_level(), which asserts exactly one valid level is set.
+  HWP_Type dest_level;
 
   HWP_Info* hwp_info;
 
@@ -229,6 +233,11 @@ Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_
 Flag pref_addto_dest_req_queue(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id);
 Flag pref_addto_dest_req_queue_set(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id, uns distance,
                                    Addr loadPC, uns32 global_hist, Flag bw);
+
+/* Resolve a prefetcher's destination level (table dest_level default, per-prefetcher
+   --pref_<name>_dest_level override, 32 = use table); asserts exactly one valid
+   level. Called from each prefetcher's init_func with its own dest param. */
+HWP_Type pref_resolve_dest_level(HWP* hwp, uns override);
 
 // A prefetch missed its target cache and went out on the bus; charge the send
 // to the counters for the level it fills (dest).

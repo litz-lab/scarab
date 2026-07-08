@@ -77,16 +77,17 @@ void pref_ghb_init(HWP* hwp) {
   if (!PREF_GHB_ON)
     return;
 
+  HWP_Type dest = pref_resolve_dest_level(hwp, PREF_GHB_DEST_LEVEL);
   if (PREF_UMLC_ON) {
     ghb_prefetchers_array.ghb_hwp_core_umlc = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
     for (uns i = 0; i < NUM_CORES; i++)
-      ghb_prefetchers_array.ghb_hwp_core_umlc[i].type = PREF_TO_UMLC;
+      ghb_prefetchers_array.ghb_hwp_core_umlc[i].type = dest;
     init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_umlc);
   }
   if (PREF_UL1_ON) {
     ghb_prefetchers_array.ghb_hwp_core_ul1 = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
     for (uns i = 0; i < NUM_CORES; i++)
-      ghb_prefetchers_array.ghb_hwp_core_ul1[i].type = PREF_TO_UL1;
+      ghb_prefetchers_array.ghb_hwp_core_ul1[i].type = dest;
     init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_ul1);
   }
 }

@@ -72,16 +72,17 @@ void pref_stridepc_init(HWP* hwp) {
     return;
   hwp->hwp_info->enabled = TRUE;
 
+  HWP_Type dest = pref_resolve_dest_level(hwp, PREF_STRIDEPC_DEST_LEVEL);
   if (PREF_UMLC_ON) {
     stridepc_prefetche_array.stridepc_hwp_core_umlc = (Pref_StridePC*)calloc(NUM_CORES, sizeof(Pref_StridePC));
     for (uns i = 0; i < NUM_CORES; i++)
-      stridepc_prefetche_array.stridepc_hwp_core_umlc[i].type = PREF_TO_UMLC;
+      stridepc_prefetche_array.stridepc_hwp_core_umlc[i].type = dest;
     init_stridepc(hwp, stridepc_prefetche_array.stridepc_hwp_core_umlc);
   }
   if (PREF_UL1_ON) {
     stridepc_prefetche_array.stridepc_hwp_core_ul1 = (Pref_StridePC*)calloc(NUM_CORES, sizeof(Pref_StridePC));
     for (uns i = 0; i < NUM_CORES; i++)
-      stridepc_prefetche_array.stridepc_hwp_core_ul1[i].type = PREF_TO_UL1;
+      stridepc_prefetche_array.stridepc_hwp_core_ul1[i].type = dest;
     init_stridepc(hwp, stridepc_prefetche_array.stridepc_hwp_core_ul1);
   }
 }

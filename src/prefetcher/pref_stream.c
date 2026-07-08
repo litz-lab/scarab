@@ -103,12 +103,17 @@ void pref_stream_init(HWP* hwp) {
 
   hwp->hwp_info->enabled = TRUE;
 
+  HWP_Type dest = pref_resolve_dest_level(hwp, PREF_STREAM_DEST_LEVEL);
   if (PREF_UMLC_ON) {
     stream_prefetchers_array.pref_stream_core_umlc = (Pref_Stream*)calloc(NUM_CORES, sizeof(Pref_Stream));
+    for (uns p = 0; p < NUM_CORES; p++)
+      stream_prefetchers_array.pref_stream_core_umlc[p].type = dest;
     init_stream_core(hwp, stream_prefetchers_array.pref_stream_core_umlc);
   }
   if (PREF_UL1_ON) {
     stream_prefetchers_array.pref_stream_core_ul1 = (Pref_Stream*)calloc(NUM_CORES, sizeof(Pref_Stream));
+    for (uns p = 0; p < NUM_CORES; p++)
+      stream_prefetchers_array.pref_stream_core_ul1[p].type = dest;
     init_stream_core(hwp, stream_prefetchers_array.pref_stream_core_ul1);
   }
 }
@@ -232,9 +237,8 @@ void pref_stream_train(Pref_Stream* pref_stream, uns8 proc_id, Addr line_addr, A
         } else {
           Addr line_index = stream->ep + stream->dir;
           uns distance = stream->dir > 0 ? line_index - stream->sp : stream->sp - line_index;
-          if (!pref_addto_dest_req_queue_set(proc_id, is_mlc ? PREF_TO_UMLC : PREF_TO_UL1, line_index,
-                                             pref_stream->hwp_info->id, distance, load_PC, global_hist,
-                                             stream->buffer_full)) {
+          if (!pref_addto_dest_req_queue_set(proc_id, pref_stream->type, line_index, pref_stream->hwp_info->id,
+                                             distance, load_PC, global_hist, stream->buffer_full)) {
             return;
           }
         }

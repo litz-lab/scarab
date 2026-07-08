@@ -75,14 +75,15 @@ void pref_stride_init(HWP* hwp) {
           "Stride prefetcher must train on demands matching prefetch request "
           "buffers\n");
 
+  HWP_Type dest = pref_resolve_dest_level(hwp, PREF_STRIDE_DEST_LEVEL);
   if (PREF_UMLC_ON) {
     stride_prefetche_array.stride_hwp_umlc = (Pref_Stride*)malloc(sizeof(Pref_Stride));
-    stride_prefetche_array.stride_hwp_umlc->type = PREF_TO_UMLC;
+    stride_prefetche_array.stride_hwp_umlc->type = dest;
     init_stride(hwp, stride_prefetche_array.stride_hwp_umlc);
   }
   if (PREF_UL1_ON) {
     stride_prefetche_array.stride_hwp_ul1 = (Pref_Stride*)malloc(sizeof(Pref_Stride));
-    stride_prefetche_array.stride_hwp_ul1->type = PREF_TO_UL1;
+    stride_prefetche_array.stride_hwp_ul1->type = dest;
     init_stride(hwp, stride_prefetche_array.stride_hwp_ul1);
   }
 }

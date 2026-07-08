@@ -28,7 +28,7 @@
 
 
 HWP pref_table [] = {
-    /* Name,	  hwp_type,		hwp_info,		init,			done,
+    /* Name,	  dest_level,		hwp_info,		init,			done,
                   per_core_done,
 		  dl0_miss,		dl0_hit,  		dl0_pref_hit,   
 		  umlc_miss,             umlc_hit, 	        umlc_pref_hit

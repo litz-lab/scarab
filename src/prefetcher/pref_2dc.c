@@ -81,14 +81,15 @@ void pref_2dc_init(HWP* hwp) {
   if (!PREF_2DC_ON)
     return;
 
+  HWP_Type dest = pref_resolve_dest_level(hwp, PREF_2DC_DEST_LEVEL);
   if (PREF_UMLC_ON) {
     tdc_prefetcher_array.tdc_hwp_umlc = (Pref_2DC*)malloc(sizeof(Pref_2DC));
-    tdc_prefetcher_array.tdc_hwp_umlc->type = PREF_TO_UMLC;
+    tdc_prefetcher_array.tdc_hwp_umlc->type = dest;
     init_2dc(hwp, tdc_prefetcher_array.tdc_hwp_umlc);
   }
   if (PREF_UL1_ON) {
     tdc_prefetcher_array.tdc_hwp_ul1 = (Pref_2DC*)malloc(sizeof(Pref_2DC));
-    tdc_prefetcher_array.tdc_hwp_ul1->type = PREF_TO_UL1;
+    tdc_prefetcher_array.tdc_hwp_ul1->type = dest;
     init_2dc(hwp, tdc_prefetcher_array.tdc_hwp_ul1);
   }
 }

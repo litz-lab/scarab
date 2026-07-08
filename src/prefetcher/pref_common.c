@@ -656,6 +656,22 @@ Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_
   return TRUE;
 }
 
+/* Resolve a prefetcher's destination cache level: its pref_table dest_level is
+   the default; `override` (the prefetcher's --pref_<name>_dest_level param, 32 =
+   use table) replaces it. Asserts the result names exactly one valid level and
+   writes it back to hwp->dest_level, the runtime routing authority. Every prefetch
+   this prefetcher emits goes to this one level, no matter which cache level's
+   hooks trained it. Called from each prefetcher's init_func. */
+HWP_Type pref_resolve_dest_level(HWP* hwp, uns override) {
+  if (override != 32)
+    hwp->dest_level = (HWP_Type) override;
+  ASSERTM(0, hwp->dest_level == PREF_TO_UL1 || hwp->dest_level == PREF_TO_UMLC || hwp->dest_level == PREF_TO_DL0,
+          "%s: exactly one valid destination level must be set (pref_table dest_level or "
+          "--pref_%s_dest_level 0=ul1/1=umlc/2=dl0)\n",
+          hwp->name, hwp->name);
+  return hwp->dest_level;
+}
+
 /* Route a prefetch to the destination level named by `dest` -- the single choke
    point that turns a HWP_Type into the matching per-level request queue. The UL1
    path uses the rich _set enqueue so distance/loadPC/global_hist/bw survive; DL0
@@ -944,12 +960,16 @@ void pref_sent(uns8 proc_id, Addr addr, uns8 prefetcher_id, Destination dest) {
       STAT_EVENT_ALL(PREF_MLC_TOTAL_SENT);
       STAT_EVENT(proc_id, CORE_PREF_MLC_SENT);
       break;
+    case DEST_DCACHE:  // dl0 prefetch filling the dcache directly (--pref_dl0_fill_dcache)
+      STAT_EVENT_ALL(PREF_DCACHE_TOTAL_SENT);
+      STAT_EVENT(proc_id, CORE_PREF_DCACHE_SENT);
+      break;
     case DEST_L1:    // ul1 queue; dl0/dcache prefetches re-issue here on a dcache miss
     case DEST_NONE:  // demand-matched prefetch demoted to DEST_NONE; count at L1
       STAT_EVENT_ALL(PREF_L1_TOTAL_SENT);
       STAT_EVENT(proc_id, CORE_PREF_L1_SENT);
       break;
-    default:  // DEST_DCACHE/ICACHE/MEM never reach the send path; catch new dests
+    default:  // DEST_ICACHE/MEM never reach the send path; catch new dests
       ASSERTM(proc_id, FALSE, "pref_sent: unhandled prefetch destination %d\n", dest);
       break;
   }

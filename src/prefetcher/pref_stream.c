@@ -103,19 +103,13 @@ void pref_stream_init(HWP* hwp) {
 
   hwp->hwp_info->enabled = TRUE;
 
-  // An enabled prefetcher needs a destination: at least one level must be on
-  // (pref_init asserts at most one, so exactly one twin is allocated here).
-  ASSERTM(0, PREF_UMLC_ON || PREF_UL1_ON,
-          "stream: enable at least one destination level (--pref_umlc_on / --pref_ul1_on)\n");
-  switch ((PREF_UMLC_ON ? 1u : 0u) | (PREF_UL1_ON ? 2u : 0u)) {
-    case 1u:
-      stream_prefetchers_array.pref_stream_core_umlc = (Pref_Stream*)calloc(NUM_CORES, sizeof(Pref_Stream));
-      init_stream_core(hwp, stream_prefetchers_array.pref_stream_core_umlc);
-      break;
-    case 2u:
-      stream_prefetchers_array.pref_stream_core_ul1 = (Pref_Stream*)calloc(NUM_CORES, sizeof(Pref_Stream));
-      init_stream_core(hwp, stream_prefetchers_array.pref_stream_core_ul1);
-      break;
+  if (PREF_UMLC_ON) {
+    stream_prefetchers_array.pref_stream_core_umlc = (Pref_Stream*)calloc(NUM_CORES, sizeof(Pref_Stream));
+    init_stream_core(hwp, stream_prefetchers_array.pref_stream_core_umlc);
+  }
+  if (PREF_UL1_ON) {
+    stream_prefetchers_array.pref_stream_core_ul1 = (Pref_Stream*)calloc(NUM_CORES, sizeof(Pref_Stream));
+    init_stream_core(hwp, stream_prefetchers_array.pref_stream_core_ul1);
   }
 }
 

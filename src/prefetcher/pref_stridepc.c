@@ -72,23 +72,17 @@ void pref_stridepc_init(HWP* hwp) {
     return;
   hwp->hwp_info->enabled = TRUE;
 
-  // An enabled prefetcher needs a destination: at least one level must be on
-  // (pref_init asserts at most one, so exactly one twin is allocated here).
-  ASSERTM(0, PREF_UMLC_ON || PREF_UL1_ON,
-          "stridepc: enable at least one destination level (--pref_umlc_on / --pref_ul1_on)\n");
-  switch ((PREF_UMLC_ON ? 1u : 0u) | (PREF_UL1_ON ? 2u : 0u)) {
-    case 1u:
-      stridepc_prefetche_array.stridepc_hwp_core_umlc = (Pref_StridePC*)calloc(NUM_CORES, sizeof(Pref_StridePC));
-      for (uns i = 0; i < NUM_CORES; i++)
-        stridepc_prefetche_array.stridepc_hwp_core_umlc[i].type = PREF_TO_UMLC;
-      init_stridepc(hwp, stridepc_prefetche_array.stridepc_hwp_core_umlc);
-      break;
-    case 2u:
-      stridepc_prefetche_array.stridepc_hwp_core_ul1 = (Pref_StridePC*)calloc(NUM_CORES, sizeof(Pref_StridePC));
-      for (uns i = 0; i < NUM_CORES; i++)
-        stridepc_prefetche_array.stridepc_hwp_core_ul1[i].type = PREF_TO_UL1;
-      init_stridepc(hwp, stridepc_prefetche_array.stridepc_hwp_core_ul1);
-      break;
+  if (PREF_UMLC_ON) {
+    stridepc_prefetche_array.stridepc_hwp_core_umlc = (Pref_StridePC*)calloc(NUM_CORES, sizeof(Pref_StridePC));
+    for (uns i = 0; i < NUM_CORES; i++)
+      stridepc_prefetche_array.stridepc_hwp_core_umlc[i].type = PREF_TO_UMLC;
+    init_stridepc(hwp, stridepc_prefetche_array.stridepc_hwp_core_umlc);
+  }
+  if (PREF_UL1_ON) {
+    stridepc_prefetche_array.stridepc_hwp_core_ul1 = (Pref_StridePC*)calloc(NUM_CORES, sizeof(Pref_StridePC));
+    for (uns i = 0; i < NUM_CORES; i++)
+      stridepc_prefetche_array.stridepc_hwp_core_ul1[i].type = PREF_TO_UL1;
+    init_stridepc(hwp, stridepc_prefetche_array.stridepc_hwp_core_ul1);
   }
 }
 

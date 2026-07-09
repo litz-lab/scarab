@@ -31,6 +31,7 @@ jobs:
       collect_metrics: true
 
   build-and-run-scarab-opt:
+    if: github.event_name == 'pull_request' || github.repository == 'litz-lab/scarab'
     uses: ./.github/workflows/scarab-sim.yml
     with:
       sci_id: top_simpoint
@@ -67,7 +68,7 @@ jobs:
     needs: [build-and-run-scarab-opt, build-and-run-scarab-dbg, compare-ipc]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: litz-lab/scarab_perf
           path: baseline
@@ -128,7 +129,7 @@ jobs:
     steps:
       # 1) Clone the perf repo (via HTTPS + PAT)
       - name: Checkout perf baseline
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: litz-lab/scarab_perf
           token: ${{ secrets.SCARAB_PERF_PAT }}

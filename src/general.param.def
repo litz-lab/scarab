@@ -112,3 +112,4 @@ DEF_PARAM( ignore_bar_fetch             , IGNORE_BAR_FETCH           , Flag   , 
 DEF_PARAM( trace_bbv_output             , TRACE_BBV_OUTPUT          , char*  , string    , NULL     ,       )
 DEF_PARAM( trace_footprint_output       , TRACE_FOOTPRINT_OUTPUT    , char*  , string    , ""       ,       )
 DEF_PARAM( segment_instr_count          , SEGMENT_INSTR_COUNT       , uns64  , uns64     , 0        ,       )
+DEF_PARAM( kernel                       , KERNEL                    , uns    , kernel    , ILP_LIMITED_1_DEP_CHAIN,  )  

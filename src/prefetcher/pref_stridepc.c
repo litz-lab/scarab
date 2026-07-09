@@ -72,7 +72,7 @@ void pref_stridepc_init(HWP* hwp) {
     return;
   hwp->hwp_info->enabled = TRUE;
 
-  HWP_Type dest = pref_resolve_dest_level(hwp, PREF_STRIDEPC_DEST_LEVEL);
+  HWP_Type dest = pref_set_dest_level(hwp, PREF_STRIDEPC_DEST_LEVEL);
   if (PREF_UMLC_ON) {
     stridepc_prefetche_array.stridepc_hwp_core_umlc = (Pref_StridePC*)calloc(NUM_CORES, sizeof(Pref_StridePC));
     for (uns i = 0; i < NUM_CORES; i++)

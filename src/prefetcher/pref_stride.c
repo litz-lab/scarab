@@ -75,7 +75,7 @@ void pref_stride_init(HWP* hwp) {
           "Stride prefetcher must train on demands matching prefetch request "
           "buffers\n");
 
-  HWP_Type dest = pref_resolve_dest_level(hwp, PREF_STRIDE_DEST_LEVEL);
+  HWP_Type dest = pref_set_dest_level(hwp, PREF_STRIDE_DEST_LEVEL);
   if (PREF_UMLC_ON) {
     stride_prefetche_array.stride_hwp_umlc = (Pref_Stride*)malloc(sizeof(Pref_Stride));
     stride_prefetche_array.stride_hwp_umlc->type = dest;

@@ -81,7 +81,7 @@ void pref_2dc_init(HWP* hwp) {
   if (!PREF_2DC_ON)
     return;
 
-  HWP_Type dest = pref_resolve_dest_level(hwp, PREF_2DC_DEST_LEVEL);
+  HWP_Type dest = pref_set_dest_level(hwp, PREF_2DC_DEST_LEVEL);
   if (PREF_UMLC_ON) {
     tdc_prefetcher_array.tdc_hwp_umlc = (Pref_2DC*)malloc(sizeof(Pref_2DC));
     tdc_prefetcher_array.tdc_hwp_umlc->type = dest;

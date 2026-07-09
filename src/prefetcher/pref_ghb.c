@@ -77,7 +77,7 @@ void pref_ghb_init(HWP* hwp) {
   if (!PREF_GHB_ON)
     return;
 
-  HWP_Type dest = pref_resolve_dest_level(hwp, PREF_GHB_DEST_LEVEL);
+  HWP_Type dest = pref_set_dest_level(hwp, PREF_GHB_DEST_LEVEL);
   if (PREF_UMLC_ON) {
     ghb_prefetchers_array.ghb_hwp_core_umlc = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
     for (uns i = 0; i < NUM_CORES; i++)

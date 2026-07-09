@@ -103,7 +103,7 @@ void pref_stream_init(HWP* hwp) {
 
   hwp->hwp_info->enabled = TRUE;
 
-  HWP_Type dest = pref_resolve_dest_level(hwp, PREF_STREAM_DEST_LEVEL);
+  HWP_Type dest = pref_set_dest_level(hwp, PREF_STREAM_DEST_LEVEL);
   if (PREF_UMLC_ON) {
     stream_prefetchers_array.pref_stream_core_umlc = (Pref_Stream*)calloc(NUM_CORES, sizeof(Pref_Stream));
     for (uns p = 0; p < NUM_CORES; p++)

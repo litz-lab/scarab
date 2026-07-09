@@ -75,7 +75,7 @@ struct HWP_Info_struct {
 typedef enum HWP_Type_enum {
   PREF_TO_UL1,
   PREF_TO_UMLC,
-  PREF_TO_DL0,
+  PREF_TO_DCACHE,
 } HWP_Type;
 
 typedef enum HWP_DynAggr_enum {
@@ -87,11 +87,6 @@ typedef enum HWP_DynAggr_enum {
 // typedef in globals/global_types.h
 struct HWP_struct {
   char const* const name;
-  // Destination cache level for every prefetch this prefetcher emits, no matter
-  // which level's hooks trained it. The pref_table row sets the default; the
-  // per-prefetcher --pref_<name>_dest_level param overrides it at init via
-  // pref_resolve_dest_level(), which asserts exactly one valid level is set.
-  HWP_Type dest_level;
 
   HWP_Info* hwp_info;
 
@@ -134,6 +129,13 @@ struct HWP_struct {
   // Same as ul1_cache_fill but for UMLC (L2) fills. Lets an L2 prefetcher count
   // its own fills (e.g. accuracy accounting). Kept LAST after ul1_cache_fill.
   void (*umlc_cache_fill)(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata);
+
+  // Destination cache level for every prefetch this prefetcher emits, no matter
+  // which level's hooks trained it. Defined solely by the per-prefetcher
+  // --pref_<name>_dest_level param (0=ul1/LLC, 1=umlc/L2, 2=dcache/L1D); set at
+  // init via pref_set_dest_level(), which asserts exactly one valid level. Kept
+  // LAST so pref_table.def rows do not initialize it.
+  HWP_Type dest_level;
 };
 
 /* Per core prefetching data */
@@ -227,17 +229,17 @@ Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_
                                  uns32 global_hist, Flag bw);
 
 /* Unified destination-level routing: send a prefetch to the level named by `dest`
-   (PREF_TO_DL0/UMLC/UL1) via the matching per-level request queue. The single choke
+   (PREF_TO_DCACHE/UMLC/UL1) via the matching per-level request queue. The single choke
    point for choosing a prefetch's destination cache level. The _set variant carries
    the rich UL1 metadata (distance/loadPC/global_hist/bw); DL0 and UMLC ignore it. */
 Flag pref_addto_dest_req_queue(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id);
 Flag pref_addto_dest_req_queue_set(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id, uns distance,
                                    Addr loadPC, uns32 global_hist, Flag bw);
 
-/* Resolve a prefetcher's destination level (table dest_level default, per-prefetcher
-   --pref_<name>_dest_level override, 32 = use table); asserts exactly one valid
-   level. Called from each prefetcher's init_func with its own dest param. */
-HWP_Type pref_resolve_dest_level(HWP* hwp, uns override);
+/* Set a prefetcher's destination level from its --pref_<name>_dest_level param
+   (the single place the level is defined); asserts exactly one valid level.
+   Called from each prefetcher's init_func with its own dest param. */
+HWP_Type pref_set_dest_level(HWP* hwp, uns level);
 
 // A prefetch missed its target cache and went out on the bus; charge the send
 // to the counters for the level it fills (dest).

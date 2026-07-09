@@ -72,7 +72,7 @@ void pref_markov_init(HWP* hwp) {
     return;
   hwp->hwp_info->enabled = TRUE;
 
-  HWP_Type dest = pref_resolve_dest_level(hwp, PREF_MARKOV_DEST_LEVEL);
+  HWP_Type dest = pref_set_dest_level(hwp, PREF_MARKOV_DEST_LEVEL);
   if (PREF_UMLC_ON) {
     markov_prefetchers_array.markov_hwp_core_umlc = (Pref_Markov*)calloc(NUM_CORES, sizeof(Pref_Markov));
     for (uns i = 0; i < NUM_CORES; i++)

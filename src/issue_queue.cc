@@ -931,6 +931,8 @@ void IssueQueues::schedule() {
     unused_ilp_slots = 0;
   INC_STAT_EVENT(proc_id, TOPDOWN_UNUSED_ILP_SLOTS, unused_ilp_slots);
 
+  INC_STAT_EVENT(proc_id, TOPDOWN_UNUSED_ILP_SLOTS, std::max(uns(0), ISSUE_WIDTH - num_of_ready_ops));
+
   for (size_t queue_id = 0; queue_id < issue_queues.size(); ++queue_id) {
     uns64 ready_not_issued_op_types_others = 0;
     for (size_t other_queue_id = 0; other_queue_id < issue_queues.size(); ++other_queue_id) {

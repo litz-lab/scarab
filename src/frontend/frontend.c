@@ -36,6 +36,7 @@
 #include "general.param.h"
 
 #include "bp/bp.h"
+#include "frontend/synthetic/synth_fe.h"
 
 #include "frontend_intf.h"
 #include "icache_stage.h"
@@ -70,6 +71,10 @@ void frontend_init() {
       trace_init();
       break;
     }
+    case FE_SYNTHETIC: {
+      synth_init();
+      break;
+    }
 #ifdef ENABLE_PT_MEMTRACE
     case FE_PT:
     case FE_MEMTRACE: {
@@ -91,6 +96,10 @@ void frontend_done(Flag* retired_exit) {
     }
     case FE_TRACE: {
       trace_done();
+      break;
+    }
+    case FE_SYNTHETIC: {
+      synth_done();
       break;
     }
 #ifdef ENABLE_PT_MEMTRACE

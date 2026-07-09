@@ -211,11 +211,15 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
                    IARG_BRANCH_TAKEN, IARG_END);
   }
 
+  // Instrument GPR operands to capture their runtime values.
+  // Src: IPOINT_BEFORE (values ready before exec). Dst: IPOINT_AFTER
+  // (dst values only exist after exec);
   if (INS_Valid(ins)) {
     for (uns i = 0; i < info->num_src_regs; i++) {
       uint8_t scarab_id = info->src_regs[i];
       auto it = reg_scarab_to_pin_map.find(scarab_id);
       REG pin_reg = (it != reg_scarab_to_pin_map.end()) ? it->second : REG_INVALID_;
+      // read pin_reg's value and store it into glb_src_vector_vals
       INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_src_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT,
                      (ADDRINT)pin_reg, IARG_ADDRINT, (ADDRINT)scarab_id, IARG_END);
     }
@@ -227,23 +231,27 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
         uint8_t scarab_id = info->dst_regs[i];
         auto it = reg_scarab_to_pin_map.find(scarab_id);
         REG pin_reg = (it != reg_scarab_to_pin_map.end()) ? it->second : REG_INVALID_;
+        // read pin_reg's value and store it into glb_dst_vector_vals
         INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)get_dst_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT,
                        (ADDRINT)pin_reg, IARG_ADDRINT, (ADDRINT)scarab_id, IARG_END);
       }
+      // Attach the dst values captured at IPOINT_AFTER.
       INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)create_compressed_op_after, IARG_INST_PTR, IARG_END);
     }
   }
 
+  // Build the compressed op at IPOINT_BEFORE (dst values not yet known).
   INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)create_compressed_op,
                  IARG_INST_PTR, IARG_END);
 }
 
 void create_compressed_op_after(ADDRINT iaddr) {
-  if (!fast_forward_count) {
-    assert(inst_info_storage.count(iaddr) == 1);
-    filled_inst_info = inst_info_storage[iaddr];
-    fill_register_values(filled_inst_info, true, glb_dst_vector_vals, filled_inst_info->num_dst_regs);
-  }
+  if (fast_forward_count)
+    return;
+
+  assert(inst_info_storage.count(iaddr) == 1);
+  filled_inst_info = inst_info_storage[iaddr];
+  fill_register_values(filled_inst_info, true, glb_dst_vector_vals, filled_inst_info->num_dst_regs);
 }
 
 // int64_t heartbeat = 0;
@@ -401,12 +409,13 @@ void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg
       inst->dests[i].id = global_vals[i].id;
       inst->dests[i].val = global_vals[i].val;
       inst->dests[i].size = global_vals[i].size;
-    } else {
-      ASSERTX(global_vals[i].id == inst->src_regs[i]);
-      inst->srcs[i].id = global_vals[i].id;
-      inst->srcs[i].val = global_vals[i].val;
-      inst->srcs[i].size = global_vals[i].size;
+      continue;
     }
+
+    ASSERTX(global_vals[i].id == inst->src_regs[i]);
+    inst->srcs[i].id = global_vals[i].id;
+    inst->srcs[i].val = global_vals[i].val;
+    inst->srcs[i].size = global_vals[i].size;
   }
 }
 

@@ -1932,18 +1932,19 @@ void reg_file_commit(Op *op) {
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].commit(op);
 }
 
-uint64_t reg_file_read_arch(uns proc_id, int reg_type, int arch_id, Flag* produced_out) {
-  struct reg_table* srt  = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL];
-  struct reg_table* ptab = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+uint64_t reg_file_read_arch(uns proc_id, int reg_type, int arch_id, Flag *produced_out) {
+  struct reg_table *srt = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL];
+  struct reg_table *ptab = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
 
   int ptag = srt->entries[arch_id].child_reg_id;
-  if (ptag == REG_TABLE_REG_ID_INVALID ||
-      ptab->entries[ptag].reg_state < REG_TABLE_ENTRY_STATE_PRODUCED) {
+  if (ptag == REG_TABLE_REG_ID_INVALID || ptab->entries[ptag].reg_state < REG_TABLE_ENTRY_STATE_PRODUCED) {
     STAT_EVENT(proc_id, REG_READ_NOT_PRODUCED);
-    if (produced_out) *produced_out = FALSE;
+    if (produced_out)
+      *produced_out = FALSE;
     return 0;
   }
   STAT_EVENT(proc_id, REG_READ_PRODUCED);
-  if (produced_out) *produced_out = TRUE;
+  if (produced_out)
+    *produced_out = TRUE;
   return ptab->entries[ptag].reg_val;
 }

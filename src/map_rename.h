@@ -225,7 +225,7 @@ void reg_file_produce(Op *op);                // write back the dst registers
 void reg_file_recover(Op *op);                // flush registers of misprediction operands
 void reg_file_precommit(Op *op);              // update the register metadata when an op is non-spec
 void reg_file_commit(Op *op);                 // release the previous register with same architectural register id
-uint64_t reg_file_read_arch(uns proc_id, int reg_type, int arch_id, Flag* produced_out);
+uint64_t reg_file_read_arch(uns proc_id, int reg_type, int arch_id, Flag *produced_out);
 
 #ifdef __cplusplus
 }

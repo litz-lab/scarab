@@ -329,6 +329,7 @@ void l1i_init_hist_table() {
     l1i_hist_table[eip_proc_id][i].tag = 0;
     l1i_hist_table[eip_proc_id][i].time_diff = 0;
     l1i_hist_table[eip_proc_id][i].bb_size = 0;
+    l1i_hist_table[eip_proc_id][i].op_num = 0;
   }
 }
 
@@ -956,12 +957,12 @@ void alloc_mem_eip(uns numCores) {
     *it = (l1i_stats_entry *)malloc(sizeof(l1i_stats_entry) * L1I_STATS_TABLE_ENTRIES);
   l1i_hist_table.resize(numCores);
   for (auto it = l1i_hist_table.begin(); it != l1i_hist_table.end(); ++it)
-    *it = (l1i_hist_entry *)malloc(sizeof(l1i_hist_entry) * L1I_HIST_TABLE_ENTRIES);
+    *it = (l1i_hist_entry *)calloc(L1I_HIST_TABLE_ENTRIES, sizeof(l1i_hist_entry));
   l1i_hist_table_head.resize(numCores);
   l1i_hist_table_head_time.resize(numCores);
   l1i_timing_mshr_table.resize(numCores);
   for (auto it = l1i_timing_mshr_table.begin(); it != l1i_timing_mshr_table.end(); ++it)
-    *it = (l1i_timing_mshr_entry *)malloc(sizeof(l1i_timing_mshr_entry) * L1I_TIMING_MSHR_SIZE);
+    *it = (l1i_timing_mshr_entry *)calloc(L1I_TIMING_MSHR_SIZE, sizeof(l1i_timing_mshr_entry));
   l1i_timing_cache_table.resize(numCores);
   for (auto it = l1i_timing_cache_table.begin(); it != l1i_timing_cache_table.end(); ++it) {
     *it = (l1i_timing_cache_entry **)malloc(sizeof(l1i_timing_cache_entry *) * L1I_SET);

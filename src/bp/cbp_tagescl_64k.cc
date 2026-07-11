@@ -111,6 +111,7 @@ TAGE64K& TAGE64K::operator=(const TAGE64K& other) {
   tage_component_inter = other.tage_component_inter;
   tage_component_tage = other.tage_component_tage;
   tage_component_alt = other.tage_component_alt;
+  tage_used_alt = other.tage_used_alt;
 
   return *this;
 }
@@ -694,6 +695,7 @@ void TAGE64K::Tagepred(UINT64 PC) {
   tage_component_tage = TAGE_BASE;
   if (TAGESCL64KB_ALT) {
     tage_component_alt = TAGE_BASE;
+    tage_used_alt = false;
   }
 
   // Look for the bank with longest matching history
@@ -736,6 +738,7 @@ void TAGE64K::Tagepred(UINT64 PC) {
       } else {
         Pstate.tage_pred = Pstate.alttaken;
         tage_component_tage = tage_component_alt;
+        tage_used_alt = true;
       }
     } else if (abs(2 * gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr + 1) > 1) {
       Pstate.tage_pred = Pstate.LongestMatchPred;
@@ -865,6 +868,13 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
   if (!op->off_path) {
     STAT_EVENT(op->proc_id,
                TAGESCL_COMP_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) + tage_component * 2);
+
+    if (TAGESCL64KB_ALT && tage_used_alt && (tage_component_alt == TAGE_SHORT || tage_component_alt == TAGE_LONG))
+      STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_SHORT_ALT_CORRECT + (Pstate.tage_pred != op->oracle_info.dir) + (tage_component_alt - TAGE_SHORT) * 2);
+
+    if (Pstate.HitBank > 0 && gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].pc != PC)
+      STAT_EVENT(op->proc_id, TAGESCL_TAGE_TAG_ALIAS_CORRECT + (Pstate.tage_pred != op->oracle_info.dir));
+
     if (btb_pred_miss(op->btb_pred_info))
       STAT_EVENT(op->proc_id, TAGESCL_COMP_BTB_MISS_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) +
                                   tage_component * 2);
@@ -1176,6 +1186,7 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
 #endif
           {
             gtable[i][pstate.GI[idx]].tag = pstate.GTAG[idx];
+            gtable[i][pstate.GI[idx]].pc = PC;
             gtable[i][pstate.GI[idx]].ctr = (resolveDir) ? 0 : -1;
             NA++;
             if (T <= 0) {
@@ -1216,6 +1227,7 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
 
             {
               gtable[i][pstate.GI[idx]].tag = pstate.GTAG[idx];
+              gtable[i][pstate.GI[idx]].pc = PC;
               gtable[i][pstate.GI[idx]].ctr = (resolveDir) ? 0 : -1;
               NA++;
               if (T <= 0) {

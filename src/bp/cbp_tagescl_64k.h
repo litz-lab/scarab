@@ -100,6 +100,7 @@ class cbp64_gentry  // TAGE global table entry
     ctr = 0;
     u = 0;
     tag = 0;
+    pc = 0;
   }
 
   bool operator==(const cbp64_gentry& other) const {

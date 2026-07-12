@@ -870,7 +870,8 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
                TAGESCL_COMP_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) + tage_component * 2);
 
     if (TAGESCL64KB_ALT && tage_used_alt && (tage_component_alt == TAGE_SHORT || tage_component_alt == TAGE_LONG))
-      STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_SHORT_ALT_CORRECT + (Pstate.tage_pred != op->oracle_info.dir) + (tage_component_alt - TAGE_SHORT) * 2);
+      STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_SHORT_ALT_CORRECT + (Pstate.tage_pred != op->oracle_info.dir) +
+                                  (tage_component_alt - TAGE_SHORT) * 2);
 
     if (Pstate.HitBank > 0) {
       if (gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].pc != PC)

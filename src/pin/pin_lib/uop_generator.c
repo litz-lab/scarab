@@ -400,6 +400,12 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   /* multi path support */
 
   /* execute op */
+  for (uns ii = 0; ii < trace_uop->num_src_regs; ii++) {
+    op->src_val[ii] = trace_uop->srcs[ii].val;
+  }
+  for (uns ii = 0; ii < trace_uop->num_dest_regs; ii++) {
+    op->dst_val[ii] = trace_uop->dests[ii].val;
+  }
 
   if (op->inst_info->table_info.op_type == OP_CF) {
     if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP) {
@@ -924,6 +930,25 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
   trace_uop->inst_uid = pi->inst_uid;
   trace_uop->va = 0;
   trace_uop->mem_size = 0;
+
+  for (uns ii = 0; ii < info->table_info.num_src_regs; ii++) {
+    trace_uop->srcs[ii].val = 0;
+    for (uns j = 0; j < pi->num_src_regs; j++) {
+      if (pi->src_regs[j] == info->srcs[ii].id) {
+        trace_uop->srcs[ii].val = pi->srcs[j].val;
+        break;
+      }
+    }
+  }
+  for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++) {
+    trace_uop->dests[ii].val = 0;
+    for (uns j = 0; j < pi->num_dst_regs; j++) {
+      if (pi->dst_regs[j] == info->dests[ii].id) {
+        trace_uop->dests[ii].val = pi->dests[j].val;
+        break;
+      }
+    }
+  }
 
   if (info->table_info.cf_type) {
     trace_uop->actual_taken = pi->actually_taken;

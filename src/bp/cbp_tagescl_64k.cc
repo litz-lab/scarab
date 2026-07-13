@@ -701,7 +701,8 @@ void TAGE64K::Tagepred(UINT64 PC) {
   // Look for the bank with longest matching history
   for (int i = NHIST; i > 0; i--) {
     if (NOSKIP[i])
-      if (gtable[i][Pstate.GI[i]].tag == Pstate.GTAG[i] && (!TAGESCL64KB_PERFECT_TAG || gtable[i][Pstate.GI[i]].pc == PC)) {
+      if (gtable[i][Pstate.GI[i]].tag == Pstate.GTAG[i] &&
+          (!TAGESCL64KB_PERFECT_TAG || gtable[i][Pstate.GI[i]].pc == PC)) {
         Pstate.HitBank = i;
         Pstate.LongestMatchPred = (gtable[Pstate.HitBank][Pstate.GI[Pstate.HitBank]].ctr >= 0);
         break;
@@ -712,7 +713,8 @@ void TAGE64K::Tagepred(UINT64 PC) {
   if (TAGESCL64KB_ALT) {
     for (int i = Pstate.HitBank - 1; i > 0; i--) {
       if (NOSKIP[i])
-        if (gtable[i][Pstate.GI[i]].tag == Pstate.GTAG[i] && (!TAGESCL64KB_PERFECT_TAG || gtable[i][Pstate.GI[i]].pc == PC)) {
+        if (gtable[i][Pstate.GI[i]].tag == Pstate.GTAG[i] &&
+            (!TAGESCL64KB_PERFECT_TAG || gtable[i][Pstate.GI[i]].pc == PC)) {
           Pstate.AltBank = i;
           break;
         }

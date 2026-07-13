@@ -196,3 +196,5 @@ DEF_PARAM(  h2p_track_call            , H2P_TRACK_CALL            , Flag    , Fl
 DEF_PARAM(  h2p_track_ibr             , H2P_TRACK_IBR             , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM(  h2p_track_icall           , H2P_TRACK_ICALL           , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM(  h2p_track_ret             , H2P_TRACK_RET             , Flag    , Flag       , FALSE      ,        )
+
+DEF_PARAM( tagescl64kb_perfect_tag    , TAGESCL64KB_PERFECT_TAG   , Flag    , Flag       , FALSE      ,        )

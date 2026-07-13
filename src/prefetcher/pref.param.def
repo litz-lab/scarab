@@ -51,18 +51,26 @@
 
 DEF_PARAM( pref_framework_on                   , PREF_FRAMEWORK_ON                   , Flag            , Flag               , FALSE     ,    )
 DEF_PARAM( pref_trace_on                       , PREF_TRACE_ON                       , Flag            , Flag               , FALSE     ,    )
-DEF_PARAM( pref_umlc_on                        , PREF_UMLC_ON                         , Flag            , Flag               , FALSE     ,    )
-DEF_PARAM( pref_ul1_on                         , PREF_UL1_ON                         , Flag            , Flag               , TRUE      ,    )
-/* Per-prefetcher destination cache level: 0 = UL1 (LLC), 1 = UMLC (L2),
-   2 = DCACHE (L1D) -- matching the HWP_Type enum. The single place a
-   prefetcher's destination is defined. All of a prefetcher's prefetches go to
-   this one level, regardless of which cache level's hooks trained it. */
-DEF_PARAM( pref_stream_dest_level              , PREF_STREAM_DEST_LEVEL              , uns             , uns                , 0         ,    )
-DEF_PARAM( pref_stride_dest_level              , PREF_STRIDE_DEST_LEVEL              , uns             , uns                , 0         ,    )
-DEF_PARAM( pref_stridepc_dest_level            , PREF_STRIDEPC_DEST_LEVEL            , uns             , uns                , 0         ,    )
-DEF_PARAM( pref_2dc_dest_level                 , PREF_2DC_DEST_LEVEL                 , uns             , uns                , 0         ,    )
-DEF_PARAM( pref_ghb_dest_level                 , PREF_GHB_DEST_LEVEL                 , uns             , uns                , 0         ,    )
-DEF_PARAM( pref_markov_dest_level              , PREF_MARKOV_DEST_LEVEL              , uns             , uns                , 0         ,    )
+/* Instance-based prefetcher configuration. Each list declares the prefetcher
+   instances trained by that cache level's hits/misses, as comma-separated
+   TYPE_<name>,DEST_<level> pairs (names from pref_table.def; levels DCACHE/MLC/L1).
+   The DEST token sets where that instance's prefetches go, independent of its
+   training level. The same type may appear at several training levels (one
+   instance per type per level). Appearing in a list is what enables a type.
+   The pref_num_* value is the authority for how many instances the level runs:
+   0 disables the level (its list is ignored, so configs can override an
+   architecture PARAMS list off); otherwise it must match the pair count.
+   Example:
+     --pref_num_dcache_prefetchers 2
+     --pref_dcache_prefetchers TYPE_STRIDE,DEST_DCACHE,TYPE_STREAM,DEST_L1
+     --pref_num_mlc_prefetchers 1
+     --pref_mlc_prefetchers TYPE_STRIDE,DEST_MLC                            */
+DEF_PARAM( pref_num_dcache_prefetchers         , PREF_NUM_DCACHE_PREFETCHERS         , uns             , uns                , 0         ,    )
+DEF_PARAM( pref_num_mlc_prefetchers            , PREF_NUM_MLC_PREFETCHERS            , uns             , uns                , 0         ,    )
+DEF_PARAM( pref_num_l1_prefetchers             , PREF_NUM_L1_PREFETCHERS             , uns             , uns                , 0         ,    )
+DEF_PARAM( pref_dcache_prefetchers             , PREF_DCACHE_PREFETCHERS             , char*           , string             , ""        ,    )
+DEF_PARAM( pref_mlc_prefetchers                , PREF_MLC_PREFETCHERS                , char*           , string             , ""        ,    )
+DEF_PARAM( pref_l1_prefetchers                 , PREF_L1_PREFETCHERS                 , char*           , string             , ""        ,    )
 DEF_PARAM( pref_dl0req_queue_size              , PREF_DL0REQ_QUEUE_SIZE              , uns             , uns                , 32        ,    )
 DEF_PARAM( pref_umlc_req_queue_size            , PREF_UMLC_REQ_QUEUE_SIZE            , uns             , uns                , 64        ,    )
 DEF_PARAM( pref_ul1req_queue_size              , PREF_UL1REQ_QUEUE_SIZE              , uns             , uns                , 128       ,    )

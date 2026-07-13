@@ -73,8 +73,9 @@ typedef struct Pref_Stride_Struct {
 } Pref_Stride;
 
 typedef struct {
-  Pref_Stride* stride_hwp_ul1;
+  Pref_Stride* stride_hwp_dcache;  // one instance per configured training level
   Pref_Stride* stride_hwp_umlc;
+  Pref_Stride* stride_hwp_ul1;
 } stride_prefetchers;
 /*************************************************************/
 /* HWP Interface */
@@ -84,6 +85,8 @@ void pref_stride_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global
 void pref_stride_ul1_hit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 void pref_stride_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 void pref_stride_umlc_hit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_stride_dl0_miss(Addr lineAddr, Addr loadPC);
+void pref_stride_dl0_hit(Addr lineAddr, Addr loadPC);
 /*************************************************************/
 /* Internal Function */
 void init_stride(HWP* hwp, Pref_Stride* stride_hwp);

@@ -3570,7 +3570,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   }
   new_req->cyc_hit_by_demand_load = 0;
   if (PREF_FRAMEWORK_ON) {
-    new_req->bw_prefetchable = PREF_STREAM_ON && pref_stream_bw_prefetchable(proc_id, addr);
+    new_req->bw_prefetchable = pref_stream_enabled() && pref_stream_bw_prefetchable(proc_id, addr);
   } else {
     new_req->bw_prefetchable = FALSE;
   }

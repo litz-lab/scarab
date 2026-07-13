@@ -67,8 +67,9 @@ typedef struct Pref_GHB_Struct {
 } Pref_GHB;
 
 typedef struct {
-  Pref_GHB* ghb_hwp_core_ul1;
+  Pref_GHB* ghb_hwp_core_dcache;  // one instance per configured training level
   Pref_GHB* ghb_hwp_core_umlc;
+  Pref_GHB* ghb_hwp_core_ul1;
 } ghb_prefetchers;
 
 /*************************************************************/
@@ -76,6 +77,8 @@ typedef struct {
 void pref_ghb_init(HWP* hwp);
 
 void pref_ghb_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_ghb_dl0_miss(Addr lineAddr, Addr loadPC);
+void pref_ghb_dl0_hit(Addr lineAddr, Addr loadPC);
 void pref_ghb_ul1_prefhit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 void pref_ghb_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 void pref_ghb_umlc_prefhit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);

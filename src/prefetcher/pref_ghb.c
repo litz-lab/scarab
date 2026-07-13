@@ -74,20 +74,30 @@
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_PREF_GHB, ##args)
 ghb_prefetchers ghb_prefetchers_array;
 void pref_ghb_init(HWP* hwp) {
-  if (!PREF_GHB_ON)
+  if (!pref_hwp_enabled(hwp))
     return;
 
-  HWP_Type dest = pref_set_dest_level(hwp, PREF_GHB_DEST_LEVEL);
-  if (PREF_UMLC_ON) {
+  // One instance per configured training level; each instance's destination
+  // comes from its list entry (pref_{dcache,mlc,l1}_prefetchers).
+  if (pref_hwp_instance_enabled(hwp, PREF_TRAIN_LEVEL_DCACHE)) {
+    HWP_Type dcache_dest = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_DCACHE);
+    ghb_prefetchers_array.ghb_hwp_core_dcache = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
+    for (uns i = 0; i < NUM_CORES; i++)
+      ghb_prefetchers_array.ghb_hwp_core_dcache[i].type = dcache_dest;
+    init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_dcache);
+  }
+  if (pref_hwp_instance_enabled(hwp, PREF_TRAIN_LEVEL_UMLC)) {
+    HWP_Type umlc_dest = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_UMLC);
     ghb_prefetchers_array.ghb_hwp_core_umlc = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
     for (uns i = 0; i < NUM_CORES; i++)
-      ghb_prefetchers_array.ghb_hwp_core_umlc[i].type = dest;
+      ghb_prefetchers_array.ghb_hwp_core_umlc[i].type = umlc_dest;
     init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_umlc);
   }
-  if (PREF_UL1_ON) {
+  if (pref_hwp_instance_enabled(hwp, PREF_TRAIN_LEVEL_UL1)) {
+    HWP_Type ul1_dest = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_UL1);
     ghb_prefetchers_array.ghb_hwp_core_ul1 = (Pref_GHB*)calloc(NUM_CORES, sizeof(Pref_GHB));
     for (uns i = 0; i < NUM_CORES; i++)
-      ghb_prefetchers_array.ghb_hwp_core_ul1[i].type = dest;
+      ghb_prefetchers_array.ghb_hwp_core_ul1[i].type = ul1_dest;
     init_ghb_core(hwp, ghb_prefetchers_array.ghb_hwp_core_ul1);
   }
 }
@@ -141,6 +151,14 @@ void pref_ghb_umlc_prefhit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 globa
 
 void pref_ghb_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist) {
   pref_ghb_train(&ghb_prefetchers_array.ghb_hwp_core_umlc[proc_id], proc_id, lineAddr, loadPC, FALSE);
+}
+/* Dcache (L1D) training: the dl0 dispatcher carries no proc_id. */
+void pref_ghb_dl0_hit(Addr lineAddr, Addr loadPC) {
+  pref_ghb_train(&ghb_prefetchers_array.ghb_hwp_core_dcache[0], 0, lineAddr, loadPC, TRUE);
+}
+
+void pref_ghb_dl0_miss(Addr lineAddr, Addr loadPC) {
+  pref_ghb_train(&ghb_prefetchers_array.ghb_hwp_core_dcache[0], 0, lineAddr, loadPC, FALSE);
 }
 
 void pref_ghb_train(Pref_GHB* ghb_hwp, uns8 proc_id, Addr lineAddr, Addr loadPC, Flag is_hit) {

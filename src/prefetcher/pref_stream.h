@@ -85,8 +85,9 @@ typedef struct Pref_Stream_struct {
 } Pref_Stream;
 
 typedef struct {
-  Pref_Stream* pref_stream_core_ul1;
+  Pref_Stream* pref_stream_core_dcache;  // one instance per configured training level
   Pref_Stream* pref_stream_core_umlc;
+  Pref_Stream* pref_stream_core_ul1;
 } stream_prefetchers;
 
 void pref_stream_init(HWP* hwp);
@@ -98,6 +99,8 @@ void pref_stream_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global
 void pref_stream_ul1_hit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 void pref_stream_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 void pref_stream_umlc_hit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_stream_dl0_miss(Addr lineAddr, Addr loadPC);
+void pref_stream_dl0_hit(Addr lineAddr, Addr loadPC);
 /*************************************************************/
 void init_stream_core(HWP* hwp, Pref_Stream* pref_stream_core);
 void pref_stream_train(Pref_Stream* pref_stream, uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist,
@@ -113,6 +116,7 @@ Flag pref_stream_req_queue_filter(Pref_Stream* pref_stream, Addr line_addr);
 
 void pref_stream_remove_redundant_stream(Pref_Stream* pref_stream, int hit_index);
 
+Flag pref_stream_enabled(void);
 Flag pref_stream_bw_prefetchable(uns proc_id, Addr line_addr);
 
 // Used when throttling using the overall accuracy numbers

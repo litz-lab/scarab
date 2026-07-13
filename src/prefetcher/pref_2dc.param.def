@@ -49,7 +49,6 @@
 
 */
 
-DEF_PARAM(pref_2dc_on                 , PREF_2DC_ON              , Flag   , Flag      , FALSE       ,      ) 
 DEF_PARAM(debug_pref_2dc              , DEBUG_PREF_2DC           , Flag   , Flag      , FALSE       ,      ) 
 
 DEF_PARAM(pref_2dc_cache_size         , PREF_2DC_CACHE_SIZE      , uns    , uns       , (1 * 1024)  ,      )

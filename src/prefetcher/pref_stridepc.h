@@ -52,8 +52,9 @@ typedef struct Pref_StridePC_Struct {
 } Pref_StridePC;
 
 typedef struct {
-  Pref_StridePC* stridepc_hwp_core_ul1;
+  Pref_StridePC* stridepc_hwp_core_dcache;  // one instance per configured training level
   Pref_StridePC* stridepc_hwp_core_umlc;
+  Pref_StridePC* stridepc_hwp_core_ul1;
 } stridepc_prefetchers;
 
 /*************************************************************/
@@ -61,6 +62,8 @@ typedef struct {
 void pref_stridepc_init(HWP* hwp);
 
 void pref_stridepc_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_stridepc_dl0_miss(Addr lineAddr, Addr loadPC);
+void pref_stridepc_dl0_hit(Addr lineAddr, Addr loadPC);
 void pref_stridepc_ul1_hit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 void pref_stridepc_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 void pref_stridepc_umlc_hit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);

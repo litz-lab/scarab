@@ -44,25 +44,25 @@ HWP pref_table [] = {
     
     { "ghb",  NULL,   		pref_ghb_init,  	NULL,
                   NULL,
-	 	  NULL,  		NULL,         		NULL,
+	 	  pref_ghb_dl0_miss,  	pref_ghb_dl0_hit,      	NULL,
           pref_ghb_umlc_miss,        		NULL,   pref_ghb_umlc_prefhit,   		
 	     	  pref_ghb_ul1_miss,    NULL,     		pref_ghb_ul1_prefhit  , NULL, NULL   }, 
 
     { "stream",  NULL,   		pref_stream_init,       NULL,
                   pref_stream_per_core_done,
-		  NULL, 	       	NULL,  			NULL,     		
+		  pref_stream_dl0_miss,	pref_stream_dl0_hit,  	NULL,     		
           pref_stream_umlc_miss, pref_stream_umlc_miss,  	NULL,   		
 		  pref_stream_ul1_miss, pref_stream_ul1_hit,   	NULL  , NULL, NULL   },
  
     { "stride",  NULL,   		pref_stride_init,    	NULL,
                   NULL,
-	     	  NULL,       		NULL,      		NULL,     
+	     	  pref_stride_dl0_miss, pref_stride_dl0_hit,   	NULL,     
 	          pref_stride_umlc_miss,       pref_stride_umlc_hit,   	   	NULL,   		
 		  pref_stride_ul1_miss, pref_stride_ul1_hit,    NULL  , NULL, NULL   },
  
     { "stridepc",  NULL,   		pref_stridepc_init,   	NULL,
                   NULL,
-	     	  NULL,        		NULL,      		NULL,     
+	     	  pref_stridepc_dl0_miss, pref_stridepc_dl0_hit,	NULL,     
 	          pref_stridepc_umlc_miss,   pref_stridepc_umlc_hit,   	   	NULL,   		
 		  pref_stridepc_ul1_miss, pref_stridepc_ul1_hit, NULL    , NULL, NULL   }, 
 
@@ -74,13 +74,13 @@ HWP pref_table [] = {
  
     { "2dc",  NULL,   		pref_2dc_init,    	NULL,
                   NULL,
-	    	  NULL,        		NULL,      		NULL,     
+	    	  pref_2dc_dl0_miss,   	pref_2dc_dl0_hit,      	NULL,     
 	          pref_2dc_umlc_miss,        		NULL,  pref_2dc_umlc_prefhit,   		
 		  pref_2dc_ul1_miss,    NULL,  		        pref_2dc_ul1_prefhit    , NULL, NULL   }, 
 
     { "markov",  NULL,   		pref_markov_init,  	NULL,
                   NULL,
-	 	  NULL,  		NULL,         		NULL,
+	 	  pref_markov_dl0_miss,	pref_markov_dl0_hit,   	NULL,
           pref_markov_umlc_miss,        		NULL,  	pref_markov_umlc_prefhit,   		
 	    pref_markov_ul1_miss, 		NULL,    pref_markov_ul1_prefhit  , NULL, NULL   }, 
 

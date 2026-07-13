@@ -208,21 +208,32 @@ void update_dcache_stage(Stage_Data* src_sd) {
 
   /* phase 2 - check the dcache port availability and do dcache access */
   int start_op_count = dc->sd.op_count;
-  Counter last_oldest_op_num = 0;
-  for (uns ii = 0; ii < start_op_count; ii++) {
-    /* update in program order (make things easier) */
-    uns oldest_index = 0;
-    Counter oldest_op_num = MAX_CTR;
-    // TODO: adjust this O(n2) algorithm by getting the program order outside first
-    for (uns jj = 0; jj < dc->sd.max_op_count; jj++) {
-      if (dc->sd.ops[jj] && dc->sd.ops[jj]->op_num > last_oldest_op_num && dc->sd.ops[jj]->op_num < oldest_op_num) {
-        oldest_op_num = dc->sd.ops[jj]->op_num;
-        oldest_index = jj;
-      }
-    }
-    last_oldest_op_num = oldest_op_num;
+  uns program_order[STAGE_MAX_OP_COUNT];
+  uns program_order_count = 0;
 
-    ASSERT(dc->proc_id, oldest_op_num < MAX_CTR);
+  /* Determine program order once.  Keep the sort stable so this has the same
+   * tie behavior as the old repeated scan, which selected the lowest stage
+   * index first. */
+  for (uns ii = 0; ii < dc->sd.max_op_count; ii++) {
+    if (dc->sd.ops[ii])
+      program_order[program_order_count++] = ii;
+  }
+  ASSERT(dc->proc_id, program_order_count == start_op_count);
+
+  for (uns ii = 1; ii < program_order_count; ii++) {
+    uns key_index = program_order[ii];
+    Counter key_op_num = dc->sd.ops[key_index]->op_num;
+    int jj = ii - 1;
+
+    while (jj >= 0 && dc->sd.ops[program_order[jj]]->op_num > key_op_num) {
+      program_order[jj + 1] = program_order[jj];
+      jj--;
+    }
+    program_order[jj + 1] = key_index;
+  }
+
+  for (uns ii = 0; ii < start_op_count; ii++) {
+    uns oldest_index = program_order[ii];
     Op* op = dc->sd.ops[oldest_index];
 
     // if the op is replaying, squish it

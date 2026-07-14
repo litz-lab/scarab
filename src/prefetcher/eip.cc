@@ -368,7 +368,9 @@ uint32_t l1i_add_hist_table(uint64_t line_addr) {
 
 void l1i_add_bb_size_hist_table(uint64_t line_addr, uint32_t bb_size) {
   uint64_t index = l1i_find_hist_entry(line_addr);
-  l1i_hist_table[eip_proc_id][index].bb_size = bb_size & L1I_MERGE_BBSIZE_MAX_VALUE;
+  if (index < L1I_HIST_TABLE_ENTRIES) {
+    l1i_hist_table[eip_proc_id][index].bb_size = bb_size & L1I_MERGE_BBSIZE_MAX_VALUE;
+  }
 }
 
 uint32_t l1i_find_bb_merge_hist_table(uint64_t line_addr) {

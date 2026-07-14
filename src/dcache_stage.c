@@ -540,6 +540,8 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
     if (line->HW_prefetch) {
       pref_dl0_pref_hit(line_addr, op->inst_info->addr, 0);  // CHANGEME
       line->HW_prefetch = FALSE;
+      STAT_EVENT(dc->proc_id, PREF_DCACHE_TOTAL_USED);
+      STAT_EVENT(dc->proc_id, CORE_PREF_DCACHE_USED);
     } else {
       pref_dl0_hit(line_addr, op->inst_info->addr);
     }
@@ -760,6 +762,14 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
     }
     STAT_EVENT(dc->proc_id, DCACHE_WB_REQ_DIRTY);
     STAT_EVENT(dc->proc_id, DCACHE_WB_REQ);
+  }
+
+  // The victim is final past the writeback check (a failed writeback returns
+  // NULL above and the fill retries). A prefetched line evicted with
+  // HW_prefetch still set was never demand-used.
+  if (repl_line_valid && data->HW_prefetch) {
+    STAT_EVENT(dc->proc_id, PREF_DCACHE_TOTAL_NOT_USED);
+    STAT_EVENT(dc->proc_id, CORE_PREF_DCACHE_NOT_USED);
   }
 
   DEBUG(dc->proc_id,

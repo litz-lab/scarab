@@ -24,7 +24,7 @@
 
 extern "C" {}
 
-#define RECEIVE_BUFFER_MAX_SIZE (0x01 << 12)
+#define RECEIVE_BUFFER_MAX_SIZE (0x01 << 14)
 #define CHECK_FOR_FAILURE(f, str)                                       \
   if(f) {                                                               \
     char error_message[1024];                                           \

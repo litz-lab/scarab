@@ -40,7 +40,7 @@ typedef struct Markov_Table_Entry_Struct {
 typedef struct Pref_Markov_Struct {
   HWP_Info* hwp_info;
   Markov_Table_Entry** markov_table;
-  CacheLevel type;
+  HWP_Type type;
 } Pref_Markov;
 
 typedef struct {
@@ -48,6 +48,8 @@ typedef struct {
   Pref_Markov* markov_hwp_core_umlc;
   Addr* last_miss_addr_core_ul1;
   Addr* last_miss_addr_core_umlc;
+  Pref_Markov* markov_hwp_core_dcache;  // one instance per configured training level
+  Addr* last_miss_addr_core_dcache;
 } markov_prefetchers;
 /*************************************************************/
 /* HWP Interface */
@@ -56,6 +58,8 @@ void pref_markov_ul1_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global
 void pref_markov_ul1_prefhit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 void pref_markov_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
 void pref_markov_umlc_prefhit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist);
+void pref_markov_dl0_miss(Addr lineAddr, Addr loadPC);
+void pref_markov_dl0_hit(Addr lineAddr, Addr loadPC);
 /*************************************************************/
 /* Internal function */
 void init_markov(HWP* hwp, Pref_Markov* markov_hwp_core, Addr* last_miss_addr_core);

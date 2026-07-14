@@ -68,21 +68,34 @@
 markov_prefetchers markov_prefetchers_array;
 
 void pref_markov_init(HWP* hwp) {
-  if (!PREF_MARKOV_ON)
+  if (!pref_hwp_enabled(hwp))
     return;
   hwp->hwp_info->enabled = TRUE;
 
-  if (PREF_UMLC_ON) {
+  // One instance per configured training level; each instance's destination
+  // comes from its list entry (pref_{dcache,mlc,l1}_prefetchers).
+  if (pref_hwp_instance_enabled(hwp, PREF_TRAIN_LEVEL_DCACHE)) {
+    HWP_Type dcache_dest = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_DCACHE);
+    markov_prefetchers_array.markov_hwp_core_dcache = (Pref_Markov*)calloc(NUM_CORES, sizeof(Pref_Markov));
+    for (uns i = 0; i < NUM_CORES; i++)
+      markov_prefetchers_array.markov_hwp_core_dcache[i].type = dcache_dest;
+    markov_prefetchers_array.last_miss_addr_core_dcache = malloc(sizeof(Addr) * NUM_CORES);
+    init_markov(hwp, markov_prefetchers_array.markov_hwp_core_dcache,
+                markov_prefetchers_array.last_miss_addr_core_dcache);
+  }
+  if (pref_hwp_instance_enabled(hwp, PREF_TRAIN_LEVEL_UMLC)) {
+    HWP_Type umlc_dest = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_UMLC);
     markov_prefetchers_array.markov_hwp_core_umlc = (Pref_Markov*)calloc(NUM_CORES, sizeof(Pref_Markov));
     for (uns i = 0; i < NUM_CORES; i++)
-      markov_prefetchers_array.markov_hwp_core_umlc[i].type = UMLC;
+      markov_prefetchers_array.markov_hwp_core_umlc[i].type = umlc_dest;
     markov_prefetchers_array.last_miss_addr_core_umlc = malloc(sizeof(Addr) * NUM_CORES);
     init_markov(hwp, markov_prefetchers_array.markov_hwp_core_umlc, markov_prefetchers_array.last_miss_addr_core_umlc);
   }
-  if (PREF_UL1_ON) {
+  if (pref_hwp_instance_enabled(hwp, PREF_TRAIN_LEVEL_UL1)) {
+    HWP_Type ul1_dest = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_UL1);
     markov_prefetchers_array.markov_hwp_core_ul1 = (Pref_Markov*)calloc(NUM_CORES, sizeof(Pref_Markov));
     for (uns i = 0; i < NUM_CORES; i++)
-      markov_prefetchers_array.markov_hwp_core_ul1[i].type = UL1;
+      markov_prefetchers_array.markov_hwp_core_ul1[i].type = ul1_dest;
     markov_prefetchers_array.last_miss_addr_core_ul1 = malloc(sizeof(Addr) * NUM_CORES);
     init_markov(hwp, markov_prefetchers_array.markov_hwp_core_ul1, markov_prefetchers_array.last_miss_addr_core_ul1);
   }
@@ -140,6 +153,22 @@ void pref_markov_umlc_miss(uns8 proc_id, Addr lineAddr, Addr load_PC, uns32 glob
   pref_markov_update_table(&markov_prefetchers_array.markov_hwp_core_umlc[proc_id],
                            markov_prefetchers_array.last_miss_addr_core_umlc, proc_id, lineAddr, 1);
   pref_markov_send_prefetches(&markov_prefetchers_array.markov_hwp_core_umlc[proc_id], proc_id, lineAddr);
+}
+/* Dcache (L1D) training: the dl0 dispatcher carries no proc_id. */
+void pref_markov_dl0_hit(Addr lineAddr, Addr loadPC) {
+  if (PREF_MARKOV_UPDATE_ON_PREF_HIT) {
+    pref_markov_update_table(&markov_prefetchers_array.markov_hwp_core_dcache[0],
+                             markov_prefetchers_array.last_miss_addr_core_dcache, 0, lineAddr, 0);
+  }
+  if (PREF_MARKOV_SEND_ON_PREF_HIT) {
+    pref_markov_send_prefetches(&markov_prefetchers_array.markov_hwp_core_dcache[0], 0, lineAddr);
+  }
+}
+
+void pref_markov_dl0_miss(Addr lineAddr, Addr loadPC) {
+  pref_markov_update_table(&markov_prefetchers_array.markov_hwp_core_dcache[0],
+                           markov_prefetchers_array.last_miss_addr_core_dcache, 0, lineAddr, 1);
+  pref_markov_send_prefetches(&markov_prefetchers_array.markov_hwp_core_dcache[0], 0, lineAddr);
 }
 
 void pref_markov_update_table(Pref_Markov* markov_hwp, Addr* last_miss_addr_core, uns8 proc_id, Addr current_addr,
@@ -218,11 +247,8 @@ void pref_markov_send_prefetches(Pref_Markov* markov_hwp, uns8 proc_id, Addr mis
     if (markov_hwp->markov_table[table_index][ii].valid) {
       if ((markov_hwp->markov_table[table_index][ii].tag == miss_lineAddr) &&
           (markov_hwp->markov_table[table_index][ii].count > PREF_MARKOV_SEND_THRESHOLD)) {
-        if (markov_hwp->type == UMLC)
-          pref_addto_umlc_req_queue(proc_id, markov_hwp->markov_table[table_index][ii].next_addr >> LOG2(L1_LINE_SIZE),
-                                    markov_hwp->hwp_info->id);
-        else
-          pref_addto_ul1req_queue(proc_id, markov_hwp->markov_table[table_index][ii].next_addr >> LOG2(L1_LINE_SIZE),
+        pref_addto_dest_req_queue(proc_id, markov_hwp->type,
+                                  markov_hwp->markov_table[table_index][ii].next_addr >> LOG2(L1_LINE_SIZE),
                                   markov_hwp->hwp_info->id);
       }
     } else

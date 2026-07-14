@@ -28,6 +28,7 @@
  ***************************************************************************************/
 
 #include <math.h>
+#include <strings.h>
 
 #include "globals/assert.h"
 #include "globals/global_defs.h"
@@ -95,6 +96,23 @@ static void pref_polbv_update_on_evict(uns8 pref_proc_id, uns8 evicted_proc_id, 
 static void pref_polbv_lookup_on_miss(uns8 proc_id, Addr addr);
 static void pref_polbv_update_on_repref(uns8 proc_id, Addr addr);
 void pref_feed_back_info_update(uns8 prefetcher_id);
+static void pref_parse_level_config(const char* param_name, const char* value, Pref_Train_Level lvl, uns expected_num);
+
+/* Per-(type, training level) instance registry. An instance is declared in a
+   --pref_{dcache,mlc,l1}_prefetchers list as a TYPE_<name>,DEST_<level> pair:
+   the list fixes which cache level's hits/misses train it, the DEST token
+   fixes where its prefetches go. Indexed by hwp_info->id (assigned as the
+   pre-sort table index in pref_init; stable across the priority qsort). */
+typedef struct Pref_Level_Cfg_struct {
+  Flag enabled;
+  HWP_Type dest;
+} Pref_Level_Cfg;
+
+static Pref_Level_Cfg* pref_level_cfg;  // [pref_table_size][PREF_TRAIN_LEVEL_NUM]
+
+static Pref_Level_Cfg* pref_level_cfg_entry(uns8 id, Pref_Train_Level lvl) {
+  return &pref_level_cfg[id * PREF_TRAIN_LEVEL_NUM + lvl];
+}
 /***************************************************************************************/
 /* supporting functions */
 
@@ -173,7 +191,19 @@ void pref_init(void) {
 
     pref_table[ii].hwp_info->priority = 0;
     pref_table[ii].hwp_info->enabled = FALSE;
+  }
 
+  // Parse the per-level instance lists into the registry before any init_func
+  // runs: each prefetcher's init queries which of its training levels have an
+  // instance and each instance's destination.
+  pref_level_cfg = (Pref_Level_Cfg*)calloc(pref_table_size * PREF_TRAIN_LEVEL_NUM, sizeof(Pref_Level_Cfg));
+  pref_parse_level_config("pref_dcache_prefetchers", PREF_DCACHE_PREFETCHERS, PREF_TRAIN_LEVEL_DCACHE,
+                          PREF_NUM_DCACHE_PREFETCHERS);
+  pref_parse_level_config("pref_mlc_prefetchers", PREF_MLC_PREFETCHERS, PREF_TRAIN_LEVEL_UMLC,
+                          PREF_NUM_MLC_PREFETCHERS);
+  pref_parse_level_config("pref_l1_prefetchers", PREF_L1_PREFETCHERS, PREF_TRAIN_LEVEL_UL1, PREF_NUM_L1_PREFETCHERS);
+
+  for (ii = 0; ii < pref_table_size; ii++) {
     if (pref_table[ii].init_func)
       pref_table[ii].init_func(&pref_table[ii]);
   }
@@ -251,7 +281,8 @@ void pref_dl0_miss(Addr line_addr, Addr load_PC) {
     return;
   if (PREF_DL0_MISS_ON) {
     for (ii = 0; ii < pref_table_size; ii++) {
-      if (pref_table[ii].hwp_info->enabled && pref_table[ii].dl0_miss_func) {
+      if (pref_table[ii].hwp_info->enabled && pref_table[ii].dl0_miss_func &&
+          pref_hwp_instance_enabled(&pref_table[ii], PREF_TRAIN_LEVEL_DCACHE)) {
         pref_table[ii].dl0_miss_func(line_addr, load_PC);
       }
     }
@@ -265,7 +296,8 @@ void pref_dl0_hit(Addr line_addr, Addr load_PC) {
     return;
   if (PREF_DL0_HIT_ON) {
     for (ii = 0; ii < pref_table_size; ii++) {
-      if (pref_table[ii].hwp_info->enabled && pref_table[ii].dl0_hit_func) {
+      if (pref_table[ii].hwp_info->enabled && pref_table[ii].dl0_hit_func &&
+          pref_hwp_instance_enabled(&pref_table[ii], PREF_TRAIN_LEVEL_DCACHE)) {
         pref_table[ii].dl0_hit_func(line_addr, load_PC);
       }
     }
@@ -282,7 +314,8 @@ void pref_dl0_pref_hit(Addr line_addr, Addr load_PC, uns8 prefetcher_id) {
 
   if (PREF_DL0_HIT_ON) {
     for (ii = 0; ii < pref_table_size; ii++) {
-      if (pref_table[ii].hwp_info->enabled && pref_table[ii].dl0_pref_hit) {
+      if (pref_table[ii].hwp_info->enabled && pref_table[ii].dl0_pref_hit &&
+          pref_hwp_instance_enabled(&pref_table[ii], PREF_TRAIN_LEVEL_DCACHE)) {
         pref_table[ii].dl0_pref_hit(line_addr, load_PC);
       }
     }
@@ -293,7 +326,7 @@ void pref_umlc_miss(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_his
   int ii;
   if (!PREF_FRAMEWORK_ON)
     return;
-  if (!PREF_UMLC_ON || !MLC_PRESENT)
+  if (!MLC_PRESENT)
     return;
 
   // IGNORE BELOW
@@ -307,7 +340,8 @@ void pref_umlc_miss(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_his
   }
 
   for (ii = 0; ii < pref_table_size; ii++) {
-    if (pref_table[ii].hwp_info->enabled && pref_table[ii].umlc_miss_func) {
+    if (pref_table[ii].hwp_info->enabled && pref_table[ii].umlc_miss_func &&
+        pref_hwp_instance_enabled(&pref_table[ii], PREF_TRAIN_LEVEL_UMLC)) {
       pref_table[ii].umlc_miss_func(proc_id, line_addr, load_PC, global_hist);
     }
   }
@@ -317,14 +351,15 @@ void pref_umlc_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist
   int ii;
   if (!PREF_FRAMEWORK_ON)
     return;
-  if (!PREF_UMLC_ON || !MLC_PRESENT)
+  if (!MLC_PRESENT)
     return;
   if (PREF_TRACE_ON)
     fprintf(PREF_TRACE_OUT, "%s \t %s \t %s \t %s\n", hexstr64s(cycle_count), hexstr64s(0), hexstr64s(line_addr),
             "UMLC_HIT");
 
   for (ii = 0; ii < pref_table_size; ii++) {
-    if (pref_table[ii].hwp_info->enabled && pref_table[ii].umlc_hit_func) {
+    if (pref_table[ii].hwp_info->enabled && pref_table[ii].umlc_hit_func &&
+        pref_hwp_instance_enabled(&pref_table[ii], PREF_TRAIN_LEVEL_UMLC)) {
       pref_table[ii].umlc_hit_func(proc_id, line_addr, load_PC, global_hist);
     }
   }
@@ -333,7 +368,7 @@ void pref_umlc_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist
 void pref_umlc_pref_hit_late(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist, uns8 prefetcher_id) {
   if (!PREF_FRAMEWORK_ON)
     return;
-  if (!PREF_UMLC_ON || !MLC_PRESENT)
+  if (!MLC_PRESENT)
     return;
   if (prefetcher_id == 0)
     return;
@@ -350,7 +385,7 @@ void pref_umlc_pref_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global
 
   if (!PREF_FRAMEWORK_ON)
     return;
-  if (!PREF_UMLC_ON || !MLC_PRESENT)
+  if (!MLC_PRESENT)
     return;
 
   if (PREF_TRACE_ON)
@@ -360,7 +395,8 @@ void pref_umlc_pref_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global
   pref_table[prefetcher_id].hwp_info->curr_useful_core[proc_id]++;
 
   for (ii = 0; ii < pref_table_size; ii++) {
-    if (pref_table[ii].hwp_info->enabled && pref_table[ii].umlc_pref_hit) {
+    if (pref_table[ii].hwp_info->enabled && pref_table[ii].umlc_pref_hit &&
+        pref_hwp_instance_enabled(&pref_table[ii], PREF_TRAIN_LEVEL_UMLC)) {
       pref_table[ii].umlc_pref_hit(proc_id, line_addr, load_PC, global_hist);
     }
   }
@@ -369,8 +405,6 @@ void pref_umlc_pref_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global
 void pref_ul1_miss(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist) {
   int ii;
   if (!PREF_FRAMEWORK_ON)
-    return;
-  if (!PREF_UL1_ON)
     return;
   if (DUMB_CORE_ON && DUMB_CORE == proc_id)
     return;  // dumb core should not trigger prefetches
@@ -389,7 +423,8 @@ void pref_ul1_miss(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist
   }
 
   for (ii = 0; ii < pref_table_size; ii++) {
-    if (pref_table[ii].hwp_info->enabled && pref_table[ii].ul1_miss_func) {
+    if (pref_table[ii].hwp_info->enabled && pref_table[ii].ul1_miss_func &&
+        pref_hwp_instance_enabled(&pref_table[ii], PREF_TRAIN_LEVEL_UL1)) {
       pref_table[ii].ul1_miss_func(proc_id, line_addr, load_PC, global_hist);
     }
   }
@@ -399,8 +434,6 @@ void pref_ul1_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist)
   int ii;
   if (!PREF_FRAMEWORK_ON)
     return;
-  if (!PREF_UL1_ON)
-    return;
   if (DUMB_CORE_ON && DUMB_CORE == proc_id)
     return;  // dumb core should not trigger prefetches
   if (PREF_TRACE_ON)
@@ -408,7 +441,8 @@ void pref_ul1_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist)
             "UL1_HIT");
 
   for (ii = 0; ii < pref_table_size; ii++) {
-    if (pref_table[ii].hwp_info->enabled && pref_table[ii].ul1_hit_func) {
+    if (pref_table[ii].hwp_info->enabled && pref_table[ii].ul1_hit_func &&
+        pref_hwp_instance_enabled(&pref_table[ii], PREF_TRAIN_LEVEL_UL1)) {
       pref_table[ii].ul1_hit_func(proc_id, line_addr, load_PC, global_hist);
     }
   }
@@ -416,8 +450,6 @@ void pref_ul1_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist)
 
 void pref_ul1_pref_hit_late(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist, uns8 prefetcher_id) {
   if (!PREF_FRAMEWORK_ON)
-    return;
-  if (!PREF_UL1_ON)
     return;
   if (prefetcher_id == 0)
     return;
@@ -438,8 +470,6 @@ void pref_ul1_pref_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_
 
   if (!PREF_FRAMEWORK_ON)
     return;
-  if (!PREF_UL1_ON)
-    return;
 
   if (PREF_TRACE_ON)
     fprintf(PREF_TRACE_OUT, "%s \t %s \t %s \t %s\n", hexstr64s(cycle_count), hexstr64s(0), hexstr64s(line_addr),
@@ -448,7 +478,8 @@ void pref_ul1_pref_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_
   pref_table[prefetcher_id].hwp_info->curr_useful_core[proc_id]++;
 
   for (ii = 0; ii < pref_table_size; ii++) {
-    if (pref_table[ii].hwp_info->enabled && pref_table[ii].ul1_pref_hit) {
+    if (pref_table[ii].hwp_info->enabled && pref_table[ii].ul1_pref_hit &&
+        pref_hwp_instance_enabled(&pref_table[ii], PREF_TRAIN_LEVEL_UL1)) {
       pref_table[ii].ul1_pref_hit(proc_id, line_addr, load_PC, global_hist);
     }
   }
@@ -654,6 +685,103 @@ Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_
 
   ul1req_queue[*ul1req_queue_req_pos] = new_req;
   return TRUE;
+}
+
+Flag pref_hwp_instance_enabled(const HWP* hwp, Pref_Train_Level lvl) {
+  return pref_level_cfg_entry(hwp->hwp_info->id, lvl)->enabled;
+}
+
+HWP_Type pref_hwp_instance_dest(const HWP* hwp, Pref_Train_Level lvl) {
+  ASSERT(0, pref_hwp_instance_enabled(hwp, lvl));
+  return pref_level_cfg_entry(hwp->hwp_info->id, lvl)->dest;
+}
+
+Flag pref_hwp_enabled(const HWP* hwp) {
+  for (uns lvl = 0; lvl < PREF_TRAIN_LEVEL_NUM; lvl++) {
+    if (pref_hwp_instance_enabled(hwp, (Pref_Train_Level)lvl))
+      return TRUE;
+  }
+  return FALSE;
+}
+
+static int pref_find_hwp_by_name(const char* name) {
+  for (int ii = 0; ii < pref_table_size; ii++) {
+    if (!strcasecmp(pref_table[ii].name, name))
+      return ii;
+  }
+  return -1;
+}
+
+/* Parse one --pref_<level>_prefetchers list (comma-separated
+   TYPE_<name>,DEST_<level> pairs, e.g. "TYPE_STRIDE,DEST_DCACHE,TYPE_STREAM,DEST_L1")
+   into the registry for training level `lvl`. Same consumer-tokenized string-param
+   idiom as rs_sizes. Asserts on unknown tokens, a duplicate type within the level
+   (the static per-level hook APIs allow one instance per type per level), and a
+   pair count that contradicts the level's --pref_num_*_prefetchers value. */
+static void pref_parse_level_config(const char* param_name, const char* value, Pref_Train_Level lvl, uns expected_num) {
+  uns num_pairs = 0;
+  // The pref_num_* param is the authority for how many instances this level
+  // runs: 0 disables the level outright (its list, e.g. one inherited from an
+  // architecture PARAMS file, is ignored), so configs can turn a level off
+  // without having to clear the list string.
+  if (expected_num == 0)
+    return;
+  if (value && *value) {
+    char* buf = strdup(value);
+    char* tok = strtok(buf, ", ");
+    while (tok) {
+      ASSERTM(0, !strncasecmp(tok, "TYPE_", 5), "%s: expected TYPE_<prefetcher> token, got '%s'\n", param_name, tok);
+      int id = pref_find_hwp_by_name(tok + 5);
+      ASSERTM(0, id >= 0, "%s: unknown prefetcher type '%s'\n", param_name, tok);
+      char* dest_tok = strtok(NULL, ", ");
+      ASSERTM(0, dest_tok && !strncasecmp(dest_tok, "DEST_", 5),
+              "%s: TYPE_%s must be followed by DEST_DCACHE, DEST_MLC, or DEST_L1\n", param_name, pref_table[id].name);
+      HWP_Type dest = PREF_TO_UL1;
+      if (!strcasecmp(dest_tok + 5, "DCACHE")) {
+        dest = PREF_TO_DCACHE;
+      } else if (!strcasecmp(dest_tok + 5, "MLC")) {
+        dest = PREF_TO_UMLC;
+      } else if (!strcasecmp(dest_tok + 5, "L1")) {
+        dest = PREF_TO_UL1;
+      } else {
+        ASSERTM(0, FALSE, "%s: unknown destination '%s' (use DEST_DCACHE, DEST_MLC, or DEST_L1)\n", param_name,
+                dest_tok);
+      }
+      Pref_Level_Cfg* cfg = pref_level_cfg_entry((uns8)id, lvl);
+      ASSERTM(0, !cfg->enabled, "%s: duplicate TYPE_%s (one instance per type per training level)\n", param_name,
+              pref_table[id].name);
+      cfg->enabled = TRUE;
+      cfg->dest = dest;
+      num_pairs++;
+      tok = strtok(NULL, ", ");
+    }
+    free(buf);
+  }
+  ASSERTM(0, num_pairs == expected_num, "%s configures %u prefetcher(s) but the matching pref_num param says %u\n",
+          param_name, num_pairs, expected_num);
+}
+
+/* Route a prefetch to the destination level named by `dest` -- the single choke
+   point that turns a HWP_Type into the matching per-level request queue. The UL1
+   path uses the rich _set enqueue so distance/loadPC/global_hist/bw survive; DL0
+   and UMLC enqueues do not carry those (unchanged from before). */
+Flag pref_addto_dest_req_queue_set(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id, uns distance,
+                                   Addr loadPC, uns32 global_hist, Flag bw) {
+  switch (dest) {
+    case PREF_TO_DCACHE:
+      return pref_addto_dl0req_queue(proc_id, line_index, prefetcher_id);
+    case PREF_TO_UMLC:
+      return pref_addto_umlc_req_queue(proc_id, line_index, prefetcher_id);
+    case PREF_TO_UL1:
+      return pref_addto_ul1req_queue_set(proc_id, line_index, prefetcher_id, distance, loadPC, global_hist, bw);
+    default:
+      ASSERTM(proc_id, FALSE, "pref_addto_dest_req_queue_set: unhandled destination %d\n", (int)dest);
+      return FALSE;
+  }
+}
+
+Flag pref_addto_dest_req_queue(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id) {
+  return pref_addto_dest_req_queue_set(proc_id, dest, line_index, prefetcher_id, 0, 0, 0, FALSE);
 }
 
 void pref_update(void) {
@@ -921,12 +1049,16 @@ void pref_sent(uns8 proc_id, Addr addr, uns8 prefetcher_id, Destination dest) {
       STAT_EVENT_ALL(PREF_MLC_TOTAL_SENT);
       STAT_EVENT(proc_id, CORE_PREF_MLC_SENT);
       break;
-    case DEST_L1:    // ul1 queue; dl0/dcache prefetches re-issue here on a dcache miss
+    case DEST_DCACHE:  // dcache-destined prefetch filling the dcache directly (--pref_dl0_fill_dcache)
+      STAT_EVENT_ALL(PREF_DCACHE_TOTAL_SENT);
+      STAT_EVENT(proc_id, CORE_PREF_DCACHE_SENT);
+      break;
+    case DEST_L1:    // ul1 queue; dcache-destined prefetches re-issue here on a dcache miss
     case DEST_NONE:  // demand-matched prefetch demoted to DEST_NONE; count at L1
       STAT_EVENT_ALL(PREF_L1_TOTAL_SENT);
       STAT_EVENT(proc_id, CORE_PREF_L1_SENT);
       break;
-    default:  // DEST_DCACHE/ICACHE/MEM never reach the send path; catch new dests
+    default:  // DEST_ICACHE/MEM never reach the send path; catch new dests
       ASSERTM(proc_id, FALSE, "pref_sent: unhandled prefetch destination %d\n", dest);
       break;
   }

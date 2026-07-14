@@ -49,7 +49,6 @@
 
 */
 
-DEF_PARAM(pref_stride_on                , PREF_STRIDE_ON              , Flag   , Flag      , FALSE       ,      ) 
 DEF_PARAM(debug_pref_stride             , DEBUG_PREF_STRIDE           , Flag   , Flag      , FALSE       ,      ) 
 // the size of the stride table
 DEF_PARAM(pref_stride_table_n           , PREF_STRIDE_TABLE_N         , uns    , uns       , 1024        ,      ) 

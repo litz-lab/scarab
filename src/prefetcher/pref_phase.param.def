@@ -49,7 +49,6 @@
 
 */
 
-DEF_PARAM(pref_phase_on                 , PREF_PHASE_ON              , Flag   , Flag      , FALSE       ,      ) 
 DEF_PARAM(pref_phase_study              , PREF_PHASE_STUDY           , Flag   , Flag      , FALSE       ,      ) 
 DEF_PARAM(debug_pref_phase              , DEBUG_PREF_PHASE           , Flag   , Flag      , FALSE       ,      ) 
 

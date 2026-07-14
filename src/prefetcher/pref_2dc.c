@@ -78,17 +78,24 @@
 tdc_prefetchers tdc_prefetcher_array;
 
 void pref_2dc_init(HWP* hwp) {
-  if (!PREF_2DC_ON)
+  if (!pref_hwp_enabled(hwp))
     return;
 
-  if (PREF_UMLC_ON) {
+  // One instance per configured training level; each instance's destination
+  // comes from its list entry (pref_{dcache,mlc,l1}_prefetchers).
+  if (pref_hwp_instance_enabled(hwp, PREF_TRAIN_LEVEL_DCACHE)) {
+    tdc_prefetcher_array.tdc_hwp_dcache = (Pref_2DC*)malloc(sizeof(Pref_2DC));
+    tdc_prefetcher_array.tdc_hwp_dcache->type = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_DCACHE);
+    init_2dc(hwp, tdc_prefetcher_array.tdc_hwp_dcache);
+  }
+  if (pref_hwp_instance_enabled(hwp, PREF_TRAIN_LEVEL_UMLC)) {
     tdc_prefetcher_array.tdc_hwp_umlc = (Pref_2DC*)malloc(sizeof(Pref_2DC));
-    tdc_prefetcher_array.tdc_hwp_umlc->type = UMLC;
+    tdc_prefetcher_array.tdc_hwp_umlc->type = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_UMLC);
     init_2dc(hwp, tdc_prefetcher_array.tdc_hwp_umlc);
   }
-  if (PREF_UL1_ON) {
+  if (pref_hwp_instance_enabled(hwp, PREF_TRAIN_LEVEL_UL1)) {
     tdc_prefetcher_array.tdc_hwp_ul1 = (Pref_2DC*)malloc(sizeof(Pref_2DC));
-    tdc_prefetcher_array.tdc_hwp_ul1->type = UL1;
+    tdc_prefetcher_array.tdc_hwp_ul1->type = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_UL1);
     init_2dc(hwp, tdc_prefetcher_array.tdc_hwp_ul1);
   }
 }
@@ -121,6 +128,14 @@ void pref_2dc_umlc_prefhit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 globa
 
 void pref_2dc_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_histC) {
   pref_2dc_train(tdc_prefetcher_array.tdc_hwp_umlc, lineAddr, loadPC, FALSE);  // FIXME
+}
+/* Dcache (L1D) training: the dl0 dispatcher carries no proc_id. */
+void pref_2dc_dl0_hit(Addr lineAddr, Addr loadPC) {
+  pref_2dc_train(tdc_prefetcher_array.tdc_hwp_dcache, lineAddr, loadPC, TRUE);
+}
+
+void pref_2dc_dl0_miss(Addr lineAddr, Addr loadPC) {
+  pref_2dc_train(tdc_prefetcher_array.tdc_hwp_dcache, lineAddr, loadPC, FALSE);
 }
 
 void pref_2dc_train(Pref_2DC* tdc_hwp, Addr lineAddr, Addr loadPC, Flag is_hit) {
@@ -175,10 +190,8 @@ void pref_2dc_train(Pref_2DC* tdc_hwp, Addr lineAddr, Addr loadPC, Flag is_hit) 
       // few.
       for (; num_pref_sent < tdc_hwp->pref_degree; num_pref_sent++) {
         lineIndex += region->deltaA;
-        if (tdc_hwp->type == UMLC)
-          pref_addto_umlc_req_queue(0, lineIndex, tdc_hwp->hwp_info->id);
-        else
-          pref_addto_ul1req_queue_set(0, lineIndex, tdc_hwp->hwp_info->id, 0, loadPC, 0, FALSE);  // FIXME
+        pref_addto_dest_req_queue_set(0, tdc_hwp->type, lineIndex, tdc_hwp->hwp_info->id, 0, loadPC, 0,
+                                      FALSE);  // FIXME
       }
     }
     while (num_pref_sent < tdc_hwp->pref_degree) {
@@ -192,10 +205,7 @@ void pref_2dc_train(Pref_2DC* tdc_hwp, Addr lineAddr, Addr loadPC, Flag is_hit) 
       delta1 = delta2;
       delta2 = data->delta;
 
-      if (tdc_hwp->type == UMLC)
-        pref_addto_umlc_req_queue(0, lineIndex, tdc_hwp->hwp_info->id);
-      else
-        pref_addto_ul1req_queue_set(0, lineIndex, tdc_hwp->hwp_info->id, 0, loadPC, 0, FALSE);  // FIXME
+      pref_addto_dest_req_queue_set(0, tdc_hwp->type, lineIndex, tdc_hwp->hwp_info->id, 0, loadPC, 0, FALSE);  // FIXME
       num_pref_sent++;
     }
   }

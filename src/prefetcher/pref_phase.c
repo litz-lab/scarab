@@ -69,7 +69,7 @@ void pref_phase_init(HWP* hwp) {
   int ii;
   static char* pref_phase_filename = "pref_phase";
 
-  if (!PREF_PHASE_ON)
+  if (!pref_hwp_enabled(hwp))
     return;
 
   phase_hwp = (Pref_PHASE*)calloc(1, sizeof(Pref_PHASE));

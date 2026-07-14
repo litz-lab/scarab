@@ -71,6 +71,7 @@ void alloc_mem_issue_queue(uns num_cores);
 void set_issue_queue(uns8 proc_id);
 void recover_issue_queue();
 
+uns num_of_ready_ops;
 #ifdef __cplusplus
 }
 #endif

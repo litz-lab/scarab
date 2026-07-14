@@ -276,6 +276,7 @@ class SelectLogic {
   std::list<IssueQueueEntry*> ready_list;
 
   // bitmask of ready but not yet issued op types in this cycle
+  uns num_of_ready_ops = 0;
   uns64 ready_not_issued_op_types = 0;
   std::vector<uns64> ready_not_issued_op_types_per_fu;
 
@@ -300,6 +301,7 @@ class SelectLogic {
   void release(IssueQueueEntry* entry) { ready_list.remove(entry); }
 
   bool has_ready_ops() const { return !ready_list.empty(); }
+  uns get_num_of_ready_ops() const { return num_of_ready_ops; }
   uns64 get_ready_not_issued_op_types() const { return ready_not_issued_op_types; }
 
   void collect_entry_op_ready_stats(IssueQueueEntry* entry);
@@ -319,12 +321,16 @@ void SelectLogic::bid() {
   traversal_policy->build_picker_order(picker_order);
   ready_not_issued_op_types = 0;
   ready_not_issued_op_types_per_fu.assign(connected_fu_pickers.size(), 0);
+  num_of_ready_ops = 0;
 
   for (IssueQueueEntry* entry : ready_list) {
     // check if the op is ready (it may become not ready due to memory blocking or waiting for forwarding)
     if (entry->state != ISSUE_QUEUE_ENTRY_STATE_READY || !issue_queue_check_op_ready(entry->op)) {
       continue;
     }
+
+    if (!entry->op->off_path)
+      num_of_ready_ops++;
 
     // the current request propagated through the serial picker chain
     IssueQueueEntry* request_entry = entry;
@@ -661,6 +667,7 @@ class IssueQueue {
 
   uns64 get_ready_not_issued_op_types() const { return select_logic->get_ready_not_issued_op_types(); }
   bool has_ready_ops() const { return select_logic->has_ready_ops(); }
+  uns get_num_of_ready_ops() const { return select_logic->get_num_of_ready_ops(); };
 };
 
 IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size, std::vector<FunctionalUnitPicker> connected_fu_pickers)
@@ -913,10 +920,18 @@ void IssueQueues::schedule() {
   update_mem_block();
 
   std::vector<uns64> ready_not_issued_op_types_total;
+  uns num_of_ready_ops = 0;
   for (IssueQueue& queue : issue_queues) {
     queue.bid();
     ready_not_issued_op_types_total.push_back(queue.get_ready_not_issued_op_types());
+    num_of_ready_ops += queue.get_num_of_ready_ops();
   }
+  uns unused_ilp_slots = ISSUE_WIDTH - num_of_ready_ops;
+  if (num_of_ready_ops > ISSUE_WIDTH)
+    unused_ilp_slots = 0;
+  INC_STAT_EVENT(proc_id, TOPDOWN_UNUSED_ILP_SLOTS, unused_ilp_slots);
+
+  INC_STAT_EVENT(proc_id, TOPDOWN_UNUSED_ILP_SLOTS, std::max(uns(0), ISSUE_WIDTH - num_of_ready_ops));
 
   for (size_t queue_id = 0; queue_id < issue_queues.size(); ++queue_id) {
     uns64 ready_not_issued_op_types_others = 0;

@@ -65,7 +65,7 @@ ctype_pin_inst Kernel_Factory::get_next_cbr_kernel_type_inst(uns proc_id, bool o
   /* if we are at the tail end of program regenerate the kernel - this generates new random branch directions, without
   this predictor may predict the intial pattern  */
   if (!offpath && inst.instruction_next_addr == get_start_pc()) {
-    kernel_map = generate_kernel_map();
+    generate_kernel();
   }
   return inst;
 }
@@ -80,51 +80,52 @@ ctype_pin_inst Kernel_Factory::get_next_ibr_kernel_type_inst(uns proc_id, bool o
   /* for random ibr, if the number of ibr ops executed equals the required number of random targets we re-randomize
      targets by generating new kernel */
   if (!offpath && (num_of_ibr_ops_executed == target_pool_size) && target_strategy == UNIFORM_RANDOM) {
-    kernel_map = generate_kernel_map();
+    generate_kernel();
     num_of_ibr_ops_executed = 0;
   }
   return inst;
 }
 
-std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_kernel_map(Limit_Load_To level, uns num_of_dependence_chains) {
+void Kernel_Factory::generate_kernel(Limit_Load_To level, uns num_of_dependence_chains) {
   switch (kernel) {
     case MEM_BANDWIDTH_LIMITED:
-      return generate_load_kernel(NO_DEPENDENCE_CHAIN, workload_length, target_strategy, starting_target, 4,
-                                  DCACHE_LEVEL, get_start_pc(), get_start_uid());
+      generate_load_kernel(NO_DEPENDENCE_CHAIN, workload_length, target_strategy, starting_target, 4, DCACHE_LEVEL,
+                           get_start_pc(), get_start_uid());
+      break;
     case DCACHE_LIMITED:
     case MLC_LIMITED:
     case LLC_LIMITED:
     case MEM_LIMITED:
-      return generate_load_kernel(DEPENDENCE_CHAIN, workload_length, target_strategy, starting_target, 0, level,
-                                  get_start_pc(), get_start_uid());
-
+      generate_load_kernel(DEPENDENCE_CHAIN, workload_length, target_strategy, starting_target, 0, level,
+                           get_start_pc(), get_start_uid());
+      break;
     case CBR_LIMITED_20T:
     case CBR_LIMITED_50T:
     case CBR_LIMITED_80T:
-      return generate_cbr_kernel(direction_strategy, target_strategy, workload_length, t_nt_ratio, workload_length,
-                                 get_start_pc(), get_start_uid());
-
+      generate_cbr_kernel(direction_strategy, target_strategy, workload_length, t_nt_ratio, workload_length,
+                          get_start_pc(), get_start_uid());
+      break;
     case BTB_LIMITED_FULL_ASSOC_SWEEP:
     case BTB_LIMITED_FULL_CAPACITY_SWEEP:
     case BTB_CONTAINED:
-      return generate_ubr_kernel(target_strategy, target_pool_size, workload_length, get_start_pc(), get_start_uid(),
-                                 starting_target, target_stride);
-
+      generate_ubr_kernel(target_strategy, target_pool_size, workload_length, get_start_pc(), get_start_uid(),
+                          starting_target, target_stride);
+      break;
     case IBR_LIMITED_Random_2TGTS:
     case IBR_LIMITED_RANDOM_4TGTS:
     case IBR_LIMITED_ROUNDROBIN_4TGTS:
-      return generate_ibr_kernel(target_strategy, target_pool_size, get_start_pc(), get_start_uid(), target_stride,
-                                 starting_target);
-
+      generate_ibr_kernel(target_strategy, target_pool_size, get_start_pc(), get_start_uid(), target_stride,
+                          starting_target);
+      break;
     case ICACHE_LIMITED:
-      return generate_icache_kernel(get_start_pc(), get_start_uid());
-
+      generate_icache_kernel(get_start_pc(), get_start_uid());
+      break;
     case ILP_LIMITED_0_DEP_CHAIN:
     case ILP_LIMITED_1_DEP_CHAIN:
     case ILP_LIMITED_2_DEP_CHAIN:
     case ILP_LIMITED_4_DEP_CHAIN:
-      return generate_ilp_kernel(num_of_dependence_chains, workload_length, get_start_pc(), get_start_uid());
-
+      generate_ilp_kernel(num_of_dependence_chains, workload_length, get_start_pc(), get_start_uid());
+      break;
     default:
       assert(0 && "Invalid kernel");
   }
@@ -237,6 +238,6 @@ Kernel_Factory::Kernel_Factory(Kernel_Enum kernel, uns64 start_pc, uns64 start_u
       assert(0 && "kernel is invalid");
       break;
   }
-
-  kernel_map = generate_kernel_map(level, num_of_dependence_chains);
+  // generate kernel
+  generate_kernel(level, num_of_dependence_chains);
 }

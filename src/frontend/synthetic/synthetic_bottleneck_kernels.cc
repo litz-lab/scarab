@@ -20,8 +20,7 @@
 /* Helper Functions For Microkernels */
 
 // Function to generate leading nops for CF workloads
-uns64 Kernel_Factory::generate_nop_sequence(std::map<uns64, ctype_pin_inst>& kernel_map, Sampler& uid_sequence,
-                                            uns num_of_nops, uns64 starting_pc) {
+uns64 Kernel_Factory::generate_nop_sequence(Sampler& uid_sequence, uns num_of_nops, uns64 starting_pc) {
   Sampler nop_pcs(UNIFORM_SEQUENTIAL, 1, ISSUE_WIDTH, starting_pc, NOP_SIZE);
   for (uns i{0}; i < num_of_nops; i++) {
     auto current_pc{nop_pcs.get_next_element()};
@@ -32,9 +31,10 @@ uns64 Kernel_Factory::generate_nop_sequence(std::map<uns64, ctype_pin_inst>& ker
 
 /*  Microkernel Definitions */
 // CBR
-std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_cbr_kernel(
-    Sequence_Pick_Strategy branch_direction_pick_strategy, Sequence_Pick_Strategy branch_target_pick_strategy,
-    uns64 target_pool_size, double branch_t_nt_ratio, uns64 workload_length, uns64 start_pc, uns64 start_uid) {
+void Kernel_Factory::generate_cbr_kernel(Sequence_Pick_Strategy branch_direction_pick_strategy,
+                                         Sequence_Pick_Strategy branch_target_pick_strategy, uns64 target_pool_size,
+                                         double branch_t_nt_ratio, uns64 workload_length, uns64 start_pc,
+                                         uns64 start_uid) {
   Sampler uid_sequence(UNIFORM_SEQUENTIAL, 1, ((2 * target_pool_size) + PAD_LENGTH), start_uid, 1);
 
   // distribution for every possibe pc; onpath+offpath
@@ -53,14 +53,13 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_cbr_kernel(
   Sampler direction_sequence(branch_direction_pick_strategy, 1, {0, 1}, ((2 * target_pool_size) + PAD_LENGTH),
                              {taken_ratio, not_Taken_ratio});
 
-  std::map<uns64, ctype_pin_inst> kernel_map;
   uns64 current_pc{start_pc}, _target{0};
   ctype_pin_inst next_inst;
 
   // Generate insts for every possible pc, includes possible offpath insts
   for (uns i{0}; i < (2 * target_pool_size + PAD_LENGTH); i++) {
     // generate leading nops and return next pc
-    current_pc = generate_nop_sequence(kernel_map, uid_sequence, ISSUE_WIDTH - 1, current_pc);
+    current_pc = generate_nop_sequence(uid_sequence, ISSUE_WIDTH - 1, current_pc);
     auto current_uid = uid_sequence.get_next_element();
 
     // every taken-target is 2 cachelines away.
@@ -77,15 +76,12 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_cbr_kernel(
     // set up for next pc
     current_pc = combined_targets_pool.get_next_element();
   }
-
-  return kernel_map;
 }
 
 // UBR
-std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ubr_kernel(Sequence_Pick_Strategy branch_target_pick_strategy,
-                                                                    uns64 target_pool_size, uns64 workload_length,
-                                                                    uns64 start_pc, uns64 start_uid,
-                                                                    uns64 starting_target, uns64 target_stride) {
+void Kernel_Factory::generate_ubr_kernel(Sequence_Pick_Strategy branch_target_pick_strategy, uns64 target_pool_size,
+                                         uns64 workload_length, uns64 start_pc, uns64 start_uid, uns64 starting_target,
+                                         uns64 target_stride) {
   assert(target_pool_size <= workload_length && "workload_length must be less than or equal to target_pool size ");
 
   Sampler uid_sequence(UNIFORM_SEQUENTIAL, 1, ((2 * target_pool_size) + PAD_LENGTH), start_uid, 1);
@@ -95,13 +91,12 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ubr_kernel(Sequence_Pic
 
   Sampler targets_pool(branch_target_pick_strategy, 1, target_pool_size, starting_target, target_stride);
 
-  std::map<uns64, ctype_pin_inst> kernel_map;
   ctype_pin_inst next_inst;
 
   uns64 current_pc{start_pc}, current_uid{0};
   for (uns i{0}; i < ((2 * target_pool_size) + PAD_LENGTH); i++) {
     // generate leading nops
-    current_pc = generate_nop_sequence(kernel_map, uid_sequence, ISSUE_WIDTH - 1, current_pc);
+    current_pc = generate_nop_sequence(uid_sequence, ISSUE_WIDTH - 1, current_pc);
     current_uid = uid_sequence.get_next_element();
 
     // every taken target is 2 cachelines away
@@ -116,14 +111,11 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ubr_kernel(Sequence_Pic
     // setup for next possibe pc
     current_pc = combined_target_pool.get_next_element();
   }
-  return kernel_map;
 }
 
 // IBR
-std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ibr_kernel(Sequence_Pick_Strategy branch_target_pick_strategy,
-                                                                    uns64 target_pool_size, uns64 start_pc,
-                                                                    uns64 start_uid, uns64 target_stride,
-                                                                    uns64 starting_target) {
+void Kernel_Factory::generate_ibr_kernel(Sequence_Pick_Strategy branch_target_pick_strategy, uns64 target_pool_size,
+                                         uns64 start_pc, uns64 start_uid, uns64 target_stride, uns64 starting_target) {
   Sampler uid_sequence(UNIFORM_SEQUENTIAL, 1, (2 * target_pool_size + PAD_LENGTH), start_uid, 1);
 
   Sampler targets_pool(branch_target_pick_strategy, 1, target_pool_size, starting_target, target_stride);
@@ -133,13 +125,13 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ibr_kernel(Sequence_Pic
   static std::default_random_engine rnd_engine(12345);
   static std::uniform_int_distribution<uns64> uns64_dist{1, 0x00007fffffffffff};
   static uns64 memaddress = uns64_dist(rnd_engine);
-  std::map<uns64, ctype_pin_inst> kernel_map;
+
   ctype_pin_inst next_inst;
   uns64 current_pc{start_pc}, current_uid{0};
 
   for (uns i{0}; i < (2 * target_pool_size) + PAD_LENGTH; i++) {
     // generate leading nops
-    current_pc = generate_nop_sequence(kernel_map, uid_sequence, ISSUE_WIDTH - 1, current_pc);
+    current_pc = generate_nop_sequence(uid_sequence, ISSUE_WIDTH - 1, current_pc);
     current_uid = uid_sequence.get_next_element();
 
     // the target of every branch is 2 cachelines away, for Round Robin
@@ -158,13 +150,11 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ibr_kernel(Sequence_Pic
     // setup for next possibe pc
     current_pc = combined_target_pool.get_next_element();
   }
-
-  return kernel_map;
 }
 
 // ILP
-std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ilp_kernel(uns dependence_chain_length, uns workload_length,
-                                                                    uns64 start_pc, uns64 start_uid) {
+void Kernel_Factory::generate_ilp_kernel(uns dependence_chain_length, uns workload_length, uns64 start_pc,
+                                         uns64 start_uid) {
   /* Using 3x pad length because the dummy offpath insts after the workload have the same dependence chain structure
      as the on-path insts.
   */
@@ -174,7 +164,6 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ilp_kernel(uns dependen
   if (dependence_chain_length != 0)
     assert((workload_length % dependence_chain_length) == 0 &&
            "workload_length must be a multiple of dependence chain length");
-  std::map<uns64, ctype_pin_inst> kernel_map;
 
   // zero dependence chain length means no carried loop dependence
   if (dependence_chain_length == 0) {
@@ -206,16 +195,13 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ilp_kernel(uns dependen
       }
     }
   }
-
-  return kernel_map;
 }
 
 // LOAD
-std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_load_kernel(Load_Kernel_Type type, uns workload_length,
-                                                                     Sequence_Pick_Strategy mem_address_pick_srategy,
-                                                                     uns64 start_mem_address,
-                                                                     uns64 mem_addresses_stride, Limit_Load_To level,
-                                                                     uns64 start_pc, uns64 start_uid) {
+void Kernel_Factory::generate_load_kernel(Load_Kernel_Type type, uns workload_length,
+                                          Sequence_Pick_Strategy mem_address_pick_srategy, uns64 start_mem_address,
+                                          uns64 mem_addresses_stride, Limit_Load_To level, uns64 start_pc,
+                                          uns64 start_uid) {
   // stride should be enough to cause hits at a level but misses in the precceding levels if any
   uns64 stride = [&]() -> uns64 {
     switch (level) {
@@ -266,8 +252,6 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_load_kernel(Load_Kernel
 
   Sampler pc_sequence(UNIFORM_SEQUENTIAL, 1, (workload_length + PAD_LENGTH), start_pc, LOAD_INST_SIZE);
 
-  std::map<uns64, ctype_pin_inst> kernel_map;
-
   for (uns i{0}; i < (workload_length + PAD_LENGTH); i++) {
     auto current_pc{pc_sequence.get_next_element()};
 
@@ -295,17 +279,16 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_load_kernel(Load_Kernel
         break;
     }
   }
-  return kernel_map;
 }
 
 // ICACHE
-std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_icache_kernel(uns64 start_pc, uns64 start_uid) {
+void Kernel_Factory::generate_icache_kernel(uns64 start_pc, uns64 start_uid) {
   // generate 2*ICACHE_DEPTH worth of instructions, so entries are always replaced
   uns64 workload_length = 2 * (ICACHE_SIZE / ICACHE_LINE_SIZE);
   Sampler pc_sequence(UNIFORM_SEQUENTIAL, 1, (workload_length + PAD_LENGTH), start_pc, ICACHE_LINE_SIZE);
 
   Sampler uid_sequence(UNIFORM_SEQUENTIAL, 1, (workload_length + PAD_LENGTH), start_uid, 1);
-  std::map<uns64, ctype_pin_inst> kernel_map;
+
   for (uns64 i{0}; i < workload_length + PAD_LENGTH; i++) {
     auto current_pc{pc_sequence.get_next_element()};
     if (i == workload_length) {
@@ -317,6 +300,4 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_icache_kernel(uns64 sta
     kernel_map.insert(
         {current_pc, generate_alu_type_inst(current_pc, uid_sequence.get_next_element(), ICACHE_LINE_SIZE, 1, 2, 3)});
   }
-
-  return kernel_map;
 }

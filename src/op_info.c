@@ -123,7 +123,10 @@ uns op_sources_add(Op* op, Dep_Type type, Op* src_op, Counter src_op_num, Counte
   info->op_num = src_op_num;
   info->unique_num = src_unique_num;
 
-  op_sources_set_not_rdy(op, src_num);
+  /* Load value/address prediction: a producer resolved early at fetch lets its
+   * consumers wake immediately, so do not mark this source not-ready. */
+  if (!src_op->load_value_predicted)
+    op_sources_set_not_rdy(op, src_num);
 
   if (type == MEM_DATA_DEP) {
     ASSERT(op->proc_id,

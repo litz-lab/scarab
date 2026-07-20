@@ -984,6 +984,10 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       op->bp_pred_l0.pred_global_hist = g_bp_data->global_hist;
       op->bp_pred_main.pred_global_hist = g_bp_data->global_hist;
     }
+
+    if (op->load_value_flush) {
+      ic->off_path = ic->off_path || op->bp_pred_info->recover_at_exec;
+    }
   }
 }
 

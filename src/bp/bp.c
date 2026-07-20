@@ -1009,6 +1009,12 @@ void bp_retire_op(Bp_Data* bp_data, Op* op) {
 void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   STAT_EVENT(0, PERFORMED_RECOVERIES);
   INC_STAT_EVENT(0, PERFORMED_RECOVERY_LAT, cycle_count - info->predict_cycle);
+
+  /* A load value/addr flush rides the recovery path as a non-CF op: it must not
+   * touch branch-predictor state (global/target history, CRS, etc.). */
+  if (!cf_type)
+    return;
+
   /* always recover the global history */
   if (cf_type == CF_CBR || cf_type == CF_REP) {
     bp_data->global_hist = (info->pred_global_hist >> 1) | (info->new_dir << 31);

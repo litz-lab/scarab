@@ -45,6 +45,7 @@ extern "C" {
 #include "isa/isa_macros.h"
 
 #include "decoupled_frontend.h"
+#include "load_value_pred.h"
 #include "op_pool.h"
 #include "uop_cache.h"
 
@@ -395,6 +396,21 @@ FT_PredictResult FT::predict_ft() {
 
     if (event == FT_EVENT_FETCH_BARRIER) {
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
+    }
+
+    // Load value prediction (main BP pass, once per op). Predicts loads; the
+    // per-core latch inside marks the macro's EOM op for a squash on a wrong
+    // prediction, at which point we redirect the frontend to the fall-through.
+    if (bp_id == MAIN_BP) {
+      load_value_predictor_predict_op(op);
+      if (op->load_value_flush) {
+        if (op->off_path) {
+          op->bp_pred_main.recover_at_exec = FALSE;
+          op->bp_pred_l0.recover_at_exec = FALSE;
+        } else if (event == FT_EVENT_NONE && op->bp_pred_main.recover_at_exec) {
+          event = FT_EVENT_MISPREDICT;
+        }
+      }
     }
 
     if (event != FT_EVENT_NONE) {

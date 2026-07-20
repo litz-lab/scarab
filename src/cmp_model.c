@@ -128,7 +128,7 @@ void cmp_init(uns mode) {
     init_exec_stage(proc_id, "EXEC");
     init_exec_ports(proc_id, "EXEC_PORTS");
     init_dcache_stage(proc_id, "DCACHE");
-    init_load_value_predictor(proc_id, "LOAD_VALUE_PRED");
+    init_load_predictors(proc_id, "LOAD_PRED");
 
     /* initialize the common data structures */
     // Only one recovery info for all the BPs
@@ -397,7 +397,7 @@ void cmp_recover() {
   recover_exec_stage();
   recover_dcache_stage();
   recover_memory();
-  recover_load_value_predictor();
+  recover_load_predictors();
   recover_node_stage();
 }
 

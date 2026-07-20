@@ -22,9 +22,29 @@
 
 /***************************************************************************************
  * File         : load_value_pred.h
- * Author       : Yinyuan Zhao
+ * Author       : Yinyuan Zhao, Litz Lab
  * Date         : 10/2025
- * Description  :
+ * Description  : Generalized speculative load-*result* predictor framework.
+ *
+ *   Two independent predictor *categories* are supported and may be enabled at
+ *   the same time (one active scheme per category, per core):
+ *
+ *     1. LOAD_PRED_CAT_VALUE - predicts the loaded value so consumers can execute
+ *                              before the load resolves (reads the architectural
+ *                              result via op->dst_val, see the .cc).
+ *     2. LOAD_PRED_CAT_ADDR  - predicts the load's effective address so the access
+ *                              can resolve ahead of address generation.
+ *
+ *   A memory-dependence (store-to-load forwarding/bypass) category is planned as
+ *   a future addition; it will slot in as a third category here (ideally hooking
+ *   at fetch so it can reuse this same LoadPredictor interface and EOM handling).
+ *
+ *   Mechanism vs. policy: the pipeline *mechanism* lives on the op
+ *   (op->load_value_predicted lets consumers wake early; op->load_value_flush
+ *   drives a squash through the branch-recovery path; op->load_value_mispredicted
+ *   flags a wrong prediction so the FT builder can target the macro's EOM op).
+ *   The *policy* - which predictor, how it trains, when it speculates - lives
+ *   entirely in this module.
  ***************************************************************************************/
 
 #ifndef __LOAD_VALUE_PRED_H__
@@ -37,28 +57,64 @@ extern "C" {
 #include "op.h"
 
 /**************************************************************************************/
-/* Constexpr */
+/* Predictor categories */
 
-typedef enum LOAD_VALUE_PRED_SCHEME_enum {
+typedef enum Load_Pred_Category_enum {
+  LOAD_PRED_CAT_VALUE,  // predicts the loaded value
+  LOAD_PRED_CAT_ADDR,   // predicts the load's effective address
+  LOAD_PRED_CAT_NUM
+} Load_Pred_Category;
+
+/**************************************************************************************/
+/* Per-category schemes.  Scheme 0 is always "none" (category disabled). */
+
+/* Value predictors (selected by LOAD_VALUE_PRED_SCHEME). */
+typedef enum Load_Value_Pred_Scheme_enum {
   LOAD_VALUE_PRED_SCHEME_NONE,
-  LOAD_VALUE_PRED_SCHEME_CONST_ADDR_PRED,
+  LOAD_VALUE_PRED_SCHEME_LAST_VALUE,  // last-value predictor (scaffold; see .cc)
   LOAD_VALUE_PRED_SCHEME_NUM
 } Load_Value_Pred_Scheme;
 
-/**************************************************************************************/
-/* External Methods */
-
-void alloc_mem_load_value_predictor(uns num_cores);
-void set_load_value_predictor(uns8 proc_id);
-void init_load_value_predictor(uns8 proc_id, const char* name);
-void recover_load_value_predictor();
-
-void load_value_predictor_predict_op(Op* op);
+/* Address predictors (selected by LOAD_ADDR_PRED_SCHEME). */
+typedef enum Load_Addr_Pred_Scheme_enum {
+  LOAD_ADDR_PRED_SCHEME_NONE,
+  LOAD_ADDR_PRED_SCHEME_CONST,   // constant-address predictor
+  LOAD_ADDR_PRED_SCHEME_STRIDE,  // stride-address predictor
+  LOAD_ADDR_PRED_SCHEME_NUM
+} Load_Addr_Pred_Scheme;
 
 /**************************************************************************************/
+/* Lifecycle (per-core).  C linkage: called from the C cmp_model files. */
+
+void alloc_mem_load_predictors(uns num_cores);
+void set_load_predictors(uns8 proc_id);
+void init_load_predictors(uns8 proc_id, const char* name);
+void recover_load_predictors(void);
 
 #ifdef __cplusplus
 }
+#endif
+
+/**************************************************************************************/
+/* Pipeline hooks (C++ only: called from ft.cc, which owns the FT op vector). */
+
+#ifdef __cplusplus
+
+/*
+ * Fetch-time hook.  Runs the value and address predictors on a load: predicts,
+ * applies the early-resolve effect, and trains.  On a wrong prediction it sets
+ * op->load_value_mispredicted; the FT builder (which can see the whole macro)
+ * then stamps the squash recovery on the macro's EOM op via the call below.
+ */
+void load_pred_predict_op(Op* op);
+
+/*
+ * Stamp the squash-and-resteer recovery onto a macro's end-of-macro op so a
+ * mispredicted load re-issues without skipping sibling uops.  Reuses the
+ * branch-recovery path (non-CF, fall-through resteer).
+ */
+void load_pred_schedule_squash(Op* eom_op);
+
 #endif
 
 #endif /* #ifndef __LOAD_VALUE_PRED_H__ */

@@ -22,9 +22,19 @@
 
 /***************************************************************************************
  * File         : load_value_pred.cc
- * Author       : Yinyuan Zhao
+ * Author       : Yinyuan Zhao, Litz Lab
  * Date         : 10/2025
- * Description  : Load Address Predictor
+ * Description  : Generalized speculative load-result predictor framework.
+ *
+ *   See load_value_pred.h for the category model.  This file provides:
+ *     - a shared squash/recovery helper (load_pred_schedule_squash)
+ *     - LoadPredictor       : fetch-time interface for value & address predictors
+ *     - concrete predictors : last-value (scaffold), constant/stride address
+ *     - a per-core registry holding one active scheme per category
+ *
+ *   The recovery has no cross-op global state: a wrong prediction is recorded on
+ *   the op (load_value_mispredicted) and the FT builder walks the macro's uops to
+ *   stamp the squash on the EOM (see FT::predict_ft in ft.cc).
  ***************************************************************************************/
 
 #include "load_value_pred.h"
@@ -43,65 +53,45 @@ extern "C" {
 #include "memory/memory.h"
 
 #include "statistics.h"
-#include "xed-interface.h"
 }
 
 #include <unordered_map>
 #include <vector>
 
 /**************************************************************************************/
-/* Global Values */
+/* Shared pipeline effect / recovery helpers */
 
 /*
- * When a load is mispredicted, the ending op of its corresponding macro-instruction
- * is marked as the recovery op.
- * This flag is to records the last mispredicted load operation to associate it with
- * its end-of-macro (EOM) op.
+ * Read the load's architectural result (the loaded value).  Ops carry their
+ * destination register values in op->dst_val[], populated at uop generation, so
+ * this is available by the time predict_ft runs.  A load writes a single
+ * destination; dst_val[0] holds the loaded value.  Returns FALSE for the (rare)
+ * load form with no destination register, in which case the value predictor
+ * simply does not speculate.
  */
-Flag* per_core_load_value_mispredict;
-
-/**************************************************************************************/
-/* Static Methods */
-
-static inline void load_value_predictor_debug_print_op(Op* op, int state) {
-  ASSERT(op->proc_id, op != NULL);
-
-  Inst_Info* inst_info = op->inst_info;
-  Table_Info* table_info = &inst_info->table_info;
-  uns16 op_code = inst_info->table_info.true_op_type;
-  const char* op_str = xed_iclass_enum_t2str((xed_iclass_enum_t)op_code);
-
-  printf("--- %d ---\n", state);
-  printf("[OP: %lld]\n", op->op_num);
-  printf(" - pc: 0x%llx, opcode: 0x%x(%s)\n", inst_info->addr, op_code, op_str);
-  printf(" - off_path: %d, cf: %d, mem: %d\n", op->off_path, table_info->cf_type, table_info->mem_type);
-  printf(" - bom: %d, eom: %d\n", op->bom, op->eom);
-  printf(" - predicted: %d, recover: %d\n", op->load_value_predicted, op->bp_pred_main.recover_at_exec);
-
-  printf(" - src#%d: <", inst_info->table_info.num_src_regs);
-  for (uns ii = 0; ii < inst_info->table_info.num_src_regs; ii++)
-    printf("%d, ", inst_info->srcs[ii].id);
-  printf(">, dest#%d: <", inst_info->table_info.num_dest_regs);
-  for (uns ii = 0; ii < inst_info->table_info.num_dest_regs; ii++)
-    printf("%d, ", inst_info->dests[ii].id);
-  printf(">\n");
+static inline Flag load_pred_read_dest_value(Op* op, uns64* value) {
+  if (op->inst_info->table_info.num_dest_regs < 1)
+    return FALSE;
+  *value = op->dst_val[0];
+  return TRUE;
 }
 
-static inline void load_value_predictor_sched_recovery(Op* op) {
-  if (!op->eom || !per_core_load_value_mispredict[op->proc_id])
-    return;
-
-  per_core_load_value_mispredict[op->proc_id] = FALSE;
+/*
+ * Route a squash through the existing branch-recovery path so a mispredicted
+ * load re-issues.  The op is set up as a non-CF, on-path recovery at exec:
+ * exec_stage_bp_resolve() sees bp_pred_info->recover_at_exec and calls
+ * bp_sched_recovery(), which resteers to op->oracle_info.npc (the true
+ * fall-through) - i.e. re-fetch the same correct path with the load resolved.
+ * recovery_info.cf_type = NOT_CF suppresses branch-predictor state recovery in
+ * bp_recover_op().  Must be called on the macro's EOM op (bp_sched_recovery
+ * squashes ops younger than it), so sibling uops are not skipped on the resteer.
+ */
+void load_pred_schedule_squash(Op* op) {
   op->load_value_flush = TRUE;
 
-  const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
-  op->oracle_info.dir = NOT_TAKEN;
-
-  // Branch-prediction/recovery state moved to bp_pred_info on modern main; set
-  // both levels so the exec-stage recovery check fires regardless of selection.
+  // On-path non-CF ops select bp_pred_main during predict_ft; set both levels so
+  // the exec-stage recovery check fires regardless of which is selected.
   for (Bp_Pred_Info* bp : {&op->bp_pred_main, &op->bp_pred_l0}) {
-    bp->pred = NOT_TAKEN;
-    bp->pred_npc = pc_plus_offset;
     bp->recover_at_fe = FALSE;
     bp->recover_at_decode = FALSE;
     bp->recover_at_exec = TRUE;
@@ -109,36 +99,41 @@ static inline void load_value_predictor_sched_recovery(Op* op) {
 
   op->recovery_info.proc_id = op->proc_id;
   op->recovery_info.op = op;
-  op->recovery_info.new_dir = op->oracle_info.dir;
   op->recovery_info.op_num = op->op_num;
   op->recovery_info.PC = op->inst_info->addr;
   op->recovery_info.cf_type = NOT_CF;
   op->recovery_info.oracle_dir = op->oracle_info.dir;
+  op->recovery_info.new_dir = op->oracle_info.dir;
   op->recovery_info.branchTarget = op->oracle_info.target;
   op->recovery_info.predict_cycle = cycle_count;
 }
 
-static inline void load_value_predictor_process_predict_op(Op* op, Flag is_mispred) {
+/*
+ * Early-resolve effect used by the value and address categories: the load's
+ * result is treated as available at fetch so consumers may wake early (honored
+ * in map.c).  A wrong prediction is recorded on the op; ft.cc stamps the squash
+ * on this macro's EOM op (it owns the FT vector and can look forward to the EOM),
+ * so no cross-op global latch is needed.
+ */
+static inline void load_pred_apply_early_resolve(Op* op, Flag is_mispred) {
   ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
 
-  // set the metadata to indicate bypassing
   op->load_value_predicted = TRUE;
   op->decode_cycle = cycle_count;
   op->exec_cycle = cycle_count;
 
   if (is_mispred) {
-    per_core_load_value_mispredict[op->proc_id] = TRUE;
+    op->load_value_mispredicted = TRUE;
     if (!op->off_path) {
       STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH_MISPREDICTED);
     }
   }
 }
 
-static void load_value_predictor_collect_stat(Op* op) {
+static void load_pred_collect_predict_stat(Op* op) {
   ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
-  if (op->off_path) {
+  if (op->off_path)
     return;
-  }
 
   STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH);
   if (op->load_value_predicted) {
@@ -147,11 +142,12 @@ static void load_value_predictor_collect_stat(Op* op) {
 }
 
 /**************************************************************************************/
-/* Definition */
+/* Predictor interface */
 
-// Internal linkage: these generic type names collide with identically-named
-// types in other translation units (e.g. bp/cbp_tagescl_64k.h's PredictorEntry).
-// An anonymous namespace keeps them TU-local, avoiding ODR violations.
+// Internal linkage: these type names (PredictorEntry, LoadPredictor, ...) are
+// generic and collide with identically-named types in other translation units
+// (e.g. bp/cbp_tagescl_64k.h). An anonymous namespace keeps them TU-local and
+// avoids C++ One-Definition-Rule violations.
 namespace {
 
 class PredictorEntry {
@@ -160,9 +156,10 @@ class PredictorEntry {
   virtual bool is_found() const = 0;
 };
 
-class LoadValuePredictor {
+/* Fetch-time predictors that resolve a load early (value & address categories). */
+class LoadPredictor {
  public:
-  virtual ~LoadValuePredictor() = default;
+  virtual ~LoadPredictor() = default;
   virtual void init(uns8 proc_id) = 0;
   virtual void recover() = 0;
 
@@ -171,25 +168,107 @@ class LoadValuePredictor {
   virtual void infer(Op* op, PredictorEntry* entry) = 0;
 };
 
-/**************************************************************************************/
-/* Load Value Predictor None */
-
-class NoneLoadValuePredictor : public LoadValuePredictor {
+/* None predictor (category disabled). */
+class NoneLoadPredictor : public LoadPredictor {
  public:
   void init(uns8 proc_id) override { return; }
   void recover() override { return; }
-
   PredictorEntry* lookup(Op* op) override { return nullptr; }
   void train(Op* op, PredictorEntry* entry) override { return; }
   void infer(Op* op, PredictorEntry* entry) override { return; }
 };
 
 /**************************************************************************************/
-/*
- * Constant Load Address Predictor
- *    The constant load address predictor accelerates critical instruction chains by
- *    resolving loads with a constant address early. In particular, it trains loads
- *    that frequently utilize the same address and executes them at fetch.
+/* Value Predictor: Last Value
+ *
+ *   Predicts that a load produces the same value it produced last time.  Reads
+ *   the load's architectural result via load_pred_read_dest_value() (op->dst_val)
+ *   to both train and verify; once confidence exceeds the threshold it resolves
+ *   the load early so consumers can wake before it executes.
+ */
+
+struct LastValuePredEntry : public PredictorEntry {
+  uns64 last_value;
+  uns confidence;
+  bool found;
+
+  LastValuePredEntry() : last_value(0), confidence(0), found(false) {}
+  explicit LastValuePredEntry(uns64 value) : last_value(value), confidence(0), found(true) {}
+
+  bool is_found() const override { return found; }
+};
+
+class LastValuePredictor : public LoadPredictor {
+ private:
+  uns8 proc_id;
+  std::unordered_map<Addr, LastValuePredEntry> prediction_table;
+
+ public:
+  void init(uns8 proc_id) override {
+    this->proc_id = proc_id;
+    prediction_table.clear();
+  }
+  void recover() override { return; }
+
+  PredictorEntry* lookup(Op* op) override {
+    ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
+    auto it = prediction_table.find(op->inst_info->addr);
+    if (it != prediction_table.end()) {
+      it->second.found = true;
+      return &(it->second);
+    }
+    static LastValuePredEntry not_found_entry;
+    not_found_entry.found = false;
+    return &not_found_entry;
+  }
+
+  void infer(Op* op, PredictorEntry* entry) override {
+    ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
+    auto* pred_entry = static_cast<LastValuePredEntry*>(entry);
+    if (!pred_entry->is_found())
+      return;
+    if (pred_entry->confidence <= LOAD_VALUE_PRED_THRESHOLD)
+      return;
+
+    // SEAM: requires the load's true destination value to verify the prediction.
+    uns64 actual_value = 0;
+    if (!load_pred_read_dest_value(op, &actual_value))
+      return;  // values unavailable -> never speculate (sound no-op today)
+
+    Flag is_mispred = (pred_entry->last_value != actual_value);
+    load_pred_apply_early_resolve(op, is_mispred);
+  }
+
+  void train(Op* op, PredictorEntry* entry) override {
+    ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
+    if (op->off_path)
+      return;
+
+    // SEAM: requires the load's true destination value to update the table.
+    uns64 actual_value = 0;
+    if (!load_pred_read_dest_value(op, &actual_value))
+      return;
+
+    auto* pred_entry = static_cast<LastValuePredEntry*>(entry);
+    if (!pred_entry->is_found()) {
+      prediction_table[op->inst_info->addr] = LastValuePredEntry(actual_value);
+      return;
+    }
+    if (pred_entry->last_value == actual_value) {
+      pred_entry->confidence++;
+    } else {
+      pred_entry->last_value = actual_value;
+      pred_entry->confidence = 0;
+    }
+  }
+};
+
+/**************************************************************************************/
+/* Address Predictor: Constant
+ *
+ *   Accelerates critical instruction chains by resolving loads whose effective
+ *   address is constant.  Trains loads that repeatedly use the same address and,
+ *   once confident and the line is present in the L1, resolves them at fetch.
  */
 
 struct ConstantLoadAddrPredEntry : public PredictorEntry {
@@ -198,152 +277,249 @@ struct ConstantLoadAddrPredEntry : public PredictorEntry {
   bool found;
 
   ConstantLoadAddrPredEntry() : oracle_address(0), confidence(0), found(false) {}
-  ConstantLoadAddrPredEntry(Addr addr) : oracle_address(addr), confidence(0), found(true) {}
+  explicit ConstantLoadAddrPredEntry(Addr addr) : oracle_address(addr), confidence(0), found(true) {}
 
   bool is_found() const override { return found; }
 };
 
-class ConstantLoadAddrPredictor : public LoadValuePredictor {
+class ConstantLoadAddrPredictor : public LoadPredictor {
  private:
   uns8 proc_id;
   std::unordered_map<Addr, ConstantLoadAddrPredEntry> prediction_table;
 
  public:
-  void init(uns8 proc_id) override;
-  void recover() override;
+  void init(uns8 proc_id) override {
+    this->proc_id = proc_id;
+    prediction_table.clear();
+  }
+  void recover() override { return; }
 
-  PredictorEntry* lookup(Op* op) override;
-  void train(Op* op, PredictorEntry* entry) override;
-  void infer(Op* op, PredictorEntry* entry) override;
+  PredictorEntry* lookup(Op* op) override {
+    ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
+    auto it = prediction_table.find(op->inst_info->addr);
+    if (it != prediction_table.end()) {
+      it->second.found = true;
+      return &(it->second);
+    }
+    static ConstantLoadAddrPredEntry not_found_entry;
+    not_found_entry.found = false;
+    return &not_found_entry;
+  }
+
+  void train(Op* op, PredictorEntry* entry) override {
+    ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
+    if (op->off_path)
+      return;
+
+    Addr pc = op->inst_info->addr;
+    Addr va = op->oracle_info.va;
+
+    auto* pred_entry = static_cast<ConstantLoadAddrPredEntry*>(entry);
+    if (!pred_entry->is_found()) {
+      prediction_table[pc] = ConstantLoadAddrPredEntry(va);
+      return;
+    }
+    if (pred_entry->oracle_address == va) {
+      pred_entry->confidence++;
+    } else {
+      pred_entry->oracle_address = va;
+      pred_entry->confidence = 0;
+    }
+  }
+
+  void infer(Op* op, PredictorEntry* entry) override {
+    ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
+    auto* pred_entry = static_cast<ConstantLoadAddrPredEntry*>(entry);
+    if (!pred_entry->is_found())
+      return;
+    if (pred_entry->confidence <= CONST_LOAD_ADDR_PRED_THRESHOLD)
+      return;
+
+    Addr pred_addr = pred_entry->oracle_address;
+    L1_Data* l1_data = do_l1_access_addr(pred_addr);
+    if (!l1_data)
+      return;
+
+    Flag is_mispred = (pred_addr != op->oracle_info.va);
+    load_pred_apply_early_resolve(op, is_mispred);
+  }
 };
 
-void ConstantLoadAddrPredictor::init(uns8 proc_id) {
-  this->proc_id = proc_id;
-  prediction_table.clear();
+/**************************************************************************************/
+/* Address Predictor: Stride
+ *
+ *   Predicts addr = last_addr + stride for loads that walk memory with a stable
+ *   stride.  Confidence is gained when the observed stride repeats and reset when
+ *   it changes.  Like the constant predictor, it only resolves early when the
+ *   predicted line is present in the L1.
+ */
+
+struct StrideLoadAddrPredEntry : public PredictorEntry {
+  Addr last_address;
+  int64 stride;
+  uns confidence;
+  bool found;
+
+  StrideLoadAddrPredEntry() : last_address(0), stride(0), confidence(0), found(false) {}
+  explicit StrideLoadAddrPredEntry(Addr addr) : last_address(addr), stride(0), confidence(0), found(true) {}
+
+  bool is_found() const override { return found; }
+};
+
+class StrideLoadAddrPredictor : public LoadPredictor {
+ private:
+  uns8 proc_id;
+  std::unordered_map<Addr, StrideLoadAddrPredEntry> prediction_table;
+
+ public:
+  void init(uns8 proc_id) override {
+    this->proc_id = proc_id;
+    prediction_table.clear();
+  }
+  void recover() override { return; }
+
+  PredictorEntry* lookup(Op* op) override {
+    ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
+    auto it = prediction_table.find(op->inst_info->addr);
+    if (it != prediction_table.end()) {
+      it->second.found = true;
+      return &(it->second);
+    }
+    static StrideLoadAddrPredEntry not_found_entry;
+    not_found_entry.found = false;
+    return &not_found_entry;
+  }
+
+  void train(Op* op, PredictorEntry* entry) override {
+    ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
+    if (op->off_path)
+      return;
+
+    Addr pc = op->inst_info->addr;
+    Addr va = op->oracle_info.va;
+
+    auto* pred_entry = static_cast<StrideLoadAddrPredEntry*>(entry);
+    if (!pred_entry->is_found()) {
+      prediction_table[pc] = StrideLoadAddrPredEntry(va);
+      return;
+    }
+
+    int64 observed_stride = (int64)va - (int64)pred_entry->last_address;
+    if (observed_stride == pred_entry->stride) {
+      pred_entry->confidence++;
+    } else {
+      pred_entry->stride = observed_stride;
+      pred_entry->confidence = 0;
+    }
+    pred_entry->last_address = va;
+  }
+
+  void infer(Op* op, PredictorEntry* entry) override {
+    ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
+    auto* pred_entry = static_cast<StrideLoadAddrPredEntry*>(entry);
+    if (!pred_entry->is_found())
+      return;
+    if (pred_entry->confidence <= LOAD_ADDR_PRED_STRIDE_THRESHOLD)
+      return;
+
+    Addr pred_addr = (Addr)((int64)pred_entry->last_address + pred_entry->stride);
+    L1_Data* l1_data = do_l1_access_addr(pred_addr);
+    if (!l1_data)
+      return;
+
+    Flag is_mispred = (pred_addr != op->oracle_info.va);
+    load_pred_apply_early_resolve(op, is_mispred);
+  }
+};
+
+/**************************************************************************************/
+/* Per-core registry: one active scheme per category */
+
+struct LoadPredictorSet {
+  LoadPredictor* value_pred;
+  LoadPredictor* addr_pred;
+};
+
+static std::vector<LoadPredictorSet> per_core_predictors;
+static LoadPredictorSet* active = nullptr;
+
+static LoadPredictor* make_value_predictor() {
+  switch (LOAD_VALUE_PRED_SCHEME) {
+    case LOAD_VALUE_PRED_SCHEME_NONE:
+      return new NoneLoadPredictor();
+    case LOAD_VALUE_PRED_SCHEME_LAST_VALUE:
+      return new LastValuePredictor();
+    default:
+      ASSERT(0, 0);
+      return new NoneLoadPredictor();
+  }
 }
 
-void ConstantLoadAddrPredictor::recover() {
-  return;
-}
-
-PredictorEntry* ConstantLoadAddrPredictor::lookup(Op* op) {
-  ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
-  Addr pc = op->inst_info->addr;
-
-  auto it = prediction_table.find(pc);
-  if (it != prediction_table.end()) {
-    it->second.found = true;
-    return &(it->second);
+static LoadPredictor* make_addr_predictor() {
+  switch (LOAD_ADDR_PRED_SCHEME) {
+    case LOAD_ADDR_PRED_SCHEME_NONE:
+      return new NoneLoadPredictor();
+    case LOAD_ADDR_PRED_SCHEME_CONST:
+      return new ConstantLoadAddrPredictor();
+    case LOAD_ADDR_PRED_SCHEME_STRIDE:
+      return new StrideLoadAddrPredictor();
+    default:
+      ASSERT(0, 0);
+      return new NoneLoadPredictor();
   }
-
-  // Return a new entry that represents "not found"
-  static ConstantLoadAddrPredEntry not_found_entry;
-  not_found_entry.found = false;
-  return &not_found_entry;
-}
-
-void ConstantLoadAddrPredictor::train(Op* op, PredictorEntry* entry) {
-  ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
-  if (op->off_path)
-    return;
-
-  Addr pc = op->inst_info->addr;
-  Addr va = op->oracle_info.va;
-
-  auto* pred_entry = static_cast<ConstantLoadAddrPredEntry*>(entry);
-  if (!pred_entry->is_found()) {
-    prediction_table[pc] = ConstantLoadAddrPredEntry(va);
-    return;
-  }
-
-  // Update confidence based on whether prediction matches actual address
-  if (pred_entry->oracle_address == va) {
-    pred_entry->confidence++;
-  } else {
-    pred_entry->oracle_address = va;
-    pred_entry->confidence = 0;
-  }
-}
-
-void ConstantLoadAddrPredictor::infer(Op* op, PredictorEntry* entry) {
-  ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
-
-  auto* pred_entry = static_cast<ConstantLoadAddrPredEntry*>(entry);
-  if (!pred_entry->is_found()) {
-    return;
-  }
-
-  // Only make prediction if confidence exceeds threshold
-  if (pred_entry->confidence <= CONST_LOAD_ADDR_PRED_THRESHOLD) {
-    return;
-  }
-
-  Addr pred_addr = pred_entry->oracle_address;
-  L1_Data* l1_data = do_l1_access_addr(pred_addr);
-  if (!l1_data) {
-    return;
-  }
-
-  Flag is_mispred = (pred_addr != op->oracle_info.va);
-  load_value_predictor_process_predict_op(op, is_mispred);
 }
 
 }  // anonymous namespace
 
 /**************************************************************************************/
-/* Global Values */
+/* Lifecycle */
 
-static std::vector<LoadValuePredictor*> per_core_load_value_pred;
-static LoadValuePredictor* predictor = nullptr;
-
-/**************************************************************************************/
-/* External Vanilla Model Func */
-
-void alloc_mem_load_value_predictor(uns num_cores) {
+void alloc_mem_load_predictors(uns num_cores) {
   ASSERT(0, LOAD_VALUE_PRED_SCHEME >= 0 && LOAD_VALUE_PRED_SCHEME < LOAD_VALUE_PRED_SCHEME_NUM);
-  per_core_load_value_mispredict = (Flag*)malloc(num_cores * sizeof(Flag));
+  ASSERT(0, LOAD_ADDR_PRED_SCHEME >= 0 && LOAD_ADDR_PRED_SCHEME < LOAD_ADDR_PRED_SCHEME_NUM);
 
   for (uns ii = 0; ii < num_cores; ii++) {
-    per_core_load_value_mispredict[ii] = FALSE;
-
-    switch (LOAD_VALUE_PRED_SCHEME) {
-      case LOAD_VALUE_PRED_SCHEME_NONE:
-        per_core_load_value_pred.push_back(new NoneLoadValuePredictor());
-        break;
-
-      case LOAD_VALUE_PRED_SCHEME_CONST_ADDR_PRED:
-        per_core_load_value_pred.push_back(new ConstantLoadAddrPredictor());
-        break;
-
-      default:
-        ASSERT(0, 0);
-        break;
-    }
+    LoadPredictorSet set;
+    set.value_pred = make_value_predictor();
+    set.addr_pred = make_addr_predictor();
+    per_core_predictors.push_back(set);
   }
 }
 
-void set_load_value_predictor(uns8 proc_id) {
-  predictor = per_core_load_value_pred[proc_id];
+void set_load_predictors(uns8 proc_id) {
+  active = &per_core_predictors[proc_id];
 }
 
-void init_load_value_predictor(uns8 proc_id, const char* name) {
-  predictor->init(proc_id);
+void init_load_predictors(uns8 proc_id, const char* name) {
+  active->value_pred->init(proc_id);
+  active->addr_pred->init(proc_id);
 }
 
-void recover_load_value_predictor() {
-  predictor->recover();
+void recover_load_predictors(void) {
+  active->value_pred->recover();
+  active->addr_pred->recover();
 }
 
 /**************************************************************************************/
-/* External Methods */
+/* Pipeline hook */
 
-void load_value_predictor_predict_op(Op* op) {
-  if (op->inst_info->table_info.mem_type == MEM_LD) {
-    PredictorEntry* entry = predictor->lookup(op);
-    predictor->infer(op, entry);
-    predictor->train(op, entry);
-    load_value_predictor_collect_stat(op);
+void load_pred_predict_op(Op* op) {
+  if (op->inst_info->table_info.mem_type != MEM_LD)
+    return;
+
+  // Value category (scaffold; inert until ops carry register values).
+  PredictorEntry* v_entry = active->value_pred->lookup(op);
+  if (v_entry) {
+    active->value_pred->infer(op, v_entry);
+    active->value_pred->train(op, v_entry);
   }
 
-  load_value_predictor_sched_recovery(op);
+  // Address category.
+  PredictorEntry* a_entry = active->addr_pred->lookup(op);
+  if (a_entry) {
+    active->addr_pred->infer(op, a_entry);
+    active->addr_pred->train(op, a_entry);
+  }
+
+  load_pred_collect_predict_stat(op);
 }

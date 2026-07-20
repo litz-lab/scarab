@@ -398,18 +398,23 @@ FT_PredictResult FT::predict_ft() {
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
     }
 
-    // Load value prediction (main BP pass, once per op). Predicts loads; the
-    // per-core latch inside marks the macro's EOM op for a squash on a wrong
-    // prediction, at which point we redirect the frontend to the fall-through.
-    if (bp_id == MAIN_BP) {
-      load_value_predictor_predict_op(op);
-      if (op->load_value_flush) {
-        if (op->off_path) {
-          op->bp_pred_main.recover_at_exec = FALSE;
-          op->bp_pred_l0.recover_at_exec = FALSE;
-        } else if (event == FT_EVENT_NONE && op->bp_pred_main.recover_at_exec) {
-          event = FT_EVENT_MISPREDICT;
-        }
+    // Load value/address prediction (main BP pass only, so it runs once per op).
+    // Predict/resolve a load early; on a wrong prediction, stamp the squash on
+    // this macro's EOM op. This is data (not control) speculation: the fetched
+    // path does not change, so we do NOT redirect the frontend here. The op is
+    // only marked recover_at_exec - the redirect/refetch happens after recovery
+    // fires at exec (bp_sched_recovery). Stamping the EOM (not a mid-macro uop)
+    // avoids skipping siblings; the EOM is guaranteed present (an FT ends on eom).
+    if (bp_id == MAIN_BP && !op->inst_info->table_info.cf_type) {
+      load_pred_predict_op(op);
+      if (op->load_value_mispredicted && !op->off_path) {
+        size_t eom_idx = idx;
+        while (eom_idx < ops.size() && !ops[eom_idx]->eom)
+          eom_idx++;
+        ASSERT(proc_id, eom_idx < ops.size());
+        // the EOM must belong to the same macro-instruction as the load
+        ASSERT(proc_id, ops[eom_idx]->inst_uid == op->inst_uid);
+        load_pred_schedule_squash(ops[eom_idx]);
       }
     }
 

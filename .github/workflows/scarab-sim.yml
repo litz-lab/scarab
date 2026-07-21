@@ -91,6 +91,9 @@ jobs:
           with open(src) as f:
               d = json.load(f)
           d["application_dir"] = os.environ["GITHUB_WORKSPACE"] + "/"
+          d["scarab_path"] = os.environ["GITHUB_WORKSPACE"] + "/"
+          d["root_dir"] = os.environ["GITHUB_WORKSPACE"] + "/"
+          d["traces_dir"] = os.environ["GITHUB_WORKSPACE"] + "/traces_top_simpoint"
           src.write_text(json.dumps(d, indent=2, separators=(',', ':')) + "\n")
           PY
         env:

@@ -368,6 +368,11 @@ uint32_t l1i_add_hist_table(uint64_t line_addr) {
 
 void l1i_add_bb_size_hist_table(uint64_t line_addr, uint32_t bb_size) {
   uint64_t index = l1i_find_hist_entry(line_addr);
+  // l1i_find_hist_entry returns L1I_HIST_TABLE_ENTRIES when line_addr is not
+  // in the 16-entry ring buffer. That happens when the time-overflow loop in
+  // l1i_add_hist_table filled the buffer with empty entries between the
+  // insertion of this BB and this annotation, evicting the entry we wanted
+  // to annotate. Nothing to update; skip without touching the buffer.
   if (index < L1I_HIST_TABLE_ENTRIES) {
     l1i_hist_table[eip_proc_id][index].bb_size = bb_size & L1I_MERGE_BBSIZE_MAX_VALUE;
   }

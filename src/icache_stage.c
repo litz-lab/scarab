@@ -291,6 +291,10 @@ void recover_icache_stage() {
     uop_cache_trim_lookup_buffer_to_n_ops(ft_op_buffer_count(ic));
   }
 
+  /* TC'24: squash wrong-path EIP entries on recovery */
+  if (EIP_ENABLE)
+    eip_recover(ic->proc_id, bp_recovery_info->recovery_op_num);
+
   // Do not signal resteer if a fetch barrier is still pending: the icache must
   // remain STALLED until icache_resolve_fetch_barrier() is called at ROB
   // retirement.  Setting the signal here would cause execute_coupled_FSM() to
@@ -405,7 +409,7 @@ Inst_Info** lookup_icache() {
 
 void prefetcher_update_on_icache_access(Flag icache_hit) {
   if (EIP_ENABLE)
-    eip_prefetch(ic->proc_id, ic->fetch_addr, icache_hit, 0, ic->off_path);
+    eip_prefetch(ic->proc_id, ic->fetch_addr, icache_hit, 0, ic->off_path, op_count[ic->proc_id]);
   if (DJOLT_ENABLE)
     djolt_prefetch(ic->proc_id, ic->fetch_addr, icache_hit, 0);
   if (FNLMMA_ENABLE)

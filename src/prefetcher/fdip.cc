@@ -19,6 +19,7 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <cstdint>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -133,12 +134,25 @@ class FDIP_Stat {
   unordered_map<Addr, vector<uns8>> useful_sequence;
   // <CL address, sequence of hit/miss>
   unordered_map<Addr, vector<uns8>> icache_sequence;
-  // <CL address, all sequence> char - P: prefetch, p: not prefetch, m: icache miss, h: icache hit, U: useful, u:
-  // unuseful (Counter - cycle count)
-  unordered_map<Addr, vector<pair<char, Counter>>> sequence_bw;
-  // <CL address, all sequence> char - P: prefetch, p: not prefetch, m: icache miss, h: icache hit, U: useful, u:
-  // unuseful (Counter - cycle count)
+  // Before warmup, consumers only need to know whether each event type occurred;
+  // a bitmask avoids retaining duplicate events, ordering, and cycle timestamps.
+  enum SequenceBwEvent : uint8_t {
+    BW_p = 1u << 0,
+    BW_P = 1u << 1,
+    BW_m = 1u << 2,
+    BW_h = 1u << 3,
+    BW_u = 1u << 4,
+    BW_U = 1u << 5,
+    BW_e = 1u << 6,
+  };
+  unordered_map<Addr, uint8_t> sequence_bw;
+
+  // sequence_aw stores the complete per-cache-line event history required by
+  // print_cl_info(), including event order, duplicates, and cycle timestamps.
+  // Only populate it when FDIP_PRINT_CL_INFO is enabled; otherwise this history
+  // is never consumed and retaining it causes unnecessary memory growth.
   unordered_map<Addr, vector<pair<char, Counter>>> sequence_aw;
+
   // <CL address, total miss delay>
   map<Addr, Counter> per_line_delay_aw;
   Counter cur_line_delay;
@@ -621,21 +635,10 @@ void FDIP_Stat::inc_cnt_unuseful(Addr line_addr) {
     else
       it->second++;
 
-    auto it2 = sequence_aw.find(line_addr);
-    if (it2 == sequence_aw.end()) {
-      sequence_aw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
+    if (FDIP_PRINT_CL_INFO)
       sequence_aw[line_addr].push_back(make_pair('u', cycle_count));
-    } else {
-      it2->second.push_back(make_pair('u', cycle_count));
-    }
   } else {
-    auto it2 = sequence_bw.find(line_addr);
-    if (it2 == sequence_bw.end()) {
-      sequence_bw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
-      sequence_bw[line_addr].push_back(make_pair('u', cycle_count));
-    } else {
-      it2->second.push_back(make_pair('u', cycle_count));
-    }
+    sequence_bw[line_addr] |= BW_u;
   }
 }
 
@@ -661,21 +664,11 @@ void FDIP_Stat::inc_cnt_useful(Addr line_addr, Flag pref_miss) {
       it->second.second = pref_miss;
     }
 
-    auto it2 = sequence_aw.find(line_addr);
-    if (it2 == sequence_aw.end()) {
-      sequence_aw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
+    if (FDIP_PRINT_CL_INFO) {
       sequence_aw[line_addr].push_back(make_pair('U', cycle_count));
-    } else {
-      it2->second.push_back(make_pair('U', cycle_count));
     }
   } else {
-    auto iter = sequence_bw.find(line_addr);
-    if (iter == sequence_bw.end()) {
-      sequence_bw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
-      sequence_bw[line_addr].push_back(make_pair('U', cycle_count));
-    } else {
-      iter->second.push_back(make_pair('U', cycle_count));
-    }
+    sequence_bw[line_addr] |= BW_U;
   }
 }
 
@@ -687,23 +680,12 @@ void FDIP_Stat::probe_prefetched_cls(Addr line_addr) {
 
 void FDIP_Stat::not_prefetch(Addr line_addr) {
   if (g_fdip->get_warmed_up()) {
-    auto it = sequence_aw.find(line_addr);
-    Counter onoff_cycle_count = fdip_off_path(proc_id, bp_id) ? -cycle_count : cycle_count;
-    if (it == sequence_aw.end()) {
-      sequence_aw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
+    if (FDIP_PRINT_CL_INFO) {
+      const Counter onoff_cycle_count = fdip_off_path(proc_id, bp_id) ? -cycle_count : cycle_count;
       sequence_aw[line_addr].push_back(make_pair('p', onoff_cycle_count));
-    } else {
-      it->second.push_back(make_pair('p', onoff_cycle_count));
     }
   } else {
-    auto it = sequence_bw.find(line_addr);
-    Counter onoff_cycle_count = fdip_off_path(proc_id, bp_id) ? -cycle_count : cycle_count;
-    if (it == sequence_bw.end()) {
-      sequence_bw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
-      sequence_bw[line_addr].push_back(make_pair('p', onoff_cycle_count));
-    } else {
-      it->second.push_back(make_pair('p', onoff_cycle_count));
-    }
+    sequence_bw[line_addr] |= BW_p;
   }
 }
 
@@ -722,23 +704,13 @@ void FDIP_Stat::inc_icache_miss(Addr line_addr) {
     else
       it->second++;
 
-    auto it2 = sequence_aw.find(line_addr);
-    if (it2 == sequence_aw.end()) {
-      sequence_aw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
+    if (FDIP_PRINT_CL_INFO) {
       sequence_aw[line_addr].push_back(make_pair('m', cycle_count));
-    } else {
-      it2->second.push_back(make_pair('m', cycle_count));
     }
 
     cur_line_delay = cycle_count;
   } else {
-    auto it2 = sequence_bw.find(line_addr);
-    if (it2 == sequence_bw.end()) {
-      sequence_bw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
-      sequence_bw[line_addr].push_back(make_pair('m', cycle_count));
-    } else {
-      it2->second.push_back(make_pair('m', cycle_count));
-    }
+    sequence_bw[line_addr] |= BW_m;
   }
 
   uns icache_val = g_fdip->get_warmed_up() ? 2 : 0;
@@ -750,19 +722,12 @@ void FDIP_Stat::inc_icache_miss(Addr line_addr) {
       auto it2 = sequence_bw.find(line_addr);
       if (it2 != sequence_bw.end()) {
         STAT_EVENT(proc_id, ICACHE_FIRST_MISS_AFTER_WARMUP_SEEN_DURING_WARMUP);
-        Counter no_pref = 0;
-        Counter unuseful = 0;
-        Counter useful = 0;
-        auto it3 = it2->second.begin();
-        while (it3 != it2->second.end()) {
-          if (it3->first == 'p')
-            no_pref++;
-          else if (it3->first == 'u')
-            useful++;
-          else if (it3->first == 'U')
-            unuseful++;
-          ++it3;
-        }
+        const uint8_t state = it2->second;
+        const bool no_pref = state & BW_p;
+        // Preserve the legacy sequence_bw interpretation: lowercase 'u' drives
+        // the useful predicate, while uppercase 'U' drives the unuseful predicate.
+        const bool useful = state & BW_u;
+        const bool unuseful = state & BW_U;
         if (no_pref && !unuseful && !useful)
           STAT_EVENT(proc_id, ICACHE_FIRST_MISS_AFTER_WARMUP_NO_PREF_DURING_WARMUP);
         if (!no_pref && unuseful && !useful)
@@ -817,23 +782,12 @@ void FDIP_Stat::inc_prefetched_cls(Addr line_addr, Flag on_path, uns success) {
         it->second++;
     }
 
-    auto it2 = sequence_aw.find(line_addr);
-    Counter onoff_cycle_count = fdip_off_path(proc_id, bp_id) ? -cycle_count : cycle_count;
-    if (it2 == sequence_aw.end()) {
-      sequence_aw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
+    if (FDIP_PRINT_CL_INFO) {
+      const Counter onoff_cycle_count = fdip_off_path(proc_id, bp_id) ? -cycle_count : cycle_count;
       sequence_aw[line_addr].push_back(make_pair('P', onoff_cycle_count));
-    } else {
-      it2->second.push_back(make_pair('P', onoff_cycle_count));
     }
   } else {
-    auto it2 = sequence_bw.find(line_addr);
-    Counter onoff_cycle_count = fdip_off_path(proc_id, bp_id) ? -cycle_count : cycle_count;
-    if (it2 == sequence_bw.end()) {
-      sequence_bw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
-      sequence_bw[line_addr].push_back(make_pair('P', onoff_cycle_count));
-    } else {
-      it2->second.push_back(make_pair('P', onoff_cycle_count));
-    }
+    sequence_bw[line_addr] |= BW_P;
   }
 }
 
@@ -869,13 +823,8 @@ void FDIP_Stat::inc_icache_hit(Addr line_addr) {
     else
       it->second++;
 
-    auto it2 = sequence_aw.find(line_addr);
-    if (it2 == sequence_aw.end()) {
-      sequence_aw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
+    if (FDIP_PRINT_CL_INFO)
       sequence_aw[line_addr].push_back(make_pair('h', cycle_count));
-    } else {
-      it2->second.push_back(make_pair('h', cycle_count));
-    }
 
     if (cur_line_delay) {
       auto it3 = per_line_delay_aw.find(line_addr);
@@ -887,13 +836,7 @@ void FDIP_Stat::inc_icache_hit(Addr line_addr) {
     }
     cur_line_delay = 0;
   } else {
-    auto it2 = sequence_bw.find(line_addr);
-    if (it2 == sequence_bw.end()) {
-      sequence_bw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
-      sequence_bw[line_addr].push_back(make_pair('h', cycle_count));
-    } else {
-      it2->second.push_back(make_pair('h', cycle_count));
-    }
+    sequence_bw[line_addr] |= BW_h;
   }
 
   uns icache_val = g_fdip->get_warmed_up() ? 3 : 1;
@@ -1540,21 +1483,10 @@ void FDIP::assert_break_reason(Addr line_addr) {
 
 void FDIP::add_evict_seq(Addr line_addr) {
   if (warmed_up) {
-    auto it2 = fdip_stat->sequence_aw.find(line_addr);
-    if (it2 == fdip_stat->sequence_aw.end()) {
-      fdip_stat->sequence_aw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
+    if (FDIP_PRINT_CL_INFO)
       fdip_stat->sequence_aw[line_addr].push_back(make_pair('e', cycle_count));
-    } else {
-      it2->second.push_back(make_pair('e', cycle_count));
-    }
   } else {
-    auto it2 = fdip_stat->sequence_bw.find(line_addr);
-    if (it2 == fdip_stat->sequence_bw.end()) {
-      fdip_stat->sequence_bw.insert(make_pair(line_addr, vector<pair<char, Counter>>()));
-      fdip_stat->sequence_bw[line_addr].push_back(make_pair('e', cycle_count));
-    } else {
-      it2->second.push_back(make_pair('e', cycle_count));
-    }
+    fdip_stat->sequence_bw[line_addr] |= FDIP_Stat::BW_e;
   }
 }
 

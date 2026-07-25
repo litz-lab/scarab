@@ -217,6 +217,13 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
   if (entry->off_path)
     return;
 
+  // On-path registers are freed only at retirement (a value mispredict makes its
+  // follow-up ops off-path before flushing them), so a retired register must
+  // have been produced. MAX_CTR here means a producer never ran wake_up_ops /
+  // set wake_cycle -- or a mispredicted consumer was flushed without being
+  // marked off-path.
+  ASSERT(map_data->proc_id, entry->produced_cycle != MAX_CTR);
+
   // set the cycle counts for unconsumed registers
   entry->produced_cycle = entry->produced_cycle == MAX_CTR ? cycle_count : entry->produced_cycle;
   entry->onpath_consumed_cycle = entry->onpath_consumed_cycle == MAX_CTR ? cycle_count : entry->onpath_consumed_cycle;
@@ -698,6 +705,9 @@ void reg_table_entry_write(struct reg_table_entry *entry, Op *op, int parent_reg
   entry->parent_reg_id = parent_reg_id;
   entry->reg_state = REG_TABLE_ENTRY_STATE_ALLOC;
   entry->allocated_cycle = cycle_count;
+  // reset for the produce-once guard in reg_table_entry_produce (MAX_CTR = "not
+  // yet produced", matching the sentinel the release-stat logic expects)
+  entry->produced_cycle = MAX_CTR;
 
   DEBUG(0, "(entry write)[%lld]: parent_reg_id: %d, self_reg_id: %d, child_reg_id: %d\n", entry->op_num,
         entry->parent_reg_id, entry->self_reg_id, entry->child_reg_id);
@@ -740,11 +750,19 @@ void reg_table_entry_produce(struct reg_table_entry *entry, Op *op, uns dst_reg_
     return;
   }
   ASSERT(map_data->proc_id, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
+  // Produce exactly once: a producer's wake_up_ops must not fire twice (the
+  // entry is reset to MAX_CTR at allocation; a second produce would find it set).
+  ASSERT(map_data->proc_id, entry->produced_cycle == MAX_CTR);
+  // A genuine producer makes its value available now-or-later; only a value-
+  // predicted load may have produced it earlier (predicted before it executes).
+  ASSERT(map_data->proc_id, op->load_value_predicted || op->wake_cycle >= cycle_count);
 
   entry->reg_val = op->dst_val[dst_reg_idx];
   entry->produced_uid = op->inst_uid;
   entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
-  entry->produced_cycle = cycle_count;
+  // produced_cycle is the cycle the value is available in the register file
+  // (== wake_cycle), so consumers (floored to wake_cycle) never consume before it.
+  entry->produced_cycle = op->wake_cycle;
 }
 
 struct reg_table_entry_ops reg_table_entry_ops = {

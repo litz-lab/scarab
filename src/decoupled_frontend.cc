@@ -576,6 +576,8 @@ void Decoupled_FE::update() {
           stall(result.op);
         } else if (result.event == FT_EVENT_MISPREDICT) {
           redirect_to_off_path(result);
+        } else if (result.event == FT_EVENT_LOAD_MISPREDICT) {
+          redirect_load_mispred(result);
         }
 
         break;
@@ -618,6 +620,8 @@ void Decoupled_FE::update() {
           stall(result.op);
         } else if (result.event == FT_EVENT_MISPREDICT) {
           redirect_to_off_path(result);
+        } else if (result.event == FT_EVENT_LOAD_MISPREDICT) {
+          redirect_load_mispred(result);
         }
 
         break;
@@ -1068,4 +1072,61 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
     exit_on_off_path = true;
   }
   ASSERT(proc_id, current_ft_to_push->get_end_reason() != FT_NOT_ENDED);
+}
+
+void Decoupled_FE::redirect_load_mispred(FT_PredictResult result) {
+  ASSERT(proc_id, bp_id == MAIN_BP);
+  ASSERT(proc_id, result.event == FT_EVENT_LOAD_MISPREDICT);
+  FT* ft = current_ft_to_push;
+  const uint64_t eom_idx = result.index;
+  std::vector<Op*>& ops = ft->get_ops();
+  ASSERT(proc_id, eom_idx < ops.size());
+  ASSERT(proc_id, eom_idx + 1 < ops.size());  // there are consumer ops after the load's EOM in this FT
+
+  // Move the on-path consumers (ops after the load's EOM) into a fresh recovery
+  // FT -- no copy, no re-fetch. They are held on-path and restored at recovery;
+  // their first op begins at the load's fall-through (== recovery_fetch_addr).
+  FT* saved = new FT(proc_id, bp_id);
+  std::vector<Op*>& saved_ops = saved->get_ops();
+  for (size_t i = eom_idx + 1; i < ops.size(); i++) {
+    ops[i]->parent_FT = saved;
+    saved_ops.push_back(ops[i]);
+  }
+  ops.resize(eom_idx + 1);  // working FT now ends at the load's EOM (a load doesn't end an FT -> FT_NOT_ENDED)
+  // Mark the EOM so the icache flips off-path right after fetching it, exactly as
+  // it flips at a mispredicted branch (icache_stage.c line ~962). This keeps the
+  // per-op invariant ic->off_path == op->off_path across the on->off boundary
+  // within this single mixed FT (no split).
+  ASSERT(proc_id, ops[eom_idx] == result.op);
+  ops[eom_idx]->load_pred_offpath_after = TRUE;
+  saved->op_pos = 0;
+  saved->generate_ft_info();
+  saved->set_prebuilt(true);
+  saved_recovery_ft = saved;
+
+  // Refill the SAME FT's tail with off-path ops (no split), then continue
+  // off-path -- identical to redirect_to_off_path's off-path fill, but in place.
+  redirect_cycle = cycle_count;
+  next_state = SERVING_OFF_PATH;
+  set_off_path_op_num(ft->get_last_op()->op_num + 1);
+  frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);
+  while (ft->get_end_reason() == FT_NOT_ENDED) {
+    auto build_event =
+        ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                  [](uns8 pid, uns8 bid, Op* op) -> bool {
+                    frontend_fetch_op(pid, bid, op);
+                    return true;
+                  },
+                  true, conf_off_path, []() { return decoupled_fe_get_next_off_path_op_num(); });
+    ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+    if (build_event == FT_EVENT_MISPREDICT || build_event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
+      frontend_redirect(proc_id, bp_id, ft->get_last_op()->inst_uid, ft->get_last_op()->bp_pred_info->pred_npc);
+    } else if (build_event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
+      stall(ft->get_last_op());
+    }
+  }
+  if (ft->ended_by_exit()) {
+    next_state = INACTIVE;
+    exit_on_off_path = true;
+  }
 }

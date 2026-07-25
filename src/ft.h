@@ -44,6 +44,7 @@ typedef struct FT FT;
 enum FT_Event {
   FT_EVENT_NONE,
   FT_EVENT_MISPREDICT,
+  FT_EVENT_LOAD_MISPREDICT,  // load value/RFP mispredict: go off-path after the load (in-place, no FT split)
   FT_EVENT_FETCH_BARRIER,
   FT_EVENT_OFFPATH_TAKEN_REDIRECT,
   FT_EVENT_BUILD_FAIL

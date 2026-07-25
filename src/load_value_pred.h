@@ -83,6 +83,22 @@ typedef enum Load_Addr_Pred_Scheme_enum {
   LOAD_ADDR_PRED_SCHEME_NUM
 } Load_Addr_Pred_Scheme;
 
+/*
+ * How a correct address prediction is applied (selected by LOAD_ADDR_PRED_MODE):
+ *   EARLY_AGEN - the load issues without waiting for its address-operand registers
+ *                and accesses the dcache at the predicted address, incurring normal
+ *                hit/miss latency; consumers wake at the load's real completion.
+ *   RFP        - Register File Prefetching (Shukla et al., ISCA 2022): the value is
+ *                prefetched into the register file, so consumers wake early as if the
+ *                load-use latency were hidden. Address is verified at exec; a wrong
+ *                address squashes the speculative consumers.
+ */
+typedef enum Load_Addr_Pred_Mode_enum {
+  LOAD_ADDR_PRED_MODE_EARLY_AGEN,
+  LOAD_ADDR_PRED_MODE_RFP,
+  LOAD_ADDR_PRED_MODE_NUM
+} Load_Addr_Pred_Mode;
+
 /**************************************************************************************/
 /* Lifecycle (per-core).  C linkage: called from the C cmp_model files. */
 
@@ -90,6 +106,13 @@ void alloc_mem_load_predictors(uns num_cores);
 void set_load_predictors(uns8 proc_id);
 void init_load_predictors(uns8 proc_id, const char* name);
 void recover_load_predictors(void);
+
+/*
+ * Called from the dcache stage when a load completes.  For a value-predicted load
+ * that mispredicted, schedules the squash at the load's completion (the value is
+ * only known now).  No-op for correct predictions and for AGEN-verified modes.
+ */
+void load_pred_verify_at_completion(Op* op);
 
 #ifdef __cplusplus
 }

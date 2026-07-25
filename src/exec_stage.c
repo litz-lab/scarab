@@ -564,7 +564,9 @@ static inline void exec_stage_bp_resolve(Op* op) {
     bp_resolve_op(g_bp_data, op);
   }
 
-  if (op->bp_pred_info->recover_at_exec) {
+  // A value-pred squash may already have scheduled this op's recovery at load
+  // completion (load_pred_verify_at_completion); don't double-schedule it here.
+  if (op->bp_pred_info->recover_at_exec && !op->bp_pred_info->recovery_sch) {
     DEBUG(exec->proc_id, "Exec schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
           (unsigned long long)op_get_exec_cycle(op));
     // load value/addr flush is not a branch: skip branch-resolve latency stat

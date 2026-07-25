@@ -355,6 +355,10 @@ struct Decoupled_FE {
   bool is_off_path_state() const { return state == SERVING_OFF_PATH; }
   void check_consecutivity_and_push_to_ftq();
   void redirect_to_off_path(FT_PredictResult result);
+  // Load value/RFP mispredict: go off-path after the mispredicted load IN PLACE
+  // (no FT split). The consumers after the load's EOM are moved into the recovery
+  // FT (held for replay) and the working FT's tail is refilled with off-path ops.
+  void redirect_load_mispred(FT_PredictResult result);
   inline uint64_t ftq_max_size() { return ftq_ft_num; }
   void set_off_path_op_num(uint64_t op_num) { current_off_path_op_num = op_num; }
   void set_on_path_op_num(uint64_t op_num) { this->op_num = op_num; }

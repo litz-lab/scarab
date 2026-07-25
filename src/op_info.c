@@ -123,10 +123,24 @@ uns op_sources_add(Op* op, Dep_Type type, Op* src_op, Counter src_op_num, Counte
   info->op_num = src_op_num;
   info->unique_num = src_unique_num;
 
-  /* Load value/address prediction: a producer resolved early at fetch lets its
-   * consumers wake immediately, so do not mark this source not-ready. */
-  if (!src_op->load_value_predicted)
+  /* Load prediction, two cases where this source does not gate readiness:
+   *  - producer_ready: the producer load resolved its result early (value pred /
+   *    RFP), so this consumer may wake immediately.
+   *  - agen_early: this op is an early-AGEN load and the source is one of its
+   *    address-operand registers; it accesses the predicted address instead, so
+   *    it need not wait for the real address to be computed. */
+  Flag producer_ready = src_op->load_value_predicted;
+  Flag agen_early = op->load_addr_predicted && type == REG_DATA_DEP;
+  if (!producer_ready && !agen_early) {
     op_sources_set_not_rdy(op, src_num);
+  } else if (producer_ready) {
+    // The producer resolved early, but its result is only available to consumers
+    // at load_pred_ready_cycle (now for value prediction; now + DCACHE_CYCLES for
+    // RFP's L1->register-file prefetch). Apply that as a wake-time floor so RFP
+    // consumers do not wake before the prefetched value arrives.
+    if (src_op->load_pred_ready_cycle > op->rdy_cycle)
+      op->rdy_cycle = src_op->load_pred_ready_cycle;
+  }
 
   if (type == MEM_DATA_DEP) {
     ASSERT(op->proc_id,

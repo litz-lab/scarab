@@ -51,7 +51,9 @@ extern "C" {
 
 #include "core.param.h"
 #include "memory/memory.h"
+#include "memory/memory.param.h"
 
+#include "bp/bp.h"
 #include "statistics.h"
 }
 
@@ -109,18 +111,53 @@ void load_pred_schedule_squash(Op* op) {
 }
 
 /*
- * Early-resolve effect used by the value and address categories: the load's
- * result is treated as available at fetch so consumers may wake early (honored
- * in map.c).  A wrong prediction is recorded on the op; ft.cc stamps the squash
- * on this macro's EOM op (it owns the FT vector and can look forward to the EOM),
- * so no cross-op global latch is needed.
+ * Value-prediction verification at load completion.  Called from the dcache stage
+ * when a load finishes (its real value is now known).  A value predictor verifies
+ * at completion rather than at AGEN, so if the predicted value was wrong the
+ * squash is scheduled here, at the load's done_cycle - modelling that the
+ * misprediction is only detected once the load returns its data.  The recovery is
+ * stamped on the load itself and fires immediately (bp_sched_recovery), flushing
+ * the speculatively-woken consumers so they re-execute with the correct value.
  */
-static inline void load_pred_apply_early_resolve(Op* op, Flag is_mispred) {
+void load_pred_verify_at_completion(Op* op) {
+  if (!op->load_value_mispredicted || !op->load_pred_verify_at_done || op->off_path)
+    return;
+
+  op->load_value_mispredicted = FALSE;
+
+  // Stamp the squash on the macro's EOM (recorded at FT in ft.cc), not on this
+  // possibly mid-macro load uop. For single-uop loads the EOM is the load
+  // itself. The EOM is a younger sibling on the same path, so it is still live
+  // (not yet retired) at the load's completion.
+  Op* eom = op->load_pred_squash_op;
+  ASSERT(op->proc_id, eom && eom->op_pool_valid && eom->unique_num == op->load_pred_squash_unique);
+
+  load_pred_schedule_squash(eom);
+  bp_sched_recovery(bp_recovery_info, eom, op->done_cycle);
+  eom->recovery_scheduled = TRUE;
+}
+
+/*
+ * "Early-result" effect: the load's result is made available to consumers before
+ * the load itself finishes, so they may wake early (honored in op_sources_add,
+ * which also applies ready_cycle as a wake-time floor).  Used by:
+ *   - value prediction: the value is predicted, available immediately
+ *     (ready_cycle = now), and verified against the real value at load
+ *     completion (verify_at_done = TRUE);
+ *   - RFP: the value is prefetched L1->register-file, so consumers wake after the
+ *     prefetch latency (ready_cycle = now + DCACHE_CYCLES); the predicted address
+ *     is verified at AGEN (verify_at_done = FALSE).
+ * The load still flows through the pipeline and accesses the dcache normally, so
+ * its bandwidth/port contention is modeled; only its consumers are accelerated.
+ * A wrong prediction is recorded on the op and squashed later (ft.cc for AGEN-
+ * verified modes; dcache completion for value's verify-at-done).
+ */
+static inline void load_pred_apply_early_result(Op* op, Flag is_mispred, Counter ready_cycle, Flag verify_at_done) {
   ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
 
   op->load_value_predicted = TRUE;
-  op->decode_cycle = cycle_count;
-  op->exec_cycle = cycle_count;
+  op->load_pred_ready_cycle = ready_cycle;
+  op->load_pred_verify_at_done = verify_at_done;
 
   if (is_mispred) {
     op->load_value_mispredicted = TRUE;
@@ -130,13 +167,60 @@ static inline void load_pred_apply_early_resolve(Op* op, Flag is_mispred) {
   }
 }
 
+/*
+ * "Early-AGEN" effect (address prediction): only the *address* is known early,
+ * not the value.  The load is allowed to issue without waiting for its
+ * address-operand (REG_DATA_DEP) registers and to access the dcache at the
+ * predicted address (op_sources_add honors load_addr_predicted; dcache_stage
+ * uses load_pred_addr).  It then incurs the normal hit/miss latency and wakes its
+ * consumers at its real completion - unlike wake-now, consumers are NOT resolved
+ * at fetch.  The predicted address is verified against the true VA at exec; a
+ * mismatch squashes via the macro's EOM (as for value/RFP mispredicts).
+ */
+static inline void load_pred_apply_early_agen(Op* op, Addr pred_addr, Flag is_mispred) {
+  ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
+
+  op->load_addr_predicted = TRUE;
+  op->load_pred_addr = pred_addr;
+
+  if (is_mispred) {
+    op->load_value_mispredicted = TRUE;
+    if (!op->off_path) {
+      STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH_MISPREDICTED);
+    }
+  }
+}
+
+/*
+ * Apply the configured address-prediction effect for a confident prediction.
+ * Shared by all address predictor schemes (constant, stride, ...); the algorithm
+ * only produces pred_addr, this decides how it acts on the pipeline.
+ */
+static inline void load_pred_apply_addr(Op* op, Addr pred_addr) {
+  Flag is_mispred = (pred_addr != op->oracle_info.va);
+
+  if (LOAD_ADDR_PRED_MODE == LOAD_ADDR_PRED_MODE_RFP) {
+    // RFP prefetches the value L1->register file. Model it only when the
+    // predicted line is L1-resident (bounded prefetch latency); consumers then
+    // wake after the L1->RF transfer (now + DCACHE_CYCLES), NOT immediately. The
+    // predicted address is verified at AGEN.
+    if (!do_l1_access_addr(pred_addr))
+      return;
+    load_pred_apply_early_result(op, is_mispred, cycle_count + DCACHE_CYCLES, /*verify_at_done=*/FALSE);
+  } else {
+    // EARLY_AGEN: issue early and access the predicted address in the dcache
+    // stage, which handles hit and miss (mem req) with normal latency.
+    load_pred_apply_early_agen(op, pred_addr, is_mispred);
+  }
+}
+
 static void load_pred_collect_predict_stat(Op* op) {
   ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
   if (op->off_path)
     return;
 
   STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH);
-  if (op->load_value_predicted) {
+  if (op->load_value_predicted || op->load_addr_predicted) {
     STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH_PREDICTED);
   }
 }
@@ -236,7 +320,8 @@ class LastValuePredictor : public LoadPredictor {
       return;  // values unavailable -> never speculate (sound no-op today)
 
     Flag is_mispred = (pred_entry->last_value != actual_value);
-    load_pred_apply_early_resolve(op, is_mispred);
+    // value known now; verified against the real value at load completion.
+    load_pred_apply_early_result(op, is_mispred, cycle_count, /*verify_at_done=*/TRUE);
   }
 
   void train(Op* op, PredictorEntry* entry) override {
@@ -335,13 +420,7 @@ class ConstantLoadAddrPredictor : public LoadPredictor {
     if (pred_entry->confidence <= CONST_LOAD_ADDR_PRED_THRESHOLD)
       return;
 
-    Addr pred_addr = pred_entry->oracle_address;
-    L1_Data* l1_data = do_l1_access_addr(pred_addr);
-    if (!l1_data)
-      return;
-
-    Flag is_mispred = (pred_addr != op->oracle_info.va);
-    load_pred_apply_early_resolve(op, is_mispred);
+    load_pred_apply_addr(op, pred_entry->oracle_address);
   }
 };
 
@@ -423,12 +502,7 @@ class StrideLoadAddrPredictor : public LoadPredictor {
       return;
 
     Addr pred_addr = (Addr)((int64)pred_entry->last_address + pred_entry->stride);
-    L1_Data* l1_data = do_l1_access_addr(pred_addr);
-    if (!l1_data)
-      return;
-
-    Flag is_mispred = (pred_addr != op->oracle_info.va);
-    load_pred_apply_early_resolve(op, is_mispred);
+    load_pred_apply_addr(op, pred_addr);
   }
 };
 
@@ -507,17 +581,19 @@ void load_pred_predict_op(Op* op) {
   if (op->inst_info->table_info.mem_type != MEM_LD)
     return;
 
-  // Value category (scaffold; inert until ops carry register values).
+  // Value category: predicts the loaded value.
   PredictorEntry* v_entry = active->value_pred->lookup(op);
   if (v_entry) {
     active->value_pred->infer(op, v_entry);
     active->value_pred->train(op, v_entry);
   }
 
-  // Address category.
+  // Address category. Always train, but only apply its effect if the value
+  // predictor did not already resolve this load (avoid double speculation).
   PredictorEntry* a_entry = active->addr_pred->lookup(op);
   if (a_entry) {
-    active->addr_pred->infer(op, a_entry);
+    if (!op->load_value_predicted)
+      active->addr_pred->infer(op, a_entry);
     active->addr_pred->train(op, a_entry);
   }
 

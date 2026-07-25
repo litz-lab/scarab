@@ -215,6 +215,13 @@ struct Op_struct {
   Flag load_value_predicted;      // if consumers of the op can be ready before this load
   Flag load_value_flush;          // if this is the eom of a load value/addr predict inst
   Flag load_value_mispredicted;   // load's value/addr was mispredicted (EOM will schedule squash)
+  Flag load_addr_predicted;       // early-AGEN: load may issue w/o addr operands, access load_pred_addr
+  Addr load_pred_addr;            // predicted effective addr (early-AGEN/RFP), verified vs va at exec
+  Counter load_pred_ready_cycle;  // cycle a predicted load's result is available to consumers (RFP: +DCACHE_CYCLES)
+  Flag load_pred_verify_at_done;  // value pred: verify + squash at load completion (done), not at AGEN
+  struct Op_struct* load_pred_squash_op;  // macro EOM the deferred value-pred squash targets (recorded at FT)
+  Counter load_pred_squash_unique;        // load_pred_squash_op's unique_num, validated at completion
+  Flag load_pred_offpath_after;   // load-mispred EOM: icache flips off-path AFTER fetching this op (mixed FT)
   Flag replay;                  // is the op waiting to replay?
   uns exec_count;               // how many times has this op been executed?
   // }}}

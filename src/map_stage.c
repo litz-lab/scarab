@@ -274,13 +274,14 @@ static inline void stage_process_op(Op* op) {
    * produced_cycle and marks the entry PRODUCED, so consumers renamed later read
    * it ready (via the wake_up_signaled re-check in add_to_wake_up_lists) and
    * simple_wake floors their rdy_cycle at wake_cycle. Availability is recomputed
-   * relative to this cycle: immediately for value prediction, after the L1->RF
-   * prefetch latency for RFP (load_pred_verify_at_done distinguishes them). The
-   * load still flows through the dcache for bandwidth; its completion suppresses
-   * the duplicate REG_DATA_DEP wake (see dcache_stage.c) so we produce once.
+   * relative to this cycle by the produce->availability latency set at predict
+   * time (load_pred_ready_delay: 0 for value prediction, DCACHE_CYCLES for RFP's
+   * L1->RF prefetch). The load still flows through the dcache for bandwidth; its
+   * completion suppresses the duplicate REG_DATA_DEP wake (see dcache_stage.c) so
+   * we produce once.
    */
   if (op->load_value_predicted) {
-    op->load_pred_ready_cycle = cycle_count + (op->load_pred_verify_at_done ? 0 : DCACHE_CYCLES);
+    op->load_pred_ready_cycle = cycle_count + op->load_pred_ready_delay;
     op->wake_cycle = op->load_pred_ready_cycle;
     wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
   }

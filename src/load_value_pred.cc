@@ -27,14 +27,17 @@
  * Description  : Generalized speculative load-result predictor framework.
  *
  *   See load_value_pred.h for the category model.  This file provides:
- *     - a shared squash/recovery helper (load_pred_schedule_squash)
+ *     - a shared squash/recovery helper (load_pred_schedule_squash) and the
+ *       dcache-stage entry point (predicted_load_schedule_recovery)
  *     - LoadPredictor       : fetch-time interface for value & address predictors
  *     - concrete predictors : last-value (scaffold), constant/stride address
  *     - a per-core registry holding one active scheme per category
  *
  *   The recovery has no cross-op global state: a wrong prediction is recorded on
- *   the op (load_value_mispredicted) and the FT builder walks the macro's uops to
- *   stamp the squash on the EOM (see FT::predict_ft in ft.cc).
+ *   the load (load_value_mispredicted) along with its recovery reason
+ *   (bp_pred_info->recover_at_agen for address prediction, recover_at_load_completion
+ *   for value prediction); the dcache stage fires the squash when the load reaches
+ *   that point.
  ***************************************************************************************/
 
 #include "load_value_pred.h"
@@ -50,10 +53,11 @@ extern "C" {
 #include "debug/debug_print.h"
 
 #include "core.param.h"
-#include "memory/memory.h"
 #include "memory/memory.param.h"
 
 #include "bp/bp.h"
+#include "memory/memory.h"
+
 #include "statistics.h"
 }
 
@@ -64,40 +68,53 @@ extern "C" {
 /* Shared pipeline effect / recovery helpers */
 
 /*
- * Read the load's architectural result (the loaded value).  Ops carry their
- * destination register values in op->dst_val[], populated at uop generation, so
- * this is available by the time predict_ft runs.  A load writes a single
- * destination; dst_val[0] holds the loaded value.  Returns FALSE for the (rare)
- * load form with no destination register, in which case the value predictor
- * simply does not speculate.
+ * Read one architectural destination value of the load.  Ops carry their
+ * destination register values in op->dst_val[], indexed by destination register
+ * (0 .. num_dest_regs-1) and populated at uop generation, so they are available
+ * by the time predict_ft runs.  Returns FALSE when dst_idx is out of range (e.g.
+ * a load form with no destination register), in which case the caller does not
+ * speculate on that destination.
  */
-static inline Flag load_pred_read_dest_value(Op* op, uns64* value) {
-  if (op->inst_info->table_info.num_dest_regs < 1)
+static inline Flag load_pred_read_dest_value(Op* op, uns dst_idx, uns64* value) {
+  if (dst_idx >= op->inst_info->table_info.num_dest_regs)
     return FALSE;
-  *value = op->dst_val[0];
+  *value = op->dst_val[dst_idx];
   return TRUE;
 }
 
 /*
- * Route a squash through the existing branch-recovery path so a mispredicted
- * load re-issues.  The op is set up as a non-CF, on-path recovery at exec:
- * exec_stage_bp_resolve() sees bp_pred_info->recover_at_exec and calls
- * bp_sched_recovery(), which resteers to op->oracle_info.npc (the true
- * fall-through) - i.e. re-fetch the same correct path with the load resolved.
- * recovery_info.cf_type = NOT_CF suppresses branch-predictor state recovery in
- * bp_recover_op().  Must be called on the macro's EOM op (bp_sched_recovery
- * squashes ops younger than it), so sibling uops are not skipped on the resteer.
+ * Mark how a mispredicted load recovers.  A wrong prediction is corrected by
+ * resteering to the load's fall-through (op->oracle_info.npc) once the
+ * misprediction is detected; the recovery is *scheduled* later from the dcache
+ * stage (predicted_load_schedule_recovery), when the load reaches the point at
+ * which the prediction can be checked:
+ *   - recover_at_agen           : address prediction, checked at AGEN;
+ *   - recover_at_load_completion : value prediction, checked when data returns.
+ * On-path non-CF loads select bp_pred_main during predict_ft, so the flag lives
+ * there.  The reason is set at predict time; only one is ever set per load.
  */
-void load_pred_schedule_squash(Op* op) {
-  op->load_value_flush = TRUE;
+static inline void load_pred_mark_recovery(Op* op, Flag recover_at_completion) {
+  op->load_value_mispredicted = TRUE;
+  if (recover_at_completion)
+    op->bp_pred_main.recover_at_load_completion = TRUE;
+  else
+    op->bp_pred_main.recover_at_agen = TRUE;
+  if (!op->off_path)
+    STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH_MISPREDICTED);
+}
 
-  // On-path non-CF ops select bp_pred_main during predict_ft; set both levels so
-  // the exec-stage recovery check fires regardless of which is selected.
-  for (Bp_Pred_Info* bp : {&op->bp_pred_main, &op->bp_pred_l0}) {
-    bp->recover_at_fe = FALSE;
-    bp->recover_at_decode = FALSE;
-    bp->recover_at_exec = TRUE;
-  }
+/*
+ * Route a squash through the existing branch-recovery path so a mispredicted
+ * load re-issues.  The load is set up as a non-CF, on-path recovery: bp_recover
+ * resteers to op->oracle_info.npc (the true fall-through) - i.e. re-fetch the
+ * consumers with the load resolved.  recovery_info.cf_type = NOT_CF suppresses
+ * branch-predictor state recovery in bp_recover_op().  bp_sched_recovery squashes
+ * ops younger than op, so op must be the macro's EOM; value/address prediction
+ * targets single-destination loads whose load uop is its own EOM (asserted in
+ * ft.cc).  bp_sched_recovery fires here (not at exec) at the supplied cycle.
+ */
+void load_pred_schedule_squash(Op* op, Counter recover_cycle) {
+  ASSERT(op->proc_id, !op->off_path);
 
   op->recovery_info.proc_id = op->proc_id;
   op->recovery_info.op = op;
@@ -108,33 +125,23 @@ void load_pred_schedule_squash(Op* op) {
   op->recovery_info.new_dir = op->oracle_info.dir;
   op->recovery_info.branchTarget = op->oracle_info.target;
   op->recovery_info.predict_cycle = cycle_count;
+
+  bp_sched_recovery(bp_recovery_info, op, recover_cycle);
+  op->recovery_scheduled = TRUE;
 }
 
 /*
- * Value-prediction verification at load completion.  Called from the dcache stage
- * when a load finishes (its real value is now known).  A value predictor verifies
- * at completion rather than at AGEN, so if the predicted value was wrong the
- * squash is scheduled here, at the load's done_cycle - modelling that the
- * misprediction is only detected once the load returns its data.  The recovery is
- * stamped on the load itself and fires immediately (bp_sched_recovery), flushing
- * the speculatively-woken consumers so they re-execute with the correct value.
+ * Schedule the recovery for a mispredicted predicted load.  Called from the
+ * dcache stage, gated by the load's recover_at_agen / recover_at_load_completion
+ * flag, so the reason and timing are already decided; this only needs to fire the
+ * squash once.  Clearing load_value_mispredicted makes a replayed load idempotent
+ * (bp_sched_recovery asserts a recovery is not scheduled twice).
  */
-void load_pred_verify_at_completion(Op* op) {
-  if (!op->load_value_mispredicted || !op->load_pred_verify_at_done || op->off_path)
+void predicted_load_schedule_recovery(Op* op, Counter recover_cycle) {
+  if (!op->load_value_mispredicted)
     return;
-
   op->load_value_mispredicted = FALSE;
-
-  // Stamp the squash on the macro's EOM (recorded at FT in ft.cc), not on this
-  // possibly mid-macro load uop. For single-uop loads the EOM is the load
-  // itself. The EOM is a younger sibling on the same path, so it is still live
-  // (not yet retired) at the load's completion.
-  Op* eom = op->load_pred_squash_op;
-  ASSERT(op->proc_id, eom && eom->op_pool_valid && eom->unique_num == op->load_pred_squash_unique);
-
-  load_pred_schedule_squash(eom);
-  bp_sched_recovery(bp_recovery_info, eom, op->done_cycle);
-  eom->recovery_scheduled = TRUE;
+  load_pred_schedule_squash(op, recover_cycle);
 }
 
 /*
@@ -142,29 +149,23 @@ void load_pred_verify_at_completion(Op* op) {
  * the load itself finishes, so they may wake early (honored in op_sources_add,
  * which also applies ready_cycle as a wake-time floor).  Used by:
  *   - value prediction: the value is predicted, available immediately
- *     (ready_cycle = now), and verified against the real value at load
- *     completion (verify_at_done = TRUE);
+ *     (ready_delay = 0), and verified against the real value at load completion
+ *     (recover_at_load_completion on a mispredict);
  *   - RFP: the value is prefetched L1->register-file, so consumers wake after the
- *     prefetch latency (ready_cycle = now + DCACHE_CYCLES); the predicted address
- *     is verified at AGEN (verify_at_done = FALSE).
+ *     prefetch latency (ready_delay = DCACHE_CYCLES); the predicted address is
+ *     verified at AGEN (recover_at_agen on a mispredict).
  * The load still flows through the pipeline and accesses the dcache normally, so
  * its bandwidth/port contention is modeled; only its consumers are accelerated.
- * A wrong prediction is recorded on the op and squashed later (ft.cc for AGEN-
- * verified modes; dcache completion for value's verify-at-done).
  */
-static inline void load_pred_apply_early_result(Op* op, Flag is_mispred, Counter ready_cycle, Flag verify_at_done) {
+static inline void load_pred_apply_early_result(Op* op, Flag is_mispred, Counter ready_delay,
+                                                Flag verify_at_completion) {
   ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
 
   op->load_value_predicted = TRUE;
-  op->load_pred_ready_cycle = ready_cycle;
-  op->load_pred_verify_at_done = verify_at_done;
+  op->load_pred_ready_delay = ready_delay;
 
-  if (is_mispred) {
-    op->load_value_mispredicted = TRUE;
-    if (!op->off_path) {
-      STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH_MISPREDICTED);
-    }
-  }
+  if (is_mispred)
+    load_pred_mark_recovery(op, /*recover_at_completion=*/verify_at_completion);
 }
 
 /*
@@ -174,8 +175,8 @@ static inline void load_pred_apply_early_result(Op* op, Flag is_mispred, Counter
  * predicted address (op_sources_add honors load_addr_predicted; dcache_stage
  * uses load_pred_addr).  It then incurs the normal hit/miss latency and wakes its
  * consumers at its real completion - unlike wake-now, consumers are NOT resolved
- * at fetch.  The predicted address is verified against the true VA at exec; a
- * mismatch squashes via the macro's EOM (as for value/RFP mispredicts).
+ * at fetch.  The predicted address is verified against the true VA at AGEN; a
+ * mismatch squashes via recover_at_agen (as for RFP mispredicts).
  */
 static inline void load_pred_apply_early_agen(Op* op, Addr pred_addr, Flag is_mispred) {
   ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
@@ -183,12 +184,8 @@ static inline void load_pred_apply_early_agen(Op* op, Addr pred_addr, Flag is_mi
   op->load_addr_predicted = TRUE;
   op->load_pred_addr = pred_addr;
 
-  if (is_mispred) {
-    op->load_value_mispredicted = TRUE;
-    if (!op->off_path) {
-      STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH_MISPREDICTED);
-    }
-  }
+  if (is_mispred)
+    load_pred_mark_recovery(op, /*recover_at_completion=*/FALSE);
 }
 
 /*
@@ -206,7 +203,7 @@ static inline void load_pred_apply_addr(Op* op, Addr pred_addr) {
     // predicted address is verified at AGEN.
     if (!do_l1_access_addr(pred_addr))
       return;
-    load_pred_apply_early_result(op, is_mispred, cycle_count + DCACHE_CYCLES, /*verify_at_done=*/FALSE);
+    load_pred_apply_early_result(op, is_mispred, /*ready_delay=*/DCACHE_CYCLES, /*verify_at_completion=*/FALSE);
   } else {
     // EARLY_AGEN: issue early and access the predicted address in the dcache
     // stage, which handles hit and miss (mem req) with normal latency.
@@ -285,7 +282,12 @@ struct LastValuePredEntry : public PredictorEntry {
 class LastValuePredictor : public LoadPredictor {
  private:
   uns8 proc_id;
-  std::unordered_map<Addr, LastValuePredEntry> prediction_table;
+  // A load may write more than one architectural destination, so the table is
+  // keyed per (PC, destination index) rather than per PC.  MAX_DESTS == 8 fits in
+  // the low 3 bits.
+  std::unordered_map<uint64_t, LastValuePredEntry> prediction_table;
+
+  static inline uint64_t dest_key(Addr pc, uns dst_idx) { return ((uint64_t)pc << 3) | (dst_idx & 0x7); }
 
  public:
   void init(uns8 proc_id) override {
@@ -294,56 +296,59 @@ class LastValuePredictor : public LoadPredictor {
   }
   void recover() override { return; }
 
+  // The per-destination table is consulted directly in infer()/train(); the
+  // shared lookup()/entry indirection (used by single-target predictors) is not
+  // needed here, so return a non-null sentinel to let predict_op proceed.
   PredictorEntry* lookup(Op* op) override {
     ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
-    auto it = prediction_table.find(op->inst_info->addr);
-    if (it != prediction_table.end()) {
-      it->second.found = true;
-      return &(it->second);
-    }
-    static LastValuePredEntry not_found_entry;
-    not_found_entry.found = false;
-    return &not_found_entry;
+    static LastValuePredEntry sentinel;
+    return &sentinel;
   }
 
-  void infer(Op* op, PredictorEntry* entry) override {
+  // Speculate only if EVERY destination is trained and confident; a wrong
+  // prediction on any destination makes the load a mispredict.  Reads each
+  // destination's true value (op->dst_val[i]) to decide correctness.
+  void infer(Op* op, PredictorEntry* /*entry*/) override {
     ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
-    auto* pred_entry = static_cast<LastValuePredEntry*>(entry);
-    if (!pred_entry->is_found())
-      return;
-    if (pred_entry->confidence <= LOAD_VALUE_PRED_THRESHOLD)
+    uns ndest = op->inst_info->table_info.num_dest_regs;
+    if (ndest < 1)
       return;
 
-    // SEAM: requires the load's true destination value to verify the prediction.
-    uns64 actual_value = 0;
-    if (!load_pred_read_dest_value(op, &actual_value))
-      return;  // values unavailable -> never speculate (sound no-op today)
+    Flag any_mispred = FALSE;
+    for (uns i = 0; i < ndest; i++) {
+      uns64 actual_value = 0;
+      if (!load_pred_read_dest_value(op, i, &actual_value))
+        return;  // value unavailable -> do not speculate
+      auto it = prediction_table.find(dest_key(op->inst_info->addr, i));
+      if (it == prediction_table.end() || it->second.confidence <= LOAD_VALUE_PRED_THRESHOLD)
+        return;  // not trained / not confident -> do not speculate
+      if (it->second.last_value != actual_value)
+        any_mispred = TRUE;
+    }
 
-    Flag is_mispred = (pred_entry->last_value != actual_value);
     // value known now; verified against the real value at load completion.
-    load_pred_apply_early_result(op, is_mispred, cycle_count, /*verify_at_done=*/TRUE);
+    load_pred_apply_early_result(op, any_mispred, /*ready_delay=*/0, /*verify_at_completion=*/TRUE);
   }
 
-  void train(Op* op, PredictorEntry* entry) override {
+  void train(Op* op, PredictorEntry* /*entry*/) override {
     ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
     if (op->off_path)
       return;
 
-    // SEAM: requires the load's true destination value to update the table.
-    uns64 actual_value = 0;
-    if (!load_pred_read_dest_value(op, &actual_value))
-      return;
-
-    auto* pred_entry = static_cast<LastValuePredEntry*>(entry);
-    if (!pred_entry->is_found()) {
-      prediction_table[op->inst_info->addr] = LastValuePredEntry(actual_value);
-      return;
-    }
-    if (pred_entry->last_value == actual_value) {
-      pred_entry->confidence++;
-    } else {
-      pred_entry->last_value = actual_value;
-      pred_entry->confidence = 0;
+    for (uns i = 0; i < op->inst_info->table_info.num_dest_regs; i++) {
+      uns64 actual_value = 0;
+      if (!load_pred_read_dest_value(op, i, &actual_value))
+        continue;
+      uint64_t key = dest_key(op->inst_info->addr, i);
+      auto it = prediction_table.find(key);
+      if (it == prediction_table.end()) {
+        prediction_table[key] = LastValuePredEntry(actual_value);
+      } else if (it->second.last_value == actual_value) {
+        it->second.confidence++;
+      } else {
+        it->second.last_value = actual_value;
+        it->second.confidence = 0;
+      }
     }
   }
 };

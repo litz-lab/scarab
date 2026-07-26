@@ -40,11 +40,11 @@
  *   at fetch so it can reuse this same LoadPredictor interface and EOM handling).
  *
  *   Mechanism vs. policy: the pipeline *mechanism* lives on the op
- *   (op->load_value_predicted lets consumers wake early; op->load_value_flush
- *   drives a squash through the branch-recovery path; op->load_value_mispredicted
- *   flags a wrong prediction so the FT builder can target the macro's EOM op).
- *   The *policy* - which predictor, how it trains, when it speculates - lives
- *   entirely in this module.
+ *   (op->load_value_predicted lets consumers wake early; op->load_value_mispredicted
+ *   flags a wrong prediction, and bp_pred_info->recover_at_agen /
+ *   recover_at_load_completion route the squash through the branch-recovery path
+ *   from the dcache stage).  The *policy* - which predictor, how it trains, when
+ *   it speculates - lives entirely in this module.
  ***************************************************************************************/
 
 #ifndef __LOAD_VALUE_PRED_H__
@@ -108,11 +108,12 @@ void init_load_predictors(uns8 proc_id, const char* name);
 void recover_load_predictors(void);
 
 /*
- * Called from the dcache stage when a load completes.  For a value-predicted load
- * that mispredicted, schedules the squash at the load's completion (the value is
- * only known now).  No-op for correct predictions and for AGEN-verified modes.
+ * Called from the dcache stage, gated by the load's recover_at_agen /
+ * recover_at_load_completion flag, to schedule the squash-and-resteer recovery
+ * for a mispredicted predicted load at the given cycle (AGEN cycle for address
+ * prediction; the load's done_cycle for value prediction).
  */
-void load_pred_verify_at_completion(Op* op);
+void predicted_load_schedule_recovery(Op* op, Counter recover_cycle);
 
 #ifdef __cplusplus
 }
@@ -132,11 +133,11 @@ void load_pred_verify_at_completion(Op* op);
 void load_pred_predict_op(Op* op);
 
 /*
- * Stamp the squash-and-resteer recovery onto a macro's end-of-macro op so a
- * mispredicted load re-issues without skipping sibling uops.  Reuses the
- * branch-recovery path (non-CF, fall-through resteer).
+ * Fill the load's recovery_info and fire bp_sched_recovery at recover_cycle,
+ * reusing the branch-recovery path (non-CF, fall-through resteer) so a
+ * mispredicted load re-issues its consumers.  op must be on-path.
  */
-void load_pred_schedule_squash(Op* eom_op);
+void load_pred_schedule_squash(Op* op, Counter recover_cycle);
 
 #endif
 

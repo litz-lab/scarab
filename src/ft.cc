@@ -400,43 +400,24 @@ FT_PredictResult FT::predict_ft() {
 
     // Load value/address prediction (main BP pass only, so it runs once per op).
     // Predict/resolve a load early. This is data (not control) speculation: the
-    // fetched path does not change, so we do NOT redirect the frontend here; the
-    // op is only marked recover_at_exec and the refetch happens after recovery
-    // fires (bp_sched_recovery). For AGEN-verified modes (address prediction) a
-    // wrong prediction is known at fetch (oracle) and the squash is stamped now
-    // on the macro's EOM op (stamping the EOM, not a mid-macro uop, avoids
-    // skipping siblings; an FT always ends on an eom op). Value prediction
-    // instead verifies at load completion, so its squash is deferred to the
-    // dcache stage (see load_pred_verify_at_done).
-    if (bp_id == MAIN_BP && !op->inst_info->table_info.cf_type) {
+    // fetched path does not change. The predictor records the recovery reason on
+    // the load (bp_pred_info->recover_at_agen for address prediction, verified at
+    // AGEN; recover_at_load_completion for value prediction, verified when the
+    // load's data returns); the recovery itself is scheduled later from the dcache
+    // stage. Here we only trigger the in-place off-path redirect after the load.
+    if (bp_id == MAIN_BP && op->inst_info->table_info.mem_type == MEM_LD) {
       load_pred_predict_op(op);
       if (op->load_value_mispredicted && !op->off_path) {
-        // Always target the macro's EOM, never a mid-macro uop: stamping the EOM
-        // avoids skipping sibling uops on the resteer, and an FT always ends on
-        // an eom op. The FT is available here, so find the EOM now for BOTH
-        // verification modes.
-        size_t eom_idx = idx;
-        while (eom_idx < ops.size() && !ops[eom_idx]->eom)
-          eom_idx++;
-        ASSERT(proc_id, eom_idx < ops.size());
-        // the EOM must belong to the same macro-instruction as the load
-        ASSERT(proc_id, ops[eom_idx]->inst_uid == op->inst_uid);
-        Op* eom = ops[eom_idx];
-        // Record the recovery trigger: AGEN-verified fires at the EOM's exec
-        // (recover_at_exec); value-verified fires at load completion (dcache,
-        // load_pred_verify_at_completion) -- record the EOM for it.
-        if (!op->load_pred_verify_at_done)
-          load_pred_schedule_squash(eom);
-        else {
-          op->load_pred_squash_op = eom;
-          op->load_pred_squash_unique = eom->unique_num;
-        }
+        // The recovery resteers to the load's fall-through and squashes ops
+        // younger than the load; require the load to be its own end-of-macro op so
+        // no sibling uop is dropped. Value/address prediction targets such loads.
+        ASSERT(proc_id, op->eom);
         // Go off-path after the load, IN PLACE (no FT split): the consumers after
-        // the EOM are moved aside as the recovery FT and the FT's tail is refilled
+        // the load are moved aside as the recovery FT and the FT's tail is refilled
         // with off-path ops. Driven from update() via redirect_load_mispred.
         if (!ended_by_exit()) {
-          const Addr fall_through = ADDR_PLUS_OFFSET(eom->inst_info->addr, eom->inst_info->trace_info.inst_size);
-          return {eom_idx, FT_EVENT_LOAD_MISPREDICT, eom, fall_through};
+          const Addr fall_through = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
+          return {idx, FT_EVENT_LOAD_MISPREDICT, op, fall_through};
         }
       }
     }

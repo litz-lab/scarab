@@ -41,6 +41,8 @@ typedef struct Bp_Pred_Info_struct {
   Flag recover_at_fe;      // op will schedule recovery in frontend (early correction)
   Flag recover_at_decode;  // op will schedule recovery at decode
   Flag recover_at_exec;    // op will schedule recovery at exec
+  Flag recover_at_agen;    // predicted load: schedule recovery when the address is generated (addr mispredict)
+  Flag recover_at_load_completion;  // predicted load: schedule recovery when the load's data returns (value mispredict)
 
   // Only for perceptron
   uns64 pred_perceptron_global_hist;            // global history used to predict the branch

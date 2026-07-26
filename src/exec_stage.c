@@ -331,7 +331,7 @@ void update_exec_stage(Stage_Data* src_sd) {
 
     /* branch recovery/resolution */
     Flag is_replay = FALSE;  // TODO: check if this val is needed
-    if ((op->inst_info->table_info.cf_type || op->load_value_flush) && !is_replay) {
+    if (op->inst_info->table_info.cf_type && !is_replay) {
       /*
        * branch recovery currently does not like to be done more than 1 time.
        * since we don't have any way to know if an op is going to be replayed,
@@ -546,17 +546,12 @@ static inline void exec_stage_process_op(Op* op) {
   STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST_MEM + (op->inst_info->table_info.mem_type == NOT_MEM) + 2 * op->off_path);
   STAT_EVENT(op->proc_id, EXEC_ALL_INST);
 
-  if (op->load_value_predicted && !op->off_path)
-    STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_SAVED_CYCLES_ON_PATH);
-
   DEBUG(exec->proc_id, "op_num:%s fu_num:%d exec_cycle:%s done_cycle:%s off_path:%d\n", unsstr64(op->op_num),
         op->fu_num, unsstr64(op_get_exec_cycle(op)), unsstr64(op_get_done_cycle(op)), op->off_path);
 }
 
 static inline void exec_stage_bp_resolve(Op* op) {
-  // A load value/addr misprediction rides the branch-recovery path but is not a
-  // branch: skip predictor training and only schedule the recovery below.
-  if (!BP_UPDATE_AT_RETIRE && !op->load_value_flush) {
+  if (!BP_UPDATE_AT_RETIRE) {
     // this code updates the branch prediction structures
     if (op->inst_info->table_info.cf_type >= CF_IBR)
       bp_target_known_op(g_bp_data, op);
@@ -564,15 +559,10 @@ static inline void exec_stage_bp_resolve(Op* op) {
     bp_resolve_op(g_bp_data, op);
   }
 
-  // A value-pred squash may already have scheduled this op's recovery at load
-  // completion (load_pred_verify_at_completion); don't double-schedule it here.
   if (op->bp_pred_info->recover_at_exec && !op->bp_pred_info->recovery_sch) {
     DEBUG(exec->proc_id, "Exec schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
           (unsigned long long)op_get_exec_cycle(op));
-    // load value/addr flush is not a branch: skip branch-resolve latency stat
-    // (it asserts op->bp_cycle, never set for a non-CF op).
-    if (!op->load_value_flush)
-      bp_stat_main_branch_resolve_latency(op, op_get_exec_cycle(op), TRUE);
+    bp_stat_main_branch_resolve_latency(op, op_get_exec_cycle(op), TRUE);
     bp_sched_recovery(bp_recovery_info, op, op_get_exec_cycle(op));
     if (!op->off_path)
       op->recovery_scheduled = TRUE;

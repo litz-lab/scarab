@@ -1092,13 +1092,12 @@ void Decoupled_FE::redirect_load_mispred(FT_PredictResult result) {
     ops[i]->parent_FT = saved;
     saved_ops.push_back(ops[i]);
   }
-  ops.resize(eom_idx + 1);  // working FT now ends at the load's EOM (a load doesn't end an FT -> FT_NOT_ENDED)
-  // Mark the EOM so the icache flips off-path right after fetching it, exactly as
-  // it flips at a mispredicted branch (icache_stage.c line ~962). This keeps the
-  // per-op invariant ic->off_path == op->off_path across the on->off boundary
+  ops.resize(eom_idx + 1);  // working FT now ends at the mispredicted load (a load doesn't end an FT -> FT_NOT_ENDED)
+  // The mispredicted load (result.op == ops[eom_idx]) carries load_value_mispredicted,
+  // which the icache reads to flip off-path right after fetching it -- keeping the
+  // per-op ic->off_path == op->off_path invariant across the on->off boundary
   // within this single mixed FT (no split).
   ASSERT(proc_id, ops[eom_idx] == result.op);
-  ops[eom_idx]->load_pred_offpath_after = TRUE;
   saved->op_pos = 0;
   saved->generate_ft_info();
   saved->set_prebuilt(true);
@@ -1111,13 +1110,12 @@ void Decoupled_FE::redirect_load_mispred(FT_PredictResult result) {
   set_off_path_op_num(ft->get_last_op()->op_num + 1);
   frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);
   while (ft->get_end_reason() == FT_NOT_ENDED) {
-    auto build_event =
-        ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                  [](uns8 pid, uns8 bid, Op* op) -> bool {
-                    frontend_fetch_op(pid, bid, op);
-                    return true;
-                  },
-                  true, conf_off_path, []() { return decoupled_fe_get_next_off_path_op_num(); });
+    auto build_event = ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                 [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                   frontend_fetch_op(pid, bid, op);
+                                   return true;
+                                 },
+                                 true, conf_off_path, []() { return decoupled_fe_get_next_off_path_op_num(); });
     ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
     if (build_event == FT_EVENT_MISPREDICT || build_event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
       frontend_redirect(proc_id, bp_id, ft->get_last_op()->inst_uid, ft->get_last_op()->bp_pred_info->pred_npc);

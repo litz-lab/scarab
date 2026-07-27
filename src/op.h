@@ -320,6 +320,11 @@ static inline Counter op_get_exec_cycle(const Op* op) {
 static inline void op_set_exec_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.exec_cycle == MAX_CTR);
   op->cycles.exec_cycle = cycle;
+  // A mispredicted predicted load recovers like a branch, at exec: mark it here so
+  // exec_stage_bp_resolve schedules its squash (its recovery_info was filled at
+  // predict time). bp_pred_main is the level selected for on-path non-CF loads.
+  if (op->load_value_mispredicted && !op->off_path)
+    op->bp_pred_main.recover_at_exec = TRUE;
 }
 
 static inline Counter op_get_dcache_cycle(const Op* op) {

@@ -41,10 +41,10 @@
  *
  *   Mechanism vs. policy: the pipeline *mechanism* lives on the op
  *   (op->load_value_predicted lets consumers wake early; op->load_value_mispredicted
- *   flags a wrong prediction, and bp_pred_info->recover_at_agen /
- *   recover_at_load_completion route the squash through the branch-recovery path
- *   from the dcache stage).  The *policy* - which predictor, how it trains, when
- *   it speculates - lives entirely in this module.
+ *   flags a wrong prediction, and the load recovers at exec like a branch -
+ *   op_set_exec_cycle sets recover_at_exec and exec_stage_bp_resolve fires the
+ *   squash).  The *policy* - which predictor, how it trains, when it speculates -
+ *   lives entirely in this module.
  ***************************************************************************************/
 
 #ifndef __LOAD_VALUE_PRED_H__
@@ -107,14 +107,6 @@ void set_load_predictors(uns8 proc_id);
 void init_load_predictors(uns8 proc_id, const char* name);
 void recover_load_predictors(void);
 
-/*
- * Called from the dcache stage, gated by the load's recover_at_agen /
- * recover_at_load_completion flag, to schedule the squash-and-resteer recovery
- * for a mispredicted predicted load at the given cycle (AGEN cycle for address
- * prediction; the load's done_cycle for value prediction).
- */
-void predicted_load_schedule_recovery(Op* op, Counter recover_cycle);
-
 #ifdef __cplusplus
 }
 #endif
@@ -131,13 +123,6 @@ void predicted_load_schedule_recovery(Op* op, Counter recover_cycle);
  * then stamps the squash recovery on the macro's EOM op via the call below.
  */
 void load_pred_predict_op(Op* op);
-
-/*
- * Fill the load's recovery_info and fire bp_sched_recovery at recover_cycle,
- * reusing the branch-recovery path (non-CF, fall-through resteer) so a
- * mispredicted load re-issues its consumers.  op must be on-path.
- */
-void load_pred_schedule_squash(Op* op, Counter recover_cycle);
 
 #endif
 

@@ -329,9 +329,10 @@ void update_exec_stage(Stage_Data* src_sd) {
     /* update op status and execution metadata; increment PMU counters */
     exec_stage_process_op(op);
 
-    /* branch recovery/resolution */
+    /* branch recovery/resolution -- also fires for a mispredicted predicted load,
+     * which op_set_exec_cycle() marked recover_at_exec (recovers like a branch). */
     Flag is_replay = FALSE;  // TODO: check if this val is needed
-    if (op->inst_info->table_info.cf_type && !is_replay) {
+    if ((op->inst_info->table_info.cf_type || op->bp_pred_info->recover_at_exec) && !is_replay) {
       /*
        * branch recovery currently does not like to be done more than 1 time.
        * since we don't have any way to know if an op is going to be replayed,
@@ -551,7 +552,10 @@ static inline void exec_stage_process_op(Op* op) {
 }
 
 static inline void exec_stage_bp_resolve(Op* op) {
-  if (!BP_UPDATE_AT_RETIRE) {
+  // Only branches update branch-predictor state / take the branch-resolve latency
+  // stat (it asserts bp_cycle, never set for a non-CF op). A mispredicted predicted
+  // load rides the recover_at_exec path below but is not a branch.
+  if (!BP_UPDATE_AT_RETIRE && op->inst_info->table_info.cf_type) {
     // this code updates the branch prediction structures
     if (op->inst_info->table_info.cf_type >= CF_IBR)
       bp_target_known_op(g_bp_data, op);
@@ -562,7 +566,8 @@ static inline void exec_stage_bp_resolve(Op* op) {
   if (op->bp_pred_info->recover_at_exec) {
     DEBUG(exec->proc_id, "Exec schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
           (unsigned long long)op_get_exec_cycle(op));
-    bp_stat_main_branch_resolve_latency(op, op_get_exec_cycle(op), TRUE);
+    if (op->inst_info->table_info.cf_type)
+      bp_stat_main_branch_resolve_latency(op, op_get_exec_cycle(op), TRUE);
     bp_sched_recovery(bp_recovery_info, op, op_get_exec_cycle(op));
     if (!op->off_path)
       op->recovery_scheduled = TRUE;

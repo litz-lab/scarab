@@ -274,12 +274,6 @@ void update_dcache_stage(Stage_Data* src_sd) {
     Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, access_va, &line_addr, TRUE);
     dc->idle_cycle = MAX2(dc->idle_cycle, cycle_count + DCACHE_CYCLES);
 
-    // Address prediction (early-AGEN / RFP) verifies at AGEN: the effective
-    // address is known once the load accesses the dcache, so a mispredicted
-    // predicted address schedules its recovery here, on hit or miss alike.
-    if (op->bp_pred_info->recover_at_agen)
-      predicted_load_schedule_recovery(op, cycle_count);
-
     if (op->inst_info->table_info.mem_type == MEM_ST)
       STAT_EVENT(op->proc_id, POWER_DCACHE_WRITE_ACCESS);
     else
@@ -309,10 +303,6 @@ void update_dcache_stage(Stage_Data* src_sd) {
         // produced early and woke consumers at rename; wake_cycle must already be set
         ASSERT(op->proc_id, op_get_wake_cycle(op) != MAX_CTR);
       }
-      // Value prediction verifies at completion: the load's data is available, so
-      // a mispredicted predicted value schedules its recovery at done_cycle.
-      if (op->bp_pred_info->recover_at_load_completion)
-        predicted_load_schedule_recovery(op, op_get_done_cycle(op));
       continue;
     }
 
@@ -619,9 +609,6 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
     // produced early and woke consumers at rename; wake_cycle must already be set
     ASSERT(op->proc_id, op_get_wake_cycle(op) != MAX_CTR);
   }
-  // Value prediction verifies at completion (data now available on this hit).
-  if (op->bp_pred_info->recover_at_load_completion)
-    predicted_load_schedule_recovery(op, op_get_done_cycle(op));
 }
 
 static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
@@ -655,10 +642,6 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
           // produced early and woke consumers at rename; wake_cycle must already be set
           ASSERT(op->proc_id, op_get_wake_cycle(op) != MAX_CTR);
         }
-        // Store-forwarding provides the data, so the load is complete here: value
-        // prediction can be verified at this store-buffer hit.
-        if (op->bp_pred_info->recover_at_load_completion)
-          predicted_load_schedule_recovery(op, op_get_done_cycle(op));
         break;
       }
 
@@ -926,9 +909,6 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
       // produced early and woke consumers at rename; wake_cycle must already be set
       ASSERT(op->proc_id, op_get_wake_cycle(op) != MAX_CTR);
     }
-    // Value prediction verifies at completion: the miss fill returned the data.
-    if (op->bp_pred_info->recover_at_load_completion)
-      predicted_load_schedule_recovery(op, op_get_done_cycle(op));
   }
 
   /*

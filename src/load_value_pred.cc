@@ -27,17 +27,15 @@
  * Description  : Generalized speculative load-result predictor framework.
  *
  *   See load_value_pred.h for the category model.  This file provides:
- *     - a shared squash/recovery helper (load_pred_schedule_squash) and the
- *       dcache-stage entry point (predicted_load_schedule_recovery)
+ *     - the fetch-time recovery marker (load_pred_mark_recovery)
  *     - LoadPredictor       : fetch-time interface for value & address predictors
  *     - concrete predictors : last-value (scaffold), constant/stride address
  *     - a per-core registry holding one active scheme per category
  *
- *   The recovery has no cross-op global state: a wrong prediction is recorded on
- *   the load (load_value_mispredicted) along with its recovery reason
- *   (bp_pred_info->recover_at_agen for address prediction, recover_at_load_completion
- *   for value prediction); the dcache stage fires the squash when the load reaches
- *   that point.
+ *   The recovery has no cross-op global state: a wrong on-path prediction is
+ *   recorded on the load (load_value_mispredicted) and its recovery_info is filled
+ *   at predict time; the load then recovers at exec like a branch
+ *   (op_set_exec_cycle sets recover_at_exec, exec_stage_bp_resolve fires it).
  ***************************************************************************************/
 
 #include "load_value_pred.h"
@@ -83,38 +81,21 @@ static inline Flag load_pred_read_dest_value(Op* op, uns dst_idx, uns64* value) 
 }
 
 /*
- * Mark how a mispredicted load recovers.  A wrong prediction is corrected by
- * resteering to the load's fall-through (op->oracle_info.npc) once the
- * misprediction is detected; the recovery is *scheduled* later from the dcache
- * stage (predicted_load_schedule_recovery), when the load reaches the point at
- * which the prediction can be checked:
- *   - recover_at_agen           : address prediction, checked at AGEN;
- *   - recover_at_load_completion : value prediction, checked when data returns.
- * On-path non-CF loads select bp_pred_main during predict_ft, so the flag lives
- * there.  The reason is set at predict time; only one is ever set per load.
+ * Mark a mispredicted (on-path) load for recovery.  Like a branch, the load
+ * recovers at exec: op_set_exec_cycle() sets recover_at_exec and
+ * exec_stage_bp_resolve() fires bp_sched_recovery().  Here we only record the
+ * misprediction and fill the op's recovery_info -- a non-CF, fall-through
+ * (op->oracle_info.npc) resteer; cf_type = NOT_CF so bp_recover_op leaves
+ * branch-predictor state untouched.  bp_sched_recovery squashes ops younger than
+ * op, so op must be the macro's EOM; value/address prediction targets
+ * single-destination loads whose load uop is its own EOM (asserted in ft.cc).
+ * Off-path predicted loads are flushed and never recover.
  */
-static inline void load_pred_mark_recovery(Op* op, Flag recover_at_completion) {
+static inline void load_pred_mark_recovery(Op* op) {
+  if (op->off_path)
+    return;
   op->load_value_mispredicted = TRUE;
-  if (recover_at_completion)
-    op->bp_pred_main.recover_at_load_completion = TRUE;
-  else
-    op->bp_pred_main.recover_at_agen = TRUE;
-  if (!op->off_path)
-    STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH_MISPREDICTED);
-}
-
-/*
- * Route a squash through the existing branch-recovery path so a mispredicted
- * load re-issues.  The load is set up as a non-CF, on-path recovery: bp_recover
- * resteers to op->oracle_info.npc (the true fall-through) - i.e. re-fetch the
- * consumers with the load resolved.  recovery_info.cf_type = NOT_CF suppresses
- * branch-predictor state recovery in bp_recover_op().  bp_sched_recovery squashes
- * ops younger than op, so op must be the macro's EOM; value/address prediction
- * targets single-destination loads whose load uop is its own EOM (asserted in
- * ft.cc).  bp_sched_recovery fires here (not at exec) at the supplied cycle.
- */
-void load_pred_schedule_squash(Op* op, Counter recover_cycle) {
-  ASSERT(op->proc_id, !op->off_path);
+  STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH_MISPREDICTED);
 
   op->recovery_info.proc_id = op->proc_id;
   op->recovery_info.op = op;
@@ -125,23 +106,6 @@ void load_pred_schedule_squash(Op* op, Counter recover_cycle) {
   op->recovery_info.new_dir = op->oracle_info.dir;
   op->recovery_info.branchTarget = op->oracle_info.target;
   op->recovery_info.predict_cycle = cycle_count;
-
-  bp_sched_recovery(bp_recovery_info, op, recover_cycle);
-  op->recovery_scheduled = TRUE;
-}
-
-/*
- * Schedule the recovery for a mispredicted predicted load.  Called from the
- * dcache stage, gated by the load's recover_at_agen / recover_at_load_completion
- * flag, so the reason and timing are already decided; this only needs to fire the
- * squash once.  Clearing load_value_mispredicted makes a replayed load idempotent
- * (bp_sched_recovery asserts a recovery is not scheduled twice).
- */
-void predicted_load_schedule_recovery(Op* op, Counter recover_cycle) {
-  if (!op->load_value_mispredicted)
-    return;
-  op->load_value_mispredicted = FALSE;
-  load_pred_schedule_squash(op, recover_cycle);
 }
 
 /*
@@ -149,23 +113,21 @@ void predicted_load_schedule_recovery(Op* op, Counter recover_cycle) {
  * the load itself finishes, so they may wake early (honored in op_sources_add,
  * which also applies ready_cycle as a wake-time floor).  Used by:
  *   - value prediction: the value is predicted, available immediately
- *     (ready_delay = 0), and verified against the real value at load completion
- *     (recover_at_load_completion on a mispredict);
+ *     (ready_delay = 0);
  *   - RFP: the value is prefetched L1->register-file, so consumers wake after the
- *     prefetch latency (ready_delay = DCACHE_CYCLES); the predicted address is
- *     verified at AGEN (recover_at_agen on a mispredict).
+ *     prefetch latency (ready_delay = DCACHE_CYCLES).
  * The load still flows through the pipeline and accesses the dcache normally, so
  * its bandwidth/port contention is modeled; only its consumers are accelerated.
+ * A wrong prediction is recorded via load_pred_mark_recovery and recovers at exec.
  */
-static inline void load_pred_apply_early_result(Op* op, Flag is_mispred, Counter ready_delay,
-                                                Flag verify_at_completion) {
+static inline void load_pred_apply_early_result(Op* op, Flag is_mispred, Counter ready_delay) {
   ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
 
   op->load_value_predicted = TRUE;
   op->load_pred_ready_delay = ready_delay;
 
   if (is_mispred)
-    load_pred_mark_recovery(op, /*recover_at_completion=*/verify_at_completion);
+    load_pred_mark_recovery(op);
 }
 
 /*
@@ -175,8 +137,8 @@ static inline void load_pred_apply_early_result(Op* op, Flag is_mispred, Counter
  * predicted address (op_sources_add honors load_addr_predicted; dcache_stage
  * uses load_pred_addr).  It then incurs the normal hit/miss latency and wakes its
  * consumers at its real completion - unlike wake-now, consumers are NOT resolved
- * at fetch.  The predicted address is verified against the true VA at AGEN; a
- * mismatch squashes via recover_at_agen (as for RFP mispredicts).
+ * at fetch.  A wrong predicted address is recorded via load_pred_mark_recovery
+ * and recovers at exec (as for value/RFP mispredicts).
  */
 static inline void load_pred_apply_early_agen(Op* op, Addr pred_addr, Flag is_mispred) {
   ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
@@ -185,7 +147,7 @@ static inline void load_pred_apply_early_agen(Op* op, Addr pred_addr, Flag is_mi
   op->load_pred_addr = pred_addr;
 
   if (is_mispred)
-    load_pred_mark_recovery(op, /*recover_at_completion=*/FALSE);
+    load_pred_mark_recovery(op);
 }
 
 /*
@@ -203,7 +165,7 @@ static inline void load_pred_apply_addr(Op* op, Addr pred_addr) {
     // predicted address is verified at AGEN.
     if (!do_l1_access_addr(pred_addr))
       return;
-    load_pred_apply_early_result(op, is_mispred, /*ready_delay=*/DCACHE_CYCLES, /*verify_at_completion=*/FALSE);
+    load_pred_apply_early_result(op, is_mispred, /*ready_delay=*/DCACHE_CYCLES);
   } else {
     // EARLY_AGEN: issue early and access the predicted address in the dcache
     // stage, which handles hit and miss (mem req) with normal latency.
@@ -327,7 +289,7 @@ class LastValuePredictor : public LoadPredictor {
     }
 
     // value known now; verified against the real value at load completion.
-    load_pred_apply_early_result(op, any_mispred, /*ready_delay=*/0, /*verify_at_completion=*/TRUE);
+    load_pred_apply_early_result(op, any_mispred, /*ready_delay=*/0);
   }
 
   void train(Op* op, PredictorEntry* /*entry*/) override {

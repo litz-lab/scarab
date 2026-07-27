@@ -1028,8 +1028,8 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
   reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
   // checkpoint the speculative register table for recovering
-  if (!op->off_path && ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) ||
-                        op->bp_pred_info->recover_at_agen || op->bp_pred_info->recover_at_load_completion))
+  if (!op->off_path &&
+      ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) || op->load_value_mispredicted))
     reg_file_snapshot_srt();
 }
 
@@ -1056,13 +1056,11 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 
 // flush registers of misprediction operands using the ptag info
 void reg_renaming_scheme_realistic_recover(Op *op) {
-  // A branch recovers at exec; a predicted load recovers at AGEN (address pred)
-  // or at load completion (value pred). Any of these is a valid SRT-rollback
-  // recovery point; a decode/frontend-only recovery is not and returns early.
-  ASSERT(op->proc_id, op->inst_info->table_info.cf_type || op->bp_pred_info->recover_at_agen ||
-                          op->bp_pred_info->recover_at_load_completion);
-  if (!op->bp_pred_info->recover_at_exec && !op->bp_pred_info->recover_at_agen &&
-      !op->bp_pred_info->recover_at_load_completion)
+  // A branch and a mispredicted predicted load both recover at exec (the load was
+  // marked recover_at_exec in op_set_exec_cycle). A decode/frontend-only recovery
+  // is not an SRT-rollback point and returns early.
+  ASSERT(op->proc_id, op->inst_info->table_info.cf_type || op->load_value_mispredicted);
+  if (!op->bp_pred_info->recover_at_exec)
     return;
 
   // rollback to the status that does not contain any off_path entries
@@ -1149,8 +1147,8 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
   reg_file_write_dst(op, REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
   // checkpoint the speculative register table for recovering
-  if (!op->off_path && ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) ||
-                        op->bp_pred_info->recover_at_agen || op->bp_pred_info->recover_at_load_completion))
+  if (!op->off_path &&
+      ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) || op->load_value_mispredicted))
     reg_file_snapshot_srt();
 }
 
@@ -1210,13 +1208,11 @@ void reg_renaming_scheme_late_allocation_produce(Op *op) {
 }
 
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
-  // Only execution-time recoveries take/consume SRT checkpoints: a branch at
-  // exec, or a predicted load at AGEN (address) / load completion (value).
-  // Decode-time and early frontend-only recoveries should not rollback SRT.
-  ASSERT(op->proc_id, op->inst_info->table_info.cf_type || op->bp_pred_info->recover_at_agen ||
-                          op->bp_pred_info->recover_at_load_completion);
-  if (!op->bp_pred_info->recover_at_exec && !op->bp_pred_info->recover_at_agen &&
-      !op->bp_pred_info->recover_at_load_completion)
+  // Only execution-time recoveries take/consume SRT checkpoints: a branch or a
+  // mispredicted predicted load, both recover_at_exec. Decode-time and early
+  // frontend-only recoveries should not rollback SRT.
+  ASSERT(op->proc_id, op->inst_info->table_info.cf_type || op->load_value_mispredicted);
+  if (!op->bp_pred_info->recover_at_exec)
     return;
 
   // rollback to the status that does not contain any off_path entries

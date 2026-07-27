@@ -1010,10 +1010,10 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   STAT_EVENT(0, PERFORMED_RECOVERIES);
   INC_STAT_EVENT(0, PERFORMED_RECOVERY_LAT, cycle_count - info->predict_cycle);
 
-  /* A load value/addr flush rides the recovery path as a non-CF op: it must not
-   * touch branch-predictor state (global/target history, CRS, etc.). */
-  if (!cf_type)
-    return;
+  /* Callers only invoke bp_recover_op for a real branch (cf_type != NOT_CF); a
+   * predicted-load recovery is filtered out at the call sites so it never touches
+   * branch-predictor state (global/target history, CRS, etc.). */
+  ASSERT(0, cf_type != NOT_CF);
 
   /* always recover the global history */
   if (cf_type == CF_CBR || cf_type == CF_REP) {

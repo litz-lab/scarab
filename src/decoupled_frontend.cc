@@ -437,7 +437,10 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
   // For CONTINUE_ON_RECOVERY, alt continues the off-path stream main was on by
   // resuming from this address (rather than restarting at the misprediction).
   Op* alt_op = per_core_dfe[proc_id][MAIN_BP]->get_last_fetch_op();
-  bp_recover_op(bp_data, cf_type, info);
+  // Only branches recover branch-predictor state; a predicted-load recovery rides
+  // this path as a non-CF op and must not touch it.
+  if (cf_type != NOT_CF)
+    bp_recover_op(bp_data, cf_type, info);
   dfe_recover_op();
   switch (dfe_trigger_policy) {
     case PRIMARY_DFE:

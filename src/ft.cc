@@ -400,11 +400,11 @@ FT_PredictResult FT::predict_ft() {
 
     // Load value/address prediction (main BP pass only, so it runs once per op).
     // Predict/resolve a load early. This is data (not control) speculation: the
-    // fetched path does not change. The predictor records the recovery reason on
-    // the load (bp_pred_info->recover_at_agen for address prediction, verified at
-    // AGEN; recover_at_load_completion for value prediction, verified when the
-    // load's data returns); the recovery itself is scheduled later from the dcache
-    // stage. Here we only trigger the in-place off-path redirect after the load.
+    // fetched path does not change. On a wrong on-path prediction the predictor
+    // records the misprediction (load_value_mispredicted) and fills recovery_info;
+    // the load then recovers at exec like a branch (op_set_exec_cycle sets
+    // recover_at_exec, exec_stage_bp_resolve fires it). Here we only trigger the
+    // in-place off-path redirect after the load.
     if (bp_id == MAIN_BP && op->inst_info->table_info.mem_type == MEM_LD) {
       load_pred_predict_op(op);
       if (op->load_value_mispredicted && !op->off_path) {

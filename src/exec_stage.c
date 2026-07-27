@@ -251,9 +251,9 @@ void update_exec_stage(Stage_Data* src_sd) {
            get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd) & exec->fus[ii].type);
 
     /* if we get to here, then it means the op is going into the functional unit. */
-    op->sched_cycle = cycle_count;
+    op_set_sched_cycle(op, cycle_count);
     DEBUG(exec->proc_id, "op_num:%s fu_num:%d sched_cycle:%s off_path:%d\n", unsstr64(op->op_num), op->fu_num,
-          unsstr64(op->sched_cycle), op->off_path);
+          unsstr64(op_get_sched_cycle(op)), op->off_path);
 
     // consume the src register values
     reg_file_consume(op);
@@ -457,7 +457,7 @@ static inline void exec_stage_dep_wakeup(Op* op) {
 
   // non-memory ops will always distribute their results after the op's latency
   if (op->inst_info->table_info.mem_type == NOT_MEM) {
-    op->wake_cycle = exec_cycle;
+    op_set_wake_cycle(op, exec_cycle);
     wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
     return;
   }
@@ -466,7 +466,7 @@ static inline void exec_stage_dep_wakeup(Op* op) {
   if (op->inst_info->table_info.mem_type == MEM_ST) {
     // only wake up if this is the first time this op executes
     if (op->exec_count == 0) {
-      op->wake_cycle = exec_cycle;
+      op_set_wake_cycle(op, exec_cycle);
       wake_up_ops(op, MEM_ADDR_DEP, model->wake_hook);
       wake_up_ops(op, MEM_DATA_DEP, model->wake_hook);
     }
@@ -519,7 +519,7 @@ static inline int exec_stage_check_fu_available(int ii) {
   }
 
   // need to kill it if it is a simultaneous replay
-  if (fop->replay && fop->replay_cycle == cycle_count) {
+  if (fop->replay && op_get_replay_cycle(fop) == cycle_count) {
     STAT_EVENT(exec->proc_id, FU_REPLAY);
     return 0;
   }
@@ -537,17 +537,17 @@ static inline void exec_stage_process_op(Op* op) {
     op->state = OS_TENTATIVE;
   }
 
-  op->exec_cycle = cycle_count + abs(op->inst_info->latency);
+  op_set_exec_cycle(op, cycle_count + abs(op->inst_info->latency));
   op->exec_count++;
   if (op->inst_info->table_info.mem_type == NOT_MEM)
-    op->done_cycle = op->exec_cycle;
+    op_set_done_cycle(op, op_get_exec_cycle(op));
 
   STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST + op->off_path);
   STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST_MEM + (op->inst_info->table_info.mem_type == NOT_MEM) + 2 * op->off_path);
   STAT_EVENT(op->proc_id, EXEC_ALL_INST);
 
   DEBUG(exec->proc_id, "op_num:%s fu_num:%d exec_cycle:%s done_cycle:%s off_path:%d\n", unsstr64(op->op_num),
-        op->fu_num, unsstr64(op->exec_cycle), unsstr64(op->done_cycle), op->off_path);
+        op->fu_num, unsstr64(op_get_exec_cycle(op)), unsstr64(op_get_done_cycle(op)), op->off_path);
 }
 
 static inline void exec_stage_bp_resolve(Op* op) {
@@ -561,9 +561,9 @@ static inline void exec_stage_bp_resolve(Op* op) {
 
   if (op->bp_pred_info->recover_at_exec) {
     DEBUG(exec->proc_id, "Exec schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
-          (unsigned long long)op->exec_cycle);
-    bp_stat_main_branch_resolve_latency(op, op->exec_cycle, TRUE);
-    bp_sched_recovery(bp_recovery_info, op, op->exec_cycle);
+          (unsigned long long)op_get_exec_cycle(op));
+    bp_stat_main_branch_resolve_latency(op, op_get_exec_cycle(op), TRUE);
+    bp_sched_recovery(bp_recovery_info, op, op_get_exec_cycle(op));
     if (!op->off_path)
       op->recovery_scheduled = TRUE;
 
@@ -574,7 +574,7 @@ static inline void exec_stage_bp_resolve(Op* op) {
 #if 0
   if (op->inst_info->table_info.cf_type >= CF_IBR && OP_CF_BTB_PRED_INFO(op)->no_target) {
     ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == op->proc_id);
-    bp_sched_redirect(bp_recovery_info, op, op->exec_cycle);
+    bp_sched_redirect(bp_recovery_info, op, op_get_exec_cycle(op));
     // stats for the reason of resteer
     STAT_EVENT(op->proc_id,
                 RESTEER_NO_TARGET_CF_IBR + op->inst_info->table_info.cf_type - CF_IBR);

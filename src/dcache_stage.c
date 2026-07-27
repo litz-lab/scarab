@@ -164,8 +164,8 @@ void update_dcache_stage(Stage_Data* src_sd) {
     Op* dc_op = dc->sd.ops[ii];
 
     // op just got told to replay this cycle (clobber it)
-    if (op && cycle_count < op->rdy_cycle) {
-      ASSERTM(dc->proc_id, op->replay, "o:%s  rdy:%s", unsstr64(op->op_num), unsstr64(op->rdy_cycle));
+    if (op && cycle_count < op_get_rdy_cycle(op)) {
+      ASSERTM(dc->proc_id, op->replay, "o:%s  rdy:%s", unsstr64(op->op_num), unsstr64(op_get_rdy_cycle(op)));
       dcache_stage_remove_src_op(src_sd, ii);
       op = NULL;
     }
@@ -173,7 +173,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
     /* check if the op in the dcache_stage is stall */
     if (dc_op) {
       if (dc_op->state == OS_WAIT_DCACHE || (STALL_ON_WAIT_MEM && dc_op->state == OS_WAIT_MEM)) {
-        ASSERT(dc->proc_id, cycle_count >= dc->sd.ops[ii]->exec_cycle);
+        ASSERT(dc->proc_id, cycle_count >= op_get_exec_cycle(dc->sd.ops[ii]));
         continue;
       }
 
@@ -203,7 +203,8 @@ void update_dcache_stage(Stage_Data* src_sd) {
     dc->sd.op_count++;
     ASSERT(dc->proc_id, dc->sd.op_count <= dc->sd.max_op_count);
     dcache_stage_remove_src_op(src_sd, ii);
-    ASSERTM(dc->proc_id, cycle_count >= op->exec_cycle, "o:%s  %s\n", unsstr64(op->op_num), Op_State_str(op->state));
+    ASSERTM(dc->proc_id, cycle_count >= op_get_exec_cycle(op), "o:%s  %s\n", unsstr64(op->op_num),
+            Op_State_str(op->state));
   }
 
   /* phase 2 - check the dcache port availability and do dcache access */
@@ -226,7 +227,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
     Op* op = dc->sd.ops[oldest_index];
 
     // if the op is replaying, squish it
-    if (op->replay && op->exec_cycle == MAX_CTR) {
+    if (op->replay && op_get_exec_cycle(op) == MAX_CTR) {
       dc->sd.ops[oldest_index] = NULL;
       dc->sd.op_count--;
       ASSERT(dc->proc_id, dc->sd.op_count >= 0);
@@ -254,7 +255,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
     /* now access the dcache with it */
     Addr line_addr;
     Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, TRUE);
-    op->dcache_cycle = cycle_count;
+    op_set_dcache_cycle(op, cycle_count);
     dc->idle_cycle = MAX2(dc->idle_cycle, cycle_count + DCACHE_CYCLES);
 
     if (op->inst_info->table_info.mem_type == MEM_ST)
@@ -276,9 +277,9 @@ void update_dcache_stage(Stage_Data* src_sd) {
         STAT_EVENT(op->proc_id, DCACHE_HIT_OFFPATH);
       }
 
-      op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
+      op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency);
       if (op->inst_info->table_info.mem_type != MEM_ST) {
-        op->wake_cycle = op->done_cycle;
+        op_set_wake_cycle(op, op_get_done_cycle(op));
         wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
       }
       continue;
@@ -387,7 +388,7 @@ static inline Flag dcache_stage_addr_unready(Op* op) {
    * won't get cleared out of the exec stage, thus making it block the functional unit
    * (not for the henry mem system, which handles agen itself)
    */
-  if (cycle_count >= op->exec_cycle)
+  if (cycle_count >= op_get_exec_cycle(op))
     return FALSE;
 
   /*
@@ -395,7 +396,7 @@ static inline Flag dcache_stage_addr_unready(Op* op) {
    * This stage will grab the op out of exec a cycle before normal,
    * so the wake up happens in the same cycle as execute
    */
-  if (DCACHE_CYCLES == 0 && cycle_count + 1 == op->exec_cycle)
+  if (DCACHE_CYCLES == 0 && cycle_count + 1 == op_get_exec_cycle(op))
     return FALSE;
 
   return TRUE;
@@ -410,7 +411,7 @@ static inline Flag dcache_stage_check_mem_type(Op* op) {
 
   /* skip prefetch ops if software prefetching is disabled */
   if (op->inst_info->table_info.mem_type == MEM_PF && !ENABLE_SWPRF) {
-    op->done_cycle = cycle_count + DCACHE_CYCLES;
+    op_set_done_cycle(op, cycle_count + DCACHE_CYCLES);
     op->state = OS_SCHEDULED;
     return FALSE;
   }
@@ -570,7 +571,7 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
   }
 
   /* update cacheline state */
-  op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
+  op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency);
   line->read_count[op->off_path] = line->read_count[op->off_path] + (op->inst_info->table_info.mem_type == MEM_LD);
   line->write_count[op->off_path] = line->write_count[op->off_path] + (op->inst_info->table_info.mem_type == MEM_ST);
   line->misc_state = (line->misc_state & 2) | op->off_path;
@@ -580,7 +581,7 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
 
   /* wake up source inst if the op is completed */
   if (op->inst_info->table_info.mem_type != MEM_ST) {
-    op->wake_cycle = op->done_cycle;
+    op_set_wake_cycle(op, op_get_done_cycle(op));
     wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
   }
 }
@@ -607,8 +608,8 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
           STAT_EVENT(op->proc_id, DCACHE_ST_BUFFER_HIT_OFFPATH);
         }
 
-        op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
-        op->wake_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
+        op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency);
+        op_set_wake_cycle(op, cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency);
         wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
         break;
       }
@@ -671,7 +672,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
       }
       op->state = OS_MISS;
       if (PREFS_DO_NOT_BLOCK_WINDOW || op->inst_info->table_info.mem_type == MEM_PF) {
-        op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
+        op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency);
         op->state = OS_SCHEDULED;
       }
       break;
@@ -702,7 +703,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
       }
       op->state = OS_MISS;
       if (STORES_DO_NOT_BLOCK_WINDOW) {
-        op->done_cycle = cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency;
+        op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency);
         op->state = OS_SCHEDULED;
       }
       break;
@@ -857,11 +858,11 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     DEBUG(dc->proc_id, "Awakening op_num:%lld %d %d\n", op->op_num, op->engine_info.l1_miss_satisfied, op->in_rdy_list);
     ASSERT(dc->proc_id, !op->in_rdy_list);
 
-    op->done_cycle = cycle_count + 1;
+    op_set_done_cycle(op, cycle_count + 1);
     op->state = OS_SCHEDULED;
 
     if (op->inst_info->table_info.mem_type != MEM_ST) {
-      op->wake_cycle = op->done_cycle;
+      op_set_wake_cycle(op, op_get_done_cycle(op));
       wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
     }
   }

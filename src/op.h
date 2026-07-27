@@ -29,7 +29,9 @@
 #ifndef __OP_H__
 #define __OP_H__
 
+#include "globals/assert.h"
 #include "globals/enum.h"
+#include "globals/global_defs.h"
 #include "globals/global_types.h"
 
 #include "ft_info.h"
@@ -41,6 +43,30 @@
 // forward declaration of FT
 typedef struct FT FT;
 
+/* All per-op pipeline cycle counters live in one struct on the Op. Each counter
+ * is read through op_get_<name>_cycle() and written through op_set_<name>_cycle()
+ * (defined below the Op struct). Every counter is reset to a sentinel when the op
+ * is allocated (MAX_CTR, except rdy_cycle which starts at 1); except for the
+ * rdy_cycle accumulator, each counter is write-once per op and its setter asserts
+ * the counter had not been set since allocation. */
+typedef struct Op_Cycles_struct {
+  Counter fetch_cycle;   // cycle an individual instruction is fetched
+  Counter bp_cycle;      // cycle a CF instruction accesses the branch predictor
+  Counter map_cycle;     // cycle an individual instruction enters the map stage
+  Counter issue_cycle;   // cycle an individual instruction is issued -- same as chkpt
+  Counter rdy_cycle;     // cycle the final source value is available (accumulator: MAX over producers)
+  Counter sched_cycle;   // cycle when the op is scheduled (arrives at the functional unit)
+  Counter exec_cycle;    // cycle when execution (or addr gen) of op will be completed (result usable)
+  Counter dcache_cycle;  // cycle when the op accesses the dcache
+  Counter done_cycle;    // cycle when the op is ready to retire
+  Counter retire_cycle;  // cycle when the op actually retires
+  Counter replay_cycle;  // cycle when the op catches a replay signal
+  Counter pred_cycle;
+  Counter precommit_cycle;  // cycle when the op is precommit (will eventually retire)
+  Counter decode_cycle;     // cycle when decode completes
+  Counter wake_cycle;       // cycle a wake up signal is sent to dependents
+} Op_Cycles;
+
 /* Register id slots on Op; must match REG_TABLE_REG_ID_INVALID in map_rename.h (0xFFFF). */
 #define OP_REG_ID_INVALID ((uns16)0xFFFF)
 
@@ -48,9 +74,9 @@ typedef struct FT FT;
 // Macro Defines
 
 /* OP_SRCS_RDY uses op_sources_not_rdy_is_clear (op_info.c). */
-#define OP_SRCS_RDY(x) (op_sources_not_rdy_is_clear((x)) && cycle_count >= (x)->rdy_cycle)
-#define OP_DONE(x) (cycle_count >= (x)->done_cycle)
-#define OP_BROADCAST(x) ((cycle_count + 1) >= (x)->done_cycle)
+#define OP_SRCS_RDY(x) (op_sources_not_rdy_is_clear((x)) && cycle_count >= op_get_rdy_cycle((x)))
+#define OP_DONE(x) (cycle_count >= op_get_done_cycle((x)))
+#define OP_BROADCAST(x) ((cycle_count + 1) >= op_get_done_cycle((x)))
 #define MULTI_CYCLE_OP(x) ((x)->inst_info->latency > 1 + RFILE_STAGE || (x)->inst_info->table_info.mem_type == MEM_LD)
 #define OP_BP_ID(x) ((x)->parent_FT->bp_id)
 #define MAX_STRANDS 400
@@ -160,21 +186,8 @@ struct Op_struct {
 
   int32 conf_perceptron_output;  // confidece perceptron
   // {{{ state and event cycle counters
-  Op_State state;        // the state of the op in the datapath
-  Counter fetch_cycle;   // cycle an individual instruction is fetched
-  Counter bp_cycle;      // cycle a CF instruction accesses the branch predictor
-  Counter map_cycle;     // cycle an individual instruction enters the map stage
-  Counter issue_cycle;   // cycle an individual instruction is issued -- same as chkpt
-  Counter rdy_cycle;     // cycle when the final source value is available to the op (only useful when vector is clear)
-  Counter sched_cycle;   // cycle when the op is scheduled (arrives at the functional unit)
-  Counter exec_cycle;    // cycle when execution (or addr gen) of op will be completed (result usable)
-  Counter dcache_cycle;  // cycle when the op accesses the dcache
-  Counter done_cycle;    // cycle when the op is ready to retire
-  Counter retire_cycle;  // cycle when the op actually retires (useful if you keep the ops around after they commit
-  Counter replay_cycle;  // cycle when the op catches a replay signal
-  Counter pred_cycle;
-  Counter precommit_cycle;  // cycle when the op is precommit (will eventually retire)
-  Counter decode_cycle;     // cycle when decode completes
+  Op_State state;    // the state of the op in the datapath
+  Op_Cycles cycles;  // all per-op pipeline cycle counters (access via op_get/op_set_<name>_cycle)
   // }}}
 
   // {{{ path and fetch info
@@ -210,7 +223,7 @@ struct Op_struct {
   Wake_Up_Entry* wake_up_head;           // list of ops that are dependent on this op, by dependency type
   Wake_Up_Entry* wake_up_tail;           // last entry in each wake up list (for speed)
   uns wake_up_count;                     // count of ops to be awakened by this op (wake up list length)
-  Counter wake_cycle;                    // used by wake up logic for time wake up signal is sent
+  // wake_cycle now lives in Op_Cycles (op->cycles.wake_cycle); use op_get/op_set_wake_cycle
   // }}}
 
   struct Mem_Req_struct* req;  // pointer to memory request responsible for waking up the op
@@ -247,6 +260,161 @@ struct Op_struct {
   FT* parent_FT;
   FT* parent_FT_off_path;
 };
+
+/* Per-op cycle-counter accessors. Each counter has its own get/set function so
+ * that per-counter behavior (stats, debug, invariants) can be added in one place.
+ * op_set_<name>_cycle() is write-once: it asserts the counter has not been set
+ * since the op was allocated (still MAX_CTR). Multiple assignment SITES are fine
+ * as long as they are mutually exclusive for a given op. rdy_cycle is the sole
+ * exception (an accumulator: MAX over the op's producers) and has no assert. */
+
+static inline Counter op_get_fetch_cycle(const Op* op) {
+  return op->cycles.fetch_cycle;
+}
+static inline void op_set_fetch_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.fetch_cycle == MAX_CTR);
+  op->cycles.fetch_cycle = cycle;
+}
+
+static inline Counter op_get_bp_cycle(const Op* op) {
+  return op->cycles.bp_cycle;
+}
+static inline void op_set_bp_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.bp_cycle == MAX_CTR);
+  op->cycles.bp_cycle = cycle;
+}
+
+static inline Counter op_get_map_cycle(const Op* op) {
+  return op->cycles.map_cycle;
+}
+static inline void op_set_map_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.map_cycle == MAX_CTR);
+  op->cycles.map_cycle = cycle;
+}
+
+static inline Counter op_get_issue_cycle(const Op* op) {
+  return op->cycles.issue_cycle;
+}
+static inline void op_set_issue_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.issue_cycle == MAX_CTR);
+  op->cycles.issue_cycle = cycle;
+}
+
+static inline Counter op_get_sched_cycle(const Op* op) {
+  return op->cycles.sched_cycle;
+}
+static inline void op_set_sched_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.sched_cycle == MAX_CTR);
+  op->cycles.sched_cycle = cycle;
+}
+
+static inline Counter op_get_exec_cycle(const Op* op) {
+  return op->cycles.exec_cycle;
+}
+static inline void op_set_exec_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.exec_cycle == MAX_CTR);
+  op->cycles.exec_cycle = cycle;
+}
+
+static inline Counter op_get_dcache_cycle(const Op* op) {
+  return op->cycles.dcache_cycle;
+}
+static inline void op_set_dcache_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.dcache_cycle == MAX_CTR);
+  op->cycles.dcache_cycle = cycle;
+}
+
+static inline Counter op_get_done_cycle(const Op* op) {
+  return op->cycles.done_cycle;
+}
+static inline void op_set_done_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.done_cycle == MAX_CTR);
+  op->cycles.done_cycle = cycle;
+}
+
+static inline Counter op_get_retire_cycle(const Op* op) {
+  return op->cycles.retire_cycle;
+}
+static inline void op_set_retire_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.retire_cycle == MAX_CTR);
+  op->cycles.retire_cycle = cycle;
+}
+
+static inline Counter op_get_replay_cycle(const Op* op) {
+  return op->cycles.replay_cycle;
+}
+static inline void op_set_replay_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.replay_cycle == MAX_CTR);
+  op->cycles.replay_cycle = cycle;
+}
+
+static inline Counter op_get_pred_cycle(const Op* op) {
+  return op->cycles.pred_cycle;
+}
+static inline void op_set_pred_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.pred_cycle == MAX_CTR);
+  op->cycles.pred_cycle = cycle;
+}
+
+static inline Counter op_get_precommit_cycle(const Op* op) {
+  return op->cycles.precommit_cycle;
+}
+static inline void op_set_precommit_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.precommit_cycle == MAX_CTR);
+  op->cycles.precommit_cycle = cycle;
+}
+
+static inline Counter op_get_decode_cycle(const Op* op) {
+  return op->cycles.decode_cycle;
+}
+static inline void op_set_decode_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.decode_cycle == MAX_CTR);
+  op->cycles.decode_cycle = cycle;
+}
+
+static inline Counter op_get_wake_cycle(const Op* op) {
+  return op->cycles.wake_cycle;
+}
+static inline void op_set_wake_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.wake_cycle == MAX_CTR);
+  op->cycles.wake_cycle = cycle;
+}
+
+/* rdy_cycle is an accumulator (MAX over the op's producers), so it is intentionally
+ * NOT write-once and has no assert. */
+static inline Counter op_get_rdy_cycle(const Op* op) {
+  return op->cycles.rdy_cycle;
+}
+static inline void op_set_rdy_cycle(Op* op, Counter cycle) {
+  op->cycles.rdy_cycle = cycle;
+}
+
+/* At retirement every on-path op has passed through each pipeline stage, so its
+ * cycle counters must all be set (!= MAX_CTR). Genuinely conditional counters are
+ * handled specially:
+ *   - bp_cycle    : only control-flow ops access the branch predictor;
+ *   - dcache_cycle: only memory ops access the dcache;
+ * and these are intentionally NOT checked (set only in specific situations):
+ *   - replay_cycle: set only when the op actually replayed;
+ *   - pred_cycle  : stamped only by predictors that use it (e.g. hybridgp);
+ *   - retire_cycle: set at retirement itself, after this check runs.
+ * rdy_cycle defaults to 1 for born-ready ops, so it is always set. */
+static inline void op_assert_cycles_set_at_retire(const Op* op) {
+  ASSERT(op->proc_id, op->cycles.fetch_cycle != MAX_CTR);
+  ASSERT(op->proc_id, op->cycles.map_cycle != MAX_CTR);
+  ASSERT(op->proc_id, op->cycles.issue_cycle != MAX_CTR);
+  ASSERT(op->proc_id, op->cycles.rdy_cycle != MAX_CTR);
+  ASSERT(op->proc_id, op->cycles.sched_cycle != MAX_CTR);
+  ASSERT(op->proc_id, op->cycles.exec_cycle != MAX_CTR);
+  ASSERT(op->proc_id, op->cycles.done_cycle != MAX_CTR);
+  ASSERT(op->proc_id, op->cycles.precommit_cycle != MAX_CTR);
+  ASSERT(op->proc_id, op->cycles.decode_cycle != MAX_CTR);
+  ASSERT(op->proc_id, op->cycles.wake_cycle != MAX_CTR);
+  if (op->inst_info->table_info.cf_type)
+    ASSERT(op->proc_id, op->cycles.bp_cycle != MAX_CTR);
+  if (op->inst_info->table_info.mem_type != NOT_MEM)
+    ASSERT(op->proc_id, op->cycles.dcache_cycle != MAX_CTR);
+}
 
 static inline void op_select_bp_pred_info(Op* op, Bp_Pred_Level level) {
   op->bp_pred_info = (level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;

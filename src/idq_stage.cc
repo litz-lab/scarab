@@ -283,7 +283,7 @@ void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd, int& count
     ASSERT(proc_id, op && op->op_num == next_op_num);
     /* If the uops are fetched from the uop cache,
      * it is possible that they have not yet called decode_stage_process_op */
-    if (!op->decode_cycle) {
+    if (op_get_decode_cycle(op) == MAX_CTR) {
       ASSERT(proc_id, op->fetched_from_uop_cache);
       decode_stage_process_op(op);
     }

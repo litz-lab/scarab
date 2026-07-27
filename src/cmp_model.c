@@ -347,13 +347,13 @@ void cmp_wake(Op* src_op, Op* dep_op, uns rdy_bit) {
   if (dep_op->state != OS_IN_RS) {
     /* However, update the rdy_cycle now so that the dependence is
        maintained when the op enters RS. */
-    dep_op->rdy_cycle = MAX2(dep_op->rdy_cycle, src_op->wake_cycle);
+    op_set_rdy_cycle(dep_op, MAX2(op_get_rdy_cycle(dep_op), op_get_wake_cycle(src_op)));
     return;
   }
 
   simple_wake(src_op, dep_op, rdy_bit);
 
-  if (op_sources_not_rdy_is_clear(dep_op) && cycle_count >= dep_op->issue_cycle && !dep_op->in_rdy_list) {
+  if (op_sources_not_rdy_is_clear(dep_op) && cycle_count >= op_get_issue_cycle(dep_op) && !dep_op->in_rdy_list) {
     _DEBUG(dep_op->proc_id, DEBUG_NODE_STAGE, "Adding to ready list  op_num:%s\n", unsstr64(dep_op->op_num));
     issue_queue_wakeup(dep_op);
   }

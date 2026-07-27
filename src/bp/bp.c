@@ -306,8 +306,8 @@ void bp_stat_main_branch_resolve_latency(Op* op, Counter resolve_cycle, Flag rec
   if (!(op->bp_pred_main.recover_at_decode || op->bp_pred_main.recover_at_exec))
     return;
 
-  ASSERT(op->proc_id, op->bp_cycle != MAX_CTR);
-  Counter latency = resolve_cycle > op->bp_cycle ? resolve_cycle - op->bp_cycle : 1;
+  ASSERT(op->proc_id, op_get_bp_cycle(op) != MAX_CTR);
+  Counter latency = resolve_cycle > op_get_bp_cycle(op) ? resolve_cycle - op_get_bp_cycle(op) : 1;
   uns bucket = latency > 100 ? 100 : (uns)(latency - 1);
   STAT_EVENT(op->proc_id,
              (recover_at_exec ? MAIN_BRANCH_RESOLVE_AT_EXEC_LAT_1 : MAIN_BRANCH_RESOLVE_AT_DECODE_LAT_1) + bucket);
@@ -865,7 +865,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
 
   ASSERT_PROC_ID_IN_ADDR(op->proc_id, bp_pred_info->pred_npc);
 
-  op->bp_cycle = cycle_count;
+  op_set_bp_cycle(op, cycle_count);
 
   if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP) {
     if (!op->off_path) {

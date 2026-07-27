@@ -307,7 +307,7 @@ uns8 bp_hybridgp_pred(Op* op, Bp_Pred_Level pred_level) {
     }
   }
 
-  op->pred_cycle = cycle_count;
+  op_set_pred_cycle(op, cycle_count);
   bp_pred_info->hybridgp_gpred = gpred;
   bp_pred_info->hybridgp_ppred = ppred;
   bp_pred_info->pred_local_hist = phist;
@@ -348,14 +348,14 @@ void bp_hybridgp_update(Op* op, Bp_Pred_Level pred_level) {
   const uns32 phist = bp_pred_info->pred_local_hist;
   const auto indices = cook_indices(addr, ghist, phist);
 
-  const uns32 resolution_time = cycle_count - op->pred_cycle;  // a bucket of 10s
-  const uns32 resolution_bucket = (cycle_count - op->pred_cycle) / 10;
+  const uns32 resolution_time = cycle_count - op_get_pred_cycle(op);  // a bucket of 10s
+  const uns32 resolution_bucket = (cycle_count - op_get_pred_cycle(op)) / 10;
 
   if (KNOB_PRINT_BRINFO)
     STAT_EVENT(proc_id, PRED_TO_UPDATE_CYCLES_0 + MIN2(50, resolution_bucket));
   else
-    STAT_EVENT(proc_id, PRED_TO_UPDATE_CYCLES_0 + MIN2(30, cycle_count - op->pred_cycle - DECODE_CYCLES));
-  ASSERT(proc_id, cycle_count - op->pred_cycle - DECODE_CYCLES > 0);
+    STAT_EVENT(proc_id, PRED_TO_UPDATE_CYCLES_0 + MIN2(30, cycle_count - op_get_pred_cycle(op) - DECODE_CYCLES));
+  ASSERT(proc_id, cycle_count - op_get_pred_cycle(op) - DECODE_CYCLES > 0);
 
   if (USE_FILTER) {
     const auto loop_filter_features = get_loop_filter_features(hybridgp_state, indices.filter);

@@ -89,33 +89,33 @@ void pipeview_print_op(struct Op_struct* op) {
   FILE* file = files[op->proc_id];
   print_header(file, op);
   if (op->off_path) {
-    print_event(file, op, "fetch_offpath", op->fetch_cycle);
+    print_event(file, op, "fetch_offpath", op_get_fetch_cycle(op));
   } else {
-    print_event(file, op, "fetch", op->fetch_cycle);
+    print_event(file, op, "fetch", op_get_fetch_cycle(op));
   }
-  print_event(file, op, "decode", op->fetch_cycle + 1);
-  print_event(file, op, "decode_done", op->fetch_cycle + 1 + DECODE_CYCLES);
-  print_event(file, op, "map", op->map_cycle);
-  print_event(file, op, "map_done", op->map_cycle + MAP_CYCLES);
-  print_event(file, op, "issue", op->issue_cycle);
-  print_event(file, op, "issue_done", op->issue_cycle + 1);
+  print_event(file, op, "decode", op_get_fetch_cycle(op) + 1);
+  print_event(file, op, "decode_done", op_get_fetch_cycle(op) + 1 + DECODE_CYCLES);
+  print_event(file, op, "map", op_get_map_cycle(op));
+  print_event(file, op, "map_done", op_get_map_cycle(op) + MAP_CYCLES);
+  print_event(file, op, "issue", op_get_issue_cycle(op));
+  print_event(file, op, "issue_done", op_get_issue_cycle(op) + 1);
   if (op_sources_not_rdy_is_clear(op)) {
     // op was ready at rdy_cycle only if all sources are ready
-    print_event(file, op, "ready", MAX2(op->rdy_cycle, op->issue_cycle + 1));
+    print_event(file, op, "ready", MAX2(op_get_rdy_cycle(op), op_get_issue_cycle(op) + 1));
   } else {
     ASSERT(op->proc_id, op->off_path);
   }
-  print_event(file, op, "sched", op->sched_cycle);
-  print_event(file, op, "exec", op->exec_cycle);
-  print_event(file, op, "dcache", op->dcache_cycle);
-  print_event(file, op, "done", op->done_cycle);
+  print_event(file, op, "sched", op_get_sched_cycle(op));
+  print_event(file, op, "exec", op_get_exec_cycle(op));
+  print_event(file, op, "dcache", op_get_dcache_cycle(op));
+  print_event(file, op, "done", op_get_done_cycle(op));
   if (op->off_path) {
     print_event(file, op, "flush", cycle_count);
     print_event(file, op, "end", cycle_count);
   } else {
-    ASSERT(op->proc_id, op->retire_cycle <= cycle_count);
-    print_event(file, op, "retire", op->retire_cycle);
-    print_event(file, op, "end", op->retire_cycle);
+    ASSERT(op->proc_id, op_get_retire_cycle(op) <= cycle_count);
+    print_event(file, op, "retire", op_get_retire_cycle(op));
+    print_event(file, op, "end", op_get_retire_cycle(op));
   }
 }
 
@@ -137,7 +137,7 @@ void print_event(FILE* file, Op* op, const char* name, Counter cycle) {
   /* print only events that make sense because flushed ops may not
      have all *_cycle fields set and non mem ops will not have
      dcache_cycle set  */
-  if (cycle >= op->fetch_cycle && cycle <= cycle_count) {
+  if (cycle >= op_get_fetch_cycle(op) && cycle <= cycle_count) {
     fprintf(file, "%s:%s:%lld\n", PREFIX, name, cycle);
   }
 }
@@ -146,6 +146,6 @@ void print_event(FILE* file, Op* op, const char* name, Counter cycle) {
 /* print_header: */
 
 void print_header(FILE* file, Op* op) {
-  fprintf(file, "%s:new:%lld:%llx:%d:%lld:%s\n", PREFIX, op->fetch_cycle, op->inst_info->addr, 0,
+  fprintf(file, "%s:new:%lld:%llx:%d:%lld:%s\n", PREFIX, op_get_fetch_cycle(op), op->inst_info->addr, 0,
           op->unique_num_per_proc, disasm_op(op, TRUE));
 }

@@ -256,7 +256,7 @@ void update_decode_stage(Stage_Data* src_sd) {
 
 void decode_stage_process_op(Op* op) {
   Cf_Type cf = op->inst_info->table_info.cf_type;
-  op->decode_cycle = cycle_count;
+  op_set_decode_cycle(op, cycle_count);
 
   if (cf) {
     DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",

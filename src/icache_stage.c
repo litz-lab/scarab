@@ -928,7 +928,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     STAT_EVENT(op->proc_id,
                ORACLE_ON_PATH_INST_MEM + (op->inst_info->table_info.mem_type == NOT_MEM) + 2 * op->off_path);
 
-    op->fetch_cycle = cycle_count;
+    op_set_fetch_cycle(op, cycle_count);
 
     if (is_fetch_barrier_op(op)) {
       ASSERT(ic->proc_id, !ic->fetch_barrier_pending);

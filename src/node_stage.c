@@ -389,7 +389,7 @@ void node_fill_rob(Stage_Data* src_sd) {
 
     /* set op fields */
     op->node_id = node->node_count;
-    op->issue_cycle = cycle_count;
+    op_set_issue_cycle(op, cycle_count);
 
     /* add to node list & update node state*/
     ASSERT(node->proc_id, !op->in_node_list);
@@ -450,7 +450,7 @@ void node_retire() {
             "Node retire stalled head_op_num:%s state:%s off_path:%u recovery_scheduled:%u redirect_scheduled:%u "
             "done_cycle:%s cycle:%s op_done_now:%u\n",
             unsstr64(op->op_num), Op_State_str(op->state), op->off_path, op->recovery_scheduled, op->redirect_scheduled,
-            unsstr64(op->done_cycle), unsstr64(cycle_count), (unsigned)(OP_DONE(op) ? 1 : 0));
+            unsstr64(op_get_done_cycle(op)), unsstr64(cycle_count), (unsigned)(OP_DONE(op) ? 1 : 0));
       // op is not ready to retire
       collect_not_ready_to_retire_stats(op);
       break;
@@ -479,12 +479,14 @@ void node_retire() {
     node->ret_stall_length = 0;
 
     // retire the ops
-    Counter real_rdy_cycle = MAX2(op->rdy_cycle, op->issue_cycle);
+    Counter real_rdy_cycle = MAX2(op_get_rdy_cycle(op), op_get_issue_cycle(op));
 
     ASSERT(node->proc_id, node->proc_id == op->proc_id);
     ASSERT(node->proc_id, op->in_node_list);
     ASSERT(node->proc_id, !op->off_path);
-    STAT_EVENT(op->proc_id, OP_WAIT_0 + MIN2(op->sched_cycle - real_rdy_cycle, 31));
+    // all per-op cycle counters (except the conditional ones) must be set by now
+    op_assert_cycles_set_at_retire(op);
+    STAT_EVENT(op->proc_id, OP_WAIT_0 + MIN2(op_get_sched_cycle(op) - real_rdy_cycle, 31));
     STAT_EVENT(op->proc_id, OP_RETIRED);  // Counts all ops retired, not just those in primary thread
 
     DEBUG(node->proc_id, "Retiring op_num:%s\n", unsstr64(op->op_num));
@@ -538,15 +540,15 @@ void node_retire() {
       bp_retire_op(g_bp_data, op);
     }
 
-    if (op->inst_info->table_info.mem_type == MEM_LD && (op->done_cycle - op->sched_cycle) < 5) {
-      STAT_EVENT(op->proc_id, LD_EXEC_CYCLES_0 + (op->done_cycle - op->sched_cycle));
+    if (op->inst_info->table_info.mem_type == MEM_LD && (op_get_done_cycle(op) - op_get_sched_cycle(op)) < 5) {
+      STAT_EVENT(op->proc_id, LD_EXEC_CYCLES_0 + (op_get_done_cycle(op) - op_get_sched_cycle(op)));
     }
     if (op->inst_info->table_info.mem_type == MEM_LD) {
       STAT_EVENT(op->proc_id, LD_NO_DEPENDENTS + (op->wake_up_head ? 1 : 0));
     }
     STAT_EVENT(op->proc_id, RET_OP_EXEC_COUNT_0 + MIN2(32, op->exec_count));
 
-    op->retire_cycle = cycle_count;
+    op_set_retire_cycle(op, cycle_count);
 
     // free the previous register entries with same architectural destination
     reg_file_commit(op);
@@ -707,12 +709,12 @@ void node_precommit_update(void) {
   uns precommit_count = 0;
   for (; op != NULL && precommit_count < NODE_RET_WIDTH; op = op->next_node) {
     // wait until the results usable for branches
-    if (op->inst_info->table_info.cf_type && op->exec_cycle > cycle_count)
+    if (op->inst_info->table_info.cf_type && op_get_exec_cycle(op) > cycle_count)
       return;
 
     // wait until looking up the d-cache for memory operands
     if ((op->inst_info->table_info.mem_type == MEM_LD || op->inst_info->table_info.mem_type == MEM_ST) &&
-        op->dcache_cycle > cycle_count)
+        op_get_dcache_cycle(op) > cycle_count)
       return;
 
     if (op->off_path)
@@ -725,7 +727,7 @@ void node_precommit_update(void) {
     precommit_count++;
     node->node_precommit = op;
     op->precommitted = TRUE;
-    op->precommit_cycle = cycle_count;
+    op_set_precommit_cycle(op, cycle_count);
 
     reg_file_precommit(op);
   }
@@ -733,7 +735,7 @@ void node_precommit_update(void) {
 
 void node_precommit_retire(Op* op) {
   ASSERT(node->proc_id, op->precommitted);
-  ASSERT(node->proc_id, op->precommit_cycle <= op->retire_cycle);
+  ASSERT(node->proc_id, op_get_precommit_cycle(op) <= op_get_retire_cycle(op));
 
   if (!node->node_precommit)
     return;

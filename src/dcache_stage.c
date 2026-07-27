@@ -245,6 +245,16 @@ void update_dcache_stage(Stage_Data* src_sd) {
       STAT_EVENT(dc->proc_id, DCACHE_READ_PORT_UNAVAILABLE_ONPATH + op->off_path);
       continue;
     }
+    // Record the first dcache access, keeping dcache_cycle write-once. The only
+    // legitimate re-probe is a miss still waiting for a mem-request buffer
+    // (OS_WAIT_MEM): it stays resident and re-runs this access every cycle. Checked
+    // here, before op->state is set OS_SCHEDULED below, so op->state is still the
+    // entry state; any re-probe from a non-WAIT_MEM state is a bug.
+    if (op_get_dcache_cycle(op) == MAX_CTR)
+      op_set_dcache_cycle(op, cycle_count);
+    else
+      ASSERT(dc->proc_id, op->state == OS_WAIT_MEM);
+
     // memory ops are marked as scheduled so that they can be removed from the node->rdy_list
     op->state = OS_SCHEDULED;
 
@@ -255,11 +265,6 @@ void update_dcache_stage(Stage_Data* src_sd) {
     /* now access the dcache with it */
     Addr line_addr;
     Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, TRUE);
-    // A miss that cannot get a mem-request buffer (OS_WAIT_MEM) stays resident and
-    // re-probes the dcache every cycle; record only the first access so dcache_cycle
-    // stays write-once.
-    if (op_get_dcache_cycle(op) == MAX_CTR)
-      op_set_dcache_cycle(op, cycle_count);
     dc->idle_cycle = MAX2(dc->idle_cycle, cycle_count + DCACHE_CYCLES);
 
     if (op->inst_info->table_info.mem_type == MEM_ST)

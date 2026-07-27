@@ -138,8 +138,8 @@ uns op_sources_add(Op* op, Dep_Type type, Op* src_op, Counter src_op_num, Counte
     // at load_pred_ready_cycle (now for value prediction; now + DCACHE_CYCLES for
     // RFP's L1->register-file prefetch). Apply that as a wake-time floor so RFP
     // consumers do not wake before the prefetched value arrives.
-    if (src_op->load_pred_ready_cycle > op->rdy_cycle)
-      op->rdy_cycle = src_op->load_pred_ready_cycle;
+    if (src_op->load_pred_ready_cycle > op_get_rdy_cycle(op))
+      op_set_rdy_cycle(op, src_op->load_pred_ready_cycle);
   }
 
   if (type == MEM_DATA_DEP) {

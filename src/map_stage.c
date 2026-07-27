@@ -282,7 +282,7 @@ static inline void stage_process_op(Op* op) {
    */
   if (op->load_value_predicted) {
     op->load_pred_ready_cycle = cycle_count + op->load_pred_ready_delay;
-    op->wake_cycle = op->load_pred_ready_cycle;
+    op_set_wake_cycle(op, op->load_pred_ready_cycle);
     wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
   }
 }

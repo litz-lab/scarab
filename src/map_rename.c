@@ -755,14 +755,14 @@ void reg_table_entry_produce(struct reg_table_entry *entry, Op *op, uns dst_reg_
   ASSERT(map_data->proc_id, entry->produced_cycle == MAX_CTR);
   // A genuine producer makes its value available now-or-later; only a value-
   // predicted load may have produced it earlier (predicted before it executes).
-  ASSERT(map_data->proc_id, op->load_value_predicted || op->wake_cycle >= cycle_count);
+  ASSERT(map_data->proc_id, op->load_value_predicted || op_get_wake_cycle(op) >= cycle_count);
 
   entry->reg_val = op->dst_val[dst_reg_idx];
   entry->produced_uid = op->inst_uid;
   entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
   // produced_cycle is the cycle the value is available in the register file
   // (== wake_cycle), so consumers (floored to wake_cycle) never consume before it.
-  entry->produced_cycle = op->wake_cycle;
+  entry->produced_cycle = op_get_wake_cycle(op);
 }
 
 struct reg_table_entry_ops reg_table_entry_ops = {

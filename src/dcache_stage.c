@@ -255,7 +255,11 @@ void update_dcache_stage(Stage_Data* src_sd) {
     /* now access the dcache with it */
     Addr line_addr;
     Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, TRUE);
-    op_set_dcache_cycle(op, cycle_count);
+    // A miss that cannot get a mem-request buffer (OS_WAIT_MEM) stays resident and
+    // re-probes the dcache every cycle; record only the first access so dcache_cycle
+    // stays write-once.
+    if (op_get_dcache_cycle(op) == MAX_CTR)
+      op_set_dcache_cycle(op, cycle_count);
     dc->idle_cycle = MAX2(dc->idle_cycle, cycle_count + DCACHE_CYCLES);
 
     if (op->inst_info->table_info.mem_type == MEM_ST)

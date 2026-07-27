@@ -867,7 +867,16 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     DEBUG(dc->proc_id, "Awakening op_num:%lld %d %d\n", op->op_num, op->engine_info.l1_miss_satisfied, op->in_rdy_list);
     ASSERT(dc->proc_id, !op->in_rdy_list);
 
-    op_set_done_cycle(op, cycle_count + 1);
+    // Record completion once (keeps done_cycle write-once). A store/prefetch that
+    // missed with *_DO_NOT_BLOCK_WINDOW already completed early (lines ~684/715)
+    // but still has this pending fill; keep its earlier done_cycle. Any other op
+    // arriving here already-done is a bug.
+    if (op_get_done_cycle(op) == MAX_CTR) {
+      op_set_done_cycle(op, cycle_count + 1);
+    } else {
+      Mem_Type mt = op->inst_info->table_info.mem_type;
+      ASSERT(dc->proc_id, mt == MEM_ST || mt == MEM_PF || mt == MEM_WH);
+    }
     op->state = OS_SCHEDULED;
 
     if (op->inst_info->table_info.mem_type != MEM_ST) {

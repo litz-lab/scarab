@@ -335,6 +335,15 @@ DEF_PARAM(l1_miss_rate, L1_MISS_RATE, uns, uns, 10, )
 
 DEF_PARAM(trace_buf_size, TRACE_BUF_SIZE, uns, uns, 0, )
 
+/* Replace the oracle memory addresses (ld_vaddr/st_vaddr) of every instruction
+   recorded in the trace frontend's replay buffer with a poison value. The
+   replay buffer is keyed by PC and is replayed to synthesize wrong-path
+   instructions; the addresses it stores come from the on-path occurrence of
+   that PC, so reusing them off-path leaks oracle information and makes
+   wrong-path memory accesses behave like a perfect prefetcher. Enabled by
+   default so wrong-path memory behavior is not oracle-informed. */
+DEF_PARAM(poison_replay_buffer_oracle_va, POISON_REPLAY_BUFFER_ORACLE_VA, Flag, Flag, TRUE, )
+
 DEF_PARAM(perfect_confidence, PERFECT_CONFIDENCE, Flag, Flag, FALSE, )
 DEF_PARAM(confidence_enable, CONFIDENCE_ENABLE, Flag, Flag, FALSE, )
 DEF_PARAM(confidence_mech, CONFIDENCE_MECH, uns, uns, 0, ) // 0 = weight, 1 = btb_miss_bp_taken

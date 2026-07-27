@@ -253,6 +253,15 @@ void update_dcache_stage(Stage_Data* src_sd) {
       STAT_EVENT(dc->proc_id, DCACHE_READ_PORT_UNAVAILABLE_ONPATH + op->off_path);
       continue;
     }
+    // Record the first dcache access, keeping dcache_cycle write-once, before the
+    // state is set OS_SCHEDULED below (so op->state here is still the entry state).
+    // The only legitimate re-probe is a miss still waiting for a mem-request buffer
+    // (OS_WAIT_MEM), which stays resident and re-runs this access every cycle.
+    if (op_get_dcache_cycle(op) == MAX_CTR)
+      op_set_dcache_cycle(op, cycle_count);
+    else
+      ASSERT(dc->proc_id, op->state == OS_WAIT_MEM);
+
     // memory ops are marked as scheduled so that they can be removed from the node->rdy_list
     op->state = OS_SCHEDULED;
 
@@ -263,11 +272,6 @@ void update_dcache_stage(Stage_Data* src_sd) {
     /* now access the dcache with it */
     Addr line_addr;
     Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, access_va, &line_addr, TRUE);
-    // A miss that cannot get a mem-request buffer (OS_WAIT_MEM) stays resident and
-    // re-probes the dcache every cycle; record only the first access so dcache_cycle
-    // stays write-once.
-    if (op_get_dcache_cycle(op) == MAX_CTR)
-      op_set_dcache_cycle(op, cycle_count);
     dc->idle_cycle = MAX2(dc->idle_cycle, cycle_count + DCACHE_CYCLES);
 
     // Address prediction (early-AGEN / RFP) verifies at AGEN: the effective
@@ -301,6 +305,9 @@ void update_dcache_stage(Stage_Data* src_sd) {
       if (op->inst_info->table_info.mem_type != MEM_ST && !op->load_value_predicted) {
         op_set_wake_cycle(op, op_get_done_cycle(op));
         wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+      } else if (op->load_value_predicted) {
+        // produced early and woke consumers at rename; wake_cycle must already be set
+        ASSERT(op->proc_id, op_get_wake_cycle(op) != MAX_CTR);
       }
       // Value prediction verifies at completion: the load's data is available, so
       // a mispredicted predicted value schedules its recovery at done_cycle.
@@ -608,6 +615,9 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
   if (op->inst_info->table_info.mem_type != MEM_ST && !op->load_value_predicted) {
     op_set_wake_cycle(op, op_get_done_cycle(op));
     wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+  } else if (op->load_value_predicted) {
+    // produced early and woke consumers at rename; wake_cycle must already be set
+    ASSERT(op->proc_id, op_get_wake_cycle(op) != MAX_CTR);
   }
   // Value prediction verifies at completion (data now available on this hit).
   if (op->bp_pred_info->recover_at_load_completion)
@@ -641,6 +651,9 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
         if (!op->load_value_predicted) {
           op_set_wake_cycle(op, cycle_count + DCACHE_CYCLES + op->inst_info->extra_ld_latency);
           wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+        } else {
+          // produced early and woke consumers at rename; wake_cycle must already be set
+          ASSERT(op->proc_id, op_get_wake_cycle(op) != MAX_CTR);
         }
         // Store-forwarding provides the data, so the load is complete here: value
         // prediction can be verified at this store-buffer hit.
@@ -909,6 +922,9 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     if (op->inst_info->table_info.mem_type != MEM_ST && !op->load_value_predicted) {
       op_set_wake_cycle(op, op_get_done_cycle(op));
       wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+    } else if (op->load_value_predicted) {
+      // produced early and woke consumers at rename; wake_cycle must already be set
+      ASSERT(op->proc_id, op_get_wake_cycle(op) != MAX_CTR);
     }
     // Value prediction verifies at completion: the miss fill returned the data.
     if (op->bp_pred_info->recover_at_load_completion)

@@ -865,7 +865,11 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
 
   ASSERT_PROC_ID_IN_ADDR(op->proc_id, bp_pred_info->pred_npc);
 
-  op_set_bp_cycle(op, cycle_count);
+  // A CF op is predicted at both levels (L0 when enabled, then MAIN) in the same
+  // cycle. Record the predictor-access cycle once, on the MAIN pass (always run),
+  // so bp_cycle stays write-once.
+  if (pred_level == BP_PRED_MAIN)
+    op_set_bp_cycle(op, cycle_count);
 
   if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP) {
     if (!op->off_path) {

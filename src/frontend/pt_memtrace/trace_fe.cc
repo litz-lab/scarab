@@ -54,6 +54,12 @@ static TraceBufState trace_buf_state[MAX_NUM_PROCS];
 
 const int CLINE = ~0x3F;
 
+/* Stamped into replay-buffer oracle memory addresses when
+   POISON_REPLAY_BUFFER_ORACLE_VA is set. Deliberately non-canonical so any
+   consumer of a replayed address fails loudly rather than silently inheriting
+   on-path oracle state. */
+static const uint64_t REPLAY_BUFFER_POISON_VA = 0xCAFEBABEDEADBEAFULL;
+
 extern uint64_t ins_id;
 extern uint64_t ins_id_fetched;
 
@@ -303,6 +309,15 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
           if (DEBUG_TRACE_READ && DEBUG_RANGE_COND(proc_id)) {
             assert_ctype_pin_inst_same(proc_id, next_onpath_pi[proc_id], find->second);
           }
+        }
+        // Poison the oracle memory addresses of the replay-buffer entry for this
+        // PC; they are only ever read back to replay off-path instructions.
+        if (POISON_REPLAY_BUFFER_ORACLE_VA) {
+          ctype_pin_inst &replay_entry = pc_to_inst[proc_id][addr];
+          for (uns i = 0; i < MAX_LD_NUM; i++)
+            replay_entry.ld_vaddr[i] = REPLAY_BUFFER_POISON_VA;
+          for (uns i = 0; i < MAX_ST_NUM; i++)
+            replay_entry.st_vaddr[i] = REPLAY_BUFFER_POISON_VA;
         }
       }
     } else {

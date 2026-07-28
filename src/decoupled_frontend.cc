@@ -1088,50 +1088,31 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
 void Decoupled_FE::redirect_load_mispred(FT_PredictResult result) {
   ASSERT(proc_id, bp_id == MAIN_BP);
   ASSERT(proc_id, result.event == FT_EVENT_LOAD_MISPREDICT);
-  FT* ft = current_ft_to_push;
-  const uint64_t eom_idx = result.index;
-  std::vector<Op*>& ops = ft->get_ops();
-  ASSERT(proc_id, eom_idx < ops.size());
-  // The macro EOM is the recovery point. The icache flips off-path right after
-  // fetching it (see ft_get_sibling_eom), keeping the per-op ic->off_path ==
-  // op->off_path invariant across the on->off boundary.
-  ASSERT(proc_id, ops[eom_idx] == result.op);
+  ASSERT(proc_id, result.index < current_ft_to_push->get_ops().size());
+  ASSERT(proc_id, current_ft_to_push->get_ops()[result.index] == result.op);
 
-  if (eom_idx + 1 < ops.size()) {
-    // In-FT consumers after the load's EOM: move them into a fresh recovery FT --
-    // no copy, no re-fetch. They are held on-path and restored at recovery; their
-    // first op begins at the load's fall-through (== recovery_fetch_addr). The
-    // working FT now ends at the EOM; a non-CF load doesn't end an FT, so
-    // get_end_reason() == FT_NOT_ENDED and its tail is refilled off-path below.
-    FT* saved = new FT(proc_id, bp_id);
-    std::vector<Op*>& saved_ops = saved->get_ops();
-    for (size_t i = eom_idx + 1; i < ops.size(); i++) {
-      ops[i]->parent_FT = saved;
-      saved_ops.push_back(ops[i]);
-    }
-    ops.resize(eom_idx + 1);
-    saved->op_pos = 0;
-    saved->generate_ft_info();
-    saved->set_prebuilt(true);
-    saved_recovery_ft = saved;
-  } else {
-    // The load's EOM is the last op of this FT (the FT ended at the macro, e.g. an
-    // icache-line boundary): the consumers live in the NEXT on-path FT. Keep this
-    // FT on-path as-is and hold the next on-path FT as the recovery FT -- the same
-    // no-trailing-ft handling as redirect_to_off_path. This FT is already ended, so
-    // the refill below is a no-op; off-path fetching resumes in the next FT.
+  // A predicted-load mispredict goes off-path after the load's macro EOM. There is
+  // no control-flow divergence (the "target" is just the fall-through), but the FT
+  // bookkeeping is identical to a branch mispredict at result.index, so reuse the
+  // same split/recovery machinery as redirect_to_off_path: split at the EOM into the
+  // off-path FT (prefix through the EOM, refilled off-path) and the trailing on-path
+  // consumers held for recovery; if the EOM is the FT's last op, hold the next
+  // on-path FT instead. The icache flips off-path right after the EOM (op->eom).
+  auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
+  current_ft_to_push = off_path_FT;
+  if (trailing_ft && trailing_ft->has_unread_ops())
+    saved_recovery_ft = trailing_ft;
+  else
     saved_recovery_ft = build_or_pop_next_on_path_ft();
-  }
 
-  // Go off-path after the load's EOM (in place for the in-FT-consumers case; in the
-  // next FT otherwise), then continue off-path -- shared with redirect_to_off_path.
   redirect_cycle = cycle_count;
   next_state = SERVING_OFF_PATH;
-  set_off_path_op_num(ft->get_last_op()->op_num + 1);
   frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);
-  refill_ft_tail_off_path(ft);
-  if (ft->ended_by_exit()) {
+  set_off_path_op_num(current_ft_to_push->get_last_op()->op_num + 1);
+  refill_ft_tail_off_path(current_ft_to_push);
+  if (current_ft_to_push->ended_by_exit()) {
     next_state = INACTIVE;
     exit_on_off_path = true;
   }
+  ASSERT(proc_id, current_ft_to_push->get_end_reason() != FT_NOT_ENDED);
 }

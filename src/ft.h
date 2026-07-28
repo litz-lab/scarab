@@ -68,6 +68,7 @@ bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start);
 void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr);
 void ft_free_op(Op* op);
 Op* ft_get_sibling_eom(Op* op);
+Flag ft_sibling_recovers_at_exec(Op* op);
 
 #ifdef __cplusplus
 }  // extern "C"

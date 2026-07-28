@@ -1030,11 +1030,11 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
 
   // checkpoint the speculative register table for recovering. A branch snapshots at
   // its own rename (recover_at_exec). A predicted-load recovery snapshots at the
-  // macro EOM's rename (ft_get_sibling_eom(op) == op) so the checkpoint pairs with
-  // the EOM rollback, even though the trigger uop carrying recover_at_exec may be
-  // mid-macro.
+  // macro EOM's rename (op->eom) -- the recovery point -- so the checkpoint pairs
+  // with the EOM rollback even though the trigger uop carrying recover_at_exec may
+  // be mid-macro; ft_sibling_recovers_at_exec gates it to recovering macros.
   if (!op->off_path && ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) ||
-                        (op->inst_info->table_info.cf_type == NOT_CF && ft_get_sibling_eom(op) == op)))
+                        (op->eom && op->inst_info->table_info.cf_type == NOT_CF && ft_sibling_recovers_at_exec(op))))
     reg_file_snapshot_srt();
 }
 
@@ -1156,11 +1156,11 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
 
   // checkpoint the speculative register table for recovering. A branch snapshots at
   // its own rename (recover_at_exec). A predicted-load recovery snapshots at the
-  // macro EOM's rename (ft_get_sibling_eom(op) == op) so the checkpoint pairs with
-  // the EOM rollback, even though the trigger uop carrying recover_at_exec may be
-  // mid-macro.
+  // macro EOM's rename (op->eom) -- the recovery point -- so the checkpoint pairs
+  // with the EOM rollback even though the trigger uop carrying recover_at_exec may
+  // be mid-macro; ft_sibling_recovers_at_exec gates it to recovering macros.
   if (!op->off_path && ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) ||
-                        (op->inst_info->table_info.cf_type == NOT_CF && ft_get_sibling_eom(op) == op)))
+                        (op->eom && op->inst_info->table_info.cf_type == NOT_CF && ft_sibling_recovers_at_exec(op))))
     reg_file_snapshot_srt();
 }
 

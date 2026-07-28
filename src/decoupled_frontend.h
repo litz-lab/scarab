@@ -355,9 +355,9 @@ struct Decoupled_FE {
   bool is_off_path_state() const { return state == SERVING_OFF_PATH; }
   void check_consecutivity_and_push_to_ftq();
   void redirect_to_off_path(FT_PredictResult result);
-  // Load value/RFP mispredict: go off-path after the mispredicted load IN PLACE
-  // (no FT split). The consumers after the load's EOM are moved into the recovery
-  // FT (held for replay) and the working FT's tail is refilled with off-path ops.
+  // Load value/RFP mispredict: go off-path after the mispredicted load's macro EOM.
+  // Uses the same FT split/recovery machinery as redirect_to_off_path (split at the
+  // EOM; consumers held in the recovery FT); the "target" is just the fall-through.
   void redirect_load_mispred(FT_PredictResult result);
   // Shared off-path-redirect helpers (used by both redirect_to_off_path and
   // redirect_load_mispred). build_or_pop_next_on_path_ft returns the next on-path

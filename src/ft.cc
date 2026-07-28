@@ -413,13 +413,11 @@ FT_PredictResult FT::predict_ft() {
         // predicted_load_schedule_recovery): bp_sched_recovery squashes ops younger
         // than it, so scheduling on the EOM keeps the load's own sibling uops alive.
         load_pred_mark_recovery(op);
-        // Go off-path after the macro, IN PLACE (no FT split): the consumers after
-        // the EOM are moved aside as the recovery FT and the FT's tail is refilled
-        // with off-path ops. Driven from update() via redirect_load_mispred. Resolve
-        // the recovery point (macro EOM) through the same ft_get_sibling_eom used by
-        // the scheduler/snapshot, then locate its index for the in-place split.
+        // Go off-path after the load's macro, driven from update() via
+        // redirect_load_mispred (it splits this FT at the EOM like a branch
+        // mispredict). result.index must be the EOM's position in ops[]: the EOM is
+        // this load's macro tail, so walk forward over the macro's remaining uops.
         Op* eom = ft_get_sibling_eom(op);
-        ASSERT(proc_id, eom);
         size_t eom_idx = idx;
         while (ops[eom_idx] != eom)
           eom_idx++;
@@ -568,35 +566,41 @@ FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
 
-/* If op belongs to a predicted-load macro that recovers at exec (some uop of the
- * macro is marked recover_at_exec), return that macro's END-OF-MACRO op; otherwise
- * return NULL. The recovery is TRIGGERED by a (possibly mid-macro) uop's execution
- * but must be SCHEDULED on the EOM: bp_sched_recovery squashes ops younger than the
- * recovery op, so targeting the EOM keeps the load's own sibling uops alive and
- * squashes only the speculatively-woken consumers after the macro.
- *
- * One API, three callers, so trigger/EOM stay consistent:
- *   - the recovery scheduler passes the trigger and gets the squash point (EOM);
- *   - the rename SRT snapshot and the icache off-path flip pass each op and fire
- *     exactly when it IS the recovering macro's EOM (ft_get_sibling_eom(op) == op),
- *     so the snapshot/rollback and off-path boundary land on the EOM even when the
- *     trigger is mid-macro. */
+/* Return the END-OF-MACRO op of op's macro-instruction (the uop with the same
+ * inst_uid and eom set), by scanning op's parent FT. Pure: always returns the EOM,
+ * independent of whether the macro recovers. A predicted load's recovery is
+ * TRIGGERED by a (possibly mid-macro) uop's execution but must be SCHEDULED on the
+ * EOM (bp_sched_recovery squashes ops younger than the recovery op, so the EOM keeps
+ * the load's own sibling uops alive). The rename SRT snapshot and icache off-path
+ * flip use "op->eom" for the same "op is the EOM" test (equivalent for a valid
+ * macro) and gate recovery separately via ft_sibling_recovers_at_exec. */
 Op* ft_get_sibling_eom(Op* op) {
+  ASSERT(0, op);
+  if (op->eom)
+    return op;
+  FT* ft = op->parent_FT;
+  ASSERT(op->proc_id, ft);
+  for (Op* cand : ft->get_ops()) {
+    if (cand && cand->inst_uid == op->inst_uid && cand->eom)
+      return cand;
+  }
+  ASSERT(op->proc_id, FALSE);  // every macro has an EOM
+  return op;
+}
+
+/* Whether op's macro-instruction is a predicted-load recovery macro: some uop of
+ * the macro is marked recover_at_exec (on bp_pred_main, set on-path). Separate from
+ * ft_get_sibling_eom so the EOM lookup stays independent of the recover decision. */
+Flag ft_sibling_recovers_at_exec(Op* op) {
   ASSERT(0, op);
   FT* ft = op->parent_FT;
   if (!ft)
-    return NULL;
-  Op* eom = NULL;
-  bool recovers = false;
+    return FALSE;
   for (Op* cand : ft->get_ops()) {
-    if (!cand || cand->inst_uid != op->inst_uid)
-      continue;
-    if (cand->eom)
-      eom = cand;
-    if (cand->bp_pred_main.recover_at_exec)
-      recovers = true;
+    if (cand && cand->inst_uid == op->inst_uid && cand->bp_pred_main.recover_at_exec)
+      return TRUE;
   }
-  return recovers ? eom : NULL;
+  return FALSE;
 }
 
 static bool ft_op_recovery_addr_is_consecutive(Op* op, Addr next_start) {

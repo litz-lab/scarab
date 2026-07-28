@@ -359,6 +359,12 @@ struct Decoupled_FE {
   // (no FT split). The consumers after the load's EOM are moved into the recovery
   // FT (held for replay) and the working FT's tail is refilled with off-path ops.
   void redirect_load_mispred(FT_PredictResult result);
+  // Shared off-path-redirect helpers (used by both redirect_to_off_path and
+  // redirect_load_mispred). build_or_pop_next_on_path_ft returns the next on-path
+  // FT (from the lookahead buffer or freshly built) to hold as the recovery FT;
+  // refill_ft_tail_off_path appends off-path ops to ft until it ends.
+  FT* build_or_pop_next_on_path_ft();
+  void refill_ft_tail_off_path(FT* ft);
   inline uint64_t ftq_max_size() { return ftq_ft_num; }
   void set_off_path_op_num(uint64_t op_num) { current_off_path_op_num = op_num; }
   void set_on_path_op_num(uint64_t op_num) { this->op_num = op_num; }

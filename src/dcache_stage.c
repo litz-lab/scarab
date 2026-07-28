@@ -253,11 +253,15 @@ void update_dcache_stage(Stage_Data* src_sd) {
       STAT_EVENT(dc->proc_id, DCACHE_READ_PORT_UNAVAILABLE_ONPATH + op->off_path);
       continue;
     }
-    // Record the first dcache access, keeping dcache_cycle write-once, before the
-    // state is set OS_SCHEDULED below. An op may re-probe this access across cycles
-    // (a miss waiting for a mem-request buffer in OS_WAIT_MEM re-runs it every cycle;
-    // predicted loads can also re-access), so only the first probe is recorded.
-    if (op_get_dcache_cycle(op) == MAX_CTR)
+    // Record the dcache access before the op is marked OS_SCHEDULED below. Write-once
+    // and self-checking: op_set_dcache_cycle asserts the counter was unset, so a
+    // stray double-set anywhere trips -- it is not silently skipped. The one path
+    // that legitimately re-enters here for the same op is a miss still waiting for a
+    // mem-request buffer (OS_WAIT_MEM, STALL_ON_WAIT_MEM), which re-probes every cycle
+    // after its first probe already recorded the cycle; assert exactly that.
+    if (op->state == OS_WAIT_MEM)
+      ASSERT(dc->proc_id, op_get_dcache_cycle(op) != MAX_CTR);
+    else
       op_set_dcache_cycle(op, cycle_count);
 
     // memory ops are marked as scheduled so that they can be removed from the node->rdy_list

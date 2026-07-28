@@ -999,6 +999,48 @@ void Decoupled_FE::check_consecutivity_and_push_to_ftq() {
   ftq.emplace_back(std::move(current_ft_to_push));
 }
 
+// Build (or pop from the lookahead buffer) the next on-path FT, prebuilt, to hold
+// as the recovery FT. Shared by the off-path redirect paths for the case where the
+// on-path continuation is not already resident in the working FT.
+FT* Decoupled_FE::build_or_pop_next_on_path_ft() {
+  FT* ft;
+  if (LOOKAHEAD_BUF_SIZE) {
+    ft = lookahead_buffer_pop_ft(proc_id);
+    ASSERT(proc_id, ft->get_is_prebuilt());
+  } else {
+    ft = new FT(proc_id, bp_id);
+    auto build_event = ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                 [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                   frontend_fetch_op(pid, bid, op);
+                                   return true;
+                                 },
+                                 false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
+    ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+    ft->set_prebuilt(true);
+  }
+  return ft;
+}
+
+// Append off-path ops to ft (in place) until it ends, redirecting the backend on a
+// taken/mispredicted off-path CF and stalling on a fetch barrier. Shared by the
+// off-path redirect paths.
+void Decoupled_FE::refill_ft_tail_off_path(FT* ft) {
+  while (ft->get_end_reason() == FT_NOT_ENDED) {
+    auto build_event = ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                 [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                   frontend_fetch_op(pid, bid, op);
+                                   return true;
+                                 },
+                                 true, conf_off_path, []() { return decoupled_fe_get_next_off_path_op_num(); });
+    ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+    if (build_event == FT_EVENT_MISPREDICT || build_event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
+      frontend_redirect(proc_id, bp_id, ft->get_last_op()->inst_uid, ft->get_last_op()->bp_pred_info->pred_npc);
+    } else if (build_event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
+      stall(ft->get_last_op());
+    }
+  }
+}
+
 void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling
   ASSERT(proc_id, bp_id == MAIN_BP);
@@ -1010,35 +1052,16 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
     conf->set_off_path_reason(reason);
   auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
   current_ft_to_push = off_path_FT;
-  // if we have a tailing ft, save it for recovery
+  // if we have a tailing ft, save it for recovery; otherwise the misprediction was
+  // at the last op of the on-path FT, so hold the next on-path FT for recovery.
   if (trailing_ft && trailing_ft->has_unread_ops()) {
     saved_recovery_ft = trailing_ft;
-    DEBUG(proc_id, "[DFE%u] saved_recovery_ft<-trailing_ft id:%llu start:0x%llx ops:%zu\n", bp_id,
-          (unsigned long long)saved_recovery_ft->get_ft_info().dynamic_info.FT_id,
-          (unsigned long long)saved_recovery_ft->get_ft_info().static_info.start, saved_recovery_ft->ops.size());
+  } else {
+    saved_recovery_ft = build_or_pop_next_on_path_ft();
   }
-  // no trailing ft, misprediction happened at the last op of the on-path FT, fetch the next on-path ft, then redirect
-  else {
-    if (LOOKAHEAD_BUF_SIZE) {
-      saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
-      ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
-    } else {
-      saved_recovery_ft = new FT(proc_id, bp_id);
-      auto build_event =
-          saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                                   [](uns8 pid, uns8 bid, Op* op) -> bool {
-                                     frontend_fetch_op(pid, bid, op);
-                                     return true;
-                                   },
-                                   false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
-      ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
-      saved_recovery_ft->set_prebuilt(true);
-    }
-
-    DEBUG(proc_id, "[DFE%u] saved_recovery_ft<-newly_built id:%llu start:0x%llx ops:%zu\n", bp_id,
-          (unsigned long long)saved_recovery_ft->get_ft_info().dynamic_info.FT_id,
-          (unsigned long long)saved_recovery_ft->get_ft_info().static_info.start, saved_recovery_ft->ops.size());
-  }
+  DEBUG(proc_id, "[DFE%u] saved_recovery_ft id:%llu start:0x%llx ops:%zu\n", bp_id,
+        (unsigned long long)saved_recovery_ft->get_ft_info().dynamic_info.FT_id,
+        (unsigned long long)saved_recovery_ft->get_ft_info().static_info.start, saved_recovery_ft->ops.size());
   redirect_cycle = cycle_count;
   next_state = SERVING_OFF_PATH;
   frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);
@@ -1054,22 +1077,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // set the current op number as the beginning op count of this off-path divergence
   set_off_path_op_num(current_ft_to_push->get_last_op()->op_num + 1);
   // patching/modify the current FT with off-path op if current FT not ended
-  while (current_ft_to_push->get_end_reason() == FT_NOT_ENDED) {
-    auto build_event =
-        current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                                  [](uns8 pid, uns8 bid, Op* op) -> bool {
-                                    frontend_fetch_op(pid, bid, op);
-                                    return true;
-                                  },
-                                  true, conf_off_path, []() { return decoupled_fe_get_next_off_path_op_num(); });
-    ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
-    if (build_event == FT_EVENT_MISPREDICT || build_event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
-      frontend_redirect(proc_id, bp_id, current_ft_to_push->get_last_op()->inst_uid,
-                        current_ft_to_push->get_last_op()->bp_pred_info->pred_npc);
-    } else if (build_event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
-      stall(current_ft_to_push->get_last_op());
-    }
-  }
+  refill_ft_tail_off_path(current_ft_to_push);
   if (current_ft_to_push->ended_by_exit()) {
     next_state = INACTIVE;
     exit_on_off_path = true;
@@ -1109,47 +1117,19 @@ void Decoupled_FE::redirect_load_mispred(FT_PredictResult result) {
   } else {
     // The load's EOM is the last op of this FT (the FT ended at the macro, e.g. an
     // icache-line boundary): the consumers live in the NEXT on-path FT. Keep this
-    // FT on-path as-is and build/pop the next on-path FT as the recovery FT --
-    // mirrors redirect_to_off_path's no-trailing-ft case. This FT is already ended,
-    // so the refill loop below is a no-op; off-path fetching resumes in the next FT.
-    if (LOOKAHEAD_BUF_SIZE) {
-      saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
-      ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
-    } else {
-      saved_recovery_ft = new FT(proc_id, bp_id);
-      auto build_event =
-          saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                                   [](uns8 pid, uns8 bid, Op* op) -> bool {
-                                     frontend_fetch_op(pid, bid, op);
-                                     return true;
-                                   },
-                                   false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
-      ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
-      saved_recovery_ft->set_prebuilt(true);
-    }
+    // FT on-path as-is and hold the next on-path FT as the recovery FT -- the same
+    // no-trailing-ft handling as redirect_to_off_path. This FT is already ended, so
+    // the refill below is a no-op; off-path fetching resumes in the next FT.
+    saved_recovery_ft = build_or_pop_next_on_path_ft();
   }
 
   // Go off-path after the load's EOM (in place for the in-FT-consumers case; in the
-  // next FT otherwise), then continue off-path -- same off-path fill as
-  // redirect_to_off_path. The refill loop only runs while the FT is FT_NOT_ENDED.
+  // next FT otherwise), then continue off-path -- shared with redirect_to_off_path.
   redirect_cycle = cycle_count;
   next_state = SERVING_OFF_PATH;
   set_off_path_op_num(ft->get_last_op()->op_num + 1);
   frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);
-  while (ft->get_end_reason() == FT_NOT_ENDED) {
-    auto build_event = ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
-                                 [](uns8 pid, uns8 bid, Op* op) -> bool {
-                                   frontend_fetch_op(pid, bid, op);
-                                   return true;
-                                 },
-                                 true, conf_off_path, []() { return decoupled_fe_get_next_off_path_op_num(); });
-    ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
-    if (build_event == FT_EVENT_MISPREDICT || build_event == FT_EVENT_OFFPATH_TAKEN_REDIRECT) {
-      frontend_redirect(proc_id, bp_id, ft->get_last_op()->inst_uid, ft->get_last_op()->bp_pred_info->pred_npc);
-    } else if (build_event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
-      stall(ft->get_last_op());
-    }
-  }
+  refill_ft_tail_off_path(ft);
   if (ft->ended_by_exit()) {
     next_state = INACTIVE;
     exit_on_off_path = true;

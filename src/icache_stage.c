@@ -987,11 +987,12 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
 
     // Load value/address mispredict: the decoupled frontend marked recover_at_exec
     // on the mispredict's trigger uop and refilled this FT's tail off-path in place
-    // after the macro EOM. Flip the icache off-path right after the recovering
-    // macro's EOM (ft_get_sibling_eom(op) == op) -- not at the trigger, which may be
-    // mid-macro -- so the following tail ops satisfy the ic->off_path == op->off_path
-    // invariant, mirroring the branch flip above.
-    if (op->eom && op->inst_info->table_info.cf_type == NOT_CF && !op->off_path && ft_get_sibling_eom(op) == op) {
+    // after the macro EOM. ft_get_sibling_eom(op) == op already means "op is the EOM
+    // of a recovering macro" (it returns NULL unless some uop of the macro carries
+    // recover_at_exec), so flip the icache off-path right after that EOM -- even when
+    // the trigger is mid-macro -- keeping the ic->off_path == op->off_path invariant.
+    // cf_type == NOT_CF excludes branch-recovery macros, which flip above.
+    if (!op->off_path && op->inst_info->table_info.cf_type == NOT_CF && ft_get_sibling_eom(op) == op) {
       ASSERT(ic->proc_id, !ic->off_path);
       ic->off_path = TRUE;
     }

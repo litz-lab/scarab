@@ -1034,7 +1034,7 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
   // the EOM rollback, even though the trigger uop carrying recover_at_exec may be
   // mid-macro.
   if (!op->off_path && ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) ||
-                        (op->eom && op->inst_info->table_info.cf_type == NOT_CF && ft_get_sibling_eom(op) == op)))
+                        (op->inst_info->table_info.cf_type == NOT_CF && ft_get_sibling_eom(op) == op)))
     reg_file_snapshot_srt();
 }
 
@@ -1160,7 +1160,7 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
   // the EOM rollback, even though the trigger uop carrying recover_at_exec may be
   // mid-macro.
   if (!op->off_path && ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) ||
-                        (op->eom && op->inst_info->table_info.cf_type == NOT_CF && ft_get_sibling_eom(op) == op)))
+                        (op->inst_info->table_info.cf_type == NOT_CF && ft_get_sibling_eom(op) == op)))
     reg_file_snapshot_srt();
 }
 

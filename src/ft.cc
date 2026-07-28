@@ -415,12 +415,14 @@ FT_PredictResult FT::predict_ft() {
         load_pred_mark_recovery(op);
         // Go off-path after the macro, IN PLACE (no FT split): the consumers after
         // the EOM are moved aside as the recovery FT and the FT's tail is refilled
-        // with off-path ops. Driven from update() via redirect_load_mispred.
+        // with off-path ops. Driven from update() via redirect_load_mispred. Resolve
+        // the recovery point (macro EOM) through the same ft_get_sibling_eom used by
+        // the scheduler/snapshot, then locate its index for the in-place split.
+        Op* eom = ft_get_sibling_eom(op);
+        ASSERT(proc_id, eom);
         size_t eom_idx = idx;
-        while (eom_idx < ops.size() && !ops[eom_idx]->eom)
+        while (ops[eom_idx] != eom)
           eom_idx++;
-        ASSERT(proc_id, eom_idx < ops.size() && ops[eom_idx]->inst_uid == op->inst_uid);
-        Op* eom = ops[eom_idx];
         if (!ended_by_exit()) {
           const Addr fall_through = ADDR_PLUS_OFFSET(eom->inst_info->addr, eom->inst_info->trace_info.inst_size);
           return {eom_idx, FT_EVENT_LOAD_MISPREDICT, eom, fall_through};

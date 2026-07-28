@@ -254,13 +254,11 @@ void update_dcache_stage(Stage_Data* src_sd) {
       continue;
     }
     // Record the first dcache access, keeping dcache_cycle write-once, before the
-    // state is set OS_SCHEDULED below (so op->state here is still the entry state).
-    // The only legitimate re-probe is a miss still waiting for a mem-request buffer
-    // (OS_WAIT_MEM), which stays resident and re-runs this access every cycle.
+    // state is set OS_SCHEDULED below. An op may re-probe this access across cycles
+    // (a miss waiting for a mem-request buffer in OS_WAIT_MEM re-runs it every cycle;
+    // predicted loads can also re-access), so only the first probe is recorded.
     if (op_get_dcache_cycle(op) == MAX_CTR)
       op_set_dcache_cycle(op, cycle_count);
-    else
-      ASSERT(dc->proc_id, op->state == OS_WAIT_MEM);
 
     // memory ops are marked as scheduled so that they can be removed from the node->rdy_list
     op->state = OS_SCHEDULED;

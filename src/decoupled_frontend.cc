@@ -1084,30 +1084,54 @@ void Decoupled_FE::redirect_load_mispred(FT_PredictResult result) {
   const uint64_t eom_idx = result.index;
   std::vector<Op*>& ops = ft->get_ops();
   ASSERT(proc_id, eom_idx < ops.size());
-  ASSERT(proc_id, eom_idx + 1 < ops.size());  // there are consumer ops after the load's EOM in this FT
-
-  // Move the on-path consumers (ops after the load's EOM) into a fresh recovery
-  // FT -- no copy, no re-fetch. They are held on-path and restored at recovery;
-  // their first op begins at the load's fall-through (== recovery_fetch_addr).
-  FT* saved = new FT(proc_id, bp_id);
-  std::vector<Op*>& saved_ops = saved->get_ops();
-  for (size_t i = eom_idx + 1; i < ops.size(); i++) {
-    ops[i]->parent_FT = saved;
-    saved_ops.push_back(ops[i]);
-  }
-  ops.resize(eom_idx + 1);  // working FT now ends at the mispredicted load (a load doesn't end an FT -> FT_NOT_ENDED)
-  // The mispredicted load (result.op == ops[eom_idx]) carries load_value_mispredicted,
-  // which the icache reads to flip off-path right after fetching it -- keeping the
-  // per-op ic->off_path == op->off_path invariant across the on->off boundary
-  // within this single mixed FT (no split).
+  // The macro EOM is the recovery point. The icache flips off-path right after
+  // fetching it (see ft_get_sibling_eom), keeping the per-op ic->off_path ==
+  // op->off_path invariant across the on->off boundary.
   ASSERT(proc_id, ops[eom_idx] == result.op);
-  saved->op_pos = 0;
-  saved->generate_ft_info();
-  saved->set_prebuilt(true);
-  saved_recovery_ft = saved;
 
-  // Refill the SAME FT's tail with off-path ops (no split), then continue
-  // off-path -- identical to redirect_to_off_path's off-path fill, but in place.
+  if (eom_idx + 1 < ops.size()) {
+    // In-FT consumers after the load's EOM: move them into a fresh recovery FT --
+    // no copy, no re-fetch. They are held on-path and restored at recovery; their
+    // first op begins at the load's fall-through (== recovery_fetch_addr). The
+    // working FT now ends at the EOM; a non-CF load doesn't end an FT, so
+    // get_end_reason() == FT_NOT_ENDED and its tail is refilled off-path below.
+    FT* saved = new FT(proc_id, bp_id);
+    std::vector<Op*>& saved_ops = saved->get_ops();
+    for (size_t i = eom_idx + 1; i < ops.size(); i++) {
+      ops[i]->parent_FT = saved;
+      saved_ops.push_back(ops[i]);
+    }
+    ops.resize(eom_idx + 1);
+    saved->op_pos = 0;
+    saved->generate_ft_info();
+    saved->set_prebuilt(true);
+    saved_recovery_ft = saved;
+  } else {
+    // The load's EOM is the last op of this FT (the FT ended at the macro, e.g. an
+    // icache-line boundary): the consumers live in the NEXT on-path FT. Keep this
+    // FT on-path as-is and build/pop the next on-path FT as the recovery FT --
+    // mirrors redirect_to_off_path's no-trailing-ft case. This FT is already ended,
+    // so the refill loop below is a no-op; off-path fetching resumes in the next FT.
+    if (LOOKAHEAD_BUF_SIZE) {
+      saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
+      ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
+    } else {
+      saved_recovery_ft = new FT(proc_id, bp_id);
+      auto build_event =
+          saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
+                                   [](uns8 pid, uns8 bid, Op* op) -> bool {
+                                     frontend_fetch_op(pid, bid, op);
+                                     return true;
+                                   },
+                                   false, conf_off_path, []() { return decoupled_fe_get_next_on_path_op_num(); });
+      ASSERT(proc_id, build_event != FT_EVENT_BUILD_FAIL);
+      saved_recovery_ft->set_prebuilt(true);
+    }
+  }
+
+  // Go off-path after the load's EOM (in place for the in-FT-consumers case; in the
+  // next FT otherwise), then continue off-path -- same off-path fill as
+  // redirect_to_off_path. The refill loop only runs while the FT is FT_NOT_ENDED.
   redirect_cycle = cycle_count;
   next_state = SERVING_OFF_PATH;
   set_off_path_op_num(ft->get_last_op()->op_num + 1);

@@ -400,24 +400,30 @@ FT_PredictResult FT::predict_ft() {
 
     // Load value/address prediction (main BP pass only, so it runs once per op).
     // Predict/resolve a load early. This is data (not control) speculation: the
-    // fetched path does not change. On a wrong on-path prediction the predictor
-    // records the misprediction (load_value_mispredicted) and fills recovery_info;
-    // the load then recovers at exec like a branch (op_set_exec_cycle sets
-    // recover_at_exec, exec_stage_bp_resolve fires it). Here we only trigger the
-    // in-place off-path redirect after the load.
+    // fetched path does not change. load_pred_predict_op returns whether the
+    // prediction was wrong; on an on-path mispredict we mark recover_at_exec on the
+    // macro's EOM so the load recovers at exec (op_set_exec_cycle ->
+    // predicted_load_schedule_recovery) and trigger the in-place off-path redirect.
     if (bp_id == MAIN_BP && op->inst_info->table_info.mem_type == MEM_LD) {
-      load_pred_predict_op(op);
-      if (op->load_value_mispredicted && !op->off_path) {
-        // The recovery resteers to the load's fall-through and squashes ops
-        // younger than the load; require the load to be its own end-of-macro op so
-        // no sibling uop is dropped. Value/address prediction targets such loads.
-        ASSERT(proc_id, op->eom);
-        // Go off-path after the load, IN PLACE (no FT split): the consumers after
-        // the load are moved aside as the recovery FT and the FT's tail is refilled
+      if (load_pred_predict_op(op) && !op->off_path) {
+        // Mark recover_at_exec on the TRIGGER uop - the uop whose execution resolves
+        // the misprediction (the load itself for value prediction; the address-
+        // generating uop for address prediction). It need not be the EOM. The
+        // recovery POINT is still the macro EOM (found via ft_get_sibling_eom in
+        // predicted_load_schedule_recovery): bp_sched_recovery squashes ops younger
+        // than it, so scheduling on the EOM keeps the load's own sibling uops alive.
+        load_pred_mark_recovery(op);
+        // Go off-path after the macro, IN PLACE (no FT split): the consumers after
+        // the EOM are moved aside as the recovery FT and the FT's tail is refilled
         // with off-path ops. Driven from update() via redirect_load_mispred.
+        size_t eom_idx = idx;
+        while (eom_idx < ops.size() && !ops[eom_idx]->eom)
+          eom_idx++;
+        ASSERT(proc_id, eom_idx < ops.size() && ops[eom_idx]->inst_uid == op->inst_uid);
+        Op* eom = ops[eom_idx];
         if (!ended_by_exit()) {
-          const Addr fall_through = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
-          return {idx, FT_EVENT_LOAD_MISPREDICT, op, fall_through};
+          const Addr fall_through = ADDR_PLUS_OFFSET(eom->inst_info->addr, eom->inst_info->trace_info.inst_size);
+          return {eom_idx, FT_EVENT_LOAD_MISPREDICT, eom, fall_through};
         }
       }
     }
@@ -558,6 +564,37 @@ Op* ft_fetch_op(FT* ft) {
 
 FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
+}
+
+/* If op belongs to a predicted-load macro that recovers at exec (some uop of the
+ * macro is marked recover_at_exec), return that macro's END-OF-MACRO op; otherwise
+ * return NULL. The recovery is TRIGGERED by a (possibly mid-macro) uop's execution
+ * but must be SCHEDULED on the EOM: bp_sched_recovery squashes ops younger than the
+ * recovery op, so targeting the EOM keeps the load's own sibling uops alive and
+ * squashes only the speculatively-woken consumers after the macro.
+ *
+ * One API, three callers, so trigger/EOM stay consistent:
+ *   - the recovery scheduler passes the trigger and gets the squash point (EOM);
+ *   - the rename SRT snapshot and the icache off-path flip pass each op and fire
+ *     exactly when it IS the recovering macro's EOM (ft_get_sibling_eom(op) == op),
+ *     so the snapshot/rollback and off-path boundary land on the EOM even when the
+ *     trigger is mid-macro. */
+Op* ft_get_sibling_eom(Op* op) {
+  ASSERT(0, op);
+  FT* ft = op->parent_FT;
+  if (!ft)
+    return NULL;
+  Op* eom = NULL;
+  bool recovers = false;
+  for (Op* cand : ft->get_ops()) {
+    if (!cand || cand->inst_uid != op->inst_uid)
+      continue;
+    if (cand->eom)
+      eom = cand;
+    if (cand->bp_pred_main.recover_at_exec)
+      recovers = true;
+  }
+  return recovers ? eom : NULL;
 }
 
 static bool ft_op_recovery_addr_is_consecutive(Op* op, Addr next_start) {

@@ -985,12 +985,13 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       op->bp_pred_main.pred_global_hist = g_bp_data->global_hist;
     }
 
-    // Load value/address mispredict: the decoupled frontend refilled this FT's
-    // tail off-path in place after the mispredicted load. Flip the icache
-    // off-path right after the load, mirroring the branch flip above
-    // (recover_at_*), so the following tail ops satisfy the
-    // ic->off_path == op->off_path invariant.
-    if (op->load_value_mispredicted && !op->off_path) {
+    // Load value/address mispredict: the decoupled frontend marked recover_at_exec
+    // on the mispredict's trigger uop and refilled this FT's tail off-path in place
+    // after the macro EOM. Flip the icache off-path right after the recovering
+    // macro's EOM (ft_get_sibling_eom(op) == op) -- not at the trigger, which may be
+    // mid-macro -- so the following tail ops satisfy the ic->off_path == op->off_path
+    // invariant, mirroring the branch flip above.
+    if (op->eom && op->inst_info->table_info.cf_type == NOT_CF && !op->off_path && ft_get_sibling_eom(op) == op) {
       ASSERT(ic->proc_id, !ic->off_path);
       ic->off_path = TRUE;
     }

@@ -205,21 +205,20 @@ struct Op_struct {
   uns16 queue_id;        // id for which issue queue this op is assigned to
   uns16 queue_entry_id;  // id for which entry in the issue queue this op is
 
-  struct Op_struct* next_rdy;   // pointer to next ready op (node table)
-  Flag in_rdy_list;             // is the op in the node stage's ready list?
-  struct Op_struct* next_node;  // pointer to the next op in the node table
-  Flag in_node_list;            // is the op in the node list?
-  Flag precommitted;            // if the op is pre-commit in the ROB
-  Flag macro_fused;             // if the op should be fused with the previous op (CMP/TEST)
-  Flag move_eliminated;         // if the op can be move-eliminated
+  struct Op_struct* next_rdy;     // pointer to next ready op (node table)
+  Flag in_rdy_list;               // is the op in the node stage's ready list?
+  struct Op_struct* next_node;    // pointer to the next op in the node table
+  Flag in_node_list;              // is the op in the node list?
+  Flag precommitted;              // if the op is pre-commit in the ROB
+  Flag macro_fused;               // if the op should be fused with the previous op (CMP/TEST)
+  Flag move_eliminated;           // if the op can be move-eliminated
   Flag load_value_predicted;      // if consumers of the op can be ready before this load
-  Flag load_value_mispredicted;   // load's value/addr was mispredicted (recovery fires from the dcache)
   Flag load_addr_predicted;       // early-AGEN: load may issue w/o addr operands, access load_pred_addr
   Addr load_pred_addr;            // predicted effective addr (early-AGEN/RFP), verified vs va at exec
   Counter load_pred_ready_cycle;  // cycle a predicted load's result is available to consumers (RFP: +DCACHE_CYCLES)
   Counter load_pred_ready_delay;  // produce->availability latency (0 value pred; DCACHE_CYCLES RFP), applied at rename
-  Flag replay;                  // is the op waiting to replay?
-  uns exec_count;               // how many times has this op been executed?
+  Flag replay;                    // is the op waiting to replay?
+  uns exec_count;                 // how many times has this op been executed?
   // }}}
 
   // {{{ dependency information
@@ -266,6 +265,17 @@ struct Op_struct {
   FT* parent_FT;
   FT* parent_FT_off_path;
 };
+
+/* Schedules the exec-time squash for a mispredicted predicted load (defined in
+ * load_value_pred.cc; it does bp_sched_recovery, which op.h cannot call directly
+ * because bp/bp.h includes op.h). Called from op_set_exec_cycle below. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void predicted_load_schedule_recovery(Op* op);
+#ifdef __cplusplus
+}
+#endif
 
 /* Per-op cycle-counter accessors. Each counter has its own get/set function so
  * that per-counter behavior (stats, debug, invariants) can be added in one place.
@@ -320,11 +330,14 @@ static inline Counter op_get_exec_cycle(const Op* op) {
 static inline void op_set_exec_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.exec_cycle == MAX_CTR);
   op->cycles.exec_cycle = cycle;
-  // A mispredicted predicted load recovers like a branch, at exec: mark it here so
-  // exec_stage_bp_resolve schedules its squash (its recovery_info was filled at
-  // predict time). bp_pred_main is the level selected for on-path non-CF loads.
-  if (op->load_value_mispredicted && !op->off_path)
-    op->bp_pred_main.recover_at_exec = TRUE;
+  // A mispredicted predicted load was marked recover_at_exec in the decoupled
+  // frontend, on its TRIGGER uop (a non-CF op -- the load itself for value
+  // prediction, the address-gen uop for address prediction). Schedule its squash
+  // here, at the trigger's exec, via the dedicated load-recovery path (which
+  // targets the macro EOM) -- NOT through exec_stage_bp_resolve / bp_recover_op,
+  // which are branch-only.
+  if (op->bp_pred_info->recover_at_exec && op->inst_info->table_info.cf_type == NOT_CF)
+    predicted_load_schedule_recovery(op);
 }
 
 static inline Counter op_get_dcache_cycle(const Op* op) {

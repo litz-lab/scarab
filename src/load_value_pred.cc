@@ -32,10 +32,11 @@
  *     - concrete predictors : last-value (scaffold), constant/stride address
  *     - a per-core registry holding one active scheme per category
  *
- *   The recovery has no cross-op global state: a wrong on-path prediction is
- *   recorded on the load (load_value_mispredicted) and its recovery_info is filled
- *   at predict time; the load then recovers at exec like a branch
- *   (op_set_exec_cycle sets recover_at_exec, exec_stage_bp_resolve fires it).
+ *   The recovery has no cross-op global state: on a wrong on-path prediction the
+ *   frontend marks recover_at_exec on the mispredict's trigger uop; it then recovers
+ *   at exec (op_set_exec_cycle -> predicted_load_schedule_recovery, which resolves
+ *   the macro EOM via ft_get_sibling_eom, fills its recovery_info, and fires
+ *   bp_sched_recovery on the EOM).
  ***************************************************************************************/
 
 #include "load_value_pred.h"
@@ -62,6 +63,8 @@ extern "C" {
 #include <unordered_map>
 #include <vector>
 
+#include "ft.h"
+
 /**************************************************************************************/
 /* Shared pipeline effect / recovery helpers */
 
@@ -81,31 +84,48 @@ static inline Flag load_pred_read_dest_value(Op* op, uns dst_idx, uns64* value) 
 }
 
 /*
- * Mark a mispredicted (on-path) load for recovery.  Like a branch, the load
- * recovers at exec: op_set_exec_cycle() sets recover_at_exec and
- * exec_stage_bp_resolve() fires bp_sched_recovery().  Here we only record the
- * misprediction and fill the op's recovery_info -- a non-CF, fall-through
- * (op->oracle_info.npc) resteer; cf_type = NOT_CF so bp_recover_op leaves
- * branch-predictor state untouched.  bp_sched_recovery squashes ops younger than
- * op, so op must be the macro's EOM; value/address prediction targets
- * single-destination loads whose load uop is its own EOM (asserted in ft.cc).
- * Off-path predicted loads are flushed and never recover.
+ * Mark a mispredicted (on-path) predicted load so it recovers at exec. The flag
+ * lives on the load uop itself (any op may carry it); op_set_exec_cycle() fires
+ * the recovery when the load's exec_cycle is set. bp_pred_main is the level
+ * selected for on-path non-CF loads.
  */
-static inline void load_pred_mark_recovery(Op* op) {
-  if (op->off_path)
-    return;
-  op->load_value_mispredicted = TRUE;
+void load_pred_mark_recovery(Op* op) {
+  ASSERT(op->proc_id, !op->off_path);
   STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH_MISPREDICTED);
 
-  op->recovery_info.proc_id = op->proc_id;
-  op->recovery_info.op = op;
-  op->recovery_info.op_num = op->op_num;
-  op->recovery_info.PC = op->inst_info->addr;
-  op->recovery_info.cf_type = NOT_CF;
-  op->recovery_info.oracle_dir = op->oracle_info.dir;
-  op->recovery_info.new_dir = op->oracle_info.dir;
-  op->recovery_info.branchTarget = op->oracle_info.target;
-  op->recovery_info.predict_cycle = cycle_count;
+  op_select_bp_pred_info(op, BP_PRED_MAIN);
+  op->bp_pred_main.recover_at_exec = TRUE;
+}
+
+/*
+ * Fire the mispredicted load's squash at exec, called from op_set_exec_cycle when
+ * the (recover_at_exec) load's exec_cycle is set. bp_sched_recovery squashes ops
+ * younger than the recovery op, so it must target the macro's END-OF-MACRO op --
+ * that squashes the speculatively-woken consumers after the macro while the load's
+ * own uops survive. The EOM is found by scanning the op's parent FT for the
+ * macro's last uop (same inst_uid, eom set). recovery_info is a non-CF,
+ * fall-through (oracle_info.npc) resteer with cf_type = NOT_CF, so the bp_recover_op
+ * callers skip it and branch-predictor state is left untouched.
+ */
+void predicted_load_schedule_recovery(Op* op) {
+  ASSERT(op->proc_id, !op->off_path);
+
+  Op* eom = ft_get_sibling_eom(op);
+  ASSERT(op->proc_id, eom);
+
+  op_select_bp_pred_info(eom, BP_PRED_MAIN);
+  eom->recovery_info.proc_id = eom->proc_id;
+  eom->recovery_info.op = eom;
+  eom->recovery_info.op_num = eom->op_num;
+  eom->recovery_info.PC = eom->inst_info->addr;
+  eom->recovery_info.cf_type = NOT_CF;
+  eom->recovery_info.oracle_dir = eom->oracle_info.dir;
+  eom->recovery_info.new_dir = eom->oracle_info.dir;
+  eom->recovery_info.branchTarget = eom->oracle_info.target;
+  eom->recovery_info.predict_cycle = cycle_count;
+
+  bp_sched_recovery(bp_recovery_info, eom, op_get_exec_cycle(op));
+  eom->recovery_scheduled = TRUE;
 }
 
 /*
@@ -118,16 +138,15 @@ static inline void load_pred_mark_recovery(Op* op) {
  *     prefetch latency (ready_delay = DCACHE_CYCLES).
  * The load still flows through the pipeline and accesses the dcache normally, so
  * its bandwidth/port contention is modeled; only its consumers are accelerated.
- * A wrong prediction is recorded via load_pred_mark_recovery and recovers at exec.
+ * Returns whether the prediction was wrong (the caller sets up the exec recovery
+ * on the macro's EOM).
  */
-static inline void load_pred_apply_early_result(Op* op, Flag is_mispred, Counter ready_delay) {
+static inline Flag load_pred_apply_early_result(Op* op, Flag is_mispred, Counter ready_delay) {
   ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
 
   op->load_value_predicted = TRUE;
   op->load_pred_ready_delay = ready_delay;
-
-  if (is_mispred)
-    load_pred_mark_recovery(op);
+  return is_mispred;
 }
 
 /*
@@ -137,25 +156,24 @@ static inline void load_pred_apply_early_result(Op* op, Flag is_mispred, Counter
  * predicted address (op_sources_add honors load_addr_predicted; dcache_stage
  * uses load_pred_addr).  It then incurs the normal hit/miss latency and wakes its
  * consumers at its real completion - unlike wake-now, consumers are NOT resolved
- * at fetch.  A wrong predicted address is recorded via load_pred_mark_recovery
- * and recovers at exec (as for value/RFP mispredicts).
+ * at fetch.  Returns whether the predicted address was wrong (recovers at exec,
+ * as for value/RFP mispredicts).
  */
-static inline void load_pred_apply_early_agen(Op* op, Addr pred_addr, Flag is_mispred) {
+static inline Flag load_pred_apply_early_agen(Op* op, Addr pred_addr, Flag is_mispred) {
   ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
 
   op->load_addr_predicted = TRUE;
   op->load_pred_addr = pred_addr;
-
-  if (is_mispred)
-    load_pred_mark_recovery(op);
+  return is_mispred;
 }
 
 /*
  * Apply the configured address-prediction effect for a confident prediction.
  * Shared by all address predictor schemes (constant, stride, ...); the algorithm
- * only produces pred_addr, this decides how it acts on the pipeline.
+ * only produces pred_addr, this decides how it acts on the pipeline.  Returns
+ * whether the prediction was wrong.
  */
-static inline void load_pred_apply_addr(Op* op, Addr pred_addr) {
+static inline Flag load_pred_apply_addr(Op* op, Addr pred_addr) {
   Flag is_mispred = (pred_addr != op->oracle_info.va);
 
   if (LOAD_ADDR_PRED_MODE == LOAD_ADDR_PRED_MODE_RFP) {
@@ -164,13 +182,12 @@ static inline void load_pred_apply_addr(Op* op, Addr pred_addr) {
     // wake after the L1->RF transfer (now + DCACHE_CYCLES), NOT immediately. The
     // predicted address is verified at AGEN.
     if (!do_l1_access_addr(pred_addr))
-      return;
-    load_pred_apply_early_result(op, is_mispred, /*ready_delay=*/DCACHE_CYCLES);
-  } else {
-    // EARLY_AGEN: issue early and access the predicted address in the dcache
-    // stage, which handles hit and miss (mem req) with normal latency.
-    load_pred_apply_early_agen(op, pred_addr, is_mispred);
+      return FALSE;
+    return load_pred_apply_early_result(op, is_mispred, /*ready_delay=*/DCACHE_CYCLES);
   }
+  // EARLY_AGEN: issue early and access the predicted address in the dcache
+  // stage, which handles hit and miss (mem req) with normal latency.
+  return load_pred_apply_early_agen(op, pred_addr, is_mispred);
 }
 
 static void load_pred_collect_predict_stat(Op* op) {
@@ -208,7 +225,8 @@ class LoadPredictor {
 
   virtual PredictorEntry* lookup(Op* op) = 0;
   virtual void train(Op* op, PredictorEntry* entry) = 0;
-  virtual void infer(Op* op, PredictorEntry* entry) = 0;
+  // Returns TRUE if this predictor speculated and the prediction is wrong.
+  virtual Flag infer(Op* op, PredictorEntry* entry) = 0;
 };
 
 /* None predictor (category disabled). */
@@ -218,7 +236,7 @@ class NoneLoadPredictor : public LoadPredictor {
   void recover() override { return; }
   PredictorEntry* lookup(Op* op) override { return nullptr; }
   void train(Op* op, PredictorEntry* entry) override { return; }
-  void infer(Op* op, PredictorEntry* entry) override { return; }
+  Flag infer(Op* op, PredictorEntry* entry) override { return FALSE; }
 };
 
 /**************************************************************************************/
@@ -270,26 +288,26 @@ class LastValuePredictor : public LoadPredictor {
   // Speculate only if EVERY destination is trained and confident; a wrong
   // prediction on any destination makes the load a mispredict.  Reads each
   // destination's true value (op->dst_val[i]) to decide correctness.
-  void infer(Op* op, PredictorEntry* /*entry*/) override {
+  Flag infer(Op* op, PredictorEntry* /*entry*/) override {
     ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
     uns ndest = op->inst_info->table_info.num_dest_regs;
     if (ndest < 1)
-      return;
+      return FALSE;
 
     Flag any_mispred = FALSE;
     for (uns i = 0; i < ndest; i++) {
       uns64 actual_value = 0;
       if (!load_pred_read_dest_value(op, i, &actual_value))
-        return;  // value unavailable -> do not speculate
+        return FALSE;  // value unavailable -> do not speculate
       auto it = prediction_table.find(dest_key(op->inst_info->addr, i));
       if (it == prediction_table.end() || it->second.confidence <= LOAD_VALUE_PRED_THRESHOLD)
-        return;  // not trained / not confident -> do not speculate
+        return FALSE;  // not trained / not confident -> do not speculate
       if (it->second.last_value != actual_value)
         any_mispred = TRUE;
     }
 
     // value known now; verified against the real value at load completion.
-    load_pred_apply_early_result(op, any_mispred, /*ready_delay=*/0);
+    return load_pred_apply_early_result(op, any_mispred, /*ready_delay=*/0);
   }
 
   void train(Op* op, PredictorEntry* /*entry*/) override {
@@ -379,15 +397,15 @@ class ConstantLoadAddrPredictor : public LoadPredictor {
     }
   }
 
-  void infer(Op* op, PredictorEntry* entry) override {
+  Flag infer(Op* op, PredictorEntry* entry) override {
     ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
     auto* pred_entry = static_cast<ConstantLoadAddrPredEntry*>(entry);
     if (!pred_entry->is_found())
-      return;
+      return FALSE;
     if (pred_entry->confidence <= CONST_LOAD_ADDR_PRED_THRESHOLD)
-      return;
+      return FALSE;
 
-    load_pred_apply_addr(op, pred_entry->oracle_address);
+    return load_pred_apply_addr(op, pred_entry->oracle_address);
   }
 };
 
@@ -460,16 +478,16 @@ class StrideLoadAddrPredictor : public LoadPredictor {
     pred_entry->last_address = va;
   }
 
-  void infer(Op* op, PredictorEntry* entry) override {
+  Flag infer(Op* op, PredictorEntry* entry) override {
     ASSERT(op->proc_id, op->inst_info->table_info.mem_type == MEM_LD);
     auto* pred_entry = static_cast<StrideLoadAddrPredEntry*>(entry);
     if (!pred_entry->is_found())
-      return;
+      return FALSE;
     if (pred_entry->confidence <= LOAD_ADDR_PRED_STRIDE_THRESHOLD)
-      return;
+      return FALSE;
 
     Addr pred_addr = (Addr)((int64)pred_entry->last_address + pred_entry->stride);
-    load_pred_apply_addr(op, pred_addr);
+    return load_pred_apply_addr(op, pred_addr);
   }
 };
 
@@ -544,14 +562,18 @@ void recover_load_predictors(void) {
 /**************************************************************************************/
 /* Pipeline hook */
 
-void load_pred_predict_op(Op* op) {
+// Returns TRUE if a category speculated on this load and its prediction is wrong;
+// the decoupled frontend then sets up the exec recovery on the macro's EOM.
+Flag load_pred_predict_op(Op* op) {
   if (op->inst_info->table_info.mem_type != MEM_LD)
-    return;
+    return FALSE;
+
+  Flag is_mispred = FALSE;
 
   // Value category: predicts the loaded value.
   PredictorEntry* v_entry = active->value_pred->lookup(op);
   if (v_entry) {
-    active->value_pred->infer(op, v_entry);
+    is_mispred |= active->value_pred->infer(op, v_entry);
     active->value_pred->train(op, v_entry);
   }
 
@@ -560,9 +582,10 @@ void load_pred_predict_op(Op* op) {
   PredictorEntry* a_entry = active->addr_pred->lookup(op);
   if (a_entry) {
     if (!op->load_value_predicted)
-      active->addr_pred->infer(op, a_entry);
+      is_mispred |= active->addr_pred->infer(op, a_entry);
     active->addr_pred->train(op, a_entry);
   }
 
   load_pred_collect_predict_stat(op);
+  return is_mispred;
 }

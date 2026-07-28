@@ -40,10 +40,11 @@
  *   at fetch so it can reuse this same LoadPredictor interface and EOM handling).
  *
  *   Mechanism vs. policy: the pipeline *mechanism* lives on the op
- *   (op->load_value_predicted lets consumers wake early; op->load_value_mispredicted
- *   flags a wrong prediction, and the load recovers at exec like a branch -
- *   op_set_exec_cycle sets recover_at_exec and exec_stage_bp_resolve fires the
- *   squash).  The *policy* - which predictor, how it trains, when it speculates -
+ *   (op->load_value_predicted lets consumers wake early; the frontend marks
+ *   recover_at_exec on the mispredicted load's trigger uop, and it recovers at exec
+ *   via op_set_exec_cycle -> predicted_load_schedule_recovery, which squashes on the
+ *   macro EOM found via ft_get_sibling_eom).  The *policy*
+ *   - which predictor, how it trains, when it speculates -
  *   lives entirely in this module.
  ***************************************************************************************/
 
@@ -107,6 +108,13 @@ void set_load_predictors(uns8 proc_id);
 void init_load_predictors(uns8 proc_id, const char* name);
 void recover_load_predictors(void);
 
+/*
+ * Schedule the exec-time squash for a mispredicted predicted load, called from
+ * op_set_exec_cycle(). C linkage so op.h's inline accessor can call it. Finds the
+ * macro EOM by scanning op->parent_FT and targets bp_sched_recovery at it.
+ */
+void predicted_load_schedule_recovery(Op* op);
+
 #ifdef __cplusplus
 }
 #endif
@@ -118,11 +126,18 @@ void recover_load_predictors(void);
 
 /*
  * Fetch-time hook.  Runs the value and address predictors on a load: predicts,
- * applies the early-resolve effect, and trains.  On a wrong prediction it sets
- * op->load_value_mispredicted; the FT builder (which can see the whole macro)
- * then stamps the squash recovery on the macro's EOM op via the call below.
+ * applies the early-resolve effect, and trains.  Returns TRUE if a category
+ * speculated and the prediction is wrong; the decoupled frontend then marks
+ * recover_at_exec on the mispredict's trigger uop (load_pred_mark_recovery).
  */
-void load_pred_predict_op(Op* op);
+Flag load_pred_predict_op(Op* op);
+
+/*
+ * Mark a mispredicted (on-path) load's trigger uop for exec-time recovery. Called
+ * from the decoupled frontend (ft.cc). The recovery is scheduled on the macro EOM
+ * (found via ft_get_sibling_eom) when the trigger's exec_cycle is set.
+ */
+void load_pred_mark_recovery(Op* op);
 
 #endif
 

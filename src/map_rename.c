@@ -40,6 +40,7 @@
 #include "isa/isa.h"
 #include "isa/isa_macros.h"
 
+#include "ft.h"
 #include "map_stage.h"
 #include "node_stage.h"
 #include "op.h"
@@ -1027,9 +1028,13 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
   // write the physical register table and update the arch register table
   reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
-  // checkpoint the speculative register table for recovering
-  if (!op->off_path &&
-      ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) || op->load_value_mispredicted))
+  // checkpoint the speculative register table for recovering. A branch snapshots at
+  // its own rename (recover_at_exec). A predicted-load recovery snapshots at the
+  // macro EOM's rename (ft_get_sibling_eom(op) == op) so the checkpoint pairs with
+  // the EOM rollback, even though the trigger uop carrying recover_at_exec may be
+  // mid-macro.
+  if (!op->off_path && ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) ||
+                        (op->eom && op->inst_info->table_info.cf_type == NOT_CF && ft_get_sibling_eom(op) == op)))
     reg_file_snapshot_srt();
 }
 
@@ -1056,11 +1061,14 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 
 // flush registers of misprediction operands using the ptag info
 void reg_renaming_scheme_realistic_recover(Op *op) {
-  // A branch and a mispredicted predicted load both recover at exec (the load was
-  // marked recover_at_exec in op_set_exec_cycle). A decode/frontend-only recovery
-  // is not an SRT-rollback point and returns early.
-  ASSERT(op->proc_id, op->inst_info->table_info.cf_type || op->load_value_mispredicted);
-  if (!op->bp_pred_info->recover_at_exec)
+  // A branch recovers at exec via recover_at_exec on the branch itself. A
+  // mispredicted predicted load recovers at exec too, but recover_at_exec lives on
+  // the TRIGGER uop (the load / address-gen uop); the recovery POINT reaching here
+  // is the macro EOM, identified by recovery_info.cf_type == NOT_CF. A
+  // decode/frontend-only branch recovery is not an SRT-rollback point and returns.
+  Flag is_load_recovery = (op->recovery_info.cf_type == NOT_CF);
+  ASSERT(op->proc_id, op->inst_info->table_info.cf_type || op->bp_pred_info->recover_at_exec || is_load_recovery);
+  if (!op->bp_pred_info->recover_at_exec && !is_load_recovery)
     return;
 
   // rollback to the status that does not contain any off_path entries
@@ -1146,9 +1154,13 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
   // write the virtaul register table and update the arch register table
   reg_file_write_dst(op, REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
-  // checkpoint the speculative register table for recovering
-  if (!op->off_path &&
-      ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) || op->load_value_mispredicted))
+  // checkpoint the speculative register table for recovering. A branch snapshots at
+  // its own rename (recover_at_exec). A predicted-load recovery snapshots at the
+  // macro EOM's rename (ft_get_sibling_eom(op) == op) so the checkpoint pairs with
+  // the EOM rollback, even though the trigger uop carrying recover_at_exec may be
+  // mid-macro.
+  if (!op->off_path && ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) ||
+                        (op->eom && op->inst_info->table_info.cf_type == NOT_CF && ft_get_sibling_eom(op) == op)))
     reg_file_snapshot_srt();
 }
 
@@ -1208,11 +1220,14 @@ void reg_renaming_scheme_late_allocation_produce(Op *op) {
 }
 
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
-  // Only execution-time recoveries take/consume SRT checkpoints: a branch or a
-  // mispredicted predicted load, both recover_at_exec. Decode-time and early
-  // frontend-only recoveries should not rollback SRT.
-  ASSERT(op->proc_id, op->inst_info->table_info.cf_type || op->load_value_mispredicted);
-  if (!op->bp_pred_info->recover_at_exec)
+  // Only execution-time recoveries take/consume SRT checkpoints: a branch (via
+  // recover_at_exec on the branch) or a mispredicted predicted load (recover_at_exec
+  // lives on the trigger uop; the recovery point here is the macro EOM, identified
+  // by recovery_info.cf_type == NOT_CF). Decode-time and early frontend-only
+  // recoveries should not rollback SRT.
+  Flag is_load_recovery = (op->recovery_info.cf_type == NOT_CF);
+  ASSERT(op->proc_id, op->inst_info->table_info.cf_type || op->bp_pred_info->recover_at_exec || is_load_recovery);
+  if (!op->bp_pred_info->recover_at_exec && !is_load_recovery)
     return;
 
   // rollback to the status that does not contain any off_path entries

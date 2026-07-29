@@ -354,15 +354,15 @@ struct Decoupled_FE {
   void dfe_recover_op();
   bool is_off_path_state() const { return state == SERVING_OFF_PATH; }
   void check_consecutivity_and_push_to_ftq();
-  void redirect_to_off_path(FT_PredictResult result);
-  // Load value/RFP mispredict: go off-path after the mispredicted load's macro EOM.
-  // Uses the same FT split/recovery machinery as redirect_to_off_path (split at the
-  // EOM; consumers held in the recovery FT); the "target" is just the fall-through.
-  void redirect_load_mispred(FT_PredictResult result);
-  // Shared off-path-redirect helpers (used by both redirect_to_off_path and
-  // redirect_load_mispred). build_or_pop_next_on_path_ft returns the next on-path
-  // FT (from the lookahead buffer or freshly built) to hold as the recovery FT;
-  // refill_ft_tail_off_path appends off-path ops to ft until it ends.
+  // Switch to off-path execution after a divergence at result.index. caused_by_lvp
+  // distinguishes a predicted-load mispredict (split at the macro EOM, off-path
+  // stream is the fall-through) from a branch mispredict; the FT split/recovery
+  // bookkeeping is shared, only branch-specific reason/alt-DFE handling is gated.
+  void redirect_to_off_path(FT_PredictResult result, bool caused_by_lvp);
+  // Off-path-redirect helpers used by redirect_to_off_path.
+  // build_or_pop_next_on_path_ft returns the next on-path FT (from the lookahead
+  // buffer or freshly built) to hold as the recovery FT; refill_ft_tail_off_path
+  // appends off-path ops to ft until it ends.
   FT* build_or_pop_next_on_path_ft();
   void refill_ft_tail_off_path(FT* ft);
   inline uint64_t ftq_max_size() { return ftq_ft_num; }

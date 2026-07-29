@@ -110,7 +110,7 @@ void load_pred_mark_recovery(Op* op) {
 void predicted_load_schedule_recovery(Op* op) {
   ASSERT(op->proc_id, !op->off_path);
 
-  Op* eom = ft_get_sibling_eom(op);
+  Op* eom = ft_get_sibling_eom(op, NULL);
   ASSERT(op->proc_id, eom);
 
   op_select_bp_pred_info(eom, BP_PRED_MAIN);

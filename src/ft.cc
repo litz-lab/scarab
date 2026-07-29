@@ -414,13 +414,11 @@ FT_PredictResult FT::predict_ft() {
         // than it, so scheduling on the EOM keeps the load's own sibling uops alive.
         load_pred_mark_recovery(op);
         // Go off-path after the load's macro, driven from update() via
-        // redirect_load_mispred (it splits this FT at the EOM like a branch
-        // mispredict). result.index must be the EOM's position in ops[]: the EOM is
-        // this load's macro tail, so walk forward over the macro's remaining uops.
-        Op* eom = ft_get_sibling_eom(op);
-        size_t eom_idx = idx;
-        while (ops[eom_idx] != eom)
-          eom_idx++;
+        // redirect_to_off_path (it splits this FT at the EOM like a branch
+        // mispredict). result.index is the EOM's position in ops[], returned by
+        // ft_get_sibling_eom alongside the EOM op itself.
+        uns64 eom_idx = 0;
+        Op* eom = ft_get_sibling_eom(op, &eom_idx);
         if (!ended_by_exit()) {
           const Addr fall_through = ADDR_PLUS_OFFSET(eom->inst_info->addr, eom->inst_info->trace_info.inst_size);
           return {eom_idx, FT_EVENT_LOAD_MISPREDICT, eom, fall_through};
@@ -567,40 +565,26 @@ FT_Info ft_get_ft_info(FT* ft) {
 }
 
 /* Return the END-OF-MACRO op of op's macro-instruction (the uop with the same
- * inst_uid and eom set), by scanning op's parent FT. Pure: always returns the EOM,
- * independent of whether the macro recovers. A predicted load's recovery is
- * TRIGGERED by a (possibly mid-macro) uop's execution but must be SCHEDULED on the
- * EOM (bp_sched_recovery squashes ops younger than the recovery op, so the EOM keeps
- * the load's own sibling uops alive). The rename SRT snapshot and icache off-path
- * flip use "op->eom" for the same "op is the EOM" test (equivalent for a valid
- * macro) and gate recovery separately via ft_sibling_recovers_at_exec. */
-Op* ft_get_sibling_eom(Op* op) {
+ * inst_uid and eom set), by scanning op's parent FT, and write its index within the
+ * FT's op vector to *eom_idx (may be NULL if the caller only wants the op). A
+ * predicted load's recovery is TRIGGERED by a (possibly mid-macro) uop's execution
+ * but must be SCHEDULED on the EOM: bp_sched_recovery squashes ops younger than the
+ * recovery op, so targeting the EOM keeps the load's own sibling uops alive. The
+ * decoupled frontend also needs the index to split the FT at the EOM. */
+Op* ft_get_sibling_eom(Op* op, uns64* eom_idx) {
   ASSERT(0, op);
-  if (op->eom)
-    return op;
   FT* ft = op->parent_FT;
   ASSERT(op->proc_id, ft);
-  for (Op* cand : ft->get_ops()) {
-    if (cand && cand->inst_uid == op->inst_uid && cand->eom)
-      return cand;
+  std::vector<Op*>& ops = ft->get_ops();
+  for (uns64 i = 0; i < ops.size(); i++) {
+    if (ops[i] && ops[i]->inst_uid == op->inst_uid && ops[i]->eom) {
+      if (eom_idx)
+        *eom_idx = i;
+      return ops[i];
+    }
   }
   ASSERT(op->proc_id, FALSE);  // every macro has an EOM
   return op;
-}
-
-/* Whether op's macro-instruction is a predicted-load recovery macro: some uop of
- * the macro is marked recover_at_exec (on bp_pred_main, set on-path). Separate from
- * ft_get_sibling_eom so the EOM lookup stays independent of the recover decision. */
-Flag ft_sibling_recovers_at_exec(Op* op) {
-  ASSERT(0, op);
-  FT* ft = op->parent_FT;
-  if (!ft)
-    return FALSE;
-  for (Op* cand : ft->get_ops()) {
-    if (cand && cand->inst_uid == op->inst_uid && cand->bp_pred_main.recover_at_exec)
-      return TRUE;
-  }
-  return FALSE;
 }
 
 static bool ft_op_recovery_addr_is_consecutive(Op* op, Addr next_start) {

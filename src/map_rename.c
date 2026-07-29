@@ -40,7 +40,6 @@
 #include "isa/isa.h"
 #include "isa/isa_macros.h"
 
-#include "ft.h"
 #include "map_stage.h"
 #include "node_stage.h"
 #include "op.h"
@@ -591,6 +590,29 @@ static inline void reg_file_rollback_srt() {
   }
 }
 
+/* Take the single SRT checkpoint on the on-path -> off-path transition: the first
+ * off-path op to reach rename (map_offpath still clear). Called before the op writes
+ * its dst, so the checkpoint captures only on-path renames. Shared by all schemes;
+ * paired with reg_file_recover_srt() at recovery. */
+static inline void reg_file_snapshot_srt_on_offpath_entry(Op *op) {
+  if (op->off_path && !map_data->map_offpath) {
+    map_data->map_offpath = TRUE;
+    reg_file_snapshot_srt();
+  }
+}
+
+/* Undo off-path SRT pollution at recovery: roll back to the checkpoint iff an
+ * off-path op actually reached rename (map_offpath). Decode/frontend recoveries
+ * squash their off-path ops before rename, so there is nothing to undo. Returns
+ * whether a rollback happened. */
+static inline Flag reg_file_recover_srt() {
+  if (!map_data->map_offpath)
+    return FALSE;
+  map_data->map_offpath = FALSE;
+  reg_file_rollback_srt();
+  return TRUE;
+}
+
 /**************************************************************************************/
 /* register free list operation */
 
@@ -1022,20 +1044,18 @@ Flag reg_renaming_scheme_realistic_available(uns stage_op_count) {
 
 // allocate physical registers of the op and write the ptag info into the op
 void reg_renaming_scheme_realistic_rename(Op *op) {
+  // Checkpoint the SRT the first time an off-path op reaches rename since the last
+  // recovery. At that instant the SRT holds exactly the on-path renames, and every
+  // op the recovery will discard is off-path -- so this is the correct rollback
+  // point regardless of what caused the divergence (branch or predicted-load
+  // mispredict). Taken before write_dst so the checkpoint excludes this op.
+  reg_file_snapshot_srt_on_offpath_entry(op);
+
   // read the physical register table by looking up the arch register table
   reg_file_read_src(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
   // write the physical register table and update the arch register table
   reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL);
-
-  // checkpoint the speculative register table for recovering. A branch snapshots at
-  // its own rename (recover_at_exec). A predicted-load recovery snapshots at the
-  // macro EOM's rename (op->eom) -- the recovery point -- so the checkpoint pairs
-  // with the EOM rollback even though the trigger uop carrying recover_at_exec may
-  // be mid-macro; ft_sibling_recovers_at_exec gates it to recovering macros.
-  if (!op->off_path && ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) ||
-                        (op->eom && op->inst_info->table_info.cf_type == NOT_CF && ft_sibling_recovers_at_exec(op))))
-    reg_file_snapshot_srt();
 }
 
 // do not check the reg file when issuing
@@ -1061,18 +1081,12 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 
 // flush registers of misprediction operands using the ptag info
 void reg_renaming_scheme_realistic_recover(Op *op) {
-  // A branch recovers at exec via recover_at_exec on the branch itself. A
-  // mispredicted predicted load recovers at exec too, but recover_at_exec lives on
-  // the TRIGGER uop (the load / address-gen uop); the recovery POINT reaching here
-  // is the macro EOM, identified by recovery_info.cf_type == NOT_CF. A
-  // decode/frontend-only branch recovery is not an SRT-rollback point and returns.
-  Flag is_load_recovery = (op->recovery_info.cf_type == NOT_CF);
-  ASSERT(op->proc_id, op->inst_info->table_info.cf_type || op->bp_pred_info->recover_at_exec || is_load_recovery);
-  if (!op->bp_pred_info->recover_at_exec && !is_load_recovery)
+  // Roll back the SRT and release off-path registers only if off-path ops actually
+  // reached rename (map_offpath). This subsumes the branch-vs-load and
+  // exec-vs-decode distinctions: the on->off transition at rename is the sole thing
+  // that pollutes the SRT, so it is the sole thing a recovery needs to undo.
+  if (!reg_file_recover_srt())
     return;
-
-  // rollback to the status that does not contain any off_path entries
-  reg_file_rollback_srt();
 
   // release the registers from the youngest to the flush point
   int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
@@ -1148,20 +1162,15 @@ Flag reg_renaming_scheme_late_allocation_available(uns stage_op_count) {
 
 // allocate only virtual registers and write the vtag info into the op
 void reg_renaming_scheme_late_allocation_rename(Op *op) {
+  // Checkpoint the SRT on the on-path -> off-path transition (see the realistic
+  // scheme for the rationale). Taken before write_dst so it excludes this op.
+  reg_file_snapshot_srt_on_offpath_entry(op);
+
   // read the virtaul register table by looking up the arch register table
   reg_file_read_src(op, REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
   // write the virtaul register table and update the arch register table
   reg_file_write_dst(op, REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL);
-
-  // checkpoint the speculative register table for recovering. A branch snapshots at
-  // its own rename (recover_at_exec). A predicted-load recovery snapshots at the
-  // macro EOM's rename (op->eom) -- the recovery point -- so the checkpoint pairs
-  // with the EOM rollback even though the trigger uop carrying recover_at_exec may
-  // be mid-macro; ft_sibling_recovers_at_exec gates it to recovering macros.
-  if (!op->off_path && ((op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec) ||
-                        (op->eom && op->inst_info->table_info.cf_type == NOT_CF && ft_sibling_recovers_at_exec(op))))
-    reg_file_snapshot_srt();
 }
 
 /*
@@ -1220,18 +1229,10 @@ void reg_renaming_scheme_late_allocation_produce(Op *op) {
 }
 
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
-  // Only execution-time recoveries take/consume SRT checkpoints: a branch (via
-  // recover_at_exec on the branch) or a mispredicted predicted load (recover_at_exec
-  // lives on the trigger uop; the recovery point here is the macro EOM, identified
-  // by recovery_info.cf_type == NOT_CF). Decode-time and early frontend-only
-  // recoveries should not rollback SRT.
-  Flag is_load_recovery = (op->recovery_info.cf_type == NOT_CF);
-  ASSERT(op->proc_id, op->inst_info->table_info.cf_type || op->bp_pred_info->recover_at_exec || is_load_recovery);
-  if (!op->bp_pred_info->recover_at_exec && !is_load_recovery)
+  // Roll back the SRT and release off-path registers only if off-path ops actually
+  // reached rename (map_offpath) -- see the realistic scheme for the rationale.
+  if (!reg_file_recover_srt())
     return;
-
-  // rollback to the status that does not contain any off_path entries
-  reg_file_rollback_srt();
 
   // release the registers from the youngest to the flush point for both register tables
   int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};

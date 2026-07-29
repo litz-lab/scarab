@@ -898,6 +898,13 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       uc->sd.ops[ii]->fetched_from_uop_cache = TRUE;
     }
 
+    // op->off_path is the authoritative per-op path (set by the frontend at FT
+    // build). ic->off_path is flipped predictively at a CF op below; a mispredicted
+    // predicted load diverges after a non-CF EOM with no such flag, so sync here at
+    // the first off-path op. This makes op->off_path the single source of truth for
+    // the on->off boundary -- no recovery-flag or macro-EOM inspection needed.
+    if (op->off_path)
+      ic->off_path = TRUE;
     ASSERTM(ic->proc_id, ic->off_path == op->off_path, "Inconsistent off-path op PC: %llx ic:%i op:%i\n",
             op->inst_info->addr, ic->off_path, op->off_path);
 
@@ -983,17 +990,6 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       // pass the global branch history to all the instructions
       op->bp_pred_l0.pred_global_hist = g_bp_data->global_hist;
       op->bp_pred_main.pred_global_hist = g_bp_data->global_hist;
-    }
-
-    // Load value/address mispredict: the decoupled frontend marked recover_at_exec
-    // on the mispredict's trigger uop and refilled this FT's tail off-path after the
-    // macro EOM. Flip the icache off-path right after that EOM (op->eom) -- even when
-    // the trigger is mid-macro -- keeping the ic->off_path == op->off_path invariant.
-    // ft_sibling_recovers_at_exec gates it to recovering macros; cf_type == NOT_CF
-    // excludes branch-recovery macros, which flip above.
-    if (!op->off_path && op->eom && op->inst_info->table_info.cf_type == NOT_CF && ft_sibling_recovers_at_exec(op)) {
-      ASSERT(ic->proc_id, !ic->off_path);
-      ic->off_path = TRUE;
     }
   }
 }

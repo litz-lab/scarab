@@ -578,9 +578,9 @@ void Decoupled_FE::update() {
         if (result.event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
           stall(result.op);
         } else if (result.event == FT_EVENT_MISPREDICT) {
-          redirect_to_off_path(result);
+          redirect_to_off_path(result, /*caused_by_lvp=*/false);
         } else if (result.event == FT_EVENT_LOAD_MISPREDICT) {
-          redirect_load_mispred(result);
+          redirect_to_off_path(result, /*caused_by_lvp=*/true);
         }
 
         break;
@@ -622,9 +622,9 @@ void Decoupled_FE::update() {
         if (result.event == FT_EVENT_FETCH_BARRIER && FRONTEND == FE_PIN_EXEC_DRIVEN) {
           stall(result.op);
         } else if (result.event == FT_EVENT_MISPREDICT) {
-          redirect_to_off_path(result);
+          redirect_to_off_path(result, /*caused_by_lvp=*/false);
         } else if (result.event == FT_EVENT_LOAD_MISPREDICT) {
-          redirect_load_mispred(result);
+          redirect_to_off_path(result, /*caused_by_lvp=*/true);
         }
 
         break;
@@ -1041,15 +1041,23 @@ void Decoupled_FE::refill_ft_tail_off_path(FT* ft) {
   }
 }
 
-void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
-  // misprediction and redirection handling
+void Decoupled_FE::redirect_to_off_path(FT_PredictResult result, bool caused_by_lvp) {
+  // Switch to off-path execution after a divergence at result.index. Two callers:
+  //  - branch mispredict (caused_by_lvp == false): result.index is the branch, the
+  //    off-path stream is its wrong target;
+  //  - predicted-load mispredict (caused_by_lvp == true): result.index is the load's
+  //    macro EOM, and there is no control-flow divergence -- the off-path stream is
+  //    just the fall-through, refetched so its consumers re-execute after recovery.
+  // The FT split / recovery-FT bookkeeping is identical; only the branch-specific
+  // off-path-reason classification and alt-DFE driving are gated out for LVP.
   ASSERT(proc_id, bp_id == MAIN_BP);
-  ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT);
-  // Misprediction: Switch to off-path execution
-  const Off_Path_Reason reason = eval_off_path_reason(result.op);
-  ASSERT(proc_id, reason != REASON_NOT_IDENTIFIED);
-  if (CONFIDENCE_ENABLE)
-    conf->set_off_path_reason(reason);
+  ASSERT(proc_id, caused_by_lvp ? (result.event == FT_EVENT_LOAD_MISPREDICT) : (result.event == FT_EVENT_MISPREDICT));
+  if (!caused_by_lvp) {
+    const Off_Path_Reason reason = eval_off_path_reason(result.op);
+    ASSERT(proc_id, reason != REASON_NOT_IDENTIFIED);
+    if (CONFIDENCE_ENABLE)
+      conf->set_off_path_reason(reason);
+  }
   auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
   current_ft_to_push = off_path_FT;
   // if we have a tailing ft, save it for recovery; otherwise the misprediction was
@@ -1065,7 +1073,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   redirect_cycle = cycle_count;
   next_state = SERVING_OFF_PATH;
   frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);
-  if (bp_id == MAIN_BP) {
+  if (!caused_by_lvp && bp_id == MAIN_BP) {
     // Misprediction event: drive alt DFEs that subscribe to it. The
     // _ON_MISPREDICTION variants are oracle-aware (gating on simulator-known
     // misprediction at predict-stage) and not realistic in real hardware;
@@ -1077,38 +1085,6 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // set the current op number as the beginning op count of this off-path divergence
   set_off_path_op_num(current_ft_to_push->get_last_op()->op_num + 1);
   // patching/modify the current FT with off-path op if current FT not ended
-  refill_ft_tail_off_path(current_ft_to_push);
-  if (current_ft_to_push->ended_by_exit()) {
-    next_state = INACTIVE;
-    exit_on_off_path = true;
-  }
-  ASSERT(proc_id, current_ft_to_push->get_end_reason() != FT_NOT_ENDED);
-}
-
-void Decoupled_FE::redirect_load_mispred(FT_PredictResult result) {
-  ASSERT(proc_id, bp_id == MAIN_BP);
-  ASSERT(proc_id, result.event == FT_EVENT_LOAD_MISPREDICT);
-  ASSERT(proc_id, result.index < current_ft_to_push->get_ops().size());
-  ASSERT(proc_id, current_ft_to_push->get_ops()[result.index] == result.op);
-
-  // A predicted-load mispredict goes off-path after the load's macro EOM. There is
-  // no control-flow divergence (the "target" is just the fall-through), but the FT
-  // bookkeeping is identical to a branch mispredict at result.index, so reuse the
-  // same split/recovery machinery as redirect_to_off_path: split at the EOM into the
-  // off-path FT (prefix through the EOM, refilled off-path) and the trailing on-path
-  // consumers held for recovery; if the EOM is the FT's last op, hold the next
-  // on-path FT instead. The icache flips off-path right after the EOM (op->eom).
-  auto [off_path_FT, trailing_ft] = current_ft_to_push->extract_off_path_ft(result.index);
-  current_ft_to_push = off_path_FT;
-  if (trailing_ft && trailing_ft->has_unread_ops())
-    saved_recovery_ft = trailing_ft;
-  else
-    saved_recovery_ft = build_or_pop_next_on_path_ft();
-
-  redirect_cycle = cycle_count;
-  next_state = SERVING_OFF_PATH;
-  frontend_redirect(proc_id, bp_id, result.op->inst_uid, result.pred_addr);
-  set_off_path_op_num(current_ft_to_push->get_last_op()->op_num + 1);
   refill_ft_tail_off_path(current_ft_to_push);
   if (current_ft_to_push->ended_by_exit()) {
     next_state = INACTIVE;

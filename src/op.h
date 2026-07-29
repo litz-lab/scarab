@@ -410,7 +410,11 @@ static inline void op_assert_cycles_set_at_retire(const Op* op) {
   ASSERT(op->proc_id, op->cycles.precommit_cycle != MAX_CTR);
   ASSERT(op->proc_id, op->cycles.decode_cycle != MAX_CTR);
   ASSERT(op->proc_id, op->cycles.wake_cycle != MAX_CTR);
-  if (op->inst_info->table_info.cf_type)
+  // Syscalls and fetch-barrier CF ops are serializing: the frontend treats them as
+  // fetch barriers (predict_op_ft_event returns FETCH_BARRIER) rather than predicted
+  // branches, so they never stamp bp_cycle. Require it only for predicted CF ops.
+  if (op->inst_info->table_info.cf_type && op->inst_info->table_info.cf_type != CF_SYS &&
+      !(op->inst_info->table_info.bar_type & BAR_FETCH))
     ASSERT(op->proc_id, op->cycles.bp_cycle != MAX_CTR);
   if (op->inst_info->table_info.mem_type != NOT_MEM)
     ASSERT(op->proc_id, op->cycles.dcache_cycle != MAX_CTR);

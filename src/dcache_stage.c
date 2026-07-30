@@ -245,23 +245,18 @@ void update_dcache_stage(Stage_Data* src_sd) {
       STAT_EVENT(dc->proc_id, DCACHE_READ_PORT_UNAVAILABLE_ONPATH + op->off_path);
       continue;
     }
-    // Record the dcache access. op->state is still the entry state here (set
-    // OS_SCHEDULED below). An op reaches this point either fresh from the scheduler,
-    // or re-probing from one of the two states phase 1 keeps resident (see the
-    // retention check above): OS_WAIT_DCACHE (waiting for a cache port) and
-    // OS_WAIT_MEM (a miss waiting for a mem-request buffer). A re-probe stamps
-    // dcache_cycle on its first real access and may re-run afterwards (e.g. a
-    // re-executed op re-enters with it already stamped), so record once and tolerate.
-    // A genuinely fresh entry must not already be stamped.
-    if (op->state == OS_WAIT_DCACHE || op->state == OS_WAIT_MEM) {
-      if (op_get_dcache_cycle(op) == MAX_CTR)
-        op_set_dcache_cycle(op, cycle_count);
-    } else {
-      ASSERTM(dc->proc_id, op_get_dcache_cycle(op) == MAX_CTR,
-              "dcache first access with cycle already set: state=%s exec_count=%d mem_type=%d off_path=%d\n",
-              Op_State_str(op->state), op->exec_count, op->inst_info->table_info.mem_type, op->off_path);
+    // Record the op's first dcache access (dcache_cycle gates precommit). op->state
+    // is still the entry state here (set OS_SCHEDULED below). If dcache_cycle is not
+    // yet set, this is that first access -- stamp it. If it is already set, this must
+    // be a re-probe from one of the two states phase 1 keeps resident (see the
+    // retention check above): OS_WAIT_MEM (missed, waiting for a mem-request buffer,
+    // already accessed+stamped) or OS_WAIT_DCACHE (a stamped OS_WAIT_MEM op that
+    // re-probed into a busy port -- the only path by which a stamped op re-enters
+    // OS_WAIT_DCACHE; a *fresh* OS_WAIT_DCACHE is unstamped and takes the branch above).
+    if (op_get_dcache_cycle(op) == MAX_CTR)
       op_set_dcache_cycle(op, cycle_count);
-    }
+    else
+      ASSERT(dc->proc_id, op->state == OS_WAIT_DCACHE || op->state == OS_WAIT_MEM);
 
     // memory ops are marked as scheduled so that they can be removed from the node->rdy_list
     op->state = OS_SCHEDULED;

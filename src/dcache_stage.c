@@ -234,6 +234,21 @@ void update_dcache_stage(Stage_Data* src_sd) {
       continue;
     }
 
+    // OS_WAIT_MEM re-probe: the op already accessed the dcache and missed, and
+    // new_mem_req found no in-flight request to merge with and no free mem-request
+    // buffer. Re-looking-up the dcache can only re-derive the same known miss, so skip
+    // the port acquisition and the tag lookup entirely and go straight to retrying the
+    // mem request. A matching in-flight request that shows up later is still caught by
+    // new_mem_req's queue search inside the miss handler. Set OS_SCHEDULED first (as the
+    // fresh-access path below does) so the store-forward-hit case, which does not set
+    // op->state, leaves the op removable instead of resident.
+    if (op->state == OS_WAIT_MEM) {
+      ASSERT(dc->proc_id, op_get_dcache_cycle(op) != MAX_CTR);
+      op->state = OS_SCHEDULED;
+      dcache_cacheline_miss(op, get_cache_line_addr(&dc->dcache, op->oracle_info.va));
+      continue;
+    }
+
     /* check on the availability of a read port for the given bank */
     // the bank bits are the lowest order cache index bits
     uns bank = BANK(op->oracle_info.va, DCACHE_BANKS, DCACHE_INTERLEAVE_FACTOR);
@@ -245,18 +260,13 @@ void update_dcache_stage(Stage_Data* src_sd) {
       STAT_EVENT(dc->proc_id, DCACHE_READ_PORT_UNAVAILABLE_ONPATH + op->off_path);
       continue;
     }
-    // Record the op's first dcache access (dcache_cycle gates precommit). op->state
-    // is still the entry state here (set OS_SCHEDULED below). If dcache_cycle is not
-    // yet set, this is that first access -- stamp it. If it is already set, this must
-    // be a re-probe from one of the two states phase 1 keeps resident (see the
-    // retention check above): OS_WAIT_MEM (missed, waiting for a mem-request buffer,
-    // already accessed+stamped) or OS_WAIT_DCACHE (a stamped OS_WAIT_MEM op that
-    // re-probed into a busy port -- the only path by which a stamped op re-enters
-    // OS_WAIT_DCACHE; a *fresh* OS_WAIT_DCACHE is unstamped and takes the branch above).
-    if (op_get_dcache_cycle(op) == MAX_CTR)
-      op_set_dcache_cycle(op, cycle_count);
-    else
-      ASSERT(dc->proc_id, op->state == OS_WAIT_DCACHE || op->state == OS_WAIT_MEM);
+    // Record the op's first dcache access (dcache_cycle gates precommit). Every op
+    // reaching here is making that first access: fresh from the scheduler, or an
+    // OS_WAIT_DCACHE op that was only ever waiting for a cache port and never accessed.
+    // OS_WAIT_MEM re-probes are short-circuited above, so a stamped op can no longer
+    // re-enter this point (the sole path was OS_WAIT_MEM -> busy port -> OS_WAIT_DCACHE);
+    // op_set_dcache_cycle is write-once and asserts dcache_cycle was unset.
+    op_set_dcache_cycle(op, cycle_count);
 
     // memory ops are marked as scheduled so that they can be removed from the node->rdy_list
     op->state = OS_SCHEDULED;

@@ -80,7 +80,12 @@ bool signal_handler(THREADID tid, INT32 sig, CONTEXT* ctxt, bool hasHandler,
             "signalhandler curr_uid=%" PRIu64 ", curr_eip=%" PRIx64
             ", sig=%d, wp=%d\n",
             uid_ctr, (uint64_t)curr_eip, sig, on_wrongpath);
-  if(!fast_forward_count || on_wrongpath) {
+  // During hyper fast-forward, fast_forward_count is 0 (only hyper_fast_forward_count
+  // counts down), so an app exception here must NOT be processed as a simulated
+  // right-path exception -- no op was staged into the mailbox yet, so the first
+  // do_fe_null would assert "Expected full mailbox". Treat hyper-FF like regular FF
+  // (fall through, deliver to the app).
+  if ((!fast_forward_count && !hyper_ff) || on_wrongpath) {
     if(on_wrongpath) {
       if(sig == SIGFPE || sig == SIGSEGV || sig == SIGBUS) {
         PIN_SetContextRegval(ctxt, REG_INST_PTR, (const UINT8*)(&next_eip));

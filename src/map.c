@@ -611,8 +611,8 @@ void add_to_wake_up_lists(Op* op, void (*wake_action)(Op*, Op*, uns)) {
       Wake_Up_Entry* wake;
 
       ASSERTM(op->proc_id, op->proc_id == src_op->proc_id,
-              "op num: %llu fetch: %llu, src_op num: %llu unique: %llu fetch: %llu\n", op->op_num, op->fetch_cycle,
-              src_op->op_num, src_op->unique_num, src_op->fetch_cycle);
+              "op num: %llu fetch: %llu, src_op num: %llu unique: %llu fetch: %llu\n", op->op_num,
+              op_get_fetch_cycle(op), src_op->op_num, src_op->unique_num, op_get_fetch_cycle(src_op));
 
       if (map_data->free_list_head == NULL) {
         ASSERT(map_data->proc_id, map_data->active_wake_up_entries == map_data->wake_up_entries);
@@ -696,9 +696,9 @@ void simple_wake(Op* src_op, Op* dep_op, uns rdy_bit) {
   ASSERT(src_op->proc_id, src_op && src_op != &invalid_op);
   ASSERT(src_op->proc_id, dep_op && dep_op != &invalid_op);
   UNUSED(rdy_bit);
-  dep_op->rdy_cycle = MAX2(dep_op->rdy_cycle, src_op->wake_cycle);
+  op_set_rdy_cycle(dep_op, MAX2(op_get_rdy_cycle(dep_op), op_get_wake_cycle(src_op)));
   if (op_sources_not_rdy_is_clear(dep_op))
-    dep_op->state = dep_op->rdy_cycle == cycle_count + 1 ? OS_READY : OS_WAIT_FWD;
+    dep_op->state = op_get_rdy_cycle(dep_op) == cycle_count + 1 ? OS_READY : OS_WAIT_FWD;
 }
 
 /**************************************************************************************/

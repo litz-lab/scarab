@@ -186,8 +186,8 @@ void print_op_field(FILE* stream, Op* op, uns field) {
           fprintf(stream, "D ");
         else {
           if (op->state == OS_WAIT_FWD)
-            if (cycle_count < op->rdy_cycle - 1)
-              fprintf(stream, "%c%lld", op->replay ? 'w' : 'W', op->rdy_cycle - cycle_count - 1);
+            if (cycle_count < op_get_rdy_cycle(op) - 1)
+              fprintf(stream, "%c%lld", op->replay ? 'w' : 'W', op_get_rdy_cycle(op) - cycle_count - 1);
             else
               fprintf(stream, "%c%c", 'R', op->replay ? 'r' : ' ');
           else

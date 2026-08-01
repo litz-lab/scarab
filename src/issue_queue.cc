@@ -94,7 +94,7 @@ static inline Flag issue_queue_check_op_ready(Op* op) {
   ASSERT(node->proc_id, op->state == OS_IN_RS || op->state == OS_READY || op->state == OS_WAIT_FWD);
 
   // if the op is waiting for forwarding, check if it can be forwarded in time to be ready in the next cycle
-  if (cycle_count < op->rdy_cycle - 1) {
+  if (cycle_count < op_get_rdy_cycle(op) - 1) {
     return FALSE;
   }
   ASSERT(node->proc_id, op_sources_not_rdy_is_clear(op));
@@ -880,7 +880,7 @@ void IssueQueues::dispatch() {
 
     if (op_sources_not_rdy_is_clear(op)) {
       queue.wakeup(op->queue_entry_id);
-      op->state = (cycle_count + 1 >= op->rdy_cycle ? OS_READY : OS_WAIT_FWD);
+      op->state = (cycle_count + 1 >= op_get_rdy_cycle(op) ? OS_READY : OS_WAIT_FWD);
     }
 
     // maximum number of operations to fill into the RS per cycle (0 = unlimited)

@@ -292,7 +292,7 @@ static inline void map_stage_fetch_op(Stage_Data* src_sd) {
     ASSERT(map->proc_id, op->op_num == map->next_op_num);
     DEBUG(map->proc_id, "Fetching opnum=%llu at idx=%i\n", op->op_num, ii);
 
-    op->map_cycle = cycle_count;
+    op_set_map_cycle(op, cycle_count);
     first_sd->ops[ii] = op;
     first_sd->op_count++;
 

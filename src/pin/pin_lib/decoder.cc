@@ -55,6 +55,7 @@ static ctype_pin_inst  tmp_inst_info;
 // Globals used for communication between analysis functions
 uint32_t       glb_opcode, glb_actually_taken;
 deque<ADDRINT> glb_ld_vaddrs, glb_st_vaddrs;
+deque<uint64_t> glb_ld_data;  // loaded value per load, captured at IPOINT_BEFORE (kept aligned with glb_ld_vaddrs)
 deque<Pin_Reg_Val> glb_src_vector_vals, glb_dst_vector_vals;
 
 std::ostream*                                    glb_err_ostream;
@@ -84,8 +85,8 @@ void print_err_if_invalid(ctype_pin_inst* info, const INS& ins);
 void get_opcode(UINT32 opcode);
 void get_gather_scatter_eas(bool is_gather, CONTEXT* ctxt,
                             PIN_MULTI_MEM_ACCESS_INFO* mem_access_info);
-void get_ld_ea(ADDRINT addr);
-void get_ld_ea2(ADDRINT addr1, ADDRINT addr2);
+void get_ld_ea(ADDRINT addr, UINT32 size);
+void get_ld_ea2(ADDRINT addr1, ADDRINT addr2, UINT32 size);
 void get_st_ea(ADDRINT addr);
 void get_branch_dir(bool taken);
 void get_src_vector_vals(CONTEXT* ctxt, ADDRINT reg_id, ADDRINT scarab_id);
@@ -192,11 +193,10 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
   } else {
     if(INS_IsMemoryRead(ins)) {
       if(INS_HasMemoryRead2(ins)) {
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea2,
-                       IARG_MEMORYREAD_EA, IARG_MEMORYREAD2_EA, IARG_END);
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea2, IARG_MEMORYREAD_EA, IARG_MEMORYREAD2_EA,
+                       IARG_MEMORYREAD_SIZE, IARG_END);
       } else {
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea,
-                       IARG_MEMORYREAD_EA, IARG_END);
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea, IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE, IARG_END);
       }
     }
 
@@ -287,6 +287,7 @@ void create_compressed_op(ADDRINT iaddr) {
     assert(filled_inst_info->num_ld == num_lds);
     for(uint ld = 0; ld < num_lds; ld++) {
       filled_inst_info->ld_vaddr[ld] = glb_ld_vaddrs[ld];
+      filled_inst_info->ld_data[ld] = (ld < glb_ld_data.size()) ? glb_ld_data[ld] : 0;
     }
 
     uint num_sts = glb_st_vaddrs.size();
@@ -306,6 +307,7 @@ void create_compressed_op(ADDRINT iaddr) {
   glb_dst_vector_vals.clear();
   glb_src_vector_vals.clear();
   glb_ld_vaddrs.clear();
+  glb_ld_data.clear();
   glb_st_vaddrs.clear();
   glb_actually_taken = 0;
 
@@ -341,9 +343,10 @@ void get_gather_scatter_eas(bool is_gather, CONTEXT* ctxt,
 
     // only let Scarab know about it if the memop is not masked away
     if(mask_on) {
-      if(is_load)
+      if (is_load) {
         glb_ld_vaddrs.push_back(addr);
-      else
+        glb_ld_data.push_back(0);  // gather loads are vector (> 8 bytes); value not captured
+      } else
         glb_st_vaddrs.push_back(addr);
     }
   }
@@ -353,13 +356,25 @@ void get_opcode(UINT32 opcode) {
   glb_opcode = opcode;
 }
 
-void get_ld_ea(ADDRINT addr) {
-  glb_ld_vaddrs.push_back(addr);
+// Read the loaded value now (IPOINT_BEFORE), so read-modify-write loads observe the
+// pre-store memory. Only scalar loads (<= 8 bytes) are captured; wider loads store 0.
+static uint64_t read_ld_data(ADDRINT addr, UINT32 size) {
+  uint64_t val = 0;
+  if (size && size <= 8)
+    PIN_SafeCopy(&val, (const void*)addr, size);
+  return val;
 }
 
-void get_ld_ea2(ADDRINT addr1, ADDRINT addr2) {
+void get_ld_ea(ADDRINT addr, UINT32 size) {
+  glb_ld_vaddrs.push_back(addr);
+  glb_ld_data.push_back(read_ld_data(addr, size));
+}
+
+void get_ld_ea2(ADDRINT addr1, ADDRINT addr2, UINT32 size) {
   glb_ld_vaddrs.push_back(addr1);
   glb_ld_vaddrs.push_back(addr2);
+  glb_ld_data.push_back(read_ld_data(addr1, size));
+  glb_ld_data.push_back(read_ld_data(addr2, size));
 }
 
 void get_st_ea(ADDRINT addr) {

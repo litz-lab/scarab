@@ -136,9 +136,7 @@ typedef struct ctype_pin_inst_struct {
   Pin_Reg_Val dests[MAX_DESTS];
   uint64_t ld_vaddr[MAX_LD_NUM];
   uint64_t st_vaddr[MAX_ST_NUM];
-  // Loaded data value (zero-extended, scalar loads <= 8 bytes; 0 for wider loads),
-  // captured at IPOINT_BEFORE so read-modify-write loads see the pre-store value.
-  uint64_t ld_data[MAX_LD_NUM];
+  uint64_t ld_data[MAX_LD_NUM];  // loaded value (scalar <=8B, captured at IPOINT_BEFORE; 0 for wider)
   uint8_t ld_size;
   uint8_t st_size;
 

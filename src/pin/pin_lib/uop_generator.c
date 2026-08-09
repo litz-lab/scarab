@@ -968,11 +968,15 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
       trace_uop->load_seq_num = info->trace_info.load_seq_num;
       ASSERT(proc_id, trace_uop->load_seq_num < MAX_LD_NUM);
       trace_uop->va = pi->ld_vaddr[trace_uop->load_seq_num];
-      // The loaded value is the memory data (captured at IPOINT_BEFORE), not a destination
-      // register value: a cracked load-op writes an internal temp (REG_TMP0) that PIN has no
-      // architectural destination for, so the dst-reg match above leaves it 0. Take it from ld_data.
+      // The loaded value is the memory data (captured at IPOINT_BEFORE); it overrides the dst-reg
+      // match above, which leaves 0 for a cracked load-op whose load uop writes the internal
+      // REG_TMP0 (no architectural destination for PIN to report). A load uop has a single
+      // destination -- its loaded value -- so this cannot clobber another matched register.
+      ASSERT(proc_id, trace_uop->load_seq_num < pi->num_ld);
+      ASSERT(proc_id, info->table_info.num_dest_regs <= 1);
+      const uns64 ld_val = pi->ld_data[trace_uop->load_seq_num];
       for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++)
-        trace_uop->dests[ii].val = pi->ld_data[trace_uop->load_seq_num];
+        trace_uop->dests[ii].val = ld_val;
       DEBUG(proc_id,
             "Generating a load: inst @%llx opcode: %s num_ld: %i "
             "num_st: %u va: 0x%s load size: %u\n",

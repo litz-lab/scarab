@@ -949,6 +949,7 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
       continue;
     for (uns j = 0; j < pi->num_dst_regs; j++) {
       if (pi->dst_regs[j] == info->dests[ii].id) {
+        ASSERT(proc_id, !trace_uop->dests[ii].val_valid);  // a destination value is written exactly once
         trace_uop->dests[ii].val = pi->dests[j].val;
         trace_uop->dests[ii].val_valid = TRUE;
         break;

@@ -136,16 +136,16 @@ class FDIP_Stat {
   unordered_map<Addr, vector<uns8>> icache_sequence;
   // Before warmup, consumers only need to know whether each event type occurred;
   // a bitmask avoids retaining duplicate events, ordering, and cycle timestamps.
-  enum SequenceBwEvent : uint8_t {
-    BW_p = 1u << 0,
-    BW_P = 1u << 1,
-    BW_m = 1u << 2,
-    BW_h = 1u << 3,
-    BW_u = 1u << 4,
-    BW_U = 1u << 5,
-    BW_e = 1u << 6,
+  enum WarmupEvent : uint8_t {
+    WARMUP_EVENT_p = 1u << 0,
+    WARMUP_EVENT_P = 1u << 1,
+    WARMUP_EVENT_m = 1u << 2,
+    WARMUP_EVENT_h = 1u << 3,
+    WARMUP_EVENT_u = 1u << 4,
+    WARMUP_EVENT_U = 1u << 5,
+    WARMUP_EVENT_e = 1u << 6,
   };
-  unordered_map<Addr, uint8_t> sequence_bw;
+  unordered_map<Addr, uint8_t> warmup_events;
 
   // sequence_aw stores the complete per-cache-line event history required by
   // print_cl_info(), including event order, duplicates, and cycle timestamps.
@@ -638,7 +638,7 @@ void FDIP_Stat::inc_cnt_unuseful(Addr line_addr) {
     if (FDIP_PRINT_CL_INFO)
       sequence_aw[line_addr].push_back(make_pair('u', cycle_count));
   } else {
-    sequence_bw[line_addr] |= BW_u;
+    warmup_events[line_addr] |= WARMUP_EVENT_u;
   }
 }
 
@@ -668,7 +668,7 @@ void FDIP_Stat::inc_cnt_useful(Addr line_addr, Flag pref_miss) {
       sequence_aw[line_addr].push_back(make_pair('U', cycle_count));
     }
   } else {
-    sequence_bw[line_addr] |= BW_U;
+    warmup_events[line_addr] |= WARMUP_EVENT_U;
   }
 }
 
@@ -685,7 +685,7 @@ void FDIP_Stat::not_prefetch(Addr line_addr) {
       sequence_aw[line_addr].push_back(make_pair('p', onoff_cycle_count));
     }
   } else {
-    sequence_bw[line_addr] |= BW_p;
+    warmup_events[line_addr] |= WARMUP_EVENT_p;
   }
 }
 
@@ -710,7 +710,7 @@ void FDIP_Stat::inc_icache_miss(Addr line_addr) {
 
     cur_line_delay = cycle_count;
   } else {
-    sequence_bw[line_addr] |= BW_m;
+    warmup_events[line_addr] |= WARMUP_EVENT_m;
   }
 
   uns icache_val = g_fdip->get_warmed_up() ? 2 : 0;
@@ -719,15 +719,15 @@ void FDIP_Stat::inc_icache_miss(Addr line_addr) {
     icache_sequence.insert(make_pair(line_addr, vector<uns8>()));
     icache_sequence[line_addr].push_back(icache_val);
     if (icache_val == 2) {
-      auto it2 = sequence_bw.find(line_addr);
-      if (it2 != sequence_bw.end()) {
+      auto it2 = warmup_events.find(line_addr);
+      if (it2 != warmup_events.end()) {
         STAT_EVENT(proc_id, ICACHE_FIRST_MISS_AFTER_WARMUP_SEEN_DURING_WARMUP);
         const uint8_t state = it2->second;
-        const bool no_pref = state & BW_p;
-        // Preserve the legacy sequence_bw interpretation: lowercase 'u' drives
+        const bool no_pref = state & WARMUP_EVENT_p;
+        // Preserve the legacy before-warmup event interpretation: lowercase 'u' drives
         // the useful predicate, while uppercase 'U' drives the unuseful predicate.
-        const bool useful = state & BW_u;
-        const bool unuseful = state & BW_U;
+        const bool useful = state & WARMUP_EVENT_u;
+        const bool unuseful = state & WARMUP_EVENT_U;
         if (no_pref && !unuseful && !useful)
           STAT_EVENT(proc_id, ICACHE_FIRST_MISS_AFTER_WARMUP_NO_PREF_DURING_WARMUP);
         if (!no_pref && unuseful && !useful)
@@ -787,7 +787,7 @@ void FDIP_Stat::inc_prefetched_cls(Addr line_addr, Flag on_path, uns success) {
       sequence_aw[line_addr].push_back(make_pair('P', onoff_cycle_count));
     }
   } else {
-    sequence_bw[line_addr] |= BW_P;
+    warmup_events[line_addr] |= WARMUP_EVENT_P;
   }
 }
 
@@ -836,7 +836,7 @@ void FDIP_Stat::inc_icache_hit(Addr line_addr) {
     }
     cur_line_delay = 0;
   } else {
-    sequence_bw[line_addr] |= BW_h;
+    warmup_events[line_addr] |= WARMUP_EVENT_h;
   }
 
   uns icache_val = g_fdip->get_warmed_up() ? 3 : 1;
@@ -1486,7 +1486,7 @@ void FDIP::add_evict_seq(Addr line_addr) {
     if (FDIP_PRINT_CL_INFO)
       fdip_stat->sequence_aw[line_addr].push_back(make_pair('e', cycle_count));
   } else {
-    fdip_stat->sequence_bw[line_addr] |= FDIP_Stat::BW_e;
+    fdip_stat->warmup_events[line_addr] |= FDIP_Stat::WARMUP_EVENT_e;
   }
 }
 

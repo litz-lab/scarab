@@ -88,7 +88,7 @@ void topdown_bp_recovery(uns proc_id, Op* op) {
 }
 
 void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path) {
-  INC_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS, ISSUE_WIDTH);
+  INC_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS, DISPATCH_WIDTH);
   INC_STAT_EVENT(proc_id, TOPDOWN_ISSUED_SLOTS, count_issued);
   INC_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS, count_issued_on_path);
 
@@ -96,7 +96,7 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
   if (recovery_cycle != 0) {
     ASSERT(proc_id, recovery_cycle > 0);
     idq_stage_set_recovery_cycle(recovery_cycle - 1);
-    INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES_SLOTS, ISSUE_WIDTH - count_available);
+    INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES_SLOTS, DISPATCH_WIDTH - count_available);
     return;
   }
 
@@ -111,7 +111,7 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
     return;
   }
 
-  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS, ISSUE_WIDTH - count_available);
+  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS, DISPATCH_WIDTH - count_available);
   if (count_available == 0)
     STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GT_MIW_CYCLES);
 }

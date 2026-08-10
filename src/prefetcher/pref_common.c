@@ -1445,9 +1445,9 @@ HWP_DynAggr pref_get_degfb(uns8 proc_id, uns8 prefetcher_id) {
             pref_table[prefetcher_id].hwp_info->dyn_degree_core[proc_id]--;
         } else {  // NOT TIMELY WITH LOW POL
           STAT_EVENT(proc_id, PREF_ACC4_LT_LP);
-          ret = AGGR_DEC;
-          if (pref_table[prefetcher_id].hwp_info->dyn_degree_core[proc_id] > 0)
-            pref_table[prefetcher_id].hwp_info->dyn_degree_core[proc_id]--;
+          ret = AGGR_INC;
+          if (pref_table[prefetcher_id].hwp_info->dyn_degree_core[proc_id] < PREF_MAX_DEGFB)
+            pref_table[prefetcher_id].hwp_info->dyn_degree_core[proc_id]++;
         }
       }
     }

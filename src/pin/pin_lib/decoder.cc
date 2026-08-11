@@ -285,9 +285,10 @@ void create_compressed_op(ADDRINT iaddr) {
                                          num_lds, filled_inst_info);
     }
     assert(filled_inst_info->num_ld == num_lds);
+    assert(glb_ld_data.size() == glb_ld_vaddrs.size());
     for(uint ld = 0; ld < num_lds; ld++) {
       filled_inst_info->ld_vaddr[ld] = glb_ld_vaddrs[ld];
-      filled_inst_info->ld_data[ld] = (ld < glb_ld_data.size()) ? glb_ld_data[ld] : 0;
+      filled_inst_info->ld_data[ld] = glb_ld_data[ld];
     }
 
     uint num_sts = glb_st_vaddrs.size();
@@ -318,6 +319,8 @@ void create_compressed_op(ADDRINT iaddr) {
   // heartbeat += 1;
 }
 
+static uint64_t read_ld_data(ADDRINT addr, UINT32 size);
+
 void get_gather_scatter_eas(bool is_gather, CONTEXT* ctxt,
                             PIN_MULTI_MEM_ACCESS_INFO* mem_access_info) {
   const vector<PIN_MEM_ACCESS_INFO> gather_scatter_mem_access_infos =
@@ -344,8 +347,10 @@ void get_gather_scatter_eas(bool is_gather, CONTEXT* ctxt,
     // only let Scarab know about it if the memop is not masked away
     if(mask_on) {
       if (is_load) {
+        // Each gather element access is scalar-sized; capture it like a normal load
+        // (read_ld_data zero-fills anything > 8 bytes).
         glb_ld_vaddrs.push_back(addr);
-        glb_ld_data.push_back(0);  // gather loads are vector (> 8 bytes); value not captured
+        glb_ld_data.push_back(read_ld_data(addr, gather_scatter_mem_access_infos[i].bytesAccessed));
       } else
         glb_st_vaddrs.push_back(addr);
     }

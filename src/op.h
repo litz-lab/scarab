@@ -38,6 +38,7 @@
 #include "inst_info.h"
 #include "op_info.h"
 #include "pred_info.h"
+#include "static_inst_info.h"
 #include "table_info.h"
 
 // forward declaration of FT
@@ -172,6 +173,8 @@ struct Op_struct {
   Counter unique_num_per_proc;  // unique number per core
   uns64 inst_uid;               // unique number for the macro instruction provided by the frontend (PIN)
   Inst_Info* inst_info;         // pointer to unique struct for each static instruction
+  Static_Inst_Info* inst;       // shared per-macro-instruction static info
+  Static_Op_Info* uop;          // per-uop static info
   Op_Info oracle_info;          // information about the execution of the op in the oracle
   Op_Info engine_info;          // information about the execution of the op in the engine
   uns num_srcs;                 // number of map dependencies (order matches srcs_not_rdy_words / wake-up)

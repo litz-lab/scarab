@@ -138,7 +138,7 @@ void recover_decode_stage() {
           op_select_bp_pred_info(cur->ops[jj], BP_PRED_MAIN);
           DEBUG(dec->proc_id, "Recovery op found in Decode stage:%u slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
                 jj, (unsigned long long)cur->ops[jj]->op_num, cur->ops[jj]->off_path,
-                (unsigned long long)cur->ops[jj]->inst_info->addr);
+                (unsigned long long)cur->ops[jj]->inst->addr);
         }
         if (FLUSH_OP(cur->ops[jj])) {
           DEBUG(dec->proc_id, "Decode flushing op_num:%llu off_path:%u\n", (unsigned long long)cur->ops[jj]->op_num,
@@ -244,8 +244,7 @@ void update_decode_stage(Stage_Data* src_sd) {
     Op* op = dec->last_sd->ops[ii];
     ASSERT(dec->proc_id, op != NULL);
     ASSERT(dec->proc_id, !op->fetched_from_uop_cache);
-    DEBUG(dec->proc_id, "Decoding op op_num=%llu, addr=%llx off_path:%i\n", op->op_num, op->inst_info->addr,
-          op->off_path);
+    DEBUG(dec->proc_id, "Decoding op op_num=%llu, addr=%llx off_path:%i\n", op->op_num, op->inst->addr, op->off_path);
     decode_stage_process_op(op);
     uop_cache_insert_op(op);
   }
@@ -255,12 +254,12 @@ void update_decode_stage(Stage_Data* src_sd) {
 /* process_decode_op: This function may also be called by ops from the uop cache.     */
 
 void decode_stage_process_op(Op* op) {
-  Cf_Type cf = op->inst_info->table_info.cf_type;
+  Cf_Type cf = op->uop->cf_type;
   op_set_decode_cycle(op, cycle_count);
 
   if (cf) {
     DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",
-          op->inst_info->table_info.bar_type & BAR_FETCH ? TRUE : FALSE, op->inst_info->addr, op->op_num,
+          op->uop->bar_type & BAR_FETCH ? TRUE : FALSE, op->inst->addr, op->op_num,
           op->bp_pred_info->recover_at_decode);
     // it is a direct branch, so the target is now known
     if (cf <= CF_CALL) {
@@ -283,7 +282,7 @@ void decode_stage_process_op(Op* op) {
     }
 
     if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)
-      increment_branch_count(op->inst_info->addr);
+      increment_branch_count(op->inst->addr);
   }
 }
 

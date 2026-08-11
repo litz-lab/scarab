@@ -183,26 +183,25 @@ static void print_inst_fields(uns proc_id, compressed_op* cop) {
 static void print_op_fields(uns proc_id, Op* op) {
   if (DEBUG_OP_FIELDS && DEBUG_RANGE_COND(proc_id)) {
     DEBUG_PRINT(proc_id, "----- Op Information -----\n");
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS inst addrs fake: %llx %d %d\n", op->inst_info->addr, op->inst_info->fake_inst,
-                op->inst_info->fake_inst_reason);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS inst addrs fake: %llx %d %d\n", op->inst->addr, op->inst->fake_inst,
+                op->inst->fake_inst_reason);
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op: %s\n", disasm_op(op, FALSE));
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op cf dir: %d %d %d\n", op->inst_info->table_info.op_type,
-                op->inst_info->table_info.cf_type, op->oracle_info.dir);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op cf dir: %d %d %d\n", op->uop->op_type, op->uop->cf_type,
+                op->oracle_info.dir);
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS src regs: ");
-    for (int i = 0; i < op->inst_info->table_info.num_src_regs; ++i) {
-      DEBUG_PRINT(proc_id, "%d ", op->inst_info->srcs[i].id);
+    for (int i = 0; i < op->uop->num_src_regs; ++i) {
+      DEBUG_PRINT(proc_id, "%d ", op->uop->srcs[i].id);
     }
     DEBUG_PRINT(proc_id, "\n");
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS dst regs: ");
-    for (int i = 0; i < op->inst_info->table_info.num_dest_regs; ++i) {
-      DEBUG_PRINT(proc_id, "%d ", op->inst_info->dests[i].id);
+    for (int i = 0; i < op->uop->num_dest_regs; ++i) {
+      DEBUG_PRINT(proc_id, "%d ", op->uop->dests[i].id);
     }
     DEBUG_PRINT(proc_id, "\n");
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS simd: %d %d %d\n", op->inst_info->table_info.is_simd,
-                op->inst_info->table_info.is_simd ? op->inst_info->table_info.num_simd_lanes : 0,
-                op->inst_info->table_info.is_simd ? op->inst_info->table_info.lane_width_bytes : 0);
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS mem_type addr mem_size: %d %llx %d\n", op->inst_info->table_info.mem_type,
-                op->oracle_info.va, op->inst_info->table_info.mem_size);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS simd: %d %d %d\n", op->inst->is_simd,
+                op->inst->is_simd ? op->inst->num_simd_lanes : 0, op->inst->is_simd ? op->inst->lane_width_bytes : 0);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS mem_type addr mem_size: %d %llx %d\n", op->uop->mem_type, op->oracle_info.va,
+                op->uop->mem_size);
   }
 }
 
@@ -413,8 +412,8 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
     op->dst_val[ii] = trace_uop->dests[ii].val;
   }
 
-  if (op->inst_info->table_info.op_type == OP_CF) {
-    if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP) {
+  if (op->uop->op_type == OP_CF) {
+    if (op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP) {
       op->oracle_info.dir = (trace_uop->actual_taken == 0) ? NOT_TAKEN : TAKEN;
     } else {
       /* assume that all CFs besides CBR are actually always taken. This fixes the
@@ -424,8 +423,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   } else
     op->oracle_info.dir = NOT_TAKEN;
 
-  if ((op->inst_info->table_info.cf_type == CF_ICALL) || (op->inst_info->table_info.cf_type == CF_IBR) ||
-      (op->inst_info->table_info.cf_type == CF_ICO))
+  if ((op->uop->cf_type == CF_ICALL) || (op->uop->cf_type == CF_IBR) || (op->uop->cf_type == CF_ICO))
     op->oracle_info.dir = 1;  // FIXME Hack!! because of StringMOV
 
   /* removing proc_id from target before compare with zero */
@@ -434,13 +432,13 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->oracle_info.npc = trace_uop->npc;
   if (op->proc_id)
     ASSERT(op->proc_id, op->oracle_info.npc);
-  if (op->inst_info->table_info.cf_type == CF_BR || op->inst_info->table_info.cf_type == CF_CALL)
+  if (op->uop->cf_type == CF_BR || op->uop->cf_type == CF_CALL)
     ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
   op->oracle_info.mem_size = trace_uop->mem_size;
   // because of repeat move mem size is dynamic info  WRONG!!!!
-  // op->inst_info->table_info.mem_size = trace_uop->mem_size;
+  // op->uop->mem_size = trace_uop->mem_size;
 
-  if (op->inst_info->table_info.mem_type && !(op->oracle_info.va)) {
+  if (op->uop->mem_type && !(op->oracle_info.va)) {
     // QUESTION why? //TODO: Really why?
     op->oracle_info.va = last_ga_va[proc_id];
   } else if (op->oracle_info.va)
@@ -455,20 +453,20 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   DEBUG(proc_id,
         "op_num:%s unique_num:%s pc:0x%s npc:0x%s va:0x%s mem_type:%d "
         "mem_size:%d cf_type:%d oracle_target:%s dir:%d\n",
-        unsstr64(op->op_num), unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc),
-        hexstr64s(op->oracle_info.va), op->inst_info->table_info.mem_type, op->oracle_info.mem_size,
-        op->inst_info->table_info.cf_type, hexstr64s(op->oracle_info.target), op->oracle_info.dir);
+        unsstr64(op->op_num), unsstr64(op->unique_num), hexstr64s(op->inst->addr), hexstr64s(op->oracle_info.npc),
+        hexstr64s(op->oracle_info.va), op->uop->mem_type, op->oracle_info.mem_size, op->uop->cf_type,
+        hexstr64s(op->oracle_info.target), op->oracle_info.dir);
 
-  for (ii = 0; ii < op->inst_info->table_info.num_src_regs; ii++) {
+  for (ii = 0; ii < op->uop->num_src_regs; ii++) {
     DEBUG(proc_id, "op_num:%s unique_num:%s pc:0x%s npc:0x%s, src(%d/%d):%s \n", unsstr64(op->op_num),
-          unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc), ii + 1,
-          op->inst_info->table_info.num_src_regs, disasm_reg(op->inst_info->srcs[ii].id));
+          unsstr64(op->unique_num), hexstr64s(op->inst->addr), hexstr64s(op->oracle_info.npc), ii + 1,
+          op->uop->num_src_regs, disasm_reg(op->uop->srcs[ii].id));
   }
 
-  for (ii = 0; ii < op->inst_info->table_info.num_dest_regs; ii++) {
+  for (ii = 0; ii < op->uop->num_dest_regs; ii++) {
     DEBUG(proc_id, "op_num:%s unique_num:%s pc:0x%s npc:0x%s, dest(%d/%d):%s \n", unsstr64(op->op_num),
-          unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc), ii + 1,
-          op->inst_info->table_info.num_dest_regs, disasm_reg(op->inst_info->dests[ii].id));
+          unsstr64(op->unique_num), hexstr64s(op->inst->addr), hexstr64s(op->oracle_info.npc), ii + 1,
+          op->uop->num_dest_regs, disasm_reg(op->uop->dests[ii].id));
   }
 }
 

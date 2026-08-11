@@ -31,8 +31,9 @@
 #ifndef __STATIC_INST_INFO_H__
 #define __STATIC_INST_INFO_H__
 
-#include "ctype_pin_inst.h"  // Reg_Type
 #include "globals/global_types.h"
+
+#include "ctype_pin_inst.h"  // Reg_Type
 #include "table_info.h"
 
 /* Static register operand: id/type only. The runtime value lives in Op::src_val /
@@ -46,22 +47,22 @@ typedef struct Static_Reg_Info_struct {
 /* Per-x86-instruction static info: one instance per macro-instruction, shared by
  * every uop the macro cracks into. Interned by {addr, opcode bytes}. */
 typedef struct Static_Inst_Info_struct {
-  Addr addr;             // instruction address (PC)
-  uns64 opcode_lsb;      // raw instruction bytes, first 8B (was ctype_pin_inst.inst_binary_lsb)
-  uns64 opcode_msb;      // raw instruction bytes, last 8B
-  uns8 inst_size;        // x86 instruction length in bytes
-  uns8 num_uop;          // number of uops this macro cracks into
-  Addr branch_target;    // static (decoded) branch target, if any
+  Addr addr;           // instruction address (PC)
+  uns64 opcode_lsb;    // raw instruction bytes, first 8B (was ctype_pin_inst.inst_binary_lsb)
+  uns64 opcode_msb;    // raw instruction bytes, last 8B
+  uns8 inst_size;      // x86 instruction length in bytes
+  uns8 num_uop;        // number of uops this macro cracks into
+  Addr branch_target;  // static (decoded) branch target, if any
 
-  uns16 true_op_type;    // opcode class from PIN (not for Scarab timing)
-  char name[16];         // mnemonic
+  uns16 true_op_type;  // opcode class from PIN (not for Scarab timing)
+  char name[16];       // mnemonic
 
   Flag is_simd;
   uns8 num_simd_lanes;
   uns8 lane_width_bytes;
   Flag is_gather_scatter;
 
-  Flag fake_inst;        // PIN-synthesized op (exceptions / uninstrumented code)
+  Flag fake_inst;  // PIN-synthesized op (exceptions / uninstrumented code)
   Wrongpath_Nop_Mode_Reason fake_inst_reason;
 
   uns8 type;        // format type code (legacy; zeroed in PIN path but still read)
@@ -70,7 +71,7 @@ typedef struct Static_Inst_Info_struct {
 
 /* Per-uop static info: one instance per uop. Interned by {addr, opcode bytes, uop_idx}. */
 typedef struct Static_Op_Info_struct {
-  uns uop_seq_num;   // index of this uop within its macro-instruction
+  uns uop_seq_num;  // index of this uop within its macro-instruction
 
   Op_Type op_type;
   Mem_Type mem_type;
@@ -82,11 +83,11 @@ typedef struct Static_Op_Info_struct {
   Static_Reg_Info srcs[MAX_SRCS];    // runtime values live in Op::src_val
   Static_Reg_Info dests[MAX_DESTS];  // runtime values live in Op::dst_val
 
-  uns mem_size;          // static bytes read/written (dynamic REP size lives in oracle_info)
+  uns mem_size;  // static bytes read/written (dynamic REP size lives in oracle_info)
   int latency;
   int extra_ld_latency;
 
-  uns8 load_seq_num;     // 0 = first load uop of the macro, 1 = second, ...
+  uns8 load_seq_num;  // 0 = first load uop of the macro, 1 = second, ...
   uns store_seq_num;
 
   Flag trigger_op_fetched_hook;  // fire the model's fetch hook for this uop

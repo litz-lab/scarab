@@ -150,10 +150,10 @@ void free_op(Op* op) {
   ASSERTM(0, op_pool_active_ops >= 0, "op_pool_active_ops:%u\n", op_pool_active_ops);
   DEBUG(0, "Freed op  id:%u  op_pool_active_ops: %u\n", op->op_pool_id, op_pool_active_ops);
 
-  if (op->inst_info && op->inst_info->table_info.mem_type == MEM_ST)
+  if (op->inst_info && op->uop->mem_type == MEM_ST)
     delete_store_hash_entry(op);
 
-  if (op->inst_info && op->inst_info->fake_inst) {
+  if (op->inst_info && op->inst->fake_inst) {
     // we no longer allocate memory for fake nops
     // free(op->inst_info->table_info);
     free(op->inst_info);

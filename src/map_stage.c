@@ -141,7 +141,7 @@ void recover_map_stage() {
           op_select_bp_pred_info(cur->ops[jj], BP_PRED_MAIN);
           DEBUG(map->proc_id, "Recovery op found in Map stage:%u slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii, jj,
                 (unsigned long long)cur->ops[jj]->op_num, cur->ops[jj]->off_path,
-                (unsigned long long)cur->ops[jj]->inst_info->addr);
+                (unsigned long long)cur->ops[jj]->inst->addr);
         }
         if (FLUSH_OP(cur->ops[jj])) {
           DEBUG(map->proc_id, "Map flushing op_num:%llu off_path:%u\n", (unsigned long long)cur->ops[jj]->op_num,

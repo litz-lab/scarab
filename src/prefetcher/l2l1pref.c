@@ -107,7 +107,7 @@ void l2l1pref_mem(Mem_Req* req) {
   mem_req_info.addr = req->addr;
   mem_req_info.type = (Mem_Req_Type)req->type;  // FIXME !!
   mem_req_info.oldest_op_unique_num = req->oldest_op_unique_num;
-  mem_req_info.oldest_op_inst_addr = (op ? op->inst_info->addr : 1);
+  mem_req_info.oldest_op_inst_addr = (op ? op->inst->addr : 1);
   l2l1pref_mem_process(&mem_req_info);
 }
 
@@ -213,8 +213,8 @@ void l2l1pref_dcache(Addr line_addr, Op* op) {
       fprintf(f_l1_hit,
               "op_uniq_no:%8s l *0x%10s va:0x%s li:%4s l1_set:%4d dc_set:%4d "
               "%5s co:%8s t_hit:%d p_req:%d req_addr:0x%8s \n",
-              unsstr64(op->unique_num), hexstr64(op->inst_info->addr), hexstr64(line_addr), hexstr64(line_addr >> 6),
-              l1_set, dc_set, "DCACHE", unsstr64(cycle_count), train_hit, pref_req, hexstr64(req_addr));
+              unsstr64(op->unique_num), hexstr64(op->inst->addr), hexstr64(line_addr), hexstr64(line_addr >> 6), l1_set,
+              dc_set, "DCACHE", unsstr64(cycle_count), train_hit, pref_req, hexstr64(req_addr));
     }
   }
   if (L2L1_HIT_TRAIN && L2NEXT_PREF_ON)

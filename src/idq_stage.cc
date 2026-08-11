@@ -144,7 +144,7 @@ void IDQ_Stage::recover() {
       if (ops[i] && IS_FLUSHING_OP(ops[i])) {
         op_select_bp_pred_info(ops[i], BP_PRED_MAIN);
         DEBUG(proc_id, "Recovery op found in IDQ queue idx:%d op_num:%llu off_path:%u addr:0x%llx\n", i,
-              (unsigned long long)ops[i]->op_num, ops[i]->off_path, (unsigned long long)ops[i]->inst_info->addr);
+              (unsigned long long)ops[i]->op_num, ops[i]->off_path, (unsigned long long)ops[i]->inst->addr);
       }
       if (FLUSH_OP(ops[i])) {
         DEBUG(proc_id, "IDQ queue flushing op_num:%llu off_path:%u\n", (unsigned long long)ops[i]->op_num,
@@ -177,7 +177,7 @@ void IDQ_Stage::recover() {
     if (op && IS_FLUSHING_OP(op)) {
       op_select_bp_pred_info(op, BP_PRED_MAIN);
       DEBUG(proc_id, "Recovery op found in IDQ output idx:%d op_num:%llu off_path:%u addr:0x%llx\n", i,
-            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
+            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst->addr);
     }
     if (op && FLUSH_OP(op)) {
       DEBUG(proc_id, "IDQ output flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);

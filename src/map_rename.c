@@ -94,7 +94,7 @@ static inline void reg_file_debug_print_entry(struct reg_table_entry *entry, int
 
 static inline void reg_file_debug_print_op(Op *op, int state) {
   ASSERT(op->proc_id, op != NULL);
-  if (op->inst_info->table_info.num_dest_regs == 0)
+  if (op->uop->num_dest_regs == 0)
     return;
 
   Inst_Info *inst_info = op->inst_info;
@@ -165,24 +165,24 @@ static inline void reg_file_extract_arch_reg_id(Op *op) {
   ASSERT(op->proc_id, op != &invalid_op);
 
   // fill the source register id
-  for (uns ii = 0; ii < op->inst_info->table_info.num_src_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
     ASSERT(op->proc_id, op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] == REG_TABLE_REG_ID_INVALID);
-    int reg_type = reg_file_get_reg_type(op->inst_info->srcs[ii].id);
+    int reg_type = reg_file_get_reg_type(op->uop->srcs[ii].id);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
-    op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] = op->inst_info->srcs[ii].id;
+    op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] = op->uop->srcs[ii].id;
   }
 
   // fill the destination register id
   uns reg_dest_num[REG_FILE_REG_TYPE_NUM] = {0};
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
     ASSERT(op->proc_id, op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] == REG_TABLE_REG_ID_INVALID);
-    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+    int reg_type = reg_file_get_reg_type(op->uop->dests[ii].id);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
-    op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] = op->inst_info->dests[ii].id;
+    op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] = op->uop->dests[ii].id;
     reg_dest_num[reg_type]++;
   }
 
@@ -195,8 +195,8 @@ static inline void reg_file_collect_rename_stat(Op *op) {
   ASSERT(op->proc_id, op != &invalid_op);
   STAT_EVENT(map_data->proc_id, MAP_STAGE_RENAME_OP_ONPATH + op->off_path);
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
-    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->uop->dests[ii].id);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
@@ -320,10 +320,10 @@ static inline void reg_file_move_eliminate(Op *op) {
   if (!REG_RENAMING_MOVE_ELIMINATE)
     return;
 
-  if (op->inst_info->table_info.mem_type)
+  if (op->uop->mem_type)
     return;
 
-  if (op->inst_info->table_info.num_src_regs != 1 || op->inst_info->table_info.num_dest_regs != 1)
+  if (op->uop->num_src_regs != 1 || op->uop->num_dest_regs != 1)
     return;
 
   int src_reg_id = op->src_reg_id[0][REG_TABLE_TYPE_ARCHITECTURAL];
@@ -337,7 +337,7 @@ static inline void reg_file_move_eliminate(Op *op) {
   if (!reg_file_check_same_reg_width(src_reg_id, dst_reg_id))
     return;
 
-  if (!reg_file_check_move_elim_candidate(op->inst_info->table_info.true_op_type))
+  if (!reg_file_check_move_elim_candidate(op->inst->true_op_type))
     return;
 
   op->move_eliminated = TRUE;
@@ -363,7 +363,7 @@ static inline void reg_file_read_src(Op *op, int self_reg_table_type, int parent
   // the register dependency is not read since it is already tracked in the map module
   ASSERT(op->proc_id, op != &invalid_op);
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_src_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -383,7 +383,7 @@ static inline void reg_file_read_src(Op *op, int self_reg_table_type, int parent
 // allocate registers from free list, update SRT, and record reg id into the op
 static inline void reg_file_write_dst(Op *op, int self_reg_table_type, int parent_reg_table_type) {
   ASSERT(op->proc_id, op != &invalid_op);
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -413,7 +413,7 @@ static inline void reg_file_write_dst(Op *op, int self_reg_table_type, int paren
 
 // only update metadata since the register dependency wake up will be done in the map module
 static inline void reg_file_consume_src(Op *op, int *reg_table_types, int reg_table_num) {
-  for (uns ii = 0; ii < op->inst_info->table_info.num_src_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -431,7 +431,7 @@ static inline void reg_file_consume_src(Op *op, int *reg_table_types, int reg_ta
 }
 
 static inline void reg_file_produce_dst(Op *op, int *reg_table_types, int reg_table_num) {
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -451,7 +451,7 @@ static inline void reg_file_produce_dst(Op *op, int *reg_table_types, int reg_ta
 static inline void reg_file_flush_mispredict(Op *op, int *reg_table_types, int reg_table_num) {
   ASSERT(op->proc_id, op->off_path);
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ii++) {
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ii++) {
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -482,7 +482,7 @@ static inline void reg_file_flush_mispredict(Op *op, int *reg_table_types, int r
 
 // mark the previous entry with same archituctural id before the committed one as dead and remove it
 static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_table_num) {
-  for (uns ii = 0; ii < op->inst_info->table_info.num_src_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -500,7 +500,7 @@ static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_t
     }
   }
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -828,7 +828,7 @@ int reg_table_alloc(struct reg_table *reg_table, Op *op, int parent_reg_id) {
 
   if (op->move_eliminated) {
     ASSERT(op->proc_id, REG_RENAMING_MOVE_ELIMINATE);
-    ASSERT(op->proc_id, op->inst_info->table_info.num_src_regs == 1);
+    ASSERT(op->proc_id, op->uop->num_src_regs == 1);
     return op->src_reg_id[0][reg_table->reg_table_type];
   }
 
@@ -1010,7 +1010,7 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
   reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
   // checkpoint the speculative register table for recovering
-  if (!op->off_path && op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec)
+  if (!op->off_path && op->uop->cf_type && op->bp_pred_info->recover_at_exec)
     reg_file_snapshot_srt();
 }
 
@@ -1038,7 +1038,7 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 // flush registers of misprediction operands using the ptag info
 void reg_renaming_scheme_realistic_recover(Op *op) {
   // do not need to do flushing if it is a decoding flush
-  ASSERT(op->proc_id, op->inst_info->table_info.cf_type);
+  ASSERT(op->proc_id, op->uop->cf_type);
   if (!op->bp_pred_info->recover_at_exec)
     return;
 
@@ -1126,7 +1126,7 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
   reg_file_write_dst(op, REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
   // checkpoint the speculative register table for recovering
-  if (!op->off_path && op->inst_info->table_info.cf_type && op->bp_pred_info->recover_at_exec)
+  if (!op->off_path && op->uop->cf_type && op->bp_pred_info->recover_at_exec)
     reg_file_snapshot_srt();
 }
 
@@ -1136,13 +1136,13 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
 */
 Flag reg_renaming_scheme_late_allocation_issue(Op *op) {
   // if the op does not have destination registers, it will no result in deadlock
-  if (op == NULL || op->inst_info->table_info.num_dest_regs == 0)
+  if (op == NULL || op->uop->num_dest_regs == 0)
     return TRUE;
 
   // find the first op with destination registers from the head of ROB
   Op *reserve_op = node->node_head;
   while (reserve_op != NULL) {
-    if (reserve_op->inst_info->table_info.num_dest_regs != 0) {
+    if (reserve_op->uop->num_dest_regs != 0) {
       break;
     }
     reserve_op = reserve_op->next_node;
@@ -1188,7 +1188,7 @@ void reg_renaming_scheme_late_allocation_produce(Op *op) {
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
   // Only execution-time recoveries take/consume SRT checkpoints.
   // Decode-time and early frontend-only recoveries should not rollback SRT.
-  ASSERT(op->proc_id, op->inst_info->table_info.cf_type);
+  ASSERT(op->proc_id, op->uop->cf_type);
   if (!op->bp_pred_info->recover_at_exec)
     return;
 
@@ -1213,7 +1213,7 @@ void reg_renaming_scheme_late_allocation_commit(Op *op) {
     therefore, a lazy assignment is done here, e.g., tracking the prev_ptag when the op is committed and the prev_ptag
     is to be released
   */
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -1241,7 +1241,7 @@ static void reg_early_release_clear(struct reg_table_entry *entry) {
   ASSERT(op->proc_id, op->op_num == entry->op_num && op->unique_num == entry->unique_num);
 
   // find and clear the corresponding register information inside the operands
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
     if (entry->parent_reg_id != op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL])
       continue;
 
@@ -1277,7 +1277,7 @@ void reg_renaming_scheme_early_release_spec_rename(Op *op) {
   if (op->off_path)
     return;
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -1301,7 +1301,7 @@ void reg_renaming_scheme_early_release_spec_rename(Op *op) {
 void reg_renaming_scheme_early_release_spec_consume(Op *op) {
   reg_renaming_scheme_realistic_consume(op);
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_src_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -1321,7 +1321,7 @@ void reg_renaming_scheme_early_release_spec_consume(Op *op) {
 void reg_renaming_scheme_early_release_spec_commit(Op *op) {
   /* the physical register is already released during renaming or execution */
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
     // if the corresponding entry is early released, the reg info of this op is cleared
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
@@ -1369,8 +1369,8 @@ void reg_renaming_scheme_early_release_nonspec_consume(Op *op);
 void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
   ASSERT(op->proc_id, !op->off_path);
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
-    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->uop->dests[ii].id);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
 
@@ -1395,7 +1395,7 @@ void reg_renaming_scheme_early_release_nonspec_precommit(Op *op) {
 void reg_renaming_scheme_early_release_nonspec_consume(Op *op) {
   reg_renaming_scheme_realistic_consume(op);
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_src_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -1434,7 +1434,7 @@ void reg_renaming_scheme_early_release_lastuse_commit(Op *op);
 void reg_renaming_scheme_early_release_lastuse_precommit(Op *op) {
   ASSERT(op->proc_id, !op->off_path);
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -1461,7 +1461,7 @@ void reg_renaming_scheme_early_release_lastuse_precommit(Op *op) {
 void reg_renaming_scheme_early_release_lastuse_commit(Op *op) {
   /* when the last-use consumer is committed, early release the producer instruction
    * if the redefine-instruction of the producer is precommitted */
-  for (uns ii = 0; ii < op->inst_info->table_info.num_src_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -1511,14 +1511,13 @@ static void reg_early_release_atomic_identify(Op *op) {
   Flag is_except = FALSE;
 
   // control flows may lead to mispredictions
-  if (op->inst_info->table_info.cf_type) {
+  if (op->uop->cf_type) {
     is_branch = TRUE;
   }
 
   // store/load/div may lead to exceptions
-  if ((op->inst_info->table_info.mem_type == MEM_LD || op->inst_info->table_info.mem_type == MEM_ST) ||
-      (op->inst_info->table_info.true_op_type >= XED_ICLASS_DIV &&
-       op->inst_info->table_info.true_op_type <= XED_ICLASS_DIVSS)) {
+  if ((op->uop->mem_type == MEM_LD || op->uop->mem_type == MEM_ST) ||
+      (op->inst->true_op_type >= XED_ICLASS_DIV && op->inst->true_op_type <= XED_ICLASS_DIVSS)) {
     is_except = TRUE;
   }
 
@@ -1560,7 +1559,7 @@ void reg_renaming_scheme_early_release_atomic_rename(Op *op) {
 
   reg_early_release_atomic_identify(op);
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->dst_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -1574,7 +1573,7 @@ void reg_renaming_scheme_early_release_atomic_rename(Op *op) {
     prev_entry->redefined_rename = TRUE;
     prev_entry->redefined_cycle = cycle_count;
 
-    int arch_id = op->inst_info->dests[ii].id;
+    int arch_id = op->uop->dests[ii].id;
     int ptag = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->entries[arch_id].child_reg_id;
     Flag redefined = (prev_entry->self_reg_id != ptag);
     Flag atomic = (prev_entry->atomic_pending_consumed != REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX);
@@ -1596,7 +1595,7 @@ void reg_renaming_scheme_early_release_atomic_rename(Op *op) {
 void reg_renaming_scheme_early_release_atomic_consume(Op *op) {
   reg_renaming_scheme_realistic_consume(op);
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_src_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -1606,7 +1605,7 @@ void reg_renaming_scheme_early_release_atomic_consume(Op *op) {
     struct reg_table *reg_table = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
     struct reg_table_entry *src_entry = &reg_table->entries[src_reg_id];
 
-    int arch_id = op->inst_info->srcs[ii].id;
+    int arch_id = op->uop->srcs[ii].id;
     int ptag = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->entries[arch_id].child_reg_id;
     Flag redefined = (src_entry->self_reg_id != ptag);
 
@@ -1619,8 +1618,8 @@ void reg_renaming_scheme_early_release_atomic_consume(Op *op) {
 }
 
 void reg_renaming_scheme_early_release_atomic_commit(Op *op) {
-  for (uns ii = 0; ii < op->inst_info->table_info.num_dest_regs; ++ii) {
-    int reg_type = reg_file_get_reg_type(op->inst_info->dests[ii].id);
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->uop->dests[ii].id);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
     struct reg_table *reg_table = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
@@ -1666,7 +1665,7 @@ void reg_renaming_scheme_early_release_nonspec_atomic_consume(Op *op);
 void reg_renaming_scheme_early_release_nonspec_atomic_consume(Op *op) {
   reg_renaming_scheme_realistic_consume(op);
 
-  for (uns ii = 0; ii < op->inst_info->table_info.num_src_regs; ++ii) {
+  for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
       continue;
@@ -1676,7 +1675,7 @@ void reg_renaming_scheme_early_release_nonspec_atomic_consume(Op *op) {
     struct reg_table *reg_table = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
     struct reg_table_entry *src_entry = &reg_table->entries[src_reg_id];
 
-    int arch_id = op->inst_info->srcs[ii].id;
+    int arch_id = op->uop->srcs[ii].id;
     int ptag = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_ARCHITECTURAL]->entries[arch_id].child_reg_id;
     Flag redefined = (src_entry->self_reg_id != ptag);
 

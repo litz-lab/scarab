@@ -25,6 +25,7 @@ extern "C" {
 #include <memory>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_FDIP, ##args)
 #define FDIP_PREF_STAT_COUNT 12
 
@@ -133,9 +134,10 @@ class FDIP_Stat {
   // Per-cache-line usefulness history emitted by print_cl_info(). The vectors
   // are populated only when FDIP_PRINT_CL_INFO is enabled.
   unordered_map<Addr, vector<uns8>> usefulness_history;
-  // Per-cache-line hit/miss history emitted by print_cl_info(). The vectors are
-  // populated only when FDIP_PRINT_CL_INFO is enabled, but map-entry existence
-  // is also used to identify a cache line's first recorded access.
+  // Tracks first recorded I-cache access independently of optional history output.
+  unordered_set<Addr> accessed_cachelines;
+  // Per-cache-line hit/miss history emitted by print_cl_info(). Allocate and
+  // populate entries only when FDIP_PRINT_CL_INFO is enabled.
   unordered_map<Addr, vector<uns8>> icache_access_history;
   // Consumers only need to know whether each cache-line event type occurred;
   // a bitmask avoids retaining duplicate events, ordering, and cycle timestamps.
@@ -713,11 +715,10 @@ void FDIP_Stat::inc_icache_miss(Addr line_addr) {
   }
 
   uns icache_val = g_fdip->get_warmed_up() ? 2 : 0;
-  auto it = icache_access_history.find(line_addr);
-  if (it == icache_access_history.end()) {
-    icache_access_history.insert(make_pair(line_addr, vector<uns8>()));
-    if (FDIP_PRINT_CL_INFO)
-      icache_access_history[line_addr].push_back(icache_val);
+  const bool first_access = accessed_cachelines.insert(line_addr).second;
+  if (FDIP_PRINT_CL_INFO)
+    icache_access_history[line_addr].push_back(icache_val);
+  if (first_access) {
     if (icache_val == 2) {
       auto it2 = cacheline_events.find(line_addr);
       if (it2 != cacheline_events.end()) {
@@ -738,8 +739,6 @@ void FDIP_Stat::inc_icache_miss(Addr line_addr) {
       } else
         STAT_EVENT(proc_id, ICACHE_FIRST_MISS_AFTER_WARMUP_NOT_SEEN_DURING_WARMUP);
     }
-  } else if (FDIP_PRINT_CL_INFO) {
-    it->second.push_back(icache_val);
   }
 }
 
@@ -837,14 +836,9 @@ void FDIP_Stat::inc_icache_hit(Addr line_addr) {
   }
 
   uns icache_val = g_fdip->get_warmed_up() ? 3 : 1;
-  auto it = icache_access_history.find(line_addr);
-  if (it == icache_access_history.end()) {
-    icache_access_history.insert(make_pair(line_addr, vector<uns8>()));
-    if (FDIP_PRINT_CL_INFO)
-      icache_access_history[line_addr].push_back(icache_val);
-  } else if (FDIP_PRINT_CL_INFO) {
-    it->second.push_back(icache_val);
-  }
+  accessed_cachelines.insert(line_addr);
+  if (FDIP_PRINT_CL_INFO)
+    icache_access_history[line_addr].push_back(icache_val);
 }
 
 /* FDIP member functions */

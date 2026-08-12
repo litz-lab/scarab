@@ -70,7 +70,7 @@
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_NODE_STAGE, ##args)
 #define PRINT_RETIRED_UOP(proc_id, args...) _DEBUG_LEAN(proc_id, DEBUG_RETIRED_UOPS, ##args)
 
-#define DEBUG_NODE_WIDTH ISSUE_WIDTH
+#define DEBUG_NODE_WIDTH DISPATCH_WIDTH
 /**************************************************************************************/
 /* Global Variables */
 

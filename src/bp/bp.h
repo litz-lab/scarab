@@ -48,7 +48,7 @@ typedef struct Bp_Recovery_Info_struct {
   Counter recovery_op_num;        /* op_num of op that caused recovery */
   Counter recovery_cf_type;       /* cf_type of op that caused recovery */
   Recovery_Info recovery_info;    /* information about the op causing the recovery */
-  Inst_Info* recovery_inst_info;  // pointer to inst causing recovery
+  Static_Inst_Info* recovery_inst_info;  // pointer to inst causing recovery
   Flag recovery_force_offpath;
 
   Counter redirect_cycle;  /* cycle that begins a redirection (eg. btb miss) */

@@ -365,7 +365,6 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->proc_id = proc_id;
   op->eom = trace_uop->eom;
   op->fetched_instruction = fetched_instruction[proc_id];
-  op->inst_info = info;
   op->inst = trace_uop->static_inst;
   op->uop = trace_uop->static_op;
   op->off_path = FALSE;

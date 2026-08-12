@@ -261,7 +261,7 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
     bp_recovery_info->recovery_cf_type = op->uop->cf_type;
     bp_recovery_info->recovery_info = op->recovery_info;
     bp_recovery_info->recovery_info.op_num = op->op_num;
-    bp_recovery_info->recovery_inst_info = op->inst_info;
+    bp_recovery_info->recovery_inst_info = op->inst;
     bp_recovery_info->recovery_force_offpath = op->off_path;
     bp_recovery_info->recovery_op = op;
     bp_recovery_info->recovery_unique_num = op->unique_num;

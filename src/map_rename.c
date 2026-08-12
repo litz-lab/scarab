@@ -97,34 +97,33 @@ static inline void reg_file_debug_print_op(Op *op, int state) {
   if (op->uop->num_dest_regs == 0)
     return;
 
-  Inst_Info *inst_info = op->inst_info;
-  uns16 op_code = inst_info->table_info.true_op_type;
+  uns16 op_code = op->inst->true_op_type;
 
   printf("[OP: %d]\n", state);
   printf("op_num: %lld, off_path: %d, ", op->op_num, op->off_path);
-  printf("pc: %lld, opcode: 0x%x(%s), cf: %d, mem: %d\n", inst_info->addr, op_code, xed_iclass_enum_t2str(op_code),
-         inst_info->table_info.cf_type, inst_info->table_info.mem_type);
+  printf("pc: %lld, opcode: 0x%x(%s), cf: %d, mem: %d\n", op->inst->addr, op_code, xed_iclass_enum_t2str(op_code),
+         op->uop->cf_type, op->uop->mem_type);
 
-  printf("src#%d: <", inst_info->table_info.num_src_regs);
-  for (int ii = 0; ii < inst_info->table_info.num_src_regs; ii++)
-    printf("%d, ", inst_info->srcs[ii].id);
-  printf(">, dest#%d: <", inst_info->table_info.num_dest_regs);
-  for (int ii = 0; ii < inst_info->table_info.num_dest_regs; ii++)
-    printf("%d, ", inst_info->dests[ii].id);
+  printf("src#%d: <", op->uop->num_src_regs);
+  for (int ii = 0; ii < op->uop->num_src_regs; ii++)
+    printf("%d, ", op->uop->srcs[ii].id);
+  printf(">, dest#%d: <", op->uop->num_dest_regs);
+  for (int ii = 0; ii < op->uop->num_dest_regs; ii++)
+    printf("%d, ", op->uop->dests[ii].id);
   printf(">\n");
 
-  printf("src_ptag#%d: <", inst_info->table_info.num_src_regs);
-  for (int ii = 0; ii < inst_info->table_info.num_src_regs; ii++)
+  printf("src_ptag#%d: <", op->uop->num_src_regs);
+  for (int ii = 0; ii < op->uop->num_src_regs; ii++)
     printf("%d, ", op->src_reg_id[ii][REG_TABLE_TYPE_PHYSICAL]);
   printf(">\n");
 
-  printf("dst_ptag#%d: <", inst_info->table_info.num_dest_regs);
-  for (int ii = 0; ii < inst_info->table_info.num_dest_regs; ii++)
+  printf("dst_ptag#%d: <", op->uop->num_dest_regs);
+  for (int ii = 0; ii < op->uop->num_dest_regs; ii++)
     printf("%d, ", op->dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL]);
   printf(">\n");
 
-  printf("prev_ptag#%d: <", inst_info->table_info.num_dest_regs);
-  for (int ii = 0; ii < inst_info->table_info.num_dest_regs; ii++)
+  printf("prev_ptag#%d: <", op->uop->num_dest_regs);
+  for (int ii = 0; ii < op->uop->num_dest_regs; ii++)
     printf("%d, ", op->prev_dst_reg_id[ii][REG_TABLE_TYPE_PHYSICAL]);
   printf(">\n");
 }

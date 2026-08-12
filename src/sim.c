@@ -553,10 +553,6 @@ void uop_sim() {
   ASSERTM(0, NUM_CORES == 1 || !FAST_FORWARD_UNTIL_ADDR, "FAST_FORWARD_UNTIL_ADDR works only for single core\n");
 
   Op op;
-  Table_Info table_info;
-  Inst_Info inst_info;
-  op.inst_info = &inst_info;
-  memset(&inst_info, 0, sizeof(inst_info));
   op.bp_pred_info = NULL;
   memset(&op.bp_pred_l0, 0, sizeof(op.bp_pred_l0));
   memset(&op.bp_pred_main, 0, sizeof(op.bp_pred_main));
@@ -574,10 +570,8 @@ void uop_sim() {
       if (!retired_exit[proc_id]) {
         do {
           frontend_fetch_op(proc_id, 0, &op);
-          // Keep Inst_Info's embedded table_info consistent with local copy.
-          inst_info.table_info = table_info;
 
-          if (op.inst_info->table_info.mem_type != NOT_MEM && op.oracle_info.va == 0) {
+          if (op.uop->mem_type != NOT_MEM && op.oracle_info.va == 0) {
             FATAL_ERROR(proc_id, "Access to 0x0\n");
           }
 

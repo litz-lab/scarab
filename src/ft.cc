@@ -85,7 +85,7 @@ Op* FT::fetch_op() {
   Op* op = ops[op_pos];
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->op_pool_valid);
-  ASSERT(proc_id, op->inst_info);
+  ASSERT(proc_id, op->inst);
   op_pos++;
 
   DEBUG(proc_id, "Fetch op from FT fetch_addr0x:%llx off_path:%i op_num:%llu\n", op->inst->addr, op->off_path,
@@ -96,11 +96,11 @@ Op* FT::fetch_op() {
 void FT::add_op(Op* op) {
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->op_pool_valid);
-  ASSERT(proc_id, op->inst_info);
+  ASSERT(proc_id, op->inst);
   if (!ops.empty()) {
     ASSERT(proc_id, ops.back());
     ASSERT(proc_id, ops.back()->op_pool_valid);
-    ASSERT(proc_id, ops.back()->inst_info);
+    ASSERT(proc_id, ops.back()->inst);
     if (op->bom) {
       // assert consecutivity
       DEBUG(proc_id, "back addr + size %llx fetch addr %llx\n", ops.back()->inst->addr + ops.back()->inst->inst_size,
@@ -296,7 +296,7 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
           bp_id, op->inst->addr, op->oracle_info.npc, bp_pred_info->pred_npc, bp_pred_info->recover_at_fe,
           btb_pred_miss(op->btb_pred_info), bp_pred_info->pred == TAKEN, bp_pred_info->recover_at_decode,
           bp_pred_info->recover_at_exec, op->uop->bar_type & BAR_FETCH);
-    if ((op->uop->bar_type & BAR_FETCH) || IS_CALLSYS(&op->inst_info->table_info)) {
+    if ((op->uop->bar_type & BAR_FETCH) || IS_CALLSYS(op->uop)) {
       bp_pred_info->recover_at_decode = FALSE;
       bp_pred_info->recover_at_exec = FALSE;
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
@@ -464,13 +464,13 @@ FT_Ended_By FT::get_end_reason() const {
   Op* op = ops.back();  // Get the last op
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->op_pool_valid);
-  ASSERT(proc_id, op->inst_info);
+  ASSERT(proc_id, op->inst);
   if (op->eom) {
     const Bp_Pred_Info* bp_pred_info = ft_active_or_main_bp_pred_info(op);
     uns offset = ADDR_PLUS_OFFSET(op->inst->addr, op->inst->inst_size) - ROUND_DOWN(op->inst->addr, ICACHE_LINE_SIZE);
     bool end_of_icache_line = offset >= ICACHE_LINE_SIZE;
     bool cf_taken = (op->uop->cf_type && bp_pred_info->pred == TAKEN);
-    bool bar_fetch = IS_CALLSYS(&op->inst_info->table_info) || op->uop->bar_type & BAR_FETCH;
+    bool bar_fetch = IS_CALLSYS(op->uop) || op->uop->bar_type & BAR_FETCH;
 
     if (op->exit) {
       return FT_APP_EXIT;
@@ -491,10 +491,10 @@ void FT::generate_ft_info() {
   auto op = ops[op_pos];
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->op_pool_valid);
-  ASSERT(proc_id, op->inst_info);
+  ASSERT(proc_id, op->inst);
   ASSERT(proc_id, get_last_op());
   ASSERT(proc_id, get_last_op()->op_pool_valid);
-  ASSERT(proc_id, get_last_op()->inst_info);
+  ASSERT(proc_id, get_last_op()->inst);
   ASSERT(proc_id, op->bom && get_last_op()->eom);
 
   ft_info.static_info.start = op->inst->addr;
@@ -604,7 +604,7 @@ void ft_free_op(Op* op) {
 std::set<Addr> FT::get_pcs() {
   std::set<Addr> pc_set;
   for (auto op : ops) {
-    if (op && op->inst_info) {
+    if (op && op->inst) {
       pc_set.insert(op->inst->addr);
     }
   }

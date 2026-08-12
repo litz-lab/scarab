@@ -813,6 +813,12 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
   return idx;
 }
 
+// Reusable per-proc scratch for fake ops. The fake Inst_Info is only read during decode (to
+// populate op->inst / op->uop and read num_uop/bar_type here); the pipeline never touches it, so a
+// single reused struct avoids leaking one heap Inst_Info per fake op (op->inst_info no longer holds
+// and frees it after the split).
+static Inst_Info fake_inst_info_scratch[MAX_NUM_PROCS];
+
 void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop) {
   Flag new_entry = FALSE;
   Inst_Info* info;
@@ -836,7 +842,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
 
   if (pi->fake_inst) {
     ASSERT(proc_id, fake_templates_ready);
-    info = (Inst_Info*)calloc(1, sizeof(Inst_Info));
+    info = &fake_inst_info_scratch[proc_id];
     if (pi->fake_inst_reason == WPNM_FAKE_JMP) {
       *info = fake_jmp_template;
     } else {

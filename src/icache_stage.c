@@ -949,7 +949,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     DEBUG(ic->proc_id,
           "Fetching op from Icache addr: %s off: %d inst_info: %p ii_addr: %s "
           "dis: %s opnum: (%s:%s)\n",
-          hexstr64s(op->inst->addr), op->off_path, op->inst_info, hexstr64s(op->inst->addr), disasm_op(op, TRUE),
+          hexstr64s(op->inst->addr), op->off_path, (void*)op->inst, hexstr64s(op->inst->addr), disasm_op(op, TRUE),
           unsstr64(op->op_num), unsstr64(op->unique_num));
 
     if (op->uop->cf_type) {

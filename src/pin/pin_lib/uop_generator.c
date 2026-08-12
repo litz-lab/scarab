@@ -1023,9 +1023,16 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
   }
   for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++) {
     trace_uop->dests[ii].val = 0;
+    trace_uop->dests[ii].val_valid = FALSE;
+    // A load's produced value comes from ld_data (MEM_LD block below), not the architectural
+    // dst-reg match; skip it here so the destination value is written exactly once.
+    if (info->table_info.mem_type == MEM_LD)
+      continue;
     for (uns j = 0; j < pi->num_dst_regs; j++) {
       if (pi->dst_regs[j] == info->dests[ii].id) {
+        ASSERT(proc_id, !trace_uop->dests[ii].val_valid);  // a destination value is written exactly once
         trace_uop->dests[ii].val = pi->dests[j].val;
+        trace_uop->dests[ii].val_valid = TRUE;
         break;
       }
     }
@@ -1049,6 +1056,16 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
       trace_uop->load_seq_num = info->trace_info.load_seq_num;
       ASSERT(proc_id, trace_uop->load_seq_num < MAX_LD_NUM);
       trace_uop->va = pi->ld_vaddr[trace_uop->load_seq_num];
+      // The loaded value is the memory data (captured at IPOINT_BEFORE). The dst-reg match above
+      // deliberately skips load uops, so the value is written here exactly once -- val_valid must
+      // be false (a cracked load-op writes the internal REG_TMP0, which PIN has no arch dest for).
+      ASSERT(proc_id, trace_uop->load_seq_num < pi->num_ld);
+      const uns64 ld_val = pi->ld_data[trace_uop->load_seq_num];
+      for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++) {
+        ASSERT(proc_id, !trace_uop->dests[ii].val_valid);  // a destination value is written exactly once
+        trace_uop->dests[ii].val = ld_val;
+        trace_uop->dests[ii].val_valid = TRUE;
+      }
       DEBUG(proc_id,
             "Generating a load: inst @%llx opcode: %s num_ld: %i "
             "num_st: %u va: 0x%s load size: %u\n",

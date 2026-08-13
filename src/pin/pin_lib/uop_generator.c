@@ -933,8 +933,14 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
 
   trace_uop[num_uop - 1]->npc = pi->instruction_next_addr;
 
+  // Static_Inst_Info keeps a fixed-size uops[] array; bump STATIC_INST_MAX_UOPS if this ever fires.
+  ASSERTM(proc_id, num_uop <= STATIC_INST_MAX_UOPS, "macro at 0x%llx cracks into %d uops (> %d)\n",
+          (unsigned long long)pi->instruction_addr, num_uop, STATIC_INST_MAX_UOPS);
+
   // Intern (or, for fake ops, allocate) the split static structs and attach to each uop. Real ops
-  // dedup the per-macro struct by {addr, binary}; fake ops mirror the calloc'd Inst_Info above.
+  // dedup the per-macro struct by {addr, binary}; fake ops mirror the calloc'd Inst_Info above. As
+  // each uop is added to si->uops[], OR its kind into has_load/has_store/has_cf, so the summary
+  // flags are derived from exactly the uops in the array. All idempotent for an already-interned si.
   for (ii = 0; ii < num_uop; ii++) {
     Static_Inst_Info* si;
     Static_Op_Info* so;
@@ -954,6 +960,12 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
       if (so_new)
         populate_static_op_info(so, trace_uop[ii]->info);
     }
+    if (ii == 0)
+      si->has_load = si->has_store = si->has_cf = FALSE;  // reset on the macro's first uop
+    si->uops[ii] = so;
+    si->has_load |= (so->mem_type == MEM_LD);
+    si->has_store |= (so->mem_type == MEM_ST);
+    si->has_cf |= (so->cf_type != NOT_CF);
     trace_uop[ii]->static_inst = si;
     trace_uop[ii]->static_op = so;
   }

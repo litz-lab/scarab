@@ -44,6 +44,14 @@ typedef struct Static_Reg_Info_struct {
   uns16 id;       // flattened register number (unique across sets)
 } Static_Reg_Info;
 
+// Max uops per macro-instruction that Static_Inst_Info keeps pointers for. Kept small on purpose --
+// this struct is interned by value, so every pointer here is paid per distinct static instruction.
+// Observed max is 7 (SPEC gcc); 16 leaves headroom. The decoder ASSERTs num_uop <= this and prints
+// the offending PC, so if a bigger macro shows up we bump it (the hard ceiling is MAX_PUP).
+#define STATIC_INST_MAX_UOPS 16
+
+struct Static_Op_Info_struct;  // forward decl for the uops[] back-pointers below
+
 /* Per-x86-instruction static info: one instance per macro-instruction, shared by
  * every uop the macro cracks into. Interned by {addr, opcode bytes}. */
 typedef struct Static_Inst_Info_struct {
@@ -51,8 +59,14 @@ typedef struct Static_Inst_Info_struct {
   uns64 opcode_lsb;    // raw instruction bytes, first 8B (was ctype_pin_inst.inst_binary_lsb)
   uns64 opcode_msb;    // raw instruction bytes, last 8B
   uns8 inst_size;      // x86 instruction length in bytes
-  uns8 num_uop;        // number of uops this macro cracks into
+  uns8 num_uop;        // number of uops this macro cracks into (<= STATIC_INST_MAX_UOPS)
   Addr branch_target;  // static (decoded) branch target, if any
+
+  struct Static_Op_Info_struct* uops[STATIC_INST_MAX_UOPS];  // this macro's uops; num_uop valid entries
+
+  Flag has_load;   // any contained uop is a load
+  Flag has_store;  // any contained uop is a store
+  Flag has_cf;     // any contained uop is a control-flow uop
 
   uns16 true_op_type;  // opcode class from PIN (not for Scarab timing)
   char name[16];       // mnemonic

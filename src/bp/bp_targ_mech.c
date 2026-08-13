@@ -88,7 +88,7 @@
 /* bp_crs_push: */
 
 void bp_crs_push(Bp_Data* bp_data, Op* op) {
-  Addr addr = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
+  Addr addr = ADDR_PLUS_OFFSET(op->inst->addr, op->inst->inst_size);
 
   Flag flag = op->off_path;
   Crs_Entry* ent = &bp_data->crs.entries[bp_data->crs.tail << 1 | flag];
@@ -118,7 +118,7 @@ void bp_crs_push(Bp_Data* bp_data, Op* op) {
             "PUSH       head:%d  tail:%d  depth:%d  op:%s  addr:0x%s  type:%s  "
             "offpath:%d\n",
             bp_data->crs.head, bp_data->crs.tail, bp_data->crs.depth, unsstr64(op->op_num), hexstr64s(addr),
-            cf_type_names[op->inst_info->table_info.cf_type], op->off_path);
+            cf_type_names[op->uop->cf_type], op->off_path);
 }
 
 /**************************************************************************************/
@@ -152,8 +152,7 @@ Addr bp_crs_pop(Bp_Data* bp_data, Op* op) {
             "offpath:%d  true:0x%s  miss:%d\n",
             bp_data->crs.head, bp_data->crs.tail, bp_data->crs.depth,
             unsstr64(bp_data->crs.entries[bp_data->crs.tail << 1 | flag].op_num), hexstr64s(addr),
-            cf_type_names[op->inst_info->table_info.cf_type], op->off_path, hexstr64s(op->oracle_info.npc),
-            addr != op->oracle_info.npc);
+            cf_type_names[op->uop->cf_type], op->off_path, hexstr64s(op->oracle_info.npc), addr != op->oracle_info.npc);
   mispred = PERFECT_CRS ? 0 : addr != op->oracle_info.npc;
   STAT_EVENT(op->proc_id, CRS_MISS + !mispred + 2 * op->off_path);
   return PERFECT_CRS ? op->oracle_info.target : addr;
@@ -176,7 +175,7 @@ void bp_crs_recover(Bp_Data* bp_data) {
 /* bp_crs_realistic_push: */
 
 void bp_crs_realistic_push(Bp_Data* bp_data, Op* op) {
-  Addr addr = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
+  Addr addr = ADDR_PLUS_OFFSET(op->inst->addr, op->inst->inst_size);
   Crs_Entry* ent = &bp_data->crs.entries[bp_data->crs.next];
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
@@ -206,7 +205,7 @@ void bp_crs_realistic_push(Bp_Data* bp_data, Op* op) {
             "PUSH       next:%d  tos:%d  depth:%d  op:%s  addr:0x%s  type:%s  "
             "offpath:%d\n",
             bp_data->crs.next, bp_data->crs.tos, bp_data->crs.depth, unsstr64(op->op_num), hexstr64s(addr),
-            cf_type_names[op->inst_info->table_info.cf_type], op->off_path);
+            cf_type_names[op->uop->cf_type], op->off_path);
 }
 
 /**************************************************************************************/
@@ -260,9 +259,8 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
             "POP        next:%d  tos:%d  depth:%d  old_tos:%d  op:%s  "
             "addr:0x%s  type:%s  offpath:%d  true:0x%s  miss:%d\n",
             bp_data->crs.next, bp_data->crs.tos, bp_data->crs.depth, old_tos,
-            unsstr64(bp_data->crs.entries[old_tos].op_num), hexstr64s(addr),
-            cf_type_names[op->inst_info->table_info.cf_type], op->off_path, hexstr64s(op->oracle_info.npc),
-            addr != op->oracle_info.npc);
+            unsstr64(bp_data->crs.entries[old_tos].op_num), hexstr64s(addr), cf_type_names[op->uop->cf_type],
+            op->off_path, hexstr64s(op->oracle_info.npc), addr != op->oracle_info.npc);
   mispred = PERFECT_CRS ? 0 : addr != op->oracle_info.npc;
   STAT_EVENT(op->proc_id, CRS_MISS + !mispred + 2 * op->off_path);
   return PERFECT_CRS ? op->oracle_info.target : addr;
@@ -346,7 +344,7 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   memset(btb_pred_info, 0, sizeof(*btb_pred_info));
   btb_pred_info->no_target = TRUE;
 
-  if (!op->inst_info->table_info.cf_type)
+  if (!op->uop->cf_type)
     return;
 
   // Set pointer and init l0/l1 fields so bp_btb_gen_pred can populate them.
@@ -355,13 +353,12 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   btb_pred_info->btb_l0_target = btb_pred_info->btb_l1_target = btb_pred_info->btb_main_target = 0;
   btb_pred_info->btb_pred_latency = MAX_UNS;
 
-  const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
-  const Flag collect_btb_stats = op->inst_info->table_info.cf_type != CF_ICO &&
-                                 op->inst_info->table_info.cf_type != CF_RET &&
-                                 !(op->inst_info->table_info.bar_type & BAR_FETCH);
+  const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst->addr, op->inst->inst_size);
+  const Flag collect_btb_stats =
+      op->uop->cf_type != CF_ICO && op->uop->cf_type != CF_RET && !(op->uop->bar_type & BAR_FETCH);
 
   /* Syscall: target is always known from oracle */
-  if (op->inst_info->table_info.cf_type == CF_SYS) {
+  if (op->uop->cf_type == CF_SYS) {
     btb_pred_info->no_target = FALSE;
     btb_pred_info->btb_pred_latency = BTB_L0_LATENCY;
     btb_pred_info->pred_target = convert_to_cmp_addr(bp_data->proc_id, op->oracle_info.npc);
@@ -426,7 +423,7 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   }
 
   /* PERFECT_CBR_BTB: use oracle target for conditional branches */
-  if (PERFECT_CBR_BTB && (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP)) {
+  if (PERFECT_CBR_BTB && (op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP)) {
     btb_pred_info->no_target = FALSE;
     btb_pred_info->btb_pred_latency = BTB_L0_LATENCY;
     ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
@@ -434,11 +431,11 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   }
 
   /* PERFECT_BP: for CBR/REP the direction is always known, so no_target = FALSE */
-  if (PERFECT_BP && (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP)) {
+  if (PERFECT_BP && (op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP)) {
     btb_pred_info->no_target = FALSE;
   }
 
-  if (ENABLE_IBP && (op->inst_info->table_info.cf_type == CF_IBR || op->inst_info->table_info.cf_type == CF_ICALL)) {
+  if (ENABLE_IBP && (op->uop->cf_type == CF_IBR || op->uop->cf_type == CF_ICALL)) {
     Addr ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op);
     if (ibp_target) {
       btb_pred_info->pred_target = ibp_target;
@@ -462,7 +459,7 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
  * after ALL BPs made predictions. This must be coupled with bp_predict_btb(),
  * having any bp_predict_op()s in between. */
 void bp_btb_post_bp_predict(Bp_Data* bp_data, Op* op) {
-  if (op->inst_info->table_info.cf_type && op->inst_info->table_info.cf_type != CF_SYS) {
+  if (op->uop->cf_type && op->uop->cf_type != CF_SYS) {
     // CF_SYS does not terminate an FT / basic block
     bp_data->prev_cf_pred = op->bp_pred_info->pred;
     bp_data->prev_cf_target = op->bp_pred_info->pred_npc;
@@ -514,7 +511,7 @@ void bp_btb_gen_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 /* bp_btb_gen_pred: */
 
 void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
-  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+  ASSERT(bp_data->proc_id, op->uop->cf_type);
 
   Btb_Pred_Info* bpi = op->btb_pred_info;
   Addr intra_bank_addr;
@@ -522,10 +519,10 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Flag tag_aliasing;
   Flag lru = bp_data->bp_id ? FALSE : TRUE;
 
-  op->btb_pred_info->btb_index_addr = op->inst_info->addr;
+  op->btb_pred_info->btb_index_addr = op->inst->addr;
 
   if (BTB_L0_PRESENT) {
-    uns bank_id = get_btb_bank_id(BTB_L0_BANKS, op->inst_info->addr, &intra_bank_addr);
+    uns bank_id = get_btb_bank_id(BTB_L0_BANKS, op->inst->addr, &intra_bank_addr);
     STAT_EVENT_BTB_BANK(op->proc_id, L0, PRED, bank_id);
     Addr* e = (Addr*)cache_access_impl(&bp_data->btb_l0[bank_id], intra_bank_addr, &line_addr, &tag_aliasing, lru);
     if (e) {
@@ -536,7 +533,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   }
 
   if (BTB_L1_PRESENT) {
-    uns bank_id = get_btb_bank_id(BTB_L1_BANKS, op->inst_info->addr, &intra_bank_addr);
+    uns bank_id = get_btb_bank_id(BTB_L1_BANKS, op->inst->addr, &intra_bank_addr);
     STAT_EVENT_BTB_BANK(op->proc_id, L1, PRED, bank_id);
     Addr* e = (Addr*)cache_access_impl(&bp_data->btb_l1[bank_id], intra_bank_addr, &line_addr, &tag_aliasing, lru);
     if (e) {
@@ -546,7 +543,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
     }
   }
 
-  uns bank_id = get_btb_bank_id(BTB_BANKS, op->inst_info->addr, &intra_bank_addr);
+  uns bank_id = get_btb_bank_id(BTB_BANKS, op->inst->addr, &intra_bank_addr);
   STAT_EVENT_BTB_BANK(op->proc_id, MAIN, PRED, bank_id);
   Addr* e = (Addr*)cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &line_addr, &tag_aliasing, lru);
   if (e) {
@@ -562,9 +559,9 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
 void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
-  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+  ASSERT(bp_data->proc_id, op->uop->cf_type);
 
-  Addr fetch_addr = op->inst_info->addr;
+  Addr fetch_addr = op->inst->addr;
   Addr intra_bank_addr;
   Addr *btb_line, btb_line_addr, repl_line_addr;
   Flag tag_aliasing;
@@ -610,7 +607,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
         // FIXME: the exceptions to this assert are really about x86 vs Alpha
         ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
       }
-      STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_JITTED_NOT_CF + op->inst_info->table_info.cf_type);
+      STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_JITTED_NOT_CF + op->uop->cf_type);
     }
   }
 
@@ -653,7 +650,7 @@ void bp_btb_block_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 /* bp_btb_block_pred: */
 
 void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
-  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+  ASSERT(bp_data->proc_id, op->uop->cf_type);
 
   Btb_Pred_Info* bpi = op->btb_pred_info;
 
@@ -670,12 +667,12 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
       btb_index_addr = bp_data->prev_cf_btb_index_addr;
     }
   }
-  ASSERT(bp_data->proc_id, btb_index_addr <= op->inst_info->addr);
+  ASSERT(bp_data->proc_id, btb_index_addr <= op->inst->addr);
   // Compute block-size-aligned (fall-through) address from the start of the first block, in case op is far away.
-  btb_index_addr += (op->inst_info->addr - btb_index_addr) & ~(BTB_BLOCK_SIZE - 1);
-  // Assert btb_index_addr <= op->inst_info->addr < btb_index_addr + BTB_BLOCK_SIZE
-  ASSERT(bp_data->proc_id, btb_index_addr <= op->inst_info->addr);
-  ASSERT(bp_data->proc_id, op->inst_info->addr < ADDR_PLUS_OFFSET(btb_index_addr, BTB_BLOCK_SIZE));
+  btb_index_addr += (op->inst->addr - btb_index_addr) & ~(BTB_BLOCK_SIZE - 1);
+  // Assert btb_index_addr <= op->inst->addr < btb_index_addr + BTB_BLOCK_SIZE
+  ASSERT(bp_data->proc_id, btb_index_addr <= op->inst->addr);
+  ASSERT(bp_data->proc_id, op->inst->addr < ADDR_PLUS_OFFSET(btb_index_addr, BTB_BLOCK_SIZE));
 
   // Store index for update
   op->btb_pred_info->btb_index_addr = btb_index_addr;
@@ -693,7 +690,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   bpi->btb_main_hit = FALSE;
   if (br_slots) {
     for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
-      if (br_slots[ii].valid == TRUE && br_slots[ii].addr == op->inst_info->addr) {
+      if (br_slots[ii].valid == TRUE && br_slots[ii].addr == op->inst->addr) {
         bpi->btb_main_hit = TRUE;
         bpi->btb_main_target = br_slots[ii].target;
         break;
@@ -708,22 +705,22 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
 void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
-  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+  ASSERT(bp_data->proc_id, op->uop->cf_type);
 
   if (BTB_OFF_PATH_WRITES || !op->off_path) {
     Addr btb_index_addr = op->btb_pred_info->btb_index_addr;
-    ASSERT(bp_data->proc_id, btb_index_addr <= op->inst_info->addr);
-    ASSERT(bp_data->proc_id, op->inst_info->addr < ADDR_PLUS_OFFSET(btb_index_addr, BTB_BLOCK_SIZE));
+    ASSERT(bp_data->proc_id, btb_index_addr <= op->inst->addr);
+    ASSERT(bp_data->proc_id, op->inst->addr < ADDR_PLUS_OFFSET(btb_index_addr, BTB_BLOCK_SIZE));
 
     if (op->oracle_info.dir == TAKEN) {
       ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  btb addr:0x%s  op addr:0x%s  target:0x%s\n", hexstr64s(btb_index_addr),
-                hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.target));
+                hexstr64s(op->inst->addr), hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
 
       Blk_Btb_BrSlot br_slot;
-      br_slot.addr = op->inst_info->addr;
-      br_slot.type = op->inst_info->table_info.cf_type;
+      br_slot.addr = op->inst->addr;
+      br_slot.type = op->uop->cf_type;
       br_slot.target = op->oracle_info.target;
       br_slot.valid = TRUE;
 
@@ -745,16 +742,16 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
         uns insert_pos = BTB_NUM_BRSLOT;
         for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
           if (br_slots[ii].valid) {
-            // slot that has smaller addr (br_slots[ii].addr < op->inst_info->addr) will be just skipped
-            if (br_slots[ii].addr == op->inst_info->addr) {
+            // slot that has smaller addr (br_slots[ii].addr < op->inst->addr) will be just skipped
+            if (br_slots[ii].addr == op->inst->addr) {
               br_slots[ii] = br_slot;
               break;
-            } else if (br_slots[ii].addr > op->inst_info->addr) {
+            } else if (br_slots[ii].addr > op->inst->addr) {
               // If there is no self-modifying code (e.g. SPEC 2017 int), op must be conditional in this case.
               // Enable this assertion when debugging.
               // ASSERT(bp_data->proc_id,
-              //        op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP);
-              if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP) {
+              //        op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP);
+              if (op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP) {
                 // If this op is NOT always-taken, it needs to be inserted, not just appended.
                 insert_pos = ii;
               } else {
@@ -792,7 +789,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
 /* bp_btb_recover: */
 
 void bp_btb_block_recover(Bp_Data* bp_data, Recovery_Info* info) {
-  DEBUG_BTB(bp_data->proc_id, "Recovering BLOCK_BTB prev cf to 0x%llx\n", info->op->inst_info->addr);
+  DEBUG_BTB(bp_data->proc_id, "Recovering BLOCK_BTB prev cf to 0x%llx\n", info->op->inst->addr);
   bp_data->prev_cf_pred = info->op->oracle_info.dir;
   bp_data->prev_cf_target = info->op->oracle_info.target;
   bp_data->prev_cf_btb_index_addr = info->op->btb_pred_info->btb_index_addr;
@@ -827,13 +824,13 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
   /* 1. branch history (USE_PAT_HIST) */
   /* 2. path history */
   if (USE_PAT_HIST) {
-    addr = op->inst_info->addr;
+    addr = op->inst->addr;
     bp_data->targ_hist = bp_data->global_hist; /* use global history from conditional branches */
     hist = bp_data->targ_hist;
     op->btb_pred.ibp_pred_targ_hist = bp_data->targ_hist;
     op->recovery_info.targ_hist = bp_data->targ_hist;
   } else {
-    addr = op->inst_info->addr;
+    addr = op->inst->addr;
     hist = bp_data->targ_hist;
     op->btb_pred.ibp_pred_targ_hist = bp_data->targ_hist;
     bp_data->targ_hist >>= bp_data->target_bit_length;
@@ -866,7 +863,7 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
 /* bp_tc_tagged_update: */
 
 void bp_ibtb_tc_tagged_update(Bp_Data* bp_data, Op* op) {
-  Addr addr = op->inst_info->addr;
+  Addr addr = op->inst->addr;
   uns32 hist = op->btb_pred_info->ibp_pred_targ_hist;
   uns32 tc_index = hist ^ addr;
   Addr* tc_line;
@@ -933,13 +930,13 @@ Addr bp_ibtb_tc_tagless_pred(Bp_Data* bp_data, Op* op) {
   /* 1. branch history (USE_PAT_HIST) */
   /* 2. path history */
   if (USE_PAT_HIST) {
-    addr = op->inst_info->addr;
+    addr = op->inst->addr;
     bp_data->targ_hist = bp_data->global_hist; /* use global history from conditional branches */
     hist = bp_data->targ_hist;
     op->btb_pred.ibp_pred_targ_hist = bp_data->targ_hist;
     op->recovery_info.targ_hist = bp_data->targ_hist;
   } else {
-    addr = op->inst_info->addr;
+    addr = op->inst->addr;
     hist = bp_data->targ_hist;
     op->btb_pred.ibp_pred_targ_hist = bp_data->targ_hist;
     bp_data->targ_hist >>= bp_data->target_bit_length;
@@ -973,7 +970,7 @@ Addr bp_ibtb_tc_tagless_pred(Bp_Data* bp_data, Op* op) {
 /* bp_tc_tagless_update */
 
 void bp_ibtb_tc_tagless_update(Bp_Data* bp_data, Op* op) {
-  Addr addr = op->inst_info->addr;
+  Addr addr = op->inst->addr;
   uns32 hist = op->btb_pred_info->ibp_pred_targ_hist;
   uns32 cooked_hist = COOK_HIST_BITS(hist, 0);
   uns32 cooked_addr = COOK_ADDR_BITS(addr, 2);
@@ -1035,7 +1032,7 @@ void bp_ibtb_tc_hybrid_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 
 Addr bp_ibtb_tc_hybrid_pred(Bp_Data* bp_data, Op* op) {
   Addr target;
-  Addr addr = op->inst_info->addr;
+  Addr addr = op->inst->addr;
   uns32 hist = bp_data->global_hist;
   uns32 cooked_hist = COOK_HIST_BITS(hist, 0);
   uns32 cooked_addr = COOK_ADDR_BITS(addr, 2);
@@ -1069,7 +1066,7 @@ Addr bp_ibtb_tc_hybrid_pred(Bp_Data* bp_data, Op* op) {
 /* bp_tc_hybrid_update: */
 
 void bp_ibtb_tc_hybrid_update(Bp_Data* bp_data, Op* op) {
-  Addr addr = op->inst_info->addr;
+  Addr addr = op->inst->addr;
   uns32 hist = op->btb_pred_info->ibp_pred_global_hist;
   uns32 cooked_hist = COOK_HIST_BITS(hist, 0);
   uns32 cooked_addr = COOK_ADDR_BITS(addr, 2);

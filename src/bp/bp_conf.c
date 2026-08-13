@@ -104,7 +104,7 @@ void bp_conf_pred(Op* op, Bp_Pred_Level pred_level) {
   Flag recover_at_decode_or_exec = bp_pred_info->recover_at_decode || bp_pred_info->recover_at_exec;
 
   // only updated on conditional branches
-  Addr addr = op->inst_info->addr;
+  Addr addr = op->inst->addr;
   uns32 hist = g_bp_data->global_hist;
   uns32 cooked_hist = COOK_HIST_BITS(hist, 0);
   uns32 cooked_addr = COOK_ADDR_BITS(addr, 2);
@@ -201,7 +201,7 @@ void pred_onpath_conf(Op* op, Bp_Pred_Level pred_level) {
          "pred_onpath_conf: op:%s ind:%u 0x%llx recover_at_fe:%d recover_at_decode:%d recover_at_exec:%d "
          "pred_ok:%d,%c "
          "off_path:%d pred_onpath:%d,%c\n",
-         unsstr64(op->op_num), head, op->inst_info->addr, bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
+         unsstr64(op->op_num), head, op->inst->addr, bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
          bp_pred_info->recover_at_exec, opc_table->pred_conf,
          opc_table->recover_at_decode_or_exec != opc_table->pred_conf ? 'c' : 'm', opc_table->off_path, pred_onpath,
          opc_table->off_path != pred_onpath ? 'c' : 'm');
@@ -403,7 +403,7 @@ void conf_perceptron_init(void) {
 
 void conf_perceptron_pred(Op* op, Bp_Pred_Level pred_level) {
   Bp_Pred_Info* bp_pred_info = conf_get_bp_pred_info(op, pred_level);
-  Addr addr = op->inst_info->addr;
+  Addr addr = op->inst->addr;
   uns64 hist = 0;
   uns32 index = CONF_PERCEPTRON_HASH(addr);
   uns8 pred_conf = 0;
@@ -518,7 +518,7 @@ void conf_perceptron_pred(Op* op, Bp_Pred_Level pred_level) {
 #define MIN_WEIGHT (-(MAX_WEIGHT + 1))
 
 void conf_perceptron_update(Op* op) {
-  Addr addr = op->inst_info->addr;
+  Addr addr = op->inst->addr;
   uns64 hist = 0;
   uns32 index = CONF_PERCEPTRON_HASH(addr);
   int32 output = op->conf_perceptron_output;

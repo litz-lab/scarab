@@ -126,8 +126,7 @@ uns op_sources_add(Op* op, Dep_Type type, Op* src_op, Counter src_op_num, Counte
   op_sources_set_not_rdy(op, src_num);
 
   if (type == MEM_DATA_DEP) {
-    ASSERT(op->proc_id,
-           src_op->inst_info->table_info.mem_type == MEM_ST && op->inst_info->table_info.mem_type == MEM_LD);
+    ASSERT(op->proc_id, src_op->uop->mem_type == MEM_ST && op->uop->mem_type == MEM_LD);
   }
   return src_num;
 }

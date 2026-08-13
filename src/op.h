@@ -38,6 +38,7 @@
 #include "inst_info.h"
 #include "op_info.h"
 #include "pred_info.h"
+#include "static_inst_info.h"
 #include "table_info.h"
 
 // forward declaration of FT
@@ -77,7 +78,7 @@ typedef struct Op_Cycles_struct {
 #define OP_SRCS_RDY(x) (op_sources_not_rdy_is_clear((x)) && cycle_count >= op_get_rdy_cycle((x)))
 #define OP_DONE(x) (cycle_count >= op_get_done_cycle((x)))
 #define OP_BROADCAST(x) ((cycle_count + 1) >= op_get_done_cycle((x)))
-#define MULTI_CYCLE_OP(x) ((x)->inst_info->latency > 1 + RFILE_STAGE || (x)->inst_info->table_info.mem_type == MEM_LD)
+#define MULTI_CYCLE_OP(x) ((x)->uop->latency > 1 + RFILE_STAGE || (x)->uop->mem_type == MEM_LD)
 #define OP_BP_ID(x) ((x)->parent_FT->bp_id)
 #define MAX_STRANDS 400
 #define MAX_STRAND_BYTES (MAX_STRANDS / 8)
@@ -171,7 +172,8 @@ struct Op_struct {
   Counter unique_num;           // unique number for each instance of an op (not reset on recovery)
   Counter unique_num_per_proc;  // unique number per core
   uns64 inst_uid;               // unique number for the macro instruction provided by the frontend (PIN)
-  Inst_Info* inst_info;         // pointer to unique struct for each static instruction
+  Static_Inst_Info* inst;       // shared per-macro-instruction static info
+  Static_Op_Info* uop;          // per-uop static info
   Op_Info oracle_info;          // information about the execution of the op in the oracle
   Op_Info engine_info;          // information about the execution of the op in the engine
   uns num_srcs;                 // number of map dependencies (order matches srcs_not_rdy_words / wake-up)
@@ -413,10 +415,9 @@ static inline void op_assert_cycles_set_at_retire(const Op* op) {
   // Syscalls and fetch-barrier CF ops are serializing: the frontend treats them as
   // fetch barriers (predict_op_ft_event returns FETCH_BARRIER) rather than predicted
   // branches, so they never stamp bp_cycle. Require it only for predicted CF ops.
-  if (op->inst_info->table_info.cf_type && op->inst_info->table_info.cf_type != CF_SYS &&
-      !(op->inst_info->table_info.bar_type & BAR_FETCH))
+  if (op->uop->cf_type && op->uop->cf_type != CF_SYS && !(op->uop->bar_type & BAR_FETCH))
     ASSERT(op->proc_id, op->cycles.bp_cycle != MAX_CTR);
-  if (op->inst_info->table_info.mem_type != NOT_MEM)
+  if (op->uop->mem_type != NOT_MEM)
     ASSERT(op->proc_id, op->cycles.dcache_cycle != MAX_CTR);
 }
 

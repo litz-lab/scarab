@@ -117,7 +117,7 @@ static inline void wp_process_icache_hit(Icache_Data* line, Addr fetch_addr);
 static inline void wp_process_icache_fill(Icache_Data* line, Mem_Req* req);
 
 static inline Flag is_fetch_barrier_op(Op* op) {
-  return (op->inst_info->table_info.bar_type & BAR_FETCH);
+  return (op->uop->bar_type & BAR_FETCH);
 }
 
 /**************************************************************************************/
@@ -242,7 +242,7 @@ void recover_icache_stage() {
         op_select_bp_pred_info(cur_data->ops[ii], BP_PRED_MAIN);
         DEBUG(ic->proc_id, "Recovery op found in %s slot:%u op_num:%llu off_path:%u addr:0x%llx\n", cur_data->name, ii,
               (unsigned long long)cur_data->ops[ii]->op_num, cur_data->ops[ii]->off_path,
-              (unsigned long long)cur_data->ops[ii]->inst_info->addr);
+              (unsigned long long)cur_data->ops[ii]->inst->addr);
       }
       if (FLUSH_OP(cur_data->ops[ii])) {
         DEBUG(ic->proc_id, "Icache flushing op_num:%llu off_path:%u\n", (unsigned long long)cur_data->ops[ii]->op_num,
@@ -899,7 +899,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     }
 
     ASSERTM(ic->proc_id, ic->off_path == op->off_path, "Inconsistent off-path op PC: %llx ic:%i op:%i\n",
-            op->inst_info->addr, ic->off_path, op->off_path);
+            op->inst->addr, ic->off_path, op->off_path);
 
     if (!op->off_path) {
       STAT_EVENT(ic->proc_id, UOPS_SERVED_BY_ICACHE_ON_PATH + op->fetched_from_uop_cache);
@@ -907,9 +907,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       STAT_EVENT(ic->proc_id, UOPS_SERVED_BY_ICACHE_OFF_PATH + op->fetched_from_uop_cache);
     }
 
-    if (!op->off_path &&
-        (op->inst_info->table_info.mem_type == MEM_LD || op->inst_info->table_info.mem_type == MEM_ST) &&
-        op->oracle_info.va == 0) {
+    if (!op->off_path && (op->uop->mem_type == MEM_LD || op->uop->mem_type == MEM_ST) && op->oracle_info.va == 0) {
       // don't care if the va is 0x0 if mem_type is MEM_PF(SW prefetch),
       // MEM_WH(write hint), or MEM_EVICT(cache block eviction hint)
       print_func_op(op);
@@ -920,13 +918,12 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       print_func_op(op);
 
     if (DIE_ON_CALLSYS && !op->off_path) {
-      ASSERT(ic->proc_id, op->inst_info->table_info.cf_type != CF_SYS);
+      ASSERT(ic->proc_id, op->uop->cf_type != CF_SYS);
     }
 
     STAT_EVENT(op->proc_id, FETCH_ALL_INST);
     STAT_EVENT(op->proc_id, ORACLE_ON_PATH_INST + op->off_path);
-    STAT_EVENT(op->proc_id,
-               ORACLE_ON_PATH_INST_MEM + (op->inst_info->table_info.mem_type == NOT_MEM) + 2 * op->off_path);
+    STAT_EVENT(op->proc_id, ORACLE_ON_PATH_INST_MEM + (op->uop->mem_type == NOT_MEM) + 2 * op->off_path);
 
     op_set_fetch_cycle(op, cycle_count);
 
@@ -944,7 +941,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     unique_count_per_core[ic->proc_id]++;
     unique_count++;
     /* check trigger */
-    if (op->inst_info->trigger_op_fetched_hook)
+    if (op->uop->trigger_op_fetched_hook)
       model->op_fetched_hook(op);
 
     INC_STAT_EVENT(ic->proc_id, INST_LOST_FETCH + ic->off_path, 1);
@@ -952,13 +949,13 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     DEBUG(ic->proc_id,
           "Fetching op from Icache addr: %s off: %d inst_info: %p ii_addr: %s "
           "dis: %s opnum: (%s:%s)\n",
-          hexstr64s(op->inst_info->addr), op->off_path, op->inst_info, hexstr64s(op->inst_info->addr),
-          disasm_op(op, TRUE), unsstr64(op->op_num), unsstr64(op->unique_num));
+          hexstr64s(op->inst->addr), op->off_path, (void*)op->inst, hexstr64s(op->inst->addr), disasm_op(op, TRUE),
+          unsstr64(op->op_num), unsstr64(op->unique_num));
 
-    if (op->inst_info->table_info.cf_type) {
+    if (op->uop->cf_type) {
       // TODO: can we move this prefetch update to decoupled front-end or need it be here?
       if (DJOLT_ENABLE)
-        update_djolt(ic->proc_id, op->inst_info->addr, op->inst_info->table_info.cf_type, op->bp_pred_info->pred_npc);
+        update_djolt(ic->proc_id, op->inst->addr, op->uop->cf_type, op->bp_pred_info->pred_npc);
 
       ASSERT(ic->proc_id, ((op->bp_pred_info->recover_at_exec << 2) | (op->bp_pred_info->recover_at_decode << 1) |
                            btb_pred_miss(op->btb_pred_info)) <= 0x7);
@@ -971,7 +968,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       static int bbl_len_dont_end_pred_nt = 0;
       bbl_len++;
       bbl_len_dont_end_pred_nt++;
-      if (op->inst_info->table_info.cf_type) {
+      if (op->uop->cf_type) {
         STAT_EVENT(ic->proc_id, BBL_LENGTH_1 + bbl_len-1);
         bbl_len = 0;
         if (op->bp_pred_info->pred == TAKEN) {

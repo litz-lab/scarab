@@ -88,8 +88,7 @@ void recover_ft_op_buffer(Icache_Stage* ic) {
     if (IS_FLUSHING_OP(op)) {
       op_select_bp_pred_info(op, BP_PRED_MAIN);
       DEBUG(ic->proc_id, "Recovery op found in FT buffer idx:%llu op_num:%llu off_path:%u addr:0x%llx\n",
-            (unsigned long long)ii, (unsigned long long)op->op_num, op->off_path,
-            (unsigned long long)op->inst_info->addr);
+            (unsigned long long)ii, (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst->addr);
     }
     if (FLUSH_OP(op)) {
       DEBUG(ic->proc_id, "Icache buffer flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num,

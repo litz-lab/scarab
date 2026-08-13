@@ -976,16 +976,16 @@ void FDIP::update() {
     }
     if (!bp_id && (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)) {
       udp->clear_old_seniority_ftq();
-      udp->set_last_bbl_start_addr(op->inst_info->addr);
+      udp->set_last_bbl_start_addr(op->inst->addr);
     }
 
-    uint64_t pc_addr = op->inst_info->addr;
-    Addr line_addr = op->inst_info->addr & ~0x3F;
+    uint64_t pc_addr = op->inst->addr;
+    Addr line_addr = op->inst->addr & ~0x3F;
     uint64_t ft_id = (op->parent_FT) ? op->parent_FT->get_ft_info().dynamic_info.FT_id : 0;
     DEBUG(proc_id,
-          "[FDIP%u] ft_id: %llu, op_num: %llu, op->inst_info->addr: %llx, line_addr: %llx, last_line_addr: %llx, "
+          "[FDIP%u] ft_id: %llu, op_num: %llu, op->inst->addr: %llx, line_addr: %llx, last_line_addr: %llx, "
           "off-path: %d\n",
-          bp_id, (unsigned long long)ft_id, op->op_num, op->inst_info->addr, line_addr, last_line_addr, op->off_path);
+          bp_id, (unsigned long long)ft_id, op->op_num, op->inst->addr, line_addr, last_line_addr, op->off_path);
     UNUSED(ft_id);
     if (line_addr != last_line_addr) {
       STAT_EVENT(proc_id, FDIP_ATTEMPTED_PREF_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
@@ -1068,7 +1068,7 @@ void FDIP::update() {
           req.oldest_op_unique_num = (Counter)0;
           req.oldest_op_op_num = (Counter)0;
           req.oldest_op_addr = (Addr)0;
-          req.dirty_l0 = op && op->inst_info->table_info.mem_type == MEM_ST && !op->off_path;
+          req.dirty_l0 = op && op->uop->mem_type == MEM_ST && !op->off_path;
           req.fdip_pref_off_path = op->off_path;
           req.demand_icache_emitted_cycle = 0;
           req.fdip_emitted_cycle = cycle_count;

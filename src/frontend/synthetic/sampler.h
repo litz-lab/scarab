@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <globals/global_types.h>
+#include <iostream>
 #include <random>
 #include <vector>
 
@@ -11,10 +13,10 @@ class Sampler {
   std::vector<uns64> sequence_vector;
   Sequence_Pick_Strategy strategy;
   uns64 next_pick_index;
+  uns64 last_element_in_sorted_order;
   void scale_periodicity(uns64 periodicity);
 
   // random number generator
-  std::random_device seed;
   std::default_random_engine rng_engine;
 
   /********************** FIXES ******************/
@@ -27,14 +29,23 @@ class Sampler {
                                                        std::vector<uns64> weights = {});
 
  public:
+  void reset_next_pointer() { next_pick_index = 0; }
+
+  void randomize_sequence_vector() { std::shuffle(sequence_vector.begin(), sequence_vector.end(), rng_engine); }
   // get next element
   uns64 get_next_element();
+
+  // peek at next element, does not progress pointer. Useful for workloads where targets are picked from a random pool.
+  uns64 peek_next_element() const;
 
   // peek element 2 indicies away. Useful for CF workloads, does not progress the element pointer.
   uns64 peek_element_following_next() const;
 
   // CF workloads need to know what the last target is, to keep workload bounded
   uns64 get_last_element() const { return sequence_vector.back(); }
+
+  // CF workloads need to know what the last target is, to keep workload bounded
+  uns64 get_last_element_in_sorted_order() const { return last_element_in_sorted_order; }
 
   // Common Constructor
   Sampler(std::vector<uns64> sequence_vector, Sequence_Pick_Strategy strategy, uns periodicity, bool should_shuffle);
@@ -45,6 +56,12 @@ class Sampler {
   // Builds DISCRETE_RANDOM or retains USER_DEFINED sequence vector and passes control to common constructor
   Sampler(Sequence_Pick_Strategy strategy, uns periodicity, std::vector<uns64> values, uns sequence_length,
           std::vector<uns64> weights = {});
+
+  void print_sequence() const {
+    for (auto item : sequence_vector)
+      std::cout << item << " ";
+    std::cout << std::endl;
+  }
 };
 
 #endif

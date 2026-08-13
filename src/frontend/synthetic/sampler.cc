@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cassert>
+
 uns64 Sampler::get_next_element() {
   auto index{next_pick_index};
   if (++next_pick_index >= sequence_vector.size())
@@ -20,10 +21,12 @@ void Sampler::scale_periodicity(uns64 periodicity) {
 
 uns64 Sampler::peek_element_following_next() const {
   auto index = (next_pick_index + 1) % sequence_vector.size();
-  if (index < next_pick_index)
-    return sequence_vector.back();
-  else
-    return sequence_vector[index];
+  return sequence_vector[index];
+}
+
+uns64 Sampler::peek_next_element() const {
+  auto index = (next_pick_index) % sequence_vector.size();
+  return sequence_vector[index];
 }
 
 // generates a linear sequence vector
@@ -78,10 +81,11 @@ std::vector<uns64> Sampler::generate_discrete_weight_sequence(std::vector<uns64>
 
 // Common Constructor...shared code by all sequence types
 Sampler::Sampler(std::vector<uns64> seq_vec, Sequence_Pick_Strategy strategy, uns periodicity, bool should_shuffle)
-    : sequence_vector(std::move(seq_vec)), strategy(strategy), next_pick_index(0), rng_engine(seed()) {
-  if (should_shuffle)
-    std::shuffle(sequence_vector.begin(), sequence_vector.end(), rng_engine);
+    : sequence_vector(std::move(seq_vec)), strategy(strategy), next_pick_index(0), rng_engine(std::random_device{}()) {
+  last_element_in_sorted_order = sequence_vector.back();
   scale_periodicity(periodicity);
+  if (should_shuffle)
+    randomize_sequence_vector();
 }
 
 // Builds UNIFORM_SEQUENTIAL, NORMAL_RANDOM or UNIFORM_RANDOM sequence and passes control to common constructor

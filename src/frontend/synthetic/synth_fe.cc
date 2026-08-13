@@ -20,6 +20,7 @@ extern "C" {
 #include "pin/pin_lib/uop_generator.h"
 
 #include "ctype_pin_inst.h"
+#include "kernel_dispatcher.h"
 #include "kernel_params.h"
 // #define PRINT_INSTRUCTION_INFO
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_SYNTHETIC_INST, ##args)
@@ -31,15 +32,15 @@ static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS][MAX_NUM_BPS];
 static bool off_path_mode[MAX_NUM_PROCS][MAX_NUM_BPS] = {false};
 static uint64_t off_path_addr[MAX_NUM_PROCS][MAX_NUM_BPS] = {0};
 
-Kernel_Factory* kernel_factory;
+Kernel_Dispatcher* dispatcher;
 
 void synth_init() {
   Kernel_Enum kernel = static_cast<Kernel_Enum>(KERNEL);
-  kernel_factory = new Kernel_Factory(kernel, (uns64)START_PC, (uns64)START_UID, 1000);
+  dispatcher = new Kernel_Dispatcher(kernel, (uns64)START_PC, (uns64)START_UID, 1000);
   uop_generator_init(NUM_CORES);
 
   for (uns proc_id{0}; proc_id < NUM_CORES; proc_id++) {
-    next_onpath_pi[proc_id] = kernel_factory->synthetic_fe_generate_next(proc_id, false);
+    next_onpath_pi[proc_id] = dispatcher->synthetic_fe_generate_next(proc_id, false);
   }
 }
 
@@ -74,9 +75,9 @@ void synth_fetch_op(uns proc_id, uns bp_id, struct Op_struct* op) {
 
   if (uop_generator_get_eom(proc_id)) {
     if (!off_path_mode_) {
-      next_onpath_pi[proc_id] = kernel_factory->synthetic_fe_generate_next(proc_id, off_path_mode_);
+      next_onpath_pi[proc_id] = dispatcher->synthetic_fe_generate_next(proc_id, off_path_mode_);
     } else {
-      *next_offpath_pi_ = kernel_factory->synthetic_fe_generate_next(proc_id, off_path_mode_);
+      *next_offpath_pi_ = dispatcher->synthetic_fe_generate_next(proc_id, off_path_mode_);
     }
   }
 }
@@ -91,8 +92,8 @@ void synth_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr) {
   off_path_addr[proc_id][bp_id] = fetch_addr;
   // synthetic kernel manages PCs internally using synth_fe_curr_pc variable
   // on redirect we modify synth_fe_curr_pc accordingly
-  kernel_factory->redirect_next_pc(off_path_addr[proc_id][bp_id]);
-  next_offpath_pi[proc_id][bp_id] = kernel_factory->synthetic_fe_generate_next(proc_id, off_path_mode[proc_id]);
+  dispatcher->redirect_next_pc(off_path_addr[proc_id][bp_id]);
+  next_offpath_pi[proc_id][bp_id] = dispatcher->synthetic_fe_generate_next(proc_id, off_path_mode[proc_id]);
   DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx\n", next_onpath_pi[proc_id].instruction_addr,
         next_offpath_pi[proc_id][bp_id].instruction_addr);
 }
@@ -110,7 +111,7 @@ void synth_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
     uop_generator_get_uop(proc_id, &dummy_op, &next_offpath_pi[proc_id][bp_id]);
   }
   // restore synthetic frontend pc using the state that was stored before redirect
-  kernel_factory->redirect_next_pc(next_onpath_pi->instruction_next_addr);
+  dispatcher->redirect_next_pc(next_onpath_pi->instruction_next_addr);
   DEBUG(proc_id, "Recover CF:%lx \n", next_onpath_pi[proc_id].instruction_addr);
 }
 

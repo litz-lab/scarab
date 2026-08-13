@@ -933,6 +933,16 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
 
   trace_uop[num_uop - 1]->npc = pi->instruction_next_addr;
 
+  // Summarize whether any contained uop is a load / store / control-flow uop, for the shared
+  // per-macro struct below.
+  Flag has_load = FALSE, has_store = FALSE, has_cf = FALSE;
+  for (ii = 0; ii < num_uop; ii++) {
+    Mem_Type mt = trace_uop[ii]->info->table_info.mem_type;
+    has_load |= (mt == MEM_LD);
+    has_store |= (mt == MEM_ST);
+    has_cf |= (trace_uop[ii]->info->table_info.cf_type != NOT_CF);
+  }
+
   // Intern (or, for fake ops, allocate) the split static structs and attach to each uop. Real ops
   // dedup the per-macro struct by {addr, binary}; fake ops mirror the calloc'd Inst_Info above.
   for (ii = 0; ii < num_uop; ii++) {
@@ -954,6 +964,10 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
       if (so_new)
         populate_static_op_info(so, trace_uop[ii]->info);
     }
+    // Idempotent for an already-interned si (the macro's uops are deterministic).
+    si->has_load = has_load;
+    si->has_store = has_store;
+    si->has_cf = has_cf;
     trace_uop[ii]->static_inst = si;
     trace_uop[ii]->static_op = so;
   }

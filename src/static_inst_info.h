@@ -54,6 +54,10 @@ typedef struct Static_Inst_Info_struct {
   uns8 num_uop;        // number of uops this macro cracks into
   Addr branch_target;  // static (decoded) branch target, if any
 
+  Flag has_load;   // any contained uop is a load
+  Flag has_store;  // any contained uop is a store
+  Flag has_cf;     // any contained uop is a control-flow uop
+
   uns16 true_op_type;  // opcode class from PIN (not for Scarab timing)
   char name[16];       // mnemonic
 

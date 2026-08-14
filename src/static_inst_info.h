@@ -64,10 +64,6 @@ typedef struct Static_Inst_Info_struct {
 
   struct Static_Op_Info_struct* uops[STATIC_INST_MAX_UOPS];  // this macro's uops; num_uop valid entries
 
-  Flag has_load;   // any contained uop is a load
-  Flag has_store;  // any contained uop is a store
-  Flag has_cf;     // any contained uop is a control-flow uop
-
   uns16 true_op_type;  // opcode class from PIN (not for Scarab timing)
   char name[16];       // mnemonic
 
@@ -106,5 +102,28 @@ typedef struct Static_Op_Info_struct {
 
   Flag trigger_op_fetched_hook;  // fire the model's fetch hook for this uop
 } Static_Op_Info;
+
+/* Does any uop of this macro do a load / store / control transfer? Derived from uops[] so there is
+ * a single source of truth (num_uop is small, typically 1-3). */
+static inline Flag static_inst_has_load(const Static_Inst_Info* inst) {
+  for (uns i = 0; i < inst->num_uop; i++)
+    if (inst->uops[i]->mem_type == MEM_LD)
+      return TRUE;
+  return FALSE;
+}
+
+static inline Flag static_inst_has_store(const Static_Inst_Info* inst) {
+  for (uns i = 0; i < inst->num_uop; i++)
+    if (inst->uops[i]->mem_type == MEM_ST)
+      return TRUE;
+  return FALSE;
+}
+
+static inline Flag static_inst_has_cf(const Static_Inst_Info* inst) {
+  for (uns i = 0; i < inst->num_uop; i++)
+    if (inst->uops[i]->cf_type != NOT_CF)
+      return TRUE;
+  return FALSE;
+}
 
 #endif /* #ifndef __STATIC_INST_INFO_H__ */

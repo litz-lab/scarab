@@ -937,10 +937,11 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
   ASSERTM(proc_id, num_uop <= STATIC_INST_MAX_UOPS, "macro at 0x%llx cracks into %d uops (> %d)\n",
           (unsigned long long)pi->instruction_addr, num_uop, STATIC_INST_MAX_UOPS);
 
-  // Intern (or, for fake ops, allocate) the split static structs and attach to each uop. Real ops
-  // dedup the per-macro struct by {addr, binary}; fake ops mirror the calloc'd Inst_Info above. As
-  // each uop is added to si->uops[], OR its kind into has_load/has_store/has_cf, so the summary
-  // flags are derived from exactly the uops in the array. All idempotent for an already-interned si.
+  // Intern (or, for fake ops, allocate) the split static structs and attach each uop to its
+  // Trace_Uop. Real ops dedup the per-macro struct by {addr, binary}; fake ops mirror the calloc'd
+  // Inst_Info above. si->uops[ii] is set right where the uop is first populated (so_new / fresh
+  // fake), so the array is filled exactly once; has_load/has_store/has_cf derive from it on demand
+  // (static_inst_has_*()).
   for (ii = 0; ii < num_uop; ii++) {
     Static_Inst_Info* si;
     Static_Op_Info* so;
@@ -949,6 +950,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
       so = (Static_Op_Info*)calloc(1, sizeof(Static_Op_Info));
       populate_static_inst_info(si, trace_uop[ii]->info, pi);
       populate_static_op_info(so, trace_uop[ii]->info);
+      si->uops[ii] = so;
     } else {
       unsigned char si_new = 0, so_new = 0;
       si = cpp_static_inst_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb,
@@ -957,15 +959,11 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
                                        &so_new);
       if (si_new)
         populate_static_inst_info(si, trace_uop[ii]->info, pi);
-      if (so_new)
+      if (so_new) {
         populate_static_op_info(so, trace_uop[ii]->info);
+        si->uops[ii] = so;
+      }
     }
-    if (ii == 0)
-      si->has_load = si->has_store = si->has_cf = FALSE;  // reset on the macro's first uop
-    si->uops[ii] = so;
-    si->has_load |= (so->mem_type == MEM_LD);
-    si->has_store |= (so->mem_type == MEM_ST);
-    si->has_cf |= (so->cf_type != NOT_CF);
     trace_uop[ii]->static_inst = si;
     trace_uop[ii]->static_op = so;
   }

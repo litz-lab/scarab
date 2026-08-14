@@ -44,6 +44,14 @@ typedef struct Static_Reg_Info_struct {
   uns16 id;       // flattened register number (unique across sets)
 } Static_Reg_Info;
 
+// Max uops per macro-instruction that Static_Inst_Info keeps pointers for. Kept small on purpose --
+// this struct is interned by value, so every pointer here is paid per distinct static instruction.
+// Observed max is 7 (SPEC gcc); 16 leaves headroom. The decoder ASSERTs num_uop <= this and prints
+// the offending PC, so if a bigger macro shows up we bump it (the hard ceiling is MAX_PUP).
+#define STATIC_INST_MAX_UOPS 16
+
+struct Static_Op_Info_struct;  // forward decl for the uops[] back-pointers below
+
 /* Per-x86-instruction static info: one instance per macro-instruction, shared by
  * every uop the macro cracks into. Interned by {addr, opcode bytes}. */
 typedef struct Static_Inst_Info_struct {
@@ -51,8 +59,10 @@ typedef struct Static_Inst_Info_struct {
   uns64 opcode_lsb;    // raw instruction bytes, first 8B (was ctype_pin_inst.inst_binary_lsb)
   uns64 opcode_msb;    // raw instruction bytes, last 8B
   uns8 inst_size;      // x86 instruction length in bytes
-  uns8 num_uop;        // number of uops this macro cracks into
+  uns8 num_uop;        // number of uops this macro cracks into (<= STATIC_INST_MAX_UOPS)
   Addr branch_target;  // static (decoded) branch target, if any
+
+  struct Static_Op_Info_struct* uops[STATIC_INST_MAX_UOPS];  // this macro's uops; num_uop valid entries
 
   uns16 true_op_type;  // opcode class from PIN (not for Scarab timing)
   char name[16];       // mnemonic
@@ -92,5 +102,28 @@ typedef struct Static_Op_Info_struct {
 
   Flag trigger_op_fetched_hook;  // fire the model's fetch hook for this uop
 } Static_Op_Info;
+
+/* Does any uop of this macro do a load / store / control transfer? Derived from uops[] so there is
+ * a single source of truth (num_uop is small, typically 1-3). */
+static inline Flag static_inst_has_load(const Static_Inst_Info* inst) {
+  for (uns i = 0; i < inst->num_uop; i++)
+    if (inst->uops[i]->mem_type == MEM_LD)
+      return TRUE;
+  return FALSE;
+}
+
+static inline Flag static_inst_has_store(const Static_Inst_Info* inst) {
+  for (uns i = 0; i < inst->num_uop; i++)
+    if (inst->uops[i]->mem_type == MEM_ST)
+      return TRUE;
+  return FALSE;
+}
+
+static inline Flag static_inst_has_cf(const Static_Inst_Info* inst) {
+  for (uns i = 0; i < inst->num_uop; i++)
+    if (inst->uops[i]->cf_type != NOT_CF)
+      return TRUE;
+  return FALSE;
+}
 
 #endif /* #ifndef __STATIC_INST_INFO_H__ */

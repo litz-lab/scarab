@@ -24,13 +24,21 @@ on:
 ############################################################
 permissions:
   contents: read
+  # Required by download-artifact when reading from a DIFFERENT workflow run.
+  # An explicit permissions block sets every unlisted scope to none, so without
+  # this the download 403s.
+  actions: read
   pull-requests: write
 
 jobs:
   comment:
-    # Only for PR-triggered runs that produced an artifact. A run that failed
-    # before perf-report uploaded simply has nothing to say.
-    if: github.event.workflow_run.event == 'pull_request'
+    # Only for PR-triggered runs that got far enough to upload metrics. A run
+    # that failed earlier has nothing to say, and gating on success here means
+    # a missing artifact below is a genuine error worth failing on rather than
+    # something to swallow.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       ####################################################################
@@ -41,10 +49,11 @@ jobs:
       # rather than interpolated into the script, so a crafted artifact
       # cannot inject anything.
       ####################################################################
+      # Not continue-on-error: the job only runs when the producing run
+      # succeeded, so a missing artifact or a permissions problem is a real
+      # fault and should be loud rather than silently skipping the comment.
       - name: Download metrics artifact
-        id: download
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
           name: perf-report
           path: perf-report
@@ -52,7 +61,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Post or update PR comment
-        if: steps.download.outcome == 'success'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

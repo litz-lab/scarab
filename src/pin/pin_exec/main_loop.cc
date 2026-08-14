@@ -352,6 +352,10 @@ void do_fe_null(bool& have_consumed_op) {
       if(op_mailbox.cf_type && op_mailbox.actually_taken) {
         op_mailbox.branch_target = cop->instruction_addr;
       }
+      ctype_pin_inst* prev = pin_decoder_get_inst_by_addr(op_mailbox.instruction_addr);
+      if (prev && op_mailbox.num_dst_regs > 0 && prev->num_dst_regs == op_mailbox.num_dst_regs) {
+        memcpy(op_mailbox.dests, prev->dests, sizeof(op_mailbox.dests));
+      }
       insert_scarab_op_in_buffer(op_mailbox);
       op_mailbox_full = false;
     }

@@ -39,6 +39,7 @@ void pin_decoder_init(bool translate_x87_regs, std::ostream* err_ostream);
 void            pin_decoder_insert_analysis_functions(const INS& ins);
 void            insert_analysis_functions(ctype_pin_inst* info, const INS& ins);
 ctype_pin_inst* pin_decoder_get_latest_inst();
+ctype_pin_inst* pin_decoder_get_inst_by_addr(ADDRINT iaddr);
 
 void pin_decoder_print_unknown_opcodes();
 

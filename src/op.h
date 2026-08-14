@@ -34,6 +34,7 @@
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 
+#include "dyn_inst.h"
 #include "ft_info.h"
 #include "inst_info.h"
 #include "op_info.h"
@@ -174,6 +175,7 @@ struct Op_struct {
   uns64 inst_uid;               // unique number for the macro instruction provided by the frontend (PIN)
   Static_Inst_Info* inst;       // shared per-macro-instruction static info
   Static_Op_Info* uop;          // per-uop static info
+  Dynamic_Inst* dyn_inst;       // this op's dynamic macro instance (its sibling uop ops)
   Op_Info oracle_info;          // information about the execution of the op in the oracle
   Op_Info engine_info;          // information about the execution of the op in the engine
   uns num_srcs;                 // number of map dependencies (order matches srcs_not_rdy_words / wake-up)
@@ -269,6 +271,22 @@ struct Op_struct {
  * since the op was allocated (still MAX_CTR). Multiple assignment SITES are fine
  * as long as they are mutually exclusive for a given op. rdy_cycle is the sole
  * exception (an accumulator: MAX over the op's producers) and has no assert. */
+
+// Number of dynamic uops in this op's macro instance.
+static inline uns op_macro_num_uops(const Op* op) {
+  ASSERT(op->proc_id, op->dyn_inst);
+  return op->dyn_inst->num_uop;
+}
+// The i-th dynamic uop op of this op's macro instance (0 == bom, num_uop-1 == eom).
+static inline Op* op_macro_uop(const Op* op, uns i) {
+  ASSERT(op->proc_id, op->dyn_inst && i < op->dyn_inst->num_uop);
+  return op->dyn_inst->uops[i];
+}
+// The end-of-macro (last) dynamic uop op of this op's macro instance.
+static inline Op* op_macro_eom(const Op* op) {
+  ASSERT(op->proc_id, op->dyn_inst);
+  return op->dyn_inst->uops[op->dyn_inst->num_uop - 1];
+}
 
 static inline Counter op_get_fetch_cycle(const Op* op) {
   return op->cycles.fetch_cycle;

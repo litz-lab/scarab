@@ -52,6 +52,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #include "frontend/frontend_intf.h"
 #include "frontend/pin_trace_fe.h"
 
+#include "dyn_inst.h"
 #include "map.h"
 #include "model.h"
 #include "op_info.h"
@@ -110,6 +111,39 @@ void reset_op_pool() {
 }
 
 /**************************************************************************************/
+/* Dynamic_Inst pool: per-dynamic-macro grouping of uop ops, refcounted by the uops that reference
+   it and recycled through a simple free list (mirrors the op pool's reuse pattern). */
+
+static Dynamic_Inst* dyn_inst_free_list = NULL;
+
+Dynamic_Inst* alloc_dyn_inst(uns num_uop) {
+  ASSERT(0, num_uop > 0 && num_uop <= STATIC_INST_MAX_UOPS);
+  Dynamic_Inst* di = dyn_inst_free_list;
+  if (di) {
+    dyn_inst_free_list = di->free_list_next;
+  } else {
+    di = (Dynamic_Inst*)malloc(sizeof(Dynamic_Inst));
+  }
+  memset(di, 0, sizeof(*di));
+  di->num_uop = num_uop;
+  return di;
+}
+
+void dyn_inst_attach(Dynamic_Inst* di, Op* op) {
+  ASSERT(op->proc_id, di && op->uop && op->uop->uop_seq_num < di->num_uop);
+  op->dyn_inst = di;
+  di->uops[op->uop->uop_seq_num] = op;
+  di->refs++;
+}
+
+void dyn_inst_release(Dynamic_Inst* di) {
+  ASSERT(0, di && di->refs > 0);
+  if (--di->refs == 0) {
+    di->free_list_next = dyn_inst_free_list;
+    dyn_inst_free_list = di;
+  }
+}
+
 /* alloc_op:  returns a pointer to the next available op */
 
 Op* alloc_op(uns proc_id) {
@@ -159,6 +193,11 @@ void free_op(Op* op) {
     free(op->uop);
     op->inst = NULL;
     op->uop = NULL;
+  }
+
+  if (op->dyn_inst) {
+    dyn_inst_release(op->dyn_inst);
+    op->dyn_inst = NULL;
   }
 
   op_sources_free(op);

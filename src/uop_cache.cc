@@ -497,7 +497,7 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
 
     // Start a new line if needed
     if (!line_started) {
-      current_line.line_start = op->inst_info->addr;
+      current_line.line_start = op->inst->addr;
       current_line.ft_first_op_off_path = ft->get_first_op_off_path();
       current_line.contains_fake_nop = ft->get_contains_fake_nop();
       current_line.n_uops = 0;
@@ -510,7 +510,7 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
 
     // Check for line termination conditions
     Addr ft_end_addr = ft->get_start_addr() + ft_info.static_info.length;
-    Addr inst_end_addr = op->inst_info->addr + op->inst_info->trace_info.inst_size;
+    Addr inst_end_addr = op->inst->addr + op->inst->inst_size;
 
     is_ft_end = op->eom && (inst_end_addr == ft_end_addr);
     bool is_line_end = (current_line.n_uops == UOP_CACHE_WIDTH);
@@ -524,7 +524,7 @@ void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out) {
       } else if (i + 1 < ops.size()) {
         // Calculate offset to next line start
         Op* next_op = ops[i + 1];
-        Addr next_line_start = next_op->inst_info->addr;
+        Addr next_line_start = next_op->inst->addr;
         current_line.offset = next_line_start - current_line.line_start;
         current_line.end_of_ft = FALSE;
       } else {
@@ -557,7 +557,7 @@ void uop_cache_insert_FT(FT* ft) {
         (unsigned long long)ft_info.dynamic_info.FT_id, (unsigned long long)ft_info.static_info.start,
         (unsigned long long)ft_info.static_info.length, (unsigned long long)ft_info.static_info.n_uops,
         (unsigned long long)ft->get_op_pos(), ops.size(), (int)ft->get_end_reason(), last ? "yes" : "no",
-        (unsigned long long)(last ? last->op_num : 0), (unsigned long long)(last ? last->inst_info->addr : 0),
+        (unsigned long long)(last ? last->op_num : 0), (unsigned long long)(last ? last->inst->addr : 0),
         (unsigned)(last ? last->eom : 0));
   UNUSED(last);
 

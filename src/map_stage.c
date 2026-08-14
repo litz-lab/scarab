@@ -57,7 +57,7 @@
 /**************************************************************************************/
 /* Macros */
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_MAP_STAGE, ##args)
-#define STAGE_MAX_OP_COUNT ISSUE_WIDTH
+#define STAGE_MAX_OP_COUNT RENAME_WIDTH
 #define STAGE_MAX_DEPTH MAP_CYCLES
 
 /**************************************************************************************/
@@ -141,7 +141,7 @@ void recover_map_stage() {
           op_select_bp_pred_info(cur->ops[jj], BP_PRED_MAIN);
           DEBUG(map->proc_id, "Recovery op found in Map stage:%u slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii, jj,
                 (unsigned long long)cur->ops[jj]->op_num, cur->ops[jj]->off_path,
-                (unsigned long long)cur->ops[jj]->inst_info->addr);
+                (unsigned long long)cur->ops[jj]->inst->addr);
         }
         if (FLUSH_OP(cur->ops[jj])) {
           DEBUG(map->proc_id, "Map flushing op_num:%llu off_path:%u\n", (unsigned long long)cur->ops[jj]->op_num,
@@ -292,7 +292,7 @@ static inline void map_stage_fetch_op(Stage_Data* src_sd) {
     ASSERT(map->proc_id, op->op_num == map->next_op_num);
     DEBUG(map->proc_id, "Fetching opnum=%llu at idx=%i\n", op->op_num, ii);
 
-    op->map_cycle = cycle_count;
+    op_set_map_cycle(op, cycle_count);
     first_sd->ops[ii] = op;
     first_sd->op_count++;
 

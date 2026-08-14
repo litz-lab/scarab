@@ -82,9 +82,9 @@ void ConfMechStatBase::update(Op* op, Conf_Off_Path_Reason reason, bool last_in_
   // log stats for on/off events
   if (dfe_off_path && !prev_op->off_path) {  // the actual path goes off
     DEBUG(proc_id, "off-path event: prev_op op_num: %llu, cf_type: %i, cur_op op_num: %llu, cf_type: %i\n",
-          prev_op->op_num, prev_op->inst_info->table_info.cf_type, decoupled_fe_get_cur_op()->op_num,
-          decoupled_fe_get_cur_op()->inst_info->table_info.cf_type);
-    ASSERT(proc_id, prev_op->inst_info->table_info.cf_type);  // must be a cf as the last on-path op
+          prev_op->op_num, prev_op->uop->cf_type, decoupled_fe_get_cur_op()->op_num,
+          decoupled_fe_get_cur_op()->uop->cf_type);
+    ASSERT(proc_id, prev_op->uop->cf_type);  // must be a cf as the last on-path op
     ASSERT(proc_id, off_path_reason != REASON_NOT_IDENTIFIED);
 
     if (!op->conf_off_path) {
@@ -116,7 +116,7 @@ void ConfMechStatBase::print_data() {
 void ConfMechStatBase::set_prev_op(Op* op) {
   prev_op = op;
   DEBUG(proc_id, "Set prev_op off_path:%i, op_num:%llu, cf_type:%i\n", prev_op->off_path, prev_op->op_num,
-        prev_op->inst_info->table_info.cf_type);
+        prev_op->uop->cf_type);
 }
 
 /* Conf member functions */
@@ -146,7 +146,7 @@ void Conf::process_op(Op* op, Conf_Off_Path_Reason& new_reason, bool last_in_ft)
     perfect_conf_update(op, new_reason);
     if (!PERFECT_CONFIDENCE && new_reason == REASON_CONF_NOT_IDENTIFIED) {
       per_op_update(op, new_reason);
-      if (op->inst_info->table_info.cf_type)
+      if (op->uop->cf_type)
         per_cf_op_update(op, new_reason);
     }
   }
@@ -213,8 +213,8 @@ void Conf::per_cf_op_update(Op* op, Conf_Off_Path_Reason& new_reason) {
 
   // log conf stats
   // if it is a cf with bp conf
-  if ((op)->inst_info->table_info.cf_type == CF_CBR || (op)->inst_info->table_info.cf_type == CF_IBR ||
-      (op)->inst_info->table_info.cf_type == CF_ICALL || (op)->inst_info->table_info.cf_type == CF_REP) {
+  if ((op)->uop->cf_type == CF_CBR || (op)->uop->cf_type == CF_IBR || (op)->uop->cf_type == CF_ICALL ||
+      (op)->uop->cf_type == CF_REP) {
     if (op->bp_pred_info->recover_at_exec) {
       // reorder stats
       STAT_EVENT(proc_id, DFE_CONF_0_RECOVER_AT_EXEC + op->bp_confidence);

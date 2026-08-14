@@ -85,10 +85,10 @@ READ_TRACE_CXXFLAGS =  -std=c++14 -O3 -I$(SCARAB_DIR)
 gen_trace: $(OBJDIR)gen_trace.so
 
 $(OBJDIR)%.o: $(COMMON_LIB_PATH)/%.cc
-	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $< -DPIN_COMPILE
+	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $< -MMD -DPIN_COMPILE
 
 $(OBJDIR)%.o: %.cc
-	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $< -DPIN_COMPILE
+	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $< -MMD -DPIN_COMPILE
 
 $(OBJDIR)isa.o: $(SCARAB_DIR)/isa/isa.c
 	$(CC) $(READ_TRACE_CFLAGS) $(COMP_OBJ)$@ $<
@@ -112,3 +112,7 @@ $(OBJDIR)read_trace: read_trace.cc dir $(SCARAB_OBJFILES)
 
 -include $(OBJDIR)gen_trace.d
 -include $(OBJDIR)read_trace.d
+# Track headers for the tool sources and shared pin_lib objects so a shared-header change
+# (e.g. ctype_pin_inst.h) rebuilds every dependent object instead of leaving a stale one.
+-include $(SOURCE_OBJFILES:.o=.d)
+-include $(COMMON_LIB_OBJFILES:.o=.d)

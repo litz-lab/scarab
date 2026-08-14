@@ -42,8 +42,7 @@ std::vector<std::vector<std::unique_ptr<Decoupled_FE>>> per_core_dfe;
 // so the TAKEN target is unknown without consulting oracle); the caller treats
 // 0 as "no alternate path available" and skips alt activation for this trigger.
 static Addr alt_direction_target(const Op* trigger_op) {
-  const Addr pc_plus_offset =
-      ADDR_PLUS_OFFSET(trigger_op->inst_info->addr, trigger_op->inst_info->trace_info.inst_size);
+  const Addr pc_plus_offset = ADDR_PLUS_OFFSET(trigger_op->inst->addr, trigger_op->inst->inst_size);
   if (trigger_op->bp_pred_info->pred == TAKEN)
     return pc_plus_offset;
   if (!btb_pred_miss(trigger_op->btb_pred_info))
@@ -487,7 +486,7 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
       // alt_op may be nullptr when main was stalled at a fetch barrier;
       // activate_off_path(0, 0) then stops alt fetching.
       if (dfe_trigger_policy == CONTINUE_ON_RECOVERY) {
-        activate_off_path(alt_op ? alt_op->inst_uid : 0, alt_op ? alt_op->inst_info->addr : 0);
+        activate_off_path(alt_op ? alt_op->inst_uid : 0, alt_op ? alt_op->inst->addr : 0);
       }
       break;
   }
@@ -815,7 +814,7 @@ void Decoupled_FE::capture_main_pre_state_for_alts(Op* trigger_op) {
   // capture main's pre-spec-update state.
   const Flag is_misprediction = trigger_op->bp_pred_main.recover_at_fe || trigger_op->bp_pred_main.recover_at_decode ||
                                 trigger_op->bp_pred_main.recover_at_exec;
-  const bool h2p = is_h2p_at_exec(trigger_op->inst_info->addr);
+  const bool h2p = is_h2p_at_exec(trigger_op->inst->addr);
   for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
     Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();
     const uns trigger_policy = alt->get_dfe_trigger_policy();
@@ -887,7 +886,7 @@ void Decoupled_FE::drive_alt_on_misprediction(Op* trigger_op) {
   // H2P-filtered variants fire on the same misprediction event when the
   // online H2P classifier (exec-stage stats) flags this branch PC as
   // hard-to-predict.
-  if (is_h2p_at_exec(trigger_op->inst_info->addr)) {
+  if (is_h2p_at_exec(trigger_op->inst->addr)) {
     STAT_EVENT(proc_id, H2P_SEEN_MAIN);
     drive_alt_on_event(trigger_op, ALTERNATE_ON_H2P_MISPREDICTION, STOP_ON_H2P_MISPREDICTION);
   }
@@ -898,21 +897,21 @@ void Decoupled_FE::drive_alt_on_prediction(Op* trigger_op) {
   // H2P-filtered variants fire on the same per-CF prediction event when the
   // online H2P classifier (exec-stage stats) flags this branch PC as
   // hard-to-predict.
-  if (is_h2p_at_exec(trigger_op->inst_info->addr))
+  if (is_h2p_at_exec(trigger_op->inst->addr))
     drive_alt_on_event(trigger_op, ALTERNATE_ON_H2P_PREDICTION, STOP_ON_H2P_PREDICTION);
 }
 
 void Decoupled_FE::stall(Op* op) {
   stalled = true;
-  DEBUG(proc_id, "Decoupled fetch stalled due to barrier fetch_addr0x:%llx off_path:%i op_num:%llu\n",
-        op->inst_info->addr, op->off_path, op->op_num);
+  DEBUG(proc_id, "Decoupled fetch stalled due to barrier fetch_addr0x:%llx off_path:%i op_num:%llu\n", op->inst->addr,
+        op->off_path, op->op_num);
 }
 
 void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
-  if (op->inst_info->table_info.bar_type & BAR_FETCH) {
+  if (op->uop->bar_type & BAR_FETCH) {
     DEBUG(proc_id,
           "[DFE%u] Decoupled fetch saw barrier retire fetch_addr:0x%llx off_path:%i op_num:%llu list_count:%i\n", bp_id,
-          op->inst_info->addr, op->off_path, op->op_num, td->seq_op_list.count);
+          op->inst->addr, op->off_path, op->op_num, td->seq_op_list.count);
     ASSERT(proc_id, td->seq_op_list.count == 1);
     stalled = false;
   }
@@ -935,9 +934,8 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
     return REASON_MISFETCH;
   }
   // ibtb miss
-  else if (ENABLE_IBP &&
-           (op->inst_info->table_info.cf_type == CF_IBR || op->inst_info->table_info.cf_type == CF_ICALL) &&
-           op->btb_pred_info->ibp_miss && op->bp_pred_info->pred_orig == TAKEN) {
+  else if (ENABLE_IBP && (op->uop->cf_type == CF_IBR || op->uop->cf_type == CF_ICALL) && op->btb_pred_info->ibp_miss &&
+           op->bp_pred_info->pred_orig == TAKEN) {
     return REASON_IBTB_MISS;
   }
   // btb miss and mispred (would have been incorrect with or without btb miss)
@@ -962,11 +960,11 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
             "l0_rec_fe:%u l0_rec_decode:%u l0_rec_exec:%u l0_pred_orig:%u l0_pred:%u l0_pred_npc:0x%llx "
             "main_rec_fe:%u main_rec_decode:%u main_rec_exec:%u main_pred_orig:%u main_pred:%u "
             "main_pred_npc:0x%llx\n",
-            (unsigned long long)op->op_num, (unsigned long long)op->inst_uid, (unsigned long long)op->inst_info->addr,
-            (int)op->inst_info->table_info.cf_type, op->bp_pred_info == &op->bp_pred_l0,
-            op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec,
-            op->bp_pred_info->pred_orig, op->bp_pred_info->pred, (unsigned long long)op->bp_pred_info->pred_npc,
-            op->oracle_info.dir, (unsigned long long)op->oracle_info.npc, (unsigned long long)op->oracle_info.target,
+            (unsigned long long)op->op_num, (unsigned long long)op->inst_uid, (unsigned long long)op->inst->addr,
+            (int)op->uop->cf_type, op->bp_pred_info == &op->bp_pred_l0, op->bp_pred_info->recover_at_fe,
+            op->bp_pred_info->recover_at_decode, op->bp_pred_info->recover_at_exec, op->bp_pred_info->pred_orig,
+            op->bp_pred_info->pred, (unsigned long long)op->bp_pred_info->pred_npc, op->oracle_info.dir,
+            (unsigned long long)op->oracle_info.npc, (unsigned long long)op->oracle_info.target,
             btb_pred_miss(op->btb_pred_info), op->btb_pred_info->ibp_miss, op->btb_pred_info->no_target,
             op->bp_pred_l0.recover_at_fe, op->bp_pred_l0.recover_at_decode, op->bp_pred_l0.recover_at_exec,
             op->bp_pred_l0.pred_orig, op->bp_pred_l0.pred, (unsigned long long)op->bp_pred_l0.pred_npc,

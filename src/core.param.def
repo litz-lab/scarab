@@ -123,7 +123,6 @@ DEF_PARAM(topdown_fu_exec_few, TOPDOWN_FU_EXEC_FEW, uns, uns, 0, )
 
 /********NODE TABLE
  * PARAMETERS********************************************************/
-DEF_PARAM(issue_width, ISSUE_WIDTH, uns, uns, 4, )
 DEF_PARAM(rs_fill_width, RS_FILL_WIDTH, uns, uns, 8, )
 DEF_PARAM(node_table_size, NODE_TABLE_SIZE, uns, uns, 256, )
 DEF_PARAM(node_ret_width, NODE_RET_WIDTH, uns, uns, 4, )
@@ -139,10 +138,12 @@ DEF_PARAM(decode_width, DECODE_WIDTH, uns, uns, 4, )
 
 /********INSTRUCTION DECODE QUEUE
  * PARAMETERS********************************************************/
+DEF_PARAM(dispatch_width, DISPATCH_WIDTH, uns, uns, 4, )
 DEF_PARAM(idq_size, IDQ_SIZE, uns, uns, 140, )
 
 /********MAP REGISTER FILE
  * PARAMETERS********************************************************/
+DEF_PARAM(rename_width, RENAME_WIDTH, uns, uns, 4, )
 DEF_PARAM(reg_renaming_scheme, REG_RENAMING_SCHEME, uns, uns, 0, )
 DEF_PARAM(reg_table_integer_physical_size, REG_TABLE_INTEGER_PHYSICAL_SIZE, uns, uns, 256, )
 DEF_PARAM(reg_table_vector_physical_size, REG_TABLE_VECTOR_PHYSICAL_SIZE, uns, uns, 256, )
@@ -334,6 +335,15 @@ DEF_PARAM(dcache_miss_rate, DCACHE_MISS_RATE, uns, uns, 10, )
 DEF_PARAM(l1_miss_rate, L1_MISS_RATE, uns, uns, 10, )
 
 DEF_PARAM(trace_buf_size, TRACE_BUF_SIZE, uns, uns, 0, )
+
+/* Replace the oracle memory addresses (ld_vaddr/st_vaddr) of every instruction
+   recorded in the trace frontend's replay buffer with a poison value. The
+   replay buffer is keyed by PC and is replayed to synthesize wrong-path
+   instructions; the addresses it stores come from the on-path occurrence of
+   that PC, so reusing them off-path leaks oracle information and makes
+   wrong-path memory accesses behave like a perfect prefetcher. Enabled by
+   default so wrong-path memory behavior is not oracle-informed. */
+DEF_PARAM(poison_replay_buffer_oracle_va, POISON_REPLAY_BUFFER_ORACLE_VA, Flag, Flag, TRUE, )
 
 DEF_PARAM(perfect_confidence, PERFECT_CONFIDENCE, Flag, Flag, FALSE, )
 DEF_PARAM(confidence_enable, CONFIDENCE_ENABLE, Flag, Flag, FALSE, )

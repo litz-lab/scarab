@@ -85,10 +85,10 @@ Op* FT::fetch_op() {
   Op* op = ops[op_pos];
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->op_pool_valid);
-  ASSERT(proc_id, op->inst_info);
+  ASSERT(proc_id, op->inst);
   op_pos++;
 
-  DEBUG(proc_id, "Fetch op from FT fetch_addr0x:%llx off_path:%i op_num:%llu\n", op->inst_info->addr, op->off_path,
+  DEBUG(proc_id, "Fetch op from FT fetch_addr0x:%llx off_path:%i op_num:%llu\n", op->inst->addr, op->off_path,
         op->op_num);
   return op;
 }
@@ -96,19 +96,19 @@ Op* FT::fetch_op() {
 void FT::add_op(Op* op) {
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->op_pool_valid);
-  ASSERT(proc_id, op->inst_info);
+  ASSERT(proc_id, op->inst);
   if (!ops.empty()) {
     ASSERT(proc_id, ops.back());
     ASSERT(proc_id, ops.back()->op_pool_valid);
-    ASSERT(proc_id, ops.back()->inst_info);
+    ASSERT(proc_id, ops.back()->inst);
     if (op->bom) {
       // assert consecutivity
-      DEBUG(proc_id, "back addr + size %llx fetch addr %llx\n",
-            ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size, op->inst_info->addr);
-      ASSERT(proc_id, ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size == op->inst_info->addr);
+      DEBUG(proc_id, "back addr + size %llx fetch addr %llx\n", ops.back()->inst->addr + ops.back()->inst->inst_size,
+            op->inst->addr);
+      ASSERT(proc_id, ops.back()->inst->addr + ops.back()->inst->inst_size == op->inst->addr);
     } else {
       // assert all uops of the same inst share the same addr
-      ASSERT(proc_id, ops.back()->inst_info->addr == op->inst_info->addr);
+      ASSERT(proc_id, ops.back()->inst->addr == op->inst->addr);
     }
   }
   op->parent_FT = this;
@@ -165,7 +165,7 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
       op_select_bp_pred_info(op, BP_PRED_MAIN);
       bp_btb_post_bp_predict(g_bp_data, op);  // for next BTB access
     }
-    if (op->inst_info->fake_inst == 1) {
+    if (op->inst->fake_inst == 1) {
       ft_info.dynamic_info.contains_fake_nop = TRUE;
     }
     if ((event == FT_EVENT_MISPREDICT || event == FT_EVENT_FETCH_BARRIER) && off_path) {
@@ -285,18 +285,18 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
 #ifdef ENABLE_PT_MEMTRACE
   trace_mode |= (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE);
 #endif
-  if (op->inst_info->table_info.cf_type) {
+  if (op->uop->cf_type) {
     ASSERT(proc_id, op->eom);
-    bp_predict_op(g_bp_data, op, op->parent_FT->bp_id, 1, op->inst_info->addr, pred_level);
-    const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
+    bp_predict_op(g_bp_data, op, op->parent_FT->bp_id, 1, op->inst->addr, pred_level);
+    const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst->addr, op->inst->inst_size);
 
     DEBUG(proc_id,
           "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx recover_at_fe:%i btb miss:%i taken:%i "
           "recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
-          bp_id, op->inst_info->addr, op->oracle_info.npc, bp_pred_info->pred_npc, bp_pred_info->recover_at_fe,
+          bp_id, op->inst->addr, op->oracle_info.npc, bp_pred_info->pred_npc, bp_pred_info->recover_at_fe,
           btb_pred_miss(op->btb_pred_info), bp_pred_info->pred == TAKEN, bp_pred_info->recover_at_decode,
-          bp_pred_info->recover_at_exec, op->inst_info->table_info.bar_type & BAR_FETCH);
-    if ((op->inst_info->table_info.bar_type & BAR_FETCH) || IS_CALLSYS(&op->inst_info->table_info)) {
+          bp_pred_info->recover_at_exec, op->uop->bar_type & BAR_FETCH);
+    if ((op->uop->bar_type & BAR_FETCH) || IS_CALLSYS(op->uop)) {
       bp_pred_info->recover_at_decode = FALSE;
       bp_pred_info->recover_at_exec = FALSE;
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
@@ -320,7 +320,7 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
       return FT_EVENT_OFFPATH_TAKEN_REDIRECT;
     }
 
-  } else if (op->inst_info->table_info.bar_type & BAR_FETCH) {
+  } else if (op->uop->bar_type & BAR_FETCH) {
     ASSERT(0, !(bp_pred_info->recover_at_fe | bp_pred_info->recover_at_decode | bp_pred_info->recover_at_exec));
     return FT_EVENT_FETCH_BARRIER;
   }
@@ -381,7 +381,7 @@ FT_PredictResult FT::predict_ft() {
       op_select_bp_pred_info(op, BP_PRED_MAIN);
     }
     bp_btb_post_bp_predict(g_bp_data, op);  // for next BTB access
-    if (op->inst_info->table_info.cf_type) {
+    if (op->uop->cf_type) {
       // Per-CF prediction event: now that main's bp_pred_info is finalized for
       // op (and main's bp_data has just been spec-updated), fire alt-DFE
       // _ON_PREDICTION dispatch. Single-op rollback in trigger_alt_with_rewind
@@ -436,9 +436,8 @@ bool FT::is_consecutive(const FT& previous_ft) const {
   const Bp_Pred_Info* bp_pred_info = ft_active_or_main_bp_pred_info(last_op);
   Addr pred_npc = bp_pred_info->pred_npc;
   Addr npc = last_op->oracle_info.npc;
-  Addr end_addr = (FRONTEND == FE_PIN_EXEC_DRIVEN)
-                      ? ADDR_PLUS_OFFSET(last_op->inst_info->addr, last_op->inst_info->trace_info.inst_size)
-                      : last_op->inst_info->addr + last_op->inst_info->trace_info.inst_size;
+  Addr end_addr = (FRONTEND == FE_PIN_EXEC_DRIVEN) ? ADDR_PLUS_OFFSET(last_op->inst->addr, last_op->inst->inst_size)
+                                                   : last_op->inst->addr + last_op->inst->inst_size;
   bool matches = false;
   switch (prev_end_type) {
     case FT_TAKEN_BRANCH:
@@ -465,14 +464,13 @@ FT_Ended_By FT::get_end_reason() const {
   Op* op = ops.back();  // Get the last op
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->op_pool_valid);
-  ASSERT(proc_id, op->inst_info);
+  ASSERT(proc_id, op->inst);
   if (op->eom) {
     const Bp_Pred_Info* bp_pred_info = ft_active_or_main_bp_pred_info(op);
-    uns offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size) -
-                 ROUND_DOWN(op->inst_info->addr, ICACHE_LINE_SIZE);
+    uns offset = ADDR_PLUS_OFFSET(op->inst->addr, op->inst->inst_size) - ROUND_DOWN(op->inst->addr, ICACHE_LINE_SIZE);
     bool end_of_icache_line = offset >= ICACHE_LINE_SIZE;
-    bool cf_taken = (op->inst_info->table_info.cf_type && bp_pred_info->pred == TAKEN);
-    bool bar_fetch = IS_CALLSYS(&op->inst_info->table_info) || op->inst_info->table_info.bar_type & BAR_FETCH;
+    bool cf_taken = (op->uop->cf_type && bp_pred_info->pred == TAKEN);
+    bool bar_fetch = IS_CALLSYS(op->uop) || op->uop->bar_type & BAR_FETCH;
 
     if (op->exit) {
       return FT_APP_EXIT;
@@ -493,18 +491,17 @@ void FT::generate_ft_info() {
   auto op = ops[op_pos];
   ASSERT(proc_id, op);
   ASSERT(proc_id, op->op_pool_valid);
-  ASSERT(proc_id, op->inst_info);
+  ASSERT(proc_id, op->inst);
   ASSERT(proc_id, get_last_op());
   ASSERT(proc_id, get_last_op()->op_pool_valid);
-  ASSERT(proc_id, get_last_op()->inst_info);
+  ASSERT(proc_id, get_last_op()->inst);
   ASSERT(proc_id, op->bom && get_last_op()->eom);
 
-  ft_info.static_info.start = op->inst_info->addr;
+  ft_info.static_info.start = op->inst->addr;
   ft_info.dynamic_info.first_op_off_path = op->off_path;
   ft_info.dynamic_info.ended_by = get_end_reason();
   ft_info.static_info.n_uops = ops.size() - op_pos;
-  ft_info.static_info.length =
-      ops.back()->inst_info->addr + ops.back()->inst_info->trace_info.inst_size - ft_info.static_info.start;
+  ft_info.static_info.length = ops.back()->inst->addr + ops.back()->inst->inst_size - ft_info.static_info.start;
   ASSERT(proc_id, ft_info.static_info.start && ft_info.static_info.length && ft_info.static_info.n_uops);
   STAT_EVENT(proc_id, POWER_BTB_READ);
 }
@@ -541,9 +538,8 @@ static bool ft_op_recovery_addr_is_consecutive(Op* op, Addr next_start) {
   const Bp_Pred_Info* bp_pred_info = ft_active_or_main_bp_pred_info(op);
   Addr pred_npc = bp_pred_info->pred_npc;
   Addr npc = op->oracle_info.npc;
-  Addr end_addr = (FRONTEND == FE_PIN_EXEC_DRIVEN)
-                      ? ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size)
-                      : op->inst_info->addr + op->inst_info->trace_info.inst_size;
+  Addr end_addr = (FRONTEND == FE_PIN_EXEC_DRIVEN) ? ADDR_PLUS_OFFSET(op->inst->addr, op->inst->inst_size)
+                                                   : op->inst->addr + op->inst->inst_size;
 
   return (pred_npc == next_start) || (npc == next_start) || (end_addr == next_start);
 }
@@ -588,7 +584,7 @@ void ft_free_op(Op* op) {
       while (!ft_ops.empty() && ft_ops.back()->off_path) {
         Op* tail = ft_ops.back();
         DEBUG(op->proc_id, "[DFE%u] ft_free_op removing off-path op_num:%llu addr:0x%llx\n", ft->get_bp_id(),
-              (unsigned long long)tail->op_num, (unsigned long long)tail->inst_info->addr);
+              (unsigned long long)tail->op_num, (unsigned long long)tail->inst->addr);
         ft_ops.pop_back();
         free_op(tail);
       }
@@ -608,8 +604,8 @@ void ft_free_op(Op* op) {
 std::set<Addr> FT::get_pcs() {
   std::set<Addr> pc_set;
   for (auto op : ops) {
-    if (op && op->inst_info) {
-      pc_set.insert(op->inst_info->addr);
+    if (op && op->inst) {
+      pc_set.insert(op->inst->addr);
     }
   }
   return pc_set;

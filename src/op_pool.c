@@ -150,14 +150,15 @@ void free_op(Op* op) {
   ASSERTM(0, op_pool_active_ops >= 0, "op_pool_active_ops:%u\n", op_pool_active_ops);
   DEBUG(0, "Freed op  id:%u  op_pool_active_ops: %u\n", op->op_pool_id, op_pool_active_ops);
 
-  if (op->inst_info && op->inst_info->table_info.mem_type == MEM_ST)
+  if (op->inst && op->uop->mem_type == MEM_ST)
     delete_store_hash_entry(op);
 
-  if (op->inst_info && op->inst_info->fake_inst) {
-    // we no longer allocate memory for fake nops
-    // free(op->inst_info->table_info);
-    free(op->inst_info);
-    op->inst_info = NULL;
+  if (op->inst && op->inst->fake_inst) {
+    // fake ops get their own (non-interned) static structs; free both
+    free(op->inst);
+    free(op->uop);
+    op->inst = NULL;
+    op->uop = NULL;
   }
 
   op_sources_free(op);
@@ -191,20 +192,23 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->proc_id = proc_id;
   op->state = OS_FETCHED;
   op->fu_num = -1;
-  op->fetch_cycle = MAX_CTR;
-  op->bp_cycle = MAX_CTR;
-  op->issue_cycle = MAX_CTR;
-  op->map_cycle = MAX_CTR;
-  op->rdy_cycle = 1;
-  op->sched_cycle = MAX_CTR;
-  op->exec_cycle = MAX_CTR;
-  op->dcache_cycle = MAX_CTR;
-  op->done_cycle = MAX_CTR;
-  op->retire_cycle = MAX_CTR;
-  op->replay_cycle = MAX_CTR;
-  op->pred_cycle = MAX_CTR;
-  op->precommit_cycle = MAX_CTR;
-  op->wake_cycle = MAX_CTR;
+  /* reset the per-op cycle counters to their sentinels (op_set_<name>_cycle
+   * asserts against MAX_CTR; rdy_cycle is the accumulator and starts at 1). */
+  op->cycles.fetch_cycle = MAX_CTR;
+  op->cycles.bp_cycle = MAX_CTR;
+  op->cycles.issue_cycle = MAX_CTR;
+  op->cycles.map_cycle = MAX_CTR;
+  op->cycles.rdy_cycle = 1;
+  op->cycles.sched_cycle = MAX_CTR;
+  op->cycles.exec_cycle = MAX_CTR;
+  op->cycles.dcache_cycle = MAX_CTR;
+  op->cycles.done_cycle = MAX_CTR;
+  op->cycles.retire_cycle = MAX_CTR;
+  op->cycles.replay_cycle = MAX_CTR;
+  op->cycles.pred_cycle = MAX_CTR;
+  op->cycles.precommit_cycle = MAX_CTR;
+  op->cycles.decode_cycle = MAX_CTR;
+  op->cycles.wake_cycle = MAX_CTR;
 
   /* pipelined scheduler fields */
   op->chkpt_num = MAX_CTR;

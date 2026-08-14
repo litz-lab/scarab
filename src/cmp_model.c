@@ -347,13 +347,13 @@ void cmp_wake(Op* src_op, Op* dep_op, uns rdy_bit) {
   if (dep_op->state != OS_IN_RS) {
     /* However, update the rdy_cycle now so that the dependence is
        maintained when the op enters RS. */
-    dep_op->rdy_cycle = MAX2(dep_op->rdy_cycle, src_op->wake_cycle);
+    op_set_rdy_cycle(dep_op, MAX2(op_get_rdy_cycle(dep_op), op_get_wake_cycle(src_op)));
     return;
   }
 
   simple_wake(src_op, dep_op, rdy_bit);
 
-  if (op_sources_not_rdy_is_clear(dep_op) && cycle_count >= dep_op->issue_cycle && !dep_op->in_rdy_list) {
+  if (op_sources_not_rdy_is_clear(dep_op) && cycle_count >= op_get_issue_cycle(dep_op) && !dep_op->in_rdy_list) {
     _DEBUG(dep_op->proc_id, DEBUG_NODE_STAGE, "Adding to ready list  op_num:%s\n", unsstr64(dep_op->op_num));
     issue_queue_wakeup(dep_op);
   }
@@ -454,7 +454,7 @@ void warmup_uncore(uns proc_id, Addr addr, Flag write) {
 
 void cmp_warmup(Op* op) {
   uns proc_id = op->proc_id;
-  Addr ia = op->inst_info->addr;
+  Addr ia = op->inst->addr;
   Addr va = op->oracle_info.va;
   Addr dummy_line_addr;
   Addr dummy_line_addr2;
@@ -490,8 +490,8 @@ void cmp_warmup(Op* op) {
   }
 
   // Warmup caches for data
-  Flag is_load = op->inst_info->table_info.mem_type == MEM_LD;
-  Flag is_store = op->inst_info->table_info.mem_type == MEM_ST;
+  Flag is_load = op->uop->mem_type == MEM_LD;
+  Flag is_store = op->uop->mem_type == MEM_ST;
   if (is_load || is_store) {
     Cache* dcache = &(cmp_model.dcache_stage[proc_id].dcache);
     Dcache_Data* dc_data = cache_access(dcache, va, &dummy_line_addr, TRUE);
@@ -514,7 +514,7 @@ void cmp_warmup(Op* op) {
   }
 
   // Warmup BP for CF instructions
-  if (op->inst_info->table_info.cf_type != NOT_CF) {
+  if (op->uop->cf_type != NOT_CF) {
     Bp_Data* bp_data = &(cmp_model.bp_data[proc_id][0]);
     op->btb_pred_info = NULL;  // reset so bp_predict_btb() can set it (op may be reused)
     bp_predict_btb(bp_data, op);
@@ -526,7 +526,7 @@ void cmp_warmup(Op* op) {
     bp_target_known_op(bp_data, op);
     bp_resolve_op(bp_data, op);
     if (op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec) {
-      bp_recover_op(bp_data, op->inst_info->table_info.cf_type, &op->recovery_info);
+      bp_recover_op(bp_data, op->uop->cf_type, &op->recovery_info);
     }
     bp_retire_op(bp_data, op);
   }

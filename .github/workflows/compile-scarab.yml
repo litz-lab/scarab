@@ -60,9 +60,19 @@ jobs:
           fi
           echo "IPC match: $opt_ipc"
 
-  comment-pr:
+  perf-report:
     ########################################################
-    # Job: comment on PR with metrics
+    # Job: publish metrics for the commenting workflow
+    #
+    # This job must NOT try to comment on the PR itself. For a pull_request
+    # event raised from a fork, GitHub forces GITHUB_TOKEN to read-only no
+    # matter what `permissions:` declares, so issues.createComment returns
+    # 403 "Resource not accessible by integration" and the whole workflow
+    # fails -- which is what happened on #551.
+    #
+    # Instead we write the numbers to an artifact. The companion workflow
+    # comment-perf.yml picks it up on workflow_run, where it runs in the base
+    # repository's context and does get a writable token.
     ########################################################
     if: github.event_name == 'pull_request'
     needs: [build-and-run-scarab-opt, build-and-run-scarab-dbg, compare-ipc]
@@ -73,48 +83,32 @@ jobs:
           repository: litz-lab/scarab_perf
           path: baseline
 
-      - id: base
-        name: Read last baseline line
+      - name: Collect metrics
+        env:
+          SIM_IPC: ${{ needs.build-and-run-scarab-opt.outputs.ipc }}
+          SIM_KIPS: ${{ needs.build-and-run-scarab-opt.outputs.kips }}
         run: |
           last=$(tail -n1 baseline/scarab_perf.log | tr -d '\r')
-          IFS=',' read -r _ IPC KIPS <<<"$last"
-          echo "ipc=$IPC"   >>"$GITHUB_OUTPUT"
-          echo "kips=$KIPS" >>"$GITHUB_OUTPUT"
+          IFS=',' read -r _ BASE_IPC BASE_KIPS <<<"$last"
+          mkdir -p perf-report
+          # Plain key=value so the consumer can parse it without eval. The PR
+          # number is deliberately NOT written here: the consumer resolves it
+          # from the workflow_run head SHA so that a fork cannot point the
+          # comment at a different PR.
+          {
+            echo "sim_ipc=${SIM_IPC}"
+            echo "sim_kips=${SIM_KIPS}"
+            echo "base_ipc=${BASE_IPC}"
+            echo "base_kips=${BASE_KIPS}"
+          } > perf-report/metrics.txt
+          cat perf-report/metrics.txt
 
-      - name: Post PR comment
-        uses: actions/github-script@v7
+      - name: Upload metrics
+        uses: actions/upload-artifact@v4
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const simKips  = parseFloat("${{ needs.build-and-run-scarab-opt.outputs.kips }}");
-            const simIpc   = parseFloat("${{ needs.build-and-run-scarab-opt.outputs.ipc  }}");
-            const baseKips = parseFloat("${{ steps.base.outputs.kips      }}");
-            const baseIpc  = parseFloat("${{ steps.base.outputs.ipc       }}");
-
-            // 1× → green, <1× → red, >1× → blue
-            function coloured(v) {
-              const EPS = 1e-3;          // tolerance for “equal”
-              let colour = 'green';
-              if (v > 1 + EPS) colour = 'blue';
-              else if (v < 1 - EPS) colour = 'red';
-              return `<span style="color:${colour};font-weight:bold">${v.toFixed(2)}×</span>`;
-            }
-
-            const body = `
-              📊 **Scarab simulation**
-
-              | Metric | PR | Baseline | Δ |
-              | ------ | --:| -------: | :- |
-              | **KIPS** | \`${simKips}\` | \`${baseKips}\` | ${coloured(simKips / baseKips)} |
-              | **IPC**  | \`${simIpc}\`  | \`${baseIpc}\`  | ${coloured(simIpc  / baseIpc )} |
-            `;
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo:  context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body
-            });
+          name: perf-report
+          path: perf-report/
+          retention-days: 7
 
   update-baseline:
     ########################################################

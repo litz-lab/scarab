@@ -61,3 +61,40 @@ Inst_Info *cpp_hash_table_access_create(int core, uint64_t addr, uint64_t lsb_by
     return &inserted.first->second;
   }
 }
+
+// Per-macro-instruction static info: keyed by {addr, binary} only (op_idx fixed at 0), so all
+// uops of the same macro share one entry.
+std::unordered_map<key, Static_Inst_Info, hash_fn> per_core_static_inst_map[MAX_NUM_PROCS];
+
+Static_Inst_Info *cpp_static_inst_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes,
+                                                unsigned char *new_entry) {
+  *new_entry = false;
+  key _key(addr, lsb_bytes, msb_bytes, 0);
+  auto &hash_map = per_core_static_inst_map[core];
+  auto lookup = hash_map.find(_key);
+  if (lookup != hash_map.end()) {
+    return &lookup->second;
+  } else {
+    auto inserted = hash_map.emplace(_key, Static_Inst_Info{});
+    *new_entry = inserted.second;
+    return &inserted.first->second;
+  }
+}
+
+// Per-uop static info: keyed by {addr, binary, op_idx}.
+std::unordered_map<key, Static_Op_Info, hash_fn> per_core_static_op_map[MAX_NUM_PROCS];
+
+Static_Op_Info *cpp_static_op_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes,
+                                            uint8_t op_idx, unsigned char *new_entry) {
+  *new_entry = false;
+  key _key(addr, lsb_bytes, msb_bytes, op_idx);
+  auto &hash_map = per_core_static_op_map[core];
+  auto lookup = hash_map.find(_key);
+  if (lookup != hash_map.end()) {
+    return &lookup->second;
+  } else {
+    auto inserted = hash_map.emplace(_key, Static_Op_Info{});
+    *new_entry = inserted.second;
+    return &inserted.first->second;
+  }
+}

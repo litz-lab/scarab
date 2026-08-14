@@ -290,7 +290,7 @@ uns8 bp_hybridgp_pred(Op* op, Bp_Pred_Level pred_level) {
   const uns proc_id = op->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
 
-  const Addr addr = op->inst_info->addr;
+  const Addr addr = op->inst->addr;
   const uns32 ghist = bp_pred_info->pred_global_hist;
   const uns32 phist = get_local_history(hybridgp_state, addr);
   const auto indices = cook_indices(addr, ghist, phist);
@@ -307,7 +307,7 @@ uns8 bp_hybridgp_pred(Op* op, Bp_Pred_Level pred_level) {
     }
   }
 
-  op->pred_cycle = cycle_count;
+  op_set_pred_cycle(op, cycle_count);
   bp_pred_info->hybridgp_gpred = gpred;
   bp_pred_info->hybridgp_ppred = ppred;
   bp_pred_info->pred_local_hist = phist;
@@ -335,7 +335,7 @@ void bp_hybridgp_spec_update(Op* op, Bp_Pred_Level pred_level) {
 
 void bp_hybridgp_update(Op* op, Bp_Pred_Level pred_level) {
   Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
-  if (op->inst_info->table_info.cf_type != CF_CBR && op->inst_info->table_info.cf_type != CF_REP) {
+  if (op->uop->cf_type != CF_CBR && op->uop->cf_type != CF_REP) {
     // If op is not a conditional branch/REP, we do not interact with hybridgp.
     return;
   }
@@ -343,19 +343,19 @@ void bp_hybridgp_update(Op* op, Bp_Pred_Level pred_level) {
   const uns proc_id = op->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
 
-  const Addr addr = op->inst_info->addr;
+  const Addr addr = op->inst->addr;
   const uns32 ghist = bp_pred_info->pred_global_hist;
   const uns32 phist = bp_pred_info->pred_local_hist;
   const auto indices = cook_indices(addr, ghist, phist);
 
-  const uns32 resolution_time = cycle_count - op->pred_cycle;  // a bucket of 10s
-  const uns32 resolution_bucket = (cycle_count - op->pred_cycle) / 10;
+  const uns32 resolution_time = cycle_count - op_get_pred_cycle(op);  // a bucket of 10s
+  const uns32 resolution_bucket = (cycle_count - op_get_pred_cycle(op)) / 10;
 
   if (KNOB_PRINT_BRINFO)
     STAT_EVENT(proc_id, PRED_TO_UPDATE_CYCLES_0 + MIN2(50, resolution_bucket));
   else
-    STAT_EVENT(proc_id, PRED_TO_UPDATE_CYCLES_0 + MIN2(30, cycle_count - op->pred_cycle - DECODE_CYCLES));
-  ASSERT(proc_id, cycle_count - op->pred_cycle - DECODE_CYCLES > 0);
+    STAT_EVENT(proc_id, PRED_TO_UPDATE_CYCLES_0 + MIN2(30, cycle_count - op_get_pred_cycle(op) - DECODE_CYCLES));
+  ASSERT(proc_id, cycle_count - op_get_pred_cycle(op) - DECODE_CYCLES > 0);
 
   if (USE_FILTER) {
     const auto loop_filter_features = get_loop_filter_features(hybridgp_state, indices.filter);

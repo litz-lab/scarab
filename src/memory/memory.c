@@ -2748,18 +2748,18 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
     op_unique = sl_list_add_tail(&req->op_uniques);
     *op_unique = op->unique_num;
 
-    if (op->inst_info->table_info.mem_type == MEM_ST && !op->off_path)
+    if (op->uop->mem_type == MEM_ST && !op->off_path)
       req->dirty_l0 = TRUE;
 
     if (req->oldest_op_unique_num) {
       req->oldest_op_unique_num =
           ((op->unique_num < req->oldest_op_unique_num) ? op->unique_num : req->oldest_op_unique_num);
       req->oldest_op_op_num = ((op->unique_num < req->oldest_op_unique_num) ? op->op_num : req->oldest_op_op_num);
-      req->oldest_op_addr = ((op->unique_num < req->oldest_op_unique_num) ? op->inst_info->addr : req->oldest_op_addr);
+      req->oldest_op_addr = ((op->unique_num < req->oldest_op_unique_num) ? op->inst->addr : req->oldest_op_addr);
     } else {
       req->oldest_op_unique_num = op->unique_num;
       req->oldest_op_op_num = op->op_num;
-      req->oldest_op_addr = op->inst_info->addr;
+      req->oldest_op_addr = op->inst->addr;
     }
     if (req->off_path && !(op->off_path)) {  // cmp IGNORE
       STAT_EVENT(req->proc_id, MEM_REQ_MATCH_OFF_PATH_HIT_BY_ON_PATH);
@@ -3239,7 +3239,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
   new_req->unique_num = unique_num;  // this is for icache requests for now
   new_req->onpath_match_offpath = FALSE;
   new_req->demand_match_prefetch = FALSE;
-  new_req->dirty_l0 = op && op->inst_info->table_info.mem_type == MEM_ST && !op->off_path;
+  new_req->dirty_l0 = op && op->uop->mem_type == MEM_ST && !op->off_path;
   new_req->wb_requested_back = FALSE;
   new_req->wb_used_onpath = FALSE;
   new_req->mem_seq_num = 0;
@@ -3265,7 +3265,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
 
     new_req->oldest_op_unique_num = op->unique_num;
     new_req->oldest_op_op_num = op->op_num;
-    new_req->oldest_op_addr = op->inst_info->addr;
+    new_req->oldest_op_addr = op->inst->addr;
     op->req = new_req;
   }
 
@@ -3453,7 +3453,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
           op ? (int)op->op_num : -1, op ? op->off_path : FALSE);
     if ((type == MRT_DFETCH) || (type == MRT_DSTORE) || matching_req) {
       // Train the Data prefetcher as a miss
-      //	    pref_ul1_miss(addr, (op ? op->inst_info->addr : 0));
+      //	    pref_ul1_miss(addr, (op ? op->inst->addr : 0));
       // Why? If it was a true miss, the original req would have matched.
       // Otherwise the pref_hit_late should have got it.
     }
@@ -3542,10 +3542,10 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       data = (L1_Data*)cache_access(&L1(proc_id)->cache, addr, &line_addr, FALSE);
 
       if (data) {
-        pref_ul1_hit(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_ul1_hit(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
       } else {
         // TREAT queue hits as misses
-        pref_ul1_miss(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_ul1_miss(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
       }
     }
   } else {
@@ -3560,10 +3560,10 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       data = (MLC_Data*)cache_access(&MLC(proc_id)->cache, addr, &line_addr, FALSE);
 
       if (data) {
-        pref_umlc_hit(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_umlc_hit(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
       } else {
         // TREAT queue hits as misses
-        pref_umlc_miss(proc_id, addr, (op ? op->inst_info->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_umlc_miss(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
       }
     }
   }
@@ -3575,7 +3575,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
   /* Step 6: Insert the request into the appropriate queue if it is not already there */
 
-  new_req->loadPC = op ? op->inst_info->addr : 0;
+  new_req->loadPC = op ? op->inst->addr : 0;
   new_req->prefetcher_id = (pref_info ? pref_info->prefetcher_id : 0);
   new_req->pref_distance = (pref_info ? pref_info->distance : 0);
   new_req->pref_loadPC = (pref_info ? pref_info->loadPC : 0);
@@ -4621,8 +4621,7 @@ void mark_ops_as_l1_miss_satisfied(Mem_Req* req) {
       ASSERTM(req->proc_id, req->proc_id == op->proc_id,
               "req addr: %llx, valid_op: %u, op_proc_id: %u op_num: %llu, "
               "offpath: %u op_type: %u, mem_type: %u\n",
-              req->addr, op->op_pool_valid, op->proc_id, op->op_num, op->off_path, op->inst_info->table_info.op_type,
-              op->inst_info->table_info.mem_type);
+              req->addr, op->op_pool_valid, op->proc_id, op->op_num, op->off_path, op->uop->op_type, op->uop->mem_type);
 
       if (op->req == req) {
         op->engine_info.l1_miss_satisfied = TRUE;
@@ -4658,7 +4657,7 @@ static void mark_l1_miss_deps(Op* op) {
          unsstr64(dep_op->oracle_info.va), unsstr64(op->unique_num),
          unsstr64(op->exec_cycle), disasm_op(op, TRUE),
          unsstr64(op->oracle_info.va)); */
-      ASSERT(dep_op->proc_id, !dep_op->engine_info.l1_miss || dep_op->inst_info->table_info.mem_type == MEM_ST);
+      ASSERT(dep_op->proc_id, !dep_op->engine_info.l1_miss || dep_op->uop->mem_type == MEM_ST);
       if (!dep_op->engine_info.dep_on_l1_miss) {
         dep_op->engine_info.dep_on_l1_miss = TRUE;
         mark_l1_miss_deps(dep_op);
@@ -4994,7 +4993,7 @@ void wp_process_reqbuf_match(Mem_Req* req, Op* op) {
         DEBUG(0,
               "Reqbuf match: On path hits off path. va:%s op:%s op:0x%s "
               "wp_op:0x%s opu:%s wpu:%s dist:%s%s\n",
-              hexstr64s(op->oracle_info.va), disasm_op(op, TRUE), hexstr64s(op->inst_info->addr),
+              hexstr64s(op->oracle_info.va), disasm_op(op, TRUE), hexstr64s(op->inst->addr),
               hexstr64s(req->oldest_op_addr), unsstr64(op->unique_num), unsstr64(req->oldest_op_unique_num),
               op->unique_num > req->oldest_op_unique_num ? " " : "-",
               op->unique_num > req->oldest_op_unique_num ? unsstr64(op->unique_num - req->oldest_op_unique_num)

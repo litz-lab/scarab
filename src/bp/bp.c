@@ -116,10 +116,9 @@ static void init_branch_pc_stats(void) {
 
 static void branch_pc_stats_update(Op* op) {
   Flag new_entry;
-  Branch_PC_Stats* s =
-      (Branch_PC_Stats*)hash_table_access_create(&branch_pc_stats_table, op->inst_info->addr, &new_entry);
+  Branch_PC_Stats* s = (Branch_PC_Stats*)hash_table_access_create(&branch_pc_stats_table, op->inst->addr, &new_entry);
   if (new_entry) {
-    s->pc = op->inst_info->addr;
+    s->pc = op->inst->addr;
     s->exec_count = 0;
     s->mispred_count = 0;
     s->mispred_at_fe_count = 0;
@@ -259,10 +258,10 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
       ASSERT(op->proc_id, bp_recovery_info->recovery_fetch_addr);
 
     bp_recovery_info->recovery_op_num = op->op_num;
-    bp_recovery_info->recovery_cf_type = op->inst_info->table_info.cf_type;
+    bp_recovery_info->recovery_cf_type = op->uop->cf_type;
     bp_recovery_info->recovery_info = op->recovery_info;
     bp_recovery_info->recovery_info.op_num = op->op_num;
-    bp_recovery_info->recovery_inst_info = op->inst_info;
+    bp_recovery_info->recovery_inst_info = op->inst;
     bp_recovery_info->recovery_force_offpath = op->off_path;
     bp_recovery_info->recovery_op = op;
     bp_recovery_info->recovery_unique_num = op->unique_num;
@@ -270,7 +269,7 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
     bp_recovery_info->wpe_flag = FALSE;
     DEBUG(bp_recovery_info->proc_id,
           "Recovery scheduled op_num:%s @ 0x%s next_fetch:0x%s offpath:%d recovery_cycle:%s (now:%s)\n",
-          unsstr64(op->op_num), hexstr64s(op->inst_info->addr), hexstr64s(next_fetch_addr), op->off_path,
+          unsstr64(op->op_num), hexstr64s(op->inst->addr), hexstr64s(next_fetch_addr), op->off_path,
           unsstr64(bp_recovery_info->recovery_cycle), unsstr64(cycle_count));
   }
 }
@@ -282,10 +281,9 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
 void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle) {
   if (bp_recovery_info->redirect_cycle == MAX_CTR || op->op_num < bp_recovery_info->redirect_op_num) {
     DEBUG(bp_recovery_info->proc_id, "Redirect signaled for op_num:%s @ 0x%s\n", unsstr64(op->op_num),
-          hexstr64s(op->inst_info->addr));
+          hexstr64s(op->inst->addr));
 
-    bp_recovery_info->redirect_cycle =
-        cycle + 1 + (op->inst_info->table_info.cf_type == CF_SYS ? EXTRA_CALLSYS_CYCLES : 0);
+    bp_recovery_info->redirect_cycle = cycle + 1 + (op->uop->cf_type == CF_SYS ? EXTRA_CALLSYS_CYCLES : 0);
     bp_recovery_info->redirect_op = op;
     bp_recovery_info->redirect_op_num = op->op_num;
     bp_recovery_info->redirect_op->redirect_scheduled = TRUE;
@@ -306,8 +304,8 @@ void bp_stat_main_branch_resolve_latency(Op* op, Counter resolve_cycle, Flag rec
   if (!(op->bp_pred_main.recover_at_decode || op->bp_pred_main.recover_at_exec))
     return;
 
-  ASSERT(op->proc_id, op->bp_cycle != MAX_CTR);
-  Counter latency = resolve_cycle > op->bp_cycle ? resolve_cycle - op->bp_cycle : 1;
+  ASSERT(op->proc_id, op_get_bp_cycle(op) != MAX_CTR);
+  Counter latency = resolve_cycle > op_get_bp_cycle(op) ? resolve_cycle - op_get_bp_cycle(op) : 1;
   uns bucket = latency > 100 ? 100 : (uns)(latency - 1);
   STAT_EVENT(op->proc_id,
              (recover_at_exec ? MAIN_BRANCH_RESOLVE_AT_EXEC_LAT_1 : MAIN_BRANCH_RESOLVE_AT_DECODE_LAT_1) + bucket);
@@ -426,13 +424,13 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   Bp* pred_bp = (pred_level == BP_PRED_L0) ? bp_data->bp_l0 : bp_data->bp;
   Addr pred_target;
   Flag btb_miss_nt = FALSE;
-  const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst_info->addr, op->inst_info->trace_info.inst_size);
+  const Addr pc_plus_offset = ADDR_PLUS_OFFSET(op->inst->addr, op->inst->inst_size);
 
   (void)br_num;
 
   ASSERT(bp_data->proc_id, bp_id < MAX_NUM_BPS);
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
-  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+  ASSERT(bp_data->proc_id, op->uop->cf_type);
   ASSERT(bp_data->proc_id, op->btb_pred_info);  // must have been set by bp_predict_btb()
 
   /* initialize recovery information---this stuff might be
@@ -447,9 +445,9 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   op->recovery_info.crs_tos = bp_data->crs.tos;
   op->recovery_info.crs_depth = bp_data->crs.depth;
   op->recovery_info.op_num = op->op_num;
-  op->recovery_info.PC = op->inst_info->addr;
+  op->recovery_info.PC = op->inst->addr;
   op->recovery_info.op = op;
-  op->recovery_info.cf_type = op->inst_info->table_info.cf_type;
+  op->recovery_info.cf_type = op->uop->cf_type;
   op->recovery_info.oracle_dir = op->oracle_info.dir;
   op->recovery_info.branchTarget = op->oracle_info.target;
   op->recovery_info.predict_cycle = cycle_count;
@@ -481,7 +479,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   }
 
   // {{{ special case--system calls
-  if (op->inst_info->table_info.cf_type == CF_SYS) {
+  if (op->uop->cf_type == CF_SYS) {
     bp_pred_info->pred = TAKEN;
     // Syscalls cause flush of later ops at decode
     bp_pred_info->recover_at_decode = TRUE;
@@ -491,7 +489,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
     pred_bp->spec_update_func(op, pred_level);
     return op->oracle_info.npc;
   } else
-    ASSERT(0, !(op->inst_info->table_info.bar_type & BAR_FETCH));
+    ASSERT(0, !(op->uop->bar_type & BAR_FETCH));
   // }}}
 
   // {{{ read pre-computed BTB/IBP results from btb_pred_info
@@ -508,7 +506,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
 
   // }}}
   // {{{ handle predictions for individual cf types
-  switch (op->inst_info->table_info.cf_type) {
+  switch (op->uop->cf_type) {
     case CF_BR:
       // BR will be predicted at decode, but fill in the info here
       bp_pred_info->pred_orig = TAKEN;
@@ -639,10 +637,10 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         DEBUG(bp_data->proc_id,
               "no flush BP:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
               "t_npc:0x%s  btb_miss:%d  recover_at_fe:%d recover_at_decode:%d recover_at_exec:%d no_tar:%d\n",
-              unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
-              hexstr64s(op->inst_info->addr), hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc),
-              btb_pred_miss(op->btb_pred_info), bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
-              bp_pred_info->recover_at_exec, op->btb_pred_info->no_target);
+              unsstr64(op->op_num), op->off_path, cf_type_names[op->uop->cf_type], hexstr64s(op->inst->addr),
+              hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc), btb_pred_miss(op->btb_pred_info),
+              bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode, bp_pred_info->recover_at_exec,
+              op->btb_pred_info->no_target);
 
         ASSERT(0, bp_pred_info->pred == op->oracle_info.dir);
         STAT_EVENT_BP_SPLIT_PATH(op, CALL_CORRECT);
@@ -651,10 +649,10 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
               "flush BP:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
               "t_npc:0x%s  btb_miss:%d  recover_at_fe:%d recover_at_decode:%d recover_at_exec:%d no_tar:%d "
               "predtarg %llx npc %llx\n",
-              unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
-              hexstr64s(op->inst_info->addr), hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc),
-              btb_pred_miss(op->btb_pred_info), bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
-              bp_pred_info->recover_at_exec, op->btb_pred_info->no_target, pred_target, op->oracle_info.npc);
+              unsstr64(op->op_num), op->off_path, cf_type_names[op->uop->cf_type], hexstr64s(op->inst->addr),
+              hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc), btb_pred_miss(op->btb_pred_info),
+              bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode, bp_pred_info->recover_at_exec,
+              op->btb_pred_info->no_target, pred_target, op->oracle_info.npc);
 
         bp_pred_info->recover_at_decode = TRUE;
         bp_pred_info->recover_at_exec = FALSE;
@@ -850,10 +848,10 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         "t_npc:0x%s  btb_miss:%d  recover_at_fe:%d recover_at_decode:%d recover_at_exec:%d no_tar:%d dir%d "
         "pred%d offset %llx target %llx\n",
         pred_bp->name, pred_level == BP_PRED_L0 ? "l0" : "main", unsstr64(op->op_num), op->off_path,
-        cf_type_names[op->inst_info->table_info.cf_type], hexstr64s(op->inst_info->addr),
-        hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc), btb_pred_miss(op->btb_pred_info),
-        bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode, bp_pred_info->recover_at_exec,
-        op->btb_pred_info->no_target, op->oracle_info.dir, bp_pred_info->pred, pc_plus_offset, op->oracle_info.target);
+        cf_type_names[op->uop->cf_type], hexstr64s(op->inst->addr), hexstr64s(bp_pred_info->pred_npc),
+        hexstr64s(op->oracle_info.npc), btb_pred_miss(op->btb_pred_info), bp_pred_info->recover_at_fe,
+        bp_pred_info->recover_at_decode, bp_pred_info->recover_at_exec, op->btb_pred_info->no_target,
+        op->oracle_info.dir, bp_pred_info->pred, pc_plus_offset, op->oracle_info.target);
 
   ASSERT(op->proc_id, bp_pred_info->pred_npc);
   if (op->oracle_info.dir != bp_pred_info->pred &&
@@ -865,30 +863,34 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
 
   ASSERT_PROC_ID_IN_ADDR(op->proc_id, bp_pred_info->pred_npc);
 
-  op->bp_cycle = cycle_count;
+  // A CF op is predicted at both levels (L0 when enabled, then MAIN) in the same
+  // cycle. Record the predictor-access cycle once, on the MAIN pass (always run),
+  // so bp_cycle stays write-once.
+  if (pred_level == BP_PRED_MAIN)
+    op_set_bp_cycle(op, cycle_count);
 
-  if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP) {
+  if (op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP) {
     if (!op->off_path) {
       if (bp_pred_info->recover_at_exec)
-        _DEBUGA(op->proc_id, 0, "ON PATH HW RECOVER_AT_EXEC  addr:0x%s  pghist:0x%s\n", hexstr64s(op->inst_info->addr),
+        _DEBUGA(op->proc_id, 0, "ON PATH HW RECOVER_AT_EXEC  addr:0x%s  pghist:0x%s\n", hexstr64s(op->inst->addr),
                 hexstr64s(bp_pred_info->pred_global_hist));
       else
-        _DEBUGA(op->proc_id, 0, "ON PATH HW CORRECT  addr:0x%s  pghist:0x%s\n", hexstr64s(op->inst_info->addr),
+        _DEBUGA(op->proc_id, 0, "ON PATH HW CORRECT  addr:0x%s  pghist:0x%s\n", hexstr64s(op->inst->addr),
                 hexstr64s(bp_pred_info->pred_global_hist));
     }
   }
 
   DEBUG_BTB(bp_data->proc_id, "BTB:  op_num:%s  off_path:%d  cf_type:%s  addr:0x%s  btb_miss:%d\n",
-            unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
-            hexstr64s(op->inst_info->addr), btb_pred_miss(op->btb_pred_info));
+            unsstr64(op->op_num), op->off_path, cf_type_names[op->uop->cf_type], hexstr64s(op->inst->addr),
+            btb_pred_miss(op->btb_pred_info));
 
   DEBUG(bp_data->proc_id,
         "BP:  op_num:%s  off_path:%d  cf_type:%s  addr:%s  p_npc:%s  "
         "t_npc:0x%s  btb_miss:%d  recover_at_fe:%d  recover_at_decode:%d  recover_at_exec:%d  no_tar:%d\n",
-        unsstr64(op->op_num), op->off_path, cf_type_names[op->inst_info->table_info.cf_type],
-        hexstr64s(op->inst_info->addr), hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc),
-        btb_pred_miss(op->btb_pred_info), bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
-        bp_pred_info->recover_at_exec, op->btb_pred_info->no_target);
+        unsstr64(op->op_num), op->off_path, cf_type_names[op->uop->cf_type], hexstr64s(op->inst->addr),
+        hexstr64s(bp_pred_info->pred_npc), hexstr64s(op->oracle_info.npc), btb_pred_miss(op->btb_pred_info),
+        bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode, bp_pred_info->recover_at_exec,
+        op->btb_pred_info->no_target);
 
   if (bp_id == MAIN_BP && ENABLE_BP_CONF && IS_CONF_CF(op)) {
     bp_data->br_conf->pred_func(op, pred_level);
@@ -942,13 +944,13 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_a
 
 void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
-  ASSERT(bp_data->proc_id, op->inst_info->table_info.cf_type);
+  ASSERT(bp_data->proc_id, op->uop->cf_type);
 
-  if (op->inst_info->table_info.cf_type != CF_SYS)
+  if (op->uop->cf_type != CF_SYS)
     bp_data->bp_btb->update_func(bp_data, op);
 
   // special case updates
-  switch (op->inst_info->table_info.cf_type) {
+  switch (op->uop->cf_type) {
     case CF_ICALL:  // fall through
     case CF_IBR:
       if (ENABLE_IBP) {
@@ -994,7 +996,7 @@ void bp_retire_op(Bp_Data* bp_data, Op* op) {
   if (bp_data->bp_l0)
     bp_data->bp_l0->retire_func(op);
 
-  if (is_h2p_tracked_cf_type(op->inst_info->table_info.cf_type))
+  if (is_h2p_tracked_cf_type(op->uop->cf_type))
     branch_pc_stats_update(op);
 }
 

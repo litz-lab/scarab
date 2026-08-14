@@ -433,7 +433,11 @@ static inline Flag dcache_stage_check_mem_type(Op* op) {
 
   /* skip prefetch ops if software prefetching is disabled */
   if (op->uop->mem_type == MEM_PF && !ENABLE_SWPRF) {
+    // The op completes here without a real dcache access; still stamp dcache/wake cycles (as the
+    // normal completion paths do) so op_assert_cycles_set_at_retire holds when it retires.
+    op_set_dcache_cycle(op, cycle_count);
     op_set_done_cycle(op, cycle_count + DCACHE_CYCLES);
+    op_set_wake_cycle(op, op_get_done_cycle(op));
     op->state = OS_SCHEDULED;
     return FALSE;
   }

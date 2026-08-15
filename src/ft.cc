@@ -113,9 +113,8 @@ void FT::add_op(Op* op) {
   }
   op->parent_FT = this;
 
-  // Group this uop into its dynamic macro instance: a new instance starts at the bom, and every
-  // uop of the macro (which are added consecutively) attaches to it. Refcounted via the ops, so it
-  // is released when the last of them is freed -- see dyn_inst_release in free_op.
+  // Group this uop into its dynamic macro instance: a new instance starts at the bom; the macro's
+  // consecutively-added uops all attach to it. Released when its eom uop is freed (see free_op).
   if (op->bom)
     building_dyn_inst = alloc_dyn_inst();
   ASSERT(proc_id, building_dyn_inst);

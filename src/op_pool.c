@@ -120,11 +120,10 @@ Dynamic_Inst* alloc_dyn_inst(void) {
   Dynamic_Inst* di = dyn_inst_free_list;
   if (di) {
     dyn_inst_free_list = di->free_list_next;
+    memset(di, 0, sizeof(*di));
   } else {
-    di = (Dynamic_Inst*)malloc(sizeof(Dynamic_Inst));
+    di = (Dynamic_Inst*)calloc(1, sizeof(Dynamic_Inst));
   }
-  // Zero on allocation so a recycled instance carries no stale sibling pointers.
-  memset(di, 0, sizeof(*di));
   return di;
 }
 

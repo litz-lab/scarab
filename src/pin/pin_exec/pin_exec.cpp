@@ -245,6 +245,11 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
       // Inserting functions to create a compressed op
       pin_decoder_insert_analysis_functions(ins);
 
+      // Re-stage the mailbox at IPOINT_AFTER (runs after create_compressed_op_after) so the staged
+      // copy carries the destination register values, which are only produced at AFTER.
+      if (INS_IsValidForIpointAfter(ins))
+        INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)after_ins_restage_op, IARG_INST_PTR, IARG_END);
+
       xed_decoded_inst_t* xed_ins = INS_XedDec(ins);
       if(INS_IsSyscall(ins) || is_ifetch_barrier(xed_ins)) {
         insert_processing_for_syscalls(ins);

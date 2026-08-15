@@ -111,37 +111,33 @@ void reset_op_pool() {
 }
 
 /**************************************************************************************/
-/* Dynamic_Inst pool: per-dynamic-macro grouping of uop ops, refcounted by the uops that reference
-   it and recycled through a simple free list (mirrors the op pool's reuse pattern). */
+/* Dynamic_Inst pool: per-dynamic-macro grouping of uop ops, recycled through a simple free list
+   (mirrors the op pool's reuse pattern). The instance is released when its eom uop is freed. */
 
 static Dynamic_Inst* dyn_inst_free_list = NULL;
 
-Dynamic_Inst* alloc_dyn_inst(uns num_uop) {
-  ASSERT(0, num_uop > 0 && num_uop <= STATIC_INST_MAX_UOPS);
+Dynamic_Inst* alloc_dyn_inst(void) {
   Dynamic_Inst* di = dyn_inst_free_list;
   if (di) {
     dyn_inst_free_list = di->free_list_next;
   } else {
     di = (Dynamic_Inst*)malloc(sizeof(Dynamic_Inst));
   }
+  // Zero on allocation so a recycled instance carries no stale sibling pointers.
   memset(di, 0, sizeof(*di));
-  di->num_uop = num_uop;
   return di;
 }
 
 void dyn_inst_attach(Dynamic_Inst* di, Op* op) {
-  ASSERT(op->proc_id, di && op->uop && op->uop->uop_seq_num < di->num_uop);
+  ASSERT(op->proc_id, di && op->uop && op->uop->uop_seq_num < op->inst->num_uop);
   op->dyn_inst = di;
   di->uops[op->uop->uop_seq_num] = op;
-  di->refs++;
 }
 
-void dyn_inst_release(Dynamic_Inst* di) {
-  ASSERT(0, di && di->refs > 0);
-  if (--di->refs == 0) {
-    di->free_list_next = dyn_inst_free_list;
-    dyn_inst_free_list = di;
-  }
+void free_dyn_inst(Dynamic_Inst* di) {
+  ASSERT(0, di);
+  di->free_list_next = dyn_inst_free_list;
+  dyn_inst_free_list = di;
 }
 
 /* alloc_op:  returns a pointer to the next available op */
@@ -195,8 +191,11 @@ void free_op(Op* op) {
     op->uop = NULL;
   }
 
+  // The macro's dynamic instance is shared by all its uops; release it once, when its eom (the last
+  // uop to be freed, since uops retire/free in order) goes. Other uops just drop their pointer.
   if (op->dyn_inst) {
-    dyn_inst_release(op->dyn_inst);
+    if (op->eom)
+      free_dyn_inst(op->dyn_inst);
     op->dyn_inst = NULL;
   }
 

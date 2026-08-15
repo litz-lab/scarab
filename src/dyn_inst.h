@@ -35,12 +35,11 @@ struct Op_struct;
 
 /* One dynamic execution of a macro-instruction: pointers to the dynamic uop ops it cracked into,
  * shared by all of those uops. Pool-allocated when the macro begins building in an FT and recycled
- * when its last referencing uop op is freed (refcount reaches 0). Lets any uop reach its siblings --
- * e.g. the end-of-macro op -- directly, without walking the FT. Distinct from Static_Inst_Info, which
- * is interned/shared across every dynamic instance of the same PC. */
+ * when its end-of-macro (last) uop is freed -- which, because uops retire/free in order, is the last
+ * of them to go. Lets any uop reach its siblings -- e.g. the eom -- directly, without walking the FT.
+ * Distinct from Static_Inst_Info, which is interned/shared across every dynamic instance of the same
+ * PC (and already holds the uop count, so it is not duplicated here). */
 typedef struct Dynamic_Inst_struct {
-  uns8 num_uop;                                  // number of dynamic uops (== op->inst->num_uop)
-  uns8 refs;                                     // live uop ops referencing this; recycled at 0
   struct Op_struct* uops[STATIC_INST_MAX_UOPS];  // the dynamic uop ops, indexed by uop_seq_num
   struct Dynamic_Inst_struct* free_list_next;    // pool free-list link (valid only while recycled)
 } Dynamic_Inst;
@@ -49,12 +48,12 @@ typedef struct Dynamic_Inst_struct {
 extern "C" {
 #endif
 
-// Allocate a fresh instance for a macro cracking into num_uop uops (refs = 0, uops[] cleared).
-Dynamic_Inst* alloc_dyn_inst(uns num_uop);
-// Link op <-> di: record op at its uop_seq_num slot and take a reference.
+// Allocate a fresh, zeroed instance for a macro (all uop slots cleared).
+Dynamic_Inst* alloc_dyn_inst(void);
+// Link op <-> di: record op at its uop_seq_num slot.
 void dyn_inst_attach(Dynamic_Inst* di, struct Op_struct* op);
-// Drop one reference; recycle the instance to the pool when the last uop is freed.
-void dyn_inst_release(Dynamic_Inst* di);
+// Recycle the instance to the pool (called when its eom uop is freed).
+void free_dyn_inst(Dynamic_Inst* di);
 
 #ifdef __cplusplus
 }

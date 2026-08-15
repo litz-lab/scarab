@@ -117,7 +117,7 @@ void FT::add_op(Op* op) {
   // uop of the macro (which are added consecutively) attaches to it. Refcounted via the ops, so it
   // is released when the last of them is freed -- see dyn_inst_release in free_op.
   if (op->bom)
-    building_dyn_inst = alloc_dyn_inst(op->inst->num_uop);
+    building_dyn_inst = alloc_dyn_inst();
   ASSERT(proc_id, building_dyn_inst);
   dyn_inst_attach(building_dyn_inst, op);
 

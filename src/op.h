@@ -272,20 +272,19 @@ struct Op_struct {
  * as long as they are mutually exclusive for a given op. rdy_cycle is the sole
  * exception (an accumulator: MAX over the op's producers) and has no assert. */
 
-// Number of dynamic uops in this op's macro instance.
+// Number of dynamic uops in this op's macro instance (from the interned static info).
 static inline uns op_macro_num_uops(const Op* op) {
-  ASSERT(op->proc_id, op->dyn_inst);
-  return op->dyn_inst->num_uop;
+  return op->inst->num_uop;
 }
 // The i-th dynamic uop op of this op's macro instance (0 == bom, num_uop-1 == eom).
 static inline Op* op_macro_uop(const Op* op, uns i) {
-  ASSERT(op->proc_id, op->dyn_inst && i < op->dyn_inst->num_uop);
+  ASSERT(op->proc_id, op->dyn_inst && i < op->inst->num_uop);
   return op->dyn_inst->uops[i];
 }
 // The end-of-macro (last) dynamic uop op of this op's macro instance.
 static inline Op* op_macro_eom(const Op* op) {
   ASSERT(op->proc_id, op->dyn_inst);
-  return op->dyn_inst->uops[op->dyn_inst->num_uop - 1];
+  return op->dyn_inst->uops[op->inst->num_uop - 1];
 }
 
 static inline Counter op_get_fetch_cycle(const Op* op) {

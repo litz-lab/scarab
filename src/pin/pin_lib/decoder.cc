@@ -249,8 +249,6 @@ void create_compressed_op_after(ADDRINT iaddr) {
   if (fast_forward_count)
     return;
 
-  assert(inst_info_storage.count(iaddr) == 1);
-  filled_inst_info = inst_info_storage[iaddr];
   fill_register_values(filled_inst_info, true, glb_dst_vector_vals, filled_inst_info->num_dst_regs);
 }
 

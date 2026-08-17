@@ -61,6 +61,11 @@ typedef struct Map_Data_struct {
 
   /* register files for INT/FP with arch/physical tables */
   Reg_File* reg_file[REG_FILE_REG_TYPE_NUM];
+
+  /* TRUE once an off-path op has reached rename since the last recovery: the SRT
+   * then holds off-path renames that a recovery must undo. Drives the single SRT
+   * checkpoint -- snapshot taken on the on->off transition, rolled back at recover. */
+  Flag map_offpath;
 } Map_Data;
 
 /**************************************************************************************/

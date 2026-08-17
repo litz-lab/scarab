@@ -272,6 +272,7 @@ void decode_stage_process_op(Op* op) {
       DEBUG(dec->proc_id, "Decode schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
             (unsigned long long)cycle_count);
       bp_stat_main_branch_resolve_latency(op, cycle_count, FALSE);
+      op->recovery_info.recovery_point = RECOVER_AT_DECODE;
       bp_sched_recovery(bp_recovery_info, op, cycle_count);
 
       op->btb_pred_info->btb_miss_resolved = TRUE;

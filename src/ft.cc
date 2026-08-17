@@ -45,6 +45,7 @@ extern "C" {
 #include "isa/isa_macros.h"
 
 #include "decoupled_frontend.h"
+#include "load_value_pred.h"
 #include "op_pool.h"
 #include "uop_cache.h"
 
@@ -243,6 +244,7 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
   uns index_uns = static_cast<uns>(split_index);
   ASSERT(proc_id, index_uns < ops.size() && index_uns >= 0);
   ASSERT(proc_id, get_is_prebuilt());
+  ASSERT(proc_id, ops[split_index]->eom);
 
   // if split at the last op and FT already ended, no need to create new FT, just update end condition
   if (split_index == ops.size() - 1 && get_end_reason() != FT_NOT_ENDED) {
@@ -364,6 +366,7 @@ FT_PredictResult FT::predict_ft() {
             ASSERT(proc_id, recovery_latency > BP_L0_LATENCY);
             const Counter recovery_cycle = fetch_cycle + recovery_latency - BP_L0_LATENCY;
 
+            op->recovery_info.recovery_point = RECOVER_AT_FE;
             bp_sched_recovery(bp_recovery_info, op, recovery_cycle);
             event = l0_event;
           }
@@ -402,6 +405,24 @@ FT_PredictResult FT::predict_ft() {
 
     if (event == FT_EVENT_FETCH_BARRIER) {
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
+    }
+
+    // Load-value/addr prediction on a plain load. A load whose macro ends in a control transfer
+    // (RET/CALL pop the stack) has a CF eom that never went through branch prediction, so predicting
+    // it would drive a recovery on a CF op with no bp_pred_info; !static_inst_has_cf excludes those
+    // off op->inst (and implies this load uop is itself NOT_CF) without walking to the eom.
+    if (!op->off_path && bp_id == MAIN_BP && op->uop->mem_type == MEM_LD && !static_inst_has_cf(op->inst) &&
+        load_pred_predict_op(op)) {
+      load_pred_mark_recovery(op);
+      if (!ended_by_exit()) {
+        // The recovery target is the macro's eom. op->dyn_inst gives it directly, and it sits
+        // (num_uops-1 - this uop's index) slots ahead of op in the FT (uops are contiguous).
+        Op* eom = op_inst_eom(op);
+        uns64 eom_idx = idx + (op_inst_num_uops(op) - 1 - op->uop->uop_seq_num);
+        ASSERT(op->proc_id, ops[eom_idx] == eom && eom->eom);
+        const Addr fall_through = ADDR_PLUS_OFFSET(op->inst->addr, op->inst->inst_size);
+        return {eom_idx, FT_EVENT_MISPREDICT, eom, fall_through};
+      }
     }
 
     if (event != FT_EVENT_NONE) {
@@ -518,11 +539,6 @@ void FT::clear_recovery_info() {
     op->bp_pred_info->recovery_point = RECOVER_AT_NONE;
   }
 }
-
-// generate_uop_cache_data was moved to uop_cache.cc as
-// generate_uop_cache_data_from_FT(FT*, std::vector<Uop_Cache_Data>&)
-// to keep FT class focused on FT semantics. Implementation lives in
-// uop_cache.cc and is declared a friend of FT (see ft.h).
 
 /* FT wrappers */
 bool ft_can_fetch_op(FT* ft) {

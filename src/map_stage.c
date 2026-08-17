@@ -264,6 +264,15 @@ static inline void stage_process_op(Op* op) {
 
   /* setting wake up lists */
   add_to_wake_up_lists(op, model->wake_hook);
+
+  /* Value/RFP prediction: the predicted result is produced into the phys reg at
+   * rename (here, not at FT) and wakes dependents now; ready_delay defers
+   * availability (0 value, DCACHE_CYCLES RFP). dcache suppresses the duplicate wake. */
+  if (op->load_value_predicted) {
+    op->load_pred_ready_cycle = cycle_count + op->load_pred_ready_delay;
+    op_set_wake_cycle(op, op->load_pred_ready_cycle);
+    wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+  }
 }
 
 static inline void map_stage_collect_stat(Flag stall, Flag starved) {

@@ -898,6 +898,9 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       uc->sd.ops[ii]->fetched_from_uop_cache = TRUE;
     }
 
+    // sync ic->off_path from op->off_path (authoritative) at the first off-path op
+    if (op->off_path)
+      ic->off_path = TRUE;
     ASSERTM(ic->proc_id, ic->off_path == op->off_path, "Inconsistent off-path op PC: %llx ic:%i op:%i\n",
             op->inst->addr, ic->off_path, op->off_path);
 

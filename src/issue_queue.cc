@@ -934,13 +934,13 @@ void IssueQueues::schedule() {
     num_of_ready_ops_onpath += queue.get_num_of_ready_ops_onpath();
     num_of_ready_ops_general += queue.get_num_of_ready_ops_general();
   }
-  uns unused_ilp_slots_onpath = ISSUE_WIDTH - num_of_ready_ops_onpath;
-  uns unused_ilp_slots_general = ISSUE_WIDTH - num_of_ready_ops_general;
+  uns unused_ilp_slots_onpath = DISPATCH_WIDTH - num_of_ready_ops_onpath;
+  uns unused_ilp_slots_general = DISPATCH_WIDTH - num_of_ready_ops_general;
 
-  if (num_of_ready_ops_onpath > ISSUE_WIDTH)
+  if (num_of_ready_ops_onpath > DISPATCH_WIDTH)
     unused_ilp_slots_onpath = 0;
 
-  if (num_of_ready_ops_general > ISSUE_WIDTH)
+  if (num_of_ready_ops_general > DISPATCH_WIDTH)
     unused_ilp_slots_general = 0;
 
   INC_STAT_EVENT(proc_id, TOPDOWN_UNUSED_ILP_SLOTS_ONPATH, unused_ilp_slots_onpath);

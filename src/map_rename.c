@@ -419,10 +419,6 @@ static inline void reg_file_write_dst(Op *op, int self_reg_table_type, int paren
 
 // only update metadata since the register dependency wake up will be done in the map module
 static inline void reg_file_consume_src(Op *op, int *reg_table_types, int reg_table_num) {
-  // Addr-predicted load issues before its operands are read, so it does not consume here at exec;
-  // it reads and consumes its sources together once they wake (reg_file_read_src_at_wakeup).
-  if (op->load_addr_predicted)
-    return;
   for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)
@@ -674,9 +670,8 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
   entry->atomic_pending_consumed = 0;
 }
 
-// consumer bookkeeping for one source register, shared by the rename-time read and the
-// addr-predicted load's deferred read at operand wake-up (reg_file_read_src_at_wakeup)
-static inline void reg_table_entry_mark_read(struct reg_table_entry *entry, Op *op) {
+/* update the metadata when it is read during renaming */
+void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
   if (entry->atomic_pending_consumed != REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX) {
     entry->atomic_pending_consumed++;
   }
@@ -687,15 +682,6 @@ static inline void reg_table_entry_mark_read(struct reg_table_entry *entry, Op *
   entry->onpath_consumers_num++;
   entry->lastuse_op_num = op->op_num;
   entry->lastuse_committed = FALSE;
-}
-
-/* update the metadata when it is read during renaming */
-void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
-  // Addr-predicted load issues early on its predicted address before its base/index operands are
-  // read, so it registers as their consumer later, at operand wake-up, not here at rename.
-  if (op->load_addr_predicted)
-    return;
-  reg_table_entry_mark_read(entry, op);
 }
 
 /* update reg_table entry by setting its key (lookup reg_id) and value (tag and op whose dest is assigned to reg_id) */
@@ -764,7 +750,7 @@ void reg_file_read_src_at_wakeup(Op *op) {
     ASSERT(op->proc_id, reg_id != REG_TABLE_REG_ID_INVALID);
     struct reg_table *reg_table = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
     struct reg_table_entry *entry = &reg_table->entries[reg_id];
-    reg_table_entry_mark_read(entry, op);
+    reg_table_entry_read(entry, op);
     reg_table_entry_consume(entry, op);
   }
 }
@@ -858,7 +844,10 @@ int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id) {
   ASSERT(map_data->proc_id, self_reg_id != REG_TABLE_REG_ID_INVALID);
 
   struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
-  entry->ops->read(entry, op);
+  // Addr-predicted load defers its source read to operand wake-up (reg_file_read_src_at_wakeup),
+  // so it does not register as a consumer here at rename.
+  if (!op->load_addr_predicted)
+    entry->ops->read(entry, op);
   return self_reg_id;
 }
 
@@ -1067,6 +1056,9 @@ Flag reg_renaming_scheme_realistic_issue(Op *op) {
 
 // consume the src registers
 void reg_renaming_scheme_realistic_consume(Op *op) {
+  // Addr-predicted load reads and consumes its sources later, at operand wake-up, not here.
+  if (op->load_addr_predicted)
+    return;
   int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
 
   // consume the src register in the physical reg table
@@ -1220,9 +1212,11 @@ void reg_renaming_scheme_late_allocation_consume(Op *op) {
   reg_file_read_src(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_VIRTUAL);
   reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_VIRTUAL);
 
-  // consume for both register tables
-  int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
-  reg_file_consume_src(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
+  // consume for both register tables (addr-pred load consumes later, at operand wake-up)
+  if (!op->load_addr_predicted) {
+    int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
+    reg_file_consume_src(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
+  }
 }
 
 void reg_renaming_scheme_late_allocation_produce(Op *op) {

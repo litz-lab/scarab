@@ -1070,8 +1070,10 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 
 // flush registers of misprediction operands using the ptag info
 void reg_renaming_scheme_realistic_recover(Op *op) {
-  // only exec recoveries pollute the SRT; decode/frontend recoveries squash before rename
-  if (op->bp_pred_info->recovery_point != RECOVER_AT_EXEC)
+  // only exec recoveries pollute the SRT; decode/frontend recoveries squash before rename. Recovery
+  // fires on the macro's eom, whose own recovery_point is NONE (it lives on the trigger uop), so gate
+  // on op_inst_recovery_point -- matching the snapshot guard in reg_renaming_scheme_realistic_rename.
+  if (op_inst_recovery_point(op) != RECOVER_AT_EXEC)
     return;
 
   reg_file_rollback_srt();
@@ -1221,8 +1223,9 @@ void reg_renaming_scheme_late_allocation_produce(Op *op) {
 }
 
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
-  // only exec recoveries touch the SRT -- see the realistic scheme
-  if (op->bp_pred_info->recovery_point != RECOVER_AT_EXEC)
+  // only exec recoveries touch the SRT -- see the realistic scheme (gate on the macro trigger, not
+  // the eom whose own recovery_point is NONE)
+  if (op_inst_recovery_point(op) != RECOVER_AT_EXEC)
     return;
 
   reg_file_rollback_srt();

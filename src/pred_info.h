@@ -31,6 +31,15 @@
 
 #include "globals/global_types.h"
 
+// Pipeline stage at which an op's prediction schedules its recovery. Exactly one-hot: an op recovers
+// at a single stage (or not at all). Shared with Recovery_Info.recovery_point.
+typedef enum Recovery_Point_enum {
+  RECOVER_AT_NONE,    // no recovery scheduled for this prediction
+  RECOVER_AT_EXEC,    // recovery at exec (branches; and mispredicted predicted loads)
+  RECOVER_AT_DECODE,  // recovery at decode
+  RECOVER_AT_FE,      // recovery in the frontend (early correction; L0)
+} Recovery_Point;
+
 typedef struct Bp_Pred_Info_struct {
   Addr pred_npc;           // predicted next pc field
   Counter bp_ready_cycle;  // cycle when this level's prediction becomes available
@@ -38,9 +47,7 @@ typedef struct Bp_Pred_Info_struct {
   uns8 pred;               // predicted direction of branch, set by the branch predictor
   uns8 pred_orig;          // predicted direction of branch, not overwritten on BTB miss (for fdip)
   Flag recovery_sch;       // true if this op has scheduled a recovery
-  Flag recover_at_fe;      // op will schedule recovery in frontend (early correction)
-  Flag recover_at_decode;  // op will schedule recovery at decode
-  Flag recover_at_exec;    // op will schedule recovery at exec
+  Recovery_Point recovery_point;  // stage at which this op's prediction recovers (RECOVER_AT_NONE if none)
 
   // Only for perceptron
   uns64 pred_perceptron_global_hist;            // global history used to predict the branch

@@ -101,7 +101,8 @@ void bp_conf_pred(Op* op, Bp_Pred_Level pred_level) {
   uns32 index;
   uns entry;
   Flag pred_conf;
-  Flag recover_at_decode_or_exec = bp_pred_info->recover_at_decode || bp_pred_info->recover_at_exec;
+  Flag recover_at_decode_or_exec =
+      (bp_pred_info->recovery_point == RECOVER_AT_DECODE || bp_pred_info->recovery_point == RECOVER_AT_EXEC);
 
   // only updated on conditional branches
   Addr addr = op->inst->addr;
@@ -129,8 +130,9 @@ void bp_conf_pred(Op* op, Bp_Pred_Level pred_level) {
     pred_conf = !recover_at_decode_or_exec;
 
   _DEBUG(0, DEBUG_BP_CONF, "bp_conf_pred: op:%s recover_at_fe:%d recover_at_decode:%d recover_at_exec:%d pred:%d,%d\n",
-         unsstr64(op->op_num), bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
-         bp_pred_info->recover_at_exec, pred_conf, pred_conf != recover_at_decode_or_exec);
+         unsstr64(op->op_num), bp_pred_info->recovery_point == RECOVER_AT_FE,
+         bp_pred_info->recovery_point == RECOVER_AT_DECODE, bp_pred_info->recovery_point == RECOVER_AT_EXEC, pred_conf,
+         pred_conf != recover_at_decode_or_exec);
 
   bp_pred_info->pred_conf_index = index;
   bp_pred_info->pred_conf = pred_conf;
@@ -149,11 +151,12 @@ void bp_conf_pred(Op* op, Bp_Pred_Level pred_level) {
 void bp_update_conf(Op* op) {
   uns32 index = op->bp_pred_info->pred_conf_index;
   uns* entry = &bpc_data->bpc_ctr_table[index];
-  Flag recover_at_decode_or_exec = op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec;
+  Flag recover_at_decode_or_exec =
+      (op->bp_pred_info->recovery_point == RECOVER_AT_DECODE || op->bp_pred_info->recovery_point == RECOVER_AT_EXEC);
 
   _DEBUG(0, DEBUG_BP_CONF, "bp_update_conf: op:%s recover_at_fe:%d recover_at_decode:%d recover_at_exec:%d\n",
-         unsstr64(op->op_num), op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode,
-         op->bp_pred_info->recover_at_exec);
+         unsstr64(op->op_num), op->bp_pred_info->recovery_point == RECOVER_AT_FE,
+         op->bp_pred_info->recovery_point == RECOVER_AT_DECODE, op->bp_pred_info->recovery_point == RECOVER_AT_EXEC);
 
   // update the counters
   if (BPC_MECH)
@@ -184,7 +187,8 @@ void pred_onpath_conf(Op* op, Bp_Pred_Level pred_level) {
 
   // update the opc_table
   ASSERT(0, bpc_data->count < OPC_SIZE);
-  opc_table->recover_at_decode_or_exec = bp_pred_info->recover_at_decode || bp_pred_info->recover_at_exec;
+  opc_table->recover_at_decode_or_exec =
+      (bp_pred_info->recovery_point == RECOVER_AT_DECODE || bp_pred_info->recovery_point == RECOVER_AT_EXEC);
   opc_table->pred_conf = bp_pred_info->pred_conf;
   opc_table->off_path = op->off_path;
   opc_table->verified = FALSE;
@@ -201,10 +205,10 @@ void pred_onpath_conf(Op* op, Bp_Pred_Level pred_level) {
          "pred_onpath_conf: op:%s ind:%u 0x%llx recover_at_fe:%d recover_at_decode:%d recover_at_exec:%d "
          "pred_ok:%d,%c "
          "off_path:%d pred_onpath:%d,%c\n",
-         unsstr64(op->op_num), head, op->inst->addr, bp_pred_info->recover_at_fe, bp_pred_info->recover_at_decode,
-         bp_pred_info->recover_at_exec, opc_table->pred_conf,
-         opc_table->recover_at_decode_or_exec != opc_table->pred_conf ? 'c' : 'm', opc_table->off_path, pred_onpath,
-         opc_table->off_path != pred_onpath ? 'c' : 'm');
+         unsstr64(op->op_num), head, op->inst->addr, bp_pred_info->recovery_point == RECOVER_AT_FE,
+         bp_pred_info->recovery_point == RECOVER_AT_DECODE, bp_pred_info->recovery_point == RECOVER_AT_EXEC,
+         opc_table->pred_conf, opc_table->recover_at_decode_or_exec != opc_table->pred_conf ? 'c' : 'm',
+         opc_table->off_path, pred_onpath, opc_table->off_path != pred_onpath ? 'c' : 'm');
 
   print_onpath_conf();
 
@@ -220,13 +224,15 @@ void pred_onpath_conf(Op* op, Bp_Pred_Level pred_level) {
 
 void update_onpath_conf(Op* op) {
   uns index = op->bp_pred_info->opc_index;
-  Flag recover_at_decode_or_exec = op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec;
+  Flag recover_at_decode_or_exec =
+      (op->bp_pred_info->recovery_point == RECOVER_AT_DECODE || op->bp_pred_info->recovery_point == RECOVER_AT_EXEC);
   uns ii;
 
   _DEBUG(0, DEBUG_ONPATH_CONF,
          "update_onpath_conf: %s ind:%u recover_at_fe:%d recover_at_decode:%d recover_at_exec:%d off_path:%d\n",
-         unsstr64(op->op_num), index, op->bp_pred_info->recover_at_fe, op->bp_pred_info->recover_at_decode,
-         op->bp_pred_info->recover_at_exec, op->off_path);
+         unsstr64(op->op_num), index, op->bp_pred_info->recovery_point == RECOVER_AT_FE,
+         op->bp_pred_info->recovery_point == RECOVER_AT_DECODE, op->bp_pred_info->recovery_point == RECOVER_AT_EXEC,
+         op->off_path);
 
   bpc_data->opc_table[index].pred_conf = !recover_at_decode_or_exec;
   bpc_data->opc_table[index].verified = TRUE;
@@ -407,7 +413,8 @@ void conf_perceptron_pred(Op* op, Bp_Pred_Level pred_level) {
   uns64 hist = 0;
   uns32 index = CONF_PERCEPTRON_HASH(addr);
   uns8 pred_conf = 0;
-  Flag recover_at_decode_or_exec = bp_pred_info->recover_at_decode || bp_pred_info->recover_at_exec;
+  Flag recover_at_decode_or_exec =
+      (bp_pred_info->recovery_point == RECOVER_AT_DECODE || bp_pred_info->recovery_point == RECOVER_AT_EXEC);
   int32 output = 0;
   uns ii;
   uns64 mask;
@@ -531,7 +538,7 @@ void conf_perceptron_update(Op* op) {
           // predicted
   int c;  // c = 1 : low confidence , c = -1: high confidence
 
-  const Flag recover = op->bp_pred_info->recover_at_exec;
+  const Flag recover = op->bp_pred_info->recovery_point == RECOVER_AT_EXEC;
   if (recover)
     p = 1;
   else

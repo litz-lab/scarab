@@ -957,11 +957,13 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
       if (DJOLT_ENABLE)
         update_djolt(ic->proc_id, op->inst->addr, op->uop->cf_type, op->bp_pred_info->pred_npc);
 
-      ASSERT(ic->proc_id, ((op->bp_pred_info->recover_at_exec << 2) | (op->bp_pred_info->recover_at_decode << 1) |
+      ASSERT(ic->proc_id, (((op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) << 2) |
+                           ((op->bp_pred_info->recovery_point == RECOVER_AT_DECODE) << 1) |
                            btb_pred_miss(op->btb_pred_info)) <= 0x7);
 
-      ic->off_path = ic->off_path || op->bp_pred_info->recover_at_fe || op->bp_pred_info->recover_at_decode ||
-                     op->bp_pred_info->recover_at_exec;
+      ic->off_path = ic->off_path || (op->bp_pred_info->recovery_point == RECOVER_AT_FE) ||
+                     op->bp_pred_info->recovery_point == RECOVER_AT_DECODE ||
+                     op->bp_pred_info->recovery_point == RECOVER_AT_EXEC;
 
       // Measuring basic block lengths
       /*static int bbl_len = 0;

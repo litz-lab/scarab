@@ -525,7 +525,7 @@ void cmp_warmup(Op* op) {
     bp_btb_post_bp_predict(bp_data, op);  // for next BTB access
     bp_target_known_op(bp_data, op);
     bp_resolve_op(bp_data, op);
-    if (op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec) {
+    if (op->bp_pred_info->recovery_point == RECOVER_AT_DECODE || op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
       bp_recover_op(bp_data, op->uop->cf_type, &op->recovery_info);
     }
     bp_retire_op(bp_data, op);

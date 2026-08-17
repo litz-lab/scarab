@@ -194,8 +194,8 @@ void print_op_field(FILE* stream, Op* op, uns field) {
             fprintf(stream, "%c%c", Op_State_str(op->state)[0], op->replay ? 'r' : ' ');
         }
         if (op->uop->cf_type && op->bp_pred_info && op->btb_pred_info) {
-          Flag bits = (op->bp_pred_info->recover_at_exec << 2) | (op->bp_pred_info->recover_at_decode << 1) |
-                      btb_pred_miss(op->btb_pred_info);
+          Flag bits = ((op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) << 2) |
+                      ((op->bp_pred_info->recovery_point == RECOVER_AT_DECODE) << 1) | btb_pred_miss(op->btb_pred_info);
           switch (bits) {
             case 0x4:
               fprintf(stream, "P|");

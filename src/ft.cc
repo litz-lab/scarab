@@ -300,22 +300,22 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
     DEBUG(proc_id,
           "[DFE%u] Predict CF fetch_addr:%llx true_npc:%llx pred_npc:%llx recover_at_fe:%i btb miss:%i taken:%i "
           "recover_at_decode:%i recover_at_exec:%i, bar_fetch:%i\n",
-          bp_id, op->inst->addr, op->oracle_info.npc, bp_pred_info->pred_npc, bp_pred_info->recover_at_fe,
-          btb_pred_miss(op->btb_pred_info), bp_pred_info->pred == TAKEN, bp_pred_info->recover_at_decode,
-          bp_pred_info->recover_at_exec, op->uop->bar_type & BAR_FETCH);
+          bp_id, op->inst->addr, op->oracle_info.npc, bp_pred_info->pred_npc,
+          bp_pred_info->recovery_point == RECOVER_AT_FE, btb_pred_miss(op->btb_pred_info), bp_pred_info->pred == TAKEN,
+          bp_pred_info->recovery_point == RECOVER_AT_DECODE, bp_pred_info->recovery_point == RECOVER_AT_EXEC,
+          op->uop->bar_type & BAR_FETCH);
     if ((op->uop->bar_type & BAR_FETCH) || IS_CALLSYS(op->uop)) {
-      bp_pred_info->recover_at_decode = FALSE;
-      bp_pred_info->recover_at_exec = FALSE;
+      bp_pred_info->recovery_point = RECOVER_AT_NONE;
       STAT_EVENT(proc_id, op->off_path ? FTQ_SAW_BAR_FETCH_OFFPATH : FTQ_SAW_BAR_FETCH_ONPATH);
       return FT_EVENT_FETCH_BARRIER;
     }
-    if (bp_pred_info->recover_at_fe || bp_pred_info->recover_at_decode || bp_pred_info->recover_at_exec) {
-      ASSERT(0, !(bp_pred_info->recover_at_decode && bp_pred_info->recover_at_exec));
+    if (bp_pred_info->recovery_point != RECOVER_AT_NONE) {
+      ASSERT(0,
+             !(bp_pred_info->recovery_point == RECOVER_AT_DECODE && bp_pred_info->recovery_point == RECOVER_AT_EXEC));
 
       if (op->off_path) {
-        bp_pred_info->recover_at_decode = FALSE;
-        bp_pred_info->recover_at_exec = FALSE;
-        bp_pred_info->recover_at_fe = FALSE;
+        bp_pred_info->recovery_point = RECOVER_AT_NONE;
+        bp_pred_info->recovery_point = RECOVER_AT_NONE;
       }
       return FT_EVENT_MISPREDICT;
     } else if (trace_mode && op->off_path && bp_pred_info->pred == TAKEN) {
@@ -328,7 +328,7 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
     }
 
   } else if (op->uop->bar_type & BAR_FETCH) {
-    ASSERT(0, !(bp_pred_info->recover_at_fe | bp_pred_info->recover_at_decode | bp_pred_info->recover_at_exec));
+    ASSERT(0, bp_pred_info->recovery_point == RECOVER_AT_NONE);
     return FT_EVENT_FETCH_BARRIER;
   }
 
@@ -344,10 +344,11 @@ FT_PredictResult FT::predict_ft() {
       INC_STAT_EVENT(proc_id, DFE_L0_ENABLED_PREDICTIONS, 1);
 
       const FT_Event l0_event = predict_op_ft_event(op, BP_PRED_L0);
-      const Flag l0_wrong = op->bp_pred_l0.recover_at_fe;
+      const Flag l0_wrong = op->bp_pred_l0.recovery_point == RECOVER_AT_FE;
 
       const FT_Event main_event = predict_op_ft_event(op, BP_PRED_MAIN);
-      const Flag main_wrong = op->bp_pred_main.recover_at_decode || op->bp_pred_main.recover_at_exec;
+      const Flag main_wrong =
+          op->bp_pred_main.recovery_point == RECOVER_AT_DECODE || op->bp_pred_main.recovery_point == RECOVER_AT_EXEC;
 
       if (l0_wrong && !main_wrong) {
         STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
@@ -515,9 +516,8 @@ void FT::generate_ft_info() {
 
 void FT::clear_recovery_info() {
   for (auto op : ops) {
-    op->bp_pred_info->recover_at_decode = FALSE;
-    op->bp_pred_info->recover_at_exec = FALSE;
-    op->bp_pred_info->recover_at_fe = FALSE;
+    op->bp_pred_info->recovery_point = RECOVER_AT_NONE;
+    op->bp_pred_info->recovery_point = RECOVER_AT_NONE;
   }
 }
 

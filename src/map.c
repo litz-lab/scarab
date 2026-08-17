@@ -555,7 +555,6 @@ static void addr_pred_on_operands_woken(Op* op) {
   ASSERT(op->proc_id, op->bp_pred_info);
   if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
     predicted_load_schedule_recovery(op, cycle_count);
-    op->bp_pred_info->recovery_point = RECOVER_AT_NONE;
   }
 }
 

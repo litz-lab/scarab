@@ -235,6 +235,7 @@ void init_bp_recovery_info(uns8 proc_id, Bp_Recovery_Info* new_bp_recovery_info)
 void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle) {
   ASSERT(op->proc_id, bp_recovery_info->proc_id == op->proc_id);
   ASSERT(0, !op->off_path);
+  op->recovery_info.recovery_point = op->bp_pred_info->recovery_point;
   if (op->bp_pred_info->recovery_point == RECOVER_AT_FE) {
     INC_STAT_EVENT(op->proc_id, SCHEDULED_L0_EARLY_LAT, cycle_count - op->recovery_info.predict_cycle);
     STAT_EVENT(op->proc_id, SCHEDULED_L0_EARLY_RECOVERIES);

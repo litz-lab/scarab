@@ -492,8 +492,6 @@ static inline void reg_file_flush_mispredict(Op *op, int *reg_table_types, int r
 
 // mark the previous entry with same archituctural id before the committed one as dead and remove it
 static inline void reg_file_release_prev(Op *op, int *reg_table_types, int reg_table_num) {
-  // Sources were registered as consumers at rename (or, for addr-predicted loads, at operand
-  // wake-up), so the consumer sanity check below holds for every op.
   for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
     int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
     if (reg_type == REG_FILE_REG_TYPE_OTHER)

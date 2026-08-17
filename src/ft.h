@@ -43,7 +43,7 @@ typedef struct FT FT;
 
 enum FT_Event {
   FT_EVENT_NONE,
-  FT_EVENT_MISPREDICT,
+  FT_EVENT_MISPREDICT,  // branch mispredict, or a predicted-load mispredict (aligned: split at the EOM)
   FT_EVENT_FETCH_BARRIER,
   FT_EVENT_OFFPATH_TAKEN_REDIRECT,
   FT_EVENT_BUILD_FAIL

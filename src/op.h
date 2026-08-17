@@ -116,8 +116,10 @@ typedef struct Wake_Up_Entry_struct {
 } Wake_Up_Entry;
 
 // this information is used when the op mispredicts
+// (Recovery_Point enum is defined in pred_info.h, shared with Bp_Pred_Info.recovery_point)
 typedef struct Recovery_Info_struct {  // QUESTION no proc_id?
   uns proc_id;
+  Recovery_Point recovery_point;
   uns bp_id;
   uns32 pred_global_hist;                  // the global history used for the prediction
   uns64 conf_perceptron_global_hist;       // Only for confidnece perceptron, a copy of the correct global history
@@ -209,15 +211,20 @@ struct Op_struct {
   uns16 queue_id;        // id for which issue queue this op is assigned to
   uns16 queue_entry_id;  // id for which entry in the issue queue this op is
 
-  struct Op_struct* next_rdy;   // pointer to next ready op (node table)
-  Flag in_rdy_list;             // is the op in the node stage's ready list?
-  struct Op_struct* next_node;  // pointer to the next op in the node table
-  Flag in_node_list;            // is the op in the node list?
-  Flag precommitted;            // if the op is pre-commit in the ROB
-  Flag macro_fused;             // if the op should be fused with the previous op (CMP/TEST)
-  Flag move_eliminated;         // if the op can be move-eliminated
-  Flag replay;                  // is the op waiting to replay?
-  uns exec_count;               // how many times has this op been executed?
+  struct Op_struct* next_rdy;     // pointer to next ready op (node table)
+  Flag in_rdy_list;               // is the op in the node stage's ready list?
+  struct Op_struct* next_node;    // pointer to the next op in the node table
+  Flag in_node_list;              // is the op in the node list?
+  Flag precommitted;              // if the op is pre-commit in the ROB
+  Flag macro_fused;               // if the op should be fused with the previous op (CMP/TEST)
+  Flag move_eliminated;           // if the op can be move-eliminated
+  Flag load_value_predicted;      // if consumers of the op can be ready before this load
+  Flag load_addr_predicted;       // early-AGEN: load may issue w/o addr operands, access load_pred_addr
+  Addr load_pred_addr;            // predicted effective addr (early-AGEN/RFP), verified vs va at exec
+  Counter load_pred_ready_cycle;  // cycle a predicted load's result is available to consumers (RFP: +DCACHE_CYCLES)
+  Counter load_pred_ready_delay;  // produce->availability latency (0 value pred; DCACHE_CYCLES RFP), applied at rename
+  Flag replay;                    // is the op waiting to replay?
+  uns exec_count;                 // how many times has this op been executed?
   // }}}
 
   // {{{ dependency information
@@ -264,6 +271,17 @@ struct Op_struct {
   FT* parent_FT;
   FT* parent_FT_off_path;
 };
+
+/* Schedules the exec-time squash for a mispredicted predicted load (defined in
+ * load_value_pred.cc; it does bp_sched_recovery, which op.h cannot call directly
+ * because bp/bp.h includes op.h). Called from op_set_exec_cycle below. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void predicted_load_schedule_recovery(Op* op, Counter recovery_cycle);
+#ifdef __cplusplus
+}
+#endif
 
 /* Per-op cycle-counter accessors. Each counter has its own get/set function so
  * that per-counter behavior (stats, debug, invariants) can be added in one place.
@@ -331,6 +349,12 @@ static inline Counter op_get_exec_cycle(const Op* op) {
 static inline void op_set_exec_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.exec_cycle == MAX_CTR);
   op->cycles.exec_cycle = cycle;
+  // A value/RFP-predicted load fires its mispredict recovery here at exec. An addr-predicted load
+  // instead fires it from the map module's operand-wake path (addr_pred_on_operands_woken) when its
+  // address operands become ready, so it is excluded here.
+  if (op->bp_pred_info && op->bp_pred_info->recovery_point == RECOVER_AT_EXEC && op->uop->cf_type == NOT_CF &&
+      !op->load_addr_predicted)
+    predicted_load_schedule_recovery(op, op_get_exec_cycle(op));
 }
 
 static inline Counter op_get_dcache_cycle(const Op* op) {

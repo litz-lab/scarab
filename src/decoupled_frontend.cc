@@ -436,7 +436,8 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
   // For CONTINUE_ON_RECOVERY, alt continues the off-path stream main was on by
   // resuming from this address (rather than restarting at the misprediction).
   Op* alt_op = per_core_dfe[proc_id][MAIN_BP]->get_last_fetch_op();
-  bp_recover_op(bp_data, cf_type, info);
+  if (cf_type != NOT_CF)
+    bp_recover_op(bp_data, cf_type, info);
   dfe_recover_op();
   switch (dfe_trigger_policy) {
     case PRIMARY_DFE:
@@ -920,6 +921,11 @@ void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
 }
 
 Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
+  // A non-CF op that triggers recovery is a predicted-load (LVP) data mispredict. It never went
+  // through branch prediction, so op->bp_pred_info is unset -- classify it before dereferencing it.
+  if (op->uop->cf_type == NOT_CF) {
+    return REASON_MISPRED;
+  }
   if (op->bp_pred_info->recovery_point == RECOVER_AT_NONE) {
     return REASON_NOT_IDENTIFIED;
   }
@@ -995,7 +1001,6 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
   // misprediction and redirection handling
   ASSERT(proc_id, bp_id == MAIN_BP);
   ASSERT(proc_id, result.event == FT_EVENT_MISPREDICT);
-  // Misprediction: Switch to off-path execution
   const Off_Path_Reason reason = eval_off_path_reason(result.op);
   ASSERT(proc_id, reason != REASON_NOT_IDENTIFIED);
   if (CONFIDENCE_ENABLE)

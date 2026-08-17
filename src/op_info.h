@@ -71,6 +71,7 @@ void op_sources_set_not_rdy(Op* op, uns bit);
 void op_sources_clear_not_rdy(Op* op, uns bit);
 Flag op_sources_test_not_rdy(const Op* op, uns bit);
 Flag op_sources_not_rdy_is_clear(const Op* op);
+Flag op_sources_all_woken(const Op* op);
 
 /**************************************************************************************/
 /* The 'Op_Info' struct holds information that is unique to the

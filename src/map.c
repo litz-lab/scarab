@@ -540,6 +540,26 @@ static inline void update_store_hash(Op* op) {
 }
 
 /**************************************************************************************/
+/* addr_pred_on_operands_woken: once an addr-predicted load's AGEN source operands have all woken
+   (real address fully known), read+consume its sources -- deferred from rename since it issued on
+   the predicted address -- and, if the predicted address was wrong, schedule the mispredict
+   recovery. Skips wake_action so the already-issued load is not re-readied. */
+
+static void addr_pred_on_operands_woken(Op* op) {
+  ASSERT(op->proc_id, op->load_addr_predicted);
+  if (!op_sources_all_woken(op))
+    return;
+  reg_file_read_src_at_wakeup(op);
+  // An addr-predicted load always has bp_pred_info bound at predict time, so read recover_at_exec
+  // through the selected level. A wrong predicted address set it; a correct one leaves it FALSE.
+  ASSERT(op->proc_id, op->bp_pred_info);
+  if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
+    predicted_load_schedule_recovery(op, cycle_count);
+    op->bp_pred_info->recovery_point = RECOVER_AT_NONE;
+  }
+}
+
+/**************************************************************************************/
 /* wake_up_ops: */
 
 void wake_up_ops(Op* op, Dep_Type type, void (*wake_action)(Op*, Op*, uns)) {
@@ -574,11 +594,13 @@ void wake_up_ops(Op* op, Dep_Type type, void (*wake_action)(Op*, Op*, uns)) {
                 unsstr64(dep_op->op_num),
                 dep_op->srcs_not_rdy_words ? (unsigned long long)dep_op->srcs_not_rdy_words[0] : 0ull);
 
-        /* unset the not ready bit for this source */
         op_sources_clear_not_rdy(dep_op, temp->rdy_bit);
 
-        /* call the wake action function */
-        wake_action(op, dep_op, temp->rdy_bit);
+        if (dep_op->load_addr_predicted) {
+          addr_pred_on_operands_woken(dep_op);
+        } else {
+          wake_action(op, dep_op, temp->rdy_bit);
+        }
       }
     }
   }
@@ -652,7 +674,11 @@ void add_to_wake_up_lists(Op* op, void (*wake_action)(Op*, Op*, uns)) {
 
       if (src_op->wake_up_signaled[src_info->type]) {
         op_sources_clear_not_rdy(op, ii);
-        wake_action(src_op, op, ii);
+        if (op->load_addr_predicted) {
+          addr_pred_on_operands_woken(op);
+        } else {
+          wake_action(src_op, op, ii);
+        }
       }
 
       DEBUG(op->proc_id, "Added to wake up list  op_num:%s  src_op_num:%s type:%s\n", unsstr64(op->op_num),
@@ -661,6 +687,8 @@ void add_to_wake_up_lists(Op* op, void (*wake_action)(Op*, Op*, uns)) {
       /* the src op must have retired already  */
       src_info->op = &invalid_op;
       op_sources_clear_not_rdy(op, ii);
+      if (op->load_addr_predicted)
+        addr_pred_on_operands_woken(op);
     }
   }
 }

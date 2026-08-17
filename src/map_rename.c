@@ -728,7 +728,13 @@ void reg_table_entry_consume(struct reg_table_entry *entry, Op *op) {
       STAT_EVENT(map_data->proc_id, MAP_STAGE_INT_REG_ISSUE_READ_SAME_CYCLE_CONSUMED_ONPATH + entry->reg_type);
     }
   }
-  entry->onpath_consumed_cycle = cycle_count;
+  // An addr-predicted (early-AGEN) load reaches this deferred consume at the producer's wake SIGNAL,
+  // which exec_stage fires op_latency cycles before the value is in the register file (op_get_wake_cycle
+  // == produced_cycle). Normal consumers are floored to that wake_cycle in map.c; floor this consume the
+  // same way so onpath_consumed_cycle never precedes produced_cycle. Every consumable register is now
+  // produced (real producers, or live-ins recorded at reg_table_init), so produced_cycle is set.
+  ASSERT(map_data->proc_id, entry->produced_cycle != MAX_CTR);
+  entry->onpath_consumed_cycle = MAX2(cycle_count, entry->produced_cycle);
 }
 
 /* An addr-predicted load skips reading its source registers at rename (it issued on the predicted
@@ -821,6 +827,10 @@ void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_ta
 
     struct reg_table_entry *entry = reg_table->free_list->ops->alloc(reg_table->free_list);
     entry->ops->write(entry, &invalid_op, ii);
+    // Live-in: this maps an arch reg to a value that exists from the start of simulation but that no op
+    // ever produces. Record its availability now (== allocated_cycle) so produced_cycle is set, not left
+    // at MAX_CTR -- otherwise a consumer of the live-in reads a value with no produce cycle.
+    entry->produced_cycle = entry->allocated_cycle;
     entry->num_refs++;
     reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->self_reg_id;
   }

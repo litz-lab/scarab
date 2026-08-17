@@ -593,23 +593,6 @@ static inline void reg_file_rollback_srt() {
   }
 }
 
-/* Checkpoint the SRT when the first off-path op reaches rename (before it writes its dst). */
-static inline void reg_file_snapshot_srt_on_offpath_entry(Op *op) {
-  if (op->off_path && !map_data->map_offpath) {
-    map_data->map_offpath = TRUE;
-    reg_file_snapshot_srt();
-  }
-}
-
-/* Roll back to the checkpoint iff an off-path op reached rename. */
-static inline Flag reg_file_recover_srt() {
-  if (!map_data->map_offpath)
-    return FALSE;
-  map_data->map_offpath = FALSE;
-  reg_file_rollback_srt();
-  return TRUE;
-}
-
 /**************************************************************************************/
 /* register free list operation */
 
@@ -1063,13 +1046,18 @@ Flag reg_renaming_scheme_realistic_available(uns stage_op_count) {
 
 // allocate physical registers of the op and write the ptag info into the op
 void reg_renaming_scheme_realistic_rename(Op *op) {
-  reg_file_snapshot_srt_on_offpath_entry(op);
-
   // read the physical register table by looking up the arch register table
   reg_file_read_src(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
   // write the physical register table and update the arch register table
   reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL);
+
+  // Checkpoint the SRT at the eom of a macro that recovers at exec: off-path starts after the eom, so
+  // this captures the full on-path state to roll back to (the branch/predicted-load recovers there).
+  if (op->eom && op_inst_recovery_point(op) == RECOVER_AT_EXEC) {
+    ASSERT(op->proc_id, !op->off_path);
+    reg_file_snapshot_srt();
+  }
 }
 
 // do not check the reg file when issuing
@@ -1096,10 +1084,10 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 // flush registers of misprediction operands using the ptag info
 void reg_renaming_scheme_realistic_recover(Op *op) {
   // only exec recoveries pollute the SRT; decode/frontend recoveries squash before rename
-  if (op->recovery_info.recovery_point != RECOVER_AT_EXEC)
+  if (op->bp_pred_info->recovery_point != RECOVER_AT_EXEC)
     return;
 
-  reg_file_recover_srt();
+  reg_file_rollback_srt();
 
   // release the registers from the youngest to the flush point
   int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
@@ -1175,15 +1163,17 @@ Flag reg_renaming_scheme_late_allocation_available(uns stage_op_count) {
 
 // allocate only virtual registers and write the vtag info into the op
 void reg_renaming_scheme_late_allocation_rename(Op *op) {
-  // Checkpoint the SRT on the on-path -> off-path transition (see the realistic
-  // scheme for the rationale). Taken before write_dst so it excludes this op.
-  reg_file_snapshot_srt_on_offpath_entry(op);
-
   // read the virtaul register table by looking up the arch register table
   reg_file_read_src(op, REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
   // write the virtaul register table and update the arch register table
   reg_file_write_dst(op, REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL);
+
+  // Checkpoint the SRT at the eom of a macro that recovers at exec (see the realistic scheme).
+  if (op->eom && op_inst_recovery_point(op) == RECOVER_AT_EXEC) {
+    ASSERT(op->proc_id, !op->off_path);
+    reg_file_snapshot_srt();
+  }
 }
 
 /*
@@ -1243,10 +1233,10 @@ void reg_renaming_scheme_late_allocation_produce(Op *op) {
 
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
   // only exec recoveries touch the SRT -- see the realistic scheme
-  if (op->recovery_info.recovery_point != RECOVER_AT_EXEC)
+  if (op->bp_pred_info->recovery_point != RECOVER_AT_EXEC)
     return;
 
-  reg_file_recover_srt();
+  reg_file_rollback_srt();
 
   // release the registers from the youngest to the flush point for both register tables
   int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};

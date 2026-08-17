@@ -132,9 +132,6 @@ void predicted_load_schedule_recovery(Op* op, Counter recovery_cycle) {
 
   eom->bp_pred_info->recovery_point = RECOVER_AT_EXEC;
   bp_sched_recovery(bp_recovery_info, eom, recovery_cycle);
-
-  // Clear the trigger so a re-woken/replayed load does not schedule the recovery twice.
-  op->bp_pred_info->recovery_point = RECOVER_AT_NONE;
 }
 
 /*

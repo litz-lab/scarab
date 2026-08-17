@@ -33,7 +33,7 @@ uns64 Kernel_Factory::generate_nop_sequence(std::vector<ctype_pin_inst>& kernel_
 void Kernel_Factory::generate_tail_end_insts(std::vector<ctype_pin_inst>& kernel_buffer, Sampler& uid_sequence,
                                              Sampler& targets_pool, uns64 pad_to_next_inst) {
   uns64 current_pc = targets_pool.get_last_element_in_sorted_order() + pad_to_next_inst;
-  current_pc = generate_nop_sequence(kernel_buffer, uid_sequence, ISSUE_WIDTH, current_pc);
+  current_pc = generate_nop_sequence(kernel_buffer, uid_sequence, DISPATCH_WIDTH, current_pc);
   auto next_inst =
       generate_unconditional_branch(current_pc, uid_sequence.get_next_element(), get_start_pc(), get_inst_size());
   kernel_buffer.push_back(next_inst);
@@ -63,8 +63,9 @@ void Kernel_Factory::generate_tail_end_insts(std::vector<ctype_pin_inst>& kernel
  * ================================================================================================*/
 
 std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_cbr_kernel() {
-  inst_size = ICACHE_LINE_SIZE - (nop_size * (ISSUE_WIDTH - 1));
-  uid_sequence = Sampler(UNIFORM_SEQUENTIAL, 1, ((2 * ISSUE_WIDTH * target_pool_size) + pad_length + 1), start_uid, 1);
+  inst_size = ICACHE_LINE_SIZE - (nop_size * (DISPATCH_WIDTH - 1));
+  uid_sequence =
+      Sampler(UNIFORM_SEQUENTIAL, 1, ((2 * DISPATCH_WIDTH * target_pool_size) + pad_length + 1), start_uid, 1);
 
   std::map<uns64, ctype_pin_inst> kernel_map;
   std::vector<ctype_pin_inst> kernel_buffer;
@@ -79,7 +80,7 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_cbr_kernel() {
   for (uns i{0}; i < (target_pool_size); i++) {
     // generate leading nops and return next pc
     current_pc = target_pool.get_next_element();
-    current_pc = generate_nop_sequence(kernel_buffer, uid_sequence, ISSUE_WIDTH, current_pc);
+    current_pc = generate_nop_sequence(kernel_buffer, uid_sequence, DISPATCH_WIDTH, current_pc);
     current_uid = uid_sequence.get_next_element();
     // every taken target is the next element in the shuffled sequence
     _target = target_pool.peek_next_element();
@@ -87,7 +88,7 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_cbr_kernel() {
                                             get_inst_size());
     kernel_buffer.push_back(next_inst);
     // generate unconditional brnach to target on fall through
-    current_pc = generate_nop_sequence(kernel_buffer, uid_sequence, ISSUE_WIDTH, (current_pc + get_inst_size()));
+    current_pc = generate_nop_sequence(kernel_buffer, uid_sequence, DISPATCH_WIDTH, (current_pc + get_inst_size()));
     current_uid = uid_sequence.get_next_element();
     next_inst = generate_unconditional_branch(current_pc, current_uid, _target, get_inst_size());
     kernel_buffer.push_back(next_inst);
@@ -114,9 +115,10 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_cbr_kernel() {
  * ================================================================================================*/
 
 std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ubr_kernel() {
-  inst_size = ICACHE_LINE_SIZE - (nop_size * (ISSUE_WIDTH - 1));
+  inst_size = ICACHE_LINE_SIZE - (nop_size * (DISPATCH_WIDTH - 1));
   starting_target = get_start_pc();
-  uid_sequence = Sampler(UNIFORM_SEQUENTIAL, 1, ((2 * ISSUE_WIDTH * target_pool_size) + pad_length + 1), start_uid, 1);
+  uid_sequence =
+      Sampler(UNIFORM_SEQUENTIAL, 1, ((2 * DISPATCH_WIDTH * target_pool_size) + pad_length + 1), start_uid, 1);
   target_pool = Sampler(target_strategy, 1, target_pool_size, starting_target, target_stride);
 
   std::map<uns64, ctype_pin_inst> kernel_map;
@@ -127,7 +129,7 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ubr_kernel() {
   for (uns i{0}; i < (2 * target_pool_size); i++) {
     // generate leading nops
     current_pc = target_pool.get_next_element();
-    current_pc = generate_nop_sequence(kernel_buffer, uid_sequence, ISSUE_WIDTH, current_pc);
+    current_pc = generate_nop_sequence(kernel_buffer, uid_sequence, DISPATCH_WIDTH, current_pc);
     current_uid = uid_sequence.get_next_element();
 
     // target is the next element in shuffled sequence
@@ -160,9 +162,10 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ubr_kernel() {
  * The RANDOM variants are randomized whenever control returns to the beginning of the program
  * ===========================================================================================================*/
 std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ibr_kernel() {
-  inst_size = ICACHE_LINE_SIZE - (nop_size * (ISSUE_WIDTH - 1));
+  inst_size = ICACHE_LINE_SIZE - (nop_size * (DISPATCH_WIDTH - 1));
   starting_target = get_start_pc() + ICACHE_LINE_SIZE;
-  uid_sequence = Sampler(UNIFORM_SEQUENTIAL, 1, ((2 * ISSUE_WIDTH * target_pool_size) + pad_length + 1), start_uid, 1);
+  uid_sequence =
+      Sampler(UNIFORM_SEQUENTIAL, 1, ((2 * DISPATCH_WIDTH * target_pool_size) + pad_length + 1), start_uid, 1);
 
   uns last_target = starting_target + (target_pool_size - 1) * target_stride;
   uns pool_size = ((last_target - start_pc) / ICACHE_LINE_SIZE) + 1;
@@ -178,7 +181,7 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ibr_kernel() {
   for (uns i{0}; i < pool_size; i++) {
     // generate leading nops
     current_pc = combined_target_pool.get_next_element();
-    current_pc = generate_nop_sequence(kernel_buffer, uid_sequence, ISSUE_WIDTH, current_pc);
+    current_pc = generate_nop_sequence(kernel_buffer, uid_sequence, DISPATCH_WIDTH, current_pc);
     current_uid = uid_sequence.get_next_element();
     // target is the next element in shuffled sequence
     uns64 next_target = target_pool.get_next_element();
@@ -263,9 +266,9 @@ std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_ilp_kernel(uns dependen
 
 *-------------------------------------Bandwidth-Limited KERNEL VARIANTS----------------------------------------*
  * No Loop Carried Dependence Chain, all loads are independent.
- * MEM_BANDWIDTH_1FU             - Single load FU. IPC approx 1. Retiring = 1 / ISSUE_WIDTH
- * MEM_BANDWIDTH_2FU             - two load FUs. IPC approx 2. Retiring = 2 / ISSUE_WIDTH.
- * MEM_BANDWIDTH_4FU             - four Load FUs, IPC approx 4. Retiring = 4 / ISSUE_WIDTH..
+ * MEM_BANDWIDTH_1FU             - Single load FU. IPC approx 1. Retiring = 1 / DISPATCH_WIDTH
+ * MEM_BANDWIDTH_2FU             - two load FUs. IPC approx 2. Retiring = 2 / DISPATCH_WIDTH.
+ * MEM_BANDWIDTH_4FU             - four Load FUs, IPC approx 4. Retiring = 4 / DISPATCH_WIDTH..
  * ===========================================================================================================*/
 std::map<uns64, ctype_pin_inst> Kernel_Factory::generate_load_kernel(Load_Kernel_Type type) {
   // stride should be enough to cause hits at a level but misses in the precceding levels if any

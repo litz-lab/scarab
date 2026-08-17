@@ -70,7 +70,7 @@ Kernel_Factory::Kernel_Factory(Kernel_Enum kernel, uns64 start_pc, uns64 start_u
       level(DCACHE_LEVEL),
       num_of_dependence_chains(0),
       inst_size(8),
-      nop_size(ICACHE_LINE_SIZE / (ISSUE_WIDTH)),
+      nop_size(ICACHE_LINE_SIZE / (DISPATCH_WIDTH)),
       pad_length(500),
       target_strategy(UNIFORM_SEQUENTIAL),
       direction_strategy(DICRETE_RANDOM),

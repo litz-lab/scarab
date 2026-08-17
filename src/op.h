@@ -300,9 +300,7 @@ static inline Op* op_inst_eom(const Op* op) {
   ASSERT(op->proc_id, op->dyn_inst);
   return op->dyn_inst->uops[op->inst->num_uop - 1];
 }
-// Recovery stage for this op's macro. Invariant: at most one uop of a macro may carry a non-NONE
-// recovery_point (a macro has a single recovery trigger -- a CF eom or an LVP load). Returns it, or
-// RECOVER_AT_NONE. Asserts if more than one uop is marked, catching double-marking at the source.
+// Recovery stage for this macro (RECOVER_AT_NONE if none). Invariant: at most one uop is marked -- asserts otherwise.
 static inline Recovery_Point op_inst_recovery_point(const Op* op) {
   Recovery_Point rp = RECOVER_AT_NONE;
   for (uns i = 0; i < op_inst_num_uops(op); i++) {

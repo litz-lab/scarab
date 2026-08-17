@@ -216,11 +216,6 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
   if (entry->off_path)
     return;
 
-  // On-path registers are freed only at retirement (a value mispredict makes its
-  // follow-up ops off-path before flushing them), so a retired register must
-  // have been produced. MAX_CTR here means a producer never ran wake_up_ops /
-  // set wake_cycle -- or a mispredicted consumer was flushed without being
-  // marked off-path.
   ASSERT(map_data->proc_id, entry->produced_cycle != MAX_CTR);
 
   // set the cycle counts for unconsumed registers

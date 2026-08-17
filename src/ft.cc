@@ -419,8 +419,11 @@ FT_PredictResult FT::predict_ft() {
         Op* eom = op_inst_eom(op);
         uns64 eom_idx = idx + (op_inst_num_uops(op) - 1 - op->uop->uop_seq_num);
         ASSERT(op->proc_id, ops[eom_idx] == eom && eom->eom);
-        // mark the recovery target (eom) at predict time; schedule_recovery only schedules
-        eom->bp_pred_main.recovery_point = RECOVER_AT_EXEC;
+        // Mark the recovery target (eom) at predict time; schedule_recovery only schedules.
+        // Select main first: a multi-uop load's eom is NOT_CF and is never otherwise selected, so its
+        // bp_pred_info would be NULL when redirect_to_off_path -> eval_off_path_reason reads it.
+        op_select_bp_pred_info(eom, BP_PRED_MAIN);
+        eom->bp_pred_info->recovery_point = RECOVER_AT_EXEC;
         const Addr fall_through = ADDR_PLUS_OFFSET(op->inst->addr, op->inst->inst_size);
         return {eom_idx, FT_EVENT_MISPREDICT, eom, fall_through};
       }

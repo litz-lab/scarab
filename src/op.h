@@ -300,14 +300,19 @@ static inline Op* op_inst_eom(const Op* op) {
   ASSERT(op->proc_id, op->dyn_inst);
   return op->dyn_inst->uops[op->inst->num_uop - 1];
 }
-// Recovery stage marked on any uop of this op's macro (RECOVER_AT_NONE if none; at most one carries it).
+// Recovery stage for this op's macro. Invariant: at most one uop of a macro may carry a non-NONE
+// recovery_point (a macro has a single recovery trigger -- a CF eom or an LVP load). Returns it, or
+// RECOVER_AT_NONE. Asserts if more than one uop is marked, catching double-marking at the source.
 static inline Recovery_Point op_inst_recovery_point(const Op* op) {
+  Recovery_Point rp = RECOVER_AT_NONE;
   for (uns i = 0; i < op_inst_num_uops(op); i++) {
     const Op* u = op_inst_uop(op, i);
-    if (u->bp_pred_info && u->bp_pred_info->recovery_point != RECOVER_AT_NONE)
-      return u->bp_pred_info->recovery_point;
+    if (u->bp_pred_info && u->bp_pred_info->recovery_point != RECOVER_AT_NONE) {
+      ASSERT(op->proc_id, rp == RECOVER_AT_NONE);
+      rp = u->bp_pred_info->recovery_point;
+    }
   }
-  return RECOVER_AT_NONE;
+  return rp;
 }
 
 static inline Counter op_get_fetch_cycle(const Op* op) {

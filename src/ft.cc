@@ -315,7 +315,6 @@ FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
 
       if (op->off_path) {
         bp_pred_info->recovery_point = RECOVER_AT_NONE;
-        bp_pred_info->recovery_point = RECOVER_AT_NONE;
       }
       return FT_EVENT_MISPREDICT;
     } else if (trace_mode && op->off_path && bp_pred_info->pred == TAKEN) {
@@ -516,7 +515,6 @@ void FT::generate_ft_info() {
 
 void FT::clear_recovery_info() {
   for (auto op : ops) {
-    op->bp_pred_info->recovery_point = RECOVER_AT_NONE;
     op->bp_pred_info->recovery_point = RECOVER_AT_NONE;
   }
 }

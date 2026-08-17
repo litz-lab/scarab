@@ -366,7 +366,6 @@ FT_PredictResult FT::predict_ft() {
             ASSERT(proc_id, recovery_latency > BP_L0_LATENCY);
             const Counter recovery_cycle = fetch_cycle + recovery_latency - BP_L0_LATENCY;
 
-            op->recovery_info.recovery_point = RECOVER_AT_FE;
             bp_sched_recovery(bp_recovery_info, op, recovery_cycle);
             event = l0_event;
           }

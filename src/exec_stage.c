@@ -563,7 +563,6 @@ static inline void exec_stage_bp_resolve(Op* op) {
     DEBUG(exec->proc_id, "Exec schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
           (unsigned long long)op_get_exec_cycle(op));
     bp_stat_main_branch_resolve_latency(op, op_get_exec_cycle(op), TRUE);
-    op->recovery_info.recovery_point = RECOVER_AT_EXEC;
     bp_sched_recovery(bp_recovery_info, op, op_get_exec_cycle(op));
 
     // stats for the reason of resteer

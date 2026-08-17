@@ -419,6 +419,8 @@ FT_PredictResult FT::predict_ft() {
         Op* eom = op_inst_eom(op);
         uns64 eom_idx = idx + (op_inst_num_uops(op) - 1 - op->uop->uop_seq_num);
         ASSERT(op->proc_id, ops[eom_idx] == eom && eom->eom);
+        // mark the recovery target (eom) at predict time; schedule_recovery only schedules
+        eom->bp_pred_main.recovery_point = RECOVER_AT_EXEC;
         const Addr fall_through = ADDR_PLUS_OFFSET(op->inst->addr, op->inst->inst_size);
         return {eom_idx, FT_EVENT_MISPREDICT, eom, fall_through};
       }

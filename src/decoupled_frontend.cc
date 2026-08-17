@@ -921,11 +921,11 @@ void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
 }
 
 Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
-  // A non-CF op reaching here is an LVP predicted-load (data) mispredict: recover_at_exec lives on
-  // the macro's trigger uop, not on this eom (which was never branch-predicted, so its bp_pred_info
-  // may be NULL). Classify via the macro's recovery trigger and never touch the eom's bp_pred_info.
+  // A non-CF op only reaches redirect as an LVP predicted-load mispredict; recover_at_exec lives on
+  // the macro's trigger uop, not this eom (never branch-predicted, so its bp_pred_info may be NULL).
   if (op->uop->cf_type == NOT_CF) {
-    return op_inst_recovery_point(op) == RECOVER_AT_EXEC ? REASON_MISPRED : REASON_NOT_IDENTIFIED;
+    ASSERT(proc_id, op_inst_recovery_point(op) == RECOVER_AT_EXEC);
+    return REASON_MISPRED;
   }
   if (op->bp_pred_info->recovery_point == RECOVER_AT_NONE) {
     return REASON_NOT_IDENTIFIED;

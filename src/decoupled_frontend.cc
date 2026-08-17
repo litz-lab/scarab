@@ -921,13 +921,14 @@ void Decoupled_FE::retire(Op* op, int op_proc_id, uns64 inst_uid) {
 }
 
 Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
+  // A non-CF op reaching here is an LVP predicted-load (data) mispredict: recover_at_exec lives on
+  // the macro's trigger uop, not on this eom (which was never branch-predicted, so its bp_pred_info
+  // may be NULL). Classify via the macro's recovery trigger and never touch the eom's bp_pred_info.
+  if (op->uop->cf_type == NOT_CF) {
+    return op_inst_recovery_point(op) == RECOVER_AT_EXEC ? REASON_MISPRED : REASON_NOT_IDENTIFIED;
+  }
   if (op->bp_pred_info->recovery_point == RECOVER_AT_NONE) {
     return REASON_NOT_IDENTIFIED;
-  }
-  // A non-CF op that triggers recovery is a predicted-load (LVP) data mispredict -- it never went
-  // through branch prediction, so there is no branch classification to do.
-  if (op->uop->cf_type == NOT_CF) {
-    return REASON_MISPRED;
   }
   // mispred
   if (op->bp_pred_info->pred_orig != op->oracle_info.dir && !btb_pred_miss(op->btb_pred_info)) {

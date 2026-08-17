@@ -553,7 +553,7 @@ static void addr_pred_on_operands_woken(Op* op) {
   // An addr-predicted load always has bp_pred_info bound at predict time, so read recover_at_exec
   // through the selected level. A wrong predicted address set it; a correct one leaves it FALSE.
   ASSERT(op->proc_id, op->bp_pred_info);
-  if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
+  if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC && !op_inst_eom(op)->recovery_scheduled) {
     predicted_load_schedule_recovery(op, cycle_count);
   }
 }

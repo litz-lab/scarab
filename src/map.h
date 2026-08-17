@@ -65,7 +65,6 @@ typedef struct Map_Data_struct {
   /* TRUE once an off-path op has reached rename since the last recovery: the SRT
    * then holds off-path renames that a recovery must undo. Drives the single SRT
    * checkpoint -- snapshot taken on the on->off transition, rolled back at recover. */
-  Flag map_offpath;
 } Map_Data;
 
 /**************************************************************************************/

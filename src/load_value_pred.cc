@@ -98,7 +98,7 @@ void load_pred_mark_recovery(Op* op) {
   STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH_MISPREDICTED);
 
   op_select_bp_pred_info(op, BP_PRED_MAIN);
-  op->bp_pred_main.recovery_point = RECOVER_AT_EXEC;
+  op->bp_pred_info->recovery_point = RECOVER_AT_EXEC;
 }
 
 /*

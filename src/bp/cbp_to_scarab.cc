@@ -127,14 +127,15 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op, Bp_Pred_Level pred_level) 
   Flag is_conditional = is_conditional_branch(op->uop->cf_type);
   Flag pred_dir =
       (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON) ? op->oracle_info.dir : bp_pred_info->pred;
-  const Flag l0_wrong = op->bp_pred_l0.recover_at_fe;
-  const Flag main_wrong = op->bp_pred_main.recover_at_decode || op->bp_pred_main.recover_at_exec;
+  const Flag l0_wrong = op->bp_pred_l0.recovery_point == RECOVER_AT_FE;
+  const Flag main_wrong =
+      op->bp_pred_main.recovery_point == RECOVER_AT_DECODE || op->bp_pred_main.recovery_point == RECOVER_AT_EXEC;
   // FE-only recovery (L0 wrong / main correct) still needs a main-BP
   // checkpoint because off-path speculative updates may already have been
   // applied before the late correction fires.
   const Flag fe_only_recovery = bp_l0_enabled() && l0_wrong && !main_wrong;
-  const Flag checkpoint_needed =
-      fe_only_recovery || op->bp_pred_main.recover_at_decode || op->bp_pred_main.recover_at_exec;
+  const Flag checkpoint_needed = fe_only_recovery || op->bp_pred_main.recovery_point == RECOVER_AT_DECODE ||
+                                 op->bp_pred_main.recovery_point == RECOVER_AT_EXEC;
 
   if (op->off_path) {
     if (SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON)

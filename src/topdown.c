@@ -79,7 +79,7 @@ void topdown_bp_recovery(uns proc_id, Op* op) {
   ASSERT(op->proc_id, op->uop->cf_type);
 
   STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_CYCLES);
-  if (op->bp_pred_info->recover_at_exec) {
+  if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
     ASSERT(op->proc_id, !op->off_path);
     STAT_EVENT(proc_id, TOPDOWN_BR_RECOVER_AT_EXEC_RETIRED_CYCLES);
   }

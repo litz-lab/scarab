@@ -260,7 +260,7 @@ void decode_stage_process_op(Op* op) {
   if (cf) {
     DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",
           op->uop->bar_type & BAR_FETCH ? TRUE : FALSE, op->inst->addr, op->op_num,
-          op->bp_pred_info->recover_at_decode);
+          op->bp_pred_info->recovery_point == RECOVER_AT_DECODE);
     // it is a direct branch, so the target is now known
     if (cf <= CF_CALL) {
       bp_target_known_op(g_bp_data, op);
@@ -268,7 +268,7 @@ void decode_stage_process_op(Op* op) {
     // If the CF was unconditional and direct and taken and there was a BTB miss
     // we can schedule a redirect. If the branch was not taken we are on the on-path.
     // If the branch is condidtional or indirect, we will schedule recovery at exec
-    if (op->bp_pred_info->recover_at_decode) {
+    if (op->bp_pred_info->recovery_point == RECOVER_AT_DECODE) {
       DEBUG(dec->proc_id, "Decode schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
             (unsigned long long)cycle_count);
       bp_stat_main_branch_resolve_latency(op, cycle_count, FALSE);

@@ -558,7 +558,7 @@ static inline void exec_stage_bp_resolve(Op* op) {
     bp_resolve_op(g_bp_data, op);
   }
 
-  if (op->bp_pred_info->recover_at_exec) {
+  if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
     DEBUG(exec->proc_id, "Exec schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
           (unsigned long long)op_get_exec_cycle(op));
     bp_stat_main_branch_resolve_latency(op, op_get_exec_cycle(op), TRUE);

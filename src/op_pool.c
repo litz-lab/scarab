@@ -52,6 +52,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #include "frontend/frontend_intf.h"
 #include "frontend/pin_trace_fe.h"
 
+#include "dyn_inst.h"
 #include "map.h"
 #include "model.h"
 #include "op_info.h"
@@ -110,6 +111,34 @@ void reset_op_pool() {
 }
 
 /**************************************************************************************/
+/* Dynamic_Inst pool: per-dynamic-macro grouping of uop ops, recycled through a simple free list
+   (mirrors the op pool's reuse pattern). The instance is released when its eom uop is freed. */
+
+static Dynamic_Inst* dyn_inst_free_list = NULL;
+
+Dynamic_Inst* alloc_dyn_inst(void) {
+  Dynamic_Inst* di = dyn_inst_free_list;
+  if (di) {
+    dyn_inst_free_list = di->free_list_next;
+    memset(di, 0, sizeof(*di));
+  } else {
+    di = (Dynamic_Inst*)calloc(1, sizeof(Dynamic_Inst));
+  }
+  return di;
+}
+
+void dyn_inst_attach(Dynamic_Inst* di, Op* op) {
+  ASSERT(op->proc_id, di && op->uop && op->uop->uop_seq_num < op->inst->num_uop);
+  op->dyn_inst = di;
+  di->uops[op->uop->uop_seq_num] = op;
+}
+
+void free_dyn_inst(Dynamic_Inst* di) {
+  ASSERT(0, di);
+  di->free_list_next = dyn_inst_free_list;
+  dyn_inst_free_list = di;
+}
+
 /* alloc_op:  returns a pointer to the next available op */
 
 Op* alloc_op(uns proc_id) {
@@ -150,14 +179,23 @@ void free_op(Op* op) {
   ASSERTM(0, op_pool_active_ops >= 0, "op_pool_active_ops:%u\n", op_pool_active_ops);
   DEBUG(0, "Freed op  id:%u  op_pool_active_ops: %u\n", op->op_pool_id, op_pool_active_ops);
 
-  if (op->inst_info && op->inst_info->table_info.mem_type == MEM_ST)
+  if (op->inst && op->uop->mem_type == MEM_ST)
     delete_store_hash_entry(op);
 
-  if (op->inst_info && op->inst_info->fake_inst) {
-    // we no longer allocate memory for fake nops
-    // free(op->inst_info->table_info);
-    free(op->inst_info);
-    op->inst_info = NULL;
+  if (op->inst && op->inst->fake_inst) {
+    // fake ops get their own (non-interned) static structs; free both
+    free(op->inst);
+    free(op->uop);
+    op->inst = NULL;
+    op->uop = NULL;
+  }
+
+  // The macro's dynamic instance is shared by all its uops; release it once, when its eom (the last
+  // uop to be freed, since uops retire/free in order) goes. Other uops just drop their pointer.
+  if (op->dyn_inst) {
+    if (op->eom)
+      free_dyn_inst(op->dyn_inst);
+    op->dyn_inst = NULL;
   }
 
   op_sources_free(op);

@@ -127,7 +127,7 @@ void IssueQueueEntry::clear() {
 
 void IssueQueueEntry::fill(Op* op) {
   this->op = op;
-  op_fu_type = get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd);
+  op_fu_type = get_fu_type(op->uop->op_type, op->inst->is_simd);
 }
 
 /**************************************************************************************/
@@ -401,15 +401,15 @@ void SelectLogic::collect_entry_op_ready_stats(IssueQueueEntry* entry) {
   Op* op = entry->op;
   if (op->off_path) {
     STAT_EVENT(op->proc_id, ST_OP_OFFPATH_READY);
-    STAT_EVENT(op->proc_id, ST_NOT_MEM_OFFPATH_READY + op->inst_info->table_info.mem_type);
+    STAT_EVENT(op->proc_id, ST_NOT_MEM_OFFPATH_READY + op->uop->mem_type);
     return;
   }
 
   STAT_EVENT(op->proc_id, ST_OP_ONPATH_READY);
-  STAT_EVENT(op->proc_id, ST_OP_INV_READY + op->inst_info->table_info.op_type);
-  STAT_EVENT(op->proc_id, ST_NOT_CF_READY + op->inst_info->table_info.cf_type);
-  STAT_EVENT(op->proc_id, ST_BAR_NONE_READY + op->inst_info->table_info.bar_type);
-  STAT_EVENT(op->proc_id, ST_NOT_MEM_READY + op->inst_info->table_info.mem_type);
+  STAT_EVENT(op->proc_id, ST_OP_INV_READY + op->uop->op_type);
+  STAT_EVENT(op->proc_id, ST_NOT_CF_READY + op->uop->cf_type);
+  STAT_EVENT(op->proc_id, ST_BAR_NONE_READY + op->uop->bar_type);
+  STAT_EVENT(op->proc_id, ST_NOT_MEM_READY + op->uop->mem_type);
 }
 
 void SelectLogic::collect_entry_op_ready_not_issued_stats(IssueQueueEntry* entry) {
@@ -419,15 +419,15 @@ void SelectLogic::collect_entry_op_ready_not_issued_stats(IssueQueueEntry* entry
   Op* op = entry->op;
   if (op->off_path) {
     STAT_EVENT(op->proc_id, ST_OP_OFFPATH_READY_NOT_ISSUED);
-    STAT_EVENT(op->proc_id, ST_NOT_MEM_OFFPATH_READY_NOT_ISSUED + op->inst_info->table_info.mem_type);
+    STAT_EVENT(op->proc_id, ST_NOT_MEM_OFFPATH_READY_NOT_ISSUED + op->uop->mem_type);
     return;
   }
 
   STAT_EVENT(op->proc_id, ST_OP_ONPATH_READY_NOT_ISSUED);
-  STAT_EVENT(op->proc_id, ST_OP_INV_READY_NOT_ISSUED + op->inst_info->table_info.op_type);
-  STAT_EVENT(op->proc_id, ST_NOT_CF_READY_NOT_ISSUED + op->inst_info->table_info.cf_type);
-  STAT_EVENT(op->proc_id, ST_BAR_NONE_READY_NOT_ISSUED + op->inst_info->table_info.bar_type);
-  STAT_EVENT(op->proc_id, ST_NOT_MEM_READY_NOT_ISSUED + op->inst_info->table_info.mem_type);
+  STAT_EVENT(op->proc_id, ST_OP_INV_READY_NOT_ISSUED + op->uop->op_type);
+  STAT_EVENT(op->proc_id, ST_NOT_CF_READY_NOT_ISSUED + op->uop->cf_type);
+  STAT_EVENT(op->proc_id, ST_BAR_NONE_READY_NOT_ISSUED + op->uop->bar_type);
+  STAT_EVENT(op->proc_id, ST_NOT_MEM_READY_NOT_ISSUED + op->uop->mem_type);
 }
 
 /**************************************************************************************/
@@ -978,7 +978,7 @@ uns16 IssueQueues::find_emptiest_queue(Op* op) {
   uns16 emptiest_queue_id = MAX_UNS16;
   size_t emptiest_queue_entries = 0;
 
-  uns64 op_fu_type = get_fu_type(op->inst_info->table_info.op_type, op->inst_info->table_info.is_simd);
+  uns64 op_fu_type = get_fu_type(op->uop->op_type, op->inst->is_simd);
   for (size_t queue_id = 0; queue_id < issue_queues.size(); ++queue_id) {
     const IssueQueue& queue = issue_queues[queue_id];
     uns64 queue_fu_types = fu_types[queue_id];

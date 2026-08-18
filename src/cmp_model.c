@@ -454,7 +454,7 @@ void warmup_uncore(uns proc_id, Addr addr, Flag write) {
 
 void cmp_warmup(Op* op) {
   uns proc_id = op->proc_id;
-  Addr ia = op->inst_info->addr;
+  Addr ia = op->inst->addr;
   Addr va = op->oracle_info.va;
   Addr dummy_line_addr;
   Addr dummy_line_addr2;
@@ -490,8 +490,8 @@ void cmp_warmup(Op* op) {
   }
 
   // Warmup caches for data
-  Flag is_load = op->inst_info->table_info.mem_type == MEM_LD;
-  Flag is_store = op->inst_info->table_info.mem_type == MEM_ST;
+  Flag is_load = op->uop->mem_type == MEM_LD;
+  Flag is_store = op->uop->mem_type == MEM_ST;
   if (is_load || is_store) {
     Cache* dcache = &(cmp_model.dcache_stage[proc_id].dcache);
     Dcache_Data* dc_data = cache_access(dcache, va, &dummy_line_addr, TRUE);
@@ -514,7 +514,7 @@ void cmp_warmup(Op* op) {
   }
 
   // Warmup BP for CF instructions
-  if (op->inst_info->table_info.cf_type != NOT_CF) {
+  if (op->uop->cf_type != NOT_CF) {
     Bp_Data* bp_data = &(cmp_model.bp_data[proc_id][0]);
     op->btb_pred_info = NULL;  // reset so bp_predict_btb() can set it (op may be reused)
     bp_predict_btb(bp_data, op);
@@ -525,8 +525,8 @@ void cmp_warmup(Op* op) {
     bp_btb_post_bp_predict(bp_data, op);  // for next BTB access
     bp_target_known_op(bp_data, op);
     bp_resolve_op(bp_data, op);
-    if (op->bp_pred_info->recover_at_decode || op->bp_pred_info->recover_at_exec) {
-      bp_recover_op(bp_data, op->inst_info->table_info.cf_type, &op->recovery_info);
+    if (op->bp_pred_info->recovery_point == RECOVER_AT_DECODE || op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
+      bp_recover_op(bp_data, op->uop->cf_type, &op->recovery_info);
     }
     bp_retire_op(bp_data, op);
   }

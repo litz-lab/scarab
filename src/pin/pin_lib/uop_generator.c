@@ -92,6 +92,8 @@ struct Trace_Uop_struct {
   Flag is_from_gather_scater;
 
   Inst_Info* info;
+  Static_Inst_Info* static_inst;  // per-macro-inst static info (interned)
+  Static_Op_Info* static_op;      // per-uop static info (interned)
   Flag alu_uop;
 };
 typedef struct Trace_Uop_struct Trace_Uop;
@@ -122,6 +124,8 @@ static Flag fake_templates_ready = FALSE;
 static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop);
 static void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop);
 static void convert_t_uop_to_info(uns8 proc_id, Trace_Uop* t_uop, Inst_Info* info);
+static void populate_static_inst_info(Static_Inst_Info* si, const Inst_Info* info, const ctype_pin_inst* pi);
+static void populate_static_op_info(Static_Op_Info* so, const Inst_Info* info);
 static void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uop* trace_uop, uns mem_size,
                             Flag is_last_uop);
 
@@ -179,26 +183,25 @@ static void print_inst_fields(uns proc_id, compressed_op* cop) {
 static void print_op_fields(uns proc_id, Op* op) {
   if (DEBUG_OP_FIELDS && DEBUG_RANGE_COND(proc_id)) {
     DEBUG_PRINT(proc_id, "----- Op Information -----\n");
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS inst addrs fake: %llx %d %d\n", op->inst_info->addr, op->inst_info->fake_inst,
-                op->inst_info->fake_inst_reason);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS inst addrs fake: %llx %d %d\n", op->inst->addr, op->inst->fake_inst,
+                op->inst->fake_inst_reason);
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op: %s\n", disasm_op(op, FALSE));
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op cf dir: %d %d %d\n", op->inst_info->table_info.op_type,
-                op->inst_info->table_info.cf_type, op->oracle_info.dir);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS op cf dir: %d %d %d\n", op->uop->op_type, op->uop->cf_type,
+                op->oracle_info.dir);
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS src regs: ");
-    for (int i = 0; i < op->inst_info->table_info.num_src_regs; ++i) {
-      DEBUG_PRINT(proc_id, "%d ", op->inst_info->srcs[i].id);
+    for (int i = 0; i < op->uop->num_src_regs; ++i) {
+      DEBUG_PRINT(proc_id, "%d ", op->uop->srcs[i].id);
     }
     DEBUG_PRINT(proc_id, "\n");
     DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS dst regs: ");
-    for (int i = 0; i < op->inst_info->table_info.num_dest_regs; ++i) {
-      DEBUG_PRINT(proc_id, "%d ", op->inst_info->dests[i].id);
+    for (int i = 0; i < op->uop->num_dest_regs; ++i) {
+      DEBUG_PRINT(proc_id, "%d ", op->uop->dests[i].id);
     }
     DEBUG_PRINT(proc_id, "\n");
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS simd: %d %d %d\n", op->inst_info->table_info.is_simd,
-                op->inst_info->table_info.is_simd ? op->inst_info->table_info.num_simd_lanes : 0,
-                op->inst_info->table_info.is_simd ? op->inst_info->table_info.lane_width_bytes : 0);
-    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS mem_type addr mem_size: %d %llx %d\n", op->inst_info->table_info.mem_type,
-                op->oracle_info.va, op->inst_info->table_info.mem_size);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS simd: %d %d %d\n", op->inst->is_simd,
+                op->inst->is_simd ? op->inst->num_simd_lanes : 0, op->inst->is_simd ? op->inst->lane_width_bytes : 0);
+    DEBUG_PRINT(proc_id, "DEBUG_OP_FIELDS mem_type addr mem_size: %d %llx %d\n", op->uop->mem_type, op->oracle_info.va,
+                op->uop->mem_size);
   }
 }
 
@@ -362,7 +365,8 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->proc_id = proc_id;
   op->eom = trace_uop->eom;
   op->fetched_instruction = fetched_instruction[proc_id];
-  op->inst_info = info;
+  op->inst = trace_uop->static_inst;
+  op->uop = trace_uop->static_op;
   op->off_path = FALSE;
   op->state = OS_FETCHED;
   op->fu_num = -1;
@@ -400,15 +404,15 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   /* multi path support */
 
   /* execute op */
-  for (uns ii = 0; ii < trace_uop->num_src_regs; ii++) {
+  for (uns ii = 0; ii < info->table_info.num_src_regs; ii++) {
     op->src_val[ii] = trace_uop->srcs[ii].val;
   }
-  for (uns ii = 0; ii < trace_uop->num_dest_regs; ii++) {
+  for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++) {
     op->dst_val[ii] = trace_uop->dests[ii].val;
   }
 
-  if (op->inst_info->table_info.op_type == OP_CF) {
-    if (op->inst_info->table_info.cf_type == CF_CBR || op->inst_info->table_info.cf_type == CF_REP) {
+  if (op->uop->op_type == OP_CF) {
+    if (op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP) {
       op->oracle_info.dir = (trace_uop->actual_taken == 0) ? NOT_TAKEN : TAKEN;
     } else {
       /* assume that all CFs besides CBR are actually always taken. This fixes the
@@ -418,8 +422,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   } else
     op->oracle_info.dir = NOT_TAKEN;
 
-  if ((op->inst_info->table_info.cf_type == CF_ICALL) || (op->inst_info->table_info.cf_type == CF_IBR) ||
-      (op->inst_info->table_info.cf_type == CF_ICO))
+  if ((op->uop->cf_type == CF_ICALL) || (op->uop->cf_type == CF_IBR) || (op->uop->cf_type == CF_ICO))
     op->oracle_info.dir = 1;  // FIXME Hack!! because of StringMOV
 
   /* removing proc_id from target before compare with zero */
@@ -428,13 +431,13 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->oracle_info.npc = trace_uop->npc;
   if (op->proc_id)
     ASSERT(op->proc_id, op->oracle_info.npc);
-  if (op->inst_info->table_info.cf_type == CF_BR || op->inst_info->table_info.cf_type == CF_CALL)
+  if (op->uop->cf_type == CF_BR || op->uop->cf_type == CF_CALL)
     ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
   op->oracle_info.mem_size = trace_uop->mem_size;
   // because of repeat move mem size is dynamic info  WRONG!!!!
-  // op->inst_info->table_info.mem_size = trace_uop->mem_size;
+  // op->uop->mem_size = trace_uop->mem_size;
 
-  if (op->inst_info->table_info.mem_type && !(op->oracle_info.va)) {
+  if (op->uop->mem_type && !(op->oracle_info.va)) {
     // QUESTION why? //TODO: Really why?
     op->oracle_info.va = last_ga_va[proc_id];
   } else if (op->oracle_info.va)
@@ -449,20 +452,20 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   DEBUG(proc_id,
         "op_num:%s unique_num:%s pc:0x%s npc:0x%s va:0x%s mem_type:%d "
         "mem_size:%d cf_type:%d oracle_target:%s dir:%d\n",
-        unsstr64(op->op_num), unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc),
-        hexstr64s(op->oracle_info.va), op->inst_info->table_info.mem_type, op->oracle_info.mem_size,
-        op->inst_info->table_info.cf_type, hexstr64s(op->oracle_info.target), op->oracle_info.dir);
+        unsstr64(op->op_num), unsstr64(op->unique_num), hexstr64s(op->inst->addr), hexstr64s(op->oracle_info.npc),
+        hexstr64s(op->oracle_info.va), op->uop->mem_type, op->oracle_info.mem_size, op->uop->cf_type,
+        hexstr64s(op->oracle_info.target), op->oracle_info.dir);
 
-  for (ii = 0; ii < op->inst_info->table_info.num_src_regs; ii++) {
+  for (ii = 0; ii < op->uop->num_src_regs; ii++) {
     DEBUG(proc_id, "op_num:%s unique_num:%s pc:0x%s npc:0x%s, src(%d/%d):%s \n", unsstr64(op->op_num),
-          unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc), ii + 1,
-          op->inst_info->table_info.num_src_regs, disasm_reg(op->inst_info->srcs[ii].id));
+          unsstr64(op->unique_num), hexstr64s(op->inst->addr), hexstr64s(op->oracle_info.npc), ii + 1,
+          op->uop->num_src_regs, disasm_reg(op->uop->srcs[ii].id));
   }
 
-  for (ii = 0; ii < op->inst_info->table_info.num_dest_regs; ii++) {
+  for (ii = 0; ii < op->uop->num_dest_regs; ii++) {
     DEBUG(proc_id, "op_num:%s unique_num:%s pc:0x%s npc:0x%s, dest(%d/%d):%s \n", unsstr64(op->op_num),
-          unsstr64(op->unique_num), hexstr64s(op->inst_info->addr), hexstr64s(op->oracle_info.npc), ii + 1,
-          op->inst_info->table_info.num_dest_regs, disasm_reg(op->inst_info->dests[ii].id));
+          unsstr64(op->unique_num), hexstr64s(op->inst->addr), hexstr64s(op->oracle_info.npc), ii + 1,
+          op->uop->num_dest_regs, disasm_reg(op->uop->dests[ii].id));
   }
 }
 
@@ -810,6 +813,12 @@ static uns generate_uops(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop
   return idx;
 }
 
+// Reusable per-proc scratch for fake ops. The fake Inst_Info is only read during decode (to
+// populate op->inst / op->uop and read num_uop/bar_type here); the pipeline never touches it, so a
+// single reused struct avoids leaking one heap Inst_Info per fake op (op->inst_info no longer holds
+// and frees it after the split).
+static Inst_Info fake_inst_info_scratch[MAX_NUM_PROCS];
+
 void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace_uop) {
   Flag new_entry = FALSE;
   Inst_Info* info;
@@ -833,7 +842,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
 
   if (pi->fake_inst) {
     ASSERT(proc_id, fake_templates_ready);
-    info = (Inst_Info*)calloc(1, sizeof(Inst_Info));
+    info = &fake_inst_info_scratch[proc_id];
     if (pi->fake_inst_reason == WPNM_FAKE_JMP) {
       *info = fake_jmp_template;
     } else {
@@ -923,6 +932,88 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
   trace_uop[num_uop - 1]->eom = TRUE;
 
   trace_uop[num_uop - 1]->npc = pi->instruction_next_addr;
+
+  // Static_Inst_Info keeps a fixed-size uops[] array; bump STATIC_INST_MAX_UOPS if this ever fires.
+  ASSERTM(proc_id, num_uop <= STATIC_INST_MAX_UOPS, "macro at 0x%llx cracks into %d uops (> %d)\n",
+          (unsigned long long)pi->instruction_addr, num_uop, STATIC_INST_MAX_UOPS);
+
+  // Intern (or, for fake ops, allocate) the split static structs and attach each uop to its
+  // Trace_Uop. Real ops dedup the per-macro struct by {addr, binary}; fake ops mirror the calloc'd
+  // Inst_Info above. si->uops[ii] is set right where the uop is first populated (so_new / fresh
+  // fake), so the array is filled exactly once; has_load/has_store/has_cf derive from it on demand
+  // (static_inst_has_*()).
+  for (ii = 0; ii < num_uop; ii++) {
+    Static_Inst_Info* si;
+    Static_Op_Info* so;
+    if (pi->fake_inst) {
+      si = (Static_Inst_Info*)calloc(1, sizeof(Static_Inst_Info));
+      so = (Static_Op_Info*)calloc(1, sizeof(Static_Op_Info));
+      populate_static_inst_info(si, trace_uop[ii]->info, pi);
+      populate_static_op_info(so, trace_uop[ii]->info);
+      si->uops[ii] = so;
+    } else {
+      unsigned char si_new = 0, so_new = 0;
+      si = cpp_static_inst_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb,
+                                         &si_new);
+      so = cpp_static_op_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb, ii,
+                                       &so_new);
+      if (si_new)
+        populate_static_inst_info(si, trace_uop[ii]->info, pi);
+      if (so_new) {
+        populate_static_op_info(so, trace_uop[ii]->info);
+        si->uops[ii] = so;
+      }
+    }
+    trace_uop[ii]->static_inst = si;
+    trace_uop[ii]->static_op = so;
+  }
+}
+
+// Fill the shared per-macro-instruction static struct from the built Inst_Info + pi.
+static void populate_static_inst_info(Static_Inst_Info* si, const Inst_Info* info, const ctype_pin_inst* pi) {
+  si->addr = info->addr;
+  si->opcode_lsb = pi->inst_binary_lsb;
+  si->opcode_msb = pi->inst_binary_msb;
+  si->inst_size = info->trace_info.inst_size;
+  si->num_uop = info->trace_info.num_uop;
+  si->branch_target = pi->branch_target;
+  si->true_op_type = info->table_info.true_op_type;
+  memcpy(si->name, info->table_info.name, sizeof(si->name));
+  si->is_simd = info->table_info.is_simd;
+  si->num_simd_lanes = info->table_info.num_simd_lanes;
+  si->lane_width_bytes = info->table_info.lane_width_bytes;
+  si->is_gather_scatter = info->trace_info.is_gather_scatter;
+  si->fake_inst = info->fake_inst;
+  si->fake_inst_reason = info->fake_inst_reason;
+  si->type = info->table_info.type;
+  si->qualifiers = info->table_info.qualifiers;
+}
+
+// Fill the per-uop static struct from the built Inst_Info (reg values stay off it).
+static void populate_static_op_info(Static_Op_Info* so, const Inst_Info* info) {
+  so->uop_seq_num = info->uop_seq_num;
+  so->op_type = info->table_info.op_type;
+  so->mem_type = info->table_info.mem_type;
+  so->cf_type = info->table_info.cf_type;
+  so->bar_type = info->table_info.bar_type;
+  so->num_src_regs = info->table_info.num_src_regs;
+  so->num_dest_regs = info->table_info.num_dest_regs;
+  for (uns i = 0; i < info->table_info.num_src_regs; i++) {
+    so->srcs[i].reg = info->srcs[i].reg;
+    so->srcs[i].type = info->srcs[i].type;
+    so->srcs[i].id = info->srcs[i].id;
+  }
+  for (uns i = 0; i < info->table_info.num_dest_regs; i++) {
+    so->dests[i].reg = info->dests[i].reg;
+    so->dests[i].type = info->dests[i].type;
+    so->dests[i].id = info->dests[i].id;
+  }
+  so->mem_size = info->table_info.mem_size;
+  so->latency = info->latency;
+  so->extra_ld_latency = info->extra_ld_latency;
+  so->load_seq_num = info->trace_info.load_seq_num;
+  so->store_seq_num = info->trace_info.store_seq_num;
+  so->trigger_op_fetched_hook = info->trigger_op_fetched_hook;
 }
 
 void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uop* trace_uop, uns mem_size,
@@ -942,9 +1033,16 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
   }
   for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++) {
     trace_uop->dests[ii].val = 0;
+    trace_uop->dests[ii].val_valid = FALSE;
+    // A load's produced value comes from ld_data (MEM_LD block below), not the architectural
+    // dst-reg match; skip it here so the destination value is written exactly once.
+    if (info->table_info.mem_type == MEM_LD)
+      continue;
     for (uns j = 0; j < pi->num_dst_regs; j++) {
       if (pi->dst_regs[j] == info->dests[ii].id) {
+        ASSERT(proc_id, !trace_uop->dests[ii].val_valid);  // a destination value is written exactly once
         trace_uop->dests[ii].val = pi->dests[j].val;
+        trace_uop->dests[ii].val_valid = TRUE;
         break;
       }
     }
@@ -968,6 +1066,16 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
       trace_uop->load_seq_num = info->trace_info.load_seq_num;
       ASSERT(proc_id, trace_uop->load_seq_num < MAX_LD_NUM);
       trace_uop->va = pi->ld_vaddr[trace_uop->load_seq_num];
+      // The loaded value is the memory data (captured at IPOINT_BEFORE). The dst-reg match above
+      // deliberately skips load uops, so the value is written here exactly once -- val_valid must
+      // be false (a cracked load-op writes the internal REG_TMP0, which PIN has no arch dest for).
+      ASSERT(proc_id, trace_uop->load_seq_num < pi->num_ld);
+      const uns64 ld_val = pi->ld_data[trace_uop->load_seq_num];
+      for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++) {
+        ASSERT(proc_id, !trace_uop->dests[ii].val_valid);  // a destination value is written exactly once
+        trace_uop->dests[ii].val = ld_val;
+        trace_uop->dests[ii].val_valid = TRUE;
+      }
       DEBUG(proc_id,
             "Generating a load: inst @%llx opcode: %s num_ld: %i "
             "num_st: %u va: 0x%s load size: %u\n",

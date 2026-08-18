@@ -146,6 +146,6 @@ void print_event(FILE* file, Op* op, const char* name, Counter cycle) {
 /* print_header: */
 
 void print_header(FILE* file, Op* op) {
-  fprintf(file, "%s:new:%lld:%llx:%d:%lld:%s\n", PREFIX, op_get_fetch_cycle(op), op->inst_info->addr, 0,
+  fprintf(file, "%s:new:%lld:%llx:%d:%lld:%s\n", PREFIX, op_get_fetch_cycle(op), op->inst->addr, 0,
           op->unique_num_per_proc, disasm_op(op, TRUE));
 }

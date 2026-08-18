@@ -290,7 +290,7 @@ uns8 bp_hybridgp_pred(Op* op, Bp_Pred_Level pred_level) {
   const uns proc_id = op->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
 
-  const Addr addr = op->inst_info->addr;
+  const Addr addr = op->inst->addr;
   const uns32 ghist = bp_pred_info->pred_global_hist;
   const uns32 phist = get_local_history(hybridgp_state, addr);
   const auto indices = cook_indices(addr, ghist, phist);
@@ -335,7 +335,7 @@ void bp_hybridgp_spec_update(Op* op, Bp_Pred_Level pred_level) {
 
 void bp_hybridgp_update(Op* op, Bp_Pred_Level pred_level) {
   Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
-  if (op->inst_info->table_info.cf_type != CF_CBR && op->inst_info->table_info.cf_type != CF_REP) {
+  if (op->uop->cf_type != CF_CBR && op->uop->cf_type != CF_REP) {
     // If op is not a conditional branch/REP, we do not interact with hybridgp.
     return;
   }
@@ -343,7 +343,7 @@ void bp_hybridgp_update(Op* op, Bp_Pred_Level pred_level) {
   const uns proc_id = op->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
 
-  const Addr addr = op->inst_info->addr;
+  const Addr addr = op->inst->addr;
   const uns32 ghist = bp_pred_info->pred_global_hist;
   const uns32 phist = bp_pred_info->pred_local_hist;
   const auto indices = cook_indices(addr, ghist, phist);
@@ -371,9 +371,9 @@ void bp_hybridgp_update(Op* op, Bp_Pred_Level pred_level) {
   // 1: confident branch will go the right direction
   if (KNOB_PRINT_BRINFO) {
     ASSERT(proc_id, brmispred != NULL);
-    fprintf(brmispred, "%16llx %d %d %d %d %d\n", addr, bp_pred_info->recover_at_exec ? 1 : 0,
-            bp_pred_info->recover_at_decode ? 1 : 0, bp_pred_info->pred_conf ? 1 : 0, op->oracle_info.dir ? 1 : 0,
-            resolution_time);
+    fprintf(brmispred, "%16llx %d %d %d %d %d\n", addr, bp_pred_info->recovery_point == RECOVER_AT_EXEC ? 1 : 0,
+            bp_pred_info->recovery_point == RECOVER_AT_DECODE ? 1 : 0, bp_pred_info->pred_conf ? 1 : 0,
+            op->oracle_info.dir ? 1 : 0, resolution_time);
   }
 }
 

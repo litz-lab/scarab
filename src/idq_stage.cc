@@ -83,7 +83,6 @@ struct IDQ_Stage {
   /* the IDQ outpur stage data */
   Stage_Data idq_sd = {};
   // Backing storage for `idq_sd.ops` (avoids explicit per-init malloc).
-  // Note: `ISSUE_WIDTH` is a parameter and may not be a compile-time constant.
   std::vector<Op*> idq_ops;
 
   // Backing storage for `idq_sd.name` (avoids per-init `strdup` leaks and
@@ -113,8 +112,8 @@ void IDQ_Stage::init(uns8 _proc_id, const char* name) {
   snprintf(tmp_name, MAX_STR_LENGTH, "%s %d", name, 0);
   idq_stage_name = tmp_name;
   idq_sd.name = idq_stage_name.data();
-  idq_sd.max_op_count = ISSUE_WIDTH;
-  idq_ops.assign(ISSUE_WIDTH, NULL);
+  idq_sd.max_op_count = DISPATCH_WIDTH;
+  idq_ops.assign(DISPATCH_WIDTH, NULL);
   idq_sd.ops = idq_ops.data();
   idq_sd.op_count = 0;
 
@@ -145,7 +144,7 @@ void IDQ_Stage::recover() {
       if (ops[i] && IS_FLUSHING_OP(ops[i])) {
         op_select_bp_pred_info(ops[i], BP_PRED_MAIN);
         DEBUG(proc_id, "Recovery op found in IDQ queue idx:%d op_num:%llu off_path:%u addr:0x%llx\n", i,
-              (unsigned long long)ops[i]->op_num, ops[i]->off_path, (unsigned long long)ops[i]->inst_info->addr);
+              (unsigned long long)ops[i]->op_num, ops[i]->off_path, (unsigned long long)ops[i]->inst->addr);
       }
       if (FLUSH_OP(ops[i])) {
         DEBUG(proc_id, "IDQ queue flushing op_num:%llu off_path:%u\n", (unsigned long long)ops[i]->op_num,
@@ -178,7 +177,7 @@ void IDQ_Stage::recover() {
     if (op && IS_FLUSHING_OP(op)) {
       op_select_bp_pred_info(op, BP_PRED_MAIN);
       DEBUG(proc_id, "Recovery op found in IDQ output idx:%d op_num:%llu off_path:%u addr:0x%llx\n", i,
-            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
+            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst->addr);
     }
     if (op && FLUSH_OP(op)) {
       DEBUG(proc_id, "IDQ output flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);

@@ -149,6 +149,7 @@ struct FT {
   FT_Info ft_info = {};
   bool is_prebuilt = false;
   std::vector<Op*> ops = {};
+  Dynamic_Inst* building_dyn_inst = nullptr;  // macro instance currently being grouped in add_op
   FT_Event predict_op_ft_event(Op* op, Bp_Pred_Level pred_level);
   void generate_ft_info();
   // Common helper used by recovery/exec-recovery trimming paths.

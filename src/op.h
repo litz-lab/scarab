@@ -55,6 +55,7 @@ typedef struct Op_Cycles_struct {
   Counter fetch_cycle;   // cycle an individual instruction is fetched
   Counter bp_cycle;      // cycle a CF instruction accesses the branch predictor
   Counter map_cycle;     // cycle an individual instruction enters the map stage
+  Counter renamed_cycle;  // cycle the op finished reg_file_rename (its SRT effect is applied); MAX_CTR until then
   Counter issue_cycle;   // cycle an individual instruction is issued -- same as chkpt
   Counter rdy_cycle;     // cycle the final source value is available (accumulator: MAX over producers)
   Counter sched_cycle;   // cycle when the op is scheduled (arrives at the functional unit)
@@ -336,6 +337,13 @@ static inline void op_set_map_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.map_cycle == MAX_CTR);
   op->cycles.map_cycle = cycle;
 }
+static inline Counter op_get_renamed_cycle(const Op* op) {
+  return op->cycles.renamed_cycle;
+}
+static inline void op_set_renamed_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.renamed_cycle == MAX_CTR);
+  op->cycles.renamed_cycle = cycle;
+}
 
 static inline Counter op_get_issue_cycle(const Op* op) {
   return op->cycles.issue_cycle;
@@ -360,8 +368,8 @@ static inline void op_set_exec_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.exec_cycle == MAX_CTR);
   op->cycles.exec_cycle = cycle;
   // A value/RFP-predicted load fires its mispredict recovery here at exec. An addr-predicted load
-  // instead fires it from the map module's operand-wake path (addr_pred_on_operands_woken) when its
-  // address operands become ready, so it is excluded here.
+  // instead fires it from the map operand-wake path (addr_pred_on_operands_woken), or, if that wake
+  // beat the macro's rename, from the eom-rename retry (reg_file_rename) -- never here, so it is excluded.
   if (op->bp_pred_info && op->bp_pred_info->recovery_point == RECOVER_AT_EXEC && op->uop->cf_type == NOT_CF &&
       !op->load_addr_predicted)
     predicted_load_schedule_recovery(op, op_get_exec_cycle(op));

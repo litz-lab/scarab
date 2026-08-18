@@ -1046,10 +1046,13 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
   // write the physical register table and update the arch register table
   reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
-  // Snapshot the SRT at the eom of a macro that recovers at the eom (branch/predicted load).
-  if (op->eom && (op_inst_recovery_point(op) == RECOVER_AT_EXEC || op_inst_recovery_at_agen(op))) {
-    ASSERT(op->proc_id, !op->off_path);
-    reg_file_snapshot_srt();
+  // Snapshot the SRT at the eom of a macro that recovers at the eom (exec, or early-AGEN wake/rename).
+  if (op->eom) {
+    Recovery_Point rp = op_inst_recovery_point(op);
+    if (rp == RECOVER_AT_EXEC || rp == RECOVER_AT_WAKE || rp == RECOVER_AT_RENAME) {
+      ASSERT(op->proc_id, !op->off_path);
+      reg_file_snapshot_srt();
+    }
   }
 }
 
@@ -1079,10 +1082,11 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 
 // flush registers of misprediction operands using the ptag info
 void reg_renaming_scheme_realistic_recover(Op *op) {
-  // only exec recoveries pollute the SRT; decode/frontend recoveries squash before rename. Recovery
-  // only eom-recoveries touch the SRT (matches the snapshot guard); decode/FE squash before rename.
-  if (op_inst_recovery_point(op) != RECOVER_AT_EXEC && !op_inst_recovery_at_agen(op))
+  // only eom-recoveries touch the SRT (exec, or early-AGEN wake/rename); decode/FE squash before rename.
+  Recovery_Point rp = op_inst_recovery_point(op);
+  if (rp != RECOVER_AT_EXEC && rp != RECOVER_AT_WAKE && rp != RECOVER_AT_RENAME)
     return;
+  ASSERT(op->proc_id, op->bp_pred_main.recovery_sch);
 
   reg_file_rollback_srt();
 
@@ -1167,9 +1171,12 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
   reg_file_write_dst(op, REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
   // Snapshot the SRT at the eom of a macro that recovers at the eom (see the realistic scheme).
-  if (op->eom && (op_inst_recovery_point(op) == RECOVER_AT_EXEC || op_inst_recovery_at_agen(op))) {
-    ASSERT(op->proc_id, !op->off_path);
-    reg_file_snapshot_srt();
+  if (op->eom) {
+    Recovery_Point rp = op_inst_recovery_point(op);
+    if (rp == RECOVER_AT_EXEC || rp == RECOVER_AT_WAKE || rp == RECOVER_AT_RENAME) {
+      ASSERT(op->proc_id, !op->off_path);
+      reg_file_snapshot_srt();
+    }
   }
 }
 
@@ -1232,8 +1239,10 @@ void reg_renaming_scheme_late_allocation_produce(Op *op) {
 
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
   // only eom-recoveries touch the SRT -- see the realistic scheme.
-  if (op_inst_recovery_point(op) != RECOVER_AT_EXEC && !op_inst_recovery_at_agen(op))
+  Recovery_Point rp = op_inst_recovery_point(op);
+  if (rp != RECOVER_AT_EXEC && rp != RECOVER_AT_WAKE && rp != RECOVER_AT_RENAME)
     return;
+  ASSERT(op->proc_id, op->bp_pred_main.recovery_sch);
 
   reg_file_rollback_srt();
 

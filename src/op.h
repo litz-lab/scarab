@@ -313,10 +313,10 @@ static inline Recovery_Point op_inst_recovery_point(const Op* op) {
   }
   return rp;
 }
-// Recovers at the eom (snapshots/rolls back the SRT): exec/wake/rename, not decode/FE.
-static inline Flag op_inst_recovery_srt(const Op* op) {
+// early-AGEN addr-pred load recovery: detected at operand wake, or deferred to rename.
+static inline Flag op_inst_recovery_at_agen(const Op* op) {
   Recovery_Point rp = op_inst_recovery_point(op);
-  return rp == RECOVER_AT_EXEC || rp == RECOVER_AT_WAKE || rp == RECOVER_AT_RENAME;
+  return rp == RECOVER_AT_WAKE || rp == RECOVER_AT_RENAME;
 }
 
 static inline Counter op_get_fetch_cycle(const Op* op) {

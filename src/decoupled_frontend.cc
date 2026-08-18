@@ -924,7 +924,7 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
   // A non-CF op only reaches redirect as an LVP predicted-load mispredict; recover_at_exec lives on
   // the macro's trigger uop, not this eom (never branch-predicted, so its bp_pred_info may be NULL).
   if (op->uop->cf_type == NOT_CF) {
-    ASSERT(proc_id, op_inst_recovery_srt(op));
+    ASSERT(proc_id, op_inst_recovery_point(op) == RECOVER_AT_EXEC || op_inst_recovery_at_agen(op));
     return REASON_MISPRED;
   }
   if (op->bp_pred_info->recovery_point == RECOVER_AT_NONE) {

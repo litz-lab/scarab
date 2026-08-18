@@ -367,11 +367,13 @@ static inline Counter op_get_exec_cycle(const Op* op) {
 static inline void op_set_exec_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.exec_cycle == MAX_CTR);
   op->cycles.exec_cycle = cycle;
-  // A value/RFP-predicted load fires its mispredict recovery here at exec. An addr-predicted load
-  // instead fires it from the map operand-wake path (addr_pred_on_operands_woken), or, if that wake
-  // beat the macro's rename, from the eom-rename retry (reg_file_rename) -- never here, so it is excluded.
+  // A value/RFP-predicted load fires its mispredict recovery here at exec -- but only once the macro's
+  // eom has renamed, so the SRT snapshot exists to roll back to. If this exec beat the eom's rename, the
+  // eom-rename retry (reg_file_rename) fires it instead. An addr-predicted load fires from the operand-
+  // wake path, never here. recovery_sch dedups the exec and eom-rename triggers.
   if (op->bp_pred_info && op->bp_pred_info->recovery_point == RECOVER_AT_EXEC && op->uop->cf_type == NOT_CF &&
-      !op->load_addr_predicted)
+      !op->load_addr_predicted && op_get_renamed_cycle(op_inst_eom(op)) != MAX_CTR &&
+      !op_inst_eom(op)->bp_pred_main.recovery_sch)
     predicted_load_schedule_recovery(op, op_get_exec_cycle(op));
 }
 

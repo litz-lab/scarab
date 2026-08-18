@@ -1907,16 +1907,19 @@ void reg_file_rename(Op *op) {
   // addr-pred operand-wake path to tell whether the whole macro has renamed yet.
   op_set_renamed_cycle(op, cycle_count);
 
-  // eom-rename retry for a deferred addr-pred mispredict: if an operand-wake detected the wrong address
-  // before this macro finished renaming, it deferred scheduling so the SRT snapshot (taken just above at
-  // the eom's rename) would exist first. Now that the eom has renamed, schedule the recovery if the
-  // load's AGEN operands are already woken; otherwise the later operand-wake schedules it. recovery_sch
-  // dedups the two triggers.
+  // eom-rename retry for a deferred predicted-load mispredict: a predicted load's recovery trigger can
+  // fire before its macro finishes renaming (addr-pred operand-wake, or value/RFP-pred load exec), in
+  // which case it deferred scheduling so the SRT snapshot (taken just above at the eom's rename) would
+  // exist first. Now that the eom has renamed, schedule if the trigger has already happened; otherwise
+  // the later trigger schedules it. recovery_sch dedups the two triggers.
   if (op->eom && op_inst_recovery_point(op) == RECOVER_AT_EXEC && !op->bp_pred_main.recovery_sch) {
     for (uns i = 0; i < op_inst_num_uops(op); i++) {
       Op *u = op_inst_uop(op, i);
-      if (u->load_addr_predicted && u->bp_pred_info && u->bp_pred_info->recovery_point == RECOVER_AT_EXEC &&
-          op_sources_all_woken(u)) {
+      if (!(u->bp_pred_info && u->bp_pred_info->recovery_point == RECOVER_AT_EXEC))
+        continue;
+      // addr-pred fires once its AGEN operands wake; value/RFP-pred fires once the load has executed.
+      Flag trigger_ready = u->load_addr_predicted ? op_sources_all_woken(u) : (op_get_exec_cycle(u) != MAX_CTR);
+      if (trigger_ready) {
         predicted_load_schedule_recovery(u, cycle_count);
         break;
       }

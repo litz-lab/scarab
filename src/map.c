@@ -553,14 +553,12 @@ static void addr_pred_on_operands_woken(Op* op) {
   // An addr-predicted load always has bp_pred_info bound at predict time, so read recover_at_exec
   // through the selected level. A wrong predicted address set it; a correct one leaves it FALSE.
   ASSERT(op->proc_id, op->bp_pred_info);
-  // Schedule the mispredict recovery from the operand-wake only once the whole macro has renamed, so the
-  // eom-rename SRT snapshot exists to roll back to. If this operand-wake beat the macro's rename, defer:
-  // the eom-rename retry (reg_file_rename) schedules once the eom renames and sees the operands woken.
-  // recovery_sch (persists across cmp_recover, unlike recovery_scheduled) dedups the two triggers.
-  Op* eom = op_inst_eom(op);
-  if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC && op_get_renamed_cycle(eom) != MAX_CTR &&
-      !eom->bp_pred_main.recovery_sch) {
-    predicted_load_schedule_recovery(op, cycle_count);
+  // addr-pred load: recover now if the eom has renamed, else defer to RECOVER_AT_RENAME.
+  if (op->bp_pred_info->recovery_point == RECOVER_AT_WAKE) {
+    if (op_get_renamed_cycle(op_inst_eom(op)) != MAX_CTR)
+      predicted_load_schedule_recovery(op, cycle_count);
+    else
+      op->bp_pred_info->recovery_point = RECOVER_AT_RENAME;
   }
 }
 

@@ -217,27 +217,25 @@ void topdown_done(uns proc_id) {
                  bad_spec_bound - GET_STAT_EVENT(proc_id, TOPDOWN_BR_RECOVER_AT_EXEC_BOUND));
 
   uns64 unutilised_ilp_slots_onpath = GET_STAT_EVENT(proc_id, TOPDOWN_UNUSED_ILP_SLOTS_ONPATH);
-  uns64 unutilised_ilp_slots_general = GET_STAT_EVENT(proc_id, TOPDOWN_UNUSED_ILP_SLOTS_GENERAL);
+  uns64 unutilised_ilp_slots_all = GET_STAT_EVENT(proc_id, TOPDOWN_UNUSED_ILP_SLOTS_ALL);
 
   uns64 unutilised_bandwidth_slots_onpath = GET_STAT_EVENT(proc_id, ST_OP_ONPATH_READY_NOT_ISSUED);
-  uns64 unutilised_bandwidth_slots_general =
+  uns64 unutilised_bandwidth_slots_all =
       GET_STAT_EVENT(proc_id, ST_OP_ONPATH_READY_NOT_ISSUED) + GET_STAT_EVENT(proc_id, ST_OP_OFFPATH_READY_NOT_ISSUED);
 
-  uns64 corebound_slots_onpath = unutilised_ilp_slots_onpath + unutilised_bandwidth_slots_onpath;
+  uns64 wasted_slots_onpath = unutilised_ilp_slots_onpath + unutilised_bandwidth_slots_onpath;
 
-  uns64 corebound_slots_general = unutilised_ilp_slots_general + unutilised_bandwidth_slots_general;
+  uns64 wasted_slots_all = unutilised_ilp_slots_all + unutilised_bandwidth_slots_all;
 
-  INC_STAT_EVENT(proc_id, TOPDOWN_CORE_ILP_BOUND_ONPATH_CALCULATION,
-                 unutilised_ilp_slots_onpath * GET_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND) / corebound_slots_onpath);
+  INC_STAT_EVENT(proc_id, TOPDOWN_CORE_ILP_BOUND_ONPATH,
+                 unutilised_ilp_slots_onpath * GET_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND) / wasted_slots_onpath);
 
-  INC_STAT_EVENT(proc_id, TOPDOWN_CORE_ILP_BOUND_GENERAL_CALCULATION,
-                 unutilised_ilp_slots_general * GET_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND) / corebound_slots_general);
+  INC_STAT_EVENT(proc_id, TOPDOWN_CORE_ILP_BOUND_ALL,
+                 unutilised_ilp_slots_all * GET_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND) / wasted_slots_all);
 
-  INC_STAT_EVENT(proc_id, TOPDOWN_CORE_BANDWIDTH_BOUND_GENERAL_CALCULATION,
-                 GET_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND) -
-                     GET_STAT_EVENT(proc_id, TOPDOWN_CORE_ILP_BOUND_GENERAL_CALCULATION));
+  INC_STAT_EVENT(proc_id, TOPDOWN_CORE_BANDWIDTH_BOUND_ONPATH,
+                 unutilised_bandwidth_slots_onpath * GET_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND) / wasted_slots_onpath);
 
-  INC_STAT_EVENT(
-      proc_id, TOPDOWN_CORE_BANDWIDTH_BOUND_ONPATH_CALCULATION,
-      GET_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND) - GET_STAT_EVENT(proc_id, TOPDOWN_CORE_ILP_BOUND_ONPATH_CALCULATION));
+  INC_STAT_EVENT(proc_id, TOPDOWN_CORE_BANDWIDTH_BOUND_ALL,
+                 unutilised_bandwidth_slots_all * GET_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND) / wasted_slots_all);
 }

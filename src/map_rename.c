@@ -1047,7 +1047,7 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
   reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
   // Snapshot the SRT at the eom of a macro that recovers at the eom (branch/predicted load).
-  if (op->eom && op_inst_recovery_srt(op)) {
+  if (op->eom && (op_inst_recovery_point(op) == RECOVER_AT_EXEC || op_inst_recovery_at_agen(op))) {
     ASSERT(op->proc_id, !op->off_path);
     reg_file_snapshot_srt();
   }
@@ -1081,7 +1081,7 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 void reg_renaming_scheme_realistic_recover(Op *op) {
   // only exec recoveries pollute the SRT; decode/frontend recoveries squash before rename. Recovery
   // only eom-recoveries touch the SRT (matches the snapshot guard); decode/FE squash before rename.
-  if (!op_inst_recovery_srt(op))
+  if (op_inst_recovery_point(op) != RECOVER_AT_EXEC && !op_inst_recovery_at_agen(op))
     return;
 
   reg_file_rollback_srt();
@@ -1167,7 +1167,7 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
   reg_file_write_dst(op, REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
   // Snapshot the SRT at the eom of a macro that recovers at the eom (see the realistic scheme).
-  if (op->eom && op_inst_recovery_srt(op)) {
+  if (op->eom && (op_inst_recovery_point(op) == RECOVER_AT_EXEC || op_inst_recovery_at_agen(op))) {
     ASSERT(op->proc_id, !op->off_path);
     reg_file_snapshot_srt();
   }
@@ -1232,7 +1232,7 @@ void reg_renaming_scheme_late_allocation_produce(Op *op) {
 
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
   // only eom-recoveries touch the SRT -- see the realistic scheme.
-  if (!op_inst_recovery_srt(op))
+  if (op_inst_recovery_point(op) != RECOVER_AT_EXEC && !op_inst_recovery_at_agen(op))
     return;
 
   reg_file_rollback_srt();
@@ -1904,15 +1904,8 @@ void reg_file_rename(Op *op) {
   op_set_renamed_cycle(op, cycle_count);
 
   // schedule a predicted-load recovery deferred to RECOVER_AT_RENAME (its trigger beat the eom's rename).
-  if (op->eom && op_inst_recovery_point(op) == RECOVER_AT_RENAME) {
-    for (uns i = 0; i < op_inst_num_uops(op); i++) {
-      Op *u = op_inst_uop(op, i);
-      if (u->bp_pred_info && u->bp_pred_info->recovery_point == RECOVER_AT_RENAME) {
-        predicted_load_schedule_recovery(u, cycle_count);
-        break;
-      }
-    }
-  }
+  if (op->eom && op_inst_recovery_point(op) == RECOVER_AT_RENAME)
+    predicted_load_schedule_recovery(op, cycle_count);
 }
 
 /*

@@ -313,11 +313,6 @@ static inline Recovery_Point op_inst_recovery_point(const Op* op) {
   }
   return rp;
 }
-// early-AGEN addr-pred load recovery: detected at operand wake, or deferred to rename.
-static inline Flag op_inst_recovery_at_agen(const Op* op) {
-  Recovery_Point rp = op_inst_recovery_point(op);
-  return rp == RECOVER_AT_WAKE || rp == RECOVER_AT_RENAME;
-}
 
 static inline Counter op_get_fetch_cycle(const Op* op) {
   return op->cycles.fetch_cycle;
@@ -372,14 +367,14 @@ static inline Counter op_get_exec_cycle(const Op* op) {
 static inline void op_set_exec_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.exec_cycle == MAX_CTR);
   op->cycles.exec_cycle = cycle;
-  // value/RFP-pred load: recover at exec if the eom has renamed, else defer to RECOVER_AT_RENAME.
-  if (op->bp_pred_info && op->bp_pred_info->recovery_point == RECOVER_AT_EXEC && op->uop->cf_type == NOT_CF &&
-      !op->load_addr_predicted) {
-    if (op_get_renamed_cycle(op_inst_eom(op)) != MAX_CTR)
-      predicted_load_schedule_recovery(op, op_get_exec_cycle(op));
-    else
-      op->bp_pred_info->recovery_point = RECOVER_AT_RENAME;
-  }
+  // value/RFP-pred load only: recover at exec if the eom has renamed, else defer to RECOVER_AT_RENAME.
+  if (!op->bp_pred_info || op->bp_pred_info->recovery_point != RECOVER_AT_EXEC || op->uop->cf_type != NOT_CF ||
+      op->load_addr_predicted)
+    return;
+  if (op_get_renamed_cycle(op_inst_eom(op)) != MAX_CTR)
+    predicted_load_schedule_recovery(op, op_get_exec_cycle(op));
+  else
+    op->bp_pred_info->recovery_point = RECOVER_AT_RENAME;
 }
 
 static inline Counter op_get_dcache_cycle(const Op* op) {

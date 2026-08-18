@@ -98,7 +98,8 @@ void load_pred_mark_recovery(Op* op) {
   STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_LOADS_ON_PATH_MISPREDICTED);
 
   op_select_bp_pred_info(op, BP_PRED_MAIN);
-  op->bp_pred_info->recovery_point = RECOVER_AT_EXEC;
+  // addr-pred load recovers at operand wake; value/RFP-pred at exec.
+  op->bp_pred_info->recovery_point = op->load_addr_predicted ? RECOVER_AT_WAKE : RECOVER_AT_EXEC;
 }
 
 /*

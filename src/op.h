@@ -313,6 +313,11 @@ static inline Recovery_Point op_inst_recovery_point(const Op* op) {
   }
   return rp;
 }
+// Recovers at the eom (snapshots/rolls back the SRT): exec/wake/rename, not decode/FE.
+static inline Flag op_inst_recovery_srt(const Op* op) {
+  Recovery_Point rp = op_inst_recovery_point(op);
+  return rp == RECOVER_AT_EXEC || rp == RECOVER_AT_WAKE || rp == RECOVER_AT_RENAME;
+}
 
 static inline Counter op_get_fetch_cycle(const Op* op) {
   return op->cycles.fetch_cycle;
@@ -367,14 +372,14 @@ static inline Counter op_get_exec_cycle(const Op* op) {
 static inline void op_set_exec_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.exec_cycle == MAX_CTR);
   op->cycles.exec_cycle = cycle;
-  // A value/RFP-predicted load fires its mispredict recovery here at exec -- but only once the macro's
-  // eom has renamed, so the SRT snapshot exists to roll back to. If this exec beat the eom's rename, the
-  // eom-rename retry (reg_file_rename) fires it instead. An addr-predicted load fires from the operand-
-  // wake path, never here. recovery_sch dedups the exec and eom-rename triggers.
+  // value/RFP-pred load: recover at exec if the eom has renamed, else defer to RECOVER_AT_RENAME.
   if (op->bp_pred_info && op->bp_pred_info->recovery_point == RECOVER_AT_EXEC && op->uop->cf_type == NOT_CF &&
-      !op->load_addr_predicted && op_get_renamed_cycle(op_inst_eom(op)) != MAX_CTR &&
-      !op_inst_eom(op)->bp_pred_main.recovery_sch)
-    predicted_load_schedule_recovery(op, op_get_exec_cycle(op));
+      !op->load_addr_predicted) {
+    if (op_get_renamed_cycle(op_inst_eom(op)) != MAX_CTR)
+      predicted_load_schedule_recovery(op, op_get_exec_cycle(op));
+    else
+      op->bp_pred_info->recovery_point = RECOVER_AT_RENAME;
+  }
 }
 
 static inline Counter op_get_dcache_cycle(const Op* op) {

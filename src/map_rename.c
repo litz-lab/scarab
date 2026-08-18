@@ -1046,9 +1046,8 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
   // write the physical register table and update the arch register table
   reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
-  // Checkpoint the SRT at the eom of a macro that recovers at exec: off-path starts after the eom, so
-  // this captures the full on-path state to roll back to (the branch/predicted-load recovers there).
-  if (op->eom && op_inst_recovery_point(op) == RECOVER_AT_EXEC) {
+  // Snapshot the SRT at the eom of a macro that recovers at the eom (branch/predicted load).
+  if (op->eom && op_inst_recovery_srt(op)) {
     ASSERT(op->proc_id, !op->off_path);
     reg_file_snapshot_srt();
   }
@@ -1081,9 +1080,8 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 // flush registers of misprediction operands using the ptag info
 void reg_renaming_scheme_realistic_recover(Op *op) {
   // only exec recoveries pollute the SRT; decode/frontend recoveries squash before rename. Recovery
-  // fires on the macro's eom, whose own recovery_point is NONE (it lives on the trigger uop), so gate
-  // on op_inst_recovery_point -- matching the snapshot guard in reg_renaming_scheme_realistic_rename.
-  if (op_inst_recovery_point(op) != RECOVER_AT_EXEC)
+  // only eom-recoveries touch the SRT (matches the snapshot guard); decode/FE squash before rename.
+  if (!op_inst_recovery_srt(op))
     return;
 
   reg_file_rollback_srt();
@@ -1168,8 +1166,8 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
   // write the virtaul register table and update the arch register table
   reg_file_write_dst(op, REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
-  // Checkpoint the SRT at the eom of a macro that recovers at exec (see the realistic scheme).
-  if (op->eom && op_inst_recovery_point(op) == RECOVER_AT_EXEC) {
+  // Snapshot the SRT at the eom of a macro that recovers at the eom (see the realistic scheme).
+  if (op->eom && op_inst_recovery_srt(op)) {
     ASSERT(op->proc_id, !op->off_path);
     reg_file_snapshot_srt();
   }
@@ -1233,9 +1231,8 @@ void reg_renaming_scheme_late_allocation_produce(Op *op) {
 }
 
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
-  // only exec recoveries touch the SRT -- see the realistic scheme (gate on the macro trigger, not
-  // the eom whose own recovery_point is NONE)
-  if (op_inst_recovery_point(op) != RECOVER_AT_EXEC)
+  // only eom-recoveries touch the SRT -- see the realistic scheme.
+  if (!op_inst_recovery_srt(op))
     return;
 
   reg_file_rollback_srt();
@@ -1903,23 +1900,14 @@ void reg_file_rename(Op *op) {
 
   reg_file_collect_rename_stat(op);
 
-  // The op (and its SRT effect, incl. any recover-at-exec eom snapshot) is now renamed. Used by the
-  // addr-pred operand-wake path to tell whether the whole macro has renamed yet.
+  // macro renamed; the wake/exec paths read this to tell whether the eom has renamed yet.
   op_set_renamed_cycle(op, cycle_count);
 
-  // eom-rename retry for a deferred predicted-load mispredict: a predicted load's recovery trigger can
-  // fire before its macro finishes renaming (addr-pred operand-wake, or value/RFP-pred load exec), in
-  // which case it deferred scheduling so the SRT snapshot (taken just above at the eom's rename) would
-  // exist first. Now that the eom has renamed, schedule if the trigger has already happened; otherwise
-  // the later trigger schedules it. recovery_sch dedups the two triggers.
-  if (op->eom && op_inst_recovery_point(op) == RECOVER_AT_EXEC && !op->bp_pred_main.recovery_sch) {
+  // schedule a predicted-load recovery deferred to RECOVER_AT_RENAME (its trigger beat the eom's rename).
+  if (op->eom && op_inst_recovery_point(op) == RECOVER_AT_RENAME) {
     for (uns i = 0; i < op_inst_num_uops(op); i++) {
       Op *u = op_inst_uop(op, i);
-      if (!(u->bp_pred_info && u->bp_pred_info->recovery_point == RECOVER_AT_EXEC))
-        continue;
-      // addr-pred fires once its AGEN operands wake; value/RFP-pred fires once the load has executed.
-      Flag trigger_ready = u->load_addr_predicted ? op_sources_all_woken(u) : (op_get_exec_cycle(u) != MAX_CTR);
-      if (trigger_ready) {
+      if (u->bp_pred_info && u->bp_pred_info->recovery_point == RECOVER_AT_RENAME) {
         predicted_load_schedule_recovery(u, cycle_count);
         break;
       }

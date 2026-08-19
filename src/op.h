@@ -65,6 +65,7 @@ typedef struct Op_Cycles_struct {
   Counter retire_cycle;  // cycle when the op actually retires
   Counter replay_cycle;  // cycle when the op catches a replay signal
   Counter pred_cycle;
+  Counter value_predicted_cycle;  // cycle a load's value was predicted (value pred); MAX_CTR until then
   Counter precommit_cycle;  // cycle when the op is precommit (will eventually retire)
   Counter decode_cycle;     // cycle when decode completes
   Counter wake_cycle;       // cycle a wake up signal is sent to dependents
@@ -278,6 +279,8 @@ struct Op_struct {
 extern "C" {
 #endif
 void predicted_load_schedule_recovery(Op* op, Counter recovery_cycle);
+/* Adds (exec_cycle - value_predicted_cycle) to LOAD_VALUE_PREDICT_SAVED_CYCLES_ON_PATH. */
+void load_pred_account_saved_cycles(Op* op);
 #ifdef __cplusplus
 }
 #endif
@@ -367,6 +370,9 @@ static inline Counter op_get_exec_cycle(const Op* op) {
 static inline void op_set_exec_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.exec_cycle == MAX_CTR);
   op->cycles.exec_cycle = cycle;
+  // value-predicted load: its value was usable to consumers at prediction; count cycles saved vs exec.
+  if (op->cycles.value_predicted_cycle != MAX_CTR && !op->off_path)
+    load_pred_account_saved_cycles(op);
   // value/RFP-pred load only: recover at exec if the eom has renamed, else defer to RECOVER_AT_RENAME.
   if (!op->bp_pred_info || op->bp_pred_info->recovery_point != RECOVER_AT_EXEC || op->uop->cf_type != NOT_CF ||
       op->load_addr_predicted)
@@ -415,6 +421,13 @@ static inline Counter op_get_pred_cycle(const Op* op) {
 static inline void op_set_pred_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.pred_cycle == MAX_CTR);
   op->cycles.pred_cycle = cycle;
+}
+static inline Counter op_get_value_predicted_cycle(const Op* op) {
+  return op->cycles.value_predicted_cycle;
+}
+static inline void op_set_value_predicted_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.value_predicted_cycle == MAX_CTR);
+  op->cycles.value_predicted_cycle = cycle;
 }
 
 static inline Counter op_get_precommit_cycle(const Op* op) {

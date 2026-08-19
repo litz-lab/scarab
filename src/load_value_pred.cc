@@ -65,6 +65,8 @@ extern "C" {
 #include <unordered_map>
 #include <vector>
 
+#include "isa/isa.h"
+
 #include "frontend/frontend_intf.h"
 
 #include "ft.h"
@@ -85,6 +87,12 @@ static inline Flag load_pred_read_dest_value(Op* op, uns dst_idx, uns64* value) 
     return FALSE;
   *value = op->dst_val[dst_idx];
   return TRUE;
+}
+
+// Value-predict only architectural GP integer regs (RAX..R15), never the stack pointer; excludes
+// flags, segment, RIP, and vector regs (all outside RAX..R15).
+static inline Flag reg_is_value_predictable(uns reg_id) {
+  return reg_id >= REG_RAX && reg_id <= REG_R15 && reg_id != REG_RSP;
 }
 
 /*
@@ -134,6 +142,14 @@ void predicted_load_schedule_recovery(Op* op, Counter recovery_cycle) {
   bp_sched_recovery(bp_recovery_info, eom, recovery_cycle);
 }
 
+// At a value-predicted load's exec, count the cycles its value was available early (exec - predicted).
+void load_pred_account_saved_cycles(Op* op) {
+  Counter vp = op_get_value_predicted_cycle(op);
+  Counter ex = op_get_exec_cycle(op);
+  if (ex > vp)
+    INC_STAT_EVENT(op->proc_id, LOAD_VALUE_PREDICT_SAVED_CYCLES_ON_PATH, ex - vp);
+}
+
 /*
  * "Early-result" effect: the load's result is made available to consumers before
  * the load itself finishes, so they may wake early (honored in op_sources_add,
@@ -151,6 +167,8 @@ static inline void load_pred_apply_early_result(Op* op, Counter ready_delay) {
 
   op->load_value_predicted = TRUE;
   op->load_pred_ready_delay = ready_delay;
+  if (ready_delay == 0)  // value prediction: value usable to consumers now; stamp for saved-cycles
+    op_set_value_predicted_cycle(op, cycle_count);
 }
 
 /*
@@ -304,6 +322,8 @@ class LastValuePredictor : public LoadPredictor {
 
     Flag any_mispred = FALSE;
     for (uns i = 0; i < ndest; i++) {
+      if (!reg_is_value_predictable(op->uop->dests[i].id))
+        return FALSE;  // only architectural GP value regs (no RSP/flags/segment/vector)
       uns64 actual_value = 0;
       if (!load_pred_read_dest_value(op, i, &actual_value))
         return FALSE;  // value unavailable -> do not speculate

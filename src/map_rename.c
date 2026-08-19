@@ -1049,7 +1049,7 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
   // Snapshot the SRT at the eom of a macro that recovers at the eom (exec, or early-AGEN wake/rename).
   if (op->eom) {
     Recovery_Point rp = op_inst_recovery_point(op);
-    if (rp == RECOVER_AT_EXEC || rp == RECOVER_AT_WAKE || rp == RECOVER_AT_RENAME) {
+    if (rp != RECOVER_AT_NONE && rp != RECOVER_AT_DECODE && rp != RECOVER_AT_FE) {
       ASSERT(op->proc_id, !op->off_path);
       reg_file_snapshot_srt();
     }
@@ -1084,7 +1084,7 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 void reg_renaming_scheme_realistic_recover(Op *op) {
   // only eom-recoveries touch the SRT (exec, or early-AGEN wake/rename); decode/FE squash before rename.
   Recovery_Point rp = op_inst_recovery_point(op);
-  if (rp != RECOVER_AT_EXEC && rp != RECOVER_AT_WAKE && rp != RECOVER_AT_RENAME)
+  if (rp == RECOVER_AT_NONE || rp == RECOVER_AT_DECODE || rp == RECOVER_AT_FE)
     return;
   ASSERT(op->proc_id, op->bp_pred_main.recovery_sch);
 
@@ -1173,7 +1173,7 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
   // Snapshot the SRT at the eom of a macro that recovers at the eom (see the realistic scheme).
   if (op->eom) {
     Recovery_Point rp = op_inst_recovery_point(op);
-    if (rp == RECOVER_AT_EXEC || rp == RECOVER_AT_WAKE || rp == RECOVER_AT_RENAME) {
+    if (rp != RECOVER_AT_NONE && rp != RECOVER_AT_DECODE && rp != RECOVER_AT_FE) {
       ASSERT(op->proc_id, !op->off_path);
       reg_file_snapshot_srt();
     }
@@ -1240,7 +1240,7 @@ void reg_renaming_scheme_late_allocation_produce(Op *op) {
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
   // only eom-recoveries touch the SRT -- see the realistic scheme.
   Recovery_Point rp = op_inst_recovery_point(op);
-  if (rp != RECOVER_AT_EXEC && rp != RECOVER_AT_WAKE && rp != RECOVER_AT_RENAME)
+  if (rp == RECOVER_AT_NONE || rp == RECOVER_AT_DECODE || rp == RECOVER_AT_FE)
     return;
   ASSERT(op->proc_id, op->bp_pred_main.recovery_sch);
 

@@ -65,9 +65,8 @@ extern "C" {
 #include <unordered_map>
 #include <vector>
 
-#include "isa/isa.h"
-
 #include "frontend/frontend_intf.h"
+#include "isa/isa.h"
 
 #include "ft.h"
 

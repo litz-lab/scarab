@@ -287,6 +287,9 @@ struct LastValuePredEntry : public PredictorEntry {
 class LastValuePredictor : public LoadPredictor {
  private:
   uns8 proc_id = 0;
+  // perfect: same confidence training, but only speculate when the prediction matches the oracle
+  // value (skip would-be mispredicts) -- same accurate predictions, zero mispredicts.
+  bool perfect_ = false;
   // A load may write more than one architectural destination, so the table is
   // keyed per (PC, destination index) rather than per PC.  MAX_DESTS == 8 fits in
   // the low 3 bits.
@@ -295,6 +298,7 @@ class LastValuePredictor : public LoadPredictor {
   static inline uint64_t dest_key(Addr pc, uns dst_idx) { return ((uint64_t)pc << 3) | (dst_idx & 0x7); }
 
  public:
+  explicit LastValuePredictor(bool perfect = false) : perfect_(perfect) {}
   void init(uns8 proc_id) override {
     this->proc_id = proc_id;
     prediction_table.clear();
@@ -329,8 +333,11 @@ class LastValuePredictor : public LoadPredictor {
       auto it = prediction_table.find(dest_key(op->inst->addr, i));
       if (it == prediction_table.end() || it->second.confidence <= LOAD_VALUE_PRED_THRESHOLD)
         return FALSE;  // not trained / not confident -> do not speculate
-      if (it->second.last_value != actual_value)
+      if (it->second.last_value != actual_value) {
+        if (perfect_)
+          return FALSE;  // perfect: this prediction would be wrong -> skip it (no mispredicts)
         any_mispred = TRUE;
+      }
     }
 
     // value known now; verified against the real value at load completion.
@@ -539,7 +546,9 @@ static std::unique_ptr<LoadPredictor> make_value_predictor() {
     case LOAD_VALUE_PRED_SCHEME_NONE:
       return std::make_unique<NoneLoadPredictor>();
     case LOAD_VALUE_PRED_SCHEME_LAST_VALUE:
-      return std::make_unique<LastValuePredictor>();
+      return std::make_unique<LastValuePredictor>(/*perfect=*/false);
+    case LOAD_VALUE_PRED_SCHEME_PERFECT_LAST_VALUE:
+      return std::make_unique<LastValuePredictor>(/*perfect=*/true);
     default:
       ASSERT(0, 0);
       return std::make_unique<NoneLoadPredictor>();

@@ -72,7 +72,8 @@ typedef enum Load_Pred_Category_enum {
 /* Value predictors (selected by LOAD_VALUE_PRED_SCHEME). */
 typedef enum Load_Value_Pred_Scheme_enum {
   LOAD_VALUE_PRED_SCHEME_NONE,
-  LOAD_VALUE_PRED_SCHEME_LAST_VALUE,  // last-value predictor (scaffold; see .cc)
+  LOAD_VALUE_PRED_SCHEME_LAST_VALUE,          // last-value predictor (scaffold; see .cc)
+  LOAD_VALUE_PRED_SCHEME_PERFECT_LAST_VALUE,  // last-value + oracle filter: only speculate correct predictions
   LOAD_VALUE_PRED_SCHEME_NUM
 } Load_Value_Pred_Scheme;
 

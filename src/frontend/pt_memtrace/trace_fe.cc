@@ -314,10 +314,12 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
         // PC; they are only ever read back to replay off-path instructions.
         if (POISON_REPLAY_BUFFER_ORACLE_VA) {
           ctype_pin_inst &replay_entry = pc_to_inst[proc_id][addr];
+          // Make it scarab-legal while maintaining it non-canonical
+          uint64_t poison_va = convert_to_cmp_addr(proc_id, REPLAY_BUFFER_POISON_VA);
           for (uns i = 0; i < MAX_LD_NUM; i++)
-            replay_entry.ld_vaddr[i] = REPLAY_BUFFER_POISON_VA;
+            replay_entry.ld_vaddr[i] = poison_va;
           for (uns i = 0; i < MAX_ST_NUM; i++)
-            replay_entry.st_vaddr[i] = REPLAY_BUFFER_POISON_VA;
+            replay_entry.st_vaddr[i] = poison_va;
         }
       }
     } else {

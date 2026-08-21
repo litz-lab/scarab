@@ -150,13 +150,25 @@ struct FT {
   bool is_prebuilt = false;
   std::vector<Op*> ops = {};
   Dynamic_Inst* building_dyn_inst = nullptr;  // macro instance currently being grouped in add_op
+  FT* pool_next = nullptr;                    // pool free-list link (valid only while recycled)
+  void reinit(uns _proc_id, uns _bp_id);      // reset to the just-constructed state, keeping ops' capacity
+  void release_ops();                         // free the ops this FT owns (shared by ~FT and the pool)
   FT_Event predict_op_ft_event(Op* op, Bp_Pred_Level pred_level);
   void generate_ft_info();
   // Common helper used by recovery/exec-recovery trimming paths.
   // Only touches unread ops [op_pos, end) from the back (youngest first).
   void trim_unread_tail(const std::function<bool(Op*)>& should_remove);
   friend struct Decoupled_FE;
+  friend FT* alloc_ft(uns proc_id, uns bp_id);
+  friend void free_ft(FT* ft);
 };
+
+/* One FT is built per fetch target -- on gcc_r that is roughly one per two simulated instructions,
+   most of them off path -- so allocating an FT and growing its ops vector was a large share of the
+   simulator's malloc traffic. FTs are recycled through a free list instead: the vector keeps its
+   capacity across uses, so a warmed-up pool allocates nothing per FT. */
+FT* alloc_ft(uns proc_id, uns bp_id);
+void free_ft(FT* ft);
 
 #endif  // __cplusplus
 

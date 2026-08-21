@@ -139,6 +139,47 @@ void free_dyn_inst(Dynamic_Inst* di) {
   dyn_inst_free_list = di;
 }
 
+/**************************************************************************************/
+/* Fake-op static info pools: fake (wrong-path-nop) ops are not interned, so each gets its own
+   Static_Inst_Info/Static_Op_Info pair. Recycled through free lists rather than malloc'd per op. */
+
+static Static_Inst_Info* fake_static_inst_free_list = NULL;
+static Static_Op_Info* fake_static_op_free_list = NULL;
+
+Static_Inst_Info* alloc_fake_static_inst(void) {
+  Static_Inst_Info* si = fake_static_inst_free_list;
+  if (si) {
+    fake_static_inst_free_list = si->free_list_next;
+    memset(si, 0, sizeof(*si));
+  } else {
+    si = (Static_Inst_Info*)calloc(1, sizeof(*si));
+  }
+  return si;
+}
+
+Static_Op_Info* alloc_fake_static_op(void) {
+  Static_Op_Info* so = fake_static_op_free_list;
+  if (so) {
+    fake_static_op_free_list = so->free_list_next;
+    memset(so, 0, sizeof(*so));
+  } else {
+    so = (Static_Op_Info*)calloc(1, sizeof(*so));
+  }
+  return so;
+}
+
+void free_fake_static_inst(Static_Inst_Info* si) {
+  ASSERT(0, si);
+  si->free_list_next = fake_static_inst_free_list;
+  fake_static_inst_free_list = si;
+}
+
+void free_fake_static_op(Static_Op_Info* so) {
+  ASSERT(0, so);
+  so->free_list_next = fake_static_op_free_list;
+  fake_static_op_free_list = so;
+}
+
 /* alloc_op:  returns a pointer to the next available op */
 
 Op* alloc_op(uns proc_id) {
@@ -183,9 +224,9 @@ void free_op(Op* op) {
     delete_store_hash_entry(op);
 
   if (op->inst && op->inst->fake_inst) {
-    // fake ops get their own (non-interned) static structs; free both
-    free(op->inst);
-    free(op->uop);
+    // fake ops get their own (non-interned) static structs; recycle both
+    free_fake_static_inst(op->inst);
+    free_fake_static_op(op->uop);
     op->inst = NULL;
     op->uop = NULL;
   }

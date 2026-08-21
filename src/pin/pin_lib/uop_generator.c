@@ -946,8 +946,8 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
     Static_Inst_Info* si;
     Static_Op_Info* so;
     if (pi->fake_inst) {
-      si = (Static_Inst_Info*)calloc(1, sizeof(Static_Inst_Info));
-      so = (Static_Op_Info*)calloc(1, sizeof(Static_Op_Info));
+      si = alloc_fake_static_inst();
+      so = alloc_fake_static_op();
       populate_static_inst_info(si, trace_uop[ii]->info, pi);
       populate_static_op_info(so, trace_uop[ii]->info);
       si->uops[ii] = so;

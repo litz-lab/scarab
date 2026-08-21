@@ -62,7 +62,6 @@ FT::~FT() {
 }
 
 void FT::release_ops() {
-  ASSERT(proc_id, bp_id || !ops.empty());
   for (auto ft_op : ops) {
     if (!ft_op->parent_FT_off_path || ft_op->off_path) {
       ft_op->parent_FT = nullptr;
@@ -82,13 +81,19 @@ FT::FT(uns _proc_id, uns _bp_id) {
 }
 
 void FT::reinit(uns _proc_id, uns _bp_id) {
+  /* Reset by assigning a default-constructed FT, so every member -- including any added later --
+     is reset without this function having to name it. The two things that must survive recycling
+     are named explicitly: the ops vector (kept for its capacity; release_ops() already emptied it)
+     and the pool link. */
+  std::vector<Op*> kept_ops = std::move(ops);
+  FT* kept_pool_next = pool_next;
+
+  *this = FT{};
+
+  ops = std::move(kept_ops);
+  pool_next = kept_pool_next;
   proc_id = _proc_id;
   bp_id = _bp_id;
-  op_pos = 0;
-  ft_info = {};
-  is_prebuilt = false;
-  building_dyn_inst = nullptr;
-  ops.clear();  // keeps the capacity the previous use grew
   ft_info.dynamic_info.FT_id = FT_id_counter++;
 }
 
@@ -105,6 +110,7 @@ FT* alloc_ft(uns proc_id, uns bp_id) {
 
 void free_ft(FT* ft) {
   ASSERT(0, ft);
+  ASSERT(ft->proc_id, ft->bp_id || !ft->ops.empty());
   ft->release_ops();
   ft->pool_next = ft_free_list;
   ft_free_list = ft;

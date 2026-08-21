@@ -101,7 +101,9 @@ inline bool operator<(const FT_Info_Static& a, const FT_Info_Static& b) {
 // to `class` since the definition uses explicit access specifiers.
 struct FT {
  public:
+  FT() = default;  // only used as the reset template in reinit()
   FT(uns _proc_id, uns _bp_id);
+  FT& operator=(const FT&) = default;
   ~FT();
   void add_op(Op* op);
   bool can_fetch_op();
@@ -169,6 +171,14 @@ struct FT {
    capacity across uses, so a warmed-up pool allocates nothing per FT. */
 FT* alloc_ft(uns proc_id, uns bp_id);
 void free_ft(FT* ft);
+
+/* A recycled FT has to come back in the same state a fresh one would be in, and a hand-written
+   reset silently goes stale the moment someone adds a member -- the failure mode being stale state
+   leaking into the next FT, which shows up as drift rather than as a crash. reinit() therefore lets
+   the compiler do it (assign from a default-constructed FT) and only names what is deliberately
+   carried over, and this check fails the build if the layout changes so the carried-over list gets
+   re-examined. */
+static_assert(sizeof(FT) == 112, "FT layout changed -- re-check what FT::reinit() carries over");
 
 #endif  // __cplusplus
 

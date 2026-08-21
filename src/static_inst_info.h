@@ -103,8 +103,6 @@ typedef struct Static_Op_Info_struct {
   uns store_seq_num;
 
   Flag trigger_op_fetched_hook;  // fire the model's fetch hook for this uop
-
-  struct Static_Op_Info_struct* free_list_next;  // fake-op pool free-list link (valid only while recycled)
 } Static_Op_Info;
 
 #ifdef __cplusplus
@@ -112,14 +110,12 @@ extern "C" {
 #endif
 
 /* Fake (wrong-path-nop) ops cannot be interned by {addr, opcode bytes} -- their addresses are
- * synthesized and mostly unique -- so each one needs its own pair of static structs. They are
- * recycled through free lists (same pattern as the Dynamic_Inst pool) instead of being malloc'd and
- * freed per op: fake ops are 40-70% of all ops, so that churn dominated allocator time. Both
- * allocators hand back a fully zeroed struct, as the calloc they replace did. */
+ * synthesized and mostly unique -- so each one needs its own Static_Inst_Info, recycled through a
+ * free list (same pattern as the Dynamic_Inst pool) instead of being malloc'd per op: fake ops are
+ * 40-70% of all ops, so that churn dominated allocator time. The returned struct is uninitialized;
+ * the caller copies a per-kind template over it. Their Static_Op_Info is shared, not allocated. */
 Static_Inst_Info* alloc_fake_static_inst(void);
-Static_Op_Info* alloc_fake_static_op(void);
 void free_fake_static_inst(Static_Inst_Info* si);
-void free_fake_static_op(Static_Op_Info* so);
 
 #ifdef __cplusplus
 }

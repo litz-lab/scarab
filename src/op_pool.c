@@ -140,44 +140,26 @@ void free_dyn_inst(Dynamic_Inst* di) {
 }
 
 /**************************************************************************************/
-/* Fake-op static info pools: fake (wrong-path-nop) ops are not interned, so each gets its own
-   Static_Inst_Info/Static_Op_Info pair. Recycled through free lists rather than malloc'd per op. */
+/* Fake-op Static_Inst_Info pool: fake (wrong-path-nop) ops cannot be interned (their addresses are
+   synthesized), so each needs its own. Recycled through a free list rather than malloc'd per op; the
+   caller overwrites the whole struct from a per-kind template, so no clearing is needed here. */
 
 static Static_Inst_Info* fake_static_inst_free_list = NULL;
-static Static_Op_Info* fake_static_op_free_list = NULL;
 
 Static_Inst_Info* alloc_fake_static_inst(void) {
   Static_Inst_Info* si = fake_static_inst_free_list;
   if (si) {
     fake_static_inst_free_list = si->free_list_next;
-    memset(si, 0, sizeof(*si));
   } else {
-    si = (Static_Inst_Info*)calloc(1, sizeof(*si));
+    si = (Static_Inst_Info*)malloc(sizeof(*si));
   }
   return si;
-}
-
-Static_Op_Info* alloc_fake_static_op(void) {
-  Static_Op_Info* so = fake_static_op_free_list;
-  if (so) {
-    fake_static_op_free_list = so->free_list_next;
-    memset(so, 0, sizeof(*so));
-  } else {
-    so = (Static_Op_Info*)calloc(1, sizeof(*so));
-  }
-  return so;
 }
 
 void free_fake_static_inst(Static_Inst_Info* si) {
   ASSERT(0, si);
   si->free_list_next = fake_static_inst_free_list;
   fake_static_inst_free_list = si;
-}
-
-void free_fake_static_op(Static_Op_Info* so) {
-  ASSERT(0, so);
-  so->free_list_next = fake_static_op_free_list;
-  fake_static_op_free_list = so;
 }
 
 /* alloc_op:  returns a pointer to the next available op */
@@ -224,9 +206,8 @@ void free_op(Op* op) {
     delete_store_hash_entry(op);
 
   if (op->inst && op->inst->fake_inst) {
-    // fake ops get their own (non-interned) static structs; recycle both
+    // fake ops get their own Static_Inst_Info; their Static_Op_Info is shared, so it is not freed
     free_fake_static_inst(op->inst);
-    free_fake_static_op(op->uop);
     op->inst = NULL;
     op->uop = NULL;
   }

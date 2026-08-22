@@ -86,8 +86,14 @@ static inline void dcache_hit_wp_collect_stats(Dcache_Data* line, Op* op);
 static inline void ld_served_stat(Op* op, Stat_Enum served, Stat_Enum lat) {
   Counter start = op_get_exec_cycle(op);
   Counter end = op_get_done_cycle(op);
-  if (start == MAX_CTR || end == MAX_CTR || end < start)
-    return;
+  // Both are always set here: a replaying op with an unset exec_cycle is squished
+  // out of the stage before this point, and both call sites run right after
+  // done_cycle is stamped. end >= start because the addr-ready gate only lets the
+  // op through once cycle_count >= exec_cycle. Skipping instead of asserting would
+  // silently drop loads and break the LD_SERVED_* partition.
+  ASSERT(op->proc_id, start != MAX_CTR);
+  ASSERT(op->proc_id, end != MAX_CTR);
+  ASSERT(op->proc_id, end >= start);
   STAT_EVENT(op->proc_id, served);
   INC_STAT_EVENT(op->proc_id, lat, end - start);
 }

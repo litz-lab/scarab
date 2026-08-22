@@ -286,7 +286,7 @@ void bp_hybridgp_init() {
 }
 
 uns8 bp_hybridgp_pred(Op* op, Bp_Pred_Level pred_level) {
-  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->pred->bp_pred_l0 : &op->pred->bp_pred_main;
   const uns proc_id = op->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
 
@@ -312,7 +312,7 @@ uns8 bp_hybridgp_pred(Op* op, Bp_Pred_Level pred_level) {
   bp_pred_info->hybridgp_ppred = ppred;
   bp_pred_info->pred_local_hist = phist;
 
-  const auto branch_id = op->recovery_info.branch_id;
+  const auto branch_id = op->pred->recovery_info.branch_id;
   hybridgp_state.in_flight[branch_id].updated_local_history = true;
   hybridgp_state.in_flight[branch_id].pred_phist = phist;
   hybridgp_state.in_flight[branch_id].bht_addr = addr;
@@ -334,7 +334,7 @@ void bp_hybridgp_spec_update(Op* op, Bp_Pred_Level pred_level) {
 }
 
 void bp_hybridgp_update(Op* op, Bp_Pred_Level pred_level) {
-  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->pred->bp_pred_l0 : &op->pred->bp_pred_main;
   if (op->uop->cf_type != CF_CBR && op->uop->cf_type != CF_REP) {
     // If op is not a conditional branch/REP, we do not interact with hybridgp.
     return;
@@ -412,14 +412,14 @@ void bp_hybridgp_timestamp(Op* op) {
 
   const int64 branch_id = hybridgp_state.in_flight.allocate_back();
   hybridgp_state.in_flight[branch_id].updated_local_history = false;
-  op->recovery_info.branch_id = branch_id;
+  op->pred->recovery_info.branch_id = branch_id;
 }
 
 void bp_hybridgp_retire(Op* op) {
   const uns proc_id = op->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
 
-  hybridgp_state.in_flight.deallocate_front(op->recovery_info.branch_id);
+  hybridgp_state.in_flight.deallocate_front(op->pred->recovery_info.branch_id);
 }
 
 uns8 bp_hybridgp_full(Bp_Data* bp_data) {

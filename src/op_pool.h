@@ -51,6 +51,9 @@ Op* alloc_op(uns proc_id);
 void free_op(Op*);
 void op_pool_init_op(Op*);
 void op_pool_setup_op(uns proc_id, Op* op);
+/* Give the op its prediction/recovery state once its static info is attached: a pooled instance if
+   it can mispredict, otherwise the shared zero instance. */
+void op_pred_attach(Op* op);
 
 /**************************************************************************************/
 

@@ -872,9 +872,9 @@ void FDIP::init(uns _proc_id, uns _bp_id, Icache_Stage* _ic) {
 void FDIP::recover() {
   last_line_addr = 0;
   const bool is_early_recovery = bp_l0_enabled() &&
-                                 bp_recovery_info->recovery_op->bp_pred_l0.recovery_point == RECOVER_AT_FE &&
-                                 bp_recovery_info->recovery_op->bp_pred_main.recovery_point != RECOVER_AT_EXEC &&
-                                 bp_recovery_info->recovery_op->bp_pred_main.recovery_point != RECOVER_AT_DECODE;
+                                 bp_recovery_info->recovery_op->pred->bp_pred_l0.recovery_point == RECOVER_AT_FE &&
+                                 bp_recovery_info->recovery_op->pred->bp_pred_main.recovery_point != RECOVER_AT_EXEC &&
+                                 bp_recovery_info->recovery_op->pred->bp_pred_main.recovery_point != RECOVER_AT_DECODE;
   DEBUG(proc_id, "[FDIP%u] recover cycle from %llu", bp_id, fdip_stat->last_recover_cycle);
   if (!is_early_recovery) {
     fdip_stat->last_recover_cycle = cycle_count;

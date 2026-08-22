@@ -27,7 +27,7 @@
 #include "cbp_to_scarab.h"
 
 static inline Bp_Pred_Info* cbp_get_bp_pred_info(Op* op, Bp_Pred_Level pred_level) {
-  return (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+  return (pred_level == BP_PRED_L0) ? &op->pred->bp_pred_l0 : &op->pred->bp_pred_main;
 }
 
 template <typename CBP_CLASS>
@@ -60,7 +60,7 @@ class CBP_To_Scarab_Intf {
 
   void timestamp(Op* op) {
     /* CBP Interface does not support speculative updates */
-    op->recovery_info.branch_id = 0;
+    op->pred->recovery_info.branch_id = 0;
   }
 
   uns8 pred(Op* op, Bp_Pred_Level pred_level) {
@@ -127,15 +127,15 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op, Bp_Pred_Level pred_level) 
   Flag is_conditional = is_conditional_branch(op->uop->cf_type);
   Flag pred_dir =
       (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON) ? op->oracle_info.dir : bp_pred_info->pred;
-  const Flag l0_wrong = op->bp_pred_l0.recovery_point == RECOVER_AT_FE;
-  const Flag main_wrong =
-      op->bp_pred_main.recovery_point == RECOVER_AT_DECODE || op->bp_pred_main.recovery_point == RECOVER_AT_EXEC;
+  const Flag l0_wrong = op->pred->bp_pred_l0.recovery_point == RECOVER_AT_FE;
+  const Flag main_wrong = op->pred->bp_pred_main.recovery_point == RECOVER_AT_DECODE ||
+                          op->pred->bp_pred_main.recovery_point == RECOVER_AT_EXEC;
   // FE-only recovery (L0 wrong / main correct) still needs a main-BP
   // checkpoint because off-path speculative updates may already have been
   // applied before the late correction fires.
   const Flag fe_only_recovery = bp_l0_enabled() && l0_wrong && !main_wrong;
-  const Flag checkpoint_needed = fe_only_recovery || op->bp_pred_main.recovery_point == RECOVER_AT_DECODE ||
-                                 op->bp_pred_main.recovery_point == RECOVER_AT_EXEC;
+  const Flag checkpoint_needed = fe_only_recovery || op->pred->bp_pred_main.recovery_point == RECOVER_AT_DECODE ||
+                                 op->pred->bp_pred_main.recovery_point == RECOVER_AT_EXEC;
 
   if (op->off_path) {
     if (SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON)
@@ -148,11 +148,11 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op, Bp_Pred_Level pred_level) 
   }
 
   if (!bp_id) {
-    cbp_predictors_all_cores.at(proc_id).at(bp_id)->SavePredictorStates(op->recovery_info.branch_id);
+    cbp_predictors_all_cores.at(proc_id).at(bp_id)->SavePredictorStates(op->pred->recovery_info.branch_id);
     if (!(SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON)) {
       if (checkpoint_needed) {
         ASSERT(op->proc_id, !op->off_path);
-        cbp_predictors_all_cores.at(proc_id).at(bp_id)->TakeCheckpoint(op->recovery_info.branch_id);
+        cbp_predictors_all_cores.at(proc_id).at(bp_id)->TakeCheckpoint(op->pred->recovery_info.branch_id);
       }
     }
   }
@@ -165,7 +165,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op, Bp_Pred_Level pred_level) 
     if (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON)
       cbp_predictors_all_cores.at(proc_id).at(bp_id)->NonSpecUpdateAtCond(op->inst->addr, optype, op->oracle_info.dir,
                                                                           bp_pred_info->pred, op->oracle_info.target,
-                                                                          op->recovery_info.branch_id);
+                                                                          op->pred->recovery_info.branch_id);
   } else {
     cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdate(op->inst->addr, optype, pred_dir,
                                                                op->oracle_info.target);
@@ -181,9 +181,9 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op, Bp_Pred_Level pred_level) 
   if ((SPEC_LEVEL > BP_PRED_ON) && (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON)) {
     if (checkpoint_needed) {
       ASSERT(op->proc_id, !op->off_path);
-      cbp_predictors_all_cores.at(proc_id).at(bp_id)->TakeCheckpoint(op->recovery_info.branch_id);
+      cbp_predictors_all_cores.at(proc_id).at(bp_id)->TakeCheckpoint(op->pred->recovery_info.branch_id);
       if (SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON)
-        cbp_predictors_all_cores.at(proc_id).at(bp_id)->VerifyPredictorStates(op->recovery_info.branch_id);
+        cbp_predictors_all_cores.at(proc_id).at(bp_id)->VerifyPredictorStates(op->pred->recovery_info.branch_id);
     }
   }
 }
@@ -205,7 +205,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::update(Op* op,
   if (is_conditional)
     cbp_predictors_all_cores.at(proc_id).at(bp_id)->NonSpecUpdateAtCond(op->inst->addr, optype, op->oracle_info.dir,
                                                                         bp_pred_info->pred, op->oracle_info.target,
-                                                                        op->recovery_info.branch_id);
+                                                                        op->pred->recovery_info.branch_id);
   else
     cbp_predictors_all_cores.at(proc_id).at(bp_id)->TrackOtherInst(op->inst->addr, optype, op->oracle_info.dir,
                                                                    op->oracle_info.target);
@@ -217,7 +217,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::retire(Op* op) {
     return;
   uns proc_id = op->proc_id;
   uns bp_id = op->parent_FT->get_bp_id();
-  cbp_predictors_all_cores.at(proc_id).at(bp_id)->RetireCheckpoint(op->recovery_info.branch_id);
+  cbp_predictors_all_cores.at(proc_id).at(bp_id)->RetireCheckpoint(op->pred->recovery_info.branch_id);
 }
 
 template <>
@@ -237,7 +237,7 @@ template <>
 void CBP_To_Scarab_Intf<TAGE64K>::timestamp(Op* op) {
   uns proc_id = op->proc_id;
   uns bp_id = op->parent_FT->get_bp_id();
-  op->recovery_info.branch_id = cbp_predictors_all_cores.at(proc_id).at(bp_id)->KeyGeneration();
+  op->pred->recovery_info.branch_id = cbp_predictors_all_cores.at(proc_id).at(bp_id)->KeyGeneration();
 }
 
 /******DO NOT MODIFY BELOW THIS POINT*****/

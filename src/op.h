@@ -155,6 +155,18 @@ typedef struct Dp_Info_struct {
 /**************************************************************************************/
 /* typedef in globals/global_types.h */
 
+/* Prediction and recovery state: 448B that only a control-flow op needs -- plus a load, when value
+   prediction is on, since a value mispredict takes the same resteer path. Ops that need it get a
+   pooled instance; the rest point at one shared instance that is permanently zero, so their reads
+   see what an unused block always held without anything being allocated or cleared per op. */
+typedef struct Op_Pred_State_struct {
+  Bp_Pred_Info bp_pred_l0;    // l0 branch prediction info
+  Bp_Pred_Info bp_pred_main;  // main branch prediction info
+  Btb_Pred_Info btb_pred;     // btb prediction info
+  Recovery_Info recovery_info;
+  struct Op_Pred_State_struct* free_list_next;  // pool link (valid only while recycled)
+} Op_Pred_State;
+
 struct Op_struct {
   // {{{ op_pool stuff --- don't use outside of op pool management
   Flag op_pool_valid;  // is op allocated from the op_pool?
@@ -181,9 +193,7 @@ struct Op_struct {
   uns num_srcs;                 // number of map dependencies (order matches srcs_not_rdy_words / wake-up)
   Src_Info* src_info;           /* grown by map (2 -> 8 -> 128, then x2); freed in free_op */
   uns src_info_cap;
-  Bp_Pred_Info bp_pred_l0;       // l0 branch prediction info
-  Bp_Pred_Info bp_pred_main;     // main branch prediction info
-  Btb_Pred_Info btb_pred;        // btb prediction info
+  Op_Pred_State* pred;           // prediction/recovery state (shared zero instance if unused)
   Bp_Pred_Info* bp_pred_info;    // selected/active branch prediction info
   Btb_Pred_Info* btb_pred_info;  // selected/active btb prediction info
   // }}}
@@ -198,7 +208,6 @@ struct Op_struct {
   Flag off_path;                // is the op on the correct path of the program? - oracle information
   Flag conf_off_path;           // is the op on the correct path of the program? - confidence information
   Flag exit;                    // is this the last instruction to execute?
-  Recovery_Info recovery_info;  // information that will be used to recover a mispredict by the op
   // }}}
 
   // {{{ scheduler information
@@ -436,8 +445,13 @@ static inline void op_assert_cycles_set_at_retire(const Op* op) {
     ASSERT(op->proc_id, op->cycles.dcache_cycle != MAX_CTR);
 }
 
+// Extend for value prediction: a load that can mispredict a value also resteers.
+static inline Flag op_needs_pred_state(const Op* op) {
+  return op->uop->cf_type != NOT_CF;
+}
+
 static inline void op_select_bp_pred_info(Op* op, Bp_Pred_Level level) {
-  op->bp_pred_info = (level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+  op->bp_pred_info = (level == BP_PRED_L0) ? &op->pred->bp_pred_l0 : &op->pred->bp_pred_main;
   // btb_pred_info is set exclusively by bp_predict_btb(); do not touch it here.
 }
 

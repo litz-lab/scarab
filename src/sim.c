@@ -552,11 +552,10 @@ void uop_sim() {
           model->name);
   ASSERTM(0, NUM_CORES == 1 || !FAST_FORWARD_UNTIL_ADDR, "FAST_FORWARD_UNTIL_ADDR works only for single core\n");
 
-  Op op;
+  Op op = {};                       /* not from the op pool */
+  Op_Pred_State op_pred_state = {}; /* ... so it carries its own prediction/recovery state */
+  op.pred = &op_pred_state;
   op.bp_pred_info = NULL;
-  memset(&op.bp_pred_l0, 0, sizeof(op.bp_pred_l0));
-  memset(&op.bp_pred_main, 0, sizeof(op.bp_pred_main));
-  memset(&op.btb_pred, 0, sizeof(op.btb_pred));
   op.btb_pred_info = NULL;
 
   Flag uop_sim_done = FALSE;

@@ -350,10 +350,9 @@ void ext_trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr)
 }
 
 void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
-  Op dummy_op;
-  dummy_op.bp_pred_l0 = {};
-  dummy_op.bp_pred_main = {};
-  dummy_op.btb_pred = {};
+  Op dummy_op = {};                    /* not from the op pool */
+  Op_Pred_State dummy_pred_state = {}; /* ... so it carries its own prediction/recovery state */
+  dummy_op.pred = &dummy_pred_state;
   if (bp_id) {
     off_path_addr[proc_id][bp_id] = 0;
     next_offpath_pi[proc_id][bp_id] = {};

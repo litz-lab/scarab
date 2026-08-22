@@ -30,10 +30,22 @@
 #undef UNUSED
 #undef WARNING
 
+#ifdef ENABLE_PINPLAY
+#include "control_manager.H"
+#include "instlib.H"
+#endif
 #include "pin.H"
+#ifdef ENABLE_PINPLAY
+#include "pinplay.H"
+#endif
 
 #undef UNUSED
 #undef WARNING
+
+#ifdef ENABLE_PINPLAY
+using namespace INSTLIB;
+using namespace CONTROLLER;
+#endif
 
 #include "analysis_functions.h"
 #include "exception_handling.h"
@@ -90,6 +102,13 @@ KNOB<UINT64> KnobStartRip(KNOB_MODE_WRITEONCE, "pintool", "rip", "0",
 
 KNOB<bool> KnobTrackAtInstrumentation(KNOB_MODE_WRITEONCE, "pintool", "track_at_instr", "true",
                                       "Track RIP at instrumentation time instead of execution time");
+
+#ifdef ENABLE_PINPLAY
+// PinPlay: replay a pinball for deterministic, host-independent exec-driven runs.
+PINPLAY_ENGINE pinplay_engine;
+KNOB<BOOL> KnobPinPlayLogger(KNOB_MODE_WRITEONCE, "pintool", "log", "0", "Activate the pinplay logger");
+KNOB<BOOL> KnobPinPlayReplayer(KNOB_MODE_WRITEONCE, "pintool", "replay", "0", "Activate the pinplay replayer");
+#endif
 /* ===================================================================== */
 /* ===================================================================== */
 
@@ -298,6 +317,11 @@ int main(int argc, char* argv[]) {
   if(PIN_Init(argc, argv)) {
     return Usage();
   }
+
+#ifdef ENABLE_PINPLAY
+  pinplay_engine.Activate(argc, argv, KnobPinPlayLogger, KnobPinPlayReplayer);
+#endif
+
   // if no start EIP was specified, then we don't need to redirect,
   // and so we have "started"
   started   = (0 == KnobStartRip.Value());

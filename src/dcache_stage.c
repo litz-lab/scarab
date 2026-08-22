@@ -308,6 +308,10 @@ void update_dcache_stage(Stage_Data* src_sd) {
     }
 
     if (line) {
+      if (!op->off_path && op->uop->mem_type == MEM_LD) {
+        STAT_EVENT(op->proc_id, LD_SERVED_DCACHE);
+        INC_STAT_EVENT(op->proc_id, LD_LAT_DCACHE, DCACHE_CYCLES);
+      }
       dcache_cacheline_hit(op, line_addr, line);
       continue;
     }
@@ -874,6 +878,21 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
       ASSERT(dc->proc_id, data->dirty);
 
     data->prefetch &= op->uop->mem_type == MEM_PF || op->uop->mem_type == MEM_WH;
+    /* Which level served this load, and how long it waited (from its dcache probe). */
+    Counter ld_probe = op_get_dcache_cycle(op);
+    if (!op->off_path && op->uop->mem_type == MEM_LD && ld_probe != MAX_CTR && cycle_count >= ld_probe) {
+      Counter ld_lat = cycle_count - ld_probe;
+      if (req->mlc_hit) {
+        STAT_EVENT(op->proc_id, LD_SERVED_MLC);
+        INC_STAT_EVENT(op->proc_id, LD_LAT_MLC, ld_lat);
+      } else if (req->l1_hit) {
+        STAT_EVENT(op->proc_id, LD_SERVED_LLC);
+        INC_STAT_EVENT(op->proc_id, LD_LAT_LLC, ld_lat);
+      } else {
+        STAT_EVENT(op->proc_id, LD_SERVED_MEM);
+        INC_STAT_EVENT(op->proc_id, LD_LAT_MEM, ld_lat);
+      }
+    }
     data->read_count[op->off_path] += (op->uop->mem_type == MEM_LD);
     data->write_count[op->off_path] += (op->uop->mem_type == MEM_ST);
 

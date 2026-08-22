@@ -139,6 +139,59 @@ void free_dyn_inst(Dynamic_Inst* di) {
   dyn_inst_free_list = di;
 }
 
+/**************************************************************************************/
+/* Prediction/recovery state. Ops that can resteer (see op_needs_pred_state) get a pooled instance,
+   cleared on hand-out; every other op points at OP_PRED_ZERO and so reads zeros without anything
+   being allocated or cleared per op. Nothing may store prediction state through OP_PRED_ZERO --
+   one op doing so would hand every other op stale state, so the debug build checks it. */
+
+#ifdef SCARAB_PRED_ZERO_GUARD
+/* Build with -DSCARAB_PRED_ZERO_GUARD to map the shared instance read-only: a write through it
+   then faults with a live stack, which also catches stores of zero the memcmp check cannot see. */
+#include <sys/mman.h>
+static Op_Pred_State* op_pred_zero_p = NULL;
+static void op_pred_zero_init(void) {
+  size_t sz = (sizeof(Op_Pred_State) + 4095) & ~(size_t)4095;
+  op_pred_zero_p = (Op_Pred_State*)mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT(0, op_pred_zero_p != MAP_FAILED);
+  ASSERT(0, !mprotect(op_pred_zero_p, sz, PROT_READ));
+}
+#define OP_PRED_ZERO (op_pred_zero_p ? op_pred_zero_p : (op_pred_zero_init(), op_pred_zero_p))
+#else
+static Op_Pred_State op_pred_zero_storage; /* permanently zero; never written through */
+#define OP_PRED_ZERO (&op_pred_zero_storage)
+#endif
+static Op_Pred_State* op_pred_free_list = NULL;
+
+void op_pred_attach(Op* op) {
+  if (!op_needs_pred_state(op)) {
+#ifndef NO_DEBUG
+    static const Op_Pred_State all_zero;
+    ASSERTM(op->proc_id, !memcmp(OP_PRED_ZERO, &all_zero, sizeof(all_zero)),
+            "op_pred_zero was written through: an op without prediction state stored into it\n");
+#endif
+    op->pred = OP_PRED_ZERO;
+    return;
+  }
+
+  Op_Pred_State* st = op_pred_free_list;
+  if (st) {
+    op_pred_free_list = st->free_list_next;
+    memset(st, 0, sizeof(*st));
+  } else {
+    st = (Op_Pred_State*)calloc(1, sizeof(*st));
+  }
+  op->pred = st;
+}
+
+static inline void op_pred_release(Op* op) {
+  if (op->pred == OP_PRED_ZERO)
+    return;
+  op->pred->free_list_next = op_pred_free_list;
+  op_pred_free_list = op->pred;
+  op->pred = OP_PRED_ZERO;
+}
+
 /* alloc_op:  returns a pointer to the next available op */
 
 Op* alloc_op(uns proc_id) {
@@ -199,6 +252,7 @@ void free_op(Op* op) {
   }
 
   op_sources_free(op);
+  op_pred_release(op);
 
   op->op_pool_next = op_pool_free_head;
   op_pool_free_head = op;
@@ -255,6 +309,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
 
   op->bp_pred_info = NULL;
   op->btb_pred_info = NULL;
+  op->pred = OP_PRED_ZERO; /* until op_pred_attach() decides, reads see zeros */
 
   for (ii = 0; ii < MAX_SRCS; ++ii) {
     for (jj = 0; jj < REG_TABLE_TYPE_NUM; ++jj) {

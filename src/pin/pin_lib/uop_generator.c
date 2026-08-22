@@ -48,6 +48,7 @@
 
 #include "ctype_pin_inst.h"
 #include "math.h"
+#include "op_pool.h"
 #include "statistics.h"
 
 /**************************************************************************************/
@@ -367,6 +368,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->fetched_instruction = fetched_instruction[proc_id];
   op->inst = trace_uop->static_inst;
   op->uop = trace_uop->static_op;
+  op_pred_attach(op);
   op->off_path = FALSE;
   op->state = OS_FETCHED;
   op->fu_num = -1;
@@ -383,8 +385,10 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->exec_count = 0;
   op->in_rdy_list = FALSE;
   op->in_node_list = FALSE;
-  op->bp_pred_l0.recovery_sch = FALSE;
-  op->bp_pred_main.recovery_sch = FALSE;
+  if (op_needs_pred_state(op)) {
+    op->pred->bp_pred_l0.recovery_sch = FALSE;
+    op->pred->bp_pred_main.recovery_sch = FALSE;
+  }
 
   op->req = NULL;
   op->marked = FALSE;

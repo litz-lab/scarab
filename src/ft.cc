@@ -53,7 +53,7 @@ extern "C" {
 uint64_t FT_id_counter = 0;
 
 static inline const Bp_Pred_Info* ft_active_or_main_bp_pred_info(const Op* op) {
-  return op->bp_pred_info ? op->bp_pred_info : &op->bp_pred_main;
+  return op->bp_pred_info ? op->bp_pred_info : &op->pred->bp_pred_main;
 }
 
 /* FT member functions */
@@ -161,8 +161,10 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
     op->conf_off_path = conf_off_path;
     collect_op_stats(op);
     op->op_num = get_next_op_id_fn();
-    op->bp_pred_main.pred_npc = op->oracle_info.npc;
-    op->bp_pred_main.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
+    if (op_needs_pred_state(op)) {
+      op->pred->bp_pred_main.pred_npc = op->oracle_info.npc;
+      op->pred->bp_pred_main.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
+    }
     add_op(op);
     if (off_path) {
       bp_predict_btb(g_bp_data, op);
@@ -286,7 +288,7 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
 }
 
 FT_Event FT::predict_op_ft_event(Op* op, Bp_Pred_Level pred_level) {
-  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->pred->bp_pred_l0 : &op->pred->bp_pred_main;
   bool trace_mode = false;
 
 #ifdef ENABLE_PT_MEMTRACE
@@ -343,11 +345,11 @@ FT_PredictResult FT::predict_ft() {
       INC_STAT_EVENT(proc_id, DFE_L0_ENABLED_PREDICTIONS, 1);
 
       const FT_Event l0_event = predict_op_ft_event(op, BP_PRED_L0);
-      const Flag l0_wrong = op->bp_pred_l0.recovery_point == RECOVER_AT_FE;
+      const Flag l0_wrong = op->pred->bp_pred_l0.recovery_point == RECOVER_AT_FE;
 
       const FT_Event main_event = predict_op_ft_event(op, BP_PRED_MAIN);
-      const Flag main_wrong =
-          op->bp_pred_main.recovery_point == RECOVER_AT_DECODE || op->bp_pred_main.recovery_point == RECOVER_AT_EXEC;
+      const Flag main_wrong = op->pred->bp_pred_main.recovery_point == RECOVER_AT_DECODE ||
+                              op->pred->bp_pred_main.recovery_point == RECOVER_AT_EXEC;
 
       if (l0_wrong && !main_wrong) {
         STAT_EVENT(proc_id, DFE_L0_WRONG_MAIN_CORRECT);
@@ -358,8 +360,8 @@ FT_PredictResult FT::predict_ft() {
           } else {
             op_select_bp_pred_info(op, BP_PRED_L0);
 
-            const Counter fetch_cycle = op->bp_pred_main.bp_ready_cycle - BP_MAIN_LATENCY;
-            const Flag l0_dir_wrong = op->bp_pred_l0.pred_orig != op->oracle_info.dir;
+            const Counter fetch_cycle = op->pred->bp_pred_main.bp_ready_cycle - BP_MAIN_LATENCY;
+            const Flag l0_dir_wrong = op->pred->bp_pred_l0.pred_orig != op->oracle_info.dir;
             const uns recovery_latency = l0_dir_wrong ? BP_MAIN_LATENCY : op->btb_pred_info->btb_pred_latency;
             ASSERT(proc_id, recovery_latency > BP_L0_LATENCY);
             const Counter recovery_cycle = fetch_cycle + recovery_latency - BP_L0_LATENCY;

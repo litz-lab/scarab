@@ -126,13 +126,13 @@ static void branch_pc_stats_update(Op* op) {
     s->mispred_at_exec_count = 0;
   }
   s->exec_count++;
-  if (op->bp_pred_main.recovery_point == RECOVER_AT_FE) {
+  if (op->pred->bp_pred_main.recovery_point == RECOVER_AT_FE) {
     s->mispred_count++;
     s->mispred_at_fe_count++;
-  } else if (op->bp_pred_main.recovery_point == RECOVER_AT_DECODE) {
+  } else if (op->pred->bp_pred_main.recovery_point == RECOVER_AT_DECODE) {
     s->mispred_count++;
     s->mispred_at_decode_count++;
-  } else if (op->bp_pred_main.recovery_point == RECOVER_AT_EXEC) {
+  } else if (op->pred->bp_pred_main.recovery_point == RECOVER_AT_EXEC) {
     s->mispred_count++;
     s->mispred_at_exec_count++;
   }
@@ -236,13 +236,13 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
   ASSERT(op->proc_id, bp_recovery_info->proc_id == op->proc_id);
   ASSERT(0, !op->off_path);
   if (op->bp_pred_info->recovery_point == RECOVER_AT_FE) {
-    INC_STAT_EVENT(op->proc_id, SCHEDULED_L0_EARLY_LAT, cycle_count - op->recovery_info.predict_cycle);
+    INC_STAT_EVENT(op->proc_id, SCHEDULED_L0_EARLY_LAT, cycle_count - op->pred->recovery_info.predict_cycle);
     STAT_EVENT(op->proc_id, SCHEDULED_L0_EARLY_RECOVERIES);
   } else if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
-    INC_STAT_EVENT(op->proc_id, SCHEDULED_MAIN_EXEC_LAT, cycle_count - op->recovery_info.predict_cycle);
+    INC_STAT_EVENT(op->proc_id, SCHEDULED_MAIN_EXEC_LAT, cycle_count - op->pred->recovery_info.predict_cycle);
     STAT_EVENT(op->proc_id, SCHEDULED_MAIN_EXEC_RECOVERIES);
   } else if (op->bp_pred_info->recovery_point == RECOVER_AT_DECODE) {
-    INC_STAT_EVENT(op->proc_id, SCHEDULED_MAIN_DECODE_LAT, cycle_count - op->recovery_info.predict_cycle);
+    INC_STAT_EVENT(op->proc_id, SCHEDULED_MAIN_DECODE_LAT, cycle_count - op->pred->recovery_info.predict_cycle);
     STAT_EVENT(op->proc_id, SCHEDULED_MAIN_DECODE_RECOVERIES);
   }
 
@@ -259,7 +259,7 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
 
     bp_recovery_info->recovery_op_num = op->op_num;
     bp_recovery_info->recovery_cf_type = op->uop->cf_type;
-    bp_recovery_info->recovery_info = op->recovery_info;
+    bp_recovery_info->recovery_info = op->pred->recovery_info;
     bp_recovery_info->recovery_info.op_num = op->op_num;
     bp_recovery_info->recovery_inst_info = op->inst;
     bp_recovery_info->recovery_force_offpath = op->off_path;
@@ -299,9 +299,10 @@ void bp_sched_redirect(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
  * prediction that requires frontend recovery. */
 
 void bp_stat_main_branch_resolve_latency(Op* op, Counter resolve_cycle, Flag recover_at_exec) {
-  if (op->bp_pred_info != &op->bp_pred_main)
+  if (op->bp_pred_info != &op->pred->bp_pred_main)
     return;
-  if (!(op->bp_pred_main.recovery_point == RECOVER_AT_DECODE || op->bp_pred_main.recovery_point == RECOVER_AT_EXEC))
+  if (!(op->pred->bp_pred_main.recovery_point == RECOVER_AT_DECODE ||
+        op->pred->bp_pred_main.recovery_point == RECOVER_AT_EXEC))
     return;
 
   ASSERT(op->proc_id, op_get_bp_cycle(op) != MAX_CTR);
@@ -420,7 +421,7 @@ Flag bp_is_predictable(Bp_Data* bp_data) {
 
 static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, Addr fetch_addr,
                                Bp_Pred_Level pred_level) {
-  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->pred->bp_pred_l0 : &op->pred->bp_pred_main;
   Bp* pred_bp = (pred_level == BP_PRED_L0) ? bp_data->bp_l0 : bp_data->bp;
   Addr pred_target;
   Flag btb_miss_nt = FALSE;
@@ -436,24 +437,24 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   /* initialize recovery information---this stuff might be
      overwritten by a prediction function that uses and
      speculatively updates global history */
-  op->recovery_info.proc_id = op->proc_id;
-  op->recovery_info.bp_id = bp_id;
-  op->recovery_info.pred_global_hist = bp_data->global_hist;
-  op->recovery_info.targ_hist = bp_data->targ_hist;
-  op->recovery_info.new_dir = op->oracle_info.dir;
-  op->recovery_info.crs_next = bp_data->crs.next;
-  op->recovery_info.crs_tos = bp_data->crs.tos;
-  op->recovery_info.crs_depth = bp_data->crs.depth;
-  op->recovery_info.op_num = op->op_num;
-  op->recovery_info.PC = op->inst->addr;
-  op->recovery_info.op = op;
-  op->recovery_info.cf_type = op->uop->cf_type;
-  op->recovery_info.oracle_dir = op->oracle_info.dir;
-  op->recovery_info.branchTarget = op->oracle_info.target;
-  op->recovery_info.predict_cycle = cycle_count;
+  op->pred->recovery_info.proc_id = op->proc_id;
+  op->pred->recovery_info.bp_id = bp_id;
+  op->pred->recovery_info.pred_global_hist = bp_data->global_hist;
+  op->pred->recovery_info.targ_hist = bp_data->targ_hist;
+  op->pred->recovery_info.new_dir = op->oracle_info.dir;
+  op->pred->recovery_info.crs_next = bp_data->crs.next;
+  op->pred->recovery_info.crs_tos = bp_data->crs.tos;
+  op->pred->recovery_info.crs_depth = bp_data->crs.depth;
+  op->pred->recovery_info.op_num = op->op_num;
+  op->pred->recovery_info.PC = op->inst->addr;
+  op->pred->recovery_info.op = op;
+  op->pred->recovery_info.cf_type = op->uop->cf_type;
+  op->pred->recovery_info.oracle_dir = op->oracle_info.dir;
+  op->pred->recovery_info.branchTarget = op->oracle_info.target;
+  op->pred->recovery_info.predict_cycle = cycle_count;
 
   pred_bp->timestamp_func(op);
-  bp_pred_info->pred_branch_id = op->recovery_info.branch_id;
+  bp_pred_info->pred_branch_id = op->pred->recovery_info.branch_id;
   bp_pred_info->bp_ready_cycle = cycle_count + (pred_level == BP_PRED_L0 ? BP_L0_LATENCY : BP_MAIN_LATENCY);
 
   if (BP_HASH_TOS || IBTB_HASH_TOS) {
@@ -475,7 +476,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         tos_addr = 0;
         break;
     }
-    op->recovery_info.tos_addr = tos_addr;
+    op->pred->recovery_info.tos_addr = tos_addr;
   }
 
   // {{{ special case--system calls
@@ -944,7 +945,7 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
     return;
   }
   // Always train both predictors regardless of which one made the active prediction.
-  op->recovery_info.branch_id = op->bp_pred_main.pred_branch_id;
+  op->pred->recovery_info.branch_id = op->pred->bp_pred_main.pred_branch_id;
   bp_data->bp->update_func(op, BP_PRED_MAIN);
   if (bp_data->bp_l0)
     bp_data->bp_l0->update_func(op, BP_PRED_L0);
@@ -963,7 +964,7 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
 
 void bp_retire_op(Bp_Data* bp_data, Op* op) {
   // Always retire both predictors regardless of which one made the active prediction.
-  op->recovery_info.branch_id = op->bp_pred_main.pred_branch_id;
+  op->pred->recovery_info.branch_id = op->pred->bp_pred_main.pred_branch_id;
   bp_data->bp->retire_func(op);
   if (bp_data->bp_l0)
     bp_data->bp_l0->retire_func(op);

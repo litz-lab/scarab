@@ -197,9 +197,9 @@ void bp_crs_realistic_push(Bp_Data* bp_data, Op* op) {
     ASSERTM(bp_data->proc_id, bp_data->crs.depth <= CRS_ENTRIES, "bp_data->crs_depth:%d\n", bp_data->crs.depth);
   }
 
-  op->recovery_info.crs_next = bp_data->crs.next;
-  op->recovery_info.crs_tos = bp_data->crs.tos;
-  op->recovery_info.crs_depth = bp_data->crs.depth;
+  op->pred->recovery_info.crs_next = bp_data->crs.next;
+  op->pred->recovery_info.crs_tos = bp_data->crs.tos;
+  op->pred->recovery_info.crs_depth = bp_data->crs.depth;
 
   DEBUG_CRS(bp_data->proc_id,
             "PUSH       next:%d  tos:%d  depth:%d  op:%s  addr:0x%s  type:%s  "
@@ -251,9 +251,9 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
   if (addr != op->oracle_info.npc)
     DEBUG_CRS(bp_data->proc_id, "MISS       addr:0x%s  true:0x%s\n", hexstr64s(addr), hexstr64s(op->oracle_info.npc));
 
-  op->recovery_info.crs_next = bp_data->crs.next;
-  op->recovery_info.crs_tos = bp_data->crs.tos;
-  op->recovery_info.crs_depth = bp_data->crs.depth;
+  op->pred->recovery_info.crs_next = bp_data->crs.next;
+  op->pred->recovery_info.crs_tos = bp_data->crs.tos;
+  op->pred->recovery_info.crs_depth = bp_data->crs.depth;
 
   DEBUG_CRS(bp_data->proc_id,
             "POP        next:%d  tos:%d  depth:%d  old_tos:%d  op:%s  "
@@ -334,18 +334,17 @@ static void btb_update_level(Cache* cache, uns level, uns proc_id, Addr fetch_ad
 /* bp_predict_btb: query the BTB and IBP once per branch and populate all
  * Btb_Pred_Info fields.  Must be called before any bp_predict_op() call for
  * the same op.  On entry op->btb_pred_info must be NULL; this function sets it
- * to &op->btb_pred and fills in every field so that bp_predict_op() is a pure
+ * to &op->pred->btb_pred and fills in every field so that bp_predict_op() is a pure
  * reader of btb_pred_info. */
 
 void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, !op->btb_pred_info);
-  Btb_Pred_Info* btb_pred_info = &op->btb_pred;
+  if (!op->uop->cf_type)
+    return;  // btb_pred_info stays NULL, so no reader looks at the state below
 
+  Btb_Pred_Info* btb_pred_info = &op->pred->btb_pred;
   memset(btb_pred_info, 0, sizeof(*btb_pred_info));
   btb_pred_info->no_target = TRUE;
-
-  if (!op->uop->cf_type)
-    return;
 
   // Set pointer and init l0/l1 fields so bp_btb_gen_pred can populate them.
   op->btb_pred_info = btb_pred_info;
@@ -827,14 +826,14 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
     addr = op->inst->addr;
     bp_data->targ_hist = bp_data->global_hist; /* use global history from conditional branches */
     hist = bp_data->targ_hist;
-    op->btb_pred.ibp_pred_targ_hist = bp_data->targ_hist;
-    op->recovery_info.targ_hist = bp_data->targ_hist;
+    op->pred->btb_pred.ibp_pred_targ_hist = bp_data->targ_hist;
+    op->pred->recovery_info.targ_hist = bp_data->targ_hist;
   } else {
     addr = op->inst->addr;
     hist = bp_data->targ_hist;
-    op->btb_pred.ibp_pred_targ_hist = bp_data->targ_hist;
+    op->pred->btb_pred.ibp_pred_targ_hist = bp_data->targ_hist;
     bp_data->targ_hist >>= bp_data->target_bit_length;
-    op->recovery_info.targ_hist =
+    op->pred->recovery_info.targ_hist =
         bp_data->targ_hist |
         (op->oracle_info.target >> 2 & N_BIT_MASK(bp_data->target_bit_length) << (32 - bp_data->target_bit_length));
     bp_data->targ_hist |= op->oracle_info.target >> 2 & N_BIT_MASK(bp_data->target_bit_length)
@@ -842,7 +841,7 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
   }
   tc_index = hist ^ addr;
   if (IBTB_HASH_TOS)
-    tc_index = tc_index ^ op->recovery_info.tos_addr;
+    tc_index = tc_index ^ op->pred->recovery_info.tos_addr;
   tc_entry = (Addr*)cache_access(bp_data->tc_tagged, tc_index, &line_addr,
                                  bp_data->bp_id ? FALSE : TRUE);  // TODO
 
@@ -872,7 +871,7 @@ void bp_ibtb_tc_tagged_update(Bp_Data* bp_data, Op* op) {
 
   ASSERT(bp_data->proc_id, !bp_data->bp_id);
   if (IBTB_HASH_TOS)
-    tc_index = tc_index ^ op->recovery_info.tos_addr;
+    tc_index = tc_index ^ op->pred->recovery_info.tos_addr;
 
   DEBUG(bp_data->proc_id, "Writing target cache target for op_num:%s\n", unsstr64(op->op_num));
   tc_line = (Addr*)cache_access(bp_data->tc_tagged, tc_index, &tc_line_addr, bp_data->bp_id ? FALSE : TRUE);
@@ -933,14 +932,14 @@ Addr bp_ibtb_tc_tagless_pred(Bp_Data* bp_data, Op* op) {
     addr = op->inst->addr;
     bp_data->targ_hist = bp_data->global_hist; /* use global history from conditional branches */
     hist = bp_data->targ_hist;
-    op->btb_pred.ibp_pred_targ_hist = bp_data->targ_hist;
-    op->recovery_info.targ_hist = bp_data->targ_hist;
+    op->pred->btb_pred.ibp_pred_targ_hist = bp_data->targ_hist;
+    op->pred->recovery_info.targ_hist = bp_data->targ_hist;
   } else {
     addr = op->inst->addr;
     hist = bp_data->targ_hist;
-    op->btb_pred.ibp_pred_targ_hist = bp_data->targ_hist;
+    op->pred->btb_pred.ibp_pred_targ_hist = bp_data->targ_hist;
     bp_data->targ_hist >>= bp_data->target_bit_length;
-    op->recovery_info.targ_hist =
+    op->pred->recovery_info.targ_hist =
         bp_data->targ_hist |
         (op->oracle_info.target >> 2 & N_BIT_MASK(bp_data->target_bit_length) << (32 - bp_data->target_bit_length));
     bp_data->targ_hist |= op->oracle_info.target >> 2 & N_BIT_MASK(bp_data->target_bit_length)
@@ -953,7 +952,7 @@ Addr bp_ibtb_tc_tagless_pred(Bp_Data* bp_data, Op* op) {
 
   if (IBTB_HASH_TOS) {
     uns32 cooked_tos_addr;
-    cooked_tos_addr = COOK_ADDR_BITS(op->recovery_info.tos_addr, 2);
+    cooked_tos_addr = COOK_ADDR_BITS(op->pred->recovery_info.tos_addr, 2);
     tc_index = tc_index ^ cooked_tos_addr;
     tc_entry = bp_data->tc_tagless[tc_index];
   }
@@ -978,7 +977,7 @@ void bp_ibtb_tc_tagless_update(Bp_Data* bp_data, Op* op) {
 
   if (IBTB_HASH_TOS) {
     uns32 cooked_tos_addr;
-    cooked_tos_addr = COOK_ADDR_BITS(op->recovery_info.tos_addr, 2);
+    cooked_tos_addr = COOK_ADDR_BITS(op->pred->recovery_info.tos_addr, 2);
     tc_index = tc_index ^ cooked_tos_addr;
   }
 
@@ -1043,7 +1042,7 @@ Addr bp_ibtb_tc_hybrid_pred(Bp_Data* bp_data, Op* op) {
 
   if (IBTB_HASH_TOS) {
     uns32 cooked_tos_addr;
-    cooked_tos_addr = COOK_ADDR_BITS(op->recovery_info.tos_addr, 2);
+    cooked_tos_addr = COOK_ADDR_BITS(op->pred->recovery_info.tos_addr, 2);
     sel_index = sel_index ^ cooked_tos_addr;
     sel_entry = bp_data->tc_selector[sel_index];
   }
@@ -1056,8 +1055,8 @@ Addr bp_ibtb_tc_hybrid_pred(Bp_Data* bp_data, Op* op) {
     target = bp_ibtb_tc_tagless_pred(bp_data, op);
   }
 
-  op->btb_pred.ibp_pred_global_hist = bp_data->global_hist;
-  op->btb_pred.ibp_pred_tc_selector_entry = sel_entry;
+  op->pred->btb_pred.ibp_pred_global_hist = bp_data->global_hist;
+  op->pred->btb_pred.ibp_pred_tc_selector_entry = sel_entry;
 
   return target;
 }
@@ -1078,7 +1077,7 @@ void bp_ibtb_tc_hybrid_update(Bp_Data* bp_data, Op* op) {
 
   if (IBTB_HASH_TOS) {
     uns32 cooked_tos_addr;
-    cooked_tos_addr = COOK_ADDR_BITS(op->recovery_info.tos_addr, 2);
+    cooked_tos_addr = COOK_ADDR_BITS(op->pred->recovery_info.tos_addr, 2);
     sel_index = sel_index ^ cooked_tos_addr;
     sel_entry = bp_data->tc_selector[sel_index];
   }

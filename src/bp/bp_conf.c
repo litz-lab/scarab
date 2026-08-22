@@ -63,7 +63,7 @@ static Flag compute_onpath_conf(Flag);
 static void print_onpath_conf(void);
 static uns count_zeros(uns, uns);
 static inline Bp_Pred_Info* conf_get_bp_pred_info(Op* op, Bp_Pred_Level pred_level) {
-  return (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
+  return (pred_level == BP_PRED_L0) ? &op->pred->bp_pred_l0 : &op->pred->bp_pred_main;
 }
 
 /**************************************************************************************/
@@ -492,16 +492,16 @@ void conf_perceptron_pred(Op* op, Bp_Pred_Level pred_level) {
     else
       x_i = 1;
 
-    op->recovery_info.conf_perceptron_global_hist =
+    op->pred->recovery_info.conf_perceptron_global_hist =
         (percep_bpc_data->conf_perceptron_global_hist) | (((uns64)x_i) << 63);
     percep_bpc_data->conf_perceptron_global_hist |= (((uns64)x_i) << 63);
   } else {
-    op->recovery_info.conf_perceptron_global_hist =
+    op->pred->recovery_info.conf_perceptron_global_hist =
         (percep_bpc_data->conf_perceptron_global_hist) | (((uns64)op->oracle_info.dir) << 63);
 
     percep_bpc_data->conf_perceptron_global_hist |= (((uns64)(op->oracle_info.dir)) << 63);
 
-    op->recovery_info.conf_perceptron_global_misp_hist =
+    op->pred->recovery_info.conf_perceptron_global_misp_hist =
         (percep_bpc_data->conf_perceptron_global_misp_hist) | ((uns64)recover_at_decode_or_exec << 63);
 
     percep_bpc_data->conf_perceptron_global_misp_hist |= (((uns64)recover_at_decode_or_exec) << 63);
@@ -556,7 +556,7 @@ void conf_perceptron_update(Op* op) {
 
   if (PERCEPTRON_CONF_HIS_BOTH) {
     hist = PERCEPTRON_HIS(op->bp_pred_info->pred_conf_perceptron_global_hist,
-                          op->recovery_info.conf_perceptron_global_misp_hist);
+                          op->pred->recovery_info.conf_perceptron_global_misp_hist);
   }
 
   /* if the output of the perceptron predictor is outside of

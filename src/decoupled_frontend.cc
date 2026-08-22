@@ -812,7 +812,7 @@ void Decoupled_FE::capture_main_pre_state_for_alts(Op* trigger_op) {
   // SIMULATION_MODE && !off_path by the caller in bp.c). Determine which alt
   // DFEs will be (re-)triggered by this prediction event and bp_sync them to
   // capture main's pre-spec-update state.
-  const Flag is_misprediction = trigger_op->bp_pred_main.recovery_point != RECOVER_AT_NONE;
+  const Flag is_misprediction = trigger_op->pred->bp_pred_main.recovery_point != RECOVER_AT_NONE;
   const bool h2p = is_h2p_at_exec(trigger_op->inst->addr);
   for (uns _bp_id = ALT_BP_1; _bp_id < NUM_BPS; ++_bp_id) {
     Decoupled_FE* alt = per_core_dfe[proc_id][_bp_id].get();
@@ -947,7 +947,8 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
   }
   // A BTB level hit, but it was not available early enough for the active BP level.
   else if (op->btb_pred_info->btb_pred_latency != MAX_UNS &&
-           op->btb_pred_info->btb_pred_latency > op->bp_pred_info->bp_ready_cycle - op->recovery_info.predict_cycle) {
+           op->btb_pred_info->btb_pred_latency >
+               op->bp_pred_info->bp_ready_cycle - op->pred->recovery_info.predict_cycle) {
     return REASON_LATE_BTB_HIT;
   } else {
     // all cases should be covered
@@ -960,17 +961,20 @@ Off_Path_Reason Decoupled_FE::eval_off_path_reason(Op* op) {
             "main_rec_fe:%u main_rec_decode:%u main_rec_exec:%u main_pred_orig:%u main_pred:%u "
             "main_pred_npc:0x%llx\n",
             (unsigned long long)op->op_num, (unsigned long long)op->inst_uid, (unsigned long long)op->inst->addr,
-            (int)op->uop->cf_type, op->bp_pred_info == &op->bp_pred_l0,
+            (int)op->uop->cf_type, op->bp_pred_info == &op->pred->bp_pred_l0,
             op->bp_pred_info->recovery_point == RECOVER_AT_FE, op->bp_pred_info->recovery_point == RECOVER_AT_DECODE,
             op->bp_pred_info->recovery_point == RECOVER_AT_EXEC, op->bp_pred_info->pred_orig, op->bp_pred_info->pred,
             (unsigned long long)op->bp_pred_info->pred_npc, op->oracle_info.dir,
             (unsigned long long)op->oracle_info.npc, (unsigned long long)op->oracle_info.target,
             btb_pred_miss(op->btb_pred_info), op->btb_pred_info->ibp_miss, op->btb_pred_info->no_target,
-            op->bp_pred_l0.recovery_point == RECOVER_AT_FE, op->bp_pred_l0.recovery_point == RECOVER_AT_DECODE,
-            op->bp_pred_l0.recovery_point == RECOVER_AT_EXEC, op->bp_pred_l0.pred_orig, op->bp_pred_l0.pred,
-            (unsigned long long)op->bp_pred_l0.pred_npc, op->bp_pred_main.recovery_point == RECOVER_AT_FE,
-            op->bp_pred_main.recovery_point == RECOVER_AT_DECODE, op->bp_pred_main.recovery_point == RECOVER_AT_EXEC,
-            op->bp_pred_main.pred_orig, op->bp_pred_main.pred, (unsigned long long)op->bp_pred_main.pred_npc);
+            op->pred->bp_pred_l0.recovery_point == RECOVER_AT_FE,
+            op->pred->bp_pred_l0.recovery_point == RECOVER_AT_DECODE,
+            op->pred->bp_pred_l0.recovery_point == RECOVER_AT_EXEC, op->pred->bp_pred_l0.pred_orig,
+            op->pred->bp_pred_l0.pred, (unsigned long long)op->pred->bp_pred_l0.pred_npc,
+            op->pred->bp_pred_main.recovery_point == RECOVER_AT_FE,
+            op->pred->bp_pred_main.recovery_point == RECOVER_AT_DECODE,
+            op->pred->bp_pred_main.recovery_point == RECOVER_AT_EXEC, op->pred->bp_pred_main.pred_orig,
+            op->pred->bp_pred_main.pred, (unsigned long long)op->pred->bp_pred_main.pred_npc);
   }
 }
 

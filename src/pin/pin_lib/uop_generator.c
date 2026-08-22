@@ -116,6 +116,10 @@ Addr* last_ga_va;
 
 static Inst_Info fake_nop_template;
 static Inst_Info fake_jmp_template;
+/* A fake op's Static_Op_Info is byte-identical for every fake op of a kind (it holds no address),
+   so they all share one, built once at init. */
+static Static_Op_Info fake_nop_static_op;
+static Static_Op_Info fake_jmp_static_op;
 static Flag fake_templates_ready = FALSE;
 
 /**************************************************************************************/
@@ -252,6 +256,9 @@ void uop_generator_init(uint32_t num_cores) {
   fake_jmp_template.uop_seq_num = 0;
   fake_jmp_template.fake_inst = TRUE;
   fake_jmp_template.fake_inst_reason = WPNM_FAKE_JMP;
+
+  populate_static_op_info(&fake_nop_static_op, &fake_nop_template);
+  populate_static_op_info(&fake_jmp_static_op, &fake_jmp_template);
 
   fake_templates_ready = TRUE;
 }
@@ -946,10 +953,11 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
     Static_Inst_Info* si;
     Static_Op_Info* so;
     if (pi->fake_inst) {
-      si = (Static_Inst_Info*)calloc(1, sizeof(Static_Inst_Info));
-      so = (Static_Op_Info*)calloc(1, sizeof(Static_Op_Info));
+      si = alloc_fake_static_inst();
       populate_static_inst_info(si, trace_uop[ii]->info, pi);
-      populate_static_op_info(so, trace_uop[ii]->info);
+      // one shared Static_Op_Info per fake-op kind; uops[] beyond num_uop stays undefined, as the
+      // struct's contract allows
+      so = (pi->fake_inst_reason == WPNM_FAKE_JMP) ? &fake_jmp_static_op : &fake_nop_static_op;
       si->uops[ii] = so;
     } else {
       unsigned char si_new = 0, so_new = 0;

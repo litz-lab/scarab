@@ -77,6 +77,8 @@ typedef struct Static_Inst_Info_struct {
 
   uns8 type;        // format type code (legacy; zeroed in PIN path but still read)
   uns8 qualifiers;  // FP qualifier bit string (legacy; zeroed in PIN path but still read)
+
+  struct Static_Inst_Info_struct* free_list_next;  // fake-op pool free-list link (valid only while recycled)
 } Static_Inst_Info;
 
 /* Per-uop static info: one instance per uop. Interned by {addr, opcode bytes, uop_idx}. */
@@ -102,6 +104,22 @@ typedef struct Static_Op_Info_struct {
 
   Flag trigger_op_fetched_hook;  // fire the model's fetch hook for this uop
 } Static_Op_Info;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Fake (wrong-path-nop) ops cannot be interned by {addr, opcode bytes} -- their addresses are
+ * synthesized and mostly unique -- so each one needs its own Static_Inst_Info, recycled through a
+ * free list (same pattern as the Dynamic_Inst pool) instead of being malloc'd per op: fake ops are
+ * 40-70% of all ops, so that churn dominated allocator time. The returned struct is uninitialized;
+ * the caller copies a per-kind template over it. Their Static_Op_Info is shared, not allocated. */
+Static_Inst_Info* alloc_fake_static_inst(void);
+void free_fake_static_inst(Static_Inst_Info* si);
+
+#ifdef __cplusplus
+}
+#endif
 
 /* Does any uop of this macro do a load / store / control transfer? Derived from uops[] so there is
  * a single source of truth (num_uop is small, typically 1-3). */

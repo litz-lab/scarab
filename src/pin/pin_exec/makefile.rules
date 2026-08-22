@@ -60,6 +60,22 @@ SOURCE_FILES := analysis_functions.cc globals.cc main_loop.cc exception_handling
 SOURCE_OBJFILES := $(patsubst %.cc,$(OBJDIR)%.o,$(SOURCE_FILES))
 
 SCARAB_DIR ?= ../../
+
+# PinPlay: opt-in (ENABLE_PINPLAY=1) so the exec-driven tool can replay a pinball
+# for deterministic, host-independent runs. Requires PIN_ROOT to point at a
+# pinplay-capable kit (extras/pinplay/{include,lib,lib-ext}); off by default so
+# the standard PIN kit still builds.
+PINPLAY_LINK_DEPS :=
+ifdef ENABLE_PINPLAY
+PINPLAY_HOME=$(PIN_ROOT)/extras/pinplay/
+PINPLAY_INCLUDE_HOME=$(PINPLAY_HOME)/include
+PINPLAY_LIB_HOME=$(PINPLAY_HOME)/lib/$(TARGET)
+EXT_LIB_HOME=$(PINPLAY_HOME)/lib-ext/$(TARGET)
+PINPLAY_LIBS=$(PINPLAY_LIB_HOME)/libpinplay.a $(EXT_LIB_HOME)/libbz2.a $(EXT_LIB_HOME)/libzlib.a $(CONTROLLERLIB)
+PINPLAY_LINK_DEPS=$(PINPLAY_LIBS)
+TOOL_CXXFLAGS += -I$(PINPLAY_INCLUDE_HOME) -DENABLE_PINPLAY
+endif
+
 #allow deprecated-declarations to enable compiling with newer PIN version e.g. 3.15 that define new APIs
 TOOL_CXXFLAGS += -std=c++14 -g3 -static -I$(SCARAB_DIR) -Wno-error=deprecated-declarations
 TOOL_LDFLAGS += -std=c++14
@@ -100,9 +116,9 @@ commonlibs: $(COMMON_LIB_OBJFILES)
 
 # Build the tool as a dll (shared object).
 # overriding rule in makefile.default.rules
-$(OBJDIR)pin_exec$(PINTOOL_SUFFIX): $(OBJDIR)pin_exec$(OBJ_SUFFIX) $(SOURCE_OBJFILES) commonlibs
+$(OBJDIR)pin_exec$(PINTOOL_SUFFIX): $(OBJDIR)pin_exec$(OBJ_SUFFIX) $(SOURCE_OBJFILES) commonlibs $(PINPLAY_LINK_DEPS)
 	$(info invoking link)
-	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $< $(SOURCE_OBJFILES) $(COMMON_LIB_OBJFILES) $(TOOL_LPATHS) $(TOOL_LIBS)
+	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $< $(SOURCE_OBJFILES) $(COMMON_LIB_OBJFILES) $(TOOL_LPATHS) $(PINPLAY_LIBS) $(TOOL_LIBS)
 
 
 $(OBJDIR)pin_exec$(OBJ_SUFFIX):pin_exec.cpp

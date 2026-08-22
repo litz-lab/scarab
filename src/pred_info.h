@@ -35,9 +35,11 @@
 // at a single stage (or not at all). Shared with Recovery_Info.recovery_point.
 typedef enum Recovery_Point_enum {
   RECOVER_AT_NONE,    // no recovery scheduled for this prediction
-  RECOVER_AT_EXEC,    // recovery at exec (branches; and mispredicted predicted loads)
+  RECOVER_AT_EXEC,    // recovery at exec (branches; and mispredicted value/RFP-predicted loads)
   RECOVER_AT_DECODE,  // recovery at decode
   RECOVER_AT_FE,      // recovery in the frontend (early correction; L0)
+  RECOVER_AT_WAKE,    // addr-predicted load: recovery at operand wake-up
+  RECOVER_AT_RENAME,  // deferred predicted-load recovery: trigger fired before the eom renamed
 } Recovery_Point;
 
 typedef struct Bp_Pred_Info_struct {

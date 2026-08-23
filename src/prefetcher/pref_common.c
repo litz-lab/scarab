@@ -846,7 +846,9 @@ void pref_update_core(uns proc_id) {
       dc_hit = (Dcache_Data*)cache_access(&dc->dcache, dl0req_queue[q_index].line_addr, &dummy_line_addr, FALSE);
 
       if (dc_hit) {
-        // nothing for now
+        // Already cached: drop the redundant prefetch. Leaving it valid jammed the queue.
+        dl0req_queue[q_index].valid = FALSE;
+        STAT_EVENT(proc_id, PREF_DL0REQ_QUEUE_HIT_DROP);
       } else if (PREF_DL0_FILL_DCACHE) {
         // True L1D prefetch: issue a memory request that fills the dcache on
         // return (done_func = dcache_fill_line, the same callback a demand dcache

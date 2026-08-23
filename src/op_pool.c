@@ -139,6 +139,29 @@ void free_dyn_inst(Dynamic_Inst* di) {
   dyn_inst_free_list = di;
 }
 
+/**************************************************************************************/
+/* Fake-op Static_Inst_Info pool: fake (wrong-path-nop) ops cannot be interned (their addresses are
+   synthesized), so each needs its own. Recycled through a free list rather than malloc'd per op; the
+   caller overwrites the whole struct from a per-kind template, so no clearing is needed here. */
+
+static Static_Inst_Info* fake_static_inst_free_list = NULL;
+
+Static_Inst_Info* alloc_fake_static_inst(void) {
+  Static_Inst_Info* si = fake_static_inst_free_list;
+  if (si) {
+    fake_static_inst_free_list = si->free_list_next;
+  } else {
+    si = (Static_Inst_Info*)malloc(sizeof(*si));
+  }
+  return si;
+}
+
+void free_fake_static_inst(Static_Inst_Info* si) {
+  ASSERT(0, si);
+  si->free_list_next = fake_static_inst_free_list;
+  fake_static_inst_free_list = si;
+}
+
 /* alloc_op:  returns a pointer to the next available op */
 
 Op* alloc_op(uns proc_id) {
@@ -183,9 +206,8 @@ void free_op(Op* op) {
     delete_store_hash_entry(op);
 
   if (op->inst && op->inst->fake_inst) {
-    // fake ops get their own (non-interned) static structs; free both
-    free(op->inst);
-    free(op->uop);
+    // fake ops get their own Static_Inst_Info; their Static_Op_Info is shared, so it is not freed
+    free_fake_static_inst(op->inst);
     op->inst = NULL;
     op->uop = NULL;
   }

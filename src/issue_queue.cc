@@ -57,6 +57,7 @@ extern "C" {
 #include <memory>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 /**************************************************************************************/
@@ -279,6 +280,10 @@ class SelectLogic {
   uns64 ready_not_issued_op_types = 0;
   std::vector<uns64> ready_not_issued_op_types_per_fu;
 
+  // statistics for ops that read the same physical register in this cycle, within this queue
+  std::unordered_map<uns16, uns> ready_reg_read_count;
+  std::unordered_map<uns16, uns> issued_reg_read_count;
+
  public:
   explicit SelectLogic(uns proc_id, uns16 queue_id, std::vector<FunctionalUnitPicker> connected_fu_pickers,
                        std::unique_ptr<SchedulePolicy> sched_policy, std::unique_ptr<TraversalPolicy> traversal_policy,
@@ -291,8 +296,9 @@ class SelectLogic {
         bind_policy(std::move(bind_policy)),
         picker_order(this->connected_fu_pickers.size()) {}
 
-  void bid();
-  void grant(uns64 ready_not_issued_op_types_others);
+  void bid(std::unordered_map<uns16, uns>& ready_reg_read_count_across_queue);
+  void grant(uns64 ready_not_issued_op_types_others,
+             std::unordered_map<uns16, uns>& issued_reg_read_count_across_queue);
 
   void bind(IssueQueueEntry* entry) { bind_policy->bind(connected_fu_pickers, entry); }
   void unbind(IssueQueueEntry* entry) { bind_policy->unbind(entry); }
@@ -302,8 +308,11 @@ class SelectLogic {
   bool has_ready_ops() const { return !ready_list.empty(); }
   uns64 get_ready_not_issued_op_types() const { return ready_not_issued_op_types; }
 
-  void collect_entry_op_ready_stats(IssueQueueEntry* entry);
+  void collect_entry_op_ready_stats(IssueQueueEntry* entry,
+                                    std::unordered_map<uns16, uns>& ready_reg_read_count_across_queue);
   void collect_entry_op_ready_not_issued_stats(IssueQueueEntry* entry);
+  void collect_issued_op_stats(Op* op, std::unordered_map<uns16, uns>& issued_reg_read_count_across_queue);
+  void collect_not_issued_fu_stats(const FunctionalUnitPicker& fu_picker, uns64 ready_not_issued_op_types_others);
 };
 
 /*
@@ -315,10 +324,11 @@ class SelectLogic {
  */
 
 // pick ready ops for issue according to the scheduling policy and picker traversal order
-void SelectLogic::bid() {
+void SelectLogic::bid(std::unordered_map<uns16, uns>& ready_reg_read_count_across_queue) {
   traversal_policy->build_picker_order(picker_order);
   ready_not_issued_op_types = 0;
   ready_not_issued_op_types_per_fu.assign(connected_fu_pickers.size(), 0);
+  ready_reg_read_count.clear();
 
   for (IssueQueueEntry* entry : ready_list) {
     // check if the op is ready (it may become not ready due to memory blocking or waiting for forwarding)
@@ -328,7 +338,7 @@ void SelectLogic::bid() {
 
     // the current request propagated through the serial picker chain
     IssueQueueEntry* request_entry = entry;
-    collect_entry_op_ready_stats(request_entry);
+    collect_entry_op_ready_stats(request_entry, ready_reg_read_count_across_queue);
 
     for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
       size_t picker_idx = picker_order[i];
@@ -353,18 +363,16 @@ void SelectLogic::bid() {
 
     // the entry is not picked or displaced
     if (request_entry != nullptr) {
-      ready_not_issued_op_types |= request_entry->op_fu_type;
-      if (request_entry->bound_fu_id != MAX_UNS) {
-        ready_not_issued_op_types_per_fu[request_entry->bound_fu_id] |= request_entry->op_fu_type;
-      }
-
       collect_entry_op_ready_not_issued_stats(request_entry);
     }
   }
 }
 
 // grant the picked ops into issue ports
-void SelectLogic::grant(uns64 ready_not_issued_op_types_others) {
+void SelectLogic::grant(uns64 ready_not_issued_op_types_others,
+                        std::unordered_map<uns16, uns>& issued_reg_read_count_across_queue) {
+  issued_reg_read_count.clear();
+
   for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
     // grant the pick after scanning the ready list
     FunctionalUnitPicker& fu_picker = connected_fu_pickers[picker_order[i]];
@@ -372,39 +380,46 @@ void SelectLogic::grant(uns64 ready_not_issued_op_types_others) {
 
     // track FU idle stats after scheduling
     uns32 fu_id = fu_picker.get_fu_id();
-    if (node->sd.ops[fu_id] != NULL)
+    Op* issued_op = node->sd.ops[fu_id];
+    if (issued_op != NULL) {
+      collect_issued_op_stats(issued_op, issued_reg_read_count_across_queue);
       continue;
-
-    bool matching_unpick = false;
-    if (ready_not_issued_op_types_others & fu_picker.get_fu_type()) {
-      STAT_EVENT(proc_id, ISSUE_QUEUE_MATCHING_UNPICK_ACROSS_QUEUES);
-      matching_unpick = true;
     }
 
-    for (size_t j = 0; j < connected_fu_pickers.size(); ++j) {
-      if (ready_not_issued_op_types_per_fu[j] & fu_picker.get_fu_type()) {
-        STAT_EVENT(proc_id, ISSUE_QUEUE_MATCHING_UNPICK_WITHIN_QUEUE);
-        matching_unpick = true;
-        break;
-      }
-    }
-
-    if (matching_unpick) {
-      STAT_EVENT(proc_id, ISSUE_QUEUE_MATCHING_UNPICK);
-    }
+    collect_not_issued_fu_stats(fu_picker, ready_not_issued_op_types_others);
   }
 }
 
-void SelectLogic::collect_entry_op_ready_stats(IssueQueueEntry* entry) {
+void SelectLogic::collect_entry_op_ready_stats(IssueQueueEntry* entry,
+                                               std::unordered_map<uns16, uns>& ready_reg_read_count_across_queue) {
   STAT_EVENT(node->proc_id, RS_OP_READY);
-
   Op* op = entry->op;
+
+  // collect reg read stats of ready ops
+  for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
+    if (op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] == REG_TABLE_REG_ID_INVALID) {
+      continue;
+    }
+    uns16 reg_id = op->src_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+
+    STAT_EVENT(op->proc_id, ISSUE_QUEUE_OP_READY_REG_READ_WITHIN_QUEUE_TOTAL);
+    if (++ready_reg_read_count[reg_id] > 1) {
+      STAT_EVENT(op->proc_id, ISSUE_QUEUE_OP_READY_REG_READ_WITHIN_QUEUE_SHARED);
+    }
+
+    STAT_EVENT(op->proc_id, ISSUE_QUEUE_OP_READY_REG_READ_ACROSS_QUEUE_TOTAL);
+    if (++ready_reg_read_count_across_queue[reg_id] > 1) {
+      STAT_EVENT(op->proc_id, ISSUE_QUEUE_OP_READY_REG_READ_ACROSS_QUEUE_SHARED);
+    }
+  }
+
   if (op->off_path) {
     STAT_EVENT(op->proc_id, ST_OP_OFFPATH_READY);
     STAT_EVENT(op->proc_id, ST_NOT_MEM_OFFPATH_READY + op->uop->mem_type);
     return;
   }
 
+  // collect on-path op mix stats
   STAT_EVENT(op->proc_id, ST_OP_ONPATH_READY);
   STAT_EVENT(op->proc_id, ST_OP_INV_READY + op->uop->op_type);
   STAT_EVENT(op->proc_id, ST_NOT_CF_READY + op->uop->cf_type);
@@ -413,6 +428,12 @@ void SelectLogic::collect_entry_op_ready_stats(IssueQueueEntry* entry) {
 }
 
 void SelectLogic::collect_entry_op_ready_not_issued_stats(IssueQueueEntry* entry) {
+  // update the bitmask for aggregating ready but not yet issued op types in this cycle
+  ready_not_issued_op_types |= entry->op_fu_type;
+  if (entry->bound_fu_id != MAX_UNS) {
+    ready_not_issued_op_types_per_fu[entry->bound_fu_id] |= entry->op_fu_type;
+  }
+
   STAT_EVENT(node->proc_id, RS_OP_READY_NOT_ISSUED_TOTAL);
   STAT_EVENT(node->proc_id, RS_0_OP_READY_NOT_ISSUED + (queue_id < 8 ? queue_id : 8));
 
@@ -423,11 +444,53 @@ void SelectLogic::collect_entry_op_ready_not_issued_stats(IssueQueueEntry* entry
     return;
   }
 
+  // collect on-path op mix stats
   STAT_EVENT(op->proc_id, ST_OP_ONPATH_READY_NOT_ISSUED);
   STAT_EVENT(op->proc_id, ST_OP_INV_READY_NOT_ISSUED + op->uop->op_type);
   STAT_EVENT(op->proc_id, ST_NOT_CF_READY_NOT_ISSUED + op->uop->cf_type);
   STAT_EVENT(op->proc_id, ST_BAR_NONE_READY_NOT_ISSUED + op->uop->bar_type);
   STAT_EVENT(op->proc_id, ST_NOT_MEM_READY_NOT_ISSUED + op->uop->mem_type);
+}
+
+void SelectLogic::collect_issued_op_stats(Op* op, std::unordered_map<uns16, uns>& issued_reg_read_count_across_queue) {
+  // collect reg read stats of issued ops
+  for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
+    if (op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] == REG_TABLE_REG_ID_INVALID) {
+      continue;
+    }
+    uns16 reg_id = op->src_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+
+    STAT_EVENT(op->proc_id, ISSUE_QUEUE_OP_ISSUED_REG_READ_WITHIN_QUEUE_TOTAL);
+    if (++issued_reg_read_count[reg_id] > 1) {
+      STAT_EVENT(op->proc_id, ISSUE_QUEUE_OP_ISSUED_REG_READ_WITHIN_QUEUE_SHARED);
+    }
+
+    STAT_EVENT(op->proc_id, ISSUE_QUEUE_OP_ISSUED_REG_READ_ACROSS_QUEUE_TOTAL);
+    if (++issued_reg_read_count_across_queue[reg_id] > 1) {
+      STAT_EVENT(op->proc_id, ISSUE_QUEUE_OP_ISSUED_REG_READ_ACROSS_QUEUE_SHARED);
+    }
+  }
+}
+
+void SelectLogic::collect_not_issued_fu_stats(const FunctionalUnitPicker& fu_picker,
+                                              uns64 ready_not_issued_op_types_others) {
+  bool matching_unpick = false;
+  if (ready_not_issued_op_types_others & fu_picker.get_fu_type()) {
+    STAT_EVENT(proc_id, ISSUE_QUEUE_MATCHING_UNPICK_ACROSS_QUEUES);
+    matching_unpick = true;
+  }
+
+  for (size_t j = 0; j < connected_fu_pickers.size(); ++j) {
+    if (ready_not_issued_op_types_per_fu[j] & fu_picker.get_fu_type()) {
+      STAT_EVENT(proc_id, ISSUE_QUEUE_MATCHING_UNPICK_WITHIN_QUEUE);
+      matching_unpick = true;
+      break;
+    }
+  }
+
+  if (matching_unpick) {
+    STAT_EVENT(proc_id, ISSUE_QUEUE_MATCHING_UNPICK);
+  }
 }
 
 /**************************************************************************************/
@@ -656,8 +719,13 @@ class IssueQueue {
   void issued(uns16 entry_id);
   void recover();
 
-  void bid() { select_logic->bid(); }
-  void grant(uns64 ready_not_issued_op_types_others) { select_logic->grant(ready_not_issued_op_types_others); }
+  void bid(std::unordered_map<uns16, uns>& ready_reg_read_count_across_queue) {
+    select_logic->bid(ready_reg_read_count_across_queue);
+  }
+  void grant(uns64 ready_not_issued_op_types_others,
+             std::unordered_map<uns16, uns>& issued_reg_read_count_across_queue) {
+    select_logic->grant(ready_not_issued_op_types_others, issued_reg_read_count_across_queue);
+  }
 
   uns64 get_ready_not_issued_op_types() const { return select_logic->get_ready_not_issued_op_types(); }
   bool has_ready_ops() const { return select_logic->has_ready_ops(); }
@@ -762,6 +830,10 @@ class IssueQueues {
   std::vector<IssueQueue> issue_queues;
   std::vector<uns16> fu_map;
   std::vector<uns64> fu_types;
+
+  // statistics for ops that read the same physical register in this cycle, across all queues in this core
+  std::unordered_map<uns16, uns> ready_reg_read_count_across_queue;
+  std::unordered_map<uns16, uns> issued_reg_read_count_across_queue;
 
   void update_mem_block();
   uns16 find_emptiest_queue(Op* op);
@@ -912,12 +984,14 @@ void IssueQueues::schedule() {
   // checks if any of the L1 MSHRs have become available
   update_mem_block();
 
+  ready_reg_read_count_across_queue.clear();
   std::vector<uns64> ready_not_issued_op_types_total;
   for (IssueQueue& queue : issue_queues) {
-    queue.bid();
+    queue.bid(ready_reg_read_count_across_queue);
     ready_not_issued_op_types_total.push_back(queue.get_ready_not_issued_op_types());
   }
 
+  issued_reg_read_count_across_queue.clear();
   for (size_t queue_id = 0; queue_id < issue_queues.size(); ++queue_id) {
     uns64 ready_not_issued_op_types_others = 0;
     for (size_t other_queue_id = 0; other_queue_id < issue_queues.size(); ++other_queue_id) {
@@ -926,8 +1000,15 @@ void IssueQueues::schedule() {
       }
     }
 
-    issue_queues[queue_id].grant(ready_not_issued_op_types_others);
+    issue_queues[queue_id].grant(ready_not_issued_op_types_others, issued_reg_read_count_across_queue);
   }
+
+  // distribution of the number of distinct physical registers issued across all queues this cycle
+  size_t reg_read_count = issued_reg_read_count_across_queue.size();
+  if (reg_read_count != 0) {
+    STAT_EVENT(proc_id, ISSUE_QUEUE_OP_ISSUED_REG_READ_CYCLE);
+  }
+  STAT_EVENT(proc_id, ISSUE_QUEUE_OP_ISSUED_REG_READ_COUNT_0 + (reg_read_count < 7 ? reg_read_count : 7));
 }
 
 void IssueQueues::recover() {

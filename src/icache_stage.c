@@ -979,11 +979,9 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
         }
       }*/
     } else {
-      // pass the global branch history to the instructions that can use it
-      if (op_needs_pred_state(op)) {
-        op->pred->bp_pred_l0.pred_global_hist = g_bp_data->global_hist;
-        op->pred->bp_pred_main.pred_global_hist = g_bp_data->global_hist;
-      }
+      // pass the global branch history to all the instructions
+      op->pred_global_hist[BP_PRED_L0] = g_bp_data->global_hist;
+      op->pred_global_hist[BP_PRED_MAIN] = g_bp_data->global_hist;
     }
   }
 }

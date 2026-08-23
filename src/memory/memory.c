@@ -3542,10 +3542,10 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       data = (L1_Data*)cache_access(&L1(proc_id)->cache, addr, &line_addr, FALSE);
 
       if (data) {
-        pref_ul1_hit(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_ul1_hit(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->pred_global_hist[op->bp_pred_level] : 0));
       } else {
         // TREAT queue hits as misses
-        pref_ul1_miss(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_ul1_miss(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->pred_global_hist[op->bp_pred_level] : 0));
       }
     }
   } else {
@@ -3560,10 +3560,10 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       data = (MLC_Data*)cache_access(&MLC(proc_id)->cache, addr, &line_addr, FALSE);
 
       if (data) {
-        pref_umlc_hit(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_umlc_hit(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->pred_global_hist[op->bp_pred_level] : 0));
       } else {
         // TREAT queue hits as misses
-        pref_umlc_miss(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_umlc_miss(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->pred_global_hist[op->bp_pred_level] : 0));
       }
     }
   }

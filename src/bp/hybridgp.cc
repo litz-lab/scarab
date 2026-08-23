@@ -208,12 +208,12 @@ bool get_spred(const Hybridgp_State& hybridgp_state, const uns32 spht_index) {
   return spht_entry >> (PHT_CTR_BITS - 1);
 }
 
-bool get_gpred(Op* op, Bp_Pred_Info* bp_pred_info, Hybridgp_State& hybridgp_state, const Addr addr,
+bool get_gpred(Op* op, Bp_Pred_Info* bp_pred_info, uns32 ghist, Hybridgp_State& hybridgp_state, const Addr addr,
                const uns32 gpht_index) {
   uns8 gpht_entry;
   if (INF_HYBRIDGP) {
     Flag new_entry;
-    const int64 key = addr << 32 | (Addr)bp_pred_info->pred_global_hist;
+    const int64 key = addr << 32 | (Addr)ghist;
     uns8* entry = (uns8*)hash_table_access_create(&hybridgp_state.hybgpht_hash, key, &new_entry);
     if (new_entry) {
       *entry = PHT_INIT_VALUE;
@@ -291,12 +291,12 @@ uns8 bp_hybridgp_pred(Op* op, Bp_Pred_Level pred_level) {
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
 
   const Addr addr = op->inst->addr;
-  const uns32 ghist = bp_pred_info->pred_global_hist;
+  const uns32 ghist = op->pred_global_hist[pred_level];
   const uns32 phist = get_local_history(hybridgp_state, addr);
   const auto indices = cook_indices(addr, ghist, phist);
 
   const bool spred = get_spred(hybridgp_state, indices.spht);
-  const bool gpred = get_gpred(op, bp_pred_info, hybridgp_state, addr, indices.gpht);
+  const bool gpred = get_gpred(op, bp_pred_info, ghist, hybridgp_state, addr, indices.gpht);
   const bool ppred = get_ppred(hybridgp_state, indices.ppht);
 
   uns8 pred = spred ? gpred : ppred;
@@ -344,7 +344,7 @@ void bp_hybridgp_update(Op* op, Bp_Pred_Level pred_level) {
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
 
   const Addr addr = op->inst->addr;
-  const uns32 ghist = bp_pred_info->pred_global_hist;
+  const uns32 ghist = op->pred_global_hist[pred_level];
   const uns32 phist = bp_pred_info->pred_local_hist;
   const auto indices = cook_indices(addr, ghist, phist);
 

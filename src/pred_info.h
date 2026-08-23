@@ -58,7 +58,6 @@ typedef struct Bp_Pred_Info_struct {
   uns8* pred_ppht_entry;        // entry used for interference free pred
   uns8* pred_spht_entry;        // entry used for interference free pred
   uns32 pred_local_hist;        // local history used to predict the branch
-  uns32 pred_global_hist;       // global history used to predict the branch (CBR/REP direction)
   uns8 hybridgp_gpred;          // hybridgp's global prediction
   uns8 hybridgp_ppred;          // hybridgp's pred-address prediction
 
@@ -119,5 +118,6 @@ typedef enum Bp_Pred_Level_enum {
   BP_PRED_L0 = 0,
   BP_PRED_MAIN = 1,
 } Bp_Pred_Level;
+#define BP_PRED_NUM_LEVELS 2
 
 #endif /* #ifndef __PRED_INFO_H__ */

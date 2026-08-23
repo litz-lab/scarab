@@ -526,7 +526,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
     case CF_REP:
     case CF_CBR:
       // Branch predictors may use pred_global_hist as input.
-      bp_pred_info->pred_global_hist = bp_data->global_hist;
+      op->pred_global_hist[pred_level] = bp_data->global_hist;
 
       if (PERFECT_BP) {
         bp_pred_info->pred = op->oracle_info.dir;
@@ -845,10 +845,10 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
     if (!op->off_path) {
       if (bp_pred_info->recovery_point == RECOVER_AT_EXEC)
         _DEBUGA(op->proc_id, 0, "ON PATH HW RECOVER_AT_EXEC  addr:0x%s  pghist:0x%s\n", hexstr64s(op->inst->addr),
-                hexstr64s(bp_pred_info->pred_global_hist));
+                hexstr64s(op->pred_global_hist[pred_level]));
       else
         _DEBUGA(op->proc_id, 0, "ON PATH HW CORRECT  addr:0x%s  pghist:0x%s\n", hexstr64s(op->inst->addr),
-                hexstr64s(bp_pred_info->pred_global_hist));
+                hexstr64s(op->pred_global_hist[pred_level]));
     }
   }
 

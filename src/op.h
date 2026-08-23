@@ -194,7 +194,9 @@ struct Op_struct {
   Src_Info* src_info;           /* grown by map (2 -> 8 -> 128, then x2); freed in free_op */
   uns src_info_cap;
   Op_Pred_State* pred;           // prediction/recovery state (shared zero instance if unused)
+  uns32 pred_global_hist[BP_PRED_NUM_LEVELS];  // written for every op (prefetchers read it), so it stays in Op
   Bp_Pred_Info* bp_pred_info;    // selected/active branch prediction info
+  uns8 bp_pred_level;            // which level bp_pred_info selects; indexes pred_global_hist
   Btb_Pred_Info* btb_pred_info;  // selected/active btb prediction info
   // }}}
 
@@ -452,6 +454,7 @@ static inline Flag op_needs_pred_state(const Op* op) {
 
 static inline void op_select_bp_pred_info(Op* op, Bp_Pred_Level level) {
   op->bp_pred_info = (level == BP_PRED_L0) ? &op->pred->bp_pred_l0 : &op->pred->bp_pred_main;
+  op->bp_pred_level = level;
   // btb_pred_info is set exclusively by bp_predict_btb(); do not touch it here.
 }
 

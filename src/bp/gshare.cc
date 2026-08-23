@@ -78,12 +78,11 @@ void bp_gshare_init() {
 }
 
 uns8 bp_gshare_pred(Op* op, Bp_Pred_Level pred_level) {
-  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->pred->bp_pred_l0 : &op->pred->bp_pred_main;
   const uns proc_id = op->proc_id;
   const auto& gshare_state = gshare_state_all_cores.at(proc_id);
 
   const Addr addr = op->inst->addr;
-  const uns32 hist = bp_pred_info->pred_global_hist;
+  const uns32 hist = op->pred_global_hist[pred_level];
   const uns32 pht_index = get_pht_index(addr, hist);
   const uns8 pht_entry = gshare_state.pht[pht_index];
   const uns8 pred = pht_entry >> (PHT_CTR_BITS - 1) & 0x1;
@@ -96,7 +95,6 @@ uns8 bp_gshare_pred(Op* op, Bp_Pred_Level pred_level) {
 }
 
 void bp_gshare_update(Op* op, Bp_Pred_Level pred_level) {
-  Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->pred->bp_pred_l0 : &op->pred->bp_pred_main;
   if (op->uop->cf_type != CF_CBR && op->uop->cf_type != CF_REP) {
     // If op is not a conditional branch/REP, we do not interact with gshare.
     return;
@@ -105,7 +103,7 @@ void bp_gshare_update(Op* op, Bp_Pred_Level pred_level) {
   const uns proc_id = op->proc_id;
   auto& gshare_state = gshare_state_all_cores.at(proc_id);
   const Addr addr = op->inst->addr;
-  const uns32 hist = bp_pred_info->pred_global_hist;
+  const uns32 hist = op->pred_global_hist[pred_level];
   const uns32 pht_index = get_pht_index(addr, hist);
   const uns8 pht_entry = gshare_state.pht[pht_index];
 

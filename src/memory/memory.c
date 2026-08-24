@@ -3966,6 +3966,10 @@ void op_nuke_mem_req(Op* op) {
  * @return Flag 1 on successful fill
  */
 Flag l1_fill_line(Mem_Req* req) {
+  if (EXCLUSIVE_CACHES && req->destination != DEST_L1) {
+    STAT_EVENT(req->proc_id, EXCL_FILL_SKIPPED_LLC);
+    return TRUE;
+  }
   L1_Data* data;
   Addr line_addr, repl_line_addr = 0;
   Op* top;
@@ -4279,7 +4283,50 @@ Flag l1_fill_line(Mem_Req* req) {
 /**************************************************************************************/
 /* mlc_fill_line: */
 
+/* Exclusive hierarchy: move a line down one level, chaining MLC -> LLC when the
+   demotion itself evicts a valid line. Metadata (dirty, prefetch state) follows
+   the line so per-level prefetch accounting keeps working. */
+void mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, Flag seen_prefetch) {
+  Addr mlc_line_addr, mlc_repl_addr;
+  Flag mlc_repl_valid;
+  MLC_Data* victim =
+      (MLC_Data*)get_next_repl_line(&MLC(proc_id)->cache, proc_id, line_addr, &mlc_repl_addr, &mlc_repl_valid);
+  Flag v_dirty = FALSE, v_pref = FALSE, v_seen = FALSE;
+  if (mlc_repl_valid && victim) {
+    v_dirty = victim->dirty;
+    v_pref = victim->prefetch;
+    v_seen = victim->seen_prefetch;
+  }
+  MLC_Data* data = (MLC_Data*)cache_insert(&MLC(proc_id)->cache, proc_id, line_addr, &mlc_line_addr, &mlc_repl_addr);
+  data->proc_id = proc_id;
+  data->dirty = dirty;
+  data->prefetch = prefetch;
+  data->seen_prefetch = seen_prefetch;
+  STAT_EVENT(proc_id, EXCL_DEMOTE_DC_TO_MLC);
+
+  if (!mlc_repl_valid)
+    return;
+  Addr l1_line_addr, l1_repl_addr;
+  Flag l1_repl_valid;
+  L1_Data* l1_victim =
+      (L1_Data*)get_next_repl_line(&L1(proc_id)->cache, proc_id, mlc_repl_addr, &l1_repl_addr, &l1_repl_valid);
+  L1_Data* l1_data = (L1_Data*)cache_insert(&L1(proc_id)->cache, proc_id, mlc_repl_addr, &l1_line_addr, &l1_repl_addr);
+  l1_data->proc_id = proc_id;
+  l1_data->dirty = v_dirty;
+  l1_data->prefetch = v_pref;
+  l1_data->seen_prefetch = v_seen;
+  STAT_EVENT(proc_id, EXCL_DEMOTE_MLC_TO_LLC);
+  if (l1_repl_valid && l1_victim && l1_victim->dirty)
+    STAT_EVENT(proc_id, EXCL_DROP_LLC_VICTIM);
+}
+
 Flag mlc_fill_line(Mem_Req* req) {
+  /* Exclusive: only the destination level keeps the line; a core-destined fill
+     passes through the MLC without inserting. */
+  if (EXCLUSIVE_CACHES && req->destination != DEST_MLC) {
+    STAT_EVENT(req->proc_id, EXCL_FILL_SKIPPED_MLC);
+    return TRUE;
+  }
   MLC_Data* data;
   Addr line_addr, repl_line_addr = 0;
   Op* top = NULL;

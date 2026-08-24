@@ -279,3 +279,5 @@ extern Freq_Domain_Id FREQ_DOMAIN_MEMORY;
 extern Counter mem_seq_num;
 
 #endif /* #ifndef __MEMORY_H__*/
+
+void mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, Flag seen_prefetch);

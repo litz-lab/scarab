@@ -45,11 +45,12 @@ Bp bp_table [] = {
 
 
 Bp_Btb bp_btb_table [] = {
-    /* Enum          Name         init                pred                update                recover              */
-    /* ------------------------------------------------------------------------------------------------------------- */
-    { GENERIC_BTB,   "generic",   bp_btb_gen_init,    bp_btb_gen_pred,    bp_btb_gen_update,    bp_btb_gen_recover   },
-    { BLOCK_BTB,     "block",     bp_btb_block_init,  bp_btb_block_pred,  bp_btb_block_update,  bp_btb_block_recover },
-    { NUM_BTB,       0,           NULL,               NULL,               NULL,                 NULL, }
+    /* Enum            Name           init                     pred                     update                     recover              */
+    /* -------------------------------------------------------------------------------------------------------------------------------- */
+    { GENERIC_BTB,     "generic",     bp_btb_gen_init,         bp_btb_gen_pred,         bp_btb_gen_update,         bp_btb_gen_recover   },
+    { BLOCK_BTB,       "block",       bp_btb_block_init,       bp_btb_block_pred,       bp_btb_block_update,       bp_btb_block_recover },
+    { BLOCK_BTB_SPLIT, "block_split", bp_btb_block_split_init, bp_btb_block_split_pred, bp_btb_block_split_update, bp_btb_block_recover },  /* shares bp_btb_block_recover on purpose */
+    { NUM_BTB,         0,             NULL,                    NULL,                    NULL,                      NULL, }
 };
 
 

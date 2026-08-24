@@ -79,6 +79,25 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr);
 
 static inline void dcache_fill_wp_collect_stats(Dcache_Data* line, Mem_Req* req);
 static inline void dcache_hit_wp_collect_stats(Dcache_Data* line, Op* op);
+/* Load latency actually observed by the op: from the cycle its address was ready
+   (earliest it could be submitted to the dcache) to the cycle its data is ready.
+   Spans port/bank-conflict waits, OS_WAIT_DCACHE re-probes, replays and
+   extra_ld_latency, so it is not bounded below by DCACHE_CYCLES. */
+static inline void ld_served_stat(Op* op, Stat_Enum served, Stat_Enum lat) {
+  Counter start = op_get_exec_cycle(op);
+  Counter end = op_get_done_cycle(op);
+  // Both are always set here: a replaying op with an unset exec_cycle is squished
+  // out of the stage before this point, and both call sites run right after
+  // done_cycle is stamped. end >= start because the addr-ready gate only lets the
+  // op through once cycle_count >= exec_cycle. Skipping instead of asserting would
+  // silently drop loads and break the LD_SERVED_* partition.
+  ASSERT(op->proc_id, start != MAX_CTR);
+  ASSERT(op->proc_id, end != MAX_CTR);
+  ASSERT(op->proc_id, end >= start);
+  STAT_EVENT(op->proc_id, served);
+  INC_STAT_EVENT(op->proc_id, lat, end - start);
+}
+
 static inline Flag dcache_miss_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type);
 static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr, uns8 proc_id, uns8 cache_cycle);
 
@@ -309,6 +328,8 @@ void update_dcache_stage(Stage_Data* src_sd) {
 
     if (line) {
       dcache_cacheline_hit(op, line_addr, line);
+      if (!op->off_path && op->uop->mem_type == MEM_LD)
+        ld_served_stat(op, LD_SERVED_DCACHE, LD_LAT_DCACHE);
       continue;
     }
     dcache_cacheline_miss(op, line_addr);
@@ -890,6 +911,9 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     // arriving here already-done is a bug.
     if (op_get_done_cycle(op) == MAX_CTR) {
       op_set_done_cycle(op, cycle_count + 1);
+      if (!op->off_path && op->uop->mem_type == MEM_LD)
+        ld_served_stat(op, req->mlc_hit ? LD_SERVED_MLC : (req->l1_hit ? LD_SERVED_LLC : LD_SERVED_MEM),
+                       req->mlc_hit ? LD_LAT_MLC : (req->l1_hit ? LD_LAT_LLC : LD_LAT_MEM));
     } else {
       Mem_Type mt = op->uop->mem_type;
       ASSERT(dc->proc_id, mt == MEM_ST || mt == MEM_PF || mt == MEM_WH);

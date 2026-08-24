@@ -4286,7 +4286,40 @@ Flag l1_fill_line(Mem_Req* req) {
 /* Exclusive hierarchy: move a line down one level, chaining MLC -> LLC when the
    demotion itself evicts a valid line. Metadata (dirty, prefetch state) follows
    the line so per-level prefetch accounting keeps working. */
+/* Exclusive hierarchy demotion, one level per eviction:
+   - a dcache victim is checked against the MLC and inserted there if absent;
+   - if that insert evicts an MLC line, that line is checked against the LLC and
+     inserted there if absent;
+   - an LLC line evicted by such an insert is dropped (dirty ones are counted).
+   Each level therefore reacts only to its own eviction, and a line already
+   resident one level down is left alone instead of being inserted twice. */
+static void mem_demote_to_llc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, Flag seen_prefetch) {
+  Addr probe_addr;
+  if (cache_access(&L1(proc_id)->cache, line_addr, &probe_addr, FALSE)) {
+    STAT_EVENT(proc_id, EXCL_DEMOTE_LLC_PRESENT);
+    return;
+  }
+  Addr l1_line_addr, l1_repl_addr;
+  Flag l1_repl_valid;
+  L1_Data* victim =
+      (L1_Data*)get_next_repl_line(&L1(proc_id)->cache, proc_id, line_addr, &l1_repl_addr, &l1_repl_valid);
+  Flag v_dirty = (l1_repl_valid && victim) ? victim->dirty : FALSE;
+  L1_Data* data = (L1_Data*)cache_insert(&L1(proc_id)->cache, proc_id, line_addr, &l1_line_addr, &l1_repl_addr);
+  data->proc_id = proc_id;
+  data->dirty = dirty;
+  data->prefetch = prefetch;
+  data->seen_prefetch = seen_prefetch;
+  STAT_EVENT(proc_id, EXCL_DEMOTE_MLC_TO_LLC);
+  if (l1_repl_valid && v_dirty)
+    STAT_EVENT(proc_id, EXCL_DIRTY_LLC_DROPPED);
+}
+
 void mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, Flag seen_prefetch) {
+  Addr probe_addr;
+  if (cache_access(&MLC(proc_id)->cache, line_addr, &probe_addr, FALSE)) {
+    STAT_EVENT(proc_id, EXCL_DEMOTE_MLC_PRESENT);
+    return;
+  }
   Addr mlc_line_addr, mlc_repl_addr;
   Flag mlc_repl_valid;
   MLC_Data* victim =
@@ -4304,20 +4337,9 @@ void mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, 
   data->seen_prefetch = seen_prefetch;
   STAT_EVENT(proc_id, EXCL_DEMOTE_DC_TO_MLC);
 
-  if (!mlc_repl_valid)
-    return;
-  Addr l1_line_addr, l1_repl_addr;
-  Flag l1_repl_valid;
-  L1_Data* l1_victim =
-      (L1_Data*)get_next_repl_line(&L1(proc_id)->cache, proc_id, mlc_repl_addr, &l1_repl_addr, &l1_repl_valid);
-  L1_Data* l1_data = (L1_Data*)cache_insert(&L1(proc_id)->cache, proc_id, mlc_repl_addr, &l1_line_addr, &l1_repl_addr);
-  l1_data->proc_id = proc_id;
-  l1_data->dirty = v_dirty;
-  l1_data->prefetch = v_pref;
-  l1_data->seen_prefetch = v_seen;
-  STAT_EVENT(proc_id, EXCL_DEMOTE_MLC_TO_LLC);
-  if (l1_repl_valid && l1_victim && l1_victim->dirty)
-    STAT_EVENT(proc_id, EXCL_DROP_LLC_VICTIM);
+  /* The MLC eviction this insert caused is what triggers the LLC step. */
+  if (mlc_repl_valid)
+    mem_demote_to_llc(proc_id, mlc_repl_addr, v_dirty, v_pref, v_seen);
 }
 
 Flag mlc_fill_line(Mem_Req* req) {

@@ -20,6 +20,7 @@
  */
 
 #include "gather_scatter_addresses.h"
+
 #include <cassert>
 #include <iostream>
 #include <map>
@@ -489,10 +490,10 @@ vector<PIN_MEM_ACCESS_INFO> gather_scatter_info::compute_mem_access_infos(
   ADDRINT base_addr_contribution = compute_base_reg_addr_contribution(ctxt);
   PIN_MEMOP_ENUM memop_type      = type_to_PIN_MEMOP_ENUM();
 
-  PIN_REGISTER vector_index_reg_val_buf;
+  PINTOOL_REGISTER vector_index_reg_val_buf;
   assert(reg_xed_to_pin_map.find(_index_reg) != reg_xed_to_pin_map.end());
   PIN_GetContextRegval(ctxt, reg_xed_to_pin_map[_index_reg],
-(UINT8*)&vector_index_reg_val_buf); PIN_REGISTER mask_reg_val_buf;
+(UINT8*)&vector_index_reg_val_buf); PINTOOL_REGISTER mask_reg_val_buf;
   assert(reg_xed_to_pin_map.find(_mask_reg) != reg_xed_to_pin_map.end());
   PIN_GetContextRegval(ctxt, reg_xed_to_pin_map[_mask_reg],
 (UINT8*)&mask_reg_val_buf); for(uint32_t lane_id = 0; lane_id < _num_mem_ops;

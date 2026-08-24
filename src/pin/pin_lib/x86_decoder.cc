@@ -351,8 +351,10 @@ void print_err_if_invalid(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
       std::cout << "Invalid inst! " << std::endl;
     }
     if(!correct) {
-      std::cout
-        << "Not correct inst: " << +info->cf_type << ", " << std::hex << info->instruction_addr << ' ' << std::dec << +info->size << ' ' << xed_operand_values_get_branch_displacement_int32(ins) << ' ' << std::hex << info->branch_target << ' ' << std::endl;;
+      std::cout << "Not correct inst: " << +info->cf_type << ", " << std::hex << info->instruction_addr << ' '
+                << std::dec << +info->size << ' ' << xed_decoded_inst_get_branch_displacement(ins) << ' ' << std::hex
+                << info->branch_target << ' ' << std::endl;
+      ;
     }
     std::cout
       << "Unmapped instruction at "

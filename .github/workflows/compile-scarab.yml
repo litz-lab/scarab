@@ -87,9 +87,12 @@ jobs:
         env:
           SIM_IPC: ${{ needs.build-and-run-scarab-opt.outputs.ipc }}
           SIM_KIPS: ${{ needs.build-and-run-scarab-opt.outputs.kips }}
+          SIM_INSTRUCTIONS: ${{ needs.build-and-run-scarab-opt.outputs.instructions }}
         run: |
           last=$(tail -n1 baseline/scarab_perf.log | tr -d '\r')
-          IFS=',' read -r _ BASE_IPC BASE_KIPS <<<"$last"
+          # Lines written before the instruction count existed have three
+          # fields, so BASE_INSTRUCTIONS just comes out empty for those.
+          IFS=',' read -r _ BASE_IPC BASE_KIPS BASE_INSTRUCTIONS <<<"$last"
           mkdir -p perf-report
           # Plain key=value so the consumer can parse it without eval. The PR
           # number is deliberately NOT written here: the consumer resolves it
@@ -98,8 +101,10 @@ jobs:
           {
             echo "sim_ipc=${SIM_IPC}"
             echo "sim_kips=${SIM_KIPS}"
+            echo "sim_instructions=${SIM_INSTRUCTIONS}"
             echo "base_ipc=${BASE_IPC}"
             echo "base_kips=${BASE_KIPS}"
+            echo "base_instructions=${BASE_INSTRUCTIONS}"
           } > perf-report/metrics.txt
           cat perf-report/metrics.txt
 
@@ -150,7 +155,7 @@ jobs:
       # 4) Append the new line
       - name: Append new metrics line
         run: |
-          echo "${COMMIT_SHA},${{ needs.build-and-run-scarab-opt.outputs.ipc }},${{ needs.build-and-run-scarab-opt.outputs.kips }}" \
+          echo "${COMMIT_SHA},${{ needs.build-and-run-scarab-opt.outputs.ipc }},${{ needs.build-and-run-scarab-opt.outputs.kips }},${{ needs.build-and-run-scarab-opt.outputs.instructions }}" \
             >> perf/scarab_perf.log
 
       # 5) Commit & push back to the perf repo using the “public” remote

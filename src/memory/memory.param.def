@@ -57,6 +57,16 @@ DEF_PARAM(mlc_size, MLC_SIZE, uns, uns, (512 * 1024), )
 DEF_PARAM(mlc_assoc, MLC_ASSOC, uns, uns, 4, )
 DEF_PARAM(mlc_line_size, MLC_LINE_SIZE, uns, uns, 64, )
 DEF_PARAM(mlc_cycles, MLC_CYCLES, uns, uns, 12, )
+/* Exclusive cache hierarchy: a fill inserts the line only at the level the
+   request targets, so a core-destined demand or prefetch load lands in the
+   dcache alone. Lines reach the lower levels by demotion: a dcache victim is
+   inserted into the MLC, an MLC victim into the LLC. */
+DEF_PARAM(exclusive_caches, EXCLUSIVE_CACHES, Flag, Flag, FALSE, )
+/* With exclusive_caches: drop a dcache victim instead of demoting it when it was
+   prefetched and never demand-used, so useless prefetches do not consume MLC/LLC
+   capacity on their way out. */
+DEF_PARAM(exclusive_drop_unused_pref, EXCLUSIVE_DROP_UNUSED_PREF, Flag, Flag, FALSE, )
+
 DEF_PARAM(perfect_mlc, PERFECT_MLC, Flag, Flag, FALSE, )
 DEF_PARAM(mlc_read_ports, MLC_READ_PORTS, uns, uns, 1, )
 DEF_PARAM(mlc_write_ports, MLC_WRITE_PORTS, uns, uns, 1, )

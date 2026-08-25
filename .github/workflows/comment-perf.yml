@@ -113,20 +113,30 @@ jobs:
             };
             const simKips  = num(fields.sim_kips);
             const simIpc   = num(fields.sim_ipc);
+            const simInsts = num(fields.sim_instructions);
             const baseKips = num(fields.base_kips);
             const baseIpc  = num(fields.base_ipc);
+            const baseInsts = num(fields.base_instructions);
 
             // GitHub strips style attributes from markdown, so the previous
             // <span style="color:..."> rendered as plain text. Use an emoji,
             // which survives sanitising.
             const EPS = 1e-3;
-            function delta(sim, base) {
+            // higherIsBetter=false for instructions retired: more host work for
+            // the same simulation is a slowdown, so the colours flip.
+            function delta(sim, base, higherIsBetter = true) {
               if (sim === null || base === null || base === 0) return 'n/a';
               const ratio = sim / base;
-              const mark = ratio > 1 + EPS ? '🔵' : ratio < 1 - EPS ? '🔴' : '🟢';
+              const up = higherIsBetter ? '🔵' : '🔴';
+              const down = higherIsBetter ? '🔴' : '🔵';
+              const mark = ratio > 1 + EPS ? up : ratio < 1 - EPS ? down : '🟢';
               return `${mark} **${ratio.toFixed(2)}×**`;
             }
             const show = (v) => (v === null ? 'n/a' : `\`${v}\``);
+            // Instruction counts run to the trillions; group them so the two
+            // columns can be compared at a glance.
+            const showInt = (v) =>
+              v === null ? 'n/a' : `\`${v.toLocaleString('en-US')}\``;
 
             const marker = '<!-- scarab-perf-report -->';
             const body = [
@@ -137,6 +147,7 @@ jobs:
               '| ------ | --: | -------: | :- |',
               `| **KIPS** | ${show(simKips)} | ${show(baseKips)} | ${delta(simKips, baseKips)} |`,
               `| **IPC** | ${show(simIpc)} | ${show(baseIpc)} | ${delta(simIpc, baseIpc)} |`,
+              `| **Instructions** | ${showInt(simInsts)} | ${showInt(baseInsts)} | ${delta(simInsts, baseInsts, false)} |`,
               '',
               `<sub>commit ${context.payload.workflow_run.head_sha.slice(0, 7)}</sub>`,
             ].join('\n');

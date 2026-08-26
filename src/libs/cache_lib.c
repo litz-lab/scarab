@@ -59,11 +59,35 @@
 static inline uns cache_index(Cache* cache, Addr addr, Addr* tag, Addr* tag_full, Addr* line_addr);
 static inline void update_repl_policy(Cache*, Cache_Entry*, uns, uns, Flag);
 static inline Cache_Entry* find_repl_entry(Cache*, uns8, uns, uns*);
+static inline Cache_Entry* find_rrip_repl_entry_no_update(Cache* cache, uns set, uns* way);
+static inline void* cache_insert_strategy_with_pref(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr,
+                                                    Addr* repl_line_addr, Flag is_prefetch);
 
 /* for ideal replacement */
 static inline void* access_unsure_lines(Cache*, uns, Addr, Flag);
 static inline Cache_Entry* insert_sure_line(Cache*, uns, Addr);
 static inline void invalidate_unsure_line(Cache*, uns, Addr);
+
+typedef struct Cache_Repl_Context_struct {
+  Flag is_prefetch;
+} Cache_Repl_Context;
+
+enum {
+  SHIP_SHCT_BITS = 14,
+  SHIP_SHCT_SIZE = 1 << SHIP_SHCT_BITS,
+  SHIP_SHCT_MASK = SHIP_SHCT_SIZE - 1,
+  SHIP_SHCT_MAX = 7
+};
+
+static inline uns cache_repl_signature_hash(Addr sign) {
+  sign ^= sign >> 33;
+  sign *= 0xff51afd7ed558ccdULL;
+  sign ^= sign >> 33;
+  sign *= 0xc4ceb9fe1a85ec53ULL;
+  sign ^= sign >> 33;
+
+  return (uns)(sign & SHIP_SHCT_MASK);
+}
 
 /**************************************************************************************/
 /* Global Variables */
@@ -317,7 +341,7 @@ void* cache_insert_replpos(Cache* cache, uns8 proc_id, Addr addr, Addr* line_add
   cache_invalidate(cache, addr, line_addr);
 
   if (cache->repl_policy >= REPL_VOID)
-    return cache_insert_strategy(cache, proc_id, addr, line_addr, repl_line_addr);
+    return cache_insert_strategy_with_pref(cache, proc_id, addr, line_addr, repl_line_addr, isPrefetch);
 
   if (cache->repl_policy == REPL_IDEAL) {
     new_line = insert_sure_line(cache, set, tag);
@@ -1036,7 +1060,7 @@ void* cache_insert_lru(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, A
   Cache_Entry* new_line;
 
   if (cache->repl_policy >= REPL_VOID)
-    cache_insert_strategy(cache, proc_id, addr, line_addr, repl_line_addr);
+    return cache_insert_strategy(cache, proc_id, addr, line_addr, repl_line_addr);
 
   if (cache->repl_policy == REPL_IDEAL) {
     new_line = insert_sure_line(cache, set, tag);
@@ -1217,21 +1241,20 @@ static inline int cache_get_policy_index(Repl_Policy repl_policy) {
   return policy;
 }
 
-static inline uns cache_repl_signiture(Cache_Entry* cache_entry, Cache_Repl_Signiture sign_type) {
-  uns sign = 0;
+static inline uns cache_repl_signiture(Cache* cache, Cache_Entry* cache_entry, Cache_Repl_Signiture sign_type) {
+  Addr sign = 0;
   switch (sign_type) {
-    case CACHE_REPL_SIGH_PC:
-      break;
-
     case CACHE_REPL_SIGH_MEM:
       sign = cache_entry->base;
+      if (!cache->tag_incl_offset)
+        sign >>= cache->shift_bits;
       break;
 
     default:
       break;
   }
 
-  return sign;
+  return cache_repl_signature_hash(sign);
 }
 
 const static int CACHE_EVENT_HIT = 1;
@@ -1278,11 +1301,17 @@ void init_cache_strategy(Cache* cache, const char* name, uns cache_size, uns ass
   -- called by external func: cache_insert, cache_insert_replpos, cache_insert_lru
 */
 void* cache_insert_strategy(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr) {
+  return cache_insert_strategy_with_pref(cache, proc_id, addr, line_addr, repl_line_addr, FALSE);
+}
+
+static inline void* cache_insert_strategy_with_pref(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr,
+                                                    Addr* repl_line_addr, Flag is_prefetch) {
   Addr tag, tag_full;
   uns repl_index;
   Cache_Entry* new_line;
   int policy;
   uns set = cache_index(cache, addr, &tag, &tag_full, line_addr);
+  Cache_Repl_Context repl_context;
 
   // Get the selected strategy (policy)
   policy = cache_get_policy_index(cache->repl_policy);
@@ -1300,7 +1329,9 @@ void* cache_insert_strategy(Cache* cache, uns8 proc_id, Addr addr, Addr* line_ad
   else
     *repl_line_addr = 0;
   repl_policy_func_table[policy].action_repl(cache, new_line, proc_id, tag, tag_full, line_addr, repl_line_addr);
-  repl_policy_func_table[policy].update_insert(cache, proc_id, set, repl_index, NULL);
+  new_line->pref = is_prefetch;
+  repl_context.is_prefetch = is_prefetch;
+  repl_policy_func_table[policy].update_insert(cache, proc_id, set, repl_index, &repl_context);
 
   return new_line->data;
 }
@@ -1327,8 +1358,12 @@ void* cache_access_strategy(Cache* cache, Addr addr, Addr* line_addr, Flag* tag_
     Cache_Entry* line = &cache->entries[set][ii];
 
     if (line->valid && line->tag == tag) {
-      if (update_repl)
+      if (update_repl) {
+        if (line->pref)
+          line->pref = FALSE;
+        cache->num_demand_access++;
         repl_policy_func_table[policy].update_hit(cache, set, ii, NULL);
+      }
 
       *tag_aliasing = line->tag_full != tag_full;
       return line->data;
@@ -1413,6 +1448,28 @@ void general_action_repl(Cache* cache, Cache_Entry* new_line, uns8 proc_id, Addr
   new_line->tag = tag;
   new_line->tag_full = tag_full;
   new_line->base = *line_addr;
+  new_line->outcome = FALSE;
+}
+
+static inline Cache_Entry* find_rrip_repl_entry_no_update(Cache* cache, uns set, uns* way) {
+  int ii;
+  uns8 max_ref = 0;
+
+  for (ii = 0; ii < cache->assoc; ii++) {
+    Cache_Entry* entry = &cache->entries[set][ii];
+
+    if (!entry->valid) {
+      *way = ii;
+      return entry;
+    }
+
+    if (ii == 0 || entry->reference_val > max_ref) {
+      *way = ii;
+      max_ref = entry->reference_val;
+    }
+  }
+
+  return &cache->entries[set][*way];
 }
 
 /**************************************************************************************/
@@ -1515,6 +1572,12 @@ Cache_Entry* nru_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, voi
   int ii;
   Flag found = FALSE;
 
+  if (if_external) {
+    Cache_Entry* line = find_rrip_repl_entry_no_update(cache, set, way);
+    cache_debug_print_set(cache, set, *way, CACHE_EVENT_EVICT);
+    return line;
+  }
+
   while (!found) {
     // eviction: search the distant line whose RRPV == 1
     for (ii = 0; ii < cache->assoc; ii++) {
@@ -1562,6 +1625,12 @@ void srrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
 Cache_Entry* srrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg, Flag if_external) {
   int ii;
   Flag found = FALSE;
+
+  if (if_external) {
+    Cache_Entry* line = find_rrip_repl_entry_no_update(cache, set, way);
+    cache_debug_print_set(cache, set, *way, CACHE_EVENT_EVICT);
+    return line;
+  }
 
   while (!found) {
     // eviction: search the distant line whose RRPV == 2^M - 1
@@ -1709,7 +1778,8 @@ void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
 }
 
 Cache_Entry* drrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg, Flag if_external) {
-  cache->miss_count[set]++;
+  if (!if_external)
+    cache->miss_count[set]++;
   DEBUG(0, "DRRIP evict count: 0x%x, 0x%llx\n", set, cache->miss_count[set]);
   return srrip_update_evict(cache, proc_id, set, way, arg, if_external);
 }
@@ -1724,9 +1794,24 @@ Cache_Entry* ship_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, vo
 
 /* Signiture History Counter Table */
 struct ship_shct {
-  Hash_Table shct_hash;
-  Cache_Repl_Signiture shct_key_tpye;
+  uns8* shct;
+  Cache_Repl_Signiture shct_key_type;
 };
+
+static inline uns8* ship_get_shct_entry(Cache* cache, Cache_Entry* line) {
+  struct ship_shct* cache_shct = (struct ship_shct*)cache->predictor;
+  return &cache_shct->shct[cache_repl_signiture(cache, line, cache_shct->shct_key_type)];
+}
+
+static inline void ship_shct_increment(uns8* counter) {
+  if (*counter < SHIP_SHCT_MAX)
+    (*counter)++;
+}
+
+static inline void ship_shct_decrement(uns8* counter) {
+  if (*counter > 0)
+    (*counter)--;
+}
 
 void ship_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                       Repl_Policy repl_policy) {
@@ -1737,8 +1822,8 @@ void ship_action_init(Cache* cache, const char* name, uns cache_size, uns assoc,
   /* allocate history table */
   cache->predictor = malloc(sizeof(struct ship_shct));
   struct ship_shct* cache_shct = (struct ship_shct*)cache->predictor;
-  init_hash_table(&cache_shct->shct_hash, "cache repl ship shct", NODE_TABLE_SIZE, sizeof(Counter));
-  cache_shct->shct_key_tpye = CACHE_REPL_SIGH_MEM;
+  cache_shct->shct = (uns8*)calloc(SHIP_SHCT_SIZE, sizeof(uns8));
+  cache_shct->shct_key_type = CACHE_REPL_SIGH_MEM;
 
   /* init outcome and sign for each line */
   for (ii = 0; ii < num_sets; ii++) {
@@ -1754,28 +1839,24 @@ void ship_update_hit(Cache* cache, uns set, uns way, void* arg) {
 
   // prediction update
   cache->entries[set][way].outcome = TRUE;
-  struct ship_shct* cache_shct = (struct ship_shct*)cache->predictor;
-  Counter* cache_shct_entry = (Counter*)hash_table_access(
-      &cache_shct->shct_hash, cache_repl_signiture(&cache->entries[set][way], cache_shct->shct_key_tpye));
-  (*cache_shct_entry)++;
+  uns8* cache_shct_entry = ship_get_shct_entry(cache, &cache->entries[set][way]);
+  ship_shct_increment(cache_shct_entry);
 
   cache_debug_print_set(cache, set, way, CACHE_EVENT_HIT);
 }
 
 void ship_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg) {
-  struct ship_shct* cache_shct = (struct ship_shct*)cache->predictor;
-  Flag new_entry = FALSE;
-  Counter* cache_shct_entry = (Counter*)hash_table_access_create(
-      &cache_shct->shct_hash, cache_repl_signiture(&cache->entries[set][way], cache_shct->shct_key_tpye), &new_entry);
-  if (new_entry)
-    *cache_shct_entry = 0;
+  Cache_Entry* line = &cache->entries[set][way];
+  uns8* cache_shct_entry = ship_get_shct_entry(cache, line);
+  Cache_Repl_Context* repl_context = (Cache_Repl_Context*)arg;
+  Flag is_prefetch = repl_context && repl_context->is_prefetch;
 
-  if (*cache_shct_entry == 0) {
-    // insertion in distant future
-    cache->entries[set][way].reference_val = RRIP_DISTANT_VAL;
+  if (*cache_shct_entry == 0 && is_prefetch) {
+    // Keep cold prefetch fills conservative until this signature proves useful.
+    line->reference_val = RRIP_DISTANT_VAL;
   } else {
-    // insertion in long-interval future
-    cache->entries[set][way].reference_val = RRIP_DISTANT_VAL - 1;
+    // Demand and trained prefetch fills get one reuse opportunity.
+    line->reference_val = RRIP_DISTANT_VAL - 1;
   }
 
   cache_debug_print_set(cache, set, way, CACHE_EVENT_INSERT);
@@ -1789,14 +1870,9 @@ Cache_Entry* ship_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, vo
     return line;
 
   // prediction update
-  if (!line->outcome) {
-    cache->entries[set][*way].outcome = TRUE;
-    struct ship_shct* cache_shct = (struct ship_shct*)cache->predictor;
-    Counter* cache_shct_entry = (Counter*)hash_table_access(
-        &cache_shct->shct_hash, cache_repl_signiture(&cache->entries[set][*way], cache_shct->shct_key_tpye));
-
-    if (cache_shct_entry != NULL && (*cache_shct_entry) > 0)
-      (*cache_shct_entry)--;
+  if (line->valid && !line->outcome) {
+    uns8* cache_shct_entry = ship_get_shct_entry(cache, line);
+    ship_shct_decrement(cache_shct_entry);
   }
   line->outcome = FALSE;
 

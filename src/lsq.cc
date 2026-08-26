@@ -123,8 +123,9 @@ void LSQ::recover(Counter flush_op_num) {
   while (!entries.empty()) {
     auto& back_entry = entries.back();
 
-    // Stop when reaching on-path ops earlier than the branch
-    if (back_entry.op_num < flush_op_num) {
+    // Squash only ops strictly younger than the recovery op (op_num > flush_op_num), matching
+    // map_rename: the predicted-load recovery point (the macro EOM) can itself be a mem op that survives.
+    if (back_entry.op_num <= flush_op_num) {
       break;
     }
 

@@ -41,10 +41,12 @@ extern "C" {
 #include "debug/debug_print.h"
 
 #include "core.param.h"
+#include "memory/memory.param.h"
 
 #include "bp/bp.h"
 #include "memory/memory.h"
 
+#include "dcache_stage.h"
 #include "exec_ports.h"
 #include "exec_stage.h"
 #include "map_rename.h"
@@ -115,6 +117,9 @@ struct IssueQueueEntry {
   uns32 bound_fu_id = MAX_UNS;
   ISSUE_QUEUE_ENTRY_STATE state = ISSUE_QUEUE_ENTRY_STATE_EMPTY;
 
+  // dependency-chain weight recomputed each cycle for criticality-based scheduling
+  uns64 criticality = 0;
+
   explicit IssueQueueEntry(uns16 queue_id, uns16 entry_id) : queue_id(queue_id), entry_id(entry_id) {}
   void clear();
   void fill(Op* op);
@@ -123,6 +128,7 @@ struct IssueQueueEntry {
 void IssueQueueEntry::clear() {
   op = nullptr;
   op_fu_type = 0;
+  criticality = 0;
 }
 
 void IssueQueueEntry::fill(Op* op) {
@@ -471,6 +477,19 @@ class RandomSchedulePolicy : public SchedulePolicy {
   }
 };
 
+/*
+ * CriticalitySchedulePolicy prioritizes ops with a higher criticality weight,
+ * i.e. ops that a larger dependent chain of in-flight ops is waiting on.
+ */
+class CriticalitySchedulePolicy : public SchedulePolicy {
+ public:
+  bool compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const override {
+    if (lhs->criticality != rhs->criticality)
+      return lhs->criticality > rhs->criticality;
+    return lhs->op->op_num < rhs->op->op_num;
+  }
+};
+
 /**************************************************************************************/
 
 // RoundRobinTraversalPolicy ensures fairness by rotating through pickers in a circular manner.
@@ -588,6 +607,7 @@ class IssueQueuePolicyFactory {
         []() -> std::unique_ptr<SchedulePolicy> { return std::make_unique<OldestFirstSchedulePolicy>(); },
         []() -> std::unique_ptr<SchedulePolicy> { return std::make_unique<AMDBulldozerSchedulePolicy>(); },
         []() -> std::unique_ptr<SchedulePolicy> { return std::make_unique<RandomSchedulePolicy>(); },
+        []() -> std::unique_ptr<SchedulePolicy> { return std::make_unique<CriticalitySchedulePolicy>(); },
     };
 
     ASSERT(node->proc_id, ISSUE_QUEUE_SCHEDULE_POLICY < ISSUE_QUEUE_SCHEDULE_POLICY_NUM);
@@ -650,7 +670,7 @@ class IssueQueue {
   uns16 allocate_entry(Op* op);
   void free_entry(uns16 entry_id);
   size_t available_entries() const { return free_list.size(); }
-  const std::vector<IssueQueueEntry>& get_entries() const { return entries; }
+  std::vector<IssueQueueEntry>& get_entries() { return entries; }
 
   void wakeup(uns16 entry_id);
   void issued(uns16 entry_id);
@@ -894,6 +914,85 @@ void IssueQueues::dispatch() {
   node->next_op_into_rs = op;
 }
 
+static uns64 crit_sched_op_weight(Op* op) {
+  static uns64 CRIT_SCHED_NON_LD_WEIGHT = 1;
+  static uns64 CRIT_SCHED_L1_HIT_WEIGHT = DCACHE_CYCLES;
+  static uns64 CRIT_SCHED_L2_HIT_WEIGHT = DCACHE_CYCLES + MLC_CYCLES;
+  static uns64 CRIT_SCHED_L3_HIT_WEIGHT = DCACHE_CYCLES + MLC_CYCLES + L1_CYCLES;
+  static uns64 CRIT_SCHED_MEM_WEIGHT = DCACHE_CYCLES + MLC_CYCLES + L1_CYCLES + MEMORY_CYCLES;
+
+  if (op->uop->mem_type != MEM_LD) {
+    return CRIT_SCHED_NON_LD_WEIGHT;
+  }
+
+  Addr line_addr;
+  if (cache_access(&dc->dcache, op->oracle_info.va, &line_addr, FALSE)) {
+    return CRIT_SCHED_L1_HIT_WEIGHT;
+  }
+
+  if (do_mlc_access(op)) {
+    return CRIT_SCHED_L2_HIT_WEIGHT;
+  }
+
+  // Scarab names the LLC-level uncore struct "L1"; this is the true L3
+  if (do_l1_access(op)) {
+    return CRIT_SCHED_L3_HIT_WEIGHT;
+  }
+
+  return CRIT_SCHED_MEM_WEIGHT;
+}
+
+/*
+ * Calculate the criticality weight of each ready op by tracking the dependency chain of ops in the ROB.
+ * A dynamic programming table is built to store the longest weighted chain of ops that depend on each op.
+ */
+static void crit_sched_cal_criticality(std::vector<IssueQueue>& issue_queues) {
+  static std::vector<Op*> dp_op;
+  static std::vector<uns64> op_weight;
+  static std::vector<uns64> dp_weight;
+  dp_op.clear();
+  op_weight.clear();
+  dp_weight.clear();
+
+  /* 1. init the dp table for each op to get its own base weight. */
+  Counter offset = node->node_head ? node->node_head->op_num : 0;
+  for (Op* op = node->node_head; op; op = op->next_node) {
+    uns64 weight = crit_sched_op_weight(op);
+    dp_op.push_back(op);
+    op_weight.push_back(weight);
+    dp_weight.push_back(weight);
+  }
+
+  /* 2. update the dp table from tail to head */
+  for (size_t cur_idx = dp_op.size(); cur_idx-- > 0;) {
+    Op* op = dp_op[cur_idx];
+    ASSERT(node->proc_id, op != nullptr);
+
+    // set the criticality weight in the issue queue entry for scheduling in this cycle
+    if (op->in_rdy_list) {
+      ASSERT(node->proc_id, op->queue_id < issue_queues.size());
+      IssueQueueEntry& entry = issue_queues[op->queue_id].get_entries()[op->queue_entry_id];
+
+      ASSERT(node->proc_id, entry.op == op);
+      entry.criticality = dp_weight[cur_idx];
+    }
+
+    // propagate the weight to all source ops that are still in the ROB
+    for (uns ii = 0; ii < op->num_srcs; ++ii) {
+      Src_Info& src_info = op->src_info[ii];
+      if (src_info.op_num < offset) {
+        continue;
+      }
+
+      size_t src_idx = src_info.op_num - offset;
+      ASSERT(node->proc_id, src_idx < dp_weight.size());
+
+      // update the dp table to store the longest weighted chain of ops that depend on each op
+      dp_weight[src_idx] = std::max(dp_weight[src_idx], op_weight[src_idx] + dp_weight[cur_idx]);
+    }
+  }
+}
+
 /*
  * Schedule ready ops (ops that are currently in the ready list).
  *
@@ -908,6 +1007,10 @@ void IssueQueues::dispatch() {
 void IssueQueues::schedule() {
   // the next stage is supposed to clear them out
   ASSERT(node->proc_id, node->sd.op_count == 0);
+
+  if (ISSUE_QUEUE_SCHEDULE_POLICY == ISSUE_QUEUE_SCHEDULE_POLICY_CRITICALITY) {
+    crit_sched_cal_criticality(issue_queues);
+  }
 
   // checks if any of the L1 MSHRs have become available
   update_mem_block();

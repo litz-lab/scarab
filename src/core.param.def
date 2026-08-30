@@ -160,6 +160,9 @@ DEF_PARAM(issue_queue_traversal_priority, ISSUE_QUEUE_TRAVERSAL_PRIORITY, char*,
 
 DEF_PARAM(issue_queue_stat_collect, ISSUE_QUEUE_STAT_COLLECT, Flag, Flag, FALSE, )
 
+DEF_PARAM(issue_queue_spec_fu_check, ISSUE_QUEUE_SPEC_FU_CHECK, Flag, Flag, FALSE, )
+DEF_PARAM(issue_queue_crit_head, ISSUE_QUEUE_CRIT_HEAD, Flag, Flag, FALSE, )
+
 /********EXEC PORT
  * PARAMETERS*********************************************************/
 /*Size of each RS, length should be NUM_RS, Must be type string since it is an

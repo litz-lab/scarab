@@ -58,7 +58,10 @@ static inline const Bp_Pred_Info* ft_active_or_main_bp_pred_info(const Op* op) {
 
 /* FT member functions */
 FT::~FT() {
-  ASSERT(proc_id, bp_id || !ops.empty());
+  release_ops();
+}
+
+void FT::release_ops() {
   for (auto ft_op : ops) {
     if (!ft_op->parent_FT_off_path || ft_op->off_path) {
       ft_op->parent_FT = nullptr;
@@ -70,10 +73,47 @@ FT::~FT() {
       ft_op->parent_FT_off_path = nullptr;
     }
   }
+  ops.clear();
 }
 
-FT::FT(uns _proc_id, uns _bp_id) : proc_id(_proc_id), bp_id(_bp_id) {
+FT::FT(uns _proc_id, uns _bp_id) {
+  reinit(_proc_id, _bp_id);
+}
+
+void FT::reinit(uns _proc_id, uns _bp_id) {
+  /* Reset by assigning a default-constructed FT, so every member -- including any added later --
+     is reset without this function having to name it. The two things that must survive recycling
+     are named explicitly: the ops vector (kept for its capacity; release_ops() already emptied it)
+     and the pool link. */
+  std::vector<Op*> kept_ops = std::move(ops);
+  FT* kept_pool_next = pool_next;
+
+  *this = FT{};
+
+  ops = std::move(kept_ops);
+  pool_next = kept_pool_next;
+  proc_id = _proc_id;
+  bp_id = _bp_id;
   ft_info.dynamic_info.FT_id = FT_id_counter++;
+}
+
+static FT* ft_free_list = nullptr;
+
+FT* alloc_ft(uns proc_id, uns bp_id) {
+  FT* ft = ft_free_list;
+  if (!ft)
+    return new FT(proc_id, bp_id);
+  ft_free_list = ft->pool_next;
+  ft->reinit(proc_id, bp_id);
+  return ft;
+}
+
+void free_ft(FT* ft) {
+  ASSERT(0, ft);
+  ASSERT(ft->proc_id, ft->bp_id || !ft->ops.empty());
+  ft->release_ops();
+  ft->pool_next = ft_free_list;
+  ft_free_list = ft;
 }
 
 bool FT::can_fetch_op() {
@@ -152,7 +192,7 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
   do {
     if (!can_fetch_op_fn(proc_id, bp_id)) {
       std::cout << "Warning could not fetch inst from frontend" << std::endl;
-      delete this;
+      free_ft(this);
       return FT_EVENT_BUILD_FAIL;
     }
     Op* op = alloc_op(proc_id);
@@ -250,7 +290,7 @@ std::pair<FT*, FT*> FT::extract_off_path_ft(uns split_index) {
     return {this, nullptr};
   }
   // Initialize off-path FT that will contain off-path ops after split position
-  FT* off_path_ft = new FT(proc_id, bp_id);
+  FT* off_path_ft = alloc_ft(proc_id, bp_id);
 
   bool has_trailing_ops = (index_uns + 1 < ops.size());
 
@@ -567,7 +607,7 @@ void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr) {
 void ft_free_op(Op* op) {
   ASSERT(0, op->parent_FT);
   if (op->parent_FT_off_path && op->parent_FT_off_path->get_last_op() == op)
-    delete op->parent_FT_off_path;
+    free_ft(op->parent_FT_off_path);
   if (!op->parent_FT_off_path && op->parent_FT->get_last_op() == op) {
     FT* ft = op->parent_FT;
     std::vector<Op*>& ft_ops = ft->get_ops();
@@ -600,8 +640,8 @@ void ft_free_op(Op* op) {
       return;
     }
 
-    // Uniform-path FT (all on-path or all off-path): delete FT as before.
-    delete ft;
+    // Uniform-path FT (all on-path or all off-path): recycle the FT as before.
+    free_ft(ft);
   }
 }
 

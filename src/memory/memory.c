@@ -1761,7 +1761,13 @@ static void mem_process_l1_reqs() {
   }
 
   ASSERT(req->proc_id, out_queue_insertion_count <= l1_queue_removal_count);
-  ASSERT(req->proc_id, l1_queue_reserve_entry_count <= out_queue_insertion_count);
+  /* Reservations are taken for requests leaving the L1 queue toward memory, so the
+     bound is the number removed from the queue. It used to be compared against
+     out_queue_insertion_count, but that counter only tracked insertions into
+     bus_out_queue, which Ramulator replaced with ramulator_send() -- its increment
+     is commented out above, so it is permanently 0 and the check failed on the first
+     reservation whenever HIER_MSHR_ON was set. */
+  ASSERT(req->proc_id, l1_queue_reserve_entry_count <= l1_queue_removal_count);
 
   /* Remove requests from l1 access queue */
   if (l1_queue_removal_count > 0) {

@@ -147,6 +147,64 @@ typedef struct Branch_PC_Stats_struct {
   Counter mispred_at_exec_count;
 } Branch_PC_Stats;
 
+typedef enum Btb_Level_enum {
+  BTB_L0,
+  BTB_L1,
+  BTB_MAIN,
+  NUM_BTB_LEVELS,
+} Btb_Level;
+
+// bp.c asserts 0 < BTB_BANKS <= BTB_MAX_BANKS
+#define BTB_MAX_BANKS 64
+
+// Last bucket of the per-cycle access-cost histogram means "this many or more".
+#define BTB_ACCESS_CYCLES_MAX 8
+
+/* Per-cycle BTB access accounting, used to charge bank conflicts.
+ *
+ * A group is one frontend cycle, not one FT. predict_ft() and the off-path build loops can both
+ * hit the BTB in one cycle, and their contention is not visible when accounted per-FT.
+ *
+ * A bank serves BTB_BANK_PORTS accesses per cycle, so the cycle costs the busiest bank's access
+ * count (divided by the ports), floored by the longest dependent chain (a split walk reads the
+ * next anchor out of the current entry, so banking cannot overlap those hops).
+ *
+ * Some accounting notes:
+ *  - A block BTB looks the same block up once per branch, but that is one physical read.
+ *    Within a cycle a given bank's index address never moves backwards, so one remembered address
+ *    per (level, bank) collapses those repeats and btb_access() asserts the ordering. A repeat
+ *    replays the remembered result rather than calling the cache again, so replacement state is
+ *    updated once per physical read. (REPL_TRUE_LRU would tolerate the repeats, as it stamps
+ *    sim_time that does not advance within a group, but ROUND_ROBIN and NOT_MRU would not.)
+ *  - A split walk re-scans from the chain head for every branch because the mech interface is
+ *    per-op, while hardware walks the chain once. Hence split block BTB reports its deepest walk
+ *    via btb_access_record_chain() instead of counting each hop.
+ *
+ * Per-bank state is cleared lazily. `group_id` counts groups, and a bank's saved state counts
+ * only if `entry_group_id` matches, so begin() is O(1) instead of memsetting the arrays below. */
+typedef struct Btb_Access_Group_struct {
+  uns64 group_id;  // counts groups (one per DFE cycle); identifies what is below
+
+  // Valid iff entry_group_id == group_id. Anything else is left over from an earlier group.
+  uns64 entry_group_id[NUM_BTB_LEVELS][BTB_MAX_BANKS];
+  uns accesses[NUM_BTB_LEVELS][BTB_MAX_BANKS];    // #(physical accesses) to that bank this cycle
+  Addr last_addr[NUM_BTB_LEVELS][BTB_MAX_BANKS];  // last index address, for the repeat check
+
+  // Result of the last access replayed when a repeat detected, so the cache is touched only once.
+  void* last_ret[NUM_BTB_LEVELS][BTB_MAX_BANKS];
+  Addr last_line_addr[NUM_BTB_LEVELS][BTB_MAX_BANKS];
+  Flag last_tag_alias[NUM_BTB_LEVELS][BTB_MAX_BANKS];
+  Flag last_update_lru[NUM_BTB_LEVELS][BTB_MAX_BANKS];
+
+  // The cycle's cost is max(max_bank_accesses, max_serial_depth).
+  uns max_bank_accesses;  // #accesses the busiest single (level, bank) had to serve this cycle
+  uns max_serial_depth;   // most chained entries one branch had to read back-to-back
+
+  // #cf ops that reached a lookup (non-cf ops and CF_SYS return before touching the BTB).
+  // It only decides whether this cycle enters the histogram and does not affect the cost.
+  uns num_cfs;
+} Btb_Access_Group;
+
 typedef struct Bp_Data_struct {
   uns proc_id;
   uns bp_id;
@@ -177,6 +235,11 @@ typedef struct Bp_Data_struct {
   uns8 prev_cf_pred;  // set after all BPs made pred. Only after recovery, oracle dir is set
   Addr prev_cf_target;
   Addr prev_cf_btb_index_addr;
+
+  // BTB access accounting for the cycle being predicted
+  Btb_Access_Group btb_accesses;
+  // Cycle the BTB will be free again, when BTB_BANK_PORTS limits accesses per bank per cycle
+  Counter btb_busy_until;
 } Bp_Data;
 
 /**************************************************************************************/
@@ -202,12 +265,6 @@ typedef enum Btb_Id_enum {
   BLOCK_BTB_SPLIT,
   NUM_BTB,
 } Btb_Id;
-
-typedef enum Btb_Level_enum {
-  BTB_L0,
-  BTB_L1,
-  BTB_MAIN,
-} Btb_Level;
 
 typedef enum Ibtb_Id_enum {
   TC_TAGLESS_IBTB,

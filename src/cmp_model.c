@@ -517,6 +517,10 @@ void cmp_warmup(Op* op) {
   if (op->uop->cf_type != NOT_CF) {
     Bp_Data* bp_data = &(cmp_model.bp_data[proc_id][0]);
     op->btb_pred_info = NULL;  // reset so bp_predict_btb() can set it (op may be reused)
+    // Warmup predicts one op at a time outside the frontend's cycle loop.
+    // Give it its own group so its accesses are not folded into a real FT's.
+    // No matching _end() because warmup should not stall the frontend or land in the histogram.
+    btb_access_group_begin(bp_data);
     bp_predict_btb(bp_data, op);
     if (bp_l0_enabled())
       bp_predict_op(bp_data, op, MAIN_BP, 1, ia, BP_PRED_L0);

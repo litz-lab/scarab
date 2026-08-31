@@ -46,6 +46,10 @@ void bp_crs_sync(Bp_Data*, Bp_Data*);
 void bp_predict_btb(Bp_Data*, Op*);
 void bp_btb_post_bp_predict(Bp_Data*, Op*);
 
+void btb_access_group_begin(Bp_Data*);
+void btb_access_group_end(Bp_Data*);
+Flag btb_is_busy(Bp_Data*);
+
 static inline uns get_btb_bank_id(uns num_banks, Addr addr, Addr* intra_bank_addr) {
   *intra_bank_addr = addr >> LOG2(num_banks);
   return addr % num_banks;

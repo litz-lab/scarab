@@ -86,6 +86,7 @@ DEF_PARAM(  btb_entries               , BTB_ENTRIES               , uns     , un
 DEF_PARAM(  btb_assoc                 , BTB_ASSOC                 , uns     , uns        , 4          ,        )
 DEF_PARAM(  btb_tag_bits              , BTB_TAG_BITS              , uns     , uns        , 64         ,        )
 DEF_PARAM(  btb_banks                 , BTB_BANKS                 , uns     , uns        , 1          ,        ) /* number of banks interleaved */
+DEF_PARAM(  btb_bank_ports            , BTB_BANK_PORTS            , uns     , uns        , 0          ,        ) /* accesses each BTB bank can serve per cycle (0 = unlimited) */
 DEF_PARAM(  btb_num_brslot            , BTB_NUM_BRSLOT            , uns     , uns        , 1          ,        ) /* number of branch slots per block */
 DEF_PARAM(  btb_block_size            , BTB_BLOCK_SIZE            , uns64   , uns64      , 64         ,        ) /* number of max bytes within a block (Note x86 has variable inst size) */
 DEF_PARAM(  btb_off_path_writes       , BTB_OFF_PATH_WRITES       , Flag    , Flag       , TRUE       ,        ) /* const */

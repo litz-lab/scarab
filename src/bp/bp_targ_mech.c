@@ -85,6 +85,112 @@
   } while (0)
 
 /**************************************************************************************/
+/* BTB access accounting and bank-port model. */
+
+static void btb_access_record_cf(Bp_Data* bp_data) {
+  bp_data->btb_accesses.num_cfs++;
+}
+
+/* A split walk is a pointer chase, so its hops are dependent and banking cannot overlap them.
+ * The mech re-walks per branch only because the interface is per-op. Hardware walks the chain
+ * once, so the cost is the deepest walk. */
+static void btb_access_record_chain(Bp_Data* bp_data, uns depth) {
+  Btb_Access_Group* group = &bp_data->btb_accesses;
+  if (depth <= group->max_serial_depth)
+    return;
+  group->max_serial_depth = depth;
+  STAT_EVENT_BTB_BANK(bp_data->proc_id, MAIN, PRED, 0);  // block mechs assert BTB_BANKS == 1
+}
+
+static uns btb_access_cycles(Bp_Data* bp_data) {
+  const Btb_Access_Group* group = &bp_data->btb_accesses;
+  const uns ports = BTB_BANK_PORTS ? BTB_BANK_PORTS : 1;
+  const uns bank_cycles = (group->max_bank_accesses + ports - 1) / ports;  // ceiling division
+  return MAX2(bank_cycles, group->max_serial_depth);
+}
+
+void btb_access_group_begin(Bp_Data* bp_data) {
+  Btb_Access_Group* group = &bp_data->btb_accesses;
+  group->group_id++;  // invalidates older per-bank entries without touching them
+  group->max_bank_accesses = 0;
+  group->max_serial_depth = 0;
+  group->num_cfs = 0;
+}
+
+void btb_access_group_end(Bp_Data* bp_data) {
+  Btb_Access_Group* group = &bp_data->btb_accesses;
+
+  // A cycle with no branch does not appear in the histogram.
+  // This return also preserves btb_busy_until across a stalled cycle.
+  if (group->num_cfs == 0)
+    return;
+
+  const uns cycles = btb_access_cycles(bp_data);
+  if (cycles)
+    STAT_EVENT(bp_data->proc_id, BTB_ACCESS_CYCLES_1 + MIN2(cycles, BTB_ACCESS_CYCLES_MAX) - 1);
+
+  if (BTB_BANK_PORTS)
+    bp_data->btb_busy_until = cycle_count + cycles;
+}
+
+Flag btb_is_busy(Bp_Data* bp_data) {
+  return BTB_BANK_PORTS && cycle_count < bp_data->btb_busy_until;
+}
+
+/* Returns the requested BTB entry, if exists */
+static void* btb_access(Bp_Data* bp_data, Btb_Level level, uns bank, Cache* cache, Addr index_addr, Addr* line_addr,
+                        Flag* tag_aliasing, Flag update_lru) {
+  Btb_Access_Group* group = &bp_data->btb_accesses;
+  ASSERT(bp_data->proc_id, level < NUM_BTB_LEVELS);
+  ASSERT(bp_data->proc_id, bank < BTB_MAX_BANKS);
+
+  // group_id only ever increments, so no entry can be newer than the current group.
+  // A greater stamp means memory corruption, as uns64 wraparound is practically unreachable.
+  ASSERTM(bp_data->proc_id, group->entry_group_id[level][bank] <= group->group_id,
+          "BTB access group stamp from the future: %llu > %llu\n", group->entry_group_id[level][bank], group->group_id);
+
+  if (group->entry_group_id[level][bank] != group->group_id) {
+    group->entry_group_id[level][bank] = group->group_id;
+    group->accesses[level][bank] = 0;  // Invalidates all fields
+  }
+
+  if (group->accesses[level][bank]) {
+    // Repeats of the same index are one physical read.
+    ASSERTM(bp_data->proc_id, group->last_addr[level][bank] <= index_addr,
+            "BTB index went backwards within one cycle: 0x%llx after 0x%llx\n", index_addr,
+            group->last_addr[level][bank]);
+    if (index_addr == group->last_addr[level][bank]) {
+      // Replay the result instead of touching the cache again,
+      // so the replacement policy is updated once per physical read.
+      ASSERT(bp_data->proc_id, update_lru == group->last_update_lru[level][bank]);
+      *line_addr = group->last_line_addr[level][bank];
+      *tag_aliasing = group->last_tag_alias[level][bank];
+      return group->last_ret[level][bank];
+    }
+  }
+
+  void* ret = cache_access_impl(cache, index_addr, line_addr, tag_aliasing, update_lru);
+
+  group->last_addr[level][bank] = index_addr;
+  group->last_ret[level][bank] = ret;
+  group->last_line_addr[level][bank] = *line_addr;
+  group->last_tag_alias[level][bank] = *tag_aliasing;
+  group->last_update_lru[level][bank] = update_lru;
+  group->accesses[level][bank]++;
+  if (group->accesses[level][bank] > group->max_bank_accesses)
+    group->max_bank_accesses = group->accesses[level][bank];
+
+  if (level == BTB_L0) {
+    STAT_EVENT_BTB_BANK(bp_data->proc_id, L0, PRED, bank);
+  } else if (level == BTB_L1) {
+    STAT_EVENT_BTB_BANK(bp_data->proc_id, L1, PRED, bank);
+  } else {
+    STAT_EVENT_BTB_BANK(bp_data->proc_id, MAIN, PRED, bank);
+  }
+  return ret;
+}
+
+/**************************************************************************************/
 /* bp_crs_push: */
 
 void bp_crs_push(Bp_Data* bp_data, Op* op) {
@@ -365,6 +471,8 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
     return;
   }
 
+  btb_access_record_cf(bp_data);
+
   /* Main BTB lookup (pred_func populates BTB hit/target fields as a side effect) */
   if (PERFECT_BTB) {
     ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
@@ -523,8 +631,8 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
 
   if (BTB_L0_PRESENT) {
     uns bank_id = get_btb_bank_id(BTB_L0_BANKS, op->inst->addr, &intra_bank_addr);
-    STAT_EVENT_BTB_BANK(op->proc_id, L0, PRED, bank_id);
-    Addr* e = (Addr*)cache_access_impl(&bp_data->btb_l0[bank_id], intra_bank_addr, &line_addr, &tag_aliasing, lru);
+    Addr* e = (Addr*)btb_access(bp_data, BTB_L0, bank_id, &bp_data->btb_l0[bank_id], intra_bank_addr, &line_addr,
+                                &tag_aliasing, lru);
     if (e) {
       bpi->btb_l0_hit = TRUE;
       bpi->btb_l0_target = *e;
@@ -534,8 +642,8 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
 
   if (BTB_L1_PRESENT) {
     uns bank_id = get_btb_bank_id(BTB_L1_BANKS, op->inst->addr, &intra_bank_addr);
-    STAT_EVENT_BTB_BANK(op->proc_id, L1, PRED, bank_id);
-    Addr* e = (Addr*)cache_access_impl(&bp_data->btb_l1[bank_id], intra_bank_addr, &line_addr, &tag_aliasing, lru);
+    Addr* e = (Addr*)btb_access(bp_data, BTB_L1, bank_id, &bp_data->btb_l1[bank_id], intra_bank_addr, &line_addr,
+                                &tag_aliasing, lru);
     if (e) {
       bpi->btb_l1_hit = TRUE;
       bpi->btb_l1_target = *e;
@@ -544,8 +652,8 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   }
 
   uns bank_id = get_btb_bank_id(BTB_BANKS, op->inst->addr, &intra_bank_addr);
-  STAT_EVENT_BTB_BANK(op->proc_id, MAIN, PRED, bank_id);
-  Addr* e = (Addr*)cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &line_addr, &tag_aliasing, lru);
+  Addr* e = (Addr*)btb_access(bp_data, BTB_MAIN, bank_id, &bp_data->btb[bank_id], intra_bank_addr, &line_addr,
+                              &tag_aliasing, lru);
   if (e) {
     bpi->btb_main_hit = TRUE;
     bpi->btb_main_target = *e;
@@ -680,11 +788,10 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   // Prepare for next BTB lookup
   bp_data->prev_cf_btb_index_addr = btb_index_addr;
 
-  STAT_EVENT_BTB_BANK(op->proc_id, MAIN, PRED, 0);
   Addr btb_line_addr;
   Flag tag_aliasing;
-  Blk_Btb_BrSlot* br_slots =
-      (Blk_Btb_BrSlot*)cache_access_impl(bp_data->btb, btb_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
+  Blk_Btb_BrSlot* br_slots = (Blk_Btb_BrSlot*)btb_access(bp_data, BTB_MAIN, 0, bp_data->btb, btb_index_addr,
+                                                         &btb_line_addr, &tag_aliasing, TRUE);
   bpi->btb_main_tag_alias = tag_aliasing;
 
   bpi->btb_main_hit = FALSE;
@@ -918,12 +1025,15 @@ void bp_btb_block_split_pred(Bp_Data* bp_data, Op* op) {
   Addr entry_index_addr = btb_index_addr;
 
   bpi->btb_main_hit = FALSE;
+  uns walk_depth = 0;
   for (uns64 seen_slots = 0; seen_slots < BTB_BLOCK_SIZE; seen_slots += BTB_NUM_BRSLOT) {
     ASSERT(bp_data->proc_id, btb_index_addr <= entry_index_addr);
     ASSERT(bp_data->proc_id, entry_index_addr <= op->inst->addr);
     ASSERT(bp_data->proc_id, op->inst->addr < block_end);
 
-    STAT_EVENT_BTB_BANK(op->proc_id, MAIN, PRED, 0);
+    // A walk is a pointer chase, so its hops are dependent and banking cannot overlap them.
+    btb_access_record_chain(bp_data, ++walk_depth);
+
     Addr btb_line_addr;
     Flag tag_aliasing;
     Blk_Btb_Split_Entry* entry =

@@ -492,7 +492,18 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
   }
 }
 
+namespace {
+/* Scopes one BTB access group to one frontend cycle.
+ * The destructor catches early returns after predict_ft is called in Decoupled_FE::update(). */
+struct Btb_Access_Group_Scope {
+  Bp_Data* bp_data;
+  explicit Btb_Access_Group_Scope(Bp_Data* bp) : bp_data(bp) { btb_access_group_begin(bp_data); }
+  ~Btb_Access_Group_Scope() { btb_access_group_end(bp_data); }
+};
+}  // namespace
+
 void Decoupled_FE::update() {
+  Btb_Access_Group_Scope btb_group(g_bp_data);
   uint64_t cfs_taken_this_cycle = 0;
   uint64_t ft_pushed_this_cycle = 0;
   if (bp_id == MAIN_BP) {
@@ -530,6 +541,11 @@ void Decoupled_FE::update() {
     if (ft_pushed_this_cycle >= FE_FTQ_FT_PER_CYCLE) {
       DEBUG(proc_id, "[DFE%u] Break due to max bytes per cycle\n", bp_id);
       STAT_EVENT(proc_id, FTQ_BREAK_MAX_FT_ONPATH + is_off_path_state());
+      break;
+    }
+    if (btb_is_busy(g_bp_data)) {
+      DEBUG(proc_id, "[DFE%u] Break due to busy BTB bank\n", bp_id);
+      STAT_EVENT(proc_id, FTQ_BREAK_BTB_PORT_ONPATH + is_off_path_state());
       break;
     }
     if (BP_MECH != MTAGE_BP && !bp_is_predictable(g_bp_data)) {

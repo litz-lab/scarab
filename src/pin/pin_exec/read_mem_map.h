@@ -86,7 +86,7 @@ struct pageTableStruct {
       pageTableEntryStruct(address, address + 1, 0, "", ""));
 
     if(overlapping_entries.first != overlapping_entries.second) {
-      *p_p_entry = overlapping_entries.first;
+      *p_p_entry = &*overlapping_entries.first;
       // make sure only one overlaping entry
 
       if((overlapping_entries.first + 1) != overlapping_entries.second) {

@@ -1654,8 +1654,8 @@ static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_ent
           ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (PREF_I_TOGETHER && req->type == MRT_IFETCH) ||
            (PREF_TRAIN_ON_PREF_MISSES && req->type == MRT_DPRF))) {
         // Train the Data prefetcher
-        ASSERT(req->proc_id, data);
-        ASSERT(req->proc_id, req->proc_id == data->proc_id);
+        ASSERT(req->proc_id, PERFECT_MLC || data);
+        ASSERT(req->proc_id, PERFECT_MLC || req->proc_id == data->proc_id);
         ASSERT(req->proc_id, req->proc_id == req->addr >> 58);
         pref_umlc_hit(req->proc_id, req->addr, req->loadPC, req->global_hist);
       }
@@ -1761,7 +1761,13 @@ static void mem_process_l1_reqs() {
   }
 
   ASSERT(req->proc_id, out_queue_insertion_count <= l1_queue_removal_count);
-  ASSERT(req->proc_id, l1_queue_reserve_entry_count <= out_queue_insertion_count);
+  /* Reservations are taken for requests leaving the L1 queue toward memory, so the
+     bound is the number removed from the queue. It used to be compared against
+     out_queue_insertion_count, but that counter only tracked insertions into
+     bus_out_queue, which Ramulator replaced with ramulator_send() -- its increment
+     is commented out above, so it is permanently 0 and the check failed on the first
+     reservation whenever HIER_MSHR_ON was set. */
+  ASSERT(req->proc_id, l1_queue_reserve_entry_count <= l1_queue_removal_count);
 
   /* Remove requests from l1 access queue */
   if (l1_queue_removal_count > 0) {

@@ -154,7 +154,8 @@ struct InstInfo {
 #define XED_INS_IsSysret(ins) (XED_INS_Category(ins) == XED_CATEGORY_SYSRET)
 #define XED_INS_IsInterrupt(ins) \
   (XED_INS_Category(ins) == XED_CATEGORY_INTERRUPT)
-#define XED_INS_DirectBranchOrCallTargetAddress(pc, ins) pc + XED_INS_Size(ins) + xed_operand_values_get_branch_displacement_int32(ins)
+#define XED_INS_DirectBranchOrCallTargetAddress(pc, ins) \
+  pc + XED_INS_Size(ins) + xed_decoded_inst_get_branch_displacement(ins)
 
 #define XED_INS_IsVgather(ins) (XED_INS_Category(ins) == XED_CATEGORY_GATHER)
 #define XED_INS_IsVscatter(ins) (XED_INS_Category(ins) == XED_CATEGORY_SCATTER)

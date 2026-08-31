@@ -30,6 +30,10 @@
 
 #include "pin_scarab_common_lib.h"
 
+// PIN >=3.3x moved the register-value union out of the core API (was PIN_REGISTER
+// in types_vmapi) into this tool-utils header, renamed PINTOOL_REGISTER (same layout).
+#include "regvalue_utils.h"
+
 #define REG(x) SCARAB_REG_##x,
 typedef enum Reg_Id_struct {
 #include "isa/x86_regs.def"
@@ -107,12 +111,10 @@ std::vector<PIN_MEM_ACCESS_INFO> compute_mem_access_infos(
   const CONTEXT* ctxt, gather_scatter_info* info);
 ADDRDELTA compute_base_reg_addr_contribution(const CONTEXT*       ctxt,
                                              gather_scatter_info* info);
-ADDRDELTA compute_base_index_addr_contribution(
-  const PIN_REGISTER& vector_index_reg_val, const UINT32 lane_id,
-  gather_scatter_info* info);
+ADDRDELTA compute_base_index_addr_contribution(const PINTOOL_REGISTER& vector_index_reg_val, const UINT32 lane_id,
+                                               gather_scatter_info* info);
 PIN_MEMOP_ENUM type_to_PIN_MEMOP_ENUM(gather_scatter_info* info);
-bool extract_mask_on(const PIN_REGISTER& mask_reg_val_buf, const UINT32 lane_id,
-                     gather_scatter_info* info);
+bool extract_mask_on(const PINTOOL_REGISTER& mask_reg_val_buf, const UINT32 lane_id, gather_scatter_info* info);
 
 /**************************** Public Functions ********************************/
 void pin_decoder_init(bool translate_x87_regs, std::ostream* err_ostream) {
@@ -390,7 +392,7 @@ void get_branch_dir(bool taken) {
 
 void get_src_vector_vals(CONTEXT* ctxt, ADDRINT pin_reg, ADDRINT scarab_id) {
   REG reg = (REG)pin_reg;
-  PIN_REGISTER reg_val;
+  PINTOOL_REGISTER reg_val;
   uint64_t val = 0;
   uint8_t size = 0;
   if (REG_valid(reg)) {
@@ -403,7 +405,7 @@ void get_src_vector_vals(CONTEXT* ctxt, ADDRINT pin_reg, ADDRINT scarab_id) {
 
 void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT pin_reg, ADDRINT scarab_id) {
   REG reg = (REG)pin_reg;
-  PIN_REGISTER reg_val;
+  PINTOOL_REGISTER reg_val;
   uint64_t val = 0;
   uint8_t size = 0;
   if (REG_valid(reg)) {
@@ -515,12 +517,12 @@ vector<PIN_MEM_ACCESS_INFO> compute_mem_access_infos(
                                                                       info);
   PIN_MEMOP_ENUM memop_type      = type_to_PIN_MEMOP_ENUM(info);
 
-  PIN_REGISTER vector_index_reg_val_buf;
+  PINTOOL_REGISTER vector_index_reg_val_buf;
   assert(reg_xed_to_pin_map.find(info->get_index_reg()) !=
          reg_xed_to_pin_map.end());
   PIN_GetContextRegval(ctxt, reg_xed_to_pin_map[info->get_index_reg()],
                        (UINT8*)&vector_index_reg_val_buf);
-  PIN_REGISTER mask_reg_val_buf;
+  PINTOOL_REGISTER mask_reg_val_buf;
   assert(reg_xed_to_pin_map.find(info->get_mask_reg()) !=
          reg_xed_to_pin_map.end());
   PIN_GetContextRegval(ctxt, reg_xed_to_pin_map[info->get_mask_reg()],
@@ -548,7 +550,7 @@ ADDRDELTA compute_base_reg_addr_contribution(const CONTEXT*       ctxt,
                                              gather_scatter_info* info) {
   ADDRDELTA base_addr_contribution = 0;
   if(XED_REG_valid(info->get_base_reg())) {
-    PIN_REGISTER buf;
+    PINTOOL_REGISTER buf;
     ASSERTX(reg_xed_to_pin_map.find(info->get_base_reg()) !=
             reg_xed_to_pin_map.end());
     PIN_GetContextRegval(ctxt, reg_xed_to_pin_map[info->get_base_reg()],
@@ -566,9 +568,8 @@ ADDRDELTA compute_base_reg_addr_contribution(const CONTEXT*       ctxt,
   return base_addr_contribution;
 }
 
-ADDRDELTA compute_base_index_addr_contribution(
-  const PIN_REGISTER& vector_index_reg_val, const UINT32 lane_id,
-  gather_scatter_info* info) {
+ADDRDELTA compute_base_index_addr_contribution(const PINTOOL_REGISTER& vector_index_reg_val, const UINT32 lane_id,
+                                               gather_scatter_info* info) {
   ADDRDELTA index_val;
   switch(info->get_index_lane_width_bytes()) {
     case 4:
@@ -596,8 +597,7 @@ PIN_MEMOP_ENUM type_to_PIN_MEMOP_ENUM(gather_scatter_info* info) {
   }
 }
 
-bool extract_mask_on(const PIN_REGISTER& mask_reg_val_buf, const UINT32 lane_id,
-                     gather_scatter_info* info) {
+bool extract_mask_on(const PINTOOL_REGISTER& mask_reg_val_buf, const UINT32 lane_id, gather_scatter_info* info) {
   bool   mask_on  = false;
   UINT64 msb_mask = ((UINT64)1) << (info->get_data_lane_width_bytes() * 8 - 1);
 

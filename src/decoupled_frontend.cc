@@ -343,7 +343,7 @@ void Decoupled_FE::dfe_recover_op() {
 
   if (erase_from != ftq.end()) {
     for (auto it = erase_from; it != ftq.end(); ++it)
-      delete (*it);
+      free_ft(*it);
     ftq.erase(erase_from, ftq.end());
   }
 
@@ -591,7 +591,7 @@ void Decoupled_FE::update() {
           current_ft_to_push = lookahead_buffer_pop_ft(proc_id);
           ASSERT(proc_id, current_ft_to_push->get_is_prebuilt());
         } else {
-          current_ft_to_push = new FT(proc_id, bp_id);
+          current_ft_to_push = alloc_ft(proc_id, bp_id);
           auto build_event =
               current_ft_to_push->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
                                         [](uns8 pid, uns8 bid, Op* op) -> bool {
@@ -627,7 +627,7 @@ void Decoupled_FE::update() {
         // cf processed while building
         if (exit_on_off_path)
           return;
-        current_ft_to_push = new FT(proc_id, bp_id);
+        current_ft_to_push = alloc_ft(proc_id, bp_id);
         ASSERT(proc_id, !current_ft_to_push->has_unread_ops());
         while (current_ft_to_push->get_end_reason() == FT_NOT_ENDED) {
           auto build_event =
@@ -1015,7 +1015,7 @@ void Decoupled_FE::redirect_to_off_path(FT_PredictResult result) {
       saved_recovery_ft = lookahead_buffer_pop_ft(proc_id);
       ASSERT(proc_id, saved_recovery_ft->get_is_prebuilt());
     } else {
-      saved_recovery_ft = new FT(proc_id, bp_id);
+      saved_recovery_ft = alloc_ft(proc_id, bp_id);
       auto build_event =
           saved_recovery_ft->build([](uns8 pid, uns8 bid) { return frontend_can_fetch_op(pid, bid); },
                                    [](uns8 pid, uns8 bid, Op* op) -> bool {

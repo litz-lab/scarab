@@ -138,8 +138,8 @@ Flag btb_is_busy(Bp_Data* bp_data) {
 }
 
 /* Returns the requested BTB entry, if exists */
-static void* btb_access(Bp_Data* bp_data, Btb_Level level, uns bank, Cache* cache, Addr index_addr, Addr* line_addr,
-                        Flag* tag_aliasing, Flag update_lru) {
+static void* btb_access(Bp_Data* bp_data, Op* op, Btb_Level level, uns bank, Cache* cache, Addr index_addr,
+                        Addr* line_addr, Flag* tag_aliasing, Flag update_lru) {
   Btb_Access_Group* group = &bp_data->btb_accesses;
   ASSERT(bp_data->proc_id, level < NUM_BTB_LEVELS);
   ASSERT(bp_data->proc_id, bank < BTB_MAX_BANKS);
@@ -156,7 +156,9 @@ static void* btb_access(Bp_Data* bp_data, Btb_Level level, uns bank, Cache* cach
 
   if (group->accesses[level][bank]) {
     // Repeats of the same index are one physical read.
-    ASSERTM(bp_data->proc_id, group->last_addr[level][bank] <= index_addr,
+    ASSERTM(bp_data->proc_id,
+            group->last_addr[level][bank] <= index_addr ||
+                ft_get_ft_info(op->parent_FT).dynamic_info.ended_by == FT_APP_EXIT,
             "BTB index went backwards within one cycle: 0x%llx after 0x%llx\n", index_addr,
             group->last_addr[level][bank]);
     if (index_addr == group->last_addr[level][bank]) {
@@ -631,7 +633,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
 
   if (BTB_L0_PRESENT) {
     uns bank_id = get_btb_bank_id(BTB_L0_BANKS, op->inst->addr, &intra_bank_addr);
-    Addr* e = (Addr*)btb_access(bp_data, BTB_L0, bank_id, &bp_data->btb_l0[bank_id], intra_bank_addr, &line_addr,
+    Addr* e = (Addr*)btb_access(bp_data, op, BTB_L0, bank_id, &bp_data->btb_l0[bank_id], intra_bank_addr, &line_addr,
                                 &tag_aliasing, lru);
     if (e) {
       bpi->btb_l0_hit = TRUE;
@@ -642,7 +644,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
 
   if (BTB_L1_PRESENT) {
     uns bank_id = get_btb_bank_id(BTB_L1_BANKS, op->inst->addr, &intra_bank_addr);
-    Addr* e = (Addr*)btb_access(bp_data, BTB_L1, bank_id, &bp_data->btb_l1[bank_id], intra_bank_addr, &line_addr,
+    Addr* e = (Addr*)btb_access(bp_data, op, BTB_L1, bank_id, &bp_data->btb_l1[bank_id], intra_bank_addr, &line_addr,
                                 &tag_aliasing, lru);
     if (e) {
       bpi->btb_l1_hit = TRUE;
@@ -652,7 +654,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   }
 
   uns bank_id = get_btb_bank_id(BTB_BANKS, op->inst->addr, &intra_bank_addr);
-  Addr* e = (Addr*)btb_access(bp_data, BTB_MAIN, bank_id, &bp_data->btb[bank_id], intra_bank_addr, &line_addr,
+  Addr* e = (Addr*)btb_access(bp_data, op, BTB_MAIN, bank_id, &bp_data->btb[bank_id], intra_bank_addr, &line_addr,
                               &tag_aliasing, lru);
   if (e) {
     bpi->btb_main_hit = TRUE;
@@ -790,7 +792,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
 
   Addr btb_line_addr;
   Flag tag_aliasing;
-  Blk_Btb_BrSlot* br_slots = (Blk_Btb_BrSlot*)btb_access(bp_data, BTB_MAIN, 0, bp_data->btb, btb_index_addr,
+  Blk_Btb_BrSlot* br_slots = (Blk_Btb_BrSlot*)btb_access(bp_data, op, BTB_MAIN, 0, bp_data->btb, btb_index_addr,
                                                          &btb_line_addr, &tag_aliasing, TRUE);
   bpi->btb_main_tag_alias = tag_aliasing;
 

@@ -3421,7 +3421,11 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
     if (HIER_MSHR_ON) {
       ASSERT(0, !ALLOW_TYPE_MATCHES);  // we rely on the adjust function always
                                        // returning true
-      ASSERTM(0, ADDR_TRANSLATION == ADDR_TRANS_NONE, "MLC && HIER_MSHR_ON && ADDR_TRANSLATION not supported\n");
+      /* No ADDR_TRANSLATION restriction: the reservation below is two counters and
+         a queue-full test, with no address involved. Translation cannot reach it --
+         every cache is indexed by the virtual req->addr (MLC at mem_process_mlc_access,
+         LLC at mem_process_l1_access, and their fills), while phys_addr is consumed
+         only for DRAM bank selection and Ramulator queue matching. */
       if (queue_full(&mem->mlc_queue))
         return FALSE;
       mem->mlc_queue.reserved_entry_count += 1;

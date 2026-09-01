@@ -820,6 +820,17 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
     STAT_EVENT(dc->proc_id, CORE_PREF_DCACHE_NOT_USED);
   }
 
+  /* Exclusive hierarchy: the victim moves down a level instead of vanishing,
+     unless it is an unused prefetch and we were asked to drop those. */
+  if (EXCLUSIVE_CACHES && repl_line_valid) {
+    if (EXCLUSIVE_DROP_UNUSED_PREF && data->HW_prefetch) {
+      STAT_EVENT(dc->proc_id, EXCL_DROP_UNUSED_PREF);
+    } else {
+      mem_demote_to_mlc(get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr, data->dirty, data->HW_prefetched,
+                        data->HW_prefetched && !data->HW_prefetch);
+    }
+  }
+
   DEBUG(dc->proc_id,
         "Filling dcache  off_path:%d addr:0x%s  :%7d index:%7d op_count:%d "
         "oldest:%lld\n",

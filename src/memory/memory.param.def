@@ -188,6 +188,10 @@ DEF_PARAM(mem_req_buffer_pref_watermark, MEM_REQ_BUFFER_PREF_WATERMARK, uns,
           uns, 0, )
 DEF_PARAM(mem_req_buffer_wb_valve, MEM_REQ_BUFFER_WB_VALVE, uns, uns, 2, )
 
+// Queue entries reserved for writebacks, as mem_req_buffer_pref_watermark does for
+// prefetches. Carved out of the configured size; 0 disables.
+DEF_PARAM(queue_wb_watermark, QUEUE_WB_WATERMARK, uns, uns, 2, )
+
 // l1_queue size is the same as mem_req_buffer_entries
 // FOR independently sized queues beyond the l1
 DEF_PARAM(mem_l1_fill_queue_entries, MEM_L1_FILL_QUEUE_ENTRIES, uns, uns, 32, )

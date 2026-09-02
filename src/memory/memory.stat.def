@@ -1004,6 +1004,11 @@ DEF_STAT(  PREF_L1_HIT_ON_INSERT               , DIST  , NO_RATIO  )
 
      /* different type matches */
 DEF_STAT(  L1_NEWREQ_MATCHED_MLC_REQ                     , COUNT  , NO_RATIO  )
+/* merged vs refused for lack of an MSHR, per level being entered */
+DEF_STAT(  MEM_REQ_MERGED_MLC                          , COUNT  , NO_RATIO  )
+DEF_STAT(  MEM_REQ_MERGED_L1                           , COUNT  , NO_RATIO  )
+DEF_STAT(  MEM_REQ_MERGE_REFUSED_MLC                   , COUNT  , NO_RATIO  )
+DEF_STAT(  MEM_REQ_MERGE_REFUSED_L1                    , COUNT  , NO_RATIO  )
 DEF_STAT(  MLC_NEWREQ_MATCHED_L2_PREF                    , COUNT  , NO_RATIO  )
 DEF_STAT(  MLC_NEWREQ_MATCHED_L2_PREF_MLC_HIT            , RATIO  , MLC_NEWREQ_MATCHED_L2_PREF  )
 DEF_STAT(  NEWREQ_WB_MATCH_IGNORED                       , COUNT  , NO_RATIO  )

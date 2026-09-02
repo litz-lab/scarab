@@ -751,15 +751,13 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
               // Enable this assertion when debugging.
               // ASSERT(bp_data->proc_id,
               //        op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP);
-              if (op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP) {
-                // If this op is NOT always-taken, it needs to be inserted, not just appended.
-                insert_pos = ii;
-              } else {
-                // If this op is always-taken, invalidate the rest as the block ends here.
-                // Only happens with self-modifying code.
+              if (BTB_ALWAYS_TAKEN_TERMINATES && op->uop->cf_type != CF_CBR && op->uop->cf_type != CF_REP) {
+                // This op is always-taken and it terminates the block.
                 br_slots[ii] = br_slot;
                 for (uns jj = ii + 1; jj < BTB_NUM_BRSLOT; jj++)
                   br_slots[jj].valid = FALSE;
+              } else {
+                insert_pos = ii;
               }
               break;
             }
@@ -1024,7 +1022,7 @@ void bp_btb_block_split_update(Bp_Data* bp_data, Op* op) {
         // If there is no self-modifying code (e.g. SPEC 2017 int), op must be conditional to reach here.
         // Enable this assertion when debugging.
         // ASSERT(bp_data->proc_id, brslot_new.type == CF_CBR || brslot_new.type == CF_REP);
-        if (brslot_new.type != CF_CBR && brslot_new.type != CF_REP) {
+        if (BTB_ALWAYS_TAKEN_TERMINATES && brslot_new.type != CF_CBR && brslot_new.type != CF_REP) {
           DEBUG_BTB(bp_data->proc_id, "BTB block terminates at [%d] by an always-taken cf\n", ii);
           entry->brslots[ii] = brslot_new;
           blk_btb_split_terminate_entry(entry, ii);

@@ -186,6 +186,7 @@ static void mem_clear_reqbuf(Mem_Req* req);
 static L1_Data* l1_pref_cache_access(Mem_Req* req);
 
 static inline Flag queue_full(Mem_Queue* queue);
+static inline Flag queue_full_for_req(Mem_Queue* queue, Mem_Req_Type type);
 static inline uns queue_num_free(Mem_Queue* queue);
 
 Flag is_final_state(Mem_Req_State state);
@@ -595,12 +596,18 @@ static inline Flag mem_req_holds_mshr_at(Mem_Req* req, Mem_Queue* queue, uns8 le
   return (req->queue == queue) || (req->reserved_levels & level_bit);
 }
 
-static inline Flag queue_full(Mem_Queue* queue) {
-  if (queue->entry_count == (queue->size - queue->reserved_entry_count))
-    return TRUE;
+/* The last QUEUE_WB_WATERMARK entries are writeback-only: a fill evicting a dirty
+   line cannot complete until its writeback is admitted. */
+static inline Flag queue_full_for_req(Mem_Queue* queue, Mem_Req_Type type) {
+  uns num_free = queue_num_free(queue);
 
-  ASSERT(0, queue->entry_count < (queue->size - queue->reserved_entry_count));
-  return FALSE;
+  if (type == MRT_WB || type == MRT_WB_NODIRTY)
+    return num_free == 0;
+  return num_free <= QUEUE_WB_WATERMARK;
+}
+
+static inline Flag queue_full(Mem_Queue* queue) {
+  return queue_num_free(queue) <= QUEUE_WB_WATERMARK;
 }
 /**************************************************************************************/
 /* queue_num_free: */
@@ -1359,7 +1366,7 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue
     }
   }
 
-  if (!queue_full(&mem->l1_queue)) {
+  if (!queue_full_for_req(&mem->l1_queue, req->type)) {
     req->state = MRS_L1_NEW;
     /* this req will be ready to be sent to memory in the  next cycle */
     req->rdy_cycle = cycle_count + MLCQ_TO_L1Q_TRANSFER_LATENCY;
@@ -3495,12 +3502,12 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
   /* Step 2.5: Check if there is space in the appropriate queue */
   if (to_mlc) {
-    if (queue_full(&mem->mlc_queue)) {
+    if (queue_full_for_req(&mem->mlc_queue, type)) {
       STAT_EVENT(proc_id, REJECTED_QUEUE_MLC);
       return FALSE;
     }
   } else {
-    if (queue_full(&mem->l1_queue) ||
+    if (queue_full_for_req(&mem->l1_queue, type) ||
         ((type == MRT_IPRF || type == MRT_DPRF) && queue_num_free(&mem->l1_queue) <= MEM_REQ_BUFFER_PREF_WATERMARK)) {
       STAT_EVENT(proc_id, REJECTED_QUEUE_L1);
       return FALSE;
@@ -3638,7 +3645,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
 static Flag insert_new_req_into_l1_queue(uns proc_id, Mem_Req* new_req) {
   if (!ROUND_ROBIN_TO_L1) {
-    if (queue_full(&mem->l1_queue)) {
+    if (queue_full_for_req(&mem->l1_queue, new_req->type)) {
       ASSERT(proc_id, 0);
     }
     mem_insert_req_into_queue(new_req, new_req->queue, ALL_FIFO_QUEUES ? l1_seq_num : 0);
@@ -3657,7 +3664,7 @@ static Flag insert_new_req_into_l1_queue(uns proc_id, Mem_Req* new_req) {
 /* insert_new_req_into_mlc_queue: */
 
 static Flag insert_new_req_into_mlc_queue(uns proc_id, Mem_Req* new_req) {
-  if (queue_full(&mem->mlc_queue)) {
+  if (queue_full_for_req(&mem->mlc_queue, new_req->type)) {
     ASSERT(proc_id, 0);
   }
   mem_insert_req_into_queue(new_req, new_req->queue, ALL_FIFO_QUEUES ? mlc_seq_num : 0);
@@ -3711,12 +3718,12 @@ Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns
 
   /* Step 2.5: Check if there is space in the appropriate queue */
   if (MLC_PRESENT) {
-    if (queue_full(&mem->mlc_queue)) {
+    if (queue_full_for_req(&mem->mlc_queue, type)) {
       STAT_EVENT(proc_id, REJECTED_QUEUE_MLC);
       return FALSE;
     }
   } else {
-    if (queue_full(&mem->l1_queue)) {
+    if (queue_full_for_req(&mem->l1_queue, type)) {
       STAT_EVENT(proc_id, REJECTED_QUEUE_L1);
       return FALSE;
     }
@@ -3802,7 +3809,7 @@ static Flag new_mem_mlc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns s
   }
 
   /* Step 2.5: Check if there is space in the L1 queue */
-  if (queue_full(&mem->l1_queue)) {
+  if (queue_full_for_req(&mem->l1_queue, type)) {
     STAT_EVENT(proc_id, REJECTED_QUEUE_L1);
     return FALSE;
   }
@@ -3892,7 +3899,7 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
 
   // TODO: obsolete now that we don't have a bus_out queue after Ramulator integration
   /* Step 2.5: Check if there is space in the bus_out queue */
-  if (queue_full(&mem->bus_out_queue)) {
+  if (queue_full_for_req(&mem->bus_out_queue, type)) {
     STAT_EVENT(proc_id, REJECTED_QUEUE_BUS_OUT);
     return FALSE;
   }

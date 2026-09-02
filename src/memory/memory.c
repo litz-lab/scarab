@@ -2286,10 +2286,13 @@ static void mem_process_l1_fill_reqs() {
       mem->l1fill_queue.base[ii].priority = Mem_Req_Priority_Offset[MRT_MIN_PRIORITY];
     } else {
       ASSERT(req->proc_id, req->state == MRS_FILL_DONE);
+      /* Both branches below leave the l1fill queue, so both release an l1_queue
+         reservation; the decrement used to sit in only one of them. */
+      if (HIER_MSHR_ON) {
+        ASSERT(req->proc_id, req->reserved_entry_count > 0);
+        req->reserved_entry_count -= 1;
+      }
       if (!req->done_func) {
-        if (HIER_MSHR_ON)
-          req->reserved_entry_count -= 1;
-
         // Free the request buffer
         mem_free_reqbuf(req);
 

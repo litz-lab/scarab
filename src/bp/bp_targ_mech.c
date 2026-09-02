@@ -1044,6 +1044,13 @@ void bp_btb_block_split_update(Bp_Data* bp_data, Op* op) {
       if (entry->brslots[ii].addr < brslot_new.addr) {
         if (brslot_new.addr >= ADDR_PLUS_OFFSET(entry->brslots[ii].addr, entry->brslots[ii].inst_size))
           continue;  // No overlap, keep scanning.
+        if (BTB_SPLIT_ADJUST_OVERLAP) {
+          // The older slot's recorded size is stale, but that is no evidence its target is wrong.
+          // Instead of invalidating the slot, adjust the inst size to keep the recorded target.
+          entry->brslots[ii].inst_size = (uns8)(brslot_new.addr - entry->brslots[ii].addr);
+          ASSERT(bp_data->proc_id, entry->brslots[ii].inst_size > 0);
+          continue;
+        }
         // entry->brslots[ii] overlaps to brslot_new: brslots[ii] is stale, due to self-modifying code.
         DEBUG_BTB(bp_data->proc_id, "Replace BTB slot 0x%llx [%d] size %d (likely self-modification)\n",
                   entry->brslots[ii].addr, ii, entry->brslots[ii].inst_size);
@@ -1060,6 +1067,8 @@ void bp_btb_block_split_update(Bp_Data* bp_data, Op* op) {
         if (brslot_new.type != CF_CBR && brslot_new.type != CF_REP) {
           DEBUG_BTB(bp_data->proc_id, "BTB block terminates at [%d] by an always-taken cf\n", ii);
           blk_btb_split_terminate_entry(entry, ii);
+        } else {
+          blk_btb_split_drop_overlapped(bp_data->proc_id, entry, ii);
         }
         break;
       } else {  // brslots[ii].addr > brslot_new.addr

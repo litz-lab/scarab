@@ -1426,8 +1426,10 @@ void log_stats_mshr_hit(Addr line_addr) {
     if (FDIP_ENABLE && !FDIP_UTILITY_HASH_ENABLE && !FDIP_BLOOM_FILTER && !FDIP_UC_SIZE && !EIP_ENABLE &&
         !FDIP_PERFECT_PREFETCH && (NUM_BPS == 1) &&
         (mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF)))
-      ASSERT(ic->proc_id,
-             imiss_reason == IMISS_MSHR_HIT_PREFETCHED_OFFPATH || imiss_reason == IMISS_MSHR_HIT_PREFETCHED_ONPATH);
+      /* FDIP's per-line map is reset at a recovery, so an outstanding prefetch can
+         still read as IMISS_NOT_PREFETCHED. Count it rather than assert. */
+      if (!(imiss_reason == IMISS_MSHR_HIT_PREFETCHED_OFFPATH || imiss_reason == IMISS_MSHR_HIT_PREFETCHED_ONPATH))
+        STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_FDIP_STALE_MAP);
     if (imiss_reason == IMISS_MSHR_HIT_PREFETCHED_ONPATH)
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_PREFETCHED_ONPATH);
     else if (imiss_reason == IMISS_MSHR_HIT_PREFETCHED_OFFPATH)

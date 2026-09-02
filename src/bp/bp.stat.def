@@ -213,6 +213,9 @@ DEF_STAT(  IBTB_TARG_CACHE_WRITE_OFFPATH, DIST , NO_RATIO      )
 DEF_STAT(  BTB_WRITE                , DIST    , NO_RATIO       )
 DEF_STAT(  BTB_WRITE_OFFPATH        , DIST    , NO_RATIO       )
 
+DEF_STAT(  BTB_SPLIT_OVERLAP_ONPATH , DIST    , NO_RATIO       )
+DEF_STAT(  BTB_SPLIT_OVERLAP_OFFPATH, DIST    , NO_RATIO       )
+
 // Per-hardware-BTB-level outcome stats.  Fired in bp_predict_btb() for every
 // CF branch (excluding CF_ICO, CF_RET, BAR_FETCH, CF_SYS).  The
 // INCORRECT_BUT_TARGET_CORRECT bucket is the no-entry/fallthrough-correct case.

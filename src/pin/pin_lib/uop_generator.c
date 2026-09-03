@@ -1068,6 +1068,8 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
       if (pi->num_st > 0) {
         ASSERT(proc_id, trace_uop->store_seq_num < pi->num_st);
         trace_uop->va = pi->st_vaddr[trace_uop->store_seq_num];
+      } else {
+        ASSERT(proc_id, pi->is_repeat);
       }
       DEBUG(proc_id,
             "Generating a store: inst @%llx opcode: %s num_ld: %i "
@@ -1091,6 +1093,8 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
           trace_uop->dests[ii].val = ld_val;
           trace_uop->dests[ii].val_valid = TRUE;
         }
+      } else {
+        ASSERT(proc_id, pi->is_repeat);
       }
       DEBUG(proc_id,
             "Generating a load: inst @%llx opcode: %s num_ld: %i "

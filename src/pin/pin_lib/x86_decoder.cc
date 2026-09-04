@@ -110,6 +110,25 @@ void fill_in_basic_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
   assert(XED_INS_Mnemonic(ins).size() < sizeof(info->pin_iclass));
   strcpy(info->pin_iclass, XED_INS_Mnemonic(ins).c_str());
 
+  // DIAG: report each distinct unmapped iclass once (the memtrace XED path does
+  // not call print_err_if_invalid, so unmapped ops otherwise surface only as a
+  // hard OP_INV assert in uop_generator with no mnemonic).
+  if(info->op_type == OP_INV) {
+    static std::set<int> reported_inv_iclass;
+    int iclass = XED_INS_Opcode(ins);
+    if(reported_inv_iclass.insert(iclass).second) {
+      std::cout << "UNMAPPED_ICLASS opcode=" << iclass
+                << " mnemonic=" << XED_INS_Mnemonic(ins)
+                << " category=" << std::string(xed_category_enum_t2str(XED_INS_Category(ins)))
+                << std::endl;
+    }
+    // Env-gated: keep the run alive past the uop_generator OP_INV assert so a
+    // single pass over a trace enumerates every distinct unmapped iclass. Off
+    // by default (no effect on real runs); set SCARAB_INV_AS_NOP=1 only when
+    // scanning a new trace for instructions to add to iclass_to_scarab_map.
+    if(getenv("SCARAB_INV_AS_NOP")) info->op_type = OP_NOP;
+  }
+
   if((category == XED_CATEGORY_SSE) || (category == XED_CATEGORY_FCMOV) ||
      (category == XED_CATEGORY_X87_ALU)) {
     info->is_fp = 1;
@@ -1994,4 +2013,55 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_XTEST] = {OP_LOGIC, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KXORB] = {OP_LOGIC, 1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KORTESTB] = {OP_LOGIC, 1, 1, NONE};
+
+  // AVX-512 mask (opmask) and mask-producing compare families. Surfaced by
+  // CPython 3.11's glibc AVX-512 string/memory routines in the agent traces
+  // (crash was VPTESTMD / KTESTD). All are single-cycle integer ops on mask
+  // registers, mapped like the existing PTEST/PAND (OP_LOGIC) and KUNPCK
+  // (OP_PIPELINED_MEDIUM) entries. Suffix width B=1,W=2,D=4,Q=8.
+  iclass_to_scarab_map[XED_ICLASS_VPTESTMW]  = {OP_LOGIC, 2, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPTESTMD]  = {OP_LOGIC, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPTESTMQ]  = {OP_LOGIC, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPTESTNMB] = {OP_LOGIC, 1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPTESTNMW] = {OP_LOGIC, 2, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPTESTNMD] = {OP_LOGIC, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPTESTNMQ] = {OP_LOGIC, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KADDB]  = {OP_IADD, 1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KADDW]  = {OP_IADD, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KADDD]  = {OP_IADD, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KADDQ]  = {OP_IADD, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KANDB]  = {OP_LOGIC, 1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KANDW]  = {OP_LOGIC, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KANDD]  = {OP_LOGIC, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KANDQ]  = {OP_LOGIC, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KANDNB] = {OP_LOGIC, 1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KANDNW] = {OP_LOGIC, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KANDND] = {OP_LOGIC, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KANDNQ] = {OP_LOGIC, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KORB]   = {OP_LOGIC, 1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KORW]   = {OP_LOGIC, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KORQ]   = {OP_LOGIC, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KXNORB] = {OP_LOGIC, 1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KXNORW] = {OP_LOGIC, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KXNORD] = {OP_LOGIC, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KXNORQ] = {OP_LOGIC, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KXORW]  = {OP_LOGIC, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KXORD]  = {OP_LOGIC, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KXORQ]  = {OP_LOGIC, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KTESTB] = {OP_LOGIC, 1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KTESTW] = {OP_LOGIC, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KTESTD] = {OP_LOGIC, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KTESTQ] = {OP_LOGIC, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KORTESTW] = {OP_LOGIC, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KORTESTQ] = {OP_LOGIC, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KSHIFTLB] = {OP_LOGIC, 1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KSHIFTLW] = {OP_LOGIC, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KSHIFTLD] = {OP_LOGIC, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KSHIFTLQ] = {OP_LOGIC, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KSHIFTRB] = {OP_LOGIC, 1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KSHIFTRW] = {OP_LOGIC, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KSHIFTRD] = {OP_LOGIC, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KSHIFTRQ] = {OP_LOGIC, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KUNPCKBW] = {OP_PIPELINED_MEDIUM, 1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KUNPCKWD] = {OP_PIPELINED_MEDIUM, 2, -1, NONE};
 }

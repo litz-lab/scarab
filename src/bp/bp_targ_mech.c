@@ -517,7 +517,8 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Addr intra_bank_addr;
   Addr line_addr;
   Flag tag_aliasing;
-  Flag lru = bp_data->bp_id ? FALSE : TRUE;
+  // pred does not imply the validity and should not influence replacement
+  Flag lru = FALSE;
 
   op->btb_pred_info->btb_index_addr = op->inst->addr;
 
@@ -592,12 +593,12 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
     // or For indirects we want to update the BTB if the target changes, even on btb hit
     // The detection relies on the target stored in the btb
 
-    btb_line = (Addr*)cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing, FALSE);
+    btb_line = (Addr*)cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing,
+                                        BTB_OFF_PATH_WRITES || !op->off_path);
 
     // The following assertion can fail (due to eviction?)
     // ASSERT(bp_data->proc_id, btb_entry);
     if (btb_line && *btb_line != op->oracle_info.target) {
-      cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing, TRUE);
       if (BTB_OFF_PATH_WRITES || !op->off_path) {
         DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
                   hexstr64s(op->oracle_info.target));
@@ -684,7 +685,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   Addr btb_line_addr;
   Flag tag_aliasing;
   Blk_Btb_BrSlot* br_slots =
-      (Blk_Btb_BrSlot*)cache_access_impl(bp_data->btb, btb_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
+      (Blk_Btb_BrSlot*)cache_access_impl(bp_data->btb, btb_index_addr, &btb_line_addr, &tag_aliasing, FALSE);
   bpi->btb_main_tag_alias = tag_aliasing;
 
   bpi->btb_main_hit = FALSE;
@@ -744,6 +745,8 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
           if (br_slots[ii].valid) {
             // slot that has smaller addr (br_slots[ii].addr < op->inst->addr) will be just skipped
             if (br_slots[ii].addr == op->inst->addr) {
+              if (br_slots[ii].target != br_slot.target)
+                STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_JITTED_NOT_CF + br_slot.type);
               br_slots[ii] = br_slot;
               break;
             } else if (br_slots[ii].addr > op->inst->addr) {
@@ -897,7 +900,7 @@ void bp_btb_block_split_pred(Bp_Data* bp_data, Op* op) {
     Addr btb_line_addr;
     Flag tag_aliasing;
     Blk_Btb_Split_Entry* entry =
-        (Blk_Btb_Split_Entry*)cache_access_impl(bp_data->btb, entry_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
+        (Blk_Btb_Split_Entry*)cache_access_impl(bp_data->btb, entry_index_addr, &btb_line_addr, &tag_aliasing, FALSE);
     bpi->btb_main_tag_alias = tag_aliasing;
     if (!entry)
       return;
@@ -1016,6 +1019,8 @@ void bp_btb_block_split_update(Bp_Data* bp_data, Op* op) {
           STAT_EVENT(op->proc_id, BTB_SPLIT_OVERLAP_ONPATH + op->off_path);
         continue;  // Keep scanning
       } else if (entry->brslots[ii].addr == brslot_new.addr) {
+        if (entry->brslots[ii].target != brslot_new.target)
+          STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_JITTED_NOT_CF + brslot_new.type);
         entry->brslots[ii] = brslot_new;
         break;
       } else {  // brslots[ii].addr > brslot_new.addr

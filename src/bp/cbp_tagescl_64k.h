@@ -94,11 +94,13 @@ class cbp64_gentry  // TAGE global table entry
   int8_t ctr;
   uint tag;
   int8_t u;
+  uint64_t pc;
 
   cbp64_gentry() {
     ctr = 0;
     u = 0;
     tag = 0;
+    pc = 0;
   }
 
   bool operator==(const cbp64_gentry& other) const {
@@ -634,5 +636,6 @@ class TAGE64K {
   int8_t tage_component_inter = 0;
   int8_t tage_component_tage = 0;
   int8_t tage_component_alt = 0;
+  bool tage_used_alt = false;
 };
 #endif

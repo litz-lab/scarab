@@ -563,8 +563,7 @@ void power_print_core_params(std::ofstream& out, uint32_t core_id) {
   uns pipeline_depth = DECODE_CYCLES + MAP_CYCLES + 1 + 1 + 1 + 1;  // icache, node, exec, retire
 
   /* Scarab: theoretical peak ops per cycle */
-  uns32 peak_ops_per_cycle =
-      std::min(std::min(NUM_FUS, ISSUE_WIDTH), std::min(RS_FILL_WIDTH == 0 ? MAX_INT : RS_FILL_WIDTH, NODE_RET_WIDTH));
+  uns32 peak_ops_per_cycle = std::min(NUM_FUS, std::min(RS_FILL_WIDTH == 0 ? MAX_INT : RS_FILL_WIDTH, NODE_RET_WIDTH));
   DEBUG(core_id, "peak_ops_per_cycle: %d\n", peak_ops_per_cycle);
 
   double ops_per_cycle =

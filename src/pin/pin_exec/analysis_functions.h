@@ -42,6 +42,7 @@ void finish_before_ins_all(CONTEXT* ctxt, bool from_syscall);
 
 void add_right_path_exec_br(CONTEXT* ctxt);
 
+void after_ins_restage_op(ADDRINT iaddr);
 void before_ins_no_mem(CONTEXT* ctxt);
 
 void before_ins_one_mem(CONTEXT* ctxt, ADDRINT write_addr, UINT32 write_size);

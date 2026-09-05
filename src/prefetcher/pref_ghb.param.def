@@ -49,7 +49,6 @@
 
 */
 
-DEF_PARAM(pref_ghb_on                 , PREF_GHB_ON              , Flag   , Flag      , FALSE       ,      ) 
 DEF_PARAM(debug_pref_ghb              , DEBUG_PREF_GHB           , Flag   , Flag      , FALSE       ,      ) 
 // the size of the global history buffer
 DEF_PARAM(pref_ghb_buffer_n           , PREF_GHB_BUFFER_N        , uns    , uns       , 1024        ,      ) 

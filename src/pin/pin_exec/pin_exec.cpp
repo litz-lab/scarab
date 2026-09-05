@@ -31,6 +31,11 @@
 #undef WARNING
 
 #include "pin.H"
+#ifdef ENABLE_PINPLAY
+#include "pinplay.H"
+#include "sde-init.H"
+#include "sde-pinplay-supp.H"
+#endif
 
 #undef UNUSED
 #undef WARNING
@@ -52,7 +57,7 @@
 /* ===================================================================== */
 /* ===================================================================== */
 
-KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "",
+KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool", "scarab_pintool_out", "",
                             "specify file name for pintool output");
 
 KNOB<string> KnobSocketPath(KNOB_MODE_WRITEONCE, "pintool", "socket_path",
@@ -90,6 +95,10 @@ KNOB<UINT64> KnobStartRip(KNOB_MODE_WRITEONCE, "pintool", "rip", "0",
 
 KNOB<bool> KnobTrackAtInstrumentation(KNOB_MODE_WRITEONCE, "pintool", "track_at_instr", "true",
                                       "Track RIP at instrumentation time instead of execution time");
+
+// PinPlay note: with the SDE pinkit, libsde provides pinplay_engine and the
+// -log/-replay knobs; the tool just inits through SDE (see main), so nothing is
+// declared here.
 /* ===================================================================== */
 /* ===================================================================== */
 
@@ -169,8 +178,8 @@ void insert_processing_for_nonsyscall_instructions(const INS& ins) {
     INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_no_mem, IARG_CONTEXT,
                    IARG_END);
   } else {
-    if(INS_hasKnownMemorySize(ins)) {
-      // Single memory op
+    if (!INS_HasScatteredMemoryAccess(ins)) {
+      // Single memory op (known size); scatter/gather -> multi-mem path below
       INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_one_mem,
                      IARG_CONTEXT, IARG_MEMORYWRITE_EA, IARG_MEMORYWRITE_SIZE,
                      IARG_END);
@@ -245,6 +254,11 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
       // Inserting functions to create a compressed op
       pin_decoder_insert_analysis_functions(ins);
 
+      // Re-stage the mailbox at IPOINT_AFTER (runs after create_compressed_op_after) so the staged
+      // copy carries the destination register values, which are only produced at AFTER.
+      if (INS_IsValidForIpointAfter(ins))
+        INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)after_ins_restage_op, IARG_INST_PTR, IARG_END);
+
       xed_decoded_inst_t* xed_ins = INS_XedDec(ins);
       if(INS_IsSyscall(ins) || is_ifetch_barrier(xed_ins)) {
         insert_processing_for_syscalls(ins);
@@ -290,9 +304,19 @@ int main(int argc, char* argv[]) {
   page_table = new pageTableStruct();
   update_page_table(page_table);
 
+#ifdef ENABLE_PINPLAY
+  // SDE owns the pinplay engine and the -log/-replay knobs; init through SDE so a
+  // pinball can be replayed deterministically instead of running the live program.
+  (void)&Usage;  // unused on the SDE init path
+  PIN_InitSymbols();
+  sde_pin_init(argc, argv);
+  sde_init();
+#else
   if(PIN_Init(argc, argv)) {
     return Usage();
   }
+#endif
+
   // if no start EIP was specified, then we don't need to redirect,
   // and so we have "started"
   started   = (0 == KnobStartRip.Value());

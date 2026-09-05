@@ -49,7 +49,6 @@
 
 */
 
-DEF_PARAM(pref_markov_on                  , PREF_MARKOV_ON                  , Flag    , Flag      , FALSE       ,      )
 DEF_PARAM(debug_pref_markov               , DEBUG_PREF_MARKOV               , Flag    , Flag      , FALSE       ,      )
 DEF_PARAM(pref_markov_num_entries         , PREF_MARKOV_NUM_ENTRIES         , uns     , uns       , 65536       ,      )
 DEF_PARAM(pref_markov_num_next_states     , PREF_MARKOV_NUM_NEXT_STATES     , uns     , uns       , 8           ,      )

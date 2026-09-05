@@ -175,7 +175,7 @@ void recover_uop_queue_stage(void) {
       if (op && IS_FLUSHING_OP(op)) {
         op_select_bp_pred_info(op, BP_PRED_MAIN);
         DEBUG(uopq->proc_id, "Recovery op found in UopQ slot:%u op_num:%llu off_path:%u addr:0x%llx\n", op_idx,
-              (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst_info->addr);
+              (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst->addr);
       }
       if (op && FLUSH_OP(op)) {
         DEBUG(op->proc_id, "UopQ flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);

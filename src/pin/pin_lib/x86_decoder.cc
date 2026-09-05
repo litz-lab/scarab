@@ -351,8 +351,10 @@ void print_err_if_invalid(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
       std::cout << "Invalid inst! " << std::endl;
     }
     if(!correct) {
-      std::cout
-        << "Not correct inst: " << +info->cf_type << ", " << std::hex << info->instruction_addr << ' ' << std::dec << +info->size << ' ' << xed_operand_values_get_branch_displacement_int32(ins) << ' ' << std::hex << info->branch_target << ' ' << std::endl;;
+      std::cout << "Not correct inst: " << +info->cf_type << ", " << std::hex << info->instruction_addr << ' '
+                << std::dec << +info->size << ' ' << xed_decoded_inst_get_branch_displacement(ins) << ' ' << std::hex
+                << info->branch_target << ' ' << std::endl;
+      ;
     }
     std::cout
       << "Unmapped instruction at "
@@ -945,6 +947,7 @@ void init_pin_opcode_convert(void) {
                                              NONE};
   iclass_to_scarab_map[XED_ICLASS_FNOP]   = {OP_NOP, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_FPREM]  = {OP_FMUL, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_FPREM1] = {OP_FMUL, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_FRNDINT]       = {OP_FCVT, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_FSETPM287_NOP] = {OP_NOP, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_FSIN]    = {OP_NOTPIPELINED_VERY_SLOW, 8, 1,

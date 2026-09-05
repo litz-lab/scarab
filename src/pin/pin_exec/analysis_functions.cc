@@ -235,6 +235,19 @@ void add_right_path_exec_br(CONTEXT* ctxt) {
 #endif
 }
 
+// The op is staged into op_mailbox at IPOINT_BEFORE, before its destination register values exist
+// (they are produced only at IPOINT_AFTER, by create_compressed_op_after). Re-stage the mailbox here,
+// after that, so the staged copy picks up the dst values directly -- no separate copy at send time.
+// Inserted only for INS_IsValidForIpointAfter instructions; the op still waits for the next
+// instruction to supply instruction_next_addr, and a faulting op (whose AFTER never runs) simply
+// keeps its BEFORE snapshot, which the exception path already handles.
+void after_ins_restage_op(ADDRINT iaddr) {
+  if (fast_forward_count)
+    return;
+  if (op_mailbox_full && op_mailbox.instruction_addr == iaddr)
+    op_mailbox = *pin_decoder_get_latest_inst();
+}
+
 void before_ins_no_mem(CONTEXT* ctxt) {
   if(!fast_forward_count) {
     if(seen_rightpath_exc_mode) {

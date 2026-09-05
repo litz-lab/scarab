@@ -1408,6 +1408,13 @@ DEF_STAT(  PREF_MLC_TOTAL_PARTIAL_USED   , COUNT , NO_RATIO  )
 DEF_STAT(  PREF_MLC_TOTAL_NOT_USED       , COUNT , NO_RATIO  )
 DEF_STAT(  PREF_MLC_TOTAL_DROPPED        , DIST  , NO_RATIO  )
 
+DEF_STAT(  PREF_DCACHE_TOTAL_SENT	        , COUNT , NO_RATIO  )
+
+DEF_STAT(  PREF_DCACHE_TOTAL_USED	        , DIST  , NO_RATIO  )
+DEF_STAT(  PREF_DCACHE_TOTAL_PARTIAL_USED   , COUNT , NO_RATIO  )
+DEF_STAT(  PREF_DCACHE_TOTAL_NOT_USED       , COUNT , NO_RATIO  )
+DEF_STAT(  PREF_DCACHE_TOTAL_DROPPED        , DIST  , NO_RATIO  )
+
 
 // Per Core
 DEF_STAT(  CORE_MLC_PREF_REQ_MISS                ,DIST,    NO_RATIO) // Consider a prefetch hit by demand before mlc access as a prefetch
@@ -2129,6 +2136,13 @@ DEF_STAT(  CORE_PREF_L1_USED            , DIST  , NO_RATIO  )
 DEF_STAT(  CORE_PREF_L1_PARTIAL_USED    , COUNT , NO_RATIO  )
 DEF_STAT(  CORE_PREF_L1_NOT_USED        , COUNT , NO_RATIO  )
 DEF_STAT(  CORE_PREF_L1_DROPPED         , DIST  , NO_RATIO  )
+
+DEF_STAT(  CORE_PREF_DCACHE_SENT	        , COUNT , NO_RATIO  )
+
+DEF_STAT(  CORE_PREF_DCACHE_USED            , DIST  , NO_RATIO  )
+DEF_STAT(  CORE_PREF_DCACHE_PARTIAL_USED    , COUNT , NO_RATIO  )
+DEF_STAT(  CORE_PREF_DCACHE_NOT_USED        , COUNT , NO_RATIO  )
+DEF_STAT(  CORE_PREF_DCACHE_DROPPED         , DIST  , NO_RATIO  )
 
 // average memory latency
 DEF_STAT( TOTAL_MEM_LATENCY             , RATIO , L1_FILL)
@@ -3243,6 +3257,19 @@ DEF_STAT(  DATA_LD_CYCLES_ONPATH, COUNT , NO_RATIO)
 DEF_STAT(  DATA_LD_CYCLES_OFFPATH, COUNT , NO_RATIO)
 DEF_STAT(  DATA_LD_MLC_CYCLES_ONPATH, COUNT , NO_RATIO)
 DEF_STAT(  DATA_LD_MLC_CYCLES_OFFPATH, COUNT , NO_RATIO)
+/* Per-load serving level: which cache level satisfied each on-path demand load,
+   and the summed load latency for that level (avg = LD_LAT_x / LD_SERVED_x).
+   Unlike DATA_LD_*, these are per load op, exclude prefetch requests, and
+   include dcache hits, so the four SERVED counters partition on-path loads. */
+DEF_STAT(  LD_SERVED_DCACHE              , COUNT , NO_RATIO  )
+DEF_STAT(  LD_SERVED_MLC                 , COUNT , NO_RATIO  )
+DEF_STAT(  LD_SERVED_LLC                 , COUNT , NO_RATIO  )
+DEF_STAT(  LD_SERVED_MEM                 , COUNT , NO_RATIO  )
+DEF_STAT(  LD_LAT_DCACHE                 , COUNT , NO_RATIO  )
+DEF_STAT(  LD_LAT_MLC                    , COUNT , NO_RATIO  )
+DEF_STAT(  LD_LAT_LLC                    , COUNT , NO_RATIO  )
+DEF_STAT(  LD_LAT_MEM                    , COUNT , NO_RATIO  )
+
 DEF_STAT(  DATA_LD_MLC_ACCESSES_ONPATH, COUNT , NO_RATIO)
 DEF_STAT(  DATA_LD_MLC_ACCESSES_OFFPATH, COUNT , NO_RATIO)
 DEF_STAT(  DATA_LD_L1_CYCLES_ONPATH, COUNT , NO_RATIO)

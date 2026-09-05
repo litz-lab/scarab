@@ -68,21 +68,28 @@
 stride_prefetchers stride_prefetche_array;
 
 void pref_stride_init(HWP* hwp) {
-  if (!PREF_STRIDE_ON)
+  if (!pref_hwp_enabled(hwp))
     return;
 
   ASSERTM(0, PREF_REPORT_PREF_MATCH_AS_HIT || PREF_REPORT_PREF_MATCH_AS_MISS,
           "Stride prefetcher must train on demands matching prefetch request "
           "buffers\n");
 
-  if (PREF_UMLC_ON) {
+  // One instance per configured training level; each instance's destination
+  // comes from its list entry (pref_{dcache,mlc,l1}_prefetchers).
+  if (pref_hwp_instance_enabled(hwp, PREF_TRAIN_LEVEL_DCACHE)) {
+    stride_prefetche_array.stride_hwp_dcache = (Pref_Stride*)malloc(sizeof(Pref_Stride));
+    stride_prefetche_array.stride_hwp_dcache->type = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_DCACHE);
+    init_stride(hwp, stride_prefetche_array.stride_hwp_dcache);
+  }
+  if (pref_hwp_instance_enabled(hwp, PREF_TRAIN_LEVEL_UMLC)) {
     stride_prefetche_array.stride_hwp_umlc = (Pref_Stride*)malloc(sizeof(Pref_Stride));
-    stride_prefetche_array.stride_hwp_umlc->type = UMLC;
+    stride_prefetche_array.stride_hwp_umlc->type = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_UMLC);
     init_stride(hwp, stride_prefetche_array.stride_hwp_umlc);
   }
-  if (PREF_UL1_ON) {
+  if (pref_hwp_instance_enabled(hwp, PREF_TRAIN_LEVEL_UL1)) {
     stride_prefetche_array.stride_hwp_ul1 = (Pref_Stride*)malloc(sizeof(Pref_Stride));
-    stride_prefetche_array.stride_hwp_ul1->type = UL1;
+    stride_prefetche_array.stride_hwp_ul1->type = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_UL1);
     init_stride(hwp, stride_prefetche_array.stride_hwp_ul1);
   }
 }
@@ -106,6 +113,14 @@ void pref_stride_umlc_hit(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global
 
 void pref_stride_umlc_miss(uns8 proc_id, Addr lineAddr, Addr loadPC, uns32 global_hist) {
   pref_stride_train(stride_prefetche_array.stride_hwp_umlc, lineAddr, loadPC, FALSE);
+}
+/* Dcache (L1D) training: the dl0 dispatcher carries no proc_id. */
+void pref_stride_dl0_hit(Addr lineAddr, Addr loadPC) {
+  pref_stride_train(stride_prefetche_array.stride_hwp_dcache, lineAddr, loadPC, TRUE);
+}
+
+void pref_stride_dl0_miss(Addr lineAddr, Addr loadPC) {
+  pref_stride_train(stride_prefetche_array.stride_hwp_dcache, lineAddr, loadPC, FALSE);
 }
 void pref_stride_train(Pref_Stride* stride_hwp, Addr lineAddr, Addr loadPC, Flag is_hit) {
   int ii;
@@ -228,15 +243,10 @@ void pref_stride_train(Pref_Stride* stride_hwp, Addr lineAddr, Addr loadPC, Flag
       // single stride case
       for (ii = 0; (ii < PREF_STRIDE_DEGREE && entry->pref_sent < PREF_STRIDE_DISTANCE); ii++, entry->pref_sent++) {
         pref_index = entry->pref_last_index + entry->stride[0];
-        if (stride_hwp->type == UMLC) {
-          if (!pref_addto_umlc_req_queue(0, pref_index,
-                                         stride_hwp->hwp_info->id))  // FIXME
-            break;
-        } else {
-          if (!pref_addto_ul1req_queue(0, pref_index,
+        if (!pref_addto_dest_req_queue(0, stride_hwp->type, pref_index,
                                        stride_hwp->hwp_info->id))  // FIXME
-            break;
-        }  // q is full
+          break;
+        // q is full
         entry->pref_last_index = pref_index;
       }
     } else if ((stride == entry->stride[entry->curr_state] && entry->count < entry->s_cnt[entry->curr_state]) ||
@@ -252,28 +262,18 @@ void pref_stride_train(Pref_Stride* stride_hwp, Addr lineAddr, Addr loadPC, Flag
       for (ii = 0; (ii < PREF_STRIDE_DEGREE && entry->pref_sent < PREF_STRIDE_DISTANCE); ii++, entry->pref_sent++) {
         if (entry->pref_count == entry->s_cnt[entry->pref_curr_state]) {
           pref_index = entry->pref_last_index + entry->strans[entry->pref_curr_state];
-          if (stride_hwp->type == UMLC) {
-            if (!pref_addto_umlc_req_queue(0, pref_index,
-                                           stride_hwp->hwp_info->id))  // FIXME
-              break;
-          } else {
-            if (!pref_addto_ul1req_queue(0, pref_index,
+          if (!pref_addto_dest_req_queue(0, stride_hwp->type, pref_index,
                                          stride_hwp->hwp_info->id))  // FIXME
-              break;
-          }  // q is full
+            break;
+          // q is full
           entry->pref_count = 0;
           entry->pref_curr_state = (1 - entry->pref_curr_state);
         } else {
           pref_index = entry->pref_last_index + entry->stride[entry->pref_curr_state];
-          if (stride_hwp->type == UMLC) {
-            if (!pref_addto_umlc_req_queue(0, pref_index,
-                                           stride_hwp->hwp_info->id))  // FIXME
-              break;
-          } else {
-            if (!pref_addto_ul1req_queue(0, pref_index,
+          if (!pref_addto_dest_req_queue(0, stride_hwp->type, pref_index,
                                          stride_hwp->hwp_info->id))  // FIXME
-              break;
-          }  // q is full
+            break;
+          // q is full
           entry->pref_count++;
         }
         entry->pref_last_index = pref_index;

@@ -24,6 +24,9 @@ on:
       kips:
         description: Parsed KIPS value
         value: ${{ jobs.run.outputs.kips }}
+      instructions:
+        description: Host instructions the simulation retired (empty if perf could not count)
+        value: ${{ jobs.run.outputs.instructions }}
 
 jobs:
   run:
@@ -31,12 +34,13 @@ jobs:
     outputs:
       ipc: ${{ steps.ipc.outputs.value }}
       kips: ${{ steps.kips.outputs.value }}
+      instructions: ${{ steps.instructions.outputs.value }}
     steps:
       - name: Checkout Scarab
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Checkout scarab-infra
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: litz-lab/scarab-infra
           path: infra
@@ -91,6 +95,9 @@ jobs:
           with open(src) as f:
               d = json.load(f)
           d["application_dir"] = os.environ["GITHUB_WORKSPACE"] + "/"
+          d["scarab_path"] = os.environ["GITHUB_WORKSPACE"] + "/"
+          d["root_dir"] = os.environ["GITHUB_WORKSPACE"] + "/"
+          d["traces_dir"] = os.environ["GITHUB_WORKSPACE"] + "/traces_top_simpoint"
           src.write_text(json.dumps(d, indent=2, separators=(',', ':')) + "\n")
           PY
         env:
@@ -232,6 +239,34 @@ jobs:
             echo "Contents of sim.log for debugging:"
             cat "${sim_dir}/this_pr/${workload_path}/sim.log"
             exit 1
+          fi
+          echo "value=$v" >>"$GITHUB_OUTPUT"
+
+      # Host instructions retired, which scarab-infra's run script records with
+      # `perf stat`. Unlike KIPS this does not move with how loaded the machine
+      # was, so it is the signal worth comparing across runs.
+      #
+      # Soft: GitHub-hosted runners are VMs with no PMU, so perf reports the
+      # event as unsupported and no count is written. Reporting nothing is
+      # right there -- the simulation itself is fine -- and the comment shows
+      # n/a. It fills in wherever the check runs on hardware with a PMU.
+      - id: instructions
+        if: inputs.collect_metrics
+        name: Grab host instruction count
+        working-directory: simulations
+        run: |
+          sim_dir="${{ steps.simdir.outputs.path }}"
+          workload_path="${{ steps.simworkload.outputs.path }}"
+          perf_file="${sim_dir}/this_pr/${workload_path}/perf_stat.txt"
+          if [ ! -f "$perf_file" ]; then
+            echo "No $perf_file; perf could not count on this runner."
+            exit 0
+          fi
+          cat "$perf_file"
+          v=$(awk -F, '$3 ~ /^instructions/ && $1 ~ /^[0-9]+$/ {print $1; exit}' "$perf_file")
+          if [ -z "$v" ]; then
+            echo "No instruction count in $perf_file; leaving the metric empty."
+            exit 0
           fi
           echo "value=$v" >>"$GITHUB_OUTPUT"
 

@@ -22,11 +22,18 @@ if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
   set(flags_enable_pt_memtrace "-DENABLE_PT_MEMTRACE")
 endif()
 
-# SCARABOPT: -O3 portable x86-64 (make opt). OPT_AVX: same + -march=skylake-avx512 (make opt-avx).
+# SCARABOPT: -O3 portable x86-64 (make opt). OPT_AVX: same + -march=haswell (make opt-avx).
+#
+# OPT_AVX targets haswell (256-bit AVX2, FMA, BMI2) rather than skylake-avx512.
+# -march=skylake-avx512 emits AVX-512 instructions, so the resulting binary dies
+# with SIGILL ("Illegal instruction") on any host without AVX-512 -- including all
+# AMD Zen hosts. haswell is the widest baseline that every x86-64 machine from
+# Haswell/Zen1 onward can execute, which keeps one build usable across a
+# heterogeneous cluster instead of silently restricting it to Intel nodes.
 set(CMAKE_C_FLAGS_SCARABOPT "-O3 -g3 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
 set(CMAKE_CXX_FLAGS_SCARABOPT "-O3 -g3 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
-set(CMAKE_C_FLAGS_OPT_AVX "-O3 -g3 -march=skylake-avx512 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
-set(CMAKE_CXX_FLAGS_OPT_AVX "-O3 -g3 -march=skylake-avx512 -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
+set(CMAKE_C_FLAGS_OPT_AVX "-O3 -g3 -march=haswell -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
+set(CMAKE_CXX_FLAGS_OPT_AVX "-O3 -g3 -march=haswell -DNO_DEBUG -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
 
 set(CMAKE_C_FLAGS_VALGRIND    "-O0 -g3 -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
 set(CMAKE_CXX_FLAGS_VALGRIND  "-O0 -g3 -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")

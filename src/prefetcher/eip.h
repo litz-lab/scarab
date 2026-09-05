@@ -10,9 +10,11 @@ extern "C" {
 // Interface
 void alloc_mem_eip(uns numCores);
 void init_eip(uns proc_id);
-void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefetch_hit, Flag off_path);
+void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefetch_hit, Flag off_path,
+                  uint64_t op_num);
 void set_eip(uns proc_id);
 void update_eip();
+void eip_recover(uns proc_id, uint64_t recovery_op_num);
 void eip_cache_fill(uns proc_id, uint64_t v_addr, uint64_t evicted_v_addr);
 void print_eip_stats(uns proc_id);
 

@@ -1,0 +1,180 @@
+name: Comment perf results
+
+############################################################
+# Triggers
+#
+# Runs after "Compile PR in Container" finishes. workflow_run fires in the
+# context of the BASE repository, so unlike the pull_request run that produced
+# the metrics -- which gets a read-only token when the PR comes from a fork --
+# this one can be granted write access and post the comment.
+#
+# GitHub only triggers workflow_run for the copy of this file on the default
+# branch, so edits here take effect once merged to main, not from a PR.
+############################################################
+on:
+  workflow_run:
+    workflows: ["Compile PR in Container"]
+    types: [completed]
+
+############################################################
+# Permissions
+#
+# The producing workflow keeps the default read-only token. Only this job,
+# which never runs PR-authored code, is granted write.
+############################################################
+permissions:
+  contents: read
+  # Required by download-artifact when reading from a DIFFERENT workflow run.
+  # An explicit permissions block sets every unlisted scope to none, so without
+  # this the download 403s.
+  actions: read
+  pull-requests: write
+
+jobs:
+  comment:
+    # Only for PR-triggered runs that got far enough to upload metrics. A run
+    # that failed earlier has nothing to say, and gating on success here means
+    # a missing artifact below is a genuine error worth failing on rather than
+    # something to swallow.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      ####################################################################
+      # SECURITY: this job holds a writable token and is triggered by code
+      # from an untrusted fork. It must never check out or execute the PR's
+      # code -- it only downloads the artifact and treats its contents as
+      # untrusted input. Metrics are read from disk and parsed as numbers
+      # rather than interpolated into the script, so a crafted artifact
+      # cannot inject anything.
+      ####################################################################
+      # Not continue-on-error: the job only runs when the producing run
+      # succeeded, so a missing artifact or a permissions problem is a real
+      # fault and should be loud rather than silently skipping the comment.
+      - name: Download metrics artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: perf-report
+          path: perf-report
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post or update PR comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            const path = 'perf-report/metrics.txt';
+            if (!fs.existsSync(path)) {
+              core.info('No metrics.txt in the artifact; nothing to comment.');
+              return;
+            }
+
+            // Untrusted input: parse strictly, keep only known keys.
+            const fields = {};
+            for (const line of fs.readFileSync(path, 'utf8').split('\n')) {
+              const m = line.match(/^([a-z_]+)=(.*)$/);
+              if (m) fields[m[1]] = m[2].trim();
+            }
+
+            // Resolve the PR from the head SHA that GitHub itself recorded on
+            // the workflow_run, NOT from the artifact. The artifact is written
+            // by the untrusted PR build, so trusting a pr= field in it would
+            // let a fork redirect this comment onto any PR in the repository.
+            //
+            // Both of the obvious lookups come up empty for fork PRs:
+            // workflow_run.pull_requests is [] by design, and
+            // listPullRequestsAssociatedWithCommit also returns [] even though
+            // the commit is reachable in the base repo (verified against #551).
+            // Matching head.sha over the open PRs does work for forks.
+            const headSha = context.payload.workflow_run.head_sha;
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const match = prs.find((p) => p.head.sha === headSha);
+            if (!match) {
+              // Normal when the PR advanced past this run, or was closed
+              // before the build finished: those numbers are stale, so
+              // there is nothing worth posting.
+              core.info(`No open PR at ${headSha}; skipping comment.`);
+              return;
+            }
+            const prNumber = match.number;
+
+            const num = (v) => {
+              const n = Number.parseFloat(v);
+              return Number.isFinite(n) ? n : null;
+            };
+            const simKips  = num(fields.sim_kips);
+            const simIpc   = num(fields.sim_ipc);
+            const simInsts = num(fields.sim_instructions);
+            const baseKips = num(fields.base_kips);
+            const baseIpc  = num(fields.base_ipc);
+            const baseInsts = num(fields.base_instructions);
+
+            // GitHub strips style attributes from markdown, so the previous
+            // <span style="color:..."> rendered as plain text. Use an emoji,
+            // which survives sanitising.
+            const EPS = 1e-3;
+            // higherIsBetter=false for instructions retired: more host work for
+            // the same simulation is a slowdown, so the colours flip.
+            function delta(sim, base, higherIsBetter = true) {
+              if (sim === null || base === null || base === 0) return 'n/a';
+              const ratio = sim / base;
+              const up = higherIsBetter ? '🔵' : '🔴';
+              const down = higherIsBetter ? '🔴' : '🔵';
+              const mark = ratio > 1 + EPS ? up : ratio < 1 - EPS ? down : '🟢';
+              return `${mark} **${ratio.toFixed(2)}×**`;
+            }
+            const show = (v) => (v === null ? 'n/a' : `\`${v}\``);
+            // Instruction counts run to the trillions; group them so the two
+            // columns can be compared at a glance.
+            const showInt = (v) =>
+              v === null ? 'n/a' : `\`${v.toLocaleString('en-US')}\``;
+
+            const marker = '<!-- scarab-perf-report -->';
+            const body = [
+              marker,
+              '📊 **Scarab simulation**',
+              '',
+              '| Metric | PR | Baseline | Δ |',
+              '| ------ | --: | -------: | :- |',
+              `| **KIPS** | ${show(simKips)} | ${show(baseKips)} | ${delta(simKips, baseKips)} |`,
+              `| **IPC** | ${show(simIpc)} | ${show(baseIpc)} | ${delta(simIpc, baseIpc)} |`,
+              `| **Instructions** | ${showInt(simInsts)} | ${showInt(baseInsts)} | ${delta(simInsts, baseInsts, false)} |`,
+              '',
+              `<sub>commit ${context.payload.workflow_run.head_sha.slice(0, 7)}</sub>`,
+            ].join('\n');
+
+            // Update our previous comment instead of stacking a new one per run.
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (c) => c.user.type === 'Bot' && c.body && c.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }

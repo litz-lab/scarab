@@ -75,8 +75,21 @@ struct HWP_Info_struct {
 typedef enum HWP_Type_enum {
   PREF_TO_UL1,
   PREF_TO_UMLC,
-  PREF_TO_DL0,
+  PREF_TO_DCACHE,
 } HWP_Type;
+
+/* Cache level whose hits/misses train a prefetcher instance. An instance is
+   declared in the matching --pref_{dcache,mlc,l1}_prefetchers list param as a
+   TYPE_<name>,DEST_<level> pair: the list fixes the training level, the DEST
+   token fixes where that instance's prefetches go (its HWP_Type). The same
+   prefetcher type may be instantiated at several training levels (one instance
+   per type per level). */
+typedef enum Pref_Train_Level_enum {
+  PREF_TRAIN_LEVEL_DCACHE,
+  PREF_TRAIN_LEVEL_UMLC,
+  PREF_TRAIN_LEVEL_UL1,
+  PREF_TRAIN_LEVEL_NUM,
+} Pref_Train_Level;
 
 typedef enum HWP_DynAggr_enum {
   AGGR_DEC,
@@ -87,7 +100,6 @@ typedef enum HWP_DynAggr_enum {
 // typedef in globals/global_types.h
 struct HWP_struct {
   char const* const name;
-  HWP_Type hwp_type;
 
   HWP_Info* hwp_info;
 
@@ -121,6 +133,15 @@ struct HWP_struct {
                        uns32 global_hist);  // called when a ul1 access hits a
                                             // prefetched line for the first
                                             // time
+
+  // Called on every UL1 (LLC) fill: fill_addr filled, evicted_addr kicked out
+  // (0 if none), prefetch=TRUE if the filling request was a prefetch. Mirrors
+  // ChampSim's *_prefetcher_cache_fill so eviction-trained prefetchers can learn.
+  // Kept LAST in HWP; pref_table.def rows set these two to NULL explicitly.
+  void (*ul1_cache_fill)(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata);
+  // Same as ul1_cache_fill but for UMLC (L2) fills. Lets an L2 prefetcher count
+  // its own fills (e.g. accuracy accounting). Kept LAST after ul1_cache_fill.
+  void (*umlc_cache_fill)(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata);
 };
 
 /* Per core prefetching data */
@@ -168,11 +189,6 @@ typedef struct HWP_Common_struct {
   uns phase;
 } HWP_Common;
 
-typedef enum {
-  UMLC,
-  UL1
-} CacheLevel;
-
 /**************************************************************/
 /* Framework interface */
 
@@ -198,6 +214,9 @@ void pref_ul1_pref_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_
                        uns8 prefetcher_id);
 void pref_ul1_pref_hit_late(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist, uns8 prefetcher_id);
 
+void pref_ul1_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata);
+void pref_umlc_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata);
+
 void pref_update(void);
 
 // returns true if req hits in the req queue. It also invalidates the request in
@@ -215,8 +234,26 @@ Flag pref_addto_ul1req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id);
 Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_id, uns distance, Addr loadAddr,
                                  uns32 global_hist, Flag bw);
 
-// prefetch missed in the ul1 and went out on the bus
-void pref_ul1sent(uns8 proc_id, Addr addr, uns8 prefetcher_id);
+/* Unified destination-level routing: send a prefetch to the level named by `dest`
+   (PREF_TO_DCACHE/UMLC/UL1) via the matching per-level request queue. The single choke
+   point for choosing a prefetch's destination cache level. The _set variant carries
+   the rich UL1 metadata (distance/loadPC/global_hist/bw); DL0 and UMLC ignore it. */
+Flag pref_addto_dest_req_queue(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id);
+Flag pref_addto_dest_req_queue_set(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id, uns distance,
+                                   Addr loadPC, uns32 global_hist, Flag bw);
+
+/* Instance registry, filled in pref_init by parsing the per-level list params
+   --pref_{dcache,mlc,l1}_prefetchers (TYPE_<name>,DEST_<level> pairs). A
+   prefetcher's init_func queries which of its training levels have an instance
+   and each instance's destination; dispatchers use the same registry to decide
+   which types observe a given level's hits/misses. Indexed by hwp_info->id. */
+Flag pref_hwp_instance_enabled(const HWP* hwp, Pref_Train_Level lvl);
+HWP_Type pref_hwp_instance_dest(const HWP* hwp, Pref_Train_Level lvl);
+Flag pref_hwp_enabled(const HWP* hwp);  // instance at any training level
+
+// A prefetch missed its target cache and went out on the bus; charge the send
+// to the counters for the level it fills (dest).
+void pref_sent(uns8 proc_id, Addr addr, uns8 prefetcher_id, Destination dest);
 
 /*************************************************************/
 /* Misc functions */

@@ -30,6 +30,16 @@
 
 #include "pin_scarab_common_lib.h"
 
+// PIN >=3.3x moved the register-value union out of the core API (was PIN_REGISTER
+// in types_vmapi) into this tool-utils header, renamed PINTOOL_REGISTER (same layout).
+#include "regvalue_utils.h"
+
+#define REG(x) SCARAB_REG_##x,
+typedef enum Reg_Id_struct {
+#include "isa/x86_regs.def"
+  SCARAB_NUM_REGS
+} Reg_Id;
+#undef REG
 
 using namespace std;
 
@@ -49,6 +59,8 @@ static ctype_pin_inst  tmp_inst_info;
 // Globals used for communication between analysis functions
 uint32_t       glb_opcode, glb_actually_taken;
 deque<ADDRINT> glb_ld_vaddrs, glb_st_vaddrs;
+deque<uint64_t> glb_ld_data;  // loaded value per load, captured at IPOINT_BEFORE (kept aligned with glb_ld_vaddrs)
+deque<Pin_Reg_Val> glb_src_vector_vals, glb_dst_vector_vals;
 
 std::ostream*                                    glb_err_ostream;
 bool                                             glb_translate_x87_regs;
@@ -56,6 +68,17 @@ std::set<std::string>                            unknown_opcodes;
 inst_info_map                                    inst_info_storage;
 static std::map<xed_reg_enum_t, LEVEL_BASE::REG> reg_xed_to_pin_map;
 extern scatter_info_map                          scatter_info_storage;
+
+extern uint8_t reg_compress_map[];
+static std::map<uint8_t, LEVEL_BASE::REG> reg_scarab_to_pin_map;
+
+static void init_reg_scarab_to_pin_map() {
+  const xed_reg_enum_t gprs[] = {XED_REG_RAX, XED_REG_RBX, XED_REG_RCX, XED_REG_RDX, XED_REG_RBP, XED_REG_RSI,
+                                 XED_REG_RDI, XED_REG_RSP, XED_REG_R8,  XED_REG_R9,  XED_REG_R10, XED_REG_R11,
+                                 XED_REG_R12, XED_REG_R13, XED_REG_R14, XED_REG_R15};
+  for (xed_reg_enum_t x : gprs)
+    reg_scarab_to_pin_map[reg_compress_map[(int)x]] = reg_xed_to_pin_map[x];
+}
 
 /********************* Private Functions Prototypes ***************************/
 ctype_pin_inst* get_inst_info_obj(const INS& ins);
@@ -66,11 +89,15 @@ void print_err_if_invalid(ctype_pin_inst* info, const INS& ins);
 void get_opcode(UINT32 opcode);
 void get_gather_scatter_eas(bool is_gather, CONTEXT* ctxt,
                             PIN_MULTI_MEM_ACCESS_INFO* mem_access_info);
-void get_ld_ea(ADDRINT addr);
-void get_ld_ea2(ADDRINT addr1, ADDRINT addr2);
+void get_ld_ea(ADDRINT addr, UINT32 size);
+void get_ld_ea2(ADDRINT addr1, ADDRINT addr2, UINT32 size);
 void get_st_ea(ADDRINT addr);
 void get_branch_dir(bool taken);
+void get_src_vector_vals(CONTEXT* ctxt, ADDRINT reg_id, ADDRINT scarab_id);
+void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT reg_id, ADDRINT scarab_id);
+void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count);
 void create_compressed_op(ADDRINT iaddr);
+void create_compressed_op_after(ADDRINT iaddr);
 
 void update_gather_scatter_num_ld_or_st(const ADDRINT                   iaddr,
                                         const gather_scatter_info::type type,
@@ -84,17 +111,16 @@ std::vector<PIN_MEM_ACCESS_INFO> compute_mem_access_infos(
   const CONTEXT* ctxt, gather_scatter_info* info);
 ADDRDELTA compute_base_reg_addr_contribution(const CONTEXT*       ctxt,
                                              gather_scatter_info* info);
-ADDRDELTA compute_base_index_addr_contribution(
-  const PIN_REGISTER& vector_index_reg_val, const UINT32 lane_id,
-  gather_scatter_info* info);
+ADDRDELTA compute_base_index_addr_contribution(const PINTOOL_REGISTER& vector_index_reg_val, const UINT32 lane_id,
+                                               gather_scatter_info* info);
 PIN_MEMOP_ENUM type_to_PIN_MEMOP_ENUM(gather_scatter_info* info);
-bool extract_mask_on(const PIN_REGISTER& mask_reg_val_buf, const UINT32 lane_id,
-                     gather_scatter_info* info);
+bool extract_mask_on(const PINTOOL_REGISTER& mask_reg_val_buf, const UINT32 lane_id, gather_scatter_info* info);
 
 /**************************** Public Functions ********************************/
 void pin_decoder_init(bool translate_x87_regs, std::ostream* err_ostream) {
   init_x86_decoder(err_ostream);
   init_reg_xed_to_pin_map();
+  init_reg_scarab_to_pin_map();
   init_x87_stack_delta();
   glb_translate_x87_regs = translate_x87_regs;
   if(err_ostream) {
@@ -169,11 +195,10 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
   } else {
     if(INS_IsMemoryRead(ins)) {
       if(INS_HasMemoryRead2(ins)) {
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea2,
-                       IARG_MEMORYREAD_EA, IARG_MEMORYREAD2_EA, IARG_END);
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea2, IARG_MEMORYREAD_EA, IARG_MEMORYREAD2_EA,
+                       IARG_MEMORYREAD_SIZE, IARG_END);
       } else {
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea,
-                       IARG_MEMORYREAD_EA, IARG_END);
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea, IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE, IARG_END);
       }
     }
 
@@ -188,8 +213,45 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
                    IARG_BRANCH_TAKEN, IARG_END);
   }
 
+  // Instrument GPR operands to capture their runtime values.
+  // Src: IPOINT_BEFORE (values ready before exec). Dst: IPOINT_AFTER
+  // (dst values only exist after exec);
+  if (INS_Valid(ins)) {
+    for (uns i = 0; i < info->num_src_regs; i++) {
+      uint8_t scarab_id = info->src_regs[i];
+      auto it = reg_scarab_to_pin_map.find(scarab_id);
+      REG pin_reg = (it != reg_scarab_to_pin_map.end()) ? it->second : REG_INVALID_;
+      // read pin_reg's value and store it into glb_src_vector_vals
+      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_src_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT,
+                     (ADDRINT)pin_reg, IARG_ADDRINT, (ADDRINT)scarab_id, IARG_END);
+    }
+  }
+
+  if (INS_Valid(ins)) {
+    if (INS_IsValidForIpointAfter(ins)) {
+      for (uns i = 0; i < info->num_dst_regs; i++) {
+        uint8_t scarab_id = info->dst_regs[i];
+        auto it = reg_scarab_to_pin_map.find(scarab_id);
+        REG pin_reg = (it != reg_scarab_to_pin_map.end()) ? it->second : REG_INVALID_;
+        // read pin_reg's value and store it into glb_dst_vector_vals
+        INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)get_dst_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT,
+                       (ADDRINT)pin_reg, IARG_ADDRINT, (ADDRINT)scarab_id, IARG_END);
+      }
+      // Attach the dst values captured at IPOINT_AFTER.
+      INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)create_compressed_op_after, IARG_INST_PTR, IARG_END);
+    }
+  }
+
+  // Build the compressed op at IPOINT_BEFORE (dst values not yet known).
   INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)create_compressed_op,
                  IARG_INST_PTR, IARG_END);
+}
+
+void create_compressed_op_after(ADDRINT iaddr) {
+  if (fast_forward_count)
+    return;
+
+  fill_register_values(filled_inst_info, true, glb_dst_vector_vals, filled_inst_info->num_dst_regs);
 }
 
 // int64_t heartbeat = 0;
@@ -211,6 +273,7 @@ void create_compressed_op(ADDRINT iaddr) {
         filled_inst_info->dst_regs[i] = absolute_reg(
           filled_inst_info->dst_regs[i], glb_opcode, true);
       }
+      fill_register_values(filled_inst_info, false, glb_src_vector_vals, filled_inst_info->num_src_regs);
       // update x87 state
       update_x87_stack_state(glb_opcode);
     }
@@ -222,8 +285,10 @@ void create_compressed_op(ADDRINT iaddr) {
                                          num_lds, filled_inst_info);
     }
     assert(filled_inst_info->num_ld == num_lds);
+    assert(glb_ld_data.size() == glb_ld_vaddrs.size());
     for(uint ld = 0; ld < num_lds; ld++) {
       filled_inst_info->ld_vaddr[ld] = glb_ld_vaddrs[ld];
+      filled_inst_info->ld_data[ld] = glb_ld_data[ld];
     }
 
     uint num_sts = glb_st_vaddrs.size();
@@ -240,7 +305,10 @@ void create_compressed_op(ADDRINT iaddr) {
     filled_inst_info->actually_taken = glb_actually_taken;
   }
   glb_opcode = 0;
+  glb_dst_vector_vals.clear();
+  glb_src_vector_vals.clear();
   glb_ld_vaddrs.clear();
+  glb_ld_data.clear();
   glb_st_vaddrs.clear();
   glb_actually_taken = 0;
 
@@ -250,6 +318,8 @@ void create_compressed_op(ADDRINT iaddr) {
   //}
   // heartbeat += 1;
 }
+
+static uint64_t read_ld_data(ADDRINT addr, UINT32 size);
 
 void get_gather_scatter_eas(bool is_gather, CONTEXT* ctxt,
                             PIN_MULTI_MEM_ACCESS_INFO* mem_access_info) {
@@ -276,9 +346,12 @@ void get_gather_scatter_eas(bool is_gather, CONTEXT* ctxt,
 
     // only let Scarab know about it if the memop is not masked away
     if(mask_on) {
-      if(is_load)
+      if (is_load) {
+        // Each gather element access is scalar-sized; capture it like a normal load
+        // (read_ld_data zero-fills anything > 8 bytes).
         glb_ld_vaddrs.push_back(addr);
-      else
+        glb_ld_data.push_back(read_ld_data(addr, gather_scatter_mem_access_infos[i].bytesAccessed));
+      } else
         glb_st_vaddrs.push_back(addr);
     }
   }
@@ -288,13 +361,25 @@ void get_opcode(UINT32 opcode) {
   glb_opcode = opcode;
 }
 
-void get_ld_ea(ADDRINT addr) {
-  glb_ld_vaddrs.push_back(addr);
+// Read the loaded value now (IPOINT_BEFORE), so read-modify-write loads observe the
+// pre-store memory. Only scalar loads (<= 8 bytes) are captured; wider loads store 0.
+static uint64_t read_ld_data(ADDRINT addr, UINT32 size) {
+  uint64_t val = 0;
+  if (size && size <= 8)
+    PIN_SafeCopy(&val, (const void*)addr, size);
+  return val;
 }
 
-void get_ld_ea2(ADDRINT addr1, ADDRINT addr2) {
+void get_ld_ea(ADDRINT addr, UINT32 size) {
+  glb_ld_vaddrs.push_back(addr);
+  glb_ld_data.push_back(read_ld_data(addr, size));
+}
+
+void get_ld_ea2(ADDRINT addr1, ADDRINT addr2, UINT32 size) {
   glb_ld_vaddrs.push_back(addr1);
   glb_ld_vaddrs.push_back(addr2);
+  glb_ld_data.push_back(read_ld_data(addr1, size));
+  glb_ld_data.push_back(read_ld_data(addr2, size));
 }
 
 void get_st_ea(ADDRINT addr) {
@@ -303,6 +388,55 @@ void get_st_ea(ADDRINT addr) {
 
 void get_branch_dir(bool taken) {
   glb_actually_taken = taken;
+}
+
+void get_src_vector_vals(CONTEXT* ctxt, ADDRINT pin_reg, ADDRINT scarab_id) {
+  REG reg = (REG)pin_reg;
+  PINTOOL_REGISTER reg_val;
+  uint64_t val = 0;
+  uint8_t size = 0;
+  if (REG_valid(reg)) {
+    PIN_GetContextRegval(ctxt, reg, (UINT8*)&reg_val);
+    val = reg_val.qword[0];
+    size = (uint8_t)(REG_Size(reg) * 8);
+  }
+  glb_src_vector_vals.push_back({(uint16_t)scarab_id, val, size});
+}
+
+void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT pin_reg, ADDRINT scarab_id) {
+  REG reg = (REG)pin_reg;
+  PINTOOL_REGISTER reg_val;
+  uint64_t val = 0;
+  uint8_t size = 0;
+  if (REG_valid(reg)) {
+    PIN_GetContextRegval(ctxt, reg, (UINT8*)&reg_val);
+    val = reg_val.qword[0];
+    size = (uint8_t)(REG_Size(reg) * 8);
+  }
+  glb_dst_vector_vals.push_back({(uint16_t)scarab_id, val, size});
+}
+
+static inline bool is_arch_gpr(uint8_t reg_id) {
+  return reg_id >= SCARAB_REG_RAX && reg_id <= SCARAB_REG_R15;
+}
+
+void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count) {
+  for (int i = 0; i < reg_count; ++i) {
+    if (!is_arch_gpr(global_vals[i].id))
+      continue;
+    if (is_dst) {
+      ASSERTX(global_vals[i].id == inst->dst_regs[i]);
+      inst->dests[i].id = global_vals[i].id;
+      inst->dests[i].val = global_vals[i].val;
+      inst->dests[i].size = global_vals[i].size;
+      continue;
+    }
+
+    ASSERTX(global_vals[i].id == inst->src_regs[i]);
+    inst->srcs[i].id = global_vals[i].id;
+    inst->srcs[i].val = global_vals[i].val;
+    inst->srcs[i].size = global_vals[i].size;
+  }
 }
 
 void update_gather_scatter_num_ld_or_st(const ADDRINT                   iaddr,
@@ -383,12 +517,12 @@ vector<PIN_MEM_ACCESS_INFO> compute_mem_access_infos(
                                                                       info);
   PIN_MEMOP_ENUM memop_type      = type_to_PIN_MEMOP_ENUM(info);
 
-  PIN_REGISTER vector_index_reg_val_buf;
+  PINTOOL_REGISTER vector_index_reg_val_buf;
   assert(reg_xed_to_pin_map.find(info->get_index_reg()) !=
          reg_xed_to_pin_map.end());
   PIN_GetContextRegval(ctxt, reg_xed_to_pin_map[info->get_index_reg()],
                        (UINT8*)&vector_index_reg_val_buf);
-  PIN_REGISTER mask_reg_val_buf;
+  PINTOOL_REGISTER mask_reg_val_buf;
   assert(reg_xed_to_pin_map.find(info->get_mask_reg()) !=
          reg_xed_to_pin_map.end());
   PIN_GetContextRegval(ctxt, reg_xed_to_pin_map[info->get_mask_reg()],
@@ -416,7 +550,7 @@ ADDRDELTA compute_base_reg_addr_contribution(const CONTEXT*       ctxt,
                                              gather_scatter_info* info) {
   ADDRDELTA base_addr_contribution = 0;
   if(XED_REG_valid(info->get_base_reg())) {
-    PIN_REGISTER buf;
+    PINTOOL_REGISTER buf;
     ASSERTX(reg_xed_to_pin_map.find(info->get_base_reg()) !=
             reg_xed_to_pin_map.end());
     PIN_GetContextRegval(ctxt, reg_xed_to_pin_map[info->get_base_reg()],
@@ -434,9 +568,8 @@ ADDRDELTA compute_base_reg_addr_contribution(const CONTEXT*       ctxt,
   return base_addr_contribution;
 }
 
-ADDRDELTA compute_base_index_addr_contribution(
-  const PIN_REGISTER& vector_index_reg_val, const UINT32 lane_id,
-  gather_scatter_info* info) {
+ADDRDELTA compute_base_index_addr_contribution(const PINTOOL_REGISTER& vector_index_reg_val, const UINT32 lane_id,
+                                               gather_scatter_info* info) {
   ADDRDELTA index_val;
   switch(info->get_index_lane_width_bytes()) {
     case 4:
@@ -464,8 +597,7 @@ PIN_MEMOP_ENUM type_to_PIN_MEMOP_ENUM(gather_scatter_info* info) {
   }
 }
 
-bool extract_mask_on(const PIN_REGISTER& mask_reg_val_buf, const UINT32 lane_id,
-                     gather_scatter_info* info) {
+bool extract_mask_on(const PINTOOL_REGISTER& mask_reg_val_buf, const UINT32 lane_id, gather_scatter_info* info) {
   bool   mask_on  = false;
   UINT64 msb_mask = ((UINT64)1) << (info->get_data_lane_width_bytes() * 8 - 1);
 

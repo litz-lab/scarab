@@ -101,7 +101,9 @@ inline bool operator<(const FT_Info_Static& a, const FT_Info_Static& b) {
 // to `class` since the definition uses explicit access specifiers.
 struct FT {
  public:
+  FT() = default;  // only used as the reset template in reinit()
   FT(uns _proc_id, uns _bp_id);
+  FT& operator=(const FT&) = default;
   ~FT();
   void add_op(Op* op);
   bool can_fetch_op();
@@ -149,13 +151,34 @@ struct FT {
   FT_Info ft_info = {};
   bool is_prebuilt = false;
   std::vector<Op*> ops = {};
+  Dynamic_Inst* building_dyn_inst = nullptr;  // macro instance currently being grouped in add_op
+  FT* pool_next = nullptr;                    // pool free-list link (valid only while recycled)
+  void reinit(uns _proc_id, uns _bp_id);      // reset to the just-constructed state, keeping ops' capacity
+  void release_ops();                         // free the ops this FT owns (shared by ~FT and the pool)
   FT_Event predict_op_ft_event(Op* op, Bp_Pred_Level pred_level);
   void generate_ft_info();
   // Common helper used by recovery/exec-recovery trimming paths.
   // Only touches unread ops [op_pos, end) from the back (youngest first).
   void trim_unread_tail(const std::function<bool(Op*)>& should_remove);
   friend struct Decoupled_FE;
+  friend FT* alloc_ft(uns proc_id, uns bp_id);
+  friend void free_ft(FT* ft);
 };
+
+/* One FT is built per fetch target -- on gcc_r that is roughly one per two simulated instructions,
+   most of them off path -- so allocating an FT and growing its ops vector was a large share of the
+   simulator's malloc traffic. FTs are recycled through a free list instead: the vector keeps its
+   capacity across uses, so a warmed-up pool allocates nothing per FT. */
+FT* alloc_ft(uns proc_id, uns bp_id);
+void free_ft(FT* ft);
+
+/* A recycled FT has to come back in the same state a fresh one would be in, and a hand-written
+   reset silently goes stale the moment someone adds a member -- the failure mode being stale state
+   leaking into the next FT, which shows up as drift rather than as a crash. reinit() therefore lets
+   the compiler do it (assign from a default-constructed FT) and only names what is deliberately
+   carried over, and this check fails the build if the layout changes so the carried-over list gets
+   re-examined. */
+static_assert(sizeof(FT) == 112, "FT layout changed -- re-check what FT::reinit() carries over");
 
 #endif  // __cplusplus
 

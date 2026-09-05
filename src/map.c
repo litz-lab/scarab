@@ -218,7 +218,7 @@ void rebuild_offpath_map() {
   /* rebuild the map starting with the first offpath op */
   for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
     update_map(*op_p);
-    if ((*op_p)->inst_info->table_info.mem_type == MEM_ST) {
+    if ((*op_p)->uop->mem_type == MEM_ST) {
       update_store_hash(*op_p);
     }
   }
@@ -265,8 +265,8 @@ void map_op(Op* op) {
 static inline void read_reg_map(Op* op) {
   uns ii;
 
-  for (ii = 0; ii < op->inst_info->table_info.num_src_regs; ii++) {
-    uns id = op->inst_info->srcs[ii].id;
+  for (ii = 0; ii < op->uop->num_src_regs; ii++) {
+    uns id = op->uop->srcs[ii].id;
     ASSERT(map_data->proc_id, id < NUM_REG_IDS);
 
     uns ind = id << 1 | map_data->map_flags[id];
@@ -291,7 +291,7 @@ static inline void read_store_map(Op* op) {
   if (!MEM_OBEY_STORE_DEP || MEM_OOO_STORES)
     return;
 
-  if (op->inst_info->table_info.mem_type) {
+  if (op->uop->mem_type) {
     uns ind = map_data->last_store_flag;
     Map_Entry* map_entry = &map_data->last_store[ind];
 
@@ -311,8 +311,8 @@ static inline void update_map(Op* op) {
 
   ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
   /* update the register map if the op produces a value */
-  for (ii = 0; ii < op->inst_info->table_info.num_dest_regs; ii++) {
-    uns id = op->inst_info->dests[ii].id;
+  for (ii = 0; ii < op->uop->num_dest_regs; ii++) {
+    uns id = op->uop->dests[ii].id;
     ASSERT(map_data->proc_id, id < NUM_REG_IDS);
 
     uns ind = id << 1 | op->off_path;
@@ -328,7 +328,7 @@ static inline void update_map(Op* op) {
   }
 
   /* update the map if the op is a store */
-  if (op->inst_info->table_info.mem_type == MEM_ST) {
+  if (op->uop->mem_type == MEM_ST) {
     uns ind = op->off_path;
     Map_Entry* map_entry = &map_data->last_store[ind];
 
@@ -359,9 +359,9 @@ inline void update_map_entry(Op* op, Map_Entry* map_entry) {
 void map_mem_dep(Op* op) {
   if (!MEM_OBEY_STORE_DEP)
     return;
-  if (op->inst_info->table_info.mem_type == MEM_ST)
+  if (op->uop->mem_type == MEM_ST)
     update_store_hash(op);
-  if (op->inst_info->table_info.mem_type == MEM_LD)
+  if (op->uop->mem_type == MEM_LD)
     add_store_deps(op);
 }
 
@@ -477,8 +477,7 @@ static inline Op* add_store_deps(Op* op) {
         src_op->marked = TRUE;  // mark op to avoid adding duplicate sources
         STAT_EVENT(op->proc_id, FORWARDED_LD);
         DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d  op:%s  src:%s\n",
-              unsstr64(op->op_num), unsstr64(src_op->op_num), op->num_srcs - 1, op->inst_info->table_info.name,
-              src_op->inst_info->table_info.name);
+              unsstr64(op->op_num), unsstr64(src_op->op_num), op->num_srcs - 1, op->inst->name, src_op->inst->name);
       }
       if (!last_src_op || last_src_op->op_num < src_op->op_num) { /* take latest store dependency only */
         last_src_op = src_op;
@@ -502,8 +501,7 @@ static inline Op* add_store_deps(Op* op) {
     op_sources_add(op, MEM_DATA_DEP, last_src_op, last_src_op->op_num, last_src_op->unique_num);
     STAT_EVENT(op->proc_id, FORWARDED_LD);
     DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d  op:%s  src:%s\n", unsstr64(op->op_num),
-          unsstr64(last_src_op->op_num), op->num_srcs - 1, op->inst_info->table_info.name,
-          last_src_op->inst_info->table_info.name);
+          unsstr64(last_src_op->op_num), op->num_srcs - 1, op->inst->name, last_src_op->inst->name);
   }
   return last_src_op;
 }
@@ -611,8 +609,8 @@ void add_to_wake_up_lists(Op* op, void (*wake_action)(Op*, Op*, uns)) {
       Wake_Up_Entry* wake;
 
       ASSERTM(op->proc_id, op->proc_id == src_op->proc_id,
-              "op num: %llu fetch: %llu, src_op num: %llu unique: %llu fetch: %llu\n", op->op_num, op->fetch_cycle,
-              src_op->op_num, src_op->unique_num, src_op->fetch_cycle);
+              "op num: %llu fetch: %llu, src_op num: %llu unique: %llu fetch: %llu\n", op->op_num,
+              op_get_fetch_cycle(op), src_op->op_num, src_op->unique_num, op_get_fetch_cycle(src_op));
 
       if (map_data->free_list_head == NULL) {
         ASSERT(map_data->proc_id, map_data->active_wake_up_entries == map_data->wake_up_entries);
@@ -696,9 +694,9 @@ void simple_wake(Op* src_op, Op* dep_op, uns rdy_bit) {
   ASSERT(src_op->proc_id, src_op && src_op != &invalid_op);
   ASSERT(src_op->proc_id, dep_op && dep_op != &invalid_op);
   UNUSED(rdy_bit);
-  dep_op->rdy_cycle = MAX2(dep_op->rdy_cycle, src_op->wake_cycle);
+  op_set_rdy_cycle(dep_op, MAX2(op_get_rdy_cycle(dep_op), op_get_wake_cycle(src_op)));
   if (op_sources_not_rdy_is_clear(dep_op))
-    dep_op->state = dep_op->rdy_cycle == cycle_count + 1 ? OS_READY : OS_WAIT_FWD;
+    dep_op->state = op_get_rdy_cycle(dep_op) == cycle_count + 1 ? OS_READY : OS_WAIT_FWD;
 }
 
 /**************************************************************************************/

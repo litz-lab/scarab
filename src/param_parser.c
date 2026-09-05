@@ -68,6 +68,9 @@ the program.  This way, an exact duplicate run can be performed.
 
 #define ARG_FILE_OUT "PARAMS" /* the name of the parameter dump file */
 
+/* param_parser uses a soft ASSERTM (print + exit(0)) for user-facing parse
+ * errors; undef the global one (now pulled in via op.h -> globals/assert.h). */
+#undef ASSERTM
 #define ASSERTM(proc_id, cond, ...) \
   if (!(cond)) {                    \
     printf(__VA_ARGS__);            \

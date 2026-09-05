@@ -49,7 +49,6 @@
 
 */
 
-DEF_PARAM(pref_stridepc_on                , PREF_STRIDEPC_ON              , Flag   , Flag      , FALSE       ,      ) 
 DEF_PARAM(debug_pref_stridepc             , DEBUG_PREF_STRIDEPC           , Flag   , Flag      , FALSE       ,      ) 
 // the size of the stridepc table
 DEF_PARAM(pref_stridepc_table_n           , PREF_STRIDEPC_TABLE_N         , uns    , uns       , 1024        ,      ) 

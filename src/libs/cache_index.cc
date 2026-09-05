@@ -219,7 +219,7 @@ static void entropy_index_remap_one_set(Cache* cache) {
 
 struct Csv_Index_State_struct {
   std::unordered_map<Addr, uns> addr_to_set;
-  uns last_set; /* default set for unlisted addresses */
+  uns last_set = 0; /* default set for unlisted addresses */
 };
 
 /* Trim leading/trailing ASCII whitespace from s. */

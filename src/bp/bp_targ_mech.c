@@ -521,6 +521,7 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Flag lru = FALSE;
 
   op->btb_pred_info->btb_index_addr = op->inst->addr;
+  STAT_EVENT(op->proc_id, BTB_INDEX_LOW_0 + (op->inst->addr & 63)); /* low 6 bits */
 
   if (BTB_L0_PRESENT) {
     uns bank_id = get_btb_bank_id(BTB_L0_BANKS, op->inst->addr, &intra_bank_addr);
@@ -677,6 +678,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
 
   // Store index for update
   op->btb_pred_info->btb_index_addr = btb_index_addr;
+  STAT_EVENT(op->proc_id, BTB_INDEX_LOW_0 + (btb_index_addr & 63)); /* low 6 bits */
 
   // Prepare for next BTB lookup
   bp_data->prev_cf_btb_index_addr = btb_index_addr;
@@ -883,6 +885,7 @@ void bp_btb_block_split_pred(Bp_Data* bp_data, Op* op) {
   // Store index for update. This is the block anchor, not the chained entry where op is found.
   op->btb_pred_info->btb_index_addr = btb_index_addr;
   ASSERT(bp_data->proc_id, op->inst->inst_size > 0);
+  STAT_EVENT(op->proc_id, BTB_INDEX_LOW_0 + (btb_index_addr & 63)); /* low 6 bits */
 
   // Prepare for next BTB lookup
   bp_data->prev_cf_btb_index_addr = btb_index_addr;

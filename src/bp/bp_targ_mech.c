@@ -521,7 +521,6 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Flag lru = FALSE;
 
   op->btb_pred_info->btb_index_addr = op->inst->addr;
-  STAT_EVENT(op->proc_id, BTB_INDEX_LOW_0 + (op->inst->addr & 63)); /* low 6 bits */
 
   if (BTB_L0_PRESENT) {
     uns bank_id = get_btb_bank_id(BTB_L0_BANKS, op->inst->addr, &intra_bank_addr);
@@ -576,6 +575,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
                 hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
+      STAT_EVENT(op->proc_id, BTB_INDEX_LOW_UPDATE_0 + (fetch_addr & 63));
       STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
 
       btb_line = (Addr*)cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing, TRUE);
@@ -594,6 +594,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
     // or For indirects we want to update the BTB if the target changes, even on btb hit
     // The detection relies on the target stored in the btb
 
+    STAT_EVENT(op->proc_id, BTB_INDEX_LOW_UPDATE_0 + (fetch_addr & 63));
     btb_line = (Addr*)cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing,
                                         BTB_OFF_PATH_WRITES || !op->off_path);
 
@@ -678,7 +679,6 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
 
   // Store index for update
   op->btb_pred_info->btb_index_addr = btb_index_addr;
-  STAT_EVENT(op->proc_id, BTB_INDEX_LOW_0 + (btb_index_addr & 63)); /* low 6 bits */
 
   // Prepare for next BTB lookup
   bp_data->prev_cf_btb_index_addr = btb_index_addr;
@@ -720,6 +720,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  btb addr:0x%s  op addr:0x%s  target:0x%s\n", hexstr64s(btb_index_addr),
                 hexstr64s(op->inst->addr), hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
+      STAT_EVENT(op->proc_id, BTB_INDEX_LOW_UPDATE_0 + (btb_index_addr & 63));
 
       Blk_Btb_BrSlot br_slot;
       br_slot.addr = op->inst->addr;
@@ -885,7 +886,6 @@ void bp_btb_block_split_pred(Bp_Data* bp_data, Op* op) {
   // Store index for update. This is the block anchor, not the chained entry where op is found.
   op->btb_pred_info->btb_index_addr = btb_index_addr;
   ASSERT(bp_data->proc_id, op->inst->inst_size > 0);
-  STAT_EVENT(op->proc_id, BTB_INDEX_LOW_0 + (btb_index_addr & 63)); /* low 6 bits */
 
   // Prepare for next BTB lookup
   bp_data->prev_cf_btb_index_addr = btb_index_addr;
@@ -985,6 +985,7 @@ void bp_btb_block_split_update(Bp_Data* bp_data, Op* op) {
     STAT_EVENT_BTB_BANK(op->proc_id, MAIN, INSERT, 0);
     entry = (Blk_Btb_Split_Entry*)cache_insert(bp_data->btb, bp_data->proc_id, entry_index_addr, &btb_line_addr,
                                                &repl_line_addr);
+    STAT_EVENT(op->proc_id, BTB_INDEX_LOW_UPDATE_0 + (entry_index_addr & 63));
     blk_btb_split_reset_entry(entry);
     entry->brslots[0] = brslot_fwd;
     blk_btb_split_assert_entry(bp_data->proc_id, entry, entry_index_addr);
@@ -1059,6 +1060,8 @@ void bp_btb_block_split_update(Bp_Data* bp_data, Op* op) {
     if (ii == BTB_NUM_BRSLOT) {
       // Fell off the end: every slot was valid and below brslot_new, so it goes to the next entry.
       need_split = TRUE;
+    } else if (brslot_new.addr == op->inst->addr) {
+      STAT_EVENT(op->proc_id, BTB_INDEX_LOW_UPDATE_0 + (entry_index_addr & 63));
     }
 
     // Assert post-condition on the entry we just rewrote to catch a bad shift, insert or overlap-drop.

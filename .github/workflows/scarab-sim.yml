@@ -38,7 +38,7 @@ on:
       infra_ref:
         description: scarab-infra ref to test. Callers in scarab-infra pass their own sha.
         required: false
-        default: refs/heads/main
+        default: main
         type: string
     outputs:
       ipc:

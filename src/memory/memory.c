@@ -295,7 +295,19 @@ void init_memory() {
   init_mem_req_type_priorities();
 
   /* Initialize request buffers */
-  mem->total_mem_req_buffers = MEM_REQ_BUFFER_ENTRIES * (PRIVATE_MSHR_ON ? NUM_CORES : 1);
+  uns mlc_queue_size = QUEUE_MLC_SIZE ? QUEUE_MLC_SIZE : MEM_REQ_BUFFER_ENTRIES;
+  uns l1_queue_size = QUEUE_L1_SIZE ? QUEUE_L1_SIZE : MEM_REQ_BUFFER_ENTRIES;
+  /* With per-level MSHR files the request buffer is not a resource of its own: a
+     request holds an entry for as long as it holds an MSHR at any level, so the
+     buffer has to cover every level at once. Taking mem_req_buffer_entries
+     instead left the two levels' 64 MSHRs sharing 32 entries, which made the
+     buffer the bottleneck rather than the levels it is meant to track. */
+  mem->req_buffers_per_core = HIER_MSHR_ON ? mlc_queue_size + l1_queue_size : MEM_REQ_BUFFER_ENTRIES;
+  mem->total_mem_req_buffers = mem->req_buffers_per_core * (PRIVATE_MSHR_ON ? NUM_CORES : 1);
+  /* Record it: the derived size is not a parameter, so PARAMS.out still shows
+     mem_req_buffer_entries, which is no longer what the buffer is. */
+  fprintf(mystdout, "MEM_REQ_BUFFER: %u entries per core (mlc_queue %u + l1_queue %u)\n", mem->req_buffers_per_core,
+          mlc_queue_size, l1_queue_size);
   mem->req_buffer = (Mem_Req*)calloc(mem->total_mem_req_buffers, sizeof(Mem_Req));
   for (ii = 0; ii < mem->total_mem_req_buffers; ii++) {
     mem->req_buffer[ii].state = MRS_INV;
@@ -319,10 +331,9 @@ void init_memory() {
   }
 
   /* Initialize l1 and bus access queues which hold id's of request buffers */
-  init_mem_queue(&mem->mlc_queue, "MLC_QUEUE", QUEUE_MLC_SIZE == 0 ? mem->total_mem_req_buffers : QUEUE_MLC_SIZE,
-                 QUEUE_MLC);
+  init_mem_queue(&mem->mlc_queue, "MLC_QUEUE", mlc_queue_size, QUEUE_MLC);
   init_mem_queue(&mem->mlc_fill_queue, "MLC_FILL_QUEUE", mem->total_mem_req_buffers, QUEUE_MLC_FILL);
-  init_mem_queue(&mem->l1_queue, "L1_QUEUE", QUEUE_L1_SIZE == 0 ? mem->total_mem_req_buffers : QUEUE_L1_SIZE, QUEUE_L1);
+  init_mem_queue(&mem->l1_queue, "L1_QUEUE", l1_queue_size, QUEUE_L1);
   init_mem_queue(&mem->bus_out_queue, "BUS_OUT_QUEUE",
                  QUEUE_BUS_OUT_SIZE == 0 ? mem->total_mem_req_buffers : QUEUE_BUS_OUT_SIZE, QUEUE_BUS_OUT);
   init_mem_queue(&mem->l1fill_queue, "L1FILL_QUEUE", mem->total_mem_req_buffers, QUEUE_L1FILL);
@@ -653,7 +664,7 @@ void print_req_buffer() {
   fprintf(stdout, "REQ_BUFFER --- cycle: %s\n", unsstr64(cycle_count));
   fprintf(stdout, "------------------------------------------------------\n");
 
-  for (int reqbuf_id = 0; reqbuf_id < MEM_REQ_BUFFER_ENTRIES; reqbuf_id++) {
+  for (uns reqbuf_id = 0; reqbuf_id < mem->total_mem_req_buffers; reqbuf_id++) {
     req = &(mem->req_buffer[reqbuf_id]);
     fprintf(stdout,
             ": q:%s reqbuf:%d index:%d st:%s type:%s pri:%s beg:%s "
@@ -3088,7 +3099,7 @@ Flag mem_can_allocate_req_buffer(uns proc_id, Mem_Req_Type type, Flag for_l1_wri
 
   if (type == MRT_IPRF || type == MRT_DPRF || type == MRT_UOCPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF ||
       type == MRT_FDIPPRFALT) {
-    if (PRIVATE_MSHR_ON && mem->num_req_buffers_per_core[proc_id] + watermark >= MEM_REQ_BUFFER_ENTRIES) {
+    if (PRIVATE_MSHR_ON && mem->num_req_buffers_per_core[proc_id] + watermark >= mem->req_buffers_per_core) {
       return FALSE;
     } else if (!PRIVATE_MSHR_ON && mem->req_buffer_free_list.count <= watermark) {
       return FALSE;
@@ -3096,7 +3107,8 @@ Flag mem_can_allocate_req_buffer(uns proc_id, Mem_Req_Type type, Flag for_l1_wri
   }
 
   if (type != MRT_WB && type != MRT_WB_NODIRTY) {
-    if (PRIVATE_MSHR_ON && mem->num_req_buffers_per_core[proc_id] + MEM_REQ_BUFFER_WB_VALVE >= MEM_REQ_BUFFER_ENTRIES) {
+    if (PRIVATE_MSHR_ON &&
+        mem->num_req_buffers_per_core[proc_id] + MEM_REQ_BUFFER_WB_VALVE >= mem->req_buffers_per_core) {
       return FALSE;
     } else if (!PRIVATE_MSHR_ON && mem->req_buffer_free_list.count <= MEM_REQ_BUFFER_WB_VALVE) {
       return FALSE;
@@ -3107,7 +3119,7 @@ Flag mem_can_allocate_req_buffer(uns proc_id, Mem_Req_Type type, Flag for_l1_wri
   // be space for a L1 (i.e., LLC) writeback, since this is the only type of
   // request that is guaranteed not to cause additional write backs (and hence
   // guaranteed to not require additional mem_req entries)
-  if (PRIVATE_MSHR_ON && mem->num_req_buffers_per_core[proc_id] + 1 >= MEM_REQ_BUFFER_ENTRIES) {
+  if (PRIVATE_MSHR_ON && mem->num_req_buffers_per_core[proc_id] + 1 >= mem->req_buffers_per_core) {
     if (!for_l1_writeback) {
       return FALSE;
     } else {
@@ -3123,8 +3135,8 @@ Flag mem_can_allocate_req_buffer(uns proc_id, Mem_Req_Type type, Flag for_l1_wri
   }
 
   if (PRIVATE_MSHR_ON) {
-    ASSERT(proc_id, mem->num_req_buffers_per_core[proc_id] <= MEM_REQ_BUFFER_ENTRIES);
-    if (mem->num_req_buffers_per_core[proc_id] == MEM_REQ_BUFFER_ENTRIES)
+    ASSERT(proc_id, mem->num_req_buffers_per_core[proc_id] <= mem->req_buffers_per_core);
+    if (mem->num_req_buffers_per_core[proc_id] == mem->req_buffers_per_core)
       return FALSE;
   }
 
@@ -4951,6 +4963,10 @@ L1_Data* l1_pref_cache_access(Mem_Req* req) {
 
 int mem_get_req_count(uns proc_id) {
   return mem->num_req_buffers_per_core[proc_id];
+}
+
+uns mem_get_req_buffer_size(void) {
+  return mem->req_buffers_per_core;
 }
 
 /**************************************************************************************/

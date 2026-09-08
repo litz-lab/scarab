@@ -144,20 +144,6 @@ jobs:
           trace_home: ${{ github.workspace }}/traces_top_simpoint
         run: ./sci --lint-scarab ${{ inputs.sci_id }}
 
-      # The exec-driven workload needs its binary built first. Guarded on the
-      # flag being present, so this workflow works against a scarab-infra main
-      # that predates it.
-      - name: Setup Dhrystone
-        working-directory: infra
-        env:
-          trace_home: ${{ github.workspace }}/traces_top_simpoint
-        run: |
-          if ./sci --help 2>/dev/null | grep -q -- --setup-dhrystone; then
-            ./sci --setup-dhrystone ${{ inputs.sci_id }}
-          else
-            echo "scarab-infra checkout has no --setup-dhrystone; skipping."
-          fi
-
       - name: Run scarab simulation
         working-directory: infra
         env:

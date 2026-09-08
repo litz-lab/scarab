@@ -1621,9 +1621,11 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
         }
 
         // bus_out_seq_num++;
-        if (HIER_MSHR_ON && (req->type != MRT_WB) && (req->type != MRT_WB_NODIRTY)) {
-          (*reserved_entry_count) += 1;  // writebacks are not reserved (they
-                                         // never come back)
+        /* Only once the send succeeded: a rejected request stays in the l1_queue and
+           comes back next cycle, so reserving here would take a second entry for it
+           every retry. Writebacks are never reserved, they do not come back. */
+        if (HIER_MSHR_ON && l1_miss_access && (req->type != MRT_WB) && (req->type != MRT_WB_NODIRTY)) {
+          (*reserved_entry_count) += 1;
           req->reserved_entry_count += 1;
           req->reserved_levels |= MEM_RES_L1;
         }

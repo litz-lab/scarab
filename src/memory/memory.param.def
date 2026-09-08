@@ -181,12 +181,16 @@ DEF_PARAM(mem_priority_wb_nodirty, MEM_PRIORITY_WB_NODIRTY, uns, uns, 0, )
 DEF_PARAM(promote_to_higher_priority_mem_req_type,
           PROMOTE_TO_HIGHER_PRIORITY_MEM_REQ_TYPE, Flag, Flag, FALSE, )
 
-// if there are fewer mem req buffer entries than the watermark, prefetches are
-// rejected (otherwise demands can get delayed) alternative is kicking out
-// prefetches
-DEF_PARAM(mem_req_buffer_pref_watermark, MEM_REQ_BUFFER_PREF_WATERMARK, uns,
+// Request-buffer entries held in reserve so one class cannot starve another:
+// demand_reserve is withheld from prefetches, wb_reserve from everything except
+// writebacks. queue_wb_reserve applies the same rule per queue.
+DEF_PARAM(mem_req_buffer_demand_reserve, MEM_REQ_BUFFER_DEMAND_RESERVE, uns,
           uns, 0, )
-DEF_PARAM(mem_req_buffer_wb_valve, MEM_REQ_BUFFER_WB_VALVE, uns, uns, 2, )
+DEF_PARAM(mem_req_buffer_wb_reserve, MEM_REQ_BUFFER_WB_RESERVE, uns, uns, 2, )
+
+// Queue entries held in reserve for writebacks, as the mem_req_buffer_*_reserve
+// parameters do for the request buffer. Carved out of the configured size; 0 disables.
+DEF_PARAM(queue_wb_reserve, QUEUE_WB_RESERVE, uns, uns, 2, )
 
 // l1_queue size is the same as mem_req_buffer_entries
 // FOR independently sized queues beyond the l1
@@ -326,7 +330,7 @@ DEF_PARAM(l1_shadow_tags_modulo, L1_SHADOW_TAGS_MODULO, uns, uns, 1, )
 // L1 partitioning done
 
 // Hierarchical MSHR behavior for MLC and L1 queues
-DEF_PARAM(hier_mshr_on, HIER_MSHR_ON, Flag, Flag, FALSE, )
+DEF_PARAM(hier_mshr_on, HIER_MSHR_ON, Flag, Flag, TRUE, )
 
 DEF_PARAM(perf_pred_enable, PERF_PRED_ENABLE, Flag, Flag, FALSE, )
 DEF_PARAM(perf_pred_mech, PERF_PRED_MECH, uns, Perf_Pred_Mech, PERF_PRED_CP, )

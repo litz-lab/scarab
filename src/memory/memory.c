@@ -3094,26 +3094,23 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
 /**************************************************************************************/
 /* mem_can_allocate_req_buffer: */
 
+/* Entries held in reserve: a request outside the reserved class is refused once
+   free space falls to the reserve. Same rule queue_full_for_req() applies to the
+   queues. Signed on the free-list side, which is an int. */
+static inline Flag req_buffer_reserved(uns proc_id, uns reserve) {
+  if (PRIVATE_MSHR_ON)
+    return mem->num_req_buffers_per_core[proc_id] + reserve >= mem->req_buffers_per_core;
+  return mem->req_buffer_free_list.count <= (int)reserve;
+}
+
 Flag mem_can_allocate_req_buffer(uns proc_id, Mem_Req_Type type, Flag for_l1_writeback) {
-  Counter watermark = MEM_REQ_BUFFER_PREF_WATERMARK;
+  if ((type == MRT_IPRF || type == MRT_DPRF || type == MRT_UOCPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF ||
+       type == MRT_FDIPPRFALT) &&
+      req_buffer_reserved(proc_id, MEM_REQ_BUFFER_DEMAND_RESERVE))
+    return FALSE;
 
-  if (type == MRT_IPRF || type == MRT_DPRF || type == MRT_UOCPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF ||
-      type == MRT_FDIPPRFALT) {
-    if (PRIVATE_MSHR_ON && mem->num_req_buffers_per_core[proc_id] + watermark >= mem->req_buffers_per_core) {
-      return FALSE;
-    } else if (!PRIVATE_MSHR_ON && mem->req_buffer_free_list.count <= watermark) {
-      return FALSE;
-    }
-  }
-
-  if (type != MRT_WB && type != MRT_WB_NODIRTY) {
-    if (PRIVATE_MSHR_ON &&
-        mem->num_req_buffers_per_core[proc_id] + MEM_REQ_BUFFER_WB_VALVE >= mem->req_buffers_per_core) {
-      return FALSE;
-    } else if (!PRIVATE_MSHR_ON && mem->req_buffer_free_list.count <= MEM_REQ_BUFFER_WB_VALVE) {
-      return FALSE;
-    }
-  }
+  if (type != MRT_WB && type != MRT_WB_NODIRTY && req_buffer_reserved(proc_id, MEM_REQ_BUFFER_WB_RESERVE))
+    return FALSE;
 
   // to ensure deadlock freedom, we need to make sure that there will at least
   // be space for a L1 (i.e., LLC) writeback, since this is the only type of
@@ -3652,7 +3649,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   } else {
     if (queue_full_for_req(&mem->l1_queue, type) ||
         ((type == MRT_IPRF || type == MRT_DPRF) &&
-         queue_num_free(&mem->l1_queue) <= (int)MEM_REQ_BUFFER_PREF_WATERMARK)) {
+         queue_num_free(&mem->l1_queue) <= (int)MEM_REQ_BUFFER_DEMAND_RESERVE)) {
       STAT_EVENT(proc_id, REJECTED_QUEUE_L1);
       return FALSE;
     }

@@ -82,6 +82,7 @@ jobs:
         working-directory: infra
         env:
           trace_home: ${{ github.workspace }}/traces_top_simpoint
+          application_home: ${{ github.workspace }}
         run: ./sci --ci-init
 
       - name: Locate scarabinfra conda env

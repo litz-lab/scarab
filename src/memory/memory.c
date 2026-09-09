@@ -4051,13 +4051,6 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
                                         ramulator_match));
   }
 
-  // TODO: obsolete now that we don't have a bus_out queue after Ramulator integration
-  /* Step 2.5: Check if there is space in the bus_out queue */
-  if (queue_full_for_req(&mem->bus_out_queue, type)) {
-    STAT_EVENT(proc_id, REJECTED_QUEUE_BUS_OUT);
-    return FALSE;
-  }
-
   /* Step 3: Not already in request buffer. Figure out if a free request buffer
    * exists */
 

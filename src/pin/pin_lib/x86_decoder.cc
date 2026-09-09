@@ -789,6 +789,12 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_ADD]      = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_ADDPD]    = {OP_FADD, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_ADDPS]    = {OP_FADD, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_HADDPS]   = {OP_FADD, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_HADDPD]   = {OP_FADD, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_HSUBPS]   = {OP_FADD, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_HSUBPD]   = {OP_FADD, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_PHADDD]   = {OP_IADD, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_PHADDW]   = {OP_IADD, 2, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_ADDSD]    = {OP_FADD, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_ADDSS]    = {OP_FADD, 4, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_ADDSUBPD] = {OP_FADD, 8, -1, NONE};

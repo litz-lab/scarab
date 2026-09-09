@@ -82,7 +82,6 @@ jobs:
         working-directory: infra
         env:
           trace_home: ${{ github.workspace }}/traces_top_simpoint
-          application_home: ${{ github.workspace }}
         run: ./sci --ci-init
 
       - name: Locate scarabinfra conda env
@@ -125,6 +124,18 @@ jobs:
           d["scarab_path"] = os.environ["GITHUB_WORKSPACE"] + "/"
           d["root_dir"] = os.environ["GITHUB_WORKSPACE"] + "/"
           d["traces_dir"] = os.environ["GITHUB_WORKSPACE"] + "/traces_top_simpoint"
+          # Cover the exec-driven frontend too. Which simulations CI runs is CI's
+          # business, so it is declared here rather than in scarab-infra's
+          # descriptor; the workload's program is installed into application_dir
+          # by the step below.
+          d["simulations"].append({
+              "suite": "dhrystone",
+              "subsuite": "dhrystone",
+              "workload": "dhrystone",
+              "cluster_id": 0,
+              "simulation_type": "exec",
+              "warmup": 1000000,
+          })
           src.write_text(json.dumps(d, indent=2, separators=(',', ':')) + "\n")
           PY
         env:
@@ -144,6 +155,15 @@ jobs:
         env:
           trace_home: ${{ github.workspace }}/traces_top_simpoint
         run: ./sci --lint-scarab ${{ inputs.sci_id }}
+
+      # The exec-driven workload's program is a local directory the descriptor
+      # points at, exactly as SPEC is on a lab machine. A runner has no such
+      # tree, so put one here: application_dir is patched to the workspace.
+      - name: Install exec-driven application binaries
+        run: |
+          wget -q https://github.com/litz-lab/scarab-infra/releases/download/dhrystone-2.1/dhrystone-2.1-x86_64-static.tar.gz -O "$RUNNER_TEMP/dhrystone.tar.gz"
+          tar -xzf "$RUNNER_TEMP/dhrystone.tar.gz" -C "$GITHUB_WORKSPACE"
+          rm -f "$RUNNER_TEMP/dhrystone.tar.gz"
 
       - name: Run scarab simulation
         working-directory: infra

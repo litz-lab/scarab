@@ -282,4 +282,6 @@ extern Freq_Domain_Id FREQ_DOMAIN_CHIP;
 extern Freq_Domain_Id FREQ_DOMAIN_MEMORY;
 extern Counter mem_seq_num;
 
+Flag mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, Flag seen_prefetch);
+
 #endif /* #ifndef __MEMORY_H__*/

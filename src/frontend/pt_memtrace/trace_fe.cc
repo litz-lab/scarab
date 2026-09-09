@@ -272,42 +272,38 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
         op->exit = TRUE;
       } else {
         uint64_t addr = next_onpath_pi[proc_id].instruction_addr;
-        auto find = pc_to_inst[proc_id].find(addr);
-        if (find == pc_to_inst[proc_id].end()) {
-          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+        auto it = pc_to_inst[proc_id].find(addr);
+        if (it == pc_to_inst[proc_id].end()) {
+          pc_to_inst[proc_id].emplace(addr, next_onpath_pi[proc_id]);
         } else if (next_onpath_pi[proc_id].encoding_is_new) {
           STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
-          pc_to_inst[proc_id].erase(addr);
-          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
-        } else if (next_onpath_pi[proc_id].inst_binary_lsb != find->second.inst_binary_lsb ||
-                   next_onpath_pi[proc_id].inst_binary_msb != find->second.inst_binary_msb) {
+          it->second = next_onpath_pi[proc_id];
+        } else if (next_onpath_pi[proc_id].inst_binary_lsb != it->second.inst_binary_lsb ||
+                   next_onpath_pi[proc_id].inst_binary_msb != it->second.inst_binary_msb) {
           DEBUG(proc_id, "Previously seen PC references new instruction addr:%lx inst_size:%i lsb:%lx msb:%lx\n ", addr,
                 next_onpath_pi[proc_id].size, next_onpath_pi[proc_id].inst_binary_lsb,
                 next_onpath_pi[proc_id].inst_binary_msb);
           // Handle jitted code
           STAT_EVENT(proc_id, INST_MAP_UPDATE_JITTED);
-          pc_to_inst[proc_id].erase(addr);
-          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
-        } else if (next_onpath_pi[proc_id].instruction_next_addr != find->second.instruction_next_addr) {
-          ASSERT(proc_id, next_onpath_pi[proc_id].op_type == find->second.op_type);
+          it->second = next_onpath_pi[proc_id];
+        } else if (next_onpath_pi[proc_id].instruction_next_addr != it->second.instruction_next_addr) {
+          ASSERT(proc_id, next_onpath_pi[proc_id].op_type == it->second.op_type);
           if (next_onpath_pi[proc_id].cf_type) {
-            ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == find->second.cf_type);
+            ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == it->second.cf_type);
             // This can fail for java pt traces
             // ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == CF_CBR ||
             //                 next_onpath_pi[proc_id].cf_type >= CF_IBR ||
             //                 next_onpath_pi[proc_id].last_inst_from_trace);
           }
           STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + next_onpath_pi[proc_id].op_type);
-          pc_to_inst[proc_id].erase(addr);
-          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
-        } else if (!ctype_pin_inst_same_mem_vaddr(next_onpath_pi[proc_id], find->second)) {
-          ASSERT(proc_id, next_onpath_pi[proc_id].op_type == find->second.op_type);
+          it->second = next_onpath_pi[proc_id];
+        } else if (!ctype_pin_inst_same_mem_vaddr(next_onpath_pi[proc_id], it->second)) {
+          ASSERT(proc_id, next_onpath_pi[proc_id].op_type == it->second.op_type);
           STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + next_onpath_pi[proc_id].op_type);
-          pc_to_inst[proc_id].erase(addr);
-          pc_to_inst[proc_id].insert(std::pair<uint64_t, ctype_pin_inst>(addr, next_onpath_pi[proc_id]));
+          it->second = next_onpath_pi[proc_id];
         } else {
           if (DEBUG_TRACE_READ && DEBUG_RANGE_COND(proc_id)) {
-            assert_ctype_pin_inst_same(proc_id, next_onpath_pi[proc_id], find->second);
+            assert_ctype_pin_inst_same(proc_id, next_onpath_pi[proc_id], it->second);
           }
         }
         // Poison the oracle memory addresses of the replay-buffer entry for this

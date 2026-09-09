@@ -3,7 +3,7 @@
 #
 
 from shutil import copy
-from os import mkdir
+from os import mkdir, remove
 from os import path
 import sys
 
@@ -19,6 +19,7 @@ if not path.exists(binPath):
     mkdir(binPath)
 
 data = []
+copied = set()
 with open(traceDir + '/bin/modules.log', 'r') as infile :
     separator = ', '
     first = 1
@@ -48,10 +49,17 @@ with open(traceDir + '/bin/modules.log', 'r') as infile :
             data.append(line);
             continue;
         libPath = s[col].strip()
-        copy(libPath, binPath)
         # Modify the path to the library to point to new, relative path
         libName = path.basename(libPath)
         newLibPath = path.abspath(binPath + libName)
+        # DynamoRIO emits one modules.log line per ELF segment, so the same module
+        # appears several times with an identical path. Copy each module only once
+        # per run (but remove leftovers from earlier runs) to avoid redundant copies.
+        if libPath not in copied:
+            if path.exists(newLibPath):
+                remove(newLibPath)
+            copy(libPath, newLibPath)
+            copied.add(libPath)
         s[col] = newLibPath + '\n'
         
         data.append(separator.join(s))

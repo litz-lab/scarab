@@ -57,7 +57,7 @@
 /* ===================================================================== */
 /* ===================================================================== */
 
-KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "",
+KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool", "scarab_pintool_out", "",
                             "specify file name for pintool output");
 
 KNOB<string> KnobSocketPath(KNOB_MODE_WRITEONCE, "pintool", "socket_path",

@@ -1031,7 +1031,14 @@ void FDIP::update() {
             STAT_EVENT(proc_id, FDIP_PREF_MSHR_PROBE_HIT_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
             DEBUG(proc_id, "[FDIP%u] Success to merge a prefetch for %llx\n", bp_id, line_addr);
           } else if (success == Mem_Queue_Req_Result::FAILED) {
-            ASSERT(proc_id, mem_req_buf_full);
+            // new_mem_req() refuses for two reasons: no free request-buffer entry,
+            // or the target queue is full (its Step 2.5 check, REJECTED_QUEUE_*).
+            // mem_req_buf_full only reflects the first, so a queue rejection is a
+            // legitimate failure -- this used to assert on it, which aborted any
+            // run with a queue sized smaller than the request buffer (e.g.
+            // hier_mshr_on with independent queue_*_size values). Count which
+            // resource ran out instead.
+            STAT_EVENT(proc_id, mem_req_buf_full ? FDIP_PREF_FAILED_REQ_BUF_FULL : FDIP_PREF_FAILED_QUEUE_FULL);
             STAT_EVENT(proc_id, FDIP_PREF_FAILED_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
             DEBUG(proc_id, "[FDIP%u] Failed to emit a prefetch for %llx\n", bp_id, line_addr);
           }

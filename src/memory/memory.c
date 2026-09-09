@@ -1355,7 +1355,10 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue
       ASSERT(req->proc_id, ALLOW_TYPE_MATCHES);
       ASSERT(req->proc_id, req->wb_requested_back);
       if (req->done_func(req)) {
-        mlc_fill_line(req);
+        if (!mlc_fill_line(req)) {
+          req->rdy_cycle = cycle_count + 1;
+          return FALSE;
+        }
         req->state = MRS_MLC_HIT_DONE;
         req->rdy_cycle = cycle_count + 1;
         mem_free_reqbuf(req);
@@ -1367,7 +1370,10 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue
       }
     } else {
       STAT_EVENT(req->proc_id, WB_MLC_MISS_FILL_MLC);  // CMP remove this later
-      mlc_fill_line(req);
+      if (!mlc_fill_line(req)) {
+        req->rdy_cycle = cycle_count + 1;
+        return FALSE;
+      }
       if (MLC_WRITE_THROUGH && req->type == MRT_WB) {
         req->state = MRS_L1_NEW;
         req->rdy_cycle = cycle_count + MLCQ_TO_L1Q_TRANSFER_LATENCY;
@@ -4485,59 +4491,6 @@ Flag mlc_fill_line(Mem_Req* req) {
   /* if (!get_write_port(&MLC(req->proc_id)->ports[req->mlc_bank])) return
    * FAILURE; */
 
-  // Put prefetches in the right position for replacement
-  // cmp FIXME prefetchers
-  if (req->type == MRT_DPRF || req->type == MRT_IPRF) {
-    mem->pref_replpos = INSERT_REPL_DEFAULT;
-    if (PREF_INSERT_LRU) {
-      mem->pref_replpos = INSERT_REPL_LRU;
-      STAT_EVENT(req->proc_id, PREF_REPL_LRU);
-    } else if (PREF_INSERT_MIDDLE) {
-      mem->pref_replpos = INSERT_REPL_MID;
-      STAT_EVENT(req->proc_id, PREF_REPL_MID);
-    } else if (PREF_INSERT_LOWQTR) {
-      mem->pref_replpos = INSERT_REPL_LOWQTR;
-      STAT_EVENT(req->proc_id, PREF_REPL_LOWQTR);
-    }
-    data = (MLC_Data*)cache_insert_replpos(&MLC(req->proc_id)->cache, req->proc_id, req->addr, &line_addr,
-                                           &repl_line_addr, mem->pref_replpos, TRUE);
-  } else {
-    data = (MLC_Data*)cache_insert(&MLC(req->proc_id)->cache, req->proc_id, req->addr, &line_addr, &repl_line_addr);
-  }
-  /* this will make it bring the line into the mlc and then modify it */
-  data->proc_id = req->proc_id;
-
-  /* Immediately set proc_id after cache_insert to avoid stale data issues.
-     The data area still contains values from the evicted line until we update them. */
-  data->proc_id = req->proc_id;
-
-  if (req->type == MRT_WB_NODIRTY || req->type == MRT_WB) {
-    STAT_EVENT(req->proc_id, MLC_WB_FILL);
-    STAT_EVENT(req->proc_id, CORE_MLC_WB_FILL);
-  } else {
-    STAT_EVENT(req->proc_id, MLC_FILL);
-    STAT_EVENT(req->proc_id, CORE_MLC_FILL);
-    INC_STAT_EVENT_ALL(TOTAL_MEM_LATENCY, cycle_count - req->mlc_miss_cycle);
-    INC_STAT_EVENT(req->proc_id, CORE_MEM_LATENCY, cycle_count - req->mlc_miss_cycle);
-
-    if (req->type != MRT_DPRF && req->type != MRT_IPRF && !req->demand_match_prefetch) {
-      STAT_EVENT(req->proc_id, MLC_DEMAND_FILL);
-      STAT_EVENT(req->proc_id, CORE_MLC_DEMAND_FILL);
-      INC_STAT_EVENT_ALL(TOTAL_MEM_LATENCY_DEMAND, cycle_count - req->mlc_miss_cycle);
-      INC_STAT_EVENT(req->proc_id, CORE_MEM_LATENCY_DEMAND, cycle_count - req->mlc_miss_cycle);
-    } else {
-      STAT_EVENT(req->proc_id, MLC_PREF_FILL);
-      STAT_EVENT(req->proc_id, CORE_MLC_PREF_FILL);
-      INC_STAT_EVENT_ALL(TOTAL_MEM_LATENCY_PREF, cycle_count - req->mlc_miss_cycle);
-      INC_STAT_EVENT(req->proc_id, CORE_MEM_LATENCY_PREF, cycle_count - req->mlc_miss_cycle);
-      if (req->demand_match_prefetch) {
-        STAT_EVENT(req->proc_id, CORE_MLC_PREF_FILL_PARTIAL_USED);
-        STAT_EVENT(req->proc_id, CORE_PREF_MLC_PARTIAL_USED);
-        STAT_EVENT_ALL(PREF_MLC_TOTAL_PARTIAL_USED);
-      }
-    }
-  }
-
   /* Do not insert the line yet, just check which line we
      need to replace. If that line is dirty, it's possible
      that we won't be able to insert the writeback into the
@@ -4548,8 +4501,8 @@ Flag mlc_fill_line(Mem_Req* req) {
 
   /* If we are replacing anything, check if we need to write it back */
   if (repl_line_valid) {
-    /* Note: data now points to the newly inserted line after cache_insert above.
-       For the evicted line's proc_id, we must extract it from repl_line_addr. */
+    /* data is the victim, from the probe above. Its proc_id comes from
+       repl_line_addr rather than the field, which cache_insert would overwrite. */
     uns repl_proc_id = get_proc_id_from_cmp_addr(repl_line_addr);
     if (!MLC_WRITE_THROUGH && data->dirty) {
       /* need to do a write-back */
@@ -4633,6 +4586,59 @@ Flag mlc_fill_line(Mem_Req* req) {
         STAT_EVENT(repl_proc_id, CORE_PREF_MLC_DEMAND_LATENCY400);
       else
         STAT_EVENT(repl_proc_id, CORE_PREF_MLC_DEMAND_LATENCY300);
+    }
+  }
+
+  // Put prefetches in the right position for replacement
+  // cmp FIXME prefetchers
+  if (req->type == MRT_DPRF || req->type == MRT_IPRF) {
+    mem->pref_replpos = INSERT_REPL_DEFAULT;
+    if (PREF_INSERT_LRU) {
+      mem->pref_replpos = INSERT_REPL_LRU;
+      STAT_EVENT(req->proc_id, PREF_REPL_LRU);
+    } else if (PREF_INSERT_MIDDLE) {
+      mem->pref_replpos = INSERT_REPL_MID;
+      STAT_EVENT(req->proc_id, PREF_REPL_MID);
+    } else if (PREF_INSERT_LOWQTR) {
+      mem->pref_replpos = INSERT_REPL_LOWQTR;
+      STAT_EVENT(req->proc_id, PREF_REPL_LOWQTR);
+    }
+    data = (MLC_Data*)cache_insert_replpos(&MLC(req->proc_id)->cache, req->proc_id, req->addr, &line_addr,
+                                           &repl_line_addr, mem->pref_replpos, TRUE);
+  } else {
+    data = (MLC_Data*)cache_insert(&MLC(req->proc_id)->cache, req->proc_id, req->addr, &line_addr, &repl_line_addr);
+  }
+  /* this will make it bring the line into the mlc and then modify it */
+  data->proc_id = req->proc_id;
+
+  /* Immediately set proc_id after cache_insert to avoid stale data issues.
+     The data area still contains values from the evicted line until we update them. */
+  data->proc_id = req->proc_id;
+
+  if (req->type == MRT_WB_NODIRTY || req->type == MRT_WB) {
+    STAT_EVENT(req->proc_id, MLC_WB_FILL);
+    STAT_EVENT(req->proc_id, CORE_MLC_WB_FILL);
+  } else {
+    STAT_EVENT(req->proc_id, MLC_FILL);
+    STAT_EVENT(req->proc_id, CORE_MLC_FILL);
+    INC_STAT_EVENT_ALL(TOTAL_MEM_LATENCY, cycle_count - req->mlc_miss_cycle);
+    INC_STAT_EVENT(req->proc_id, CORE_MEM_LATENCY, cycle_count - req->mlc_miss_cycle);
+
+    if (req->type != MRT_DPRF && req->type != MRT_IPRF && !req->demand_match_prefetch) {
+      STAT_EVENT(req->proc_id, MLC_DEMAND_FILL);
+      STAT_EVENT(req->proc_id, CORE_MLC_DEMAND_FILL);
+      INC_STAT_EVENT_ALL(TOTAL_MEM_LATENCY_DEMAND, cycle_count - req->mlc_miss_cycle);
+      INC_STAT_EVENT(req->proc_id, CORE_MEM_LATENCY_DEMAND, cycle_count - req->mlc_miss_cycle);
+    } else {
+      STAT_EVENT(req->proc_id, MLC_PREF_FILL);
+      STAT_EVENT(req->proc_id, CORE_MLC_PREF_FILL);
+      INC_STAT_EVENT_ALL(TOTAL_MEM_LATENCY_PREF, cycle_count - req->mlc_miss_cycle);
+      INC_STAT_EVENT(req->proc_id, CORE_MEM_LATENCY_PREF, cycle_count - req->mlc_miss_cycle);
+      if (req->demand_match_prefetch) {
+        STAT_EVENT(req->proc_id, CORE_MLC_PREF_FILL_PARTIAL_USED);
+        STAT_EVENT(req->proc_id, CORE_PREF_MLC_PARTIAL_USED);
+        STAT_EVENT_ALL(PREF_MLC_TOTAL_PARTIAL_USED);
+      }
     }
   }
 

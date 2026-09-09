@@ -2328,7 +2328,6 @@ DEF_STAT(  DRAM_ROW_BATCHES                                  , COUNT  , NO_RATIO
 
 DEF_STAT( REJECTED_QUEUE_MLC                                    , COUNT, NO_RATIO)
 DEF_STAT( REJECTED_QUEUE_L1                                     , COUNT, NO_RATIO)
-DEF_STAT( REJECTED_QUEUE_BUS_OUT                                , COUNT, NO_RATIO)
 
 // Performance prediction
 DEF_STAT(  LEADING_LOAD_LATENCY                              , RATIO  ,  NODE_CYCLE)

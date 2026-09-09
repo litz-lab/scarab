@@ -188,6 +188,7 @@ static void mem_clear_reqbuf(Mem_Req* req);
 static L1_Data* l1_pref_cache_access(Mem_Req* req);
 
 static inline Flag queue_full_for_req(Mem_Queue* queue, Mem_Req_Type type);
+static inline void mem_record_late_prefetch(Mem_Req* pref);
 static inline int queue_num_free(Mem_Queue* queue);
 
 Flag is_final_state(Mem_Req_State state);
@@ -1737,6 +1738,10 @@ static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_ent
           mem->mlc_queue.reserved_entry_count += 1;
           req->reserved_entry_count += 1;
           req->reserved_levels |= MEM_RES_MLC;
+          /* Same accounting the creation-time merge does: without this the descent
+             path folds demands into prefetches and reports no lateness at all. */
+          if (descent_pref && req->type != MRT_DPRF && req->type != MRT_IPRF)
+            mem_record_late_prefetch(descent_match);
           STAT_EVENT(req->proc_id, MEM_REQ_MERGED_L1_DESCENT);
           mem_merge_reqs(descent_match, req);
           mlc_queue_entry->priority = Mem_Req_Priority_Offset[MRT_MIN_PRIORITY];
@@ -2525,6 +2530,20 @@ Flag scan_stores(Addr addr, uns size) {
   return FAILURE;
 }
 
+/* A demand folded into an in-flight prefetch for the same line: the prefetch did not
+   arrive in time to have saved the miss. */
+static inline void mem_record_late_prefetch(Mem_Req* pref) {
+  if (pref->destination == DEST_MLC) {
+    STAT_EVENT(pref->proc_id, MLC_PREF_LATE);
+  } else if (pref->destination == DEST_L1) {
+    STAT_EVENT(pref->proc_id, L1_PREF_LATE);
+    Counter l1_cycles = freq_cycle_count(FREQ_DOMAIN_L1);
+    Counter diff = l1_cycles >= pref->start_cycle ? l1_cycles - pref->start_cycle : 0;
+    INC_STAT_EVENT(pref->proc_id, L1_LATE_PREF_CYCLES, diff);
+    STAT_EVENT(pref->proc_id, L1_LATE_PREF_CYCLES_DIST_0 + MIN2(diff / 100, 20));
+  }
+}
+
 /**************************************************************************************/
 /* mem_merge_reqs: fold one live request into another for the same line */
 
@@ -2956,15 +2975,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
 
     // cmp FIXME prefetchers
     if (demand_hit_prefetch && type != MRT_DPRF && type != MRT_IPRF) {
-      if (req->destination == DEST_MLC) {
-        STAT_EVENT(req->proc_id, MLC_PREF_LATE);
-      } else if (req->destination == DEST_L1) {
-        STAT_EVENT(req->proc_id, L1_PREF_LATE);
-        Counter l1_cycles = freq_cycle_count(FREQ_DOMAIN_L1);
-        Counter diff = l1_cycles >= req->start_cycle ? l1_cycles - req->start_cycle : 0;
-        INC_STAT_EVENT(req->proc_id, L1_LATE_PREF_CYCLES, diff);
-        STAT_EVENT(req->proc_id, L1_LATE_PREF_CYCLES_DIST_0 + MIN2(diff / 100, 20));
-      }
+      mem_record_late_prefetch(req);
 
       pref_ul1_pref_hit_late(req->proc_id, req->addr, req->loadPC, req->global_hist, req->prefetcher_id);
       req->demand_match_prefetch = TRUE;
@@ -4040,13 +4051,6 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
                                         ramulator_match));
   }
 
-  // TODO: obsolete now that we don't have a bus_out queue after Ramulator integration
-  /* Step 2.5: Check if there is space in the bus_out queue */
-  if (queue_full_for_req(&mem->bus_out_queue, type)) {
-    STAT_EVENT(proc_id, REJECTED_QUEUE_BUS_OUT);
-    return FALSE;
-  }
-
   /* Step 3: Not already in request buffer. Figure out if a free request buffer
    * exists */
 
@@ -4974,13 +4978,19 @@ void stats_per_core_collect(uns8 proc_id) {
   Counter pref_fill = GET_STAT_EVENT(proc_id, CORE_L1_PREF_FILL);
   Counter pref_fill_patial_used = GET_STAT_EVENT(proc_id, CORE_L1_PREF_FILL_PARTIAL_USED);
   Counter pref_fill_used = GET_STAT_EVENT(proc_id, CORE_L1_PREF_FILL_USED);
-  INC_STAT_EVENT(proc_id, CORE_L1_PREF_FILL_NOT_USED, pref_fill - (pref_fill_patial_used + pref_fill_used));
-  INC_STAT_EVENT(proc_id, CORE_PREF_L1_NOT_USED, pref_fill - (pref_fill_patial_used + pref_fill_used));
+  if (pref_fill > pref_fill_patial_used + pref_fill_used) {
+    INC_STAT_EVENT(proc_id, CORE_L1_PREF_FILL_NOT_USED, pref_fill - (pref_fill_patial_used + pref_fill_used));
+    INC_STAT_EVENT(proc_id, CORE_PREF_L1_NOT_USED, pref_fill - (pref_fill_patial_used + pref_fill_used));
+  }
 
   pref_fill = GET_STAT_EVENT(proc_id, L1_PREF_FILL);
   pref_fill_patial_used = GET_STAT_EVENT(proc_id, PREF_L1_TOTAL_PARTIAL_USED);
   pref_fill_used = GET_STAT_EVENT(proc_id, PREF_L1_TOTAL_USED);
-  INC_STAT_EVENT(proc_id, PREF_L1_TOTAL_NOT_USED, pref_fill - (pref_fill_patial_used + pref_fill_used));
+  /* A line prefetched before the post-warmup stat reset can be hit after it, so the
+     uses can outnumber the fills; the counters are unsigned, and the difference
+     wrapped to ~1.8e19 and poisoned any sum over runs. */
+  if (pref_fill > pref_fill_patial_used + pref_fill_used)
+    INC_STAT_EVENT(proc_id, PREF_L1_TOTAL_NOT_USED, pref_fill - (pref_fill_patial_used + pref_fill_used));
 }
 
 /**************************************************************************************/

@@ -53,7 +53,6 @@ extern "C" {
 
 #include <algorithm>
 #include <deque>
-#include <list>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -114,6 +113,10 @@ struct IssueQueueEntry {
 
   uns32 bound_fu_id = MAX_UNS;
   ISSUE_QUEUE_ENTRY_STATE state = ISSUE_QUEUE_ENTRY_STATE_EMPTY;
+
+  IssueQueueEntry* ready_prev = nullptr;
+  IssueQueueEntry* ready_next = nullptr;
+  bool in_ready_list = false;
 
   explicit IssueQueueEntry(uns16 queue_id, uns16 entry_id) : queue_id(queue_id), entry_id(entry_id) {}
   void clear();
@@ -273,7 +276,7 @@ class SelectLogic {
   std::unique_ptr<BindPolicy> bind_policy;
 
   std::vector<size_t> picker_order;  // picker traversal order generated each cycle
-  std::list<IssueQueueEntry*> ready_list;
+  IssueQueueEntry* ready_head = nullptr;
 
   // bitmask of ready but not yet issued op types in this cycle
   uns64 ready_not_issued_op_types = 0;
@@ -296,15 +299,44 @@ class SelectLogic {
 
   void bind(IssueQueueEntry* entry) { bind_policy->bind(connected_fu_pickers, entry); }
   void unbind(IssueQueueEntry* entry) { bind_policy->unbind(entry); }
-  void request(IssueQueueEntry* entry) { ready_list.push_front(entry); }
-  void release(IssueQueueEntry* entry) { ready_list.remove(entry); }
+  void request(IssueQueueEntry* entry);
+  void release(IssueQueueEntry* entry);
 
-  bool has_ready_ops() const { return !ready_list.empty(); }
+  bool has_ready_ops() const { return ready_head != nullptr; }
   uns64 get_ready_not_issued_op_types() const { return ready_not_issued_op_types; }
 
   void collect_entry_op_ready_stats(IssueQueueEntry* entry);
   void collect_entry_op_ready_not_issued_stats(IssueQueueEntry* entry);
 };
+
+void SelectLogic::request(IssueQueueEntry* entry) {
+  ASSERT(proc_id, entry->queue_id == queue_id && !entry->in_ready_list);
+
+  entry->ready_prev = nullptr;
+  entry->ready_next = ready_head;
+  if (ready_head != nullptr)
+    ready_head->ready_prev = entry;
+  ready_head = entry;
+  entry->in_ready_list = true;
+}
+
+void SelectLogic::release(IssueQueueEntry* entry) {
+  if (!entry->in_ready_list)
+    return;
+
+  ASSERT(proc_id, entry->queue_id == queue_id);
+  if (entry->ready_prev != nullptr)
+    entry->ready_prev->ready_next = entry->ready_next;
+  else
+    ready_head = entry->ready_next;
+
+  if (entry->ready_next != nullptr)
+    entry->ready_next->ready_prev = entry->ready_prev;
+
+  entry->ready_prev = nullptr;
+  entry->ready_next = nullptr;
+  entry->in_ready_list = false;
+}
 
 /*
  * Serial selection is described in "Quantifying the complexity of superscalar processors", 1996.
@@ -320,7 +352,7 @@ void SelectLogic::bid() {
   ready_not_issued_op_types = 0;
   ready_not_issued_op_types_per_fu.assign(connected_fu_pickers.size(), 0);
 
-  for (IssueQueueEntry* entry : ready_list) {
+  for (IssueQueueEntry* entry = ready_head; entry != nullptr; entry = entry->ready_next) {
     // check if the op is ready (it may become not ready due to memory blocking or waiting for forwarding)
     if (entry->state != ISSUE_QUEUE_ENTRY_STATE_READY || !issue_queue_check_op_ready(entry->op)) {
       continue;

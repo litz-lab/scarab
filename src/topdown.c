@@ -87,20 +87,15 @@ void topdown_bp_recovery(uns proc_id, Op* op) {
   idq_stage_set_recovery_cycle(TOPDOWN_RECOVERY_DEPTH);
 }
 
-void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path) {
+void topdown_idq_update(uns proc_id, int bad_spec_slots, int unutilised_frontend_slots, int count_issued,
+                        int count_issued_on_path) {
   INC_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS, DISPATCH_WIDTH);
   INC_STAT_EVENT(proc_id, TOPDOWN_ISSUED_SLOTS, count_issued);
   INC_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS, count_issued_on_path);
+  INC_STAT_EVENT(proc_id, TOPDOWN_FRONTEND_SLOTS, unutilised_frontend_slots);
+  INC_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC_SLOTS, bad_spec_slots);
 
-  int recovery_cycle = idq_stage_get_recovery_cycle();
-  if (recovery_cycle != 0) {
-    ASSERT(proc_id, recovery_cycle > 0);
-    idq_stage_set_recovery_cycle(recovery_cycle - 1);
-    INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES_SLOTS, DISPATCH_WIDTH - count_available);
-    return;
-  }
-
-  // only increment frontend-stall when there is no backend-stall
+  // this is a little off : we dont know if we are on or offpath ...
   if (count_issued == 0 && idq_stage_get_stage_data()->op_count > 0) {
     STAT_EVENT(proc_id, TOPDOWN_BACKEND_STALLS_CYCLES);
     if (lsq_get_in_flight_load_num() > 0) {
@@ -108,12 +103,7 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
     } else if (!lsq_available(MEM_ST)) {
       STAT_EVENT(proc_id, TOPDOWN_MEM_STORE_STALLS_CYCLES);
     }
-    return;
   }
-
-  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS, DISPATCH_WIDTH - count_available);
-  if (count_available == 0)
-    STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GT_MIW_CYCLES);
 }
 
 void topdown_exec_update(uns proc_id, uns8 fus_busy) {
@@ -163,13 +153,12 @@ void topdown_exec_update(uns proc_id, uns8 fus_busy) {
 
 void topdown_done(uns proc_id) {
   /* Top-Level Breakdown */
-  uns64 frontend_bound = GET_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS) * TOPDOWN_SCALE_FACTOR /
+  uns64 frontend_bound = GET_STAT_EVENT(proc_id, TOPDOWN_FRONTEND_SLOTS) * TOPDOWN_SCALE_FACTOR /
                          GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS);
   INC_STAT_EVENT(proc_id, TOPDOWN_FRONTEND_BOUND, frontend_bound);
 
-  uns64 bad_spec_slots = GET_STAT_EVENT(proc_id, TOPDOWN_ISSUED_SLOTS) -
-                         GET_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS) +
-                         GET_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES_SLOTS);
+  uns64 bad_spec_slots = GET_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC_SLOTS);
+
   uns64 bad_spec_bound = bad_spec_slots * TOPDOWN_SCALE_FACTOR / GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS);
   INC_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC_BOUND, bad_spec_bound);
 

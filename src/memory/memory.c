@@ -959,6 +959,23 @@ void mem_start_l1_access(Mem_Req* req) {
     STAT_EVENT(req->proc_id, L1_LD_BANK_BLOCK + avail);
 }
 
+/* Exclusive hierarchy: a promoted line must not stay behind, or a hit leaves two
+   copies and the capacity that exclusivity buys is lost. The dirty bit travels with
+   the line via req->dirty_l0, which dcache_fill_line() applies to the new copy. A
+   dirty line promoted to the icache has nowhere to carry it, so that copy is kept. */
+static inline void mem_invalidate_on_promote(Mem_Req* req, Cache* cache, Flag dirty, Stat_Enum inval_stat) {
+  if (!EXCLUSIVE_CACHES || !EXCLUSIVE_PROMOTE_INVALIDATE)
+    return;
+  if (dirty && (req->type == MRT_IFETCH || req->type == MRT_IPRF || req->destination == DEST_ICACHE)) {
+    STAT_EVENT(req->proc_id, EXCL_PROMOTE_KEPT_DIRTY);
+    return;
+  }
+  Addr inval_line_addr;
+  cache_invalidate(cache, req->addr, &inval_line_addr);
+  req->dirty_l0 |= dirty;
+  STAT_EVENT(req->proc_id, inval_stat);
+}
+
 /**************************************************************************************/
 /* mem_process_l1_hit_access: */
 /* Returns TRUE if l1 access is complete and needs to be removed from l1_queue
@@ -1014,6 +1031,9 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry, Ad
       STAT_EVENT(req->proc_id, CORE_L1_WB_HIT);
     }
     data->dirty |= (req->type == MRT_WB);
+    /* Above the LLC: NONE (demand), DCACHE, ICACHE or MLC all take the line away. */
+    if (req->destination < DEST_L1 && req->type != MRT_WB && req->type != MRT_WB_NODIRTY)
+      mem_invalidate_on_promote(req, &L1(req->proc_id)->cache, data->dirty, EXCL_PROMOTE_INVAL_LLC);
   }
 
   DEBUG(req->proc_id,
@@ -1128,6 +1148,9 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_entry, 
         STAT_EVENT(req->proc_id, CORE_MLC_WB_HIT);
       }
       data->dirty |= (req->type == MRT_WB);
+      /* Above the MLC: NONE (demand), DCACHE or ICACHE take the line away. */
+      if (req->destination < DEST_MLC && req->type != MRT_WB && req->type != MRT_WB_NODIRTY)
+        mem_invalidate_on_promote(req, &MLC(req->proc_id)->cache, data->dirty, EXCL_PROMOTE_INVAL_MLC);
     }
 
     if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {

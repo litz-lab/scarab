@@ -66,6 +66,9 @@ DEF_PARAM(exclusive_caches, EXCLUSIVE_CACHES, Flag, Flag, FALSE, )
    prefetched and never demand-used, so useless prefetches do not consume MLC/LLC
    capacity on their way out. */
 DEF_PARAM(exclusive_drop_unused_pref, EXCLUSIVE_DROP_UNUSED_PREF, Flag, Flag, FALSE, )
+/* With exclusive_caches: invalidate the copy left behind when a line is promoted, so a
+   line lives at exactly one level. 0 keeps it, making the hierarchy non-inclusive. */
+DEF_PARAM(exclusive_promote_invalidate, EXCLUSIVE_PROMOTE_INVALIDATE, Flag, Flag, TRUE, )
 
 DEF_PARAM(perfect_mlc, PERFECT_MLC, Flag, Flag, FALSE, )
 DEF_PARAM(mlc_read_ports, MLC_READ_PORTS, uns, uns, 1, )

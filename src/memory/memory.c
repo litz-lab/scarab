@@ -4974,13 +4974,19 @@ void stats_per_core_collect(uns8 proc_id) {
   Counter pref_fill = GET_STAT_EVENT(proc_id, CORE_L1_PREF_FILL);
   Counter pref_fill_patial_used = GET_STAT_EVENT(proc_id, CORE_L1_PREF_FILL_PARTIAL_USED);
   Counter pref_fill_used = GET_STAT_EVENT(proc_id, CORE_L1_PREF_FILL_USED);
-  INC_STAT_EVENT(proc_id, CORE_L1_PREF_FILL_NOT_USED, pref_fill - (pref_fill_patial_used + pref_fill_used));
-  INC_STAT_EVENT(proc_id, CORE_PREF_L1_NOT_USED, pref_fill - (pref_fill_patial_used + pref_fill_used));
+  if (pref_fill > pref_fill_patial_used + pref_fill_used) {
+    INC_STAT_EVENT(proc_id, CORE_L1_PREF_FILL_NOT_USED, pref_fill - (pref_fill_patial_used + pref_fill_used));
+    INC_STAT_EVENT(proc_id, CORE_PREF_L1_NOT_USED, pref_fill - (pref_fill_patial_used + pref_fill_used));
+  }
 
   pref_fill = GET_STAT_EVENT(proc_id, L1_PREF_FILL);
   pref_fill_patial_used = GET_STAT_EVENT(proc_id, PREF_L1_TOTAL_PARTIAL_USED);
   pref_fill_used = GET_STAT_EVENT(proc_id, PREF_L1_TOTAL_USED);
-  INC_STAT_EVENT(proc_id, PREF_L1_TOTAL_NOT_USED, pref_fill - (pref_fill_patial_used + pref_fill_used));
+  /* A line prefetched before the post-warmup stat reset can be hit after it, so the
+     uses can outnumber the fills; the counters are unsigned, and the difference
+     wrapped to ~1.8e19 and poisoned any sum over runs. */
+  if (pref_fill > pref_fill_patial_used + pref_fill_used)
+    INC_STAT_EVENT(proc_id, PREF_L1_TOTAL_NOT_USED, pref_fill - (pref_fill_patial_used + pref_fill_used));
 }
 
 /**************************************************************************************/

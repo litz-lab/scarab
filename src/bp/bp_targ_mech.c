@@ -517,7 +517,8 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
   Addr intra_bank_addr;
   Addr line_addr;
   Flag tag_aliasing;
-  Flag lru = bp_data->bp_id ? FALSE : TRUE;
+  // pred does not imply the validity and should not influence replacement
+  Flag lru = FALSE;
 
   op->btb_pred_info->btb_index_addr = op->inst->addr;
 
@@ -574,6 +575,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
                 hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
+      STAT_EVENT(op->proc_id, BTB_INDEX_LOW_UPDATE_0 + (fetch_addr & 63));
       STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
 
       btb_line = (Addr*)cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing, TRUE);
@@ -592,12 +594,13 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
     // or For indirects we want to update the BTB if the target changes, even on btb hit
     // The detection relies on the target stored in the btb
 
-    btb_line = (Addr*)cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing, FALSE);
+    STAT_EVENT(op->proc_id, BTB_INDEX_LOW_UPDATE_0 + (fetch_addr & 63));
+    btb_line = (Addr*)cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing,
+                                        BTB_OFF_PATH_WRITES || !op->off_path);
 
     // The following assertion can fail (due to eviction?)
     // ASSERT(bp_data->proc_id, btb_entry);
     if (btb_line && *btb_line != op->oracle_info.target) {
-      cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing, TRUE);
       if (BTB_OFF_PATH_WRITES || !op->off_path) {
         DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
                   hexstr64s(op->oracle_info.target));
@@ -684,7 +687,7 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
   Addr btb_line_addr;
   Flag tag_aliasing;
   Blk_Btb_BrSlot* br_slots =
-      (Blk_Btb_BrSlot*)cache_access_impl(bp_data->btb, btb_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
+      (Blk_Btb_BrSlot*)cache_access_impl(bp_data->btb, btb_index_addr, &btb_line_addr, &tag_aliasing, FALSE);
   bpi->btb_main_tag_alias = tag_aliasing;
 
   bpi->btb_main_hit = FALSE;
@@ -717,6 +720,7 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  btb addr:0x%s  op addr:0x%s  target:0x%s\n", hexstr64s(btb_index_addr),
                 hexstr64s(op->inst->addr), hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
+      STAT_EVENT(op->proc_id, BTB_INDEX_LOW_UPDATE_0 + (btb_index_addr & 63));
 
       Blk_Btb_BrSlot br_slot;
       br_slot.addr = op->inst->addr;
@@ -744,6 +748,8 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
           if (br_slots[ii].valid) {
             // slot that has smaller addr (br_slots[ii].addr < op->inst->addr) will be just skipped
             if (br_slots[ii].addr == op->inst->addr) {
+              if (br_slots[ii].target != br_slot.target)
+                STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_JITTED_NOT_CF + br_slot.type);
               br_slots[ii] = br_slot;
               break;
             } else if (br_slots[ii].addr > op->inst->addr) {
@@ -751,15 +757,13 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
               // Enable this assertion when debugging.
               // ASSERT(bp_data->proc_id,
               //        op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP);
-              if (op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP) {
-                // If this op is NOT always-taken, it needs to be inserted, not just appended.
-                insert_pos = ii;
-              } else {
-                // If this op is always-taken, invalidate the rest as the block ends here.
-                // Only happens with self-modifying code.
+              if (BTB_ALWAYS_TAKEN_TERMINATES && op->uop->cf_type != CF_CBR && op->uop->cf_type != CF_REP) {
+                // This op is always-taken and it terminates the block.
                 br_slots[ii] = br_slot;
                 for (uns jj = ii + 1; jj < BTB_NUM_BRSLOT; jj++)
                   br_slots[jj].valid = FALSE;
+              } else {
+                insert_pos = ii;
               }
               break;
             }
@@ -793,6 +797,313 @@ void bp_btb_block_recover(Bp_Data* bp_data, Recovery_Info* info) {
   bp_data->prev_cf_pred = info->op->oracle_info.dir;
   bp_data->prev_cf_target = info->op->oracle_info.target;
   bp_data->prev_cf_btb_index_addr = info->op->btb_pred_info->btb_index_addr;
+}
+
+/**************************************************************************************/
+/* Block-BTB Split helper functions */
+
+static inline void blk_btb_split_reset_entry(Blk_Btb_Split_Entry* entry) {
+  entry->split = FALSE;
+  for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++)
+    entry->brslots[ii].valid = FALSE;
+}
+
+static inline void blk_btb_split_terminate_entry(Blk_Btb_Split_Entry* entry, uns pos) {
+  entry->split = FALSE;
+  for (uns ii = pos + 1; ii < BTB_NUM_BRSLOT; ii++)
+    entry->brslots[ii].valid = FALSE;
+}
+
+static void blk_btb_split_assert_entry(uns8 proc_id, const Blk_Btb_Split_Entry* entry, Addr entry_index_addr) {
+  Flag seen_invalid = FALSE;
+  for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
+    if (entry->brslots[ii].valid == FALSE) {
+      seen_invalid = TRUE;
+      continue;
+    }
+    ASSERTM(proc_id, !seen_invalid, "entry 0x%llx: slot [%d] valid behind an invalid slot\n", entry_index_addr, ii);
+    ASSERTM(proc_id, entry->brslots[ii].inst_size > 0, "entry 0x%llx: slot [%d] has zero inst_size\n", entry_index_addr,
+            ii);
+    ASSERTM(proc_id, entry_index_addr <= entry->brslots[ii].addr,
+            "entry 0x%llx: slot [%d] addr 0x%llx precedes the entry\n", entry_index_addr, ii, entry->brslots[ii].addr);
+    if (ii > 0) {
+      const Blk_Btb_Split_BrSlot* prev = &entry->brslots[ii - 1];
+      ASSERTM(proc_id, prev->addr < entry->brslots[ii].addr,
+              "entry 0x%llx: slots [%d],[%d] out of order 0x%llx,0x%llx\n", entry_index_addr, ii - 1, ii, prev->addr,
+              entry->brslots[ii].addr);
+    }
+  }
+  ASSERTM(proc_id, !entry->split || entry->brslots[BTB_NUM_BRSLOT - 1].valid,
+          "entry 0x%llx: split enabled while the last slot is invalid\n", entry_index_addr);
+}
+
+/**************************************************************************************/
+/* bp_btb_block_split_init: */
+
+void bp_btb_block_split_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
+  if (!bp_data->bp_id) {
+    DEBUG_BTB(bp_data->proc_id, "Initializing BLOCK_BTB_SPLIT\n");
+    ASSERT(bp_data->proc_id, BTB_NUM_BRSLOT > 0);
+    ASSERT(bp_data->proc_id, BTB_BLOCK_SIZE > 0);
+    ASSERT(bp_data->proc_id, (1 << LOG2(BTB_BLOCK_SIZE)) == BTB_BLOCK_SIZE);
+
+    ASSERT(bp_data->proc_id, BTB_BANKS == 1);
+    ASSERT(bp_data->proc_id, BTB_ENTRIES >= BTB_ASSOC);
+    init_cache_impl(bp_data->btb, "B-BTB-SPLIT", BTB_ENTRIES, BTB_ASSOC, 1, BTB_TAG_BITS, BLK_BTB_SPLIT_ENTRY_SIZE,
+                    REPL_TRUE_LRU);
+  } else  // points to the primary BP's shared BTB
+    bp_data->btb = primary_bp->btb;
+}
+
+/**************************************************************************************/
+/* bp_btb_block_split_pred */
+
+void bp_btb_block_split_pred(Bp_Data* bp_data, Op* op) {
+  ASSERT(bp_data->proc_id, op->uop->cf_type);
+
+  Btb_Pred_Info* bpi = op->btb_pred_info;
+
+  Addr btb_index_addr = 0;
+  // Actual BTB does not require this because the index addr to look up BTB is given,
+  // but Scarab needs to memorize the previous target as it looks up BTB without knowing the index addr.
+  if (bp_data->prev_cf_btb_index_addr == 0) {
+    // Only for the very first access
+    btb_index_addr = ft_get_ft_info(op->parent_FT).static_info.start;
+  } else {
+    if (bp_data->prev_cf_pred == TAKEN) {
+      btb_index_addr = bp_data->prev_cf_target;
+    } else {
+      btb_index_addr = bp_data->prev_cf_btb_index_addr;
+    }
+  }
+  ASSERT(bp_data->proc_id, btb_index_addr <= op->inst->addr);
+  // Compute block-size-aligned (fall-through) address from the start of the first block, in case op is far away.
+  btb_index_addr += (op->inst->addr - btb_index_addr) & ~(BTB_BLOCK_SIZE - 1);
+  // Assert btb_index_addr <= op->inst->addr < btb_index_addr + BTB_BLOCK_SIZE
+  ASSERT(bp_data->proc_id, btb_index_addr <= op->inst->addr);
+  ASSERT(bp_data->proc_id, op->inst->addr < ADDR_PLUS_OFFSET(btb_index_addr, BTB_BLOCK_SIZE));
+
+  // Store index for update. This is the block anchor, not the chained entry where op is found.
+  op->btb_pred_info->btb_index_addr = btb_index_addr;
+  ASSERT(bp_data->proc_id, op->inst->inst_size > 0);
+
+  // Prepare for next BTB lookup
+  bp_data->prev_cf_btb_index_addr = btb_index_addr;
+
+  const Addr block_end = ADDR_PLUS_OFFSET(btb_index_addr, BTB_BLOCK_SIZE);
+  Addr entry_index_addr = btb_index_addr;
+
+  bpi->btb_main_hit = FALSE;
+  for (uns64 seen_slots = 0; seen_slots < BTB_BLOCK_SIZE; seen_slots += BTB_NUM_BRSLOT) {
+    ASSERT(bp_data->proc_id, btb_index_addr <= entry_index_addr);
+    ASSERT(bp_data->proc_id, entry_index_addr <= op->inst->addr);
+    ASSERT(bp_data->proc_id, op->inst->addr < block_end);
+
+    STAT_EVENT_BTB_BANK(op->proc_id, MAIN, PRED, 0);
+    Addr btb_line_addr;
+    Flag tag_aliasing;
+    Blk_Btb_Split_Entry* entry =
+        (Blk_Btb_Split_Entry*)cache_access_impl(bp_data->btb, entry_index_addr, &btb_line_addr, &tag_aliasing, FALSE);
+    bpi->btb_main_tag_alias = tag_aliasing;
+    if (!entry)
+      return;
+    blk_btb_split_assert_entry(bp_data->proc_id, entry, entry_index_addr);
+
+    for (uns ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
+      if (entry->brslots[ii].valid == FALSE)
+        return;  // the block records no more branches
+      if (entry->brslots[ii].addr == op->inst->addr) {
+        bpi->btb_main_hit = TRUE;
+        bpi->btb_main_target = entry->brslots[ii].target;
+        ASSERT(bp_data->proc_id, bpi->btb_main_target != ADDR_INVALID);
+        return;
+      }
+      if (entry->brslots[ii].addr > op->inst->addr)
+        return;  // slots are address-ordered, so op is not recorded in the block
+    }
+
+    // Every slot was valid and below op; follow the split chain, if there is one.
+    if (entry->split == FALSE)
+      return;
+    const Blk_Btb_Split_BrSlot* last_slot = &entry->brslots[BTB_NUM_BRSLOT - 1];
+    const Addr next_index_addr = ADDR_PLUS_OFFSET(last_slot->addr, last_slot->inst_size);
+    if (next_index_addr > op->inst->addr)
+      return;  // the chain continues past op without recording it
+    // Slots never precede their own entry. With a full tag, the chain must advance.
+    // Only a folded-tag false hit can hand back an entry whose last slot sits at or below this anchor.
+    ASSERTM(bp_data->proc_id, BTB_TAG_BITS < 64 || entry_index_addr < next_index_addr,
+            "split chain does not advance: 0x%llx -> 0x%llx\n", entry_index_addr, next_index_addr);
+    if (next_index_addr <= entry_index_addr)
+      return;
+    entry_index_addr = next_index_addr;
+  }
+  ASSERTM(bp_data->proc_id, FALSE, "split chain at 0x%llx is longer than the %llu-byte block\n", btb_index_addr,
+          (uns64)BTB_BLOCK_SIZE);
+}
+
+/**************************************************************************************/
+/* bp_btb_block_split_update */
+
+void bp_btb_block_split_update(Bp_Data* bp_data, Op* op) {
+  ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
+  ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
+  ASSERT(bp_data->proc_id, op->uop->cf_type);
+
+  if (!BTB_OFF_PATH_WRITES && op->off_path)
+    return;
+
+  const Addr btb_index_addr = op->btb_pred_info->btb_index_addr;
+  ASSERT(bp_data->proc_id, btb_index_addr <= op->inst->addr);
+  ASSERT(bp_data->proc_id, op->inst->addr < ADDR_PLUS_OFFSET(btb_index_addr, BTB_BLOCK_SIZE));
+
+  if (op->oracle_info.dir != TAKEN)
+    return;
+
+  ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
+  ASSERT(bp_data->proc_id, op->inst->inst_size > 0);
+  DEBUG_BTB(bp_data->proc_id, "Writing BTB  btb addr:0x%llx  op addr:0x%llx  target:0x%llx  size:%d\n", btb_index_addr,
+            op->inst->addr, op->oracle_info.target, op->inst->inst_size);
+  STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
+
+  const Addr block_end = ADDR_PLUS_OFFSET(btb_index_addr, BTB_BLOCK_SIZE);
+  Addr entry_index_addr = btb_index_addr;
+  Addr btb_line_addr, repl_line_addr;
+  Flag tag_aliasing;
+
+  Blk_Btb_Split_BrSlot brslot_fwd;
+  brslot_fwd.addr = op->inst->addr;
+  brslot_fwd.type = op->uop->cf_type;
+  brslot_fwd.target = op->oracle_info.target;
+  brslot_fwd.inst_size = op->inst->inst_size;
+  brslot_fwd.valid = TRUE;
+
+  STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, 0);
+  Blk_Btb_Split_Entry* entry =
+      (Blk_Btb_Split_Entry*)cache_access_impl(bp_data->btb, entry_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
+
+  if (!entry) {
+    STAT_EVENT_BTB_BANK(op->proc_id, MAIN, INSERT, 0);
+    entry = (Blk_Btb_Split_Entry*)cache_insert(bp_data->btb, bp_data->proc_id, entry_index_addr, &btb_line_addr,
+                                               &repl_line_addr);
+    STAT_EVENT(op->proc_id, BTB_INDEX_LOW_UPDATE_0 + (entry_index_addr & 63));
+    blk_btb_split_reset_entry(entry);
+    entry->brslots[0] = brslot_fwd;
+    blk_btb_split_assert_entry(bp_data->proc_id, entry, entry_index_addr);
+    return;
+  }
+
+  for (uns64 seen_slots = 0; seen_slots < BTB_BLOCK_SIZE; seen_slots += BTB_NUM_BRSLOT) {
+    ASSERT(bp_data->proc_id, btb_index_addr <= entry_index_addr);
+    ASSERT(bp_data->proc_id, entry_index_addr < block_end);
+    ASSERT(bp_data->proc_id, entry_index_addr <= brslot_fwd.addr);
+    ASSERT(bp_data->proc_id, brslot_fwd.addr < block_end);
+    ASSERT(bp_data->proc_id, brslot_fwd.valid == TRUE);
+    ASSERT(bp_data->proc_id, brslot_fwd.inst_size > 0);
+    blk_btb_split_assert_entry(bp_data->proc_id, entry, entry_index_addr);
+
+    // Except on this line, brslot_new and brslot_fwd should appear in RHS and LHS, respectively.
+    // - brslot_new: the slot coming into this entry
+    // - brslot_fwd: the slot leaving this entry for the next one
+    Blk_Btb_Split_BrSlot brslot_new = brslot_fwd;
+
+    uns ii;
+    Flag need_split = FALSE;
+
+    // Scan entry for a slot to store brslot_new.
+    for (ii = 0; ii < BTB_NUM_BRSLOT; ii++) {
+      if (entry->brslots[ii].valid == FALSE) {
+        // A free slot means the block ends here, so nothing can be chained behind it.
+        ASSERT(bp_data->proc_id, entry->split == FALSE);
+        entry->brslots[ii] = brslot_new;
+        break;
+      }
+
+      if (entry->brslots[ii].addr < brslot_new.addr) {
+        if (brslot_new.addr < ADDR_PLUS_OFFSET(entry->brslots[ii].addr, entry->brslots[ii].inst_size))
+          STAT_EVENT(op->proc_id, BTB_SPLIT_OVERLAP_ONPATH + op->off_path);
+        continue;  // Keep scanning
+      } else if (entry->brslots[ii].addr == brslot_new.addr) {
+        if (entry->brslots[ii].target != brslot_new.target)
+          STAT_EVENT(bp_data->proc_id, BTB_UPDATE_BTB_HIT_JITTED_NOT_CF + brslot_new.type);
+        entry->brslots[ii] = brslot_new;
+        break;
+      } else {  // brslots[ii].addr > brslot_new.addr
+        // If there is no self-modifying code (e.g. SPEC 2017 int), op must be conditional to reach here.
+        // Enable this assertion when debugging.
+        // ASSERT(bp_data->proc_id, brslot_new.type == CF_CBR || brslot_new.type == CF_REP);
+        if (BTB_ALWAYS_TAKEN_TERMINATES && brslot_new.type != CF_CBR && brslot_new.type != CF_REP) {
+          DEBUG_BTB(bp_data->proc_id, "BTB block terminates at [%d] by an always-taken cf\n", ii);
+          entry->brslots[ii] = brslot_new;
+          blk_btb_split_terminate_entry(entry, ii);
+          break;
+        } else {  // Conditional branch
+          if (ADDR_PLUS_OFFSET(brslot_new.addr, brslot_new.inst_size) > entry->brslots[ii].addr)
+            STAT_EVENT(op->proc_id, BTB_SPLIT_OVERLAP_ONPATH + op->off_path);
+
+          // Insert brslot_new before brslots[ii]
+          DEBUG_BTB(bp_data->proc_id, "Insert BTB slot before 0x%llx [%d]\n", entry->brslots[ii].addr, ii);
+          if (entry->brslots[BTB_NUM_BRSLOT - 1].valid) {
+            // The last slot no longer fits, so it has to go to the next entry.
+            brslot_fwd = entry->brslots[BTB_NUM_BRSLOT - 1];
+            need_split = TRUE;
+          }
+          for (uns jj = BTB_NUM_BRSLOT - 1; jj > ii; jj--) {
+            if (entry->brslots[jj - 1].valid)
+              entry->brslots[jj] = entry->brslots[jj - 1];
+          }
+          entry->brslots[ii] = brslot_new;
+          break;
+        }
+      }
+    }
+
+    if (ii == BTB_NUM_BRSLOT) {
+      // Fell off the end: every slot was valid and below brslot_new, so it goes to the next entry.
+      need_split = TRUE;
+    } else if (brslot_new.addr == op->inst->addr) {
+      STAT_EVENT(op->proc_id, BTB_INDEX_LOW_UPDATE_0 + (entry_index_addr & 63));
+    }
+
+    // Assert post-condition on the entry we just rewrote to catch a bad shift, insert or overlap-drop.
+    blk_btb_split_assert_entry(bp_data->proc_id, entry, entry_index_addr);
+
+    if (need_split == FALSE)
+      return;
+
+    // Need split: split and chain another one to store brslot_fwd.
+    const Blk_Btb_Split_BrSlot* last = &entry->brslots[BTB_NUM_BRSLOT - 1];
+    const Addr next_index_addr = ADDR_PLUS_OFFSET(last->addr, last->inst_size);
+    if (next_index_addr <= entry_index_addr || next_index_addr >= block_end || next_index_addr > brslot_fwd.addr ||
+        brslot_fwd.addr >= block_end) {
+      // The chain would leave the block, so drop the overflow to make the loop bound over block real.
+      entry->split = FALSE;
+      blk_btb_split_assert_entry(bp_data->proc_id, entry, entry_index_addr);
+      return;
+    }
+
+    DEBUG_BTB(bp_data->proc_id, "Split block to btb addr:0x%llx  at  op addr:0x%llx  target:0x%llx  size:%d\n",
+              next_index_addr, brslot_fwd.addr, brslot_fwd.target, brslot_fwd.inst_size);
+
+    Blk_Btb_Split_Entry* next_entry = NULL;
+    if (entry->split) {
+      STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, 0);
+      next_entry =
+          (Blk_Btb_Split_Entry*)cache_access_impl(bp_data->btb, next_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
+    }
+    if (!next_entry) {
+      DEBUG_BTB(bp_data->proc_id, entry->split ? " (missing next entry)\n" : " (create next entry)\n");
+      entry->split = TRUE;
+      STAT_EVENT_BTB_BANK(op->proc_id, MAIN, INSERT, 0);
+      next_entry = (Blk_Btb_Split_Entry*)cache_insert(bp_data->btb, bp_data->proc_id, next_index_addr, &btb_line_addr,
+                                                      &repl_line_addr);
+      blk_btb_split_reset_entry(next_entry);
+    }
+    ASSERT(bp_data->proc_id, next_entry != entry);
+    entry = next_entry;
+    entry_index_addr = next_index_addr;
+  }
+  ASSERTM(bp_data->proc_id, FALSE, "split chain at 0x%llx is longer than the %llu-byte block\n", btb_index_addr,
+          (uns64)BTB_BLOCK_SIZE);
 }
 
 /**************************************************************************************/

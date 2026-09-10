@@ -18,13 +18,6 @@
 
 ### Fetch Stage
 --fetch_off_path_ops            1
---fetch_across_cache_lines      1
-
-# Will break the packet upon a taken branch.
---fetch_break_on_taken          1
-
-# Number of bubble cycles to wait after taken branch.
---fetch_taken_bubble_cycles     0
 
 
 #### ICache
@@ -71,14 +64,14 @@
 --decode_cycles                 5
 
 
+--dispatch_width                6
+
 ### Map Stage
+--rename_width                  6
 --map_cycles                    5
 
 
 ### Issue Stage
-
-# Max number of instructions to be fetched, decoded, renamed, and issued per cycle.
---issue_width                   6
 
 --rs_fill_width                 0
 --rs_sizes                      97

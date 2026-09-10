@@ -959,6 +959,23 @@ void mem_start_l1_access(Mem_Req* req) {
     STAT_EVENT(req->proc_id, L1_LD_BANK_BLOCK + avail);
 }
 
+/* Exclusive hierarchy: a promoted line must not stay behind, or a hit leaves two
+   copies and the capacity that exclusivity buys is lost. The dirty bit travels with
+   the line via req->dirty_l0, which dcache_fill_line() applies to the new copy. A
+   dirty line promoted to the icache has nowhere to carry it, so that copy is kept. */
+static inline void mem_invalidate_on_promote(Mem_Req* req, Cache* cache, Flag dirty, Stat_Enum inval_stat) {
+  if (!EXCLUSIVE_CACHES || !EXCLUSIVE_PROMOTE_INVALIDATE)
+    return;
+  if (dirty && (req->type == MRT_IFETCH || req->type == MRT_IPRF || req->destination == DEST_ICACHE)) {
+    STAT_EVENT(req->proc_id, EXCL_PROMOTE_KEPT_DIRTY);
+    return;
+  }
+  Addr inval_line_addr;
+  cache_invalidate(cache, req->addr, &inval_line_addr);
+  req->dirty_l0 |= dirty;
+  STAT_EVENT(req->proc_id, inval_stat);
+}
+
 /**************************************************************************************/
 /* mem_process_l1_hit_access: */
 /* Returns TRUE if l1 access is complete and needs to be removed from l1_queue
@@ -1014,6 +1031,9 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry, Ad
       STAT_EVENT(req->proc_id, CORE_L1_WB_HIT);
     }
     data->dirty |= (req->type == MRT_WB);
+    /* Above the LLC: NONE (demand), DCACHE, ICACHE or MLC all take the line away. */
+    if (req->destination < DEST_L1 && req->type != MRT_WB && req->type != MRT_WB_NODIRTY)
+      mem_invalidate_on_promote(req, &L1(req->proc_id)->cache, data->dirty, EXCL_PROMOTE_INVAL_LLC);
   }
 
   DEBUG(req->proc_id,
@@ -1128,6 +1148,9 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_entry, 
         STAT_EVENT(req->proc_id, CORE_MLC_WB_HIT);
       }
       data->dirty |= (req->type == MRT_WB);
+      /* Above the MLC: NONE (demand), DCACHE or ICACHE take the line away. */
+      if (req->destination < DEST_MLC && req->type != MRT_WB && req->type != MRT_WB_NODIRTY)
+        mem_invalidate_on_promote(req, &MLC(req->proc_id)->cache, data->dirty, EXCL_PROMOTE_INVAL_MLC);
     }
 
     if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
@@ -4155,6 +4178,26 @@ void op_nuke_mem_req(Op* op) {
  * @return Flag 1 on successful fill
  */
 Flag l1_fill_line(Mem_Req* req) {
+  if (EXCLUSIVE_CACHES && req->destination != DEST_L1) {
+    STAT_EVENT(req->proc_id, EXCL_FILL_SKIPPED_LLC);
+    return TRUE;
+  }
+  /* An LLC prefetch that missed the MLC on its way down can land after a dcache demotion
+     has put the line there. The resident copy is the newer one and sits closer to the
+     core, so drop this fill rather than make a second copy. */
+  if (EXCLUSIVE_CACHES) {
+    Addr dup_addr;
+    if (cache_access(&MLC(req->proc_id)->cache, req->addr, &dup_addr, FALSE)) {
+      STAT_EVENT(req->proc_id, EXCL_FILL_DUP_SKIPPED_LLC);
+      return TRUE;
+    }
+    /* The dcache is a different matter: this prefetch never probed it, so a line the core
+       pulled up after the prefetch was issued is a pair we cannot prevent without giving
+       the LLC prefetcher a view of L1 tags. Count it rather than act on it -- the promote
+       invalidate closes the pair on the next hit. */
+    if (cache_access(&cmp_model.dcache_stage[req->proc_id].dcache, req->addr, &dup_addr, FALSE))
+      STAT_EVENT(req->proc_id, EXCL_FILL_DUP_L0_LLC);
+  }
   L1_Data* data;
   Addr line_addr, repl_line_addr = 0;
   Op* top;
@@ -4466,9 +4509,111 @@ Flag l1_fill_line(Mem_Req* req) {
 }
 
 /**************************************************************************************/
+/* mem_demote_probe / mem_demote_commit / mem_demote_to_mlc: */
+
+/* Exclusive hierarchy: probe one level for a demotion. Returns FALSE when the line is
+   already there and must not be inserted again. Otherwise reports the line the insert
+   would displace -- cache_insert reuses the entry, so the caller needs a snapshot
+   rather than a pointer. */
+static Flag mem_demote_probe(Cache* cache, uns8 proc_id, Addr line_addr, Flag dirty, Stat_Enum present_stat,
+                             Addr* victim_addr, L1_Data* victim_out, Flag* victim_valid_out) {
+  Addr probe_addr;
+  L1_Data* resident = (L1_Data*)cache_access(cache, line_addr, &probe_addr, FALSE);
+  if (resident) {
+    /* The demoted copy is the newer one, so the resident line is stale: its dirty bit has
+       to absorb ours or the write is lost. Same rule the inclusive writeback paths use on
+       a hit -- OR the dirty bit in, never invalidate. */
+    STAT_EVENT(proc_id, present_stat);
+    if (dirty && !resident->dirty) {
+      resident->dirty = TRUE;
+      STAT_EVENT(proc_id, EXCL_DEMOTE_PRESENT_DIRTY);
+    }
+    return FALSE;
+  }
+
+  Flag repl_line_valid;
+  L1_Data* victim = (L1_Data*)get_next_repl_line(cache, proc_id, line_addr, victim_addr, &repl_line_valid);
+  *victim_valid_out = repl_line_valid && victim;
+  if (*victim_valid_out)
+    *victim_out = *victim;
+
+  return TRUE;
+}
+
+static void mem_demote_commit(Cache* cache, uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, Flag seen_prefetch,
+                              Stat_Enum demote_stat) {
+  Addr insert_addr, victim_addr;
+  L1_Data* data = (L1_Data*)cache_insert(cache, proc_id, line_addr, &insert_addr, &victim_addr);
+  data->proc_id = proc_id;
+  data->dirty = dirty;
+  data->prefetch = prefetch;
+  data->seen_prefetch = seen_prefetch;
+  STAT_EVENT(proc_id, demote_stat);
+}
+
+/* Exclusive hierarchy: move a line out of the core caches and down into the MLC, which
+   chains its own victim into the LLC, whose victim leaves the hierarchy for memory. Only
+   that last step can be refused, and by then no insert can be undone -- so the whole
+   cascade is probed first and nothing moves unless memory accepts the writeback. Returns
+   FALSE when it was refused, which the caller must treat as "retry later". */
+Flag mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, Flag seen_prefetch) {
+  Addr mlc_victim_addr;
+  L1_Data mlc_victim;
+  Flag mlc_evicts = FALSE;
+
+  /* An LLC-destined prefetch never probes the core's caches, so the LLC can hold a line
+     the dcache also has. Demoting that line would make a second copy in the MLC, turning a
+     duplicate the LLC prefetcher cannot avoid into one the uncore can: the line already
+     has a home below, so leave it there and just carry the dirty bit down. */
+  if (!mem_demote_probe(&L1(proc_id)->cache, proc_id, line_addr, dirty, EXCL_DEMOTE_LLC_PRESENT, &mlc_victim_addr,
+                        &mlc_victim, &mlc_evicts))
+    return TRUE;
+
+  if (!mem_demote_probe(&MLC(proc_id)->cache, proc_id, line_addr, dirty, EXCL_DEMOTE_MLC_PRESENT, &mlc_victim_addr,
+                        &mlc_victim, &mlc_evicts))
+    return TRUE;
+
+  Addr llc_victim_addr;
+  L1_Data llc_victim;
+  Flag llc_evicts = FALSE, llc_inserts = FALSE;
+  if (mlc_evicts)
+    llc_inserts = mem_demote_probe(&L1(proc_id)->cache, proc_id, mlc_victim_addr, mlc_victim.dirty,
+                                   EXCL_DEMOTE_LLC_PRESENT, &llc_victim_addr, &llc_victim, &llc_evicts);
+
+  if (llc_inserts && llc_evicts && llc_victim.dirty) {
+    if (!new_mem_l1_wb_req(MRT_WB, get_proc_id_from_cmp_addr(llc_victim_addr), llc_victim_addr, L1_LINE_SIZE, 0, NULL,
+                           NULL, unique_count)) {
+      STAT_EVENT(proc_id, EXCL_DEMOTE_WB_REFUSED);
+      return FALSE;
+    }
+    STAT_EVENT(proc_id, EXCL_DIRTY_LLC_WRITTEN_BACK);
+  }
+
+  mem_demote_commit(&MLC(proc_id)->cache, proc_id, line_addr, dirty, prefetch, seen_prefetch, EXCL_DEMOTE_DC_TO_MLC);
+  if (llc_inserts)
+    mem_demote_commit(&L1(proc_id)->cache, proc_id, mlc_victim_addr, mlc_victim.dirty, mlc_victim.prefetch,
+                      mlc_victim.seen_prefetch, EXCL_DEMOTE_MLC_TO_LLC);
+
+  return TRUE;
+}
+
+/**************************************************************************************/
 /* mlc_fill_line: */
 
 Flag mlc_fill_line(Mem_Req* req) {
+  /* Exclusive: only the destination level keeps the line; a core-destined fill
+     passes through the MLC without inserting. */
+  if (EXCLUSIVE_CACHES && req->destination != DEST_MLC) {
+    STAT_EVENT(req->proc_id, EXCL_FILL_SKIPPED_MLC);
+    return TRUE;
+  }
+  if (EXCLUSIVE_CACHES) {
+    Addr dup_addr;
+    if (cache_access(&L1(req->proc_id)->cache, req->addr, &dup_addr, FALSE)) {
+      STAT_EVENT(req->proc_id, EXCL_FILL_DUP_SKIPPED_MLC);
+      return TRUE;
+    }
+  }
   MLC_Data* data;
   Addr line_addr, repl_line_addr = 0;
   Op* top = NULL;

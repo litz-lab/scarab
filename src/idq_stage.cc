@@ -90,8 +90,7 @@ struct IDQ_Stage {
   std::string idq_stage_name;
 
   Stage_Data* select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd);
-  void process_input_stage_data(Stage_Data* consume_from_sd, int& count_issued, int& count_issued_on_path,
-                                int& bad_spec_slots);
+  void process_input_stage_data(Stage_Data* consume_from_sd);
   bool enqueue(Op* op);
   Op* dequeue();
   inline int wrap_around(int);
@@ -264,53 +263,71 @@ Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Dat
   return consume_from_sd;
 }
 
-void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd, int& count_issued, int& count_issued_on_path,
-                                         int& bad_spec_slots) {
-  /* Return if the next expected uop has not yet arrived. */
-  if (!consume_from_sd) {
-    return;
-  }
+void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd) {
+  int count_issued = 0;
+  int count_issued_on_path = 0;
+  int count_bad_spec_slots = 0;
+  int count_unutilised_frontend_slots = 0;
 
-  /* Return if there is no enough space. */
-  if (capacity - occupied_count < consume_from_sd->op_count) {
-    ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count);
-    return;
-  }
+  // /* Return if the next expected uop has not yet arrived. */
+  // if (!consume_from_sd) {
+  //   return;
+  // }
+
+  // /* Return if there is no enough space. */
+  // if (capacity - occupied_count < consume_from_sd->op_count) {
+  //   ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count);
+  //   return;
+  //}
 
   /* Process the input stage data. */
-  int op_count_before_consuming = consume_from_sd->op_count;
-  for (int i = 0; i < op_count_before_consuming; i++) {
-    Op* op = consume_from_sd->ops[i];
-    ASSERT(proc_id, op && op->op_num == next_op_num);
-    /* If the uops are fetched from the uop cache,
-     * it is possible that they have not yet called decode_stage_process_op */
-    if (op_get_decode_cycle(op) == MAX_CTR) {
-      ASSERT(proc_id, op->fetched_from_uop_cache);
-      decode_stage_process_op(op);
-    }
-    /* If there are still slots in the output stage data,
-     * bypass the queue and go straight to the output data.
-     * Otherwise, enqueue the IDQ. */
-    if (idq_sd.op_count < idq_sd.max_op_count) {
-      ASSERT(proc_id, !occupied_count);
-      idq_sd.ops[idq_sd.op_count++] = op;
+  if (consume_from_sd && capacity - occupied_count >= consume_from_sd->op_count) {
+    int op_count_before_consuming = consume_from_sd->op_count;
+    for (int i = 0; i < op_count_before_consuming; i++) {
+      Op* op = consume_from_sd->ops[i];
+      ASSERT(proc_id, op && op->op_num == next_op_num);
+      /* If the uops are fetched from the uop cache,
+       * it is possible that they have not yet called decode_stage_process_op */
+      if (op_get_decode_cycle(op) == MAX_CTR) {
+        ASSERT(proc_id, op->fetched_from_uop_cache);
+        decode_stage_process_op(op);
+      }
+      /* If there are still slots in the output stage data,
+       * bypass the queue and go straight to the output data.
+       * Otherwise, enqueue the IDQ. */
+      if (idq_sd.op_count < idq_sd.max_op_count) {
+        ASSERT(proc_id, !occupied_count);
+        idq_sd.ops[idq_sd.op_count++] = op;
+      } else {
+        bool success = enqueue(op);
+        ASSERT(proc_id, success);
+      }
+      consume_from_sd->ops[i] = NULL;
+      consume_from_sd->op_count--;
+      next_op_num++;
+
       if (!op->off_path) {
         count_issued_on_path++;
       } else
-        bad_spec_slots++;
+        count_bad_spec_slots++;
       count_issued++;
-    } else {
-      bool success = enqueue(op);
-      ASSERT(proc_id, success);
     }
-    consume_from_sd->ops[i] = NULL;
-    consume_from_sd->op_count--;
-    next_op_num++;
-  }
-  ASSERT(proc_id, !consume_from_sd->op_count);
 
-  /* The output stage data should be full unless the IDQ is empty. */
-  ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count || !occupied_count);
+    ASSERT(proc_id, !consume_from_sd->op_count);
+
+    ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count || !occupied_count);
+  }
+
+  int bubble_slots = DISPATCH_WIDTH - idq_sd.op_count;
+  int recovery_cycle = idq_stage_get_recovery_cycle();
+  if (recovery_cycle != 0) {
+    ASSERT(proc_id, recovery_cycle > 0);
+    idq_stage_set_recovery_cycle(recovery_cycle - 1);
+    count_bad_spec_slots += bubble_slots;
+  } else
+    count_unutilised_frontend_slots += bubble_slots;
+  topdown_idq_update(proc_id, count_bad_spec_slots, count_unutilised_frontend_slots, count_issued,
+                     count_issued_on_path);
 }
 
 void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
@@ -326,11 +343,11 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
       (ic_uopc_sd->op_count && ic_uopc_sd->ops[0]) ? unsstr64(ic_uopc_sd->ops[0]->op_num) : "none",
       ic_uopc_sd->op_count, idq_sd.op_count, occupied_count);
   /* Fill the IDQ output stage data with uops from IDQ. */
-  int count_issued = 0;
-  int count_issued_on_path = 0;
-  int bad_spec_slots = 0;
-  int unitilised_frontend_slots = 0;
-  int recovery_cycle = idq_stage_get_recovery_cycle();
+  // int count_issued = 0;
+  // int count_issued_on_path = 0;
+  // int bad_spec_slots = 0;
+  // int unitilised_frontend_slots = 0;
+  // int recovery_cycle = idq_stage_get_recovery_cycle();
   for (int i = idq_sd.op_count; i < idq_sd.max_op_count; i++) {
     Op* op = dequeue();
     if (!op) {
@@ -340,11 +357,11 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
     idq_sd.ops[i] = op;
     idq_sd.op_count++;
 
-    if (!op->off_path) {
-      count_issued_on_path++;
-    } else
-      bad_spec_slots++;
-    count_issued++;
+    //   if (!op->off_path) {
+    //     count_issued_on_path++;
+    //   } else
+    //     bad_spec_slots++;
+    //   count_issued++;
   }
 
   /* Select the input stage data. */
@@ -354,23 +371,22 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
         : consume_from_sd == uop_queue_sd ? "uop_queue"
         : consume_from_sd == ic_uopc_sd   ? "ic_uopc"
                                           : "none");
-  process_input_stage_data(consume_from_sd, count_issued, count_issued_on_path, bad_spec_slots);
+  process_input_stage_data(consume_from_sd);
 
-  int empty_slots = idq_sd.max_op_count - idq_sd.op_count;
-  if (empty_slots > 0) {
-    if (recovery_cycle > 0) {
-      bad_spec_slots += empty_slots;
-    } else {
-      unitilised_frontend_slots += empty_slots;
-      if (idq_sd.op_count == 0)
-        STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GT_MIW_CYCLES);
-    }
-  }
+  // int empty_slots = idq_sd.max_op_count - idq_sd.op_count;
+  // if (empty_slots > 0) {
+  //   if (recovery_cycle > 0) {
+  //     bad_spec_slots += empty_slots;
+  //   } else {
+  //     unitilised_frontend_slots += empty_slots;
+  //     if (idq_sd.op_count == 0)
+  //       STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GT_MIW_CYCLES);
+  //   }
 
-  if (recovery_cycle > 0)
-    idq_stage_set_recovery_cycle(recovery_cycle - 1);
+  // if (recovery_cycle > 0)
+  //   idq_stage_set_recovery_cycle(recovery_cycle - 1);
 
-  topdown_idq_update(proc_id, bad_spec_slots, unitilised_frontend_slots, count_issued, count_issued_on_path);
+  // topdown_idq_update(proc_id, bad_spec_slots, unitilised_frontend_slots, count_issued, count_issued_on_path);
 }
 
 bool IDQ_Stage::enqueue(Op* op) {

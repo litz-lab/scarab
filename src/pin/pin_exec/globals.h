@@ -44,7 +44,7 @@ extern PINPLAY_ENGINE* scarab_pinplay_engine;
 
 static inline ADDRINT app_addr(ADDRINT a) {
 #ifdef ENABLE_PINPLAY
-  if(scarab_pinplay_engine && scarab_pinplay_engine->IsReplayerActive())
+  if (scarab_pinplay_engine && scarab_pinplay_engine->IsReplayerActive())
     return scarab_pinplay_engine->ReplayerTranslateAddress(a);
 #endif
   return a;

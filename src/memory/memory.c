@@ -1977,283 +1977,10 @@ static void mem_process_mlc_reqs() {
 /* mem_process_bus_out_reqs: */
 /* FIXME: need to busy the bus for the time a line is being sent */
 
+/* Ramulator handles off-chip communication itself, so nothing is ever inserted into the
+   bus_out_queue. This runs each cycle purely to hold that invariant down. */
 static void mem_process_bus_out_reqs() {
-  Mem_Req* req;
-  int ii;
-  int reqbuf_id;
-  int bus_schedule = FALSE;
-
-  // Ramulator implements separate queues for read/write requests
-  // per channel. Hence, requests in the bus_out_queue needs to be
-  // checked to see if their target queue is available. Removing
-  // early return case, i.e., MEM_QUEUE_FULL
-
-  // if(mem->mem_queue.entry_count == MEM_MEM_QUEUE_ENTRIES ||
-  if (mem->bus_out_queue.entry_count == 0) {
-    // if (mem->bus_out_queue.entry_count > 0) {
-    //    STAT_EVENT_ALL(MEM_QUEUE_FULL);
-    //}
-    // return; // VEYNU: if there is no room in the mem queue do nothing
-    return;  // Ramulator: early return if bus_out_queue is empty
-  }
-  ASSERTM(0, FALSE,
-          "ERROR: bus_out_queue should always be empty\n");  // Ramulator
-  // Ramulator handles off-chip communication latency itself. So we
-  // do not make use of bus_out_queue anymore.
-
-  /* Go thru the bus_out_queue and try to get the bus for the highest priority
-   * ready request */
-
-  if (OLDEST_FIRST_TO_MEM_QUEUE) {  // Original scheduling
-    for (ii = 0; ii < mem->bus_out_queue.entry_count; ii++) {
-      reqbuf_id = mem->bus_out_queue.base[ii].reqbuf;
-      req = &(mem->req_buffer[reqbuf_id]);
-      ASSERT(req->proc_id, req->state != MRS_INV);
-      ASSERT(req->proc_id,
-             req->state == MRS_BUS_NEW); /* only those requests that are new will be handled in this stage */
-
-      if (cycle_count < req->rdy_cycle)
-        continue;
-
-      ASSERTM(0, !MEM_MEM_QUEUE_PARTITION_ENABLE, "ERROR: MEM_QUEUE partitioning is not implemented in Ramulator!\n");
-      // if (MEM_MEM_QUEUE_PARTITION_ENABLE) {
-      //    if (mem->mem_queue_entry_count_bank[req->mem_flat_bank] ==
-      //    MEM_MEM_QUEUE_ENTRIES / (RAMULATOR_CHANNELS * RAMULATOR_BANKS)) {
-      //        continue;
-      //    }
-      //}
-
-      /* Adjust the request's priority so that it will be removed */
-      bus_schedule = TRUE;
-      mem->bus_out_queue.base[ii].priority = Mem_Req_Priority_Offset[MRT_MIN_PRIORITY];
-
-      DEBUG(req->proc_id,
-            "Mem request acquired the bus out  index:%ld  type:%s  addr:0x%s  "
-            "size:%d  state: %s\n",
-            (long int)(req - mem->req_buffer), Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->size,
-            mem_req_state_names[req->state]);
-
-      /* Send one at a time*/
-      if (bus_schedule)
-        break;
-    }
-  } else if (ROUND_ROBIN_TO_MEM_QUEUE) {
-    uns8 proc_id;
-    uns8 next_proc_id;
-
-    ASSERTM(0, !MEM_MEM_QUEUE_PARTITION_ENABLE, "ERROR: MEM_QUEUE partitioning is not implemented in Ramulator!\n");
-    ASSERT(0,
-           MEM_MEM_QUEUE_PARTITION_ENABLE && MEM_BUS_OUT_QUEUE_PARTITION_ENABLE);  // these have to be enabled
-
-    for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {  // initialize the round robin scheduling
-      mem->bus_out_queue_index_core[proc_id] = -1;       // -1 = not ready for scheduling
-      mem->bus_out_queue_seen_oldest_core[proc_id] = FALSE;
-    }
-
-    // Set candidates for the all cores by searching the whole bus_out_queue
-    for (ii = 0; ii < mem->bus_out_queue.entry_count; ii++) {
-      reqbuf_id = mem->bus_out_queue.base[ii].reqbuf;
-      req = &(mem->req_buffer[reqbuf_id]);
-      ASSERT(req->proc_id, req->state != MRS_INV);
-      /* only those requests that are new  will be handled in this stage */
-      ASSERT(req->proc_id, req->state == MRS_BUS_NEW);
-
-      if (cycle_count < req->rdy_cycle)
-        continue;
-
-      // Assuming bus out queue is a FIFO. The oldest one can block others
-      if (MEM_BUS_OUT_QUEUE_AS_FIFO) {
-        // this looks at only the oldest req for each bus_out_queue per core (assuming bus_out_queue is a FIFO
-        if (!mem->bus_out_queue_seen_oldest_core[req->proc_id]) {
-          ASSERT(0, mem->bus_out_queue_entry_count_core[req->proc_id]);
-          mem->bus_out_queue_seen_oldest_core[req->proc_id] = TRUE;
-
-          // if (mem->mem_queue_entry_count_bank[req->mem_flat_bank] <
-          // MEM_MEM_QUEUE_ENTRIES / (RAMULATOR_CHANNELS * RAMULATOR_BANKS)) {
-          // // a candidate is found when the bank is availabe
-          //    mem->bus_out_queue_index_core[req->proc_id] = ii;
-          //}
-        }
-      } else {  // Assuming bus out queue can be searched through. Non-blocking
-        if (mem->bus_out_queue_index_core[req->proc_id] == -1) {
-          // if (mem->mem_queue_entry_count_bank[req->mem_flat_bank] <
-          // MEM_MEM_QUEUE_ENTRIES / (RAMULATOR_CHANNELS * RAMULATOR_BANKS))
-          // mem->bus_out_queue_index_core[req->proc_id] = ii;
-        }
-      }
-    }
-
-    // really scheduling, the next proc_id gets the highest priority
-    next_proc_id = mem->bus_out_queue_round_robin_next_proc_id;
-    for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-      if (mem->bus_out_queue_index_core[next_proc_id] != -1) {  // found one
-        bus_schedule = TRUE;
-        mem->bus_out_queue.base[mem->bus_out_queue_index_core[next_proc_id]].priority =
-            Mem_Req_Priority_Offset[MRT_MIN_PRIORITY];
-
-        reqbuf_id = mem->bus_out_queue.base[mem->bus_out_queue_index_core[next_proc_id]].reqbuf;
-        req = &(mem->req_buffer[reqbuf_id]);
-
-        // update round_robin for the next schedule only when this scheduling is successful.
-        mem->bus_out_queue_round_robin_next_proc_id = (mem->bus_out_queue_round_robin_next_proc_id + 1) % NUM_CORES;
-        break;
-      }
-      next_proc_id = (next_proc_id + 1) % NUM_CORES;  // look at the next core
-    }
-  } else if (ONE_CORE_FIRST_TO_MEM_QUEUE) {
-    uns8 proc_id;
-    uns8 next_proc_id;
-
-    ASSERTM(0, !MEM_MEM_QUEUE_PARTITION_ENABLE, "ERROR: MEM_QUEUE partitioning is not implemented in Ramulator!\n");
-    // these have to be enabled
-    ASSERT(0, MEM_MEM_QUEUE_PARTITION_ENABLE && MEM_BUS_OUT_QUEUE_PARTITION_ENABLE);
-
-    for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {  // initialize the round robin scheduling
-      mem->bus_out_queue_index_core[proc_id] = -1;       // -1 = not ready for scheduling
-      mem->bus_out_queue_seen_oldest_core[proc_id] = FALSE;
-    }
-
-    // Set candidates for the all cores by searching the whole bus_out_queue
-    for (ii = 0; ii < mem->bus_out_queue.entry_count; ii++) {
-      reqbuf_id = mem->bus_out_queue.base[ii].reqbuf;
-      req = &(mem->req_buffer[reqbuf_id]);
-      ASSERT(req->proc_id, req->state != MRS_INV);
-      /* only those requests that are new will be handled in this stage */
-      ASSERT(req->proc_id, req->state == MRS_BUS_NEW);
-
-      if (cycle_count < req->rdy_cycle)
-        continue;
-      // Assuming bus out queue is a FIFO. The oldest one can block others
-      if (MEM_BUS_OUT_QUEUE_AS_FIFO) {
-        // this looks at only the oldest req for each bus_out_queue per core (assuming bus_out_queue is a FIFO
-        if (!mem->bus_out_queue_seen_oldest_core[req->proc_id]) {
-          ASSERT(0, mem->bus_out_queue_entry_count_core[req->proc_id]);
-          mem->bus_out_queue_seen_oldest_core[req->proc_id] = TRUE;
-
-          // if (mem->mem_queue_entry_count_bank[req->mem_flat_bank] <
-          // MEM_MEM_QUEUE_ENTRIES / (RAMULATOR_CHANNELS * RAMULATOR_BANKS)) {
-          // // a candidate is found when the bank is availabe
-          //    mem->bus_out_queue_index_core[req->proc_id] = ii; // a candidate
-          //    is found
-          //}
-        }
-      } else {  // Assuming bus out queue can be searched through. Non-blocking
-        if (mem->bus_out_queue_index_core[req->proc_id] == -1) {
-          // if (mem->mem_queue_entry_count_bank[req->mem_flat_bank] <
-          // MEM_MEM_QUEUE_ENTRIES / (RAMULATOR_CHANNELS * RAMULATOR_BANKS))
-          //    mem->bus_out_queue_index_core[req->proc_id] = ii;
-        }
-      }
-    }
-
-    // really scheduling, the previous proc_id gets the highest priority
-    next_proc_id = mem->bus_out_queue_round_robin_next_proc_id;
-    for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-      if (mem->bus_out_queue_index_core[next_proc_id] != -1) {  // found one
-        bus_schedule = TRUE;
-        mem->bus_out_queue.base[mem->bus_out_queue_index_core[next_proc_id]].priority =
-            Mem_Req_Priority_Offset[MRT_MIN_PRIORITY];
-
-        reqbuf_id = mem->bus_out_queue.base[mem->bus_out_queue_index_core[next_proc_id]].reqbuf;
-        req = &(mem->req_buffer[reqbuf_id]);
-
-        if (ONE_CORE_FIRST_TO_MEM_QUEUE_TH) {
-          if (mem->bus_out_queue_round_robin_next_proc_id == next_proc_id) {
-            mem->bus_out_queue_one_core_first_num_sent++;
-          } else {
-            mem->bus_out_queue_round_robin_next_proc_id = next_proc_id;
-            mem->bus_out_queue_one_core_first_num_sent = 1;
-          }
-
-          if (ONE_CORE_FIRST_TO_MEM_QUEUE_TH <= mem->bus_out_queue_one_core_first_num_sent) {
-            mem->bus_out_queue_round_robin_next_proc_id = (next_proc_id + 1) % NUM_CORES;
-            mem->bus_out_queue_one_core_first_num_sent = 0;
-          }
-        } else {
-          mem->bus_out_queue_round_robin_next_proc_id = next_proc_id;
-        }
-        break;
-      }
-      next_proc_id = (next_proc_id + 1) % NUM_CORES;  // look at the next core
-    }
-  } else
-    ASSERTM(0, 0, "Set mem_queue scheduling policy!!\n");
-
-  if (bus_schedule) {
-    ASSERT(0, req);
-    /* Request is accepted to the bus - change its state and ready cycle */
-    req->state = MRS_MEM_NEW;
-
-    /* Crossing frequency domain boundary between the chip and memory controller
-     */
-    req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_MEMORY) + 1;
-
-    /* Insert the request into mem queue --- perhaps this should not really be a
-     * queue */
-    req->queue = NULL;                   // &(mem->mem_queue); Ramulator_edit: not sure what to
-                                         // put in here
-    req->mem_queue_cycle = cycle_count;  // Ramulator_note: this is currently
-                                         // not used by Ramulator
-    req->mem_seq_num = mem_seq_num;      // Ramulator_note: no idea what this is
-                                         // doing. Currently not used by Ramulator
-    STAT_EVENT(0, MEM_QUEUE_ARRIVAL_DISTANCE_0 + MIN2((cycle_count - mem->last_mem_queue_cycle) / 10, 100));
-    mem->last_mem_queue_cycle = cycle_count;
-    memview_memqueue(MEMVIEW_MEMQUEUE_ARRIVE,
-                     req);  // Ramulator_note: what is memview?
-
-    STAT_EVENT(req->proc_id, POWER_MEMORY_CTRL_ACCESS);
-    if (req->type == MRT_WB || req->type == MRT_WB_NODIRTY) {
-      STAT_EVENT(req->proc_id, POWER_MEMORY_CTRL_WRITE);
-    } else {
-      STAT_EVENT(req->proc_id, POWER_MEMORY_CTRL_READ);
-    }
-
-    ASSERTM(0, !MEM_MEM_QUEUE_PARTITION_ENABLE, "ERROR: MEM_QUEUE partitioning is not implemented in Ramulator!\n");
-    if (MEM_BUS_OUT_QUEUE_PARTITION_ENABLE) {
-      ASSERT(0, mem->bus_out_queue_entry_count_core[req->proc_id] > 0);
-      mem->bus_out_queue_entry_count_core[req->proc_id]--;
-    }
-
-    // if (!ORDER_BEYOND_BUS)
-    //    mem_insert_req_into_queue (req, req->queue, mem_seq_num);
-    // else
-    //    mem_insert_req_into_queue (req, req->queue, ALL_FIFO_QUEUES ?
-    //    mem_seq_num : 0);
-    Flag sent = ramulator_send(req);  // Ramulator_note: Does ramulator need to do anything
-                                      // with mem_seq_num?
-    if (sent) {
-      ASSERT(req->proc_id, req->mem_queue_cycle >= req->rdy_cycle);
-    }
-
-    mem_seq_num++;  // Ramulator_note: Do we need to move this after
-                    // ramulator_send()?
-
-    perf_pred_mem_req_start(req);  // Ramulator_note: Do we need to call this after ramulator_send()?
-    if (mem->uncores[req->proc_id].num_outstanding_l1_misses == 0) {
-      STAT_EVENT(req->proc_id, CORE_MLP_CLUSTERS);
-    }
-    mem->uncores[req->proc_id].num_outstanding_l1_misses++;  // Ramulator_note: Do we need to move this
-                                                             // after ramulator_send()?
-    // dram->proc_infos[req->proc_id].reqs_per_bank[req->mem_flat_bank]++; //
-    // Ramulator_todo: replicate this stat
-
-    // if (MEM_MEM_QUEUE_PARTITION_ENABLE) {
-    //    ASSERT(0, mem->mem_queue_entry_count_bank[req->mem_flat_bank] <
-    //    MEM_MEM_QUEUE_ENTRIES / (RAMULATOR_CHANNELS * RAMULATOR_BANKS));
-    //    mem->mem_queue_entry_count_bank[req->mem_flat_bank]++;
-    //}
-
-    DEBUG(0, "bus_out_queue removal\n");
-    qsort(mem->bus_out_queue.base, mem->bus_out_queue.entry_count, sizeof(Mem_Queue_Entry), mem_compare_priority);
-    mem->bus_out_queue.entry_count--;
-    ASSERT(req->proc_id, mem->bus_out_queue.entry_count >= 0);
-
-    // Ramulator_remove: Ramulator implements its own request queues. This
-    // is not needed anymore
-    // if (ORDER_BEYOND_BUS)
-    //    qsort(mem->mem_queue.base, mem->mem_queue.entry_count,
-    //    sizeof(Mem_Queue_Entry), mem_compare_priority);
-  }
+  ASSERTM(0, 0 == mem->bus_out_queue.entry_count, "ERROR: bus_out_queue should always be empty\n");
 }
 
 /**************************************************************************************/
@@ -4518,7 +4245,12 @@ Flag l1_fill_line(Mem_Req* req) {
 static Flag mem_demote_probe(Cache* cache, uns8 proc_id, Addr line_addr, Flag dirty, Stat_Enum present_stat,
                              Addr* victim_addr, L1_Data* victim_out, Flag* victim_valid_out) {
   Addr probe_addr;
-  L1_Data* resident = (L1_Data*)cache_access(cache, line_addr, &probe_addr, FALSE);
+  /* update_repl is asked for so that a line already resident here is promoted to most
+     recently used: the level above just evicted it, which makes it the freshest thing at
+     this level, and leaving it at its old position ages it out as though it were cold.
+     cache_access() only touches replacement state on a tag match, so the probe below
+     still does not perturb anything when the line is absent. */
+  L1_Data* resident = (L1_Data*)cache_access(cache, line_addr, &probe_addr, TRUE);
   if (resident) {
     /* The demoted copy is the newer one, so the resident line is stale: its dirty bit has
        to absorb ours or the write is lost. Same rule the inclusive writeback paths use on
@@ -4564,8 +4296,14 @@ Flag mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, 
   /* An LLC-destined prefetch never probes the core's caches, so the LLC can hold a line
      the dcache also has. Demoting that line would make a second copy in the MLC, turning a
      duplicate the LLC prefetcher cannot avoid into one the uncore can: the line already
-     has a home below, so leave it there and just carry the dirty bit down. */
-  if (!mem_demote_probe(&L1(proc_id)->cache, proc_id, line_addr, dirty, EXCL_DEMOTE_LLC_PRESENT, &mlc_victim_addr,
+     has a home below, so leave it there and just carry the dirty bit down.
+
+     Only worth doing when a promotion invalidates, which is what keeps such pairs rare.
+     Without it every line ever served from the LLC keeps that copy for good, so this test
+     would match on half of all demotions and starve the MLC of the victims it exists to
+     hold -- and an MLC/LLC duplicate is the accepted policy in that mode anyway. */
+  if (EXCLUSIVE_PROMOTE_INVALIDATE &&
+      !mem_demote_probe(&L1(proc_id)->cache, proc_id, line_addr, dirty, EXCL_DEMOTE_LLC_PRESENT, &mlc_victim_addr,
                         &mlc_victim, &mlc_evicts))
     return TRUE;
 

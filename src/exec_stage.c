@@ -550,6 +550,7 @@ static inline void exec_stage_process_op(Op* op) {
 }
 
 static inline void exec_stage_bp_resolve(Op* op) {
+  ASSERT(exec->proc_id, op->uop->cf_type);
   if (!BP_UPDATE_AT_RETIRE) {
     // this code updates the branch prediction structures
     if (op->uop->cf_type >= CF_IBR)
@@ -563,8 +564,6 @@ static inline void exec_stage_bp_resolve(Op* op) {
           (unsigned long long)op_get_exec_cycle(op));
     bp_stat_main_branch_resolve_latency(op, op_get_exec_cycle(op), TRUE);
     bp_sched_recovery(bp_recovery_info, op, op_get_exec_cycle(op));
-    if (!op->off_path)
-      op->recovery_scheduled = TRUE;
 
     // stats for the reason of resteer
     STAT_EVENT(op->proc_id, RESTEER_RECOVER_AT_EXEC_NOT_CF + op->uop->cf_type);

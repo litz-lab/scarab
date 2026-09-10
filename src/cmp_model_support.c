@@ -43,6 +43,7 @@
 
 #include "cmp_model.h"
 #include "issue_queue.h"
+#include "load_value_pred.h"
 #include "lookahead_buffer.h"
 #include "lsq.h"
 #include "statistics.h"
@@ -79,6 +80,7 @@ void cmp_init_cmp_model() {
   alloc_mem_uop_queue_stage(NUM_CORES);
   alloc_mem_idq_stage(NUM_CORES);
   alloc_mem_lsq(NUM_CORES);
+  alloc_mem_load_predictors(NUM_CORES);
   alloc_mem_issue_queue(NUM_CORES);
 }
 
@@ -108,6 +110,7 @@ void cmp_set_all_stages(uns8 proc_id) {
   set_issue_queue(proc_id);
   set_exec_stage(&cmp_model.exec_stage[proc_id]);
   set_dcache_stage(&cmp_model.dcache_stage[proc_id]);
+  set_load_predictors(proc_id);
 }
 
 /**************************************************************************************/

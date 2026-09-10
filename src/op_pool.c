@@ -257,6 +257,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->cycles.bp_cycle = MAX_CTR;
   op->cycles.issue_cycle = MAX_CTR;
   op->cycles.map_cycle = MAX_CTR;
+  op->cycles.renamed_cycle = MAX_CTR;
   op->cycles.rdy_cycle = 1;
   op->cycles.sched_cycle = MAX_CTR;
   op->cycles.exec_cycle = MAX_CTR;
@@ -265,6 +266,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->cycles.retire_cycle = MAX_CTR;
   op->cycles.replay_cycle = MAX_CTR;
   op->cycles.pred_cycle = MAX_CTR;
+  op->cycles.value_predicted_cycle = MAX_CTR;
   op->cycles.precommit_cycle = MAX_CTR;
   op->cycles.decode_cycle = MAX_CTR;
   op->cycles.wake_cycle = MAX_CTR;

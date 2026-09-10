@@ -252,6 +252,9 @@ void bp_sched_recovery(Bp_Recovery_Info* bp_recovery_info, Op* op, Counter cycle
     const uns latency = 1;
     ASSERT(op->proc_id, !op->bp_pred_info->recovery_sch);
     op->bp_pred_info->recovery_sch = TRUE;
+    // Blocks the op's retire until the recovery is handled; cleared in cmp_recover (not in the
+    // node flush, so it works for recovery ops that never enter the node window, e.g. decode/FE).
+    op->recovery_scheduled = TRUE;
     bp_recovery_info->recovery_cycle = cycle + latency;
     bp_recovery_info->recovery_fetch_addr = next_fetch_addr;
     if (op->proc_id)
@@ -979,6 +982,12 @@ void bp_retire_op(Bp_Data* bp_data, Op* op) {
 void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   STAT_EVENT(0, PERFORMED_RECOVERIES);
   INC_STAT_EVENT(0, PERFORMED_RECOVERY_LAT, cycle_count - info->predict_cycle);
+
+  /* Callers only invoke bp_recover_op for a real branch (cf_type != NOT_CF); a
+   * predicted-load recovery is filtered out at the call sites so it never touches
+   * branch-predictor state (global/target history, CRS, etc.). */
+  ASSERT(0, cf_type != NOT_CF);
+
   /* always recover the global history */
   if (cf_type == CF_CBR || cf_type == CF_REP) {
     bp_data->global_hist = (info->pred_global_hist >> 1) | (info->new_dir << 31);

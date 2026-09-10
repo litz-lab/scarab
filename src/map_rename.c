@@ -216,6 +216,8 @@ static inline void reg_file_collect_released_entry_stat(struct reg_table_entry *
   if (entry->off_path)
     return;
 
+  ASSERT(map_data->proc_id, entry->produced_cycle != MAX_CTR);
+
   // set the cycle counts for unconsumed registers
   entry->produced_cycle = entry->produced_cycle == MAX_CTR ? cycle_count : entry->produced_cycle;
   entry->onpath_consumed_cycle = entry->onpath_consumed_cycle == MAX_CTR ? cycle_count : entry->onpath_consumed_cycle;
@@ -665,11 +667,6 @@ void reg_table_entry_clear(struct reg_table_entry *entry) {
 
 /* update the metadata when it is read during renaming */
 void reg_table_entry_read(struct reg_table_entry *entry, Op *op) {
-  /*
-    traditionally, fill src info from the entry and update not ready bit for wake up
-    since the dependency is tracked in the map module, only update the metadata for the research reg file schemes
-  */
-
   if (entry->atomic_pending_consumed != REG_RENAMING_SCHEME_EARLY_RELEASE_PENDING_CONSUMED_MAX) {
     entry->atomic_pending_consumed++;
   }
@@ -697,6 +694,7 @@ void reg_table_entry_write(struct reg_table_entry *entry, Op *op, int parent_reg
   entry->parent_reg_id = parent_reg_id;
   entry->reg_state = REG_TABLE_ENTRY_STATE_ALLOC;
   entry->allocated_cycle = cycle_count;
+  entry->produced_cycle = MAX_CTR;
 
   DEBUG(0, "(entry write)[%lld]: parent_reg_id: %d, self_reg_id: %d, child_reg_id: %d\n", entry->op_num,
         entry->parent_reg_id, entry->self_reg_id, entry->child_reg_id);
@@ -730,7 +728,32 @@ void reg_table_entry_consume(struct reg_table_entry *entry, Op *op) {
       STAT_EVENT(map_data->proc_id, MAP_STAGE_INT_REG_ISSUE_READ_SAME_CYCLE_CONSUMED_ONPATH + entry->reg_type);
     }
   }
-  entry->onpath_consumed_cycle = cycle_count;
+  // An addr-predicted (early-AGEN) load reaches this deferred consume at the producer's wake SIGNAL,
+  // which exec_stage fires op_latency cycles before the value is in the register file (op_get_wake_cycle
+  // == produced_cycle). Normal consumers are floored to that wake_cycle in map.c; floor this consume the
+  // same way so onpath_consumed_cycle never precedes produced_cycle. Every consumable register is now
+  // produced (real producers, or live-ins recorded at reg_table_init), so produced_cycle is set.
+  ASSERT(map_data->proc_id, entry->produced_cycle != MAX_CTR);
+  entry->onpath_consumed_cycle = MAX2(cycle_count, entry->produced_cycle);
+}
+
+/* An addr-predicted load skips reading its source registers at rename (it issued on the predicted
+ * address). Once its address operands wake, register it as their consumer and mark them consumed so
+ * the reg-file accounting (onpath_consumers_num == onpath_consumed_count) balances at release. */
+void reg_file_read_src_at_wakeup(Op *op) {
+  ASSERT(op->proc_id, op->load_addr_predicted);
+  for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
+    int reg_type = reg_file_get_reg_type(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]);
+    if (reg_type == REG_FILE_REG_TYPE_OTHER)
+      continue;
+
+    int reg_id = op->src_reg_id[ii][REG_TABLE_TYPE_PHYSICAL];
+    ASSERT(op->proc_id, reg_id != REG_TABLE_REG_ID_INVALID);
+    struct reg_table *reg_table = map_data->reg_file[reg_type]->reg_table[REG_TABLE_TYPE_PHYSICAL];
+    struct reg_table_entry *entry = &reg_table->entries[reg_id];
+    reg_table_entry_read(entry, op);
+    reg_table_entry_consume(entry, op);
+  }
 }
 
 /* update the register state to indicate the value is produced during execution*/
@@ -739,11 +762,19 @@ void reg_table_entry_produce(struct reg_table_entry *entry, Op *op, uns dst_reg_
     return;
   }
   ASSERT(map_data->proc_id, entry->reg_state == REG_TABLE_ENTRY_STATE_ALLOC);
+  // Produce exactly once: a producer's wake_up_ops must not fire twice (the
+  // entry is reset to MAX_CTR at allocation; a second produce would find it set).
+  ASSERT(map_data->proc_id, entry->produced_cycle == MAX_CTR);
+  // A genuine producer makes its value available now-or-later; only a value-
+  // predicted load may have produced it earlier (predicted before it executes).
+  ASSERT(map_data->proc_id, op->load_value_predicted || op_get_wake_cycle(op) >= cycle_count);
 
   entry->reg_val = op->dst_val[dst_reg_idx];
   entry->produced_uid = op->inst_uid;
   entry->reg_state = REG_TABLE_ENTRY_STATE_PRODUCED;
-  entry->produced_cycle = cycle_count;
+  // produced_cycle is the cycle the value is available in the register file
+  // (== wake_cycle), so consumers (floored to wake_cycle) never consume before it.
+  entry->produced_cycle = op_get_wake_cycle(op);
 }
 
 struct reg_table_entry_ops reg_table_entry_ops = {
@@ -796,6 +827,10 @@ void reg_table_init(struct reg_table *reg_table, struct reg_table *parent_reg_ta
 
     struct reg_table_entry *entry = reg_table->free_list->ops->alloc(reg_table->free_list);
     entry->ops->write(entry, &invalid_op, ii);
+    // Live-in: this maps an arch reg to a value that exists from the start of simulation but that no op
+    // ever produces. Record its availability now (== allocated_cycle) so produced_cycle is set, not left
+    // at MAX_CTR -- otherwise a consumer of the live-in reads a value with no produce cycle.
+    entry->produced_cycle = entry->allocated_cycle;
     entry->num_refs++;
     reg_table->parent_reg_table->entries[entry->parent_reg_id].child_reg_id = entry->self_reg_id;
   }
@@ -814,7 +849,10 @@ int reg_table_read(struct reg_table *reg_table, Op *op, int parent_reg_id) {
   ASSERT(map_data->proc_id, self_reg_id != REG_TABLE_REG_ID_INVALID);
 
   struct reg_table_entry *entry = &reg_table->entries[self_reg_id];
-  entry->ops->read(entry, op);
+  // Addr-predicted load defers its source read to operand wake-up (reg_file_read_src_at_wakeup),
+  // so it does not register as a consumer here at rename.
+  if (!op->load_addr_predicted)
+    entry->ops->read(entry, op);
   return self_reg_id;
 }
 
@@ -1008,9 +1046,14 @@ void reg_renaming_scheme_realistic_rename(Op *op) {
   // write the physical register table and update the arch register table
   reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
-  // checkpoint the speculative register table for recovering
-  if (!op->off_path && op->uop->cf_type && op->bp_pred_info->recovery_point == RECOVER_AT_EXEC)
-    reg_file_snapshot_srt();
+  // Snapshot the SRT at the eom of a macro that recovers at the eom (exec, or early-AGEN wake/rename).
+  if (op->eom) {
+    Recovery_Point rp = op_inst_recovery_point(op);
+    if (rp != RECOVER_AT_NONE && rp != RECOVER_AT_DECODE && rp != RECOVER_AT_FE) {
+      ASSERT(op->proc_id, !op->off_path);
+      reg_file_snapshot_srt();
+    }
+  }
 }
 
 // do not check the reg file when issuing
@@ -1020,6 +1063,9 @@ Flag reg_renaming_scheme_realistic_issue(Op *op) {
 
 // consume the src registers
 void reg_renaming_scheme_realistic_consume(Op *op) {
+  // Addr-predicted load reads and consumes its sources later, at operand wake-up, not here.
+  if (op->load_addr_predicted)
+    return;
   int reg_table_types[] = {REG_TABLE_TYPE_PHYSICAL};
 
   // consume the src register in the physical reg table
@@ -1036,12 +1082,12 @@ void reg_renaming_scheme_realistic_produce(Op *op) {
 
 // flush registers of misprediction operands using the ptag info
 void reg_renaming_scheme_realistic_recover(Op *op) {
-  // do not need to do flushing if it is a decoding flush
-  ASSERT(op->proc_id, op->uop->cf_type);
-  if (op->bp_pred_info->recovery_point != RECOVER_AT_EXEC)
+  // only eom-recoveries touch the SRT (exec, or early-AGEN wake/rename); decode/FE squash before rename.
+  Recovery_Point rp = op_inst_recovery_point(op);
+  if (rp == RECOVER_AT_NONE || rp == RECOVER_AT_DECODE || rp == RECOVER_AT_FE)
     return;
+  ASSERT(op->proc_id, op->bp_pred_main.recovery_sch);
 
-  // rollback to the status that does not contain any off_path entries
   reg_file_rollback_srt();
 
   // release the registers from the youngest to the flush point
@@ -1124,9 +1170,14 @@ void reg_renaming_scheme_late_allocation_rename(Op *op) {
   // write the virtaul register table and update the arch register table
   reg_file_write_dst(op, REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_ARCHITECTURAL);
 
-  // checkpoint the speculative register table for recovering
-  if (!op->off_path && op->uop->cf_type && op->bp_pred_info->recovery_point == RECOVER_AT_EXEC)
-    reg_file_snapshot_srt();
+  // Snapshot the SRT at the eom of a macro that recovers at the eom (see the realistic scheme).
+  if (op->eom) {
+    Recovery_Point rp = op_inst_recovery_point(op);
+    if (rp != RECOVER_AT_NONE && rp != RECOVER_AT_DECODE && rp != RECOVER_AT_FE) {
+      ASSERT(op->proc_id, !op->off_path);
+      reg_file_snapshot_srt();
+    }
+  }
 }
 
 /*
@@ -1173,9 +1224,11 @@ void reg_renaming_scheme_late_allocation_consume(Op *op) {
   reg_file_read_src(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_VIRTUAL);
   reg_file_write_dst(op, REG_TABLE_TYPE_PHYSICAL, REG_TABLE_TYPE_VIRTUAL);
 
-  // consume for both register tables
-  int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
-  reg_file_consume_src(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
+  // consume for both register tables (addr-pred load consumes later, at operand wake-up)
+  if (!op->load_addr_predicted) {
+    int reg_table_types[] = {REG_TABLE_TYPE_VIRTUAL, REG_TABLE_TYPE_PHYSICAL};
+    reg_file_consume_src(op, reg_table_types, sizeof(reg_table_types) / sizeof(reg_table_types[0]));
+  }
 }
 
 void reg_renaming_scheme_late_allocation_produce(Op *op) {
@@ -1185,13 +1238,12 @@ void reg_renaming_scheme_late_allocation_produce(Op *op) {
 }
 
 void reg_renaming_scheme_late_allocation_recover(Op *op) {
-  // Only execution-time recoveries take/consume SRT checkpoints.
-  // Decode-time and early frontend-only recoveries should not rollback SRT.
-  ASSERT(op->proc_id, op->uop->cf_type);
-  if (op->bp_pred_info->recovery_point != RECOVER_AT_EXEC)
+  // only eom-recoveries touch the SRT -- see the realistic scheme.
+  Recovery_Point rp = op_inst_recovery_point(op);
+  if (rp == RECOVER_AT_NONE || rp == RECOVER_AT_DECODE || rp == RECOVER_AT_FE)
     return;
+  ASSERT(op->proc_id, op->bp_pred_main.recovery_sch);
 
-  // rollback to the status that does not contain any off_path entries
   reg_file_rollback_srt();
 
   // release the registers from the youngest to the flush point for both register tables
@@ -1856,6 +1908,13 @@ void reg_file_rename(Op *op) {
   reg_renaming_scheme_func_table[REG_RENAMING_SCHEME].rename(op);
 
   reg_file_collect_rename_stat(op);
+
+  // macro renamed; the wake/exec paths read this to tell whether the eom has renamed yet.
+  op_set_renamed_cycle(op, cycle_count);
+
+  // schedule a predicted-load recovery deferred to RECOVER_AT_RENAME (its trigger beat the eom's rename).
+  if (op->eom && op_inst_recovery_point(op) == RECOVER_AT_RENAME)
+    predicted_load_schedule_recovery(op, cycle_count);
 }
 
 /*

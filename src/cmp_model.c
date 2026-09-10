@@ -59,6 +59,7 @@
 #include "ft.h"
 #include "idq_stage.h"
 #include "issue_queue.h"
+#include "load_value_pred.h"
 #include "lsq.h"
 #include "map_rename.h"
 #include "op_pool.h"
@@ -127,6 +128,7 @@ void cmp_init(uns mode) {
     init_exec_stage(proc_id, "EXEC");
     init_exec_ports(proc_id, "EXEC_PORTS");
     init_dcache_stage(proc_id, "DCACHE");
+    init_load_predictors(proc_id, "LOAD_PRED");
 
     /* initialize the common data structures */
     // Only one recovery info for all the BPs
@@ -371,6 +373,8 @@ void cmp_recover() {
   ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == map_data->proc_id);
   bp_recovery_info->recovery_cycle = MAX_CTR;
   bp_recovery_info->redirect_cycle = MAX_CTR;
+  // The recovery is now handled: clear the retire-blocking flag on the op that scheduled it.
+  bp_recovery_info->recovery_op->recovery_scheduled = FALSE;
   cmp_set_all_stages(bp_recovery_info->proc_id);
   for (int bp_id = NUM_BPS - 1; bp_id >= 0; --bp_id) {
     cmp_set_all_data(bp_recovery_info->proc_id, bp_id);
@@ -395,6 +399,7 @@ void cmp_recover() {
   recover_exec_stage();
   recover_dcache_stage();
   recover_memory();
+  recover_load_predictors();
   recover_node_stage();
 }
 
@@ -525,7 +530,9 @@ void cmp_warmup(Op* op) {
     bp_btb_post_bp_predict(bp_data, op);  // for next BTB access
     bp_target_known_op(bp_data, op);
     bp_resolve_op(bp_data, op);
-    if (op->bp_pred_info->recovery_point == RECOVER_AT_DECODE || op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
+    if ((op->bp_pred_info->recovery_point == RECOVER_AT_DECODE ||
+         op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) &&
+        op->uop->cf_type != NOT_CF) {
       bp_recover_op(bp_data, op->uop->cf_type, &op->recovery_info);
     }
     bp_retire_op(bp_data, op);

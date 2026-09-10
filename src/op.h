@@ -55,6 +55,7 @@ typedef struct Op_Cycles_struct {
   Counter fetch_cycle;   // cycle an individual instruction is fetched
   Counter bp_cycle;      // cycle a CF instruction accesses the branch predictor
   Counter map_cycle;     // cycle an individual instruction enters the map stage
+  Counter renamed_cycle;  // cycle the op finished reg_file_rename (its SRT effect is applied); MAX_CTR until then
   Counter issue_cycle;   // cycle an individual instruction is issued -- same as chkpt
   Counter rdy_cycle;     // cycle the final source value is available (accumulator: MAX over producers)
   Counter sched_cycle;   // cycle when the op is scheduled (arrives at the functional unit)
@@ -64,6 +65,7 @@ typedef struct Op_Cycles_struct {
   Counter retire_cycle;  // cycle when the op actually retires
   Counter replay_cycle;  // cycle when the op catches a replay signal
   Counter pred_cycle;
+  Counter value_predicted_cycle;  // cycle a load's value was predicted (value pred); MAX_CTR until then
   Counter precommit_cycle;  // cycle when the op is precommit (will eventually retire)
   Counter decode_cycle;     // cycle when decode completes
   Counter wake_cycle;       // cycle a wake up signal is sent to dependents
@@ -209,15 +211,20 @@ struct Op_struct {
   uns16 queue_id;        // id for which issue queue this op is assigned to
   uns16 queue_entry_id;  // id for which entry in the issue queue this op is
 
-  struct Op_struct* next_rdy;   // pointer to next ready op (node table)
-  Flag in_rdy_list;             // is the op in the node stage's ready list?
-  struct Op_struct* next_node;  // pointer to the next op in the node table
-  Flag in_node_list;            // is the op in the node list?
-  Flag precommitted;            // if the op is pre-commit in the ROB
-  Flag macro_fused;             // if the op should be fused with the previous op (CMP/TEST)
-  Flag move_eliminated;         // if the op can be move-eliminated
-  Flag replay;                  // is the op waiting to replay?
-  uns exec_count;               // how many times has this op been executed?
+  struct Op_struct* next_rdy;     // pointer to next ready op (node table)
+  Flag in_rdy_list;               // is the op in the node stage's ready list?
+  struct Op_struct* next_node;    // pointer to the next op in the node table
+  Flag in_node_list;              // is the op in the node list?
+  Flag precommitted;              // if the op is pre-commit in the ROB
+  Flag macro_fused;               // if the op should be fused with the previous op (CMP/TEST)
+  Flag move_eliminated;           // if the op can be move-eliminated
+  Flag load_value_predicted;      // if consumers of the op can be ready before this load
+  Flag load_addr_predicted;       // early-AGEN: load may issue w/o addr operands, access load_pred_addr
+  Addr load_pred_addr;            // predicted effective addr (early-AGEN/RFP), verified vs va at exec
+  Counter load_pred_ready_cycle;  // cycle a predicted load's result is available to consumers (RFP: +DCACHE_CYCLES)
+  Counter load_pred_ready_delay;  // produce->availability latency (0 value pred; DCACHE_CYCLES RFP), applied at rename
+  Flag replay;                    // is the op waiting to replay?
+  uns exec_count;                 // how many times has this op been executed?
   // }}}
 
   // {{{ dependency information
@@ -265,6 +272,19 @@ struct Op_struct {
   FT* parent_FT_off_path;
 };
 
+/* Schedules the exec-time squash for a mispredicted predicted load (defined in
+ * load_value_pred.cc; it does bp_sched_recovery, which op.h cannot call directly
+ * because bp/bp.h includes op.h). Called from op_set_exec_cycle below. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void predicted_load_schedule_recovery(Op* op, Counter recovery_cycle);
+/* Adds (exec_cycle - value_predicted_cycle) to LOAD_VALUE_PREDICT_SAVED_CYCLES_ON_PATH. */
+void load_pred_account_saved_cycles(Op* op);
+#ifdef __cplusplus
+}
+#endif
+
 /* Per-op cycle-counter accessors. Each counter has its own get/set function so
  * that per-counter behavior (stats, debug, invariants) can be added in one place.
  * op_set_<name>_cycle() is write-once: it asserts the counter has not been set
@@ -283,6 +303,18 @@ static inline Op* op_inst_uop(const Op* op, uns i) {
 static inline Op* op_inst_eom(const Op* op) {
   ASSERT(op->proc_id, op->dyn_inst);
   return op->dyn_inst->uops[op->inst->num_uop - 1];
+}
+// Recovery stage for this macro (RECOVER_AT_NONE if none). Invariant: at most one uop is marked -- asserts otherwise.
+static inline Recovery_Point op_inst_recovery_point(const Op* op) {
+  Recovery_Point rp = RECOVER_AT_NONE;
+  for (uns i = 0; i < op_inst_num_uops(op); i++) {
+    const Op* u = op_inst_uop(op, i);
+    if (u->bp_pred_info && u->bp_pred_info->recovery_point != RECOVER_AT_NONE) {
+      ASSERT(op->proc_id, rp == RECOVER_AT_NONE);
+      rp = u->bp_pred_info->recovery_point;
+    }
+  }
+  return rp;
 }
 
 static inline Counter op_get_fetch_cycle(const Op* op) {
@@ -308,6 +340,13 @@ static inline void op_set_map_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.map_cycle == MAX_CTR);
   op->cycles.map_cycle = cycle;
 }
+static inline Counter op_get_renamed_cycle(const Op* op) {
+  return op->cycles.renamed_cycle;
+}
+static inline void op_set_renamed_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.renamed_cycle == MAX_CTR);
+  op->cycles.renamed_cycle = cycle;
+}
 
 static inline Counter op_get_issue_cycle(const Op* op) {
   return op->cycles.issue_cycle;
@@ -331,6 +370,17 @@ static inline Counter op_get_exec_cycle(const Op* op) {
 static inline void op_set_exec_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.exec_cycle == MAX_CTR);
   op->cycles.exec_cycle = cycle;
+  // value-predicted load: its value was usable to consumers at prediction; count cycles saved vs exec.
+  if (op->cycles.value_predicted_cycle != MAX_CTR && !op->off_path)
+    load_pred_account_saved_cycles(op);
+  // value/RFP-pred load only: recover at exec if the eom has renamed, else defer to RECOVER_AT_RENAME.
+  if (!op->bp_pred_info || op->bp_pred_info->recovery_point != RECOVER_AT_EXEC || op->uop->cf_type != NOT_CF ||
+      op->load_addr_predicted)
+    return;
+  if (op_get_renamed_cycle(op_inst_eom(op)) != MAX_CTR)
+    predicted_load_schedule_recovery(op, op_get_exec_cycle(op));
+  else
+    op->bp_pred_info->recovery_point = RECOVER_AT_RENAME;
 }
 
 static inline Counter op_get_dcache_cycle(const Op* op) {
@@ -371,6 +421,13 @@ static inline Counter op_get_pred_cycle(const Op* op) {
 static inline void op_set_pred_cycle(Op* op, Counter cycle) {
   ASSERT(op->proc_id, op->cycles.pred_cycle == MAX_CTR);
   op->cycles.pred_cycle = cycle;
+}
+static inline Counter op_get_value_predicted_cycle(const Op* op) {
+  return op->cycles.value_predicted_cycle;
+}
+static inline void op_set_value_predicted_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.value_predicted_cycle == MAX_CTR);
+  op->cycles.value_predicted_cycle = cycle;
 }
 
 static inline Counter op_get_precommit_cycle(const Op* op) {

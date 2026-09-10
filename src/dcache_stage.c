@@ -51,6 +51,7 @@
 #include "prefetcher/stream_pref.h"
 
 #include "cmp_model.h"
+#include "load_value_pred.h"
 #include "map.h"
 #include "model.h"
 #include "statistics.h"
@@ -253,6 +254,13 @@ void update_dcache_stage(Stage_Data* src_sd) {
       continue;
     }
 
+    /* Early-AGEN address prediction accesses the dcache at the predicted address
+     * (only latency is affected; the load's value is oracle-provided). On a
+     * correct prediction this equals the true VA; a wrong one is squashed at the
+     * macro EOM. Store-forwarding (scan_stores) intentionally stays on the true
+     * VA to keep the memory-ordering oracle correct. */
+    Addr access_va = op->load_addr_predicted ? op->load_pred_addr : op->oracle_info.va;
+
     // OS_WAIT_MEM re-probe: the op already accessed the dcache and missed, and
     // new_mem_req found no in-flight request to merge with and no free mem-request
     // buffer. Re-looking-up the dcache can only re-derive the same known miss, so skip
@@ -264,13 +272,13 @@ void update_dcache_stage(Stage_Data* src_sd) {
     if (op->state == OS_WAIT_MEM) {
       ASSERT(dc->proc_id, op_get_dcache_cycle(op) != MAX_CTR);
       op->state = OS_SCHEDULED;
-      dcache_cacheline_miss(op, get_cache_line_addr(&dc->dcache, op->oracle_info.va));
+      dcache_cacheline_miss(op, get_cache_line_addr(&dc->dcache, access_va));
       continue;
     }
 
     /* check on the availability of a read port for the given bank */
     // the bank bits are the lowest order cache index bits
-    uns bank = BANK(op->oracle_info.va, DCACHE_BANKS, DCACHE_INTERLEAVE_FACTOR);
+    uns bank = BANK(access_va, DCACHE_BANKS, DCACHE_INTERLEAVE_FACTOR);
     DEBUG(dc->proc_id, "check_read and write port availiabilty mem_type:%s bank:%d \n",
           (op->uop->mem_type == MEM_ST) ? "ST" : "LD", bank);
     if (!PERFECT_DCACHE && ((op->uop->mem_type == MEM_ST && !get_write_port(&dc->ports[bank])) ||
@@ -296,7 +304,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
 
     /* now access the dcache with it */
     Addr line_addr;
-    Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, TRUE);
+    Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, access_va, &line_addr, TRUE);
     dc->idle_cycle = MAX2(dc->idle_cycle, cycle_count + DCACHE_CYCLES);
 
     if (op->uop->mem_type == MEM_ST)
@@ -319,9 +327,14 @@ void update_dcache_stage(Stage_Data* src_sd) {
       }
 
       op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->uop->extra_ld_latency);
-      if (op->uop->mem_type != MEM_ST) {
+      // A value-predicted / RFP load already produced its register and woke its
+      // consumers at rename; do not wake (and re-produce) again here.
+      if (op->uop->mem_type != MEM_ST && !op->load_value_predicted) {
         op_set_wake_cycle(op, op_get_done_cycle(op));
         wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+      } else if (op->load_value_predicted) {
+        // produced early and woke consumers at rename; wake_cycle must already be set
+        ASSERT(op->proc_id, op_get_wake_cycle(op) != MAX_CTR);
       }
       continue;
     }
@@ -626,10 +639,14 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
     line->dirty |= op->uop->mem_type == MEM_ST;
   }
 
-  /* wake up source inst if the op is completed */
-  if (op->uop->mem_type != MEM_ST) {
+  /* wake up source inst if the op is completed (skip if already produced early
+   * by value/RFP prediction at rename) */
+  if (op->uop->mem_type != MEM_ST && !op->load_value_predicted) {
     op_set_wake_cycle(op, op_get_done_cycle(op));
     wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+  } else if (op->load_value_predicted) {
+    // produced early and woke consumers at rename; wake_cycle must already be set
+    ASSERT(op->proc_id, op_get_wake_cycle(op) != MAX_CTR);
   }
 }
 
@@ -656,8 +673,14 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
         }
 
         op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->uop->extra_ld_latency);
-        op_set_wake_cycle(op, cycle_count + DCACHE_CYCLES + op->uop->extra_ld_latency);
-        wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+        // skip re-wake if produced early by value/RFP prediction at rename
+        if (!op->load_value_predicted) {
+          op_set_wake_cycle(op, cycle_count + DCACHE_CYCLES + op->uop->extra_ld_latency);
+          wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+        } else {
+          // produced early and woke consumers at rename; wake_cycle must already be set
+          ASSERT(op->proc_id, op_get_wake_cycle(op) != MAX_CTR);
+        }
         break;
       }
 
@@ -906,9 +929,9 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     ASSERT(dc->proc_id, !op->in_rdy_list);
 
     // Record completion once (keeps done_cycle write-once). A store/prefetch that
-    // missed with *_DO_NOT_BLOCK_WINDOW already completed early (lines ~684/715)
-    // but still has this pending fill; keep its earlier done_cycle. Any other op
-    // arriving here already-done is a bug.
+    // missed with *_DO_NOT_BLOCK_WINDOW already completed early but still has this
+    // pending fill; keep its earlier done_cycle. Any other op arriving here
+    // already-done is a bug.
     if (op_get_done_cycle(op) == MAX_CTR) {
       op_set_done_cycle(op, cycle_count + 1);
       if (!op->off_path && op->uop->mem_type == MEM_LD)
@@ -920,9 +943,13 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     }
     op->state = OS_SCHEDULED;
 
-    if (op->uop->mem_type != MEM_ST) {
+    // skip re-wake if produced early by value/RFP prediction at rename
+    if (op->uop->mem_type != MEM_ST && !op->load_value_predicted) {
       op_set_wake_cycle(op, op_get_done_cycle(op));
       wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+    } else if (op->load_value_predicted) {
+      // produced early and woke consumers at rename; wake_cycle must already be set
+      ASSERT(op->proc_id, op_get_wake_cycle(op) != MAX_CTR);
     }
   }
 

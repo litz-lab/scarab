@@ -123,7 +123,17 @@ uns op_sources_add(Op* op, Dep_Type type, Op* src_op, Counter src_op_num, Counte
   info->op_num = src_op_num;
   info->unique_num = src_unique_num;
 
-  op_sources_set_not_rdy(op, src_num);
+  // producer_ready: a value/RFP-predicted producer resolved early, so this consumer
+  // need not gate on it. (An addr-predicted load still gates its operands here so the
+  // producer wakes it; it issues early via op_sources_not_rdy_is_clear.)
+  Flag producer_ready = src_op->load_value_predicted;
+  if (!producer_ready) {
+    op_sources_set_not_rdy(op, src_num);
+  } else {
+    // producer resolved early; apply its ready_cycle as a wake-time floor (0 for value pred, +DCACHE_CYCLES for RFP)
+    if (src_op->load_pred_ready_cycle > op_get_rdy_cycle(op))
+      op_set_rdy_cycle(op, src_op->load_pred_ready_cycle);
+  }
 
   if (type == MEM_DATA_DEP) {
     ASSERT(op->proc_id, src_op->uop->mem_type == MEM_ST && op->uop->mem_type == MEM_LD);
@@ -149,7 +159,7 @@ Flag op_sources_test_not_rdy(const Op* op, uns bit) {
   return (Flag)((op->srcs_not_rdy_words[wi] >> bi) & 1ULL);
 }
 
-Flag op_sources_not_rdy_is_clear(const Op* op) {
+Flag op_sources_all_woken(const Op* op) {
   uns i;
   if (!op->srcs_not_rdy_words || op->srcs_not_rdy_nwords == 0)
     return TRUE;
@@ -158,4 +168,11 @@ Flag op_sources_not_rdy_is_clear(const Op* op) {
       return FALSE;
   }
   return TRUE;
+}
+
+Flag op_sources_not_rdy_is_clear(const Op* op) {
+  // Addr-predicted load issues early on its predicted address, regardless of operand readiness.
+  if (op->load_addr_predicted)
+    return TRUE;
+  return op_sources_all_woken(op);
 }

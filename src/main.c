@@ -220,6 +220,17 @@ Scarab's source code is organized as follows:
 
 /**************************************************************************************/
 
+/* Print a backtrace on a fatal memory-fault signal, then re-raise with the default
+ * handler so the exit status still reflects the signal. Unlike an ASSERT, a raw
+ * SIGSEGV/SIGBUS otherwise leaves no clue where it happened. */
+static void handle_fatal_signal(int signum) {
+  fprintf(mystderr, "\nFATAL SIGNAL %d at cycle_count=%llu:\n", signum, (unsigned long long)cycle_count);
+  print_backtrace();
+  fflush(mystderr);
+  signal(signum, SIG_DFL);
+  raise(signum);
+}
+
 int main(int argc, char* argv[], char* envp[]) {
   char** simulated_argv;
   time_t cur_time;
@@ -256,6 +267,9 @@ int main(int argc, char* argv[], char* envp[]) {
 
   /* set up signal handler for SIGINT */
   signal(SIGINT, handle_SIGINT);
+  /* backtrace on fatal memory faults (debugging aid) */
+  signal(SIGSEGV, handle_fatal_signal);
+  signal(SIGBUS, handle_fatal_signal);
 
   /* print startup messages */
   time(&cur_time);

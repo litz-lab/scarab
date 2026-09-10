@@ -238,8 +238,6 @@ void flush_window() {
 
       if (IS_FLUSHING_OP(op)) {
         op_select_bp_pred_info(op, BP_PRED_MAIN);
-        /* Mark that the scheduled recovery has occurred */
-        op->recovery_scheduled = FALSE;
       }
       DEBUG(node->proc_id, "Node keeping  op:%s node_id:%llu\n", unsstr64(op->op_num), op->node_id);
       if (!op->macro_fused)

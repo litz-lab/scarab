@@ -4245,7 +4245,12 @@ Flag l1_fill_line(Mem_Req* req) {
 static Flag mem_demote_probe(Cache* cache, uns8 proc_id, Addr line_addr, Flag dirty, Stat_Enum present_stat,
                              Addr* victim_addr, L1_Data* victim_out, Flag* victim_valid_out) {
   Addr probe_addr;
-  L1_Data* resident = (L1_Data*)cache_access(cache, line_addr, &probe_addr, FALSE);
+  /* update_repl is asked for so that a line already resident here is promoted to most
+     recently used: the level above just evicted it, which makes it the freshest thing at
+     this level, and leaving it at its old position ages it out as though it were cold.
+     cache_access() only touches replacement state on a tag match, so the probe below
+     still does not perturb anything when the line is absent. */
+  L1_Data* resident = (L1_Data*)cache_access(cache, line_addr, &probe_addr, TRUE);
   if (resident) {
     /* The demoted copy is the newer one, so the resident line is stale: its dirty bit has
        to absorb ours or the write is lost. Same rule the inclusive writeback paths use on
@@ -4291,8 +4296,14 @@ Flag mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, 
   /* An LLC-destined prefetch never probes the core's caches, so the LLC can hold a line
      the dcache also has. Demoting that line would make a second copy in the MLC, turning a
      duplicate the LLC prefetcher cannot avoid into one the uncore can: the line already
-     has a home below, so leave it there and just carry the dirty bit down. */
-  if (!mem_demote_probe(&L1(proc_id)->cache, proc_id, line_addr, dirty, EXCL_DEMOTE_LLC_PRESENT, &mlc_victim_addr,
+     has a home below, so leave it there and just carry the dirty bit down.
+
+     Only worth doing when a promotion invalidates, which is what keeps such pairs rare.
+     Without it every line ever served from the LLC keeps that copy for good, so this test
+     would match on half of all demotions and starve the MLC of the victims it exists to
+     hold -- and an MLC/LLC duplicate is the accepted policy in that mode anyway. */
+  if (EXCLUSIVE_PROMOTE_INVALIDATE &&
+      !mem_demote_probe(&L1(proc_id)->cache, proc_id, line_addr, dirty, EXCL_DEMOTE_LLC_PRESENT, &mlc_victim_addr,
                         &mlc_victim, &mlc_evicts))
     return TRUE;
 

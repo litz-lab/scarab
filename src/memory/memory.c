@@ -4518,7 +4518,12 @@ Flag l1_fill_line(Mem_Req* req) {
 static Flag mem_demote_probe(Cache* cache, uns8 proc_id, Addr line_addr, Flag dirty, Stat_Enum present_stat,
                              Addr* victim_addr, L1_Data* victim_out, Flag* victim_valid_out) {
   Addr probe_addr;
-  L1_Data* resident = (L1_Data*)cache_access(cache, line_addr, &probe_addr, FALSE);
+  /* update_repl is asked for so that a line already resident here is promoted to most
+     recently used: the level above just evicted it, which makes it the freshest thing at
+     this level, and leaving it at its old position ages it out as though it were cold.
+     cache_access() only touches replacement state on a tag match, so the probe below
+     still does not perturb anything when the line is absent. */
+  L1_Data* resident = (L1_Data*)cache_access(cache, line_addr, &probe_addr, TRUE);
   if (resident) {
     /* The demoted copy is the newer one, so the resident line is stale: its dirty bit has
        to absorb ours or the write is lost. Same rule the inclusive writeback paths use on

@@ -4569,8 +4569,14 @@ Flag mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, 
   /* An LLC-destined prefetch never probes the core's caches, so the LLC can hold a line
      the dcache also has. Demoting that line would make a second copy in the MLC, turning a
      duplicate the LLC prefetcher cannot avoid into one the uncore can: the line already
-     has a home below, so leave it there and just carry the dirty bit down. */
-  if (!mem_demote_probe(&L1(proc_id)->cache, proc_id, line_addr, dirty, EXCL_DEMOTE_LLC_PRESENT, &mlc_victim_addr,
+     has a home below, so leave it there and just carry the dirty bit down.
+
+     Only worth doing when a promotion invalidates, which is what keeps such pairs rare.
+     Without it every line ever served from the LLC keeps that copy for good, so this test
+     would match on half of all demotions and starve the MLC of the victims it exists to
+     hold -- and an MLC/LLC duplicate is the accepted policy in that mode anyway. */
+  if (EXCLUSIVE_PROMOTE_INVALIDATE &&
+      !mem_demote_probe(&L1(proc_id)->cache, proc_id, line_addr, dirty, EXCL_DEMOTE_LLC_PRESENT, &mlc_victim_addr,
                         &mlc_victim, &mlc_evicts))
     return TRUE;
 

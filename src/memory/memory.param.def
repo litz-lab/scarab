@@ -57,6 +57,19 @@ DEF_PARAM(mlc_size, MLC_SIZE, uns, uns, (512 * 1024), )
 DEF_PARAM(mlc_assoc, MLC_ASSOC, uns, uns, 4, )
 DEF_PARAM(mlc_line_size, MLC_LINE_SIZE, uns, uns, 64, )
 DEF_PARAM(mlc_cycles, MLC_CYCLES, uns, uns, 12, )
+/* Exclusive cache hierarchy: a fill inserts the line only at the level the
+   request targets, so a core-destined demand or prefetch load lands in the
+   dcache alone. Lines reach the lower levels by demotion: a dcache victim is
+   inserted into the MLC, an MLC victim into the LLC. */
+DEF_PARAM(exclusive_caches, EXCLUSIVE_CACHES, Flag, Flag, FALSE, )
+/* With exclusive_caches: drop a dcache victim instead of demoting it when it was
+   prefetched and never demand-used, so useless prefetches do not consume MLC/LLC
+   capacity on their way out. */
+DEF_PARAM(exclusive_drop_unused_pref, EXCLUSIVE_DROP_UNUSED_PREF, Flag, Flag, FALSE, )
+/* With exclusive_caches: invalidate the copy left behind when a line is promoted, so a
+   line lives at exactly one level. 0 keeps it, making the hierarchy non-inclusive. */
+DEF_PARAM(exclusive_promote_invalidate, EXCLUSIVE_PROMOTE_INVALIDATE, Flag, Flag, TRUE, )
+
 DEF_PARAM(perfect_mlc, PERFECT_MLC, Flag, Flag, FALSE, )
 DEF_PARAM(mlc_read_ports, MLC_READ_PORTS, uns, uns, 1, )
 DEF_PARAM(mlc_write_ports, MLC_WRITE_PORTS, uns, uns, 1, )
@@ -181,12 +194,16 @@ DEF_PARAM(mem_priority_wb_nodirty, MEM_PRIORITY_WB_NODIRTY, uns, uns, 0, )
 DEF_PARAM(promote_to_higher_priority_mem_req_type,
           PROMOTE_TO_HIGHER_PRIORITY_MEM_REQ_TYPE, Flag, Flag, FALSE, )
 
-// if there are fewer mem req buffer entries than the watermark, prefetches are
-// rejected (otherwise demands can get delayed) alternative is kicking out
-// prefetches
-DEF_PARAM(mem_req_buffer_pref_watermark, MEM_REQ_BUFFER_PREF_WATERMARK, uns,
+// Request-buffer entries held in reserve so one class cannot starve another:
+// demand_reserve is withheld from prefetches, wb_reserve from everything except
+// writebacks. queue_wb_reserve applies the same rule per queue.
+DEF_PARAM(mem_req_buffer_demand_reserve, MEM_REQ_BUFFER_DEMAND_RESERVE, uns,
           uns, 0, )
-DEF_PARAM(mem_req_buffer_wb_valve, MEM_REQ_BUFFER_WB_VALVE, uns, uns, 2, )
+DEF_PARAM(mem_req_buffer_wb_reserve, MEM_REQ_BUFFER_WB_RESERVE, uns, uns, 2, )
+
+// Queue entries held in reserve for writebacks, as the mem_req_buffer_*_reserve
+// parameters do for the request buffer. Carved out of the configured size; 0 disables.
+DEF_PARAM(queue_wb_reserve, QUEUE_WB_RESERVE, uns, uns, 2, )
 
 // l1_queue size is the same as mem_req_buffer_entries
 // FOR independently sized queues beyond the l1
@@ -326,7 +343,7 @@ DEF_PARAM(l1_shadow_tags_modulo, L1_SHADOW_TAGS_MODULO, uns, uns, 1, )
 // L1 partitioning done
 
 // Hierarchical MSHR behavior for MLC and L1 queues
-DEF_PARAM(hier_mshr_on, HIER_MSHR_ON, Flag, Flag, FALSE, )
+DEF_PARAM(hier_mshr_on, HIER_MSHR_ON, Flag, Flag, TRUE, )
 
 DEF_PARAM(perf_pred_enable, PERF_PRED_ENABLE, Flag, Flag, FALSE, )
 DEF_PARAM(perf_pred_mech, PERF_PRED_MECH, uns, Perf_Pred_Mech, PERF_PRED_CP, )

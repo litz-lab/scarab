@@ -143,21 +143,28 @@ void init_stream_core(HWP* hwp, Pref_Stream* pref_stream_core) {
     }
 
     pref_stream_core[proc_id].train_num = STREAM_TRAIN_NUM;
+
+    /* The throttle rewrites distance and num_tosend from these ladders every update
+       interval, so hardcoding them pinned the effective values to stream_length 16 and
+       stream_prefetch_n 2 whatever the parameters said. Scale from the parameters
+       instead: the throttle starts at rung 2, which is the nominal setting, and the
+       rungs were exactly {L/4, L/2, L, 2L, 4L, 4L} and {N/2, N/2, N, 2N, 2N, 3N} of the
+       parameter defaults, so a default configuration is unchanged. */
     pref_stream_core[proc_id].distance = STREAM_LENGTH;
-    pref_stream_core[proc_id].pref_degree_vals[0] = 4;
-    pref_stream_core[proc_id].pref_degree_vals[1] = 8;
-    pref_stream_core[proc_id].pref_degree_vals[2] = 16;
-    pref_stream_core[proc_id].pref_degree_vals[3] = 32;
-    pref_stream_core[proc_id].pref_degree_vals[4] = 64;
-    pref_stream_core[proc_id].pref_degree_vals[5] = 64;
+    pref_stream_core[proc_id].pref_degree_vals[0] = MAX2(1, STREAM_LENGTH / 4);
+    pref_stream_core[proc_id].pref_degree_vals[1] = MAX2(1, STREAM_LENGTH / 2);
+    pref_stream_core[proc_id].pref_degree_vals[2] = STREAM_LENGTH;
+    pref_stream_core[proc_id].pref_degree_vals[3] = STREAM_LENGTH * 2;
+    pref_stream_core[proc_id].pref_degree_vals[4] = STREAM_LENGTH * 4;
+    pref_stream_core[proc_id].pref_degree_vals[5] = STREAM_LENGTH * 4;
 
     pref_stream_core[proc_id].num_tosend = STREAM_PREFETCH_N;
-    pref_stream_core[proc_id].num_tosend_vals[0] = 1;
-    pref_stream_core[proc_id].num_tosend_vals[1] = 1;
-    pref_stream_core[proc_id].num_tosend_vals[2] = 2;
-    pref_stream_core[proc_id].num_tosend_vals[3] = 4;
-    pref_stream_core[proc_id].num_tosend_vals[4] = 4;
-    pref_stream_core[proc_id].num_tosend_vals[5] = 6;
+    pref_stream_core[proc_id].num_tosend_vals[0] = MAX2(1, STREAM_PREFETCH_N / 2);
+    pref_stream_core[proc_id].num_tosend_vals[1] = MAX2(1, STREAM_PREFETCH_N / 2);
+    pref_stream_core[proc_id].num_tosend_vals[2] = STREAM_PREFETCH_N;
+    pref_stream_core[proc_id].num_tosend_vals[3] = STREAM_PREFETCH_N * 2;
+    pref_stream_core[proc_id].num_tosend_vals[4] = STREAM_PREFETCH_N * 2;
+    pref_stream_core[proc_id].num_tosend_vals[5] = STREAM_PREFETCH_N * 3;
   }
 
   if (!PREF_STREAM_PER_CORE_ENABLE) {

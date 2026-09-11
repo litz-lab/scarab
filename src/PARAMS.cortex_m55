@@ -68,14 +68,14 @@
 --decode_cycles                 1
 
 
+--dispatch_width                1
+
 ### Map Stage
+--rename_width                  1
 --map_cycles                    1
 
 
 ### Issue Stage
-
-# Max number of instructions to be fetched, decoded, renamed, and issued per cycle.
---issue_width                   1
 
 --rs_fill_width                 1
 --rs_sizes                      3

@@ -269,12 +269,12 @@ void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd) {
   int count_bad_spec_slots = 0;
   int count_unutilised_frontend_slots = 0;
 
-  // /* Return if the next expected uop has not yet arrived. */
+  // /* Return if the next expected uop has not yet arrived. */           <-- c.n: frontend couldnt deliver
   // if (!consume_from_sd) {
   //   return;
   // }
 
-  // /* Return if there is no enough space. */
+  // /* Return if there is no enough space. */                            <-- c.n: this is back pressure from backend
   // if (capacity - occupied_count < consume_from_sd->op_count) {
   //   ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count);
   //   return;
@@ -318,8 +318,9 @@ void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd) {
     ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count || !occupied_count);
   }
 
-  int bubble_slots = DISPATCH_WIDTH - idq_sd.op_count;
+  int bubble_slots = DISPATCH_WIDTH - MIN2(DISPATCH_WIDTH, (uns)consume_from_sd->op_count);
   int recovery_cycle = idq_stage_get_recovery_cycle();
+
   if (recovery_cycle != 0) {
     ASSERT(proc_id, recovery_cycle > 0);
     idq_stage_set_recovery_cycle(recovery_cycle - 1);

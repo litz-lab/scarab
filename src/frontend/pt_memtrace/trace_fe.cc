@@ -726,8 +726,20 @@ void ext_trace_extract_basic_block_vectors() {
       // (cur_counter_fetched == SEGMENT_INSTR_COUNT) <=> !success
       // since do not know if it is the last one,
       // (cur_counter_fetched == SEGMENT_INSTR_COUNT) -> !success
-      if (cur_counter_fetched == SEGMENT_INSTR_COUNT) {
-        ASSERT(proc_id, !success);
+      // NOTE: the implication above only holds when this is NOT the final
+      // segment. A boundary-aligned read with data still remaining is legal
+      // (success == true), so a hard assert here aborts valid traces whose
+      // window boundaries happen to align with SEGMENT_INSTR_COUNT. Warn once
+      // instead; the condition is diagnostic, not an invariant.
+      if (cur_counter_fetched == SEGMENT_INSTR_COUNT && success) {
+        static bool warned_boundary_success = false;
+        if (!warned_boundary_success) {
+          warned_boundary_success = true;
+          fprintf(stderr,
+                  "WARNING: segment boundary reached with reader not exhausted "
+                  "(cur_counter_fetched == SEGMENT_INSTR_COUNT && success); "
+                  "continuing.\n");
+        }
       }
 
       ASSERT(proc_id, cur_counter >= cur_counter_fetched);

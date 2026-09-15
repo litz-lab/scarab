@@ -905,7 +905,6 @@ void update_memory() {
 
     perf_pred_cycle();
 
-    pref_update();
     update_memory_queues();
     update_on_chip_memory_stats();
 
@@ -926,6 +925,9 @@ void update_memory() {
     mem_process_bus_out_reqs();
     mem_process_l1_reqs();
     mem_process_mlc_reqs();
+    /* After the demand banks, so a bank a demand took this cycle cannot be taken
+       again by a prefetch: get_read_port is the per-cycle record of that. */
+    pref_update();
   }
 
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {

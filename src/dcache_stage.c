@@ -360,6 +360,7 @@ Flag dcache_fill_line(Mem_Req* req) {
 
   /* if it can't get a write port, fail */
   uns bank = BANK(req->addr, DCACHE_BANKS, DCACHE_INTERLEAVE_FACTOR);
+  /* A returning line outranks anything still asking for the cache. */
   if (!get_write_port(&dc->ports[bank])) {
     cycle_count = old_cycle_count;
     STAT_EVENT(dc->proc_id, DCACHE_FILL_PORT_UNAVAILABLE_ONPATH + req->off_path);

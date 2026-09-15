@@ -44,6 +44,7 @@ extern "C" {
 
 #include "memory/memory.h"
 
+#include "freq.h"
 #include "ramulator.h"
 #include "statistics.h"
 }
@@ -188,7 +189,8 @@ int ramulator_send(Mem_Req* scarab_req) {
     if (req.type == Request::Type::READ)
       inflight_read_reqs[req.addr].push_back(scarab_req);
 
-    scarab_req->mem_queue_cycle = cycle_count;
+    /* L1 domain, not the caller's: only rdy_cycle, an L1 cycle, is subtracted from it. */
+    scarab_req->mem_queue_cycle = freq_cycle_count(FREQ_DOMAIN_L1);
     return true;  // a request to the same address is already issued
   }
 
@@ -208,7 +210,7 @@ int ramulator_send(Mem_Req* scarab_req) {
       STAT_EVENT(scarab_req->proc_id, POWER_MEMORY_CTRL_WRITE);
     }
 
-    scarab_req->mem_queue_cycle = cycle_count;
+    scarab_req->mem_queue_cycle = freq_cycle_count(FREQ_DOMAIN_L1);
   }
 
   if (is_sent) {
@@ -236,7 +238,9 @@ void enqueue_response(Request& req) {
 }
 
 bool try_completing_request(Mem_Req* req) {
-  if ((unsigned int)mem->l1fill_queue.entry_count < MEM_L1_FILL_QUEUE_ENTRIES) {
+  /* The request already holds an LLC MSHR -- that is what bounded how many could be
+     in DRAM at once -- so there is no fill queue left to find room in. */
+  {
     DEBUG(req->proc_id, "Ramulator: Completing a (%s) request to address %llx\n", Mem_Req_Type_str(req->type),
           req->addr);
 

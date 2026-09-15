@@ -29,6 +29,7 @@
 #ifndef __PREF_COMMON_H__
 #define __PREF_COMMON_H__
 
+#include "libs/list_lib.h"
 #include "memory/mem_req.h"
 
 #define PREF_TRACKERS_NUM 16
@@ -146,18 +147,15 @@ struct HWP_struct {
 
 /* Per core prefetching data */
 typedef struct HWP_Core_struct {
-  Pref_Mem_Req* dl0req_queue;    // L1 req queue
-  Pref_Mem_Req* umlc_req_queue;  // MLC req queue
-  Pref_Mem_Req* ul1req_queue;    // L2 req queue
+  /* One FIFO per bank of the cache each prefetcher targets, in age order. The level
+     serves its demand banks first, then offers what is left to these. */
+  List* dl0req_banks;
+  List* umlc_req_banks;
+  List* ul1req_banks;
 
-  int dl0req_queue_req_pos;
-  int dl0req_queue_send_pos;
-
-  int umlc_req_queue_req_pos;
-  int umlc_req_queue_send_pos;
-
-  int ul1req_queue_req_pos;
-  int ul1req_queue_send_pos;
+  int dl0req_count;
+  int umlc_req_count;
+  int ul1req_count;
 
   Counter ul1_misses;
   Counter curr_ul1_misses;
@@ -217,7 +215,15 @@ void pref_ul1_pref_hit_late(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 gl
 void pref_ul1_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata);
 void pref_umlc_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata);
 
-void pref_update(void);
+/* Which queues to drain. Kept apart because each level's bank ports are claimed
+   against the cycle_count of that level's frequency domain. */
+typedef enum Pref_Drain_Level_enum {
+  PREF_DRAIN_DCACHE,
+  PREF_DRAIN_LEVELS
+} Pref_Drain_Level;
+
+void pref_update_levels(void); /* MLC and LLC, with their demand passes */
+void pref_update_dcache(void); /* dcache, after the dcache stage */
 
 // returns true if req hits in the req queue. It also invalidates the request in
 // the pref queue.

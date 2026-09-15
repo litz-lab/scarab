@@ -101,10 +101,10 @@ typedef struct Mem_Queue_Entry_struct {
 typedef struct Mem_Queue_struct {
   Mem_Queue_Entry* base; /* transport queues (fill, bus out) only */
   int entry_count;
-  /* Lookup levels: requests this level is tracking, from the cycle it admits one
-     until the cycle that request is finished here -- it hit, or its fill came back.
-     Descending to the next level does not end it: the line still has to be filled. */
-  int mshrs_taken;
+  /* Lookup levels: the misses this level is tracking. A request joins when it
+     misses here and leaves when its fill lands, so this doubles as the list the
+     fill walks -- there is no separate fill queue. */
+  List mshrs;
   uns size;
   /* Lookup levels only: one FIFO of request ids per bank, in age order. */
   List* banks;
@@ -165,10 +165,7 @@ typedef struct Memory_struct {
 
   /* various queues (arrays) */
   Mem_Queue mlc_queue;
-  Mem_Queue mlc_fill_queue;
   Mem_Queue l1_queue;
-  Mem_Queue bus_out_queue;
-  Mem_Queue l1fill_queue;
   Mem_Queue* core_fill_queues;
 
   Counter last_mem_queue_cycle;

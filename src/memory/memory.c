@@ -181,6 +181,7 @@ static L1_Data* l1_pref_cache_access(Mem_Req* req);
 
 static inline void mem_record_late_prefetch(Mem_Req* pref);
 static inline Flag queue_mshr_full_for(Mem_Queue* queue, Mem_Req_Type type);
+static inline void mshr_release(Mem_Req* req, Mem_Queue* queue);
 
 Flag is_final_state(Mem_Req_State state);
 Flag is_inv_state(Mem_Req_State state);
@@ -669,6 +670,19 @@ static inline Mem_Req* bank_head(Mem_Queue* queue, uns bank) {
    little short of the end so it cannot starve the ones below it: writebacks may use
    the whole file, demands leave the writeback reserve, prefetches leave a further
    margin for demands. */
+/* A request holds an MSHR at every level it was admitted to, taken on admission and
+   given back once that level has the line -- it hit there, or its fill landed. */
+static inline void mshr_release(Mem_Req* req, Mem_Queue* queue) {
+  uns8 bit = (queue == &mem->mlc_queue) ? MEM_RES_MLC : MEM_RES_L1;
+  if (!(req->reserved_levels & bit))
+    return;
+  req->reserved_levels &= ~bit;
+  ASSERT(req->proc_id, req->reserved_entry_count > 0);
+  req->reserved_entry_count -= 1;
+  ASSERT(req->proc_id, queue->mshrs_taken > 0);
+  queue->mshrs_taken--;
+}
+
 static inline Flag queue_mshr_full_for(Mem_Queue* queue, Mem_Req_Type type) {
   /* Writebacks may use the whole file; everything else leaves them their reserve,
      since a fill evicting a dirty line cannot complete until its writeback is in. */
@@ -863,7 +877,6 @@ void update_memory() {
 
     perf_pred_cycle();
 
-    pref_update();
     update_memory_queues();
     update_on_chip_memory_stats();
 
@@ -882,6 +895,9 @@ void update_memory() {
 
     mem_process_l1_reqs();
     mem_process_mlc_reqs();
+    /* After the demand passes and in their frequency domain, so a bank a demand took
+       this cycle refuses the prefetch. */
+    pref_update_levels();
   }
 
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
@@ -939,6 +955,10 @@ static inline void mem_invalidate_on_promote(Mem_Req* req, Cache* cache, Flag di
 
 Flag mem_process_l1_hit_access(Mem_Req* req, Addr* line_addr, L1_Data* data, int lru_position) {
   Flag fill_mlc = MLC_PRESENT && req->destination != DEST_L1 && (req->type != MRT_WB && req->type != MRT_WB_NODIRTY);
+
+  /* The LLC has the line, so it is done with this request; if the line still has to
+     reach the MLC, that level's own MSHR carries it. */
+  mshr_release(req, &mem->l1_queue);
 
   if (data) { /* not perfect l1 */
     if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
@@ -1062,6 +1082,9 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Addr* line_addr, L1_Data* data, int
 Flag mem_process_mlc_hit_access(Mem_Req* req, Addr* line_addr, MLC_Data* data, int lru_position) {
   if (!req->done_func || req->done_func(req)) {
     /* If done_func is not complete we will keep accessing MLC until done_func returns TRUE */
+
+    /* The MLC has the line, so it is done with this request. */
+    mshr_release(req, &mem->mlc_queue);
 
     if (data) { /* not perfect mlc */
       if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
@@ -1556,11 +1579,8 @@ static Flag mem_complete_l1_access(Mem_Req* req, int* out_queue_insertion_count)
         /* Only once the send succeeded: a rejected request stays in the l1_queue and
            comes back next cycle, so reserving here would take a second entry for it
            every retry. Writebacks are never reserved, they do not come back. */
-        if (l1_miss_access && (req->type != MRT_WB) && (req->type != MRT_WB_NODIRTY)) {
-          req->reserved_entry_count += 1;
-          req->reserved_levels |= MEM_RES_L1;
-          mem->l1_queue.mshrs_taken++;
-        }
+        /* Reaching DRAM costs no MSHR: Ramulator's queue is what bounds and
+           merges it from here. */
         // STAT_EVENT(req->proc_id, BUS_ACCESS);
       }
       //(*out_queue_insertion_count) += 1;
@@ -1659,12 +1679,8 @@ static Flag mem_complete_mlc_access(Mem_Req* req, int* l1_queue_insertion_count)
                                       QUEUE_L1 | QUEUE_MEM, &descent_entry, &descent_ramulator);
         if (descent_match && descent_match != req && descent_match->state != MRS_FILL_DONE &&
             descent_match->type != MRT_WB && descent_match->type != MRT_WB_NODIRTY) {
-          ASSERT(req->proc_id, mem_req_holds_mshr_at(descent_match, &mem->l1_queue, MEM_RES_L1));
-          /* Take the reservation this departure earns, so mem_merge_reqs can hand it
-             to the survivor or return it. */
-          req->reserved_entry_count += 1;
-          req->reserved_levels |= MEM_RES_MLC;
-          mem->mlc_queue.mshrs_taken++;
+          /* No MSHR test here: an LLC prefetch holds none, and folding into it is
+             what this merge is for. */
           /* Same accounting the creation-time merge does: without this the descent
              path folds demands into prefetches and reports no lateness at all. */
           if (descent_pref && req->type != MRT_DPRF && req->type != MRT_IPRF)
@@ -1680,11 +1696,6 @@ static Flag mem_complete_mlc_access(Mem_Req* req, int* l1_queue_insertion_count)
       mem_insert_req_into_queue(req, req->queue, ALL_FIFO_QUEUES ? l1_seq_num : 0);
       l1_seq_num++;
       (*l1_queue_insertion_count) += 1;
-      if ((req->type != MRT_WB) && (req->type != MRT_WB_NODIRTY)) {
-        req->reserved_entry_count += 1;
-        req->reserved_levels |= MEM_RES_MLC;
-        mem->mlc_queue.mshrs_taken++;
-      }
       STAT_EVENT(req->proc_id, L1_ACCESS);
 
       if (!PREF_ORACLE_TRAIN_ON &&
@@ -1714,11 +1725,15 @@ static void mem_process_l1_reqs() {
 
   INC_STAT_EVENT(0, L1_QUEUE_OCCUPANCY, q->mshrs_taken);
 
-  /* A bank works on the request at its head: start the lookup, or finish the one
-     that has elapsed and let the next in. */
+  /* A bank works on the request at its head. Taking the read port is what marks the
+     bank as spoken for this cycle, so the prefetch pass that runs after this cannot
+     look up in a bank a demand just used. */
   for (uns b = 0; b < q->num_banks; b++) {
     Mem_Req* req = bank_head(q, b);
     if (!req || cycle_count < req->rdy_cycle)
+      continue;
+
+    if (!get_read_port(&L1(req->proc_id)->ports[b]))
       continue;
 
     ASSERTM(req->proc_id, req->state == MRS_L1_WAIT, "id:%d state:%s\n", req->id, mem_req_state_names[req->state]);
@@ -1738,9 +1753,13 @@ static void mem_process_mlc_reqs() {
 
   INC_STAT_EVENT(0, MLC_QUEUE_OCCUPANCY, q->mshrs_taken);
 
+  /* Same: the read port is the record that this bank is used this cycle. */
   for (uns b = 0; b < q->num_banks; b++) {
     Mem_Req* req = bank_head(q, b);
     if (!req || cycle_count < req->rdy_cycle)
+      continue;
+
+    if (!get_read_port(&MLC(req->proc_id)->ports[b]))
       continue;
 
     ASSERTM(req->proc_id, req->state == MRS_MLC_WAIT, "id:%d state:%s\n", req->id, mem_req_state_names[req->state]);
@@ -1748,6 +1767,34 @@ static void mem_process_mlc_reqs() {
       continue;
     sl_list_remove_head(&q->banks[b]);
   }
+}
+
+/**************************************************************************************/
+/* mem_pref_probe: */
+/* A prefetcher looks its own level up, from its own queue, after the demand banks
+   have run. Takes a bank read port, so a bank a demand used this cycle refuses it.
+   Returns FALSE when the bank is busy: the prefetch keeps its place and retries. */
+
+Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit) {
+  Ports* ports;
+  Cache* cache;
+  Addr dummy_line_addr;
+
+  if (dest == DEST_MLC) {
+    ASSERT(proc_id, MLC_PRESENT);
+    ports = &MLC(proc_id)->ports[BANK(line_addr, MLC(proc_id)->num_banks, MLC_INTERLEAVE_FACTOR)];
+    cache = &MLC(proc_id)->cache;
+  } else {
+    ASSERT(proc_id, dest == DEST_L1);
+    ports = &L1(proc_id)->ports[BANK(line_addr, L1(proc_id)->num_banks, L1_INTERLEAVE_FACTOR)];
+    cache = &L1(proc_id)->cache;
+  }
+
+  if (!get_read_port(ports))
+    return FALSE;
+
+  *hit = cache_access(cache, line_addr, &dummy_line_addr, FALSE) != NULL;
+  return TRUE;
 }
 
 /**************************************************************************************/
@@ -1817,11 +1864,7 @@ static Flag mem_advance_fill(Mem_Req* req) {
     if (req->type == MRT_IFETCH || req->type == MRT_DFETCH || req->type == MRT_DSTORE)
       perf_pred_off_chip_effect_end(req);
 
-    ASSERT(req->proc_id, req->reserved_entry_count > 0);
-    req->reserved_entry_count -= 1;
-    req->reserved_levels &= ~MEM_RES_L1;
-    ASSERT(req->proc_id, mem->l1_queue.mshrs_taken > 0);
-    mem->l1_queue.mshrs_taken--;
+    mshr_release(req, &mem->l1_queue);
 
     req->state = (MLC_PRESENT && req->destination != DEST_L1) ? MRS_FILL_MLC : MRS_FILL_DONE;
     /* A fill step costs a cycle, as it did when each step was its own queue. */
@@ -1832,11 +1875,7 @@ static Flag mem_advance_fill(Mem_Req* req) {
   if (req->state == MRS_FILL_MLC) {
     if (!mlc_fill_line(req))
       return FALSE;
-    ASSERT(req->proc_id, req->reserved_entry_count > 0);
-    req->reserved_entry_count -= 1;
-    req->reserved_levels &= ~MEM_RES_MLC;
-    ASSERT(req->proc_id, mem->mlc_queue.mshrs_taken > 0);
-    mem->mlc_queue.mshrs_taken--;
+    mshr_release(req, &mem->mlc_queue);
     req->state = MRS_FILL_DONE;
     req->rdy_cycle = cycle_count + 1;
     return FALSE;
@@ -2712,6 +2751,14 @@ static inline Mem_Queue_Entry* mem_insert_req_into_queue(Mem_Req* new_req, Mem_Q
   if (queue->num_banks) {
     uns bank = req_bank_at(new_req, queue);
     *(int*)sl_list_add_tail(&queue->banks[bank]) = new_req->id;
+    /* Entering a level costs that level's MSHR, held until it has the line. A
+       writeback never comes back, so it needs none. */
+    if (new_req->type != MRT_WB && new_req->type != MRT_WB_NODIRTY) {
+      queue->mshrs_taken++;
+      new_req->reserved_levels |= (queue == &mem->mlc_queue) ? MEM_RES_MLC : MEM_RES_L1;
+      new_req->reserved_entry_count += 1;
+      ASSERT(new_req->proc_id, queue->mshrs_taken <= (int)queue->mshr_size);
+    }
     mem_admit_to_level(new_req, queue);
     return NULL;
   }
@@ -2776,7 +2823,11 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   Flag ramulator_match = FALSE;
   Counter priority_offset = freq_cycle_count(FREQ_DOMAIN_L1);
   Counter new_priority;
-  Flag to_mlc = MLC_PRESENT && (!pref_info || pref_info->dest != DEST_L1);
+  /* A probed prefetch has already missed in the level it targets, so it enters the
+     one below: an MLC prefetch goes to the LLC, and an LLC prefetch goes to DRAM. */
+  Flag probed = pref_info && pref_info->probed;
+  Flag to_dram = probed && pref_info->dest == DEST_L1;
+  Flag to_mlc = MLC_PRESENT && (!pref_info || pref_info->dest != DEST_L1) && !probed;
   Destination destination = (pref_info ? pref_info->dest : DEST_NONE);
 
   ASSERTM(proc_id, proc_id == get_proc_id_from_cmp_addr(addr), "Proc ID (%d) does not match proc ID in address (%d)!\n",
@@ -2804,10 +2855,13 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
     ramulator_match = FALSE;
   }
 
-  /* Merge only with a request holding an MSHR at the level being entered. Without
-     nothing holds one, so merging stays global. */
-  if (matching_req && !mem_req_holds_mshr_at(matching_req, to_mlc ? &mem->mlc_queue : &mem->l1_queue,
-                                             to_mlc ? MEM_RES_MLC : MEM_RES_L1)) {
+  /* Merge only with a request holding an MSHR at the level being entered, so that
+     merging is scoped to that level's MSHR file rather than global. A DRAM match is
+     exempt: past the LLC there is no MSHR to hold -- an LLC prefetch takes none --
+     and Ramulator's queue is what merges from there. */
+  if (matching_req && !ramulator_match &&
+      !mem_req_holds_mshr_at(matching_req, to_mlc ? &mem->mlc_queue : &mem->l1_queue,
+                             to_mlc ? MEM_RES_MLC : MEM_RES_L1)) {
     matching_req = NULL;
     queue_entry = NULL;
     ramulator_match = FALSE;
@@ -2856,9 +2910,10 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
                                         ramulator_match));
   }
 
-  /* Step 2.5: the level must have an MSHR for this request. */
+  /* Step 2.5: the level must have an MSHR for this request. A probed prefetch also
+     needs one at the level it missed in, so the fill comes back there. */
   Mem_Queue* target = to_mlc ? &mem->mlc_queue : &mem->l1_queue;
-  if (queue_mshr_full_for(target, type)) {
+  if (!to_dram && queue_mshr_full_for(target, type)) {
     STAT_EVENT(proc_id, to_mlc ? REJECTED_QUEUE_MLC : REJECTED_QUEUE_L1);
     return FALSE;
   }
@@ -2937,6 +2992,23 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   }
 
   perf_pred_l0_miss_start(new_req);
+
+  /* An LLC prefetch that missed has no next level to be looked up in: it goes
+     straight to DRAM, holding the LLC MSHR taken just above. */
+  if (to_dram) {
+    new_req->state = MRS_MEM_NEW;
+    if (!ramulator_send(new_req)) {
+      mem_free_reqbuf(new_req);
+      STAT_EVENT(proc_id, REJECTED_QUEUE_L1);
+      return FALSE;
+    }
+    /* Same bookkeeping the ordinary LLC miss does when it reaches DRAM. */
+    new_req->queue = NULL;
+    mem_seq_num++;
+    perf_pred_mem_req_start(new_req);
+    mem->uncores[proc_id].num_outstanding_l1_misses++;
+    return TRUE;
+  }
 
   if (to_mlc)
     return insert_new_req_into_mlc_queue(proc_id, new_req);

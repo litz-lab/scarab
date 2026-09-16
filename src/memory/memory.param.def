@@ -197,9 +197,9 @@ DEF_PARAM(promote_to_higher_priority_mem_req_type,
    pipeline holds. */
 DEF_PARAM(mlc_mshrs, MLC_MSHRS, uns, uns, 32, )
 DEF_PARAM(l1_mshrs, L1_MSHRS, uns, uns, 32, )
+DEF_PARAM(mshr_wb_reserve, MSHR_WB_RESERVE, uns, uns, 2, )
 /* Held for writebacks: they are low priority, so ordering never guarantees them
    one, and refusing an LLC writeback can deadlock. */
-DEF_PARAM(mshr_wb_reserve, MSHR_WB_RESERVE, uns, uns, 2, )
 
 // FOR independently sized queues beyond the l1
 DEF_PARAM(mem_l1_fill_queue_entries, MEM_L1_FILL_QUEUE_ENTRIES, uns, uns, 32, )
@@ -231,9 +231,6 @@ DEF_PARAM(order_beyond_bus, ORDER_BEYOND_BUS, Flag, Flag,
           FALSE, ) /* order reqs by unique even after they're on the bus */
 DEF_PARAM(all_fifo_queues, ALL_FIFO_QUEUES, Flag, Flag,
           FALSE, ) /* do all queues behave as FIFO? */
-
-DEF_PARAM(queue_core_fill_size, QUEUE_CORE_FILL_SIZE, uns, uns,
-          0, ) /* 0 = HPS_MEM_REQ_BUFFER_ENTRIES */
 
 /* are we allowing mem requests that cause exceptions? */
 DEF_PARAM(allow_type_matches, ALLOW_TYPE_MATCHES, Flag, Flag, FALSE, )

@@ -85,23 +85,32 @@ typedef enum Mem_Queue_Req_Result_enum {
 typedef enum Mem_Queue_Type_enum {
   QUEUE_L1 = 1 << 0,
   QUEUE_MEM = 1 << 2,
-  QUEUE_L1FILL = 1 << 3,
   QUEUE_MLC = 1 << 4,
-  QUEUE_MLC_FILL = 1 << 5,
-  QUEUE_CORE_FILL = 1 << 6,
 } Mem_Queue_Type;
 
 typedef struct Mem_Queue_struct {
-  /* How many misses this level is tracking. A request takes one when it misses here
-     and gives it back when its fill lands. */
+  /* This level's MSHR file: every request it is still fetching a line for, from
+     admission until the request is freed. Searching it answers "is this line already
+     on its way for me", which is the only question a merge asks. */
+  List mshrs;
+  /* The same requests keyed by line address, so a merge is a lookup rather than a
+     walk. The list stays for the walks that want every entry in order. */
+  Hash_Table mshr_hash;
+  /* How many of those consume a slot. Tracking and bounding are separate: a request
+     that reaches DRAM without an MSHR is still in the file, it just does not count. */
   int mshrs_taken;
+  /* Held back for writebacks, so a fill can always place its dirty victim. */
+  uns mshr_wb_reserve;
+  /* Fills this level owes that could not be absorbed. Only when it is non-zero does
+     anything walk this level's file looking for them. */
+  uns pending_fills;
+  /* Lookups this level has started and not yet completed. They are no longer in a
+     bank FIFO -- the bank is free the cycle after one starts. */
+  uns pending_lookups;
   /* One FIFO of requests per bank, in age order. */
   List* banks;
   uns num_banks;
-  /* Outstanding misses this level is tracking. Separate from size: entries are
-     pipeline occupancy, MSHRs are fills in flight. */
   uns mshr_size;
-  uns mshr_wb_reserve;
   char name[20];
   Mem_Queue_Type type;
 } Mem_Queue;
@@ -146,7 +155,6 @@ typedef struct Memory_struct {
   List req_pool_free_list;
   List* l1_in_buffer_core;
   uns total_req_pool;
-  uns req_pool_per_core; /* derived from the queues and what DRAM holds */
   uns* num_req_pool_per_core;
 
   int req_count;
@@ -161,13 +169,12 @@ typedef struct Memory_struct {
   Mem_Queue mlc_queue;
   Mem_Queue l1_queue;
   /* One per core: requests whose done_func still owes the core. A plain list, like
-     completed_reqs -- it is walked in order and never re-sorted. */
+     a plain list, walked in order and never re-sorted. */
   List* core_fill_queues;
   /* Fills that could not finish on the cycle their data arrived -- a dirty eviction
      whose writeback was refused, or a done_func that could not take a port. Walked
      each cycle to retry. Everything else completes inside the DRAM callback and
      never appears here, so this is short where the MSHR files are not. */
-  List completed_reqs;
 
   Counter last_mem_queue_cycle;
 
@@ -245,14 +252,13 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority);
 
 /* How many requests the pool holds. Derived from the MSHR files and the DRAM
    queues, so it is not a parameter anyone sets. */
-uns mem_req_pool_size(void);
 void mem_clear_crit_path(void);
 void mem_destroy_req_pool(void);
 
 /* Probe a level's cache for its prefetcher. FALSE means the bank was busy this
    cycle; otherwise *hit says whether the line is already there. */
 Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit);
-void print_req_pool(void);
+void print_mshr_files(void);
 void print_mem_queue(Mem_Queue_Type queue_type);
 Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                        Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath);
@@ -263,7 +269,6 @@ void mark_ops_as_l1_miss_satisfied(Mem_Req* req);
 int mem_get_req_count(uns proc_id);
 /* Per-core request-pool budget. Derived from the MSHR files and the DRAM queues unless
    derived from the per-level queue sizes. */
-uns mem_get_req_pool_size(void);
 
 void open_mem_stat_interval_file(void);
 void close_mem_stat_interval_file(void);
@@ -281,7 +286,7 @@ uns num_chip_demands(void);
 uns num_offchip_stall_reqs(uns proc_id);
 
 Mem_Req* mem_search_outstanding(uns8 proc_id, Addr addr, Mem_Req_Type type, uns size, Flag* demand_hit_prefetch,
-                                Flag* demand_hit_writeback, Flag* ramulator_match);
+                                Flag* demand_hit_writeback);
 
 /**************************************************************************************/
 /* Externs */

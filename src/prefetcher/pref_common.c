@@ -546,21 +546,6 @@ static inline void pref_bank_pop(List* banks, uns bank, int* count) {
 
 /* Is this line already queued for its bank? */
 /* Drop a queued prefetch a demand has overtaken. */
-static Flag pref_banks_drop(List* banks, Destination dest, Addr line_addr, int* count) {
-  uns bank = pref_bank_of(dest, line_addr);
-  for (List_Entry* e = banks[bank].head; e; e = e->next) {
-    Pref_Mem_Req* r = (Pref_Mem_Req*)&e->data;
-    if ((r->line_addr >> LOG2(DCACHE_LINE_SIZE)) == (line_addr >> LOG2(DCACHE_LINE_SIZE))) {
-      banks[bank].current = e;
-      dl_list_remove_current(&banks[bank]);
-      (*count)--;
-      ASSERT(0, *count >= 0);
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
 static Flag pref_banks_add(List* banks, Destination dest, int* count, uns cap, Flag overwrite_on_full,
                            Pref_Mem_Req* req, Stat_Enum full_stat) {
   if (*count >= (int)cap) {
@@ -572,36 +557,6 @@ static Flag pref_banks_add(List* banks, Destination dest, int* count, uns cap, F
   *(Pref_Mem_Req*)dl_list_add_tail(&banks[bank]) = *req;
   (*count)++;
   return TRUE;
-}
-
-Flag pref_dl0req_queue_filter(Addr line_addr) {
-  uns proc_id = get_proc_id_from_cmp_addr(line_addr);
-  HWP_Core* core = pref.cores[proc_id];
-  if (pref_banks_drop(core->dl0req_banks, DEST_DCACHE, line_addr, &core->dl0req_count)) {
-    STAT_EVENT(0, PREF_DL0REQ_QUEUE_HIT_BY_DEMAND);
-    return TRUE;
-  }
-  return FALSE;
-}
-
-Flag pref_umlc_req_queue_filter(Addr line_addr) {
-  uns proc_id = get_proc_id_from_cmp_addr(line_addr);
-  HWP_Core* core = pref.cores[proc_id];
-  if (pref_banks_drop(core->umlc_req_banks, DEST_MLC, line_addr, &core->umlc_req_count)) {
-    STAT_EVENT(0, PREF_UMLC_REQ_QUEUE_HIT_BY_DEMAND);
-    return TRUE;
-  }
-  return FALSE;
-}
-
-Flag pref_ul1req_queue_filter(Addr line_addr) {
-  uns proc_id = get_proc_id_from_cmp_addr(line_addr);
-  HWP_Core* core = pref.cores[proc_id];
-  if (pref_banks_drop(core->ul1req_banks, DEST_L1, line_addr, &core->ul1req_count)) {
-    STAT_EVENT(0, PREF_UL1REQ_QUEUE_HIT_BY_DEMAND);
-    return TRUE;
-  }
-  return FALSE;
 }
 
 Flag pref_ul1req_queue_match(Addr line_addr) {
@@ -845,8 +800,10 @@ void pref_update_core(uns proc_id, Pref_Drain_Level level) {
       info.global_hist = pf->global_hist;
       info.bw_limited = pf->bw_limited;
       info.dest = DEST_DCACHE;
-      if ((model->mem == MODEL_MEM) && new_mem_req(MRT_DPRF, proc_id, pf->line_addr, DCACHE_LINE_SIZE, 1, NULL,
-                                                   dcache_fill_line, unique_count, &info))
+      /* Without a memory model there is nothing to send to, so drop it rather than
+         hold a slot no one will ever free. */
+      if (model->mem != MODEL_MEM || new_mem_req(MRT_DPRF, proc_id, pf->line_addr, DCACHE_LINE_SIZE, 1, NULL,
+                                                 dcache_fill_line, unique_count, &info))
         pref_bank_pop(core->dl0req_banks, bank, &core->dl0req_count);
     }
   }
@@ -861,14 +818,18 @@ void pref_update_core(uns proc_id, Pref_Drain_Level level) {
     int* count;
     Destination dest;
     uns line_size;
+    /* The lookup this level costs, the trip on to the level below, and the cycle to
+       enter the queue -- what the prefetch used to pay by being queued here. */
+    uns lookup_cycles;
     Flag (*fill)(Mem_Req*);
     Stat_Enum sent_stat;
     Stat_Enum stall_stat;
     Stat_Enum drop_stat;
   } levels[] = {
-      {core->umlc_req_banks, &core->umlc_req_count, DEST_MLC, MLC_LINE_SIZE, NULL, PREF_UMLC_REQ_QUEUE_SENTREQ,
-       PREF_UMLC_REQ_SEND_QUEUE_STALL, PREF_UMLC_REQ_QUEUE_HIT_DROP},
-      {core->ul1req_banks, &core->ul1req_count, DEST_L1, L1_LINE_SIZE,
+      {core->umlc_req_banks, &core->umlc_req_count, DEST_MLC, MLC_LINE_SIZE,
+       1 + MLC_CYCLES + MLCQ_TO_L1Q_TRANSFER_LATENCY, NULL, PREF_UMLC_REQ_QUEUE_SENTREQ, PREF_UMLC_REQ_SEND_QUEUE_STALL,
+       PREF_UMLC_REQ_QUEUE_HIT_DROP},
+      {core->ul1req_banks, &core->ul1req_count, DEST_L1, L1_LINE_SIZE, 1 + L1_CYCLES + L1Q_TO_FSB_TRANSFER_LATENCY,
        STREAM_PREF_INTO_DCACHE ? dcache_fill_line : NULL, PREF_UL1REQ_QUEUE_SENTREQ, PREF_UL1REQ_SEND_QUEUE_STALL,
        PREF_UL1REQ_QUEUE_HIT_DROP},
   };
@@ -883,15 +844,26 @@ void pref_update_core(uns proc_id, Pref_Drain_Level level) {
       ASSERT(proc_id, proc_id == pf->proc_id);
       ASSERT(proc_id, proc_id == pf->line_addr >> 58);
 
-      Flag hit = FALSE;
-      if (!mem_pref_probe(proc_id, levels[lvl].dest, pf->line_addr, &hit))
-        continue; /* a demand took this bank */
+      /* The probe is a real lookup at this level, so it costs that level's latency
+         before the prefetch may go on -- exactly what it used to pay by sitting in
+         that level's queue. Charging nothing here put prefetches into the level
+         below, and into DRAM, tens of cycles early. */
+      if (!pf->probed) {
+        Flag hit = FALSE;
+        if (!mem_pref_probe(proc_id, levels[lvl].dest, pf->line_addr, &hit))
+          continue; /* a demand took this bank */
 
-      if (hit) {
-        STAT_EVENT(proc_id, levels[lvl].drop_stat);
-        pref_bank_pop(levels[lvl].banks, bank, levels[lvl].count);
-        continue;
+        if (hit) {
+          STAT_EVENT(proc_id, levels[lvl].drop_stat);
+          pref_bank_pop(levels[lvl].banks, bank, levels[lvl].count);
+          continue;
+        }
+        pf->probed = TRUE;
+        pf->rdy_cycle = cycle_count + levels[lvl].lookup_cycles;
       }
+
+      if (cycle_count < pf->rdy_cycle)
+        continue; /* the lookup is still in flight */
 
       Pref_Req_Info info = {0};
       info.prefetcher_id = pf->prefetcher_id;
@@ -902,8 +874,8 @@ void pref_update_core(uns proc_id, Pref_Drain_Level level) {
       info.dest = levels[lvl].dest;
       info.probed = TRUE;
 
-      if ((model->mem == MODEL_MEM) && new_mem_req(MRT_DPRF, proc_id, pf->line_addr, levels[lvl].line_size, 0, NULL,
-                                                   levels[lvl].fill, unique_count, &info)) {
+      if (model->mem != MODEL_MEM || new_mem_req(MRT_DPRF, proc_id, pf->line_addr, levels[lvl].line_size, 0, NULL,
+                                                 levels[lvl].fill, unique_count, &info)) {
         STAT_EVENT(0, levels[lvl].sent_stat);
         pref_bank_pop(levels[lvl].banks, bank, levels[lvl].count);
       } else {

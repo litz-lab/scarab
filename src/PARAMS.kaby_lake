@@ -169,7 +169,6 @@
 --mem_priority_wb            5
 --mem_priority_wb_nodirty    5
 
---mem_req_buffer_entries        32
 --mem_l1_fill_queue_entries     32
 --va_page_size_bytes      4096
 --bus_width_in_bytes            8

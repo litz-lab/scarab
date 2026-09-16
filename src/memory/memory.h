@@ -92,7 +92,7 @@ typedef enum Mem_Queue_Type_enum {
 } Mem_Queue_Type;
 
 typedef struct Mem_Queue_Entry_struct {
-  int reqbuf;       /* request buffer num */
+  int req_id;       /* request buffer num */
   Counter priority; /* priority of the miss */
   Counter rdy_cycle;
 } Mem_Queue_Entry;
@@ -146,12 +146,12 @@ typedef struct Uncore_struct {
 
 typedef struct Memory_struct {
   /* miss buffer */
-  Mem_Req* req_buffer;
-  List req_buffer_free_list;
+  Mem_Req* req_pool;
+  List req_pool_free_list;
   List* l1_in_buffer_core;
-  uns total_mem_req_buffers;
-  uns req_buffers_per_core; /* derived from the queues and what DRAM holds */
-  uns* num_req_buffers_per_core;
+  uns total_req_pool;
+  uns req_pool_per_core; /* derived from the queues and what DRAM holds */
+  uns* num_req_pool_per_core;
 
   int req_count;
 
@@ -237,7 +237,6 @@ void update_memory(void);
 Flag scan_stores(Addr, uns);
 void op_nuke_mem_req(Op*);
 Flag mem_req_younger_than_uniquenum(int, Counter);
-Flag mem_req_older_than_uniquenum(int, Counter);
 L1_Data* do_l1_access(Op* op);
 L1_Data* do_l1_access_addr(Addr);
 L1_Data* do_mlc_access(Op* op);
@@ -245,13 +244,17 @@ L1_Data* do_mlc_access_addr(Addr);
 
 Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op, Flag done_func(Mem_Req*),
                  Counter unique_num, Pref_Req_Info*);
-void mem_free_reqbuf(Mem_Req* req);
+void mem_free_req(Mem_Req* req);
 void mem_complete_bus_in_access(Mem_Req* req, Counter priority);
+
+/* How many requests the pool holds. Derived from the MSHR files and the DRAM
+   queues, so it is not a parameter anyone sets. */
+uns mem_req_pool_size(void);
 
 /* Probe a level's cache for its prefetcher. FALSE means the bank was busy this
    cycle; otherwise *hit says whether the line is already there. */
 Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit);
-void print_req_buffer(void);
+void print_req_pool(void);
 void print_mem_queue(Mem_Queue_Type queue_type);
 Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                        Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath);
@@ -260,9 +263,9 @@ Flag l1_fill_line(Mem_Req* req);
 
 void mark_ops_as_l1_miss_satisfied(Mem_Req* req);
 int mem_get_req_count(uns proc_id);
-/* Per-core request-buffer budget. Equals MEM_REQ_BUFFER_ENTRIES unless
+/* Per-core request-pool budget. Derived from the MSHR files and the DRAM queues unless
    derived from the per-level queue sizes. */
-uns mem_get_req_buffer_size(void);
+uns mem_get_req_pool_size(void);
 
 void open_mem_stat_interval_file(void);
 void close_mem_stat_interval_file(void);
@@ -273,15 +276,14 @@ void l1_cache_collect_stats(void);
 
 void wp_process_l1_hit(L1_Data* line, Mem_Req* req);
 void wp_process_l1_fill(L1_Data* line, Mem_Req* req);
-void wp_process_reqbuf_match(Mem_Req* req, Op* op);
+void wp_process_req_pool_match(Mem_Req* req, Op* op);
 
 // batch scheduler
 uns num_chip_demands(void);
 uns num_offchip_stall_reqs(uns proc_id);
 
-Mem_Req* mem_search_reqbuf_wrapper(uns8 proc_id, Addr addr, Mem_Req_Type type, uns size, Flag* demand_hit_prefetch,
-                                   Flag* demand_hit_writeback, uns queues_to_search, Mem_Queue_Entry** queue_entry,
-                                   Flag* ramulator_match);
+Mem_Req* mem_search_outstanding(uns8 proc_id, Addr addr, Mem_Req_Type type, uns size, Flag* demand_hit_prefetch,
+                                Flag* demand_hit_writeback, Mem_Queue_Entry** queue_entry, Flag* ramulator_match);
 
 /**************************************************************************************/
 /* Externs */

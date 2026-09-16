@@ -1386,13 +1386,12 @@ static inline void log_stats_ic_hit() {
 void log_stats_mshr_hit(Addr line_addr) {
   Flag demand_hit_prefetch = FALSE;
   Flag demand_hit_writeback = FALSE;
-  Mem_Queue_Entry* queue_entry = NULL;
   Flag ramulator_match = FALSE;
   Mem_Req* req = mem_search_outstanding(ic->proc_id, line_addr, MRT_FDIPPRFON, ICACHE_LINE_SIZE, &demand_hit_prefetch,
-                                        &demand_hit_writeback, &queue_entry, &ramulator_match);
+                                        &demand_hit_writeback, &ramulator_match);
   if (!req) {
     req = mem_search_outstanding(ic->proc_id, line_addr, MRT_FDIPPRFOFF, ICACHE_LINE_SIZE, &demand_hit_prefetch,
-                                 &demand_hit_writeback, &queue_entry, &ramulator_match);
+                                 &demand_hit_writeback, &ramulator_match);
   }
 
   if (req && !req->cyc_hit_by_demand_load) {

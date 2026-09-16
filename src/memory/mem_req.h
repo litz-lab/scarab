@@ -104,11 +104,11 @@ DECLARE_ENUM(Dram_Req_Status, DRAM_REQ_STATUS_LIST, DRAM_REQ_ROW_);
 // typedef in globals/global_types.h
 struct Mem_Req_struct {
   uns proc_id;             /* processor id that generates the request */
-  int id;                  /* request buffer num */
   Flag off_path;           /* is the mem_req entirely off path? */
   Flag off_path_confirmed; /* does the processor know that this is off-path -
                               set after the branch resolves */
   Flag conf_off_path;      /* is the mem_req off path by path confidence? */
+  Mem_Req_Type memview_type; /* type as memview last counted it */
   Mem_Req_State state;     /* what state is the miss in? */
   Mem_Req_Type type;       /* what kind of miss is it? */
   /* Bit string recording all Mem_Req_Type(s) that were coalesced into this request. */

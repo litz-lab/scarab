@@ -824,12 +824,7 @@ void full_sim() {
       mem->l1_in_buffer_core = NULL;
     }
 
-    if (mem->req_pool && mem->total_req_pool) {
-      for (uns ii = 0; ii < mem->total_req_pool; ii++) {
-        destroy_list(&mem->req_pool[ii].op_ptrs);
-        destroy_list(&mem->req_pool[ii].op_uniques);
-      }
-    }
+    mem_destroy_req_pool();
   }
 
   // fdip_print_hash_tables();

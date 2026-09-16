@@ -1043,8 +1043,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
 
       line = (Inst_Info**)cache_insert(&ic->pref_icache, ic->proc_id, ic->fetch_addr, &pref_line_addr, &repl_line_addr);
       DEBUG(ic->proc_id, "Insert PREF_ICACHE fetch_addr0x:%s line_addr:%s index:%ld addr:0x%s\n",
-            hexstr64(ic->fetch_addr), hexstr64(pref_line_addr), (long int)(req - mem->req_buffer),
-            hexstr64s(req->addr));
+            hexstr64(ic->fetch_addr), hexstr64(pref_line_addr), (long int)(req - mem->req_pool), hexstr64s(req->addr));
       STAT_EVENT(ic->proc_id, IC_PREF_CACHE_FILL);
       ic->icache_miss_fulfilled = TRUE;
       return TRUE;
@@ -1112,7 +1111,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
 
       line = (Inst_Info**)cache_insert(&ic->pref_icache, ic->proc_id, req->addr, &pref_line_addr, &repl_line_addr);
       DEBUG(ic->proc_id, "Insert PREF_ICACHE fetch_addr0x:%s line_addr:%s index:%ld addr:0x%s\n", hexstr64(req->addr),
-            hexstr64(pref_line_addr), (long int)(req - mem->req_buffer), hexstr64s(req->addr));
+            hexstr64(pref_line_addr), (long int)(req - mem->req_pool), hexstr64s(req->addr));
       STAT_EVENT(ic->proc_id, IC_PREF_CACHE_FILL);
 
       return TRUE;
@@ -1389,13 +1388,11 @@ void log_stats_mshr_hit(Addr line_addr) {
   Flag demand_hit_writeback = FALSE;
   Mem_Queue_Entry* queue_entry = NULL;
   Flag ramulator_match = FALSE;
-  Mem_Req* req = mem_search_reqbuf_wrapper(
-      ic->proc_id, line_addr, MRT_FDIPPRFON, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
-      QUEUE_MLC | QUEUE_L1 | QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL, &queue_entry, &ramulator_match);
+  Mem_Req* req = mem_search_outstanding(ic->proc_id, line_addr, MRT_FDIPPRFON, ICACHE_LINE_SIZE, &demand_hit_prefetch,
+                                        &demand_hit_writeback, &queue_entry, &ramulator_match);
   if (!req) {
-    req = mem_search_reqbuf_wrapper(
-        ic->proc_id, line_addr, MRT_FDIPPRFOFF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
-        QUEUE_MLC | QUEUE_L1 | QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL, &queue_entry, &ramulator_match);
+    req = mem_search_outstanding(ic->proc_id, line_addr, MRT_FDIPPRFOFF, ICACHE_LINE_SIZE, &demand_hit_prefetch,
+                                 &demand_hit_writeback, &queue_entry, &ramulator_match);
   }
 
   if (req && !req->cyc_hit_by_demand_load) {

@@ -950,12 +950,13 @@ void alloc_mem_eip(uns numCores) {
   L1I_TAG_BITS = (19 - L1I_ENTANGLED_TABLE_INDEX_BITS);
   L1I_TAG_MASK = (((uint64_t)1 << L1I_TAG_BITS) - 1);
 
-  ASSERT(eip_proc_id, MEM_REQ_BUFFER_ENTRIES > 16);
-  L1I_RQ_SIZE = MEM_REQ_BUFFER_ENTRIES;
+  /* Its own read queue and MSHR file, at the values the old shared parameter gave
+     it; they describe the L1I, not the request pool. */
+  L1I_RQ_SIZE = 32;
   ASSERT(eip_proc_id, L1I_RQ_SIZE > 0);
   L1I_SET = ICACHE_SIZE / ICACHE_LINE_SIZE / ICACHE_ASSOC;
   L1I_WAY = ICACHE_ASSOC;
-  int L1I_MSHR_SIZE = (MEM_REQ_BUFFER_ENTRIES <= 64 && MEM_REQ_BUFFER_ENTRIES > 16) ? 16 : MEM_REQ_BUFFER_ENTRIES / 4;
+  int L1I_MSHR_SIZE = MLC_MSHRS / 2;
   L1I_TIMING_MSHR_SIZE = FE_FTQ_BLOCK_NUM + L1I_MSHR_SIZE + L1I_RQ_SIZE;
   DEBUG(eip_proc_id, "L1I_RQ_SIZE: %d, L1I_SET: %d, L1I_WAY: %d, L1I_TIMING_MSHR_SIZE: %d\n", L1I_RQ_SIZE, L1I_SET,
         L1I_WAY, L1I_TIMING_MSHR_SIZE);

@@ -814,7 +814,7 @@ void full_sim() {
     destroy_list(&td->seq_op_list);
 
   if (mem) {
-    destroy_list(&mem->req_buffer_free_list);
+    destroy_list(&mem->req_pool_free_list);
 
     if (mem->l1_in_buffer_core) {
       for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
@@ -824,10 +824,10 @@ void full_sim() {
       mem->l1_in_buffer_core = NULL;
     }
 
-    if (mem->req_buffer && mem->total_mem_req_buffers) {
-      for (uns ii = 0; ii < mem->total_mem_req_buffers; ii++) {
-        destroy_list(&mem->req_buffer[ii].op_ptrs);
-        destroy_list(&mem->req_buffer[ii].op_uniques);
+    if (mem->req_pool && mem->total_req_pool) {
+      for (uns ii = 0; ii < mem->total_req_pool; ii++) {
+        destroy_list(&mem->req_pool[ii].op_ptrs);
+        destroy_list(&mem->req_pool[ii].op_uniques);
       }
     }
   }

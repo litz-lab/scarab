@@ -91,20 +91,11 @@ typedef enum Mem_Queue_Type_enum {
   QUEUE_CORE_FILL = 1 << 6,
 } Mem_Queue_Type;
 
-typedef struct Mem_Queue_Entry_struct {
-  int req_id;       /* request buffer num */
-  Counter priority; /* priority of the miss */
-  Counter rdy_cycle;
-} Mem_Queue_Entry;
-
 typedef struct Mem_Queue_struct {
-  Mem_Queue_Entry* base; /* transport queues (fill, bus out) only */
-  int entry_count;
-  /* Lookup levels: how many misses this level is tracking. A request takes one when
-     it misses here and gives it back when its fill lands. */
+  /* How many misses this level is tracking. A request takes one when it misses here
+     and gives it back when its fill lands. */
   int mshrs_taken;
-  uns size;
-  /* Lookup levels only: one FIFO of request ids per bank, in age order. */
+  /* One FIFO of requests per bank, in age order. */
   List* banks;
   uns num_banks;
   /* Outstanding misses this level is tracking. Separate from size: entries are
@@ -146,7 +137,12 @@ typedef struct Uncore_struct {
 
 typedef struct Memory_struct {
   /* miss buffer */
-  Mem_Req* req_pool;
+  /* Chunked so it can grow: a new chunk is appended when the free list runs dry and
+     existing chunks never move, so a Mem_Req* stays valid for the life of the request. */
+  Mem_Req** req_pool_chunks;
+  uns num_chunks;
+  uns chunks_allocated;
+  uns chunk_size;
   List req_pool_free_list;
   List* l1_in_buffer_core;
   uns total_req_pool;
@@ -164,7 +160,9 @@ typedef struct Memory_struct {
   /* various queues (arrays) */
   Mem_Queue mlc_queue;
   Mem_Queue l1_queue;
-  Mem_Queue* core_fill_queues;
+  /* One per core: requests whose done_func still owes the core. A plain list, like
+     completed_reqs -- it is walked in order and never re-sorted. */
+  List* core_fill_queues;
   /* Fills that could not finish on the cycle their data arrived -- a dirty eviction
      whose writeback was refused, or a done_func that could not take a port. Walked
      each cycle to retry. Everything else completes inside the DRAM callback and
@@ -225,7 +223,6 @@ typedef struct Umon_Cache_Data_struct {
 
 /**************************************************************************************/
 /* Prototypes */
-int mem_compare_priority(const void* a, const void* b);
 
 void set_memory(Memory*);
 void init_memory(void);
@@ -236,7 +233,6 @@ void update_memory(void);
 
 Flag scan_stores(Addr, uns);
 void op_nuke_mem_req(Op*);
-Flag mem_req_younger_than_uniquenum(int, Counter);
 L1_Data* do_l1_access(Op* op);
 L1_Data* do_l1_access_addr(Addr);
 L1_Data* do_mlc_access(Op* op);
@@ -250,6 +246,8 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority);
 /* How many requests the pool holds. Derived from the MSHR files and the DRAM
    queues, so it is not a parameter anyone sets. */
 uns mem_req_pool_size(void);
+void mem_clear_crit_path(void);
+void mem_destroy_req_pool(void);
 
 /* Probe a level's cache for its prefetcher. FALSE means the bank was busy this
    cycle; otherwise *hit says whether the line is already there. */
@@ -283,7 +281,7 @@ uns num_chip_demands(void);
 uns num_offchip_stall_reqs(uns proc_id);
 
 Mem_Req* mem_search_outstanding(uns8 proc_id, Addr addr, Mem_Req_Type type, uns size, Flag* demand_hit_prefetch,
-                                Flag* demand_hit_writeback, Mem_Queue_Entry** queue_entry, Flag* ramulator_match);
+                                Flag* demand_hit_writeback, Flag* ramulator_match);
 
 /**************************************************************************************/
 /* Externs */

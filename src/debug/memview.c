@@ -74,8 +74,6 @@ FILE* trace;
 Bank_Info* bank_infos;
 static Proc_Info* proc_infos;
 Trigger* start_trigger;
-Mem_Req_Type* req_types;
-
 /**************************************************************************************/
 /* Local Prototypes */
 
@@ -98,7 +96,6 @@ void memview_init(void) {
 
   bank_infos = calloc(RAMULATOR_CHANNELS * RAMULATOR_BANKS, sizeof(Bank_Info));
   proc_infos = calloc(NUM_CORES, sizeof(Proc_Info));
-  req_types = malloc(mem_req_pool_size() * sizeof(Mem_Req_Type));
 
   // Timing simulation start time might not be zero due to warmup
   // (which has to update time to maintain cache LRU information_
@@ -135,8 +132,8 @@ void memview_dram(Memview_Dram_Event event, Mem_Req* req, uns flat_bank_id, Coun
     return;
 
   Bank_Info* bank_info = &bank_infos[flat_bank_id];
-  fprintf(trace, "%8s %10s %20lld %20lld %2d %10lld %3d %2d %2d\n", "DRAM", Memview_Dram_Event_str(event), start, end,
-          req ? req->proc_id : -1, req ? req->unique_num : -1, req ? req->id : -1, flat_bank_id, bank_info->pos);
+  fprintf(trace, "%8s %10s %20lld %20lld %2d %10lld %2d %2d\n", "DRAM", Memview_Dram_Event_str(event), start, end,
+          req ? req->proc_id : -1, req ? req->unique_num : -1, flat_bank_id, bank_info->pos);
   if (event == MEMVIEW_DRAM_COLUMN) {
     bank_info->pos = (bank_info->pos + 1) % 3;
   }
@@ -177,10 +174,10 @@ void memview_memqueue(Memview_Memqueue_Event event, Mem_Req* req) {
   if (event == MEMVIEW_MEMQUEUE_ARRIVE) {
     ASSERT(req->proc_id, proc_info->num_reqs_by_type[req->type] < mem_req_pool_size());
     proc_info->num_reqs_by_type[req->type]++;
-    req_types[req->id] = req->type;
+    req->memview_type = req->type;
   } else {
     ASSERT(req->proc_id, proc_info->num_reqs_by_type[req->type] > 0);
-    ASSERT(req->proc_id, req_types[req->id] == req->type);
+    ASSERT(req->proc_id, req->memview_type == req->type);
     proc_info->num_reqs_by_type[req->type]--;
   }
 }
@@ -197,12 +194,12 @@ void memview_req_changed_type(struct Mem_Req_struct* req) {
           "memory request?\n");
   ASSERT(0, req);
   Proc_Info* proc_info = &proc_infos[req->proc_id];
-  Mem_Req_Type old_type = req_types[req->id];
+  Mem_Req_Type old_type = req->memview_type;
   if (req->type == old_type)
     return;  // same type, no change
   ASSERT(req->proc_id, proc_info->num_reqs_by_type[old_type] > 0);
   proc_info->num_reqs_by_type[old_type]--;
-  req_types[req->id] = req->type;
+  req->memview_type = req->type;
   ASSERT(req->proc_id, proc_info->num_reqs_by_type[req->type] < mem_req_pool_size());
   proc_info->num_reqs_by_type[req->type]++;
   if (trigger_on(start_trigger)) {

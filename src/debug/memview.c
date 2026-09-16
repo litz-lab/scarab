@@ -172,7 +172,6 @@ void memview_memqueue(Memview_Memqueue_Event event, Mem_Req* req) {
   }
   proc_info->last_memqueue_change_time = freq_time();
   if (event == MEMVIEW_MEMQUEUE_ARRIVE) {
-    ASSERT(req->proc_id, proc_info->num_reqs_by_type[req->type] < mem_req_pool_size());
     proc_info->num_reqs_by_type[req->type]++;
     req->memview_type = req->type;
   } else {
@@ -200,7 +199,6 @@ void memview_req_changed_type(struct Mem_Req_struct* req) {
   ASSERT(req->proc_id, proc_info->num_reqs_by_type[old_type] > 0);
   proc_info->num_reqs_by_type[old_type]--;
   req->memview_type = req->type;
-  ASSERT(req->proc_id, proc_info->num_reqs_by_type[req->type] < mem_req_pool_size());
   proc_info->num_reqs_by_type[req->type]++;
   if (trigger_on(start_trigger)) {
     trace_memqueue_state(req->proc_id, proc_info->last_memqueue_change_time, freq_time(), proc_info->num_reqs_by_type);

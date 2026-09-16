@@ -949,14 +949,12 @@ void FDIP::update() {
         UNUSED(dummy_addr);
         uns pref_from = line ? 0 : (mlc_line ? 1 : (l1_line ? 2 : 3));
         STAT_EVENT(proc_id, FDIP_PREFETCH_HIT_ICACHE0 + 4 * bp_id + pref_from);
-        mem_req = mem_search_reqbuf_wrapper(
-            proc_id, line_addr, MRT_FDIPPRFON, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
-            QUEUE_MLC | QUEUE_L1 | QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL, &queue_entry, &ramulator_match);
+        mem_req = mem_search_outstanding(proc_id, line_addr, MRT_FDIPPRFON, ICACHE_LINE_SIZE, &demand_hit_prefetch,
+                                         &demand_hit_writeback, &queue_entry, &ramulator_match);
 
         if (!mem_req) {
-          mem_req = mem_search_reqbuf_wrapper(
-              proc_id, line_addr, MRT_FDIPPRFOFF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
-              QUEUE_MLC | QUEUE_L1 | QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL, &queue_entry, &ramulator_match);
+          mem_req = mem_search_outstanding(proc_id, line_addr, MRT_FDIPPRFOFF, ICACHE_LINE_SIZE, &demand_hit_prefetch,
+                                           &demand_hit_writeback, &queue_entry, &ramulator_match);
         }
 
         if (line) {

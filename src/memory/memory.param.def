@@ -178,7 +178,6 @@ DEF_PARAM(pref_insert_dynacc, PREF_INSERT_DYNACC, Flag, Flag,
           FALSE, ) /* Use Dynamic accuracy */
 
 
-DEF_PARAM(mem_req_buffer_entries, MEM_REQ_BUFFER_ENTRIES, uns, uns, 32, )
 DEF_PARAM(private_mshr_on, PRIVATE_MSHR_ON, Flag, Flag, TRUE, )
 DEF_PARAM(mem_priority_ifetch, MEM_PRIORITY_IFETCH, uns, uns, 0, )
 DEF_PARAM(mem_priority_dfetch, MEM_PRIORITY_DFETCH, uns, uns, 0, )
@@ -202,7 +201,6 @@ DEF_PARAM(l1_mshrs, L1_MSHRS, uns, uns, 32, )
    one, and refusing an LLC writeback can deadlock. */
 DEF_PARAM(mshr_wb_reserve, MSHR_WB_RESERVE, uns, uns, 2, )
 
-// l1_queue size is the same as mem_req_buffer_entries
 // FOR independently sized queues beyond the l1
 DEF_PARAM(mem_l1_fill_queue_entries, MEM_L1_FILL_QUEUE_ENTRIES, uns, uns, 32, )
 DEF_PARAM(mem_mem_queue_partition_enable, MEM_MEM_QUEUE_PARTITION_ENABLE, Flag,

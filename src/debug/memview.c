@@ -98,7 +98,7 @@ void memview_init(void) {
 
   bank_infos = calloc(RAMULATOR_CHANNELS * RAMULATOR_BANKS, sizeof(Bank_Info));
   proc_infos = calloc(NUM_CORES, sizeof(Proc_Info));
-  req_types = malloc((MEM_REQ_BUFFER_ENTRIES * (PRIVATE_MSHR_ON ? NUM_CORES : 1)) * sizeof(Mem_Req_Type));
+  req_types = malloc(mem_req_pool_size() * sizeof(Mem_Req_Type));
 
   // Timing simulation start time might not be zero due to warmup
   // (which has to update time to maintain cache LRU information_
@@ -119,7 +119,6 @@ void memview_init(void) {
   MEMVIEW_PARAM_PRINT(RAMULATOR_TCK);
   MEMVIEW_PARAM_PRINT(RAMULATOR_CHANNELS);
   MEMVIEW_PARAM_PRINT(RAMULATOR_BANKS);
-  MEMVIEW_PARAM_PRINT(MEM_REQ_BUFFER_ENTRIES);
   MEMVIEW_PARAM_PRINT(MEMVIEW_NOTE_NUM_ELEMS);
 #undef MEMVIEW_PARAM_PRINT
 
@@ -176,7 +175,7 @@ void memview_memqueue(Memview_Memqueue_Event event, Mem_Req* req) {
   }
   proc_info->last_memqueue_change_time = freq_time();
   if (event == MEMVIEW_MEMQUEUE_ARRIVE) {
-    ASSERT(req->proc_id, proc_info->num_reqs_by_type[req->type] < MEM_REQ_BUFFER_ENTRIES);
+    ASSERT(req->proc_id, proc_info->num_reqs_by_type[req->type] < mem_req_pool_size());
     proc_info->num_reqs_by_type[req->type]++;
     req_types[req->id] = req->type;
   } else {
@@ -204,7 +203,7 @@ void memview_req_changed_type(struct Mem_Req_struct* req) {
   ASSERT(req->proc_id, proc_info->num_reqs_by_type[old_type] > 0);
   proc_info->num_reqs_by_type[old_type]--;
   req_types[req->id] = req->type;
-  ASSERT(req->proc_id, proc_info->num_reqs_by_type[req->type] < MEM_REQ_BUFFER_ENTRIES);
+  ASSERT(req->proc_id, proc_info->num_reqs_by_type[req->type] < mem_req_pool_size());
   proc_info->num_reqs_by_type[req->type]++;
   if (trigger_on(start_trigger)) {
     trace_memqueue_state(req->proc_id, proc_info->last_memqueue_change_time, freq_time(), proc_info->num_reqs_by_type);

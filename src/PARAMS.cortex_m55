@@ -181,7 +181,6 @@
 --mem_priority_wb            5
 --mem_priority_wb_nodirty    5
 
---mem_req_buffer_entries        32
 --bus_width_in_bytes            8
 
 --ramulator_standard		DDR4

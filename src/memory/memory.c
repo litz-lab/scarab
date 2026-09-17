@@ -1756,6 +1756,12 @@ static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_ent
         Mem_Req* descent_match =
             mem_search_reqbuf_wrapper(req->proc_id, req->addr, req->type, req->size, &descent_pref, &descent_wb,
                                       QUEUE_L1 | QUEUE_BUS_OUT | QUEUE_MEM, &descent_entry, &descent_ramulator);
+        /* Experiment: an on-path demand load may not fold into an LLC prefetch that
+           already holds the LLC MSHR, which is what the probe redesign gives up. */
+        if (descent_match && !req->off_path && req->type == MRT_DFETCH && descent_match->type == MRT_DPRF) {
+          STAT_EVENT(req->proc_id, NEWREQ_PREF_MATCH_IGNORED);
+          descent_match = NULL;
+        }
         if (descent_match && descent_match != req && descent_match->type != MRT_WB &&
             descent_match->type != MRT_WB_NODIRTY) {
           ASSERT(req->proc_id, mem_req_holds_mshr_at(descent_match, &mem->l1_queue, MEM_RES_L1));

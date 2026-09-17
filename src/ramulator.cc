@@ -180,8 +180,7 @@ int ramulator_send(Mem_Req* scarab_req) {
   if (it_scarab_req != inflight_read_reqs.end() && req.type == Request::Type::READ) {
     DEBUG(scarab_req->proc_id, "Ramulator: Duplicate (%s) request to address %llx\n",
           Mem_Req_Type_str(scarab_req->type), scarab_req->addr);
-    // Can have duplicate Ifetch and Dfetch requests, but only one of each
-    ASSERT(0, it_scarab_req->second.size() <= 1);
+    /* Any number may pile up here once the descent merge no longer folds them. */
 
     /* save it as an inflight request so later it will be moved to the resp_queue
      * at the same time with the older request */

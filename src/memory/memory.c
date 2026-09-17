@@ -375,9 +375,9 @@ void init_memory() {
   }
 
   /* Initialize l1 and bus access queues which hold id's of request buffers */
-  init_mem_queue(&mem->mlc_queue, "MLC_QUEUE", QUEUE_MLC, MLC_MSHRS, MSHR_WB_RESERVE);
+  init_mem_queue(&mem->mlc_queue, "MLC_QUEUE", QUEUE_MLC, DCACHE_MSHRS, MSHR_WB_RESERVE);
   init_mem_queue_banks(&mem->mlc_queue, MLC_BANKS);
-  init_mem_queue(&mem->l1_queue, "L1_QUEUE", QUEUE_L1, L1_MSHRS, MSHR_WB_RESERVE);
+  init_mem_queue(&mem->l1_queue, "L1_QUEUE", QUEUE_L1, MLC_MSHRS, MSHR_WB_RESERVE);
   init_mem_queue_banks(&mem->l1_queue, L1_BANKS);
 
   mem->core_fill_queues = (List*)calloc(NUM_CORES, sizeof(List));

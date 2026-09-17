@@ -195,8 +195,10 @@ DEF_PARAM(promote_to_higher_priority_mem_req_type,
 
 /* Outstanding misses a level can track, independent of how many accesses its
    pipeline holds. */
+/* An MSHR file is named for the misses it holds, not the level it sits at: the
+   dcache file holds dcache misses and lives at the MLC, and so on down. */
+DEF_PARAM(dcache_mshrs, DCACHE_MSHRS, uns, uns, 32, )
 DEF_PARAM(mlc_mshrs, MLC_MSHRS, uns, uns, 32, )
-DEF_PARAM(l1_mshrs, L1_MSHRS, uns, uns, 32, )
 DEF_PARAM(mshr_wb_reserve, MSHR_WB_RESERVE, uns, uns, 2, )
 /* Held for writebacks: they are low priority, so ordering never guarantees them
    one, and refusing an LLC writeback can deadlock. */

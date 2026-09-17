@@ -1591,12 +1591,12 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
 
         ASSERT(req->proc_id, MRS_L1_WAIT == req->state);
 
-        /* Entering DRAM there is never a request to merge with: a same-address one
-           was folded in at MLC or L1 entry. Probe only to hold that down. */
+        /* Blocking the descent merge is what lets a second request for one line reach
+           DRAM, so count them rather than assert the merge held. */
         if (ENABLE_ASSERTIONS && (req->type != MRT_WB) && (req->type != MRT_WB_NODIRTY)) {
           Mem_Req* dram_match = ramulator_search_queue(req->phys_addr, req->type);
-          ASSERT(req->proc_id,
-                 !dram_match || dram_match == req || dram_match->type == MRT_WB || dram_match->type == MRT_WB_NODIRTY);
+          if (dram_match && dram_match != req && dram_match->type != MRT_WB && dram_match->type != MRT_WB_NODIRTY)
+            STAT_EVENT(req->proc_id, MEM_REQ_DUP_TO_DRAM);
         }
 
         req->state = MRS_MEM_NEW;

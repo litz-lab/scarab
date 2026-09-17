@@ -107,8 +107,11 @@ typedef struct Mem_Queue_struct {
   /* Lookups this level has started and not yet completed. They are no longer in a
      bank FIFO -- the bank is free the cycle after one starts. */
   uns pending_lookups;
-  /* One FIFO of requests per bank, in age order. */
-  List* banks;
+  /* Banks are per port, so a read bank and a write bank share an index but are
+     separate arrays: reads and writes share this level's MSHR file, not its banks.
+     One FIFO each, in age order. */
+  List* read_banks;
+  List* write_banks;
   uns num_banks;
   uns mshr_size;
   char name[20];

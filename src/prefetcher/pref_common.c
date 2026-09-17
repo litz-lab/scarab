@@ -548,12 +548,17 @@ static inline void pref_bank_pop(List* banks, uns bank, int* count) {
 /* Drop a queued prefetch a demand has overtaken. */
 static Flag pref_banks_add(List* banks, Destination dest, int* count, uns cap, Flag overwrite_on_full,
                            Pref_Mem_Req* req, Stat_Enum full_stat) {
+  uns bank = pref_bank_of(dest, req->line_addr);
   if (*count >= (int)cap) {
     STAT_EVENT_ALL(full_stat);
     if (!overwrite_on_full)
       return FALSE;
+    /* Overwrite means the oldest prefetch is lost, as it was when this was a fixed
+       circular queue; keeping it would let the file grow without bound. */
+    if (!banks[bank].count)
+      return FALSE;
+    pref_bank_pop(banks, bank, count);
   }
-  uns bank = pref_bank_of(dest, req->line_addr);
   *(Pref_Mem_Req*)dl_list_add_tail(&banks[bank]) = *req;
   (*count)++;
   return TRUE;
@@ -628,6 +633,11 @@ Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_
   new_req.global_hist = global_hist;
   new_req.bw_limited = bw;
   new_req.rdy_cycle = cycle_count;
+
+  if (PREF_UL1REQ_ADD_FILTER_ON && pref_ul1req_queue_match(new_req.line_addr)) {
+    STAT_EVENT(0, PREF_UL1REQ_QUEUE_MATCHED_REQ);
+    return TRUE;
+  }
 
   return pref_banks_add(core->ul1req_banks, DEST_L1, &core->ul1req_count, PREF_UL1REQ_QUEUE_SIZE,
                         PREF_UL1REQ_QUEUE_OVERWRITE_ON_FULL, &new_req, PREF_UL1REQ_QUEUE_FULL);

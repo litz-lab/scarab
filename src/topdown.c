@@ -167,7 +167,7 @@ void topdown_done(uns proc_id) {
   INC_STAT_EVENT(proc_id, TOPDOWN_RETIRING_BOUND, retiring_bound);
 
   uns64 backend_bound = TOPDOWN_SCALE_FACTOR - frontend_bound - bad_spec_bound - retiring_bound;
-  assert(proc_id, backend_bound <= TOPDOWN_SCALE_FACTOR);
+  ASSERT(proc_id, backend_bound <= TOPDOWN_SCALE_FACTOR);
   INC_STAT_EVENT(proc_id, TOPDOWN_BACKEND_BOUND, backend_bound);
 
   /* Backend Breakdown */

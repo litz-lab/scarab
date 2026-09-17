@@ -1807,8 +1807,11 @@ static void mem_process_l1_reqs() {
     if (!req || cycle_count < req->rdy_cycle)
       continue;
 
-    if (!get_read_port(&L1(req->proc_id)->ports[b]))
+    if (!get_read_port(&L1(req->proc_id)->ports[b])) {
+      STAT_EVENT(req->proc_id, L1_LD_BANK_BLOCK);
       continue;
+    }
+    STAT_EVENT(req->proc_id, L1_LD_BANK_BLOCK + 1);
 
     ASSERTM(req->proc_id, req->state == MRS_L1_NEW, "addr:0x%s state:%s\n", hexstr64s(req->addr),
             mem_req_state_names[req->state]);
@@ -1846,8 +1849,11 @@ static void mem_process_mlc_reqs() {
     if (!req || cycle_count < req->rdy_cycle)
       continue;
 
-    if (!get_read_port(&MLC(req->proc_id)->ports[b]))
+    if (!get_read_port(&MLC(req->proc_id)->ports[b])) {
+      STAT_EVENT(req->proc_id, MLC_LD_BANK_BLOCK);
       continue;
+    }
+    STAT_EVENT(req->proc_id, MLC_LD_BANK_BLOCK + 1);
 
     ASSERTM(req->proc_id, req->state == MRS_MLC_NEW, "addr:0x%s state:%s\n", hexstr64s(req->addr),
             mem_req_state_names[req->state]);
@@ -1877,8 +1883,11 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit) {
     cache = &L1(proc_id)->cache;
   }
 
-  if (!get_read_port(ports))
+  if (!get_read_port(ports)) {
+    STAT_EVENT(proc_id, dest == DEST_MLC ? MLC_LD_BANK_BLOCK : L1_LD_BANK_BLOCK);
     return FALSE;
+  }
+  STAT_EVENT(proc_id, (dest == DEST_MLC ? MLC_LD_BANK_BLOCK : L1_LD_BANK_BLOCK) + 1);
 
   *hit = cache_access(cache, line_addr, &dummy_line_addr, FALSE) != NULL;
 
@@ -3013,6 +3022,13 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
     perf_pred_mem_req_start(new_req);
     mem->uncores[proc_id].num_outstanding_l1_misses++;
     return TRUE;
+  }
+
+  /* A probed MLC prefetch skipped the MLC queue, so the miss its probe found is
+     recorded here rather than in mem_process_mlc_miss_access. */
+  if (probed && !to_dram) {
+    new_req->mlc_miss = TRUE;
+    new_req->mlc_miss_cycle = cycle_count;
   }
 
   if (to_mlc)

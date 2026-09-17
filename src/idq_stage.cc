@@ -70,6 +70,9 @@ struct IDQ_Stage {
   void set_recovery_cycle(int recovery_cycle);
   int get_recovery_cycle() const;
 
+  Flag get_offpath_flag() const { return offpath; };
+  void set_offpath_flag(Flag flag) { offpath = flag; };
+
  private:
   uns8 proc_id = 0;
   int capacity = 0;
@@ -79,6 +82,7 @@ struct IDQ_Stage {
   int tail = 0;
   Counter next_op_num = 0;
   int recovery_cycle = 0;
+  Flag offpath = FALSE;
 
   /* the IDQ outpur stage data */
   Stage_Data idq_sd = {};
@@ -90,7 +94,7 @@ struct IDQ_Stage {
   std::string idq_stage_name;
 
   Stage_Data* select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd);
-  void process_input_stage_data(Stage_Data* consume_from_sd, int& count_issued, int& count_issued_on_path);
+  void process_input_stage_data(Stage_Data* consume_from_sd);
   bool enqueue(Op* op);
   Op* dequeue();
   inline int wrap_around(int);
@@ -116,7 +120,7 @@ void IDQ_Stage::init(uns8 _proc_id, const char* name) {
   idq_ops.assign(DISPATCH_WIDTH, NULL);
   idq_sd.ops = idq_ops.data();
   idq_sd.op_count = 0;
-
+  offpath = FALSE;
   reset();
 }
 
@@ -263,15 +267,35 @@ Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Dat
   return consume_from_sd;
 }
 
-void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd, int& count_issued, int& count_issued_on_path) {
-  /* Return if the next expected uop has not yet arrived. */
+void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd) {
+  int count_issued = 0;
+  int count_issued_on_path = 0;
+  int count_bad_spec_slots = 0;
+  int count_unutilised_frontend_slots = 0;
+  int count_backend_slots = 0;
+
+  // /* Return if the next expected uop has not yet arrived. */
   if (!consume_from_sd) {
+    if (get_offpath_flag())
+      count_bad_spec_slots += DISPATCH_WIDTH;
+    else
+      count_unutilised_frontend_slots += DISPATCH_WIDTH;
+    count_issued++;
+    topdown_idq_update(proc_id, count_bad_spec_slots, count_unutilised_frontend_slots, count_issued,
+                       count_issued_on_path);
     return;
   }
 
-  /* Return if there is no enough space. */
+  // /* Return if there is no enough space. */
   if (capacity - occupied_count < consume_from_sd->op_count) {
     ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count);
+    if (get_offpath_flag())
+      count_bad_spec_slots += DISPATCH_WIDTH;
+    else
+      count_backend_slots += DISPATCH_WIDTH;
+    count_issued++;
+    topdown_idq_update(proc_id, count_bad_spec_slots, count_unutilised_frontend_slots, count_issued,
+                       count_issued_on_path);
     return;
   }
 
@@ -292,10 +316,6 @@ void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd, int& count
     if (idq_sd.op_count < idq_sd.max_op_count) {
       ASSERT(proc_id, !occupied_count);
       idq_sd.ops[idq_sd.op_count++] = op;
-      if (!op->off_path) {
-        count_issued_on_path++;
-      }
-      count_issued++;
     } else {
       bool success = enqueue(op);
       ASSERT(proc_id, success);
@@ -303,11 +323,21 @@ void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd, int& count
     consume_from_sd->ops[i] = NULL;
     consume_from_sd->op_count--;
     next_op_num++;
+
+    if (!op->off_path) {
+      count_issued_on_path++;
+      set_offpath_flag(FALSE);
+    } else {
+      count_bad_spec_slots++;
+      set_offpath_flag(TRUE);
+    }
+    count_issued++;
   }
   ASSERT(proc_id, !consume_from_sd->op_count);
-
-  /* The output stage data should be full unless the IDQ is empty. */
   ASSERT(proc_id, idq_sd.op_count == idq_sd.max_op_count || !occupied_count);
+
+  topdown_idq_update(proc_id, count_bad_spec_slots, count_unutilised_frontend_slots, count_issued,
+                     count_issued_on_path);
 }
 
 void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd) {
@@ -323,8 +353,6 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
       (ic_uopc_sd->op_count && ic_uopc_sd->ops[0]) ? unsstr64(ic_uopc_sd->ops[0]->op_num) : "none",
       ic_uopc_sd->op_count, idq_sd.op_count, occupied_count);
   /* Fill the IDQ output stage data with uops from IDQ. */
-  int count_issued = 0;
-  int count_issued_on_path = 0;
   for (int i = idq_sd.op_count; i < idq_sd.max_op_count; i++) {
     Op* op = dequeue();
     if (!op) {
@@ -333,11 +361,6 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
     }
     idq_sd.ops[i] = op;
     idq_sd.op_count++;
-
-    if (!op->off_path) {
-      count_issued_on_path++;
-    }
-    count_issued++;
   }
 
   /* Select the input stage data. */
@@ -347,9 +370,7 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
         : consume_from_sd == uop_queue_sd ? "uop_queue"
         : consume_from_sd == ic_uopc_sd   ? "ic_uopc"
                                           : "none");
-  process_input_stage_data(consume_from_sd, count_issued, count_issued_on_path);
-
-  topdown_idq_update(proc_id, idq_sd.op_count, count_issued, count_issued_on_path);
+  process_input_stage_data(consume_from_sd);
 }
 
 bool IDQ_Stage::enqueue(Op* op) {

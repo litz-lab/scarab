@@ -1054,9 +1054,9 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry, Ad
 
   // cmp IGNORE
   if (req->off_path)
-    STAT_EVENT(req->proc_id, L1_HIT_OFFPATH_IFETCH + MIN2(req->type, 6));
+    STAT_EVENT(req->proc_id, L1_HIT_OFFPATH_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
   else
-    STAT_EVENT(req->proc_id, L1_HIT_ONPATH_IFETCH + MIN2(req->type, 6));
+    STAT_EVENT(req->proc_id, L1_HIT_ONPATH_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
 
   if (!req->demand_match_prefetch && (req->type == MRT_DFETCH || req->type == MRT_DSTORE || req->type == MRT_IFETCH)) {
     DEBUG(req->proc_id, "Req index:%d no longer a chip demand\n", req->id);
@@ -1166,9 +1166,9 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_entry, 
 
     // cmp IGNORE
     if (req->off_path)
-      STAT_EVENT(req->proc_id, MLC_HIT_OFFPATH_IFETCH + MIN2(req->type, 6));
+      STAT_EVENT(req->proc_id, MLC_HIT_OFFPATH_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
     else
-      STAT_EVENT(req->proc_id, MLC_HIT_ONPATH_IFETCH + MIN2(req->type, 6));
+      STAT_EVENT(req->proc_id, MLC_HIT_ONPATH_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
 
     if (MLC_WRITE_THROUGH && (req->type == MRT_WB)) {
       req->state = MRS_L1_NEW;
@@ -1235,9 +1235,9 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_e
     td->td_info.last_l1_miss_time = cycle_count;
 
     if (req->off_path)
-      STAT_EVENT(req->proc_id, L1_MISS_OFFPATH_IFETCH + MIN2(req->type, 6));
+      STAT_EVENT(req->proc_id, L1_MISS_OFFPATH_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
     else
-      STAT_EVENT(req->proc_id, L1_MISS_ONPATH_IFETCH + MIN2(req->type, 6));
+      STAT_EVENT(req->proc_id, L1_MISS_ONPATH_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
   }
 
   if ((req->type == MRT_WB) || (req->type == MRT_WB_NODIRTY)) {
@@ -1358,9 +1358,9 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue
     STAT_EVENT(req->proc_id, MLC_MISS_ALL_ONPATH + req->off_path);
 
     if (req->off_path)
-      STAT_EVENT(req->proc_id, MLC_MISS_OFFPATH_IFETCH + MIN2(req->type, 6));
+      STAT_EVENT(req->proc_id, MLC_MISS_OFFPATH_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
     else
-      STAT_EVENT(req->proc_id, MLC_MISS_ONPATH_IFETCH + MIN2(req->type, 6));
+      STAT_EVENT(req->proc_id, MLC_MISS_ONPATH_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
   }
 
   /* Mark the request as MLC_miss */
@@ -2517,7 +2517,7 @@ static inline Mem_Req* mem_search_queue(
         ASSERT(matching_req->proc_id, matching_req->state != MRS_INV);
         *queue_entry = &(queue->base[ii]);
         if (collect_stats)
-          STAT_EVENT(req->proc_id, MEM_REQ_MATCH_IFETCH + MIN2(req->type, 6));
+          STAT_EVENT(req->proc_id, MEM_REQ_MATCH_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
         break;
       }
     }
@@ -2871,7 +2871,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
   ASSERT(0, queue_type & (QUEUE_L1 | QUEUE_MLC));
   Flag to_mlc = (queue_type == QUEUE_MLC);
 
-  STAT_EVENT(proc_id, MEM_REQ_IFETCH + MIN2(type, 6));
+  STAT_EVENT(proc_id, MEM_REQ_IFETCH + MIN2(type, MRT_WB_NODIRTY));
   STAT_EVENT(proc_id, MEM_REQ_BUFFER_MISS);
 
   if (type == MRT_IFETCH || type == MRT_DFETCH || type == MRT_DSTORE) {

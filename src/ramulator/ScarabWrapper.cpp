@@ -78,6 +78,10 @@ bool ScarabWrapper::send(Request req) {
   return mem->send(req);
 }
 
+int ScarabWrapper::read_queue_free_slots(long addr) {
+  return mem->read_queue_free_slots(addr);
+}
+
 void ScarabWrapper::finish(void) {
   mem->finish();
   Stats::statlist.printall();

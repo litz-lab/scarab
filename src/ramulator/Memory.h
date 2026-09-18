@@ -56,6 +56,7 @@ public:
     virtual void tick() = 0;
     virtual bool send(Request req) = 0;
     virtual int pending_requests() = 0;
+    virtual int read_queue_free_slots(long addr) = 0;
     virtual void finish(void) = 0;
     virtual long page_allocator(long addr, int coreid) = 0;
     virtual void record_core(int coreid) = 0;
@@ -401,6 +402,16 @@ public:
         }
 
         return false;
+    }
+
+    /* Free entries in the read queue of the controller this address maps to, so a
+       caller can hold a margin back for demands. Only the channel is decoded, which
+       is the first slice send() takes. */
+    int read_queue_free_slots(long addr) {
+      clear_lower_bits(addr, tx_bits);
+      int ch = slice_lower_bits(addr, addr_bits[0]);
+      Controller<T>* ctrl = ctrls[ch];
+      return (int)ctrl->readq.max - (int)ctrl->readq.size();
     }
 
     int pending_requests()

@@ -222,6 +222,9 @@ DEF_PARAM(one_core_first_to_mem_queue_th, ONE_CORE_FIRST_TO_MEM_QUEUE_TH, uns,
 DEF_PARAM(l1_cycle_time, L1_CYCLE_TIME, uns, uns, 312500, )
 DEF_PARAM(dcq_to_mlcq_transfer_latency, DCQ_TO_MLCQ_TRANSFER_LATENCY, uns, uns,
           0, )
+/* Read-queue entries the memory controller keeps back from prefetches, so a demand
+   still gets in when prefetches have filled it. 0 leaves prefetches unthrottled. */
+DEF_PARAM(dram_pref_reserve, DRAM_PREF_RESERVE, uns, uns, 0, )
 DEF_PARAM(mlcq_to_l1q_transfer_latency, MLCQ_TO_L1Q_TRANSFER_LATENCY, uns, uns,
           1, )
 DEF_PARAM(l1q_to_fsb_transfer_latency, L1Q_TO_FSB_TRANSFER_LATENCY, uns, uns,

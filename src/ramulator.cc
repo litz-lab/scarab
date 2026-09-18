@@ -222,6 +222,10 @@ int ramulator_send(Mem_Req* scarab_req) {
   return (int)is_sent;
 }
 
+int ramulator_read_queue_free_slots(long phys_addr) {
+  return wrapper->read_queue_free_slots(phys_addr);
+}
+
 void enqueue_response(Request& req) {
   // This should only be called by READ requests
   ASSERTM(0, req.type == Request::Type::READ, "ERROR: Responses should be sent only for read requests! \n");

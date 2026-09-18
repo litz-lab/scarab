@@ -3005,6 +3005,14 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
      slot. It still joins the LLC's MSHR file, because that is what a later demand
      searches; leaving it out is how two requests for one line reach DRAM. */
   if (to_dram) {
+    /* Hold a margin of the controller's read queue back for demands, which is what
+       the LLC queue's demand reserve did before prefetches went straight to DRAM. */
+    if (DRAM_PREF_RESERVE && ramulator_read_queue_free_slots(new_req->phys_addr) <= (int)DRAM_PREF_RESERVE) {
+      mshr_retire(new_req);
+      STAT_EVENT(proc_id, PREF_DRAM_RESERVE_THROTTLE);
+      STAT_EVENT(proc_id, REJECTED_QUEUE_L1);
+      return FALSE;
+    }
     new_req->state = MRS_MEM_NEW;
     if (!ramulator_send(new_req)) {
       mshr_retire(new_req);

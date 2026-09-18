@@ -44,6 +44,7 @@ public:
     ~ScarabWrapper();
     void tick();
     bool send(Request req);
+    int read_queue_free_slots(long addr);
     void finish(void);
 
     int get_chip_width() const;

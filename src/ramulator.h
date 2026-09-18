@@ -50,6 +50,7 @@ EXTERNC int ramulator_get_chip_size();
 EXTERNC int ramulator_get_num_chips();
 EXTERNC int ramulator_get_chip_row_buffer_size();
 
+EXTERNC int ramulator_read_queue_free_slots(long phys_addr);
 EXTERNC Mem_Req* ramulator_search_queue(long phys_addr, Mem_Req_Type type);
 #undef EXTERNC
 

@@ -3322,6 +3322,18 @@ Flag l1_fill_line(Mem_Req* req) {
     if (cache_access(&cmp_model.dcache_stage[req->proc_id].dcache, req->addr, &dup_addr, FALSE))
       STAT_EVENT(req->proc_id, EXCL_FILL_DUP_L0_LLC);
   }
+
+  /* The fill writes the array, so it needs the write bank -- the same one a writeback
+     wants. A writeback already took it for this level's lookup and is that same write,
+     so it does not pay twice. */
+  if (!req_takes_write_bank(req)) {
+    if (!get_write_port(&L1(req->proc_id)->ports[req->l1_bank])) {
+      STAT_EVENT(req->proc_id, L1_FILL_BANK_BLOCK);
+      return FAILURE;
+    }
+    STAT_EVENT(req->proc_id, L1_FILL_BANK_AVAIL);
+  }
+
   L1_Data* data;
   Addr line_addr, repl_line_addr = 0;
   Op* top;
@@ -3749,6 +3761,18 @@ Flag mlc_fill_line(Mem_Req* req) {
       return TRUE;
     }
   }
+
+  /* The fill writes the array, so it needs the write bank -- the same one a writeback
+     wants. A writeback already took it for this level's lookup and is that same write,
+     so it does not pay twice. */
+  if (!req_takes_write_bank(req)) {
+    if (!get_write_port(&MLC(req->proc_id)->ports[req->mlc_bank])) {
+      STAT_EVENT(req->proc_id, MLC_FILL_BANK_BLOCK);
+      return FAILURE;
+    }
+    STAT_EVENT(req->proc_id, MLC_FILL_BANK_AVAIL);
+  }
+
   MLC_Data* data;
   Addr line_addr, repl_line_addr = 0;
   Op* top = NULL;
@@ -3768,8 +3792,6 @@ Flag mlc_fill_line(Mem_Req* req) {
         req, (req->op_count ? &(top->unique_num) : 0x0));
 
   /* if it can't get a write port, fail */
-  /* if (!get_write_port(&MLC(req->proc_id)->ports[req->mlc_bank])) return
-   * FAILURE; */
 
   /* Do not insert the line yet, just check which line we
      need to replace. If that line is dirty, it's possible

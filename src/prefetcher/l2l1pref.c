@@ -68,7 +68,9 @@ static Cache* l1_cache;
 /* Local Prototypes */
 FILE* f_l1_hit;
 
-static const char* const mem_req_type_info_names[] = {"IFTCH", "DFTCH", "DSTOR", "IPRF", "DPRF", "WB"};
+/* One per MRT_, in enum order, up to the clamp below. */
+static const char* const mem_req_type_info_names[] = {"IFTCH",   "DFTCH",   "DSTOR", "IPRF", "UOCPRF", "FDIPON",
+                                                      "FDIPOFF", "FDIPALT", "DPRF",  "WB",   "WBND"};
 
 Hash_Table ip_table;  // L1 HIT IP addresses
 Counter last_dc_miss;
@@ -137,7 +139,7 @@ void l2l1pref_mem_process(Mem_Req_Info* req) {
               "op_uniq_no:%8s l *0x%10s va:0x%s li:%4s l1_set:%4d dc_set:%4d "
               "%5s co:%8s t_hit:%d p_req:%d req_addr:0x%8s \n",
               unsstr64(req->oldest_op_unique_num), hexstr64(req->oldest_op_inst_addr), hexstr64(req->addr),
-              hexstr64(req->addr >> 6), dc_set, l1_set, mem_req_type_info_names[MIN2(req->type, 6)],
+              hexstr64(req->addr >> 6), dc_set, l1_set, mem_req_type_info_names[MIN2(req->type, MRT_WB_NODIRTY)],
               unsstr64(cycle_count), train_hit, pref_req, hexstr64(req_addr));
 
     else

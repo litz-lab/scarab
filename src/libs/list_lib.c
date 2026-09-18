@@ -59,11 +59,16 @@ static inline void record_free_list_chunk(List* list, void* chunk_base);
 /**************************************************************************************/
 /* init_list: */
 
+/* Lists that are part of a larger object do not need one. */
+static inline const char* list_name(const List* list) {
+  return list->name ? list->name : "unnamed";
+}
+
 void init_list(List* list, char name[], uns data_size, Flag use_free_list) {
-  DEBUGU(0, "Initializing list called '%s'.\n", name);
+  DEBUGU(0, "Initializing list called '%s'.\n", name ? name : "unnamed");
 
   /* set the basic parameters */
-  list->name = strdup(name);
+  list->name = name ? strdup(name) : NULL;
   list->data_size = data_size;
   list->head = NULL;
   list->tail = NULL;
@@ -83,7 +88,7 @@ void init_list(List* list, char name[], uns data_size, Flag use_free_list) {
 /* clear_list: */
 
 void clear_list(List* list) {
-  DEBUG(0, "Clearing list '%s'.\n", list->name);
+  DEBUG(0, "Clearing list '%s'.\n", list_name(list));
 
   /* Free-list mode: return all live entries to the pool without freeing
    * backing chunks. Chunk malloc blocks are released only in destroy_list(). */
@@ -142,7 +147,7 @@ void destroy_list(List* list) {
 /* clip_list_at_current: */
 
 void clip_list_at_current(List* list) {
-  DEBUG(0, "Clipping list '%s'.\n", list->name);
+  DEBUG(0, "Clipping list '%s'.\n", list_name(list));
   ASSERT(0, list);
   ASSERT(0, list->current);
   if (list->current->next) {
@@ -265,7 +270,7 @@ static inline void free_list_entry(List* list, List_Entry* entry) {
 void* sl_list_add_tail(List* list) {
   List_Entry* temp = get_list_entry(list);
 
-  DEBUG(0, "Adding to list '%s' at tail.\n", list->name);
+  DEBUG(0, "Adding to list '%s' at tail.\n", list_name(list));
 
   temp->next = NULL;
 
@@ -288,7 +293,7 @@ void* sl_list_add_tail(List* list) {
 void* dl_list_add_tail(List* list) {
   List_Entry* temp = get_list_entry(list);
 
-  DEBUG(0, "Adding to list '%s' at tail.\n", list->name);
+  DEBUG(0, "Adding to list '%s' at tail.\n", list_name(list));
 
   temp->next = NULL;
   temp->prev = NULL;
@@ -314,7 +319,7 @@ void* dl_list_add_tail(List* list) {
 void* sl_list_add_head(List* list) {
   List_Entry* temp = get_list_entry(list);
 
-  DEBUG(0, "Adding to list '%s' at head.\n", list->name);
+  DEBUG(0, "Adding to list '%s' at head.\n", list_name(list));
 
   temp->next = list->head;
   list->head = temp;
@@ -334,7 +339,7 @@ void* sl_list_add_head(List* list) {
 void* dl_list_add_head(List* list) {
   List_Entry* temp = get_list_entry(list);
 
-  DEBUG(0, "Adding to list '%s' at head.\n", list->name);
+  DEBUG(0, "Adding to list '%s' at head.\n", list_name(list));
 
   temp->next = list->head;
   temp->prev = NULL;
@@ -359,7 +364,7 @@ void* sl_list_remove_head(List* list) {
   void* temp;
   List_Entry* free;
 
-  DEBUG(0, "Removing head of list '%s'.\n", list->name);
+  DEBUG(0, "Removing head of list '%s'.\n", list_name(list));
 
   if (list->head) {
     temp = &list->head->data;
@@ -391,7 +396,7 @@ void* dl_list_remove_head(List* list) {
   void* temp;
   List_Entry* free;
 
-  DEBUG(0, "Removing head of list '%s'.\n", list->name);
+  DEBUG(0, "Removing head of list '%s'.\n", list_name(list));
 
   if (list->head) {
     temp = &list->head->data;
@@ -424,7 +429,7 @@ void* dl_list_remove_tail(List* list) {
   void* temp;
   List_Entry* free;
 
-  DEBUG(0, "Removing tail of list '%s'.\n", list->name);
+  DEBUG(0, "Removing tail of list '%s'.\n", list_name(list));
 
   if (list->tail) {
     temp = &list->tail->data;
@@ -457,7 +462,7 @@ void* dl_list_remove_current(List* list) {
   void* temp;
   List_Entry *free, *next, *prev;
 
-  DEBUG(0, "Removing current of list '%s'.\n", list->name);
+  DEBUG(0, "Removing current of list '%s'.\n", list_name(list));
 
   ASSERT(0, list->current);
   next = list->current->next;
@@ -500,7 +505,7 @@ void* dl_list_remove_current(List* list) {
 void* sl_list_add_after_current(List* list) {
   List_Entry* temp = get_list_entry(list);
 
-  DEBUG(0, "Adding after current of list '%s'.\n", list->name);
+  DEBUG(0, "Adding after current of list '%s'.\n", list_name(list));
 
   if (!list->current)  // assume that it should go at the tail
     return sl_list_add_tail(list);
@@ -522,7 +527,7 @@ void* sl_list_add_after_current(List* list) {
 void* dl_list_add_after_current(List* list) {
   List_Entry* temp = get_list_entry(list);
 
-  DEBUG(0, "Adding after current of list '%s'.\n", list->name);
+  DEBUG(0, "Adding after current of list '%s'.\n", list_name(list));
 
   if (!list->current)  // assume that it should go at the tail
     return dl_list_add_tail(list);

@@ -199,7 +199,8 @@ void perf_pred_mem_req_start(Mem_Req* req) {
   if (!PERF_PRED_ENABLE)
     return;
 
-  DEBUG(0, "Mem req %d (%s) started (bank %d)\n", req->id, Mem_Req_Type_str(req->type), req->mem_flat_bank);
+  DEBUG(0, "Mem req 0x%s (%s) started (bank %d)\n", hexstr64s(req->addr), Mem_Req_Type_str(req->type),
+        req->mem_flat_bank);
 
   Proc_Info* proc = &proc_infos[req->proc_id];
 
@@ -210,7 +211,7 @@ void perf_pred_mem_req_start(Mem_Req* req) {
   // Leading load latency computation
 
   if (!proc->current_leading_load && is_critical_req(req)) {
-    DEBUG(0, "Mem req %d is a leading load\n", req->id);
+    DEBUG(0, "Mem req 0x%s is a leading load\n", hexstr64s(req->addr));
     proc->current_leading_load = req;
     proc->current_leading_load_start_cycle = chip_cycle_count;
     STAT_EVENT(req->proc_id, LEADING_LOADS);
@@ -224,7 +225,7 @@ void perf_pred_mem_req_start(Mem_Req* req) {
   Flag critical = is_critical_req(req);
   info->num_critical_reqs += critical;
   if (critical) {
-    DEBUG(0, "Mem req %d is critical\n", req->id);
+    DEBUG(0, "Mem req 0x%s is critical\n", hexstr64s(req->addr));
     critical_access_plot(req->proc_id, req->type, CRITICAL_REQUEST, proc->total_critical_reqs);
   }
   info->last_updated = chip_cycle_count;
@@ -244,7 +245,7 @@ void perf_pred_mem_req_done(Mem_Req* req) {
   if (!PERF_PRED_ENABLE)
     return;
 
-  DEBUG(0, "Mem req %d done (bank %d)\n", req->id, req->mem_flat_bank);
+  DEBUG(0, "Mem req 0x%s done (bank %d)\n", hexstr64s(req->addr), req->mem_flat_bank);
 
   Proc_Info* proc = &proc_infos[req->proc_id];
 
@@ -286,7 +287,7 @@ void perf_pred_mem_req_done(Mem_Req* req) {
         FATAL_ERROR(req->proc_id, "Unknown request latency mechanism: %s\n",
                     Perf_Pred_Req_Latency_Mech_str(PERF_PRED_REQ_LATENCY_MECH));
     }
-    DEBUG(0, "Mem req %d left as critical, latency: %llu\n", req->id, latency);
+    DEBUG(0, "Mem req 0x%s left as critical, latency: %llu\n", hexstr64s(req->addr), latency);
     Counter min_extra_req_crit_path_length = PERF_PRED_REQ_LATENCY_MECH == PERF_PRED_REQ_LATENCY_MECH_REQ_LATENCY
                                                  ? 0
                                                  : freq_convert(FREQ_DOMAIN_MEMORY, RAMULATOR_TBL, FREQ_DOMAIN_L1);
@@ -391,11 +392,11 @@ void perf_pred_update_mem_req_type(Mem_Req* req, Mem_Req_Type old_type, Flag old
   //    ASSERT(0, is_critical_type(old_type) <= is_critical_type(req->type));
   //    // not necessarily true if prefetches are critical
   if (PERF_PRED_UPDATE_MEM_REQ_TYPE) {
-    DEBUG(0, "Mem req %d updated, type: %s -> %s, offpath: %d -> %d\n", req->id, Mem_Req_Type_str(old_type),
-          Mem_Req_Type_str(req->type), old_off_path_confirmed, req->off_path_confirmed);
+    DEBUG(0, "Mem req 0x%s updated, type: %s -> %s, offpath: %d -> %d\n", hexstr64s(req->addr),
+          Mem_Req_Type_str(old_type), Mem_Req_Type_str(req->type), old_off_path_confirmed, req->off_path_confirmed);
     if (!is_critical(old_type, old_off_path_confirmed, req->bw_prefetch || req->bw_prefetchable) &&
         is_critical_req(req)) {
-      DEBUG(0, "Mem req %d is now critical\n", req->id);
+      DEBUG(0, "Mem req 0x%s is now critical\n", hexstr64s(req->addr));
       critical_access_plot(req->proc_id, old_type, CRITICAL_REQUEST, proc->total_critical_reqs);
       proc->bank_infos[req->mem_flat_bank].num_critical_reqs += 1;
       proc->total_critical_reqs += 1;
@@ -577,7 +578,7 @@ void perf_pred_off_chip_effect_start(Mem_Req* req) {
 
   ASSERT(0, proc->total_off_chip_delays < 10000);  // sanity check with magic number
   if (proc->total_off_chip_delays == 0)
-    DEBUG(0, "Entered off-chip effect phase (req %d)\n", req->id);
+    DEBUG(0, "Entered off-chip effect phase (req 0x%s)\n", hexstr64s(req->addr));
   proc->total_off_chip_delays += 1;
 }
 
@@ -590,7 +591,7 @@ void perf_pred_off_chip_effect_end(Mem_Req* req) {
   ASSERT(0, proc->total_off_chip_delays > 0);
   proc->total_off_chip_delays -= 1;
   if (proc->total_off_chip_delays == 0)
-    DEBUG(0, "Exited off-chip effect phase (req %d)\n", req->id);
+    DEBUG(0, "Exited off-chip effect phase (req 0x%s)\n", hexstr64s(req->addr));
 }
 
 void perf_pred_reset_stats(void) {
@@ -622,15 +623,9 @@ void perf_pred_reset_stats(void) {
 
   /* The real budget, not the parameter: the request buffer is
      derived from the per-level queue sizes. */
-  ASSERTM(0, (RAMULATOR_READQ_ENTRIES + RAMULATOR_WRITEQ_ENTRIES) <= mem_get_req_buffer_size(),
-          "The request buffer (%u entries) needs to cover "
-          "(RAMULATOR_READQ_ENTRIES + RAMULATOR_WRITEQ_ENTRIES)\n",
-          mem_get_req_buffer_size());
   /* Every entry, not the first per-core budget's worth: with PRIVATE_MSHR_ON the
-     buffer holds NUM_CORES times that many. */
-  for (uns i = 0; i < mem->total_mem_req_buffers; ++i) {
-    mem->req_buffer[i].mem_crit_path_at_entry = 0;
-  }
+     pool holds NUM_CORES times that many, and it grows on demand. */
+  mem_clear_crit_path();
 
   stat_mon_reset(stat_mon);
 }

@@ -360,6 +360,7 @@ Flag dcache_fill_line(Mem_Req* req) {
 
   /* if it can't get a write port, fail */
   uns bank = BANK(req->addr, DCACHE_BANKS, DCACHE_INTERLEAVE_FACTOR);
+  /* A returning line outranks anything still asking for the cache. */
   if (!get_write_port(&dc->ports[bank])) {
     cycle_count = old_cycle_count;
     STAT_EVENT(dc->proc_id, DCACHE_FILL_PORT_UNAVAILABLE_ONPATH + req->off_path);
@@ -569,7 +570,8 @@ static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr
   }
 
   Flag ret = new_mem_req(MRT_DFETCH, proc_id, extra_line_addr, cache->line_size,
-                         cache_cycle - 1 + op->uop->extra_ld_latency, NULL, NULL, op->unique_num, 0);
+                         cache_cycle - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY + op->uop->extra_ld_latency, NULL, NULL,
+                         op->unique_num, 0);
   if (ret)
     STAT_EVENT_ALL(ONE_MORE_SUCESS);
   else
@@ -578,7 +580,8 @@ static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr
 
 static inline Flag dcache_miss_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type) {
   Flag sent = new_mem_req((mem_req_type), dc->proc_id, line_addr, DCACHE_LINE_SIZE,
-                          DCACHE_CYCLES - 1 + op->uop->extra_ld_latency, op, dcache_fill_line, op->unique_num, 0);
+                          DCACHE_CYCLES - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY + op->uop->extra_ld_latency, op,
+                          dcache_fill_line, op->unique_num, 0);
   Node_Stage* node = &cmp_model.node_stage[dc->proc_id];
   if (sent && node->mem_blocked) {
     node->mem_blocked = FALSE;

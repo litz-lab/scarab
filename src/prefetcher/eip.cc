@@ -950,7 +950,7 @@ void alloc_mem_eip(uns numCores) {
   L1I_TAG_BITS = (19 - L1I_ENTANGLED_TABLE_INDEX_BITS);
   L1I_TAG_MASK = (((uint64_t)1 << L1I_TAG_BITS) - 1);
 
-  /* Its own read queue and MSHR file, at the values the old shared parameter gave
+  /* Its own read mshr and MSHR file, at the values the old shared parameter gave
      it; they describe the L1I, not the request pool. */
   L1I_RQ_SIZE = 32;
   ASSERT(eip_proc_id, L1I_RQ_SIZE > 0);
@@ -1060,7 +1060,7 @@ void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefe
               v_addr, v_addr & ~0x3F, pf_addr, unique_count);
         if (!off_path)
           l1i_add_timing_entry(pf_addr >> LOG2(ICACHE_LINE_SIZE), 0, L1I_ENTANGLED_TABLE_WAYS);
-        // if (success == Mem_Queue_Req_Result::SUCCESS_NEW)
+        // if (success == Mshr_Req_Result::SUCCESS_NEW)
         // per_cyc_ipref++;
       }
     }
@@ -1090,7 +1090,7 @@ void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefe
                   pf_line_addr << LOG2(ICACHE_LINE_SIZE), unique_count);
             if (!off_path)
               l1i_add_timing_entry(pf_line_addr, source_set, (i == 0) ? source_way : L1I_ENTANGLED_TABLE_WAYS);
-            // if (success == Mem_Queue_Req_Result::SUCCESS_NEW)
+            // if (success == Mshr_Req_Result::SUCCESS_NEW)
             // per_cyc_ipref++;
           }
         }

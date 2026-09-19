@@ -36,7 +36,7 @@
 /**************************************************************************************/
 /* Forward Declarations */
 
-struct Mem_Queue_struct;
+struct Mshr_struct;
 
 /**************************************************************************************/
 /* Types */
@@ -85,8 +85,8 @@ DECLARE_ENUM(Mem_Req_Type, MRT_LIST, MRT_);
    - This is currently used if a demand matches a prefetch.
    - But it can be generalized if done_func is done with...
 */
-#define MEM_RES_MLC (1 << 0) /* holds an entry in mem->mlc_queue */
-#define MEM_RES_L1 (1 << 1)  /* holds an entry in mem->l1_queue */
+#define MEM_RES_DCACHE (1 << 0) /* holds an entry in mem->dcache_mshr */
+#define MEM_RES_MLC (1 << 1)    /* holds an entry in mem->mlc_mshr */
 
 typedef enum Destination_enum {
   DEST_NONE = 0,
@@ -117,7 +117,7 @@ struct Mem_Req_struct {
   uns64 ghist;
   Counter demand_icache_emitted_cycle; /* cycle when the request is emitted. */
   Counter emitted_cycle;               /* cycle when request of any type was first initialized */
-  struct Mem_Queue_struct* queue;      /* Pointer to the queue this entry is in */
+  struct Mshr_struct* mshr;            /* The MSHR file holding this request */
   Counter priority;                    /* priority of the miss */
   Addr addr;                           /* address to fetch */
   Addr phys_addr;                      /* physical address */

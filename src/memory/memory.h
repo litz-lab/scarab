@@ -76,23 +76,23 @@ typedef struct L1_Data_struct {
 
 typedef L1_Data MLC_Data; /* Use the same data structure for simplicity */
 
-typedef enum Mem_Queue_Req_Result_enum {
+typedef enum Mshr_Req_Result_enum {
   FAILED,
   SUCCESS_NEW,
   SUCCESS_MERGED,
-} Mem_Queue_Req_Result;
+} Mshr_Req_Result;
 
-typedef enum Mem_Queue_Type_enum {
-  QUEUE_L1 = 1 << 0,
-  QUEUE_MEM = 1 << 2,
-  QUEUE_MLC = 1 << 4,
-} Mem_Queue_Type;
+typedef enum Mshr_Type_enum {
+  MSHR_MLC = 1 << 0,
+  MSHR_MEM = 1 << 2,
+  MSHR_DCACHE = 1 << 4,
+} Mshr_Type;
 
-typedef struct Mem_Queue_struct {
+typedef struct Mshr_struct {
   /* This level's MSHR file: every request it is still fetching a line for, from
      admission until the request is freed. Searching it answers "is this line already
      on its way for me", which is the only question a merge asks. */
-  List mshrs;
+  List mshr_file;
   /* The same requests keyed by line address, so a merge is a lookup rather than a
      walk. The list stays for the walks that want every entry in order. */
   Hash_Table mshr_hash;
@@ -115,8 +115,8 @@ typedef struct Mem_Queue_struct {
   uns num_banks;
   uns mshr_size;
   char name[20];
-  Mem_Queue_Type type;
-} Mem_Queue;
+  Mshr_Type type;
+} Mshr;
 
 typedef struct Mem_Bank_Queue_Entry_struct {
   uns8 proc_id;
@@ -168,16 +168,13 @@ typedef struct Memory_struct {
   /* prfetcher cache */
   Cache pref_l1_cache;
 
-  /* various queues (arrays) */
-  Mem_Queue mlc_queue;
-  Mem_Queue l1_queue;
-  /* One per core: requests whose done_func still owes the core. A plain list, like
-     a plain list, walked in order and never re-sorted. */
+  /* One MSHR file per level, each named for the misses it holds: dcache misses wait
+     at the MLC, MLC misses wait at the LLC. */
+  Mshr dcache_mshr;
+  Mshr mlc_mshr;
+  /* One per core: requests whose done_func still owes the core. A plain list, walked
+     in order and never re-sorted. */
   List* core_fill_queues;
-  /* Fills that could not finish on the cycle their data arrived -- a dirty eviction
-     whose writeback was refused, or a done_func that could not take a port. Walked
-     each cycle to retry. Everything else completes inside the DRAM callback and
-     never appears here, so this is short where the MSHR files are not. */
 
   Counter last_mem_queue_cycle;
 
@@ -262,7 +259,7 @@ void mem_destroy_req_pool(void);
    cycle; otherwise *hit says whether the line is already there. */
 Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit);
 void print_mshr_files(void);
-void print_mem_queue(Mem_Queue_Type queue_type);
+void print_mshr(Mshr_Type mshr_type);
 Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                        Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath);
 Flag mlc_fill_line(Mem_Req* req);
@@ -271,7 +268,7 @@ Flag l1_fill_line(Mem_Req* req);
 void mark_ops_as_l1_miss_satisfied(Mem_Req* req);
 int mem_get_req_count(uns proc_id);
 /* Per-core request-pool budget. Derived from the MSHR files and the DRAM queues unless
-   derived from the per-level queue sizes. */
+   derived from the per-level mshr sizes. */
 
 void open_mem_stat_interval_file(void);
 void close_mem_stat_interval_file(void);

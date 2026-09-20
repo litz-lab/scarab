@@ -131,11 +131,13 @@ ADDRINT brk_req = 0;
 
 void sync_brk_entry(THREADID, CONTEXT* ctxt, SYSCALL_STANDARD std, VOID*) {
   brk_req = (PIN_GetSyscallNumber(ctxt, std) == SYS_brk) ? PIN_GetSyscallArgument(ctxt, std, 0) : 0;
-  if (brk_req) PIN_SetSyscallNumber(ctxt, std, SYS_getpid);
+  if (brk_req)
+    PIN_SetSyscallNumber(ctxt, std, SYS_getpid);
 }
 
 void sync_brk_exit(THREADID, CONTEXT* ctxt, SYSCALL_STANDARD std, VOID*) {
-  if (brk_req) PIN_SetSyscallReturn(ctxt, std, brk_req);
+  if (brk_req)
+    PIN_SetSyscallReturn(ctxt, std, brk_req);
 }
 #endif
 

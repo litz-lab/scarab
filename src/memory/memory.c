@@ -1762,9 +1762,10 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
 
   req->state = MRS_FILL_L1;
 
-  /* Crossing the frequency domain boundary between the chip and the memory
-     controller, as the hand-off into the l1 fill queue did. */
-  req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + 1;
+  /* Crossing frequency domain boundary between the chip and memory controller, plus
+     the cycle the line used to spend being handed from the l1 fill queue to the mlc
+     one. Two here reproduces the old end-to-end fill latency on both paths. */
+  req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + 2;
   req->queue = NULL;
   ASSERT(req->proc_id, mem->uncores[req->proc_id].num_outstanding_l1_misses > 0);
   mem->uncores[req->proc_id].num_outstanding_l1_misses--;

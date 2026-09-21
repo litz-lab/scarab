@@ -1805,26 +1805,6 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
 static Flag mem_advance_fill(Mem_Req* req) {
   ASSERT(req->proc_id, req->state != MRS_INV);
 
-  /* Both levels stop tracking the miss as soon as the line is in hand. They track
-     what is still being fetched, and nothing is once the data is here; holding the
-     slots until each array is written would cap how many misses can be in flight on
-     how fast the fill drains. Done here rather than in the DRAM callback because a
-     fill also starts from an LLC hit, which never goes through it. */
-  if (req->reserved_levels & MEM_RES_L1) {
-    req->reserved_levels &= ~MEM_RES_L1;
-    ASSERT(req->proc_id, req->reserved_entry_count > 0);
-    req->reserved_entry_count -= 1;
-    ASSERT(req->proc_id, mem->l1_queue.mshrs_taken > 0);
-    mem->l1_queue.mshrs_taken--;
-  }
-  if (req->reserved_levels & MEM_RES_MLC) {
-    req->reserved_levels &= ~MEM_RES_MLC;
-    ASSERT(req->proc_id, req->reserved_entry_count > 0);
-    req->reserved_entry_count -= 1;
-    ASSERT(req->proc_id, mem->mlc_queue.mshrs_taken > 0);
-    mem->mlc_queue.mshrs_taken--;
-  }
-
   if (req->state == MRS_FILL_L1) {
     if (!l1_fill_line(req))
       return FALSE;
@@ -1836,6 +1816,12 @@ static Flag mem_advance_fill(Mem_Req* req) {
     if (req->type == MRT_IFETCH || req->type == MRT_DFETCH || req->type == MRT_DSTORE)
       perf_pred_off_chip_effect_end(req);
 
+    ASSERT(req->proc_id, req->reserved_entry_count > 0);
+    req->reserved_entry_count -= 1;
+    req->reserved_levels &= ~MEM_RES_L1;
+    ASSERT(req->proc_id, mem->l1_queue.mshrs_taken > 0);
+    mem->l1_queue.mshrs_taken--;
+
     req->state = (MLC_PRESENT && req->destination != DEST_L1) ? MRS_FILL_MLC : MRS_FILL_DONE;
     /* A fill step costs a cycle, as it did when each step was its own queue. */
     req->rdy_cycle = cycle_count + 1;
@@ -1845,6 +1831,11 @@ static Flag mem_advance_fill(Mem_Req* req) {
   if (req->state == MRS_FILL_MLC) {
     if (!mlc_fill_line(req))
       return FALSE;
+    ASSERT(req->proc_id, req->reserved_entry_count > 0);
+    req->reserved_entry_count -= 1;
+    req->reserved_levels &= ~MEM_RES_MLC;
+    ASSERT(req->proc_id, mem->mlc_queue.mshrs_taken > 0);
+    mem->mlc_queue.mshrs_taken--;
     req->state = MRS_FILL_DONE;
     req->rdy_cycle = cycle_count + 1;
     return FALSE;

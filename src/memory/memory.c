@@ -1825,7 +1825,6 @@ static Flag mem_advance_fill(Mem_Req* req) {
     mem->mlc_queue.mshrs_taken--;
   }
 
-advance:
   if (req->state == MRS_FILL_L1) {
     if (!l1_fill_line(req))
       return FALSE;
@@ -1838,16 +1837,17 @@ advance:
       perf_pred_off_chip_effect_end(req);
 
     req->state = (MLC_PRESENT && req->destination != DEST_L1) ? MRS_FILL_MLC : MRS_FILL_DONE;
-    /* Carry it as far as it will go in one visit, as the queues did when a fill that
-       could proceed was never held for a cycle it did not need. */
-    goto advance;
+    /* A fill step costs a cycle, as it did when each step was its own queue. */
+    req->rdy_cycle = cycle_count + 1;
+    return FALSE;
   }
 
   if (req->state == MRS_FILL_MLC) {
     if (!mlc_fill_line(req))
       return FALSE;
     req->state = MRS_FILL_DONE;
-    goto advance;
+    req->rdy_cycle = cycle_count + 1;
+    return FALSE;
   }
 
   ASSERT(req->proc_id, req->state == MRS_FILL_DONE);

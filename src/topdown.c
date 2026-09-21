@@ -37,15 +37,20 @@
 #include "globals/global_vars.h"
 #include "globals/utils.h"
 
+#include "memory/memory.param.h"
+
 #include "dcache_stage.h"
-#include "idq_stage.h"
 #include "lsq.h"
 #include "map_stage.h"
 #include "node_stage.h"
 #include "op.h"
 
 const static uns64 TOPDOWN_SCALE_FACTOR = 10000;
-const static int TOPDOWN_RECOVERY_DEPTH = 2;
+
+// Top-down pipeline width, measured at the decoupled-frontend fetch point: the uop-cache issue width
+// (the widest fetch path). A fetch cycle served by the narrower icache/decode path therefore leaves
+// UOP_CACHE_WIDTH - DECODE_WIDTH slots as frontend bubbles.
+#define TOPDOWN_WIDTH UOP_CACHE_WIDTH
 
 /**************************************************************************************/
 /* Events Update */
@@ -78,42 +83,57 @@ const static int TOPDOWN_RECOVERY_DEPTH = 2;
 void topdown_bp_recovery(uns proc_id, Op* op) {
   ASSERT(op->proc_id, op->uop->cf_type);
 
+  // Bad-speculation breakdown inputs; the bad-spec slots themselves are counted at the fetch point
+  // (topdown_fetch_update) while the frontend fetches the wrong path.
   STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEAR_CYCLES);
   if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
     ASSERT(op->proc_id, !op->off_path);
     STAT_EVENT(proc_id, TOPDOWN_BR_RECOVER_AT_EXEC_RETIRED_CYCLES);
   }
-
-  idq_stage_set_recovery_cycle(TOPDOWN_RECOVERY_DEPTH);
 }
 
-void topdown_idq_update(uns proc_id, int count_available, int count_issued, int count_issued_on_path) {
-  INC_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS, DISPATCH_WIDTH);
-  INC_STAT_EVENT(proc_id, TOPDOWN_ISSUED_SLOTS, count_issued);
-  INC_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS, count_issued_on_path);
+/*
+ * Called once per cycle from the decoupled-frontend fetch point (execute_coupled_FSM), partitioning
+ * TOPDOWN_WIDTH fetch slots. off_path is the icache stage's own wrong-path state, so bad speculation
+ * covers the whole wrong-path fetch -- including BTB misses resolved at decode, which never reach the
+ * backend. count_fetched is the ops delivered from the FT this cycle (<= TOPDOWN_WIDTH, since the
+ * uop-cache path is the widest); a narrower icache/decode-path cycle leaves the rest as frontend.
+ * on_path_fetched is the subset that is on-path, so a transition cycle (on-path ops served before the
+ * wrong-path flip) credits those slots to retiring, not bad speculation.
+ */
+void topdown_fetch_update(uns proc_id, Flag off_path, Flag backend_stall, int count_fetched, int on_path_fetched) {
+  INC_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS, TOPDOWN_WIDTH);
 
-  int recovery_cycle = idq_stage_get_recovery_cycle();
-  if (recovery_cycle != 0) {
-    ASSERT(proc_id, recovery_cycle > 0);
-    idq_stage_set_recovery_cycle(recovery_cycle - 1);
-    INC_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES_SLOTS, DISPATCH_WIDTH - count_available);
-    return;
-  }
-
-  // only increment frontend-stall when there is no backend-stall
-  if (count_issued == 0 && idq_stage_get_stage_data()->op_count > 0) {
+  if (off_path) {
+    // off_path is stamped at fetch from bp.c's recovery-point classification (icache_stage.c:971), so
+    // it covers uopc-served wrong-path too. Credit on-path ops served before the flip to retiring; the
+    // rest of the cycle (off-path ops + off-path bubbles) is bad speculation.
+    ASSERT(proc_id, on_path_fetched <= TOPDOWN_WIDTH);
+    INC_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS, on_path_fetched);
+    INC_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC_SLOTS, TOPDOWN_WIDTH - on_path_fetched);
+  } else if (backend_stall) {
+    // Fetch stalled because the backend cannot accept ops (downstream full).
+    INC_STAT_EVENT(proc_id, TOPDOWN_BACKEND_STALL_SLOTS, TOPDOWN_WIDTH);
     STAT_EVENT(proc_id, TOPDOWN_BACKEND_STALLS_CYCLES);
     if (lsq_get_in_flight_load_num() > 0) {
       STAT_EVENT(proc_id, TOPDOWN_MEM_LOAD_STALLS_CYCLES);
     } else if (!lsq_available(MEM_ST)) {
       STAT_EVENT(proc_id, TOPDOWN_MEM_STORE_STALLS_CYCLES);
     }
-    return;
+  } else {
+    ASSERT(proc_id, count_fetched <= TOPDOWN_WIDTH);
+    INC_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS, count_fetched);
+    INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS, TOPDOWN_WIDTH - count_fetched);
+    if (count_fetched == 0)
+      STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GT_MIW_CYCLES);
   }
 
-  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS, DISPATCH_WIDTH - count_available);
-  if (count_available == 0)
-    STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GT_MIW_CYCLES);
+  // Every fetch slot is attributed to exactly one bucket, so the four must sum to the total.
+  ASSERT(proc_id, GET_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC_SLOTS) +
+                          GET_STAT_EVENT(proc_id, TOPDOWN_BACKEND_STALL_SLOTS) +
+                          GET_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS) +
+                          GET_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS) ==
+                      GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS));
 }
 
 void topdown_exec_update(uns proc_id, uns8 fus_busy) {
@@ -167,10 +187,8 @@ void topdown_done(uns proc_id) {
                          GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS);
   INC_STAT_EVENT(proc_id, TOPDOWN_FRONTEND_BOUND, frontend_bound);
 
-  uns64 bad_spec_slots = GET_STAT_EVENT(proc_id, TOPDOWN_ISSUED_SLOTS) -
-                         GET_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS) +
-                         GET_STAT_EVENT(proc_id, TOPDOWN_RECOVERY_BUBBLES_SLOTS);
-  uns64 bad_spec_bound = bad_spec_slots * TOPDOWN_SCALE_FACTOR / GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS);
+  uns64 bad_spec_bound = GET_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC_SLOTS) * TOPDOWN_SCALE_FACTOR /
+                         GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS);
   INC_STAT_EVENT(proc_id, TOPDOWN_BAD_SPEC_BOUND, bad_spec_bound);
 
   uns64 retiring_bound = GET_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS) * TOPDOWN_SCALE_FACTOR /

@@ -93,6 +93,7 @@ typedef struct Icache_Stage_struct {
   /* uops fetched from uop cache go to uopc_sd, otherwise sd */
   Stage_Data sd; /* stage interface data */
   uns8 lookups_per_cycle_count;
+  uns8 topdown_on_path_fetched; /* on-path ops served this cycle, for top-down slot attribution */
 
   Icache_State state;           /* state that the ICACHE is in */
   Icache_State next_state;      /* state that the ICACHE is going to be in next cycle */

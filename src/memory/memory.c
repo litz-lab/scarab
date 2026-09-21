@@ -1028,6 +1028,7 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Addr* line_addr, L1_Data* data, int
     /* An LLC hit still owes the MLC this line; park it and let the fill walk take
        it from here, as the mlc fill queue did. */
     req->state = MRS_FILL_MLC;
+    req->fill_start_cycle = freq_cycle_count(FREQ_DOMAIN_L1);
     req->rdy_cycle = cycle_count + 1;
     req->queue = NULL;
     *(int*)dl_list_add_tail(&mem->completed_reqs) = req->id;
@@ -1761,6 +1762,7 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
         mem_req_state_names[req->state]);
 
   req->state = MRS_FILL_L1;
+  req->fill_start_cycle = freq_cycle_count(FREQ_DOMAIN_L1);
 
   /* Crossing the frequency domain boundary between the chip and the memory
      controller, as the hand-off into the l1 fill queue did. */
@@ -1853,6 +1855,9 @@ advance:
   ASSERT(req->proc_id, req->state == MRS_FILL_DONE);
   if (req->done_func && !req->done_func(req))
     return FALSE;
+
+  INC_STAT_EVENT(req->proc_id, FILL_PATH_CYCLES, freq_cycle_count(FREQ_DOMAIN_L1) - req->fill_start_cycle);
+  STAT_EVENT(req->proc_id, FILL_PATH_FILLS);
 
   mem_free_reqbuf(req);
   return TRUE;

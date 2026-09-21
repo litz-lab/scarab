@@ -158,6 +158,7 @@ struct Mem_Req_struct {
   Flag l1_miss_satisfied;                    /* did this request miss in L1 and it is already
                                                 satisfied? */
   Counter l1_miss_cycle;                     /* cycle when this req missed in L1 */
+  Counter fill_start_cycle;                  /* probe: cycle the fill path began */
   Counter mem_queue_cycle;                   /* cycle this request entered the mem_queue */
   Counter mem_crit_path_at_entry;            /* DVFS perf pred: the global critical path
                                                 estimate when the req entered the memory

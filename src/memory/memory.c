@@ -1836,7 +1836,22 @@ static Flag mem_advance_fill(Mem_Req* req) {
     if (req->type == MRT_IFETCH || req->type == MRT_DFETCH || req->type == MRT_DSTORE)
       perf_pred_off_chip_effect_end(req);
 
-    req->state = (MLC_PRESENT && req->destination != DEST_L1) ? MRS_FILL_MLC : MRS_FILL_DONE;
+    /* Experiment: write the MLC now rather than on the next visit, so both arrays
+       land in the same cycle. The request still waits the same total number of
+       cycles before done_func and stays on completed_reqs just as long, so residency
+       and the merge window are unchanged -- only the stagger goes. */
+    if (MLC_PRESENT && req->destination != DEST_L1) {
+      req->state = MRS_FILL_MLC;
+      if (!mlc_fill_line(req)) {
+        req->rdy_cycle = cycle_count + 1;
+        return FALSE;
+      }
+      req->state = MRS_FILL_DONE;
+      req->rdy_cycle = cycle_count + 2;
+      return FALSE;
+    }
+
+    req->state = MRS_FILL_DONE;
     /* A fill step costs a cycle, as it did when each step was its own queue. */
     req->rdy_cycle = cycle_count + 1;
     return FALSE;

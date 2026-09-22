@@ -87,8 +87,19 @@ typedef enum FT_Arbitration_Result_enum {
   FT_HIT_UOP_CACHE
 } FT_Arbitration_Result;
 
+/* Why the frontend last came up short of supplying a full fetch. Held until the
+   next fetch changes it, so the bubbles an icache miss causes while it stalls are
+   charged to that miss rather than landing in OTHER. */
+typedef enum Fetch_Supply_Reason_enum {
+  FETCH_SUPPLY_OTHER,
+  FETCH_SUPPLY_UOPC_FRAGMENTATION,
+  FETCH_SUPPLY_UOPC_MISS,
+  FETCH_SUPPLY_ICACHE_MISS,
+} Fetch_Supply_Reason;
+
 typedef struct Icache_Stage_struct {
   uns8 proc_id;
+  Fetch_Supply_Reason fetch_supply_reason;
   /* two data paths: */
   /* uops fetched from uop cache go to uopc_sd, otherwise sd */
   Stage_Data sd; /* stage interface data */
@@ -135,6 +146,8 @@ typedef struct Icache_Data_struct {
 /* External Variables */
 
 extern Icache_Stage* ic;
+
+Fetch_Supply_Reason icache_stage_get_fetch_supply_reason(uns8 proc_id);
 
 /**************************************************************************************/
 /* Prototypes */

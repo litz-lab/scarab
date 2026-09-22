@@ -229,7 +229,11 @@ Uop_Cache_Data uop_cache_consume_uops_from_lookup_buffer(uns requested) {
       consumed_uop_cache_line.end_of_ft = FALSE;
     }
   } else {
-    // the current line is fully consumed; move to the next line
+    // the current line is fully consumed, so n_uops is the line's real size: a line
+    // holding fewer uops than the width is one the uop cache could not fill.
+    ic->fetch_supply_reason =
+        consumed_uop_cache_line.n_uops < UOP_CACHE_WIDTH ? FETCH_SUPPLY_UOPC_FRAGMENTATION : FETCH_SUPPLY_OTHER;
+    // move to the next line
     uc_cpp->num_looked_up_lines += 1;
   }
   return consumed_uop_cache_line;

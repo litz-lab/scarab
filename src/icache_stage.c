@@ -129,6 +129,10 @@ void set_icache_stage(Icache_Stage* new_ic) {
   ic = new_ic;
 }
 
+Fetch_Supply_Reason icache_stage_get_fetch_supply_reason(uns8 proc_id) {
+  return cmp_model.icache_stage[proc_id].fetch_supply_reason;
+}
+
 /**************************************************************************************/
 /* init_icache_stage: */
 
@@ -547,6 +551,9 @@ FT_Arbitration_Result ft_arbitration() {
         STAT_EVENT(ic->proc_id, FT_UOP_CACHE_MISS_ICACHE_MISS_OFF_PATH);
       }
       icache_miss_events();
+      /* Neither level supplied anything; the reason stands until the next fetch, so
+         the whole stall is charged here rather than just this cycle. */
+      ic->fetch_supply_reason = FETCH_SUPPLY_ICACHE_MISS;
 
       ft_op_buffer_fill_from_ft(ic, ft);
 
@@ -617,6 +624,12 @@ void icache_serve_ops() {
     ASSERT(ic->proc_id, ft_op_buffer_can_fetch_op(ic));
     ASSERT(ic->proc_id, ic->sd.op_count == ic->sd.max_op_count);
   }
+
+  /* The uop cache missed, so this fetch came from the icache. Anything it delivered
+     short of the uop cache's width is bandwidth the uop cache would have supplied. */
+  uns served = ic->sd.op_count - op_num_prev_fetch_target;
+  ic->fetch_supply_reason =
+      (UOP_CACHE_ENABLE && served < UOP_CACHE_WIDTH) ? FETCH_SUPPLY_UOPC_MISS : FETCH_SUPPLY_OTHER;
 
   // process the fetched ops
   icache_process_ops(&ic->sd, FALSE, op_num_prev_fetch_target);

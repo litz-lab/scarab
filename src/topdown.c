@@ -38,6 +38,7 @@
 #include "globals/utils.h"
 
 #include "dcache_stage.h"
+#include "icache_stage.h"
 #include "idq_stage.h"
 #include "lsq.h"
 #include "map_stage.h"
@@ -111,7 +112,26 @@ void topdown_idq_update(uns proc_id, int count_available, int count_issued, int 
     return;
   }
 
-  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS, DISPATCH_WIDTH - count_available);
+  uns64 fetch_bubbles = DISPATCH_WIDTH - count_available;
+  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS, fetch_bubbles);
+
+  /* Charge the same slots to whatever the frontend was last short of. Every bubble
+     lands in exactly one bucket, so the four sum to TOPDOWN_FETCH_BUBBLES_SLOTS. */
+  switch (icache_stage_get_fetch_supply_reason(proc_id)) {
+    case FETCH_SUPPLY_UOPC_FRAGMENTATION:
+      INC_STAT_EVENT(proc_id, TOPDOWN_UOPC_FRAGMENTATION_SLOTS, fetch_bubbles);
+      break;
+    case FETCH_SUPPLY_UOPC_MISS:
+      INC_STAT_EVENT(proc_id, TOPDOWN_UOPC_MISS_SLOTS, fetch_bubbles);
+      break;
+    case FETCH_SUPPLY_ICACHE_MISS:
+      INC_STAT_EVENT(proc_id, TOPDOWN_ICACHE_MISS_SLOTS, fetch_bubbles);
+      break;
+    default:
+      INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_OTHER_SLOTS, fetch_bubbles);
+      break;
+  }
+
   if (count_available == 0)
     STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GT_MIW_CYCLES);
 }
@@ -139,6 +159,14 @@ void topdown_exec_update(uns proc_id, uns8 fus_busy) {
  *
  * Fetch Latency Bound  = FetchBubbles[≥ #MIW] / Clocks
  * Fetch Bandwidth Bound = Frontend Bound - Fetch Latency Bound
+ *
+ * FetchBubbles splits four ways by what the frontend was last short of, charged
+ * where FetchBubbles itself is, so the four sum to it exactly:
+ * UopcFragmentation    = a fully consumed uop cache line held fewer uops than the width
+ * UopcMiss             = the uop cache missed and the icache supplied less than the width
+ * IcacheMiss           = neither level supplied anything, held for the whole stall
+ * FetchOther           = every bubble none of the three explains -- resteers, an
+ *                        unavailable FT, fetch barriers
  *
  * #BrMispredFraction   = BrMispredRetired / (BrMispredRetired + MachineClears)
  * Branch Mispredicts   = #BrMispredFraction * Bad Speculation
@@ -202,6 +230,23 @@ void topdown_done(uns proc_id) {
                         GET_STAT_EVENT(proc_id, NODE_CYCLE);
   INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_LATENCY_BOUND, latency_bound);
   INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BANDWIDTH_BOUND, frontend_bound - latency_bound);
+
+  /* The same split, on the same scale as frontend_bound. These are measured, not
+     apportioned: the four slot counts already sum to TOPDOWN_FETCH_BUBBLES_SLOTS. */
+  uns64 total_slots = GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS);
+  ASSERT(proc_id, GET_STAT_EVENT(proc_id, TOPDOWN_UOPC_FRAGMENTATION_SLOTS) +
+                          GET_STAT_EVENT(proc_id, TOPDOWN_UOPC_MISS_SLOTS) +
+                          GET_STAT_EVENT(proc_id, TOPDOWN_ICACHE_MISS_SLOTS) +
+                          GET_STAT_EVENT(proc_id, TOPDOWN_FETCH_OTHER_SLOTS) ==
+                      GET_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS));
+  INC_STAT_EVENT(proc_id, TOPDOWN_UOPC_FRAGMENTATION_BOUND,
+                 GET_STAT_EVENT(proc_id, TOPDOWN_UOPC_FRAGMENTATION_SLOTS) * TOPDOWN_SCALE_FACTOR / total_slots);
+  INC_STAT_EVENT(proc_id, TOPDOWN_UOPC_MISS_BOUND,
+                 GET_STAT_EVENT(proc_id, TOPDOWN_UOPC_MISS_SLOTS) * TOPDOWN_SCALE_FACTOR / total_slots);
+  INC_STAT_EVENT(proc_id, TOPDOWN_ICACHE_MISS_BOUND,
+                 GET_STAT_EVENT(proc_id, TOPDOWN_ICACHE_MISS_SLOTS) * TOPDOWN_SCALE_FACTOR / total_slots);
+  INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_OTHER_BOUND,
+                 GET_STAT_EVENT(proc_id, TOPDOWN_FETCH_OTHER_SLOTS) * TOPDOWN_SCALE_FACTOR / total_slots);
 
   /* Bad Spec Breakdown */
   // prevent division by zero

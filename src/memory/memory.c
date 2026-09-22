@@ -1502,8 +1502,10 @@ static Flag mem_complete_l1_access(Mem_Req* req, int* out_queue_insertion_count)
            was folded in at MLC or L1 entry. Probe only to hold that down. */
         if (ENABLE_ASSERTIONS && (req->type != MRT_WB) && (req->type != MRT_WB_NODIRTY)) {
           Mem_Req* dram_match = ramulator_search_queue(req->phys_addr, req->type);
-          ASSERT(req->proc_id,
-                 !dram_match || dram_match == req || dram_match->type == MRT_WB || dram_match->type == MRT_WB_NODIRTY);
+          /* Without the fill merge two requests for one line can reach DRAM, which is
+             the point of the experiment rather than a violation. */
+          if (dram_match && dram_match != req && dram_match->type != MRT_WB && dram_match->type != MRT_WB_NODIRTY)
+            STAT_EVENT(req->proc_id, MEM_REQ_DUP_TO_DRAM);
         }
 
         req->state = MRS_MEM_NEW;
@@ -2228,8 +2230,17 @@ static inline Mem_Req* mem_search_queue(
 static inline Mem_Req* mem_search_mshr_fills(Mem_Queue* queue, uns8 proc_id, Addr addr, Mem_Req_Type type, uns size,
                                              Flag* demand_hit_prefetch, Flag* demand_hit_writeback,
                                              Mem_Queue_Entry** queue_entry) {
-  return mem_search_queue(queue, proc_id, addr, type, size, demand_hit_prefetch, demand_hit_writeback, queue_entry,
-                          TRUE, TRUE);
+  /* Experiment: a fill in progress is not a merge target. A new request for the same
+     line issues its own miss instead of joining one that is already filling. */
+  UNUSED(queue);
+  UNUSED(proc_id);
+  UNUSED(addr);
+  UNUSED(type);
+  UNUSED(size);
+  *demand_hit_prefetch = FALSE;
+  *demand_hit_writeback = FALSE;
+  *queue_entry = NULL;
+  return NULL;
 }
 
 static inline Mem_Req* mem_search_reqbuf(

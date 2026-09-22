@@ -1028,7 +1028,7 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Addr* line_addr, L1_Data* data, int
     /* An LLC hit still owes the MLC this line; park it and let the fill walk take
        it from here, as the mlc fill queue did. */
     req->state = MRS_FILL_MLC;
-    req->rdy_cycle = cycle_count + 1;
+    req->rdy_cycle = cycle_count + 2;
     req->queue = NULL;
     *(int*)dl_list_add_tail(&mem->completed_reqs) = req->id;
     return TRUE;
@@ -1762,9 +1762,10 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
 
   req->state = MRS_FILL_L1;
 
-  /* Crossing the frequency domain boundary between the chip and the memory
-     controller, as the hand-off into the l1 fill queue did. */
-  req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + 1;
+  /* Experiment: wait until the cycle 554a20b would have written the dcache, then do
+     every array write at once. Same done_func cycle, same time on completed_reqs,
+     no stagger between the levels. */
+  req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + 3;
   req->queue = NULL;
   ASSERT(req->proc_id, mem->uncores[req->proc_id].num_outstanding_l1_misses > 0);
   mem->uncores[req->proc_id].num_outstanding_l1_misses--;

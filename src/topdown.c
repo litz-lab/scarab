@@ -101,7 +101,8 @@ void topdown_bp_recovery(uns proc_id, Op* op) {
  * on_path_fetched is the subset that is on-path, so a transition cycle (on-path ops served before the
  * wrong-path flip) credits those slots to retiring, not bad speculation.
  */
-void topdown_fetch_update(uns proc_id, Flag off_path, Flag backend_stall, int count_fetched, int on_path_fetched) {
+void topdown_fetch_update(uns proc_id, Flag off_path, Flag backend_stall, int count_fetched, int on_path_fetched,
+                          Topdown_Fe_Bubble fe_reason) {
   INC_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS, TOPDOWN_WIDTH);
 
   if (off_path) {
@@ -122,10 +123,18 @@ void topdown_fetch_update(uns proc_id, Flag off_path, Flag backend_stall, int co
     }
   } else {
     ASSERT(proc_id, count_fetched <= TOPDOWN_WIDTH);
+    int bubble = TOPDOWN_WIDTH - count_fetched;
     INC_STAT_EVENT(proc_id, TOPDOWN_RETIRED_SLOTS, count_fetched);
-    INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS, TOPDOWN_WIDTH - count_fetched);
+    INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_SLOTS, bubble);
     if (count_fetched == 0)
       STAT_EVENT(proc_id, TOPDOWN_FETCH_BUBBLES_GT_MIW_CYCLES);
+    // Subdivide the frontend bubble by why the fetch fell short this cycle.
+    if (fe_reason == TD_FE_UOPC_FRAGMENTATION)
+      INC_STAT_EVENT(proc_id, TOPDOWN_FE_UOPC_FRAGMENTATION_SLOTS, bubble);
+    else if (fe_reason == TD_FE_UOPC_MISS)
+      INC_STAT_EVENT(proc_id, TOPDOWN_FE_UOPC_MISS_SLOTS, bubble);
+    else if (fe_reason == TD_FE_ICACHE_MISS)
+      INC_STAT_EVENT(proc_id, TOPDOWN_FE_ICACHE_MISS_SLOTS, bubble);
   }
 
   // Every fetch slot is attributed to exactly one bucket, so the four must sum to the total.
@@ -220,6 +229,14 @@ void topdown_done(uns proc_id) {
                         GET_STAT_EVENT(proc_id, NODE_CYCLE);
   INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_LATENCY_BOUND, latency_bound);
   INC_STAT_EVENT(proc_id, TOPDOWN_FETCH_BANDWIDTH_BOUND, frontend_bound - latency_bound);
+
+  uns64 total_slots = GET_STAT_EVENT(proc_id, TOPDOWN_TOTAL_SLOTS);
+  INC_STAT_EVENT(proc_id, TOPDOWN_FE_UOPC_FRAGMENTATION_BOUND,
+                 GET_STAT_EVENT(proc_id, TOPDOWN_FE_UOPC_FRAGMENTATION_SLOTS) * TOPDOWN_SCALE_FACTOR / total_slots);
+  INC_STAT_EVENT(proc_id, TOPDOWN_FE_UOPC_MISS_BOUND,
+                 GET_STAT_EVENT(proc_id, TOPDOWN_FE_UOPC_MISS_SLOTS) * TOPDOWN_SCALE_FACTOR / total_slots);
+  INC_STAT_EVENT(proc_id, TOPDOWN_FE_ICACHE_MISS_BOUND,
+                 GET_STAT_EVENT(proc_id, TOPDOWN_FE_ICACHE_MISS_SLOTS) * TOPDOWN_SCALE_FACTOR / total_slots);
 
   /* Bad Spec Breakdown */
   // prevent division by zero

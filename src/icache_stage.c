@@ -873,8 +873,16 @@ void execute_coupled_FSM() {
   }
 
   Flag topdown_backend_stall = (break_fetch == BREAK_ICACHE_STALLED || break_fetch == BREAK_UOP_CACHE_STALLED);
+  Topdown_Fe_Bubble topdown_fe_reason = TD_FE_OTHER;
+  if (UOP_CACHE_ENABLE && uc->sd.op_count > 0)
+    topdown_fe_reason = TD_FE_UOPC_FRAGMENTATION;  // served from the uop cache; a short line leaves bubbles
+  else if (cur_data->op_count > 0)
+    topdown_fe_reason = TD_FE_UOPC_MISS;  // uop cache missed, served from the narrower icache/decode path
+  else if (break_fetch == BREAK_ICACHE_MISS_REQ_SUCCESS || break_fetch == BREAK_ICACHE_MISS_REQ_FAILURE ||
+           break_fetch == BREAK_ICACHE_WAIT_FOR_MISS)
+    topdown_fe_reason = TD_FE_ICACHE_MISS;  // both uop cache and icache missed
   topdown_fetch_update(ic->proc_id, ic->off_path, topdown_backend_stall, cur_data->op_count,
-                       ic->topdown_on_path_fetched);
+                       ic->topdown_on_path_fetched, topdown_fe_reason);
 }
 
 /**************************************************************************************/

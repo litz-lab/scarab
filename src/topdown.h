@@ -37,8 +37,17 @@
 
 #include "op.h"
 
+// Reason a frontend-bound cycle left slots unfilled, used to subdivide the frontend bound.
+typedef enum Topdown_Fe_Bubble_enum {
+  TD_FE_OTHER = 0,           // e.g. empty FTQ / branch resteer
+  TD_FE_UOPC_FRAGMENTATION,  // served from the uop cache but the line was not full
+  TD_FE_UOPC_MISS,           // uop cache missed, served from the narrower icache/decode path
+  TD_FE_ICACHE_MISS,         // both uop cache and icache missed (fetching from memory)
+} Topdown_Fe_Bubble;
+
 void topdown_bp_recovery(uns proc_id, Op* op);
-void topdown_fetch_update(uns proc_id, Flag off_path, Flag backend_stall, int count_fetched, int on_path_fetched);
+void topdown_fetch_update(uns proc_id, Flag off_path, Flag backend_stall, int count_fetched, int on_path_fetched,
+                          Topdown_Fe_Bubble fe_reason);
 void topdown_exec_update(uns proc_id, uns8 fus_busy);
 void topdown_done(uns proc_id);
 

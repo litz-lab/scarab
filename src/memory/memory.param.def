@@ -226,6 +226,10 @@ DEF_PARAM(mlcq_to_l1q_transfer_latency, MLCQ_TO_L1Q_TRANSFER_LATENCY, uns, uns,
           1, )
 DEF_PARAM(l1q_to_fsb_transfer_latency, L1Q_TO_FSB_TRANSFER_LATENCY, uns, uns,
           1, )
+/* Experiment only: hold an LLC miss this many cycles before issuing it to DRAM, so
+   the same total load latency can be added on the request side instead of the fill
+   side. */
+DEF_PARAM(dram_request_delay, DRAM_REQUEST_DELAY, uns, uns, 0, )
 DEF_PARAM(prioritize_prefetches_with_unique, PRIORITIZE_PREFETCHES_WITH_UNIQUE,
           Flag, Flag, FALSE, )
 

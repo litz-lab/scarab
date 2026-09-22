@@ -1506,6 +1506,14 @@ static Flag mem_complete_l1_access(Mem_Req* req, int* out_queue_insertion_count)
                  !dram_match || dram_match == req || dram_match->type == MRT_WB || dram_match->type == MRT_WB_NODIRTY);
         }
 
+        if (DRAM_REQUEST_DELAY && !req->dram_delay_paid) {
+          /* Experiment: spend the cycles here, before DRAM, instead of on the way
+             back up, so total load latency matches without touching the fill path. */
+          req->dram_delay_paid = TRUE;
+          req->rdy_cycle = cycle_count + DRAM_REQUEST_DELAY;
+          l1_miss_access = FALSE;
+          access_done = FALSE;
+        } else {
         req->state = MRS_MEM_NEW;
         l1_miss_access = ramulator_send(req);
         if (!l1_miss_access) {
@@ -1551,6 +1559,7 @@ static Flag mem_complete_l1_access(Mem_Req* req, int* out_queue_insertion_count)
                   "ERROR: Issuing a currently unhandled request type (%s) to "
                   "Ramulator\n",
                   Mem_Req_Type_str(req->type));
+        }
         }
 
         /* Only once the send succeeded: a rejected request stays in the l1_queue and
@@ -2580,6 +2589,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
   new_req->off_path_confirmed = FALSE;
   new_req->conf_off_path = op ? op->conf_off_path : FALSE;
   new_req->state = to_mlc ? MRS_MLC_NEW : MRS_L1_NEW;
+  new_req->dram_delay_paid = FALSE;
   new_req->type = type;
   new_req->types = 0;
   new_req->emitted_cycle = cycle_count;

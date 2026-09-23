@@ -2227,6 +2227,9 @@ static void mem_process_mlc_fill_reqs() {
       }
     } else {
       ASSERT(req->proc_id, req->state == MRS_FILL_DONE);
+      /* done_func is the dcache fill, so reaching it means the dcache is the level
+         that keeps this line. */
+      ASSERT(req->proc_id, !req->done_func || fill_inserts_at_dcache(req));
       if (!req->done_func || req->done_func(req)) {
         req->reserved_entry_count -= 1;
         req->reserved_levels &= ~MEM_RES_MLC;
@@ -2279,6 +2282,7 @@ static void mem_process_core_fill_reqs(uns proc_id) {
     ASSERT(proc_id, req->state == MRS_L1_HIT_DONE || req->state == MRS_FILL_DONE);
     ASSERT(proc_id,
            req->done_func);  // requests w/o done_func() should be done by now
+    ASSERT(proc_id, fill_inserts_at_dcache(req));
 
     if (req->done_func(req)) {
       // Free the request buffer
@@ -3567,9 +3571,33 @@ void op_nuke_mem_req(Op* op) {
  * @param req
  * @return Flag 1 on successful fill
  */
+/* The miss is satisfied when the line arrives, not when a level decides to keep it.
+   An exclusive hierarchy gives the line to one level and refuses it at the others, so
+   this has to run on the refusing paths too -- otherwise the ops waiting on the miss
+   are never told, and the miss latency is never counted. */
+static inline void l1_miss_is_satisfied(Mem_Req* req) {
+  if (req->l1_miss_satisfied)
+    return;
+  req->l1_miss_satisfied = TRUE;
+
+  // cmp FIXME
+  // when was MRT_DSTORE commented out...?
+  if (req->type == MRT_DFETCH || (req->type == MRT_DSTORE)) {
+    ASSERT(req->proc_id, req->l1_miss_cycle != MAX_CTR);
+    INC_STAT_EVENT_ALL(TOTAL_DATA_MISS_LATENCY, cycle_count - req->l1_miss_cycle);
+    STAT_EVENT_ALL(TOTAL_DATA_MISS_COUNT);
+  }
+  req->l1_miss_cycle = MAX_CTR;
+
+  // cmp FIXME
+  if (TRACK_L1_MISS_DEPS || MARK_L1_MISSES)
+    mark_ops_as_l1_miss_satisfied(req);
+}
+
 Flag l1_fill_line(Mem_Req* req) {
   if (!fill_inserts_at_l1(req)) {
     STAT_EVENT(req->proc_id, EXCL_FILL_SKIPPED_LLC);
+    l1_miss_is_satisfied(req);
     return TRUE;
   }
   /* An LLC prefetch that missed the MLC on its way down can land after a dcache demotion
@@ -3579,6 +3607,7 @@ Flag l1_fill_line(Mem_Req* req) {
     Addr dup_addr;
     if (cache_access(&MLC(req->proc_id)->cache, req->addr, &dup_addr, FALSE)) {
       STAT_EVENT(req->proc_id, EXCL_FILL_DUP_SKIPPED_LLC);
+      l1_miss_is_satisfied(req);
       return TRUE;
     }
     /* The dcache is a different matter: this prefetch never probed it, so a line the core
@@ -3876,21 +3905,7 @@ Flag l1_fill_line(Mem_Req* req) {
   data->fetch_cycle = cycle_count;
   data->onpath_use_cycle = req->off_path ? 0 : cycle_count;
 
-  req->l1_miss_satisfied = TRUE;
-
-  // cmp FIXME
-  // when was MRT_DSTORE commented out...?
-  if (req->type == MRT_DFETCH || (req->type == MRT_DSTORE)) {
-    uns latency = cycle_count - req->l1_miss_cycle;
-    ASSERT(req->proc_id, req->l1_miss_cycle != MAX_CTR);
-    INC_STAT_EVENT_ALL(TOTAL_DATA_MISS_LATENCY, latency);
-    STAT_EVENT_ALL(TOTAL_DATA_MISS_COUNT);
-  }
-  req->l1_miss_cycle = MAX_CTR;
-
-  // cmp FIXME
-  if (TRACK_L1_MISS_DEPS || MARK_L1_MISSES)
-    mark_ops_as_l1_miss_satisfied(req);
+  l1_miss_is_satisfied(req);
 
   // this is just a stat collection
   wp_process_l1_fill(data, req);
@@ -4001,17 +4016,38 @@ Flag mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, 
 /**************************************************************************************/
 /* mlc_fill_line: */
 
+/* The MLC's half of the same rule: the miss is satisfied when the line arrives, so
+   the refusing paths record it too. */
+static inline void mlc_miss_is_satisfied(Mem_Req* req) {
+  if (req->mlc_miss_satisfied)
+    return;
+  req->mlc_miss_satisfied = TRUE;
+
+  if (req->type == MRT_DFETCH) {
+    ASSERT(req->proc_id, req->mlc_miss_cycle != MAX_CTR);
+    INC_STAT_EVENT_ALL(TOTAL_DATA_MISS_LATENCY, cycle_count - req->mlc_miss_cycle);
+    STAT_EVENT_ALL(TOTAL_DATA_MISS_COUNT);
+  }
+
+  ASSERT(req->proc_id, req->mlc_miss_cycle != MAX_CTR);
+  ASSERT(req->proc_id, req->mlc_miss);
+
+  req->mlc_miss_cycle = MAX_CTR;
+}
+
 Flag mlc_fill_line(Mem_Req* req) {
   /* Exclusive: only the destination level keeps the line; a core-destined fill
      passes through the MLC without inserting. */
   if (!fill_inserts_at_mlc(req)) {
     STAT_EVENT(req->proc_id, EXCL_FILL_SKIPPED_MLC);
+    mlc_miss_is_satisfied(req);
     return TRUE;
   }
   if (EXCLUSIVE_CACHES) {
     Addr dup_addr;
     if (cache_access(&L1(req->proc_id)->cache, req->addr, &dup_addr, FALSE)) {
       STAT_EVENT(req->proc_id, EXCL_FILL_DUP_SKIPPED_MLC);
+      mlc_miss_is_satisfied(req);
       return TRUE;
     }
   }
@@ -4218,19 +4254,7 @@ Flag mlc_fill_line(Mem_Req* req) {
   data->fetch_cycle = cycle_count;
   data->onpath_use_cycle = req->off_path ? 0 : cycle_count;
 
-  req->mlc_miss_satisfied = TRUE;
-
-  if (req->type == MRT_DFETCH) {
-    uns latency = cycle_count - req->mlc_miss_cycle;
-    ASSERT(req->proc_id, req->mlc_miss_cycle != MAX_CTR);
-    INC_STAT_EVENT_ALL(TOTAL_DATA_MISS_LATENCY, latency);
-    STAT_EVENT_ALL(TOTAL_DATA_MISS_COUNT);
-  }
-
-  ASSERT(req->proc_id, req->mlc_miss_cycle != MAX_CTR);
-  ASSERT(req->proc_id, req->mlc_miss);
-
-  req->mlc_miss_cycle = MAX_CTR;
+  mlc_miss_is_satisfied(req);
 
   return SUCCESS;
 }

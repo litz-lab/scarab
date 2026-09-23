@@ -1805,26 +1805,6 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
 static Flag mem_advance_fill(Mem_Req* req) {
   ASSERT(req->proc_id, req->state != MRS_INV);
 
-  /* Both levels stop tracking the miss as soon as the line is in hand. They track
-     what is still being fetched, and nothing is once the data is here; holding the
-     slots until each array is written would cap how many misses can be in flight on
-     how fast the fill drains. Done here rather than in the DRAM callback because a
-     fill also starts from an LLC hit, which never goes through it. */
-  if (req->reserved_levels & MEM_RES_L1) {
-    req->reserved_levels &= ~MEM_RES_L1;
-    ASSERT(req->proc_id, req->reserved_entry_count > 0);
-    req->reserved_entry_count -= 1;
-    ASSERT(req->proc_id, mem->l1_queue.mshrs_taken > 0);
-    mem->l1_queue.mshrs_taken--;
-  }
-  if (req->reserved_levels & MEM_RES_MLC) {
-    req->reserved_levels &= ~MEM_RES_MLC;
-    ASSERT(req->proc_id, req->reserved_entry_count > 0);
-    req->reserved_entry_count -= 1;
-    ASSERT(req->proc_id, mem->mlc_queue.mshrs_taken > 0);
-    mem->mlc_queue.mshrs_taken--;
-  }
-
   if (req->state == MRS_FILL_L1) {
     if (!l1_fill_line(req))
       return FALSE;
@@ -1853,6 +1833,23 @@ static Flag mem_advance_fill(Mem_Req* req) {
   ASSERT(req->proc_id, req->state == MRS_FILL_DONE);
   if (req->done_func && !req->done_func(req))
     return FALSE;
+
+  /* Experiment: give the slots back only once the core has the line, so the level
+     never believes it has capacity while a fill is still on its way up. */
+  if (req->reserved_levels & MEM_RES_L1) {
+    req->reserved_levels &= ~MEM_RES_L1;
+    ASSERT(req->proc_id, req->reserved_entry_count > 0);
+    req->reserved_entry_count -= 1;
+    ASSERT(req->proc_id, mem->l1_queue.mshrs_taken > 0);
+    mem->l1_queue.mshrs_taken--;
+  }
+  if (req->reserved_levels & MEM_RES_MLC) {
+    req->reserved_levels &= ~MEM_RES_MLC;
+    ASSERT(req->proc_id, req->reserved_entry_count > 0);
+    req->reserved_entry_count -= 1;
+    ASSERT(req->proc_id, mem->mlc_queue.mshrs_taken > 0);
+    mem->mlc_queue.mshrs_taken--;
+  }
 
   mem_free_reqbuf(req);
   return TRUE;

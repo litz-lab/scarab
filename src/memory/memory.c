@@ -975,6 +975,50 @@ static inline void mem_invalidate_on_promote(Mem_Req* req, Cache* cache, Flag di
   STAT_EVENT(req->proc_id, inval_stat);
 }
 
+/* Which levels a fill will actually insert into. An exclusive hierarchy keeps the
+   line only at the level that asked for it, so l1_fill_line and mlc_fill_line refuse
+   anything destined elsewhere; routing a fill through such a level costs a queue hop
+   and buys nothing. */
+/* A writeback is going down, not up; it has no requester waiting and is not subject
+   to the one-level rule below. */
+static inline Flag fill_req_is_wb(Mem_Req* req) {
+  return req->type == MRT_WB || req->type == MRT_WB_NODIRTY;
+}
+
+/* Under an exclusive hierarchy these three are mutually exclusive, and each one
+   knows what the others imply: a fill claimed by a cache level was asked for by that
+   level, so nothing in the core is waiting on it, and a fill that reaches the dcache
+   was asked for by the core, so something is. done_func is how a requester says it
+   is waiting, which makes it the check. */
+static inline Flag fill_inserts_at_l1(Mem_Req* req) {
+  if (!EXCLUSIVE_CACHES)
+    return TRUE;
+  Flag at_l1 = req->destination == DEST_L1;
+  if (at_l1 && !fill_req_is_wb(req))
+    ASSERT(req->proc_id, !req->done_func);
+  return at_l1;
+}
+
+static inline Flag fill_inserts_at_mlc(Mem_Req* req) {
+  if (!EXCLUSIVE_CACHES)
+    return TRUE;
+  Flag at_mlc = req->destination == DEST_MLC;
+  if (at_mlc && !fill_req_is_wb(req))
+    ASSERT(req->proc_id, !req->done_func);
+  return at_mlc;
+}
+
+/* A demand carries DEST_NONE rather than DEST_DCACHE, so the dcache is not named by
+   destination -- it is whatever no lower level claimed. */
+static inline Flag fill_inserts_at_dcache(Mem_Req* req) {
+  if (!EXCLUSIVE_CACHES)
+    return req->done_func != NULL;
+  Flag at_dcache = req->destination != DEST_L1 && req->destination != DEST_MLC;
+  if (at_dcache && !fill_req_is_wb(req))
+    ASSERT(req->proc_id, req->done_func);
+  return at_dcache;
+}
+
 /**************************************************************************************/
 /* mem_process_l1_hit_access: */
 /* Returns TRUE if l1 access is complete and needs to be removed from l1_queue
@@ -1987,6 +2031,10 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
         "size:%d  state: %s\n",
         (long int)(req - mem->req_buffer), Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->size,
         mem_req_state_names[req->state]);
+
+  /* Exactly one level keeps the line, which is what the destination is for. */
+  ASSERT(req->proc_id, !EXCLUSIVE_CACHES || fill_req_is_wb(req) ||
+                           fill_inserts_at_l1(req) + fill_inserts_at_mlc(req) + fill_inserts_at_dcache(req) == 1);
 
   req->state = MRS_FILL_L1;
 
@@ -3520,7 +3568,7 @@ void op_nuke_mem_req(Op* op) {
  * @return Flag 1 on successful fill
  */
 Flag l1_fill_line(Mem_Req* req) {
-  if (EXCLUSIVE_CACHES && req->destination != DEST_L1) {
+  if (!fill_inserts_at_l1(req)) {
     STAT_EVENT(req->proc_id, EXCL_FILL_SKIPPED_LLC);
     return TRUE;
   }
@@ -3956,7 +4004,7 @@ Flag mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, 
 Flag mlc_fill_line(Mem_Req* req) {
   /* Exclusive: only the destination level keeps the line; a core-destined fill
      passes through the MLC without inserting. */
-  if (EXCLUSIVE_CACHES && req->destination != DEST_MLC) {
+  if (!fill_inserts_at_mlc(req)) {
     STAT_EVENT(req->proc_id, EXCL_FILL_SKIPPED_MLC);
     return TRUE;
   }

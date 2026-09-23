@@ -76,40 +76,47 @@ typedef struct L1_Data_struct {
 
 typedef L1_Data MLC_Data; /* Use the same data structure for simplicity */
 
-typedef enum Mem_Queue_Req_Result_enum {
+typedef enum Mshr_Req_Result_enum {
   FAILED,
   SUCCESS_NEW,
   SUCCESS_MERGED,
-} Mem_Queue_Req_Result;
+} Mshr_Req_Result;
 
-typedef enum Mem_Queue_Type_enum {
-  QUEUE_L1 = 1 << 0,
-  QUEUE_BUS_OUT = 1 << 1,
-  QUEUE_MEM = 1 << 2,
-  QUEUE_L1FILL = 1 << 3,
-  QUEUE_MLC = 1 << 4,
-  QUEUE_MLC_FILL = 1 << 5,
-  QUEUE_CORE_FILL = 1 << 6,
-} Mem_Queue_Type;
+typedef enum Mshr_Type_enum {
+  MSHR_MLC = 1 << 0,
+  MSHR_MEM = 1 << 2,
+  MSHR_DCACHE = 1 << 4,
+} Mshr_Type;
 
-typedef struct Mem_Queue_Entry_struct {
-  int reqbuf;       /* request buffer num */
-  Counter priority; /* priority of the miss */
-  Counter rdy_cycle;
-} Mem_Queue_Entry;
-
-typedef struct Mem_Queue_struct {
-  Mem_Queue_Entry* base;
-  int entry_count;
-  int reserved_entry_count;
-  uns size;
-  /* Outstanding misses this level is tracking. Separate from size: entries are
-     pipeline occupancy, MSHRs are fills in flight. */
-  uns mshr_size;
+typedef struct Mshr_struct {
+  /* This level's MSHR file: every request it is still fetching a line for, from
+     admission until the request is freed. Searching it answers "is this line already
+     on its way for me", which is the only question a merge asks. */
+  List mshr_file;
+  /* The same requests keyed by line address, so a merge is a lookup rather than a
+     walk. The list stays for the walks that want every entry in order. */
+  Hash_Table mshr_hash;
+  /* How many of those consume a slot. Tracking and bounding are separate: a request
+     that reaches DRAM without an MSHR is still in the file, it just does not count. */
+  int mshrs_taken;
+  /* Held back for writebacks, so a fill can always place its dirty victim. */
   uns mshr_wb_reserve;
+  /* Fills this level owes that could not be absorbed. Only when it is non-zero does
+     anything walk this level's file looking for them. */
+  uns pending_fills;
+  /* Lookups this level has started and not yet completed. They are no longer in a
+     bank FIFO -- the bank is free the cycle after one starts. */
+  uns pending_lookups;
+  /* Banks are per port, so a read bank and a write bank share an index but are
+     separate arrays: reads and writes share this level's MSHR file, not its banks.
+     One FIFO each, in age order. */
+  List* read_banks;
+  List* write_banks;
+  uns num_banks;
+  uns mshr_size;
   char name[20];
-  Mem_Queue_Type type;
-} Mem_Queue;
+  Mshr_Type type;
+} Mshr;
 
 typedef struct Mem_Bank_Queue_Entry_struct {
   uns8 proc_id;
@@ -142,12 +149,16 @@ typedef struct Uncore_struct {
 
 typedef struct Memory_struct {
   /* miss buffer */
-  Mem_Req* req_buffer;
-  List req_buffer_free_list;
+  /* Chunked so it can grow: a new chunk is appended when the free list runs dry and
+     existing chunks never move, so a Mem_Req* stays valid for the life of the request. */
+  Mem_Req** req_pool_chunks;
+  uns num_chunks;
+  uns chunks_allocated;
+  uns chunk_size;
+  List req_pool_free_list;
   List* l1_in_buffer_core;
-  uns total_mem_req_buffers;
-  uns req_buffers_per_core; /* derived from the queues and what DRAM holds */
-  uns* num_req_buffers_per_core;
+  uns total_req_pool;
+  uns* num_req_pool_per_core;
 
   int req_count;
 
@@ -157,13 +168,13 @@ typedef struct Memory_struct {
   /* prfetcher cache */
   Cache pref_l1_cache;
 
-  /* various queues (arrays) */
-  Mem_Queue mlc_queue;
-  Mem_Queue mlc_fill_queue;
-  Mem_Queue l1_queue;
-  Mem_Queue bus_out_queue;
-  Mem_Queue l1fill_queue;
-  Mem_Queue* core_fill_queues;
+  /* One MSHR file per level, each named for the misses it holds: dcache misses wait
+     at the MLC, MLC misses wait at the LLC. */
+  Mshr dcache_mshr;
+  Mshr mlc_mshr;
+  /* One per core: requests whose done_func still owes the core. A plain list, walked
+     in order and never re-sorted. */
+  List* core_fill_queues;
 
   Counter last_mem_queue_cycle;
 
@@ -178,11 +189,6 @@ typedef struct Memory_struct {
   Cache* umon_cache_core;
   double** umon_cache_hit_count_core;
 
-  uns* bus_out_queue_entry_count_core;
-  int* bus_out_queue_index_core;         // bus_out_queue to mem_queue scheduling
-  Flag* bus_out_queue_seen_oldest_core;  // FIFO for bus_out_queue
-  uns8 bus_out_queue_round_robin_next_proc_id;
-  uns bus_out_queue_one_core_first_num_sent;
 } Memory;
 
 typedef struct Pref_LoadPCInfo_Struct {
@@ -205,6 +211,9 @@ typedef struct Pref_Req_Info_Struct {
   uns distance;
   Flag bw_limited;
   Destination dest;  // Only MLC/L2 values matter
+  /* The prefetcher already looked this line up in dest's cache and missed, so the
+     request is born one level below, holding an MSHR at dest. */
+  Flag probed;
 } Pref_Req_Info;
 
 typedef enum L1_Dyn_Partition_Policy_enum {
@@ -221,7 +230,6 @@ typedef struct Umon_Cache_Data_struct {
 
 /**************************************************************************************/
 /* Prototypes */
-int mem_compare_priority(const void* a, const void* b);
 
 void set_memory(Memory*);
 void init_memory(void);
@@ -232,8 +240,6 @@ void update_memory(void);
 
 Flag scan_stores(Addr, uns);
 void op_nuke_mem_req(Op*);
-Flag mem_req_younger_than_uniquenum(int, Counter);
-Flag mem_req_older_than_uniquenum(int, Counter);
 L1_Data* do_l1_access(Op* op);
 L1_Data* do_l1_access_addr(Addr);
 L1_Data* do_mlc_access(Op* op);
@@ -241,10 +247,19 @@ L1_Data* do_mlc_access_addr(Addr);
 
 Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op, Flag done_func(Mem_Req*),
                  Counter unique_num, Pref_Req_Info*);
-void mem_free_reqbuf(Mem_Req* req);
+void mem_free_req(Mem_Req* req);
 void mem_complete_bus_in_access(Mem_Req* req, Counter priority);
-void print_req_buffer(void);
-void print_mem_queue(Mem_Queue_Type queue_type);
+
+/* How many requests the pool holds. Derived from the MSHR files and the DRAM
+   queues, so it is not a parameter anyone sets. */
+void mem_clear_crit_path(void);
+void mem_destroy_req_pool(void);
+
+/* Probe a level's cache for its prefetcher. FALSE means the bank was busy this
+   cycle; otherwise *hit says whether the line is already there. */
+Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit);
+void print_mshr_files(void);
+void print_mshr(Mshr_Type mshr_type);
 Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                        Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath);
 Flag mlc_fill_line(Mem_Req* req);
@@ -252,9 +267,8 @@ Flag l1_fill_line(Mem_Req* req);
 
 void mark_ops_as_l1_miss_satisfied(Mem_Req* req);
 int mem_get_req_count(uns proc_id);
-/* Per-core request-buffer budget. Equals MEM_REQ_BUFFER_ENTRIES unless
-   derived from the per-level queue sizes. */
-uns mem_get_req_buffer_size(void);
+/* Per-core request-pool budget. Derived from the MSHR files and the DRAM queues unless
+   derived from the per-level mshr sizes. */
 
 void open_mem_stat_interval_file(void);
 void close_mem_stat_interval_file(void);
@@ -265,15 +279,14 @@ void l1_cache_collect_stats(void);
 
 void wp_process_l1_hit(L1_Data* line, Mem_Req* req);
 void wp_process_l1_fill(L1_Data* line, Mem_Req* req);
-void wp_process_reqbuf_match(Mem_Req* req, Op* op);
+void wp_process_req_pool_match(Mem_Req* req, Op* op);
 
 // batch scheduler
 uns num_chip_demands(void);
 uns num_offchip_stall_reqs(uns proc_id);
 
-Mem_Req* mem_search_reqbuf_wrapper(uns8 proc_id, Addr addr, Mem_Req_Type type, uns size, Flag* demand_hit_prefetch,
-                                   Flag* demand_hit_writeback, uns queues_to_search, Mem_Queue_Entry** queue_entry,
-                                   Flag* ramulator_match);
+Mem_Req* mem_search_outstanding(uns8 proc_id, Addr addr, Mem_Req_Type type, uns size, Flag* demand_hit_prefetch,
+                                Flag* demand_hit_writeback);
 
 /**************************************************************************************/
 /* Externs */

@@ -759,7 +759,7 @@ void FDIP_Stat::inc_prefetched_cls(Addr line_addr, Flag on_path, uns success) {
           cycle_count);
   }
 
-  if (success == Mem_Queue_Req_Result::SUCCESS_NEW) {
+  if (success == Mshr_Req_Result::SUCCESS_NEW) {
     auto cl_new_iter = new_prefetched_cls.find(line_addr);
     if (cl_new_iter == new_prefetched_cls.end())
       new_prefetched_cls.insert(pair<Addr, Counter>(line_addr, 1));
@@ -774,7 +774,7 @@ void FDIP_Stat::inc_prefetched_cls(Addr line_addr, Flag on_path, uns success) {
     else
       it->second++;
 
-    if (success == Mem_Queue_Req_Result::SUCCESS_NEW) {
+    if (success == Mshr_Req_Result::SUCCESS_NEW) {
       it = new_prefetched_cls_aw.find(line_addr);
       if (it == new_prefetched_cls_aw.end())
         new_prefetched_cls_aw.insert(pair<Addr, Counter>(line_addr, 1));
@@ -932,8 +932,6 @@ void FDIP::update() {
 
       Flag demand_hit_prefetch = FALSE;
       Flag demand_hit_writeback = FALSE;
-      Mem_Queue_Entry* queue_entry = NULL;
-      Flag ramulator_match = FALSE;
       Addr dummy_addr = 0;
       bool line = false;
       Mem_Req* mem_req = NULL;
@@ -949,16 +947,12 @@ void FDIP::update() {
         UNUSED(dummy_addr);
         uns pref_from = line ? 0 : (mlc_line ? 1 : (l1_line ? 2 : 3));
         STAT_EVENT(proc_id, FDIP_PREFETCH_HIT_ICACHE0 + 4 * bp_id + pref_from);
-        mem_req = mem_search_reqbuf_wrapper(
-            proc_id, line_addr, MRT_FDIPPRFON, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
-            QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT | QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL, &queue_entry,
-            &ramulator_match);
+        mem_req = mem_search_outstanding(proc_id, line_addr, MRT_FDIPPRFON, ICACHE_LINE_SIZE, &demand_hit_prefetch,
+                                         &demand_hit_writeback);
 
         if (!mem_req) {
-          mem_req = mem_search_reqbuf_wrapper(
-              proc_id, line_addr, MRT_FDIPPRFOFF, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
-              QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT | QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL, &queue_entry,
-              &ramulator_match);
+          mem_req = mem_search_outstanding(proc_id, line_addr, MRT_FDIPPRFOFF, ICACHE_LINE_SIZE, &demand_hit_prefetch,
+                                           &demand_hit_writeback);
         }
 
         if (line) {
@@ -978,7 +972,7 @@ void FDIP::update() {
 
       if (!line && emit_new_prefetch) {  // create a mem request only if line doesn't exist. If the corresponding
                                          // mem_req exists, it will merge.
-        uns success = Mem_Queue_Req_Result::FAILED;
+        uns success = Mshr_Req_Result::FAILED;
         if (FDIP_PREF_NO_LATENCY) {
           Mem_Req req;
           req.off_path = op ? op->off_path : FALSE;
@@ -1002,22 +996,22 @@ void FDIP::update() {
               udp->bloom_inc_new_prefs();  // TODO: still update for the secondary?
           } else
             ASSERT(proc_id, false);
-          success = Mem_Queue_Req_Result::SUCCESS_NEW;
+          success = Mshr_Req_Result::SUCCESS_NEW;
         } else {
           success =
               new_mem_req(mem_type, proc_id, line_addr, ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
           // ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count++, 0); // bug?
-          if (success == Mem_Queue_Req_Result::SUCCESS_NEW) {
+          if (success == Mshr_Req_Result::SUCCESS_NEW) {
             STAT_EVENT(proc_id, FDIP_NEW_PREFETCHES_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
             DEBUG(proc_id, "[FDIP%u] Success to emit a new prefetch for %llx\n", bp_id, line_addr);
             per_cyc_ipref++;
             if (!bp_id && FDIP_BLOOM_FILTER)  // TODO: still update for the secondary?
               udp->bloom_inc_new_prefs();
-          } else if (success == Mem_Queue_Req_Result::SUCCESS_MERGED) {
+          } else if (success == Mshr_Req_Result::SUCCESS_MERGED) {
             STAT_EVENT(proc_id, FDIP_PREF_MSHR_PROBE_HIT_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
             DEBUG(proc_id, "[FDIP%u] Success to merge a prefetch for %llx\n", bp_id, line_addr);
-          } else if (success == Mem_Queue_Req_Result::FAILED) {
-            // The target queue is full; the request buffer cannot run dry.
+          } else if (success == Mshr_Req_Result::FAILED) {
+            // The target mshr is full; the request buffer cannot run dry.
             STAT_EVENT(proc_id, FDIP_PREF_FAILED_QUEUE_FULL);
             STAT_EVENT(proc_id, FDIP_PREF_FAILED_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
             DEBUG(proc_id, "[FDIP%u] Failed to emit a prefetch for %llx\n", bp_id, line_addr);
@@ -1083,7 +1077,7 @@ void FDIP::inc_cnt_unuseful(Addr line_addr) {
 }
 
 void FDIP::inc_prefetched_cls(Addr line_addr, uns success, Flag conf_off_path) {
-  if (success == Mem_Queue_Req_Result::FAILED)
+  if (success == Mshr_Req_Result::FAILED)
     return;
   if (bp_id)
     ASSERT(proc_id, conf_off_path);

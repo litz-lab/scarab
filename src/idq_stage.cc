@@ -50,7 +50,6 @@ extern "C" {
 
 #include "decode_stage.h"
 #include "op_pool.h"
-#include "topdown.h"
 }
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_IDQ_STAGE, ##args)
@@ -67,9 +66,6 @@ struct IDQ_Stage {
   void update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd);
   Stage_Data* get_output_stage_data();
 
-  void set_recovery_cycle(int recovery_cycle);
-  int get_recovery_cycle() const;
-
  private:
   uns8 proc_id = 0;
   int capacity = 0;
@@ -78,7 +74,6 @@ struct IDQ_Stage {
   int head = 0;
   int tail = 0;
   Counter next_op_num = 0;
-  int recovery_cycle = 0;
 
   /* the IDQ outpur stage data */
   Stage_Data idq_sd = {};
@@ -90,7 +85,7 @@ struct IDQ_Stage {
   std::string idq_stage_name;
 
   Stage_Data* select_input_stage_data(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data* uop_queue_sd);
-  void process_input_stage_data(Stage_Data* consume_from_sd, int& count_issued, int& count_issued_on_path);
+  void process_input_stage_data(Stage_Data* consume_from_sd);
   bool enqueue(Op* op);
   Op* dequeue();
   inline int wrap_around(int);
@@ -126,7 +121,6 @@ void IDQ_Stage::reset() {
   occupied_count = 0;
   head = 0;
   tail = 0;
-  recovery_cycle = 0;
 
   for (int i = 0; i < idq_sd.max_op_count; i++) {
     idq_sd.ops[i] = NULL;
@@ -263,7 +257,7 @@ Stage_Data* IDQ_Stage::select_input_stage_data(Stage_Data* dec_src_sd, Stage_Dat
   return consume_from_sd;
 }
 
-void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd, int& count_issued, int& count_issued_on_path) {
+void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd) {
   /* Return if the next expected uop has not yet arrived. */
   if (!consume_from_sd) {
     return;
@@ -292,10 +286,6 @@ void IDQ_Stage::process_input_stage_data(Stage_Data* consume_from_sd, int& count
     if (idq_sd.op_count < idq_sd.max_op_count) {
       ASSERT(proc_id, !occupied_count);
       idq_sd.ops[idq_sd.op_count++] = op;
-      if (!op->off_path) {
-        count_issued_on_path++;
-      }
-      count_issued++;
     } else {
       bool success = enqueue(op);
       ASSERT(proc_id, success);
@@ -323,8 +313,6 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
       (ic_uopc_sd->op_count && ic_uopc_sd->ops[0]) ? unsstr64(ic_uopc_sd->ops[0]->op_num) : "none",
       ic_uopc_sd->op_count, idq_sd.op_count, occupied_count);
   /* Fill the IDQ output stage data with uops from IDQ. */
-  int count_issued = 0;
-  int count_issued_on_path = 0;
   for (int i = idq_sd.op_count; i < idq_sd.max_op_count; i++) {
     Op* op = dequeue();
     if (!op) {
@@ -333,11 +321,6 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
     }
     idq_sd.ops[i] = op;
     idq_sd.op_count++;
-
-    if (!op->off_path) {
-      count_issued_on_path++;
-    }
-    count_issued++;
   }
 
   /* Select the input stage data. */
@@ -347,9 +330,7 @@ void IDQ_Stage::update(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Dat
         : consume_from_sd == uop_queue_sd ? "uop_queue"
         : consume_from_sd == ic_uopc_sd   ? "ic_uopc"
                                           : "none");
-  process_input_stage_data(consume_from_sd, count_issued, count_issued_on_path);
-
-  topdown_idq_update(proc_id, idq_sd.op_count, count_issued, count_issued_on_path);
+  process_input_stage_data(consume_from_sd);
 }
 
 bool IDQ_Stage::enqueue(Op* op) {
@@ -379,14 +360,6 @@ Op* IDQ_Stage::dequeue() {
 
 int IDQ_Stage::wrap_around(int index) {
   return (index + capacity) % capacity;
-}
-
-void IDQ_Stage::set_recovery_cycle(int recovery_cycle) {
-  this->recovery_cycle = recovery_cycle;
-}
-
-int IDQ_Stage::get_recovery_cycle() const {
-  return recovery_cycle;
 }
 
 Stage_Data* IDQ_Stage::get_output_stage_data() {
@@ -424,12 +397,4 @@ void update_idq_stage(Stage_Data* dec_src_sd, Stage_Data* ic_uopc_sd, Stage_Data
 
 Stage_Data* idq_stage_get_stage_data() {
   return idq_stage->get_output_stage_data();
-}
-
-void idq_stage_set_recovery_cycle(int recovery_cycle) {
-  idq_stage->set_recovery_cycle(recovery_cycle);
-}
-
-int idq_stage_get_recovery_cycle() {
-  return idq_stage->get_recovery_cycle();
 }

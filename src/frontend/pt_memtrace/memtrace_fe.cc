@@ -209,7 +209,7 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   memcpy(next_onpath_pi, insi->info, sizeof(ctype_pin_inst));
   fill_in_dynamic_info(proc_id, next_onpath_pi, insi);
 
-  if (next_onpath_pi->scarab_marker_roi_begin == true) {
+  if (ROI_MARKER_DUMP && next_onpath_pi->scarab_marker_roi_begin == true) {
     // Windowed runs (memtrace_roi_begin / trace_bbv segments) can start inside
     // a marked region: a BEGIN while already began means we missed the END
     // (outside the window). Re-arm instead of asserting.
@@ -218,7 +218,7 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
     std::cout << "Reached roi dump begin marker, reset stats" << std::endl;
     reset_stats(TRUE);
     roi_dump_began = TRUE;
-  } else if (next_onpath_pi->scarab_marker_roi_end == true) {
+  } else if (ROI_MARKER_DUMP && next_onpath_pi->scarab_marker_roi_end == true) {
     if (!roi_dump_began) {
       // Window started mid-region: END without a seen BEGIN. Ignore.
       std::cout << "Warning: roi end marker without begin (windowed run?); ignoring" << std::endl;

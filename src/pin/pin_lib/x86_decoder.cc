@@ -2092,4 +2092,24 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_KSHIFTRQ] = {OP_LOGIC, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KUNPCKBW] = {OP_PIPELINED_MEDIUM, 1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KUNPCKWD] = {OP_PIPELINED_MEDIUM, 2, -1, NONE};
+
+  // SHA-NI (git object hashing, cargo fingerprints, Python hashlib through
+  // OpenSSL) and the AVX-512 rotate family (hash and PRNG kernels): hit by the
+  // agent traces (code-rust, data, code-py). Multi-cycle pipelined vector ops
+  // like the AES family above; rotates are shifts.
+  iclass_to_scarab_map[XED_ICLASS_SHA1MSG1]    = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SHA1MSG2]    = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SHA1NEXTE]   = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SHA1RNDS4]   = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SHA256MSG1]  = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SHA256MSG2]  = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SHA256RNDS2] = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPROLD]      = {OP_SHIFT, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPROLQ]      = {OP_SHIFT, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPRORD]      = {OP_SHIFT, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPRORQ]      = {OP_SHIFT, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPROLVD]     = {OP_SHIFT, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPROLVQ]     = {OP_SHIFT, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPRORVD]     = {OP_SHIFT, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPRORVQ]     = {OP_SHIFT, 8, -1, NONE};
 }

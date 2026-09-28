@@ -277,6 +277,10 @@ struct IssueQueueStats {
 };
 
 void IssueQueueStats::clear() {
+  if (!ISSUE_QUEUE_STAT_COLLECT) {
+    return;
+  }
+
   for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
     ready_reg_ids[ii].clear();
     issued_reg_ids[ii].clear();
@@ -289,6 +293,10 @@ void IssueQueueStats::clear() {
 }
 
 void IssueQueueStats::update_stats() const {
+  if (!ISSUE_QUEUE_STAT_COLLECT) {
+    return;
+  }
+
   size_t distinct_count = 0;
   for (const std::vector<uns16>& reg_ids : issued_reg_ids) {
     distinct_count += reg_ids.size();
@@ -302,6 +310,8 @@ void IssueQueueStats::update_stats() const {
 }
 
 void IssueQueueStats::set_ready_unissued(uns16 queue_id, const IssueQueueEntry* entry) {
+  ASSERT(node->proc_id, ISSUE_QUEUE_STAT_COLLECT);
+
   ready_unissued_op_types[queue_id] |= entry->op_fu_type;
   if (entry->bound_fu_id != MAX_UNS) {
     ready_unissued_op_types_per_fu[queue_id][entry->bound_fu_id] |= entry->op_fu_type;
@@ -310,9 +320,11 @@ void IssueQueueStats::set_ready_unissued(uns16 queue_id, const IssueQueueEntry* 
 
 // the bitwise OR of every other queue's ready unissued op types this cycle
 uns64 IssueQueueStats::get_ready_unissued_others(size_t queue_id) const {
+  ASSERT(node->proc_id, ISSUE_QUEUE_STAT_COLLECT);
+
   uns64 result = 0;
   for (size_t i = 0; i < ready_unissued_op_types.size(); ++i) {
-    if (i != queue_id)
+    if (i == queue_id)
       continue;
 
     result |= ready_unissued_op_types[i];
@@ -322,6 +334,8 @@ uns64 IssueQueueStats::get_ready_unissued_others(size_t queue_id) const {
 }
 
 bool IssueQueueStats::lookup_and_set_reg_read(std::vector<uns16>& reg_ids, uns16 reg_id) {
+  ASSERT(node->proc_id, ISSUE_QUEUE_STAT_COLLECT);
+
   if (std::find(reg_ids.begin(), reg_ids.end(), reg_id) != reg_ids.end()) {
     return true;
   }
@@ -450,6 +464,10 @@ void SelectLogic::grant(IssueQueueStats& stats_across_queue) {
 }
 
 void SelectLogic::collect_entry_op_ready_stats(IssueQueueEntry* entry, IssueQueueStats& stats_across_queue) {
+  if (!ISSUE_QUEUE_STAT_COLLECT) {
+    return;
+  }
+
   STAT_EVENT(node->proc_id, ISSUE_QUEUE_OP_READY);
   Op* op = entry->op;
 
@@ -483,6 +501,10 @@ void SelectLogic::collect_entry_op_ready_stats(IssueQueueEntry* entry, IssueQueu
 }
 
 void SelectLogic::collect_entry_op_ready_unissued_stats(IssueQueueEntry* entry, IssueQueueStats& stats_across_queue) {
+  if (!ISSUE_QUEUE_STAT_COLLECT) {
+    return;
+  }
+
   stats_across_queue.set_ready_unissued(queue_id, entry);
 
   STAT_EVENT(node->proc_id, ISSUE_QUEUE_OP_READY_UNISSUED_TOTAL);
@@ -504,6 +526,10 @@ void SelectLogic::collect_entry_op_ready_unissued_stats(IssueQueueEntry* entry, 
 }
 
 void SelectLogic::collect_issued_op_stats(Op* op, IssueQueueStats& stats_across_queue) {
+  if (!ISSUE_QUEUE_STAT_COLLECT) {
+    return;
+  }
+
   // collect reg read stats of issued ops
   for (uns ii = 0; ii < op->uop->num_src_regs; ++ii) {
     if (op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL] == REG_TABLE_REG_ID_INVALID) {
@@ -521,6 +547,10 @@ void SelectLogic::collect_issued_op_stats(Op* op, IssueQueueStats& stats_across_
 
 void SelectLogic::collect_unissued_fu_stats(const FunctionalUnitPicker& fu_picker,
                                             IssueQueueStats& stats_across_queue) {
+  if (!ISSUE_QUEUE_STAT_COLLECT) {
+    return;
+  }
+
   uns64 ready_unissued_op_types_others = stats_across_queue.get_ready_unissued_others(queue_id);
   bool matching_unpick = false;
   if (ready_unissued_op_types_others & fu_picker.get_fu_type()) {

@@ -139,6 +139,23 @@ DEF_PARAM(  tc_entries                , TC_ENTRIES                , uns     , un
 DEF_PARAM(  tc_assoc                  , TC_ASSOC                  , uns     , uns        , 4          ,        )
 DEF_PARAM(  tc_tag_bits               , TC_TAG_BITS               , uns     , uns        , 64         ,        )
 
+// ITTAGE (--ibtb_mech ittage, bp/ittage.c). Defaults total ~61.3 KiB:
+//   tagged 8 x 2^10 x 46 b (7 region ptr + 20 offset + 16 tag + 2 conf + 1 u) = 376,832 b
+//   base   2^12 x 29 b (7 region ptr + 20 offset + 2 conf)                    = 118,784 b
+//   region 128 x 44 b (64 - 20 high target bits)                              =   5,632 b
+//   history, folded registers, counters                                       ~   1,000 b
+//   total ~502,248 b = 62,781 B. The exact figure is printed at start-up.
+DEF_PARAM(  ittage_num_tables         , ITTAGE_NUM_TABLES         , uns     , uns        , 8          ,        ) /* tagged tables (<= 16) */
+DEF_PARAM(  ittage_min_hist           , ITTAGE_MIN_HIST           , uns     , uns        , 4          ,        ) /* shortest history length (bits) */
+DEF_PARAM(  ittage_max_hist           , ITTAGE_MAX_HIST           , uns     , uns        , 640        ,        ) /* longest history length (bits) */
+DEF_PARAM(  ittage_log_table_size     , ITTAGE_LOG_TABLE_SIZE     , uns     , uns        , 10         ,        ) /* log2 entries per tagged table */
+DEF_PARAM(  ittage_log_base_size      , ITTAGE_LOG_BASE_SIZE      , uns     , uns        , 12         ,        ) /* log2 entries of the tagless base table */
+DEF_PARAM(  ittage_tag_bits           , ITTAGE_TAG_BITS           , uns     , uns        , 16         ,        ) /* partial tag width (<= 16) */
+DEF_PARAM(  ittage_region_entries     , ITTAGE_REGION_ENTRIES     , uns     , uns        , 128        ,        ) /* target region table entries (power of 2) */
+DEF_PARAM(  ittage_offset_bits        , ITTAGE_OFFSET_BITS        , uns     , uns        , 20         ,        ) /* target bits stored in each entry */
+DEF_PARAM(  ittage_targ_hist_bits     , ITTAGE_TARG_HIST_BITS     , uns     , uns        , 3          ,        ) /* history bits inserted per call/indirect target */
+DEF_PARAM(  ittage_u_reset_log_period , ITTAGE_U_RESET_LOG_PERIOD , uns     , uns        , 18         ,        ) /* clear useful bits every 2^N updates */
+
 DEF_PARAM(  num_corr_branches         , NUM_CORR_BRANCHES         , uns     , uns        , 3          ,        )
 DEF_PARAM(  sel_hist_bp_entries       , SEL_HIST_BP_ENTRIES       , uns     , uns        , 8192       ,        )
 DEF_PARAM(  sel_hist_length           , SEL_HIST_LENGTH           , uns     , uns        , 16         ,        )

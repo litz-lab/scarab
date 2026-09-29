@@ -35,6 +35,9 @@
 --bp_update_at_retire           0                         # Update the BP at retire. If false, update at the end of exec.
 --update_bp_off_path            1                         # Allow off path ops to update branch predictor state (e.g., ops when they complete exec stage).
 --bp_mech                       tage64k
+# Disable the L0 (early) predictor: with L0 enabled, BP_MAIN_LATENCY must be > 1 and < DECODE_CYCLES
+--bp_l0_latency                 0
+--bp_main_latency               1
 
 
 #### BTB
@@ -67,18 +70,16 @@
 --tc_assoc                      4
 
 ### Decode Stage
+--decode_width                  4
 --decode_cycles                 2
 
 
 ### Map Stage
+--rename_width                  4
 --map_cycles                    3
 
 
 ### Issue Stage
-
-# Max number of instructions to be fetched, decoded, renamed, and issued per cycle.
---issue_width                   5
-
 --rs_fill_width                 8
 --rs_sizes                      16 16 16 16 16 16 12 12
 --rs_connections                b00000001 b00000010 b00000100 b00001000 b00010000 b00100000 b01000000 b10000000

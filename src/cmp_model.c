@@ -64,6 +64,7 @@
 #include "op_pool.h"
 #include "sim.h"
 #include "statistics.h"
+#include "pcprof.h"
 #include "topdown.h"
 #include "uop_queue_stage.h"
 
@@ -380,6 +381,11 @@ void cmp_recover() {
   ASSERT(bp_recovery_info->proc_id, bp_recovery_info->proc_id == map_data->proc_id);
   bp_recovery_info->recovery_cycle = MAX_CTR;
   bp_recovery_info->redirect_cycle = MAX_CTR;
+  if (PC_PROFILE) {
+    Op* rop = bp_recovery_info->recovery_op;
+    if (rop && rop->op_pool_valid && rop->unique_num == bp_recovery_info->recovery_unique_num)
+      pcprof_recovery(rop);
+  }
   cmp_set_all_stages(bp_recovery_info->proc_id);
   for (int bp_id = NUM_BPS - 1; bp_id >= 0; --bp_id) {
     cmp_set_all_data(bp_recovery_info->proc_id, bp_id);

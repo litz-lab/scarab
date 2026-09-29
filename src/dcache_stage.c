@@ -53,6 +53,7 @@
 #include "cmp_model.h"
 #include "map.h"
 #include "model.h"
+#include "pcprof.h"
 #include "statistics.h"
 #include "thread.h"
 
@@ -982,6 +983,8 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
       ASSERT(dc->proc_id, mt == MEM_ST || mt == MEM_PF || mt == MEM_WH);
     }
     op->state = OS_SCHEDULED;
+    if (PC_PROFILE)
+      pcprof_dcache_fill(op, req);
 
     if (op->uop->mem_type != MEM_ST) {
       op_set_wake_cycle(op, op_get_done_cycle(op));

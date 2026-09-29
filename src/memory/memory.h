@@ -96,9 +96,6 @@ typedef struct Mshr_struct {
   /* The same requests keyed by line address, so a merge is a lookup rather than a
      walk. The list stays for the walks that want every entry in order. */
   Hash_Table mshr_hash;
-  /* How many of those consume a slot. Tracking and bounding are separate: a request
-     that reaches DRAM without an MSHR is still in the file, it just does not count. */
-  int mshrs_taken;
   /* Held back for writebacks, so a fill can always place its dirty victim. */
   uns mshr_wb_reserve;
   /* Fills this level owes that could not be absorbed. Only when it is non-zero does
@@ -169,9 +166,10 @@ typedef struct Memory_struct {
   Cache pref_l1_cache;
 
   /* One MSHR file per level, each named for the misses it holds: dcache misses wait
-     at the MLC, MLC misses wait at the LLC. */
+     at the MLC, MLC misses wait at the LLC, LLC misses wait at DRAM. */
   Mshr dcache_mshr;
   Mshr mlc_mshr;
+  Mshr l1_mshr;
   /* One per core: requests whose done_func still owes the core. A plain list, walked
      in order and never re-sorted. */
   List* core_fill_queues;

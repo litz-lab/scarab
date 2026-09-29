@@ -110,6 +110,9 @@ DEF_PARAM(constant_memory_latency, CONSTANT_MEMORY_LATENCY, Flag, Flag, FALSE, )
 // Use with CONSTANT_MEMORY_LATENCY
 DEF_PARAM(memory_cycles, MEMORY_CYCLES, uns, uns, 100, )
 DEF_PARAM(stall_mem_reqs_only, STALL_MEM_REQS_ONLY, Flag, Flag, FALSE, )
+/* Let a new request fold into one whose fill walk has reached MRS_FILL_DONE but
+   whose done_func has not run. Off reproduces the previous behaviour exactly. */
+DEF_PARAM(merge_into_fill_done, MERGE_INTO_FILL_DONE, Flag, Flag, FALSE, )
 
 /* Icache */
 DEF_PARAM(icache_size, ICACHE_SIZE, uns, uns,

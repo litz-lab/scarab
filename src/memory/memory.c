@@ -2956,10 +2956,11 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   // Search ramulator queue
   matching_req = mem_search_outstanding(proc_id, addr, type, size, &demand_hit_prefetch, &demand_hit_writeback);
 
-  /* A request whose fill is done is still findable -- the frontend asks whether a
-     line is on its way -- but nothing may fold into it: it has no fill left to carry
-     the merge up, and it would be freed still holding the victim's reservations. */
-  if (matching_req && matching_req->state == MRS_FILL_DONE)
+  /* Only under an inclusive hierarchy does MRS_FILL_DONE mean the arrays hold the
+     line. With exclusive_caches l1_fill_line and mlc_fill_line skip a core-destined
+     fill, so the only write is done_func, which has not run yet: a second demand for
+     the line arriving here misses every array, cannot fold in, and goes to DRAM. */
+  if (matching_req && matching_req->state == MRS_FILL_DONE && !MERGE_INTO_FILL_DONE)
     matching_req = NULL;
 
   // we do not allow matching non-writebacks to writebacks

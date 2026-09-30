@@ -82,6 +82,21 @@ void reg_table_arch_init(struct reg_table *reg_table, struct reg_table *parent_r
                          int reg_type, int reg_table_type);
 
 /**************************************************************************************/
+/* Global Utility Functions */
+
+// only process general purpose and vector registers for the renaming allocation
+int reg_file_get_reg_type(int reg_id) {
+  if ((reg_id >= REG_RAX && reg_id < REG_CS) || (reg_id >= REG_TMP0 && reg_id <= REG_TMP4) ||
+      (reg_id >= REG_ZPS && reg_id < REG_ZMM0))
+    return REG_FILE_REG_TYPE_GENERAL_PURPOSE;
+
+  if (reg_id >= REG_ZMM0 && reg_id < REG_K0)
+    return REG_FILE_REG_TYPE_VECTOR;
+
+  return REG_FILE_REG_TYPE_OTHER;
+}
+
+/**************************************************************************************/
 /* Inline Methods */
 
 static inline void reg_file_debug_print_entry(struct reg_table_entry *entry, int state) {
@@ -139,22 +154,15 @@ static inline void reg_file_debug_print_table(uns reg_table_type) {
   }
 }
 
-// only process general purpose and vector registers for the renaming allocation
-static inline int reg_file_get_reg_type(int reg_id) {
-  if ((reg_id >= REG_RAX && reg_id < REG_CS) || (reg_id >= REG_TMP0 && reg_id <= REG_TMP4) ||
-      (reg_id >= REG_ZPS && reg_id < REG_ZMM0))
-    return REG_FILE_REG_TYPE_GENERAL_PURPOSE;
-
-  if (reg_id >= REG_ZMM0 && reg_id < REG_K0)
-    return REG_FILE_REG_TYPE_VECTOR;
-
-  return REG_FILE_REG_TYPE_OTHER;
-}
-
 static inline Flag reg_file_check_reg_num(uns reg_table_type, uns op_count) {
   for (uns ii = 0; ii < REG_FILE_REG_TYPE_NUM; ++ii) {
-    if (map_data->reg_file[ii]->reg_table[reg_table_type]->free_list->reg_free_num < REG_FILE_MAX_DESTS[ii] * op_count)
+    /* Per file, so each one normalizes against the calls that reached it. */
+    STAT_EVENT(map_data->proc_id, REG_FILE_CHECKED_GENERAL_PURPOSE + ii);
+    if (map_data->reg_file[ii]->reg_table[reg_table_type]->free_list->reg_free_num <
+        REG_FILE_MAX_DESTS[ii] * op_count) {
+      STAT_EVENT(map_data->proc_id, REG_FILE_NO_FREE_GENERAL_PURPOSE + ii);
       return FALSE;
+    }
   }
   return TRUE;
 }

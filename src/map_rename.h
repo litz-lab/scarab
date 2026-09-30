@@ -214,6 +214,7 @@ struct reg_table_ops {
 /**************************************************************************************/
 /* External Methods */
 
+// vanilla API
 void reg_file_init(void);                     // init the register file and its register map tables
 Flag reg_file_available(uns stage_op_count);  // check if there are enough register entries
 void reg_file_rename(Op *op);                 // alloc destination registers for the operand
@@ -223,5 +224,8 @@ void reg_file_produce(Op *op);                // write back the dst registers
 void reg_file_recover(Op *op);                // flush registers of misprediction operands
 void reg_file_precommit(Op *op);              // update the register metadata when an op is non-spec
 void reg_file_commit(Op *op);                 // release the previous register with same architectural register id
+
+// utility functions
+int reg_file_get_reg_type(int reg_id);
 
 #endif /* #ifndef __MAP_RENAME_H__ */

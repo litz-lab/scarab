@@ -3580,8 +3580,11 @@ static inline void l1_miss_is_satisfied(Mem_Req* req) {
      below the MLC and reaches the fill path having never looked. */
   if (!req->l1_miss)
     return;
-  /* Every path into this runs once per request, so a second call means one of them
-     fired twice. */
+  /* Once per request. The writeback calls of l1_fill_line run before l1_miss is set
+     and drop out above; the prefetch-cache branch returns rather than falling through
+     to the normal call; and l1_pref_cache_access is only reached when the LLC missed,
+     after which the request does not go on to fill. An inclusive hierarchy changes
+     none of that -- other levels insert through mlc_fill_line, not this. */
   ASSERT(req->proc_id, !req->l1_miss_satisfied);
   req->l1_miss_satisfied = TRUE;
 
@@ -3642,7 +3645,8 @@ Flag l1_fill_line(Mem_Req* req) {
     ASSERT(0, ADDR_TRANSLATION == ADDR_TRANS_NONE);
     data = (L1_Data*)cache_insert(&mem->pref_l1_cache, req->proc_id, req->addr, &line_addr, &repl_line_addr);
     STAT_EVENT(req->proc_id, L1_PREF_CACHE_FILL);
-    req->l1_miss_satisfied = TRUE;
+    /* The prefetch cache has it, so the miss is served here. */
+    l1_miss_is_satisfied(req);
 
     ASSERT(req->id, !req->demand_match_prefetch);
     data->proc_id = req->proc_id;
@@ -3650,8 +3654,6 @@ Flag l1_fill_line(Mem_Req* req) {
     data->pref_loadPC = req->pref_loadPC;
     data->global_hist = req->global_hist;
 
-    if (TRACK_L1_MISS_DEPS || MARK_L1_MISSES)
-      mark_ops_as_l1_miss_satisfied(req);
     return SUCCESS;
   }
 
@@ -4025,6 +4027,9 @@ static inline void mlc_miss_is_satisfied(Mem_Req* req) {
      below it and reaches the fill path having never looked. */
   if (!req->mlc_miss)
     return;
+  /* Once per request, as in l1_miss_is_satisfied. mlc_miss_satisfied has no reader
+     yet -- the op side tracks LLC misses only, so mem_merge_reqs has nowhere to carry
+     it -- and is kept so MLC misses can be measured the same way later. */
   ASSERT(req->proc_id, !req->mlc_miss_satisfied);
   req->mlc_miss_satisfied = TRUE;
 
@@ -4518,10 +4523,7 @@ L1_Data* l1_pref_cache_access(Mem_Req* req) {
     data->offpath_op_addr = req->oldest_op_addr;
     data->offpath_op_unique = req->oldest_op_unique_num;
 
-    req->l1_miss_satisfied = TRUE;
-
-    if (TRACK_L1_MISS_DEPS)
-      mark_ops_as_l1_miss_satisfied(req);
+    l1_miss_is_satisfied(req);
 
     wp_process_l1_fill(data, req);
     STAT_EVENT(req->proc_id, L1_PREF_CACHE_HIT_PER + req->off_path);

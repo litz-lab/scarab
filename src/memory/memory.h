@@ -41,6 +41,7 @@
 
 #include "freq.h"
 #include "op_info.h"
+#include "statistics.h"
 // #include "dram.h"
 
 /**************************************************************************************/
@@ -251,6 +252,7 @@ Flag mlc_fill_line(Mem_Req* req);
 Flag l1_fill_line(Mem_Req* req);
 
 void mark_ops_as_l1_miss_satisfied(Mem_Req* req);
+void mem_stat_served(uns8 proc_id, Mem_Req_Type type, Stat_Enum level, Counter latency);
 int mem_get_req_count(uns proc_id);
 /* Per-core request-buffer budget. Equals MEM_REQ_BUFFER_ENTRIES unless
    derived from the per-level queue sizes. */

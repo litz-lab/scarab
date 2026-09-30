@@ -506,6 +506,42 @@ void reset_memory() {
   }
 }
 
+/* The level that served a data access, and how long it took. Shared with the dcache
+   hit path, which serves from DCACHE without ever making a request. */
+void mem_stat_served(uns8 proc_id, Mem_Req_Type type, Stat_Enum level, Counter latency) {
+  Stat_Enum base;
+  switch (type) {
+    case MRT_DFETCH:
+      base = LD_SERVED_DCACHE;
+      break;
+    case MRT_DSTORE:
+      base = ST_SERVED_DCACHE;
+      break;
+    case MRT_DPRF:
+      base = PF_SERVED_DCACHE;
+      break;
+    default:
+      return; /* instruction fetches and writebacks are counted elsewhere */
+  }
+  /* The three families are laid out identically, so an offset found once indexes any
+     of them. */
+  Stat_Enum off = level - LD_SERVED_DCACHE;
+  Stat_Enum lat = LD_LAT_DCACHE - LD_SERVED_DCACHE;
+  Stat_Enum total = LD_SERVED_TOTAL - LD_SERVED_DCACHE;
+
+  STAT_EVENT(proc_id, base + off);
+  INC_STAT_EVENT(proc_id, base + off + lat, latency);
+  STAT_EVENT(proc_id, base + total);
+  INC_STAT_EVENT(proc_id, base + total + lat, latency);
+}
+
+/* Recorded where the request is finished with: once per request by construction, and
+   the cycle the access completed -- for a demand the cycle the load does, for a
+   prefetch the cycle the line is written into the cache. */
+static inline void mem_record_served(Mem_Req* req, Stat_Enum level) {
+  mem_stat_served(req->proc_id, req->type, level, cycle_count - req->start_cycle);
+}
+
 void mem_free_reqbuf(Mem_Req* req) {
   int* reqbuf_num_ptr;
 
@@ -523,6 +559,7 @@ void mem_free_reqbuf(Mem_Req* req) {
     STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE_ONPATH);
     STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE_ONPATH_WB);
   } else if (req->state == MRS_FILL_DONE) {
+    mem_record_served(req, LD_SERVED_MEM);
     STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE_IFETCH + MIN2(req->type, 7));
     STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE);
     STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE_MEM);
@@ -542,6 +579,7 @@ void mem_free_reqbuf(Mem_Req* req) {
     if (req->type == MRT_WB)
       STAT_EVENT(req->proc_id, WB_COMING_BACK_FROM_MEM);
   } else if (req->state == MRS_L1_HIT_DONE) {
+    mem_record_served(req, LD_SERVED_LLC);
     STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE_IFETCH + MIN2(req->type, 7));
     STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE);
     STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE_L1);
@@ -557,6 +595,7 @@ void mem_free_reqbuf(Mem_Req* req) {
       STAT_EVENT(req->proc_id, WB_COMING_BACK_FROM_L1);
     }
   } else if (req->state == MRS_MLC_HIT_DONE) {
+    mem_record_served(req, LD_SERVED_MLC);
     STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE_IFETCH + MIN2(req->type, 7));
     STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE);
     STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE_MLC);

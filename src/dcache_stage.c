@@ -83,19 +83,46 @@ static inline void dcache_hit_wp_collect_stats(Dcache_Data* line, Op* op);
    (earliest it could be submitted to the dcache) to the cycle its data is ready.
    Spans port/bank-conflict waits, OS_WAIT_DCACHE re-probes, replays and
    extra_ld_latency, so it is not bounded below by DCACHE_CYCLES. */
-static inline void ld_served_stat(Op* op, Stat_Enum served, Stat_Enum lat) {
+/* Which level satisfied this op, as the four SERVED counters partition it. */
+static inline Stat_Enum served_level_of(Mem_Req* req) {
+  if (!req)
+    return LD_SERVED_DCACHE; /* never left the dcache */
+  if (req->mlc_hit)
+    return LD_SERVED_MLC;
+  if (req->l1_hit)
+    return LD_SERVED_LLC;
+  return LD_SERVED_MEM;
+}
+
+/* The three type families are laid out identically, so the level offset computed for
+   loads indexes any of them. */
+static inline Stat_Enum served_base_of(Mem_Type mem_type) {
+  switch (mem_type) {
+    case MEM_LD:
+      return LD_SERVED_DCACHE;
+    case MEM_ST:
+      return ST_SERVED_DCACHE;
+    default:
+      return PF_SERVED_DCACHE;
+  }
+}
+
+static inline void mem_served_stat(Op* op, Mem_Req* req) {
   Counter start = op_get_exec_cycle(op);
   Counter end = op_get_done_cycle(op);
-  // Both are always set here: a replaying op with an unset exec_cycle is squished
-  // out of the stage before this point, and both call sites run right after
-  // done_cycle is stamped. end >= start because the addr-ready gate only lets the
-  // op through once cycle_count >= exec_cycle. Skipping instead of asserting would
-  // silently drop loads and break the LD_SERVED_* partition.
   ASSERT(op->proc_id, start != MAX_CTR);
   ASSERT(op->proc_id, end != MAX_CTR);
   ASSERT(op->proc_id, end >= start);
-  STAT_EVENT(op->proc_id, served);
-  INC_STAT_EVENT(op->proc_id, lat, end - start);
+
+  Stat_Enum base = served_base_of(op->uop->mem_type);
+  Stat_Enum level = base + (served_level_of(req) - LD_SERVED_DCACHE);
+  Stat_Enum total = base + (LD_SERVED_TOTAL - LD_SERVED_DCACHE);
+  Stat_Enum lat_of = LD_LAT_DCACHE - LD_SERVED_DCACHE;
+
+  STAT_EVENT(op->proc_id, level);
+  INC_STAT_EVENT(op->proc_id, level + lat_of, end - start);
+  STAT_EVENT(op->proc_id, total);
+  INC_STAT_EVENT(op->proc_id, total + lat_of, end - start);
 }
 
 static inline Flag dcache_miss_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type);
@@ -328,8 +355,8 @@ void update_dcache_stage(Stage_Data* src_sd) {
 
     if (line) {
       dcache_cacheline_hit(op, line_addr, line);
-      if (!op->off_path && op->uop->mem_type == MEM_LD)
-        ld_served_stat(op, LD_SERVED_DCACHE, LD_LAT_DCACHE);
+      if (!op->off_path)
+        mem_served_stat(op, NULL);
       continue;
     }
     dcache_cacheline_miss(op, line_addr);
@@ -931,9 +958,8 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     // arriving here already-done is a bug.
     if (op_get_done_cycle(op) == MAX_CTR) {
       op_set_done_cycle(op, cycle_count + 1);
-      if (!op->off_path && op->uop->mem_type == MEM_LD)
-        ld_served_stat(op, req->mlc_hit ? LD_SERVED_MLC : (req->l1_hit ? LD_SERVED_LLC : LD_SERVED_MEM),
-                       req->mlc_hit ? LD_LAT_MLC : (req->l1_hit ? LD_LAT_LLC : LD_LAT_MEM));
+      if (!op->off_path)
+        mem_served_stat(op, req);
     } else {
       Mem_Type mt = op->uop->mem_type;
       ASSERT(dc->proc_id, mt == MEM_ST || mt == MEM_PF || mt == MEM_WH);

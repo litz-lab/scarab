@@ -3576,19 +3576,21 @@ void op_nuke_mem_req(Op* op) {
    this has to run on the refusing paths too -- otherwise the ops waiting on the miss
    are never told, and the miss latency is never counted. */
 static inline void l1_miss_is_satisfied(Mem_Req* req) {
-  /* Same rule one level down: only a request that missed here has a miss to record. */
-  if (!req->l1_miss || req->l1_miss_satisfied)
+  /* A request that never missed here has nothing to satisfy: an LLC prefetch is born
+     below the MLC and reaches the fill path having never looked. */
+  if (!req->l1_miss)
     return;
+  /* Every path into this runs once per request, so a second call means one of them
+     fired twice. */
+  ASSERT(req->proc_id, !req->l1_miss_satisfied);
   req->l1_miss_satisfied = TRUE;
 
-  if (req->type == MRT_DFETCH || req->type == MRT_DSTORE) {
-    ASSERT(req->proc_id, req->l1_miss_cycle != MAX_CTR);
-    INC_STAT_EVENT_ALL(TOTAL_DATA_MISS_LATENCY, cycle_count - req->l1_miss_cycle);
-    STAT_EVENT_ALL(TOTAL_DATA_MISS_COUNT);
-  }
-  req->l1_miss_cycle = MAX_CTR;
+  /* Set when the miss happened, and left alone: whether a miss is outstanding is
+     l1_miss && !l1_miss_satisfied, so the timestamp does not have to carry status
+     too. MAX_CTR still means "never missed here", which is what mem_merge_reqs' MIN2
+     over two requests' timestamps relies on. */
+  ASSERT(req->proc_id, req->l1_miss_cycle != MAX_CTR);
 
-  // cmp FIXME
   if (TRACK_L1_MISS_DEPS || MARK_L1_MISSES)
     mark_ops_as_l1_miss_satisfied(req);
 }
@@ -3616,6 +3618,7 @@ Flag l1_fill_line(Mem_Req* req) {
     if (cache_access(&cmp_model.dcache_stage[req->proc_id].dcache, req->addr, &dup_addr, FALSE))
       STAT_EVENT(req->proc_id, EXCL_FILL_DUP_L0_LLC);
   }
+
   L1_Data* data;
   Addr line_addr, repl_line_addr = 0;
   Op* top;
@@ -4020,18 +4023,13 @@ Flag mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, 
 static inline void mlc_miss_is_satisfied(Mem_Req* req) {
   /* Nothing to satisfy unless this request missed the MLC: an LLC prefetch is born
      below it and reaches the fill path having never looked. */
-  if (!req->mlc_miss || req->mlc_miss_satisfied)
+  if (!req->mlc_miss)
     return;
+  ASSERT(req->proc_id, !req->mlc_miss_satisfied);
   req->mlc_miss_satisfied = TRUE;
 
-  if (req->type == MRT_DFETCH) {
-    ASSERT(req->proc_id, req->mlc_miss_cycle != MAX_CTR);
-    INC_STAT_EVENT_ALL(TOTAL_DATA_MISS_LATENCY, cycle_count - req->mlc_miss_cycle);
-    STAT_EVENT_ALL(TOTAL_DATA_MISS_COUNT);
-  }
-
+  /* Left alone, as in l1_miss_is_satisfied. */
   ASSERT(req->proc_id, req->mlc_miss_cycle != MAX_CTR);
-  req->mlc_miss_cycle = MAX_CTR;
 }
 
 Flag mlc_fill_line(Mem_Req* req) {
@@ -4050,6 +4048,7 @@ Flag mlc_fill_line(Mem_Req* req) {
       return TRUE;
     }
   }
+
   MLC_Data* data;
   Addr line_addr, repl_line_addr = 0;
   Op* top = NULL;
@@ -4069,8 +4068,6 @@ Flag mlc_fill_line(Mem_Req* req) {
         req, (req->op_count ? &(top->unique_num) : 0x0));
 
   /* if it can't get a write port, fail */
-  /* if (!get_write_port(&MLC(req->proc_id)->ports[req->mlc_bank])) return
-   * FAILURE; */
 
   /* Do not insert the line yet, just check which line we
      need to replace. If that line is dirty, it's possible

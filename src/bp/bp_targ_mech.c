@@ -1084,20 +1084,18 @@ void bp_btb_block_split_update(Bp_Data* bp_data, Op* op) {
     DEBUG_BTB(bp_data->proc_id, "Split block to btb addr:0x%llx  at  op addr:0x%llx  target:0x%llx  size:%d\n",
               next_index_addr, brslot_fwd.addr, brslot_fwd.target, brslot_fwd.inst_size);
 
-    Blk_Btb_Split_Entry* next_entry = NULL;
-    if (entry->split) {
-      STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, 0);
-      next_entry =
-          (Blk_Btb_Split_Entry*)cache_access_impl(bp_data->btb, next_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
-    }
+    // Look up the next entry even when split is FALSE, as it may still be resident, to avoid duplicate lines.
+    STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, 0);
+    Blk_Btb_Split_Entry* next_entry =
+        (Blk_Btb_Split_Entry*)cache_access_impl(bp_data->btb, next_index_addr, &btb_line_addr, &tag_aliasing, TRUE);
     if (!next_entry) {
       DEBUG_BTB(bp_data->proc_id, entry->split ? " (missing next entry)\n" : " (create next entry)\n");
-      entry->split = TRUE;
       STAT_EVENT_BTB_BANK(op->proc_id, MAIN, INSERT, 0);
       next_entry = (Blk_Btb_Split_Entry*)cache_insert(bp_data->btb, bp_data->proc_id, next_index_addr, &btb_line_addr,
                                                       &repl_line_addr);
       blk_btb_split_reset_entry(next_entry);
     }
+    entry->split = TRUE;  // also when the next entry was found while split was FALSE
     ASSERT(bp_data->proc_id, next_entry != entry);
     entry = next_entry;
     entry_index_addr = next_index_addr;

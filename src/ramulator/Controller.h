@@ -350,6 +350,9 @@ public:
 
         req.arrive = clk;
         queue.q.push_back(req);
+        // writes are posted: acknowledge once the write queue holds it
+        if (req.type == Request::Type::WRITE)
+          req.callback(req);
         // shortcut for read requests, if a write to same addr exists
         // necessary for coherence
         if (req.type == Request::Type::READ && find_if(writeq.q.begin(), writeq.q.end(),

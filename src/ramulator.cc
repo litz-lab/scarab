@@ -72,6 +72,7 @@ deque<pair<long, Mem_Req*>> resp_queue;  // completed read request that need to
                                          // send back to Scarab
 
 map<long, list<Mem_Req*>> inflight_read_reqs;
+map<long, deque<Mem_Req*>> inflight_write_reqs;  // acknowledged in the order sent
 // map<long, Mem_Req*> inflight_read_reqs;
 
 void ramulator_init() {
@@ -198,9 +199,19 @@ int ramulator_send(Mem_Req* scarab_req) {
     return true;  // a request to the same address is already issued
   }
 
+  /* Registered before the send: the controller acknowledges a write inside it. */
+  if (req.type == Request::Type::WRITE)
+    inflight_write_reqs[req.addr].push_back(scarab_req);
+
   bool is_sent = wrapper->send(req);
   ASSERTM(scarab_req->proc_id, is_sent || req.type != Request::Type::READ,
           "Ramulator refused a read the l1_mshr bound should have made room for\n");
+
+  if (!is_sent && req.type == Request::Type::WRITE) {
+    inflight_write_reqs[req.addr].pop_back();
+    if (inflight_write_reqs[req.addr].empty())
+      inflight_write_reqs.erase(req.addr);
+  }
 
   if (is_sent) {
     STAT_EVENT(scarab_req->proc_id, POWER_MEMORY_CTRL_ACCESS);
@@ -229,8 +240,17 @@ int ramulator_send(Mem_Req* scarab_req) {
 }
 
 void enqueue_response(Request& req) {
-  // This should only be called by READ requests
-  ASSERTM(0, req.type == Request::Type::READ, "ERROR: Responses should be sent only for read requests! \n");
+  if (req.type == Request::Type::WRITE) {
+    auto it = inflight_write_reqs.find(req.addr);
+    ASSERTM(0, it != inflight_write_reqs.end() && !it->second.empty(),
+            "ERROR: No Scarab request for the write Ramulator acknowledged at address: %lu\n", req.addr);
+    resp_queue.push_back(make_pair(it->first, it->second.front()));
+    it->second.pop_front();
+    if (it->second.empty())
+      inflight_write_reqs.erase(it);
+    return;
+  }
+  ASSERTM(0, req.type == Request::Type::READ, "ERROR: Responses should be sent only for read or write requests! \n");
   ASSERTM(0, inflight_read_reqs.find(req.addr) != inflight_read_reqs.end(),
           "ERROR: A corresponding Scarab request was not found for the "
           "Ramulator request that read address: %lu\n",

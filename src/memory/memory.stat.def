@@ -3358,10 +3358,12 @@ DEF_STAT(  DATA_LD_CYCLES_ONPATH, COUNT , NO_RATIO)
 DEF_STAT(  DATA_LD_CYCLES_OFFPATH, COUNT , NO_RATIO)
 DEF_STAT(  DATA_LD_MLC_CYCLES_ONPATH, COUNT , NO_RATIO)
 DEF_STAT(  DATA_LD_MLC_CYCLES_OFFPATH, COUNT , NO_RATIO)
-/* Per-load serving level: which cache level satisfied each on-path demand load,
-   and the summed load latency for that level (avg = LD_LAT_x / LD_SERVED_x).
-   Unlike DATA_LD_*, these are per load op, exclude prefetch requests, and
-   include dcache hits, so the four SERVED counters partition on-path loads. */
+/* Serving level per request type: the level that completed each load, store,
+   data prefetch and writeback (for a writeback, the level that absorbed it), and
+   the summed latency from issue to completion (avg = X_LAT_y / X_SERVED_y).
+   Recorded once per request where it is freed; a dcache hit makes no request and
+   is counted op-side. The families are laid out identically, which is what
+   mem_stat_served indexes by. */
 DEF_STAT(  LD_SERVED_DCACHE   , COUNT , NO_RATIO  )
 DEF_STAT(  LD_SERVED_MLC      , COUNT , NO_RATIO  )
 DEF_STAT(  LD_SERVED_LLC      , COUNT , NO_RATIO  )
@@ -3380,6 +3382,12 @@ DEF_STAT(  PF_SERVED_LLC      , COUNT , NO_RATIO  )
 DEF_STAT(  PF_SERVED_MEM      , COUNT , NO_RATIO  )
 DEF_STAT(  PF_SERVED_TOTAL    , COUNT , NO_RATIO  )
 
+DEF_STAT(  WB_SERVED_DCACHE  , COUNT , NO_RATIO  )
+DEF_STAT(  WB_SERVED_MLC     , COUNT , NO_RATIO  )
+DEF_STAT(  WB_SERVED_LLC     , COUNT , NO_RATIO  )
+DEF_STAT(  WB_SERVED_MEM     , COUNT , NO_RATIO  )
+DEF_STAT(  WB_SERVED_TOTAL   , COUNT , NO_RATIO  )
+
 DEF_STAT(  LD_LAT_DCACHE      , RATIO , LD_SERVED_DCACHE)
 DEF_STAT(  LD_LAT_MLC         , RATIO , LD_SERVED_MLC)
 DEF_STAT(  LD_LAT_LLC         , RATIO , LD_SERVED_LLC)
@@ -3397,6 +3405,12 @@ DEF_STAT(  PF_LAT_MLC         , RATIO , PF_SERVED_MLC)
 DEF_STAT(  PF_LAT_LLC         , RATIO , PF_SERVED_LLC)
 DEF_STAT(  PF_LAT_MEM         , RATIO , PF_SERVED_MEM)
 DEF_STAT(  PF_LAT_TOTAL       , RATIO , PF_SERVED_TOTAL)
+
+DEF_STAT(  WB_LAT_DCACHE     , RATIO , WB_SERVED_DCACHE)
+DEF_STAT(  WB_LAT_MLC        , RATIO , WB_SERVED_MLC)
+DEF_STAT(  WB_LAT_LLC        , RATIO , WB_SERVED_LLC)
+DEF_STAT(  WB_LAT_MEM        , RATIO , WB_SERVED_MEM)
+DEF_STAT(  WB_LAT_TOTAL      , RATIO , WB_SERVED_TOTAL)
 
 /* Exclusive hierarchy (--exclusive_caches) line movement. */
 DEF_STAT(  EXCL_DEMOTE_DC_TO_MLC          , COUNT , NO_RATIO  )

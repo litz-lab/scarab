@@ -148,15 +148,11 @@ struct HWP_struct {
 
 /* Per core prefetching data */
 typedef struct HWP_Core_struct {
-  /* One FIFO per bank of the cache each prefetcher targets, in age order. The level
-     serves its demand banks first, then offers what is left to these. */
-  List* dl0req_banks;
-  List* umlc_req_banks;
-  List* ul1req_banks;
-
-  int dl0req_count;
-  int umlc_req_count;
-  int ul1req_count;
+  /* One queue per level, in rdy order. Each cycle the level's ready prefetches look
+     the line up, oldest first; the cache's bank ports decide which get to. */
+  List dl0req_queue;
+  List umlc_req_queue;
+  List ul1req_queue;
 
   Counter ul1_misses;
   Counter curr_ul1_misses;

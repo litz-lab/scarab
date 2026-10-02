@@ -127,32 +127,10 @@ int pref_compare_prefloadhash(const void* const a, const void* const b) {
   return ((*dataB)->count - (*dataA)->count);
 }
 
-static inline uns pref_bank_of(Destination dest, Addr line_addr);
-static inline uns pref_num_banks(Destination dest);
-
 void pref_core_init(HWP_Core* pref_core) {
-  /* One FIFO per bank of the cache each prefetcher targets. */
-  struct {
-    List** banks;
-    Destination dest;
-    const char* name;
-  } queues[] = {
-      {&pref_core->dl0req_banks, DEST_DCACHE, "PREF DL0"},
-      {&pref_core->umlc_req_banks, DEST_MLC, "PREF UMLC"},
-      {&pref_core->ul1req_banks, DEST_L1, "PREF UL1"},
-  };
-  for (uns q = 0; q < 3; q++) {
-    uns num_banks = pref_num_banks(queues[q].dest);
-    *queues[q].banks = (List*)malloc(sizeof(List) * num_banks);
-    for (uns b = 0; b < num_banks; b++) {
-      char buf[MAX_STR_LENGTH + 1];
-      sprintf(buf, "%s BANK %u", queues[q].name, b);
-      init_list(&(*queues[q].banks)[b], buf, sizeof(Pref_Mem_Req), TRUE);
-    }
-  }
-  pref_core->dl0req_count = 0;
-  pref_core->umlc_req_count = 0;
-  pref_core->ul1req_count = 0;
+  init_list(&pref_core->dl0req_queue, "PREF DL0", sizeof(Pref_Mem_Req), TRUE);
+  init_list(&pref_core->umlc_req_queue, "PREF UMLC", sizeof(Pref_Mem_Req), TRUE);
+  init_list(&pref_core->ul1req_queue, "PREF UL1", sizeof(Pref_Mem_Req), TRUE);
 }
 
 void pref_init(void) {
@@ -521,54 +499,22 @@ void pref_umlc_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evic
 
 /* A prefetcher's queue is banked the way the cache it targets is, so a bank serves
    one prefetch per cycle and only after the demands have had it. */
-static inline uns pref_bank_of(Destination dest, Addr line_addr) {
-  if (dest == DEST_DCACHE)
-    return BANK(line_addr, DCACHE_BANKS, DCACHE_LINE_SIZE);
-  if (dest == DEST_MLC)
-    return BANK(line_addr, MLC_BANKS, MLC_INTERLEAVE_FACTOR);
-  ASSERT(0, dest == DEST_L1);
-  return BANK(line_addr, L1_BANKS, L1_INTERLEAVE_FACTOR);
-}
-
-static inline uns pref_num_banks(Destination dest) {
-  return dest == DEST_DCACHE ? DCACHE_BANKS : (dest == DEST_MLC ? MLC_BANKS : L1_BANKS);
-}
-
-static inline Pref_Mem_Req* pref_bank_head(List* banks, uns bank) {
-  return (Pref_Mem_Req*)list_get_head(&banks[bank]);
-}
-
-static inline void pref_bank_pop(List* banks, uns bank, int* count) {
-  sl_list_remove_head(&banks[bank]);
-  (*count)--;
-  ASSERT(0, *count >= 0);
-}
-
-/* Is this line already queued for its bank? */
-/* Drop a queued prefetch a demand has overtaken. */
-static Flag pref_banks_add(List* banks, Destination dest, int* count, uns cap, Flag overwrite_on_full,
-                           Pref_Mem_Req* req, Stat_Enum full_stat) {
-  uns bank = pref_bank_of(dest, req->line_addr);
-  if (*count >= (int)cap) {
+/* A full queue drops the new prefetch, or with overwrite its oldest one. */
+static Flag pref_queue_add(List* q, uns cap, Flag overwrite_on_full, Pref_Mem_Req* req, Stat_Enum full_stat) {
+  if (q->count >= (int)cap) {
     STAT_EVENT_ALL(full_stat);
     if (!overwrite_on_full)
       return FALSE;
-    /* Overwrite means the oldest prefetch is lost, as it was when this was a fixed
-       circular queue; keeping it would let the file grow without bound. */
-    if (!banks[bank].count)
-      return FALSE;
-    pref_bank_pop(banks, bank, count);
+    dl_list_remove_head(q);
   }
-  *(Pref_Mem_Req*)dl_list_add_tail(&banks[bank]) = *req;
-  (*count)++;
+  *(Pref_Mem_Req*)dl_list_add_tail(q) = *req;
   return TRUE;
 }
 
 Flag pref_ul1req_queue_match(Addr line_addr) {
   uns proc_id = get_proc_id_from_cmp_addr(line_addr);
   HWP_Core* core = pref.cores[proc_id];
-  uns bank = pref_bank_of(DEST_L1, line_addr);
-  for (List_Entry* e = core->ul1req_banks[bank].head; e; e = e->next) {
+  for (List_Entry* e = core->ul1req_queue.head; e; e = e->next) {
     Pref_Mem_Req* r = (Pref_Mem_Req*)&e->data;
     if ((r->line_addr >> LOG2(DCACHE_LINE_SIZE)) == (line_addr >> LOG2(DCACHE_LINE_SIZE)))
       return TRUE;
@@ -589,8 +535,8 @@ Flag pref_addto_dl0req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) 
   new_req.prefetcher_id = prefetcher_id;
   new_req.rdy_cycle = cycle_count;
 
-  return pref_banks_add(core->dl0req_banks, DEST_DCACHE, &core->dl0req_count, PREF_DL0REQ_QUEUE_SIZE,
-                        PREF_DL0REQ_QUEUE_OVERWRITE_ON_FULL, &new_req, PREF_DL0REQ_QUEUE_FULL);
+  return pref_queue_add(&core->dl0req_queue, PREF_DL0REQ_QUEUE_SIZE, PREF_DL0REQ_QUEUE_OVERWRITE_ON_FULL, &new_req,
+                        PREF_DL0REQ_QUEUE_FULL);
 }
 
 Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) {
@@ -604,10 +550,11 @@ Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id
   new_req.line_index = line_index;
   new_req.valid = TRUE;
   new_req.prefetcher_id = prefetcher_id;
-  new_req.rdy_cycle = cycle_count;
+  /* Its MLC lookup resolves after the MLC's latency, as a demand's does. */
+  new_req.rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + MLC_CYCLES;
 
-  return pref_banks_add(core->umlc_req_banks, DEST_MLC, &core->umlc_req_count, PREF_UMLC_REQ_QUEUE_SIZE,
-                        PREF_UMLC_REQ_QUEUE_OVERWRITE_ON_FULL, &new_req, PREF_UMLC_REQ_QUEUE_FULL);
+  return pref_queue_add(&core->umlc_req_queue, PREF_UMLC_REQ_QUEUE_SIZE, PREF_UMLC_REQ_QUEUE_OVERWRITE_ON_FULL,
+                        &new_req, PREF_UMLC_REQ_QUEUE_FULL);
 }
 
 Flag pref_addto_ul1req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) {
@@ -632,15 +579,16 @@ Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_
   new_req.loadPC = loadPC;
   new_req.global_hist = global_hist;
   new_req.bw_limited = bw;
-  new_req.rdy_cycle = cycle_count;
+  /* Its LLC lookup resolves after the LLC's latency, as a demand's does. */
+  new_req.rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + L1_CYCLES;
 
   if (PREF_UL1REQ_ADD_FILTER_ON && pref_ul1req_queue_match(new_req.line_addr)) {
     STAT_EVENT(0, PREF_UL1REQ_QUEUE_MATCHED_REQ);
     return TRUE;
   }
 
-  return pref_banks_add(core->ul1req_banks, DEST_L1, &core->ul1req_count, PREF_UL1REQ_QUEUE_SIZE,
-                        PREF_UL1REQ_QUEUE_OVERWRITE_ON_FULL, &new_req, PREF_UL1REQ_QUEUE_FULL);
+  return pref_queue_add(&core->ul1req_queue, PREF_UL1REQ_QUEUE_SIZE, PREF_UL1REQ_QUEUE_OVERWRITE_ON_FULL, &new_req,
+                        PREF_UL1REQ_QUEUE_FULL);
 }
 
 Flag pref_hwp_instance_enabled(const HWP* hwp, Pref_Train_Level lvl) {
@@ -770,127 +718,72 @@ void pref_update_dcache(void) {
 }
 
 void pref_update_core(uns proc_id, Pref_Drain_Level level) {
-  /* Runs after the demand banks. Each bank of each level offers its remaining slot
-     to the oldest prefetch queued for it: the prefetcher looks the line up itself,
-     drops the prefetch if it is already there, and only a miss becomes a mem_req --
-     born one level down, holding an MSHR at the level that missed. */
+  /* Runs after the level's demands. A level's queue is in rdy order: every ready
+     prefetch, oldest first, looks the line up itself, and the bank ports decide which
+     get to this cycle. A hit is dropped; only a miss becomes a mem_req, born one level
+     down, holding an MSHR at the level that missed. */
   HWP_Core* core = pref.cores[proc_id];
-
-  if (level == PREF_DRAIN_DCACHE) {
-    set_dcache_stage(&cmp_model.dcache_stage[proc_id]);
-
-    /* dcache: its ports live in the dcache stage, so it probes here directly. */
-    for (uns bank = 0; bank < DCACHE_BANKS; bank++) {
-      Pref_Mem_Req* pf = pref_bank_head(core->dl0req_banks, bank);
-      if (!pf)
-        continue;
-      ASSERT(proc_id, proc_id == pf->line_addr >> 58);
-
-      if (!get_read_port(&dc->ports[bank]))
-        continue; /* a demand took this bank */
-
-      Addr dummy_line_addr;
-      Dcache_Data* dc_hit = (Dcache_Data*)cache_access(&dc->dcache, pf->line_addr, &dummy_line_addr, FALSE);
-      if (dc_hit) {
-        STAT_EVENT(proc_id, PREF_DL0REQ_QUEUE_HIT_DROP);
-        pref_bank_pop(core->dl0req_banks, bank, &core->dl0req_count);
-        continue;
-      }
-
-      if (!PREF_DL0_FILL_DCACHE) {
-        if (pref_addto_ul1req_queue(proc_id, pf->line_index, pf->prefetcher_id))
-          pref_bank_pop(core->dl0req_banks, bank, &core->dl0req_count);
-        continue;
-      }
-
-      Pref_Req_Info info = {0};
-      info.prefetcher_id = pf->prefetcher_id;
-      info.distance = pf->distance;
-      info.loadPC = pf->loadPC;
-      info.global_hist = pf->global_hist;
-      info.bw_limited = pf->bw_limited;
-      info.dest = DEST_DCACHE;
-      /* Without a memory model there is nothing to send to, so drop it rather than
-         hold a slot no one will ever free. */
-      if (model->mem != MODEL_MEM || new_mem_req(MRT_DPRF, proc_id, pf->line_addr, DCACHE_LINE_SIZE, 1, NULL,
-                                                 dcache_fill_line, unique_count, &info))
-        pref_bank_pop(core->dl0req_banks, bank, &core->dl0req_count);
-    }
-  }
-
-  if (level != PREF_DRAIN_LEVELS)
-    return;
-
-  /* MLC and LLC behave identically: probe the level from the prefetcher's own bank
-     FIFO, and on a miss create the request at the level below. */
   struct {
-    List* banks;
-    int* count;
+    List* q;
     Destination dest;
     uns line_size;
-    /* The lookup this level costs, the trip on to the level below, and the cycle to
-       enter the queue -- what the prefetch used to pay by being queued here. */
-    uns lookup_cycles;
+    uns delay;
     Flag (*fill)(Mem_Req*);
-    Stat_Enum sent_stat;
-    Stat_Enum stall_stat;
     Stat_Enum drop_stat;
   } levels[] = {
-      {core->umlc_req_banks, &core->umlc_req_count, DEST_MLC, MLC_LINE_SIZE,
-       1 + MLC_CYCLES + MLCQ_TO_L1Q_TRANSFER_LATENCY, NULL, PREF_UMLC_REQ_QUEUE_SENTREQ, PREF_UMLC_REQ_SEND_QUEUE_STALL,
-       PREF_UMLC_REQ_QUEUE_HIT_DROP},
-      {core->ul1req_banks, &core->ul1req_count, DEST_L1, L1_LINE_SIZE, 1 + L1_CYCLES + L1Q_TO_FSB_TRANSFER_LATENCY,
-       STREAM_PREF_INTO_DCACHE ? dcache_fill_line : NULL, PREF_UL1REQ_QUEUE_SENTREQ, PREF_UL1REQ_SEND_QUEUE_STALL,
+      {&core->dl0req_queue, DEST_DCACHE, DCACHE_LINE_SIZE, 1, dcache_fill_line, PREF_DL0REQ_QUEUE_HIT_DROP},
+      {&core->umlc_req_queue, DEST_MLC, MLC_LINE_SIZE, 0, NULL, PREF_UMLC_REQ_QUEUE_HIT_DROP},
+      {&core->ul1req_queue, DEST_L1, L1_LINE_SIZE, 0, STREAM_PREF_INTO_DCACHE ? dcache_fill_line : NULL,
        PREF_UL1REQ_QUEUE_HIT_DROP},
   };
 
-  for (uns lvl = 0; lvl < 2; lvl++) {
+  for (uns lvl = (level == PREF_DRAIN_DCACHE ? 0 : 1); lvl < (level == PREF_DRAIN_DCACHE ? 1 : 3); lvl++) {
     if (levels[lvl].dest == DEST_MLC && !MLC_PRESENT)
       continue;
-    for (uns bank = 0; bank < pref_num_banks(levels[lvl].dest); bank++) {
-      Pref_Mem_Req* pf = pref_bank_head(levels[lvl].banks, bank);
-      if (!pf)
-        continue;
+    List* q = levels[lvl].q;
+    for (List_Entry* e = q->head; e;) {
+      List_Entry* next = e->next;
+      Pref_Mem_Req* pf = (Pref_Mem_Req*)&e->data;
       ASSERT(proc_id, proc_id == pf->proc_id);
       ASSERT(proc_id, proc_id == pf->line_addr >> 58);
-
-      /* The probe is a real lookup at this level, so it costs that level's latency
-         before the prefetch may go on -- exactly what it used to pay by sitting in
-         that level's queue. Charging nothing here put prefetches into the level
-         below, and into DRAM, tens of cycles early. */
-      if (!pf->probed) {
-        Flag hit = FALSE;
-        if (!mem_pref_probe(proc_id, levels[lvl].dest, pf->line_addr, &hit))
-          continue; /* a demand took this bank */
-
-        if (hit) {
-          STAT_EVENT(proc_id, levels[lvl].drop_stat);
-          pref_bank_pop(levels[lvl].banks, bank, levels[lvl].count);
-          continue;
-        }
-        pf->probed = TRUE;
-        pf->rdy_cycle = cycle_count + levels[lvl].lookup_cycles;
-      }
-
       if (cycle_count < pf->rdy_cycle)
-        continue; /* the lookup is still in flight */
+        break;
 
-      Pref_Req_Info info = {0};
-      info.prefetcher_id = pf->prefetcher_id;
-      info.distance = pf->distance;
-      info.loadPC = pf->loadPC;
-      info.global_hist = pf->global_hist;
-      info.bw_limited = pf->bw_limited;
-      info.dest = levels[lvl].dest;
-      info.probed = TRUE;
-
-      if (model->mem != MODEL_MEM || new_mem_req(MRT_DPRF, proc_id, pf->line_addr, levels[lvl].line_size, 0, NULL,
-                                                 levels[lvl].fill, unique_count, &info)) {
-        STAT_EVENT(0, levels[lvl].sent_stat);
-        pref_bank_pop(levels[lvl].banks, bank, levels[lvl].count);
+      Flag done = FALSE;
+      Flag hit = FALSE;
+      if (!pf->probed && !mem_pref_probe(proc_id, levels[lvl].dest, pf->line_addr, &hit)) {
+        /* a demand took this bank */
+      } else if (hit) {
+        STAT_EVENT(proc_id, levels[lvl].drop_stat);
+        done = TRUE;
       } else {
-        STAT_EVENT(0, levels[lvl].stall_stat);
+        pf->probed = TRUE;
+        if (levels[lvl].dest == DEST_DCACHE && !PREF_DL0_FILL_DCACHE) {
+          done = pref_addto_ul1req_queue(proc_id, pf->line_index, pf->prefetcher_id);
+        } else {
+          Pref_Req_Info info = {0};
+          info.prefetcher_id = pf->prefetcher_id;
+          info.distance = pf->distance;
+          info.loadPC = pf->loadPC;
+          info.global_hist = pf->global_hist;
+          info.bw_limited = pf->bw_limited;
+          info.dest = levels[lvl].dest;
+          info.probed = TRUE;
+          /* Without a memory model there is nothing to send to, so drop it rather than
+             hold a slot no one will ever free. */
+          done = model->mem != MODEL_MEM || new_mem_req(MRT_DPRF, proc_id, pf->line_addr, levels[lvl].line_size,
+                                                        levels[lvl].delay, NULL, levels[lvl].fill, unique_count, &info);
+          if (levels[lvl].dest == DEST_MLC)
+            STAT_EVENT(0, done ? PREF_UMLC_REQ_QUEUE_SENTREQ : PREF_UMLC_REQ_SEND_QUEUE_STALL);
+          else if (levels[lvl].dest == DEST_L1)
+            STAT_EVENT(0, done ? PREF_UL1REQ_QUEUE_SENTREQ : PREF_UL1REQ_SEND_QUEUE_STALL);
+        }
       }
+      if (done) {
+        q->current = e;
+        dl_list_remove_current(q);
+      }
+      e = next;
     }
   }
 }

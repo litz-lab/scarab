@@ -187,9 +187,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mshr_Type mshr
 
 static inline void init_mshr(Mshr* mshr, char* name, Mshr_Type type, uns mshr_size, uns mshr_wb_reserve);
 
-static inline uns get_bank_id(Mem_Req* req, Mshr* mshr);
 static inline Flag req_is_pref(Mem_Req_Type type);
-static inline Mem_Req* bank_head(List* bank);
 static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr);
 
 static void print_mshr_generic(Mshr* mshr);
@@ -280,27 +278,8 @@ static void mem_grow_req_pool(void) {
 /**************************************************************************************/
 /* init_mshr: */
 
-/* Turn a level into a set of banks. A bank is per port, so each index has a read
-   bank and a write bank, and each of those starts at most one lookup per cycle. */
-static inline void init_mshr_banks(Mshr* mshr, uns num_banks) {
-  ASSERT(0, num_banks > 0);
-  mshr->num_banks = num_banks;
-  mshr->read_banks = (List*)malloc(sizeof(List) * num_banks);
-  mshr->write_banks = (List*)malloc(sizeof(List) * num_banks);
-  for (uns b = 0; b < num_banks; b++) {
-    char buf[MAX_STR_LENGTH + 1];
-    sprintf(buf, "%s RD BANK %u", mshr->name, b);
-    init_list(&mshr->read_banks[b], buf, sizeof(Mem_Req*), TRUE);
-    sprintf(buf, "%s WR BANK %u", mshr->name, b);
-    init_list(&mshr->write_banks[b], buf, sizeof(Mem_Req*), TRUE);
-  }
-}
-
 static inline void init_mshr(Mshr* mshr, char* name, Mshr_Type type, uns mshr_size, uns mshr_wb_reserve) {
   char mshr_name[MAX_STR_LENGTH + 1];
-  mshr->num_banks = 0;
-  mshr->read_banks = NULL;
-  mshr->write_banks = NULL;
   ASSERTM(0, mshr_size > mshr_wb_reserve, "%s: %u MSHRs do not cover a writeback reserve of %u\n", name, mshr_size,
           mshr_wb_reserve);
   mshr->mshr_size = mshr_size;
@@ -411,12 +390,12 @@ void init_memory() {
   }
 
   /* Initialize l1 and bus access queues which hold id's of request buffers */
+  /* Per-core LLC timing would make the LLC's latency differ per request, and the
+     lookup scan relies on one latency per level. */
+  ASSERTM(0, !L1_USE_CORE_FREQ, "l1_use_core_freq is not supported by the MSHR lookup scan\n");
   init_mshr(&mem->dcache_mshr, "DCACHE_MSHR", MSHR_DCACHE, DCACHE_MSHRS, MSHR_WB_RESERVE);
-  init_mshr_banks(&mem->dcache_mshr, MLC_BANKS);
   init_mshr(&mem->mlc_mshr, "MLC_MSHR", MSHR_MLC, MLC_MSHRS, MSHR_WB_RESERVE);
-  init_mshr_banks(&mem->mlc_mshr, L1_BANKS);
   init_mshr(&mem->l1_mshr, "L1_MSHR", MSHR_MEM, L1_MSHRS, MSHR_WB_RESERVE);
-  init_mshr_banks(&mem->l1_mshr, L1_BANKS);
 
   mem->core_fill_queues = (List*)calloc(NUM_CORES, sizeof(List));
   for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
@@ -565,8 +544,6 @@ void reset_memory() {
   mem->l1_mshr.pending_fills = 0;
   mem->mlc_mshr.pending_fills = 0;
   mem->dcache_mshr.pending_fills = 0;
-  mem->mlc_mshr.pending_lookups = 0;
-  mem->dcache_mshr.pending_lookups = 0;
 
   for (uns c = 0; c < mem->num_chunks; c++)
     for (uns ii = 0; ii < mem->chunk_size; ii++) {
@@ -722,71 +699,33 @@ void mem_free_req(Mem_Req* req) {
 /**************************************************************************************/
 /* queue_full: */
 
-/* MSHRs left once the writeback-only reserve is set aside: a fill evicting a dirty
-   line cannot complete until its writeback is admitted. */
-/* The bank a request looks up at this level. */
-static inline uns get_bank_id(Mem_Req* req, Mshr* mshr) {
-  return (mshr == &mem->dcache_mshr) ? req->mlc_bank : req->l1_bank;
-}
-
 static inline Flag req_is_pref(Mem_Req_Type type) {
   return type == MRT_DPRF || type == MRT_IPRF || type == MRT_UOCPRF || type == MRT_FDIPPRFON ||
          type == MRT_FDIPPRFOFF || type == MRT_FDIPPRFALT;
 }
 
-/* The request at the head of a bank, or NULL. */
-/* Admitting a request to a level starts its lookup: it becomes ready once the
-   level's latency has passed, and the bank retires one ready request per cycle. */
+/* Every request a level admits becomes ready after the same latency: the trip down and
+   the next level's lookup. With one constant per level, a file is in rdy order, so its
+   lookup scan can stop at the first request that is not ready yet. */
+static inline Counter mem_level_latency(Mshr* mshr) {
+  if (mshr == &mem->dcache_mshr)
+    return DCACHE_CYCLES - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY + MLC_CYCLES;
+  ASSERT(0, mshr == &mem->mlc_mshr);
+  return (MLC_PRESENT ? MLCQ_TO_L1Q_TRANSFER_LATENCY : DCACHE_CYCLES - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY) + L1_CYCLES;
+}
+
 static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr) {
-  /* Admission only means the request has arrived and is queued for a bank. Whoever
-     inserted it has already put the trip over into rdy_cycle; the lookup itself does
-     not start until the bank is won, in mem_start_lookup. */
   ASSERT(req->proc_id, mshr == &mem->dcache_mshr || mshr == &mem->mlc_mshr);
   req->state = (mshr == &mem->dcache_mshr) ? MRS_MLC_NEW : MRS_L1_NEW;
-  req->rdy_cycle = MAX2(req->rdy_cycle, cycle_count);
+  req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + mem_level_latency(mshr);
   if (mshr == &mem->mlc_mshr) {
     mem->uncores[req->proc_id].num_outstanding_l1_accesses++;
     memview_l1(req);
   }
 }
 
-/* The bank has been won, so the lookup begins: it finishes a level latency later,
-   and the request leaves the bank FIFO so the next one can start next cycle -- a
-   bank is pipelined, one access started per cycle, not one in flight. */
-static inline void mem_start_lookup(Mem_Req* req, Mshr* mshr) {
-  if (mshr == &mem->dcache_mshr) {
-    req->state = MRS_MLC_WAIT;
-    /* The full lookup latency, on top of what the request already paid getting here.
-       Retiming this so MLC_CYCLES is the whole load-to-use belongs in its own PR. */
-    req->rdy_cycle = cycle_count + MLC_CYCLES;
-    STAT_EVENT(req->proc_id, MLC_ACCESS);
-    STAT_EVENT(req->proc_id, req_is_pref(req->type) ? MLC_PREF_ACCESS : MLC_DEMAND_ACCESS);
-  } else {
-    req->state = MRS_L1_WAIT;
-    /* Same rule one level down. */
-    if (L1_USE_CORE_FREQ) {
-      /* model the cache in the requesting core's frequency domain */
-      Freq_Domain_Id core_domain = FREQ_DOMAIN_CORES[req->proc_id];
-      req->rdy_cycle =
-          freq_convert_future_cycle(core_domain, freq_cycle_count(core_domain) + L1_CYCLES, FREQ_DOMAIN_L1);
-    } else {
-      req->rdy_cycle = cycle_count + L1_CYCLES;
-    }
-    STAT_EVENT(req->proc_id, L1_ACCESS);
-    STAT_EVENT(req->proc_id, req_is_pref(req->type) ? L1_PREF_ACCESS : L1_DEMAND_ACCESS);
-  }
-  mshr->pending_lookups++;
-}
-
-/* The bank FIFO is in age order, so the head is the oldest request and nothing
-   behind it can be ready before it. */
-static inline Mem_Req* bank_head(List* bank) {
-  Mem_Req** req = (Mem_Req**)list_get_head(bank);
-  return req ? *req : NULL;
-}
-
-/* A writeback carries data in and so goes to the write bank; everything else below
-   the dcache is a fetch, store misses included -- those are read-for-ownership. */
+/* A writeback carries data in and so takes a write port; everything else below the
+   dcache is a fetch, store misses included -- those are read-for-ownership. */
 static inline Flag req_takes_write_bank(Mem_Req* req) {
   return (req->type == MRT_WB) || (req->type == MRT_WB_NODIRTY);
 }
@@ -894,24 +833,15 @@ static inline Flag queue_mshr_full_for(Mshr* mshr, Mem_Req_Type type) {
 static void print_mshr_generic(Mshr* mshr) {
   Mem_Req* req = NULL;
 
-  ASSERT(0, mshr->num_banks);
-  {
-    fprintf(stdout, "%s --- mshr_file: %d  cycle: %s\n", mshr->name, mshr->mshr_file.count, unsstr64(cycle_count));
-    fprintf(stdout, "------------------------------------------------------\n");
-    for (uns b = 0; b < mshr->num_banks; b++) {
-      for (uns w = 0; w < 2; w++) {
-        List* bank = w ? &mshr->write_banks[b] : &mshr->read_banks[b];
-        for (Mem_Req** req_ptr = (Mem_Req**)list_start_head_traversal(bank); req_ptr;
-             req_ptr = (Mem_Req**)list_next_element(bank)) {
-          req = *req_ptr;
-          fprintf(stdout, "%s bank %u: st:%s type:%s rdy:%s addr:%s age:%s off:%d\n", w ? "wr" : "rd", b,
-                  mem_req_state_names[req->state], Mem_Req_Type_str(req->type), unsstr64(req->rdy_cycle),
-                  hexstr64s(req->addr), unsstr64(cycle_count - req->start_cycle), req->off_path);
-        }
-      }
-    }
-    fprintf(stdout, "------------------------------------------------------\n");
+  fprintf(stdout, "%s --- mshr_file: %d  cycle: %s\n", mshr->name, mshr->mshr_file.count, unsstr64(cycle_count));
+  fprintf(stdout, "------------------------------------------------------\n");
+  for (List_Entry* e = mshr->mshr_file.head; e; e = e->next) {
+    req = *(Mem_Req**)&e->data;
+    fprintf(stdout, "st:%s type:%s rdy:%s addr:%s age:%s off:%d\n", mem_req_state_names[req->state],
+            Mem_Req_Type_str(req->type), unsstr64(req->rdy_cycle), hexstr64s(req->addr),
+            unsstr64(cycle_count - req->start_cycle), req->off_path);
   }
+  fprintf(stdout, "------------------------------------------------------\n");
 }
 
 /**************************************************************************************/
@@ -1562,10 +1492,6 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Addr* line_addr, MLC_Data*
     return FALSE;
   }
 
-  req->state = MRS_L1_NEW;
-  /* this req will be ready to be sent to memory in the  next cycle */
-  req->rdy_cycle = cycle_count + MLCQ_TO_L1Q_TRANSFER_LATENCY;
-
   return TRUE;
 }
 
@@ -1941,40 +1867,35 @@ static void mem_process_l1_reqs() {
 
   INC_STAT_EVENT(0, L1_QUEUE_OCCUPANCY, q->mshr_file.count);
 
-  /* Lookups whose latency has elapsed; completing takes no port. */
-  for (List_Entry* e = q->mshr_file.head; e && q->pending_lookups;) {
+  /* Requests waiting to look up are in rdy order (mem_admit_to_level), so the first
+     one not ready ends the scan. A ready one takes its bank's port and is looked up at
+     once; one that looked up but could not leave yet retries every cycle without a
+     port, and sits before any waiting request that is not ready. A port taken here is
+     what the prefetch pass that runs after this finds busy. */
+  Counter last_rdy = 0;
+  for (List_Entry* e = q->mshr_file.head; e;) {
     List_Entry* next = e->next;
     Mem_Req* req = *(Mem_Req**)&e->data;
-    if (req->state == MRS_L1_WAIT && cycle_count >= req->rdy_cycle &&
-        mem_complete_l1_access(req, &out_mshr_insertion_count))
-      q->pending_lookups--;
-    e = next;
-  }
-
-  /* Each bank starts one lookup per cycle, and a read bank and a write bank share an
-     index without sharing a port, so a load and a writeback both go. Taking the port
-     is what marks the bank as spoken for this cycle, so the prefetch pass that runs
-     after this cannot look up in a bank a demand just used. */
-  for (uns b = 0; b < q->num_banks; b++) {
-    for (uns w = 0; w < 2; w++) {
-      List* bank = w ? &q->write_banks[b] : &q->read_banks[b];
-      Mem_Req* req = bank_head(bank);
-      if (!req || cycle_count < req->rdy_cycle)
-        continue;
-
-      Ports* ports = &L1(req->proc_id)->ports[b];
-      Stat_Enum blocked = w ? L1_ST_BANK_BLOCK : L1_LD_BANK_BLOCK;
+    if (req->state == MRS_L1_WAIT) {
+      mem_complete_l1_access(req, &out_mshr_insertion_count);
+    } else if (req->state == MRS_L1_NEW) {
+      ASSERT(req->proc_id, req->rdy_cycle >= last_rdy);
+      last_rdy = req->rdy_cycle;
+      if (cycle_count < req->rdy_cycle)
+        break;
+      Flag w = req_takes_write_bank(req);
+      Ports* ports = &L1(req->proc_id)->ports[req->l1_bank];
       if (!(w ? get_write_port(ports) : get_read_port(ports))) {
-        STAT_EVENT(req->proc_id, blocked);
-        continue;
+        STAT_EVENT(req->proc_id, w ? L1_ST_BANK_BLOCK : L1_LD_BANK_BLOCK);
+      } else {
+        STAT_EVENT(req->proc_id, (w ? L1_ST_BANK_BLOCK : L1_LD_BANK_BLOCK) + 1);
+        STAT_EVENT(req->proc_id, L1_ACCESS);
+        STAT_EVENT(req->proc_id, req_is_pref(req->type) ? L1_PREF_ACCESS : L1_DEMAND_ACCESS);
+        req->state = MRS_L1_WAIT;
+        mem_complete_l1_access(req, &out_mshr_insertion_count);
       }
-      STAT_EVENT(req->proc_id, blocked + 1);
-
-      ASSERTM(req->proc_id, req->state == MRS_L1_NEW, "addr:0x%s state:%s\n", hexstr64s(req->addr),
-              mem_req_state_names[req->state]);
-      sl_list_remove_head(bank);
-      mem_start_lookup(req, q);
     }
+    e = next;
   }
 }
 
@@ -1988,47 +1909,41 @@ static void mem_process_mlc_reqs() {
 
   INC_STAT_EVENT(0, MLC_QUEUE_OCCUPANCY, q->mshr_file.count);
 
-  /* Lookups whose latency has elapsed. Completing takes no port -- the bank was paid
-     for when the lookup started -- so a request that cannot leave yet just retries. */
-  for (List_Entry* e = q->mshr_file.head; e && q->pending_lookups;) {
+  /* Requests waiting to look up are in rdy order (mem_admit_to_level), so the first
+     one not ready ends the scan. A ready one takes its bank's port and is looked up at
+     once; one that looked up but could not leave yet retries every cycle without a
+     port, and sits before any waiting request that is not ready. A port taken here is
+     what the prefetch pass that runs after this finds busy. */
+  Counter last_rdy = 0;
+  for (List_Entry* e = q->mshr_file.head; e;) {
     List_Entry* next = e->next;
     Mem_Req* req = *(Mem_Req**)&e->data;
-    if (req->state == MRS_MLC_WAIT && cycle_count >= req->rdy_cycle &&
-        mem_complete_mlc_access(req, &mlc_mshr_insertion_count))
-      q->pending_lookups--;
-    e = next;
-  }
-
-  /* Each bank starts one lookup per cycle, and a read bank and a write bank share an
-     index without sharing a port, so a load and a writeback both go. Taking the port
-     is what marks the bank as spoken for this cycle, so the prefetch pass that runs
-     after this cannot look up in a bank a demand just used. */
-  for (uns b = 0; b < q->num_banks; b++) {
-    for (uns w = 0; w < 2; w++) {
-      List* bank = w ? &q->write_banks[b] : &q->read_banks[b];
-      Mem_Req* req = bank_head(bank);
-      if (!req || cycle_count < req->rdy_cycle)
-        continue;
-
-      Ports* ports = &MLC(req->proc_id)->ports[b];
-      Stat_Enum blocked = w ? MLC_ST_BANK_BLOCK : MLC_LD_BANK_BLOCK;
+    if (req->state == MRS_MLC_WAIT) {
+      mem_complete_mlc_access(req, &mlc_mshr_insertion_count);
+    } else if (req->state == MRS_MLC_NEW) {
+      ASSERT(req->proc_id, req->rdy_cycle >= last_rdy);
+      last_rdy = req->rdy_cycle;
+      if (cycle_count < req->rdy_cycle)
+        break;
+      Flag w = req_takes_write_bank(req);
+      Ports* ports = &MLC(req->proc_id)->ports[req->mlc_bank];
       if (!(w ? get_write_port(ports) : get_read_port(ports))) {
-        STAT_EVENT(req->proc_id, blocked);
-        continue;
+        STAT_EVENT(req->proc_id, w ? MLC_ST_BANK_BLOCK : MLC_LD_BANK_BLOCK);
+      } else {
+        STAT_EVENT(req->proc_id, (w ? MLC_ST_BANK_BLOCK : MLC_LD_BANK_BLOCK) + 1);
+        STAT_EVENT(req->proc_id, MLC_ACCESS);
+        STAT_EVENT(req->proc_id, req_is_pref(req->type) ? MLC_PREF_ACCESS : MLC_DEMAND_ACCESS);
+        req->state = MRS_MLC_WAIT;
+        mem_complete_mlc_access(req, &mlc_mshr_insertion_count);
       }
-      STAT_EVENT(req->proc_id, blocked + 1);
-
-      ASSERTM(req->proc_id, req->state == MRS_MLC_NEW, "addr:0x%s state:%s\n", hexstr64s(req->addr),
-              mem_req_state_names[req->state]);
-      sl_list_remove_head(bank);
-      mem_start_lookup(req, q);
     }
+    e = next;
   }
 }
 
 /**************************************************************************************/
 /* mem_pref_probe: */
-/* A prefetcher looks its own level up, from its own queue, after the demand banks
+/* A prefetcher looks its own level up, from its own queue, after that level's demands
    have run. Takes a bank read port, so a bank a demand used this cycle refuses it.
    Returns FALSE when the bank is busy: the prefetch keeps its place and retries. */
 
@@ -2037,7 +1952,11 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit) {
   Cache* cache;
   Addr dummy_line_addr;
 
-  if (dest == DEST_MLC) {
+  if (dest == DEST_DCACHE) {
+    Dcache_Stage* dcs = &cmp_model.dcache_stage[proc_id];
+    ports = &dcs->ports[BANK(line_addr, DCACHE_BANKS, DCACHE_INTERLEAVE_FACTOR)];
+    cache = &dcs->dcache;
+  } else if (dest == DEST_MLC) {
     ASSERT(proc_id, MLC_PRESENT);
     ports = &MLC(proc_id)->ports[BANK(line_addr, MLC(proc_id)->num_banks, MLC_INTERLEAVE_FACTOR)];
     cache = &MLC(proc_id)->cache;
@@ -2048,12 +1967,14 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit) {
   }
 
   if (!get_read_port(ports)) {
-    STAT_EVENT(proc_id, dest == DEST_MLC ? MLC_LD_BANK_BLOCK : L1_LD_BANK_BLOCK);
+    if (dest != DEST_DCACHE)
+      STAT_EVENT(proc_id, dest == DEST_MLC ? MLC_LD_BANK_BLOCK : L1_LD_BANK_BLOCK);
     return FALSE;
   }
-  STAT_EVENT(proc_id, (dest == DEST_MLC ? MLC_LD_BANK_BLOCK : L1_LD_BANK_BLOCK) + 1);
-
   *hit = cache_access(cache, line_addr, &dummy_line_addr, FALSE) != NULL;
+  if (dest == DEST_DCACHE)
+    return TRUE;
+  STAT_EVENT(proc_id, (dest == DEST_MLC ? MLC_LD_BANK_BLOCK : L1_LD_BANK_BLOCK) + 1);
 
   /* A probe takes the bank and reads the array, so it counts as an access to that
      level -- but only as a prefetch one. MLC_MISS and L1_MISS are demand misses; a
@@ -2900,9 +2821,6 @@ static inline void mem_insert_req_into_mshr(Mem_Req* new_req, Mshr* mshr, Counte
           "Ramulator does not use MSHR_MEM. A request should be issued using "
           "ramulator_send()!\n");
 
-  uns bank = get_bank_id(new_req, mshr);
-  List* bank_list = req_takes_write_bank(new_req) ? &mshr->write_banks[bank] : &mshr->read_banks[bank];
-  *(Mem_Req**)sl_list_add_tail(bank_list) = new_req;
   /* Entering a level puts the request in that level's MSHR file and costs a slot --
      a writeback included: a dirty line waiting to be written is occupying the level
      just as much as a miss waiting for data. */

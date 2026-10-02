@@ -545,6 +545,16 @@ static inline void exec_stage_process_op(Op* op) {
   STAT_EVENT(op->proc_id, EXEC_ON_PATH_INST_MEM + (op->uop->mem_type == NOT_MEM) + 2 * op->off_path);
   STAT_EVENT(op->proc_id, EXEC_ALL_INST);
 
+  if (op->uop->cf_type && !op->off_path) {
+    Counter rob_to_resolve_cycles = op_get_exec_cycle(op) - op_get_dispatch_cycle(op);
+    STAT_EVENT(node->proc_id, ISSUE_QUEUE_BP_ON_PATH_ISSUED);
+    INC_STAT_EVENT(node->proc_id, ISSUE_QUEUE_BP_ON_PATH_DISPATCH_TO_ISSUE_CYCLES, rob_to_resolve_cycles);
+    if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
+      STAT_EVENT(node->proc_id, ISSUE_QUEUE_BP_MISPRED_ON_PATH_ISSUED);
+      INC_STAT_EVENT(node->proc_id, ISSUE_QUEUE_BP_MISPRED_ON_PATH_DISPATCH_TO_ISSUE_CYCLES, rob_to_resolve_cycles);
+    }
+  }
+
   DEBUG(exec->proc_id, "op_num:%s fu_num:%d exec_cycle:%s done_cycle:%s off_path:%d\n", unsstr64(op->op_num),
         op->fu_num, unsstr64(op_get_exec_cycle(op)), unsstr64(op_get_done_cycle(op)), op->off_path);
 }
@@ -556,6 +566,17 @@ static inline void exec_stage_bp_resolve(Op* op) {
       bp_target_known_op(g_bp_data, op);
 
     bp_resolve_op(g_bp_data, op);
+  }
+
+  // average resolve time of on-path branches, from ROB insertion to execution completion
+  if (!op->off_path) {
+    Counter resolve_cycles = op_get_exec_cycle(op) - op_get_dispatch_cycle(op);
+    STAT_EVENT(op->proc_id, EXEC_BP_ON_PATH_RESOLVED);
+    INC_STAT_EVENT(op->proc_id, EXEC_BP_ON_PATH_RESOLVED_CYCLES, resolve_cycles);
+    if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
+      STAT_EVENT(op->proc_id, EXEC_BP_MISPRE_ON_PATH_RESOLVED);
+      INC_STAT_EVENT(op->proc_id, EXEC_BP_MISPRE_ON_PATH_RESOLVED_CYCLES, resolve_cycles);
+    }
   }
 
   if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {

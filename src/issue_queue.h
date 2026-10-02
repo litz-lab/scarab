@@ -43,6 +43,7 @@ enum IssueQueueSchedulePolicy {
   ISSUE_QUEUE_SCHEDULE_POLICY_OLDEST_FIRST,
   ISSUE_QUEUE_SCHEDULE_POLICY_AMD_BULLDOZER,
   ISSUE_QUEUE_SCHEDULE_POLICY_RANDOM,
+  ISSUE_QUEUE_SCHEDULE_POLICY_CRITICALITY_MISPRED,
   ISSUE_QUEUE_SCHEDULE_POLICY_NUM
 };
 
@@ -65,6 +66,7 @@ void issue_queue_update();
 void issue_queue_wakeup(Op* op);
 void issue_queue_issued(Op* op);
 Flag issue_queue_has_ready_ops();
+void issue_queue_update_op_criticality(Op* op);
 
 // vanilla hps interface
 void alloc_mem_issue_queue(uns num_cores);

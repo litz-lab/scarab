@@ -400,6 +400,9 @@ void node_fill_rob(Stage_Data* src_sd) {
     op->in_node_list = TRUE;
     node->node_tail = op;
 
+    // set the op's criticality once it is in the ROB, and raise its backward slice if it is a mispredicted branch
+    issue_queue_update_op_criticality(op);
+
     if (!node->next_op_into_rs)   /* if there are no ops waiting to enter RS */
       node->next_op_into_rs = op; /* this will be the first one */
 

@@ -209,6 +209,9 @@ struct Op_struct {
   uns16 queue_id;        // id for which issue queue this op is assigned to
   uns16 queue_entry_id;  // id for which entry in the issue queue this op is
 
+  uns64 criticality;  // op weight for criticality-based scheduling, raised by a dependent mispredicted branch
+  uns64 slice_len;    // longest dependence chain (in hops) from this op to a dispatched mispredicted branch
+
   struct Op_struct* next_rdy;   // pointer to next ready op (node table)
   Flag in_rdy_list;             // is the op in the node stage's ready list?
   struct Op_struct* next_node;  // pointer to the next op in the node table

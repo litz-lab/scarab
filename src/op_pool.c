@@ -274,6 +274,8 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   op->node_id = MAX_CTR;
   op->queue_id = MAX_UNS16;
   op->queue_entry_id = MAX_UNS16;
+  op->criticality = 0;
+  op->slice_len = 0;
 
   op->bp_pred_info = NULL;
   op->btb_pred_info = NULL;

@@ -208,6 +208,8 @@ class FunctionalUnitPicker {
 
   uns32 get_fu_id() const { return fu_id; }
   uns64 get_fu_type() const { return fu_type; }
+  const IssueQueueEntry* get_picked_entry() const { return picked_entry; }
+  void reset() { picked_entry = nullptr; }
 };
 
 /*
@@ -267,6 +269,10 @@ struct IssueQueueStats {
   std::vector<uns16> ready_reg_ids[REG_FILE_REG_TYPE_NUM];
   std::vector<uns16> issued_reg_ids[REG_FILE_REG_TYPE_NUM];
 
+  // criticality vs. oldest-first pick comparison in this cycle
+  size_t crit_picked_ops = 0;
+  size_t crit_pick_diff_ops = 0;
+
   void clear();
   void update_stats() const;
 
@@ -277,6 +283,9 @@ struct IssueQueueStats {
 };
 
 void IssueQueueStats::clear() {
+  crit_picked_ops = 0;
+  crit_pick_diff_ops = 0;
+
   if (!ISSUE_QUEUE_STAT_COLLECT) {
     return;
   }
@@ -353,6 +362,8 @@ bool IssueQueueStats::lookup_and_set_reg_read(std::vector<uns16>& reg_ids, uns16
  * BindPolicy, which assigns ops to pickers when early binding is enabled.
  */
 
+static std::unique_ptr<SchedulePolicy> make_oldest_first_schedule_policy();
+
 class SelectLogic {
  protected:
   const uns proc_id;
@@ -366,6 +377,13 @@ class SelectLogic {
   std::vector<size_t> picker_order;  // picker traversal order generated each cycle
   std::list<IssueQueueEntry*> ready_list;
 
+  // shadow oldest-first pickers used to compare against the criticality picks
+  std::vector<FunctionalUnitPicker> shadow_fu_pickers;
+  std::unique_ptr<SchedulePolicy> shadow_sched_policy;
+
+  void shadow_pick(IssueQueueEntry* entry);
+  void compare_shadow_picks(IssueQueueStats& stats_across_queue);
+
  public:
   explicit SelectLogic(uns proc_id, uns16 queue_id, std::vector<FunctionalUnitPicker> connected_fu_pickers,
                        std::unique_ptr<SchedulePolicy> sched_policy, std::unique_ptr<TraversalPolicy> traversal_policy,
@@ -376,7 +394,15 @@ class SelectLogic {
         sched_policy(std::move(sched_policy)),
         traversal_policy(std::move(traversal_policy)),
         bind_policy(std::move(bind_policy)),
-        picker_order(this->connected_fu_pickers.size()) {}
+        picker_order(this->connected_fu_pickers.size()) {
+    if (ISSUE_QUEUE_SCHEDULE_POLICY == ISSUE_QUEUE_SCHEDULE_POLICY_CRITICALITY_MISPRED) {
+      shadow_fu_pickers.reserve(this->connected_fu_pickers.size());
+      for (const FunctionalUnitPicker& fu_picker : this->connected_fu_pickers) {
+        shadow_fu_pickers.push_back(fu_picker);
+      }
+      shadow_sched_policy = make_oldest_first_schedule_policy();
+    }
+  }
 
   void bid(IssueQueueStats& stats_across_queue);
   void grant(IssueQueueStats& stats_across_queue);
@@ -441,11 +467,64 @@ void SelectLogic::bid(IssueQueueStats& stats_across_queue) {
     if (request_entry != nullptr) {
       collect_entry_op_ready_unissued_stats(request_entry, stats_across_queue);
     }
+
+    if (shadow_sched_policy) {
+      shadow_pick(entry);
+    }
+  }
+}
+
+// replay the same serial picker chain with the oldest-first policy on the shadow pickers
+void SelectLogic::shadow_pick(IssueQueueEntry* entry) {
+  IssueQueueEntry* request_entry = entry;
+  for (size_t i = 0; i < shadow_fu_pickers.size(); ++i) {
+    size_t picker_idx = picker_order[i];
+    FunctionalUnitPicker& fu_picker = shadow_fu_pickers[picker_idx];
+
+    if (!fu_picker.is_compatible(request_entry->op_fu_type)) {
+      continue;
+    }
+
+    if (entry->bound_fu_id != MAX_UNS && entry->bound_fu_id != picker_idx) {
+      continue;
+    }
+
+    fu_picker.pick(request_entry, *shadow_sched_policy);
+    if (request_entry == nullptr) {
+      break;
+    }
+  }
+}
+
+// count the criticality picks that oldest-first would not have picked, then reset the shadow pickers
+void SelectLogic::compare_shadow_picks(IssueQueueStats& stats_across_queue) {
+  for (const FunctionalUnitPicker& fu_picker : connected_fu_pickers) {
+    const IssueQueueEntry* crit_entry = fu_picker.get_picked_entry();
+    if (crit_entry == nullptr) {
+      continue;
+    }
+
+    stats_across_queue.crit_picked_ops += 1;
+    bool picked_by_oldest = std::any_of(shadow_fu_pickers.begin(), shadow_fu_pickers.end(),
+                                        [crit_entry](const FunctionalUnitPicker& shadow_picker) {
+                                          return shadow_picker.get_picked_entry() == crit_entry;
+                                        });
+    if (!picked_by_oldest) {
+      stats_across_queue.crit_pick_diff_ops += 1;
+    }
+  }
+
+  for (FunctionalUnitPicker& shadow_picker : shadow_fu_pickers) {
+    shadow_picker.reset();
   }
 }
 
 // grant the picked ops into issue ports
 void SelectLogic::grant(IssueQueueStats& stats_across_queue) {
+  if (shadow_sched_policy) {
+    compare_shadow_picks(stats_across_queue);
+  }
+
   for (size_t i = 0; i < connected_fu_pickers.size(); ++i) {
     // grant the pick after scanning the ready list
     FunctionalUnitPicker& fu_picker = connected_fu_pickers[picker_order[i]];
@@ -583,6 +662,10 @@ class OldestFirstSchedulePolicy : public SchedulePolicy {
   }
 };
 
+static std::unique_ptr<SchedulePolicy> make_oldest_first_schedule_policy() {
+  return std::make_unique<OldestFirstSchedulePolicy>();
+}
+
 /*
  * AMDBulldozerSchedulePolicy is introduced in "40-Entry Unified Out-of-Order Scheduler
  * and Integer Execution Unit for the AMD Bulldozer x86-64 Core", ISSCC 2011.
@@ -609,6 +692,20 @@ class RandomSchedulePolicy : public SchedulePolicy {
  public:
   bool compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const override {
     return lhs->entry_id < rhs->entry_id;
+  }
+};
+
+/*
+ * CriticalitySchedulePolicy prioritizes ops with a higher criticality weight,
+ * i.e. ops that a larger dependent chain of in-flight ops is waiting on.
+ */
+class CriticalitySchedulePolicy : public SchedulePolicy {
+ public:
+  bool compare(const IssueQueueEntry* lhs, const IssueQueueEntry* rhs) const override {
+    if (lhs->op->criticality != rhs->op->criticality)
+      return lhs->op->criticality > rhs->op->criticality;
+
+    return lhs->op->op_num < rhs->op->op_num;
   }
 };
 
@@ -729,6 +826,7 @@ class IssueQueuePolicyFactory {
         []() -> std::unique_ptr<SchedulePolicy> { return std::make_unique<OldestFirstSchedulePolicy>(); },
         []() -> std::unique_ptr<SchedulePolicy> { return std::make_unique<AMDBulldozerSchedulePolicy>(); },
         []() -> std::unique_ptr<SchedulePolicy> { return std::make_unique<RandomSchedulePolicy>(); },
+        []() -> std::unique_ptr<SchedulePolicy> { return std::make_unique<CriticalitySchedulePolicy>(); },
     };
 
     ASSERT(node->proc_id, ISSUE_QUEUE_SCHEDULE_POLICY < ISSUE_QUEUE_SCHEDULE_POLICY_NUM);
@@ -791,7 +889,7 @@ class IssueQueue {
   uns16 allocate_entry(Op* op);
   void free_entry(uns16 entry_id);
   size_t available_entries() const { return free_list.size(); }
-  const std::vector<IssueQueueEntry>& get_entries() const { return entries; }
+  std::vector<IssueQueueEntry>& get_entries() { return entries; }
 
   void wakeup(uns16 entry_id);
   void issued(uns16 entry_id);
@@ -872,6 +970,7 @@ void IssueQueue::issued(uns16 entry_id) {
   ASSERT(proc_id, op != nullptr);
 
   STAT_EVENT(node->proc_id, OP_ISSUED);
+
   op->in_rdy_list = FALSE;
   select_logic->release(&entry);
   free_entry(entry.entry_id);
@@ -905,11 +1004,18 @@ class IssueQueues {
 
   IssueQueueStats stats_across_queue;
 
+  // max-heap (by op_num) of ops in the backward slice of a mispredicted branch inserted into the ROB
+  std::vector<Op*> slice_heap;
+
   void update_mem_block();
   uns16 find_emptiest_queue(Op* op);
 
+  uns64 calculate_op_weight(Op* op) const;
+
  public:
   explicit IssueQueues(uns proc_id);
+
+  void update_op_criticality(Op* op);
 
   void dispatch();
   void schedule();
@@ -1071,6 +1177,17 @@ void IssueQueues::schedule() {
 
   // update the stats events after aggregating all issue queues stats
   stats_across_queue.update_stats();
+
+  // cycles where the criticality picks differ from what oldest-first would have picked
+  if (ISSUE_QUEUE_SCHEDULE_POLICY == ISSUE_QUEUE_SCHEDULE_POLICY_CRITICALITY_MISPRED &&
+      stats_across_queue.crit_picked_ops != 0) {
+    STAT_EVENT(proc_id, ISSUE_QUEUE_CRIT_PICK_CYCLE);
+    INC_STAT_EVENT(proc_id, ISSUE_QUEUE_CRIT_PICK_OPS, stats_across_queue.crit_picked_ops);
+    if (stats_across_queue.crit_pick_diff_ops != 0) {
+      STAT_EVENT(proc_id, ISSUE_QUEUE_CRIT_PICK_DIFF_CYCLE);
+      INC_STAT_EVENT(proc_id, ISSUE_QUEUE_CRIT_PICK_DIFF_OPS, stats_across_queue.crit_pick_diff_ops);
+    }
+  }
 }
 
 void IssueQueues::recover() {
@@ -1137,6 +1254,85 @@ uns16 IssueQueues::find_emptiest_queue(Op* op) {
 }
 
 /**************************************************************************************/
+/* Criticality Based Scheduling */
+
+uns64 IssueQueues::calculate_op_weight(Op* op) const {
+  constexpr uns64 CRIT_SCHED_MISPRED_WEIGHT = 512;
+
+  ASSERT(node->proc_id, op != nullptr && !op->off_path);
+  uns64 weight = 0;
+
+  if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
+    weight += CRIT_SCHED_MISPRED_WEIGHT;
+  }
+
+  return weight;
+}
+
+void IssueQueues::update_op_criticality(Op* op) {
+  if (ISSUE_QUEUE_SCHEDULE_POLICY < ISSUE_QUEUE_SCHEDULE_POLICY_CRITICALITY_MISPRED) {
+    return;
+  }
+
+  // avoid off-path ops polluting the criticality weight calculation
+  if (op->off_path) {
+    return;
+  }
+
+  op->criticality = calculate_op_weight(op);
+  if (op->bp_pred_info->recovery_point != RECOVER_AT_EXEC) {
+    return;
+  }
+
+  /*
+   * Walk the backward slice of the mispredicted branch from youngest to oldest. All dependents of an op in the
+   * slice are younger, so its criticality and slice length are final when it is popped and propagated further.
+   * An op reached through several paths is pushed more than once, but its copies are popped back to back.
+   */
+  auto younger_first = [](const Op* lhs, const Op* rhs) { return lhs->op_num < rhs->op_num; };
+  ASSERT(node->proc_id, node->node_head != nullptr);
+  Counter rob_head_op_num = node->node_head->op_num;
+
+  slice_heap.clear();
+  slice_heap.push_back(op);
+  Op* last_popped = nullptr;
+  while (!slice_heap.empty()) {
+    std::pop_heap(slice_heap.begin(), slice_heap.end(), younger_first);
+    Op* cur = slice_heap.back();
+    slice_heap.pop_back();
+    if (cur == last_popped) {
+      continue;
+    }
+    last_popped = cur;
+
+    for (uns ii = 0; ii < cur->num_srcs; ++ii) {
+      Src_Info& src_info = cur->src_info[ii];
+      // the source op has already retired
+      if (src_info.op_num < rob_head_op_num) {
+        continue;
+      }
+
+      Op* src = src_info.op;
+      ASSERT(node->proc_id, src != nullptr && src->unique_num == src_info.unique_num);
+
+      // an op that has entered the FU no longer competes in the RS, and neither do its sources
+      if (op_get_sched_cycle(src) != MAX_CTR) {
+        continue;
+      }
+
+      src->criticality = std::max(src->criticality, calculate_op_weight(src) + cur->criticality);
+      src->slice_len = std::max(src->slice_len, cur->slice_len + 1);
+      slice_heap.push_back(src);
+      std::push_heap(slice_heap.begin(), slice_heap.end(), younger_first);
+    }
+  }
+
+  // ops are popped from youngest to oldest, so the last one is the oldest slice op not yet scheduled
+  STAT_EVENT(node->proc_id, ISSUE_QUEUE_MISPRED_SLICE_NUM);
+  INC_STAT_EVENT(node->proc_id, ISSUE_QUEUE_MISPRED_SLICE_LENGTH, last_popped->slice_len);
+}
+
+/**************************************************************************************/
 /* Global Values */
 
 static std::vector<IssueQueues> per_core_issue_queues;
@@ -1165,6 +1361,11 @@ void issue_queue_issued(Op* op) {
 
 Flag issue_queue_has_ready_ops() {
   return issue_queues->has_ready_ops();
+}
+
+void issue_queue_update_op_criticality(Op* op) {
+  // set the op's criticality, and raise its backward slice if it is a mispredicted branch
+  issue_queues->update_op_criticality(op);
 }
 
 /**************************************************************************************/

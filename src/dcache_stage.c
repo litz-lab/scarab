@@ -578,8 +578,7 @@ static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr
   }
 
   Flag ret = new_mem_req(MRT_DFETCH, proc_id, extra_line_addr, cache->line_size,
-                         cache_cycle - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY + op->uop->extra_ld_latency, NULL, NULL,
-                         op->unique_num, 0);
+                         cache_cycle - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY, NULL, NULL, op->unique_num, 0);
   if (ret)
     STAT_EVENT_ALL(ONE_MORE_SUCESS);
   else
@@ -588,8 +587,7 @@ static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr
 
 static inline Flag dcache_miss_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type) {
   Flag sent = new_mem_req((mem_req_type), dc->proc_id, line_addr, DCACHE_LINE_SIZE,
-                          DCACHE_CYCLES - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY + op->uop->extra_ld_latency, op,
-                          dcache_fill_line, op->unique_num, 0);
+                          DCACHE_CYCLES - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY, op, dcache_fill_line, op->unique_num, 0);
   Node_Stage* node = &cmp_model.node_stage[dc->proc_id];
   if (sent && node->mem_blocked) {
     node->mem_blocked = FALSE;
@@ -941,7 +939,9 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     // but still has this pending fill; keep its earlier done_cycle. Any other op
     // arriving here already-done is a bug.
     if (op_get_done_cycle(op) == MAX_CTR) {
-      op_set_done_cycle(op, cycle_count + 1);
+      /* extra_ld_latency is the op's, so it is paid on the data's way back, not by
+         the request: every request a level admits shares that level's latency. */
+      op_set_done_cycle(op, cycle_count + 1 + op->uop->extra_ld_latency);
     } else {
       Mem_Type mt = op->uop->mem_type;
       ASSERT(dc->proc_id, mt == MEM_ST || mt == MEM_PF || mt == MEM_WH);

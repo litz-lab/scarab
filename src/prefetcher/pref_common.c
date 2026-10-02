@@ -604,7 +604,8 @@ Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id
   new_req.line_index = line_index;
   new_req.valid = TRUE;
   new_req.prefetcher_id = prefetcher_id;
-  new_req.rdy_cycle = cycle_count;
+  /* Its MLC lookup resolves after the MLC's latency, as a demand's does. */
+  new_req.rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + MLC_CYCLES;
 
   return pref_banks_add(core->umlc_req_banks, DEST_MLC, &core->umlc_req_count, PREF_UMLC_REQ_QUEUE_SIZE,
                         PREF_UMLC_REQ_QUEUE_OVERWRITE_ON_FULL, &new_req, PREF_UMLC_REQ_QUEUE_FULL);
@@ -632,7 +633,8 @@ Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_
   new_req.loadPC = loadPC;
   new_req.global_hist = global_hist;
   new_req.bw_limited = bw;
-  new_req.rdy_cycle = cycle_count;
+  /* Its LLC lookup resolves after the LLC's latency, as a demand's does. */
+  new_req.rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + L1_CYCLES;
 
   if (PREF_UL1REQ_ADD_FILTER_ON && pref_ul1req_queue_match(new_req.line_addr)) {
     STAT_EVENT(0, PREF_UL1REQ_QUEUE_MATCHED_REQ);
@@ -828,18 +830,14 @@ void pref_update_core(uns proc_id, Pref_Drain_Level level) {
     int* count;
     Destination dest;
     uns line_size;
-    /* The lookup this level costs, the trip on to the level below, and the cycle to
-       enter the queue -- what the prefetch used to pay by being queued here. */
-    uns lookup_cycles;
     Flag (*fill)(Mem_Req*);
     Stat_Enum sent_stat;
     Stat_Enum stall_stat;
     Stat_Enum drop_stat;
   } levels[] = {
-      {core->umlc_req_banks, &core->umlc_req_count, DEST_MLC, MLC_LINE_SIZE,
-       1 + MLC_CYCLES + MLCQ_TO_L1Q_TRANSFER_LATENCY, NULL, PREF_UMLC_REQ_QUEUE_SENTREQ, PREF_UMLC_REQ_SEND_QUEUE_STALL,
-       PREF_UMLC_REQ_QUEUE_HIT_DROP},
-      {core->ul1req_banks, &core->ul1req_count, DEST_L1, L1_LINE_SIZE, 1 + L1_CYCLES + L1Q_TO_FSB_TRANSFER_LATENCY,
+      {core->umlc_req_banks, &core->umlc_req_count, DEST_MLC, MLC_LINE_SIZE, NULL, PREF_UMLC_REQ_QUEUE_SENTREQ,
+       PREF_UMLC_REQ_SEND_QUEUE_STALL, PREF_UMLC_REQ_QUEUE_HIT_DROP},
+      {core->ul1req_banks, &core->ul1req_count, DEST_L1, L1_LINE_SIZE,
        STREAM_PREF_INTO_DCACHE ? dcache_fill_line : NULL, PREF_UL1REQ_QUEUE_SENTREQ, PREF_UL1REQ_SEND_QUEUE_STALL,
        PREF_UL1REQ_QUEUE_HIT_DROP},
   };
@@ -854,10 +852,11 @@ void pref_update_core(uns proc_id, Pref_Drain_Level level) {
       ASSERT(proc_id, proc_id == pf->proc_id);
       ASSERT(proc_id, proc_id == pf->line_addr >> 58);
 
-      /* The probe is a real lookup at this level, so it costs that level's latency
-         before the prefetch may go on -- exactly what it used to pay by sitting in
-         that level's queue. Charging nothing here put prefetches into the level
-         below, and into DRAM, tens of cycles early. */
+      /* rdy was set when the prefetch was queued: its level's lookup latency, as for a
+         demand. A bank's queue is therefore in rdy order, and the head waiting for it
+         holds nothing back. At rdy the prefetch takes the port and the lookup resolves. */
+      if (cycle_count < pf->rdy_cycle)
+        continue;
       if (!pf->probed) {
         Flag hit = FALSE;
         if (!mem_pref_probe(proc_id, levels[lvl].dest, pf->line_addr, &hit))
@@ -869,11 +868,7 @@ void pref_update_core(uns proc_id, Pref_Drain_Level level) {
           continue;
         }
         pf->probed = TRUE;
-        pf->rdy_cycle = cycle_count + levels[lvl].lookup_cycles;
       }
-
-      if (cycle_count < pf->rdy_cycle)
-        continue; /* the lookup is still in flight */
 
       Pref_Req_Info info = {0};
       info.prefetcher_id = pf->prefetcher_id;

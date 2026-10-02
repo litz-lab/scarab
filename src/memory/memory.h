@@ -102,15 +102,6 @@ typedef struct Mshr_struct {
   /* Fills this level owes that could not be absorbed. Only when it is non-zero does
      anything walk this level's file looking for them. */
   uns pending_fills;
-  /* Lookups this level has started and not yet completed. They are no longer in a
-     bank FIFO -- the bank is free the cycle after one starts. */
-  uns pending_lookups;
-  /* Banks are per port, so a read bank and a write bank share an index but are
-     separate arrays: reads and writes share this level's MSHR file, not its banks.
-     One FIFO each, in age order. */
-  List* read_banks;
-  List* write_banks;
-  uns num_banks;
   uns mshr_size;
   char name[20];
   Mshr_Type type;

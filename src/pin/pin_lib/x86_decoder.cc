@@ -2112,6 +2112,17 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_VPROLVQ]     = {OP_SHIFT, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPRORVD]     = {OP_SHIFT, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPRORVQ]     = {OP_SHIFT, 8, -1, NONE};
+
+  // Remaining AES-NI forms (key expansion, decryption, InvMixColumns): TLS in
+  // the node-based Claude Code trace (code-node). Same class as AESENC above.
+  iclass_to_scarab_map[XED_ICLASS_AESDEC]           = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_AESDECLAST]       = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_AESIMC]           = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_AESKEYGENASSIST]  = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VAESDEC]          = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VAESDECLAST]      = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VAESIMC]          = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VAESKEYGENASSIST] = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
   // SSE4.1 variable blends (numpy where/select kernels in the data trace); the VEX forms are mapped above.
   iclass_to_scarab_map[XED_ICLASS_BLENDVPD]    = {OP_CMOV, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_BLENDVPS]    = {OP_CMOV, 4, -1, NONE};

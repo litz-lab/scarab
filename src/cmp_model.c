@@ -193,6 +193,12 @@ void cmp_cycle() {
 
   cmp_cores();
 
+  /* The dcache prefetcher drains after the dcache stage, so it can only probe a bank
+     no demand load wanted this cycle. The MLC and LLC drains are inside
+     update_memory(), after their own demand passes and in their own frequency
+     domain. */
+  pref_update_dcache();
+
   if (DVFS_ON)
     dvfs_cycle();
   cache_part_update();

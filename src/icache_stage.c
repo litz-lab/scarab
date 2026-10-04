@@ -956,8 +956,6 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     }
 
     op_count[ic->proc_id]++; /* increment instruction counters */
-    unique_count_per_core[ic->proc_id]++;
-    unique_count++;
     /* check trigger */
     if (op->uop->trigger_op_fetched_hook)
       model->op_fetched_hook(op);

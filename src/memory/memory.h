@@ -94,7 +94,7 @@ typedef enum Mem_Queue_Type_enum {
 } Mem_Queue_Type;
 
 typedef struct Mem_Queue_Entry_struct {
-  int reqbuf;       /* request buffer num */
+  Mem_Req* req;
   Counter priority; /* priority of the miss */
   Counter rdy_cycle;
 } Mem_Queue_Entry;
@@ -233,8 +233,6 @@ void update_memory(void);
 
 Flag scan_stores(Addr, uns);
 void op_nuke_mem_req(Op*);
-Flag mem_req_younger_than_uniquenum(int, Counter);
-Flag mem_req_older_than_uniquenum(int, Counter);
 L1_Data* do_l1_access(Op* op);
 L1_Data* do_l1_access_addr(Addr);
 L1_Data* do_mlc_access(Op* op);
@@ -242,7 +240,7 @@ L1_Data* do_mlc_access_addr(Addr);
 
 Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op, Flag done_func(Mem_Req*),
                  Counter unique_num, Pref_Req_Info*);
-void mem_free_reqbuf(Mem_Req* req);
+void mem_free_req(Mem_Req* req);
 void mem_complete_bus_in_access(Mem_Req* req, Counter priority);
 void print_req_buffer(void);
 void print_mem_queue(Mem_Queue_Type queue_type);

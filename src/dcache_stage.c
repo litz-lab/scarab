@@ -79,7 +79,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr);
 
 static inline void dcache_fill_wp_collect_stats(Dcache_Data* line, Mem_Req* req);
 static inline void dcache_hit_wp_collect_stats(Dcache_Data* line, Op* op);
-/* A dcache hit makes no Mem_Req, so it is the one serving level mem_free_reqbuf never
+/* A dcache hit makes no Mem_Req, so it is the one serving level mem_free_req never
    sees. Measured op-side instead: address ready to data ready, which spans bank
    conflicts, re-probes and extra_ld_latency and so is not bounded by DCACHE_CYCLES. */
 static inline void dcache_hit_served_stat(Op* op) {

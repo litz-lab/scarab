@@ -107,6 +107,14 @@ ASSERT_TYPE_FAMILY(DEMAND_MATCH_WBALL);
 ASSERT_TYPE_FAMILY(DEMAND_MATCH_WB);
 ASSERT_TYPE_FAMILY(DEMAND_MATCH_WB_ND);
 ASSERT_TYPE_FAMILY(CORE_MEM_LATENCY);
+/* mem_stat_served indexes every served family by LD's offsets. */
+#define ASSERT_SERVED_FAMILY(X)                                                                \
+  _Static_assert(X##_SERVED_TOTAL - X##_SERVED_DCACHE == LD_SERVED_TOTAL - LD_SERVED_DCACHE && \
+                     X##_LAT_DCACHE - X##_SERVED_DCACHE == LD_LAT_DCACHE - LD_SERVED_DCACHE,   \
+                 #X " served family is not laid out like LD's")
+ASSERT_SERVED_FAMILY(ST);
+ASSERT_SERVED_FAMILY(PF);
+ASSERT_SERVED_FAMILY(WB);
 
 /**************************************************************************************/
 /* Global Variables */
@@ -576,8 +584,11 @@ void mem_stat_served(uns8 proc_id, Mem_Req_Type type, Stat_Enum level, Counter l
     case MRT_DPRF:
       base = PF_SERVED_DCACHE;
       break;
+    case MRT_WB:
+      base = WB_SERVED_DCACHE;
+      break;
     default:
-      return; /* instruction fetches and writebacks are counted elsewhere */
+      return; /* instruction fetches are counted elsewhere */
   }
   /* The three families are laid out identically, so an offset found once indexes any
      of them. */
@@ -2004,7 +2015,9 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
   ASSERT(req->proc_id, !EXCLUSIVE_CACHES || fill_req_is_wb(req) ||
                            fill_inserts_at_l1(req) + fill_inserts_at_mlc(req) + fill_inserts_at_dcache(req) == 1);
 
-  req->state = MRS_FILL_L1;
+  /* A writeback's response is DRAM's acknowledgement: the line left the LLC, so there is
+     nothing to fill and it is done. */
+  req->state = (req->type == MRT_WB) ? MRS_FILL_DONE : MRS_FILL_L1;
 
   /* mem_walk_fills reaches a fill only through the file of the level that owes it. */
   ASSERT(req->proc_id, mshr_file_holds(req, mem_fill_owner(req)));
@@ -3130,6 +3143,8 @@ Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns
   mem_init_new_req(new_req, type, MLC_PRESENT ? MSHR_DCACHE : MSHR_MLC, proc_id, addr, size, delay, op, done_func,
                    unique_num, new_priority);
   new_req->wb_used_onpath = used_onpath;  // DC WB requests carry this flag
+  /* A writeback's destination is the level that issued it: where its response completes. */
+  new_req->destination = DEST_DCACHE;
 
   /* Step 6: Insert the request into the MLC MSHR file if it is not already there */
   if (MLC_PRESENT)
@@ -3188,6 +3203,7 @@ static Flag new_mem_mlc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns s
 
   /* Step 5: Allocate a new request buffer -- new_req */
   mem_init_new_req(new_req, type, MSHR_MLC, proc_id, addr, size, delay, op, done_func, unique_num, new_priority);
+  new_req->destination = DEST_MLC;
 
   /* Step 6: Insert the request into the MLC MSHR file if it is not already there */
   insert_new_req_into_mlc_mshr(proc_id, new_req);
@@ -3252,10 +3268,11 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
                    new_priority);
   new_req->mshr = NULL;
   new_req->state = MRS_MEM_NEW;
+  new_req->destination = DEST_L1;
 
   /* Step 6: Try to insert into the Ramulator queue */
   if (!ROUND_ROBIN_TO_L1) {
-    is_sent = ramulator_send(new_req);
+    is_sent = !queue_mshr_full_for(&mem->l1_mshr, type) && ramulator_send(new_req);
     if (!is_sent) {
       mem_free_req(new_req);
       return FALSE;
@@ -3266,7 +3283,9 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
       mem_seq_num++;
       perf_pred_mem_req_start(new_req);
 
-      mem_free_req(new_req);
+      /* The LLC's file holds it until DRAM acknowledges the write. */
+      mshr_file_add(new_req, &mem->l1_mshr);
+      mem->uncores[proc_id].num_outstanding_l1_misses++;
     }
   } else {
     Mem_Req** req_ptr = sl_list_add_tail(&mem->l1_in_buffer_core[proc_id]);

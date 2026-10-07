@@ -345,7 +345,7 @@ void init_memory() {
     mem->req_buffer[ii].state = MRS_INV;
   }
   mem->num_req_buffers_per_core = calloc(NUM_CORES, sizeof(uns));
-  init_list(&mem->req_buffer_free_list, "REQ BUF FREE LIST", sizeof(int), TRUE);
+  init_list(&mem->req_buffer_free_list, "REQ BUF FREE LIST", sizeof(Mem_Req*), TRUE);
 
   if (ROUND_ROBIN_TO_L1) {
     mem->l1_in_buffer_core = (List*)malloc(sizeof(List) * NUM_CORES);
@@ -355,7 +355,6 @@ void init_memory() {
   }
 
   for (ii = 0; ii < mem->total_mem_req_buffers; ii++) {
-    mem->req_buffer[ii].id = ii;
     sprintf(name, "%d OPP_L", ii);
     init_list(&mem->req_buffer[ii].op_ptrs, name, sizeof(Op*), TRUE);
     sprintf(name, "%d OPU_L", ii);
@@ -521,8 +520,7 @@ void reset_memory() {
   mem->mlc_fill_queue.entry_count = 0;
 
   for (ii = 0; ii < mem->total_mem_req_buffers; ii++) {
-    int* free_list_entry = sl_list_add_tail(&mem->req_buffer_free_list);
-    *free_list_entry = ii;
+    *(Mem_Req**)sl_list_add_tail(&mem->req_buffer_free_list) = &mem->req_buffer[ii];
     mem->req_buffer[ii].state = MRS_INV;
   }
 
@@ -570,12 +568,10 @@ static inline void mem_record_served(Mem_Req* req, Stat_Enum level) {
   mem_stat_served(req->proc_id, req->type, level, cycle_count - req->start_cycle);
 }
 
-void mem_free_reqbuf(Mem_Req* req) {
-  int* reqbuf_num_ptr;
-
-  DEBUG(req->proc_id, "Freeing mem buffer entry  index:%d queue:%s rcount:%d l1:%d bo:%d lf:%d\n", req->id,
-        (NULL == req->queue) ? "NULL" : req->queue->name, mem->req_count, mem->l1_queue.entry_count,
-        mem->bus_out_queue.entry_count, mem->l1fill_queue.entry_count);
+void mem_free_req(Mem_Req* req) {
+  DEBUG(req->proc_id, "Freeing mem buffer entry  addr:0x%s queue:%s rcount:%d l1:%d bo:%d lf:%d\n",
+        hexstr64s(req->addr), (NULL == req->queue) ? "NULL" : req->queue->name, mem->req_count,
+        mem->l1_queue.entry_count, mem->bus_out_queue.entry_count, mem->l1fill_queue.entry_count);
 
   if (req->state == MRS_MEM_DONE) {
     ASSERT(req->proc_id, req->type == MRT_WB);
@@ -660,10 +656,7 @@ void mem_free_reqbuf(Mem_Req* req) {
   clear_list(&req->op_ptrs);
   clear_list(&req->op_uniques);
 
-  reqbuf_num_ptr = sl_list_add_tail(&mem->req_buffer_free_list);
-
-  ASSERT(req->proc_id, reqbuf_num_ptr);
-  *reqbuf_num_ptr = req->id;
+  *(Mem_Req**)sl_list_add_tail(&mem->req_buffer_free_list) = req;
 
   ASSERT(req->proc_id, mem->req_buffer_free_list.count <= mem->total_mem_req_buffers);
   ASSERT(req->proc_id, (mem->req_count + mem->req_buffer_free_list.count) == mem->total_mem_req_buffers);
@@ -708,14 +701,14 @@ static void print_mem_queue_generic(Mem_Queue* queue) {
   fprintf(stdout, "------------------------------------------------------\n");
 
   for (ii = 0; ii < queue->entry_count; ii++) {
-    req = &(mem->req_buffer[queue->base[ii].reqbuf]);
+    req = queue->base[ii].req;
     fprintf(stdout,
-            "%d: q:%s reqbuf:%d index:%d pri:%s st:%s type:%s pri:%s beg:%s "
+            "%d: q:%s pri:%s st:%s type:%s pri:%s beg:%s "
             "rdy:%s addr:%s size:%d age:%s mbank:%d oc:%d oo:%s off:%d\n",
-            ii, (req->queue ? req->queue->name : "ramulator"), queue->base[ii].reqbuf, req->id,
-            unsstr64(queue->base[ii].priority), mem_req_state_names[req->state], Mem_Req_Type_str(req->type),
-            unsstr64(req->priority), unsstr64(req->start_cycle), unsstr64(req->rdy_cycle), hexstr64s(req->addr),
-            req->size, unsstr64(cycle_count - req->start_cycle), req->mem_flat_bank, req->op_count,
+            ii, (req->queue ? req->queue->name : "ramulator"), unsstr64(queue->base[ii].priority),
+            mem_req_state_names[req->state], Mem_Req_Type_str(req->type), unsstr64(req->priority),
+            unsstr64(req->start_cycle), unsstr64(req->rdy_cycle), hexstr64s(req->addr), req->size,
+            unsstr64(cycle_count - req->start_cycle), req->mem_flat_bank, req->op_count,
             unsstr64(req->oldest_op_unique_num), req->off_path);
   }
 
@@ -734,9 +727,9 @@ void print_req_buffer() {
   for (uns reqbuf_id = 0; reqbuf_id < mem->total_mem_req_buffers; reqbuf_id++) {
     req = &(mem->req_buffer[reqbuf_id]);
     fprintf(stdout,
-            ": q:%s reqbuf:%d index:%d st:%s type:%s pri:%s beg:%s "
+            ": q:%s reqbuf:%d st:%s type:%s pri:%s beg:%s "
             "rdy:%s addr:%s size:%d age:%s mbank:%d oc:%d oo:%s off:%d\n",
-            (req->queue ? req->queue->name : "ramulator"), reqbuf_id, req->id, mem_req_state_names[req->state],
+            (req->queue ? req->queue->name : "ramulator"), reqbuf_id, mem_req_state_names[req->state],
             Mem_Req_Type_str(req->type), unsstr64(req->priority), unsstr64(req->start_cycle), unsstr64(req->rdy_cycle),
             hexstr64s(req->addr), req->size, unsstr64(cycle_count - req->start_cycle), req->mem_flat_bank,
             req->op_count, unsstr64(req->oldest_op_unique_num), req->off_path);
@@ -970,10 +963,10 @@ void mem_start_mlc_access(Mem_Req* req) {
   if ((need_wp && get_write_port(&MLC(req->proc_id)->ports[req->mlc_bank])) ||
       (need_rp && get_read_port(&MLC(req->proc_id)->ports[req->mlc_bank]))) {
     DEBUG(req->proc_id,
-          "Mem request accessing MLC  index:%ld  type:%s  addr:0x%s  "
+          "Mem request accessing MLC  type:%s  addr:0x%s  "
           "mem_bank:%d  size:%d  state: %s\n",
-          (long int)(req - mem->req_buffer), Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->mem_flat_bank,
-          req->size, mem_req_state_names[req->state]);
+          Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->mem_flat_bank, req->size,
+          mem_req_state_names[req->state]);
 
     avail = TRUE;
     req->state = MRS_MLC_WAIT;
@@ -998,10 +991,10 @@ void mem_start_l1_access(Mem_Req* req) {
   if ((need_wp && get_write_port(&L1(req->proc_id)->ports[req->l1_bank])) ||
       (need_rp && get_read_port(&L1(req->proc_id)->ports[req->l1_bank]))) {
     DEBUG(req->proc_id,
-          "Mem request accessing L1  index:%ld  type:%s  addr:0x%s  "
+          "Mem request accessing L1  type:%s  addr:0x%s  "
           "mem_bank:%d  size:%d  state: %s\n",
-          (long int)(req - mem->req_buffer), Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->mem_flat_bank,
-          req->size, mem_req_state_names[req->state]);
+          Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->mem_flat_bank, req->size,
+          mem_req_state_names[req->state]);
 
     avail = TRUE;
     req->state = MRS_L1_WAIT;
@@ -1147,9 +1140,9 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry, Ad
   }
 
   DEBUG(req->proc_id,
-        "Mem request hit in the L1  index:%ld  type:%s  addr:0x%s  l1_bank:%d  "
+        "Mem request hit in the L1  type:%s  addr:0x%s  l1_bank:%d  "
         "size:%d\n",
-        (long int)(req - mem->req_buffer), Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->l1_bank, req->size);
+        Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->l1_bank, req->size);
 
   if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
     STAT_EVENT(req->proc_id, L1_HIT);
@@ -1170,7 +1163,7 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry, Ad
     STAT_EVENT(req->proc_id, L1_HIT_ONPATH_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
 
   if (!req->demand_match_prefetch && (req->type == MRT_DFETCH || req->type == MRT_DSTORE || req->type == MRT_IFETCH)) {
-    DEBUG(req->proc_id, "Req index:%d no longer a chip demand\n", req->id);
+    DEBUG(req->proc_id, "Req 0x%s no longer a chip demand\n", hexstr64s(req->addr));
   }
 
   // this is just a stat collection
@@ -1192,7 +1185,7 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry, Ad
   } else if (!req->done_func) {
     req->state = MRS_L1_HIT_DONE;
     // Free the request buffer
-    mem_free_reqbuf(req);
+    mem_free_req(req);
   } else {
     req->state = MRS_L1_HIT_DONE;
     req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_CORES[req->proc_id]);  // no +1 to match old performance
@@ -1287,7 +1280,7 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_entry, 
     } else {  // writeback done
       /* Remove the entry from request buffer */
       req->state = MRS_MLC_HIT_DONE;
-      mem_free_reqbuf(req);
+      mem_free_req(req);
     }
 
     /* Set the priority so that this entry will be removed from the mlc_queue */
@@ -1304,16 +1297,15 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_entry, 
 
 static Flag mem_process_l1_miss_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry, Addr* line_addr, L1_Data* data) {
   DEBUG(req->proc_id,
-        "Mem request missed in the L1  index:%ld  type:%s  addr:0x%s  "
+        "Mem request missed in the L1  type:%s  addr:0x%s  "
         "l1_bank:%d  size:%d  state: %s\n",
-        (long int)(req - mem->req_buffer), Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->l1_bank, req->size,
-        mem_req_state_names[req->state]);
+        Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->l1_bank, req->size, mem_req_state_names[req->state]);
 
   if (!req->l1_miss) {  // have we collected these statistics already?
     if (req->type == MRT_DFETCH || req->type == MRT_DSTORE || req->type == MRT_IFETCH) {
       perf_pred_off_chip_effect_start(req);
       if (!req->demand_match_prefetch) {
-        DEBUG(req->proc_id, "Req index:%d no longer a chip demand\n", req->id);
+        DEBUG(req->proc_id, "Req 0x%s no longer a chip demand\n", hexstr64s(req->addr));
       }
     }
 
@@ -1367,7 +1359,7 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_e
         }
         req->state = MRS_L1_HIT_DONE;
         req->rdy_cycle = cycle_count + 1;
-        mem_free_reqbuf(req);
+        mem_free_req(req);
         l1_queue_entry->priority = Mem_Req_Priority_Offset[MRT_MIN_PRIORITY];
         return TRUE;
       } else {
@@ -1387,7 +1379,7 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_e
       } else {  // CMP write back
         req->state = MRS_L1_HIT_DONE;
         req->rdy_cycle = cycle_count + 1;
-        mem_free_reqbuf(req);
+        mem_free_req(req);
       }
       l1_queue_entry->priority = Mem_Req_Priority_Offset[MRT_MIN_PRIORITY];
       return TRUE;
@@ -1398,7 +1390,7 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_e
     // not calling done_func to avoid filling caches
     req->state = MRS_INV;
     req->rdy_cycle = cycle_count + 1;
-    mem_free_reqbuf(req);
+    mem_free_req(req);
     l1_queue_entry->priority = Mem_Req_Priority_Offset[MRT_MIN_PRIORITY];
     return TRUE;
   }
@@ -1442,10 +1434,9 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_e
 static Flag mem_process_mlc_miss_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_entry, Addr* line_addr,
                                         MLC_Data* data) {
   DEBUG(req->proc_id,
-        "Mem request missed in the MLC  index:%ld  type:%s  addr:0x%s  "
+        "Mem request missed in the MLC  type:%s  addr:0x%s  "
         "mlc_bank:%d  size:%d  state: %s\n",
-        (long int)(req - mem->req_buffer), Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->mlc_bank, req->size,
-        mem_req_state_names[req->state]);
+        Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->mlc_bank, req->size, mem_req_state_names[req->state]);
 
   if (!req->mlc_miss) {  // have we marked this as MLC miss already (and thus
                          // collected the statistics)?
@@ -1494,7 +1485,7 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue
         }
         req->state = MRS_MLC_HIT_DONE;
         req->rdy_cycle = cycle_count + 1;
-        mem_free_reqbuf(req);
+        mem_free_req(req);
         mlc_queue_entry->priority = Mem_Req_Priority_Offset[MRT_MIN_PRIORITY];
         return TRUE;
       } else {
@@ -1513,7 +1504,7 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue
       } else {  // CMP write back
         req->state = MRS_MLC_HIT_DONE;
         req->rdy_cycle = cycle_count + 1;
-        mem_free_reqbuf(req);
+        mem_free_req(req);
       }
       mlc_queue_entry->priority = Mem_Req_Priority_Offset[MRT_MIN_PRIORITY];
       return TRUE;
@@ -1662,7 +1653,7 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
           DEBUG(req->proc_id, "L1 write through request is sent to Ramulator\n");
           mem_seq_num++;
           // perf_pred_mem_req_start(req);
-          mem_free_reqbuf(req);
+          mem_free_req(req);
         }
 
         // bus_out_seq_num++;
@@ -1748,7 +1739,7 @@ static Flag mem_complete_l1_access(Mem_Req* req, Mem_Queue_Entry* l1_queue_entry
           // if(req->type == MRT_DSTORE) {
           //   // write requests can be informed as done as soon as they are enqueued to Ramulator
           //   mem->uncores[req->proc_id].num_outstanding_l1_misses--;
-          //   mem_free_reqbuf(req);
+          //   mem_free_req(req);
           // }
 
           ASSERTM(0,
@@ -1924,7 +1915,6 @@ static Flag mem_complete_mlc_access(Mem_Req* req, Mem_Queue_Entry* mlc_queue_ent
 static void mem_process_l1_reqs() {
   Mem_Req* req = NULL;
   int ii;
-  int reqbuf_id;
   int l1_queue_removal_count = 0;
   int out_queue_insertion_count = 0;
   int l1_queue_reserve_entry_count = 0;
@@ -1933,17 +1923,16 @@ static void mem_process_l1_reqs() {
   /* Go thru the l1_queue and try to access L1 for each request */
 
   for (ii = 0; ii < mem->l1_queue.entry_count; ii++) {
-    reqbuf_id = mem->l1_queue.base[ii].reqbuf;
-    req = &(mem->req_buffer[reqbuf_id]);
+    req = mem->l1_queue.base[ii].req;
 
     // this is just a print
     if (req->state == MRS_INV) {
       print_mem_queue(QUEUE_L1 | QUEUE_BUS_OUT | QUEUE_L1FILL | QUEUE_MLC | QUEUE_MLC_FILL);
     }
 
-    ASSERTM(req->proc_id, req->state != MRS_INV, "id:%d state:%s type:%s rc:%d l1:%d bi:%d lf:%d\n", req->id,
-            mem_req_state_names[req->state], Mem_Req_Type_str(req->type), mem->req_count, mem->l1_queue.entry_count,
-            mem->bus_out_queue.entry_count, mem->l1fill_queue.entry_count);
+    ASSERTM(req->proc_id, req->state != MRS_INV, "addr:0x%s state:%s type:%s rc:%d l1:%d bi:%d lf:%d\n",
+            hexstr64s(req->addr), mem_req_state_names[req->state], Mem_Req_Type_str(req->type), mem->req_count,
+            mem->l1_queue.entry_count, mem->bus_out_queue.entry_count, mem->l1fill_queue.entry_count);
 
     /* if the request is not yet ready, then try the next one */
     if (cycle_count < req->rdy_cycle)
@@ -1961,9 +1950,9 @@ static void mem_process_l1_reqs() {
       else
         STAT_EVENT(req->proc_id, L1_DEMAND_ACCESS);
     } else {
-      ASSERTM(req->proc_id, req->state == MRS_L1_WAIT, "id:%d state:%s type:%s rc:%d l1:%d bi:%d lf:%d\n", req->id,
-              mem_req_state_names[req->state], Mem_Req_Type_str(req->type), mem->req_count, mem->l1_queue.entry_count,
-              mem->bus_out_queue.entry_count, mem->l1fill_queue.entry_count);
+      ASSERTM(req->proc_id, req->state == MRS_L1_WAIT, "addr:0x%s state:%s type:%s rc:%d l1:%d bi:%d lf:%d\n",
+              hexstr64s(req->addr), mem_req_state_names[req->state], Mem_Req_Type_str(req->type), mem->req_count,
+              mem->l1_queue.entry_count, mem->bus_out_queue.entry_count, mem->l1fill_queue.entry_count);
 
       if (mem_complete_l1_access(req, &(mem->l1_queue.base[ii]), &out_queue_insertion_count,
                                  &l1_queue_reserve_entry_count))
@@ -2010,7 +1999,6 @@ static void mem_process_l1_reqs() {
 static void mem_process_mlc_reqs() {
   Mem_Req* req = NULL;
   int ii;
-  int reqbuf_id;
   int mlc_queue_removal_count = 0;
   int l1_queue_insertion_count = 0;
   int mlc_queue_reserve_entry_count = 0;
@@ -2019,17 +2007,16 @@ static void mem_process_mlc_reqs() {
   /* Go thru the mlc_queue and try to access MLC for each request */
 
   for (ii = 0; ii < mem->mlc_queue.entry_count; ii++) {
-    reqbuf_id = mem->mlc_queue.base[ii].reqbuf;
-    req = &(mem->req_buffer[reqbuf_id]);
+    req = mem->mlc_queue.base[ii].req;
 
     // this is just a print
     if (req->state == MRS_INV) {
       print_mem_queue(QUEUE_L1 | QUEUE_BUS_OUT | QUEUE_L1FILL | QUEUE_MLC | QUEUE_MLC_FILL);
     }
 
-    ASSERTM(req->proc_id, req->state != MRS_INV, "id:%d state:%s type:%s rc:%d mlc:%d l1:%d mf:%d\n", req->id,
-            mem_req_state_names[req->state], Mem_Req_Type_str(req->type), mem->req_count, mem->mlc_queue.entry_count,
-            mem->l1_queue.entry_count, mem->mlc_fill_queue.entry_count);
+    ASSERTM(req->proc_id, req->state != MRS_INV, "addr:0x%s state:%s type:%s rc:%d mlc:%d l1:%d mf:%d\n",
+            hexstr64s(req->addr), mem_req_state_names[req->state], Mem_Req_Type_str(req->type), mem->req_count,
+            mem->mlc_queue.entry_count, mem->l1_queue.entry_count, mem->mlc_fill_queue.entry_count);
 
     /* if the request is not yet ready, then try the next one */
     if (cycle_count < req->rdy_cycle)
@@ -2048,9 +2035,9 @@ static void mem_process_mlc_reqs() {
       else
         STAT_EVENT(req->proc_id, MLC_DEMAND_ACCESS);
     } else {
-      ASSERTM(req->proc_id, req->state == MRS_MLC_WAIT, "id:%d state:%s type:%s rc:%d mlc:%d l1:%d mf:%d\n", req->id,
-              mem_req_state_names[req->state], Mem_Req_Type_str(req->type), mem->req_count, mem->mlc_queue.entry_count,
-              mem->l1_queue.entry_count, mem->mlc_fill_queue.entry_count);
+      ASSERTM(req->proc_id, req->state == MRS_MLC_WAIT, "addr:0x%s state:%s type:%s rc:%d mlc:%d l1:%d mf:%d\n",
+              hexstr64s(req->addr), mem_req_state_names[req->state], Mem_Req_Type_str(req->type), mem->req_count,
+              mem->mlc_queue.entry_count, mem->l1_queue.entry_count, mem->mlc_fill_queue.entry_count);
       if (mem_complete_mlc_access(req, &(mem->mlc_queue.base[ii]), &l1_queue_insertion_count,
                                   &mlc_queue_reserve_entry_count))
         mlc_queue_removal_count++;
@@ -2094,10 +2081,9 @@ static void mem_process_bus_out_reqs() {
 
 void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
   DEBUG(req->proc_id,
-        "Mem request completed bus in access  index:%ld  type:%s  addr:0x%s  "
+        "Mem request completed bus in access  type:%s  addr:0x%s  "
         "size:%d  state: %s\n",
-        (long int)(req - mem->req_buffer), Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->size,
-        mem_req_state_names[req->state]);
+        Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->size, mem_req_state_names[req->state]);
 
   /* Exactly one level keeps the line, which is what the destination is for. */
   ASSERT(req->proc_id, !EXCLUSIVE_CACHES || fill_req_is_wb(req) ||
@@ -2164,14 +2150,12 @@ static void remove_from_l1_fill_queue(uns proc_id, int* p_l1fill_queue_removal_c
 static void mem_process_l1_fill_reqs() {
   Mem_Req* req = NULL;
   int ii;
-  int reqbuf_id;
   int l1fill_queue_removal_count = 0;
 
   /* Go thru the l1fill_queue */
 
   for (ii = 0; ii < mem->l1fill_queue.entry_count; ii++) {
-    reqbuf_id = mem->l1fill_queue.base[ii].reqbuf;
-    req = &(mem->req_buffer[reqbuf_id]);
+    req = mem->l1fill_queue.base[ii].req;
 
     ASSERT(req->proc_id, req->state != MRS_INV);
     ASSERT(req->proc_id, (req->type != MRT_WB) || req->wb_requested_back);
@@ -2183,10 +2167,9 @@ static void mem_process_l1_fill_reqs() {
 
     if (req->state == MRS_FILL_L1) {
       DEBUG(req->proc_id,
-            "Mem request about to fill L1  index:%ld  type:%s  addr:0x%s  "
+            "Mem request about to fill L1  type:%s  addr:0x%s  "
             "size:%d  state: %s\n",
-            (long int)(req - mem->req_buffer), Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->size,
-            mem_req_state_names[req->state]);
+            Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->size, mem_req_state_names[req->state]);
       if (l1_fill_line(req)) {
         ASSERT(0, req->type != MRT_WB && req->type != MRT_WB_NODIRTY);
         if (CONSTANT_MEMORY_LATENCY)
@@ -2229,7 +2212,7 @@ static void mem_process_l1_fill_reqs() {
       req->reserved_levels &= ~MEM_RES_L1;
       if (!req->done_func) {
         // Free the request buffer
-        mem_free_reqbuf(req);
+        mem_free_req(req);
 
         // remove from l1fill queue
         l1fill_queue_removal_count++;
@@ -2264,14 +2247,12 @@ static void mem_process_l1_fill_reqs() {
 static void mem_process_mlc_fill_reqs() {
   Mem_Req* req;
   int ii;
-  int reqbuf_id;
   int mlc_fill_queue_removal_count = 0;
 
   /* Go thru the mlc_fill_queue */
 
   for (ii = 0; ii < mem->mlc_fill_queue.entry_count; ii++) {
-    reqbuf_id = mem->mlc_fill_queue.base[ii].reqbuf;
-    req = &(mem->req_buffer[reqbuf_id]);
+    req = mem->mlc_fill_queue.base[ii].req;
 
     ASSERT(req->proc_id, req->state != MRS_INV);
     ASSERT(req->proc_id, (req->type != MRT_WB) || req->wb_requested_back);
@@ -2284,10 +2265,9 @@ static void mem_process_mlc_fill_reqs() {
 
     if (req->state == MRS_FILL_MLC) {
       DEBUG(req->proc_id,
-            "Mem request about to fill MLC  index:%ld  type:%s  addr:0x%s  "
+            "Mem request about to fill MLC  type:%s  addr:0x%s  "
             "size:%d  state: %s\n",
-            (long int)(req - mem->req_buffer), Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->size,
-            mem_req_state_names[req->state]);
+            Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->size, mem_req_state_names[req->state]);
       if (mlc_fill_line(req)) {
         req->state = MRS_FILL_DONE;
         req->rdy_cycle = cycle_count + 1;
@@ -2302,7 +2282,7 @@ static void mem_process_mlc_fill_reqs() {
         req->reserved_levels &= ~MEM_RES_MLC;
 
         // Free the request buffer
-        mem_free_reqbuf(req);
+        mem_free_req(req);
 
         // remove from mlc_fill queue - how do we handle this now?
         mlc_fill_queue_removal_count++;
@@ -2331,15 +2311,13 @@ static void mem_process_mlc_fill_reqs() {
 static void mem_process_core_fill_reqs(uns proc_id) {
   Mem_Req* req;
   int ii;
-  int reqbuf_id;
   int core_fill_queue_removal_count = 0;
 
   /* Go thru the core_fill_queue */
 
   Mem_Queue* core_fill_queue = &mem->core_fill_queues[proc_id];
   for (ii = 0; ii < core_fill_queue->entry_count; ii++) {
-    reqbuf_id = core_fill_queue->base[ii].reqbuf;
-    req = &(mem->req_buffer[reqbuf_id]);
+    req = core_fill_queue->base[ii].req;
 
     ASSERT(req->proc_id, req->proc_id == proc_id);
     ASSERT(req->proc_id, req->state != MRS_INV);
@@ -2353,7 +2331,7 @@ static void mem_process_core_fill_reqs(uns proc_id) {
 
     if (req->done_func(req)) {
       // Free the request buffer
-      mem_free_reqbuf(req);
+      mem_free_req(req);
 
       // remove from core fill queue
       core_fill_queue_removal_count++;
@@ -2491,7 +2469,7 @@ static void mem_merge_reqs(Mem_Req* survivor, Mem_Req* victim) {
   victim->reserved_levels = 0;
 
   survivor->merged_on_descent = TRUE;
-  mem_free_reqbuf(victim);
+  mem_free_req(victim);
 }
 
 /**************************************************************************************/
@@ -2501,7 +2479,6 @@ static inline Mem_Req* mem_search_queue(
     Mem_Queue* queue, uns8 proc_id, Addr addr, Mem_Req_Type type, uns size,
     Flag* demand_hit_prefetch,  // set if the matching req is a prefetch and a demand hits it
     Flag* demand_hit_writeback, Mem_Queue_Entry** queue_entry, Flag collect_stats) {
-  int used_reqbuf_id;
   Mem_Req* req = NULL;
   Mem_Req* matching_req = NULL;
   Flag match = FALSE;
@@ -2518,8 +2495,7 @@ static inline Mem_Req* mem_search_queue(
   // CMP ignore "size" from argument
 
   for (ii = 0; ii < queue->entry_count; ii++) {
-    used_reqbuf_id = queue->base[ii].reqbuf;
-    req = &mem->req_buffer[used_reqbuf_id];
+    req = queue->base[ii].req;
     dest_addr = CACHE_SIZE_ADDR(req->size, req->addr);
     src_addr = CACHE_SIZE_ADDR(req->size, addr);
     match = FALSE;
@@ -2628,10 +2604,9 @@ static inline Mem_Req* mem_search_queue(
         matching_req = req;
         if (MRS_INV == matching_req->state) {
           DEBUG(matching_req->proc_id,
-                "Matching req invalid: id %d index:%ld type:%s addr:0x%s "
+                "Matching req invalid: type:%s addr:0x%s "
                 "size:%d \n",
-                matching_req->id, (long int)(matching_req - mem->req_buffer), Mem_Req_Type_str(matching_req->type),
-                hexstr64s(matching_req->addr), matching_req->size);
+                Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size);
         }
         ASSERT(matching_req->proc_id, matching_req->state != MRS_INV);
         *queue_entry = &(queue->base[ii]);
@@ -2967,17 +2942,17 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
 /* If queue is specified, only allocates if its entry_count < size */
 
 static inline Mem_Req* mem_allocate_req_buffer(uns proc_id, Mem_Req_Type type) {
-  int* reqbuf_num_ptr = sl_list_remove_head(&mem->req_buffer_free_list);
+  Mem_Req** req_ptr = sl_list_remove_head(&mem->req_buffer_free_list);
 
   /* Running dry means the pool is mis-sized, not that the caller should back off. */
-  ASSERTM(proc_id, reqbuf_num_ptr,
+  ASSERTM(proc_id, req_ptr,
           "Request buffer exhausted (%d entries) allocating %s; the pool must cover "
           "mlc_queue + l1_queue + readq + writeq\n",
           mem->total_mem_req_buffers, Mem_Req_Type_str(type));
-  ASSERT(0, mem->req_buffer[*reqbuf_num_ptr].state == MRS_INV);
+  ASSERT(0, (*req_ptr)->state == MRS_INV);
   mem->num_req_buffers_per_core[proc_id] += 1;
   update_mem_req_occupancy_counter(type, +1);
-  return &(mem->req_buffer[*reqbuf_num_ptr]);
+  return *req_ptr;
 }
 
 /**************************************************************************************/
@@ -2994,7 +2969,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
   STAT_EVENT(proc_id, MEM_REQ_BUFFER_MISS);
 
   if (type == MRT_IFETCH || type == MRT_DFETCH || type == MRT_DSTORE) {
-    DEBUG(proc_id, "Req index:%d has become a chip demand\n", new_req->id);
+    DEBUG(proc_id, "Req 0x%s has become a chip demand\n", hexstr64s(new_req->addr));
   }
 
   mem->req_count++;
@@ -3126,9 +3101,8 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type
     check_and_remove_addr_sign_extended_bits(addr, NUM_ADDR_NON_SIGN_EXTEND_BITS, TRUE);
   }
 
-  DEBUG(new_req->proc_id, "New mem request is initiated index:%ld type:%s addr:0x%s state:%s\n",
-        (long int)(new_req - mem->req_buffer), Mem_Req_Type_str(new_req->type), hexstr64s(new_req->addr),
-        mem_req_state_names[new_req->state]);
+  DEBUG(new_req->proc_id, "New mem request is initiated type:%s addr:0x%s state:%s\n", Mem_Req_Type_str(new_req->type),
+        hexstr64s(new_req->addr), mem_req_state_names[new_req->state]);
 }
 
 /**************************************************************************************/
@@ -3143,20 +3117,20 @@ static inline Mem_Queue_Entry* mem_insert_req_into_queue(Mem_Req* new_req, Mem_Q
     print_mem_queue(QUEUE_L1 | QUEUE_BUS_OUT | QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC | QUEUE_MLC_FILL);
   }
   ASSERTM(new_req->proc_id, queue->entry_count < (queue->size - queue->reserved_entry_count),
-          "name:%s  count:%d  size:%d  reserved:%d  reqbuf:%d  rc:%d l1:%d "
+          "name:%s  count:%d  size:%d  reserved:%d  rc:%d l1:%d "
           "bo:%d lf:%d rf:%d\n",
-          queue->name, queue->entry_count, queue->size, queue->reserved_entry_count, new_req->id, mem->req_count,
+          queue->name, queue->entry_count, queue->size, queue->reserved_entry_count, mem->req_count,
           mem->l1_queue.entry_count, mem->bus_out_queue.entry_count, mem->l1fill_queue.entry_count,
           mem->req_buffer_free_list.count);
 
   Mem_Queue_Entry* new_entry = &queue->base[queue->entry_count];
-  new_entry->reqbuf = new_req->id;
+  new_entry->req = new_req;
   new_entry->priority = priority > 0 ? priority : new_req->priority;
   queue->entry_count++;
 
-  DEBUG(new_req->proc_id, "Inserted into %s index:%d pri:%s rc:%d l1:%d bo:%d lf:%d\n", queue->name, new_req->id,
-        unsstr64(priority > 0 ? priority : new_req->priority), mem->req_count, mem->l1_queue.entry_count,
-        mem->bus_out_queue.entry_count, mem->l1fill_queue.entry_count);
+  DEBUG(new_req->proc_id, "Inserted into %s addr:0x%s pri:%s rc:%d l1:%d bo:%d lf:%d\n", queue->name,
+        hexstr64s(new_req->addr), unsstr64(priority > 0 ? priority : new_req->priority), mem->req_count,
+        mem->l1_queue.entry_count, mem->bus_out_queue.entry_count, mem->l1fill_queue.entry_count);
   return new_entry;
 }
 
@@ -3255,9 +3229,9 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
     }
     ASSERT(matching_req->proc_id, queue_entry || ramulator_match);
     DEBUG(matching_req->proc_id,
-          "Hit in mem buffer  index:%d  type:%s  addr:0x%s  size:%d  op_num:%d "
+          "Hit in mem buffer  type:%s  addr:0x%s  size:%d  op_num:%d "
           " off_path:%d\n",
-          matching_req->id, Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
+          Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
           op ? (int)op->op_num : -1, op ? op->off_path : FALSE);
     if ((type == MRT_DFETCH) || (type == MRT_DSTORE) || matching_req) {
       // Train the Data prefetcher as a miss
@@ -3434,9 +3408,9 @@ Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns
   if (matching_req) {
     ASSERT(matching_req->proc_id, queue_entry);
     DEBUG(matching_req->proc_id,
-          "Hit in mem buffer  index:%d  type:%s  addr:0x%s  size:%d  op_num:%d "
+          "Hit in mem buffer  type:%s  addr:0x%s  size:%d  op_num:%d "
           " off_path:%d\n",
-          matching_req->id, Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
+          Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
           op ? (int)op->op_num : -1, op ? op->off_path : FALSE);
     return (mem_adjust_matching_request(matching_req, type, addr, size, DEST_MLC, delay, op, done_func, unique_num,
                                         demand_hit_prefetch, demand_hit_writeback, &queue_entry, new_priority,
@@ -3507,9 +3481,9 @@ static Flag new_mem_mlc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns s
   if (matching_req) {
     ASSERT(matching_req->proc_id, queue_entry);
     DEBUG(matching_req->proc_id,
-          "Hit in mem buffer  index:%d  type:%s  addr:0x%s  size:%d  op_num:%d "
+          "Hit in mem buffer  type:%s  addr:0x%s  size:%d  op_num:%d "
           " off_path:%d\n",
-          matching_req->id, Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
+          Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
           op ? (int)op->op_num : -1, op ? op->off_path : FALSE);
     return (mem_adjust_matching_request(matching_req, type, addr, size, DEST_L1, delay, op, done_func, unique_num,
                                         demand_hit_prefetch, demand_hit_writeback, &queue_entry, new_priority,
@@ -3577,9 +3551,9 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
   if (matching_req) {
     ASSERT(matching_req->proc_id, queue_entry);
     DEBUG(matching_req->proc_id,
-          "Hit in mem buffer  index:%d  type:%s  addr:0x%s  size:%d  op_num:%d "
+          "Hit in mem buffer  type:%s  addr:0x%s  size:%d  op_num:%d "
           " off_path:%d\n",
-          matching_req->id, Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
+          Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
           op ? (int)op->op_num : -1, op ? op->off_path : FALSE);
     return (mem_adjust_matching_request(matching_req, type, addr, size, DEST_MEM, delay, op, done_func, unique_num,
                                         demand_hit_prefetch, demand_hit_writeback, &queue_entry, new_priority,
@@ -3604,7 +3578,7 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
 
     is_sent = ramulator_send(new_req);
     if (!is_sent) {
-      mem_free_reqbuf(new_req);  // RAMULATOR_todo: optimize this
+      mem_free_req(new_req);  // RAMULATOR_todo: optimize this
       return FALSE;
     } else {
       ASSERT(new_req->proc_id, new_req->mem_queue_cycle >= new_req->rdy_cycle);
@@ -3613,7 +3587,7 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
       mem_seq_num++;
       perf_pred_mem_req_start(new_req);
 
-      mem_free_reqbuf(new_req);
+      mem_free_req(new_req);
     }
   } else {
     Mem_Req** req_ptr = sl_list_add_tail(&mem->l1_in_buffer_core[proc_id]);
@@ -3701,9 +3675,9 @@ Flag l1_fill_line(Mem_Req* req) {
   }
 
   DEBUG(req->proc_id,
-        "Filling L1  index:%d addr:0x%s %7d cindex:%7d op_count:%d "
+        "Filling L1  addr:0x%s %7d cindex:%7d op_count:%d "
         "op_num[0]:0x%lld oldest_op_num:0x%d\n",
-        req->id, hexstr64s(req->addr), (int)(req->addr), (int)(req->addr >> LOG2(DCACHE_LINE_SIZE)), req->op_count,
+        hexstr64s(req->addr), (int)(req->addr), (int)(req->addr >> LOG2(DCACHE_LINE_SIZE)), req->op_count,
         (req->op_count ? req->oldest_op_unique_num : 0x0), (req->op_count ? tmp_num : 0x0));
 
   // cmp IGNORE
@@ -3715,7 +3689,7 @@ Flag l1_fill_line(Mem_Req* req) {
     /* The prefetch cache has it, so the miss is served here. */
     l1_miss_is_satisfied(req);
 
-    ASSERT(req->id, !req->demand_match_prefetch);
+    ASSERT(req->proc_id, !req->demand_match_prefetch);
     data->proc_id = req->proc_id;
     data->prefetcher_id = req->prefetcher_id;
     data->pref_loadPC = req->pref_loadPC;
@@ -4133,9 +4107,9 @@ Flag mlc_fill_line(Mem_Req* req) {
   }
 
   DEBUG(req->proc_id,
-        "Filling MLC  index:%d addr:0x%s %7d cindex:%7d op_count:%d "
+        "Filling MLC  addr:0x%s %7d cindex:%7d op_count:%d "
         "op_num[0]:0x%lld oldest_op_num:0x%d &op:%p &req:%p &opnum:%p\n",
-        req->id, hexstr64s(req->addr), (int)(req->addr), (int)(req->addr >> LOG2(DCACHE_LINE_SIZE)), req->op_count,
+        hexstr64s(req->addr), (int)(req->addr), (int)(req->addr >> LOG2(DCACHE_LINE_SIZE)), req->op_count,
         (req->op_count ? req->oldest_op_unique_num : 0x0), (req->op_count ? tmp_num : 0x0), (req->op_count ? top : 0x0),
         req, (req->op_count ? &(top->unique_num) : 0x0));
 
@@ -4325,34 +4299,6 @@ Flag mlc_fill_line(Mem_Req* req) {
   mlc_miss_is_satisfied(req);
 
   return SUCCESS;
-}
-
-/**************************************************************************************/
-/* mem_req_younger_than_uniquenum: */
-
-Flag mem_req_younger_than_uniquenum(int reqbuf, Counter unique_num) {
-  if (mem->req_buffer[reqbuf].oldest_op_unique_num == 0)
-    return mem->req_buffer[reqbuf].off_path;
-  else {
-    if (mem->req_buffer[reqbuf].oldest_op_unique_num > unique_num)
-      return TRUE;
-    else
-      return FALSE;
-  }
-}
-
-/**************************************************************************************/
-/* mem_req_older_than_uniquenum: */
-
-Flag mem_req_older_than_uniquenum(int reqbuf, Counter unique_num) {
-  if (mem->req_buffer[reqbuf].oldest_op_unique_num == 0)
-    return FALSE;
-  else {
-    if (mem->req_buffer[reqbuf].oldest_op_unique_num < unique_num)
-      return TRUE;
-    else
-      return FALSE;
-  }
 }
 
 /**************************************************************************************/

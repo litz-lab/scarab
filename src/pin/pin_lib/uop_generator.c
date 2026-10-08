@@ -377,6 +377,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->off_path = FALSE;
   op->state = OS_FETCHED;
   op->fu_num = -1;
+  op->cycles.dispatch_cycle = MAX_CTR;
   op->cycles.issue_cycle = MAX_CTR;
   op->cycles.map_cycle = MAX_CTR;
   op->cycles.rdy_cycle = 1;
@@ -390,6 +391,8 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->exec_count = 0;
   op->in_rdy_list = FALSE;
   op->in_node_list = FALSE;
+  op->criticality = 0;
+  op->slice_len = 0;
   op->bp_pred_l0.recovery_sch = FALSE;
   op->bp_pred_main.recovery_sch = FALSE;
 

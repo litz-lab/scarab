@@ -558,6 +558,17 @@ static inline void exec_stage_bp_resolve(Op* op) {
     bp_resolve_op(g_bp_data, op);
   }
 
+  // average resolve time of on-path branches, from ROB insertion to execution completion
+  if (!op->off_path) {
+    Counter resolve_cycles = op_get_exec_cycle(op) - op_get_dispatch_cycle(op);
+    STAT_EVENT(op->proc_id, EXEC_BP_ON_PATH_RESOLVED);
+    INC_STAT_EVENT(op->proc_id, EXEC_BP_ON_PATH_RESOLVED_CYCLES, resolve_cycles);
+    if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
+      STAT_EVENT(op->proc_id, EXEC_BP_MISPRE_ON_PATH_RESOLVED);
+      INC_STAT_EVENT(op->proc_id, EXEC_BP_MISPRE_ON_PATH_RESOLVED_CYCLES, resolve_cycles);
+    }
+  }
+
   if (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) {
     DEBUG(exec->proc_id, "Exec schedules recovery for op_num:%llu at cycle:%llu\n", (unsigned long long)op->op_num,
           (unsigned long long)op_get_exec_cycle(op));

@@ -97,11 +97,11 @@ void pipeview_print_op(struct Op_struct* op) {
   print_event(file, op, "decode_done", op_get_fetch_cycle(op) + 1 + DECODE_CYCLES);
   print_event(file, op, "map", op_get_map_cycle(op));
   print_event(file, op, "map_done", op_get_map_cycle(op) + MAP_CYCLES);
-  print_event(file, op, "issue", op_get_issue_cycle(op));
-  print_event(file, op, "issue_done", op_get_issue_cycle(op) + 1);
+  print_event(file, op, "issue", op_get_dispatch_cycle(op));
+  print_event(file, op, "issue_done", op_get_dispatch_cycle(op) + 1);
   if (op_sources_not_rdy_is_clear(op)) {
     // op was ready at rdy_cycle only if all sources are ready
-    print_event(file, op, "ready", MAX2(op_get_rdy_cycle(op), op_get_issue_cycle(op) + 1));
+    print_event(file, op, "ready", MAX2(op_get_rdy_cycle(op), op_get_dispatch_cycle(op) + 1));
   } else {
     ASSERT(op->proc_id, op->off_path);
   }

@@ -49,20 +49,22 @@ typedef struct FT FT;
  * is read through op_get_<name>_cycle() and written through op_set_<name>_cycle()
  * (defined below the Op struct). Every counter is reset to a sentinel when the op
  * is allocated (MAX_CTR, except rdy_cycle which starts at 1); except for the
- * rdy_cycle accumulator, each counter is write-once per op and its setter asserts
- * the counter had not been set since allocation. */
+ * rdy_cycle accumulator and issue_cycle (re-granted after an exec-stage reject),
+ * each counter is write-once per op and its setter asserts the counter had not
+ * been set since allocation. */
 typedef struct Op_Cycles_struct {
-  Counter fetch_cycle;   // cycle an individual instruction is fetched
-  Counter bp_cycle;      // cycle a CF instruction accesses the branch predictor
-  Counter map_cycle;     // cycle an individual instruction enters the map stage
-  Counter issue_cycle;   // cycle an individual instruction is issued -- same as chkpt
-  Counter rdy_cycle;     // cycle the final source value is available (accumulator: MAX over producers)
-  Counter sched_cycle;   // cycle when the op is scheduled (arrives at the functional unit)
-  Counter exec_cycle;    // cycle when execution (or addr gen) of op will be completed (result usable)
-  Counter dcache_cycle;  // cycle when the op accesses the dcache
-  Counter done_cycle;    // cycle when the op is ready to retire
-  Counter retire_cycle;  // cycle when the op actually retires
-  Counter replay_cycle;  // cycle when the op catches a replay signal
+  Counter fetch_cycle;     // cycle an individual instruction is fetched
+  Counter bp_cycle;        // cycle a CF instruction accesses the branch predictor
+  Counter map_cycle;       // cycle an individual instruction enters the map stage
+  Counter dispatch_cycle;  // cycle an individual instruction is dispatched into the ROB -- same as chkpt
+  Counter issue_cycle;     // cycle the op is granted out of the issue queue (last grant if it was rejected)
+  Counter rdy_cycle;       // cycle the final source value is available (accumulator: MAX over producers)
+  Counter sched_cycle;     // cycle when the op is scheduled (arrives at the functional unit)
+  Counter exec_cycle;      // cycle when execution (or addr gen) of op will be completed (result usable)
+  Counter dcache_cycle;    // cycle when the op accesses the dcache
+  Counter done_cycle;      // cycle when the op is ready to retire
+  Counter retire_cycle;    // cycle when the op actually retires
+  Counter replay_cycle;    // cycle when the op catches a replay signal
   Counter pred_cycle;
   Counter precommit_cycle;  // cycle when the op is precommit (will eventually retire)
   Counter decode_cycle;     // cycle when decode completes
@@ -209,6 +211,9 @@ struct Op_struct {
   uns16 queue_id;        // id for which issue queue this op is assigned to
   uns16 queue_entry_id;  // id for which entry in the issue queue this op is
 
+  uns64 criticality;  // op weight for criticality-based scheduling, raised by a dependent mispredicted branch
+  uns64 slice_len;    // longest dependence chain (in hops) from this op to a dispatched mispredicted branch
+
   struct Op_struct* next_rdy;   // pointer to next ready op (node table)
   Flag in_rdy_list;             // is the op in the node stage's ready list?
   struct Op_struct* next_node;  // pointer to the next op in the node table
@@ -269,8 +274,9 @@ struct Op_struct {
  * that per-counter behavior (stats, debug, invariants) can be added in one place.
  * op_set_<name>_cycle() is write-once: it asserts the counter has not been set
  * since the op was allocated (still MAX_CTR). Multiple assignment SITES are fine
- * as long as they are mutually exclusive for a given op. rdy_cycle is the sole
- * exception (an accumulator: MAX over the op's producers) and has no assert. */
+ * as long as they are mutually exclusive for a given op. rdy_cycle (an accumulator:
+ * MAX over the op's producers) and issue_cycle (re-granted after an exec-stage
+ * reject) are the exceptions and have no assert. */
 
 // Reach this op's sibling dynamic uop ops via its Dynamic_Inst (index 0 == bom, num_uops-1 == eom).
 static inline uns op_inst_num_uops(const Op* op) {
@@ -309,11 +315,18 @@ static inline void op_set_map_cycle(Op* op, Counter cycle) {
   op->cycles.map_cycle = cycle;
 }
 
+static inline Counter op_get_dispatch_cycle(const Op* op) {
+  return op->cycles.dispatch_cycle;
+}
+static inline void op_set_dispatch_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.dispatch_cycle == MAX_CTR);
+  op->cycles.dispatch_cycle = cycle;
+}
+
 static inline Counter op_get_issue_cycle(const Op* op) {
   return op->cycles.issue_cycle;
 }
 static inline void op_set_issue_cycle(Op* op, Counter cycle) {
-  ASSERT(op->proc_id, op->cycles.issue_cycle == MAX_CTR);
   op->cycles.issue_cycle = cycle;
 }
 
@@ -419,6 +432,7 @@ static inline void op_set_rdy_cycle(Op* op, Counter cycle) {
 static inline void op_assert_cycles_set_at_retire(const Op* op) {
   ASSERT(op->proc_id, op->cycles.fetch_cycle != MAX_CTR);
   ASSERT(op->proc_id, op->cycles.map_cycle != MAX_CTR);
+  ASSERT(op->proc_id, op->cycles.dispatch_cycle != MAX_CTR);
   ASSERT(op->proc_id, op->cycles.issue_cycle != MAX_CTR);
   ASSERT(op->proc_id, op->cycles.rdy_cycle != MAX_CTR);
   ASSERT(op->proc_id, op->cycles.sched_cycle != MAX_CTR);

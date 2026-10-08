@@ -115,8 +115,6 @@ FILE* l1_plot_file;
 FILE* mem_plot_file;
 static Counter order_num = 1;
 Counter mem_seq_num = 1;
-static Counter l1_seq_num = 1;
-static Counter mlc_seq_num = 1;
 static uns mem_req_demand_entries = 0;
 static uns mem_req_pref_entries = 0;
 static uns mem_req_wb_entries = 0;
@@ -153,39 +151,24 @@ static Flag mem_complete_mlc_access(Mem_Req* req, int* mlc_mshr_insertion_count)
 static Flag mem_process_l1_miss_access(Mem_Req* req, Addr* line_addr, L1_Data* data);
 static Flag mem_complete_l1_access(Mem_Req* req, int* out_mshr_insertion_count);
 
-static inline void mem_insert_req_into_mshr(Mem_Req* new_req, Mshr* mshr, Counter priority);
-static inline Flag insert_new_req_into_mlc_mshr(uns proc_id, Mem_Req* new_req);
-static inline Flag insert_new_req_into_dcache_mshr(uns proc_id, Mem_Req* new_req);
+static inline void mem_insert_req_into_mshr(Mem_Req* new_req, Mshr* mshr);
 
-static void mem_process_mlc_reqs(void);
-static void mem_process_l1_reqs(void);
+static void mem_process_lookups(Mshr* miss);
 
-static void mem_merge_at_level(Mem_Req* survivor, Mem_Req* req, Mshr* level);
+static void mem_merge_at_level(Mshr* level, Mem_Req* req);
 
-static inline Mem_Req* mem_search_mshr(Mshr* mshr, uns8 proc_id, Addr addr, Mem_Req_Type type, uns size,
-                                       Flag* demand_hit_prefetch, Flag* demand_hit_writeback, Flag collect_stats);
-
-static inline void mshr_file_add(Mem_Req* req, Mshr* mshr);
-static inline void mshr_file_remove(Mem_Req* req, Mshr* mshr);
 static inline Mshr* mem_fill_owner(Mem_Req* req);
 static inline Flag is_fill_state(Mem_Req_State state);
 
-static inline Mem_Req* mem_search_l1_for_merge(uns8 proc_id, Addr addr, Mem_Req_Type type, uns size,
-                                               Flag* demand_hit_prefetch, Flag* demand_hit_writeback);
-static inline Mem_Req* mem_search_level_for_merge(Mshr* mshr, uns8 proc_id, Addr addr, Mem_Req_Type type, uns size,
-                                                  Flag* demand_hit_prefetch, Flag* demand_hit_writeback);
-
 static Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns size, Destination destination,
                                         uns delay, Op* op, Flag done_func(Mem_Req*), Counter unique_num,
-                                        Flag demand_hit_prefetch, Flag demand_hit_writeback, Counter new_priority);
+                                        Flag demand_hit_prefetch, Counter new_priority);
 
 static inline Mem_Req* mem_alloc_req(uns proc_id, Mem_Req_Type type);
 
 static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mshr_Type mshr_type, uns8 proc_id, Addr addr,
                              uns size, uns delay, Op* op, Flag done_func(Mem_Req*), Counter unique_num,
                              Counter new_priority);
-
-static inline void init_mshr(Mshr* mshr, char* name, Mshr_Type type, uns mshr_size, uns mshr_wb_reserve);
 
 static inline Flag req_is_pref(Mem_Req_Type type);
 static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr);
@@ -203,8 +186,6 @@ static inline void set_off_path_confirmed_status(Mem_Req* req);
 static L1_Data* l1_pref_cache_access(Mem_Req* req);
 
 static inline void mem_record_late_prefetch(Mem_Req* pref);
-static inline Flag queue_mshr_full_for(Mshr* mshr, Mem_Req_Type type);
-static inline Flag mshr_file_holds(Mem_Req* req, Mshr* mshr);
 static void mshr_level_done(Mem_Req* req, Mshr* mshr);
 static inline void l1_miss_is_satisfied(Mem_Req* req);
 static inline void mlc_miss_is_satisfied(Mem_Req* req);
@@ -229,8 +210,6 @@ void mem_destroy_req_pool(void) {
     for (uns ii = 0; ii < mem->chunk_size; ii++) {
       destroy_list(&mem->req_pool_chunks[c][ii].op_ptrs);
       destroy_list(&mem->req_pool_chunks[c][ii].op_uniques);
-      destroy_list(&mem->req_pool_chunks[c][ii].mlc_mshr_waiters);
-      destroy_list(&mem->req_pool_chunks[c][ii].l1_mshr_waiters);
     }
     free(mem->req_pool_chunks[c]);
   }
@@ -245,8 +224,11 @@ void mem_destroy_req_pool(void) {
 void mem_clear_crit_path(void) {
   Mshr* files[3] = {&mem->dcache_mshr, &mem->mlc_mshr, &mem->l1_mshr};
   for (uns f = 0; f < 3; f++)
-    for (List_Entry* e = files[f]->mshr_file.head; e; e = e->next)
-      (*(Mem_Req**)&e->data)->mem_crit_path_at_entry = 0;
+    for (Mshr_Line* line = mshr_first(files[f]); line; line = mshr_next(files[f], line)) {
+      Mem_Req* reqs[mshr_line_count(line)];
+      for (uns i = 0, n = mshr_line_reqs(line, reqs); i < n; i++)
+        reqs[i]->mem_crit_path_at_entry = 0;
+    }
 }
 
 /* Append a chunk and put its requests on the free list. Called when the pool runs
@@ -269,27 +251,8 @@ static void mem_grow_req_pool(void) {
     /* A request is not a thing worth naming, so these lists carry none. */
     init_list(&chunk[ii].op_ptrs, NULL, sizeof(Op*), TRUE);
     init_list(&chunk[ii].op_uniques, NULL, sizeof(Counter), TRUE);
-    init_list(&chunk[ii].mlc_mshr_waiters, NULL, sizeof(Mem_Req*), TRUE);
-    init_list(&chunk[ii].l1_mshr_waiters, NULL, sizeof(Mem_Req*), TRUE);
     *(Mem_Req**)sl_list_add_tail(&mem->req_pool_free_list) = &chunk[ii];
   }
-}
-
-/**************************************************************************************/
-/* init_mshr: */
-
-static inline void init_mshr(Mshr* mshr, char* name, Mshr_Type type, uns mshr_size, uns mshr_wb_reserve) {
-  char mshr_name[MAX_STR_LENGTH + 1];
-  ASSERTM(0, mshr_size > mshr_wb_reserve, "%s: %u MSHRs do not cover a writeback reserve of %u\n", name, mshr_size,
-          mshr_wb_reserve);
-  mshr->mshr_size = mshr_size;
-  mshr->mshr_wb_reserve = mshr_wb_reserve;
-  sprintf(mshr_name, "%s MSHRS", name);
-  init_list(&mshr->mshr_file, mshr_name, sizeof(Mem_Req*), TRUE);
-  init_hash_table(&mshr->mshr_hash, mshr_name, 2 * mshr_size, sizeof(List));
-  mshr->type = type;
-  mshr->level = (type == MSHR_DCACHE) ? 0 : (type == MSHR_MLC) ? 1 : 2;
-  strcpy(mshr->name, name);
 }
 
 /**************************************************************************************/
@@ -393,9 +356,12 @@ void init_memory() {
   /* Per-core LLC timing would make the LLC's latency differ per request, and the
      lookup scan relies on one latency per level. */
   ASSERTM(0, !L1_USE_CORE_FREQ, "l1_use_core_freq is not supported by the MSHR lookup scan\n");
-  init_mshr(&mem->dcache_mshr, "DCACHE_MSHR", MSHR_DCACHE, DCACHE_MSHRS, MSHR_WB_RESERVE);
-  init_mshr(&mem->mlc_mshr, "MLC_MSHR", MSHR_MLC, MLC_MSHRS, MSHR_WB_RESERVE);
-  init_mshr(&mem->l1_mshr, "L1_MSHR", MSHR_MEM, L1_MSHRS, MSHR_WB_RESERVE);
+  mshr_init(&mem->dcache_mshr, "DCACHE_MSHR", MSHR_DCACHE, DCACHE_MSHRS);
+  mshr_init(&mem->mlc_mshr, "MLC_MSHR", MSHR_MLC, MLC_MSHRS);
+  mshr_init(&mem->l1_mshr, "L1_MSHR", MSHR_MEM, L1_MSHRS);
+  mshr_init(&mem->dcache_wb, "DCACHE_WB", MSHR_DCACHE, DCACHE_MSHRS);
+  mshr_init(&mem->mlc_wb, "MLC_WB", MSHR_MLC, MLC_MSHRS);
+  mshr_init(&mem->l1_wb, "L1_WB", MSHR_MEM, L1_MSHRS);
 
   mem->core_fill_queues = (List*)calloc(NUM_CORES, sizeof(List));
   for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
@@ -535,23 +501,15 @@ void init_uncores(void) {
 void reset_memory() {
   clear_list(&mem->req_pool_free_list);
 
-  clear_list(&mem->l1_mshr.mshr_file);
-  clear_list(&mem->mlc_mshr.mshr_file);
-  clear_list(&mem->dcache_mshr.mshr_file);
-  hash_table_clear(&mem->l1_mshr.mshr_hash);
-  hash_table_clear(&mem->mlc_mshr.mshr_hash);
-  hash_table_clear(&mem->dcache_mshr.mshr_hash);
-  mem->l1_mshr.pending_fills = 0;
-  mem->mlc_mshr.pending_fills = 0;
-  mem->dcache_mshr.pending_fills = 0;
+  Mshr* files[] = {&mem->dcache_mshr, &mem->mlc_mshr, &mem->l1_mshr, &mem->dcache_wb, &mem->mlc_wb, &mem->l1_wb};
+  for (uns f = 0; f < sizeof(files) / sizeof(files[0]); f++)
+    mshr_reset(files[f]);
 
   for (uns c = 0; c < mem->num_chunks; c++)
     for (uns ii = 0; ii < mem->chunk_size; ii++) {
       Mem_Req* req = &mem->req_pool_chunks[c][ii];
       *(Mem_Req**)sl_list_add_tail(&mem->req_pool_free_list) = req;
       req->state = MRS_INV;
-      memset(req->mshr_entry, 0, sizeof(req->mshr_entry));
-      memset(req->bucket_entry, 0, sizeof(req->bucket_entry));
     }
 
   mem->req_count = 0;
@@ -600,7 +558,7 @@ static inline void mem_record_served(Mem_Req* req, Stat_Enum level) {
 
 void mem_free_req(Mem_Req* req) {
   DEBUG(req->proc_id, "Freeing mem request  addr:0x%s mshr:%s rcount:%d\n", hexstr64s(req->addr),
-        (NULL == req->mshr) ? "NULL" : req->mshr->name, mem->req_count);
+        (NULL == req->mshr) ? "NULL" : mshr_name(req->mshr), mem->req_count);
 
   if (req->state == MRS_MEM_DONE) {
     ASSERT(req->proc_id, req->type == MRT_WB);
@@ -663,6 +621,10 @@ void mem_free_req(Mem_Req* req) {
       ASSERT(req->proc_id, (req->type == MRT_WB) || (req->type == MRT_WB_NODIRTY));
       STAT_EVENT(req->proc_id, WB_COMING_BACK_FROM_MLC);
     }
+  } else if (req->state == MRS_WB_HIT_DONE) {
+    mem_record_served(req, LD_SERVED_DCACHE);
+    STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
+    STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE);
   } else { /* killed */
     STAT_EVENT(req->proc_id, MEM_REQ_KILLED_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
     STAT_EVENT(req->proc_id, MEM_REQ_KILLED);
@@ -670,12 +632,10 @@ void mem_free_req(Mem_Req* req) {
 
   perf_pred_l0_miss_end(req);
 
-  ASSERT(req->proc_id, !req->mlc_mshr_waiters.count && !req->l1_mshr_waiters.count);
-  ASSERTM(req->proc_id,
-          !mshr_file_holds(req, &mem->dcache_mshr) && !mshr_file_holds(req, &mem->mlc_mshr) &&
-              !mshr_file_holds(req, &mem->l1_mshr),
-          "freeing a request an MSHR file still holds: type=%s state=%s\n", Mem_Req_Type_str(req->type),
-          mem_req_state_names[req->state]);
+  Mshr* files[] = {&mem->dcache_mshr, &mem->mlc_mshr, &mem->l1_mshr, &mem->dcache_wb, &mem->mlc_wb, &mem->l1_wb};
+  for (uns f = 0; f < sizeof(files) / sizeof(files[0]); f++)
+    ASSERTM(req->proc_id, !mshr_holds(files[f], req), "freeing a request %s still holds: type=%s state=%s\n",
+            mshr_name(files[f]), Mem_Req_Type_str(req->type), mem_req_state_names[req->state]);
 
   ASSERT(req->proc_id, mem->num_req_pool_per_core[req->proc_id] > 0);
   mem->num_req_pool_per_core[req->proc_id] -= 1;
@@ -714,11 +674,30 @@ static inline Counter mem_level_latency(Mshr* mshr) {
   return (MLC_PRESENT ? MLCQ_TO_L1Q_TRANSFER_LATENCY : DCACHE_CYCLES - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY) + L1_CYCLES;
 }
 
+/* A level's writeback file is looked up by the same cache as its miss file. */
+static inline Mshr* mshr_wb_file(Mshr* miss) {
+  return miss == &mem->dcache_mshr ? &mem->dcache_wb : miss == &mem->mlc_mshr ? &mem->mlc_wb : &mem->l1_wb;
+}
+
+static inline Mshr* mshr_miss_file(Mshr* mshr) {
+  return mshr == &mem->dcache_wb ? &mem->dcache_mshr
+         : mshr == &mem->mlc_wb  ? &mem->mlc_mshr
+         : mshr == &mem->l1_wb   ? &mem->l1_mshr
+                                 : mshr;
+}
+
+/* The file a request is in at a level: a writeback's is the level's writeback file. */
+static inline Mshr* mshr_of(Mem_Req* req, Mshr* miss) {
+  return (req->type == MRT_WB || req->type == MRT_WB_NODIRTY) ? mshr_wb_file(miss) : miss;
+}
+
 static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr) {
-  ASSERT(req->proc_id, mshr == &mem->dcache_mshr || mshr == &mem->mlc_mshr);
-  req->state = (mshr == &mem->dcache_mshr) ? MRS_MLC_NEW : MRS_L1_NEW;
-  req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + mem_level_latency(mshr);
-  if (mshr == &mem->mlc_mshr) {
+  Mshr* level = mshr_miss_file(mshr);
+  ASSERT(req->proc_id, level == &mem->dcache_mshr || level == &mem->mlc_mshr);
+  req->state = (level == &mem->dcache_mshr) ? MRS_MLC_NEW : MRS_L1_NEW;
+  req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + mem_level_latency(level);
+  mshr_line_set_rdy(mshr_line(mshr, req->addr), req->rdy_cycle);
+  if (level == &mem->mlc_mshr) {
     mem->uncores[req->proc_id].num_outstanding_l1_accesses++;
     memview_l1(req);
   }
@@ -730,116 +709,66 @@ static inline Flag req_takes_write_bank(Mem_Req* req) {
   return (req->type == MRT_WB) || (req->type == MRT_WB_NODIRTY);
 }
 
-/* One MSHR file, shared by everything the level tracks, with each class stopping a
-   little short of the end so it cannot starve the ones below it: writebacks may use
-   the whole file, demands leave the writeback reserve, prefetches leave a further
-   margin for demands. */
-static inline int64 mshr_key(Addr addr) {
-  return (int64)(addr >> LOG2(L1_LINE_SIZE));
+/* The deepest miss file a request is in, which is where a merged request waits. */
+static inline Mshr* mshr_deepest(Mem_Req* req) {
+  if (mshr_holds(&mem->l1_mshr, req))
+    return &mem->l1_mshr;
+  if (mshr_holds(&mem->mlc_mshr, req))
+    return &mem->mlc_mshr;
+  return &mem->dcache_mshr;
 }
 
-/* Every request in this level's file for one line, found by hashing the line. Usually
-   one; requests that cannot merge -- a writeback and a fetch, an ifetch and a dfetch
-   -- can share a line, so it is a list. */
-static inline List* mshr_bucket(Mshr* mshr, Addr addr) {
-  return (List*)hash_table_access(&mshr->mshr_hash, mshr_key(addr));
+static inline Flag mshr_waits_at(Mem_Req* req, Mshr* mshr) {
+  return req->state == MRS_MERGED && mshr_deepest(req) == mshr;
 }
 
-/* Enter a level's MSHR file. Being in it is what occupies the level: there is no
-   separate slot to take, so nothing can disagree with the file about occupancy. */
-static inline void mshr_file_add(Mem_Req* req, Mshr* mshr) {
-  Flag is_new;
-  List* bucket = (List*)hash_table_access_create(&mshr->mshr_hash, mshr_key(req->addr), &is_new);
-  if (is_new)
-    init_list(bucket, NULL, sizeof(Mem_Req*), TRUE);
-  ASSERT(req->proc_id, !req->mshr_entry[mshr->level]);
-  *(Mem_Req**)dl_list_add_tail(bucket) = req;
-  req->bucket_entry[mshr->level] = bucket->tail;
-  *(Mem_Req**)dl_list_add_tail(&mshr->mshr_file) = req;
-  req->mshr_entry[mshr->level] = mshr->mshr_file.tail;
-  ASSERTM(req->proc_id, mshr->mshr_file.count <= (int)mshr->mshr_size, "%s: %d entries of %u adding %s\n", mshr->name,
-          mshr->mshr_file.count, mshr->mshr_size, Mem_Req_Type_str(req->type));
+/* The line has reached this level for a request merged on its entry. It carries the
+   line up from here through its own entries: it leaves this one unless this is also
+   the level that finishes it. */
+static void mshr_release(Mem_Req* waiter, Mshr* mshr) {
+  if (mshr == &mem->l1_mshr)
+    l1_miss_is_satisfied(waiter);
+  else if (mshr == &mem->mlc_mshr)
+    mlc_miss_is_satisfied(waiter);
+  waiter->state =
+      (mshr == &mem->l1_mshr && MLC_PRESENT && waiter->destination != DEST_L1) ? MRS_FILL_MLC : MRS_FILL_DONE;
+  waiter->rdy_cycle = cycle_count + 1;
+  Mshr* owner = mem_fill_owner(waiter);
+  if (owner != mshr)
+    mshr_remove(mshr, waiter);
+  ASSERT(waiter->proc_id, mshr_holds(owner, waiter));
+  owner->pending_fills++;
 }
 
-/* Requests merged into req at this level, waiting on its entry here. */
-static inline List* mshr_waiters(Mem_Req* req, Mshr* mshr) {
-  ASSERT(req->proc_id, mshr == &mem->mlc_mshr || mshr == &mem->l1_mshr);
-  return (mshr == &mem->l1_mshr) ? &req->l1_mshr_waiters : &req->mlc_mshr_waiters;
-}
-
-/* One level is done with a request: that level's entry, and nothing else, is freed.
-   A request that merged into it at this level takes the response from here, up
-   through its own entries -- the levels above this one, which it holds itself. */
+/* One level is done with a request: its place on that level's entry, and nothing
+   else, is freed. If it was fetching the line rather than waiting on it, the line is
+   here, so every request merged on the entry is released. */
 static void mshr_level_done(Mem_Req* req, Mshr* mshr) {
-  ASSERT(req->proc_id, mshr_file_holds(req, mshr));
-  mshr_file_remove(req, mshr);
-  if (mshr == &mem->dcache_mshr)
+  ASSERT(req->proc_id, mshr_holds(mshr, req));
+  Flag fetched = !mshr_waits_at(req, mshr);
+  mshr_remove(mshr, req);
+  Mshr_Line* line = mshr_line(mshr, req->addr);
+  if (!fetched || !line)
     return;
 
-  List* waiters = mshr_waiters(req, mshr);
-  for (Mem_Req** cur = (Mem_Req**)list_start_head_traversal(waiters); cur;
-       cur = (Mem_Req**)list_next_element(waiters)) {
-    Mem_Req* waiter = *cur;
-    /* The next level up is the waiter's own: past DRAM's level it fills the MLC from
-       its own mlc_mshr entry, past the LLC's it fills the core from its dcache one. */
-    ASSERT(waiter->proc_id, waiter->state == MRS_MERGED);
-    ASSERT(waiter->proc_id, mshr == &mem->l1_mshr ? waiter->destination != DEST_L1 : waiter->destination < DEST_MLC);
-    /* Its own miss at this level is satisfied: the line has arrived here for it too. */
-    if (mshr == &mem->l1_mshr)
-      l1_miss_is_satisfied(waiter);
-    else
-      mlc_miss_is_satisfied(waiter);
-    waiter->state = (mshr == &mem->l1_mshr && MLC_PRESENT) ? MRS_FILL_MLC : MRS_FILL_DONE;
-    waiter->rdy_cycle = cycle_count + 1;
-    ASSERT(waiter->proc_id, mshr_file_holds(waiter, mem_fill_owner(waiter)));
-    mem_fill_owner(waiter)->pending_fills++;
-  }
-  clear_list(waiters);
-}
-
-static inline Flag mshr_file_holds(Mem_Req* req, Mshr* mshr) {
-  return req->mshr_entry[mshr->level] != NULL;
-}
-
-/* Leave it, when the request is done and about to be freed. The request knows its
-   own entries, so nothing is searched. */
-static inline void mshr_file_remove(Mem_Req* req, Mshr* mshr) {
-  ASSERT(req->proc_id, mshr_file_holds(req, mshr));
-  List* bucket = mshr_bucket(mshr, req->addr);
-  bucket->current = req->bucket_entry[mshr->level];
-  dl_list_remove_current(bucket);
-  if (!bucket->count) {
-    destroy_list(bucket);
-    hash_table_access_delete(&mshr->mshr_hash, mshr_key(req->addr));
-  }
-  mshr->mshr_file.current = req->mshr_entry[mshr->level];
-  dl_list_remove_current(&mshr->mshr_file);
-  req->mshr_entry[mshr->level] = NULL;
-  req->bucket_entry[mshr->level] = NULL;
-}
-
-/* A fill that evicts a dirty line cannot complete until the writeback is admitted,
-   so writebacks keep a reserve of the file to themselves: everything else stops
-   short of it. That bounds writebacks without letting them deadlock the fill that
-   produced them, since a writeback frees its slot without waiting on anything. */
-static inline Flag queue_mshr_full_for(Mshr* mshr, Mem_Req_Type type) {
-  int reserve = (type == MRT_WB || type == MRT_WB_NODIRTY) ? 0 : (int)mshr->mshr_wb_reserve;
-  return mshr->mshr_file.count + reserve >= (int)mshr->mshr_size;
+  Mem_Req* reqs[mshr_line_count(line)];
+  for (uns i = 0, n = mshr_line_reqs(line, reqs); i < n; i++)
+    if (mshr_waits_at(reqs[i], mshr))
+      mshr_release(reqs[i], mshr);
 }
 
 /**************************************************************************************/
 /* print_mshr: */
 
 static void print_mshr_generic(Mshr* mshr) {
-  Mem_Req* req = NULL;
-
-  fprintf(stdout, "%s --- mshr_file: %d  cycle: %s\n", mshr->name, mshr->mshr_file.count, unsstr64(cycle_count));
+  fprintf(stdout, "%s --- entries: %u  cycle: %s\n", mshr_name(mshr), mshr_count(mshr), unsstr64(cycle_count));
   fprintf(stdout, "------------------------------------------------------\n");
-  for (List_Entry* e = mshr->mshr_file.head; e; e = e->next) {
-    req = *(Mem_Req**)&e->data;
-    fprintf(stdout, "st:%s type:%s rdy:%s addr:%s age:%s off:%d\n", mem_req_state_names[req->state],
-            Mem_Req_Type_str(req->type), unsstr64(req->rdy_cycle), hexstr64s(req->addr),
-            unsstr64(cycle_count - req->start_cycle), req->off_path);
+  for (Mshr_Line* line = mshr_first(mshr); line; line = mshr_next(mshr, line)) {
+    Mem_Req* reqs[mshr_line_count(line)];
+    for (uns i = 0, n = mshr_line_reqs(line, reqs); i < n; i++)
+      fprintf(stdout, "st:%s type:%s rdy:%s addr:%s age:%s off:%d\n", mem_req_state_names[reqs[i]->state],
+              Mem_Req_Type_str(reqs[i]->type), unsstr64(reqs[i]->rdy_cycle), hexstr64s(reqs[i]->addr),
+              unsstr64(cycle_count - reqs[i]->start_cycle), reqs[i]->off_path);
   }
   fprintf(stdout, "------------------------------------------------------\n");
 }
@@ -848,22 +777,23 @@ static void print_mshr_generic(Mshr* mshr) {
 /* print_mshr_files: */
 
 void print_mshr_files() {
-  Mem_Req* req = NULL;
-  Mshr* files[3] = {&mem->dcache_mshr, &mem->mlc_mshr, &mem->l1_mshr};
+  Mshr* files[] = {&mem->dcache_mshr, &mem->mlc_mshr, &mem->l1_mshr, &mem->dcache_wb, &mem->mlc_wb, &mem->l1_wb};
 
   fprintf(stdout, "MSHR FILES --- cycle: %s\n", unsstr64(cycle_count));
   fprintf(stdout, "------------------------------------------------------\n");
-
-  for (uns f = 0; f < 3; f++)
-    for (List_Entry* e = files[f]->mshr_file.head; e; e = e->next) {
-      req = *(Mem_Req**)&e->data;
-      fprintf(stdout,
-              ": q:%s st:%s type:%s pri:%s beg:%s "
-              "rdy:%s addr:%s size:%d age:%s mbank:%d oc:%d oo:%s off:%d\n",
-              (req->mshr ? req->mshr->name : "ramulator"), mem_req_state_names[req->state], Mem_Req_Type_str(req->type),
-              unsstr64(req->priority), unsstr64(req->start_cycle), unsstr64(req->rdy_cycle), hexstr64s(req->addr),
-              req->size, unsstr64(cycle_count - req->start_cycle), req->mem_flat_bank, req->op_count,
-              unsstr64(req->oldest_op_unique_num), req->off_path);
+  for (uns f = 0; f < sizeof(files) / sizeof(files[0]); f++)
+    for (Mshr_Line* line = mshr_first(files[f]); line; line = mshr_next(files[f], line)) {
+      Mem_Req* reqs[mshr_line_count(line)];
+      for (uns i = 0, n = mshr_line_reqs(line, reqs); i < n; i++) {
+        Mem_Req* req = reqs[i];
+        fprintf(stdout,
+                ": q:%s st:%s type:%s pri:%s beg:%s "
+                "rdy:%s addr:%s size:%d age:%s mbank:%d oc:%d oo:%s off:%d\n",
+                mshr_name(files[f]), mem_req_state_names[req->state], Mem_Req_Type_str(req->type),
+                unsstr64(req->priority), unsstr64(req->start_cycle), unsstr64(req->rdy_cycle), hexstr64s(req->addr),
+                req->size, unsstr64(cycle_count - req->start_cycle), req->mem_flat_bank, req->op_count,
+                unsstr64(req->oldest_op_unique_num), req->off_path);
+      }
     }
   fprintf(stdout, "------------------------------------------------------\n");
 }
@@ -918,17 +848,15 @@ static inline void set_off_path_confirmed_status(Mem_Req* req) {
 
 void recover_memory() {
   if (SET_OFF_PATH_CONFIRMED) {
-    for (List_Entry* e = mem->dcache_mshr.mshr_file.head; e; e = e->next) {
-      Mem_Req* req = *(Mem_Req**)&e->data;
-      if (req->proc_id == bp_recovery_info->proc_id)
-        set_off_path_confirmed_status(req);
-    }
-    /* A request can be in both files; the MLC walk above already had it. */
-    for (List_Entry* e = mem->mlc_mshr.mshr_file.head; e; e = e->next) {
-      Mem_Req* req = *(Mem_Req**)&e->data;
-      if (req->proc_id == bp_recovery_info->proc_id && !mshr_file_holds(req, &mem->dcache_mshr))
-        set_off_path_confirmed_status(req);
-    }
+    /* A request can be in both files; the dcache walk has it first. */
+    Mshr* files[] = {&mem->dcache_mshr, &mem->mlc_mshr};
+    for (uns f = 0; f < 2; f++)
+      for (Mshr_Line* line = mshr_first(files[f]); line; line = mshr_next(files[f], line)) {
+        Mem_Req* reqs[mshr_line_count(line)];
+        for (uns i = 0, n = mshr_line_reqs(line, reqs); i < n; i++)
+          if (reqs[i]->proc_id == bp_recovery_info->proc_id && (f == 0 || !mshr_holds(&mem->dcache_mshr, reqs[i])))
+            set_off_path_confirmed_status(reqs[i]);
+      }
   }
 
   /* If we are supposed to do really nothing for requests that are known to be
@@ -941,9 +869,9 @@ void recover_memory() {
 
 void debug_memory() {
   DPRINTF("# MEMORY\n");
-  DPRINTF("dcache_mshr file:    %d\n", mem->dcache_mshr.mshr_file.count);
-  DPRINTF("mlc_mshr file:       %d\n", mem->mlc_mshr.mshr_file.count);
-  DPRINTF("l1_mshr file:        %d\n", mem->l1_mshr.mshr_file.count);
+  DPRINTF("dcache_mshr file:    %u\n", mshr_count(&mem->dcache_mshr));
+  DPRINTF("mlc_mshr file:       %u\n", mshr_count(&mem->mlc_mshr));
+  DPRINTF("l1_mshr file:        %u\n", mshr_count(&mem->l1_mshr));
   DPRINTF("l1_mshr fills:       %d\n", mem->l1_mshr.pending_fills);
   DPRINTF("dcache_mshr fills:   %d\n", mem->dcache_mshr.pending_fills);
   DPRINTF("mlc_mshr fills:      %d\n", mem->mlc_mshr.pending_fills);
@@ -1012,8 +940,8 @@ void update_memory() {
   if (freq_is_ready(FREQ_DOMAIN_L1)) {
     cycle_count = freq_cycle_count(FREQ_DOMAIN_L1);
 
-    mem_process_l1_reqs();
-    mem_process_mlc_reqs();
+    mem_process_lookups(&mem->mlc_mshr);
+    mem_process_lookups(&mem->dcache_mshr);
     /* After the demand passes and in their frequency domain, so a bank a demand took
        this cycle refuses the prefetch. */
     pref_update_levels();
@@ -1189,14 +1117,14 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Addr* line_addr, L1_Data* data, int
        it from here, as the mlc fill queue did. */
     req->state = MRS_FILL_MLC;
     /* mem_walk_fills reaches a fill only through the file of the level that owes it. */
-    ASSERT(req->proc_id, mshr_file_holds(req, mem_fill_owner(req)));
+    ASSERT(req->proc_id, mshr_holds(mem_fill_owner(req), req));
     req->rdy_cycle = cycle_count + 1;
     req->mshr = NULL;
     mem->mlc_mshr.pending_fills++;
     return TRUE;
   } else if (!req->done_func) {
     req->state = MRS_L1_HIT_DONE;
-    mshr_level_done(req, &mem->mlc_mshr);
+    mshr_level_done(req, mshr_of(req, &mem->mlc_mshr));
     mem_free_req(req);
   } else {
     req->state = MRS_L1_HIT_DONE;
@@ -1281,7 +1209,7 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Addr* line_addr, MLC_Data* data, i
       req->rdy_cycle = cycle_count + MLCQ_TO_L1Q_TRANSFER_LATENCY;
     } else {  // writeback done
       req->state = MRS_MLC_HIT_DONE;
-      mshr_level_done(req, &mem->dcache_mshr);
+      mshr_level_done(req, mshr_of(req, &mem->dcache_mshr));
       mem_free_req(req);
     }
 
@@ -1356,7 +1284,7 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Addr* line_addr, L1_Data* d
         }
         req->state = MRS_L1_HIT_DONE;
         req->rdy_cycle = cycle_count + 1;
-        mshr_level_done(req, &mem->mlc_mshr);
+        mshr_level_done(req, mshr_of(req, &mem->mlc_mshr));
         mem_free_req(req);
         return TRUE;
       } else {
@@ -1376,7 +1304,7 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Addr* line_addr, L1_Data* d
       } else {  // CMP write back
         req->state = MRS_L1_HIT_DONE;
         req->rdy_cycle = cycle_count + 1;
-        mshr_level_done(req, &mem->mlc_mshr);
+        mshr_level_done(req, mshr_of(req, &mem->mlc_mshr));
         mem_free_req(req);
       }
       return TRUE;
@@ -1390,7 +1318,7 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Addr* line_addr, L1_Data* d
     /* Dropped at the LLC: each level it came through lets go of it. A probed MLC
        prefetch entered at the LLC and holds no dcache entry. */
     mshr_level_done(req, &mem->mlc_mshr);
-    if (mshr_file_holds(req, &mem->dcache_mshr))
+    if (mshr_holds(&mem->dcache_mshr, req))
       mshr_level_done(req, &mem->dcache_mshr);
     mem_free_req(req);
     return TRUE;
@@ -1459,7 +1387,7 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Addr* line_addr, MLC_Data*
         }
         req->state = MRS_MLC_HIT_DONE;
         req->rdy_cycle = cycle_count + 1;
-        mshr_level_done(req, &mem->dcache_mshr);
+        mshr_level_done(req, mshr_of(req, &mem->dcache_mshr));
         mem_free_req(req);
         return TRUE;
       } else {
@@ -1478,7 +1406,7 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Addr* line_addr, MLC_Data*
       } else {  // CMP write back
         req->state = MRS_MLC_HIT_DONE;
         req->rdy_cycle = cycle_count + 1;
-        mshr_level_done(req, &mem->dcache_mshr);
+        mshr_level_done(req, mshr_of(req, &mem->dcache_mshr));
         mem_free_req(req);
       }
       return TRUE;
@@ -1487,7 +1415,7 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Addr* line_addr, MLC_Data*
 
   /* Descending admits the request to the LLC, so it is the LLC's budget that gates;
      without room the request stays in the dcache_mshr and retries. */
-  if (queue_mshr_full_for(&mem->mlc_mshr, req->type)) {
+  if (mshr_full(&mem->mlc_mshr, req->addr)) {
     STAT_EVENT(req->proc_id, REJECTED_QUEUE_L1);
     return FALSE;
   }
@@ -1619,7 +1547,7 @@ static Flag mem_complete_l1_access(Mem_Req* req, int* out_mshr_insertion_count) 
           DEBUG(req->proc_id, "L1 write through request is sent to Ramulator\n");
           mem_seq_num++;
           // perf_pred_mem_req_start(req);
-          mshr_level_done(req, &mem->mlc_mshr);
+          mshr_level_done(req, mshr_of(req, &mem->mlc_mshr));
           mem_free_req(req);
         }
 
@@ -1667,29 +1595,23 @@ static Flag mem_complete_l1_access(Mem_Req* req, int* out_mshr_insertion_count) 
             STAT_EVENT(req->proc_id, MEM_REQ_DUP_TO_DRAM);
         }
 
-        /* An LLC miss enters DRAM's level, so that is where it merges: with the line's
-           entry there, if one is outstanding. */
-        Flag dram_pref = FALSE, dram_wb = FALSE;
-        Mem_Req* dram_entry = mem_search_level_for_merge(&mem->l1_mshr, req->proc_id, req->addr, req->type, req->size,
-                                                         &dram_pref, &dram_wb);
-        if (dram_entry && dram_entry->state != MRS_FILL_DONE && dram_entry->type != MRT_WB &&
-            dram_entry->type != MRT_WB_NODIRTY) {
-          if (dram_pref && req->type != MRT_DPRF && req->type != MRT_IPRF)
-            mem_record_late_prefetch(dram_entry);
+        /* An LLC miss enters DRAM's level: if the line already has an entry there, it
+           waits on it. */
+        if (mshr_line(&mem->l1_mshr, req->addr)) {
           STAT_EVENT(req->proc_id, MEM_REQ_MERGED_DRAM_DESCENT);
           if (TRACK_L1_MISS_DEPS || MARK_L1_MISSES)
             mark_ops_as_l1_miss(req);
-          mem_merge_at_level(dram_entry, req, &mem->l1_mshr);
+          mem_merge_at_level(&mem->l1_mshr, req);
         } else {
           req->state = MRS_MEM_NEW;
-          /* DRAM is a level like the others: a miss waiting on it occupies an entry. */
-          l1_miss_access = !queue_mshr_full_for(&mem->l1_mshr, req->type) && ramulator_send(req);
+          /* DRAM is a level like the others: a line in flight there occupies an entry. */
+          l1_miss_access = !mshr_full(&mem->l1_mshr, req->addr) && ramulator_send(req);
           if (!l1_miss_access) {
             req->state = MRS_L1_WAIT;
             access_done = FALSE;
           } else {
             ASSERT(req->proc_id, req->mem_queue_cycle >= req->rdy_cycle);
-            mshr_file_add(req, &mem->l1_mshr);
+            mshr_add(&mem->l1_mshr, req);
             req->mshr = NULL;
 
             DEBUG(req->proc_id, "l1 miss request is sent to ramulator\n");
@@ -1799,9 +1721,8 @@ static Flag mem_complete_mlc_access(Mem_Req* req, int* mlc_mshr_insertion_count)
       }
 
       if (MLC_WRITE_THROUGH && (req->type == MRT_WB)) {
-        req->mshr = &(mem->mlc_mshr);
-        mem_insert_req_into_mshr(req, req->mshr, ALL_FIFO_QUEUES ? l1_seq_num : 0);
-        l1_seq_num++;
+        req->mshr = mshr_of(req, &mem->mlc_mshr);
+        mem_insert_req_into_mshr(req, req->mshr);
         (*mlc_mshr_insertion_count) += 1;
         STAT_EVENT(req->proc_id, L1_ACCESS);
       }
@@ -1815,28 +1736,16 @@ static Flag mem_complete_mlc_access(Mem_Req* req, int* mlc_mshr_insertion_count)
     if (mlc_miss_access && mlc_miss_send_l1) {
       DEBUG(req->proc_id, "mlc miss request is inserted to l1 mshr rc:%d\n", mem->req_count);
 
-      /* Entering the LLC: re-run the merge test against its MSHR file. */
-      if ((req->type != MRT_WB) && (req->type != MRT_WB_NODIRTY)) {
-        Flag descent_pref = FALSE, descent_wb = FALSE;
-        /* Entering the LLC, so the LLC's MSHR file is the whole question. */
-        Mem_Req* descent_match =
-            mem_search_l1_for_merge(req->proc_id, req->addr, req->type, req->size, &descent_pref, &descent_wb);
-        if (descent_match && descent_match != req && descent_match->state != MRS_FILL_DONE &&
-            descent_match->type != MRT_WB && descent_match->type != MRT_WB_NODIRTY) {
-          /* Same accounting the creation-time merge does: without this the descent
-             path folds demands into prefetches and reports no lateness at all. */
-          if (descent_pref && req->type != MRT_DPRF && req->type != MRT_IPRF)
-            mem_record_late_prefetch(descent_match);
-          STAT_EVENT(req->proc_id, MEM_REQ_MERGED_L1_DESCENT);
-          mem_merge_at_level(descent_match, req, &mem->mlc_mshr);
-          return TRUE;
-        }
+      /* Entering the LLC: if the line already has an entry there, it waits on it. */
+      if ((req->type != MRT_WB) && (req->type != MRT_WB_NODIRTY) && mshr_line(&mem->mlc_mshr, req->addr)) {
+        STAT_EVENT(req->proc_id, MEM_REQ_MERGED_L1_DESCENT);
+        mem_merge_at_level(&mem->mlc_mshr, req);
+        return TRUE;
       }
 
       req->mshr = &(mem->mlc_mshr);
       // MSHR full check is done in mem_process_mlc_miss_access
-      mem_insert_req_into_mshr(req, req->mshr, ALL_FIFO_QUEUES ? l1_seq_num : 0);
-      l1_seq_num++;
+      mem_insert_req_into_mshr(req, req->mshr);
       (*mlc_mshr_insertion_count) += 1;
       STAT_EVENT(req->proc_id, L1_ACCESS);
 
@@ -1858,86 +1767,64 @@ static Flag mem_complete_mlc_access(Mem_Req* req, int* mlc_mshr_insertion_count)
 }
 
 /**************************************************************************************/
-/* mem_process_new_reqs: */
-/* Access L1 if port is ready - If L1 miss, then put the request into the miss MSHR file */
+/* mem_process_lookups: */
+/* One level's lookups, from its miss file and its writeback file together. Each file
+   is in rdy order (mem_admit_to_level), so the two are walked in step, oldest first,
+   and each stops at its first entry not ready yet. A ready request takes its bank's
+   port and is looked up at once; one that looked up but could not leave yet retries
+   every cycle without a port. A port taken here is what the prefetch pass that runs
+   after this finds busy. */
 
-static void mem_process_l1_reqs() {
-  Mshr* q = &mem->mlc_mshr;
-  int out_mshr_insertion_count = 0;
-
-  INC_STAT_EVENT(0, L1_QUEUE_OCCUPANCY, q->mshr_file.count);
-
-  /* Requests waiting to look up are in rdy order (mem_admit_to_level), so the first
-     one not ready ends the scan. A ready one takes its bank's port and is looked up at
-     once; one that looked up but could not leave yet retries every cycle without a
-     port, and sits before any waiting request that is not ready. A port taken here is
-     what the prefetch pass that runs after this finds busy. */
-  Counter last_rdy = 0;
-  for (List_Entry* e = q->mshr_file.head; e;) {
-    List_Entry* next = e->next;
-    Mem_Req* req = *(Mem_Req**)&e->data;
-    if (req->state == MRS_L1_WAIT) {
-      mem_complete_l1_access(req, &out_mshr_insertion_count);
-    } else if (req->state == MRS_L1_NEW) {
-      ASSERT(req->proc_id, req->rdy_cycle >= last_rdy);
-      last_rdy = req->rdy_cycle;
-      if (cycle_count < req->rdy_cycle)
-        break;
-      Flag w = req_takes_write_bank(req);
-      Ports* ports = &L1(req->proc_id)->ports[req->l1_bank];
-      if (!(w ? get_write_port(ports) : get_read_port(ports))) {
-        STAT_EVENT(req->proc_id, w ? L1_ST_BANK_BLOCK : L1_LD_BANK_BLOCK);
-      } else {
-        STAT_EVENT(req->proc_id, (w ? L1_ST_BANK_BLOCK : L1_LD_BANK_BLOCK) + 1);
-        STAT_EVENT(req->proc_id, L1_ACCESS);
-        STAT_EVENT(req->proc_id, req_is_pref(req->type) ? L1_PREF_ACCESS : L1_DEMAND_ACCESS);
-        req->state = MRS_L1_WAIT;
-        mem_complete_l1_access(req, &out_mshr_insertion_count);
-      }
-    }
-    e = next;
-  }
+static inline Mem_Req* mshr_line_lookup(Mshr_Line* line, Mem_Req_State new_state, Mem_Req_State wait_state) {
+  Mem_Req* reqs[mshr_line_count(line)];
+  for (uns i = 0, n = mshr_line_reqs(line, reqs); i < n; i++)
+    if (reqs[i]->state == new_state || reqs[i]->state == wait_state)
+      return reqs[i];
+  return NULL;
 }
 
-/**************************************************************************************/
-/* mem_process_mlc_reqs: */
-/* Access MLC if port is ready - If MLC miss, then put the request into the miss MSHR file */
+static void mem_process_lookups(Mshr* miss) {
+  Flag llc = (miss == &mem->mlc_mshr);
+  Mem_Req_State new_state = llc ? MRS_L1_NEW : MRS_MLC_NEW;
+  Mem_Req_State wait_state = llc ? MRS_L1_WAIT : MRS_MLC_WAIT;
+  Mshr* files[2] = {miss, mshr_wb_file(miss)};
+  Mshr_Line* cur[2] = {mshr_first(files[0]), mshr_first(files[1])};
+  Counter last_rdy[2] = {0, 0};
+  int insertion_count = 0;
 
-static void mem_process_mlc_reqs() {
-  Mshr* q = &mem->dcache_mshr;
-  int mlc_mshr_insertion_count = 0;
+  INC_STAT_EVENT(0, llc ? L1_QUEUE_OCCUPANCY : MLC_QUEUE_OCCUPANCY, mshr_count(files[0]) + mshr_count(files[1]));
 
-  INC_STAT_EVENT(0, MLC_QUEUE_OCCUPANCY, q->mshr_file.count);
-
-  /* Requests waiting to look up are in rdy order (mem_admit_to_level), so the first
-     one not ready ends the scan. A ready one takes its bank's port and is looked up at
-     once; one that looked up but could not leave yet retries every cycle without a
-     port, and sits before any waiting request that is not ready. A port taken here is
-     what the prefetch pass that runs after this finds busy. */
-  Counter last_rdy = 0;
-  for (List_Entry* e = q->mshr_file.head; e;) {
-    List_Entry* next = e->next;
-    Mem_Req* req = *(Mem_Req**)&e->data;
-    if (req->state == MRS_MLC_WAIT) {
-      mem_complete_mlc_access(req, &mlc_mshr_insertion_count);
-    } else if (req->state == MRS_MLC_NEW) {
-      ASSERT(req->proc_id, req->rdy_cycle >= last_rdy);
-      last_rdy = req->rdy_cycle;
-      if (cycle_count < req->rdy_cycle)
-        break;
-      Flag w = req_takes_write_bank(req);
-      Ports* ports = &MLC(req->proc_id)->ports[req->mlc_bank];
-      if (!(w ? get_write_port(ports) : get_read_port(ports))) {
-        STAT_EVENT(req->proc_id, w ? MLC_ST_BANK_BLOCK : MLC_LD_BANK_BLOCK);
-      } else {
-        STAT_EVENT(req->proc_id, (w ? MLC_ST_BANK_BLOCK : MLC_LD_BANK_BLOCK) + 1);
-        STAT_EVENT(req->proc_id, MLC_ACCESS);
-        STAT_EVENT(req->proc_id, req_is_pref(req->type) ? MLC_PREF_ACCESS : MLC_DEMAND_ACCESS);
-        req->state = MRS_MLC_WAIT;
-        mem_complete_mlc_access(req, &mlc_mshr_insertion_count);
+  while (cur[0] || cur[1]) {
+    uns f = !cur[0] ? 1 : !cur[1] ? 0 : (mshr_line_rdy(cur[1]) < mshr_line_rdy(cur[0]));
+    Mshr_Line* line = cur[f];
+    cur[f] = mshr_next(files[f], line);
+    Mem_Req* req = mshr_line_lookup(line, new_state, wait_state);
+    if (!req)
+      continue;
+    if (req->state == new_state) {
+      ASSERT(req->proc_id, req->rdy_cycle >= last_rdy[f]);
+      last_rdy[f] = req->rdy_cycle;
+      if (cycle_count < req->rdy_cycle) {
+        cur[f] = NULL;
+        continue;
       }
+      Flag w = req_takes_write_bank(req);
+      Ports* ports = llc ? &L1(req->proc_id)->ports[req->l1_bank] : &MLC(req->proc_id)->ports[req->mlc_bank];
+      Stat_Enum block = llc ? (w ? L1_ST_BANK_BLOCK : L1_LD_BANK_BLOCK) : (w ? MLC_ST_BANK_BLOCK : MLC_LD_BANK_BLOCK);
+      if (!(w ? get_write_port(ports) : get_read_port(ports))) {
+        STAT_EVENT(req->proc_id, block);
+        continue;
+      }
+      STAT_EVENT(req->proc_id, block + 1);
+      STAT_EVENT(req->proc_id, llc ? L1_ACCESS : MLC_ACCESS);
+      STAT_EVENT(req->proc_id, req_is_pref(req->type) ? (llc ? L1_PREF_ACCESS : MLC_PREF_ACCESS)
+                                                      : (llc ? L1_DEMAND_ACCESS : MLC_DEMAND_ACCESS));
+      req->state = wait_state;
     }
-    e = next;
+    if (llc)
+      mem_complete_l1_access(req, &insertion_count);
+    else
+      mem_complete_mlc_access(req, &insertion_count);
   }
 }
 
@@ -2007,7 +1894,7 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
   req->state = MRS_FILL_L1;
 
   /* mem_walk_fills reaches a fill only through the file of the level that owes it. */
-  ASSERT(req->proc_id, mshr_file_holds(req, mem_fill_owner(req)));
+  ASSERT(req->proc_id, mshr_holds(mem_fill_owner(req), req));
 
   /* Crossing frequency domain boundary between the chip and memory controller, plus
      the cycle the line used to spend being handed from the l1 fill mshr to the mlc
@@ -2075,7 +1962,7 @@ static Flag mem_advance_fill(Mem_Req* req) {
       req->state = MRS_FILL_DONE;
     }
     /* mem_walk_fills reaches a fill only through the file of the level that owes it. */
-    ASSERT(req->proc_id, mshr_file_holds(req, mem_fill_owner(req)));
+    ASSERT(req->proc_id, mshr_holds(mem_fill_owner(req), req));
     /* A fill step costs a cycle, as it did when each step was its own queue. */
     req->rdy_cycle = cycle_count + 1;
     return FALSE;
@@ -2091,12 +1978,12 @@ static Flag mem_advance_fill(Mem_Req* req) {
       mem->dcache_mshr.pending_fills++;
     }
     /* mem_walk_fills reaches a fill only through the file of the level that owes it. */
-    ASSERT(req->proc_id, mshr_file_holds(req, mem_fill_owner(req)));
+    ASSERT(req->proc_id, mshr_holds(mem_fill_owner(req), req));
     req->rdy_cycle = cycle_count + 1;
     return FALSE;
   }
 
-  ASSERT(req->proc_id, req->state == MRS_FILL_DONE);
+  ASSERT(req->proc_id, req->state == MRS_FILL_DONE || req->state == MRS_WB_HIT_DONE);
   /* done_func is the dcache fill, so reaching it means the dcache is the level that
      keeps this line. */
   ASSERT(req->proc_id, !req->done_func || fill_inserts_at_dcache(req));
@@ -2111,7 +1998,7 @@ static Flag mem_advance_fill(Mem_Req* req) {
 /* Called every cycle from update_memory(). Holds the lines on their way back up:
    one fill step per visit, so a request is here for as long as the fill takes. */
 static inline Flag is_fill_state(Mem_Req_State state) {
-  return state == MRS_FILL_L1 || state == MRS_FILL_MLC || state == MRS_FILL_DONE;
+  return state == MRS_FILL_L1 || state == MRS_FILL_MLC || state == MRS_FILL_DONE || state == MRS_WB_HIT_DONE;
 }
 
 /* The level a filling request is waiting on: the one being filled, whose own file
@@ -2121,7 +2008,7 @@ static inline Mshr* mem_fill_owner(Mem_Req* req) {
     return &mem->l1_mshr;
   if (req->state == MRS_FILL_MLC)
     return &mem->mlc_mshr;
-  ASSERT(req->proc_id, req->state == MRS_FILL_DONE);
+  ASSERT(req->proc_id, req->state == MRS_FILL_DONE || req->state == MRS_WB_HIT_DONE);
   if (req->destination == DEST_L1)
     return &mem->l1_mshr;
   return (MLC_PRESENT && req->destination != DEST_MLC) ? &mem->dcache_mshr : &mem->mlc_mshr;
@@ -2130,20 +2017,21 @@ static inline Mshr* mem_fill_owner(Mem_Req* req) {
 /* Each level drains the fills it owes out of its own MSHR file, and only bothers
    looking while it owes one. */
 static void mem_walk_fills(Mshr* mshr) {
-  for (List_Entry* entry = mshr->mshr_file.head; entry && mshr->pending_fills;) {
-    List_Entry* next = entry->next;
-    Mem_Req* req = *(Mem_Req**)&entry->data;
-
-    if (!is_fill_state(req->state) || mem_fill_owner(req) != mshr || cycle_count < req->rdy_cycle) {
-      entry = next;
-      continue;
+  for (Mshr_Line* line = mshr_first(mshr); line && mshr->pending_fills;) {
+    /* Advancing a fill can free its request, its line's entry, and release the
+       requests waiting on the line; it touches no other entry. */
+    Mshr_Line* next = mshr_next(mshr, line);
+    Mem_Req* reqs[mshr_line_count(line)];
+    uns n = mshr_line_reqs(line, reqs);
+    for (uns i = 0; i < n && mshr->pending_fills; i++) {
+      Mem_Req* req = reqs[i];
+      if (!mshr_holds(mshr, req) || !is_fill_state(req->state) || mem_fill_owner(req) != mshr ||
+          cycle_count < req->rdy_cycle)
+        continue;
+      if (mem_advance_fill(req))
+        mshr->pending_fills--;
     }
-    /* mem_advance_fill frees the request on its last step, which unlinks this entry,
-       so next is read first. It can also hand the fill to the level below, which
-       moves the count rather than clearing it. */
-    if (mem_advance_fill(req))
-      mshr->pending_fills--;
-    entry = next;
+    line = next;
   }
 }
 
@@ -2190,11 +2078,15 @@ static void mem_process_core_fill_reqs(uns proc_id) {
 
 /* A load that misses the dcache is served by store forwarding if a store miss to its
    bytes is outstanding. A store holds its core-facing entry until it completes, so
-   that file's bucket for the line is the only place to look. */
+   that file's entry for the line is the only place to look. */
 Flag scan_stores(Addr addr, uns size) {
-  List* bucket = mshr_bucket(MLC_PRESENT ? &mem->dcache_mshr : &mem->mlc_mshr, addr);
-  for (List_Entry* e = bucket ? bucket->head : NULL; e; e = e->next) {
-    Mem_Req* req = *(Mem_Req**)&e->data;
+  Mshr* core = MLC_PRESENT ? &mem->dcache_mshr : &mem->mlc_mshr;
+  Mshr_Line* line = mshr_line(core, addr);
+  if (!line)
+    return FAILURE;
+  Mem_Req* reqs[mshr_line_count(line)];
+  for (uns i = 0, n = mshr_line_reqs(line, reqs); i < n; i++) {
+    Mem_Req* req = reqs[i];
     if (req->type == MRT_DSTORE && BYTE_CONTAIN(req->addr, req->size, addr, size)) {
       uns load_proc_id = get_proc_id_from_cmp_addr(addr);
       ASSERTM(req->proc_id, req->proc_id == load_proc_id, "Load from %d matched a store from %d!\n", load_proc_id,
@@ -2222,195 +2114,37 @@ static inline void mem_record_late_prefetch(Mem_Req* pref) {
 /**************************************************************************************/
 /* mem_merge_at_level: */
 
-/* Merge at one level: a request arriving where another already holds the line's entry
-   takes no entry there and waits on that one. When the level is done with the
-   survivor, mshr_level_done hands the waiter the response, which it carries up
-   through its own entries -- so it keeps its own ops, done_func and destination, and
-   nothing here touches any other level. */
-static void mem_merge_at_level(Mem_Req* survivor, Mem_Req* req, Mshr* level) {
-  ASSERT(survivor->proc_id, survivor != req);
-  ASSERT(survivor->proc_id, mshr_file_holds(survivor, level) && !mshr_file_holds(req, level));
-  ASSERT(survivor->proc_id, survivor->type != MRT_WB && survivor->type != MRT_WB_NODIRTY);
-  ASSERT(survivor->proc_id, req->type != MRT_WB && req->type != MRT_WB_NODIRTY);
-
-  req->state = MRS_MERGED;
-  *(Mem_Req**)dl_list_add_tail(mshr_waiters(survivor, level)) = req;
+/* Merge at one level: a request arriving where its line already has an entry takes no
+   entry of its own and waits on that one. When the request fetching the line is done
+   with this level, mshr_level_done releases it, and it carries the line up through its
+   own entries -- so it keeps its own ops, done_func and destination, and nothing here
+   touches any other level. */
+static void mem_merge_at_level(Mshr* level, Mem_Req* req) {
+  ASSERT(req->proc_id, req->type != MRT_WB && req->type != MRT_WB_NODIRTY);
+  Mshr_Line* line = mshr_line(level, req->addr);
+  ASSERT(req->proc_id, line && !mshr_holds(level, req));
 
   /* The entry now serves the waiter too: at least as urgent, and a prefetch a demand
-     waits on was used. */
-  if (mem_req_type_is_demand(req->type) && !mem_req_type_is_demand(survivor->type))
-    survivor->demand_match_prefetch = TRUE;
-  survivor->priority = MIN2(survivor->priority, req->priority);
-}
-
-/**************************************************************************************/
-/* mem_search_*: */
-
-static inline Mem_Req* mem_search_mshr(
-    Mshr* mshr, uns8 proc_id, Addr addr, Mem_Req_Type type, uns size,
-    Flag* demand_hit_prefetch,  // set if the matching req is a prefetch and a demand hits it
-    Flag* demand_hit_writeback, Flag collect_stats) {
-  Mem_Req* req = NULL;
-  Mem_Req* matching_req = NULL;
-  Flag match = FALSE;
-  Addr src_addr, dest_addr;
-
-  if (proc_id)
-    ASSERTM(proc_id, addr, "type %i\n", type);
-
-  ASSERT(proc_id, size % L1_LINE_SIZE == 0);
-
-  *demand_hit_prefetch = FALSE;
-
-  // CMP ignore "size" from argument
-
-  /* The hash gives this level's requests for the line (its bucket); only those are
-     walked, to find one this type can merge with. Walked by entry rather than by the
-     list cursor, because a fill can call back in here while the fill walk is using
-     that cursor. */
-  {
-    List* bucket = mshr_bucket(mshr, addr);
-    for (List_Entry* entry = bucket ? bucket->head : NULL; entry; entry = entry->next) {
-      req = *(Mem_Req**)&entry->data;
-      dest_addr = CACHE_SIZE_ADDR(req->size, req->addr);
-      src_addr = CACHE_SIZE_ADDR(req->size, addr);
-      match = FALSE;
-
-      if ((dest_addr == src_addr) /* && !is_final_state(req->state)*/) { /* address match */
-        ASSERTM(proc_id, proc_id == get_proc_id_from_cmp_addr(addr), "Proc ID does not match proc ID in address!\n");
-        ASSERTM(proc_id, req->proc_id == get_proc_id_from_cmp_addr(req->addr),
-                "Proc ID does not match proc ID in address!\n");
-        ASSERTM(proc_id, req->proc_id == proc_id, "req_proc_id %u addr %.16llx, proc_id %u, addr %.16llx\n",
-                req->proc_id, req->addr, proc_id, addr);
-        if (req->type == type) {
-          // if (req->size < size) then we can add new req to req already
-          // outstanding
-          match = TRUE; /* type match */
-          if (collect_stats)
-            STAT_EVENT(req->proc_id, WB_MATCH_WB_FILTERED);
-        } else {
-          switch (req->type) {
-            case MRT_IFETCH:
-              if (type == MRT_IPRF || type == MRT_UOCPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF ||
-                  type == MRT_FDIPPRFALT)
-                match = TRUE;
-              if (collect_stats && ((type == MRT_WB) || (type == MRT_WB_NODIRTY)))
-                STAT_EVENT(req->proc_id, WB_MATCH_DEMAND);
-              break;
-            case MRT_DFETCH:
-              if ((type == MRT_DSTORE) || (type == MRT_DPRF))
-                match = TRUE;
-              if (collect_stats && ((type == MRT_WB) || (type == MRT_WB_NODIRTY)))
-                STAT_EVENT(req->proc_id, WB_MATCH_DEMAND);
-              break;
-            case MRT_DSTORE:
-              if ((type == MRT_DFETCH) || (type == MRT_DPRF))
-                match = TRUE;
-              if (collect_stats && ((type == MRT_WB) || (type == MRT_WB_NODIRTY)))
-                STAT_EVENT(req->proc_id, WB_MATCH_DEMAND);
-              break;
-            case MRT_IPRF:
-              if (type == MRT_IFETCH) {
-                match = TRUE;
-                *demand_hit_prefetch = TRUE;
-              } else if (type == MRT_UOCPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF ||
-                         type == MRT_FDIPPRFALT) {
-                match = TRUE;
-              }
-              if (collect_stats && ((type == MRT_WB) || (type == MRT_WB_NODIRTY)))
-                STAT_EVENT(req->proc_id, WB_MATCH_PREF);
-              break;
-            case MRT_UOCPRF:
-              if (type == MRT_IFETCH) {
-                match = TRUE;
-                *demand_hit_prefetch = TRUE;
-              } else if (type == MRT_IPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF ||
-                         type == MRT_FDIPPRFALT) {
-                match = TRUE;
-              }
-              break;
-            case MRT_FDIPPRFON:
-              if (type == MRT_IFETCH) {
-                match = TRUE;
-                *demand_hit_prefetch = TRUE;
-              } else if (type == MRT_IPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF ||
-                         type == MRT_FDIPPRFALT) {
-                match = TRUE;
-              }
-              break;
-            case MRT_FDIPPRFOFF:
-              if (type == MRT_IFETCH) {
-                match = TRUE;
-                *demand_hit_prefetch = TRUE;
-              } else if (type == MRT_IPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF ||
-                         type == MRT_FDIPPRFALT) {
-                match = TRUE;
-              }
-              break;
-            case MRT_FDIPPRFALT:
-              if (type == MRT_IFETCH) {
-                match = TRUE;
-                *demand_hit_prefetch = TRUE;
-              } else if (type == MRT_IPRF || type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF ||
-                         type == MRT_FDIPPRFALT) {
-                match = TRUE;
-              }
-              break;
-
-            case MRT_DPRF:
-              if ((type == MRT_DFETCH) || (type == MRT_DSTORE)) {
-                match = TRUE;
-                *demand_hit_prefetch = TRUE;
-              }
-              if (collect_stats && ((type == MRT_WB) || (type == MRT_WB_NODIRTY)))
-                STAT_EVENT(req->proc_id, WB_MATCH_PREF);
-              break;
-            case MRT_WB:
-            case MRT_WB_NODIRTY:
-              if (ALLOW_TYPE_MATCHES) {
-                if ((type == MRT_DFETCH) || (type == MRT_DSTORE) || (type == MRT_IFETCH) || (type == MRT_DPRF)) {
-                  match = TRUE;
-                  *demand_hit_writeback = TRUE;
-                }
-              }
-              if (collect_stats && ((type == MRT_WB) || (type == MRT_WB_NODIRTY)))
-                STAT_EVENT(req->proc_id, WB_MATCH_WB);
-              break;
-            default:
-              break;
-          }
-        }
-        if (match) {
-          matching_req = req;
-          if (MRS_INV == matching_req->state) {
-            DEBUG(matching_req->proc_id, "Matching req invalid: type:%s addr:0x%s size:%d \n",
-                  Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size);
-          }
-          ASSERT(matching_req->proc_id, matching_req->state != MRS_INV);
-          if (collect_stats)
-            STAT_EVENT(req->proc_id, MEM_REQ_MATCH_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
-          break;
-        }
-      }
+     waits on was late. */
+  Mem_Req* reqs[mshr_line_count(line)];
+  for (uns i = 0, n = mshr_line_reqs(line, reqs); i < n; i++) {
+    Mem_Req* fetcher = reqs[i];
+    if (mshr_waits_at(fetcher, level))
+      continue;
+    if (mem_req_type_is_demand(req->type) && !mem_req_type_is_demand(fetcher->type)) {
+      if (!fetcher->demand_match_prefetch)
+        mem_record_late_prefetch(fetcher);
+      fetcher->demand_match_prefetch = TRUE;
     }
+    fetcher->priority = MIN2(fetcher->priority, req->priority);
+    break;
   }
-
-  return matching_req;
+  mshr_add(level, req);
+  req->state = MRS_MERGED;
 }
 
 /**************************************************************************************/
 /* mem_search_*: */
-
-static inline Mem_Req* mem_search_level_for_merge(Mshr* mshr, uns8 proc_id, Addr addr, Mem_Req_Type type, uns size,
-                                                  Flag* demand_hit_prefetch, Flag* demand_hit_writeback) {
-  return mem_search_mshr(mshr, proc_id, addr, type, size, demand_hit_prefetch, demand_hit_writeback, TRUE);
-}
-
-static inline Mem_Req* mem_search_l1_for_merge(uns8 proc_id, Addr addr, Mem_Req_Type type, uns size,
-                                               Flag* demand_hit_prefetch, Flag* demand_hit_writeback) {
-  return mem_search_level_for_merge(&mem->mlc_mshr, proc_id, addr, type, size, demand_hit_prefetch,
-                                    demand_hit_writeback);
-}
 
 /* Would a fetch for this line merge? Asked by the frontend, whose fetches enter the
    core-facing level, so that level's file is the only one to look in. */
@@ -2418,8 +2152,8 @@ Mem_Req* mem_search_outstanding(uns8 proc_id, Addr addr, Mem_Req_Type type, uns 
                                 Flag* demand_hit_writeback) {
   ASSERTM(proc_id, proc_id == get_proc_id_from_cmp_addr(addr), "Proc ID (%d) does not match proc ID in address (%d)!\n",
           proc_id, get_proc_id_from_cmp_addr(addr));
-  return mem_search_level_for_merge(MLC_PRESENT ? &mem->dcache_mshr : &mem->mlc_mshr, proc_id, addr, type, size,
-                                    demand_hit_prefetch, demand_hit_writeback);
+  *demand_hit_writeback = FALSE;
+  return mshr_search(MLC_PRESENT ? &mem->dcache_mshr : &mem->mlc_mshr, proc_id, addr, type, size, demand_hit_prefetch);
 }
 
 /**************************************************************************************/
@@ -2429,7 +2163,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
                                  uns delay, Op* op, Flag done_func(Mem_Req*),
                                  Counter unique_num, /* This counter is used
                                                         when op is NULL */
-                                 Flag demand_hit_prefetch, Flag demand_hit_writeback, Counter new_priority) {
+                                 Flag demand_hit_prefetch, Counter new_priority) {
   Flag higher_priority;
   Counter old_priority = req->priority;
   Op** op_ptr = NULL;
@@ -2450,35 +2184,6 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
   }
 
   wp_process_req_pool_match(req, op);
-
-  if (ALLOW_TYPE_MATCHES && demand_hit_writeback) {
-    ASSERT(req->proc_id, (req->type == MRT_WB) || (req->type == MRT_WB_NODIRTY));
-    if (!req->wb_requested_back) {
-      ASSERT(req->proc_id, !req->done_func);
-      req->done_func = done_func;
-      req->wb_requested_back = TRUE;
-      STAT_EVENT(req->proc_id, DEMAND_MATCH_WB + (req->type == MRT_WB_NODIRTY));
-      STAT_EVENT_ALL(DEMAND_MATCH_WBALL_IFETCH + type);
-      if (req->type == MRT_WB_NODIRTY) {
-        STAT_EVENT(req->proc_id, DEMAND_MATCH_WB_ND_IFETCH + type);
-      } else {
-        STAT_EVENT(req->proc_id, DEMAND_MATCH_WB_IFETCH + type);
-      }
-    } else {
-      // somebody already requested this writeback
-      if (!req->done_func) {
-        if (done_func)
-          STAT_EVENT(req->proc_id, DEMAND_MATCH_WB_NEW_DONE_FUNC);
-        else
-          STAT_EVENT(req->proc_id, DEMAND_MATCH_WB_NEW_DONE_FUNC_NULL);
-        req->done_func = done_func;
-      } else if (req->done_func != done_func) {
-        STAT_EVENT(req->proc_id, DEMAND_MATCH_WB_DONE_FUNC_NOT_SAME);
-        return FALSE;
-      } else
-        STAT_EVENT(req->proc_id, DEMAND_MATCH_WB_DONE_FUNC_SAME);
-    }
-  }
 
   Flag old_off_path_confirmed = req->off_path_confirmed;
   Flag old_type = req->type;
@@ -2704,6 +2409,8 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mshr_Type mshr
   }
   mem_req_set_types(new_req, type);
   new_req->mshr = to_mlc ? &mem->dcache_mshr : &mem->mlc_mshr;
+  if (type == MRT_WB || type == MRT_WB_NODIRTY)
+    new_req->mshr = mshr_wb_file(new_req->mshr);
   new_req->proc_id = proc_id;
   new_req->addr = addr;
   new_req->phys_addr = addr_translate(addr);
@@ -2816,17 +2523,14 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mshr_Type mshr
 /**************************************************************************************/
 /* mem_insert_req_into_mshr: */
 
-static inline void mem_insert_req_into_mshr(Mem_Req* new_req, Mshr* mshr, Counter priority) {
+/* Entering a level allocates its line's entry in that level's file -- a writeback's
+   in the level's writeback file -- and starts the lookup. */
+static inline void mem_insert_req_into_mshr(Mem_Req* new_req, Mshr* mshr) {
   ASSERTM(0, !(mshr->type & MSHR_MEM),
           "Ramulator does not use MSHR_MEM. A request should be issued using "
           "ramulator_send()!\n");
-
-  /* Entering a level puts the request in that level's MSHR file and costs a slot --
-     a writeback included: a dirty line waiting to be written is occupying the level
-     just as much as a miss waiting for data. */
-  mshr_file_add(new_req, mshr);
-  ASSERTM(new_req->proc_id, mshr->mshr_file.count <= (int)mshr->mshr_size, "%s: %d MSHRs taken of %u admitting %s\n",
-          mshr->name, mshr->mshr_file.count, mshr->mshr_size, Mem_Req_Type_str(new_req->type));
+  ASSERT(new_req->proc_id, !mshr_line(mshr, new_req->addr));
+  mshr_add(mshr, new_req);
   mem_admit_to_level(new_req, mshr);
 }
 
@@ -2843,12 +2547,7 @@ void mem_insert_req_round_robin() {
       if (req_ptr) {
         (*req_ptr)->priority =
             ((*req_ptr)->type == MRT_DPRF || (*req_ptr)->type == MRT_IPRF) ? (*req_ptr)->priority : order_num;
-        mem_insert_req_into_mshr(*req_ptr, (*req_ptr)->mshr,
-                                 ((*req_ptr)->type == MRT_DPRF || (*req_ptr)->type == MRT_IPRF ||
-                                  (*req_ptr)->type == MRT_UOCPRF || (*req_ptr)->type == MRT_FDIPPRFON ||
-                                  (*req_ptr)->type == MRT_FDIPPRFOFF || (*req_ptr)->type == MRT_FDIPPRFALT)
-                                     ? 0
-                                     : order_num);
+        mem_insert_req_into_mshr(*req_ptr, (*req_ptr)->mshr);
         order_num++;
         l1_in_buf_count--;
       }
@@ -2868,7 +2567,6 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   Mem_Req* new_req = NULL;
   Mem_Req* matching_req = NULL;
   Flag demand_hit_prefetch = FALSE;
-  Flag demand_hit_writeback = FALSE;
   Counter priority_offset = freq_cycle_count(FREQ_DOMAIN_L1);
   Counter new_priority;
   /* A probed prefetch has already missed in the level it targets, so it enters the
@@ -2888,58 +2586,39 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
   new_priority = Mem_Req_Priority_Offset[type] + priority_offset;
 
-  /* Step 1: merge only at the level being entered, with a request holding its entry. */
   Mshr* entering = to_dram ? &mem->l1_mshr : to_mlc ? &mem->dcache_mshr : &mem->mlc_mshr;
-  matching_req =
-      mem_search_level_for_merge(entering, proc_id, addr, type, size, &demand_hit_prefetch, &demand_hit_writeback);
 
-  // we do not allow matching non-writebacks to writebacks
-  // (otherwise the reserved entry counts get messed up)
-  if (matching_req && (matching_req->type == MRT_WB || matching_req->type == MRT_WB_NODIRTY)) {
-    STAT_EVENT(proc_id, NEWREQ_WB_MATCH_IGNORED);
-    matching_req = 0;
+  /* Step 1: the line is still in this level's writeback file. Its data is right
+     there, so a request that wants it delivered is served at once; one that only
+     wanted it placed lower down has nothing left to do. */
+  Flag from_wb = mshr_line(mshr_wb_file(entering), addr) != NULL;
+  if (from_wb) {
+    STAT_EVENT(proc_id, MEM_REQ_WB_FORWARD);
+    if (!done_func)
+      return TRUE;
   }
 
-  /* Step 2: Found matching request. Adjust it based on the current request */
-
+  /* Step 2: fold into a request on the line's entry that wants it for the same
+     requester. */
+  matching_req = from_wb ? NULL : mshr_search(entering, proc_id, addr, type, size, &demand_hit_prefetch);
   if (matching_req) {
     STAT_EVENT(proc_id, to_mlc ? MEM_REQ_MERGED_MLC : MEM_REQ_MERGED_L1);
-    // Simulation inaccuracy: an L2-destined request can match a request in the
-    // MLC MSHR file, not the other way around
-    if (!to_mlc && (matching_req->mshr == &mem->dcache_mshr))
-      STAT_EVENT(proc_id, L1_NEWREQ_MATCHED_MLC_REQ);
-    // a DCache miss can match an L2 prefetch
-    if (type == MRT_DPRF) {
-      if (to_mlc)
-        STAT_EVENT(proc_id, PREF_NEWREQ_MATCHED);
-      else
-        STAT_EVENT(proc_id, PREF_NEWREQ_MATCHED);
-    }
-    /* No entry to find: a banked level and an MSHR file both hold the request
-       itself, so only the core fill queue still has an entry beside it.
-       mem_adjust_matching_request handles a NULL entry. */
+    if (type == MRT_DPRF)
+      STAT_EVENT(proc_id, PREF_NEWREQ_MATCHED);
     DEBUG(matching_req->proc_id,
           "Hit in mem buffer  type:%s  addr:0x%s  size:%d  op_num:%d "
           " off_path:%d\n",
           Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
           op ? (int)op->op_num : -1, op ? op->off_path : FALSE);
-    if ((type == MRT_DFETCH) || (type == MRT_DSTORE) || matching_req) {
-      // Train the Data prefetcher as a miss
-      //	    pref_ul1_miss(addr, (op ? op->inst->addr : 0));
-      // Why? If it was a true miss, the original req would have matched.
-      // Otherwise the pref_hit_late should have got it.
-    }
-
-    // cmp FIXME cmp support
     return (mem_adjust_matching_request(matching_req, type, addr, size, destination, delay, op, done_func, unique_num,
-                                        demand_hit_prefetch, demand_hit_writeback, new_priority));
+                                        demand_hit_prefetch, new_priority));
   }
 
-  /* Step 2.5: the level must have an MSHR for this request. A probed prefetch also
-     needs one at the level it missed in, so the fill comes back there. */
-  Mshr* target = to_mlc ? &mem->dcache_mshr : &mem->mlc_mshr;
-  if (!to_dram && queue_mshr_full_for(target, type)) {
-    STAT_EVENT(proc_id, to_mlc ? REJECTED_QUEUE_MLC : REJECTED_QUEUE_L1);
+  /* Step 2.5: anything else for the line waits on its entry; a new line needs a free
+     one. */
+  Flag join = mshr_line(entering, addr) != NULL;
+  if (mshr_full(entering, addr)) {
+    STAT_EVENT(proc_id, to_dram || !to_mlc ? REJECTED_QUEUE_L1 : REJECTED_QUEUE_MLC);
     return FALSE;
   }
 
@@ -3018,17 +2697,41 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
   perf_pred_l0_miss_start(new_req);
 
+  if (from_wb || join) {
+    /* Bookkeeping a miss at this level would have done, for a request that never
+       looks the level up itself. */
+    if (to_dram) {
+      new_req->l1_miss = TRUE;
+      new_req->l1_miss_cycle = cycle_count;
+    } else if (probed) {
+      new_req->mlc_miss = TRUE;
+      new_req->mlc_miss_cycle = cycle_count;
+    }
+    if (join) {
+      STAT_EVENT(proc_id, MEM_REQ_JOINED_LINE);
+      mem_merge_at_level(entering, new_req);
+      return TRUE;
+    }
+    /* Served from the writeback: the fill walk delivers it next cycle. */
+    mshr_add(entering, new_req);
+    new_req->state = MRS_WB_HIT_DONE;
+    new_req->rdy_cycle = cycle_count + 1;
+    ASSERT(proc_id, mem_fill_owner(new_req) == entering);
+    entering->pending_fills++;
+    return TRUE;
+  }
+
   /* An LLC prefetch that missed has no next level to be looked up in, so it goes
      straight to DRAM and waits in DRAM's own MSHR file, admitted exactly as a miss
      is admitted to any other level. */
   if (to_dram) {
     new_req->state = MRS_MEM_NEW;
-    if (queue_mshr_full_for(&mem->l1_mshr, new_req->type) || !ramulator_send(new_req)) {
+    if (!ramulator_send(new_req)) {
       mem_free_req(new_req);
       STAT_EVENT(proc_id, REJECTED_QUEUE_L1);
       return FALSE;
     }
-    mshr_file_add(new_req, &mem->l1_mshr);
+    mshr_add(&mem->l1_mshr, new_req);
     /* Same bookkeeping the ordinary LLC miss does when it reaches DRAM. The probe is
        what found the miss, so record it here -- mem_process_l1_miss_access never runs
        for this path, and l1_fill_line subtracts l1_miss_cycle unconditionally. */
@@ -3048,34 +2751,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
     new_req->mlc_miss_cycle = cycle_count;
   }
 
-  if (to_mlc)
-    return insert_new_req_into_dcache_mshr(proc_id, new_req);
-  else
-    return insert_new_req_into_mlc_mshr(proc_id, new_req);
-}
-
-/**************************************************************************************/
-/* insert_new_req_into_mlc_mshr: */
-
-static Flag insert_new_req_into_mlc_mshr(uns proc_id, Mem_Req* new_req) {
-  if (!ROUND_ROBIN_TO_L1) {
-    mem_insert_req_into_mshr(new_req, new_req->mshr, ALL_FIFO_QUEUES ? l1_seq_num : 0);
-    l1_seq_num++;
-  } else {
-    ASSERT(proc_id, 0);
-    Mem_Req** req_ptr = sl_list_add_tail(&mem->l1_in_buffer_core[proc_id]);
-    *req_ptr = new_req;
-    l1_in_buf_count++;
-  }
-  return TRUE;
-}
-
-/**************************************************************************************/
-/* insert_new_req_into_dcache_mshr: */
-
-static Flag insert_new_req_into_dcache_mshr(uns proc_id, Mem_Req* new_req) {
-  mem_insert_req_into_mshr(new_req, new_req->mshr, ALL_FIFO_QUEUES ? mlc_seq_num : 0);
-  mlc_seq_num++;
+  mem_insert_req_into_mshr(new_req, entering);
   return TRUE;
 }
 
@@ -3086,9 +2762,6 @@ static Flag insert_new_req_into_dcache_mshr(uns proc_id, Mem_Req* new_req) {
 Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                        Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath) {
   Mem_Req* new_req = NULL;
-  Mem_Req* matching_req = NULL;
-  Flag demand_hit_prefetch = FALSE;
-  Flag demand_hit_writeback = FALSE;
   Counter priority_offset = freq_cycle_count(FREQ_DOMAIN_L1);
   Counter new_priority;
 
@@ -3098,28 +2771,12 @@ Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns
 
   new_priority = Mem_Req_Priority_Offset[type] + priority_offset;
 
-  /* Step 1: merge only in the level it enters. */
-  Mshr* target = MLC_PRESENT ? &mem->dcache_mshr : &mem->mlc_mshr;
-  matching_req =
-      mem_search_level_for_merge(target, proc_id, addr, type, size, &demand_hit_prefetch, &demand_hit_writeback);
-
-  /* Step 2: Found matching request. Adjust it based on the current request */
-
-  if (matching_req) {
-    DEBUG(matching_req->proc_id,
-          "Hit in mem buffer  type:%s  addr:0x%s  size:%d  op_num:%d "
-          " off_path:%d\n",
-          Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
-          op ? (int)op->op_num : -1, op ? op->off_path : FALSE);
-    return (mem_adjust_matching_request(matching_req, type, addr, size, DEST_MLC, delay, op, done_func, unique_num,
-                                        demand_hit_prefetch, demand_hit_writeback, new_priority));
-  }
-
-  /* Step 3: Not already in request buffer. Figure out if a free request buffer
-   * exists */
-  /* The level it enters has to have room for it, writeback or not; its reserve is
-     what keeps this from failing when demands have filled the file. */
-  if (queue_mshr_full_for(target, type)) {
+  /* A line is written back once: until this writeback leaves the file, the line is
+     not in the cache to be dirtied and evicted again. */
+  Mshr* target = mshr_wb_file(MLC_PRESENT ? &mem->dcache_mshr : &mem->mlc_mshr);
+  ASSERTM(proc_id, !mshr_line(target, addr), "%s: a second writeback to line 0x%s\n", mshr_name(target),
+          hexstr64s(addr));
+  if (mshr_full(target, addr)) {
     STAT_EVENT(proc_id, MLC_PRESENT ? REJECTED_QUEUE_MLC : REJECTED_QUEUE_L1);
     return FALSE;
   }
@@ -3131,11 +2788,7 @@ Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns
                    unique_num, new_priority);
   new_req->wb_used_onpath = used_onpath;  // DC WB requests carry this flag
 
-  /* Step 6: Insert the request into the MLC MSHR file if it is not already there */
-  if (MLC_PRESENT)
-    insert_new_req_into_dcache_mshr(proc_id, new_req);
-  else
-    insert_new_req_into_mlc_mshr(proc_id, new_req);
+  mem_insert_req_into_mshr(new_req, target);
 
   return TRUE;
 }
@@ -3147,9 +2800,6 @@ Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns
 static Flag new_mem_mlc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                                Flag done_func(Mem_Req*), Counter unique_num) {
   Mem_Req* new_req = NULL;
-  Mem_Req* matching_req = NULL;
-  Flag demand_hit_prefetch = FALSE;
-  Flag demand_hit_writeback = FALSE;
   Counter priority_offset = freq_cycle_count(FREQ_DOMAIN_L1);
   Counter new_priority;
 
@@ -3159,26 +2809,9 @@ static Flag new_mem_mlc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns s
 
   new_priority = Mem_Req_Priority_Offset[type] + priority_offset;
 
-  /* Step 1: Figure out if this access is already in the request buffer */
-
-  matching_req = mem_search_l1_for_merge(proc_id, addr, type, size, &demand_hit_prefetch, &demand_hit_writeback);
-
-  /* Step 2: Found matching request. Adjust it based on the current request */
-
-  if (matching_req) {
-    DEBUG(matching_req->proc_id,
-          "Hit in mem buffer  type:%s  addr:0x%s  size:%d  op_num:%d "
-          " off_path:%d\n",
-          Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
-          op ? (int)op->op_num : -1, op ? op->off_path : FALSE);
-    return (mem_adjust_matching_request(matching_req, type, addr, size, DEST_L1, delay, op, done_func, unique_num,
-                                        demand_hit_prefetch, demand_hit_writeback, new_priority));
-  }
-
-  /* A writeback takes an LLC MSHR like anything else admitted there, so it has to
-     fit. Its reserve is what keeps this from failing when demands have filled the
-     file; the caller retries, and the fill that produced it stalls a cycle. */
-  if (queue_mshr_full_for(&mem->mlc_mshr, type)) {
+  ASSERTM(proc_id, !mshr_line(&mem->mlc_wb, addr), "%s: a second writeback to line 0x%s\n", mshr_name(&mem->mlc_wb),
+          hexstr64s(addr));
+  if (mshr_full(&mem->mlc_wb, addr)) {
     STAT_EVENT(proc_id, REJECTED_QUEUE_L1);
     return FALSE;
   }
@@ -3189,8 +2822,7 @@ static Flag new_mem_mlc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns s
   /* Step 5: Allocate a new request buffer -- new_req */
   mem_init_new_req(new_req, type, MSHR_MLC, proc_id, addr, size, delay, op, done_func, unique_num, new_priority);
 
-  /* Step 6: Insert the request into the MLC MSHR file if it is not already there */
-  insert_new_req_into_mlc_mshr(proc_id, new_req);
+  mem_insert_req_into_mshr(new_req, &mem->mlc_wb);
 
   // FIXME: Do we sort the mshr right away, or should we do it at the beginning
   // of update memory? Perhaps we should keep a new_count and kill_count at each
@@ -3204,9 +2836,6 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
                               Flag done_func(Mem_Req*), Counter unique_num)  // This counter is used when op is NULL
 {
   Mem_Req* new_req = NULL;
-  Mem_Req* matching_req = NULL;
-  Flag demand_hit_prefetch = FALSE;
-  Flag demand_hit_writeback = FALSE;
   Counter priority_offset = freq_cycle_count(FREQ_DOMAIN_L1);
   Counter new_priority;
   Flag is_sent = FALSE;
@@ -3223,22 +2852,6 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
 
   if (CONSTANT_MEMORY_LATENCY || STALL_MEM_REQS_ONLY) {  // not modeling any contention
     return TRUE;
-  }
-
-  /* Step 1: merge only at its own level, the LLC's miss file. */
-  matching_req =
-      mem_search_level_for_merge(&mem->l1_mshr, proc_id, addr, type, size, &demand_hit_prefetch, &demand_hit_writeback);
-
-  /* Step 2: Found matching request. Adjust it based on the current request */
-
-  if (matching_req) {
-    DEBUG(matching_req->proc_id,
-          "Hit in mem buffer  type:%s  addr:0x%s  size:%d  op_num:%d "
-          " off_path:%d\n",
-          Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
-          op ? (int)op->op_num : -1, op ? op->off_path : FALSE);
-    return (mem_adjust_matching_request(matching_req, type, addr, size, DEST_MEM, delay, op, done_func, unique_num,
-                                        demand_hit_prefetch, demand_hit_writeback, new_priority));
   }
 
   /* Step 3: Not already in request buffer. Figure out if a free request buffer
@@ -4298,7 +3911,7 @@ void l1_cache_collect_stats() {
 
 Flag is_final_state(Mem_Req_State state) {
   return (state == MRS_MLC_HIT_DONE) || (state == MRS_L1_HIT_DONE) || (state == MRS_MEM_DONE) ||
-         (state == MRS_FILL_DONE);
+         (state == MRS_FILL_DONE) || (state == MRS_WB_HIT_DONE);
 }
 
 Flag is_inv_state(Mem_Req_State state) {

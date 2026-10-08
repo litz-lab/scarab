@@ -224,7 +224,6 @@ void pref_update_dcache(void); /* dcache, after the dcache stage */
 
 // returns true if req hits in the req queue. It also invalidates the request in
 // the pref queue.
-Flag pref_ul1req_queue_match(Addr line_addr);  // doesn't invalidate
 
 // returns true if the req was added/matched an existing req.
 //         false if queue was full

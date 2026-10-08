@@ -200,9 +200,7 @@ DEF_PARAM(promote_to_higher_priority_mem_req_type,
 DEF_PARAM(dcache_mshrs, DCACHE_MSHRS, uns, uns, 32, )
 DEF_PARAM(mlc_mshrs, MLC_MSHRS, uns, uns, 32, )
 DEF_PARAM(l1_mshrs, L1_MSHRS, uns, uns, 32, )
-DEF_PARAM(mshr_wb_reserve, MSHR_WB_RESERVE, uns, uns, 2, )
-/* Held for writebacks: they are low priority, so ordering never guarantees them
-   one, and refusing an LLC writeback can deadlock. */
+/* Each level's writebacks have a file of their own, the same size. */
 
 // FOR independently sized queues beyond the l1
 DEF_PARAM(mem_l1_fill_queue_entries, MEM_L1_FILL_QUEUE_ENTRIES, uns, uns, 32, )

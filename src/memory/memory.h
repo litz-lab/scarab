@@ -38,6 +38,7 @@
 #include "libs/list_lib.h"
 #include "libs/port_lib.h"
 #include "memory/mem_req.h"
+#include "memory/mshr.h"
 
 #include "freq.h"
 #include "op_info.h"
@@ -82,31 +83,6 @@ typedef enum Mshr_Req_Result_enum {
   SUCCESS_NEW,
   SUCCESS_MERGED,
 } Mshr_Req_Result;
-
-typedef enum Mshr_Type_enum {
-  MSHR_MLC = 1 << 0,
-  MSHR_MEM = 1 << 2,
-  MSHR_DCACHE = 1 << 4,
-} Mshr_Type;
-
-typedef struct Mshr_struct {
-  /* This level's MSHR file: every request it is still fetching a line for, from
-     admission until the request is freed. Searching it answers "is this line already
-     on its way for me", which is the only question a merge asks. */
-  List mshr_file;
-  /* The same requests keyed by line address, so a merge is a lookup rather than a
-     walk. The list stays for the walks that want every entry in order. */
-  Hash_Table mshr_hash;
-  /* Held back for writebacks, so a fill can always place its dirty victim. */
-  uns mshr_wb_reserve;
-  /* Fills this level owes that could not be absorbed. Only when it is non-zero does
-     anything walk this level's file looking for them. */
-  uns pending_fills;
-  uns mshr_size;
-  char name[20];
-  Mshr_Type type;
-  uns level; /* index into a request's mshr_entry */
-} Mshr;
 
 typedef struct Mem_Bank_Queue_Entry_struct {
   uns8 proc_id;
@@ -163,6 +139,11 @@ typedef struct Memory_struct {
   Mshr dcache_mshr;
   Mshr mlc_mshr;
   Mshr l1_mshr;
+  /* Each level's writebacks, on their way to the level below: the same structure,
+     kept apart because a writeback is not a miss and nothing merges into it. */
+  Mshr dcache_wb;
+  Mshr mlc_wb;
+  Mshr l1_wb;
   /* One per core: requests whose done_func still owes the core. A plain list, walked
      in order and never re-sorted. */
   List* core_fill_queues;

@@ -62,7 +62,8 @@ typedef enum Mem_Req_State_enum {
   MRS_FILL_L1,
   MRS_FILL_MLC,
   MRS_FILL_DONE, /* final state */
-  MRS_MERGED,    /* waiting on another request's entry at one level */
+  MRS_MERGED,    /* waiting on its line's entry at its deepest MSHR file */
+  MRS_WB_HIT_DONE, /* served from a writeback still in flight */
 } Mem_Req_State;
 
 #define MRT_LIST(elem)                                            \
@@ -128,10 +129,6 @@ struct Mem_Req_struct {
   uns mem_flat_bank;                   /* flattened bank index across channels */
   Counter start_cycle;                 /* cycle that the request is ready to process */
   Counter rdy_cycle;                   /* cycle when the current operation is complete */
-  List mlc_mshr_waiters;               /* requests waiting on this one's mlc_mshr entry */
-  List l1_mshr_waiters;                /* requests waiting on this one's l1_mshr entry */
-  struct List_Entry_struct* mshr_entry[3];   /* its entry in each level's MSHR file, or NULL */
-  struct List_Entry_struct* bucket_entry[3]; /* and in that file's bucket for its line */
   Counter first_stalling_cycle;        /* cycle this request became a type considered
                                           stalling */
   Counter oldest_op_unique_num;        /* unique num of the oldest op that is waiting

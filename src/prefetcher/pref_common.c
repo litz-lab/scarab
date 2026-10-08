@@ -511,10 +511,9 @@ static Flag pref_queue_add(List* q, uns cap, Flag overwrite_on_full, Pref_Mem_Re
   return TRUE;
 }
 
-Flag pref_ul1req_queue_match(Addr line_addr) {
-  uns proc_id = get_proc_id_from_cmp_addr(line_addr);
-  HWP_Core* core = pref.cores[proc_id];
-  for (List_Entry* e = core->ul1req_queue.head; e; e = e->next) {
+/* Is this line already queued? */
+static Flag pref_queue_match(List* q, Addr line_addr) {
+  for (List_Entry* e = q->head; e; e = e->next) {
     Pref_Mem_Req* r = (Pref_Mem_Req*)&e->data;
     if ((r->line_addr >> LOG2(DCACHE_LINE_SIZE)) == (line_addr >> LOG2(DCACHE_LINE_SIZE)))
       return TRUE;
@@ -535,6 +534,10 @@ Flag pref_addto_dl0req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) 
   new_req.prefetcher_id = prefetcher_id;
   new_req.rdy_cycle = cycle_count;
 
+  if (PREF_DL0REQ_ADD_FILTER_ON && pref_queue_match(&core->dl0req_queue, new_req.line_addr)) {
+    STAT_EVENT(0, PREF_DL0REQ_QUEUE_MATCHED_REQ);
+    return TRUE;
+  }
   return pref_queue_add(&core->dl0req_queue, PREF_DL0REQ_QUEUE_SIZE, PREF_DL0REQ_QUEUE_OVERWRITE_ON_FULL, &new_req,
                         PREF_DL0REQ_QUEUE_FULL);
 }
@@ -553,6 +556,10 @@ Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id
   /* Its MLC lookup resolves after the MLC's latency, as a demand's does. */
   new_req.rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + MLC_CYCLES;
 
+  if (PREF_UMLC_REQ_ADD_FILTER_ON && pref_queue_match(&core->umlc_req_queue, new_req.line_addr)) {
+    STAT_EVENT(0, PREF_UMLC_REQ_QUEUE_MATCHED_REQ);
+    return TRUE;
+  }
   return pref_queue_add(&core->umlc_req_queue, PREF_UMLC_REQ_QUEUE_SIZE, PREF_UMLC_REQ_QUEUE_OVERWRITE_ON_FULL,
                         &new_req, PREF_UMLC_REQ_QUEUE_FULL);
 }
@@ -582,7 +589,7 @@ Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_
   /* Its LLC lookup resolves after the LLC's latency, as a demand's does. */
   new_req.rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + L1_CYCLES;
 
-  if (PREF_UL1REQ_ADD_FILTER_ON && pref_ul1req_queue_match(new_req.line_addr)) {
+  if (PREF_UL1REQ_ADD_FILTER_ON && pref_queue_match(&core->ul1req_queue, new_req.line_addr)) {
     STAT_EVENT(0, PREF_UL1REQ_QUEUE_MATCHED_REQ);
     return TRUE;
   }

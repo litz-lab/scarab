@@ -388,7 +388,7 @@ void node_fill_rob(Stage_Data* src_sd) {
 
     /* set op fields */
     op->node_id = node->node_count;
-    op_set_issue_cycle(op, cycle_count);
+    op_set_dispatch_cycle(op, cycle_count);
 
     /* add to node list & update node state*/
     ASSERT(node->proc_id, !op->in_node_list);
@@ -478,7 +478,7 @@ void node_retire() {
     node->ret_stall_length = 0;
 
     // retire the ops
-    Counter real_rdy_cycle = MAX2(op_get_rdy_cycle(op), op_get_issue_cycle(op));
+    Counter real_rdy_cycle = MAX2(op_get_rdy_cycle(op), op_get_dispatch_cycle(op));
 
     ASSERT(node->proc_id, node->proc_id == op->proc_id);
     ASSERT(node->proc_id, op->in_node_list);

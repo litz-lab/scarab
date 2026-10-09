@@ -353,7 +353,7 @@ void cmp_wake(Op* src_op, Op* dep_op, uns rdy_bit) {
 
   simple_wake(src_op, dep_op, rdy_bit);
 
-  if (op_sources_not_rdy_is_clear(dep_op) && cycle_count >= op_get_issue_cycle(dep_op) && !dep_op->in_rdy_list) {
+  if (op_sources_not_rdy_is_clear(dep_op) && cycle_count >= op_get_dispatch_cycle(dep_op) && !dep_op->in_rdy_list) {
     _DEBUG(dep_op->proc_id, DEBUG_NODE_STAGE, "Adding to ready list  op_num:%s\n", unsstr64(dep_op->op_num));
     issue_queue_wakeup(dep_op);
   }

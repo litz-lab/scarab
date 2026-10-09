@@ -55,7 +55,7 @@ typedef struct Op_Cycles_struct {
   Counter fetch_cycle;   // cycle an individual instruction is fetched
   Counter bp_cycle;      // cycle a CF instruction accesses the branch predictor
   Counter map_cycle;     // cycle an individual instruction enters the map stage
-  Counter issue_cycle;   // cycle an individual instruction is issued -- same as chkpt
+  Counter dispatch_cycle;  // cycle an individual instruction is dispatched into the node table
   Counter rdy_cycle;     // cycle the final source value is available (accumulator: MAX over producers)
   Counter sched_cycle;   // cycle when the op is scheduled (arrives at the functional unit)
   Counter exec_cycle;    // cycle when execution (or addr gen) of op will be completed (result usable)
@@ -309,12 +309,12 @@ static inline void op_set_map_cycle(Op* op, Counter cycle) {
   op->cycles.map_cycle = cycle;
 }
 
-static inline Counter op_get_issue_cycle(const Op* op) {
-  return op->cycles.issue_cycle;
+static inline Counter op_get_dispatch_cycle(const Op* op) {
+  return op->cycles.dispatch_cycle;
 }
-static inline void op_set_issue_cycle(Op* op, Counter cycle) {
-  ASSERT(op->proc_id, op->cycles.issue_cycle == MAX_CTR);
-  op->cycles.issue_cycle = cycle;
+static inline void op_set_dispatch_cycle(Op* op, Counter cycle) {
+  ASSERT(op->proc_id, op->cycles.dispatch_cycle == MAX_CTR);
+  op->cycles.dispatch_cycle = cycle;
 }
 
 static inline Counter op_get_sched_cycle(const Op* op) {
@@ -419,7 +419,7 @@ static inline void op_set_rdy_cycle(Op* op, Counter cycle) {
 static inline void op_assert_cycles_set_at_retire(const Op* op) {
   ASSERT(op->proc_id, op->cycles.fetch_cycle != MAX_CTR);
   ASSERT(op->proc_id, op->cycles.map_cycle != MAX_CTR);
-  ASSERT(op->proc_id, op->cycles.issue_cycle != MAX_CTR);
+  ASSERT(op->proc_id, op->cycles.dispatch_cycle != MAX_CTR);
   ASSERT(op->proc_id, op->cycles.rdy_cycle != MAX_CTR);
   ASSERT(op->proc_id, op->cycles.sched_cycle != MAX_CTR);
   ASSERT(op->proc_id, op->cycles.exec_cycle != MAX_CTR);

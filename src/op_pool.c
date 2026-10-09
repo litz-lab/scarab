@@ -255,7 +255,7 @@ void op_pool_setup_op(uns proc_id, Op* op) {
    * asserts against MAX_CTR; rdy_cycle is the accumulator and starts at 1). */
   op->cycles.fetch_cycle = MAX_CTR;
   op->cycles.bp_cycle = MAX_CTR;
-  op->cycles.issue_cycle = MAX_CTR;
+  op->cycles.dispatch_cycle = MAX_CTR;
   op->cycles.map_cycle = MAX_CTR;
   op->cycles.rdy_cycle = 1;
   op->cycles.sched_cycle = MAX_CTR;

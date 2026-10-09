@@ -1400,18 +1400,8 @@ static inline void log_stats_ic_hit() {
 
 void log_stats_mshr_hit(Addr line_addr) {
   Flag demand_hit_prefetch = FALSE;
-  Flag demand_hit_writeback = FALSE;
-  Mem_Queue_Entry* queue_entry = NULL;
-  Flag ramulator_match = FALSE;
-  Mem_Req* req = mem_search_reqbuf_wrapper(
-      ic->proc_id, line_addr, MRT_FDIPPRFON, ICACHE_LINE_SIZE, &demand_hit_prefetch, &demand_hit_writeback,
-      QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT | QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL, &queue_entry, &ramulator_match);
-  if (!req) {
-    req = mem_search_reqbuf_wrapper(ic->proc_id, line_addr, MRT_FDIPPRFOFF, ICACHE_LINE_SIZE, &demand_hit_prefetch,
-                                    &demand_hit_writeback,
-                                    QUEUE_MLC | QUEUE_L1 | QUEUE_BUS_OUT | QUEUE_MEM | QUEUE_L1FILL | QUEUE_MLC_FILL,
-                                    &queue_entry, &ramulator_match);
-  }
+  Mem_Req* req = mshr_search(mem_core_file(MRT_FDIPPRFON), ic->proc_id, line_addr, MRT_FDIPPRFON, ICACHE_LINE_SIZE,
+                             &demand_hit_prefetch);
 
   if (req && !req->cyc_hit_by_demand_load) {
     uns64 hashed_addr = FDIP_GHIST_HASHING ? fdip_hash_addr_ghist(ic->line_addr, req->ghist) : ic->line_addr;

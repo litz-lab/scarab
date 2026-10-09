@@ -626,13 +626,8 @@ DEF_STAT(  WRONGPATH_L1FILLQ_DEMOTIONS , DIST  ,  NO_RATIO  )
 
 DEF_STAT(  PROMOTION_QMLC             , DIST  ,  MEM_REQ_BUFFER_HIT  )
 DEF_STAT(  PROMOTION_QL1              , DIST  ,  MEM_REQ_BUFFER_HIT  )
-DEF_STAT(  PROMOTION_QBUSOUT          , COUNT ,  MEM_REQ_BUFFER_HIT  )
 DEF_STAT(  PROMOTION_QMEM             , COUNT ,  MEM_REQ_BUFFER_HIT  )
-DEF_STAT(  PROMOTION_QL1FILL          , COUNT ,  MEM_REQ_BUFFER_HIT  )
-DEF_STAT(  PROMOTION_QMLC_FILL        , COUNT ,  MEM_REQ_BUFFER_HIT  )
 DEF_STAT(  NOPROMOTION_QMEM           , COUNT ,  MEM_REQ_BUFFER_HIT  )
-DEF_STAT(  NOPROMOTION_QL1FILL        , DIST  ,  MEM_REQ_BUFFER_HIT  )
-DEF_STAT(  NOPROMOTION_QMLC_FILL      , DIST  ,  MEM_REQ_BUFFER_HIT  )
 
 DEF_STAT( PROMOTION_FROM_FDIP_OFF_TO_ON , COUNT , NO_RATIO  )
 
@@ -1090,15 +1085,15 @@ DEF_STAT(  PREF_DC_HIT_ON_INSERT               , DIST	 , NO_RATIO  )
 DEF_STAT(  PREF_L1_HIT_ON_INSERT               , DIST  , NO_RATIO  )
 
      /* different type matches */
-DEF_STAT(  L1_NEWREQ_MATCHED_MLC_REQ                     , COUNT  , NO_RATIO  )
 /* requests folded into an existing one: at creation per level entered, and on
    descent from the MLC queue into the LLC queue */
 DEF_STAT(  MEM_REQ_MERGED_MLC                          , COUNT  , NO_RATIO  )
 DEF_STAT(  MEM_REQ_MERGED_L1                           , COUNT  , NO_RATIO  )
 DEF_STAT(  MEM_REQ_MERGED_L1_DESCENT                   , COUNT  , NO_RATIO  )
+DEF_STAT(  MEM_REQ_MERGED_DRAM_DESCENT                 , COUNT  , NO_RATIO  )
+DEF_STAT(  MEM_REQ_JOINED_LINE                         , COUNT  , NO_RATIO  )
 DEF_STAT(  MLC_NEWREQ_MATCHED_L2_PREF                    , COUNT  , NO_RATIO  )
 DEF_STAT(  MLC_NEWREQ_MATCHED_L2_PREF_MLC_HIT            , RATIO  , MLC_NEWREQ_MATCHED_L2_PREF  )
-DEF_STAT(  NEWREQ_WB_MATCH_IGNORED                       , COUNT  , NO_RATIO  )
 
 
 

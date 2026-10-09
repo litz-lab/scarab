@@ -40,24 +40,17 @@
 extern "C" {
 #endif
 
-typedef enum Mshr_Type_enum {
-  MSHR_MLC = 1 << 0,
-  MSHR_MEM = 1 << 2,
-  MSHR_DCACHE = 1 << 4,
-} Mshr_Type;
-
 typedef struct Mshr_Line_struct Mshr_Line;
 
 typedef struct Mshr_struct {
   struct Mshr_Impl_struct* impl;
-  /* Fills this level owes that could not be absorbed. Only when it is non-zero does
-     anything walk this level's file looking for them. */
+  /* Lines whose data has arrived and is waiting to fill this level (mshr_line_ready).
+     Only when it is non-zero does anything walk the file for them. */
   uns pending_fills;
   uns size; /* entries: lines in flight */
-  Mshr_Type type;
 } Mshr;
 
-void mshr_init(Mshr* mshr, const char* name, Mshr_Type type, uns size);
+void mshr_init(Mshr* mshr, const char* name, uns size);
 void mshr_reset(Mshr* mshr);
 void mshr_destroy(Mshr* mshr);
 const char* mshr_name(Mshr* mshr);
@@ -74,6 +67,14 @@ Mshr_Line* mshr_first(Mshr* mshr);
 Mshr_Line* mshr_next(Mshr* mshr, Mshr_Line* line);
 Counter mshr_line_rdy(Mshr_Line* line); /* when its first request is looked up */
 void mshr_line_set_rdy(Mshr_Line* line, Counter rdy);
+/* The line's data has arrived: fill this level at fill_rdy. The line stays ready until
+   its last request leaves. */
+void mshr_line_ready(Mshr* mshr, Mshr_Line* line, Counter fill_rdy);
+Counter mshr_line_fill_rdy(Mshr_Line* line); /* 0 until the data arrives */
+Flag mshr_line_filled(Mshr_Line* line);      /* this level's cache already took it */
+void mshr_line_set_filled(Mshr_Line* line);
+/* The request that looks the line up and goes down for it: the first to arrive. */
+Mem_Req* mshr_line_first(Mshr_Line* line);
 /* The line's requests in arrival order, copied into reqs (mshr_line_count of them). */
 uns mshr_line_count(Mshr_Line* line);
 uns mshr_line_reqs(Mshr_Line* line, Mem_Req** reqs);

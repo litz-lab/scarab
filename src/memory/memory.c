@@ -1783,7 +1783,7 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit) {
   switch (dest) {
     case DEST_DCACHE: {
       Dcache_Stage* dcs = &cmp_model.dcache_stage[proc_id];
-      ports = &dcs->ports[line_addr >> dcs->dcache.shift_bits & N_BIT_MASK(LOG2(DCACHE_BANKS))];
+      ports = &dcs->ports[BANK(line_addr, DCACHE_BANKS, DCACHE_INTERLEAVE_FACTOR)];
       cache = &dcs->dcache;
       block = L0_LD_BANK_BLOCK;
       count_access = FALSE;

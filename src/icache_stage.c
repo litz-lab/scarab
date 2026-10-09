@@ -945,6 +945,14 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
 
     op_set_fetch_cycle(op, cycle_count);
 
+    /* add to sequential op list */
+    add_to_seq_op_list(td, op);
+    ASSERT(ic->proc_id, td->seq_op_list.count <= op_pool_active_ops);
+
+    /* map the op based on true dependencies & set information in op->oracle_info */
+    thread_map_op(op);
+    thread_map_mem_dep(op);
+
     if (is_fetch_barrier_op(op)) {
       ASSERT(ic->proc_id, !ic->fetch_barrier_pending);
       ASSERT(ic->proc_id, ii == cur_data->op_count - 1);

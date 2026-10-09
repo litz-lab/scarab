@@ -33,6 +33,7 @@
 #include <list>
 #include <map>
 #include <string>
+#include <unordered_map>
 
 extern "C" {
 #include "globals/assert.h"
@@ -50,30 +51,42 @@ extern "C" {
 struct Mshr_Line_struct {
   Addr addr;
   Counter rdy;
+  Counter fill_rdy; /* when the line's data is here to fill this level; 0 until it arrives */
+  Flag filled;      /* this level's cache already took it */
   std::list<Mem_Req*> reqs;
+  Counter seq;                               /* allocation order */
+  std::list<Mshr_Line>::iterator self;       /* its place in lines */
+  Flag lookup_pending;                       /* still in lookups */
+  std::list<Mshr_Line*>::iterator lookup_it; /* its place in lookups, while lookup_pending */
 };
 
 struct Mshr_Impl_struct {
   std::string name;
   std::list<Mshr_Line> lines;                             /* in allocation order */
-  std::map<Addr, std::list<Mshr_Line>::iterator> by_line; /* line address -> entry */
+  std::unordered_map<Addr, std::list<Mshr_Line>::iterator> by_line; /* line address -> entry */
+  std::list<Mshr_Line*> lookups;                                    /* not looked up yet, in allocation order */
+  std::map<Counter, Mshr_Line*> ready;                              /* data arrived, by allocation order */
+  Counter next_seq = 0;
 };
 
 static inline Addr line_of(Addr addr) {
   return addr >> LOG2(L1_LINE_SIZE);
 }
 
-void mshr_init(Mshr* mshr, const char* name, Mshr_Type type, uns size) {
+void mshr_init(Mshr* mshr, const char* name, Mshr_File file, uns size) {
   mshr->impl = new Mshr_Impl_struct();
   mshr->impl->name = name;
+  mshr->file = file;
+  mshr->proc_id = 0;
   mshr->pending_fills = 0;
   mshr->size = size;
-  mshr->type = type;
 }
 
 void mshr_reset(Mshr* mshr) {
   mshr->impl->lines.clear();
   mshr->impl->by_line.clear();
+  mshr->impl->lookups.clear();
+  mshr->impl->ready.clear();
   mshr->pending_fills = 0;
 }
 
@@ -111,8 +124,11 @@ void mshr_add(Mshr* mshr, Mem_Req* req) {
   if (it == impl->by_line.end()) {
     ASSERTM(req->proc_id, impl->lines.size() < mshr->size, "%s: all %u entries taken adding %s\n", impl->name.c_str(),
             mshr->size, Mem_Req_Type_str(req->type));
-    impl->lines.push_back(Mshr_Line{line_of(req->addr), 0, {}});
-    it = impl->by_line.emplace(line_of(req->addr), std::prev(impl->lines.end())).first;
+    impl->lines.push_back(Mshr_Line{line_of(req->addr), 0, 0, FALSE, {}, impl->next_seq++, {}, TRUE, {}});
+    Mshr_Line& line = impl->lines.back();
+    line.self = std::prev(impl->lines.end());
+    line.lookup_it = impl->lookups.insert(impl->lookups.end(), &line);
+    it = impl->by_line.emplace(line_of(req->addr), line.self).first;
   }
   it->second->reqs.push_back(req);
 }
@@ -126,6 +142,13 @@ void mshr_remove(Mshr* mshr, Mem_Req* req) {
   ASSERT(req->proc_id, pos != reqs.end());
   reqs.erase(pos);
   if (reqs.empty()) {
+    Mshr_Line& line = *it->second;
+    if (line.lookup_pending)
+      impl->lookups.erase(line.lookup_it);
+    if (line.fill_rdy) {
+      impl->ready.erase(line.seq);
+      mshr->pending_fills--;
+    }
     impl->lines.erase(it->second);
     impl->by_line.erase(it);
   }
@@ -136,8 +159,33 @@ Mshr_Line* mshr_first(Mshr* mshr) {
 }
 
 Mshr_Line* mshr_next(Mshr* mshr, Mshr_Line* line) {
-  auto it = std::next(mshr->impl->by_line.at(line->addr));
+  auto it = std::next(line->self);
   return it == mshr->impl->lines.end() ? nullptr : &*it;
+}
+
+Mshr_Line* mshr_first_lookup(Mshr* mshr) {
+  return mshr->impl->lookups.empty() ? nullptr : mshr->impl->lookups.front();
+}
+
+Mshr_Line* mshr_next_lookup(Mshr* mshr, Mshr_Line* line) {
+  ASSERT(0, line->lookup_pending);
+  auto it = std::next(line->lookup_it);
+  return it == mshr->impl->lookups.end() ? nullptr : *it;
+}
+
+void mshr_line_lookup_done(Mshr* mshr, Mshr_Line* line) {
+  ASSERT(0, line->lookup_pending);
+  mshr->impl->lookups.erase(line->lookup_it);
+  line->lookup_pending = FALSE;
+}
+
+Mshr_Line* mshr_first_ready(Mshr* mshr) {
+  return mshr->impl->ready.empty() ? nullptr : mshr->impl->ready.begin()->second;
+}
+
+Mshr_Line* mshr_next_ready(Mshr* mshr, Mshr_Line* line) {
+  auto it = mshr->impl->ready.upper_bound(line->seq);
+  return it == mshr->impl->ready.end() ? nullptr : it->second;
 }
 
 Counter mshr_line_rdy(Mshr_Line* line) {
@@ -146,6 +194,30 @@ Counter mshr_line_rdy(Mshr_Line* line) {
 
 void mshr_line_set_rdy(Mshr_Line* line, Counter rdy) {
   line->rdy = rdy;
+}
+
+void mshr_line_ready(Mshr* mshr, Mshr_Line* line, Counter fill_rdy) {
+  if (!line->fill_rdy) {
+    mshr->impl->ready.emplace(line->seq, line);
+    mshr->pending_fills++;
+  }
+  line->fill_rdy = fill_rdy;
+}
+
+Counter mshr_line_fill_rdy(Mshr_Line* line) {
+  return line->fill_rdy;
+}
+
+Flag mshr_line_filled(Mshr_Line* line) {
+  return line->filled;
+}
+
+void mshr_line_set_filled(Mshr_Line* line) {
+  line->filled = TRUE;
+}
+
+Mem_Req* mshr_line_first(Mshr_Line* line) {
+  return line->reqs.front();
 }
 
 uns mshr_line_count(Mshr_Line* line) {

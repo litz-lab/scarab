@@ -857,7 +857,11 @@ void ext_trace_extract_basic_block_vectors() {
       // clear out current bb
       cur_bb.clear();
 
-      if (!success && !fingerprint.empty()) {
+      // In distributed mode a run fingerprints one window. If that window was already written
+      // above, what is left is the residue of a basic block crossing the window's end: it belongs
+      // to the next window, which reads it again, so writing it would add a second line.
+      const bool window_done = SIM_MODE == TRACE_BBV_DISTRIBUTED_MODE && num_of_segments > 0;
+      if (!success && !fingerprint.empty() && !window_done) {
         num_of_segments++;
         output_counts(num_of_segments, counts_dynamic, counts_as_built, op_taken_count, bb_identity_map);
 

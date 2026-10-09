@@ -576,6 +576,10 @@ void mem_free_req(Mem_Req* req) {
     else
       STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE_ONPATH_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
 
+  } else if (req->state == MRS_WB_HIT_DONE) {
+    mem_record_served(req, LD_SERVED_DCACHE);
+    STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
+    STAT_EVENT(req->proc_id, MEM_REQ_COMPLETE);
   } else { /* killed */
     STAT_EVENT(req->proc_id, MEM_REQ_KILLED_IFETCH + MIN2(req->type, MRT_WB_NODIRTY));
     STAT_EVENT(req->proc_id, MEM_REQ_KILLED);
@@ -1746,7 +1750,7 @@ static void mem_fill_line_at(Mshr* mshr, Mshr_Line* line) {
     if (at_mlc && req->mlc_miss && !req->mlc_miss_satisfied)
       mlc_miss_is_satisfied(req);
 
-    Flag hit = req->state == MRS_L1_HIT_DONE || req->state == MRS_MLC_HIT_DONE;
+    Flag hit = req->state == MRS_L1_HIT_DONE || req->state == MRS_MLC_HIT_DONE || req->state == MRS_WB_HIT_DONE;
     Mshr* above = mem_file_above(req, mshr);
     if (above) {
       mshr_remove(mshr, req);
@@ -2272,9 +2276,19 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
   Mshr* entering = to_dram ? &mem->l1_mshr : to_mlc ? mem_core_file(type) : &mem->mlc_mshr;
 
-  /* Step 1: fold into a request on the line's entry that wants it for the same
+  /* Step 1: the line is still in this level's writeback file. Its data is right
+     there, so a request that wants it delivered is served at once; one that only
+     wanted it placed lower down has nothing left to do. */
+  Flag from_wb = mem_wb_file(entering) && mshr_line(mem_wb_file(entering), addr);
+  if (from_wb) {
+    STAT_EVENT(proc_id, MEM_REQ_WB_FORWARD);
+    if (!done_func)
+      return TRUE;
+  }
+
+  /* Step 2: fold into a request on the line's entry that wants it for the same
      requester. */
-  matching_req = mshr_search(entering, proc_id, addr, type, size, &demand_hit_prefetch);
+  matching_req = from_wb ? NULL : mshr_search(entering, proc_id, addr, type, size, &demand_hit_prefetch);
   if (matching_req) {
     STAT_EVENT(proc_id, to_mlc ? MEM_REQ_MERGED_MLC : MEM_REQ_MERGED_L1);
     if (type == MRT_DPRF)
@@ -2383,6 +2397,23 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   if (join) {
     STAT_EVENT(proc_id, MEM_REQ_JOINED_LINE);
     mem_merge_at_level(entering, new_req);
+    return TRUE;
+  }
+
+  if (from_wb) {
+    /* Served from the writeback: the line comes back into the cache, so the writeback
+       is cancelled and the line keeps its dirty bit -- one home again, and its next
+       eviction writes it back. The fill walk delivers it next cycle. */
+    Mshr* wb_file = mem_wb_file(entering);
+    Mem_Req* wb = mshr_line_first(mshr_line(wb_file, addr));
+    new_req->dirty_l0 |= (wb->type == MRT_WB);
+    mshr_remove(wb_file, wb);
+    mem_free_req(wb);
+    mshr_add(entering, new_req);
+    new_req->state = MRS_WB_HIT_DONE;
+    new_req->rdy_cycle = cycle_count + 1;
+    ASSERT(proc_id, entering == mem_core_file(type));
+    mshr_line_ready(entering, mshr_line(entering, addr), cycle_count + 1);
     return TRUE;
   }
 
@@ -3517,7 +3548,7 @@ void l1_cache_collect_stats() {
 
 Flag is_final_state(Mem_Req_State state) {
   return (state == MRS_MLC_HIT_DONE) || (state == MRS_L1_HIT_DONE) || (state == MRS_MEM_DONE) ||
-         (state == MRS_FILL_DONE);
+         (state == MRS_FILL_DONE) || (state == MRS_WB_HIT_DONE);
 }
 
 Flag is_inv_state(Mem_Req_State state) {

@@ -63,6 +63,7 @@ typedef enum Mem_Req_State_enum {
   MRS_FILL_MLC,
   MRS_FILL_DONE, /* final state */
   MRS_MERGED,    /* waiting on its line's entry at its deepest MSHR file */
+  MRS_WB_HIT_DONE, /* served from a writeback still in flight */
 } Mem_Req_State;
 
 #define MRT_LIST(elem)                                            \

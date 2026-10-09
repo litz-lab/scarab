@@ -475,7 +475,7 @@ extern "C" void pcprof_node_cycle(void) {
     cat = PCPROF_OPC_BMISP;
   else if (h->redirect_scheduled || h->state == OS_DONE || OP_DONE(h))
     cat = PCPROF_OPC_OTHER;
-  else if (mt != NOT_MEM && (h->dcache_cycle != 0 || h->engine_info.dcmiss || h->state == OS_WAIT_DCACHE ||
+  else if (mt != NOT_MEM && (op_get_dcache_cycle(h) != MAX_CTR || h->engine_info.dcmiss || h->state == OS_WAIT_DCACHE ||
                              h->state == OS_WAIT_MEM || h->state == OS_MISS))
     cat = PCPROF_OPC_MEM;
   else
@@ -548,8 +548,9 @@ extern "C" void pcprof_retire(Op* op) {
           r.add(C_MLC_MISS);
         if (op->pcprof_mem_level == 4)
           r.add(C_LLC_MISS);
-        if (op->done_cycle > op->dcache_cycle)
-          r.add(C_LD_MISS_CYCLES, op->done_cycle - op->dcache_cycle);
+        const Counter dc = op_get_dcache_cycle(op), done = op_get_done_cycle(op);
+        if (dc != MAX_CTR && done != MAX_CTR && done > dc)
+          r.add(C_LD_MISS_CYCLES, done - dc);
       }
     } else {
       r.add(C_STORES);

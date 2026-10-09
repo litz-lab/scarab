@@ -172,8 +172,6 @@ struct Mem_Req_struct {
   Flag bw_prefetchable;                      /* would this request be a bandwidth prefetch if there
                                                 was more BW? */
   Flag dirty_l0;                             /* should this request dirty the L0 (dcache) line? */
-  Flag wb_requested_back;                    /* is this a writeback that is requested by the core
-                                                again? */
   Destination destination;                   /* which cache level are we filling (only value of L1
                                               * matters)
                                               */

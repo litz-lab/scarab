@@ -117,8 +117,11 @@ static inline void read_store_map(Op*);
 static inline void update_map(Op*);
 
 static inline void expand_wake_up_entries(void);
-static inline void update_store_hash(Op* op);
-static inline Op* add_store_deps(Op* op);
+static inline void update_store_hash(Op* op, Hash_Table* mem_hash);
+static inline Op* add_store_deps(Op* op, Hash_Table* mem_hash);
+static inline Op* find_last_store(Op* op, Hash_Table* mem_hash);
+static void check_lookahead_srcs(Op* op);
+static inline void delete_store_hash_entry_from(Op* op, Hash_Table* mem_hash);
 static inline void update_map_entry(Op* op, Map_Entry* map_entry);
 static inline void recover_mem_map_entry(void* hash_entry, void* arg);
 
@@ -174,6 +177,16 @@ void init_map(uns8 proc_id) {
      buckets to the size of instruction window. */
   init_hash_table(&map_data->oracle_mem_hash, "oracle mem dependence map", NODE_TABLE_SIZE, sizeof(Mem_Map_Entry));
 
+  /* Initialize the lookahead map */
+  for (ii = 0; ii < NUM_REG_IDS; ii++) {
+    map_data->lookahead_reg_map[ii].op = &invalid_op;
+    map_data->lookahead_reg_map[ii].op_num = 0;
+  }
+  map_data->lookahead_last_store.op = &invalid_op;
+  map_data->lookahead_last_store.op_num = 0;
+  init_hash_table(&map_data->lookahead_mem_hash, "lookahead mem dependence map", NODE_TABLE_SIZE,
+                  sizeof(Mem_Map_Entry));
+
   /* Init the register renaming table */
   reg_file_init();
 }
@@ -219,7 +232,7 @@ void rebuild_offpath_map() {
   for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
     update_map(*op_p);
     if ((*op_p)->uop->mem_type == MEM_ST) {
-      update_store_hash(*op_p);
+      update_store_hash(*op_p, &map_data->oracle_mem_hash);
     }
   }
 }
@@ -238,25 +251,6 @@ static inline void expand_wake_up_entries() {
   map_data->free_list_head = &new_pool[0];
   map_data->wake_up_entries += WAKE_UP_ENTRIES_INC;
   ASSERT(map_data->proc_id, map_data->wake_up_entries <= WAKE_UP_ENTRIES_INC * 128);
-}
-
-/**************************************************************************************/
-/* map_op: involves two things: setting up the src array in op_info
-   and updating the current map state based on the op's output values.
-   note that this function does nothing for memory dependencies.  you
-   must call map_mem_dep after oracle_exec to properly handle them.
-
-   map_op only reads the register dependency assuming infinite registers,
-   and the register allocation is not done here. During renaming register
-   allocation, the dependency is not read again. */
-
-void map_op(Op* op) {
-  ASSERT(map_data->proc_id, op);
-  ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
-
-  read_reg_map(op);   /* set reg sources */
-  read_store_map(op); /* set addr dependency on last store */
-  update_map(op);     /* update reg and last store maps */
 }
 
 /**************************************************************************************/
@@ -354,15 +348,70 @@ inline void update_map_entry(Op* op, Map_Entry* map_entry) {
 }
 
 /**************************************************************************************/
-/* map_mem_dep */
+/* map_op_lookahead: map an on-path op against the lookahead map when its FT is built.
+   Sets the op's register and memory sources and updates the lookahead map. */
 
-void map_mem_dep(Op* op) {
+void map_op_lookahead(Op* op) {
+  uns ii;
+
+  ASSERT(map_data->proc_id, op);
+  ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
+  ASSERT(map_data->proc_id, !op->off_path);
+
+  for (ii = 0; ii < op->uop->num_src_regs; ii++) {
+    uns id = op->uop->srcs[ii].id;
+    ASSERT(map_data->proc_id, id < NUM_REG_IDS);
+    Map_Entry* map_entry = &map_data->lookahead_reg_map[id];
+    op_sources_add(op, REG_DATA_DEP, map_entry->op, map_entry->op_num, map_entry->unique_num);
+  }
+
+  if (MEM_OBEY_STORE_DEP && !MEM_OOO_STORES && op->uop->mem_type) {
+    Map_Entry* map_entry = &map_data->lookahead_last_store;
+    op_sources_add(op, MEM_ADDR_DEP, map_entry->op, map_entry->op_num, map_entry->unique_num);
+  }
+
+  for (ii = 0; ii < op->uop->num_dest_regs; ii++) {
+    uns id = op->uop->dests[ii].id;
+    ASSERT(map_data->proc_id, id < NUM_REG_IDS);
+    update_map_entry(op, &map_data->lookahead_reg_map[id]);
+  }
+
+  if (op->uop->mem_type == MEM_ST)
+    update_map_entry(op, &map_data->lookahead_last_store);
+
   if (!MEM_OBEY_STORE_DEP)
     return;
   if (op->uop->mem_type == MEM_ST)
-    update_store_hash(op);
+    update_store_hash(op, &map_data->lookahead_mem_hash);
   if (op->uop->mem_type == MEM_LD)
-    add_store_deps(op);
+    add_store_deps(op, &map_data->lookahead_mem_hash);
+}
+
+/**************************************************************************************/
+/* map_op: map an op against the fetch map when the icache stage fetches it.
+   Off-path ops read their sources here: on-path ops past a misprediction are not fetched
+   until recovery, so the fetch map is at the divergence point. With MAP_LOOKAHEAD,
+   on-path ops already got theirs from map_op_lookahead and only update the map. Register
+   allocation is not done here; renaming does not read the dependencies again. */
+
+void map_op(Op* op) {
+  ASSERT(map_data->proc_id, op);
+  ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
+
+  /* read */
+  if (op->off_path || !MAP_LOOKAHEAD) {
+    read_reg_map(op);   /* set reg sources */
+    read_store_map(op); /* set addr dependency on last store */
+    if (MEM_OBEY_STORE_DEP && op->uop->mem_type == MEM_LD)
+      add_store_deps(op, &map_data->oracle_mem_hash);
+  } else if (ENABLE_ASSERTIONS) {
+    check_lookahead_srcs(op); /* sources from map_op_lookahead match the fetch map */
+  }
+
+  /* update */
+  update_map(op); /* update reg and last store maps */
+  if (MEM_OBEY_STORE_DEP && op->uop->mem_type == MEM_ST)
+    update_store_hash(op, &map_data->oracle_mem_hash);
 }
 
 /**************************************************************************************/
@@ -413,6 +462,12 @@ static inline void mem_map_byte_traversal_next(Mem_Map_Traversal* traversal) {
 /* delete_store_hash_entry */
 
 void delete_store_hash_entry(Op* op) {
+  delete_store_hash_entry_from(op, &map_data->oracle_mem_hash);
+  if (MAP_LOOKAHEAD && !op->off_path)
+    delete_store_hash_entry_from(op, &map_data->lookahead_mem_hash);
+}
+
+static inline void delete_store_hash_entry_from(Op* op, Hash_Table* mem_hash) {
   Addr va = op->oracle_info.va;
   Mem_Map_Traversal traversal;
 
@@ -421,8 +476,7 @@ void delete_store_hash_entry(Op* op) {
   /* Iterate through each entry that was written to by the op */
   for (mem_map_entry_traversal_init(&traversal, va, op->oracle_info.mem_size);
        !mem_map_entry_traversal_done(&traversal); mem_map_entry_traversal_next(&traversal)) {
-    Mem_Map_Entry* mem_map_p =
-        (Mem_Map_Entry*)hash_table_access(&map_data->oracle_mem_hash, MEM_MAP_KEY(traversal.entry_addr));
+    Mem_Map_Entry* mem_map_p = (Mem_Map_Entry*)hash_table_access(mem_hash, MEM_MAP_KEY(traversal.entry_addr));
 
     if (!mem_map_p)
       continue;
@@ -436,7 +490,7 @@ void delete_store_hash_entry(Op* op) {
       }
     }
     if (!mem_map_p->store_mask) {
-      hash_table_access_delete(&map_data->oracle_mem_hash, MEM_MAP_KEY(traversal.entry_addr));
+      hash_table_access_delete(mem_hash, MEM_MAP_KEY(traversal.entry_addr));
     }
   }
 }
@@ -444,7 +498,7 @@ void delete_store_hash_entry(Op* op) {
 /**************************************************************************************/
 /* add_store_deps: */
 
-static inline Op* add_store_deps(Op* op) {
+static inline Op* add_store_deps(Op* op, Hash_Table* mem_hash) {
   Addr va = op->oracle_info.va;
   Op* last_src_op = NULL;
   uns orig_num_srcs = op->num_srcs;
@@ -455,8 +509,7 @@ static inline Op* add_store_deps(Op* op) {
   /* Iterate through each entry that is read by the op */
   for (mem_map_entry_traversal_init(&traversal, va, op->oracle_info.mem_size);
        !mem_map_entry_traversal_done(&traversal); mem_map_entry_traversal_next(&traversal)) {
-    Mem_Map_Entry* mem_map_p =
-        (Mem_Map_Entry*)hash_table_access(&map_data->oracle_mem_hash, MEM_MAP_KEY(traversal.entry_addr));
+    Mem_Map_Entry* mem_map_p = (Mem_Map_Entry*)hash_table_access(mem_hash, MEM_MAP_KEY(traversal.entry_addr));
 
     if (!mem_map_p)
       continue;
@@ -507,9 +560,99 @@ static inline Op* add_store_deps(Op* op) {
 }
 
 /**************************************************************************************/
+/* find_last_store: the latest store in mem_hash overlapping op's access, without adding
+   a source (same search as add_store_deps without MEM_OOO_STORES) */
+
+static inline Op* find_last_store(Op* op, Hash_Table* mem_hash) {
+  Addr va = op->oracle_info.va;
+  Op* last_src_op = NULL;
+  Mem_Map_Traversal traversal;
+
+  for (mem_map_entry_traversal_init(&traversal, va, op->oracle_info.mem_size);
+       !mem_map_entry_traversal_done(&traversal); mem_map_entry_traversal_next(&traversal)) {
+    Mem_Map_Entry* mem_map_p = (Mem_Map_Entry*)hash_table_access(mem_hash, MEM_MAP_KEY(traversal.entry_addr));
+
+    if (!mem_map_p)
+      continue;
+
+    for (mem_map_byte_traversal_init(&traversal); !mem_map_byte_traversal_done(&traversal);
+         mem_map_byte_traversal_next(&traversal)) {
+      uns ind = MEM_MAP_BYTE_INDEX(traversal.byte, TESTBIT(mem_map_p->flag_mask, traversal.byte));
+      if (!TESTBIT(mem_map_p->store_mask, ind))
+        continue;
+      Op* src_op = mem_map_p->op[ind];
+      if (!last_src_op || last_src_op->op_num < src_op->op_num)
+        last_src_op = src_op;
+    }
+  }
+  return last_src_op;
+}
+
+/**************************************************************************************/
+/* check_lookahead_srcs: an on-path op mapped with map_op_lookahead at FT build must have
+   the sources the fetch map gives it now, in the order map_op_lookahead added them */
+
+static void check_lookahead_srcs(Op* op) {
+  uns8 proc_id = map_data->proc_id;
+  uns src_num = 0;
+
+  ASSERT(proc_id, !op->off_path);
+
+  /* register sources */
+  for (uns ii = 0; ii < op->uop->num_src_regs; ii++, src_num++) {
+    uns id = op->uop->srcs[ii].id;
+    ASSERT(proc_id, !map_data->map_flags[id]);
+    Map_Entry* map_entry = &map_data->reg_map[id << 1];
+    ASSERT(proc_id, src_num < op->num_srcs);
+    Src_Info* src_info = &op->src_info[src_num];
+    ASSERTM(proc_id,
+            src_info->type == REG_DATA_DEP && src_info->op_num == map_entry->op_num &&
+                src_info->unique_num == map_entry->unique_num,
+            "op:%llu reg:%u lookahead src:%llu fetch src:%llu\n", op->op_num, id, src_info->op_num, map_entry->op_num);
+  }
+
+  /* address dependency on the last store */
+  if (MEM_OBEY_STORE_DEP && !MEM_OOO_STORES && op->uop->mem_type) {
+    ASSERT(proc_id, !map_data->last_store_flag);
+    Map_Entry* map_entry = &map_data->last_store[0];
+    ASSERT(proc_id, src_num < op->num_srcs);
+    Src_Info* src_info = &op->src_info[src_num++];
+    ASSERTM(proc_id,
+            src_info->type == MEM_ADDR_DEP && src_info->op_num == map_entry->op_num &&
+                src_info->unique_num == map_entry->unique_num,
+            "op:%llu lookahead last store:%llu fetch last store:%llu\n", op->op_num, src_info->op_num,
+            map_entry->op_num);
+  }
+
+  /* MEM_OOO_STORES adds one data source per overlapping store; only the single latest
+     store case is checked */
+  if (MEM_OOO_STORES)
+    return;
+
+  /* data dependency on the latest overlapping store */
+  if (MEM_OBEY_STORE_DEP && op->uop->mem_type == MEM_LD) {
+    Op* store = find_last_store(op, &map_data->oracle_mem_hash);
+    Src_Info* src_info = src_num < op->num_srcs ? &op->src_info[src_num++] : NULL;
+    if (store) {
+      ASSERTM(proc_id, src_info && src_info->type == MEM_DATA_DEP && src_info->op_num == store->op_num,
+              "op:%llu lookahead store:%llu fetch store:%llu\n", op->op_num, src_info ? src_info->op_num : 0,
+              store->op_num);
+    } else {
+      /* stores leave the hash when they retire, so the store found at FT build may be gone */
+      ASSERTM(proc_id,
+              !src_info || (src_info->type == MEM_DATA_DEP &&
+                            !(src_info->op->op_pool_valid && src_info->op->op_num == src_info->op_num)),
+              "op:%llu lookahead store:%llu still in flight but not in the fetch map\n", op->op_num, src_info->op_num);
+    }
+  }
+
+  ASSERTM(proc_id, src_num == op->num_srcs, "op:%llu checked %u of %u sources\n", op->op_num, src_num, op->num_srcs);
+}
+
+/**************************************************************************************/
 /* update_store_hash: */
 
-static inline void update_store_hash(Op* op) {
+static inline void update_store_hash(Op* op, Hash_Table* mem_hash) {
   Mem_Map_Entry* mem_map_p;
   Addr va = op->oracle_info.va;
   Mem_Map_Traversal traversal;
@@ -520,8 +663,7 @@ static inline void update_store_hash(Op* op) {
   for (mem_map_entry_traversal_init(&traversal, va, op->oracle_info.mem_size);
        !mem_map_entry_traversal_done(&traversal); mem_map_entry_traversal_next(&traversal)) {
     Flag new_entry = FALSE;
-    mem_map_p = (Mem_Map_Entry*)hash_table_access_create(&map_data->oracle_mem_hash, MEM_MAP_KEY(traversal.entry_addr),
-                                                         &new_entry);
+    mem_map_p = (Mem_Map_Entry*)hash_table_access_create(mem_hash, MEM_MAP_KEY(traversal.entry_addr), &new_entry);
 
     if (new_entry) {
       mem_map_p->flag_mask = 0;
@@ -719,4 +861,11 @@ void reset_map() {
   map_data->last_store[0].op_num = 0;
   map_data->last_store[1].op = &invalid_op;
   map_data->last_store[1].op_num = 0;
+
+  for (ii = 0; ii < NUM_REG_IDS; ii++) {
+    map_data->lookahead_reg_map[ii].op = &invalid_op;
+    map_data->lookahead_reg_map[ii].op_num = 0;
+  }
+  map_data->lookahead_last_store.op = &invalid_op;
+  map_data->lookahead_last_store.op_num = 0;
 }

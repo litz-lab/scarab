@@ -55,6 +55,11 @@ typedef struct Map_Data_struct {
 
   Hash_Table oracle_mem_hash;
 
+  /* Lookahead map for on-path ops only, mapped in program order when their FT is built */
+  Map_Entry lookahead_reg_map[NUM_REG_IDS];
+  Map_Entry lookahead_last_store;
+  Hash_Table lookahead_mem_hash;
+
   Wake_Up_Entry* free_list_head;
   uns wake_up_entries;
   uns active_wake_up_entries;
@@ -76,8 +81,8 @@ void init_map(uns8);
 void recover_map(void);
 void rebuild_offpath_map(void);
 void reset_map(void);
+void map_op_lookahead(Op*);
 void map_op(Op*);
-void map_mem_dep(Op*);
 void wake_up_ops(Op*, Dep_Type, void (*)(Op*, Op*, uns));
 void free_wake_up_list(Op*);
 void add_to_wake_up_lists(Op*, void (*)(Op*, Op*, uns));

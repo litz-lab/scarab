@@ -377,7 +377,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   op->off_path = FALSE;
   op->state = OS_FETCHED;
   op->fu_num = -1;
-  op->cycles.issue_cycle = MAX_CTR;
+  op->cycles.dispatch_cycle = MAX_CTR;
   op->cycles.map_cycle = MAX_CTR;
   op->cycles.rdy_cycle = 1;
   op->cycles.sched_cycle = MAX_CTR;

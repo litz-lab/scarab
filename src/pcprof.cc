@@ -2,7 +2,7 @@
  * File         : pcprof.cc
  * Description  : AsmDB-style per-PC attribution (--pc_profile 1). See pcprof.h.
  *
- * Everything is keyed by the static instruction address (op->inst_info->addr, the raw
+ * Everything is keyed by the static instruction address (op->inst->addr, the raw
  * trace PC). Counts are taken over the measured region only: from the cycle full_warmup
  * is reached (warmup_dump_done[0]) to the end of the simulation, for on-path retired ops
  * unless a column says otherwise.
@@ -355,13 +355,13 @@ extern "C" void pcprof_recovery(Op* op) {
     return;
   ensure();
   Bp_Pred_Info* bpi = op->bp_pred_info;
-  Flag at_exec = bpi->recover_at_exec;
-  Flag at_decode = bpi->recover_at_decode;
-  Flag at_fe = bpi->recover_at_fe;
+  Flag at_exec = (bpi->recovery_point == RECOVER_AT_EXEC);
+  Flag at_decode = (bpi->recovery_point == RECOVER_AT_DECODE);
+  Flag at_fe = (bpi->recovery_point == RECOVER_AT_FE);
   op->pcprof_recov |= (at_exec ? 1 : 0) | (at_decode ? 2 : 0) | (at_fe ? 4 : 0);
 
   if (at_exec) {
-    const Cf_Type cf = op->inst_info->table_info.cf_type;
+    const Cf_Type cf = op->uop->cf_type;
     const Flag btb_miss = btb_pred_miss(op->btb_pred_info);
     op->pcprof_misp_btb_miss = btb_miss;
     op->pcprof_misp_dir = FALSE;
@@ -406,7 +406,7 @@ extern "C" void pcprof_recovery(Op* op) {
     return;
   g->in_recovery = TRUE;
   g->recovery_exec = at_exec;
-  g->recovery_pc = op->inst_info->addr;
+  g->recovery_pc = op->inst->addr;
 }
 
 extern "C" void pcprof_rob_insert(Op* op) {
@@ -414,7 +414,7 @@ extern "C" void pcprof_rob_insert(Op* op) {
     return;
   ensure();
   if (g->pending_fe) {
-    recs(op->inst_info->addr).add(C_ST_FE, g->pending_fe);
+    recs(op->inst->addr).add(C_ST_FE, g->pending_fe);
     g->pending_fe = 0;
   }
   g->in_recovery = FALSE;
@@ -469,9 +469,9 @@ extern "C" void pcprof_node_cycle(void) {
     return;
   }
   uns cat;
-  const Mem_Type mt = h->inst_info->table_info.mem_type;
+  const Mem_Type mt = h->uop->mem_type;
   if (h->recovery_scheduled ||
-      (h->inst_info->table_info.cf_type && h->bp_pred_info->recover_at_exec && !(h->state == OS_DONE || OP_DONE(h))))
+      (h->uop->cf_type && (h->bp_pred_info->recovery_point == RECOVER_AT_EXEC) && !(h->state == OS_DONE || OP_DONE(h))))
     cat = PCPROF_OPC_BMISP;
   else if (h->redirect_scheduled || h->state == OS_DONE || OP_DONE(h))
     cat = PCPROF_OPC_OTHER;
@@ -494,7 +494,7 @@ extern "C" void pcprof_retire(Op* op) {
   if (!measuring())
     return;
 
-  const Addr pc = op->inst_info->addr;
+  const Addr pc = op->inst->addr;
   R r = recs(pc);
   r.add(C_UOPS);
   if (op->eom) {
@@ -504,7 +504,7 @@ extern "C" void pcprof_retire(Op* op) {
     g->icache_pages.insert(pc >> 12);
   }
 
-  const Cf_Type cf = op->inst_info->table_info.cf_type;
+  const Cf_Type cf = op->uop->cf_type;
   if (cf) {
     r.set_cf(cf);
     if (op->oracle_info.dir)
@@ -535,7 +535,7 @@ extern "C" void pcprof_retire(Op* op) {
       r.add(C_RECOV_FE);
   }
 
-  const Mem_Type mt = op->inst_info->table_info.mem_type;
+  const Mem_Type mt = op->uop->mem_type;
   if (mt == MEM_LD || mt == MEM_ST) {
     g->mem_dyn++;
     g->data_reuse.access(op->oracle_info.va >> 6);

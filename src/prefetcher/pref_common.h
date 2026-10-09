@@ -221,9 +221,6 @@ void pref_update(void);
 
 // returns true if req hits in the req queue. It also invalidates the request in
 // the pref queue.
-Flag pref_dl0req_queue_filter(Addr line_addr);
-Flag pref_umlc_req_queue_filter(Addr line_addr);
-Flag pref_ul1req_queue_filter(Addr line_addr);
 Flag pref_ul1req_queue_match(Addr line_addr);  // doesn't invalidate
 
 // returns true if the req was added/matched an existing req.

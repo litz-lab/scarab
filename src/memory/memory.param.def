@@ -256,7 +256,6 @@ DEF_PARAM(queue_core_fill_size, QUEUE_CORE_FILL_SIZE, uns, uns,
           0, ) /* 0 = HPS_MEM_REQ_BUFFER_ENTRIES */
 
 /* are we allowing mem requests that cause exceptions? */
-DEF_PARAM(allow_type_matches, ALLOW_TYPE_MATCHES, Flag, Flag, FALSE, )
 
 /* prefetcher */
 DEF_PARAM(stream_prefetch_on, STREAM_PREFETCH_ON, Flag, Flag, FALSE, )

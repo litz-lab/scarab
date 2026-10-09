@@ -629,9 +629,7 @@ void perf_pred_reset_stats(void) {
           mem_get_req_buffer_size());
   /* Every entry, not the first per-core budget's worth: with PRIVATE_MSHR_ON the
      buffer holds NUM_CORES times that many. */
-  for (uns i = 0; i < mem->total_mem_req_buffers; ++i) {
-    mem->req_buffer[i].mem_crit_path_at_entry = 0;
-  }
+  mem_clear_crit_path();
 
   stat_mon_reset(stat_mon);
 }

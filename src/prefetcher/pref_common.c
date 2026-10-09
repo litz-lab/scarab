@@ -507,54 +507,6 @@ void pref_umlc_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evic
   }
 }
 
-Flag pref_dl0req_queue_filter(Addr line_addr) {
-  if (!PREF_DL0REQ_QUEUE_FILTER_ON)
-    return FALSE;
-  uns proc_id = get_proc_id_from_cmp_addr(line_addr);
-  Pref_Mem_Req* dl0req_queue = pref.cores[proc_id]->dl0req_queue;
-  for (uns ii = 0; ii < PREF_DL0REQ_QUEUE_SIZE; ii++) {
-    if (dl0req_queue[ii].valid &&
-        (dl0req_queue[ii].line_addr >> LOG2(DCACHE_LINE_SIZE)) == (line_addr >> LOG2(DCACHE_LINE_SIZE))) {
-      dl0req_queue[ii].valid = FALSE;
-      STAT_EVENT(0, PREF_DL0REQ_QUEUE_HIT_BY_DEMAND);
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
-Flag pref_umlc_req_queue_filter(Addr line_addr) {
-  if (!PREF_UMLC_REQ_QUEUE_FILTER_ON)
-    return FALSE;
-  uns proc_id = get_proc_id_from_cmp_addr(line_addr);
-  Pref_Mem_Req* umlc_req_queue = pref.cores[proc_id]->umlc_req_queue;
-  for (uns ii = 0; ii < PREF_UMLC_REQ_QUEUE_SIZE; ii++) {
-    if (umlc_req_queue[ii].valid &&
-        (umlc_req_queue[ii].line_addr >> LOG2(DCACHE_LINE_SIZE)) == (line_addr >> LOG2(DCACHE_LINE_SIZE))) {
-      umlc_req_queue[ii].valid = FALSE;
-      STAT_EVENT(0, PREF_UMLC_REQ_QUEUE_HIT_BY_DEMAND);
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
-Flag pref_ul1req_queue_filter(Addr line_addr) {
-  if (!PREF_UL1REQ_QUEUE_FILTER_ON)
-    return FALSE;
-  uns proc_id = get_proc_id_from_cmp_addr(line_addr);
-  Pref_Mem_Req* ul1req_queue = pref.cores[proc_id]->ul1req_queue;
-  for (uns ii = 0; ii < PREF_UL1REQ_QUEUE_SIZE; ii++) {
-    if (ul1req_queue[ii].valid &&
-        (ul1req_queue[ii].line_addr >> LOG2(DCACHE_LINE_SIZE)) == (line_addr >> LOG2(DCACHE_LINE_SIZE))) {
-      ul1req_queue[ii].valid = FALSE;
-      STAT_EVENT(0, PREF_UL1REQ_QUEUE_HIT_BY_DEMAND);
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
 Flag pref_ul1req_queue_match(Addr line_addr) {
   uns proc_id = get_proc_id_from_cmp_addr(line_addr);
   Pref_Mem_Req* ul1req_queue = pref.cores[proc_id]->ul1req_queue;

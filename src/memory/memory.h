@@ -143,12 +143,18 @@ typedef struct Uncore_struct {
 
 typedef struct Memory_struct {
   /* miss buffer */
-  Mem_Req* req_buffer;
-  List req_buffer_free_list;
+  /* Requests come from a pool of fixed-size chunks; a request's address never moves,
+     and the pool grows by a chunk when it runs dry. */
+  Mem_Req** req_pool_chunks;
+  uns num_chunks;
+  uns chunks_allocated;
+  uns chunk_size;
+  List req_pool_free_list;
+  uns total_req_pool;
   List* l1_in_buffer_core;
   uns total_mem_req_buffers;
   uns req_buffers_per_core; /* derived from the queues and what DRAM holds */
-  uns* num_req_buffers_per_core;
+  uns* num_req_pool_per_core;
 
   int req_count;
 
@@ -243,6 +249,8 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 void mem_free_req(Mem_Req* req);
 void mem_complete_bus_in_access(Mem_Req* req, Counter priority);
 void print_req_buffer(void);
+void mem_destroy_req_pool(void);
+void mem_clear_crit_path(void);
 void print_mem_queue(Mem_Queue_Type queue_type);
 Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                        Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath);

@@ -188,7 +188,7 @@ static Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr ad
                                         Flag demand_hit_prefetch, Flag demand_hit_writeback,
                                         Mem_Queue_Entry** queue_entry, Counter new_priority, Flag ramulator_match);
 
-static inline Mem_Req* mem_allocate_req_buffer(uns proc_id, Mem_Req_Type type);
+static inline Mem_Req* mem_alloc_req(uns proc_id, Mem_Req_Type type);
 
 static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, Mem_Queue_Type queue_type, uns8 proc_id, Addr addr,
                              uns size, uns delay, Op* op, Flag done_func(Mem_Req*), Counter unique_num,
@@ -223,6 +223,45 @@ Flag is_inv_state(Mem_Req_State state);
 
 void set_memory(Memory* new_mem) {
   mem = new_mem;
+}
+
+/* Append a chunk and put its requests on the free list. */
+static void mem_grow_req_pool(void) {
+  if (mem->num_chunks == mem->chunks_allocated) {
+    mem->chunks_allocated = mem->chunks_allocated ? mem->chunks_allocated * 2 : 1;
+    mem->req_pool_chunks = (Mem_Req**)realloc(mem->req_pool_chunks, mem->chunks_allocated * sizeof(Mem_Req*));
+    ASSERT(0, mem->req_pool_chunks);
+  }
+  Mem_Req* chunk = (Mem_Req*)calloc(mem->chunk_size, sizeof(Mem_Req));
+  ASSERT(0, chunk);
+  mem->req_pool_chunks[mem->num_chunks++] = chunk;
+  mem->total_req_pool += mem->chunk_size;
+  for (uns ii = 0; ii < mem->chunk_size; ii++) {
+    chunk[ii].state = MRS_INV;
+    init_list(&chunk[ii].op_ptrs, NULL, sizeof(Op*), TRUE);
+    init_list(&chunk[ii].op_uniques, NULL, sizeof(Counter), TRUE);
+    *(Mem_Req**)sl_list_add_tail(&mem->req_pool_free_list) = &chunk[ii];
+  }
+}
+
+void mem_destroy_req_pool(void) {
+  for (uns c = 0; c < mem->num_chunks; c++) {
+    for (uns ii = 0; ii < mem->chunk_size; ii++) {
+      destroy_list(&mem->req_pool_chunks[c][ii].op_ptrs);
+      destroy_list(&mem->req_pool_chunks[c][ii].op_uniques);
+    }
+    free(mem->req_pool_chunks[c]);
+  }
+  free(mem->req_pool_chunks);
+  mem->req_pool_chunks = NULL;
+  mem->num_chunks = 0;
+  mem->total_req_pool = 0;
+}
+
+void mem_clear_crit_path(void) {
+  for (uns c = 0; c < mem->num_chunks; c++)
+    for (uns ii = 0; ii < mem->chunk_size; ii++)
+      mem->req_pool_chunks[c][ii].mem_crit_path_at_entry = 0;
 }
 
 /**************************************************************************************/
@@ -311,8 +350,6 @@ void init_mem_req_type_priorities() {
 /* init_memory: */
 
 void init_memory() {
-  int ii;
-  char name[20];
   uns8 proc_id;
 
   ASSERT(0, mem);
@@ -340,25 +377,16 @@ void init_memory() {
      mem_req_buffer_entries, which is no longer what the buffer is. */
   fprintf(mystdout, "MEM_REQ_BUFFER: %u entries per core (mlc_queue %u + l1_queue %u)\n", mem->req_buffers_per_core,
           mlc_queue_size, l1_queue_size);
-  mem->req_buffer = (Mem_Req*)calloc(mem->total_mem_req_buffers, sizeof(Mem_Req));
-  for (ii = 0; ii < mem->total_mem_req_buffers; ii++) {
-    mem->req_buffer[ii].state = MRS_INV;
-  }
-  mem->num_req_buffers_per_core = calloc(NUM_CORES, sizeof(uns));
-  init_list(&mem->req_buffer_free_list, "REQ BUF FREE LIST", sizeof(Mem_Req*), TRUE);
+  mem->num_req_pool_per_core = calloc(NUM_CORES, sizeof(uns));
+  init_list(&mem->req_pool_free_list, "REQ POOL FREE LIST", sizeof(Mem_Req*), TRUE);
+  mem->chunk_size = mem->total_mem_req_buffers;
+  mem_grow_req_pool();
 
   if (ROUND_ROBIN_TO_L1) {
     mem->l1_in_buffer_core = (List*)malloc(sizeof(List) * NUM_CORES);
     for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
       init_list(&mem->l1_in_buffer_core[proc_id], "L1 IN BUFFER", sizeof(Mem_Req*), TRUE);
     }
-  }
-
-  for (ii = 0; ii < mem->total_mem_req_buffers; ii++) {
-    sprintf(name, "%d OPP_L", ii);
-    init_list(&mem->req_buffer[ii].op_ptrs, name, sizeof(Op*), TRUE);
-    sprintf(name, "%d OPU_L", ii);
-    init_list(&mem->req_buffer[ii].op_uniques, name, sizeof(Counter), TRUE);
   }
 
   /* Initialize l1 and bus access queues which hold id's of request buffers */
@@ -509,9 +537,7 @@ void init_uncores(void) {
 /* reset_memory: */
 
 void reset_memory() {
-  uns ii;
-
-  clear_list(&mem->req_buffer_free_list);
+  clear_list(&mem->req_pool_free_list);
 
   mem->l1_queue.entry_count = 0;
   mem->mlc_queue.entry_count = 0;
@@ -519,10 +545,11 @@ void reset_memory() {
   mem->l1fill_queue.entry_count = 0;
   mem->mlc_fill_queue.entry_count = 0;
 
-  for (ii = 0; ii < mem->total_mem_req_buffers; ii++) {
-    *(Mem_Req**)sl_list_add_tail(&mem->req_buffer_free_list) = &mem->req_buffer[ii];
-    mem->req_buffer[ii].state = MRS_INV;
-  }
+  for (uns c = 0; c < mem->num_chunks; c++)
+    for (uns jj = 0; jj < mem->chunk_size; jj++) {
+      *(Mem_Req**)sl_list_add_tail(&mem->req_pool_free_list) = &mem->req_pool_chunks[c][jj];
+      mem->req_pool_chunks[c][jj].state = MRS_INV;
+    }
 
   mem->req_count = 0;
 
@@ -641,8 +668,8 @@ void mem_free_req(Mem_Req* req) {
 
   perf_pred_l0_miss_end(req);
 
-  ASSERT(req->proc_id, mem->num_req_buffers_per_core[req->proc_id] > 0);
-  mem->num_req_buffers_per_core[req->proc_id] -= 1;
+  ASSERT(req->proc_id, mem->num_req_pool_per_core[req->proc_id] > 0);
+  mem->num_req_pool_per_core[req->proc_id] -= 1;
   update_mem_req_occupancy_counter(req->type, -1);
 
   ASSERTM(req->proc_id, req->reserved_entry_count == 0,
@@ -656,10 +683,10 @@ void mem_free_req(Mem_Req* req) {
   clear_list(&req->op_ptrs);
   clear_list(&req->op_uniques);
 
-  *(Mem_Req**)sl_list_add_tail(&mem->req_buffer_free_list) = req;
+  *(Mem_Req**)sl_list_add_tail(&mem->req_pool_free_list) = req;
 
-  ASSERT(req->proc_id, mem->req_buffer_free_list.count <= mem->total_mem_req_buffers);
-  ASSERT(req->proc_id, (mem->req_count + mem->req_buffer_free_list.count) == mem->total_mem_req_buffers);
+  ASSERT(req->proc_id, mem->req_pool_free_list.count <= mem->total_req_pool);
+  ASSERT(req->proc_id, (mem->req_count + mem->req_pool_free_list.count) == mem->total_req_pool);
 }
 
 /**************************************************************************************/
@@ -724,8 +751,8 @@ void print_req_buffer() {
   fprintf(stdout, "REQ_BUFFER --- cycle: %s\n", unsstr64(cycle_count));
   fprintf(stdout, "------------------------------------------------------\n");
 
-  for (uns reqbuf_id = 0; reqbuf_id < mem->total_mem_req_buffers; reqbuf_id++) {
-    req = &(mem->req_buffer[reqbuf_id]);
+  for (uns reqbuf_id = 0; reqbuf_id < mem->total_req_pool; reqbuf_id++) {
+    req = &mem->req_pool_chunks[reqbuf_id / mem->chunk_size][reqbuf_id % mem->chunk_size];
     fprintf(stdout,
             ": q:%s reqbuf:%d st:%s type:%s pri:%s beg:%s "
             "rdy:%s addr:%s size:%d age:%s mbank:%d oc:%d oo:%s off:%d\n",
@@ -799,12 +826,13 @@ static inline void set_off_path_confirmed_status(Mem_Req* req) {
 
 void recover_memory() {
   if (SET_OFF_PATH_CONFIRMED) {
-    for (uns ii = 0; ii < mem->total_mem_req_buffers; ii++) {  // FIXME: inefficient
-      Mem_Req* req = &(mem->req_buffer[ii]);
-      if (req->state != MRS_INV && req->proc_id == bp_recovery_info->proc_id) {
-        set_off_path_confirmed_status(req);
+    for (uns c = 0; c < mem->num_chunks; c++)
+      for (uns ii = 0; ii < mem->chunk_size; ii++) {  // FIXME: inefficient
+        Mem_Req* req = &mem->req_pool_chunks[c][ii];
+        if (req->state != MRS_INV && req->proc_id == bp_recovery_info->proc_id) {
+          set_off_path_confirmed_status(req);
+        }
       }
-    }
   }
 
   /* If we are supposed to do really nothing for requests that are known to be
@@ -818,7 +846,7 @@ void recover_memory() {
 void debug_memory() {
   DPRINTF("# MEMORY\n");
   DPRINTF("reqbuf_used_count:    %d\n", mem->req_count);
-  DPRINTF("reqbuf_free_count:    %d\n", mem->req_buffer_free_list.count);
+  DPRINTF("reqbuf_free_count:    %d\n", mem->req_pool_free_list.count);
   DPRINTF("mlc_queue_count:      %d\n", mem->mlc_queue.entry_count);
   DPRINTF("l1_queue_count:       %d\n", mem->l1_queue.entry_count);
   DPRINTF("bus_out_queue_count:  %d\n", mem->bus_out_queue.entry_count);
@@ -839,8 +867,8 @@ static inline void queue_sanity_check(int location) {
   ASSERTM(0, mem->req_count == queue_count, "rc:%d l1:%d bo:%d lf:%d loc:%d\n", mem->req_count,
           mem->l1_queue.entry_count, mem->bus_out_queue.entry_count, mem->l1fill_queue.entry_count, location);
 
-  ASSERTM(0, (mem->req_count + mem->req_buffer_free_list.count) == mem->total_mem_req_buffers,
-          "rc:%d rf:%d l1:%d bo:%d lf:%d loc:%d\n", mem->req_count, mem->req_buffer_free_list.count,
+  ASSERTM(0, (mem->req_count + mem->req_pool_free_list.count) == mem->total_req_pool,
+          "rc:%d rf:%d l1:%d bo:%d lf:%d loc:%d\n", mem->req_count, mem->req_pool_free_list.count,
           mem->l1_queue.entry_count, mem->bus_out_queue.entry_count, mem->l1fill_queue.entry_count, location);
 }
 
@@ -2354,17 +2382,16 @@ static void mem_process_core_fill_reqs(uns proc_id) {
 /* scan_stores: */
 
 Flag scan_stores(Addr addr, uns size) {
-  uns ii;
-
-  for (ii = 0; ii < mem->total_mem_req_buffers; ii++) {
-    Mem_Req* req = &mem->req_buffer[ii];
-    if (req->state != MRS_INV && req->type == MRT_DSTORE && BYTE_CONTAIN(req->addr, req->size, addr, size)) {
-      uns load_proc_id = get_proc_id_from_cmp_addr(addr);
-      ASSERTM(req->proc_id, req->proc_id == load_proc_id, "Load from %d matched a store from %d!\n", load_proc_id,
-              req->proc_id);
-      return SUCCESS;
+  for (uns c = 0; c < mem->num_chunks; c++)
+    for (uns ii = 0; ii < mem->chunk_size; ii++) {
+      Mem_Req* req = &mem->req_pool_chunks[c][ii];
+      if (req->state != MRS_INV && req->type == MRT_DSTORE && BYTE_CONTAIN(req->addr, req->size, addr, size)) {
+        uns load_proc_id = get_proc_id_from_cmp_addr(addr);
+        ASSERTM(req->proc_id, req->proc_id == load_proc_id, "Load from %d matched a store from %d!\n", load_proc_id,
+                req->proc_id);
+        return SUCCESS;
+      }
     }
-  }
   return FAILURE;
 }
 
@@ -2938,21 +2965,20 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
 }
 
 /**************************************************************************************/
-/* mem_allocate_req_buffer: */
-/* If queue is specified, only allocates if its entry_count < size */
+/* mem_alloc_req: */
 
-static inline Mem_Req* mem_allocate_req_buffer(uns proc_id, Mem_Req_Type type) {
-  Mem_Req** req_ptr = sl_list_remove_head(&mem->req_buffer_free_list);
-
-  /* Running dry means the pool is mis-sized, not that the caller should back off. */
-  ASSERTM(proc_id, req_ptr,
-          "Request buffer exhausted (%d entries) allocating %s; the pool must cover "
-          "mlc_queue + l1_queue + readq + writeq\n",
-          mem->total_mem_req_buffers, Mem_Req_Type_str(type));
-  ASSERT(0, (*req_ptr)->state == MRS_INV);
-  mem->num_req_buffers_per_core[proc_id] += 1;
+static inline Mem_Req* mem_alloc_req(uns proc_id, Mem_Req_Type type) {
+  Mem_Req** free_slot = sl_list_remove_head(&mem->req_pool_free_list);
+  if (!free_slot) {
+    mem_grow_req_pool();
+    free_slot = sl_list_remove_head(&mem->req_pool_free_list);
+    ASSERT(proc_id, free_slot);
+  }
+  Mem_Req* req = *free_slot;
+  ASSERT(0, req->state == MRS_INV);
+  mem->num_req_pool_per_core[proc_id] += 1;
   update_mem_req_occupancy_counter(type, +1);
-  return *req_ptr;
+  return req;
 }
 
 /**************************************************************************************/
@@ -3121,7 +3147,7 @@ static inline Mem_Queue_Entry* mem_insert_req_into_queue(Mem_Req* new_req, Mem_Q
           "bo:%d lf:%d rf:%d\n",
           queue->name, queue->entry_count, queue->size, queue->reserved_entry_count, mem->req_count,
           mem->l1_queue.entry_count, mem->bus_out_queue.entry_count, mem->l1fill_queue.entry_count,
-          mem->req_buffer_free_list.count);
+          mem->req_pool_free_list.count);
 
   Mem_Queue_Entry* new_entry = &queue->base[queue->entry_count];
   new_entry->req = new_req;
@@ -3263,7 +3289,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
   /* Step 3: Not already in request buffer. Figure out if a free request buffer
    * exists */
-  new_req = mem_allocate_req_buffer(proc_id, type);
+  new_req = mem_alloc_req(proc_id, type);
 
   /* we model this more accurately by training the prefetcher when we actually
    * hit/miss if PREF_ORACLE_TRAIN_ON is off */
@@ -3432,7 +3458,7 @@ Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns
 
   /* Step 3: Not already in request buffer. Figure out if a free request buffer
    * exists */
-  new_req = mem_allocate_req_buffer(proc_id, type);
+  new_req = mem_alloc_req(proc_id, type);
 
   /* Step 5: Allocate a new request buffer -- new_req */
   mem_init_new_req(new_req, type, MLC_PRESENT ? QUEUE_MLC : QUEUE_L1, proc_id, addr, size, delay, op, done_func,
@@ -3497,7 +3523,7 @@ static Flag new_mem_mlc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns s
   }
 
   /* Step 3: Not already in request buffer. Figure out if a free request buffer exists */
-  new_req = mem_allocate_req_buffer(proc_id, type);
+  new_req = mem_alloc_req(proc_id, type);
 
   /* Step 5: Allocate a new request buffer -- new_req */
   mem_init_new_req(new_req, type, QUEUE_L1, proc_id, addr, size, delay, op, done_func, unique_num, new_priority);
@@ -3564,7 +3590,7 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
    * exists */
 
   ASSERT(proc_id, type == MRT_WB);
-  new_req = mem_allocate_req_buffer(proc_id, type);
+  new_req = mem_alloc_req(proc_id, type);
 
   /* Step 5: Allocate a new request buffer -- new_req */
   mem_init_new_req(new_req, type, QUEUE_L1 /*fake*/, proc_id, addr, size, delay, op, done_func, unique_num,
@@ -4552,7 +4578,7 @@ L1_Data* l1_pref_cache_access(Mem_Req* req) {
 /* mem_get_req_count: */
 
 int mem_get_req_count(uns proc_id) {
-  return mem->num_req_buffers_per_core[proc_id];
+  return mem->num_req_pool_per_core[proc_id];
 }
 
 uns mem_get_req_buffer_size(void) {

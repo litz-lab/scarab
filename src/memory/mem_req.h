@@ -36,7 +36,7 @@
 /**************************************************************************************/
 /* Forward Declarations */
 
-struct Mem_Queue_struct;
+struct Mshr_struct;
 
 /**************************************************************************************/
 /* Types */
@@ -62,6 +62,8 @@ typedef enum Mem_Req_State_enum {
   MRS_FILL_L1,
   MRS_FILL_MLC,
   MRS_FILL_DONE, /* final state */
+  MRS_MERGED,    /* waiting on its line's entry at its deepest MSHR file */
+  MRS_WB_HIT_DONE, /* served from a writeback still in flight */
 } Mem_Req_State;
 
 #define MRT_LIST(elem)                                            \
@@ -85,8 +87,6 @@ DECLARE_ENUM(Mem_Req_Type, MRT_LIST, MRT_);
    - This is currently used if a demand matches a prefetch.
    - But it can be generalized if done_func is done with...
 */
-#define MEM_RES_MLC (1 << 0) /* holds an entry in mem->mlc_queue */
-#define MEM_RES_L1 (1 << 1)  /* holds an entry in mem->l1_queue */
 
 typedef enum Destination_enum {
   DEST_NONE = 0,
@@ -117,7 +117,6 @@ struct Mem_Req_struct {
   uns64 ghist;
   Counter demand_icache_emitted_cycle; /* cycle when the request is emitted. */
   Counter emitted_cycle;               /* cycle when request of any type was first initialized */
-  struct Mem_Queue_struct* queue;      /* Pointer to the queue this entry is in */
   Counter priority;                    /* priority of the miss */
   Addr addr;                           /* address to fetch */
   Addr phys_addr;                      /* physical address */
@@ -129,9 +128,6 @@ struct Mem_Req_struct {
   uns mem_flat_bank;                   /* flattened bank index across channels */
   Counter start_cycle;                 /* cycle that the request is ready to process */
   Counter rdy_cycle;                   /* cycle when the current operation is complete */
-  uns reserved_entry_count;            /* how many entries are reserved for this request */
-  Flag merged_on_descent;              /* debug: another request was folded into this one */
-  uns8 reserved_levels;                /* levels holding a reservation, one bit each */
   Counter first_stalling_cycle;        /* cycle this request became a type considered
                                           stalling */
   Counter oldest_op_unique_num;        /* unique num of the oldest op that is waiting

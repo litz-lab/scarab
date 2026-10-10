@@ -71,7 +71,6 @@ extern int per_cyc_ipref;
 
 // To access cpu in my functions
 uint32_t eip_proc_id;
-uint32_t L1I_RQ_SIZE = 0;
 uint32_t L1I_TIMING_MSHR_SIZE = 0;
 uint32_t L1I_SET = 0;
 uint32_t L1I_WAY = 0;
@@ -950,15 +949,12 @@ void alloc_mem_eip(uns numCores) {
   L1I_TAG_BITS = (19 - L1I_ENTANGLED_TABLE_INDEX_BITS);
   L1I_TAG_MASK = (((uint64_t)1 << L1I_TAG_BITS) - 1);
 
-  ASSERT(eip_proc_id, MEM_REQ_BUFFER_ENTRIES > 16);
-  L1I_RQ_SIZE = QUEUE_L1_SIZE == 0 ? MEM_REQ_BUFFER_ENTRIES : QUEUE_L1_SIZE;
-  ASSERT(eip_proc_id, L1I_RQ_SIZE > 0);
   L1I_SET = ICACHE_SIZE / ICACHE_LINE_SIZE / ICACHE_ASSOC;
   L1I_WAY = ICACHE_ASSOC;
-  int L1I_MSHR_SIZE = (MEM_REQ_BUFFER_ENTRIES <= 64 && MEM_REQ_BUFFER_ENTRIES > 16) ? 16 : MEM_REQ_BUFFER_ENTRIES / 4;
-  L1I_TIMING_MSHR_SIZE = FE_FTQ_BLOCK_NUM + L1I_MSHR_SIZE + L1I_RQ_SIZE;
-  DEBUG(eip_proc_id, "L1I_RQ_SIZE: %d, L1I_SET: %d, L1I_WAY: %d, L1I_TIMING_MSHR_SIZE: %d\n", L1I_RQ_SIZE, L1I_SET,
-        L1I_WAY, L1I_TIMING_MSHR_SIZE);
+  /* EIP tracks the lines it prefetched, each holding an icache MSHR entry until it fills,
+     plus the one demand miss it records before the memory system has accepted it. */
+  L1I_TIMING_MSHR_SIZE = ICACHE_MSHRS + 1;
+  DEBUG(eip_proc_id, "L1I_SET: %d, L1I_WAY: %d, L1I_TIMING_MSHR_SIZE: %d\n", L1I_SET, L1I_WAY, L1I_TIMING_MSHR_SIZE);
   l1i_stats_table.resize(numCores);
   for (auto it = l1i_stats_table.begin(); it != l1i_stats_table.end(); ++it)
     *it = (l1i_stats_entry *)malloc(sizeof(l1i_stats_entry) * L1I_STATS_TABLE_ENTRIES);
@@ -1059,7 +1055,7 @@ void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefe
               v_addr, v_addr & ~0x3F, pf_addr, unique_count);
         if (!off_path)
           l1i_add_timing_entry(pf_addr >> LOG2(ICACHE_LINE_SIZE), 0, L1I_ENTANGLED_TABLE_WAYS);
-        // if (success == Mem_Queue_Req_Result::SUCCESS_NEW)
+        // if (success == Mshr_Req_Result::SUCCESS_NEW)
         // per_cyc_ipref++;
       }
     }
@@ -1089,7 +1085,7 @@ void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefe
                   pf_line_addr << LOG2(ICACHE_LINE_SIZE), unique_count);
             if (!off_path)
               l1i_add_timing_entry(pf_line_addr, source_set, (i == 0) ? source_way : L1I_ENTANGLED_TABLE_WAYS);
-            // if (success == Mem_Queue_Req_Result::SUCCESS_NEW)
+            // if (success == Mshr_Req_Result::SUCCESS_NEW)
             // per_cyc_ipref++;
           }
         }

@@ -50,6 +50,8 @@ extern "C" {
 struct Mshr_Line_struct {
   Addr addr;
   Counter rdy;
+  Counter fill_rdy; /* when the line's data is here to fill this level; 0 until it arrives */
+  Flag filled;      /* this level's cache already took it */
   std::list<Mem_Req*> reqs;
 };
 
@@ -63,12 +65,11 @@ static inline Addr line_of(Addr addr) {
   return addr >> LOG2(L1_LINE_SIZE);
 }
 
-void mshr_init(Mshr* mshr, const char* name, Mshr_Type type, uns size) {
+void mshr_init(Mshr* mshr, const char* name, uns size) {
   mshr->impl = new Mshr_Impl_struct();
   mshr->impl->name = name;
   mshr->pending_fills = 0;
   mshr->size = size;
-  mshr->type = type;
 }
 
 void mshr_reset(Mshr* mshr) {
@@ -111,7 +112,7 @@ void mshr_add(Mshr* mshr, Mem_Req* req) {
   if (it == impl->by_line.end()) {
     ASSERTM(req->proc_id, impl->lines.size() < mshr->size, "%s: all %u entries taken adding %s\n", impl->name.c_str(),
             mshr->size, Mem_Req_Type_str(req->type));
-    impl->lines.push_back(Mshr_Line{line_of(req->addr), 0, {}});
+    impl->lines.push_back(Mshr_Line{line_of(req->addr), 0, 0, FALSE, {}});
     it = impl->by_line.emplace(line_of(req->addr), std::prev(impl->lines.end())).first;
   }
   it->second->reqs.push_back(req);
@@ -126,6 +127,8 @@ void mshr_remove(Mshr* mshr, Mem_Req* req) {
   ASSERT(req->proc_id, pos != reqs.end());
   reqs.erase(pos);
   if (reqs.empty()) {
+    if (it->second->fill_rdy)
+      mshr->pending_fills--;
     impl->lines.erase(it->second);
     impl->by_line.erase(it);
   }
@@ -146,6 +149,28 @@ Counter mshr_line_rdy(Mshr_Line* line) {
 
 void mshr_line_set_rdy(Mshr_Line* line, Counter rdy) {
   line->rdy = rdy;
+}
+
+void mshr_line_ready(Mshr* mshr, Mshr_Line* line, Counter fill_rdy) {
+  if (!line->fill_rdy)
+    mshr->pending_fills++;
+  line->fill_rdy = fill_rdy;
+}
+
+Counter mshr_line_fill_rdy(Mshr_Line* line) {
+  return line->fill_rdy;
+}
+
+Flag mshr_line_filled(Mshr_Line* line) {
+  return line->filled;
+}
+
+void mshr_line_set_filled(Mshr_Line* line) {
+  line->filled = TRUE;
+}
+
+Mem_Req* mshr_line_first(Mshr_Line* line) {
+  return line->reqs.front();
 }
 
 uns mshr_line_count(Mshr_Line* line) {

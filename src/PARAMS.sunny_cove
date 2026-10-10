@@ -184,7 +184,6 @@
 --pref_polpf_thresh=0.005
 --pref_update_interval=8192
 
---mem_req_buffer_demand_reserve 4
 --promote_to_higher_priority_mem_req_type 1
 
 ### Memory
@@ -199,7 +198,6 @@
 --mem_priority_wb            5
 --mem_priority_wb_nodirty    5
 
---mem_req_buffer_entries        32
 --bus_width_in_bytes            8
 
 --ramulator_standard		DDR4

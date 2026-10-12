@@ -235,38 +235,35 @@ void* cache_access_impl(Cache* cache, Addr addr, Addr* line_addr, Flag* tag_alia
   uns ii;
   void* line_data = NULL;
 
-  if (cache->repl_policy >= REPL_VOID) {
+  if (cache->repl_policy >= REPL_VOID)
     line_data = cache_access_strategy(cache, addr, line_addr, tag_aliasing, update_repl);
-    if (update_repl)
-      cache_index_on_access(cache, addr, line_data != NULL);
-    return line_data;
-  }
 
-  if (cache->repl_policy == REPL_IDEAL_STORAGE) {
-    return access_ideal_storage(cache, set, tag, tag_full, addr, tag_aliasing);
-  }
+  else if (cache->repl_policy == REPL_IDEAL_STORAGE)
+    line_data = access_ideal_storage(cache, set, tag, tag_full, addr, tag_aliasing);
 
-  for (ii = 0; ii < cache->assoc; ii++) {
-    Cache_Entry* line = &cache->entries[set][ii];
+  else {
+    for (ii = 0; ii < cache->assoc; ii++) {
+      Cache_Entry* line = &cache->entries[set][ii];
 
-    if (line->valid && line->tag == tag) {
-      /* update replacement state if necessary */
-      ASSERT(0, line->data);
-      DEBUG(0, "Found line in cache '%s' at (set %u, way %u, base 0x%s)\n", cache->name, set, ii,
-            hexstr64s(line->base));
+      if (line->valid && line->tag == tag) {
+        /* update replacement state if necessary */
+        ASSERT(0, line->data);
+        DEBUG(0, "Found line in cache '%s' at (set %u, way %u, base 0x%s)\n", cache->name, set, ii,
+              hexstr64s(line->base));
 
-      if (update_repl) {
-        if (line->pref) {
-          line->pref = FALSE;
+        if (update_repl) {
+          if (line->pref) {
+            line->pref = FALSE;
+          }
+          cache->num_demand_access++;
+          update_repl_policy(cache, line, set, ii, FALSE);
+          DEBUG(0, "(%s, %d) [0x%x, 0x%x]: in access\n\n", cache->name, cache->repl_policy, cache->num_sets,
+                cache->assoc);
         }
-        cache->num_demand_access++;
-        update_repl_policy(cache, line, set, ii, FALSE);
-        DEBUG(0, "(%s, %d) [0x%x, 0x%x]: in access\n\n", cache->name, cache->repl_policy, cache->num_sets,
-              cache->assoc);
-      }
 
-      *tag_aliasing = line->tag_full != tag_full;
-      line_data = line->data;
+        *tag_aliasing = line->tag_full != tag_full;
+        line_data = line->data;
+      }
     }
   }
 

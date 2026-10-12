@@ -113,11 +113,6 @@ void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, 
 
   DEBUG(0, "Initializing cache called '%s'.\n", name);
 
-  if (repl_policy >= REPL_VOID) {
-    init_cache_strategy(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
-    return;
-  }
-
   /* set the basic parameters */
   strncpy(cache->name, name, MAX_STR_LENGTH);
   cache->data_size = data_size;
@@ -140,7 +135,8 @@ void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, 
   cache_index_state_init(cache, idx_cfg);
 
   /* allocate memory for NMRU replacement counters  */
-  cache->repl_ctrs = (uns*)calloc(num_sets, sizeof(uns));
+  if (repl_policy < REPL_VOID)
+    cache->repl_ctrs = (uns*)calloc(num_sets, sizeof(uns));
 
   /* allocate memory for all the sets (pointers to line arrays)  */
   cache->entries = (Cache_Entry**)malloc(sizeof(Cache_Entry*) * num_sets);
@@ -218,6 +214,9 @@ void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, 
     }
   }
 
+  if (repl_policy >= REPL_VOID)
+    init_cache_strategy(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
+
   cache->tag_incl_offset = FALSE;
 }
 
@@ -237,33 +236,34 @@ void* cache_access_impl(Cache* cache, Addr addr, Addr* line_addr, Flag* tag_alia
   void* line_data = NULL;
 
   if (cache->repl_policy >= REPL_VOID)
-    return cache_access_strategy(cache, addr, line_addr, tag_aliasing, update_repl);
+    line_data = cache_access_strategy(cache, addr, line_addr, tag_aliasing, update_repl);
 
-  if (cache->repl_policy == REPL_IDEAL_STORAGE) {
-    return access_ideal_storage(cache, set, tag, tag_full, addr, tag_aliasing);
-  }
+  else if (cache->repl_policy == REPL_IDEAL_STORAGE)
+    line_data = access_ideal_storage(cache, set, tag, tag_full, addr, tag_aliasing);
 
-  for (ii = 0; ii < cache->assoc; ii++) {
-    Cache_Entry* line = &cache->entries[set][ii];
+  else {
+    for (ii = 0; ii < cache->assoc; ii++) {
+      Cache_Entry* line = &cache->entries[set][ii];
 
-    if (line->valid && line->tag == tag) {
-      /* update replacement state if necessary */
-      ASSERT(0, line->data);
-      DEBUG(0, "Found line in cache '%s' at (set %u, way %u, base 0x%s)\n", cache->name, set, ii,
-            hexstr64s(line->base));
+      if (line->valid && line->tag == tag) {
+        /* update replacement state if necessary */
+        ASSERT(0, line->data);
+        DEBUG(0, "Found line in cache '%s' at (set %u, way %u, base 0x%s)\n", cache->name, set, ii,
+              hexstr64s(line->base));
 
-      if (update_repl) {
-        if (line->pref) {
-          line->pref = FALSE;
+        if (update_repl) {
+          if (line->pref) {
+            line->pref = FALSE;
+          }
+          cache->num_demand_access++;
+          update_repl_policy(cache, line, set, ii, FALSE);
+          DEBUG(0, "(%s, %d) [0x%x, 0x%x]: in access\n\n", cache->name, cache->repl_policy, cache->num_sets,
+                cache->assoc);
         }
-        cache->num_demand_access++;
-        update_repl_policy(cache, line, set, ii, FALSE);
-        DEBUG(0, "(%s, %d) [0x%x, 0x%x]: in access\n\n", cache->name, cache->repl_policy, cache->num_sets,
-              cache->assoc);
-      }
 
-      *tag_aliasing = line->tag_full != tag_full;
-      line_data = line->data;
+        *tag_aliasing = line->tag_full != tag_full;
+        line_data = line->data;
+      }
     }
   }
 
@@ -1378,48 +1378,9 @@ void general_action_init(Cache* cache, const char* name, uns cache_size, uns ass
 void general_action_repl(Cache* cache, Cache_Entry* new_line, uns8 proc_id, Addr tag, Addr tag_full, Addr* line_addr,
                          Addr* repl_line_addr);
 
+/* The common setup (fields, entries, index hash) is done by init_cache_impl before it calls init_cache_strategy */
 void general_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                          Repl_Policy repl_policy) {
-  uns num_lines = cache_size / line_size;
-  uns num_sets = cache_size / line_size / assoc;
-  uns ii, jj;
-
-  /* set the basic parameters */
-  strncpy(cache->name, name, MAX_STR_LENGTH);
-  cache->data_size = data_size;
-  cache->num_lines = num_lines;
-  cache->assoc = assoc;
-  cache->num_sets = num_sets;
-  cache->line_size = line_size;
-  cache->repl_policy = repl_policy;
-
-  /* set some fields to make indexing quick */
-  cache->set_bits = LOG2(num_sets);
-  cache->shift_bits = LOG2(line_size);                /* use for shift amt. */
-  cache->set_mask = N_BIT_MASK(LOG2(num_sets));       /* use after shifting */
-  cache->tag_mask = ~cache->set_mask;                 /* use after shifting */
-  cache->offset_mask = N_BIT_MASK(cache->shift_bits); /* use before shifting */
-
-  /* allocate memory for all the sets (pointers to line arrays)  */
-  cache->entries = (Cache_Entry**)malloc(sizeof(Cache_Entry*) * num_sets);
-
-  /* allocate memory for all of the lines in each set */
-  for (ii = 0; ii < num_sets; ii++) {
-    cache->entries[ii] = (Cache_Entry*)malloc(sizeof(Cache_Entry) * assoc);
-    /* allocate memory for all of the data elements in each line */
-    for (jj = 0; jj < assoc; jj++) {
-      cache->entries[ii][jj].valid = FALSE;
-      if (data_size) {
-        cache->entries[ii][jj].data = (void*)malloc(data_size);
-        memset(cache->entries[ii][jj].data, 0, data_size);
-      } else
-        cache->entries[ii][jj].data = INIT_CACHE_DATA_VALUE;
-    }
-  }
-
-  /* Strategy (REPL_VOID and above) caches use the identity index hash. This also initializes
-     the index state for the strategy path, which init_cache_impl skips via its early return. */
-  cache_index_state_init(cache, get_default_cache_index_config());
 }
 
 void general_action_repl(Cache* cache, Cache_Entry* new_line, uns8 proc_id, Addr tag, Addr tag_full, Addr* line_addr,

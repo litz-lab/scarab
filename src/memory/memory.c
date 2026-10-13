@@ -753,7 +753,8 @@ static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr) {
       mem->uncores[req->proc_id].num_outstanding_l1_misses++;
       return;
     case MSHR_L1_WB:
-      ASSERTM(req->proc_id, FALSE, "LLC writebacks go to Ramulator directly (new_mem_l1_wb_req)\n");
+      /* Held until DRAM acknowledges the write; not a miss, so not in the MLP count. */
+      ASSERT(req->proc_id, req->state == MRS_MEM_NEW);
       return;
     default:
       MEM_BAD_FILE(mshr);
@@ -1846,16 +1847,28 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
   ASSERT(req->proc_id, !EXCLUSIVE_CACHES || fill_req_is_wb(req) ||
                            fill_inserts_at_l1(req) + fill_inserts_at_mlc(req) + fill_inserts_at_dcache(req) == 1);
 
-  req->state = MRS_FILL_L1;
-  Mshr_Line* line = mshr_line(&mem->l1_mshr, req->addr);
+  /* A read's data, or DRAM's acknowledgement of an LLC writeback: the line left the
+     LLC, so a writeback has nothing to fill and is done. */
+  Mshr* file = mem_file_of(req, &mem->l1_mshr);
+  switch (file->file) {
+    case MSHR_L1:
+      req->state = MRS_FILL_L1;
+      ASSERT(req->proc_id, mem->uncores[req->proc_id].num_outstanding_l1_misses > 0);
+      mem->uncores[req->proc_id].num_outstanding_l1_misses--;
+      break;
+    case MSHR_L1_WB:
+      req->state = MRS_FILL_DONE;
+      break;
+    default:
+      MEM_BAD_FILE(file);
+  }
+  Mshr_Line* line = mshr_line(file, req->addr);
   ASSERT(req->proc_id, line && mshr_line_first(line) == req);
 
   /* Crossing frequency domain boundary between the chip and memory controller, plus
      the cycle the line used to spend being handed from the l1 fill mshr to the mlc
      one. Two here reproduces the old end-to-end fill latency on both paths. */
   req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + 2;
-  ASSERT(req->proc_id, mem->uncores[req->proc_id].num_outstanding_l1_misses > 0);
-  mem->uncores[req->proc_id].num_outstanding_l1_misses--;
 
   if (!CONSTANT_MEMORY_LATENCY && !PERF_PRED_REQS_FINISH_AT_FILL)
     perf_pred_mem_req_done(req);
@@ -1877,8 +1890,8 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
     }
   }
 
-  /* The line's data is at the LLC's file; the fill walk takes it from there. */
-  mshr_line_ready(&mem->l1_mshr, line, req->rdy_cycle);
+  /* The fill walk takes it from DRAM's file. */
+  mshr_line_ready(file, line, req->rdy_cycle);
 }
 
 /* The file a request goes on to above this one, or NULL if this level finishes it. */
@@ -1893,6 +1906,7 @@ static inline Mshr* mem_file_above(Mem_Req* req, Mshr* mshr) {
       break;
     case MSHR_ICACHE:
     case MSHR_DCACHE:
+    case MSHR_L1_WB:
       break;
     default:
       MEM_BAD_FILE(mshr);
@@ -1938,6 +1952,8 @@ static void mem_fill_line_at(Mshr* mshr, Mshr_Line* line) {
     case MSHR_ICACHE:
     case MSHR_DCACHE:
       break; /* done_func fills the L1 cache */
+    case MSHR_L1_WB:
+      break; /* acknowledged: the line left the LLC, nothing to fill */
     default:
       MEM_BAD_FILE(mshr);
   }
@@ -1997,6 +2013,7 @@ static void mem_walk_fills(Mshr* mshr) {
 
 static void mem_process_completed_reqs(void) {
   mem_walk_fills(&mem->l1_mshr);
+  mem_walk_fills(&mem->l1_wb);
   mem_walk_fills(&mem->mlc_mshr);
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     mem_walk_fills(&mem->uncores[proc_id].dcache_mshr);
@@ -2785,6 +2802,13 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
    * exists */
 
   ASSERT(proc_id, type == MRT_WB);
+  /* The LLC's writeback file holds it until DRAM acknowledges the write. */
+  ASSERTM(proc_id, !mshr_line(&mem->l1_wb, addr), "%s: a second writeback to line 0x%s\n", mshr_name(&mem->l1_wb),
+          hexstr64s(addr));
+  if (mshr_full(&mem->l1_wb, addr)) {
+    STAT_EVENT(proc_id, mem_reject_stat(&mem->l1_wb));
+    return FALSE;
+  }
   new_req = mem_alloc_req(proc_id, type);
 
   /* Step 5: Allocate a new request buffer -- new_req */
@@ -2800,11 +2824,10 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
     } else {
       ASSERT(new_req->proc_id, new_req->mem_queue_cycle >= new_req->rdy_cycle);
       DEBUG(new_req->proc_id, "L1 WB request is sent to ramulator\n");
-
+      mshr_add(&mem->l1_wb, new_req);
+      mem_admit_to_level(new_req, &mem->l1_wb);
       mem_seq_num++;
       perf_pred_mem_req_start(new_req);
-
-      mem_free_req(new_req);
     }
   } else {
     Mem_Req** req_ptr = sl_list_add_tail(&mem->l1_in_buffer_core[proc_id]);

@@ -46,7 +46,7 @@ const char* const mem_req_state_names[] = {
   "INV",      "MLC_NEW",     "MLC_WAIT", "MLC_HIT_DONE", "L1_NEW",
   "L1_WAIT",  "L1_HIT_DONE", "BUS_NEW",  "MEM_NEW",      "MEM_SCHEDULED",
   "MEM_WAIT", "BUS_BUSY",    "BUS_WAIT", "MEM_DONE",     "BUS_IN_DONE",
-  "FILL_L1",  "FILL_MLC",    "FILL_DONE"
+  "FILL_L1",  "FILL_MLC",    "FILL_DONE",    "MERGED",  "WB_HIT_DONE"
 };
 // clang-format on
 

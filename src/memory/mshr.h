@@ -40,24 +40,31 @@
 extern "C" {
 #endif
 
-typedef enum Mshr_Type_enum {
-  MSHR_MLC = 1 << 0,
-  MSHR_MEM = 1 << 2,
-  MSHR_DCACHE = 1 << 4,
-} Mshr_Type;
-
 typedef struct Mshr_Line_struct Mshr_Line;
+
+/* Which file this is: the cache a file's lines miss in, or the level a writeback leaves. */
+typedef enum Mshr_File_enum {
+  MSHR_ICACHE,    /* L1I misses, looked up at the MLC */
+  MSHR_DCACHE,    /* L1D misses, looked up at the MLC */
+  MSHR_MLC,       /* MLC misses (L1 misses without an MLC), looked up at the LLC */
+  MSHR_L1,        /* LLC misses, in DRAM */
+  MSHR_DCACHE_WB, /* L1D writebacks, looked up at the MLC */
+  MSHR_MLC_WB,    /* MLC writebacks, looked up at the LLC */
+  MSHR_L1_WB,     /* LLC writebacks */
+  MSHR_NUM_FILES,
+} Mshr_File;
 
 typedef struct Mshr_struct {
   struct Mshr_Impl_struct* impl;
-  /* Fills this level owes that could not be absorbed. Only when it is non-zero does
-     anything walk this level's file looking for them. */
+  Mshr_File file;
+  uns8 proc_id; /* the core whose L1 cache it serves; 0 for the shared files */
+  /* Lines whose data has arrived and is waiting to fill this level (mshr_line_ready).
+     Only when it is non-zero does anything walk the file for them. */
   uns pending_fills;
   uns size; /* entries: lines in flight */
-  Mshr_Type type;
 } Mshr;
 
-void mshr_init(Mshr* mshr, const char* name, Mshr_Type type, uns size);
+void mshr_init(Mshr* mshr, const char* name, Mshr_File file, uns size);
 void mshr_reset(Mshr* mshr);
 void mshr_destroy(Mshr* mshr);
 const char* mshr_name(Mshr* mshr);
@@ -72,8 +79,23 @@ void mshr_remove(Mshr* mshr, Mem_Req* req);  /* the entry goes with its last req
 /* Entries in allocation order. Read next before anything that can free the current. */
 Mshr_Line* mshr_first(Mshr* mshr);
 Mshr_Line* mshr_next(Mshr* mshr, Mshr_Line* line);
+/* Lines not looked up yet, in allocation order; a line leaves when lookup_done is called. */
+Mshr_Line* mshr_first_lookup(Mshr* mshr);
+Mshr_Line* mshr_next_lookup(Mshr* mshr, Mshr_Line* line);
+void mshr_line_lookup_done(Mshr* mshr, Mshr_Line* line);
+/* Lines whose data has arrived (mshr_line_ready), in allocation order. */
+Mshr_Line* mshr_first_ready(Mshr* mshr);
+Mshr_Line* mshr_next_ready(Mshr* mshr, Mshr_Line* line);
 Counter mshr_line_rdy(Mshr_Line* line); /* when its first request is looked up */
 void mshr_line_set_rdy(Mshr_Line* line, Counter rdy);
+/* The line's data has arrived: fill this level at fill_rdy. The line stays ready until
+   its last request leaves. */
+void mshr_line_ready(Mshr* mshr, Mshr_Line* line, Counter fill_rdy);
+Counter mshr_line_fill_rdy(Mshr_Line* line); /* 0 until the data arrives */
+Flag mshr_line_filled(Mshr_Line* line);      /* this level's cache already took it */
+void mshr_line_set_filled(Mshr_Line* line);
+/* The request that looks the line up and goes down for it: the first to arrive. */
+Mem_Req* mshr_line_first(Mshr_Line* line);
 /* The line's requests in arrival order, copied into reqs (mshr_line_count of them). */
 uns mshr_line_count(Mshr_Line* line);
 uns mshr_line_reqs(Mshr_Line* line, Mem_Req** reqs);

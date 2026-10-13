@@ -62,7 +62,6 @@ Config* configs = NULL;
 
 void to_ramulator_req(const Mem_Req* scarab_req, Request* ramulator_req);
 void init_configs();
-bool try_completing_request(Mem_Req* req);
 void enqueue_response(Request& req);
 
 void stats_callback(int coreid, int type);
@@ -80,6 +79,10 @@ void ramulator_init() {
           "data cache line sizes! Currently, ICACHE_LINE_SIZE=%d, "
           "DCACHE_LINE_SIZE=%d \n",
           ICACHE_LINE_SIZE, DCACHE_LINE_SIZE);
+  /* Every read in DRAM holds an l1_mshr entry, so the file bounds each channel's read
+     queue and a read is never refused. */
+  ASSERTM(0, L1_MSHRS <= RAMULATOR_READQ_ENTRIES, "L1_MSHRS=%u exceeds RAMULATOR_READQ_ENTRIES=%u\n", L1_MSHRS,
+          RAMULATOR_READQ_ENTRIES);
 
   configs = new Config();
   init_configs();
@@ -193,6 +196,8 @@ int ramulator_send(Mem_Req* scarab_req) {
   }
 
   bool is_sent = wrapper->send(req);
+  ASSERTM(scarab_req->proc_id, is_sent || req.type != Request::Type::READ,
+          "Ramulator refused a read the l1_mshr bound should have made room for\n");
 
   if (is_sent) {
     STAT_EVENT(scarab_req->proc_id, POWER_MEMORY_CTRL_ACCESS);
@@ -235,32 +240,6 @@ void enqueue_response(Request& req) {
   inflight_read_reqs.erase(it_scarab_req);
 }
 
-bool try_completing_request(Mem_Req* req) {
-  if ((unsigned int)mem->l1fill_queue.entry_count < MEM_L1_FILL_QUEUE_ENTRIES) {
-    DEBUG(req->proc_id, "Ramulator: Completing a (%s) request to address %llx\n", Mem_Req_Type_str(req->type),
-          req->addr);
-
-    // TODO_hasan: how do we need to set the priority?
-    mem_complete_bus_in_access(req, 0 /*mem->mem_queue.base[ii].priority*/);
-
-    // remove from mem queue - how do we handle this now?
-    // mem_queue_removal_count++;
-    // l1fill_queue_insertion_count++;
-    // mem->mem_queue.base[ii].priority =
-    // Mem_Req_Priority_Offset[MRT_MIN_PRIORITY];
-    // memview_memqueue(MEMVIEW_MEMQUEUE_DEPART, req);
-
-    // if (MEM_MEM_QUEUE_PARTITION_ENABLE) {
-    //    ASSERT(0, mem->mem_queue_entry_count_bank[req->mem_flat_bank] > 0);
-    //    mem->mem_queue_entry_count_bank[req->mem_flat_bank]--;
-    //}
-
-    return true;
-  }
-
-  return false;
-}
-
 void to_ramulator_req(const Mem_Req* scarab_req, Request* ramulator_req) {
   ASSERTM(scarab_req->proc_id, scarab_req->state == MRS_MEM_NEW,
           "A"
@@ -288,9 +267,14 @@ void to_ramulator_req(const Mem_Req* scarab_req, Request* ramulator_req) {
 void ramulator_tick() {
   wrapper->tick();
 
+  /* A returning line already holds its LLC MSHR, which is what bounded how many could be
+     in DRAM at once, so nothing can refuse it here. */
   if (resp_queue.size() > 0) {
-    if (try_completing_request(resp_queue.front().second))
-      resp_queue.pop_front();
+    Mem_Req* req = resp_queue.front().second;
+    DEBUG(req->proc_id, "Ramulator: Completing a (%s) request to address %llx\n", Mem_Req_Type_str(req->type),
+          req->addr);
+    mem_complete_bus_in_access(req, 0);
+    resp_queue.pop_front();
   }
 }
 

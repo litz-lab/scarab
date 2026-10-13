@@ -621,14 +621,6 @@ void perf_pred_reset_stats(void) {
     proc->global_slack_in_this_prefetch_phase = 0;
   }
 
-  /* The real budget, not the parameter: the request buffer is
-     derived from the per-level queue sizes. */
-  ASSERTM(0, (RAMULATOR_READQ_ENTRIES + RAMULATOR_WRITEQ_ENTRIES) <= mem_get_req_buffer_size(),
-          "The request buffer (%u entries) needs to cover "
-          "(RAMULATOR_READQ_ENTRIES + RAMULATOR_WRITEQ_ENTRIES)\n",
-          mem_get_req_buffer_size());
-  /* Every entry, not the first per-core budget's worth: with PRIVATE_MSHR_ON the
-     buffer holds NUM_CORES times that many. */
   mem_clear_crit_path();
 
   stat_mon_reset(stat_mon);

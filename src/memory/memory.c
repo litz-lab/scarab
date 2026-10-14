@@ -110,7 +110,6 @@ ASSERT_TYPE_FAMILY(CORE_MEM_LATENCY);
 
 FILE* l1_plot_file;
 FILE* mem_plot_file;
-static Counter order_num = 1;
 Counter mem_seq_num = 1;
 static uns mem_req_demand_entries = 0;
 static uns mem_req_pref_entries = 0;
@@ -128,7 +127,6 @@ Counter Mem_Req_Priority_Offset[MRT_NUM_ELEMS];
 
 static void init_mem_req_type_priorities(void);
 static void init_uncores(void);
-static void update_memory_queues(void);
 static void update_on_chip_memory_stats(void);
 
 static void mark_ops_as_l1_miss(Mem_Req* req);
@@ -164,8 +162,6 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, uns8 proc_id, 
                              Flag done_func(Mem_Req*), Counter unique_num, Counter new_priority);
 
 static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr);
-
-void mem_insert_req_round_robin(void);
 
 static Flag new_mem_mlc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                                Flag done_func(Mem_Req*), Counter unique_num);
@@ -298,8 +294,6 @@ void init_mem_req_type_priorities() {
 /* init_memory: */
 
 void init_memory() {
-  uns8 proc_id;
-
   ASSERT(0, mem);
   ASSERTM(0, DCACHE_LINE_SIZE == L1_LINE_SIZE && MLC_LINE_SIZE == L1_LINE_SIZE && ICACHE_LINE_SIZE == L1_LINE_SIZE,
           "MSHR lookup keys on one line size; dcache %u, mlc %u, l1 %u, icache %u disagree\n", DCACHE_LINE_SIZE,
@@ -317,13 +311,6 @@ void init_memory() {
   init_list(&mem->req_pool_free_list, "REQ POOL FREE LIST", sizeof(Mem_Req*), TRUE);
   mem->chunk_size = MEM_REQ_POOL_CHUNK;
   mem_grow_req_pool();
-
-  if (ROUND_ROBIN_TO_L1) {
-    mem->l1_in_buffer_core = (List*)malloc(sizeof(List) * NUM_CORES);
-    for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-      init_list(&mem->l1_in_buffer_core[proc_id], "L1 IN BUFFER", sizeof(Mem_Req*), TRUE);
-    }
-  }
 
   /* Initialize the MSHR files */
   /* Per-core LLC timing would make the LLC's latency differ per request, and the
@@ -904,19 +891,6 @@ void debug_memory() {
 /**************************************************************************************/
 /* update_memory: */
 
-int l1_in_buf_count = 0;
-
-/**
- * @brief Not sure what this func is doing
- *
- */
-void update_memory_queues() {
-  // here!!! mix the requests
-  if (ROUND_ROBIN_TO_L1 && l1_in_buf_count > 0) {
-    mem_insert_req_round_robin();
-  }
-}
-
 void update_on_chip_memory_stats() {
   STAT_EVENT_ALL(L1_CYCLE);
   STAT_EVENT(0, MIN2(MEM_REQ_DEMANDS__0 + mem_req_demand_entries / 4, MEM_REQ_DEMANDS_64));
@@ -945,7 +919,6 @@ void update_memory() {
 
     perf_pred_cycle();
 
-    update_memory_queues();
     update_on_chip_memory_stats();
 
     mem_process_completed_reqs();
@@ -2484,29 +2457,6 @@ static inline void mem_insert_req_into_mshr(Mem_Req* new_req, Mshr* mshr) {
 }
 
 /**************************************************************************************/
-/* mem_insert_req_round_robin: */
-void mem_insert_req_round_robin() {
-  ASSERT(0, ROUND_ROBIN_TO_L1);
-  uns8 proc_id;
-  Mem_Req** req_ptr;
-
-  while (l1_in_buf_count) {
-    for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-      req_ptr = sl_list_remove_head(&mem->l1_in_buffer_core[proc_id]);
-      if (req_ptr) {
-        (*req_ptr)->priority =
-            ((*req_ptr)->type == MRT_DPRF || (*req_ptr)->type == MRT_IPRF) ? (*req_ptr)->priority : order_num;
-        mem_insert_req_into_mshr(*req_ptr, &mem->mlc_mshr);
-        order_num++;
-        l1_in_buf_count--;
-      }
-    }
-  }
-
-  ASSERT(0, mem->l1_in_buffer_core[0].count == 0);
-}
-
-/**************************************************************************************/
 /* new_mem_req: */
 /* Returns TRUE if the request is successfully entered into the memory system */
 
@@ -2766,6 +2716,19 @@ static Flag new_mem_wb_req(Mshr* target, Mem_Req_Type type, uns8 proc_id, Addr a
     case MSHR_MLC_WB:
       new_req->destination = DEST_L1;
       break;
+    case MSHR_L1_WB:
+      /* DRAM's writeback file is entered by sending: it holds the write until DRAM
+         acknowledges it. */
+      new_req->state = MRS_MEM_NEW;
+      if (!ramulator_send(new_req)) {
+        mem_free_req(new_req);
+        return FALSE;
+      }
+      mshr_add(target, new_req);
+      mem_admit_to_level(new_req, target);
+      mem_seq_num++;
+      perf_pred_mem_req_start(new_req);
+      return TRUE;
     default:
       MEM_BAD_FILE(target);
   }
@@ -2785,66 +2748,11 @@ static Flag new_mem_mlc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns s
 }
 
 static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
-                              Flag done_func(Mem_Req*), Counter unique_num)  // This counter is used when op is NULL
-{
-  Mem_Req* new_req = NULL;
-  Counter priority_offset = freq_cycle_count(FREQ_DOMAIN_L1);
-  Counter new_priority;
-  Flag is_sent = FALSE;
-
-  ASSERT(proc_id, type == MRT_WB);
-  ASSERT(proc_id, NULL == done_func);
-  ASSERTM(proc_id, proc_id == get_proc_id_from_cmp_addr(addr), "Proc ID (%d) does not match proc ID in address (%d)!\n",
-          proc_id, get_proc_id_from_cmp_addr(addr));
-  ASSERTM(proc_id, 0 == delay,
-          "does not support non-zero delay, because we will try to send the wb "
-          "request to Ramulator right away");
-
-  new_priority = Mem_Req_Priority_Offset[type] + priority_offset;
-
-  if (CONSTANT_MEMORY_LATENCY || STALL_MEM_REQS_ONLY) {  // not modeling any contention
-    return TRUE;
-  }
-
-  /* Step 3: Not already in request buffer. Figure out if a free request buffer
-   * exists */
-
-  ASSERT(proc_id, type == MRT_WB);
-  /* The LLC's writeback file holds it until DRAM acknowledges the write. */
-  ASSERTM(proc_id, !mshr_line(&mem->l1_wb, addr), "%s: a second writeback to line 0x%s\n", mshr_name(&mem->l1_wb),
-          hexstr64s(addr));
-  if (mshr_full(&mem->l1_wb, addr)) {
-    STAT_EVENT(proc_id, mem_reject_stat(&mem->l1_wb));
-    return FALSE;
-  }
-  new_req = mem_alloc_req(proc_id, type);
-
-  /* Step 5: Allocate a new request buffer -- new_req */
-  mem_init_new_req(new_req, type, proc_id, addr, size, delay, op, done_func, unique_num, new_priority);
-  new_req->state = MRS_MEM_NEW;
-
-  /* Step 6: Try to insert into the Ramulator queue */
-  if (!ROUND_ROBIN_TO_L1) {
-    is_sent = ramulator_send(new_req);
-    if (!is_sent) {
-      mem_free_req(new_req);
-      return FALSE;
-    } else {
-      ASSERT(new_req->proc_id, new_req->mem_queue_cycle >= new_req->rdy_cycle);
-      DEBUG(new_req->proc_id, "L1 WB request is sent to ramulator\n");
-      mshr_add(&mem->l1_wb, new_req);
-      mem_admit_to_level(new_req, &mem->l1_wb);
-      mem_seq_num++;
-      perf_pred_mem_req_start(new_req);
-    }
-  } else {
-    Mem_Req** req_ptr = sl_list_add_tail(&mem->l1_in_buffer_core[proc_id]);
-    *req_ptr = new_req;
-    l1_in_buf_count++;
-    ASSERTM(proc_id, FALSE, "Ramulator integration not complete if ROUND_ROBIN_TO_L1 is enabled");
-  }
-
-  return TRUE;
+                              Flag done_func(Mem_Req*), Counter unique_num) {
+  ASSERT(proc_id, type == MRT_WB && !done_func && !delay);
+  if (CONSTANT_MEMORY_LATENCY || STALL_MEM_REQS_ONLY)
+    return TRUE; /* DRAM contention is not modeled */
+  return new_mem_wb_req(&mem->l1_wb, type, proc_id, addr, size, delay, op, done_func, unique_num, FALSE);
 }
 
 /**************************************************************************************/

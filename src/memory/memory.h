@@ -128,7 +128,6 @@ typedef struct Memory_struct {
   uns chunk_size;
   List req_pool_free_list;
   uns total_req_pool;
-  List* l1_in_buffer_core;
   uns* num_req_pool_per_core;
 
   int req_count;

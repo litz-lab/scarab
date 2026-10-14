@@ -815,14 +815,14 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
   Flag repl_line_valid;
   data = (Dcache_Data*)get_next_repl_line(&dc->dcache, dc->proc_id, req->addr, &repl_line_addr, &repl_line_valid);
 
-  /* Exclusive hierarchy: the victim moves down a level instead of vanishing, unless it is
-     an unused prefetch and we were asked to drop those. This runs before the writeback so
-     that a demotion memory refuses leaves nothing half-done and the fill just retries. */
-  if (EXCLUSIVE_CACHES && repl_line_valid) {
+  /* Exclusive hierarchy: a clean victim has no other copy, so it moves down a level as a
+     writeback too, unless it is an unused prefetch and we were asked to drop those. A dirty
+     victim is written back below in either mode. */
+  if (EXCLUSIVE_CACHES && repl_line_valid && !data->dirty) {
     if (EXCLUSIVE_DROP_UNUSED_PREF && data->HW_prefetch) {
       STAT_EVENT(dc->proc_id, EXCL_DROP_UNUSED_PREF);
-    } else if (!mem_demote_to_mlc(get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr, data->dirty,
-                                  data->HW_prefetched, data->HW_prefetched && !data->HW_prefetch)) {
+    } else if (!new_mem_dc_wb_req(MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr,
+                                  DCACHE_LINE_SIZE, 1, NULL, NULL, unique_count, TRUE)) {
       return NULL;
     }
   }

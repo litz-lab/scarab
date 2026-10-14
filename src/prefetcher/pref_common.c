@@ -165,6 +165,7 @@ void pref_init(void) {
     memset(pref_table[ii].hwp_info->sent_core, 0, sizeof(Counter) * NUM_CORES);
     pref_table[ii].hwp_info->late_core = (Counter*)calloc(NUM_CORES, sizeof(Counter));
     memset(pref_table[ii].hwp_info->late_core, 0, sizeof(Counter) * NUM_CORES);
+    pref_table[ii].hwp_info->unused_core = (Counter*)calloc(NUM_CORES, sizeof(Counter));
 
     pref_table[ii].hwp_info->curr_useful_core = (Counter*)calloc(NUM_CORES, sizeof(Counter));
     memset(pref_table[ii].hwp_info->curr_useful_core, 0, sizeof(Counter) * NUM_CORES);
@@ -172,6 +173,7 @@ void pref_init(void) {
     memset(pref_table[ii].hwp_info->curr_sent_core, 0, sizeof(Counter) * NUM_CORES);
     pref_table[ii].hwp_info->curr_late_core = (Counter*)calloc(NUM_CORES, sizeof(Counter));
     memset(pref_table[ii].hwp_info->curr_late_core, 0, sizeof(Counter) * NUM_CORES);
+    pref_table[ii].hwp_info->curr_unused_core = (Counter*)calloc(NUM_CORES, sizeof(Counter));
 
     pref_table[ii].hwp_info->dyn_degree_core = (uns*)calloc(NUM_CORES, sizeof(uns));
     for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
@@ -865,10 +867,12 @@ inline void pref_evictline_used(uns8 proc_id, Addr addr, Addr loadPC, uns32 glob
   }
 }
 
-inline void pref_evictline_notused(uns8 proc_id, Addr addr, Addr loadPC, uns32 global_hist) {
+inline void pref_evictline_notused(uns8 proc_id, Addr addr, Addr loadPC, uns32 global_hist, uns8 prefetcher_id) {
   if (!PREF_FRAMEWORK_ON)
     return;
   STAT_EVENT(proc_id, PREF_UNUSED_EVICT);
+  if (prefetcher_id)
+    pref_table[prefetcher_id].hwp_info->curr_unused_core[proc_id]++;
 
   if (PREF_HFILTER_ON) {
     uns32 cooked_hist = COOK_HIST_BITS(global_hist, PREF_HFILTER_INDEX_BITS, 0);
@@ -997,6 +1001,11 @@ void pref_feed_back_info_update(uns8 prefetcher_id) {
             (0.5 * pref_table[prefetcher_id].hwp_info->late_core[proc_id]) +
             (0.5 * pref_table[prefetcher_id].hwp_info->curr_late_core[proc_id]);
         pref_table[prefetcher_id].hwp_info->curr_late_core[proc_id] = 0;
+
+        pref_table[prefetcher_id].hwp_info->unused_core[proc_id] =
+            (0.5 * pref_table[prefetcher_id].hwp_info->unused_core[proc_id]) +
+            (0.5 * pref_table[prefetcher_id].hwp_info->curr_unused_core[proc_id]);
+        pref_table[prefetcher_id].hwp_info->curr_unused_core[proc_id] = 0;
 
         pref.cores[proc_id]->ul1_misses =
             (0.5 * pref.cores[proc_id]->ul1_misses) + (0.5 * pref.cores[proc_id]->curr_ul1_misses);
@@ -1245,20 +1254,14 @@ HWP_DynAggr pref_get_degfb(uns8 proc_id, uns8 prefetcher_id) {
   return ret;
 }
 
+/* Of the prefetches whose fate is known: used (or late), or evicted unused. Counting
+   each when it resolves keeps a window's accuracy free of prefetches still in flight. */
 float pref_get_accuracy(uns8 proc_id, uns8 prefetcher_id) {
-  float acc;
-  if (PREF_UPDATE_INTERVAL != 0) {
-    acc = (pref_table[prefetcher_id].hwp_info->sent_core[proc_id] > 20)
-              ? ((float)pref_table[prefetcher_id].hwp_info->useful_core[proc_id] /
-                 (float)pref_table[prefetcher_id].hwp_info->sent_core[proc_id])
-              : 1.0;
-  } else {
-    acc = (pref_table[prefetcher_id].hwp_info->curr_sent_core[proc_id] > 100)
-              ? ((float)pref_table[prefetcher_id].hwp_info->curr_useful_core[proc_id] /
-                 (float)pref_table[prefetcher_id].hwp_info->curr_sent_core[proc_id])
-              : 1.0;
-  }
-  return acc;
+  HWP_Info* info = pref_table[prefetcher_id].hwp_info;
+  Counter useful = PREF_UPDATE_INTERVAL != 0 ? info->useful_core[proc_id] : info->curr_useful_core[proc_id];
+  Counter unused = PREF_UPDATE_INTERVAL != 0 ? info->unused_core[proc_id] : info->curr_unused_core[proc_id];
+  Counter min_resolved = PREF_UPDATE_INTERVAL != 0 ? 20 : 100;
+  return useful + unused > min_resolved ? (float)useful / (float)(useful + unused) : 1.0;
 }
 
 float pref_get_timeliness(uns8 proc_id, uns8 prefetcher_id) {

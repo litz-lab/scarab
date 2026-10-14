@@ -2905,7 +2905,8 @@ Flag l1_fill_line(Mem_Req* req) {
     if (data->prefetch) {
       uns log2_distance = data->pref_distance ? MIN2(LOG2(data->pref_distance), 6) : 0;
       if (!data->seen_prefetch) {  // prefeched line not used
-        pref_evictline_notused(data->proc_id, repl_line_addr, data->pref_loadPC, data->global_hist);
+        pref_evictline_notused(data->proc_id, repl_line_addr, data->pref_loadPC, data->global_hist,
+                               data->prefetcher_id);
 
         STAT_EVENT(data->proc_id, CORE_EVICTED_L1_PREF_NOT_USED);
         STAT_EVENT(data->proc_id, CORE_PREF_L1_NOT_USED);
@@ -3233,7 +3234,7 @@ Flag mlc_fill_line(Mem_Req* req) {
 
     if (data->prefetch) {
       if (!data->seen_prefetch) {  // prefeched line not used
-        pref_evictline_notused(repl_proc_id, repl_line_addr, data->pref_loadPC, data->global_hist);
+        pref_evictline_notused(repl_proc_id, repl_line_addr, data->pref_loadPC, data->global_hist, data->prefetcher_id);
 
         STAT_EVENT(repl_proc_id, CORE_EVICTED_MLC_PREF_NOT_USED);
         INC_STAT_EVENT(repl_proc_id, CORE_MEM_LATENCY_AVE_PREF_NOT_USED, data->mlc_miss_latency);

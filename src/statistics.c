@@ -296,13 +296,13 @@ static void dump_stats_array(uns8 proc_id, Flag final, Stat stat_array[], uns nu
 
       fprintf(file_stream,
               "Cumulative:        Cycles: %-20llu  Instructions: %-20llu  IPC: "
-              "%.5f\n",
+              "%.8f\n",
               cycle_count, inst_count_fetched[proc_id], (double)inst_count_fetched[proc_id] / cycle_count);
       fprintf(file_stream, "\n");
 
       fprintf(file_stream,
               "Periodic:          Cycles: %-20llu  Instructions: %-20llu  IPC: "
-              "%.5f\n",
+              "%.8f\n",
               cycle_count - period_last_cycle_count, inst_count_fetched[proc_id] - period_last_inst_count[proc_id],
               (double)(inst_count_fetched[proc_id] - period_last_inst_count[proc_id]) /
                   (cycle_count - period_last_cycle_count));

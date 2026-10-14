@@ -816,14 +816,6 @@ void full_sim() {
   if (mem) {
     destroy_list(&mem->req_pool_free_list);
 
-    if (mem->l1_in_buffer_core) {
-      for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
-        destroy_list(&mem->l1_in_buffer_core[proc_id]);
-      }
-      free(mem->l1_in_buffer_core);
-      mem->l1_in_buffer_core = NULL;
-    }
-
     mem_destroy_req_pool();
   }
 

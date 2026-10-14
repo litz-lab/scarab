@@ -274,7 +274,6 @@ DEF_PARAM(critical_access_plot_enable, CRITICAL_ACCESS_PLOT_ENABLE, Flag, Flag,
 DEF_PARAM(critical_access_plot_file, CRITICAL_ACCESS_PLOT_FILE, char*, string,
           "critical_access_plot.dat", )
 
-DEF_PARAM(round_robin_to_l1, ROUND_ROBIN_TO_L1, Flag, Flag, FALSE, )
 DEF_PARAM(pref_i_together, PREF_I_TOGETHER, Flag, Flag, FALSE, )
 
 // ONE MORE CACHE LINE

@@ -2716,6 +2716,19 @@ static Flag new_mem_wb_req(Mshr* target, Mem_Req_Type type, uns8 proc_id, Addr a
     case MSHR_MLC_WB:
       new_req->destination = DEST_L1;
       break;
+    case MSHR_L1_WB:
+      /* DRAM's writeback file is entered by sending: it holds the write until DRAM
+         acknowledges it. */
+      new_req->state = MRS_MEM_NEW;
+      if (!ramulator_send(new_req)) {
+        mem_free_req(new_req);
+        return FALSE;
+      }
+      mshr_add(target, new_req);
+      mem_admit_to_level(new_req, target);
+      mem_seq_num++;
+      perf_pred_mem_req_start(new_req);
+      return TRUE;
     default:
       MEM_BAD_FILE(target);
   }
@@ -2735,58 +2748,11 @@ static Flag new_mem_mlc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns s
 }
 
 static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
-                              Flag done_func(Mem_Req*), Counter unique_num)  // This counter is used when op is NULL
-{
-  Mem_Req* new_req = NULL;
-  Counter priority_offset = freq_cycle_count(FREQ_DOMAIN_L1);
-  Counter new_priority;
-  Flag is_sent = FALSE;
-
-  ASSERT(proc_id, type == MRT_WB);
-  ASSERT(proc_id, NULL == done_func);
-  ASSERTM(proc_id, proc_id == get_proc_id_from_cmp_addr(addr), "Proc ID (%d) does not match proc ID in address (%d)!\n",
-          proc_id, get_proc_id_from_cmp_addr(addr));
-  ASSERTM(proc_id, 0 == delay,
-          "does not support non-zero delay, because we will try to send the wb "
-          "request to Ramulator right away");
-
-  new_priority = Mem_Req_Priority_Offset[type] + priority_offset;
-
-  if (CONSTANT_MEMORY_LATENCY || STALL_MEM_REQS_ONLY) {  // not modeling any contention
-    return TRUE;
-  }
-
-  /* Step 3: Not already in request buffer. Figure out if a free request buffer
-   * exists */
-
-  ASSERT(proc_id, type == MRT_WB);
-  /* The LLC's writeback file holds it until DRAM acknowledges the write. */
-  ASSERTM(proc_id, !mshr_line(&mem->l1_wb, addr), "%s: a second writeback to line 0x%s\n", mshr_name(&mem->l1_wb),
-          hexstr64s(addr));
-  if (mshr_full(&mem->l1_wb, addr)) {
-    STAT_EVENT(proc_id, mem_reject_stat(&mem->l1_wb));
-    return FALSE;
-  }
-  new_req = mem_alloc_req(proc_id, type);
-
-  /* Step 5: Allocate a new request buffer -- new_req */
-  mem_init_new_req(new_req, type, proc_id, addr, size, delay, op, done_func, unique_num, new_priority);
-  new_req->state = MRS_MEM_NEW;
-
-  /* Step 6: Try to insert into the Ramulator queue */
-  is_sent = ramulator_send(new_req);
-  if (!is_sent) {
-    mem_free_req(new_req);
-    return FALSE;
-  }
-  ASSERT(new_req->proc_id, new_req->mem_queue_cycle >= new_req->rdy_cycle);
-  DEBUG(new_req->proc_id, "L1 WB request is sent to ramulator\n");
-  mshr_add(&mem->l1_wb, new_req);
-  mem_admit_to_level(new_req, &mem->l1_wb);
-  mem_seq_num++;
-  perf_pred_mem_req_start(new_req);
-
-  return TRUE;
+                              Flag done_func(Mem_Req*), Counter unique_num) {
+  ASSERT(proc_id, type == MRT_WB && !done_func && !delay);
+  if (CONSTANT_MEMORY_LATENCY || STALL_MEM_REQS_ONLY)
+    return TRUE; /* DRAM contention is not modeled */
+  return new_mem_wb_req(&mem->l1_wb, type, proc_id, addr, size, delay, op, done_func, unique_num, FALSE);
 }
 
 /**************************************************************************************/

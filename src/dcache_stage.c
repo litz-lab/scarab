@@ -815,30 +815,23 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
   Flag repl_line_valid;
   data = (Dcache_Data*)get_next_repl_line(&dc->dcache, dc->proc_id, req->addr, &repl_line_addr, &repl_line_valid);
 
-  /* Exclusive hierarchy: a clean victim has no other copy, so it moves down a level as a
-     writeback too, unless it is an unused prefetch and we were asked to drop those. A dirty
-     victim is written back below in either mode. */
-  if (EXCLUSIVE_CACHES && repl_line_valid && !data->dirty) {
-    if (EXCLUSIVE_DROP_UNUSED_PREF && data->HW_prefetch) {
-      STAT_EVENT(dc->proc_id, EXCL_DROP_UNUSED_PREF);
-    } else if (!new_mem_dc_wb_req(MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr,
-                                  DCACHE_LINE_SIZE, 1, NULL, NULL, unique_count, TRUE)) {
-      return NULL;
-    }
-  }
-
-  if (repl_line_valid && data->dirty) {
-    /* need to do a write-back */
-    uns repl_proc_id = get_proc_id_from_cmp_addr(repl_line_addr);
+  /* The victim goes down as a writeback: dirty in either mode, clean too in an exclusive
+     hierarchy (it has no other copy) unless it is an unused prefetch we were asked to drop. */
+  if (repl_line_valid && !data->dirty && EXCLUSIVE_CACHES && EXCLUSIVE_DROP_UNUSED_PREF && data->HW_prefetch) {
+    STAT_EVENT(dc->proc_id, EXCL_DROP_UNUSED_PREF);
+  } else if (repl_line_valid && (data->dirty || EXCLUSIVE_CACHES)) {
     DEBUG(dc->proc_id, "Scheduling writeback of addr:0x%s\n", hexstr64s(repl_line_addr));
-    ASSERT(dc->proc_id, data->read_count[0] || data->read_count[1] || data->write_count[0] || data->write_count[1]);
-    ASSERT(dc->proc_id, repl_line_addr || data->fetched_by_offpath || data->HW_prefetched);
-
-    if (!new_mem_dc_wb_req(MRT_WB, repl_proc_id, repl_line_addr, DCACHE_LINE_SIZE, 1, NULL, NULL, unique_count, TRUE)) {
-      return NULL;
+    if (data->dirty) {
+      ASSERT(dc->proc_id, data->read_count[0] || data->read_count[1] || data->write_count[0] || data->write_count[1]);
+      ASSERT(dc->proc_id, repl_line_addr || data->fetched_by_offpath || data->HW_prefetched);
     }
-    STAT_EVENT(dc->proc_id, DCACHE_WB_REQ_DIRTY);
-    STAT_EVENT(dc->proc_id, DCACHE_WB_REQ);
+    if (!new_mem_dc_wb_req(data->dirty ? MRT_WB : MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr),
+                           repl_line_addr, DCACHE_LINE_SIZE, 1, NULL, NULL, unique_count, TRUE))
+      return NULL;
+    if (data->dirty) {
+      STAT_EVENT(dc->proc_id, DCACHE_WB_REQ_DIRTY);
+      STAT_EVENT(dc->proc_id, DCACHE_WB_REQ);
+    }
   }
 
   // The victim is final past the writeback check (a failed writeback returns

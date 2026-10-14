@@ -154,14 +154,14 @@
 --mlc_present                   1
 --mlc_size                      2097000
 --mlc_assoc                     8
---mlc_cycles                    16
+--mlc_cycles                    11  # L2 load-use 16 = AGEN(1) + dcache 4 + 11
 
 
 ### LLC
 # 3 MiB per core, 16-way
 --l1_size                       3145728
 --l1_banks                      8
---l1_cycles		                36          // just a guess
+--l1_cycles		                66          # L3 load-use 86 = L2 16 + 4 transfer/fill + 66
 --l1_assoc                      16
 --l1_line_size                  64
 --l1_interleave_factor          64

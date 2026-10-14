@@ -2673,10 +2673,14 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
   /* An LLC prefetch that missed has no next level to be looked up in. */
   if (to_dram) {
+    ASSERT(proc_id, mem_req_type_is_prefetch(type));
     if (!mem_enter_dram(new_req)) {
       mem_free_req(new_req);
       return FALSE;
     }
+    /* It skips the LLC lookup, where every other prefetch that goes to DRAM is counted sent. */
+    pref_sent(proc_id, addr, new_req->prefetcher_id, destination);
+    STAT_EVENT(proc_id, BUS_PREF_ACCESS);
     return TRUE;
   }
 

@@ -1225,8 +1225,9 @@ HWP_DynAggr pref_get_degfb(uns8 proc_id, uns8 prefetcher_id) {
             pref_table[prefetcher_id].hwp_info->dyn_degree_core[proc_id]--;
         } else {  // TIMELY WITH LOW POL
           STAT_EVENT(proc_id, PREF_ACC4_HT_LP);
-          //		    ret = AGGR_STAY; // MAYBE DEC FOR BW
-          ret = AGGR_STAY;
+          ret = AGGR_DEC;
+          if (pref_table[prefetcher_id].hwp_info->dyn_degree_core[proc_id] > 0)
+            pref_table[prefetcher_id].hwp_info->dyn_degree_core[proc_id]--;
         }
       } else {
         if (pol > PREF_POLPF_THRESH) {  // NOT TIMELY WITH HIGH POL

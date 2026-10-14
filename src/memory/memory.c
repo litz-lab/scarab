@@ -2062,8 +2062,11 @@ static void mem_merge_at_level(Mshr* level, Mem_Req* req) {
      waits on was late. */
   Mem_Req* fetcher = mshr_line_first(line);
   if (mem_req_type_is_demand(req->type) && !mem_req_type_is_demand(fetcher->type)) {
-    if (!fetcher->demand_match_prefetch)
+    if (!fetcher->demand_match_prefetch) {
       mem_record_late_prefetch(fetcher);
+      pref_ul1_pref_hit_late(fetcher->proc_id, fetcher->addr, fetcher->loadPC, fetcher->global_hist,
+                             fetcher->prefetcher_id);
+    }
     fetcher->demand_match_prefetch = TRUE;
   }
   fetcher->priority = MIN2(fetcher->priority, req->priority);

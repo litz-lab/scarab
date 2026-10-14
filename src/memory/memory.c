@@ -141,6 +141,7 @@ static void mem_process_completed_reqs(void);
 
 static Flag mem_process_mlc_miss_access(Mem_Req* req, Addr* line_addr, MLC_Data* data);
 static void mem_complete_mlc_access(Mem_Req* req);
+static void mem_serve_from_wb(Mem_Req* req, Mshr* entering);
 static Flag mem_process_l1_miss_access(Mem_Req* req, Addr* line_addr, L1_Data* data);
 static void mem_complete_l1_access(Mem_Req* req);
 
@@ -1338,9 +1339,18 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Addr* line_addr, MLC_Data*
     /* Nothing waits on a writeback. */
     ASSERT(req->proc_id, !req->done_func);
     STAT_EVENT(req->proc_id, WB_MLC_MISS_FILL_MLC);  // CMP remove this later
+    /* The MLC's own writeback of the line has not left: this newer copy takes its place. */
+    Mshr_Line* pending = mshr_line(&mem->mlc_wb, req->addr);
+    if (pending && mshr_line_first(pending)->type == MRT_WB)
+      req->type = MRT_WB;
     if (!mlc_fill_line(req)) {
       req->rdy_cycle = cycle_count + 1;
       return FALSE;
+    }
+    if (pending) {
+      Mem_Req* wb = mshr_line_first(pending);
+      mshr_remove(&mem->mlc_wb, wb);
+      mem_free_req(wb);
     }
     if (MLC_WRITE_THROUGH && req->type == MRT_WB) {
       req->state = MRS_L1_NEW;
@@ -1594,6 +1604,21 @@ static void mem_complete_l1_access(Mem_Req* req) {
   }
 }
 
+/* Served from entering's writeback file: the line comes back into the cache, so the
+   writeback is cancelled and the line keeps its dirty bit -- one home again, and its next
+   eviction writes it back. The fill walk delivers it next cycle. */
+static void mem_serve_from_wb(Mem_Req* req, Mshr* entering) {
+  Mshr* wb_file = mem_wb_file(entering);
+  Mem_Req* wb = mshr_line_first(mshr_line(wb_file, req->addr));
+  req->dirty_l0 |= (wb->type == MRT_WB);
+  mshr_remove(wb_file, wb);
+  mem_free_req(wb);
+  mshr_add(entering, req);
+  req->state = MRS_WB_HIT_DONE;
+  req->rdy_cycle = cycle_count + 1;
+  mshr_line_ready(entering, mshr_line(entering, req->addr), cycle_count + 1);
+}
+
 /**************************************************************************************/
 /* mem_complete_mlc_access: */
 
@@ -1640,6 +1665,14 @@ static void mem_complete_mlc_access(Mem_Req* req) {
     Flag mlc_miss_access = mem_process_mlc_miss_access(req, &line_addr, data);
     if (mlc_miss_access && mlc_miss_send_l1) {
       DEBUG(req->proc_id, "mlc miss request is inserted to l1 mshr rc:%d\n", mem->req_count);
+
+      /* The MLC evicted the line but its writeback has not left: serve it from there. */
+      if (mshr_line(&mem->mlc_wb, req->addr)) {
+        ASSERT(req->proc_id, req->type != MRT_WB && req->type != MRT_WB_NODIRTY);
+        STAT_EVENT(req->proc_id, MEM_REQ_WB_FORWARD);
+        mem_serve_from_wb(req, &mem->mlc_mshr);
+        return;
+      }
 
       /* Entering the LLC: if the line already has an entry there, it waits on it. */
       if ((req->type != MRT_WB) && (req->type != MRT_WB_NODIRTY) && mshr_line(&mem->mlc_mshr, req->addr)) {
@@ -2658,19 +2691,8 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   }
 
   if (from_wb) {
-    /* Served from the writeback: the line comes back into the cache, so the writeback
-       is cancelled and the line keeps its dirty bit -- one home again, and its next
-       eviction writes it back. The fill walk delivers it next cycle. */
-    Mshr* wb_file = mem_wb_file(entering);
-    Mem_Req* wb = mshr_line_first(mshr_line(wb_file, addr));
-    new_req->dirty_l0 |= (wb->type == MRT_WB);
-    mshr_remove(wb_file, wb);
-    mem_free_req(wb);
-    mshr_add(entering, new_req);
-    new_req->state = MRS_WB_HIT_DONE;
-    new_req->rdy_cycle = cycle_count + 1;
     ASSERT(proc_id, entering == mem_core_file(proc_id, type));
-    mshr_line_ready(entering, mshr_line(entering, addr), cycle_count + 1);
+    mem_serve_from_wb(new_req, entering);
     return TRUE;
   }
 

@@ -293,13 +293,14 @@ void pref_dl0_hit(Addr line_addr, Addr load_PC) {
   }
 }
 
-// FIXME LATER
-void pref_dl0_pref_hit(Addr line_addr, Addr load_PC, uns8 prefetcher_id) {
+void pref_dl0_pref_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns8 prefetcher_id) {
   int ii;
   if (!PREF_FRAMEWORK_ON)
     return;
   if (prefetcher_id == 0)
     return;
+
+  pref_table[prefetcher_id].hwp_info->curr_useful_core[proc_id]++;
 
   if (PREF_DL0_HIT_ON) {
     for (ii = 0; ii < pref_table_size; ii++) {

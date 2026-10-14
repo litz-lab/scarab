@@ -193,7 +193,7 @@ void pref_per_core_done(uns proc_id);
 
 void pref_dl0_miss(Addr line_addr, Addr load_PC);
 void pref_dl0_hit(Addr line_addr, Addr load_PC);
-void pref_dl0_pref_hit(Addr line_addr, Addr load_PC, uns8 prefetcher_id);
+void pref_dl0_pref_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns8 prefetcher_id);
 
 void pref_umlc_miss(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist);
 void pref_umlc_hit(uns8 proc_id, Addr line_addr, Addr load_PC, uns32 global_hist);

@@ -1006,8 +1006,8 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
 
 /**************************************************************************************/
 /* icache_demote_victim: */
-/* Exclusive hierarchy: the line this fill is about to evict moves down a level
-   instead of vanishing. Without this, instruction lines -- which skip the MLC and
+/* Exclusive hierarchy: the line this fill is about to evict moves down a level, as a
+   writeback, instead of vanishing. Without this, instruction lines -- which skip the MLC and
    LLC on fill (see mlc_fill_line/l1_fill_line) -- have no backing store at all. */
 
 static inline void icache_demote_victim(Addr fill_addr) {
@@ -1019,7 +1019,8 @@ static inline void icache_demote_victim(Addr fill_addr) {
 
   get_next_repl_line(&ic->icache, ic->proc_id, fill_addr, &repl_line_addr, &repl_line_valid);
   if (repl_line_valid)
-    mem_demote_to_mlc(get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr, FALSE, FALSE, FALSE);
+    new_mem_dc_wb_req(MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr, ICACHE_LINE_SIZE, 1,
+                      NULL, NULL, unique_count, TRUE);
 }
 
 /**************************************************************************************/

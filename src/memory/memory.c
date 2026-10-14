@@ -753,7 +753,8 @@ static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr) {
       mem->uncores[req->proc_id].num_outstanding_l1_misses++;
       return;
     case MSHR_L1_WB:
-      ASSERTM(req->proc_id, FALSE, "LLC writebacks go to Ramulator directly (new_mem_l1_wb_req)\n");
+      /* Held until DRAM acknowledges the write; not a miss, so not in the MLP count. */
+      ASSERT(req->proc_id, req->state == MRS_MEM_NEW);
       return;
     default:
       MEM_BAD_FILE(mshr);
@@ -1276,8 +1277,6 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Addr* line_addr, L1_Data* d
   if ((req->type == MRT_WB) || (req->type == MRT_WB_NODIRTY)) {
     // if the request is a write back request then the processor just insert the
     // request to the L1 cache
-    if (req->type == MRT_WB_NODIRTY)
-      WARNING(0, "CMP: A WB_NODIRTY request found! Check it out!");
 
     /* Nothing waits on a writeback. */
     ASSERT(req->proc_id, !req->done_func);
@@ -1362,8 +1361,6 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Addr* line_addr, MLC_Data*
   if ((req->type == MRT_WB) || (req->type == MRT_WB_NODIRTY)) {
     // if the request is a write back request then the processor just insert the
     // request to the MLC cache
-    if (req->type == MRT_WB_NODIRTY)
-      WARNING(0, "CMP: A WB_NODIRTY request found! Check it out!");
 
     /* Nothing waits on a writeback. */
     ASSERT(req->proc_id, !req->done_func);
@@ -1846,16 +1843,28 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
   ASSERT(req->proc_id, !EXCLUSIVE_CACHES || fill_req_is_wb(req) ||
                            fill_inserts_at_l1(req) + fill_inserts_at_mlc(req) + fill_inserts_at_dcache(req) == 1);
 
-  req->state = MRS_FILL_L1;
-  Mshr_Line* line = mshr_line(&mem->l1_mshr, req->addr);
+  /* A read's data, or DRAM's acknowledgement of an LLC writeback: the line left the
+     LLC, so a writeback has nothing to fill and is done. */
+  Mshr* file = mem_file_of(req, &mem->l1_mshr);
+  switch (file->file) {
+    case MSHR_L1:
+      req->state = MRS_FILL_L1;
+      ASSERT(req->proc_id, mem->uncores[req->proc_id].num_outstanding_l1_misses > 0);
+      mem->uncores[req->proc_id].num_outstanding_l1_misses--;
+      break;
+    case MSHR_L1_WB:
+      req->state = MRS_FILL_DONE;
+      break;
+    default:
+      MEM_BAD_FILE(file);
+  }
+  Mshr_Line* line = mshr_line(file, req->addr);
   ASSERT(req->proc_id, line && mshr_line_first(line) == req);
 
   /* Crossing frequency domain boundary between the chip and memory controller, plus
      the cycle the line used to spend being handed from the l1 fill mshr to the mlc
      one. Two here reproduces the old end-to-end fill latency on both paths. */
   req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + 2;
-  ASSERT(req->proc_id, mem->uncores[req->proc_id].num_outstanding_l1_misses > 0);
-  mem->uncores[req->proc_id].num_outstanding_l1_misses--;
 
   if (!CONSTANT_MEMORY_LATENCY && !PERF_PRED_REQS_FINISH_AT_FILL)
     perf_pred_mem_req_done(req);
@@ -1877,8 +1886,8 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
     }
   }
 
-  /* The line's data is at the LLC's file; the fill walk takes it from there. */
-  mshr_line_ready(&mem->l1_mshr, line, req->rdy_cycle);
+  /* The fill walk takes it from DRAM's file. */
+  mshr_line_ready(file, line, req->rdy_cycle);
 }
 
 /* The file a request goes on to above this one, or NULL if this level finishes it. */
@@ -1893,6 +1902,7 @@ static inline Mshr* mem_file_above(Mem_Req* req, Mshr* mshr) {
       break;
     case MSHR_ICACHE:
     case MSHR_DCACHE:
+    case MSHR_L1_WB:
       break;
     default:
       MEM_BAD_FILE(mshr);
@@ -1938,6 +1948,8 @@ static void mem_fill_line_at(Mshr* mshr, Mshr_Line* line) {
     case MSHR_ICACHE:
     case MSHR_DCACHE:
       break; /* done_func fills the L1 cache */
+    case MSHR_L1_WB:
+      break; /* acknowledged: the line left the LLC, nothing to fill */
     default:
       MEM_BAD_FILE(mshr);
   }
@@ -1997,6 +2009,7 @@ static void mem_walk_fills(Mshr* mshr) {
 
 static void mem_process_completed_reqs(void) {
   mem_walk_fills(&mem->l1_mshr);
+  mem_walk_fills(&mem->l1_wb);
   mem_walk_fills(&mem->mlc_mshr);
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     mem_walk_fills(&mem->uncores[proc_id].dcache_mshr);
@@ -2744,6 +2757,18 @@ static Flag new_mem_wb_req(Mshr* target, Mem_Req_Type type, uns8 proc_id, Addr a
   mem_init_new_req(new_req, type, proc_id, addr, size, delay, op, done_func, unique_num,
                    Mem_Req_Priority_Offset[type] + freq_cycle_count(FREQ_DOMAIN_L1));
   new_req->wb_used_onpath = used_onpath;
+  /* A writeback is inserted at the level it goes to, which is what an exclusive
+     hierarchy's fill_inserts_at_* read. */
+  switch (target->file) {
+    case MSHR_DCACHE_WB:
+      new_req->destination = DEST_MLC;
+      break;
+    case MSHR_MLC_WB:
+      new_req->destination = DEST_L1;
+      break;
+    default:
+      MEM_BAD_FILE(target);
+  }
   mem_insert_req_into_mshr(new_req, target);
   return TRUE;
 }
@@ -2785,6 +2810,13 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
    * exists */
 
   ASSERT(proc_id, type == MRT_WB);
+  /* The LLC's writeback file holds it until DRAM acknowledges the write. */
+  ASSERTM(proc_id, !mshr_line(&mem->l1_wb, addr), "%s: a second writeback to line 0x%s\n", mshr_name(&mem->l1_wb),
+          hexstr64s(addr));
+  if (mshr_full(&mem->l1_wb, addr)) {
+    STAT_EVENT(proc_id, mem_reject_stat(&mem->l1_wb));
+    return FALSE;
+  }
   new_req = mem_alloc_req(proc_id, type);
 
   /* Step 5: Allocate a new request buffer -- new_req */
@@ -2800,11 +2832,10 @@ static Flag new_mem_l1_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns si
     } else {
       ASSERT(new_req->proc_id, new_req->mem_queue_cycle >= new_req->rdy_cycle);
       DEBUG(new_req->proc_id, "L1 WB request is sent to ramulator\n");
-
+      mshr_add(&mem->l1_wb, new_req);
+      mem_admit_to_level(new_req, &mem->l1_wb);
       mem_seq_num++;
       perf_pred_mem_req_start(new_req);
-
-      mem_free_req(new_req);
     }
   } else {
     Mem_Req** req_ptr = sl_list_add_tail(&mem->l1_in_buffer_core[proc_id]);
@@ -2866,7 +2897,9 @@ Flag l1_fill_line(Mem_Req* req) {
      core, so drop this fill rather than make a second copy. */
   if (EXCLUSIVE_CACHES) {
     Addr dup_addr;
-    if (cache_access(&MLC(req->proc_id)->cache, req->addr, &dup_addr, FALSE)) {
+    MLC_Data* dup = (MLC_Data*)cache_access(&MLC(req->proc_id)->cache, req->addr, &dup_addr, FALSE);
+    if (dup) {
+      dup->dirty |= (req->type == MRT_WB);
       STAT_EVENT(req->proc_id, EXCL_FILL_DUP_SKIPPED_LLC);
       l1_miss_is_satisfied(req);
       return TRUE;
@@ -2877,6 +2910,17 @@ Flag l1_fill_line(Mem_Req* req) {
        invalidate closes the pair on the next hit. */
     if (cache_access(&cmp_model.dcache_stage[req->proc_id].dcache, req->addr, &dup_addr, FALSE))
       STAT_EVENT(req->proc_id, EXCL_FILL_DUP_L0_LLC);
+  }
+
+  /* The fill writes the array, so it needs the write bank -- the same one a writeback
+     wants. A writeback already took it for this level's lookup and is that same write,
+     so it does not pay twice. A refused fill leaves the line ready to retry. */
+  if (!fill_req_is_wb(req)) {
+    if (!get_write_port(&L1(req->proc_id)->ports[req->l1_bank])) {
+      STAT_EVENT(req->proc_id, L1_FILL_BANK_BLOCK);
+      return FAILURE;
+    }
+    STAT_EVENT(req->proc_id, L1_FILL_BANK_AVAIL);
   }
 
   L1_Data* data;
@@ -3175,106 +3219,6 @@ Flag l1_fill_line(Mem_Req* req) {
 }
 
 /**************************************************************************************/
-/* mem_demote_probe / mem_demote_commit / mem_demote_to_mlc: */
-
-/* Exclusive hierarchy: probe one level for a demotion. Returns FALSE when the line is
-   already there and must not be inserted again. Otherwise reports the line the insert
-   would displace -- cache_insert reuses the entry, so the caller needs a snapshot
-   rather than a pointer. */
-static Flag mem_demote_probe(Cache* cache, uns8 proc_id, Addr line_addr, Flag dirty, Stat_Enum present_stat,
-                             Addr* victim_addr, L1_Data* victim_out, Flag* victim_valid_out) {
-  Addr probe_addr;
-  /* update_repl is asked for so that a line already resident here is promoted to most
-     recently used: the level above just evicted it, which makes it the freshest thing at
-     this level, and leaving it at its old position ages it out as though it were cold.
-     cache_access() only touches replacement state on a tag match, so the probe below
-     still does not perturb anything when the line is absent. */
-  L1_Data* resident = (L1_Data*)cache_access(cache, line_addr, &probe_addr, TRUE);
-  if (resident) {
-    /* The demoted copy is the newer one, so the resident line is stale: its dirty bit has
-       to absorb ours or the write is lost. Same rule the inclusive writeback paths use on
-       a hit -- OR the dirty bit in, never invalidate. */
-    STAT_EVENT(proc_id, present_stat);
-    if (dirty && !resident->dirty) {
-      resident->dirty = TRUE;
-      STAT_EVENT(proc_id, EXCL_DEMOTE_PRESENT_DIRTY);
-    }
-    return FALSE;
-  }
-
-  Flag repl_line_valid;
-  L1_Data* victim = (L1_Data*)get_next_repl_line(cache, proc_id, line_addr, victim_addr, &repl_line_valid);
-  *victim_valid_out = repl_line_valid && victim;
-  if (*victim_valid_out)
-    *victim_out = *victim;
-
-  return TRUE;
-}
-
-static void mem_demote_commit(Cache* cache, uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, Flag seen_prefetch,
-                              Stat_Enum demote_stat) {
-  Addr insert_addr, victim_addr;
-  L1_Data* data = (L1_Data*)cache_insert(cache, proc_id, line_addr, &insert_addr, &victim_addr);
-  data->proc_id = proc_id;
-  data->dirty = dirty;
-  data->prefetch = prefetch;
-  data->seen_prefetch = seen_prefetch;
-  STAT_EVENT(proc_id, demote_stat);
-}
-
-/* Exclusive hierarchy: move a line out of the core caches and down into the MLC, which
-   chains its own victim into the LLC, whose victim leaves the hierarchy for memory. Only
-   that last step can be refused, and by then no insert can be undone -- so the whole
-   cascade is probed first and nothing moves unless memory accepts the writeback. Returns
-   FALSE when it was refused, which the caller must treat as "retry later". */
-Flag mem_demote_to_mlc(uns8 proc_id, Addr line_addr, Flag dirty, Flag prefetch, Flag seen_prefetch) {
-  Addr mlc_victim_addr;
-  L1_Data mlc_victim;
-  Flag mlc_evicts = FALSE;
-
-  /* An LLC-destined prefetch never probes the core's caches, so the LLC can hold a line
-     the dcache also has. Demoting that line would make a second copy in the MLC, turning a
-     duplicate the LLC prefetcher cannot avoid into one the uncore can: the line already
-     has a home below, so leave it there and just carry the dirty bit down.
-
-     Only worth doing when a promotion invalidates, which is what keeps such pairs rare.
-     Without it every line ever served from the LLC keeps that copy for good, so this test
-     would match on half of all demotions and starve the MLC of the victims it exists to
-     hold -- and an MLC/LLC duplicate is the accepted policy in that mode anyway. */
-  if (EXCLUSIVE_PROMOTE_INVALIDATE &&
-      !mem_demote_probe(&L1(proc_id)->cache, proc_id, line_addr, dirty, EXCL_DEMOTE_LLC_PRESENT, &mlc_victim_addr,
-                        &mlc_victim, &mlc_evicts))
-    return TRUE;
-
-  if (!mem_demote_probe(&MLC(proc_id)->cache, proc_id, line_addr, dirty, EXCL_DEMOTE_MLC_PRESENT, &mlc_victim_addr,
-                        &mlc_victim, &mlc_evicts))
-    return TRUE;
-
-  Addr llc_victim_addr;
-  L1_Data llc_victim;
-  Flag llc_evicts = FALSE, llc_inserts = FALSE;
-  if (mlc_evicts)
-    llc_inserts = mem_demote_probe(&L1(proc_id)->cache, proc_id, mlc_victim_addr, mlc_victim.dirty,
-                                   EXCL_DEMOTE_LLC_PRESENT, &llc_victim_addr, &llc_victim, &llc_evicts);
-
-  if (llc_inserts && llc_evicts && llc_victim.dirty) {
-    if (!new_mem_l1_wb_req(MRT_WB, get_proc_id_from_cmp_addr(llc_victim_addr), llc_victim_addr, L1_LINE_SIZE, 0, NULL,
-                           NULL, unique_count)) {
-      STAT_EVENT(proc_id, EXCL_DEMOTE_WB_REFUSED);
-      return FALSE;
-    }
-    STAT_EVENT(proc_id, EXCL_DIRTY_LLC_WRITTEN_BACK);
-  }
-
-  mem_demote_commit(&MLC(proc_id)->cache, proc_id, line_addr, dirty, prefetch, seen_prefetch, EXCL_DEMOTE_DC_TO_MLC);
-  if (llc_inserts)
-    mem_demote_commit(&L1(proc_id)->cache, proc_id, mlc_victim_addr, mlc_victim.dirty, mlc_victim.prefetch,
-                      mlc_victim.seen_prefetch, EXCL_DEMOTE_MLC_TO_LLC);
-
-  return TRUE;
-}
-
-/**************************************************************************************/
 /* mlc_fill_line: */
 
 /* The MLC's half of the same rule: the miss is satisfied when the line arrives, so
@@ -3304,11 +3248,25 @@ Flag mlc_fill_line(Mem_Req* req) {
   }
   if (EXCLUSIVE_CACHES) {
     Addr dup_addr;
-    if (cache_access(&L1(req->proc_id)->cache, req->addr, &dup_addr, FALSE)) {
+    L1_Data* dup = (L1_Data*)cache_access(&L1(req->proc_id)->cache, req->addr, &dup_addr, FALSE);
+    if (dup) {
+      /* A writeback is the newer copy: the resident line keeps its dirty bit. */
+      dup->dirty |= (req->type == MRT_WB);
       STAT_EVENT(req->proc_id, EXCL_FILL_DUP_SKIPPED_MLC);
       mlc_miss_is_satisfied(req);
       return TRUE;
     }
+  }
+
+  /* The fill writes the array, so it needs the write bank -- the same one a writeback
+     wants. A writeback already took it for this level's lookup and is that same write,
+     so it does not pay twice. A refused fill leaves the line ready to retry. */
+  if (!fill_req_is_wb(req)) {
+    if (!get_write_port(&MLC(req->proc_id)->ports[req->mlc_bank])) {
+      STAT_EVENT(req->proc_id, MLC_FILL_BANK_BLOCK);
+      return FAILURE;
+    }
+    STAT_EVENT(req->proc_id, MLC_FILL_BANK_AVAIL);
   }
 
   MLC_Data* data;
@@ -3352,6 +3310,10 @@ Flag mlc_fill_line(Mem_Req* req) {
       if (!new_mem_mlc_wb_req(MRT_WB, repl_proc_id, repl_line_addr, MLC_LINE_SIZE, 1, NULL, NULL, unique_count))
         return FAILURE;
       STAT_EVENT(req->proc_id, MLC_FILL_DIRTY);
+    } else if (EXCLUSIVE_CACHES) {
+      /* Exclusive: a clean victim has no other copy, so it moves down too. */
+      if (!new_mem_mlc_wb_req(MRT_WB_NODIRTY, repl_proc_id, repl_line_addr, MLC_LINE_SIZE, 1, NULL, NULL, unique_count))
+        return FAILURE;
     }
 
     if (data->prefetch) {

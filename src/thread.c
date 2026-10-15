@@ -148,15 +148,15 @@ void thread_map_op(Op* op) {
 }
 
 /**************************************************************************************/
-/* thread_map_mem_dep: sets the dependencies in the thread Op_Info struct */
+/* thread_map_op_lookahead: sets the dependencies of an on-path op at FT build */
 
-void thread_map_mem_dep(Op* op) {
+void thread_map_op_lookahead(Op* op) {
   ASSERT(td->proc_id, map_data == &td->map_data);
   ASSERT(td->proc_id, td->proc_id == map_data->proc_id);
   ASSERT(td->proc_id, td->proc_id == op->proc_id);
-  /* call map.c map_op, which will use the thread's map data to set
-     the dependency information in op->thread_info */
-  map_mem_dep(op);
+  /* call map.c map_op_lookahead, which will use the thread's lookahead map
+     to set the dependency information in op->thread_info */
+  map_op_lookahead(op);
 }
 
 /**************************************************************************************/

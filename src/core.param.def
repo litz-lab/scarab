@@ -397,3 +397,4 @@ DEF_PARAM(dfe3_stop_policy, DFE3_STOP_POLICY, uns, uns, 1, )
 DEF_PARAM(dfe4_stop_policy, DFE4_STOP_POLICY, uns, uns, 1, )
 
 DEF_PARAM(lookahead_buf_size, LOOKAHEAD_BUF_SIZE, uns, uns, 0, )
+DEF_PARAM(map_lookahead, MAP_LOOKAHEAD, Flag, Flag, FALSE, )

@@ -44,16 +44,29 @@ typedef struct Map_Entry_struct {
   Counter unique_num; /* unique number of the last op to write (not cleared, only overwritten) */
 } Map_Entry;
 
+typedef struct Map_Dep_struct {
+  // last op to write each register, read as REG_DATA_DEP
+  Map_Entry reg[NUM_REG_IDS];
+
+  // last store, read as MEM_ADDR_DEP by mem ops (only when !MEM_OOO_STORES)
+  Map_Entry last_store;
+} Map_Dep;
+
 typedef struct Map_Data_struct {
-  /* store information about the last op to write each register */
   uns8 proc_id;
-  Map_Entry reg_map[NUM_REG_IDS * 2];
-  Flag map_flags[NUM_REG_IDS];
 
-  Map_Entry last_store[2];
-  Flag last_store_flag;
-
+  /* Fetch map for ops in fetch order, on-path and off-path writers kept apart */
+  Map_Dep onpath_map;
+  Map_Dep offpath_map;
   Hash_Table oracle_mem_hash;
+
+  /* Set when the latest writer is in offpath_map, cleared on recovery */
+  Flag offpath_reg_valid[NUM_REG_IDS];
+  Flag offpath_last_store_valid;
+
+  /* Lookahead map for on-path ops only, mapped in program order when their FT is built */
+  Map_Dep lookahead_map;
+  Hash_Table lookahead_mem_hash;
 
   Wake_Up_Entry* free_list_head;
   uns wake_up_entries;
@@ -71,19 +84,22 @@ extern Map_Data* map_data;
 /**************************************************************************************/
 /* Prototypes */
 
+// vanilla api
 Map_Data* set_map_data(Map_Data*);
 void init_map(uns8);
 void recover_map(void);
-void rebuild_offpath_map(void);
 void reset_map(void);
+
+// dependency tracking
+void map_op_lookahead(Op*);
 void map_op(Op*);
-void map_mem_dep(Op*);
+void delete_store_hash_entry(Op*);
+
+// wake up management
 void wake_up_ops(Op*, Dep_Type, void (*)(Op*, Op*, uns));
 void free_wake_up_list(Op*);
 void add_to_wake_up_lists(Op*, void (*)(Op*, Op*, uns));
-
 void simple_wake(Op*, Op*, uns);
-void delete_store_hash_entry(Op*);
 
 /**************************************************************************************/
 

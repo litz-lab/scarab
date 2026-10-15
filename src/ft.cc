@@ -40,6 +40,8 @@
 extern "C" {
 #include "bp/bp_targ_mech.h"
 #include "frontend/frontend.h"
+
+#include "thread.h"
 }
 #include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
@@ -204,6 +206,8 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
     op->bp_pred_main.pred_npc = op->oracle_info.npc;
     op->bp_pred_main.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     add_op(op);
+    if (MAP_LOOKAHEAD && bp_id == MAIN_BP && !off_path)
+      thread_map_op_lookahead(op);
     if (off_path) {
       bp_predict_btb(g_bp_data, op);
       if (bp_l0_enabled())

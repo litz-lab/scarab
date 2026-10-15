@@ -838,7 +838,7 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
   // NULL above and the fill retries). A prefetched line evicted with
   // HW_prefetch still set was never demand-used.
   if (repl_line_valid && data->HW_prefetch) {
-    pref_evictline_notused(dc->proc_id, repl_line_addr, data->pref_loadPC, data->global_hist);
+    pref_evictline_notused(dc->proc_id, repl_line_addr, data->pref_loadPC, data->global_hist, data->prefetcher_id);
     STAT_EVENT(dc->proc_id, PREF_DCACHE_TOTAL_NOT_USED);
     STAT_EVENT(dc->proc_id, CORE_PREF_DCACHE_NOT_USED);
   } else if (repl_line_valid && data->HW_prefetched) {

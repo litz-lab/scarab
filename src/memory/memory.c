@@ -2062,8 +2062,11 @@ static void mem_merge_at_level(Mshr* level, Mem_Req* req) {
      waits on was late. */
   Mem_Req* fetcher = mshr_line_first(line);
   if (mem_req_type_is_demand(req->type) && !mem_req_type_is_demand(fetcher->type)) {
-    if (!fetcher->demand_match_prefetch)
+    if (!fetcher->demand_match_prefetch) {
       mem_record_late_prefetch(fetcher);
+      pref_ul1_pref_hit_late(fetcher->proc_id, fetcher->addr, fetcher->loadPC, fetcher->global_hist,
+                             fetcher->prefetcher_id);
+    }
     fetcher->demand_match_prefetch = TRUE;
   }
   fetcher->priority = MIN2(fetcher->priority, req->priority);
@@ -2673,10 +2676,14 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
   /* An LLC prefetch that missed has no next level to be looked up in. */
   if (to_dram) {
+    ASSERT(proc_id, mem_req_type_is_prefetch(type));
     if (!mem_enter_dram(new_req)) {
       mem_free_req(new_req);
       return FALSE;
     }
+    /* It skips the LLC lookup, where every other prefetch that goes to DRAM is counted sent. */
+    pref_sent(proc_id, addr, new_req->prefetcher_id, destination);
+    STAT_EVENT(proc_id, BUS_PREF_ACCESS);
     return TRUE;
   }
 
@@ -2898,7 +2905,8 @@ Flag l1_fill_line(Mem_Req* req) {
     if (data->prefetch) {
       uns log2_distance = data->pref_distance ? MIN2(LOG2(data->pref_distance), 6) : 0;
       if (!data->seen_prefetch) {  // prefeched line not used
-        pref_evictline_notused(data->proc_id, repl_line_addr, data->pref_loadPC, data->global_hist);
+        pref_evictline_notused(data->proc_id, repl_line_addr, data->pref_loadPC, data->global_hist,
+                               data->prefetcher_id);
 
         STAT_EVENT(data->proc_id, CORE_EVICTED_L1_PREF_NOT_USED);
         STAT_EVENT(data->proc_id, CORE_PREF_L1_NOT_USED);
@@ -3226,7 +3234,7 @@ Flag mlc_fill_line(Mem_Req* req) {
 
     if (data->prefetch) {
       if (!data->seen_prefetch) {  // prefeched line not used
-        pref_evictline_notused(repl_proc_id, repl_line_addr, data->pref_loadPC, data->global_hist);
+        pref_evictline_notused(repl_proc_id, repl_line_addr, data->pref_loadPC, data->global_hist, data->prefetcher_id);
 
         STAT_EVENT(repl_proc_id, CORE_EVICTED_MLC_PREF_NOT_USED);
         INC_STAT_EVENT(repl_proc_id, CORE_MEM_LATENCY_AVE_PREF_NOT_USED, data->mlc_miss_latency);

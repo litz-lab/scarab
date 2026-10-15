@@ -65,11 +65,13 @@ struct HWP_Info_struct {
   Counter* useful_core;  // num of useful prefetches per core
   Counter* sent_core;    // num of sent prefetches per core
   Counter* late_core;    // num of late prefetches per core
+  Counter* unused_core;  // num of prefetched lines evicted unused per core
 
   // These are the counts for the current time slice
   Counter* curr_useful_core;  // num of Useful prefetches in currect per core
   Counter* curr_sent_core;
   Counter* curr_late_core;
+  Counter* curr_unused_core;
 
   uns* dyn_degree_core;
 };
@@ -258,7 +260,7 @@ float pref_get_replaccuracy(uns8 prefetcher_id);
 
 int pref_compare_prefloadhash(const void* const a, const void* const b);
 
-void pref_evictline_notused(uns8 proc_id, Addr addr, Addr loadPC, uns32 global_hist);
+void pref_evictline_notused(uns8 proc_id, Addr addr, Addr loadPC, uns32 global_hist, uns8 prefetcher_id);
 void pref_evictline_used(uns8 proc_id, Addr addr, Addr loadPC, uns32 global_hist);
 Flag pref_hfilter_pred_useless(uns8 proc_id, Addr addr, Addr loadPC, uns32 global_hist);
 void pref_hfilter_pht_reset(void);

@@ -367,8 +367,6 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
 
   op->op_num = op_count[proc_id];
   op->inst_uid = trace_uop->inst_uid;
-  op->unique_num = unique_count;
-  op->unique_num_per_proc = unique_count_per_core[proc_id];
   op->proc_id = proc_id;
   op->eom = trace_uop->eom;
   op->fetched_instruction = fetched_instruction[proc_id];

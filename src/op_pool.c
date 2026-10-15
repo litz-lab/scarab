@@ -246,8 +246,8 @@ void op_pool_setup_op(uns proc_id, Op* op) {
   size_t clear_off = offsetof(Op, proc_id);
   memset((char*)op + clear_off, 0, sizeof(*op) - clear_off);
   op->op_num = op_count[proc_id];
-  op->unique_num = unique_count;
-  op->unique_num_per_proc = unique_count_per_core[proc_id];
+  op->unique_num = unique_count++;
+  op->unique_num_per_proc = unique_count_per_core[proc_id]++;
   op->proc_id = proc_id;
   op->state = OS_FETCHED;
   op->fu_num = -1;

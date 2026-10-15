@@ -112,9 +112,13 @@ const char* const dep_type_names[NUM_DEP_TYPES] = {
 /**************************************************************************************/
 /* Static prototypes */
 
-static inline void read_reg_map(Op*);
-static inline void read_store_map(Op*);
-static inline void update_map(Op*);
+static inline void reset_map_dep(Map_Dep* map);
+static inline void read_reg_map(Op* op, Map_Dep* map, Map_Dep* offpath_map);
+static inline void read_store_map(Op* op, Map_Dep* map, Map_Dep* offpath_map);
+static inline void update_map_dep(Op* op, Map_Dep* map);
+static inline void map_op_read(Op* op, Map_Dep* map, Map_Dep* offpath_map, Hash_Table* mem_hash);
+static inline void map_op_update(Op* op, Map_Dep* map, Hash_Table* mem_hash);
+static inline void update_offpath_valid(Op* op);
 
 static inline void expand_wake_up_entries(void);
 static inline void update_store_hash(Op* op, Hash_Table* mem_hash);
@@ -124,6 +128,7 @@ static void check_lookahead_srcs(Op* op);
 static inline void delete_store_hash_entry_from(Op* op, Hash_Table* mem_hash);
 static inline void update_map_entry(Op* op, Map_Entry* map_entry);
 static inline void recover_mem_map_entry(void* hash_entry, void* arg);
+static inline void rebuild_offpath_map(void);
 
 /* memory map hash traversal */
 static inline void mem_map_entry_traversal_init(Mem_Map_Traversal* traversal, Addr va, uns size);
@@ -152,18 +157,12 @@ void init_map(uns8 proc_id) {
   memset(map_data, 0, sizeof(Map_Data));
   map_data->proc_id = proc_id;
 
-  /* Initialize the register "last write" map */
-  for (ii = 0; ii < NUM_REG_IDS * 2; ii++) {
-    map_data->reg_map[ii].op = &invalid_op;
-    map_data->reg_map[ii].op_num = 0;
-  }
+  /* Initialize the register and last store "last write" maps */
+  reset_map_dep(&map_data->onpath_map);
+  reset_map_dep(&map_data->offpath_map);
+  reset_map_dep(&map_data->lookahead_map);
   for (ii = 0; ii < NUM_REG_IDS; ii++)
-    map_data->map_flags[ii] = FALSE;
-
-  map_data->last_store[0].op = &invalid_op;
-  map_data->last_store[0].op_num = 0;
-  map_data->last_store[1].op = &invalid_op;
-  map_data->last_store[1].op_num = 0;
+    map_data->offpath_reg_valid[ii] = FALSE;
 
   /* Allocate the wake_up_entry pool. */
   expand_wake_up_entries();
@@ -176,14 +175,6 @@ void init_map(uns8 proc_id) {
      most the number of in-flight stores, we set the number of
      buckets to the size of instruction window. */
   init_hash_table(&map_data->oracle_mem_hash, "oracle mem dependence map", NODE_TABLE_SIZE, sizeof(Mem_Map_Entry));
-
-  /* Initialize the lookahead map */
-  for (ii = 0; ii < NUM_REG_IDS; ii++) {
-    map_data->lookahead_reg_map[ii].op = &invalid_op;
-    map_data->lookahead_reg_map[ii].op_num = 0;
-  }
-  map_data->lookahead_last_store.op = &invalid_op;
-  map_data->lookahead_last_store.op_num = 0;
   init_hash_table(&map_data->lookahead_mem_hash, "lookahead mem dependence map", NODE_TABLE_SIZE,
                   sizeof(Mem_Map_Entry));
 
@@ -198,8 +189,8 @@ void recover_map() {
   uns ii;
   DEBUG(map_data->proc_id, "Recovering register map\n");
   for (ii = 0; ii < NUM_REG_IDS; ii++)
-    map_data->map_flags[ii] = FALSE;
-  map_data->last_store_flag = FALSE;
+    map_data->offpath_reg_valid[ii] = FALSE;
+  map_data->offpath_last_store_valid = FALSE;
   hash_table_scan(&map_data->oracle_mem_hash, recover_mem_map_entry, NULL);
   rebuild_offpath_map();
 }
@@ -230,10 +221,8 @@ void rebuild_offpath_map() {
 
   /* rebuild the map starting with the first offpath op */
   for (; op_p; op_p = (Op**)list_next_element(&td->seq_op_list)) {
-    update_map(*op_p);
-    if ((*op_p)->uop->mem_type == MEM_ST) {
-      update_store_hash(*op_p, &map_data->oracle_mem_hash);
-    }
+    map_op_update(*op_p, &map_data->offpath_map, &map_data->oracle_mem_hash);
+    update_offpath_valid(*op_p);
   }
 }
 
@@ -254,43 +243,55 @@ static inline void expand_wake_up_entries() {
 }
 
 /**************************************************************************************/
-/* read_reg_map: read and set srcs based on registers */
+/* reset_map_dep: point every register and the last store at invalid_op */
 
-static inline void read_reg_map(Op* op) {
+static inline void reset_map_dep(Map_Dep* map) {
+  for (uns ii = 0; ii < NUM_REG_IDS; ii++) {
+    map->reg[ii].op = &invalid_op;
+    map->reg[ii].op_num = 0;
+  }
+  map->last_store.op = &invalid_op;
+  map->last_store.op_num = 0;
+}
+
+/**************************************************************************************/
+/* read_reg_map: read and set srcs based on registers. With offpath_map, a register whose
+   offpath_reg_valid is set is read from offpath_map instead of map. */
+
+static inline void read_reg_map(Op* op, Map_Dep* map, Map_Dep* offpath_map) {
   uns ii;
 
   for (ii = 0; ii < op->uop->num_src_regs; ii++) {
     uns id = op->uop->srcs[ii].id;
     ASSERT(map_data->proc_id, id < NUM_REG_IDS);
 
-    uns ind = id << 1 | map_data->map_flags[id];
-    Map_Entry* map_entry = &map_data->reg_map[ind];
+    Flag is_offpath = offpath_map && map_data->offpath_reg_valid[id];
+    Map_Entry* map_entry = is_offpath ? &offpath_map->reg[id] : &map->reg[id];
 
-    DEBUG(map_data->proc_id, "Reading map  op_num:%s  off_path:%d  id:%d  flag:%d  ind:%d\n", unsstr64(op->op_num),
-          op->off_path, id, map_data->map_flags[id], ind);
+    DEBUG(map_data->proc_id, "Reading map  op_num:%s  off_path:%d  id:%d  is_offpath:%d\n", unsstr64(op->op_num),
+          op->off_path, id, is_offpath);
 
     op_sources_add(op, REG_DATA_DEP, map_entry->op, map_entry->op_num, map_entry->unique_num);
     DEBUG(map_data->proc_id, "Added dep  op_num:%s  src_op_num:%s  src_num:%d\n", unsstr64(op->op_num),
           unsstr64(map_entry->op_num), op->num_srcs - 1);
-    /* address predictor is called if op is a load & this is first mem op reg
-     * read for this reg instance */
   }
 }
 
 /**************************************************************************************/
 /* read_store_map: used to make mem ops dependent on the last store
-   (no speculative loads) */
+   (no speculative loads). With offpath_map, the last store is read from offpath_map when
+   offpath_last_store_valid is set. */
 
-static inline void read_store_map(Op* op) {
+static inline void read_store_map(Op* op, Map_Dep* map, Map_Dep* offpath_map) {
   if (!MEM_OBEY_STORE_DEP || MEM_OOO_STORES)
     return;
 
   if (op->uop->mem_type) {
-    uns ind = map_data->last_store_flag;
-    Map_Entry* map_entry = &map_data->last_store[ind];
+    Flag is_offpath = offpath_map && map_data->offpath_last_store_valid;
+    Map_Entry* map_entry = is_offpath ? &offpath_map->last_store : &map->last_store;
 
-    DEBUG(map_data->proc_id, "Reading store map  op_num:%s  off_path:%d  flag:%d  ind:%d\n", unsstr64(op->op_num),
-          op->off_path, map_data->last_store_flag, ind);
+    DEBUG(map_data->proc_id, "Reading store map  op_num:%s  off_path:%d  is_offpath:%d\n", unsstr64(op->op_num),
+          op->off_path, is_offpath);
     op_sources_add(op, MEM_ADDR_DEP, map_entry->op, map_entry->op_num, map_entry->unique_num);
     DEBUG(map_data->proc_id, "Added dep  op_num:%s  src_op_num:%s  src_num:%d\n", unsstr64(op->op_num),
           unsstr64(map_entry->op_num), op->num_srcs - 1);
@@ -298,41 +299,36 @@ static inline void read_store_map(Op* op) {
 }
 
 /**************************************************************************************/
-/* update_map: write the register map and the last store map if necessary */
+/* update_map_dep: write the register map and the last store map if necessary */
 
-static inline void update_map(Op* op) {
-  int ii;
+static inline void update_map_dep(Op* op, Map_Dep* map) {
+  uns ii;
 
   ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
   /* update the register map if the op produces a value */
   for (ii = 0; ii < op->uop->num_dest_regs; ii++) {
     uns id = op->uop->dests[ii].id;
     ASSERT(map_data->proc_id, id < NUM_REG_IDS);
-
-    uns ind = id << 1 | op->off_path;
-    Map_Entry* map_entry = &map_data->reg_map[ind];
-
-    DEBUG(map_data->proc_id, "Writing map  op_num:%s  off_path:%d  id:%d  flag:%d  ind:%d\n", unsstr64(op->op_num),
-          op->off_path, id, map_data->map_flags[id], ind);
-
-    map_entry->op = op;
-    map_entry->op_num = op->op_num;
-    map_entry->unique_num = op->unique_num;
-    map_data->map_flags[id] = op->off_path;
+    DEBUG(map_data->proc_id, "Writing map  op_num:%s  off_path:%d  id:%d\n", unsstr64(op->op_num), op->off_path, id);
+    update_map_entry(op, &map->reg[id]);
   }
 
   /* update the map if the op is a store */
   if (op->uop->mem_type == MEM_ST) {
-    uns ind = op->off_path;
-    Map_Entry* map_entry = &map_data->last_store[ind];
-
-    DEBUG(map_data->proc_id, "Writing store map  op_num:%s  off_path:%d  flag:%d  ind:%d\n", unsstr64(op->op_num),
-          op->off_path, map_data->last_store_flag, ind);
-    map_entry->op = op;
-    map_entry->op_num = op->op_num;
-    map_entry->unique_num = op->unique_num;
-    map_data->last_store_flag = op->off_path;
+    DEBUG(map_data->proc_id, "Writing store map  op_num:%s  off_path:%d\n", unsstr64(op->op_num), op->off_path);
+    update_map_entry(op, &map->last_store);
   }
+}
+
+/**************************************************************************************/
+/* update_offpath_valid: mark the op's dests (and the last store) valid in offpath_map
+   for an off-path op, invalid for an on-path one */
+
+static inline void update_offpath_valid(Op* op) {
+  for (uns ii = 0; ii < op->uop->num_dest_regs; ii++)
+    map_data->offpath_reg_valid[op->uop->dests[ii].id] = op->off_path;
+  if (op->uop->mem_type == MEM_ST)
+    map_data->offpath_last_store_valid = op->off_path;
 }
 
 /**************************************************************************************/
@@ -348,43 +344,35 @@ inline void update_map_entry(Op* op, Map_Entry* map_entry) {
 }
 
 /**************************************************************************************/
+/* map_op_read: set the op's register, last store and store data sources */
+
+static inline void map_op_read(Op* op, Map_Dep* map, Map_Dep* offpath_map, Hash_Table* mem_hash) {
+  read_reg_map(op, map, offpath_map);   /* set reg sources */
+  read_store_map(op, map, offpath_map); /* set addr dependency on last store */
+  if (MEM_OBEY_STORE_DEP && op->uop->mem_type == MEM_LD)
+    add_store_deps(op, mem_hash);
+}
+
+/**************************************************************************************/
+/* map_op_update: record the op as the last writer of its dests / the last store */
+
+static inline void map_op_update(Op* op, Map_Dep* map, Hash_Table* mem_hash) {
+  update_map_dep(op, map);
+  if (MEM_OBEY_STORE_DEP && op->uop->mem_type == MEM_ST)
+    update_store_hash(op, mem_hash);
+}
+
+/**************************************************************************************/
 /* map_op_lookahead: map an on-path op against the lookahead map when its FT is built.
    Sets the op's register and memory sources and updates the lookahead map. */
 
 void map_op_lookahead(Op* op) {
-  uns ii;
-
   ASSERT(map_data->proc_id, op);
   ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
   ASSERT(map_data->proc_id, !op->off_path);
 
-  for (ii = 0; ii < op->uop->num_src_regs; ii++) {
-    uns id = op->uop->srcs[ii].id;
-    ASSERT(map_data->proc_id, id < NUM_REG_IDS);
-    Map_Entry* map_entry = &map_data->lookahead_reg_map[id];
-    op_sources_add(op, REG_DATA_DEP, map_entry->op, map_entry->op_num, map_entry->unique_num);
-  }
-
-  if (MEM_OBEY_STORE_DEP && !MEM_OOO_STORES && op->uop->mem_type) {
-    Map_Entry* map_entry = &map_data->lookahead_last_store;
-    op_sources_add(op, MEM_ADDR_DEP, map_entry->op, map_entry->op_num, map_entry->unique_num);
-  }
-
-  for (ii = 0; ii < op->uop->num_dest_regs; ii++) {
-    uns id = op->uop->dests[ii].id;
-    ASSERT(map_data->proc_id, id < NUM_REG_IDS);
-    update_map_entry(op, &map_data->lookahead_reg_map[id]);
-  }
-
-  if (op->uop->mem_type == MEM_ST)
-    update_map_entry(op, &map_data->lookahead_last_store);
-
-  if (!MEM_OBEY_STORE_DEP)
-    return;
-  if (op->uop->mem_type == MEM_ST)
-    update_store_hash(op, &map_data->lookahead_mem_hash);
-  if (op->uop->mem_type == MEM_LD)
-    add_store_deps(op, &map_data->lookahead_mem_hash);
+  map_op_read(op, &map_data->lookahead_map, NULL, &map_data->lookahead_mem_hash);
+  map_op_update(op, &map_data->lookahead_map, &map_data->lookahead_mem_hash);
 }
 
 /**************************************************************************************/
@@ -400,18 +388,14 @@ void map_op(Op* op) {
 
   /* read */
   if (op->off_path || !MAP_LOOKAHEAD) {
-    read_reg_map(op);   /* set reg sources */
-    read_store_map(op); /* set addr dependency on last store */
-    if (MEM_OBEY_STORE_DEP && op->uop->mem_type == MEM_LD)
-      add_store_deps(op, &map_data->oracle_mem_hash);
+    map_op_read(op, &map_data->onpath_map, &map_data->offpath_map, &map_data->oracle_mem_hash);
   } else if (ENABLE_ASSERTIONS) {
     check_lookahead_srcs(op); /* sources from map_op_lookahead match the fetch map */
   }
 
   /* update */
-  update_map(op); /* update reg and last store maps */
-  if (MEM_OBEY_STORE_DEP && op->uop->mem_type == MEM_ST)
-    update_store_hash(op, &map_data->oracle_mem_hash);
+  map_op_update(op, op->off_path ? &map_data->offpath_map : &map_data->onpath_map, &map_data->oracle_mem_hash);
+  update_offpath_valid(op);
 }
 
 /**************************************************************************************/
@@ -601,8 +585,8 @@ static void check_lookahead_srcs(Op* op) {
   /* register sources */
   for (uns ii = 0; ii < op->uop->num_src_regs; ii++, src_num++) {
     uns id = op->uop->srcs[ii].id;
-    ASSERT(proc_id, !map_data->map_flags[id]);
-    Map_Entry* map_entry = &map_data->reg_map[id << 1];
+    ASSERT(proc_id, !map_data->offpath_reg_valid[id]);
+    Map_Entry* map_entry = &map_data->onpath_map.reg[id];
     ASSERT(proc_id, src_num < op->num_srcs);
     Src_Info* src_info = &op->src_info[src_num];
     ASSERTM(proc_id,
@@ -613,8 +597,8 @@ static void check_lookahead_srcs(Op* op) {
 
   /* address dependency on the last store */
   if (MEM_OBEY_STORE_DEP && !MEM_OOO_STORES && op->uop->mem_type) {
-    ASSERT(proc_id, !map_data->last_store_flag);
-    Map_Entry* map_entry = &map_data->last_store[0];
+    ASSERT(proc_id, !map_data->offpath_last_store_valid);
+    Map_Entry* map_entry = &map_data->onpath_map.last_store;
     ASSERT(proc_id, src_num < op->num_srcs);
     Src_Info* src_info = &op->src_info[src_num++];
     ASSERTM(proc_id,
@@ -849,23 +833,11 @@ void reset_map() {
 
   ASSERT(map_data->proc_id, map_data == &td->map_data);
 
-  /* initialize the register "last write" map */
-  for (ii = 0; ii < NUM_REG_IDS * 2; ii++) {
-    map_data->reg_map[ii].op = &invalid_op;
-    map_data->reg_map[ii].op_num = 0;
-  }
+  /* initialize the register and last store "last write" maps */
+  reset_map_dep(&map_data->onpath_map);
+  reset_map_dep(&map_data->offpath_map);
+  reset_map_dep(&map_data->lookahead_map);
   for (ii = 0; ii < NUM_REG_IDS; ii++)
-    map_data->map_flags[ii] = FALSE;
-
-  map_data->last_store[0].op = &invalid_op;
-  map_data->last_store[0].op_num = 0;
-  map_data->last_store[1].op = &invalid_op;
-  map_data->last_store[1].op_num = 0;
-
-  for (ii = 0; ii < NUM_REG_IDS; ii++) {
-    map_data->lookahead_reg_map[ii].op = &invalid_op;
-    map_data->lookahead_reg_map[ii].op_num = 0;
-  }
-  map_data->lookahead_last_store.op = &invalid_op;
-  map_data->lookahead_last_store.op_num = 0;
+    map_data->offpath_reg_valid[ii] = FALSE;
+  map_data->offpath_last_store_valid = FALSE;
 }

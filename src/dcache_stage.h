@@ -61,6 +61,9 @@ typedef struct Dcache_Data_struct {
   Flag prefetch;      /* was the line prefetched? */
   Flag HW_prefetch;   /* was the hardware prefetcher - Be careful with this when using multiple prefetchers */
   Flag HW_prefetched; /* stick HW_prefetch - always set even if the data is used */
+  uns8 prefetcher_id; /* which prefetcher sent this prefetch */
+  Addr pref_loadPC;
+  uns32 global_hist; /* used for prefetch hfilter */
 
   uns read_count[2];  /* number of reads, including the first */
   uns write_count[2]; /* number of writes, including the first */

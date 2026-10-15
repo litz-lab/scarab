@@ -602,7 +602,7 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
   if (PREF_FRAMEWORK_ON && (PREF_UPDATE_ON_WRONGPATH || !op->off_path)) {
     // if framework is on use new prefetcher. otherwise old one
     if (line->HW_prefetch) {
-      pref_dl0_pref_hit(line_addr, op->inst->addr, 0);  // CHANGEME
+      pref_dl0_pref_hit(dc->proc_id, line_addr, op->inst->addr, line->prefetcher_id);
       line->HW_prefetch = FALSE;
       STAT_EVENT(dc->proc_id, PREF_DCACHE_TOTAL_USED);
       STAT_EVENT(dc->proc_id, CORE_PREF_DCACHE_USED);
@@ -838,8 +838,11 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
   // NULL above and the fill retries). A prefetched line evicted with
   // HW_prefetch still set was never demand-used.
   if (repl_line_valid && data->HW_prefetch) {
+    pref_evictline_notused(dc->proc_id, repl_line_addr, data->pref_loadPC, data->global_hist);
     STAT_EVENT(dc->proc_id, PREF_DCACHE_TOTAL_NOT_USED);
     STAT_EVENT(dc->proc_id, CORE_PREF_DCACHE_NOT_USED);
+  } else if (repl_line_valid && data->HW_prefetched) {
+    pref_evictline_used(dc->proc_id, repl_line_addr, data->pref_loadPC, data->global_hist);
   }
 
   DEBUG(dc->proc_id,
@@ -894,6 +897,9 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
     data->HW_prefetch = FALSE;
     data->HW_prefetched = FALSE;
   }
+  data->prefetcher_id = data->HW_prefetch ? req->prefetcher_id : 0;
+  data->pref_loadPC = req->pref_loadPC;
+  data->global_hist = req->global_hist;
 
   /* process req op */
   Op** op_p = (Op**)list_start_head_traversal(&req->op_ptrs);

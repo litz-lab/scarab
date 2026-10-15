@@ -123,7 +123,7 @@ static inline void update_offpath_valid(Op* op);
 static inline void expand_wake_up_entries(void);
 static inline void update_store_hash(Op* op, Hash_Table* mem_hash);
 static inline Op* add_store_deps(Op* op, Hash_Table* mem_hash);
-static inline Op* find_last_store(Op* op, Hash_Table* mem_hash);
+static inline Op* find_last_store(Op* op, Hash_Table* mem_hash, Flag add_all);
 static void check_lookahead_srcs(Op* op);
 static inline void delete_store_hash_entry_from(Op* op, Hash_Table* mem_hash);
 static inline void update_map_entry(Op* op, Map_Entry* map_entry);
@@ -389,7 +389,7 @@ void map_op(Op* op) {
   /* read */
   if (op->off_path || !MAP_LOOKAHEAD) {
     map_op_read(op, &map_data->onpath_map, &map_data->offpath_map, &map_data->oracle_mem_hash);
-  } else if (ENABLE_ASSERTIONS) {
+  } else {
     check_lookahead_srcs(op); /* sources from map_op_lookahead match the fetch map */
   }
 
@@ -480,15 +480,45 @@ static inline void delete_store_hash_entry_from(Op* op, Hash_Table* mem_hash) {
 }
 
 /**************************************************************************************/
-/* add_store_deps: */
+/* add_store_deps: add MEM_DATA_DEP sources on the stores in mem_hash overlapping op's
+   access. With MEM_OOO_STORES, every overlapping store; otherwise the latest one. */
 
 static inline Op* add_store_deps(Op* op, Hash_Table* mem_hash) {
-  Addr va = op->oracle_info.va;
-  Op* last_src_op = NULL;
   uns orig_num_srcs = op->num_srcs;
-  Mem_Map_Traversal traversal;
 
   ASSERT(map_data->proc_id, map_data->proc_id == op->proc_id);
+
+  Op* last_src_op = find_last_store(op, mem_hash, MEM_OOO_STORES);
+  if (!last_src_op) {
+    STAT_EVENT(op->proc_id, LD_NO_FORWARD);
+    return NULL; /* No dependency found */
+  }
+
+  ASSERT(op->proc_id, last_src_op->op_num < op->op_num || op->off_path);
+  if (MEM_OOO_STORES) {
+    /* unmark all ops find_last_store marked */
+    for (uns ii = orig_num_srcs; ii < op->num_srcs; ii++) {
+      ASSERT(op->proc_id, op->src_info[ii].op->marked);
+      op->src_info[ii].op->marked = FALSE;
+    }
+  } else {
+    op_sources_add(op, MEM_DATA_DEP, last_src_op, last_src_op->op_num, last_src_op->unique_num);
+    STAT_EVENT(op->proc_id, FORWARDED_LD);
+    DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d  op:%s  src:%s\n", unsstr64(op->op_num),
+          unsstr64(last_src_op->op_num), op->num_srcs - 1, op->inst->name, last_src_op->inst->name);
+  }
+  return last_src_op;
+}
+
+/**************************************************************************************/
+/* find_last_store: the latest store in mem_hash overlapping op's access. With add_all,
+   also adds a MEM_DATA_DEP source on every overlapping store, marking each one added
+   (the caller unmarks them). */
+
+static inline Op* find_last_store(Op* op, Hash_Table* mem_hash, Flag add_all) {
+  Addr va = op->oracle_info.va;
+  Op* last_src_op = NULL;
+  Mem_Map_Traversal traversal;
 
   /* Iterate through each entry that is read by the op */
   for (mem_map_entry_traversal_init(&traversal, va, op->oracle_info.mem_size);
@@ -509,63 +539,14 @@ static inline Op* add_store_deps(Op* op, Hash_Table* mem_hash) {
               BYTE_OVERLAP(src_op->oracle_info.va, src_op->oracle_info.mem_size, va, op->oracle_info.mem_size),
               "%d@0x%08x and %d@0x%08x\n", src_op->oracle_info.mem_size, (uns32)src_op->oracle_info.va,
               op->oracle_info.mem_size, (uns32)va);
-      if (MEM_OOO_STORES && !src_op->marked) {
+      if (add_all && !src_op->marked) {
         op_sources_add(op, MEM_DATA_DEP, src_op, src_op->op_num, src_op->unique_num);
         src_op->marked = TRUE;  // mark op to avoid adding duplicate sources
         STAT_EVENT(op->proc_id, FORWARDED_LD);
         DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d  op:%s  src:%s\n",
               unsstr64(op->op_num), unsstr64(src_op->op_num), op->num_srcs - 1, op->inst->name, src_op->inst->name);
       }
-      if (!last_src_op || last_src_op->op_num < src_op->op_num) { /* take latest store dependency only */
-        last_src_op = src_op;
-      }
-    }
-  }
-
-  if (!last_src_op) {
-    STAT_EVENT(op->proc_id, LD_NO_FORWARD);
-    return NULL; /* No dependency found */
-  }
-
-  ASSERT(op->proc_id, last_src_op->op_num < op->op_num || op->off_path);
-  if (MEM_OOO_STORES) {
-    /* unmark all ops we marked earlier */
-    for (uns ii = orig_num_srcs; ii < op->num_srcs; ii++) {
-      ASSERT(op->proc_id, op->src_info[ii].op->marked);
-      op->src_info[ii].op->marked = FALSE;
-    }
-  } else {
-    op_sources_add(op, MEM_DATA_DEP, last_src_op, last_src_op->op_num, last_src_op->unique_num);
-    STAT_EVENT(op->proc_id, FORWARDED_LD);
-    DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d  op:%s  src:%s\n", unsstr64(op->op_num),
-          unsstr64(last_src_op->op_num), op->num_srcs - 1, op->inst->name, last_src_op->inst->name);
-  }
-  return last_src_op;
-}
-
-/**************************************************************************************/
-/* find_last_store: the latest store in mem_hash overlapping op's access, without adding
-   a source (same search as add_store_deps without MEM_OOO_STORES) */
-
-static inline Op* find_last_store(Op* op, Hash_Table* mem_hash) {
-  Addr va = op->oracle_info.va;
-  Op* last_src_op = NULL;
-  Mem_Map_Traversal traversal;
-
-  for (mem_map_entry_traversal_init(&traversal, va, op->oracle_info.mem_size);
-       !mem_map_entry_traversal_done(&traversal); mem_map_entry_traversal_next(&traversal)) {
-    Mem_Map_Entry* mem_map_p = (Mem_Map_Entry*)hash_table_access(mem_hash, MEM_MAP_KEY(traversal.entry_addr));
-
-    if (!mem_map_p)
-      continue;
-
-    for (mem_map_byte_traversal_init(&traversal); !mem_map_byte_traversal_done(&traversal);
-         mem_map_byte_traversal_next(&traversal)) {
-      uns ind = MEM_MAP_BYTE_INDEX(traversal.byte, TESTBIT(mem_map_p->flag_mask, traversal.byte));
-      if (!TESTBIT(mem_map_p->store_mask, ind))
-        continue;
-      Op* src_op = mem_map_p->op[ind];
-      if (!last_src_op || last_src_op->op_num < src_op->op_num)
+      if (!last_src_op || last_src_op->op_num < src_op->op_num) /* take latest store only */
         last_src_op = src_op;
     }
   }
@@ -615,7 +596,7 @@ static void check_lookahead_srcs(Op* op) {
 
   /* data dependency on the latest overlapping store */
   if (MEM_OBEY_STORE_DEP && op->uop->mem_type == MEM_LD) {
-    Op* store = find_last_store(op, &map_data->oracle_mem_hash);
+    Op* store = find_last_store(op, &map_data->oracle_mem_hash, FALSE);
     Src_Info* src_info = src_num < op->num_srcs ? &op->src_info[src_num++] : NULL;
     if (store) {
       ASSERTM(proc_id, src_info && src_info->type == MEM_DATA_DEP && src_info->op_num == store->op_num,

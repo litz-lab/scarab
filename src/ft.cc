@@ -143,6 +143,8 @@ void FT::add_op(Op* op) {
     ASSERT(proc_id, ops.back());
     ASSERT(proc_id, ops.back()->op_pool_valid);
     ASSERT(proc_id, ops.back()->inst);
+    ASSERT(proc_id, ops.back()->unique_num < op->unique_num);
+    ASSERT(proc_id, ops.back()->unique_num_per_proc < op->unique_num_per_proc);
     if (op->bom) {
       // assert consecutivity
       DEBUG(proc_id, "back addr + size %llx fetch addr %llx\n", ops.back()->inst->addr + ops.back()->inst->inst_size,

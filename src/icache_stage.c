@@ -917,6 +917,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
 
     ASSERTM(ic->proc_id, ic->off_path == op->off_path, "Inconsistent off-path op PC: %llx ic:%i op:%i\n",
             op->inst->addr, ic->off_path, op->off_path);
+    ASSERT(ic->proc_id, ii == 0 || cur_data->ops[ii - 1]->unique_num < op->unique_num);
 
     if (!op->off_path) {
       STAT_EVENT(ic->proc_id, UOPS_SERVED_BY_ICACHE_ON_PATH + op->fetched_from_uop_cache);

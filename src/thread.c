@@ -142,9 +142,9 @@ void thread_map_op(Op* op) {
   ASSERT(td->proc_id, map_data == &td->map_data);
   ASSERT(td->proc_id, td->proc_id == map_data->proc_id);
   ASSERT(td->proc_id, td->proc_id == op->proc_id);
-  /* call map.c map_op, which will use the thread's map data to set
+  /* call map.c map_dep_fetch, which will use the thread's map data to set
      the dependency information in op->thread_info */
-  map_op(op);
+  map_dep_fetch(op);
 }
 
 /**************************************************************************************/
@@ -154,9 +154,9 @@ void thread_map_op_lookahead(Op* op) {
   ASSERT(td->proc_id, map_data == &td->map_data);
   ASSERT(td->proc_id, td->proc_id == map_data->proc_id);
   ASSERT(td->proc_id, td->proc_id == op->proc_id);
-  /* call map.c map_op_lookahead, which will use the thread's lookahead map
+  /* call map.c map_dep_lookahead, which will use the thread's lookahead map
      to set the dependency information in op->thread_info */
-  map_op_lookahead(op);
+  map_dep_lookahead(op);
 }
 
 /**************************************************************************************/

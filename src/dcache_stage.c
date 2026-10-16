@@ -329,7 +329,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
       op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->uop->extra_ld_latency);
       if (op->uop->mem_type != MEM_ST) {
         op_set_wake_cycle(op, op_get_done_cycle(op));
-        wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+        map_wakeup_signal(op, REG_DATA_DEP, model->wake_hook);
       }
       continue;
     }
@@ -645,7 +645,7 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
   /* wake up source inst if the op is completed */
   if (op->uop->mem_type != MEM_ST) {
     op_set_wake_cycle(op, op_get_done_cycle(op));
-    wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+    map_wakeup_signal(op, REG_DATA_DEP, model->wake_hook);
   }
 }
 
@@ -673,7 +673,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
 
         op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->uop->extra_ld_latency);
         op_set_wake_cycle(op, cycle_count + DCACHE_CYCLES + op->uop->extra_ld_latency);
-        wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+        map_wakeup_signal(op, REG_DATA_DEP, model->wake_hook);
         break;
       }
 
@@ -949,7 +949,7 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
 
     if (op->uop->mem_type != MEM_ST) {
       op_set_wake_cycle(op, op_get_done_cycle(op));
-      wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+      map_wakeup_signal(op, REG_DATA_DEP, model->wake_hook);
     }
   }
 

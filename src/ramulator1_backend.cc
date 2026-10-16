@@ -42,6 +42,7 @@ extern "C" {
 #include "memory/memory.param.h"
 #include "ramulator.param.h"
 
+#include "ramulator.h"
 #include "statistics.h"
 }
 
@@ -147,6 +148,23 @@ class Ramulator1Backend : public DramBackend {
   void tick() override { wrapper->tick(); }
 
   void finish() override { wrapper->finish(); }
+
+  void get_config(Ramulator_Config* config) const override {
+    config->tck_fs = RAMULATOR_TCK;
+    config->channels = RAMULATOR_CHANNELS;
+    config->ranks = RAMULATOR_RANKS;
+    config->banks = RAMULATOR_BANKS;
+    config->readq_entries = RAMULATOR_READQ_ENTRIES;
+    config->writeq_entries = RAMULATOR_WRITEQ_ENTRIES;
+    config->tCL = RAMULATOR_TCL;
+    config->tCWL = RAMULATOR_TCWL;
+    config->tBL = RAMULATOR_TBL;
+    config->tRCD = RAMULATOR_TRCD;
+    config->tRP = RAMULATOR_TRP;
+    config->tRAS = RAMULATOR_TRAS;
+    config->tCCD = RAMULATOR_TCCD;
+    config->tWTR = RAMULATOR_TWTR;
+  }
 
   int get_chip_width() const override { return wrapper->get_chip_width(); }
   int get_chip_size() const override { return wrapper->get_chip_size(); }

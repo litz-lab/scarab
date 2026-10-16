@@ -33,6 +33,8 @@
 #ifndef __DRAM_BACKEND_H__
 #define __DRAM_BACKEND_H__
 
+struct Ramulator_Config_struct;
+
 class DramBackend {
  public:
   /* Called by the backend, from tick(), when the read to line address addr completes. */
@@ -48,6 +50,9 @@ class DramBackend {
   virtual void tick() = 0;
   /* Ends the simulation and writes the backend's own stats file. */
   virtual void finish() = 0;
+
+  /* The organization and timing being simulated (see Ramulator_Config in ramulator.h). */
+  virtual void get_config(Ramulator_Config_struct* config) const = 0;
 
   /* Chip geometry for the power model. */
   virtual int get_chip_width() const = 0;

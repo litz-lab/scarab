@@ -26,6 +26,7 @@
  * Description  : Defines an interface to Ramulator
  ***************************************************************************************/
 
+#include <cstring>
 #include <deque>
 #include <list>
 #include <map>
@@ -33,6 +34,7 @@
 
 extern "C" {
 #include "globals/assert.h"
+#include "globals/utils.h"
 
 #include "general.param.h"
 #include "memory/memory.param.h"
@@ -80,7 +82,12 @@ void ramulator_init() {
   ASSERTM(0, L1_MSHRS <= RAMULATOR_READQ_ENTRIES, "L1_MSHRS=%u exceeds RAMULATOR_READQ_ENTRIES=%u\n", L1_MSHRS,
           RAMULATOR_READQ_ENTRIES);
 
-  backend = ramulator1_backend_create(&enqueue_response);
+  if (!strcmp(DRAM_BACKEND, "ramulator1"))
+    backend = ramulator1_backend_create(&enqueue_response);
+  else if (!strcmp(DRAM_BACKEND, "ramulator2"))
+    backend = ramulator2_backend_create(&enqueue_response);
+  else
+    FATAL_ERROR(0, "Unknown dram_backend %s (expected ramulator1 or ramulator2)\n", DRAM_BACKEND);
   backend->get_config(&ramulator_config);
 
   DPRINTF("Initialized Ramulator. \n");

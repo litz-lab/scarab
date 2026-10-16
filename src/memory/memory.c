@@ -1490,7 +1490,6 @@ static void mem_complete_l1_access(Mem_Req* req) {
           mem_level_done(req, mem_file_of(req, &mem->mlc_mshr));
           mem_free_req(req);
         }
-        // STAT_EVENT(req->proc_id, BUS_ACCESS);
       }
     }
     // CMP IGNORE

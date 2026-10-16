@@ -187,6 +187,7 @@ void enqueue_response(long addr) {
 
 void ramulator_tick() {
   backend->tick();
+  STAT_EVENT(0, DRAM_CYCLES);
 
   /* A returning line already holds its LLC MSHR, which is what bounded how many could be
      in DRAM at once, so nothing can refuse it here. */

@@ -31,10 +31,6 @@
 #include <map>
 #include <utility>
 
-#include "ramulator/Config.h"
-#include "ramulator/Request.h"
-#include "ramulator/ScarabWrapper.h"
-
 extern "C" {
 #include "globals/assert.h"
 
@@ -48,6 +44,8 @@ extern "C" {
 #include "statistics.h"
 }
 
+#include "dram_backend.h"
+
 /**************************************************************************************/
 /* Macros */
 
@@ -55,22 +53,19 @@ extern "C" {
 
 /**************************************************************************************/
 
-using namespace ramulator;
+DramBackend* backend = NULL;
 
-ScarabWrapper* wrapper = NULL;
-Config* configs = NULL;
+void enqueue_response(long addr);
 
-void to_ramulator_req(const Mem_Req* scarab_req, Request* ramulator_req);
-void init_configs();
-void enqueue_response(Request& req);
+std::deque<std::pair<long, Mem_Req*>> resp_queue;  // completed reads and acknowledged writes that need to
+                                                   // be sent back to Scarab
 
-void stats_callback(int coreid, int type);
+std::map<long, std::list<Mem_Req*>> inflight_read_reqs;
 
-deque<pair<long, Mem_Req*>> resp_queue;  // completed read request that need to
-                                         // send back to Scarab
-
-map<long, list<Mem_Req*>> inflight_read_reqs;
-// map<long, Mem_Req*> inflight_read_reqs;
+/* Request accounting, printed at finish: every read the backend accepted completes or is
+   still in flight, and every acknowledged write reaches Scarab or is still queued. */
+Counter glue_reads_sent = 0, glue_reads_completed = 0;
+Counter glue_writes_sent = 0, glue_writes_acked = 0;
 
 void ramulator_init() {
   ASSERTM(0, ICACHE_LINE_SIZE == DCACHE_LINE_SIZE,
@@ -84,103 +79,51 @@ void ramulator_init() {
   ASSERTM(0, L1_MSHRS <= RAMULATOR_READQ_ENTRIES, "L1_MSHRS=%u exceeds RAMULATOR_READQ_ENTRIES=%u\n", L1_MSHRS,
           RAMULATOR_READQ_ENTRIES);
 
-  configs = new Config();
-  init_configs();
-
-  wrapper = new ScarabWrapper(*configs, DCACHE_LINE_SIZE, &stats_callback);
+  backend = ramulator1_backend_create(&enqueue_response);
 
   DPRINTF("Initialized Ramulator. \n");
 }
 
 void ramulator_finish() {
-  wrapper->finish();
+  backend->finish();
 
-  delete wrapper;
-  delete configs;
-}
+  Counter writes_queued = 0;
+  for (auto& resp : resp_queue)
+    writes_queued += resp.second->type == MRT_WB;
+  DPRINTF("DRAM glue: reads sent %llu completed %llu inflight %zu; writes sent %llu acked %llu inflight %llu\n",
+          glue_reads_sent, glue_reads_completed, inflight_read_reqs.size(), glue_writes_sent, glue_writes_acked,
+          writes_queued);
 
-void stats_callback(int coreid, int type) {
-  switch (type) {
-    case int(StatCallbackType::DRAM_ACT):
-      STAT_EVENT(coreid, POWER_DRAM_ACTIVATE);
-      break;
-    case int(StatCallbackType::DRAM_PRE):
-      STAT_EVENT(coreid, POWER_DRAM_PRECHARGE);
-      break;
-    case int(StatCallbackType::DRAM_READ):
-      STAT_EVENT(coreid, POWER_DRAM_READ);
-      break;
-    case int(StatCallbackType::DRAM_WRITE):
-      STAT_EVENT(coreid, POWER_DRAM_WRITE);
-      break;
-  }
-}
-
-void init_configs() {
-  configs->set_core_num(NUM_CORES);  // This has to be 1. We do not instantiate
-                                     // CPU cores in Ramulator when using it
-                                     // with Scarab as opposed to when using
-                                     // Ramulator standalone. So, this should
-                                     // not have any effect other than printing
-                                     // "per-core" statistics in the output
-                                     // file.
-
-  configs->add("standard", RAMULATOR_STANDARD);
-  configs->add("speed", RAMULATOR_SPEED);
-  configs->add("org", RAMULATOR_ORG);
-
-  configs->add("channels", to_string(RAMULATOR_CHANNELS));
-  configs->add("ranks", to_string(RAMULATOR_RANKS));
-  configs->add("bank_groups", to_string(RAMULATOR_BANKGROUPS));
-  configs->add("banks", to_string(RAMULATOR_BANKS));
-  configs->add("rows", to_string(RAMULATOR_ROWS));
-  configs->add("columns", to_string(RAMULATOR_COLS));
-
-  configs->add("chip_width", to_string(RAMULATOR_CHIP_WIDTH));
-  configs->add("channel_width", to_string(BUS_WIDTH_IN_BYTES * 8));
-
-  configs->add("record_cmd_trace", RAMULATOR_REC_CMD_TRACE);
-  configs->add("print_cmd_trace", RAMULATOR_PRINT_CMD_TRACE);
-  configs->add("use_rest_of_addr_as_row_addr", RAMULATOR_USE_REST_OF_ADDR_AS_ROW_ADDR);
-
-  configs->add("scheduling_policy", RAMULATOR_SCHEDULING_POLICY);
-  configs->add("readq_entries", to_string(RAMULATOR_READQ_ENTRIES));
-  configs->add("writeq_entries", to_string(RAMULATOR_WRITEQ_ENTRIES));
-  configs->add("output_dir", OUTPUT_DIR);
-
-  // TODO: make these optional and use the preset values specified by
-  // RAMULATOR_SPEED for timings that are not explicitly provided in
-  // ramulator.param.def
-  configs->add("tCK", to_string(RAMULATOR_TCK));
-  configs->add("tCL", to_string(RAMULATOR_TCL));
-  configs->add("tCCD", to_string(RAMULATOR_TCCD));
-  configs->add("tCCDS", to_string(RAMULATOR_TCCDS));
-  configs->add("tCCDL", to_string(RAMULATOR_TCCDL));
-  configs->add("tCWL", to_string(RAMULATOR_TCWL));
-  configs->add("tBL", to_string(RAMULATOR_TBL));
-  configs->add("tWTR", to_string(RAMULATOR_TWTR));
-  configs->add("tWTRS", to_string(RAMULATOR_TWTRS));
-  configs->add("tWTRL", to_string(RAMULATOR_TWTRL));
-  configs->add("tRP", to_string(RAMULATOR_TRP));
-  configs->add("tRPpb", to_string(RAMULATOR_TRPpb));
-  configs->add("tRPab", to_string(RAMULATOR_TRPab));
-  configs->add("tRCD", to_string(RAMULATOR_TRCD));
-  configs->add("tRCDR", to_string(RAMULATOR_TRCDR));
-  configs->add("tRCDW", to_string(RAMULATOR_TRCDW));
-  configs->add("tRAS", to_string(RAMULATOR_TRAS));
+  delete backend;
 }
 
 int ramulator_send(Mem_Req* scarab_req) {
-  Request req;
+  ASSERTM(scarab_req->proc_id, scarab_req->state == MRS_MEM_NEW,
+          "A"
+          " request in state %d cannot be issued to Ramulator\n",
+          scarab_req->state);
 
-  to_ramulator_req(scarab_req, &req);
+  // only MRT_WB should result in a DRAM write. A plain store miss should still
+  // result in a DRAM read
+  bool is_write = false;
+  if (scarab_req->type == MRT_WB)
+    is_write = true;
+  else if (scarab_req->type == MRT_DFETCH || scarab_req->type == MRT_DSTORE || scarab_req->type == MRT_IFETCH ||
+           scarab_req->type == MRT_IPRF || scarab_req->type == MRT_DPRF || scarab_req->type == MRT_UOCPRF ||
+           scarab_req->type == MRT_FDIPPRFON || scarab_req->type == MRT_FDIPPRFOFF ||
+           scarab_req->type == MRT_FDIPPRFALT)
+    is_write = false;
+  else
+    ASSERTM(scarab_req->proc_id, false, "Ramulator: Currently unsupported Scarab request type: %d\n", scarab_req->type);
+
+  long addr = scarab_req->phys_addr;
 
   // printf("Ramulator: Received a (%s) request to address %llu\n",
   // Mem_Req_Type_str(scarab_req->type), scarab_req->addr);
 
   // does inflight_read_reqs have the proc_id in the req?
-  auto it_scarab_req = inflight_read_reqs.find(req.addr);
-  if (it_scarab_req != inflight_read_reqs.end() && req.type == Request::Type::READ) {
+  auto it_scarab_req = inflight_read_reqs.find(addr);
+  if (it_scarab_req != inflight_read_reqs.end() && !is_write) {
     DEBUG(scarab_req->proc_id, "Ramulator: Duplicate (%s) request to address %llx\n",
           Mem_Req_Type_str(scarab_req->type), scarab_req->addr);
     // Can have duplicate Ifetch and Dfetch requests, but only one of each
@@ -188,31 +131,31 @@ int ramulator_send(Mem_Req* scarab_req) {
 
     /* save it as an inflight request so later it will be moved to the resp_queue
      * at the same time with the older request */
-    if (req.type == Request::Type::READ)
-      inflight_read_reqs[req.addr].push_back(scarab_req);
+    inflight_read_reqs[addr].push_back(scarab_req);
 
     scarab_req->mem_queue_cycle = cycle_count;
     return true;  // a request to the same address is already issued
   }
 
-  bool is_sent = wrapper->send(req);
-  ASSERTM(scarab_req->proc_id, is_sent || req.type != Request::Type::READ,
+  bool is_sent = backend->send(addr, is_write, scarab_req->proc_id);
+  ASSERTM(scarab_req->proc_id, is_sent || is_write,
           "Ramulator refused a read the l1_mshr bound should have made room for\n");
 
   if (is_sent) {
     STAT_EVENT(scarab_req->proc_id, POWER_MEMORY_CTRL_ACCESS);
 
-    if (req.type == Request::Type::READ) {
-      ASSERTM(0, inflight_read_reqs.find(req.addr) == inflight_read_reqs.end(),
+    if (!is_write) {
+      ASSERTM(0, inflight_read_reqs.find(addr) == inflight_read_reqs.end(),
               "ERROR: A read request to the same address shouldn't be sent "
               "multiple times to Ramulator\n");
-      // inflight_read_reqs[req.addr] = scarab_req;
-      inflight_read_reqs[req.addr].push_back(scarab_req);
+      inflight_read_reqs[addr].push_back(scarab_req);
       STAT_EVENT(scarab_req->proc_id, POWER_MEMORY_CTRL_READ);
-    } else if (req.type == Request::Type::WRITE) {
+      glue_reads_sent++;
+    } else {
       STAT_EVENT(scarab_req->proc_id, POWER_MEMORY_CTRL_WRITE);
       /* Writes are posted: acknowledged once the controller accepts them, returning the way read data does. */
-      resp_queue.push_back(make_pair(req.addr, scarab_req));
+      resp_queue.push_back(std::make_pair(addr, scarab_req));
+      glue_writes_sent++;
     }
 
     scarab_req->mem_queue_cycle = cycle_count;
@@ -227,47 +170,23 @@ int ramulator_send(Mem_Req* scarab_req) {
   return (int)is_sent;
 }
 
-void enqueue_response(Request& req) {
-  /* Only reads are answered by the controller; writes are acknowledged in ramulator_send. */
-  ASSERTM(0, req.type == Request::Type::READ, "ERROR: Responses should be sent only for read requests! \n");
-  ASSERTM(0, inflight_read_reqs.find(req.addr) != inflight_read_reqs.end(),
+/* Called by the backend when the read to addr completes: every Scarab request merged onto it
+   is answered together. */
+void enqueue_response(long addr) {
+  ASSERTM(0, inflight_read_reqs.find(addr) != inflight_read_reqs.end(),
           "ERROR: A corresponding Scarab request was not found for the "
           "Ramulator request that read address: %lu\n",
-          req.addr);
+          addr);
 
-  auto it_scarab_req = inflight_read_reqs.find(req.addr);
+  auto it_scarab_req = inflight_read_reqs.find(addr);
   for (auto req : it_scarab_req->second)
-    resp_queue.push_back(make_pair(it_scarab_req->first, req));
-  // resp_queue.push_back(make_pair(it_scarab_req->first, it_scarab_req->second));
+    resp_queue.push_back(std::make_pair(it_scarab_req->first, req));
   inflight_read_reqs.erase(it_scarab_req);
-}
-
-void to_ramulator_req(const Mem_Req* scarab_req, Request* ramulator_req) {
-  ASSERTM(scarab_req->proc_id, scarab_req->state == MRS_MEM_NEW,
-          "A"
-          " request in state %d cannot be issued to Ramulator\n",
-          scarab_req->state);
-
-  // only MRT_WB should result in a DRAM write. A plain store miss should still
-  // result in a DRAM read
-  if (scarab_req->type == MRT_WB)
-    ramulator_req->type = Request::Type::WRITE;
-  else if (scarab_req->type == MRT_DFETCH || scarab_req->type == MRT_DSTORE || scarab_req->type == MRT_IFETCH ||
-           scarab_req->type == MRT_IPRF || scarab_req->type == MRT_DPRF || scarab_req->type == MRT_UOCPRF ||
-           scarab_req->type == MRT_FDIPPRFON || scarab_req->type == MRT_FDIPPRFOFF ||
-           scarab_req->type == MRT_FDIPPRFALT)
-    ramulator_req->type = Request::Type::READ;
-  else
-    ASSERTM(scarab_req->proc_id, false, "Ramulator: Currently unsupported Scarab request type: %d\n", scarab_req->type);
-
-  ramulator_req->addr = scarab_req->phys_addr;
-  ramulator_req->coreid = scarab_req->proc_id;
-
-  ramulator_req->callback = enqueue_response;
+  glue_reads_completed++;
 }
 
 void ramulator_tick() {
-  wrapper->tick();
+  backend->tick();
 
   /* A returning line already holds its LLC MSHR, which is what bounded how many could be
      in DRAM at once, so nothing can refuse it here. */
@@ -275,25 +194,26 @@ void ramulator_tick() {
     Mem_Req* req = resp_queue.front().second;
     DEBUG(req->proc_id, "Ramulator: Completing a (%s) request to address %llx\n", Mem_Req_Type_str(req->type),
           req->addr);
+    glue_writes_acked += req->type == MRT_WB;
     mem_complete_bus_in_access(req, 0);
     resp_queue.pop_front();
   }
 }
 
 int ramulator_get_chip_width() {
-  return wrapper->get_chip_width();
+  return backend->get_chip_width();
 }
 
 int ramulator_get_chip_size() {
-  return wrapper->get_chip_size();
+  return backend->get_chip_size();
 }
 
 int ramulator_get_num_chips() {
-  return wrapper->get_num_chips();
+  return backend->get_num_chips();
 }
 
 int ramulator_get_chip_row_buffer_size() {
-  return wrapper->get_chip_row_buffer_size();
+  return backend->get_chip_row_buffer_size();
 }
 
 Mem_Req* ramulator_search_queue(long phys_addr, Mem_Req_Type type) {

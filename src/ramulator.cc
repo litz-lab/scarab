@@ -54,6 +54,7 @@ extern "C" {
 /**************************************************************************************/
 
 DramBackend* backend = NULL;
+Ramulator_Config ramulator_config;
 
 void enqueue_response(long addr);
 
@@ -80,6 +81,7 @@ void ramulator_init() {
           RAMULATOR_READQ_ENTRIES);
 
   backend = ramulator1_backend_create(&enqueue_response);
+  backend->get_config(&ramulator_config);
 
   DPRINTF("Initialized Ramulator. \n");
 }
@@ -199,6 +201,11 @@ void ramulator_tick() {
     mem_complete_bus_in_access(req, 0);
     resp_queue.pop_front();
   }
+}
+
+const Ramulator_Config* ramulator_get_config() {
+  ASSERTM(0, backend, "The DRAM configuration is not known before ramulator_init\n");
+  return &ramulator_config;
 }
 
 int ramulator_get_chip_width() {

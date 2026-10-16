@@ -36,7 +36,6 @@
 #include "debug/debug_macros.h"
 
 #include "memory/memory.param.h"
-#include "ramulator.param.h"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_ADDR_TRANS, ##args)
 

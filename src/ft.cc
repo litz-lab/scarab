@@ -40,6 +40,8 @@
 extern "C" {
 #include "bp/bp_targ_mech.h"
 #include "frontend/frontend.h"
+
+#include "thread.h"
 }
 #include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
@@ -141,6 +143,8 @@ void FT::add_op(Op* op) {
     ASSERT(proc_id, ops.back());
     ASSERT(proc_id, ops.back()->op_pool_valid);
     ASSERT(proc_id, ops.back()->inst);
+    ASSERT(proc_id, ops.back()->unique_num < op->unique_num);
+    ASSERT(proc_id, ops.back()->unique_num_per_proc < op->unique_num_per_proc);
     if (op->bom) {
       // assert consecutivity
       DEBUG(proc_id, "back addr + size %llx fetch addr %llx\n", ops.back()->inst->addr + ops.back()->inst->inst_size,
@@ -204,6 +208,8 @@ FT_Event FT::build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::functio
     op->bp_pred_main.pred_npc = op->oracle_info.npc;
     op->bp_pred_main.pred = op->oracle_info.dir;  // for prebuilt, pred is same as dir
     add_op(op);
+    if (MAP_LOOKAHEAD && bp_id == MAIN_BP && !off_path)
+      thread_map_op_lookahead(op);
     if (off_path) {
       bp_predict_btb(g_bp_data, op);
       if (bp_l0_enabled())

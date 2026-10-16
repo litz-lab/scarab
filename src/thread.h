@@ -77,7 +77,7 @@ void recover_thread(Thread_Data*, Addr, Counter, uns64, Flag);
 void add_to_seq_op_list(Thread_Data*, Op*);
 void remove_from_seq_op_list(Thread_Data*, Op*);
 void thread_map_op(Op*);
-void thread_map_mem_dep(Op*);
+void thread_map_op_lookahead(Op*);
 void recover_seq_op_list(Thread_Data*, Counter);
 Op* remove_next_from_seq_op_list(Thread_Data*);
 void reset_seq_op_list(Thread_Data*);

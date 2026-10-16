@@ -917,6 +917,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
 
     ASSERTM(ic->proc_id, ic->off_path == op->off_path, "Inconsistent off-path op PC: %llx ic:%i op:%i\n",
             op->inst->addr, ic->off_path, op->off_path);
+    ASSERT(ic->proc_id, ii == 0 || cur_data->ops[ii - 1]->unique_num < op->unique_num);
 
     if (!op->off_path) {
       STAT_EVENT(ic->proc_id, UOPS_SERVED_BY_ICACHE_ON_PATH + op->fetched_from_uop_cache);
@@ -945,6 +946,13 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
 
     op_set_fetch_cycle(op, cycle_count);
 
+    /* add to sequential op list */
+    add_to_seq_op_list(td, op);
+    ASSERT(ic->proc_id, td->seq_op_list.count <= op_pool_active_ops);
+
+    /* map the op based on true dependencies & set information in op->oracle_info */
+    thread_map_op(op);
+
     if (is_fetch_barrier_op(op)) {
       ASSERT(ic->proc_id, !ic->fetch_barrier_pending);
       ASSERT(ic->proc_id, ii == cur_data->op_count - 1);
@@ -956,8 +964,6 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     }
 
     op_count[ic->proc_id]++; /* increment instruction counters */
-    unique_count_per_core[ic->proc_id]++;
-    unique_count++;
     /* check trigger */
     if (op->uop->trigger_op_fetched_hook)
       model->op_fetched_hook(op);

@@ -100,7 +100,7 @@ target_include_directories(scarab PRIVATE .)
 
 target_link_libraries(scarab
     PRIVATE
-        ramulator
+        ramulator1
         pin_lib_for_scarab
 )
 if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})

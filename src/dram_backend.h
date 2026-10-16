@@ -62,5 +62,6 @@ class DramBackend {
 };
 
 DramBackend* ramulator1_backend_create(DramBackend::Read_Done_Func read_done);
+DramBackend* ramulator2_backend_create(DramBackend::Read_Done_Func read_done);
 
 #endif  // __DRAM_BACKEND_H__

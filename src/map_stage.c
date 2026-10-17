@@ -255,7 +255,7 @@ static inline void stage_process_op(Op* op) {
   reg_file_rename(op);
 
   /* setting wake up lists */
-  add_to_wake_up_lists(op, model->wake_hook);
+  map_wakeup_list_add(op, model->wake_hook);
 }
 
 static inline void map_stage_collect_stat(Flag stall, Flag starved) {

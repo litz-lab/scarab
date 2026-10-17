@@ -91,15 +91,15 @@ void recover_map(void);
 void reset_map(void);
 
 // dependency tracking
-void map_op_lookahead(Op*);
-void map_op(Op*);
-void delete_store_hash_entry(Op*);
+void map_dep_lookahead(Op*);
+void map_dep_fetch(Op*);
+void map_dep_remove_store(Op*);
 
 // wake up management
-void wake_up_ops(Op*, Dep_Type, void (*)(Op*, Op*, uns));
-void free_wake_up_list(Op*);
-void add_to_wake_up_lists(Op*, void (*)(Op*, Op*, uns));
-void simple_wake(Op*, Op*, uns);
+void map_wakeup_signal(Op*, Dep_Type, void (*)(Op*, Op*, uns));
+void map_wakeup_action(Op*, Op*, uns);
+void map_wakeup_list_free(Op*);
+void map_wakeup_list_add(Op*, void (*)(Op*, Op*, uns));
 
 /**************************************************************************************/
 

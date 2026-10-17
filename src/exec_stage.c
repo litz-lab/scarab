@@ -457,7 +457,7 @@ static inline void exec_stage_dep_wakeup(Op* op) {
   // non-memory ops will always distribute their results after the op's latency
   if (op->uop->mem_type == NOT_MEM) {
     op_set_wake_cycle(op, exec_cycle);
-    wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+    map_wakeup_signal(op, REG_DATA_DEP, model->wake_hook);
     return;
   }
 
@@ -466,8 +466,8 @@ static inline void exec_stage_dep_wakeup(Op* op) {
     // only wake up if this is the first time this op executes
     if (op->exec_count == 0) {
       op_set_wake_cycle(op, exec_cycle);
-      wake_up_ops(op, MEM_ADDR_DEP, model->wake_hook);
-      wake_up_ops(op, MEM_DATA_DEP, model->wake_hook);
+      map_wakeup_signal(op, MEM_ADDR_DEP, model->wake_hook);
+      map_wakeup_signal(op, MEM_DATA_DEP, model->wake_hook);
     }
     return;
   }

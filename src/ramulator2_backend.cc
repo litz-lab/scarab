@@ -28,12 +28,15 @@
  *                YAML file in ramulator2_config (see src/ramulator2/gen_configs.py).
  ***************************************************************************************/
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <exception>
 #include <fstream>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -165,26 +168,58 @@ class Ramulator2Backend : public DramBackend {
     delete frontend;
   }
 
+  /* A line is sent as `parts` transactions: one for DDR4/DDR5, two 32-byte ones for LPDDR5 and
+     GDDR6. The channel mapper interleaves at the line size, so all of them go to the same channel
+     and consecutive columns of one row. */
   bool send(long addr, bool is_write, int proc_id) override {
     long dram_addr = fold(addr);
 #ifndef NO_DEBUG
     count_collision(addr, dram_addr);
 #endif
-    Ramulator::Request req(dram_addr, is_write ? Ramulator::Request::Type::Write : Ramulator::Request::Type::Read,
-                           proc_id, nullptr);
-    req.size_bytes = DCACHE_LINE_SIZE;
-    /* Writes get no callback: Ramulator 2 would call it when the WR issues, or inside send when
-       the write coalesces, and the glue acknowledges a write as soon as send accepts it. The
-       callback carries the unfolded address, because two lines can fold to the same one. */
-    if (!is_write)
-      req.callback = [this, addr](Ramulator::Request&) { read_done(addr); };
-    bool accepted = memory_system->send(req);
-    if (accepted)
-      (is_write ? writes_by_core : reads_by_core)[proc_id]++;
-    return accepted;
+    /* A write whose later transactions were refused is finished before another write is taken. */
+    if (is_write && !pending_write_parts.empty())
+      return false;
+    long base = parts > 1 ? dram_addr & ~(long)(DCACHE_LINE_SIZE - 1) : dram_addr;
+    uns channel = channel_of(base);
+    std::shared_ptr<Line_Read> line_read = std::make_shared<Line_Read>(Line_Read{parts, 0, 0});
+    for (uns part = 0; part < parts; part++) {
+      Ramulator::Request req(base + part * tx_bytes,
+                             is_write ? Ramulator::Request::Type::Write : Ramulator::Request::Type::Read, proc_id,
+                             nullptr);
+      req.size_bytes = tx_bytes;
+      /* Writes get no callback: Ramulator 2 would call it when the WR issues, or inside send when
+         the write coalesces, and the glue acknowledges a write as soon as send accepts it. The
+         callback carries the unfolded address, because two lines can fold to the same one. */
+      if (!is_write)
+        req.callback = [this, addr, channel, line_read](Ramulator::Request& done) {
+          line_read->arrive = done.arrive;  // the same for every transaction of the line
+          line_read->depart = std::max(line_read->depart, done.depart);
+          if (--line_read->parts_left == 0)
+            line_read_done(addr, channel, line_read->depart - line_read->arrive);
+        };
+      if (memory_system->send(req))
+        continue;
+      /* Reads are never refused: the read buffers hold ramulator_readq_entries lines (see init). */
+      ASSERTM(proc_id, is_write, "Ramulator 2 refused transaction %u of a read\n", part);
+      if (part == 0)
+        return false;
+      for (; part < parts; part++) {
+        Ramulator::Request rest(base + part * tx_bytes, Ramulator::Request::Type::Write, proc_id, nullptr);
+        rest.size_bytes = tx_bytes;
+        pending_write_parts.push_back(rest);
+      }
+      break;
+    }
+    (is_write ? writes_by_core : reads_by_core)[proc_id]++;
+    (is_write ? line_writes : line_reads)[channel]++;
+    return true;
   }
 
-  void tick() override { memory_system->tick(); }
+  void tick() override {
+    while (!pending_write_parts.empty() && memory_system->send(pending_write_parts.front()))
+      pending_write_parts.pop_front();
+    memory_system->tick();
+  }
 
   void finish() override {
     frontend->finalize();
@@ -194,6 +229,9 @@ class Ramulator2Backend : public DramBackend {
     ASSERTM(0, out.good(), "Cannot write %s\n", path.c_str());
     memory_system->print_stats(out);
     write_ramulator1_stats();
+    if (!pending_write_parts.empty())
+      DPRINTF("Ramulator 2: %zu write transactions were still waiting to enter a controller\n",
+              pending_write_parts.size());
 #ifndef NO_DEBUG
     DPRINTF(
         "Ramulator 2 address fold: capacity 2^%u bytes, row field %u bits; %zu DRAM lines used, %llu "
@@ -239,26 +277,26 @@ class Ramulator2Backend : public DramBackend {
     double tx_bytes = memory_system->get_tx_bytes();
 
     line("dram_cycles", get(channels[0], "cycles"), "Number of DRAM cycles simulated");
-    line("incoming_requests", get(stats, "total_num_read_requests") + get(stats, "total_num_write_requests"),
-         "Number of incoming requests to DRAM");
-    line("read_requests", get(stats, "total_num_read_requests"), "Number of incoming read requests to DRAM per core");
+    /* Requests and read latency are per Scarab line, as in Ramulator 1, counted here; row-buffer
+       outcomes, queue lengths and bytes are Ramulator 2's, per DRAM transaction. */
+    double reads = 0, writes = 0;
+    for (size_t c = 0; c < channels.size(); c++) {
+      reads += line_reads[c];
+      writes += line_writes[c];
+    }
+    line("incoming_requests", reads + writes, "Number of incoming requests to DRAM");
+    line("read_requests", reads, "Number of incoming read requests to DRAM per core");
     for (size_t i = 0; i < reads_by_core.size(); i++)
       elem(i, reads_by_core[i]);
-    line("write_requests", get(stats, "total_num_write_requests"),
-         "Number of incoming write requests to DRAM per core");
+    line("write_requests", writes, "Number of incoming write requests to DRAM per core");
     for (size_t i = 0; i < writes_by_core.size(); i++)
       elem(i, writes_by_core[i]);
-    double incoming = 0, incoming_reads = 0;
-    for (auto& ch : channels) {
-      incoming += get(ch, "num_read_reqs") + get(ch, "num_write_reqs");
-      incoming_reads += get(ch, "num_read_reqs");
-    }
-    line("incoming_requests_per_channel", incoming, "Number of incoming requests to each DRAM channel");
+    line("incoming_requests_per_channel", reads + writes, "Number of incoming requests to each DRAM channel");
     for (size_t c = 0; c < channels.size(); c++)
-      elem(c, get(channels[c], "num_read_reqs") + get(channels[c], "num_write_reqs"));
-    line("incoming_read_reqs_per_channel", incoming_reads, "Number of incoming read requests to each DRAM channel");
+      elem(c, line_reads[c] + line_writes[c]);
+    line("incoming_read_reqs_per_channel", reads, "Number of incoming read requests to each DRAM channel");
     for (size_t c = 0; c < channels.size(); c++)
-      elem(c, get(channels[c], "num_read_reqs"));
+      elem(c, line_reads[c]);
 
     for (size_t c = 0; c < channels.size(); c++) {
       const Ramulator::ConfigNode& ch = channels[c];
@@ -273,11 +311,11 @@ class Ramulator2Backend : public DramBackend {
         line(std::string("write_row_") + res + "_channel_" + id + "_core", get(ch, std::string("write_row_") + res),
              "Number of row hits/misses/conflicts for write requests per channel");
       }
-      /* Ramulator 1 left reads forwarded from the write queue out of the latency sum; Ramulator 2
-         counts each of them as exactly 1 cycle. */
-      double latency_sum = get(ch, "read_latency") - get(ch, "num_read_reqs_forwarded");
-      double reads = get(ch, "num_read_reqs");
-      line("read_latency_avg_" + id, reads ? latency_sum / reads : 0,
+      /* Like Ramulator 1, reads forwarded from the write queue (1 cycle) are left out of the sum but
+         counted in the average's denominator. */
+      double latency_sum = line_read_latency_sum[c];
+      double channel_reads = line_reads[c];
+      line("read_latency_avg_" + id, channel_reads ? latency_sum / channel_reads : 0,
            "The average memory latency cycles (in memory time domain) per request for all read requests in this "
            "channel");
       line("read_latency_sum_" + id, latency_sum,
@@ -322,10 +360,14 @@ class Ramulator2Backend : public DramBackend {
     Ramulator::ConfigNode controller_list = memory["controllers"];  // operator[] returns a copy
     const auto& controllers = controller_list.seq();
     ASSERTM(0, !controllers.empty(), "%s has no controllers\n", RAMULATOR2_CONFIG);
+    check_org(controllers);
+    check_channel_mapper(memory["channel_mapper"], controllers.size());
+
+    /* ramulator_*q_entries count lines; a line takes `parts` buffer entries. */
     Ramulator::ConfigNode sized;
     for (Ramulator::ConfigNode controller : controllers) {
-      controller.set("read_buffer_size", (int)RAMULATOR_READQ_ENTRIES);
-      controller.set("write_buffer_size", (int)RAMULATOR_WRITEQ_ENTRIES);
+      controller.set("read_buffer_size", (int)(RAMULATOR_READQ_ENTRIES * parts));
+      controller.set("write_buffer_size", (int)(RAMULATOR_WRITEQ_ENTRIES * parts));
       Ramulator::ConfigNode plugins;  // Ramulator 2 reads a child list from "<interface name>s"
       if (controller["controller_plugins"])
         plugins = controller["controller_plugins"];
@@ -337,8 +379,6 @@ class Ramulator2Backend : public DramBackend {
     }
     memory.set("controllers", sized);
     config.set("memory_system", memory);
-
-    check_org(controllers);
 
     frontend = Ramulator::Factory::create_frontend(config);
     memory_system = Ramulator::Factory::create_memory_system(config);
@@ -353,9 +393,34 @@ class Ramulator2Backend : public DramBackend {
     long long tck_fs = std::llround(memory_system->get_tCK() * 1e6);
     ASSERTM(0, std::llabs((long long)RAMULATOR_TCK - tck_fs) < 1000, "ramulator_tCK is %u fs but %s has tCK %lld fs\n",
             RAMULATOR_TCK, RAMULATOR2_CONFIG, tck_fs);
-    ASSERTM(0, (uns)memory_system->get_tx_bytes() == DCACHE_LINE_SIZE,
-            "%s moves %d bytes per request, but a Scarab line is %u bytes\n", RAMULATOR2_CONFIG,
-            memory_system->get_tx_bytes(), DCACHE_LINE_SIZE);
+    ASSERTM(0, (uns)memory_system->get_tx_bytes() == tx_bytes, "%s: transaction size %d, expected %u\n",
+            RAMULATOR2_CONFIG, memory_system->get_tx_bytes(), tx_bytes);
+  }
+
+  /* channel_of() reproduces CacheLineInterleave's channel choice, which must not split a line. */
+  void check_channel_mapper(const Ramulator::ConfigNode& mapper, size_t channels) {
+    ASSERTM(0, mapper["impl"].as<std::string>("") == "CacheLineInterleave",
+            "%s: Scarab supports the CacheLineInterleave channel mapper only\n", RAMULATOR2_CONFIG);
+    uns interleave_bits = mapper["interleave_bits"].as<int>(0);
+    ASSERTM(0, (1u << interleave_bits) >= parts,
+            "%s: channels interleave every %u bytes, which splits a %u-byte line; set interleave_bits\n",
+            RAMULATOR2_CONFIG, tx_bytes << interleave_bits, DCACHE_LINE_SIZE);
+    channel_shift = log2_exact(tx_bytes, "transaction size") + interleave_bits;
+    channel_mask = channels - 1;
+    line_reads.assign(channels, 0);
+    line_writes.assign(channels, 0);
+    line_read_latency_sum.assign(channels, 0);
+  }
+
+  uns channel_of(long dram_addr) const { return multi_channel ? (dram_addr >> channel_shift) & channel_mask : 0; }
+
+  /* Latency is Ramulator 2's nominal depart - arrive (its own read_latency stat uses the same). A
+     read forwarded from the write queue departs 1 cycle after it arrives, but Ramulator 2 hands it
+     back only once the older reads ahead of it in its completion queue are done. */
+  void line_read_done(long addr, uns channel, int64_t latency) {
+    if (latency > 1)  // 1 = forwarded from the write queue, left out as in Ramulator 1
+      line_read_latency_sum[channel] += latency;
+    read_done(addr);
   }
 
   /* The ramulator_* organization params must describe the same DRAM as the YAML, so a PARAMS file
@@ -363,16 +428,29 @@ class Ramulator2Backend : public DramBackend {
   void check_org(const Ramulator::ConfigNode::Seq& controllers) {
     const Ramulator::ConfigNode& controller = controllers[0];
     std::string standard = controller["dram"]["impl"].as<std::string>();
-    /* Both have Rank/BankGroup/Bank/Row/Column levels, the timing names below, and 64-byte
-       transactions. */
-    ASSERTM(0, standard == "DDR4" || standard == "DDR5",
-            "Ramulator 2 backend: only DDR4 and DDR5 are supported so far, %s is %s\n", RAMULATOR2_CONFIG,
+    ASSERTM(0, standard == "DDR4" || standard == "DDR5" || standard == "LPDDR5" || standard == "GDDR6",
+            "Ramulator 2 backend: DDR4, DDR5, LPDDR5 and GDDR6 are supported, %s is %s\n", RAMULATOR2_CONFIG,
             standard.c_str());
     /* The power model's DRAM side (CACTI main memory, power_scarab_config.cc) has only been set up
        and checked for DDR4. */
     ASSERTM(0, !POWER_INTF_ON || standard == "DDR4", "power_intf_on is only supported with DDR4; %s is %s\n",
             RAMULATOR2_CONFIG, standard.c_str());
     std::unique_ptr<Ramulator::DRAMSpec> spec = Ramulator::DRAMSpec::create(standard, controller);
+    /* GDDR6 has no Rank level; a missing level counts as 1. */
+    auto level = [&spec](const char* name) -> int { return spec->levels.count(name) ? spec->get_level_size(name) : 1; };
+    /* The first of the names this standard defines (e.g. LPDDR5's nBL_min, GDDR6's nRCDRD). */
+    auto timing = [&spec](std::initializer_list<const char*> names) -> int {
+      for (const char* name : names)
+        if (spec->timings.count(name))
+          return spec->get_timing_value(name);
+      ASSERTM(0, false, "Ramulator 2 backend: none of the timing names asked for exists in %s\n", RAMULATOR2_CONFIG);
+      return 0;
+    };
+    tx_bytes = spec->get_tx_bytes();
+    ASSERTM(0, tx_bytes && DCACHE_LINE_SIZE % tx_bytes == 0,
+            "%s moves %u bytes per transaction, which does not divide a %u-byte line\n", RAMULATOR2_CONFIG, tx_bytes,
+            DCACHE_LINE_SIZE);
+    parts = DCACHE_LINE_SIZE / tx_bytes;
 
     struct {
       const char* param;
@@ -380,11 +458,11 @@ class Ramulator2Backend : public DramBackend {
       int actual;
     } org[] = {
         {"ramulator_channels", RAMULATOR_CHANNELS, (int)controllers.size()},
-        {"ramulator_ranks", RAMULATOR_RANKS, spec->get_level_size("Rank")},
-        {"ramulator_bankgroups", RAMULATOR_BANKGROUPS, spec->get_level_size("BankGroup")},
-        {"ramulator_banks", RAMULATOR_BANKS, spec->get_level_size("Bank")},
-        {"ramulator_rows", RAMULATOR_ROWS, spec->get_level_size("Row")},
-        {"ramulator_cols", RAMULATOR_COLS, spec->get_level_size("Column")},
+        {"ramulator_ranks", RAMULATOR_RANKS, level("Rank")},
+        {"ramulator_bankgroups", RAMULATOR_BANKGROUPS, level("BankGroup")},
+        {"ramulator_banks", RAMULATOR_BANKS, level("Bank")},
+        {"ramulator_rows", RAMULATOR_ROWS, level("Row")},
+        {"ramulator_cols", RAMULATOR_COLS, level("Column")},
         {"ramulator_chip_width", RAMULATOR_CHIP_WIDTH, spec->organization.dq},
         {"bus_width_in_bytes * 8", BUS_WIDTH_IN_BYTES * 8, spec->channel_width},
     };
@@ -395,11 +473,12 @@ class Ramulator2Backend : public DramBackend {
       ASSERTM(0, same_dram(controller["dram"], other["dram"]), "All channels in %s must use the same DRAM\n",
               RAMULATOR2_CONFIG);
 
-    uint64_t ranks = spec->get_level_size("Rank"), bankgroups = spec->get_level_size("BankGroup");
-    uint64_t banks = spec->get_level_size("Bank"), rows = spec->get_level_size("Row");
-    uint64_t cols = spec->get_level_size("Column"), dq = spec->organization.dq;
+    uint64_t ranks = level("Rank"), bankgroups = level("BankGroup");
+    uint64_t banks = level("Bank"), rows = level("Row");
+    uint64_t cols = level("Column"), dq = spec->organization.dq;
     uint64_t channel_bytes = ranks * bankgroups * banks * rows * cols * spec->channel_width / 8;
     capacity_bits = log2_exact(channel_bytes * controllers.size(), "DRAM capacity in bytes");
+    multi_channel = log2_exact(controllers.size(), "channel count") > 0;  // CacheLineInterleave needs 2^n
     row_bits = log2_exact(rows, "row count");
 
     peak_bandwidth_Bps = controllers.size() * spec->get_timing_value("rate") * 1e6 * spec->channel_width / 8;
@@ -415,14 +494,14 @@ class Ramulator2Backend : public DramBackend {
     dram_config.banks = banks;
     dram_config.readq_entries = RAMULATOR_READQ_ENTRIES;
     dram_config.writeq_entries = RAMULATOR_WRITEQ_ENTRIES;
-    dram_config.tCL = spec->get_timing_value("nCL");
-    dram_config.tCWL = spec->get_timing_value("nCWL");
-    dram_config.tBL = spec->get_timing_value("nBL");
-    dram_config.tRCD = spec->get_timing_value("nRCD");
-    dram_config.tRP = spec->get_timing_value("nRP");
-    dram_config.tRAS = spec->get_timing_value("nRAS");
-    dram_config.tCCD = spec->get_timing_value("nCCDL");
-    dram_config.tWTR = spec->get_timing_value("nWTRL");
+    dram_config.tCL = timing({"nCL"});
+    dram_config.tCWL = timing({"nCWL"});
+    dram_config.tBL = timing({"nBL", "nBL_min"}) * parts;  // data-bus cycles per line
+    dram_config.tRCD = timing({"nRCD", "nRCDRD"});
+    dram_config.tRP = timing({"nRP"});
+    dram_config.tRAS = timing({"nRAS"});
+    dram_config.tCCD = timing({"nCCDL"});
+    dram_config.tWTR = timing({"nWTRL"});
   }
 
   static std::string scalars(const Ramulator::ConfigNode& seq) {
@@ -483,6 +562,16 @@ class Ramulator2Backend : public DramBackend {
   int chip_width = 0, chip_size_mbit = 0, num_chips = 0, chip_row_buffer_bits = 0;
   Ramulator_Config dram_config = {};
   double peak_bandwidth_Bps = 0;
+  uns tx_bytes = 0;  // bytes per DRAM transaction
+  uns parts = 1;     // transactions per Scarab line
+  uns channel_shift = 0, channel_mask = 0;
+  bool multi_channel = false;
+  struct Line_Read {
+    uns parts_left;
+    int64_t arrive, depart;
+  };
+  std::deque<Ramulator::Request> pending_write_parts;
+  std::vector<double> line_reads, line_writes, line_read_latency_sum;  // per channel, in lines
   std::vector<unsigned long long> reads_by_core = std::vector<unsigned long long>(NUM_CORES);
   std::vector<unsigned long long> writes_by_core = std::vector<unsigned long long>(NUM_CORES);
 };

@@ -57,6 +57,7 @@ extern "C" {
 
 #include "general.param.h"
 #include "memory/memory.param.h"
+#include "power/power.param.h"
 #include "ramulator.param.h"
 
 #include "ramulator.h"
@@ -362,8 +363,15 @@ class Ramulator2Backend : public DramBackend {
   void check_org(const Ramulator::ConfigNode::Seq& controllers) {
     const Ramulator::ConfigNode& controller = controllers[0];
     std::string standard = controller["dram"]["impl"].as<std::string>();
-    ASSERTM(0, standard == "DDR4", "Ramulator 2 backend: only DDR4 is supported so far, %s is %s\n", RAMULATOR2_CONFIG,
+    /* Both have Rank/BankGroup/Bank/Row/Column levels, the timing names below, and 64-byte
+       transactions. */
+    ASSERTM(0, standard == "DDR4" || standard == "DDR5",
+            "Ramulator 2 backend: only DDR4 and DDR5 are supported so far, %s is %s\n", RAMULATOR2_CONFIG,
             standard.c_str());
+    /* The power model's DRAM side (CACTI main memory, power_scarab_config.cc) has only been set up
+       and checked for DDR4. */
+    ASSERTM(0, !POWER_INTF_ON || standard == "DDR4", "power_intf_on is only supported with DDR4; %s is %s\n",
+            RAMULATOR2_CONFIG, standard.c_str());
     std::unique_ptr<Ramulator::DRAMSpec> spec = Ramulator::DRAMSpec::create(standard, controller);
 
     struct {

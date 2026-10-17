@@ -1339,18 +1339,9 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Addr* line_addr, MLC_Data*
     /* Nothing waits on a writeback. */
     ASSERT(req->proc_id, !req->done_func);
     STAT_EVENT(req->proc_id, WB_MLC_MISS_FILL_MLC);  // CMP remove this later
-    /* The MLC's own writeback of the line has not left: this newer copy takes its place. */
-    Mshr_Line* pending = mshr_line(&mem->mlc_wb, req->addr);
-    if (pending && mshr_line_first(pending)->type == MRT_WB)
-      req->type = MRT_WB;
     if (!mlc_fill_line(req)) {
       req->rdy_cycle = cycle_count + 1;
       return FALSE;
-    }
-    if (pending) {
-      Mem_Req* wb = mshr_line_first(pending);
-      mshr_remove(&mem->mlc_wb, wb);
-      mem_free_req(wb);
     }
     if (MLC_WRITE_THROUGH && req->type == MRT_WB) {
       req->state = MRS_L1_NEW;
@@ -2829,6 +2820,15 @@ Flag l1_fill_line(Mem_Req* req) {
     l1_miss_is_satisfied(req);
     return TRUE;
   }
+  /* Another request already filled the line: inserting it again would evict a victim
+     the insert then keeps (cache_insert reuses the line's own way). */
+  Addr resident_addr;
+  L1_Data* resident = (L1_Data*)cache_access(&L1(req->proc_id)->cache, req->addr, &resident_addr, FALSE);
+  if (resident) {
+    resident->dirty |= (req->type == MRT_WB);
+    l1_miss_is_satisfied(req);
+    return TRUE;
+  }
   /* An LLC prefetch that missed the MLC on its way down can land after a dcache demotion
      has put the line there. The resident copy is the newer one and sits closer to the
      core, so drop this fill rather than make a second copy. */
@@ -3184,6 +3184,15 @@ Flag mlc_fill_line(Mem_Req* req) {
     mlc_miss_is_satisfied(req);
     return TRUE;
   }
+  /* Another request already filled the line: inserting it again would evict a victim
+     the insert then keeps (cache_insert reuses the line's own way). */
+  Addr resident_addr;
+  MLC_Data* resident = (MLC_Data*)cache_access(&MLC(req->proc_id)->cache, req->addr, &resident_addr, FALSE);
+  if (resident) {
+    resident->dirty |= (req->type == MRT_WB);
+    mlc_miss_is_satisfied(req);
+    return TRUE;
+  }
   if (EXCLUSIVE_CACHES) {
     Addr dup_addr;
     L1_Data* dup = (L1_Data*)cache_access(&L1(req->proc_id)->cache, req->addr, &dup_addr, FALSE);
@@ -3386,6 +3395,14 @@ Flag mlc_fill_line(Mem_Req* req) {
 
   // write back can fill mlc directly - reqs filling core should not dirty the line
   data->dirty = ((req->type == MRT_WB) && (req->state != MRS_FILL_MLC));
+  /* The line's own writeback has not left: this fill takes the line back, dirty bit and all. */
+  Mshr_Line* pending = mshr_line(&mem->mlc_wb, req->addr);
+  if (pending) {
+    Mem_Req* wb = mshr_line_first(pending);
+    data->dirty |= (wb->type == MRT_WB);
+    mshr_remove(&mem->mlc_wb, wb);
+    mem_free_req(wb);
+  }
   data->prefetch = req->type == MRT_DPRF || req->type == MRT_IPRF || req->type == MRT_UOCPRF ||
                    req->type == MRT_FDIPPRFON || req->type == MRT_FDIPPRFOFF || req->type == MRT_FDIPPRFALT ||
                    req->demand_match_prefetch;

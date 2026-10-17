@@ -173,8 +173,6 @@
 --stream_prefetch_n             2
 --stream_start_dis              1
 --stream_train_num              4	
---stream_create_on_dc_miss      0
---stream_create_on_l1_miss      1
 
 --pref_throttlefb_on=0
 --pref_acc_thresh_1=0.75

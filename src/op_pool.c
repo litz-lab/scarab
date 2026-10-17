@@ -203,7 +203,7 @@ void free_op(Op* op) {
   DEBUG(0, "Freed op  id:%u  op_pool_active_ops: %u\n", op->op_pool_id, op_pool_active_ops);
 
   if (op->inst && op->uop->mem_type == MEM_ST)
-    delete_store_hash_entry(op);
+    map_dep_remove_store(op);
 
   if (op->inst && op->inst->fake_inst) {
     // fake ops get their own Static_Inst_Info; their Static_Op_Info is shared, so it is not freed
@@ -224,7 +224,7 @@ void free_op(Op* op) {
 
   op->op_pool_next = op_pool_free_head;
   op_pool_free_head = op;
-  free_wake_up_list(op);
+  map_wakeup_list_free(op);
 }
 
 /**************************************************************************************/

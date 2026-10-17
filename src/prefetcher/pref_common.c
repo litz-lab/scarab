@@ -557,7 +557,6 @@ Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_
                                  uns32 global_hist, Flag bw) {
   if (!line_index)  // addr = 0
     return TRUE;
-  pref_feed_back_info_update(prefetcher_id);
   /* Its LLC lookup resolves after the LLC's latency, as a demand's does. */
   Pref_Mem_Req req = {.proc_id = proc_id,
                       .line_addr = line_index << LOG2(DCACHE_LINE_SIZE),
@@ -653,6 +652,7 @@ static void pref_parse_level_config(const char* param_name, const char* value, P
    and UMLC enqueues do not carry those (unchanged from before). */
 Flag pref_addto_dest_req_queue_set(uns8 proc_id, HWP_Type dest, Addr line_index, uns8 prefetcher_id, uns distance,
                                    Addr loadPC, uns32 global_hist, Flag bw) {
+  pref_feed_back_info_update(prefetcher_id);
   switch (dest) {
     case PREF_TO_DCACHE:
       return pref_addto_dl0req_queue(proc_id, line_index, prefetcher_id);

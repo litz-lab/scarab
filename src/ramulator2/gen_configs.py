@@ -54,16 +54,19 @@ import ramulator  # noqa: E402
 from ramulator.export import dict_to_yaml  # noqa: E402
 
 
-def generic_ddr(standard, org_preset, timing_preset, channels, **overrides):
-    """GenericDDR controllers with FRFCFS, all-bank refresh, open rows and RoBaRaCoCh."""
+def generic_ddr(standard, org_preset, timing_preset, channels, controller="GenericDDR", refresh="AllBank",
+                interleave_bits=0, **overrides):
+    """Controllers with FRFCFS, open rows and RoBaRaCoCh. interleave_bits=1 interleaves channels at
+    64 bytes on a 32-byte-transaction standard, so both transactions of a Scarab line go to the
+    same channel and row."""
     controllers = []
     for _ in range(channels):
         dram = getattr(ramulator.dram, standard)(org_preset=org_preset, timing_preset=timing_preset, **overrides)
         controllers.append(
-            ramulator.controller.GenericDDR(
+            getattr(ramulator.controller, controller)(
                 dram=dram,
                 scheduler=ramulator.scheduler.FRFCFS(),
-                refresh_manager=ramulator.refresh_manager.AllBank(),
+                refresh_manager=getattr(ramulator.refresh_manager, refresh)(),
                 row_policy=ramulator.row_policy.Open(),
                 addr_mapper=ramulator.addr_mapper.RoBaRaCoCh(),
             )
@@ -71,7 +74,7 @@ def generic_ddr(standard, org_preset, timing_preset, channels, **overrides):
     return ramulator.memory_system.GenericDRAM(
         clock_ratio=1,
         controllers=controllers,
-        channel_mapper=ramulator.channel_mapper.CacheLineInterleave(),
+        channel_mapper=ramulator.channel_mapper.CacheLineInterleave(interleave_bits=interleave_bits),
     )
 
 
@@ -79,6 +82,28 @@ def ddr5_4800an_16gb_x8(channels):
     """DDR5-4800AN, 16 Gb x8 chips, 1 rank. A Ramulator 2 DDR5 channel is one 32-bit subchannel,
     so 2 channels make one DIMM (64 data bits, 38.4 GB/s)."""
     return generic_ddr("DDR5", "DDR5_16Gb_x8", "DDR5_4800AN", channels, rank=1)
+
+
+def lpddr5_6400_16gb_x16(channels):
+    """LPDDR5-6400, 16 Gb x16, 1 rank, 16-bit channels (12.8 GB/s each; 4 make a 64-bit
+    interface). A transaction is 32 bytes (BL16), so Scarab sends two per line."""
+    return generic_ddr("LPDDR5", "LPDDR5_16Gb_x16", "LPDDR5_6400", channels, controller="LPDDR5",
+                       interleave_bits=1, rank=1)
+
+
+def gddr6_14000_16gb_x16_norefresh(channels):
+    """GDDR6-14000, 16 Gb x16 devices; a device is 2 x 16-bit channels (28 GB/s each). A
+    transaction is 32 bytes, so Scarab sends two per line.
+
+    NO REFRESH. Ramulator 2's GDDR6 preset leaves nRFCab and nRFCpb unresolved (its own tests run
+    without refresh). They are set to 1 only so the config exports; with NoRefresh no REF is ever
+    issued. Replace them with JESD250 values and switch to AllBank before trusting these numbers
+    for anything refresh-sensitive."""
+    return generic_ddr("GDDR6", "GDDR6_16Gb_x16", "GDDR6_14000_1250mV_double", channels, refresh="NoRefresh",
+                       interleave_bits=1, nRFCab=1, nRFCpb=1)
+
+
+NO_REFRESH_NOTE = "# NO REFRESH: nRFCab/nRFCpb are placeholders; see gddr6_14000_16gb_x16_norefresh in the script.\n"
 
 
 def ddr4_2400r_8gb_x8(channels):
@@ -118,6 +143,10 @@ CONFIGS = {
     "DDR4_2400R_8Gb_x8_2ch.yaml": lambda: ddr4_2400r_8gb_x8(2),
     "DDR5_4800AN_16Gb_x8_1ch.yaml": lambda: ddr5_4800an_16gb_x8(1),
     "DDR5_4800AN_16Gb_x8_2ch.yaml": lambda: ddr5_4800an_16gb_x8(2),
+    "LPDDR5_6400_16Gb_x16_1ch.yaml": lambda: lpddr5_6400_16gb_x16(1),
+    "LPDDR5_6400_16Gb_x16_4ch.yaml": lambda: lpddr5_6400_16gb_x16(4),
+    "GDDR6_14000_16Gb_x16_1ch_norefresh.yaml": lambda: gddr6_14000_16gb_x16_norefresh(1),
+    "GDDR6_14000_16Gb_x16_2ch_norefresh.yaml": lambda: gddr6_14000_16gb_x16_norefresh(2),
 }
 
 
@@ -127,9 +156,14 @@ def scarab_params(memory_system):
     dram = memory_system.controllers[0].dram
     org, timing = dram.resolve()
     levels = {name.lower() for name in type(dram).levels}
-    # A DDR clock runs at half the transfer rate. The YAML keeps tCK in whole picoseconds,
-    # so derive femtoseconds from the rate when the two agree (they do for DDR4 and DDR5).
-    tck_fs = round(2e9 / timing["rate"]) if abs(2e6 / timing["rate"] - timing["tCK_ps"]) < 1 else timing["tCK_ps"] * 1000
+    # The YAML keeps tCK in whole picoseconds. The clock runs at the transfer rate divided by the
+    # transfers per clock (2 for DDR4/DDR5, 8 for LPDDR5's CK and GDDR6), so derive femtoseconds
+    # from the rate when one of those divisors reproduces tCK_ps.
+    tck_fs = timing["tCK_ps"] * 1000
+    for per_clock in (2, 4, 8):
+        if abs(per_clock * 1e6 / timing["rate"] - timing["tCK_ps"]) < 1:
+            tck_fs = round(per_clock * 1e9 / timing["rate"])
+            break
     params = [
         ("dram_backend", "ramulator2"),
         ("ramulator_scheduling_policy", "FRFCFS"),
@@ -168,6 +202,8 @@ def render(name, make, commit):
         f"# Command: python3 src/ramulator2/gen_configs.py\n"
     )
     params_name = name[: -len(".yaml")] + ".params"
+    if "norefresh" in name:
+        header += NO_REFRESH_NOTE
     return {
         name: header.format(name) + dict_to_yaml(config),
         params_name: header.format(params_name)

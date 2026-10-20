@@ -808,6 +808,14 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
     return data;
   }
 
+  /* Another request on the line's entry already filled it: inserting it again would queue a
+     victim's writeback and then keep the victim (cache_insert reuses the line's own way). */
+  data = (Dcache_Data*)cache_access(&dc->dcache, req->addr, &line_addr, FALSE);
+  if (data) {
+    req->dirty_l0 |= data->dirty;
+    return data;
+  }
+
   /*
    * Do not insert the line yet, just check which line we need to replace.
    * If that line is dirty, it's possible that we won't be able to insert the writeback into the memory system.
@@ -852,6 +860,8 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
         (req->op_count ? req->oldest_op_unique_num : -1));
 
   data = (Dcache_Data*)cache_insert(&dc->dcache, dc->proc_id, req->addr, &line_addr, &repl_line_addr);
+  /* The line's own writeback has not left: this fill takes the line back, dirty bit and all. */
+  req->dirty_l0 |= mem_dc_take_back_wb(dc->proc_id, req->addr);
   ASSERT(dc->proc_id, req->emitted_cycle);
   ASSERT(dc->proc_id, cycle_count >= req->emitted_cycle);
   ASSERT(dc->proc_id, ((int)req->mlc_hit + (int)req->l1_hit) < 2);

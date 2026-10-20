@@ -109,9 +109,10 @@ typedef struct Uncore_struct {
   Ported_Cache* mlc;
   Ported_Cache* l1;
   /* The core's L1 caches are its own, so are their MSHR files: L1I and L1D misses
-     waiting at the MLC, and L1D writebacks. */
+     waiting at the MLC, and each cache's writebacks. */
   Mshr icache_mshr;
   Mshr dcache_mshr;
+  Mshr icache_wb;
   Mshr dcache_wb;
   uns num_outstanding_l1_accesses;
   uns num_outstanding_l1_misses;
@@ -229,6 +230,10 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit);
 void print_mshr_files(void);
 Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                        Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath);
+Flag mem_dc_take_back_wb(uns8 proc_id, Addr addr);
+Flag new_mem_ic_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
+                       Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath);
+Flag mem_ic_wb_pending(uns8 proc_id, Addr addr);
 Flag mlc_fill_line(Mem_Req* req);
 Flag l1_fill_line(Mem_Req* req);
 

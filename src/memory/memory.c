@@ -358,8 +358,10 @@ void init_uncores(void) {
     Uncore* uncore = &mem->uncores[proc_id];
     mshr_init(&uncore->icache_mshr, "ICACHE_MSHR", MSHR_ICACHE, ICACHE_MSHRS);
     mshr_init(&uncore->dcache_mshr, "DCACHE_MSHR", MSHR_DCACHE, DCACHE_MSHRS);
+    mshr_init(&uncore->icache_wb, "ICACHE_WB", MSHR_ICACHE_WB, ICACHE_MSHRS);
     mshr_init(&uncore->dcache_wb, "DCACHE_WB", MSHR_DCACHE_WB, DCACHE_MSHRS);
-    uncore->icache_mshr.proc_id = uncore->dcache_mshr.proc_id = uncore->dcache_wb.proc_id = proc_id;
+    uncore->icache_mshr.proc_id = uncore->dcache_mshr.proc_id = proc_id;
+    uncore->icache_wb.proc_id = uncore->dcache_wb.proc_id = proc_id;
   }
 
   /* Initialize MLC cache (shared only for now) */
@@ -623,6 +625,7 @@ static inline Counter mem_level_latency(Mshr* mshr) {
   switch (mshr->file) {
     case MSHR_ICACHE:
     case MSHR_DCACHE:
+    case MSHR_ICACHE_WB:
     case MSHR_DCACHE_WB:
       latency = DCACHE_CYCLES - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY + MLC_CYCLES;
       break;
@@ -647,6 +650,7 @@ static inline Stat_Enum mem_reject_stat(Mshr* mshr) {
   switch (mshr->file) {
     case MSHR_ICACHE:
     case MSHR_DCACHE:
+    case MSHR_ICACHE_WB:
     case MSHR_DCACHE_WB:
       stat = REJECTED_QUEUE_MLC;
       break;
@@ -665,11 +669,12 @@ static inline Stat_Enum mem_reject_stat(Mshr* mshr) {
 }
 
 /* A level's writeback file is looked up by the same cache as its miss file. The icache
-   never holds a dirty line, so it has none. */
+   writes back only in an exclusive hierarchy, where its victims are demoted. */
 static inline Mshr* mem_wb_file(Mshr* miss) {
   Mshr* wb = NULL;
   switch (miss->file) {
     case MSHR_ICACHE:
+      wb = &mem->uncores[miss->proc_id].icache_wb;
       break;
     case MSHR_DCACHE:
       wb = &mem->uncores[miss->proc_id].dcache_wb;
@@ -702,8 +707,14 @@ Mshr* mem_core_file(uns8 proc_id, Mem_Req_Type type) {
 /* The file a request is in at a level: a writeback's is the level's writeback file, and
    at the L1 level an instruction miss is in the icache's. */
 static inline Mshr* mem_file_of(Mem_Req* req, Mshr* miss) {
-  if (req->type == MRT_WB || req->type == MRT_WB_NODIRTY)
+  if (req->type == MRT_WB || req->type == MRT_WB_NODIRTY) {
+    /* At the L1 caches a writeback is in the file of the cache that evicted it. */
+    if (miss->file == MSHR_ICACHE || miss->file == MSHR_DCACHE) {
+      Mshr* ic_wb = &mem->uncores[req->proc_id].icache_wb;
+      return mshr_holds(ic_wb, req) ? ic_wb : &mem->uncores[req->proc_id].dcache_wb;
+    }
     return mem_wb_file(miss);
+  }
   Mshr* file = NULL;
   switch (miss->file) {
     case MSHR_ICACHE:
@@ -724,6 +735,7 @@ static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr) {
   switch (mshr->file) {
     case MSHR_ICACHE:
     case MSHR_DCACHE:
+    case MSHR_ICACHE_WB:
     case MSHR_DCACHE_WB:
       req->state = MRS_MLC_NEW;
       break;
@@ -775,6 +787,8 @@ static Mshr* mem_mshr(uns8 proc_id, Mshr_File file) {
       return &mem->mlc_mshr;
     case MSHR_L1:
       return &mem->l1_mshr;
+    case MSHR_ICACHE_WB:
+      return &mem->uncores[proc_id].icache_wb;
     case MSHR_DCACHE_WB:
       return &mem->uncores[proc_id].dcache_wb;
     case MSHR_MLC_WB:
@@ -940,6 +954,7 @@ void update_memory() {
     for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
       mem_process_lookups(&mem->uncores[proc_id].dcache_mshr);
       mem_process_lookups(&mem->uncores[proc_id].icache_mshr);
+      mem_process_lookups(&mem->uncores[proc_id].icache_wb);
       mem_process_lookups(&mem->uncores[proc_id].dcache_wb);
     }
     /* After the demand passes and in their frequency domain, so a bank a demand took
@@ -1723,6 +1738,7 @@ static void mem_process_lookups(Mshr* file) {
   switch (file->file) {
     case MSHR_ICACHE:
     case MSHR_DCACHE:
+    case MSHR_ICACHE_WB:
     case MSHR_DCACHE_WB:
       break;
     case MSHR_MLC:
@@ -2730,6 +2746,7 @@ static Flag new_mem_wb_req(Mshr* target, Mem_Req_Type type, uns8 proc_id, Addr a
   /* A writeback is inserted at the level it goes to, which is what an exclusive
      hierarchy's fill_inserts_at_* read. */
   switch (target->file) {
+    case MSHR_ICACHE_WB:
     case MSHR_DCACHE_WB:
       new_req->destination = DEST_MLC;
       break;
@@ -2760,6 +2777,38 @@ Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns
                        Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath) {
   return new_mem_wb_req(mem_wb_file(MLC_PRESENT ? &mem->uncores[proc_id].dcache_mshr : &mem->mlc_mshr), type, proc_id,
                         addr, size, delay, op, done_func, unique_num, used_onpath);
+}
+
+static inline Mshr* mem_dc_wb_file(uns8 proc_id) {
+  return mem_wb_file(MLC_PRESENT ? &mem->uncores[proc_id].dcache_mshr : &mem->mlc_mshr);
+}
+
+static inline Mshr* mem_ic_wb_file(uns8 proc_id) {
+  return mem_wb_file(MLC_PRESENT ? &mem->uncores[proc_id].icache_mshr : &mem->mlc_mshr);
+}
+
+Flag new_mem_ic_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
+                       Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath) {
+  return new_mem_wb_req(mem_ic_wb_file(proc_id), type, proc_id, addr, size, delay, op, done_func, unique_num,
+                        used_onpath);
+}
+
+Flag mem_ic_wb_pending(uns8 proc_id, Addr addr) {
+  return mshr_line(mem_ic_wb_file(proc_id), addr) != NULL;
+}
+
+/* A dcache fill whose line's own writeback has not left takes the line back: the
+   writeback is cancelled and its dirty bit returned. */
+Flag mem_dc_take_back_wb(uns8 proc_id, Addr addr) {
+  Mshr* wb_file = mem_dc_wb_file(proc_id);
+  Mshr_Line* pending = mshr_line(wb_file, addr);
+  if (!pending)
+    return FALSE;
+  Mem_Req* wb = mshr_line_first(pending);
+  Flag dirty = wb->type == MRT_WB;
+  mshr_remove(wb_file, wb);
+  mem_free_req(wb);
+  return dirty;
 }
 
 static Flag new_mem_mlc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,

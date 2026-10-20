@@ -48,6 +48,7 @@ typedef enum Mshr_File_enum {
   MSHR_DCACHE,    /* L1D misses, looked up at the MLC */
   MSHR_MLC,       /* MLC misses (L1 misses without an MLC), looked up at the LLC */
   MSHR_L1,        /* LLC misses, in DRAM */
+  MSHR_ICACHE_WB, /* L1I writebacks (exclusive demotions), looked up at the MLC */
   MSHR_DCACHE_WB, /* L1D writebacks, looked up at the MLC */
   MSHR_MLC_WB,    /* MLC writebacks, looked up at the LLC */
   MSHR_L1_WB,     /* LLC writebacks */

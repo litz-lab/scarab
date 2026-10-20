@@ -1023,9 +1023,14 @@ static inline void icache_demote_victim(Addr fill_addr) {
   if (!EXCLUSIVE_CACHES)
     return;
 
+  /* Each line is filled once, and only after its writeback, if any, has left. */
+  Addr line_addr;
+  ASSERT(ic->proc_id, !cache_access(&ic->icache, fill_addr, &line_addr, FALSE));
+  ASSERT(ic->proc_id, !mem_ic_wb_pending(ic->proc_id, fill_addr));
+
   get_next_repl_line(&ic->icache, ic->proc_id, fill_addr, &repl_line_addr, &repl_line_valid);
   if (repl_line_valid)
-    new_mem_dc_wb_req(MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr, ICACHE_LINE_SIZE, 1,
+    new_mem_ic_wb_req(MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr, ICACHE_LINE_SIZE, 1,
                       NULL, NULL, unique_count, TRUE);
 }
 

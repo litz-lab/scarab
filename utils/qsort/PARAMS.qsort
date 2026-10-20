@@ -167,6 +167,10 @@
 --va_page_size_bytes      4096
 --bus_width_in_bytes            8
 
+# DRAM: Ramulator 2 with a config built into scarab (src/ramulator2/<name>.yaml). The ramulator_*
+# organization and tCK below must match it; ramulator_standard/speed/org apply to --dram_backend ramulator1 only.
+--dram_backend			ramulator2
+--ramulator2_config		DDR4_2400R_8Gb_x8_1ch
 --ramulator_standard		DDR4
 --ramulator_speed		DDR4_2400R
 --ramulator_org 		DDR4_8Gb_x8
@@ -177,7 +181,7 @@
 --ramulator_chip_width		8
 --ramulator_rows		65536
 --ramulator_cols		1024
---ramulator_scheduling_policy	FRFCFS_Cap		
+--ramulator_scheduling_policy	FRFCFS				
 --ramulator_readq_entries	32		
 --ramulator_writeq_entries	32		
 --ramulator_record_cmd_trace	FALSE		

@@ -34,7 +34,7 @@ fast and easy to work with.
 * Multicore 
 * Wrong path simulation
 * Cache Hierarchy (Private L1, Private MLC, Private/Shared LLC)
-* Ramulator Memory Simulator (DDR3/4, LPDDR3/4, GDDR5, HBM, WideIO/2, and more...)  
+* Ramulator 2 Memory Simulator (DDR4, DDR5, LPDDR5, GDDR6 without refresh; configs in src/ramulator2)  
 * Interface to McPat and CACTI for system level power/energy modeling
 * Support for DVFS
 * Latest Branch Predictors and Data Prefetchers (TAGE-SC-L, Stride, Stream, 2dc, GHB, Markov, and more...)

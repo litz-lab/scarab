@@ -30,7 +30,9 @@ this script needs Python; building and running Scarab do not.
 Each config also gets <name>.params: the Scarab params a run with it needs
 (dram_backend, the ramulator_* organization and tCK the backend checks against
 the YAML, bus width, scheduler). Append it to a PARAMS file or pass it on the
-command line, together with --ramulator2_config <path to the .yaml>.
+command line, together with --ramulator2_config <name>: every config here is
+built into scarab under its file name without .yaml. A path to a .yaml file
+works too.
 
 Usage (from the repository root):
   python3 src/ramulator2/gen_configs.py           # (re)write every config
@@ -207,7 +209,7 @@ def render(name, make, commit):
     return {
         name: header.format(name) + dict_to_yaml(config),
         params_name: header.format(params_name)
-        + f"# Scarab params for --ramulator2_config {name}\n"
+        + f"# Scarab params for --ramulator2_config {name[: -len('.yaml')]}\n"
         + scarab_params(memory_system),
     }
 

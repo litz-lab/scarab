@@ -70,7 +70,7 @@
 #include "topdown.h"
 #include "uop_queue_stage.h"
 
-static inline void icache_demote_victim(Addr fill_addr);
+static inline Inst_Info** icache_insert_line(Addr fill_addr, Addr* line_addr, Addr* repl_line_addr);
 
 /**************************************************************************************/
 /* Macros */
@@ -388,9 +388,7 @@ Inst_Info** lookup_icache() {
       STAT_EVENT(ic->proc_id, L2_IDEAL_FILL_ICACHE);
       // actually bring it into the L1 icache
       Addr dummy_repl_line_addr;
-      icache_demote_victim(ic->fetch_addr);
-      line =
-          (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, ic->fetch_addr, &dummy_line_addr, &dummy_repl_line_addr);
+      line = icache_insert_line(ic->fetch_addr, &dummy_line_addr, &dummy_repl_line_addr);
     } else
       STAT_EVENT(ic->proc_id, L2_IDEAL_MISS_ICACHE);
   }
@@ -1023,10 +1021,25 @@ static inline void icache_demote_victim(Addr fill_addr) {
   if (!EXCLUSIVE_CACHES)
     return;
 
+  /* Each line is filled once. */
+  Addr line_addr;
+  ASSERT(ic->proc_id, !cache_access(&ic->icache, fill_addr, &line_addr, FALSE));
+
   get_next_repl_line(&ic->icache, ic->proc_id, fill_addr, &repl_line_addr, &repl_line_valid);
   if (repl_line_valid)
-    new_mem_dc_wb_req(MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr, ICACHE_LINE_SIZE, 1,
+    new_mem_ic_wb_req(MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr, ICACHE_LINE_SIZE, 1,
                       NULL, NULL, unique_count, TRUE);
+}
+
+/* A request issued while its line was resident fills it again: inserting it again would demote
+   a victim and then keep it (cache_insert reuses the line's own way). The line is still made
+   MRU, as the insert did, which EIP's model of the icache relies on. */
+static inline Inst_Info** icache_insert_line(Addr fill_addr, Addr* line_addr, Addr* repl_line_addr) {
+  Inst_Info** line = (Inst_Info**)cache_access(&ic->icache, fill_addr, line_addr, TRUE);
+  if (line)
+    return line;
+  icache_demote_victim(fill_addr);
+  return (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, fill_addr, line_addr, repl_line_addr);
 }
 
 /**************************************************************************************/
@@ -1071,8 +1084,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       return TRUE;
     }
 
-    icache_demote_victim(ic->fetch_addr);
-    ic->line = (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, ic->fetch_addr, &ic->line_addr, &repl_line_addr);
+    ic->line = icache_insert_line(ic->fetch_addr, &ic->line_addr, &repl_line_addr);
     DEBUG(ic->proc_id, "Got line switch into ic fetch %llx\n", ic->line_addr);
     STAT_EVENT(ic->proc_id, ICACHE_FILL);
 
@@ -1139,8 +1151,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       return TRUE;
     }
 
-    icache_demote_victim(req->addr);
-    line = (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, req->addr, &dummy_addr, &repl_line_addr);
+    line = icache_insert_line(req->addr, &dummy_addr, &repl_line_addr);
 
     if (WP_COLLECT_STATS) {  // cmp IGNORE
       line_info =
@@ -1224,9 +1235,7 @@ Inst_Info** ic_pref_cache_access(void) {
   }
 
   if (line) {
-    icache_demote_victim(ic->fetch_addr);
-    inserted_line =
-        (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, ic->fetch_addr, &ic->line_addr, &repl_line_addr);
+    inserted_line = icache_insert_line(ic->fetch_addr, &ic->line_addr, &repl_line_addr);
     DEBUG(ic->proc_id, "ic_pref cache hit:fetch_addr:0x%s \n", hexstr64(ic->fetch_addr));
     STAT_EVENT(ic->proc_id, IC_PREF_MOVE_IC);
 

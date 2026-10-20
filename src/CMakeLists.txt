@@ -96,6 +96,18 @@ target_sources(scarab PRIVATE
   $<$<CONFIG:Debug>:${CMAKE_CURRENT_BINARY_DIR}/asan_default_options.cc>
 )
 
+# The Ramulator 2 configs (src/ramulator2/*.yaml) built into the binary, so ramulator2_config can
+# name one without a path: scarab-infra runs binaries away from the source tree.
+file(GLOB ramulator2_yamls CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/ramulator2/*.yaml)
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ramulator2_configs.cc
+  COMMAND ${CMAKE_COMMAND} -DDIR=${CMAKE_CURRENT_SOURCE_DIR}/ramulator2
+          -DOUT=${CMAKE_CURRENT_BINARY_DIR}/ramulator2_configs.cc
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/ramulator2/embed_configs.cmake
+  DEPENDS ${ramulator2_yamls} ${CMAKE_CURRENT_SOURCE_DIR}/ramulator2/embed_configs.cmake
+  VERBATIM)
+target_sources(scarab PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/ramulator2_configs.cc)
+
 target_include_directories(scarab PRIVATE .)
 
 target_link_libraries(scarab

@@ -25,7 +25,8 @@
  * Author       : Litz Lab
  * Date         : 10/2026
  * Description  : DramBackend over Ramulator 2 (src/deps/ramulator2), configured by the
- *                YAML file in ramulator2_config (see src/ramulator2/gen_configs.py).
+ *                config ramulator2_config names: one built into scarab or a YAML file
+ *                (see src/ramulator2/gen_configs.py).
  ***************************************************************************************/
 
 #include <algorithm>
@@ -68,6 +69,7 @@ extern "C" {
 }
 
 #include "dram_backend.h"
+#include "ramulator2_configs.h"
 
 namespace Ramulator {
 
@@ -140,6 +142,20 @@ class ScarabCmdStats : public IControllerPlugin, public Implementation {
 
 namespace {
 
+/* ramulator2_config is a file when it contains '/' or ends in ".yaml"; otherwise it names a config
+   built into scarab (src/ramulator2/<name>.yaml, given as <name>). */
+bool config_is_file(const char* config) {
+  size_t len = strlen(config);
+  return strchr(config, '/') || (len >= 5 && !strcmp(config + len - 5, ".yaml"));
+}
+
+const char* builtin_config_yaml(const char* name) {
+  for (unsigned i = 0; i < ramulator2_num_builtin_configs; i++)
+    if (!strcmp(ramulator2_builtin_configs[i].name, name))
+      return ramulator2_builtin_configs[i].yaml;
+  return nullptr;
+}
+
 uns log2_exact(uint64_t value, const char* what) {
   ASSERTM(0, value && !(value & (value - 1)), "Ramulator 2: %s (%llu) must be a power of two\n", what,
           (unsigned long long)value);
@@ -152,8 +168,16 @@ uns log2_exact(uint64_t value, const char* what) {
 class Ramulator2Backend : public DramBackend {
  public:
   explicit Ramulator2Backend(Read_Done_Func read_done) : read_done(read_done) {
-    ASSERTM(0, RAMULATOR2_CONFIG, "dram_backend ramulator2 needs --ramulator2_config <file.yaml>\n");
-    ASSERTM(0, std::ifstream(RAMULATOR2_CONFIG).good(), "Cannot read ramulator2_config %s\n", RAMULATOR2_CONFIG);
+    ASSERTM(0, RAMULATOR2_CONFIG, "dram_backend ramulator2 needs --ramulator2_config <name or file.yaml>\n");
+    if (config_is_file(RAMULATOR2_CONFIG)) {
+      ASSERTM(0, std::ifstream(RAMULATOR2_CONFIG).good(), "Cannot read ramulator2_config %s\n", RAMULATOR2_CONFIG);
+    } else if (!builtin_config_yaml(RAMULATOR2_CONFIG)) {
+      std::string names;
+      for (unsigned i = 0; i < ramulator2_num_builtin_configs; i++)
+        names += std::string(" ") + ramulator2_builtin_configs[i].name;
+      FATAL_ERROR(0, "ramulator2_config %s is not a file (no '/' or .yaml) and not a built-in config:%s\n",
+                  RAMULATOR2_CONFIG, names.c_str());
+    }
     ASSERTM(0, !strcmp(RAMULATOR_SCHEDULING_POLICY, "FRFCFS"),
             "Ramulator 2 implements FRFCFS only; ramulator_scheduling_policy is %s\n", RAMULATOR_SCHEDULING_POLICY);
     try {
@@ -346,7 +370,9 @@ class Ramulator2Backend : public DramBackend {
 
  private:
   void init() {
-    Ramulator::ConfigNode config = Ramulator::Config::parse_config_file(RAMULATOR2_CONFIG);
+    Ramulator::ConfigNode config = config_is_file(RAMULATOR2_CONFIG)
+                                       ? Ramulator::Config::parse_config_file(RAMULATOR2_CONFIG)
+                                       : Ramulator::Config::parse_config_string(builtin_config_yaml(RAMULATOR2_CONFIG));
 
     Ramulator::ConfigNode fe(Ramulator::ConfigNode::Map{});
     fe.set("impl", "ScarabFrontEnd");

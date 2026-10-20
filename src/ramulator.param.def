@@ -52,8 +52,10 @@
 // DRAM simulator behind ramulator_*: "ramulator1" (the vendored Ramulator 1.0 in src/ramulator) or
 // "ramulator2" (src/deps/ramulator2, configured by the YAML file in ramulator2_config).
 DEF_PARAM(dram_backend                   , DRAM_BACKEND                            , char*   , string , "ramulator1"         , )
-// Ramulator 2 config, e.g. src/ramulator2/DDR4_2400R_8Gb_x8_1ch.yaml. With ramulator2, the
-// organization and tCK params below must match it, and the read/write queue sizes are taken from them.
+// Ramulator 2 config: the name of one built into scarab (a src/ramulator2/*.yaml without the
+// extension, e.g. DDR4_2400R_8Gb_x8_1ch), or a YAML file (a value with '/' or ending in .yaml). With
+// ramulator2, the organization and tCK params below must match it, and the read/write queue sizes
+// are taken from them.
 DEF_PARAM(ramulator2_config              , RAMULATOR2_CONFIG                       , char*   , string , NULL                 , )
 
 // Organization

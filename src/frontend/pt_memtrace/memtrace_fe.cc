@@ -67,11 +67,11 @@ typedef enum Scarab_Reg_Id_struct {
 
 static char* trace_files[MAX_NUM_PROCS];
 TraceReader* trace_readers[MAX_NUM_PROCS];
-// TODO: Make per proc?
-uint64_t ins_id = 0;
-uint64_t ins_id_fetched = 0;
-uint64_t prior_tid = 0;
-uint64_t prior_pid = 0;
+// Per core: each core reads its own trace, with its own pid/tid and instruction count.
+uint64_t ins_id[MAX_NUM_PROCS] = {0};
+uint64_t ins_id_fetched[MAX_NUM_PROCS] = {0};
+uint64_t prior_tid[MAX_NUM_PROCS] = {0};
+uint64_t prior_pid[MAX_NUM_PROCS] = {0};
 
 Flag roi_dump_began = FALSE;
 Counter roi_dump_ID = 0;
@@ -79,7 +79,7 @@ Counter roi_dump_ID = 0;
 /**************************************************************************************/
 /* Private Functions */
 
-void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
+void fill_in_dynamic_info(uns proc_id, ctype_pin_inst* info, const InstInfo* insi) {
   uint8_t ld = 0;
   uint8_t st = 0;
 
@@ -108,7 +108,7 @@ void fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
     // target varies, and direct branches/jitted code whose target may change.
     info->branch_target = insi->target;
   }
-  info->inst_uid = ins_id;
+  info->inst_uid = ins_id[proc_id];
   info->last_inst_from_trace = insi->last_inst_from_trace;
   info->fetched_instruction = insi->fetched_instruction;
 
@@ -152,14 +152,14 @@ static bool is_xchg_rcx_rcx(const ctype_pin_inst* pi) {
          pi->src_regs[1] == SCARAB_REG_RCX;
 }
 
-int ffwd(const ctype_pin_inst* pi) {
+int ffwd(uns proc_id, const ctype_pin_inst* pi) {
   if (!FAST_FORWARD) {
     return 0;
   }
   if (is_xchg_rcx_rcx(pi)) {
     return 0;
   }
-  if ((USE_FETCHED_COUNT ? ins_id_fetched : ins_id) == FAST_FORWARD_TRACE_INS) {
+  if ((USE_FETCHED_COUNT ? ins_id_fetched[proc_id] : ins_id[proc_id]) == FAST_FORWARD_TRACE_INS) {
     return 0;
   }
   return 1;
@@ -175,34 +175,34 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   do {
     insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
 
-    if (prior_pid == 0) {
-      ASSERT(proc_id, prior_tid == 0);
+    if (prior_pid[proc_id] == 0) {
+      ASSERT(proc_id, prior_tid[proc_id] == 0);
       ASSERT(proc_id, insi->valid);
-      prior_pid = insi->pid;
-      prior_tid = insi->tid;
-      ASSERT(proc_id, prior_tid);
-      ASSERT(proc_id, prior_pid);
+      prior_pid[proc_id] = insi->pid;
+      prior_tid[proc_id] = insi->tid;
+      ASSERT(proc_id, prior_tid[proc_id]);
+      ASSERT(proc_id, prior_pid[proc_id]);
     }
     if (insi->valid) {
       if (insi->last_inst_from_trace) {
         std::cout << "Reached end of trace (last_inst) pc=0x" << std::hex << insi->pc << std::dec << std::endl;
         return 0;  // don't simulate the sentinel instruction
       }
-      ins_id++;
+      ins_id[proc_id]++;
       if (insi->fetched_instruction) {
-        ins_id_fetched++;
+        ins_id_fetched[proc_id]++;
       }
     } else {
       std::cout << "Reached end of trace pc=0x" << std::hex << insi->pc << std::dec << std::endl;
       return 0;  // end of trace
     }
-  } while (insi->pid != prior_pid || insi->tid != prior_tid);
+  } while (insi->pid != prior_pid[proc_id] || insi->tid != prior_tid[proc_id]);
 
   // Static info (basic_info, deps, simd, cf, etc.) is pre-built in
-  // processInst / processDrIsaInst and cached via ctype_inst_map.
+  // processInst / processDrIsaInst and cached via the reader's ctype_inst_map_.
   assert(insi->info != nullptr);
   memcpy(next_onpath_pi, insi->info, sizeof(ctype_pin_inst));
-  fill_in_dynamic_info(next_onpath_pi, insi);
+  fill_in_dynamic_info(proc_id, next_onpath_pi, insi);
 
   if (next_onpath_pi->scarab_marker_roi_begin == true) {
     assert(!roi_dump_began);
@@ -270,7 +270,7 @@ void memtrace_setup(uns proc_id) {
 
   if (FAST_FORWARD) {
     ASSERT(proc_id, !MEMTRACE_ROI_BEGIN && !MEMTRACE_ROI_END);
-    uint64_t inst_count_to_use = USE_FETCHED_COUNT ? ins_id_fetched : ins_id;
+    uint64_t inst_count_to_use = USE_FETCHED_COUNT ? ins_id_fetched[proc_id] : ins_id[proc_id];
     std::cout << "Enter fast forward " << inst_count_to_use << std::endl;
     // FFWD the first instruction and as many as later ffwding parameters specify.
     // insi is invalid once end of trace is reached.
@@ -279,18 +279,18 @@ void memtrace_setup(uns proc_id) {
     do {
       insi = trace_readers[proc_id]->nextInstruction();
       if (insi->valid) {
-        ins_id++;
+        ins_id[proc_id]++;
         if (insi->fetched_instruction) {
-          ins_id_fetched++;
+          ins_id_fetched[proc_id]++;
         }
       }
 
-      inst_count_to_use = USE_FETCHED_COUNT ? ins_id_fetched : ins_id;
+      inst_count_to_use = USE_FETCHED_COUNT ? ins_id_fetched[proc_id] : ins_id[proc_id];
 
       if ((inst_count_to_use % 10000000) == 0)
         std::cout << "Fast forwarded " << inst_count_to_use << " instructions." << (insi->valid ? " Valid" : " Invalid")
                   << " instr." << std::endl;
-    } while (ffwd(insi->info));
+    } while (ffwd(proc_id, insi->info));
     std::cout << "Exit fast forward " << inst_count_to_use << std::endl;
   }
 }

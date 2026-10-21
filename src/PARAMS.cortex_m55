@@ -33,6 +33,9 @@
 --bp_update_at_retire           0                         # Update the BP at retire. If false, update at the end of exec.
 --update_bp_off_path            1                         # Allow off path ops to update branch predictor state (e.g., ops when they complete exec stage).
 --bp_mech                       tage64k
+# Disable the L0 (early) predictor: with L0 enabled, BP_MAIN_LATENCY must be > 1 and < DECODE_CYCLES
+--bp_l0_latency                 0
+--bp_main_latency               1
 
 
 #### BTB
@@ -79,7 +82,8 @@
 
 --rs_fill_width                 1
 --rs_sizes                      3
---rs_connections                0
+# One 3-entry RS feeding all three FUs
+--rs_connections                b111
 --fu_types                      b11111111111111111111111111111111111110000000000011111100111111 b00000000000000000000000000000000000001100000001100000011000011 b00000000000000000000000000000001111110011111110000000000000011
 
 ### Exec Stage

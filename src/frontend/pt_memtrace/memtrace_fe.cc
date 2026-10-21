@@ -171,6 +171,11 @@ int roi(const ctype_pin_inst* pi) {
 
 int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   InstInfo* insi;
+  // A core-sharded file already contains exactly the instruction stream of one
+  // core: every thread the scheduler placed on it, in order.  Simulate all of
+  // it.  Any other file may interleave threads that were never co-scheduled, so
+  // keep the historical behaviour of following only the first thread seen.
+  const bool follow_single_thread = !trace_readers[proc_id]->isCoreSharded();
 
   do {
     insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
@@ -196,7 +201,7 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
       std::cout << "Reached end of trace pc=0x" << std::hex << insi->pc << std::dec << std::endl;
       return 0;  // end of trace
     }
-  } while (insi->pid != prior_pid || insi->tid != prior_tid);
+  } while (follow_single_thread && (insi->pid != prior_pid || insi->tid != prior_tid));
 
   // Static info (basic_info, deps, simd, cf, etc.) is pre-built in
   // processInst / processDrIsaInst and cached via ctype_inst_map.

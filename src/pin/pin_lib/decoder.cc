@@ -33,6 +33,10 @@
 // PIN >=3.3x moved the register-value union out of the core API (was PIN_REGISTER
 // in types_vmapi) into this tool-utils header, renamed PINTOOL_REGISTER (same layout).
 #include "regvalue_utils.h"
+#ifndef ENABLE_PINPLAY
+// Plain PIN kits (<3.3x, no SDE) only have the pre-rename name; same layout.
+typedef PIN_REGISTER PINTOOL_REGISTER;
+#endif
 
 #define REG(x) SCARAB_REG_##x,
 typedef enum Reg_Id_struct {

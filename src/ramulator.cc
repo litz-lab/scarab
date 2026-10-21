@@ -82,12 +82,15 @@ void ramulator_init() {
   ASSERTM(0, L1_MSHRS <= RAMULATOR_READQ_ENTRIES, "L1_MSHRS=%u exceeds RAMULATOR_READQ_ENTRIES=%u\n", L1_MSHRS,
           RAMULATOR_READQ_ENTRIES);
 
-  if (!strcmp(DRAM_BACKEND, "ramulator1"))
-    backend = ramulator1_backend_create(&enqueue_response);
-  else if (!strcmp(DRAM_BACKEND, "ramulator2"))
-    backend = ramulator2_backend_create(&enqueue_response);
-  else
-    FATAL_ERROR(0, "Unknown dram_backend %s (expected ramulator1 or ramulator2)\n", DRAM_BACKEND);
+  if (!strcmp(DRAM_BACKEND, "ramulator1")) {
+    FATAL_ERROR(0,
+                "dram_backend ramulator1: Ramulator 1 was removed by the commit \"ramulator: delete Ramulator 1\"; "
+                "build the scarab commit before it to use Ramulator 1\n");
+  }
+  if (strcmp(DRAM_BACKEND, "ramulator2")) {
+    FATAL_ERROR(0, "Unknown dram_backend %s (the only one is ramulator2)\n", DRAM_BACKEND);
+  }
+  backend = ramulator2_backend_create(&enqueue_response);
   backend->get_config(&ramulator_config);
 
   DPRINTF("Initialized Ramulator. \n");

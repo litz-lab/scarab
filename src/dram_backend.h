@@ -26,8 +26,8 @@
  * Date         : 10/2026
  * Description  : The DRAM simulator behind ramulator.cc. The glue there owns everything
  *                Scarab-specific (Mem_Req bookkeeping, merged reads, write acks, the
- *                response queue); a backend only models DRAM timing. Kept while
- *                Ramulator 1 and Ramulator 2 both exist.
+ *                response queue); a backend only models DRAM timing. Ramulator 2
+ *                (ramulator2_backend.cc) is the only one.
  ***************************************************************************************/
 
 #ifndef __DRAM_BACKEND_H__
@@ -61,7 +61,6 @@ class DramBackend {
   virtual int get_chip_row_buffer_size() const = 0;
 };
 
-DramBackend* ramulator1_backend_create(DramBackend::Read_Done_Func read_done);
 DramBackend* ramulator2_backend_create(DramBackend::Read_Done_Func read_done);
 
 #endif  // __DRAM_BACKEND_H__

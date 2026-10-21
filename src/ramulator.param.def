@@ -49,9 +49,10 @@
 
 */
 
-// DRAM simulator behind ramulator_*: "ramulator2" (src/deps/ramulator2, configured by ramulator2_config)
-// or "ramulator1" (the vendored Ramulator 1.0 in src/ramulator; results from before Ramulator 2 became
-// the default are reproduced with --dram_backend ramulator1 --ramulator_scheduling_policy FRFCFS_Cap).
+// DRAM simulator behind ramulator_*: "ramulator2" (src/deps/ramulator2, configured by ramulator2_config) is
+// the only one. "ramulator1" (Ramulator 1.0) was removed by the commit "ramulator: delete Ramulator 1"; in
+// the commit before it, --dram_backend ramulator1 --ramulator_scheduling_policy FRFCFS_Cap reproduces the
+// results from before Ramulator 2 became the default.
 DEF_PARAM(dram_backend                   , DRAM_BACKEND                            , char*   , string , "ramulator2"         , )
 // Ramulator 2 config: the name of one built into scarab (a src/ramulator2/*.yaml without the
 // extension, e.g. DDR4_2400R_8Gb_x8_1ch), or a YAML file (a value with '/' or ending in .yaml). With
@@ -60,9 +61,6 @@ DEF_PARAM(dram_backend                   , DRAM_BACKEND                         
 DEF_PARAM(ramulator2_config              , RAMULATOR2_CONFIG                       , char*   , string , "DDR4_2400R_8Gb_x8_1ch", )
 
 // Organization
-DEF_PARAM(ramulator_standard             , RAMULATOR_STANDARD                      , char*   , string , "DDR4"               , )
-DEF_PARAM(ramulator_speed                , RAMULATOR_SPEED                         , char*   , string , "DDR4_2400R"         , )
-DEF_PARAM(ramulator_org                  , RAMULATOR_ORG                           , char*   , string , "DDR4_8Gb_x8"        , )
 DEF_PARAM(ramulator_channels             , RAMULATOR_CHANNELS                      , uns     , uns    , 1                    , )
 DEF_PARAM(ramulator_ranks                , RAMULATOR_RANKS                         , uns     , uns    , 1                    , )
 DEF_PARAM(ramulator_bankgroups           , RAMULATOR_BANKGROUPS                    , uns     , uns    , 4                    , )
@@ -72,38 +70,15 @@ DEF_PARAM(bus_width_in_bytes             , BUS_WIDTH_IN_BYTES                   
 DEF_PARAM(ramulator_rows                 , RAMULATOR_ROWS                          , uns     , uns    , 65536                , )
 DEF_PARAM(ramulator_cols                 , RAMULATOR_COLS                          , uns     , uns    , 1024                 , )
 
-// Request Scheduling Policy (Ramulator 2 implements FRFCFS only; Ramulator 1 also has FRFCFS_Cap and others)
+// Request Scheduling Policy (Ramulator 2 implements FRFCFS only)
 DEF_PARAM(ramulator_scheduling_policy    , RAMULATOR_SCHEDULING_POLICY             , char*   , string , "FRFCFS"             , )
 
 // Request Queues
 DEF_PARAM(ramulator_readq_entries        , RAMULATOR_READQ_ENTRIES                 , uns     , uns    , 32                   , ) 
 DEF_PARAM(ramulator_writeq_entries       , RAMULATOR_WRITEQ_ENTRIES                , uns     , uns    , 32                   , ) 
 
-// Misc.
-DEF_PARAM(ramulator_record_cmd_trace     , RAMULATOR_REC_CMD_TRACE                 , char*   , string , "off"              , )
-DEF_PARAM(ramulator_print_cmd_trace      , RAMULATOR_PRINT_CMD_TRACE               , char*   , string , "off"              , )
-// make sure that we never artificially introduce aliasing between two phys addrs in Ramulator by making sure we subsume
-// every single phys addr bit in the DRAM address. All phys addrs bits not included as a channel/rank/bank group/bank/column bit
-// will be included as a row bit
-DEF_PARAM(ramulator_use_rest_of_addr_as_row_addr, RAMULATOR_USE_REST_OF_ADDR_AS_ROW_ADDR  , char*   , string , "on"      , )
-
-// Timing parameters (TODO: make these optional. If not specified, present // values defined by RAMULATOR_SPEED should be used instead.)
+// DRAM clock. The timings themselves come from the ramulator2_config; this must match its tCK. It is a
+// param because the memory clock domain is set up (freq.c) before the DRAM backend exists.
 DEF_PARAM(ramulator_tCK                  , RAMULATOR_TCK                           , uns     , uns    , 833333               , ) //in femtosecs
-DEF_PARAM(ramulator_tCL                  , RAMULATOR_TCL                           , uns     , uns    , 16                   , )
-DEF_PARAM(ramulator_tCCD                 , RAMULATOR_TCCD                          , uns     , uns    , 6                    , ) 
-DEF_PARAM(ramulator_tCCDS                , RAMULATOR_TCCDS                         , uns     , uns    , 4                    , ) 
-DEF_PARAM(ramulator_tCCDL                , RAMULATOR_TCCDL                         , uns     , uns    , 6                    , ) 
-DEF_PARAM(ramulator_tCWL                 , RAMULATOR_TCWL                          , uns     , uns    , 12                   , ) 
-DEF_PARAM(ramulator_tBL                  , RAMULATOR_TBL                           , uns     , uns    , 4                    , ) 
-DEF_PARAM(ramulator_tWTR                 , RAMULATOR_TWTR                          , uns     , uns    , 9                    , )
-DEF_PARAM(ramulator_tWTRS                , RAMULATOR_TWTRS                         , uns     , uns    , 3                    , )
-DEF_PARAM(ramulator_tWTRL                , RAMULATOR_TWTRL                         , uns     , uns    , 9                    , )
-DEF_PARAM(ramulator_tRP                  , RAMULATOR_TRP                           , uns     , uns    , 16                   , )
-DEF_PARAM(ramulator_tRPpb                , RAMULATOR_TRPpb                         , uns     , uns    , 16                   , )
-DEF_PARAM(ramulator_tRPab                , RAMULATOR_TRPab                         , uns     , uns    , 16                   , )
-DEF_PARAM(ramulator_tRCD                 , RAMULATOR_TRCD                          , uns     , uns    , 16                   , )
-DEF_PARAM(ramulator_tRCDR                , RAMULATOR_TRCDR                         , uns     , uns    , 16                   , )
-DEF_PARAM(ramulator_tRCDW                , RAMULATOR_TRCDW                         , uns     , uns    , 16                   , )
-DEF_PARAM(ramulator_tRAS                 , RAMULATOR_TRAS                          , uns     , uns    , 39                   , )
 
 DEF_PARAM(dram_tech_in_nm                , DRAM_TECH_IN_NM                         , uns     , uns    , 32                   , )

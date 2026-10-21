@@ -92,7 +92,7 @@ class ScarabFrontEnd : public IFrontEnd, public Implementation {
 };
 
 /* Counts every command a controller issues into POWER_DRAM_{ACTIVATE,PRECHARGE,READ,WRITE}, which
-   the power model and DVFS read, classified as Ramulator 1 did (Controller.h issue_cmd): opening
+   the power model and DVFS read, classified as Ramulator 1's controller did: opening
    commands are activates; closing ones (PRE*, RDA, WRA) precharges; accessing commands named RD*
    reads and WR* writes. A command with no requesting core (refresh, row-policy closes) is
    counted on core 0, as in Ramulator 1. */

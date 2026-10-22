@@ -1668,7 +1668,15 @@ void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
  *    cache_report_miss() when it sets repl_miss_by_report (cache_lib.h). Nothing is counted in
  *    update_evict, which also runs for get_next_repl_line's peek at the victim and again every
  *    time a refused fill is retried.
+ *  - SRRIP inserts at the long re-reference interval (RRIP_DISTANT_VAL - 1). BRRIP inserts at
+ *    the distant interval (RRIP_DISTANT_VAL), except that with probability
+ *    2^-(--drrip_bimodal_throttle_log2) a fill goes in at the long interval instead (the paper's
+ *    bimodal throttle, 1/32). The draw comes from a per-cache generator with a fixed seed, so a
+ *    run is deterministic and no other user of rand() is disturbed.
  *  - Hits promote to RRPV 0 (nru_update_hit); the victim search is rrip_update_evict.
+ *
+ * RRPVs use the SRRIP range here, 0..RRIP_DISTANT_VAL, so DRRIP's SRRIP mode places lines
+ * exactly as REPL_SRRIP does.
  *
  * Leader sets are spread with the paper's constituency scheme over the S sets an index can
  * reach (set_mask + 1; a set count that is not a power of two leaves the top sets unindexed):
@@ -1678,11 +1686,13 @@ void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
 #define DRRIP_FOLLOWER 0
 #define DRRIP_LEADER_SRRIP 1
 #define DRRIP_LEADER_BRRIP 2
+#define DRRIP_RNG_SEED 0xD1B54A32D192ED03ULL
 
 typedef struct Drrip_State_struct {
   uns8* role; /* per set: DRRIP_FOLLOWER or the policy it leads */
   uns psel;
   uns psel_max;
+  uns64 rng;
 } Drrip_State;
 
 void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
@@ -1700,11 +1710,13 @@ void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc
   uns sets = cache->set_mask + 1;
   uns leaders, constituency, k;
 
-  brrip_action_init(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
+  general_action_init(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
   ASSERTM(0, sets >= 2, "%s: REPL_DRRIP needs at least 2 sets for set dueling (got %u)\n", name, sets);
   ASSERTM(0, DRRIP_LEADER_SETS >= 1, "--drrip_leader_sets must be at least 1\n");
   ASSERTM(0, DRRIP_PSEL_BITS >= 1 && DRRIP_PSEL_BITS <= 30, "--drrip_psel_bits must be in [1, 30] (got %u)\n",
           DRRIP_PSEL_BITS);
+  ASSERTM(0, DRRIP_BIMODAL_THROTTLE_LOG2 <= 31, "--drrip_bimodal_throttle_log2 must be at most 31 (got %u)\n",
+          DRRIP_BIMODAL_THROTTLE_LOG2);
 
   s = (Drrip_State*)calloc(1, sizeof(Drrip_State));
   s->role = (uns8*)calloc(cache->num_sets, sizeof(uns8));
@@ -1716,6 +1728,7 @@ void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc
   }
   s->psel_max = (1u << DRRIP_PSEL_BITS) - 1;
   s->psel = 1u << (DRRIP_PSEL_BITS - 1);
+  s->rng = DRRIP_RNG_SEED;
   cache->predictor = s;
 }
 
@@ -1748,12 +1761,22 @@ void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
       break;
   }
 
-  if (use_brrip)
-    brrip_update_insert(cache, proc_id, set, way, arg);
-  else
-    srrip_update_insert(cache, proc_id, set, way, arg);
+  if (use_brrip) {
+    uns64 draw;
+    s->rng ^= s->rng << 13;
+    s->rng ^= s->rng >> 7;
+    s->rng ^= s->rng << 17;
+    draw = s->rng >> 32;
+    /* Long interval with probability 2^-throttle, else distant. */
+    cache->entries[set][way].reference_val =
+        (draw & (((uns64)1 << DRRIP_BIMODAL_THROTTLE_LOG2) - 1)) == 0 ? RRIP_DISTANT_VAL - 1 : RRIP_DISTANT_VAL;
+  } else {
+    cache->entries[set][way].reference_val = RRIP_DISTANT_VAL - 1;
+  }
 
-  DEBUG(0, "DRRIP insert: set 0x%x role %u psel %u brrip %d\n", set, s->role[set], s->psel, use_brrip);
+  DEBUG(0, "DRRIP insert: set 0x%x role %u psel %u brrip %d rrpv %d\n", set, s->role[set], s->psel, use_brrip,
+        cache->entries[set][way].reference_val);
+  cache_debug_print_set(cache, set, way, CACHE_EVENT_INSERT);
 }
 
 /**************************************************************************************/

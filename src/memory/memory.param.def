@@ -105,6 +105,9 @@ DEF_PARAM(prefetch_update_lru_l1, PREFETCH_UPDATE_LRU_L1, Flag, Flag, TRUE, )
 DEF_PARAM(drrip_leader_sets, DRRIP_LEADER_SETS, uns, uns, 32, )
 /* Width of the PSEL saturating counter that picks the followers' policy. */
 DEF_PARAM(drrip_psel_bits, DRRIP_PSEL_BITS, uns, uns, 10, )
+/* BRRIP's bimodal throttle: a BRRIP-mode fill goes in at the long re-reference interval
+   instead of the distant one with probability 2^-N (the paper's 1/32 is N = 5). */
+DEF_PARAM(drrip_bimodal_throttle_log2, DRRIP_BIMODAL_THROTTLE_LOG2, uns, uns, 5, )
 
 DEF_PARAM(memory_random_addr, MEMORY_RANDOM_ADDR, Flag, Flag, FALSE, )
 DEF_PARAM(va_page_size_bytes, VA_PAGE_SIZE_BYTES, uns, uns, 4096, )

@@ -1659,8 +1659,8 @@ void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
  * Re-Reference Interval Prediction (RRIP)", ISCA 2010, Sec. 4: set dueling between SRRIP and
  * BRRIP.
  *
- *  - Leader sets always insert with SRRIP or always with BRRIP. Every other set (a follower)
- *    inserts with whichever of the two is currently missing less.
+ *  - --drrip_leader_sets sets always insert with SRRIP and as many always insert with BRRIP.
+ *    Every other set (a follower) inserts with whichever of the two is currently missing less.
  *  - PSEL, a --drrip_psel_bits saturating counter, starts at its midpoint. A miss in an SRRIP
  *    leader increments it and a miss in a BRRIP leader decrements it, so PSEL's top bit set
  *    means SRRIP's leaders have been missing more, and followers then insert with BRRIP.
@@ -1670,7 +1670,11 @@ void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
  *    time a refused fill is retried.
  *  - Hits promote to RRPV 0 (nru_update_hit); the victim search is rrip_update_evict.
  *
- * One set in every four leads each policy. */
+ * Leader sets are spread with the paper's constituency scheme over the S sets an index can
+ * reach (set_mask + 1; a set count that is not a power of two leaves the top sets unindexed):
+ * the S sets are divided into L = min(--drrip_leader_sets, S / 2) equal constituencies of
+ * C = S / L sets, and constituency k holds one SRRIP leader at offset k mod C and one BRRIP
+ * leader at offset (k + C/2) mod C. C >= 2, so the two never coincide. */
 #define DRRIP_FOLLOWER 0
 #define DRRIP_LEADER_SRRIP 1
 #define DRRIP_LEADER_BRRIP 2
@@ -1693,19 +1697,22 @@ static inline Drrip_State* drrip_state(Cache* cache) {
 void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                        Repl_Policy repl_policy) {
   Drrip_State* s;
-  int ii;
-  int shift_dedicated = 0;
+  uns sets = cache->set_mask + 1;
+  uns leaders, constituency, k;
 
   brrip_action_init(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
+  ASSERTM(0, sets >= 2, "%s: REPL_DRRIP needs at least 2 sets for set dueling (got %u)\n", name, sets);
+  ASSERTM(0, DRRIP_LEADER_SETS >= 1, "--drrip_leader_sets must be at least 1\n");
   ASSERTM(0, DRRIP_PSEL_BITS >= 1 && DRRIP_PSEL_BITS <= 30, "--drrip_psel_bits must be in [1, 30] (got %u)\n",
           DRRIP_PSEL_BITS);
 
   s = (Drrip_State*)calloc(1, sizeof(Drrip_State));
   s->role = (uns8*)calloc(cache->num_sets, sizeof(uns8));
-  for (ii = 0; ii + 4 <= cache->num_sets; ii = ii + 4) {
-    s->role[ii + shift_dedicated % 4] = DRRIP_LEADER_BRRIP;
-    s->role[ii + (shift_dedicated + 1) % 4] = DRRIP_LEADER_SRRIP;
-    shift_dedicated = (shift_dedicated + 1) % 4;
+  leaders = MIN2(DRRIP_LEADER_SETS, sets / 2);
+  constituency = sets / leaders;
+  for (k = 0; k < leaders; k++) {
+    s->role[k * constituency + k % constituency] = DRRIP_LEADER_SRRIP;
+    s->role[k * constituency + (k + constituency / 2) % constituency] = DRRIP_LEADER_BRRIP;
   }
   s->psel_max = (1u << DRRIP_PSEL_BITS) - 1;
   s->psel = 1u << (DRRIP_PSEL_BITS - 1);

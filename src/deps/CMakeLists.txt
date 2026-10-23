@@ -96,4 +96,32 @@ list(FILTER ramulator2_srcs EXCLUDE REGEX "/src/ramulator/python/")
 add_library(ramulator2 OBJECT ${ramulator2_srcs})
 set_target_properties(ramulator2 PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 target_include_directories(ramulator2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/ramulator2/src)
+
+# Ramulator 2 uses five C++20 requires-expressions (dram/commands/populate.h and RD.h) that
+# GCC 9, the compiler on Ubuntu 20.04 and in scarab-infra's images, cannot parse.
+# ramulator2-gcc9.patch replaces them with equivalent C++17 detection traits. It is applied here,
+# at configure time, to copies of those two headers in the build tree, which then come first on
+# the include path; the submodule itself is never modified. git apply runs with repository
+# discovery stopped at the build directory, so it patches the copies as plain files.
+set(ramulator2_patch ${CMAKE_CURRENT_SOURCE_DIR}/ramulator2-gcc9.patch)
+set(ramulator2_patched ${CMAKE_CURRENT_BINARY_DIR}/ramulator2_patched)
+file(REMOVE_RECURSE ${ramulator2_patched})
+foreach(header src/ramulator/dram/commands/populate.h src/ramulator/dram/commands/RD.h)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/ramulator2/${header} ${ramulator2_patched}/${header} COPYONLY)
+endforeach()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${ramulator2_patch})
+find_package(Git REQUIRED)
+execute_process(
+  COMMAND ${CMAKE_COMMAND} -E env GIT_CEILING_DIRECTORIES=${CMAKE_CURRENT_BINARY_DIR}
+          ${GIT_EXECUTABLE} apply ${ramulator2_patch}
+  WORKING_DIRECTORY ${ramulator2_patched}
+  RESULT_VARIABLE ramulator2_patch_result
+  OUTPUT_VARIABLE ramulator2_patch_output
+  ERROR_VARIABLE ramulator2_patch_output)
+if(NOT ramulator2_patch_result EQUAL 0)
+  message(FATAL_ERROR "Could not apply ${ramulator2_patch} to the Ramulator 2 submodule's "
+                      "headers; if the submodule was updated, refresh or drop the patch:\n"
+                      "${ramulator2_patch_output}")
+endif()
+target_include_directories(ramulator2 BEFORE PUBLIC ${ramulator2_patched}/src)
 target_link_libraries(ramulator2 PUBLIC yaml-cpp::yaml-cpp fmt::fmt)

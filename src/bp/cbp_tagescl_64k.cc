@@ -1,5 +1,7 @@
 #include "cbp_tagescl_64k.h"
 
+#include "op_pool.h"
+
 TAGE64K::TAGE64K(void) {
   // All scalar members have default member initializers in the header and all
   // fixed-size tables are std::array members that default-initialize to zero,
@@ -542,8 +544,10 @@ void TAGE64K::RestorePredictorstates(Counter key) {
 }
 
 void TAGE64K::TakeCheckpoint(Counter key) {
-  // Guard against checkpoint leaks: there should never be more checkpoints than ROB entries
-  ASSERTM(0, checkpoints.size() < NODE_TABLE_SIZE, "TAGE Checkpoint leak\n");
+  // Guard against checkpoint leaks: each checkpoint belongs to a live op (taken at prediction, freed at retire or
+  // flush), and the op taking this one has none yet. Predicted branches still in the frontend count too, so the
+  // ROB size (NODE_TABLE_SIZE) is not a bound.
+  ASSERTM(0, checkpoints.size() < op_pool_active_ops, "TAGE Checkpoint leak\n");
   auto& key_index = checkpoints.get<0>();  // Get the key index
   auto it = key_index.find(key);
   assert(it == key_index.end());

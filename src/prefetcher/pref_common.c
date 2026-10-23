@@ -711,22 +711,24 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
   for (List_Entry *e = q->head, *next; e; e = next) {
     next = e->next;
     Pref_Mem_Req* pf = (Pref_Mem_Req*)&e->data;
-    ASSERT(proc_id, proc_id == pf->proc_id);
-    ASSERT(proc_id, proc_id == pf->line_addr >> 58);
+    /* With PREF_SHARED_QUEUES every core's prefetches are in core 0's queue: serve each from its own core. */
+    uns8 pf_proc_id = pf->proc_id;
+    ASSERT(proc_id, PREF_SHARED_QUEUES || proc_id == pf_proc_id);
+    ASSERT(pf_proc_id, pf_proc_id == pf->line_addr >> 58);
     if (cycle_count < pf->rdy_cycle)
       break;
 
     Flag hit = FALSE;
-    if (!pf->probed && !mem_pref_probe(proc_id, dest, pf->line_addr, &hit))
+    if (!pf->probed && !mem_pref_probe(pf_proc_id, dest, pf->line_addr, &hit))
       continue; /* a demand took this bank */
 
     Flag done;
     if (hit) {
-      STAT_EVENT(proc_id, drop_stat);
+      STAT_EVENT(pf_proc_id, drop_stat);
       done = TRUE;
     } else if (to_ul1) {
       pf->probed = TRUE;
-      done = pref_addto_ul1req_queue(proc_id, pf->line_index, pf->prefetcher_id);
+      done = pref_addto_ul1req_queue(pf_proc_id, pf->line_index, pf->prefetcher_id);
       STAT_EVENT(0, done ? sent_stat : stall_stat);
     } else {
       pf->probed = TRUE;
@@ -741,7 +743,7 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
       /* Without a memory model there is nothing to send to, so drop it rather than
          hold a slot no one will ever free. */
       done = model->mem != MODEL_MEM ||
-             new_mem_req(MRT_DPRF, proc_id, pf->line_addr, line_size, delay, NULL, fill, unique_count, &info);
+             new_mem_req(MRT_DPRF, pf_proc_id, pf->line_addr, line_size, delay, NULL, fill, unique_count, &info);
       STAT_EVENT(0, done ? sent_stat : stall_stat);
       if (!done)
         break; /* no MSHR this cycle: the rest of the queue waits behind it */

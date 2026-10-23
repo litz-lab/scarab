@@ -1492,15 +1492,22 @@ Cache_Entry* nru_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, voi
   int ii;
   Flag found = FALSE;
 
+  /* A free way is taken before any valid line, and taking one ages nothing. (Folding this into
+     the search below as "invalid or distant" in one pass let a distant valid line in a lower way
+     beat a free way; with lines inserted at the distant value -- NRU, BRRIP, SHiP -- a set then
+     filled only as its lines were reused.) */
+  for (ii = 0; ii < cache->assoc; ii++) {
+    if (!cache->entries[set][ii].valid) {
+      *way = ii;
+      cache_debug_print_set(cache, set, *way, CACHE_EVENT_EVICT);
+      return &cache->entries[set][*way];
+    }
+  }
+
   while (!found) {
     // eviction: search the distant line whose RRPV == 1
     for (ii = 0; ii < cache->assoc; ii++) {
       Cache_Entry* entry = &cache->entries[set][ii];
-      if (!entry->valid) {
-        *way = ii;
-        found = TRUE;
-        break;
-      }
       if (entry->reference_val == NRU_DISTANT_VAL) {
         *way = ii;
         found = TRUE;
@@ -1540,15 +1547,22 @@ Cache_Entry* srrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, v
   int ii;
   Flag found = FALSE;
 
+  /* A free way is taken before any valid line, and taking one ages nothing. (Folding this into
+     the search below as "invalid or distant" in one pass let a distant valid line in a lower way
+     beat a free way; with lines inserted at the distant value -- NRU, BRRIP, SHiP -- a set then
+     filled only as its lines were reused.) */
+  for (ii = 0; ii < cache->assoc; ii++) {
+    if (!cache->entries[set][ii].valid) {
+      *way = ii;
+      cache_debug_print_set(cache, set, *way, CACHE_EVENT_EVICT);
+      return &cache->entries[set][*way];
+    }
+  }
+
   while (!found) {
     // eviction: search the distant line whose RRPV == 2^M - 1
     for (ii = 0; ii < cache->assoc; ii++) {
       Cache_Entry* entry = &cache->entries[set][ii];
-      if (!entry->valid) {
-        *way = ii;
-        found = TRUE;
-        break;
-      }
       if (entry->reference_val == RRIP_DISTANT_VAL) {
         *way = ii;
         found = TRUE;
@@ -1765,8 +1779,9 @@ Cache_Entry* ship_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, vo
   if (if_external)
     return line;
 
-  // prediction update
-  if (!line->outcome) {
+  // prediction update: train on the evicted block if it was never reused. A free (invalid) way
+  // held no block, so there is nothing to learn from it.
+  if (line->valid && !line->outcome) {
     cache->entries[set][*way].outcome = TRUE;
     struct ship_shct* cache_shct = (struct ship_shct*)cache->predictor;
     Counter* cache_shct_entry = (Counter*)hash_table_access(

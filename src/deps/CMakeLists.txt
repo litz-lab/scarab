@@ -124,4 +124,17 @@ if(NOT ramulator2_patch_result EQUAL 0)
                       "${ramulator2_patch_output}")
 endif()
 target_include_directories(ramulator2 BEFORE PUBLIC ${ramulator2_patched}/src)
+
+# src/Makefile runs an unlimited `make -j` (a numbered -j would break the scarab LTO link's
+# jobserver), which starts every Ramulator 2 translation unit at once: at -O3 they need
+# 0.3-0.45 GB each, ~24 GB together, and a 16 GB CI runner is killed. Run them through a launcher
+# that lets at most RAMULATOR2_COMPILE_SLOTS compile at a time; nothing else in the build changes.
+set(RAMULATOR2_COMPILE_SLOTS 4 CACHE STRING "Most Ramulator 2 source files compiled at once")
+find_program(FLOCK_EXECUTABLE flock)
+if(FLOCK_EXECUTABLE)
+  set_property(TARGET ramulator2 PROPERTY RULE_LAUNCH_COMPILE
+    "sh ${CMAKE_CURRENT_SOURCE_DIR}/ramulator2_compile_slot.sh ${CMAKE_CURRENT_BINARY_DIR}/ramulator2_slots ${RAMULATOR2_COMPILE_SLOTS}")
+else()
+  message(WARNING "flock not found: Ramulator 2 files compile without a concurrency limit")
+endif()
 target_link_libraries(ramulator2 PUBLIC yaml-cpp::yaml-cpp fmt::fmt)

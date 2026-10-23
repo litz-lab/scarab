@@ -70,7 +70,7 @@
 #include "topdown.h"
 #include "uop_queue_stage.h"
 
-static inline void icache_demote_victim(Addr fill_addr);
+static inline Flag icache_demote_victim(Addr fill_addr);
 
 /**************************************************************************************/
 /* Macros */
@@ -386,11 +386,11 @@ Inst_Info** lookup_icache() {
     data = l1_cache ? (L1_Data*)cache_access(l1_cache, ic->fetch_addr, &dummy_line_addr, TRUE) : NULL;
     if (data) {  // second level cache hit
       STAT_EVENT(ic->proc_id, L2_IDEAL_FILL_ICACHE);
-      // actually bring it into the L1 icache
+      // actually bring it into the L1 icache; a refused victim writeback leaves it a miss this cycle
       Addr dummy_repl_line_addr;
-      icache_demote_victim(ic->fetch_addr);
-      line =
-          (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, ic->fetch_addr, &dummy_line_addr, &dummy_repl_line_addr);
+      if (icache_demote_victim(ic->fetch_addr))
+        line = (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, ic->fetch_addr, &dummy_line_addr,
+                                         &dummy_repl_line_addr);
     } else
       STAT_EVENT(ic->proc_id, L2_IDEAL_MISS_ICACHE);
   }
@@ -1016,12 +1016,12 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
    writeback, instead of vanishing. Without this, instruction lines -- which skip the MLC and
    LLC on fill (see mlc_fill_line/l1_fill_line) -- have no backing store at all. */
 
-static inline void icache_demote_victim(Addr fill_addr) {
+static inline Flag icache_demote_victim(Addr fill_addr) {
   Addr repl_line_addr;
   Flag repl_line_valid;
 
   if (!EXCLUSIVE_CACHES)
-    return;
+    return TRUE;
 
   /* Each line is filled once, and only after its writeback, if any, has left. */
   Addr line_addr;
@@ -1029,9 +1029,15 @@ static inline void icache_demote_victim(Addr fill_addr) {
   ASSERT(ic->proc_id, !mem_ic_wb_pending(ic->proc_id, fill_addr));
 
   get_next_repl_line(&ic->icache, ic->proc_id, fill_addr, &repl_line_addr, &repl_line_valid);
-  if (repl_line_valid)
-    new_mem_ic_wb_req(MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr, ICACHE_LINE_SIZE, 1,
-                      NULL, NULL, unique_count, TRUE);
+  if (!repl_line_valid)
+    return TRUE;
+  if (!new_mem_ic_wb_req(MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr, ICACHE_LINE_SIZE, 1,
+                         NULL, NULL, unique_count, TRUE)) {
+    STAT_EVENT(ic->proc_id, ICACHE_WB_REFUSED);
+    return FALSE;
+  }
+  STAT_EVENT(ic->proc_id, ICACHE_WB_REQ);
+  return TRUE;
 }
 
 /**************************************************************************************/
@@ -1063,9 +1069,13 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
 
   /* get new line in the cache */
   if ((ic->line_addr == req->addr) && ic->next_state == ICACHE_WAIT_FOR_MISS) {
+    Flag to_pref_cache = IC_PREF_CACHE_ENABLE &&  // cmp FIXME prefetchers
+                         (USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path);
+    /* A refused victim writeback leaves the icache untouched; the fill retries. */
+    if (!to_pref_cache && !icache_demote_victim(ic->fetch_addr))
+      return FALSE;
     INC_STAT_EVENT(ic->proc_id, MISS_WAIT_TIME, cycle_count - ic->wait_for_miss_start);
-    if (IC_PREF_CACHE_ENABLE &&  // cmp FIXME prefetchers
-        (USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path)) {
+    if (to_pref_cache) {
       Addr pref_line_addr;
 
       line = (Inst_Info**)cache_insert(&ic->pref_icache, ic->proc_id, ic->fetch_addr, &pref_line_addr, &repl_line_addr);
@@ -1076,7 +1086,6 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       return TRUE;
     }
 
-    icache_demote_victim(ic->fetch_addr);
     ic->line = (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, ic->fetch_addr, &ic->line_addr, &repl_line_addr);
     DEBUG(ic->proc_id, "Got line switch into ic fetch %llx\n", ic->line_addr);
     STAT_EVENT(ic->proc_id, ICACHE_FILL);
@@ -1144,7 +1153,8 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       return TRUE;
     }
 
-    icache_demote_victim(req->addr);
+    if (!icache_demote_victim(req->addr))
+      return FALSE;
     line = (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, req->addr, &dummy_addr, &repl_line_addr);
 
     if (WP_COLLECT_STATS) {  // cmp IGNORE
@@ -1228,8 +1238,10 @@ Inst_Info** ic_pref_cache_access(void) {
     return line;
   }
 
+  /* A refused victim writeback leaves the line in the prefetch cache, served from there. */
+  if (line && !icache_demote_victim(ic->fetch_addr))
+    return line;
   if (line) {
-    icache_demote_victim(ic->fetch_addr);
     inserted_line =
         (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, ic->fetch_addr, &ic->line_addr, &repl_line_addr);
     DEBUG(ic->proc_id, "ic_pref cache hit:fetch_addr:0x%s \n", hexstr64(ic->fetch_addr));
@@ -1489,7 +1501,8 @@ Flag instr_fill_line(Mem_Req* req) {
                           req->type == MRT_UOCPRF || req->type == MRT_IFETCH);
   if (mem_req_is_type(req, MRT_IFETCH) || mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_FDIPPRFON) ||
       mem_req_is_type(req, MRT_FDIPPRFOFF)) {
-    icache_fill_line(req);
+    if (!icache_fill_line(req))
+      return FALSE;
     DEBUG(ic->proc_id, "line 0x%llx is filled into icache\n", req->addr);
   }
 

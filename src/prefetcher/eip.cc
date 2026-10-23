@@ -57,6 +57,7 @@ extern "C" {
 #include "op.h"
 }
 
+#include <deque>
 #include <iostream>
 #include <vector>
 
@@ -74,6 +75,25 @@ uint32_t eip_proc_id;
 uint32_t L1I_TIMING_MSHR_SIZE = 0;
 uint32_t L1I_SET = 0;
 uint32_t L1I_WAY = 0;
+
+/* A prefetch waiting to look the icache up; update_eip sends it if the icache misses. */
+struct Eip_Pref {
+  uint64_t line_addr;
+  uint32_t source_set;
+  uint32_t source_way;
+  bool timing; /* on-path: record a timing entry once sent */
+  bool probed; /* missed the icache; waits only for an MSHR */
+};
+std::deque<Eip_Pref> eip_pref_queue;
+
+/* Appended at the tail; a full queue drops the new prefetch. */
+static void eip_queue_prefetch(uint64_t line_addr, uint32_t source_set, uint32_t source_way, bool timing) {
+  if (eip_pref_queue.size() >= EIP_PREF_QUEUE_SIZE) {
+    STAT_EVENT(eip_proc_id, EIP_PREF_QUEUE_FULL);
+    return;
+  }
+  eip_pref_queue.push_back({line_addr, source_set, source_way, timing, false});
+}
 
 uint64_t l1i_last_basic_block;
 uint32_t l1i_consecutive_count;
@@ -1044,21 +1064,8 @@ void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefe
     l1i_stats_basic_blocks[bb_size]++;
   for (uint32_t i = 1; i <= bb_size; i++) {
     uint64_t pf_addr = v_addr + i * (1 << LOG2(ICACHE_LINE_SIZE));
-    if (!l1i_ongoing_request(pf_addr >> LOG2(ICACHE_LINE_SIZE))) {
-      Flag success = FALSE;
-      // TODO : limit per-cycle prefetches
-      // if (per_cyc_ipref < IPRF_MAX_FTQ_ENTRY_CYC)
-      success =
-          new_mem_req(MRT_IPRF, eip_proc_id, pf_addr, ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
-      if (success) {
-        DEBUG(proc_id, "new_mem_req (BB pref) for v_addr 0x%lx,line_addr 0x%lx  pf_addr 0x%lx, unique_count: %llu\n",
-              v_addr, v_addr & ~0x3F, pf_addr, unique_count);
-        if (!off_path)
-          l1i_add_timing_entry(pf_addr >> LOG2(ICACHE_LINE_SIZE), 0, L1I_ENTANGLED_TABLE_WAYS);
-        // if (success == Mshr_Req_Result::SUCCESS_NEW)
-        // per_cyc_ipref++;
-      }
-    }
+    if (!l1i_ongoing_request(pf_addr >> LOG2(ICACHE_LINE_SIZE)))
+      eip_queue_prefetch(pf_addr >> LOG2(ICACHE_LINE_SIZE), 0, L1I_ENTANGLED_TABLE_WAYS, !off_path);
   }
 
   // Queue entangled and basic block of entangled prefetches
@@ -1074,21 +1081,8 @@ void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefe
         l1i_stats_basic_blocks_ent[bb_size]++;
       for (uint32_t i = 0; i <= bb_size; i++) {
         uint64_t pf_line_addr = entangled_line_addr + i;
-        if (!l1i_ongoing_request(pf_line_addr)) {
-          Flag success = FALSE;
-          // TODO : limit per-cycle prefetches
-          // if (per_cyc_ipref < IPRF_MAX_FTQ_ENTRY_CYC)
-          success = new_mem_req(MRT_IPRF, eip_proc_id, pf_line_addr << LOG2(ICACHE_LINE_SIZE), ICACHE_LINE_SIZE, 0,
-                                NULL, instr_fill_line, unique_count, 0);
-          if (success) {
-            DEBUG(proc_id, "new_mem_req (Entangled pref) for 0x%lx, unique_count: %llu\n",
-                  pf_line_addr << LOG2(ICACHE_LINE_SIZE), unique_count);
-            if (!off_path)
-              l1i_add_timing_entry(pf_line_addr, source_set, (i == 0) ? source_way : L1I_ENTANGLED_TABLE_WAYS);
-            // if (success == Mshr_Req_Result::SUCCESS_NEW)
-            // per_cyc_ipref++;
-          }
-        }
+        if (!l1i_ongoing_request(pf_line_addr))
+          eip_queue_prefetch(pf_line_addr, source_set, (i == 0) ? source_way : L1I_ENTANGLED_TABLE_WAYS, !off_path);
       }
     }
   }
@@ -1152,9 +1146,41 @@ void set_eip(uns _proc_id) {
   eip_proc_id = _proc_id;
 }
 
+/* After the cycle's demand and FDIP lookups, the head of the queue looks the icache up through
+   a read port of its line's bank: a hit is dropped, a miss is sent. One prefetch a cycle; a
+   head whose bank is busy, or that finds no MSHR, waits. */
 void update_eip() {
-  if (!EIP_ENABLE)
+  if (!EIP_ENABLE || eip_pref_queue.empty())
     return;
+  Eip_Pref& pf = eip_pref_queue.front();
+  Addr addr = pf.line_addr << LOG2(ICACHE_LINE_SIZE);
+  if (l1i_ongoing_request(pf.line_addr)) {
+    STAT_EVENT(eip_proc_id, EIP_PREF_ONGOING_DROP);
+    eip_pref_queue.pop_front();
+    return;
+  }
+  if (!pf.probed) {
+    Flag hit;
+    if (!icache_pref_probe(addr, FALSE, &hit)) {
+      STAT_EVENT(eip_proc_id, EIP_PREF_PORT_STALL);
+      return;
+    }
+    if (hit) {
+      STAT_EVENT(eip_proc_id, EIP_PREF_HIT_DROP);
+      eip_pref_queue.pop_front();
+      return;
+    }
+    pf.probed = true;
+  }
+  if (!new_mem_req(MRT_IPRF, eip_proc_id, addr, ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0)) {
+    STAT_EVENT(eip_proc_id, EIP_PREF_MSHR_STALL);
+    return;
+  }
+  STAT_EVENT(eip_proc_id, EIP_PREF_SENT);
+  DEBUG(eip_proc_id, "new_mem_req (EIP pref) for 0x%llx, unique_count: %llu\n", addr, unique_count);
+  if (pf.timing)
+    l1i_add_timing_entry(pf.line_addr, pf.source_set, pf.source_way);
+  eip_pref_queue.pop_front();
 }
 
 void eip_recover(uns proc_id, uint64_t recovery_op_num) {

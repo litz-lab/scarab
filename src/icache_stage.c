@@ -50,6 +50,7 @@
 #include "frontend/frontend.h"
 #include "frontend/pin_trace_fe.h"
 #include "libs/list_lib.h"
+#include "libs/port_lib.h"
 #include "memory/memory.h"
 #include "prefetcher/D_JOLT.h"
 #include "prefetcher/FNL+MMA.h"
@@ -152,6 +153,12 @@ void init_icache_stage(uns8 proc_id, const char* name) {
 
   /* initialize the cache structure */
   init_cache(&ic->icache, "ICACHE", ICACHE_SIZE, ICACHE_ASSOC, ICACHE_LINE_SIZE, 0, REPL_TRUE_LRU);
+  ic->ports = (Ports*)malloc(sizeof(Ports) * ICACHE_BANKS);
+  for (uns ii = 0; ii < ICACHE_BANKS; ii++) {
+    char name[MAX_STR_LENGTH + 1];
+    snprintf(name, MAX_STR_LENGTH, "ICACHE BANK %d PORTS", ii);
+    init_ports(&ic->ports[ii], name, ICACHE_READ_PORTS, ICACHE_WRITE_PORTS, FALSE);
+  }
 
   /* init icache_line_info struct - this struct keeps data about corresponding
    * icache lines */
@@ -501,6 +508,9 @@ FT_Arbitration_Result ft_arbitration() {
       ic->line = lookup_icache();
       ic->lookups_per_cycle_count++;
       ASSERT(ic->proc_id, ic->lookups_per_cycle_count <= ICACHE_READ_PORTS);
+      /* Demand looks up first each cycle, and no more often than a bank has ports. */
+      Flag port = get_read_port(&ic->ports[BANK(ic->fetch_addr, ICACHE_BANKS, ICACHE_LINE_SIZE)]);
+      ASSERT(ic->proc_id, port);
     }
 
     if (ft_in_uop_cache) {
@@ -896,6 +906,16 @@ void update_icache_stage() {
   }
 
   execute_coupled_FSM();
+}
+
+/* A prefetcher looks the icache up after the cycle's demand lookups, through a read port of
+   the line's bank. Returns FALSE when the bank has none left: the prefetch keeps its place. */
+Flag icache_pref_probe(Addr addr, Flag update_repl, Flag* hit) {
+  if (!get_read_port(&ic->ports[BANK(addr, ICACHE_BANKS, ICACHE_LINE_SIZE)]))
+    return FALSE;
+  Addr line_addr;
+  *hit = cache_access(&ic->icache, addr, &line_addr, update_repl) != NULL;
+  return TRUE;
 }
 
 /**************************************************************************************/

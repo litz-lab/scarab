@@ -810,6 +810,15 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
     return data;
   }
 
+  /* A request issued while its line was resident fills it again: inserting it again would queue
+     a victim's writeback and then keep the victim (cache_insert reuses the line's own way). The
+     line is still made MRU, as the insert did. */
+  data = (Dcache_Data*)cache_access(&dc->dcache, req->addr, &line_addr, TRUE);
+  if (data) {
+    req->dirty_l0 |= data->dirty;
+    return data;
+  }
+
   /*
    * Do not insert the line yet, just check which line we need to replace.
    * If that line is dirty, it's possible that we won't be able to insert the writeback into the memory system.

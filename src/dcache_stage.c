@@ -277,12 +277,14 @@ void update_dcache_stage(Stage_Data* src_sd) {
     }
 
     /* check on the availability of a read port for the given bank */
-    // the bank bits are the lowest order cache index bits
-    uns bank = BANK(op->oracle_info.va, DCACHE_BANKS, DCACHE_INTERLEAVE_FACTOR);
+    // banks interleave cache lines: the bank bits are the lowest order cache index bits
+    uns bank = BANK(op->oracle_info.va, DCACHE_BANKS, DCACHE_LINE_SIZE);
     DEBUG(dc->proc_id, "check_read and write port availiabilty mem_type:%s bank:%d \n",
           (op->uop->mem_type == MEM_ST) ? "ST" : "LD", bank);
-    if (!PERFECT_DCACHE && ((op->uop->mem_type == MEM_ST && !get_write_port(&dc->ports[bank])) ||
-                            (op->uop->mem_type != MEM_ST && !get_read_port(&dc->ports[bank])))) {
+    if (!PERFECT_DCACHE &&
+        ((op->uop->mem_type == MEM_ST && !get_write_port(&dc->ports[bank])) ||
+         (op->uop->mem_type != MEM_ST &&
+          !get_read_port_line(&dc->ports[bank], op->oracle_info.va & ~(Addr)(DCACHE_LINE_SIZE - 1))))) {
       op->state = OS_WAIT_DCACHE;
       STAT_EVENT(dc->proc_id, DCACHE_READ_PORT_UNAVAILABLE_ONPATH + op->off_path);
       continue;
@@ -367,7 +369,7 @@ Flag dcache_fill_line(Mem_Req* req) {
   ASSERT(dc->proc_id, req->op_count == req->op_uniques.count);
 
   /* if it can't get a write port, fail */
-  uns bank = BANK(req->addr, DCACHE_BANKS, DCACHE_INTERLEAVE_FACTOR);
+  uns bank = BANK(req->addr, DCACHE_BANKS, DCACHE_LINE_SIZE);
   /* A returning line outranks anything still asking for the cache. */
   if (!get_write_port(&dc->ports[bank])) {
     cycle_count = old_cycle_count;

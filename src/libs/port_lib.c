@@ -51,6 +51,7 @@ void init_ports(Ports* ports, char name[], uns read, uns write, Flag writes_prev
   ports->write_last_cycle = 0;
   ports->num_read_ports = read;
   ports->read_ports_in_use = 0;
+  ports->read_lines = (Addr*)calloc(read, sizeof(Addr));
   ports->num_write_ports = write;
   ports->write_ports_in_use = 0;
   ports->writes_prevent_reads = writes_prevent_reads;
@@ -79,6 +80,24 @@ Flag get_read_port(Ports* ports) {
 
   DEBUG(0, "get_read_port successful\n");
   ports->read_ports_in_use++;
+  return SUCCESS;
+}
+
+/**************************************************************************************/
+/* get_read_port_line: */
+/* A port reads a whole line: a read of a line another read already has this cycle
+   shares its port. */
+
+Flag get_read_port_line(Ports* ports, Addr line_addr) {
+  if (ports->read_last_cycle == cycle_count) {
+    for (uns ii = 0; ii < ports->read_ports_in_use; ii++) {
+      if (ports->read_lines[ii] == line_addr)
+        return SUCCESS;
+    }
+  }
+  if (!get_read_port(ports))
+    return FAILURE;
+  ports->read_lines[ports->read_ports_in_use - 1] = line_addr;
   return SUCCESS;
 }
 

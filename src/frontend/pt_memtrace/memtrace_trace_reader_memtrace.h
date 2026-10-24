@@ -89,7 +89,11 @@ class TraceReaderMemtrace : public TraceReader {
   InstInfo mt_info_b_ = {};
   bool mt_using_info_a_ = true;
   ctype_pin_inst gap_patch_jmp_ = {};
+  /// Synthetic fetch barrier substituted for the instruction preceding a
+  /// pid/tid change in a core-sharded trace.  See getNextInstruction__().
+  ctype_pin_inst ctx_switch_barrier_ = {};
   uint64_t mt_warn_target_ = 0;
+  uint64_t mt_ctx_switches_ = 0;
 };
 
 #endif

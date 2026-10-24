@@ -209,7 +209,14 @@ void insert_processing_for_nonsyscall_instructions(const INS& ins) {
     INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_no_mem, IARG_CONTEXT,
                    IARG_END);
   } else {
+    // INS_HasScatteredMemoryAccess only exists in PIN 3.31+ (SDE); the plain
+    // PIN 3.15 kit still only has the pre-rename INS_hasKnownMemorySize,
+    // which the ENABLE_PINPLAY build (always an SDE/3.31 kit) replaced it with.
+#ifdef ENABLE_PINPLAY
     if (!INS_HasScatteredMemoryAccess(ins)) {
+#else
+    if (INS_hasKnownMemorySize(ins)) {
+#endif
       // Single memory op (known size); scatter/gather -> multi-mem path below
       INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_one_mem,
                      IARG_CONTEXT, IARG_MEMORYWRITE_EA, IARG_MEMORYWRITE_SIZE,

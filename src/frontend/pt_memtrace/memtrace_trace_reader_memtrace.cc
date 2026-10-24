@@ -631,6 +631,7 @@ PATCH_REP:
       // filler, so clear that and the reason with it.
       ctx_switch_barrier_.fake_inst = 0;
       ctx_switch_barrier_.fake_inst_reason = WPNM_NOT_IN_WPNM;
+      ctx_switch_barrier_.is_trace_patch = 1;
       ctx_switch_barrier_.cf_type = CF_SYS;
       ctx_switch_barrier_.is_ifetch_barrier = 1;
       strcpy(ctx_switch_barrier_.pin_iclass, "CTX_SWITCH");
@@ -675,6 +676,7 @@ PATCH_REP:
     } else if (_prior->pc && non_seq &&
                (!is_rep || (_prior->pc != _info->pc && (_prior->pc + prior_isize) != _info->pc))) {
       gap_patch_jmp_ = create_dummy_jump(_prior->pc, _info->pc, XED_ICLASS_JMP);
+      gap_patch_jmp_.is_trace_patch = 1;
       _prior->info = &gap_patch_jmp_;
       _prior->target = _info->pc;
       _prior->taken = true;

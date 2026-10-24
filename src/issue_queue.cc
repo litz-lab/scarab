@@ -49,6 +49,7 @@ extern "C" {
 #include "exec_stage.h"
 #include "map_rename.h"
 #include "node_stage.h"
+#include "reg_port.h"
 }
 
 #include <algorithm>
@@ -1175,10 +1176,12 @@ void alloc_mem_issue_queue(uns num_cores) {
   for (uns ii = 0; ii < num_cores; ii++) {
     per_core_issue_queues.emplace_back(ii);
   }
+  alloc_mem_reg_port(num_cores);
 }
 
 void set_issue_queue(uns8 proc_id) {
   issue_queues = &per_core_issue_queues[proc_id];
+  set_reg_port(proc_id);
 }
 
 void recover_issue_queue() {

@@ -872,7 +872,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
   } else {
     const uint16_t mem_shape = mem_shape_of(pi);
     info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb, 0,
-                                        mem_shape, &new_entry);
+                                        mem_shape, pi->cf_type, &new_entry);
     info->fake_inst = FALSE;
     info->fake_inst_reason = WPNM_NOT_IN_WPNM;
 
@@ -887,7 +887,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
       for (ii = 0; ii < num_uop; ii++) {
         if (ii > 0) {
           info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb,
-                                              ii, mem_shape, &new_entry);
+                                              ii, mem_shape, pi->cf_type, &new_entry);
           info->fake_inst = FALSE;
           info->fake_inst_reason = WPNM_NOT_IN_WPNM;
         }
@@ -928,7 +928,7 @@ void convert_pinuop_to_t_uop(uns8 proc_id, ctype_pin_inst* pi, Trace_Uop** trace
       for (ii = 0; ii < num_uop; ii++) {
         if (ii > 0) {
           info = cpp_hash_table_access_create(proc_id, pi->instruction_addr, pi->inst_binary_lsb, pi->inst_binary_msb,
-                                              ii, mem_shape, &new_entry);
+                                              ii, mem_shape, pi->cf_type, &new_entry);
         }
         ASSERT(proc_id, !new_entry);
 

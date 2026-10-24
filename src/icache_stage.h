@@ -114,6 +114,7 @@ typedef struct Icache_Stage_struct {
   Counter rdy_cycle; /* cycle that the henry icache will return data (only used in henry model) */
 
   Cache icache;           /* the cache storage structure (caches Inst_Info *) */
+  Ports* ports;           /* read ports per bank; banks interleave cache lines */
   Cache icache_line_info; /* contains info about the icache lines */
   Cache pref_icache;      /* Prefetcher cache storage structure (caches Inst_Info *) */
   char rand_wb_state[31]; /* State of random number generator for random writeback */

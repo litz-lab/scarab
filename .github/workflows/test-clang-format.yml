@@ -16,6 +16,6 @@ jobs:
     - uses: DoozyX/clang-format-lint-action@v0.5
       with:
         source: '.'
-        exclude: './src/ramulator'
+        exclude: './src/deps'
         extensions: 'h,cpp,cc,c'
         clangFormatVersion: 5

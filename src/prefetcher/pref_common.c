@@ -678,14 +678,12 @@ Flag pref_addto_dest_req_queue(uns8 proc_id, HWP_Type dest, Addr line_index, uns
 static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
   uns line_size = 0, delay = 0;
   Flag (*fill)(Mem_Req*) = NULL;
-  Flag to_ul1 = FALSE; /* a dcache miss goes on to the LLC queue instead of memory */
   Stat_Enum drop_stat = 0, sent_stat = 0, stall_stat = 0;
   switch (dest) {
     case DEST_DCACHE:
       line_size = DCACHE_LINE_SIZE;
       delay = 1;
       fill = dcache_fill_line;
-      to_ul1 = !PREF_DL0_FILL_DCACHE;
       drop_stat = PREF_DL0REQ_QUEUE_HIT_DROP;
       sent_stat = PREF_DL0REQ_QUEUE_SENTREQ;
       stall_stat = PREF_DL0REQ_SEND_QUEUE_STALL;
@@ -698,7 +696,6 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
       break;
     case DEST_L1:
       line_size = L1_LINE_SIZE;
-      fill = STREAM_PREF_INTO_DCACHE ? dcache_fill_line : NULL;
       drop_stat = PREF_UL1REQ_QUEUE_HIT_DROP;
       sent_stat = PREF_UL1REQ_QUEUE_SENTREQ;
       stall_stat = PREF_UL1REQ_SEND_QUEUE_STALL;
@@ -724,10 +721,6 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
     if (hit) {
       STAT_EVENT(proc_id, drop_stat);
       done = TRUE;
-    } else if (to_ul1) {
-      pf->probed = TRUE;
-      done = pref_addto_ul1req_queue(proc_id, pf->line_index, pf->prefetcher_id);
-      STAT_EVENT(0, done ? sent_stat : stall_stat);
     } else {
       pf->probed = TRUE;
       Pref_Req_Info info = {0};
@@ -833,11 +826,11 @@ void pref_sent(uns8 proc_id, Addr addr, uns8 prefetcher_id, Destination dest) {
       STAT_EVENT_ALL(PREF_MLC_TOTAL_SENT);
       STAT_EVENT(proc_id, CORE_PREF_MLC_SENT);
       break;
-    case DEST_DCACHE:  // dcache-destined prefetch filling the dcache directly (--pref_dl0_fill_dcache)
+    case DEST_DCACHE:
       STAT_EVENT_ALL(PREF_DCACHE_TOTAL_SENT);
       STAT_EVENT(proc_id, CORE_PREF_DCACHE_SENT);
       break;
-    case DEST_L1:    // ul1 queue; dcache-destined prefetches re-issue here on a dcache miss
+    case DEST_L1:
     case DEST_NONE:  // demand-matched prefetch demoted to DEST_NONE; count at L1
       STAT_EVENT_ALL(PREF_L1_TOTAL_SENT);
       STAT_EVENT(proc_id, CORE_PREF_L1_SENT);

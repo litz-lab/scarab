@@ -1491,7 +1491,6 @@ static void mem_complete_l1_access(Mem_Req* req) {
           mem_level_done(req, mem_file_of(req, &mem->mlc_mshr));
           mem_free_req(req);
         }
-        // STAT_EVENT(req->proc_id, BUS_ACCESS);
       }
     }
     // CMP IGNORE
@@ -1777,7 +1776,7 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit) {
   switch (dest) {
     case DEST_DCACHE: {
       Dcache_Stage* dcs = &cmp_model.dcache_stage[proc_id];
-      ports = &dcs->ports[BANK(line_addr, DCACHE_BANKS, DCACHE_INTERLEAVE_FACTOR)];
+      ports = &dcs->ports[BANK(line_addr, DCACHE_BANKS, DCACHE_LINE_SIZE)];
       cache = &dcs->dcache;
       block = L0_LD_BANK_BLOCK;
       count_access = FALSE;
@@ -1810,7 +1809,8 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit) {
       ASSERT(proc_id, FALSE);
   }
 
-  if (!get_read_port(ports)) {
+  /* The dcache's ports read whole lines, shared by reads of the same line this cycle. */
+  if (!(dest == DEST_DCACHE ? get_read_port_line(ports, line_addr) : get_read_port(ports))) {
     STAT_EVENT(proc_id, block);
     return FALSE;
   }

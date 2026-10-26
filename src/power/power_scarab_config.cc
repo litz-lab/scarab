@@ -759,7 +759,8 @@ void power_print_noc_params(std::ofstream& out) {
 }
 
 void power_print_mc_params(std::ofstream& out) {
-  double MEMORY_FREQ_IN_MHZ = (1e15 / RAMULATOR_TCK) / 1e6;
+  const Ramulator_Config* dram = ramulator_get_config();
+  double MEMORY_FREQ_IN_MHZ = (1e15 / dram->tck_fs) / 1e6;
   double MEMORY_PEAK_RATE_IN_MB_PER_SEC =
       (double(BUS_WIDTH_IN_BYTES) / 1000000.0) * 2 * MEMORY_FREQ_IN_MHZ * 1e6;  // MBps
   std::string header = "\t";
@@ -776,13 +777,13 @@ void power_print_mc_params(std::ofstream& out) {
   ADD_XML_PARAM(out, header, "block_size", 64, "Bytes");
 
   /* current McPAT only supports homogeneous memory controllers */
-  ADD_XML_PARAM(out, header, "number_mcs", RAMULATOR_CHANNELS, );
+  ADD_XML_PARAM(out, header, "number_mcs", dram->channels, );
   ADD_XML_PARAM(out, header, "memory_channels_per_mc", 1, );
-  ADD_XML_PARAM(out, header, "number_ranks", RAMULATOR_RANKS, );
+  ADD_XML_PARAM(out, header, "number_ranks", dram->ranks, );
 
   ADD_XML_PARAM(out, header, "withPHY", 0, );  // TODO: what is this?
 
-  uint32_t MEM_REQ_WINDOW_SIZE = RAMULATOR_READQ_ENTRIES + RAMULATOR_WRITEQ_ENTRIES;
+  uint32_t MEM_REQ_WINDOW_SIZE = dram->readq_entries + dram->writeq_entries;
   ADD_XML_PARAM(out, header, "req_window_size_per_channel", MEM_REQ_WINDOW_SIZE, );
   ADD_XML_PARAM(out, header, "IO_buffer_size_per_channel", MEM_REQ_WINDOW_SIZE, );
 
@@ -858,8 +859,9 @@ void power_print_io_params(std::ofstream& out) {
 }
 
 void power_print_memory_parts(std::ofstream& out) {
+  const Ramulator_Config* dram = ramulator_get_config();
   double DRAM_TECH_IN_UM = ((double)DRAM_TECH_IN_NM) / 1000;  // default is 32nm
-  uint32_t DRAM_BURST_LENGTH = RAMULATOR_TBL * 2;  // RAMULATOR_TBL is in cycles, burst length is in transfers
+  uint32_t DRAM_BURST_LENGTH = dram->tBL * 2;                 // tBL is in cycles, burst length is in transfers
   uint32_t BUS_WIDTH_IN_BITS = BUS_WIDTH_IN_BYTES * 8;
 
   uint64_t CHIP_SIZE_IN_BYTES = uint64_t(ramulator_get_chip_size()) * 1024 * 1024 / 8;  // Convert MBits to Bytes

@@ -493,10 +493,16 @@ void mem_stat_served(uns8 proc_id, Mem_Req_Type type, Stat_Enum level, Counter l
     case MRT_DPRF:
       base = PF_SERVED_DCACHE;
       break;
+    case MRT_IPRF:
+    case MRT_FDIPPRFON:
+    case MRT_FDIPPRFOFF:
+    case MRT_FDIPPRFALT:
+      base = IPF_SERVED_DCACHE;
+      break;
     default:
-      return; /* instruction fetches and writebacks are counted elsewhere */
+      return; /* demand instruction fetches and writebacks are counted elsewhere */
   }
-  /* The three families are laid out identically, so an offset found once indexes any
+  /* The four families are laid out identically, so an offset found once indexes any
      of them. */
   Stat_Enum off = level - LD_SERVED_DCACHE;
   Stat_Enum lat = LD_LAT_DCACHE - LD_SERVED_DCACHE;
@@ -1764,16 +1770,27 @@ static void mem_process_lookups(Mshr* file) {
 
 /**************************************************************************************/
 /* mem_pref_probe: */
-/* A prefetcher looks its own level up, from its own queue, after that level's demands
-   have run. Takes a bank read port, so a bank a demand used this cycle refuses it.
-   Returns FALSE when the bank is busy: the prefetch keeps its place and retries. */
+/* A prefetcher looks up the cache named by dest, after that cache's demands have run.
+   Takes a read port of the line's bank, so a bank whose ports demands used this cycle
+   refuses it. Returns FALSE when the bank is busy. */
 
-Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit) {
+Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag update_repl, Flag* hit) {
   Ports* ports = NULL;
   Cache* cache = NULL;
   Stat_Enum block = 0, access = 0, pref_access = 0, pref_hit = 0, pref_miss = 0;
-  Flag count_access = TRUE; /* the dcache counts its accesses as DCACHE_HIT/MISS instead */
+  Flag count_access = TRUE; /* the icache and dcache count their accesses as hits/misses instead */
   switch (dest) {
+    case DEST_ICACHE: {
+      Icache_Stage* ics = &cmp_model.icache_stage[proc_id];
+      ports = &ics->ports[BANK(line_addr, ICACHE_BANKS, ICACHE_LINE_SIZE)];
+      cache = &ics->icache;
+      block = IC_LD_BANK_BLOCK;
+      count_access = FALSE;
+      pref_access = ICACHE_PREF_ACCESS;
+      pref_hit = ICACHE_PREF_REQ_HIT;
+      pref_miss = ICACHE_PREF_REQ_MISS;
+      break;
+    }
     case DEST_DCACHE: {
       Dcache_Stage* dcs = &cmp_model.dcache_stage[proc_id];
       ports = &dcs->ports[BANK(line_addr, DCACHE_BANKS, DCACHE_LINE_SIZE)];
@@ -1816,7 +1833,7 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit) {
   }
   STAT_EVENT(proc_id, block + 1);
   Addr dummy_line_addr;
-  *hit = cache_access(cache, line_addr, &dummy_line_addr, FALSE) != NULL;
+  *hit = cache_access(cache, line_addr, &dummy_line_addr, update_repl) != NULL;
 
   /* A probe takes the bank and reads the array, so it counts as an access to that
      level -- but only as a prefetch one. Demand misses are never caused by a prefetch. */

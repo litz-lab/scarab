@@ -77,7 +77,7 @@ DEF_PARAM( pref_insert_per_cycle               , PREF_INSERT_PER_CYCLE          
 DEF_PARAM( pref_queue_per_cycle                , PREF_QUEUE_PER_CYCLE                , uns             , uns                , 2         ,    )
 /* A prefetch with no bank port or MSHR this cycle stays at its queue's head and retries
    next cycle (dropped when off) */
-DEF_PARAM( pref_retry                          , PREF_RETRY                          , Flag            , Flag               , FALSE     ,    )
+DEF_PARAM( pref_retry                          , PREF_RETRY                          , Flag            , Flag               , TRUE      ,    )
 DEF_PARAM( pref_shared_queues                  , PREF_SHARED_QUEUES                  , Flag            , Flag               , TRUE     ,    )
 DEF_PARAM( pref_dl0_miss_on                    , PREF_DL0_MISS_ON                    , Flag            , Flag               , TRUE      ,    )
 DEF_PARAM( pref_dl0_hit_on                     , PREF_DL0_HIT_ON                     , Flag            , Flag               , TRUE      ,    )

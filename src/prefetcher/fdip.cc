@@ -221,7 +221,8 @@ class FDIP {
   void determine_usefulness_by_inf_hash(Addr line_addr, Flag* emit_new_prefetch, Op* op, uint64_t ghist);
   void determine_usefulness_by_utility_cache(Addr line_addr, Flag* emit_new_prefetch, Op* op, uint64_t ghist);
   void determine_usefulness_by_bloom_filter(Addr line_addr, Flag* emit_new_prefetch, Op* op, uint64_t ghist);
-  void inc_prefetched_cls(Addr line_addr, uns success, Flag conf_off_path);
+  void inc_prefetched_cls(Addr line_addr, uns success, Flag off_path, Flag conf_off_path);
+  void pref_issued(Addr line_addr, Flag off_path, Flag conf_off_path, Pref_Issue_Result result);
   void log_stats_path_conf_per_pref_candidate();
   void log_stats_path_conf_emitted();
   FDIP_Stat* get_fdip_stat() { return fdip_stat; }
@@ -930,35 +931,18 @@ void FDIP::update() {
         log_stats_path_conf_per_pref_candidate();
       emit_new_prefetch = determine_usefulness(line_addr, op, op->bp_pred_info->pred_global_hist);
 
-      bool line = false;
-      Flag port_busy = FALSE;
-      if (emit_new_prefetch) {
-        Flag hit = FALSE;
-        if (!mem_pref_probe(proc_id, DEST_ICACHE, pc_addr, TRUE, &hit)) {
-          port_busy = TRUE; /* the line's bank port is taken: dropped, or retried with PREF_RETRY */
-          STAT_EVENT(proc_id, FDIP_PREF_PORT_DROP);
-        } else {
-          line = hit;
-          // icache_line_info shadows the icache for wrong-path stats; access it whenever the icache is
-          if (WP_COLLECT_STATS) {
-            Addr dummy_addr;
-            bool line_info = (Icache_Data*)cache_access(&(ic_ref->icache_line_info), pc_addr, &dummy_addr, TRUE);
-            UNUSED(line_info);
-          }
-
-          if (line) {
-            DEBUG(proc_id, "[FDIP%u] probe hit for %llx\n", bp_id, line_addr);
-            fdip_stat->probe_prefetched_cls(line_addr);
-            STAT_EVENT(proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
-          }
+      Mem_Req_Type mem_type = is_conf_off_path() ? MRT_FDIPPRFOFF : MRT_FDIPPRFON;
+      /* A candidate joins the icache's prefetch queue, which looks it up after the cycle's
+         demand fetch (fdip_pref_issued). A full queue drops it, or with PREF_RETRY ends the
+         walk here; it resumes at this line next cycle. */
+      Flag queued = FALSE;
+      if (emit_new_prefetch && !FDIP_PREF_NO_LATENCY) {
+        queued = pref_addto_icache_queue(proc_id, line_addr, bp_id, mem_type, op->off_path, op->conf_off_path);
+        if (!queued && PREF_RETRY) {
+          break_reason = BR_FULL_MEM_REQ_BUF;
+          break;
         }
       }
-
-      if (port_busy && PREF_RETRY) {
-        break_reason = BR_FULL_MEM_REQ_BUF; /* the walk resumes at this line next cycle */
-        break;
-      }
-      Mem_Req_Type mem_type = is_conf_off_path() ? MRT_FDIPPRFOFF : MRT_FDIPPRFON;
       if (!emit_new_prefetch)  // TODO: whether to insert the candidate for the subsidiary
         insert_pref_candidate_to_seniority_ftq(line_addr, op->bp_pred_info->pred_global_hist);
       if (!bp_id && (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER))
@@ -966,60 +950,37 @@ void FDIP::update() {
       if (emit_new_prefetch)
         STAT_EVENT(proc_id, FDIP_DECIDE_PREF_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
 
-      // create a mem request only if line doesn't exist. If the corresponding mem_req exists, it will merge.
-      if (!line && emit_new_prefetch && !port_busy) {
-        uns success = Mshr_Req_Result::FAILED;
-        if (FDIP_PREF_NO_LATENCY) {
-          Mem_Req req;
-          req.off_path = op ? op->off_path : FALSE;
-          req.conf_off_path = op ? op->conf_off_path : FALSE;
-          req.off_path_confirmed = FALSE;
-          req.type = mem_type;
-          mem_req_set_types(&req, mem_type);
-          req.proc_id = proc_id;
-          req.addr = line_addr;
-          req.oldest_op_unique_num = (Counter)0;
-          req.oldest_op_op_num = (Counter)0;
-          req.oldest_op_addr = (Addr)0;
-          req.dirty_l0 = op && op->uop->mem_type == MEM_ST && !op->off_path;
-          req.fdip_pref_off_path = op->off_path;
-          req.demand_icache_emitted_cycle = 0;
-          req.fdip_emitted_cycle = cycle_count;
-          req.ghist = g_bp_data->global_hist;
-          if (icache_fill_line(&req)) {
-            STAT_EVENT(proc_id, FDIP_NEW_PREFETCHES_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
-            if (FDIP_BLOOM_FILTER)
-              udp->bloom_inc_new_prefs();  // TODO: still update for the secondary?
-          } else
-            ASSERT(proc_id, false);
-          success = Mshr_Req_Result::SUCCESS_NEW;
-        } else {
-          success =
-              new_mem_req(mem_type, proc_id, line_addr, ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
-          // ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count++, 0); // bug?
-          if (success == Mshr_Req_Result::SUCCESS_NEW) {
-            STAT_EVENT(proc_id, FDIP_NEW_PREFETCHES_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
-            DEBUG(proc_id, "[FDIP%u] Success to emit a new prefetch for %llx\n", bp_id, line_addr);
-            per_cyc_ipref++;
-            if (!bp_id && FDIP_BLOOM_FILTER)  // TODO: still update for the secondary?
-              udp->bloom_inc_new_prefs();
-          } else if (success == Mshr_Req_Result::SUCCESS_MERGED) {
-            STAT_EVENT(proc_id, FDIP_PREF_MSHR_PROBE_HIT_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
-            DEBUG(proc_id, "[FDIP%u] Success to merge a prefetch for %llx\n", bp_id, line_addr);
-          } else if (success == Mshr_Req_Result::FAILED) {
-            // The target mshr is full; the request buffer cannot run dry.
-            STAT_EVENT(proc_id, FDIP_PREF_FAILED_QUEUE_FULL);
-            STAT_EVENT(proc_id, FDIP_PREF_FAILED_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
-            DEBUG(proc_id, "[FDIP%u] Failed to emit a prefetch for %llx\n", bp_id, line_addr);
-            if (FDIP_FREEZE_AT_MEM_BUF_LIMIT && decoupled_fe_ftq_iter_ft_offset(dfe, ftq_idx) > 1) {
-              break_reason = BR_FULL_MEM_REQ_BUF;
-              break;
-            }
-          }
-        }
+      Flag hit = FALSE;
+      if (queued) {
         if (!bp_id)
           log_stats_path_conf_emitted();
-        inc_prefetched_cls(line_addr, success, op->conf_off_path);
+      } else if (emit_new_prefetch && FDIP_PREF_NO_LATENCY &&
+                 mem_pref_probe(proc_id, DEST_ICACHE, pc_addr, TRUE, &hit) && !hit) {
+        Mem_Req req;
+        req.off_path = op ? op->off_path : FALSE;
+        req.conf_off_path = op ? op->conf_off_path : FALSE;
+        req.off_path_confirmed = FALSE;
+        req.type = mem_type;
+        mem_req_set_types(&req, mem_type);
+        req.proc_id = proc_id;
+        req.addr = line_addr;
+        req.oldest_op_unique_num = (Counter)0;
+        req.oldest_op_op_num = (Counter)0;
+        req.oldest_op_addr = (Addr)0;
+        req.dirty_l0 = op && op->uop->mem_type == MEM_ST && !op->off_path;
+        req.fdip_pref_off_path = op->off_path;
+        req.demand_icache_emitted_cycle = 0;
+        req.fdip_emitted_cycle = cycle_count;
+        req.ghist = g_bp_data->global_hist;
+        if (icache_fill_line(&req)) {
+          STAT_EVENT(proc_id, FDIP_NEW_PREFETCHES_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
+          if (FDIP_BLOOM_FILTER)
+            udp->bloom_inc_new_prefs();  // TODO: still update for the secondary?
+        } else
+          ASSERT(proc_id, false);
+        if (!bp_id)
+          log_stats_path_conf_emitted();
+        inc_prefetched_cls(line_addr, Mshr_Req_Result::SUCCESS_NEW, op->off_path, op->conf_off_path);
       } else {
         fdip_stat->not_prefetch(line_addr);
       }
@@ -1072,7 +1033,7 @@ void FDIP::inc_cnt_unuseful(Addr line_addr) {
   fdip_stat->inc_cnt_unuseful(line_addr);
 }
 
-void FDIP::inc_prefetched_cls(Addr line_addr, uns success, Flag conf_off_path) {
+void FDIP::inc_prefetched_cls(Addr line_addr, uns success, Flag off_path, Flag conf_off_path) {
   if (success == Mshr_Req_Result::FAILED)
     return;
   if (bp_id)
@@ -1080,10 +1041,50 @@ void FDIP::inc_prefetched_cls(Addr line_addr, uns success, Flag conf_off_path) {
   Flag on_path = FALSE;
   if (CONFIDENCE_ENABLE && !conf_off_path)
     on_path = TRUE;
-  if (!CONFIDENCE_ENABLE && !cur_op->off_path)
+  if (!CONFIDENCE_ENABLE && !off_path)
     on_path = TRUE;
 
   fdip_stat->inc_prefetched_cls(line_addr, on_path, success);
+}
+
+/* The icache prefetch queue's outcome for a line this FDIP queued: no bank port (dropped,
+   or retried with PREF_RETRY), an icache hit, or a new, merged or (no MSHR) failed request. */
+void FDIP::pref_issued(Addr line_addr, Flag off_path, Flag conf_off_path, Pref_Issue_Result result) {
+  uns stat = FDIP_PREF_STAT_COUNT * bp_id + off_path;
+  if (result == PREF_ISSUE_BANK_BUSY) {
+    STAT_EVENT(proc_id, FDIP_PREF_PORT_DROP);
+    if (!PREF_RETRY)
+      fdip_stat->not_prefetch(line_addr);
+    return;
+  }
+  uns success = Mshr_Req_Result::FAILED;
+  switch (result) {
+    case PREF_ISSUE_HIT:
+      fdip_stat->probe_prefetched_cls(line_addr);
+      STAT_EVENT(proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ONPATH0 + stat);
+      fdip_stat->not_prefetch(line_addr);
+      return;
+    case PREF_ISSUE_NEW:
+      STAT_EVENT(proc_id, FDIP_NEW_PREFETCHES_ONPATH0 + stat);
+      per_cyc_ipref++;
+      if (!bp_id && FDIP_BLOOM_FILTER)  // TODO: still update for the secondary?
+        udp->bloom_inc_new_prefs();
+      success = Mshr_Req_Result::SUCCESS_NEW;
+      break;
+    case PREF_ISSUE_MERGED:
+      STAT_EVENT(proc_id, FDIP_PREF_MSHR_PROBE_HIT_ONPATH0 + stat);
+      success = Mshr_Req_Result::SUCCESS_MERGED;
+      break;
+    default:
+      STAT_EVENT(proc_id, FDIP_PREF_FAILED_QUEUE_FULL);
+      STAT_EVENT(proc_id, FDIP_PREF_FAILED_ONPATH0 + stat);
+  }
+  inc_prefetched_cls(line_addr, success, off_path, conf_off_path);
+}
+
+void fdip_pref_issued(uns proc_id, uns bp_id, Addr line_addr, Flag off_path, Flag conf_off_path,
+                      Pref_Issue_Result result) {
+  per_core_fdip[proc_id][bp_id]->pref_issued(line_addr, off_path, conf_off_path, result);
 }
 
 void FDIP::inc_off_fetched_cls(Addr line_addr) {

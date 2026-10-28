@@ -1835,6 +1835,9 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag update_
   STAT_EVENT(proc_id, block + 1);
   Addr dummy_line_addr;
   *hit = cache_access(cache, line_addr, &dummy_line_addr, update_repl) != NULL;
+  /* icache_line_info shadows the icache for wrong-path stats (and EIP); access it whenever the icache is */
+  if (dest == DEST_ICACHE && WP_COLLECT_STATS)
+    cache_access(&cmp_model.icache_stage[proc_id].icache_line_info, line_addr, &dummy_line_addr, update_repl);
 
   /* A probe takes the bank and reads the array, so it counts as an access to that
      level -- but only as a prefetch one. Demand misses are never caused by a prefetch. */

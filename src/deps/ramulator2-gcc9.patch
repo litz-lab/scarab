@@ -1,0 +1,108 @@
+From 0dbfc6983d05431126423a44f5526b27e3d8ca17 Mon Sep 17 00:00:00 2001
+From: Anuj Lall <alall1@ucsc.edu>
+Date: Thu, 22 Oct 2026 17:25:49 -0700
+Subject: [PATCH] dram/commands: detect optional command hooks without
+ requires-expressions
+
+register_command() and RD::preq() used `if constexpr (requires { ... })`
+to detect a command's optional hooks (action, preq, rowhit, rowopen) and
+split-activate standards (T::Command::ACT2). GCC 9 does not support
+requires-expressions, and these five checks are the only C++20 construct
+that stops Ramulator 2 from building with it.
+
+Replace them with C++17 std::void_t detection traits, which are true for
+exactly the same expressions. Generated code is unchanged.
+
+Built with GCC 9.5 and GCC 11.4 (no warnings). In Scarab, simulation
+results with the patch are bit-identical to unpatched GCC 11 builds.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/ramulator/dram/commands/RD.h       | 11 ++++++++++-
+ src/ramulator/dram/commands/populate.h | 22 ++++++++++++++++++----
+ 2 files changed, 28 insertions(+), 5 deletions(-)
+
+diff --git a/src/ramulator/dram/commands/RD.h b/src/ramulator/dram/commands/RD.h
+index 98c7198..f7bc872 100644
+--- a/src/ramulator/dram/commands/RD.h
++++ b/src/ramulator/dram/commands/RD.h
+@@ -5,8 +5,17 @@
+ #include "ramulator/dram/commands/ACT2.h"
+ #include "ramulator/dram/node.h"
+ 
++#include <type_traits>
++
+ namespace Ramulator::Cmd {
+ 
++namespace detail {
++// C++17 detection of a split-activate standard (equivalent to
++// `requires { T::Command::ACT2; }`), so the header also builds with GCC 9.
++template <class T, class = void> struct has_ACT2 : std::false_type {};
++template <class T> struct has_ACT2<T, std::void_t<decltype(T::Command::ACT2)>> : std::true_type {};
++}  // namespace detail
++
+ template <class T>
+ struct RD {
+   static constexpr DRAMCommandMeta meta = {.is_accessing = true};
+@@ -14,7 +23,7 @@ struct RD {
+ 
+   static int preq(DRAMNode* bank, int cmd, const AddrVec_t& addr_vec, Clk_t clk) {
+     // Compile-time dispatch: ACT2 for split-activate (LPDDR5), ACT otherwise
+-    if constexpr (requires { T::Command::ACT2; }) {
++    if constexpr (detail::has_ACT2<T>::value) {
+       return ACT2<T>::preq(bank, cmd, addr_vec, clk);
+     } else {
+       return ACT<T>::preq(bank, cmd, addr_vec, clk);
+diff --git a/src/ramulator/dram/commands/populate.h b/src/ramulator/dram/commands/populate.h
+index a368de1..5d9633a 100644
+--- a/src/ramulator/dram/commands/populate.h
++++ b/src/ramulator/dram/commands/populate.h
+@@ -6,6 +6,7 @@
+ // DRAMSpec must be defined before this header is included.
+ 
+ #include <tuple>
++#include <type_traits>
+ 
+ namespace Ramulator {
+ 
+@@ -13,20 +14,33 @@ namespace Ramulator {
+ // standard header before this file.
+ struct DRAMSpec;
+ 
++namespace detail {
++// C++17 detection of the optional command hooks (equivalent to
++// `requires { &CmdImpl::hook; }`), so the header also builds with GCC 9.
++template <class T, class = void> struct has_action : std::false_type {};
++template <class T> struct has_action<T, std::void_t<decltype(&T::action)>> : std::true_type {};
++template <class T, class = void> struct has_preq : std::false_type {};
++template <class T> struct has_preq<T, std::void_t<decltype(&T::preq)>> : std::true_type {};
++template <class T, class = void> struct has_rowhit : std::false_type {};
++template <class T> struct has_rowhit<T, std::void_t<decltype(&T::rowhit)>> : std::true_type {};
++template <class T, class = void> struct has_rowopen : std::false_type {};
++template <class T> struct has_rowopen<T, std::void_t<decltype(&T::rowopen)>> : std::true_type {};
++}  // namespace detail
++
+ template <class CmdImpl>
+ void register_command(DRAMSpec& spec, int cmd_id) {
+   spec.command_meta[cmd_id] = CmdImpl::meta;
+   spec.bank_targets[cmd_id] = CmdImpl::bank_target;
+-  if constexpr (requires { &CmdImpl::action; }) {
++  if constexpr (detail::has_action<CmdImpl>::value) {
+     spec.funcs.actions[cmd_id] = &CmdImpl::action;
+   }
+-  if constexpr (requires { &CmdImpl::preq; }) {
++  if constexpr (detail::has_preq<CmdImpl>::value) {
+     spec.funcs.preqs[cmd_id] = &CmdImpl::preq;
+   }
+-  if constexpr (requires { &CmdImpl::rowhit; }) {
++  if constexpr (detail::has_rowhit<CmdImpl>::value) {
+     spec.funcs.rowhits[cmd_id] = &CmdImpl::rowhit;
+   }
+-  if constexpr (requires { &CmdImpl::rowopen; }) {
++  if constexpr (detail::has_rowopen<CmdImpl>::value) {
+     spec.funcs.rowopens[cmd_id] = &CmdImpl::rowopen;
+   }
+ }
+-- 
+2.56.0
+

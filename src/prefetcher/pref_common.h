@@ -46,7 +46,6 @@ struct Pref_Mem_Req_struct {
   uns distance;
   Flag valid;
   Flag bw_limited;
-  Flag probed;        // the level has been looked up; rdy_cycle is when that finishes
   Counter rdy_cycle;  // Move this out
 };
 
@@ -80,6 +79,7 @@ typedef enum HWP_Type_enum {
   PREF_TO_UL1,
   PREF_TO_UMLC,
   PREF_TO_DCACHE,
+  PREF_TO_NUM,
 } HWP_Type;
 
 /* Cache level whose hits/misses train a prefetcher instance. An instance is
@@ -150,8 +150,8 @@ struct HWP_struct {
 
 /* Per core prefetching data */
 typedef struct HWP_Core_struct {
-  /* One queue per level, in rdy order. Each cycle the level's ready prefetches look
-     the line up, oldest first; the cache's bank ports decide which get to. */
+  /* One queue per level: its lookup pipeline, in rdy order. Each cycle the ready head
+     entries take a bank port and an MSHR, or are dropped. */
   List dl0req_queue;
   List umlc_req_queue;
   List ul1req_queue;
@@ -215,6 +215,17 @@ void pref_ul1_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evict
 void pref_umlc_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evicted_addr, uns32 metadata);
 
 void pref_update_levels(void); /* MLC and LLC, with their demand passes */
+
+struct Pref_Req_Info_Struct;
+typedef enum Pref_Issue_Result_enum {
+  PREF_ISSUE_BANK_BUSY, /* dropped: the line's bank had no read port left */
+  PREF_ISSUE_HIT,       /* dropped: the line is in the cache */
+  PREF_ISSUE_NO_MSHR,   /* dropped: a miss with no free MSHR */
+  PREF_ISSUE_NEW,       /* sent as a new request */
+  PREF_ISSUE_MERGED,    /* folded into an outstanding request */
+} Pref_Issue_Result;
+Pref_Issue_Result pref_issue(uns8 proc_id, Destination dest, Addr line_addr, Mem_Req_Type type, uns line_size,
+                             uns delay, Flag (*fill)(Mem_Req*), struct Pref_Req_Info_Struct* info);
 void pref_update_dcache(void); /* dcache, after the dcache stage */
 
 // returns true if the req was added/matched an existing req.

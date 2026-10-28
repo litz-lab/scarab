@@ -359,6 +359,7 @@ void init_uncores(void) {
     mshr_init(&uncore->icache_mshr, "ICACHE_MSHR", MSHR_ICACHE, ICACHE_MSHRS);
     mshr_init(&uncore->dcache_mshr, "DCACHE_MSHR", MSHR_DCACHE, DCACHE_MSHRS);
     mshr_init(&uncore->dcache_wb, "DCACHE_WB", MSHR_DCACHE_WB, DCACHE_MSHRS);
+    ASSERT(proc_id, ICACHE_MSHR_DEMAND_RESERVE < ICACHE_MSHRS && DCACHE_MSHR_DEMAND_RESERVE < DCACHE_MSHRS);
     uncore->icache_mshr.proc_id = uncore->dcache_mshr.proc_id = uncore->dcache_wb.proc_id = proc_id;
   }
 
@@ -493,10 +494,16 @@ void mem_stat_served(uns8 proc_id, Mem_Req_Type type, Stat_Enum level, Counter l
     case MRT_DPRF:
       base = PF_SERVED_DCACHE;
       break;
+    case MRT_IPRF:
+    case MRT_FDIPPRFON:
+    case MRT_FDIPPRFOFF:
+    case MRT_FDIPPRFALT:
+      base = IPF_SERVED_DCACHE;
+      break;
     default:
-      return; /* instruction fetches and writebacks are counted elsewhere */
+      return; /* demand instruction fetches and writebacks are counted elsewhere */
   }
-  /* The three families are laid out identically, so an offset found once indexes any
+  /* The four families are laid out identically, so an offset found once indexes any
      of them. */
   Stat_Enum off = level - LD_SERVED_DCACHE;
   Stat_Enum lat = LD_LAT_DCACHE - LD_SERVED_DCACHE;
@@ -1491,7 +1498,6 @@ static void mem_complete_l1_access(Mem_Req* req) {
           mem_level_done(req, mem_file_of(req, &mem->mlc_mshr));
           mem_free_req(req);
         }
-        // STAT_EVENT(req->proc_id, BUS_ACCESS);
       }
     }
     // CMP IGNORE
@@ -1765,19 +1771,30 @@ static void mem_process_lookups(Mshr* file) {
 
 /**************************************************************************************/
 /* mem_pref_probe: */
-/* A prefetcher looks its own level up, from its own queue, after that level's demands
-   have run. Takes a bank read port, so a bank a demand used this cycle refuses it.
-   Returns FALSE when the bank is busy: the prefetch keeps its place and retries. */
+/* A prefetcher looks up the cache named by dest, after that cache's demands have run.
+   Takes a read port of the line's bank, so a bank whose ports demands used this cycle
+   refuses it. Returns FALSE when the bank is busy. */
 
-Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit) {
+Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag update_repl, Flag* hit) {
   Ports* ports = NULL;
   Cache* cache = NULL;
   Stat_Enum block = 0, access = 0, pref_access = 0, pref_hit = 0, pref_miss = 0;
-  Flag count_access = TRUE; /* the dcache counts its accesses as DCACHE_HIT/MISS instead */
+  Flag count_access = TRUE; /* the icache and dcache count their accesses as hits/misses instead */
   switch (dest) {
+    case DEST_ICACHE: {
+      Icache_Stage* ics = &cmp_model.icache_stage[proc_id];
+      ports = &ics->ports[BANK(line_addr, ICACHE_BANKS, ICACHE_LINE_SIZE)];
+      cache = &ics->icache;
+      block = IC_LD_BANK_BLOCK;
+      count_access = FALSE;
+      pref_access = ICACHE_PREF_ACCESS;
+      pref_hit = ICACHE_PREF_REQ_HIT;
+      pref_miss = ICACHE_PREF_REQ_MISS;
+      break;
+    }
     case DEST_DCACHE: {
       Dcache_Stage* dcs = &cmp_model.dcache_stage[proc_id];
-      ports = &dcs->ports[BANK(line_addr, DCACHE_BANKS, DCACHE_INTERLEAVE_FACTOR)];
+      ports = &dcs->ports[BANK(line_addr, DCACHE_BANKS, DCACHE_LINE_SIZE)];
       cache = &dcs->dcache;
       block = L0_LD_BANK_BLOCK;
       count_access = FALSE;
@@ -1810,13 +1827,14 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit) {
       ASSERT(proc_id, FALSE);
   }
 
-  if (!get_read_port(ports)) {
+  /* The dcache's ports read whole lines, shared by reads of the same line this cycle. */
+  if (!(dest == DEST_DCACHE ? get_read_port_line(ports, line_addr) : get_read_port(ports))) {
     STAT_EVENT(proc_id, block);
     return FALSE;
   }
   STAT_EVENT(proc_id, block + 1);
   Addr dummy_line_addr;
-  *hit = cache_access(cache, line_addr, &dummy_line_addr, FALSE) != NULL;
+  *hit = cache_access(cache, line_addr, &dummy_line_addr, update_repl) != NULL;
 
   /* A probe takes the bank and reads the array, so it counts as an access to that
      level -- but only as a prefetch one. Demand misses are never caused by a prefetch. */
@@ -2574,10 +2592,17 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   }
 
   /* Step 2.5: anything else for the line waits on its entry; a new line needs a free
-     one. */
+     one, and a prefetch leaves the icache's and dcache's demand reserve free. */
   Flag join = mshr_line(entering, addr) != NULL;
   if (mshr_full(entering, addr)) {
     STAT_EVENT(proc_id, mem_reject_stat(entering));
+    return FALSE;
+  }
+  uns reserve = entering->file == MSHR_ICACHE   ? ICACHE_MSHR_DEMAND_RESERVE
+                : entering->file == MSHR_DCACHE ? DCACHE_MSHR_DEMAND_RESERVE
+                                                : 0;
+  if (!join && !mem_req_type_is_demand(type) && mshr_count(entering) + reserve >= entering->size) {
+    STAT_EVENT(proc_id, REJECTED_DEMAND_RESERVE);
     return FALSE;
   }
 

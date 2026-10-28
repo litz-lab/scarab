@@ -42,6 +42,7 @@ struct Ports_struct {
   Counter write_last_cycle;
   uns num_read_ports;
   uns read_ports_in_use;
+  Addr* read_lines; /* the line each read port in use is reading this cycle */
   uns num_write_ports;
   uns write_ports_in_use;
   Flag writes_prevent_reads;
@@ -52,6 +53,7 @@ struct Ports_struct {
 
 void init_ports(Ports* ports, char[], uns, uns, Flag);
 Flag get_read_port(Ports* ports);
+Flag get_read_port_line(Ports* ports, Addr line_addr);
 Flag get_write_port(Ports* ports);
 
 /**************************************************************************************/

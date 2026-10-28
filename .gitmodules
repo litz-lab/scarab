@@ -7,3 +7,12 @@
 [submodule "src/deps/dynamorio"]
 	path = src/deps/dynamorio
 	url = https://github.com/DynamoRIO/dynamorio.git
+[submodule "src/deps/ramulator2"]
+	path = src/deps/ramulator2
+	url = https://github.com/CMU-SAFARI/ramulator2.git
+[submodule "src/deps/yaml-cpp"]
+	path = src/deps/yaml-cpp
+	url = https://github.com/jbeder/yaml-cpp.git
+[submodule "src/deps/fmt"]
+	path = src/deps/fmt
+	url = https://github.com/fmtlib/fmt.git

@@ -225,7 +225,7 @@ void mem_clear_crit_path(void);
 
 /* Probe a level's cache for its prefetcher. FALSE means the bank was busy this
    cycle; otherwise *hit says whether the line is already there. */
-Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag* hit);
+Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag update_repl, Flag* hit);
 void print_mshr_files(void);
 Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                        Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath);

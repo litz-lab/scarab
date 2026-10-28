@@ -499,25 +499,44 @@ void pref_umlc_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evic
   }
 }
 
-/* Adds a prefetch to a level's queue. With filter on, a line already queued is dropped
-   as matched; a full queue drops the new prefetch, or with overwrite its oldest one. */
-static Flag pref_queue_add(List* q, Pref_Mem_Req* req, Flag filter, Stat_Enum matched_stat, uns cap,
-                           Flag overwrite_on_full, Stat_Enum full_stat) {
-  if (filter) {
-    for (List_Entry* e = q->head; e; e = e->next) {
-      Pref_Mem_Req* r = (Pref_Mem_Req*)&e->data;
-      if ((r->line_addr >> LOG2(DCACHE_LINE_SIZE)) == (req->line_addr >> LOG2(DCACHE_LINE_SIZE))) {
-        STAT_EVENT(0, matched_stat);
-        return TRUE;
-      }
+/* How many prefetcher ids an uns8 prefetcher_id names. */
+#define PREF_ID_NUM (UINT8_MAX + 1)
+
+/* Prefetcher instances whose prefetches go to dest; each gets (latency + 1) *
+   PREF_QUEUE_PER_CYCLE entries in dest's queue. */
+static uns pref_num_to(HWP_Type dest) {
+  uns n = 0;
+  for (int id = 0; id < pref_table_size; id++)
+    for (int lvl = 0; lvl < PREF_TRAIN_LEVEL_NUM; lvl++) {
+      Pref_Level_Cfg* cfg = pref_level_cfg_entry(id, lvl);
+      n += cfg->enabled && cfg->dest == dest;
     }
+  return MAX2(n, 1);
+}
+
+/* Appends a candidate to a level's queue, the level's lookup pipeline. A prefetcher inserts
+   at most PREF_INSERT_PER_CYCLE a cycle at a level, and the queue holds (latency + 1) *
+   PREF_QUEUE_PER_CYCLE entries per prefetcher sending to it; further candidates are dropped.
+   With PREF_RETRY a blocked head also holds the queue until it drains. */
+static Flag pref_queue_add(List* q, HWP_Type dest, uns latency, Pref_Mem_Req* req, Stat_Enum full_stat) {
+  /* Per core, level and prefetcher: the cycle of its last insertion and how many it made then. */
+  static Counter cand_cycle[MAX_NUM_PROCS][PREF_TO_NUM][PREF_ID_NUM];
+  static uns cand_count[MAX_NUM_PROCS][PREF_TO_NUM][PREF_ID_NUM];
+  Counter* last = &cand_cycle[req->proc_id][dest][req->prefetcher_id];
+  uns* count = &cand_count[req->proc_id][dest][req->prefetcher_id];
+  if (*last != cycle_count) {
+    *last = cycle_count;
+    *count = 0;
   }
-  if (q->count >= (int)cap) {
+  if (*count >= PREF_INSERT_PER_CYCLE) {
     STAT_EVENT_ALL(full_stat);
-    if (!overwrite_on_full)
-      return FALSE;
-    dl_list_remove_head(q);
+    return FALSE;
   }
+  if (q->count >= (int)((latency + 1) * PREF_QUEUE_PER_CYCLE * pref_num_to(dest))) {
+    STAT_EVENT_ALL(full_stat);
+    return FALSE;
+  }
+  (*count)++;
   *(Pref_Mem_Req*)dl_list_add_tail(q) = *req;
   return TRUE;
 }
@@ -530,9 +549,7 @@ Flag pref_addto_dl0req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) 
                       .line_index = line_index,
                       .prefetcher_id = prefetcher_id,
                       .rdy_cycle = cycle_count};
-  return pref_queue_add(&pref.cores[proc_id]->dl0req_queue, &req, PREF_DL0REQ_ADD_FILTER_ON,
-                        PREF_DL0REQ_QUEUE_MATCHED_REQ, PREF_DL0REQ_QUEUE_SIZE, PREF_DL0REQ_QUEUE_OVERWRITE_ON_FULL,
-                        PREF_DL0REQ_QUEUE_FULL);
+  return pref_queue_add(&pref.cores[proc_id]->dl0req_queue, PREF_TO_DCACHE, 0, &req, PREF_DL0REQ_QUEUE_FULL);
 }
 
 Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) {
@@ -544,9 +561,7 @@ Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id
                       .line_index = line_index,
                       .prefetcher_id = prefetcher_id,
                       .rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + MLC_CYCLES};
-  return pref_queue_add(&pref.cores[proc_id]->umlc_req_queue, &req, PREF_UMLC_REQ_ADD_FILTER_ON,
-                        PREF_UMLC_REQ_QUEUE_MATCHED_REQ, PREF_UMLC_REQ_QUEUE_SIZE,
-                        PREF_UMLC_REQ_QUEUE_OVERWRITE_ON_FULL, PREF_UMLC_REQ_QUEUE_FULL);
+  return pref_queue_add(&pref.cores[proc_id]->umlc_req_queue, PREF_TO_UMLC, MLC_CYCLES, &req, PREF_UMLC_REQ_QUEUE_FULL);
 }
 
 Flag pref_addto_ul1req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) {
@@ -567,9 +582,7 @@ Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_
                       .global_hist = global_hist,
                       .bw_limited = bw,
                       .rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + L1_CYCLES};
-  return pref_queue_add(&pref.cores[proc_id]->ul1req_queue, &req, PREF_UL1REQ_ADD_FILTER_ON,
-                        PREF_UL1REQ_QUEUE_MATCHED_REQ, PREF_UL1REQ_QUEUE_SIZE, PREF_UL1REQ_QUEUE_OVERWRITE_ON_FULL,
-                        PREF_UL1REQ_QUEUE_FULL);
+  return pref_queue_add(&pref.cores[proc_id]->ul1req_queue, PREF_TO_UL1, L1_CYCLES, &req, PREF_UL1REQ_QUEUE_FULL);
 }
 
 Flag pref_hwp_instance_enabled(const HWP* hwp, Pref_Train_Level lvl) {
@@ -670,38 +683,61 @@ Flag pref_addto_dest_req_queue(uns8 proc_id, HWP_Type dest, Addr line_index, uns
   return pref_addto_dest_req_queue_set(proc_id, dest, line_index, prefetcher_id, 0, 0, 0, FALSE);
 }
 
-/* A level's queue is in rdy order: every ready prefetch, oldest first, looks the line
-   up itself, and the bank ports decide which get to this cycle. A hit is dropped; only
-   a miss becomes a mem_req, born one level down, holding an MSHR at the level that
-   missed. Runs after the level's demands, in their frequency domain, since a bank port
-   is claimed against that domain's cycle_count. */
+/* A prefetch candidate looks its target cache up through a read port of the line's bank,
+   after the cache's demands have taken theirs. A bank with no port left, a hit, or no free
+   MSHR drops it. */
+Pref_Issue_Result pref_issue(uns8 proc_id, Destination dest, Addr line_addr, Mem_Req_Type type, uns line_size,
+                             uns delay, Flag (*fill)(Mem_Req*), Pref_Req_Info* info) {
+  Flag hit = FALSE;
+  if (!mem_pref_probe(proc_id, dest, line_addr, FALSE, &hit))
+    return PREF_ISSUE_BANK_BUSY;
+  if (hit)
+    return PREF_ISSUE_HIT;
+  /* Without a memory model there is nothing to send to. */
+  if (model->mem != MODEL_MEM)
+    return PREF_ISSUE_NEW;
+  switch (new_mem_req(type, proc_id, line_addr, line_size, delay, NULL, fill, unique_count, info)) {
+    case SUCCESS_NEW:
+      return PREF_ISSUE_NEW;
+    case SUCCESS_MERGED:
+      return PREF_ISSUE_MERGED;
+    default:
+      return PREF_ISSUE_NO_MSHR;
+  }
+}
+
+/* After the level's demands: the head entries whose lookup latency has passed are handled
+   in order, each once. One whose bank port is taken, that hits, or that finds no MSHR is
+   dropped; a miss becomes a mem_req, born one level down, holding an MSHR at the level
+   that missed. Runs in the level's frequency domain, since a bank port is claimed against
+   that domain's cycle_count. */
 static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
   uns line_size = 0, delay = 0;
   Flag (*fill)(Mem_Req*) = NULL;
-  Flag to_ul1 = FALSE; /* a dcache miss goes on to the LLC queue instead of memory */
-  Stat_Enum drop_stat = 0, sent_stat = 0, stall_stat = 0;
+  Stat_Enum drop_stat = 0, sent_stat = 0, stall_stat = 0, bank_stat = 0;
   switch (dest) {
     case DEST_DCACHE:
       line_size = DCACHE_LINE_SIZE;
       delay = 1;
       fill = dcache_fill_line;
-      to_ul1 = !PREF_DL0_FILL_DCACHE;
       drop_stat = PREF_DL0REQ_QUEUE_HIT_DROP;
       sent_stat = PREF_DL0REQ_QUEUE_SENTREQ;
       stall_stat = PREF_DL0REQ_SEND_QUEUE_STALL;
+      bank_stat = PREF_DL0REQ_BANK_DROP;
       break;
     case DEST_MLC:
       line_size = MLC_LINE_SIZE;
       drop_stat = PREF_UMLC_REQ_QUEUE_HIT_DROP;
       sent_stat = PREF_UMLC_REQ_QUEUE_SENTREQ;
       stall_stat = PREF_UMLC_REQ_SEND_QUEUE_STALL;
+      bank_stat = PREF_UMLC_REQ_BANK_DROP;
       break;
     case DEST_L1:
       line_size = L1_LINE_SIZE;
-      fill = STREAM_PREF_INTO_DCACHE ? dcache_fill_line : NULL;
       drop_stat = PREF_UL1REQ_QUEUE_HIT_DROP;
       sent_stat = PREF_UL1REQ_QUEUE_SENTREQ;
       stall_stat = PREF_UL1REQ_SEND_QUEUE_STALL;
+      bank_stat = PREF_UL1REQ_BANK_DROP;
       break;
     default:
       printf("%s: unexpected destination %d\n", __func__, dest);
@@ -716,40 +752,34 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
     if (cycle_count < pf->rdy_cycle)
       break;
 
-    Flag hit = FALSE;
-    if (!pf->probed && !mem_pref_probe(proc_id, dest, pf->line_addr, &hit))
-      continue; /* a demand took this bank */
-
-    Flag done;
-    if (hit) {
-      STAT_EVENT(proc_id, drop_stat);
-      done = TRUE;
-    } else if (to_ul1) {
-      pf->probed = TRUE;
-      done = pref_addto_ul1req_queue(proc_id, pf->line_index, pf->prefetcher_id);
-      STAT_EVENT(0, done ? sent_stat : stall_stat);
-    } else {
-      pf->probed = TRUE;
-      Pref_Req_Info info = {0};
-      info.prefetcher_id = pf->prefetcher_id;
-      info.distance = pf->distance;
-      info.loadPC = pf->loadPC;
-      info.global_hist = pf->global_hist;
-      info.bw_limited = pf->bw_limited;
-      info.dest = dest;
-      info.probed = TRUE;
-      /* Without a memory model there is nothing to send to, so drop it rather than
-         hold a slot no one will ever free. */
-      done = model->mem != MODEL_MEM ||
-             new_mem_req(MRT_DPRF, proc_id, pf->line_addr, line_size, delay, NULL, fill, unique_count, &info);
-      STAT_EVENT(0, done ? sent_stat : stall_stat);
-      if (!done)
-        break; /* no MSHR this cycle: the rest of the queue waits behind it */
+    Pref_Req_Info info = {0};
+    info.prefetcher_id = pf->prefetcher_id;
+    info.distance = pf->distance;
+    info.loadPC = pf->loadPC;
+    info.global_hist = pf->global_hist;
+    info.bw_limited = pf->bw_limited;
+    info.dest = dest;
+    info.probed = TRUE;
+    Flag blocked = FALSE; /* no bank port or MSHR this cycle */
+    switch (pref_issue(proc_id, dest, pf->line_addr, MRT_DPRF, line_size, delay, fill, &info)) {
+      case PREF_ISSUE_BANK_BUSY:
+        STAT_EVENT(proc_id, bank_stat);
+        blocked = TRUE;
+        break;
+      case PREF_ISSUE_HIT:
+        STAT_EVENT(proc_id, drop_stat);
+        break;
+      case PREF_ISSUE_NO_MSHR:
+        STAT_EVENT(0, stall_stat);
+        blocked = TRUE;
+        break;
+      default:
+        STAT_EVENT(0, sent_stat);
     }
-    if (done) {
-      q->current = e;
-      dl_list_remove_current(q);
-    }
+    if (blocked && PREF_RETRY)
+      break; /* the head retries next cycle; the rest wait behind it */
+    q->current = e;
+    dl_list_remove_current(q);
   }
 }
 
@@ -833,11 +863,11 @@ void pref_sent(uns8 proc_id, Addr addr, uns8 prefetcher_id, Destination dest) {
       STAT_EVENT_ALL(PREF_MLC_TOTAL_SENT);
       STAT_EVENT(proc_id, CORE_PREF_MLC_SENT);
       break;
-    case DEST_DCACHE:  // dcache-destined prefetch filling the dcache directly (--pref_dl0_fill_dcache)
+    case DEST_DCACHE:
       STAT_EVENT_ALL(PREF_DCACHE_TOTAL_SENT);
       STAT_EVENT(proc_id, CORE_PREF_DCACHE_SENT);
       break;
-    case DEST_L1:    // ul1 queue; dcache-destined prefetches re-issue here on a dcache miss
+    case DEST_L1:
     case DEST_NONE:  // demand-matched prefetch demoted to DEST_NONE; count at L1
       STAT_EVENT_ALL(PREF_L1_TOTAL_SENT);
       STAT_EVENT(proc_id, CORE_PREF_L1_SENT);

@@ -41,7 +41,6 @@
 #include "libs/hash_lib.h"
 #include "libs/list_lib.h"
 #include "prefetcher/fdip.h"
-#include "prefetcher/pref_common.h"
 
 #include "statistics.h"
 
@@ -53,11 +52,13 @@ extern "C" {
 #include "prefetcher/pref.param.h"
 
 #include "memory/memory.h"
+#include "prefetcher/pref_common.h"
 
 #include "op.h"
 }
 
 #include <iostream>
+#include <unordered_map>
 #include <vector>
 
 using std::cout;
@@ -74,6 +75,13 @@ uint32_t eip_proc_id;
 uint32_t L1I_TIMING_MSHR_SIZE = 0;
 uint32_t L1I_SET = 0;
 uint32_t L1I_WAY = 0;
+
+/* Timing entries of queued prefetches, recorded once they are sent (eip_pref_issued). */
+struct Eip_Timing {
+  uint32_t source_set;
+  uint32_t source_way;
+};
+std::unordered_map<uint64_t, Eip_Timing> eip_queued;
 
 uint64_t l1i_last_basic_block;
 uint32_t l1i_consecutive_count;
@@ -1045,18 +1053,11 @@ void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefe
   for (uint32_t i = 1; i <= bb_size; i++) {
     uint64_t pf_addr = v_addr + i * (1 << LOG2(ICACHE_LINE_SIZE));
     if (!l1i_ongoing_request(pf_addr >> LOG2(ICACHE_LINE_SIZE))) {
-      Flag success = FALSE;
-      // TODO : limit per-cycle prefetches
-      // if (per_cyc_ipref < IPRF_MAX_FTQ_ENTRY_CYC)
-      success =
-          new_mem_req(MRT_IPRF, eip_proc_id, pf_addr, ICACHE_LINE_SIZE, 0, NULL, instr_fill_line, unique_count, 0);
-      if (success) {
-        DEBUG(proc_id, "new_mem_req (BB pref) for v_addr 0x%lx,line_addr 0x%lx  pf_addr 0x%lx, unique_count: %llu\n",
-              v_addr, v_addr & ~0x3F, pf_addr, unique_count);
+      if (pref_addto_icache_queue(eip_proc_id, pf_addr, EIP_PREF_ID, MRT_IPRF, off_path, FALSE)) {
+        DEBUG(proc_id, "queued (BB pref) for v_addr 0x%lx,line_addr 0x%lx  pf_addr 0x%lx, unique_count: %llu\n", v_addr,
+              v_addr & ~0x3F, pf_addr, unique_count);
         if (!off_path)
-          l1i_add_timing_entry(pf_addr >> LOG2(ICACHE_LINE_SIZE), 0, L1I_ENTANGLED_TABLE_WAYS);
-        // if (success == Mshr_Req_Result::SUCCESS_NEW)
-        // per_cyc_ipref++;
+          eip_queued[pf_addr >> LOG2(ICACHE_LINE_SIZE)] = {0, L1I_ENTANGLED_TABLE_WAYS};
       }
     }
   }
@@ -1075,18 +1076,12 @@ void eip_prefetch(uns proc_id, uint64_t v_addr, uint8_t cache_hit, uint8_t prefe
       for (uint32_t i = 0; i <= bb_size; i++) {
         uint64_t pf_line_addr = entangled_line_addr + i;
         if (!l1i_ongoing_request(pf_line_addr)) {
-          Flag success = FALSE;
-          // TODO : limit per-cycle prefetches
-          // if (per_cyc_ipref < IPRF_MAX_FTQ_ENTRY_CYC)
-          success = new_mem_req(MRT_IPRF, eip_proc_id, pf_line_addr << LOG2(ICACHE_LINE_SIZE), ICACHE_LINE_SIZE, 0,
-                                NULL, instr_fill_line, unique_count, 0);
-          if (success) {
-            DEBUG(proc_id, "new_mem_req (Entangled pref) for 0x%lx, unique_count: %llu\n",
+          if (pref_addto_icache_queue(eip_proc_id, pf_line_addr << LOG2(ICACHE_LINE_SIZE), EIP_PREF_ID, MRT_IPRF,
+                                      off_path, FALSE)) {
+            DEBUG(proc_id, "queued (Entangled pref) for 0x%lx, unique_count: %llu\n",
                   pf_line_addr << LOG2(ICACHE_LINE_SIZE), unique_count);
             if (!off_path)
-              l1i_add_timing_entry(pf_line_addr, source_set, (i == 0) ? source_way : L1I_ENTANGLED_TABLE_WAYS);
-            // if (success == Mshr_Req_Result::SUCCESS_NEW)
-            // per_cyc_ipref++;
+              eip_queued[pf_line_addr] = {source_set, (i == 0) ? source_way : L1I_ENTANGLED_TABLE_WAYS};
           }
         }
       }
@@ -1155,6 +1150,15 @@ void set_eip(uns _proc_id) {
 void update_eip() {
   if (!EIP_ENABLE)
     return;
+}
+
+void eip_pref_issued(Addr addr, Flag sent) {
+  auto it = eip_queued.find(addr >> LOG2(ICACHE_LINE_SIZE));
+  if (it == eip_queued.end())
+    return;
+  if (sent)
+    l1i_add_timing_entry(it->first, it->second.source_set, it->second.source_way);
+  eip_queued.erase(it);
 }
 
 void eip_recover(uns proc_id, uint64_t recovery_op_num) {

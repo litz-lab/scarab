@@ -47,6 +47,10 @@ struct Pref_Mem_Req_struct {
   Flag valid;
   Flag bw_limited;
   Counter rdy_cycle;  // Move this out
+  /* An instruction prefetch (FDIP): its request type and path, reported back once issued. */
+  Mem_Req_Type type;
+  Flag off_path;
+  Flag conf_off_path;
 };
 
 typedef struct Pref_Polbv_Info_struct {
@@ -79,6 +83,7 @@ typedef enum HWP_Type_enum {
   PREF_TO_UL1,
   PREF_TO_UMLC,
   PREF_TO_DCACHE,
+  PREF_TO_ICACHE,
   PREF_TO_NUM,
 } HWP_Type;
 
@@ -226,11 +231,14 @@ typedef enum Pref_Issue_Result_enum {
 } Pref_Issue_Result;
 Pref_Issue_Result pref_issue(uns8 proc_id, Destination dest, Addr line_addr, Mem_Req_Type type, uns line_size,
                              uns delay, Flag (*fill)(Mem_Req*), struct Pref_Req_Info_Struct* info);
-void pref_update_dcache(void); /* dcache, after the dcache stage */
+void pref_update_dcache(void);         /* dcache, after the dcache stage */
+void pref_update_icache(uns8 proc_id); /* icache, after the icache stage and FDIP */
 
 // returns true if the req was added/matched an existing req.
 //         false if queue was full
 Flag pref_addto_dl0req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id);
+Flag pref_addto_icache_queue(uns8 proc_id, Addr line_addr, uns8 bp_id, Mem_Req_Type type, Flag off_path,
+                             Flag conf_off_path);
 Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id);
 Flag pref_addto_ul1req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id);
 Flag pref_addto_ul1req_queue_set(uns8 proc_id, Addr line_index, uns8 prefetcher_id, uns distance, Addr loadAddr,

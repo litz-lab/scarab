@@ -53,6 +53,7 @@
 #include "prefetcher//pref_stream.h"
 #include "prefetcher//pref_stride.h"
 #include "prefetcher//pref_stridepc.h"
+#include "prefetcher/fdip.h"
 #include "prefetcher/l2l1pref.h"
 #include "prefetcher/pref_2dc.h"
 #include "prefetcher/pref_ghb.h"
@@ -61,6 +62,7 @@
 
 #include "cmp_model.h"
 #include "dcache_stage.h"
+#include "icache_stage.h"
 #include "op.h"
 #include "statistics.h"
 /**************************************************************************************
@@ -552,6 +554,19 @@ Flag pref_addto_dl0req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) 
   return pref_queue_add(&pref.cores[proc_id]->dl0req_queue, PREF_TO_DCACHE, 0, &req, PREF_DL0REQ_QUEUE_FULL);
 }
 
+/* An instruction prefetch (FDIP, per branch predictor) to the icache; its lookup takes no extra cycles. */
+Flag pref_addto_icache_queue(uns8 proc_id, Addr line_addr, uns8 bp_id, Mem_Req_Type type, Flag off_path,
+                             Flag conf_off_path) {
+  Pref_Mem_Req req = {.proc_id = proc_id,
+                      .line_addr = line_addr >> LOG2(ICACHE_LINE_SIZE) << LOG2(ICACHE_LINE_SIZE),
+                      .prefetcher_id = bp_id,
+                      .rdy_cycle = cycle_count,
+                      .type = type,
+                      .off_path = off_path,
+                      .conf_off_path = conf_off_path};
+  return pref_queue_add(&cmp_model.icache_stage[proc_id].pref_queue, PREF_TO_ICACHE, 0, &req, PREF_ICREQ_QUEUE_FULL);
+}
+
 Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) {
   if (!line_index)  // addr = 0
     return TRUE;
@@ -689,7 +704,8 @@ Flag pref_addto_dest_req_queue(uns8 proc_id, HWP_Type dest, Addr line_index, uns
 Pref_Issue_Result pref_issue(uns8 proc_id, Destination dest, Addr line_addr, Mem_Req_Type type, uns line_size,
                              uns delay, Flag (*fill)(Mem_Req*), Pref_Req_Info* info) {
   Flag hit = FALSE;
-  if (!mem_pref_probe(proc_id, dest, line_addr, FALSE, &hit))
+  /* An icache prefetch's hit refreshes the line, as FDIP's probe of the fetch path always has. */
+  if (!mem_pref_probe(proc_id, dest, line_addr, dest == DEST_ICACHE, &hit))
     return PREF_ISSUE_BANK_BUSY;
   if (hit)
     return PREF_ISSUE_HIT;
@@ -716,6 +732,14 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
   Flag (*fill)(Mem_Req*) = NULL;
   Stat_Enum drop_stat = 0, sent_stat = 0, stall_stat = 0, bank_stat = 0;
   switch (dest) {
+    case DEST_ICACHE:
+      line_size = ICACHE_LINE_SIZE;
+      fill = instr_fill_line;
+      drop_stat = PREF_ICREQ_QUEUE_HIT_DROP;
+      sent_stat = PREF_ICREQ_QUEUE_SENTREQ;
+      stall_stat = PREF_ICREQ_SEND_QUEUE_STALL;
+      bank_stat = PREF_ICREQ_BANK_DROP;
+      break;
     case DEST_DCACHE:
       line_size = DCACHE_LINE_SIZE;
       delay = 1;
@@ -761,7 +785,13 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
     info.dest = dest;
     info.probed = TRUE;
     Flag blocked = FALSE; /* no bank port or MSHR this cycle */
-    switch (pref_issue(proc_id, dest, pf->line_addr, MRT_DPRF, line_size, delay, fill, &info)) {
+    Flag icache = dest == DEST_ICACHE;
+    /* An instruction prefetch carries no data-prefetcher info. */
+    Pref_Issue_Result result = pref_issue(proc_id, dest, pf->line_addr, icache ? pf->type : MRT_DPRF, line_size, delay,
+                                          fill, icache ? NULL : &info);
+    if (icache)
+      fdip_pref_issued(proc_id, pf->prefetcher_id, pf->line_addr, pf->off_path, pf->conf_off_path, result);
+    switch (result) {
       case PREF_ISSUE_BANK_BUSY:
         STAT_EVENT(proc_id, bank_stat);
         blocked = TRUE;
@@ -781,6 +811,11 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
     q->current = e;
     dl_list_remove_current(q);
   }
+}
+
+/* The icache queue, after the cycle's demand fetch and FDIP walk. */
+void pref_update_icache(uns8 proc_id) {
+  pref_drain_queue(proc_id, &cmp_model.icache_stage[proc_id].pref_queue, DEST_ICACHE);
 }
 
 /* MLC and LLC queues, after their demand lookups. */

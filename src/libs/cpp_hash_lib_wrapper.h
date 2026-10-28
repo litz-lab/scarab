@@ -10,18 +10,18 @@ extern "C" {
 
 // class cpp_hash_lib_wrapper {
 
-Inst_Info *cpp_hash_table_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes, uint8_t op_idx,
-                                        uint16_t mem_shape, uint8_t cf_type, unsigned char *new_entry);
+Inst_Info* cpp_hash_table_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes, uint8_t op_idx,
+                                        uint16_t mem_shape, uint8_t cf_type, unsigned char* new_entry);
 
 // Per-macro-instruction static info, interned by {addr, binary, mem_shape, cf_type} (shared by
 // all uops).
-Static_Inst_Info *cpp_static_inst_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes,
-                                                uint16_t mem_shape, uint8_t cf_type, unsigned char *new_entry);
+Static_Inst_Info* cpp_static_inst_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes,
+                                                uint16_t mem_shape, uint8_t cf_type, unsigned char* new_entry);
 
 // Per-uop static info, interned by {addr, binary, op_idx, mem_shape, cf_type}.
-Static_Op_Info *cpp_static_op_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes,
+Static_Op_Info* cpp_static_op_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes,
                                             uint8_t op_idx, uint16_t mem_shape, uint8_t cf_type,
-                                            unsigned char *new_entry);
+                                            unsigned char* new_entry);
 
 #ifdef __cplusplus
 }

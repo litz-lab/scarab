@@ -359,6 +359,7 @@ void init_uncores(void) {
     mshr_init(&uncore->icache_mshr, "ICACHE_MSHR", MSHR_ICACHE, ICACHE_MSHRS);
     mshr_init(&uncore->dcache_mshr, "DCACHE_MSHR", MSHR_DCACHE, DCACHE_MSHRS);
     mshr_init(&uncore->dcache_wb, "DCACHE_WB", MSHR_DCACHE_WB, DCACHE_MSHRS);
+    ASSERT(proc_id, ICACHE_MSHR_DEMAND_RESERVE < ICACHE_MSHRS && DCACHE_MSHR_DEMAND_RESERVE < DCACHE_MSHRS);
     uncore->icache_mshr.proc_id = uncore->dcache_mshr.proc_id = uncore->dcache_wb.proc_id = proc_id;
   }
 
@@ -2591,10 +2592,17 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   }
 
   /* Step 2.5: anything else for the line waits on its entry; a new line needs a free
-     one. */
+     one, and a prefetch leaves the icache's and dcache's demand reserve free. */
   Flag join = mshr_line(entering, addr) != NULL;
   if (mshr_full(entering, addr)) {
     STAT_EVENT(proc_id, mem_reject_stat(entering));
+    return FALSE;
+  }
+  uns reserve = entering->file == MSHR_ICACHE   ? ICACHE_MSHR_DEMAND_RESERVE
+                : entering->file == MSHR_DCACHE ? DCACHE_MSHR_DEMAND_RESERVE
+                                                : 0;
+  if (!join && !mem_req_type_is_demand(type) && mshr_count(entering) + reserve >= entering->size) {
+    STAT_EVENT(proc_id, REJECTED_DEMAND_RESERVE);
     return FALSE;
   }
 

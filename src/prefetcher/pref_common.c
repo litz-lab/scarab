@@ -53,6 +53,7 @@
 #include "prefetcher//pref_stream.h"
 #include "prefetcher//pref_stride.h"
 #include "prefetcher//pref_stridepc.h"
+#include "prefetcher/eip.h"
 #include "prefetcher/fdip.h"
 #include "prefetcher/l2l1pref.h"
 #include "prefetcher/pref_2dc.h"
@@ -507,6 +508,8 @@ void pref_umlc_cache_fill(uns8 proc_id, Addr fill_addr, Flag prefetch, Addr evic
 /* Prefetcher instances whose prefetches go to dest; each gets (latency + 1) *
    PREF_QUEUE_PER_CYCLE entries in dest's queue. */
 static uns pref_num_to(HWP_Type dest) {
+  if (dest == PREF_TO_ICACHE)
+    return MAX2(FDIP_ENABLE + EIP_ENABLE, 1); /* the instruction prefetchers */
   uns n = 0;
   for (int id = 0; id < pref_table_size; id++)
     for (int lvl = 0; lvl < PREF_TRAIN_LEVEL_NUM; lvl++) {
@@ -554,7 +557,7 @@ Flag pref_addto_dl0req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) 
   return pref_queue_add(&pref.cores[proc_id]->dl0req_queue, PREF_TO_DCACHE, 0, &req, PREF_DL0REQ_QUEUE_FULL);
 }
 
-/* An instruction prefetch (FDIP, per branch predictor) to the icache; its lookup takes no extra cycles. */
+/* An instruction prefetch (FDIP per branch predictor, or EIP) to the icache; its lookup takes no extra cycles. */
 Flag pref_addto_icache_queue(uns8 proc_id, Addr line_addr, uns8 bp_id, Mem_Req_Type type, Flag off_path,
                              Flag conf_off_path) {
   Pref_Mem_Req req = {.proc_id = proc_id,
@@ -789,7 +792,7 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
     /* An instruction prefetch carries no data-prefetcher info. */
     Pref_Issue_Result result = pref_issue(proc_id, dest, pf->line_addr, icache ? pf->type : MRT_DPRF, line_size, delay,
                                           fill, icache ? NULL : &info);
-    if (icache)
+    if (icache && pf->prefetcher_id != EIP_PREF_ID)
       fdip_pref_issued(proc_id, pf->prefetcher_id, pf->line_addr, pf->off_path, pf->conf_off_path, result);
     switch (result) {
       case PREF_ISSUE_BANK_BUSY:
@@ -808,6 +811,8 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
     }
     if (blocked && PREF_RETRY)
       break; /* the head retries next cycle; the rest wait behind it */
+    if (icache && pf->prefetcher_id == EIP_PREF_ID)
+      eip_pref_issued(pf->line_addr, result == PREF_ISSUE_NEW || result == PREF_ISSUE_MERGED);
     q->current = e;
     dl_list_remove_current(q);
   }

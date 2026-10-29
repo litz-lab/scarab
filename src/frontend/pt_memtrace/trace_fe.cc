@@ -1,6 +1,7 @@
 #include "trace_fe.h"
 
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -42,6 +43,8 @@ static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS][MAX_NUM_BPS];
 static bool off_path_mode[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
 static uint64_t off_path_addr[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
 static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst[MAX_NUM_PROCS];
+// replay buffer updates held while their FT is in the lookahead buffer
+static std::deque<ctype_pin_inst> deferred_replay_updates[MAX_NUM_PROCS];
 
 /* Per-core circular buffer state */
 struct TraceBufState {
@@ -246,6 +249,60 @@ int trace_read(int proc_id, ctype_pin_inst *next_onpath_pi) {
   return ret;
 }
 
+static void update_replay_buffer(uns proc_id, const ctype_pin_inst &inst) {
+  uint64_t addr = inst.instruction_addr;
+  auto it = pc_to_inst[proc_id].find(addr);
+  if (it == pc_to_inst[proc_id].end()) {
+    pc_to_inst[proc_id].emplace(addr, inst);
+  } else if (inst.encoding_is_new) {
+    STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
+    it->second = inst;
+  } else if (inst.inst_binary_lsb != it->second.inst_binary_lsb || inst.inst_binary_msb != it->second.inst_binary_msb) {
+    DEBUG(proc_id, "Previously seen PC references new instruction addr:%lx inst_size:%i lsb:%lx msb:%lx\n ", addr,
+          inst.size, inst.inst_binary_lsb, inst.inst_binary_msb);
+    // Handle jitted code
+    STAT_EVENT(proc_id, INST_MAP_UPDATE_JITTED);
+    it->second = inst;
+  } else if (inst.instruction_next_addr != it->second.instruction_next_addr) {
+    ASSERT(proc_id, inst.op_type == it->second.op_type);
+    if (inst.cf_type) {
+      ASSERT(proc_id, inst.cf_type == it->second.cf_type);
+      // This can fail for java pt traces
+      // ASSERT(proc_id, inst.cf_type == CF_CBR ||
+      //                 inst.cf_type >= CF_IBR ||
+      //                 inst.last_inst_from_trace);
+    }
+    STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + inst.op_type);
+    it->second = inst;
+  } else if (!ctype_pin_inst_same_mem_vaddr(inst, it->second)) {
+    ASSERT(proc_id, inst.op_type == it->second.op_type);
+    STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + inst.op_type);
+    it->second = inst;
+  } else {
+    if (DEBUG_TRACE_READ && DEBUG_RANGE_COND(proc_id)) {
+      assert_ctype_pin_inst_same(proc_id, inst, it->second);
+    }
+  }
+  // Poison the oracle memory addresses of the replay-buffer entry for this
+  // PC; they are only ever read back to replay off-path instructions.
+  if (POISON_REPLAY_BUFFER_ORACLE_VA) {
+    ctype_pin_inst &replay_entry = pc_to_inst[proc_id][addr];
+    for (uns i = 0; i < MAX_LD_NUM; i++)
+      replay_entry.ld_vaddr[i] = REPLAY_BUFFER_POISON_VA;
+    for (uns i = 0; i < MAX_ST_NUM; i++)
+      replay_entry.st_vaddr[i] = REPLAY_BUFFER_POISON_VA;
+  }
+}
+
+// Applies the replay buffer updates held for the next num_insts insts read ahead by the lookahead buffer
+void apply_deferred_replay_updates(uns proc_id, uns num_insts) {
+  auto &deferred = deferred_replay_updates[proc_id];
+  for (uns i = 0; i < num_insts && !deferred.empty(); i++) {
+    update_replay_buffer(proc_id, deferred.front());
+    deferred.pop_front();
+  }
+}
+
 void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
   // ext_trace_redirect should be called before fetching from the secondary fetch
   bool off_path_mode_ = off_path_mode[proc_id][bp_id];
@@ -270,51 +327,10 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
         trace_read_done[proc_id] = TRUE;
         reached_exit[proc_id] = TRUE;
         op->exit = TRUE;
+      } else if (LOOKAHEAD_BUF_SIZE) {
+        deferred_replay_updates[proc_id].push_back(next_onpath_pi[proc_id]);
       } else {
-        uint64_t addr = next_onpath_pi[proc_id].instruction_addr;
-        auto it = pc_to_inst[proc_id].find(addr);
-        if (it == pc_to_inst[proc_id].end()) {
-          pc_to_inst[proc_id].emplace(addr, next_onpath_pi[proc_id]);
-        } else if (next_onpath_pi[proc_id].encoding_is_new) {
-          STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
-          it->second = next_onpath_pi[proc_id];
-        } else if (next_onpath_pi[proc_id].inst_binary_lsb != it->second.inst_binary_lsb ||
-                   next_onpath_pi[proc_id].inst_binary_msb != it->second.inst_binary_msb) {
-          DEBUG(proc_id, "Previously seen PC references new instruction addr:%lx inst_size:%i lsb:%lx msb:%lx\n ", addr,
-                next_onpath_pi[proc_id].size, next_onpath_pi[proc_id].inst_binary_lsb,
-                next_onpath_pi[proc_id].inst_binary_msb);
-          // Handle jitted code
-          STAT_EVENT(proc_id, INST_MAP_UPDATE_JITTED);
-          it->second = next_onpath_pi[proc_id];
-        } else if (next_onpath_pi[proc_id].instruction_next_addr != it->second.instruction_next_addr) {
-          ASSERT(proc_id, next_onpath_pi[proc_id].op_type == it->second.op_type);
-          if (next_onpath_pi[proc_id].cf_type) {
-            ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == it->second.cf_type);
-            // This can fail for java pt traces
-            // ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == CF_CBR ||
-            //                 next_onpath_pi[proc_id].cf_type >= CF_IBR ||
-            //                 next_onpath_pi[proc_id].last_inst_from_trace);
-          }
-          STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + next_onpath_pi[proc_id].op_type);
-          it->second = next_onpath_pi[proc_id];
-        } else if (!ctype_pin_inst_same_mem_vaddr(next_onpath_pi[proc_id], it->second)) {
-          ASSERT(proc_id, next_onpath_pi[proc_id].op_type == it->second.op_type);
-          STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + next_onpath_pi[proc_id].op_type);
-          it->second = next_onpath_pi[proc_id];
-        } else {
-          if (DEBUG_TRACE_READ && DEBUG_RANGE_COND(proc_id)) {
-            assert_ctype_pin_inst_same(proc_id, next_onpath_pi[proc_id], it->second);
-          }
-        }
-        // Poison the oracle memory addresses of the replay-buffer entry for this
-        // PC; they are only ever read back to replay off-path instructions.
-        if (POISON_REPLAY_BUFFER_ORACLE_VA) {
-          ctype_pin_inst &replay_entry = pc_to_inst[proc_id][addr];
-          for (uns i = 0; i < MAX_LD_NUM; i++)
-            replay_entry.ld_vaddr[i] = REPLAY_BUFFER_POISON_VA;
-          for (uns i = 0; i < MAX_ST_NUM; i++)
-            replay_entry.st_vaddr[i] = REPLAY_BUFFER_POISON_VA;
-        }
+        update_replay_buffer(proc_id, next_onpath_pi[proc_id]);
       }
     } else {
       off_path_generate_inst(proc_id, off_path_addr_, next_offpath_pi_);

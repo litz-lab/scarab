@@ -19,6 +19,9 @@
 
 #include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
+#ifdef ENABLE_PT_MEMTRACE
+#include "frontend/pt_memtrace/trace_fe.h"
+#endif
 
 #include "decoupled_frontend.h"
 #include "ft.h"
@@ -132,6 +135,15 @@ FT* LookaheadBuffer::pop_ft() {
   ft_buffer_count--;
   ASSERT(proc_id, buffered_op_count >= current_read_FT->get_ops().size());
   buffered_op_count -= current_read_FT->get_ops().size();
+#ifdef ENABLE_PT_MEMTRACE
+  // the trace frontend's replay buffer follows the DFE, not the lookahead buffer's reader
+  if (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE) {
+    uns num_insts = 0;
+    for (Op* op : current_read_FT->get_ops())
+      num_insts += op->eom;
+    apply_deferred_replay_updates(proc_id, num_insts);
+  }
+#endif
   if (!have_seen_exit && (ft_buffer_count < LOOKAHEAD_BUF_SIZE))
     insert_ft();
 

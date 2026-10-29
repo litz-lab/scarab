@@ -341,8 +341,9 @@ void cmp_per_core_done(uns8 proc_id) {
 void cmp_wake(Op* src_op, Op* dep_op, uns rdy_bit) {
   /* Make the op independent, if it is dependent on a BOGUS op */
 
-  // cmp: since this function use node, we need to set node properly
+  // cmp: since this function use node and the issue queue, we need to set them properly
   set_node_stage(&cmp_model.node_stage[src_op->proc_id]);
+  set_issue_queue(src_op->proc_id);
 
   ASSERTM(src_op->proc_id, src_op->proc_id == dep_op->proc_id, "src id: %i, dep id: %i\n", src_op->proc_id,
           dep_op->proc_id);

@@ -167,7 +167,6 @@
 --pref_l1_prefetchers          TYPE_STREAM,DEST_L1
 --pref_train_on_pref_misses     0
 --pref_oracle_train             0
---pref_ul1req_queue_overwrite_on_full 1
 
 --stream_length                 16
 --stream_prefetch_n             2

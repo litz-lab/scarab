@@ -1629,79 +1629,88 @@ void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
 }
 
 /**************************************************************************************/
-/* DRRIP */
-const static int DRRIP_DEDICATED_BIMODAL = 1;
-const static int DRRIP_DEDICATED_STATIC = 2;
+/* DRRIP -- Jaleel, Theobald, Steely & Emer, "High Performance Cache Replacement Using
+ * Re-Reference Interval Prediction (RRIP)", ISCA 2010, Sec. 4: set dueling between SRRIP and
+ * BRRIP.
+ *
+ *  - Leader sets always insert with SRRIP or always with BRRIP. Every other set (a follower)
+ *    inserts with whichever of the two is currently missing less.
+ *  - PSEL, a --drrip_psel_bits saturating counter, starts at its midpoint. A miss in an SRRIP
+ *    leader increments it and a miss in a BRRIP leader decrements it, so PSEL's top bit set
+ *    means SRRIP's leaders have been missing more, and followers then insert with BRRIP.
+ *  - A miss is counted once per fill, in update_insert. Nothing is counted in update_evict,
+ *    which also runs for get_next_repl_line's peek at the victim and again every time a
+ *    refused fill is retried.
+ *  - Hits promote to RRPV 0 (nru_update_hit); the victim search is rrip_update_evict.
+ *
+ * One set in every four leads each policy. */
+#define DRRIP_FOLLOWER 0
+#define DRRIP_LEADER_SRRIP 1
+#define DRRIP_LEADER_BRRIP 2
+
+typedef struct Drrip_State_struct {
+  uns8* role; /* per set: DRRIP_FOLLOWER or the policy it leads */
+  uns psel;
+  uns psel_max;
+} Drrip_State;
 
 void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                        Repl_Policy repl_policy);
 void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg);
 
+static inline Drrip_State* drrip_state(Cache* cache) {
+  return (Drrip_State*)cache->predictor;
+}
+
 void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                        Repl_Policy repl_policy) {
+  Drrip_State* s;
   int ii;
   int shift_dedicated = 0;
-  uns num_sets = cache_size / line_size / assoc;
 
   brrip_action_init(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
+  ASSERTM(0, DRRIP_PSEL_BITS >= 1 && DRRIP_PSEL_BITS <= 30, "--drrip_psel_bits must be in [1, 30] (got %u)\n",
+          DRRIP_PSEL_BITS);
 
-  // init sample
-  cache->miss_count = (Counter*)malloc(sizeof(Counter) * num_sets);
-  for (ii = 0; ii < num_sets; ii++)
-    cache->miss_count[ii] = 0;
-
-  // init dedicated
-  cache->dedicated_policy_set = (uns*)malloc(sizeof(uns) * num_sets);
-  for (ii = 0; ii < num_sets; ii++) {
-    cache->dedicated_policy_set[ii] = 0;  // for dueling
-  }
-  for (ii = 0; ii + 4 <= num_sets; ii = ii + 4) {
-    cache->dedicated_policy_set[ii + shift_dedicated % 4] = DRRIP_DEDICATED_BIMODAL;
-    cache->dedicated_policy_set[ii + (shift_dedicated + 1) % 4] = DRRIP_DEDICATED_STATIC;
+  s = (Drrip_State*)calloc(1, sizeof(Drrip_State));
+  s->role = (uns8*)calloc(cache->num_sets, sizeof(uns8));
+  for (ii = 0; ii + 4 <= cache->num_sets; ii = ii + 4) {
+    s->role[ii + shift_dedicated % 4] = DRRIP_LEADER_BRRIP;
+    s->role[ii + (shift_dedicated + 1) % 4] = DRRIP_LEADER_SRRIP;
     shift_dedicated = (shift_dedicated + 1) % 4;
   }
+  s->psel_max = (1u << DRRIP_PSEL_BITS) - 1;
+  s->psel = 1u << (DRRIP_PSEL_BITS - 1);
+  cache->predictor = s;
 }
 
 void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg) {
-  int ii;
-  Counter miss_in_brrip = 0;
-  Counter miss_in_srrip = 0;
-  Flag psel;
+  Drrip_State* s = drrip_state(cache);
+  Flag use_brrip;
 
-  // Count the miss here, once per fill. update_evict also runs when get_next_repl_line peeks at
-  // the victim, and again every time a fill refused for a dirty victim is retried.
-  cache->miss_count[set]++;
-
-  // dedicated set
-  if (cache->dedicated_policy_set[set]) {
-    if (cache->dedicated_policy_set[set] == DRRIP_DEDICATED_BIMODAL)
-      brrip_update_insert(cache, proc_id, set, way, arg);
-    else
-      srrip_update_insert(cache, proc_id, set, way, arg);
-
-    DEBUG(0, "DRRIP insert dedicated: 0x%x, %d\n\n", set, cache->dedicated_policy_set[set]);
-    return;
+  switch (s->role[set]) {
+    case DRRIP_LEADER_SRRIP:
+      if (s->psel < s->psel_max)
+        s->psel++;
+      use_brrip = FALSE;
+      break;
+    case DRRIP_LEADER_BRRIP:
+      if (s->psel > 0)
+        s->psel--;
+      use_brrip = TRUE;
+      break;
+    default:
+      /* The top bit of PSEL: SRRIP's leaders have missed more. */
+      use_brrip = (s->psel >> (DRRIP_PSEL_BITS - 1)) & 1 ? TRUE : FALSE;
+      break;
   }
 
-  // set dueling
-  for (ii = 0; ii < cache->num_sets; ii++) {
-    if (!cache->dedicated_policy_set[ii])
-      continue;
-    // sampling
-    if (cache->dedicated_policy_set[ii] == DRRIP_DEDICATED_BIMODAL)
-      miss_in_brrip += cache->miss_count[ii];
-    else
-      miss_in_srrip += cache->miss_count[ii];
-  }
-  psel = miss_in_brrip < miss_in_srrip ? TRUE : FALSE;
-
-  // do insertion
-  if (psel)
+  if (use_brrip)
     brrip_update_insert(cache, proc_id, set, way, arg);
   else
     srrip_update_insert(cache, proc_id, set, way, arg);
 
-  DEBUG(0, "DRRIP insert dueling: 0x%x, %d, 0x%llx, 0x%llx\n\n", set, psel, miss_in_brrip, miss_in_srrip);
+  DEBUG(0, "DRRIP insert: set 0x%x role %u psel %u brrip %d\n", set, s->role[set], s->psel, use_brrip);
 }
 
 /**************************************************************************************/

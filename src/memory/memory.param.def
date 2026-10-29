@@ -98,6 +98,12 @@ DEF_PARAM(l1_ignore_wb, L1_IGNORE_WB, Flag, Flag, FALSE, )
 DEF_PARAM(l1_use_core_freq, L1_USE_CORE_FREQ, Flag, Flag, FALSE, )
 DEF_PARAM(mark_l1_misses, MARK_L1_MISSES, Flag, Flag, TRUE, )
 DEF_PARAM(prefetch_update_lru_l1, PREFETCH_UPDATE_LRU_L1, Flag, Flag, TRUE, )
+
+/* DRRIP (REPL_DRRIP, Jaleel et al., ISCA 2010) at any cache level: set dueling between SRRIP
+   and BRRIP. The defaults are the paper's; see the DRRIP section of libs/cache_lib.c. */
+/* Width of the PSEL saturating counter that picks the followers' policy. */
+DEF_PARAM(drrip_psel_bits, DRRIP_PSEL_BITS, uns, uns, 10, )
+
 DEF_PARAM(memory_random_addr, MEMORY_RANDOM_ADDR, Flag, Flag, FALSE, )
 DEF_PARAM(va_page_size_bytes, VA_PAGE_SIZE_BYTES, uns, uns, 4096, )
 // we assume the high bits of the virt address are all 1s or 0s, and can be

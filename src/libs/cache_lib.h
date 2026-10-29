@@ -155,9 +155,7 @@ struct Cache_struct {
 
   Flag tag_incl_offset; /* The uop cache is byte-addressable, so the tag includes offset bits as well */
 
-  /* For DRRIP repl */
-  uns* dedicated_policy_set; /* For dedicated set map */
-  Counter* miss_count;       /* For sampling */
+  /* For BRRIP repl */
   Counter bimodal_count;
 
   /* For repl with predictor */

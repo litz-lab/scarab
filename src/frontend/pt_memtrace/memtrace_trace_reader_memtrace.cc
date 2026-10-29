@@ -428,8 +428,6 @@ bool TraceReaderMemtrace::initTrace() {
   return true;
 }
 
-std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, ctype_pin_inst>> ctype_inst_map;
-
 bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior) {
   uint32_t prior_isize = mt_prior_isize_;
   bool complete = false;
@@ -467,7 +465,7 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
           // a repeated rep — MAP_REP is not set for DR_ISA_REGDEPS (see processDrIsaInst tuple), so only assert for XED
           // path
           if (!_prior->is_dr_ins) {
-            bool is_rep = std::get<MAP_REP>(ctype_inst_map.at(_prior->pc));
+            bool is_rep = std::get<MAP_REP>(ctype_inst_map_.at(_prior->pc));
             assert(is_rep && ((uint32_t)mt_ref_.instr.pid == _prior->pid) &&
                    ((uint32_t)mt_ref_.instr.tid == _prior->tid) && (mt_ref_.instr.addr == _prior->pc));
           }
@@ -559,8 +557,8 @@ PATCH_REP:
   _info->valid &= complete;
   // Compute the branch target information for the prior instruction
   if (_info->valid) {
-    auto ctype_prior_iter = ctype_inst_map.find(_prior->pc);
-    bool is_rep = (ctype_prior_iter != ctype_inst_map.end()) ? std::get<MAP_REP>(ctype_prior_iter->second) : false;
+    auto ctype_prior_iter = ctype_inst_map_.find(_prior->pc);
+    bool is_rep = (ctype_prior_iter != ctype_inst_map_.end()) ? std::get<MAP_REP>(ctype_prior_iter->second) : false;
     bool non_seq = _info->pc != (_prior->pc + prior_isize);
 
     if (_prior->taken) {  // currently set iif branch
@@ -900,9 +898,9 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
   bool unknown_type, cond_branch;
   _info->pc = mt_ref_.instr.addr;
   if (mt_ref_.instr.encoding_is_new) {
-    ctype_inst_map.erase(mt_ref_.instr.addr);
+    ctype_inst_map_.erase(mt_ref_.instr.addr);
   }
-  auto ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
+  auto ctype_inst_iter = ctype_inst_map_.find(mt_ref_.instr.addr);
   if (mt_ref_.instr.encoding_is_new) {
     assert(predecoded != nullptr);
     ctype_pin_inst cinst = {};
@@ -910,11 +908,11 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
     fill_in_basic_info(&cinst, predecoded, mt_ref_.instr.size, mt_ref_.instr.type);
     add_dependency_info(&cinst, predecoded);
     cinst.encoding_is_new = mt_ref_.instr.encoding_is_new;
-    ctype_inst_map.emplace(mt_ref_.instr.addr,
-                           std::make_tuple(cinst.num_ld + cinst.num_st, false, cinst.cf_type, false, cinst));
-    ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
+    ctype_inst_map_.emplace(mt_ref_.instr.addr,
+                            std::make_tuple(cinst.num_ld + cinst.num_st, false, cinst.cf_type, false, cinst));
+    ctype_inst_iter = ctype_inst_map_.find(mt_ref_.instr.addr);
   } else {
-    assert(ctype_inst_iter != ctype_inst_map.end());
+    assert(ctype_inst_iter != ctype_inst_map_.end());
     std::get<MAP_XED>(ctype_inst_iter->second).encoding_is_new = mt_ref_.instr.encoding_is_new;
   }
 
@@ -950,10 +948,10 @@ void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t*
   mt_prior_isize_ = mt_ref_.instr.size;
 
   if (mt_ref_.instr.encoding_is_new) {
-    ctype_inst_map.erase(mt_ref_.instr.addr);
+    ctype_inst_map_.erase(mt_ref_.instr.addr);
   }
-  auto ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
-  if (ctype_inst_iter == ctype_inst_map.end()) {
+  auto ctype_inst_iter = ctype_inst_map_.find(mt_ref_.instr.addr);
+  if (ctype_inst_iter == ctype_inst_map_.end()) {
     // XED decode into a stack-local inst (only the ctype_pin_inst is cached)
     xed_decoded_inst_t xed_inst;
     xed_decoded_inst_zero_set_mode(&xed_inst, &xed_state_);
@@ -1018,9 +1016,9 @@ void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t*
     fill_in_cf_info(&cinst, xed_ins);
     cinst.encoding_is_new = mt_ref_.instr.encoding_is_new;
 
-    ctype_inst_map.emplace(mt_ref_.instr.addr,
-                           std::make_tuple(n_used_mem_ops, unknown_type, cinst.cf_type != NOT_CF, is_rep, cinst));
-    ctype_inst_iter = ctype_inst_map.find(mt_ref_.instr.addr);
+    ctype_inst_map_.emplace(mt_ref_.instr.addr,
+                            std::make_tuple(n_used_mem_ops, unknown_type, cinst.cf_type != NOT_CF, is_rep, cinst));
+    ctype_inst_iter = ctype_inst_map_.find(mt_ref_.instr.addr);
   } else {
     std::get<MAP_XED>(ctype_inst_iter->second).encoding_is_new = mt_ref_.instr.encoding_is_new;
   }

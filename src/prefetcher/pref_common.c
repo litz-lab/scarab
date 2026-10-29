@@ -747,8 +747,10 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
   for (List_Entry *e = q->head, *next; e; e = next) {
     next = e->next;
     Pref_Mem_Req* pf = (Pref_Mem_Req*)&e->data;
-    ASSERT(proc_id, proc_id == pf->proc_id);
-    ASSERT(proc_id, proc_id == pf->line_addr >> 58);
+    /* With PREF_SHARED_QUEUES every core's prefetches are in core 0's queue: serve each from its own core. */
+    uns8 pf_proc_id = pf->proc_id;
+    ASSERT(proc_id, PREF_SHARED_QUEUES || proc_id == pf_proc_id);
+    ASSERT(pf_proc_id, pf_proc_id == pf->line_addr >> 58);
     if (cycle_count < pf->rdy_cycle)
       break;
 
@@ -761,13 +763,13 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
     info.dest = dest;
     info.probed = TRUE;
     Flag blocked = FALSE; /* no bank port or MSHR this cycle */
-    switch (pref_issue(proc_id, dest, pf->line_addr, MRT_DPRF, line_size, delay, fill, &info)) {
+    switch (pref_issue(pf_proc_id, dest, pf->line_addr, MRT_DPRF, line_size, delay, fill, &info)) {
       case PREF_ISSUE_BANK_BUSY:
-        STAT_EVENT(proc_id, bank_stat);
+        STAT_EVENT(pf_proc_id, bank_stat);
         blocked = TRUE;
         break;
       case PREF_ISSUE_HIT:
-        STAT_EVENT(proc_id, drop_stat);
+        STAT_EVENT(pf_proc_id, drop_stat);
         break;
       case PREF_ISSUE_NO_MSHR:
         STAT_EVENT(0, stall_stat);

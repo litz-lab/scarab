@@ -89,6 +89,8 @@ class TraceReaderMemtrace : public TraceReader {
   InstInfo mt_info_b_ = {};
   bool mt_using_info_a_ = true;
   ctype_pin_inst gap_patch_jmp_ = {};
+  // Static info per instruction PC, decoded once. Per reader: each core's trace has its own address space.
+  std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, ctype_pin_inst>> ctype_inst_map_ = {};
   uint64_t mt_warn_target_ = 0;
 };
 

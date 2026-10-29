@@ -57,6 +57,7 @@
 #include "prefetcher/pref_2dc.h"
 #include "prefetcher/pref_ghb.h"
 #include "prefetcher/pref_markov.h"
+#include "prefetcher/pref_nextline.h"
 #include "prefetcher/pref_phase.h"
 
 #include "cmp_model.h"

@@ -84,6 +84,12 @@ HWP pref_table [] = {
           pref_markov_umlc_miss,        		NULL,  	pref_markov_umlc_prefhit,   		
 	    pref_markov_ul1_miss, 		NULL,    pref_markov_ul1_prefhit  , NULL, NULL   }, 
 
+    { "nextline",  NULL,   		pref_nextline_init,  	NULL,
+                  NULL,
+	 	  pref_nextline_dl0_miss,	NULL,   	NULL,
+          NULL,        		NULL,   	   	NULL,
+		  NULL,     		NULL, 			NULL    , NULL, NULL   },
+
     { NULL,  NULL,   		NULL,    		NULL,
                   NULL,
 		  NULL,        		NULL,      		NULL,      

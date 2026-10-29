@@ -47,6 +47,9 @@ uint64_t lookahead_buffer_rdptr(uns proc_id);
 /* Returns number of FTs in buffer */
 uint64_t lookahead_buffer_count(uns proc_id);
 
+/* Returns number of ops held by the FTs in all cores' buffers */
+uint64_t lookahead_buffer_total_op_count(void);
+
 #ifdef __cplusplus
 }
 
@@ -112,6 +115,7 @@ class LookaheadBuffer {
   uint64_t rdptr_lb;
   uint64_t wrptr_lb;
   uint64_t ft_buffer_count;
+  uint64_t buffered_op_count;  // ops held by the buffered FTs
 
   void insert_ft();
   void update_search_indexes_on_insert(uint64_t buf_pos);
@@ -163,6 +167,9 @@ class LookaheadBuffer {
 
   /* Returns number of FTs in buffer */
   uint64_t count() { return ft_buffer_count; };
+
+  /* Returns number of ops held by the FTs in buffer */
+  uint64_t get_buffered_op_count() { return buffered_op_count; }
 };
 
 /* Returns all FTs in the buffer matching given static FT info */

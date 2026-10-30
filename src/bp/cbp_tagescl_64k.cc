@@ -1,5 +1,9 @@
 #include "cbp_tagescl_64k.h"
 
+#include "memory/memory.param.h"
+
+#include "decoupled_frontend.h"
+
 TAGE64K::TAGE64K(void) {
   // All scalar members have default member initializers in the header and all
   // fixed-size tables are std::array members that default-initialize to zero,
@@ -541,9 +545,25 @@ void TAGE64K::RestorePredictorstates(Counter key) {
   }
 }
 
+// The most checkpoints that can be live at once. A checkpoint is taken when a branch is predicted and
+// freed when the branch retires or a recovery flushes it, so every live checkpoint belongs to a branch
+// in one of the buffers from the FTQ to the ROB. Each term is one buffer's capacity in instructions
+// (uops after decode), which bounds the branches it holds.
+static uns64 max_live_checkpoints() {
+  return (decoupled_fe_get_ftq_num() + 1) * ICACHE_LINE_SIZE    // FTQ, plus the FT being predicted: an FT
+                                                                // ends at its icache line's end
+         + DECODE_WIDTH                                         // icache stage
+         + (DECODE_CYCLES + ICACHE_LATENCY - 1) * DECODE_WIDTH  // decode stages
+         + (1 + UOP_QUEUE_LENGTH) * UOP_CACHE_WIDTH             // uop cache stage, uop queue
+         + IDQ_SIZE + DISPATCH_WIDTH                            // IDQ and its output latch
+         + MAP_CYCLES * RENAME_WIDTH                            // map stages
+         + NODE_TABLE_SIZE;                                     // ROB
+}
+
 void TAGE64K::TakeCheckpoint(Counter key) {
-  // Guard against checkpoint leaks: there should never be more checkpoints than ROB entries
-  ASSERTM(0, checkpoints.size() < NODE_TABLE_SIZE, "TAGE Checkpoint leak\n");
+  ASSERTM(0, checkpoints.size() < max_live_checkpoints(),
+          "TAGE checkpoint leak: taking checkpoint %zu, but the pipeline holds at most %llu branches\n",
+          checkpoints.size() + 1, (unsigned long long)max_live_checkpoints());
   auto& key_index = checkpoints.get<0>();  // Get the key index
   auto it = key_index.find(key);
   assert(it == key_index.end());
@@ -650,6 +670,12 @@ void TAGE64K::RestoreCheckpoint(Counter key) {
 void TAGE64K::RetireCheckpoint(Counter key) {
   auto& key_index = checkpoints.get<0>();
   auto& key_pindex = predictor_states.get<0>();
+  // A checkpoint lives from its branch's prediction until that branch retires or is flushed by a
+  // recovery, and branches retire in program order (keys increase in program order). So when this
+  // branch retires, no checkpoint of an older branch may remain; one that does was never freed.
+  ASSERTM(0, key_index.empty() || key_index.begin()->counter >= key,
+          "TAGE checkpoint %llu outlived its branch (retiring branch %llu)\n",
+          (unsigned long long)key_index.begin()->counter, (unsigned long long)key);
   auto it = key_index.find(key);
   auto pit = key_pindex.find(key);
   // assert(it != key_index.end()); // key can be not exist

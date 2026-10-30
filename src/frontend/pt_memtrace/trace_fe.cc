@@ -60,8 +60,8 @@ const int CLINE = ~0x3F;
    on-path oracle state. */
 static const uint64_t REPLAY_BUFFER_POISON_VA = 0xCAFEBABEDEADBEAFULL;
 
-extern uint64_t ins_id;
-extern uint64_t ins_id_fetched;
+extern uint64_t ins_id[MAX_NUM_PROCS];
+extern uint64_t ins_id_fetched[MAX_NUM_PROCS];
 
 Flag buf_map_find(uns proc_id, Addr line_addr) {
   return trace_buf_state[proc_id].buf_map.find(line_addr) != trace_buf_state[proc_id].buf_map.end();
@@ -850,8 +850,8 @@ void ext_trace_extract_basic_block_vectors() {
         output_counts(num_of_segments, counts_dynamic, counts_as_built, op_taken_count, bb_identity_map);
 
         // caution that ins_id and ins_id_fetched is only for memtrace
-        ASSERT(proc_id, counts_dynamic.total_size == ins_id);
-        ASSERT(proc_id, counts_dynamic.fetched_size == ins_id_fetched);
+        ASSERT(proc_id, counts_dynamic.total_size == ins_id[proc_id]);
+        ASSERT(proc_id, counts_dynamic.fetched_size == ins_id_fetched[proc_id]);
 
         std::string bbv_output(TRACE_BBV_OUTPUT);
         std::string footprint_output(TRACE_FOOTPRINT_OUTPUT);

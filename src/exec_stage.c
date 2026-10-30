@@ -54,6 +54,7 @@
 #include "issue_queue.h"
 #include "map.h"
 #include "map_rename.h"
+#include "reg_port.h"
 #include "statistics.h"
 #include "topdown.h"
 
@@ -213,6 +214,9 @@ void update_exec_stage(Stage_Data* src_sd) {
       exec_off_path = 1;
   }
 
+  // the FU slots of the ops that cannot acquire the register read ports
+  uns64 reg_port_reject_mask = reg_port_arbitrate(src_sd);
+
   /* phase 1 - success/failure of latching and wake up of dependent ops */
   for (uns ii = 0; ii < src_sd->max_op_count; ii++) {
     /* do issue availability checking before latching */
@@ -231,6 +235,13 @@ void update_exec_stage(Stage_Data* src_sd) {
     Op* fop = exec->sd.ops[ii];
     if (fop) {
       exec_stage_clear_fu(ii);
+    }
+
+    // check register read ports if op can issue
+    if (reg_port_reject_mask & (1ULL << ii)) {
+      exec_stage_reject_op(src_sd, ii, FU_PORT_UNAVAILABLE);
+      STAT_EVENT(exec->proc_id, FU_STARVED);
+      continue;
     }
 
     // check register file (late allocation) if op can issue
@@ -481,14 +492,13 @@ static inline void exec_stage_reject_op(Stage_Data* src_sd, int ii, int event) {
   src_sd->ops[ii] = NULL;
   src_sd->op_count--;
 
-  ASSERT(exec->proc_id, event == FU_UNAVAILABLE || event == FU_MEM_UNAVAILABLE || event == FU_OTHER_UNAVAILABLE);
+  ASSERT(exec->proc_id, event >= FU_UNAVAILABLE && event <= FU_OTHER_UNAVAILABLE);
   STAT_EVENT(exec->proc_id, event);
 
-  if (event == FU_OTHER_UNAVAILABLE)
-    return;
-
-  int simd_stat_base = op->inst->is_simd ? FU_REJECTED_OP_INV_SIMD : FU_REJECTED_OP_INV_NOT_SIMD;
-  STAT_EVENT(exec->proc_id, simd_stat_base + op->uop->op_type);
+  if (event == FU_UNAVAILABLE || event == FU_MEM_UNAVAILABLE) {
+    int simd_stat_base = op->inst->is_simd ? FU_REJECTED_OP_INV_SIMD : FU_REJECTED_OP_INV_NOT_SIMD;
+    STAT_EVENT(exec->proc_id, simd_stat_base + op->uop->op_type);
+  }
 }
 
 static inline void exec_stage_clear_fu(int ii) {

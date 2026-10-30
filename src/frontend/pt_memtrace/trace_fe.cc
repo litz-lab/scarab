@@ -329,7 +329,7 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
         trace_read_done[proc_id] = TRUE;
         reached_exit[proc_id] = TRUE;
         op->exit = TRUE;
-      } else if (LOOKAHEAD_BUF_SIZE) {
+      } else if (LOOKAHEAD_BUF_SIZE && !LOOKAHEAD_BUF_UPDATES_REPLAY_BUF) {
         deferred_replay_updates[proc_id].push_back(next_onpath_pi[proc_id]);
       } else {
         update_replay_buffer(proc_id, next_onpath_pi[proc_id]);

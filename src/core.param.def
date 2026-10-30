@@ -397,4 +397,6 @@ DEF_PARAM(dfe3_stop_policy, DFE3_STOP_POLICY, uns, uns, 1, )
 DEF_PARAM(dfe4_stop_policy, DFE4_STOP_POLICY, uns, uns, 1, )
 
 DEF_PARAM(lookahead_buf_size, LOOKAHEAD_BUF_SIZE, uns, uns, 0, )
+// replay buffer updated when the lookahead buffer reads the trace, not when the DFE pops the FT
+DEF_PARAM(lookahead_buf_updates_replay_buf, LOOKAHEAD_BUF_UPDATES_REPLAY_BUF, Flag, Flag, FALSE, )
 DEF_PARAM(map_lookahead, MAP_LOOKAHEAD, Flag, Flag, FALSE, )

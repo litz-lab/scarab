@@ -249,7 +249,7 @@ int trace_read(int proc_id, ctype_pin_inst *next_onpath_pi) {
   return ret;
 }
 
-static void update_replay_buffer(uns proc_id, const ctype_pin_inst &inst) {
+static void update_replay_buffer(uns proc_id, const ctype_pin_inst& inst) {
   uint64_t addr = inst.instruction_addr;
   auto it = pc_to_inst[proc_id].find(addr);
   if (it == pc_to_inst[proc_id].end()) {
@@ -286,7 +286,7 @@ static void update_replay_buffer(uns proc_id, const ctype_pin_inst &inst) {
   // Poison the oracle memory addresses of the replay-buffer entry for this
   // PC; they are only ever read back to replay off-path instructions.
   if (POISON_REPLAY_BUFFER_ORACLE_VA) {
-    ctype_pin_inst &replay_entry = pc_to_inst[proc_id][addr];
+    ctype_pin_inst& replay_entry = pc_to_inst[proc_id][addr];
     for (uns i = 0; i < MAX_LD_NUM; i++)
       replay_entry.ld_vaddr[i] = REPLAY_BUFFER_POISON_VA;
     for (uns i = 0; i < MAX_ST_NUM; i++)
@@ -296,7 +296,7 @@ static void update_replay_buffer(uns proc_id, const ctype_pin_inst &inst) {
 
 // Applies the replay buffer updates held for the next num_insts insts read ahead by the lookahead buffer
 void apply_deferred_replay_updates(uns proc_id, uns num_insts) {
-  auto &deferred = deferred_replay_updates[proc_id];
+  auto& deferred = deferred_replay_updates[proc_id];
   for (uns i = 0; i < num_insts && !deferred.empty(); i++) {
     update_replay_buffer(proc_id, deferred.front());
     deferred.pop_front();

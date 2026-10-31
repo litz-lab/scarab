@@ -19,6 +19,9 @@
 
 #include "frontend/frontend_intf.h"
 #include "isa/isa_macros.h"
+#ifdef ENABLE_PT_MEMTRACE
+#include "frontend/pt_memtrace/trace_fe.h"
+#endif
 
 #include "decoupled_frontend.h"
 #include "ft.h"
@@ -38,7 +41,7 @@ std::vector<std::unique_ptr<LookaheadBuffer>> per_core_lookahead;
  * ============================================================================ */
 
 LookaheadBuffer::LookaheadBuffer(uns proc_id)
-    : have_seen_exit(0), proc_id(proc_id), rdptr_lb(0), wrptr_lb(0), ft_buffer_count(0) {
+    : have_seen_exit(0), proc_id(proc_id), rdptr_lb(0), wrptr_lb(0), ft_buffer_count(0), buffered_op_count(0) {
 }
 
 LookaheadBuffer::~LookaheadBuffer() {
@@ -117,6 +120,7 @@ void LookaheadBuffer::insert_ft() {
   update_search_indexes_on_insert(wrptr_lb);
   wrptr_lb = (wrptr_lb + 1) % LOOKAHEAD_BUF_SIZE;
   ft_buffer_count++;
+  buffered_op_count += new_ft->get_ops().size();
   if (new_ft->get_end_reason() == FT_APP_EXIT)
     have_seen_exit = 1;
 }
@@ -129,6 +133,17 @@ FT* LookaheadBuffer::pop_ft() {
   lookahead_buffer[rdptr_lb] = nullptr;
   rdptr_lb = (rdptr_lb + 1) % LOOKAHEAD_BUF_SIZE;
   ft_buffer_count--;
+  ASSERT(proc_id, buffered_op_count >= current_read_FT->get_ops().size());
+  buffered_op_count -= current_read_FT->get_ops().size();
+#ifdef ENABLE_PT_MEMTRACE
+  // the trace frontend's replay buffer follows the DFE, not the lookahead buffer's reader
+  if (FRONTEND == FE_PT || FRONTEND == FE_MEMTRACE) {
+    uns num_insts = 0;
+    for (Op* op : current_read_FT->get_ops())
+      num_insts += op->eom;
+    apply_deferred_replay_updates(proc_id, num_insts);
+  }
+#endif
   if (!have_seen_exit && (ft_buffer_count < LOOKAHEAD_BUF_SIZE))
     insert_ft();
 
@@ -301,6 +316,13 @@ uint64_t lookahead_buffer_count(uns proc_id) {
   ASSERT(proc_id, proc_id < per_core_lookahead.size());
   ASSERT(proc_id, per_core_lookahead[proc_id]);
   return per_core_lookahead[proc_id]->count();
+}
+
+uint64_t lookahead_buffer_total_op_count(void) {
+  uint64_t total = 0;
+  for (const auto& buffer : per_core_lookahead)
+    total += buffer->get_buffered_op_count();
+  return total;
 }
 
 }  // extern "C"

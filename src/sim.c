@@ -692,6 +692,9 @@ void full_sim() {
 
   init_op_pool();
 
+  // before the lookahead buffer fill, which allocates ops
+  unique_count = 1;
+
   // need to fill lookahead buffer after init_op_pool
   if (LOOKAHEAD_BUF_SIZE) {
     for (proc_id = 0; proc_id < NUM_CORES; proc_id++) {
@@ -700,8 +703,6 @@ void full_sim() {
       init_lookahead_buffer(proc_id);
     }
   }
-
-  unique_count = 1;
 
   sim_limit = trigger_create("SIM_LIMIT", SIM_LIMIT, TRIGGER_ONCE);
   clear_stats = trigger_create("CLEAR_STATS", CLEAR_STATS, TRIGGER_ONCE);

@@ -53,6 +53,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #include "frontend/pin_trace_fe.h"
 
 #include "dyn_inst.h"
+#include "lookahead_buffer.h"
 #include "map.h"
 #include "model.h"
 #include "op_info.h"
@@ -65,7 +66,6 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #define DEBUGU(proc_id, args...) _DEBUGU(proc_id, DEBUG_OP_POOL, ##args)
 
 // TODO: it should be increased to 512 to use more than 50,000 FDIP lookahead buffer entries
-// Also need to increase if enabling large lookahead buffer
 #define OP_POOL_ENTRIES_INC 128 /* default 128 */
 
 /**************************************************************************************/
@@ -312,5 +312,6 @@ static inline void expand_op_pool() {
   op_pool_init_op(&new_pool[ii]);
 
   op_pool_free_head = &new_pool[0];
-  ASSERT(0, op_pool_entries <= OP_POOL_ENTRIES_INC * 128);
+  // leak check (ops held by the lookahead buffers are not leaked)
+  ASSERT(0, op_pool_entries <= OP_POOL_ENTRIES_INC * 128 + lookahead_buffer_total_op_count());
 }

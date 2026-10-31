@@ -109,7 +109,9 @@ uns op_sources_add(Op* op, Dep_Type type, Op* src_op, Counter src_op_num, Counte
   Src_Info* info;
 
   ASSERT(op->proc_id, op && src_op);
-  ASSERT(op->proc_id, op->proc_id == src_op->proc_id);
+  // A map entry may name invalid_op (proc 0) or a pooled op since reused by another core. Only a source that is
+  // still live under the recorded unique_num must be on this core (the same filter as map_wakeup_list_add).
+  ASSERT(op->proc_id, !src_op->op_pool_valid || src_op->unique_num != src_unique_num || op->proc_id == src_op->proc_id);
   ASSERT(op->proc_id, type < NUM_DEP_TYPES);
   ASSERTM(op->proc_id, src_op_num < op->op_num, "op:%s  src_op:%s\n", unsstr64(op->op_num), unsstr64(src_op_num));
 

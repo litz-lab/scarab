@@ -623,9 +623,10 @@ void mem_free_req(Mem_Req* req) {
   } while (0)
 
 /* A request a level admits becomes ready after the trip down and the next level's lookup.
-   A first-level demand also pays the rest of its own cache's latency here; a first-level
-   prefetch already waited it out in its prefetch queue. The lookup scan stops at the first
-   request that is not ready yet, so a prefetch can wait behind an earlier demand. */
+   A first-level demand, or a software prefetch an op looked up in the dcache stage, also
+   pays the rest of its own cache's latency here; a hardware prefetch already waited it out
+   in its prefetch queue. The lookup scan stops at the first request that is not ready
+   yet, so a prefetch can wait behind an earlier demand. */
 static inline Counter mem_level_latency(Mshr* mshr, Mem_Req* req) {
   Counter latency = 0;
   switch (mshr->file) {
@@ -633,7 +634,7 @@ static inline Counter mem_level_latency(Mshr* mshr, Mem_Req* req) {
     case MSHR_DCACHE:
     case MSHR_DCACHE_WB:
       latency = DCQ_TO_MLCQ_TRANSFER_LATENCY + MLC_CYCLES;
-      if (req->destination != DEST_DCACHE && req->destination != DEST_ICACHE)
+      if (!mem_req_type_is_prefetch(req->type) || req->op_count)
         latency += DCACHE_CYCLES - 1;
       break;
     case MSHR_MLC:

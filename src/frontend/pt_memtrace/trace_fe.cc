@@ -270,7 +270,7 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
         trace_read_done[proc_id] = TRUE;
         reached_exit[proc_id] = TRUE;
         op->exit = TRUE;
-      } else {
+      } else if (!next_onpath_pi[proc_id].is_trace_patch) {
         uint64_t addr = next_onpath_pi[proc_id].instruction_addr;
         auto it = pc_to_inst[proc_id].find(addr);
         if (it == pc_to_inst[proc_id].end()) {

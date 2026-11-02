@@ -30,6 +30,7 @@
 #define __DCACHE_STAGE_H__
 
 #include "libs/cache_lib.h"
+#include "libs/list_lib.h"
 
 #include "stage_data.h"
 
@@ -52,9 +53,16 @@ typedef struct Dcache_Stage_struct {
 
   Counter idle_cycle; /* Cycle the cache will be idle */
   Flag mem_blocked;   /* Are memory request buffers (aka MSHRs) full? */
+  List miss_queue;    /* missed accesses waiting out the lookup before they go down */
 
   char rand_wb_state[31]; /* state of random number generator for random writebacks */
 } Dcache_Stage;
+
+typedef struct Dcache_Miss_struct {
+  Op* op;
+  Counter op_num;
+  Addr line_addr;
+} Dcache_Miss;
 
 typedef struct Dcache_Data_struct {
   Flag dirty;         /* is the line dirty? */

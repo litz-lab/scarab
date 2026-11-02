@@ -544,12 +544,14 @@ static Flag pref_queue_add(List* q, HWP_Type dest, uns latency, Pref_Mem_Req* re
 Flag pref_addto_dl0req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) {
   if (!line_index)  // addr = 0
     return TRUE;
+  /* Its dcache lookup resolves after the dcache's latency; a miss then only goes down. */
   Pref_Mem_Req req = {.proc_id = proc_id,
                       .line_addr = line_index << LOG2(DCACHE_LINE_SIZE),
                       .line_index = line_index,
                       .prefetcher_id = prefetcher_id,
-                      .rdy_cycle = cycle_count};
-  return pref_queue_add(&pref.cores[proc_id]->dl0req_queue, PREF_TO_DCACHE, 0, &req, PREF_DL0REQ_QUEUE_FULL);
+                      .rdy_cycle = cycle_count + DCACHE_CYCLES};
+  return pref_queue_add(&pref.cores[proc_id]->dl0req_queue, PREF_TO_DCACHE, DCACHE_CYCLES, &req,
+                        PREF_DL0REQ_QUEUE_FULL);
 }
 
 Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) {

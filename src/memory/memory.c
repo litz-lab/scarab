@@ -622,16 +622,19 @@ void mem_free_req(Mem_Req* req) {
     ASSERT((req)->proc_id, FALSE);                                                    \
   } while (0)
 
-/* Every request a level admits becomes ready after the same latency: the trip down and
-   the next level's lookup. With one constant per level, a file is in rdy order, so its
-   lookup scan can stop at the first request that is not ready yet. */
-static inline Counter mem_level_latency(Mshr* mshr) {
+/* A request a level admits becomes ready after the trip down and the next level's lookup.
+   A first-level demand also pays the rest of its own cache's latency here; a first-level
+   prefetch already waited it out in its prefetch queue. The lookup scan stops at the first
+   request that is not ready yet, so a prefetch can wait behind an earlier demand. */
+static inline Counter mem_level_latency(Mshr* mshr, Mem_Req* req) {
   Counter latency = 0;
   switch (mshr->file) {
     case MSHR_ICACHE:
     case MSHR_DCACHE:
     case MSHR_DCACHE_WB:
-      latency = DCACHE_CYCLES - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY + MLC_CYCLES;
+      latency = DCQ_TO_MLCQ_TRANSFER_LATENCY + MLC_CYCLES;
+      if (req->destination != DEST_DCACHE && req->destination != DEST_ICACHE)
+        latency += DCACHE_CYCLES - 1;
       break;
     case MSHR_MLC:
     case MSHR_MLC_WB:
@@ -754,7 +757,7 @@ static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr) {
     default:
       MEM_BAD_FILE(mshr);
   }
-  req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + mem_level_latency(mshr);
+  req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + mem_level_latency(mshr, req);
   mshr_line_set_rdy(mshr_line(mshr, req->addr), req->rdy_cycle);
 }
 
@@ -2726,12 +2729,6 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   }
 
   mem_insert_req_into_mshr(new_req, entering);
-  /* A first-level prefetch already waited out its cache's lookup in the prefetch queue, so
-     it reaches the MLC when a demand miss made in the same cycle would. */
-  if (probed && (destination == DEST_DCACHE || destination == DEST_ICACHE)) {
-    new_req->rdy_cycle -= destination == DEST_DCACHE ? DCACHE_CYCLES : ICACHE_LATENCY;
-    mshr_line_set_rdy(mshr_line(entering, addr), new_req->rdy_cycle);
-  }
   return TRUE;
 }
 

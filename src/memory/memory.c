@@ -622,16 +622,26 @@ void mem_free_req(Mem_Req* req) {
     ASSERT((req)->proc_id, FALSE);                                                    \
   } while (0)
 
-/* Every request a level admits becomes ready after the same latency: the trip down and
-   the next level's lookup. With one constant per level, a file is in rdy order, so its
-   lookup scan can stop at the first request that is not ready yet. */
-static inline Counter mem_level_latency(Mshr* mshr) {
+/* A prefetch made by a prefetch or write-hint op rather than by a hardware prefetcher. */
+static inline Flag mem_req_is_sw_prefetch(Mem_Req* req) {
+  Op** op = list_get_head(&req->op_ptrs);
+  return op && ((*op)->uop->mem_type == MEM_PF || (*op)->uop->mem_type == MEM_WH);
+}
+
+/* A request a level admits becomes ready after the trip down and the next level's lookup.
+   A first-level demand, or a software prefetch an op looked up in the dcache stage, also
+   pays the rest of its own cache's latency here; a hardware prefetch already waited it out
+   in its prefetch queue. The lookup scan stops at the first request that is not ready
+   yet, so a prefetch can wait behind an earlier demand. */
+static inline Counter mem_level_latency(Mshr* mshr, Mem_Req* req) {
   Counter latency = 0;
   switch (mshr->file) {
     case MSHR_ICACHE:
     case MSHR_DCACHE:
     case MSHR_DCACHE_WB:
-      latency = DCACHE_CYCLES - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY + MLC_CYCLES;
+      latency = DCQ_TO_MLCQ_TRANSFER_LATENCY + MLC_CYCLES;
+      if (!mem_req_type_is_prefetch(req->type) || mem_req_is_sw_prefetch(req))
+        latency += DCACHE_CYCLES - 1;
       break;
     case MSHR_MLC:
     case MSHR_MLC_WB:
@@ -754,7 +764,7 @@ static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr) {
     default:
       MEM_BAD_FILE(mshr);
   }
-  req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + mem_level_latency(mshr);
+  req->rdy_cycle = freq_cycle_count(FREQ_DOMAIN_L1) + mem_level_latency(mshr, req);
   mshr_line_set_rdy(mshr_line(mshr, req->addr), req->rdy_cycle);
 }
 

@@ -75,7 +75,7 @@ DEF_PARAM( pref_l1_prefetchers                 , PREF_L1_PREFETCHERS            
 DEF_PARAM( pref_insert_per_cycle               , PREF_INSERT_PER_CYCLE               , uns             , uns                , 4         ,    )
 /* A level's queue holds (latency + 1) * this many candidates per enabled prefetcher */
 DEF_PARAM( pref_queue_per_cycle                , PREF_QUEUE_PER_CYCLE                , uns             , uns                , 2         ,    )
-/* The icache prefetch queue's size, independent of its latency and prefetchers */
+/* The icache prefetch queue's size, independent of its latency and prefetchers; double it with --eip_enable */
 DEF_PARAM( pref_icache_queue_size              , PREF_ICACHE_QUEUE_SIZE              , uns             , uns                , 8         ,    )
 /* A prefetch with no bank port or MSHR this cycle stays at its queue's head and retries
    next cycle (dropped when off) */

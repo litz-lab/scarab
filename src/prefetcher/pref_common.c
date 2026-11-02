@@ -53,6 +53,7 @@
 #include "prefetcher//pref_stream.h"
 #include "prefetcher//pref_stride.h"
 #include "prefetcher//pref_stridepc.h"
+#include "prefetcher/eip.h"
 #include "prefetcher/fdip.h"
 #include "prefetcher/l2l1pref.h"
 #include "prefetcher/pref_2dc.h"
@@ -558,7 +559,7 @@ Flag pref_addto_dl0req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) 
                         PREF_DL0REQ_QUEUE_FULL);
 }
 
-/* An instruction prefetch (FDIP, per branch predictor) to the icache. FDIP only matches
+/* An instruction prefetch (FDIP per branch predictor, or EIP) to the icache. It only matches
    the tags, without the data read, so its lookup takes one cycle less than a demand's. */
 Flag pref_addto_icache_queue(uns8 proc_id, Addr line_addr, uns8 bp_id, Mem_Req_Type type, Flag off_path,
                              Flag conf_off_path, uns32 ghist) {
@@ -791,7 +792,7 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
     Flag icache = dest == DEST_ICACHE;
     Pref_Req_Info info = {0};
     if (icache) {
-      /* An FDIP prefetch carries its walk's path and history, not data-prefetcher info. */
+      /* An instruction prefetch carries its path and history, not data-prefetcher info. */
       info.fdip_off_path = pf->off_path;
       info.fdip_ghist = pf->global_hist;
       info.dest = dest;
@@ -825,7 +826,9 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
     }
     if (blocked && PREF_RETRY)
       break; /* the head retries next cycle; the rest wait behind it */
-    if (icache)
+    if (icache && pf->prefetcher_id == EIP_PREF_ID)
+      eip_pref_issued(pf->line_addr, result == PREF_ISSUE_NEW || result == PREF_ISSUE_MERGED);
+    else if (icache)
       fdip_pref_issued(pf_proc_id, pf->prefetcher_id, pf->line_addr, pf->off_path, pf->conf_off_path, result);
     q->current = e;
     dl_list_remove_current(q);
@@ -844,6 +847,9 @@ void pref_flush_icache(uns8 proc_id) {
     return;
   List* q = &cmp_model.icache_stage[proc_id].pref_queue;
   INC_STAT_EVENT(proc_id, PREF_ICREQ_RECOVERY_FLUSH, q->count);
+  for (List_Entry* e = q->head; e; e = e->next)
+    if (((Pref_Mem_Req*)&e->data)->prefetcher_id == EIP_PREF_ID)
+      eip_pref_issued(((Pref_Mem_Req*)&e->data)->line_addr, FALSE);
   clear_list(q);
 }
 

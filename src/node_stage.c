@@ -493,10 +493,11 @@ void node_retire() {
       if (!op->dst_val_valid[i] || reg < REG_RAX || reg > REG_R15 || reg == REG_RSP)
         continue;
       uint64_t v = op->dst_val[i];
-      STAT_EVENT(op->proc_id, !(v >> 8)    ? DST_VAL_WIDTH_8
-                              : !(v >> 16) ? DST_VAL_WIDTH_16
-                              : !(v >> 32) ? DST_VAL_WIDTH_32
-                                           : DST_VAL_WIDTH_64);
+      uns w = op->dst_width[i];
+      ASSERT(op->proc_id, w == 8 || w == 16 || w == 32 || w == 64);
+      uns wi = w == 8 ? 0 : w == 16 ? 1 : w == 32 ? 2 : 3;
+      uns vi = !(v >> 8) ? 0 : !(v >> 16) ? 1 : !(v >> 32) ? 2 : 3;
+      STAT_EVENT(op->proc_id, DST_W8_V8 + 4 * wi + vi);
     }
 
     DEBUG(node->proc_id, "Retiring op_num:%s\n", unsstr64(op->op_num));

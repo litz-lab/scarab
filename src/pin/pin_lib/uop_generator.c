@@ -415,6 +415,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++) {
     op->dst_val[ii] = trace_uop->dests[ii].val;
     op->dst_val_valid[ii] = trace_uop->dests[ii].val_valid;
+    op->dst_width[ii] = trace_uop->dests[ii].width;
   }
 
   if (op->uop->op_type == OP_CF) {
@@ -1051,6 +1052,10 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
   for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++) {
     trace_uop->dests[ii].val = 0;
     trace_uop->dests[ii].val_valid = FALSE;
+    trace_uop->dests[ii].width = 0;
+    for (uns j = 0; j < pi->num_dst_regs; j++)
+      if (pi->dst_regs[j] == info->dests[ii].id)
+        trace_uop->dests[ii].width = pi->dst_reg_width[j];
     // A load's produced value comes from ld_data (MEM_LD block below), not the architectural
     // dst-reg match; skip it here so the destination value is written exactly once.
     if (info->table_info.mem_type == MEM_LD)

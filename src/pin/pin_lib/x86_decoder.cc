@@ -162,7 +162,10 @@ uint32_t add_dependency_info(ctype_pin_inst*           info,
           add_reg(info, SRC_REGS, scarab_reg);
         }
         if(operandWritten) {
+          uint8_t n = info->num_dst_regs;
           add_reg(info, DST_REGS, scarab_reg);
+          if (info->num_dst_regs > n)
+            info->dst_reg_width[n] = xed_get_register_width_bits64(xed_reg);
         }
         if(scarab_reg >= SCARAB_REG_FP0 && scarab_reg <= SCARAB_REG_FP7)
           info->is_fp = TRUE;

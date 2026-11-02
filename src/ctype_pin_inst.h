@@ -116,6 +116,7 @@ typedef struct ctype_pin_inst_struct {
 
   compressed_reg_t src_regs[MAX_SRC_REGS_NUM];
   compressed_reg_t dst_regs[MAX_DST_REGS_NUM];
+  uint8_t dst_reg_width[MAX_DST_REGS_NUM];  // bits written (AL=8, AX=16, EAX=32, RAX=64)
   compressed_reg_t ld1_addr_regs[MAX_MEM_ADDR_REGS_NUM];
   compressed_reg_t ld2_addr_regs[MAX_MEM_ADDR_REGS_NUM];
   compressed_reg_t st_addr_regs[MAX_MEM_ADDR_REGS_NUM];

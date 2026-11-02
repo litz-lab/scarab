@@ -42,6 +42,7 @@ typedef struct Reg_Info_struct {
   uns16 id;       // flattened register number (unique across sets)
   uint64_t val;   // runtime register value (valid only in dynamic/Trace_Uop context)
   Flag val_valid;  // whether val has been written (a 0 val does not imply "unwritten")
+  uns8 width;      // bits written by the instruction (exec-driven only)
 } Reg_Info;
 
 /**************************************************************************************/

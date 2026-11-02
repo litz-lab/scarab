@@ -107,8 +107,16 @@ void init_cache(Cache* cache, const char* name, uns cache_size, uns assoc, uns l
 
 void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns tag_bits,
                      uns data_size, Repl_Policy repl_policy, Cache_Index_Config idx_cfg) {
+  /* The offset and set index are bit fields (shift_bits, set_mask below), so both the line size and
+     the set count must be powers of two. Otherwise the sets above the largest power of two are
+     allocated but never indexed, and the cache silently holds less than configured. */
+  ASSERTUM(0, line_size && !(line_size & (line_size - 1)), "%s: line size %u is not a power of two\n", name, line_size);
+  ASSERTUM(0, assoc, "%s: associativity is 0\n", name);
   uns num_lines = cache_size / line_size;
   uns num_sets = cache_size / line_size / assoc;
+  ASSERTUM(0, num_sets * assoc * line_size == cache_size && num_sets && !(num_sets & (num_sets - 1)),
+           "%s: size %u / assoc %u / line size %u is not a power-of-two number of sets\n", name, cache_size, assoc,
+           line_size);
   uns ii, jj;
 
   DEBUG(0, "Initializing cache called '%s'.\n", name);

@@ -254,6 +254,7 @@ struct Op_struct {
   // {{{ source and destination values
   uint64_t src_val[MAX_SRCS];
   uint64_t dst_val[MAX_DESTS];
+  Flag dst_val_valid[MAX_DESTS];  // dst_val[i] was captured by the frontend
   // }}}
 
   // {{{ register renaming

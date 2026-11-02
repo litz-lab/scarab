@@ -49,6 +49,7 @@
 #include "bp/bp.h"
 #include "bp/tagescl.h"
 #include "frontend/frontend.h"
+#include "isa/isa.h"
 #include "memory/memory.h"
 
 #include "decoupled_frontend.h"
@@ -487,6 +488,16 @@ void node_retire() {
     op_assert_cycles_set_at_retire(op);
     STAT_EVENT(op->proc_id, OP_WAIT_0 + MIN2(op_get_sched_cycle(op) - real_rdy_cycle, 31));
     STAT_EVENT(op->proc_id, OP_RETIRED);  // Counts all ops retired, not just those in primary thread
+    for (uns i = 0; i < op->uop->num_dest_regs; i++) {
+      uns reg = op->uop->dests[i].id;
+      if (!op->dst_val_valid[i] || reg < REG_RAX || reg > REG_R15 || reg == REG_RSP)
+        continue;
+      uint64_t v = op->dst_val[i];
+      STAT_EVENT(op->proc_id, !(v >> 8)    ? DST_VAL_WIDTH_8
+                              : !(v >> 16) ? DST_VAL_WIDTH_16
+                              : !(v >> 32) ? DST_VAL_WIDTH_32
+                                           : DST_VAL_WIDTH_64);
+    }
 
     DEBUG(node->proc_id, "Retiring op_num:%s\n", unsstr64(op->op_num));
 

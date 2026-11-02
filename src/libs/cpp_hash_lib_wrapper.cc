@@ -8,29 +8,38 @@ extern "C" {
 #include "globals/global_defs.h"
 }
 
-struct key {
+// Synthetic "patch" instructions (ctx_switch_barrier_, etc.) reuse a real instruction's
+// address but carry their own fabricated (always-zeroed) binary encoding, so {addr,
+// lsb_bytes, msb_bytes, op_idx, mem_shape} alone isn't enough to tell them apart from
+// whatever real instruction happens to hash to the same key. cf_type is included in every
+// one of these tables (dynamic Inst_Info as well as the static per-macro/per-uop tables)
+// so a patch can never alias a real decode, or vice versa.
+struct inst_key {
   uint64_t addr;
   uint64_t lsb_bytes;
   uint64_t msb_bytes;
   uint8_t op_idx;
-  uint16_t mem_shape;  // The number of memory ops performed by the instance
+  uint16_t mem_shape;
+  uint8_t cf_type;
 
-  key() : addr(0), lsb_bytes(0), msb_bytes(0), op_idx(0), mem_shape(0){};
-  key(uint64_t _addr, uint64_t _lsb_bytes, uint64_t _msb_bytes, uint8_t _op_idx, uint16_t _mem_shape)
-      : addr(_addr), lsb_bytes(_lsb_bytes), msb_bytes(_msb_bytes), op_idx(_op_idx), mem_shape(_mem_shape){};
+  inst_key() : addr(0), lsb_bytes(0), msb_bytes(0), op_idx(0), mem_shape(0), cf_type(0) {}
+  inst_key(uint64_t _addr, uint64_t _lsb_bytes, uint64_t _msb_bytes, uint8_t _op_idx, uint16_t _mem_shape,
+           uint8_t _cf_type)
+      : addr(_addr),
+        lsb_bytes(_lsb_bytes),
+        msb_bytes(_msb_bytes),
+        op_idx(_op_idx),
+        mem_shape(_mem_shape),
+        cf_type(_cf_type) {}
 
-  bool operator==(const key &p) const {
+  bool operator==(const inst_key& p) const {
     return addr == p.addr && lsb_bytes == p.lsb_bytes && msb_bytes == p.msb_bytes && op_idx == p.op_idx &&
-           mem_shape == p.mem_shape;
+           mem_shape == p.mem_shape && cf_type == p.cf_type;
   }
 };
 
-// The specialized hash function for `unordered_map` keys
-struct hash_fn {
-  // template <class T1, class T2>
-  std::size_t operator()(const key &key) const {
-    // Knuth multiplicative hashing to reduce collisions for similar keys.
-    // Constant is derived from the golden ratio: 2^64 / phi.
+struct inst_hash_fn {
+  std::size_t operator()(const inst_key& key) const {
     const uint64_t KNUTH64 = 11400714819323198485ull;
 
     uint64_t h = key.addr;
@@ -42,20 +51,21 @@ struct hash_fn {
     h += static_cast<uint64_t>(key.op_idx);
     h *= KNUTH64;
     h += static_cast<uint64_t>(key.mem_shape);
+    h *= KNUTH64;
+    h += static_cast<uint64_t>(key.cf_type);
 
-    // Mix down to size_t in a platform-agnostic way.
     return static_cast<std::size_t>(h ^ (h >> 32));
   }
 };
 
 // Per-core hash maps for instruction info
-std::unordered_map<key, Inst_Info, hash_fn> per_core_hash_map[MAX_NUM_PROCS];
+std::unordered_map<inst_key, Inst_Info, inst_hash_fn> per_core_hash_map[MAX_NUM_PROCS];
 
-Inst_Info *cpp_hash_table_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes, uint8_t op_idx,
-                                        uint16_t mem_shape, unsigned char *new_entry) {
+Inst_Info* cpp_hash_table_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes, uint8_t op_idx,
+                                        uint16_t mem_shape, uint8_t cf_type, unsigned char* new_entry) {
   *new_entry = false;
-  key _key(addr, lsb_bytes, msb_bytes, op_idx, mem_shape);
-  auto &hash_map = per_core_hash_map[core];
+  inst_key _key(addr, lsb_bytes, msb_bytes, op_idx, mem_shape, cf_type);
+  auto& hash_map = per_core_hash_map[core];
   auto lookup = hash_map.find(_key);
   if (lookup != hash_map.end()) {
     return &lookup->second;
@@ -66,15 +76,15 @@ Inst_Info *cpp_hash_table_access_create(int core, uint64_t addr, uint64_t lsb_by
   }
 }
 
-// Per-macro-instruction static info: keyed by {addr, binary, mem_shape} only (op_idx fixed at 0),
-// so all uops of the same macro instance share one entry.
-std::unordered_map<key, Static_Inst_Info, hash_fn> per_core_static_inst_map[MAX_NUM_PROCS];
+// Per-macro-instruction static info: keyed by {addr, binary, mem_shape, cf_type} (op_idx fixed
+// at 0), so all uops of the same macro instance share one entry.
+std::unordered_map<inst_key, Static_Inst_Info, inst_hash_fn> per_core_static_inst_map[MAX_NUM_PROCS];
 
-Static_Inst_Info *cpp_static_inst_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes,
-                                                uint16_t mem_shape, unsigned char *new_entry) {
+Static_Inst_Info* cpp_static_inst_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes,
+                                                uint16_t mem_shape, uint8_t cf_type, unsigned char* new_entry) {
   *new_entry = false;
-  key _key(addr, lsb_bytes, msb_bytes, 0, mem_shape);
-  auto &hash_map = per_core_static_inst_map[core];
+  inst_key _key(addr, lsb_bytes, msb_bytes, 0, mem_shape, cf_type);
+  auto& hash_map = per_core_static_inst_map[core];
   auto lookup = hash_map.find(_key);
   if (lookup != hash_map.end()) {
     return &lookup->second;
@@ -85,14 +95,15 @@ Static_Inst_Info *cpp_static_inst_access_create(int core, uint64_t addr, uint64_
   }
 }
 
-// Per-uop static info: keyed by {addr, binary, op_idx, mem_shape}.
-std::unordered_map<key, Static_Op_Info, hash_fn> per_core_static_op_map[MAX_NUM_PROCS];
+// Per-uop static info: keyed by {addr, binary, op_idx, mem_shape, cf_type}.
+std::unordered_map<inst_key, Static_Op_Info, inst_hash_fn> per_core_static_op_map[MAX_NUM_PROCS];
 
-Static_Op_Info *cpp_static_op_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes,
-                                            uint8_t op_idx, uint16_t mem_shape, unsigned char *new_entry) {
+Static_Op_Info* cpp_static_op_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes,
+                                            uint8_t op_idx, uint16_t mem_shape, uint8_t cf_type,
+                                            unsigned char* new_entry) {
   *new_entry = false;
-  key _key(addr, lsb_bytes, msb_bytes, op_idx, mem_shape);
-  auto &hash_map = per_core_static_op_map[core];
+  inst_key _key(addr, lsb_bytes, msb_bytes, op_idx, mem_shape, cf_type);
+  auto& hash_map = per_core_static_op_map[core];
   auto lookup = hash_map.find(_key);
   if (lookup != hash_map.end()) {
     return &lookup->second;

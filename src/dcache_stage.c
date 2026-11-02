@@ -269,21 +269,6 @@ void update_dcache_stage(Stage_Data* src_sd) {
       continue;
     }
 
-    // OS_WAIT_MEM re-probe: the op already accessed the dcache and missed, and
-    // new_mem_req found no in-flight request to merge with and no free mem-request
-    // buffer. Re-looking-up the dcache can only re-derive the same known miss, so skip
-    // the port acquisition and the tag lookup entirely and go straight to retrying the
-    // mem request. A matching in-flight request that shows up later is still caught by
-    // new_mem_req's queue search inside the miss handler. Set OS_SCHEDULED first (as the
-    // fresh-access path below does) so the store-forward-hit case, which does not set
-    // op->state, leaves the op removable instead of resident.
-    if (op->state == OS_WAIT_MEM) {
-      ASSERT(dc->proc_id, op_get_dcache_cycle(op) != MAX_CTR);
-      op->state = OS_SCHEDULED;
-      dcache_cacheline_miss(op, get_cache_line_addr(&dc->dcache, op->oracle_info.va), cycle_count + DCACHE_CYCLES);
-      continue;
-    }
-
     /* check on the availability of a read port for the given bank */
     // banks interleave cache lines: the bank bits are the lowest order cache index bits
     uns bank = BANK(op->oracle_info.va, DCACHE_BANKS, DCACHE_LINE_SIZE);
@@ -354,16 +339,23 @@ void update_dcache_stage(Stage_Data* src_sd) {
   }
 
   /* A miss goes down once its lookup is done, DCACHE_CYCLES - 1 cycles after its access; a
-     fill meanwhile serves it. */
-  while (dc->miss_queue.count) {
-    Dcache_Miss* miss = (Dcache_Miss*)list_get_head(&dc->miss_queue);
+     fill meanwhile serves it. A miss that found no MSHR (OS_WAIT_MEM) stays and retries. */
+  for (List_Entry *e = dc->miss_queue.head, *next; e; e = next) {
+    next = e->next;
+    Dcache_Miss* miss = (Dcache_Miss*)&e->data;
     Op* op = miss->op;
     ASSERT(dc->proc_id, op->op_num == miss->op_num);
     Counter access_done = op_get_dcache_cycle(op) + DCACHE_CYCLES;
     if (cycle_count + 1 < access_done)
       break;
-    Addr line_addr;
-    Dcache_Data* line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, TRUE);
+    Addr line_addr = 0;
+    Dcache_Data* line = NULL;
+    if (op->state == OS_WAIT_MEM) {
+      op->state = OS_SCHEDULED;
+      access_done = cycle_count + DCACHE_CYCLES;
+    } else {
+      line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, TRUE);
+    }
     if (line) {
       dcache_cacheline_hit(op, line_addr, line, access_done);
       if (!op->off_path)
@@ -371,7 +363,10 @@ void update_dcache_stage(Stage_Data* src_sd) {
     } else {
       dcache_cacheline_miss(op, miss->line_addr, access_done);
     }
-    dl_list_remove_head(&dc->miss_queue);
+    if (op->state != OS_WAIT_MEM) {
+      dc->miss_queue.current = e;
+      dl_list_remove_current(&dc->miss_queue);
+    }
   }
 
   /* prefetcher update */

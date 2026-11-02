@@ -84,7 +84,7 @@ DEF_PARAM(  ibtb_hash_tos             , IBTB_HASH_TOS             , Flag    , Fl
 DEF_PARAM(  btb_mech                  , BTB_MECH                  , uns     , btb_mech   , GENERIC_BTB,        )
 DEF_PARAM(  btb_hash                  , BTB_HASH                  , uns     , index_hash , ID_HASH    ,        )
 DEF_PARAM(  btb_entries               , BTB_ENTRIES               , uns     , uns        , 12288      ,        )
-DEF_PARAM(  btb_assoc                 , BTB_ASSOC                 , uns     , uns        , 4          ,        )
+DEF_PARAM(  btb_assoc                 , BTB_ASSOC                 , uns     , uns        , 3          ,        ) /* btb_entries / btb_banks / btb_assoc must be a power of two */
 DEF_PARAM(  btb_tag_bits              , BTB_TAG_BITS              , uns     , uns        , 64         ,        )
 DEF_PARAM(  btb_banks                 , BTB_BANKS                 , uns     , uns        , 1          ,        ) /* number of banks interleaved */
 DEF_PARAM(  btb_num_brslot            , BTB_NUM_BRSLOT            , uns     , uns        , 1          ,        ) /* number of branch slots per block */
@@ -111,7 +111,7 @@ DEF_PARAM(  btb_l0_latency           , BTB_L0_LATENCY            , uns     , uns
 DEF_PARAM(  btb_l1_present           , BTB_L1_PRESENT            , Flag    , Flag       , FALSE      ,        )
 DEF_PARAM(  btb_l1_hash              , BTB_L1_HASH               , uns     , index_hash , ID_HASH    ,        )
 DEF_PARAM(  btb_l1_entries           , BTB_L1_ENTRIES            , uns     , uns        , 6144       ,        )
-DEF_PARAM(  btb_l1_assoc             , BTB_L1_ASSOC              , uns     , uns        , 4          ,        )
+DEF_PARAM(  btb_l1_assoc             , BTB_L1_ASSOC              , uns     , uns        , 3          ,        ) /* btb_l1_entries / btb_l1_banks / btb_l1_assoc must be a power of two */
 DEF_PARAM(  btb_l1_tag_bits          , BTB_L1_TAG_BITS           , uns     , uns        , 64         ,        )
 DEF_PARAM(  btb_l1_banks             , BTB_L1_BANKS              , uns     , uns        , 1          ,        ) /* number of banks interleaved */
 DEF_PARAM(  btb_l1_num_track_bits    , BTB_L1_NUM_TRACK_BITS     , uns     , uns        , 64         ,        ) /* used when BTB_L1_HASH == ENTROPY_INDEX */

@@ -2726,10 +2726,10 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   }
 
   mem_insert_req_into_mshr(new_req, entering);
-  /* A first-level prefetch spent its cache's lookup in the prefetch queue: only the trip
-     down and the MLC lookup remain. */
+  /* A first-level prefetch already waited out its cache's lookup in the prefetch queue, so
+     it reaches the MLC when a demand miss made in the same cycle would. */
   if (probed && (destination == DEST_DCACHE || destination == DEST_ICACHE)) {
-    new_req->rdy_cycle -= DCACHE_CYCLES - 1;
+    new_req->rdy_cycle -= destination == DEST_DCACHE ? DCACHE_CYCLES : ICACHE_LATENCY;
     mshr_line_set_rdy(mshr_line(entering, addr), new_req->rdy_cycle);
   }
   return TRUE;

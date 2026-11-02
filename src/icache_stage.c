@@ -561,6 +561,8 @@ FT_Arbitration_Result ft_arbitration() {
         STAT_EVENT(ic->proc_id, FT_UOP_CACHE_MISS_ICACHE_MISS_OFF_PATH);
       }
       icache_miss_events();
+      ic->miss_lookup_done = cycle_count + ICACHE_LATENCY;
+      ic->icache_miss_fulfilled = FALSE;
 
       ft_op_buffer_fill_from_ft(ic, ft);
 
@@ -572,6 +574,15 @@ FT_Arbitration_Result ft_arbitration() {
 Icache_State icache_mem_req_actions(Break_Reason* break_fetch) {
   DEBUG(ic->proc_id, "Icache mem req on op_num:%s @ 0x%s\n", unsstr64(op_count[ic->proc_id]),
         hexstr64s(ic->fetch_addr));
+  /* The miss goes down only once its icache lookup is done; a fill meanwhile serves it. */
+  if (ic->icache_miss_fulfilled) {
+    *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
+    return ICACHE_SERVING;
+  }
+  if (cycle_count < ic->miss_lookup_done) {
+    *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
+    return ICACHE_MEM_REQ;
+  }
   Flag success = mem_req_on_icache_miss();
   if (success) {
     ic->icache_miss_fulfilled = FALSE;
@@ -1070,7 +1081,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
   }
 
   /* get new line in the cache */
-  if ((ic->line_addr == req->addr) && ic->next_state == ICACHE_WAIT_FOR_MISS) {
+  if ((ic->line_addr == req->addr) && (ic->next_state == ICACHE_WAIT_FOR_MISS || ic->next_state == ICACHE_MEM_REQ)) {
     INC_STAT_EVENT(ic->proc_id, MISS_WAIT_TIME, cycle_count - ic->wait_for_miss_start);
     if (IC_PREF_CACHE_ENABLE &&  // cmp FIXME prefetchers
         (USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path)) {

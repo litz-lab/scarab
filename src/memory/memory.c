@@ -622,6 +622,12 @@ void mem_free_req(Mem_Req* req) {
     ASSERT((req)->proc_id, FALSE);                                                    \
   } while (0)
 
+/* A prefetch made by a prefetch or write-hint op rather than by a hardware prefetcher. */
+static inline Flag mem_req_is_sw_prefetch(Mem_Req* req) {
+  Op** op = list_get_head(&req->op_ptrs);
+  return op && ((*op)->uop->mem_type == MEM_PF || (*op)->uop->mem_type == MEM_WH);
+}
+
 /* A request a level admits becomes ready after the trip down and the next level's lookup.
    A first-level demand, or a software prefetch an op looked up in the dcache stage, also
    pays the rest of its own cache's latency here; a hardware prefetch already waited it out
@@ -634,7 +640,7 @@ static inline Counter mem_level_latency(Mshr* mshr, Mem_Req* req) {
     case MSHR_DCACHE:
     case MSHR_DCACHE_WB:
       latency = DCQ_TO_MLCQ_TRANSFER_LATENCY + MLC_CYCLES;
-      if (!mem_req_type_is_prefetch(req->type) || req->op_count)
+      if (!mem_req_type_is_prefetch(req->type) || mem_req_is_sw_prefetch(req))
         latency += DCACHE_CYCLES - 1;
       break;
     case MSHR_MLC:

@@ -366,6 +366,7 @@ void init_uncores(void) {
   /* Initialize MLC cache (shared only for now) */
   Ported_Cache* mlc = (Ported_Cache*)malloc(sizeof(Ported_Cache));
   init_cache(&mlc->cache, "MLC_CACHE", MLC_SIZE, MLC_ASSOC, MLC_LINE_SIZE, sizeof(MLC_Data), MLC_CACHE_REPL_POLICY);
+  mlc->cache.repl_miss_by_report = TRUE; /* see mem_report_miss() */
   mlc->num_banks = MLC_BANKS;
   mlc->ports = (Ports*)malloc(sizeof(Ports) * mlc->num_banks);
   for (uns ii = 0; ii < mlc->num_banks; ii++) {
@@ -387,6 +388,7 @@ void init_uncores(void) {
       char buf[MAX_STR_LENGTH + 1];
       sprintf(buf, "L1[%d]", proc_id);
       init_cache(&l1->cache, buf, L1_SIZE / NUM_CORES, L1_ASSOC, L1_LINE_SIZE, sizeof(L1_Data), L1_CACHE_REPL_POLICY);
+      l1->cache.repl_miss_by_report = TRUE; /* see mem_report_miss() */
 
       l1->num_banks = L1_BANKS / NUM_CORES;
       l1->ports = (Ports*)malloc(sizeof(Ports) * l1->num_banks);
@@ -400,6 +402,7 @@ void init_uncores(void) {
   } else {
     Ported_Cache* l1 = (Ported_Cache*)malloc(sizeof(Ported_Cache));
     init_cache(&l1->cache, "L1_CACHE", L1_SIZE, L1_ASSOC, L1_LINE_SIZE, sizeof(L1_Data), L1_CACHE_REPL_POLICY);
+    l1->cache.repl_miss_by_report = TRUE; /* see mem_report_miss() */
     l1->num_banks = L1_BANKS;
     l1->ports = (Ports*)malloc(sizeof(Ports) * l1->num_banks);
     for (uns ii = 0; ii < l1->num_banks; ii++) {
@@ -988,6 +991,17 @@ static inline Flag fill_req_is_wb(Mem_Req* req) {
   return req->type == MRT_WB || req->type == MRT_WB_NODIRTY;
 }
 
+/* The MLC and LLC report their misses to the replacement policy (repl_miss_by_report in
+   cache_lib.h) instead of letting each insert count as one, because their inserts are not their
+   misses: under an exclusive hierarchy a level is filled by demotions from the level above, which
+   arrive whether this level hit or missed, and in any hierarchy writebacks fill it too. Each
+   request reports once per level, where it first misses there. A writeback carries a line down
+   rather than looking for one, so its miss is not reported. */
+static inline void mem_report_miss(Cache* cache, Mem_Req* req) {
+  if (!fill_req_is_wb(req))
+    cache_report_miss(cache, req->proc_id, req->addr);
+}
+
 /* Under an exclusive hierarchy these three are mutually exclusive, and each one
    knows what the others imply: a fill claimed by a cache level was asked for by that
    level, so nothing in the core is waiting on it, and a fill that reaches the dcache
@@ -1214,6 +1228,7 @@ static Flag mem_process_l1_miss_access(Mem_Req* req, Addr* line_addr, L1_Data* d
         Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->l1_bank, req->size, mem_req_state_names[req->state]);
 
   if (!req->l1_miss) {  // have we collected these statistics already?
+    mem_report_miss(&L1(req->proc_id)->cache, req);
     if (req->type == MRT_DFETCH || req->type == MRT_DSTORE || req->type == MRT_IFETCH) {
       perf_pred_off_chip_effect_start(req);
       if (!req->demand_match_prefetch) {
@@ -1310,6 +1325,7 @@ static Flag mem_process_mlc_miss_access(Mem_Req* req, Addr* line_addr, MLC_Data*
 
   if (!req->mlc_miss) {  // have we marked this as MLC miss already (and thus
                          // collected the statistics)?
+    mem_report_miss(&MLC(req->proc_id)->cache, req);
     if (req->type == MRT_DPRF || req->type == MRT_IPRF || req->demand_match_prefetch) {
       STAT_EVENT(req->proc_id, MLC_PREF_REQ_MISS);
       STAT_EVENT(req->proc_id, CORE_MLC_PREF_REQ_MISS);
@@ -2689,10 +2705,12 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       case DEST_MLC:
         new_req->mlc_miss = TRUE;
         new_req->mlc_miss_cycle = cycle_count;
+        mem_report_miss(&MLC(proc_id)->cache, new_req);
         break;
       case DEST_L1:
         new_req->l1_miss = TRUE;
         new_req->l1_miss_cycle = cycle_count;
+        mem_report_miss(&L1(proc_id)->cache, new_req);
         break;
       default:
         printf("%s: unexpected destination %d\n", __func__, destination);

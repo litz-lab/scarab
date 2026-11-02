@@ -218,6 +218,7 @@ void init_cache_impl(Cache* cache, const char* name, uns cache_size, uns assoc, 
     init_cache_strategy(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
 
   cache->tag_incl_offset = FALSE;
+  cache->repl_miss_by_report = FALSE;
 }
 
 /**************************************************************************************/
@@ -1303,6 +1304,11 @@ void* cache_insert_strategy(Cache* cache, uns8 proc_id, Addr addr, Addr* line_ad
 
   DEBUG(0, "%s, %d: Insert Strategy\n", cache->name, cache->repl_policy);
 
+  // A cache inserts only after a lookup missed, so the insert stands for that miss unless the
+  // cache's owner reports misses itself (repl_miss_by_report).
+  if (!cache->repl_miss_by_report && repl_policy_func_table[policy].update_miss)
+    repl_policy_func_table[policy].update_miss(cache, proc_id, set, NULL);
+
   // update_evict -> action_repl -> update_insert
   // External func also directly call it
   new_line = repl_policy_func_table[policy].update_evict(cache, proc_id, set, &repl_index, NULL, FALSE);
@@ -1368,6 +1374,26 @@ Cache_Entry* cache_evict_strategy(Cache* cache, uns8 proc_id, uns set, uns* way)
   /* True flag indicates it is called in the external eviction */
   new_line = repl_policy_func_table[policy].update_evict(cache, proc_id, set, way, NULL, TRUE);
   return new_line;
+}
+
+/*
+  cache_report_miss
+  -- call sub internal func: update_miss
+  -- called by the owner of a cache with repl_miss_by_report set, once per lookup that missed
+*/
+void cache_report_miss(Cache* cache, uns8 proc_id, Addr addr) {
+  Addr tag, tag_full, line_addr;
+  uns set;
+  int policy;
+
+  if (cache->repl_policy < REPL_VOID)
+    return;
+  policy = cache_get_policy_index(cache->repl_policy);
+  if (policy == -1 || !repl_policy_func_table[policy].update_miss)
+    return;
+
+  set = cache_index(cache, addr, &tag, &tag_full, &line_addr);
+  repl_policy_func_table[policy].update_miss(cache, proc_id, set, NULL);
 }
 
 /**************************************************************************************/
@@ -1638,9 +1664,10 @@ void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
  *  - PSEL, a --drrip_psel_bits saturating counter, starts at its midpoint. A miss in an SRRIP
  *    leader increments it and a miss in a BRRIP leader decrements it, so PSEL's top bit set
  *    means SRRIP's leaders have been missing more, and followers then insert with BRRIP.
- *  - A miss is counted once per fill, in update_insert. Nothing is counted in update_evict,
- *    which also runs for get_next_repl_line's peek at the victim and again every time a
- *    refused fill is retried.
+ *  - Misses reach PSEL only through update_miss: from each insert, or from the cache's owner via
+ *    cache_report_miss() when it sets repl_miss_by_report (cache_lib.h). Nothing is counted in
+ *    update_evict, which also runs for get_next_repl_line's peek at the victim and again every
+ *    time a refused fill is retried.
  *  - Hits promote to RRPV 0 (nru_update_hit); the victim search is rrip_update_evict.
  *
  * One set in every four leads each policy. */
@@ -1657,6 +1684,7 @@ typedef struct Drrip_State_struct {
 void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                        Repl_Policy repl_policy);
 void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg);
+void drrip_update_miss(Cache* cache, uns8 proc_id, uns set, void* arg);
 
 static inline Drrip_State* drrip_state(Cache* cache) {
   return (Drrip_State*)cache->predictor;
@@ -1684,19 +1712,27 @@ void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc
   cache->predictor = s;
 }
 
+void drrip_update_miss(Cache* cache, uns8 proc_id, uns set, void* arg) {
+  Drrip_State* s = drrip_state(cache);
+
+  if (s->role[set] == DRRIP_LEADER_SRRIP) {
+    if (s->psel < s->psel_max)
+      s->psel++;
+  } else if (s->role[set] == DRRIP_LEADER_BRRIP) {
+    if (s->psel > 0)
+      s->psel--;
+  }
+}
+
 void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg) {
   Drrip_State* s = drrip_state(cache);
   Flag use_brrip;
 
   switch (s->role[set]) {
     case DRRIP_LEADER_SRRIP:
-      if (s->psel < s->psel_max)
-        s->psel++;
       use_brrip = FALSE;
       break;
     case DRRIP_LEADER_BRRIP:
-      if (s->psel > 0)
-        s->psel--;
       use_brrip = TRUE;
       break;
     default:
@@ -1809,13 +1845,13 @@ Cache_Entry* ship_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, vo
 
 // clang-format off
 struct repl_policy_func repl_policy_func_table[NUM_REPL] = {
-  { REPL_LRU_REF, general_action_init,  general_action_repl,  lru_update_hit,     lru_update_insert,    lru_update_evict    },
-  { REPL_NRU,     general_action_init,  general_action_repl,  nru_update_hit,     nru_update_insert,    nru_update_evict    },
-  { REPL_SRRIP,   general_action_init,  general_action_repl,  nru_update_hit,     srrip_update_insert,  rrip_update_evict   },
-  { REPL_BRRIP,   brrip_action_init,    general_action_repl,  nru_update_hit,     brrip_update_insert,  rrip_update_evict   },
-  { REPL_DRRIP,   drrip_action_init,    general_action_repl,  nru_update_hit,     drrip_update_insert,  rrip_update_evict   },
-  { REPL_SHIP,    ship_action_init,     general_action_repl,  ship_update_hit,    ship_update_insert,   ship_update_evict   },
-  { REPL_VOID,    NULL,                 NULL,                 NULL,               NULL,                 NULL                },
+  { REPL_LRU_REF, general_action_init,  general_action_repl,  lru_update_hit,     lru_update_insert,    lru_update_evict,   NULL              },
+  { REPL_NRU,     general_action_init,  general_action_repl,  nru_update_hit,     nru_update_insert,    nru_update_evict,   NULL              },
+  { REPL_SRRIP,   general_action_init,  general_action_repl,  nru_update_hit,     srrip_update_insert,  rrip_update_evict,  NULL              },
+  { REPL_BRRIP,   brrip_action_init,    general_action_repl,  nru_update_hit,     brrip_update_insert,  rrip_update_evict,  NULL              },
+  { REPL_DRRIP,   drrip_action_init,    general_action_repl,  nru_update_hit,     drrip_update_insert,  rrip_update_evict,  drrip_update_miss },
+  { REPL_SHIP,    ship_action_init,     general_action_repl,  ship_update_hit,    ship_update_insert,   ship_update_evict,  NULL              },
+  { REPL_VOID,    NULL,                 NULL,                 NULL,               NULL,                 NULL,               NULL              },
 };
 // clang-format on
 

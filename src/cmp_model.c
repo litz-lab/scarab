@@ -439,6 +439,7 @@ void warmup_uncore(uns proc_id, Addr addr, Flag write) {
   } else {  // miss
     Addr repl_line_addr;
     Flag repl_line_valid;
+    cache_report_miss(l1_cache, proc_id, addr); /* the LLC reports its misses: see memory.c */
     get_next_repl_line(l1_cache, proc_id, addr, &repl_line_addr, &repl_line_valid);
     STAT_EVENT(proc_id, NORESET_L1_FILL);
     STAT_EVENT(proc_id, NORESET_L1_FILL_NONPREF);

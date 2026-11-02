@@ -414,6 +414,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   }
   for (uns ii = 0; ii < info->table_info.num_dest_regs; ii++) {
     op->dst_val[ii] = trace_uop->dests[ii].val;
+    op->dst_val_valid[ii] = trace_uop->dests[ii].val_valid;
   }
 
   if (op->uop->op_type == OP_CF) {

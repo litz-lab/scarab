@@ -155,12 +155,12 @@ static void mem_merge_at_level(Mshr* level, Mem_Req* req);
 
 static Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns size, Destination destination,
                                         uns delay, Op* op, Flag done_func(Mem_Req*), Counter unique_num,
-                                        Flag demand_hit_prefetch, Counter new_priority);
+                                        Flag demand_hit_prefetch, Counter new_priority, Flag fdip_off);
 
 static inline Mem_Req* mem_alloc_req(uns proc_id, Mem_Req_Type type);
 
 static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
-                             Flag done_func(Mem_Req*), Counter unique_num, Counter new_priority);
+                             Flag done_func(Mem_Req*), Counter unique_num, Counter new_priority, Flag fdip_off);
 
 static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr);
 
@@ -1845,6 +1845,9 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag update_
   STAT_EVENT(proc_id, block + 1);
   Addr dummy_line_addr;
   *hit = cache_access(cache, line_addr, &dummy_line_addr, update_repl) != NULL;
+  /* icache_line_info shadows the icache for wrong-path stats (and EIP); access it whenever the icache is */
+  if (dest == DEST_ICACHE && WP_COLLECT_STATS)
+    cache_access(&cmp_model.icache_stage[proc_id].icache_line_info, line_addr, &dummy_line_addr, update_repl);
 
   /* A probe takes the bank and reads the array, so it counts as an access to that
      level -- but only as a prefetch one. Demand misses are never caused by a prefetch. */
@@ -2072,6 +2075,8 @@ static inline void mem_record_late_prefetch(Mem_Req* pref) {
   switch (pref->destination) {
     case DEST_NONE:
       return; /* issued outside the prefetch framework: no target level to charge */
+    case DEST_ICACHE:
+      return; /* FDIP and EIP count their own late prefetches */
     case DEST_DCACHE:
       late = DCACHE_PREF_LATE;
       cycles = DCACHE_LATE_PREF_CYCLES;
@@ -2136,7 +2141,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
                                  uns delay, Op* op, Flag done_func(Mem_Req*),
                                  Counter unique_num, /* This counter is used
                                                         when op is NULL */
-                                 Flag demand_hit_prefetch, Counter new_priority) {
+                                 Flag demand_hit_prefetch, Counter new_priority, Flag fdip_off) {
   Flag higher_priority;
   Counter old_priority = req->priority;
   Op** op_ptr = NULL;
@@ -2292,7 +2297,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
   if ((mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF) ||
        mem_req_is_type(req, MRT_FDIPPRFALT)) &&
       (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF || type == MRT_FDIPPRFALT) &&
-      req->fdip_pref_off_path != fdip_off_path(req->proc_id, 0))
+      req->fdip_pref_off_path != fdip_off)
     req->fdip_pref_off_path = 2;
 
   update_mem_req_occupancy_counter(old_type, -1);
@@ -2344,7 +2349,7 @@ static inline Mem_Req* mem_alloc_req(uns proc_id, Mem_Req_Type type) {
 
 static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                              Flag done_func(Mem_Req*), Counter unique_num, /* This counter is used when op is NULL */
-                             Counter new_priority) {
+                             Counter new_priority, Flag fdip_off) {
   STAT_EVENT(proc_id, MEM_REQ_IFETCH + MIN2(type, MRT_WB_NODIRTY));
   STAT_EVENT(proc_id, MEM_REQ_BUFFER_MISS);
 
@@ -2444,9 +2449,9 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, uns8 proc_id, 
   if (new_req->type == MRT_IFETCH && icache_off_path())
     new_req->off_path = TRUE;
   // All oracle (correct-path) prefetches are on path.
-  if (((new_req->type == MRT_UOCPRF && !UOC_ORACLE_PREF) || new_req->type == MRT_FDIPPRFON ||
-       new_req->type == MRT_FDIPPRFOFF || new_req->type == MRT_FDIPPRFALT) &&
-      fdip_off_path(proc_id, 0))
+  if ((new_req->type == MRT_UOCPRF && !UOC_ORACLE_PREF && fdip_off_path(proc_id, 0)) ||
+      ((new_req->type == MRT_FDIPPRFON || new_req->type == MRT_FDIPPRFOFF || new_req->type == MRT_FDIPPRFALT) &&
+       fdip_off))
     new_req->off_path = TRUE;
 
   STAT_EVENT(proc_id, MEM_REQ_INIT_IFETCH + type);
@@ -2598,7 +2603,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
           Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
           op ? (int)op->op_num : -1, op ? op->off_path : FALSE);
     return (mem_adjust_matching_request(matching_req, type, addr, size, destination, delay, op, done_func, unique_num,
-                                        demand_hit_prefetch, new_priority));
+                                        demand_hit_prefetch, new_priority, pref_info && pref_info->fdip_off_path));
   }
 
   /* Step 2.5: anything else for the line waits on its entry; a new line needs a free
@@ -2663,7 +2668,8 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
   /* Step 5: Allocate a new request buffer -- new_req */
 
-  mem_init_new_req(new_req, type, proc_id, addr, size, delay, op, done_func, unique_num, new_priority);
+  mem_init_new_req(new_req, type, proc_id, addr, size, delay, op, done_func, unique_num, new_priority,
+                   pref_info && pref_info->fdip_off_path);
 
   /* Step 6: Insert the request into the appropriate MSHR file if it is not already there */
 
@@ -2675,11 +2681,8 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   new_req->bw_prefetch = (pref_info ? pref_info->bw_limited : FALSE);
   new_req->destination = destination;
   if (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF || type == MRT_FDIPPRFALT) {
-    if (fdip_off_path(proc_id, 0))
-      new_req->fdip_pref_off_path = 1;
-    else
-      new_req->fdip_pref_off_path = 0;
-    new_req->ghist = g_bp_data->global_hist;
+    new_req->fdip_pref_off_path = pref_info->fdip_off_path;
+    new_req->ghist = pref_info->fdip_ghist;
   }
   new_req->cyc_hit_by_demand_load = 0;
   if (PREF_FRAMEWORK_ON) {
@@ -2694,8 +2697,9 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
      miss here; l1_fill_line subtracts l1_miss_cycle unconditionally. */
   if (probed) {
     switch (destination) {
+      case DEST_ICACHE:
       case DEST_DCACHE:
-        break; /* a dcache miss is not tracked on the request */
+        break; /* a first-level miss is not tracked on the request */
       case DEST_MLC:
         new_req->mlc_miss = TRUE;
         new_req->mlc_miss_cycle = cycle_count;
@@ -2760,7 +2764,7 @@ static Flag new_mem_wb_req(Mshr* target, Mem_Req_Type type, uns8 proc_id, Addr a
 
   Mem_Req* new_req = mem_alloc_req(proc_id, type);
   mem_init_new_req(new_req, type, proc_id, addr, size, delay, op, done_func, unique_num,
-                   Mem_Req_Priority_Offset[type] + freq_cycle_count(FREQ_DOMAIN_L1));
+                   Mem_Req_Priority_Offset[type] + freq_cycle_count(FREQ_DOMAIN_L1), FALSE);
   new_req->wb_used_onpath = used_onpath;
   /* A writeback is inserted at the level it goes to, which is what an exclusive
      hierarchy's fill_inserts_at_* read. */

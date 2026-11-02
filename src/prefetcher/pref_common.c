@@ -53,6 +53,7 @@
 #include "prefetcher//pref_stream.h"
 #include "prefetcher//pref_stride.h"
 #include "prefetcher//pref_stridepc.h"
+#include "prefetcher/fdip.h"
 #include "prefetcher/l2l1pref.h"
 #include "prefetcher/pref_2dc.h"
 #include "prefetcher/pref_ghb.h"
@@ -61,6 +62,7 @@
 
 #include "cmp_model.h"
 #include "dcache_stage.h"
+#include "icache_stage.h"
 #include "op.h"
 #include "statistics.h"
 /**************************************************************************************
@@ -516,7 +518,8 @@ static uns pref_num_to(HWP_Type dest) {
 
 /* Appends a candidate to a level's queue, the level's lookup pipeline. A prefetcher inserts
    at most PREF_INSERT_PER_CYCLE a cycle at a level, and the queue holds (latency + 1) *
-   PREF_QUEUE_PER_CYCLE entries per prefetcher sending to it; further candidates are dropped.
+   PREF_QUEUE_PER_CYCLE entries per prefetcher sending to it (the icache's holds
+   PREF_ICACHE_QUEUE_SIZE); further candidates are dropped.
    With PREF_RETRY a blocked head also holds the queue until it drains. */
 static Flag pref_queue_add(List* q, HWP_Type dest, uns latency, Pref_Mem_Req* req, Stat_Enum full_stat) {
   /* Per core, level and prefetcher: the cycle of its last insertion and how many it made then. */
@@ -532,7 +535,8 @@ static Flag pref_queue_add(List* q, HWP_Type dest, uns latency, Pref_Mem_Req* re
     STAT_EVENT_ALL(full_stat);
     return FALSE;
   }
-  if (q->count >= (int)((latency + 1) * PREF_QUEUE_PER_CYCLE * pref_num_to(dest))) {
+  uns size = dest == PREF_TO_ICACHE ? PREF_ICACHE_QUEUE_SIZE : (latency + 1) * PREF_QUEUE_PER_CYCLE * pref_num_to(dest);
+  if (q->count >= (int)size) {
     STAT_EVENT_ALL(full_stat);
     return FALSE;
   }
@@ -552,6 +556,22 @@ Flag pref_addto_dl0req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) 
                       .rdy_cycle = cycle_count + DCACHE_CYCLES};
   return pref_queue_add(&pref.cores[proc_id]->dl0req_queue, PREF_TO_DCACHE, DCACHE_CYCLES, &req,
                         PREF_DL0REQ_QUEUE_FULL);
+}
+
+/* An instruction prefetch (FDIP, per branch predictor) to the icache. Its icache lookup
+   resolves after the icache's latency, as a demand fetch's does. */
+Flag pref_addto_icache_queue(uns8 proc_id, Addr line_addr, uns8 bp_id, Mem_Req_Type type, Flag off_path,
+                             Flag conf_off_path, uns32 ghist) {
+  Pref_Mem_Req req = {.proc_id = proc_id,
+                      .line_addr = line_addr >> LOG2(ICACHE_LINE_SIZE) << LOG2(ICACHE_LINE_SIZE),
+                      .global_hist = ghist,
+                      .prefetcher_id = bp_id,
+                      .rdy_cycle = cycle_count + ICACHE_LATENCY,
+                      .type = type,
+                      .off_path = off_path,
+                      .conf_off_path = conf_off_path};
+  return pref_queue_add(&cmp_model.icache_stage[proc_id].pref_queue, PREF_TO_ICACHE, ICACHE_LATENCY, &req,
+                        PREF_ICREQ_QUEUE_FULL);
 }
 
 Flag pref_addto_umlc_req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) {
@@ -691,7 +711,8 @@ Flag pref_addto_dest_req_queue(uns8 proc_id, HWP_Type dest, Addr line_index, uns
 Pref_Issue_Result pref_issue(uns8 proc_id, Destination dest, Addr line_addr, Mem_Req_Type type, uns line_size,
                              uns delay, Flag (*fill)(Mem_Req*), Pref_Req_Info* info) {
   Flag hit = FALSE;
-  if (!mem_pref_probe(proc_id, dest, line_addr, FALSE, &hit))
+  /* An icache prefetch's hit refreshes the line, as FDIP's probe of the fetch path always has. */
+  if (!mem_pref_probe(proc_id, dest, line_addr, dest == DEST_ICACHE, &hit))
     return PREF_ISSUE_BANK_BUSY;
   if (hit)
     return PREF_ISSUE_HIT;
@@ -718,6 +739,14 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
   Flag (*fill)(Mem_Req*) = NULL;
   Stat_Enum drop_stat = 0, sent_stat = 0, stall_stat = 0, bank_stat = 0;
   switch (dest) {
+    case DEST_ICACHE:
+      line_size = ICACHE_LINE_SIZE;
+      fill = instr_fill_line;
+      drop_stat = PREF_ICREQ_QUEUE_HIT_DROP;
+      sent_stat = PREF_ICREQ_QUEUE_SENTREQ;
+      stall_stat = PREF_ICREQ_SEND_QUEUE_STALL;
+      bank_stat = PREF_ICREQ_BANK_DROP;
+      break;
     case DEST_DCACHE:
       line_size = DCACHE_LINE_SIZE;
       delay = 1;
@@ -756,16 +785,27 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
     if (cycle_count < pf->rdy_cycle)
       break;
 
+    Flag icache = dest == DEST_ICACHE;
     Pref_Req_Info info = {0};
-    info.prefetcher_id = pf->prefetcher_id;
-    info.distance = pf->distance;
-    info.loadPC = pf->loadPC;
-    info.global_hist = pf->global_hist;
-    info.bw_limited = pf->bw_limited;
-    info.dest = dest;
-    info.probed = TRUE;
+    if (icache) {
+      /* An FDIP prefetch carries its walk's path and history, not data-prefetcher info. */
+      info.fdip_off_path = pf->off_path;
+      info.fdip_ghist = pf->global_hist;
+      info.dest = dest;
+      info.probed = TRUE;
+    } else {
+      info.prefetcher_id = pf->prefetcher_id;
+      info.distance = pf->distance;
+      info.loadPC = pf->loadPC;
+      info.global_hist = pf->global_hist;
+      info.bw_limited = pf->bw_limited;
+      info.dest = dest;
+      info.probed = TRUE;
+    }
     Flag blocked = FALSE; /* no bank port or MSHR this cycle */
-    switch (pref_issue(pf_proc_id, dest, pf->line_addr, MRT_DPRF, line_size, delay, fill, &info)) {
+    Pref_Issue_Result result =
+        pref_issue(pf_proc_id, dest, pf->line_addr, icache ? pf->type : MRT_DPRF, line_size, delay, fill, &info);
+    switch (result) {
       case PREF_ISSUE_BANK_BUSY:
         STAT_EVENT(pf_proc_id, bank_stat);
         blocked = TRUE;
@@ -782,9 +822,26 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
     }
     if (blocked && PREF_RETRY)
       break; /* the head retries next cycle; the rest wait behind it */
+    if (icache)
+      fdip_pref_issued(pf_proc_id, pf->prefetcher_id, pf->line_addr, pf->off_path, pf->conf_off_path, result);
     q->current = e;
     dl_list_remove_current(q);
   }
+}
+
+/* The icache queue, after the cycle's demand fetch and FDIP walk. */
+void pref_update_icache(uns8 proc_id) {
+  pref_drain_queue(proc_id, &cmp_model.icache_stage[proc_id].pref_queue, DEST_ICACHE);
+}
+
+/* With PREF_ICACHE_FLUSH_ON_RECOVERY a recovery squashes the icache queue's lookups in
+   flight, as it does the fetch's. */
+void pref_flush_icache(uns8 proc_id) {
+  if (!PREF_ICACHE_FLUSH_ON_RECOVERY)
+    return;
+  List* q = &cmp_model.icache_stage[proc_id].pref_queue;
+  INC_STAT_EVENT(proc_id, PREF_ICREQ_RECOVERY_FLUSH, q->count);
+  clear_list(q);
 }
 
 /* MLC and LLC queues, after their demand lookups. */

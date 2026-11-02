@@ -272,6 +272,7 @@ void cmp_cores(void) {
       }
       cmp_set_all_data(proc_id, 0);
       update_eip();
+      pref_update_icache(proc_id);
 
       cmp_measure_chip_util();
     }

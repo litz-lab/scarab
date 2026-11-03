@@ -2740,13 +2740,16 @@ static Flag new_mem_wb_req(Mshr* target, Mem_Req_Type type, uns8 proc_id, Addr a
   ASSERTM(proc_id, proc_id == get_proc_id_from_cmp_addr(addr), "Proc ID (%d) does not match proc ID in address (%d)!\n",
           proc_id, get_proc_id_from_cmp_addr(addr));
 
-  /* A line is written back once: until this writeback leaves the file, the line is
-     not in the cache to be dirtied and evicted again. */
-  ASSERTM(proc_id, !mshr_line(target, addr), "%s: a second writeback to line 0x%s\n", mshr_name(target),
-          hexstr64s(addr));
-  if (mshr_full(target, addr)) {
-    STAT_EVENT(proc_id, mem_reject_stat(target));
-    return FALSE;
+  /* The icache and the dcache both demote through DCACHE_WB and can hold the same
+     line under an exclusive hierarchy, so a line can be written back twice while
+     the first is still here. Fold the second into the first; a dirty one makes it dirty. */
+  Mshr_Line* pending = mshr_line(target, addr);
+  if (pending) {
+    ASSERTM(proc_id, target->file == MSHR_DCACHE_WB, "%s: a second writeback to line 0x%s\n", mshr_name(target),
+            hexstr64s(addr));
+    if (type == MRT_WB)
+      mshr_line_first(pending)->type = MRT_WB;
+    return TRUE;
   }
 
   Mem_Req* new_req = mem_alloc_req(proc_id, type);

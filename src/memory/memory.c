@@ -1829,7 +1829,8 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag update_
   }
 
   /* The dcache's ports read whole lines, shared by reads of the same line this cycle. */
-  if (!(dest == DEST_DCACHE ? get_read_port_line(ports, line_addr) : get_read_port(ports))) {
+  if (!(dest == DEST_ICACHE && PREF_ICACHE_NO_PORT) &&
+      !(dest == DEST_DCACHE ? get_read_port_line(ports, line_addr) : get_read_port(ports))) {
     STAT_EVENT(proc_id, block);
     return FALSE;
   }

@@ -80,6 +80,8 @@ DEF_PARAM( pref_icache_queue_size              , PREF_ICACHE_QUEUE_SIZE         
 /* A prefetch with no bank port or MSHR this cycle stays at its queue's head and retries
    next cycle (dropped when off) */
 DEF_PARAM( pref_retry                          , PREF_RETRY                          , Flag            , Flag               , TRUE      ,    )
+/* Experiment: icache prefetch lookups take no bank port */
+DEF_PARAM( pref_icache_no_port                 , PREF_ICACHE_NO_PORT                 , Flag            , Flag               , FALSE     ,    )
 /* A recovery drops the icache prefetch queue's entries */
 DEF_PARAM( pref_icache_flush_on_recovery       , PREF_ICACHE_FLUSH_ON_RECOVERY       , Flag            , Flag               , FALSE     ,    )
 DEF_PARAM( pref_shared_queues                  , PREF_SHARED_QUEUES                  , Flag            , Flag               , TRUE     ,    )

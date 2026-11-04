@@ -49,6 +49,7 @@ extern "C" {
 #include "exec_stage.h"
 #include "map_rename.h"
 #include "node_stage.h"
+#include "reg_port.h"
 }
 
 #include <algorithm>
@@ -541,6 +542,8 @@ void SelectLogic::collect_issued_op_stats(Op* op, IssueQueueStats& stats_across_
     STAT_EVENT(op->proc_id, ISSUE_QUEUE_OP_ISSUED_REG_READ_TOTAL);
     if (stats_across_queue.lookup_and_set_reg_read(stats_across_queue.issued_reg_ids[reg_type], reg_id)) {
       STAT_EVENT(op->proc_id, ISSUE_QUEUE_OP_ISSUED_REG_READ_SHARED);
+      STAT_EVENT(op->proc_id, ISSUE_QUEUE_OP_ISSUED_REG_READ_SHARED_REG_GPR +
+                                  reg_port_get_reg_class(op->src_reg_id[ii][REG_TABLE_TYPE_ARCHITECTURAL]));
     }
   }
 }
@@ -1175,10 +1178,12 @@ void alloc_mem_issue_queue(uns num_cores) {
   for (uns ii = 0; ii < num_cores; ii++) {
     per_core_issue_queues.emplace_back(ii);
   }
+  alloc_mem_reg_port(num_cores);
 }
 
 void set_issue_queue(uns8 proc_id) {
   issue_queues = &per_core_issue_queues[proc_id];
+  set_reg_port(proc_id);
 }
 
 void recover_issue_queue() {

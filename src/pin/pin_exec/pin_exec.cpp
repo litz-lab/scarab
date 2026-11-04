@@ -121,7 +121,7 @@ INT32 Usage() {
 #ifdef ENABLE_PINPLAY
 // PinPlay restores the pinball's pages as rwx. Put the code segments back to r-x, so a
 // wrong-path store into code faults (and is handled) instead of changing the code.
-void protect_code_segments() {
+void protect_code_segments(THREADID, CONTEXT*, INT32, VOID*) {
   for (IMG img = APP_ImgHead(); IMG_Valid(img); img = IMG_Next(img)) {
     FILE* f = fopen(IMG_Name(img).c_str(), "rb");
     if (!f) continue;

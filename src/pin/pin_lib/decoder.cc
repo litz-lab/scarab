@@ -243,8 +243,7 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
   }
 
   // Build the compressed op at IPOINT_BEFORE (dst values not yet known).
-  INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)create_compressed_op,
-                 IARG_INST_PTR, IARG_PTR, info, IARG_END);
+  INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)create_compressed_op, IARG_INST_PTR, IARG_PTR, info, IARG_END);
 }
 
 void create_compressed_op_after(ADDRINT iaddr) {

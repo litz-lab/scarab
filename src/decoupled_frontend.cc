@@ -137,6 +137,14 @@ Op* decoupled_fe_ftq_iter_get_next(Decoupled_FE* dfe, uns iter_idx, bool* end_of
   return dfe->ftq_iter_get_next(iter_idx, end_of_ft);
 }
 
+FT* decoupled_fe_ftq_iter_ft(Decoupled_FE* dfe, uns iter_idx) {
+  return dfe->ftq_iter_ft(iter_idx);
+}
+
+FT* decoupled_fe_ftq_iter_next_ft(Decoupled_FE* dfe, uns iter_idx) {
+  return dfe->ftq_iter_next_ft(iter_idx);
+}
+
 /* Returns iter flattened offset from the start of the FTQ, this offset gets incremented
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */
@@ -705,7 +713,7 @@ Op* Decoupled_FE::ftq_iter_get(uns iter_idx, bool* end_of_ft) {
   // if FTQ is empty or if iter has seen all FTs
   if (ftq.empty() || iter->ft_pos == ftq.size()) {
     if (ftq.empty())
-      ASSERT(proc_id, iter[iter_idx].ft_pos == 0 && iter[iter_idx].op_pos == 0 && iter[iter_idx].flattened_op_pos == 0);
+      ASSERT(proc_id, iter->ft_pos == 0 && iter->op_pos == 0 && iter->flattened_op_pos == 0);
     return NULL;
   }
 
@@ -743,6 +751,20 @@ Op* Decoupled_FE::ftq_iter_get_next(uns iter_idx, bool* end_of_ft) {
     iter->flattened_op_pos++;
   }
   return ftq_iter_get(iter_idx, end_of_ft);
+}
+
+FT* Decoupled_FE::ftq_iter_ft(uns iter_idx) {
+  decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
+  return iter->ft_pos < ftq.size() ? ftq.at(iter->ft_pos) : nullptr;
+}
+
+FT* Decoupled_FE::ftq_iter_next_ft(uns iter_idx) {
+  decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
+  ASSERT(proc_id, iter->ft_pos < ftq.size());
+  iter->flattened_op_pos += ftq.at(iter->ft_pos)->ops.size() - iter->op_pos;
+  iter->ft_pos++;
+  iter->op_pos = 0;
+  return ftq_iter_ft(iter_idx);
 }
 
 uint64_t Decoupled_FE::ftq_iter_offset(uns iter_idx) {

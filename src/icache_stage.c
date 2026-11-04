@@ -148,6 +148,7 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   ASSERT(proc_id, IC_ISSUE_WIDTH);
   ic->sd.max_op_count = IC_ISSUE_WIDTH;
   ic->sd.ops = (Op**)malloc(sizeof(Op*) * IC_ISSUE_WIDTH);
+  init_list(&ic->lookups, "IC LOOKUPS", sizeof(Icache_Lookup), TRUE);
   ft_op_buffer_init(ic);
   ft_op_buffer_reset(ic);
 
@@ -182,6 +183,11 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   memset(ic->rand_wb_state, 0, NUM_ELEMENTS(ic->rand_wb_state));
 }
 
+/* The icache follows the main FTQ, as FDIP does, to start each FT's lookup. */
+void init_icache_ftq_iter(uns8 proc_id) {
+  ic->dfe = decoupled_fe_new_ftq_iter(proc_id, MAIN_BP, &ic->ftq_iter);
+}
+
 /**************************************************************************************/
 /* get_current_stage_data: */
 
@@ -205,6 +211,7 @@ void reset_icache_stage() {
     cur_data->ops[ii] = NULL;
   cur_data->op_count = 0;
 
+  clear_list(&ic->lookups);
   ic->off_path = FALSE;
   ic->back_on_path = FALSE;
   ic->fetch_barrier_pending = FALSE;
@@ -224,6 +231,7 @@ void reset_all_ops_icache_stage() {
     cur_data->ops[ii] = NULL;
   cur_data->op_count = 0;
 
+  clear_list(&ic->lookups);
   ic->off_path = FALSE;
   ic->back_on_path = FALSE;
   ic->fetch_barrier_pending = FALSE;
@@ -244,6 +252,13 @@ void recover_icache_stage() {
         hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
 
   recover_ft_op_buffer(ic);
+  /* The FTQ keeps a prefix of its FTs and moves ic->ftq_iter back to the first FT it flushed,
+     so the iterator's FT offset counts the started lookups that survive. */
+  while (list_get_count(&ic->lookups) > (int)decoupled_fe_ftq_iter_ft_offset(ic->dfe, ic->ftq_iter)) {
+    /* A recovery flushes only off-path FTs. */
+    ASSERT(ic->proc_id, ((Icache_Lookup*)list_get_tail(&ic->lookups))->off_path);
+    dl_list_remove_tail(&ic->lookups);
+  }
 
   cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {
@@ -489,11 +504,17 @@ Flag mem_req_on_icache_miss() {
 FT_Arbitration_Result ft_arbitration() {
   ASSERT(ic->proc_id, !ft_op_buffer_can_fetch_op(ic));
 
-  FT* ft = decoupled_fe_pop_ft();
+  /* Only an FT at the end of the icache pipeline leaves the FTQ; before that the pipeline is filling. */
+  Icache_Lookup* lookup = (Icache_Lookup*)list_get_head(&ic->lookups);
+  if (lookup && cycle_count < lookup->done)
+    return FT_IC_PIPE_FILLING;
+  FT* ft = lookup ? decoupled_fe_pop_ft() : NULL;
   if (!ft) {
     return FT_UNAVAILABLE;
   } else {
     FT_Info ft_info = ft_get_ft_info(ft);
+    ASSERT(ic->proc_id, ft_info.dynamic_info.FT_id == lookup->ft_id);
+    dl_list_remove_head(&ic->lookups);
     // set the current fetch address
     ic->fetch_addr = ft_info.static_info.start;
     ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr);
@@ -556,7 +577,8 @@ FT_Arbitration_Result ft_arbitration() {
         STAT_EVENT(ic->proc_id, FT_UOP_CACHE_MISS_ICACHE_MISS_OFF_PATH);
       }
       icache_miss_events();
-      ic->miss_lookup_done = cycle_count + ICACHE_LATENCY;
+      /* The miss goes down when a hit's data would enter decode, the cycle after the lookup. */
+      ic->miss_send = cycle_count + 1;
       ic->icache_miss_fulfilled = FALSE;
 
       ft_op_buffer_fill_from_ft(ic, ft);
@@ -569,12 +591,12 @@ FT_Arbitration_Result ft_arbitration() {
 Icache_State icache_mem_req_actions(Break_Reason* break_fetch) {
   DEBUG(ic->proc_id, "Icache mem req on op_num:%s @ 0x%s\n", unsstr64(op_count[ic->proc_id]),
         hexstr64s(ic->fetch_addr));
-  /* The miss goes down only once its icache lookup is done; a fill meanwhile serves it. */
+  /* A fill that arrived meanwhile serves it. */
   if (ic->icache_miss_fulfilled) {
     *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
     return ICACHE_SERVING;
   }
-  if (cycle_count < ic->miss_lookup_done) {
+  if (cycle_count < ic->miss_send) {
     *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
     return ICACHE_MEM_REQ;
   }
@@ -680,6 +702,9 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
         case FT_UNAVAILABLE:
           *break_fetch = BREAK_FT_UNAVAILABLE;
           return ICACHE_STAGE_RESTEER;
+        case FT_IC_PIPE_FILLING:
+          *break_fetch = BREAK_ICACHE_PIPE_FILL;
+          return ICACHE_STAGE_RESTEER;
         case FT_MISS_BOTH:
           return icache_mem_req_actions(break_fetch);
         case FT_HIT_ICACHE:
@@ -779,6 +804,9 @@ Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
         case FT_UNAVAILABLE:
           *break_fetch = BREAK_FT_UNAVAILABLE;
           return ICACHE_STAGE_RESTEER;
+        case FT_IC_PIPE_FILLING:
+          *break_fetch = BREAK_ICACHE_PIPE_FILL;
+          return ICACHE_STAGE_RESTEER;
         case FT_MISS_BOTH:
           return icache_mem_req_actions(break_fetch);
         case FT_HIT_ICACHE:
@@ -835,6 +863,10 @@ void execute_coupled_FSM() {
       case FT_UNAVAILABLE:
         ic->next_state = ICACHE_STAGE_RESTEER;
         break_fetch = BREAK_FT_UNAVAILABLE;
+        break;
+      case FT_IC_PIPE_FILLING:
+        ic->next_state = ICACHE_STAGE_RESTEER;
+        break_fetch = BREAK_ICACHE_PIPE_FILL;
         break;
       case FT_MISS_BOTH:
         ic->next_state = icache_mem_req_actions(&break_fetch);
@@ -908,6 +940,17 @@ void execute_coupled_FSM() {
 /* icache_cycle: */
 
 void update_icache_stage() {
+  /* The icache starts the lookup of each FT that reaches it, up to ICACHE_LATENCY in flight;
+     it is done ICACHE_LATENCY - 1 cycles later, when ft_arbitration may take the FT. An FT
+     the uop cache holds needs no icache lookup. */
+  FT* ft;
+  while (list_get_count(&ic->lookups) < (int)ICACHE_LATENCY && (ft = decoupled_fe_ftq_iter_ft(ic->dfe, ic->ftq_iter))) {
+    FT_Info ft_info = ft_get_ft_info(ft);
+    Flag uop_hit = UOP_CACHE_ENABLE && uop_cache_lookup_line(ft_info.static_info.start, ft_info, FALSE);
+    *(Icache_Lookup*)dl_list_add_tail(&ic->lookups) = (Icache_Lookup){
+        ft_info.dynamic_info.FT_id, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1), ft_is_off_path(ft)};
+    decoupled_fe_ftq_iter_next_ft(ic->dfe, ic->ftq_iter);
+  }
   ic->lookups_per_cycle_count = 0;
   ic->topdown_on_path_fetched = 0;
   if (UOP_CACHE_ENABLE) {

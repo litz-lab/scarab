@@ -2751,6 +2751,10 @@ static Flag new_mem_wb_req(Mshr* target, Mem_Req_Type type, uns8 proc_id, Addr a
       mshr_line_first(pending)->type = MRT_WB;
     return TRUE;
   }
+  if (mshr_full(target, addr)) {
+    STAT_EVENT(proc_id, mem_reject_stat(target));
+    return FALSE;
+  }
 
   Mem_Req* new_req = mem_alloc_req(proc_id, type);
   mem_init_new_req(new_req, type, proc_id, addr, size, delay, op, done_func, unique_num,

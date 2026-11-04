@@ -3367,7 +3367,7 @@ DEF_STAT(  IPF_LAT_LLC        , RATIO , IPF_SERVED_LLC)
 DEF_STAT(  IPF_LAT_MEM        , RATIO , IPF_SERVED_MEM)
 DEF_STAT(  IPF_LAT_TOTAL      , RATIO , IPF_SERVED_TOTAL)
 
-/* Exclusive cache levels (--exclusive_mlc, --exclusive_llc, --exclusive_caches) line movement. */
+/* Exclusive cache levels (--exclusive_mlc, --exclusive_l1, --exclusive_caches) line movement. */
 DEF_STAT(  EXCL_DROP_UNUSED_PREF          , COUNT , NO_RATIO  )
 DEF_STAT(  EXCL_DIRTY_LLC_WRITTEN_BACK    , COUNT , NO_RATIO  )
 DEF_STAT(  EXCL_FILL_SKIPPED_MLC          , COUNT , NO_RATIO  )

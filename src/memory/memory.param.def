@@ -64,15 +64,16 @@ DEF_PARAM(mlc_cycles, MLC_CYCLES, uns, uns, 12, )
 
    exclusive_mlc: the MLC is exclusive of the dcache and icache. A core-destined demand or
    prefetch skips the MLC, and dcache/icache victims are demoted into it.
-   exclusive_llc: the LLC is exclusive of the MLC. Fills skip the LLC, and MLC victims are
-   demoted into it -- the victim-filled LLC of AMD Zen, Intel Skylake-SP onward and Arm
-   DynamIQ, all of whose L2s are filled on demand (exclusive_llc without exclusive_mlc).
+   exclusive_l1: the L1 (Scarab's LLC) is exclusive of the MLC. Fills skip the L1, and
+   MLC victims are demoted into it -- the victim-filled LLC of AMD Zen, Intel Skylake-SP
+   onward and Arm DynamIQ, all of whose L2s are filled on demand (exclusive_l1 without
+   exclusive_mlc).
    exclusive_caches: both. A line lives at exactly one level. Setting it overrides
-   exclusive_mlc and exclusive_llc; read the effective values through mem_exclusive_mlc()
-   and mem_exclusive_llc(). */
+   exclusive_mlc and exclusive_l1; read the effective values through mem_exclusive_mlc()
+   and mem_exclusive_l1(). */
 DEF_PARAM(exclusive_caches, EXCLUSIVE_CACHES, Flag, Flag, FALSE, )
 DEF_PARAM(exclusive_mlc, EXCLUSIVE_MLC, Flag, Flag, FALSE, )
-DEF_PARAM(exclusive_llc, EXCLUSIVE_LLC, Flag, Flag, FALSE, )
+DEF_PARAM(exclusive_l1, EXCLUSIVE_L1, Flag, Flag, FALSE, )
 /* With an exclusive MLC: drop a dcache victim instead of demoting it when it was
    prefetched and never demand-used, so useless prefetches do not consume MLC/LLC
    capacity on their way out. */

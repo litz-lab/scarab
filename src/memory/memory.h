@@ -214,8 +214,8 @@ static inline Flag mem_exclusive_mlc(void) {
   return EXCLUSIVE_CACHES || EXCLUSIVE_MLC;
 }
 
-static inline Flag mem_exclusive_llc(void) {
-  return EXCLUSIVE_CACHES || EXCLUSIVE_LLC;
+static inline Flag mem_exclusive_l1(void) {
+  return EXCLUSIVE_CACHES || EXCLUSIVE_L1;
 }
 
 /**************************************************************************************/

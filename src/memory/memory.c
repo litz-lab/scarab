@@ -1015,7 +1015,7 @@ static inline Flag fill_req_is_wb(Mem_Req* req) {
    for by the core, so something is. done_func is how a requester says it is waiting,
    which makes it the check. */
 static inline Flag fill_inserts_at_l1(Mem_Req* req) {
-  if (!mem_exclusive_llc())
+  if (!mem_exclusive_l1())
     return TRUE;
   Flag at_l1 = req->destination == DEST_L1;
   if (at_l1 && !fill_req_is_wb(req))
@@ -1098,8 +1098,7 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Addr* line_addr, L1_Data* data, int
     data->dirty |= (req->type == MRT_WB);
     /* Above the LLC: NONE (demand), DCACHE, ICACHE or MLC all take the line away. */
     if (req->destination < DEST_L1 && req->type != MRT_WB && req->type != MRT_WB_NODIRTY)
-      mem_invalidate_on_promote(req, &L1(req->proc_id)->cache, mem_exclusive_llc(), data->dirty,
-                                EXCL_PROMOTE_INVAL_LLC);
+      mem_invalidate_on_promote(req, &L1(req->proc_id)->cache, mem_exclusive_l1(), data->dirty, EXCL_PROMOTE_INVAL_LLC);
   }
 
   DEBUG(req->proc_id, "Mem request hit in the L1  type:%s  addr:0x%s  l1_bank:%d  size:%d\n",
@@ -1888,7 +1887,7 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
 
   /* With every level exclusive, exactly one keeps the line, which is what the
      destination is for. */
-  ASSERT(req->proc_id, !(mem_exclusive_mlc() && mem_exclusive_llc()) || fill_req_is_wb(req) ||
+  ASSERT(req->proc_id, !(mem_exclusive_mlc() && mem_exclusive_l1()) || fill_req_is_wb(req) ||
                            fill_inserts_at_l1(req) + fill_inserts_at_mlc(req) + fill_inserts_at_dcache(req) == 1);
 
   /* A read's data, or DRAM's acknowledgement of an LLC writeback: the line left the
@@ -2923,7 +2922,7 @@ Flag l1_fill_line(Mem_Req* req) {
      reached the MLC (a dcache demotion, or a demand fill if the MLC is not exclusive).
      The resident copy is the newer one and sits closer to the core, so drop this fill
      rather than make a second copy. */
-  if (mem_exclusive_llc()) {
+  if (mem_exclusive_l1()) {
     Addr dup_addr;
     MLC_Data* dup = (MLC_Data*)cache_access(&MLC(req->proc_id)->cache, req->addr, &dup_addr, FALSE);
     if (dup) {
@@ -3286,7 +3285,7 @@ Flag mlc_fill_line(Mem_Req* req) {
   }
   /* Exclusive LLC: a line the LLC already holds stays there rather than gaining a copy
      here. */
-  if (mem_exclusive_llc()) {
+  if (mem_exclusive_l1()) {
     Addr dup_addr;
     L1_Data* dup = (L1_Data*)cache_access(&L1(req->proc_id)->cache, req->addr, &dup_addr, FALSE);
     if (dup) {
@@ -3350,7 +3349,7 @@ Flag mlc_fill_line(Mem_Req* req) {
       if (!new_mem_mlc_wb_req(MRT_WB, repl_proc_id, repl_line_addr, MLC_LINE_SIZE, 1, NULL, NULL, unique_count))
         return FAILURE;
       STAT_EVENT(req->proc_id, MLC_FILL_DIRTY);
-    } else if (mem_exclusive_llc()) {
+    } else if (mem_exclusive_l1()) {
       /* Exclusive LLC: the LLC holds no copy of an MLC line, so a clean victim moves
          down too. */
       if (!new_mem_mlc_wb_req(MRT_WB_NODIRTY, repl_proc_id, repl_line_addr, MLC_LINE_SIZE, 1, NULL, NULL, unique_count))

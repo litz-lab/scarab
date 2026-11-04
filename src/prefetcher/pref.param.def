@@ -71,18 +71,16 @@ DEF_PARAM( pref_num_l1_prefetchers             , PREF_NUM_L1_PREFETCHERS        
 DEF_PARAM( pref_dcache_prefetchers             , PREF_DCACHE_PREFETCHERS             , char*           , string             , ""        ,    )
 DEF_PARAM( pref_mlc_prefetchers                , PREF_MLC_PREFETCHERS                , char*           , string             , ""        ,    )
 DEF_PARAM( pref_l1_prefetchers                 , PREF_L1_PREFETCHERS                 , char*           , string             , ""        ,    )
-DEF_PARAM( pref_dl0req_queue_size              , PREF_DL0REQ_QUEUE_SIZE              , uns             , uns                , 32        ,    )
-DEF_PARAM( pref_umlc_req_queue_size            , PREF_UMLC_REQ_QUEUE_SIZE            , uns             , uns                , 64        ,    )
-DEF_PARAM( pref_ul1req_queue_size              , PREF_UL1REQ_QUEUE_SIZE              , uns             , uns                , 128       ,    )
+/* Prefetch candidates one prefetcher may insert per cycle at a level */
+DEF_PARAM( pref_insert_per_cycle               , PREF_INSERT_PER_CYCLE               , uns             , uns                , 4         ,    )
+/* A level's queue holds (latency + 1) * this many candidates per enabled prefetcher */
+DEF_PARAM( pref_queue_per_cycle                , PREF_QUEUE_PER_CYCLE                , uns             , uns                , 2         ,    )
+/* A prefetch with no bank port or MSHR this cycle stays at its queue's head and retries
+   next cycle (dropped when off) */
+DEF_PARAM( pref_retry                          , PREF_RETRY                          , Flag            , Flag               , TRUE      ,    )
 DEF_PARAM( pref_shared_queues                  , PREF_SHARED_QUEUES                  , Flag            , Flag               , TRUE     ,    )
 DEF_PARAM( pref_dl0_miss_on                    , PREF_DL0_MISS_ON                    , Flag            , Flag               , TRUE      ,    )
 DEF_PARAM( pref_dl0_hit_on                     , PREF_DL0_HIT_ON                     , Flag            , Flag               , TRUE      ,    )
-DEF_PARAM( pref_dl0req_add_filter_on           , PREF_DL0REQ_ADD_FILTER_ON           , Flag            , Flag               , TRUE      ,    )
-DEF_PARAM( pref_umlc_req_add_filter_on         , PREF_UMLC_REQ_ADD_FILTER_ON         , Flag            , Flag               , TRUE      ,    )
-DEF_PARAM( pref_ul1req_add_filter_on           , PREF_UL1REQ_ADD_FILTER_ON           , Flag            , Flag               , TRUE      ,    )
-DEF_PARAM( pref_dl0req_queue_overwrite_on_full , PREF_DL0REQ_QUEUE_OVERWRITE_ON_FULL , Flag            , Flag               , FALSE     ,    )
-DEF_PARAM( pref_umlc_req_queue_overwrite_on_full, PREF_UMLC_REQ_QUEUE_OVERWRITE_ON_FULL, Flag          , Flag               , FALSE     ,    )
-DEF_PARAM( pref_ul1req_queue_overwrite_on_full , PREF_UL1REQ_QUEUE_OVERWRITE_ON_FULL , Flag            , Flag               , FALSE     ,    )
 
 DEF_PARAM( pref_report_pref_match_as_miss      , PREF_REPORT_PREF_MATCH_AS_MISS      , Flag            , Flag               , FALSE     ,    )
 DEF_PARAM( pref_report_pref_match_as_hit       , PREF_REPORT_PREF_MATCH_AS_HIT       , Flag            , Flag               , TRUE      ,    )
@@ -204,8 +202,3 @@ DEF_PARAM(uoc_pref                      , UOC_PREF                         , Fla
 DEF_PARAM(uoc_oracle_pref               , UOC_ORACLE_PREF                  , Flag    , Flag    , FALSE, )
 DEF_PARAM(uoc_zero_latency_pref         , UOC_ZERO_LATENCY_PREF            , Flag    , Flag    , FALSE, )
 
-// When set, a DL0 (L1D) prefetch request issues a real memory request that fills
-// the dcache on return (done_func = dcache_fill_line), instead of forwarding it to
-// the UL1 (LLC) request queue. Lets L1D-targeted prefetchers actually populate the
-// L1D. Default FALSE preserves the legacy forward-to-UL1 behavior.
-DEF_PARAM(pref_dl0_fill_dcache          , PREF_DL0_FILL_DCACHE             , Flag    , Flag    , FALSE, )

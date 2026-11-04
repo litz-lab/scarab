@@ -69,7 +69,6 @@ add_compile_options(
   "$<$<COMPILE_LANGUAGE:CXX>:${warn_cxx_flags}>"
 )
 
-add_subdirectory(ramulator)
 add_subdirectory(pin/pin_lib)
 add_subdirectory(pin/pin_exec/testing)
 
@@ -96,11 +95,23 @@ target_sources(scarab PRIVATE
   $<$<CONFIG:Debug>:${CMAKE_CURRENT_BINARY_DIR}/asan_default_options.cc>
 )
 
+# The Ramulator 2 configs (src/ramulator2/*.yaml) built into the binary, so ramulator2_config can
+# name one without a path: scarab-infra runs binaries away from the source tree.
+file(GLOB ramulator2_yamls CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/ramulator2/*.yaml)
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ramulator2_configs.cc
+  COMMAND ${CMAKE_COMMAND} -DDIR=${CMAKE_CURRENT_SOURCE_DIR}/ramulator2
+          -DOUT=${CMAKE_CURRENT_BINARY_DIR}/ramulator2_configs.cc
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/ramulator2/embed_configs.cmake
+  DEPENDS ${ramulator2_yamls} ${CMAKE_CURRENT_SOURCE_DIR}/ramulator2/embed_configs.cmake
+  VERBATIM)
+target_sources(scarab PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/ramulator2_configs.cc)
+
 target_include_directories(scarab PRIVATE .)
 
 target_link_libraries(scarab
     PRIVATE
-        ramulator
+        ramulator2
         pin_lib_for_scarab
 )
 if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})

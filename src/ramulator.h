@@ -39,11 +39,32 @@
 #define EXTERNC
 #endif
 
+/* The DRAM configuration the backend simulates, for models outside it (power, DVFS,
+   perf_pred, memview). Valid once ramulator_init has run. Timings are in DRAM cycles. */
+typedef struct Ramulator_Config_struct {
+  uns tck_fs; /* DRAM clock period in femtoseconds */
+  uns channels;
+  uns ranks; /* per channel */
+  uns banks; /* per bank group, like the ramulator_banks param */
+  uns readq_entries;
+  uns writeq_entries;
+  uns tCL;
+  uns tCWL;
+  uns tBL;
+  uns tRCD;
+  uns tRP;
+  uns tRAS;
+  uns tCCD;
+  uns tWTR;
+} Ramulator_Config;
+
 EXTERNC void ramulator_init();
 EXTERNC void ramulator_finish();
 
 EXTERNC int ramulator_send(Mem_Req* scarab_req);
 EXTERNC void ramulator_tick();
+
+EXTERNC const Ramulator_Config* ramulator_get_config();
 
 EXTERNC int ramulator_get_chip_width();
 EXTERNC int ramulator_get_chip_size();

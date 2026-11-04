@@ -1492,15 +1492,22 @@ Cache_Entry* nru_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, voi
   int ii;
   Flag found = FALSE;
 
+  /* A free way is taken before any valid line, and taking one ages nothing. (Folding this into
+     the search below as "invalid or distant" in one pass let a distant valid line in a lower way
+     beat a free way; with lines inserted at the distant value -- NRU, BRRIP, SHiP -- a set then
+     filled only as its lines were reused.) */
+  for (ii = 0; ii < cache->assoc; ii++) {
+    if (!cache->entries[set][ii].valid) {
+      *way = ii;
+      cache_debug_print_set(cache, set, *way, CACHE_EVENT_EVICT);
+      return &cache->entries[set][*way];
+    }
+  }
+
   while (!found) {
     // eviction: search the distant line whose RRPV == 1
     for (ii = 0; ii < cache->assoc; ii++) {
       Cache_Entry* entry = &cache->entries[set][ii];
-      if (!entry->valid) {
-        *way = ii;
-        found = TRUE;
-        break;
-      }
       if (entry->reference_val == NRU_DISTANT_VAL) {
         *way = ii;
         found = TRUE;
@@ -1527,7 +1534,7 @@ const static uns8 RRIP_DISTANT_VAL = (1 << RRIP_M) - 1;
 /**************************************************************************************/
 /* SRRIP */
 void srrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg);
-Cache_Entry* srrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg, Flag if_external);
+Cache_Entry* rrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg, Flag if_external);
 
 void srrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg) {
   // insertion: long interval -> RRPV = 2^M - 2
@@ -1536,19 +1543,28 @@ void srrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
   cache_debug_print_set(cache, set, way, CACHE_EVENT_INSERT);
 }
 
-Cache_Entry* srrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg, Flag if_external) {
+/* The RRIP victim search: a free way or a line at the distant RRPV, aging the set until there is one.
+   SRRIP, BRRIP, DRRIP and SHiP all evict through it; they differ only in how they insert and promote. */
+Cache_Entry* rrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg, Flag if_external) {
   int ii;
   Flag found = FALSE;
+
+  /* A free way is taken before any valid line, and taking one ages nothing. (Folding this into
+     the search below as "invalid or distant" in one pass let a distant valid line in a lower way
+     beat a free way; with lines inserted at the distant value -- NRU, BRRIP, SHiP -- a set then
+     filled only as its lines were reused.) */
+  for (ii = 0; ii < cache->assoc; ii++) {
+    if (!cache->entries[set][ii].valid) {
+      *way = ii;
+      cache_debug_print_set(cache, set, *way, CACHE_EVENT_EVICT);
+      return &cache->entries[set][*way];
+    }
+  }
 
   while (!found) {
     // eviction: search the distant line whose RRPV == 2^M - 1
     for (ii = 0; ii < cache->assoc; ii++) {
       Cache_Entry* entry = &cache->entries[set][ii];
-      if (!entry->valid) {
-        *way = ii;
-        found = TRUE;
-        break;
-      }
       if (entry->reference_val == RRIP_DISTANT_VAL) {
         *way = ii;
         found = TRUE;
@@ -1620,7 +1636,6 @@ const static int DRRIP_DEDICATED_STATIC = 2;
 void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                        Repl_Policy repl_policy);
 void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg);
-Cache_Entry* drrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg, Flag if_external);
 
 void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                        Repl_Policy repl_policy) {
@@ -1653,6 +1668,10 @@ void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
   Counter miss_in_srrip = 0;
   Flag psel;
 
+  // Count the miss here, once per fill. update_evict also runs when get_next_repl_line peeks at
+  // the victim, and again every time a fill refused for a dirty victim is retried.
+  cache->miss_count[set]++;
+
   // dedicated set
   if (cache->dedicated_policy_set[set]) {
     if (cache->dedicated_policy_set[set] == DRRIP_DEDICATED_BIMODAL)
@@ -1683,12 +1702,6 @@ void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
     srrip_update_insert(cache, proc_id, set, way, arg);
 
   DEBUG(0, "DRRIP insert dueling: 0x%x, %d, 0x%llx, 0x%llx\n\n", set, psel, miss_in_brrip, miss_in_srrip);
-}
-
-Cache_Entry* drrip_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg, Flag if_external) {
-  cache->miss_count[set]++;
-  DEBUG(0, "DRRIP evict count: 0x%x, 0x%llx\n", set, cache->miss_count[set]);
-  return srrip_update_evict(cache, proc_id, set, way, arg, if_external);
 }
 
 /**************************************************************************************/
@@ -1759,14 +1772,15 @@ void ship_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg)
 }
 
 Cache_Entry* ship_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, void* arg, Flag if_external) {
-  Cache_Entry* line = srrip_update_evict(cache, proc_id, set, way, arg, if_external);
+  Cache_Entry* line = rrip_update_evict(cache, proc_id, set, way, arg, if_external);
 
   // if it is called by external eviction, do not change the prediction value
   if (if_external)
     return line;
 
-  // prediction update
-  if (!line->outcome) {
+  // prediction update: train on the evicted block if it was never reused. A free (invalid) way
+  // held no block, so there is nothing to learn from it.
+  if (line->valid && !line->outcome) {
     cache->entries[set][*way].outcome = TRUE;
     struct ship_shct* cache_shct = (struct ship_shct*)cache->predictor;
     Counter* cache_shct_entry = (Counter*)hash_table_access(
@@ -1788,9 +1802,9 @@ Cache_Entry* ship_update_evict(Cache* cache, uns8 proc_id, uns set, uns* way, vo
 struct repl_policy_func repl_policy_func_table[NUM_REPL] = {
   { REPL_LRU_REF, general_action_init,  general_action_repl,  lru_update_hit,     lru_update_insert,    lru_update_evict    },
   { REPL_NRU,     general_action_init,  general_action_repl,  nru_update_hit,     nru_update_insert,    nru_update_evict    },
-  { REPL_SRRIP,   general_action_init,  general_action_repl,  nru_update_hit,     srrip_update_insert,  srrip_update_evict  },
-  { REPL_BRRIP,   brrip_action_init,    general_action_repl,  nru_update_hit,     brrip_update_insert,  srrip_update_evict  },
-  { REPL_DRRIP,   drrip_action_init,    general_action_repl,  nru_update_hit,     drrip_update_insert,  drrip_update_evict  },
+  { REPL_SRRIP,   general_action_init,  general_action_repl,  nru_update_hit,     srrip_update_insert,  rrip_update_evict   },
+  { REPL_BRRIP,   brrip_action_init,    general_action_repl,  nru_update_hit,     brrip_update_insert,  rrip_update_evict   },
+  { REPL_DRRIP,   drrip_action_init,    general_action_repl,  nru_update_hit,     drrip_update_insert,  rrip_update_evict   },
   { REPL_SHIP,    ship_action_init,     general_action_repl,  ship_update_hit,    ship_update_insert,   ship_update_evict   },
   { REPL_VOID,    NULL,                 NULL,                 NULL,               NULL,                 NULL                },
 };

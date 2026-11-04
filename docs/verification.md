@@ -16,6 +16,9 @@ gg
 ./utils/qsort/ref_stats includes sample stats that you can use for sanity
 checks. The exact statistics are unlikely to match with the reference stats
 because the produced binary is compiler-dependent.
+They were produced with Ramulator 1 as the DRAM model, before Ramulator 2
+became the default, so DRAM-related statistics and ramulator.stat.out differ
+by more than the compiler effect.
 
 # Automatic Verification Tools
 

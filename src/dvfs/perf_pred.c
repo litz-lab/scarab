@@ -45,6 +45,7 @@
 
 #include "freq.h"
 #include "math.h"
+#include "ramulator.h"
 #include "stat_mon.h"
 #include "statistics.h"
 
@@ -138,6 +139,7 @@ static Flag is_prefetch_type(Mem_Req_Type type) {
 }
 
 void init_perf_pred(void) {
+  const Ramulator_Config* dram = ramulator_get_config();
   init_mlp_infos();
 
   if (!PERF_PRED_ENABLE)
@@ -146,7 +148,7 @@ void init_perf_pred(void) {
   proc_infos = (Proc_Info*)malloc(sizeof(Proc_Info) * NUM_CORES);
   for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
     Proc_Info* proc = &proc_infos[proc_id];
-    proc->bank_infos = (Bank_Info*)malloc(sizeof(Bank_Info) * RAMULATOR_BANKS * RAMULATOR_CHANNELS);
+    proc->bank_infos = (Bank_Info*)malloc(sizeof(Bank_Info) * dram->banks * dram->channels);
     if (CRITICAL_ACCESS_PLOT_ENABLE) {
       char filename[MAX_STR_LENGTH + 1];
       sprintf(filename, "%s.%d.out", CRITICAL_ACCESS_PLOT_FILE, proc_id);
@@ -196,6 +198,7 @@ static Flag is_critical_req(Mem_Req* req) {
 }
 
 void perf_pred_mem_req_start(Mem_Req* req) {
+  const Ramulator_Config* dram = ramulator_get_config();
   if (!PERF_PRED_ENABLE)
     return;
 
@@ -236,12 +239,13 @@ void perf_pred_mem_req_start(Mem_Req* req) {
     proc->total_prefetch_reqs += 1;
   }
 
-  ASSERT(0, proc->total_reqs < (RAMULATOR_READQ_ENTRIES + RAMULATOR_WRITEQ_ENTRIES) || PERF_PRED_REQS_FINISH_AT_FILL);
+  ASSERT(0, proc->total_reqs < (dram->readq_entries + dram->writeq_entries) || PERF_PRED_REQS_FINISH_AT_FILL);
   proc->total_critical_reqs += critical;
   proc->total_reqs += 1;
 }
 
 void perf_pred_mem_req_done(Mem_Req* req) {
+  const Ramulator_Config* dram = ramulator_get_config();
   if (!PERF_PRED_ENABLE)
     return;
 
@@ -290,7 +294,7 @@ void perf_pred_mem_req_done(Mem_Req* req) {
     DEBUG(0, "Mem req 0x%s left as critical, latency: %llu\n", hexstr64s(req->addr), latency);
     Counter min_extra_req_crit_path_length = PERF_PRED_REQ_LATENCY_MECH == PERF_PRED_REQ_LATENCY_MECH_REQ_LATENCY
                                                  ? 0
-                                                 : freq_convert(FREQ_DOMAIN_MEMORY, RAMULATOR_TBL, FREQ_DOMAIN_L1);
+                                                 : freq_convert(FREQ_DOMAIN_MEMORY, dram->tBL, FREQ_DOMAIN_L1);
     Counter new_mem_req_critical_path_length = MAX2(
         latency + req->mem_crit_path_at_entry, proc->mem_req_critical_path_length + min_extra_req_crit_path_length);
     INC_STAT_EVENT(req->proc_id, MEM_REQ_CRITICAL_PATH_LENGTH,
@@ -320,20 +324,22 @@ void perf_pred_mem_req_done(Mem_Req* req) {
 }
 
 static Counter full_dram_latency(Flag prev_row_hit, Flag row_hit, Flag write) {
+  const Ramulator_Config* dram = ramulator_get_config();
   if (row_hit)
-    return (write ? RAMULATOR_TCWL : RAMULATOR_TCL) + RAMULATOR_TBL;
+    return (write ? dram->tCWL : dram->tCL) + dram->tBL;
   if (prev_row_hit) {
-    return RAMULATOR_TRP + RAMULATOR_TRCD + (write ? RAMULATOR_TCWL : RAMULATOR_TCL) + RAMULATOR_TBL;
+    return dram->tRP + dram->tRCD + (write ? dram->tCWL : dram->tCL) + dram->tBL;
   } else {
     // return RAMULATOR_TRC;
-    return (RAMULATOR_TRAS + RAMULATOR_TRP);  // tRC
+    return (dram->tRAS + dram->tRP);  // tRC
   }
 }
 
 static Counter overlapped_dram_latency(Flag prev_row_hit, Flag row_hit, Flag write) {
+  const Ramulator_Config* dram = ramulator_get_config();
   if (row_hit)
-    return (write ? RAMULATOR_TCWL : RAMULATOR_TCL);
-  return prev_row_hit ? RAMULATOR_TCL : 0;
+    return (write ? dram->tCWL : dram->tCL);
+  return prev_row_hit ? dram->tCL : 0;
 }
 
 void perf_pred_dram_latency_start(Mem_Req* req) {
@@ -364,6 +370,7 @@ void perf_pred_dram_latency_start(Mem_Req* req) {
 }
 
 void perf_pred_dram_latency_end(Mem_Req* req) {
+  const Ramulator_Config* dram = ramulator_get_config();
   if (!PERF_PRED_ENABLE)
     return;
 
@@ -371,10 +378,10 @@ void perf_pred_dram_latency_end(Mem_Req* req) {
                 "This code may have stopped working when shadow row hit "
                 "detection was moved to ACTIVATE time\n");
   Counter full_dram_cycles =
-      (req->type == MRT_WB ? RAMULATOR_TCWL : RAMULATOR_TCL) + RAMULATOR_TBL +
-      (req->row_access_status == DRAM_REQ_ROW_HIT || req->shadow_row_hit ? 0 : RAMULATOR_TRP + RAMULATOR_TRCD);
+      (req->type == MRT_WB ? dram->tCWL : dram->tCL) + dram->tBL +
+      (req->row_access_status == DRAM_REQ_ROW_HIT || req->shadow_row_hit ? 0 : dram->tRP + dram->tRCD);
   Counter pipelined_dram_cycles =
-      req->row_access_status == DRAM_REQ_ROW_HIT || req->shadow_row_hit ? RAMULATOR_TBL : full_dram_cycles;
+      req->row_access_status == DRAM_REQ_ROW_HIT || req->shadow_row_hit ? dram->tBL : full_dram_cycles;
   // freq_converts are HACKS, may not work with pairwise prime freqs
   Counter full_dram_latency = freq_convert(FREQ_DOMAIN_MEMORY, full_dram_cycles, FREQ_DOMAIN_L1);
   Counter pipelined_dram_latency = freq_convert(FREQ_DOMAIN_MEMORY, pipelined_dram_cycles, FREQ_DOMAIN_L1);
@@ -408,6 +415,7 @@ void perf_pred_update_mem_req_type(Mem_Req* req, Mem_Req_Type old_type, Flag old
 }
 
 void reset_perf_pred() {
+  const Ramulator_Config* dram = ramulator_get_config();
   if (!PERF_PRED_ENABLE)
     return;
 
@@ -415,7 +423,7 @@ void reset_perf_pred() {
     Proc_Info* proc = &proc_infos[proc_id];
     proc->current_leading_load = NULL;
     proc->mem_req_critical_path_length = 0;
-    for (int bank_id = 0; bank_id < RAMULATOR_BANKS * RAMULATOR_CHANNELS; ++bank_id) {
+    for (int bank_id = 0; bank_id < dram->banks * dram->channels; ++bank_id) {
       Bank_Info* bank = &proc->bank_infos[bank_id];
       bank->length = 0;
       bank->num_critical_reqs = 0;
@@ -536,6 +544,7 @@ void perf_pred_slack(Mem_Req* req, Counter old_constraint, Counter latency, Flag
 }
 
 static void process_slack_period(uns proc_id, Counter slack_period_end) {
+  const Ramulator_Config* dram = ramulator_get_config();
   Proc_Info* proc = &proc_infos[proc_id];
 
   Counter least_slack = slack_period_end - proc->last_slack_period_start;
@@ -545,7 +554,7 @@ static void process_slack_period(uns proc_id, Counter slack_period_end) {
     least_slack -= min_bus_latency;
   else
     least_slack = 0;
-  for (int bank = 0; bank < RAMULATOR_BANKS * RAMULATOR_CHANNELS; ++bank) {
+  for (int bank = 0; bank < dram->banks * dram->channels; ++bank) {
     Bank_Info* info = &proc->bank_infos[bank];
     Counter slack = (info->bank_accessed_in_this_slack_period
                          ? info->slack_in_this_slack_period + (slack_period_end - info->slack_last_update_cycle)
@@ -595,6 +604,7 @@ void perf_pred_off_chip_effect_end(Mem_Req* req) {
 }
 
 void perf_pred_reset_stats(void) {
+  const Ramulator_Config* dram = ramulator_get_config();
   if (!PERF_PRED_ENABLE)
     return;
 
@@ -605,7 +615,7 @@ void perf_pred_reset_stats(void) {
     GET_STAT_EVENT(proc_id,
                    PERF_PRED_RESET_STATS_CYCLE) = chip_cycle_count;  // HACK!
 
-    for (int bank = 0; bank < RAMULATOR_BANKS * RAMULATOR_CHANNELS; ++bank) {
+    for (int bank = 0; bank < dram->banks * dram->channels; ++bank) {
       Bank_Info* info = &proc->bank_infos[bank];
       info->length = 0;
       info->slack_in_this_slack_period = 0;
@@ -632,6 +642,7 @@ void perf_pred_cycle(void) {
 }
 
 double perf_pred_slowdown(uns proc_id, Perf_Pred_Mech mech, uns chip_cycle_time, uns memory_cycle_time) {
+  const Ramulator_Config* dram = ramulator_get_config();
   Counter num_cycles = stat_mon_get_count(stat_mon, 0, PERF_PRED_CYCLE);
   ASSERT(proc_id, num_cycles > 0);
 
@@ -672,12 +683,10 @@ double perf_pred_slowdown(uns proc_id, Perf_Pred_Mech mech, uns chip_cycle_time,
   double chip_busy_crit;
 
   if (PERF_PRED_MEM_UTIL_VIA_BUS_BW) {
-    uns rtw_bus_cost =
-        (RAMULATOR_TCL + RAMULATOR_TCCD - RAMULATOR_TCWL + 2) + RAMULATOR_TCWL - (RAMULATOR_TCL + RAMULATOR_TCCD);
-    uns wtr_bus_cost =
-        (RAMULATOR_TCWL + RAMULATOR_TBL + RAMULATOR_TWTR) + RAMULATOR_TCL - (RAMULATOR_TCWL + RAMULATOR_TBL);
+    uns rtw_bus_cost = (dram->tCL + dram->tCCD - dram->tCWL + 2) + dram->tCWL - (dram->tCL + dram->tCCD);
+    uns wtr_bus_cost = (dram->tCWL + dram->tBL + dram->tWTR) + dram->tCL - (dram->tCWL + dram->tBL);
     double bus_dir_switch_cost = ((double)rtw_bus_cost + (double)wtr_bus_cost) / 2.0;
-    mem_util = (RAMULATOR_TBL * (double)stat_mon_get_count(stat_mon, proc_id, MEM_REQ_COMPLETE_MEM) +
+    mem_util = (dram->tBL * (double)stat_mon_get_count(stat_mon, proc_id, MEM_REQ_COMPLETE_MEM) +
                 bus_dir_switch_cost * (double)stat_mon_get_count(stat_mon, proc_id, DRAM_BUS_DIR_SWITCHES)) /
                stat_mon_get_count(stat_mon, proc_id, DRAM_CYCLES);
   } else {

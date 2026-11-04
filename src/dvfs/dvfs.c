@@ -39,7 +39,6 @@
 #include "dvfs.param.h"
 #include "memory/memory.param.h"
 #include "power/power.param.h"
-#include "ramulator.param.h"
 
 #include "power/power_intf.h"
 
@@ -47,6 +46,7 @@
 #include "optimizer2.h"
 #include "perf_pred.h"
 #include "power_pred.h"
+#include "ramulator.h"
 #include "stat_mon.h"
 #include "statistics.h"
 #include "trigger.h"
@@ -394,6 +394,7 @@ static void dvfs_reconfigure_oracle(void) {
 }
 
 static void dvfs_reconfigure_perf_pred(void) {
+  const Ramulator_Config* dram = ramulator_get_config();
   double min_metric = 10.0;
   uns min_metric_idx = num_configs;
   perf_pred_interval_done();
@@ -407,14 +408,14 @@ static void dvfs_reconfigure_perf_pred(void) {
     double pred_slowdown =
         // perf_pred_slowdown(0, PERF_PRED_MECH, config->core_cycle_times[0],
         // MEMORY_CYCLE_TIME);
-        perf_pred_slowdown(0, PERF_PRED_MECH, config->core_cycle_times[0], RAMULATOR_TCK);
+        perf_pred_slowdown(0, PERF_PRED_MECH, config->core_cycle_times[0], dram->tck_fs);
     double pred_norm_power;
     double memory_access_frac = 1.0;
     if (POWER_INTF_ON) {
       // pred_norm_power = power_pred_norm_power(config->core_cycle_times,
       // MEMORY_CYCLE_TIME,
       pred_norm_power =
-          power_pred_norm_power(config->core_cycle_times, RAMULATOR_TCK, &memory_access_frac, &pred_slowdown);
+          power_pred_norm_power(config->core_cycle_times, dram->tck_fs, &memory_access_frac, &pred_slowdown);
     } else {
       ASSERT(0, metric.energy_exp == 0);
       pred_norm_power = 1.0;
@@ -422,7 +423,7 @@ static void dvfs_reconfigure_perf_pred(void) {
     double metric = dvfs_metric(pred_norm_power, pred_slowdown);
     DEBUG(0, "Predicted metric for {\%d, \%d} is %f (norm. power %f, slowdown %f)\n",
           // configs[i].core_cycle_times[0], MEMORY_CYCLE_TIME,
-          configs[i].core_cycle_times[0], RAMULATOR_TCK, metric, pred_norm_power, pred_slowdown);
+          configs[i].core_cycle_times[0], dram->tck_fs, metric, pred_norm_power, pred_slowdown);
     if (DVFS_LOG)
       fprintf(dvfs_log, " (%f, %f)", pred_norm_power, pred_slowdown);
     if (metric < min_metric) {
@@ -437,6 +438,7 @@ static void dvfs_reconfigure_perf_pred(void) {
 }
 
 static void dvfs_reconfigure_dram_sharing(void) {
+  const Ramulator_Config* dram = ramulator_get_config();
   double min_metric = 10.0;
   uns min_metric_idx = num_configs;
   if (metric.energy_exp != 0)
@@ -475,7 +477,7 @@ static void dvfs_reconfigure_dram_sharing(void) {
       // pred_norm_power = power_pred_norm_power(config->core_cycle_times,
       // MEMORY_CYCLE_TIME,
       pred_norm_power =
-          power_pred_norm_power(config->core_cycle_times, RAMULATOR_TCK, memory_access_fracs, pred_slowdowns);
+          power_pred_norm_power(config->core_cycle_times, dram->tck_fs, memory_access_fracs, pred_slowdowns);
     } else {
       ASSERT(0, metric.energy_exp == 0);
       pred_norm_power = 1.0;
@@ -518,13 +520,14 @@ static double gmean(const double* array, uns num) {
 }
 
 static void invoke_dram_sharing_solver(double* pred_speedups, Config* config) {
+  const Ramulator_Config* dram = ramulator_get_config();
   ASSERT(0, DVFS_DRAM_SHARING_SOLVER_BIN);
 
   char cmd[MAX_STR_LENGTH + 1];
   char* buf = cmd;
   // buf += sprintf(buf, "%s %d %d ", DVFS_DRAM_SHARING_SOLVER_BIN, NUM_CORES,
   // MEMORY_CHANNELS*MEMORY_BANKS);
-  buf += sprintf(buf, "%s %d %d ", DVFS_DRAM_SHARING_SOLVER_BIN, NUM_CORES, RAMULATOR_CHANNELS * RAMULATOR_BANKS);
+  buf += sprintf(buf, "%s %d %d ", DVFS_DRAM_SHARING_SOLVER_BIN, NUM_CORES, dram->channels * dram->banks);
   Counter dram_cycles = stat_mon_get_count(stat_mon, 0, DRAM_CYCLES);
   Counter blp_times_cycles = stat_mon_get_count(stat_mon, 0, DRAM_BANK_IN_DEMAND);
   buf += sprintf(buf, " %.6f", (double)blp_times_cycles / (double)dram_cycles);
@@ -579,6 +582,7 @@ static void compute_stall_time_speedups(double* pred_speedups, Config* config) {
 }
 
 static void compute_bw_sharing_speedups(double* pred_speedups, Config* config) {
+  const Ramulator_Config* dram = ramulator_get_config();
   Counter total_mem_reqs = 0;
   DEBUG(0, "%7s %7s %7s %7s %11s\n", "f%", "stall%", "full%", "perf%", "r");
   /* Compute speedups due to latency */
@@ -616,18 +620,16 @@ static void compute_bw_sharing_speedups(double* pred_speedups, Config* config) {
   }
   Counter bus_dir_switches = stat_mon_get_count(stat_mon, 0, DRAM_BUS_DIR_SWITCHES);
   // uns rtw_bus_cost = (DRAM_CL + DRAM_TCCD - DRAM_CWL + 2) + DRAM_CWL - (DRAM_CL + DRAM_TCCD);
-  uns rtw_bus_cost =
-      (RAMULATOR_TCL + RAMULATOR_TCCD - RAMULATOR_TCWL + 2) + RAMULATOR_TCWL - (RAMULATOR_TCL + RAMULATOR_TCCD);
+  uns rtw_bus_cost = (dram->tCL + dram->tCCD - dram->tCWL + 2) + dram->tCWL - (dram->tCL + dram->tCCD);
   // uns wtr_bus_cost = (DRAM_CWL + DRAM_TBL + DRAM_TWTR) + DRAM_CL - (DRAM_CWL + DRAM_TBL);
-  uns wtr_bus_cost =
-      (RAMULATOR_TCWL + RAMULATOR_TBL + RAMULATOR_TWTR) + RAMULATOR_TCL - (RAMULATOR_TCWL + RAMULATOR_TBL);
+  uns wtr_bus_cost = (dram->tCWL + dram->tBL + dram->tWTR) + dram->tCL - (dram->tCWL + dram->tBL);
   double bus_dir_switch_cost = ((double)rtw_bus_cost + (double)wtr_bus_cost) / 2.0;
   double bus_cycles_per_req =
       //((double)DRAM_TBL*(double)total_mem_reqs + bus_dir_switch_cost*(double)bus_dir_switches)/
-      ((double)RAMULATOR_TBL * (double)total_mem_reqs + bus_dir_switch_cost * (double)bus_dir_switches) /
+      ((double)dram->tBL * (double)total_mem_reqs + bus_dir_switch_cost * (double)bus_dir_switches) /
       (double)total_mem_reqs;
   // double max_bw = (double)MEMORY_CHANNELS;
-  double max_bw = (double)RAMULATOR_CHANNELS;
+  double max_bw = (double)dram->channels;
   if (DVFS_BW_SHARING_CRIT_STATS) {
     Counter reqs = stat_mon_get_count(stat_mon, 0, DRAM_CHANNEL_REQS);
     if (reqs == 0) {
@@ -641,19 +643,19 @@ static void compute_bw_sharing_speedups(double* pred_speedups, Config* config) {
     if (reqs > 0 && crit_reqs > 0) {
       bus_cycles_per_req =
           //(double)(crit_reqs*DRAM_TBL+crit_dir_switches*bus_dir_switch_cost)/(double)crit_reqs;
-          (double)(crit_reqs * RAMULATOR_TBL + crit_dir_switches * bus_dir_switch_cost) / (double)crit_reqs;
+          (double)(crit_reqs * dram->tBL + crit_dir_switches * bus_dir_switch_cost) / (double)crit_reqs;
       max_bw = (double)reqs / (double)crit_reqs;
     } else {
       // bus_cycles_per_req = DRAM_TBL;
-      bus_cycles_per_req = RAMULATOR_TBL;
+      bus_cycles_per_req = dram->tBL;
       // ASSERT(0, MEMORY_CHANNELS == 1 || MEMORY_CHANNELS == 2);
-      ASSERT(0, RAMULATOR_CHANNELS == 1 || RAMULATOR_CHANNELS == 2);
+      ASSERT(0, dram->channels == 1 || dram->channels == 2);
       // max_bw = MEMORY_CHANNELS == 1 ? 1 : 1.5;
-      max_bw = RAMULATOR_CHANNELS == 1 ? 1 : 1.5;
+      max_bw = dram->channels == 1 ? 1 : 1.5;
     }
   }
   // bus_cycles_per_req = MIN2(bus_cycles_per_req, (1.0 + DVFS_BW_SHARING_MAX_RW_COST)*DRAM_TBL);
-  bus_cycles_per_req = MIN2(bus_cycles_per_req, (1.0 + DVFS_BW_SHARING_MAX_RW_COST) * RAMULATOR_TBL);
+  bus_cycles_per_req = MIN2(bus_cycles_per_req, (1.0 + DVFS_BW_SHARING_MAX_RW_COST) * dram->tBL);
   double avg_req_latency = 0.0;  // in DRAM cycles
   double bus_freq = 1.0e15 / (double)freq_get_cycle_time(FREQ_DOMAIN_MEMORY);
   while (TRUE) {

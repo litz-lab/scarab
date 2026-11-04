@@ -36,7 +36,6 @@
 
 #include "general.param.h"
 #include "power/power.param.h"
-#include "ramulator.param.h"
 
 #include "power/power_scarab_config.h"
 

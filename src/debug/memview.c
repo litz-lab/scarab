@@ -34,12 +34,12 @@
 #include "core.param.h"
 #include "general.param.h"
 #include "memory/memory.param.h"
-#include "ramulator.param.h"
 
 #include "memory/memory.h"
 
 #include "exec_ports.h"
 #include "freq.h"
+#include "ramulator.h"
 #include "trigger.h"
 
 /**************************************************************************************/
@@ -85,6 +85,7 @@ static void trace_fus_busy(uns proc_id, Counter begin, Counter end, uns fus_busy
 /* memview_init */
 
 void memview_init(void) {
+  const Ramulator_Config* dram = ramulator_get_config();
   if (!MEMVIEW) {
     trace = NULL;
     return;
@@ -94,7 +95,7 @@ void memview_init(void) {
   trace = fopen(memview_filename, "w");
   ASSERTM(0, trace, "Could not open %s\n", memview_filename);
 
-  bank_infos = calloc(RAMULATOR_CHANNELS * RAMULATOR_BANKS, sizeof(Bank_Info));
+  bank_infos = calloc(dram->channels * dram->banks, sizeof(Bank_Info));
   proc_infos = calloc(NUM_CORES, sizeof(Proc_Info));
 
   // Timing simulation start time might not be zero due to warmup
@@ -113,9 +114,11 @@ void memview_init(void) {
   MEMVIEW_PARAM_PRINT(NUM_CORES);
   MEMVIEW_PARAM_PRINT(NUM_FUS);
   // MEMVIEW_PARAM_PRINT(MEMORY_CYCLE_TIME);
-  MEMVIEW_PARAM_PRINT(RAMULATOR_TCK);
-  MEMVIEW_PARAM_PRINT(RAMULATOR_CHANNELS);
-  MEMVIEW_PARAM_PRINT(RAMULATOR_BANKS);
+#define MEMVIEW_DRAM_PARAM_PRINT(param, value) fprintf(trace, "%-20s %3d\n", #param, value)
+  MEMVIEW_DRAM_PARAM_PRINT(RAMULATOR_TCK, dram->tck_fs);
+  MEMVIEW_DRAM_PARAM_PRINT(RAMULATOR_CHANNELS, dram->channels);
+  MEMVIEW_DRAM_PARAM_PRINT(RAMULATOR_BANKS, dram->banks);
+#undef MEMVIEW_DRAM_PARAM_PRINT
   MEMVIEW_PARAM_PRINT(MEMVIEW_NOTE_NUM_ELEMS);
 #undef MEMVIEW_PARAM_PRINT
 

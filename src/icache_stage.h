@@ -99,6 +99,7 @@ typedef struct Icache_Stage_struct {
   Icache_State next_state;      /* state that the ICACHE is going to be in next cycle */
   uint64_t wait_for_miss_start; /* time when cache miss was observed */
   Flag icache_miss_fulfilled;
+  Counter miss_lookup_done; /* cycle the missed line's icache lookup completes */
   Flag icache_stage_resteer_signaled;
   Flag fetch_barrier_pending;
   uns64 fetch_barrier_inst_uid;
@@ -114,6 +115,7 @@ typedef struct Icache_Stage_struct {
   Counter rdy_cycle; /* cycle that the henry icache will return data (only used in henry model) */
 
   Cache icache;           /* the cache storage structure (caches Inst_Info *) */
+  Ports* ports;           /* read ports per bank; banks interleave cache lines */
   Cache icache_line_info; /* contains info about the icache lines */
   Cache pref_icache;      /* Prefetcher cache storage structure (caches Inst_Info *) */
   char rand_wb_state[31]; /* State of random number generator for random writeback */

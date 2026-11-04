@@ -165,8 +165,6 @@ void update_decoupled_fe(uns proc_id, uns bp_id);
 // Icache/Core API
 void recover_decoupled_fe(uns proc_id, uns bp_id, Cf_Type cf_type, Recovery_Info* info);
 FT* decoupled_fe_pop_ft();
-uns decoupled_fe_ftq_size();
-FT* decoupled_fe_peek_ft(uns idx);
 bool decoupled_fe_is_off_path();
 void decoupled_fe_retire(Op* op, int proc_id, uns64 inst_uid);
 // FT::predict_ft calls this after each CF main predicts (per-CF prediction
@@ -197,6 +195,10 @@ Op* decoupled_fe_ftq_iter_get(Decoupled_FE* dfe, uns iter_idx, bool* end_of_ft);
 /* Increments iterator and returns the Op at iterator position or NULL if FTQ is empty or the end of FTQ was reached
    if end_of_ft is true the Op is the last one in a fetch target (cache-line boundary of taken branch)*/
 Op* decoupled_fe_ftq_iter_get_next(Decoupled_FE* dfe, uns iter_idx, bool* end_of_ft);
+/* Returns the FT at the iterator, or NULL if FTQ is empty or the end of FTQ was reached */
+FT* decoupled_fe_ftq_iter_ft(Decoupled_FE* dfe, uns iter_idx);
+/* Moves the iterator to the next FT's first op and returns that FT, or NULL past the last FT */
+FT* decoupled_fe_ftq_iter_next_ft(Decoupled_FE* dfe, uns iter_idx);
 /* Returns iter flattened offset from the start of the FTQ, this offset gets incremented
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */
@@ -268,11 +270,11 @@ struct Decoupled_FE {
   void recover(Cf_Type cf_type, Recovery_Info* info);
   void update();
   FT* pop_ft();
-  uns ftq_size() { return ftq.size(); }
-  FT* peek_ft(uns idx) { return ftq.at(idx); }
   uns new_ftq_iter();
   Op* ftq_iter_get(uns iter_idx, bool* end_of_ft);
   Op* ftq_iter_get_next(uns iter_idx, bool* end_of_ft);
+  FT* ftq_iter_ft(uns iter_idx);
+  FT* ftq_iter_next_ft(uns iter_idx);
   uint64_t ftq_iter_offset(uns iter_idx);
   uint64_t ftq_iter_ft_offset(uns iter_idx);
   uint64_t ftq_num_ops();

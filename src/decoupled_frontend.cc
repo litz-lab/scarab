@@ -122,16 +122,6 @@ FT* decoupled_fe_pop_ft() {
   return g_dfe->pop_ft();
 }
 
-uns decoupled_fe_ftq_size() {
-  ASSERT(0, g_dfe->get_bp_id() == MAIN_BP);
-  return g_dfe->ftq_size();
-}
-
-FT* decoupled_fe_peek_ft(uns idx) {
-  ASSERT(0, g_dfe->get_bp_id() == MAIN_BP);
-  return g_dfe->peek_ft(idx);
-}
-
 Decoupled_FE* decoupled_fe_new_ftq_iter(uns proc_id, uns bp_id, uns* ftq_idx) {
   *ftq_idx = per_core_dfe[proc_id][bp_id]->new_ftq_iter();
   return per_core_dfe[proc_id][bp_id].get();
@@ -145,6 +135,14 @@ Op* decoupled_fe_ftq_iter_get(Decoupled_FE* dfe, uns iter_idx, bool* end_of_ft) 
 /* Increments the iterator and returns the Op at FTQ iterator position. Returns NULL if the FTQ is empty */
 Op* decoupled_fe_ftq_iter_get_next(Decoupled_FE* dfe, uns iter_idx, bool* end_of_ft) {
   return dfe->ftq_iter_get_next(iter_idx, end_of_ft);
+}
+
+FT* decoupled_fe_ftq_iter_ft(Decoupled_FE* dfe, uns iter_idx) {
+  return dfe->ftq_iter_ft(iter_idx);
+}
+
+FT* decoupled_fe_ftq_iter_next_ft(Decoupled_FE* dfe, uns iter_idx) {
+  return dfe->ftq_iter_next_ft(iter_idx);
 }
 
 /* Returns iter flattened offset from the start of the FTQ, this offset gets incremented
@@ -715,7 +713,7 @@ Op* Decoupled_FE::ftq_iter_get(uns iter_idx, bool* end_of_ft) {
   // if FTQ is empty or if iter has seen all FTs
   if (ftq.empty() || iter->ft_pos == ftq.size()) {
     if (ftq.empty())
-      ASSERT(proc_id, iter[iter_idx].ft_pos == 0 && iter[iter_idx].op_pos == 0 && iter[iter_idx].flattened_op_pos == 0);
+      ASSERT(proc_id, iter->ft_pos == 0 && iter->op_pos == 0 && iter->flattened_op_pos == 0);
     return NULL;
   }
 
@@ -753,6 +751,20 @@ Op* Decoupled_FE::ftq_iter_get_next(uns iter_idx, bool* end_of_ft) {
     iter->flattened_op_pos++;
   }
   return ftq_iter_get(iter_idx, end_of_ft);
+}
+
+FT* Decoupled_FE::ftq_iter_ft(uns iter_idx) {
+  decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
+  return iter->ft_pos < ftq.size() ? ftq.at(iter->ft_pos) : nullptr;
+}
+
+FT* Decoupled_FE::ftq_iter_next_ft(uns iter_idx) {
+  decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
+  ASSERT(proc_id, iter->ft_pos < ftq.size());
+  iter->flattened_op_pos += ftq.at(iter->ft_pos)->ops.size() - iter->op_pos;
+  iter->ft_pos++;
+  iter->op_pos = 0;
+  return ftq_iter_ft(iter_idx);
 }
 
 uint64_t Decoupled_FE::ftq_iter_offset(uns iter_idx) {

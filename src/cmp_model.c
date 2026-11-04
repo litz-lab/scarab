@@ -143,6 +143,7 @@ void cmp_init(uns mode) {
       init_fdip(proc_id, bp_id, &cmp_model.icache_stage[proc_id]);
     }
     cmp_set_all_data(proc_id, 0);
+    init_icache_ftq_iter(proc_id);
     init_eip(proc_id);
     init_djolt(proc_id);
     init_fnlmma(proc_id);

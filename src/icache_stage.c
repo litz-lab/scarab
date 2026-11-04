@@ -979,8 +979,8 @@ void update_icache_stage() {
     FT_Info ft_info = ft_get_ft_info(op->parent_FT);
     Flag uop_hit = UOP_CACHE_ENABLE && uop_cache_lookup_line(ft_info.static_info.start, ft_info, FALSE);
     *(Icache_Lookup*)dl_list_add_tail(&ic->lookups) =
-        (Icache_Lookup){ft_info.dynamic_info.FT_id, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1), op->off_path,
-                        op->op_num};
+        (Icache_Lookup){ft_info.dynamic_info.FT_id, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1),
+                        ft_is_off_path(op->parent_FT), op->op_num};
     dbg_add("start", ft_info.dynamic_info.FT_id, list_get_count(&ic->lookups),
             (int)decoupled_fe_ftq_iter_ft_offset(ic->dfe, ic->ftq_iter));
     decoupled_fe_ftq_iter_next_ft(ic->dfe, ic->ftq_iter);

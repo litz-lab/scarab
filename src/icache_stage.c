@@ -242,6 +242,17 @@ void reset_all_ops_icache_stage() {
 /**************************************************************************************/
 /* recover_icache_stage: */
 
+static Counter dbg_last_rec_cyc;
+static int dbg_last_rec_before, dbg_last_rec_after;
+static char dbg_log[8192];
+static void dbg_add(const char* what, unsigned long long ft, int a, int b) {
+  char line[128];
+  snprintf(line, sizeof(line), "%llu %s ft=%llu %d %d\n", (unsigned long long)cycle_count, what, ft, a, b);
+  size_t n = strlen(dbg_log), m = strlen(line);
+  if (n + m >= sizeof(dbg_log)) { memmove(dbg_log, dbg_log + n / 2, n - n / 2 + 1); n = strlen(dbg_log); }
+  memcpy(dbg_log + n, line, m + 1);
+}
+
 void recover_icache_stage() {
   Stage_Data* cur_data = get_current_stage_data();
   uns ii;
@@ -254,8 +265,20 @@ void recover_icache_stage() {
   recover_ft_op_buffer(ic);
   /* The FTQ keeps a prefix of its FTs and moves ic->ftq_iter back to the first FT it flushed,
      so the iterator's FT offset counts the started lookups that survive. */
-  while (list_get_count(&ic->lookups) > (int)decoupled_fe_ftq_iter_ft_offset(ic->dfe, ic->ftq_iter))
+  dbg_last_rec_cyc = cycle_count;
+  dbg_last_rec_before = list_get_count(&ic->lookups);
+  while (list_get_count(&ic->lookups) > (int)decoupled_fe_ftq_iter_ft_offset(ic->dfe, ic->ftq_iter)) {
+    Icache_Lookup* t = (Icache_Lookup*)list_get_tail(&ic->lookups);
+    if (!t->off_path)
+      fprintf(stderr, "DBG onpath-drop cyc=%llu ft=%llu first_op=%llu rec_op=%llu rec_point=%d\n",
+              (unsigned long long)cycle_count, (unsigned long long)t->ft_id, (unsigned long long)t->op_num,
+              (unsigned long long)bp_recovery_info->recovery_op_num,
+              (int)bp_recovery_info->recovery_op->bp_pred_info->recovery_point);
+    dbg_add(t->off_path ? "drop-off" : "drop-ON", t->ft_id, (int)t->op_num, 0);
     dl_list_remove_tail(&ic->lookups);
+  }
+  dbg_last_rec_after = list_get_count(&ic->lookups);
+  dbg_add("rec", 0, dbg_last_rec_before, dbg_last_rec_after);
 
   cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {
@@ -512,7 +535,20 @@ FT_Arbitration_Result ft_arbitration() {
     return FT_UNAVAILABLE;
   } else {
     FT_Info ft_info = ft_get_ft_info(ft);
+    if (ft_info.dynamic_info.FT_id != lookup->ft_id) {
+      fprintf(stderr, "DBG mismatch cyc=%llu popped_ft=%llu head_lookup_ft=%llu lookups=%d iter_ft_off=%llu last_rec_cyc=%llu last_rec_trunc=%d->%d\n",
+              (unsigned long long)cycle_count, (unsigned long long)ft_info.dynamic_info.FT_id,
+              (unsigned long long)lookup->ft_id, list_get_count(&ic->lookups),
+              (unsigned long long)decoupled_fe_ftq_iter_ft_offset(ic->dfe, ic->ftq_iter),
+              (unsigned long long)dbg_last_rec_cyc, dbg_last_rec_before, dbg_last_rec_after);
+      for (Icache_Lookup* l = (Icache_Lookup*)list_start_head_traversal(&ic->lookups); l;
+           l = (Icache_Lookup*)list_next_element(&ic->lookups))
+        fprintf(stderr, "DBG   lookup ft=%llu done=%llu\n", (unsigned long long)l->ft_id, (unsigned long long)l->done);
+      fprintf(stderr, "DBG   dbg_log:\n%s\n", dbg_log);
+    }
     ASSERT(ic->proc_id, ft_info.dynamic_info.FT_id == lookup->ft_id);
+    dbg_add("pop", ft_info.dynamic_info.FT_id, list_get_count(&ic->lookups),
+            (int)decoupled_fe_ftq_iter_ft_offset(ic->dfe, ic->ftq_iter));
     dl_list_remove_head(&ic->lookups);
     // set the current fetch address
     ic->fetch_addr = ft_info.static_info.start;
@@ -943,7 +979,10 @@ void update_icache_stage() {
     FT_Info ft_info = ft_get_ft_info(op->parent_FT);
     Flag uop_hit = UOP_CACHE_ENABLE && uop_cache_lookup_line(ft_info.static_info.start, ft_info, FALSE);
     *(Icache_Lookup*)dl_list_add_tail(&ic->lookups) =
-        (Icache_Lookup){ft_info.dynamic_info.FT_id, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1)};
+        (Icache_Lookup){ft_info.dynamic_info.FT_id, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1), op->off_path,
+                        op->op_num};
+    dbg_add("start", ft_info.dynamic_info.FT_id, list_get_count(&ic->lookups),
+            (int)decoupled_fe_ftq_iter_ft_offset(ic->dfe, ic->ftq_iter));
     decoupled_fe_ftq_iter_next_ft(ic->dfe, ic->ftq_iter);
   }
   ic->lookups_per_cycle_count = 0;

@@ -944,9 +944,7 @@ void update_icache_stage() {
     Flag uop_hit = UOP_CACHE_ENABLE && uop_cache_lookup_line(ft_info.static_info.start, ft_info, FALSE);
     *(Icache_Lookup*)dl_list_add_tail(&ic->lookups) =
         (Icache_Lookup){ft_info.dynamic_info.FT_id, op->op_num, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1)};
-    while (!end_of_ft)
-      decoupled_fe_ftq_iter_get_next(ic->dfe, ic->ftq_iter, &end_of_ft);
-    decoupled_fe_ftq_iter_get_next(ic->dfe, ic->ftq_iter, &end_of_ft);
+    decoupled_fe_ftq_iter_next_ft(ic->dfe, ic->ftq_iter);
   }
   ic->lookups_per_cycle_count = 0;
   ic->topdown_on_path_fetched = 0;

@@ -195,6 +195,8 @@ Op* decoupled_fe_ftq_iter_get(Decoupled_FE* dfe, uns iter_idx, bool* end_of_ft);
 /* Increments iterator and returns the Op at iterator position or NULL if FTQ is empty or the end of FTQ was reached
    if end_of_ft is true the Op is the last one in a fetch target (cache-line boundary of taken branch)*/
 Op* decoupled_fe_ftq_iter_get_next(Decoupled_FE* dfe, uns iter_idx, bool* end_of_ft);
+/* Moves the iterator to the next FT's first op and returns it, or NULL past the last FT */
+Op* decoupled_fe_ftq_iter_next_ft(Decoupled_FE* dfe, uns iter_idx);
 /* Returns iter flattened offset from the start of the FTQ, this offset gets incremented
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */
@@ -269,6 +271,7 @@ struct Decoupled_FE {
   uns new_ftq_iter();
   Op* ftq_iter_get(uns iter_idx, bool* end_of_ft);
   Op* ftq_iter_get_next(uns iter_idx, bool* end_of_ft);
+  Op* ftq_iter_next_ft(uns iter_idx);
   uint64_t ftq_iter_offset(uns iter_idx);
   uint64_t ftq_iter_ft_offset(uns iter_idx);
   uint64_t ftq_num_ops();

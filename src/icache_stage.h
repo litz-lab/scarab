@@ -128,10 +128,8 @@ typedef struct Icache_Stage_struct {
 
 typedef struct Icache_Lookup_struct {
   uint64_t ft_id;
-  Counter done;   /* cycle the lookup completes */
-  Flag off_path;  /* the FT has off-path ops */
-  Counter op_num; /* the FT's first op */
-  uns n_ops;
+  Counter done;  /* cycle the lookup completes */
+  Flag off_path; /* the FT has off-path ops */
 } Icache_Lookup;
 
 typedef struct Icache_Data_struct {

@@ -255,11 +255,8 @@ void recover_icache_stage() {
   /* The FTQ keeps a prefix of its FTs and moves ic->ftq_iter back to the first FT it flushed,
      so the iterator's FT offset counts the started lookups that survive. */
   while (list_get_count(&ic->lookups) > (int)decoupled_fe_ftq_iter_ft_offset(ic->dfe, ic->ftq_iter)) {
-    /* Only off-path FTs are flushed, and the on-path FT holding the recovery op, which the FTQ
-       replaces when that op is not its last on-path op. */
-    Icache_Lookup* flushed = (Icache_Lookup*)list_get_tail(&ic->lookups);
-    ASSERT(ic->proc_id, flushed->off_path || (flushed->op_num <= bp_recovery_info->recovery_op_num &&
-                                              bp_recovery_info->recovery_op_num < flushed->op_num + flushed->n_ops));
+    /* A recovery flushes only off-path FTs. */
+    ASSERT(ic->proc_id, ((Icache_Lookup*)list_get_tail(&ic->lookups))->off_path);
     dl_list_remove_tail(&ic->lookups);
   }
 
@@ -946,11 +943,8 @@ void update_icache_stage() {
   while (list_get_count(&ic->lookups) < (int)ICACHE_LATENCY && (ft = decoupled_fe_ftq_iter_ft(ic->dfe, ic->ftq_iter))) {
     FT_Info ft_info = ft_get_ft_info(ft);
     Flag uop_hit = UOP_CACHE_ENABLE && uop_cache_lookup_line(ft_info.static_info.start, ft_info, FALSE);
-    bool end_of_ft;
-    Op* first_op = decoupled_fe_ftq_iter_get(ic->dfe, ic->ftq_iter, &end_of_ft);
-    *(Icache_Lookup*)dl_list_add_tail(&ic->lookups) =
-        (Icache_Lookup){ft_info.dynamic_info.FT_id, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1),
-                        ft_is_off_path(ft), first_op->op_num, ft_info.static_info.n_uops};
+    *(Icache_Lookup*)dl_list_add_tail(&ic->lookups) = (Icache_Lookup){
+        ft_info.dynamic_info.FT_id, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1), ft_is_off_path(ft)};
     decoupled_fe_ftq_iter_next_ft(ic->dfe, ic->ftq_iter);
   }
   ic->lookups_per_cycle_count = 0;

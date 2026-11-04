@@ -79,12 +79,12 @@ typedef enum Break_Reason_enum {
   BREAK_UOP_CACHE_TO_ICACHE_SWITCH,
   BREAK_UOP_CACHE_READ_LIMIT,
   BREAK_UOP_CACHE_ISSUE_WIDTH,
-  BREAK_ICACHE_LOOKUP  // break because the next FT's icache lookup is not done yet
+  BREAK_ICACHE_PIPE_FILL  // break because the icache pipeline is filling: no FT has reached its end yet
 } Break_Reason;
 
 typedef enum FT_Arbitration_Result_enum {
   FT_UNAVAILABLE,
-  FT_LOOKUP_PENDING,
+  FT_IC_PIPE_FILLING,
   FT_MISS_BOTH,
   FT_HIT_ICACHE,
   FT_HIT_UOP_CACHE

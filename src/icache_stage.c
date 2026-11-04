@@ -506,10 +506,10 @@ Flag mem_req_on_icache_miss() {
 FT_Arbitration_Result ft_arbitration() {
   ASSERT(ic->proc_id, !ft_op_buffer_can_fetch_op(ic));
 
-  /* Only an FT whose icache lookup is done leaves the FTQ. */
+  /* Only an FT at the end of the icache pipeline leaves the FTQ; before that the pipeline is filling. */
   Icache_Lookup* lookup = (Icache_Lookup*)list_get_head(&ic->lookups);
   if (lookup && cycle_count < lookup->done)
-    return FT_LOOKUP_PENDING;
+    return FT_IC_PIPE_FILLING;
   FT* ft = lookup ? decoupled_fe_pop_ft() : NULL;
   if (!ft) {
     return FT_UNAVAILABLE;
@@ -704,8 +704,8 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
         case FT_UNAVAILABLE:
           *break_fetch = BREAK_FT_UNAVAILABLE;
           return ICACHE_STAGE_RESTEER;
-        case FT_LOOKUP_PENDING:
-          *break_fetch = BREAK_ICACHE_LOOKUP;
+        case FT_IC_PIPE_FILLING:
+          *break_fetch = BREAK_ICACHE_PIPE_FILL;
           return ICACHE_STAGE_RESTEER;
         case FT_MISS_BOTH:
           return icache_mem_req_actions(break_fetch);
@@ -806,8 +806,8 @@ Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
         case FT_UNAVAILABLE:
           *break_fetch = BREAK_FT_UNAVAILABLE;
           return ICACHE_STAGE_RESTEER;
-        case FT_LOOKUP_PENDING:
-          *break_fetch = BREAK_ICACHE_LOOKUP;
+        case FT_IC_PIPE_FILLING:
+          *break_fetch = BREAK_ICACHE_PIPE_FILL;
           return ICACHE_STAGE_RESTEER;
         case FT_MISS_BOTH:
           return icache_mem_req_actions(break_fetch);
@@ -866,9 +866,9 @@ void execute_coupled_FSM() {
         ic->next_state = ICACHE_STAGE_RESTEER;
         break_fetch = BREAK_FT_UNAVAILABLE;
         break;
-      case FT_LOOKUP_PENDING:
+      case FT_IC_PIPE_FILLING:
         ic->next_state = ICACHE_STAGE_RESTEER;
-        break_fetch = BREAK_ICACHE_LOOKUP;
+        break_fetch = BREAK_ICACHE_PIPE_FILL;
         break;
       case FT_MISS_BOTH:
         ic->next_state = icache_mem_req_actions(&break_fetch);

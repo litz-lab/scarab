@@ -711,8 +711,11 @@ Flag pref_addto_dest_req_queue(uns8 proc_id, HWP_Type dest, Addr line_index, uns
 Pref_Issue_Result pref_issue(uns8 proc_id, Destination dest, Addr line_addr, Mem_Req_Type type, uns line_size,
                              uns delay, Flag (*fill)(Mem_Req*), Pref_Req_Info* info) {
   Flag hit = FALSE;
-  /* An icache prefetch's hit refreshes the line, as FDIP's probe of the fetch path always has. */
-  if (!mem_pref_probe(proc_id, dest, line_addr, dest == DEST_ICACHE, &hit))
+  /* A line already in the icache's MSHR file would miss the icache: an FDIP prefetch merges
+     into it without a bank port. An icache prefetch's hit refreshes the line, as FDIP's probe
+     of the fetch path always has. */
+  Flag in_flight = dest == DEST_ICACHE && model->mem == MODEL_MEM && mshr_line(mem_core_file(proc_id, type), line_addr);
+  if (!in_flight && !mem_pref_probe(proc_id, dest, line_addr, dest == DEST_ICACHE, &hit))
     return PREF_ISSUE_BANK_BUSY;
   if (hit)
     return PREF_ISSUE_HIT;

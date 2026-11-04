@@ -149,6 +149,9 @@ void protect_code_segments(THREADID, CONTEXT*, INT32, VOID*) {
       if (hi > lo)
         mprotect((void*)lo, hi - lo, PROT_READ | PROT_EXEC);
     }
+  }
+}
+
 // -replay:injection 0 runs the region's syscalls for real, but nullapp has none of the
 // recorded fds open. Reopen them from <basename>.fds ("<fd> <mode> <path> <offset>").
 void sync_fds() {

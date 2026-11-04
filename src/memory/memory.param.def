@@ -200,6 +200,9 @@ DEF_PARAM(icache_mshrs, ICACHE_MSHRS, uns, uns, 16, )
 DEF_PARAM(dcache_mshrs, DCACHE_MSHRS, uns, uns, 32, )
 DEF_PARAM(mlc_mshrs, MLC_MSHRS, uns, uns, 32, )
 DEF_PARAM(l1_mshrs, L1_MSHRS, uns, uns, 32, )
+/* Entries of the icache and dcache files a new prefetched line may not take: kept for demand misses. */
+DEF_PARAM(icache_mshr_demand_reserve, ICACHE_MSHR_DEMAND_RESERVE, uns, uns, 1, )
+DEF_PARAM(dcache_mshr_demand_reserve, DCACHE_MSHR_DEMAND_RESERVE, uns, uns, 2, )
 /* Each level's writebacks have a file of their own, the same size. */
 
 // FOR independently sized queues beyond the l1

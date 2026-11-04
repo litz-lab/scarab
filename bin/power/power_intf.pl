@@ -330,7 +330,7 @@ sub get_params($@) {
     }
 
     my $cmd = "";
-    for my $file (`ls $dir/${file_tag}PARAMS.*{out,out.gz} 2> /dev/null`) {
+    for my $file (`ls $dir/${file_tag}PARAMS.*out $dir/${file_tag}PARAMS.*out.gz 2> /dev/null`) {
         chomp $file;
         $cmd .= ($file =~ /gz$/ ? "zcat" : "cat")." $file ; ";
     }
@@ -384,8 +384,8 @@ sub traverse_stats($$$$$) {
     my $power_intf = shift;
 
     my @files = $power_intf ?
-        `ls $dir/${file_tag}*.stat.*{out,out.gz} 2> /dev/null` :
-        `ls $dir/${file_tag}*.stat.*{out,out.gz} 2> /dev/null | grep -v scarab_power`;
+        `ls $dir/${file_tag}*.stat.*out $dir/${file_tag}*.stat.*out.gz 2> /dev/null` :
+        `ls $dir/${file_tag}*.stat.*out $dir/${file_tag}*.stat.*out.gz 2> /dev/null | grep -v scarab_power`;
 
     for my $file (@files) {
         chomp $file;

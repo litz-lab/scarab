@@ -930,42 +930,44 @@ void FDIP::update() {
         log_stats_path_conf_per_pref_candidate();
       emit_new_prefetch = determine_usefulness(line_addr, op, op->bp_pred_info->pred_global_hist);
 
-      Flag demand_hit_prefetch = FALSE;
-      Addr dummy_addr = 0;
       bool line = false;
-      Mem_Req* mem_req = NULL;
+      Flag port_busy = FALSE;
       if (emit_new_prefetch) {
-        line = (Inst_Info**)cache_access(&(ic_ref->icache), pc_addr, &line_addr, TRUE);
-        // icache_line_info cache should be accessed same times with icache for a consistant line information
-        if (WP_COLLECT_STATS) {
-          bool line_info = (Icache_Data*)cache_access(&(ic_ref->icache_line_info), pc_addr, &dummy_addr, TRUE);
-          UNUSED(line_info);
-        }
-        bool mlc_line = (Inst_Info**)cache_access(&mem->uncores[proc_id].mlc->cache, pc_addr, &dummy_addr, FALSE);
-        bool l1_line = (Inst_Info**)cache_access(&mem->uncores[proc_id].l1->cache, pc_addr, &dummy_addr, FALSE);
-        UNUSED(dummy_addr);
-        uns pref_from = line ? 0 : (mlc_line ? 1 : (l1_line ? 2 : 3));
-        STAT_EVENT(proc_id, FDIP_PREFETCH_HIT_ICACHE0 + 4 * bp_id + pref_from);
-        mem_req = mshr_search(mem_core_file(proc_id, MRT_FDIPPRFON), proc_id, line_addr, MRT_FDIPPRFON,
-                              ICACHE_LINE_SIZE, &demand_hit_prefetch);
+        Flag hit = FALSE;
+        if (!mem_pref_probe(proc_id, DEST_ICACHE, pc_addr, TRUE, &hit)) {
+          port_busy = TRUE; /* the line's bank port is taken: dropped, or retried with PREF_RETRY */
+          STAT_EVENT(proc_id, FDIP_PREF_PORT_DROP);
+        } else {
+          line = hit;
+          // icache_line_info shadows the icache for wrong-path stats; access it whenever the icache is
+          if (WP_COLLECT_STATS) {
+            Addr dummy_addr;
+            bool line_info = (Icache_Data*)cache_access(&(ic_ref->icache_line_info), pc_addr, &dummy_addr, TRUE);
+            UNUSED(line_info);
+          }
 
-        if (line) {
-          DEBUG(proc_id, "[FDIP%u] probe hit for %llx\n", bp_id, line_addr);
-          fdip_stat->probe_prefetched_cls(line_addr);
-          STAT_EVENT(proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
+          if (line) {
+            DEBUG(proc_id, "[FDIP%u] probe hit for %llx\n", bp_id, line_addr);
+            fdip_stat->probe_prefetched_cls(line_addr);
+            STAT_EVENT(proc_id, FDIP_PREF_ICACHE_PROBE_HIT_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
+          }
         }
       }
 
+      if (port_busy && PREF_RETRY) {
+        break_reason = BR_FULL_MEM_REQ_BUF; /* the walk resumes at this line next cycle */
+        break;
+      }
       Mem_Req_Type mem_type = is_conf_off_path() ? MRT_FDIPPRFOFF : MRT_FDIPPRFON;
-      if (!emit_new_prefetch && !line && !mem_req)  // TODO: whether to insert the candidate for the subsidiary
+      if (!emit_new_prefetch)  // TODO: whether to insert the candidate for the subsidiary
         insert_pref_candidate_to_seniority_ftq(line_addr, op->bp_pred_info->pred_global_hist);
       if (!bp_id && (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER))
         INC_STAT_EVENT(proc_id, FDIP_SENIORITY_FTQ_ACCUMULATED, udp->seniority_ftq.size());
       if (emit_new_prefetch)
         STAT_EVENT(proc_id, FDIP_DECIDE_PREF_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);
 
-      if (!line && emit_new_prefetch) {  // create a mem request only if line doesn't exist. If the corresponding
-                                         // mem_req exists, it will merge.
+      // create a mem request only if line doesn't exist. If the corresponding mem_req exists, it will merge.
+      if (!line && emit_new_prefetch && !port_busy) {
         uns success = Mshr_Req_Result::FAILED;
         if (FDIP_PREF_NO_LATENCY) {
           Mem_Req req;

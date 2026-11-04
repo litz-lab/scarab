@@ -50,6 +50,7 @@
 #include "frontend/frontend.h"
 #include "frontend/pin_trace_fe.h"
 #include "libs/list_lib.h"
+#include "libs/port_lib.h"
 #include "memory/memory.h"
 #include "prefetcher/D_JOLT.h"
 #include "prefetcher/FNL+MMA.h"
@@ -152,6 +153,12 @@ void init_icache_stage(uns8 proc_id, const char* name) {
 
   /* initialize the cache structure */
   init_cache(&ic->icache, "ICACHE", ICACHE_SIZE, ICACHE_ASSOC, ICACHE_LINE_SIZE, 0, REPL_TRUE_LRU);
+  ic->ports = (Ports*)malloc(sizeof(Ports) * ICACHE_BANKS);
+  for (uns ii = 0; ii < ICACHE_BANKS; ii++) {
+    char name[MAX_STR_LENGTH + 1];
+    snprintf(name, MAX_STR_LENGTH, "ICACHE BANK %d PORTS", ii);
+    init_ports(&ic->ports[ii], name, ICACHE_READ_PORTS, ICACHE_WRITE_PORTS, FALSE);
+  }
 
   /* init icache_line_info struct - this struct keeps data about corresponding
    * icache lines */
@@ -501,6 +508,9 @@ FT_Arbitration_Result ft_arbitration() {
       ic->line = lookup_icache();
       ic->lookups_per_cycle_count++;
       ASSERT(ic->proc_id, ic->lookups_per_cycle_count <= ICACHE_READ_PORTS);
+      /* Demand looks up first each cycle, and no more often than a bank has ports. */
+      Flag port = get_read_port(&ic->ports[BANK(ic->fetch_addr, ICACHE_BANKS, ICACHE_LINE_SIZE)]);
+      ASSERT(ic->proc_id, port);
     }
 
     if (ft_in_uop_cache) {
@@ -548,6 +558,8 @@ FT_Arbitration_Result ft_arbitration() {
         STAT_EVENT(ic->proc_id, FT_UOP_CACHE_MISS_ICACHE_MISS_OFF_PATH);
       }
       icache_miss_events();
+      ic->miss_lookup_done = cycle_count + ICACHE_LATENCY;
+      ic->icache_miss_fulfilled = FALSE;
 
       ft_op_buffer_fill_from_ft(ic, ft);
 
@@ -559,6 +571,15 @@ FT_Arbitration_Result ft_arbitration() {
 Icache_State icache_mem_req_actions(Break_Reason* break_fetch) {
   DEBUG(ic->proc_id, "Icache mem req on op_num:%s @ 0x%s\n", unsstr64(op_count[ic->proc_id]),
         hexstr64s(ic->fetch_addr));
+  /* The miss goes down only once its icache lookup is done; a fill meanwhile serves it. */
+  if (ic->icache_miss_fulfilled) {
+    *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
+    return ICACHE_SERVING;
+  }
+  if (cycle_count < ic->miss_lookup_done) {
+    *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
+    return ICACHE_MEM_REQ;
+  }
   Flag success = mem_req_on_icache_miss();
   if (success) {
     ic->icache_miss_fulfilled = FALSE;
@@ -1057,7 +1078,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
   }
 
   /* get new line in the cache */
-  if ((ic->line_addr == req->addr) && ic->next_state == ICACHE_WAIT_FOR_MISS) {
+  if ((ic->line_addr == req->addr) && (ic->next_state == ICACHE_WAIT_FOR_MISS || ic->next_state == ICACHE_MEM_REQ)) {
     INC_STAT_EVENT(ic->proc_id, MISS_WAIT_TIME, cycle_count - ic->wait_for_miss_start);
     if (IC_PREF_CACHE_ENABLE &&  // cmp FIXME prefetchers
         (USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path)) {

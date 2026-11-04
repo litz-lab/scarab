@@ -705,7 +705,7 @@ Op* Decoupled_FE::ftq_iter_get(uns iter_idx, bool* end_of_ft) {
   // if FTQ is empty or if iter has seen all FTs
   if (ftq.empty() || iter->ft_pos == ftq.size()) {
     if (ftq.empty())
-      ASSERT(proc_id, iter[iter_idx].ft_pos == 0 && iter[iter_idx].op_pos == 0 && iter[iter_idx].flattened_op_pos == 0);
+      ASSERT(proc_id, iter->ft_pos == 0 && iter->op_pos == 0 && iter->flattened_op_pos == 0);
     return NULL;
   }
 

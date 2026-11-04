@@ -62,20 +62,29 @@ DEF_PARAM(mlc_cycles, MLC_CYCLES, uns, uns, 12, )
    moves the line up instead of copying it (exclusive_promote_invalidate). A level that is
    not exclusive is filled on the way up and drops its clean victims.
 
-   exclusive_mlc: the MLC is exclusive of the dcache and icache. A core-destined demand or
-   prefetch skips the MLC, and dcache/icache victims are demoted into it.
+   exclusive_mlc_dcache: the MLC is exclusive of the dcache. A data demand or prefetch
+   bound for the dcache skips the MLC, and dcache victims are demoted into it.
+   exclusive_mlc_icache: the same for the icache and instruction fetches.
+   exclusive_mlc: both of the above.
    exclusive_l1: the L1 (Scarab's LLC) is exclusive of the MLC. Fills skip the L1, and
    MLC victims are demoted into it -- the victim-filled LLC of AMD Zen, Intel Skylake-SP
    onward and Arm DynamIQ, all of whose L2s are filled on demand (exclusive_l1 without
    exclusive_mlc).
-   exclusive_caches: both. A line lives at exactly one level. Setting it overrides
-   exclusive_mlc and exclusive_l1; read the effective values through mem_exclusive_mlc()
-   and mem_exclusive_l1(). */
+   exclusive_caches: all of the above. A line lives at exactly one level.
+   A broader flag overrides the narrower ones it covers; read the effective values through
+   mem_exclusive_mlc_dcache(), mem_exclusive_mlc_icache() and mem_exclusive_l1().
+
+   An exclusive MLC with a non-exclusive L1 matches no current design; it is there to
+   separate the two effects of exclusive_caches. So is a split MLC: the side is taken from
+   the request that fills the MLC line, so a line used as both code and data (with both
+   misses outstanding at once) follows whichever side missed first. */
 DEF_PARAM(exclusive_caches, EXCLUSIVE_CACHES, Flag, Flag, FALSE, )
 DEF_PARAM(exclusive_mlc, EXCLUSIVE_MLC, Flag, Flag, FALSE, )
+DEF_PARAM(exclusive_mlc_dcache, EXCLUSIVE_MLC_DCACHE, Flag, Flag, FALSE, )
+DEF_PARAM(exclusive_mlc_icache, EXCLUSIVE_MLC_ICACHE, Flag, Flag, FALSE, )
 DEF_PARAM(exclusive_l1, EXCLUSIVE_L1, Flag, Flag, FALSE, )
-/* With an exclusive MLC: drop a dcache victim instead of demoting it when it was
-   prefetched and never demand-used, so useless prefetches do not consume MLC/LLC
+/* With an MLC exclusive of the dcache: drop a dcache victim instead of demoting it when
+   it was prefetched and never demand-used, so useless prefetches do not consume MLC/LLC
    capacity on their way out. */
 DEF_PARAM(exclusive_drop_unused_pref, EXCLUSIVE_DROP_UNUSED_PREF, Flag, Flag, FALSE, )
 /* At an exclusive level: invalidate the copy left behind when a line is promoted out of

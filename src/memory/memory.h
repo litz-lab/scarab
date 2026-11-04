@@ -208,10 +208,14 @@ typedef struct Umon_Cache_Data_struct {
 /**************************************************************************************/
 /* Inline helpers */
 
-/* The effective exclusivity of each level: exclusive_caches turns on both (see
-   memory.param.def). */
-static inline Flag mem_exclusive_mlc(void) {
-  return EXCLUSIVE_CACHES || EXCLUSIVE_MLC;
+/* The effective exclusivity of each level: exclusive_mlc turns on both MLC sides, and
+   exclusive_caches turns on everything (see memory.param.def). */
+static inline Flag mem_exclusive_mlc_dcache(void) {
+  return EXCLUSIVE_CACHES || EXCLUSIVE_MLC || EXCLUSIVE_MLC_DCACHE;
+}
+
+static inline Flag mem_exclusive_mlc_icache(void) {
+  return EXCLUSIVE_CACHES || EXCLUSIVE_MLC || EXCLUSIVE_MLC_ICACHE;
 }
 
 static inline Flag mem_exclusive_l1(void) {

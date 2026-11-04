@@ -853,10 +853,12 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
   data = (Dcache_Data*)get_next_repl_line(&dc->dcache, dc->proc_id, req->addr, &repl_line_addr, &repl_line_valid);
 
   /* The victim goes down as a writeback: dirty in either mode, clean too when the MLC is
-     exclusive (it has no other copy) unless it is an unused prefetch we were asked to drop. */
-  if (repl_line_valid && !data->dirty && mem_exclusive_mlc() && EXCLUSIVE_DROP_UNUSED_PREF && data->HW_prefetch) {
+     exclusive of the dcache (it has no other copy) unless it is an unused prefetch we were
+     asked to drop. */
+  if (repl_line_valid && !data->dirty && mem_exclusive_mlc_dcache() && EXCLUSIVE_DROP_UNUSED_PREF &&
+      data->HW_prefetch) {
     STAT_EVENT(dc->proc_id, EXCL_DROP_UNUSED_PREF);
-  } else if (repl_line_valid && (data->dirty || mem_exclusive_mlc())) {
+  } else if (repl_line_valid && (data->dirty || mem_exclusive_mlc_dcache())) {
     DEBUG(dc->proc_id, "Scheduling writeback of addr:0x%s\n", hexstr64s(repl_line_addr));
     if (data->dirty) {
       ASSERT(dc->proc_id, data->read_count[0] || data->read_count[1] || data->write_count[0] || data->write_count[1]);

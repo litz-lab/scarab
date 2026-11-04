@@ -148,7 +148,7 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   ASSERT(proc_id, IC_ISSUE_WIDTH);
   ic->sd.max_op_count = IC_ISSUE_WIDTH;
   ic->sd.ops = (Op**)malloc(sizeof(Op*) * IC_ISSUE_WIDTH);
-  init_list(&ic->lookups, "IC LOOKUPS", sizeof(Counter), TRUE);
+  init_list(&ic->lookups, "IC LOOKUPS", sizeof(Icache_Lookup), TRUE);
   ft_op_buffer_init(ic);
   ft_op_buffer_reset(ic);
 
@@ -181,6 +181,11 @@ void init_icache_stage(uns8 proc_id, const char* name) {
                REPL_TRUE_LRU);
 
   memset(ic->rand_wb_state, 0, NUM_ELEMENTS(ic->rand_wb_state));
+}
+
+/* The icache follows the main FTQ, as FDIP does, to start each FT's lookup. */
+void init_icache_ftq_iter(uns8 proc_id) {
+  ic->dfe = decoupled_fe_new_ftq_iter(proc_id, MAIN_BP, &ic->ftq_iter);
 }
 
 /**************************************************************************************/
@@ -247,8 +252,9 @@ void recover_icache_stage() {
         hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
 
   recover_ft_op_buffer(ic);
-  /* The FTQ keeps its oldest FTs on a recovery, and with them their lookups. */
-  while (list_get_count(&ic->lookups) > (int)decoupled_fe_ftq_size())
+  /* Lookups of the flushed FTs are dropped; the FTQ resets ic->ftq_iter. */
+  while (list_get_count(&ic->lookups) &&
+         ((Icache_Lookup*)list_get_tail(&ic->lookups))->op_num > bp_recovery_info->recovery_op_num)
     dl_list_remove_tail(&ic->lookups);
 
   cur_data->op_count = 0;
@@ -498,15 +504,16 @@ FT_Arbitration_Result ft_arbitration() {
   ASSERT(ic->proc_id, !ft_op_buffer_can_fetch_op(ic));
 
   /* Only an FT whose icache lookup is done leaves the FTQ. */
-  Counter* lookup_done = (Counter*)list_get_head(&ic->lookups);
-  if (lookup_done && cycle_count < *lookup_done)
+  Icache_Lookup* lookup = (Icache_Lookup*)list_get_head(&ic->lookups);
+  if (lookup && cycle_count < lookup->done)
     return FT_LOOKUP_PENDING;
-  FT* ft = lookup_done ? decoupled_fe_pop_ft() : NULL;
+  FT* ft = lookup ? decoupled_fe_pop_ft() : NULL;
   if (!ft) {
     return FT_UNAVAILABLE;
   } else {
-    dl_list_remove_head(&ic->lookups);
     FT_Info ft_info = ft_get_ft_info(ft);
+    ASSERT(ic->proc_id, ft_info.dynamic_info.FT_id == lookup->ft_id);
+    dl_list_remove_head(&ic->lookups);
     // set the current fetch address
     ic->fetch_addr = ft_info.static_info.start;
     ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr);
@@ -926,13 +933,20 @@ void execute_coupled_FSM() {
 /* icache_cycle: */
 
 void update_icache_stage() {
-  /* The icache starts looking up the FTQ's next FTs as they arrive; each lookup is done
-     ICACHE_LATENCY - 1 cycles later, when ft_arbitration may take the FT. An FT the uop
-     cache holds needs no icache lookup. */
-  while (list_get_count(&ic->lookups) < (int)MIN2(ICACHE_LATENCY, decoupled_fe_ftq_size())) {
-    FT_Info ft_info = ft_get_ft_info(decoupled_fe_peek_ft(list_get_count(&ic->lookups)));
+  /* The icache starts the lookup of each FT that reaches it, up to ICACHE_LATENCY in flight;
+     it is done ICACHE_LATENCY - 1 cycles later, when ft_arbitration may take the FT. An FT
+     the uop cache holds needs no icache lookup. */
+  bool end_of_ft;
+  Op* op;
+  while (list_get_count(&ic->lookups) < (int)ICACHE_LATENCY &&
+         (op = decoupled_fe_ftq_iter_get(ic->dfe, ic->ftq_iter, &end_of_ft))) {
+    FT_Info ft_info = ft_get_ft_info(op->parent_FT);
     Flag uop_hit = UOP_CACHE_ENABLE && uop_cache_lookup_line(ft_info.static_info.start, ft_info, FALSE);
-    *(Counter*)dl_list_add_tail(&ic->lookups) = cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1);
+    *(Icache_Lookup*)dl_list_add_tail(&ic->lookups) =
+        (Icache_Lookup){ft_info.dynamic_info.FT_id, op->op_num, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1)};
+    while (!end_of_ft)
+      decoupled_fe_ftq_iter_get_next(ic->dfe, ic->ftq_iter, &end_of_ft);
+    decoupled_fe_ftq_iter_get_next(ic->dfe, ic->ftq_iter, &end_of_ft);
   }
   ic->lookups_per_cycle_count = 0;
   ic->topdown_on_path_fetched = 0;

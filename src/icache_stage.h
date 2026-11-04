@@ -95,7 +95,9 @@ typedef struct Icache_Stage_struct {
   /* two data paths: */
   /* uops fetched from uop cache go to uopc_sd, otherwise sd */
   Stage_Data sd; /* stage interface data */
-  List lookups;  /* cycle each of the FTQ's head FTs completes its icache lookup */
+  List lookups;  /* FTs whose icache lookup is in flight, oldest first (Icache_Lookup) */
+  Decoupled_FE* dfe; /* the FTQ the icache follows to start lookups */
+  uns ftq_iter;      /* first op of the next FT to start its lookup */
   uns8 lookups_per_cycle_count;
   uns8 topdown_on_path_fetched; /* on-path ops served this cycle, for top-down slot attribution */
 
@@ -123,6 +125,12 @@ typedef struct Icache_Stage_struct {
   Cache pref_icache;      /* Prefetcher cache storage structure (caches Inst_Info *) */
   char rand_wb_state[31]; /* State of random number generator for random writeback */
 } Icache_Stage;
+
+typedef struct Icache_Lookup_struct {
+  uint64_t ft_id;
+  Counter op_num; /* the FT's first op */
+  Counter done;   /* cycle the lookup completes */
+} Icache_Lookup;
 
 typedef struct Icache_Data_struct {
   Flag fetched_by_offpath;   /* fetched by an off_path op? */
@@ -152,6 +160,7 @@ Stage_Data* get_current_stage_data(void);
 void reset_icache_stage(void);
 void reset_all_ops_icache_stage(void);
 void recover_icache_stage(void);
+void init_icache_ftq_iter(uns8 proc_id);
 void redirect_icache_stage(void);
 void debug_icache_stage(void);
 void update_icache_stage(void);

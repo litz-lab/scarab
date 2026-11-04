@@ -122,16 +122,6 @@ FT* decoupled_fe_pop_ft() {
   return g_dfe->pop_ft();
 }
 
-uns decoupled_fe_ftq_size() {
-  ASSERT(0, g_dfe->get_bp_id() == MAIN_BP);
-  return g_dfe->ftq_size();
-}
-
-FT* decoupled_fe_peek_ft(uns idx) {
-  ASSERT(0, g_dfe->get_bp_id() == MAIN_BP);
-  return g_dfe->peek_ft(idx);
-}
-
 Decoupled_FE* decoupled_fe_new_ftq_iter(uns proc_id, uns bp_id, uns* ftq_idx) {
   *ftq_idx = per_core_dfe[proc_id][bp_id]->new_ftq_iter();
   return per_core_dfe[proc_id][bp_id].get();

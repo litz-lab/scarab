@@ -34,6 +34,10 @@
 #ifdef ENABLE_PINPLAY
 #include <sys/syscall.h>
 
+#include <fcntl.h>
+#include <sstream>
+#include <unistd.h>
+
 #include "pinplay.H"
 #include "sde-init.H"
 #include "sde-pinplay-supp.H"
@@ -116,6 +120,26 @@ INT32 Usage() {
 }
 
 #ifdef ENABLE_PINPLAY
+// -replay:injection 0 runs the region's syscalls for real, but nullapp has none of the
+// recorded fds open. Reopen them from <basename>.fds ("<fd> <mode> <path> <offset>").
+void sync_fds() {
+  KNOB_BASE* basename = KNOB_BASE::FindKnob("replay:basename");
+  if (!basename || basename->NumberOfValues() == 0) return;
+  std::ifstream in((basename->ValueString(0) + ".fds").c_str());
+  std::string line, mode, path;
+  int fd;
+  long long offset;
+  while (std::getline(in, line)) {
+    if (!(std::istringstream(line) >> fd >> mode >> path >> offset) || fd <= 2) continue;
+    int src = open(path.c_str(), mode == "r" ? O_RDONLY : O_RDWR);
+    if (src < 0 || dup2(src, fd) < 0 || lseek(fd, offset, SEEK_SET) != offset) {
+      *out << "ERROR: sync_fds: fd " << fd << " " << path << " errno=" << errno << endl;
+      PIN_ExitProcess(1);
+    }
+    close(src);
+  }
+}
+
 void sync_fs_base(THREADID tid, CONTEXT* ctxt, INT32, VOID*) {
   ADDRINT fsb = 0;
   PIN_GetContextRegval(ctxt, REG_SEG_FS_BASE, (UINT8*)&fsb);
@@ -342,6 +366,7 @@ int main(int argc, char* argv[]) {
   PIN_InitSymbols();
   sde_pin_init(argc, argv);
   sde_init();
+  sync_fds();
 #else
   if(PIN_Init(argc, argv)) {
     return Usage();

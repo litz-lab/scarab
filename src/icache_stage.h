@@ -32,6 +32,7 @@
 #include "globals/global_types.h"
 
 #include "libs/cache_lib.h"
+#include "libs/list_lib.h"
 
 #include "decoupled_frontend.h"
 #include "stage_data.h"
@@ -77,11 +78,13 @@ typedef enum Break_Reason_enum {
   BREAK_UOP_CACHE_STALLED,
   BREAK_UOP_CACHE_TO_ICACHE_SWITCH,
   BREAK_UOP_CACHE_READ_LIMIT,
-  BREAK_UOP_CACHE_ISSUE_WIDTH
+  BREAK_UOP_CACHE_ISSUE_WIDTH,
+  BREAK_ICACHE_PIPE_FILL  // break because the icache pipeline is filling: no FT has reached its end yet
 } Break_Reason;
 
 typedef enum FT_Arbitration_Result_enum {
   FT_UNAVAILABLE,
+  FT_IC_PIPE_FILLING,
   FT_MISS_BOTH,
   FT_HIT_ICACHE,
   FT_HIT_UOP_CACHE
@@ -92,6 +95,9 @@ typedef struct Icache_Stage_struct {
   /* two data paths: */
   /* uops fetched from uop cache go to uopc_sd, otherwise sd */
   Stage_Data sd; /* stage interface data */
+  List lookups;  /* FTs whose icache lookup is in flight, oldest first (Icache_Lookup) */
+  Decoupled_FE* dfe; /* the FTQ the icache follows to start lookups */
+  uns ftq_iter;      /* first op of the next FT to start its lookup */
   uns8 lookups_per_cycle_count;
   uns8 topdown_on_path_fetched; /* on-path ops served this cycle, for top-down slot attribution */
 
@@ -99,7 +105,7 @@ typedef struct Icache_Stage_struct {
   Icache_State next_state;      /* state that the ICACHE is going to be in next cycle */
   uint64_t wait_for_miss_start; /* time when cache miss was observed */
   Flag icache_miss_fulfilled;
-  Counter miss_lookup_done; /* cycle the missed line's icache lookup completes */
+  Counter miss_send; /* cycle the missed line's request goes down */
   Flag icache_stage_resteer_signaled;
   Flag fetch_barrier_pending;
   uns64 fetch_barrier_inst_uid;
@@ -120,6 +126,12 @@ typedef struct Icache_Stage_struct {
   Cache pref_icache;      /* Prefetcher cache storage structure (caches Inst_Info *) */
   char rand_wb_state[31]; /* State of random number generator for random writeback */
 } Icache_Stage;
+
+typedef struct Icache_Lookup_struct {
+  uint64_t ft_id;
+  Counter done;  /* cycle the lookup completes */
+  Flag off_path; /* the FT has off-path ops */
+} Icache_Lookup;
 
 typedef struct Icache_Data_struct {
   Flag fetched_by_offpath;   /* fetched by an off_path op? */
@@ -149,6 +161,7 @@ Stage_Data* get_current_stage_data(void);
 void reset_icache_stage(void);
 void reset_all_ops_icache_stage(void);
 void recover_icache_stage(void);
+void init_icache_ftq_iter(uns8 proc_id);
 void redirect_icache_stage(void);
 void debug_icache_stage(void);
 void update_icache_stage(void);

@@ -142,7 +142,7 @@ void protect_code_segments(THREADID, CONTEXT*, INT32, VOID*) {
       if (p.p_type != PT_LOAD || !(p.p_flags & PF_X) || (p.p_flags & PF_W))
         continue;
       ADDRINT lo = (bias + p.p_vaddr) & ~0xFFFUL;
-      ADDRINT hi = (bias + p.p_vaddr + p.p_memsz) & ~0xFFFUL;
+      ADDRINT hi = (bias + p.p_vaddr + p.p_memsz + 0xFFF) & ~0xFFFUL;
       if (hi > lo)
         mprotect((void*)lo, hi - lo, PROT_READ | PROT_EXEC);
     }

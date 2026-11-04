@@ -252,9 +252,9 @@ void recover_icache_stage() {
         hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
 
   recover_ft_op_buffer(ic);
-  /* Lookups of the flushed FTs are dropped; the FTQ resets ic->ftq_iter. */
-  while (list_get_count(&ic->lookups) &&
-         ((Icache_Lookup*)list_get_tail(&ic->lookups))->op_num > bp_recovery_info->recovery_op_num)
+  /* The FTQ keeps a prefix of its FTs and moves ic->ftq_iter back to the first FT it flushed,
+     so the iterator's FT offset counts the started lookups that survive. */
+  while (list_get_count(&ic->lookups) > (int)decoupled_fe_ftq_iter_ft_offset(ic->dfe, ic->ftq_iter))
     dl_list_remove_tail(&ic->lookups);
 
   cur_data->op_count = 0;
@@ -943,7 +943,7 @@ void update_icache_stage() {
     FT_Info ft_info = ft_get_ft_info(op->parent_FT);
     Flag uop_hit = UOP_CACHE_ENABLE && uop_cache_lookup_line(ft_info.static_info.start, ft_info, FALSE);
     *(Icache_Lookup*)dl_list_add_tail(&ic->lookups) =
-        (Icache_Lookup){ft_info.dynamic_info.FT_id, op->op_num, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1)};
+        (Icache_Lookup){ft_info.dynamic_info.FT_id, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1)};
     decoupled_fe_ftq_iter_next_ft(ic->dfe, ic->ftq_iter);
   }
   ic->lookups_per_cycle_count = 0;

@@ -21,13 +21,13 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <elf.h>
 #include <fstream>
 #include <iostream>
 #include <signal.h>
+#include <sys/mman.h>
 #include <syscall.h>
 #include <unordered_map>
-#include <elf.h>
-#include <sys/mman.h>
 #include <vector>
 
 #undef UNUSED
@@ -124,22 +124,27 @@ INT32 Usage() {
 void protect_code_segments(THREADID, CONTEXT*, INT32, VOID*) {
   for (IMG img = APP_ImgHead(); IMG_Valid(img); img = IMG_Next(img)) {
     FILE* f = fopen(IMG_Name(img).c_str(), "rb");
-    if (!f) continue;
+    if (!f)
+      continue;
     Elf64_Ehdr eh;
     std::vector<Elf64_Phdr> phdrs;
-    if (fread(&eh, sizeof eh, 1, f) == 1 && eh.e_phentsize == sizeof(Elf64_Phdr) && fseek(f, eh.e_phoff, SEEK_SET) == 0) {
+    if (fread(&eh, sizeof eh, 1, f) == 1 && eh.e_phentsize == sizeof(Elf64_Phdr) &&
+        fseek(f, eh.e_phoff, SEEK_SET) == 0) {
       phdrs.resize(eh.e_phnum);
       phdrs.resize(fread(phdrs.data(), sizeof(Elf64_Phdr), eh.e_phnum, f));
     }
     fclose(f);
     auto first = std::find_if(phdrs.begin(), phdrs.end(), [](const Elf64_Phdr& p) { return p.p_type == PT_LOAD; });
-    if (first == phdrs.end()) continue;
+    if (first == phdrs.end())
+      continue;
     ADDRINT bias = IMG_LowAddress(img) - first->p_vaddr;
     for (const Elf64_Phdr& p : phdrs) {
-      if (p.p_type != PT_LOAD || !(p.p_flags & PF_X) || (p.p_flags & PF_W)) continue;
+      if (p.p_type != PT_LOAD || !(p.p_flags & PF_X) || (p.p_flags & PF_W))
+        continue;
       ADDRINT lo = (bias + p.p_vaddr) & ~0xFFFUL;
       ADDRINT hi = (bias + p.p_vaddr + p.p_memsz) & ~0xFFFUL;
-      if (hi > lo) mprotect((void*)lo, hi - lo, PROT_READ | PROT_EXEC);
+      if (hi > lo)
+        mprotect((void*)lo, hi - lo, PROT_READ | PROT_EXEC);
     }
   }
 }

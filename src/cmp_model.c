@@ -261,7 +261,7 @@ void cmp_cores(void) {
         update_idq_stage(dec->last_sd, NULL, NULL);
         update_uop_queue_stage(NULL);
       }
-      update_decode_stage(&ic->sd);
+      update_decode_stage(icache_stage_output());
       update_icache_stage();
 
       /* Decoupled branch prediction and prefetching */

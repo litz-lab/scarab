@@ -148,6 +148,8 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   ASSERT(proc_id, IC_ISSUE_WIDTH);
   ic->sd.max_op_count = IC_ISSUE_WIDTH;
   ic->sd.ops = (Op**)malloc(sizeof(Op*) * IC_ISSUE_WIDTH);
+  ASSERT(proc_id, ICACHE_LATENCY);
+  init_list(&ic->pipe, "IC PIPE", sizeof(Icache_Group), TRUE);
   ft_op_buffer_init(ic);
   ft_op_buffer_reset(ic);
 
@@ -195,6 +197,20 @@ Stage_Data* get_current_stage_data() {
   }
 }
 
+/* What decode takes this cycle: the oldest fetched group once its icache lookup is done. */
+Stage_Data* icache_stage_output() {
+  static Stage_Data none;
+  if (ICACHE_LATENCY == 1)
+    return &ic->sd;
+  Icache_Group* group = (Icache_Group*)list_get_head(&ic->pipe);
+  return group && cycle_count >= group->ready ? &group->sd : &none;
+}
+
+static void icache_pipe_pop() {
+  free(((Icache_Group*)list_get_head(&ic->pipe))->sd.ops);
+  dl_list_remove_head(&ic->pipe);
+}
+
 /**************************************************************************************/
 /* reset_icache_stage: */
 
@@ -205,6 +221,8 @@ void reset_icache_stage() {
     cur_data->ops[ii] = NULL;
   cur_data->op_count = 0;
 
+  while (list_get_count(&ic->pipe))
+    icache_pipe_pop();
   ic->off_path = FALSE;
   ic->back_on_path = FALSE;
   ic->fetch_barrier_pending = FALSE;
@@ -224,6 +242,8 @@ void reset_all_ops_icache_stage() {
     cur_data->ops[ii] = NULL;
   cur_data->op_count = 0;
 
+  while (list_get_count(&ic->pipe))
+    icache_pipe_pop();
   ic->off_path = FALSE;
   ic->back_on_path = FALSE;
   ic->fetch_barrier_pending = FALSE;
@@ -234,16 +254,10 @@ void reset_all_ops_icache_stage() {
 /**************************************************************************************/
 /* recover_icache_stage: */
 
-void recover_icache_stage() {
-  Stage_Data* cur_data = get_current_stage_data();
+/* Flushes a stage data's ops younger than the recovery. */
+static void recover_icache_sd(Stage_Data* cur_data) {
   uns ii;
   Flag flushed = FALSE;
-
-  ASSERT(ic->proc_id, ic->proc_id == bp_recovery_info->proc_id);
-  DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s recovery_op_num:%llu\n",
-        hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
-
-  recover_ft_op_buffer(ic);
 
   cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {
@@ -273,6 +287,26 @@ void recover_icache_stage() {
   if (cur_data->op_count > 0 && flushed) {
     Op* op = cur_data->ops[cur_data->op_count - 1];
     assert_ft_after_recovery(ic->proc_id, op, bp_recovery_info->recovery_fetch_addr);
+  }
+}
+
+void recover_icache_stage() {
+  Stage_Data* cur_data = get_current_stage_data();
+
+  ASSERT(ic->proc_id, ic->proc_id == bp_recovery_info->proc_id);
+  DEBUG(ic->proc_id, "Icache stage recovery signaled.  recovery_fetch_addr: 0x%s recovery_op_num:%llu\n",
+        hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
+
+  recover_ft_op_buffer(ic);
+
+  recover_icache_sd(cur_data);
+  for (Icache_Group* group = (Icache_Group*)list_start_head_traversal(&ic->pipe); group;
+       group = (Icache_Group*)list_next_element(&ic->pipe))
+    recover_icache_sd(&group->sd);
+  /* Groups are oldest first: a flushed one has only younger ones behind it. */
+  while (list_get_count(&ic->pipe) && !((Icache_Group*)list_get_tail(&ic->pipe))->sd.op_count) {
+    free(((Icache_Group*)list_get_tail(&ic->pipe))->sd.ops);
+    dl_list_remove_tail(&ic->pipe);
   }
 
   ic->back_on_path = !bp_recovery_info->recovery_force_offpath;
@@ -910,6 +944,17 @@ void execute_coupled_FSM() {
 /* icache_cycle: */
 
 void update_icache_stage() {
+  /* Last cycle's fetch enters the icache lookup's remaining ICACHE_LATENCY - 1 cycles, behind
+     the groups decode has not taken yet; a full pipe holds it in ic->sd and fetch stalls. */
+  if (list_get_count(&ic->pipe) && !((Icache_Group*)list_get_head(&ic->pipe))->sd.op_count)
+    icache_pipe_pop();
+  if (ic->sd.op_count && list_get_count(&ic->pipe) < (int)ICACHE_LATENCY - 1) {
+    Icache_Group* group = (Icache_Group*)dl_list_add_tail(&ic->pipe);
+    group->ready = cycle_count + ICACHE_LATENCY - 1;
+    group->sd = ic->sd;
+    ic->sd.ops = (Op**)calloc(IC_ISSUE_WIDTH, sizeof(Op*));
+    ic->sd.op_count = 0;
+  }
   ic->lookups_per_cycle_count = 0;
   ic->topdown_on_path_fetched = 0;
   if (UOP_CACHE_ENABLE) {

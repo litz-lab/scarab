@@ -936,11 +936,9 @@ void update_icache_stage() {
   /* The icache starts the lookup of each FT that reaches it, up to ICACHE_LATENCY in flight;
      it is done ICACHE_LATENCY - 1 cycles later, when ft_arbitration may take the FT. An FT
      the uop cache holds needs no icache lookup. */
-  bool end_of_ft;
-  Op* op;
-  while (list_get_count(&ic->lookups) < (int)ICACHE_LATENCY &&
-         (op = decoupled_fe_ftq_iter_get(ic->dfe, ic->ftq_iter, &end_of_ft))) {
-    FT_Info ft_info = ft_get_ft_info(op->parent_FT);
+  FT* ft;
+  while (list_get_count(&ic->lookups) < (int)ICACHE_LATENCY && (ft = decoupled_fe_ftq_iter_ft(ic->dfe, ic->ftq_iter))) {
+    FT_Info ft_info = ft_get_ft_info(ft);
     Flag uop_hit = UOP_CACHE_ENABLE && uop_cache_lookup_line(ft_info.static_info.start, ft_info, FALSE);
     *(Icache_Lookup*)dl_list_add_tail(&ic->lookups) =
         (Icache_Lookup){ft_info.dynamic_info.FT_id, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1)};

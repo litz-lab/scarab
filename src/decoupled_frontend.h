@@ -165,6 +165,8 @@ void update_decoupled_fe(uns proc_id, uns bp_id);
 // Icache/Core API
 void recover_decoupled_fe(uns proc_id, uns bp_id, Cf_Type cf_type, Recovery_Info* info);
 FT* decoupled_fe_pop_ft();
+uns decoupled_fe_ftq_size();
+FT* decoupled_fe_peek_ft(uns idx);
 bool decoupled_fe_is_off_path();
 void decoupled_fe_retire(Op* op, int proc_id, uns64 inst_uid);
 // FT::predict_ft calls this after each CF main predicts (per-CF prediction
@@ -266,6 +268,8 @@ struct Decoupled_FE {
   void recover(Cf_Type cf_type, Recovery_Info* info);
   void update();
   FT* pop_ft();
+  uns ftq_size() { return ftq.size(); }
+  FT* peek_ft(uns idx) { return ftq.at(idx); }
   uns new_ftq_iter();
   Op* ftq_iter_get(uns iter_idx, bool* end_of_ft);
   Op* ftq_iter_get_next(uns iter_idx, bool* end_of_ft);

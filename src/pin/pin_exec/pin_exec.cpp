@@ -26,6 +26,9 @@
 #include <signal.h>
 #include <syscall.h>
 #include <unordered_map>
+#include <elf.h>
+#include <sys/mman.h>
+#include <vector>
 
 #undef UNUSED
 #undef WARNING
@@ -116,7 +119,33 @@ INT32 Usage() {
 }
 
 #ifdef ENABLE_PINPLAY
+// PinPlay restores the pinball's pages as rwx. Put the code segments back to r-x, so a
+// wrong-path store into code faults (and is handled) instead of changing the code.
+void protect_code_segments() {
+  for (IMG img = APP_ImgHead(); IMG_Valid(img); img = IMG_Next(img)) {
+    FILE* f = fopen(IMG_Name(img).c_str(), "rb");
+    if (!f) continue;
+    Elf64_Ehdr eh;
+    std::vector<Elf64_Phdr> phdrs;
+    if (fread(&eh, sizeof eh, 1, f) == 1 && eh.e_phentsize == sizeof(Elf64_Phdr) && fseek(f, eh.e_phoff, SEEK_SET) == 0) {
+      phdrs.resize(eh.e_phnum);
+      phdrs.resize(fread(phdrs.data(), sizeof(Elf64_Phdr), eh.e_phnum, f));
+    }
+    fclose(f);
+    auto first = std::find_if(phdrs.begin(), phdrs.end(), [](const Elf64_Phdr& p) { return p.p_type == PT_LOAD; });
+    if (first == phdrs.end()) continue;
+    ADDRINT bias = IMG_LowAddress(img) - first->p_vaddr;
+    for (const Elf64_Phdr& p : phdrs) {
+      if (p.p_type != PT_LOAD || !(p.p_flags & PF_X) || (p.p_flags & PF_W)) continue;
+      ADDRINT lo = (bias + p.p_vaddr) & ~0xFFFUL;
+      ADDRINT hi = (bias + p.p_vaddr + p.p_memsz) & ~0xFFFUL;
+      if (hi > lo) mprotect((void*)lo, hi - lo, PROT_READ | PROT_EXEC);
+    }
+  }
+}
+
 void sync_fs_base(THREADID tid, CONTEXT* ctxt, INT32, VOID*) {
+  protect_code_segments();
   ADDRINT fsb = 0;
   PIN_GetContextRegval(ctxt, REG_SEG_FS_BASE, (UINT8*)&fsb);
   // ARCH_SET_FS, 0x1002 (ref. arch/x86/include/uapi/asm/prctl.h)

@@ -580,6 +580,7 @@ FT_Arbitration_Result ft_arbitration() {
       }
       icache_miss_events();
       ic->icache_miss_fulfilled = FALSE;
+      ic->exp_miss_send = cycle_count + 1; /* EXPERIMENT: #691's miss timing */
 
       ft_op_buffer_fill_from_ft(ic, ft);
 
@@ -595,6 +596,10 @@ Icache_State icache_mem_req_actions(Break_Reason* break_fetch) {
   if (ic->icache_miss_fulfilled) {
     *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
     return ICACHE_SERVING;
+  }
+  if (cycle_count < ic->exp_miss_send) {
+    *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
+    return ICACHE_MEM_REQ;
   }
   Flag success = mem_req_on_icache_miss();
   if (success) {

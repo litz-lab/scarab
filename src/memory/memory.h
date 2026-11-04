@@ -33,6 +33,8 @@
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
 
+#include "memory/memory.param.h"
+
 #include "libs/cache_lib.h"
 #include "libs/hash_lib.h"
 #include "libs/list_lib.h"
@@ -202,6 +204,19 @@ typedef struct Umon_Cache_Data_struct {
   Addr addr;
   Flag prefetch; /* was the line prefetched? */
 } Umon_Cache_Data;
+
+/**************************************************************************************/
+/* Inline helpers */
+
+/* The effective exclusivity of each level: exclusive_caches turns on both (see
+   memory.param.def). */
+static inline Flag mem_exclusive_mlc(void) {
+  return EXCLUSIVE_CACHES || EXCLUSIVE_MLC;
+}
+
+static inline Flag mem_exclusive_llc(void) {
+  return EXCLUSIVE_CACHES || EXCLUSIVE_LLC;
+}
 
 /**************************************************************************************/
 /* Prototypes */

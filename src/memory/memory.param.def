@@ -57,17 +57,28 @@ DEF_PARAM(mlc_size, MLC_SIZE, uns, uns, (512 * 1024), )
 DEF_PARAM(mlc_assoc, MLC_ASSOC, uns, uns, 4, )
 DEF_PARAM(mlc_line_size, MLC_LINE_SIZE, uns, uns, 64, )
 DEF_PARAM(mlc_cycles, MLC_CYCLES, uns, uns, 12, )
-/* Exclusive cache hierarchy: a fill inserts the line only at the level the
-   request targets, so a core-destined demand or prefetch load lands in the
-   dcache alone. Lines reach the lower levels by demotion: a dcache victim is
-   inserted into the MLC, an MLC victim into the LLC. */
+/* Exclusive cache levels. An exclusive level is not filled by lines passing through it on
+   their way up: it receives the victims of the level above (demotion), and a hit there
+   moves the line up instead of copying it (exclusive_promote_invalidate). A level that is
+   not exclusive is filled on the way up and drops its clean victims.
+
+   exclusive_mlc: the MLC is exclusive of the dcache and icache. A core-destined demand or
+   prefetch skips the MLC, and dcache/icache victims are demoted into it.
+   exclusive_llc: the LLC is exclusive of the MLC. Fills skip the LLC, and MLC victims are
+   demoted into it -- the victim-filled LLC of AMD Zen, Intel Skylake-SP onward and Arm
+   DynamIQ, all of whose L2s are filled on demand (exclusive_llc without exclusive_mlc).
+   exclusive_caches: both. A line lives at exactly one level. Setting it overrides
+   exclusive_mlc and exclusive_llc; read the effective values through mem_exclusive_mlc()
+   and mem_exclusive_llc(). */
 DEF_PARAM(exclusive_caches, EXCLUSIVE_CACHES, Flag, Flag, FALSE, )
-/* With exclusive_caches: drop a dcache victim instead of demoting it when it was
+DEF_PARAM(exclusive_mlc, EXCLUSIVE_MLC, Flag, Flag, FALSE, )
+DEF_PARAM(exclusive_llc, EXCLUSIVE_LLC, Flag, Flag, FALSE, )
+/* With an exclusive MLC: drop a dcache victim instead of demoting it when it was
    prefetched and never demand-used, so useless prefetches do not consume MLC/LLC
    capacity on their way out. */
 DEF_PARAM(exclusive_drop_unused_pref, EXCLUSIVE_DROP_UNUSED_PREF, Flag, Flag, FALSE, )
-/* With exclusive_caches: invalidate the copy left behind when a line is promoted, so a
-   line lives at exactly one level. 0 keeps it, making the hierarchy non-inclusive. */
+/* At an exclusive level: invalidate the copy left behind when a line is promoted out of
+   it. 0 keeps it, making that level non-inclusive instead. */
 DEF_PARAM(exclusive_promote_invalidate, EXCLUSIVE_PROMOTE_INVALIDATE, Flag, Flag, TRUE, )
 
 DEF_PARAM(perfect_mlc, PERFECT_MLC, Flag, Flag, FALSE, )

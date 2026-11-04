@@ -498,6 +498,13 @@ void node_retire() {
       uns wi = w == 8 ? 0 : w == 16 ? 1 : w == 32 ? 2 : 3;
       uns vi = !(v >> 8) ? 0 : !(v >> 16) ? 1 : !(v >> 32) ? 2 : 3;
       STAT_EVENT(op->proc_id, DST_W8_V8 + 4 * wi + vi);
+      // operand's upper bits all 0 or all 1
+      uint64_t m = w == 64 ? ~0ULL : (1ULL << w) - 1;
+      uint64_t o = v & m;
+      uns si = 0;
+      while (si < 3 && (o >> (8 << si)) != 0 && (o >> (8 << si)) != (m >> (8 << si)))
+        si++;
+      STAT_EVENT(op->proc_id, DST_W8_S8 + 4 * wi + si);
     }
 
     DEBUG(node->proc_id, "Retiring op_num:%s\n", unsstr64(op->op_num));

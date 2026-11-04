@@ -93,6 +93,7 @@ typedef struct Icache_Stage_struct {
   /* two data paths: */
   /* uops fetched from uop cache go to uopc_sd, otherwise sd */
   Stage_Data sd; /* stage interface data */
+  List pipe;     /* fetched groups in the rest of their icache lookup (Icache_Group) */
   uns8 lookups_per_cycle_count;
   uns8 topdown_on_path_fetched; /* on-path ops served this cycle, for top-down slot attribution */
 
@@ -123,6 +124,11 @@ typedef struct Icache_Stage_struct {
   char rand_wb_state[31]; /* State of random number generator for random writeback */
 } Icache_Stage;
 
+typedef struct Icache_Group_struct {
+  Counter ready; /* cycle decode can take it */
+  Stage_Data sd;
+} Icache_Group;
+
 typedef struct Icache_Data_struct {
   Flag fetched_by_offpath;   /* fetched by an off_path op? */
   Addr offpath_op_addr;      /* PC of the off path op that fetched this line */
@@ -148,6 +154,7 @@ extern Icache_Stage* ic;
 void set_icache_stage(Icache_Stage*);
 void init_icache_stage(uns8, const char*);
 Stage_Data* get_current_stage_data(void);
+Stage_Data* icache_stage_output(void);
 void reset_icache_stage(void);
 void reset_all_ops_icache_stage(void);
 void recover_icache_stage(void);

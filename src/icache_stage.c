@@ -579,6 +579,8 @@ FT_Arbitration_Result ft_arbitration() {
         STAT_EVENT(ic->proc_id, FT_UOP_CACHE_MISS_ICACHE_MISS_OFF_PATH);
       }
       icache_miss_events();
+      /* The miss goes down when a hit's data would enter decode, the cycle after the lookup. */
+      ic->miss_send = cycle_count + 1;
       ic->icache_miss_fulfilled = FALSE;
 
       ft_op_buffer_fill_from_ft(ic, ft);
@@ -591,10 +593,14 @@ FT_Arbitration_Result ft_arbitration() {
 Icache_State icache_mem_req_actions(Break_Reason* break_fetch) {
   DEBUG(ic->proc_id, "Icache mem req on op_num:%s @ 0x%s\n", unsstr64(op_count[ic->proc_id]),
         hexstr64s(ic->fetch_addr));
-  /* A fill that arrived while the request waited for an MSHR serves it. */
+  /* A fill that arrived meanwhile serves it. */
   if (ic->icache_miss_fulfilled) {
     *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
     return ICACHE_SERVING;
+  }
+  if (cycle_count < ic->miss_send) {
+    *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
+    return ICACHE_MEM_REQ;
   }
   Flag success = mem_req_on_icache_miss();
   if (success) {

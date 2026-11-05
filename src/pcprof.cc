@@ -128,9 +128,8 @@ enum Misp_Src {
 const char* cf_names[NUM_CF_TYPES] = {"", "jmp", "cbr", "rep", "call", "ijmp", "icall", "ico", "ret", "sys"};
 
 struct PcRec {
-  uns64 c[NUM_COLS];
-  uns8 cf;
-  PcRec() : cf(0) { std::fill(c, c + NUM_COLS, 0); }
+  uns64 c[NUM_COLS] = {};
+  uns8 cf = 0;
 };
 
 // Exact LRU stack distance (number of distinct other keys touched since the previous
@@ -326,7 +325,7 @@ struct R {
 };
 
 inline R recs(Addr pc) {
-  R r;
+  R r = {};
   r.p[0] = &g->pcs[pc];
   r.p[1] = &g->sys_pcs[std::make_pair(pc, g->sys_phase)];
   r.p[2] = &g->mark_pcs[std::make_pair(pc, g->mark_phase)];

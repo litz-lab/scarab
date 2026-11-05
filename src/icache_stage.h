@@ -121,6 +121,7 @@ typedef struct Icache_Stage_struct {
 
   Cache icache;           /* the cache storage structure (caches Inst_Info *) */
   Ports* ports;           /* read ports per bank; banks interleave cache lines */
+  List pref_queue;        /* instruction prefetches, in pref_common's queue */
   Cache icache_line_info; /* contains info about the icache lines */
   Cache pref_icache;      /* Prefetcher cache storage structure (caches Inst_Info *) */
   char rand_wb_state[31]; /* State of random number generator for random writeback */

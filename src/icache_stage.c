@@ -57,6 +57,7 @@
 #include "prefetcher/eip.h"
 #include "prefetcher/fdip.h"
 #include "prefetcher/l2l1pref.h"
+#include "prefetcher/pref_common.h"
 #include "prefetcher/stream_pref.h"
 
 #include "cmp_model.h"
@@ -155,6 +156,7 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   /* initialize the cache structure */
   init_cache(&ic->icache, "ICACHE", ICACHE_SIZE, ICACHE_ASSOC, ICACHE_LINE_SIZE, 0, REPL_TRUE_LRU);
   ic->ports = (Ports*)malloc(sizeof(Ports) * ICACHE_BANKS);
+  init_list(&ic->pref_queue, "PREF IC", sizeof(Pref_Mem_Req), TRUE);
   for (uns ii = 0; ii < ICACHE_BANKS; ii++) {
     char name[MAX_STR_LENGTH + 1];
     snprintf(name, MAX_STR_LENGTH, "ICACHE BANK %d PORTS", ii);
@@ -252,6 +254,7 @@ void recover_icache_stage() {
         hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
 
   recover_ft_op_buffer(ic);
+  pref_flush_icache(ic->proc_id);
   /* The FTQ keeps a prefix of its FTs and moves ic->ftq_iter back to the first FT it flushed,
      so the iterator's FT offset counts the started lookups that survive. */
   while (list_get_count(&ic->lookups) > (int)decoupled_fe_ftq_iter_ft_offset(ic->dfe, ic->ftq_iter)) {

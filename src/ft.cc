@@ -583,6 +583,10 @@ FT_Info ft_get_ft_info(FT* ft) {
   return ft->get_ft_info();
 }
 
+bool ft_is_off_path(FT* ft) {
+  return ft->get_ops().back()->off_path;
+}
+
 static bool ft_op_recovery_addr_is_consecutive(Op* op, Addr next_start) {
   ASSERT(0, op);
 

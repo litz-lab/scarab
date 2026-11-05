@@ -17,6 +17,20 @@ on:
         required: false
         default: false
         type: boolean
+      pt_workload:
+        description: >-
+          Run this PT workload (datacenter/datacenter/<name>) in place of the
+          descriptor's simulations. Empty runs the descriptor's simulations.
+        required: false
+        default: ''
+        type: string
+      pt_inst_limit:
+        description: >-
+          --inst_limit for the PT run. A PT trace has no simpoints and is
+          simulated whole (100M instructions), so CI caps it.
+        required: false
+        default: '20000000'
+        type: string
       # Both repositories run this workflow, each pinning the other side to main:
       # a Scarab PR tests its own tree against scarab-infra main, a scarab-infra
       # PR tests its own tree against Scarab main. Defaults describe the latter.
@@ -124,22 +138,50 @@ jobs:
           d["scarab_path"] = os.environ["GITHUB_WORKSPACE"] + "/"
           d["root_dir"] = os.environ["GITHUB_WORKSPACE"] + "/"
           d["traces_dir"] = os.environ["GITHUB_WORKSPACE"] + "/traces_top_simpoint"
-          # Cover the exec-driven frontend too. Which simulations CI runs is CI's
-          # business, so it is declared here rather than in scarab-infra's
-          # descriptor; the workload's program is installed into application_dir
-          # by the step below.
-          d["simulations"].append({
-              "suite": "dhrystone",
-              "subsuite": "dhrystone",
-              "workload": "dhrystone",
-              "cluster_id": 0,
-              "simulation_type": "exec",
-              "warmup": 1000000,
-          })
+          pt_workload = os.environ["PT_WORKLOAD"].strip()
+          if pt_workload:
+              # PT frontend run: one whole PT trace (cluster 0, no simpoints),
+              # capped, in place of the descriptor's simulations. Like the
+              # exec run below, which simulations CI runs is CI's business.
+              d["simulations"] = [{
+                  "suite": "datacenter",
+                  "subsuite": "datacenter",
+                  "workload": pt_workload,
+                  "cluster_id": 0,
+                  "simulation_type": "pt",
+                  "warmup": 10000000,
+              }]
+              limit = os.environ["PT_INST_LIMIT"].strip()
+              for config in d["configurations"].values():
+                  config["params"] = f'{config["params"]} --inst_limit {limit}'.strip()
+          else:
+              # Cover the exec-driven frontend too. Which simulations CI runs is CI's
+              # business, so it is declared here rather than in scarab-infra's
+              # descriptor; the workload's program is installed into application_dir
+              # by the step below.
+              d["simulations"].append({
+                  "suite": "dhrystone",
+                  "subsuite": "dhrystone",
+                  "workload": "dhrystone",
+                  "cluster_id": 0,
+                  "simulation_type": "exec",
+                  "warmup": 1000000,
+              })
           src.write_text(json.dumps(d, indent=2, separators=(',', ':')) + "\n")
           PY
         env:
           SCI_ID: ${{ inputs.sci_id }}
+          PT_WORKLOAD: ${{ inputs.pt_workload }}
+          PT_INST_LIMIT: ${{ inputs.pt_inst_limit }}
+
+      # sci --ci-init fetches only the memtrace CI trace.
+      - name: Download PT trace
+        if: inputs.pt_workload != ''
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
+          PT_WORKLOAD: ${{ inputs.pt_workload }}
+        run: ./sci --fetch-traces "datacenter.datacenter.${PT_WORKLOAD}.pt"
 
       - name: Build Scarab
         working-directory: infra
@@ -160,6 +202,7 @@ jobs:
       # points at, exactly as SPEC is on a lab machine. A runner has no such
       # tree, so put one here: application_dir is patched to the workspace.
       - name: Install exec-driven application binaries
+        if: inputs.pt_workload == ''
         run: |
           wget -q https://github.com/litz-lab/scarab-infra/releases/download/dhrystone-2.1/dhrystone-2.1-x86_64-static.tar.gz -O "$RUNNER_TEMP/dhrystone.tar.gz"
           tar -xzf "$RUNNER_TEMP/dhrystone.tar.gz" -C "$GITHUB_WORKSPACE"

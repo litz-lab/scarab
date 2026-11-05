@@ -1492,8 +1492,13 @@ void log_stats_mshr_hit(Addr line_addr) {
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_ONPATH_BY_FDIP + icache_off_path());
       if (req->fdip_pref_off_path)
         STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_BY_FDIP_OFFPATH);
-      else
+      else {
         STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_BY_FDIP_ONPATH);
+        if (req->fdip_emitted_cycle) {
+          STAT_EVENT(ic->proc_id, ICACHE_MISS_FDIP_LEAD);
+          INC_STAT_EVENT(ic->proc_id, ICACHE_MISS_FDIP_LEAD_CYCLES, cycle_count - req->fdip_emitted_cycle);
+        }
+      }
     }
     if (!icache_off_path())
       req->cyc_hit_by_demand_load = cycle_count;
@@ -1502,6 +1507,14 @@ void log_stats_mshr_hit(Addr line_addr) {
     inc_icache_miss(ic->line_addr);
   Imiss_Reason imiss_reason = get_miss_reason(line_addr);
   DEBUG_FDIP(ic->proc_id, "miss reason: %d, req: %d\n", imiss_reason, req ? 1 : 0);
+  if (!req && !icache_off_path()) {
+    /* The line's FDIP prefetch is still waiting in the icache's queue. */
+    for (List_Entry* e = ic->pref_queue.head; e; e = e->next)
+      if (((Pref_Mem_Req*)&e->data)->line_addr == line_addr) {
+        STAT_EVENT(ic->proc_id, ICACHE_MISS_PREF_IN_QUEUE);
+        break;
+      }
+  }
   if (!req) {
     if (!icache_off_path()) {
       uns64 hashed_addr =

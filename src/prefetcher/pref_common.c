@@ -825,8 +825,16 @@ static void pref_drain_queue(uns proc_id, List* q, Destination dest) {
     }
     if (blocked && PREF_RETRY)
       break; /* the head retries next cycle; the rest wait behind it */
-    if (icache)
+    if (icache) {
+      /* Cycles this prefetch waited in the queue beyond ICACHE_LATENCY. */
+      STAT_EVENT(pf_proc_id, PREF_ICREQ_ISSUED);
+      INC_STAT_EVENT(pf_proc_id, PREF_ICREQ_EXTRA_WAIT_CYCLES, cycle_count - pf->rdy_cycle);
+      if (result == PREF_ISSUE_NEW) {
+        STAT_EVENT(pf_proc_id, PREF_ICREQ_NEW_ISSUED);
+        INC_STAT_EVENT(pf_proc_id, PREF_ICREQ_NEW_EXTRA_WAIT_CYCLES, cycle_count - pf->rdy_cycle);
+      }
       fdip_pref_issued(pf_proc_id, pf->prefetcher_id, pf->line_addr, pf->off_path, pf->conf_off_path, result);
+    }
     q->current = e;
     dl_list_remove_current(q);
   }

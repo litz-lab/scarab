@@ -502,6 +502,12 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   pred_target = ibp_hit ? op->btb_pred_info->ibp_target : btb_hit ? op->btb_pred_info->pred_target : pc_plus_offset;
   bp_pred_info->target_latency = ibp_hit ? BTB_MAIN_LATENCY : btb_hit ? op->btb_pred_info->btb_pred_latency : MAX_UNS;
 
+  // There is one return stack. When L0 runs, it pushes and pops it and main reuses L0's popped target;
+  // letting both levels push and pop would store every return address twice (half the depth) and let
+  // L0 and main pop different entries after a recovery.
+  const Flag crs_owner = ENABLE_CRS && (pred_level == BP_PRED_L0 || !bp_l0_enabled());
+  const Flag crs_reuse = ENABLE_CRS && !crs_owner;
+
   // }}}
   // {{{ handle predictions for individual cf types
   switch (op->uop->cf_type) {
@@ -615,7 +621,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
     case CF_CALL:
       bp_pred_info->pred = TAKEN;
       bp_pred_info->pred_orig = TAKEN;
-      if (ENABLE_CRS)
+      if (crs_owner)
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) : bp_crs_push(bp_data, op);
       // On BTB hit, ensure that target is correct (no aliasing or jitted code)
       if (btb_hit && pred_target == op->oracle_info.npc) {
@@ -700,7 +706,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         bp_pred_info->pred = TAKEN;
         bp_pred_info->pred_orig = TAKEN;
       }
-      if (ENABLE_CRS)
+      if (crs_owner)
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) : bp_crs_push(bp_data, op);
 
       if (ibp_hit) {
@@ -740,10 +746,12 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
     case CF_ICO:
       bp_pred_info->pred = TAKEN;
       bp_pred_info->pred_orig = TAKEN;
-      if (ENABLE_CRS) {
+      if (crs_owner) {
         pred_target = CRS_REALISTIC ? bp_crs_realistic_pop(bp_data, op) : bp_crs_pop(bp_data, op);
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) : bp_crs_push(bp_data, op);
-      }
+        op->bp_pred_l0.crs_target = pred_target;
+      } else if (crs_reuse)
+        pred_target = op->bp_pred_l0.crs_target;
 
       if (pred_target != op->oracle_info.npc) {
         bp_pred_info->recovery_point = RECOVER_AT_EXEC;
@@ -766,8 +774,11 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         bp_pred_info->pred = TAKEN;
         bp_pred_info->pred_orig = TAKEN;
       }
-      if (ENABLE_CRS)
+      if (crs_owner) {
         pred_target = CRS_REALISTIC ? bp_crs_realistic_pop(bp_data, op) : bp_crs_pop(bp_data, op);
+        op->bp_pred_l0.crs_target = pred_target;
+      } else if (crs_reuse)
+        pred_target = op->bp_pred_l0.crs_target;
       if (pred_target == 0) {  // RAS Underflow
         bp_pred_info->recovery_point = RECOVER_AT_EXEC;
         bp_pred_info->pred_npc = pc_plus_offset;

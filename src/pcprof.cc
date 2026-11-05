@@ -389,8 +389,13 @@ extern "C" void pcprof_recovery(Op* op) {
       }
     } else if (cf == CF_IBR || cf == CF_ICALL) {
       if (ENABLE_IBP && !op->btb_pred_info->ibp_miss) {
-        const Ittage_Pred_Info* pi = &op->btb_pred_info->ittage;
-        src = pi->used_alt ? MS_ITT_ALT : (pi->provider == 0 ? MS_ITT_BASE : MS_ITT_PROV);
+        // the provider/alt/base split exists only for ITTAGE; other IBP mechanisms count as other
+        if (IBTB_MECH == ITTAGE_IBTB) {
+          const Ittage_Pred_Info* pi = &op->btb_pred_info->ittage;
+          src = pi->used_alt ? MS_ITT_ALT : (pi->provider == 0 ? MS_ITT_BASE : MS_ITT_PROV);
+        } else {
+          src = MS_OTHER;
+        }
       } else {
         src = btb_miss ? MS_NO_TGT : MS_BTB_TGT;
       }

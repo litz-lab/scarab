@@ -113,20 +113,19 @@ void fill_in_basic_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
   // DIAG: report each distinct unmapped iclass once (the memtrace XED path does
   // not call print_err_if_invalid, so unmapped ops otherwise surface only as a
   // hard OP_INV assert in uop_generator with no mnemonic).
-  if(info->op_type == OP_INV) {
+  if (info->op_type == OP_INV) {
     static std::set<int> reported_inv_iclass;
     int iclass = XED_INS_Opcode(ins);
-    if(reported_inv_iclass.insert(iclass).second) {
-      std::cout << "UNMAPPED_ICLASS opcode=" << iclass
-                << " mnemonic=" << XED_INS_Mnemonic(ins)
-                << " category=" << std::string(xed_category_enum_t2str(XED_INS_Category(ins)))
-                << std::endl;
+    if (reported_inv_iclass.insert(iclass).second) {
+      std::cout << "UNMAPPED_ICLASS opcode=" << iclass << " mnemonic=" << XED_INS_Mnemonic(ins)
+                << " category=" << std::string(xed_category_enum_t2str(XED_INS_Category(ins))) << std::endl;
     }
     // Env-gated: keep the run alive past the uop_generator OP_INV assert so a
     // single pass over a trace enumerates every distinct unmapped iclass. Off
     // by default (no effect on real runs); set SCARAB_INV_AS_NOP=1 only when
     // scanning a new trace for instructions to add to iclass_to_scarab_map.
-    if(getenv("SCARAB_INV_AS_NOP")) info->op_type = OP_NOP;
+    if (getenv("SCARAB_INV_AS_NOP"))
+      info->op_type = OP_NOP;
   }
 
   if((category == XED_CATEGORY_SSE) || (category == XED_CATEGORY_FCMOV) ||
@@ -789,12 +788,12 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_ADD]      = {OP_IADD, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_ADDPD]    = {OP_FADD, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_ADDPS]    = {OP_FADD, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_HADDPS]   = {OP_FADD, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_HADDPD]   = {OP_FADD, 8, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_HSUBPS]   = {OP_FADD, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_HSUBPD]   = {OP_FADD, 8, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_PHADDD]   = {OP_IADD, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_PHADDW]   = {OP_IADD, 2, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_HADDPS] = {OP_FADD, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_HADDPD] = {OP_FADD, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_HSUBPS] = {OP_FADD, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_HSUBPD] = {OP_FADD, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_PHADDD] = {OP_IADD, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_PHADDW] = {OP_IADD, 2, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_ADDSD]    = {OP_FADD, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_ADDSS]    = {OP_FADD, 4, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_ADDSUBPD] = {OP_FADD, 8, -1, NONE};
@@ -977,8 +976,8 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_FSETPM287_NOP] = {OP_NOP, -1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_FSIN]    = {OP_NOTPIPELINED_VERY_SLOW, 8, 1,
                                            NONE};
-  iclass_to_scarab_map[XED_ICLASS_F2XM1]   = {OP_NOTPIPELINED_VERY_SLOW, 8, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_FSCALE]  = {OP_NOTPIPELINED_VERY_SLOW, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_F2XM1] = {OP_NOTPIPELINED_VERY_SLOW, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_FSCALE] = {OP_NOTPIPELINED_VERY_SLOW, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_FSINCOS] = {OP_NOTPIPELINED_VERY_SLOW, 8, 1,
                                               NONE};
   iclass_to_scarab_map[XED_ICLASS_FSQRT]   = {OP_FDIV, 8, 1, NONE};
@@ -1737,27 +1736,18 @@ void init_pin_opcode_convert(void) {
   iclass_to_scarab_map[XED_ICLASS_VPERM2F128] = {OP_MOV, 16, 1,
                                                  NONE};  // TODO: Move or shift?
   iclass_to_scarab_map[XED_ICLASS_VPERM2I128] = {OP_MOV, 16, 1,
-                                                 NONE};
+                                                 NONE};  // TODO: Move or shift?
   iclass_to_scarab_map[XED_ICLASS_VSHUFF32X4] = {OP_MOV, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VSHUFF64X2] = {OP_MOV, 8, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VSHUFI32X4] = {OP_MOV, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VSHUFI64X2] = {OP_MOV, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VFPCLASSPS] = {OP_FCMP, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VFPCLASSPD] = {OP_FCMP, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VFPCLASSSS] = {OP_FCMP, 4, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VFPCLASSSD] = {OP_FCMP, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPERMI2PS] = {OP_MOV, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPERMT2PS] = {OP_MOV, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPERMI2PD] = {OP_MOV, 8, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPERMT2PD] = {OP_MOV, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPERMI2D] = {OP_MOV, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPERMT2D] = {OP_MOV, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPERMI2Q] = {OP_MOV, 8, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPERMT2Q] = {OP_MOV, 8, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPERMI2W] = {OP_MOV, 2, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPERMT2W] = {OP_MOV, 2, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPERMI2B] = {OP_MOV, 1, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPERMT2B] = {OP_MOV, 1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPERMB]     = {OP_MOV, 1, -1,
                                              NONE};  // TODO: Move or shift?
   iclass_to_scarab_map[XED_ICLASS_VPERMD]     = {OP_MOV, 4, -1,
@@ -2047,35 +2037,35 @@ void init_pin_opcode_convert(void) {
   // (crash was VPTESTMD / KTESTD). All are single-cycle integer ops on mask
   // registers, mapped like the existing PTEST/PAND (OP_LOGIC) and KUNPCK
   // (OP_PIPELINED_MEDIUM) entries. Suffix width B=1,W=2,D=4,Q=8.
-  iclass_to_scarab_map[XED_ICLASS_VPTESTMW]  = {OP_LOGIC, 2, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPTESTMD]  = {OP_LOGIC, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPTESTMQ]  = {OP_LOGIC, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPTESTMW] = {OP_LOGIC, 2, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPTESTMD] = {OP_LOGIC, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPTESTMQ] = {OP_LOGIC, 8, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPTESTNMB] = {OP_LOGIC, 1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPTESTNMW] = {OP_LOGIC, 2, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPTESTNMD] = {OP_LOGIC, 4, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VPTESTNMQ] = {OP_LOGIC, 8, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KADDB]  = {OP_IADD, 1, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KADDW]  = {OP_IADD, 2, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KADDD]  = {OP_IADD, 4, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KADDQ]  = {OP_IADD, 8, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KANDB]  = {OP_LOGIC, 1, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KANDW]  = {OP_LOGIC, 2, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KANDD]  = {OP_LOGIC, 4, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KANDQ]  = {OP_LOGIC, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KADDB] = {OP_IADD, 1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KADDW] = {OP_IADD, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KADDD] = {OP_IADD, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KADDQ] = {OP_IADD, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KANDB] = {OP_LOGIC, 1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KANDW] = {OP_LOGIC, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KANDD] = {OP_LOGIC, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KANDQ] = {OP_LOGIC, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KANDNB] = {OP_LOGIC, 1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KANDNW] = {OP_LOGIC, 2, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KANDND] = {OP_LOGIC, 4, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KANDNQ] = {OP_LOGIC, 8, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KORB]   = {OP_LOGIC, 1, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KORW]   = {OP_LOGIC, 2, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KORQ]   = {OP_LOGIC, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KORB] = {OP_LOGIC, 1, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KORW] = {OP_LOGIC, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KORQ] = {OP_LOGIC, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KXNORB] = {OP_LOGIC, 1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KXNORW] = {OP_LOGIC, 2, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KXNORD] = {OP_LOGIC, 4, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KXNORQ] = {OP_LOGIC, 8, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KXORW]  = {OP_LOGIC, 2, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KXORD]  = {OP_LOGIC, 4, 1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_KXORQ]  = {OP_LOGIC, 8, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KXORW] = {OP_LOGIC, 2, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KXORD] = {OP_LOGIC, 4, 1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_KXORQ] = {OP_LOGIC, 8, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KTESTB] = {OP_LOGIC, 1, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KTESTW] = {OP_LOGIC, 2, 1, NONE};
   iclass_to_scarab_map[XED_ICLASS_KTESTD] = {OP_LOGIC, 4, 1, NONE};
@@ -2097,36 +2087,35 @@ void init_pin_opcode_convert(void) {
   // OpenSSL) and the AVX-512 rotate family (hash and PRNG kernels): hit by the
   // agent traces (code-rust, data, code-py). Multi-cycle pipelined vector ops
   // like the AES family above; rotates are shifts.
-  iclass_to_scarab_map[XED_ICLASS_SHA1MSG1]    = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_SHA1MSG2]    = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_SHA1NEXTE]   = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_SHA1RNDS4]   = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_SHA256MSG1]  = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_SHA256MSG2]  = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SHA1MSG1] = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SHA1MSG2] = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SHA1NEXTE] = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SHA1RNDS4] = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SHA256MSG1] = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_SHA256MSG2] = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_SHA256RNDS2] = {OP_PIPELINED_MEDIUM, 16, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPROLD]      = {OP_SHIFT, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPROLQ]      = {OP_SHIFT, 8, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPRORD]      = {OP_SHIFT, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPRORQ]      = {OP_SHIFT, 8, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPROLVD]     = {OP_SHIFT, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPROLVQ]     = {OP_SHIFT, 8, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPRORVD]     = {OP_SHIFT, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VPRORVQ]     = {OP_SHIFT, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPROLD] = {OP_SHIFT, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPROLQ] = {OP_SHIFT, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPRORD] = {OP_SHIFT, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPRORQ] = {OP_SHIFT, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPROLVD] = {OP_SHIFT, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPROLVQ] = {OP_SHIFT, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPRORVD] = {OP_SHIFT, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VPRORVQ] = {OP_SHIFT, 8, -1, NONE};
 
   // Remaining AES-NI forms (key expansion, decryption, InvMixColumns): TLS in
   // the node-based Claude Code trace (code-node). Same class as AESENC above.
-  iclass_to_scarab_map[XED_ICLASS_AESDEC]           = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_AESDECLAST]       = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_AESIMC]           = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_AESKEYGENASSIST]  = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VAESDEC]          = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VAESDECLAST]      = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_VAESIMC]          = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_AESDEC] = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_AESDECLAST] = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_AESIMC] = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_AESKEYGENASSIST] = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VAESDEC] = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VAESDECLAST] = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_VAESIMC] = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
   iclass_to_scarab_map[XED_ICLASS_VAESKEYGENASSIST] = {OP_PIPELINED_MEDIUM, -1, -1, NONE};
   // SSE4.1 variable blends (numpy where/select kernels in the data trace); the VEX forms are mapped above.
-  iclass_to_scarab_map[XED_ICLASS_BLENDVPD]    = {OP_CMOV, 8, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_BLENDVPS]    = {OP_CMOV, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_BLENDPD]     = {OP_CMOV, 8, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_BLENDPS]     = {OP_CMOV, 4, -1, NONE};
-  iclass_to_scarab_map[XED_ICLASS_PBLENDW]     = {OP_CMOV, 2, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_BLENDVPD] = {OP_CMOV, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_BLENDVPS] = {OP_CMOV, 4, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_BLENDPD] = {OP_CMOV, 8, -1, NONE};
+  iclass_to_scarab_map[XED_ICLASS_BLENDPS] = {OP_CMOV, 4, -1, NONE};
 }

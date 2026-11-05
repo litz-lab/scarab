@@ -211,15 +211,16 @@
 --mem_priority_wb            5
 --mem_priority_wb_nodirty    5
 
---bus_width_in_bytes            8
+--bus_width_in_bytes            4
 
 # DRAM: Ramulator 2 with a config built into scarab (src/ramulator2/<name>.yaml). The ramulator_*
-# organization and tCK below must match it.
+# organization, tCK and bus_width_in_bytes must match it (src/ramulator2/<name>.params).
+# DDR5-4800, as Golden Cove (Alder Lake) supports: 2 Ramulator 2 channels of 32 bits are one DIMM.
 --dram_backend			ramulator2
---ramulator2_config		DDR4_2400R_8Gb_x8_1ch
---ramulator_channels		1
+--ramulator2_config		DDR5_4800AN_16Gb_x8_2ch
+--ramulator_channels		2
 --ramulator_ranks		1
---ramulator_bankgroups		4
+--ramulator_bankgroups		8
 --ramulator_banks		4
 --ramulator_chip_width		8
 --ramulator_rows		65536
@@ -227,7 +228,7 @@
 --ramulator_scheduling_policy	FRFCFS		
 --ramulator_readq_entries	32
 --ramulator_writeq_entries	32
---ramulator_tCK			833333
+--ramulator_tCK			416667
 --dram_tech_in_nm		32
 
 ## Other

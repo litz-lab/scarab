@@ -24,6 +24,8 @@
 #include "pcprof.h"
 
 #include <algorithm>
+#include <deque>
+#include <map>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -206,6 +208,12 @@ struct PairHash {
   }
 };
 
+struct PairHash64 {
+  size_t operator()(const std::pair<Addr, int64>& p) const {
+    return std::hash<uns64>()(p.first * 0x9E3779B97F4A7C15ull ^ (uns64)p.second);
+  }
+};
+
 struct Prof {
   std::unordered_map<Addr, PcRec> pcs;
 
@@ -229,6 +237,30 @@ struct Prof {
   StackDist br_reuse;    // conditional branch PCs (cbr + rep), in conditional branches
   StackDist data_reuse;  // 64B data lines, in retired load/store uops
   uns64 cond_dyn = 0, ind_dyn = 0, mem_dyn = 0;
+
+  // ---- phases ----
+  // sys phase = number of the last syscall retired before the instruction (-1 = none seen)
+  // mark phase = k for the k-th XCHG rbx,rbx begin marker until XCHG rdx,rdx (0 = unmarked)
+  struct Ev {
+    uns64 uid;
+    int type;
+    int64 value;
+  };
+  std::deque<Ev> events;
+  int64 sys_phase = -1;
+  int64 mark_phase = 0;
+  int64 mark_count = 0;
+  uns64 insts_since_sys = 0;
+  std::unordered_map<std::pair<Addr, int64>, PcRec, PairHash64> sys_pcs, mark_pcs;
+  struct PhaseTot {
+    uns64 cycles = 0, retiring = 0, entries = 0;
+  };
+  std::map<int64, PhaseTot> sys_tot, mark_tot;
+  uns64 win_hist[64] = {0};  // log2 histogram of retired insts between consecutive syscalls
+  uns64 win_count = 0, win_sum = 0;
+  uns64 syscalls_in_region = 0;
+  uns64 mark_begins_in_region = 0, mark_ends_in_region = 0;
+  int64 sys_phase_at_start = -2, mark_phase_at_start = -2;
 };
 
 Prof* g = nullptr;
@@ -239,12 +271,67 @@ inline Flag measuring() {
   if (!g->started) {
     g->started = TRUE;
     g->start_cycle = cycle_count;
+    g->sys_phase_at_start = g->sys_phase;
+    g->mark_phase_at_start = g->mark_phase;
+    g->sys_tot[g->sys_phase].entries++;  // the phase in progress counts as entered once
+    g->mark_tot[g->mark_phase].entries++;
   }
   return TRUE;
 }
 
-inline PcRec& rec(Addr pc) {
-  return g->pcs[pc];
+// Apply frontend phase events up to and including this retiring instruction.
+inline void apply_events(uns64 uid) {
+  while (!g->events.empty() && g->events.front().uid <= uid) {
+    const Prof::Ev e = g->events.front();
+    g->events.pop_front();
+    Flag m = measuring();
+    if (e.type == PCPROF_EV_SYSCALL) {
+      if (m) {
+        g->syscalls_in_region++;
+        uns64 w = g->insts_since_sys;
+        g->win_hist[w ? 64 - __builtin_clzll(w) : 0]++;
+        g->win_count++;
+        g->win_sum += w;
+      }
+      g->sys_phase = e.value;
+      g->insts_since_sys = 0;
+      if (m)
+        g->sys_tot[g->sys_phase].entries++;
+    } else if (e.type == PCPROF_EV_MARK_BEGIN) {
+      g->mark_count++;
+      g->mark_phase = g->mark_count;
+      if (m) {
+        g->mark_begins_in_region++;
+        g->mark_tot[g->mark_phase].entries++;
+      }
+    } else if (e.type == PCPROF_EV_MARK_END) {
+      g->mark_phase = 0;
+      if (m) {
+        g->mark_ends_in_region++;
+        g->mark_tot[0].entries++;
+      }
+    }
+  }
+}
+
+
+// A counter update goes to the whole-region table and to the current sys and mark phase tables.
+struct R {
+  PcRec* p[3];
+  void add(int col, uns64 v = 1) {
+    p[0]->c[col] += v;
+    p[1]->c[col] += v;
+    p[2]->c[col] += v;
+  }
+  void set_cf(uns8 cf) { p[0]->cf = p[1]->cf = p[2]->cf = cf; }
+};
+
+inline R recs(Addr pc) {
+  R r;
+  r.p[0] = &g->pcs[pc];
+  r.p[1] = &g->sys_pcs[std::make_pair(pc, g->sys_phase)];
+  r.p[2] = &g->mark_pcs[std::make_pair(pc, g->mark_phase)];
+  return r;
 }
 
 inline void ensure() {
@@ -255,6 +342,13 @@ inline void ensure() {
 }  // namespace
 
 /**************************************************************************************/
+
+extern "C" void pcprof_fe_event(uns proc_id, uns64 inst_uid, int type, int64 value) {
+  if (!PC_PROFILE || proc_id != 0)
+    return;
+  ensure();
+  g->events.push_back(Prof::Ev{inst_uid, type, value});
+}
 
 extern "C" void pcprof_recovery(Op* op) {
   if (!PC_PROFILE || !op)
@@ -320,7 +414,7 @@ extern "C" void pcprof_rob_insert(Op* op) {
     return;
   ensure();
   if (g->pending_fe) {
-    rec(op->inst_info->addr).c[C_ST_FE] += g->pending_fe;
+    recs(op->inst_info->addr).add(C_ST_FE, g->pending_fe);
     g->pending_fe = 0;
   }
   g->in_recovery = FALSE;
@@ -338,12 +432,12 @@ extern "C" void pcprof_fetch(Addr fetch_addr, Flag off_path, Flag uc_hit, Flag i
   ensure();
   if (!measuring())
     return;
-  PcRec& r = rec(fetch_addr);
-  r.c[C_FT_FETCH]++;
+  R r = recs(fetch_addr);
+  r.add(C_FT_FETCH);
   if (!uc_hit) {
-    r.c[C_FT_UC_MISS]++;
+    r.add(C_FT_UC_MISS);
     if (!ic_hit)
-      r.c[C_FT_IC_MISS]++;
+      r.add(C_FT_IC_MISS);
   }
 }
 
@@ -356,14 +450,20 @@ extern "C" void pcprof_node_cycle(void) {
   if (!measuring())
     return;
   g->cycles++;
+  Prof::PhaseTot& st = g->sys_tot[g->sys_phase];
+  Prof::PhaseTot& mk = g->mark_tot[g->mark_phase];
+  st.cycles++;
+  mk.cycles++;
   if (retired) {
     g->retiring_cycles++;
+    st.retiring++;
+    mk.retiring++;
     return;
   }
   Op* h = node->node_head;
   if (!h || h->off_path) {
     if (g->in_recovery)
-      rec(g->recovery_pc).c[g->recovery_exec ? C_ST_BMISP : C_ST_RESTEER]++;
+      recs(g->recovery_pc).add(g->recovery_exec ? C_ST_BMISP : C_ST_RESTEER);
     else
       g->pending_fe++;
     return;
@@ -388,14 +488,17 @@ extern "C" void pcprof_retire(Op* op) {
     return;
   ensure();
   g->retired_this_cycle++;
+  apply_events(op->inst_uid);
+  if (op->eom)
+    g->insts_since_sys++;
   if (!measuring())
     return;
 
   const Addr pc = op->inst_info->addr;
-  PcRec& r = rec(pc);
-  r.c[C_UOPS]++;
+  R r = recs(pc);
+  r.add(C_UOPS);
   if (op->eom) {
-    r.c[C_INSTS]++;
+    r.add(C_INSTS);
     g->inst_pcs.insert(pc);
     g->icache_lines.insert(pc >> 6);
     g->icache_pages.insert(pc >> 12);
@@ -403,9 +506,9 @@ extern "C" void pcprof_retire(Op* op) {
 
   const Cf_Type cf = op->inst_info->table_info.cf_type;
   if (cf) {
-    r.cf = cf;
+    r.set_cf(cf);
     if (op->oracle_info.dir)
-      r.c[C_TAKEN]++;
+      r.add(C_TAKEN);
     if (cf == CF_CBR || cf == CF_REP) {
       g->cond_dyn++;
       g->br_reuse.access(pc);
@@ -417,19 +520,19 @@ extern "C" void pcprof_retire(Op* op) {
       g->ret_pcs.insert(pc);
     }
     if (op->pcprof_recov & 1) {
-      r.c[C_MISP_EXEC]++;
-      r.c[op->pcprof_misp_dir ? C_MISP_DIR : C_MISP_TGT]++;
+      r.add(C_MISP_EXEC);
+      r.add(op->pcprof_misp_dir ? C_MISP_DIR : C_MISP_TGT);
       if (op->pcprof_misp_btb_miss)
-        r.c[C_MISP_BTB_MISS]++;
+        r.add(C_MISP_BTB_MISS);
       static const int src_col[] = {C_MISP_OTHER,   C_MISP_BIM,     C_MISP_TAGE_PROV, C_MISP_TAGE_ALT, C_MISP_LOOP,
                                     C_MISP_SC,      C_MISP_ITT_PROV, C_MISP_ITT_ALT,  C_MISP_ITT_BASE, C_MISP_BTB_TGT,
                                     C_MISP_NO_TGT,  C_MISP_RAS,     C_MISP_OTHER};
-      r.c[src_col[op->pcprof_misp]]++;
+      r.add(src_col[op->pcprof_misp]);
     }
     if (op->pcprof_recov & 2)
-      r.c[C_RECOV_DECODE]++;
+      r.add(C_RECOV_DECODE);
     if (op->pcprof_recov & 4)
-      r.c[C_RECOV_FE]++;
+      r.add(C_RECOV_FE);
   }
 
   const Mem_Type mt = op->inst_info->table_info.mem_type;
@@ -438,26 +541,26 @@ extern "C" void pcprof_retire(Op* op) {
     g->data_reuse.access(op->oracle_info.va >> 6);
     g->data_pages.insert(op->oracle_info.va >> 12);
     if (mt == MEM_LD) {
-      r.c[C_LOADS]++;
+      r.add(C_LOADS);
       if (op->engine_info.dcmiss) {
-        r.c[C_L1D_MISS]++;
+        r.add(C_L1D_MISS);
         if (op->pcprof_mem_level >= 3)
-          r.c[C_MLC_MISS]++;
+          r.add(C_MLC_MISS);
         if (op->pcprof_mem_level == 4)
-          r.c[C_LLC_MISS]++;
+          r.add(C_LLC_MISS);
         if (op->done_cycle > op->dcache_cycle)
-          r.c[C_LD_MISS_CYCLES] += op->done_cycle - op->dcache_cycle;
+          r.add(C_LD_MISS_CYCLES, op->done_cycle - op->dcache_cycle);
       }
     } else {
-      r.c[C_STORES]++;
+      r.add(C_STORES);
       if (op->engine_info.dcmiss)
-        r.c[C_ST_L1D_MISS]++;
+        r.add(C_ST_L1D_MISS);
     }
   }
 
-  r.c[C_ST_BMISP] += op->pcprof_stall[PCPROF_OPC_BMISP];
-  r.c[C_ST_EXEC] += op->pcprof_stall[PCPROF_OPC_EXEC];
-  r.c[C_ST_OTHER] += op->pcprof_stall[PCPROF_OPC_OTHER];
+  r.add(C_ST_BMISP, op->pcprof_stall[PCPROF_OPC_BMISP]);
+  r.add(C_ST_EXEC, op->pcprof_stall[PCPROF_OPC_EXEC]);
+  r.add(C_ST_OTHER, op->pcprof_stall[PCPROF_OPC_OTHER]);
   uns32 m = op->pcprof_stall[PCPROF_OPC_MEM];
   if (m) {
     int col = C_ST_L1D;
@@ -465,7 +568,7 @@ extern "C" void pcprof_retire(Op* op) {
       col = op->pcprof_mem_level == 2 ? C_ST_MLC
                                       : op->pcprof_mem_level == 3 ? C_ST_LLC
                                                                   : op->pcprof_mem_level == 4 ? C_ST_DRAM : C_ST_MEM_UNK;
-    r.c[col] += m;
+    r.add(col, m);
   }
 }
 
@@ -552,6 +655,255 @@ void print_hist(FILE* f, const char* name, const StackDist& sd) {
     fprintf(f, "%s_sd_%02d %-24s %14llu %8.5f %8.5f\n", name, b, range, (unsigned long long)sd.hist[b],
             reuse ? (double)sd.hist[b] / reuse : 0.0, reuse ? (double)cum / reuse : 0.0);
   }
+}
+
+struct SysName {
+  int nr;
+  const char* name;
+  const char* cat;
+};
+// x86-64 Linux syscall numbers. Categories: net_recv, read, net_send (includes write),
+// wait_child, poll, proc_create, file, futex, other.
+const SysName sys_names[] = {
+    {0, "read", "read"},
+    {1, "write", "net_send"},
+    {2, "open", "file"},
+    {3, "close", "file"},
+    {4, "stat", "file"},
+    {5, "fstat", "file"},
+    {6, "lstat", "file"},
+    {7, "poll", "poll"},
+    {8, "lseek", "file"},
+    {9, "mmap", "file"},
+    {10, "mprotect", "other"},
+    {11, "munmap", "file"},
+    {12, "brk", "other"},
+    {13, "rt_sigaction", "other"},
+    {14, "rt_sigprocmask", "other"},
+    {15, "rt_sigreturn", "other"},
+    {16, "ioctl", "other"},
+    {17, "pread64", "read"},
+    {18, "pwrite64", "other"},
+    {19, "readv", "read"},
+    {20, "writev", "net_send"},
+    {21, "access", "other"},
+    {22, "pipe", "other"},
+    {23, "select", "poll"},
+    {24, "sched_yield", "other"},
+    {25, "mremap", "other"},
+    {28, "madvise", "other"},
+    {32, "dup", "other"},
+    {33, "dup2", "other"},
+    {35, "nanosleep", "other"},
+    {39, "getpid", "other"},
+    {41, "socket", "other"},
+    {42, "connect", "other"},
+    {43, "accept", "other"},
+    {44, "sendto", "net_send"},
+    {45, "recvfrom", "net_recv"},
+    {46, "sendmsg", "net_send"},
+    {47, "recvmsg", "net_recv"},
+    {48, "shutdown", "other"},
+    {49, "bind", "other"},
+    {50, "listen", "other"},
+    {51, "getsockname", "other"},
+    {52, "getpeername", "other"},
+    {53, "socketpair", "other"},
+    {54, "setsockopt", "other"},
+    {55, "getsockopt", "other"},
+    {56, "clone", "proc_create"},
+    {57, "fork", "proc_create"},
+    {58, "vfork", "proc_create"},
+    {59, "execve", "proc_create"},
+    {60, "exit", "other"},
+    {61, "wait4", "wait_child"},
+    {62, "kill", "other"},
+    {63, "uname", "other"},
+    {72, "fcntl", "other"},
+    {74, "fsync", "other"},
+    {77, "ftruncate", "other"},
+    {78, "getdents", "file"},
+    {79, "getcwd", "other"},
+    {80, "chdir", "other"},
+    {82, "rename", "other"},
+    {83, "mkdir", "other"},
+    {84, "rmdir", "other"},
+    {87, "unlink", "other"},
+    {89, "readlink", "other"},
+    {90, "chmod", "other"},
+    {95, "umask", "other"},
+    {96, "gettimeofday", "other"},
+    {97, "getrlimit", "other"},
+    {102, "getuid", "other"},
+    {104, "getgid", "other"},
+    {107, "geteuid", "other"},
+    {108, "getegid", "other"},
+    {110, "getppid", "other"},
+    {131, "sigaltstack", "other"},
+    {137, "statfs", "file"},
+    {138, "fstatfs", "file"},
+    {157, "prctl", "other"},
+    {158, "arch_prctl", "other"},
+    {186, "gettid", "other"},
+    {200, "tkill", "other"},
+    {202, "futex", "futex"},
+    {204, "sched_getaffinity", "other"},
+    {213, "epoll_create", "other"},
+    {217, "getdents64", "file"},
+    {218, "set_tid_address", "other"},
+    {228, "clock_gettime", "other"},
+    {230, "clock_nanosleep", "other"},
+    {231, "exit_group", "other"},
+    {232, "epoll_wait", "poll"},
+    {233, "epoll_ctl", "other"},
+    {234, "tgkill", "other"},
+    {247, "waitid", "wait_child"},
+    {257, "openat", "file"},
+    {262, "newfstatat", "file"},
+    {263, "unlinkat", "other"},
+    {267, "readlinkat", "other"},
+    {269, "faccessat", "other"},
+    {270, "pselect6", "poll"},
+    {271, "ppoll", "poll"},
+    {273, "set_robust_list", "other"},
+    {281, "epoll_pwait", "poll"},
+    {288, "accept4", "other"},
+    {290, "eventfd2", "other"},
+    {291, "epoll_create1", "other"},
+    {292, "dup3", "other"},
+    {293, "pipe2", "other"},
+    {299, "recvmmsg", "net_recv"},
+    {302, "prlimit64", "other"},
+    {307, "sendmmsg", "net_send"},
+    {318, "getrandom", "other"},
+    {332, "statx", "file"},
+    {334, "rseq", "other"},
+    {434, "pidfd_open", "other"},
+    {435, "clone3", "proc_create"},
+    {436, "close_range", "file"},
+    {439, "faccessat2", "other"},
+    {441, "epoll_pwait2", "poll"},
+};
+
+void sys_label(int64 nr, std::string* name, std::string* cat) {
+  if (nr < 0) {
+    *name = "none";
+    *cat = "none";
+    return;
+  }
+  for (const SysName& sn : sys_names)
+    if (sn.nr == nr) {
+      *name = sn.name;
+      *cat = sn.cat;
+      return;
+    }
+  *name = "sys" + std::to_string(nr);
+  *cat = "other";
+}
+
+void write_phase_pcs(const std::string& path,
+                     const std::unordered_map<std::pair<Addr, int64>, PcRec, PairHash64>& m) {
+  std::vector<std::pair<std::pair<Addr, int64>, const PcRec*>> rows;
+  rows.reserve(m.size());
+  for (auto& kv : m) {
+    Flag nz = FALSE;
+    for (int c = 0; c < NUM_COLS && !nz; c++)
+      nz = kv.second.c[c] != 0;
+    if (nz)
+      rows.emplace_back(kv.first, &kv.second);
+  }
+  std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
+    return a.first.second != b.first.second ? a.first.second < b.first.second : a.first.first < b.first.first;
+  });
+  FILE* f = fopen(path.c_str(), "w");
+  ASSERTM(0, f, "cannot open %s\n", path.c_str());
+  fprintf(f, "pc,phase,cf");
+  for (int c = 0; c < NUM_COLS; c++)
+    fprintf(f, ",%s", col_names[c]);
+  fprintf(f, "\n");
+  for (auto& row : rows) {
+    fprintf(f, "0x%llx,%lld,%s", (unsigned long long)row.first.first, (long long)row.first.second,
+            cf_names[row.second->cf]);
+    for (int c = 0; c < NUM_COLS; c++)
+      fprintf(f, ",%llu", (unsigned long long)row.second->c[c]);
+    fprintf(f, "\n");
+  }
+  fclose(f);
+}
+
+struct PhaseAgg {
+  uns64 c[NUM_COLS] = {0};
+  uns64 cond = 0, ind = 0, ret = 0;
+  Prof::PhaseTot t;
+};
+
+void aggregate(const std::unordered_map<std::pair<Addr, int64>, PcRec, PairHash64>& m,
+               const std::map<int64, Prof::PhaseTot>& tots, std::map<int64, PhaseAgg>* out) {
+  for (auto& kv : tots)
+    (*out)[kv.first].t = kv.second;
+  for (auto& kv : m) {
+    PhaseAgg& a = (*out)[kv.first.second];
+    const PcRec& r = kv.second;
+    for (int c = 0; c < NUM_COLS; c++)
+      a.c[c] += r.c[c];
+    if (r.cf == CF_CBR || r.cf == CF_REP)
+      a.cond += r.c[C_MISP_EXEC];
+    else if (r.cf == CF_IBR || r.cf == CF_ICALL)
+      a.ind += r.c[C_MISP_EXEC];
+    else if (r.cf == CF_RET || r.cf == CF_ICO)
+      a.ret += r.c[C_MISP_EXEC];
+  }
+}
+
+void phase_row(FILE* f, const char* dim, const std::string& phase, const std::string& name, const std::string& cat,
+               const PhaseAgg& a) {
+  fprintf(f, "%s,%s,%s,%s,%llu,%llu,%llu,%llu,%llu,%llu", dim, phase.c_str(), name.c_str(), cat.c_str(),
+          (unsigned long long)a.t.entries, (unsigned long long)a.t.cycles, (unsigned long long)a.t.retiring,
+          (unsigned long long)a.cond, (unsigned long long)a.ind, (unsigned long long)a.ret);
+  for (int c = 0; c < NUM_COLS; c++)
+    fprintf(f, ",%llu", (unsigned long long)a.c[c]);
+  fprintf(f, "\n");
+}
+
+void dump_phases(const std::string& dir) {
+  write_phase_pcs(dir + "/pcprof_phase_sys.csv", g->sys_pcs);
+  write_phase_pcs(dir + "/pcprof_phase_mark.csv", g->mark_pcs);
+
+  std::map<int64, PhaseAgg> sys, mark;
+  aggregate(g->sys_pcs, g->sys_tot, &sys);
+  aggregate(g->mark_pcs, g->mark_tot, &mark);
+  std::map<std::string, PhaseAgg> cats;
+  for (auto& kv : sys) {
+    std::string name, cat;
+    sys_label(kv.first, &name, &cat);
+    PhaseAgg& c = cats[cat];
+    for (int i = 0; i < NUM_COLS; i++)
+      c.c[i] += kv.second.c[i];
+    c.cond += kv.second.cond;
+    c.ind += kv.second.ind;
+    c.ret += kv.second.ret;
+    c.t.cycles += kv.second.t.cycles;
+    c.t.retiring += kv.second.t.retiring;
+    c.t.entries += kv.second.t.entries;
+  }
+
+  FILE* f = fopen((dir + "/pcprof_phases.csv").c_str(), "w");
+  ASSERTM(0, f, "cannot open pcprof_phases.csv\n");
+  fprintf(f, "dim,phase,name,category,entries,cycles,retiring_cycles,misp_exec_cond,misp_exec_ind,misp_exec_ret");
+  for (int c = 0; c < NUM_COLS; c++)
+    fprintf(f, ",%s", col_names[c]);
+  fprintf(f, "\n");
+  for (auto& kv : sys) {
+    std::string name, cat;
+    sys_label(kv.first, &name, &cat);
+    phase_row(f, "sys", std::to_string(kv.first), name, cat, kv.second);
+  }
+  for (auto& kv : cats)
+    phase_row(f, "syscat", kv.first, kv.first, kv.first, kv.second);
+  for (auto& kv : mark)
+    phase_row(f, "mark", std::to_string(kv.first), kv.first ? "marked_" + std::to_string(kv.first) : "unmarked",
+              kv.first ? "marked" : "unmarked", kv.second);
+  fclose(f);
 }
 
 }  // namespace
@@ -663,5 +1015,30 @@ extern "C" void pcprof_dump(uns proc_id) {
 
   print_hist(f, "cond_branch_pc", g->br_reuse);
   print_hist(f, "data_line", g->data_reuse);
+
+  fprintf(f, "\n# phases (details in pcprof_phases.csv, pcprof_phase_sys.csv, pcprof_phase_mark.csv)\n");
+  std::string n0, c0;
+  sys_label(g->sys_phase_at_start, &n0, &c0);
+  fprintf(f, "syscalls_in_region %llu\n", (unsigned long long)g->syscalls_in_region);
+  fprintf(f, "sys_phase_at_start %lld %s\n", (long long)g->sys_phase_at_start, n0.c_str());
+  fprintf(f, "mark_phase_at_start %lld\n", (long long)g->mark_phase_at_start);
+  fprintf(f, "mark_begins_total_including_warmup %lld\n", (long long)g->mark_count);
+  fprintf(f, "mark_begins_in_region %llu\nmark_ends_in_region %llu\n", (unsigned long long)g->mark_begins_in_region,
+          (unsigned long long)g->mark_ends_in_region);
+  fprintf(f, "\n# inter-syscall window length (retired instructions between consecutive syscalls ending in region)\n");
+  fprintf(f, "syscall_windows %llu\nsyscall_window_mean %.1f\n", (unsigned long long)g->win_count,
+          g->win_count ? (double)g->win_sum / g->win_count : 0.0);
+  for (int b = 0; b < 64; b++) {
+    if (!g->win_hist[b])
+      continue;
+    char range[64];
+    if (b == 0)
+      snprintf(range, sizeof(range), "0");
+    else
+      snprintf(range, sizeof(range), "[%llu,%llu)", 1ull << (b - 1), 1ull << b);
+    fprintf(f, "syscall_window_%02d %-24s %llu\n", b, range, (unsigned long long)g->win_hist[b]);
+  }
   fclose(f);
+
+  dump_phases(dir);
 }

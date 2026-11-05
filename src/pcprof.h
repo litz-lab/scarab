@@ -36,6 +36,15 @@ void pcprof_fetch(Addr fetch_addr, Flag off_path, Flag uc_hit, Flag ic_hit);  //
 void pcprof_dcache_fill(Op* op, struct Mem_Req_struct* req);   // dcache fill wakes a missing op
 void pcprof_dump(uns proc_id);                                 // end of simulation
 
+/* frontend phase events, keyed by the inst_uid of the first on-path instruction they
+   precede (syscall marker) or of the marker instruction itself (roi begin/end) */
+typedef enum Pcprof_Event_enum {
+  PCPROF_EV_SYSCALL,     // value = syscall number (TRACE_MARKER_TYPE_SYSCALL)
+  PCPROF_EV_MARK_BEGIN,  // XCHG rbx,rbx (scarab_marker_roi_begin)
+  PCPROF_EV_MARK_END,    // XCHG rdx,rdx (scarab_marker_roi_end)
+} Pcprof_Event;
+void pcprof_fe_event(uns proc_id, uns64 inst_uid, int type, int64 value);
+
 #ifdef __cplusplus
 }
 #endif

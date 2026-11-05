@@ -558,19 +558,19 @@ Flag pref_addto_dl0req_queue(uns8 proc_id, Addr line_index, uns8 prefetcher_id) 
                         PREF_DL0REQ_QUEUE_FULL);
 }
 
-/* An instruction prefetch (FDIP, per branch predictor) to the icache. Its icache lookup
-   resolves after the icache's latency, as a demand fetch's does. */
+/* An instruction prefetch (FDIP, per branch predictor) to the icache. FDIP only matches
+   the tags, without the data read, so its lookup takes one cycle less than a demand's. */
 Flag pref_addto_icache_queue(uns8 proc_id, Addr line_addr, uns8 bp_id, Mem_Req_Type type, Flag off_path,
                              Flag conf_off_path, uns32 ghist) {
   Pref_Mem_Req req = {.proc_id = proc_id,
                       .line_addr = line_addr >> LOG2(ICACHE_LINE_SIZE) << LOG2(ICACHE_LINE_SIZE),
                       .global_hist = ghist,
                       .prefetcher_id = bp_id,
-                      .rdy_cycle = cycle_count + ICACHE_LATENCY,
+                      .rdy_cycle = cycle_count + ICACHE_LATENCY - 1,
                       .type = type,
                       .off_path = off_path,
                       .conf_off_path = conf_off_path};
-  return pref_queue_add(&cmp_model.icache_stage[proc_id].pref_queue, PREF_TO_ICACHE, ICACHE_LATENCY, &req,
+  return pref_queue_add(&cmp_model.icache_stage[proc_id].pref_queue, PREF_TO_ICACHE, ICACHE_LATENCY - 1, &req,
                         PREF_ICREQ_QUEUE_FULL);
 }
 

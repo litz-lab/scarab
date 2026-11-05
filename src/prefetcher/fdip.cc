@@ -932,8 +932,8 @@ void FDIP::update() {
       emit_new_prefetch = determine_usefulness(line_addr, op, op->bp_pred_info->pred_global_hist);
 
       Mem_Req_Type mem_type = is_conf_off_path() ? MRT_FDIPPRFOFF : MRT_FDIPPRFON;
-      /* A candidate joins the icache's prefetch queue, which looks it up ICACHE_LATENCY cycles
-         later (fdip_pref_issued). A full queue drops it, or with PREF_RETRY ends the walk
+      /* A candidate joins the icache's prefetch queue, which matches its tags ICACHE_LATENCY - 1
+         cycles later (fdip_pref_issued). A full queue drops it, or with PREF_RETRY ends the walk
          here; it resumes at this line next cycle. */
       Flag queued = FALSE;
       if (emit_new_prefetch && !FDIP_PREF_NO_LATENCY) {

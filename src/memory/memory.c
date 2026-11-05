@@ -2308,6 +2308,10 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
     perf_pred_update_mem_req_type(req, old_type, old_off_path_confirmed);
   }
 
+  if (old_type == MRT_IFETCH && (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF) && req->demand_icache_emitted_cycle) {
+    STAT_EVENT(req->proc_id, FDIP_MERGE_INTO_IFETCH);
+    INC_STAT_EVENT(req->proc_id, FDIP_MERGE_INTO_IFETCH_CYCLES, cycle_count - req->demand_icache_emitted_cycle);
+  }
   req->req_count++;
   return SUCCESS_MERGED;
 }

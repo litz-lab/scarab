@@ -1446,8 +1446,13 @@ void log_stats_mshr_hit(Addr line_addr) {
       STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_ONPATH_BY_FDIP + icache_off_path());
       if (req->fdip_pref_off_path)
         STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_BY_FDIP_OFFPATH);
-      else
+      else {
         STAT_EVENT(ic->proc_id, ICACHE_MISS_MSHR_HIT_BY_FDIP_ONPATH);
+        if (req->fdip_emitted_cycle) {
+          STAT_EVENT(ic->proc_id, ICACHE_MISS_FDIP_LEAD);
+          INC_STAT_EVENT(ic->proc_id, ICACHE_MISS_FDIP_LEAD_CYCLES, cycle_count - req->fdip_emitted_cycle);
+        }
+      }
     }
     if (!icache_off_path())
       req->cyc_hit_by_demand_load = cycle_count;

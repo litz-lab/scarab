@@ -96,7 +96,7 @@ void get_branch_dir(bool taken);
 void get_src_vector_vals(CONTEXT* ctxt, ADDRINT reg_id, ADDRINT scarab_id);
 void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT reg_id, ADDRINT scarab_id);
 void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count);
-void create_compressed_op(ADDRINT iaddr);
+void create_compressed_op(ADDRINT iaddr, ctype_pin_inst* info);
 void create_compressed_op_after(ADDRINT iaddr);
 
 void update_gather_scatter_num_ld_or_st(const ADDRINT                   iaddr,
@@ -243,8 +243,7 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
   }
 
   // Build the compressed op at IPOINT_BEFORE (dst values not yet known).
-  INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)create_compressed_op,
-                 IARG_INST_PTR, IARG_END);
+  INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)create_compressed_op, IARG_INST_PTR, IARG_PTR, info, IARG_END);
 }
 
 void create_compressed_op_after(ADDRINT iaddr) {
@@ -255,10 +254,10 @@ void create_compressed_op_after(ADDRINT iaddr) {
 }
 
 // int64_t heartbeat = 0;
-void create_compressed_op(ADDRINT iaddr) {
+void create_compressed_op(ADDRINT iaddr, ctype_pin_inst* info) {
   if(!fast_forward_count) {
     assert(inst_info_storage.count(iaddr) == 1);
-    filled_inst_info = inst_info_storage[iaddr];
+    filled_inst_info = info;
     if(glb_translate_x87_regs) {
       // copy ctype_pin_inst to avoid clobbering it
       memcpy(&tmp_inst_info, filled_inst_info, sizeof(ctype_pin_inst));

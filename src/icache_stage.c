@@ -1511,7 +1511,14 @@ void log_stats_mshr_hit(Addr line_addr) {
     /* The line's FDIP prefetch is still waiting in the icache's queue. */
     for (List_Entry* e = ic->pref_queue.head; e; e = e->next)
       if (((Pref_Mem_Req*)&e->data)->line_addr == line_addr) {
+        /* Due this cycle: the same-cycle tie. Due later: FDIP walked the FT after it was made. */
+        Counter rdy = ((Pref_Mem_Req*)&e->data)->rdy_cycle;
         STAT_EVENT(ic->proc_id, ICACHE_MISS_PREF_IN_QUEUE);
+        STAT_EVENT(ic->proc_id, rdy <= cycle_count ? ICACHE_MISS_PREF_IN_QUEUE_DUE : ICACHE_MISS_PREF_IN_QUEUE_LATE);
+        if (rdy > cycle_count) {
+          INC_STAT_EVENT(ic->proc_id, ICACHE_MISS_PREF_IN_QUEUE_LATE_CYCLES, rdy - cycle_count);
+          STAT_EVENT(ic->proc_id, ICACHE_MISS_PREF_IN_QUEUE_LATE_1 + MIN2(rdy - cycle_count, 4) - 1);
+        }
         break;
       }
   }

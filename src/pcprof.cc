@@ -1,5 +1,28 @@
+/*
+ * Copyright 2026 University of California Santa Cruz
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 /***************************************************************************************
  * File         : pcprof.cc
+ * Author       : Litz Lab
  * Description  : AsmDB-style per-PC attribution (--pc_profile 1). See pcprof.h.
  *
  * Everything is keyed by the static instruction address (op->inst->addr, the raw
@@ -254,7 +277,8 @@ struct Prof {
   struct PhaseTot {
     uns64 cycles = 0, retiring = 0, entries = 0;
   };
-  std::map<int64, PhaseTot> sys_tot, mark_tot;
+  std::unordered_map<int64, PhaseTot> sys_tot, mark_tot;
+  PhaseTot *sys_cur = nullptr, *mark_cur = nullptr;  // current phases' entries; null after a phase change
   uns64 win_hist[64] = {0};  // log2 histogram of retired insts between consecutive syscalls
   uns64 win_count = 0, win_sum = 0;
   uns64 syscalls_in_region = 0;
@@ -293,18 +317,21 @@ inline void apply_events(uns64 uid) {
         g->win_sum += w;
       }
       g->sys_phase = e.value;
+      g->sys_cur = nullptr;
       g->insts_since_sys = 0;
       if (m)
         g->sys_tot[g->sys_phase].entries++;
     } else if (e.type == PCPROF_EV_MARK_BEGIN) {
       g->mark_count++;
       g->mark_phase = g->mark_count;
+      g->mark_cur = nullptr;
       if (m) {
         g->mark_begins_in_region++;
         g->mark_tot[g->mark_phase].entries++;
       }
     } else if (e.type == PCPROF_EV_MARK_END) {
       g->mark_phase = 0;
+      g->mark_cur = nullptr;
       if (m) {
         g->mark_ends_in_region++;
         g->mark_tot[0].entries++;
@@ -453,8 +480,12 @@ extern "C" void pcprof_node_cycle(void) {
   if (!measuring())
     return;
   g->cycles++;
-  Prof::PhaseTot& st = g->sys_tot[g->sys_phase];
-  Prof::PhaseTot& mk = g->mark_tot[g->mark_phase];
+  if (!g->sys_cur)
+    g->sys_cur = &g->sys_tot[g->sys_phase];
+  if (!g->mark_cur)
+    g->mark_cur = &g->mark_tot[g->mark_phase];
+  Prof::PhaseTot& st = *g->sys_cur;
+  Prof::PhaseTot& mk = *g->mark_cur;
   st.cycles++;
   mk.cycles++;
   if (retired) {
@@ -842,7 +873,7 @@ struct PhaseAgg {
 };
 
 void aggregate(const std::unordered_map<std::pair<Addr, int64>, PcRec, PairHash64>& m,
-               const std::map<int64, Prof::PhaseTot>& tots, std::map<int64, PhaseAgg>* out) {
+               const std::unordered_map<int64, Prof::PhaseTot>& tots, std::map<int64, PhaseAgg>* out) {
   for (auto& kv : tots)
     (*out)[kv.first].t = kv.second;
   for (auto& kv : m) {

@@ -62,9 +62,9 @@
 #include "lsq.h"
 #include "map_rename.h"
 #include "op_pool.h"
+#include "pcprof.h"
 #include "sim.h"
 #include "statistics.h"
-#include "pcprof.h"
 #include "topdown.h"
 #include "uop_queue_stage.h"
 

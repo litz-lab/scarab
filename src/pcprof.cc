@@ -24,10 +24,10 @@
 #include "pcprof.h"
 
 #include <algorithm>
-#include <deque>
-#include <map>
 #include <cmath>
 #include <cstdio>
+#include <deque>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -47,6 +47,7 @@ extern "C" {
 
 #include "bp/bp.h"
 #include "memory/mem_req.h"
+
 #include "node_stage.h"
 #include "op.h"
 #include "table_info.h"
@@ -100,13 +101,12 @@ enum Col {
 };
 
 const char* col_names[NUM_COLS] = {
-    "insts",         "uops",          "taken",        "misp_exec",     "misp_dir",     "misp_tgt",
-    "misp_btb_miss", "misp_bim",      "misp_tage_prov", "misp_tage_alt", "misp_loop",  "misp_sc",
-    "misp_itt_prov", "misp_itt_alt",  "misp_itt_base", "misp_btb_tgt", "misp_no_tgt",  "misp_ras",
-    "misp_other",    "recov_decode",  "recov_fe",     "loads",         "stores",       "l1d_miss",
-    "mlc_miss",      "llc_miss",      "ld_miss_cycles", "st_l1d_miss", "ft_fetch",     "ft_uc_miss",
-    "ft_ic_miss",    "st_bmisp",      "st_resteer",   "st_l1d",        "st_mlc",       "st_llc",
-    "st_dram",       "st_mem_unk",    "st_exec",      "st_fe",         "st_other"};
+    "insts",         "uops",           "taken",         "misp_exec", "misp_dir",   "misp_tgt",       "misp_btb_miss",
+    "misp_bim",      "misp_tage_prov", "misp_tage_alt", "misp_loop", "misp_sc",    "misp_itt_prov",  "misp_itt_alt",
+    "misp_itt_base", "misp_btb_tgt",   "misp_no_tgt",   "misp_ras",  "misp_other", "recov_decode",   "recov_fe",
+    "loads",         "stores",         "l1d_miss",      "mlc_miss",  "llc_miss",   "ld_miss_cycles", "st_l1d_miss",
+    "ft_fetch",      "ft_uc_miss",     "ft_ic_miss",    "st_bmisp",  "st_resteer", "st_l1d",         "st_mlc",
+    "st_llc",        "st_dram",        "st_mem_unk",    "st_exec",   "st_fe",      "st_other"};
 
 // exec-recovery source (Op::pcprof_misp)
 enum Misp_Src {
@@ -313,7 +313,6 @@ inline void apply_events(uns64 uid) {
     }
   }
 }
-
 
 // A counter update goes to the whole-region table and to the current sys and mark phase tables.
 struct R {
@@ -529,9 +528,9 @@ extern "C" void pcprof_retire(Op* op) {
       r.add(op->pcprof_misp_dir ? C_MISP_DIR : C_MISP_TGT);
       if (op->pcprof_misp_btb_miss)
         r.add(C_MISP_BTB_MISS);
-      static const int src_col[] = {C_MISP_OTHER,   C_MISP_BIM,     C_MISP_TAGE_PROV, C_MISP_TAGE_ALT, C_MISP_LOOP,
-                                    C_MISP_SC,      C_MISP_ITT_PROV, C_MISP_ITT_ALT,  C_MISP_ITT_BASE, C_MISP_BTB_TGT,
-                                    C_MISP_NO_TGT,  C_MISP_RAS,     C_MISP_OTHER};
+      static const int src_col[] = {C_MISP_OTHER,  C_MISP_BIM,      C_MISP_TAGE_PROV, C_MISP_TAGE_ALT, C_MISP_LOOP,
+                                    C_MISP_SC,     C_MISP_ITT_PROV, C_MISP_ITT_ALT,   C_MISP_ITT_BASE, C_MISP_BTB_TGT,
+                                    C_MISP_NO_TGT, C_MISP_RAS,      C_MISP_OTHER};
       r.add(src_col[op->pcprof_misp]);
     }
     if (op->pcprof_recov & 2)
@@ -571,9 +570,10 @@ extern "C" void pcprof_retire(Op* op) {
   if (m) {
     int col = C_ST_L1D;
     if (op->engine_info.dcmiss)
-      col = op->pcprof_mem_level == 2 ? C_ST_MLC
-                                      : op->pcprof_mem_level == 3 ? C_ST_LLC
-                                                                  : op->pcprof_mem_level == 4 ? C_ST_DRAM : C_ST_MEM_UNK;
+      col = op->pcprof_mem_level == 2   ? C_ST_MLC
+            : op->pcprof_mem_level == 3 ? C_ST_LLC
+            : op->pcprof_mem_level == 4 ? C_ST_DRAM
+                                        : C_ST_MEM_UNK;
     r.add(col, m);
   }
 }
@@ -807,8 +807,7 @@ void sys_label(int64 nr, std::string* name, std::string* cat) {
   *cat = "other";
 }
 
-void write_phase_pcs(const std::string& path,
-                     const std::unordered_map<std::pair<Addr, int64>, PcRec, PairHash64>& m) {
+void write_phase_pcs(const std::string& path, const std::unordered_map<std::pair<Addr, int64>, PcRec, PairHash64>& m) {
   std::vector<std::pair<std::pair<Addr, int64>, const PcRec*>> rows;
   rows.reserve(m.size());
   for (auto& kv : m) {
@@ -925,10 +924,9 @@ extern "C" void pcprof_dump(uns proc_id) {
   rows.reserve(g->pcs.size());
   for (auto& kv : g->pcs)
     rows.emplace_back(kv.first, &kv.second);
-  std::sort(rows.begin(), rows.end(),
-            [](const std::pair<Addr, const PcRec*>& a, const std::pair<Addr, const PcRec*>& b) {
-              return a.first < b.first;
-            });
+  std::sort(
+      rows.begin(), rows.end(),
+      [](const std::pair<Addr, const PcRec*>& a, const std::pair<Addr, const PcRec*>& b) { return a.first < b.first; });
 
   std::string dir = OUTPUT_DIR;
   FILE* f = fopen((dir + "/pcprof.csv").c_str(), "w");
@@ -977,8 +975,8 @@ extern "C" void pcprof_dump(uns proc_id) {
   fprintf(f, "frac_cycles_retiring %.5f\n", g->cycles ? (double)g->retiring_cycles / g->cycles : 0.0);
 
   fprintf(f, "\n# concentration: fraction of each event covered by the top-N PCs\n");
-  fprintf(f, "%-22s %14s %9s %7s %7s %7s %8s %8s\n", "event", "total", "npcs", "top10", "top100", "top1000",
-          "pcs50%", "pcs90%");
+  fprintf(f, "%-22s %14s %9s %7s %7s %7s %8s %8s\n", "event", "total", "npcs", "top10", "top100", "top1000", "pcs50%",
+          "pcs90%");
   coverage(f, "insts", all, C_INSTS, f_all);
   coverage(f, "misp_exec_all", all, C_MISP_EXEC, f_all);
   coverage(f, "misp_exec_cond", all, C_MISP_EXEC, f_cond);

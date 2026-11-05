@@ -61,6 +61,7 @@ typedef enum Scarab_Reg_Id_struct {
 #include <unordered_map>
 
 #include "frontend/pt_memtrace/memtrace_trace_reader_memtrace.h"
+
 #include "pcprof.h"
 
 /**************************************************************************************/

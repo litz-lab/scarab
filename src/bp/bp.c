@@ -499,10 +499,13 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   // stored in op->btb_pred_info.  The BTB target is usable by this predictor
   // level only if the BTB level that supplied it is no slower than the BP.
   const uns bp_latency = pred_level == BP_PRED_L0 ? BP_L0_LATENCY : BP_MAIN_LATENCY;
-  const Flag btb_hit = btb_pred_hit_by(op->btb_pred_info, bp_latency);
+  Flag btb_hit = btb_pred_hit_by(op->btb_pred_info, bp_latency);
   if (btb_hit)
     pred_target = op->btb_pred_info->pred_target;
-  else
+  else if (IBP_L0_BTB && op->btb_pred_info->btb_only_latency <= bp_latency) {
+    btb_hit = TRUE;
+    pred_target = op->btb_pred_info->btb_only_target;
+  } else
     pred_target = pc_plus_offset;
 
   // }}}

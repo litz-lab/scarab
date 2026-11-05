@@ -446,6 +446,8 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
     btb_pred_info->no_target = FALSE;
   }
 
+  btb_pred_info->btb_only_target = btb_pred_info->pred_target;
+  btb_pred_info->btb_only_latency = btb_pred_miss(btb_pred_info) ? MAX_UNS : btb_pred_info->btb_pred_latency;
   if (ENABLE_IBP && (op->uop->cf_type == CF_IBR || op->uop->cf_type == CF_ICALL)) {
     Addr ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op);
     if (ibp_target) {

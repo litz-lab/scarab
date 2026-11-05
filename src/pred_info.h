@@ -95,6 +95,8 @@ typedef struct Btb_Pred_Info_struct {
   Addr btb_index_addr;  // address used to look up btb for prediction
 
   uns btb_pred_latency;  // latency of pred_target; MAX_UNS means no prediction-time target
+  Addr btb_only_target;  // BTB target before the IBP overrides it
+  uns btb_only_latency;
 
   // IBP-specific history saved during bp_predict_btb() for use in the
   // corresponding update call.  Kept here (not Bp_Pred_Info) so that they are

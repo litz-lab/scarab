@@ -414,6 +414,9 @@ Addr bp_ibtb_ittage_pred(Bp_Data* bp_data, Op* op) {
     pi->pred_target = pi->provider_target;
   }
 
+  if (ITTAGE_BASE_BTB && pi->provider == 0 && !pi->used_alt)
+    pi->pred_target = 0;
+
   if (!op->off_path) {
     if (pi->provider < 0)
       STAT_EVENT(op->proc_id, ITTAGE_NO_PRED);

@@ -839,6 +839,7 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
      line is still made MRU, as the insert did. */
   data = (Dcache_Data*)cache_access(&dc->dcache, req->addr, &line_addr, TRUE);
   if (data) {
+    STAT_EVENT(dc->proc_id, DCACHE_FILL_RESIDENT);
     req->dirty_l0 |= data->dirty;
     return data;
   }

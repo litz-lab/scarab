@@ -1100,8 +1100,10 @@ static inline void icache_demote_victim(Addr fill_addr) {
    MRU, as the insert did, which EIP's model of the icache relies on. */
 static inline Inst_Info** icache_insert_line(Addr fill_addr, Addr* line_addr, Addr* repl_line_addr) {
   Inst_Info** line = (Inst_Info**)cache_access(&ic->icache, fill_addr, line_addr, TRUE);
-  if (line)
+  if (line) {
+    STAT_EVENT(ic->proc_id, ICACHE_FILL_RESIDENT);
     return line;
+  }
   icache_demote_victim(fill_addr);
   return (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, fill_addr, line_addr, repl_line_addr);
 }

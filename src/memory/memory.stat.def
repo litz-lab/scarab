@@ -1033,6 +1033,8 @@ DEF_STAT(MLC_FILL_SKIPPED,                             COUNT,           NO_RATIO
 
 DEF_STAT( DCACHE_FILL,                                COUNT,           NO_RATIO)
 DEF_STAT( DCACHE_WB_REQ,                              RATIO,        DCACHE_FILL)
+DEF_STAT( DCACHE_FILL_RESIDENT,                       COUNT,           NO_RATIO)
+DEF_STAT( ICACHE_FILL_RESIDENT,                       COUNT,           NO_RATIO)
 
 DEF_STAT( DCACHE_WB_REQ_DIRTY,                        DIST,            NO_RATIO)
 DEF_STAT( DCACHE_WB_REQ_NODIRTY,                      DIST,            NO_RATIO)

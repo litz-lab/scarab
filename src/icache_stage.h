@@ -105,7 +105,6 @@ typedef struct Icache_Stage_struct {
   Icache_State next_state;      /* state that the ICACHE is going to be in next cycle */
   uint64_t wait_for_miss_start; /* time when cache miss was observed */
   Flag icache_miss_fulfilled;
-  Counter miss_send; /* cycle the missed line's request goes down */
   Flag icache_stage_resteer_signaled;
   Flag fetch_barrier_pending;
   uns64 fetch_barrier_inst_uid;

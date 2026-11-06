@@ -186,6 +186,9 @@ typedef struct Pref_Req_Info_Struct {
   /* The prefetcher already looked this line up in dest's cache and missed, so the
      request is born one level below, holding an MSHR at dest. */
   Flag probed;
+  /* An FDIP prefetch: the path and branch history of the walk that queued it. */
+  Flag fdip_off_path;
+  uns32 fdip_ghist;
 } Pref_Req_Info;
 
 typedef enum L1_Dyn_Partition_Policy_enum {

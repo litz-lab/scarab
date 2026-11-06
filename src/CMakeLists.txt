@@ -19,7 +19,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(flags_enable_pt_memtrace "")
 
 if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
-  set(flags_enable_pt_memtrace "-DENABLE_PT_MEMTRACE")
+  # HAS_LZ4: lz4_file_reader dispatch for .trace.lz4 memtraces (lz4 is already
+  # linked into the drmemtrace libs; lz4_istream.h hard-errors without this).
+  set(flags_enable_pt_memtrace "-DENABLE_PT_MEMTRACE -DHAS_LZ4")
 endif()
 
 # SCARABOPT: -O3 portable x86-64 (make opt). OPT_AVX: same + -march=haswell (make opt-avx).

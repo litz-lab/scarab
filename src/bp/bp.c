@@ -440,6 +440,8 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   op->recovery_info.bp_id = bp_id;
   op->recovery_info.pred_global_hist = bp_data->global_hist;
   op->recovery_info.targ_hist = bp_data->targ_hist;
+  if (bp_data->ittage_hist)
+    bp_ittage_checkpoint(bp_data, op);
   op->recovery_info.new_dir = op->oracle_info.dir;
   op->recovery_info.crs_next = bp_data->crs.next;
   op->recovery_info.crs_tos = bp_data->crs.tos;
@@ -913,6 +915,11 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       STAT_EVENT(op->proc_id, BP_MAIN_DECODE_RECOVERIES);
     }
   }
+
+  // ITTAGE history covers all branches: insert this op with its predicted outcome
+  if (pred_level == BP_PRED_MAIN && bp_data->ittage_hist)
+    bp_ittage_spec_update(bp_data, op, bp_pred_info);
+
   return bp_pred_info->pred_npc;
 }
 
@@ -1004,7 +1011,8 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   bp_data->bp_btb->recover_func(bp_data, info);
 
   /* type-specific recovery */
-  if (cf_type == CF_ICALL || cf_type == CF_IBR) {
+  // ITTAGE history includes every branch, so it is repaired on every recovery
+  if (cf_type == CF_ICALL || cf_type == CF_IBR || bp_data->ittage_hist) {
     bp_data->bp_ibtb->recover_func(bp_data, info);
   }
   bp_data->bp->recover_func(info);
@@ -1027,6 +1035,7 @@ void bp_sync(Bp_Data* bp_data_src, Bp_Data* bp_data_dst) {
   bp_data_dst->targ_index = bp_data_src->targ_index;
   bp_data_dst->target_bit_length = bp_data_src->target_bit_length;
   bp_data_dst->on_path_pred = bp_data_src->on_path_pred;
+  bp_ittage_sync(bp_data_src, bp_data_dst);
   bp_crs_sync(bp_data_src, bp_data_dst);
   bp_predictors_sync(bp_data_src, bp_data_dst);
 }

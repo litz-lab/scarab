@@ -123,6 +123,7 @@ typedef struct Recovery_Info_struct {  // QUESTION no proc_id?
   uns64 conf_perceptron_global_hist;       // Only for confidnece perceptron, a copy of the correct global history
   uns64 conf_perceptron_global_misp_hist;  // Only for confidnece perceptron, a copy of the correct global history
   uns32 targ_hist;                         // a copy of the correct indirect branch pattern history
+  Ittage_Ckpt ittage_ckpt;                 // ITTAGE history before this op (ittage IBP only)
   Addr npc;
 
   // next three are used to recover the realistic CRS

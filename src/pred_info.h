@@ -40,6 +40,8 @@ typedef enum Recovery_Point_enum {
   RECOVER_AT_FE,      // recovery in the frontend (early correction; L0)
 } Recovery_Point;
 
+#include "bp/ittage.h"
+
 typedef struct Bp_Pred_Info_struct {
   Addr pred_npc;           // predicted next pc field
   Counter bp_ready_cycle;  // cycle when this level's prediction becomes available
@@ -103,6 +105,7 @@ typedef struct Btb_Pred_Info_struct {
   uns32 ibp_pred_targ_hist;         // target history used by tc_tagged / tc_tagless IBP
   uns32 ibp_pred_global_hist;       // global history used by tc_hybrid IBP
   uns8 ibp_pred_tc_selector_entry;  // selector entry saved by tc_hybrid IBP
+  Ittage_Pred_Info ittage;          // lookup record saved by the ittage IBP
 } Btb_Pred_Info;
 
 static inline Flag btb_pred_miss(const Btb_Pred_Info* btb_pred_info) {

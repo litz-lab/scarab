@@ -279,7 +279,7 @@ struct Prof {
   };
   std::unordered_map<int64, PhaseTot> sys_tot, mark_tot;
   PhaseTot *sys_cur = nullptr, *mark_cur = nullptr;  // current phases' entries; null after a phase change
-  uns64 win_hist[64] = {0};  // log2 histogram of retired insts between consecutive syscalls
+  uns64 win_hist[64] = {0};                          // log2 histogram of retired insts between consecutive syscalls
   uns64 win_count = 0, win_sum = 0;
   uns64 syscalls_in_region = 0;
   uns64 mark_begins_in_region = 0, mark_ends_in_region = 0;

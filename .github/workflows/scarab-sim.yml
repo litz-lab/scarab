@@ -140,14 +140,16 @@ jobs:
           d["traces_dir"] = os.environ["GITHUB_WORKSPACE"] + "/traces_top_simpoint"
           pt_workload = os.environ["PT_WORKLOAD"].strip()
           if pt_workload:
-              # PT frontend run: one whole PT trace (cluster 0, no simpoints),
-              # capped, in place of the descriptor's simulations. Like the
-              # exec run below, which simulations CI runs is CI's business.
+              # PT frontend run: one whole PT trace, capped, in place of the
+              # descriptor's simulations. Like the exec run below, which
+              # simulations CI runs is CI's business. PT traces have no
+              # simpoints, and sci rejects any cluster_id for such a workload,
+              # so it must be null (sci then runs the whole trace as cluster 0).
               d["simulations"] = [{
                   "suite": "datacenter",
                   "subsuite": "datacenter",
                   "workload": pt_workload,
-                  "cluster_id": 0,
+                  "cluster_id": None,
                   "simulation_type": "pt",
                   "warmup": 10000000,
               }]

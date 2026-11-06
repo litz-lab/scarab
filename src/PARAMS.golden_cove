@@ -82,7 +82,7 @@
 ### iBP
 --enable_ibp                    1                         # Enable the indirect branch predictor
 --ibtb_mech                     tc_tagged
-                                                          # iBTB Model. tc_tagless, tc_tagged, tc_hybrid.
+                                                          # iBTB Model. tc_tagless, tc_tagged, tc_hybrid, ittage.
 --ibtb_off_path_writes          1                         # Allow off path ops to update the ibtb.
 --tc_entries                    4096
 --tc_assoc                      4

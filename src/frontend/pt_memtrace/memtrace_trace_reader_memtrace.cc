@@ -38,6 +38,7 @@
 #include "compressed_file_reader.h"
 #include "directory_iterator.h"
 #include "file_reader.h"
+#include "lz4_file_reader.h"
 #include "snappy_file_reader.h"
 #include "zipfile_file_reader.h"
 
@@ -349,12 +350,16 @@ static std::unique_ptr<reader_t> create_trace_reader(const std::string& path, in
         return std::unique_ptr<reader_t>(new snappy_file_reader_t(path, verbosity));
       if (ends_with(fname, ".zip"))
         return std::unique_ptr<reader_t>(new zipfile_file_reader_t(path, verbosity));
+      if (ends_with(fname, ".lz4"))
+        return std::unique_ptr<reader_t>(new lz4_file_reader_t(path, verbosity));
     }
   } else {
     if (ends_with(path, ".sz"))
       return std::unique_ptr<reader_t>(new snappy_file_reader_t(path, verbosity));
     if (ends_with(path, ".zip"))
       return std::unique_ptr<reader_t>(new zipfile_file_reader_t(path, verbosity));
+    if (ends_with(path, ".lz4"))
+      return std::unique_ptr<reader_t>(new lz4_file_reader_t(path, verbosity));
   }
   return std::unique_ptr<reader_t>(new compressed_file_reader_t(path, verbosity));
 }

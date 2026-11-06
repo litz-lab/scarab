@@ -155,12 +155,12 @@ static void mem_merge_at_level(Mshr* level, Mem_Req* req);
 
 static Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns size, Destination destination,
                                         uns delay, Op* op, Flag done_func(Mem_Req*), Counter unique_num,
-                                        Flag demand_hit_prefetch, Counter new_priority);
+                                        Flag demand_hit_prefetch, Counter new_priority, Flag fdip_off);
 
 static inline Mem_Req* mem_alloc_req(uns proc_id, Mem_Req_Type type);
 
 static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
-                             Flag done_func(Mem_Req*), Counter unique_num, Counter new_priority);
+                             Flag done_func(Mem_Req*), Counter unique_num, Counter new_priority, Flag fdip_off);
 
 static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr);
 
@@ -358,9 +358,11 @@ void init_uncores(void) {
     Uncore* uncore = &mem->uncores[proc_id];
     mshr_init(&uncore->icache_mshr, "ICACHE_MSHR", MSHR_ICACHE, ICACHE_MSHRS);
     mshr_init(&uncore->dcache_mshr, "DCACHE_MSHR", MSHR_DCACHE, DCACHE_MSHRS);
+    mshr_init(&uncore->icache_wb, "ICACHE_WB", MSHR_ICACHE_WB, ICACHE_MSHRS);
     mshr_init(&uncore->dcache_wb, "DCACHE_WB", MSHR_DCACHE_WB, DCACHE_MSHRS);
     ASSERT(proc_id, ICACHE_MSHR_DEMAND_RESERVE < ICACHE_MSHRS && DCACHE_MSHR_DEMAND_RESERVE < DCACHE_MSHRS);
-    uncore->icache_mshr.proc_id = uncore->dcache_mshr.proc_id = uncore->dcache_wb.proc_id = proc_id;
+    uncore->icache_mshr.proc_id = uncore->dcache_mshr.proc_id = proc_id;
+    uncore->icache_wb.proc_id = uncore->dcache_wb.proc_id = proc_id;
   }
 
   /* Initialize MLC cache (shared only for now) */
@@ -631,6 +633,7 @@ static inline Counter mem_level_latency(Mshr* mshr) {
   switch (mshr->file) {
     case MSHR_ICACHE:
     case MSHR_DCACHE:
+    case MSHR_ICACHE_WB:
     case MSHR_DCACHE_WB:
       latency = DCQ_TO_MLCQ_TRANSFER_LATENCY + MLC_CYCLES;
       break;
@@ -655,6 +658,7 @@ static inline Stat_Enum mem_reject_stat(Mshr* mshr) {
   switch (mshr->file) {
     case MSHR_ICACHE:
     case MSHR_DCACHE:
+    case MSHR_ICACHE_WB:
     case MSHR_DCACHE_WB:
       stat = REJECTED_QUEUE_MLC;
       break;
@@ -673,11 +677,12 @@ static inline Stat_Enum mem_reject_stat(Mshr* mshr) {
 }
 
 /* A level's writeback file is looked up by the same cache as its miss file. The icache
-   never holds a dirty line, so it has none. */
+   writes back only in an exclusive hierarchy, where its victims are demoted. */
 static inline Mshr* mem_wb_file(Mshr* miss) {
   Mshr* wb = NULL;
   switch (miss->file) {
     case MSHR_ICACHE:
+      wb = &mem->uncores[miss->proc_id].icache_wb;
       break;
     case MSHR_DCACHE:
       wb = &mem->uncores[miss->proc_id].dcache_wb;
@@ -710,8 +715,13 @@ Mshr* mem_core_file(uns8 proc_id, Mem_Req_Type type) {
 /* The file a request is in at a level: a writeback's is the level's writeback file, and
    at the L1 level an instruction miss is in the icache's. */
 static inline Mshr* mem_file_of(Mem_Req* req, Mshr* miss) {
-  if (req->type == MRT_WB || req->type == MRT_WB_NODIRTY)
+  if (req->type == MRT_WB || req->type == MRT_WB_NODIRTY) {
+    /* At the L1 level (callers pass the dcache's file), an icache victim's writeback is in
+       the icache's file. */
+    if (miss->file == MSHR_DCACHE && req->wb_from_icache)
+      miss = &mem->uncores[req->proc_id].icache_mshr;
     return mem_wb_file(miss);
+  }
   Mshr* file = NULL;
   switch (miss->file) {
     case MSHR_ICACHE:
@@ -732,6 +742,7 @@ static inline void mem_admit_to_level(Mem_Req* req, Mshr* mshr) {
   switch (mshr->file) {
     case MSHR_ICACHE:
     case MSHR_DCACHE:
+    case MSHR_ICACHE_WB:
     case MSHR_DCACHE_WB:
       req->state = MRS_MLC_NEW;
       break;
@@ -783,6 +794,8 @@ static Mshr* mem_mshr(uns8 proc_id, Mshr_File file) {
       return &mem->mlc_mshr;
     case MSHR_L1:
       return &mem->l1_mshr;
+    case MSHR_ICACHE_WB:
+      return &mem->uncores[proc_id].icache_wb;
     case MSHR_DCACHE_WB:
       return &mem->uncores[proc_id].dcache_wb;
     case MSHR_MLC_WB:
@@ -948,6 +961,7 @@ void update_memory() {
     for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
       mem_process_lookups(&mem->uncores[proc_id].dcache_mshr);
       mem_process_lookups(&mem->uncores[proc_id].icache_mshr);
+      mem_process_lookups(&mem->uncores[proc_id].icache_wb);
       mem_process_lookups(&mem->uncores[proc_id].dcache_wb);
     }
     /* After the demand passes and in their frequency domain, so a bank a demand took
@@ -1602,15 +1616,9 @@ static void mem_complete_l1_access(Mem_Req* req) {
   }
 }
 
-/* Served from entering's writeback file: the line comes back into the cache, so the
-   writeback is cancelled and the line keeps its dirty bit -- one home again, and its next
-   eviction writes it back. The fill walk delivers it next cycle. */
+/* Served from entering's writeback file: the line comes back into the cache clean, and the
+   writeback, which carries its data down, goes on. The fill walk delivers it next cycle. */
 static void mem_serve_from_wb(Mem_Req* req, Mshr* entering) {
-  Mshr* wb_file = mem_wb_file(entering);
-  Mem_Req* wb = mshr_line_first(mshr_line(wb_file, req->addr));
-  req->dirty_l0 |= (wb->type == MRT_WB);
-  mshr_remove(wb_file, wb);
-  mem_free_req(wb);
   mshr_add(entering, req);
   req->state = MRS_WB_HIT_DONE;
   req->rdy_cycle = cycle_count + 1;
@@ -1730,6 +1738,7 @@ static void mem_process_lookups(Mshr* file) {
   switch (file->file) {
     case MSHR_ICACHE:
     case MSHR_DCACHE:
+    case MSHR_ICACHE_WB:
     case MSHR_DCACHE_WB:
       break;
     case MSHR_MLC:
@@ -1836,6 +1845,9 @@ Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag update_
   STAT_EVENT(proc_id, block + 1);
   Addr dummy_line_addr;
   *hit = cache_access(cache, line_addr, &dummy_line_addr, update_repl) != NULL;
+  /* icache_line_info shadows the icache for wrong-path stats (and EIP); access it whenever the icache is */
+  if (dest == DEST_ICACHE && WP_COLLECT_STATS)
+    cache_access(&cmp_model.icache_stage[proc_id].icache_line_info, line_addr, &dummy_line_addr, update_repl);
 
   /* A probe takes the bank and reads the array, so it counts as an access to that
      level -- but only as a prefetch one. Demand misses are never caused by a prefetch. */
@@ -2063,6 +2075,8 @@ static inline void mem_record_late_prefetch(Mem_Req* pref) {
   switch (pref->destination) {
     case DEST_NONE:
       return; /* issued outside the prefetch framework: no target level to charge */
+    case DEST_ICACHE:
+      return; /* FDIP and EIP count their own late prefetches */
     case DEST_DCACHE:
       late = DCACHE_PREF_LATE;
       cycles = DCACHE_LATE_PREF_CYCLES;
@@ -2127,7 +2141,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
                                  uns delay, Op* op, Flag done_func(Mem_Req*),
                                  Counter unique_num, /* This counter is used
                                                         when op is NULL */
-                                 Flag demand_hit_prefetch, Counter new_priority) {
+                                 Flag demand_hit_prefetch, Counter new_priority, Flag fdip_off) {
   Flag higher_priority;
   Counter old_priority = req->priority;
   Op** op_ptr = NULL;
@@ -2283,7 +2297,7 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
   if ((mem_req_is_type(req, MRT_FDIPPRFON) || mem_req_is_type(req, MRT_FDIPPRFOFF) ||
        mem_req_is_type(req, MRT_FDIPPRFALT)) &&
       (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF || type == MRT_FDIPPRFALT) &&
-      req->fdip_pref_off_path != fdip_off_path(req->proc_id, 0))
+      req->fdip_pref_off_path != fdip_off)
     req->fdip_pref_off_path = 2;
 
   update_mem_req_occupancy_counter(old_type, -1);
@@ -2335,7 +2349,7 @@ static inline Mem_Req* mem_alloc_req(uns proc_id, Mem_Req_Type type) {
 
 static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                              Flag done_func(Mem_Req*), Counter unique_num, /* This counter is used when op is NULL */
-                             Counter new_priority) {
+                             Counter new_priority, Flag fdip_off) {
   STAT_EVENT(proc_id, MEM_REQ_IFETCH + MIN2(type, MRT_WB_NODIRTY));
   STAT_EVENT(proc_id, MEM_REQ_BUFFER_MISS);
 
@@ -2405,6 +2419,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, uns8 proc_id, 
   new_req->demand_match_prefetch = FALSE;
   new_req->dirty_l0 = op && op->uop->mem_type == MEM_ST && !op->off_path;
   new_req->wb_used_onpath = FALSE;
+  new_req->wb_from_icache = FALSE;
   new_req->mem_seq_num = 0;
   new_req->fq_start_time = MAX_CTR;
   new_req->fq_bank_finish_time = MAX_CTR;
@@ -2435,9 +2450,9 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, uns8 proc_id, 
   if (new_req->type == MRT_IFETCH && icache_off_path())
     new_req->off_path = TRUE;
   // All oracle (correct-path) prefetches are on path.
-  if (((new_req->type == MRT_UOCPRF && !UOC_ORACLE_PREF) || new_req->type == MRT_FDIPPRFON ||
-       new_req->type == MRT_FDIPPRFOFF || new_req->type == MRT_FDIPPRFALT) &&
-      fdip_off_path(proc_id, 0))
+  if ((new_req->type == MRT_UOCPRF && !UOC_ORACLE_PREF && fdip_off_path(proc_id, 0)) ||
+      ((new_req->type == MRT_FDIPPRFON || new_req->type == MRT_FDIPPRFOFF || new_req->type == MRT_FDIPPRFALT) &&
+       fdip_off))
     new_req->off_path = TRUE;
 
   STAT_EVENT(proc_id, MEM_REQ_INIT_IFETCH + type);
@@ -2589,7 +2604,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
           Mem_Req_Type_str(matching_req->type), hexstr64s(matching_req->addr), matching_req->size,
           op ? (int)op->op_num : -1, op ? op->off_path : FALSE);
     return (mem_adjust_matching_request(matching_req, type, addr, size, destination, delay, op, done_func, unique_num,
-                                        demand_hit_prefetch, new_priority));
+                                        demand_hit_prefetch, new_priority, pref_info && pref_info->fdip_off_path));
   }
 
   /* Step 2.5: anything else for the line waits on its entry; a new line needs a free
@@ -2654,7 +2669,8 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
   /* Step 5: Allocate a new request buffer -- new_req */
 
-  mem_init_new_req(new_req, type, proc_id, addr, size, delay, op, done_func, unique_num, new_priority);
+  mem_init_new_req(new_req, type, proc_id, addr, size, delay, op, done_func, unique_num, new_priority,
+                   pref_info && pref_info->fdip_off_path);
 
   /* Step 6: Insert the request into the appropriate MSHR file if it is not already there */
 
@@ -2666,11 +2682,8 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
   new_req->bw_prefetch = (pref_info ? pref_info->bw_limited : FALSE);
   new_req->destination = destination;
   if (type == MRT_FDIPPRFON || type == MRT_FDIPPRFOFF || type == MRT_FDIPPRFALT) {
-    if (fdip_off_path(proc_id, 0))
-      new_req->fdip_pref_off_path = 1;
-    else
-      new_req->fdip_pref_off_path = 0;
-    new_req->ghist = g_bp_data->global_hist;
+    new_req->fdip_pref_off_path = pref_info->fdip_off_path;
+    new_req->ghist = pref_info->fdip_ghist;
   }
   new_req->cyc_hit_by_demand_load = 0;
   if (PREF_FRAMEWORK_ON) {
@@ -2685,8 +2698,9 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
      miss here; l1_fill_line subtracts l1_miss_cycle unconditionally. */
   if (probed) {
     switch (destination) {
+      case DEST_ICACHE:
       case DEST_DCACHE:
-        break; /* a dcache miss is not tracked on the request */
+        break; /* a first-level miss is not tracked on the request */
       case DEST_MLC:
         new_req->mlc_miss = TRUE;
         new_req->mlc_miss_cycle = cycle_count;
@@ -2740,10 +2754,23 @@ static Flag new_mem_wb_req(Mshr* target, Mem_Req_Type type, uns8 proc_id, Addr a
   ASSERTM(proc_id, proc_id == get_proc_id_from_cmp_addr(addr), "Proc ID (%d) does not match proc ID in address (%d)!\n",
           proc_id, get_proc_id_from_cmp_addr(addr));
 
-  /* A line is written back once: until this writeback leaves the file, the line is
-     not in the cache to be dirtied and evicted again. */
-  ASSERTM(proc_id, !mshr_line(target, addr), "%s: a second writeback to line 0x%s\n", mshr_name(target),
-          hexstr64s(addr));
+  /* The line's previous writeback has not left this file, the cache's write buffer: a
+     clean one adds nothing, and a dirty one's newer data goes into it. DRAM's file holds
+     writes DRAM has already taken, so there a second one waits for the first's ack. */
+  Mshr_Line* pending = mshr_line(target, addr);
+  if (pending) {
+    if (target->file == MSHR_L1_WB)
+      return FALSE;
+    Mem_Req* wb = mshr_line_first(pending);
+    if (type == MRT_WB && wb->type != MRT_WB) {
+      mem_req_clr_types(wb, wb->type);
+      wb->type = MRT_WB;
+      mem_req_set_types(wb, MRT_WB);
+    }
+    wb->wb_used_onpath |= used_onpath;
+    STAT_EVENT(proc_id, MEM_REQ_WB_MERGED);
+    return TRUE;
+  }
   if (mshr_full(target, addr)) {
     STAT_EVENT(proc_id, mem_reject_stat(target));
     return FALSE;
@@ -2751,11 +2778,13 @@ static Flag new_mem_wb_req(Mshr* target, Mem_Req_Type type, uns8 proc_id, Addr a
 
   Mem_Req* new_req = mem_alloc_req(proc_id, type);
   mem_init_new_req(new_req, type, proc_id, addr, size, delay, op, done_func, unique_num,
-                   Mem_Req_Priority_Offset[type] + freq_cycle_count(FREQ_DOMAIN_L1));
+                   Mem_Req_Priority_Offset[type] + freq_cycle_count(FREQ_DOMAIN_L1), FALSE);
   new_req->wb_used_onpath = used_onpath;
+  new_req->wb_from_icache = target->file == MSHR_ICACHE_WB;
   /* A writeback is inserted at the level it goes to, which is what an exclusive
      hierarchy's fill_inserts_at_* read. */
   switch (target->file) {
+    case MSHR_ICACHE_WB:
     case MSHR_DCACHE_WB:
       new_req->destination = DEST_MLC;
       break;
@@ -2786,6 +2815,16 @@ Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns
                        Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath) {
   return new_mem_wb_req(mem_wb_file(MLC_PRESENT ? &mem->uncores[proc_id].dcache_mshr : &mem->mlc_mshr), type, proc_id,
                         addr, size, delay, op, done_func, unique_num, used_onpath);
+}
+
+static inline Mshr* mem_ic_wb_file(uns8 proc_id) {
+  return mem_wb_file(MLC_PRESENT ? &mem->uncores[proc_id].icache_mshr : &mem->mlc_mshr);
+}
+
+Flag new_mem_ic_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
+                       Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath) {
+  return new_mem_wb_req(mem_ic_wb_file(proc_id), type, proc_id, addr, size, delay, op, done_func, unique_num,
+                        used_onpath);
 }
 
 static Flag new_mem_mlc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
@@ -3421,14 +3460,6 @@ Flag mlc_fill_line(Mem_Req* req) {
 
   // write back can fill mlc directly - reqs filling core should not dirty the line
   data->dirty = ((req->type == MRT_WB) && (req->state != MRS_FILL_MLC));
-  /* The line's own writeback has not left: this fill takes the line back, dirty bit and all. */
-  Mshr_Line* pending = mshr_line(&mem->mlc_wb, req->addr);
-  if (pending) {
-    Mem_Req* wb = mshr_line_first(pending);
-    data->dirty |= (wb->type == MRT_WB);
-    mshr_remove(&mem->mlc_wb, wb);
-    mem_free_req(wb);
-  }
   data->prefetch = req->type == MRT_DPRF || req->type == MRT_IPRF || req->type == MRT_UOCPRF ||
                    req->type == MRT_FDIPPRFON || req->type == MRT_FDIPPRFOFF || req->type == MRT_FDIPPRFALT ||
                    req->demand_match_prefetch;

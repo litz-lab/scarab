@@ -406,15 +406,15 @@ FT_PredictResult FT::predict_ft() {
 
             const Counter fetch_cycle = op->bp_pred_main.bp_ready_cycle - BP_MAIN_LATENCY;
             const Flag l0_dir_wrong = op->bp_pred_l0.pred_orig != op->oracle_info.dir;
-            uns recovery_latency = l0_dir_wrong ? BP_MAIN_LATENCY : op->btb_pred_info->btb_pred_latency;
+            uns recovery_latency = l0_dir_wrong ? BP_MAIN_LATENCY : op->bp_pred_main.target_latency;
             // The BTB latency is not the correction time when main's own prediction
             // is: a return takes its target from the return stack, which L0 and main
             // each pop, so L0 can pop a different address than main; and a branch
             // whose target is its fall-through is right under main's not-taken guess
             // while L0's taken guess follows a wrong BTB target. Both showed up only
-            // as a BTB latency no later than L0's, so only those wait for main here;
+            // as a BTB latency no later than L0's (or none), so only those wait for main here;
             // every other case keeps its BTB latency and its earlier results.
-            if (recovery_latency <= BP_L0_LATENCY) {
+            if (recovery_latency <= BP_L0_LATENCY || recovery_latency == MAX_UNS) {
               ASSERT(proc_id, op->uop->cf_type == CF_RET || op->uop->cf_type == CF_ICO ||
                                   op->bp_pred_l0.pred_orig != op->bp_pred_main.pred_orig);
               recovery_latency = BP_MAIN_LATENCY;

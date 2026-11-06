@@ -494,14 +494,13 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   // {{{ read pre-computed BTB/IBP results from btb_pred_info
 
   // All BTB/IBP lookup results were computed once by bp_predict_btb() and
-  // stored in op->btb_pred_info.  The BTB target is usable by this predictor
-  // level only if the BTB level that supplied it is no slower than the BP.
+  // stored in op->btb_pred_info.  Each predictor level uses the targets that are
+  // available within its latency: the IBP (BTB_MAIN_LATENCY) overrides the BTB.
   const uns bp_latency = pred_level == BP_PRED_L0 ? BP_L0_LATENCY : BP_MAIN_LATENCY;
+  const Flag ibp_hit = !op->btb_pred_info->ibp_miss && BTB_MAIN_LATENCY <= bp_latency;
   const Flag btb_hit = btb_pred_hit_by(op->btb_pred_info, bp_latency);
-  if (btb_hit)
-    pred_target = op->btb_pred_info->pred_target;
-  else
-    pred_target = pc_plus_offset;
+  pred_target = ibp_hit ? op->btb_pred_info->ibp_target : btb_hit ? op->btb_pred_info->pred_target : pc_plus_offset;
+  bp_pred_info->target_latency = ibp_hit ? BTB_MAIN_LATENCY : btb_hit ? op->btb_pred_info->btb_pred_latency : MAX_UNS;
 
   // }}}
   // {{{ handle predictions for individual cf types
@@ -659,7 +658,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         bp_pred_info->pred = TAKEN;
         bp_pred_info->pred_orig = TAKEN;
       }
-      if (ENABLE_IBP && !op->btb_pred_info->ibp_miss) {
+      if (ibp_hit) {
         ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
         if (op->oracle_info.target == pred_target) {
           bp_pred_info->recovery_point = RECOVER_AT_NONE;
@@ -704,7 +703,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       if (ENABLE_CRS)
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) : bp_crs_push(bp_data, op);
 
-      if (ENABLE_IBP && !op->btb_pred_info->ibp_miss) {
+      if (ibp_hit) {
         ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
         if (op->oracle_info.target == pred_target) {
           bp_pred_info->recovery_point = RECOVER_AT_NONE;

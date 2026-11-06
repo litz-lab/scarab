@@ -440,6 +440,8 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   op->recovery_info.bp_id = bp_id;
   op->recovery_info.pred_global_hist = bp_data->global_hist;
   op->recovery_info.targ_hist = bp_data->targ_hist;
+  if (bp_data->ittage_hist)
+    bp_ittage_checkpoint(bp_data, op);
   op->recovery_info.new_dir = op->oracle_info.dir;
   op->recovery_info.crs_next = bp_data->crs.next;
   op->recovery_info.crs_tos = bp_data->crs.tos;
@@ -494,14 +496,13 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
   // {{{ read pre-computed BTB/IBP results from btb_pred_info
 
   // All BTB/IBP lookup results were computed once by bp_predict_btb() and
-  // stored in op->btb_pred_info.  The BTB target is usable by this predictor
-  // level only if the BTB level that supplied it is no slower than the BP.
+  // stored in op->btb_pred_info.  Each predictor level uses the targets that are
+  // available within its latency: the IBP (BTB_MAIN_LATENCY) overrides the BTB.
   const uns bp_latency = pred_level == BP_PRED_L0 ? BP_L0_LATENCY : BP_MAIN_LATENCY;
+  const Flag ibp_hit = !op->btb_pred_info->ibp_miss && BTB_MAIN_LATENCY <= bp_latency;
   const Flag btb_hit = btb_pred_hit_by(op->btb_pred_info, bp_latency);
-  if (btb_hit)
-    pred_target = op->btb_pred_info->pred_target;
-  else
-    pred_target = pc_plus_offset;
+  pred_target = ibp_hit ? op->btb_pred_info->ibp_target : btb_hit ? op->btb_pred_info->pred_target : pc_plus_offset;
+  bp_pred_info->target_latency = ibp_hit ? BTB_MAIN_LATENCY : btb_hit ? op->btb_pred_info->btb_pred_latency : MAX_UNS;
 
   // }}}
   // {{{ handle predictions for individual cf types
@@ -659,7 +660,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         bp_pred_info->pred = TAKEN;
         bp_pred_info->pred_orig = TAKEN;
       }
-      if (ENABLE_IBP && !op->btb_pred_info->ibp_miss) {
+      if (ibp_hit) {
         ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
         if (op->oracle_info.target == pred_target) {
           bp_pred_info->recovery_point = RECOVER_AT_NONE;
@@ -704,7 +705,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       if (ENABLE_CRS)
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) : bp_crs_push(bp_data, op);
 
-      if (ENABLE_IBP && !op->btb_pred_info->ibp_miss) {
+      if (ibp_hit) {
         ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
         if (op->oracle_info.target == pred_target) {
           bp_pred_info->recovery_point = RECOVER_AT_NONE;
@@ -903,6 +904,11 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       STAT_EVENT(op->proc_id, BP_MAIN_DECODE_RECOVERIES);
     }
   }
+
+  // ITTAGE history covers all branches: insert this op with its predicted outcome
+  if (pred_level == BP_PRED_MAIN && bp_data->ittage_hist)
+    bp_ittage_spec_update(bp_data, op, bp_pred_info);
+
   return bp_pred_info->pred_npc;
 }
 
@@ -994,7 +1000,8 @@ void bp_recover_op(Bp_Data* bp_data, Cf_Type cf_type, Recovery_Info* info) {
   bp_data->bp_btb->recover_func(bp_data, info);
 
   /* type-specific recovery */
-  if (cf_type == CF_ICALL || cf_type == CF_IBR) {
+  // ITTAGE history includes every branch, so it is repaired on every recovery
+  if (cf_type == CF_ICALL || cf_type == CF_IBR || bp_data->ittage_hist) {
     bp_data->bp_ibtb->recover_func(bp_data, info);
   }
   bp_data->bp->recover_func(info);
@@ -1017,6 +1024,7 @@ void bp_sync(Bp_Data* bp_data_src, Bp_Data* bp_data_dst) {
   bp_data_dst->targ_index = bp_data_src->targ_index;
   bp_data_dst->target_bit_length = bp_data_src->target_bit_length;
   bp_data_dst->on_path_pred = bp_data_src->on_path_pred;
+  bp_ittage_sync(bp_data_src, bp_data_dst);
   bp_crs_sync(bp_data_src, bp_data_dst);
   bp_predictors_sync(bp_data_src, bp_data_dst);
 }

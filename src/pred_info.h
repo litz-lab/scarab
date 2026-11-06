@@ -40,9 +40,12 @@ typedef enum Recovery_Point_enum {
   RECOVER_AT_FE,      // recovery in the frontend (early correction; L0)
 } Recovery_Point;
 
+#include "bp/ittage.h"
+
 typedef struct Bp_Pred_Info_struct {
   Addr pred_npc;           // predicted next pc field
   Counter bp_ready_cycle;  // cycle when this level's prediction becomes available
+  uns target_latency;      // latency of the BTB/IBP target this level used; MAX_UNS = none
   int64 pred_branch_id;    // predictor-local branch id for speculative checkpoint/recover
   uns8 pred;               // predicted direction of branch, set by the branch predictor
   uns8 pred_orig;          // predicted direction of branch, not overwritten on BTB miss (for fdip)
@@ -73,7 +76,8 @@ typedef struct Btb_Pred_Info_struct {
   Flag btb_miss_resolved;  // true if the btb miss is resolved by the pipeline.
   Flag no_target;          // true if there is no target for this branch at prediction time
   Flag ibp_miss;           // true if the target is not predicted by the indirect pred
-  Addr pred_target;        // selected target from BTB/IBTB (if any)
+  Addr ibp_target;         // indirect predictor's target (valid when !ibp_miss), main BP level only
+  Addr pred_target;        // target of the fastest BTB level that hit (if any)
 
   // Pre-computed BTB lookup result, populated once by bp_predict_btb() before
   // bp_predict_op() is called.  Both BP_PRED_L0 and BP_PRED_MAIN read from
@@ -100,6 +104,7 @@ typedef struct Btb_Pred_Info_struct {
   uns32 ibp_pred_targ_hist;         // target history used by tc_tagged / tc_tagless IBP
   uns32 ibp_pred_global_hist;       // global history used by tc_hybrid IBP
   uns8 ibp_pred_tc_selector_entry;  // selector entry saved by tc_hybrid IBP
+  Ittage_Pred_Info ittage;          // lookup record saved by the ittage IBP
 } Btb_Pred_Info;
 
 static inline Flag btb_pred_miss(const Btb_Pred_Info* btb_pred_info) {

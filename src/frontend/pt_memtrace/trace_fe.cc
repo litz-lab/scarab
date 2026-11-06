@@ -726,8 +726,20 @@ void ext_trace_extract_basic_block_vectors() {
       // (cur_counter_fetched == SEGMENT_INSTR_COUNT) <=> !success
       // since do not know if it is the last one,
       // (cur_counter_fetched == SEGMENT_INSTR_COUNT) -> !success
-      if (cur_counter_fetched == SEGMENT_INSTR_COUNT) {
-        ASSERT(proc_id, !success);
+      // NOTE: the implication above only holds when this is NOT the final
+      // segment. A boundary-aligned read with data still remaining is legal
+      // (success == true), so a hard assert here aborts valid traces whose
+      // window boundaries happen to align with SEGMENT_INSTR_COUNT. Warn once
+      // instead; the condition is diagnostic, not an invariant.
+      if (cur_counter_fetched == SEGMENT_INSTR_COUNT && success) {
+        static bool warned_boundary_success = false;
+        if (!warned_boundary_success) {
+          warned_boundary_success = true;
+          fprintf(stderr,
+                  "WARNING: segment boundary reached with reader not exhausted "
+                  "(cur_counter_fetched == SEGMENT_INSTR_COUNT && success); "
+                  "continuing.\n");
+        }
       }
 
       ASSERT(proc_id, cur_counter >= cur_counter_fetched);
@@ -845,7 +857,11 @@ void ext_trace_extract_basic_block_vectors() {
       // clear out current bb
       cur_bb.clear();
 
-      if (!success && !fingerprint.empty()) {
+      // In distributed mode a run fingerprints one window. If that window was already written
+      // above, what is left is the residue of a basic block crossing the window's end: it belongs
+      // to the next window, which reads it again, so writing it would add a second line.
+      const bool window_done = SIM_MODE == TRACE_BBV_DISTRIBUTED_MODE && num_of_segments > 0;
+      if (!success && !fingerprint.empty() && !window_done) {
         num_of_segments++;
         output_counts(num_of_segments, counts_dynamic, counts_as_built, op_taken_count, bb_identity_map);
 

@@ -105,7 +105,6 @@ typedef struct Icache_Stage_struct {
   Icache_State next_state;      /* state that the ICACHE is going to be in next cycle */
   uint64_t wait_for_miss_start; /* time when cache miss was observed */
   Flag icache_miss_fulfilled;
-  Counter miss_send; /* cycle the missed line's request goes down */
   Flag icache_stage_resteer_signaled;
   Flag fetch_barrier_pending;
   uns64 fetch_barrier_inst_uid;
@@ -122,6 +121,7 @@ typedef struct Icache_Stage_struct {
 
   Cache icache;           /* the cache storage structure (caches Inst_Info *) */
   Ports* ports;           /* read ports per bank; banks interleave cache lines */
+  List pref_queue;        /* instruction prefetches, in pref_common's queue */
   Cache icache_line_info; /* contains info about the icache lines */
   Cache pref_icache;      /* Prefetcher cache storage structure (caches Inst_Info *) */
   char rand_wb_state[31]; /* State of random number generator for random writeback */

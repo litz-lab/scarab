@@ -890,6 +890,11 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
                                   tage_component * 2);
   }
 
+  // pc_profile bookkeeping (op fields only; never read by the predictor or timing model)
+  op->pcprof_tage_comp = (uns8)tage_component;
+  op->pcprof_tage_used_alt = TAGESCL64KB_ALT && tage_used_alt;
+  op->pcprof_tage_hitbank = (int16)Pstate.HitBank;
+
   *bp_confidence = 0;
   if (Pstate.HighConf)
     *bp_confidence += 3;

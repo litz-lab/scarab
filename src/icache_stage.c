@@ -66,6 +66,7 @@
 #include "ft_op_buffer.h"
 #include "map.h"
 #include "op_pool.h"
+#include "pcprof.h"
 #include "sim.h"
 #include "statistics.h"
 #include "thread.h"
@@ -558,6 +559,8 @@ FT_Arbitration_Result ft_arbitration() {
       }
 
       ft_op_buffer_fill_from_ft(ic, ft);
+      if (PC_PROFILE)
+        pcprof_fetch(ic->fetch_addr, ic->off_path, TRUE, TRUE);
 
       return FT_HIT_UOP_CACHE;
     } else if (ic->line) {
@@ -570,6 +573,8 @@ FT_Arbitration_Result ft_arbitration() {
       icache_hit_events();
 
       ft_op_buffer_fill_from_ft(ic, ft);
+      if (PC_PROFILE)
+        pcprof_fetch(ic->fetch_addr, ic->off_path, FALSE, TRUE);
 
       return FT_HIT_ICACHE;
     } else {
@@ -583,6 +588,8 @@ FT_Arbitration_Result ft_arbitration() {
       ic->icache_miss_fulfilled = FALSE;
 
       ft_op_buffer_fill_from_ft(ic, ft);
+      if (PC_PROFILE)
+        pcprof_fetch(ic->fetch_addr, ic->off_path, FALSE, FALSE);
 
       return FT_MISS_BOTH;
     }

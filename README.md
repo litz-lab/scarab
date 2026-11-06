@@ -1,8 +1,8 @@
 # Scarab Quick Start Guide
 Install:
-1. Install exact PIN version ([PIN 3.15](https://www.intel.com/content/www/us/en/developer/articles/tool/pin-a-binary-instrumentation-tool-downloads.html))
+1. Install exact PIN version ([PIN 3.31](https://www.intel.com/content/www/us/en/developer/articles/tool/pin-a-binary-instrumentation-tool-downloads.html))
 2. Export the following paths
-  - `export PIN_ROOT=/path/to/pin-3.15`
+  - `export PIN_ROOT=/path/to/pin-3.31`
   - `export SCARAB_ENABLE_PT_MEMTRACE=1`
 3. `cd src && make`
 

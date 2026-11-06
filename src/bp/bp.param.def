@@ -181,6 +181,23 @@ DEF_PARAM( tagescl64kb_sc                 , TAGESCL64KB_SC                 , Fla
 DEF_PARAM( tagescl64kb_loop               , TAGESCL64KB_LOOP               , Flag    , Flag       , TRUE       ,        )
 DEF_PARAM( tagescl64kb_alt                , TAGESCL64KB_ALT           , Flag    , Flag       , TRUE       ,        )
 
+// tage64k capacity scaling: multiply the entries of every tagged TAGE table by
+// 2^N (index width LOGG+N) while keeping tag widths, history lengths, the
+// bimodal base and the SC/loop components unchanged. 0 = the 64 KB baseline.
+DEF_PARAM( tage_size_log_scale            , TAGE_SIZE_LOG_SCALE            , uns     , uns        , 0          ,        )
+
+// tage64k two-level (tage2l): a large second-level store of tagged TAGE
+// entries behind the first-level tagged tables. Entries evicted from the first
+// level on allocation are written back to the second level; on a prediction,
+// components longer than the first-level provider that miss in the first level
+// probe the second level, and hits are swapped (promoted) into the first level.
+// When the second-level-augmented prediction differs from the first-level one,
+// the decoupled front end stops producing fetch targets for tage_l2_latency
+// cycles (late override bubble). tage_l2_entries_log = 0 disables the level.
+DEF_PARAM( tage_l2_entries_log            , TAGE_L2_ENTRIES_LOG            , uns     , uns        , 0          ,        )
+DEF_PARAM( tage_l2_assoc                  , TAGE_L2_ASSOC                  , uns     , uns        , 8          ,        )
+DEF_PARAM( tage_l2_latency                , TAGE_L2_LATENCY                , uns     , uns        , 4          ,        )
+
 ///////////////////////////////////////////////////////////////////////////
 // confidence estimator based on perceptron
 

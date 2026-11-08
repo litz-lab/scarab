@@ -459,6 +459,11 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
     mt_use_next_ref_ = true;
   }
   while (!reader_at_eof_) {
+    // Remember syscall-number markers (emitted right after the syscall gateway
+    // instruction) so the next instruction can carry them; the FSM ignores markers.
+    if (mt_ref_.marker.type == dynamorio::drmemtrace::TRACE_TYPE_MARKER &&
+        mt_ref_.marker.marker_type == dynamorio::drmemtrace::TRACE_MARKER_TYPE_SYSCALL)
+      mt_pending_syscall_ = (int64_t)mt_ref_.marker.marker_value;
     // there can be mt_ref types other than inst and mem
     // the FSM will skip those if they appear within MTState::INST state
     switch (mt_state_) {
@@ -472,6 +477,8 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
           } else {
             processInst(_info, &probe.instr);
           }
+          _info->syscall_before = mt_pending_syscall_;
+          mt_pending_syscall_ = -1;
           if (mt_mem_ops_ > 0) {
             mt_state_ = MTState::MEM1;
           } else {
@@ -489,6 +496,8 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
           *_info = *_prior;
           // flag this instruction as non-fetched
           _info->fetched_instruction = false;
+          _info->syscall_before = mt_pending_syscall_;
+          mt_pending_syscall_ = -1;
           // mt_mem_ops_ set by the first rep occurance
           if (mt_mem_ops_ > 0) {
             mt_state_ = MTState::MEM1;

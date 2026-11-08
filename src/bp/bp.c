@@ -225,7 +225,6 @@ void init_bp_recovery_info(uns8 proc_id, Bp_Recovery_Info* new_bp_recovery_info)
   new_bp_recovery_info->redirect_cycle = MAX_CTR;
 
   bp_recovery_info = new_bp_recovery_info;
-
 }
 
 /******************************************************************************/
@@ -534,14 +533,13 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       // Branch predictors may use pred_global_hist as input.
       bp_pred_info->pred_global_hist = bp_data->global_hist;
 
-      if (PERFECT_BP) {
+      ASSERT(op->proc_id, !PERFECT_NT_BTB);  // currently not supported
+      /* The real predictor predicts (and later trains) either way; on the correct path a
+         perfect predictor replaces its answer. */
+      bp_pred_info->pred = pred_bp->pred_func(op, pred_level);
+      if (PERFECT_BP_ON(op))
         bp_pred_info->pred = op->oracle_info.dir;
-        bp_pred_info->pred_orig = op->oracle_info.dir;
-      } else {
-        ASSERT(op->proc_id, !PERFECT_NT_BTB);  // currently not supported
-        bp_pred_info->pred = pred_bp->pred_func(op, pred_level);
-        bp_pred_info->pred_orig = bp_pred_info->pred;
-      }
+      bp_pred_info->pred_orig = bp_pred_info->pred;
       // Update history used by the rest of Scarab.
       if (pred_level == BP_PRED_MAIN)
         bp_data->global_hist = (bp_data->global_hist >> 1) | (bp_pred_info->pred << 31);
@@ -659,7 +657,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       break;
 
     case CF_IBR:
-      if (PERFECT_BP) {
+      if (PERFECT_BP_ON(op)) {
         bp_pred_info->pred = op->oracle_info.dir;
         bp_pred_info->pred_orig = op->oracle_info.dir;
       } else {
@@ -701,7 +699,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       break;
 
     case CF_ICALL:
-      if (PERFECT_BP) {
+      if (PERFECT_BP_ON(op)) {
         bp_pred_info->pred = op->oracle_info.dir;
         bp_pred_info->pred_orig = op->oracle_info.dir;
       } else {
@@ -769,7 +767,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       break;
 
     case CF_RET:
-      if (PERFECT_BP) {
+      if (PERFECT_BP_ON(op)) {
         bp_pred_info->pred = op->oracle_info.dir;
         bp_pred_info->pred_orig = op->oracle_info.dir;
       } else {

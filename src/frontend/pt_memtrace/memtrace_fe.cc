@@ -62,6 +62,8 @@ typedef enum Scarab_Reg_Id_struct {
 
 #include "frontend/pt_memtrace/memtrace_trace_reader_memtrace.h"
 
+#include "pcprof.h"
+
 /**************************************************************************************/
 /* Global Variables */
 
@@ -176,9 +178,12 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   // it.  Any other file may interleave threads that were never co-scheduled, so
   // keep the historical behaviour of following only the first thread seen.
   const bool follow_single_thread = !trace_readers[proc_id]->isCoreSharded();
+  static int64_t pcprof_pending_syscall = -1;  // survives instructions of other pid/tid (pc_profile covers core 0)
 
   do {
     insi = const_cast<InstInfo*>(trace_readers[proc_id]->nextInstruction());
+    if (PC_PROFILE && proc_id == 0 && insi->valid && insi->syscall_before >= 0)
+      pcprof_pending_syscall = insi->syscall_before;
 
     if (prior_pid[proc_id] == 0) {
       ASSERT(proc_id, prior_tid[proc_id] == 0);
@@ -208,6 +213,17 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   assert(insi->info != nullptr);
   memcpy(next_onpath_pi, insi->info, sizeof(ctype_pin_inst));
   fill_in_dynamic_info(proc_id, next_onpath_pi, insi);
+
+  if (PC_PROFILE) {
+    if (pcprof_pending_syscall >= 0) {
+      pcprof_fe_event(proc_id, next_onpath_pi->inst_uid, PCPROF_EV_SYSCALL, pcprof_pending_syscall);
+      pcprof_pending_syscall = -1;
+    }
+    if (next_onpath_pi->scarab_marker_roi_begin)
+      pcprof_fe_event(proc_id, next_onpath_pi->inst_uid, PCPROF_EV_MARK_BEGIN, 0);
+    else if (next_onpath_pi->scarab_marker_roi_end)
+      pcprof_fe_event(proc_id, next_onpath_pi->inst_uid, PCPROF_EV_MARK_END, 0);
+  }
 
   if (ROI_MARKER_DUMP && next_onpath_pi->scarab_marker_roi_begin == true) {
     // Windowed runs (memtrace_roi_begin / trace_bbv segments) can start inside

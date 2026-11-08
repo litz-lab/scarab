@@ -60,6 +60,7 @@
 #include "map.h"
 #include "map_rename.h"
 #include "op_pool.h"
+#include "pcprof.h"
 #include "sim.h"
 #include "statistics.h"
 #include "thread.h"
@@ -329,6 +330,8 @@ void update_node_stage(Stage_Data* src_sd) {
 
   /* get rid of the ops that are finished */
   node_retire();
+  if (PC_PROFILE)
+    pcprof_node_cycle();
 
   // TODO: add PMUs to track issue queue and ready list stall
   memview_core_stall(node->proc_id, is_node_stage_stalled(), node->mem_blocked);
@@ -417,6 +420,8 @@ void node_fill_rob(Stage_Data* src_sd) {
     DEBUG(node->proc_id, "Issuing the op op_num:%s off_path:%d\n", unsstr64(op->op_num), op->off_path);
 
     op->state = OS_IN_ROB;
+    if (PC_PROFILE)
+      pcprof_rob_insert(op);
 
     /* always stop issuing after a synchronizing op */
     if (op->uop->bar_type & BAR_ISSUE)
@@ -487,6 +492,8 @@ void node_retire() {
     op_assert_cycles_set_at_retire(op);
     STAT_EVENT(op->proc_id, OP_WAIT_0 + MIN2(op_get_sched_cycle(op) - real_rdy_cycle, 31));
     STAT_EVENT(op->proc_id, OP_RETIRED);  // Counts all ops retired, not just those in primary thread
+    if (PC_PROFILE)
+      pcprof_retire(op);
 
     DEBUG(node->proc_id, "Retiring op_num:%s\n", unsstr64(op->op_num));
 

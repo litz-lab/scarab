@@ -53,6 +53,7 @@
 #include "cmp_model.h"
 #include "map.h"
 #include "model.h"
+#include "pcprof.h"
 #include "statistics.h"
 #include "thread.h"
 
@@ -862,11 +863,15 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
       ASSERT(dc->proc_id, repl_line_addr || data->fetched_by_offpath || data->HW_prefetched);
     }
     if (!new_mem_dc_wb_req(data->dirty ? MRT_WB : MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr),
-                           repl_line_addr, DCACHE_LINE_SIZE, 1, NULL, NULL, unique_count, TRUE))
+                           repl_line_addr, DCACHE_LINE_SIZE, 1, NULL, NULL, unique_count, TRUE)) {
+      STAT_EVENT(dc->proc_id, DCACHE_WB_REFUSED);
       return NULL;
+    }
     if (data->dirty) {
       STAT_EVENT(dc->proc_id, DCACHE_WB_REQ_DIRTY);
       STAT_EVENT(dc->proc_id, DCACHE_WB_REQ);
+    } else {
+      STAT_EVENT(dc->proc_id, DCACHE_WB_REQ_NODIRTY);
     }
   }
 
@@ -982,6 +987,8 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
       ASSERT(dc->proc_id, mt == MEM_ST || mt == MEM_PF || mt == MEM_WH);
     }
     op->state = OS_SCHEDULED;
+    if (PC_PROFILE)
+      pcprof_dcache_fill(op, req);
 
     if (op->uop->mem_type != MEM_ST) {
       op_set_wake_cycle(op, op_get_done_cycle(op));

@@ -186,6 +186,11 @@ void bp_predictors_sync(Bp_Data* src, Bp_Data* dst);
 // alt into main's pre-spec-update state via bp_predictors_sync). Skips the
 // main-only TakeCheckpoint / SavePredictorStates branches.
 void bp_alt_spec_update_TAGE64K(uns proc_id, uns alt_bp_id, Op* trigger_op, Flag alt_dir);
+// tage2l: cycle until which the decoupled front end must not produce new
+// fetch targets because a second-level TAGE prediction overrode the
+// first-level one (late override bubble); cleared on a pipeline recovery.
+Counter tage2l_stall_until(uns proc_id);
+void tage2l_clear_stall(uns proc_id);
 #ifdef __cplusplus
 }
 #endif

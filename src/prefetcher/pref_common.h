@@ -47,8 +47,8 @@ struct Pref_Mem_Req_struct {
   Flag valid;
   Flag bw_limited;
   Counter rdy_cycle;  // Move this out
-  /* An instruction prefetch (FDIP): its request type and path, reported back once issued;
-     global_hist holds its walk's branch history. */
+  /* An instruction prefetch (FDIP or EIP): its request type and path, reported back once
+     issued; global_hist holds its walk's branch history. */
   Mem_Req_Type type;
   Flag off_path;
   Flag conf_off_path;

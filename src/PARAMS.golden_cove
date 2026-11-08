@@ -54,7 +54,7 @@
 # BTB model to use.
 --btb_mech                      generic
 --btb_entries                   12288
---btb_assoc                     4
+--btb_assoc                     3                         # 4096 sets; entries / assoc must be a power of two
 --btb_main_latency              3
 --btb_l0_present                1
 --btb_l0_entries                128
@@ -62,7 +62,7 @@
 --btb_l0_latency                1
 --btb_l1_present                1
 --btb_l1_entries                6144
---btb_l1_assoc                  4
+--btb_l1_assoc                  3                         # 2048 sets
 --btb_l1_latency                2
 
 # Allow the BTB to be updated by off path ops.
@@ -150,19 +150,20 @@
 
 # Enable use of a midlevel cache between i/d and L1
 # client 1.25 MiB (1310720 bytes) per core, 8-way, 15 cycles
-# server 2 MiB (2097000 bytes) per core, 8-way, 16 cycles
+# server 2 MiB (2097152 bytes) per core, 8-way, 16 cycles
 --mlc_present                   1
---mlc_size                      2097000
+--mlc_size                      2097152
 --mlc_assoc                     8
 --mlc_cycles                    11  # L2 load-use 16 = AGEN(1) + dcache 4 + 11
 
 
 ### LLC
-# 3 MiB per core, 16-way
+# 3 MiB per core, 16-way. Modelled as 12-way: Scarab needs a power-of-two set count, and
+# 3 MiB / 64 B / 16 ways is 3072 sets, while 12 ways gives 4096.
 --l1_size                       3145728
 --l1_banks                      8
 --l1_cycles		                66          # L3 load-use 86 = L2 16 + 4 transfer/fill + 66
---l1_assoc                      16
+--l1_assoc                      12
 --l1_line_size                  64
 --l1_interleave_factor          64
 

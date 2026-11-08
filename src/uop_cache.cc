@@ -302,11 +302,6 @@ Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag upd
 
 const static int UOP_CACHE_STAT_OFFSET = 4;
 
-/*
- * Do not insert the FT into the uop cache if any of the following hold:
- *   1. An instruction generates more uops than the uop cache line width.
- *   2. The FT spans more lines than the uop cache associativity.
- */
 void uop_cache_evict_FT(const Entry<Uop_Cache_Key, Uop_Cache_Data>& evicted_entry);
 
 /*
@@ -328,6 +323,11 @@ static void uop_cache_drop_filler_line(FT_Info ft_info) {
   }
 }
 
+/*
+ * Do not insert the FT into the uop cache if any of the following hold:
+ *   1. An instruction generates more uops than the uop cache line width.
+ *   2. The FT spans more lines than the uop cache associativity.
+ */
 Flag uop_cache_FT_if_insertable(const std::vector<Uop_Cache_Data> inserting_FT, FT_Info inserting_FT_info) {
   ASSERT(uc->proc_id, UOP_CACHE_ENABLE);
 

@@ -302,6 +302,27 @@ Uop_Cache_Data* uop_cache_lookup_line(Addr line_start, FT_Info ft_info, Flag upd
 
 const static int UOP_CACHE_STAT_OFFSET = 4;
 
+void uop_cache_evict_FT(const Entry<Uop_Cache_Key, Uop_Cache_Data>& evicted_entry);
+
+/*
+ * Called for an FT that will not be inserted. A line for its start address can already exist only as
+ * wrong-path filler: an earlier off-path fetch of the same address had no decoded instructions and got
+ * dummy NOPs (one uop each), which fit and were inserted. Invalidate that line, as uop_cache_insert_FT
+ * does before it inserts, so the filler is not hit later. Any other line here is a bug.
+ */
+static void uop_cache_drop_filler_line(FT_Info ft_info) {
+  Uop_Cache_Data* uop_cache_line = uop_cache_lookup_line(ft_info.static_info.start, ft_info, FALSE);
+  if (!uop_cache_line)
+    return;
+  ASSERT(uc->proc_id, uop_cache_line->contains_fake_nop);
+  Uop_Cache_Stage_Cpp* uc_cpp = &per_core_uc_stage[uc->proc_id];
+  Uop_Cache_Key key = {ft_info.static_info.start, ft_info.static_info};
+  Entry<Uop_Cache_Key, Uop_Cache_Data> invalidated_entry = uc_cpp->uop_cache->invalidate(key);
+  if (invalidated_entry.valid) {
+    uop_cache_evict_FT(invalidated_entry);
+  }
+}
+
 /*
  * Do not insert the FT into the uop cache if any of the following hold:
  *   1. An instruction generates more uops than the uop cache line width.
@@ -326,9 +347,7 @@ Flag uop_cache_FT_if_insertable(const std::vector<Uop_Cache_Data> inserting_FT, 
     if (it.end_of_ft || it.offset != 0)
       continue;
 
-    Uop_Cache_Data* uop_cache_line =
-        uop_cache_lookup_line(inserting_FT_info.static_info.start, inserting_FT_info, FALSE);
-    ASSERT(uc->proc_id, !uop_cache_line);
+    uop_cache_drop_filler_line(inserting_FT_info);
     STAT_EVENT(uc->proc_id, UOP_CACHE_FT_INSERT_FAILED_INST_TOO_BIG_ON_PATH + ft_off_path * UOP_CACHE_STAT_OFFSET);
     INC_STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERT_FAILED_INST_TOO_BIG_ON_PATH + ft_off_path * UOP_CACHE_STAT_OFFSET,
                    inserting_FT.size());
@@ -338,9 +357,7 @@ Flag uop_cache_FT_if_insertable(const std::vector<Uop_Cache_Data> inserting_FT, 
 
   /* if the FT is too big, do not insert */
   if (inserting_FT.size() > UOP_CACHE_ASSOC) {
-    Uop_Cache_Data* uop_cache_line =
-        uop_cache_lookup_line(inserting_FT_info.static_info.start, inserting_FT_info, FALSE);
-    ASSERT(uc->proc_id, !uop_cache_line);
+    uop_cache_drop_filler_line(inserting_FT_info);
     STAT_EVENT(uc->proc_id, UOP_CACHE_FT_INSERT_FAILED_FT_TOO_BIG_ON_PATH + ft_off_path * UOP_CACHE_STAT_OFFSET);
     INC_STAT_EVENT(uc->proc_id, UOP_CACHE_LINE_INSERT_FAILED_FT_TOO_BIG_ON_PATH + ft_off_path * UOP_CACHE_STAT_OFFSET,
                    inserting_FT.size());

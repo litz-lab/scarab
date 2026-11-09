@@ -173,7 +173,7 @@ void pref_imp_dl0_access(uns8 proc_id, Addr va, uns size, Addr load_PC, Flag hit
   const uns64 idx = pin_exec_driven_read_mem(proc_id, va + PREF_IMP_DIST * size, size);
   const Addr target = e->base + (idx << e->shift);
 
-  if (get_proc_id_from_cmp_addr(target) != proc_id)
+  if (target != convert_to_cmp_addr(proc_id, target & N_BIT_MASK(NUM_ADDR_NON_SIGN_EXTEND_BITS)))
     return;
 
   if (pref_addto_dest_req_queue(proc_id, imp_dest, target >> LOG2(DCACHE_LINE_SIZE), imp_hwp_info->id))

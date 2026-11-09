@@ -353,9 +353,6 @@ void bp_ibtb_ittage_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 /* bp_ibtb_ittage_pred: returns the predicted target, 0 = no prediction */
 
 Addr bp_ibtb_ittage_pred(Bp_Data* bp_data, Op* op) {
-  if (PERFECT_IBP)
-    return op->oracle_info.target;
-
   const Ittage* it = bp_data->ittage;
   const Ittage_Hist* h = bp_data->ittage_hist;
   const Addr pc = op->inst->addr;
@@ -425,6 +422,10 @@ Addr bp_ibtb_ittage_pred(Bp_Data* bp_data, Op* op) {
       STAT_EVENT(op->proc_id, pi->pred_target == op->oracle_info.target ? ITTAGE_CORRECT : ITTAGE_INCORRECT);
   }
 
+  /* The real prediction above is made (and trained) either way; on the correct path a
+     perfect predictor replaces it. */
+  if (PERFECT_IBP_ON(op))
+    return op->oracle_info.target;
   return pi->pred_target;
 }
 
@@ -459,7 +460,7 @@ void bp_ibtb_ittage_update(Bp_Data* bp_data, Op* op) {
   const uns proc_id = op->proc_id;
 
   ASSERT(bp_data->proc_id, !bp_data->bp_id);
-  if (PERFECT_IBP || correct == 0 || correct == ADDR_INVALID)
+  if (correct == 0 || correct == ADDR_INVALID)
     return;
 
   const Flag mispred = pi->pred_target != correct;

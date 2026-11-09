@@ -66,6 +66,7 @@ static const uns imp_shift[IMP_NSHIFT] = {2, 3, 4};
 
 typedef struct Imp_Entry_struct {
   Addr pc;
+  Counter last_use;  // LRU
   Addr last_va;  // stream
   uns stream_hits;
   Flag found;  // pattern
@@ -77,7 +78,7 @@ typedef struct Imp_Entry_struct {
   Addr miss[2][IMP_IPD_MISSES];
 } Imp_Entry;
 
-static Imp_Entry* imp_pt;  // Prefetch Table, direct-mapped by PC; NULL when IMP is off
+static Imp_Entry* imp_pt;  // Prefetch Table, fully associative with LRU (paper: 16 entries); NULL when IMP is off
 static HWP_Info* imp_hwp_info;
 static HWP_Type imp_dest;
 
@@ -125,14 +126,29 @@ void pref_imp_dl0_access(uns8 proc_id, Addr va, uns size, Addr load_PC, Flag hit
     }
   }
 
-  /* 1. stream: same PC, next element */
-  Imp_Entry* e = &imp_pt[load_PC % PREF_IMP_PT_ENTRIES];
-  if (e->pc != load_PC) {
+  /* PT lookup: fully associative, LRU replacement */
+  Imp_Entry* e = NULL;
+  Imp_Entry* lru = &imp_pt[0];
+  for (uns ii = 0; ii < PREF_IMP_PT_ENTRIES && !e; ii++) {
+    if (imp_pt[ii].pc == load_PC)
+      e = &imp_pt[ii];
+    else if (imp_pt[ii].last_use < lru->last_use)
+      lru = &imp_pt[ii];
+  }
+
+  /* replace according to LRU replacement*/
+  if (!e) {
+    e = lru;
     memset(e, 0, sizeof(*e));
     e->pc = load_PC;
   }
+
+  e->last_use = cycle_count;
+
+  /* 1. stream: same PC, next element */
   e->stream_hits = (va == e->last_va + size) ? e->stream_hits + 1 : 0;
   e->last_va = va;
+
   if ((!e->found && e->stream_hits < PREF_IMP_STREAM_THRESH) || size > 8)
     return;  // the stream check is only needed to find the pattern
 
@@ -142,11 +158,14 @@ void pref_imp_dl0_access(uns8 proc_id, Addr va, uns size, Addr load_PC, Flag hit
       e->idx[e->nidx++] = pin_exec_driven_read_mem(proc_id, va, size);
       return;
     }
+
     e->found = imp_ipd_match(e);
+
     STAT_EVENT(proc_id, e->found ? PREF_IMP_PATTERN_FOUND : PREF_IMP_PATTERN_FAILED);
-    DEBUG(proc_id, "pc:0x%llx pattern %s shift:%u base:0x%llx\n", e->pc, e->found ? "found" : "failed", e->shift,
-          e->base);
+    DEBUG(proc_id, "pc:0x%llx pattern %s shift:%u base:0x%llx\n", e->pc, e->found ? "found" : "failed", e->shift, e->base);
+
     e->nidx = e->nmiss[0] = e->nmiss[1] = 0;  // on failure, retry with the next two index values
+
     return;
   }
 

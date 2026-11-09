@@ -60,6 +60,7 @@ static constexpr int MAP_UNKNOWN = 1;
 static constexpr int MAP_COND = 2;
 static constexpr int MAP_REP = 3;
 static constexpr int MAP_XED = 4;
+static constexpr int MAP_PATCH = 5;  // TracePatch
 
 class TraceReader {
  public:
@@ -105,9 +106,11 @@ class TraceReader {
   bool is_core_sharded_ = false;
   xed_state_t xed_state_ = {};
   std::vector<std::tuple<uint64_t, uint64_t, uint8_t*>> sections_ = {};
-  std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, std::unique_ptr<xed_decoded_inst_t>>> xed_map_ = {};
+  std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, std::unique_ptr<xed_decoded_inst_t>, uint8_t>>
+      xed_map_ = {};
   int warn_not_found_ = 0;
   uint64_t skipped_ = 0;
+  uint64_t num_decode_nops_ = 0;  // PCs whose record did not decode and became a NOP
   uint32_t buf_size_ = 0;
   std::deque<InstInfo> ins_buffer = {};
 

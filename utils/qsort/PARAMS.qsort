@@ -18,13 +18,6 @@
 
 ### Fetch Stage
 --fetch_off_path_ops            1
---fetch_across_cache_lines      1
-
-# Will break the packet upon a taken branch.
---fetch_break_on_taken          1
-
-# Number of bubble cycles to wait after taken branch.
---fetch_taken_bubble_cycles     0
 
 
 #### ICache
@@ -38,7 +31,7 @@
 --cfs_per_cycle                 6                         # Number of branches that can be predicted in a single cycle
 --bp_update_at_retire           0                         # Update the BP at retire. If false, update at the end of exec.
 --update_bp_off_path            1                         # Allow off path ops to update branch predictor state (e.g., ops when they complete exec stage).
---bp_mech                       tagescl                   
+--bp_mech                       tage64k
 
 
 #### BTB
@@ -71,19 +64,20 @@
 --decode_cycles                 5
 
 
+--dispatch_width                6
+
 ### Map Stage
+--rename_width                  6
 --map_cycles                    5
 
 
 ### Issue Stage
 
-# Max number of instructions to be fetched, decoded, renamed, and issued per cycle.
---issue_width                   6
-
 --rs_fill_width                 0
 --rs_sizes                      97
---rs_connections                0
---fu_types                      0 0 0 0 0 0 0 0
+# Skylake: one unified 97-entry RS feeding all 8 ports (scarab FUs 0-7, roles as in sunny_cove)
+--rs_connections                b11111111
+--fu_types                      b00100100111111100111001001111110010010011111110011100100111111 b10010000110111100011111001110111001000011011110001111100111011 b00000001000000001000000010000010000000100000000100000001000001 b00000001000000001000000010000010000000100000000100000001000001 b00000000110111100011011001110110000000011011110001101100111011 b01001000000000000111001001111110100100000000000011100100111111 b00000010000000010000000100000010000001000000001000000010000001 b00000010000000010000000100000010000001000000001000000010000001
 
 
 ### Exec Stage
@@ -127,9 +121,8 @@
 
 ### Prefetcher
 --pref_framework_on             1
---pref_umlc_on                  0
---pref_ul1_on                   1
---pref_stream_on 		        1
+--pref_num_l1_prefetchers      1
+--pref_l1_prefetchers          TYPE_STREAM,DEST_L1
 --pref_train_on_pref_misses     0
 --pref_oracle_train             0
 --pref_ul1req_queue_overwrite_on_full 1
@@ -138,8 +131,6 @@
 --stream_prefetch_n             4
 --stream_start_dis              1
 --stream_train_num 		4	
---stream_create_on_dc_miss      0
---stream_create_on_l1_miss      1
 
 --pref_throttlefb_on=1
 --pref_acc_thresh_1=0.75
@@ -149,7 +140,6 @@
 --pref_polpf_thresh=0.005
 --pref_update_interval=8192
 
---mem_req_buffer_pref_watermark 4
 --promote_to_higher_priority_mem_req_type 1
 
 ### Memory
@@ -163,7 +153,6 @@
 --mem_priority_wb            5
 --mem_priority_wb_nodirty    5
 
---mem_req_buffer_entries        32
 --va_page_size_bytes      4096
 --bus_width_in_bytes            8
 

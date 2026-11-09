@@ -111,11 +111,19 @@ void pref_imp_dl0_access(uns8 proc_id, Addr va, uns size, Addr load_PC, Flag hit
     return;
 
   /* IPD: a miss may be A[B[k]] for any index value recorded so far */
-  if (!hit)
-    for (uns ii = 0; ii < PREF_IMP_PT_ENTRIES; ii++)
-      for (uns k = 0; k < imp_pt[ii].nidx; k++)
-        if (imp_pt[ii].nmiss[k] < IMP_IPD_MISSES)
-          imp_pt[ii].miss[k][imp_pt[ii].nmiss[k]++] = va;
+  if (!hit) {
+    for (uns ii = 0; ii < PREF_IMP_PT_ENTRIES; ii++) {
+      Imp_Entry* e = &imp_pt[ii];
+
+      for (uns k = 0; k < e->nidx; k++) {
+        if (e->nmiss[k] >= IMP_IPD_MISSES)
+          continue;
+
+        e->miss[k][e->nmiss[k]] = va;
+        e->nmiss[k]++;
+      }
+    }
+  }
 
   /* 1. stream: same PC, next element */
   Imp_Entry* e = &imp_pt[load_PC % PREF_IMP_PT_ENTRIES];
@@ -145,6 +153,10 @@ void pref_imp_dl0_access(uns8 proc_id, Addr va, uns size, Addr load_PC, Flag hit
   /* 3. prefetch A[B[i + dist]] */
   const uns64 idx = pin_exec_driven_read_mem(proc_id, va + PREF_IMP_DIST * size, size);
   const Addr target = e->base + (idx << e->shift);
+
+  if (get_proc_id_from_cmp_addr(target) != proc_id)
+    return;
+
   if (pref_addto_dest_req_queue(proc_id, imp_dest, target >> LOG2(DCACHE_LINE_SIZE), imp_hwp_info->id))
     STAT_EVENT(proc_id, PREF_IMP_PREF_ISSUED);
 }

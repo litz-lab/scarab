@@ -24,13 +24,24 @@
 Scarab_To_Pin_Msg get_scarab_cmd() {
   Scarab_To_Pin_Msg cmd = {};
 
-  DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
-            "START: Receiving from Scarab\n");
-  cmd = scarab->receive<Scarab_To_Pin_Msg>();
-  DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
-            "END: %d Received from Scarab\n", cmd.type);
+  while(true) {
+    DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
+              "START: Receiving from Scarab\n");
+    cmd = scarab->receive<Scarab_To_Pin_Msg>();
+    DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
+              "END: %d Received from Scarab\n", cmd.type);
+    if(cmd.type != FE_READ_MEM)
+      return cmd;
 
-  return cmd;
+    // A memory read for Scarab (the IMP prefetcher reading a future index
+    // value): the app's memory as of Pin's current execution point. Answered
+    // here so it never becomes a saved/replayed command.
+    uint64_t value = 0;
+    size_t   size  = cmd.inst_uid > sizeof(value) ? sizeof(value) : cmd.inst_uid;
+    if(PIN_SafeCopy(&value, (void*)cmd.inst_addr, size) != size)
+      value = 0;
+    scarab->send(Message<uint64_t>(value));
+  }
 }
 
 void insert_scarab_op_in_buffer(compressed_op& cop) {

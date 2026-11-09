@@ -48,6 +48,7 @@
 #include "bp/bp.h"
 #include "prefetcher/l2l1pref.h"
 #include "prefetcher/pref_common.h"
+#include "prefetcher/pref_imp.h"
 #include "prefetcher/stream_pref.h"
 
 #include "cmp_model.h"
@@ -314,6 +315,8 @@ void update_dcache_stage(Stage_Data* src_sd) {
     }
 
     op->oracle_info.dcmiss = FALSE;
+    if (PREF_FRAMEWORK_ON && (PREF_UPDATE_ON_WRONGPATH || !op->off_path) && op->uop->mem_type == MEM_LD)
+      pref_imp_dl0_access(op->proc_id, op->oracle_info.va, op->oracle_info.mem_size, op->inst->addr, line != NULL);
     if (PERFECT_DCACHE) {
       if (!op->off_path) {
         STAT_EVENT(op->proc_id, DCACHE_HIT);

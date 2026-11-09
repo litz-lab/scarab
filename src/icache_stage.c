@@ -57,6 +57,7 @@
 #include "prefetcher/eip.h"
 #include "prefetcher/fdip.h"
 #include "prefetcher/l2l1pref.h"
+#include "prefetcher/pref_common.h"
 #include "prefetcher/stream_pref.h"
 
 #include "cmp_model.h"
@@ -65,13 +66,14 @@
 #include "ft_op_buffer.h"
 #include "map.h"
 #include "op_pool.h"
+#include "pcprof.h"
 #include "sim.h"
 #include "statistics.h"
 #include "thread.h"
 #include "topdown.h"
 #include "uop_queue_stage.h"
 
-static inline void icache_demote_victim(Addr fill_addr);
+static inline Inst_Info** icache_insert_line(Addr fill_addr, Addr* line_addr, Addr* repl_line_addr);
 
 /**************************************************************************************/
 /* Macros */
@@ -148,12 +150,14 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   ASSERT(proc_id, IC_ISSUE_WIDTH);
   ic->sd.max_op_count = IC_ISSUE_WIDTH;
   ic->sd.ops = (Op**)malloc(sizeof(Op*) * IC_ISSUE_WIDTH);
+  init_list(&ic->lookups, "IC LOOKUPS", sizeof(Icache_Lookup), TRUE);
   ft_op_buffer_init(ic);
   ft_op_buffer_reset(ic);
 
   /* initialize the cache structure */
   init_cache(&ic->icache, "ICACHE", ICACHE_SIZE, ICACHE_ASSOC, ICACHE_LINE_SIZE, 0, REPL_TRUE_LRU);
   ic->ports = (Ports*)malloc(sizeof(Ports) * ICACHE_BANKS);
+  init_list(&ic->pref_queue, "PREF IC", sizeof(Pref_Mem_Req), TRUE);
   for (uns ii = 0; ii < ICACHE_BANKS; ii++) {
     char name[MAX_STR_LENGTH + 1];
     snprintf(name, MAX_STR_LENGTH, "ICACHE BANK %d PORTS", ii);
@@ -182,6 +186,11 @@ void init_icache_stage(uns8 proc_id, const char* name) {
   memset(ic->rand_wb_state, 0, NUM_ELEMENTS(ic->rand_wb_state));
 }
 
+/* The icache follows the main FTQ, as FDIP does, to start each FT's lookup. */
+void init_icache_ftq_iter(uns8 proc_id) {
+  ic->dfe = decoupled_fe_new_ftq_iter(proc_id, MAIN_BP, &ic->ftq_iter);
+}
+
 /**************************************************************************************/
 /* get_current_stage_data: */
 
@@ -205,6 +214,7 @@ void reset_icache_stage() {
     cur_data->ops[ii] = NULL;
   cur_data->op_count = 0;
 
+  clear_list(&ic->lookups);
   ic->off_path = FALSE;
   ic->back_on_path = FALSE;
   ic->fetch_barrier_pending = FALSE;
@@ -224,6 +234,7 @@ void reset_all_ops_icache_stage() {
     cur_data->ops[ii] = NULL;
   cur_data->op_count = 0;
 
+  clear_list(&ic->lookups);
   ic->off_path = FALSE;
   ic->back_on_path = FALSE;
   ic->fetch_barrier_pending = FALSE;
@@ -244,6 +255,14 @@ void recover_icache_stage() {
         hexstr64s(bp_recovery_info->recovery_fetch_addr), (unsigned long long)bp_recovery_info->recovery_op_num);
 
   recover_ft_op_buffer(ic);
+  pref_flush_icache(ic->proc_id);
+  /* The FTQ keeps a prefix of its FTs and moves ic->ftq_iter back to the first FT it flushed,
+     so the iterator's FT offset counts the started lookups that survive. */
+  while (list_get_count(&ic->lookups) > (int)decoupled_fe_ftq_iter_ft_offset(ic->dfe, ic->ftq_iter)) {
+    /* A recovery flushes only off-path FTs. */
+    ASSERT(ic->proc_id, ((Icache_Lookup*)list_get_tail(&ic->lookups))->off_path);
+    dl_list_remove_tail(&ic->lookups);
+  }
 
   cur_data->op_count = 0;
   for (ii = 0; ii < cur_data->max_op_count; ii++) {
@@ -393,11 +412,9 @@ Inst_Info** lookup_icache() {
     data = l1_cache ? (L1_Data*)cache_access(l1_cache, ic->fetch_addr, &dummy_line_addr, TRUE) : NULL;
     if (data) {  // second level cache hit
       STAT_EVENT(ic->proc_id, L2_IDEAL_FILL_ICACHE);
-      // actually bring it into the L1 icache
+      // actually bring it into the L1 icache; a refused victim writeback leaves it a miss this cycle
       Addr dummy_repl_line_addr;
-      icache_demote_victim(ic->fetch_addr);
-      line =
-          (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, ic->fetch_addr, &dummy_line_addr, &dummy_repl_line_addr);
+      line = icache_insert_line(ic->fetch_addr, &dummy_line_addr, &dummy_repl_line_addr);
     } else
       STAT_EVENT(ic->proc_id, L2_IDEAL_MISS_ICACHE);
   }
@@ -491,11 +508,17 @@ Flag mem_req_on_icache_miss() {
 FT_Arbitration_Result ft_arbitration() {
   ASSERT(ic->proc_id, !ft_op_buffer_can_fetch_op(ic));
 
-  FT* ft = decoupled_fe_pop_ft();
+  /* Only an FT at the end of the icache pipeline leaves the FTQ; before that the pipeline is filling. */
+  Icache_Lookup* lookup = (Icache_Lookup*)list_get_head(&ic->lookups);
+  if (lookup && cycle_count < lookup->done)
+    return FT_IC_PIPE_FILLING;
+  FT* ft = lookup ? decoupled_fe_pop_ft() : NULL;
   if (!ft) {
     return FT_UNAVAILABLE;
   } else {
     FT_Info ft_info = ft_get_ft_info(ft);
+    ASSERT(ic->proc_id, ft_info.dynamic_info.FT_id == lookup->ft_id);
+    dl_list_remove_head(&ic->lookups);
     // set the current fetch address
     ic->fetch_addr = ft_info.static_info.start;
     ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr);
@@ -536,6 +559,8 @@ FT_Arbitration_Result ft_arbitration() {
       }
 
       ft_op_buffer_fill_from_ft(ic, ft);
+      if (PC_PROFILE)
+        pcprof_fetch(ic->fetch_addr, ic->off_path, TRUE, TRUE);
 
       return FT_HIT_UOP_CACHE;
     } else if (ic->line) {
@@ -548,6 +573,8 @@ FT_Arbitration_Result ft_arbitration() {
       icache_hit_events();
 
       ft_op_buffer_fill_from_ft(ic, ft);
+      if (PC_PROFILE)
+        pcprof_fetch(ic->fetch_addr, ic->off_path, FALSE, TRUE);
 
       return FT_HIT_ICACHE;
     } else {
@@ -558,10 +585,11 @@ FT_Arbitration_Result ft_arbitration() {
         STAT_EVENT(ic->proc_id, FT_UOP_CACHE_MISS_ICACHE_MISS_OFF_PATH);
       }
       icache_miss_events();
-      ic->miss_lookup_done = cycle_count + ICACHE_LATENCY;
       ic->icache_miss_fulfilled = FALSE;
 
       ft_op_buffer_fill_from_ft(ic, ft);
+      if (PC_PROFILE)
+        pcprof_fetch(ic->fetch_addr, ic->off_path, FALSE, FALSE);
 
       return FT_MISS_BOTH;
     }
@@ -571,14 +599,10 @@ FT_Arbitration_Result ft_arbitration() {
 Icache_State icache_mem_req_actions(Break_Reason* break_fetch) {
   DEBUG(ic->proc_id, "Icache mem req on op_num:%s @ 0x%s\n", unsstr64(op_count[ic->proc_id]),
         hexstr64s(ic->fetch_addr));
-  /* The miss goes down only once its icache lookup is done; a fill meanwhile serves it. */
+  /* A fill that arrived meanwhile serves it. */
   if (ic->icache_miss_fulfilled) {
     *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
     return ICACHE_SERVING;
-  }
-  if (cycle_count < ic->miss_lookup_done) {
-    *break_fetch = BREAK_ICACHE_WAIT_FOR_MISS;
-    return ICACHE_MEM_REQ;
   }
   Flag success = mem_req_on_icache_miss();
   if (success) {
@@ -682,6 +706,9 @@ Icache_State icache_serving_actions(Break_Reason* break_fetch) {
         case FT_UNAVAILABLE:
           *break_fetch = BREAK_FT_UNAVAILABLE;
           return ICACHE_STAGE_RESTEER;
+        case FT_IC_PIPE_FILLING:
+          *break_fetch = BREAK_ICACHE_PIPE_FILL;
+          return ICACHE_STAGE_RESTEER;
         case FT_MISS_BOTH:
           return icache_mem_req_actions(break_fetch);
         case FT_HIT_ICACHE:
@@ -781,6 +808,9 @@ Icache_State uop_cache_serving_actions(Break_Reason* break_fetch) {
         case FT_UNAVAILABLE:
           *break_fetch = BREAK_FT_UNAVAILABLE;
           return ICACHE_STAGE_RESTEER;
+        case FT_IC_PIPE_FILLING:
+          *break_fetch = BREAK_ICACHE_PIPE_FILL;
+          return ICACHE_STAGE_RESTEER;
         case FT_MISS_BOTH:
           return icache_mem_req_actions(break_fetch);
         case FT_HIT_ICACHE:
@@ -837,6 +867,10 @@ void execute_coupled_FSM() {
       case FT_UNAVAILABLE:
         ic->next_state = ICACHE_STAGE_RESTEER;
         break_fetch = BREAK_FT_UNAVAILABLE;
+        break;
+      case FT_IC_PIPE_FILLING:
+        ic->next_state = ICACHE_STAGE_RESTEER;
+        break_fetch = BREAK_ICACHE_PIPE_FILL;
         break;
       case FT_MISS_BOTH:
         ic->next_state = icache_mem_req_actions(&break_fetch);
@@ -910,6 +944,17 @@ void execute_coupled_FSM() {
 /* icache_cycle: */
 
 void update_icache_stage() {
+  /* The icache starts the lookup of each FT that reaches it, up to ICACHE_LATENCY in flight;
+     it is done ICACHE_LATENCY - 1 cycles later, when ft_arbitration may take the FT. An FT
+     the uop cache holds needs no icache lookup. */
+  FT* ft;
+  while (list_get_count(&ic->lookups) < (int)ICACHE_LATENCY && (ft = decoupled_fe_ftq_iter_ft(ic->dfe, ic->ftq_iter))) {
+    FT_Info ft_info = ft_get_ft_info(ft);
+    Flag uop_hit = UOP_CACHE_ENABLE && uop_cache_lookup_line(ft_info.static_info.start, ft_info, FALSE);
+    *(Icache_Lookup*)dl_list_add_tail(&ic->lookups) = (Icache_Lookup){
+        ft_info.dynamic_info.FT_id, cycle_count + (uop_hit ? 0 : ICACHE_LATENCY - 1), ft_is_off_path(ft)};
+    decoupled_fe_ftq_iter_next_ft(ic->dfe, ic->ftq_iter);
+  }
   ic->lookups_per_cycle_count = 0;
   ic->topdown_on_path_fetched = 0;
   if (UOP_CACHE_ENABLE) {
@@ -1037,17 +1082,41 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
    writeback, instead of vanishing. Without this, instruction lines -- which skip the MLC and
    LLC on fill (see mlc_fill_line/l1_fill_line) -- have no backing store at all. */
 
-static inline void icache_demote_victim(Addr fill_addr) {
+static inline Flag icache_demote_victim(Addr fill_addr) {
   Addr repl_line_addr;
   Flag repl_line_valid;
 
   if (!EXCLUSIVE_CACHES)
-    return;
+    return TRUE;
+
+  /* Each line is filled once. */
+  Addr line_addr;
+  ASSERT(ic->proc_id, !cache_access(&ic->icache, fill_addr, &line_addr, FALSE));
 
   get_next_repl_line(&ic->icache, ic->proc_id, fill_addr, &repl_line_addr, &repl_line_valid);
-  if (repl_line_valid)
-    new_mem_dc_wb_req(MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr, ICACHE_LINE_SIZE, 1,
-                      NULL, NULL, unique_count, TRUE);
+  if (!repl_line_valid)
+    return TRUE;
+  if (!new_mem_ic_wb_req(MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr), repl_line_addr, ICACHE_LINE_SIZE, 1,
+                         NULL, NULL, unique_count, TRUE)) {
+    STAT_EVENT(ic->proc_id, ICACHE_WB_REFUSED);
+    return FALSE;
+  }
+  STAT_EVENT(ic->proc_id, ICACHE_WB_REQ);
+  return TRUE;
+}
+
+/* A request issued while its line was resident fills it again: inserting it again would demote
+   a victim and then keep it (cache_insert reuses the line's own way). The line is still made
+   MRU, as the insert did, which EIP's model of the icache relies on. */
+static inline Inst_Info** icache_insert_line(Addr fill_addr, Addr* line_addr, Addr* repl_line_addr) {
+  Inst_Info** line = (Inst_Info**)cache_access(&ic->icache, fill_addr, line_addr, TRUE);
+  if (line) {
+    STAT_EVENT(ic->proc_id, ICACHE_FILL_RESIDENT);
+    return line;
+  }
+  if (!icache_demote_victim(fill_addr))
+    return NULL; /* a refused victim writeback leaves the icache untouched */
+  return (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, fill_addr, line_addr, repl_line_addr);
 }
 
 /**************************************************************************************/
@@ -1079,9 +1148,15 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
 
   /* get new line in the cache */
   if ((ic->line_addr == req->addr) && (ic->next_state == ICACHE_WAIT_FOR_MISS || ic->next_state == ICACHE_MEM_REQ)) {
+    Flag to_pref_cache = IC_PREF_CACHE_ENABLE &&  // cmp FIXME prefetchers
+                         (USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path);
+    if (!to_pref_cache) {
+      line = icache_insert_line(ic->fetch_addr, &ic->line_addr, &repl_line_addr);
+      if (!line)  // a refused victim writeback: the fill retries
+        return FALSE;
+    }
     INC_STAT_EVENT(ic->proc_id, MISS_WAIT_TIME, cycle_count - ic->wait_for_miss_start);
-    if (IC_PREF_CACHE_ENABLE &&  // cmp FIXME prefetchers
-        (USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path)) {
+    if (to_pref_cache) {
       Addr pref_line_addr;
 
       line = (Inst_Info**)cache_insert(&ic->pref_icache, ic->proc_id, ic->fetch_addr, &pref_line_addr, &repl_line_addr);
@@ -1092,8 +1167,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       return TRUE;
     }
 
-    icache_demote_victim(ic->fetch_addr);
-    ic->line = (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, ic->fetch_addr, &ic->line_addr, &repl_line_addr);
+    ic->line = line;
     DEBUG(ic->proc_id, "Got line switch into ic fetch %llx\n", ic->line_addr);
     STAT_EVENT(ic->proc_id, ICACHE_FILL);
 
@@ -1160,8 +1234,9 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
       return TRUE;
     }
 
-    icache_demote_victim(req->addr);
-    line = (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, req->addr, &dummy_addr, &repl_line_addr);
+    line = icache_insert_line(req->addr, &dummy_addr, &repl_line_addr);
+    if (!line)  // a refused victim writeback: the fill retries
+      return FALSE;
 
     if (WP_COLLECT_STATS) {  // cmp IGNORE
       line_info =
@@ -1245,9 +1320,9 @@ Inst_Info** ic_pref_cache_access(void) {
   }
 
   if (line) {
-    icache_demote_victim(ic->fetch_addr);
-    inserted_line =
-        (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, ic->fetch_addr, &ic->line_addr, &repl_line_addr);
+    inserted_line = icache_insert_line(ic->fetch_addr, &ic->line_addr, &repl_line_addr);
+    if (!inserted_line)  // a refused victim writeback leaves the line in the prefetch cache, served from there
+      return line;
     DEBUG(ic->proc_id, "ic_pref cache hit:fetch_addr:0x%s \n", hexstr64(ic->fetch_addr));
     STAT_EVENT(ic->proc_id, IC_PREF_MOVE_IC);
 
@@ -1505,7 +1580,8 @@ Flag instr_fill_line(Mem_Req* req) {
                           req->type == MRT_UOCPRF || req->type == MRT_IFETCH);
   if (mem_req_is_type(req, MRT_IFETCH) || mem_req_is_type(req, MRT_IPRF) || mem_req_is_type(req, MRT_FDIPPRFON) ||
       mem_req_is_type(req, MRT_FDIPPRFOFF)) {
-    icache_fill_line(req);
+    if (!icache_fill_line(req))
+      return FALSE;
     DEBUG(ic->proc_id, "line 0x%llx is filled into icache\n", req->addr);
   }
 

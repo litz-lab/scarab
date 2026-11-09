@@ -85,6 +85,7 @@ class TraceReaderMemtrace : public TraceReader {
   int mt_mem_ops_ = 0;
   uint64_t mt_seq_ = 0;
   uint32_t mt_prior_isize_ = 0;
+  int64_t mt_pending_syscall_ = -1;  // syscall marker value waiting for the next instruction
   InstInfo mt_info_a_ = {};
   InstInfo mt_info_b_ = {};
   bool mt_using_info_a_ = true;

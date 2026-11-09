@@ -1033,13 +1033,17 @@ DEF_STAT(MLC_FILL_SKIPPED,                             COUNT,           NO_RATIO
 
 DEF_STAT( DCACHE_FILL,                                COUNT,           NO_RATIO)
 DEF_STAT( DCACHE_WB_REQ,                              RATIO,        DCACHE_FILL)
+DEF_STAT( DCACHE_FILL_RESIDENT,                       COUNT,           NO_RATIO)
+DEF_STAT( ICACHE_FILL_RESIDENT,                       COUNT,           NO_RATIO)
 
 DEF_STAT( DCACHE_WB_REQ_DIRTY,                        DIST,            NO_RATIO)
 DEF_STAT( DCACHE_WB_REQ_NODIRTY,                      DIST,            NO_RATIO)
+DEF_STAT( DCACHE_WB_REFUSED,                          COUNT,           NO_RATIO)
 
 
 DEF_STAT( ICACHE_FILL,                                COUNT,           NO_RATIO)
 DEF_STAT( ICACHE_WB_REQ,                              RATIO,        ICACHE_FILL)
+DEF_STAT( ICACHE_WB_REFUSED,                          COUNT,           NO_RATIO)
 
 DEF_STAT(L1_FILL_DIRTY,                               RATIO,           L1_FILL)
 DEF_STAT(MLC_FILL_DIRTY,                              RATIO,           MLC_FILL)
@@ -1095,6 +1099,7 @@ DEF_STAT(  MEM_REQ_MERGED_L1_DESCENT                   , COUNT  , NO_RATIO  )
 DEF_STAT(  MEM_REQ_MERGED_DRAM_DESCENT                 , COUNT  , NO_RATIO  )
 DEF_STAT(  MEM_REQ_JOINED_LINE                         , COUNT  , NO_RATIO  )
 DEF_STAT(  MEM_REQ_WB_FORWARD                          , COUNT  , NO_RATIO  )
+DEF_STAT(  MEM_REQ_WB_MERGED                           , COUNT  , NO_RATIO  )
 DEF_STAT(  MLC_NEWREQ_MATCHED_L2_PREF                    , COUNT  , NO_RATIO  )
 DEF_STAT(  MLC_NEWREQ_MATCHED_L2_PREF_MLC_HIT            , RATIO  , MLC_NEWREQ_MATCHED_L2_PREF  )
 

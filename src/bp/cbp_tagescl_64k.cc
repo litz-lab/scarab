@@ -98,8 +98,13 @@ TAGE64K& TAGE64K::operator=(const TAGE64K& other) {
   LTAG = other.LTAG;
   use_alt_on_na = other.use_alt_on_na;
   btable = other.btable;
+  logg_tagged = other.logg_tagged;
   gtable_low = other.gtable_low;
   gtable_high = other.gtable_high;
+  l2 = other.l2;
+  l2_sets = other.l2_sets;
+  l2_assoc = other.l2_assoc;
+  l2_clock = other.l2_clock;
   gtable[1] = gtable_low.data();
   gtable[BORN] = gtable_high.data();
   for (int i = BORN + 1; i <= NHIST; i++)
@@ -158,16 +163,20 @@ void TAGE64K::reinit() {
   for (int i = NHIST; i > 1; i--) {
     m[i] = m[(i + 1) / 2];
   }
+  logg_tagged = LOGG + TAGE_SIZE_LOG_SCALE;
+  ASSERTM(0, logg_tagged <= 20, "tage_size_log_scale too large: %u\n", TAGE_SIZE_LOG_SCALE);
   for (int i = 1; i <= NHIST; i++) {
     TB[i] = TBITS + 4 * (i >= BORN);
-    logg[i] = LOGG;
+    logg[i] = logg_tagged;
   }
 
-  gtable_low.assign(NBANKLOW * (1 << LOGG), cbp64_gentry{});
-  SizeTable[1] = NBANKLOW * (1 << LOGG);
+  gtable_low.assign(NBANKLOW * (1 << logg_tagged), cbp64_gentry{});
+  SizeTable[1] = NBANKLOW * (1 << logg_tagged);
 
-  gtable_high.assign(NBANKHIGH * (1 << LOGG), cbp64_gentry{});
-  SizeTable[BORN] = NBANKHIGH * (1 << LOGG);
+  gtable_high.assign(NBANKHIGH * (1 << logg_tagged), cbp64_gentry{});
+  SizeTable[BORN] = NBANKHIGH * (1 << logg_tagged);
+
+  L2Init();
 
   gtable[1] = gtable_low.data();
   gtable[BORN] = gtable_high.data();
@@ -692,19 +701,19 @@ void TAGE64K::UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history
     Pstate.GI[i] = gindex(PC, i, path_history, index);
     Pstate.GTAG[i] = gtag(PC, i, tag0, tag1);
     Pstate.GTAG[i + 1] = Pstate.GTAG[i];
-    Pstate.GI[i + 1] = Pstate.GI[i] ^ (Pstate.GTAG[i] & ((1 << LOGG) - 1));
+    Pstate.GI[i + 1] = Pstate.GI[i] ^ (Pstate.GTAG[i] & ((1 << logg_tagged) - 1));
   }
   int T = (PC ^ (path_history & ((1 << m[BORN]) - 1))) % NBANKHIGH;
   for (int i = BORN; i <= NHIST; i++)
     if (NOSKIP[i]) {
-      Pstate.GI[i] += (T << LOGG);
+      Pstate.GI[i] += (T << logg_tagged);
       T++;
       T = T % NBANKHIGH;
     }
   T = (PC ^ (path_history & ((1 << m[1]) - 1))) % NBANKLOW;
   for (int i = 1; i <= BORN - 1; i++)
     if (NOSKIP[i]) {
-      Pstate.GI[i] += (T << LOGG);
+      Pstate.GI[i] += (T << logg_tagged);
       T++;
       T = T % NBANKLOW;
     }
@@ -779,8 +788,189 @@ void TAGE64K::Tagepred(UINT64 PC) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// tage2l: second-level store of tagged entries
+// ---------------------------------------------------------------------------
+namespace {
+std::vector<Counter> tage2l_stall_until_cycle;
+bool tage2l_storage_printed = false;
+}  // namespace
+
+Counter tage2l_stall_until(uns proc_id) {
+  return proc_id < tage2l_stall_until_cycle.size() ? tage2l_stall_until_cycle[proc_id] : 0;
+}
+
+void tage2l_clear_stall(uns proc_id) {
+  if (proc_id < tage2l_stall_until_cycle.size())
+    tage2l_stall_until_cycle[proc_id] = 0;
+}
+
+static void tage2l_set_stall(uns proc_id, Counter until) {
+  if (tage2l_stall_until_cycle.size() <= proc_id)
+    tage2l_stall_until_cycle.resize(proc_id + 1, 0);
+  if (until > tage2l_stall_until_cycle[proc_id])
+    tage2l_stall_until_cycle[proc_id] = until;
+}
+
+void TAGE64K::L2Init() {
+  l2.clear();
+  l2_sets = 0;
+  l2_assoc = 0;
+  l2_clock = 0;
+  if (TAGE_L2_ENTRIES_LOG) {
+    ASSERTM(0, TAGE_L2_ASSOC > 0 && (TAGE_L2_ASSOC & (TAGE_L2_ASSOC - 1)) == 0, "tage_l2_assoc must be a power of 2\n");
+    ASSERTM(0, (1u << TAGE_L2_ENTRIES_LOG) >= TAGE_L2_ASSOC, "tage_l2_entries_log too small for tage_l2_assoc\n");
+    l2_assoc = TAGE_L2_ASSOC;
+    l2_sets = (1u << TAGE_L2_ENTRIES_LOG) / l2_assoc;
+    l2.assign((size_t)l2_sets * l2_assoc, L2Entry{});
+  }
+  if (!tage2l_storage_printed) {
+    tage2l_storage_printed = true;
+    // storage accounting (bits); the simulation-only pc field is not counted
+    const double low = (double)NBANKLOW * (1 << logg_tagged) * (CWIDTH + UWIDTH + TBITS);
+    const double high = (double)NBANKHIGH * (1 << logg_tagged) * (CWIDTH + UWIDTH + TBITS + 4);
+    double l2bits = 0;
+    if (l2_sets) {
+      // key = (low/high storage bit, first-level slot index, tag); the set index is implied
+      const int slot_bits = (int)ceil(log2((double)NBANKHIGH * (1 << logg_tagged)));
+      const int key_bits = 1 + slot_bits + TBITS + 4 - (int)log2((double)l2_sets);
+      const int entry_bits = 1 /*valid*/ + CWIDTH + UWIDTH + key_bits + (int)log2((double)l2_assoc) /*LRU*/;
+      l2bits = (double)l2_sets * l2_assoc * entry_bits;
+    }
+    fprintf(stderr,
+            "tage64k storage: tagged L1 %.1f KB (log_scale %u, %d entries/bank) | L2 %.1f KB (%u sets x %u ways, "
+            "latency %u)\n",
+            (low + high) / 8192.0, TAGE_SIZE_LOG_SCALE, 1 << logg_tagged, l2bits / 8192.0, l2_sets, l2_assoc,
+            TAGE_L2_LATENCY);
+  }
+}
+
+// key of a first-level slot's content: which storage (low/high), physical slot, tag
+static inline uint64_t tage2l_key(bool high, int slot, uint tag) {
+  return ((uint64_t)high << 62) | ((uint64_t)(uint32_t)slot << 16) | (uint64_t)(tag & 0xffff);
+}
+
+uint32_t TAGE64K::L2Set(uint64_t key) const {
+  uint64_t h = key * 0x9E3779B97F4A7C15ULL;
+  h ^= h >> 29;
+  h *= 0xBF58476D1CE4E5B9ULL;
+  h ^= h >> 32;
+  return (uint32_t)(h & (l2_sets - 1));
+}
+
+TAGE64K::L2Entry* TAGE64K::L2Find(uint64_t key) {
+  L2Entry* set = &l2[(size_t)L2Set(key) * l2_assoc];
+  for (uint32_t w = 0; w < l2_assoc; w++)
+    if (set[w].valid && set[w].key == key)
+      return &set[w];
+  return nullptr;
+}
+
+void TAGE64K::L2Insert(uint64_t key, const cbp64_gentry& e) {
+  L2Entry* set = &l2[(size_t)L2Set(key) * l2_assoc];
+  L2Entry* victim = nullptr;
+  for (uint32_t w = 0; w < l2_assoc; w++) {
+    if (set[w].valid && set[w].key == key) {
+      victim = &set[w];
+      break;
+    }
+  }
+  if (!victim) {
+    for (uint32_t w = 0; w < l2_assoc; w++) {
+      if (!set[w].valid) {
+        victim = &set[w];
+        break;
+      }
+      if (!victim || set[w].lru < victim->lru)
+        victim = &set[w];
+    }
+    if (victim->valid)
+      STAT_EVENT(0, TAGE2L_L2_EVICTIONS);
+  }
+  victim->valid = true;
+  victim->key = key;
+  victim->ctr = e.ctr;
+  victim->u = e.u;
+  victim->pc = e.pc;
+  victim->lru = ++l2_clock;
+}
+
+// called before a first-level slot is overwritten by a new allocation
+void TAGE64K::L2WriteBack(int bank, int slot, uint newtag) {
+  if (!l2_sets)
+    return;
+  cbp64_gentry& e = gtable[bank][slot];
+  const bool high = bank >= BORN;
+  // the second level is exclusive: a stale copy of the entry being allocated is dropped
+  if (L2Entry* stale = L2Find(tage2l_key(high, slot, newtag)))
+    stale->valid = false;
+  if (e.pc == 0 || e.tag == newtag)  // never allocated, or same key
+    return;
+  L2Insert(tage2l_key(high, slot, e.tag), e);
+  STAT_EVENT(0, TAGE2L_WRITEBACKS);
+}
+
+// After a first-level lookup (Pstate filled by Tagepred), probe the second
+// level for every component longer than the first-level provider and swap
+// hits into the first level. Returns the number of promoted entries.
+int TAGE64K::L2Promote(bool stat_on, uns proc_id) {
+  int promoted = 0;
+  for (int i = NHIST; i > Pstate.HitBank; i--) {
+    if (!NOSKIP[i])
+      continue;
+    const int slot = Pstate.GI[i];
+    cbp64_gentry& e = gtable[i][slot];
+    if (e.tag == Pstate.GTAG[i])
+      continue;  // cannot happen for i > HitBank, kept for safety
+    const bool high = i >= BORN;
+    if (stat_on)
+      STAT_EVENT(proc_id, TAGE2L_L2_PROBES);
+    L2Entry* hit = L2Find(tage2l_key(high, slot, Pstate.GTAG[i]));
+    if (!hit)
+      continue;
+    if (stat_on)
+      STAT_EVENT(proc_id, TAGE2L_L2_HITS);
+    cbp64_gentry up;
+    up.tag = Pstate.GTAG[i];
+    up.ctr = hit->ctr;
+    up.u = hit->u;
+    up.pc = hit->pc;
+    hit->valid = false;
+    if (e.pc != 0)
+      L2Insert(tage2l_key(high, slot, e.tag), e);
+    e = up;
+    promoted++;
+  }
+  return promoted;
+}
+
+bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op, uns bp_id) {
+  if (!l2_sets)
+    return GetPredictionImpl(PC, bp_confidence, op, true);
+
+  const bool stat_on = !op->off_path;
+  // first level only (the fast answer the front end follows first)
+  const bool pred_l1 = GetPredictionImpl(PC, bp_confidence, op, false);
+  const int promoted = L2Promote(stat_on, op->proc_id);
+  // prediction with the second-level entries in place (the final answer)
+  const bool pred = GetPredictionImpl(PC, bp_confidence, op, true);
+  if (promoted) {
+    if (stat_on)
+      STAT_EVENT(op->proc_id, TAGE2L_PROMOTE_BRANCHES);
+    if (pred != pred_l1) {
+      STAT_EVENT(op->proc_id, stat_on ? TAGE2L_OVERRIDES : TAGE2L_OVERRIDES_OFFPATH);
+      if (stat_on)
+        STAT_EVENT(op->proc_id, pred == op->oracle_info.dir ? TAGE2L_OVERRIDE_CORRECT : TAGE2L_OVERRIDE_WRONG);
+      if (TAGE_L2_LATENCY && bp_id == 0)
+        tage2l_set_stall(op->proc_id, cycle_count + TAGE_L2_LATENCY);
+    }
+  }
+  return pred;
+}
+
 // compute the prediction
-bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
+bool TAGE64K::GetPredictionImpl(UINT64 PC, int* bp_confidence, Op* op, bool stats) {
+  const bool stat_on = stats && !op->off_path;
   // computes the TAGE table addresses and the partial tags
 
   Tagepred(PC);
@@ -788,7 +978,7 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
   tage_component = tage_component_tage;
 
   if (!TAGESCL64KB_SC) {
-    if (!op->off_path)
+    if (stat_on && !op->off_path)
       STAT_EVENT(op->proc_id, TAGESCL_COMP_TAGE_BASE_CORRECT + (op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) +
                                   tage_component * 2);
   }
@@ -872,7 +1062,7 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
         else if ((abs(Pstate.LSUM) < Pstate.THRES / 2)) {
           Pstate.pred_taken = (SecondH < 0) ? SCPRED : Pstate.pred_inter;
           tage_component = (SecondH < 0) ? TAGE_SC : tage_component_inter;
-          if (Pstate.pred_taken == SCPRED && !op->off_path)
+          if (Pstate.pred_taken == SCPRED && stat_on)
             STAT_EVENT(op->proc_id, TAGESCL_SC_SMALLLSUM + 2);  // SC from HighConf
         }
       }
@@ -881,20 +1071,20 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
         if ((abs(Pstate.LSUM) < Pstate.THRES / 4)) {
           Pstate.pred_taken = (FirstH < 0) ? SCPRED : Pstate.pred_inter;
           tage_component = (FirstH < 0) ? TAGE_SC : tage_component_inter;
-          if (Pstate.pred_taken == SCPRED && !op->off_path)
+          if (Pstate.pred_taken == SCPRED && stat_on)
             STAT_EVENT(op->proc_id, TAGESCL_SC_SMALLLSUM + 1);  // SC from MedConf
         }
       }
-      if (!Pstate.MedConf && !Pstate.HighConf && Pstate.pred_taken == SCPRED && !op->off_path) {
+      if (!Pstate.MedConf && !Pstate.HighConf && Pstate.pred_taken == SCPRED && stat_on) {
         STAT_EVENT(op->proc_id, TAGESCL_SC_SMALLLSUM);  // exclusive SC not MedConf or HighConf
       }
     } else if (Pstate.pred_inter == SCPRED) {
-      if (!op->off_path)
+      if (stat_on)
         STAT_EVENT(op->proc_id, TAGESCL_SC_SMALLLSUM + 3);
     }
   }
 
-  if (!op->off_path) {
+  if (stat_on) {
     STAT_EVENT(op->proc_id,
                TAGESCL_COMP_TAGE_BASE_CORRECT + (Pstate.pred_taken != op->oracle_info.dir) + tage_component * 2);
 
@@ -916,6 +1106,11 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
                                   tage_component * 2);
   }
 
+  // pc_profile bookkeeping (op fields only; never read by the predictor or timing model)
+  op->pcprof_tage_comp = (uns8)tage_component;
+  op->pcprof_tage_used_alt = TAGESCL64KB_ALT && tage_used_alt;
+  op->pcprof_tage_hitbank = (int16)Pstate.HitBank;
+
   *bp_confidence = 0;
   if (Pstate.HighConf)
     *bp_confidence += 3;
@@ -925,7 +1120,7 @@ bool TAGE64K::GetPrediction(UINT64 PC, int* bp_confidence, Op* op) {
     *bp_confidence += 1;
   assert(*bp_confidence < 4);
 
-  if ((Pstate.pred_taken != op->oracle_info.dir) && !op->off_path) {  // collect only for misprediction
+  if ((Pstate.pred_taken != op->oracle_info.dir) && stat_on) {  // collect only for misprediction
     STAT_EVENT(op->proc_id, TAGESCL_CONF_0_PER_BASE_RECOVER_AT_EXEC + *bp_confidence + tage_component * 4);
   }
   return Pstate.pred_taken;
@@ -1221,6 +1416,7 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
           if (abs(2 * gtable[i][pstate.GI[idx]].ctr + 1) <= 3)
 #endif
           {
+            L2WriteBack(i, pstate.GI[idx], pstate.GTAG[idx]);
             gtable[i][pstate.GI[idx]].tag = pstate.GTAG[idx];
             gtable[i][pstate.GI[idx]].pc = PC;
             gtable[i][pstate.GI[idx]].ctr = (resolveDir) ? 0 : -1;
@@ -1262,6 +1458,7 @@ void TAGE64K::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool pr
 #endif
 
             {
+              L2WriteBack(i, pstate.GI[idx], pstate.GTAG[idx]);
               gtable[i][pstate.GI[idx]].tag = pstate.GTAG[idx];
               gtable[i][pstate.GI[idx]].pc = PC;
               gtable[i][pstate.GI[idx]].ctr = (resolveDir) ? 0 : -1;

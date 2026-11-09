@@ -123,6 +123,7 @@ typedef struct Recovery_Info_struct {  // QUESTION no proc_id?
   uns64 conf_perceptron_global_hist;       // Only for confidnece perceptron, a copy of the correct global history
   uns64 conf_perceptron_global_misp_hist;  // Only for confidnece perceptron, a copy of the correct global history
   uns32 targ_hist;                         // a copy of the correct indirect branch pattern history
+  Ittage_Ckpt ittage_ckpt;                 // ITTAGE history before this op (ittage IBP only)
   Addr npc;
 
   // next three are used to recover the realistic CRS
@@ -263,6 +264,18 @@ struct Op_struct {
   // }}}
   FT* parent_FT;
   FT* parent_FT_off_path;
+
+  // {{{ pc_profile (pcprof.cc): bookkeeping only, never read by the timing model
+  uns32 pcprof_stall[4];      // ROB-head zero-retire cycles charged while this op was the head (Pcprof_Op_Cat)
+  uns8 pcprof_mem_level;      // level that filled this op's dcache miss: 2=MLC 3=LLC 4=DRAM (0=unknown)
+  uns8 pcprof_tage_comp;      // TAGE-SC-L component that made the final direction prediction (tage_component)
+  Flag pcprof_tage_used_alt;  // TAGE used the alternate prediction
+  int16 pcprof_tage_hitbank;  // TAGE provider bank (0 = no tagged hit)
+  uns8 pcprof_recov;          // bit0 recovered at exec, bit1 at decode, bit2 at fe
+  uns8 pcprof_misp;           // exec-recovery attribution (Pcprof_Misp_Src)
+  Flag pcprof_misp_dir;       // exec recovery was a wrong direction (else wrong target)
+  Flag pcprof_misp_btb_miss;  // BTB had no usable target at prediction time
+  // }}}
 };
 
 /* Per-op cycle-counter accessors. Each counter has its own get/set function so

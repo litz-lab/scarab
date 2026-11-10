@@ -47,7 +47,6 @@ typedef enum Scarab_To_Pin_Cmd_enum {
   FE_RECOVER_BEFORE,
   FE_RECOVER_AFTER,
   FE_RETIRE,
-  FE_READ_MEM,  // inst_addr = address, inst_uid = size (<= 8); Pin replies with a uint64_t
   FE_NUM_COMMANDS
 } Scarab_To_Pin_Cmd;
 

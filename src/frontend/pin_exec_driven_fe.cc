@@ -196,13 +196,3 @@ void pin_exec_driven_retire(uns proc_id, uns64 inst_uid) {
   server->send(proc_id, (Message<Scarab_To_Pin_Msg>)msg);  // blocking
   DEBUG(proc_id, "Fetch Retire end: %llu\n", inst_uid);
 }
-
-uns64 pin_exec_driven_read_mem(uns proc_id, Addr addr, uns size) {
-  Scarab_To_Pin_Msg msg = {};
-  msg.type = FE_READ_MEM;
-  msg.inst_addr = addr;
-  msg.inst_uid = size;
-
-  server->send(proc_id, (Message<Scarab_To_Pin_Msg>)msg);  // blocking
-  return server->receive<uint64_t>(proc_id);               // blocking
-}

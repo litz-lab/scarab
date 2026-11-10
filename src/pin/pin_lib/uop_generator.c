@@ -80,6 +80,7 @@ struct Trace_Uop_struct {
   Flag actual_taken;
   Addr va;
   uns mem_size;  // number of bytes read/written by a memory instruction
+  uns64 ld_ahead_val;  // loads: value LD_LOOKAHEAD elements past va
   Addr target;
   Addr npc;
   Flag bom;
@@ -433,6 +434,7 @@ void uop_generator_get_uop(uns proc_id, Op* op, ctype_pin_inst* inst) {
   /* removing proc_id from target before compare with zero */
   op->oracle_info.target = convert_to_cmp_addr(0, trace_uop->target) ? trace_uop->target : trace_uop->npc;
   op->oracle_info.va = trace_uop->va;
+  op->oracle_info.ld_ahead_val = trace_uop->ld_ahead_val;
   op->oracle_info.npc = trace_uop->npc;
   if (op->proc_id)
     ASSERT(op->proc_id, op->oracle_info.npc);
@@ -1083,6 +1085,7 @@ void convert_dyn_uop(uns8 proc_id, Inst_Info* info, ctype_pin_inst* pi, Trace_Uo
       trace_uop->load_seq_num = info->trace_info.load_seq_num;
       ASSERT(proc_id, trace_uop->load_seq_num < MAX_LD_NUM);
       trace_uop->va = pi->ld_vaddr[trace_uop->load_seq_num];
+      trace_uop->ld_ahead_val = pi->ld_ahead_data[trace_uop->load_seq_num];
       // The loaded value is the memory data (captured at IPOINT_BEFORE). The dst-reg match above
       // deliberately skips load uops, so the value is written here exactly once -- val_valid must
       // be false (a cracked load-op writes the internal REG_TMP0, which PIN has no arch dest for).

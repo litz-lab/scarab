@@ -63,10 +63,6 @@ void pin_exec_driven_recover(uns proc_id, uns bp_id, uns64 inst_uid);
 /* Retire instruction at unique op id */
 void pin_exec_driven_retire(uns proc_id, uns64 inst_uid);
 
-/* Read `size` (<= 8) bytes of the program's memory at `addr` from Pin, as of its
-   current execution point. Blocking round trip; the result is zero-extended. */
-uns64 pin_exec_driven_read_mem(uns proc_id, Addr addr, uns size);
-
 #ifdef __cplusplus
 }
 #endif

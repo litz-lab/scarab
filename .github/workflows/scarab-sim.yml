@@ -198,6 +198,60 @@ jobs:
             exit 1
           fi
 
+      # How long each simulation took. The sim step runs them all at once and
+      # prints nothing per run, so without this a slow job cannot be traced to
+      # one workload. Runs even when the status check failed (not on cancel).
+      - name: Report simulation times
+        if: ${{ !cancelled() }}
+        run: |
+          python3 - <<'PY'
+          import glob
+          import os
+          import re
+          import subprocess
+
+          rows = []
+          for stat in sorted(glob.glob("simulations/*/this_pr/**/core.stat.0.out", recursive=True)):
+              run_dir = os.path.dirname(stat)
+              name = run_dir.split("/this_pr/", 1)[1]
+              files = [os.path.join(r, f) for r, _, fs in os.walk(run_dir) for f in fs]
+              # %W: birth time (0 if the filesystem does not record it); %Y: mtime.
+              out = subprocess.run(["stat", "-c", "%W %Y", *files],
+                                   capture_output=True, text=True).stdout.split()
+              births = [int(v) for v in out[0::2] if int(v) > 0]
+              mtimes = [int(v) for v in out[1::2]]
+              wall = f"{max(mtimes) - min(births)}" if births and mtimes else "n/a"
+              timed = "n/a"
+              with open(stat) as fh:
+                  for line in fh:
+                      if line.startswith("SIM_HOST_WALL_SECONDS"):
+                          timed = f"{float(line.split()[-1]):.0f}"
+                          break
+              kips = "n/a"
+              log = os.path.join(run_dir, "scarab.out")
+              if os.path.exists(log):
+                  with open(log, errors="replace") as fh:
+                      m = re.findall(r"Finished:.*\(([0-9.]+) KIPS\)", fh.read())
+                  if m:
+                      kips = m[-1]
+              rows.append((name, wall, timed, kips))
+
+          if not rows:
+              print("No simulation output found.")
+              raise SystemExit(0)
+          head = ("simulation", "wall s (files)", "timed s (Scarab)", "KIPS")
+          table = ["| " + " | ".join(head) + " |", "|---|--:|--:|--:|"]
+          table += ["| " + " | ".join(r) + " |" for r in rows]
+          print("\n".join(table))
+          print("wall: first file created to last file written in the run dir, "
+                "including fast-forward and frontend startup. "
+                "timed: Scarab's SIM_HOST_WALL_SECONDS, warmup and simulation only.")
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a") as fh:
+                  fh.write("### Simulation times\n\n" + "\n".join(table) + "\n")
+          PY
+
       - id: simdir
         if: inputs.collect_metrics
         name: Resolve simulation directory

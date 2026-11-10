@@ -115,7 +115,7 @@ class TraceReaderPT : public TraceReader {
   //   f3 0f 1e | fa            -> endbr64
   //   f3 48 0f 1e | c8 48 89 47 | 58  -> rdsspq rax; mov [rdi+0x58],rax
   // All the bytes are in the trace, so the real instructions can be rebuilt.
-  bool missing_0f1e_modrm(const PTInst &inst) {
+  bool missing_0f1e_modrm(const PTInst& inst) {
     if (inst.size < 2 || inst.inst_bytes[inst.size - 2] != 0x0f || inst.inst_bytes[inst.size - 1] != 0x1e)
       return false;
     xed_decoded_inst_t ins;
@@ -128,7 +128,7 @@ class TraceReaderPT : public TraceReader {
   // instruction ends exactly where a record ends. Those records are then replaced
   // by the decoded instructions. If they never line up within
   // kMaxRepairRecords, nothing is changed and fillCache NOPs the record.
-  void repair_split(PTInst &inst) {
+  void repair_split(PTInst& inst) {
     static constexpr size_t kMaxRepairRecords = 4;
     uint8_t bytes[16 * (kMaxRepairRecords + 1)];
     size_t len = inst.size;
@@ -140,7 +140,7 @@ class TraceReaderPT : public TraceReader {
           return;
         pending_.push_back(next);
       }
-      const PTInst &next = pending_[used];
+      const PTInst& next = pending_[used];
       if (next.pc != inst.pc + len)
         return;
       memcpy(bytes + len, next.inst_bytes, next.size);
@@ -172,7 +172,7 @@ class TraceReaderPT : public TraceReader {
     }
   }
 
-  bool read_trace_line(PTInst &inst) {
+  bool read_trace_line(PTInst& inst) {
     if (raw_file == NULL)
       return false;
     char buffer[GZ_BUFFER_SIZE];

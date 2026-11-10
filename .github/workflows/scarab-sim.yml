@@ -293,7 +293,10 @@ jobs:
           run_dir="${sim_dir}/this_pr/${workload_path}"
           log="${run_dir}/scarab.out"
           [ -f "$log" ] || log="${run_dir}/sim.log"
-          v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' "$log" | head -n1)
+          # The run's KIPS is the cumulative value on the "Core N Finished" line. The
+          # first heartbeat's value covers only the first 5% and counts whole seconds
+          # (src/sim.c), so it came out as 1M insts / 2, 3, 4 ... seconds.
+          v=$(grep -oP '^\*\* Core [0-9]+ Finished:.*\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' "$log" | tail -n1)
           if ! [[ "$v" =~ ^[0-9]+$ ]]; then
             echo "KIPS value is not a valid integer: '$v' Run failed!"
             echo "Contents of $log for debugging:"

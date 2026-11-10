@@ -86,32 +86,31 @@ static const uns imp_shift[IMP_NSHIFT] = {2, 3, 4};
 
 typedef struct Imp_Entry_struct {
   Addr pc;
-  Counter last_use;  // LRU
-  Addr last_va;  // stream
+  Counter last_use;                   // LRU
+  Addr last_va;                       // stream
   uns stream_hits;
-  Flag found;  // pattern
+  Flag found;                         // pattern
   uns shift;
   Addr base;
-  uns nidx;  // IPD: index values B[i], B[i+1] and the misses after each
+  uns nidx;                           // IPD: index values B[i], B[i+1] and the misses after each
   uns64 idx[2];
   uns nmiss[2];
   Addr miss[2][IMP_IPD_MISSES];
-  uns hit_cnt;                        // confidence (paper: hit cnt)
-  uns64 recent[IMP_CONF_WINDOW];      // recent B[i] values
-  Flag wait[IMP_CONF_WINDOW];         // still waiting for their A[B[i]]
-  uns next;
+  uns hit_cnt;                        // confidence: +1 correct prediction, -1 wrong (0..7)
+  uns64 pred_idx[IMP_CONF_WINDOW];    // predictions: index value B[i] -> expect A[B[i]] soon
+  Flag pred_pending[IMP_CONF_WINDOW]; // TRUE: prediction not graded yet
+  uns pred_next;                      // next slot to write (round robin)
 } Imp_Entry;
-
-static Imp_Entry* imp_pt;  // Prefetch Table, fully associative with LRU (paper: 16 entries); NULL when IMP is off
-static HWP_Info* imp_hwp_info;
-static HWP_Type imp_dest;
-
 
 typedef struct { 
   Addr idx_va;
   uns size, shift;
   Addr base;
 } Imp_Pending;  // idx_va == 0: empty
+
+static Imp_Entry* imp_pt;  // Prefetch Table, fully associative with LRU (paper: 16 entries); NULL when IMP is off
+static HWP_Info* imp_hwp_info;
+static HWP_Type imp_dest;
 
 static Imp_Pending imp_pend[IMP_PENDING];  // A prefetches waiting for their index line
 static uns imp_pend_next;
@@ -216,13 +215,24 @@ void pref_imp_dl0_access(uns8 proc_id, Addr va, uns size, Addr load_PC, Flag hit
     }
   }
 
-  /* Confidence: an access to A[B[k]] for a recent index value confirms the pattern */
+  /* Confidence, grade: does this access match a pending prediction A[B[i]]? */
   for (uns ii = 0; ii < PREF_IMP_PT_ENTRIES; ii++) {
-    for (uns k = 0; imp_pt[ii].found && k < IMP_CONF_WINDOW; k++) {
-      if (imp_pt[ii].wait[k] && va == imp_pt[ii].base + (imp_pt[ii].recent[k] << imp_pt[ii].shift)) {
-        imp_pt[ii].wait[k] = FALSE;
-        imp_pt[ii].hit_cnt += imp_pt[ii].hit_cnt < 7;
-      }
+    Imp_Entry* c = &imp_pt[ii];
+
+    if (!c->found)
+      continue;
+
+    for (uns k = 0; k < IMP_CONF_WINDOW; k++) {
+      if (!c->pred_pending[k])
+        continue;  // empty or already graded
+
+      const Addr predicted = c->base + (c->pred_idx[k] << c->shift);
+      if (va != predicted)
+        continue;  // not this one
+
+      c->pred_pending[k] = FALSE;  // correct
+      if (c->hit_cnt < 7)
+        c->hit_cnt++;
     }
   }
 
@@ -261,8 +271,6 @@ void pref_imp_dl0_access(uns8 proc_id, Addr va, uns size, Addr load_PC, Flag hit
     }
 
     e->found = imp_ipd_match(e);
-    if (e->found)
-      fprintf(stderr, "IMP found pc:0x%llx shift:%u base:0x%llx\n", e->pc, e->shift, e->base);
 
     STAT_EVENT(proc_id, e->found ? PREF_IMP_PATTERN_FOUND : PREF_IMP_PATTERN_FAILED);
     DEBUG(proc_id, "pc:0x%llx pattern %s shift:%u base:0x%llx\n", e->pc, e->found ? "found" : "failed", e->shift, e->base);
@@ -272,14 +280,18 @@ void pref_imp_dl0_access(uns8 proc_id, Addr va, uns size, Addr load_PC, Flag hit
     return;
   }
 
-  /* Confidence: record B[i]; the value it replaces never saw its A[B[i]] -> count down */
-  const uns k = e->next++ % IMP_CONF_WINDOW;
-  e->hit_cnt -= e->wait[k] && e->hit_cnt > 0;
-  e->recent[k] = pin_exec_driven_read_mem(proc_id, va, size);
-  e->wait[k] = TRUE;
+  /* Confidence, predict: B[i] was read, so A[B[i]] should come soon */
+  const uns k = e->pred_next;
+  e->pred_next = (e->pred_next + 1) % IMP_CONF_WINDOW;
+
+  if (e->pred_pending[k] && e->hit_cnt > 0)
+    e->hit_cnt--;  // the old prediction in this slot never came true: wrong
+
+  e->pred_idx[k] = pin_exec_driven_read_mem(proc_id, va, size);
+  e->pred_pending[k] = TRUE;
 
   if (e->hit_cnt < IMP_CONF_THRESH)
-    return;  // pattern not confirmed: train only
+    return;  // not confident yet: predict only, no prefetch
 
   /* 3. prefetch A[B[i + dist]] once B[i + dist] is in the L1 */
   const Imp_Pending p = {va + PREF_IMP_DIST * size, size, e->shift, e->base};

@@ -33,5 +33,6 @@ void pref_imp_init(HWP* hwp);
 /* Called from the dcache stage on every demand load (hit or miss): unlike the
    line-address hooks, IMP needs the word address and size to follow an index stream. */
 void pref_imp_dl0_access(uns8 proc_id, Addr va, uns size, Addr load_PC, Flag hit);
+void pref_imp_dcache_fill(uns8 proc_id, Addr line_addr);
 
 #endif /* __PREF_IMP_H__ */

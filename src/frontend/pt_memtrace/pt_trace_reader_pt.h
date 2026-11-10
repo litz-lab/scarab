@@ -30,6 +30,9 @@
  ***************************************************************************************/
 #ifndef __PT_TRACE_READER_PT_H__
 #define __PT_TRACE_READER_PT_H__
+#include <algorithm>
+#include <cstring>
+#include <deque>
 #include <map>
 #include <sstream>
 #include <stdlib.h>
@@ -50,6 +53,7 @@ struct PTInst {
   uint64_t pc;
   uint8_t size;
   uint8_t inst_bytes[16];
+  uint8_t patch;  // TracePatch
 };
 
 class TraceReaderPT : public TraceReader {
@@ -65,6 +69,7 @@ class TraceReaderPT : public TraceReader {
   uint64_t num_direct_brs_in_trace = 0, num_inserted_direct_brs = 0;
   std::vector<std::string> parsed = {};
   ctype_pin_inst patch_inst_{};
+  std::deque<PTInst> pending_ = {};  // records read ahead by repair_split, not yet returned
 
  public:
   bool read_next_line(PTInst &inst) {
@@ -74,8 +79,100 @@ class TraceReaderPT : public TraceReader {
       inst.pc = NOPS_BB_START + num_nops_at_start++;
       inst.size = 1;
       inst.inst_bytes[0] = 0x90;
+      inst.patch = TRACE_PATCH_NONE;
       return true;
     }
+    if (!pending_.empty()) {
+      inst = pending_.front();
+      pending_.pop_front();
+    } else if (!read_trace_line(inst)) {
+      return false;
+    }
+    if (missing_0f1e_modrm(inst))
+      repair_split(inst);
+
+    if (enable_code_bloat_effect && (prev_to_new_bbl_address_map != nullptr)) {
+      uint64_t result = inst.pc;
+      auto it = prev_to_new_bbl_address_map->lower_bound(inst.pc);
+      if (it->first == inst.pc) {
+        result = it->second;
+      } else {
+        if (it == prev_to_new_bbl_address_map->begin())
+          result = inst.pc;
+        else {
+          it--;
+          result = it->second + (inst.pc - (it->first));
+        }
+      }
+      inst.pc = result;
+    }
+    return true;
+  }
+
+  // Some PT traces were recorded by a tracer that decodes opcode 0F 1E (endbr64,
+  // rdsspq, hint NOPs) as having no ModRM byte (#499). The record then stops
+  // right after "0f 1e" and the ModRM byte starts the next record, e.g.
+  //   f3 0f 1e | fa            -> endbr64
+  //   f3 48 0f 1e | c8 48 89 47 | 58  -> rdsspq rax; mov [rdi+0x58],rax
+  // All the bytes are in the trace, so the real instructions can be rebuilt.
+  bool missing_0f1e_modrm(const PTInst& inst) {
+    if (inst.size < 2 || inst.inst_bytes[inst.size - 2] != 0x0f || inst.inst_bytes[inst.size - 1] != 0x1e)
+      return false;
+    xed_decoded_inst_t ins;
+    xed_decoded_inst_zero_set_mode(&ins, &xed_state_);
+    return xed_decode(&ins, inst.inst_bytes, inst.size) == XED_ERROR_BUFFER_TOO_SHORT;
+  }
+
+  // Decode the bytes of 'inst' and the records that follow it on straight
+  // (each starting where the previous one ends) as one stream, until an
+  // instruction ends exactly where a record ends. Those records are then replaced
+  // by the decoded instructions. If they never line up within
+  // kMaxRepairRecords, nothing is changed and fillCache NOPs the record.
+  void repair_split(PTInst& inst) {
+    static constexpr size_t kMaxRepairRecords = 4;
+    uint8_t bytes[16 * (kMaxRepairRecords + 1)];
+    size_t len = inst.size;
+    memcpy(bytes, inst.inst_bytes, inst.size);
+    for (size_t used = 0; used < kMaxRepairRecords; used++) {
+      if (pending_.size() <= used) {
+        PTInst next = {};
+        if (!read_trace_line(next))
+          return;
+        pending_.push_back(next);
+      }
+      const PTInst& next = pending_[used];
+      if (next.pc != inst.pc + len)
+        return;
+      memcpy(bytes + len, next.inst_bytes, next.size);
+      len += next.size;
+
+      std::vector<PTInst> rebuilt;
+      size_t off = 0;
+      while (off < len) {
+        xed_decoded_inst_t ins;
+        xed_decoded_inst_zero_set_mode(&ins, &xed_state_);
+        xed_error_enum_t res = xed_decode(&ins, bytes + off, (unsigned)std::min<size_t>(len - off, 15));
+        if (res != XED_ERROR_NONE)
+          break;
+        PTInst out = {};
+        out.pc = inst.pc + off;
+        out.size = (uint8_t)xed_decoded_inst_get_length(&ins);
+        memcpy(out.inst_bytes, bytes + off, out.size);
+        out.patch = TRACE_PATCH_REPAIRED;
+        rebuilt.push_back(out);
+        off += out.size;
+      }
+      if (off != len)
+        continue;  // ends mid-instruction or failed: take in one more record
+
+      pending_.erase(pending_.begin(), pending_.begin() + used + 1);
+      pending_.insert(pending_.begin(), rebuilt.begin() + 1, rebuilt.end());
+      inst = rebuilt.front();
+      return;
+    }
+  }
+
+  bool read_trace_line(PTInst& inst) {
     if (raw_file == NULL)
       return false;
     char buffer[GZ_BUFFER_SIZE];
@@ -103,22 +200,7 @@ class TraceReaderPT : public TraceReader {
       }
       inst.inst_bytes[found++] = strtoul(parsed[i].c_str(), NULL, 16);
     }
-
-    if (enable_code_bloat_effect && (prev_to_new_bbl_address_map != nullptr)) {
-      uint64_t result = inst.pc;
-      auto it = prev_to_new_bbl_address_map->lower_bound(inst.pc);
-      if (it->first == inst.pc) {
-        result = it->second;
-      } else {
-        if (it == prev_to_new_bbl_address_map->begin())
-          result = inst.pc;
-        else {
-          it--;
-          result = it->second + (inst.pc - (it->first));
-        }
-      }
-      inst.pc = result;
-    }
+    inst.patch = TRACE_PATCH_NONE;
     return true;
   }
 
@@ -129,12 +211,15 @@ class TraceReaderPT : public TraceReader {
       fillCache(next_line.pc, next_line.size, next_line.inst_bytes);
       xed_map_iter = xed_map_.find(next_line.pc);
       assert((xed_map_iter != xed_map_.end()));
+      if (next_line.patch == TRACE_PATCH_REPAIRED)
+        std::get<MAP_PATCH>(xed_map_iter->second) = TRACE_PATCH_REPAIRED;
     }
     bool unknown_type, cond_branch;
     int mem_ops_;
     xed_decoded_inst_t *xed_ins;
     auto &xed_tuple = (*xed_map_iter).second;
-    tie(mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) = xed_tuple;
+    uint8_t trace_patch;
+    tie(mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore, trace_patch) = xed_tuple;
     xed_ins = std::get<MAP_XED>(xed_tuple).get();
     InstInfo &_info = (use_info_a ? inst_info_a : inst_info_b);
     InstInfo &_prior = (use_info_a ? inst_info_b : inst_info_a);
@@ -209,6 +294,7 @@ class TraceReaderPT : public TraceReader {
     _info.mem_used[0] = false;
     _info.mem_used[1] = false;
     _info.unknown_type = unknown_type;
+    _info.trace_patch = trace_patch;
     _info.valid = true;
 
     for (int i = 0; i < mem_ops_; i++) {

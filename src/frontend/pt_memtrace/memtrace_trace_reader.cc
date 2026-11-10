@@ -120,7 +120,8 @@ void TraceReader::fillCache(uint64_t _vAddr, uint8_t _reported_size, uint8_t* in
   uint64_t size;
   uint8_t* loc;
   if (inst_bytes != NULL || locationForVAddr(_vAddr, &loc, &size)) {
-    xed_map_.emplace(_vAddr, make_tuple(0, false, false, false, make_unique<xed_decoded_inst_t>()));
+    xed_map_.emplace(_vAddr,
+                     make_tuple(0, false, false, false, make_unique<xed_decoded_inst_t>(), (uint8_t)TRACE_PATCH_NONE));
     xed_decoded_inst_t* ins = get<MAP_XED>(xed_map_.at(_vAddr)).get();
     xed_decoded_inst_zero_set_mode(ins, &xed_state_);
     if (inst_bytes != NULL) {
@@ -129,10 +130,17 @@ void TraceReader::fillCache(uint64_t _vAddr, uint8_t _reported_size, uint8_t* in
     xed_error_enum_t res;
     res = xed_decode(ins, loc, _reported_size);
     if (res != XED_ERROR_NONE) {
-      assert(inst_bytes == NULL || !"decode should not fail with trace-provided encodings");
-      warn("XED decode error for 0x%lx: %s %u, replacing with nop\n", _vAddr, xed_error_enum_t2str(res),
-           _reported_size);
+      // Only the PT reader calls fillCache (memtrace decodes in its own reader and
+      // keeps its assert). Some PT traces hold records whose bytes are not valid
+      // x86-64 (#499); the next record still starts right after them, so a NOP of
+      // the same length keeps the PC stream and instruction count unchanged.
+      if (num_decode_nops_ < 10) {
+        warn("Undecodable trace record at 0x%lx (%u bytes, XED %s), replaced with a same-length NOP%s\n", _vAddr,
+             _reported_size, xed_error_enum_t2str(res), num_decode_nops_ == 9 ? "; suppressing further messages" : "");
+      }
+      num_decode_nops_++;
       *ins = *makeNop(_reported_size);
+      get<MAP_PATCH>(xed_map_.at(_vAddr)) = TRACE_PATCH_NOP;
     }
     // Record if this instruction requires memory operands, since the trace
     // will deliver it in additional pieces
@@ -182,7 +190,7 @@ void TraceReader::fillCache(uint64_t _vAddr, uint8_t _reported_size, uint8_t* in
     // Replace the unknown instruction with a NOP
     // NOTE: Unknown memory records are skipped, so 'rep' needs no special
     // handling here
-    xed_map_.emplace(_vAddr, make_tuple(0, true, false, false, makeNop(_reported_size)));
+    xed_map_.emplace(_vAddr, make_tuple(0, true, false, false, makeNop(_reported_size), (uint8_t)TRACE_PATCH_NONE));
   }
 }
 
@@ -203,12 +211,21 @@ unique_ptr<xed_decoded_inst_t> TraceReader::makeNop(uint8_t _length) {
     const uint8_t* pos = reinterpret_cast<const uint8_t*>(nop15 + offset);
     res = xed_decode(ins, pos, 15 - offset);
   } else {
-    uint8_t buf[XED_MAX_INSTRUCTION_BYTES] = {};
-    res = xed_encode_nop(&buf[0], _length);
-    if (res != XED_ERROR_NONE) {
-      warn("XED NOP encode error: %s", xed_error_enum_t2str(res));
-    }
-    res = xed_decode(ins, buf, sizeof(buf));
+    // The decoded instruction keeps a pointer to these bytes (read later through
+    // xed_decoded_inst_get_byte), so they must outlive this call: encode each
+    // length once into static storage, like nop15 above.
+    static uint8_t bufs[10][XED_MAX_INSTRUCTION_BYTES] = {};
+    static const bool encoded = [] {
+      for (unsigned len = 1; len <= 9; len++) {
+        xed_error_enum_t enc = xed_encode_nop(&bufs[len][0], len);
+        if (enc != XED_ERROR_NONE) {
+          warn("XED NOP encode error: %s", xed_error_enum_t2str(enc));
+        }
+      }
+      return true;
+    }();
+    (void)encoded;
+    res = xed_decode(ins, bufs[_length], sizeof(bufs[_length]));
   }
   if (res != XED_ERROR_NONE) {
     warn("XED NOP decode error: %s", xed_error_enum_t2str(res));

@@ -290,8 +290,8 @@ void create_compressed_op(ADDRINT iaddr, ctype_pin_inst* info) {
     for(uint ld = 0; ld < num_lds; ld++) {
       filled_inst_info->ld_vaddr[ld] = glb_ld_vaddrs[ld];
       filled_inst_info->ld_data[ld] = glb_ld_data[ld];
-      filled_inst_info->ld_ahead_data[ld] = read_ld_data(
-        glb_ld_vaddrs[ld] + LD_LOOKAHEAD * filled_inst_info->ld_size, filled_inst_info->ld_size);
+      filled_inst_info->ld_ahead_data[ld] =
+          read_ld_data(glb_ld_vaddrs[ld] + LD_LOOKAHEAD * filled_inst_info->ld_size, filled_inst_info->ld_size);
     }
 
     uint num_sts = glb_st_vaddrs.size();

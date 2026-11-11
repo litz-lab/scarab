@@ -54,6 +54,7 @@
  ***************************************************************************************/
 
 #include "prefetcher/pref_imp.h"
+
 #include "globals/assert.h"
 #include "globals/global_defs.h"
 #include "globals/global_types.h"
@@ -68,11 +69,11 @@
 #include "prefetcher/pref.param.h"
 
 #include "frontend/frontend_intf.h"
-#include "statistics.h"
+#include "libs/cache_lib.h"
 
 #include "cmp_model.h"
 #include "ctype_pin_inst.h"
-#include "libs/cache_lib.h"
+#include "statistics.h"
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_PREF, ##args)
 
@@ -87,13 +88,13 @@ static const uns imp_shift[IMP_NSHIFT] = {2, 3, 4};
 
 typedef struct Imp_Entry_struct {
   Addr pc;
-  Counter last_use;                    // LRU
-  Addr last_va;                        // stream
+  Counter last_use;  // LRU
+  Addr last_va;      // stream
   uns stream_hits;
-  Flag found;                          // pattern
+  Flag found;  // pattern
   uns shift;
   Addr base;
-  uns nidx;                            // IPD: index values B[i], B[i+1] and the misses after each
+  uns nidx;  // IPD: index values B[i], B[i+1] and the misses after each
   uns64 idx[2];
   uns nmiss[2];
   Addr miss[2][IMP_IPD_MISSES];

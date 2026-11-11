@@ -120,19 +120,40 @@
  
  /* Prefetch A[B[i+dist]]; the caller made sure the index line is in the L1.
   * Returns FALSE only if the prefetch queue is full (retry later). */
- static Flag imp_issue(uns8 proc_id, Imp_Pending p) {
-   const Addr target = p.base + (p.idx_val << p.shift);
+//  static Flag imp_issue(uns8 proc_id, Imp_Pending p) {
+//    const Addr target = p.base + (p.idx_val << p.shift);
  
-   if (target != convert_to_cmp_addr(proc_id, target & N_BIT_MASK(NUM_ADDR_NON_SIGN_EXTEND_BITS)))
-     return TRUE;  // bad target: drop it
+//    if (target != convert_to_cmp_addr(proc_id, target & N_BIT_MASK(NUM_ADDR_NON_SIGN_EXTEND_BITS)))
+//      return TRUE;  // bad target: drop it
  
-   if (!pref_addto_dest_req_queue(proc_id, imp_dest, target >> LOG2(DCACHE_LINE_SIZE), imp_hwp_info->id))
-     return FALSE;
+//    if (!pref_addto_dest_req_queue(proc_id, imp_dest, target >> LOG2(DCACHE_LINE_SIZE), imp_hwp_info->id))
+//      return FALSE;
  
-   STAT_EVENT(proc_id, PREF_IMP_PREF_ISSUED);
-   return TRUE;
- }
+//    STAT_EVENT(proc_id, PREF_IMP_PREF_ISSUED);
+//    return TRUE;
+//  }
  
+static Flag imp_issue(uns8 proc_id, Imp_Pending p) {
+  const Addr target = p.base + (p.idx_val << p.shift);
+
+  if (target != convert_to_cmp_addr(proc_id, target & N_BIT_MASK(NUM_ADDR_NON_SIGN_EXTEND_BITS)))
+    return TRUE;  // bad target: drop it
+
+  if (!pref_addto_dest_req_queue(proc_id, imp_dest, target >> LOG2(DCACHE_LINE_SIZE), imp_hwp_info->id))
+    return FALSE;
+
+  STAT_EVENT(proc_id, PREF_IMP_PREF_ISSUED);
+
+  /* A[B[i]] + 1 element in the next line (e.g., CSR bounds offsets[u], offsets[u+1]):
+   * prefetch that line too, best effort (dropped if the queue is full) */
+  const Addr next = target + (1 << p.shift);
+  if ((next >> LOG2(DCACHE_LINE_SIZE)) != (target >> LOG2(DCACHE_LINE_SIZE)) &&
+      pref_addto_dest_req_queue(proc_id, imp_dest, next >> LOG2(DCACHE_LINE_SIZE), imp_hwp_info->id))
+    STAT_EVENT(proc_id, PREF_IMP_PREF_ISSUED);
+
+  return TRUE;
+}
+
  static Flag imp_idx_line_ready(uns8 proc_id, Addr idx_va) {
    Addr line;
    return cache_access(&cmp_model.dcache_stage[proc_id].dcache, idx_va, &line, FALSE) != NULL;

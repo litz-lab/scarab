@@ -134,9 +134,9 @@ static Flag imp_issue(uns8 proc_id, Imp_Pending p) {
   const Addr next = target + (1 << p.shift);
 
   if ((next >> LOG2(DCACHE_LINE_SIZE)) != (target >> LOG2(DCACHE_LINE_SIZE)) &&
-    pref_addto_dest_req_queue(proc_id, imp_dest, next >> LOG2(DCACHE_LINE_SIZE), imp_hwp_info->id))
+      pref_addto_dest_req_queue(proc_id, imp_dest, next >> LOG2(DCACHE_LINE_SIZE), imp_hwp_info->id))
 
-  STAT_EVENT(proc_id, PREF_IMP_PREF_ISSUED);
+    STAT_EVENT(proc_id, PREF_IMP_PREF_ISSUED);
 
   return TRUE;
 }

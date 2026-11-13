@@ -53,6 +53,7 @@
 #include "prefetcher/fdip.h"
 #include "prefetcher/l2l1pref.h"
 #include "prefetcher/pref_common.h"
+#include "prefetcher/pref_imp.h"
 #include "prefetcher/stream_pref.h"
 
 #include "addr_trans.h"
@@ -2097,6 +2098,8 @@ static inline void mem_record_late_prefetch(Mem_Req* pref) {
       ASSERT(pref->proc_id, FALSE);
   }
   STAT_EVENT(pref->proc_id, late);
+  if (pref->destination == DEST_DCACHE && pref_imp_is(pref->prefetcher_id))
+    STAT_EVENT(pref->proc_id, PREF_IMP_LATE);
   Counter l1_cycles = freq_cycle_count(FREQ_DOMAIN_L1);
   Counter diff = l1_cycles >= pref->start_cycle ? l1_cycles - pref->start_cycle : 0;
   INC_STAT_EVENT(pref->proc_id, cycles, diff);

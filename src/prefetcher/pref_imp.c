@@ -176,6 +176,10 @@ void pref_imp_init(HWP* hwp) {
   hwp->hwp_info->enabled = TRUE;
 }
 
+Flag pref_imp_is(uns8 prefetcher_id) {
+  return imp_pt && prefetcher_id == imp_hwp_info->id;
+}
+
 /* Base candidate from a miss address and an index value: base = addr - (idx << shift) */
 static inline Addr imp_base_of(Addr miss_addr, uns64 idx, uns shift) {
   return miss_addr - (idx << shift);

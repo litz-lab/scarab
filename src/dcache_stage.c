@@ -637,6 +637,8 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
       line->HW_prefetch = FALSE;
       STAT_EVENT(dc->proc_id, PREF_DCACHE_TOTAL_USED);
       STAT_EVENT(dc->proc_id, CORE_PREF_DCACHE_USED);
+      if (pref_imp_is(line->prefetcher_id))
+        STAT_EVENT(dc->proc_id, PREF_IMP_USED);
     } else {
       pref_dl0_hit(line_addr, op->inst->addr);
     }
@@ -886,6 +888,8 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
     pref_evictline_notused(dc->proc_id, repl_line_addr, data->pref_loadPC, data->global_hist, data->prefetcher_id);
     STAT_EVENT(dc->proc_id, PREF_DCACHE_TOTAL_NOT_USED);
     STAT_EVENT(dc->proc_id, CORE_PREF_DCACHE_NOT_USED);
+    if (pref_imp_is(data->prefetcher_id))
+      STAT_EVENT(dc->proc_id, PREF_IMP_NOT_USED);
   } else if (repl_line_valid && data->HW_prefetched) {
     pref_evictline_used(dc->proc_id, repl_line_addr, data->pref_loadPC, data->global_hist);
   }

@@ -30,6 +30,9 @@
 
 void pref_imp_init(HWP* hwp);
 
+/* TRUE if this prefetcher id is IMP (for per-prefetcher stats) */
+Flag pref_imp_is(uns8 prefetcher_id);
+
 /* Called from the dcache stage on every demand load (hit or miss): unlike the
    line-address hooks, IMP needs the word address, the size and the loaded values. */
 void pref_imp_dl0_access(uns8 proc_id, Addr va, uns size, Addr load_PC, Flag hit, uns64 ld_val, uns64 ld_ahead_val);

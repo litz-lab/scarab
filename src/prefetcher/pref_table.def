@@ -84,6 +84,13 @@ HWP pref_table [] = {
           pref_markov_umlc_miss,        		NULL,  	pref_markov_umlc_prefhit,   		
 	    pref_markov_ul1_miss, 		NULL,    pref_markov_ul1_prefhit  , NULL, NULL   }, 
 
+    /* IMP trains on its own op-level hook (pref_imp_dl0_access, dcache_stage.c) */
+    { "imp",  NULL,   		pref_imp_init,    	NULL,
+                  NULL,
+		  NULL,        		NULL,      		NULL,
+          NULL,        		NULL,   	   	NULL,
+		  NULL,      		NULL,       		NULL    , NULL, NULL   },
+
     { NULL,  NULL,   		NULL,    		NULL,
                   NULL,
 		  NULL,        		NULL,      		NULL,      

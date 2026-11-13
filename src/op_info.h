@@ -81,6 +81,7 @@ struct Op_Info_struct {
   // mem op fields
   Addr va;       // virtual address for memory instructions
   uns mem_size;  // memory data size now became dynamic property due to REP STRING
+  uns64 ld_ahead_val;  // loads: value LD_LOOKAHEAD elements past va (from Pin)
 
   // all op fields
   Addr npc;  // the true next pc after the instruction

@@ -3,6 +3,14 @@
 
 #include "globals/global_types.h"
 
+// generic Instruction-BTB branch slot
+typedef struct Gen_Btb_BrSlot_struct {
+  Addr target;   // sizeof(Addr) bits
+  Cf_Type type;  // log2(NUM_CF_TYPES) bits
+} Gen_Btb_BrSlot;
+
+#define GEN_BTB_ENTRY_SIZE sizeof(Gen_Btb_BrSlot)
+
 // Block-BTB branch slot
 typedef struct Blk_Btb_BrSlot_struct {
   Addr addr;     // equivalent to offset, log2(BTB_BLOCK_SIZE) bits

@@ -783,42 +783,49 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         pred_target = op->bp_pred_l0.crs_target;
 
       // Return-stack underflow: a CF_RET BTB entry supplies the target; without one, fall through.
-      if (pred_target == 0 && btb_hit && op->btb_pred_info->pred_type == CF_RET) {
-        bp_pred_info->pred_npc = op->btb_pred_info->pred_target;
-        if (op->btb_pred_info->pred_target == op->oracle_info.npc) {
-          bp_pred_info->recovery_point = RECOVER_AT_NONE;
-          STAT_EVENT_BP_SPLIT_PATH(op, RET_CORRECT_UFLOW_BTB_HIT);
+      if (pred_target == 0) {  // RAS Underflow
+        if (btb_hit && op->btb_pred_info->pred_type == CF_RET) {
+          bp_pred_info->pred_npc = op->btb_pred_info->pred_target;  // fall back to BTB's target
+          if (op->btb_pred_info->pred_target == op->oracle_info.npc) {
+            bp_pred_info->recovery_point = RECOVER_AT_NONE;
+            STAT_EVENT_BP_SPLIT_PATH(op, RET_CORRECT_UFLOW_BTB_HIT);
+          } else {
+            bp_pred_info->recovery_point = RECOVER_AT_EXEC;
+            STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER_UFLOW_BTB_HIT);
+          }
         } else {
           bp_pred_info->recovery_point = RECOVER_AT_EXEC;
-          STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER_UFLOW_BTB_HIT);
+          bp_pred_info->pred_npc = pc_plus_offset;
+          bp_pred_info->pred = NOT_TAKEN;
+          STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER_UFLOW);
         }
-      } else if (pred_target == 0) {  // RAS Underflow
-        bp_pred_info->recovery_point = RECOVER_AT_EXEC;
-        bp_pred_info->pred_npc = pc_plus_offset;
-        bp_pred_info->pred = NOT_TAKEN;
-        STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER_UFLOW);
       }
       // Wrong return-stack target: fetch uses it only with a CF_RET BTB entry; without one, fall through.
-      else if (pred_target != op->oracle_info.npc && btb_hit && op->btb_pred_info->pred_type == CF_RET) {
+      else if (pred_target != op->oracle_info.npc) {
         bp_pred_info->recovery_point = RECOVER_AT_EXEC;
-        bp_pred_info->pred_npc = pred_target;
-        STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER);
-      } else if (pred_target != op->oracle_info.npc) {
-        bp_pred_info->recovery_point = RECOVER_AT_EXEC;
-        bp_pred_info->pred_npc = pc_plus_offset;
-        bp_pred_info->pred = NOT_TAKEN;
-        STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER_CRS_WRONG_BTB_MISS);
+        if (btb_hit && op->btb_pred_info->pred_type == CF_RET) {
+          bp_pred_info->pred_npc = pred_target;
+          STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER);
+        } else {
+          bp_pred_info->pred_npc = pc_plus_offset;
+          bp_pred_info->pred = NOT_TAKEN;
+          STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER_CRS_WRONG_BTB_MISS);
+        }
       }
       // Correct return-stack target: fetch uses it only with a CF_RET BTB entry; without one, decode does.
-      else if (btb_hit && op->btb_pred_info->pred_type == CF_RET) {
-        bp_pred_info->recovery_point = RECOVER_AT_NONE;
-        bp_pred_info->pred_npc = pred_target;
-        STAT_EVENT_BP_SPLIT_PATH(op, RET_CORRECT);
+      else if (pred_target == op->oracle_info.npc) {
+        if (btb_hit && op->btb_pred_info->pred_type == CF_RET) {
+          bp_pred_info->recovery_point = RECOVER_AT_NONE;
+          bp_pred_info->pred_npc = pred_target;
+          STAT_EVENT_BP_SPLIT_PATH(op, RET_CORRECT);
+        } else {
+          bp_pred_info->recovery_point = RECOVER_AT_DECODE;
+          bp_pred_info->pred_npc = pc_plus_offset;
+          bp_pred_info->pred = NOT_TAKEN;
+          STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER_CRS_CORRECT_BTB_MISS);
+        }
       } else {
-        bp_pred_info->recovery_point = RECOVER_AT_DECODE;
-        bp_pred_info->pred_npc = pc_plus_offset;
-        bp_pred_info->pred = NOT_TAKEN;
-        STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER_CRS_CORRECT_BTB_MISS);
+        ASSERT(op->proc_id, 0);
       }
       break;
 

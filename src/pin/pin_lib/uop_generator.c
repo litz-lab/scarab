@@ -80,7 +80,7 @@ struct Trace_Uop_struct {
   Flag actual_taken;
   Addr va;
   uns mem_size;  // number of bytes read/written by a memory instruction
-  uns64 ld_ahead_val;  // loads: value LD_LOOKAHEAD elements past va
+  uns64 ld_ahead_val;  // loads: value -pref_imp_dist elements past va
   Addr target;
   Addr npc;
   Flag bom;

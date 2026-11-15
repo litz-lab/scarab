@@ -45,7 +45,6 @@
 #define MAX_LD_NUM 8
 #define MAX_ST_NUM 8
 #define DUMMY_NOP_SIZE 3
-#define LD_LOOKAHEAD 16
 
 enum reg_table_type {
   REG_TABLE_TYPE_ARCHITECTURAL,
@@ -138,7 +137,7 @@ typedef struct ctype_pin_inst_struct {
   uint64_t ld_vaddr[MAX_LD_NUM];
   uint64_t st_vaddr[MAX_ST_NUM];
   uint64_t ld_data[MAX_LD_NUM];  // loaded value (scalar <=8B, captured at IPOINT_BEFORE; 0 for wider)
-  uint64_t ld_ahead_data[MAX_LD_NUM];  // value LD_LOOKAHEAD elements past the load (0 for wider)
+  uint64_t ld_ahead_data[MAX_LD_NUM];  // loads: value -pref_imp_dist elements past va
   uint8_t ld_size;
   uint8_t st_size;
 

@@ -34,7 +34,7 @@
  *
  *   Index values: Scarab's caches hold no data, so both values come with the load from
  *   Pin (pin_exec only): B[i] is the loaded value (ld_data) and B[i+dist] is the value
- *   LD_LOOKAHEAD elements ahead (ld_ahead_data), so PREF_IMP_DIST must equal LD_LOOKAHEAD.
+ *   -pref_imp_dist elements ahead (ld_ahead_data); pass the same value as --pref_imp_dist.
  *   B[i+dist] is used only once its line is in the L1, as in hardware. IMP never fetches
  *   index lines: other prefetchers (e.g., stream) or demand accesses bring them. Until
  *   then the A prefetch waits in a small pending table that is retried on every L1
@@ -167,8 +167,6 @@ void pref_imp_init(HWP* hwp) {
     return;
 
   ASSERTM(0, FRONTEND == FE_PIN_EXEC_DRIVEN, "IMP needs load values from Pin: pin_exec only\n");
-  ASSERTM(0, PREF_IMP_DIST == LD_LOOKAHEAD, "Pin sends B[i + %d] with each load: --pref_imp_dist must be %d\n",
-          LD_LOOKAHEAD, LD_LOOKAHEAD);
 
   imp_hwp_info = hwp->hwp_info;
   imp_dest = pref_hwp_instance_dest(hwp, PREF_TRAIN_LEVEL_DCACHE);
@@ -213,7 +211,7 @@ static Flag imp_ipd_match(Imp_Entry* e) {
 }
 
 /* ld_val: value this load read (B[i] for an index load).
- * ld_ahead_val: value LD_LOOKAHEAD elements ahead (B[i+dist] for an index load). */
+ * ld_ahead_val: value -pref_imp_dist elements ahead (B[i+dist] for an index load). */
 void pref_imp_dl0_access(uns8 proc_id, Addr va, uns size, Addr load_PC, Flag hit, uns64 ld_val, uns64 ld_ahead_val) {
   if (!imp_pt)
     return;

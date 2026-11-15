@@ -294,7 +294,7 @@ void create_compressed_op(ADDRINT iaddr, ctype_pin_inst* info) {
       filled_inst_info->ld_vaddr[ld] = glb_ld_vaddrs[ld];
       filled_inst_info->ld_data[ld] = glb_ld_data[ld];
       filled_inst_info->ld_ahead_data[ld] = read_ld_data(
-          glb_ld_vaddrs[ld] + Knob_ld_lookahead.Value() * filled_inst_info->ld_size, filled_inst_info->ld_size);
+          glb_ld_vaddrs[ld] + Knob_pref_imp_dist.Value() * filled_inst_info->ld_size, filled_inst_info->ld_size);
     }
 
     uint num_sts = glb_st_vaddrs.size();

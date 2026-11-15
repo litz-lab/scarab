@@ -782,9 +782,9 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       } else if (crs_reuse)
         pred_target = op->bp_pred_l0.crs_target;
 
-      // Return-stack underflow: a CF_RET BTB entry supplies the target; without one, fall through.
+      // Return-stack underflow: a BTB entry supplies the target; without one, fall through.
       if (pred_target == 0) {  // RAS Underflow
-        if (btb_hit && op->btb_pred_info->pred_type == CF_RET) {
+        if (btb_hit) {
           bp_pred_info->pred_npc = op->btb_pred_info->pred_target;  // fall back to BTB's target
           if (op->btb_pred_info->pred_target == op->oracle_info.npc) {
             bp_pred_info->recovery_point = RECOVER_AT_NONE;
@@ -800,10 +800,10 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
           STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER_UFLOW);
         }
       }
-      // Wrong return-stack target: fetch uses it only with a CF_RET BTB entry; without one, fall through.
+      // Wrong return-stack target: fetch uses it only with a BTB entry; without one, fall through.
       else if (pred_target != op->oracle_info.npc) {
         bp_pred_info->recovery_point = RECOVER_AT_EXEC;
-        if (btb_hit && op->btb_pred_info->pred_type == CF_RET) {
+        if (btb_hit) {
           bp_pred_info->pred_npc = pred_target;
           STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER);
         } else {
@@ -812,9 +812,9 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
           STAT_EVENT_BP_SPLIT_PATH(op, RET_RECOVER_CRS_WRONG_BTB_MISS);
         }
       }
-      // Correct return-stack target: fetch uses it only with a CF_RET BTB entry; without one, decode does.
+      // Correct return-stack target: fetch uses it only with a BTB entry; without one, decode does.
       else if (pred_target == op->oracle_info.npc) {
-        if (btb_hit && op->btb_pred_info->pred_type == CF_RET) {
+        if (btb_hit) {
           bp_pred_info->recovery_point = RECOVER_AT_NONE;
           bp_pred_info->pred_npc = pred_target;
           STAT_EVENT_BP_SPLIT_PATH(op, RET_CORRECT);

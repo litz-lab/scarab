@@ -51,12 +51,12 @@ extern "C" {
 
 void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst);
 Flag buf_map_find(uns proc_id, Addr line_addr);
-void apply_deferred_replay_updates(uns proc_id, uns num_insts);
 
 /* Implementing the frontend interface */
 Addr ext_trace_next_fetch_addr(uns proc_id);
 Flag ext_trace_can_fetch_op(uns proc_id, uns bp_id);
 void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op);
+void ext_trace_consume(uns proc_id, uns64 inst_uid);
 void ext_trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr);
 void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid);
 void ext_trace_retire(uns proc_id, uns64 inst_uid);

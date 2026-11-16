@@ -7,6 +7,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <optional>
 
 #include "bp/bp.param.h"
 
@@ -43,8 +44,14 @@ static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS][MAX_NUM_BPS];
 static bool off_path_mode[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
 static uint64_t off_path_addr[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
 static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst[MAX_NUM_PROCS];
-// replay buffer updates held while their FT is in the lookahead buffer
-static std::deque<ctype_pin_inst> deferred_replay_updates[MAX_NUM_PROCS];
+
+/* An on-path record read ahead of the core (by the lookahead buffer) */
+struct DeferredReplayUpdate {
+  uint64_t read_by_inst_uid;  // inst whose last-uop fetch read this record, which is the next inst's
+  ctype_pin_inst record;
+};
+// the replay buffer holds exactly the records read by the insts the core has consumed
+static std::deque<DeferredReplayUpdate> deferred_replay_updates[MAX_NUM_PROCS];
 
 /* Per-core circular buffer state */
 struct TraceBufState {
@@ -294,13 +301,16 @@ static void update_replay_buffer(uns proc_id, const ctype_pin_inst& inst) {
   }
 }
 
-// Applies the replay buffer updates held for the next num_insts insts read ahead by the lookahead buffer
-void apply_deferred_replay_updates(uns proc_id, uns num_insts) {
+// Applies the records read by the insts up to inst_uid; returns the reader of the last record applied
+static std::optional<uint64_t> apply_replay_updates_up_to(uns proc_id, uns64 inst_uid) {
+  std::optional<uint64_t> last_reader;
   auto& deferred = deferred_replay_updates[proc_id];
-  for (uns i = 0; i < num_insts && !deferred.empty(); i++) {
-    update_replay_buffer(proc_id, deferred.front());
+  while (!deferred.empty() && deferred.front().read_by_inst_uid <= inst_uid) {
+    last_reader = deferred.front().read_by_inst_uid;
+    update_replay_buffer(proc_id, deferred.front().record);
     deferred.pop_front();
   }
+  return last_reader;
 }
 
 void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
@@ -329,8 +339,9 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
         trace_read_done[proc_id] = TRUE;
         reached_exit[proc_id] = TRUE;
         op->exit = TRUE;
-      } else if (LOOKAHEAD_BUF_SIZE && !LOOKAHEAD_BUF_UPDATES_REPLAY_BUF) {
-        deferred_replay_updates[proc_id].push_back(next_onpath_pi[proc_id]);
+      } else if (LOOKAHEAD_BUF_SIZE) {
+        // read ahead of the core: applied once the core consumes the inst that read it
+        deferred_replay_updates[proc_id].push_back({op->inst_uid, next_onpath_pi[proc_id]});
       } else {
         update_replay_buffer(proc_id, next_onpath_pi[proc_id]);
       }
@@ -340,6 +351,12 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
   }
   DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode_,
         next_onpath_pi[proc_id].instruction_addr, next_offpath_pi_->instruction_addr);
+}
+
+void ext_trace_consume(uns proc_id, uns64 inst_uid) {
+  const std::optional<uint64_t> last_reader = apply_replay_updates_up_to(proc_id, inst_uid);
+  // The consumed FT's last inst read the next record, unless the trace ended there
+  ASSERT(proc_id, last_reader == inst_uid || reached_exit[proc_id]);
 }
 
 Flag ext_trace_can_fetch_op(uns proc_id, uns bp_id) {
@@ -382,8 +399,8 @@ void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
 }
 
 void ext_trace_retire(uns proc_id, uns64 inst_uid) {
-  // Trace frontend does not need to communicate to PIN which instruction are
-  // retired.
+  // functional warmup (uop_sim) reports consumption only through retire
+  apply_replay_updates_up_to(proc_id, inst_uid);
 }
 
 Addr ext_trace_next_fetch_addr(uns proc_id) {

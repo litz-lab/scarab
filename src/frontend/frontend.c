@@ -118,6 +118,11 @@ void frontend_fetch_op(uns proc_id, uns bp_id, Op* op) {
   frontend->fetch_op(proc_id, bp_id, op);
 }
 
+void frontend_consume(uns proc_id, uns64 inst_uid) {
+  DEBUG(proc_id, "Consumed up to inst_uid %lld\n", inst_uid);
+  frontend->consume(proc_id, inst_uid);
+}
+
 void frontend_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr) {
   DEBUG(proc_id, "Redirect after op_num %lld to 0x%08llx\n", op_count[proc_id] - 1, fetch_addr);
   frontend->redirect(proc_id, bp_id, inst_uid, fetch_addr);

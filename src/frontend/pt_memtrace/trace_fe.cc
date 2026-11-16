@@ -262,7 +262,7 @@ static void update_replay_buffer(uns proc_id, const ctype_pin_inst& inst) {
   uint64_t addr = inst.instruction_addr;
   auto it = pc_to_inst[proc_id].find(addr);
   if (it == pc_to_inst[proc_id].end()) {
-    pc_to_inst[proc_id].emplace(addr, inst);
+    it = pc_to_inst[proc_id].emplace(addr, inst).first;
   } else if (inst.encoding_is_new) {
     STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
     it->second = inst;
@@ -295,7 +295,7 @@ static void update_replay_buffer(uns proc_id, const ctype_pin_inst& inst) {
   // Poison the oracle memory addresses of the replay-buffer entry for this
   // PC; they are only ever read back to replay off-path instructions.
   if (POISON_REPLAY_BUFFER_ORACLE_VA) {
-    ctype_pin_inst& replay_entry = pc_to_inst[proc_id][addr];
+    ctype_pin_inst& replay_entry = it->second;
     for (uns i = 0; i < MAX_LD_NUM; i++)
       replay_entry.ld_vaddr[i] = REPLAY_BUFFER_POISON_VA;
     for (uns i = 0; i < MAX_ST_NUM; i++)

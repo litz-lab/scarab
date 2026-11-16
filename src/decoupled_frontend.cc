@@ -137,6 +137,14 @@ Op* decoupled_fe_ftq_iter_get_next(Decoupled_FE* dfe, uns iter_idx, bool* end_of
   return dfe->ftq_iter_get_next(iter_idx, end_of_ft);
 }
 
+FT* decoupled_fe_ftq_iter_ft(Decoupled_FE* dfe, uns iter_idx) {
+  return dfe->ftq_iter_ft(iter_idx);
+}
+
+FT* decoupled_fe_ftq_iter_next_ft(Decoupled_FE* dfe, uns iter_idx) {
+  return dfe->ftq_iter_next_ft(iter_idx);
+}
+
 /* Returns iter flattened offset from the start of the FTQ, this offset gets incremented
    by advancing the iter and decremented by the icache consuming FTQ entries,
    and reset by flushes */
@@ -437,6 +445,8 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
   // resuming from this address (rather than restarting at the misprediction).
   Op* alt_op = per_core_dfe[proc_id][MAIN_BP]->get_last_fetch_op();
   bp_recover_op(bp_data, cf_type, info);
+  if (bp_id == MAIN_BP)
+    tage2l_clear_stall(proc_id);  // the overriding branch was flushed with the younger path
   dfe_recover_op();
   switch (dfe_trigger_policy) {
     case PRIMARY_DFE:
@@ -519,6 +529,14 @@ void Decoupled_FE::update() {
     if (ftq.size() == ftq_max_size()) {
       DEBUG(proc_id, "[DFE%u] Break due to full FTQ\n", bp_id);
       STAT_EVENT(proc_id, FTQ_BREAK_FULL_FT_ONPATH + is_off_path_state());
+      break;
+    }
+    // tage2l: a second-level TAGE prediction overrode the first-level one;
+    // the front end is redirected when the late answer arrives, modeled as no
+    // new fetch targets until the second-level latency has elapsed.
+    if (bp_id == MAIN_BP && cycle_count < tage2l_stall_until(proc_id)) {
+      DEBUG(proc_id, "[DFE%u] Break due to tage2l override bubble\n", bp_id);
+      STAT_EVENT(proc_id, FTQ_BREAK_TAGE2L_OVERRIDE_ONPATH + is_off_path_state());
       break;
     }
     if (cfs_taken_this_cycle >= FE_FTQ_TAKEN_CFS_PER_CYCLE) {
@@ -705,7 +723,7 @@ Op* Decoupled_FE::ftq_iter_get(uns iter_idx, bool* end_of_ft) {
   // if FTQ is empty or if iter has seen all FTs
   if (ftq.empty() || iter->ft_pos == ftq.size()) {
     if (ftq.empty())
-      ASSERT(proc_id, iter[iter_idx].ft_pos == 0 && iter[iter_idx].op_pos == 0 && iter[iter_idx].flattened_op_pos == 0);
+      ASSERT(proc_id, iter->ft_pos == 0 && iter->op_pos == 0 && iter->flattened_op_pos == 0);
     return NULL;
   }
 
@@ -743,6 +761,20 @@ Op* Decoupled_FE::ftq_iter_get_next(uns iter_idx, bool* end_of_ft) {
     iter->flattened_op_pos++;
   }
   return ftq_iter_get(iter_idx, end_of_ft);
+}
+
+FT* Decoupled_FE::ftq_iter_ft(uns iter_idx) {
+  decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
+  return iter->ft_pos < ftq.size() ? ftq.at(iter->ft_pos) : nullptr;
+}
+
+FT* Decoupled_FE::ftq_iter_next_ft(uns iter_idx) {
+  decoupled_fe_iter* iter = ftq_iterators[iter_idx].get();
+  ASSERT(proc_id, iter->ft_pos < ftq.size());
+  iter->flattened_op_pos += ftq.at(iter->ft_pos)->ops.size() - iter->op_pos;
+  iter->ft_pos++;
+  iter->op_pos = 0;
+  return ftq_iter_ft(iter_idx);
 }
 
 uint64_t Decoupled_FE::ftq_iter_offset(uns iter_idx) {

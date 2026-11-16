@@ -171,6 +171,9 @@ typedef struct Bp_Data_struct {
   uns32 targ_index;
   uns8 target_bit_length;
 
+  struct Ittage_struct* ittage;            // ITTAGE tables, shared over all the BPs
+  struct Ittage_Hist_struct* ittage_hist;  // ITTAGE speculative history, per BP
+
   Flag on_path_pred;
 
   // used for next index computation at prediction in some BTB mechanisms
@@ -212,6 +215,7 @@ typedef enum Ibtb_Id_enum {
   TC_TAGLESS_IBTB,
   TC_TAGGED_IBTB,
   TC_HYBRID_IBTB,
+  ITTAGE_IBTB,
   NUM_IBTB,
 } Ibtb_Id;
 

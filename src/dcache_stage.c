@@ -53,6 +53,7 @@
 #include "cmp_model.h"
 #include "map.h"
 #include "model.h"
+#include "pcprof.h"
 #include "statistics.h"
 #include "thread.h"
 
@@ -74,8 +75,8 @@ static inline Flag dcache_stage_addr_unready(Op* op);
 static inline Flag dcache_stage_check_mem_type(Op* op);
 static inline void dcache_stage_remove_src_op(Stage_Data* src_sd, int ii);
 
-static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* line);
-static inline void dcache_cacheline_miss(Op* op, Addr line_addr);
+static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* line, Counter access_done);
+static inline void dcache_cacheline_miss(Op* op, Addr line_addr, Counter access_done);
 
 static inline void dcache_fill_wp_collect_stats(Dcache_Data* line, Mem_Req* req);
 static inline void dcache_hit_wp_collect_stats(Dcache_Data* line, Op* op);
@@ -130,6 +131,7 @@ void init_dcache_stage(uns8 proc_id, const char* name) {
   dc->sd.name = (char*)name;
   dc->sd.max_op_count = STAGE_MAX_OP_COUNT;
   dc->sd.ops = (Op**)malloc(sizeof(Op*) * STAGE_MAX_OP_COUNT);
+  init_list(&dc->miss_queue, "DC MISS", sizeof(Dcache_Miss), TRUE);
 
   /* initialize the cache structure */
   init_cache(&dc->dcache, "DCACHE", DCACHE_SIZE, DCACHE_ASSOC, DCACHE_LINE_SIZE, sizeof(Dcache_Data), DCACHE_REPL);
@@ -173,6 +175,13 @@ void recover_dcache_stage() {
       ASSERT(dc->proc_id, op->off_path);
       dc->sd.ops[ii] = NULL;
       dc->sd.op_count--;
+    }
+  }
+  for (List_Entry *e = dc->miss_queue.head, *next; e; e = next) {
+    next = e->next;
+    if (((Dcache_Miss*)&e->data)->op_num > bp_recovery_info->recovery_op_num) {
+      dc->miss_queue.current = e;
+      dl_list_remove_current(&dc->miss_queue);
     }
   }
   dc->idle_cycle = cycle_count + 1;
@@ -261,21 +270,6 @@ void update_dcache_stage(Stage_Data* src_sd) {
       continue;
     }
 
-    // OS_WAIT_MEM re-probe: the op already accessed the dcache and missed, and
-    // new_mem_req found no in-flight request to merge with and no free mem-request
-    // buffer. Re-looking-up the dcache can only re-derive the same known miss, so skip
-    // the port acquisition and the tag lookup entirely and go straight to retrying the
-    // mem request. A matching in-flight request that shows up later is still caught by
-    // new_mem_req's queue search inside the miss handler. Set OS_SCHEDULED first (as the
-    // fresh-access path below does) so the store-forward-hit case, which does not set
-    // op->state, leaves the op removable instead of resident.
-    if (op->state == OS_WAIT_MEM) {
-      ASSERT(dc->proc_id, op_get_dcache_cycle(op) != MAX_CTR);
-      op->state = OS_SCHEDULED;
-      dcache_cacheline_miss(op, get_cache_line_addr(&dc->dcache, op->oracle_info.va));
-      continue;
-    }
-
     /* check on the availability of a read port for the given bank */
     // banks interleave cache lines: the bank bits are the lowest order cache index bits
     uns bank = BANK(op->oracle_info.va, DCACHE_BANKS, DCACHE_LINE_SIZE);
@@ -337,12 +331,43 @@ void update_dcache_stage(Stage_Data* src_sd) {
     }
 
     if (line) {
-      dcache_cacheline_hit(op, line_addr, line);
+      dcache_cacheline_hit(op, line_addr, line, cycle_count + DCACHE_CYCLES);
       if (!op->off_path)
         dcache_hit_served_stat(op);
       continue;
     }
-    dcache_cacheline_miss(op, line_addr);
+    *(Dcache_Miss*)dl_list_add_tail(&dc->miss_queue) = (Dcache_Miss){op, op->op_num, line_addr};
+  }
+
+  /* A miss goes down once its lookup is done, DCACHE_CYCLES - 1 cycles after its access; a
+     fill meanwhile serves it. A miss that found no MSHR (OS_WAIT_MEM) stays and retries. */
+  for (List_Entry *e = dc->miss_queue.head, *next; e; e = next) {
+    next = e->next;
+    Dcache_Miss* miss = (Dcache_Miss*)&e->data;
+    Op* op = miss->op;
+    ASSERT(dc->proc_id, op->op_num == miss->op_num);
+    Counter access_done = op_get_dcache_cycle(op) + DCACHE_CYCLES;
+    if (cycle_count + 1 < access_done)
+      break;
+    Addr line_addr = 0;
+    Dcache_Data* line = NULL;
+    if (op->state == OS_WAIT_MEM) {
+      op->state = OS_SCHEDULED;
+      access_done = cycle_count + DCACHE_CYCLES;
+    } else {
+      line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va, &line_addr, TRUE);
+    }
+    if (line) {
+      dcache_cacheline_hit(op, line_addr, line, access_done);
+      if (!op->off_path)
+        dcache_hit_served_stat(op);
+    } else {
+      dcache_cacheline_miss(op, miss->line_addr, access_done);
+    }
+    if (op->state != OS_WAIT_MEM) {
+      dc->miss_queue.current = e;
+      dl_list_remove_current(&dc->miss_queue);
+    }
   }
 
   /* prefetcher update */
@@ -588,8 +613,8 @@ static inline void dcache_miss_extra_access(Op* op, Cache* cache, Addr line_addr
 }
 
 static inline Flag dcache_miss_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type mem_req_type) {
-  Flag sent = new_mem_req((mem_req_type), dc->proc_id, line_addr, DCACHE_LINE_SIZE,
-                          DCACHE_CYCLES - 1 + DCQ_TO_MLCQ_TRANSFER_LATENCY, op, dcache_fill_line, op->unique_num, 0);
+  Flag sent =
+      new_mem_req((mem_req_type), dc->proc_id, line_addr, DCACHE_LINE_SIZE, 0, op, dcache_fill_line, op->unique_num, 0);
   Node_Stage* node = &cmp_model.node_stage[dc->proc_id];
   if (sent && node->mem_blocked) {
     node->mem_blocked = FALSE;
@@ -599,7 +624,7 @@ static inline Flag dcache_miss_new_mem_req(Op* op, Addr line_addr, Mem_Req_Type 
   return sent;
 }
 
-static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* line) {
+static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* line, Counter access_done) {
   /* prefetching handle */
   if (PREF_FRAMEWORK_ON && (PREF_UPDATE_ON_WRONGPATH || !op->off_path)) {
     // if framework is on use new prefetcher. otherwise old one
@@ -636,7 +661,7 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
   }
 
   /* update cacheline state */
-  op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->uop->extra_ld_latency);
+  op_set_done_cycle(op, access_done + op->uop->extra_ld_latency);
   line->read_count[op->off_path] = line->read_count[op->off_path] + (op->uop->mem_type == MEM_LD);
   line->write_count[op->off_path] = line->write_count[op->off_path] + (op->uop->mem_type == MEM_ST);
   line->misc_state = (line->misc_state & 2) | op->off_path;
@@ -651,7 +676,7 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
   }
 }
 
-static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
+static inline void dcache_cacheline_miss(Op* op, Addr line_addr, Counter access_done) {
   if (op->uop->mem_type == MEM_ST)
     STAT_EVENT(op->proc_id, POWER_DCACHE_WRITE_MISS);
   else
@@ -673,8 +698,8 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
           STAT_EVENT(op->proc_id, DCACHE_ST_BUFFER_HIT_OFFPATH);
         }
 
-        op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->uop->extra_ld_latency);
-        op_set_wake_cycle(op, cycle_count + DCACHE_CYCLES + op->uop->extra_ld_latency);
+        op_set_done_cycle(op, access_done + op->uop->extra_ld_latency);
+        op_set_wake_cycle(op, access_done + op->uop->extra_ld_latency);
         map_wakeup_signal(op, REG_DATA_DEP, model->wake_hook);
         break;
       }
@@ -737,7 +762,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
       }
       op->state = OS_MISS;
       if (PREFS_DO_NOT_BLOCK_WINDOW || op->uop->mem_type == MEM_PF) {
-        op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->uop->extra_ld_latency);
+        op_set_done_cycle(op, access_done + op->uop->extra_ld_latency);
         op->state = OS_SCHEDULED;
       }
       break;
@@ -768,7 +793,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr) {
       }
       op->state = OS_MISS;
       if (STORES_DO_NOT_BLOCK_WINDOW) {
-        op_set_done_cycle(op, cycle_count + DCACHE_CYCLES + op->uop->extra_ld_latency);
+        op_set_done_cycle(op, access_done + op->uop->extra_ld_latency);
         op->state = OS_SCHEDULED;
       }
       break;
@@ -810,6 +835,16 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
     return data;
   }
 
+  /* A request issued while its line was resident fills it again: inserting it again would queue
+     a victim's writeback and then keep the victim (cache_insert reuses the line's own way). The
+     line is still made MRU, as the insert did. */
+  data = (Dcache_Data*)cache_access(&dc->dcache, req->addr, &line_addr, TRUE);
+  if (data) {
+    STAT_EVENT(dc->proc_id, DCACHE_FILL_RESIDENT);
+    req->dirty_l0 |= data->dirty;
+    return data;
+  }
+
   /*
    * Do not insert the line yet, just check which line we need to replace.
    * If that line is dirty, it's possible that we won't be able to insert the writeback into the memory system.
@@ -828,11 +863,15 @@ static inline Dcache_Data* dcache_fill_get_cacheline(Mem_Req* req) {
       ASSERT(dc->proc_id, repl_line_addr || data->fetched_by_offpath || data->HW_prefetched);
     }
     if (!new_mem_dc_wb_req(data->dirty ? MRT_WB : MRT_WB_NODIRTY, get_proc_id_from_cmp_addr(repl_line_addr),
-                           repl_line_addr, DCACHE_LINE_SIZE, 1, NULL, NULL, unique_count, TRUE))
+                           repl_line_addr, DCACHE_LINE_SIZE, 1, NULL, NULL, unique_count, TRUE)) {
+      STAT_EVENT(dc->proc_id, DCACHE_WB_REFUSED);
       return NULL;
+    }
     if (data->dirty) {
       STAT_EVENT(dc->proc_id, DCACHE_WB_REQ_DIRTY);
       STAT_EVENT(dc->proc_id, DCACHE_WB_REQ);
+    } else {
+      STAT_EVENT(dc->proc_id, DCACHE_WB_REQ_NODIRTY);
     }
   }
 
@@ -948,6 +987,8 @@ static inline void dcache_fill_process_cacheline(Mem_Req* req, Dcache_Data* data
       ASSERT(dc->proc_id, mt == MEM_ST || mt == MEM_PF || mt == MEM_WH);
     }
     op->state = OS_SCHEDULED;
+    if (PC_PROFILE)
+      pcprof_dcache_fill(op, req);
 
     if (op->uop->mem_type != MEM_ST) {
       op_set_wake_cycle(op, op_get_done_cycle(op));

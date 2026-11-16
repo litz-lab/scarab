@@ -59,6 +59,7 @@ Bp_Ibtb bp_ibtb_table [] = {
     { TC_TAGLESS_IBTB, "tc_tagless", bp_ibtb_tc_tagless_init, bp_ibtb_tc_tagless_pred, bp_ibtb_tc_tagless_update, bp_ibtb_tc_tagless_recover },
     { TC_TAGGED_IBTB,  "tc_tagged",  bp_ibtb_tc_tagged_init,  bp_ibtb_tc_tagged_pred,  bp_ibtb_tc_tagged_update,  bp_ibtb_tc_tagged_recover  },
     { TC_HYBRID_IBTB,  "tc_hybrid",  bp_ibtb_tc_hybrid_init,  bp_ibtb_tc_hybrid_pred,  bp_ibtb_tc_hybrid_update,  bp_ibtb_tc_hybrid_recover  },
+    { ITTAGE_IBTB,     "ittage",     bp_ibtb_ittage_init,     bp_ibtb_ittage_pred,     bp_ibtb_ittage_update,     bp_ibtb_ittage_recover     },
     { NUM_IBTB,        0,            NULL,                    NULL,                    NULL,                      NULL,                      }
 };
 

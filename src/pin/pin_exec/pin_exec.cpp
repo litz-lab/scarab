@@ -21,18 +21,24 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <elf.h>
 #include <fstream>
 #include <iostream>
 #include <signal.h>
+#include <sys/mman.h>
 #include <syscall.h>
 #include <unordered_map>
+#include <vector>
 
 #undef UNUSED
 #undef WARNING
 
 #include "pin.H"
 #ifdef ENABLE_PINPLAY
+#include <fcntl.h>
+#include <sstream>
 #include <sys/syscall.h>
+#include <unistd.h>
 
 #include "pinplay.H"
 #include "sde-init.H"
@@ -116,6 +122,58 @@ INT32 Usage() {
 }
 
 #ifdef ENABLE_PINPLAY
+// PinPlay restores the pinball's pages as rwx. Put the code segments back to r-x, so a
+// wrong-path store into code faults (and is handled) instead of changing the code.
+void protect_code_segments(THREADID, CONTEXT*, INT32, VOID*) {
+  for (IMG img = APP_ImgHead(); IMG_Valid(img); img = IMG_Next(img)) {
+    FILE* f = fopen(IMG_Name(img).c_str(), "rb");
+    if (!f)
+      continue;
+    Elf64_Ehdr eh;
+    std::vector<Elf64_Phdr> phdrs;
+    if (fread(&eh, sizeof eh, 1, f) == 1 && eh.e_phentsize == sizeof(Elf64_Phdr) &&
+        fseek(f, eh.e_phoff, SEEK_SET) == 0) {
+      phdrs.resize(eh.e_phnum);
+      phdrs.resize(fread(phdrs.data(), sizeof(Elf64_Phdr), eh.e_phnum, f));
+    }
+    fclose(f);
+    auto first = std::find_if(phdrs.begin(), phdrs.end(), [](const Elf64_Phdr& p) { return p.p_type == PT_LOAD; });
+    if (first == phdrs.end())
+      continue;
+    ADDRINT bias = IMG_LowAddress(img) - first->p_vaddr;
+    for (const Elf64_Phdr& p : phdrs) {
+      if (p.p_type != PT_LOAD || !(p.p_flags & PF_X) || (p.p_flags & PF_W))
+        continue;
+      ADDRINT lo = (bias + p.p_vaddr) & ~0xFFFUL;
+      ADDRINT hi = (bias + p.p_vaddr + p.p_memsz + 0xFFF) & ~0xFFFUL;
+      if (hi > lo)
+        mprotect((void*)lo, hi - lo, PROT_READ | PROT_EXEC);
+    }
+  }
+}
+
+// -replay:injection 0 runs the region's syscalls for real, but nullapp has none of the
+// recorded fds open. Reopen them from <basename>.fds ("<fd> <mode> <path> <offset>").
+void sync_fds() {
+  KNOB_BASE* basename = KNOB_BASE::FindKnob("replay:basename");
+  if (!basename || basename->NumberOfValues() == 0)
+    return;
+  std::ifstream in((basename->ValueString(0) + ".fds").c_str());
+  std::string line, mode, path;
+  int fd;
+  long long offset;
+  while (std::getline(in, line)) {
+    if (!(std::istringstream(line) >> fd >> mode >> path >> offset) || fd <= 2)
+      continue;
+    int src = open(path.c_str(), mode == "r" ? O_RDONLY : O_RDWR);
+    if (src < 0 || dup2(src, fd) < 0 || lseek(fd, offset, SEEK_SET) != offset) {
+      *out << "ERROR: sync_fds: fd " << fd << " " << path << " errno=" << errno << endl;
+      PIN_ExitProcess(1);
+    }
+    close(src);
+  }
+}
+
 void sync_fs_base(THREADID tid, CONTEXT* ctxt, INT32, VOID*) {
   ADDRINT fsb = 0;
   PIN_GetContextRegval(ctxt, REG_SEG_FS_BASE, (UINT8*)&fsb);
@@ -342,6 +400,7 @@ int main(int argc, char* argv[]) {
   PIN_InitSymbols();
   sde_pin_init(argc, argv);
   sde_init();
+  sync_fds();
 #else
   if(PIN_Init(argc, argv)) {
     return Usage();
@@ -404,6 +463,7 @@ int main(int argc, char* argv[]) {
   scarab = new Client(KnobSocketPath, KnobCoreId);
 
 #ifdef ENABLE_PINPLAY
+  PIN_AddThreadStartFunction(protect_code_segments, 0);
   PIN_AddThreadStartFunction(sync_fs_base, 0);
   PIN_AddSyscallEntryFunction(sync_brk_entry, 0);
   PIN_AddSyscallExitFunction(sync_brk_exit, 0);

@@ -354,6 +354,7 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
 
   memset(btb_pred_info, 0, sizeof(*btb_pred_info));
   btb_pred_info->no_target = TRUE;
+  btb_pred_info->ibp_miss = TRUE;
 
   if (!op->uop->cf_type)
     return;
@@ -449,9 +450,8 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   if (ENABLE_IBP && (op->uop->cf_type == CF_IBR || op->uop->cf_type == CF_ICALL)) {
     Addr ibp_target = bp_data->bp_ibtb->pred_func(bp_data, op);
     if (ibp_target) {
-      btb_pred_info->pred_target = ibp_target;
+      btb_pred_info->ibp_target = convert_to_cmp_addr(bp_data->proc_id, ibp_target);
       btb_pred_info->no_target = FALSE;
-      btb_pred_info->btb_pred_latency = BTB_MAIN_LATENCY;
       btb_pred_info->ibp_miss = FALSE;
       STAT_EVENT_IBTB_OUTCOME(op, ALL_IBTB, ibp_target == op->oracle_info.target);
     } else {

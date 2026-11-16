@@ -44,7 +44,7 @@
 # BTB model to use.
 --btb_mech                      generic
 --btb_entries                   12288
---btb_assoc                     4
+--btb_assoc                     3                         # 4096 sets; entries / assoc must be a power of two
 --btb_main_latency              3
 --btb_l0_present                1
 --btb_l0_entries                256
@@ -52,7 +52,7 @@
 --btb_l0_latency                1
 --btb_l1_present                1
 --btb_l1_entries                5120
---btb_l1_assoc                  4
+--btb_l1_assoc                  5                         # 1024 sets
 --btb_l1_latency                2
 
 # Allow the BTB to be updated by off path ops.

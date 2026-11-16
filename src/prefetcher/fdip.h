@@ -34,6 +34,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#include "prefetcher/pref_common.h"
 
 void alloc_mem_fdip(uns numProcs, uns numBPs);
 void init_fdip(uns proc_id, uns bp_id, Icache_Stage* ic);
@@ -67,6 +68,8 @@ Flag fdip_search_pref_candidate(Addr addr);
 void assert_fdip_break_reason(Addr line_addr);
 Op* fdip_get_cur_op();
 Counter fdip_get_last_recover_cycle();
+void fdip_pref_issued(uns proc_id, uns bp_id, Addr line_addr, Flag off_path, Flag conf_off_path,
+                      Pref_Issue_Result result);
 #ifdef __cplusplus
 }
 #endif

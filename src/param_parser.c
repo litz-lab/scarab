@@ -791,6 +791,47 @@ uns get_param_file_args_and_command_line_args(char*** arg_list_ptr, int argc, ch
   return param_file_arg_count + argc; /*Return the total number of args in the arg_list*/
 }
 
+/**************************************************************************************/
+/* Run-time window preset (window_scale): see core.param.def. It rewrites the list-valued
+   rs_sizes and the scalar window knobs after every param is read, so one binary and one PARAMS
+   file cover every window size. The installed values replace the original ones in PARAMS.out. */
+
+static void preset_set_string(Param_Record used_params[], int idx, char** variable, const char* value) {
+  *variable = strdup(value);
+  track_param_strdup(*variable);
+  used_params[idx].used = TRUE;
+  snprintf(used_params[idx].optarg, sizeof(used_params[idx].optarg), "%s", value);
+}
+
+static void preset_set_uns(Param_Record used_params[], int idx, uns* variable, uns value) {
+  *variable = value;
+  used_params[idx].used = TRUE;
+  snprintf(used_params[idx].optarg, sizeof(used_params[idx].optarg), "%u", value);
+}
+
+static void apply_window_scale(Param_Record used_params[]) {
+  if (WINDOW_SCALE == 1)
+    return;
+  ASSERTM(0, WINDOW_SCALE > 1, "--window_scale must be >= 1\n");
+
+  char in[MAX_STR_LENGTH + 1], out[MAX_STR_LENGTH + 1];
+  snprintf(in, sizeof(in), "%s", RS_SIZES);
+  size_t pos = 0;
+  for (char* tok = strtok(in, DELIMITERS); tok; tok = strtok(NULL, DELIMITERS)) {
+    int len = snprintf(out + pos, sizeof(out) - pos, "%s%llu", pos ? " " : "",
+                       (unsigned long long)strtoull(tok, NULL, 10) * WINDOW_SCALE);
+    ASSERTM(0, len > 0 && pos + len < sizeof(out), "window_scale: rs_sizes too long\n");
+    pos += len;
+  }
+  preset_set_string(used_params, PARAM_ENUM_rs_sizes, &RS_SIZES, out);
+  preset_set_uns(used_params, PARAM_ENUM_node_table_size, &NODE_TABLE_SIZE, NODE_TABLE_SIZE * WINDOW_SCALE);
+  preset_set_uns(used_params, PARAM_ENUM_load_queue_entry_num, &LOAD_QUEUE_ENTRY_NUM,
+                 LOAD_QUEUE_ENTRY_NUM * WINDOW_SCALE);
+  preset_set_uns(used_params, PARAM_ENUM_store_queue_entry_num, &STORE_QUEUE_ENTRY_NUM,
+                 STORE_QUEUE_ENTRY_NUM * WINDOW_SCALE);
+  preset_set_uns(used_params, PARAM_ENUM_dcache_mshrs, &DCACHE_MSHRS, DCACHE_MSHRS * WINDOW_SCALE);
+}
+
 char** get_params(int argc, char* argv[]) {
   uns arg_list_count;                   /*Count of all args and values in the arg_list (like argc
                                            for the command line)*/
@@ -832,6 +873,8 @@ char** get_params(int argc, char* argv[]) {
         FATAL_ERROR(0, "Unknown command-line option found (index:%u).\n", index);
     }
   }
+
+  apply_window_scale(used_params);
 
   // Set global size variables.
   NUM_RS = num_tokens(RS_SIZES, DELIMITERS);

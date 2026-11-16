@@ -109,9 +109,10 @@ typedef struct Uncore_struct {
   Ported_Cache* mlc;
   Ported_Cache* l1;
   /* The core's L1 caches are its own, so are their MSHR files: L1I and L1D misses
-     waiting at the MLC, and L1D writebacks. */
+     waiting at the MLC, and each cache's writebacks. */
   Mshr icache_mshr;
   Mshr dcache_mshr;
+  Mshr icache_wb;
   Mshr dcache_wb;
   uns num_outstanding_l1_accesses;
   uns num_outstanding_l1_misses;
@@ -185,6 +186,9 @@ typedef struct Pref_Req_Info_Struct {
   /* The prefetcher already looked this line up in dest's cache and missed, so the
      request is born one level below, holding an MSHR at dest. */
   Flag probed;
+  /* An FDIP prefetch: the path and branch history of the walk that queued it. */
+  Flag fdip_off_path;
+  uns32 fdip_ghist;
 } Pref_Req_Info;
 
 typedef enum L1_Dyn_Partition_Policy_enum {
@@ -228,6 +232,8 @@ void mem_clear_crit_path(void);
 Flag mem_pref_probe(uns8 proc_id, Destination dest, Addr line_addr, Flag update_repl, Flag* hit);
 void print_mshr_files(void);
 Flag new_mem_dc_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
+                       Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath);
+Flag new_mem_ic_wb_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay, Op* op,
                        Flag done_func(Mem_Req*), Counter unique_num, Flag used_onpath);
 Flag mlc_fill_line(Mem_Req* req);
 Flag l1_fill_line(Mem_Req* req);

@@ -174,6 +174,9 @@ typedef struct ctype_pin_inst_struct {
   uint8_t scarab_marker_roi_begin : 1;
   // used to flag scarab marker roi begin
   uint8_t scarab_marker_roi_end : 1;
+  // set by MEMTRACE frontend on synthetic gap-patch-jmp / ctx-switch-barrier records to
+  // exclude them from trace_fe.cc's pc_to_inst cache
+  uint8_t is_trace_patch : 1;
 } __attribute__((packed)) ctype_pin_inst;
 
 typedef ctype_pin_inst compressed_op;

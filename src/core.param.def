@@ -182,6 +182,12 @@ DEF_PARAM(fu_types, FU_TYPES, char*, string, "0, 0, 0, 0", )
 DEF_PARAM(lsq_enable, LSQ_ENABLE, Flag, Flag, TRUE, )
 DEF_PARAM(load_queue_entry_num, LOAD_QUEUE_ENTRY_NUM, uns, uns, 128, )
 DEF_PARAM(store_queue_entry_num, STORE_QUEUE_ENTRY_NUM, uns, uns, 72, )
+/* --window_scale N multiplies the instruction window after every param is read: ROB
+ * (node_table_size), every RS size (rs_sizes), load queue, store queue and outstanding dcache
+ * misses (dcache_mshrs). 1 changes nothing; 4 on golden_cove gives ROB 2048, RS 388 280 76,
+ * LQ 512, SQ 288 and 128 dcache MSHRs. rs_sizes is a list, so it cannot be scaled through a
+ * single command-line value; PARAMS.out shows the installed values. */
+DEF_PARAM(window_scale, WINDOW_SCALE, uns, uns, 1, )
 
 /********FRONT END STAGE
  * LATENCIES****************************************************/

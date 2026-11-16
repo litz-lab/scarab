@@ -85,13 +85,18 @@ class TraceReaderMemtrace : public TraceReader {
   int mt_mem_ops_ = 0;
   uint64_t mt_seq_ = 0;
   uint32_t mt_prior_isize_ = 0;
+  int64_t mt_pending_syscall_ = -1;  // syscall marker value waiting for the next instruction
   InstInfo mt_info_a_ = {};
   InstInfo mt_info_b_ = {};
   bool mt_using_info_a_ = true;
   ctype_pin_inst gap_patch_jmp_ = {};
+  /// Synthetic fetch barrier substituted for the instruction preceding a
+  /// pid/tid change in a core-sharded trace.  See getNextInstruction__().
+  ctype_pin_inst ctx_switch_barrier_ = {};
   // Static info per instruction PC, decoded once. Per reader: each core's trace has its own address space.
   std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, ctype_pin_inst>> ctype_inst_map_ = {};
   uint64_t mt_warn_target_ = 0;
+  uint64_t mt_ctx_switches_ = 0;
 };
 
 #endif

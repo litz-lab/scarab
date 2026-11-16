@@ -546,7 +546,23 @@ class TAGE64K {
   void Tagepred(UINT64 PC);
   void UpdateAddr(UINT64 PC, long long path_history, cbp64_folded_history* index, cbp64_folded_history* tag0,
                   cbp64_folded_history* tag1);
-  bool GetPrediction(UINT64 PC, int* bp_confidence, Op* op);
+  bool GetPrediction(UINT64 PC, int* bp_confidence, Op* op, uns bp_id = 0);
+  bool GetPredictionImpl(UINT64 PC, int* bp_confidence, Op* op, bool stats);
+  // tage2l second level
+  struct L2Entry {
+    uint64_t key = 0;
+    uint64_t pc = 0;
+    uint64_t lru = 0;
+    int8_t ctr = 0;
+    int8_t u = 0;
+    bool valid = false;
+  };
+  void L2Init();
+  uint32_t L2Set(uint64_t key) const;
+  L2Entry* L2Find(uint64_t key);
+  void L2Insert(uint64_t key, const cbp64_gentry& e);
+  void L2WriteBack(int bank, int slot, uint newtag);
+  int L2Promote(bool stat_on, uns proc_id);
   void HistoryUpdate(UINT64 PC, OpType opType, bool taken, UINT64 target);
   void SavePredictorStates(Counter key);
   void TakeCheckpoint(Counter key);
@@ -623,6 +639,11 @@ class TAGE64K {
   std::vector<cbp64_gentry> gtable_low = {};   // N: backing storage for short-history TAGE tables
   std::vector<cbp64_gentry> gtable_high = {};  // N: backing storage for long-history TAGE tables
   cbp64_gentry* gtable[NHIST + 1] = {};        // N: tagged TAGE tables (non-owning row pointers)
+  int logg_tagged = LOGG;                      // log2 entries per bank (LOGG + tage_size_log_scale)
+  std::vector<L2Entry> l2 = {};                // tage2l second-level store (empty when disabled)
+  uint32_t l2_sets = 0;
+  uint32_t l2_assoc = 0;
+  uint64_t l2_clock = 0;
 
   // utility variables
   int TICK = 0;  // N: for the reset of the u counter

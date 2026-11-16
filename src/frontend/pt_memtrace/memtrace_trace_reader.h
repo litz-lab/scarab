@@ -83,6 +83,10 @@ class TraceReader {
   const returnValue findPC(bufferEntry& ref, uint64_t _pc);
   const returnValue peekInstructionAtIndex(uint32_t idx, bufferEntry& ref);
   bufferEntry bufferStart();
+  /// True for a core-sharded trace, i.e. one file holding every thread that the
+  /// scheduler placed on a single core, interleaved and separated by context
+  /// switches.  Thread-sharded traces (one file per thread) return false.
+  bool isCoreSharded() const { return is_core_sharded_; }
 
  private:
   virtual const InstInfo* getNextInstruction() = 0;
@@ -98,6 +102,7 @@ class TraceReader {
   InstInfo invalid_info_ = {};
   bool trace_ready_ = false;
   bool has_trace_encodings_ = false;
+  bool is_core_sharded_ = false;
   xed_state_t xed_state_ = {};
   std::vector<std::tuple<uint64_t, uint64_t, uint8_t*>> sections_ = {};
   std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, std::unique_ptr<xed_decoded_inst_t>>> xed_map_ = {};

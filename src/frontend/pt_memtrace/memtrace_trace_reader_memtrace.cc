@@ -38,6 +38,7 @@
 #include "compressed_file_reader.h"
 #include "directory_iterator.h"
 #include "file_reader.h"
+#include "lz4_file_reader.h"
 #include "snappy_file_reader.h"
 #include "zipfile_file_reader.h"
 
@@ -300,13 +301,17 @@ TraceReaderMemtrace::TraceReaderMemtrace(const std::string& _trace, uint32_t _bu
       mt_seq_(0),
       mt_prior_isize_(0),
       mt_using_info_a_(true),
-      mt_warn_target_(0) {
+      mt_warn_target_(0),
+      mt_ctx_switches_(0) {
   init(_trace);
 }
 
 TraceReaderMemtrace::~TraceReaderMemtrace() {
   if (mt_warn_target_ > 0) {
     warn("Set %lu conditional branches to 'not-taken' due to pid/tid gaps\n", mt_warn_target_);
+  }
+  if (mt_ctx_switches_ > 0) {
+    warn("Patched %lu thread switches with a fetch barrier (core-sharded trace)\n", mt_ctx_switches_);
   }
 }
 
@@ -345,12 +350,16 @@ static std::unique_ptr<reader_t> create_trace_reader(const std::string& path, in
         return std::unique_ptr<reader_t>(new snappy_file_reader_t(path, verbosity));
       if (ends_with(fname, ".zip"))
         return std::unique_ptr<reader_t>(new zipfile_file_reader_t(path, verbosity));
+      if (ends_with(fname, ".lz4"))
+        return std::unique_ptr<reader_t>(new lz4_file_reader_t(path, verbosity));
     }
   } else {
     if (ends_with(path, ".sz"))
       return std::unique_ptr<reader_t>(new snappy_file_reader_t(path, verbosity));
     if (ends_with(path, ".zip"))
       return std::unique_ptr<reader_t>(new zipfile_file_reader_t(path, verbosity));
+    if (ends_with(path, ".lz4"))
+      return std::unique_ptr<reader_t>(new lz4_file_reader_t(path, verbosity));
   }
   return std::unique_ptr<reader_t>(new compressed_file_reader_t(path, verbosity));
 }
@@ -404,6 +413,13 @@ bool TraceReaderMemtrace::initTrace() {
   }
 
   trace_has_encodings_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ENCODINGS;
+  // A core-sharded file holds every thread the scheduler placed on one core.
+  // Scarab then simulates the whole core, including the context switches,
+  // rather than filtering the file down to the first thread it sees.
+  is_core_sharded_ = type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_CORE_SHARDED;
+  if (is_core_sharded_) {
+    warn("Core-sharded trace (filetype 0x%lx): simulating all threads on this core.\n", (unsigned long)type);
+  }
   if (type & dynamorio::drmemtrace::OFFLINE_FILE_TYPE_ARCH_REGDEPS) {
     dr_isa_mode_t dummy;
     dr_set_isa_mode(dcontext_, DR_ISA_REGDEPS, &dummy);
@@ -443,6 +459,11 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
     mt_use_next_ref_ = true;
   }
   while (!reader_at_eof_) {
+    // Remember syscall-number markers (emitted right after the syscall gateway
+    // instruction) so the next instruction can carry them; the FSM ignores markers.
+    if (mt_ref_.marker.type == dynamorio::drmemtrace::TRACE_TYPE_MARKER &&
+        mt_ref_.marker.marker_type == dynamorio::drmemtrace::TRACE_MARKER_TYPE_SYSCALL)
+      mt_pending_syscall_ = (int64_t)mt_ref_.marker.marker_value;
     // there can be mt_ref types other than inst and mem
     // the FSM will skip those if they appear within MTState::INST state
     switch (mt_state_) {
@@ -456,6 +477,8 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
           } else {
             processInst(_info, &probe.instr);
           }
+          _info->syscall_before = mt_pending_syscall_;
+          mt_pending_syscall_ = -1;
           if (mt_mem_ops_ > 0) {
             mt_state_ = MTState::MEM1;
           } else {
@@ -473,6 +496,8 @@ bool TraceReaderMemtrace::getNextInstruction__(InstInfo* _info, InstInfo* _prior
           *_info = *_prior;
           // flag this instruction as non-fetched
           _info->fetched_instruction = false;
+          _info->syscall_before = mt_pending_syscall_;
+          mt_pending_syscall_ = -1;
           // mt_mem_ops_ set by the first rep occurance
           if (mt_mem_ops_ > 0) {
             mt_state_ = MTState::MEM1;
@@ -561,13 +586,19 @@ PATCH_REP:
     bool is_rep = (ctype_prior_iter != ctype_inst_map_.end()) ? std::get<MAP_REP>(ctype_prior_iter->second) : false;
     bool non_seq = _info->pc != (_prior->pc + prior_isize);
 
-    if (_prior->taken) {  // currently set iif branch
-      bool new_gid = (_prior->tid != _info->tid) || (_prior->pid != _info->pid);
-      if (new_gid) {
-        // TODO(granta): If there are enough of these, it may make sense to
-        // delay conditional branch instructions until the thread resumes even
-        // though this alters the apparent order of the trace.
-        // (Seeking ahead to resolve the branch info is a non-starter.)
+    bool new_gid = _prior->pc && ((_prior->tid != _info->tid) || (_prior->pid != _info->pid));
+
+    if (new_gid && !is_core_sharded_) {
+      // Not core-sharded: memtrace_trace_read() drops every instruction that
+      // does not belong to the first thread it saw, so the other thread's
+      // instructions never reach the core and _prior is in fact followed by its
+      // own next instruction.  Keep the historical behaviour of calling the
+      // branch not-taken.
+      // TODO(granta): If there are enough of these, it may make sense to delay
+      // conditional branch instructions until the thread resumes even though
+      // this alters the apparent order of the trace.  (Seeking ahead to resolve
+      // the branch info is a non-starter.)
+      if (_prior->taken) {
         if (mt_warn_target_ == 0) {
           warn(
               "Detected a conditional branch preceding a pid/tid change "
@@ -578,6 +609,64 @@ PATCH_REP:
         mt_warn_target_++;
         non_seq = false;
       }
+      new_gid = false;
+    }
+
+    if (new_gid) {
+      // Core-sharded trace: the scheduler switched threads between _prior and
+      // _info, so the next PC belongs to a different thread and bears no
+      // control-flow relation to _prior.  This is an asynchronous redirect,
+      // not a branch, and it cannot be expressed as one: leaving _prior as a
+      // not-taken branch whose next address is another thread's PC makes the
+      // branch-recovery address disagree with the fetch target queue
+      // (decoupled_frontend.cc ASSERT on recovery_fetch_addr).
+      //
+      // Model it the way the Pin frontend models exceptions
+      // (pin_exec/main_loop.cc): substitute a fetch barrier whose next address
+      // is the resume PC.  CF_SYS gets a no-mispredict, oracle-npc,
+      // flush-at-decode path in bp_predict_op(), which is precisely a context
+      // switch, and it consults no BTB entry, so the switch does not pollute
+      // branch prediction state.  FT_BAR_FETCH then permits the following
+      // fetch target to start at an arbitrary PC (see FT::get_end_reason and
+      // the FT_BAR_FETCH case of the FT continuity check).
+      //
+      // Note bar_type BAR_FETCH is only legal together with CF_SYS: bp.c
+      // asserts !(bar_type & BAR_FETCH) on every non-CF_SYS control flow op.
+      ctx_switch_barrier_ = create_dummy_jump(_prior->pc, _info->pc, XED_ICLASS_SYSCALL);
+      // create_dummy_jump() hardcodes a 5-byte size.  Keep the real size so the
+      // barrier's fall-through (addr + inst_size) stays the true fall-through:
+      // the FT continuity check accepts it as an alternative to npc, and the
+      // icache/fetch-boundary logic works in real instruction bytes.
+      ctx_switch_barrier_.size = prior_isize;
+      // create_dummy_jump() marks its product a fake instruction; this one is a
+      // real instruction whose semantics are being replaced, not wrong-path
+      // filler, so clear that and the reason with it.
+      ctx_switch_barrier_.fake_inst = 0;
+      ctx_switch_barrier_.fake_inst_reason = WPNM_NOT_IN_WPNM;
+      ctx_switch_barrier_.is_trace_patch = 1;
+      ctx_switch_barrier_.cf_type = CF_SYS;
+      ctx_switch_barrier_.is_ifetch_barrier = 1;
+      strcpy(ctx_switch_barrier_.pin_iclass, "CTX_SWITCH");
+      _prior->info = &ctx_switch_barrier_;
+      _prior->taken = true;
+      _prior->mem_addr[0] = 0;
+      _prior->mem_addr[1] = 0;
+      _prior->mem_used[0] = false;
+      _prior->mem_used[1] = false;
+      _prior->mem_is_rd[0] = false;
+      _prior->mem_is_rd[1] = false;
+      _prior->mem_is_wr[0] = false;
+      _prior->mem_is_wr[1] = false;
+      _prior->is_dr_ins = false;
+      if (mt_ctx_switches_ == 0) {
+        warn(
+            "Core-sharded trace: patching thread switch at seq. %lu (tid %lu pc "
+            "0x%lx -> tid %lu pc 0x%lx) with a fetch barrier. Suppressing "
+            "further messages.\n",
+            mt_seq_ - 1, (unsigned long)_prior->tid, _prior->pc, (unsigned long)_info->tid, _info->pc);
+      }
+      mt_ctx_switches_++;
+    } else if (_prior->taken) {  // currently set iif branch
       // non_seq tells us whether the branch was taken for conditional branches.
       // Unconditional branches are always taken even if the target equals fall-through.
       if (_prior->info && _prior->info->cf_type != CF_CBR && _prior->info->cf_type != CF_REP)
@@ -599,6 +688,7 @@ PATCH_REP:
     } else if (_prior->pc && non_seq &&
                (!is_rep || (_prior->pc != _info->pc && (_prior->pc + prior_isize) != _info->pc))) {
       gap_patch_jmp_ = create_dummy_jump(_prior->pc, _info->pc, XED_ICLASS_JMP);
+      gap_patch_jmp_.is_trace_patch = 1;
       _prior->info = &gap_patch_jmp_;
       _prior->target = _info->pc;
       _prior->taken = true;

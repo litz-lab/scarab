@@ -76,6 +76,15 @@ Addr bp_ibtb_tc_hybrid_pred(Bp_Data*, Op*);
 void bp_ibtb_tc_hybrid_update(Bp_Data*, Op*);
 void bp_ibtb_tc_hybrid_recover(Bp_Data*, Recovery_Info*);
 
+/* ITTAGE (bp/ittage.c) */
+void bp_ibtb_ittage_init(Bp_Data*, Bp_Data*);
+Addr bp_ibtb_ittage_pred(Bp_Data*, Op*);
+void bp_ibtb_ittage_update(Bp_Data*, Op*);
+void bp_ibtb_ittage_recover(Bp_Data*, Recovery_Info*);
+void bp_ittage_checkpoint(Bp_Data*, Op*);
+void bp_ittage_spec_update(Bp_Data*, Op*, const Bp_Pred_Info*);
+void bp_ittage_sync(Bp_Data*, Bp_Data*);
+
 /**************************************************************************************/
 
 #endif /* #ifndef __BP_TARG_MECH_H__ */

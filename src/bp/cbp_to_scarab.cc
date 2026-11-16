@@ -113,7 +113,8 @@ uns8 CBP_To_Scarab_Intf<TAGE64K>::pred(Op* op, Bp_Pred_Level pred_level) {
   if (op->off_path)
     if (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON)
       return op->oracle_info.dir;
-  uns8 pred = cbp_predictors_all_cores.at(proc_id).at(bp_id)->GetPrediction(op->inst->addr, &op->bp_confidence, op);
+  uns8 pred =
+      cbp_predictors_all_cores.at(proc_id).at(bp_id)->GetPrediction(op->inst->addr, &op->bp_confidence, op, bp_id);
 
   return pred;
 }

@@ -772,6 +772,13 @@ uint32_t TraceReaderMemtrace::add_dependency_info(ctype_pin_inst* info, instr_t*
     }
   }
 
+  /* REGDEPS carries arithmetic flags only as read/write bits; model them as the ZPS flags reg. */
+  uint arith_flags = instr_get_arith_flags(drinst, DR_QUERY_DEFAULT);
+  if (TESTANY(EFLAGS_READ_ARITH, arith_flags) && info->num_src_regs < MAX_SRC_REGS_NUM)
+    add_reg(info, SRC_REGS, SCARAB_REG_ZPS);
+  if (TESTANY(EFLAGS_WRITE_ARITH, arith_flags) && info->num_dst_regs < MAX_DST_REGS_NUM)
+    add_reg(info, DST_REGS, SCARAB_REG_ZPS);
+
   return max_op_width;
 }
 

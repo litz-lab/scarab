@@ -42,6 +42,9 @@ static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS][MAX_NUM_BPS];
 static bool off_path_mode[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
 static uint64_t off_path_addr[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
 static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst[MAX_NUM_PROCS];
+extern "C" uint64_t leak_probe_pc_to_inst(void) {
+  return pc_to_inst[0].size();
+}
 
 /* Per-core circular buffer state */
 struct TraceBufState {

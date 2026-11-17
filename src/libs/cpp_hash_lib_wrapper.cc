@@ -97,6 +97,11 @@ Static_Inst_Info* cpp_static_inst_access_create(int core, uint64_t addr, uint64_
 
 // Per-uop static info: keyed by {addr, binary, op_idx, mem_shape, cf_type}.
 std::unordered_map<inst_key, Static_Op_Info, inst_hash_fn> per_core_static_op_map[MAX_NUM_PROCS];
+extern "C" void leak_probe_inst_maps(uint64_t* inst, uint64_t* sinst, uint64_t* sop) {
+  *inst = per_core_hash_map[0].size();
+  *sinst = per_core_static_inst_map[0].size();
+  *sop = per_core_static_op_map[0].size();
+}
 
 Static_Op_Info* cpp_static_op_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes,
                                             uint8_t op_idx, uint16_t mem_shape, uint8_t cf_type,

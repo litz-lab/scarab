@@ -64,6 +64,7 @@
 #include "dumb_model.h"
 #include "freq.h"
 #include "lookahead_buffer.h"
+#include "map.h"
 #include "model.h"
 #include "op_pool.h"
 #include "optimizer2.h"
@@ -290,6 +291,33 @@ static inline void check_heartbeat(uns8 proc_id, Flag final) {
         fprintf(mystdout, "%lld ", USE_FETCHED_COUNT ? inst_count_fetched[proc_id] : inst_count[proc_id]);
       }
       fprintf(mystdout, "} -- %.2f KIPS (%.2f KIPS)\n", int_khz, cum_khz);
+      {  // leak probe
+        extern uns op_pool_entries, op_pool_active_ops;
+        extern uns64 leak_probe_dyn_inst_live, leak_probe_fake_si_mallocs, leak_probe_ft_objects;
+        extern uint64_t leak_probe_ctype_map_size;
+        extern void leak_probe_inst_maps(uint64_t*, uint64_t*, uint64_t*);
+        extern uint64_t leak_probe_pc_to_inst(void);
+        extern int leak_probe_branch_pc_stats(void);
+        uint64_t n_inst = 0, n_sinst = 0, n_sop = 0;
+        leak_probe_inst_maps(&n_inst, &n_sinst, &n_sop);
+        fprintf(mystdout,
+                "** LeakProbeMaps: inst_info %lu static_inst %lu static_op %lu ctype_map %lu pc_to_inst %lu "
+                "branch_pc_stats %d oracle_mem_hash %d\n",
+                n_inst, n_sinst, n_sop, leak_probe_ctype_map_size, leak_probe_pc_to_inst(),
+                leak_probe_branch_pc_stats(), map_data ? map_data->oracle_mem_hash.count : -1);
+        long rss_pages = 0, vm_pages = 0;
+        FILE* statm = fopen("/proc/self/statm", "r");
+        if (statm) {
+          if (fscanf(statm, "%ld %ld", &vm_pages, &rss_pages) != 2)
+            rss_pages = 0;
+          fclose(statm);
+        }
+        fprintf(mystdout,
+                "** LeakProbe: rss_mb %ld op_pool_entries %u op_pool_active %u dyn_inst_live %llu ft_objects %llu "
+                "fake_si_mallocs %llu\n",
+                rss_pages * 4096 / (1024 * 1024), op_pool_entries, op_pool_active_ops, leak_probe_dyn_inst_live,
+                leak_probe_ft_objects, leak_probe_fake_si_mallocs);
+      }
       fflush(mystdout);
       heartbeat_last_time = cur_time;
       heartbeat_last_cycle_count = cycle_count;

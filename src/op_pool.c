@@ -115,9 +115,11 @@ void reset_op_pool() {
    (mirrors the op pool's reuse pattern). The instance is released when its eom uop is freed. */
 
 static Dynamic_Inst* dyn_inst_free_list = NULL;
+uns64 leak_probe_dyn_inst_live = 0, leak_probe_fake_si_mallocs = 0;
 
 Dynamic_Inst* alloc_dyn_inst(void) {
   Dynamic_Inst* di = dyn_inst_free_list;
+  leak_probe_dyn_inst_live++;
   if (di) {
     dyn_inst_free_list = di->free_list_next;
     memset(di, 0, sizeof(*di));
@@ -135,6 +137,7 @@ void dyn_inst_attach(Dynamic_Inst* di, Op* op) {
 
 void free_dyn_inst(Dynamic_Inst* di) {
   ASSERT(0, di);
+  leak_probe_dyn_inst_live--;
   di->free_list_next = dyn_inst_free_list;
   dyn_inst_free_list = di;
 }
@@ -152,6 +155,7 @@ Static_Inst_Info* alloc_fake_static_inst(void) {
     fake_static_inst_free_list = si->free_list_next;
   } else {
     si = (Static_Inst_Info*)malloc(sizeof(*si));
+    leak_probe_fake_si_mallocs++;
   }
   return si;
 }

@@ -990,7 +990,10 @@ void TraceReaderMemtrace::fill_in_basic_info(ctype_pin_inst* info, instr_t* drin
   info->scarab_marker_roi_end = false;
 }
 
+extern "C" uint64_t leak_probe_ctype_map_size;
+uint64_t leak_probe_ctype_map_size = 0;
 void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem, instr_t* predecoded) {
+  leak_probe_ctype_map_size = ctype_inst_map_.size();
   assert(mt_ref_.instr.size);
   bool unknown_type, cond_branch;
   _info->pc = mt_ref_.instr.addr;

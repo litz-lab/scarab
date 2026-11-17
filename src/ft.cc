@@ -100,11 +100,15 @@ void FT::reinit(uns _proc_id, uns _bp_id) {
 }
 
 static FT* ft_free_list = nullptr;
+extern "C" uns64 leak_probe_ft_objects;
+uns64 leak_probe_ft_objects = 0;
 
 FT* alloc_ft(uns proc_id, uns bp_id) {
   FT* ft = ft_free_list;
-  if (!ft)
+  if (!ft) {
+    leak_probe_ft_objects++;
     return new FT(proc_id, bp_id);
+  }
   ft_free_list = ft->pool_next;
   ft->reinit(proc_id, bp_id);
   return ft;

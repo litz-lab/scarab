@@ -105,6 +105,10 @@ extern List op_buf;
 extern uns operating_mode;
 
 static Hash_Table branch_pc_stats_table;
+int leak_probe_branch_pc_stats(void);
+int leak_probe_branch_pc_stats(void) {
+  return branch_pc_stats_table.count;
+}
 static Flag branch_pc_stats_inited = FALSE;
 
 static void init_branch_pc_stats(void) {

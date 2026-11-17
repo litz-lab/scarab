@@ -70,6 +70,7 @@ typedef struct Bp_Pred_Info_struct {
   uns opc_index;
 
   int8 off_path_reason;  // reason this op will cause a recovery (Off_Path_Reason enum)
+  Addr crs_target;       // return-stack target popped by the first level that predicted this op (CF_RET/CF_ICO)
 } Bp_Pred_Info;
 
 typedef struct Btb_Pred_Info_struct {

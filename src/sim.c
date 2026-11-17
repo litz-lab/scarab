@@ -67,6 +67,7 @@
 #include "model.h"
 #include "op_pool.h"
 #include "optimizer2.h"
+#include "pcprof.h"
 #include "ramulator.h"
 #include "stat_trace.h"
 #include "statistics.h"
@@ -751,6 +752,8 @@ void full_sim() {
           print_eip_stats(proc_id);
         if (PERIODIC_DUMP == FALSE)
           dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
+        if (PC_PROFILE)
+          pcprof_dump(proc_id);
         sim_done[proc_id] = TRUE;
         any_sim_done = TRUE;
         check_heartbeat(proc_id, TRUE);

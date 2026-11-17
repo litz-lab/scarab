@@ -445,6 +445,8 @@ void Decoupled_FE::recover(Cf_Type cf_type, Recovery_Info* info) {
   // resuming from this address (rather than restarting at the misprediction).
   Op* alt_op = per_core_dfe[proc_id][MAIN_BP]->get_last_fetch_op();
   bp_recover_op(bp_data, cf_type, info);
+  if (bp_id == MAIN_BP)
+    tage2l_clear_stall(proc_id);  // the overriding branch was flushed with the younger path
   dfe_recover_op();
   switch (dfe_trigger_policy) {
     case PRIMARY_DFE:
@@ -527,6 +529,14 @@ void Decoupled_FE::update() {
     if (ftq.size() == ftq_max_size()) {
       DEBUG(proc_id, "[DFE%u] Break due to full FTQ\n", bp_id);
       STAT_EVENT(proc_id, FTQ_BREAK_FULL_FT_ONPATH + is_off_path_state());
+      break;
+    }
+    // tage2l: a second-level TAGE prediction overrode the first-level one;
+    // the front end is redirected when the late answer arrives, modeled as no
+    // new fetch targets until the second-level latency has elapsed.
+    if (bp_id == MAIN_BP && cycle_count < tage2l_stall_until(proc_id)) {
+      DEBUG(proc_id, "[DFE%u] Break due to tage2l override bubble\n", bp_id);
+      STAT_EVENT(proc_id, FTQ_BREAK_TAGE2L_OVERRIDE_ONPATH + is_off_path_state());
       break;
     }
     if (cfs_taken_this_cycle >= FE_FTQ_TAKEN_CFS_PER_CYCLE) {

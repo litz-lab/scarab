@@ -70,6 +70,9 @@ struct InstInfo {
   bool fetched_instruction = false;
   // DynamoRIO trace_type_t for this instruction (set by memtrace reader)
   int dr_trace_type = 0;
+  // syscall number of a TRACE_MARKER_TYPE_SYSCALL marker seen between the previous
+  // instruction and this one (-1 = none); consumed only by pc_profile
+  int64_t syscall_before = -1;
 };
 
 #define XED_OP_NAME(ins, op) \

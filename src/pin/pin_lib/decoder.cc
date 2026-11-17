@@ -48,6 +48,9 @@ KNOB<BOOL> Knob_debug(KNOB_MODE_WRITEONCE, "pintool", "debug", "0",
 KNOB<BOOL> Knob_translate_x87_regs(
   KNOB_MODE_WRITEONCE, "pintool", "translate_x87_regs", "1",
   "translate Pin's relative x87 regs to Scarab's absolute regs");
+KNOB<UINT32> Knob_pref_imp_dist(
+    KNOB_MODE_WRITEONCE, "pintool", "pref_imp_dist", "16",
+    "IMP prefetcher: send the value this many elements past each load (must match scarab's --pref_imp_dist)");
 
 // the most recently filled instruction
 static ctype_pin_inst* filled_inst_info;
@@ -79,6 +82,8 @@ static void init_reg_scarab_to_pin_map() {
   for (xed_reg_enum_t x : gprs)
     reg_scarab_to_pin_map[reg_compress_map[(int)x]] = reg_xed_to_pin_map[x];
 }
+
+static uint64_t read_ld_data(ADDRINT addr, UINT32 size);
 
 /********************* Private Functions Prototypes ***************************/
 ctype_pin_inst* get_inst_info_obj(const INS& ins);
@@ -288,6 +293,8 @@ void create_compressed_op(ADDRINT iaddr, ctype_pin_inst* info) {
     for(uint ld = 0; ld < num_lds; ld++) {
       filled_inst_info->ld_vaddr[ld] = glb_ld_vaddrs[ld];
       filled_inst_info->ld_data[ld] = glb_ld_data[ld];
+      filled_inst_info->ld_ahead_data[ld] = read_ld_data(
+          glb_ld_vaddrs[ld] + Knob_pref_imp_dist.Value() * filled_inst_info->ld_size, filled_inst_info->ld_size);
     }
 
     uint num_sts = glb_st_vaddrs.size();
@@ -317,8 +324,6 @@ void create_compressed_op(ADDRINT iaddr, ctype_pin_inst* info) {
   //}
   // heartbeat += 1;
 }
-
-static uint64_t read_ld_data(ADDRINT addr, UINT32 size);
 
 void get_gather_scatter_eas(bool is_gather, CONTEXT* ctxt,
                             PIN_MULTI_MEM_ACCESS_INFO* mem_access_info) {

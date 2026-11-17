@@ -58,6 +58,7 @@
 #include "prefetcher/l2l1pref.h"
 #include "prefetcher/pref_2dc.h"
 #include "prefetcher/pref_ghb.h"
+#include "prefetcher/pref_imp.h"
 #include "prefetcher/pref_markov.h"
 #include "prefetcher/pref_phase.h"
 

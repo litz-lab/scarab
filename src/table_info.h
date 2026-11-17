@@ -131,45 +131,5 @@ typedef enum Bar_Type_enum {
 } Bar_Type;
 
 /**************************************************************************************/
-/* The 'Table_Info' type is the static information associated with an
- * instruction. */
-
-struct Op_struct;
-struct Op_Info_struct;
-struct Inst_Info_struct;
-
-// typedef in globals/global_types.h
-struct Table_Info_struct {
-  Op_Type op_type;     // type of operation
-  Mem_Type mem_type;   // type of memory instruction
-  Cf_Type cf_type;     // type of control flow instruction
-  Bar_Type bar_type;   // type of barrier caused by instruction
-  uns16 true_op_type;  // type of opcode from PIN. Should not be used for Scarab timing.
-
-  uns num_dest_regs;  // number of destination registers written
-  uns num_src_regs;   // number of source registers read
-
-  Flag is_simd;         // Is it a SIMD opcode (even if it is a scalar operation like MOVSD)
-  uns8 num_simd_lanes;  // Number of data parallel operations in the instruction. For non-SIMD instructions, this is 1.
-  uns8 lane_width_bytes;  // Operand width of each SIMD lane. For non-SIMD instructions, this is still set.
-
-  uns mem_size;  // number of bytes read/written by a memory instruction
-
-  Binary op_func;  // the 6-bit opcode plus the function code
-  char name[16];   // Mnemonic of the instruction
-  uns8 type;       // the format type code for the instruction (see table)
-  uns32 mask;
-
-  // Function that decodes the instruction fields
-  Flag (*dec_func)(Inst_Info*);
-  // Function that sources the register values for the oracle
-  void (*src_func)(Op_Info*);
-  // Function that simulates the instruction
-  void (*sim_func)(Op_Info*, Flag);
-
-  uns8 qualifiers;  // Floating point qualifier bit string (/d, /s, /ud, etc.)
-};
-
-/**************************************************************************************/
 
 #endif /* #ifndef __TABLE_INFO_H__ */
